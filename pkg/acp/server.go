@@ -21,7 +21,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/logging"
 	"github.com/nickheyer/icebath/pkg/mcp"
 	"github.com/nickheyer/icebath/pkg/memory"
-	"github.com/nickheyer/icebath/pkg/observability"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tools"
@@ -195,7 +194,7 @@ func historySummaryMeta(message map[string]any, text string) *pyjson.Object {
 	inner := pyjson.NewObject()
 	inner.Set(key, true)
 	meta := pyjson.NewObject()
-	meta.Set("hermes", inner)
+	meta.Set("icebath", inner)
 	return meta
 }
 
@@ -379,13 +378,13 @@ func bindGuarded(stack *exitStack, label string, setup func() (func(), error)) {
 		return setup()
 	}()
 	if err != nil {
-		serverLog.Debug(fmt.Sprintf("Could not set ACP %s\n%s", label, err))
+		pkgLog().Debug(fmt.Sprintf("Could not set ACP %s\n%s", label, err))
 		return
 	}
 	stack.callback(func() {
 		defer func() {
 			if r := recover(); r != nil {
-				serverLog.Debug(fmt.Sprintf("Could not restore ACP %s\n%v", label, r))
+				pkgLog().Debug(fmt.Sprintf("Could not restore ACP %s\n%v", label, r))
 			}
 		}()
 		teardown()
@@ -453,23 +452,23 @@ type turnArgs struct {
 }
 
 var (
-	_ pyacp.Connector          = (*HermesACPAgent)(nil)
-	_ pyacp.Initializer        = (*HermesACPAgent)(nil)
-	_ pyacp.Authenticator      = (*HermesACPAgent)(nil)
-	_ pyacp.SessionCreator     = (*HermesACPAgent)(nil)
-	_ pyacp.SessionLoader      = (*HermesACPAgent)(nil)
-	_ pyacp.SessionResumer     = (*HermesACPAgent)(nil)
-	_ pyacp.Canceller          = (*HermesACPAgent)(nil)
-	_ pyacp.SessionForker      = (*HermesACPAgent)(nil)
-	_ pyacp.SessionLister      = (*HermesACPAgent)(nil)
-	_ pyacp.Prompter           = (*HermesACPAgent)(nil)
-	_ pyacp.SessionModelSetter = (*HermesACPAgent)(nil)
-	_ pyacp.SessionModeSetter  = (*HermesACPAgent)(nil)
-	_ pyacp.ConfigOptionSetter = (*HermesACPAgent)(nil)
+	_ pyacp.Connector          = (*IcebathACPAgent)(nil)
+	_ pyacp.Initializer        = (*IcebathACPAgent)(nil)
+	_ pyacp.Authenticator      = (*IcebathACPAgent)(nil)
+	_ pyacp.SessionCreator     = (*IcebathACPAgent)(nil)
+	_ pyacp.SessionLoader      = (*IcebathACPAgent)(nil)
+	_ pyacp.SessionResumer     = (*IcebathACPAgent)(nil)
+	_ pyacp.Canceller          = (*IcebathACPAgent)(nil)
+	_ pyacp.SessionForker      = (*IcebathACPAgent)(nil)
+	_ pyacp.SessionLister      = (*IcebathACPAgent)(nil)
+	_ pyacp.Prompter           = (*IcebathACPAgent)(nil)
+	_ pyacp.SessionModelSetter = (*IcebathACPAgent)(nil)
+	_ pyacp.SessionModeSetter  = (*IcebathACPAgent)(nil)
+	_ pyacp.ConfigOptionSetter = (*IcebathACPAgent)(nil)
 )
 
 // ACP agent wrapping an in process AIAgent per session
-type HermesACPAgent struct {
+type IcebathACPAgent struct {
 	SessionManager  Sessions
 	connMu          sync.Mutex
 	conn            Client
@@ -481,8 +480,8 @@ type HermesACPAgent struct {
 }
 
 // In process agent over the given session manager
-func NewHermesACPAgent(sessionManager Sessions) *HermesACPAgent {
-	a := &HermesACPAgent{SessionManager: sessionManager}
+func NewIcebathACPAgent(sessionManager Sessions) *IcebathACPAgent {
+	a := &IcebathACPAgent{SessionManager: sessionManager}
 	a.commandHandlers = map[string]slashHandler{
 		"help": a.cmdHelp, "model": a.cmdModel, "tools": a.cmdTools, "context": a.cmdContext, "reset": a.cmdReset,
 		"compress": a.cmdCompress, "steer": a.cmdSteer, "queue": a.cmdQueue, "version": a.cmdVersion,
@@ -493,23 +492,23 @@ func NewHermesACPAgent(sessionManager Sessions) *HermesACPAgent {
 }
 
 // Stores the client connection that receives session updates
-func (a *HermesACPAgent) OnConnect(conn *pyacp.AgentSideConnection) {
+func (a *IcebathACPAgent) OnConnect(conn *pyacp.AgentSideConnection) {
 	a.connMu.Lock()
 	a.conn = conn
 	a.loop = NewConnLoop(context.Background())
 	a.connMu.Unlock()
-	serverLog.Info("ACP client connected")
+	pkgLog().Info("ACP client connected")
 }
 
 // Connected client, nil before one connects
-func (a *HermesACPAgent) client() Client {
+func (a *IcebathACPAgent) client() Client {
 	a.connMu.Lock()
 	defer a.connMu.Unlock()
 	return a.conn
 }
 
 // Loop worker threads schedule client calls on
-func (a *HermesACPAgent) runningLoop() Loop {
+func (a *IcebathACPAgent) runningLoop() Loop {
 	a.connMu.Lock()
 	defer a.connMu.Unlock()
 	if a.loop == nil {
@@ -519,16 +518,16 @@ func (a *HermesACPAgent) runningLoop() Loop {
 }
 
 // Sends a session update, logging instead of failing, false when it was not delivered
-func (a *HermesACPAgent) send(ctx context.Context, sessionID string, update pyacp.SessionUpdate, failMsg string, level int) bool {
+func (a *IcebathACPAgent) send(ctx context.Context, sessionID string, update pyacp.SessionUpdate, failMsg string, level int) bool {
 	if err := a.client().SessionUpdate(ctx, sessionID, update, nil); err != nil {
-		serverLog.Log(level, fmt.Sprintf(failMsg, sessionID)+"\n"+err.Error())
+		pkgLog().Log(level, fmt.Sprintf(failMsg, sessionID)+"\n"+err.Error())
 		return false
 	}
 	return true
 }
 
 // Runs a notification coroutine right after the current response is queued
-func (a *HermesACPAgent) scheduleSoon(ctx context.Context, coro func(ctx context.Context)) {
+func (a *IcebathACPAgent) scheduleSoon(ctx context.Context, coro func(ctx context.Context)) {
 	if a.client() == nil {
 		return
 	}
@@ -538,7 +537,7 @@ func (a *HermesACPAgent) scheduleSoon(ctx context.Context, coro func(ctx context
 		defer a.background.Done()
 		defer func() {
 			if r := recover(); r != nil {
-				serverLog.Error(fmt.Sprintf("Task exception was never retrieved\n%v", r))
+				pkgLog().Error(fmt.Sprintf("Task exception was never retrieved\n%v", r))
 			}
 		}()
 		coro(detached)
@@ -546,7 +545,7 @@ func (a *HermesACPAgent) scheduleSoon(ctx context.Context, coro func(ctx context
 }
 
 // Edit approval policy of the session as ACP modes
-func (a *HermesACPAgent) sessionModes(st *SessionState) *pyacp.SessionModeState {
+func (a *IcebathACPAgent) sessionModes(st *SessionState) *pyacp.SessionModeState {
 	current := st.Mode
 	if _, ok := Modes[current]; !ok {
 		current = DefaultMode
@@ -560,7 +559,7 @@ func (a *HermesACPAgent) sessionModes(st *SessionState) *pyacp.SessionModeState 
 }
 
 // Edit approval policy and cwd the session's mode stands for
-func (a *HermesACPAgent) editApprovalPolicyForState(st *SessionState) (string, string, error) {
+func (a *IcebathACPAgent) editApprovalPolicyForState(st *SessionState) (string, string, error) {
 	mode := st.Mode
 	if mode == "" {
 		mode = DefaultMode
@@ -573,7 +572,7 @@ func (a *HermesACPAgent) editApprovalPolicyForState(st *SessionState) (string, s
 }
 
 // Model picker of the session from the shared inventory, a single current model row when nothing is listable
-func (a *HermesACPAgent) buildModelState(ctx context.Context, st *SessionState) *pyacp.SessionModelState {
+func (a *IcebathACPAgent) buildModelState(ctx context.Context, st *SessionState) *pyacp.SessionModelState {
 	model := st.Model
 	if model == "" {
 		model = agentModel(st.Agent)
@@ -595,7 +594,7 @@ func (a *HermesACPAgent) buildModelState(ctx context.Context, st *SessionState) 
 		return BuildModelState(ctx, model, providerName, agentBaseURL(st.Agent))
 	}()
 	if err != nil {
-		serverLog.Debug("Could not build ACP model state\n" + err.Error())
+		pkgLog().Debug("Could not build ACP model state\n" + err.Error())
 	} else if picker != nil {
 		return picker
 	}
@@ -607,8 +606,8 @@ func (a *HermesACPAgent) buildModelState(ctx context.Context, st *SessionState) 
 }
 
 // Rebuilds the session agent on a new model and returns the old provider, the new provider and the model
-func (a *HermesACPAgent) switchModel(ctx context.Context, st *SessionState, rawModel string, keepEndpoint bool) (string, string, string, error) {
-	currentProvider, currentModel := agentProvider(st.Agent), st.Model
+func (a *IcebathACPAgent) switchModel(ctx context.Context, st *SessionState, rawModel string, keepEndpoint bool) (string, string, string, error) {
+	currentProvider := agentProvider(st.Agent)
 	explicitProvider, modelInput := provider.ParseModelInput(ctx, rawModel, "", nil)
 	cfg, err := config.LoadContext(ctx, home.Dir(ctx), nil)
 	if err != nil {
@@ -654,16 +653,11 @@ func (a *HermesACPAgent) switchModel(ctx context.Context, st *SessionState, rawM
 	}
 	st.Agent, st.Model = rebuilt, newModel
 	a.SessionManager.SaveSession(ctx, st.SessionID)
-	var from any
-	if currentProvider != "" {
-		from = currentProvider
-	}
-	observability.RecordModelSwitch(ctx, from, targetProvider, "acp", currentModel, st.SessionID)
 	return currentProvider, targetProvider, newModel, nil
 }
 
 // Usage update of the context indicator, nil when the agent reports no context window
-func (a *HermesACPAgent) buildUsageUpdate(ctx context.Context, st *SessionState) *pyacp.UsageUpdate {
+func (a *IcebathACPAgent) buildUsageUpdate(ctx context.Context, st *SessionState) *pyacp.UsageUpdate {
 	size, _, lastPromptTokens := agentCompressorFigures(st.Agent)
 	if size <= 0 {
 		return nil
@@ -672,7 +666,7 @@ func (a *HermesACPAgent) buildUsageUpdate(ctx context.Context, st *SessionState)
 	func() {
 		defer func() {
 			if r := recover(); r != nil {
-				serverLog.Debug(fmt.Sprintf("Could not estimate ACP native context usage\n%v", r))
+				pkgLog().Debug(fmt.Sprintf("Could not estimate ACP native context usage\n%v", r))
 				used = lastPromptTokens
 			}
 		}()
@@ -681,7 +675,7 @@ func (a *HermesACPAgent) buildUsageUpdate(ctx context.Context, st *SessionState)
 	return &pyacp.UsageUpdate{Size: max(size, 0), Used: max(used, 0)}
 }
 
-func (a *HermesACPAgent) sendUsageUpdate(ctx context.Context, st *SessionState) {
+func (a *IcebathACPAgent) sendUsageUpdate(ctx context.Context, st *SessionState) {
 	if a.client() == nil {
 		return
 	}
@@ -691,10 +685,10 @@ func (a *HermesACPAgent) sendUsageUpdate(ctx context.Context, st *SessionState) 
 }
 
 // Session provenance meta of an ACP session, nil when it cannot be built
-func (a *HermesACPAgent) provenanceMeta(ctx context.Context, acpSessionID, currentID, previousID string) (meta *pyjson.Object) {
+func (a *IcebathACPAgent) provenanceMeta(ctx context.Context, acpSessionID, currentID, previousID string) (meta *pyjson.Object) {
 	defer func() {
 		if r := recover(); r != nil {
-			serverLog.Debug(fmt.Sprintf("Could not build ACP session provenance for %s\n%v", acpSessionID, r))
+			pkgLog().Debug(fmt.Sprintf("Could not build ACP session provenance for %s\n%v", acpSessionID, r))
 			meta = nil
 		}
 	}()
@@ -706,18 +700,18 @@ func (a *HermesACPAgent) provenanceMeta(ctx context.Context, acpSessionID, curre
 }
 
 // Sends the session title with provenance, the previous head named when compression rotated it
-func (a *HermesACPAgent) sendSessionInfoUpdate(ctx context.Context, sessionID, currentID, previousID string) {
+func (a *IcebathACPAgent) sendSessionInfoUpdate(ctx context.Context, sessionID, currentID, previousID string) {
 	if a.client() == nil {
 		return
 	}
 	db := a.SessionManager.GetDB(ctx)
 	if db == nil {
-		serverLog.Debug(fmt.Sprintf("Could not read ACP session info for %s", sessionID))
+		pkgLog().Debug(fmt.Sprintf("Could not read ACP session info for %s", sessionID))
 		return
 	}
 	row, err := db.GetSession(ctx, sessionID)
 	if err != nil {
-		serverLog.Debug(fmt.Sprintf("Could not read ACP session info for %s\n%s", sessionID, err))
+		pkgLog().Debug(fmt.Sprintf("Could not read ACP session info for %s\n%s", sessionID, err))
 		return
 	}
 	if row == nil || row.Len() == 0 {
@@ -735,7 +729,7 @@ func (a *HermesACPAgent) sendSessionInfoUpdate(ctx context.Context, sessionID, c
 }
 
 // Registers editor provided MCP servers and refreshes the agent tool surface
-func (a *HermesACPAgent) registerSessionMCPServers(ctx context.Context, st *SessionState, servers []pyacp.McpServer) {
+func (a *IcebathACPAgent) registerSessionMCPServers(ctx context.Context, st *SessionState, servers []pyacp.McpServer) {
 	if len(servers) == 0 {
 		return
 	}
@@ -757,16 +751,16 @@ func (a *HermesACPAgent) registerSessionMCPServers(ctx context.Context, st *Sess
 		_, err = registerMCPServers(ctx, pinned, configs)
 		return err
 	}(); err != nil {
-		serverLog.Warning(fmt.Sprintf("Session %s: failed to register ACP MCP servers\n%s", st.SessionID, err))
+		pkgLog().Warning(fmt.Sprintf("Session %s: failed to register ACP MCP servers\n%s", st.SessionID, err))
 		return
 	}
 	if err := a.refreshToolSurface(ctx, st, names); err != nil {
-		serverLog.Warning(fmt.Sprintf("Session %s: failed to refresh tool surface after ACP MCP registration\n%s", st.SessionID, err))
+		pkgLog().Warning(fmt.Sprintf("Session %s: failed to refresh tool surface after ACP MCP registration\n%s", st.SessionID, err))
 	}
 }
 
 // Rebuilds the agent tool snapshot with the editor servers added to its toolsets
-func (a *HermesACPAgent) refreshToolSurface(ctx context.Context, st *SessionState, serverNames []string) (err error) {
+func (a *IcebathACPAgent) refreshToolSurface(ctx context.Context, st *SessionState, serverNames []string) (err error) {
 	defer func() {
 		if r := recover(); r != nil {
 			err = fmt.Errorf("%v", r)
@@ -801,12 +795,12 @@ func (a *HermesACPAgent) refreshToolSurface(ctx context.Context, st *SessionStat
 			return err
 		}
 	}
-	serverLog.Info(fmt.Sprintf("Session %s: refreshed tool surface after ACP MCP registration (%d tools)", st.SessionID, len(defs)))
+	pkgLog().Info(fmt.Sprintf("Session %s: refreshed tool surface after ACP MCP registration (%d tools)", st.SessionID, len(defs)))
 	return nil
 }
 
 // Refreshes the tool snapshot once background MCP discovery lands, before the first turn only
-func (a *HermesACPAgent) scheduleMCPLateRefresh(ctx context.Context, st *SessionState) {
+func (a *IcebathACPAgent) scheduleMCPLateRefresh(ctx context.Context, st *SessionState) {
 	inFlight := func() (inFlight bool) {
 		defer func() {
 			if recover() != nil {
@@ -825,7 +819,7 @@ func (a *HermesACPAgent) scheduleMCPLateRefresh(ctx context.Context, st *Session
 		defer a.background.Done()
 		defer func() {
 			if r := recover(); r != nil {
-				serverLog.Debug(fmt.Sprintf("Session %s: late MCP refresh failed\n%v", sessionID, r))
+				pkgLog().Debug(fmt.Sprintf("Session %s: late MCP refresh failed\n%v", sessionID, r))
 			}
 		}()
 		if !joinMCPDiscovery(detached, 30*time.Second) {
@@ -855,13 +849,13 @@ func (a *HermesACPAgent) scheduleMCPLateRefresh(ctx context.Context, st *Session
 				names = append(names, name)
 			}
 			sort.Strings(names)
-			serverLog.Info(fmt.Sprintf("Session %s: late MCP refresh added %d tools: %s", sessionID, len(added), strings.Join(names, ", ")))
+			pkgLog().Info(fmt.Sprintf("Session %s: late MCP refresh added %d tools: %s", sessionID, len(added), strings.Join(names, ", ")))
 		}
 	}()
 }
 
 // Answers initialize with the protocol version, agent info, capabilities and auth methods
-func (a *HermesACPAgent) Initialize(ctx context.Context, req *pyacp.InitializeRequest) (*pyacp.InitializeResponse, error) {
+func (a *IcebathACPAgent) Initialize(ctx context.Context, req *pyacp.InitializeRequest) (*pyacp.InitializeResponse, error) {
 	authMethods := BuildAuthMethods(ctx)
 	clientName := "unknown"
 	if req != nil && req.ClientInfo != nil {
@@ -871,7 +865,7 @@ func (a *HermesACPAgent) Initialize(ctx context.Context, req *pyacp.InitializeRe
 	if req != nil {
 		version = req.ProtocolVersion
 	}
-	serverLog.Info(fmt.Sprintf("Initialize from %s (protocol v%d)", clientName, version))
+	pkgLog().Info(fmt.Sprintf("Initialize from %s (protocol v%d)", clientName, version))
 	info, err := getVersionInfo()
 	if err != nil {
 		return nil, err
@@ -907,12 +901,12 @@ func authenticate(ctx context.Context, methodID string) *pyacp.AuthenticateRespo
 }
 
 // Answers authenticate for the detected provider or the terminal setup method
-func (a *HermesACPAgent) Authenticate(ctx context.Context, req *pyacp.AuthenticateRequest) (*pyacp.AuthenticateResponse, error) {
+func (a *IcebathACPAgent) Authenticate(ctx context.Context, req *pyacp.AuthenticateRequest) (*pyacp.AuthenticateResponse, error) {
 	return authenticate(ctx, req.MethodID), nil
 }
 
 // Replays the history as chunks and tool call pairs so the editor shows the transcript
-func (a *HermesACPAgent) replaySessionHistory(ctx context.Context, st *SessionState) {
+func (a *IcebathACPAgent) replaySessionHistory(ctx context.Context, st *SessionState) {
 	if a.client() == nil || len(st.History) == 0 {
 		return
 	}
@@ -924,12 +918,12 @@ func (a *HermesACPAgent) replaySessionHistory(ctx context.Context, st *SessionSt
 }
 
 // Models, modes and provenance meta of a session response, after the history replay load and resume owe
-func (a *HermesACPAgent) sessionResponseFields(ctx context.Context, st *SessionState, replayVerb string) (*pyacp.SessionModelState, *pyacp.SessionModeState, *pyjson.Object) {
+func (a *IcebathACPAgent) sessionResponseFields(ctx context.Context, st *SessionState, replayVerb string) (*pyacp.SessionModelState, *pyacp.SessionModeState, *pyjson.Object) {
 	if replayVerb != "" {
 		func() {
 			defer func() {
 				if r := recover(); r != nil {
-					serverLog.Warning(fmt.Sprintf("ACP history replay raised during session/%s for %s — %s will still succeed, partial transcript may be missing\n%v",
+					pkgLog().Warning(fmt.Sprintf("ACP history replay raised during session/%s for %s — %s will still succeed, partial transcript may be missing\n%v",
 						replayVerb, st.SessionID, replayVerb, r))
 				}
 			}()
@@ -941,14 +935,14 @@ func (a *HermesACPAgent) sessionResponseFields(ctx context.Context, st *SessionS
 	return a.buildModelState(ctx, st), a.sessionModes(st), a.provenanceMeta(ctx, st.SessionID, agentSessionID(st.Agent, st.SessionID), "")
 }
 
-func (a *HermesACPAgent) attachSessionMCP(ctx context.Context, st *SessionState, servers []pyacp.McpServer, logLine string) {
+func (a *IcebathACPAgent) attachSessionMCP(ctx context.Context, st *SessionState, servers []pyacp.McpServer, logLine string) {
 	a.registerSessionMCPServers(ctx, st, servers)
 	a.scheduleMCPLateRefresh(ctx, st)
-	serverLog.Info(logLine)
+	pkgLog().Info(logLine)
 }
 
 // Creates a session with a fresh agent
-func (a *HermesACPAgent) NewSession(ctx context.Context, req *pyacp.NewSessionRequest) (*pyacp.NewSessionResponse, error) {
+func (a *IcebathACPAgent) NewSession(ctx context.Context, req *pyacp.NewSessionRequest) (*pyacp.NewSessionResponse, error) {
 	st, err := a.SessionManager.CreateSession(ctx, req.Cwd)
 	if err != nil {
 		return nil, err
@@ -959,10 +953,10 @@ func (a *HermesACPAgent) NewSession(ctx context.Context, req *pyacp.NewSessionRe
 }
 
 // Loads a session into the given cwd and replays its history, nil when it is unknown
-func (a *HermesACPAgent) LoadSession(ctx context.Context, req *pyacp.LoadSessionRequest) (*pyacp.LoadSessionResponse, error) {
+func (a *IcebathACPAgent) LoadSession(ctx context.Context, req *pyacp.LoadSessionRequest) (*pyacp.LoadSessionResponse, error) {
 	st := a.SessionManager.UpdateCwd(ctx, req.SessionID, req.Cwd)
 	if st == nil {
-		serverLog.Warning(fmt.Sprintf("load_session: session %s not found", req.SessionID))
+		pkgLog().Warning(fmt.Sprintf("load_session: session %s not found", req.SessionID))
 		return nil, nil
 	}
 	a.attachSessionMCP(ctx, st, req.MCPServers, "Loaded session "+req.SessionID)
@@ -971,10 +965,10 @@ func (a *HermesACPAgent) LoadSession(ctx context.Context, req *pyacp.LoadSession
 }
 
 // Resumes a session, creating a new one when it is unknown
-func (a *HermesACPAgent) ResumeSession(ctx context.Context, req *pyacp.ResumeSessionRequest) (*pyacp.ResumeSessionResponse, error) {
+func (a *IcebathACPAgent) ResumeSession(ctx context.Context, req *pyacp.ResumeSessionRequest) (*pyacp.ResumeSessionResponse, error) {
 	st := a.SessionManager.UpdateCwd(ctx, req.SessionID, req.Cwd)
 	if st == nil {
-		serverLog.Warning(fmt.Sprintf("resume_session: session %s not found, creating new", req.SessionID))
+		pkgLog().Warning(fmt.Sprintf("resume_session: session %s not found, creating new", req.SessionID))
 		created, err := a.SessionManager.CreateSession(ctx, req.Cwd)
 		if err != nil {
 			return nil, err
@@ -987,7 +981,7 @@ func (a *HermesACPAgent) ResumeSession(ctx context.Context, req *pyacp.ResumeSes
 }
 
 // Cancels the running turn of a session, keeping its prompt for a correction that follows
-func (a *HermesACPAgent) Cancel(ctx context.Context, req *pyacp.CancelNotification) error {
+func (a *IcebathACPAgent) Cancel(ctx context.Context, req *pyacp.CancelNotification) error {
 	st := a.SessionManager.GetSession(ctx, req.SessionID)
 	if st == nil || st.CancelEvent == nil {
 		return nil
@@ -1001,35 +995,35 @@ func (a *HermesACPAgent) Cancel(ctx context.Context, req *pyacp.CancelNotificati
 		st.CancelEvent.Set()
 		defer func() {
 			if r := recover(); r != nil {
-				serverLog.Debug(fmt.Sprintf("Failed to interrupt ACP session %s\n%v", req.SessionID, r))
+				pkgLog().Debug(fmt.Sprintf("Failed to interrupt ACP session %s\n%v", req.SessionID, r))
 			}
 		}()
 		if st.Agent != nil {
 			agent.RequestHardInterruptOf(st.Agent, nil, nil)
 		}
 	}()
-	serverLog.Info("Cancelled session " + req.SessionID)
+	pkgLog().Info("Cancelled session " + req.SessionID)
 	return nil
 }
 
 // Forks a session into a new one carrying its history, an empty id when the original is unknown
-func (a *HermesACPAgent) ForkSession(ctx context.Context, req *pyacp.ForkSessionRequest) (*pyacp.ForkSessionResponse, error) {
+func (a *IcebathACPAgent) ForkSession(ctx context.Context, req *pyacp.ForkSessionRequest) (*pyacp.ForkSessionResponse, error) {
 	st, err := a.SessionManager.ForkSession(ctx, req.SessionID, req.Cwd)
 	if err != nil {
 		return nil, err
 	}
 	if st == nil {
-		serverLog.Info(fmt.Sprintf("Forked session %s -> %s", req.SessionID, ""))
+		pkgLog().Info(fmt.Sprintf("Forked session %s -> %s", req.SessionID, ""))
 		return &pyacp.ForkSessionResponse{SessionID: ""}, nil
 	}
 	a.registerSessionMCPServers(ctx, st, req.MCPServers)
-	serverLog.Info(fmt.Sprintf("Forked session %s -> %s", req.SessionID, st.SessionID))
+	pkgLog().Info(fmt.Sprintf("Forked session %s -> %s", req.SessionID, st.SessionID))
 	a.scheduleAvailableCommandsUpdate(ctx, st.SessionID)
 	return &pyacp.ForkSessionResponse{SessionID: st.SessionID, Models: a.buildModelState(ctx, st), Modes: a.sessionModes(st)}, nil
 }
 
 // Lists sessions after the cursor, one fixed size page at a time
-func (a *HermesACPAgent) ListSessions(ctx context.Context, req *pyacp.ListSessionsRequest) (*pyacp.ListSessionsResponse, error) {
+func (a *IcebathACPAgent) ListSessions(ctx context.Context, req *pyacp.ListSessionsRequest) (*pyacp.ListSessionsResponse, error) {
 	cwd, cursor := "", ""
 	if req.Cwd != nil {
 		cwd = *req.Cwd
@@ -1074,7 +1068,7 @@ func (a *HermesACPAgent) ListSessions(ctx context.Context, req *pyacp.ListSessio
 }
 
 // Prompt text and content after an interrupt, the cancelled request reattached to a steer or a plain follow up
-func (a *HermesACPAgent) rewritePromptForInterrupt(st *SessionState, userText string, userContent any, textOnly bool) (string, any) {
+func (a *IcebathACPAgent) rewritePromptForInterrupt(st *SessionState, userText string, userContent any, textOnly bool) (string, any) {
 	if _, isText := userContent.(string); !textOnly || !isText {
 		return userText, userContent
 	}
@@ -1103,7 +1097,7 @@ func (a *HermesACPAgent) rewritePromptForInterrupt(st *SessionState, userText st
 }
 
 // Marks the session running, or redirects or queues the prompt behind a live turn and returns the client message
-func (a *HermesACPAgent) claimTurnOrQueue(st *SessionState, sessionID, userText string, userContent any, textOnly bool) (string, bool) {
+func (a *IcebathACPAgent) claimTurnOrQueue(st *SessionState, sessionID, userText string, userContent any, textOnly bool) (string, bool) {
 	st.RuntimeLock.Lock()
 	defer st.RuntimeLock.Unlock()
 	queued := userText
@@ -1124,7 +1118,7 @@ func (a *HermesACPAgent) claimTurnOrQueue(st *SessionState, sessionID, userText 
 			redirected := func() (ok bool) {
 				defer func() {
 					if r := recover(); r != nil {
-						serverLog.Debug(fmt.Sprintf("ACP active-turn redirect failed for %s\n%v", sessionID, r))
+						pkgLog().Debug(fmt.Sprintf("ACP active-turn redirect failed for %s\n%v", sessionID, r))
 						ok = false
 					}
 				}()
@@ -1140,7 +1134,7 @@ func (a *HermesACPAgent) claimTurnOrQueue(st *SessionState, sessionID, userText 
 }
 
 // Executor body of one turn with the session context, approval routing and title notice bound around the agent run
-func (a *HermesACPAgent) runAgentTurn(ctx context.Context, t turnArgs) (map[string]any, error) {
+func (a *IcebathACPAgent) runAgentTurn(ctx context.Context, t turnArgs) (map[string]any, error) {
 	st, ag := t.state, t.state.Agent
 	stack := &exitStack{}
 	defer stack.close()
@@ -1182,7 +1176,7 @@ func (a *HermesACPAgent) runAgentTurn(ctx context.Context, t turnArgs) (map[stri
 				safeScheduleThreadsafe(func(context.Context) (any, error) {
 					a.sendSessionInfoUpdate(detached, t.sessionID, "", "")
 					return nil, nil
-				}, t.loop, serverLog, "")
+				}, t.loop, pkgLog(), "")
 			}
 		})
 	}
@@ -1206,18 +1200,18 @@ func (a *HermesACPAgent) runAgentTurn(ctx context.Context, t turnArgs) (map[stri
 			ConversationHistory: st.History, TaskID: t.sessionID, PersistUserMessage: persisted})
 	}()
 	if err != nil {
-		serverLog.Error(fmt.Sprintf("Agent error in session %s\n%s", t.sessionID, err))
+		pkgLog().Error(fmt.Sprintf("Agent error in session %s\n%s", t.sessionID, err))
 		return map[string]any{"final_response": "Error: " + err.Error(), "messages": st.History}, nil
 	}
 	return result, nil
 }
 
 // Runs the agent on the user's prompt and streams its events back to the editor
-func (a *HermesACPAgent) Prompt(ctx context.Context, req *pyacp.PromptRequest) (*pyacp.PromptResponse, error) {
+func (a *IcebathACPAgent) Prompt(ctx context.Context, req *pyacp.PromptRequest) (*pyacp.PromptResponse, error) {
 	sessionID := req.SessionID
 	st := a.SessionManager.GetSession(ctx, sessionID)
 	if st == nil {
-		serverLog.Error(fmt.Sprintf("prompt: session %s not found", sessionID))
+		pkgLog().Error(fmt.Sprintf("prompt: session %s not found", sessionID))
 		return &pyacp.PromptResponse{StopReason: "refusal"}, nil
 	}
 	userText := pystr.Strip(ExtractText(req.Prompt))
@@ -1261,7 +1255,7 @@ func (a *HermesACPAgent) Prompt(ctx context.Context, req *pyacp.PromptRequest) (
 	if r := []rune(userText); len(r) > 100 {
 		preview = string(r[:100])
 	}
-	serverLog.Info(fmt.Sprintf("Prompt on session %s: %s", sessionID, preview))
+	pkgLog().Info(fmt.Sprintf("Prompt on session %s: %s", sessionID, preview))
 	conn, loop := a.client(), a.runningLoop()
 	if st.CancelEvent != nil {
 		st.CancelEvent.Clear()
@@ -1291,7 +1285,7 @@ func (a *HermesACPAgent) Prompt(ctx context.Context, req *pyacp.PromptRequest) (
 	}()
 	out := <-done
 	if out.err != nil {
-		serverLog.Error(fmt.Sprintf("Executor error for session %s\n%s", sessionID, out.err))
+		pkgLog().Error(fmt.Sprintf("Executor error for session %s\n%s", sessionID, out.err))
 		st.RuntimeLock.Lock()
 		st.IsRunning = false
 		st.CurrentPromptText = ""
@@ -1302,13 +1296,13 @@ func (a *HermesACPAgent) Prompt(ctx context.Context, req *pyacp.PromptRequest) (
 }
 
 // Closes any tool call the turn left open so no bubble spins after the turn ends
-func (a *HermesACPAgent) flushTurnToolCalls(cbs *turnCallbacks, sessionID string, conn Client, loop Loop) {
+func (a *IcebathACPAgent) flushTurnToolCalls(cbs *turnCallbacks, sessionID string, conn Client, loop Loop) {
 	if conn == nil || cbs.toolCalls == nil {
 		return
 	}
 	defer func() {
 		if r := recover(); r != nil {
-			serverLog.Debug(fmt.Sprintf("Could not flush open ACP tool calls for %s\n%v", sessionID, r))
+			pkgLog().Debug(fmt.Sprintf("Could not flush open ACP tool calls for %s\n%v", sessionID, r))
 		}
 	}()
 	FlushOpenToolCalls(conn, sessionID, loop, cbs.toolCalls)
@@ -1324,7 +1318,7 @@ func requestPermissionVia(conn Client) RequestPermissionFunc {
 }
 
 // Installs the streaming callbacks of one turn on the session agent
-func (a *HermesACPAgent) wireTurnCallbacks(st *SessionState, sessionID string, conn Client, loop Loop) *turnCallbacks {
+func (a *IcebathACPAgent) wireTurnCallbacks(st *SessionState, sessionID string, conn Client, loop Loop) *turnCallbacks {
 	cbs := &turnCallbacks{}
 	if conn != nil {
 		calls := NewToolCalls()
@@ -1349,7 +1343,7 @@ func (a *HermesACPAgent) wireTurnCallbacks(st *SessionState, sessionID string, c
 		func() {
 			defer func() {
 				if r := recover(); r != nil {
-					serverLog.Debug(fmt.Sprintf("Could not create ACP edit approval requester\n%v", r))
+					pkgLog().Debug(fmt.Sprintf("Could not create ACP edit approval requester\n%v", r))
 				}
 			}()
 			cbs.editApprovalRequester = MakeACPEditApprovalRequester(request, loop, sessionID, nil, policy, send)
@@ -1401,7 +1395,7 @@ func resultInt(result map[string]any, key string, def int) int {
 }
 
 // Persists the turn, emits provenance and the final text, drains queued prompts and reports usage
-func (a *HermesACPAgent) finishTurn(ctx context.Context, st *SessionState, sessionID string, conn Client, result map[string]any, preTurnID string, streamed bool) (resp *pyacp.PromptResponse, err error) {
+func (a *IcebathACPAgent) finishTurn(ctx context.Context, st *SessionState, sessionID string, conn Client, result map[string]any, preTurnID string, streamed bool) (resp *pyacp.PromptResponse, err error) {
 	cancelled := false
 	err = func() (err error) {
 		defer func() {
@@ -1427,7 +1421,7 @@ func (a *HermesACPAgent) finishTurn(ctx context.Context, st *SessionState, sessi
 			func() {
 				defer func() {
 					if r := recover(); r != nil {
-						serverLog.Debug(fmt.Sprintf("Could not emit ACP provenance update after rotation for %s\n%v", sessionID, r))
+						pkgLog().Debug(fmt.Sprintf("Could not emit ACP provenance update after rotation for %s\n%v", sessionID, r))
 					}
 				}()
 				a.sendSessionInfoUpdate(ctx, sessionID, postTurnID, preTurnID)
@@ -1482,7 +1476,7 @@ func (a *HermesACPAgent) finishTurn(ctx context.Context, st *SessionState, sessi
 }
 
 // Runs queued prompts while the session is idle
-func (a *HermesACPAgent) drainQueuedPrompts(ctx context.Context, st *SessionState, sessionID string, conn Client) error {
+func (a *IcebathACPAgent) drainQueuedPrompts(ctx context.Context, st *SessionState, sessionID string, conn Client) error {
 	for {
 		st.RuntimeLock.Lock()
 		if st.IsRunning || st.CommandOp || len(st.QueuedPrompts) == 0 {
@@ -1504,11 +1498,11 @@ func (a *HermesACPAgent) drainQueuedPrompts(ctx context.Context, st *SessionStat
 }
 
 // Switches the model of an idle session through the shared switch resolution
-func (a *HermesACPAgent) SetSessionModel(ctx context.Context, req *pyacp.SetSessionModelRequest) (*pyacp.SetSessionModelResponse, error) {
+func (a *IcebathACPAgent) SetSessionModel(ctx context.Context, req *pyacp.SetSessionModelRequest) (*pyacp.SetSessionModelResponse, error) {
 	sessionID := req.SessionID
 	st := a.SessionManager.GetSession(ctx, sessionID)
 	if st == nil {
-		serverLog.Warning(fmt.Sprintf("Session %s: model switch requested for missing session", sessionID))
+		pkgLog().Warning(fmt.Sprintf("Session %s: model switch requested for missing session", sessionID))
 		return nil, nil
 	}
 	st.RuntimeLock.Lock()
@@ -1525,7 +1519,7 @@ func (a *HermesACPAgent) SetSessionModel(ctx context.Context, req *pyacp.SetSess
 			st.RuntimeLock.Unlock()
 			a.scheduleSoon(ctx, func(ctx context.Context) {
 				if err := a.drainQueuedPrompts(ctx, st, sessionID, a.client()); err != nil {
-					serverLog.Error(fmt.Sprintf("Task exception was never retrieved\n%s", err))
+					pkgLog().Error(fmt.Sprintf("Task exception was never retrieved\n%s", err))
 				}
 			})
 		}()
@@ -1540,15 +1534,15 @@ func (a *HermesACPAgent) SetSessionModel(ctx context.Context, req *pyacp.SetSess
 		}
 		return nil, err
 	}
-	serverLog.Info(fmt.Sprintf("Session %s: model switched to %s via provider %s", sessionID, resolvedModel, requestedProvider))
+	pkgLog().Info(fmt.Sprintf("Session %s: model switched to %s via provider %s", sessionID, resolvedModel, requestedProvider))
 	return &pyacp.SetSessionModelResponse{}, nil
 }
 
 // Persists the editor requested mode, an unknown mode becoming the default
-func (a *HermesACPAgent) SetSessionMode(ctx context.Context, req *pyacp.SetSessionModeRequest) (*pyacp.SetSessionModeResponse, error) {
+func (a *IcebathACPAgent) SetSessionMode(ctx context.Context, req *pyacp.SetSessionModeRequest) (*pyacp.SetSessionModeResponse, error) {
 	st := a.SessionManager.GetSession(ctx, req.SessionID)
 	if st == nil {
-		serverLog.Warning(fmt.Sprintf("Session %s: mode switch requested for missing session", req.SessionID))
+		pkgLog().Warning(fmt.Sprintf("Session %s: mode switch requested for missing session", req.SessionID))
 		return nil, nil
 	}
 	mode := pystr.Strip(req.ModeID)
@@ -1557,15 +1551,15 @@ func (a *HermesACPAgent) SetSessionMode(ctx context.Context, req *pyacp.SetSessi
 	}
 	st.Mode = mode
 	a.SessionManager.SaveSession(ctx, req.SessionID)
-	serverLog.Info(fmt.Sprintf("Session %s: mode switched to %s", req.SessionID, mode))
+	pkgLog().Info(fmt.Sprintf("Session %s: mode switched to %s", req.SessionID, mode))
 	return &pyacp.SetSessionModeResponse{}, nil
 }
 
 // Accepts a config option update, the edit approval policy becoming the session mode
-func (a *HermesACPAgent) SetConfigOption(ctx context.Context, req *pyacp.SetConfigOptionParams) (*pyacp.SetSessionConfigOptionResponse, error) {
+func (a *IcebathACPAgent) SetConfigOption(ctx context.Context, req *pyacp.SetConfigOptionParams) (*pyacp.SetSessionConfigOptionResponse, error) {
 	st := a.SessionManager.GetSession(ctx, req.SessionID)
 	if st == nil {
-		serverLog.Warning(fmt.Sprintf("Session %s: config update requested for missing session", req.SessionID))
+		pkgLog().Warning(fmt.Sprintf("Session %s: config update requested for missing session", req.SessionID))
 		return nil, nil
 	}
 	if req.ConfigID == EditApprovalPolicyConfigID {
@@ -1581,6 +1575,6 @@ func (a *HermesACPAgent) SetConfigOption(ctx context.Context, req *pyacp.SetConf
 		st.ConfigOptions[req.ConfigID] = req.Value
 	}
 	a.SessionManager.SaveSession(ctx, req.SessionID)
-	serverLog.Info(fmt.Sprintf("Session %s: config option %s updated", req.SessionID, req.ConfigID))
+	pkgLog().Info(fmt.Sprintf("Session %s: config option %s updated", req.SessionID, req.ConfigID))
 	return &pyacp.SetSessionConfigOptionResponse{ConfigOptions: []pyacp.SessionConfigOption{}}, nil
 }

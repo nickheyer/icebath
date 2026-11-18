@@ -2,11 +2,12 @@ package agent
 
 import (
 	"context"
+	"errors"
 	"fmt"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"log/slog"
 	"os"
 	"sync"
+
+	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 
 	"github.com/google/uuid"
 
@@ -19,10 +20,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
-
-func chatCompletionHelpersLog() *slog.Logger {
-	return slog.Default().With("logger", "agent.chat_completion_helpers")
-}
 
 // Agent state of the request builders, the reasoning capability probes and the fallback chain walk
 type apiKwargsState struct {
@@ -67,7 +64,7 @@ func dictOrNone(m map[string]any) any {
 // AttributeError a missing transport raises on build_kwargs
 func buildWithTransport(t provider.Transport, model string, messages, tools []map[string]any, params map[string]any) (map[string]any, error) {
 	if t == nil {
-		return nil, fmt.Errorf("AttributeError: 'NoneType' object has no attribute 'build_kwargs'")
+		return nil, errors.New("no provider transport to build the request with")
 	}
 	return t.BuildKwargs(model, messages, tools, params)
 }
@@ -200,7 +197,7 @@ func (a *AIAgent) aliasToolSearchBridgeForXAI(t provider.Transport, toolsForAPI 
 		}
 		fnMap, ok := pyjson.Dict(fn)
 		if !ok {
-			chatCompletionHelpersLog().Warn(fmt.Sprintf("%s⚠️ Failed to alias tool_search bridge for xAI: '%s' object has no attribute 'get'", a.logPrefix, pyrepr.TypeName(fn)))
+			pkgLog().Warn(fmt.Sprintf("%s⚠️ Failed to alias tool_search bridge for xAI: '%s' object has no attribute 'get'", a.logPrefix, pyrepr.TypeName(fn)))
 			return toolsForAPI
 		}
 		if fnMap["name"] == "tool_search" {
@@ -218,7 +215,7 @@ func (a *AIAgent) aliasToolSearchBridgeForXAI(t provider.Transport, toolsForAPI 
 	return renamed
 }
 
-// Messages kwargs with the Nous Portal profile body merged for sticky routing
+// Messages kwargs of the Anthropic wire with the provider profile body merged
 func (a *AIAgent) buildAnthropicKwargs(ctx context.Context, apiMessages, toolsForAPI []map[string]any, reasoningConfig, requestOverrides map[string]any) (map[string]any, error) {
 	var contextLength any
 	if a.contextCompressor != nil {
@@ -241,7 +238,7 @@ func (a *AIAgent) buildAnthropicKwargs(ctx context.Context, apiMessages, toolsFo
 	if err != nil {
 		return nil, err
 	}
-	return provider.MergeNousPortalMessagesExtraBody(ctx, a, kwargs, apiMessages), nil
+	return kwargs, nil
 }
 
 // Converse kwargs, the adapter converting messages and tools itself
@@ -401,7 +398,7 @@ func (a *AIAgent) buildChatCompletionsKwargs(ctx context.Context, apiMessages, t
 		endpointReasoning = a.endpointReasoningPayload(ctx)
 	}
 	for k, v := range map[string]any{
-		"model_lower": pystr.Lower(a.model), "is_openrouter": isOpenRouter, "is_nous": hostMatches(host, "nousresearch.com"),
+		"model_lower": pystr.Lower(a.model), "is_openrouter": isOpenRouter,
 		"is_qwen_portal": isQwen, "is_nvidia_nim": hostMatches(host, "integrate.api.nvidia.com"), "is_kimi": isKimi,
 		"is_tokenhub": hostMatches(host, "tokenhub.tencentmaas.com"), "is_custom_provider": a.provider == "custom",
 		"qwen_prepare_fn": qwenPrepare, "qwen_prepare_inplace_fn": qwenPrepareInplace, "fixed_temperature": fixedTemp,

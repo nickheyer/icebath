@@ -8,7 +8,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"log/slog"
 	"math"
 	"os"
 	"os/exec"
@@ -189,7 +188,7 @@ func ProbeVideoGeometry(ctx context.Context, path string) (VideoGeometry, bool) 
 		return g, nil
 	}()
 	if err != nil {
-		slog.Default().With("logger", "plugins.platforms.telegram.adapter").Debug(
+		pkgLog().Debug(
 			fmt.Sprintf("[Telegram] video geometry probe failed for %s", path), "error", err)
 		return VideoGeometry{}, false
 	}

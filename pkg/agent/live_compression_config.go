@@ -3,7 +3,6 @@ package agent
 import (
 	"context"
 	"fmt"
-	"log/slog"
 	"math"
 	"math/big"
 
@@ -263,7 +262,7 @@ func (a *AIAgent) ApplyLiveCompressionConfig(ctx context.Context, cfg map[string
 		}
 	}
 	if nativeThreshold <= 0 {
-		slog.Warn(fmt.Sprintf("Invalid compression.codex_responses_compact_threshold=%s; using 200000.", pyrepr.Repr(nativeRaw)))
+		pkgLog().Warn(fmt.Sprintf("Invalid compression.codex_responses_compact_threshold=%s; using 200000.", pyrepr.Repr(nativeRaw)))
 		nativeThreshold = 200_000
 	}
 	a.codexResponsesCompactThreshold = float64(nativeThreshold)

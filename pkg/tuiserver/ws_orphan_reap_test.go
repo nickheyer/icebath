@@ -12,7 +12,7 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tools"
-	"github.com/nickheyer/icebath/pkg/tuigateway"
+	"github.com/nickheyer/icebath/pkg/tuihost"
 )
 
 // Agent double whose plain interrupt runs a case body
@@ -21,7 +21,7 @@ type interruptOnlyAgent struct{ fn func() }
 func (a interruptOnlyAgent) Interrupt(string) { a.fn() }
 
 // Session record of the server cases with their default fields and the overrides
-func serverCaseSession(t *testing.T, sid string, extra map[string]any) *tuigateway.Session {
+func serverCaseSession(t *testing.T, sid string, extra map[string]any) *tuihost.Session {
 	t.Helper()
 	fields := map[string]any{"agent": &struct{}{}, "session_key": "session-key", "history": []any{}, "history_version": 0,
 		"running": false, "attached_images": []any{}, "image_counter": 0, "cols": 80, "slash_worker": nil,
@@ -52,19 +52,19 @@ func TestWsOrphanReapSparesTurnReattachedWithinGrace(t *testing.T) {
 	session := serverCaseSession(t, "reattached-sid", map[string]any{"transport": disconnecting, "running": true,
 		"agent": interruptOnlyAgent{func() { interrupted = append(interrupted, "interrupted") }}, "_run_thread": liveTurnThread(t)})
 	closeSessionsForTransport(context.Background(), disconnecting, "ws_disconnect")
-	if session.Get("transport") != tuigateway.DetachedWSTransport() {
+	if session.Get("transport") != tuihost.DetachedWSTransport() {
 		t.Fatalf("transport %v", session.Get("transport"))
 	}
 	session.Set("transport", &orphanRacePeer{id: 31})
 	fireReap(pendingReap("reattached-sid"), 20, 20)
-	if len(interrupted) != 0 || tuigateway.SessionRecord("reattached-sid") != session || pendingReap("reattached-sid") != nil {
+	if len(interrupted) != 0 || tuihost.SessionRecord("reattached-sid") != session || pendingReap("reattached-sid") != nil {
 		t.Fatalf("interrupted %v pending %v", interrupted, pendingReap("reattached-sid"))
 	}
 }
 
 func TestWsOrphanReapDefersRunningTurnForActiveDelegation(t *testing.T) {
 	var interrupted []string
-	var session *tuigateway.Session
+	var session *tuihost.Session
 	session = serverCaseSession(t, "delegating-turn", map[string]any{"running": true, "_run_thread": liveTurnThread(t),
 		"agent": interruptOnlyAgent{func() { interrupted = append(interrupted, "interrupted"); session.Set("running", false) }}})
 	orphanRaceStale(t, 0)
@@ -81,14 +81,14 @@ func TestWsOrphanReapDefersRunningTurnForActiveDelegation(t *testing.T) {
 		t.Fatalf("interrupted %v", interrupted)
 	}
 	fireReap(pendingReap("delegating-turn"), 1, 1)
-	if tuigateway.SessionRecord("delegating-turn") != nil {
+	if tuihost.SessionRecord("delegating-turn") != nil {
 		t.Fatal("settled turn was not reaped")
 	}
 }
 
 func TestWsOrphanReapInterruptsInProcessTurn(t *testing.T) {
 	var interrupted []string
-	var session *tuigateway.Session
+	var session *tuihost.Session
 	session = serverCaseSession(t, "inline-sid", map[string]any{"running": true, "_run_thread": liveTurnThread(t),
 		"agent": interruptOnlyAgent{func() { interrupted = append(interrupted, "interrupted"); session.Set("running", false) }}})
 	orphanRaceStale(t, 0)
@@ -110,7 +110,7 @@ func TestWsDisconnectRunningSidecarStillClosesWithoutOrphanTimer(t *testing.T) {
 	if reaped != 1 || detached != 0 {
 		t.Fatalf("close returned (%d, %d)", reaped, detached)
 	}
-	if tuigateway.SessionRecord("sidecar-sid") != nil || !truthy(session.Get("_finalized")) {
+	if tuihost.SessionRecord("sidecar-sid") != nil || !truthy(session.Get("_finalized")) {
 		t.Fatal("sidecar session was not torn down")
 	}
 	if pendingReap("sidecar-sid") != nil {
@@ -123,7 +123,7 @@ func TestWsOrphanReapReschedulesWhileMidTurnThenReaps(t *testing.T) {
 	scheduleWSOrphanReap(context.Background(), "midturn-sid", nil, nil)
 	first := pendingReap("midturn-sid")
 	fireReap(first, 20, 20)
-	if tuigateway.SessionRecord("midturn-sid") != session {
+	if tuihost.SessionRecord("midturn-sid") != session {
 		t.Fatal("mid turn session was reaped")
 	}
 	next := pendingReap("midturn-sid")
@@ -132,7 +132,7 @@ func TestWsOrphanReapReschedulesWhileMidTurnThenReaps(t *testing.T) {
 	}
 	session.Set("running", false)
 	fireReap(next, 1, 1)
-	if tuigateway.SessionRecord("midturn-sid") != nil || !truthy(session.Get("_finalized")) {
+	if tuihost.SessionRecord("midturn-sid") != nil || !truthy(session.Get("_finalized")) {
 		t.Fatal("settled session was not torn down")
 	}
 }
@@ -144,14 +144,14 @@ func TestWsOrphanReapWaitsForActiveDelegationThenReaps(t *testing.T) {
 	first := pendingReap("delegating-sid")
 	fireReap(first, 20, 20)
 	next := pendingReap("delegating-sid")
-	if tuigateway.SessionRecord("delegating-sid") != session || next == nil || next == first || truthy(session.Get("_finalized")) {
+	if tuihost.SessionRecord("delegating-sid") != session || next == nil || next == first || truthy(session.Get("_finalized")) {
 		t.Fatal("session with a running delegation was reaped")
 	}
 	tools.SetAsyncDelegationRecordForTests("deleg_ws_orphan_reap_test", map[string]any{"delegation_id": "deleg_ws_orphan_reap_test",
 		"status": "completed", "origin_ui_session_id": "delegating-sid"})
 	fireReap(next, 20, 20)
 	remove()
-	if tuigateway.SessionRecord("delegating-sid") != nil || !truthy(session.Get("_finalized")) {
+	if tuihost.SessionRecord("delegating-sid") != nil || !truthy(session.Get("_finalized")) {
 		t.Fatal("session was not reaped after its delegation completed")
 	}
 }
@@ -201,25 +201,25 @@ func receivedFrames(peer *closablePeer, want int) []map[string]any {
 func TestCloseTransportRebindsSessionToRemainingViewer(t *testing.T) {
 	main, popout := &closablePeer{}, &closablePeer{}
 	session := serverCaseSession(t, "multi-sid", map[string]any{"transport": nil})
-	tuigateway.AttachSessionTransport(session, main)
-	tuigateway.AttachSessionTransport(session, popout)
-	tuigateway.SetSessionViewer(session, main, 100.0)
-	tuigateway.SetSessionViewer(session, popout, 200.0)
-	if _, fanout := session.Get("transport").(*tuigateway.FanoutTransport); !fanout {
+	tuihost.AttachSessionTransport(session, main)
+	tuihost.AttachSessionTransport(session, popout)
+	tuihost.SetSessionViewer(session, main, 100.0)
+	tuihost.SetSessionViewer(session, popout, 200.0)
+	if _, fanout := session.Get("transport").(*tuihost.FanoutTransport); !fanout {
 		t.Fatalf("transport %T", session.Get("transport"))
 	}
 	reaped, detached := closeSessionsForTransport(context.Background(), popout, "ws_disconnect")
 	if reaped != 0 || detached != 0 {
 		t.Fatalf("close returned (%d, %d)", reaped, detached)
 	}
-	fanout, _ := session.Get("transport").(*tuigateway.FanoutTransport)
+	fanout, _ := session.Get("transport").(*tuihost.FanoutTransport)
 	if fanout == nil || !fanout.Contains(main) || fanout.Contains(popout) {
 		t.Fatalf("transport after close %v", session.Get("transport"))
 	}
 	if pendingReap("multi-sid") != nil || wsSessionIsOrphaned(session) {
 		t.Fatal("watched session was handed to the orphan reaper")
 	}
-	tuigateway.Emit(context.Background(), "message.delta", "multi-sid", map[string]any{"text": "still here"})
+	tuihost.Emit(context.Background(), "message.delta", "multi-sid", map[string]any{"text": "still here"})
 	frames := receivedFrames(main, 1)
 	if len(frames) != 1 || frames[0]["params"].(map[string]any)["type"] != "message.delta" {
 		t.Fatalf("main frames %v", frames)
@@ -232,9 +232,9 @@ func TestCloseTransportRebindsSessionToRemainingViewer(t *testing.T) {
 func TestCloseTransportDetachesWhenNoViewersRemain(t *testing.T) {
 	only := &closablePeer{}
 	session := serverCaseSession(t, "solo-sid", map[string]any{"transport": only})
-	tuigateway.SetSessionViewer(session, only, 100.0)
+	tuihost.SetSessionViewer(session, only, 100.0)
 	reaped, detached := closeSessionsForTransport(context.Background(), only, "ws_disconnect")
-	if reaped != 0 || detached != 1 || session.Get("transport") != tuigateway.DetachedWSTransport() {
+	if reaped != 0 || detached != 1 || session.Get("transport") != tuihost.DetachedWSTransport() {
 		t.Fatalf("close returned (%d, %d) transport %v", reaped, detached, session.Get("transport"))
 	}
 	if pendingReap("solo-sid") == nil {
@@ -245,16 +245,16 @@ func TestCloseTransportDetachesWhenNoViewersRemain(t *testing.T) {
 func TestCloseTransportSkipsDeadRemainingViewers(t *testing.T) {
 	dead, popout := &closablePeer{}, &closablePeer{}
 	session := serverCaseSession(t, "dead-viewer-sid", map[string]any{"transport": nil})
-	tuigateway.AttachSessionTransport(session, dead)
-	tuigateway.AttachSessionTransport(session, popout)
-	tuigateway.SetSessionViewer(session, dead, 100.0)
-	tuigateway.SetSessionViewer(session, popout, 200.0)
-	if _, fanout := session.Get("transport").(*tuigateway.FanoutTransport); !fanout {
+	tuihost.AttachSessionTransport(session, dead)
+	tuihost.AttachSessionTransport(session, popout)
+	tuihost.SetSessionViewer(session, dead, 100.0)
+	tuihost.SetSessionViewer(session, popout, 200.0)
+	if _, fanout := session.Get("transport").(*tuihost.FanoutTransport); !fanout {
 		t.Fatalf("transport %T", session.Get("transport"))
 	}
 	dead.closed.Store(true)
 	reaped, detached := closeSessionsForTransport(context.Background(), popout, "ws_disconnect")
-	if reaped != 0 || detached != 1 || session.Get("transport") != tuigateway.DetachedWSTransport() {
+	if reaped != 0 || detached != 1 || session.Get("transport") != tuihost.DetachedWSTransport() {
 		t.Fatalf("close returned (%d, %d) transport %v", reaped, detached, session.Get("transport"))
 	}
 	if pendingReap("dead-viewer-sid") == nil {
@@ -265,11 +265,11 @@ func TestCloseTransportSkipsDeadRemainingViewers(t *testing.T) {
 func TestWsOrphanReapSparesReattachedSession(t *testing.T) {
 	cases := map[string]map[string]any{
 		"reattached": {"transport": &orphanRacePeer{id: 40}, "running": false},
-		"mid_turn":   {"transport": tuigateway.DetachedWSTransport(), "running": true},
-		"done":       {"transport": tuigateway.DetachedWSTransport(), "running": false, "_finalized": true},
+		"mid_turn":   {"transport": tuihost.DetachedWSTransport(), "running": true},
+		"done":       {"transport": tuihost.DetachedWSTransport(), "running": false, "_finalized": true},
 	}
 	for name, fields := range cases {
-		if wsSessionIsOrphaned(tuigateway.NewSession(fields)) {
+		if wsSessionIsOrphaned(tuihost.NewSession(fields)) {
 			t.Fatalf("%s session reads as orphaned", name)
 		}
 	}
@@ -283,7 +283,7 @@ func TestWsOrphanReapStillFiresWhenNeverResumed(t *testing.T) {
 		t.Fatal("reap was not armed")
 	}
 	fireReap(pending, 20, 20)
-	if tuigateway.SessionRecord("lonely-sid") != nil || pendingReap("lonely-sid") != nil || !truthy(session.Get("_finalized")) {
+	if tuihost.SessionRecord("lonely-sid") != nil || pendingReap("lonely-sid") != nil || !truthy(session.Get("_finalized")) {
 		t.Fatal("never resumed session was not reaped")
 	}
 }
@@ -307,13 +307,13 @@ func TestWsOrphanReapSparesDetachedSessionWithRunningAsyncDelegation(t *testing.
 		before := pendingReap("bg-sid")
 		fireReap(before, 20, 20)
 		after := pendingReap("bg-sid")
-		if tuigateway.SessionRecord("bg-sid") != session || after == nil || after == before || truthy(session.Get("_finalized")) {
+		if tuihost.SessionRecord("bg-sid") != session || after == nil || after == before || truthy(session.Get("_finalized")) {
 			t.Fatalf("session reaped while its delegation was live (next status %s)", status)
 		}
 		record(status)
 	}
 	fireReap(pendingReap("bg-sid"), 20, 20)
-	if tuigateway.SessionRecord("bg-sid") != nil || !truthy(session.Get("_finalized")) {
+	if tuihost.SessionRecord("bg-sid") != nil || !truthy(session.Get("_finalized")) {
 		t.Fatal("session kept after its delegation completed")
 	}
 }
@@ -372,7 +372,7 @@ func TestWsOrphanReapDefersRunningTurnWithFreshActivity(t *testing.T) {
 		fireReap(pendingReap("fresh-sid"), 20, 20)
 		next := pendingReap("fresh-sid")
 		if len(fake.interrupts()) != 0 || truthy(session.Get("_client_gone_interrupt_requested")) || next == nil || next.interval != 20 ||
-			tuigateway.SessionRecord("fresh-sid") != session {
+			tuihost.SessionRecord("fresh-sid") != session {
 			t.Fatalf("fresh turn was not deferred: interrupts %v", fake.interrupts())
 		}
 	}
@@ -383,7 +383,7 @@ func TestWsOrphanReapDefersRunningTurnWithFreshActivity(t *testing.T) {
 	}
 	session.Set("running", false)
 	fireReap(pendingReap("fresh-sid"), 1, 1)
-	if tuigateway.SessionRecord("fresh-sid") != nil || !truthy(session.Get("_finalized")) {
+	if tuihost.SessionRecord("fresh-sid") != nil || !truthy(session.Get("_finalized")) {
 		t.Fatal("settled turn was not reaped")
 	}
 }
@@ -408,7 +408,7 @@ func TestWsOrphanActivityGateUnreadableSummaryStaysEligible(t *testing.T) {
 		"no_clock": &struct{}{},
 		"no_value": &activityAgent{summary: map[string]any{"seconds_since_activity": nil}},
 	} {
-		if wsOrphanTurnActivityIsFresh(tuigateway.NewSession(map[string]any{"agent": held})) {
+		if wsOrphanTurnActivityIsFresh(tuihost.NewSession(map[string]any{"agent": held})) {
 			t.Fatalf("%s summary reads as fresh", name)
 		}
 	}
@@ -426,8 +426,8 @@ func TestCloseSessionByIdIsIdempotentAndFull(t *testing.T) {
 	ctx := context.Background()
 	t.Setenv("ICEBATH_HOME", t.TempDir())
 	worker, closer := &countingWorker{}, &closingAgent{}
-	session := tuigateway.NewSession(map[string]any{"session_key": "k1", "agent": closer, "slash_worker": worker})
-	swapSessions(t, map[string]*tuigateway.Session{"sid-1": session})
+	session := tuihost.NewSession(map[string]any{"session_key": "k1", "agent": closer, "slash_worker": worker})
+	swapSessions(t, map[string]*tuihost.Session{"sid-1": session})
 	tools.QueueGatewayApprovalForTests("k1", map[string]any{"command": "danger"})
 	t.Cleanup(func() { tools.UnregisterGatewayNotify("k1") })
 	if !closeSessionByID(ctx, "sid-1", "ws_disconnect", nil) {
@@ -442,17 +442,17 @@ func TestCloseSessionByIdIsIdempotentAndFull(t *testing.T) {
 	if tools.GetPendingGatewayApproval("k1") != nil {
 		t.Fatal("approval route was not unregistered")
 	}
-	if tuigateway.SessionRecord("sid-1") != nil {
+	if tuihost.SessionRecord("sid-1") != nil {
 		t.Fatal("session still registered")
 	}
 }
 
 func TestAttachWorkerClosesOrphanWhenSessionAlreadyTornDown(t *testing.T) {
-	swapSessions(t, map[string]*tuigateway.Session{})
+	swapSessions(t, map[string]*tuihost.Session{})
 	worker := &countingWorker{}
-	detached := tuigateway.NewSession(map[string]any{"session_key": "k"})
+	detached := tuihost.NewSession(map[string]any{"session_key": "k"})
 	attachWorker("gone", detached, worker)
-	if _, stored := detached.Lookup("slash_worker"); worker.closes != 1 || stored || tuigateway.SessionRecord("gone") != nil {
+	if _, stored := detached.Lookup("slash_worker"); worker.closes != 1 || stored || tuihost.SessionRecord("gone") != nil {
 		t.Fatalf("closes %d stored %v", worker.closes, stored)
 	}
 }
@@ -463,8 +463,8 @@ type mustStayOpenWorker struct{ t *testing.T }
 func (w mustStayOpenWorker) Close() { w.t.Error("must not close a worker for a live session") }
 
 func TestAttachWorkerStoresWorkerOnLiveSession(t *testing.T) {
-	live := tuigateway.NewSession(map[string]any{"session_key": "k"})
-	swapSessions(t, map[string]*tuigateway.Session{"live": live})
+	live := tuihost.NewSession(map[string]any{"session_key": "k"})
+	swapSessions(t, map[string]*tuihost.Session{"live": live})
 	worker := mustStayOpenWorker{t}
 	attachWorker("live", live, worker)
 	if live.Get("slash_worker") != any(worker) {
@@ -478,14 +478,14 @@ func TestCloseSessionsForTransportClosesFlaggedRepointsRest(t *testing.T) {
 	wsOrphanReapGraceS = func() float64 { return 0 }
 	t.Cleanup(func() { wsOrphanReapGraceS = prev })
 	transport := &orphanRacePeer{id: 50}
-	flagged := tuigateway.NewSession(map[string]any{"transport": transport, "close_on_disconnect": true})
-	rest := tuigateway.NewSession(map[string]any{"transport": transport, "close_on_disconnect": false})
-	swapSessions(t, map[string]*tuigateway.Session{"a": flagged, "b": rest})
+	flagged := tuihost.NewSession(map[string]any{"transport": transport, "close_on_disconnect": true})
+	rest := tuihost.NewSession(map[string]any{"transport": transport, "close_on_disconnect": false})
+	swapSessions(t, map[string]*tuihost.Session{"a": flagged, "b": rest})
 	closeSessionsForTransport(context.Background(), transport, "ws_disconnect")
-	if tuigateway.SessionRecord("a") != nil || !truthy(flagged.Get("_finalized")) {
+	if tuihost.SessionRecord("a") != nil || !truthy(flagged.Get("_finalized")) {
 		t.Fatal("flagged session was not closed")
 	}
-	if tuigateway.SessionRecord("b") != rest || truthy(rest.Get("_finalized")) || rest.Get("transport") != tuigateway.DetachedWSTransport() {
+	if tuihost.SessionRecord("b") != rest || truthy(rest.Get("_finalized")) || rest.Get("transport") != tuihost.DetachedWSTransport() {
 		t.Fatalf("rest session transport %v", rest.Get("transport"))
 	}
 }

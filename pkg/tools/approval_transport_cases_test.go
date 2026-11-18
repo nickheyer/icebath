@@ -12,7 +12,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/config"
 )
 
-// Request of the hermes _request fixture
+// Request of the request fixture
 func atFixtureRequest(t *testing.T, command, description, patternKey string, allowSession, allowPermanent bool) ApprovalRequest {
 	t.Helper()
 	req, err := newApprovalRequest(command, description, patternKey, []string{patternKey}, "session-a", "cli", allowSession, allowPermanent, 1)

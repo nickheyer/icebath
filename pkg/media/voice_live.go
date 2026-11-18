@@ -5,7 +5,6 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"log/slog"
 	"net/http"
 	"strings"
 	"time"
@@ -48,8 +47,6 @@ const LivePersona = "You are Icebath, a calm and friendly voice assistant. Speak
 	"- You need a brief clarification to understand the request.\n\n" +
 	"Delegate before giving an answer that depends on backend work. Do not guess the result " +
 	"while waiting; say briefly that you are checking, then wait for the result."
-
-func voiceLiveLog() *slog.Logger { return slog.Default().With("logger", "tools.voice_live") }
 
 // ValueError of a GPT-Live session that cannot start, a missing key
 type VoiceLiveValueError struct{ Msg string }
@@ -165,7 +162,7 @@ func CreateWebRTCSession(ctx context.Context, sdpOffer string, history []any) (a
 	}
 	if resp.StatusCode >= 400 {
 		detail := pystr.Slice(pystr.DecodeUTF8Replace(raw), 0, 600)
-		voiceLiveLog().Warn(fmt.Sprintf("GPT-Live session creation failed: %d %s", resp.StatusCode, detail))
+		pkgLog().Warn(fmt.Sprintf("GPT-Live session creation failed: %d %s", resp.StatusCode, detail))
 		return nil, &VoiceLiveRuntimeError{fmt.Sprintf("GPT-Live session creation failed (%d): %s", resp.StatusCode, detail)}
 	}
 	text, err := pystr.DecodeUTF8(raw)

@@ -12,14 +12,10 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/internal/pyhost"
-	"github.com/nickheyer/icebath/pkg/pm"
 )
 
 // Hidden verb of the binary that hosts nemo_relay in an embedded interpreter
 const Entry = "relay-host"
-
-// Hidden verb of the binary that provisions the relay runtime environment as a detached child
-const ProvisionEntry = "relay-provision"
 
 const (
 	exitStartFailed    = 3
@@ -30,18 +26,11 @@ const (
 
 var entryDispatched atomic.Bool
 
-// Registers the provisioning child command, then runs the relay host or provisioning child when started as one
+// Runs the relay host child when started as one
 func DispatchRelayHostEntry(ctx context.Context) {
 	entryDispatched.Store(true)
-	pm.RegisterRuntimeProvisioner(provisionCommand)
-	if len(os.Args) < 2 {
-		return
-	}
-	switch os.Args[1] {
-	case Entry:
+	if len(os.Args) >= 2 && os.Args[1] == Entry {
 		os.Exit(runChild(ctx, os.Args[2:]))
-	case ProvisionEntry:
-		os.Exit(pm.ServeRuntimeProvisioning(ctx, os.Args[2:]))
 	}
 }
 
@@ -567,7 +556,7 @@ func (c *child) popParameters(g *pyhost.GIL, s *pyScope, pop uintptr) ([]any, er
 // Attribute path under nemo_relay, a borrowed object kept alive by the scope
 func (c *child) resolve(g *pyhost.GIL, s *pyScope, path string) (uintptr, error) {
 	if c.relay == nil {
-		return 0, &pyhost.Exception{Type: "ModuleNotFoundError", Message: "No module named 'nemo_relay'"}
+		return 0, &pyhost.Exception{Type: "ModuleNotFoundError", Message: pythonNoRelayModule}
 	}
 	o := c.relay.Ptr()
 	for _, part := range strings.Split(path, ".") {
@@ -1045,7 +1034,7 @@ func (c *child) liftTag(tag string, body any) (any, error) {
 		}
 		return pendingObject{tag: tag, body: body}, nil
 	}
-	return nil, fmt.Errorf("ValueError: unknown wire tag %s", tag)
+	return nil, fmt.Errorf("unknown Relay wire tag %s", tag)
 }
 
 // Python object of a tagged node, a held object, a parent callable or iterator, or a nemo_relay value class

@@ -79,7 +79,7 @@ type commandCompleted struct {
 	Stdout, Stderr string
 }
 
-// Platform name hermes keys its spawn branches on
+// Platform name the spawn branches key on
 func hostOSName() string {
 	if runtime.GOOS == "windows" {
 		return "nt"

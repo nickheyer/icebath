@@ -15,7 +15,7 @@ type FileLockTimeoutError struct {
 
 func (e *FileLockTimeoutError) Error() string { return e.Message }
 
-// Per goroutine reentrancy depth of one lock path, the threading.local holder of the hermes lock
+// Per goroutine reentrancy depth of one lock path, the threading.local holder of the lock
 type fileLockHolder struct {
 	mu    sync.Mutex
 	depth map[uint64]int

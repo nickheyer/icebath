@@ -27,21 +27,6 @@ var (
 	thinkingStatusRe    = regexp.MustCompile(`(?i)^(?:` + strings.Join(thinkingVerbs, "|") + `)\.{0,3}$`)
 	thinkingStatusChunk = regexp.MustCompile(`(?i)[^A-Za-z\n]+[` + jsWS + `]*(?:` + strings.Join(thinkingVerbs, "|") + `)\.{0,3}[` + jsWS + `]*`)
 	newlineRuns         = regexp.MustCompile(`\n{3,}`)
-	estimateImage       = regexp.MustCompile(`!\[(.*?)\]\(([^)` + jsWS + `]+)\)`)
-	estimateLink        = regexp.MustCompile(`\[(.+?)\]\((https?://[^` + jsWS + `)]+)\)`)
-	estimateCode        = regexp.MustCompile("`([^`]+)`")
-	estimateBold        = regexp.MustCompile(`\*\*(.+?)\*\*`)
-	estimateItalic      = regexp.MustCompile(`\*(.+?)\*`)
-	estimateStrike      = regexp.MustCompile(`~~(.+?)~~`)
-	estimateMark        = regexp.MustCompile(`==(.+?)==`)
-	estimateFootnote    = regexp.MustCompile(`\[\^([^\]]+)\]`)
-	estimateHeading     = regexp.MustCompile(`^#{1,6}[` + jsWS + `]+`)
-	estimateChecklist   = regexp.MustCompile(`^[` + jsWS + `]*[-*+][` + jsWS + `]+\[( |x|X)\][` + jsWS + `]+`)
-	estimateBullet      = regexp.MustCompile(`^[` + jsWS + `]*[-*+][` + jsWS + `]+`)
-	estimateNumbered    = regexp.MustCompile(`^[` + jsWS + `]*(\d+)\.[` + jsWS + `]+`)
-	estimateQuote       = regexp.MustCompile(`^[` + jsWS + `]*(?:>[` + jsWS + `]*)+`)
-	estimateFence       = regexp.MustCompile("^[" + jsWS + "]*(`{3,}|~{3,})(.*)$")
-	tableRule           = regexp.MustCompile(`^[|` + jsWS + `:-]+$`)
 	ansiOSC             = regexp.MustCompile(`\x1b\][\s\S]*?(?:\x07|\x1b\\)`)
 	ansiString          = regexp.MustCompile(`\x1b[PX^_][\s\S]*?(?:\x07|\x1b\\)`)
 	ansiCSI             = regexp.MustCompile(`\x1b\[[0-?]*[ -/]*[@-~]`)
@@ -50,7 +35,6 @@ var (
 	controlBytes        = regexp.MustCompile(`[\x00-\x08\x0B\x0C\x0D\x0E-\x1A\x1C-\x1F\x7F]`)
 	pasteBacked         = regexp.MustCompile(`\[\[paste:\d+(?:[^\n]*?)\]\]|\[paste #\d+ (?:attached|excerpt)(?:[^\n]*?)\]`)
 	trailingNewlines    = regexp.MustCompile(`\n+$`)
-	toolDuration        = regexp.MustCompile(`^(.*?)( \(\d+(?:\.\d)?s\))$`)
 )
 
 // Text of UTF-16 units, the index space of a JavaScript string
@@ -158,75 +142,6 @@ func stripIncompleteCSI(s string) string {
 	return b.String()
 }
 
-// Whether a byte is a JavaScript word character
-func isWordByte(c byte) bool {
-	return c == '_' || c >= '0' && c <= '9' || c >= 'a' && c <= 'z' || c >= 'A' && c <= 'Z'
-}
-
-// Replaces a delimited span with its body where no word character touches either delimiter, as (?<!\w)d(.+?)d(?!\w)
-func replaceUnwordedSpan(s, delim string) string {
-	var b strings.Builder
-	i := 0
-	for i < len(s) {
-		if strings.HasPrefix(s[i:], delim) && (i == 0 || !isWordByte(s[i-1])) {
-			start := i + len(delim)
-			end := -1
-			for j := start + 1; j+len(delim) <= len(s); j++ {
-				if s[j-1] == '\n' {
-					break
-				}
-				if strings.HasPrefix(s[j:], delim) && (j+len(delim) == len(s) || !isWordByte(s[j+len(delim)])) {
-					end = j
-					break
-				}
-			}
-			if end > start && !strings.Contains(s[start:end], "\n") {
-				b.WriteString(s[start:end])
-				i = end + len(delim)
-				continue
-			}
-		}
-		b.WriteByte(s[i])
-		i++
-	}
-	return b.String()
-}
-
-// Plain rendering of one markdown line for row estimates
-func renderEstimateLine(line string) string {
-	trimmed := strings.TrimFunc(line, isJSSpace)
-	if strings.HasPrefix(trimmed, "|") {
-		var cells []string
-		for cell := range strings.SplitSeq(trimmed, "|") {
-			if cell != "" {
-				cells = append(cells, strings.TrimFunc(cell, isJSSpace))
-			}
-		}
-		return strings.Join(cells, "  ")
-	}
-	out := estimateImage.ReplaceAllString(line, "[image: $1]")
-	out = estimateLink.ReplaceAllString(out, "$1")
-	out = estimateCode.ReplaceAllString(out, "$1")
-	out = estimateBold.ReplaceAllString(out, "$1")
-	out = replaceUnwordedSpan(out, "__")
-	out = estimateItalic.ReplaceAllString(out, "$1")
-	out = replaceUnwordedSpan(out, "_")
-	out = estimateStrike.ReplaceAllString(out, "$1")
-	out = estimateMark.ReplaceAllString(out, "$1")
-	out = estimateFootnote.ReplaceAllString(out, "[$1]")
-	out = estimateHeading.ReplaceAllString(out, "")
-	out = estimateChecklist.ReplaceAllStringFunc(out, func(m string) string {
-		checked := estimateChecklist.FindStringSubmatch(m)[1]
-		if strings.ToLower(checked) == "x" {
-			return "• [x] "
-		}
-		return "• [ ] "
-	})
-	out = estimateBullet.ReplaceAllString(out, "• ")
-	out = estimateNumbered.ReplaceAllString(out, "$1. ")
-	return estimateQuote.ReplaceAllString(out, "│ ")
-}
-
 // One line preview cut to max units with an ellipsis
 func compactPreview(s string, limit int) string {
 	one := collapseWS(s)
@@ -306,23 +221,6 @@ func cleanThinkingText(reasoning string) string {
 	}
 	out := headingBreaks(strings.Join(kept, "\n"))
 	return strings.TrimFunc(newlineRuns.ReplaceAllString(out, "\n\n"), isJSSpace)
-}
-
-// Reasoning shown for a thinking mode, the bounded tail cleaned, nothing when collapsed
-func thinkingPreview(reasoning, mode string, limit int) string {
-	bound := int(liveRenderMaxChars * 1.5)
-	bounded := reasoning
-	if unitLen(reasoning) > bound {
-		bounded = jsSlice(reasoning, -bound, unitLen(reasoning))
-	}
-	raw := cleanThinkingText(bounded)
-	switch {
-	case raw == "" || mode == "collapsed":
-		return ""
-	case mode == "full":
-		return raw
-	}
-	return compactPreview(wsRun.ReplaceAllString(raw, " "), limit)
 }
 
 // Live text kept to its tail within the render budget, a label naming what was omitted
@@ -503,50 +401,6 @@ func verboseToolTrailLine(call string, failed bool, duration *float64, argsText,
 	return line + " " + resultMark(failed)
 }
 
-// Verbose trail row of a named call with its context
-func buildVerboseToolTrailLine(name, context string, failed bool, duration *float64, argsText, resultText string) string {
-	return verboseToolTrailLine(formatToolCall(name, context), failed, duration, argsText, resultText)
-}
-
-// Whether a trail line ends with a result mark
-func isToolTrailResultLine(line string) bool {
-	return strings.HasSuffix(line, " ✓") || strings.HasSuffix(line, " ✗")
-}
-
-// Call, detail and mark of a finished trail row
-type toolTrailResult struct {
-	Call   string
-	Detail string
-	Mark   string
-}
-
-// Parts of a finished trail row, ok false for a line without a result mark
-func parseToolTrailResultLine(line string) (toolTrailResult, bool) {
-	if !isToolTrailResultLine(line) {
-		return toolTrailResult{}, false
-	}
-	mark := "✓"
-	if strings.HasSuffix(line, " ✗") {
-		mark = "✗"
-	}
-	body := jsSlice(line, 0, -2)
-	if call, detail, found := strings.Cut(body, " :: "); found {
-		return toolTrailResult{Call: call, Detail: detail, Mark: mark}, true
-	}
-	if i := strings.Index(body, ": "); i > 0 {
-		return toolTrailResult{Call: body[:i], Detail: body[i+2:], Mark: mark}, true
-	}
-	return toolTrailResult{Call: body, Mark: mark}, true
-}
-
-// Call label and its duration suffix
-func splitToolDuration(call string) (label, duration string) {
-	if m := toolDuration.FindStringSubmatch(call); m != nil {
-		return m[1], m[2]
-	}
-	return call, ""
-}
-
 // Whether a trail line is a passing status that a real row replaces
 func isTransientTrailLine(line string) bool {
 	return strings.HasPrefix(line, "drafting ") || line == "analyzing tool output…"
@@ -556,52 +410,6 @@ func isTransientTrailLine(line string) bool {
 func sameToolTrailGroup(label, entry string) bool {
 	return entry == label+" ✓" || entry == label+" ✗" || strings.HasPrefix(entry, label+"(") ||
 		strings.HasPrefix(entry, label+" ::") || strings.HasPrefix(entry, label+":")
-}
-
-// Index of the last trail line that is not a finished row, minus one when every line is
-func lastCotTrailIndex(trail []string) int {
-	for i := len(trail) - 1; i >= 0; i-- {
-		if !isToolTrailResultLine(trail[i]) {
-			return i
-		}
-	}
-	return -1
-}
-
-// Rows markdown text takes at a width, fences and table rules sized as they render
-func estimateRows(text string, w int, compact bool) int {
-	var fenceChar byte
-	fenceLen, rows := 0, 0
-	for raw := range strings.SplitSeq(text, "\n") {
-		line := stripAnsi(raw)
-		if m := estimateFence.FindStringSubmatch(line); m != nil {
-			marker, lang := m[1], strings.TrimFunc(m[2], isJSSpace)
-			switch {
-			case fenceLen == 0:
-				fenceChar, fenceLen = marker[0], len(marker)
-				if lang != "" {
-					rows += int(math.Ceil(float64(max(unitLen("─ "+lang), 1)) / float64(w)))
-				}
-			case marker[0] == fenceChar && len(marker) >= fenceLen:
-				fenceLen = 0
-			}
-			continue
-		}
-		inCode := fenceLen > 0
-		trimmed := strings.TrimFunc(line, isJSSpace)
-		if !inCode && strings.HasPrefix(trimmed, "|") && tableRule.MatchString(trimmed) {
-			continue
-		}
-		rendered := line
-		if !inCode {
-			rendered = renderEstimateLine(line)
-		}
-		if compact && strings.TrimFunc(rendered, isJSSpace) == "" {
-			continue
-		}
-		rows += int(math.Ceil(float64(max(unitLen(rendered), 1)) / float64(w)))
-	}
-	return max(1, rows)
 }
 
 // Whether text carries a paste reference token

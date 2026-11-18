@@ -110,39 +110,6 @@ func TestIsCronProviderDirReadsTheContractMarkers(t *testing.T) {
 	}
 }
 
-func TestProviderDirsListBundledFirstAndBundledWinsACollision(t *testing.T) {
-	s, buf := newTestStore(t)
-	writeProviderTree(t, filepath.Join(s.home, "plugins"), map[string]string{
-		"chronos/__init__.py": "class CronScheduler: pass\n",
-		"mycron/__init__.py":  "def register(ctx):\n    ctx.register_cron_scheduler(object())\n",
-		"notcron/__init__.py": "def register(ctx):\n    pass\n",
-	})
-	ctx := providerContext(s)
-	dirs, err := iterCronProviderDirs(ctx)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(dirs) != 2 || dirs[0].name != "chronos" || dirs[0].bundled == nil || dirs[1].name != "mycron" || dirs[1].dir != filepath.Join(s.home, "plugins", "mycron") {
-		t.Fatalf("dirs = %+v", dirs)
-	}
-	if d, ok := findCronProviderDir(ctx, "chronos"); !ok || d.bundled == nil {
-		t.Fatalf("chronos resolved to %+v", d)
-	}
-	if _, ok := findCronProviderDir(ctx, "notcron"); ok {
-		t.Fatal("a plugin without the cron contract resolved as a provider")
-	}
-	p, err := realLoadCronScheduler(s, "chronos")
-	if _, isChronos := p.(*ChronosCronScheduler); err != nil || !isChronos {
-		t.Fatalf("chronos loaded %T %v", p, err)
-	}
-	if p, err := realLoadCronScheduler(s, "missing"); p != nil || err != nil {
-		t.Fatalf("missing loaded %v %v", p, err)
-	}
-	if !strings.Contains(buf.String(), "Cron provider 'missing' not found in bundled or user plugins") {
-		t.Fatalf("log = %s", buf.String())
-	}
-}
-
 const splitFireCronProviderSrc = `from cron.scheduler_provider import CronScheduler
 
 

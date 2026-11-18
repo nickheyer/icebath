@@ -6,7 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"log/slog"
 	"net"
 	"net/http"
 	"net/url"
@@ -190,16 +189,16 @@ func (a *SlackAdapter) slackMentionPatterns(ctx context.Context) []*regexp2.Rege
 			}
 			re, err := compileIgnoreCase(pat)
 			if err != nil {
-				slog.Warn(fmt.Sprintf("[Slack] Invalid mention pattern %s: %v", pyrepr.Repr(pat), err))
+				pkgLog().Warn(fmt.Sprintf("[Slack] Invalid mention pattern %s: %v", pyrepr.Repr(pat), err))
 				continue
 			}
 			compiled = append(compiled, re)
 		}
 	} else if patterns != nil {
-		slog.Warn(fmt.Sprintf("[Slack] mention_patterns must be a list or string; got %s", pyrepr.TypeName(patterns)))
+		pkgLog().Warn(fmt.Sprintf("[Slack] mention_patterns must be a list or string; got %s", pyrepr.TypeName(patterns)))
 	}
 	if len(compiled) > 0 {
-		slog.Info(fmt.Sprintf("[Slack] Loaded %d mention pattern(s)", len(compiled)))
+		pkgLog().Info(fmt.Sprintf("[Slack] Loaded %d mention pattern(s)", len(compiled)))
 	}
 	a.mu.Lock()
 	a.compiledMentionPatterns, a.mentionPatternsLoaded = compiled, true
@@ -261,7 +260,7 @@ func (a *SlackAdapter) resolveDownloadToken(rawURL, teamID string) string {
 	return strOrEmpty(a.Config.Token)
 }
 
-// SSRF safe client for Slack file downloads, a package var the way hermes tests patch the client factory
+// SSRF safe client for Slack file downloads, a package var the way tests patch the client factory
 var newDownloadClient = func(env *tools.Env, timeout time.Duration) *http.Client {
 	return tools.NewSSRFSafeClient(env, timeout, false)
 }
@@ -298,7 +297,7 @@ func (a *SlackAdapter) downloadSlackFileBytes(ctx context.Context, rawURL, teamI
 			return nil, err
 		}
 		if attempt < 2 {
-			slog.Debug(fmt.Sprintf("Slack file download retry %d/2 for %s: %v", attempt+1, pystr.Slice(rawURL, 0, 80), err))
+			pkgLog().Debug(fmt.Sprintf("Slack file download retry %d/2 for %s: %v", attempt+1, pystr.Slice(rawURL, 0, 80), err))
 			if serr := sleepCtx(ctx, time.Duration(1.5*float64(attempt+1)*float64(time.Second))); serr != nil {
 				return nil, serr
 			}

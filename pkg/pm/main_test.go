@@ -42,6 +42,5 @@ func TestMain(m *testing.M) {
 		_, _ = io.ReadAll(os.Stdin)
 		os.Exit(0)
 	}
-	InteractiveAppRunning = func() bool { return false }
 	os.Exit(m.Run())
 }

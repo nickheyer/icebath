@@ -229,7 +229,7 @@ func TestSpawnDetachedWarnsAndMarksNoBreakawayFallback(t *testing.T) {
 }
 
 func TestStableWindowsGatewayWorkingDir(t *testing.T) {
-	t.Run("test_stable_gateway_working_dir_uses_hermes_home", func(t *testing.T) {
+	t.Run("test_stable_gateway_working_dir_uses_icebath_home", func(t *testing.T) {
 		tmp := t.TempDir()
 		h := filepath.Join(tmp, ".icebath")
 		if err := os.Mkdir(h, 0o755); err != nil {

@@ -3,7 +3,6 @@ package yuanbao
 import (
 	"context"
 	"fmt"
-	"log/slog"
 	"strings"
 
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
@@ -30,7 +29,7 @@ func (m *ForwardedRecordsParseMiddleware) Handle(ctx context.Context, ic *Inboun
 		case err != nil && ctx.Err() != nil:
 			return ctx.Err()
 		case err != nil:
-			slog.Warn(fmt.Sprintf("[%s] forwarded-records deep parse failed: %s", ic.Adapter.Name(), errText(err)))
+			pkgLog().Warn(fmt.Sprintf("[%s] forwarded-records deep parse failed: %s", ic.Adapter.Name(), errText(err)))
 		default:
 			ic.RawText = text
 		}

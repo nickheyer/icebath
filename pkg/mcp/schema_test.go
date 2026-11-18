@@ -1,10 +1,11 @@
 package mcp
 
 import (
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"reflect"
 	"strings"
 	"testing"
+
+	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 )
 
 // Tool with a default object input schema
@@ -15,7 +16,7 @@ func mcpTool(name, description string, schema map[string]any) *Tool {
 	return &Tool{Name: name, Description: description, InputSchema: pyjson.Ordered(schema).(*pyjson.Object)}
 }
 
-func TestSchemaConversionConvertsMcpToolToHermesSchema(t *testing.T) {
+func TestSchemaConversionConvertsMcpToolToIcebathSchema(t *testing.T) {
 	s := convertToolSchema("filesystem", mcpTool("read_file", "Read a file", nil))
 	if s.Vals["name"] != "mcp__filesystem__read_file" || s.Vals["description"] != "Read a file" {
 		t.Fatalf("schema %v", s)
@@ -103,7 +104,7 @@ func TestSchemaConversionNormalizedMcpSchemaKeepsRequiredAsList(t *testing.T) {
 	}
 	fragment := normalizeInputSchema(pyjson.ObjectOf("type", "object", "properties", pyjson.ObjectOf("a", pyjson.ObjectOf(), "b", pyjson.ObjectOf()),
 		"oneOf", []any{map[string]any{"required": []any{"a"}}, map[string]any{"required": []any{"b"}}}))
-	if !reflect.DeepEqual(fragment.Vals["oneOf"], []any{map[string]any{"required": []any{"a"}}, map[string]any{"required": []any{"b"}}}) {
+	if !reflect.DeepEqual(pyjson.Plain(fragment.Vals["oneOf"]), []any{map[string]any{"required": []any{"a"}}, map[string]any{"required": []any{"b"}}}) {
 		t.Fatalf("constraint fragments repaired %v", fragment.Vals["oneOf"])
 	}
 }

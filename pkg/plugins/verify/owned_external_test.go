@@ -114,7 +114,7 @@ func TestReadinessTimeoutWhenNothingListens(t *testing.T) {
 	if res.Readiness == nil || res.Readiness.Ready || res.OK() {
 		t.Fatalf("readiness %#v", res.Readiness)
 	}
-	if res.Readiness.Error == nil || *res.Readiness.Error != "<urlopen error [Errno 111] Connection refused>" {
+	if res.Readiness.Error == nil || *res.Readiness.Error != "connection refused" {
 		t.Fatalf("error %v", res.Readiness.Error)
 	}
 }

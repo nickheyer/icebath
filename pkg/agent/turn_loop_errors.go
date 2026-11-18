@@ -61,7 +61,7 @@ type OuterErrorVerdict struct {
 // Classifies an escaped loop exception, fills unanswered tool results and ends the turn once errors are deterministic or capped
 func (a *AIAgent) handleOuterLoopError(ctx context.Context, e error, outerErrorCount, apiCallCount int, messages *[]*state.Message,
 	conversationHistory []*state.Message, turnExitReason any, failed bool, finalResponse any) (OuterErrorVerdict, error) {
-	log := conversationLoopLog()
+	log := pkgLog()
 	verdict := func(action string) OuterErrorVerdict {
 		return OuterErrorVerdict{Action: action, OuterErrorCount: outerErrorCount, TurnExitReason: turnExitReason,
 			Failed: failed, FinalResponse: finalResponse}

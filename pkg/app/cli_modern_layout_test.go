@@ -144,10 +144,10 @@ func TestToolRowsKeepTheClassicToolEmoji(t *testing.T) {
 func TestRefusedSkillWriteReadsNeutralNotFailed(t *testing.T) {
 	recordPrints(t)
 	ctx := context.Background()
-	refused := `{"success": false, "error": "operations[0] (patch on 'hermes-agent-dev') failed: ` +
+	refused := `{"success": false, "error": "operations[0] (patch on 'icebath-agent-dev') failed: ` +
 		`SKILL.md content is 100,193 characters (limit: 100,000).", ` +
 		`"file_preview": "Never ignore a ROLLBACK FAILED note."}`
-	row := toolRow(ctx, nil, "skill_manage", map[string]any{"operations": []any{map[string]any{"action": "patch", "name": "hermes-agent-dev"}}}, 1.1, refused, false)
+	row := toolRow(ctx, nil, "skill_manage", map[string]any{"operations": []any{map[string]any{"action": "patch", "name": "icebath-agent-dev"}}}, 1.1, refused, false)
 	if !strings.HasPrefix(plainSGR(row), tools.GetToolEmoji(nil, "skill_manage", "⚡")+" ") {
 		t.Fatalf("row %q", row)
 	}

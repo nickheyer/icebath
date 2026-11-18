@@ -4,24 +4,31 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"os"
 
 	"github.com/nickheyer/icebath/pkg/pm"
-	"github.com/nickheyer/icebath/pkg/relayhost"
+	"github.com/nickheyer/icebath/pkg/tools"
 )
 
-// Provisions the relay runtime the updated binary pins, replaced by tests
-var maintProvisionRelayRuntime = relayhost.ProvisionRuntime
-
-// Provisions the relay runtime after an update, a failure printed with what provisions it next
-func provisionRelayRuntimeAfterUpdate(ctx context.Context, w io.Writer) error {
-	err := maintProvisionRelayRuntime(ctx, w)
-	if err == nil {
+// Brings the relay runtime to this version's pins with progress once Relay is switched on, leaving it absent otherwise
+func refreshSwitchedOnRelayRuntime(ctx context.Context, w io.Writer) error {
+	target, err := pm.CurrentTarget()
+	if err != nil {
+		return err
+	}
+	if _, ok := pm.NemoRelayWheel(target); !ok {
 		return nil
 	}
-	next := "the next icebath start provisions it in the background"
-	if !pm.LazyInstallsAllowedFor(ctx) {
-		next = "run `icebath pm install` to provision it"
+	venv, ready, err := pm.RuntimeEnvironmentReady(ctx)
+	if err != nil || ready {
+		return err
 	}
-	fmt.Fprintf(w, "  ⚠ %s; %s\n", err, next)
-	return err
+	if _, err := os.Stat(pm.VenvPython(venv)); err != nil && !tools.RelayDemanded(ctx) {
+		return nil
+	}
+	fmt.Fprintln(w)
+	if err := tools.ProvisionNemoRelay(ctx, w); err != nil {
+		fmt.Fprintf(w, "  ⚠ %s\n    Run `icebath pm install --extra nemo-relay` once the cause is fixed\n", err)
+	}
+	return nil
 }

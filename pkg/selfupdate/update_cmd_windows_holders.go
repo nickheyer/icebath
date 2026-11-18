@@ -48,7 +48,7 @@ type venvMatch struct {
 func tryCall[T any](ctx context.Context, fn func() (T, error), fallback T, logMessage string, logArgs ...any) T {
 	value, err := fn()
 	if err != nil {
-		updateLog.DebugContext(ctx, fmt.Sprintf(logMessage, append(logArgs, launchErrorText(err))...))
+		pkgLog().DebugContext(ctx, fmt.Sprintf(logMessage, append(logArgs, launchErrorText(err))...))
 		return fallback
 	}
 	return value
@@ -239,13 +239,13 @@ func winIsPausableGateway(cmdline string) bool {
 	return pm.LooksLikeGatewayCommandLine != nil && pm.LooksLikeGatewayCommandLine(cmdline)
 }
 
-// Machine readable class of one venv holder, gateway, a hermes subcommand or python
+// Machine readable class of one venv holder, gateway, a subcommand or python
 func venvHolderKind(cmdline string) string {
 	if winIsPausableGateway(cmdline) {
 		return "gateway"
 	}
-	if subcommand, ok := hermesHolderSubcommand(cmdline); ok && subcommand != "" {
-		return "hermes:" + subcommand
+	if subcommand, ok := icebathHolderSubcommand(cmdline); ok && subcommand != "" {
+		return "icebath:" + subcommand
 	}
 	return "python"
 }

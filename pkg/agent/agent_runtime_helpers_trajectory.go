@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
@@ -43,7 +44,7 @@ func trajectoryNormalizeMsg(msg map[string]any) map[string]any {
 func trajectoryItem(m map[string]any, key string) (any, error) {
 	v, ok := m[key]
 	if !ok {
-		return nil, fmt.Errorf("KeyError: %s", pyStrRepr(key))
+		return nil, fmt.Errorf("trajectory message has no %s", key)
 	}
 	return v, nil
 }
@@ -52,7 +53,7 @@ func trajectoryItem(m map[string]any, key string) (any, error) {
 func trajectoryStrip(v any) (string, error) {
 	s, ok := v.(string)
 	if !ok {
-		return "", fmt.Errorf("AttributeError: '%s' object has no attribute 'strip'", pyrepr.TypeName(v))
+		return "", fmt.Errorf("trajectory content is %s, expected text", errchain.Kind(v))
 	}
 	return pystr.Strip(s), nil
 }
@@ -109,7 +110,7 @@ func trajectoryToolCallTurn(msg map[string]any) (string, error) {
 		}
 		fn, ok := pyjson.Dict(fnValue)
 		if !ok {
-			return "", fmt.Errorf("TypeError: '%s' object is not subscriptable", pyrepr.TypeName(fnValue))
+			return "", fmt.Errorf("a tool call function is %s, expected a mapping", errchain.Kind(fnValue))
 		}
 		rawArgs, err := trajectoryItem(fn, "arguments")
 		if err != nil {
@@ -120,7 +121,7 @@ func trajectoryToolCallTurn(msg map[string]any) (string, error) {
 			parsed, perr := pyjson.Loads(s)
 			if perr != nil {
 				runes := []rune(s)
-				agentRuntimeHelpersLog().Warn(fmt.Sprintf("Unexpected invalid JSON in trajectory conversion: %s", string(runes[:min(len(runes), 100)])))
+				pkgLog().Warn(fmt.Sprintf("Unexpected invalid JSON in trajectory conversion: %s", string(runes[:min(len(runes), 100)])))
 				parsed = pyjson.NewObject()
 			}
 			arguments = parsed
@@ -170,7 +171,7 @@ func trajectoryToolResponses(msg map[string]any, messages []map[string]any, star
 		if idx := len(responses); idx < len(calls) {
 			call, ok := pyjson.Dict(calls[idx])
 			if !ok {
-				return nil, 0, fmt.Errorf("TypeError: '%s' object is not subscriptable", pyrepr.TypeName(calls[idx]))
+				return nil, 0, fmt.Errorf("a tool call is %s, expected a mapping", errchain.Kind(calls[idx]))
 			}
 			fnValue, err := trajectoryItem(call, "function")
 			if err != nil {
@@ -178,7 +179,7 @@ func trajectoryToolResponses(msg map[string]any, messages []map[string]any, star
 			}
 			fn, ok := pyjson.Dict(fnValue)
 			if !ok {
-				return nil, 0, fmt.Errorf("TypeError: '%s' object is not subscriptable", pyrepr.TypeName(fnValue))
+				return nil, 0, fmt.Errorf("a tool call function is %s, expected a mapping", errchain.Kind(fnValue))
 			}
 			if name, err = trajectoryItem(fn, "name"); err != nil {
 				return nil, 0, err
@@ -260,7 +261,7 @@ func (a *AIAgent) convertToTrajectoryFormat(messages []map[string]any, userQuery
 			if pyrepr.Truthy(content) {
 				s, ok := content.(string)
 				if !ok {
-					return nil, fmt.Errorf("TypeError: can only concatenate str (not \"%s\") to str", pyrepr.TypeName(content))
+					return nil, fmt.Errorf("message content is %s, expected text", errchain.Kind(content))
 				}
 				text = s
 			}

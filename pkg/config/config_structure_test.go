@@ -110,12 +110,12 @@ func TestTimezoneValidationInvalidOrNonStringZoneIsAnError(t *testing.T) {
 	if _, err := time.LoadLocation("Etc/UTC"); err != nil {
 		t.Skip("no tz database on this host")
 	}
-	got := tzIssues(map[string]any{"timezone": "Asia/Tokio", "model": map[string]any{"provider": "nous"}})
+	got := tzIssues(map[string]any{"timezone": "Asia/Tokio", "model": map[string]any{"provider": "deepseek"}})
 	if len(got) != 1 || got[0].Severity != "error" || !strings.Contains(got[0].Message, "Asia/Tokio") ||
 		!strings.Contains(got[0].Hint, "IANA") || !strings.Contains(got[0].Hint, "ICEBATH_TIMEZONE") {
 		t.Fatalf("invalid zone: %+v", got)
 	}
-	got = tzIssues(map[string]any{"timezone": 9, "model": map[string]any{"provider": "nous"}})
+	got = tzIssues(map[string]any{"timezone": 9, "model": map[string]any{"provider": "deepseek"}})
 	if len(got) != 1 || got[0].Severity != "error" || !strings.Contains(got[0].Message, "string") {
 		t.Fatalf("non string zone: %+v", got)
 	}
@@ -123,7 +123,7 @@ func TestTimezoneValidationInvalidOrNonStringZoneIsAnError(t *testing.T) {
 
 func TestTimezoneValidationValidBlankMissingOrUnverifiableZoneIsSilent(t *testing.T) {
 	for _, cfg := range []map[string]any{{"timezone": "Asia/Tokyo"}, {}, {"timezone": ""}, {"timezone": "   "}, {"timezone": nil}} {
-		cfg["model"] = map[string]any{"provider": "nous"}
+		cfg["model"] = map[string]any{"provider": "deepseek"}
 		if got := tzIssues(cfg); len(got) != 0 {
 			t.Fatalf("%v flagged: %+v", cfg, got)
 		}
@@ -131,7 +131,7 @@ func TestTimezoneValidationValidBlankMissingOrUnverifiableZoneIsSilent(t *testin
 	saved := loadZone
 	loadZone = func(string) (*time.Location, error) { return nil, errors.New("no tz database") }
 	t.Cleanup(func() { loadZone = saved })
-	if got := tzIssues(map[string]any{"timezone": "Asia/Tokio", "model": map[string]any{"provider": "nous"}}); len(got) != 0 {
+	if got := tzIssues(map[string]any{"timezone": "Asia/Tokio", "model": map[string]any{"provider": "deepseek"}}); len(got) != 0 {
 		t.Fatalf("unverifiable zone flagged: %+v", got)
 	}
 }

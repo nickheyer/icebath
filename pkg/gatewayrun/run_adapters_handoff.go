@@ -20,7 +20,7 @@ func (r *GatewayRunner) reclaimStaleHandoffs(ctx context.Context) {
 	}
 	ids := db.ReclaimStaleRunningHandoffs(ctx, "gateway stopped mid-handoff; state reclaimed at startup. Re-run /handoff to try again.")
 	if len(ids) > 0 {
-		runLog().Warn(fmt.Sprintf("Reclaimed %d handoff(s) stranded in 'running' by a previous gateway: %s", len(ids), strings.Join(ids, ", ")))
+		pkgLog().Warn(fmt.Sprintf("Reclaimed %d handoff(s) stranded in 'running' by a previous gateway: %s", len(ids), strings.Join(ids, ", ")))
 	}
 }
 
@@ -56,9 +56,9 @@ func (r *GatewayRunner) handoffWatcher(ctx context.Context, interval, drainTimeo
 		if isCancellation(err) || c.Err() != nil {
 			return err
 		}
-		runLog().Warn(fmt.Sprintf("Handoff for session %s failed: %s", sessionID, err.Error()), "exc_info", err)
+		pkgLog().Warn(fmt.Sprintf("Handoff for session %s failed: %s", sessionID, err.Error()), "exc_info", err)
 		if _, ferr := db.FailHandoff(c, sessionID, err.Error(), nil); ferr != nil {
-			runLog().Debug("Could not record handoff failure", "exc_info", ferr)
+			pkgLog().Debug("Could not record handoff failure", "exc_info", ferr)
 		}
 		return nil
 	}
@@ -103,7 +103,7 @@ func (r *GatewayRunner) handoffWatcher(ctx context.Context, interval, drainTimeo
 		func() {
 			defer func() {
 				if rec := recover(); rec != nil {
-					runLog().Debug("Stale-handoff reclaim failed", "error", rec)
+					pkgLog().Debug("Stale-handoff reclaim failed", "error", rec)
 				}
 			}()
 			r.reclaimStaleHandoffs(handoffScopeContext(ctx, scope))
@@ -169,7 +169,7 @@ func (r *GatewayRunner) handoffWatcher(ctx context.Context, interval, drainTimeo
 			if isCancellation(err) || ctx.Err() != nil {
 				return err
 			}
-			runLog().Debug(fmt.Sprintf("Handoff watcher tick error: %s", err.Error()), "exc_info", err)
+			pkgLog().Debug(fmt.Sprintf("Handoff watcher tick error: %s", err.Error()), "exc_info", err)
 		}
 		if err := sleepCtx(ctx, interval); err != nil {
 			return err

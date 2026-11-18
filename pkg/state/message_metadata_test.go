@@ -173,21 +173,7 @@ func TestWithheldPromptRoundTrip(t *testing.T) {
 	}
 }
 
-func TestDataUseStampAndLift(t *testing.T) {
-	msg := map[string]any{"display_metadata": map[string]any{"a": 1}}
-	StampDataUse(msg, []string{"zdr"})
-	if !reflect.DeepEqual(msg[DataUse], []any{"zdr"}) || !reflect.DeepEqual(msg["display_metadata"], map[string]any{"a": 1, DataUse: []any{"zdr"}}) {
-		t.Fatalf("stamped %v", msg)
-	}
-	req := DataUseRequirement([]any{msg, "skip", map[string]any{DataUse: []any{"eu"}}})
-	if !req["zdr"] || !req["eu"] || len(req) != 2 {
-		t.Fatalf("requirement %v", req)
-	}
-	replayed := map[string]any{"display_metadata": map[string]any{DataUse: []any{"zdr"}}}
-	LiftDataUse(replayed)
-	if !reflect.DeepEqual(replayed[DataUse], []any{"zdr"}) {
-		t.Fatalf("lifted %v", replayed)
-	}
+func TestWithoutPersistenceFieldsDropsRowBookkeeping(t *testing.T) {
 	if got := WithoutPersistenceFields(map[string]any{"role": "user", "_row_id": 3, DBRowSnapshot: "x"}); !reflect.DeepEqual(got, map[string]any{"role": "user"}) {
 		t.Fatalf("stripped %v", got)
 	}

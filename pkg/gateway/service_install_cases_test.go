@@ -31,7 +31,7 @@ func legacySearchDirs(t *testing.T) (string, string) {
 	return userDir, systemDir
 }
 
-func TestLegacyHermesUnitDetectionDetectsBothScopesSimultaneously(t *testing.T) {
+func TestLegacyIcebathUnitDetectionDetectsBothScopesSimultaneously(t *testing.T) {
 	userDir, systemDir := legacySearchDirs(t)
 	for _, d := range []string{userDir, systemDir} {
 		if err := os.WriteFile(filepath.Join(d, "icebath.service"), []byte(legacyUnitText), 0o644); err != nil {
@@ -39,7 +39,7 @@ func TestLegacyHermesUnitDetectionDetectsBothScopesSimultaneously(t *testing.T) 
 		}
 	}
 	var scopes []bool
-	for _, u := range findLegacyHermesUnits(context.Background()) {
+	for _, u := range findLegacyIcebathUnits(context.Background()) {
 		scopes = append(scopes, u.system)
 	}
 	if !reflect.DeepEqual(scopes, []bool{false, true}) {
@@ -47,7 +47,7 @@ func TestLegacyHermesUnitDetectionDetectsBothScopesSimultaneously(t *testing.T) 
 	}
 }
 
-func TestLegacyHermesUnitDetectionAcceptsAlternateExecstartFormats(t *testing.T) {
+func TestLegacyIcebathUnitDetectionAcceptsAlternateExecstartFormats(t *testing.T) {
 	userDir, _ := legacySearchDirs(t)
 	for i, execStart := range []string{
 		"ExecStart=/venv/bin/python -m icebath_cli.main gateway run --replace",
@@ -59,7 +59,7 @@ func TestLegacyHermesUnitDetectionAcceptsAlternateExecstartFormats(t *testing.T)
 		if err := os.WriteFile(filepath.Join(userDir, "icebath.service"), []byte(text), 0o644); err != nil {
 			t.Fatal(err)
 		}
-		if n := len(findLegacyHermesUnits(context.Background())); n != 1 {
+		if n := len(findLegacyIcebathUnits(context.Background())); n != 1 {
 			t.Fatalf("variant %d not detected: %q", i, execStart)
 		}
 	}
@@ -82,13 +82,13 @@ func legacyRemovalHost(t *testing.T, asRoot bool) (string, *[]string) {
 	return userDir, calls
 }
 
-func TestRemoveLegacyHermesUnitsRemovesUserScopeLegacyUnit(t *testing.T) {
+func TestRemoveLegacyIcebathUnitsRemovesUserScopeLegacyUnit(t *testing.T) {
 	userDir, calls := legacyRemovalHost(t, false)
 	legacy := filepath.Join(userDir, "icebath.service")
 	if err := os.WriteFile(legacy, []byte(legacyUnitText), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	removed, remaining, err := removeLegacyHermesUnits(context.Background(), &bytes.Buffer{}, false, false)
+	removed, remaining, err := removeLegacyIcebathUnits(context.Background(), &bytes.Buffer{}, false, false)
 	if err != nil || removed != 1 || len(remaining) != 0 {
 		t.Fatalf("removed %d remaining %v %v", removed, remaining, err)
 	}
@@ -106,7 +106,7 @@ func TestRemoveLegacyHermesUnitsRemovesUserScopeLegacyUnit(t *testing.T) {
 	}
 }
 
-func TestRemoveLegacyHermesUnitsDoesNotTouchProfileUnitsDuringMigration(t *testing.T) {
+func TestRemoveLegacyIcebathUnitsDoesNotTouchProfileUnitsDuringMigration(t *testing.T) {
 	userDir, _ := legacyRemovalHost(t, true)
 	profileUnit, defaultUnit := filepath.Join(userDir, "icebath-gateway-coder.service"), filepath.Join(userDir, "icebath-gateway.service")
 	for _, p := range []string{profileUnit, defaultUnit} {
@@ -114,7 +114,7 @@ func TestRemoveLegacyHermesUnitsDoesNotTouchProfileUnitsDuringMigration(t *testi
 			t.Fatal(err)
 		}
 	}
-	removed, remaining, err := removeLegacyHermesUnits(context.Background(), &bytes.Buffer{}, false, false)
+	removed, remaining, err := removeLegacyIcebathUnits(context.Background(), &bytes.Buffer{}, false, false)
 	if err != nil || removed != 0 || len(remaining) != 0 {
 		t.Fatalf("removed %d remaining %v %v", removed, remaining, err)
 	}
@@ -254,10 +254,10 @@ func TestSystemScopeWizardPreCheckNonRootWithExplicitSystemArgReturnsTrue(t *tes
 	}
 }
 
-// Forced launchd reinstall over a supervised incumbent, every step faked and recorded like the hermes fixture
+// Forced launchd reinstall over a supervised incumbent, every step faked and recorded like the test fixture
 func forcedLaunchdInstall(t *testing.T) (string, *[][]any) {
 	t.Helper()
-	const label, domain = "ai.icebath.gateway", "gui/501"
+	const label, domain = "app.icebath.gateway", "gui/501"
 	plist := filepath.Join(t.TempDir(), "LaunchAgents", label+".plist")
 	if err := os.MkdirAll(filepath.Dir(plist), 0o755); err != nil {
 		t.Fatal(err)
@@ -309,7 +309,7 @@ func TestForceInstallWaitsForIncumbentThenRetriesUntilSupervised(t *testing.T) {
 	for i, e := range *events {
 		switch e[0] {
 		case "run":
-			bootout = bootout || e[1] == "launchctl bootout gui/501/ai.icebath.gateway"
+			bootout = bootout || e[1] == "launchctl bootout gui/501/app.icebath.gateway"
 		case "wait":
 			if reflect.DeepEqual(e, []any{"wait", 4242, 45.0}) {
 				waitIndex = i

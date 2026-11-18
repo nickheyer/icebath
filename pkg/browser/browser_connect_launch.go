@@ -3,7 +3,6 @@ package browser
 import (
 	"context"
 	"fmt"
-	"log/slog"
 	"net"
 	"os"
 	"os/exec"
@@ -13,6 +12,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/nickheyer/icebath/pkg/browser/quiet"
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
@@ -30,8 +30,6 @@ const (
 	launchStderrLog      = "launch-stderr.log"
 	stderrTailLimit      = 2000
 )
-
-var connectLog = slog.Default().With("logger", "hermes_cli.browser_connect")
 
 // Possible debug browser binaries in launch order, empty entries for unresolved names
 func debugCandidatePaths(system string) []string {
@@ -135,10 +133,10 @@ func openLaunchStderrLog(ctx context.Context, p string) (*os.File, error) {
 	return f, nil
 }
 
-// Remote debugging flags of a debug browser launch
+// Remote debugging flags of a debug browser launch with the switches that keep it from calling home
 func chromeDebugArgs(ctx context.Context, port int) []string {
-	return []string{fmt.Sprintf("--remote-debugging-port=%d", port), "--user-data-dir=" + ChromeDebugDataDir(ctx),
-		"--no-first-run", "--no-default-browser-check"}
+	return append([]string{fmt.Sprintf("--remote-debugging-port=%d", port), "--user-data-dir=" + ChromeDebugDataDir(ctx)},
+		quiet.Args()...)
 }
 
 // Whether a reusable TCP socket binds the host and port
@@ -173,9 +171,7 @@ func ManualChromeDebugCommand(ctx context.Context, port int, system string) stri
 		return pyshlex.Join(argv)
 	}
 	if system == "Darwin" {
-		return fmt.Sprintf(`open -a "Google Chrome" --args --remote-debugging-port=%d `, port) +
-			fmt.Sprintf(`--user-data-dir="%s" --no-first-run `, ChromeDebugDataDir(ctx)) +
-			"--no-default-browser-check"
+		return `open -a "Google Chrome" --args ` + pyshlex.Join(chromeDebugArgs(ctx, port))
 	}
 	return ""
 }
@@ -246,24 +242,27 @@ func readStderrTail(p string) string {
 func LaunchChromeDebug(ctx context.Context, port int, system string) ChromeDebugLaunch {
 	system = systemOr(system)
 	result := ChromeDebugLaunch{}
-	candidates := GetChromeDebugCandidates(system)
-	if len(candidates) == 0 {
-		connectLog.Info(fmt.Sprintf("browser debug launch: no Chromium-family binary found (system=%s)", system))
-		return result
-	}
 	dataDir := ChromeDebugDataDir(ctx)
 	if err := ensureChromeDebugDataDir(ctx, dataDir); err != nil {
 		panic(err)
+	}
+	if err := quiet.SeedProfile(dataDir, true); err != nil {
+		panic(err)
+	}
+	candidates := GetChromeDebugCandidates(system)
+	if len(candidates) == 0 {
+		pkgLog().Info(fmt.Sprintf("browser debug launch: no Chromium-family binary found (system=%s)", system))
+		return result
 	}
 	stderrPath := filepath.Join(dataDir, launchStderrLog)
 	for _, candidate := range candidates {
 		cmd, err := spawnDebugCandidate(ctx, candidate, port, stderrPath)
 		if err != nil {
 			result.Attempts = append(result.Attempts, &LaunchAttempt{Binary: candidate, State: "spawn-failed"})
-			connectLog.Info(fmt.Sprintf("browser debug launch: failed to spawn %s: %s", candidate, err))
+			pkgLog().Info(fmt.Sprintf("browser debug launch: failed to spawn %s: %s", candidate, err))
 			continue
 		}
-		connectLog.Info(fmt.Sprintf("browser debug launch: spawned %s (pid=%d) with --remote-debugging-port=%d", candidate, cmd.Process.Pid, port))
+		pkgLog().Info(fmt.Sprintf("browser debug launch: spawned %s (pid=%d) with --remote-debugging-port=%d", candidate, cmd.Process.Pid, port))
 		exited := make(chan struct{})
 		var code int
 		go func() {
@@ -286,7 +285,7 @@ func LaunchChromeDebug(ctx context.Context, port int, system string) ChromeDebug
 		if attempt.StderrTail != "" {
 			tail = "; stderr tail: " + attempt.StderrTail
 		}
-		connectLog.Warn(fmt.Sprintf("browser debug launch: %s exited (code=%d) before port %d opened%s", candidate, rc, port, tail))
+		pkgLog().Warn(fmt.Sprintf("browser debug launch: %s exited (code=%d) before port %d opened%s", candidate, rc, port, tail))
 	}
 	return result
 }

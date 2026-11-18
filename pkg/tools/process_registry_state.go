@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -13,6 +12,8 @@ import (
 	"sync"
 	"time"
 	"unicode/utf8"
+
+	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 
 	"github.com/nickheyer/icebath/pkg/activesessions"
 	"github.com/nickheyer/icebath/pkg/home"
@@ -133,18 +134,18 @@ func (r *ProcessRegistry) writeCheckpoint(env *Env, extraEntries []*pyjson.Objec
 	path := checkpointPathFn(env)
 	unlock, err := activesessions.FileLock(path+".lock", activesessions.NoLockTimeout)
 	if err != nil {
-		toolsLogger(env).Debug(fmt.Sprintf("Failed to write checkpoint file: %v", err))
+		envLog(env).Debug(fmt.Sprintf("Failed to write checkpoint file: %v", err))
 		return
 	}
 	defer unlock()
 	foreign, err := r.foreignHandoffs(env, path, known)
 	if err != nil {
-		toolsLogger(env).Debug(fmt.Sprintf("Failed to write checkpoint file: %v", err))
+		envLog(env).Debug(fmt.Sprintf("Failed to write checkpoint file: %v", err))
 		return
 	}
 	entries = append(entries, foreign...)
 	if err := procAtomicJSONWrite(path, entries, 0o644, false); err != nil {
-		toolsLogger(env).Debug(fmt.Sprintf("Failed to write checkpoint file: %v", err))
+		envLog(env).Debug(fmt.Sprintf("Failed to write checkpoint file: %v", err))
 	}
 }
 
@@ -286,7 +287,7 @@ func (r *ProcessRegistry) RecoverFromCheckpoint(ctx context.Context, env *Env) (
 			command = "unknown"
 		}
 		if pidScope != "host" {
-			toolsLogger(env).Info(fmt.Sprintf("Skipping recovery for non-host process: %s (pid=%d, scope=%s)", headChars(command, 60), pid, pidScope))
+			envLog(env).Info(fmt.Sprintf("Skipping recovery for non-host process: %s (pid=%d, scope=%s)", headChars(command, 60), pid, pidScope))
 			continue
 		}
 		fate := r.detachedHostFate(pid, entryInt64Ptr(entry, "host_start_time"))
@@ -299,12 +300,12 @@ func (r *ProcessRegistry) RecoverFromCheckpoint(ctx context.Context, env *Env) (
 			if shown == "" {
 				shown = "?"
 			}
-			toolsLogger(env).Info(fmt.Sprintf("Not recovering session %s: pid %d is alive but its start time no longer matches — PID was recycled onto an unrelated process; refusing to adopt or signal it.", shown, pid))
+			envLog(env).Info(fmt.Sprintf("Not recovering session %s: pid %d is alive but its start time no longer matches — PID was recycled onto an unrelated process; refusing to adopt or signal it.", shown, pid))
 			continue
 		}
 		if fate != "running" {
 			if unit := asStr(entry.Vals["systemd_unit"]); unit != "" && !stopSystemdUnit(unit) {
-				toolsLogger(env).Warn(fmt.Sprintf("Could not reap persisted scope %s for dead wrapper pid %d; retaining checkpoint entry for the next startup", unit, pid))
+				envLog(env).Warn(fmt.Sprintf("Could not reap persisted scope %s for dead wrapper pid %d; retaining checkpoint entry for the next startup", unit, pid))
 				unresolvedScopeEntries = append(unresolvedScopeEntries, entry)
 			}
 			continue
@@ -338,7 +339,7 @@ func (r *ProcessRegistry) RecoverFromCheckpoint(ctx context.Context, env *Env) (
 			r.mu.Unlock()
 		}
 		recovered++
-		toolsLogger(env).Info(fmt.Sprintf("Recovered detached process: %s (pid=%d)", headChars(s.Command, 60), pid))
+		envLog(env).Info(fmt.Sprintf("Recovered detached process: %s (pid=%d)", headChars(s.Command, 60), pid))
 		if s.WatcherInterval > 0 {
 			watcher := map[string]any{
 				"session_id": s.ID, "check_interval": s.WatcherInterval, "session_key": s.SessionKey,
@@ -381,7 +382,7 @@ func (r *ProcessRegistry) logReaderLoop(ctx context.Context, s *ProcessSession) 
 	}
 	stream, err := os.Open(s.OutputLog)
 	if err != nil {
-		toolsLogger(s.env).Warn(fmt.Sprintf("Process output log %s unreadable: %v", s.OutputLog, err))
+		envLog(s.env).Warn(fmt.Sprintf("Process output log %s unreadable: %v", s.OutputLog, err))
 	} else {
 		drained := 0
 		buf := make([]byte, 65536)
@@ -400,7 +401,7 @@ func (r *ProcessRegistry) logReaderLoop(ctx context.Context, s *ProcessSession) 
 				}
 			}
 			if rerr != nil && rerr.Error() != "EOF" {
-				toolsLogger(s.env).Warn(fmt.Sprintf("Process output log %s unreadable: %v", s.OutputLog, rerr))
+				envLog(s.env).Warn(fmt.Sprintf("Process output log %s unreadable: %v", s.OutputLog, rerr))
 				break
 			}
 			if !alive {
@@ -501,11 +502,11 @@ func saveCompletedResult(ctx context.Context, env *Env, s *ProcessSession) {
 	record.Set("command", RedactSensitiveTextWith(env, s.Command, RedactOptions{CodeFile: true, Force: true}))
 	directory := processResultsDir(env)
 	if _, err := home.Mkdir(WithEnvHome(ctx, env), directory); err != nil {
-		toolsLogger(env).Warn(fmt.Sprintf("Could not retain completed process result %s", s.ID), "error", err)
+		envLog(env).Warn(fmt.Sprintf("Could not retain completed process result %s", s.ID), "error", err)
 		return
 	}
 	if err := procAtomicJSONWrite(filepath.Join(directory, s.ID+".json"), record, 0o600, false); err != nil {
-		toolsLogger(env).Warn(fmt.Sprintf("Could not retain completed process result %s", s.ID), "error", err)
+		envLog(env).Warn(fmt.Sprintf("Could not retain completed process result %s", s.ID), "error", err)
 		return
 	}
 	resultPaths(env)
@@ -551,14 +552,14 @@ func loadCompletedResultList(env *Env, prefix string) []*ProcessSession {
 		}
 		data, err := os.ReadFile(path)
 		if err != nil {
-			toolsLogger(env).Debug(fmt.Sprintf("Skipping unreadable process result %s", filepath.Base(path)), "error", err)
+			envLog(env).Debug(fmt.Sprintf("Skipping unreadable process result %s", filepath.Base(path)), "error", err)
 			continue
 		}
 		var record map[string]any
 		dec := json.NewDecoder(strings.NewReader(strings.TrimPrefix(string(data), "\xEF\xBB\xBF")))
 		dec.UseNumber()
 		if err := dec.Decode(&record); err != nil {
-			toolsLogger(env).Debug(fmt.Sprintf("Skipping unreadable process result %s", filepath.Base(path)), "error", err)
+			envLog(env).Debug(fmt.Sprintf("Skipping unreadable process result %s", filepath.Base(path)), "error", err)
 			continue
 		}
 		id := asStr(record["id"])
@@ -570,7 +571,7 @@ func loadCompletedResultList(env *Env, prefix string) []*ProcessSession {
 		}
 		output, ok := record["output"].(string)
 		if !ok {
-			toolsLogger(env).Debug(fmt.Sprintf("Skipping unreadable process result %s", filepath.Base(path)))
+			envLog(env).Debug(fmt.Sprintf("Skipping unreadable process result %s", filepath.Base(path)))
 			continue
 		}
 		s := NewProcessSession(id, asStr(record["command"]))
@@ -911,7 +912,7 @@ func (r *ProcessRegistry) promoteNotify(env *Env, s *ProcessSession) {
 		registerCompletionWatcher(s, s.SessionKey)
 	}
 	r.writeCheckpoint(env, nil)
-	toolsLogger(env).Info(fmt.Sprintf("process %s: repeated wait/poll with no new output; auto-enabled notify_on_complete", s.ID))
+	envLog(env).Info(fmt.Sprintf("process %s: repeated wait/poll with no new output; auto-enabled notify_on_complete", s.ID))
 }
 
 // Post processes one process_manage session action result, promoting a silent process to notify_on_complete

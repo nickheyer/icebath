@@ -4,11 +4,11 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"log/slog"
 	"os"
 	"strings"
 	"sync"
 
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/i18n"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
@@ -277,7 +277,7 @@ func resolveCommandAlias(ctx context.Context, name, arg string) (string, string,
 		case []any:
 			for _, item := range table {
 				if item == name {
-					return "", "", fmt.Errorf("TypeError: list indices must be integers or slices, not str")
+					return "", "", fmt.Errorf("quick_commands in config is a list, expected a mapping of command name to its definition")
 				}
 			}
 			return name, arg, nil
@@ -301,7 +301,7 @@ func resolveCommandAlias(ctx context.Context, name, arg string) (string, string,
 		}
 		parts := pystr.SplitWhitespace(pystr.LstripChars(pystr.Strip(target), "/"), 1)
 		if len(parts) == 0 {
-			return "", "", &PyError{Kind: "IndexError", Msg: "list index out of range"}
+			return "", "", &PyError{Kind: "IndexError", Msg: fmt.Sprintf("quick command %s is an alias with an empty target", name)}
 		}
 		name = parts[0]
 		var joined []string
@@ -319,7 +319,7 @@ func runnerCommand(ctx context.Context, name string) (string, string, bool, erro
 	quick := quickCommands(ctx)
 	table, isDict := quick.(map[string]any)
 	if !isDict {
-		return "", "", false, fmt.Errorf("AttributeError: %s object has no attribute 'get'", pyrepr.Repr(pyrepr.TypeName(quick)))
+		return "", "", false, fmt.Errorf("quick_commands in config is %s, expected a mapping of command name to its definition", errchain.Kind(quick))
 	}
 	if entry, ok := table[name].(map[string]any); ok && entry["type"] == "exec" {
 		shell := ""
@@ -371,7 +371,7 @@ func runRunnerCommand(ctx context.Context, a *SessionAuthority, runner localComm
 	entry := a.Runner.SessionStore().LookupBySessionKey(ctx, live.Route)
 	output, err := runner.LocalPluginCommand(ctx, handler, event, live.Source, entry, arg)
 	if err != nil {
-		slog.Warn(fmt.Sprintf("Plugin command dispatch failed: %s", err))
+		pkgLog().Warn(fmt.Sprintf("Plugin command dispatch failed: %s", err))
 		message := err.Error()
 		if message == "" {
 			message = fmt.Sprintf("%T", err)
@@ -447,7 +447,7 @@ func boundCommandReply(ctx context.Context, a *SessionAuthority, ref SessionRef,
 	if handle.ExecutionState != "idle" {
 		runner, ok := a.Runner.(localCommandRunner)
 		if !ok {
-			return nil, attributeError("_dispatch_busy_slash_command")
+			return nil, runnerLacks("run a slash command while a turn is busy")
 		}
 		event := NewMessageEvent(pystr.Strip("/" + bound.Name + " " + arg))
 		event.Source = live.Source
@@ -538,7 +538,7 @@ func queuePreCommand(ctx context.Context, a *SessionAuthority, ref SessionRef, c
 	tail := preCommandTails[key]
 	if tail.pending >= preCommandPendingLimit {
 		preCommandMu.Unlock()
-		slog.Warn(fmt.Sprintf("pre_command for /%s dropped: %d deliveries already queued for this session", canonical, tail.pending))
+		pkgLog().Warn(fmt.Sprintf("pre_command for /%s dropped: %d deliveries already queued for this session", canonical, tail.pending))
 		return nil, nil
 	}
 	done := make(chan struct{})
@@ -578,7 +578,7 @@ func queuePreCommand(ctx context.Context, a *SessionAuthority, ref SessionRef, c
 			defer close(ran)
 			defer func() {
 				if r := recover(); r != nil {
-					slog.Error(fmt.Sprintf("pre_command delivery failed: %v", r))
+					pkgLog().Error(fmt.Sprintf("pre_command delivery failed: %v", r))
 				}
 			}()
 			fire()
@@ -794,7 +794,7 @@ func executeCommand(ctx context.Context, c *AuthorityConnection, ref SessionRef,
 	if hasRunnerCommand {
 		runner, ok := a.Runner.(localCommandRunner)
 		if !ok {
-			return nil, attributeError("_check_slash_access")
+			return nil, runnerLacks("check slash command access")
 		}
 		inWorkspace, err := workspace()
 		if err != nil {
@@ -836,7 +836,7 @@ func executeCommand(ctx context.Context, c *AuthorityConnection, ref SessionRef,
 	}
 	runner, ok := a.Runner.(localCommandRunner)
 	if !ok {
-		return nil, attributeError("_command_handler_table")
+		return nil, runnerLacks("list its command handlers")
 	}
 	typed := "/" + canonical
 	if arg != "" {
@@ -886,7 +886,7 @@ func executeCommand(ctx context.Context, c *AuthorityConnection, ref SessionRef,
 		}
 		handler := runner.LocalCommandHandler(canonical)
 		if handler == nil {
-			return nil, attributeError("_handle_" + strings.ReplaceAll(canonical, "-", "_") + "_command")
+			return nil, runnerLacks("handle the /" + canonical + " command")
 		}
 		if output, err = handler(captured, event); err != nil {
 			return nil, err

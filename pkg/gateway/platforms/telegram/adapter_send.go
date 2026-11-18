@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"log/slog"
 	"math"
 	"regexp"
 	"strconv"
@@ -18,7 +17,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
 
-// Python TypeError raised where hermes code unpacks or calls with the wrong shape
+// TypeError raised where a value is unpacked or called with the wrong shape
 type typeError struct{ msg string }
 
 func (e *typeError) Error() string      { return e.msg }
@@ -92,7 +91,7 @@ func (a *TelegramAdapter) sendChunkMarkdownOrPlain(ctx context.Context, chunk st
 	}
 	low := errLower(err)
 	if strings.Contains(low, "parse") || strings.Contains(low, "markdown") {
-		slog.Warn(fmt.Sprintf("[%s] MarkdownV2 parse failed, falling back to plain text: %s", a.Name(), pyrepr.ExceptionMessage(err)))
+		pkgLog().Warn(fmt.Sprintf("[%s] MarkdownV2 parse failed, falling back to plain text: %s", a.Name(), pyrepr.ExceptionMessage(err)))
 		return a.boundedSendMessage(ctx, a.sendMessageParams(kw, stripMdv2(chunk), ""))
 	}
 	return nil, err
@@ -132,10 +131,10 @@ func (a *TelegramAdapter) sendChunkWithRetries(ctx context.Context, chatID, chun
 					}
 					if !retriedThreadNotFound {
 						retriedThreadNotFound = true
-						slog.Warn(fmt.Sprintf("[%s] Thread %d not found, retrying once with same thread_id", a.Name(), *effectiveThreadID))
+						pkgLog().Warn(fmt.Sprintf("[%s] Thread %d not found, retrying once with same thread_id", a.Name(), *effectiveThreadID))
 						continue
 					}
-					slog.Warn(fmt.Sprintf("[%s] Thread %d not found, retrying without message_thread_id", a.Name(), *effectiveThreadID))
+					pkgLog().Warn(fmt.Sprintf("[%s] Thread %d not found, retrying without message_thread_id", a.Name(), *effectiveThreadID))
 					a.core.pruneStaleDMTopicBinding(ctx, chatID, *effectiveThreadID, metadata)
 					usedThreadFallback = true
 					effectiveThreadID = nil
@@ -147,7 +146,7 @@ func (a *TelegramAdapter) sendChunkWithRetries(ctx context.Context, chatID, chun
 					if privateDMTopicSend {
 						return nil, usedThreadFallback, &gateway.SendResult{Success: false, Error: safe}, nil
 					}
-					slog.Warn(fmt.Sprintf("[%s] Reply target deleted, retrying without reply_to: %s", a.Name(), safe))
+					pkgLog().Warn(fmt.Sprintf("[%s] Reply target deleted, retrying without reply_to: %s", a.Name(), safe))
 					replyToID = nil
 					if dmTopicFallback(metadata) {
 						thread = threadKwargs{}
@@ -170,7 +169,7 @@ func (a *TelegramAdapter) sendChunkWithRetries(ctx context.Context, chatID, chun
 				return nil, usedThreadFallback, nil, sendErr
 			}
 			wait := math.Pow(2, float64(attempt))
-			slog.Warn(fmt.Sprintf("[%s] Network error on send (attempt %d/3), retrying in %ds: %s", a.Name(), attempt+1, int(wait),
+			pkgLog().Warn(fmt.Sprintf("[%s] Network error on send (attempt %d/3), retrying in %ds: %s", a.Name(), attempt+1, int(wait),
 				redactTelegramErrorText(sendErr)))
 			if !sleepCtx(ctx, wait) {
 				return nil, usedThreadFallback, nil, ctx.Err()
@@ -187,19 +186,19 @@ func (a *TelegramAdapter) sendChunkWithRetries(ctx context.Context, chatID, chun
 		}
 		safe := redactTelegramErrorText(sendErr)
 		if wait > floodInlineWaitCapSecs {
-			slog.Warn(fmt.Sprintf("[%s] Telegram flood control on send (retry_after=%.1fs > %.0fs); failing closed instead of sleeping: %s",
+			pkgLog().Warn(fmt.Sprintf("[%s] Telegram flood control on send (retry_after=%.1fs > %.0fs); failing closed instead of sleeping: %s",
 				a.Name(), wait, floodInlineWaitCapSecs, safe))
 			result := a.pacer.recordSendFloodCooldown(chatID, wait)
 			return nil, usedThreadFallback, &result, nil
 		}
 		if attempt < 2 {
-			slog.Warn(fmt.Sprintf("[%s] Telegram flood control on send (attempt %d/3), retrying in %.1fs: %s", a.Name(), attempt+1, wait, safe))
+			pkgLog().Warn(fmt.Sprintf("[%s] Telegram flood control on send (attempt %d/3), retrying in %.1fs: %s", a.Name(), attempt+1, wait, safe))
 			if !sleepCtx(ctx, wait) {
 				return nil, usedThreadFallback, nil, ctx.Err()
 			}
 			continue
 		}
-		slog.Warn(fmt.Sprintf("[%s] Telegram flood control on send persisted across %d attempts; failing closed so the delivery ledger owns the wait: %s",
+		pkgLog().Warn(fmt.Sprintf("[%s] Telegram flood control on send persisted across %d attempts; failing closed so the delivery ledger owns the wait: %s",
 			a.Name(), attempt+1, safe))
 		result := a.pacer.recordSendFloodCooldown(chatID, wait)
 		return nil, usedThreadFallback, &result, nil
@@ -290,12 +289,12 @@ var chunkIndicatorSuffixRE = regexp.MustCompile(` \((\d+)/(\d+)\)$`)
 // Send body under the chat lock, the rich fast path first then MarkdownV2 chunks
 func (a *TelegramAdapter) sendTextLocked(ctx context.Context, chatID, content string, replyTo *string, metadata map[string]any) (gateway.SendResult, error) {
 	if cooldown := a.pacer.sendFloodCooldownRemaining(chatID); cooldown != nil {
-		slog.Warn(fmt.Sprintf("[%s] Telegram flood control still active for chat %s (%.0fs left); refusing locally without an API call",
+		pkgLog().Warn(fmt.Sprintf("[%s] Telegram flood control still active for chat %s (%.0fs left); refusing locally without an API call",
 			a.Name(), chatID, *cooldown))
 		return floodCapResult(*cooldown), nil
 	}
 	if remaining := a.pacer.chatOutboundSlotRemaining(chatID); remaining > 0 {
-		slog.Debug(fmt.Sprintf("[%s] pacing send for chat %s (shared send+edit budget: slot in %.1fs)", a.Name(), chatID, remaining))
+		pkgLog().Debug(fmt.Sprintf("[%s] pacing send for chat %s (shared send+edit budget: slot in %.1fs)", a.Name(), chatID, remaining))
 		if !sleepCtx(ctx, remaining) {
 			return gateway.SendResult{}, ctx.Err()
 		}
@@ -343,11 +342,11 @@ func (a *TelegramAdapter) classifiedPartial(err error, chunks, delivered []strin
 // Failed result of an exception escaping the chunk loop, retryable meaning non delivery is certain
 func (a *TelegramAdapter) classifySendException(err error) gateway.SendResult {
 	safe := redactTelegramErrorText(err)
-	slog.Error(fmt.Sprintf("[%s] Failed to send Telegram message: %s", a.Name(), safe))
+	pkgLog().Error(fmt.Sprintf("[%s] Failed to send Telegram message: %s", a.Name(), safe))
 	low := errLower(err)
 	kind := gateway.ClassifySendError(err, "")
 	if strings.Contains(low, "message_too_long") || strings.Contains(low, "too long") {
-		slog.Debug(fmt.Sprintf("[%s] send() content too long, falling back to new-message continuation", a.Name()))
+		pkgLog().Debug(fmt.Sprintf("[%s] send() content too long, falling back to new-message continuation", a.Name()))
 		tooLong := "too_long"
 		return gateway.SendResult{Success: false, Error: "message_too_long", ErrorKind: &tooLong}
 	}
@@ -546,7 +545,7 @@ func (a *TelegramAdapter) editMarkdownOrPlain(ctx context.Context, chatID, messa
 	if strings.Contains(errLower(err), "not modified") {
 		return true, nil
 	}
-	slog.Warn(fmt.Sprintf(warnFmt, a.Name(), redactTelegramErrorText(err)))
+	pkgLog().Warn(fmt.Sprintf(warnFmt, a.Name(), redactTelegramErrorText(err)))
 	return false, a.editText(ctx, chatID, messageID, plain, "")
 }
 
@@ -561,7 +560,7 @@ func (a *TelegramAdapter) editMessage(ctx context.Context, chatID, messageID, co
 		return gateway.SendResult{Success: false, Error: "Not connected"}, nil
 	}
 	if !finalize && gateway.UTF16Len(content) <= maxMessageLength && a.pacer.chatOutboundSlotRemaining(chatID) > 0 {
-		slog.Debug(fmt.Sprintf("[%s] skipping interim edit for chat %s (shared send+edit budget: slot busy)", a.Name(), chatID))
+		pkgLog().Debug(fmt.Sprintf("[%s] skipping interim edit for chat %s (shared send+edit budget: slot busy)", a.Name(), chatID))
 		return gateway.SendResult{Success: true, MessageID: messageID, RawResponse: map[string]any{"skipped": true}}, nil
 	}
 	a.pacer.holdChatOutboundSlot(chatID)
@@ -635,7 +634,7 @@ func (a *TelegramAdapter) editFailure(ctx context.Context, chatID, messageID, co
 		return gateway.SendResult{Success: true, MessageID: messageID}, nil
 	}
 	if strings.Contains(low, "message_too_long") || strings.Contains(low, "too long") {
-		slog.Debug(fmt.Sprintf("[%s] edit_message overflow (%d UTF-16 > %d), splitting", a.Name(), gateway.UTF16Len(content), maxMessageLength))
+		pkgLog().Debug(fmt.Sprintf("[%s] edit_message overflow (%d UTF-16 > %d), splitting", a.Name(), gateway.UTF16Len(content), maxMessageLength))
 		if finalize {
 			return a.editOverflowSplit(ctx, chatID, messageID, content, finalize, metadata)
 		}
@@ -661,10 +660,10 @@ func (a *TelegramAdapter) editFailure(ctx context.Context, chatID, messageID, co
 			wait = *retryAfter
 		}
 		if wait > floodInlineWaitCapSecs {
-			slog.Warn(fmt.Sprintf("[%s] Telegram flood control, refusing edit (retry_after %.1fs > %.0fs inline cap)", a.Name(), wait, floodInlineWaitCapSecs))
+			pkgLog().Warn(fmt.Sprintf("[%s] Telegram flood control, refusing edit (retry_after %.1fs > %.0fs inline cap)", a.Name(), wait, floodInlineWaitCapSecs))
 			return floodCapResult(wait), nil
 		}
-		slog.Warn(fmt.Sprintf("[%s] Telegram flood control, waiting %.1fs", a.Name(), wait))
+		pkgLog().Warn(fmt.Sprintf("[%s] Telegram flood control, waiting %.1fs", a.Name(), wait))
 		if !sleepCtx(ctx, wait) {
 			return gateway.SendResult{}, ctx.Err()
 		}
@@ -673,7 +672,7 @@ func (a *TelegramAdapter) editFailure(ctx context.Context, chatID, messageID, co
 			return gateway.SendResult{Success: true, MessageID: messageID}, nil
 		}
 		safeRetry := redactTelegramErrorText(retryErr)
-		slog.Error(fmt.Sprintf("[%s] Edit retry failed after flood wait: %s", a.Name(), safeRetry))
+		pkgLog().Error(fmt.Sprintf("[%s] Edit retry failed after flood wait: %s", a.Name(), safeRetry))
 		retryWait := retryAfterOf(retryErr)
 		if retryWait != nil || strings.Contains(errLower(retryErr), "retry after") {
 			if retryWait != nil {
@@ -687,11 +686,11 @@ func (a *TelegramAdapter) editFailure(ctx context.Context, chatID, messageID, co
 	for _, marker := range []string{"connecterror", "connect error", "connection error", "networkerror", "network error", "timed out", "readtimeout",
 		"writetimeout", "server disconnected", "temporarily unavailable", "temporary failure", "httpx"} {
 		if strings.Contains(low, marker) {
-			slog.Warn(fmt.Sprintf("[%s] Transient network error editing message %s (will retry): %s", a.Name(), messageID, safe))
+			pkgLog().Warn(fmt.Sprintf("[%s] Transient network error editing message %s (will retry): %s", a.Name(), messageID, safe))
 			return gateway.SendResult{Success: false, Error: safe, Retryable: true}, nil
 		}
 	}
-	slog.Error(fmt.Sprintf("[%s] Failed to edit Telegram message %s: %s", a.Name(), messageID, safe))
+	pkgLog().Error(fmt.Sprintf("[%s] Failed to edit Telegram message %s: %s", a.Name(), messageID, safe))
 	return gateway.SendResult{Success: false, Error: safe}, nil
 }
 
@@ -728,7 +727,7 @@ func (a *TelegramAdapter) sendOverflowContinuation(ctx context.Context, chatID, 
 			if !dmTopicFallback(metadata) {
 				retryThread, err = threadKwargsForSend(threadID, metadata, nil, "first")
 				if err != nil {
-					slog.Warn(fmt.Sprintf("[%s] Overflow continuation no-reply retry failed: %s", a.Name(), redactTelegramErrorText(err)))
+					pkgLog().Warn(fmt.Sprintf("[%s] Overflow continuation no-reply retry failed: %s", a.Name(), redactTelegramErrorText(err)))
 					return nil
 				}
 			}
@@ -739,7 +738,7 @@ func (a *TelegramAdapter) sendOverflowContinuation(ctx context.Context, chatID, 
 			retryKw := textSend{chatID: kw.chatID, thread: retryThread, disableNote: kw.disableNote}
 			retryMsg, retryErr := a.boundedSendMessage(ctx, a.sendMessageParams(retryKw, retryText, ""))
 			if retryErr != nil {
-				slog.Warn(fmt.Sprintf("[%s] Overflow continuation no-reply retry failed: %s", a.Name(), redactTelegramErrorText(retryErr)))
+				pkgLog().Warn(fmt.Sprintf("[%s] Overflow continuation no-reply retry failed: %s", a.Name(), redactTelegramErrorText(retryErr)))
 				return nil
 			}
 			return retryMsg
@@ -747,7 +746,7 @@ func (a *TelegramAdapter) sendOverflowContinuation(ctx context.Context, chatID, 
 		if useMarkdown {
 			continue
 		}
-		slog.Warn(fmt.Sprintf("[%s] Overflow continuation send failed: %s", a.Name(), redactTelegramErrorText(err)))
+		pkgLog().Warn(fmt.Sprintf("[%s] Overflow continuation send failed: %s", a.Name(), redactTelegramErrorText(err)))
 		return nil
 	}
 	return nil
@@ -770,7 +769,7 @@ func (a *TelegramAdapter) editOverflowSplit(ctx context.Context, chatID, message
 		err = a.editText(ctx, chatID, messageID, first, "")
 	}
 	if err != nil && !strings.Contains(errLower(err), "not modified") {
-		slog.Error(fmt.Sprintf("[%s] Overflow split: first-chunk edit failed: %s", a.Name(), redactTelegramErrorText(err)))
+		pkgLog().Error(fmt.Sprintf("[%s] Overflow split: first-chunk edit failed: %s", a.Name(), redactTelegramErrorText(err)))
 		return gateway.SendResult{Success: false, Error: redactTelegramErrorText(err)}, nil
 	}
 	var continuationIDs []string
@@ -792,7 +791,7 @@ func (a *TelegramAdapter) editOverflowSplit(ctx context.Context, chatID, message
 		}
 		sent := a.sendOverflowContinuation(ctx, chatID, chunk, replyToID, thread, threadID, metadata, finalize)
 		if sent == nil {
-			slog.Warn(fmt.Sprintf("[%s] Overflow split: stopped at %d/%d chunks delivered", a.Name(), 1+len(continuationIDs), len(chunks)))
+			pkgLog().Warn(fmt.Sprintf("[%s] Overflow split: stopped at %d/%d chunks delivered", a.Name(), 1+len(continuationIDs), len(chunks)))
 			var prefix strings.Builder
 			for _, d := range deliveredChunks {
 				prefix.WriteString(chunkSuffixStripRE.ReplaceAllString(d, ""))
@@ -820,7 +819,7 @@ func (a *TelegramAdapter) editOverflowSplit(ctx context.Context, chatID, message
 	if len(continuationIDs) > 0 {
 		lastID = continuationIDs[len(continuationIDs)-1]
 	}
-	slog.Debug(fmt.Sprintf("[%s] Overflow split delivered %d chunks; last_id=%s", a.Name(), 1+len(continuationIDs), lastID))
+	pkgLog().Debug(fmt.Sprintf("[%s] Overflow split delivered %d chunks; last_id=%s", a.Name(), 1+len(continuationIDs), lastID))
 	anyIDs := make([]any, 0, len(continuationIDs))
 	for _, id := range continuationIDs {
 		anyIDs = append(anyIDs, id)
@@ -840,7 +839,7 @@ func (a *TelegramAdapter) DeleteMessage(ctx context.Context, chatID, messageID s
 		err = ptbError(err)
 	}
 	if err != nil {
-		slog.Debug(fmt.Sprintf("[%s] Failed to delete Telegram message %s: %s", a.Name(), messageID, redactTelegramErrorText(err)))
+		pkgLog().Debug(fmt.Sprintf("[%s] Failed to delete Telegram message %s: %s", a.Name(), messageID, redactTelegramErrorText(err)))
 		return false, nil
 	}
 	return true, nil
@@ -907,11 +906,11 @@ func (a *TelegramAdapter) SendDraft(ctx context.Context, chatID string, draftID 
 			return gateway.SendResult{Success: false, Error: "draft_rejected"}, nil
 		}
 		if useMarkdown && isBadRequestError(sendErr) {
-			slog.Debug(fmt.Sprintf("[%s] sendMessageDraft MarkdownV2 rejected, retrying as plain text (chat=%s draft_id=%d): %s", a.Name(), chatID,
+			pkgLog().Debug(fmt.Sprintf("[%s] sendMessageDraft MarkdownV2 rejected, retrying as plain text (chat=%s draft_id=%d): %s", a.Name(), chatID,
 				draftID, redactTelegramErrorText(sendErr)))
 			continue
 		}
-		slog.Debug(fmt.Sprintf("[%s] sendMessageDraft failed (chat=%s draft_id=%d): %s", a.Name(), chatID, draftID, pyrepr.ExceptionMessage(sendErr)))
+		pkgLog().Debug(fmt.Sprintf("[%s] sendMessageDraft failed (chat=%s draft_id=%d): %s", a.Name(), chatID, draftID, pyrepr.ExceptionMessage(sendErr)))
 		return gateway.SendResult{Success: false, Error: redactTelegramErrorText(sendErr)}, nil
 	}
 	return gateway.SendResult{Success: false, Error: "draft_rejected"}, nil
@@ -969,7 +968,7 @@ func (a *TelegramAdapter) StreamingOverflowLimit() (int, bool) {
 // Failed result of a transient rich failure the caller must not resend through the legacy path
 func (a *TelegramAdapter) richTransientResult(err error, what string, retryAfter *float64) gateway.SendResult {
 	safe := redactTelegramErrorText(err)
-	slog.Warn(fmt.Sprintf("[%s] %s transient failure (no legacy resend): %s", a.Name(), what, safe))
+	pkgLog().Warn(fmt.Sprintf("[%s] %s transient failure (no legacy resend): %s", a.Name(), what, safe))
 	return gateway.SendResult{Success: false, Error: safe, Retryable: looksLikeConnectTimeout(err) || !isTimedOut(err), RetryAfter: retryAfter}
 }
 
@@ -1062,7 +1061,7 @@ func (a *TelegramAdapter) richRejected(err error, what, fallback string) bool {
 	if isRichCapabilityError(err) {
 		a.richSendDisabled.Store(true)
 	}
-	slog.Debug(fmt.Sprintf("[%s] %s rejected (%s) — falling back to %s", a.Name(), what, redactTelegramErrorText(err), fallback))
+	pkgLog().Debug(fmt.Sprintf("[%s] %s rejected (%s) — falling back to %s", a.Name(), what, redactTelegramErrorText(err), fallback))
 	return true
 }
 
@@ -1121,9 +1120,9 @@ func (a *TelegramAdapter) trySendRichDraft(ctx context.Context, chatID string, d
 	}
 	if isRichCapabilityError(err) {
 		a.richDraftDisabled.Store(true)
-		slog.Debug(fmt.Sprintf("[%s] sendRichMessageDraft unsupported (%s) — using legacy drafts", a.Name(), redactTelegramErrorText(err)))
+		pkgLog().Debug(fmt.Sprintf("[%s] sendRichMessageDraft unsupported (%s) — using legacy drafts", a.Name(), redactTelegramErrorText(err)))
 	} else {
-		slog.Debug(fmt.Sprintf("[%s] sendRichMessageDraft transient failure (%s) — legacy draft this frame", a.Name(), redactTelegramErrorText(err)))
+		pkgLog().Debug(fmt.Sprintf("[%s] sendRichMessageDraft transient failure (%s) — legacy draft this frame", a.Name(), redactTelegramErrorText(err)))
 	}
 	return false
 }
@@ -1164,7 +1163,7 @@ func (a *TelegramAdapter) SendTyping(ctx context.Context, chatID string, metadat
 	} else if isTransientTypingError(err) {
 		a.pacer.recordTypingCooldown(chatID, err)
 	}
-	slog.Debug(fmt.Sprintf("[%s] Failed to send Telegram typing indicator: %s", a.Name(), redactTelegramErrorText(err)))
+	pkgLog().Debug(fmt.Sprintf("[%s] Failed to send Telegram typing indicator: %s", a.Name(), redactTelegramErrorText(err)))
 	return nil
 }
 
@@ -1177,7 +1176,7 @@ func (a *TelegramAdapter) GetChatInfo(ctx context.Context, chatID string) (map[s
 	chat, err := b.GetChat(ctx, &bot.GetChatParams{ChatID: NormalizeTelegramChatID(chatID)})
 	if err != nil {
 		err = ptbError(err)
-		slog.Error(fmt.Sprintf("[%s] Failed to get Telegram chat info for %s: %s", a.Name(), chatID, redactTelegramErrorText(err)))
+		pkgLog().Error(fmt.Sprintf("[%s] Failed to get Telegram chat info for %s: %s", a.Name(), chatID, redactTelegramErrorText(err)))
 		return map[string]any{"name": chatID, "type": "dm", "error": pyrepr.ExceptionMessage(err)}, nil
 	}
 	chatType := "dm"
@@ -1237,9 +1236,9 @@ func (a *TelegramAdapter) setReaction(ctx context.Context, chatID, messageID, em
 	}
 	if err != nil {
 		if emoji == "" {
-			slog.Debug(fmt.Sprintf("[%s] clear reactions failed: %s", a.Name(), redactTelegramErrorText(err)))
+			pkgLog().Debug(fmt.Sprintf("[%s] clear reactions failed: %s", a.Name(), redactTelegramErrorText(err)))
 		} else {
-			slog.Debug(fmt.Sprintf("[%s] set_message_reaction failed (%s): %s", a.Name(), emoji, redactTelegramErrorText(err)))
+			pkgLog().Debug(fmt.Sprintf("[%s] set_message_reaction failed (%s): %s", a.Name(), emoji, redactTelegramErrorText(err)))
 		}
 		return false
 	}

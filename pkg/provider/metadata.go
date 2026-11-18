@@ -81,7 +81,7 @@ func warnContextLengthFallback(model, baseURL string) {
 	if shown == "" {
 		shown = "default"
 	}
-	metadataLog.Warn(fmt.Sprintf("Could not determine context length for model %q (base_url=%s) — falling back to %s tokens. Set model.context_length in config.yaml to override.", model, shown, formatWithCommas(DefaultFallbackContext)))
+	pkgLog().Warn(fmt.Sprintf("Could not determine context length for model %q (base_url=%s) — falling back to %s tokens. Set model.context_length in config.yaml to override.", model, shown, formatWithCommas(DefaultFallbackContext)))
 }
 
 // Integer with comma thousands separators
@@ -250,7 +250,7 @@ var metadataURLToProvider = []hostProvider{
 	{"api.stepfun.ai", "stepfun"}, {"api.stepfun.com", "stepfun"}, {"api.arcee.ai", "arcee"}, {"api.minimax", "minimax"},
 	{"dashscope.aliyuncs.com", "alibaba"}, {"dashscope-intl.aliyuncs.com", "alibaba"}, {"portal.qwen.ai", "qwen-oauth"},
 	{"openrouter.ai", "openrouter"}, {"generativelanguage.googleapis.com", "gemini"},
-	{"inference-api.nousresearch.com", "nous"}, {"api.deepseek.com", "deepseek"},
+	{"api.deepseek.com", "deepseek"},
 	{"api.fireworks.ai", "fireworks"}, {"opencode.ai", "opencode-go"}, {"api.x.ai", "xai"},
 	{"integrate.api.nvidia.com", "nvidia"}, {"api.xiaomimimo.com", "xiaomi"}, {"xiaomimimo.com", "xiaomi"},
 	{"api.gmi-serving.com", "gmi"}, {"api.novita.ai", "novita"},
@@ -325,7 +325,7 @@ func stripOpenRouterRoutingVariant(model, baseURL, providerName string) string {
 	if base == "" {
 		return model
 	}
-	metadataLog.Debug("resolving context length for OpenRouter routing variant via base id", "model", model, "base", base)
+	pkgLog().Debug("resolving context length for OpenRouter routing variant via base id", "model", model, "base", base)
 	return base
 }
 
@@ -532,9 +532,9 @@ func reconcileLocalCachedContextLength(ctx context.Context, model, baseURL strin
 		return cached
 	}
 	if live < MinimumContextLength {
-		metadataLog.Info(fmt.Sprintf("Live local probe for %s@%s reports %s (< minimum %s); invalidating stale cache — agent init should reject", model, baseURL, formatWithCommas(live), formatWithCommas(MinimumContextLength)))
+		pkgLog().Info(fmt.Sprintf("Live local probe for %s@%s reports %s (< minimum %s); invalidating stale cache — agent init should reject", model, baseURL, formatWithCommas(live), formatWithCommas(MinimumContextLength)))
 	} else {
-		metadataLog.Info(fmt.Sprintf("Reconciling stale local cache entry %s@%s: %s -> %s (live probe)", model, baseURL, formatWithCommas(cached), formatWithCommas(live)))
+		pkgLog().Info(fmt.Sprintf("Reconciling stale local cache entry %s@%s: %s -> %s (live probe)", model, baseURL, formatWithCommas(cached), formatWithCommas(live)))
 	}
 	invalidateCachedContextLength(ctx, model, baseURL)
 	if live >= MinimumContextLength {

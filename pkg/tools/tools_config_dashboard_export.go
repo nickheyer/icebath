@@ -5,11 +5,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 )
 
-// Whether the credentials of a toolset are configured under an entitlement state already read
-func (s *ToolsSetup) ToolsetHasKeys(tsKey string, cfg config.Tree, features *NousToolFeatures) (bool, error) {
-	return s.toolsetHasKeys(tsKey, cfg, false, features)
-}
-
 // Toolsets a platform resolves to without the implicit MCP servers
 func (s *ToolsSetup) CurrentPlatformTools(cfg config.Tree, platform string) map[string]bool {
 	return s.currentPlatformTools(cfg, platform)

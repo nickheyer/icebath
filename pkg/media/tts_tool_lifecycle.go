@@ -74,7 +74,7 @@ func signalUserTTSProvider(ctx context.Context, env *tools.Env, name string, tts
 			bound := context.WithoutCancel(ctx)
 			go func() {
 				if _, err := lifecycleRunCommandProvider(bound, env, command, getCommandTTSTimeout(cfg), commandEnvPassthrough(cfg)); err != nil {
-					ttsLog().Debug(fmt.Sprintf("[TTS] %s_command for %s failed: %s", hook, name, pyrepr.ExceptionMessage(err)))
+					pkgLog().Debug(fmt.Sprintf("[TTS] %s_command for %s failed: %s", hook, name, pyrepr.ExceptionMessage(err)))
 				}
 			}()
 			return hook, nil
@@ -97,7 +97,7 @@ func signalUserTTSProvider(ctx context.Context, env *tools.Env, name string, tts
 		return hook, nil
 	}()
 	if err != nil {
-		ttsLog().Debug(fmt.Sprintf("[TTS] %s hook for %s failed: %s", hook, name, pyrepr.ExceptionMessage(err)))
+		pkgLog().Debug(fmt.Sprintf("[TTS] %s hook for %s failed: %s", hook, name, pyrepr.ExceptionMessage(err)))
 		return "error"
 	}
 	return out
@@ -130,7 +130,7 @@ func WarmTTSProvider(ctx context.Context, env *tools.Env, ttsConfig map[string]a
 		}
 		started := time.Now()
 		if err := warmer(ctx, env, ttsConfig); err != nil {
-			ttsLog().Warn(fmt.Sprintf("[TTS] warm-up for %s failed: %s", name, pyrepr.ExceptionMessage(err)))
+			pkgLog().Warn(fmt.Sprintf("[TTS] warm-up for %s failed: %s", name, pyrepr.ExceptionMessage(err)))
 			result["action"], result["error"] = "error", pyrepr.ExceptionMessage(err)
 			return result
 		}
@@ -144,7 +144,7 @@ func WarmTTSProvider(ctx context.Context, env *tools.Env, ttsConfig map[string]a
 			result["action"] = "loaded"
 		}
 		result["elapsed_ms"] = int(time.Since(started).Milliseconds())
-		ttsLog().Info(fmt.Sprintf("[TTS] warm-up %s: %s in %dms", name, result["action"], result["elapsed_ms"]))
+		pkgLog().Info(fmt.Sprintf("[TTS] warm-up %s: %s in %dms", name, result["action"], result["elapsed_ms"]))
 		return result
 	}
 	if signalled := signalUserTTSProvider(ctx, env, name, ttsConfig, "warm"); signalled != "" {
@@ -180,7 +180,7 @@ func ReleaseTTSProvider(ctx context.Context, env *tools.Env, providerName string
 		}
 	}
 	if released > 0 {
-		ttsLog().Info(fmt.Sprintf("[TTS] released %d resident local model(s)", released))
+		pkgLog().Info(fmt.Sprintf("[TTS] released %d resident local model(s)", released))
 	}
 	return map[string]any{"released": released}
 }

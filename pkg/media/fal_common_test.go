@@ -87,113 +87,6 @@ func (f *falFixture) accepted() falReply {
 	}}
 }
 
-func strPtr(s string) *string     { return &s }
-func floatPtr(f float64) *float64 { return &f }
-
-func TestFalSDKSubmitPreservesWireContract(t *testing.T) {
-	for _, path := range []string{"sub/path", "/sub/path"} {
-		f := newFalFixture(t)
-		f.replies = append(f.replies, f.accepted())
-		client, err := newManagedFalSyncClient(f.mod, "test-token", "  "+f.srv.URL+"///  ")
-		if err != nil {
-			t.Fatal(err)
-		}
-		client.syncClient.DefaultTimeout = floatPtr(37)
-		headers := map[string]string{"X-Custom": "kept", "X-Idempotency-Key": "one-operation"}
-		handle, err := client.Submit(context.Background(), "app", map[string]any{"prompt": "local fixture"}, falSubmitOptions{
-			Path: path, Hint: strPtr("runner"), WebhookURL: strPtr("https://hook.test/cb?a=1"), Priority: strPtr("low"),
-			StartTimeout: floatPtr(60), Headers: headers})
-		if err != nil {
-			t.Fatal(err)
-		}
-		if len(f.snapshot()) != 1 {
-			t.Fatalf("requests %d", len(f.snapshot()))
-		}
-		r := f.snapshot()[0]
-		if r.Method != "POST" || r.URL.String() != "/app/sub/path?fal_webhook=https%3A%2F%2Fhook.test%2Fcb%3Fa%3D1" {
-			t.Fatalf("got %s %s", r.Method, r.URL)
-		}
-		if strings.TrimSpace(f.body(0)) != `{"prompt":"local fixture"}` {
-			t.Fatalf("body %s", f.body(0))
-		}
-		for k, v := range map[string]string{"authorization": "Key test-token", "x-custom": "kept", "x-idempotency-key": "one-operation",
-			"x-fal-runner-hint": "runner", "x-fal-queue-priority": "low", "x-fal-request-timeout": "60.0"} {
-			if r.Header.Get(k) != v {
-				t.Fatalf("header %s = %q", k, r.Header.Get(k))
-			}
-		}
-		if f.deadline != 37*time.Second {
-			t.Fatalf("timeout %v", f.deadline)
-		}
-		if len(headers) != 2 {
-			t.Fatalf("caller headers mutated %v", headers)
-		}
-		if handle.RequestID != "r1" || handle.ResponseURL != f.srv.URL+"/result" || handle.StatusURL != f.srv.URL+"/status" ||
-			handle.CancelURL != f.srv.URL+"/cancel" || handle.Client != client.httpClient {
-			t.Fatalf("handle %+v", handle)
-		}
-	}
-}
-
-func TestFalKeyedErrorsSurviveWithoutDuplicateSubmission(t *testing.T) {
-	body := map[string]any{"error": map[string]any{"code": "BILLING_ERROR", "message": "meter disabled",
-		"details": map[string]any{"upstreamPayload": map[string]any{"code": "meter_missing", "error": "not configured"}}}}
-	for _, status := range []int{402, 409, 429, 503, 0} {
-		for _, keyed := range []bool{true, false} {
-			f := newFalFixture(t)
-			if status == 0 {
-				f.replies = append(f.replies, "transport", f.accepted())
-			} else {
-				f.replies = append(f.replies, falReply{status: status, body: body}, f.accepted())
-			}
-			client, err := newManagedFalSyncClient(f.mod, "token", f.srv.URL)
-			if err != nil {
-				t.Fatal(err)
-			}
-			var headers map[string]string
-			if keyed {
-				headers = map[string]string{"x-IDEMPOTENCY-key": "operation"}
-			}
-			handle, err := client.Submit(context.Background(), "app", map[string]any{}, falSubmitOptions{Headers: headers})
-			if keyed || status == 402 || status == 503 {
-				if err == nil || len(f.snapshot()) != 1 {
-					t.Fatalf("status %d keyed %v: err %v requests %d", status, keyed, err, len(f.snapshot()))
-				}
-				if status != 0 {
-					var fe *falClientHTTPError
-					if !errors.As(err, &fe) {
-						t.Fatalf("want client HTTP error, got %T", err)
-					}
-					if s, _ := extractHTTPStatus(err); s != status {
-						t.Fatalf("status %d", s)
-					}
-					if !strings.Contains(managedFalBillingError(err, "model"), "meter_missing") {
-						t.Fatalf("billing %q", managedFalBillingError(err, "model"))
-					}
-				}
-			} else if err != nil || handle.RequestID != "r1" || len(f.snapshot()) != 2 {
-				t.Fatalf("status %d unkeyed retry: %v %d", status, err, len(f.snapshot()))
-			}
-			if f.snapshot()[0].URL.Path != "/app" || f.snapshot()[0].Header.Get("x-custom") != "" {
-				t.Fatalf("first request %s", f.snapshot()[0].URL)
-			}
-		}
-	}
-}
-
-func TestFalQueueOriginNormalization(t *testing.T) {
-	for in, want := range map[string]string{"https://q.test": "https://q.test/", "https://q.test///": "https://q.test/", "  https://q.test  ": "https://q.test/"} {
-		if got, err := normalizeFalQueueURLFormat(in); err != nil || got != want {
-			t.Fatalf("%q -> %q %v", in, got, err)
-		}
-	}
-	for _, in := range []string{"", "   "} {
-		if _, err := normalizeFalQueueURLFormat(in); err == nil || !strings.Contains(err.Error(), "origin is required") {
-			t.Fatalf("%q accepted", in)
-		}
-	}
-}
-
 // Error shape with independently present response and exception statuses
 type statusShape struct {
 	resp, exc     int
@@ -226,98 +119,14 @@ func TestFalExceptionStatusShapes(t *testing.T) {
 	}
 }
 
-func TestFalMissingSDKSurfaceIsActionable(t *testing.T) {
-	cases := map[string]func(m *falClientModule){
-		"fal_client.SyncClient": func(m *falClientModule) { m.NewSyncClient = nil },
-		"fal_client.client":     func(m *falClientModule) { m.Client = nil },
-		"SyncClient._client": func(m *falClientModule) {
-			base := m.NewSyncClient
-			m.NewSyncClient = func(k string) *falSyncClient { c := base(k); c.HTTP = nil; return c }
-		},
-		"request helpers":   func(m *falClientModule) { m.Client.MaybeRetryRequest = nil },
-		"request helpers ":  func(m *falClientModule) { m.Client.RaiseForStatus = nil },
-		"SyncRequestHandle": func(m *falClientModule) { m.Client.SyncRequestHandle = nil },
-	}
-	for msg, mutate := range cases {
-		m := newFalClientModule()
-		mutate(m)
-		if _, err := newManagedFalSyncClient(m, "token", "https://queue.test"); err == nil || !strings.Contains(err.Error(), strings.TrimSpace(msg)) {
-			t.Fatalf("%s: %v", msg, err)
-		}
-	}
-}
-
-func TestFalOptionalSDKSurfaceRefusedBeforeHTTP(t *testing.T) {
-	for helper, opts := range map[string]falSubmitOptions{
-		"add_priority_header": {Priority: strPtr("low")},
-		"add_timeout_header":  {StartTimeout: floatPtr(60)},
-	} {
-		f := newFalFixture(t)
-		if helper == "add_priority_header" {
-			f.mod.Client.AddPriorityHeader = nil
-		} else {
-			f.mod.Client.AddTimeoutHeader = nil
-		}
-		client, _ := newManagedFalSyncClient(f.mod, "token", f.srv.URL)
-		if _, err := client.Submit(context.Background(), "app", map[string]any{}, opts); err == nil || !strings.Contains(err.Error(), helper) {
-			t.Fatalf("%s: %v", helper, err)
-		}
-		if len(f.snapshot()) != 0 {
-			t.Fatal("request sent")
-		}
-	}
-}
-
-func TestFalOlderSDKTimeoutDefaultAndOptionalHint(t *testing.T) {
-	for _, c := range []struct {
-		timeout *float64
-		want    time.Duration
-	}{{nil, 120 * time.Second}, {floatPtr(300), 300 * time.Second}} {
-		f := newFalFixture(t)
-		f.mod.Client.AddHintHeader = nil
-		client, _ := newManagedFalSyncClient(f.mod, "token", f.srv.URL)
-		client.syncClient.DefaultTimeout = c.timeout
-		f.replies = append(f.replies, f.accepted())
-		h, err := client.Submit(context.Background(), "app", map[string]any{}, falSubmitOptions{Hint: strPtr("ignored-on-old-sdk")})
-		if err != nil || h.RequestID != "r1" {
-			t.Fatal(err)
-		}
-		if f.deadline != c.want || f.snapshot()[0].Header.Get("x-fal-runner-hint") != "" {
-			t.Fatalf("timeout %v hint %q", f.deadline, f.snapshot()[0].Header.Get("x-fal-runner-hint"))
-		}
-	}
-}
-
-func TestFalSubmitWithIdempotencyKeyIsNotRetried(t *testing.T) {
-	f := newFalFixture(t)
-	retried := 0
-	inner := f.mod.Client.MaybeRetryRequest
-	f.mod.Client.MaybeRetryRequest = func(ctx context.Context, c *http.Client, m, u string, r falHTTPRequest) (*falResponse, error) {
-		retried++
-		return inner(ctx, c, m, u, r)
-	}
-	f.replies = append(f.replies, f.accepted(), f.accepted())
-	client, _ := newManagedFalSyncClient(f.mod, "token", f.srv.URL)
-	if _, err := client.Submit(context.Background(), "app", map[string]any{}, falSubmitOptions{Headers: map[string]string{"X-Idempotency-Key": "k"}}); err != nil {
-		t.Fatal(err)
-	}
-	if retried != 0 {
-		t.Fatal("keyed submit went through the retry helper")
-	}
-	if _, err := client.Submit(context.Background(), "app", map[string]any{}, falSubmitOptions{}); err != nil || retried != 1 {
-		t.Fatalf("unkeyed submit skipped the retry helper %v", err)
-	}
-}
-
-func TestFalWaitPollsQueueStatusAtGatewayCadence(t *testing.T) {
+func TestFalWaitPollsQueueStatusAtQueueCadence(t *testing.T) {
 	f := newFalFixture(t)
 	f.replies = append(f.replies, f.accepted(), falReply{status: 200, body: map[string]any{"status": "IN_QUEUE", "queue_position": 0}},
 		falReply{status: 200, body: map[string]any{"status": "IN_PROGRESS", "logs": nil}},
 		falReply{status: 200, body: map[string]any{"status": "COMPLETED", "logs": nil}},
 		falReply{status: 200, body: map[string]any{"status": "COMPLETED", "logs": nil}},
 		falReply{status: 200, body: map[string]any{"images": []any{"done"}}})
-	client, _ := newManagedFalSyncClient(f.mod, "token", f.srv.URL)
-	h, err := client.Submit(context.Background(), "app", map[string]any{}, falSubmitOptions{})
+	h, err := falSubmitRequest(context.Background(), f.mod.Client, f.mod.NewSyncClient("token"), f.srv.URL+"/app", map[string]any{}, nil)
 	if err != nil {
 		t.Fatal(err)
 	}

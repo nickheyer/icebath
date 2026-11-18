@@ -3,9 +3,9 @@ package googlemeet
 import (
 	"context"
 	"fmt"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"log/slog"
 	"strings"
+
+	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 
 	"github.com/nickheyer/icebath/pkg/internal/pyplatform"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
@@ -40,12 +40,12 @@ func (Plugin) Manifest() plugins.Manifest {
 		Name:          "google_meet",
 		Version:       "0.2.0",
 		Description:   pluginDescription,
-		Author:        "NousResearch",
+		Author:        "Icebath",
 		Kind:          "standalone",
 		ProvidesTools: []string{"meet_join", "meet_leave", "meet_status", "meet_transcript", "meet_say"},
 		ProvidesHooks: []string{"on_session_end"},
 		Raw: map[string]any{"name": "google_meet", "version": "0.2.0", "description": pluginDescription,
-			"author": "NousResearch", "kind": "standalone", "platforms": []any{"linux", "macos"},
+			"author": "Icebath", "kind": "standalone", "platforms": []any{"linux", "macos"},
 			"provides_tools": []any{"meet_join", "meet_leave", "meet_status", "meet_transcript", "meet_say"},
 			"provides_hooks": []any{"on_session_end"}},
 	}
@@ -55,7 +55,7 @@ func (Plugin) Manifest() plugins.Manifest {
 func (Plugin) Register(ctx *plugins.Context) error {
 	system := strings.ToLower(pyplatform.System())
 	if system != "linux" && system != "darwin" {
-		slog.Info(fmt.Sprintf("google_meet plugin: platform=%s not supported (linux/macos only)", system))
+		pkgLog().Info(fmt.Sprintf("google_meet plugin: platform=%s not supported (linux/macos only)", system))
 		return nil
 	}
 	for _, t := range meetTools {
@@ -81,7 +81,7 @@ func onSessionEnd(ctx context.Context, _ map[string]any) (any, error) {
 		_, err = sessionEndStop(ctx, "session ended")
 	}
 	if err != nil {
-		slog.Debug(fmt.Sprintf("google_meet on_session_end cleanup failed: %v", err))
+		pkgLog().Debug(fmt.Sprintf("google_meet on_session_end cleanup failed: %v", err))
 	}
 	return nil, nil
 }

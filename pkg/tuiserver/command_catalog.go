@@ -235,20 +235,20 @@ func CommandCatalog(ctx context.Context, scope func(context.Context) (context.Co
 		}
 	}
 	if err := catalogQuickCommands(scoped, cat); err != nil {
-		discoveryLogger().Debug("quick_commands discovery failed", "error", err)
+		pkgLog().Debug("quick_commands discovery failed", "error", err)
 		warning = fmt.Sprintf("quick_commands discovery unavailable: %s", err)
 	}
 	var pluginSubcommands map[string][]string
 	if failure := catchPanic(func() { pluginSubcommands = catalogPluginCommands(scoped, cat) }); failure != nil {
 		err := fmt.Errorf("%v", failure)
-		discoveryLogger().Debug("plugin command discovery failed", "error", err)
+		pkgLog().Debug("plugin command discovery failed", "error", err)
 		pluginError = err.Error()
 		if warning == "" {
 			warning = fmt.Sprintf("plugin command discovery unavailable: %s", err)
 		}
 	}
 	if note, err := catalogSkills(scoped, cat, skillsOut); err != nil {
-		discoveryLogger().Debug("skill discovery failed", "error", err)
+		pkgLog().Debug("skill discovery failed", "error", err)
 		warning = fmt.Sprintf("skill discovery unavailable: %s", err)
 	} else if warning == "" {
 		warning = note

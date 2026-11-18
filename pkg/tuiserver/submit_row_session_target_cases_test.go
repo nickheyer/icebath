@@ -8,7 +8,7 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/agent"
 	"github.com/nickheyer/icebath/pkg/state"
-	"github.com/nickheyer/icebath/pkg/tuigateway"
+	"github.com/nickheyer/icebath/pkg/tuihost"
 )
 
 // Production rotation onto a continuation, the parent reopened the way a resume of the old id does
@@ -57,7 +57,7 @@ func TestSubmitRowSessionTarget(t *testing.T) {
 		}
 		t.Cleanup(func() { _ = db.Close() })
 		sid, key := submitRowSession(t, db)
-		session := tuigateway.SessionRecord(sid)
+		session := tuihost.SessionRecord(sid)
 		if session == nil {
 			t.Fatalf("no live session %s", sid)
 		}

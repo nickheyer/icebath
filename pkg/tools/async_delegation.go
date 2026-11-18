@@ -103,7 +103,7 @@ func asyncLog() interface {
 	Error(string, ...any)
 	Debug(string, ...any)
 } {
-	return toolsLogger(nil).With("logger", "tools.async_delegation")
+	return envLog(nil)
 }
 
 func asyncProbes() (func(int) bool, func(int) (int64, bool)) {
@@ -1479,7 +1479,7 @@ func asyncRecordList() []*asyncRecord {
 	return out
 }
 
-// SwapAsyncRecords installs plain delegation records in id order the way hermes cases patch the records table, returning the restore
+// Installs plain delegation records in id order the way tests patch the records table, returning the restore
 func SwapAsyncRecords(ids []string, records map[string]map[string]any) (restore func()) {
 	asyncRecordsMu.Lock()
 	defer asyncRecordsMu.Unlock()

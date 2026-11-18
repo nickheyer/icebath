@@ -8,10 +8,10 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/memory"
-	"github.com/nickheyer/icebath/pkg/tuigateway"
+	"github.com/nickheyer/icebath/pkg/tuihost"
 )
 
-// Bare live client, the plain object the hermes cases attach as a reconnecting peer
+// Bare live client, the plain object the tests attach as a reconnecting peer
 type orphanRacePeer struct{ id int }
 
 func (*orphanRacePeer) Write(*pyjson.Object) bool { return true }
@@ -23,12 +23,12 @@ type orphanInterruptAgent struct{ interrupt func() }
 func (a *orphanInterruptAgent) HardInterrupt(string) { a.interrupt() }
 
 // Registers one session alone with a 20 s orphan grace and the given activity stale window
-func orphanRaceSession(t *testing.T, sid string, stale float64, fields map[string]any) *tuigateway.Session {
+func orphanRaceSession(t *testing.T, sid string, stale float64, fields map[string]any) *tuihost.Session {
 	t.Helper()
 	t.Setenv("ICEBATH_HOME", t.TempDir())
-	fields["transport"] = tuigateway.DetachedWSTransport()
-	session := tuigateway.NewSession(fields)
-	swapSessions(t, map[string]*tuigateway.Session{sid: session})
+	fields["transport"] = tuihost.DetachedWSTransport()
+	session := tuihost.NewSession(fields)
+	swapSessions(t, map[string]*tuihost.Session{sid: session})
 	prevGrace, prevStale := wsOrphanReapGraceS, wsOrphanActivityStaleS
 	wsOrphanReapGraceS = func() float64 { return 20 }
 	orphanRaceStale(t, stale)
@@ -75,7 +75,7 @@ func TestObsoleteOrphanCannotReplaceNewDetachment(t *testing.T) {
 			session := orphanRaceSession(t, sid, 600, map[string]any{"running": true, "agent": fake})
 			redetach := func() *wsReapTimer {
 				cancelWSOrphanReap(sid)
-				session.Set("transport", tuigateway.DetachedWSTransport())
+				session.Set("transport", tuihost.DetachedWSTransport())
 				scheduleWSOrphanReap(ctx, sid, nil, nil)
 				return pendingReap(sid)
 			}
@@ -88,7 +88,7 @@ func TestObsoleteOrphanCannotReplaceNewDetachment(t *testing.T) {
 					defer close(reconnected)
 					for {
 						sessionsLock.Lock()
-						parked := session.Get("transport") == tuigateway.DetachedWSTransport()
+						parked := session.Get("transport") == tuihost.DetachedWSTransport()
 						sessionsLock.Unlock()
 						if parked {
 							break
@@ -118,13 +118,13 @@ func TestObsoleteOrphanCannotReplaceNewDetachment(t *testing.T) {
 				orphanRaceStale(t, 0)
 				var replies []map[string]any
 				fake.interrupt = func() {
-					replies = append(replies, newResumeCtx(ctx, 1, map[string]any{}, sid).claim("unused", tuigateway.NewSession(map[string]any{})))
+					replies = append(replies, newResumeCtx(ctx, 1, map[string]any{}, sid).claim("unused", tuihost.NewSession(map[string]any{})))
 				}
 				fireReap(old, 0, 0)
 				if len(replies) != 1 || rpcCode(replies[0]) != 4009 {
 					t.Fatalf("replies %v", replies)
 				}
-				if session.Get("transport") != tuigateway.DetachedWSTransport() {
+				if session.Get("transport") != tuihost.DetachedWSTransport() {
 					t.Fatalf("transport %v", session.Get("transport"))
 				}
 				if !truthy(session.Get("_client_gone_interrupt_requested")) {
@@ -214,7 +214,7 @@ func TestWsOrphanReapRearmsAfterSystemSleep(t *testing.T) {
 		t.Fatalf("first timer %+v", first)
 	}
 	fireReap(first, 2, 42)
-	if tuigateway.SessionRecord(sid) != session {
+	if tuihost.SessionRecord(sid) != session {
 		t.Fatal("reaped a session the host slept through")
 	}
 	second := pendingReap(sid)
@@ -222,7 +222,7 @@ func TestWsOrphanReapRearmsAfterSystemSleep(t *testing.T) {
 		t.Fatalf("re-armed timer %+v", second)
 	}
 	fireReap(second, 18, 18)
-	if tuigateway.SessionRecord(sid) != nil {
+	if tuihost.SessionRecord(sid) != nil {
 		t.Fatal("awake remainder did not reap")
 	}
 }
@@ -241,7 +241,7 @@ func TestWsOrphanReapRearmSparesPostWakeReconnect(t *testing.T) {
 	cancelWSOrphanReap(sid)
 	session.Set("transport", &orphanRacePeer{id: 3})
 	fireReap(second, 18, 18)
-	if tuigateway.SessionRecord(sid) != session {
+	if tuihost.SessionRecord(sid) != session {
 		t.Fatal("reaped a session that reconnected")
 	}
 }

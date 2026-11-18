@@ -12,7 +12,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
 
-// The hermes _FakeProvider of the image and video picker tests, a titled schema with one key and one model
+// The fake provider of the image and video picker tests, a titled schema with one key and one model
 func pickerFake(name, modelSuffix string, available bool, schema map[string]any) *fakePickerProvider {
 	if schema == nil {
 		schema = map[string]any{"name": pystr.Title(name), "badge": "test", "tag": name + " test tag",
@@ -23,7 +23,7 @@ func pickerFake(name, modelSuffix string, available bool, schema map[string]any)
 		models: []map[string]any{{"id": id, "display": name + " v1", "speed": "~5s", "strengths": "test", "price": "$"}}, def: id}
 }
 
-// The hermes _FakeTTSProvider, a catalog provider whose default schema names its title cased display name
+// The fake TTS provider, a catalog provider whose default schema names its title cased display name
 func ttsFake(name string) *fakePickerProvider {
 	display := pystr.Title(name)
 	return &fakePickerProvider{name: name, display: display, available: true,
@@ -60,7 +60,7 @@ func rowNames(rows []*pyjson.Object) []string {
 func TestPluginPickerInjectionVisibleProvidersIncludesPluginsForImageGen(t *testing.T) {
 	s, _ := newTestToolsSetup(t, "")
 	swapHook(t, &ToolsConfigHooks.ImageGenRegistry, fakePickerRegistry(nil, pickerFake("someimg", "-model-v1", true, nil)))
-	rows, err := s.VisibleProviders(categoryOf("image_gen"), config.Tree{}, false, nil)
+	rows, err := s.VisibleProviders(categoryOf("image_gen"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -86,7 +86,7 @@ func TestConfigPromptImageGenSatisfiedByPluginProvider(t *testing.T) {
 	s, _ := newTestToolsSetup(t, "")
 	unsetEnv(t, "FAL_KEY")
 	swapHook(t, &ToolsConfigHooks.ImageGenRegistry, fakePickerRegistry(nil, pickerFake("avail-img", "-model-v1", true, nil)))
-	if needs, err := s.toolsetNeedsConfigurationPrompt("image_gen", config.Tree{}, false); err != nil || needs {
+	if needs, err := s.toolsetNeedsConfigurationPrompt("image_gen", config.Tree{}); err != nil || needs {
 		t.Fatalf("needs %v %v", needs, err)
 	}
 }
@@ -98,7 +98,7 @@ func TestConfigWritingPickingPluginProviderWritesProviderAndModel(t *testing.T) 
 	swapHook(t, &toolsPromptChoice, func(*ToolsSetup, string, []string, int) (int, error) { return 0, nil })
 	cfg := config.Tree{}
 	row := caseRow("name", "NoEnv", "env_vars", []any{}, "image_gen_plugin_name", "noenv")
-	if err := s.configureProvider(row, cfg, true, false); err != nil {
+	if err := s.configureProvider(row, cfg, false); err != nil {
 		t.Fatal(err)
 	}
 	imageGen := section(cfg, "image_gen")
@@ -134,7 +134,7 @@ func TestPluginTTSProvidersMinimalSchemaUsesDisplayName(t *testing.T) {
 func TestVisibleProvidersInjectsTTSPluginsTtsCategoryIncludesPluginRows(t *testing.T) {
 	s, _ := newTestToolsSetup(t, "")
 	swapHook(t, &ToolsConfigHooks.TTSRegistry, fakePickerRegistry(ttsBuiltinNames(t), ttsFake("cartesia")))
-	rows, err := s.VisibleProviders(categoryOf("tts"), config.Tree{}, false, nil)
+	rows, err := s.VisibleProviders(categoryOf("tts"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -150,7 +150,7 @@ func TestVisibleProvidersInjectsTTSPluginsTtsCategoryIncludesPluginRows(t *testi
 func TestVisibleProvidersInjectsTTSPluginsOtherCategoriesUnaffectedByTtsPlugins(t *testing.T) {
 	s, _ := newTestToolsSetup(t, "")
 	swapHook(t, &ToolsConfigHooks.TTSRegistry, fakePickerRegistry(ttsBuiltinNames(t), ttsFake("cartesia")))
-	rows, err := s.VisibleProviders(categoryOf("image_gen"), config.Tree{}, false, nil)
+	rows, err := s.VisibleProviders(categoryOf("image_gen"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -168,11 +168,11 @@ func TestReconfigureWritesProviderReconfigureWithEnvVarsAlreadySetWritesProvider
 	t.Setenv("XAI_FAKE_API_KEY", "sk-fake")
 	cfg := config.Tree{}
 	row := caseRow("name", "xAI", "env_vars", []any{caseRow("key", "XAI_FAKE_API_KEY", "prompt", "xAI key")}, "video_gen_plugin_name", "xai_fake")
-	if err := s.reconfigureProvider(row, cfg, true); err != nil {
+	if err := s.reconfigureProvider(row, cfg); err != nil {
 		t.Fatal(err)
 	}
 	videoGen := section(cfg, "video_gen")
-	if _, has := videoGen["use_gateway"]; videoGen["provider"] != "xai_fake" || videoGen["model"] != "xai_fake-video-v1" || has {
+	if videoGen["provider"] != "xai_fake" || videoGen["model"] != "xai_fake-video-v1" {
 		t.Fatalf("video_gen %v", videoGen)
 	}
 }
@@ -192,25 +192,11 @@ func TestPluginVideoProvidersRowPostSetupPropagatedWhenDeclared(t *testing.T) {
 	t.Fatal("xai_video row missing")
 }
 
-func TestPoolOnlyAccountIsOfferedFalModelsOnly(t *testing.T) {
-	s, _ := newTestToolsSetup(t, "")
-	swapHook(t, &ToolsConfigHooks.NousFeatures, nousFeaturesDouble(true, map[string]NousToolFeature{}, accountDouble(true, boolRef(false), true, "fal")))
-	catalog, _ := s.managedImageCatalog(config.Tree{})
-	if len(catalog.ids) == 0 {
-		t.Fatal("empty catalog")
-	}
-	for _, id := range catalog.ids {
-		if backend := catalog.meta[id]["backend"]; backend != "fal" {
-			t.Fatalf("%s backend %v", id, backend)
-		}
-	}
-}
-
 func TestVisionPickerCustomEndpoint(t *testing.T) {
 	s, _ := newTestToolsSetup(t, "https://my.endpoint/v1\nmy-vision-model\n")
 	s.Con.MaskedSecretPrompt = func(string) (string, error) { return "sk-secret", nil }
 	swapHook(t, &toolsPromptChoice, func(*ToolsSetup, string, []string, int) (int, error) { return 2, nil })
-	swapHook(t, &toolsetHasKeysFn, func(*ToolsSetup, string, config.Tree, bool, *NousToolFeatures) (bool, error) { return false, nil })
+	swapHook(t, &toolsetHasKeysFn, func(*ToolsSetup, string, config.Tree) (bool, error) { return false, nil })
 	unsetEnv(t, "OPENAI_API_KEY")
 	if err := s.configureVisionBackend(); err != nil {
 		t.Fatal(err)
@@ -245,7 +231,7 @@ func TestResolveToolsetModelPluginBranches(t *testing.T) {
 		want string
 	}{
 		{"image_gen", caseRow("image_gen_plugin_name", "openai", "imagegen_backend", "fal"), "openai"},
-		{"image_gen", caseRow("image_gen_plugin_name", "", "imagegen_backend", "nous"), "nous"},
+		{"image_gen", caseRow("image_gen_plugin_name", "", "imagegen_backend", "fal"), "fal"},
 		{"image_gen", caseRow("name", "x"), ""},
 		{"video_gen", caseRow("video_gen_plugin_name", "xai", "image_gen_plugin_name", "fal"), "xai"},
 		{"tts", caseRow("image_gen_plugin_name", "fal"), ""},

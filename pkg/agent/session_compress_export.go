@@ -247,7 +247,7 @@ func mapOr(m map[string]any, key string, def any) any {
 func endSessionEngine(engine ContextEngine, sessionID string, messages []map[string]any) {
 	defer func() {
 		if r := recover(); r != nil {
-			compressionLog().Warn(fmt.Sprintf("context engine on_session_end failed: %v", r))
+			pkgLog().Warn(fmt.Sprintf("context engine on_session_end failed: %v", r))
 		}
 	}()
 	engine.OnSessionEnd(sessionID, messages)

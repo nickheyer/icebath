@@ -10,7 +10,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/tools"
-	"github.com/nickheyer/icebath/pkg/tuigateway"
+	"github.com/nickheyer/icebath/pkg/tuihost"
 )
 
 // Authority and canonical session that last ran a turn under a process session key
@@ -73,7 +73,7 @@ func installConnectionUpdateHook() {
 			}
 		}
 		payload.Set("owner", pyjson.ObjectOf("type", "session", "session_id", route.sessionID))
-		live.EventStream.Publish(route.sessionID, tuigateway.ConnectorUIPayload(payload), "connection.update", nil)
+		live.EventStream.Publish(route.sessionID, tuihost.ConnectorUIPayload(payload), "connection.update", nil)
 	}
 	localConnections.mu.Lock()
 	localConnections.hook = hook

@@ -51,7 +51,7 @@ func (r *GatewayRunner) LocalPromptCommand(ctx context.Context, canonical string
 	case "egress":
 		run = r.hmCmdEgress
 	default:
-		return false, nil, &missingRunnerMethod{"_hm_cmd_" + canonical}
+		return false, nil, &missingRunnerMethod{canonical}
 	}
 	handled, reply, err := run(ctx, event, source, quickKey)
 	return handled, commandReply(reply), err
@@ -79,11 +79,11 @@ func (r *GatewayRunner) GoalManagerForEvent(ctx context.Context, event *gateway.
 	return r.getGoalManagerForEvent(ctx, event)
 }
 
-// Python AttributeError of a runner method a prompt command names that the runner lacks
-type missingRunnerMethod struct{ name string }
+// Prompt command the runner has no handler for
+type missingRunnerMethod struct{ command string }
 
 func (e *missingRunnerMethod) Error() string {
-	return "AttributeError: 'GatewayRunner' object has no attribute '" + e.name + "'"
+	return "the gateway runner has no handler for the /" + e.command + " command"
 }
 
 // Goal turn budget of the user config, the default when unset or invalid

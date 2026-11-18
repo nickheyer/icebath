@@ -450,7 +450,7 @@ func messageIDInt(id *big.Int) *int {
 	return &n
 }
 
-// Whether the pattern matches anywhere in the text, the re.search of hermes
+// Whether the pattern matches anywhere in the text
 func regexp2Search(re *regexp2.Regexp, text string) bool {
 	m, err := re.FindStringMatch(text)
 	return err == nil && m != nil

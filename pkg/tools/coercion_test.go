@@ -2,9 +2,10 @@ package tools
 
 import (
 	"context"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"reflect"
 	"testing"
+
+	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 )
 
 func coercionRegistry(t *testing.T, parameters string) (*Registry, *Env) {

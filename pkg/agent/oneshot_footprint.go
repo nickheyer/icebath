@@ -2,7 +2,9 @@ package agent
 
 import (
 	"context"
+	"errors"
 	"fmt"
+
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
@@ -32,10 +34,10 @@ func OneshotToolSchemas(schemas []map[string]any) ([]map[string]any, error) {
 		}
 		params, hasParams := pyjson.Dict(fn.Vals["parameters"])
 		if !hasParams {
-			return nil, fmt.Errorf("KeyError: 'parameters'")
+			return nil, errors.New("the delegate_task tool schema has no parameters")
 		}
 		if _, hasProps := pyjson.Dict(params["properties"]); !hasProps {
-			return nil, fmt.Errorf("KeyError: 'properties'")
+			return nil, errors.New("the delegate_task tool schema parameters have no properties")
 		}
 		variant := tools.OneshotDelegateFunction(fn)
 		swapped := make(map[string]any, len(tool))

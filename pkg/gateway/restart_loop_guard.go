@@ -3,13 +3,13 @@ package gateway
 import (
 	"context"
 	"fmt"
-	"log/slog"
 	"math/big"
 	"os"
 	"path/filepath"
 	"sort"
 	"time"
 
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
@@ -43,7 +43,7 @@ func restartLoopLoadBoots(ctx context.Context) ([]float64, error) {
 	}
 	obj, ok := data.(*pyjson.Object)
 	if !ok {
-		return nil, fmt.Errorf("AttributeError: %T object has no attribute 'get'", data)
+		return nil, fmt.Errorf("the restart loop record is %s, expected a mapping", errchain.Kind(data))
 	}
 	boots := []float64{}
 	value, found := obj.Get("boots")
@@ -153,7 +153,7 @@ func RestartLoopCheckAndRecord(ctx context.Context, maxRestarts, windowSeconds i
 	}
 	tripped := maxRestarts > 0 && len(boots) >= maxRestarts
 	if tripped {
-		slog.Default().With("logger", "gateway.run").Warn(fmt.Sprintf("Restart-loop breaker TRIPPED: %d chained restart-interrupted gateway boots (no gap wider than %ds; "+
+		pkgLog().Warn(fmt.Sprintf("Restart-loop breaker TRIPPED: %d chained restart-interrupted gateway boots (no gap wider than %ds; "+
 			"threshold %d). Skipping auto-resume to break a suspected SIGTERM-respawn loop (#30719, #81642). "+
 			"Restart-interrupted sessions stay resume-pending and will continue on the next real user message. "+
 			"If this is a false positive, delete %s.",

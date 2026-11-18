@@ -31,7 +31,7 @@ var (
 
 var realProfileExtraFlags = []string{"--disable-hang-monitor", "--disable-popup-blocking", "--disable-prompt-on-repost"}
 
-// Module attributes of the real profile launch hermes tests patch
+// Module attributes of the real profile launch tests patch
 var (
 	realProfileLaunchChromium = launchChromium
 	realProfileEnsureScreen   = ensureScreenForHeadedChromium
@@ -106,7 +106,7 @@ func launchRealProfile(env *tools.Env, browserName string) (string, string) {
 	timeout := 30 * time.Second
 	launched, err := realProfileLaunchChromium(tools.WithEnvHome(context.Background(), env), env, realProfileKey(env), LaunchOptions{
 		Executable: realBinary, UserDataDir: connectRealProfileCopyDir(env, browserName), Ephemeral: false,
-		ExtraArgs: realProfileExtraFlags, Timeout: &timeout, SandboxBypass: false, Prepare: overlay})
+		ExtraArgs: realProfileExtraFlags, Timeout: &timeout, SandboxBypass: false, Prepare: overlay, UserProfile: true})
 	if launched == nil {
 		if len(snapshotFailure) > 0 {
 			return "", snapshotFailure[0]

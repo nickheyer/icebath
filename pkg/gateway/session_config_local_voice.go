@@ -14,7 +14,7 @@ func SetLocalVoiceMode(sessionID any, mode string) (*bool, error) {
 		}
 		modes, isVoiceRunner := runner.(voiceModeRunner)
 		if !isVoiceRunner {
-			return nil, attributeError("_voice_mode")
+			return nil, runnerLacks("report the voice mode")
 		}
 		modes.StoreVoiceMode(live.Source, mode)
 		LocalVoiceTransition(live.Source, mode)

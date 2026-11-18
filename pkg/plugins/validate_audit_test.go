@@ -19,10 +19,10 @@ func TestRuntimeRebindOfIcebathCoreFailsAdmission(t *testing.T) {
 		"    _wrap(run_agent.AIAgent, '_replace_primary_openai_client', print)\n"+
 		"    srv = gateway_server()\n"+
 		"    setattr(srv, 'handle_request', print)\n"+
-		"    import hermes_cli.models_catalog_static as m\n"+
+		"    import icebath_cli.models_catalog_static as m\n"+
 		"    m._PROVIDER_MODELS['x'] = ['y']\n")
 	vtWrite(t, filepath.Join(bad, "compat.py"), "from importlib import import_module\ndef server():\n    return import_module('tui_gateway.server')\n")
-	good := vtPlugin(t, root, vtManifest(map[string]any{"name": "good"}), "from hermes_cli.config import load_config\n"+
+	good := vtPlugin(t, root, vtManifest(map[string]any{"name": "good"}), "from icebath_cli.config import load_config\n"+
 		"from .tools import helper\n"+
 		"class Box:\n"+
 		"    def set(self, v):\n"+
@@ -120,13 +120,13 @@ func TestDocumentedPublicStdlibAndOwnPackageImportsAreNotFlagged(t *testing.T) {
 			"import requests\n" +
 			"from agent.memory_provider import MemoryProvider\n" +
 			"from gateway.platforms import base\n" +
-			"from hermes_cli.plugins import PluginContext\n" +
+			"from icebath_cli.plugins import PluginContext\n" +
 			"from clean_lib.helpers import local_helper\n" +
 			"from .client import Client\n" +
 			"if TYPE_CHECKING:\n" +
 			"    from run_agent import AIAgent\n" +
 			"def register(ctx):\n" +
-			"    from hermes_cli.plugins import get_plugin_manager\n" +
+			"    from icebath_cli.plugins import get_plugin_manager\n" +
 			"    return get_plugin_manager\n",
 		"clean_lib/__init__.py": "",
 		"clean_lib/helpers.py":  "def local_helper():\n    pass\n",
@@ -137,11 +137,11 @@ func TestDocumentedPublicStdlibAndOwnPackageImportsAreNotFlagged(t *testing.T) {
 		t.Fatal(err)
 	}
 	hits, err := privateImportFindings(files)
-	if err != nil || !reflect.DeepEqual(hits, []string{"__init__.py:12 hermes_cli.plugins.get_plugin_manager"}) {
+	if err != nil || !reflect.DeepEqual(hits, []string{"__init__.py:12 icebath_cli.plugins.get_plugin_manager"}) {
 		t.Fatalf("%q %v", hits, err)
 	}
 	sites := piSites(t, piWarnings(piValidate(t, plugin), "private core imports"))
-	if !reflect.DeepEqual(sites, []string{"__init__.py:12 hermes_cli.plugins.get_plugin_manager"}) {
+	if !reflect.DeepEqual(sites, []string{"__init__.py:12 icebath_cli.plugins.get_plugin_manager"}) {
 		t.Fatalf("%q", sites)
 	}
 }
@@ -155,12 +155,12 @@ func TestDocumentedSessionHelperAndOwnInstallPathFallbackAreNotFlagged(t *testin
 			"    except ImportError:\n" +
 			"        import plugins.memory.openltm._db as _db\n" +
 			"        from plugins.memory.openltm import _db\n" +
-			"    from hermes_cli.gateway_client import _session_ticket\n" +
+			"    from icebath_cli.gateway_client import _session_ticket\n" +
 			"    return get_session_env, _db, _session_ticket\n",
 		"_db.py": "",
 	})
 	sites := piSites(t, piWarnings(piValidate(t, plugin), "private core imports"))
-	if !reflect.DeepEqual(sites, []string{"__init__.py:8 hermes_cli.gateway_client._session_ticket"}) {
+	if !reflect.DeepEqual(sites, []string{"__init__.py:8 icebath_cli.gateway_client._session_ticket"}) {
 		t.Fatalf("%q", sites)
 	}
 }
@@ -212,15 +212,15 @@ func TestIsolationVisitorFlagsPatchesRegistryCallsAndSyntaxErrors(t *testing.T) 
 func TestPluginValidateTreatsTheModelSetupHelpersAsPublic(t *testing.T) {
 	dir := t.TempDir()
 	vtWrite(t, filepath.Join(dir, "plugin.yaml"), "name: fake-provider\nkind: model-provider\n")
-	vtWrite(t, filepath.Join(dir, "__init__.py"), "from hermes_cli.model_setup import persist_model_selection, note_setup_failure\n"+
+	vtWrite(t, filepath.Join(dir, "__init__.py"), "from icebath_cli.model_setup import persist_model_selection, note_setup_failure\n"+
 		"from agent.secret_scope import secret_source_label\n"+
-		"from hermes_cli.model_setup_flows_common import _persist_model\n")
+		"from icebath_cli.model_setup_flows_common import _persist_model\n")
 	files, err := privateParsedFiles(dir)
 	if err != nil {
 		t.Fatal(err)
 	}
 	hits, err := privateImportFindings(files)
-	if err != nil || !reflect.DeepEqual(hits, []string{"__init__.py:3 hermes_cli.model_setup_flows_common._persist_model"}) {
+	if err != nil || !reflect.DeepEqual(hits, []string{"__init__.py:3 icebath_cli.model_setup_flows_common._persist_model"}) {
 		t.Fatalf("%q %v", hits, err)
 	}
 }

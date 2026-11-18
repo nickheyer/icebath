@@ -49,7 +49,7 @@ func foreignGateway(record map[string]any) {
 			return nil
 		}
 		obj := pyjson.NewObject()
-		for _, k := range []string{"pid", "code_sha", "hermes_home", "served_profiles"} {
+		for _, k := range []string{"pid", "code_sha", "icebath_home", "served_profiles"} {
 			if v, ok := record[k]; ok {
 				obj.Set(k, v)
 			}
@@ -128,7 +128,7 @@ func TestHostMultiplexerOwnsOnlyTheHomesItTicks(t *testing.T) {
 func TestLiveGatewayTickingIsAnsweredPerServedProfile(t *testing.T) {
 	a, b := ownershipHomes(t)
 	disk := "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
-	foreignGateway(map[string]any{"pid": int64(4321), "code_sha": disk, "hermes_home": a})
+	foreignGateway(map[string]any{"pid": int64(4321), "code_sha": disk, "icebath_home": a})
 	registerTickedHomes([]string{a, b})
 	if rec := liveGatewayTicking(a); rec == nil {
 		t.Fatal("fresher gateway serving A was not found")
@@ -138,20 +138,20 @@ func TestLiveGatewayTickingIsAnsweredPerServedProfile(t *testing.T) {
 	if liveGatewayTicking(b) != nil {
 		t.Fatal("profile B has no fresher ticker")
 	}
-	foreignGateway(map[string]any{"pid": 4321.0, "hermes_home": a, "served_profiles": []any{"gamma", "beta"}})
+	foreignGateway(map[string]any{"pid": 4321.0, "icebath_home": a, "served_profiles": []any{"gamma", "beta"}})
 	if liveGatewayTicking(b) == nil {
 		t.Fatal("served set naming beta did not cover profile B")
 	}
-	foreignGateway(map[string]any{"pid": int64(99), "hermes_home": a})
+	foreignGateway(map[string]any{"pid": int64(99), "icebath_home": a})
 	if liveGatewayTicking(a) != nil {
 		t.Fatal("record of a different pid was trusted")
 	}
-	foreignGateway(map[string]any{"pid": int64(4321), "hermes_home": a})
+	foreignGateway(map[string]any{"pid": int64(4321), "icebath_home": a})
 	gatewayProbes.runtimeStatusIsStale = func(*pyjson.Object, int) bool { return true }
 	if liveGatewayTicking(a) != nil {
 		t.Fatal("stale heartbeat was trusted")
 	}
-	foreignGateway(map[string]any{"pid": int64(4321), "hermes_home": a})
+	foreignGateway(map[string]any{"pid": int64(4321), "icebath_home": a})
 	gatewayProbes.runtimeLockActive = func(string) (bool, error) { return false, nil }
 	if liveGatewayTicking(a) != nil {
 		t.Fatal("no lock held yet a ticker was proven")
@@ -160,7 +160,7 @@ func TestLiveGatewayTickingIsAnsweredPerServedProfile(t *testing.T) {
 	if liveGatewayTicking(a) != nil {
 		t.Fatal("lock probe failure proved a ticker")
 	}
-	foreignGateway(map[string]any{"pid": int64(4321), "hermes_home": a})
+	foreignGateway(map[string]any{"pid": int64(4321), "icebath_home": a})
 	gatewayProbes.runningPid = func(string, bool) (int, bool, error) { return 0, false, nil }
 	if liveGatewayTicking(a) != nil {
 		t.Fatal("missing pid file proved a ticker")
@@ -169,7 +169,7 @@ func TestLiveGatewayTickingIsAnsweredPerServedProfile(t *testing.T) {
 	if liveGatewayTicking(a) != nil {
 		t.Fatal("missing status record proved a ticker")
 	}
-	foreignGateway(map[string]any{"pid": int64(4321), "hermes_home": a})
+	foreignGateway(map[string]any{"pid": int64(4321), "icebath_home": a})
 	gatewayProbes.ownsRuntimeLock = func() bool { return true }
 	if liveGatewayTicking(a) != nil {
 		t.Fatal("this process holding the lock is never a foreign ticker")
@@ -182,9 +182,9 @@ func TestRecordServesProfileFallsBackToTheProcessHome(t *testing.T) {
 		t.Fatal("nil record proved a home")
 	}
 	rec := pyjson.NewObject()
-	rec.Set("hermes_home", "   ")
+	rec.Set("icebath_home", "   ")
 	if !recordServesProfile(rec, a) {
-		t.Fatal("blank hermes_home did not fall back to the process home")
+		t.Fatal("blank icebath_home did not fall back to the process home")
 	}
 	if recordServesProfile(rec, b) {
 		t.Fatal("empty served set covered another profile")
@@ -193,7 +193,7 @@ func TestRecordServesProfileFallsBackToTheProcessHome(t *testing.T) {
 	if recordServesProfile(rec, b) {
 		t.Fatal("non list served set was trusted")
 	}
-	gatewayProbes.sameHermesHome = func(string, string) (bool, error) { return false, errors.New("realpath failed") }
+	gatewayProbes.sameIcebathHome = func(string, string) (bool, error) { return false, errors.New("realpath failed") }
 	rec.Set("served_profiles", []any{"beta"})
 	if recordServesProfile(rec, b) {
 		t.Fatal("home comparison failure answered yes")

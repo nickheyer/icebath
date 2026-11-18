@@ -3,7 +3,6 @@ package gateway
 import (
 	"context"
 	"fmt"
-	"log/slog"
 	"runtime"
 	"sync"
 	"time"
@@ -137,7 +136,7 @@ func (b *BasePlatformAdapter) KeepTyping(ctx context.Context, chatID string, int
 			select {
 			case err := <-done:
 				if err != nil && ctx.Err() == nil && tctx.Err() == nil {
-					slog.Debug(fmt.Sprintf("[%s] send_typing error (non-fatal): %v", self.Name(), err))
+					pkgLog().Debug(fmt.Sprintf("[%s] send_typing error (non-fatal): %v", self.Name(), err))
 				}
 			case <-tctx.Done():
 			}
@@ -252,11 +251,11 @@ func chainCallbacks(callbacks ...PostDeliveryCallback) PostDeliveryCallback {
 			func() {
 				defer func() {
 					if r := recover(); r != nil {
-						slog.Debug(fmt.Sprintf("Post-delivery callback failed: %v", r))
+						pkgLog().Debug(fmt.Sprintf("Post-delivery callback failed: %v", r))
 					}
 				}()
 				if err := cb(ctx); err != nil {
-					slog.Debug(fmt.Sprintf("Post-delivery callback failed: %v", err))
+					pkgLog().Debug(fmt.Sprintf("Post-delivery callback failed: %v", err))
 				}
 			}()
 		}
@@ -329,6 +328,6 @@ func (b *BasePlatformAdapter) runProcessingHook(ctx context.Context, hookName st
 		return hook(ctx)
 	}()
 	if err != nil {
-		slog.Warn(fmt.Sprintf("[%s] %s hook failed: %v", b.Self().Name(), hookName, err))
+		pkgLog().Warn(fmt.Sprintf("[%s] %s hook failed: %v", b.Self().Name(), hookName, err))
 	}
 }

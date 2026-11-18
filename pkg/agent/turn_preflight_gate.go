@@ -34,7 +34,7 @@ func runPreflightGate(ctx context.Context, a *AIAgent, s *LoopState) (PhaseVerdi
 	if lastPressure != nil && s.RequestPressureTokens >= threshold &&
 		!compressionWarrantsAnotherPreflightPass(*lastPressure, s.RequestPressureTokens, threshold) {
 		s.PreflightCompressionBlocked = true
-		conversationLoopLog().Warn(fmt.Sprintf("Pre-API compression made insufficient progress: ~%s -> ~%s request tokens; skipping additional preflight passes",
+		pkgLog().Warn(fmt.Sprintf("Pre-API compression made insufficient progress: ~%s -> ~%s request tokens; skipping additional preflight passes",
 			pystr.GroupThousands(int64(*lastPressure)), pystr.GroupThousands(int64(s.RequestPressureTokens))))
 	}
 	deferPreflight := func(int) bool { return false }

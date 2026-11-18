@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"log/slog"
 	"net/http"
 	"os"
 	"os/exec"
@@ -87,7 +86,7 @@ func pvLinuxMachine(machine string, is64 bool, cpuInfo func() ([]byte, error)) (
 	case cpuPart == "0xd0b":
 		return "cortex-a76" + archInfo, nil
 	case machine == "armv7l":
-		slog.Warn(fmt.Sprintf("WARNING: Please be advised that this device (CPU part = %s) is not officially supported by Picovoice. "+
+		pkgLog().Warn(fmt.Sprintf("WARNING: Please be advised that this device (CPU part = %s) is not officially supported by Picovoice. "+
 			"Falling back to the armv6-based (Raspberry Pi Zero) library. This is not tested nor optimal.", cpuPart))
 		return "arm11", nil
 	}

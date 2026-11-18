@@ -2,25 +2,25 @@ package gateway
 
 import (
 	"fmt"
-	"log/slog"
 	"runtime"
 
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pythread"
 	"github.com/nickheyer/icebath/pkg/tuigateway"
+	"github.com/nickheyer/icebath/pkg/tuihost"
 )
 
 // Authority local subscription ordering over the bounded fanout and the shared replay cache
 type SessionEvents struct {
 	Lock       pythread.RLock
-	Fanout     *tuigateway.FanoutTransport
+	Fanout     *tuihost.FanoutTransport
 	key        string
 	Epoch      string
 	Sequence   int
 	publicID   any
 	Execution  *pyjson.Object
 	Observers  map[*SessionEventObserver]bool
-	OnOverflow func(transport tuigateway.Transport)
+	OnOverflow func(transport tuihost.Transport)
 }
 
 // Synchronous same goroutine recipient of every published frame
@@ -30,9 +30,9 @@ type SessionEventObserver struct {
 
 // Event stream under a private replay key freed when the stream is collected
 func NewSessionEvents() *SessionEvents {
-	e := &SessionEvents{Fanout: tuigateway.NewFanoutTransport(), key: uuid4HexString(), Epoch: uuid4HexString(),
+	e := &SessionEvents{Fanout: tuihost.NewFanoutTransport(), key: uuid4HexString(), Epoch: uuid4HexString(),
 		Execution: pyjson.NewObject(), Observers: map[*SessionEventObserver]bool{}}
-	runtime.AddCleanup(e, func(key string) { tuigateway.ReleaseKey(key, false) }, e.key)
+	runtime.AddCleanup(e, func(key string) { tuihost.ReleaseKey(key, false) }, e.key)
 	return e
 }
 
@@ -40,18 +40,28 @@ func NewSessionEvents() *SessionEvents {
 func (e *SessionEvents) Release() {
 	e.Lock.Lock()
 	defer e.Lock.Unlock()
-	tuigateway.ReleaseKey(e.key, true)
+	tuihost.ReleaseKey(e.key, true)
 }
 
 // Current replay epoch and sequence, a fresh epoch once the shared cache evicted this session
 func (e *SessionEvents) Watermark() (string, int) {
 	e.Lock.Lock()
 	defer e.Lock.Unlock()
-	if e.Sequence != 0 && tuigateway.LatestSeq(e.key) == 0 {
+	if e.Sequence != 0 && tuihost.LatestSeq(e.key) == 0 {
 		e.Epoch = uuid4HexString()
 		e.Sequence = 0
 	}
 	return e.Epoch, e.Sequence
+}
+
+// Event payload checked against its typed contract, a misfit reported and the payload published as given
+func sealCanonicalPayload(eventType string, payload any) any {
+	if typed := tuigateway.Lookup(tuigateway.KindEvent, eventType); typed != nil && payload != nil {
+		if err := typed.CheckResult(payload); err != nil {
+			tuihost.ReportMisfit("payload of", eventType, err)
+		}
+	}
+	return payload
 }
 
 // Stamps, records and fans out one event frame, true when a live viewer or observer took it
@@ -66,10 +76,10 @@ func (e *SessionEvents) Publish(sessionID any, payload any, eventType string, ex
 	params := stamp.Copy()
 	params.Set("type", eventType)
 	params.Set("session_id", e.key)
-	params.Set("payload", pyjson.Clone(payload))
+	params.Set("payload", pyjson.Clone(sealCanonicalPayload(eventType, payload)))
 	params.Set("replay_epoch", e.Epoch)
 	frame := pyjson.ObjectOf("jsonrpc", "2.0", "method", "event", "params", params)
-	tuigateway.StampEvent(frame)
+	tuihost.StampEvent(frame)
 	seqValue, _ := params.Get("seq")
 	seq, _ := seqValue.(int)
 	if seq <= e.Sequence {
@@ -79,13 +89,13 @@ func (e *SessionEvents) Publish(sessionID any, payload any, eventType string, ex
 	params.Set("session_id", sessionID)
 	e.publicID = sessionID
 	e.Sequence = seq
-	overflow := func(transport tuigateway.Transport) *pyjson.Object {
+	overflow := func(transport tuihost.Transport) *pyjson.Object {
 		if e.OnOverflow != nil {
 			e.OnOverflow(transport)
 		}
 		return pyjson.ObjectOf("jsonrpc", "2.0", "method", "event", "params", pyjson.ObjectOf(
 			"type", "session.replay_gap", "session_id", sessionID,
-			"payload", pyjson.ObjectOf("replay_epoch", e.Epoch, "latest_seq", e.Sequence)))
+			"payload", tuigateway.SessionReplayGapEvent.Wire(tuigateway.SessionReplayGapPayload{ReplayEpoch: e.Epoch, LatestSeq: int64(e.Sequence)})))
 	}
 	delivered := e.Fanout.WriteOverflow(frame, overflow)
 	for observer := range e.Observers {
@@ -100,7 +110,7 @@ func (e *SessionEvents) Publish(sessionID any, payload any, eventType string, ex
 func (e *SessionEvents) observe(observer *SessionEventObserver, frame *pyjson.Object, sessionID any) (ok bool) {
 	defer func() {
 		if r := recover(); r != nil {
-			slog.Warn(fmt.Sprintf("Session event observer failed for %v: %v", sessionID, r))
+			pkgLog().Warn(fmt.Sprintf("Session event observer failed for %v: %v", sessionID, r))
 			ok = false
 		}
 	}()
@@ -109,7 +119,7 @@ func (e *SessionEvents) observe(observer *SessionEventObserver, frame *pyjson.Ob
 }
 
 // Writes a joining transport the frames published after its replay cursor, the caller holding Lock
-func (e *SessionEvents) CatchUp(transport tuigateway.Transport, epoch string, sequence int) {
+func (e *SessionEvents) CatchUp(transport tuihost.Transport, epoch string, sequence int) {
 	replay := e.Since(epoch, sequence)
 	if required, _ := replay.Get("snapshot_required"); required == true {
 		return
@@ -125,9 +135,9 @@ func (e *SessionEvents) Since(epoch string, sequence int) *pyjson.Object {
 	e.Lock.Lock()
 	defer e.Lock.Unlock()
 	currentEpoch, latest := e.Watermark()
-	frames := tuigateway.EventsSince(e.key, sequence)
-	missing := epoch != currentEpoch || sequence > latest || tuigateway.IsTruncated(e.key, sequence) ||
-		tuigateway.LatestSeq(e.key) != latest
+	frames := tuihost.EventsSince(e.key, sequence)
+	missing := epoch != currentEpoch || sequence > latest || tuihost.IsTruncated(e.key, sequence) ||
+		tuihost.LatestSeq(e.key) != latest
 	events := []any{}
 	if !missing {
 		for _, frame := range frames {

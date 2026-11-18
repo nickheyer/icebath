@@ -13,7 +13,6 @@ type BillingBlock struct {
 	ProviderLabel string
 	Model         string
 	BillingURL    string
-	IsNous        bool
 	Message       string
 }
 
@@ -23,7 +22,7 @@ func (b BillingBlock) ToDict() map[string]any {
 	if b.BillingURL != "" {
 		url = b.BillingURL
 	}
-	return map[string]any{"provider": b.Provider, "provider_label": b.ProviderLabel, "model": b.Model, "billing_url": url, "is_nous": b.IsNous, "message": b.Message}
+	return map[string]any{"provider": b.Provider, "provider_label": b.ProviderLabel, "model": b.Model, "billing_url": url, "message": b.Message}
 }
 
 type billingProvider struct {
@@ -47,23 +46,6 @@ var billingProviders = []billingProvider{
 	{"Moonshot AI", "https://platform.moonshot.ai/console/pay", []string{"moonshot"}, nil},
 	{"NVIDIA", "https://build.nvidia.com/settings/billing", []string{"nvidia"}, nil},
 }
-
-// Nous managed inference gateway by provider or host, the urlparse ValueError of a malformed base url returned
-func isNousInferenceRoute(provider, baseURL string) (bool, error) {
-	if pystr.Lower(pystr.Strip(provider)) == "nous" {
-		return true, nil
-	}
-	return pyurl.BaseURLHostMatches(baseURL, "inference-api.nousresearch.com")
-}
-
-// IsNousInferenceRoute reports the Nous managed inference gateway by provider or host
-func IsNousInferenceRoute(provider, baseURL string) bool {
-	nous, err := isNousInferenceRoute(provider, baseURL)
-	return err == nil && nous
-}
-
-// Python str.title of the text
-func pyTitle(s string) string { return pystr.Title(s) }
 
 // Label and billing page by exact slug, then base url host, then a readable label without a url
 func resolveProviderLinkErr(slug, baseURL string) (string, string, error) {
@@ -105,16 +87,6 @@ func resolveProviderLink(slug, baseURL string) (string, string) {
 func BuildBillingBlockErr(provider, baseURL, model, message string) (BillingBlock, error) {
 	slug := pystr.Lower(pystr.Strip(provider))
 	model = pystr.Strip(model)
-	nous, err := isNousInferenceRoute(slug, baseURL)
-	if err != nil {
-		return BillingBlock{}, err
-	}
-	if nous {
-		if slug == "" {
-			slug = "nous"
-		}
-		return BillingBlock{Provider: slug, ProviderLabel: "Nous Portal", Model: model, BillingURL: NousPortalBillingURL(""), IsNous: true, Message: message}, nil
-	}
 	label, url, err := resolveProviderLinkErr(slug, baseURL)
 	if err != nil {
 		return BillingBlock{}, err

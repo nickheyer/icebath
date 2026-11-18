@@ -348,18 +348,18 @@ func TestCompressContextPreservesAmbientContext(t *testing.T) {
 	var seen []string
 	orig := facadeCompressContext
 	facadeCompressContext = func(ctx context.Context, a *AIAgent, messages []map[string]any, systemMessage *string, o compressContextOptions) ([]map[string]any, string, error) {
-		seen = append(seen, provider.PortalConversationContext(ctx))
+		seen = append(seen, provider.ConversationContext(ctx))
 		return []map[string]any{}, "", nil
 	}
 	t.Cleanup(func() { facadeCompressContext = orig })
 	a := &AIAgent{cachedConversationRoot: "segment-after-compaction"}
 	system := "sys"
-	ctx := provider.WithPortalConversationContext(context.Background(), "outer-root")
+	ctx := provider.WithConversationContext(context.Background(), "outer-root")
 	if _, _, err := a.compressContext(ctx, []map[string]any{}, &system, compressContextOptions{TaskID: "default"}); err != nil {
 		t.Fatal(err)
 	}
-	if len(seen) != 1 || seen[0] != "outer-root" || provider.PortalConversationContext(ctx) != "outer-root" {
-		t.Fatalf("ambient root %q after %q", seen, provider.PortalConversationContext(ctx))
+	if len(seen) != 1 || seen[0] != "outer-root" || provider.ConversationContext(ctx) != "outer-root" {
+		t.Fatalf("ambient root %q after %q", seen, provider.ConversationContext(ctx))
 	}
 	if _, _, err := a.compressContext(context.Background(), []map[string]any{}, &system, compressContextOptions{TaskID: "default"}); err != nil {
 		t.Fatal(err)
@@ -481,7 +481,7 @@ func TestOwnedTimeoutSkipsHungCompress(t *testing.T) {
 	})
 	original := []map[string]any{{"role": "user", "content": "stay"}}
 	system := "sys"
-	ctx := provider.WithPortalConversationContext(context.Background(), "owned-timeout")
+	ctx := provider.WithConversationContext(context.Background(), "owned-timeout")
 	out, prompt, err := s.agent.compressContext(ctx, original, &system, compressContextOptions{})
 	close(hang)
 	if err != nil || !sameMessageList(out, original) || prompt != "sys" {
@@ -517,7 +517,7 @@ func TestOwnedTotalCeilingReportsProgressAccurately(t *testing.T) {
 	})
 	original := []map[string]any{{"role": "user", "content": "stay"}}
 	system := "sys"
-	ctx := provider.WithPortalConversationContext(context.Background(), "owned-ceiling")
+	ctx := provider.WithConversationContext(context.Background(), "owned-ceiling")
 	out, prompt, err := s.agent.compressContext(ctx, original, &system, compressContextOptions{})
 	close(release)
 	if err != nil || !sameMessageList(out, original) || prompt != "sys" || len(s.warnings) == 0 {
@@ -551,7 +551,7 @@ func TestFallbackPromptResolvedLazilyOnTimeout(t *testing.T) {
 	t.Cleanup(func() { facadeBuildSystemPrompt = prevBuild })
 	original := []map[string]any{{"role": "user", "content": "stay"}}
 	system := "sys"
-	ctx := provider.WithPortalConversationContext(context.Background(), "owned-lazy-prompt")
+	ctx := provider.WithConversationContext(context.Background(), "owned-lazy-prompt")
 	out, prompt, err := s.agent.compressContext(ctx, original, &system, compressContextOptions{})
 	close(hang)
 	if err != nil || !sameMessageList(out, original) || prompt != "sys" || builds.Load() != 1 || len(s.warnings) != 1 {
@@ -574,7 +574,7 @@ func TestCallerFenceBypassesOwnedWrapper(t *testing.T) {
 	t.Cleanup(func() { facadeCompressContext, facadeRunWithProgressTimeout = prevCompress, prevRun })
 	fence := NewCompressionCommitFence()
 	system := "sys"
-	ctx := provider.WithPortalConversationContext(context.Background(), "caller-fence")
+	ctx := provider.WithConversationContext(context.Background(), "caller-fence")
 	msgs, prompt, err := a.compressContext(ctx, []map[string]any{{"role": "user", "content": "x"}}, &system, compressContextOptions{CommitFence: fence})
 	if err != nil || seen != fence || a.lastCompressionTimedOut || prompt != "sys" || msgs[0]["content"] != "ok" {
 		t.Fatalf("fence %p want %p timed out %v msgs %v prompt %q err %v", seen, fence, a.lastCompressionTimedOut, msgs, prompt, err)

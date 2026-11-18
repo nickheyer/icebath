@@ -89,7 +89,7 @@ func TestStatusNamesTheMemberAnsweringWhileItsTurnRuns(t *testing.T) {
 	}
 	service.runtime.RPC = held
 	if _, err := service.CreateRoom("room-1", "Release room", []any{
-		map[string]any{"member_id": "default", "profile": "default", "handle": "hermes"},
+		map[string]any{"member_id": "default", "profile": "default", "handle": "icebath"},
 		map[string]any{"member_id": "ops", "profile": "ops", "handle": "ops"},
 	}, nil); err != nil {
 		t.Fatal(err)

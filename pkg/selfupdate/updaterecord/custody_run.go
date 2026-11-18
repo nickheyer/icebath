@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"log/slog"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -138,7 +137,7 @@ func RefuseCustodyChild(ctx context.Context, argv []string, cause any, receipted
 	}
 	detail := exc.Reason + ": " + strings.Join(head, " ")
 	if !receipted {
-		slog.Warn("Refused update child: " + detail)
+		pkgLog().Warn("Refused update child: " + detail)
 		RecordStep(ctx, "update_custody", false, detail)
 	}
 	custodyRun.Lock()

@@ -11,7 +11,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 )
 
-// Wires a mock runner whose telegram adapter records sends, the hermes _wire_mock_target
+// Wires a mock runner whose telegram adapter records sends, the wire mock target
 func wireWebhookMockTarget(adapter *WebhookAdapter) *webhookTargetAdapter {
 	target := newWebhookTarget(PlatformTelegram)
 	adapters := pydict.New[Platform, PlatformAdapter]()

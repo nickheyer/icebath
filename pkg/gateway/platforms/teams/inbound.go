@@ -3,7 +3,6 @@ package teams
 import (
 	"context"
 	"fmt"
-	"log/slog"
 	"strings"
 	"time"
 
@@ -80,13 +79,13 @@ func (a *TeamsAdapter) handleActivityRequest(ctx context.Context, request *gatew
 func (a *TeamsAdapter) handleActivity(ctx context.Context, decoded any, authorization string) (status int, body any) {
 	defer func() {
 		if rec := recover(); rec != nil {
-			slog.Error(pyrepr.Str(rec))
+			pkgLog().Error(pyrepr.Str(rec))
 			status, body = 500, pyjson.ObjectOf("error", "Internal server error")
 		}
 	}()
 	activity, ok := decoded.(map[string]any)
 	if !ok {
-		slog.Error(fmt.Sprintf("'%s' object has no attribute 'get'", pyrepr.TypeName(decoded)))
+		pkgLog().Error(fmt.Sprintf("'%s' object has no attribute 'get'", pyrepr.TypeName(decoded)))
 		return 500, pyjson.ObjectOf("error", "Internal server error")
 	}
 	a.mu.Lock()
@@ -96,18 +95,18 @@ func (a *TeamsAdapter) handleActivity(ctx context.Context, decoded any, authoriz
 		return 401, pyjson.ObjectOf("error", "Authentication not configured")
 	}
 	if !strings.HasPrefix(authorization, "Bearer ") {
-		slog.Warn(fmt.Sprintf("inbound activity rejected (type=%s, id=%s): missing or malformed Authorization header (responding 401)",
+		pkgLog().Warn(fmt.Sprintf("inbound activity rejected (type=%s, id=%s): missing or malformed Authorization header (responding 401)",
 			pyrepr.Str(activity["type"]), pyrepr.Str(activity["id"])))
 		return 401, pyjson.ObjectOf("error", "Unauthorized")
 	}
 	serviceURL, _ := activity["serviceUrl"].(string)
 	tokenServiceURL, err := app.validator.validate(strings.TrimPrefix(authorization, "Bearer "), serviceURL)
 	if err != nil {
-		slog.Warn(fmt.Sprintf("JWT token validation failed: %v", err))
+		pkgLog().Warn(fmt.Sprintf("JWT token validation failed: %v", err))
 		return 401, pyjson.ObjectOf("error", "Unauthorized")
 	}
 	if obj(activity, "from") == nil || obj(activity, "conversation") == nil || obj(activity, "recipient") == nil {
-		slog.Error("activity requires from, conversation and recipient accounts")
+		pkgLog().Error("activity requires from, conversation and recipient accounts")
 		return 500, pyjson.ObjectOf("error", "Internal server error")
 	}
 	if serviceURL == "" {
@@ -115,7 +114,7 @@ func (a *TeamsAdapter) handleActivity(ctx context.Context, decoded any, authoriz
 	}
 	status, body, err = a.routeActivity(ctx, activity)
 	if err != nil {
-		slog.Error(err.Error())
+		pkgLog().Error(err.Error())
 		return 500, pyjson.ObjectOf("error", "Internal server error")
 	}
 	return status, body
@@ -188,7 +187,7 @@ func (a *TeamsAdapter) onMessage(ctx context.Context, activity map[string]any) e
 		}
 		a.mu.Unlock()
 		if !activityMentionsBot(activity, botIDs, text) && !repliedToOurs {
-			slog.Debug(fmt.Sprintf("[teams] Dropping non-personal message without a bot mention (chat=%s, msg=%s)", convID, msgID))
+			pkgLog().Debug(fmt.Sprintf("[teams] Dropping non-personal message without a bot mention (chat=%s, msg=%s)", convID, msgID))
 			return nil
 		}
 	}
@@ -304,19 +303,19 @@ func (a *TeamsAdapter) cacheAttachment(ctx context.Context, att map[string]any) 
 			var cached *gateway.CachedMedia
 			if cached, err = gateway.CacheMediaBytesAsync(ctx, data, filename, "", ""); err == nil {
 				if cached == nil {
-					slog.Warn(fmt.Sprintf("[teams] Unsupported document type for attachment '%s', skipping", filename))
+					pkgLog().Warn(fmt.Sprintf("[teams] Unsupported document type for attachment '%s', skipping", filename))
 					return "", "", "", false
 				}
 				return cached.Path, cached.MediaType, cached.Kind, true
 			}
 		}
-		slog.Warn(fmt.Sprintf("[teams] Failed to cache file attachment '%s': %v", filename, err))
+		pkgLog().Warn(fmt.Sprintf("[teams] Failed to cache file attachment '%s': %v", filename, err))
 		return "", "", "", false
 	}
 	if contentURL != "" && strings.HasPrefix(contentType, "image/") {
 		path, mediaType, err := a.cacheImageAttachment(ctx, contentURL, contentType, attName)
 		if err != nil {
-			slog.Warn(fmt.Sprintf("[teams] Failed to cache image attachment: %v", err))
+			pkgLog().Warn(fmt.Sprintf("[teams] Failed to cache image attachment: %v", err))
 			return "", "", "", false
 		}
 		return path, mediaType, "image", path != ""
@@ -336,7 +335,7 @@ func (a *TeamsAdapter) cacheAttachment(ctx context.Context, att map[string]any) 
 		if label == "" {
 			label = contentURL
 		}
-		slog.Warn(fmt.Sprintf("[teams] Failed to cache attachment '%s' (%s): %v", label, contentType, err))
+		pkgLog().Warn(fmt.Sprintf("[teams] Failed to cache attachment '%s' (%s): %v", label, contentType, err))
 	}
 	return "", "", "", false
 }
@@ -366,7 +365,7 @@ func (a *TeamsAdapter) cacheImageAttachment(ctx context.Context, contentURL, con
 			if label == "" {
 				label = contentURL
 			}
-			slog.Warn(fmt.Sprintf("[teams] Bot Framework attachment '%s' returned data that failed image validation, skipping", label))
+			pkgLog().Warn(fmt.Sprintf("[teams] Bot Framework attachment '%s' returned data that failed image validation, skipping", label))
 			return "", "", nil
 		}
 		return cached.Path, cached.MediaType, nil
@@ -397,14 +396,17 @@ func (a *TeamsAdapter) onCardAction(ctx context.Context, activity map[string]any
 	if data == nil {
 		data = map[string]any{}
 	}
-	hermesAction, sessionKey := str(data, "hermes_action"), str(data, "session_key")
-	if hermesAction == "" || sessionKey == "" {
+	cardAction, sessionKey := str(data, "icebath_action"), str(data, "session_key")
+	if cardAction == "" {
+		cardAction = str(data, "hermes_action")
+	}
+	if cardAction == "" || sessionKey == "" {
 		return invokeMessage(i18n.T(ctx, "platform.teams.approval.unknown_action", "", nil))
 	}
 	if denied := cardActionDenied(ctx, obj(activity, "from")); denied != "" {
 		return invokeMessage(denied)
 	}
-	choice, ok := approvalChoices[hermesAction]
+	choice, ok := approvalChoices[cardAction]
 	if !ok {
 		return invokeMessage(i18n.T(ctx, "platform.teams.approval.unknown_action", "", nil))
 	}
@@ -434,7 +436,7 @@ func cardActionDenied(ctx context.Context, from map[string]any) string {
 	allowedCSV, _ := gateway.GetScopedSecret(ctx, "TEAMS_ALLOWED_USERS", "", false)
 	allowedCSV = pystr.Strip(allowedCSV)
 	if allowedCSV == "" {
-		slog.Warn("[teams] card action rejected: TEAMS_ALLOWED_USERS not configured and TEAMS_ALLOW_ALL_USERS not set — default deny")
+		pkgLog().Warn("[teams] card action rejected: TEAMS_ALLOWED_USERS not configured and TEAMS_ALLOW_ALL_USERS not set — default deny")
 		return i18n.T(ctx, "platform.teams.approval.requires_allowlist", "", nil)
 	}
 	clicker := str(from, "aadObjectId")
@@ -448,7 +450,7 @@ func cardActionDenied(ctx context.Context, from map[string]any) string {
 		}
 	}
 	if !allowed["*"] && !allowed[clicker] {
-		slog.Warn(fmt.Sprintf("[teams] Unauthorized card action by %s — ignoring", clicker))
+		pkgLog().Warn(fmt.Sprintf("[teams] Unauthorized card action by %s — ignoring", clicker))
 		return i18n.T(ctx, "platform.shared.not_authorized", "", nil)
 	}
 	return ""

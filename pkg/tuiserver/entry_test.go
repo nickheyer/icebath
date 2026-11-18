@@ -15,7 +15,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/provider"
-	"github.com/nickheyer/icebath/pkg/tuigateway"
+	"github.com/nickheyer/icebath/pkg/tuihost"
 )
 
 // Fake collaborators of the stdio entry every case installs, stdin fed from text and stdio flagged as not the channel
@@ -38,9 +38,9 @@ func fakeEntryStartup(t *testing.T, stdin string) {
 			})
 		}
 	})
-	wasChannel := tuigateway.StdioIsRPCChannel()
-	tuigateway.SetStdioIsRPCChannel(false)
-	t.Cleanup(func() { tuigateway.SetStdioIsRPCChannel(wasChannel) })
+	wasChannel := tuihost.StdioIsRPCChannel()
+	tuihost.SetStdioIsRPCChannel(false)
+	t.Cleanup(func() { tuihost.SetStdioIsRPCChannel(wasChannel) })
 }
 
 // Runs main of a fresh entry and returns its status
@@ -195,7 +195,7 @@ func TestMainSurvivesPrewarmFailure(t *testing.T) {
 
 func TestMainMarksStdoutAsTheRpcChannel(t *testing.T) {
 	runEntryMainRecording(t, nil)
-	if !tuigateway.StdioIsRPCChannel() {
+	if !tuihost.StdioIsRPCChannel() {
 		t.Fatal("main left stdout unmarked as the RPC channel")
 	}
 }

@@ -64,7 +64,7 @@ func newWorkerStore(t *testing.T, db *SessionDB, scope WorkerReceipt) *workerSto
 	return s
 }
 
-// Registered compute worker execution on session owned beside a foreign session, the hermes worker fixture
+// Registered compute worker execution on session owned beside a foreign session, the worker fixture
 func workerFixture(t *testing.T) (*SessionDB, *workerStore) {
 	t.Helper()
 	ctx := context.Background()

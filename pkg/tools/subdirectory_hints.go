@@ -5,7 +5,6 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
-	"log/slog"
 	"os"
 	"path/filepath"
 	"strings"
@@ -343,7 +342,7 @@ func (t *SubdirectoryHintTracker) isExcluded(path string) bool {
 func (t *SubdirectoryHintTracker) loadHintsForDirectory(directory string) (string, bool) {
 	t.loadedDirs[directory] = true
 	if t.homeIsWorkingDir || !t.withinWorkingDir(directory) {
-		slog.Debug(fmt.Sprintf("Skipping hint files in %s — outside working_dir %s", directory, t.workingDir))
+		pkgLog().Debug(fmt.Sprintf("Skipping hint files in %s — outside working_dir %s", directory, t.workingDir))
 		return "", false
 	}
 	for _, filename := range hintFilenames {
@@ -358,7 +357,7 @@ func (t *SubdirectoryHintTracker) loadHintsForDirectory(directory string) (strin
 		}
 		text, _, err := ReadTextWithTimeout(t.env, target, nil)
 		if err != nil {
-			slog.Debug(fmt.Sprintf("Could not read %s: %s", hintPath, pypath.OSErrorText(err)))
+			pkgLog().Debug(fmt.Sprintf("Could not read %s: %s", hintPath, pypath.OSErrorText(err)))
 			continue
 		}
 		content := pystr.Strip(text)
@@ -367,7 +366,7 @@ func (t *SubdirectoryHintTracker) loadHintsForDirectory(directory string) (strin
 		}
 		digest := hintDigest(content)
 		if t.loadedDigests[digest] {
-			slog.Debug(fmt.Sprintf("Skipping duplicate hint content at %s (digest %s)", hintPath, digest[:12]))
+			pkgLog().Debug(fmt.Sprintf("Skipping duplicate hint content at %s (digest %s)", hintPath, digest[:12]))
 			return "", false
 		}
 		t.loadedDigests[digest] = true
@@ -376,7 +375,7 @@ func (t *SubdirectoryHintTracker) loadHintsForDirectory(directory string) (strin
 		limit := maxHintChars
 		content = TruncateContent(context.Background(), t.env, content, filename,
 			TruncateOptions{MaxChars: &limit, ReadPath: relPath, NoQueue: true})
-		slog.Debug(fmt.Sprintf("Loaded subdirectory hints from %s: %s", directory, pyrepr.Repr([]any{relPath})))
+		pkgLog().Debug(fmt.Sprintf("Loaded subdirectory hints from %s: %s", directory, pyrepr.Repr([]any{relPath})))
 		return fmt.Sprintf("[Subdirectory context discovered: %s]\n%s", relPath, content), true
 	}
 	return "", false

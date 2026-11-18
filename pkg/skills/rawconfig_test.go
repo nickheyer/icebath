@@ -337,7 +337,7 @@ func TestNormalizeSkillLookupNameRelativeAndSymlink(t *testing.T) {
 }
 
 func TestBOMPlatformGatingRegression(t *testing.T) {
-	skill := "---\nname: my-skill\ndescription: Does a thing.\nplatforms: [macos]\nmetadata:\n  hermes:\n    config:\n      - key: my.key\n        description: A configured value\n---\n\n# My Skill\n\nBody text.\n"
+	skill := "---\nname: my-skill\ndescription: Does a thing.\nplatforms: [macos]\nmetadata:\n  icebath:\n    config:\n      - key: my.key\n        description: A configured value\n---\n\n# My Skill\n\nBody text.\n"
 	plain, plainBody := ParseFrontmatter(skill)
 	bom, bomBody := ParseFrontmatter("\xEF\xBB\xBF" + skill)
 	if !reflect.DeepEqual(plain, bom) || plainBody != bomBody || bom["name"] != "my-skill" || bom["description"] != "Does a thing." {

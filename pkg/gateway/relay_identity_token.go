@@ -15,13 +15,11 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pyhttpx"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/internal/pyurl"
-	"github.com/nickheyer/icebath/pkg/provider"
 )
 
 // JWT of three or more dotted segments or a long opaque base64url bearer, the ambient endpoint body shape
@@ -78,11 +76,11 @@ func relayURLErrorReason(err error) string {
 	}
 	var dnsErr *net.DNSError
 	if errors.As(err, &dnsErr) && dnsErr.IsNotFound {
-		return "[Errno -2] Name or service not known"
+		return "host name could not be resolved"
 	}
 	var errno syscall.Errno
 	if errors.As(err, &errno) {
-		return pyhttpx.OSErrorText(err)
+		return errno.Error()
 	}
 	var urlErr *url.Error
 	if errors.As(err, &urlErr) {
@@ -119,7 +117,7 @@ func relayURLOpenResponse(req *http.Request, timeout time.Duration) (*http.Respo
 	return resp, nil
 }
 
-// Caller identity bearer the connector introspects, client credentials or an ambient endpoint when an IdP is set, else Nous Portal
+// Caller identity bearer the connector introspects, client credentials or an ambient endpoint of the configured IdP
 func ResolveRelayIdentityToken(ctx context.Context) (string, error) {
 	env := map[string]string{}
 	for _, k := range relayIdpKeys {
@@ -135,11 +133,8 @@ func ResolveRelayIdentityToken(ctx context.Context) (string, error) {
 	}
 	tokenURL, clientID, clientSecret, scope := env["token_url"], env["client_id"], env["client_secret"], env["scope"]
 	if tokenURL == "" {
-		scoped := ctx
-		if provider.IsMultiplexActive(ctx) {
-			scoped = profileRuntimeScope(ctx, home.Process(), true)
-		}
-		return provider.ResolveNousAccessToken(provider.PoolEnv{Store: provider.NewStore(home.Dir(scoped)), Ctx: scoped}, provider.NousAccessTokenOptions{})
+		return "", errors.New("the relay needs a caller identity: set gateway.idp.token_url (or GATEWAY_RELAY_IDP_TOKEN_URL) " +
+			"with client_id and client_secret for the OAuth2 client_credentials grant, or token_url alone for an ambient token endpoint.")
 	}
 	if clientID == "" && clientSecret == "" {
 		return relayAmbientToken(ctx, tokenURL)

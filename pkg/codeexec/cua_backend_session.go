@@ -6,7 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"log/slog"
 	"os"
 	"strings"
 	"sync"
@@ -172,7 +171,7 @@ func cliRunJSON(cmd []string, env map[string]string, name string, timeout float6
 			}
 		}
 		if attempt < cliAttempts-1 {
-			slog.Warn(fmt.Sprintf("cua-driver CLI fallback for %s got no JSON (attempt %d/%d); retrying in %.1fs",
+			pkgLog(nil).Warn(fmt.Sprintf("cua-driver CLI fallback for %s got no JSON (attempt %d/%d); retrying in %.1fs",
 				name, attempt+1, cliAttempts, backoff))
 			cliSleep(time.Duration(backoff * float64(time.Second)))
 			backoff *= 2
@@ -198,7 +197,7 @@ func cliResult(parsed any, shotFile string) *pyjson.Object {
 			if raw, err := os.ReadFile(p); err == nil {
 				shot = base64.StdEncoding.EncodeToString(raw)
 			} else {
-				slog.Debug(fmt.Sprintf("cua-driver CLI fallback: failed reading %s: %v", p, err))
+				pkgLog(nil).Debug(fmt.Sprintf("cua-driver CLI fallback: failed reading %s: %v", p, err))
 			}
 		}
 	}
@@ -530,7 +529,7 @@ func (s *cuaDriverSession) lifecycle(ctx context.Context, ready, shutdown chan s
 	s.state.Unlock()
 	signalled = true
 	close(ready)
-	slog.Info(fmt.Sprintf("cua-driver session ready in %.1fs (manifest=%.1fs, mcp_init=%.1fs)",
+	pkgLog(nil).Info(fmt.Sprintf("cua-driver session ready in %.1fs (manifest=%.1fs, mcp_init=%.1fs)",
 		time.Since(t0).Seconds(), tManifest.Sub(t0).Seconds(), tInit.Sub(tManifest).Seconds()))
 	select {
 	case <-shutdown:
@@ -547,7 +546,7 @@ func (s *cuaDriverSession) populateCapabilities(ctx context.Context, client cuaM
 	s.state.Unlock()
 	list, err := client.ListTools(ctx)
 	if err != nil {
-		slog.Debug(fmt.Sprintf("cua-driver tools/list capability discovery failed: %v", err))
+		pkgLog(nil).Debug(fmt.Sprintf("cua-driver tools/list capability discovery failed: %v", err))
 		return
 	}
 	toolsList, _ := toolField(list, "tools").([]any)
@@ -658,7 +657,7 @@ func (s *cuaDriverSession) setTransportResetCallback(cb func()) { s.transportRes
 func (s *cuaDriverSession) notifyTransportReset() {
 	defer func() {
 		if r := recover(); r != nil {
-			slog.Debug(fmt.Sprintf("cua-driver transport reset callback failed: %v", r))
+			pkgLog(nil).Debug(fmt.Sprintf("cua-driver transport reset callback failed: %v", r))
 		}
 	}()
 	if s.transportReset != nil {
@@ -679,10 +678,10 @@ func (s *cuaDriverSession) stopLifecycleLocked() {
 	select {
 	case err := <-done:
 		if err != nil {
-			slog.Warn(fmt.Sprintf("cua-driver shutdown error: %v", err))
+			pkgLog(nil).Warn(fmt.Sprintf("cua-driver shutdown error: %v", err))
 		}
 	case <-timer.C:
-		slog.Warn("cua-driver session shutdown timed out (5s)")
+		pkgLog(nil).Warn("cua-driver session shutdown timed out (5s)")
 	}
 }
 
@@ -794,7 +793,7 @@ func (s *cuaDriverSession) redeclareSession(timeout float64, failureMsg string) 
 		return false, err
 	}
 	if cuGet(result, "isError") == true {
-		slog.Warn(fmt.Sprintf(failureMsg, pyrepr.Str(derefOr(sessionID)), logicalErrorText(result)))
+		pkgLog(nil).Warn(fmt.Sprintf(failureMsg, pyrepr.Str(derefOr(sessionID)), logicalErrorText(result)))
 	}
 	return cuGet(result, "isError") != true, nil
 }
@@ -808,7 +807,7 @@ func derefOr(p *string) any {
 
 // Starts a dead session or rebuilds the lifecycle from scratch, then reattaches the declared label
 func (s *cuaDriverSession) recreateSession(name string, timeout float64, logMsg string, restart, clearTimeoutSuspect bool) error {
-	slog.Warn(fmt.Sprintf(logMsg, name))
+	pkgLog(nil).Warn(fmt.Sprintf(logMsg, name))
 	if !restart {
 		if err := s.start(); err != nil {
 			return err
@@ -926,7 +925,7 @@ func (s *cuaDriverSession) callTool(name string, args *pyjson.Object, timeout fl
 		var timedOut bridgeTimeoutError
 		if errors.As(err, &timedOut) {
 			s.timeoutSuspect.Store(true)
-			slog.Warn(fmt.Sprintf("cua-driver MCP timed out on %s; marking session suspect for recreation before the next call", name))
+			pkgLog(nil).Warn(fmt.Sprintf("cua-driver MCP timed out on %s; marking session suspect for recreation before the next call", name))
 			return outcomeUnknown(name, err, "timeout_outcome_unknown"), nil
 		}
 		if s.isTransientDaemonError(err) {
@@ -934,7 +933,7 @@ func (s *cuaDriverSession) callTool(name string, args *pyjson.Object, timeout fl
 				s.notifyTransportReset()
 				return outcomeUnknown(name, err, "transport_outcome_unknown"), nil
 			}
-			slog.Warn(fmt.Sprintf("cua-driver MCP transport failed on %s (%v); falling back to CLI transport", name, err))
+			pkgLog(nil).Warn(fmt.Sprintf("cua-driver MCP transport failed on %s (%v); falling back to CLI transport", name, err))
 			return s.callToolViaCLIFn(name, args, timeout)
 		}
 		if !s.isClosedSessionError(err) {
@@ -957,7 +956,7 @@ func (s *cuaDriverSession) callTool(name string, args *pyjson.Object, timeout fl
 	}
 	if isEndedSessionResult(result) {
 		if s.declaredSessionID != nil && *s.declaredSessionID != "" && !cuaLifecycleCalls[name] {
-			slog.Warn(fmt.Sprintf("cua-driver session %s ended during %s; reviving and retrying once", *s.declaredSessionID, name))
+			pkgLog(nil).Warn(fmt.Sprintf("cua-driver session %s ended during %s; reviving and retrying once", *s.declaredSessionID, name))
 			revived, err := s.redeclareSession(timeout, "cua-driver session %s could not be revived: %s")
 			if err != nil {
 				return nil, err

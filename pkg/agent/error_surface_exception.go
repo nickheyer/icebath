@@ -95,7 +95,7 @@ func surfaceExceptionStatus(err error) (int, bool) {
 func buildErrorSurfaceFromException(err error, providerName, model string, apiKey any) (surface map[string]any) {
 	defer func() {
 		if r := recover(); r != nil {
-			errorSurfaceLog().Debug("error_surface: exception classification failed", "error", fmt.Sprint(r))
+			pkgLog().Debug("error_surface: exception classification failed", "error", fmt.Sprint(r))
 			surface = nil
 		}
 	}()

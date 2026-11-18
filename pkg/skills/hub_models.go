@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"log/slog"
 	"maps"
 	"slices"
 	"strings"
@@ -190,13 +189,13 @@ func hubParseFrontmatter(content string) map[string]any {
 	return map[string]any{}
 }
 
-// Tags under metadata.icebath or metadata.hermes, an empty list when absent
+// Tags under the icebath metadata of the frontmatter, an empty list when absent
 func hubTags(fm map[string]any) any {
 	meta, ok := fm["metadata"].(map[string]any)
 	if !ok {
 		return []any{}
 	}
-	for _, key := range []string{"icebath", "hermes"} {
+	for _, key := range MetadataKeys {
 		if _, present := meta[key]; present {
 			m, isMap := meta[key].(map[string]any)
 			if !isMap {
@@ -404,7 +403,7 @@ func referencedSupportPaths(skillMD string) (paths map[string]bool, ok bool, err
 			continue
 		}
 		if strings.HasPrefix(name, "..") {
-			slog.Default().Warn("SKILL.md links outside the skill directory; installing without it", "link", raw)
+			pkgLog().Warn("SKILL.md links outside the skill directory; installing without it", "link", raw)
 			continue
 		}
 		if strings.Contains(name, "/") || pystr.Casefold(name) == "skill.md" || !strings.Contains(strings.TrimLeft(name, "."), ".") || !reSearch(samedirNameRe, name) {

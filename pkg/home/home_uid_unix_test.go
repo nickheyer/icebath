@@ -10,7 +10,7 @@ import (
 	"testing"
 )
 
-func TestResolveHermesUidGidReturnsParsedValuesWhenBothSet(t *testing.T) {
+func TestResolveIcebathUidGidReturnsParsedValuesWhenBothSet(t *testing.T) {
 	t.Setenv("ICEBATH_UID", "1000")
 	t.Setenv("ICEBATH_GID", "911")
 	uid, gid := resolveIcebathUIDGID()
@@ -19,7 +19,7 @@ func TestResolveHermesUidGidReturnsParsedValuesWhenBothSet(t *testing.T) {
 	}
 }
 
-func TestChownToHermesUidEpermIsSilentlySwallowed(t *testing.T) {
+func TestChownToIcebathUidEpermIsSilentlySwallowed(t *testing.T) {
 	t.Setenv("ICEBATH_UID", "1000")
 	t.Setenv("ICEBATH_GID", "911")
 	d := mkdirs(t, filepath.Join(t.TempDir(), "subdir"), 0)

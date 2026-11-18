@@ -365,7 +365,7 @@ func TestValidPostSetupKeysCoverCatalogAndPluginRows(t *testing.T) {
 	swapHook(t, &ToolsConfigHooks.ImageGenRegistry, &PickerRegistry{List: func(context.Context, *Env) []PickerProvider { panic("image registry boom") }})
 	swapHook(t, &ToolsConfigHooks.VideoGenRegistry, nil)
 	got := s.ValidPostSetupKeys()
-	want := []string{"browserbase", "chromium", "cua_driver", "faster_whisper", "kittentts", "lightpanda", "steel_cli", "xai_grok"}
+	want := []string{"chromium", "cua_driver", "faster_whisper", "kittentts", "lightpanda", "steel_cli", "xai_grok"}
 	var keys []string
 	for k := range got {
 		keys = append(keys, k)
@@ -387,12 +387,13 @@ func TestRunPostSetupCommandExitCodes(t *testing.T) {
 	}
 	s, out = newTestToolsSetup(t, "")
 	if code := s.RunPostSetupCommand(map[string]any{"post_setup_key": "bogus"}); code != 2 ||
-		out.String() != "✗ Unknown post-setup key: 'bogus'. Valid keys: browserbase, chromium, cua_driver, faster_whisper, kittentts, lightpanda, xai_grok\n" {
+		out.String() != "✗ Unknown post-setup key: 'bogus'. Valid keys: chromium, cua_driver, faster_whisper, kittentts, lightpanda, xai_grok\n" {
 		t.Fatalf("unknown %d %q", code, out.String())
 	}
 	s, out = newTestToolsSetup(t, "")
-	if code := s.RunPostSetupCommand(map[string]any{"post_setup_key": "browserbase"}); code != 0 ||
-		out.String() != "  Running post-setup hook: browserbase\n✓     browser_exec ready (built in)\n✓ Post-setup 'browserbase' complete\n" {
+	swapHook(t, &ToolsConfigHooks.InstallCuaDriver, func(context.Context, *Env, *cliui.Console) (bool, error) { return true, nil })
+	if code := s.RunPostSetupCommand(map[string]any{"post_setup_key": "cua_driver"}); code != 0 ||
+		out.String() != "  Running post-setup hook: cua_driver\n✓ Post-setup 'cua_driver' complete\n" {
 		t.Fatalf("success %d %q", code, out.String())
 	}
 	s, out = newTestToolsSetup(t, "")

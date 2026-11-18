@@ -100,7 +100,7 @@ var onDiskJournalMode = func(ctx context.Context, conn SQLiteConn) (string, bool
 		}
 		return pyLower(pyStrip(pyStr(mode))), true, nil
 	}
-	slog.Debug(fmt.Sprintf("_on_disk_journal_mode: retries exhausted on disk read (%s)", errText(lastErr)))
+	pkgLog().Debug(fmt.Sprintf("_on_disk_journal_mode: retries exhausted on disk read (%s)", errText(lastErr)))
 	return "", false, nil
 }
 
@@ -115,7 +115,7 @@ func applyWALSizeLimit(ctx context.Context, conn SQLiteConn) error {
 		if !isOperationalError(err) {
 			return err
 		}
-		slog.Debug(fmt.Sprintf("journal_size_limit not applied: %s", errText(err)))
+		pkgLog().Debug(fmt.Sprintf("journal_size_limit not applied: %s", errText(err)))
 	}
 	return nil
 }
@@ -759,7 +759,7 @@ func logOnce(kind, dbLabel string, args ...any) {
 	for _, a := range args {
 		texts = append(texts, logArgText(a))
 	}
-	slog.Log(context.Background(), entry.level, fmt.Sprintf(entry.message, texts...))
+	pkgLog().Log(context.Background(), entry.level, fmt.Sprintf(entry.message, texts...))
 }
 
 // Path of the running executable as sys.executable, empty when the platform cannot name it
@@ -822,12 +822,12 @@ func ResolveSynchronousLevel(rawValue any) (int, bool) {
 func applySynchronousPragma(ctx context.Context, conn SQLiteConn, rawValue any, dbLabel string) error {
 	level, ok := ResolveSynchronousLevel(rawValue)
 	if !ok {
-		slog.Warn(fmt.Sprintf("%s: ignoring unrecognized database.synchronous=%s (expected OFF, NORMAL, FULL, EXTRA, or 0-3)",
+		pkgLog().Warn(fmt.Sprintf("%s: ignoring unrecognized database.synchronous=%s (expected OFF, NORMAL, FULL, EXTRA, or 0-3)",
 			dbLabel, pyReprValue(rawValue)))
 		return nil
 	}
 	if walPlatform == "darwin" && level < synchronousFull {
-		slog.Warn(fmt.Sprintf("%s: refusing database.synchronous=%s on macOS; keeping FULL. Darwin's fsync() does not "+
+		pkgLog().Warn(fmt.Sprintf("%s: refusing database.synchronous=%s on macOS; keeping FULL. Darwin's fsync() does not "+
 			"guarantee write ordering, so a lower level readmits the half-written btree pages FULL exists "+
 			"to prevent.", dbLabel, synchronousNames[level]))
 		return nil
@@ -851,7 +851,7 @@ func ApplyDatabasePragmas(ctx context.Context, conn SQLiteConn, dbLabel string) 
 		}
 		value, convErr := pyIntOf(pyStr(rawValue))
 		if convErr != nil {
-			slog.Warn(fmt.Sprintf("%s: ignoring non-integer database.%s=%s", dbLabel, name, pyReprValue(rawValue)))
+			pkgLog().Warn(fmt.Sprintf("%s: ignoring non-integer database.%s=%s", dbLabel, name, pyReprValue(rawValue)))
 			continue
 		}
 		if _, err := conn.ExecContext(ctx, fmt.Sprintf("PRAGMA %s=%s", name, value.String())); err != nil && !isOperationalError(err) {

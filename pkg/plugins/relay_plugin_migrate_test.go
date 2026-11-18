@@ -89,7 +89,7 @@ func TestLegacyEnvBecomesValidatedTOMLSelectedFromEnv(t *testing.T) {
 		validated = append(validated, payload)
 		return relayReport(), nil
 	})
-	result, err := MigrateProfileRelayEnv(context.Background(), h, true)
+	result, err := MigrateProfileRelayEnv(context.Background(), h, true, nil)
 	if err != nil || !result.Migrated() {
 		t.Fatalf("result %+v err %v", result, err)
 	}
@@ -129,7 +129,7 @@ func TestLegacyEnvBecomesValidatedTOMLSelectedFromEnv(t *testing.T) {
 	if !strings.Contains(out.String(), "     • default: "+tomlPath+"\n") {
 		t.Fatalf("report %q", out.String())
 	}
-	again, err := MigrateProfileRelayEnv(context.Background(), h, true)
+	again, err := MigrateProfileRelayEnv(context.Background(), h, true, nil)
 	if err != nil || again.SkippedReason != "no legacy exporter variables" {
 		t.Fatalf("second run %+v %v", again, err)
 	}
@@ -146,7 +146,7 @@ func TestUpdateMigratesEveryProfileHomeSeparately(t *testing.T) {
 	work, idle := filepath.Join(h, "profiles", "work"), filepath.Join(h, "profiles", "idle")
 	writeRelayFile(t, filepath.Join(work, ".env"), relayEnvText(work))
 	writeRelayFile(t, filepath.Join(idle, ".env"), "SLACK_BOT_TOKEN=y\n")
-	all, err := MigrateAllProfileRelayEnvs(context.Background(), false)
+	all, err := MigrateAllProfileRelayEnvs(context.Background(), false, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -184,7 +184,7 @@ func TestErrorDiagnosticsRejectThePayloadLikeRelay08Did(t *testing.T) {
 			map[string]any{"level": "error", "code": "unsupported_value", "message": "atof.mode 'nope' is unsupported"}), nil
 	})
 	_, err := ValidateRelayPluginPayload(context.Background(), relayObject("version", 1))
-	if err == nil || relayExceptionText(err) != "ValueError: atof.mode 'nope' is unsupported" {
+	if err == nil || relayExceptionText(err) != "atof.mode 'nope' is unsupported" {
 		t.Fatalf("err %v", err)
 	}
 }
@@ -204,13 +204,13 @@ func TestErrorDiagnosticsLeaveEnvUntouched(t *testing.T) {
 	installRelayValidator(t, func(map[string]any) (map[string]any, error) {
 		return relayReport(map[string]any{"level": "error", "code": "bad", "message": "rejected"}), nil
 	})
-	result, err := MigrateProfileRelayEnv(context.Background(), h, true)
-	if err != nil || result.Migrated() || result.ValidationError != "ValueError: rejected" {
+	result, err := MigrateProfileRelayEnv(context.Background(), h, true, nil)
+	if err != nil || result.Migrated() || result.ValidationError != "rejected" {
 		t.Fatalf("result %+v err %v", result, err)
 	}
 	tools.RegisterNemoRelayBinding(nil)
-	missing, err := MigrateProfileRelayEnv(context.Background(), h, false)
-	if err != nil || missing.ValidationError != "ModuleNotFoundError: No module named 'nemo_relay'" {
+	missing, err := MigrateProfileRelayEnv(context.Background(), h, false, nil)
+	if err != nil || missing.ValidationError != "the Relay runtime binding is not installed" {
 		t.Fatalf("missing binding %+v err %v", missing, err)
 	}
 	if data, _ := os.ReadFile(filepath.Join(h, ".env")); string(data) != relayEnvText(h) {
@@ -221,7 +221,7 @@ func TestErrorDiagnosticsLeaveEnvUntouched(t *testing.T) {
 	}
 	var out bytes.Buffer
 	PrintRelayMigrationReport(&out, []*RelayMigrationResult{result})
-	want := "\n   ✗ " + h + ": could not migrate Relay exporter vars — ValueError: rejected\n     Write " + filepath.Join(h, RelayPluginsTOMLName) + " by hand and set " + tools.RelayPluginsConfigEnv + ".\n"
+	want := "\n   ✗ " + h + ": could not migrate Relay exporter vars — rejected\n     Write " + filepath.Join(h, RelayPluginsTOMLName) + " by hand and set " + tools.RelayPluginsConfigEnv + ".\n"
 	if out.String() != want {
 		t.Fatalf("report %q", out.String())
 	}

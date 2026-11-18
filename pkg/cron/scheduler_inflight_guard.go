@@ -3,7 +3,6 @@ package cron
 import (
 	"context"
 	"fmt"
-	"log/slog"
 	"os"
 	"path/filepath"
 	"sort"
@@ -84,7 +83,7 @@ func (s *Store) recordForcedRelease(jobID, name string, ageSeconds, allowanceSec
 		return werr
 	}()
 	if err != nil {
-		s.logAs("cron.scheduler").Debug(fmt.Sprintf("Could not append forced-release record: %v", err))
+		s.log.Debug(fmt.Sprintf("Could not append forced-release record: %v", err))
 	}
 }
 
@@ -148,7 +147,7 @@ func (s *Store) recordStaleRelease(job *Job, jobID string, age, allowance float6
 	case fut == nil:
 		futureState = "missing"
 	}
-	s.logAs("cron.scheduler").Warn(fmt.Sprintf("cron.inflight.forced_release event=forced_release reason=%s job='%s' "+
+	s.log.Warn(fmt.Sprintf("cron.inflight.forced_release event=forced_release reason=%s job='%s' "+
 		"id=%s age=%.0fs allowance=%.0fs future=%s — stale in-flight claim "+
 		"released; the job was skipping every fire with 'already running'", reason, name, jobID, age, allowance, futureState))
 	s.recordForcedRelease(jobID, name, age, allowance)
@@ -156,7 +155,7 @@ func (s *Store) recordStaleRelease(job *Job, jobID string, age, allowance float6
 		return
 	}
 	if job != nil && job.Repeat != nil && job.Repeat.Times != nil {
-		s.logAs("cron.scheduler").Warn(fmt.Sprintf("cron.inflight.forced_release.job_untouched job='%s' id=%s — "+
+		s.log.Warn(fmt.Sprintf("cron.inflight.forced_release.job_untouched job='%s' id=%s — "+
 			"finite-repeat job released without mark_job_run (repeat budget "+
 			"preserved); row left in place so it re-fires normally", name, jobID))
 		return
@@ -164,7 +163,7 @@ func (s *Store) recordStaleRelease(job *Job, jobID string, age, allowance float6
 	msg := fmt.Sprintf("Stale in-flight claim force-released after %.1fm (allowance %.1fm); previous run never released "+
 		"the scheduler in-flight guard", age/60, allowance/60)
 	if _, err := markJobRunSeam(s, context.Background(), jobID, false, MarkOptions{Error: &msg}); err != nil {
-		s.logAs("cron.scheduler").Warn(fmt.Sprintf("Could not record forced release for job %s: %v", jobID, err))
+		s.log.Warn(fmt.Sprintf("Could not record forced release for job %s: %v", jobID, err))
 	}
 }
 
@@ -296,7 +295,7 @@ func markRunningJobsInterrupted(ctx context.Context, reason string, onlyOwners m
 	marked := []string{}
 	for _, f := range fires {
 		if f.owner == nil || *f.owner == "" {
-			slog.Default().Warn(fmt.Sprintf("Job '%s' interrupted before its durable fire owner was registered; "+
+			pkgLog().Warn(fmt.Sprintf("Job '%s' interrupted before its durable fire owner was registered; "+
 				"leaving persisted state untouched", f.key.JobID))
 			marked = append(marked, f.key.JobID)
 			continue
@@ -305,7 +304,7 @@ func markRunningJobsInterrupted(ctx context.Context, reason string, onlyOwners m
 		msg := reason
 		ok, err := markJobRunSeam(s, ctx, f.key.JobID, false, MarkOptions{Error: &msg, ExpectedFireOwner: f.owner})
 		if err != nil {
-			s.logAs("cron.scheduler").Warn(fmt.Sprintf("Failed to mark job %s interrupted: %v", f.key.JobID, err))
+			s.log.Warn(fmt.Sprintf("Failed to mark job %s interrupted: %v", f.key.JobID, err))
 			continue
 		}
 		if ok {

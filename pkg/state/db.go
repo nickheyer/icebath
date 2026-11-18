@@ -11,7 +11,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/home"
 )
 
-// Session store of one home, the hermes SessionDB
+// Session store of one home, the SessionDB
 type DB = SessionDB
 
 // Options of a database open

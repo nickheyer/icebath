@@ -67,8 +67,8 @@ func logsFileSamples(t *testing.T) map[string]string {
 		"agent":   logsPythonLogLine(t, "run_agent"),
 		"errors":  logsPythonLogLine(t, "run_agent"),
 		"gateway": logsPythonLogLine(t, "gateway.run"),
-		"gui":     logsPythonLogLine(t, "hermes_cli.web_server"),
-		"desktop": "2026-09-28 13:18:46,062 [hermes] [boot] ready",
+		"gui":     logsPythonLogLine(t, "icebath.web_server"),
+		"desktop": "2026-09-28 13:18:46,062 [icebath] [boot] ready",
 		"mcp":     logsMCPOutputLine(t),
 		"update":  logsUpdateLogLine(t),
 		"handoff": logsHandoffLogLine(t),
@@ -85,7 +85,7 @@ func logsHandoffLogLine(t *testing.T) string {
 	return strings.TrimRight(string(out), "\n")
 }
 
-func TestEveryLogFileWritesAStampHermesLogsSinceCanRead(t *testing.T) {
+func TestEveryLogFileWritesAStampIcebathLogsSinceCanRead(t *testing.T) {
 	t.Setenv("ICEBATH_HOME", t.TempDir())
 	samples := logsFileSamples(t)
 	if len(samples) != len(logging.LogFiles) {

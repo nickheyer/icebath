@@ -1,4 +1,4 @@
 package manage
 
-// Tree removal a profile delete runs, the _rmtree_with_retry attribute hermes tests replace
+// Tree removal a profile delete runs, the rmtree with retry attribute tests replace
 var rmtreeForDelete = rmtreeWithRetry

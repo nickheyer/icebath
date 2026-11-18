@@ -204,9 +204,6 @@ func resolveTTSClientConfig(ctx context.Context) (*pyjson.Object, error) {
 		model := truthyOr(oai["model"], defaultOpenAITTSModel)
 		configBase := oai["base_url"]
 		baseURL := truthyOr(configBase, route.BaseURL)
-		if route.IsManaged && !pyTruthy(configBase) && !managedOpenAITTSModels[pyrepr.Str(model)] {
-			model = defaultOpenAITTSModel
-		}
 		speedDefault, ok := ttsConfig["speed"]
 		if !ok {
 			speedDefault = 1.0
@@ -265,7 +262,7 @@ func ResolveClientVoiceConfig(ctx context.Context) *pyjson.Object {
 				return err
 			})
 			if err != nil {
-				voiceLog().Error(fmt.Sprintf("client voice-config %s resolution failed: %s", strings.ToUpper(step.key), err))
+				pkgLog().Error(fmt.Sprintf("client voice-config %s resolution failed: %s", strings.ToUpper(step.key), err))
 				result = relayVoiceConfig("resolution error")
 			}
 			out.Set(step.key, result)
@@ -278,7 +275,7 @@ func ResolveClientVoiceConfig(ctx context.Context) *pyjson.Object {
 		return err
 	})
 	if err != nil {
-		voiceLog().Debug(fmt.Sprintf("live STT capability probe failed: %s", err))
+		pkgLog().Debug(fmt.Sprintf("live STT capability probe failed: %s", err))
 		return out
 	}
 	if stt, ok := out.Get("stt"); ok {

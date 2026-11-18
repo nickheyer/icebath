@@ -3,7 +3,6 @@ package provider
 import (
 	"context"
 	"fmt"
-	"log/slog"
 	"regexp"
 	"sort"
 	"strconv"
@@ -12,6 +11,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
@@ -121,7 +121,7 @@ func auxBareModelOf(v any) (string, error) {
 	}
 	s, ok := v.(string)
 	if !ok {
-		return "", fmt.Errorf("AttributeError: '%s' object has no attribute 'strip'", pyrepr.TypeName(v))
+		return "", fmt.Errorf("the auxiliary model is %s, expected text", errchain.Kind(v))
 	}
 	return bareModel(s), nil
 }
@@ -222,11 +222,11 @@ func auxResetTemperatureRejections() {
 // Temperature policy as omit, a fixed value, or neither when the caller's value stands
 func auxFixedTemperatureForModel(model, baseURL, provider string) (omit bool, fixed *float64, err error) {
 	if isKimiModel(model) {
-		slog.Debug("Omitting temperature for Kimi model " + pyrepr.Repr(model) + " (server-managed)")
+		pkgLog().Debug("Omitting temperature for Kimi model " + pyrepr.Repr(model) + " (server-managed)")
 		return true, nil, nil
 	}
 	if isOpenAIDefaultTemperatureOnly(model) || geminiSamplingDeprecated(bareModel(model)) {
-		slog.Debug("Omitting temperature for " + pyrepr.Repr(model) + " (default-only, or Gemini 3.6+ ignores sampling)")
+		pkgLog().Debug("Omitting temperature for " + pyrepr.Repr(model) + " (default-only, or Gemini 3.6+ ignores sampling)")
 		return true, nil, nil
 	}
 	route, err := auxRouteKey(provider, baseURL)
@@ -237,7 +237,7 @@ func auxFixedTemperatureForModel(model, baseURL, provider string) (omit bool, fi
 	rejected := auxTemperatureRejectedRoutes[auxTemperatureRoute{route, bareModel(model)}]
 	auxTemperatureRejectedMu.Unlock()
 	if rejected {
-		slog.Debug("Omitting temperature for " + pyrepr.Repr(model) + " (route rejected it earlier)")
+		pkgLog().Debug("Omitting temperature for " + pyrepr.Repr(model) + " (route rejected it earlier)")
 		return true, nil, nil
 	}
 	if auxIsArceeTrinityThinking(model) {
@@ -351,15 +351,11 @@ var (
 
 // Newest fast family match from the provider's live catalog, empty when none or the catalog is unreachable
 func auxFastModelFromCatalog(ctx context.Context, providerID string) string {
-	isNous := pystr.Lower(pystr.Strip(providerID)) == "nous"
 	apiKey, baseURL := "", ""
 	if creds, err := auxResolveAPIKeyProviderCredentialsFn(ctx, providerID); err != nil {
-		slog.Debug("No credentials for "+providerID+" catalog", "err", err)
+		pkgLog().Debug("No credentials for "+providerID+" catalog", "err", err)
 	} else {
 		apiKey, baseURL = pystr.Strip(creds.APIKey), pystr.Strip(creds.BaseURL)
-	}
-	if apiKey == "" && isNous {
-		apiKey, baseURL = resolveNousPricingCredentials(ctx)
 	}
 	if baseURL == "" {
 		if profile, ok := GetProviderProfile(ctx, providerID); ok {
@@ -371,9 +367,6 @@ func auxFastModelFromCatalog(ctx context.Context, providerID string) string {
 		return ""
 	}
 	opts := PricingFetchOptions{APIKey: apiKey, BaseURL: strings.TrimSuffix(baseURL, "/v1"), Timeout: 3 * time.Second}
-	if isNous {
-		opts.IncludeSaleOriginal, opts.CacheTTL = true, NousCatalogTTL
-	}
 	catalog := auxFetchModelsWithPricingFn(ctx, opts)
 	ids := make([]string, 0, len(catalog))
 	for id := range catalog {
@@ -385,10 +378,6 @@ func auxFastModelFromCatalog(ctx context.Context, providerID string) string {
 		keys[id] = auxModelRecencyKey(id)
 	}
 	sort.SliceStable(ids, func(i, j int) bool { return auxCompareRecency(keys[ids[i]], keys[ids[j]]) > 0 })
-	if isNous {
-		allowed, _ := nousPolicyAllowedIDsFn(ctx, false)
-		ids = RestrictToNousPolicy(ids, allowed, false)
-	}
 	for _, family := range auxFastModelFamilies {
 		for _, modelID := range ids {
 			lowered := pystr.Lower(modelID)
@@ -415,7 +404,7 @@ func auxGetAuxModelForProvider(ctx context.Context, providerID string) string {
 	return auxAuxModelForProvider(ctx, providerID, false)
 }
 
-// Provider aux model lookup, swapped by tests the way hermes tests patch the module function
+// Provider aux model lookup, swapped by tests
 var auxGetAuxModelForProviderFn = auxGetAuxModelForProvider
 
 // Auxiliary model ladder whose live catalog fast tier runs only when the caller opts in
@@ -433,11 +422,6 @@ func auxAuxModelForProvider(ctx context.Context, providerID string, preferFast b
 	}
 	if picked == "" {
 		picked = auxAPIKeyProviderAuxModelsFallback[providerID]
-	}
-	if picked != "" && pystr.Lower(pystr.Strip(providerID)) == "nous" {
-		if allowed, _ := nousPolicyAllowedIDsFn(ctx, false); len(allowed) > 0 && len(RestrictToNousPolicy([]string{picked}, allowed, false)) == 0 {
-			return ""
-		}
 	}
 	return picked
 }

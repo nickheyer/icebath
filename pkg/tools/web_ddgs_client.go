@@ -6,7 +6,6 @@ import (
 	"encoding/base64"
 	"fmt"
 	"io"
-	"log/slog"
 	"math"
 	"math/big"
 	mrand "math/rand/v2"
@@ -413,7 +412,7 @@ func (r *ddgsTextResult) hrefStr() string {
 	return s
 }
 
-// ddgsQuery carries the text search arguments hermes leaves at their ddgs defaults
+// Text search arguments left at their ddgs defaults
 type ddgsQuery struct {
 	query, region, safesearch, timelimit string
 	page                                 int
@@ -1195,13 +1194,13 @@ func (c *ddgsClient) text(ctx context.Context, q ddgsQuery, maxResults int) ([]*
 				case <-p.done:
 					if p.err != nil {
 						lastErr = p.err
-						slog.Info(fmt.Sprintf("Error in engine %s: %s", p.engine.name, pyExcClass(p.err)+"("+pyrepr.StrRepr(p.err.Error())+")"))
+						pkgLog().Info(fmt.Sprintf("Error in engine %s: %s", p.engine.name, pyExcClass(p.err)+"("+pyrepr.StrRepr(p.err.Error())+")"))
 						continue
 					}
 					if len(p.results) > 0 {
 						if err := agg.extend(p.results); err != nil {
 							lastErr = err
-							slog.Info(fmt.Sprintf("Error in engine %s: %s", p.engine.name, pyExcClass(err)+"("+pyrepr.StrRepr(err.Error())+")"))
+							pkgLog().Info(fmt.Sprintf("Error in engine %s: %s", p.engine.name, pyExcClass(err)+"("+pyrepr.StrRepr(err.Error())+")"))
 							continue
 						}
 						seen[p.engine.provider] = true

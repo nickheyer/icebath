@@ -22,18 +22,18 @@ var toolCallLoggerMu sync.Mutex
 
 // Process wide tool call logger with one size rotated redacting handler on logs tool_calls.log
 func toolCallLogger(ctx context.Context) *logging.Logger {
-	toolLogger := logging.GetLogger("hermes.tool_calls")
+	toolLogger := logging.GetLogger("gatewayrun/tool_calls")
 	toolCallLoggerMu.Lock()
 	defer toolCallLoggerMu.Unlock()
 	if len(toolLogger.Handlers()) == 0 {
 		logDir := filepath.Join(home.Dir(ctx), "logs")
 		if err := os.MkdirAll(logDir, 0o755); err != nil {
-			runLog().Error(fmt.Sprintf("write_tool_log error: %s", err))
+			pkgLog().Error(fmt.Sprintf("write_tool_log error: %s", err))
 			return toolLogger
 		}
 		handler, err := logging.NewRedactingRotatingFileHandler(ctx, filepath.Join(logDir, "tool_calls.log"), 5*1024*1024, 3, "%(message)s")
 		if err != nil {
-			runLog().Error(fmt.Sprintf("write_tool_log error: %s", err))
+			pkgLog().Error(fmt.Sprintf("write_tool_log error: %s", err))
 			return toolLogger
 		}
 		toolLogger.SetLevel(logging.LevelInfo)
@@ -80,7 +80,7 @@ func (r *GatewayRunner) runAgentStartStreamingTTS(ctx context.Context, tc *TurnC
 	}
 	consumer, err := gateway.NewStreamingTTSConsumer(ctx, tc.sessionEnv, adapter, tc.source.ChatID, media.LoadTTSConfig(ctx, tc.sessionEnv), statusThreadMetadata, nil)
 	if err != nil {
-		runLog().Debug(fmt.Sprintf("Could not set up streaming TTS consumer: %s", err))
+		pkgLog().Debug(fmt.Sprintf("Could not set up streaming TTS consumer: %s", err))
 		return
 	}
 	if consumer.Active() {
@@ -135,7 +135,7 @@ func (r *GatewayRunner) runAgentTrackAgent(ctx context.Context, tc *TurnContext)
 		s.turn.agent, s.turn.ctx = promoted, tc
 	})
 	if stale {
-		runLog().Info(fmt.Sprintf("Skipping stale agent promotion for %s — generation %d is no longer current", tc.sessionKey, *tc.runGeneration))
+		pkgLog().Info(fmt.Sprintf("Skipping stale agent promotion for %s — generation %d is no longer current", tc.sessionKey, *tc.runGeneration))
 		return
 	}
 	if r.draining.Load() {

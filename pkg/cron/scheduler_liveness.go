@@ -91,6 +91,6 @@ func (p *executionProgressStamper) tick(ctx context.Context) {
 	ownerProgress.at[p.executionID] = epochNow()
 	ownerProgress.Unlock()
 	if _, err := touchExecutionProgress(ctx, p.s, p.executionID); err != nil {
-		p.s.logAs("cron.scheduler_liveness").Debug(fmt.Sprintf("Job '%s': execution progress stamp failed", p.jobName), "error", err)
+		p.s.log.Debug(fmt.Sprintf("Job '%s': execution progress stamp failed", p.jobName), "error", err)
 	}
 }

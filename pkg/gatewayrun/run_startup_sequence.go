@@ -17,11 +17,10 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/monitoring"
-	"github.com/nickheyer/icebath/pkg/observability"
 	"github.com/nickheyer/icebath/pkg/plugins"
 	"github.com/nickheyer/icebath/pkg/profiles"
 	"github.com/nickheyer/icebath/pkg/tools"
-	"github.com/nickheyer/icebath/pkg/tuigateway"
+	"github.com/nickheyer/icebath/pkg/tuihost"
 )
 
 // Whether a chat restart completion marker is waiting to be delivered
@@ -46,7 +45,7 @@ func (r *GatewayRunner) startPrefilterPlatforms(ctx context.Context) (aborted bo
 			continue
 		}
 		if multiplexOn && !platformHasBotCredential(ctx, platform, platformConfig) {
-			runLog().Info(fmt.Sprintf("Skipping %s on default profile: no bot credential in this "+
+			pkgLog().Info(fmt.Sprintf("Skipping %s on default profile: no bot credential in this "+
 				"profile's secrets. Secondary multiplexed profiles that "+
 				"provide the token will still connect.", platform))
 			skipped = append(skipped, platform)
@@ -59,9 +58,9 @@ func (r *GatewayRunner) startPrefilterPlatforms(ctx context.Context) (aborted bo
 		}
 		if adapter == nil {
 			if slices.Contains(gateway.PlatformMembers(), platform) {
-				runLog().Warn(fmt.Sprintf("No adapter available for %s", platform))
+				pkgLog().Warn(fmt.Sprintf("No adapter available for %s", platform))
 			} else {
-				runLog().Warn(fmt.Sprintf("No adapter for '%s' -- is the plugin installed? "+
+				pkgLog().Warn(fmt.Sprintf("No adapter for '%s' -- is the plugin installed? "+
 					"(platform is enabled in config.yaml but no plugin registered it)", platform))
 			}
 			heals := r.adapterMayHeal(ctx, platform, platformConfig)
@@ -82,7 +81,7 @@ func (r *GatewayRunner) startAggregateConnectResults(ctx context.Context, raw []
 	connected := 0
 	for _, item := range raw {
 		if item.raised != nil {
-			runLog().Error(fmt.Sprintf("Unexpected startup connect error: %v", item.raised))
+			pkgLog().Error(fmt.Sprintf("Unexpected startup connect error: %v", item.raised))
 			continue
 		}
 		platform, adapter := item.platform, item.adapter
@@ -90,7 +89,7 @@ func (r *GatewayRunner) startAggregateConnectResults(ctx context.Context, raw []
 		case "aborted":
 			continue
 		case "exception":
-			runLog().Error(fmt.Sprintf("✗ %s error: %v", platform, item.exc))
+			pkgLog().Error(fmt.Sprintf("✗ %s error: %v", platform, item.exc))
 			r.safeAdapterDisconnect(ctx, adapter, platform)
 			r.startupQueueTransientFailure(ctx, platform, adapter, item.config, fmt.Sprint(item.exc), retryable)
 			continue
@@ -107,10 +106,10 @@ func (r *GatewayRunner) startAggregateConnectResults(ctx context.Context, raw []
 				suffix = " (degraded)"
 			}
 			r.updatePlatformRuntimeStatus(ctx, string(platform), status)
-			runLog().Info(fmt.Sprintf("✓ %s connected%s", platform, suffix))
+			pkgLog().Info(fmt.Sprintf("✓ %s connected%s", platform, suffix))
 			continue
 		}
-		runLog().Warn(fmt.Sprintf("✗ %s failed to connect", platform))
+		pkgLog().Warn(fmt.Sprintf("✗ %s failed to connect", platform))
 		r.safeAdapterDisconnect(ctx, adapter, platform)
 		base := adapter.Base()
 		if !base.HasFatalError() {
@@ -162,11 +161,11 @@ func (r *GatewayRunner) startSecondaryProfiles(ctx context.Context, connected in
 		var configErr *MultiplexConfigError
 		switch {
 		case errors.As(err, &configErr):
-			runLog().Error(fmt.Sprintf("Gateway multiplexer config error: %s", configErr.Error()))
+			pkgLog().Error(fmt.Sprintf("Gateway multiplexer config error: %s", configErr.Error()))
 			r.startupFailFatalConfig(ctx, configErr.Error())
 			connected = -1 - connected
 		case err != nil:
-			runLog().Error(fmt.Sprintf("Secondary-profile adapter startup failed: %v", err), "exc_info", err)
+			pkgLog().Error(fmt.Sprintf("Secondary-profile adapter startup failed: %v", err), "exc_info", err)
 		}
 	}()
 	if connected < 0 {
@@ -181,13 +180,13 @@ func (r *GatewayRunner) startSecondaryProfiles(ctx context.Context, connected in
 			}
 		}
 		if !served {
-			runLog().Warn(fmt.Sprintf("%s is enabled but no profile (default or secondary) provided a bot credential for it — "+
+			pkgLog().Warn(fmt.Sprintf("%s is enabled but no profile (default or secondary) provided a bot credential for it — "+
 				"the platform is not being served. Add its token to the profile that should "+
 				"own it, or disable the platform.", platform))
 		}
 	}
 	for _, line := range r.unservedSharedIngressWarnings() {
-		runLog().Warn(line)
+		pkgLog().Warn(line)
 	}
 	return false, connected
 }
@@ -195,7 +194,7 @@ func (r *GatewayRunner) startSecondaryProfiles(ctx context.Context, connected in
 // Room worker, heartbeat, startup hook, channel directory and the pending update notice
 func (r *GatewayRunner) startPostConnectServices(ctx context.Context, connected int) error {
 	if _, err := r.ensureHostedRoomWorker(ctx); err != nil {
-		runLog().Error("Group Chat worker failed to start; mutating Group Chat commands "+
+		pkgLog().Error("Group Chat worker failed to start; mutating Group Chat commands "+
 			"will fail closed until supervision recovers it", "exc_info", err)
 	}
 	r.spawnSupervised(func(c context.Context) error { return r.hostedRoomWorkerWatcher(c, 1.0) }, "hosted_room_worker", true, 0, supervisedHooks{})
@@ -209,7 +208,7 @@ func (r *GatewayRunner) startPostConnectServices(ctx context.Context, connected 
 		return err
 	}
 	if len(loaded) > 0 {
-		runLog().Info(fmt.Sprintf("%d hook(s) loaded", len(loaded)))
+		pkgLog().Info(fmt.Sprintf("%d hook(s) loaded", len(loaded)))
 	}
 	names := []any{}
 	for _, p := range r.adapters.Keys() {
@@ -219,7 +218,7 @@ func (r *GatewayRunner) startPostConnectServices(ctx context.Context, connected 
 		return err
 	}
 	if connected > 0 {
-		runLog().Info(fmt.Sprintf("Gateway running with %d platform(s)", connected))
+		pkgLog().Info(fmt.Sprintf("Gateway running with %d platform(s)", connected))
 	}
 	func() {
 		defer func() {
@@ -240,7 +239,7 @@ func (r *GatewayRunner) startPostConnectServices(ctx context.Context, connected 
 				}
 			}
 		}
-		runLog().Info(fmt.Sprintf("Channel directory built: %d target(s)", count))
+		pkgLog().Info(fmt.Sprintf("Channel directory built: %d target(s)", count))
 	}()
 	notified, err := r.sendUpdateNotification(ctx)
 	if err != nil {
@@ -301,7 +300,7 @@ func (r *GatewayRunner) startFinishWiring(ctx context.Context, connected int) er
 			w := watcher
 			r.spawnSupervised(func(c context.Context) error { return r.runProcessWatcher(c, w) },
 				fmt.Sprintf("process_watcher:%s", pyrepr.Str(w["session_id"])), false, 0, supervisedHooks{})
-			runLog().Info(fmt.Sprintf("Resumed watcher for recovered process %s", pyrepr.Str(w["session_id"])))
+			pkgLog().Info(fmt.Sprintf("Resumed watcher for recovered process %s", pyrepr.Str(w["session_id"])))
 		}
 	}()
 	return nil
@@ -327,7 +326,7 @@ func (r *GatewayRunner) startSpawnBackgroundWatchers(ctx context.Context) {
 		for _, p := range r.failedPlatforms.Keys() {
 			names = append(names, string(p))
 		}
-		runLog().Info(fmt.Sprintf("Starting reconnection watcher for %d failed platform(s): %s", len(names), strings.Join(names, ", ")))
+		pkgLog().Info(fmt.Sprintf("Starting reconnection watcher for %d failed platform(s): %s", len(names), strings.Join(names, ", ")))
 	}
 	r.spawnReconnectWatcher(ctx, nil)
 	post := []struct {
@@ -346,12 +345,12 @@ func (r *GatewayRunner) startSpawnBackgroundWatchers(ctx context.Context) {
 	func() {
 		defer func() {
 			if rec := recover(); rec != nil {
-				runLog().Debug("scale-to-zero: arm check failed at startup", "exc_info", rec)
+				pkgLog().Debug("scale-to-zero: arm check failed at startup", "exc_info", rec)
 			}
 		}()
 		if r.scaleToZeroShouldArm(ctx) {
 			idle, _ := pyrepr.Format(r.scaleToZeroIdleTimeoutSeconds(ctx), ".0f")
-			runLog().Info(fmt.Sprintf("scale-to-zero: armed (idle timeout %ss) — watching for idle", idle))
+			pkgLog().Info(fmt.Sprintf("scale-to-zero: armed (idle timeout %ss) — watching for idle", idle))
 			r.spawnSupervised(func(c context.Context) error { return r.scaleToZeroWatcher(c, 30.0) }, "scale_to_zero_watcher", true, 0, supervisedHooks{})
 		} else {
 			r.logScaleToZeroNotArmedReason(ctx)
@@ -364,11 +363,11 @@ func (r *GatewayRunner) startSpawnBackgroundWatchers(ctx context.Context) {
 func startFlushRuntimeStatus(ctx context.Context) {
 	ok, err := gateway.FlushRuntimeStatusAsync(ctx, 2*time.Second)
 	if err != nil {
-		runLog().Debug("Final startup runtime-status flush failed", "exc_info", err)
+		pkgLog().Debug("Final startup runtime-status flush failed", "exc_info", err)
 		return
 	}
 	if !ok {
-		runLog().Warn("Timed out flushing final startup runtime status")
+		pkgLog().Warn("Timed out flushing final startup runtime status")
 	}
 }
 
@@ -380,7 +379,7 @@ func (r *GatewayRunner) Start(ctx context.Context) (bool, error) {
 
 // Startup sequence from recovery through connects to the running state and background watchers
 func (r *GatewayRunner) startImpl(ctx context.Context) (bool, error) {
-	runLog().Info("Starting Icebath Gateway...")
+	pkgLog().Info("Starting Icebath Gateway...")
 	r.startInstallFaulthandler(ctx)
 	r.startLogStartupEnvironment(ctx)
 	if stop, err := r.abortStartupIfShutdownRequested(ctx, nil, nil); err != nil || stop {
@@ -437,8 +436,7 @@ func (r *GatewayRunner) startImpl(ctx context.Context) (bool, error) {
 		return false, err
 	}
 	r.startSpawnBackgroundWatchers(ctx)
-	observability.RecordProcessReady(ctx, "gateway_boot", true)
-	runLog().Info("Press Ctrl+C to stop")
+	pkgLog().Info("Press Ctrl+C to stop")
 	return true, nil
 }
 
@@ -449,13 +447,13 @@ func (r *GatewayRunner) startLogStartupEnvironment(ctx context.Context) {
 		func() {
 			defer func() {
 				if rec := recover(); rec != nil {
-					runLog().Debug("Startup watchdog disarm failed", "exc_info", rec)
+					pkgLog().Debug("Startup watchdog disarm failed", "exc_info", rec)
 				}
 			}()
 			gateway.DisarmStartupWatchdog()
 		}()
 	}
-	runLog().Info(fmt.Sprintf("Session storage: %s", r.config.SessionsDir))
+	pkgLog().Info(fmt.Sprintf("Session storage: %s", r.config.SessionsDir))
 	r.startLogSystemdTimingAlignment(ctx)
 	r.startLogRetiredSessionReset(ctx)
 	logAgentBudget()
@@ -465,15 +463,15 @@ func (r *GatewayRunner) startLogStartupEnvironment(ctx context.Context) {
 	}
 	switch strings.ToLower(redactRaw) {
 	case "1", "true", "yes", "on":
-		runLog().Info("Secret redaction: ENABLED (tool output, logs, and chat " +
+		pkgLog().Info("Secret redaction: ENABLED (tool output, logs, and chat " +
 			"responses are scrubbed before delivery)")
 	default:
-		runLog().Warn(fmt.Sprintf("Secret redaction: DISABLED (ICEBATH_REDACT_SECRETS=%s). API keys and tokens may appear "+
+		pkgLog().Warn(fmt.Sprintf("Secret redaction: DISABLED (ICEBATH_REDACT_SECRETS=%s). API keys and tokens may appear "+
 			"verbatim in chat output, session JSONs, and logs. Set security.redact_secrets: true "+
 			"in config.yaml to re-enable.", redactRaw))
 	}
 	if profile := profiles.GetActiveProfileName(ctx); profile != "" && profile != "default" {
-		runLog().Info(fmt.Sprintf("Active profile: %s", profile))
+		pkgLog().Info(fmt.Sprintf("Active profile: %s", profile))
 	}
 	wait := 2 * time.Second
 	persisted, err := gateway.WriteRuntimeStatus(ctx, gateway.RuntimeStatusUpdate{
@@ -481,36 +479,36 @@ func (r *GatewayRunner) startLogStartupEnvironment(ctx context.Context) {
 	}, true, &wait)
 	switch {
 	case err != nil:
-		runLog().Debug("Initial gateway runtime-status write failed", "exc_info", err)
+		pkgLog().Debug("Initial gateway runtime-status write failed", "exc_info", err)
 	case !persisted:
-		runLog().Warn("Timed out persisting initial gateway runtime status")
+		pkgLog().Warn("Timed out persisting initial gateway runtime status")
 	}
 	func() {
 		defer func() {
 			if rec := recover(); rec != nil {
-				runLog().Debug("gateway health OTLP export startup failed", "exc_info", rec)
+				pkgLog().Debug("gateway health OTLP export startup failed", "exc_info", rec)
 			}
 		}()
 		cfg, err := config.Load(home.Dir(ctx), nil)
 		if err != nil {
-			runLog().Debug("gateway health OTLP export startup failed", "exc_info", err)
+			pkgLog().Debug("gateway health OTLP export startup failed", "exc_info", err)
 			return
 		}
 		runtime := monitoring.StartGatewayHealthExport(map[string]any(cfg))
 		r.gatewayHealthExportRuntime = runtime
 		if runtime.Enabled {
-			runLog().Info("Gateway health OTLP export: enabled")
+			pkgLog().Info("Gateway health OTLP export: enabled")
 		}
 	}()
 	func() {
 		defer func() {
 			if rec := recover(); rec != nil {
-				runLog().Debug("security advisory check failed at gateway startup", "exc_info", rec)
+				pkgLog().Debug("security advisory check failed at gateway startup", "exc_info", rec)
 			}
 		}()
 		if msg := plugins.AdvisoryGatewayLogMessage(ctx, plugins.DetectCompromised(ctx, plugins.Advisories)); msg != "" {
-			runLog().Warn(msg)
-			runLog().Warn("Run `icebath doctor` on the gateway host for full remediation steps.")
+			pkgLog().Warn(msg)
+			pkgLog().Warn("Run `icebath doctor` on the gateway host for full remediation steps.")
 		}
 	}()
 }
@@ -520,7 +518,7 @@ func (r *GatewayRunner) startRecoverPreviousRun(ctx context.Context) error {
 	startRegisterPluginsRelayHooks(ctx)
 	r.startRelayProvisionRetry(ctx)
 	if err := r.subscribePluginRewire(plugins.GetPluginManager(ctx), "", ""); err != nil {
-		runLog().Warn("plugin re-wire subscription failed", "exc_info", err)
+		pkgLog().Warn("plugin re-wire subscription failed", "exc_info", err)
 	}
 	if err := r.hooks.discoverAndLoad(ctx); err != nil {
 		return err
@@ -535,27 +533,27 @@ func (r *GatewayRunner) startRecoverPreviousRun(ctx context.Context) error {
 	if err != nil {
 		logSuppressed(slog.LevelWarn, err, "Process checkpoint recovery: %s")
 	} else if recovered > 0 {
-		runLog().Info(fmt.Sprintf("Recovered %d background process(es) from previous run", recovered))
+		pkgLog().Info(fmt.Sprintf("Recovered %d background process(es) from previous run", recovered))
 	}
 	if _, err := tools.RestoreUndeliveredCompletions(&tools.Env{Home: home.Dir(ctx), TerminalScope: tools.GetTerminalScope(ctx)}, registry.CompletionQueue); err != nil {
 		logSuppressed(slog.LevelWarn, err, "Could not restore async delegation completions: %s")
 	}
 	cleanMarker := filepath.Join(home.Process(), ".clean_shutdown")
 	if _, statErr := os.Stat(cleanMarker); statErr == nil {
-		runLog().Info("Previous gateway exited cleanly — skipping session suspension")
+		pkgLog().Info("Previous gateway exited cleanly — skipping session suspension")
 		discarded, err := r.consumeCleanShutdownMarker(ctx, cleanMarker)
 		if err != nil {
-			runLog().Error(fmt.Sprintf("Clean-start marker cleanup failed; refusing startup so the "+
+			pkgLog().Error(fmt.Sprintf("Clean-start marker cleanup failed; refusing startup so the "+
 				"clean-exit receipt cannot mask a later unclean exit: %v", err))
 			return fmt.Errorf("clean-start recovery cleanup failed: %w", err)
 		}
 		if discarded > 0 {
-			runLog().Info(fmt.Sprintf("Discarded %d orphan active-turn marker(s) after clean shutdown", discarded))
+			pkgLog().Info(fmt.Sprintf("Discarded %d orphan active-turn marker(s) after clean shutdown", discarded))
 		}
 	} else {
 		resumed, ledgered := r.recoverUncleanSessions(ctx)
 		if resumed+ledgered > 0 {
-			runLog().Info(fmt.Sprintf("Recovered %d interrupted turn(s) from previous run (%d to resume, %d reply(ies) "+
+			pkgLog().Info(fmt.Sprintf("Recovered %d interrupted turn(s) from previous run (%d to resume, %d reply(ies) "+
 				"owed delivery)", resumed+ledgered, resumed, ledgered))
 		}
 	}
@@ -566,7 +564,7 @@ func (r *GatewayRunner) startRecoverPreviousRun(ctx context.Context) error {
 			}
 		}()
 		if stuck := r.suspendStuckLoopSessions(ctx); stuck > 0 {
-			runLog().Warn(fmt.Sprintf("Auto-suspended %d stuck-loop session(s)", stuck))
+			pkgLog().Warn(fmt.Sprintf("Auto-suspended %d stuck-loop session(s)", stuck))
 		}
 	}()
 	return nil
@@ -577,7 +575,7 @@ func startRegisterPluginsRelayHooks(ctx context.Context) {
 	func() {
 		defer func() {
 			if rec := recover(); rec != nil {
-				runLog().Warn("plugin discovery failed at gateway startup", "exc_info", rec)
+				pkgLog().Warn("plugin discovery failed at gateway startup", "exc_info", rec)
 			}
 		}()
 		plugins.SweepPendingPluginDeletes(ctx)
@@ -586,22 +584,22 @@ func startRegisterPluginsRelayHooks(ctx context.Context) {
 	func() {
 		defer func() {
 			if rec := recover(); rec != nil {
-				runLog().Warn("relay adapter registration failed at gateway startup", "exc_info", rec)
+				pkgLog().Warn("relay adapter registration failed at gateway startup", "exc_info", rec)
 			}
 		}()
 		if _, err := gateway.SelfProvisionRelay(ctx); err != nil {
-			runLog().Warn("relay adapter registration failed at gateway startup", "exc_info", err)
+			pkgLog().Warn("relay adapter registration failed at gateway startup", "exc_info", err)
 			return
 		}
 		registered, err := gateway.RegisterRelayAdapter(ctx)
 		if err != nil {
-			runLog().Warn("relay adapter registration failed at gateway startup", "exc_info", err)
+			pkgLog().Warn("relay adapter registration failed at gateway startup", "exc_info", err)
 			return
 		}
 		if registered {
-			runLog().Info(fmt.Sprintf("relay adapter registered (connector at %s)", gateway.RelayURL(ctx)))
+			pkgLog().Info(fmt.Sprintf("relay adapter registered (connector at %s)", gateway.RelayURL(ctx)))
 			if _, err := gateway.SendRelayPolicy(ctx); err != nil {
-				runLog().Warn("relay adapter registration failed at gateway startup", "exc_info", err)
+				pkgLog().Warn("relay adapter registration failed at gateway startup", "exc_info", err)
 			}
 		}
 	}()
@@ -612,7 +610,7 @@ func startRegisterPluginsRelayHooks(ctx context.Context) {
 func (r *GatewayRunner) startRelayProvisionRetry(ctx context.Context) {
 	defer func() {
 		if rec := recover(); rec != nil {
-			runLog().Warn("relay self-provision retry could not start", "exc_info", rec)
+			pkgLog().Warn("relay self-provision retry could not start", "exc_info", rec)
 		}
 	}()
 	if gateway.RelayProvisionPending(ctx) {
@@ -631,10 +629,10 @@ func (r *GatewayRunner) onRelayProvisioned() {
 }
 
 // Starts the local Group Chat worker, an error when it has no backend or did not start
-func startHostedRoomWorkerSync() (tuigateway.HostedRoomService, error) {
-	service := tuigateway.GetHostedRoomService()
+func startHostedRoomWorkerSync() (tuihost.HostedRoomService, error) {
+	service := tuihost.GetHostedRoomService()
 	if service == nil {
-		started, err := tuigateway.StartHostedRoomService()
+		started, err := tuihost.StartHostedRoomService()
 		if err != nil {
 			return nil, err
 		}

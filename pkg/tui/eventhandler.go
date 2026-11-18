@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"github.com/nickheyer/icebath/pkg/tuigateway"
 	"os"
 	"reflect"
 	"strings"
@@ -73,7 +74,6 @@ type eventHandler struct {
 	thinkingGen               int
 	thinkingArmed             bool
 	persistedAbandonedClarify map[string]bool
-	openedChallenges          map[string]bool
 	lastDelegationFetchAt     float64
 	config                    *fullConfigFlight
 	agentsNudgeEnabled        bool
@@ -91,7 +91,7 @@ func newEventHandler(store *tuiStore, turn *turnController, gw turnGateway, app 
 	h := &eventHandler{
 		store: store, turn: turn, gw: gw, app: app,
 		startupResumeID:           env("ICEBATH_TUI_RESUME"),
-		persistedAbandonedClarify: map[string]bool{}, openedChallenges: map[string]bool{}, agentsNudgeEnabled: true, config: &fullConfigFlight{},
+		persistedAbandonedClarify: map[string]bool{}, agentsNudgeEnabled: true, config: &fullConfigFlight{},
 	}
 	return h, store.syncThemeToTerminalBackground()
 }
@@ -319,11 +319,11 @@ func (h *eventHandler) persistSpawnTree(subagents []subagentProgress, sessionID 
 
 // State the main view of the reference redraws on, its event handler built anew at each redraw
 type mainView struct {
-	status        string
-	info, usage   unsafe.Pointer
-	busy, agents  bool
-	activity      int
-	transcript    int
+	status       string
+	info, usage  unsafe.Pointer
+	busy, agents bool
+	activity     int
+	transcript   int
 }
 
 // Main view state as it stands
@@ -452,9 +452,6 @@ func (h *eventHandler) handleReady(skin *gatewaySkin) {
 	if skin != nil {
 		h.queue(h.store.applySkin(skin))
 	}
-	if params, report := startupReport.take(); report {
-		h.queue(h.quietRequest("shared_metrics.startup_latency", params))
-	}
 	h.ensureAgentsNudgeConfig()
 	if !h.store.wakeUserDisabled {
 		h.queue(h.rpc("wake.start", map[string]any{"surface": "tui"}, nil))
@@ -486,10 +483,10 @@ func (h *eventHandler) handleReady(skin *gatewaySkin) {
 		if !truthyJS(configPath(cfg, "config", "display", "tui_auto_resume_recent")) {
 			return h.forgeSession()
 		}
-		return h.rpc("session.most_recent", map[string]any{}, func(r map[string]any) tea.Cmd {
-			if target := r["session_id"]; truthyJS(target) {
+		return ask(h.rpc, h.app.sys, tuigateway.SessionMostRecent, tuigateway.SessionMostRecentParams{}, func(r *tuigateway.SessionMostRecentResult) tea.Cmd {
+			if r != nil && val(r.SessionID) != "" {
 				h.store.ui.Status = tr("gatewayMsg.status.resumingMostRecent")
-				return h.app.resumeByID(jsValueString(target), nil)
+				return h.app.resumeByID(*r.SessionID, nil)
 			}
 			return h.forgeSession()
 		})
@@ -515,34 +512,6 @@ func (h *eventHandler) showGatewayNotice(p map[string]any) {
 		n.TTLms = &ttl
 	}
 	h.turn.showNotice(n)
-}
-
-// Puts the billing step up link where the user is and opens it
-func (h *eventHandler) showBillingVerification(p map[string]any) {
-	link, _ := p["verification_url"].(string)
-	if link == "" {
-		return
-	}
-	h.app.sys(tr("gatewayMsg.billing.openLinkRemoteSpending"))
-	h.app.sys(link)
-	if truthyJS(p["user_code"]) {
-		h.app.sys(tr("gatewayMsg.billing.enterCode", jsValueString(p["user_code"])))
-	}
-	openExternalURL(link)
-}
-
-// Puts the free tier browser check link where the user is, one browser tab per ticket
-func (h *eventHandler) showChallenge(p map[string]any) {
-	link, _ := p["url"].(string)
-	if !truthyJS(p["required"]) || link == "" {
-		return
-	}
-	h.app.sys(stringOr(p["message"], ""))
-	h.app.sys(link)
-	if !h.openedChallenges[link] {
-		h.openedChallenges[link] = true
-		openExternalURL(link)
-	}
 }
 
 // Voice submit mode of the config, draft or direct
@@ -612,8 +581,8 @@ func (h *eventHandler) handleWakeDetected(p map[string]any) {
 	}
 	wakeProfile := strings.TrimFunc(paramStr(p["profile"]), isJSSpace)
 	ownProfile := "default"
-	if truthyJS(h.store.ui.Info["profile_name"]) {
-		ownProfile = jsValueString(h.store.ui.Info["profile_name"])
+	if name := val(infoOf(h.store.ui.Info).ProfileName); name != "" {
+		ownProfile = name
 	}
 	if wakeProfile != "" && wakeProfile != ownProfile {
 		h.app.sys(tr("gatewayMsg.wake.otherProfile", wakeProfile))

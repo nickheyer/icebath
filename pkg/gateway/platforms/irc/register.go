@@ -85,7 +85,7 @@ type ircPlatformPlugin struct{}
 
 func (ircPlatformPlugin) Manifest() plugins.Manifest {
 	return plugins.Manifest{Name: "irc-platform", Version: "1.0.0", Kind: "platform", Source: "bundled", Key: "platforms/irc",
-		Author: "Nous Research",
+		Author: "Icebath",
 		Description: "IRC gateway adapter for Icebath Agent. Connects to an IRC server and relays messages between an IRC channel " +
 			"(or DMs) and the Icebath agent.  No external dependencies \u2014 uses the Go standard library net package for the " +
 			"IRC protocol.\n",

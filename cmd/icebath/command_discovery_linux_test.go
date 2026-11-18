@@ -17,14 +17,14 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/pluginsdk"
-	"github.com/nickheyer/icebath/pkg/tuigateway"
+	"github.com/nickheyer/icebath/pkg/tuihost"
 	"github.com/nickheyer/icebath/pkg/tuiserver"
 )
 
 // Discovery requests the in process methods answer, read from the first argument, results printed as one JSON line
 const discoveryMethodsMode = "discovery-methods"
 
-// External program of the probe plugin, the register function of the hermes fixture plugin
+// External program of the probe plugin, the register function of the test fixture plugin
 const probePluginMode = "probe-plugin"
 
 func init() {
@@ -84,7 +84,7 @@ func (r *discoveryRequest) UnmarshalJSON(raw []byte) error {
 func runDiscoveryMethods() {
 	ctx := context.Background()
 	startProcess(ctx)
-	ctx = tuigateway.BindTransport(ctx, tuigateway.ModuleStdioTransport())
+	ctx = tuihost.BindTransport(ctx, tuihost.ModuleStdioTransport())
 	var requests []discoveryRequest
 	if err := json.Unmarshal([]byte(os.Args[1]), &requests); err != nil {
 		fmt.Fprintln(os.Stderr, err)

@@ -6,7 +6,6 @@ import (
 	"encoding/binary"
 	"fmt"
 	"io"
-	"log/slog"
 	"math"
 	"os"
 	"path/filepath"
@@ -899,7 +898,7 @@ func ReadGGUFHeader(path string) (*GGUFHeader, error) {
 			if !GGUFReadSkippable(err) {
 				return nil, err
 			}
-			slog.Debug("split part unreadable", "part", filepath.Base(part), "err", err)
+			pkgLog().Debug("split part unreadable", "part", filepath.Base(part), "err", err)
 			continue
 		}
 		readable = append(readable, h)

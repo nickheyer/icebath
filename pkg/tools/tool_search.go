@@ -3,7 +3,6 @@ package tools
 import (
 	"context"
 	"fmt"
-	"log/slog"
 	"math"
 	"sort"
 	"strconv"
@@ -20,17 +19,6 @@ const (
 	toolSearchMaxQueriesPerCall       = 7
 	toolSearchMaxDescribeNamesPerCall = 10
 )
-
-// ConnectorBatchSentinel is the dispatch unit name a connector only tool_call batch resolves to
-const ConnectorBatchSentinel = "connectors__execute"
-
-// ConnectorNamePrefix marks hosted connector tool names
-const ConnectorNamePrefix = "connectors__"
-
-// IsConnectorName reports whether a tool name belongs to the hosted connector surface by prefix
-func IsConnectorName(name string) bool {
-	return strings.HasPrefix(name, ConnectorNamePrefix)
-}
 
 // ToolSearchConfig is the resolved and validated tool search configuration for one assembly
 type ToolSearchConfig struct {
@@ -156,7 +144,7 @@ func ToolSearchConfigFromRaw(raw any) ToolSearchConfig {
 	if deferRaw, present := m["defer"]; present && deferRaw != nil {
 		list, isList := toolSearchAsList(deferRaw)
 		if !isList {
-			toolSearchLog().Warn(fmt.Sprintf("tools.tool_search.defer is %v, expected a YAML list of tool names (e.g. [todo_list, computer_use]; [] keeps every tool eager) - using the curated default set.", deferRaw))
+			pkgLog().Warn(fmt.Sprintf("tools.tool_search.defer is %v, expected a YAML list of tool names (e.g. [todo_list, computer_use]; [] keeps every tool eager) - using the curated default set.", deferRaw))
 		} else {
 			deferTools = map[string]bool{}
 			for _, n := range list {
@@ -290,14 +278,8 @@ func EstimateTokensFromSchemas(toolDefs []map[string]any) int {
 }
 
 // ShouldActivate reports whether the bridge replaces deferrable tools for this assembly
-func ShouldActivate(cfg ToolSearchConfig, deferrableTokens int, contextLength int, connectionsGranted bool) bool {
-	if cfg.Enabled == "off" {
-		return false
-	}
-	if deferrableTokens > 0 {
-		return true
-	}
-	return connectionsGranted
+func ShouldActivate(cfg ToolSearchConfig, deferrableTokens int, contextLength int) bool {
+	return cfg.Enabled != "off" && deferrableTokens > 0
 }
 
 // ListingTokenBudget is the smaller of the listing cap and the threshold share of the context
@@ -327,24 +309,12 @@ func toolSearchBridgeSchema(name, description string, properties *pyjson.Object,
 		"parameters", Dict("type", "object", "properties", properties, "required", req)))
 }
 
-const toolSearchConnectionsHint = " Searches also cover the user's connected app accounts, whose tools are hosted and so " +
-	"never listed here (results named `connectors__<app>__<tool>`); `manage_connections` checks " +
-	"or connects an account."
-
 // tool_search bridge description with the listing embedded and framed per listing form
-func toolSearchDescription(deferredCount int, listing, listingForm string, connectionsGranted bool) string {
-	var desc string
-	if deferredCount > 0 {
-		desc = fmt.Sprintf("Search %d additional tools that are loaded on demand. ", deferredCount)
-	} else {
-		desc = "Search remote connector tools (email, calendars, issue trackers, and more). "
-	}
+func toolSearchDescription(deferredCount int, listing, listingForm string) string {
+	desc := fmt.Sprintf("Search %d additional tools that are loaded on demand. ", deferredCount)
 	desc += "Send one keyword query per capability you need; returns matching tool names " +
 		fmt.Sprintf("and descriptions. Then `%s` loads schemas and `%s` ", ToolDescribeName, ToolCallName) +
 		"invokes. Tools already in your tool list need no search."
-	if connectionsGranted {
-		desc += toolSearchConnectionsHint
-	}
 	if listing == "" {
 		return desc
 	}
@@ -366,10 +336,10 @@ func toolSearchDescription(deferredCount int, listing, listingForm string, conne
 }
 
 // BridgeToolSchemas returns the three bridge schemas injected in place of deferred tools
-func BridgeToolSchemas(deferredCount int, listing, listingForm string, connectionsGranted bool) []map[string]any {
+func BridgeToolSchemas(deferredCount int, listing, listingForm string) []map[string]any {
 	return []map[string]any{
 		toolSearchBridgeSchema(ToolSearchName,
-			toolSearchDescription(deferredCount, listing, listingForm, connectionsGranted),
+			toolSearchDescription(deferredCount, listing, listingForm),
 			Dict(
 				"queries", Dict(
 					"type", "array",
@@ -428,16 +398,6 @@ type AssemblyResult struct {
 	ListingForm string
 }
 
-// Reports whether manage_connections is in the session's tool defs
-func connectionsInScope(toolDefs []map[string]any) bool {
-	for _, td := range toolDefs {
-		if toolDefName(td) == "manage_connections" {
-			return true
-		}
-	}
-	return false
-}
-
 // AssembleToolDefs replaces deferrable tools by the bridge tools when active, stripping stale bridges first
 func AssembleToolDefs(ctx context.Context, env *Env, toolDefs []map[string]any, contextLength int, cfg *ToolSearchConfig) AssemblyResult {
 	var c ToolSearchConfig
@@ -453,16 +413,11 @@ func AssembleToolDefs(ctx context.Context, env *Env, toolDefs []map[string]any, 
 		}
 	}
 	visible, deferrable := ClassifyTools(ctx, env, incoming, c.EffectiveDeferTools())
-	connectionsGranted := connectionsInScope(incoming)
 	if len(deferrable) == 0 {
-		if ShouldActivate(c, 0, contextLength, connectionsGranted) {
-			return AssemblyResult{ToolDefs: append(append([]map[string]any{}, incoming...), BridgeToolSchemas(0, "", "", connectionsGranted)...),
-				Activated: true, Tier: 2, ListingForm: "none"}
-		}
 		return AssemblyResult{ToolDefs: incoming, ListingForm: "none"}
 	}
 	deferrableTokens := EstimateTokensFromSchemas(deferrable)
-	if !ShouldActivate(c, deferrableTokens, contextLength, false) {
+	if !ShouldActivate(c, deferrableTokens, contextLength) {
 		return AssemblyResult{ToolDefs: incoming, DeferredCount: len(deferrable), DeferredTokens: deferrableTokens,
 			ThresholdTokens: int(float64(contextLength) * (c.ThresholdPct / 100.0)), ListingForm: "none"}
 	}
@@ -471,13 +426,13 @@ func AssembleToolDefs(ctx context.Context, env *Env, toolDefs []map[string]any, 
 	if c.Listing != "off" {
 		listing, listingForm = BuildCatalogListingWithForm(ctx, env, deferrable, listingBudget)
 	}
-	bridge := BridgeToolSchemas(len(deferrable), listing, listingForm, connectionsGranted)
+	bridge := BridgeToolSchemas(len(deferrable), listing, listingForm)
 	tier := 2
 	switch listingForm {
 	case "full", "names", "mixed":
 		tier = 1
 	}
-	toolSearchLog().Info(fmt.Sprintf("tool_search activated (tier %d): %d core/visible tools kept, %d deferred (~%d tokens), listing %s (budget ~%d tokens)",
+	pkgLog().Info(fmt.Sprintf("tool_search activated (tier %d): %d core/visible tools kept, %d deferred (~%d tokens), listing %s (budget ~%d tokens)",
 		tier, len(visible), len(deferrable), deferrableTokens, listingForm, listingBudget))
 	return AssemblyResult{ToolDefs: append(append([]map[string]any{}, visible...), bridge...), Activated: true,
 		DeferredCount: len(deferrable), DeferredTokens: deferrableTokens, ThresholdTokens: listingBudget,
@@ -602,7 +557,6 @@ func DispatchToolSearch(ctx context.Context, env *Env, args map[string]any, curr
 	}
 	queries, errJSON := toolSearchStringListArg(args, "queries", false, toolSearchMaxQueriesPerCall, "Retry with fewer, more targeted queries.")
 	if errJSON != "" {
-		toolSearchRecordMetric(ctx, env, currentToolDefs, nil, 0, "error")
 		return errJSON
 	}
 	limit := c.SearchDefaultLimit
@@ -610,17 +564,11 @@ func DispatchToolSearch(ctx context.Context, env *Env, args map[string]any, curr
 		limit = toolSearchClampedInt(rawLimit, c.SearchDefaultLimit, 1, c.MaxSearchLimit)
 	}
 	catalog := BuildCatalog(ctx, env, toolSearchDeferrableIn(ctx, env, currentToolDefs))
-	remoteEntries := make([][]CatalogEntry, len(queries))
-	hostedFailure := ""
-	if connectionsInScope(currentToolDefs) {
-		remoteEntries, hostedFailure = connectorEntriesByGroup(ctx, env, queries, call)
-	}
 	results := make([]*pyjson.Object, 0, len(queries))
 	toolsMap := Dict()
 	availableSources := toolSearchAvailableSourceSummary(ctx, env, catalog)
-	for position, query := range queries {
-		corpus := append(append([]CatalogEntry{}, catalog...), remoteEntries[position]...)
-		hits := SearchCatalog(corpus, query, limit, nil)
+	for _, query := range queries {
+		hits := SearchCatalog(catalog, query, limit, nil)
 		matches := make([]any, 0, len(hits))
 		for _, h := range hits {
 			if _, seen := toolsMap.Get(h.Name); !seen {
@@ -638,42 +586,7 @@ func DispatchToolSearch(ctx context.Context, env *Env, args map[string]any, curr
 		}
 		results = append(results, group)
 	}
-	remoteCount := 0
-	for _, name := range toolsMap.Keys {
-		if IsConnectorName(name) {
-			remoteCount++
-		}
-	}
-	payload := Dict("queries", queries, "total_available", len(catalog)+remoteCount,
-		"results", results, "tools", toolsMap)
-	if hostedFailure != "" {
-		payload.Set("connectors", connectorsUnavailable(env, hostedFailure, "searched", nil))
-	}
-	outcome := "no_hits"
-	if hostedFailure != "" {
-		outcome = "connector_unavailable"
-	} else if toolsMap.Len() > 0 {
-		outcome = "hits"
-	}
-	toolSearchRecordMetric(ctx, env, currentToolDefs, catalog, toolsMap.Len(), outcome)
-	return JSON(payload)
-}
-
-// Emits one icebath.tool_search.count metric event naming the corpora read, never the query
-func toolSearchRecordMetric(ctx context.Context, env *Env, currentToolDefs []map[string]any, catalog []CatalogEntry, hits int, outcome string) {
-	local := len(catalog) > 0
-	if catalog == nil {
-		local = len(toolSearchDeferrableIn(ctx, env, currentToolDefs)) > 0
-	}
-	hosted := connectionsInScope(currentToolDefs)
-	scope := "local"
-	if local && hosted {
-		scope = "both"
-	} else if hosted {
-		scope = "connector"
-	}
-	env.Emit(Event{Kind: "metric", Tool: ToolSearchName, Data: map[string]any{
-		"metric": "icebath.tool_search.count", "scope": scope, "hits": hits, "outcome": outcome}})
+	return JSON(Dict("queries", queries, "total_available", len(catalog), "results", results, "tools", toolsMap))
 }
 
 // DispatchToolDescribe answers a tool_describe bridge call with full schemas for deferred tools
@@ -689,16 +602,14 @@ func DispatchToolDescribe(ctx context.Context, env *Env, args map[string]any, cu
 			byName[n] = toolDefFn(td)
 		}
 	}
-	remoteSchemas, hostedFailure := connectorRemoteSchemasFor(ctx, env, names, currentToolDefs, call)
 	tools := Dict()
-	var notFound, undescribed []string
+	var notFound []string
 	errors := Dict()
 	sessionNames := SessionToolNames(currentToolDefs)
 	deferTools := LoadToolSearchConfig(env).EffectiveDeferTools()
 	scope := newSearchScope(ctx, env)
 	for _, name := range names {
 		fn, local := byName[name]
-		remoteFn, remote := remoteSchemas[name]
 		switch {
 		case local:
 			params, _ := fn["parameters"]
@@ -707,22 +618,6 @@ func DispatchToolDescribe(ctx context.Context, env *Env, args map[string]any, cu
 			}
 			desc, _ := fn["description"].(string)
 			tools.Set(name, Dict("description", desc, "parameters", params))
-		case remote && remoteFn != nil:
-			params, _ := remoteFn["parameters"]
-			if params == nil {
-				params = map[string]any{}
-			}
-			desc := ""
-			if d, ok := remoteFn["description"]; ok && d != nil {
-				desc = fmt.Sprint(d)
-			}
-			tools.Set(name, Dict("description", desc, "parameters", params))
-		case IsConnectorName(name):
-			if hostedFailure != "" {
-				undescribed = append(undescribed, name)
-			} else {
-				notFound = append(notFound, name)
-			}
 		default:
 			if unavailable := SessionUnavailableError(ctx, env, name, sessionNames); unavailable != "" {
 				errors.Set(name, unavailable)
@@ -740,9 +635,6 @@ func DispatchToolDescribe(ctx context.Context, env *Env, args map[string]any, cu
 	}
 	if errors.Len() > 0 {
 		result.Set("errors", errors)
-	}
-	if hostedFailure != "" {
-		result.Set("connectors", connectorsUnavailable(env, hostedFailure, "described", undescribed))
 	}
 	return JSON(result)
 }
@@ -787,18 +679,7 @@ func ResolveUnderlyingCall(ctx context.Context, env *Env, args map[string]any, s
 		return "", map[string]any{}, errMsg
 	}
 	if len(entries) > 1 {
-		for _, e := range entries {
-			if !IsConnectorName(e.Name) {
-				return "", map[string]any{}, LocalBatchError(entries)
-			}
-		}
-	}
-	if IsConnectorName(entries[0].Name) {
-		calls := make([]any, 0, len(entries))
-		for _, e := range entries {
-			calls = append(calls, map[string]any{"name": e.Name, "arguments": e.HandlerArgs()})
-		}
-		return ConnectorBatchSentinel, map[string]any{"calls": calls}, ""
+		return "", map[string]any{}, LocalBatchError(entries)
 	}
 	name := entries[0].Name
 	rawArgs := entries[0].HandlerArgs()
@@ -810,6 +691,3 @@ func ResolveUnderlyingCall(ctx context.Context, env *Env, args map[string]any, s
 	}
 	return name, rawArgs, ""
 }
-
-// Logger of the reference module tools.tool_search
-func toolSearchLog() *slog.Logger { return slog.Default().With("logger", "tools.tool_search") }

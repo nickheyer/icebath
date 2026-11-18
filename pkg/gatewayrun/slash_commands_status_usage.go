@@ -24,9 +24,6 @@ import (
 // Unicode dash a phone keyboard substitutes for a double hyphen before an insights flag
 var insightsDashFlagRe = regexp.MustCompile(`[\x{2012}\x{2013}\x{2014}\x{2015}](days|source)`)
 
-// Seconds a portal fetch of the usage and topup replies may take
-const accountFetchTimeout = 10 * time.Second
-
 // Agents rows for one background delegation with its live per child activity
 func agentsDelegationLines(ctx context.Context, d map[string]any) []string {
 	goal := clipText(strings.Join(pystr.SplitWhitespace(pyrepr.Str(pyrepr.Or(d["goal"], "")), -1), " "), 70)
@@ -77,7 +74,7 @@ func agentsDelegationLines(ctx context.Context, d map[string]any) []string {
 // Usage session block for a live agent of rate limits, token breakdown, context window and compressions
 func usageAgentStatsLines(ctx context.Context, a *agent.AIAgent) []string {
 	var lines []string
-	if rl := a.CreditsCapture().RateLimit(); rl.HasData() {
+	if rl := a.HeaderCapture().RateLimit(); rl.HasData() {
 		lines = append(lines, i18n.T(ctx, "gateway.usage.rate_limits", "", map[string]any{"state": provider.FormatRateLimitCompact(rl, time.Now())}), "")
 	}
 	lines = append(lines, i18n.T(ctx, "gateway.usage.header_session", "", nil),
@@ -211,34 +208,6 @@ func (r *GatewayRunner) handleAgentsCommand(ctx context.Context, event *gateway.
 	return strings.Join(lines, "\n"), nil
 }
 
-// Nous balance with the portal top up link, never charging or tracking payment
-func (r *GatewayRunner) handleTopupCommand(ctx context.Context, event *gateway.MessageEvent) (string, error) {
-	view, ok := func() (v provider.CreditsView, ok bool) {
-		defer func() {
-			if recover() != nil {
-				v, ok = provider.CreditsView{}, false
-			}
-		}()
-		return provider.BuildCreditsView(ctx, true, accountFetchTimeout), true
-	}()
-	if !ok || !view.LoggedIn {
-		return i18n.T(ctx, "gateway.credits.not_logged_in", "", nil), nil
-	}
-	lines := []string{i18n.T(ctx, "gateway.topup.header", "", nil)}
-	for _, ln := range view.BalanceLines {
-		if !strings.HasPrefix(pystr.Lstrip(ln), "📈") {
-			lines = append(lines, ln)
-		}
-	}
-	if view.IdentityLine != "" {
-		lines = append(lines, "", view.IdentityLine)
-	}
-	if view.TopupURL != "" {
-		lines = append(lines, "", i18n.T(ctx, "gateway.topup.portal_link", "", map[string]any{"url": view.TopupURL}), i18n.T(ctx, "gateway.topup.hint", "", nil))
-	}
-	return strings.Join(lines, "\n"), nil
-}
-
 // Token usage of the session plus account and credit blocks, reset redeeming a banked Codex reset credit
 func (r *GatewayRunner) handleUsageCommand(ctx context.Context, event *gateway.MessageEvent) (string, error) {
 	source := event.Source
@@ -288,25 +257,12 @@ func (r *GatewayRunner) handleUsageCommand(ctx context.Context, event *gateway.M
 			}
 		}()
 	}
-	var creditsState *provider.CreditsState
-	if resident != nil {
-		creditsState = resident.CreditsCapture().Credits()
-	}
-	var creditsLines []string
-	func() {
-		defer func() { _ = recover() }()
-		for _, line := range provider.NousCreditsLines(ctx, true, accountFetchTimeout, creditsState) {
-			creditsLines = append(creditsLines, provider.PortalWording(line))
-		}
-	}()
 	withAccountBlocks := func(lines []string) string {
-		for _, block := range [][]string{accountLines, creditsLines} {
-			if len(block) > 0 {
-				if len(lines) > 0 {
-					lines = append(lines, "")
-				}
-				lines = append(lines, block...)
+		if len(accountLines) > 0 {
+			if len(lines) > 0 {
+				lines = append(lines, "")
 			}
+			lines = append(lines, accountLines...)
 		}
 		return strings.Join(lines, "\n")
 	}
@@ -336,7 +292,7 @@ func (r *GatewayRunner) handleUsageCommand(ctx context.Context, event *gateway.M
 			i18n.T(ctx, "gateway.usage.label_estimated_context", "", map[string]any{"count": fmtThousands(approx)}),
 			i18n.T(ctx, "gateway.usage.detailed_after_first", "", nil)}), nil
 	}
-	if len(accountLines) > 0 || len(creditsLines) > 0 {
+	if len(accountLines) > 0 {
 		return withAccountBlocks(nil), nil
 	}
 	return i18n.T(ctx, "gateway.usage.no_data", "", nil), nil
@@ -429,7 +385,7 @@ func (r *GatewayRunner) handleInsightsCommand(ctx context.Context, event *gatewa
 		return engine.FormatGateway(report), nil
 	})
 	if err != nil {
-		runLog().Error(fmt.Sprintf("Insights command error: %s", pyrepr.ExceptionMessage(err)), "exc_info", err)
+		pkgLog().Error(fmt.Sprintf("Insights command error: %s", pyrepr.ExceptionMessage(err)), "exc_info", err)
 		return i18n.T(ctx, "gateway.insights.error", "", map[string]any{"error": pyrepr.ExceptionMessage(err)}), nil
 	}
 	return value.(string), nil

@@ -39,12 +39,6 @@ type SessionSource struct {
 	rejectedRouteProfile     *string
 }
 
-// Platform value the shared metrics reply clock keys a chat by
-func (s *SessionSource) MetricsPlatform() any { return string(s.Platform) }
-
-// Chat id the shared metrics reply clock keys a chat by
-func (s *SessionSource) MetricsChatID() any { return s.ChatID }
-
 // Binds the adapter that received the message, the transport ref the base adapter stamps
 func (s *SessionSource) SetTransportAdapterRef(adapter PlatformAdapter) {
 	s.transportAdapterRef = adapter

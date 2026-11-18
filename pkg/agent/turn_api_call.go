@@ -6,7 +6,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/plugins"
@@ -227,95 +226,4 @@ func (a *AIAgent) handleAPIInterrupt(retry *TurnRetryState, spinner tools.Spinne
 		return APIInterruptVerdict{}, err
 	}
 	return APIInterruptVerdict{"break", spinner, interrupted, finalResponse}, nil
-}
-
-// Moves the agent and the config default to the backing model the gateway named, false when nothing was pending
-func applyNousModelSwitch(ctx context.Context, a *AIAgent) (string, bool) {
-	requested, backing, ok := a.creditsCapture().TakePendingModelSwitch()
-	if !ok || a.model != requested {
-		return "", false
-	}
-	a.model, a.modelNone = backing, false
-	a.nousModelSwitch = &[2]string{requested, backing}
-	conversationLoopLog().Info(fmt.Sprintf("Nous gateway asked to switch %s -> %s; applied for this session", requested, backing))
-	provider.ApplyModelSwitchConfig(agentPoolEnv(ctx), a.baseURL, requested, backing)
-	a.bufferStatus(fmt.Sprintf("Model is now %s (your account's model; %s is the free tier's).", backing, requested))
-	return backing, true
-}
-
-// Skips an attempt under an active Nous rate limit, arming the fallback or returning the limit result
-func nousRateLimitGuard(ctx context.Context, a *AIAgent, s *LoopState) (verdict PhaseVerdict) {
-	verdict = PhaseVerdict{Action: "fallthrough"}
-	if a.provider != "nous" {
-		return verdict
-	}
-	func() {
-		defer func() {
-			if r := recover(); r != nil && isUserInterruptPanic(r) {
-				panic(r)
-			}
-		}()
-		applyNousModelSwitch(ctx, a)
-	}()
-	defer func() {
-		if r := recover(); r != nil {
-			if isUserInterruptPanic(r) {
-				panic(r)
-			}
-			verdict = PhaseVerdict{Action: "fallthrough"}
-		}
-	}()
-	anonymous := provider.IsAnonymousRequest(a.provider, a.apiKey)
-	guard := &provider.NousRateGuard{Home: home.Dir(ctx), Anonymous: anonymous}
-	remaining, limited := guard.Remaining()
-	if !limited || remaining <= 0 {
-		return verdict
-	}
-	seconds := remaining.Seconds()
-	message := fmt.Sprintf("Your Nous account has hit its rate limit; it resets in %s.", provider.FormatSeconds(seconds))
-	if anonymous {
-		message = strings.ReplaceAll(provider.FreeTierRateLimitChat, "{reset}", provider.FriendlyWait(seconds))
-	}
-	a.bufferVprint("⏳ " + message + " Trying fallback...")
-	a.BufferDiagnosticStatus("⏳ " + message)
-	if a.tryActivateFallback(ctx, "") {
-		s.ActiveSystemPrompt = armFallbackRestart(ctx, a, s.APIMessages, s.ActiveSystemPrompt, s.Retry)
-		s.RetryCount, s.CompressionAttempts = 0, 0
-		return PhaseVerdict{Action: "break"}
-	}
-	a.flushStatusBuffer()
-	limit := &provider.DoError{Message: message}
-	if anonymous {
-		limit.FreeTierKind = "rate_limited"
-		limit.WelcomeHint = strings.ReplaceAll(provider.FreeTierRateLimitCard, "{reset}", provider.FriendlyWait(seconds))
-	}
-	result, err := a.nousRateLimitResult(ctx, limit, s.Messages, s.ConversationHistory, s.APICallCount)
-	if err != nil {
-		return PhaseVerdict{Action: "fallthrough"}
-	}
-	return PhaseVerdict{Action: "return", Result: result}
-}
-
-// Turn result for a Nous Portal rate limit the provider guard hit with no fallback left, persisted first
-func (a *AIAgent) nousRateLimitResult(ctx context.Context, de *provider.DoError, messages, conversationHistory []*state.Message, apiCallCount int) (map[string]any, error) {
-	if err := a.persistSession(&messages, conversationHistory); err != nil {
-		return nil, err
-	}
-	anonymous := de.FreeTierKind == "rate_limited"
-	finalResponse := "⏳ " + de.Message
-	if !anonymous {
-		advice, err := tools.SiteCopy(ctx, "nous_rate_limit", nil)
-		if err != nil {
-			return nil, err
-		}
-		finalResponse += "\n\n" + advice
-	}
-	result := map[string]any{
-		"final_response": finalResponse, "messages": messages, "api_calls": apiCallCount,
-		"completed": false, "failed": true, "error": de.Message,
-	}
-	if anonymous {
-		result["free_tier"] = map[string]any{"kind": "rate_limited", "message": de.WelcomeHint}
-	}
-	return StampFailure(result, string(provider.ReasonRateLimit), true), nil
 }

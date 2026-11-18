@@ -11,6 +11,7 @@ import (
 	"strings"
 
 	"github.com/nickheyer/icebath/pkg/cliui"
+	"github.com/nickheyer/icebath/pkg/linktier"
 )
 
 // ImportSource is one native importer with the dirs that show the agent is installed
@@ -284,6 +285,9 @@ func runAgentImport(ctx context.Context, source ImportSource, icebathHome string
 // Runs icebath import-agent for the source in process on the setup console, a failed run reported
 func agentImportRun(ctx context.Context, source ImportSource, icebathHome string, opts AgentImportOptions) (int, error) {
 	PrintSetupHeader("Importing from "+source.Label, true)
+	if refusal, refused := linktier.Refusal("icebath import-agent", linktier.Extras); refused {
+		return 0, errors.New(refusal)
+	}
 	if AgentImportRunner == nil {
 		return 0, errors.New("the native agent importer is not wired into this binary: AgentImportRunner is unset")
 	}

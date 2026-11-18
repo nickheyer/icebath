@@ -22,5 +22,5 @@ func stillRunning(pid int) bool {
 	return !errors.Is(syscall.Kill(pid, 0), syscall.ESRCH)
 }
 
-// Reports the unlink refusals hermes reads as PermissionError
+// Reports the unlink refusals read as permission errors
 func unlinkPermissionDenied(err error) bool { return errors.Is(err, fs.ErrPermission) }

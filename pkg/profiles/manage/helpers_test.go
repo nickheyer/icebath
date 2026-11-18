@@ -9,7 +9,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/profiles"
 )
 
-// Temp user home and default profile home like the hermes profile_env Path.home patch, returning the user home
+// Temp user home and default profile home like the profile_env Path.home patch, returning the user home
 func manageEnv(t *testing.T) string {
 	t.Helper()
 	tmp := t.TempDir()

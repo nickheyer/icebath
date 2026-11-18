@@ -3,7 +3,6 @@ package provider
 import (
 	"context"
 	"fmt"
-	"log/slog"
 	"slices"
 	"strings"
 
@@ -195,7 +194,7 @@ func ApplyCodexRuntime(ctx context.Context, cfg map[string]any, newValue *string
 		}
 		if persist != nil {
 			if err := codexRuntimePersist(persist, cfg); err != nil {
-				slog.Error("failed to persist openai_runtime change", "error", err)
+				pkgLog().Error("failed to persist openai_runtime change", "error", err)
 				return CodexRuntimeStatus{Success: false, NewValue: &value, OldValue: &cur, Message: "updated config in memory but persist failed: " + err.Error()}, nil
 			}
 		}

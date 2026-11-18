@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"log/slog"
 	"strings"
 	"sync"
 	"time"
@@ -495,7 +494,7 @@ func (a *SessionAuthority) claimOnce(ctx context.Context, ref SessionRef, live *
 			}
 		}
 	}
-	slog.Warn(fmt.Sprintf("Session %s paused: %s", ref.SessionID, refusal.Reason))
+	pkgLog().Warn(fmt.Sprintf("Session %s paused: %s", ref.SessionID, refusal.Reason))
 	if err := a.pause(ctx, ref, refusal.Reason); err != nil {
 		return claimAttempt{}, false, false, err
 	}
@@ -519,7 +518,7 @@ func (a *SessionAuthority) claimWithRetry(ctx context.Context, ref SessionRef, l
 				return claimAttempt{}, true, nil
 			}
 			backoff = min(max(backoff*2, claimRetryMinS), claimRetryMaxS)
-			slog.Warn(fmt.Sprintf("Session %s claim deferred by storage (%s); retrying in %.1fs", ref.SessionID, pyExceptionRepr(err), backoff))
+			pkgLog().Warn(fmt.Sprintf("Session %s claim deferred by storage (%s); retrying in %.1fs", ref.SessionID, pyExceptionRepr(err), backoff))
 			if err := drainSleep(ctx, backoff); err != nil {
 				return claimAttempt{}, false, err
 			}
@@ -598,7 +597,7 @@ func (a *SessionAuthority) executeClaimed(ctx context.Context, ref SessionRef, l
 	if errors.Is(err, context.Canceled) {
 		return nil, "", err
 	}
-	slog.Error(fmt.Sprintf("Admitted turn %s failed", rowString(row, "admission_id")), "error", err)
+	pkgLog().Error(fmt.Sprintf("Admitted turn %s failed", rowString(row, "admission_id")), "error", err)
 	return "The admitted turn failed.", "failed", nil
 }
 
@@ -640,7 +639,7 @@ func (a *SessionAuthority) settleClaimed(ctx context.Context, ref SessionRef, li
 	if errors.Is(err, context.Canceled) {
 		return settleDeliver, err
 	}
-	slog.Error(fmt.Sprintf("Settlement or publication of admission %s failed", admissionID), "error", err)
+	pkgLog().Error(fmt.Sprintf("Settlement or publication of admission %s failed", admissionID), "error", err)
 	if *settled != nil {
 		return settleDeliver, nil
 	}
@@ -831,7 +830,7 @@ func runDeferredReset(ctx context.Context, route string, reset func(ctx context.
 		return
 	}
 	if err := reset(ctx); err != nil && !errors.Is(err, context.Canceled) {
-		slog.Error(fmt.Sprintf("Deferred auto-reset of %s failed", route), "error", err)
+		pkgLog().Error(fmt.Sprintf("Deferred auto-reset of %s failed", route), "error", err)
 	}
 }
 

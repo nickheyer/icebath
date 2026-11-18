@@ -66,9 +66,9 @@ func BuildSessionProvenance(ctx context.Context, db SessionGetter, acpSessionID,
 	continuation := parentID != "" && isCompressionEnd(provenanceRow(ctx, db, parentID))
 	prov := pyjson.NewObject()
 	prov.Set("acpSessionId", acpSessionID)
-	prov.Set("currentHermesSessionId", currentID)
-	prov.Set("rootHermesSessionId", rootID)
-	prov.Set("parentHermesSessionId", parentRaw)
+	prov.Set("currentIcebathSessionId", currentID)
+	prov.Set("rootIcebathSessionId", rootID)
+	prov.Set("parentIcebathSessionId", parentRaw)
 	kind := "root"
 	if continuation {
 		kind = "continuation"
@@ -76,7 +76,7 @@ func BuildSessionProvenance(ctx context.Context, db SessionGetter, acpSessionID,
 	prov.Set("sessionKind", kind)
 	prov.Set("compressionDepth", int64(depth))
 	if previousID != "" {
-		prov.Set("previousHermesSessionId", previousID)
+		prov.Set("previousIcebathSessionId", previousID)
 		if previousID != currentID {
 			prov.Set("reason", "compression")
 			prov.Set("creatorKind", "compression")
@@ -85,7 +85,7 @@ func BuildSessionProvenance(ctx context.Context, db SessionGetter, acpSessionID,
 	return prov
 }
 
-// Meta payload wrapping the provenance under hermes.sessionProvenance, nil when unreadable
+// Meta payload wrapping the provenance under icebath.sessionProvenance, nil when unreadable
 func SessionProvenanceMeta(ctx context.Context, db SessionGetter, acpSessionID, currentID, previousID string) *pyjson.Object {
 	prov := BuildSessionProvenance(ctx, db, acpSessionID, currentID, previousID)
 	if prov == nil {
@@ -94,6 +94,6 @@ func SessionProvenanceMeta(ctx context.Context, db SessionGetter, acpSessionID, 
 	inner := pyjson.NewObject()
 	inner.Set("sessionProvenance", prov)
 	meta := pyjson.NewObject()
-	meta.Set("hermes", inner)
+	meta.Set("icebath", inner)
 	return meta
 }

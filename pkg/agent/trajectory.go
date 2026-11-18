@@ -2,15 +2,12 @@ package agent
 
 import (
 	"fmt"
-	"log/slog"
 	"os"
 	"strings"
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 )
-
-func trajectoryLog() *slog.Logger { return slog.Default().With("logger", "agent.trajectory") }
 
 // Wall clock the trajectory timestamp reads
 var trajectoryNow = time.Now
@@ -51,10 +48,10 @@ func SaveTrajectory(trajectory []any, model string, completed bool, filename str
 	entry.Set("model", model)
 	entry.Set("completed", completed)
 	if err := appendTrajectoryLine(entry, filename); err != nil {
-		trajectoryLog().Warn(fmt.Sprintf("Failed to save trajectory: %s", err))
+		pkgLog().Warn(fmt.Sprintf("Failed to save trajectory: %s", err))
 		return
 	}
-	trajectoryLog().Info(fmt.Sprintf("Trajectory saved to %s", filename))
+	pkgLog().Info(fmt.Sprintf("Trajectory saved to %s", filename))
 }
 
 func appendTrajectoryLine(entry *pyjson.Object, filename string) (err error) {

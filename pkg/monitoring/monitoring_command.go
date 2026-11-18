@@ -34,7 +34,7 @@ func onOff(v any) string {
 	return "off"
 }
 
-// CmdMonitoring prints the gateway monitoring status, hermes_cli/main_agent_cmds.py cmd_monitoring
+// Prints the gateway monitoring status
 func CmdMonitoring(ctx context.Context, h string, ns map[string]any, w, errw io.Writer) (int, error) {
 	action := "status"
 	if v := pyrepr.Str(ns["monitoring_action"]); pyrepr.Truthy(ns["monitoring_action"]) {

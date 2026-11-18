@@ -2,7 +2,6 @@ package agent
 
 import (
 	"fmt"
-	"log/slog"
 	"reflect"
 	"strings"
 	"unicode/utf8"
@@ -203,7 +202,7 @@ func (c *ContextCompressor) sanitizeToolPairs(messages []map[string]any) []map[s
 		}
 		messages = kept
 		if !c.quietMode {
-			slog.Info(fmt.Sprintf("Compression sanitizer: removed %d orphaned tool result(s)", len(orphaned)))
+			pkgLog().Info(fmt.Sprintf("Compression sanitizer: removed %d orphaned tool result(s)", len(orphaned)))
 		}
 	}
 	if len(missingToolCalls) == 0 {
@@ -250,7 +249,7 @@ func (c *ContextCompressor) sanitizeToolPairs(messages []map[string]any) []map[s
 		}
 	}
 	if stripped > 0 && !c.quietMode {
-		slog.Info(fmt.Sprintf("Compression sanitizer: stripped %d orphaned tool_call(s) from assistant messages", stripped))
+		pkgLog().Info(fmt.Sprintf("Compression sanitizer: stripped %d orphaned tool_call(s) from assistant messages", stripped))
 	}
 	return messages
 }

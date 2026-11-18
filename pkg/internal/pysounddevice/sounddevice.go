@@ -2,7 +2,6 @@ package pysounddevice
 
 import (
 	"fmt"
-	"log/slog"
 	"runtime"
 	"strings"
 	"sync"
@@ -575,7 +574,7 @@ func dispatchStream(input, output unsafe.Pointer, frameCount uintptr, _ unsafe.P
 	frames, status := int(uint32(frameCount)), CallbackFlags(uint32(statusFlags))
 	defer func() {
 		if r := recover(); r != nil {
-			slog.Error("sounddevice callback failed", "error", r)
+			pkgLog().Error("sounddevice callback failed", "error", r)
 			result = paAbort
 		}
 	}()

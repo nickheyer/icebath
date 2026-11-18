@@ -411,7 +411,7 @@ func (s *Store) appendTelemetryRecord(filename string, entry *pyjson.Object, rec
 	}
 	path := filepath.Join(s.cronDir, filename)
 	if err := ensureCronDir(filepath.Dir(path)); err != nil {
-		s.logAs("cron.jobs").Debug(fmt.Sprintf("Could not append %s record: %v", filename, err))
+		s.log.Debug(fmt.Sprintf("Could not append %s record: %v", filename, err))
 		return
 	}
 	text, err := pyjson.Dumps(entry)
@@ -426,7 +426,7 @@ func (s *Store) appendTelemetryRecord(filename string, entry *pyjson.Object, rec
 		}
 	}
 	if err != nil {
-		s.logAs("cron.jobs").Debug(fmt.Sprintf("Could not append %s record: %v", filename, err))
+		s.log.Debug(fmt.Sprintf("Could not append %s record: %v", filename, err))
 	}
 }
 

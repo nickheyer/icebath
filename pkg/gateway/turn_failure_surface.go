@@ -11,7 +11,7 @@ var ErrorSurfaceFromResult func(result any, providerName, model string) map[stri
 
 // Key order the error descriptor is built in
 var errorSurfaceKeyOrder = []string{"layer", "code", "retryable", "provider", "model", "provider_label", "auth_kind",
-	"api_key_env", "message", "resets_at", "usage_limit"}
+	"api_key_env", "message", "resets_at"}
 
 // Stamps the UI failure verdict fields on a terminal result in place
 func stampTurnFailure(result *pyjson.Object, reason string, retryable bool) {

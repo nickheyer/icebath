@@ -3,11 +3,12 @@ package media
 import (
 	"context"
 	"errors"
-	"github.com/nickheyer/icebath/pkg/internal/sherpaonnx"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/nickheyer/icebath/pkg/internal/sherpaonnx"
 
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pvporcupine"
@@ -54,7 +55,7 @@ func TestWakeLibraryImportsWithoutTheDistributions(t *testing.T) {
 	check := func(name string, err error) {
 		t.Helper()
 		var we *WakeWordError
-		if !errors.As(err, &we) || we.Class != "ModuleNotFoundError" || we.Msg != "No module named '"+name+"'" {
+		if !errors.As(err, &we) || we.Class != "ModuleNotFoundError" || we.Msg != "the Python package "+name+" is not installed in the wake word environment" {
 			t.Fatalf("import of %s gave %v", name, err)
 		}
 	}
@@ -98,7 +99,7 @@ func TestWakeLibraryImportsFromTheSelectedEnvironment(t *testing.T) {
 	if _, err := oww.FeaturesFromBuiltin(); !errors.As(err, &owwErr) || owwErr.Class != "ValueError" {
 		t.Fatalf("features without the TFLite library gave %v", err)
 	}
-	if _, err := oww.ModelFromModel(filepath.Join(site, "hey_hermes.tflite")); !errors.As(err, &owwErr) || owwErr.Class != "ValueError" {
+	if _, err := oww.ModelFromModel(filepath.Join(site, "hey_jarvis.tflite")); !errors.As(err, &owwErr) || owwErr.Class != "ValueError" {
 		t.Fatalf("classifier without the TFLite library gave %v", err)
 	}
 

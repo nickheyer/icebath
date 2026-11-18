@@ -294,7 +294,7 @@ func TestCronSkillReceivesDeclaredConfig(t *testing.T) {
 		s := promptStore(t)
 		dir := filepath.Join(s.home, "skills", "cron-config")
 		_ = os.MkdirAll(dir, 0o755)
-		_ = os.WriteFile(filepath.Join(dir, "SKILL.md"), []byte("---\nname: cron-config\ndescription: Uses configured cron data\nmetadata:\n  hermes:\n    config:\n      - key: cron_config.data_dir\n        description: Directory used by the cron skill\n---\n\nUse the configured data directory.\n"), 0o644)
+		_ = os.WriteFile(filepath.Join(dir, "SKILL.md"), []byte("---\nname: cron-config\ndescription: Uses configured cron data\nmetadata:\n  icebath:\n    config:\n      - key: cron_config.data_dir\n        description: Directory used by the cron skill\n---\n\nUse the configured data directory.\n"), 0o644)
 		if configured != "" {
 			_ = os.WriteFile(filepath.Join(s.home, "config.yaml"), []byte("skills:\n  config:\n    cron_config:\n      data_dir: "+configured+"\n"), 0o644)
 		}

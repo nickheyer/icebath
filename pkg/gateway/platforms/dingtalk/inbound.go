@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
@@ -87,10 +88,16 @@ func or(vals ...any) any {
 	return vals[len(vals)-1]
 }
 
+// Payload value of the wrong kind, keeping the exception class callers read
+type payloadError struct{ class, msg string }
+
+func (e *payloadError) Error() string      { return e.msg }
+func (e *payloadError) PyTypeName() string { return e.class }
+
 func strip(v any) (string, error) {
 	s, ok := v.(string)
 	if !ok {
-		return "", fmt.Errorf("AttributeError: '%s' object has no attribute 'strip'", pyrepr.TypeName(v))
+		return "", &payloadError{"AttributeError", fmt.Sprintf("expected text, got %s", errchain.Kind(v))}
 	}
 	return pystr.Strip(s), nil
 }
@@ -100,7 +107,7 @@ func join(items []any) (string, error) {
 	for i, it := range items {
 		s, ok := it.(string)
 		if !ok {
-			return "", fmt.Errorf("TypeError: sequence item %d: expected str instance, %s found", i, pyrepr.TypeName(it))
+			return "", &payloadError{"TypeError", fmt.Sprintf("item %d is %s, expected text", i, errchain.Kind(it))}
 		}
 		parts[i] = s
 	}
@@ -271,7 +278,7 @@ func codeString(v any) string {
 func hashableKey(v any) (string, bool, error) {
 	switch v.(type) {
 	case map[string]any, []any:
-		return "", false, fmt.Errorf("TypeError: unhashable type: '%s'", pyrepr.TypeName(v))
+		return "", false, &payloadError{"TypeError", fmt.Sprintf("expected a single value, got %s", errchain.Kind(v))}
 	}
 	s, ok := v.(string)
 	return s, ok, nil
@@ -297,12 +304,12 @@ func fileNameExt(fname any) (string, error) {
 	default:
 		d, ok := asDict(fname)
 		if !ok {
-			return "", fmt.Errorf("TypeError: argument of type '%s' is not iterable", pyrepr.TypeName(fname))
+			return "", &payloadError{"TypeError", fmt.Sprintf("a DingTalk file name is %s, expected text", errchain.Kind(fname))}
 		}
 		_, contains = d["."]
 	}
 	if contains {
-		return "", fmt.Errorf("AttributeError: '%s' object has no attribute 'rsplit'", pyrepr.TypeName(fname))
+		return "", &payloadError{"AttributeError", fmt.Sprintf("a DingTalk file name is %s, expected text", errchain.Kind(fname))}
 	}
 	return "", nil
 }

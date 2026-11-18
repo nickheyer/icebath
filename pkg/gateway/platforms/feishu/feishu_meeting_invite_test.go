@@ -25,7 +25,7 @@ func meetingInvitePayload(eventID string) map[string]any {
 					"user_type": int64(1), "user_role": int64(2), "user_name": "赵磊"},
 			},
 			"bot": map[string]any{"id": inviteUserID("ou_4398906db1bc4a2d7ed91b95ffb308d0", "on_bot", ""), "user_type": int64(10),
-				"user_role": int64(0), "user_name": "Hermes龙虾"},
+				"user_role": int64(0), "user_name": "Icebath龙虾"},
 			"inviter": map[string]any{"id": inviteUserID("ou_390b35dca44816efc9afa812aaff3a69", "on_e19a19e6ffafbd54fbb3c4d251d6fa19", "e65g874e"),
 				"user_type": int64(1), "user_role": int64(0), "user_name": "赵磊"},
 			"invite_time": "1780388292",

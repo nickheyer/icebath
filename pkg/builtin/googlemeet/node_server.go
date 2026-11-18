@@ -21,6 +21,7 @@ import (
 	"sync"
 
 	"github.com/nickheyer/icebath/pkg/config"
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
@@ -77,7 +78,7 @@ func (s *nodeServer) ensureToken(ctx context.Context) (string, error) {
 	return tok, nil
 }
 
-// String payload value, the TypeError a non string environment value raises otherwise
+// String payload value, a refusal sent back to the caller for any other value
 func payloadStr(v any) (string, error) {
 	switch x := v.(type) {
 	case nil:
@@ -85,7 +86,7 @@ func payloadStr(v any) (string, error) {
 	case string:
 		return x, nil
 	}
-	return "", fmt.Errorf("TypeError: expected str, bytes or os.PathLike object, not %s", pyTypeName(v))
+	return "", &rpcError{fmt.Sprintf("expected text, got %s", errchain.Kind(v))}
 }
 
 // Starts the bot from the whitelisted payload keys
@@ -181,11 +182,11 @@ func lastArg(v any) (int, error) {
 		if x == 0 {
 			return 0, nil
 		}
-		return 0, errors.New("TypeError: slice indices must be integers or None or have an __index__ method")
+		return 0, &rpcError{"the transcript last argument must be a whole number"}
 	}
 	n, err := pyIntOf(v)
 	if err != nil {
-		return 0, fmt.Errorf("TypeError: slice indices must be integers or None or have an __index__ method")
+		return 0, &rpcError{"the transcript last argument must be a whole number"}
 	}
 	return n, nil
 }
@@ -252,8 +253,7 @@ func (s *nodeServer) handleRequest(ctx context.Context, msg *pyjson.Object) *pyj
 	switch {
 	case errors.As(err, &rpcErr):
 		return makeError(reqID, rpcErr.msg)
-	case err != nil && strings.HasPrefix(err.Error(), "TypeError: "):
-		return makeError(reqID, err.Error())
+
 	case err != nil:
 		return makeError(reqID, fmt.Sprintf("%s: %v", pyExcName(err), err))
 	}

@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"log/slog"
 	"strings"
 	"sync"
 	"time"
@@ -165,7 +164,7 @@ func copilotACPSessionModels(ctx context.Context, forceRefresh bool) []string {
 	func() {
 		defer func() {
 			if r := recover(); r != nil {
-				slog.Default().Debug(fmt.Sprintf("copilot-acp session model discovery failed: %v", r))
+				pkgLog().Debug(fmt.Sprintf("copilot-acp session model discovery failed: %v", r))
 				live = nil
 			}
 		}()

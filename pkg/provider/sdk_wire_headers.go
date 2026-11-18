@@ -162,6 +162,34 @@ func (d *pyHeaderDict) put(e pyHeaderEntry) {
 
 func (d *pyHeaderDict) set(name, value string) { d.put(pyHeaderEntry{name: name, value: value}) }
 
+// Stores the entry at the first key naming the same header in any letter case and drops the rest, so one line reaches the wire
+func (d *pyHeaderDict) putFold(e pyHeaderEntry) {
+	placed := false
+	kept := d.entries[:0]
+	for _, old := range d.entries {
+		if !strings.EqualFold(old.name, e.name) {
+			kept = append(kept, old)
+		} else if !placed {
+			kept = append(kept, e)
+			placed = true
+		}
+	}
+	d.entries = kept
+	if !placed {
+		d.entries = append(d.entries, e)
+	}
+}
+
+// Merges the other dict over this one, a key in another letter case replacing the header it names
+func (d *pyHeaderDict) updateFold(other *pyHeaderDict) {
+	if other == nil {
+		return
+	}
+	for _, e := range other.entries {
+		d.putFold(e)
+	}
+}
+
 // Marks the key Omit, the SDK removal marker dropped when the merged dict is stripped
 func (d *pyHeaderDict) omit(name string) { d.put(pyHeaderEntry{name: name, omit: true}) }
 
@@ -280,7 +308,7 @@ func stainlessMergeHeaders(mappings ...*pyHeaderDict) *pyHeaderDict {
 		}
 		for _, e := range m.entries {
 			if strings.ToLower(e.name) != stainlessHelperHeader {
-				merged.put(e)
+				merged.putFold(e)
 				continue
 			}
 			existing, present := merged.get(stainlessHelperHeader)
@@ -365,11 +393,11 @@ func (s anthSDKClientSpec) defaultHeaders() *pyHeaderDict {
 			d.set("Authorization", "Bearer "+*s.authToken)
 		}
 	}
-	d.update(custom)
+	d.updateFold(custom)
 	if s.class == "Anthropic" {
 		d.set("X-Stainless-Async", "false")
 		d.set("anthropic-version", "2023-06-01")
-		d.update(custom)
+		d.updateFold(custom)
 	}
 	return d
 }

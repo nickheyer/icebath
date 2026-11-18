@@ -83,14 +83,14 @@ func (a *AIAgent) spawnBackgroundReviewNow(ctx context.Context, kw backgroundRev
 func (a *AIAgent) maybeRequeuePreemptedReview(ctx context.Context, run *backgroundReviewRun, kw backgroundReviewKwargs) {
 	defer func() {
 		if r := recover(); r != nil {
-			runAgentLog().Debug(fmt.Sprintf("Preempted-review requeue failed: %v", r))
+			pkgLog().Debug(fmt.Sprintf("Preempted-review requeue failed: %v", r))
 		}
 	}()
 	if !run.cancelRequestedSet() || kw.focus != nil || kw.explicit {
 		return
 	}
 	if kw.requeueAttempts > reviewRequeueMaxAttempts {
-		runAgentLog().Info(fmt.Sprintf("Preempted background review dropped after %d requeues", reviewRequeueMaxAttempts))
+		pkgLog().Info(fmt.Sprintf("Preempted background review dropped after %d requeues", reviewRequeueMaxAttempts))
 		return
 	}
 	if !reviewShouldDefer(ctx, a, kw.taskCfg) {
@@ -109,7 +109,7 @@ func (a *AIAgent) ShutdownMemoryProvider(ctx context.Context, messages []map[str
 		func() {
 			defer func() {
 				if r := recover(); r != nil {
-					runAgentLog().Warn(fmt.Sprintf("Memory provider on_session_end failed during shutdown: %v", r))
+					pkgLog().Warn(fmt.Sprintf("Memory provider on_session_end failed during shutdown: %v", r))
 				}
 			}()
 			a.memoryManager.OnSessionEnd(ctx, nonNilMessages(messages))
@@ -325,7 +325,7 @@ func (a *AIAgent) conversationRootID() string {
 	}
 	root, err := a.sessionDB.GetConversationRoot(start)
 	if err != nil {
-		runAgentLog().Debug("Conversation root lineage walk failed", "error", err)
+		pkgLog().Debug("Conversation root lineage walk failed", "error", err)
 		return start
 	}
 	if root == "" {

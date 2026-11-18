@@ -3,7 +3,6 @@ package monitoring
 import (
 	"context"
 	"fmt"
-	"log/slog"
 	"math"
 	"runtime/pprof"
 	"sort"
@@ -89,7 +88,7 @@ func eventPayload(event any) (*pyjson.Object, error) {
 func (e *MonitoringEmitter) Emit(event any) {
 	defer func() {
 		if r := recover(); r != nil {
-			slog.Debug(fmt.Sprintf("monitoring emit failed: %v", r))
+			pkgLog().Debug(fmt.Sprintf("monitoring emit failed: %v", r))
 		}
 	}()
 	if !e.enabled.Load() {
@@ -97,7 +96,7 @@ func (e *MonitoringEmitter) Emit(event any) {
 	}
 	payload, err := eventPayload(event)
 	if err != nil {
-		slog.Debug(fmt.Sprintf("monitoring emit failed: %v", err))
+		pkgLog().Debug(fmt.Sprintf("monitoring emit failed: %v", err))
 		return
 	}
 	if _, ok := payload.Get("ts_ns"); !ok {
@@ -195,7 +194,7 @@ func (e *MonitoringEmitter) dispatch(batch []*pyjson.Object) {
 		func() {
 			defer func() {
 				if r := recover(); r != nil {
-					slog.Debug(fmt.Sprintf("monitoring subscriber failed: %v", r))
+					pkgLog().Debug(fmt.Sprintf("monitoring subscriber failed: %v", r))
 				}
 			}()
 			sub.fn(batch)
@@ -242,7 +241,7 @@ func (e *MonitoringEmitter) Flush(timeout float64) {
 		return
 	}
 	if math.IsNaN(timeout) {
-		panic("ValueError: Invalid value NaN (not a number)")
+		panic("the flush timeout is NaN, expected a number of seconds")
 	}
 	finished := make(chan struct{})
 	go pprof.Do(context.Background(), pprof.Labels("name", "icebath-monitoring-flush"), func(context.Context) {

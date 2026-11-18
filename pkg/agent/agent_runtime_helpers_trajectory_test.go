@@ -70,7 +70,7 @@ func TestConvertToTrajectoryFormatReplacesImagesAndRaisesOnMissingRole(t *testin
 	if first := value.([]any)[0].(map[string]any); first["text"] != "[screenshot]" {
 		t.Fatalf("image part %v", value)
 	}
-	if _, err := a.convertToTrajectoryFormat([]map[string]any{{"role": "user"}, {"content": "x"}}, "q"); err == nil || err.Error() != "KeyError: 'role'" {
+	if _, err := a.convertToTrajectoryFormat([]map[string]any{{"role": "user"}, {"content": "x"}}, "q"); err == nil || err.Error() != "trajectory message has no role" {
 		t.Fatalf("err %v", err)
 	}
 }

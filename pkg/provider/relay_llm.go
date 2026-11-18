@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"log/slog"
 	"math"
 	"reflect"
 	"runtime"
@@ -214,7 +213,7 @@ func (a *relayManagedAttempt) resolveFailure(ctx context.Context, err error, def
 	if auxIsBaseException(err) || callbackErr != nil || !hasValue {
 		return nil, err
 	}
-	slog.WarnContext(ctx, "NeMo Relay LLM post-processing failed after provider success; returning the provider response", "error", err)
+	pkgLog().WarnContext(ctx, "NeMo Relay LLM post-processing failed after provider success; returning the provider response", "error", err)
 	if cerr := a.complete(ctx, deferLogical); cerr != nil {
 		return nil, cerr
 	}
@@ -394,7 +393,7 @@ func relayAcloseOnLoop(ctx context.Context, stream any) (bool, error) {
 		"relay-llm-stream-aclose", &timeout, "Relay stream aclose did not finish; abandoning the close attempt")
 	var te *tools.RelayTimeoutError
 	if errors.As(err, &te) {
-		slog.WarnContext(ctx, fmt.Sprintf("Relay stream aclose exceeded %ss; abandoning the close attempt and its private loop", pyrepr.Repr(relayAcloseTimeout)))
+		pkgLog().WarnContext(ctx, fmt.Sprintf("Relay stream aclose exceeded %ss; abandoning the close attempt and its private loop", pyrepr.Repr(relayAcloseTimeout)))
 		return false, nil
 	}
 	return true, err
@@ -825,11 +824,11 @@ func (s *ManagedLlmStream) primeCompletedResponse(ctx context.Context) error {
 func (s *ManagedLlmStream) recoverableRelayFailure(ctx context.Context, err error) bool {
 	recoverable := !auxIsBaseException(err) && s.providerCompleted && s.callbackErr == nil
 	if recoverable && s.deliveredUnmatched {
-		slog.WarnContext(ctx, "NeMo Relay stream post-processing failed after transformed output; propagating rather than replaying provider chunks", "error", err)
+		pkgLog().WarnContext(ctx, "NeMo Relay stream post-processing failed after transformed output; propagating rather than replaying provider chunks", "error", err)
 		return false
 	}
 	if recoverable {
-		slog.WarnContext(ctx, "NeMo Relay stream post-processing failed after provider success; preserving the provider result", "error", err)
+		pkgLog().WarnContext(ctx, "NeMo Relay stream post-processing failed after provider success; preserving the provider result", "error", err)
 	}
 	return recoverable
 }
@@ -966,7 +965,7 @@ func (s *ManagedLlmStream) preservePendingProviderChunks(ctx context.Context) er
 			if auxIsBaseException(err) {
 				return err
 			}
-			slog.DebugContext(ctx, "Relay stream cleanup failed during provider fallback", "error", err)
+			pkgLog().DebugContext(ctx, "Relay stream cleanup failed during provider fallback", "error", err)
 		}
 	}
 	return s.finishLogical(ctx, "success", nil)
@@ -1009,7 +1008,7 @@ func (s *ManagedLlmStream) closeProviderResources(ctx context.Context) error {
 				return err
 			}
 			s.keepFirstCloseError(err)
-			slog.DebugContext(ctx, "Provider stream cleanup failed", "error", err)
+			pkgLog().DebugContext(ctx, "Provider stream cleanup failed", "error", err)
 		}
 	}
 	return nil
@@ -1323,12 +1322,12 @@ func relayCompleteLogical(ctx context.Context, logical *relayLogicalCall, outcom
 		if auxIsBaseException(err) {
 			return err
 		}
-		slog.WarnContext(ctx, "Icebath Relay logical LLM finalization failed", "error", err)
+		pkgLog().WarnContext(ctx, "Icebath Relay logical LLM finalization failed", "error", err)
 		return nil
 	}
 	if popped == false {
 		host.DeferScopeOutput(logical.handle, output)
-		slog.DebugContext(ctx, fmt.Sprintf("Left logical LLM scope %s under a concurrent scope; the drain closes it with its result", logical.requestID))
+		pkgLog().DebugContext(ctx, fmt.Sprintf("Left logical LLM scope %s under a concurrent scope; the drain closes it with its result", logical.requestID))
 	}
 	turn.LogicalLLMMu.Lock()
 	if current, _ := turn.LogicalLLMCalls.Get(logical.requestID); tools.RelayIdentical(current, logical.handle) {
@@ -1624,7 +1623,7 @@ func relayCodecRoundTripRequestBody(ctx context.Context, relay *tools.NemoRelay,
 		if auxIsBaseException(err) {
 			return nil, err
 		}
-		slog.WarnContext(ctx, "NeMo Relay request codec baseline failed; ignoring request rewrites", "error", err)
+		pkgLog().WarnContext(ctx, "NeMo Relay request codec baseline failed; ignoring request rewrites", "error", err)
 		return nil, nil
 	}
 	content := encoded
@@ -1634,7 +1633,7 @@ func relayCodecRoundTripRequestBody(ctx context.Context, relay *tools.NemoRelay,
 	if m, ok := content.(map[string]any); ok {
 		return relayProviderRequestBody(m, metadata), nil
 	}
-	slog.WarnContext(ctx, "NeMo Relay request codec returned an unsupported baseline; ignoring request rewrites")
+	pkgLog().WarnContext(ctx, "NeMo Relay request codec returned an unsupported baseline; ignoring request rewrites")
 	return nil, nil
 }
 

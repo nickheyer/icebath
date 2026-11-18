@@ -17,7 +17,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/provider"
 )
 
-// Bot Desktop runtime seams the screen tests swap as hermes monkeypatches the runtime module
+// Bot Desktop runtime seams the screen tests swap
 var (
 	screenStatus          = botdesktop.Status
 	screenStart           = botdesktop.Start

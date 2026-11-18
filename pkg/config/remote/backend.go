@@ -333,7 +333,7 @@ func (b *remoteBackend) bootFetch(ctx context.Context, h, key string, fetchLock 
 }
 
 func bearerForFetch(ctx context.Context, h string) (string, error) {
-	token, err := Bearer(ctx, h)
+	token, err := Bearer(ctx)
 	if err != nil {
 		var pce *PlaneCredentialError
 		if errors.As(err, &pce) {
@@ -365,7 +365,7 @@ func (b *remoteBackend) fetchInto(ctx context.Context, st *profileState, conditi
 		etag = st.etag
 	}
 	unlock()
-	resp, err := request(ctx, "GET", st.home, st.profile, etag, nil, token)
+	resp, err := request(ctx, "GET", st.profile, etag, nil, token)
 	if err != nil {
 		var pce *PlaneCredentialError
 		var te *TransportError
@@ -747,7 +747,7 @@ func (b *remoteBackend) WriteChanges(ctx context.Context, h string, changes conf
 	if err != nil {
 		return err
 	}
-	token, err := Bearer(ctx, st.home)
+	token, err := Bearer(ctx)
 	if err != nil {
 		var pce *PlaneCredentialError
 		if errors.As(err, &pce) {
@@ -805,7 +805,7 @@ func (b *remoteBackend) sendChanges(ctx context.Context, st *profileState, chang
 				st.mu.Unlock()
 				continue
 			}
-			resp, err := request(ctx, "PATCH", st.home, st.profile, "", body, token)
+			resp, err := request(ctx, "PATCH", st.profile, "", body, token)
 			if err != nil {
 				st.mu.Unlock()
 				var pce *PlaneCredentialError

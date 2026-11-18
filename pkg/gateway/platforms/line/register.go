@@ -113,7 +113,7 @@ type linePlatformPlugin struct{}
 
 func (linePlatformPlugin) Manifest() plugins.Manifest {
 	return plugins.Manifest{Name: "line-platform", Version: "1.0.0", Kind: "platform", Source: "bundled", Key: "platforms/line",
-		Author: "Icebath Agent contributors",
+		Author: "Icebath",
 		Description: "LINE Messaging API gateway adapter for Icebath Agent. Runs a net/http webhook server that receives LINE " +
 			"webhook events (with HMAC-SHA256 signature verification) and relays messages between LINE chats (1:1, groups, " +
 			"rooms) and the Icebath agent. Outbound replies prefer the free reply token and fall back to the metered Push API " +

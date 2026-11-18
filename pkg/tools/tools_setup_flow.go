@@ -13,10 +13,6 @@ import (
 
 // Steps of the tools flow that live in packages above this one, installed by the gateway server
 type ToolsFlowHooks struct {
-	// Shared metrics consent question writing both consent keys
-	Consent func(ctx context.Context, h string, cfg config.Tree, ask setupflow.Asker) error
-	// Nous Portal entitlement of a capability, offering a Portal login when signed out
-	PortalAccess func(ctx context.Context, h string, out io.Writer, capability, coverage string, ask setupflow.Asker) bool
 	// Per server MCP tool selection
 	ConfigureMCP func(ctx context.Context, cfg config.Tree, ask setupflow.Asker) error
 	// xAI Grok OAuth device login saving tokens only

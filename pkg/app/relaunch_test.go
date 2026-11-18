@@ -35,20 +35,20 @@ func resolvedRelaunchBin(t *testing.T) string {
 	return bin
 }
 
-func TestResolveHermesBinPrefersAbsoluteArgv0WhenExecutable(t *testing.T) {
+func TestResolveIcebathBinPrefersAbsoluteArgv0WhenExecutable(t *testing.T) {
 	fake := writeExecutable(t, filepath.Join(t.TempDir(), "nix", "store", "abc", "bin", "icebath"+relaunchExeSuffix), "\x7fELF native")
 	setRelaunchArgv(t, fake)
-	if got, ok := resolveHermesBin(); !ok || got != fake {
+	if got, ok := resolveIcebathBin(); !ok || got != fake {
 		t.Fatalf("resolved %q %v", got, ok)
 	}
 }
 
-func TestResolveHermesBinFallsBackToPathWhich(t *testing.T) {
+func TestResolveIcebathBinFallsBackToPathWhich(t *testing.T) {
 	dir := t.TempDir()
 	onPath := writeExecutable(t, filepath.Join(dir, "icebath"+relaunchExeSuffix), "\x7fELF native")
 	t.Setenv("PATH", dir)
 	setRelaunchArgv(t, "-c")
-	if got, ok := resolveHermesBin(); !ok || got != onPath {
+	if got, ok := resolveIcebathBin(); !ok || got != onPath {
 		t.Fatalf("resolved %q %v, want %q", got, ok, onPath)
 	}
 }

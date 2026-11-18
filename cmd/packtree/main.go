@@ -1,69 +1,41 @@
-// Command packtree packs, unpacks and renames deterministic zstd tars of file trees with their path, sha256 and mode manifests
+// Command packtree packs and unpacks deterministic zstd tars of file trees with their manifests and renders the plugin catalog document
 package main
 
 import (
 	"flag"
 	"fmt"
 	"os"
-	"strings"
 
 	"github.com/nickheyer/icebath/pkg/tarzst"
 )
 
 func usage() {
 	fmt.Fprintln(os.Stderr, `usage:
-  packtree [-src DIR] -out ARCHIVE [-manifest FILE] [-shebang-exec]   pack DIR, or repack ARCHIVE when -src is empty
   packtree pack -dir DIR -out ARCHIVE [-manifest FILE] [-shebang-exec]
   packtree unpack -archive ARCHIVE -dir DIR
-  packtree rename -archive ARCHIVE [-manifest FILE]                    apply the product renames inside the archive`)
+  packtree catalog -dir DIR -out FILE                                  write the catalog document of a plugin catalog directory`)
 	os.Exit(2)
 }
 
-// Dispatches a verb, a leading flag selecting the pack or repack form the go:generate lines use
+// Dispatches a verb
 func main() {
 	if len(os.Args) < 2 {
 		usage()
 	}
 	var err error
-	switch verb := os.Args[1]; {
-	case verb == "pack":
+	switch os.Args[1] {
+	case "pack":
 		err = packVerb(os.Args[2:])
-	case verb == "unpack":
+	case "unpack":
 		err = unpackVerb(os.Args[2:])
-	case verb == "rename":
-		err = renameVerb(os.Args[2:])
-	case strings.HasPrefix(verb, "-"):
-		err = repackVerb(os.Args[1:])
+	case "catalog":
+		err = catalogVerb(os.Args[2:])
 	default:
 		usage()
 	}
 	if err != nil {
 		fail(err)
 	}
-}
-
-// Packs -src into -out, or repacks the existing -out when no source is given
-func repackVerb(args []string) error {
-	fs := flag.NewFlagSet("packtree", flag.ExitOnError)
-	src := fs.String("src", "", "tree to pack, the existing archive being repacked when empty")
-	out := fs.String("out", "", "archive to write")
-	manifest := fs.String("manifest", "", "manifest to write, none when empty")
-	shebangExec := fs.Bool("shebang-exec", false, "pack files that start with #! as executable")
-	fs.Parse(args)
-	if *out == "" {
-		return fmt.Errorf("-out is required")
-	}
-	var files []tarzst.File
-	var err error
-	if *src != "" {
-		files, err = tarzst.Collect(*src, *shebangExec)
-	} else {
-		files, err = readArchive(*out)
-	}
-	if err != nil {
-		return err
-	}
-	return writeArchive(*out, *manifest, files)
 }
 
 // Packs a directory into an archive and its manifest
@@ -98,34 +70,6 @@ func unpackVerb(args []string) error {
 		return err
 	}
 	return tarzst.Extract(data, *dir)
-}
-
-// Rewrites an archive in place with the product renames applied to paths and text bodies
-func renameVerb(args []string) error {
-	fs := flag.NewFlagSet("rename", flag.ExitOnError)
-	archive := fs.String("archive", "", "archive to rewrite")
-	manifest := fs.String("manifest", "", "manifest to write, none when empty")
-	fs.Parse(args)
-	if *archive == "" {
-		return fmt.Errorf("rename needs -archive")
-	}
-	files, err := readArchive(*archive)
-	if err != nil {
-		return err
-	}
-	renamed, err := renameArchiveFiles(files)
-	if err != nil {
-		return err
-	}
-	return writeArchive(*archive, *manifest, renamed)
-}
-
-func readArchive(path string) ([]tarzst.File, error) {
-	data, err := os.ReadFile(path)
-	if err != nil {
-		return nil, err
-	}
-	return tarzst.Decode(data)
 }
 
 // Encodes the files into the archive and writes the manifest when one is named

@@ -94,8 +94,8 @@ func pmManagedNodeDirs(h string) ([]string, error) {
 }
 
 // Entries plus the pm recorded node dirs, or the legacy home node tree only when pm recorded none
-func appendNodeDirForService(ctx context.Context, entries []string, hermesRoot string) []string {
-	h := hermesRoot
+func appendNodeDirForService(ctx context.Context, entries []string, icebathRoot string) []string {
+	h := icebathRoot
 	if h == "" {
 		h = home.Dir(ctx)
 	}
@@ -177,7 +177,7 @@ func remapPathForUser(p, targetHomeDir string) (string, error) {
 }
 
 // Caller home in effect remapped under the target account's default home, a custom home kept as is
-func hermesHomeForTargetUser(ctx context.Context, targetHomeDir string) (string, error) {
+func icebathHomeForTargetUser(ctx context.Context, targetHomeDir string) (string, error) {
 	current := home.Dir(ctx)
 	if raw := pystr.Strip(os.Getenv("ICEBATH_HOME")); raw != "" {
 		expanded, err := pypath.PathExpanduser(raw)
@@ -208,7 +208,7 @@ func prepareServiceLauncher(ctx context.Context, system bool, runAsUser string) 
 		if root, err = remapPathForUser(root, homeDir); err != nil {
 			return err
 		}
-		if h, err = hermesHomeForTargetUser(ctx, homeDir); err != nil {
+		if h, err = icebathHomeForTargetUser(ctx, homeDir); err != nil {
 			return err
 		}
 		owned, uid, username = true, id, name

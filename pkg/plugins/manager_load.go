@@ -108,7 +108,7 @@ func (m *Manager) DiscoverAndLoad(ctx context.Context, force bool) {
 	}
 }
 
-// Marks the manager discovered without a sweep, the hermes test pin of a zero plugin runtime
+// Marks the manager discovered without a sweep, the test pin of a zero plugin runtime
 func (m *Manager) MarkDiscoveredForTests() { m.setDiscovered(true) }
 
 // Locked sweep body, false when nothing ran, safe mode skipped it or an interrupt cancelled it
@@ -131,7 +131,7 @@ func (m *Manager) discoverAndLoadLocked(ctx context.Context, force bool) (map[st
 		m.unloadScoped(nil)
 	}
 	if envEnabled("ICEBATH_SAFE_MODE") {
-		logPlugins.info("ICEBATH_SAFE_MODE=1 — plugin discovery skipped")
+		pkgLog().Info("ICEBATH_SAFE_MODE=1 — plugin discovery skipped")
 		m.setDiscovered(true)
 		return nil, false
 	}
@@ -168,7 +168,7 @@ func (m *Manager) reRegisterConfigHooksAfterForce(ctx context.Context) {
 	}{{"shell-hook", func() error { return reRegisterConfigHooks(ctx) }}, {"outbound-webhook", func() error { return ReRegisterOutboundWebhooks(ctx) }}}
 	for _, step := range steps {
 		if err := callGuarded(step.fn); err != nil {
-			logPlugins.debug(fmt.Sprintf("force-reload %s re-register skipped: %v", step.label, err))
+			pkgLog().Debug(fmt.Sprintf("force-reload %s re-register skipped: %v", step.label, err))
 		}
 	}
 }
@@ -223,7 +223,7 @@ func (m *Manager) refreshSecretSourcesAfterDiscovery(ctx context.Context) {
 		return s.SecretSources.RefreshInstalledScope(ctx, h)
 	})
 	if err != nil {
-		logPlugins.debug(fmt.Sprintf("secret source re-apply after discovery failed: %v", err))
+		pkgLog().Debug(fmt.Sprintf("secret source re-apply after discovery failed: %v", err))
 		return
 	}
 	if len(enabledNames) == 0 {
@@ -236,7 +236,7 @@ func (m *Manager) refreshSecretSourcesAfterDiscovery(ctx context.Context) {
 	if names == "" {
 		names = "<none — reconciled removed plugin sources>"
 	}
-	logPlugins.debug("Re-applied secret sources after plugin discovery for: " + names)
+	pkgLog().Debug("Re-applied secret sources after plugin discovery for: " + names)
 }
 
 // Collects, gates and loads every manifest in dependency order, an error only for a user interrupt
@@ -253,7 +253,7 @@ func (m *Manager) discoverAndLoadInner(ctx context.Context) error {
 			entryPoints++
 		}
 	}
-	logPlugins.debug(fmt.Sprintf("  entrypoints: %d manifest(s)", entryPoints))
+	pkgLog().Debug(fmt.Sprintf("  entrypoints: %d manifest(s)", entryPoints))
 	cfg := loadConfigOrEmpty(m.home)
 	disabled := DisabledPlugins(m.home)
 	enabled, enabledPresent := enabledPlugins(cfg)
@@ -265,7 +265,7 @@ func (m *Manager) discoverAndLoadInner(ctx context.Context) error {
 	}
 	if len(stale) > 0 {
 		sort.Strings(stale)
-		logPlugins.warn(fmt.Sprintf("Removed icebath plugin %s is still listed in plugins.enabled; remove it and configure a standard user or system Relay plugins.toml, or use %s for an explicit user-file override",
+		pkgLog().Warn(fmt.Sprintf("Removed icebath plugin %s is still listed in plugins.enabled; remove it and configure a standard user or system Relay plugins.toml, or use %s for an explicit user-file override",
 			strings.Join(stale, ", "), tools.RelayPluginsConfigEnv))
 	}
 	winners := ResolveManifestWinners(manifests)
@@ -308,7 +308,7 @@ func (m *Manager) discoverAndLoadInner(ctx context.Context) error {
 			}
 		}
 		m.mu.RUnlock()
-		logPlugins.info(fmt.Sprintf("Plugin discovery complete: %d found, %d enabled", found, on))
+		pkgLog().Info(fmt.Sprintf("Plugin discovery complete: %d found, %d enabled", found, on))
 	}
 	return nil
 }
@@ -373,7 +373,7 @@ func (m *Manager) notifyPluginLoaded(ctx context.Context, loadedBefore map[strin
 	for _, l := range listeners {
 		if err := callGuarded(func() error { l.fn(summaries); return nil }); err != nil {
 			_, name := callbackNames(l.fn)
-			logPlugins.warn(fmt.Sprintf("plugin-loaded listener %s raised", name), "error", err)
+			pkgLog().Warn(fmt.Sprintf("plugin-loaded listener %s raised", name), "error", err)
 		}
 	}
 }
@@ -390,7 +390,7 @@ func (m *Manager) RegisterApprovalTransport(ctx context.Context, name string, pr
 		return fmt.Errorf("approval transport %s is already registered by %s", config.PyRepr(clean), config.PyRepr(existing.PluginID))
 	}
 	m.approvalTransports[clean] = &tools.RegisteredApprovalTransport{Name: clean, Present: present, PluginID: pluginID, ProfileHome: resolvedHome(ctx)}
-	logPlugins.info(fmt.Sprintf("Plugin %s registered approval transport: %s", pluginID, clean))
+	pkgLog().Info(fmt.Sprintf("Plugin %s registered approval transport: %s", pluginID, clean))
 	return nil
 }
 
@@ -405,7 +405,7 @@ func (m *Manager) GetApprovalTransport(ctx context.Context, name string) *tools.
 	return registered
 }
 
-// Transport of the env's profile after the lazy discovery a first approval needs, the hermes approval_prompt seam
+// Transport of the env's profile after the lazy discovery a first approval needs, the approval_prompt seam
 func resolveRegisteredApprovalTransport(env *tools.Env, name string) (*tools.RegisteredApprovalTransport, error) {
 	ctx := context.Background()
 	if env != nil && env.Home != "" {
@@ -720,7 +720,7 @@ func (m *Manager) resetContextRegistriesLocked() {
 func unregisterGatewayPlatform(name string) {
 	if s := installedServices(); s != nil && s.Platforms != nil {
 		if err := callGuarded(func() error { s.Platforms.Unregister(name); return nil }); err != nil {
-			logPlugins.debug(fmt.Sprintf("unload: platform unregister %s failed: %v", name, err))
+			pkgLog().Debug(fmt.Sprintf("unload: platform unregister %s failed: %v", name, err))
 		}
 	}
 }

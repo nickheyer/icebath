@@ -569,10 +569,10 @@ func JudgeGoal(ctx context.Context, goal, lastResponse string, o JudgeOptions) J
 	if err != nil {
 		var unavailable *provider.AuxiliaryClientUnavailable
 		if errors.As(err, &unavailable) {
-			goalsLogger().Info(fmt.Sprintf("goal judge: auxiliary client unavailable (%s) — falling through to continue", pyrepr.ExceptionMessage(err)))
+			pkgLog().Info(fmt.Sprintf("goal judge: auxiliary client unavailable (%s) — falling through to continue", pyrepr.ExceptionMessage(err)))
 			return JudgeResult{Verdict: "continue", Reason: "goal_judge auxiliary client unavailable: " + pyrepr.ExceptionMessage(err), TransportFailed: true}
 		}
-		goalsLogger().Info(fmt.Sprintf("goal judge: API call failed (%s) — falling through to continue", pyrepr.ExceptionMessage(err)))
+		pkgLog().Info(fmt.Sprintf("goal judge: API call failed (%s) — falling through to continue", pyrepr.ExceptionMessage(err)))
 		return JudgeResult{Verdict: "continue", Reason: "judge error: " + pyrepr.ExceptionName(err), TransportFailed: true}
 	}
 	verdict, reason, parseFailed, wait, err := parseJudgeResponse(raw)
@@ -583,7 +583,7 @@ func JudgeGoal(ctx context.Context, goal, lastResponse string, o JudgeOptions) J
 	if len(wait) > 0 {
 		waitText = " wait=" + pyrepr.Str(wait)
 	}
-	goalsLogger().Info(fmt.Sprintf("goal judge: verdict=%s reason=%s%s", verdict, goalTruncate(reason, 120), waitText))
+	pkgLog().Info(fmt.Sprintf("goal judge: verdict=%s reason=%s%s", verdict, goalTruncate(reason, 120), waitText))
 	return JudgeResult{Verdict: verdict, Reason: reason, ParseFailed: parseFailed, Wait: wait}
 }
 
@@ -729,7 +729,7 @@ func GatherBackgroundProcesses(ctx context.Context, taskID, ownerTaskID string) 
 	sessions, failed := func() (sessions []map[string]any, failed bool) {
 		defer func() {
 			if r := recover(); r != nil {
-				goalsLogger().Debug(fmt.Sprintf("gather_background_processes failed: %v", r))
+				pkgLog().Debug(fmt.Sprintf("gather_background_processes failed: %v", r))
 				sessions, failed = nil, true
 			}
 		}()
@@ -770,7 +770,7 @@ func DraftContract(ctx context.Context, objective string, timeout *float64) *Goa
 	}
 	raw, err := callGoalJudgeLLM(ctx, draftContractSystemPrompt, "Objective:\n"+goalTruncate(objective, 4000), budget)
 	if err != nil {
-		goalsLogger().Info(fmt.Sprintf("goal draft: API call failed (%s)", pyrepr.ExceptionMessage(err)))
+		pkgLog().Info(fmt.Sprintf("goal draft: API call failed (%s)", pyrepr.ExceptionMessage(err)))
 		return nil
 	}
 	data, err := extractJSONObject(raw)
@@ -778,7 +778,7 @@ func DraftContract(ctx context.Context, objective string, timeout *float64) *Goa
 		panic(err)
 	}
 	if data == nil {
-		goalsLogger().Debug("goal draft: reply was not JSON: " + pyrepr.Repr(goalTruncate(raw.(string), 200)))
+		pkgLog().Debug("goal draft: reply was not JSON: " + pyrepr.Repr(goalTruncate(raw.(string), 200)))
 		return nil
 	}
 	contract := GoalContractFromDict(data)

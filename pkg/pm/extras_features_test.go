@@ -73,22 +73,6 @@ func TestSVExtraSupportedUngatedExtraIsTrue(t *testing.T) {
 	}
 }
 
-func TestSVEnsureImportRaisesOnGatedOffExtra(t *testing.T) {
-	tmp := isolateHome(t)
-	defaults := svHostInterpreter(t, sttMkdir(t, filepath.Join(tmp, "repo")))
-	svGates(t, map[string]string{"gated-extra": "python_full_version < '" + defaults["python_full_version"] + "'"})
-	svImportable(t, nil)
-	synced := svSynced(t)
-	err := EnsureImport(context.Background(), "gated-extra")
-	var ie *InstallError
-	if !errors.As(err, &ie) || !strings.Contains(err.Error(), "not supported on this platform") {
-		t.Fatalf("gated extra gave %v", err)
-	}
-	if len(*synced) != 0 {
-		t.Fatalf("synced %v", *synced)
-	}
-}
-
 func TestSVSyncRefusesPythonGatedExtraBeforeTouchingEnvironment(t *testing.T) {
 	tmp := isolateHome(t)
 	repo := sttMkdir(t, filepath.Join(tmp, "repo"))
@@ -158,97 +142,6 @@ func TestSVAvailableUnknownExtraUsesUnderscoreGuess(t *testing.T) {
 	svImportable(t, map[string]bool{"some_new_thing": true})
 	if ok, _ := Available(context.Background(), "some-new-thing"); !ok {
 		t.Fatal("underscore guess missed")
-	}
-}
-
-func TestSVEnsureImportNoopWhenAvailable(t *testing.T) {
-	isolateHome(t)
-	svGates(t, nil)
-	svImportable(t, map[string]bool{"pilk": true})
-	synced := svSynced(t)
-	if err := EnsureImport(context.Background(), "silk"); err != nil || len(*synced) != 0 {
-		t.Fatalf("available extra gave %v, synced %v", err, *synced)
-	}
-}
-
-func TestSVEnsureImportSyncsWhenMissing(t *testing.T) {
-	isolateHome(t)
-	svGates(t, nil)
-	svImportable(t, nil)
-	synced := svSynced(t)
-	if err := EnsureImport(context.Background(), "silk"); err != nil {
-		t.Fatal(err)
-	}
-	if !reflect.DeepEqual(*synced, [][]string{{"silk"}}) {
-		t.Fatalf("synced %v", *synced)
-	}
-}
-
-func TestSVEnsureImportRespectsTerminalDeclineWithoutInstalling(t *testing.T) {
-	isolateHome(t)
-	svGates(t, nil)
-	svImportable(t, nil)
-	synced := svSynced(t)
-	peSwap(t, &promptTerminals, func() bool { return true })
-	var prompts []string
-	peSwap(t, &promptInput, func(text string) (string, error) {
-		prompts = append(prompts, text)
-		return "n", nil
-	})
-	err := EnsureImport(context.Background(), "silk")
-	var ie *InstallError
-	if !errors.As(err, &ie) || !strings.Contains(err.Error(), "declined") {
-		t.Fatalf("declined prompt gave %v", err)
-	}
-	if len(prompts) != 1 || !strings.Contains(prompts[0], "'silk' feature") || strings.Contains(prompts[0], "pilk") {
-		t.Fatalf("prompts %q", prompts)
-	}
-	if len(*synced) != 0 {
-		t.Fatalf("synced %v", *synced)
-	}
-}
-
-func TestSVEnsureImportPropagatesInstallError(t *testing.T) {
-	isolateHome(t)
-	svGates(t, nil)
-	svImportable(t, nil)
-	peSwap(t, &clientSyncVenv, func(context.Context, SyncVenvOptions) error {
-		return NewInstallError("venv", "lazy installs are disabled", "")
-	})
-	var ie *InstallError
-	if err := EnsureImport(context.Background(), "silk"); !errors.As(err, &ie) {
-		t.Fatalf("install error became %v", err)
-	}
-}
-
-func TestSVEnsureAndBindPreservesTargetOnFailure(t *testing.T) {
-	for _, failure := range []string{"", "install", "import"} {
-		t.Run("failure="+failure, func(t *testing.T) {
-			isolateHome(t)
-			svGates(t, nil)
-			svImportable(t, map[string]bool{"pilk": failure != "install"})
-			peSwap(t, &clientSyncVenv, func(context.Context, SyncVenvOptions) error {
-				return NewInstallError("venv", "install refused", "")
-			})
-			importer := func() (map[string]any, error) {
-				if failure == "import" {
-					return nil, &PyError{Class: "ImportError", Message: "still broken"}
-				}
-				return map[string]any{"NAME": 42}, nil
-			}
-			target := map[string]any{"existing": "kept"}
-			ok, err := EnsureAndBind(context.Background(), "silk", importer, target)
-			if err != nil || ok != (failure == "") {
-				t.Fatalf("bound %v %v", ok, err)
-			}
-			want := map[string]any{"existing": "kept"}
-			if failure == "" {
-				want["NAME"] = 42
-			}
-			if !reflect.DeepEqual(target, want) {
-				t.Fatalf("target %v", target)
-			}
-		})
 	}
 }
 
@@ -358,6 +251,7 @@ func TestSVLazySyncNeverCreatesTheFirstSelectionForAForeignInterpreter(t *testin
 	ctx := context.Background()
 	repo := sttMkdir(t, filepath.Join(tmp, "repo"))
 	sttMkdir(t, filepath.Join(repo, "venv"))
+	peWrite(t, filepath.Join(repo, "pyproject.toml"), "[project]\nname = \"fixture\"\nversion = \"1\"\n\n[project.optional-dependencies]\nbedrock = []\n")
 	peSwap(t, &repoRoot, func() string { return repo })
 	built := false
 	pubSwapVenv(t, &pubVenv{

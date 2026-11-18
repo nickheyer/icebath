@@ -34,11 +34,11 @@ func TestBackgroundTaskUnderMultiplexRunsTerminalWithTheServedProfilesSecrets(t 
 	t.Setenv("ICEBATH_HOME", launch)
 	t.Setenv("LAUNCH_ONLY_TOKEN", "launch-secret")
 	t.Setenv("SKILL_TOKEN", "launch-skill")
-	if err := fakellm.WriteHome(served, server.BaseURL(), "", "", 0); err != nil {
+	if err := fakellm.WriteHome(served, server.BaseURL(), "", ""); err != nil {
 		t.Fatal(err)
 	}
 	appendFileLines(t, filepath.Join(served, ".env"), "SKILL_TOKEN=skill-secret\n")
-	if err := fakellm.WriteHome(launch, server.BaseURL(), "", "", 0); err != nil {
+	if err := fakellm.WriteHome(launch, server.BaseURL(), "", ""); err != nil {
 		t.Fatal(err)
 	}
 	appendFileLines(t, filepath.Join(launch, ".env"), "LAUNCH_ONLY_TOKEN=launch-secret\n")

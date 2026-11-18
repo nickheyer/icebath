@@ -34,7 +34,7 @@ func (r *GatewayRunner) checkSlashAccess(ctx context.Context, source *gateway.Se
 	if source.Platform != "" {
 		platform = string(source.Platform)
 	}
-	runLog().Info(fmt.Sprintf("Slash command /%s denied for %s:%s (not admin, not in user_allowed_commands)", canonicalCmd, platform, derefOrNoneText(source.UserID)))
+	pkgLog().Info(fmt.Sprintf("Slash command /%s denied for %s:%s (not admin, not in user_allowed_commands)", canonicalCmd, platform, derefOrNoneText(source.UserID)))
 	allowed := make([]string, 0, len(policy.UserAllowedCommands))
 	for cmd := range policy.UserAllowedCommands {
 		allowed = append(allowed, cmd)

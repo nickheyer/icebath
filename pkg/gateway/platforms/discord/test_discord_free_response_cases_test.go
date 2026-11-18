@@ -213,7 +213,7 @@ func historyAdapter(t *testing.T, msgs ...*discordgo.Message) (*DiscordAdapter, 
 }
 
 var (
-	botSelf  = &discordgo.User{ID: "999", Username: "hermes", Bot: true}
+	botSelf  = &discordgo.User{ID: "999", Username: "icebath", Bot: true}
 	alice    = &discordgo.User{ID: "56", Username: "Alice", GlobalName: "Alice"}
 	geminiBt = &discordgo.User{ID: "55", Username: "Gemini", GlobalName: "Gemini", Bot: true}
 )

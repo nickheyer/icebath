@@ -30,7 +30,7 @@ import (
 // Argument of the completion entry that runs the libatomic pre install of the new tree
 const completionInstallBeforeLock = "--install-before-lock"
 
-// Steps of the completion process, the host behaviour unless a hermes test replaces them
+// Steps of the completion process, the host behaviour unless a test replaces them
 var (
 	completionBinary          = pm.ResolveInstallBinary
 	completionStdoutTTY       = func() bool { return fileIsTTY(os.Stdout) }

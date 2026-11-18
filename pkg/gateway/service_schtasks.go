@@ -6,7 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
-	"log/slog"
 	"math/big"
 	"os"
 	"os/exec"
@@ -984,7 +983,7 @@ func spawnWindowsDetached(ctx context.Context, homeOverride string) (int, error)
 	if errno, ok := errors.AsType[syscall.Errno](err); ok {
 		code = strconv.Itoa(int(errno))
 	}
-	slog.Warn(fmt.Sprintf("Gateway breakaway spawn failed (error=%s); retrying without CREATE_BREAKAWAY_FROM_JOB", code))
+	pkgLog().Warn(fmt.Sprintf("Gateway breakaway spawn failed (error=%s); retrying without CREATE_BREAKAWAY_FROM_JOB", code))
 	pid, err = popen("0", false)
 	if err != nil {
 		return 0, err
@@ -1007,7 +1006,7 @@ func setupIsNoninteractive() bool {
 	return false
 }
 
-// Asks the hermes_cli.setup yes or no question the Windows backend imports
+// Asks the yes or no question the Windows backend imports
 func setupPromptYesNo(_ context.Context, question string, def bool) bool {
 	return WizardSetup.PromptYesNo(question, def)
 }
@@ -1302,7 +1301,7 @@ func startAttestationPath(ctx context.Context) string {
 func writeStartAttestation(ctx context.Context, pids []int, via string) {
 	path := startAttestationPath(ctx)
 	if err := os.MkdirAll(filepath.Dir(path), 0o777); err != nil {
-		slog.Debug("Failed to write gateway start attestation", "error", err)
+		pkgLog().Debug("Failed to write gateway start attestation", "error", err)
 		return
 	}
 	pidList := make([]any, len(pids))
@@ -1327,7 +1326,7 @@ func writeStartAttestation(ctx context.Context, pids []int, via string) {
 		}
 	}
 	if err != nil {
-		slog.Debug("Failed to write gateway start attestation", "error", err)
+		pkgLog().Debug("Failed to write gateway start attestation", "error", err)
 	}
 }
 
@@ -1601,7 +1600,7 @@ func queryScheduledTaskXML(taskName string) (string, bool, error) {
 		return "", false, err
 	}
 	if code != 0 || pystr.Strip(out) == "" {
-		slog.Debug(fmt.Sprintf("Could not query Scheduled Task XML for %s: %s", pyrepr.Repr(taskName), pystr.Strip(firstNonEmpty(errText, out))))
+		pkgLog().Debug(fmt.Sprintf("Could not query Scheduled Task XML for %s: %s", pyrepr.Repr(taskName), pystr.Strip(firstNonEmpty(errText, out))))
 		return "", false, nil
 	}
 	return out, true, nil

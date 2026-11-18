@@ -34,136 +34,6 @@ func tuiTestHome(t *testing.T) string {
 	return h
 }
 
-// Session with one exchange and the given token counts in the store of h
-func tuiSeed(t *testing.T, h, sid string, input, output int64) {
-	t.Helper()
-	ctx := context.Background()
-	db, err := state.NewSessionDB(ctx, filepath.Join(h, "state.db"), false)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer db.Close()
-	if err := db.CreateSession(state.NewSession{ID: sid, Source: "tui"}); err != nil {
-		t.Fatal(err)
-	}
-	for _, m := range []map[string]any{{"role": "user", "content": "q"}, {"role": "assistant", "content": "a"}} {
-		if _, err := db.AppendMessage(ctx, sid, m, state.AppendGuards{}); err != nil {
-			t.Fatal(err)
-		}
-	}
-	if err := db.UpdateTokenCounts(sid, state.TokenCountDelta{InputTokens: input, OutputTokens: output}); err != nil {
-		t.Fatal(err)
-	}
-}
-
-// Epilogue text for a session id
-func tuiSummary(sid string) string {
-	var out bytes.Buffer
-	printTUIExitSummary(context.Background(), &out, sid, "")
-	return out.String()
-}
-
-func TestEpiloguePrintsShortResumeIDForCanonicalSession(t *testing.T) {
-	h := tuiTestHome(t)
-	sid := "local-" + "ab12cd34ef56a7b8" + strings.Repeat("0", 48)
-	tuiSeed(t, h, sid, 300, 60)
-	out := tuiSummary(sid)
-	if !strings.Contains(out, "icebath --resume "+sid[:22]+"\n") {
-		t.Fatalf("short id missing: %q", out)
-	}
-	if strings.Contains(out, sid) {
-		t.Fatalf("full id printed: %q", out)
-	}
-	if !strings.Contains(out, "Tokens:         360 (in 300, out 60") {
-		t.Fatalf("tokens: %q", out)
-	}
-}
-
-func TestAmbiguousPrefixFallsBackToFullID(t *testing.T) {
-	h := tuiTestHome(t)
-	a := "local-" + "ab12cd34ef56a7b8" + strings.Repeat("0", 48)
-	b := "local-" + "ab12cd34ef56a7b8" + strings.Repeat("1", 48)
-	tuiSeed(t, h, a, 300, 60)
-	tuiSeed(t, h, b, 300, 60)
-	if out := tuiSummary(a); !strings.Contains(out, "icebath --resume "+a+"\n") {
-		t.Fatalf("ambiguous prefix shortened: %q", out)
-	}
-}
-
-func TestStoredIDsPrintUnchanged(t *testing.T) {
-	h := tuiTestHome(t)
-	tuiSeed(t, h, "20261012_185208_a67483", 300, 60)
-	if out := tuiSummary("20261012_185208_a67483"); !strings.Contains(out, "icebath --resume 20261012_185208_a67483\n") {
-		t.Fatalf("stored id: %q", out)
-	}
-}
-
-func TestBranchChildEpilogueCountsTheBranchedConversation(t *testing.T) {
-	h := tuiTestHome(t)
-	parent := "local-" + strings.Repeat("1", 64)
-	child := "local-" + strings.Repeat("2", 64)
-	tuiSeed(t, h, parent, 300, 60)
-	ctx := context.Background()
-	db, err := state.NewSessionDB(ctx, filepath.Join(h, "state.db"), false)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := db.CreateSession(state.NewSession{ID: child, Source: "tui", ModelConfig: map[string]any{"_branched_from": parent}, ParentSessionID: parent}); err != nil {
-		t.Fatal(err)
-	}
-	for _, m := range []map[string]any{{"role": "user", "content": "q"}, {"role": "assistant", "content": "a"}} {
-		if _, err := db.AppendMessage(ctx, child, m, state.AppendGuards{}); err != nil {
-			t.Fatal(err)
-		}
-	}
-	db.Close()
-	out := tuiSummary(child)
-	if !strings.Contains(out, "--resume "+child[:22]) || !strings.Contains(out, "Tokens:         360 (in 300, out 60") {
-		t.Fatalf("branch epilogue: %q", out)
-	}
-}
-
-// Session with three messages titled for the profile hint cases
-func tuiTitledSession(t *testing.T, h, sid string) {
-	t.Helper()
-	tuiSeed(t, h, sid, 0, 0)
-	ctx := context.Background()
-	db, err := state.NewSessionDB(ctx, filepath.Join(h, "state.db"), false)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer db.Close()
-	if _, err := db.AppendMessage(ctx, sid, map[string]any{"role": "user", "content": "more"}, state.AppendGuards{}); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := db.SetSessionTitle(ctx, sid, "My TUI Session"); err != nil {
-		t.Fatal(err)
-	}
-}
-
-func TestTuiExitSummaryResumeHintTuiHintsIncludeProfileFlagForNamedProfile(t *testing.T) {
-	root := t.TempDir()
-	h := filepath.Join(root, ".icebath", "profiles", "dev")
-	if err := os.MkdirAll(h, 0o755); err != nil {
-		t.Fatal(err)
-	}
-	t.Setenv("ICEBATH_HOME", h)
-	tuiTitledSession(t, h, "20260524_000001_abc123")
-	out := tuiSummary("20260524_000001_abc123")
-	if !strings.Contains(out, "icebath --resume 20260524_000001_abc123 -p dev") || !strings.Contains(out, `icebath -c "My TUI Session" -p dev`) {
-		t.Fatalf("profile hints: %q", out)
-	}
-}
-
-func TestTuiExitSummaryResumeHintTuiHintsNoProfileFlagOnDefault(t *testing.T) {
-	h := tuiTestHome(t)
-	tuiTitledSession(t, h, "20260524_000001_abc123")
-	out := tuiSummary("20260524_000001_abc123")
-	if !strings.Contains(out, "icebath --resume 20260524_000001_abc123") || strings.Contains(out, " -p ") {
-		t.Fatalf("default hints: %q", out)
-	}
-}
-
 // Launch seams that record the child environment and answer code
 func tuiFakeDeps(t *testing.T, code int, captured *[]map[string]string) (tuiLaunchDeps, *bytes.Buffer) {
 	t.Helper()
@@ -181,10 +51,9 @@ func tuiFakeDeps(t *testing.T, code int, captured *[]map[string]string) (tuiLaun
 			*captured = append(*captured, copied)
 			return code, nil
 		},
-		printSummary: func(context.Context, string, string) {},
-		relaunch:     func([]string, bool) { t.Fatal("relaunch") },
-		stdout:       &bytes.Buffer{},
-		stderr:       &errOut,
+		relaunch: func([]string, bool) { t.Fatal("relaunch") },
+		stdout:   &bytes.Buffer{},
+		stderr:   &errOut,
 	}, &errOut
 }
 
@@ -212,13 +81,13 @@ func TestLaunchTuiExportsModelProviderAndToolsets(t *testing.T) {
 		}
 		return run(ctx, env)
 	}
-	code := launchTUIWith(context.Background(), TUILaunch{Model: "nous/icebath-test", Provider: "nous", Toolsets: "web, terminal"}, deps)
+	code := launchTUIWith(context.Background(), TUILaunch{Model: "openrouter/icebath-test", Provider: "openrouter", Toolsets: "web, terminal"}, deps)
 	if code != 1 {
 		t.Fatalf("exit %d", code)
 	}
 	env := captured[0]
-	for key, want := range map[string]string{"ICEBATH_MODEL": "nous/icebath-test", "ICEBATH_INFERENCE_MODEL": "nous/icebath-test",
-		"ICEBATH_TUI_PROVIDER": "nous", "ICEBATH_INFERENCE_PROVIDER": "nous", "ICEBATH_TUI_TOOLSETS": "web,terminal"} {
+	for key, want := range map[string]string{"ICEBATH_MODEL": "openrouter/icebath-test", "ICEBATH_INFERENCE_MODEL": "openrouter/icebath-test",
+		"ICEBATH_TUI_PROVIDER": "openrouter", "ICEBATH_INFERENCE_PROVIDER": "openrouter", "ICEBATH_TUI_TOOLSETS": "web,terminal"} {
 		if env[key] != want {
 			t.Fatalf("%s = %q, want %q", key, env[key], want)
 		}
@@ -245,7 +114,7 @@ func tuiResolved(t *testing.T, p string) string {
 	return r
 }
 
-func TestLaunchTuiPrefersLaunchCwdOverInheritedHermesCwd(t *testing.T) {
+func TestLaunchTuiPrefersLaunchCwdOverInheritedIcebathCwd(t *testing.T) {
 	tuiTestHome(t)
 	base := t.TempDir()
 	stale, launch := filepath.Join(base, "stale-project"), filepath.Join(base, "launch-project")

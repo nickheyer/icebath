@@ -4,10 +4,11 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"log/slog"
 	"runtime/debug"
 	"strings"
 	"sync"
+
+	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 )
 
 var routePureHooks = map[string]bool{"request_headers": true, "max_tokens_param": true, "reasoning_payload": true,
@@ -190,7 +191,7 @@ func headersAnswer(m map[string]string) any {
 	return m
 }
 
-// Answer of the base profile for a hook it does not override, the hermes ProviderProfile default body
+// Answer of the base profile for a hook it does not override, the ProviderProfile default body
 func baseHookAnswer(hook string) any {
 	switch hook {
 	case "request_headers":
@@ -249,6 +250,8 @@ func copyHookAnswer(v any) any {
 			out[i] = copyHookAnswer(e)
 		}
 		return out
+	case *pyjson.Object:
+		return pyjson.Clone(x)
 	}
 	return v
 }
@@ -302,7 +305,7 @@ func hookFailures(scope any) map[string]bool {
 	return f
 }
 
-// Name of a profile as the hermes name attribute, a question mark for an unnamed one
+// Name of a profile as the name attribute, a question mark for an unnamed one
 func profileIdentity(p *Profile) string {
 	if p == nil || p.Name == "" {
 		return "?"
@@ -358,13 +361,13 @@ func AskProfile(ctx context.Context, p *Profile, hook string, fallback any, scop
 	routeWarned[warnKey] = true
 	routeWarnedMu.Unlock()
 	if warn {
-		slog.Warn(fmt.Sprintf("provider %s: %s hook failed (%s: %v); using the generic answer for the rest of the session",
-			strings.SplitN(warnKey, "|", 2)[0], hook, pyTypeNameOfError(err), err), "exc_info", hookTraceback(err))
+		pkgLog().Warn(fmt.Sprintf("provider %s: %s hook failed (%v); using the generic answer for the rest of the session",
+			strings.SplitN(warnKey, "|", 2)[0], hook, err), "exc_info", hookTraceback(err))
 	}
 	return fallback
 }
 
-// Panic raised inside a profile hook with the goroutine stack at the raise, the hermes traceback
+// Panic raised inside a profile hook with the goroutine stack at the raise, the traceback
 type hookPanicError struct {
 	err   error
 	stack string
@@ -396,7 +399,7 @@ func AskOnErrorPath(ctx context.Context, p *Profile, hook string, fallback any, 
 		name = "?"
 	}
 	if _, seen := errorPathHookWarned.LoadOrStore(name+"|"+hook, true); !seen {
-		slog.Warn(fmt.Sprintf("provider %s: %s hook failed; handling the API error without it", name, hook), "error", err)
+		pkgLog().Warn(fmt.Sprintf("provider %s: %s hook failed; handling the API error without it", name, hook), "error", err)
 	}
 	return fallback
 }

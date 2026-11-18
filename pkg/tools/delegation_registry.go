@@ -3,7 +3,6 @@ package tools
 import (
 	"context"
 	"fmt"
-	"log/slog"
 	"regexp"
 	"sync"
 
@@ -13,8 +12,6 @@ import (
 
 // Backend a blank or unset delegation.backend selects
 const DefaultDelegationBackend = "default"
-
-var delegationRegistryLog = slog.Default().With("logger", "agent.delegation_registry")
 
 var bundledDelegationNameRE = regexp.MustCompile(`^[a-z0-9][a-z0-9_-]{0,63}$`)
 
@@ -83,7 +80,7 @@ func LoadBundledDelegation(ctx context.Context, name string) DelegationProvider 
 	return loadBundledDelegation(ctx, name)
 }
 
-// Forgets every first use bundled strategy, the hermes _first_use reset of tests
+// Forgets every first use bundled strategy, the first use reset of tests
 func ResetDelegationFirstUse() {
 	delegationFirstUseMu.Lock()
 	delegationFirstUse = map[string]DelegationProvider{}
@@ -97,7 +94,7 @@ func delegationAvailable(p DelegationProvider) (available bool) {
 	}
 	defer func() {
 		if rec := recover(); rec != nil {
-			delegationRegistryLog.Debug(fmt.Sprintf("delegation provider %s.is_available() raised %v", p.Name(), rec))
+			pkgLog().Debug(fmt.Sprintf("delegation provider %s.is_available() raised %v", p.Name(), rec))
 			available = false
 		}
 	}()

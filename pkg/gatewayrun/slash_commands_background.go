@@ -90,7 +90,7 @@ func (r *GatewayRunner) handleBtwCommand(ctx context.Context, event *gateway.Mes
 		answer, err := agent.AnswerSideQuestion(ctx, question, snapshot, opts)
 		var reply string
 		if err != nil {
-			runLog().Warn(fmt.Sprintf("/btw side question failed: %s", pyrepr.ExceptionMessage(err)))
+			pkgLog().Warn(fmt.Sprintf("/btw side question failed: %s", pyrepr.ExceptionMessage(err)))
 			reply = i18n.T(ctx, "gateway.btw.failed", "", map[string]any{"preview": shown, "error": pyrepr.ExceptionMessage(err)})
 		} else {
 			reply = i18n.T(ctx, "gateway.btw.answer", "", map[string]any{"preview": shown, "answer": answer})

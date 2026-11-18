@@ -53,15 +53,15 @@ func TestSystemdProbesSelectScopeAndReadUnitState(t *testing.T) {
 	if props["ActiveState"] != "active" || !strings.Contains(calls[len(calls)-1], "--property ActiveState") {
 		t.Fatalf("properties %v %v", props, calls)
 	}
-	if err := SyncHermesHomeFromSystemdUnit(ctx, false); err != nil || os.Getenv("ICEBATH_HOME") != filepath.Join(tmp, "home") {
+	if err := SyncIcebathHomeFromSystemdUnit(ctx, false); err != nil || os.Getenv("ICEBATH_HOME") != filepath.Join(tmp, "home") {
 		t.Fatal("user scope must not adopt a unit home")
 	}
-	if err := SyncHermesHomeFromSystemdUnit(ctx, true); err != nil || os.Getenv("ICEBATH_HOME") != "/srv/pinned" {
+	if err := SyncIcebathHomeFromSystemdUnit(ctx, true); err != nil || os.Getenv("ICEBATH_HOME") != "/srv/pinned" {
 		t.Fatalf("show environment adoption %q %v", os.Getenv("ICEBATH_HOME"), err)
 	}
 	t.Setenv("ICEBATH_HOME", filepath.Join(tmp, "home"))
 	writeUnit(t, sysUnit, "[Service]\nEnvironment=\"ICEBATH_HOME=/srv/from-unit\"\n")
-	if err := SyncHermesHomeFromSystemdUnit(ctx, true); err != nil || os.Getenv("ICEBATH_HOME") != "/srv/from-unit" {
+	if err := SyncIcebathHomeFromSystemdUnit(ctx, true); err != nil || os.Getenv("ICEBATH_HOME") != "/srv/from-unit" {
 		t.Fatalf("unit file adoption %q %v", os.Getenv("ICEBATH_HOME"), err)
 	}
 	pinSystemdHost(t, "linux", false, false, false, true, func(argv []string) (CommandResult, error) { return CommandResult{}, ErrCommandNotFound })

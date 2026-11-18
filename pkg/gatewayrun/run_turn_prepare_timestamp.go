@@ -87,7 +87,7 @@ func (r *GatewayRunner) hmwaApplyMessageTimestamp(ctx context.Context, event *ga
 		return nil
 	}
 	if err := apply(); err != nil {
-		runLog().Debug(fmt.Sprintf("Message timestamp injection failed (non-fatal): %v", err))
+		pkgLog().Debug(fmt.Sprintf("Message timestamp injection failed (non-fatal): %v", err))
 	}
 	return messageText, persistUserMessage, persistUserTimestamp
 }

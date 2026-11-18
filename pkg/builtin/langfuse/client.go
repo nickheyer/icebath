@@ -157,7 +157,7 @@ func buildClient(ctx context.Context) *lfClient {
 		if secretKey == "" {
 			missing = append(missing, secretKeyEnv)
 		}
-		lfLog().Warn(fmt.Sprintf("Langfuse plugin: missing credentials (%s), traces will NOT be emitted. Set both "+
+		pkgLog().Warn(fmt.Sprintf("Langfuse plugin: missing credentials (%s), traces will NOT be emitted. Set both "+
 			"ICEBATH_LANGFUSE_PUBLIC_KEY and ICEBATH_LANGFUSE_SECRET_KEY, or disable the plugin "+
 			"(`icebath plugins disable langfuse`) to silence this warning.", strings.Join(missing, ", ")))
 		return nil
@@ -179,7 +179,7 @@ func buildClient(ctx context.Context) *lfClient {
 		}
 	}
 	if len(placeholders) > 0 {
-		lfLog().Warn(fmt.Sprintf("Langfuse plugin: credentials look like placeholders, traces will "+
+		pkgLog().Warn(fmt.Sprintf("Langfuse plugin: credentials look like placeholders, traces will "+
 			"NOT be emitted (%s). Set real Langfuse keys (pk-lf-... / sk-lf-...) "+
 			"or unset ICEBATH_LANGFUSE_PUBLIC_KEY / ICEBATH_LANGFUSE_SECRET_KEY to "+
 			"silence this warning.", strings.Join(placeholders, "; ")))
@@ -191,7 +191,7 @@ func buildClient(ctx context.Context) *lfClient {
 		}
 	}
 	if len(prefixes) > 0 {
-		lfLog().Warn(fmt.Sprintf("Langfuse plugin: credentials do not look like Langfuse keys (%s). Fine for a "+
+		pkgLog().Warn(fmt.Sprintf("Langfuse plugin: credentials do not look like Langfuse keys (%s). Fine for a "+
 			"Langfuse-compatible endpoint that issues its own keys; otherwise every trace is "+
 			"rejected at flush: check for template values or swapped public/secret keys.", strings.Join(prefixes, "; ")))
 	}
@@ -201,14 +201,14 @@ func buildClient(ctx context.Context) *lfClient {
 		if f, err := pyint.ParseFloat(raw); err == nil {
 			opts.sampleRate = &f
 		} else {
-			lfLog().Warn(fmt.Sprintf("Invalid ICEBATH_LANGFUSE_SAMPLE_RATE=%s", pyrepr.StrRepr(raw)))
+			pkgLog().Warn(fmt.Sprintf("Invalid ICEBATH_LANGFUSE_SAMPLE_RATE=%s", pyrepr.StrRepr(raw)))
 		}
 	}
 	_, serviceSet := os.LookupEnv("OTEL_SERVICE_NAME")
 	opts.defaultService = !serviceSet && !strings.Contains(os.Getenv("OTEL_RESOURCE_ATTRIBUTES"), "service.name=")
 	client, err := newClient(opts)
 	if err != nil {
-		lfLog().Warn(fmt.Sprintf("Could not initialize Langfuse client: %v", err))
+		pkgLog().Warn(fmt.Sprintf("Could not initialize Langfuse client: %v", err))
 		return nil
 	}
 	return client

@@ -3,7 +3,6 @@ package tuiserver
 import (
 	"bytes"
 	"context"
-	"log/slog"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -282,7 +281,7 @@ func modelPickerContext(ctx context.Context, a *agent.AIAgent) (provider.PickerC
 func canonicalCustomIdentityQuietly(ctx context.Context, baseURL, configProvider, model, requested string) (identity string) {
 	defer func() {
 		if r := recover(); r != nil {
-			slog.Debug("custom provider identity recovery failed (model picker)", "error", r)
+			pkgLog().Debug("custom provider identity recovery failed (model picker)", "error", r)
 			identity = ""
 		}
 	}()

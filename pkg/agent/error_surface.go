@@ -1,7 +1,6 @@
 package agent
 
 import (
-	"log/slog"
 	"strings"
 
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
@@ -31,9 +30,8 @@ var surfaceReasonToLayer = map[string]string{
 }
 
 var (
-	surfaceTransportReasons       = map[string]bool{"timeout": true, "ssl_cert_verification": true}
-	surfaceFreeTierRetryableKinds = map[string]bool{"rate_limited": true, "at_capacity": true, "outage": true}
-	surfaceNonRetryableReasons    = map[string]bool{
+	surfaceTransportReasons    = map[string]bool{"timeout": true, "ssl_cert_verification": true}
+	surfaceNonRetryableReasons = map[string]bool{
 		"auth": true, "auth_permanent": true, "billing": true, "billing_unverified": true, "content_policy_blocked": true,
 		"provider_policy_blocked": true, "data_policy_denied": true, "model_not_found": true, "format_error": true,
 		"ssl_cert_verification": true, "context_overflow": true, "interpreter_shutdown": true, "upstream_blocked": true,
@@ -43,8 +41,6 @@ var (
 	surfaceStreamDropFragments = []string{"stream connection", "peer closed connection", "incomplete chunked read",
 		"connection broken", "stream ended prematurely", "sse", "mid-stream"}
 )
-
-func errorSurfaceLog() *slog.Logger { return slog.Default().With("logger", "agent.error_surface") }
 
 // True for user configured custom or local endpoint providers
 func surfaceIsCustomEndpoint(providerName string) bool {
@@ -135,7 +131,7 @@ func surfaceNumber(v any) (float64, bool) {
 func buildErrorSurfaceFromResult(result any, providerName, model string) (surface map[string]any) {
 	defer func() {
 		if r := recover(); r != nil {
-			errorSurfaceLog().Debug("error_surface: result classification failed", "error", r)
+			pkgLog().Debug("error_surface: result classification failed", "error", r)
 			surface = nil
 		}
 	}()
@@ -152,30 +148,11 @@ func buildErrorSurfaceFromResult(result any, providerName, model string) (surfac
 		return errorSurface(LayerDisk, "disk_full", false, providerName, model)
 	}
 	if pyrepr.Truthy(res["billing_block"]) || reason == "billing" || reason == "billing_unverified" {
-		if window := surfaceStr(res["usage_window_message"]); window != "" {
-			s := errorSurface(LayerBilling, "usage_window", true, providerName, model)
-			s["message"] = window
-			if resetsAt, ok := surfaceNumber(res["failure_resets_at"]); ok {
-				s["resets_at"] = resetsAt
-			}
-			if limit, ok := res["usage_limit"].(map[string]any); ok {
-				s["usage_limit"] = limit
-			}
-			return s
-		}
 		code := reason
 		if code == "" {
 			code = "billing"
 		}
 		return errorSurface(LayerBilling, code, false, providerName, model)
-	}
-	if freeTier, ok := res["free_tier"].(map[string]any); ok && pyrepr.Truthy(freeTier["kind"]) {
-		kind := pyrepr.Str(freeTier["kind"])
-		s := errorSurface(LayerProvider, "free_tier_"+kind, surfaceFreeTierRetryableKinds[kind], providerName, model)
-		if message := surfaceStr(freeTier["message"]); message != "" {
-			s["message"] = message
-		}
-		return s
 	}
 	if reason == "" {
 		if surfaceLooksLikeStreamDrop(errorText) {

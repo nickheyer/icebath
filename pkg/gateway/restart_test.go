@@ -21,7 +21,7 @@ func TestCappedDrainFitsInsideLaunchdBudgetMinusReserve(t *testing.T) {
 	}
 	uid := 501
 	fake := func(argv []string, timeout time.Duration) (string, int, error) {
-		if argv[2] != "gui/501/ai.icebath.gateway" || timeout != 5*time.Second {
+		if argv[2] != "gui/501/app.icebath.gateway" || timeout != 5*time.Second {
 			t.Fatalf("launchctl %v %v", argv, timeout)
 		}
 		return "exit timeout = 60\n", 0, nil
@@ -31,10 +31,10 @@ func TestCappedDrainFitsInsideLaunchdBudgetMinusReserve(t *testing.T) {
 		environ  map[string]string
 		want     float64
 	}{
-		{"darwin", direct("ai.icebath.gateway"), capped}, {"darwin", grandchild("ai.icebath.gateway"), capped},
+		{"darwin", direct("app.icebath.gateway"), capped}, {"darwin", grandchild("app.icebath.gateway"), capped},
 		{"darwin", direct("application.com.example.ide.123"), 180.0}, {"darwin", grandchild("application.com.example.ide.123"), 180.0},
 		{"darwin", map[string]string{"XPC_SERVICE_NAME": "0"}, 180.0},
-		{"linux", direct("ai.icebath.gateway"), 180.0}, {"linux", grandchild("ai.icebath.gateway"), 180.0},
+		{"linux", direct("app.icebath.gateway"), 180.0}, {"linux", grandchild("app.icebath.gateway"), 180.0},
 	} {
 		budget := ReadLaunchdExitTimeoutS(LaunchdExitTimeoutQuery{Environ: c.environ, UID: &uid, Run: fake, Platform: c.platform})
 		var b any
@@ -45,8 +45,8 @@ func TestCappedDrainFitsInsideLaunchdBudgetMinusReserve(t *testing.T) {
 			t.Fatalf("%s %v -> %v", c.platform, c.environ, got)
 		}
 	}
-	gc := grandchild("ai.icebath.gateway")
-	if LaunchdServiceLabel(gc, "darwin") != "ai.icebath.gateway" || !IsGatewaySupervisorProcess(gc) ||
+	gc := grandchild("app.icebath.gateway")
+	if LaunchdServiceLabel(gc, "darwin") != "app.icebath.gateway" || !IsGatewaySupervisorProcess(gc) ||
 		IsGatewaySupervisorProcess(map[string]string{"XPC_SERVICE_NAME": "0"}) || IsGatewaySupervisorProcess(grandchild("application.com.x.1")) {
 		t.Fatal("forwarded label marks the grandchild supervised")
 	}
@@ -137,8 +137,8 @@ func TestRestartSupervisorAndExitHelpers(t *testing.T) {
 	if !IsSupervisedGatewayLaunch(map[string]string{"ICEBATH_SUPERVISED_CHILD": "1"}) || IsSupervisedGatewayLaunch(map[string]string{}) {
 		t.Fatal("supervised launch")
 	}
-	if ReadLaunchdExitTimeoutS(LaunchdExitTimeoutQuery{Label: "ai.icebath.gateway", UID: new(int), Run: func(argv []string, _ time.Duration) (string, int, error) {
-		if argv[2] != "system/ai.icebath.gateway" {
+	if ReadLaunchdExitTimeoutS(LaunchdExitTimeoutQuery{Label: "app.icebath.gateway", UID: new(int), Run: func(argv []string, _ time.Duration) (string, int, error) {
+		if argv[2] != "system/app.icebath.gateway" {
 			t.Fatalf("root domain %v", argv)
 		}
 		return "", 1, nil

@@ -137,10 +137,6 @@ func TestHTTPDateHeaderParsedIdenticallyAcrossSites(t *testing.T) {
 	}
 	h := http.Header{}
 	h.Set("Retry-After", header)
-	guard, ok := parseResetSeconds(h)
-	if !ok || math.Abs(guard.Seconds()-canonical.Seconds()) >= 2 {
-		t.Fatalf("guard %v %v", guard, ok)
-	}
 	err := &APIError{Message: "rate limited", Err: &headerErr{msg: "rate limited", h: h}}
 	ctx := ExtractAPIErrorContext(err)
 	resetAt, _ := ctx["reset_at"].(float64)
@@ -210,7 +206,7 @@ func TestExtractAPIErrorContextBodyFields(t *testing.T) {
 	}
 }
 
-var nousHeaders = map[string]string{
+var rateLimitHeaders = map[string]string{
 	"x-ratelimit-limit-requests": "800", "x-ratelimit-limit-requests-1h": "33600",
 	"x-ratelimit-limit-tokens": "8000000", "x-ratelimit-limit-tokens-1h": "336000000",
 	"x-ratelimit-remaining-requests": "795", "x-ratelimit-remaining-requests-1h": "33590",
@@ -228,8 +224,8 @@ func headersFrom(m map[string]string) http.Header {
 }
 
 func TestParseRateLimitHeadersBasic(t *testing.T) {
-	state := ParseRateLimitHeaders(headersFrom(nousHeaders), "nous", time.Now())
-	if state == nil || state.Provider != "nous" || !state.HasData() {
+	state := ParseRateLimitHeaders(headersFrom(rateLimitHeaders), "openrouter", time.Now())
+	if state == nil || state.Provider != "openrouter" || !state.HasData() {
 		t.Fatalf("state %+v", state)
 	}
 	if state.RequestsMin.Limit != 800 || state.RequestsMin.Remaining != 795 || state.RequestsMin.ResetSeconds != 45.5 {

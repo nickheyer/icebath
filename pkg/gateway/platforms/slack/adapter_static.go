@@ -351,7 +351,7 @@ func feedbackBlock(ctx context.Context) map[string]any {
 		"type": "context_actions",
 		"elements": []any{map[string]any{
 			"type":      "feedback_buttons",
-			"action_id": "hermes_feedback",
+			"action_id": feedbackActionID,
 			"positive_button": map[string]any{
 				"text":                map[string]any{"type": "plain_text", "text": label("platform.slack.feedback.good")},
 				"accessibility_label": label("platform.slack.feedback.good_a11y"),

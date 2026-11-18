@@ -3,7 +3,6 @@ package state
 import (
 	"context"
 	"fmt"
-	"log/slog"
 	"slices"
 	"strings"
 	"time"
@@ -58,7 +57,7 @@ func (s *sessionSearch) SearchMessages(ctx context.Context, query string, o Sear
 		if runes := []rune(query); len(runes) > 200 {
 			head = string(runes[:200])
 		}
-		slog.Info(fmt.Sprintf("slow session search: path=%s elapsed=%.0fms rows=%s query=%s",
+		pkgLog().Info(fmt.Sprintf("slow session search: path=%s elapsed=%.0fms rows=%s query=%s",
 			s.describeSearchPath(query), elapsedMS, count, pyrepr.StrRepr(head)))
 	}
 	return rows, err
@@ -144,7 +143,7 @@ func (s *sessionSearch) searchMessagesImpl(ctx context.Context, query string, o 
 			return nil, err
 		}
 		if err != nil {
-			slog.Debug(fmt.Sprintf("Unindexed-gap supplement skipped: %s", errText(err)))
+			pkgLog().Debug(fmt.Sprintf("Unindexed-gap supplement skipped: %s", errText(err)))
 		} else {
 			seen := map[string]bool{}
 			for _, m := range matches {

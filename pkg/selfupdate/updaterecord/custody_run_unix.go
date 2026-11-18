@@ -5,7 +5,6 @@ package updaterecord
 import (
 	"context"
 	"fmt"
-	"log/slog"
 	"os"
 	"os/exec"
 	"strconv"
@@ -37,7 +36,7 @@ func runGitPlatform(ctx context.Context, argv []string, timeout time.Duration, h
 func ownerWatch(pid int) func() {
 	r, w, err := os.Pipe()
 	if err != nil {
-		slog.Warn(fmt.Sprintf("Could not watch update child %d for its owner's death: %v", pid, err))
+		pkgLog().Warn(fmt.Sprintf("Could not watch update child %d for its owner's death: %v", pid, err))
 		return nil
 	}
 	watcher := exec.Command("/bin/sh", "-c", ownerWatchScript, "sh", strconv.Itoa(pid))
@@ -47,7 +46,7 @@ func ownerWatch(pid int) func() {
 	r.Close()
 	if err != nil {
 		w.Close()
-		slog.Warn(fmt.Sprintf("Could not watch update child %d for its owner's death: %v", pid, err))
+		pkgLog().Warn(fmt.Sprintf("Could not watch update child %d for its owner's death: %v", pid, err))
 		return nil
 	}
 	return func() {

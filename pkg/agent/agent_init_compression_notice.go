@@ -9,6 +9,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 )
@@ -42,11 +43,11 @@ type CompressionSettings struct {
 	PrepareAhead                   bool
 }
 
-// Float form of an autoraise field, the KeyError or ValueError of a missing or non numeric one
+// Float form of an autoraise field, an error for a missing or non numeric one
 func autoraiseFloat(autoraise map[string]any, key string) (float64, error) {
 	raw, ok := autoraise[key]
 	if !ok {
-		return 0, fmt.Errorf("KeyError: %s", pyrepr.Repr(key))
+		return 0, fmt.Errorf("compression autoraise has no %s", key)
 	}
 	switch v := raw.(type) {
 	case float64:
@@ -63,11 +64,11 @@ func autoraiseFloat(autoraise map[string]any, key string) (float64, error) {
 	case string:
 		f, err := strconv.ParseFloat(strings.TrimSpace(v), 64)
 		if err != nil {
-			return 0, fmt.Errorf("ValueError: could not convert string to float: %s", pyrepr.Repr(v))
+			return 0, fmt.Errorf("compression autoraise %s value %s is not a number", key, v)
 		}
 		return f, nil
 	}
-	return 0, fmt.Errorf("TypeError: float() argument must be a string or a real number")
+	return 0, fmt.Errorf("compression autoraise %s is %s, expected a number", key, errchain.Kind(raw))
 }
 
 func autoraiseModel(autoraise map[string]any, fallback string) string {

@@ -5,6 +5,7 @@ import (
 	"crypto/hmac"
 	"crypto/sha256"
 	"encoding/hex"
+	"errors"
 	"net/http"
 	"strings"
 
@@ -123,7 +124,8 @@ func (a *APIServerAdapter) normalizeRoomDispatch(ctx context.Context, request *g
 		if err != nil {
 			return nil, err
 		}
-		if _, err := gateway.VerifyRoomGrant(secret, roomToken, dispatch, "dispatch", nil); err != nil {
+		claims, err := gateway.VerifyRoomGrant(secret, roomToken, dispatch, "dispatch", nil)
+		if err != nil {
 			return nil, err
 		}
 		activeProfile := requestProfile(ctx)
@@ -162,15 +164,39 @@ func (a *APIServerAdapter) normalizeRoomDispatch(ctx context.Context, request *g
 		if strings.TrimSpace(request.Header.Get("Idempotency-Key")) != expectedKey {
 			return nil, &gateway.PyError{Kind: "ValueError", Msg: "room dispatch idempotency key is invalid"}
 		}
+		input, err := roomTurnInput(ctx, claims, activeProfile, dispatch)
+		if err != nil {
+			return nil, err
+		}
 		sessionID, err := a.ensureHostedMemberSession(ctx, dispatch)
 		if err != nil {
 			return nil, err
 		}
-		return pyjson.ObjectOf("input", dispatch.Prompt, "session_id", sessionID, "hosted_room_dispatch", dispatch.AsMapping(),
+		return pyjson.ObjectOf("input", input, "session_id", sessionID, "hosted_room_dispatch", dispatch.AsMapping(),
 			"_room_execution_policy", policy.AsMapping()), nil
 	}()
+	var refusal *gateway.PeerFileRefusal
+	if errors.As(err, &refusal) {
+		return body, jsonError(refusal.Msg, refusal.Code, refusal.Status), nil
+	}
 	if err != nil {
 		return body, roomDispatchError(err), nil
 	}
 	return normalized, nil, nil
+}
+
+// Turn input of a verified dispatch, the files it names read from this gateway's hold for the member seat
+func roomTurnInput(ctx context.Context, claims *pyjson.Object, profile string, dispatch *gateway.HostedMemberDispatch) (any, error) {
+	if len(dispatch.Attachments) == 0 {
+		return dispatch.Prompt, nil
+	}
+	scope, err := gateway.PeerFileScope(claims)
+	if err != nil {
+		return nil, err
+	}
+	scoped, err := profileScope(ctx, profile)
+	if err != nil {
+		return nil, err
+	}
+	return gateway.PeerMemberTurnInput(scoped, gateway.HostedRoomsDefaultDBPath(ctx), scope, dispatch)
 }

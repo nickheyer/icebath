@@ -93,7 +93,7 @@ var providerFailureAction = func() map[string]string {
 	m := map[string]string{
 		"billing": "Top up or wait for the limit to reset, or pin another provider with " +
 			"`icebath cron edit {job_id} --provider <name>`.",
-		"auth": "Sign in again with /login (or `{relogin}` in a terminal), or pin a " +
+		"auth": "Sign in again with /setup model (or `{relogin}` in a terminal), or pin a " +
 			"working provider with `icebath cron edit {job_id} --provider <name>`, then " +
 			"`icebath cron run {job_id}` to retry.",
 		"model_not_found": "Pick another model with `icebath cron edit {job_id} --model <name>`.",

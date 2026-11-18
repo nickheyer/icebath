@@ -112,9 +112,9 @@ func (a *APIServerAdapter) prepareSessionChat(ctx context.Context, request *gate
 
 // Session id and declared key response headers
 func sessionHeaders(sessionID, gatewaySessionKey string) map[string]string {
-	headers := map[string]string{"X-Hermes-Session-Id": sessionID}
+	headers := map[string]string{"X-Icebath-Session-Id": sessionID}
 	if gatewaySessionKey != "" {
-		headers["X-Hermes-Session-Key"] = gatewaySessionKey
+		headers["X-Icebath-Session-Key"] = gatewaySessionKey
 	}
 	return headers
 }
@@ -213,11 +213,11 @@ func (a *APIServerAdapter) answerThroughLiveBotChat(ctx context.Context, c *sess
 	status := pyrepr.Str(record["status"])
 	switch status {
 	case "settled":
-		return jsonResponse(pyjson.ObjectOf("object", "hermes.session.chat.completion", "session_id", sessionID,
+		return jsonResponse(pyjson.ObjectOf("object", "icebath.session.chat.completion", "session_id", sessionID,
 			"message", pyjson.ObjectOf("role", "assistant", "content", pyrepr.Or(record["reply"], "")),
 			"usage", pyjson.NewObject(), "runtime", pyjson.NewObject(), "delivery_id", deliveryID), http.StatusOK, headers), nil
 	case "queued", "claimed":
-		return jsonResponse(pyjson.ObjectOf("object", "hermes.session.chat.queued", "session_id", sessionID,
+		return jsonResponse(pyjson.ObjectOf("object", "icebath.session.chat.queued", "session_id", sessionID,
 			"status", status, "delivery_id", deliveryID), http.StatusAccepted, headers), nil
 	}
 	message := pyrepr.Str(pyrepr.Or(record["error"], "Bot Chat delivery "+status))
@@ -314,7 +314,7 @@ func (a *APIServerAdapter) streamThroughLiveBotChat(ctx context.Context, request
 	}()
 	if err != nil {
 		if isClientGone(err) {
-			apiLog().Info("Session SSE client disconnected while a live Bot Chat held the turn")
+			pkgLog().Info("Session SSE client disconnected while a live Bot Chat held the turn")
 		} else {
 			return nil, err
 		}
@@ -370,7 +370,7 @@ func (a *APIServerAdapter) handleSessionChat(ctx context.Context, request *gatew
 	}
 	final, _ := result["final_response"].(string)
 	finalResponse := gateway.APIResolveMediaToDataURLs(ctx, final)
-	return jsonResponse(pyjson.ObjectOf("object", "hermes.session.chat.completion", "status", responseStatus(result),
+	return jsonResponse(pyjson.ObjectOf("object", "icebath.session.chat.completion", "status", responseStatus(result),
 		"session_id", effective, "message", pyjson.ObjectOf("role", "assistant", "content", finalResponse), "usage", usage,
 		"runtime", a.effectiveTurnRuntime(c.runtimeRequest, result, usage)), http.StatusOK, sessionHeaders(effective, c.gatewaySessionKey)), nil
 }
@@ -472,7 +472,7 @@ func (a *APIServerAdapter) handleSessionChatStream(ctx context.Context, request 
 				a.setRunStatus(taskCtx, runID, "cancelled", "last_event", "run.cancelled")
 				return
 			}
-			apiLog().Error("[api_server] session chat stream failed", "error", err)
+			pkgLog().Error("[api_server] session chat stream failed", "error", err)
 			a.setRunStatus(taskCtx, runID, "failed", "error", redactAPIErrorText(err.Error(), -1), "last_event", "run.failed")
 			events.enqueue("error", pyjson.ObjectOf("message", redactAPIErrorText(err.Error(), -1)))
 			return
@@ -537,13 +537,13 @@ func (a *APIServerAdapter) handleSessionChatStream(ctx context.Context, request 
 		switch {
 		case errors.Is(streamErr, context.Canceled):
 			a.drainSessionStreamTaskOnDisconnect(runID, task, "SSE task cancelled")
-			apiLog().Info(fmt.Sprintf("Session SSE task cancelled; drained live run %s", runID))
+			pkgLog().Info(fmt.Sprintf("Session SSE task cancelled; drained live run %s", runID))
 			return nil, streamErr
 		case isClientGone(streamErr):
 			a.drainSessionStreamTaskOnDisconnect(runID, task, "SSE client disconnected")
-			apiLog().Info(fmt.Sprintf("Session SSE client disconnected; interrupted live run %s", runID))
+			pkgLog().Info(fmt.Sprintf("Session SSE client disconnected; interrupted live run %s", runID))
 		default:
-			apiLog().Debug(fmt.Sprintf("[api_server] session SSE stream error: %v", streamErr))
+			pkgLog().Debug(fmt.Sprintf("[api_server] session SSE stream error: %v", streamErr))
 		}
 	}
 	return response.WebResponse, nil
@@ -622,5 +622,5 @@ func (a *APIServerAdapter) handleSessionModelLock(ctx context.Context, request *
 	}
 	runtime := sanitizeRuntimeMetadata(pyjson.ObjectOf("provider", providerName, "model", model, "route_source", source),
 		r.requested(), source, "accepted")
-	return jsonResponse(pyjson.ObjectOf("object", "hermes.session.model_lock", "session_id", sessionID, "runtime", runtime), http.StatusOK, nil), nil
+	return jsonResponse(pyjson.ObjectOf("object", "icebath.session.model_lock", "session_id", sessionID, "runtime", runtime), http.StatusOK, nil), nil
 }

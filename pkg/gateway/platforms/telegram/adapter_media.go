@@ -11,7 +11,6 @@ import (
 	"image/jpeg"
 	_ "image/png"
 	"io"
-	"log/slog"
 	"net/http"
 	"net/url"
 	"os"
@@ -122,7 +121,7 @@ func (a *TelegramAdapter) compressImageToJPEG(imagePath string) string {
 	}
 	tmp, err := a.writeCompressedJPEG(imagePath)
 	if err != nil {
-		slog.Warn(fmt.Sprintf("[%s] Image compression failed, uploading original: %s", a.Name(), pyrepr.ExceptionMessage(err)))
+		pkgLog().Warn(fmt.Sprintf("[%s] Image compression failed, uploading original: %s", a.Name(), pyrepr.ExceptionMessage(err)))
 		return ""
 	}
 	out, _ := os.Stat(tmp)
@@ -130,7 +129,7 @@ func (a *TelegramAdapter) compressImageToJPEG(imagePath string) string {
 	if out != nil {
 		outSize = out.Size()
 	}
-	slog.Info(fmt.Sprintf("[%s] Pre-compressed %s (%.1fKB → %s %.1fKB) for Telegram upload", a.Name(), imagePath, float64(info.Size())/1024, tmp,
+	pkgLog().Info(fmt.Sprintf("[%s] Pre-compressed %s (%.1fKB → %s %.1fKB) for Telegram upload", a.Name(), imagePath, float64(info.Size())/1024, tmp,
 		float64(outSize)/1024))
 	return tmp
 }
@@ -214,7 +213,7 @@ func (a *TelegramAdapter) sendVoiceBubble(ctx context.Context, audioPath, chatID
 		}
 		low := errLower(err)
 		if v.mode != "" && (strings.Contains(low, "parse") || strings.Contains(low, "entit")) {
-			slog.Warn(fmt.Sprintf("[%s] voice caption MarkdownV2 rejected, retrying plain: %s", a.Name(), redactTelegramErrorText(err)))
+			pkgLog().Warn(fmt.Sprintf("[%s] voice caption MarkdownV2 rejected, retrying plain: %s", a.Name(), redactTelegramErrorText(err)))
 			lastParseErr = err
 			continue
 		}
@@ -248,7 +247,7 @@ func (a *TelegramAdapter) SendVoice(ctx context.Context, chatID, audioPath, capt
 		if out != "" {
 			transcoded, path = out, out
 		} else {
-			slog.Warn(fmt.Sprintf("[%s] voice transcode unavailable for %s — sending original format (install ffmpeg for voice bubbles)", a.Name(),
+			pkgLog().Warn(fmt.Sprintf("[%s] voice transcode unavailable for %s — sending original format (install ffmpeg for voice bubbles)", a.Name(),
 				filepath.Base(path)))
 		}
 	}
@@ -286,7 +285,7 @@ func (a *TelegramAdapter) SendVoice(ctx context.Context, chatID, audioPath, capt
 		if errors.Is(err, context.Canceled) && ctx.Err() != nil {
 			return gateway.SendResult{}, err
 		}
-		slog.Error(fmt.Sprintf("[%s] Failed to send Telegram voice/audio, falling back to base adapter: %s", a.Name(), redactTelegramErrorText(err)))
+		pkgLog().Error(fmt.Sprintf("[%s] Failed to send Telegram voice/audio, falling back to base adapter: %s", a.Name(), redactTelegramErrorText(err)))
 		return a.BasePlatformAdapter.SendVoice(ctx, chatID, audioPath, caption, replyTo, metadata, nil)
 	}
 	return gateway.SendResult{Success: true, MessageID: sentID(msg)}, nil
@@ -342,7 +341,7 @@ func (a *TelegramAdapter) SendMultipleImages(ctx context.Context, chatID string,
 			if errors.Is(err, context.Canceled) && ctx.Err() != nil {
 				return gateway.SendResult{}, err
 			}
-			slog.Warn(fmt.Sprintf("[%s] send_media_group failed (chunk %d/%d), falling back to per-image: %s", a.Name(), idx+1, len(chunks),
+			pkgLog().Warn(fmt.Sprintf("[%s] send_media_group failed (chunk %d/%d), falling back to per-image: %s", a.Name(), idx+1, len(chunks),
 				redactTelegramErrorText(err)))
 			fallback, ferr := a.BasePlatformAdapter.SendMultipleImages(ctx, chatID, chunk, metadata, humanDelay)
 			if ferr != nil {
@@ -379,7 +378,7 @@ func (a *TelegramAdapter) sendMediaGroupChunk(ctx context.Context, chatID string
 				local = img.URL[7:]
 			}
 			if _, statErr := os.Stat(local); statErr != nil {
-				slog.Warn(fmt.Sprintf("[%s] Skipping missing image in media group: %s", a.Name(), local))
+				pkgLog().Warn(fmt.Sprintf("[%s] Skipping missing image in media group: %s", a.Name(), local))
 				continue
 			}
 			if compressed := a.compressImageToJPEG(local); compressed != "" {
@@ -393,7 +392,7 @@ func (a *TelegramAdapter) sendMediaGroupChunk(ctx context.Context, chatID string
 	if len(media) == 0 {
 		return false, nil
 	}
-	slog.Info(fmt.Sprintf("[%s] Sending media group of %d photo(s) (chunk %d/%d)", a.Name(), len(media), idx+1, total))
+	pkgLog().Info(fmt.Sprintf("[%s] Sending media group of %d photo(s) (chunk %d/%d)", a.Name(), len(media), idx+1, total))
 	replyToID, kw, err := buildMediaSendKwargs(chatID, nil, metadata, a.replyToMode, a.notificationsMode)
 	if err != nil {
 		return false, err
@@ -440,9 +439,9 @@ func (a *TelegramAdapter) SendImageFile(ctx context.Context, chatID, imagePath, 
 	onError := func(e error) (gateway.SendResult, error) {
 		text := pyrepr.ExceptionMessage(e)
 		if strings.Contains(text, "Photo_invalid_dimensions") || strings.Contains(text, "PHOTO_INVALID_DIMENSIONS") {
-			slog.Info(fmt.Sprintf("[%s] Image dimensions exceed Telegram photo limits, sending as document: %s", a.Name(), imagePath))
+			pkgLog().Info(fmt.Sprintf("[%s] Image dimensions exceed Telegram photo limits, sending as document: %s", a.Name(), imagePath))
 		} else {
-			slog.Warn(fmt.Sprintf("[%s] Failed to send Telegram local image as photo, trying document fallback: %s", a.Name(), redactTelegramErrorText(e)))
+			pkgLog().Warn(fmt.Sprintf("[%s] Failed to send Telegram local image as photo, trying document fallback: %s", a.Name(), redactTelegramErrorText(e)))
 		}
 		return a.SendDocument(ctx, chatID, actual, caption, docName, replyTo, metadata, nil)
 	}
@@ -486,7 +485,7 @@ func (a *TelegramAdapter) sendLocalFile(ctx context.Context, label, path, chatID
 
 // Logs the native media failure then runs the base fallback
 func (a *TelegramAdapter) warnThen(mediaKey string, e error, fallback func() (gateway.SendResult, error)) (gateway.SendResult, error) {
-	slog.Warn(fmt.Sprintf("[%s] Failed to send %s: %s", a.Name(), mediaKey, redactTelegramErrorText(e)))
+	pkgLog().Warn(fmt.Sprintf("[%s] Failed to send %s: %s", a.Name(), mediaKey, redactTelegramErrorText(e)))
 	return fallback()
 }
 
@@ -563,7 +562,7 @@ func (a *TelegramAdapter) SendImage(ctx context.Context, chatID, imageURL, capti
 	}
 	env := urlSafetyEnv(ctx)
 	if !tools.IsSafeURL(env, imageURL) {
-		slog.Warn(fmt.Sprintf("[%s] Blocked unsafe image URL (SSRF protection)", a.Name()))
+		pkgLog().Warn(fmt.Sprintf("[%s] Blocked unsafe image URL (SSRF protection)", a.Name()))
 		return a.BasePlatformAdapter.SendImage(ctx, chatID, imageURL, caption, replyTo, metadata)
 	}
 	sendPhoto := func(photo func() models.InputFile, label string, upload bool) (*models.Message, error) {
@@ -585,7 +584,7 @@ func (a *TelegramAdapter) SendImage(ctx context.Context, chatID, imageURL, capti
 	if errors.Is(err, context.Canceled) && ctx.Err() != nil {
 		return gateway.SendResult{}, err
 	}
-	slog.Warn(fmt.Sprintf("[%s] URL-based send_photo failed, trying file upload: %s", a.Name(), redactTelegramErrorText(err)))
+	pkgLog().Warn(fmt.Sprintf("[%s] URL-based send_photo failed, trying file upload: %s", a.Name(), redactTelegramErrorText(err)))
 	data, err := fetchSafeImage(ctx, env, imageURL)
 	if err == nil {
 		msg, err = sendPhoto(func() models.InputFile {
@@ -596,7 +595,7 @@ func (a *TelegramAdapter) SendImage(ctx context.Context, chatID, imageURL, capti
 		if errors.Is(err, context.Canceled) && ctx.Err() != nil {
 			return gateway.SendResult{}, err
 		}
-		slog.Error(fmt.Sprintf("[%s] File upload send_photo also failed: %s", a.Name(), pyrepr.ExceptionMessage(err)))
+		pkgLog().Error(fmt.Sprintf("[%s] File upload send_photo also failed: %s", a.Name(), pyrepr.ExceptionMessage(err)))
 		return a.BasePlatformAdapter.SendImage(ctx, chatID, imageURL, caption, replyTo, metadata)
 	}
 	return gateway.SendResult{Success: true, MessageID: sentID(msg)}, nil
@@ -653,7 +652,7 @@ func (a *TelegramAdapter) SendAnimation(ctx context.Context, chatID, animationUR
 		if errors.Is(err, context.Canceled) && ctx.Err() != nil {
 			return gateway.SendResult{}, err
 		}
-		slog.Error(fmt.Sprintf("[%s] Failed to send Telegram animation, falling back to photo: %s", a.Name(), redactTelegramErrorText(err)))
+		pkgLog().Error(fmt.Sprintf("[%s] Failed to send Telegram animation, falling back to photo: %s", a.Name(), redactTelegramErrorText(err)))
 		return a.SendImage(ctx, chatID, animationURL, caption, replyTo, metadata)
 	}
 	return gateway.SendResult{Success: true, MessageID: sentID(msg)}, nil

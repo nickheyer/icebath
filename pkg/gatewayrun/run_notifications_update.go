@@ -12,6 +12,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/i18n"
@@ -159,7 +160,7 @@ func readMarkerObject(path string) (*pyjson.Object, error) {
 	}
 	object, ok := decoded.(*pyjson.Object)
 	if !ok {
-		return nil, fmt.Errorf("AttributeError: '%s' object has no attribute 'get'", pyrepr.TypeName(decoded))
+		return nil, fmt.Errorf("the update marker is %s, expected a mapping", errchain.Kind(decoded))
 	}
 	return object, nil
 }
@@ -230,7 +231,7 @@ func updateSleep(ctx context.Context, d time.Duration) error {
 
 // Waits for the exit code with no resolvable chat, then sends the final notice
 func (r *GatewayRunner) watchUpdateCompletionOnly(ctx context.Context, paths updatePaths, deadline time.Time, pollInterval time.Duration) error {
-	inboundLog().Warn("Update watcher: cannot resolve adapter/chat_id, falling back to completion-only")
+	pkgLog().Warn("Update watcher: cannot resolve adapter/chat_id, falling back to completion-only")
 	for paths.anyPending() && time.Now().Before(deadline) {
 		if updatePathExists(paths.exitCode) {
 			notified, err := r.sendUpdateNotification(ctx)
@@ -321,7 +322,7 @@ func (r *GatewayRunner) forwardUpdatePrompt(ctx context.Context, target *updateT
 		}
 	}
 	r.updatePromptPending().Set(target.sessionKey, true)
-	inboundLog().Info(fmt.Sprintf("Forwarded update prompt to %s: %s", target.sessionKey, pystr.Slice(promptText, 0, 80)))
+	pkgLog().Info(fmt.Sprintf("Forwarded update prompt to %s: %s", target.sessionKey, pystr.Slice(promptText, 0, 80)))
 	return nil
 }
 
@@ -388,7 +389,7 @@ func (r *GatewayRunner) watchUpdateProgress(ctx context.Context, pollInterval, s
 		}
 	}
 	if !updatePathExists(paths.exitCode) {
-		inboundLog().Warn(fmt.Sprintf("Update watcher timed out after %.0fs", timeout.Seconds()))
+		pkgLog().Warn(fmt.Sprintf("Update watcher timed out after %.0fs", timeout.Seconds()))
 		if err := os.WriteFile(paths.exitCode, []byte("124"), 0o644); err != nil {
 			return err
 		}
@@ -412,7 +413,7 @@ func (r *GatewayRunner) sendUpdateFinished(ctx context.Context, paths updatePath
 	if _, err := target.send(ctx, notice); err != nil {
 		return err
 	}
-	inboundLog().Info(fmt.Sprintf("Update finished (exit=%s), notified %s", code.String(), target.sessionKey))
+	pkgLog().Info(fmt.Sprintf("Update finished (exit=%s), notified %s", code.String(), target.sessionKey))
 	return nil
 }
 
@@ -430,14 +431,14 @@ func (r *GatewayRunner) forwardPendingUpdatePrompt(ctx context.Context, paths up
 		var decodeErr *pyjson.DecodeError
 		var pathErr *fs.PathError
 		if errors.As(err, &decodeErr) || errors.As(err, &pathErr) {
-			inboundLog().Debug(fmt.Sprintf("Failed to read update prompt: %s", err))
+			pkgLog().Debug(fmt.Sprintf("Failed to read update prompt: %s", err))
 			return nil
 		}
 		return err
 	}
 	object, ok := data.(*pyjson.Object)
 	if !ok {
-		return fmt.Errorf("AttributeError: '%s' object has no attribute 'get'", pyrepr.TypeName(data))
+		return fmt.Errorf("the pending update prompt is %s, expected a mapping", errchain.Kind(data))
 	}
 	promptText := object.GetOr("prompt", "")
 	if !pyrepr.Truthy(promptText) {
@@ -456,7 +457,7 @@ func (r *GatewayRunner) sendUpdateNotification(ctx context.Context) (notified bo
 	cleanup := true
 	active := paths.claimed
 	deferred := func(reason string) (bool, error) {
-		inboundLog().Info(reason)
+		pkgLog().Info(reason)
 		cleanup = false
 		active = paths.pending
 		return false, os.Rename(paths.claimed, paths.pending)
@@ -470,7 +471,7 @@ func (r *GatewayRunner) sendUpdateNotification(ctx context.Context) (notified bo
 	}()
 	result, derr := r.deliverUpdateNotification(ctx, paths, deferred)
 	if derr != nil {
-		inboundLog().Warn(fmt.Sprintf("Post-update notification failed: %s", derr))
+		pkgLog().Warn(fmt.Sprintf("Post-update notification failed: %s", derr))
 		return true, nil
 	}
 	return result, nil
@@ -517,7 +518,7 @@ func (r *GatewayRunner) deliverUpdateNotification(ctx context.Context, paths upd
 	adapter := r.authorizationAdapter(ctx, platform, markerProfile(pending))
 	if pyrepr.Truthy(chatID) && adapter == nil {
 		if age, ok := markerAgeSeconds(pending); ok && age > updateNotifyMaxAdapterWaitSeconds {
-			inboundLog().Warn(fmt.Sprintf("Post-update notification for %s:%s dropped after %.1fh: %s adapter never connected",
+			pkgLog().Warn(fmt.Sprintf("Post-update notification for %s:%s dropped after %.1fh: %s adapter never connected",
 				pyrepr.Str(platformStr), pyrepr.Str(chatID), age/3600.0, pyrepr.Str(platformStr)))
 			if err := r.clearUpdateMarkers(paths, truthyText(rowField(pending, "session_key"))); err != nil {
 				return true, err
@@ -545,7 +546,7 @@ func (r *GatewayRunner) deliverUpdateNotification(ctx context.Context, paths upd
 		if _, err := adapter.Send(ctx, chat, msg, "", nonConversationalMetadata(metadata, platform)); err != nil {
 			return true, err
 		}
-		inboundLog().Info(fmt.Sprintf("Sent post-update notification to %s:%s (exit=%s)", pyrepr.Str(platformStr), chat, code.String()))
+		pkgLog().Info(fmt.Sprintf("Sent post-update notification to %s:%s (exit=%s)", pyrepr.Str(platformStr), chat, code.String()))
 	}
 	return true, nil
 }

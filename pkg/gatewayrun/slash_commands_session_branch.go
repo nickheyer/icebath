@@ -18,7 +18,7 @@ import (
 
 // Message fields a branch child row copies from its parent row
 var branchCopiedFields = []string{"content", "tool_calls", "tool_call_id", "finish_reason", "reasoning",
-	"reasoning_content", "reasoning_details", "codex_reasoning_items", "codex_message_items", "timestamp", "data_use"}
+	"reasoning_content", "reasoning_details", "codex_reasoning_items", "codex_message_items", "timestamp"}
 
 // Adapter tracking the threads its bot has participated in
 type threadParticipationAdapter interface {
@@ -156,7 +156,7 @@ func (r *GatewayRunner) handleBranchCommand(ctx context.Context, event *gateway.
 			ChatType: destSource.ChatType, ThreadID: sattr(destSource.ThreadID), OriginJSON: originJSON, DisplayName: displayName,
 			SystemPrompt: systemPrompt})
 	}(); err != nil {
-		runLog().Error(fmt.Sprintf("Failed to create branch session: %s", pyrepr.ExceptionMessage(err)))
+		pkgLog().Error(fmt.Sprintf("Failed to create branch session: %s", pyrepr.ExceptionMessage(err)))
 		return i18n.T(ctx, "gateway.branch.create_failed", "", map[string]any{"error": pyrepr.ExceptionMessage(err)}), nil
 	}
 	rows := make([]map[string]any, len(history))
@@ -218,7 +218,7 @@ func (r *GatewayRunner) branchOpenThread(ctx context.Context, source *gateway.Se
 	}
 	threadID, _, err := adapter.CreateHandoffThread(ctx, *parentID, title)
 	if err != nil {
-		runLog().Warn(fmt.Sprintf("Branch: create_handoff_thread failed on %s; branching in place", string(source.Platform)), "exc_info", err)
+		pkgLog().Warn(fmt.Sprintf("Branch: create_handoff_thread failed on %s; branching in place", string(source.Platform)), "exc_info", err)
 		return nil, nil
 	}
 	if threadID == "" {

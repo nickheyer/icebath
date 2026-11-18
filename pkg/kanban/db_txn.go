@@ -124,7 +124,7 @@ func WriteTxn(ctx context.Context, conn state.SQLiteConn, allowNested bool, body
 		}
 		token := make([]byte, 8)
 		crand.Read(token)
-		savepoint := "hermes_nested_" + hex.EncodeToString(token)
+		savepoint := "icebath_nested_" + hex.EncodeToString(token)
 		if _, err := conn.ExecContext(ctx, "SAVEPOINT "+savepoint); err != nil {
 			return err
 		}

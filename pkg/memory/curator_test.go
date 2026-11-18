@@ -8,21 +8,14 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
-	"slices"
 	"sort"
 	"strings"
-	"sync"
 	"testing"
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/internal/pydatetime"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/skills"
-)
-
-var (
-	curRunsMu sync.Mutex
-	curRuns   [][2]string
 )
 
 // Temp home with a skills dir, default curator config and the warn once memory cleared
@@ -33,16 +26,7 @@ func curTestHome(t *testing.T, cfg map[string]any) (context.Context, string) {
 		t.Fatal(err)
 	}
 	t.Setenv("ICEBATH_HOME", h)
-	prevCfg, prevLLM, prevRec := curatorConfig, curatorLLMReview, curatorRecordRun
-	curRunsMu.Lock()
-	curRuns = nil
-	curRunsMu.Unlock()
-	curatorRecordRun = func(_ context.Context, trigger, outcome string, counts func() map[string]int, _ string) {
-		curRunsMu.Lock()
-		curRuns = append(curRuns, [2]string{trigger, outcome})
-		curRunsMu.Unlock()
-		counts()
-	}
+	prevCfg, prevLLM := curatorConfig, curatorLLMReview
 	curatorConfig = func(context.Context) map[string]any {
 		if cfg == nil {
 			return map[string]any{}
@@ -53,7 +37,7 @@ func curTestHome(t *testing.T, cfg map[string]any) (context.Context, string) {
 	curatorWarned.Lock()
 	curatorWarned.seen = map[string]bool{}
 	curatorWarned.Unlock()
-	t.Cleanup(func() { curatorConfig, curatorLLMReview, curatorRecordRun = prevCfg, prevLLM, prevRec })
+	t.Cleanup(func() { curatorConfig, curatorLLMReview = prevCfg, prevLLM })
 	t.Cleanup(curatorReviewThreads.Wait)
 	return context.Background(), h
 }
@@ -238,12 +222,6 @@ func TestCuratorRunReviewRecordsState(t *testing.T) {
 	st, _ := LoadCuratorState(ctx)
 	if st.Vals["last_run_at"] == nil || curatorCount(st, "run_count") < 1 || st.Vals["last_run_summary"] == nil {
 		t.Fatalf("state %v", st.Vals)
-	}
-	curRunsMu.Lock()
-	runs := slices.Clone(curRuns)
-	curRunsMu.Unlock()
-	if len(runs) != 1 || runs[0] != [2]string{"manual", "success"} {
-		t.Fatalf("run metric %v", runs)
 	}
 	report := pyStr(st.Vals["last_report_path"])
 	for _, f := range []string{"run.json", "REPORT.md"} {

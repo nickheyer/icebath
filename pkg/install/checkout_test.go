@@ -79,23 +79,3 @@ func TestCopySkillsNoClobberKeepsExistingFiles(t *testing.T) {
 		t.Fatal("existing file replaced")
 	}
 }
-
-func TestProvisionCheckoutRuntimeRunsTheCheckoutsRelayInstall(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip("posix shell stand-in")
-	}
-	checkout := t.TempDir()
-	record := filepath.Join(checkout, "argv")
-	os.WriteFile(InstallBinaryPath(checkout), []byte("#!/bin/sh\nprintf '%s %s\\n' \"$PWD\" \"$*\" > "+record+"\necho provisioned\n"), 0o755)
-	var out strings.Builder
-	if err := ProvisionCheckoutRuntime(context.Background(), checkout, &out, &out); err != nil {
-		t.Fatal(err)
-	}
-	if got, _ := os.ReadFile(record); string(got) != checkout+" pm install --extra nemo-relay\n" || out.String() != "provisioned\n" {
-		t.Fatalf("argv %q output %q", got, out.String())
-	}
-	os.WriteFile(InstallBinaryPath(checkout), []byte("#!/bin/sh\nexit 3\n"), 0o755)
-	if err := ProvisionCheckoutRuntime(context.Background(), checkout, &out, &out); err == nil || err.Error() != "NeMo Relay runtime provisioning failed: exit status 3" {
-		t.Fatalf("failure %v", err)
-	}
-}

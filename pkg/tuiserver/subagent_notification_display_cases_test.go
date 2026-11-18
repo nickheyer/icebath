@@ -8,7 +8,7 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/internal/pycopy"
 	"github.com/nickheyer/icebath/pkg/tools"
-	"github.com/nickheyer/icebath/pkg/tuigateway"
+	"github.com/nickheyer/icebath/pkg/tuihost"
 )
 
 func TestCompletionDisplayKeepsPayloadSeparateAcrossSurfaces(t *testing.T) {
@@ -29,12 +29,12 @@ func TestCompletionDisplayKeepsPayloadSeparateAcrossSurfaces(t *testing.T) {
 		payload := tools.FormatProcessNotification(event)
 		expected := fmt.Sprintf("Subagent Task %s: Review [bold]changes[/bold]", row.label)
 		recorder := &frameRecorder{}
-		ctx := tuigateway.BindTransport(context.Background(), recorder)
+		ctx := tuihost.BindTransport(context.Background(), recorder)
 		var dispatched []string
-		notifDispatchEvent = func(_ context.Context, _ string, _ *tuigateway.Session, _ map[string]any, text string) {
+		notifDispatchEvent = func(_ context.Context, _ string, _ *tuihost.Session, _ map[string]any, text string) {
 			dispatched = append(dispatched, text)
 		}
-		session := tuigateway.NewSession(map[string]any{"session_key": event["session_key"]})
+		session := tuihost.NewSession(map[string]any{"session_key": event["session_key"]})
 		notifHandleEvent(ctx, "ui-session", session, event, map[string]bool{}, tools.NewProcessRegistry(), tools.FormatProcessNotification, nil, nil, false)
 		frames := recordedFrames(recorder)
 		if len(frames) == 0 {

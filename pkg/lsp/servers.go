@@ -15,6 +15,7 @@ import (
 	"sync"
 	"unicode/utf8"
 
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 )
@@ -310,7 +311,7 @@ func warnOnce(rt *Runtime, key, message string) {
 	warnedOnce[key] = true
 	warnedMu.Unlock()
 	if !seen {
-		rt.logf(slog.LevelWarn, "agent.lsp.servers", "%s", message)
+		rt.logf(slog.LevelWarn, "%s", message)
 	}
 }
 
@@ -378,7 +379,7 @@ func vueServerMajor(rt *Runtime, trees []string) (int, error) {
 		}
 		m, ok := v.(map[string]any)
 		if !ok {
-			return 0, fmt.Errorf("AttributeError: '%s' object has no attribute 'get'", pyrepr.TypeName(v))
+			return 0, fmt.Errorf("a Vue package manifest is %s, expected a mapping", errchain.Kind(v))
 		}
 		version, ok := m["version"]
 		if !ok {
@@ -761,7 +762,7 @@ func CustomServers(rt *Runtime, serversCfg any) []*ServerDef {
 		command, okCmd := stringList(entry["command"])
 		exts, okExt := stringList(entry["extensions"])
 		if !okCmd || !okExt {
-			rt.logf(slog.LevelWarn, "agent.lsp.servers",
+			rt.logf(slog.LevelWarn,
 				"lsp.servers.%s: custom server needs command: [bin, ...args] and extensions: [.ext, ...] — ignored", serverID)
 			continue
 		}

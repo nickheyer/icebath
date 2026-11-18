@@ -36,7 +36,7 @@ func systemdUnitBelongsToCurrentHome(ctx context.Context, system bool) (bool, er
 	if err := lifecycleSyncHome(ctx, system); err != nil {
 		return false, err
 	}
-	unitHome, err := hermesHomeFromSystemdUnitFile(ctx, system)
+	unitHome, err := icebathHomeFromSystemdUnitFile(ctx, system)
 	if err != nil || unitHome == "" {
 		return err == nil, err
 	}
@@ -98,6 +98,9 @@ func SystemdUninstall(ctx context.Context, system bool) error {
 	if _, err := runSystemctlChecked(ctx, []string{"daemon-reload"}, system, 30*time.Second); err != nil {
 		return err
 	}
+	if _, _, _, err := removeRetired(ctx, lifecycleOut, retiredSystemdServices, removeRetiredSystemdUnit); err != nil {
+		return err
+	}
 	lifecyclePrintf("✓ %s service uninstalled\n", pystr.Capitalize(ServiceScopeLabel(system)))
 	return nil
 }
@@ -127,6 +130,9 @@ func LaunchdUninstall(ctx context.Context) error {
 			return err
 		}
 		lifecyclePrintf("✓ Removed %s\n", plistPath)
+	}
+	if _, _, _, err := removeRetired(ctx, lifecycleOut, retiredLaunchdServices, removeRetiredLaunchdService); err != nil {
+		return err
 	}
 	lifecyclePrintf("✓ Service uninstalled\n")
 	return nil

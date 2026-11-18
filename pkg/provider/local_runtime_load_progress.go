@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"log/slog"
 	"maps"
 	"math"
 	"math/big"
@@ -396,7 +395,7 @@ func watchLoadProgress() {
 			continue
 		}
 		if err := streamLoadEvents(base, key); err != nil {
-			slog.Debug(fmt.Sprintf("load-progress SSE reconnecting: %v", err))
+			pkgLog().Debug(fmt.Sprintf("load-progress SSE reconnecting: %v", err))
 		}
 		clearLoadSnapshot()
 		time.Sleep(loadReconnectDelay)

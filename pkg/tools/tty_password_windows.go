@@ -48,7 +48,7 @@ func readHiddenLine() string {
 	return string(utf16.Decode(chars))
 }
 
-// Flushes stdout the way the hermes prompt does after every status line
+// Flushes stdout the way the prompt does after every status line
 func flushStdout() {
 	os.Stdout.Sync()
 }

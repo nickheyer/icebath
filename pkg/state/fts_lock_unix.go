@@ -5,7 +5,6 @@ package state
 import (
 	"errors"
 	"fmt"
-	"log/slog"
 	"os"
 	"syscall"
 	"time"
@@ -54,7 +53,7 @@ func acquireDBFlock(lockPath string, handle *os.File, timeoutSeconds, pollSecond
 	for {
 		if err := flockRetrying(handle, syscall.LOCK_EX|syscall.LOCK_NB); err != nil {
 			if !IsAdvisoryLockContention(err) {
-				slog.Warn(fmt.Sprintf("Could not acquire %s %s (%s) — deferring rather than "+
+				pkgLog().Warn(fmt.Sprintf("Could not acquire %s %s (%s) — deferring rather than "+
 					"waiting out the %.0fs holder timeout on a non-contention error.", description, lockPath, err, timeoutSeconds))
 				return lockFailed, handle, nil
 			}
@@ -74,17 +73,17 @@ func acquireDBFlock(lockPath string, handle *os.File, timeoutSeconds, pollSecond
 				return lockTimedOut, handle, nil
 			}
 			pid, _ := record.get("pid")
-			slog.Warn(fmt.Sprintf("%s %s is held by an orphaned file descriptor (recorded holder pid %s is dead — a "+
+			pkgLog().Warn(fmt.Sprintf("%s %s is held by an orphaned file descriptor (recorded holder pid %s is dead — a "+
 				"forked child inherited the lock fd); breaking the stale lock and retaking it on a "+
 				"fresh file.", description, lockPath, pyStr(pid)))
 			if err := os.Remove(lockPath); err != nil {
-				slog.Warn(fmt.Sprintf("Could not break stale %s %s (%s) — deferring.", description, lockPath, err))
+				pkgLog().Warn(fmt.Sprintf("Could not break stale %s %s (%s) — deferring.", description, lockPath, err))
 				return lockTimedOut, handle, nil
 			}
 			_ = handle.Close()
 			reopened, err := os.OpenFile(lockPath, os.O_RDWR|os.O_CREATE|os.O_APPEND, 0o666)
 			if err != nil {
-				slog.Warn(fmt.Sprintf("Could not break stale %s %s (%s) — deferring.", description, lockPath, err))
+				pkgLog().Warn(fmt.Sprintf("Could not break stale %s %s (%s) — deferring.", description, lockPath, err))
 				return lockTimedOut, handle, nil
 			}
 			handle = reopened

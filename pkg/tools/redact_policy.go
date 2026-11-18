@@ -104,6 +104,11 @@ func redactEnabledFor(ctx context.Context, scopeOf func(context.Context) map[str
 	return redactSwitchOn(*raw)
 }
 
+// Whether secret redaction is on for the context profile under its live environment and recorded policy
+func RedactEnabled(ctx context.Context) bool {
+	return redactEnabledFor(ctx, liveSecretScope)
+}
+
 // Log handler that redacts secrets from every record message and attribute
 type RedactingHandler struct {
 	next    slog.Handler

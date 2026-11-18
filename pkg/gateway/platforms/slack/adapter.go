@@ -334,19 +334,19 @@ func (a *SlackAdapter) sendSlashEphemeral(ctx context.Context, sc *slashContext,
 		payload, _ := json.Marshal(map[string]any{"response_type": "ephemeral", "replace_original": idx == 0, "text": chunk})
 		req, err := http.NewRequestWithContext(ctx, http.MethodPost, sc.responseURL, bytes.NewReader(payload))
 		if err != nil {
-			slog.Warn(fmt.Sprintf("[Slack] response_url POST failed: %v", err))
+			pkgLog().Warn(fmt.Sprintf("[Slack] response_url POST failed: %v", err))
 			return gateway.SendResult{Success: false, Error: err.Error()}
 		}
 		req.Header.Set("Content-Type", "application/json")
 		resp, err := client.Do(req)
 		if err != nil {
-			slog.Warn(fmt.Sprintf("[Slack] response_url POST failed: %v", err))
+			pkgLog().Warn(fmt.Sprintf("[Slack] response_url POST failed: %v", err))
 			return gateway.SendResult{Success: false, Error: err.Error()}
 		}
 		if resp.StatusCode != http.StatusOK {
 			body := readErrorTextLimited(resp.Body, slackErrorBodyLimitBytes)
 			resp.Body.Close()
-			slog.Warn(fmt.Sprintf("[Slack] response_url POST returned %d: %s", resp.StatusCode, pystr.Slice(body, 0, 200)))
+			pkgLog().Warn(fmt.Sprintf("[Slack] response_url POST returned %d: %s", resp.StatusCode, pystr.Slice(body, 0, 200)))
 			return gateway.SendResult{Success: false, Error: fmt.Sprintf("response_url POST returned %d", resp.StatusCode)}
 		}
 		resp.Body.Close()
@@ -399,7 +399,7 @@ func (a *SlackAdapter) warnIfMissingGroupDMScopes(headers http.Header, teamName 
 		if team == "" {
 			team = "this workspace"
 		}
-		slog.Warn(fmt.Sprintf("[Slack] Group DMs (multi-person DMs) will not work in workspace %s: the app "+
+		pkgLog().Warn(fmt.Sprintf("[Slack] Group DMs (multi-person DMs) will not work in workspace %s: the app "+
 			"is missing the 'mpim:history' scope and 'message.mpim' event. Add "+
 			"'mpim:history' (and 'mpim:read') to bot scopes, add 'message.mpim' to event "+
 			"subscriptions, then REINSTALL the app to the workspace. Regenerating the app "+
@@ -426,7 +426,7 @@ func (a *SlackAdapter) warnIfNotBotToken(auth map[string]any, teamName string) {
 	if team == "" {
 		team = "this workspace"
 	}
-	slog.Warn(fmt.Sprintf("[Slack] The configured Slack token for workspace %s authenticated as a USER "+
+	pkgLog().Warn(fmt.Sprintf("[Slack] The configured Slack token for workspace %s authenticated as a USER "+
 		"(member %s), not a bot — the auth.test response has no 'bot_id'. This is "+
 		"almost certainly a user token (xoxp-...) instead of a Bot User OAuth Token "+
 		"(xoxb-...). The bot's identity is now bound to that member's ID, so mentions "+
@@ -494,13 +494,13 @@ func (a *SlackAdapter) ensureDMConversation(ctx context.Context, chatID, teamID 
 	}
 	client := a.getClient(chatID, teamID)
 	if client == nil {
-		slog.Warn(fmt.Sprintf("[Slack] conversations.open failed for user target %s: 'NoneType' object has no attribute "+
+		pkgLog().Warn(fmt.Sprintf("[Slack] conversations.open failed for user target %s: 'NoneType' object has no attribute "+
 			"'client' (check the bot's im:write scope)", chatID))
 		return chatID
 	}
 	result, err := client.call(ctx, "conversations.open", map[string]any{"users": chatID})
 	if err != nil {
-		slog.Warn(fmt.Sprintf("[Slack] conversations.open failed for user target %s: %v (check the bot's im:write scope)", chatID, err))
+		pkgLog().Warn(fmt.Sprintf("[Slack] conversations.open failed for user target %s: %v (check the bot's im:write scope)", chatID, err))
 		return chatID
 	}
 	dmID := strOrEmpty(asMap(result.get("channel"))["id"])
@@ -520,7 +520,7 @@ func (a *SlackAdapter) ensureDMConversation(ctx context.Context, chatID, teamID 
 // Status clear for send paths that skip the regular clear, its failure only debug logged
 func (a *SlackAdapter) clearThreadStatusQuietly(ctx context.Context, chatID string, metadata map[string]any) {
 	if err := a.StopTyping(ctx, chatID, metadata); err != nil {
-		slog.Debug(fmt.Sprintf("[Slack] status cleanup failed: %v", err))
+		pkgLog().Debug(fmt.Sprintf("[Slack] status cleanup failed: %v", err))
 	}
 }
 
@@ -621,7 +621,7 @@ func (a *SlackAdapter) SendNativeTaskCardProgress(ctx context.Context, chatID st
 			if !slackErrorIs(err, "message_not_in_streaming_state") {
 				return gateway.SendResult{}, err
 			}
-			slog.Info(fmt.Sprintf("[Slack] Native task-card stream %s expired (message_not_in_streaming_state); reopening a fresh card in thread %s", stream.streamTS, stream.threadTS))
+			pkgLog().Info(fmt.Sprintf("[Slack] Native task-card stream %s expired (message_not_in_streaming_state); reopening a fresh card in thread %s", stream.streamTS, stream.threadTS))
 			stream.streamTS = ""
 			if err := startNativeTaskCardStream(ctx, client, stream, metadata); err != nil {
 				return gateway.SendResult{}, err
@@ -633,7 +633,7 @@ func (a *SlackAdapter) SendNativeTaskCardProgress(ctx context.Context, chatID st
 		return gateway.SendResult{Success: true, MessageID: stream.streamTS}, nil
 	}()
 	if err != nil {
-		slog.Error(fmt.Sprintf("[Slack] Native task-card progress error: %v", err))
+		pkgLog().Error(fmt.Sprintf("[Slack] Native task-card progress error: %v", err))
 		return gateway.SendResult{Success: false, Error: err.Error(), Retryable: true}, nil
 	}
 	return result, nil
@@ -700,7 +700,7 @@ func (a *SlackAdapter) stopNativeTaskCardStream(ctx context.Context, key threadK
 	stream.stopped = true
 	if a.currentApp() != nil && stream.streamTS != "" {
 		if _, err := a.getClient(stream.channel, stream.teamID).call(ctx, "chat.stopStream", map[string]any{"channel": stream.channel, "ts": stream.streamTS}); err != nil {
-			slog.Debug(fmt.Sprintf("[Slack] Native task-card stopStream failed: %v", err))
+			pkgLog().Debug(fmt.Sprintf("[Slack] Native task-card stopStream failed: %v", err))
 		}
 	}
 	a.mu.Lock()
@@ -728,7 +728,7 @@ func (a *SlackAdapter) StopNativeTaskCardProgress(ctx context.Context, chatID st
 // Whether the chat is an ignored channel, logged at the given level when it is
 func (a *SlackAdapter) suppressedIgnored(ctx context.Context, chatID, what string, level slog.Level) bool {
 	if a.IsIgnoredChannel(ctx, chatID) {
-		slog.Log(ctx, level, fmt.Sprintf("[Slack] Suppressed %s configured ignored channel %s", what, chatID))
+		pkgLog().Log(ctx, level, fmt.Sprintf("[Slack] Suppressed %s configured ignored channel %s", what, chatID))
 		return true
 	}
 	return false
@@ -763,7 +763,7 @@ func (a *SlackAdapter) callWithBlockFallback(ctx context.Context, clientFn func(
 	} else {
 		delete(retry, "blocks")
 	}
-	slog.Info(fmt.Sprintf("[Slack] Block Kit payload rejected; retrying %s without blocks: %v", verb, err))
+	pkgLog().Info(fmt.Sprintf("[Slack] Block Kit payload rejected; retrying %s without blocks: %v", verb, err))
 	return clientFn().call(ctx, method, retry)
 }
 
@@ -789,7 +789,7 @@ func (a *SlackAdapter) Send(ctx context.Context, chatID, content, replyTo string
 	lastResult, err := a.postChunks(ctx, chatID, teamID, content, formatted, threadTS)
 	if err != nil {
 		a.clearThreadStatusQuietly(ctx, chatID, metadata)
-		slog.Error(fmt.Sprintf("[Slack] Send error: %v", err))
+		pkgLog().Error(fmt.Sprintf("[Slack] Send error: %v", err))
 		retryable := a.isRetryableUploadError(err)
 		res := gateway.SendResult{Success: false, Error: err.Error(), Retryable: retryable}
 		if retryable {
@@ -857,13 +857,13 @@ func (a *SlackAdapter) sendSlashReply(ctx context.Context, chatID string, sc *sl
 		a.clearThreadStatusQuietly(ctx, chatID, metadata)
 		return ephemeral
 	}
-	slog.Warn(fmt.Sprintf("[Slack] response_url slash reply failed (%s); retrying via chat.postEphemeral", pyrepr.Str(ephemeral.Error)))
+	pkgLog().Warn(fmt.Sprintf("[Slack] response_url slash reply failed (%s); retrying via chat.postEphemeral", pyrepr.Str(ephemeral.Error)))
 	fallback := a.postEphemeralFallback(ctx, chatID, sc, content)
 	if fallback.Success {
 		a.clearThreadStatusQuietly(ctx, chatID, metadata)
 		return fallback
 	}
-	slog.Error(fmt.Sprintf("[Slack] Ephemeral slash reply failed on both response_url and chat.postEphemeral (%s); dropping rather than posting publicly", pyrepr.Str(fallback.Error)))
+	pkgLog().Error(fmt.Sprintf("[Slack] Ephemeral slash reply failed on both response_url and chat.postEphemeral (%s); dropping rather than posting publicly", pyrepr.Str(fallback.Error)))
 	return fallback
 }
 
@@ -883,7 +883,7 @@ func (a *SlackAdapter) SendPrivateNotice(ctx context.Context, chatID string, use
 	}
 	result, err := a.clientFor(chatID, metadata).call(ctx, "chat.postEphemeral", kwargs)
 	if err != nil {
-		slog.Error(fmt.Sprintf("[Slack] Ephemeral send error: %v", err))
+		pkgLog().Error(fmt.Sprintf("[Slack] Ephemeral send error: %v", err))
 		return gateway.SendResult{Success: false, Error: err.Error()}, nil
 	}
 	return gateway.SendResult{Success: true, MessageID: firstTruthy(result.Data, "message_ts", "ts"), RawResponse: result.Data}, nil
@@ -954,7 +954,7 @@ func (a *SlackAdapter) editMessage(ctx context.Context, chatID, messageID, conte
 		return gateway.SendResult{Success: true, MessageID: messageID}
 	}
 	if isTransientTransportError(err) {
-		slog.Error(fmt.Sprintf("[Slack] transient chat.update failure on message %s in channel %s: %v", messageID, chatID, err))
+		pkgLog().Error(fmt.Sprintf("[Slack] transient chat.update failure on message %s in channel %s: %v", messageID, chatID, err))
 		kind := "transient"
 		return gateway.SendResult{Success: false, Error: err.Error(), Retryable: true, ErrorKind: &kind}
 	}
@@ -962,7 +962,7 @@ func (a *SlackAdapter) editMessage(ctx context.Context, chatID, messageID, conte
 	if apiError == "" {
 		apiError = "none"
 	}
-	slog.Error(fmt.Sprintf("[Slack] Failed to edit message %s in channel %s: api_error=%s: %v", messageID, chatID, apiError, err))
+	pkgLog().Error(fmt.Sprintf("[Slack] Failed to edit message %s in channel %s: api_error=%s: %v", messageID, chatID, apiError, err))
 	return gateway.SendResult{Success: false, Error: err.Error()}
 }
 
@@ -974,10 +974,10 @@ func (a *SlackAdapter) DeleteMessage(ctx context.Context, chatID, messageID stri
 	if _, err := a.getClient(chatID, "").call(ctx, "chat.delete", map[string]any{"channel": chatID, "ts": messageID}); err != nil {
 		var apiErr *slackAPIError
 		if errors.As(err, &apiErr) && apiErr.Response["ok"] == false && apiErr.StatusCode == http.StatusOK {
-			slog.Debug(fmt.Sprintf("[Slack] chat.delete returned ok=false for message %s in channel %s: %s", messageID, chatID, pyrepr.Str(getOr(apiErr.Response, "error", "unknown"))))
+			pkgLog().Debug(fmt.Sprintf("[Slack] chat.delete returned ok=false for message %s in channel %s: %s", messageID, chatID, pyrepr.Str(getOr(apiErr.Response, "error", "unknown"))))
 			return false, nil
 		}
-		slog.Debug(fmt.Sprintf("[Slack] Failed to delete message %s in channel %s: %v", messageID, chatID, err))
+		pkgLog().Debug(fmt.Sprintf("[Slack] Failed to delete message %s in channel %s: %v", messageID, chatID, err))
 		return false, nil
 	}
 	return true, nil
@@ -1042,7 +1042,7 @@ func (a *SlackAdapter) SendDraft(ctx context.Context, chatID string, draftID int
 			if !slackErrorIs(err, "message_not_in_streaming_state") {
 				return gateway.SendResult{}, err
 			}
-			slog.Info(fmt.Sprintf("[Slack] Native draft stream %s expired (message_not_in_streaming_state); reopening a fresh stream for chat %s", stream.ts, chatID))
+			pkgLog().Info(fmt.Sprintf("[Slack] Native draft stream %s expired (message_not_in_streaming_state); reopening a fresh stream for chat %s", stream.ts, chatID))
 			return a.startStream(ctx, client, *key, draftID, text, metadata, pystr.Len(sent))
 		}
 		stream.sent = text
@@ -1058,13 +1058,13 @@ func (a *SlackAdapter) SendDraft(ctx context.Context, chatID string, draftID int
 			a.mu.Lock()
 			a.nativeStreamUnsupported = true
 			a.mu.Unlock()
-			slog.Warn(fmt.Sprintf("[Slack] Native streaming unavailable (%s). Falling back to edit-based "+
+			pkgLog().Warn(fmt.Sprintf("[Slack] Native streaming unavailable (%s). Falling back to edit-based "+
 				"streaming. To enable native streaming, turn on the Agents & AI Apps feature "+
 				"for this Slack app (and ensure the assistant:write scope).", errText))
 			return gateway.SendResult{Success: false, Error: errText}, nil
 		}
 	}
-	slog.Debug(fmt.Sprintf("[Slack] Native stream frame failed: %s", errText))
+	pkgLog().Debug(fmt.Sprintf("[Slack] Native stream frame failed: %s", errText))
 	return gateway.SendResult{Success: false, Error: errText}, nil
 }
 
@@ -1147,11 +1147,11 @@ func (a *SlackAdapter) sealStream(ctx context.Context, key threadKey, stream *dr
 	}
 	client := a.getClient(chatID, teamID)
 	if client == nil {
-		slog.Debug(fmt.Sprintf("[Slack] chat.stopStream failed for %s/%s: not connected", chatID, stream.ts))
+		pkgLog().Debug(fmt.Sprintf("[Slack] chat.stopStream failed for %s/%s: not connected", chatID, stream.ts))
 		return false
 	}
 	if _, err := client.call(ctx, "chat.stopStream", kwargs); err != nil {
-		slog.Debug(fmt.Sprintf("[Slack] chat.stopStream failed for %s/%s: %v", chatID, stream.ts, err))
+		pkgLog().Debug(fmt.Sprintf("[Slack] chat.stopStream failed for %s/%s: %v", chatID, stream.ts, err))
 		return false
 	}
 	return true
@@ -1216,7 +1216,7 @@ func (a *SlackAdapter) commitStream(ctx context.Context, key threadKey, stream *
 			if committed {
 				outcome = "final committed via chat.update instead (no duplicate post)"
 			}
-			slog.Warn(fmt.Sprintf("[Slack] chat.stopStream failed for %s/%s; %s", chatID, ts, outcome))
+			pkgLog().Warn(fmt.Sprintf("[Slack] chat.stopStream failed for %s/%s; %s", chatID, ts, outcome))
 		}
 	}
 	if !committed {

@@ -28,8 +28,6 @@ $script:OnWindows = -not ($IsLinux -or $IsMacOS)
 $script:LongProfileRoot = $null
 $script:LastResolver = 'none'
 $script:NormalizedPathRewrites = @{}
-$script:FailureClass = ""
-$script:InstallReceiptWritten = $false
 
 # Path diagnostics on stderr, silent under the machine readable -ShowResolvedPaths
 function Write-PathDiag {
@@ -161,29 +159,9 @@ function Log([string]$msg) { Write-Host "-> $msg" -ForegroundColor Cyan }
 function Write-Ok([string]$msg) { Write-Host "[OK] $msg" -ForegroundColor Green }
 function Write-Err([string]$msg) { Write-Host "[X] $msg" -ForegroundColor Red }
 
-# Throws the reason with its closed failure class, the entry below owns reporting and the exit code
-function Fail([string]$msg, [string]$Class = "other") {
-    $script:FailureClass = $Class
+# Throws the reason, the entry below owns reporting and the exit code
+function Fail([string]$msg) {
     throw $msg
-}
-
-# One local receipt for a run the bootstrap ended, closed tokens and two timestamps only, never failing the install
-function Write-InstallReceipt([string]$Outcome, [string]$FailedStage, [string]$Class) {
-    if ($script:InstallReceiptWritten) { return }
-    $script:InstallReceiptWritten = $true
-    $tmp = $null
-    try {
-        $dir = Join-Path (Join-Path (Join-Path $IcebathHome "telemetry") "shared_metrics") "pending_installs"
-        New-Item -ItemType Directory -Force -Path $dir | Out-Null
-        $id = [guid]::NewGuid().ToString("N")
-        $json = '{{"id":"{0}","installer":"install_ps1","outcome":"{1}","failed_stage":"{2}","failure_class":"{3}","started_at":{4},"finished_at":{5}}}' -f `
-            $id, $Outcome, ($FailedStage -replace '-', '_'), $Class, $script:InstallStarted, [DateTimeOffset]::UtcNow.ToUnixTimeSeconds()
-        $tmp = Join-Path $dir ".$id.tmp"
-        [IO.File]::WriteAllText($tmp, $json + "`n", (New-Object System.Text.UTF8Encoding $false))
-        Move-Item -LiteralPath $tmp -Destination (Join-Path $dir "$id.json") -Force
-    } catch {
-        if ($tmp) { Remove-Item -LiteralPath $tmp -Force -ErrorAction SilentlyContinue }
-    }
 }
 
 # Normalizes the profile paths once per entry, resolves the home and install dir and records the path report
@@ -231,7 +209,7 @@ function Get-ReleasePlatform {
     $goarch = switch ($arch) {
         { $_ -in @('ARM64', 'Arm64') } { 'arm64' }
         { $_ -in @('AMD64', 'X64') } { 'amd64' }
-        default { Fail "no release build for this machine ($arch)" unsupported_platform }
+        default { Fail "no release build for this machine ($arch)" }
     }
     return @{ Os = $os; Arch = $goarch }
 }
@@ -295,15 +273,15 @@ function Receive-ReleaseAsset([string]$Url, [string]$OutFile) {
     } catch {
         $errorType = $_.Exception.GetType().FullName
         if ($_.Exception -is [System.Net.WebException] -and $_.Exception.Status -in @('TrustFailure', 'SecureChannelFailure')) {
-            Fail "TLS failure downloading ${Url}: $($_.Exception.Message)" download_failed
+            Fail "TLS failure downloading ${Url}: $($_.Exception.Message)"
         }
         if ($errorType -eq 'System.Net.Http.HttpRequestException') {
             $inner = $_.Exception.InnerException
             if ($inner -and $inner.GetType().FullName -eq 'System.Security.Authentication.AuthenticationException') {
-                Fail "TLS failure downloading ${Url}: $($inner.Message)" download_failed
+                Fail "TLS failure downloading ${Url}: $($inner.Message)"
             }
         }
-        Fail "failed to download ${Url}: $($_.Exception.Message)" download_failed
+        Fail "failed to download ${Url}: $($_.Exception.Message)"
     }
 }
 
@@ -319,7 +297,7 @@ function Get-RepoWeb {
 function Get-RepoApi([string]$Web) {
     if ($Web -match '^https://github\.com/([^/]+/[^/]+)$') { return "https://api.github.com/repos/$($Matches[1])" }
     if ($Web -match '^(https?)://([^/]+)/([^/]+/[^/]+)$') { return "$($Matches[1])://$($Matches[2])/api/v3/repos/$($Matches[3])" }
-    Fail "repository URL $Web does not name owner/repo" other
+    Fail "repository URL $Web does not name owner/repo"
 }
 
 # Downloads the release archive and checksums, verifies the archive and unpacks it, returning the unpacked binary
@@ -335,9 +313,9 @@ function Receive-Release([string]$Web, [string]$Version, [hashtable]$Platform, [
         $parts = $line -split '\s+', 2
         if ($parts.Count -eq 2 -and ($parts[1] -eq $archive -or $parts[1] -eq "*$archive")) { $want = $parts[0].ToLowerInvariant(); break }
     }
-    if (-not $want) { Fail "checksums.txt has no entry for $archive" download_failed }
+    if (-not $want) { Fail "checksums.txt has no entry for $archive" }
     $got = (Get-FileHash -Algorithm SHA256 -Path (Join-Path $Work $archive)).Hash.ToLowerInvariant()
-    if ($got -ne $want) { Fail "checksum mismatch for ${archive}: expected $want, got $got" download_digest_mismatch }
+    if ($got -ne $want) { Fail "checksum mismatch for ${archive}: expected $want, got $got" }
     $unpacked = Join-Path $Work "unpacked"
     New-Item -ItemType Directory -Force -Path $unpacked | Out-Null
     if ($ext -eq 'zip') {
@@ -345,10 +323,10 @@ function Receive-Release([string]$Web, [string]$Version, [hashtable]$Platform, [
         $exe = Join-Path $unpacked "icebath.exe"
     } else {
         & tar -xzf (Join-Path $Work $archive) -C $unpacked
-        if ($LASTEXITCODE) { Fail "could not unpack $archive (tar exit $LASTEXITCODE)" download_failed }
+        if ($LASTEXITCODE) { Fail "could not unpack $archive (tar exit $LASTEXITCODE)" }
         $exe = Join-Path $unpacked "icebath"
     }
-    if (-not (Test-Path -LiteralPath $exe)) { Fail "$archive has no $(Split-Path -Leaf $exe)" download_failed }
+    if (-not (Test-Path -LiteralPath $exe)) { Fail "$archive has no $(Split-Path -Leaf $exe)" }
     return $exe
 }
 
@@ -382,21 +360,17 @@ if ($script:IsDotSourced) {
     return
 }
 
-$script:InstallStarted = [DateTimeOffset]::UtcNow.ToUnixTimeSeconds()
-$script:InstallStage = "prerequisites"
 $work = $null
 try {
     Initialize-ResolvedPaths
     if ($VerbosePreference -ne 'SilentlyContinue') { $env:ICEBATH_INSTALL_VERBOSE = "1" }
     if ($ShowResolvedPaths) {
         $script:ResolvedPathReport | ConvertTo-Json -Depth 5 -Compress | Write-Output
-        $script:InstallReceiptWritten = $true
         Complete-Run 0
         return
     }
     $platform = Get-ReleasePlatform
-    $script:InstallStage = "repository"
-    if ($Channel -and $Channel -cnotin @('stable', 'main')) { Fail "-Channel must be stable or main, not $Channel" other }
+    if ($Channel -and $Channel -cnotin @('stable', 'main')) { Fail "-Channel must be stable or main, not $Channel" }
     $web = Get-RepoWeb
     $version = $env:ICEBATH_VERSION
     if (-not $version) {
@@ -404,10 +378,10 @@ try {
         try {
             $release = Invoke-RestMethod -Uri $api -Headers @{ Accept = "application/vnd.github+json" } -UseBasicParsing
         } catch {
-            Fail "could not resolve the latest release from ${api}: $($_.Exception.Message)" download_failed
+            Fail "could not resolve the latest release from ${api}: $($_.Exception.Message)"
         }
         $version = $release.tag_name
-        if (-not $version) { Fail "the latest release of $web has no tag" download_failed }
+        if (-not $version) { Fail "the latest release of $web has no tag" }
     }
     $version = $version.TrimStart('v')
     $work = Join-Path ([IO.Path]::GetTempPath()) ("icebath-install-" + [Guid]::NewGuid().ToString("N"))
@@ -424,8 +398,6 @@ try {
     if ($SkipComputerUse) { $forward += "--skip-computer-use" }
     if ($VerbosePreference -ne 'SilentlyContinue') { $forward += "--verbose" }
 
-    $script:InstallReceiptWritten = $true
-    $env:ICEBATH_INSTALLER = "install_ps1"
     $previousPreference = $ErrorActionPreference
     $ErrorActionPreference = 'Continue'
     try {
@@ -433,7 +405,6 @@ try {
         $code = $LASTEXITCODE
     } finally {
         $ErrorActionPreference = $previousPreference
-        Remove-Item Env:ICEBATH_INSTALLER -ErrorAction SilentlyContinue
     }
     if ($code -eq 0) {
         $script:BinDir = if ($script:OnWindows) { Join-Path $IcebathHome "bin" } else { Join-Path $HOME ".local/bin" }
@@ -442,10 +413,8 @@ try {
     }
     Complete-Run $code
 } catch {
-    Write-InstallReceipt "failed" $script:InstallStage $(if ($script:FailureClass) { $script:FailureClass } else { "other" })
     Write-Err "$_"
     Complete-Run 1
 } finally {
     if ($work) { Remove-Item -Recurse -Force -Path $work -ErrorAction SilentlyContinue }
-    Write-InstallReceipt "failed" $script:InstallStage "interrupted"
 }

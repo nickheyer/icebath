@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"github.com/nickheyer/icebath/pkg/tuigateway"
 	"math"
 	"strings"
 )
@@ -11,7 +12,9 @@ const (
 )
 
 // Intro row carrying the session info the banner renders
-func introMsg(info map[string]any) msg { return msg{Info: info, Kind: "intro", Role: "system"} }
+func introMsg(info *tuigateway.SessionInfo) msg {
+	return msg{Info: info, Kind: "intro", Role: "system"}
+}
 
 // User text as the transcript shows it, a long paste reduced to its first words
 func userDisplay(text string) string {
@@ -30,6 +33,22 @@ func userDisplay(text string) string {
 		prefix = tr("libText.messages.messageFallback")
 	}
 	return tr("libText.messages.longMessage", prefix)
+}
+
+// Folded block of an asynchronous delegation batch result, headed by its display text or the finished agent count
+func delegationResultMsg(text string, meta map[string]any, createdAt *float64) msg {
+	count, hasCount := meta["task_count"].(float64)
+	label := tr("libText.messages.backgroundAgentWorkFinished")
+	switch {
+	case hasCount && count == 1:
+		label = tr("libText.messages.backgroundAgentsFinishedOne", count)
+	case hasCount:
+		label = tr("libText.messages.backgroundAgentsFinishedOther", count)
+	}
+	if display, isStr := meta["display_text"].(string); isStr && strings.TrimSpace(display) != "" {
+		label = display
+	}
+	return msg{Kind: "delegation", Role: "system", Label: label, Text: text, CreatedAt: createdAt}
 }
 
 // Transcript rows of a stored session, tool rows folded into the next reply and display only events projected
@@ -79,20 +98,14 @@ func toTranscriptMessages(rows any) []msg {
 		case "personality_switch":
 			event(tr("libText.messages.personalityChanged"))
 			continue
-		case "async_delegation_complete", "process_complete":
+		case "async_delegation_complete":
+			meta, _ := row["display_metadata"].(map[string]any)
+			out = append(out, delegationResultMsg(text, meta, createdAt))
+			pending = nil
+			continue
+		case "process_complete":
 			meta, _ := row["display_metadata"].(map[string]any)
 			label := tr("libText.messages.backgroundProcessFinished")
-			if kind != "process_complete" {
-				count, hasCount := meta["task_count"].(float64)
-				switch {
-				case !hasCount:
-					label = tr("libText.messages.backgroundAgentWorkFinished")
-				case count == 1:
-					label = tr("libText.messages.backgroundAgentsFinishedOne", count)
-				default:
-					label = tr("libText.messages.backgroundAgentsFinishedOther", count)
-				}
-			}
 			if display, isStr := meta["display_text"].(string); isStr {
 				label = display
 			}
@@ -142,65 +155,6 @@ func capTranscriptHistory(items []msg) []msg {
 		return append([]msg{items[0]}, items[len(items)-(maxHistory-1):]...)
 	}
 	return items[len(items)-maxHistory:]
-}
-
-// Rows with the last one replaced when it has the role, appended otherwise
-func upsert(prev []msg, role, text string) []msg {
-	if n := len(prev); n > 0 && prev[n-1].Role == role {
-		return append(append([]msg(nil), prev[:n-1]...), msg{Role: role, Text: text})
-	}
-	return append(append([]msg(nil), prev...), msg{Role: role, Text: text})
-}
-
-// Index of the first offset past the target
-func upperBound(offsets []int, target int) int {
-	lo, hi := 0, len(offsets)
-	for lo < hi {
-		mid := (lo + hi) >> 1
-		if offsets[mid] <= target {
-			lo = mid + 1
-		} else {
-			hi = mid
-		}
-	}
-	return lo
-}
-
-// Prompt pinned above the viewport, the latest user message scrolled fully out of view
-func stickyPromptFromViewport(messages []msg, offsets []int, top, bottom int, sticky bool) string {
-	if sticky || len(messages) == 0 {
-		return ""
-	}
-	first := max(0, upperBound(offsets, top)-1)
-	last := max(first, upperBound(offsets, bottom)-1)
-	visibleStart := min(len(messages), first)
-	visibleEnd := min(len(messages)-1, last)
-	for i := visibleStart; i <= visibleEnd; i++ {
-		if messages[i].Role == "user" {
-			return ""
-		}
-	}
-	offsetAt := func(i int) (int, bool) {
-		if i >= 0 && i < len(offsets) {
-			return offsets[i], true
-		}
-		return 0, false
-	}
-	for i := min(len(messages)-1, visibleStart-1); i >= 0; i-- {
-		if messages[i].Role != "user" {
-			continue
-		}
-		end, has := offsetAt(i + 1)
-		if !has {
-			start, _ := offsetAt(i)
-			end = start + 1
-		}
-		if end <= top {
-			return collapseWS(userDisplay(strings.TrimFunc(messages[i].Text, isJSSpace)))
-		}
-		return ""
-	}
-	return ""
 }
 
 // Visual band of a transcript block
@@ -259,14 +213,4 @@ func blockRenders(m msg, ctx detailsCtx) bool {
 		}
 	}
 	return false
-}
-
-// Nearest earlier block that draws, nil at the top of the transcript
-func prevRenderedMsg(msgAt func(int) *msg, index int, ctx detailsCtx) *msg {
-	for i := index - 1; i >= 0; i-- {
-		if candidate := msgAt(i); candidate != nil && blockRenders(*candidate, ctx) {
-			return candidate
-		}
-	}
-	return nil
 }

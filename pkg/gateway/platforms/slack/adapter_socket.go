@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"log/slog"
 	"regexp"
 	"strings"
 	"sync"
@@ -202,6 +201,9 @@ func (app *slackApp) dispatchAction(ctx context.Context, ack ackFunc, body map[s
 		return
 	}
 	action := asMap(actions[0])
+	if id, ok := action["action_id"].(string); ok {
+		action["action_id"] = currentActionID(id)
+	}
 	app.mu.Lock()
 	routes := append([]actionRoute(nil), app.actions...)
 	app.mu.Unlock()
@@ -235,7 +237,7 @@ func (s socketLogSink) Output(_ int, line string) error {
 		s.h.mu.Unlock()
 		return nil
 	}
-	slog.Debug("[Slack] socketmode: " + strings.TrimSpace(line))
+	pkgLog().Debug("[Slack] socketmode: " + strings.TrimSpace(line))
 	return nil
 }
 
@@ -331,7 +333,7 @@ func (h *socketModeHandler) handle(ctx context.Context, app *slackApp, evt socke
 	go func() {
 		defer func() {
 			if r := recover(); r != nil {
-				slog.Error(fmt.Sprintf("[Slack] listener panicked: %v", r))
+				pkgLog().Error(fmt.Sprintf("[Slack] listener panicked: %v", r))
 				_ = ack(nil)
 			}
 		}()
@@ -438,10 +440,10 @@ func (a *SlackAdapter) restartSocketMode(ctx context.Context, reason string) {
 	if !a.running() || !ready {
 		return
 	}
-	slog.Warn(fmt.Sprintf("[Slack] Socket Mode unhealthy (%s); reconnecting", reason))
+	pkgLog().Warn(fmt.Sprintf("[Slack] Socket Mode unhealthy (%s); reconnecting", reason))
 	a.stopSocketModeHandler()
 	if err := a.startSocketModeHandler(ctx); err != nil {
-		slog.Error(fmt.Sprintf("[Slack] Socket Mode reconnect failed: %v", err))
+		pkgLog().Error(fmt.Sprintf("[Slack] Socket Mode reconnect failed: %v", err))
 	}
 }
 
@@ -484,9 +486,9 @@ func (a *SlackAdapter) onSocketWatchdogDone(ctx context.Context, task *socketTas
 		return
 	}
 	if task.err != nil {
-		slog.Warn(fmt.Sprintf("[Slack] Socket Mode watchdog exited with error; restarting: %v", task.err))
+		pkgLog().Warn(fmt.Sprintf("[Slack] Socket Mode watchdog exited with error; restarting: %v", task.err))
 	} else {
-		slog.Warn("[Slack] Socket Mode watchdog exited; restarting")
+		pkgLog().Warn("[Slack] Socket Mode watchdog exited; restarting")
 	}
 	a.mu.Lock()
 	a.socketWatchdogTask = nil
@@ -506,7 +508,7 @@ func (a *SlackAdapter) cancelSocketWatchdog(failureMsg string) {
 	task.cancel()
 	<-task.done
 	if task.err != nil && !errors.Is(task.err, context.Canceled) {
-		slog.Debug(fmt.Sprintf("%s: %v", failureMsg, task.err))
+		pkgLog().Debug(fmt.Sprintf("%s: %v", failureMsg, task.err))
 	}
 }
 
@@ -531,9 +533,9 @@ func (a *SlackAdapter) onSocketModeTaskDone(ctx context.Context, task *socketTas
 		return
 	}
 	if err != nil {
-		slog.Warn(fmt.Sprintf("[Slack] Socket Mode task exited with error: %v", err))
+		pkgLog().Warn(fmt.Sprintf("[Slack] Socket Mode task exited with error: %v", err))
 	} else {
-		slog.Warn("[Slack] Socket Mode task exited unexpectedly")
+		pkgLog().Warn("[Slack] Socket Mode task exited unexpectedly")
 	}
 	a.restartSocketMode(ctx, "socket task exited")
 }
@@ -564,7 +566,7 @@ func (a *SlackAdapter) authenticateWorkspace(ctx context.Context, token, proxyUR
 		a.botDisplayName = &botName
 	}
 	a.mu.Unlock()
-	slog.Info(fmt.Sprintf("[Slack] Authenticated as @%s in workspace %s (team: %s)", botName, teamName, teamID))
+	pkgLog().Info(fmt.Sprintf("[Slack] Authenticated as @%s in workspace %s (team: %s)", botName, teamName, teamID))
 	a.warnIfMissingGroupDMScopes(auth.Headers, teamName)
 	a.warnIfNotBotToken(auth.Data, teamName)
 	a.warnIfInchannelWithoutFlatReply(teamName)
@@ -583,12 +585,12 @@ func (a *SlackAdapter) Connect(ctx context.Context, isReconnect bool) (bool, err
 	}
 	proxyURL := resolveSlackProxyURL(ctx)
 	if proxyURL != "" {
-		slog.Info(fmt.Sprintf("[Slack] Using proxy for Slack transport: %s", gateway.SafeURLForLog(proxyURL, 80)))
+		pkgLog().Info(fmt.Sprintf("[Slack] Using proxy for Slack transport: %s", gateway.SafeURLForLog(proxyURL, 80)))
 	}
 	botTokens := loadSlackBotTokens(ctx, rawToken, false)
 	acquired, err := a.AcquirePlatformLock(ctx, "slack-app-token", appToken, "Slack app token")
 	if err != nil {
-		slog.Error(fmt.Sprintf("[Slack] Connection failed: %v", err))
+		pkgLog().Error(fmt.Sprintf("[Slack] Connection failed: %v", err))
 		return false, nil
 	}
 	if !acquired {
@@ -618,18 +620,18 @@ func (a *SlackAdapter) connectLocked(ctx context.Context, appToken, proxyURL str
 	a.mu.Unlock()
 	for _, token := range botTokens {
 		if err := a.authenticateWorkspace(ctx, token, proxyURL); err != nil {
-			slog.Error(fmt.Sprintf("[Slack] Connection failed: %v", err))
+			pkgLog().Error(fmt.Sprintf("[Slack] Connection failed: %v", err))
 			return false
 		}
 	}
 	if err := a.registerBoltHandlers(ctx); err != nil {
-		slog.Error(fmt.Sprintf("[Slack] Connection failed: %v", err))
+		pkgLog().Error(fmt.Sprintf("[Slack] Connection failed: %v", err))
 		return false
 	}
 	if err := a.startSocketModeHandler(ctx); err != nil {
 		a.SetRunning(false)
 		a.stopSocketModeHandler()
-		slog.Error(fmt.Sprintf("[Slack] Connection failed: %v", err))
+		pkgLog().Error(fmt.Sprintf("[Slack] Connection failed: %v", err))
 		return false
 	}
 	a.SetRunning(true)
@@ -637,14 +639,14 @@ func (a *SlackAdapter) connectLocked(ctx context.Context, appToken, proxyURL str
 	a.mu.Lock()
 	n := a.teamClients.Len()
 	a.mu.Unlock()
-	slog.Info(fmt.Sprintf("[Slack] Socket Mode connected (%d workspace(s))", n))
+	pkgLog().Info(fmt.Sprintf("[Slack] Socket Mode connected (%d workspace(s))", n))
 	a.hintAllowBots(ctx)
 	return true
 }
 
 // Logs and records the permanent config error of a missing Slack token
 func (a *SlackAdapter) fatalMissingEnv(ctx context.Context, envName string) {
-	slog.Error(fmt.Sprintf("[Slack] %s not set — this is a permanent config error; set %s via `icebath "+
+	pkgLog().Error(fmt.Sprintf("[Slack] %s not set — this is a permanent config error; set %s via `icebath "+
 		"gateway setup` or in the active profile's ICEBATH_HOME/.env file, then restart the "+
 		"gateway.", envName, envName))
 	a.SetFatalError(ctx, "missing_"+strings.ToLower(envName),
@@ -655,7 +657,7 @@ func (a *SlackAdapter) fatalMissingEnv(ctx context.Context, envName string) {
 // Startup hint for the plumbing bot to bot interop also needs when allow_bots is on
 func (a *SlackAdapter) hintAllowBots(ctx context.Context) {
 	if policy := a.slackAllowBots(ctx); policy != "none" {
-		slog.Info(fmt.Sprintf("[Slack] allow_bots=%s — for bot-to-bot interop also ensure: (a) the Slack "+
+		pkgLog().Info(fmt.Sprintf("[Slack] allow_bots=%s — for bot-to-bot interop also ensure: (a) the Slack "+
 			"app manifest subscribes to message.channels / message.groups / message.im as "+
 			"appropriate (run 'icebath slack manifest' if unsure), and (b) the other bot's "+
 			"Slack user id is in SLACK_ALLOWED_USERS or GATEWAY_ALLOW_ALL_USERS=true. "+
@@ -679,7 +681,7 @@ func (a *SlackAdapter) CreateHandoffThread(ctx context.Context, parentChatID, na
 	seed := i18n.T(ctx, "platform.slack.handoff.seed", "", map[string]any{"name": pystr.Slice(pystr.Strip(name), 0, 80)})
 	result, err := client.call(ctx, "chat.postMessage", map[string]any{"channel": parentChatID, "text": seed})
 	if err != nil {
-		slog.Warn(fmt.Sprintf("[%s] Handoff thread: seed-post failed for channel %s: %v", a.Name(), parentChatID, err))
+		pkgLog().Warn(fmt.Sprintf("[%s] Handoff thread: seed-post failed for channel %s: %v", a.Name(), parentChatID, err))
 		return "", false, nil
 	}
 	ts := strOrEmpty(result.get("ts"))
@@ -723,6 +725,6 @@ func (a *SlackAdapter) Disconnect(ctx context.Context) error {
 	a.dmConversationCache = pydict.New[string, string]()
 	a.mu.Unlock()
 	a.ReleasePlatformLock()
-	slog.Info("[Slack] Disconnected")
+	pkgLog().Info("[Slack] Disconnected")
 	return nil
 }

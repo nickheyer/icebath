@@ -6,12 +6,12 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/nickheyer/icebath/pkg/tuiserver"
+	"github.com/nickheyer/icebath/pkg/tuigateway"
 )
 
 func TestNormalizeSlashSearchQuery(t *testing.T) {
 	t.Run("trims, strips leading slashes, and lowercases", func(t *testing.T) {
-		if tuiserver.NormalizeSlashSearchQuery(" /Model ") != "model" || tuiserver.NormalizeSlashSearchQuery("//help") != "help" || tuiserver.NormalizeSlashSearchQuery("plain") != "plain" {
+		if tuigateway.NormalizeSlashSearchQuery(" /Model ") != "model" || tuigateway.NormalizeSlashSearchQuery("//help") != "help" || tuigateway.NormalizeSlashSearchQuery("plain") != "plain" {
 			t.Fatal("normalize")
 		}
 	})
@@ -19,7 +19,7 @@ func TestNormalizeSlashSearchQuery(t *testing.T) {
 
 func TestTokenizeSearchText(t *testing.T) {
 	t.Run("returns the full lowercased value plus alphanumeric word tokens", func(t *testing.T) {
-		if got := tuiserver.TokenizeSearchText("Commit & Push"); !reflect.DeepEqual(got, []string{"commit & push", "commit", "push"}) {
+		if got := tuigateway.TokenizeSearchText("Commit & Push"); !reflect.DeepEqual(got, []string{"commit & push", "commit", "push"}) {
 			t.Fatalf("got %q", got)
 		}
 	})

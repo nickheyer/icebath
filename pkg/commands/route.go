@@ -182,6 +182,9 @@ func UnknownCommandLines(typed string, known []string) (string, string) {
 	if fields := strings.Fields(typed); len(fields) > 0 {
 		base = fields[0]
 	}
+	if refusal, ok := SlashTierRefusal(base); ok {
+		return refusal + " — nothing was sent.", "Type /help for the full list."
+	}
 	hint := ""
 	if close := pydifflib.GetCloseMatches(base, known, 1, 0.6); len(close) > 0 {
 		hint = " Did you mean " + close[0] + "?"

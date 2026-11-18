@@ -11,6 +11,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tuigateway"
+	"github.com/nickheyer/icebath/pkg/tuihost"
 )
 
 // Socket double for a connection whose frames the case never reads
@@ -60,13 +61,18 @@ func TestEveryCanonicalVerbHasADeclaredContract(t *testing.T) {
 	}
 	var undeclared, orphaned []string
 	for name := range served {
-		if tuigateway.Methods[name] == nil && tuigateway.CanonicalMethods[name] == nil {
+		if tuihost.Methods[name] == nil && tuihost.CanonicalMethods[name] == nil && tuigateway.Lookup(tuigateway.KindMethod, name) == nil && tuigateway.Lookup(tuigateway.KindCanonical, name) == nil {
 			undeclared = append(undeclared, name)
 		}
 	}
-	for name := range tuigateway.CanonicalMethods {
+	for name := range tuihost.CanonicalMethods {
 		if !served[name] {
 			orphaned = append(orphaned, name)
+		}
+	}
+	for _, entry := range tuigateway.Entries(tuigateway.KindCanonical) {
+		if !served[entry.Name] {
+			orphaned = append(orphaned, entry.Name)
 		}
 	}
 	slices.Sort(undeclared)
@@ -135,7 +141,7 @@ func TestDeclaredParamsGateCanonicalVerbsBeforeTheirHandlers(t *testing.T) {
 		t.Fatal(err)
 	}
 	response := wireReply(t, applied)
-	if invalid := tuigateway.CanonicalMethods["session.mutate"].Result.ModelValidate(response["result"]); invalid != nil {
+	if invalid := tuigateway.Lookup(tuigateway.KindCanonical, "session.mutate").CheckResult(response["result"]); invalid != nil {
 		t.Fatalf("reply %v violates the contract: %v", response, invalid)
 	}
 	row, err = db.GetSession(ctx, "s")
@@ -171,7 +177,7 @@ func TestCanonicalResumeRejectsUnknownKeysAndValidatesRealSnapshot(t *testing.T)
 		served[name] = true
 	}
 	for name := range served {
-		if tuigateway.Methods[name] == nil && tuigateway.CanonicalMethods[name] == nil {
+		if tuihost.Methods[name] == nil && tuihost.CanonicalMethods[name] == nil && tuigateway.Lookup(tuigateway.KindMethod, name) == nil && tuigateway.Lookup(tuigateway.KindCanonical, name) == nil {
 			t.Fatalf("%s is served without a declared contract", name)
 		}
 	}
@@ -200,7 +206,7 @@ func TestCanonicalResumeRejectsUnknownKeysAndValidatesRealSnapshot(t *testing.T)
 		t.Fatal(err)
 	}
 	result := wireReply(t, reply)["result"]
-	if invalid := tuigateway.CanonicalMethods["session.resume"].Result.ModelValidate(result); invalid != nil {
+	if invalid := tuigateway.Lookup(tuigateway.KindCanonical, "session.resume").CheckResult(result); invalid != nil {
 		t.Fatalf("snapshot %v violates the contract: %v", reply, invalid)
 	}
 	snapshot, _ := result.(map[string]any)
@@ -233,15 +239,15 @@ func TestCanonicalResultValidationCatchesAHandlerContractViolation(t *testing.T)
 	if err != nil {
 		t.Fatal(err)
 	}
-	strict := tuigateway.Strict
-	tuigateway.Strict = true
-	declared := tuigateway.Methods["ping"]
+	strict := tuihost.Strict
+	tuihost.Strict = true
+	declared := tuihost.Methods["ping"]
 	broken := *declared
-	broken.Result = pydantic.NewModel("BrokenPingResult", tuigateway.ClosedConfig, pydantic.Req("not_pong", pydantic.Bool))
-	tuigateway.Methods["ping"] = &broken
-	t.Cleanup(func() { tuigateway.Strict, tuigateway.Methods["ping"] = strict, declared })
+	broken.Result = pydantic.NewModel("BrokenPingResult", tuihost.ClosedConfig, pydantic.Req("not_pong", pydantic.Bool))
+	tuihost.Methods["ping"] = &broken
+	t.Cleanup(func() { tuihost.Strict, tuihost.Methods["ping"] = strict, declared })
 	defer func() {
-		violation, ok := recover().(*tuigateway.ContractViolation)
+		violation, ok := recover().(*tuihost.ContractViolation)
 		if !ok || !strings.Contains(violation.Message, "ping") {
 			t.Fatalf("dispatch raised %v, want a ContractViolation naming ping", violation)
 		}

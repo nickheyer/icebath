@@ -1,9 +1,9 @@
 package gateway
 
-// Video extensions in hermes declaration order
+// Video extensions in declaration order
 var SupportedVideoTypeOrder = videoTypeOrder
 
-// Image document extensions in hermes declaration order, the first key winning a reversed MIME lookup
+// Image document extensions in declaration order, the first key winning a reversed MIME lookup
 var SupportedImageDocumentTypeOrder = imageDocumentTypeOrder
 
 // Whether the URL points at an animated GIF

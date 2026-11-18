@@ -68,7 +68,7 @@ var promptTemplates = map[string]func(map[string]any) (string, string){
 func RenderOneshotTemplate(name string, variables map[string]any) (string, string, error) {
 	template, ok := promptTemplates[name]
 	if !ok {
-		return "", "", fmt.Errorf("KeyError: %s", pyrepr.Repr("unknown one-shot template: "+name))
+		return "", "", fmt.Errorf("unknown one-shot template %s", name)
 	}
 	if variables == nil {
 		variables = map[string]any{}
@@ -105,7 +105,7 @@ func RunOneshot(ctx context.Context, req OneshotRequest) (string, error) {
 	}
 	hasInstructions := pystr.Strip(instructions) != ""
 	if !hasInstructions && pystr.Strip(userInput) == "" {
-		return "", errors.New("ValueError: run_oneshot requires a template or instructions/user_input")
+		return "", errors.New("a one-shot run needs a template, instructions or user input")
 	}
 	messages := []any{}
 	if hasInstructions {

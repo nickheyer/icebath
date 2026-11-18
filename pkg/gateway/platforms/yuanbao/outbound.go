@@ -3,7 +3,6 @@ package yuanbao
 import (
 	"context"
 	"fmt"
-	"log/slog"
 	"os"
 	"strings"
 	"sync"
@@ -31,7 +30,7 @@ func readLocalFile(adapter *YuanbaoAdapter, label, path, defaultName, filename s
 	if !isFile(path) {
 		return nil, "", "", valueError("File not found: " + path)
 	}
-	slog.Info(fmt.Sprintf("[%s] %s: reading %s", adapter.Name(), label, path))
+	pkgLog().Info(fmt.Sprintf("[%s] %s: reading %s", adapter.Name(), label, path))
 	fileBytes, err := os.ReadFile(path)
 	if err != nil {
 		return nil, "", "", &pyErr{pypath.OSErrorClass(err), pypath.OSErrorText(err)}
@@ -95,7 +94,7 @@ func (imageURLHandler) buildMsgBody(upload *pyjson.Object, kwargs map[string]any
 
 func (imageURLHandler) acquireFile(ctx context.Context, adapter *YuanbaoAdapter, kwargs map[string]any) ([]byte, string, string, error) {
 	imageURL := kwargText(kwargs, "image_url")
-	slog.Info(fmt.Sprintf("[%s] ImageUrlHandler: downloading %s", adapter.Name(), imageURL))
+	pkgLog().Info(fmt.Sprintf("[%s] ImageUrlHandler: downloading %s", adapter.Name(), imageURL))
 	fileBytes, contentType, err := DownloadURL(ctx, gateway.URLSafetyEnv(ctx), imageURL, mediaMaxSizeMB)
 	if err != nil {
 		return nil, "", "", err
@@ -249,7 +248,7 @@ func handleMediaSend(ctx context.Context, handler mediaSendHandler, adapter *Yua
 	case isValueError(err):
 		return gateway.SendResult{Success: false, Error: errText(err)}, nil
 	}
-	slog.Error(fmt.Sprintf("[%s] %s.handle() failed: %s", adapter.Name(), handler.className(), errText(err)), "error", err)
+	pkgLog().Error(fmt.Sprintf("[%s] %s.handle() failed: %s", adapter.Name(), handler.className(), errText(err)), "error", err)
 	return gateway.SendResult{Success: false, Error: errTextOrName(err)}, nil
 }
 
@@ -298,14 +297,14 @@ func (h *heartbeatManager) sendHeartbeatOnce(ctx context.Context, chatID string,
 		return ws.SendBytes(encoded)
 	}()
 	if err != nil {
-		slog.Debug(fmt.Sprintf("[%s] send_heartbeat_once failed: %s", adapter.Name(), errText(err)))
+		pkgLog().Debug(fmt.Sprintf("[%s] send_heartbeat_once failed: %s", adapter.Name(), errText(err)))
 		return
 	}
 	state := "FINISH"
 	if heartbeat == WSHeartbeatRunning {
 		state = "RUNNING"
 	}
-	slog.Debug(fmt.Sprintf("[%s] Reply heartbeat %s sent: chat=%s", adapter.Name(), state, chatID))
+	pkgLog().Debug(fmt.Sprintf("[%s] Reply heartbeat %s sent: chat=%s", adapter.Name(), state, chatID))
 }
 
 // Starts the periodic running sender of a chat or renews the one already running
@@ -390,7 +389,7 @@ func (n *slowResponseNotifier) notify(ctx context.Context, chatID string) error 
 	if err := sleep(ctx, slowResponseTimeoutS); err != nil {
 		return nil
 	}
-	slog.Info(fmt.Sprintf("[%s] Agent response exceeded %ds for %s, sending wait notice", n.adapter.Name(), int(slowResponseTimeoutS), chatID))
+	pkgLog().Info(fmt.Sprintf("[%s] Agent response exceeded %ds for %s, sending wait notice", n.adapter.Name(), int(slowResponseTimeoutS), chatID))
 	_, _ = n.sender.sendTextChunk(ctx, chatID, slowResponseMessage(ctx), "", "")
 	return nil
 }
@@ -489,7 +488,7 @@ func (s *messageSender) sendText(ctx context.Context, chatID, content, replyTo s
 		for i, chunk := range chunks {
 			sizes[i] = int64(pystr.Len(chunk))
 		}
-		slog.Info(fmt.Sprintf("[%s] truncate_message: input=%d chars, max=%d, output=%d chunk(s) sizes=%s", adapter.Name(),
+		pkgLog().Info(fmt.Sprintf("[%s] truncate_message: input=%d chars, max=%d, output=%d chunk(s) sizes=%s", adapter.Name(),
 			pystr.Len(contentToSend), maxTextChunk, len(chunks), pyrepr.Repr(sizes)))
 		for i, chunk := range chunks {
 			chunkReplyTo := ""
@@ -587,12 +586,12 @@ func (s *messageSender) sendTextChunk(ctx context.Context, chatID, text, replyTo
 			return gateway.SendResult{}, ctx.Err()
 		case err != nil:
 			lastError = errText(err)
-			slog.Warn(fmt.Sprintf("[%s] send_text_chunk attempt %d/%d exception: %s", name, attempt+1, textChunkRetries, lastError))
+			pkgLog().Warn(fmt.Sprintf("[%s] send_text_chunk attempt %d/%d exception: %s", name, attempt+1, textChunkRetries, lastError))
 		case outcome.success:
 			return outcome.sendResult(), nil
 		default:
 			lastError = outcome.errText
-			slog.Warn(fmt.Sprintf("[%s] send_text_chunk attempt %d/%d failed: %s", name, attempt+1, textChunkRetries, lastError))
+			pkgLog().Warn(fmt.Sprintf("[%s] send_text_chunk attempt %d/%d failed: %s", name, attempt+1, textChunkRetries, lastError))
 		}
 		if attempt < textChunkRetries-1 {
 			if err := sleep(ctx, float64(int(1)<<attempt)); err != nil {
@@ -600,7 +599,7 @@ func (s *messageSender) sendTextChunk(ctx context.Context, chatID, text, replyTo
 			}
 		}
 	}
-	slog.Error(fmt.Sprintf("[%s] send_text_chunk max retries (%d) exceeded. Last error: %s", name, textChunkRetries, lastError))
+	pkgLog().Error(fmt.Sprintf("[%s] send_text_chunk max retries (%d) exceeded. Last error: %s", name, textChunkRetries, lastError))
 	return gateway.SendResult{Success: false, Error: "Max retries exceeded: " + lastError}, nil
 }
 

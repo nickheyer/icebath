@@ -55,7 +55,7 @@ const cdpDescription = "Send a raw Chrome DevTools Protocol (CDP) command. Escap
 // Static browser_cdp schema
 func BrowserCDPSchema() *pyjson.Object {
 	return pyjson.ObjectOf(
-		"name",        "browser_cdp",
+		"name", "browser_cdp",
 		"description", cdpDescription,
 		"parameters", pyjson.ObjectOf(
 			"type", "object",
@@ -63,13 +63,13 @@ func BrowserCDPSchema() *pyjson.Object {
 				"method", pyjson.ObjectOf("type", "string", "description", "CDP method name, e.g. 'Target.getTargets', 'Runtime.evaluate', 'Page.handleJavaScriptDialog'."),
 				"params", pyjson.ObjectOf("type", "object", "properties", pyjson.ObjectOf(), "additionalProperties", true,
 					"description", "Method-specific parameters as a JSON object. Omit or pass {} for methods that take no parameters."),
-				"target_id", pyjson.ObjectOf("type", "string", "description", "Optional. Target/tab ID from Target.getTargets result (each entry's 'targetId'). Use for " +
+				"target_id", pyjson.ObjectOf("type", "string", "description", "Optional. Target/tab ID from Target.getTargets result (each entry's 'targetId'). Use for "+
 					"page-level methods at the top-level tab scope. Mutually exclusive with frame_id."),
-				"frame_id", pyjson.ObjectOf("type", "string", "description", "Optional. Out-of-process iframe (OOPIF) frame id from Page.getFrameTree. " +
-					"When set, routes the call through the CDP supervisor's live session for " +
-					"that iframe. Essential for Runtime.evaluate inside cross-origin iframes, especially on " +
-					"Browserbase where fresh per-call CDP connections can't keep up with signed URL rotation. For " +
-					"same-origin iframes, use parent contentWindow/contentDocument from Runtime.evaluate at the " +
+				"frame_id", pyjson.ObjectOf("type", "string", "description", "Optional. Out-of-process iframe (OOPIF) frame id from Page.getFrameTree. "+
+					"When set, routes the call through the CDP supervisor's live session for "+
+					"that iframe. Essential for Runtime.evaluate inside cross-origin iframes, especially on "+
+					"Browserbase where fresh per-call CDP connections can't keep up with signed URL rotation. For "+
+					"same-origin iframes, use parent contentWindow/contentDocument from Runtime.evaluate at the "+
 					"top-level page instead."),
 				"timeout", pyjson.ObjectOf("type", "number", "default", 30, "description", "Timeout in seconds (default 30, max 300)."),
 			),
@@ -452,7 +452,7 @@ func pyWSError(err error, rawURL string) error {
 	}
 	var dnsErr *net.DNSError
 	if errors.As(err, &dnsErr) {
-		return pyError("gaierror", "[Errno -2] Name or service not known")
+		return pyError("gaierror", "host name could not be resolved")
 	}
 	var opErr *net.OpError
 	var errno syscall.Errno
@@ -461,7 +461,7 @@ func pyWSError(err error, rawURL string) error {
 		if addr, ok := opErr.Addr.(*net.TCPAddr); ok {
 			host, port = addr.IP.String(), addr.Port
 		}
-		return pyError(pypath.OSErrorClass(err), fmt.Sprintf("[Errno %d] Connect call failed (%s, %d)", int(errno), pyrepr.StrRepr(host), port))
+		return pyError(pypath.OSErrorClass(err), fmt.Sprintf("could not connect to %s port %d: %s", host, port, errno.Error()))
 	}
 	text := err.Error()
 	if rest, ok := strings.CutPrefix(text, "websocket handshake rejected: "); ok {

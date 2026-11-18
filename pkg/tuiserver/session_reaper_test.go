@@ -11,7 +11,7 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/agent"
 	"github.com/nickheyer/icebath/pkg/state"
-	"github.com/nickheyer/icebath/pkg/tuigateway"
+	"github.com/nickheyer/icebath/pkg/tuihost"
 )
 
 const reaperIdleS = 6 * 3600
@@ -36,16 +36,16 @@ func swapVar[T any](t *testing.T, target *T, value T) {
 }
 
 // Live session registry holding exactly the given records for the case
-func swapSessions(t *testing.T, records map[string]*tuigateway.Session) {
+func swapSessions(t *testing.T, records map[string]*tuihost.Session) {
 	t.Helper()
-	for _, live := range tuigateway.LiveSessions() {
+	for _, live := range tuihost.LiveSessions() {
 		saved := live
-		tuigateway.SetSessionRecord(saved.SID, nil)
-		t.Cleanup(func() { tuigateway.SetSessionRecord(saved.SID, saved.Session) })
+		tuihost.SetSessionRecord(saved.SID, nil)
+		t.Cleanup(func() { tuihost.SetSessionRecord(saved.SID, saved.Session) })
 	}
 	for sid, record := range records {
-		tuigateway.SetSessionRecord(sid, record)
-		t.Cleanup(func() { tuigateway.SetSessionRecord(sid, nil) })
+		tuihost.SetSessionRecord(sid, record)
+		t.Cleanup(func() { tuihost.SetSessionRecord(sid, nil) })
 	}
 }
 
@@ -91,7 +91,7 @@ func reaperRow(t *testing.T, db *state.DB, sid string) map[string]any {
 }
 
 // Sweep scope of the TestSweepOrphanedSessionRows cases over the given store
-func sweepScope(t *testing.T, db *state.DB, ttl float64, records map[string]*tuigateway.Session) {
+func sweepScope(t *testing.T, db *state.DB, ttl float64, records map[string]*tuihost.Session) {
 	t.Helper()
 	swapVar(t, &reaperDB, func(context.Context) *state.DB { return db })
 	swapVar(t, &sessionTTLS, ttl)
@@ -156,8 +156,8 @@ func TestSparesLiveInMemoryAndGatewayRows(t *testing.T) {
 	seedReaperSession(t, db, "recent-tui", "tui", nowSeconds()-30, nil)
 	resumedAgent := &agent.AIAgent{}
 	resumedAgent.SetSessionID("resumed-tui")
-	sweepScope(t, db, reaperIdleS, map[string]*tuigateway.Session{
-		"mem-sid": tuigateway.NewSession(map[string]any{"agent": resumedAgent, "session_key": "resumed-tui"}),
+	sweepScope(t, db, reaperIdleS, map[string]*tuihost.Session{
+		"mem-sid": tuihost.NewSession(map[string]any{"agent": resumedAgent, "session_key": "resumed-tui"}),
 	})
 	if swept := sweepOrphanedSessionRows(context.Background()); len(swept) != 0 {
 		t.Fatalf("swept %v", swept)

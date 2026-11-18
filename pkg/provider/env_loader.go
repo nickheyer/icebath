@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
-	"log/slog"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -38,8 +37,6 @@ type DotenvLoadOptions struct {
 }
 
 var (
-	envLoaderLog = slog.Default()
-
 	envLoaderWarnMu       sync.Mutex
 	warnedUTF32Paths      = map[string]bool{}
 	scopedSkipLogged      = map[string]bool{}
@@ -405,7 +402,7 @@ func sanitizeEnvFileIfNeeded(path string) {
 		warnedUTF32Paths[key] = true
 		envLoaderWarnMu.Unlock()
 		if first {
-			envLoaderLog.Warn(fmt.Sprintf("Skipping .env sanitize for %s: UTF-32 BOM detected; leaving file untouched to avoid corruption", path))
+			pkgLog().Warn(fmt.Sprintf("Skipping .env sanitize for %s: UTF-32 BOM detected; leaving file untouched to avoid corruption", path))
 		}
 		return
 	case hasUTF16BOM(raw):
@@ -634,7 +631,7 @@ func loadUserDotenv(path string, loadPass int) (bool, error) {
 	warnedUnreadablePaths[path] = true
 	envLoaderWarnMu.Unlock()
 	if first {
-		envLoaderLog.Warn(fmt.Sprintf("Cannot read %s; managed scope pins terminal.backend, so it loads as absent", path))
+		pkgLog().Warn(fmt.Sprintf("Cannot read %s; managed scope pins terminal.backend, so it loads as absent", path))
 	}
 	return false, nil
 }
@@ -657,7 +654,7 @@ func LoadIcebathDotenv(ctx context.Context, opts DotenvLoadOptions) ([]string, e
 		scopedSkipLogged[key] = true
 		envLoaderWarnMu.Unlock()
 		if first {
-			envLoaderLog.Debug(fmt.Sprintf("multiplex: skipping process-global dotenv load for routed profile home %s (credentials resolve via the profile scope)", homePath))
+			pkgLog().Debug(fmt.Sprintf("multiplex: skipping process-global dotenv load for routed profile home %s (credentials resolve via the profile scope)", homePath))
 		}
 		if !opts.SkipExternalSecrets && !skipExternalSecretSourcesFn() {
 			HydrateProfileSecretSources(homePath)

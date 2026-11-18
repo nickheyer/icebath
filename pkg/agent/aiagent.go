@@ -2,7 +2,6 @@ package agent
 
 import (
 	"context"
-	"log/slog"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -27,7 +26,7 @@ import (
 const toolCallArgumentsCorruptionMarker = "[icebath-agent: tool call arguments were corrupted in this session and " +
 	"have been dropped to keep the conversation alive. See issue #15236.]"
 
-// AIAgent is the tool calling agent runner, hermes attribute names kept as unexported fields
+// The tool calling agent runner, its attributes kept as unexported fields
 type AIAgent struct {
 	provider                         string
 	requestedProvider                string
@@ -47,7 +46,6 @@ type AIAgent struct {
 	contextEngineToolNames           map[string]bool
 	forceASCIIPayload                bool
 	bedrockConverseFallbackAttempted bool
-	nousModelSwitch                  *[2]string
 	sessionID                        string
 	parentSessionID                  string
 	sessionDB                        SessionStore
@@ -207,6 +205,7 @@ type AIAgent struct {
 	interimAssistantCallback           any
 	statusCallback                     any
 	noticeCallback                     any
+	relayNoticeChecked                 bool
 	noticeClearCallback                any
 	eventCallback                      func(string, map[string]any)
 	reactionCallback                   func(string)
@@ -276,8 +275,8 @@ type AIAgent struct {
 	currentTool                        string
 	apiCallCount                       atomic.Int64
 	skipMCPRefresh                     bool
-	credits                            *provider.CreditsCapture
-	creditsMu                          sync.Mutex
+	headerCapture                      *provider.HeaderCapture
+	headerCaptureMu                    sync.Mutex
 	sessionMessages                    atomic.Pointer[[]*state.Message]
 	sessionMessageOrigins              map[*state.Message]map[string]any
 	sharedRowStamps                    map[*state.Message]map[string]any
@@ -352,7 +351,6 @@ type AIAgent struct {
 	currentAPIRequestID                string
 	turnUserIntervened                 bool
 	sanitizeArgsCursor                 map[string]any
-	nousWirePending                    any
 	emptyContentRetries                int
 	lastAPIFirstChunkAt                *float64
 	promptRefreshEpoch                 *int
@@ -499,7 +497,7 @@ type RunConversationOptions struct {
 
 // Python DeprecationWarning channel, recorded on the warnings logger below the default level so it stays silent
 var warnDeprecation = func(message string) {
-	slog.Default().With("logger", "py.warnings").Debug("DeprecationWarning: " + message)
+	pkgLog().Debug("DeprecationWarning: " + message)
 }
 
 // Builds an agent through the init_agent forwarder, runtime fields filling the route keywords like cron does
@@ -544,7 +542,7 @@ func (a *AIAgent) setBaseURL(value string) {
 	a.baseURLHostname, _ = pyurl.BaseURLHostname(value)
 }
 
-// Context bound to the agent tool env home, the hermes home a method reads
+// Context bound to the agent tool env home, the home a method reads
 func (a *AIAgent) homeContext() context.Context {
 	if a.env != nil && a.env.Home != "" {
 		return home.WithOverride(context.Background(), a.env.Home)

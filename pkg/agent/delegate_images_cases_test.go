@@ -38,7 +38,7 @@ func imageFakeChild(env *tools.Env) *AIAgent {
 	return &AIAgent{provider: "openrouter", model: "some/vision-model", env: env}
 }
 
-// Forces the image input mode decision, a panic standing in for the hermes RuntimeError
+// Forces the image input mode decision, a panic standing in for the RuntimeError
 func forceImageInputMode(t *testing.T, fn func() string) {
 	t.Helper()
 	prev := decideImageInputModeFn

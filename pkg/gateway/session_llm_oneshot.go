@@ -3,23 +3,12 @@ package gateway
 import (
 	"context"
 	"fmt"
-	"log/slog"
-	"math/big"
-	"strings"
 	"sync"
 
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/state"
-	"github.com/nickheyer/icebath/pkg/tuigateway"
+	"github.com/nickheyer/icebath/pkg/tuihost"
 )
-
-// Params a one shot generation accepts
-var oneshotFields = []string{"session_id", "profile", "template", "instructions", "input", "variables", "task",
-	"temperature", "max_tokens"}
-
-// Text params of a one shot generation
-var oneshotText = []string{"template", "instructions", "input", "task"}
 
 // One request's pending answer, owned by the connection that asked and dropped once its socket closes
 type oneshotAnswer struct {
@@ -73,7 +62,7 @@ func (d *DeferredReply) Start(ctx context.Context, c *AuthorityConnection, rid a
 }
 
 // Writes the request's one reply on the owner loop, true when its socket closed first and no frame went out
-func answerOneshot(pool *oneshotPool, transport tuigateway.Transport, rid any, call *oneshotCall, check func(result any) error, answer *oneshotAnswer) bool {
+func answerOneshot(pool *oneshotPool, transport tuihost.Transport, rid any, call *oneshotCall, check func(result any) error, answer *oneshotAnswer) bool {
 	select {
 	case <-answer.forgotten:
 		return true
@@ -99,7 +88,7 @@ func answerOneshot(pool *oneshotPool, transport tuigateway.Transport, rid any, c
 		if failure == nil {
 			frame = pyjson.ObjectOf("jsonrpc", "2.0", "id", rid, "result", result)
 		} else {
-			slog.Warn(fmt.Sprintf("llm.oneshot failed: %s", pyrepr.ExceptionMessage(failure)), "error", failure)
+			pkgLog().Warn(fmt.Sprintf("llm.oneshot failed: %s", pyrepr.ExceptionMessage(failure)), "error", failure)
 			frame = pyjson.ObjectOf("jsonrpc", "2.0", "id", rid, "error", pyjson.ObjectOf("code", 5030,
 				"message", "one-shot generation failed: "+pyrepr.ExceptionMessage(failure)))
 		}
@@ -127,50 +116,6 @@ func forgetOneshots(c *AuthorityConnection) {
 	for _, answer := range owned {
 		answer.forget()
 	}
-}
-
-// Refuses one shot params outside the contract, an unknown template, or nothing to generate from
-func validateOneshot(params *pyjson.Object) error {
-	invalid := paramsOutside(params, oneshotFields...)
-	for _, key := range append(append([]string{}, oneshotText...), "session_id") {
-		if value, present := params.Get(key); present && value != nil {
-			if _, isStr := value.(string); !isStr {
-				invalid = true
-			}
-		}
-	}
-	if variables := params.GetOr("variables", nil); pyrepr.Truthy(variables) {
-		if _, isDict := variables.(*pyjson.Object); !isDict {
-			invalid = true
-		}
-	}
-	for _, key := range []string{"temperature", "max_tokens"} {
-		if value, present := params.Get(key); present && value != nil {
-			switch value.(type) {
-			case bool:
-				invalid = true
-			case int, int64, float64, *big.Int:
-			default:
-				invalid = true
-			}
-		}
-	}
-	if invalid {
-		return runtimeRefusal("invalid_params")
-	}
-	text := func(key string) string {
-		value, _ := params.GetOr(key, "").(string)
-		return strings.TrimSpace(value)
-	}
-	if template := text("template"); template != "" && !OneshotAgent.TemplateKnown(template) {
-		field, detail := "template", "unknown one-shot template"
-		return state.NewRuntimeStoreError("invalid_params", &field, &detail)
-	}
-	if text("template") == "" && text("instructions") == "" && text("input") == "" {
-		field, detail := "input", "needs a template or instructions/input"
-		return state.NewRuntimeStoreError("invalid_params", &field, &detail)
-	}
-	return nil
 }
 
 // One shot generation reads from pkg/agent, assigned in cmd/icebath/wiring.go

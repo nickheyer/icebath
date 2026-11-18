@@ -195,7 +195,7 @@ func (c *CLI) discardSessionIfEmpty(sessionID string) bool {
 	}
 	removed, err := c.sessionDB.DeleteSessionIfEmpty(c.ctx, sessionID)
 	if err != nil {
-		cliLogger.Debug(fmt.Sprintf("Could not prune empty session %s", sessionID), "error", err)
+		pkgLog().Debug(fmt.Sprintf("Could not prune empty session %s", sessionID), "error", err)
 		return false
 	}
 	return removed

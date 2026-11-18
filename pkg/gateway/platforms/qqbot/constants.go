@@ -9,7 +9,7 @@ const (
 	GatewayURLPath           = "/gateway"
 	OnboardCreatePath        = "/lite/create_bind_task"
 	OnboardPollPath          = "/lite/poll_bind_result"
-	QRURLTemplate            = "https://q.qq.com/qqbot/openclaw/connect.html?task_id={task_id}&_wv=2&source=hermes"
+	QRURLTemplate            = "https://q.qq.com/qqbot/openclaw/connect.html?task_id={task_id}&_wv=2&source=icebath"
 	DefaultAPITimeout        = 30.0
 	FileUploadTimeout        = 120.0
 	ConnectTimeoutSeconds    = 20.0

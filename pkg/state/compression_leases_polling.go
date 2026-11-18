@@ -1,7 +1,6 @@
 package state
 
 import (
-	"log/slog"
 	"math"
 	"time"
 )
@@ -19,7 +18,7 @@ func AcquireTurnLeasePolling(owner string, try TurnLeaseTry, sleepRetry func(dea
 		if o.ShouldAbort != nil {
 			abort, err := o.ShouldAbort()
 			if err != nil {
-				slog.Debug("session turn lease should_abort callback failed", "error", err)
+				pkgLog().Debug("session turn lease should_abort callback failed", "error", err)
 			} else if abort {
 				return false, nil
 			}
@@ -32,7 +31,7 @@ func AcquireTurnLeasePolling(owner string, try TurnLeaseTry, sleepRetry func(dea
 			}
 			if o.OnContended != nil {
 				if cerr := o.OnContended(); cerr != nil {
-					slog.Debug("session turn lease on_contended callback failed", "error", cerr)
+					pkgLog().Debug("session turn lease on_contended callback failed", "error", cerr)
 				}
 			}
 			patience = math.Min(o.AcquirePatienceS+math.Max(0, o.PollIntervalSeconds), math.Max(o.AcquirePatienceS, deadline-monotonicSeconds()))
@@ -58,7 +57,7 @@ func AcquireTurnLeasePolling(owner string, try TurnLeaseTry, sleepRetry func(dea
 		}
 		if o.OnWait != nil && (lastNotice == nil || noticeEvery == 0 || t-*lastNotice >= noticeEvery) {
 			if werr := o.OnWait(math.Max(0, t-*waitStarted)); werr != nil {
-				slog.Debug("session turn lease on_wait callback failed", "error", werr)
+				pkgLog().Debug("session turn lease on_wait callback failed", "error", werr)
 			}
 			lastNotice = &t
 		}

@@ -21,7 +21,7 @@ import (
 func (r *GatewayRunner) startSecondaryProfileAdapters(ctx context.Context) (int, error) {
 	if !r.multiplexOn() {
 		if _, err := gateway.PublishRuntimeStatus(ctx, gateway.RuntimeStatusUpdate{Fields: map[string]any{"served_profiles": []any{}}}); err != nil {
-			runLog().Debug("could not clear served_profiles", "exc_info", err)
+			pkgLog().Debug("could not clear served_profiles", "exc_info", err)
 		}
 		return 0, nil
 	}
@@ -35,7 +35,7 @@ func (r *GatewayRunner) startSecondaryProfileAdapters(ctx context.Context) (int,
 	}
 	for _, p := range served {
 		if p.Name != "default" && profiles.ProfileIsParked(p.Home) {
-			runLog().Info(fmt.Sprintf("profile '%s' is parked (gateway.parked); not served by this gateway", p.Name))
+			pkgLog().Info(fmt.Sprintf("profile '%s' is parked (gateway.parked); not served by this gateway", p.Name))
 		}
 	}
 	connected := 0
@@ -63,7 +63,7 @@ func (r *GatewayRunner) startSecondaryProfileAdapters(ctx context.Context) (int,
 			if isCancellation(err) || ctx.Err() != nil {
 				return 0, err
 			}
-			runLog().Error(fmt.Sprintf("Failed to start adapters for profile '%s': %s", p.Name, err.Error()), "exc_info", err)
+			pkgLog().Error(fmt.Sprintf("Failed to start adapters for profile '%s': %s", p.Name, err.Error()), "exc_info", err)
 			transientFailed[p.Name] = true
 			continue
 		}
@@ -132,7 +132,7 @@ func (r *GatewayRunner) recordServedProfiles(ctx context.Context, active string,
 		return nil
 	}()
 	if err != nil {
-		runLog().Debug("could not record served_profiles", "exc_info", err)
+		pkgLog().Debug("could not record served_profiles", "exc_info", err)
 	}
 }
 
@@ -226,7 +226,7 @@ func (r *GatewayRunner) startOneProfileAdapters(ctx context.Context, profileName
 			if platform == gateway.PlatformWhatsApp {
 				r.noteUnservedSecondaryPlatform(ctx, profileName, platform)
 			}
-			runLog().Info(fmt.Sprintf("[MULTIPLEX] Profile '%s': skipping %s - no bot credential "+
+			pkgLog().Info(fmt.Sprintf("[MULTIPLEX] Profile '%s': skipping %s - no bot credential "+
 				"in this profile's secrets", profileName, platform))
 			continue
 		}
@@ -235,13 +235,13 @@ func (r *GatewayRunner) startOneProfileAdapters(ctx context.Context, profileName
 			continue
 		}
 		if multiplex && gateway.SharedListenerMirrorPlatforms[string(platform)] {
-			runLog().Info(fmt.Sprintf("[MULTIPLEX] Profile '%s': %s is served by the default profile's listener at /p/%s/ — "+
+			pkgLog().Info(fmt.Sprintf("[MULTIPLEX] Profile '%s': %s is served by the default profile's listener at /p/%s/ — "+
 				"not starting a second listener", profileName, platform, profileName))
 			continue
 		}
 		adapter, err := r.createAdapter(scoped, platform, platformConfig)
 		if err != nil {
-			runLog().Error(fmt.Sprintf("[MULTIPLEX] Profile '%s': _create_adapter('%s') raised", profileName, platform), "exc_info", err)
+			pkgLog().Error(fmt.Sprintf("[MULTIPLEX] Profile '%s': _create_adapter('%s') raised", profileName, platform), "exc_info", err)
 			continue
 		}
 		heals := false
@@ -274,10 +274,10 @@ func (r *GatewayRunner) startOneProfileAdapters(ctx context.Context, profileName
 				if isCancellation(err) || ctx.Err() != nil {
 					return false, err
 				}
-				runLog().Error(fmt.Sprintf("✗ %s error (profile: %s): %s", platform, profileName, err.Error()))
+				pkgLog().Error(fmt.Sprintf("✗ %s error (profile: %s): %s", platform, profileName, err.Error()))
 				success = false
 			} else if !success {
-				runLog().Warn(fmt.Sprintf("✗ %s failed to connect (profile: %s)", platform, profileName))
+				pkgLog().Warn(fmt.Sprintf("✗ %s failed to connect (profile: %s)", platform, profileName))
 			}
 			if !success {
 				r.safeAdapterDisconnect(ctx, adapter, platform)
@@ -300,7 +300,7 @@ func (r *GatewayRunner) startOneProfileAdapters(ctx context.Context, profileName
 			}
 		}
 		connected++
-		runLog().Info(fmt.Sprintf("✓ %s connected (profile: %s)", platform, profileName))
+		pkgLog().Info(fmt.Sprintf("✓ %s connected (profile: %s)", platform, profileName))
 	}
 	return connected, nil
 }

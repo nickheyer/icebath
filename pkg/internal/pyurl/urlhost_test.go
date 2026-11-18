@@ -5,7 +5,7 @@ import (
 	"testing"
 )
 
-func TestFormatURLHostMatchesHermes(t *testing.T) {
+func TestFormatURLHost(t *testing.T) {
 	for in, want := range map[string]string{
 		"127.0.0.1": "127.0.0.1", " ::1 ": "[::1]", "[::1]": "[::1]", "fe80::1%eth0": "[fe80::1%25eth0]",
 		"[fe80::1%eth0]": "[fe80::1%25eth0]", "[host]": "[host]", "example.com": "example.com",

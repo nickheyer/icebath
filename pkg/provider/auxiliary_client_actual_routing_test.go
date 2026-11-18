@@ -68,7 +68,7 @@ func auxServeLoopbackDNS(conn net.Conn, host string) {
 	}
 }
 
-// Resolves host to 127.0.0.1 for every dial in the process, the getaddrinfo patch of the hermes fixture
+// Resolves host to 127.0.0.1 for every dial in the process, the getaddrinfo patch of the test fixture
 func auxRedirectHostToLoopback(t *testing.T, host string) {
 	t.Helper()
 	orig := net.DefaultResolver

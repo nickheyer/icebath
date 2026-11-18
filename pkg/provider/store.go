@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
-	"net/url"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -22,8 +21,6 @@ import (
 
 // AuthData is the parsed auth.json document in its exact on disk schema
 type AuthData map[string]any
-
-var nousStalePortalHosts = map[string]bool{"api.nousresearch.com": true}
 
 // ProviderWriteHook observes every provider state replacement so guest handoff records can be kept
 type ProviderWriteHook func(providerID string, previous, next map[string]any) error
@@ -47,14 +44,11 @@ func NewStore(h string) *Store {
 	if h == "" {
 		h = home.Process()
 	}
-	s := &Store{home: h, path: home.AuthPath(h), Log: slog.Default()}
+	s := &Store{home: h, path: home.AuthPath(h), Log: pkgLog()}
 	root := home.RootOf(h)
 	if !samePath(root, h) {
 		s.globalPath = home.AuthPath(root)
 	}
-	s.hooks = []ProviderWriteHook{func(providerID string, previous, next map[string]any) error {
-		return guestHandoffNoteStoreWrite(PoolEnv{Store: s}, providerID, previous, next)
-	}}
 	return s
 }
 
@@ -107,7 +101,7 @@ func resolvedKey(path string) string {
 	return path
 }
 
-// Per path process lock that the holding goroutine may re-enter, mirroring the reentrant hermes auth store lock
+// Per path process lock that the holding goroutine may re-enter, a reentrant auth store lock
 type storeLock struct {
 	mu    sync.Mutex
 	state sync.Mutex
@@ -120,7 +114,7 @@ var (
 	storeLocks   = map[string]*storeLock{}
 )
 
-// Process wide lock of one resolved auth path shared by every Store instance like the module level hermes lock
+// Process wide lock of one resolved auth path shared by every Store instance
 func (s *Store) processLock(path string) *storeLock {
 	storeLocksMu.Lock()
 	defer storeLocksMu.Unlock()
@@ -210,12 +204,28 @@ func lockHolderHint(lockPath string) string {
 
 // fileLock takes the cross process advisory lock for an auth path and returns its releaser
 func (s *Store) fileLock(authPath string, timeout time.Duration) (func(), error) {
+	return s.takeFileLock(authPath, timeout, true)
+}
+
+// Lock holder busy reported by a lock attempt that does not wait
+var errAuthLockBusy = errors.New("auth store lock is held")
+
+// Takes the auth path lock, waiting up to timeout or failing at once with errAuthLockBusy when wait is off
+func (s *Store) takeFileLock(authPath string, timeout time.Duration, wait bool) (func(), error) {
 	lockPath := strings.TrimSuffix(authPath, filepath.Ext(authPath)) + ".lock"
 	pl := s.processLock(authPath)
 	if release, nested := pl.reenter(); nested {
 		return release, nil
 	}
-	pl.acquire()
+	if wait {
+		pl.acquire()
+	} else if !pl.mu.TryLock() {
+		return nil, errAuthLockBusy
+	} else {
+		pl.state.Lock()
+		pl.owner, pl.depth = goroutineID(), 1
+		pl.state.Unlock()
+	}
 	if err := os.MkdirAll(filepath.Dir(lockPath), 0o700); err != nil {
 		pl.release()
 		return nil, err
@@ -238,6 +248,11 @@ func (s *Store) fileLock(authPath string, timeout time.Duration) (func(), error)
 			f.Close()
 			pl.release()
 			return nil, err
+		}
+		if !wait {
+			f.Close()
+			pl.release()
+			return nil, errAuthLockBusy
 		}
 		if time.Now().After(deadline) {
 			f.Close()
@@ -309,39 +324,32 @@ func (s *Store) LoadFile(path string) (AuthData, error) {
 		if _, ok := obj["providers"]; !ok {
 			obj["providers"] = map[string]any{}
 		}
-		if providers, ok := obj["providers"].(map[string]any); ok {
-			s.migrateStaleNousPortalURL(providers)
+		if renameRetiredSourceLabels(obj) {
+			s.storeRenamedSourceLabels(path)
 		}
 		return AuthData(obj), nil
-	}
-	if systems, ok := obj["systems"].(map[string]any); ok {
-		out := emptyAuthData()
-		providers := map[string]any{}
-		var active any
-		if nous, ok := systems["nous_portal"]; ok {
-			providers["nous"] = nous
-			active = "nous"
-		}
-		out["providers"] = providers
-		out["active_provider"] = active
-		return out, nil
 	}
 	return emptyAuthData(), nil
 }
 
-func (s *Store) migrateStaleNousPortalURL(providers map[string]any) {
-	nous, ok := providers["nous"].(map[string]any)
-	if !ok {
+// Stores the renamed source labels when the file lock is free, a busy lock leaving it to a later load
+func (s *Store) storeRenamedSourceLabels(path string) {
+	unlock, err := s.takeFileLock(path, AuthLockTimeout, false)
+	if err != nil {
+		s.Log.Debug("auth: source label rename deferred", "path", path, "err", err)
 		return
 	}
-	stored, _ := nous["portal_base_url"].(string)
-	stored = strings.TrimSpace(stored)
-	if stored == "" {
+	defer unlock()
+	raw, err := os.ReadFile(path)
+	if err != nil {
 		return
 	}
-	if u, err := url.Parse(stored); err == nil && nousStalePortalHosts[u.Hostname()] {
-		s.Log.Warn("auth: migrating stale nous portal_base_url", "from", stored, "to", DefaultNousPortalURL)
-		nous["portal_base_url"] = DefaultNousPortalURL
+	var obj map[string]any
+	if json.Unmarshal([]byte(strings.TrimPrefix(string(raw), "\ufeff")), &obj) != nil || obj == nil || !renameRetiredSourceLabels(obj) {
+		return
+	}
+	if err := s.SaveTo(AuthData(obj), path); err != nil {
+		s.Log.Warn("auth: could not store renamed source labels", "path", path, "err", err)
 	}
 }
 
@@ -1016,21 +1024,6 @@ func (s *Store) GetProviderAuthState(providerID string) (map[string]any, error) 
 		return nil, err
 	}
 	return s.ProviderState(data, providerID), nil
-}
-
-// NousTokenHasBillingScope reports whether the stored Nous scope contains billing manage
-func (s *Store) NousTokenHasBillingScope() bool {
-	st, err := s.GetProviderAuthState("nous")
-	if err != nil || st == nil {
-		return false
-	}
-	scope, _ := st["scope"].(string)
-	for _, part := range strings.Fields(scope) {
-		if part == NousBillingManageScope {
-			return true
-		}
-	}
-	return false
 }
 
 // ActiveProvider returns the active provider id from the store

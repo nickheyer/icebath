@@ -162,7 +162,7 @@ func relayTestEnv(t *testing.T, segments map[string]any) *relayLogSink {
 	}
 	ResetRelaySegmentsConfigForTests()
 	relayLogger = func() *slog.Logger {
-		return slog.New(slog.NewTextHandler(sink, &slog.HandlerOptions{Level: slog.LevelDebug})).With("logger", "agent.relay_runtime")
+		return slog.New(slog.NewTextHandler(sink, &slog.HandlerOptions{Level: slog.LevelDebug})).With("logger", logName)
 	}
 	t.Cleanup(func() {
 		RelayScopeOpTimeout, relayLoadUserConfigEffective, relayLogger = timeout, loader, logger
@@ -786,7 +786,7 @@ func TestRelayRuntimeNeverImportsGatewayRun(t *testing.T) {
 func TestLoadNemoRelayReadsTheRegisteredBinding(t *testing.T) {
 	RegisterNemoRelayBinding(nil)
 	t.Cleanup(func() { RegisterNemoRelayBinding(nil) })
-	if relay, err := LoadNemoRelay(); relay != nil || err == nil || err.Error() != "No module named 'nemo_relay'" {
+	if relay, err := LoadNemoRelay(); relay != nil || err == nil || err.Error() != "the Relay runtime binding is not installed" {
 		t.Fatalf("absent binding %v %v", relay, err)
 	}
 	want := &NemoRelay{Plugin: &NemoRelayPlugin{}}

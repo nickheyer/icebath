@@ -5,7 +5,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"log/slog"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -53,7 +52,7 @@ func TranscodeToOggOpus(ctx context.Context, path, bitrate string, timeout time.
 func transcodeSucceeded(path, oggPath, workPath string, inPlace bool, runErr error, timedOut bool, stderr []byte) bool {
 	var exitErr *exec.ExitError
 	if runErr != nil && (timedOut || !errors.As(runErr, &exitErr)) {
-		slog.Warn(fmt.Sprintf("voice transcode to Ogg/Opus failed for %s", path), "error", runErr)
+		pkgLog().Warn(fmt.Sprintf("voice transcode to Ogg/Opus failed for %s", path), "error", runErr)
 		return false
 	}
 	if runErr == nil {
@@ -62,7 +61,7 @@ func transcodeSucceeded(path, oggPath, workPath string, inPlace bool, runErr err
 			err = os.Rename(workPath, oggPath)
 		}
 		if err != nil {
-			slog.Warn(fmt.Sprintf("voice transcode to Ogg/Opus failed for %s", path), "error", err)
+			pkgLog().Warn(fmt.Sprintf("voice transcode to Ogg/Opus failed for %s", path), "error", err)
 			return false
 		}
 		if info.Size() > 0 {
@@ -77,6 +76,6 @@ func transcodeSucceeded(path, oggPath, workPath string, inPlace bool, runErr err
 	if len(detail) > 500 {
 		detail = detail[:500]
 	}
-	slog.Warn(fmt.Sprintf("ffmpeg Ogg/Opus transcode of %s failed (returncode=%d): %s", path, code, string(detail)))
+	pkgLog().Warn(fmt.Sprintf("ffmpeg Ogg/Opus transcode of %s failed (returncode=%d): %s", path, code, string(detail)))
 	return false
 }

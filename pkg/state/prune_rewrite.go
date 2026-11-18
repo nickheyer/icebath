@@ -11,7 +11,7 @@ import (
 
 // Insert statement columns in bind order so a row rewrite diffs bind values by name
 var messageRowColumns = func() []string {
-	inner := strings.SplitN(strings.SplitN(hermesInsertMessageSQL, "(", 2)[1], ")", 2)[0]
+	inner := strings.SplitN(strings.SplitN(icebathInsertMessageSQL, "(", 2)[1], ")", 2)[0]
 	var out []string
 	for _, column := range strings.Split(inner, ",") {
 		out = append(out, strings.TrimSpace(column))

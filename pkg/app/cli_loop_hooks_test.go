@@ -37,7 +37,7 @@ func fakeGoalJudge(t *testing.T, h, reply string) {
 		t.Fatal(err)
 	}
 	t.Cleanup(srv.Stop)
-	if err := fakellm.WriteHome(h, srv.BaseURL(), "", "", 0); err != nil {
+	if err := fakellm.WriteHome(h, srv.BaseURL(), "", ""); err != nil {
 		t.Fatal(err)
 	}
 }

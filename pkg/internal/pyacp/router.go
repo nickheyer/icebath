@@ -5,7 +5,6 @@ import (
 	"strings"
 
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/logging"
 )
 
 // Handler of one routed method receiving the raw params
@@ -31,7 +30,7 @@ func (r *Route) Handle(ctx context.Context, params any) (any, error) {
 		return nil, MethodNotFound(r.Method)
 	}
 	if r.WarnUnstable {
-		logging.GetLogger("py.warnings").Warning("UserWarning: The method " + r.Method + " is part of the unstable protocol, please enable `use_unstable_protocol` flag to use it.")
+		pkgLog().Warning("UserWarning: The method " + r.Method + " is part of the unstable protocol, please enable `use_unstable_protocol` flag to use it.")
 		return nil, MethodNotFound(r.Method)
 	}
 	result, err := r.Func(ctx, params)

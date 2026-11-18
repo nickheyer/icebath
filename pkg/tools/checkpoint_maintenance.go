@@ -248,7 +248,7 @@ func PruneCheckpoints(env *Env, o CheckpointPruneOptions) (CheckpointPruneResult
 	release, err := checkpointStoreLock(base)
 	if err != nil {
 		result.Errors++
-		toolsLogger(env).Warn(fmt.Sprintf("Checkpoint maintenance stopped: %v", err))
+		envLog(env).Warn(fmt.Sprintf("Checkpoint maintenance stopped: %v", err))
 		return result, nil
 	}
 	defer release()
@@ -258,14 +258,14 @@ func PruneCheckpoints(env *Env, o CheckpointPruneOptions) (CheckpointPruneResult
 			return result, err
 		}
 		result.Errors++
-		toolsLogger(env).Warn(fmt.Sprintf("Checkpoint maintenance stopped: %v", err))
+		envLog(env).Warn(fmt.Sprintf("Checkpoint maintenance stopped: %v", err))
 	}
 	return result, nil
 }
 
 // Prune body run while the store lock is held, sweeping legacy archives, pre v2 repos and v2 project refs
 func pruneCheckpointsLocked(env *Env, base string, result *CheckpointPruneResult, o CheckpointPruneOptions) error {
-	log := toolsLogger(env)
+	log := envLog(env)
 	sizeBefore := checkpointDirSizeBytes(base)
 	cutoff := 0.0
 	if o.RetentionDays > 0 {
@@ -468,7 +468,7 @@ func MaybeAutoPruneCheckpoints(env *Env, o CheckpointAutoPruneOptions) Checkpoin
 	if base == "" {
 		base = CheckpointBase(env)
 	}
-	log := toolsLogger(env)
+	log := envLog(env)
 	var out CheckpointAutoPruneOutcome
 	if !pathExistsFollow(base) {
 		out.Result = &CheckpointPruneResult{}
@@ -542,7 +542,7 @@ func checkpointConfigInt(section map[string]any, key string, fallback int) (int,
 // Runs the startup prune from the checkpoints config section, never deleting orphans unattended
 func AutoPruneCheckpointsFromConfig(env *Env) CheckpointAutoPruneOutcome {
 	fail := func(err error) CheckpointAutoPruneOutcome {
-		toolsLogger(env).Debug(fmt.Sprintf("checkpoint auto-maintenance skipped: %v", err))
+		envLog(env).Debug(fmt.Sprintf("checkpoint auto-maintenance skipped: %v", err))
 		return CheckpointAutoPruneOutcome{Skipped: true, Error: err.Error()}
 	}
 	cfg, err := checkpointConfigSection(env)
@@ -594,7 +594,7 @@ func SizefmtBytes(n int64) string { return sizefmtBytes(n) }
 func CheckpointFootprintNotice(env *Env) string {
 	cfg, err := checkpointConfigSection(env)
 	if err != nil {
-		toolsLogger(env).Debug(fmt.Sprintf("checkpoint footprint notice skipped: %v", err))
+		envLog(env).Debug(fmt.Sprintf("checkpoint footprint notice skipped: %v", err))
 		return ""
 	}
 	if !truthy(cfg["enabled"]) {
@@ -604,7 +604,7 @@ func CheckpointFootprintNotice(env *Env) string {
 	if raw, ok := cfg["max_total_size_mb"]; !ok || truthy(raw) {
 		capMB, err = checkpointConfigInt(cfg, "max_total_size_mb", 500)
 		if err != nil {
-			toolsLogger(env).Debug(fmt.Sprintf("checkpoint footprint notice skipped: %v", err))
+			envLog(env).Debug(fmt.Sprintf("checkpoint footprint notice skipped: %v", err))
 			return ""
 		}
 	}
@@ -755,7 +755,7 @@ func ClearAllCheckpoints(env *Env, base string) CheckpointClearResult {
 		release()
 	}
 	if err != nil {
-		toolsLogger(env).Warn(fmt.Sprintf("Could not clear checkpoint base %s: %v", base, err))
+		envLog(env).Warn(fmt.Sprintf("Could not clear checkpoint base %s: %v", base, err))
 		return out
 	}
 	out.BytesFreed = size
@@ -779,7 +779,7 @@ func ClearLegacyCheckpoints(env *Env, base string) CheckpointClearLegacyResult {
 	if !pathExistsFollow(base) {
 		return out
 	}
-	log := toolsLogger(env)
+	log := envLog(env)
 	release, err := checkpointStoreLock(base)
 	if err != nil {
 		out.Errors++

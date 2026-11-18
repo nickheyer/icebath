@@ -6,7 +6,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/tools"
-	"github.com/nickheyer/icebath/pkg/tuigateway"
+	"github.com/nickheyer/icebath/pkg/tuihost"
 )
 
 // Plain mapping of tool arguments, empty for anything that is not a dict
@@ -69,7 +69,7 @@ func toolCompletePayload(ctx context.Context, callID, toolName, args, result any
 	payload.Set("is_error", failed)
 	payload.Set("result", boundedResult(result, failed))
 	if verbose {
-		payload.Set("result_text", tuigateway.ToolResultText(result))
+		payload.Set("result_text", tuihost.ToolResultText(result))
 	}
 	return payload
 }

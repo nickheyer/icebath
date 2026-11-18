@@ -61,11 +61,11 @@ func (r *Runner) stagePrerequisites(ctx context.Context) error {
 	}
 	parent := filepath.Dir(r.installDir)
 	if err := os.MkdirAll(parent, 0o777); err != nil {
-		return fail(fmt.Sprintf("cannot create %s: %v", parent, err), "filesystem_error")
+		return fail(fmt.Sprintf("cannot create %s: %v", parent, err))
 	}
 	probe, err := os.CreateTemp(parent, ".icebath-install-probe-*")
 	if err != nil {
-		return fail(fmt.Sprintf("%s is not writable: %v", parent, err), "filesystem_error")
+		return fail(fmt.Sprintf("%s is not writable: %v", parent, err))
 	}
 	probe.Close()
 	os.Remove(probe.Name())
@@ -92,15 +92,15 @@ func (r *Runner) stableApplies() bool {
 func (r *Runner) resolveTarget(ctx context.Context) (*ReleaseTarget, error) {
 	repo, err := ParseRepo(r.opts.RepoURL)
 	if err != nil {
-		return nil, fail(err.Error(), "git_fetch_failed")
+		return nil, fail(err.Error())
 	}
 	if r.opts.Commit != "" {
 		t, err := releaseForCommit(ctx, repo, r.opts.Commit)
 		if err != nil {
-			return nil, fail(fmt.Sprintf("could not list releases of %s: %v. Rerun the installer to retry", repo.Web, err), "git_fetch_failed")
+			return nil, fail(fmt.Sprintf("could not list releases of %s: %v. Rerun the installer to retry", repo.Web, err))
 		}
 		if t == nil {
-			return nil, fail(fmt.Sprintf("no published release of %s was built from commit %s", repo.Web, r.opts.Commit), "git_fetch_failed")
+			return nil, fail(fmt.Sprintf("no published release of %s was built from commit %s", repo.Web, r.opts.Commit))
 		}
 		return t, nil
 	}
@@ -114,10 +114,10 @@ func (r *Runner) resolveTarget(ctx context.Context) (*ReleaseTarget, error) {
 	}
 	t, err := releaseForBranch(ctx, repo, r.opts.Branch)
 	if err != nil {
-		return nil, fail(fmt.Sprintf("could not list releases of %s: %v. Rerun the installer to retry", repo.Web, err), "git_fetch_failed")
+		return nil, fail(fmt.Sprintf("could not list releases of %s: %v. Rerun the installer to retry", repo.Web, err))
 	}
 	if t == nil {
-		return nil, fail(fmt.Sprintf("no published release of %s follows branch %s", repo.Web, r.opts.Branch), "git_fetch_failed")
+		return nil, fail(fmt.Sprintf("no published release of %s follows branch %s", repo.Web, r.opts.Branch))
 	}
 	r.logInfo(fmt.Sprintf("Installing %s, the newest release built from %s", t.Tag, r.opts.Branch))
 	return t, nil
@@ -129,13 +129,13 @@ func (r *Runner) stableUnreachable(what string) error {
 		r.logWarn(what + "; keeping the installed binary where it is")
 		return nil
 	}
-	return fail(what+". Rerun the installer to retry, or pass --channel main to install main's newest release", "git_fetch_failed")
+	return fail(what + ". Rerun the installer to retry, or pass --channel main to install main's newest release")
 }
 
 // Fetches one release asset to dest verified against its sha256, a status line tracking progress on a terminal
 func (r *Runner) download(ctx context.Context, label, url, dest, sum string) error {
 	if err := os.MkdirAll(filepath.Dir(dest), 0o777); err != nil {
-		return fail(fmt.Sprintf("cannot create %s: %v", filepath.Dir(dest), err), "filesystem_error")
+		return fail(fmt.Sprintf("cannot create %s: %v", filepath.Dir(dest), err))
 	}
 	d := pm.NewDownload([]pm.Source{{URL: url, Dest: dest, SHA256: sum}}, pm.DownloadOptions{PartialsDir: filepath.Join(r.home, "bootstrap-cache", "partials")})
 	stop := context.AfterFunc(ctx, d.Pause)
@@ -163,11 +163,11 @@ func (r *Runner) download(ctx context.Context, label, url, dest, sum string) err
 	case err == nil:
 		return nil
 	case ctx.Err() != nil:
-		return fail("cancelled by user", "interrupted")
+		return fail("cancelled by user")
 	case isDigestMismatch(err):
-		return fail(fmt.Sprintf("%s digest mismatch from %s (expected %s): %v", filepath.Base(dest), url, sum, err), "download_digest_mismatch")
+		return fail(fmt.Sprintf("%s digest mismatch from %s (expected %s): %v", filepath.Base(dest), url, sum, err))
 	}
-	return fail(fmt.Sprintf("failed to download %s: %v", url, err), "download_failed")
+	return fail(fmt.Sprintf("failed to download %s: %v", url, err))
 }
 
 // Places the release binary in the install dir and stamps the install method and release repository beside it
@@ -179,10 +179,10 @@ func (r *Runner) stageRepository(ctx context.Context) error {
 		return nil
 	}
 	if err := WriteInstallMethod(r.installDir, r.opts.InstallMethod); err != nil {
-		return fail(fmt.Sprintf("cannot stamp the install method in %s: %v", r.installDir, err), "filesystem_error")
+		return fail(fmt.Sprintf("cannot stamp the install method in %s: %v", r.installDir, err))
 	}
 	if err := WriteInstalledRepository(r.installDir, r.opts.RepoURL); err != nil {
-		return fail(fmt.Sprintf("cannot record the release repository in %s: %v", r.installDir, err), "filesystem_error")
+		return fail(fmt.Sprintf("cannot record the release repository in %s: %v", r.installDir, err))
 	}
 	return nil
 }
@@ -190,19 +190,19 @@ func (r *Runner) stageRepository(ctx context.Context) error {
 func (r *Runner) placeBinary(ctx context.Context) error {
 	dest := InstallBinaryPath(r.installDir)
 	if err := os.MkdirAll(r.installDir, 0o777); err != nil {
-		return fail(fmt.Sprintf("cannot create %s: %v", r.installDir, err), "filesystem_error")
+		return fail(fmt.Sprintf("cannot create %s: %v", r.installDir, err))
 	}
 	if r.opts.Binary != "" && r.stableApplies() {
 		if _, err := os.Stat(r.opts.Binary); err != nil {
-			return fail(fmt.Sprintf("binary %s is missing: %v", r.opts.Binary, err), "download_failed")
+			return fail(fmt.Sprintf("binary %s is missing: %v", r.opts.Binary, err))
 		}
 		if !samePath(r.opts.Binary, dest) {
 			if err := copyFile(r.opts.Binary, dest, 0o755); err != nil {
-				return fail(fmt.Sprintf("cannot place %s: %v", dest, err), "filesystem_error")
+				return fail(fmt.Sprintf("cannot place %s: %v", dest, err))
 			}
 		}
 		if err := placeCompanionFiles(filepath.Dir(r.opts.Binary), r.installDir); err != nil {
-			return fail(err.Error(), "filesystem_error")
+			return fail(err.Error())
 		}
 		tag := r.opts.Version
 		if tag == "" {
@@ -220,23 +220,23 @@ func (r *Runner) placeBinary(ctx context.Context) error {
 	sum, err := t.ExpectedSHA256(ctx, name)
 	if err != nil {
 		if errors.As(err, new(errDigestMismatch)) {
-			return fail(err.Error(), "download_digest_mismatch")
+			return fail(err.Error())
 		}
-		return fail(err.Error(), "download_failed")
+		return fail(err.Error())
 	}
 	unpacked, err := os.MkdirTemp(r.installDir, ".icebath-release-")
 	if err != nil {
-		return fail(fmt.Sprintf("cannot stage the release in %s: %v", r.installDir, err), "filesystem_error")
+		return fail(fmt.Sprintf("cannot stage the release in %s: %v", r.installDir, err))
 	}
 	defer os.RemoveAll(unpacked)
 	if err := r.download(ctx, fmt.Sprintf("Downloading Icebath Agent %s (%s-%s)", t.Tag, goos, goarch), t.AssetURL(name), filepath.Join(unpacked, name), sum); err != nil {
 		return err
 	}
 	if err := extractReleaseArchive(filepath.Join(unpacked, name), unpacked, goos); err != nil {
-		return fail(err.Error(), "download_failed")
+		return fail(err.Error())
 	}
 	if err := placeUnpackedRelease(unpacked, r.installDir, goos); err != nil {
-		return fail(err.Error(), "filesystem_error")
+		return fail(err.Error())
 	}
 	r.logSuccess(fmt.Sprintf("Icebath Agent %s installed at %s", t.Tag, dest))
 	return nil
@@ -252,7 +252,7 @@ func displayTag(tag string) string {
 func (r *Runner) stageConfig(ctx context.Context) error {
 	for _, sub := range []string{"cron", "sessions", "logs", "pairing", "hooks", "image_cache", "audio_cache", "memories", "skills"} {
 		if err := os.MkdirAll(filepath.Join(r.home, sub), 0o777); err != nil {
-			return fail(fmt.Sprintf("cannot create %s: %v", filepath.Join(r.home, sub), err), "filesystem_error")
+			return fail(fmt.Sprintf("cannot create %s: %v", filepath.Join(r.home, sub), err))
 		}
 	}
 	env := filepath.Join(r.home, ".env")
@@ -260,20 +260,20 @@ func (r *Runner) stageConfig(ctx context.Context) error {
 		if copyFile(filepath.Join(r.installDir, ".env.example"), env, 0o600) != nil {
 			f, err := os.OpenFile(env, os.O_CREATE|os.O_WRONLY, 0o600)
 			if err != nil {
-				return fail(fmt.Sprintf("cannot create %s: %v", env, err), "filesystem_error")
+				return fail(fmt.Sprintf("cannot create %s: %v", env, err))
 			}
 			f.Close()
 		}
 	}
 	if err := os.Chmod(env, 0o600); err != nil {
-		return fail(fmt.Sprintf("cannot restrict %s: %v", env, err), "filesystem_error")
+		return fail(fmt.Sprintf("cannot restrict %s: %v", env, err))
 	}
 	cfg := filepath.Join(r.home, "config.yaml")
 	example := filepath.Join(r.installDir, "cli-config.yaml.example")
 	if _, err := os.Stat(cfg); err != nil {
 		if _, err := os.Stat(example); err == nil {
 			if err := copyFile(example, cfg, 0o644); err != nil {
-				return fail(fmt.Sprintf("cannot create %s: %v", cfg, err), "filesystem_error")
+				return fail(fmt.Sprintf("cannot create %s: %v", cfg, err))
 			}
 		}
 	}
@@ -286,7 +286,7 @@ func (r *Runner) stageConfig(ctx context.Context) error {
 	}
 	if len(declined) > 0 {
 		if _, err := pm.RecordDeclined(ctx, declined, nil, r.installDir); err != nil {
-			return fail(fmt.Sprintf("could not record the opt-outs %s: %v", strings.Join(declined, ", "), err), "filesystem_error")
+			return fail(fmt.Sprintf("could not record the opt-outs %s: %v", strings.Join(declined, ", "), err))
 		}
 		for _, name := range declined {
 			r.logSuccess(fmt.Sprintf("%s left out of default installs; undo with 'icebath pm install %s'", name, name))
@@ -298,14 +298,14 @@ func (r *Runner) stageConfig(ctx context.Context) error {
 
 func (r *Runner) stageProducts(ctx context.Context) error {
 	if _, err := os.Stat(InstallBinaryPath(r.installDir)); err != nil {
-		return fail("command publication failed: no icebath binary in "+r.installDir, "products_build_failed")
+		return fail("command publication failed: no icebath binary in " + r.installDir)
 	}
 	res, err := pm.ExposeCLI(ctx, r.installDir, true)
 	if err != nil {
-		return fail("command publication failed: "+err.Error(), "products_build_failed")
+		return fail("command publication failed: " + err.Error())
 	}
 	if !res.OK {
-		return fail("command publication failed: "+res.Error, "products_build_failed")
+		return fail("command publication failed: " + res.Error)
 	}
 	for _, name := range res.Written {
 		r.logSuccess("published " + name)
@@ -353,7 +353,7 @@ func (r *Runner) stageRuntimes(ctx context.Context) error {
 	cmd.Env = append(os.Environ(), "ICEBATH_HOME="+r.home)
 	cmd.Stdout, cmd.Stderr = r.stdout, r.stderr
 	if err := cmd.Run(); err != nil {
-		return fail("pm install failed", "deps_install_failed")
+		return fail("pm install failed")
 	}
 	r.logSuccess("dependencies installed")
 	return nil
@@ -367,7 +367,7 @@ func (r *Runner) stageSetup(ctx context.Context) error {
 	}
 	defer tty.Close()
 	if err := r.runInteractive(tty); err != nil {
-		return fail("setup failed", "setup_failed")
+		return fail("setup failed")
 	}
 	return nil
 }
@@ -380,7 +380,7 @@ func (r *Runner) stageGateway(ctx context.Context) error {
 	}
 	defer tty.Close()
 	if err := r.runInteractive(tty, "gateway", "install", "--if-missing"); err != nil {
-		return fail("gateway installation failed", "gateway_failed")
+		return fail("gateway installation failed")
 	}
 	return nil
 }
@@ -393,13 +393,13 @@ func (r *Runner) stageComplete(ctx context.Context) error {
 	if commit != "" {
 		branch := r.opts.Branch
 		if _, err := writeMarker(r.installDir, &commit, &branch, time.Now().UTC().Truncate(time.Second)); err != nil {
-			return fail(err.Error(), "filesystem_error")
+			return fail(err.Error())
 		}
 	}
 	if r.opts.InstallMethod == MethodWinGet {
 		version := strings.TrimPrefix(InstalledRelease(ctx, InstallBinaryPath(r.installDir)).Tag, "v")
 		if err := registerUninstallEntry(r.installDir, version); err != nil {
-			return fail("cannot register icebath in Apps and Features: "+err.Error(), "filesystem_error")
+			return fail("cannot register icebath in Apps and Features: " + err.Error())
 		}
 	}
 	if r.opts.Channel != "" {
@@ -411,7 +411,7 @@ func (r *Runner) stageComplete(ctx context.Context) error {
 					r.line(Stderr, line)
 				}
 			}
-			return fail(fmt.Sprintf("could not save the %s update channel", r.opts.Channel), "other")
+			return fail(fmt.Sprintf("could not save the %s update channel", r.opts.Channel))
 		}
 	}
 	r.logSuccess("Icebath Agent install complete. Run: icebath")

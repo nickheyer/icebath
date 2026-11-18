@@ -145,7 +145,7 @@ func (s *Store) redactCronPayload(text, what string) (out string) {
 	}
 	defer func() {
 		if r := recover(); r != nil {
-			s.logAs("cron.scheduler").Warn(fmt.Sprintf("Failed to redact secrets from cron %s: %v", what, r))
+			s.log.Warn(fmt.Sprintf("Failed to redact secrets from cron %s: %v", what, r))
 			out = "[REDACTED - redaction failed]"
 		}
 	}()
@@ -176,14 +176,14 @@ func (s *Store) maybeMirrorCronDelivery(ctx context.Context, job *Job, platform,
 	}
 	defer func() {
 		if r := recover(); r != nil {
-			s.logAs("cron.scheduler").Debug(fmt.Sprintf("Job '%s': delivery mirror failed for %s:%s: %v", jobIDOr(job, "?"), platform, chatID, r))
+			s.log.Debug(fmt.Sprintf("Job '%s': delivery mirror failed for %s:%s: %v", jobIDOr(job, "?"), platform, chatID, r))
 		}
 	}()
 	ok := gateway.MirrorToSession(ctx, platform, chatID, s.cronMirrorMessage(job, text), gateway.MirrorOptions{SourceLabel: "cron", ThreadID: optStr(threadID), UserID: userID, Role: "user"})
 	if ok {
-		s.logAs("cron.scheduler").Info(fmt.Sprintf("Job '%s': mirrored delivery into %s:%s session transcript", jobIDOr(job, "?"), platform, chatID))
+		s.log.Info(fmt.Sprintf("Job '%s': mirrored delivery into %s:%s session transcript", jobIDOr(job, "?"), platform, chatID))
 	} else {
-		s.logAs("cron.scheduler").Debug(fmt.Sprintf("Job '%s': delivery mirror skipped for %s:%s (no matching gateway session — cold start)", jobIDOr(job, "?"), platform, chatID))
+		s.log.Debug(fmt.Sprintf("Job '%s': delivery mirror skipped for %s:%s (no matching gateway session — cold start)", jobIDOr(job, "?"), platform, chatID))
 	}
 }
 
@@ -249,12 +249,12 @@ func (s *Store) getConfigHomeChannel(ctx context.Context, platform string) (home
 	}()
 	cfg, err := loadGatewayConfig(ctx)
 	if err != nil {
-		s.logAs("cron.scheduler").Debug(fmt.Sprintf("config home_channel lookup failed for platform %s", pyrepr.Repr(platform)))
+		s.log.Debug(fmt.Sprintf("config home_channel lookup failed for platform %s", pyrepr.Repr(platform)))
 		return nil
 	}
 	p, err := gateway.ParsePlatform(ctx, strings.ToLower(platform))
 	if err != nil {
-		s.logAs("cron.scheduler").Debug(fmt.Sprintf("config home_channel lookup failed for platform %s", pyrepr.Repr(platform)))
+		s.log.Debug(fmt.Sprintf("config home_channel lookup failed for platform %s", pyrepr.Repr(platform)))
 		return nil
 	}
 	return cfg.GetHomeChannel(p)
@@ -348,7 +348,7 @@ func (s *Store) relayFrontedConnectedPlatforms(ctx context.Context, connected ma
 	}
 	fronted, err := gateway.RelayFrontedPlatformsChecked(ctx)
 	if err != nil {
-		s.logAs("cron.scheduler").Debug("relay fronted-platform lookup failed")
+		s.log.Debug("relay fronted-platform lookup failed")
 		return map[string]bool{}
 	}
 	return fronted
@@ -399,7 +399,7 @@ func (s *Store) resolveSingleDeliveryTarget(ctx context.Context, job *Job, deliv
 		for _, platform := range iterHomeTargetPlatforms(ctx) {
 			if chatID := s.getHomeTargetChatID(ctx, platform); chatID != "" {
 				name := jobNameOr(job, jobIDOr(job, "?"))
-				s.logAs("cron.scheduler").Info(fmt.Sprintf("Job '%s' has deliver=origin but no origin; falling back to %s home channel", name, platform))
+				s.log.Info(fmt.Sprintf("Job '%s' has deliver=origin but no origin; falling back to %s home channel", name, platform))
 				return s.homeTarget(ctx, platform, chatID, "origin_fallback"), true
 			}
 		}
@@ -410,7 +410,7 @@ func (s *Store) resolveSingleDeliveryTarget(ctx context.Context, job *Job, deliv
 		gateway.PrepareSendMessagePlatforms(ctx)
 		chatID, threadID, resolutionErr := gateway.ResolveSendTarget(ctx, key, rest, true)
 		if resolutionErr != "" {
-			s.logAs("cron.scheduler").Warn(fmt.Sprintf("Invalid cron delivery target '%s': %s", deliverValue, resolutionErr))
+			s.log.Warn(fmt.Sprintf("Invalid cron delivery target '%s': %s", deliverValue, resolutionErr))
 			return Target{}, false
 		}
 		thread := ""
@@ -449,17 +449,17 @@ func (s *Store) resolveBotChatTarget(job *Job, profileArg string) (t Target, ok 
 	}
 	defer func() {
 		if r := recover(); r != nil {
-			s.logAs("cron.scheduler").Warn(fmt.Sprintf("Job '%s': failed to resolve bot-chat profile '%s'", jobIDOr(job, "?"), profileArg))
+			s.log.Warn(fmt.Sprintf("Job '%s': failed to resolve bot-chat profile '%s'", jobIDOr(job, "?"), profileArg))
 			t, ok = Target{}, false
 		}
 	}()
 	canon, err := profiles.NormalizeProfileName(profileArg)
 	if err != nil {
-		s.logAs("cron.scheduler").Warn(fmt.Sprintf("Job '%s': failed to resolve bot-chat profile '%s'", jobIDOr(job, "?"), profileArg))
+		s.log.Warn(fmt.Sprintf("Job '%s': failed to resolve bot-chat profile '%s'", jobIDOr(job, "?"), profileArg))
 		return Target{}, false
 	}
 	if !profiles.ProfileExists(canon) {
-		s.logAs("cron.scheduler").Warn(fmt.Sprintf("Job '%s': bot-chat delivery profile '%s' not found on this machine — skipping target", jobIDOr(job, "?"), profileArg))
+		s.log.Warn(fmt.Sprintf("Job '%s': bot-chat delivery profile '%s' not found on this machine — skipping target", jobIDOr(job, "?"), profileArg))
 		return Target{}, false
 	}
 	return Target{Platform: BotChatPlatform, ChatID: canon}, true

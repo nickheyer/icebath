@@ -7,7 +7,7 @@ import (
 	"testing"
 )
 
-func TestInstallProceedsWhenHermesSatisfiesTheSpecOrItsVersionIsUnknown(t *testing.T) {
+func TestInstallProceedsWhenIcebathSatisfiesTheSpecOrItsVersionIsUnknown(t *testing.T) {
 	for _, tc := range []struct{ running, spec string }{{"0.30.0", ">=0.30"}, {"unknown", ">=99.0"}} {
 		t.Run(tc.running, func(t *testing.T) {
 			w := catWorld(t)
@@ -26,7 +26,7 @@ func TestInstallProceedsWhenHermesSatisfiesTheSpecOrItsVersionIsUnknown(t *testi
 	}
 }
 
-func TestPortableCatalogEntryGetsItsHermesFloorFromTheCatalog(t *testing.T) {
+func TestPortableCatalogEntryGetsItsIcebathFloorFromTheCatalog(t *testing.T) {
 	w := catWorld(t)
 	RunningVersion = "0.30.0"
 	const refusal = "cat-plugin needs Icebath >=0.31; this is 0.30.0."

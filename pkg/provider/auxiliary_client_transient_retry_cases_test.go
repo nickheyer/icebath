@@ -7,7 +7,7 @@ import (
 	"testing"
 )
 
-// Route, cached client and identity validation, as the hermes _patches fixture installs them
+// Route, cached client and identity validation, as the patches fixture installs them
 func auxTransientPatches(t *testing.T, client AuxClient) context.Context {
 	t.Helper()
 	ctx := auxMainTestHome(t, "")

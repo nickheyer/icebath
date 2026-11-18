@@ -5,7 +5,6 @@ import (
 	"database/sql"
 	"database/sql/driver"
 	"fmt"
-	"github.com/nickheyer/icebath/pkg/internal/pyshutil"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -15,6 +14,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/nickheyer/icebath/pkg/internal/pyshutil"
 
 	"modernc.org/sqlite"
 
@@ -65,7 +66,7 @@ func worktreeGitOut(args []string, cwd string, timeout time.Duration) (string, b
 // Runs git swallowing every error, logging it at debug under the given prefix
 func worktreeGitQuiet(args []string, cwd string, timeout time.Duration, log string, env map[string]string) {
 	if _, err := worktreeGit(args, cwd, timeout, env); err != nil && log != "" {
-		toolsLogger(nil).Debug(fmt.Sprintf("%s: %s", log, err))
+		envLog(nil).Debug(fmt.Sprintf("%s: %s", log, err))
 	}
 }
 
@@ -175,7 +176,7 @@ func copyWorktreeIncludes(repoRoot, wtPath string) {
 	if len(entries) == 0 {
 		return
 	}
-	log := toolsLogger(nil)
+	log := envLog(nil)
 	repoResolved, err := pypath.Realpath(repoRoot, pypath.Lax)
 	if err != nil {
 		log.Debug(fmt.Sprintf("Error copying .worktreeinclude entries: %s", pypath.OSErrorText(err)))
@@ -310,7 +311,7 @@ func deepenShallowRepo(repoRoot string, timeout time.Duration) bool {
 	}
 	remotes, ok, err := worktreeGitOut([]string{"remote"}, repoRoot, 10*time.Second)
 	if err != nil {
-		toolsLogger(nil).Debug(fmt.Sprintf("Deepening shallow repo failed (non-fatal): %s", err))
+		envLog(nil).Debug(fmt.Sprintf("Deepening shallow repo failed (non-fatal): %s", err))
 		return false
 	}
 	if !ok || remotes == "" {
@@ -334,7 +335,7 @@ func deepenShallowRepo(repoRoot string, timeout time.Duration) bool {
 				if _, isTimeout := err.(*pysubprocess.TimeoutExpired); isTimeout {
 					return true
 				}
-				toolsLogger(nil).Debug(fmt.Sprintf("Deepening shallow repo failed (non-fatal): %s", err))
+				envLog(nil).Debug(fmt.Sprintf("Deepening shallow repo failed (non-fatal): %s", err))
 				return true
 			}
 			if r.Returncode == 0 {
@@ -345,7 +346,7 @@ func deepenShallowRepo(repoRoot string, timeout time.Duration) bool {
 				label = " " + strings.Join(extra, " ")
 			}
 			stderr := pystr.Strip(r.Stderr)
-			toolsLogger(nil).Debug(fmt.Sprintf("git fetch --unshallow%s failed: %s", label, pystr.Slice(stderr, -500, pystr.Len(stderr))))
+			envLog(nil).Debug(fmt.Sprintf("git fetch --unshallow%s failed: %s", label, pystr.Slice(stderr, -500, pystr.Len(stderr))))
 		}
 		return false
 	}()
@@ -354,12 +355,12 @@ func deepenShallowRepo(repoRoot string, timeout time.Duration) bool {
 	}
 	deepened := !repoIsShallow(repoRoot, 5*time.Second)
 	if deepened {
-		toolsLogger(nil).Info(fmt.Sprintf("Deepened shallow clone at %s so worktree cleanup can verify push state", repoRoot))
+		envLog(nil).Info(fmt.Sprintf("Deepened shallow clone at %s so worktree cleanup can verify push state", repoRoot))
 	}
 	return deepened
 }
 
-// Retained git cherry verdicts kept on disk, the module attribute hermes tests patch
+// Retained git cherry verdicts kept on disk, the module attribute tests patch
 var worktreeMergeCacheMax = 1000
 
 // Insertion ordered verdict map with dict update semantics
@@ -441,7 +442,7 @@ func saveWorktreeMergeCache(ctx context.Context, verdicts *mergeVerdicts) {
 		err = config.AtomicJSONWriteWith(ctx, path, payload)
 	}
 	if err != nil {
-		toolsLogger(nil).Debug(fmt.Sprintf("Could not persist worktree merge cache: %s", err))
+		envLog(nil).Debug(fmt.Sprintf("Could not persist worktree merge cache: %s", err))
 	}
 }
 
@@ -602,16 +603,16 @@ func retainWorktreeForSession(repoRoot, worktreePath, sessionID, dbPath string) 
 	worktreeGitQuiet([]string{"worktree", "unlock", worktreePath}, repoRoot, 10*time.Second, "worktree unlock before retain failed", nil)
 	r, err := worktreeGit([]string{"worktree", "lock", "--reason", fmt.Sprintf("icebath session=%s db=%s", sessionID, dbPath), worktreePath}, repoRoot, 10*time.Second, nil)
 	if err != nil {
-		toolsLogger(nil).Debug(fmt.Sprintf("worktree retain lock failed for %s: %s", worktreePath, err))
+		envLog(nil).Debug(fmt.Sprintf("worktree retain lock failed for %s: %s", worktreePath, err))
 		return false
 	}
 	return r.Returncode == 0
 }
 
-// Native path identity of a spelling, the os.path.normcase hermes tests patch
+// Native path identity of a spelling, the os.path.normcase tests patch
 var insideTreeNormcase = pypath.Normcase
 
-// Core count the classification pool is sized from, the os.cpu_count hermes tests patch
+// Core count the classification pool is sized from, the os.cpu_count tests patch
 var worktreeCPUCount = runtime.NumCPU
 
 // Comparable key of a path under the native identity with forward slashes and no trailing slash
@@ -719,7 +720,7 @@ func treeStillServed(dbPath, worktreePath string) string {
 			return "session"
 		}
 		if err != nil {
-			toolsLogger(nil).Debug(fmt.Sprintf("retained worktree serve check failed (%s); keeping tree", err))
+			envLog(nil).Debug(fmt.Sprintf("retained worktree serve check failed (%s); keeping tree", err))
 			return "unreadable"
 		}
 	}
@@ -755,12 +756,12 @@ func cronBoundToTree(worktreePath string, chats map[string]bool) bool {
 		if os.IsNotExist(err) {
 			return false
 		}
-		toolsLogger(nil).Debug(fmt.Sprintf("cron store unreadable (%s); keeping tree", err))
+		envLog(nil).Debug(fmt.Sprintf("cron store unreadable (%s); keeping tree", err))
 		return true
 	}
 	data, err := WorktreeCronStore.ParseJobs(jobsFile)
 	if err != nil {
-		toolsLogger(nil).Debug(fmt.Sprintf("cron store unreadable (%s); keeping tree", err))
+		envLog(nil).Debug(fmt.Sprintf("cron store unreadable (%s); keeping tree", err))
 		return true
 	}
 	jobs := data
@@ -826,7 +827,7 @@ func retainedTreeIsLive(dbPath, worktreePath string, pendingOnly bool) bool {
 			return false
 		}
 	}
-	toolsLogger(nil).Debug(fmt.Sprintf("retained worktree session check failed (%s); keeping tree", err))
+	envLog(nil).Debug(fmt.Sprintf("retained worktree session check failed (%s); keeping tree", err))
 	return true
 }
 
@@ -1057,7 +1058,7 @@ func reapPruneVerdicts(repoRoot string, verdicts []pruneVerdict, staleWorkCutoff
 			continue
 		}
 		if v.verdict == "locked-live" {
-			toolsLogger(nil).Debug("Skipping live-locked worktree: " + name)
+			envLog(nil).Debug("Skipping live-locked worktree: " + name)
 			continue
 		}
 		if blocked := RemovalBlocked(v.entry); blocked != nil {
@@ -1078,7 +1079,7 @@ func reapPruneVerdicts(repoRoot string, verdicts []pruneVerdict, staleWorkCutoff
 				return err
 			}
 			if rm.Returncode != 0 {
-				toolsLogger(nil).Debug(fmt.Sprintf("Failed to remove worktree %s: %s", name, pystr.Strip(rm.Stderr)))
+				envLog(nil).Debug(fmt.Sprintf("Failed to remove worktree %s: %s", name, pystr.Strip(rm.Stderr)))
 				return nil
 			}
 			if branch != "" && v.verdict == "reap-keep-branch" {
@@ -1088,11 +1089,11 @@ func reapPruneVerdicts(repoRoot string, verdicts []pruneVerdict, staleWorkCutoff
 					return err
 				}
 			}
-			toolsLogger(nil).Debug(fmt.Sprintf("Pruned stale worktree: %s (force=%s)", name, pyrepr.Str(v.force)))
+			envLog(nil).Debug(fmt.Sprintf("Pruned stale worktree: %s (force=%s)", name, pyrepr.Str(v.force)))
 			return nil
 		}()
 		if err != nil {
-			toolsLogger(nil).Debug(fmt.Sprintf("Failed to prune worktree %s: %s", name, err))
+			envLog(nil).Debug(fmt.Sprintf("Failed to prune worktree %s: %s", name, err))
 		}
 	}
 	return preservedStale, keptBranches
@@ -1113,16 +1114,16 @@ var collectOrphanInstallStates = func(ctx context.Context) ([]string, error) {
 func reclaimOrphanInstallStates(ctx context.Context) {
 	defer func() {
 		if r := recover(); r != nil {
-			toolsLogger(nil).Debug(fmt.Sprintf("Orphan install-state reclaim failed: %v", r))
+			envLog(nil).Debug(fmt.Sprintf("Orphan install-state reclaim failed: %v", r))
 		}
 	}()
 	reclaimed, err := collectOrphanInstallStates(ctx)
 	if err != nil {
-		toolsLogger(nil).Debug(fmt.Sprintf("Orphan install-state reclaim failed: %s", err))
+		envLog(nil).Debug(fmt.Sprintf("Orphan install-state reclaim failed: %s", err))
 		return
 	}
 	if len(reclaimed) > 0 {
-		toolsLogger(nil).Info(fmt.Sprintf("Reclaimed %d dependency state dir(s) of deleted checkouts", len(reclaimed)))
+		envLog(nil).Info(fmt.Sprintf("Reclaimed %d dependency state dir(s) of deleted checkouts", len(reclaimed)))
 	}
 }
 
@@ -1154,7 +1155,7 @@ func pruneStaleWorktreeTrees(ctx context.Context, repoRoot string, maxAgeHours i
 	if len(preservedStale) > 0 {
 		sorted := slices.Clone(preservedStale)
 		sort.Strings(sorted)
-		toolsLogger(nil).Warn(fmt.Sprintf("Preserving %d worktree(s) older than 7 days with unmerged work "+
+		envLog(nil).Warn(fmt.Sprintf("Preserving %d worktree(s) older than 7 days with unmerged work "+
 			"(run `icebath worktree prune` to review and reclaim): %s", len(preservedStale), strings.Join(sorted, ", ")))
 	}
 	pruneOrphanedBranches(repoRoot, keptBranches)
@@ -1171,7 +1172,7 @@ func warnWorktreeFootprint(repoRoot string) {
 		if sizeMB != nil && *sizeMB != 0 {
 			sizeTxt = fmt.Sprintf(" (%.1fGB)", float64(*sizeMB)/1024)
 		}
-		toolsLogger(nil).Warn(fmt.Sprintf(".worktrees/ holds %d tree(s)%s — run `icebath worktree list` "+
+		envLog(nil).Warn(fmt.Sprintf(".worktrees/ holds %d tree(s)%s — run `icebath worktree list` "+
 			"to audit and `icebath worktree prune` to reclaim safely.", count, sizeTxt))
 	}
 }
@@ -1218,5 +1219,5 @@ func pruneOrphanedBranches(repoRoot string, protect map[string]bool) {
 		worktreeGitQuiet(append([]string{"branch", "-D"}, orphaned[i:min(i+50, len(orphaned))]...), repoRoot, 30*time.Second,
 			"Failed to prune orphaned branches", NoninteractiveGitEnv(nil))
 	}
-	toolsLogger(nil).Debug(fmt.Sprintf("Pruned %d orphaned branches", len(orphaned)))
+	envLog(nil).Debug(fmt.Sprintf("Pruned %d orphaned branches", len(orphaned)))
 }

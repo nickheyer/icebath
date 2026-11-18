@@ -6,6 +6,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
+	"fmt"
 	"hash"
 	"io"
 	"io/fs"
@@ -682,7 +683,7 @@ func copyBounded(ctx context.Context, source io.Reader, output *os.File, limit, 
 	return digest, size, output.Sync()
 }
 
-// Refuses a batch whose validated manifest sizes pass the admission's byte limit
+// Refuses a batch whose validated manifest sizes pass the admission's byte limit, naming the limit
 func validateMediaBatchSize(ctx context.Context, sizes []int64) error {
 	var sum int64
 	for _, size := range sizes {
@@ -690,7 +691,8 @@ func validateMediaBatchSize(ctx context.Context, sizes []int64) error {
 	}
 	limit := inboundMediaLimit(ctx)
 	if mediacache.ValidateInboundMediaSize(ctx, home.Dir(ctx), sum, "", &limit) != nil {
-		return runtimeRefusal("invalid_params")
+		return roomRefusal("invalid_params", fmt.Sprintf("the files of this turn are %s, over the %s limit this gateway sets for inbound files (gateway.max_inbound_media_bytes)",
+			roomBytes(sum), roomBytes(limit)))
 	}
 	return nil
 }

@@ -4,7 +4,6 @@ import (
 	"context"
 	"crypto/sha256"
 	"fmt"
-	"log/slog"
 	"slices"
 	"strings"
 
@@ -14,7 +13,7 @@ import (
 )
 
 const (
-	hermesInsertMessageSQL = `INSERT INTO messages (session_id, role, content, tool_call_id,
+	icebathInsertMessageSQL = `INSERT INTO messages (session_id, role, content, tool_call_id,
                    tool_calls, tool_name, effect_disposition, timestamp, token_count, finish_reason,
                    reasoning, reasoning_content, reasoning_details, codex_reasoning_items,
                    codex_message_items, platform_message_id, observed, _compressed_summary, active, api_content, display_kind,
@@ -196,12 +195,12 @@ func encodeDisplayMetadata(displayMetadata any) (any, error) {
 			return nil, nil
 		}
 		if !isMapping(v) {
-			slog.Warn("Ignoring non-object display metadata on write")
+			pkgLog().Warn("Ignoring non-object display metadata on write")
 			return nil, nil
 		}
 		displayMetadata = v
 	} else if !isMapping(displayMetadata) {
-		slog.Warn(fmt.Sprintf("Ignoring unexpected display metadata type on write: %s", pyrepr.TypeName(displayMetadata)))
+		pkgLog().Warn(fmt.Sprintf("Ignoring unexpected display metadata type on write: %s", pyrepr.TypeName(displayMetadata)))
 		return nil, nil
 	}
 	text, err := pyDumps(displayMetadata, pyJSONDefault)
@@ -560,15 +559,7 @@ func messageRowParams(sessionID, role string, msg map[string]any, toolCalls any,
 		encodedToolCalls = text
 	}
 	encodedToolName := scrubSurrogates(msg["tool_name"])
-	displayMetadata := msg["display_metadata"]
-	if pyTruthy(msg[DataUse]) && (displayMetadata == nil || isMapping(displayMetadata)) {
-		merged := pyObject{}
-		if displayMetadata != nil {
-			merged = toPyObject(displayMetadata)
-		}
-		displayMetadata = pyObjectSet(merged, DataUse, append([]any{}, pyIter(msg[DataUse])...))
-	}
-	encodedMeta, err := encodeDisplayMetadata(displayMetadata)
+	encodedMeta, err := encodeDisplayMetadata(msg["display_metadata"])
 	if err != nil {
 		return nil, err
 	}
@@ -742,7 +733,7 @@ func (d *SessionDB) AppendMessage(ctx context.Context, sessionID string, fields 
 			turnLeaseHolder: guards.TurnLeaseHolder, turnLeaseTTLSeconds: guards.TurnLeaseTTLSeconds}); err != nil {
 			return err
 		}
-		res, err := conn.ExecContext(ctx, hermesInsertMessageSQL, params...)
+		res, err := conn.ExecContext(ctx, icebathInsertMessageSQL, params...)
 		if err != nil {
 			return err
 		}

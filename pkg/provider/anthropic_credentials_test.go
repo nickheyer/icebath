@@ -62,8 +62,8 @@ func TestSpentRotationRegistryAndSidecar(t *testing.T) {
 	t.Cleanup(ResetSpentRotationsForTests)
 	h := newTestHome(t)
 	env := testEnv(t, h)
-	source := SpentRotationSourcePath(env, "hermes_pkce")
-	if source != HermesOAuthFile(env) || SpentRotationSourcePath(env, "manual") != "" {
+	source := SpentRotationSourcePath(env, "icebath_pkce")
+	if source != IcebathOAuthFile(env) || SpentRotationSourcePath(env, "manual") != "" {
 		t.Fatal("only singleton sources have a sidecar")
 	}
 	MarkRotationConsumedUncommitted(source, "spent-rt", "")

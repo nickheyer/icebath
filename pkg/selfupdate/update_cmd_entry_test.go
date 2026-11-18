@@ -7,45 +7,26 @@ import (
 	"io"
 	"os"
 	"path/filepath"
-	"reflect"
-	"sync"
 	"testing"
 
 	"github.com/nickheyer/icebath/pkg/gateway"
-	"github.com/nickheyer/icebath/pkg/observability"
 	"github.com/nickheyer/icebath/pkg/pm"
 	"github.com/nickheyer/icebath/pkg/selfupdate/updaterecord"
 )
 
-// Home with shared metrics enabled and a recorder capturing every update run row
-func ucMetricRows(t *testing.T) (context.Context, string, func() []map[string]string) {
+// Fresh update home and the receipt scope of one update command
+func ucReceiptHome(t *testing.T) (context.Context, string) {
 	t.Helper()
 	h := filepath.Join(t.TempDir(), "home")
 	if err := os.MkdirAll(h, 0o755); err != nil {
 		t.Fatal(err)
 	}
 	t.Setenv("ICEBATH_HOME", h)
-	if err := os.WriteFile(filepath.Join(h, "config.yaml"), []byte("telemetry:\n  shared_metrics:\n    enabled: true\n"), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	var mu sync.Mutex
-	var captured []map[string]string
-	t.Cleanup(observability.SetRelayRecorder(func(context.Context) bool { return true }, func(_ context.Context, mark string, data map[string]string) {
-		if mark == observability.UpdateRunMark {
-			mu.Lock()
-			captured = append(captured, data)
-			mu.Unlock()
-		}
-	}))
-	return updaterecord.UpdateReceiptScope(context.Background()), h, func() []map[string]string {
-		mu.Lock()
-		defer mu.Unlock()
-		return append([]map[string]string{}, captured...)
-	}
+	return updaterecord.UpdateReceiptScope(context.Background()), h
 }
 
-func TestExitsBeforeTheReceiptOpensCountOnceAndLeaveTheHoldersReceiptAlone(t *testing.T) {
-	ctx, h, runs := ucMetricRows(t)
+func TestExitsBeforeTheReceiptOpensLeaveTheHoldersReceiptAlone(t *testing.T) {
+	ctx, h := ucReceiptHome(t)
 	updaterecord.BeginUpdateReceipt(ctx, nil, "")
 	latest := filepath.Join(h, "logs", "update_receipts", "latest.json")
 	holders, err := os.ReadFile(latest)
@@ -77,21 +58,6 @@ func TestExitsBeforeTheReceiptOpensCountOnceAndLeaveTheHoldersReceiptAlone(t *te
 	}
 	if refusedExit.Code != 2 || inProgressExit.Code != 1 {
 		t.Fatalf("exit codes = %d, %d", refusedExit.Code, inProgressExit.Code)
-	}
-	var got [][3]string
-	for _, row := range runs() {
-		got = append(got, [3]string{row["failure_class"], row["outcome"], row["failed_stage"]})
-		dimensions := map[string]any{}
-		for key, value := range row {
-			dimensions[key] = value
-		}
-		if !observability.CounterDimensionsAreValid(observability.UpdateRunMetric, dimensions) {
-			t.Fatalf("row %v carries dimensions outside the contract", row)
-		}
-	}
-	want := [][3]string{{"lock_held", "refused", "none"}, {"git_in_progress", "failed", "other"}}
-	if !reflect.DeepEqual(got, want) {
-		t.Fatalf("rows = %v, want %v", got, want)
 	}
 	if after, err := os.ReadFile(latest); err != nil || !bytes.Equal(after, holders) {
 		t.Fatalf("the holder's latest.json changed: %v", err)

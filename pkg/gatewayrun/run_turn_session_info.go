@@ -84,7 +84,7 @@ func (r *GatewayRunner) hmwaDeliverAutoResetNotice(ctx context.Context, entry *g
 	}
 	*turnSidecarNotes = append(*turnSidecarNotes, contextNote)
 	if err := r.sendAutoResetNotice(ctx, source, resetReason == "suspended"); err != nil {
-		runLog().Debug(fmt.Sprintf("Auto-reset notification failed (non-fatal): %s", err))
+		pkgLog().Debug(fmt.Sprintf("Auto-reset notification failed (non-fatal): %s", err))
 	}
 	entry.AutoResetReason = nil
 }

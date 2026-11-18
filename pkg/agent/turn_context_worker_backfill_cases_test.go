@@ -11,7 +11,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/state"
 )
 
-// Registered compute worker execution on session owned, the hermes_state conftest worker fixture
+// Registered compute worker execution on session owned, the test setup worker fixture
 func workerFixture(t *testing.T) (*state.SessionDB, *RuntimeSessionStore) {
 	t.Helper()
 	caseHome(t)

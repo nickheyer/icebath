@@ -64,12 +64,6 @@ var poolExtraKeys = map[string]bool{
 	"failure_reason": true,
 }
 
-// Nous singleton metadata mirrored between auth.json state and the entry extras
-var nousExtraStateKeys = []string{
-	"obtained_at", "expires_in", "agent_key_id", "agent_key_expires_in", "agent_key_reused",
-	"agent_key_obtained_at", "auth_method", "account_tier", "anon_token", "user_id", "org_id",
-}
-
 var poolFieldNames = map[string]bool{
 	"id": true, "label": true, "auth_type": true, "priority": true, "source": true, "access_token": true,
 	"refresh_token": true, "last_status": true, "last_status_at": true, "last_error_code": true,
@@ -367,29 +361,14 @@ func (e PooledCredential) secretStr(name string) string {
 	return processSecret(name)
 }
 
-// RuntimeAPIKey is the bearer a request sends, a usable Nous invoke JWT for nous
+// RuntimeAPIKey is the bearer a request sends
 func (e PooledCredential) RuntimeAPIKey() string {
-	if e.Provider == "nous" {
-		for _, pair := range [][2]string{{e.AgentKey, e.AgentKeyExpiresAt}, {e.AccessToken, e.ExpiresAt}} {
-			token := strings.TrimSpace(pair[0])
-			if token != "" && NousInvokeJWTStatus(token, e.Extra["scope"], pair[1], NousInvokeJWTMinTTL) == "" {
-				return token
-			}
-		}
-		return ""
-	}
 	return e.AccessToken
 }
 
 // RuntimeBaseURL is the endpoint the row serves, the codex proxy override winning for every reader
 func (e PooledCredential) RuntimeBaseURL() string {
-	switch e.Provider {
-	case "nous":
-		if e.InferenceBaseURL != "" {
-			return e.InferenceBaseURL
-		}
-		return e.BaseURL
-	case "openai-codex":
+	if e.Provider == "openai-codex" {
 		if override := strings.TrimRight(strings.TrimSpace(e.secretStr("ICEBATH_CODEX_BASE_URL")), "/"); override != "" {
 			return override
 		}
@@ -418,42 +397,6 @@ func scopeValues(v any) map[string]bool {
 		}
 	}
 	return out
-}
-
-// NousInvokeJWTStatus is empty when the token can be used for inference, else the refusal reason
-func NousInvokeJWTStatus(token string, scope any, expiresAt any, minTTL time.Duration) string {
-	claims := DecodeJWTClaims(token)
-	if len(claims) == 0 {
-		return "access_token_not_jwt"
-	}
-	scopes := scopeValues(scope)
-	for k := range scopeValues(claims["scope"]) {
-		scopes[k] = true
-	}
-	for k := range scopeValues(claims["scp"]) {
-		scopes[k] = true
-	}
-	if !scopes[NousInferenceInvokeScope] {
-		return "missing_inference_invoke_scope"
-	}
-	if minTTL < 0 {
-		minTTL = 0
-	}
-	if exp, ok := anyFloat(claims["exp"]); ok {
-		if exp <= nowEpoch()+minTTL.Seconds() {
-			return "invoke_jwt_expiring"
-		}
-		return ""
-	}
-	if IsExpiring(expiresAt, minTTL) {
-		return "invoke_jwt_expiry_unknown_or_expiring"
-	}
-	return ""
-}
-
-// NousInvokeJWTUsable reports whether the token carries a live inference invoke scope
-func NousInvokeJWTUsable(token string, scope any, expiresAt any) bool {
-	return NousInvokeJWTStatus(token, scope, expiresAt, NousInvokeJWTMinTTL) == ""
 }
 
 // LabelFromToken picks the email like claim of a JWT as the display label

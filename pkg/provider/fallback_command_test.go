@@ -15,7 +15,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/home"
 )
 
-// Isolated icebath home and a context bound to it, the hermes isolated_home fixture
+// Isolated icebath home and a context bound to it, the isolated_home fixture
 func fallbackTestHome(t *testing.T) (string, context.Context) {
 	t.Helper()
 	h := newTestHome(t)
@@ -59,11 +59,11 @@ func runFallback(t *testing.T, ctx context.Context, h string, sub any) (string, 
 func TestReadChainReadsNewListFormat(t *testing.T) {
 	cfg := map[string]any{"fallback_providers": []any{
 		map[string]any{"provider": "openrouter", "model": "anthropic/claude-sonnet-4.6"},
-		map[string]any{"provider": "nous", "model": "Hermes-4-Llama-3.1-405B"},
+		map[string]any{"provider": "deepseek", "model": "deepseek-v4-pro"},
 	}}
 	want := []map[string]any{
 		{"provider": "openrouter", "model": "anthropic/claude-sonnet-4.6"},
-		{"provider": "nous", "model": "Hermes-4-Llama-3.1-405B"},
+		{"provider": "deepseek", "model": "deepseek-v4-pro"},
 	}
 	if got := ReadFallbackChain(cfg); !reflect.DeepEqual(got, want) {
 		t.Fatalf("chain %v", got)
@@ -71,10 +71,10 @@ func TestReadChainReadsNewListFormat(t *testing.T) {
 }
 
 func TestReadChainReturnsCopiesNotAliases(t *testing.T) {
-	cfg := map[string]any{"fallback_providers": []any{map[string]any{"provider": "nous", "model": "foo"}}}
+	cfg := map[string]any{"fallback_providers": []any{map[string]any{"provider": "deepseek", "model": "foo"}}}
 	result := ReadFallbackChain(cfg)
 	result[0]["provider"] = "mutated"
-	if cfg["fallback_providers"].([]any)[0].(map[string]any)["provider"] != "nous" {
+	if cfg["fallback_providers"].([]any)[0].(map[string]any)["provider"] != "deepseek" {
 		t.Fatal("chain aliases the config entry")
 	}
 }
@@ -99,16 +99,16 @@ func TestListCommandListWithEntries(t *testing.T) {
 		"model": map[string]any{"provider": "anthropic", "default": "claude-sonnet-4-6"},
 		"fallback_providers": []any{
 			map[string]any{"provider": "openrouter", "model": "anthropic/claude-sonnet-4.6"},
-			map[string]any{"provider": "nous", "model": "Hermes-4"},
+			map[string]any{"provider": "deepseek", "model": "deepseek-v4"},
 		},
 	})
 	out, _, code := runFallback(t, ctx, h, "ls")
-	for _, want := range []string{"anthropic/claude-sonnet-4.6", "Hermes-4", "claude-sonnet-4-6"} {
+	for _, want := range []string{"anthropic/claude-sonnet-4.6", "deepseek-v4", "claude-sonnet-4-6"} {
 		if !strings.Contains(out, want) {
 			t.Fatalf("missing %q in %q", want, out)
 		}
 	}
-	recorded := "\n  Primary:   claude-sonnet-4-6  (via anthropic)\n\n  Fallback chain (2 entries):\n    1. anthropic/claude-sonnet-4.6  (via openrouter)\n    2. Hermes-4  (via nous)\n\n  Tried in order when the primary fails (rate-limit, 5xx, connection errors).\n  Help: icebath fallback --help\n\n"
+	recorded := "\n  Primary:   claude-sonnet-4-6  (via anthropic)\n\n  Fallback chain (2 entries):\n    1. anthropic/claude-sonnet-4.6  (via openrouter)\n    2. deepseek-v4  (via deepseek)\n\n  Tried in order when the primary fails (rate-limit, 5xx, connection errors).\n  Help: icebath fallback --help\n\n"
 	if out != recorded || code != 0 {
 		t.Fatalf("code %d out %q", code, out)
 	}
@@ -247,7 +247,7 @@ func TestRemoveCommandRemoveSelectedEntry(t *testing.T) {
 	h, ctx := fallbackTestHome(t)
 	writeConfig(t, h, map[string]any{"fallback_providers": []any{
 		map[string]any{"provider": "openrouter", "model": "gpt-5.4"},
-		map[string]any{"provider": "nous", "model": "Hermes-4"},
+		map[string]any{"provider": "deepseek", "model": "deepseek-v4"},
 		map[string]any{"provider": "anthropic", "model": "claude-sonnet-4-6"},
 	}})
 	var gotChoices []string
@@ -260,10 +260,10 @@ func TestRemoveCommandRemoveSelectedEntry(t *testing.T) {
 	if got := readConfig(t, h)["fallback_providers"]; !reflect.DeepEqual(got, want) {
 		t.Fatalf("chain %v", got)
 	}
-	if !reflect.DeepEqual(gotChoices, []string{"gpt-5.4  (via openrouter)", "Hermes-4  (via nous)", "claude-sonnet-4-6  (via anthropic)", "Cancel"}) {
+	if !reflect.DeepEqual(gotChoices, []string{"gpt-5.4  (via openrouter)", "deepseek-v4  (via deepseek)", "claude-sonnet-4-6  (via anthropic)", "Cancel"}) {
 		t.Fatalf("choices %v", gotChoices)
 	}
-	if out != "\n  Removed fallback: Hermes-4  (via nous)\n  Chain is now 2 entries long.\n\n" {
+	if out != "\n  Removed fallback: deepseek-v4  (via deepseek)\n  Chain is now 2 entries long.\n\n" {
 		t.Fatalf("out %q", out)
 	}
 }
@@ -272,14 +272,14 @@ func TestClearCommandClearWithConfirmation(t *testing.T) {
 	h, ctx := fallbackTestHome(t)
 	writeConfig(t, h, map[string]any{"fallback_providers": []any{
 		map[string]any{"provider": "openrouter", "model": "gpt-5.4"},
-		map[string]any{"provider": "nous", "model": "Hermes-4"},
+		map[string]any{"provider": "deepseek", "model": "deepseek-v4"},
 	}})
 	swapFlowSeam(t, &fallbackConfirmFn, func(io.Writer, string) (string, error) { return "y", nil })
 	out, _, _ := runFallback(t, ctx, h, "clear")
 	if got, has := readConfig(t, h)["fallback_providers"]; !has || !reflect.DeepEqual(got, []any{}) {
 		t.Fatalf("chain %v %v", got, has)
 	}
-	if out != "\n  Current fallback chain (2 entries):\n    1. gpt-5.4  (via openrouter)\n    2. Hermes-4  (via nous)\n\n\n  Fallback chain cleared.\n\n" {
+	if out != "\n  Current fallback chain (2 entries):\n    1. gpt-5.4  (via openrouter)\n    2. deepseek-v4  (via deepseek)\n\n\n  Fallback chain cleared.\n\n" {
 		t.Fatalf("out %q", out)
 	}
 }
@@ -293,7 +293,7 @@ func TestDispatcherUnknownSubcommandExits(t *testing.T) {
 	}
 }
 
-func TestFallbackCommandMatchesRecordedHermesOutput(t *testing.T) {
+func TestFallbackCommandMatchesRecordedOutput(t *testing.T) {
 	adding := "\n  Adding a fallback provider.  The picker below is the same one used by\n  `icebath model` — select the provider + model you want as a fallback.\n\n"
 	t.Run("list_empty", func(t *testing.T) {
 		h, ctx := fallbackTestHome(t)
@@ -327,9 +327,9 @@ func TestFallbackCommandMatchesRecordedHermesOutput(t *testing.T) {
 	})
 	t.Run("remove_last", func(t *testing.T) {
 		h, ctx := fallbackTestHome(t)
-		writeConfig(t, h, map[string]any{"fallback_providers": []any{map[string]any{"provider": "nous", "model": "Hermes-4"}}})
+		writeConfig(t, h, map[string]any{"fallback_providers": []any{map[string]any{"provider": "deepseek", "model": "deepseek-v4"}}})
 		swapFlowSeam(t, &fallbackChooseFn, func(string, []string, int, string) (int, error) { return 0, nil })
-		if out, _, _ := runFallback(t, ctx, h, "remove"); out != "\n  Removed fallback: Hermes-4  (via nous)\n  Fallback chain is now empty.\n\n" {
+		if out, _, _ := runFallback(t, ctx, h, "remove"); out != "\n  Removed fallback: deepseek-v4  (via deepseek)\n  Fallback chain is now empty.\n\n" {
 			t.Fatalf("out %q", out)
 		}
 		if got, has := readConfig(t, h)["fallback_providers"]; !has || !reflect.DeepEqual(got, []any{}) {
@@ -338,7 +338,7 @@ func TestFallbackCommandMatchesRecordedHermesOutput(t *testing.T) {
 	})
 	t.Run("remove_cancel", func(t *testing.T) {
 		h, ctx := fallbackTestHome(t)
-		writeConfig(t, h, map[string]any{"fallback_providers": []any{map[string]any{"provider": "nous", "model": "Hermes-4"}}})
+		writeConfig(t, h, map[string]any{"fallback_providers": []any{map[string]any{"provider": "deepseek", "model": "deepseek-v4"}}})
 		swapFlowSeam(t, &fallbackChooseFn, func(string, []string, int, string) (int, error) { return -1, nil })
 		if out, _, _ := runFallback(t, ctx, h, "remove"); out != "\n  Cancelled — no change.\n" {
 			t.Fatalf("out %q", out)
@@ -405,7 +405,7 @@ func TestFallbackEntryFormattingAndPrimaryDescription(t *testing.T) {
 			t.Fatalf("%v gave %q %v", tc.cfg, got, err)
 		}
 	}
-	if _, err := DescribePrimary(map[string]any{"model": map[string]any{"provider": 5}}); err == nil || err.Error() != "AttributeError: 'int' object has no attribute 'strip'" {
+	if _, err := DescribePrimary(map[string]any{"model": map[string]any{"provider": 5}}); err == nil || err.Error() != "model.provider is a number, expected text" {
 		t.Fatalf("err %v", err)
 	}
 }
@@ -413,11 +413,11 @@ func TestFallbackEntryFormattingAndPrimaryDescription(t *testing.T) {
 func TestRestoreModelCfgPutsTheSnapshotBack(t *testing.T) {
 	h, ctx := fallbackTestHome(t)
 	writeConfig(t, h, map[string]any{"model": map[string]any{"provider": "openrouter", "default": "changed"}, "theme": "x"})
-	if err := RestoreModelCfg(ctx, h, map[string]any{"provider": "nous", "default": "Hermes-4"}); err != nil {
+	if err := RestoreModelCfg(ctx, h, map[string]any{"provider": "deepseek", "default": "deepseek-v4"}); err != nil {
 		t.Fatal(err)
 	}
 	cfg := readConfig(t, h)
-	if !reflect.DeepEqual(cfg["model"], map[string]any{"provider": "nous", "default": "Hermes-4"}) || cfg["theme"] != "x" {
+	if !reflect.DeepEqual(cfg["model"], map[string]any{"provider": "deepseek", "default": "deepseek-v4"}) || cfg["theme"] != "x" {
 		t.Fatalf("cfg %v", cfg)
 	}
 	if err := RestoreModelCfg(ctx, h, nil); err != nil {
@@ -428,7 +428,7 @@ func TestRestoreModelCfgPutsTheSnapshotBack(t *testing.T) {
 	}
 }
 
-func TestFallbackCommandWritesTheRecordedHermesConfigBytes(t *testing.T) {
+func TestFallbackCommandWritesTheRecordedConfigBytes(t *testing.T) {
 	picked := map[string]any{"provider": "openrouter", "default": "anthropic/claude-sonnet-4.6", "base_url": "https://openrouter.ai/api/v1", "api_mode": "chat_completions"}
 	configBytes := func(t *testing.T, h string) string {
 		t.Helper()
@@ -450,7 +450,7 @@ func TestFallbackCommandWritesTheRecordedHermesConfigBytes(t *testing.T) {
 	})
 	t.Run("remove", func(t *testing.T) {
 		h, ctx := fallbackTestHome(t)
-		writePickerConfig(t, h, "fallback_providers:\n- model: gpt-5.4\n  provider: openrouter\n- model: Hermes-4\n  provider: nous\n- model: claude-sonnet-4-6\n  provider: anthropic\n")
+		writePickerConfig(t, h, "fallback_providers:\n- model: gpt-5.4\n  provider: openrouter\n- model: deepseek-v4\n  provider: deepseek\n- model: claude-sonnet-4-6\n  provider: anthropic\n")
 		swapFlowSeam(t, &fallbackChooseFn, func(string, []string, int, string) (int, error) { return 1, nil })
 		runFallback(t, ctx, h, "rm")
 		want := "fallback_providers:\n  - model: gpt-5.4\n    provider: openrouter\n  - model: claude-sonnet-4-6\n    provider: anthropic\n_config_version: " + strconv.Itoa(config.Version) + "\n"
@@ -460,7 +460,7 @@ func TestFallbackCommandWritesTheRecordedHermesConfigBytes(t *testing.T) {
 	})
 	t.Run("clear", func(t *testing.T) {
 		h, ctx := fallbackTestHome(t)
-		writePickerConfig(t, h, "fallback_providers:\n- model: gpt-5.4\n  provider: openrouter\n- model: Hermes-4\n  provider: nous\n")
+		writePickerConfig(t, h, "fallback_providers:\n- model: gpt-5.4\n  provider: openrouter\n- model: deepseek-v4\n  provider: deepseek\n")
 		swapFlowSeam(t, &fallbackConfirmFn, func(io.Writer, string) (string, error) { return "y", nil })
 		runFallback(t, ctx, h, "clear")
 		if got := configBytes(t, h); got != "fallback_providers: []\n_config_version: "+strconv.Itoa(config.Version)+"\n" {

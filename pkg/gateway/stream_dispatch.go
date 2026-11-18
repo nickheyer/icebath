@@ -3,7 +3,6 @@ package gateway
 import (
 	"context"
 	"fmt"
-	"log/slog"
 )
 
 // Adapter surface that renders message events onto a sink and formats tool chrome
@@ -51,7 +50,7 @@ func NewGatewayEventDispatcher(adapter StreamEventRenderer, sink StreamSink, opt
 func (d *GatewayEventDispatcher) Dispatch(ctx context.Context, event StreamEvent) {
 	defer func() {
 		if r := recover(); r != nil {
-			slog.Debug(fmt.Sprintf("stream-event dispatch error: %v", r))
+			pkgLog().Debug(fmt.Sprintf("stream-event dispatch error: %v", r))
 		}
 	}()
 	d.dispatch(ctx, event)

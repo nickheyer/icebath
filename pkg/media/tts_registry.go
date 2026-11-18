@@ -3,7 +3,6 @@ package media
 import (
 	"context"
 	"fmt"
-	"log/slog"
 	"sort"
 	"strings"
 
@@ -17,8 +16,6 @@ var ttsRegistryBuiltinNames = map[string]bool{
 	"neutts": true, "kittentts": true, "piper": true, "deepinfra": true,
 }
 
-var ttsRegistryLog = slog.Default().With("logger", "agent.tts_registry")
-
 // Warns that a plugin tried to take a built in TTS name and was ignored
 func warnTTSBuiltinCollision(key string) error {
 	names := make([]string, 0, len(ttsRegistryBuiltinNames))
@@ -26,13 +23,13 @@ func warnTTSBuiltinCollision(key string) error {
 		names = append(names, n)
 	}
 	sort.Strings(names)
-	ttsRegistryLog.Warn(fmt.Sprintf("TTS provider '%s' shadows a built-in name; registration ignored. "+
+	pkgLog().Warn(fmt.Sprintf("TTS provider '%s' shadows a built-in name; registration ignored. "+
 		"Built-in TTS providers (%s) always win — pick a different name.", key, strings.Join(names, ", ")))
 	return nil
 }
 
 var ttsRegistry = provider.NewProviderRegistry[TTSProvider](provider.ProviderRegistryOptions{
-	Label: "TTS", Logger: ttsRegistryLog, Normalize: provider.LowerKey,
+	Label: "TTS", Logger: pkgLog(), Normalize: provider.LowerKey,
 	BuiltinNames: ttsRegistryBuiltinNames, OnBuiltinCollision: warnTTSBuiltinCollision,
 })
 

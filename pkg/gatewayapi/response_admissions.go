@@ -6,7 +6,6 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
-	"log/slog"
 	"net/http"
 
 	"github.com/google/uuid"
@@ -281,7 +280,7 @@ func bindSuccessor(ctx context.Context, a *APIServerAdapter, sessionID, walkedFr
 	if err == nil || errors.As(err, &refusal) {
 		return err
 	}
-	slog.Warn(fmt.Sprintf("pre-stream bind of %s failed", sessionID), "error", err)
+	pkgLog().Warn(fmt.Sprintf("pre-stream bind of %s failed", sessionID), "error", err)
 	return state.NewRuntimeStoreError("storage_unavailable", nil, nil)
 }
 

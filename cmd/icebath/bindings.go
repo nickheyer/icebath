@@ -3,21 +3,15 @@ package main
 import (
 	"context"
 	"fmt"
-	"log/slog"
 	"os"
 	"strings"
 
-	"github.com/nickheyer/icebath/pkg/cliui"
-	"github.com/nickheyer/icebath/pkg/codeexec"
 	"github.com/nickheyer/icebath/pkg/commands"
-	"github.com/nickheyer/icebath/pkg/cron"
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/lsp"
 	"github.com/nickheyer/icebath/pkg/memory"
 	"github.com/nickheyer/icebath/pkg/plugins"
 	"github.com/nickheyer/icebath/pkg/provider"
-	"github.com/nickheyer/icebath/pkg/tools"
 	"github.com/spf13/cobra"
 )
 
@@ -25,10 +19,10 @@ import (
 func newCLI() *commands.CLI {
 	cli := commands.NewCLI()
 	bindChat(cli)
-	bindCron(cli)
-	bindLSP(cli)
-	bindComputerUse(cli)
 	bindLogout(cli)
+	for _, bind := range tierCLI {
+		bind(cli)
+	}
 	bindHostCommands(cli)
 	registerPluginCLICommands(cli, os.Args[1:])
 	return cli
@@ -62,187 +56,6 @@ func bindChat(cli *commands.CLI) {
 	cli.Bind("resume", func(cmd *cobra.Command, args []string) error {
 		return status(cmdResume(cmdCtx(cmd), cmd, args))
 	})
-}
-
-// Binds icebath cron and every subcommand onto cron.CronCommand, the handler's int the exit code
-func bindCron(cli *commands.CLI) {
-	for _, path := range []string{"cron", "cron list", "cron create", "cron edit", "cron pause", "cron resume", "cron run", "cron cancel",
-		"cron remove", "cron status", "cron runs", "cron incidents", "cron notepad", "cron doctor", "cron tick"} {
-		sub := strings.TrimPrefix(strings.TrimPrefix(path, "cron"), " ")
-		cli.Bind(path, func(cmd *cobra.Command, args []string) error {
-			ctx := cmdCtx(cmd)
-			a := cronArgs(cli, cmd, sub, args)
-			return status(cron.CronCommand(ctx, home.Dir(ctx), a, cmd.OutOrStdout()))
-		})
-	}
-}
-
-// Reads one cron command line into CronArgs the way argparse fills its namespace
-func cronArgs(cli *commands.CLI, cmd *cobra.Command, sub string, args []string) *cron.CronArgs {
-	f := cmd.Flags()
-	a := &cron.CronArgs{Command: cmd.CalledAs()}
-	if sub == "" {
-		a.Command = ""
-	}
-	str := func(name string) *string {
-		if f.Lookup(name) == nil || !f.Changed(name) {
-			return nil
-		}
-		v, _ := f.GetString(name)
-		return &v
-	}
-	anyStr := func(name string) any {
-		if p := str(name); p != nil {
-			return *p
-		}
-		return nil
-	}
-	boolean := func(name string) bool {
-		if f.Lookup(name) == nil {
-			return false
-		}
-		v, _ := f.GetBool(name)
-		return v
-	}
-	list := func(name string) []string {
-		if f.Lookup(name) == nil || !f.Changed(name) {
-			return nil
-		}
-		v, _ := f.GetStringArray(name)
-		return v
-	}
-	a.JobID = cli.Positional(cmd, args, "job_id")
-	switch sub {
-	case "list":
-		a.All = boolean("all")
-	case "create", "edit":
-		if sub == "create" {
-			if s := cli.Positional(cmd, args, "schedule"); s != "" {
-				a.Schedule = &s
-			}
-			if p := cli.Positional(cmd, args, "prompt"); p != "" {
-				a.Prompt = &p
-			}
-			if boolean("no-agent") {
-				t := true
-				a.NoAgent = &t
-			}
-			a.Paused = boolean("paused")
-			a.PausedReason = str("paused-reason")
-			if boolean("pin") {
-				a.Pinned = true
-			}
-			if boolean("continuity") {
-				a.Continuity = true
-			}
-		} else {
-			a.Schedule, a.Prompt = str("schedule"), str("prompt")
-			a.AddSkills, a.RemoveSkills = list("add-skill"), list("remove-skill")
-			a.ClearSkills = boolean("clear-skills")
-			if last := cli.LastGiven(cmd, "no-agent", "agent"); last != "" {
-				on := last == "no-agent"
-				a.NoAgent = &on
-			}
-			switch {
-			case boolean("pin"):
-				a.Pinned = true
-			case boolean("unpin"):
-				a.Pinned = false
-			}
-			if last := cli.LastGiven(cmd, "continuity", "no-continuity"); last != "" {
-				a.Continuity = last == "continuity"
-			}
-		}
-		a.Skills = list("skill")
-		a.Name, a.Deliver, a.FailureDeliver = anyStr("name"), anyStr("deliver"), anyStr("failure-deliver")
-		if f.Changed("repeat") {
-			n, _ := f.GetInt("repeat")
-			a.Repeat = n
-		}
-		a.Script, a.Workdir, a.Model, a.ModelProvider = anyStr("script"), anyStr("workdir"), anyStr("model"), anyStr("provider")
-		a.MonitorScript, a.MonitorURL = anyStr("monitor-script"), anyStr("monitor-url")
-		a.ReasoningEffort, a.Interpreter, a.Timezone, a.GraceMinutes = anyStr("reasoning-effort"), anyStr("interpreter"), anyStr("timezone"), anyStr("grace-minutes")
-		if c := str("catch-up"); c != nil {
-			a.CatchUp = *c == "on"
-		}
-	case "resume":
-		a.RunAt = str("at")
-		a.RunNow = boolean("run-now")
-	case "cancel":
-		a.Reason = str("reason")
-	case "runs":
-		if f.Changed("limit") {
-			n, _ := f.GetInt("limit")
-			a.Limit = &n
-		} else {
-			n := 20
-			a.Limit = &n
-		}
-	case "incidents":
-		a.State = str("state")
-		a.IncidentAction = cli.Positional(cmd, args, "incident_action")
-		a.IncidentID = cli.Positional(cmd, args, "incident_id")
-	case "notepad":
-		a.NotepadAction = cli.Positional(cmd, args, "notepad_action")
-		if k := cli.Positional(cmd, args, "key"); k != "" {
-			a.Key = &k
-		}
-		if v := cli.Positional(cmd, args, "value"); v != "" {
-			a.Value = &v
-		}
-	}
-	return a
-}
-
-// Binds icebath lsp onto lsp.RunCommand with the process home's command context
-func bindLSP(cli *commands.CLI) {
-	for _, sub := range []string{"status", "list", "install", "install-all", "restart", "which"} {
-		cli.Bind("lsp "+sub, func(cmd *cobra.Command, args []string) error {
-			ctx := cmdCtx(cmd)
-			f := cmd.Flags()
-			a := lsp.CommandArgs{Subcommand: sub, Server: cli.Positional(cmd, args, "server")}
-			if f.Lookup("json") != nil {
-				a.JSON, _ = f.GetBool("json")
-			}
-			if f.Lookup("installed-only") != nil {
-				a.InstalledOnly, _ = f.GetBool("installed-only")
-			}
-			if f.Lookup("include-manual") != nil {
-				a.IncludeManual, _ = f.GetBool("include-manual")
-			}
-			return status(lsp.RunCommand(ctx, tools.LSPCommandContext(processToolsEnv(ctx)), a, cmd.OutOrStdout(), cmd.ErrOrStderr()), nil)
-		})
-	}
-	cli.Bind("lsp", func(cmd *cobra.Command, args []string) error {
-		ctx := cmdCtx(cmd)
-		return status(lsp.RunCommand(ctx, tools.LSPCommandContext(processToolsEnv(ctx)), lsp.CommandArgs{}, cmd.OutOrStdout(), cmd.ErrOrStderr()), nil)
-	})
-}
-
-// Binds the computer-use tree onto the codeexec dispatcher
-func bindComputerUse(cli *commands.CLI) {
-	run := codeexec.BuildComputerUseParser()
-	for _, path := range codeexec.ComputerUseCommandPaths {
-		cli.Bind(path, func(cmd *cobra.Command, args []string) error {
-			ctx := cmdCtx(cmd)
-			ns, err := codeexec.ParseComputerUseArgs(path, cmd.Flags())
-			if err != nil {
-				return err
-			}
-			rc, err := run(ctx, &codeexec.ComputerUseCLI{Env: processToolsEnv(ctx), Console: cliui.Default(), Stderr: os.Stderr,
-				PrintHelp: func(p string) error {
-					target, _, findErr := cli.Root.Find(strings.Fields(p))
-					if findErr != nil {
-						return findErr
-					}
-					return target.Help()
-				}}, ns)
-			return status(rc, err)
-		})
-	}
-	for _, parent := range []string{"computer-use", "computer-use permissions", "computer-use screen"} {
-		cli.Bind(parent, func(cmd *cobra.Command, args []string) error { return cmd.Help() })
-	}
 }
 
 // Binds login and logout onto the provider auth flows
@@ -284,7 +97,7 @@ func registerPluginCLICommands(cli *commands.CLI, argv []string) {
 			continue
 		}
 		if failure := attachManagerCLICommand(cli, info); failure != nil {
-			slog.Default().With("logger", "hermes_cli.main").Debug(fmt.Sprintf("Plugin CLI discovery failed: %v", failure))
+			pkgLog().Debug(fmt.Sprintf("Plugin CLI discovery failed: %v", failure))
 			return
 		}
 	}

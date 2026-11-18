@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/config"
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
 
@@ -173,7 +174,7 @@ func saveCustomProvider(r *ModelFlowRun, baseURL, apiKey, model string, contextL
 		if !ok {
 			continue
 		}
-		entryBase, err := pyStrReceiver(dictGet(entry, "base_url", ""), "rstrip")
+		entryBase, err := pyStrReceiver(dictGet(entry, "base_url", ""), "custom_providers base_url")
 		if err != nil {
 			return err
 		}
@@ -239,12 +240,12 @@ func saveCustomProvider(r *ModelFlowRun, baseURL, apiKey, model string, contextL
 	return nil
 }
 
-// Python str receiver of a method call, an AttributeError for a value that is no str
-func pyStrReceiver(v any, method string) (string, error) {
+// Text of a setting, an error naming the setting when it is no text
+func pyStrReceiver(v any, setting string) (string, error) {
 	if s, ok := v.(string); ok {
 		return s, nil
 	}
-	return "", fmt.Errorf("AttributeError: '%s' object has no attribute '%s'", config.PyTypeName(v), method)
+	return "", fmt.Errorf("%s is %s, expected text", setting, errchain.Kind(v))
 }
 
 // The models entry of one context length

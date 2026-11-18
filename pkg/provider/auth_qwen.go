@@ -24,7 +24,7 @@ var qwenHTTPClientFn = func(timeout time.Duration) *http.Client {
 // Token endpoint the Qwen refresh posts to, swappable so tests aim it at a local server
 var qwenOAuthTokenURL = QwenOAuthTokenURL
 
-// Token refresh of the Qwen CLI credentials, the auth module attribute the hermes tests patch
+// Token refresh of the Qwen CLI credentials, the auth module attribute the tests patch
 var refreshQwenCLITokensFn = refreshQwenCLITokens
 
 // Path of the Qwen CLI OAuth credentials file in the user home

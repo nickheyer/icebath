@@ -299,7 +299,7 @@ func TestLeftCoreRecoverProviderStopsBeforeAnyReadForOtherNames(t *testing.T) {
 		}
 	})
 	recoverLeftCoreProvider(context.Background(), h, "openrouter")
-	writeLeftCoreFile(t, filepath.Join(h, "auth.json"), `{"active_provider": "nous"}`)
+	writeLeftCoreFile(t, filepath.Join(h, "auth.json"), `{"active_provider": "openai-codex"}`)
 	recoverLeftCoreProvider(context.Background(), h, "auto")
 	recoverLeftCoreProvider(WithLeftCoreInstallsHeld(context.Background()), h, "copilot")
 	mkPluginDir(t, h, "github-copilot")

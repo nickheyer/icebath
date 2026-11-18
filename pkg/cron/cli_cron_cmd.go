@@ -21,7 +21,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
-	"github.com/nickheyer/icebath/pkg/observability"
 	"github.com/nickheyer/icebath/pkg/profiles"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
@@ -381,7 +380,6 @@ func jobWarnings(job *pyjson.Object) []string {
 
 // Runs due jobs once headless for an external crontab, nonzero when the tick yielded or failed
 func (s *Store) cronTick(ctx context.Context, w io.Writer) (int, error) {
-	observability.BeginProcess(ctx, "cron")
 	_, err := schedulerTick(ctx, s, tickOptions{Verbose: true, Headless: true})
 	var yielded *CronTickYielded
 	switch {
@@ -1317,7 +1315,7 @@ func init() {
 	cronSubcommands["delete"] = cronSubcommands["remove"]
 }
 
-// UnknownCronCommandError is the usage exit of an unknown cron subcommand, sys.exit(1) in hermes
+// Usage exit of an unknown cron subcommand, exit status 1
 type UnknownCronCommandError struct{ Command string }
 
 func (e *UnknownCronCommandError) Error() string { return "Unknown cron command: " + e.Command }

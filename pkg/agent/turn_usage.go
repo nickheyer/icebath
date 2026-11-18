@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"log/slog"
 	"reflect"
 
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
@@ -12,10 +11,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/state"
 )
-
-func conversationLoopLog() *slog.Logger {
-	return slog.Default().With("logger", "agent.conversation_loop")
-}
 
 // ResponseUsageOutcome carries the possibly rearmed compression budget and whether the loop clears its preflight latch
 type ResponseUsageOutcome struct {
@@ -65,7 +60,7 @@ func (a *AIAgent) foldMoAUsage(canonical provider.CanonicalUsage) (any, provider
 	if c, ok := client.(moaReferenceUsageClient); ok {
 		refUsage, cost, err := c.ConsumeReferenceUsage()
 		if err != nil {
-			conversationLoopLog().Debug(fmt.Sprintf("MoA reference usage accounting failed: %s", err))
+			pkgLog().Debug(fmt.Sprintf("MoA reference usage accounting failed: %s", err))
 		} else {
 			refCost = cost
 			if refUsage != nil {
@@ -80,7 +75,7 @@ func (a *AIAgent) foldMoAUsage(canonical provider.CanonicalUsage) (any, provider
 			fallback = &text
 		}
 		if err := c.ConsumeAndSaveTrace(a.sessionID, fallback); err != nil {
-			conversationLoopLog().Debug(fmt.Sprintf("MoA trace flush failed: %s", err))
+			pkgLog().Debug(fmt.Sprintf("MoA trace flush failed: %s", err))
 		}
 	}
 	return client, canonical, refCost
@@ -118,7 +113,7 @@ func (a *AIAgent) recordResponseUsage(ctx context.Context, response any, message
 	apiDuration float64, compressionAttempts, maxCompressionAttempts int) ResponseUsageOutcome {
 	rearmed := false
 	compressor := a.contextCompressor
-	log := conversationLoopLog()
+	log := pkgLog()
 	a.sessionAPICalls++
 	rawUsage := state.ToolCallField(response, "usage")
 	providerName := a.provider
@@ -243,9 +238,6 @@ func (a *AIAgent) recordResponseUsage(ctx context.Context, response any, message
 	}
 	log.Info(fmt.Sprintf("API call #%d: model=%s provider=%s in=%d out=%d total=%d latency=%.1fs%s%s",
 		a.sessionAPICalls, a.model, providerName, promptTokens, completionTokens, totalTokens, apiDuration, cachePct, ident))
-	if a.sessionAPICalls == 1 && a.provider == "nous" {
-		maybeSwitchWireAfterFirstResponse(a, ctx, response, a.sessionAPICalls)
-	}
 
 	costModel, costProvider, costBaseURL := a.model, a.provider, a.baseURL
 	if s, ok := moaClient.(moaAggregatorSlotClient); ok {
@@ -282,7 +274,7 @@ func (a *AIAgent) recordResponseUsage(ctx context.Context, response any, message
 	}
 
 	if a.verboseLogging {
-		slog.Debug(fmt.Sprintf("Token usage: prompt=%s, completion=%s, total=%s",
+		pkgLog().Debug(fmt.Sprintf("Token usage: prompt=%s, completion=%s, total=%s",
 			groupedInt(usagePrompt), groupedInt(completionTokens), groupedInt(usageTotal)))
 	}
 	cached := canonical.CacheReadTokens

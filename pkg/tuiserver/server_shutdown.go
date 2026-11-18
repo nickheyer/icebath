@@ -7,10 +7,10 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/pm"
 	"github.com/nickheyer/icebath/pkg/provider"
-	"github.com/nickheyer/icebath/pkg/tuigateway"
+	"github.com/nickheyer/icebath/pkg/tuihost"
 )
 
-// Shutdown steps, the real functions swapped only where a hermes case installs a fake
+// Shutdown steps, the real functions swapped only where a test installs a fake
 var (
 	shutdownFlushSessions    = flushSessionsBeforeExit
 	shutdownReleaseWakeOwner = releaseGatewayWakeOwner
@@ -27,7 +27,7 @@ func shutdownSessions() {
 	func() {
 		sessionsLock.Lock()
 		defer sessionsLock.Unlock()
-		for _, live := range tuigateway.LiveSessions() {
+		for _, live := range tuihost.LiveSessions() {
 			sids = append(sids, live.SID)
 		}
 	}()

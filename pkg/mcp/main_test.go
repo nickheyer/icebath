@@ -21,9 +21,6 @@ const fakeSubprocessChild = "ICEBATH_MCP_FAKE_SUBPROCESS_CHILD"
 func TestMain(m *testing.M) {
 	hermetic.BlockExternalHTTP()
 	hermetic.BlockExternalDNS()
-	if os.Getenv(connectorsLoadChild) != "" {
-		os.Exit(0)
-	}
 	if mode := os.Getenv(fakeSubprocessChild); mode != "" {
 		if mode == "sleep" {
 			time.Sleep(30 * time.Second)

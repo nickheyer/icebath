@@ -121,7 +121,6 @@ func TestIsolateReplacesADeveloperHomeAndEveryPointerIntoIt(t *testing.T) {
 	os.Setenv("HOME", dev)
 	os.Setenv("USERPROFILE", dev)
 	os.Setenv("ICEBATH_HOME", filepath.Join(dev, ".icebath"))
-	os.Setenv("HERMES_HOME", "~/.hermes")
 	os.Setenv("ICEBATH_REAL_HOME", dev)
 	elsewhere := filepath.Join(string(filepath.Separator), "srv", "icebath")
 	os.Setenv("ICEBATH_ELSEWHERE", elsewhere)
@@ -145,7 +144,7 @@ func TestIsolateReplacesADeveloperHomeAndEveryPointerIntoIt(t *testing.T) {
 	if Original() != dev || !underTemp(resolve(private)) || os.Getenv("HOME") != private {
 		t.Fatalf("original %q private %q HOME %q", Original(), private, os.Getenv("HOME"))
 	}
-	for name, want := range map[string]string{"ICEBATH_HOME": "", "HERMES_HOME": "", "ICEBATH_REAL_HOME": "", "ICEBATH_ELSEWHERE": elsewhere,
+	for name, want := range map[string]string{"ICEBATH_HOME": "", "ICEBATH_REAL_HOME": "", "ICEBATH_ELSEWHERE": elsewhere,
 		"ICEBATH_TMP_HOME": filepath.Join(dev, "code", "work"), "XDG_CONFIG_HOME": "", "XDG_CACHE_HOME": "", "XDG_CONFIG_DIRS": "/etc/xdg",
 		"XDG_DATA_DIRS": "", "DBUS_SESSION_BUS_ADDRESS": "", "XDG_RUNTIME_DIR": filepath.Join(private, ".run"),
 		"GOPATH": filepath.Join(dev, "go")} {

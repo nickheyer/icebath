@@ -14,12 +14,11 @@ import (
 )
 
 const (
-	perplexityDefaultBaseURL    = "https://api.perplexity.ai"
-	perplexityKeyURL            = "https://www.perplexity.ai/account/api"
-	perplexityMaxSearchResults  = 20
-	perplexityMaxTokens         = 16384
-	perplexityMaxTokensPerPage  = 4096
-	perplexityNoIdentityFailure = "there is no usable Nous identity (sign in with `/login`)"
+	perplexityDefaultBaseURL   = "https://api.perplexity.ai"
+	perplexityKeyURL           = "https://www.perplexity.ai/account/api"
+	perplexityMaxSearchResults = 20
+	perplexityMaxTokens        = 16384
+	perplexityMaxTokensPerPage = 4096
 )
 
 // Static harness identity plus the Perplexity integration header, no per user identifier
@@ -36,37 +35,24 @@ func perplexityMissingKeyError() string {
 	return "PERPLEXITY_API_KEY is not set. Get a key at " + perplexityKeyURL
 }
 
-// Nous gateway config when web search is on the managed route, else nil
-func perplexityManagedGateway(env *Env, tokenReader func(*Env) string) (*ManagedToolGatewayConfig, error) {
-	if !managedWebSearch(env) {
-		return nil, nil
-	}
-	return ResolveFreeSearchGateway(env, tokenReader)
-}
-
-// POST to Perplexity or the gateway and parse the answer, a missing key or error body raised verbatim
-func perplexityRequest(ctx context.Context, env *Env, endpoint string, payload *pyjson.Object, gateway *ManagedToolGatewayConfig) (any, error) {
+// POST to Perplexity and parse the answer, a missing key or error body raised verbatim
+func perplexityRequest(ctx context.Context, env *Env, endpoint string, payload *pyjson.Object) (any, error) {
 	apiKey, err := providerEnv(ctx, env, "PERPLEXITY_API_KEY")
 	if err != nil {
 		return nil, err
 	}
-	headers := perplexityHeaders()
-	var baseURL string
-	switch {
-	case gateway != nil:
-		baseURL, apiKey, headers = strings.TrimRight(gateway.GatewayOrigin, "/"), gateway.NousUserToken, [][2]string{headers[2]}
-	case apiKey != "":
-		override, err := providerEnv(ctx, env, "PERPLEXITY_BASE_URL")
-		if err != nil {
-			return nil, err
-		}
-		if override == "" {
-			override = perplexityDefaultBaseURL
-		}
-		baseURL = strings.TrimRight(override, "/")
-	default:
+	if apiKey == "" {
 		return nil, verbatim(perplexityMissingKeyError())
 	}
+	headers := perplexityHeaders()
+	override, err := providerEnv(ctx, env, "PERPLEXITY_BASE_URL")
+	if err != nil {
+		return nil, err
+	}
+	if override == "" {
+		override = perplexityDefaultBaseURL
+	}
+	baseURL := strings.TrimRight(override, "/")
 	target := baseURL + "/" + strings.TrimLeft(endpoint, "/")
 	envLog(env).Info("Perplexity request", "endpoint", endpoint, "url", target)
 	all := append([][2]string{{"Authorization", "Bearer " + apiKey}, {"Content-Type", "application/json"}}, headers...)
@@ -199,42 +185,21 @@ func pyStrIsDigit(s string) bool {
 
 type perplexityProvider struct{ baseWebProvider }
 
-// Available with a key, or on the managed route with a likely usable Nous token
+// Available with a Perplexity key
 func (p *perplexityProvider) Available(env *Env) bool {
 	key, err := providerEnv(context.Background(), env, "PERPLEXITY_API_KEY")
-	if err == nil && key != "" {
-		return true
-	}
-	gateway, err := perplexityManagedGateway(env, peekNousAccessToken)
-	return err == nil && gateway != nil
+	return err == nil && key != ""
 }
 
-// Search direct with a key or through the managed fast route, failures as search errors
+// Search with the Perplexity key, failures as search errors
 func (p *perplexityProvider) Search(ctx context.Context, env *Env, query string, limit int) (*WebSearchResponse, error) {
 	return runSearch(ctx, env, "Perplexity", func() (*WebSearchResponse, error) {
-		key, err := providerEnv(ctx, env, "PERPLEXITY_API_KEY")
-		if err != nil {
-			return nil, err
-		}
-		managed := key == "" && managedWebSearch(env)
-		var gateway *ManagedToolGatewayConfig
-		if managed {
-			if gateway, err = ResolveFreeSearchGateway(env, nil); err != nil {
-				return nil, err
-			}
-			if gateway == nil {
-				return nil, verbatim(SelectionError("web", NousManagedProvider, perplexityNoIdentityFailure))
-			}
-		}
-		envLog(env).Info("Perplexity search", "query", query, "limit", limit, "managed", gateway != nil)
+		envLog(env).Info("Perplexity search", "query", query, "limit", limit)
 		payload := pyjson.NewObject()
 		payload.Set("query", query)
 		payload.Set("max_results", max(1, min(limit, perplexityMaxSearchResults)))
 		payload.Set("search_context_size", "low")
-		if gateway != nil {
-			payload.Set("search_type", "fast")
-		}
-		raw, err := perplexityRequest(ctx, env, "search", payload, gateway)
+		raw, err := perplexityRequest(ctx, env, "search", payload)
 		if err != nil {
 			return nil, err
 		}
@@ -259,7 +224,7 @@ func (p *perplexityProvider) Extract(ctx context.Context, env *Env, urls []strin
 		payload.Set("urls", list)
 		payload.Set("max_tokens", perplexityMaxTokens)
 		payload.Set("max_tokens_per_page", perplexityMaxTokensPerPage)
-		raw, err := perplexityRequest(ctx, env, "sdk/content/snippets", payload, nil)
+		raw, err := perplexityRequest(ctx, env, "sdk/content/snippets", payload)
 		if err != nil {
 			return nil, err
 		}

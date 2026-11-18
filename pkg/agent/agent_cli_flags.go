@@ -119,7 +119,7 @@ func (a *AIAgent) publishControlIfChanged() {
 	}
 	revision, err := a.controlSnapshotRevision()
 	if err != nil {
-		runAgentLog().Debug("session.control.update skipped for " + a.sessionID + ": " + err.Error())
+		pkgLog().Debug("session.control.update skipped for " + a.sessionID + ": " + err.Error())
 		return
 	}
 	if revision == a.controlRevision {
@@ -235,10 +235,10 @@ func goalWaitBarrier(s *goals.GoalState) *pyjson.Object {
 		return pyjson.ObjectOf("type", "until", "until_at", s.WaitingUntil, "reason", reason)
 	}
 	if s.WaitingOnSession != nil {
-		return pyjson.ObjectOf("type", "session", "target", *s.WaitingOnSession, "reason", reason)
+		return pyjson.ObjectOf("type", "session", "session_id", *s.WaitingOnSession, "reason", reason)
 	}
 	if s.WaitingOnPID != nil {
-		return pyjson.ObjectOf("type", "pid", "target", *s.WaitingOnPID, "reason", reason)
+		return pyjson.ObjectOf("type", "pid", "pid", *s.WaitingOnPID, "reason", reason)
 	}
 	return nil
 }

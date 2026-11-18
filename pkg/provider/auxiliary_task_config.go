@@ -3,7 +3,6 @@ package provider
 import (
 	"context"
 	"fmt"
-	"log/slog"
 
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
@@ -88,7 +87,7 @@ func (r *resolver) auxTaskConfig(task string, seen map[string]bool) (resolved ma
 	}
 	defer func() {
 		if failure := recover(); failure != nil {
-			slog.Debug(fmt.Sprintf("plugin auxiliary task lookup failed for %s", pyrepr.Repr(task)), "error", failure)
+			pkgLog().Debug(fmt.Sprintf("plugin auxiliary task lookup failed for %s", pyrepr.Repr(task)), "error", failure)
 			resolved = taskConfig
 		}
 	}()
@@ -106,7 +105,7 @@ func (r *resolver) auxTaskConfig(task string, seen map[string]bool) (resolved ma
 		}
 		inherit := entry["inherit_from"]
 		if pyrepr.Truthy(inherit) && seen[task] {
-			slog.Default().Warn(fmt.Sprintf("Auxiliary task %s has a circular inherit_from chain — ignoring inheritance", pyrepr.Repr(task)))
+			pkgLog().Warn(fmt.Sprintf("Auxiliary task %s has a circular inherit_from chain — ignoring inheritance", pyrepr.Repr(task)))
 		}
 		if !pyrepr.Truthy(inherit) || seen[task] {
 			merged := copyAnyMap(defaults)

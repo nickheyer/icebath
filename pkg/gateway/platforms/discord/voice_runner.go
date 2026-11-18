@@ -77,7 +77,7 @@ func (a *DiscordAdapter) CachedChannel(channelID int64) any {
 func (a *DiscordAdapter) SendToChannel(ctx context.Context, channel any, content string) error {
 	ch, ok := channel.(*discordgo.Channel)
 	if !ok || ch == nil {
-		return errors.New("AttributeError: object has no attribute 'send'")
+		return errors.New("the target is not a Discord channel that can be sent to")
 	}
 	_, err := a.channelSend(ctx, ch.ID, content, nil)
 	return err

@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/hex"
 	"fmt"
-	"log/slog"
 	"slices"
 	"strings"
 	"sync"
@@ -507,7 +506,7 @@ func (r *GatewayRunner) legacyTelegramChatGrant(source *gateway.SessionSource, g
 			ids = append(ids, id)
 		}
 		slices.Sort(ids)
-		runLog().Warn(fmt.Sprintf("TELEGRAM_GROUP_ALLOWED_USERS contains chat-ID-shaped values "+
+		pkgLog().Warn(fmt.Sprintf("TELEGRAM_GROUP_ALLOWED_USERS contains chat-ID-shaped values "+
 			"(%s). Treating them as chat IDs for backward compatibility. "+
 			"Move chat IDs to TELEGRAM_GROUP_ALLOWED_CHATS — the _USERS var "+
 			"is now for sender user IDs.", strings.Join(ids, ",")))
@@ -546,7 +545,7 @@ func (r *GatewayRunner) admitBotMessage(ctx context.Context, source *gateway.Ses
 		if source.UserID != nil {
 			userID = *source.UserID
 		}
-		slog.Default().With("logger", "gateway.authz_mixin").Warn(fmt.Sprintf("Bot loop guard is dropping bot messages in %s chat %s: bot %s sent one message too many "+
+		pkgLog().Warn(fmt.Sprintf("Bot loop guard is dropping bot messages in %s chat %s: bot %s sent one message too many "+
 			"for the window, cooling down (gateway.bot_loop_guard in config.yaml).", source.Platform, source.ChatID, userID))
 	}
 	return allowed

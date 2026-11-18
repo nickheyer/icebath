@@ -11,7 +11,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/provider"
 )
 
-// Seams the feasibility tests replace like the hermes patch of the auxiliary client and model metadata
+// Seams the feasibility tests replace like the patch of the auxiliary client and model metadata
 var (
 	feasibilityTaskProvider   = provider.ResolveAuxTaskProvider
 	feasibilityAuxClient      = provider.GetTextAuxiliaryClient
@@ -116,7 +116,7 @@ func lowerThresholdToAuxContext(a *AIAgent, auxModel string, auxContext int, aux
 			groupThousands(oldThreshold), mainLabel, groupThousands(mainCtx), groupThousands(*recomputed), groupThousands(auxContext))
 	}
 	emitFeasibilityNotice(a, msg)
-	compressionLog().Warn(fmt.Sprintf("Auxiliary compression model %s has %d token context, below the main model's compression threshold of %d tokens — auto-lowered session threshold to %d to keep compression working.",
+	pkgLog().Warn(fmt.Sprintf("Auxiliary compression model %s has %d token context, below the main model's compression threshold of %d tokens — auto-lowered session threshold to %d to keep compression working.",
 		auxModel, auxContext, oldThreshold, newThreshold))
 }
 
@@ -136,14 +136,14 @@ func checkCompressionModelFeasibility(ctx context.Context, a *AIAgent) (err erro
 	}
 	defer func() {
 		if r := recover(); r != nil {
-			compressionLog().Debug(fmt.Sprintf("Compression feasibility check failed (non-fatal): %v", r))
+			pkgLog().Debug(fmt.Sprintf("Compression feasibility check failed (non-fatal): %v", r))
 			err = nil
 		}
 	}()
 	err = probeCompressionModelFeasibility(ctx, a)
 	var below *auxContextBelowMinimumError
 	if err != nil && !errors.As(err, &below) {
-		compressionLog().Debug(fmt.Sprintf("Compression feasibility check failed (non-fatal): %v", err))
+		pkgLog().Debug(fmt.Sprintf("Compression feasibility check failed (non-fatal): %v", err))
 		return nil
 	}
 	return err
@@ -187,7 +187,7 @@ func probeCompressionModelFeasibility(ctx context.Context, a *AIAgent) error {
 			msg = "⚠ No auxiliary LLM provider configured: Icebath has no helper model for summarising long chats, so older messages will be cut without a summary. Start `icebath` and type `/setup aux` to add one."
 		}
 		emitFeasibilityNotice(a, msg)
-		compressionLog().Warn("No auxiliary LLM provider for compression — summaries will be unavailable.")
+		pkgLog().Warn("No auxiliary LLM provider for compression — summaries will be unavailable.")
 		return nil
 	}
 	auxBaseURL := client.BaseURL()
@@ -235,7 +235,7 @@ func revalidateCompressionFeasibility(ctx context.Context, a *AIAgent) {
 		return
 	}
 	if err := checkCompressionModelFeasibility(ctx, a); err != nil {
-		compressionLog().Debug(fmt.Sprintf("Compression feasibility re-check deferred to the next compaction: %v", err))
+		pkgLog().Debug(fmt.Sprintf("Compression feasibility re-check deferred to the next compaction: %v", err))
 		return
 	}
 	a.compressionFeasibilityChecked = true
@@ -250,7 +250,7 @@ func ensureCompressionFeasibilityChecked(ctx context.Context, a *AIAgent, estima
 		return
 	}
 	if err := checkCompressionModelFeasibility(ctx, a); err != nil {
-		compressionLog().Debug(fmt.Sprintf("Compression feasibility probe deferred to the first compaction: %v", err))
+		pkgLog().Debug(fmt.Sprintf("Compression feasibility probe deferred to the first compaction: %v", err))
 		return
 	}
 	a.compressionFeasibilityChecked = true

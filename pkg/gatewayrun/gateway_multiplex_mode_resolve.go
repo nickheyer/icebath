@@ -3,7 +3,6 @@ package gatewayrun
 import (
 	"context"
 	"fmt"
-	"log/slog"
 	"strings"
 
 	"github.com/nickheyer/icebath/pkg/gateway"
@@ -54,13 +53,13 @@ func ImplicitMultiplexBlocker(ctx context.Context) (string, error) {
 func preflightBlocker(ctx context.Context) (blocker string) {
 	defer func() {
 		if r := recover(); r != nil {
-			multiplexResolveLog().Warn(fmt.Sprintf("Multiplex preflight failed; starting standalone: %v", r))
+			pkgLog().Warn(fmt.Sprintf("Multiplex preflight failed; starting standalone: %v", r))
 			blocker = fmt.Sprintf("preflight failed (%v)", r)
 		}
 	}()
 	blocker, err := ImplicitMultiplexBlocker(ctx)
 	if err != nil {
-		multiplexResolveLog().Warn("Multiplex preflight failed; starting standalone: " + err.Error())
+		pkgLog().Warn("Multiplex preflight failed; starting standalone: " + err.Error())
 		return fmt.Sprintf("preflight failed (%s)", err.Error())
 	}
 	return blocker
@@ -91,9 +90,4 @@ func ResolveMultiplexMode(ctx context.Context, cfg *gateway.GatewayConfig) (gate
 	enabled := decision.Enabled
 	cfg.MultiplexProfiles = &enabled
 	return decision, nil
-}
-
-// Logger records carry the module name of the multiplex verdict
-func multiplexResolveLog() *slog.Logger {
-	return slog.Default().With("logger", "hermes_cli.gateway_multiplex_mode")
 }

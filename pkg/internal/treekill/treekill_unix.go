@@ -5,7 +5,6 @@ package treekill
 import (
 	"errors"
 	"fmt"
-	"log/slog"
 	"os"
 	"sort"
 	"syscall"
@@ -98,7 +97,7 @@ func (p Proc) Signal(sig syscall.Signal) error {
 func processTreeSnapshot(pid int, hardKill bool) (descendants []Proc, stopped []Proc) {
 	rootBirth, err := proc.Birth(pid)
 	if err != nil {
-		slog.Debug(fmt.Sprintf("kill_process_tree: snapshot incomplete for pid %d: %v", pid, err))
+		pkgLog().Debug(fmt.Sprintf("kill_process_tree: snapshot incomplete for pid %d: %v", pid, err))
 		return nil, nil
 	}
 	root := Proc{pid, rootBirth}
@@ -107,7 +106,7 @@ func processTreeSnapshot(pid int, hardKill bool) (descendants []Proc, stopped []
 		return descendants, nil
 	}
 	incomplete := func(reason string) ([]Proc, []Proc) {
-		slog.Debug(fmt.Sprintf("kill_process_tree: snapshot incomplete for pid %d: %s", pid, reason))
+		pkgLog().Debug(fmt.Sprintf("kill_process_tree: snapshot incomplete for pid %d: %s", pid, reason))
 		return descendants, stopped
 	}
 	pending := []Proc{root}
@@ -176,7 +175,7 @@ func KillProcessTree(pid int, sig syscall.Signal) bool {
 	defer func() {
 		for _, p := range stopped {
 			if err := p.Signal(syscall.SIGCONT); err != nil {
-				slog.Debug(fmt.Sprintf("kill_process_tree: target already gone or resume refused: %v", err))
+				pkgLog().Debug(fmt.Sprintf("kill_process_tree: target already gone or resume refused: %v", err))
 			}
 		}
 	}()
@@ -200,7 +199,7 @@ func KillProcessTree(pid int, sig syscall.Signal) bool {
 		signalled = true
 	case err == syscall.ESRCH:
 	default:
-		slog.Debug(fmt.Sprintf("kill_process_tree: signal failed for pid %d: %v", pid, err))
+		pkgLog().Debug(fmt.Sprintf("kill_process_tree: signal failed for pid %d: %v", pid, err))
 	}
 	return signalled
 }

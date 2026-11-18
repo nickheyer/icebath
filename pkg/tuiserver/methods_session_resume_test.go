@@ -9,7 +9,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tools"
-	"github.com/nickheyer/icebath/pkg/tuigateway"
+	"github.com/nickheyer/icebath/pkg/tuihost"
 )
 
 const (
@@ -129,7 +129,7 @@ func TestResumeLazyWatchMissingKeyStill4007(t *testing.T) {
 // test_session_resume_materializes_minted_key.py test_resume_minted_key_claimed_by_other_profile_fails_closed
 func TestResumeMintedKeyClaimedByOtherProfileFailsClosed(t *testing.T) {
 	db := resumeDB(t)
-	tuigateway.SetSessionRecord("live-other-profile", tuigateway.NewSession(map[string]any{"history": []any{}, "last_active": 0.0,
+	tuihost.SetSessionRecord("live-other-profile", tuihost.NewSession(map[string]any{"history": []any{}, "last_active": 0.0,
 		"pending_title": "Bot Chat", "pending_hidden": true, "profile_home": "/tmp/other-profile", "running": false,
 		"session_key": mintedKey, "source": "tui"}))
 	if code := resumeErrCode(resumeCall(t, map[string]any{"session_id": mintedKey})); code != 4007 {
@@ -156,8 +156,8 @@ func TestSessionYoloToggleSurvivesABackendRestart(t *testing.T) {
 	db := resumeDB(t)
 	ctx := context.Background()
 	t.Cleanup(func() { tools.ClearSession("row-a") })
-	session := tuigateway.NewSession(map[string]any{"agent": NewSyntheticHeavyAgent("row-a", "test-model"), "session_key": "row-a"})
-	tuigateway.SetSessionRecord("sid", session)
+	session := tuihost.NewSession(map[string]any{"agent": NewSyntheticHeavyAgent("row-a", "test-model"), "session_key": "row-a"})
+	tuihost.SetSessionRecord("sid", session)
 	handleRequest(ctx, map[string]any{"id": "1", "method": "config.set", "params": map[string]any{"session_id": "sid", "key": "yolo"}})
 	if !ensureSessionDBRow(ctx, session) {
 		t.Fatal("row not persisted")
@@ -166,7 +166,7 @@ func TestSessionYoloToggleSurvivesABackendRestart(t *testing.T) {
 	if err != nil || !state.SessionYoloEnabled(objectMap(row)) {
 		t.Fatalf("persisted yolo %v %v", row, err)
 	}
-	tuigateway.SetSessionRecord("sid", nil)
+	tuihost.SetSessionRecord("sid", nil)
 	tools.ClearSession("row-a")
 	resp := handleRequest(ctx, map[string]any{"id": "2", "method": "session.resume", "params": map[string]any{"session_id": "row-a"}})
 	result := envelopeResult(t, resp)
@@ -181,7 +181,7 @@ func TestSessionYoloToggleSurvivesABackendRestart(t *testing.T) {
 }
 
 // Live lazy record of an ops profile bot chat that has no stored row yet
-func liveLazySession(t *testing.T) (string, *tuigateway.Session) {
+func liveLazySession(t *testing.T) (string, *tuihost.Session) {
 	t.Helper()
 	h := sessionCaseScope(t)
 	useSharedDB(t, nil)
@@ -190,9 +190,9 @@ func liveLazySession(t *testing.T) (string, *tuigateway.Session) {
 		t.Fatal(err)
 	}
 	sid := "live-lazy-1"
-	record := tuigateway.NewSession(map[string]any{"history": []any{}, "last_active": 0.0, "pending_title": "Bot Chat",
+	record := tuihost.NewSession(map[string]any{"history": []any{}, "last_active": 0.0, "pending_title": "Bot Chat",
 		"pending_hidden": true, "profile_home": opsHome, "running": false, "session_key": "20260823_000000_abc123", "source": "tui"})
-	tuigateway.SetSessionRecord(sid, record)
+	tuihost.SetSessionRecord(sid, record)
 	return sid, record
 }
 

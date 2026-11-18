@@ -1154,6 +1154,24 @@ func stripEdgeSelfMentions(text string, mentions []FeishuMentionRef) string {
 	}
 }
 
+// Card button value keys icebath posts, and the ones cards an older icebath posted still carry
+const (
+	cardApprovalKey           = "icebath_action"
+	legacyCardApprovalKey     = "hermes_action"
+	cardUpdatePromptKey       = "icebath_update_prompt_action"
+	legacyCardUpdatePromptKey = "hermes_update_prompt_action"
+)
+
+// Card value under its key, the old key read when a card an older icebath posted lacks the new one
+func cardValue(value *pyjson.Object, key, legacy string, def any) any {
+	if value != nil {
+		if v, ok := value.Get(key); ok {
+			return v
+		}
+	}
+	return dgetDef(value, legacy, def)
+}
+
 func dget(d *pyjson.Object, key string) any {
 	if d == nil {
 		return nil

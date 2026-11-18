@@ -16,11 +16,8 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/logging"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
-
-var sessionLog = logging.GetLogger("acp_adapter.session")
 
 var mntDrive = regexp.MustCompile(`^/mnt/[A-Za-z]/`)
 
@@ -135,7 +132,7 @@ func registerTaskCwd(ctx context.Context, taskID, cwd string) {
 		return
 	}
 	if err := tools.RegisterTaskEnvOverrides(nil, taskID, map[string]any{"cwd": translateACPCwd(cwd)}); err != nil {
-		sessionLog.Debug("Failed to register ACP task cwd override")
+		pkgLog().Debug("Failed to register ACP task cwd override")
 	}
 }
 

@@ -119,7 +119,7 @@ func TestFailedTurnBoundaryKeepsTheErrorCardForRehydration(t *testing.T) {
 func TestFailedTurnAfterAToolRowIsClosedWithItsErrorCard(t *testing.T) {
 	call := map[string]any{"id": "call_setup_beat_name", "type": "function",
 		"function": map[string]any{"name": "setup_beat", "arguments": `{"beat":"name"}`}}
-	db, a, messages := closureFixture(t, "tui", "nous", "m", []map[string]any{
+	db, a, messages := closureFixture(t, "tui", "deepseek", "m", []map[string]any{
 		{"role": "user", "content": "opening"},
 		{"role": "assistant", "content": "Hi!", "tool_calls": []any{call}},
 		{"role": "tool", "tool_call_id": "call_setup_beat_name", "content": `{"answer":{"name":"Austin"}}`},

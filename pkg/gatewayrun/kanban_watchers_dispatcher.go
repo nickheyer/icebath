@@ -55,7 +55,7 @@ func resolveDispatcherSettings(kanbanCfg map[string]any) dispatcherSettings {
 	}
 	interval, err := pyint.Float(rawInterval)
 	if err != nil {
-		runLog().Warn(fmt.Sprintf("kanban dispatcher: invalid dispatch_interval_seconds=%s, using default 60",
+		pkgLog().Warn(fmt.Sprintf("kanban dispatcher: invalid dispatch_interval_seconds=%s, using default 60",
 			pyrepr.Repr(kanbanCfg["dispatch_interval_seconds"])))
 		interval = 60.0
 	}
@@ -63,13 +63,13 @@ func resolveDispatcherSettings(kanbanCfg map[string]any) dispatcherSettings {
 
 	maxSpawn := kanbanCfg["max_spawn"]
 	if maxSpawn != nil {
-		runLog().Info(fmt.Sprintf("kanban dispatcher: max_spawn=%s", pyrepr.Str(maxSpawn)))
+		pkgLog().Info(fmt.Sprintf("kanban dispatcher: max_spawn=%s", pyrepr.Str(maxSpawn)))
 	}
 
 	maxInProgress := positiveIntSetting(kanbanCfg, "max_in_progress")
 	effectiveMaxInProgress := kanban.ResolveMaxInProgress(maxInProgress)
 	if maxInProgress == nil && effectiveMaxInProgress != nil {
-		runLog().Info(fmt.Sprintf("kanban dispatcher: kanban.max_in_progress unset; using "+
+		pkgLog().Info(fmt.Sprintf("kanban dispatcher: kanban.max_in_progress unset; using "+
 			"memory-derived default max_in_progress=%d "+
 			"(set kanban.max_in_progress in config.yaml to override)", *effectiveMaxInProgress))
 	}
@@ -77,12 +77,12 @@ func resolveDispatcherSettings(kanbanCfg map[string]any) dispatcherSettings {
 	rawFailureLimit := get("failure_limit", int64(kanban.DefaultFailureLimit))
 	failureLimit, err := pyint.Int64(rawFailureLimit)
 	if err != nil {
-		runLog().Warn(fmt.Sprintf("kanban dispatcher: invalid kanban.failure_limit=%s; using default %d",
+		pkgLog().Warn(fmt.Sprintf("kanban dispatcher: invalid kanban.failure_limit=%s; using default %d",
 			pyrepr.Repr(rawFailureLimit), kanban.DefaultFailureLimit))
 		failureLimit = kanban.DefaultFailureLimit
 	}
 	if failureLimit < 1 {
-		runLog().Warn(fmt.Sprintf("kanban dispatcher: kanban.failure_limit=%s is below 1; using default %d",
+		pkgLog().Warn(fmt.Sprintf("kanban dispatcher: kanban.failure_limit=%s is below 1; using default %d",
 			pyrepr.Repr(rawFailureLimit), kanban.DefaultFailureLimit))
 		failureLimit = kanban.DefaultFailureLimit
 	}
@@ -93,7 +93,7 @@ func resolveDispatcherSettings(kanbanCfg map[string]any) dispatcherSettings {
 	}
 	staleTimeoutSeconds, err := pyint.Int64(rawStale)
 	if err != nil {
-		runLog().Warn(fmt.Sprintf("kanban dispatcher: invalid kanban.dispatch_stale_timeout_seconds=%s; "+
+		pkgLog().Warn(fmt.Sprintf("kanban dispatcher: invalid kanban.dispatch_stale_timeout_seconds=%s; "+
 			"disabling stale detection", pyrepr.Repr(rawStale)))
 		staleTimeoutSeconds = 0
 	}
@@ -105,7 +105,7 @@ func resolveDispatcherSettings(kanbanCfg map[string]any) dispatcherSettings {
 		}
 	}
 	if defaultAssignee != nil {
-		runLog().Info(fmt.Sprintf("kanban dispatcher: default_assignee=%s (unassigned ready tasks "+
+		pkgLog().Info(fmt.Sprintf("kanban dispatcher: default_assignee=%s (unassigned ready tasks "+
 			"will route to this profile)", pyrepr.StrRepr(*defaultAssignee)))
 	}
 
@@ -210,10 +210,10 @@ func (d *kanbanDispatcher) quarantineLifted(slug string, fingerprint boardDBFing
 		return false
 	}
 	if entry.fingerprint == fingerprint {
-		runLog().Info(fmt.Sprintf("kanban dispatcher: board %s database fingerprint unchanged "+
+		pkgLog().Info(fmt.Sprintf("kanban dispatcher: board %s database fingerprint unchanged "+
 			"after %.0fs quarantine; retrying dispatch", slug, age))
 	} else {
-		runLog().Info(fmt.Sprintf("kanban dispatcher: board %s database changed; retrying dispatch", slug))
+		pkgLog().Info(fmt.Sprintf("kanban dispatcher: board %s database changed; retrying dispatch", slug))
 	}
 	delete(d.disabledCorruptBoards, slug)
 	return true
@@ -257,14 +257,14 @@ func (d *kanbanDispatcher) tickOnceForBoard(ctx context.Context, slug string) (*
 	}
 	if d.isCorruptBoardDBError(err) {
 		d.disabledCorruptBoards[slug] = corruptBoardEntry{fingerprint: fingerprint, at: pythread.Monotonic()}
-		runLog().Error(fmt.Sprintf("kanban dispatcher: board %s database %s is not a valid "+
+		pkgLog().Error(fmt.Sprintf("kanban dispatcher: board %s database %s is not a valid "+
 			"SQLite database; pausing dispatch for this board until "+
 			"the file changes, the gateway restarts, or the "+
 			"quarantine timer expires. Move or restore the file, "+
 			"then run `icebath kanban init` if you need a fresh board.", slug, fingerprint.resolved))
 		return nil, nil
 	}
-	runLog().Error(fmt.Sprintf("kanban dispatcher: tick failed on board %s", slug), "exc_info", err)
+	pkgLog().Error(fmt.Sprintf("kanban dispatcher: tick failed on board %s", slug), "exc_info", err)
 	return nil, nil
 }
 
@@ -350,7 +350,7 @@ func (d *kanbanDispatcher) autoDecomposeTick(ctx context.Context, perTick int) (
 			os.Setenv("ICEBATH_KANBAN_BOARD", slug)
 			triageIDs, err := kanbanDecomposeListTriageIDs(scoped, nil)
 			if err != nil {
-				runLog().Debug(fmt.Sprintf("kanban auto-decompose: list_triage_ids failed on board %s (%s)", slug, pyrepr.Str(err)))
+				pkgLog().Debug(fmt.Sprintf("kanban auto-decompose: list_triage_ids failed on board %s (%s)", slug, pyrepr.Str(err)))
 				triageIDs = nil
 			}
 			for _, tid := range triageIDs {
@@ -377,17 +377,17 @@ func decomposeOne(ctx context.Context, slug, tid string) (n int) {
 		return kanbanDecomposeTask(ctx, tid, &author, nil)
 	}()
 	if err != nil {
-		runLog().Error(fmt.Sprintf("kanban auto-decompose: decompose_task crashed on %s", tid), "exc_info", err)
+		pkgLog().Error(fmt.Sprintf("kanban auto-decompose: decompose_task crashed on %s", tid), "exc_info", err)
 		return 0
 	}
 	if !outcome.OK {
-		runLog().Debug(fmt.Sprintf("kanban auto-decompose [%s]: %s skipped: %s", slug, tid, outcome.Reason))
+		pkgLog().Debug(fmt.Sprintf("kanban auto-decompose [%s]: %s skipped: %s", slug, tid, outcome.Reason))
 		return 0
 	}
 	if outcome.Fanout && len(outcome.ChildIDs) > 0 {
-		runLog().Info(fmt.Sprintf("kanban auto-decompose [%s]: %s → %d children", slug, tid, len(outcome.ChildIDs)))
+		pkgLog().Info(fmt.Sprintf("kanban auto-decompose [%s]: %s → %d children", slug, tid, len(outcome.ChildIDs)))
 	} else {
-		runLog().Info(fmt.Sprintf("kanban auto-decompose [%s]: %s → single task (no fanout)", slug, tid))
+		pkgLog().Info(fmt.Sprintf("kanban auto-decompose [%s]: %s → single task (no fanout)", slug, tid))
 	}
 	return 1
 }
@@ -408,7 +408,7 @@ func logSpawnResults(results []boardDispatch) bool {
 		res := bd.result
 		if res != nil && len(res.Spawned) > 0 {
 			anySpawned = true
-			runLog().Info(fmt.Sprintf("kanban dispatcher [%s]: spawned=%d reclaimed=%d "+
+			pkgLog().Info(fmt.Sprintf("kanban dispatcher [%s]: spawned=%d reclaimed=%d "+
 				"crashed=%d timed_out=%d promoted=%d auto_blocked=%d",
 				bd.slug, len(res.Spawned), res.Reclaimed, len(res.Crashed), len(res.TimedOut), res.Promoted, len(res.AutoBlocked)))
 		}

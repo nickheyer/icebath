@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"log/slog"
 	"os"
 	"runtime"
 	"strings"
@@ -84,7 +83,7 @@ func createQuickSnapshotLocked(ctx context.Context, w io.Writer, label *string, 
 			return false
 		}
 		fmt.Fprintf(w, "  ⚠ Snapshot: skipping %s (%s exceeds %s limit)\n", relName, tools.SizefmtBytes(size), tools.SizefmtBytes(*maxFileSize))
-		slog.Warn(fmt.Sprintf("Quick snapshot skipped %s: %d bytes exceeds %d byte limit", relName, size, *maxFileSize))
+		pkgLog().Warn(fmt.Sprintf("Quick snapshot skipped %s: %d bytes exceeds %d byte limit", relName, size, *maxFileSize))
 		return true
 	}
 	ts := backupNow().UTC().Format("20060102-150405")
@@ -114,7 +113,7 @@ func createQuickSnapshotLocked(ctx context.Context, w io.Writer, label *string, 
 	if err := home.PathMkdir(stagingDir, 0o700, false, false); err != nil {
 		return "", err
 	}
-	slog.Info("quick snapshot phase=copy status=started id=" + snapID)
+	pkgLog().Info("quick snapshot phase=copy status=started id=" + snapID)
 
 	manifest := pyjson.NewObject()
 	var totalSize int64
@@ -158,7 +157,7 @@ func createQuickSnapshotLocked(ctx context.Context, w io.Writer, label *string, 
 			if errors.As(err, &stop) || !pypath.IsOSError(err) {
 				return err
 			}
-			slog.Warn(fmt.Sprintf("Could not snapshot %s: %s", rel, excText(err)))
+			pkgLog().Warn(fmt.Sprintf("Could not snapshot %s: %s", rel, excText(err)))
 		}
 		return nil
 	}
@@ -211,7 +210,7 @@ func createQuickSnapshotLocked(ctx context.Context, w io.Writer, label *string, 
 	if len(failedDBs) > 0 {
 		fmt.Fprintln(w, "  ⚠ CRITICAL: could not snapshot DB file(s): "+strings.Join(failedDBs, ", "))
 		fmt.Fprintf(w, "  ⚠ If sessions disappear after the update, check %s. %s\n", root, snapshotRecoveryHint())
-		slog.Error("Quick snapshot failed to capture DB file(s): " + strings.Join(failedDBs, ", "))
+		pkgLog().Error("Quick snapshot failed to capture DB file(s): " + strings.Join(failedDBs, ", "))
 	}
 	if manifest.Len() == 0 {
 		pyfs.RmTree(stagingDir, ignoreErrors)
@@ -282,12 +281,12 @@ func createQuickSnapshotLocked(ctx context.Context, w io.Writer, label *string, 
 	} else {
 		if len(oversizedSkipped) > 0 {
 			fmt.Fprintln(w, "  ⚠ Skipping snapshot prune: DB file(s) skipped for size: "+strings.Join(oversizedSkipped, ", "))
-			slog.Warn("Quick snapshot skipped oversized DB file(s): " + strings.Join(oversizedSkipped, ", "))
+			pkgLog().Warn("Quick snapshot skipped oversized DB file(s): " + strings.Join(oversizedSkipped, ", "))
 		}
-		slog.Warn(fmt.Sprintf("Skipping snapshot prune because %d DB(s) failed to capture and/or %d were oversized — "+
+		pkgLog().Warn(fmt.Sprintf("Skipping snapshot prune because %d DB(s) failed to capture and/or %d were oversized — "+
 			"preserving older snapshots as recovery source", len(failedDBs), len(oversizedSkipped)))
 	}
-	slog.Info(fmt.Sprintf("quick snapshot phase=copy status=complete id=%s files=%d bytes=%d", snapID, manifest.Len(), totalSize))
+	pkgLog().Info(fmt.Sprintf("quick snapshot phase=copy status=complete id=%s files=%d bytes=%d", snapID, manifest.Len(), totalSize))
 	return snapID, nil
 }
 
@@ -338,7 +337,7 @@ func createPreUpdateSnapshotsAllProfiles(ctx context.Context, w io.Writer, invok
 			if errors.As(err, &stop) {
 				return results, err
 			}
-			slog.Debug(fmt.Sprintf("Pre-update snapshot for profile %s failed: %s", name, excText(err)))
+			pkgLog().Debug(fmt.Sprintf("Pre-update snapshot for profile %s failed: %s", name, excText(err)))
 			continue
 		}
 		if snapID != "" {

@@ -5,7 +5,6 @@ package matrix
 import (
 	"context"
 	"fmt"
-	"log/slog"
 
 	"maunium.net/go/mautrix"
 )
@@ -27,14 +26,14 @@ func encryptedDropOffCause() string {
 // Optional mode continues without encrypted rooms and required mode refuses to connect, this build having no olm
 func (a *MatrixAdapter) connectSetupE2EE(ctx context.Context, client *mautrix.Client, stateStore mautrix.StateStore) bool {
 	if a.e2eeMode == "optional" {
-		slog.Warn(fmt.Sprintf("Matrix: E2EE optional but dependencies are missing. Continuing without "+
+		pkgLog().Warn(fmt.Sprintf("Matrix: E2EE optional but dependencies are missing. Continuing without "+
 			"encrypted-room support. %s", e2eeInstallHint))
 		a.mu.Lock()
 		a.encryption = false
 		a.mu.Unlock()
 		return true
 	}
-	slog.Error(fmt.Sprintf("Matrix: E2EE is required but dependencies are missing. %s. Refusing to connect — "+
+	pkgLog().Error(fmt.Sprintf("Matrix: E2EE is required but dependencies are missing. %s. Refusing to connect — "+
 		"encrypted rooms would silently fail.", e2eeInstallHint))
 	return abortConnect(client, nil)
 }

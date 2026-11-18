@@ -19,7 +19,7 @@ import (
 
 const vaultManagerTimeout = 30 * time.Second
 
-// Profile scoped secret reader of the manager backends, the module attribute hermes tests patch
+// Profile scoped secret reader of the manager backends, the module attribute tests patch
 var vaultGetSecret = provider.GetSecretStr
 
 // A manager backend the unlock action can hand the master password to

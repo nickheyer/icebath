@@ -51,7 +51,7 @@ func (a *APIServerAdapter) implicitChatSession(ctx context.Context, request *gat
 		if isStoreError(err) {
 			return sessionID, storeErrorResponse(err), nil
 		}
-		apiLog().Error(fmt.Sprintf("Error resolving the chat completions session: %v", err))
+		pkgLog().Error(fmt.Sprintf("Error resolving the chat completions session: %v", err))
 		return sessionID, errorResponse(fmt.Sprintf("Internal server error: %v", err), http.StatusInternalServerError, errOpts{Type: "server_error"}), nil
 	}
 	return resolved, nil, nil
@@ -96,7 +96,7 @@ func (a *APIServerAdapter) runIdempotent(ctx context.Context, request *gateway.W
 	if errors.As(err, &runtimeErr) {
 		return outcome, storeErrorResponse(err)
 	}
-	apiLog().Error(fmt.Sprintf("Error running agent for %s: %v", logLabel, err))
+	pkgLog().Error(fmt.Sprintf("Error running agent for %s: %v", logLabel, err))
 	message := fmt.Sprintf("Internal server error: %v", err)
 	var suppressed *presentationSuppressedError
 	if errors.As(err, &suppressed) {
@@ -109,12 +109,12 @@ func (a *APIServerAdapter) runIdempotent(ctx context.Context, request *gateway.W
 func (a *APIServerAdapter) prepareSSEResponse(request *gateway.WebRequest, sessionID, gatewaySessionKey string) (*gateway.WebStreamResponse, error) {
 	headers := a.sseHeaders(request, nil)
 	if sessionID != "" {
-		headers["X-Hermes-Session-Id"] = sessionID
+		headers["X-Icebath-Session-Id"] = sessionID
 	}
 	if gatewaySessionKey != "" {
-		headers["X-Hermes-Session-Key"] = gatewaySessionKey
+		headers["X-Icebath-Session-Key"] = gatewaySessionKey
 	}
-	response := gateway.NewWebStreamResponse(http.StatusOK, withIcebathTwins(headers))
+	response := gateway.NewWebStreamResponse(http.StatusOK, headers)
 	if err := response.Prepare(request); err != nil {
 		return nil, err
 	}
@@ -158,11 +158,11 @@ func (a *APIServerAdapter) writeSSEChatCompletion(ctx context.Context, request *
 					if !a.toolProgressEvents {
 						return nil
 					}
-					return write(v.payload, "hermes.tool.progress")
+					return write(v.payload, "icebath.tool.progress")
 				case "__reasoning__":
 					return write(chunk(pyjson.ObjectOf("reasoning_content", v.payload.GetOr("text", "")), nil), "")
 				case "__status__":
-					return write(v.payload, "hermes.status")
+					return write(v.payload, "icebath.status")
 				case "__approval__":
 					return write(v.payload, "approval.request")
 				}
@@ -181,7 +181,7 @@ func (a *APIServerAdapter) writeSSEChatCompletion(ctx context.Context, request *
 		usage := map[string]any{"input_tokens": int64(0), "output_tokens": int64(0), "total_tokens": int64(0)}
 		result, agentErr := outcome.result, outcome.err
 		if agentErr != nil {
-			apiLog().Error(fmt.Sprintf("Agent task %s failed during SSE streaming: %v", completionID, agentErr))
+			pkgLog().Error(fmt.Sprintf("Agent task %s failed during SSE streaming: %v", completionID, agentErr))
 		} else if len(outcome.usage) > 0 {
 			usage = outcome.usage
 		}
@@ -227,7 +227,7 @@ func (a *APIServerAdapter) writeSSEChatCompletion(ctx context.Context, request *
 			if muted {
 				extrasErr = ""
 			}
-			finishChunk.Set("hermes", hermesExtras(completed, isPartial, isFailed, extrasErr, finish, exhausted))
+			finishChunk.Set("icebath", completionExtras(completed, isPartial, isFailed, extrasErr, finish, exhausted))
 		}
 		if err := write(finishChunk, ""); err != nil {
 			return err
@@ -237,9 +237,9 @@ func (a *APIServerAdapter) writeSSEChatCompletion(ctx context.Context, request *
 	if streamErr != nil {
 		if isClientGone(streamErr) {
 			abandonAgentTask(ctx, *ref, task, "SSE client disconnected", "api_server_sse_disconnect", true)
-			apiLog().Info(fmt.Sprintf("SSE client disconnected; interrupted agent task %s", completionID))
+			pkgLog().Info(fmt.Sprintf("SSE client disconnected; interrupted agent task %s", completionID))
 		} else {
-			apiLog().Error(fmt.Sprintf("Agent crashed mid-stream for %s: %.300s", completionID, streamErr.Error()))
+			pkgLog().Error(fmt.Sprintf("Agent crashed mid-stream for %s: %.300s", completionID, streamErr.Error()))
 			if err := write(chunk(pyjson.NewObject(), "error"), ""); err == nil {
 				_ = response.Write([]byte("data: [DONE]\n\n"))
 			}
@@ -297,21 +297,21 @@ func (a *APIServerAdapter) writeSSEResponses(ctx context.Context, request *gatew
 				return nil, err
 			}
 			abandonAgentTask(ctx, *ref, task, "SSE client disconnected", "api_server_sse_disconnect", true)
-			apiLog().Info(fmt.Sprintf("SSE client disconnected; interrupted agent task %s", responseID))
+			pkgLog().Info(fmt.Sprintf("SSE client disconnected; interrupted agent task %s", responseID))
 		case errors.Is(streamErr, context.Canceled):
 			abandonAgentTask(context.WithoutCancel(ctx), *ref, task, "SSE task cancelled", "api_server_sse_cancelled", false)
 			if err := func() error { st.mu.Lock(); defer st.mu.Unlock(); return st.persistIncompleteIfNeeded() }(); err != nil {
 				return nil, err
 			}
-			apiLog().Info(fmt.Sprintf("SSE task cancelled; persisted incomplete snapshot for %s", responseID))
+			pkgLog().Info(fmt.Sprintf("SSE task cancelled; persisted incomplete snapshot for %s", responseID))
 			return nil, streamErr
 		default:
 			func() { st.mu.Lock(); defer st.mu.Unlock(); _ = st.persistIncompleteIfNeeded() }()
 			st.mu.Lock()
-			st.agentError = redactAPIErrorText(streamErr.Error()+"\n"+string(debug.Stack()), -1)
+			st.agentError = redactAPIErrorText(streamErr.Error(), -1)
 			st.mu.Unlock()
 			_ = st.emitCrash(streamErr)
-			apiLog().Error(fmt.Sprintf("Agent crashed mid-stream for %s: %.300s", responseID, st.agentError))
+			pkgLog().Error(fmt.Sprintf("Agent crashed mid-stream for %s: %.300s", responseID, st.agentError), "stack", string(debug.Stack()))
 		}
 	}
 	return response.WebResponse, nil
@@ -319,11 +319,9 @@ func (a *APIServerAdapter) writeSSEResponses(ctx context.Context, request *gatew
 
 // Re-emits a settled idempotent record as SSE, its exact frames or created plus its terminal event
 func (a *APIServerAdapter) replaySSEResponses(request *gateway.WebRequest, replay *pyjson.Object) (*gateway.WebResponse, error) {
-	headers, _ := replay.GetOr("headers", nil).(*pyjson.Object)
-	if headers == nil {
-		headers = pyjson.NewObject()
-	}
-	response, err := a.prepareSSEResponse(request, textOf(headers.GetOr("X-Hermes-Session-Id", nil)), textOf(headers.GetOr("X-Hermes-Session-Key", nil)))
+	stored, _ := replay.GetOr("headers", nil).(*pyjson.Object)
+	headers := storedHeaders(stored)
+	response, err := a.prepareSSEResponse(request, headers["X-Icebath-Session-Id"], headers["X-Icebath-Session-Key"])
 	if err != nil {
 		return nil, err
 	}
@@ -400,14 +398,8 @@ func (a *APIServerAdapter) responsesDurableReplay(ctx context.Context, request *
 			resp, err := a.replaySSEResponses(request, replay)
 			return durableKey, fingerprint, scope, idempotencyKey, resp, err
 		}
-		headers := map[string]string{}
-		if h, ok := replay.GetOr("headers", nil).(*pyjson.Object); ok {
-			for _, k := range h.Keys {
-				v, _ := h.Get(k)
-				headers[k] = pyrepr.Str(v)
-			}
-		}
-		return durableKey, fingerprint, scope, idempotencyKey, jsonResponse(replay.GetOr("response", nil), http.StatusOK, headers), nil
+		stored, _ := replay.GetOr("headers", nil).(*pyjson.Object)
+		return durableKey, fingerprint, scope, idempotencyKey, jsonResponse(replay.GetOr("response", nil), http.StatusOK, storedHeaders(stored)), nil
 	}
 	return durableKey, fingerprint, scope, idempotencyKey, nil, nil
 }

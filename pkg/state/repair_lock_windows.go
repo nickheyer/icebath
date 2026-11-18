@@ -2,7 +2,6 @@ package state
 
 import (
 	"fmt"
-	"log/slog"
 	"os"
 	"time"
 
@@ -30,7 +29,7 @@ func acquireRepairLock(lockPath string, handle *os.File, timeout float64) (lockO
 			return lockAcquired, handle, nil
 		}
 		if !IsAdvisoryLockContention(err) {
-			slog.Warn(fmt.Sprintf("Could not acquire state.db repair lock %s (%s) — skipping schema surgery on a "+
+			pkgLog().Warn(fmt.Sprintf("Could not acquire state.db repair lock %s (%s) — skipping schema surgery on a "+
 				"non-contention error.", lockPath, err))
 			return lockFailed, handle, nil
 		}

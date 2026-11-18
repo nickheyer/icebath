@@ -3,7 +3,6 @@ package gateway
 import (
 	"context"
 	"fmt"
-	"log/slog"
 	"strings"
 
 	"github.com/dlclark/regexp2/v2"
@@ -288,7 +287,7 @@ func RepairExplicitComputerUseMediaPaths(response string, messages []any) string
 func RepairExplicitComputerUseMediaPathsAt(ctx context.Context, response string, messages []any, historyOffset int) string {
 	out, err := repairExplicitComputerUseMediaPaths(ctx, response, messages, historyOffset)
 	if err != nil {
-		slog.Debug("computer_use media path repair failed", "error", err)
+		pkgLog().Debug("computer_use media path repair failed", "error", err)
 		return response
 	}
 	return out

@@ -72,7 +72,7 @@ func TestHealthReportsVersion(t *testing.T) {
 	}
 }
 
-func TestModelsReturnsHermesAgent(t *testing.T) {
+func TestModelsReturnsIcebathAgent(t *testing.T) {
 	cli := newTestClient(t, createApp(t, makeAdapter(t, "", nil)))
 	resp, body := cli.do("GET", "/v1/models", nil, nil)
 	data := jsonBody(t, body)
@@ -245,11 +245,11 @@ func TestCapabilitiesAdvertisesPluginSafeContract(t *testing.T) {
 	checks := []struct {
 		got, want any
 	}{
-		{data["object"], "hermes.api_server.capabilities"}, {data["platform"], "icebath-agent"}, {data["model"], "icebath-agent"},
+		{data["object"], "icebath.api_server.capabilities"}, {data["platform"], "icebath-agent"}, {data["model"], "icebath-agent"},
 		{auth["type"], "bearer"}, {auth["required"], false}, {runtime["mode"], "server_agent"}, {runtime["tool_execution"], "server"},
 		{runtime["split_runtime"], false}, {features["chat_completions"], true}, {features["run_status"], true},
 		{features["run_events_sse"], true}, {idempotency["supported"], true}, {idempotency["durable"], true},
-		{features["model_options"], true}, {features["session_continuity_header"], "X-Hermes-Session-Id"},
+		{features["model_options"], true}, {features["session_continuity_header"], "X-Icebath-Session-Id"},
 		{runStatus["path"], "/v1/runs/{run_id}"},
 	}
 	for i, check := range checks {
@@ -282,7 +282,7 @@ func TestTraversalSessionIDHeaderRejected(t *testing.T) {
 	for _, bad := range []string{"../../../../etc/pwned", "/abs/path", "..\\win"} {
 		resp, body := cli.do("POST", "/v1/chat/completions", map[string]any{"model": "icebath-agent",
 			"messages": []any{map[string]any{"role": "user", "content": "hi"}}},
-			map[string]string{"X-Hermes-Session-Id": bad, "Authorization": "Bearer sk-secret"})
+			map[string]string{"X-Icebath-Session-Id": bad, "Authorization": "Bearer sk-secret"})
 		if resp.StatusCode != http.StatusBadRequest {
 			t.Fatalf("%q answered %d: %s", bad, resp.StatusCode, body)
 		}

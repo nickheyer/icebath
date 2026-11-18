@@ -11,7 +11,6 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyrequests"
 	"github.com/nickheyer/icebath/pkg/plugins"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
@@ -19,8 +18,7 @@ import (
 // Strips every browser provider env var and registers the providers the bundled plugins register
 func bundledProviders(t *testing.T) *tools.Env {
 	for _, k := range []string{"BROWSERBASE_API_KEY", "BROWSERBASE_PROJECT_ID", "BROWSERBASE_BASE_URL", "BROWSER_USE_API_KEY",
-		"BROWSER_USE_GATEWAY_URL", "FIRECRAWL_API_KEY", "FIRECRAWL_API_URL", "FIRECRAWL_BROWSER_TTL", "TOOL_GATEWAY_DOMAIN",
-		"TOOL_GATEWAY_USER_TOKEN", "BROWSERBASE_PROXIES", "BROWSERBASE_KEEP_ALIVE", "BROWSERBASE_SESSION_TIMEOUT"} {
+		"FIRECRAWL_API_KEY", "FIRECRAWL_API_URL", "FIRECRAWL_BROWSER_TTL", "BROWSERBASE_PROXIES", "BROWSERBASE_KEEP_ALIVE", "BROWSERBASE_SESSION_TIMEOUT"} {
 		t.Setenv(k, "")
 		os.Unsetenv(k)
 	}
@@ -175,27 +173,4 @@ func TestFirecrawlMissingKeyPaths(t *testing.T) {
 	if _, err := p.CreateSession(env, "t"); err == nil || !isValueError(err) || !strings.Contains(err.Error(), "FIRECRAWL_API_KEY environment variable is required") {
 		t.Fatalf("create error %v", err)
 	}
-}
-
-// Managed key kept across a retryable failure only, a 409 in progress or a 5xx
-func TestPendingCreateKeyPreservation(t *testing.T) {
-	cases := []struct {
-		status int
-		body   string
-		want   bool
-	}{{502, "", true}, {409, `{"error":{"message":"Request Already In Progress"}}`, true}, {409, `{"error":"busy"}`, false}, {401, "", false}, {409, "nope", false}}
-	for _, c := range cases {
-		if got := shouldPreservePendingCreateKey(&pyrequests.Response{Status: c.status, Body: []byte(c.body)}); got != c.want {
-			t.Fatalf("%d %s preserved %v", c.status, c.body, got)
-		}
-	}
-	first := pendingCreateKey("t")
-	if pendingCreateKey("t") != first || !strings.HasPrefix(first, "browser-use-session-create:") || len(first) != len("browser-use-session-create:")+32 {
-		t.Fatalf("key %q", first)
-	}
-	clearPendingCreateKey("t")
-	if pendingCreateKey("t") == first {
-		t.Fatal("key kept after clear")
-	}
-	clearPendingCreateKey("t")
 }

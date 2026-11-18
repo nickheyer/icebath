@@ -376,7 +376,7 @@ func TestCompileMentionPatterns(t *testing.T) {
 	if CompileMentionPatterns(map[string]any{}, MentionPatternOptions{PlatformLabel: &telegram}) != nil || CompileMentionPatterns(nil, MentionPatternOptions{PlatformLabel: &telegram}) != nil {
 		t.Fatal("non list config and missing config compile nothing")
 	}
-	defaults := CompileMentionPatterns(nil, MentionPatternOptions{LogPrefix: "Photon", Defaults: []string{"hermes"}})
+	defaults := CompileMentionPatterns(nil, MentionPatternOptions{LogPrefix: "Photon", Defaults: []string{"icebath"}})
 	jsonList := CompileMentionPatterns(`["a", "b"]`, MentionPatternOptions{})
 	csv := CompileMentionPatterns("a, b\nc", MentionPatternOptions{})
 	scalar := CompileMentionPatterns(42, MentionPatternOptions{})

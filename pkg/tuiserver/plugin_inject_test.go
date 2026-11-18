@@ -9,7 +9,7 @@ import (
 	"testing"
 
 	"github.com/nickheyer/icebath/pkg/plugins"
-	"github.com/nickheyer/icebath/pkg/tuigateway"
+	"github.com/nickheyer/icebath/pkg/tuihost"
 )
 
 // Home whose config lets notify-plugin inject, with a fresh manager and the plugin's context on it
@@ -29,17 +29,17 @@ func injectHostCase(t *testing.T) (*plugins.Context, *plugins.Manager, string) {
 	return plugins.NewContext(manifest, manager), manager, h
 }
 
-// Live session record shaped like the hermes case fixture, registered under the UI sid until cleanup
-func injectHostSession(t *testing.T, sid, sessionKey string, extra map[string]any) *tuigateway.Session {
+// Live session record shaped like the test fixture, registered under the UI sid until cleanup
+func injectHostSession(t *testing.T, sid, sessionKey string, extra map[string]any) *tuihost.Session {
 	t.Helper()
 	fields := map[string]any{"agent": struct{}{}, "session_key": sessionKey, "history": []any{}, "history_lock": &sync.Mutex{},
 		"history_version": 0, "running": false, "transport": nil, "attached_images": []any{}, "last_active": 1.0}
 	for k, v := range extra {
 		fields[k] = v
 	}
-	session := tuigateway.NewSession(fields)
-	tuigateway.SetSessionRecord(sid, session)
-	t.Cleanup(func() { tuigateway.SetSessionRecord(sid, nil) })
+	session := tuihost.NewSession(fields)
+	tuihost.SetSessionRecord(sid, session)
+	t.Cleanup(func() { tuihost.SetSessionRecord(sid, nil) })
 	return session
 }
 
@@ -63,7 +63,7 @@ func (c *recordingCLI) AgentRunning() bool        { return false }
 func (c *recordingCLI) QueueInterrupt(msg string) { c.interrupts = append(c.interrupts, msg) }
 func (c *recordingCLI) QueuePending(msg string)   { c.pending = append(c.pending, msg) }
 func (c *recordingCLI) Agent() any                { return nil }
-func queuedText(session *tuigateway.Session) any {
+func queuedText(session *tuihost.Session) any {
 	q, _ := session.Get("queued_prompt").(map[string]any)
 	return q["text"]
 }

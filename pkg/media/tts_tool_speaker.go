@@ -68,7 +68,7 @@ var (
 			return false
 		}
 		if _, err := ttsImportSounddevice(); err != nil {
-			ttsLog().Debug(fmt.Sprintf("sounddevice not available, streamer→tempfile: %s", err))
+			pkgLog().Debug(fmt.Sprintf("sounddevice not available, streamer→tempfile: %s", err))
 			return false
 		}
 		return true
@@ -203,7 +203,7 @@ func playViaTempfile(chunks iter.Seq[[]byte], stop Event, sampleRate int) {
 		return nil
 	})
 	if err != nil {
-		ttsLog().Warn(fmt.Sprintf("Temp-file TTS fallback failed: %s", err))
+		pkgLog().Warn(fmt.Sprintf("Temp-file TTS fallback failed: %s", err))
 	}
 	if tmp != nil {
 		_ = pluginCall(tmp.Close)
@@ -348,7 +348,7 @@ func (p *syncSentencePipeline) synthesizeToTmp(cleaned string) string {
 		return nil
 	})
 	if err != nil {
-		ttsLog().Warn(fmt.Sprintf("Sync per-sentence TTS synthesis failed: %s", err))
+		pkgLog().Warn(fmt.Sprintf("Sync per-sentence TTS synthesis failed: %s", err))
 		removeQuietly(tmpPath)
 		return ""
 	}
@@ -369,7 +369,7 @@ func (p *syncSentencePipeline) drain() {
 			}
 			return nil
 		}); err != nil {
-			ttsLog().Warn(fmt.Sprintf("Sync per-sentence TTS failed: %s", err))
+			pkgLog().Warn(fmt.Sprintf("Sync per-sentence TTS failed: %s", err))
 		}
 		removeQuietly(tmpPath)
 	}
@@ -475,7 +475,7 @@ func (p *streamerPlayback) ensureOutputStream() bool {
 	p.closeOutputStream()
 	stream, err := p.createOutputStream()
 	if err != nil {
-		ttsLog().Warn(fmt.Sprintf("sounddevice OutputStream failed: %s", err))
+		pkgLog().Warn(fmt.Sprintf("sounddevice OutputStream failed: %s", err))
 		stream, p.reinitCount = nil, speakerMaxReinit
 	}
 	p.setOutputStream(stream)
@@ -502,7 +502,7 @@ func (p *streamerPlayback) speak(text string) {
 		audio, err = p.streamer.Stream(p.ctx, text)
 		return err
 	}); err != nil {
-		ttsLog().Warn(fmt.Sprintf("Streaming TTS synthesis failed: %s", err))
+		pkgLog().Warn(fmt.Sprintf("Streaming TTS synthesis failed: %s", err))
 		return
 	}
 	p.prefetchSem <- struct{}{}
@@ -523,7 +523,7 @@ func (p *streamerPlayback) consumeToQueue(audio iter.Seq2[[]byte, error], q chan
 				return err
 			}
 			if p.stop.IsSet() {
-				ttsLog().Info("TTS CUT: prefetch cancelled (stop_event set mid-sentence) — partial audio only")
+				pkgLog().Info("TTS CUT: prefetch cancelled (stop_event set mid-sentence) — partial audio only")
 				return nil
 			}
 			timer := time.NewTimer(speakerChunkPutWait)
@@ -536,7 +536,7 @@ func (p *streamerPlayback) consumeToQueue(audio iter.Seq2[[]byte, error], q chan
 		}
 		return nil
 	}); err != nil {
-		ttsLog().Warn(fmt.Sprintf("TTS CUT: streaming TTS prefetch failed mid-sentence (partial audio only): %s", err))
+		pkgLog().Warn(fmt.Sprintf("TTS CUT: streaming TTS prefetch failed mid-sentence (partial audio only): %s", err))
 	}
 }
 
@@ -578,7 +578,7 @@ func (p *streamerPlayback) writePCM(buf []byte) error {
 // Replaces the broken stream with a fresh one after a failed write, false once the reinit budget is spent
 func (p *streamerPlayback) recoverStream() bool {
 	if p.reinitCount >= speakerMaxReinit {
-		ttsLog().Warn(fmt.Sprintf("TTS: PortAudio reinit exhausted after %d attempts, falling back to tempfile for remaining sentences", speakerMaxReinit))
+		pkgLog().Warn(fmt.Sprintf("TTS: PortAudio reinit exhausted after %d attempts, falling back to tempfile for remaining sentences", speakerMaxReinit))
 		p.currentStream = nil
 		return false
 	}
@@ -586,10 +586,10 @@ func (p *streamerPlayback) recoverStream() bool {
 	p.closeOutputStream()
 	stream, err := p.createOutputStream()
 	if err != nil {
-		ttsLog().Warn(fmt.Sprintf("TTS: PortAudio stream reinit failed: %s", err))
+		pkgLog().Warn(fmt.Sprintf("TTS: PortAudio stream reinit failed: %s", err))
 		stream = nil
 	} else {
-		ttsLog().Info("TTS: PortAudio output stream reinitialized after error")
+		pkgLog().Info("TTS: PortAudio output stream reinitialized after error")
 	}
 	p.setOutputStream(stream)
 	p.currentStream = stream
@@ -618,7 +618,7 @@ func (p *streamerPlayback) playSentenceViaStream(q chan pcmItem) {
 	}
 	for aligned := range alignInt16Chunks(chunks, p.stop, false) {
 		if err := p.writePCM(aligned); err != nil {
-			ttsLog().Warn(fmt.Sprintf("PortAudio write failed, attempting stream reinit: %s", err))
+			pkgLog().Warn(fmt.Sprintf("PortAudio write failed, attempting stream reinit: %s", err))
 			if !p.recoverStream() {
 				return
 			}
@@ -631,7 +631,7 @@ func (p *streamerPlayback) playSentenceViaStream(q chan pcmItem) {
 func (p *streamerPlayback) playbackWorker() {
 	defer func() {
 		if r := recover(); r != nil {
-			ttsLog().Error(fmt.Sprintf("Exception in thread streamer playback: %v", r))
+			pkgLog().Error(fmt.Sprintf("Exception in thread streamer playback: %v", r))
 		}
 	}()
 	if !p.useDevice {
@@ -746,6 +746,6 @@ func StreamTTSToSpeaker(ctx context.Context, textQueue TextQueue, stopEvent, tts
 			}
 		}
 	}); err != nil {
-		ttsLog().Warn(fmt.Sprintf("Streaming TTS pipeline error: %s", err))
+		pkgLog().Warn(fmt.Sprintf("Streaming TTS pipeline error: %s", err))
 	}
 }

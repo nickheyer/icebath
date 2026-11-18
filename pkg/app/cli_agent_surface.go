@@ -31,7 +31,7 @@ type cliAgent interface {
 	ConfigContextLength() *int
 	ConnectionRespond(opID string, result any) (any, error)
 	ConnectionRetry(name string) (any, error)
-	CreditsCapture() *provider.CreditsCapture
+	HeaderCapture() *provider.HeaderCapture
 	Interrupt()
 	InterruptRequested() bool
 	MaxIterations() int

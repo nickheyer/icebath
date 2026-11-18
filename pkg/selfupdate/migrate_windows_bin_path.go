@@ -11,7 +11,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/pm"
 )
 
-// Registry access and platform of the PATH migration, replaced by hermes tests
+// Registry access and platform of the PATH migration, replaced by tests
 var (
 	migrateIsWindows     = func() bool { return runtime.GOOS == "windows" }
 	migrateReadUserPath  = readUserPathRaw

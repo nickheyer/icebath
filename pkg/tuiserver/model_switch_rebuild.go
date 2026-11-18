@@ -5,11 +5,11 @@ import (
 	"sync"
 
 	"github.com/nickheyer/icebath/pkg/internal/pythread"
-	"github.com/nickheyer/icebath/pkg/tuigateway"
+	"github.com/nickheyer/icebath/pkg/tuihost"
 )
 
 // Replaces one completed failed build generation and starts its retry, false when the generation moved on
-func restartCompletedFailedAgentBuild(ctx context.Context, sid string, session *tuigateway.Session, failedReady *pythread.Event) bool {
+func restartCompletedFailedAgentBuild(ctx context.Context, sid string, session *tuihost.Session, failedReady *pythread.Event) bool {
 	if failedReady == nil {
 		return false
 	}

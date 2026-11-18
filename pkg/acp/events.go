@@ -11,11 +11,8 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyacp"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/logging"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
-
-var eventsLog = logging.GetLogger("acp_adapter.events")
 
 // Client side of the connection that receives session updates
 type SessionUpdater interface {
@@ -69,12 +66,12 @@ func buildPlanUpdateFromTodoResult(result any) *pyacp.AgentPlanUpdate {
 func sendUpdate(conn SessionUpdater, sessionID string, loop Loop, update pyacp.SessionUpdate) {
 	future := safeScheduleThreadsafe(func(ctx context.Context) (any, error) {
 		return nil, conn.SessionUpdate(ctx, sessionID, update, nil)
-	}, loop, eventsLog, "Failed to send ACP update")
+	}, loop, pkgLog(), "Failed to send ACP update")
 	if future == nil {
 		return
 	}
 	if _, err := future.Result(5 * time.Second); err != nil {
-		eventsLog.Debug("Failed to send ACP update\n" + err.Error())
+		pkgLog().Debug("Failed to send ACP update\n" + err.Error())
 	}
 }
 
@@ -162,7 +159,7 @@ func FlushOpenToolCalls(conn SessionUpdater, sessionID string, loop Loop, calls 
 		}
 	}
 	if flushed > 0 {
-		eventsLog.Debug(fmt.Sprintf("Flushed %d ACP tool call(s) left open at turn end", flushed))
+		pkgLog().Debug(fmt.Sprintf("Flushed %d ACP tool call(s) left open at turn end", flushed))
 	}
 	return flushed
 }
@@ -218,11 +215,11 @@ func MakeToolProgressCb(conn SessionUpdater, sessionID string, loop Loop, calls 
 		if (name == "write_file" || name == "patch") && editPolicy != nil {
 			proposal, err := tools.BuildEditProposal(nil, name, plain)
 			if err != nil {
-				eventsLog.Debug("Failed to prepare auto-approved ACP edit diff for " + name)
+				pkgLog().Debug("Failed to prepare auto-approved ACP edit diff for " + name)
 			} else if proposal != nil {
 				policy, cwd, perr := editPolicy()
 				if perr != nil {
-					eventsLog.Debug("Failed to prepare auto-approved ACP edit diff for " + name)
+					pkgLog().Debug("Failed to prepare auto-approved ACP edit diff for " + name)
 				} else if tools.ShouldAutoApproveEdit(proposal, policy, cwd) {
 					editDiff = proposal
 				}
@@ -236,7 +233,7 @@ func MakeToolProgressCb(conn SessionUpdater, sessionID string, loop Loop, calls 
 func captureSnapshot(name string, args map[string]any) (snap *tools.LocalEditSnapshot) {
 	defer func() {
 		if recover() != nil {
-			eventsLog.Debug("Failed to capture ACP edit snapshot for " + name)
+			pkgLog().Debug("Failed to capture ACP edit snapshot for " + name)
 			snap = nil
 		}
 	}()

@@ -20,10 +20,10 @@ const leakedKey = "sk-or-v1-reallyLongSecretKeyValue12345678"
 
 // Credential stores of the export tests beyond PROFILE_CREDENTIAL_PATHS
 var extraCredentialStores = []string{
-	".op.env", "npmrc", "honcho.json", "google_chat_user_token.json", "google_chat_user_oauth_pending",
+	".op.env", "npmrc", "google_chat_user_token.json", "google_chat_user_oauth_pending",
 	"workspace/meetings/node_token.json", "weixin/accounts", ".copilot_jwt.json", "proxy", "chrome-debug",
 	"home/.git-credentials", "home/.config/gh/hosts.yml", "backups", "state-snapshots",
-	"teams_pipeline_store.json", "mem0.json",
+	"teams_pipeline_store.json",
 	"browser-profiles/live/Default/Cookies", "browser_profiles/default/Default/Login Data",
 	"mcp-tokens/srv.json", "vault/vault.key", "platforms/pairing/approved.json", "slack_tokens.json",
 	"webhook_subscriptions.json", ".ssh/id_rsa", ".aws/credentials", ".gnupg/x", ".kube/config", ".envrc",

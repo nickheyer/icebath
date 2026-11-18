@@ -78,7 +78,7 @@ var zipURLRetrieve = func(ctx context.Context, source, path string) error {
 		return retrieveLocalFile(parsed, path)
 	case "http", "https":
 	default:
-		return &pm.PyError{Class: "URLError", Message: "<urlopen error unknown url type: " + parsed.Scheme + ">"}
+		return &pm.PyError{Class: "URLError", Message: "unknown URL type " + parsed.Scheme}
 	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, source, nil)
 	if err != nil {
@@ -88,7 +88,7 @@ var zipURLRetrieve = func(ctx context.Context, source, path string) error {
 	client := &http.Client{Transport: &http.Transport{Proxy: func(r *http.Request) (*url.URL, error) { return proxy(r.URL) }}}
 	resp, err := client.Do(req)
 	if err != nil {
-		return &pm.PyError{Class: "URLError", Message: "<urlopen error " + err.Error() + ">"}
+		return &pm.PyError{Class: "URLError", Message: "download failed: " + err.Error()}
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
@@ -107,15 +107,15 @@ var zipURLRetrieve = func(ctx context.Context, source, path string) error {
 		return err
 	}
 	if resp.ContentLength >= 0 && read < resp.ContentLength {
-		return &pm.PyError{Class: "ContentTooShortError", Message: fmt.Sprintf("<urlopen error retrieval incomplete: got only %d out of %d bytes>", read, resp.ContentLength)}
+		return &pm.PyError{Class: "ContentTooShortError", Message: fmt.Sprintf("download incomplete: got only %d out of %d bytes", read, resp.ContentLength)}
 	}
 	return nil
 }
 
-// Copies the local file a file URL names to path, the urlopen error of a missing or remote one returned
+// Copies the local file a file URL names to path, an error for a missing or remote one
 func retrieveLocalFile(source *url.URL, path string) error {
 	if source.Host != "" && source.Host != "localhost" {
-		return &pm.PyError{Class: "URLError", Message: "<urlopen error file:// scheme is supported only on localhost>"}
+		return &pm.PyError{Class: "URLError", Message: "file URLs are supported only on localhost"}
 	}
 	local := source.Path
 	if custodyWindows() {
@@ -123,7 +123,7 @@ func retrieveLocalFile(source *url.URL, path string) error {
 	}
 	in, err := os.Open(local)
 	if err != nil {
-		return &pm.PyError{Class: "URLError", Message: "<urlopen error " + launchErrorText(err) + ">"}
+		return &pm.PyError{Class: "URLError", Message: "could not read the file: " + launchErrorText(err)}
 	}
 	defer in.Close()
 	out, err := os.Create(path)
@@ -257,7 +257,7 @@ func copyFileExclusive(src, dst string, sync bool, onCreated func(dst string) er
 func discardStaged(staged []stagedEntry) {
 	for _, entry := range staged {
 		if err := removePath(entry.staging, false); err != nil {
-			updateLog.Warn(fmt.Sprintf("could not remove staging path %s: %s", entry.staging, launchErrorText(err)))
+			pkgLog().Warn(fmt.Sprintf("could not remove staging path %s: %s", entry.staging, launchErrorText(err)))
 		}
 	}
 }
@@ -338,7 +338,7 @@ func commitStagedReplacements(staged []stagedEntry, onCommitted func() error, ta
 				if !isUpdateOSError(undo) {
 					return undo
 				}
-				updateLog.Warn(fmt.Sprintf("rollback failed for %s: %s", swapped[i].dst, launchErrorText(undo)))
+				pkgLog().Warn(fmt.Sprintf("rollback failed for %s: %s", swapped[i].dst, launchErrorText(undo)))
 			}
 		}
 		return err

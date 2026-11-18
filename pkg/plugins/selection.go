@@ -351,7 +351,7 @@ func CmdEnable(ctx context.Context, name string, allowToolOverride *bool, out io
 	}
 	changed, err := activateKey(ctx, h, key, true, console)
 	if err != nil {
-		return err
+		return reportedRefusal(err)
 	}
 	if changed {
 		console.Print(fmt.Sprintf("[green]✓[/green] Plugin [bold]%s[/bold] enabled.", key))
@@ -370,6 +370,15 @@ func CmdEnable(ctx context.Context, name string, allowToolOverride *bool, out io
 		return togglePluginToolset(ctx, h, key, true, "")
 	}
 	return nil
+}
+
+// Exit status of a refusal the console already reported, any other error unchanged
+func reportedRefusal(err error) error {
+	var refused *AdmissionRefused
+	if errors.As(err, &refused) {
+		return &CommandExit{Code: 1}
+	}
+	return err
 }
 
 // Capability consent and the legacy tool override grant of a non bundled enable
@@ -406,7 +415,7 @@ func CmdDisable(ctx context.Context, name string, out io.Writer) error {
 	}
 	changed, err := activateKey(ctx, h, key, false, console)
 	if err != nil {
-		return err
+		return reportedRefusal(err)
 	}
 	if !changed {
 		console.Print(fmt.Sprintf("[dim]Plugin '%s' is already disabled.[/dim]", key))

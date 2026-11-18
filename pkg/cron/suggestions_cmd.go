@@ -4,11 +4,11 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"log/slog"
 	"strconv"
 	"strings"
 	"time"
 
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
@@ -30,7 +30,7 @@ func suggestionGet(rec any, key string, def any) (any, error) {
 		}
 		return def, nil
 	}
-	return nil, fmt.Errorf("AttributeError: '%s' object has no attribute 'get'", pyrepr.TypeName(rec))
+	return nil, fmt.Errorf("a cron suggestion is %s, expected a mapping", errchain.Kind(rec))
 }
 
 // Nested job_spec value of a record, falling back to def as the Python or chain does
@@ -73,7 +73,7 @@ func fmtPendingSuggestions(pending []any) (string, error) {
 		}
 		descStr, ok := descVal.(string)
 		if !ok {
-			return "", fmt.Errorf("AttributeError: '%s' object has no attribute 'strip'", pyrepr.TypeName(descVal))
+			return "", fmt.Errorf("a cron suggestion description is %s, expected text", errchain.Kind(descVal))
 		}
 		if desc := pystr.Strip(descStr); desc != "" {
 			lines = append(lines, "     "+desc)
@@ -144,7 +144,7 @@ func dismissSuggestionCmd(s *Store, rest string) (string, error) {
 func catalogSuggestionsCmd(ctx context.Context, s *Store) string {
 	created, err := SeedCatalogSuggestions(ctx, s.AddSuggestion, nil)
 	if err != nil {
-		slog.Debug(fmt.Sprintf("catalog seed failed: %s", pyrepr.ExceptionMessage(err)))
+		pkgLog().Debug(fmt.Sprintf("catalog seed failed: %s", pyrepr.ExceptionMessage(err)))
 		return "Couldn't load the catalog."
 	}
 	if len(created) == 0 {

@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"log/slog"
 	"math"
 	"math/big"
 	"os"
@@ -76,7 +75,7 @@ var ProfileStoreHooks struct {
 	Dir        func(name string) (string, error)
 }
 
-// SessionSearchArgs are the session_search keyword arguments in their hermes order
+// The session_search keyword arguments in their order
 type SessionSearchArgs struct {
 	Query             any
 	RoleFilter        any
@@ -174,7 +173,7 @@ func sessionSearchOK(payload *pyjson.Object) string {
 func loud[T any](fn func() (T, error), logMsg, errorPrefix string, logArgs ...any) (T, string) {
 	out, err := fn()
 	if err != nil {
-		slog.Error(fmt.Sprintf(logMsg, append(logArgs, err)...))
+		pkgLog().Error(fmt.Sprintf(logMsg, append(logArgs, err)...))
 		var zero T
 		return zero, sessionSearchError(fmt.Sprintf("%s: %v", errorPrefix, err))
 	}
@@ -244,7 +243,7 @@ func sessionSearchFloat(v any) (float64, bool) {
 func getSessionMeta(ctx context.Context, db SessionSearchStore, sessionID string) *pyjson.Object {
 	meta, err := db.GetSession(ctx, sessionID)
 	if err != nil {
-		slog.Debug(fmt.Sprintf("get_session failed for %s: %v", sessionID, err))
+		pkgLog().Debug(fmt.Sprintf("get_session failed for %s: %v", sessionID, err))
 		return pyjson.NewObject()
 	}
 	if meta == nil {
@@ -466,7 +465,7 @@ func getMessageStorageState(ctx context.Context, db SessionSearchStore, messageI
 	})
 	if err != nil {
 		if !errors.Is(err, sql.ErrNoRows) {
-			slog.Debug(fmt.Sprintf("message storage-state lookup failed for %v", messageID))
+			pkgLog().Debug(fmt.Sprintf("message storage-state lookup failed for %v", messageID))
 		}
 		return nil
 	}
@@ -612,7 +611,7 @@ func titleMatchResult(ctx context.Context, db SessionSearchStore, query, current
 	}
 	sessionID, found, err := db.ResolveSessionByTitle(ctx, titleQuery)
 	if err != nil {
-		slog.Debug(fmt.Sprintf("resolve_session_by_title failed for %s", pyrepr.Repr(titleQuery)))
+		pkgLog().Debug(fmt.Sprintf("resolve_session_by_title failed for %s", pyrepr.Repr(titleQuery)))
 		return nil
 	}
 	if !found || sessionID == "" {
@@ -624,11 +623,11 @@ func titleMatchResult(ctx context.Context, db SessionSearchStore, query, current
 	}
 	sessionMeta := pyjson.NewObject()
 	if root, err := db.GetSession(ctx, lineageRoot); err != nil {
-		slog.Debug(fmt.Sprintf("get_session failed for title match %s", sessionID))
+		pkgLog().Debug(fmt.Sprintf("get_session failed for title match %s", sessionID))
 	} else if root != nil {
 		sessionMeta = root
 	} else if own, err := db.GetSession(ctx, sessionID); err != nil {
-		slog.Debug(fmt.Sprintf("get_session failed for title match %s", sessionID))
+		pkgLog().Debug(fmt.Sprintf("get_session failed for title match %s", sessionID))
 	} else if own != nil {
 		sessionMeta = own
 	}
@@ -637,7 +636,7 @@ func titleMatchResult(ctx context.Context, db SessionSearchStore, query, current
 	}
 	messages, err := db.GetMessages(ctx, sessionID, state.GetMessagesOptions{})
 	if err != nil {
-		slog.Debug(fmt.Sprintf("get_messages failed for title match %s", sessionID))
+		pkgLog().Debug(fmt.Sprintf("get_messages failed for title match %s", sessionID))
 		messages = nil
 	}
 	var anchorID any
@@ -649,12 +648,12 @@ func titleMatchResult(ctx context.Context, db SessionSearchStore, query, current
 		if id, ok := sessionSearchInt(anchorID); ok {
 			v, err := db.GetAnchoredView(ctx, sessionID, id, state.AnchoredViewOptions{Window: 5, Bookend: 3, KeepRoles: []string{"user", "assistant"}})
 			if err != nil {
-				slog.Debug(fmt.Sprintf("get_anchored_view failed for title match %s/%v", sessionID, anchorID))
+				pkgLog().Debug(fmt.Sprintf("get_anchored_view failed for title match %s/%v", sessionID, anchorID))
 			} else if v != nil {
 				view = v
 			}
 		} else {
-			slog.Debug(fmt.Sprintf("get_anchored_view failed for title match %s/%v", sessionID, anchorID))
+			pkgLog().Debug(fmt.Sprintf("get_anchored_view failed for title match %s/%v", sessionID, anchorID))
 		}
 	}
 	title := pyOr(oget(sessionMeta, "title"), titleQuery)
@@ -706,7 +705,7 @@ func thousands(v any) string {
 func discoverPayload(ctx context.Context, db SessionSearchStore, query, detail string, results []*pyjson.Object, extra *pyjson.Object) string {
 	status, err := db.FTSRebuildStatus(ctx)
 	if err != nil {
-		slog.Debug("fts_rebuild_status failed", "err", err)
+		pkgLog().Debug("fts_rebuild_status failed", "err", err)
 		status = nil
 	}
 	payload := pyjson.NewObject()
@@ -758,7 +757,7 @@ func hydrateHit(ctx context.Context, db SessionSearchStore, lineageRoot string, 
 		err = fmt.Errorf("anchor id %v is not an integer", msgID)
 	}
 	if err != nil {
-		slog.Warn(fmt.Sprintf("get_anchored_view failed for %s/%v: %v", hitSID, msgID, err))
+		pkgLog().Warn(fmt.Sprintf("get_anchored_view failed for %s/%v: %v", hitSID, msgID, err))
 		return nil
 	}
 	if view == nil {
@@ -947,7 +946,7 @@ func resolveProfileDB(ctx context.Context, profile any) (SessionSearchStore, err
 // Seam over the profile database resolver for tests that swap in a fake store
 var resolveProfileDBFn = resolveProfileDB
 
-// Seam over the read only default store open, the hermes SessionDB constructor
+// Seam over the read only default store open, the SessionDB constructor
 var sessionSearchOpenDefaultFn = func(ctx context.Context) (SessionSearchStore, error) {
 	db, err := state.NewSessionDB(ctx, home.StatePath(home.Dir(ctx)), true)
 	if err != nil {
@@ -1129,7 +1128,7 @@ func scroll(ctx context.Context, db SessionSearchStore, sessionID string, around
 		var rebind *pyjson.Object
 		if sameLineage(ctx, db, sessionID, owning) {
 			if rebind, err = db.GetMessagesAround(ctx, owning, anchor, win); err != nil {
-				slog.Debug(fmt.Sprintf("rebind get_messages_around failed: %v", err))
+				pkgLog().Debug(fmt.Sprintf("rebind get_messages_around failed: %v", err))
 				rebind = nil
 			}
 		}
@@ -1226,7 +1225,7 @@ func SessionSearch(ctx context.Context, a SessionSearchArgs) string {
 	}
 	profileDB, err := resolveProfileDBFn(ctx, a.Profile)
 	if err != nil {
-		slog.Debug(fmt.Sprintf("session_search: cannot open profile %s", pyrepr.Repr(a.Profile)), "err", err)
+		pkgLog().Debug(fmt.Sprintf("session_search: cannot open profile %s", pyrepr.Repr(a.Profile)), "err", err)
 		return sessionSearchError(fmt.Sprintf("profile '%s': %v", pyrepr.Str(a.Profile), err))
 	}
 	db, currentSessionID := a.DB, a.CurrentSessionID
@@ -1237,7 +1236,7 @@ func SessionSearch(ctx context.Context, a SessionSearchArgs) string {
 	if db == nil {
 		opened, err := sessionSearchOpenDefaultFn(ctx)
 		if err != nil {
-			slog.Debug("SessionDB unavailable for session_search", "err", err)
+			pkgLog().Debug("SessionDB unavailable for session_search", "err", err)
 			return sessionSearchError(state.FormatSessionDBUnavailable(ctx, state.SessionDBUnavailablePrefix, false))
 		}
 		db = opened
@@ -1246,7 +1245,7 @@ func SessionSearch(ctx context.Context, a SessionSearchArgs) string {
 	defer func() {
 		for i := len(owned) - 1; i >= 0; i-- {
 			if err := sessionSearchReleaseFn(owned[i]); err != nil {
-				slog.Debug("Failed to close session_search SessionDB", "err", err)
+				pkgLog().Debug("Failed to close session_search SessionDB", "err", err)
 			}
 		}
 	}()
@@ -1271,7 +1270,7 @@ func argDefault(args map[string]any, key string, def any) any {
 	return def
 }
 
-// session_search arguments of a registry call, the handler kwargs mapped like the hermes lambda
+// session_search arguments of a registry call, the handler kwargs mapped like the lambda
 func sessionSearchArgsOf(args map[string]any, db *state.DB, currentSessionID string) SessionSearchArgs {
 	a := SessionSearchArgs{
 		Query:             pyOr(args["query"], ""),

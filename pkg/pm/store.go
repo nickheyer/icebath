@@ -248,7 +248,7 @@ type filteredMember struct {
 	linkTarget *string
 }
 
-// Applies the hermes filter, symlinks judged from their own directory and every other member by the data filter
+// Applies the store extraction filter, symlinks judged from their own directory and every other member by the data filter
 func tarFilter(m *tarInfo, dest string) (*filteredMember, error) {
 	if !m.issym() {
 		return tarDataFilter(m, dest)
@@ -353,7 +353,7 @@ func ExtractTarFile(archive, dest string) error {
 	return ExtractTar(f, dest)
 }
 
-// Extracts a seekable tar stream the way tarfile extractall does under the hermes filter, unsafe members refused
+// Extracts a seekable tar stream the way tarfile extractall does under the store extraction filter, unsafe members refused
 func ExtractTar(r io.ReadSeeker, dest string) error {
 	if err := os.MkdirAll(dest, 0o777); err != nil {
 		return err

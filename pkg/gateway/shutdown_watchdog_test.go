@@ -238,7 +238,7 @@ func TestLoopFloorTimerReschedulesUntilCancelled(t *testing.T) {
 
 func TestProcessHomeReadersExpandLiteralTilde(t *testing.T) {
 	readers := map[string]func() string{
-		"status":            processHermesHome,
+		"status":            processIcebathHome,
 		"lifecycle_ledger":  func() string { return watchdogHome(context.Background(), "") },
 		"shutdown_watchdog": func() string { return watchdogProcessHome(context.Background()) },
 	}

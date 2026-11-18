@@ -6,7 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"log/slog"
 	"net"
 	"strings"
 	"time"
@@ -286,7 +285,7 @@ func standaloneSend(ctx context.Context, kwargs map[string]any) (map[string]any,
 		if ctx.Err() != nil {
 			return nil, ctx.Err()
 		}
-		slog.Debug("IRC standalone send raised", "error", err)
+		pkgLog().Debug("IRC standalone send raised", "error", err)
 		return gateway.SendError("IRC standalone send failed: " + standaloneErrorText(err)), nil
 	}
 	return result, nil

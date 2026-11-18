@@ -72,15 +72,3 @@ func TestLeaseTokenAndFieldViewDebugText(t *testing.T) {
 		t.Fatalf("got %q", got)
 	}
 }
-
-func TestLoginRegistryCreatesTheAttemptTableOnce(t *testing.T) {
-	r := allocGatewayRunner()
-	lock, attempts := r.loginRegistry()
-	lock.Lock()
-	attempts[loginSingle] = &signInAttempt{attemptID: "a1"}
-	lock.Unlock()
-	againLock, again := r.loginRegistry()
-	if againLock != lock || again[loginSingle] == nil || again[loginSingle].attemptID != "a1" {
-		t.Fatal("the registry was created twice")
-	}
-}

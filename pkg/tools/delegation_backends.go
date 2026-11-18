@@ -2,10 +2,11 @@ package tools
 
 import (
 	"context"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"slices"
 	"sync"
 	"unsafe"
+
+	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/home"
@@ -18,11 +19,10 @@ var (
 	delegationRebuildRequests = map[string]bool{}
 )
 
-// Wiring the provider, mcp and observability lanes install, each panics when unassigned
+// Wiring the provider and mcp lanes install, each panics when unassigned
 var DelegationBackendHooks struct {
 	ListProviders        func(ctx context.Context) []DelegationProvider
 	RefreshAgentMCPTools func(ctx context.Context, a DelegationRebuildAgent, quietMode, contentAware bool)
-	RecordCacheBreak     func(ctx context.Context, a DelegationRebuildAgent, reason string)
 }
 
 // One selectable delegation backend, Available false carrying the reason it cannot run
@@ -175,7 +175,6 @@ func ApplyRequestedToolRebuild(ctx context.Context, a DelegationRebuildAgent) bo
 	if unsafe.SliceData(after) == unsafe.SliceData(before) && len(after) == len(before) {
 		return false
 	}
-	DelegationBackendHooks.RecordCacheBreak(ctx, a, "toolset_change")
 	return true
 }
 

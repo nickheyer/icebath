@@ -38,7 +38,7 @@ func (r *GatewayRunner) busySteerAckEnabled(ctx context.Context, event *gateway.
 			platformConfigKey(event.Source.Platform), "busy_steer_ack_enabled", true))
 	}
 	if !enabled {
-		runLog().Debug(fmt.Sprintf("Busy steer ack suppressed for session %s", sessionKey))
+		pkgLog().Debug(fmt.Sprintf("Busy steer ack suppressed for session %s", sessionKey))
 	}
 	return enabled
 }
@@ -129,7 +129,7 @@ func (r *GatewayRunner) composeBusyAckMessage(ctx context.Context, event *gatewa
 // Sends the busy ack, logging a failed send at debug
 func (r *GatewayRunner) sendBusyAckReply(ctx context.Context, event *gateway.MessageEvent, adapter gateway.PlatformAdapter, message string) {
 	if err := r.sendBusyReply(ctx, event, adapter, message, false); err != nil {
-		runLog().Debug(fmt.Sprintf("Failed to send busy-ack: %s", err))
+		pkgLog().Debug(fmt.Sprintf("Failed to send busy-ack: %s", err))
 	}
 }
 
@@ -156,7 +156,7 @@ func (r *GatewayRunner) handleActiveSessionBusyMessage(ctx context.Context, even
 		if event.Source.Platform != "" {
 			platform = string(event.Source.Platform)
 		}
-		runLog().Warn(fmt.Sprintf("Dropping message from unauthorized user in active session: user=%s (%s), platform=%s, session=%s",
+		pkgLog().Warn(fmt.Sprintf("Dropping message from unauthorized user in active session: user=%s (%s), platform=%s, session=%s",
 			pyrepr.Str(derefOrNone(event.Source.UserID)), pyrepr.Str(derefOrNone(event.Source.UserName)), platform, sessionKey))
 		return true, nil
 	}
@@ -224,7 +224,7 @@ func (r *GatewayRunner) busyInterruptAndAck(ctx context.Context, event *gateway.
 		ackEnabled = env
 	}
 	if strings.ToLower(ackEnabled) != "true" {
-		runLog().Debug(fmt.Sprintf("Busy ack suppressed for session %s", sessionKey))
+		pkgLog().Debug(fmt.Sprintf("Busy ack suppressed for session %s", sessionKey))
 		return nil
 	}
 	now := wallClock()

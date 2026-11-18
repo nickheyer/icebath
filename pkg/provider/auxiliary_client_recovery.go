@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/hex"
 	"fmt"
-	"log/slog"
 	"regexp"
 	"sort"
 	"strconv"
@@ -25,7 +24,7 @@ func auxPoolCredentialDigest(pool *Pool, entry *PooledCredential) string {
 		var entries []PooledCredential
 		if pool != nil {
 			if err := auxRecoverRaise(func() { entries = pool.Entries() }); err != nil {
-				slog.Debug(fmt.Sprintf("Auxiliary client: could not list pool entries for digest: %v", err))
+				pkgLog().Debug(fmt.Sprintf("Auxiliary client: could not list pool entries for digest: %v", err))
 				return ""
 			}
 		}
@@ -101,7 +100,7 @@ func auxRecoverablePoolProvider(ctx context.Context, resolvedProvider string, cl
 			return "", err
 		}
 		if baseOrigin != rtOrigin {
-			slog.Info(fmt.Sprintf("Auxiliary: %s rejected the session key at %s, but the session's endpoint is %s — endpoint mismatch, not a dead key; skipping credential rotation",
+			pkgLog().Info(fmt.Sprintf("Auxiliary: %s rejected the session key at %s, but the session's endpoint is %s — endpoint mismatch, not a dead key; skipping credential rotation",
 				normalized, baseURLHostname(base), baseURLHostname(rtBase)))
 			return "", nil
 		}
@@ -168,7 +167,7 @@ func auxRecoverProviderPool(ctx context.Context, provider string, exc error, fai
 	normalized := auxNormalizeAuxProvider(ctx, provider)
 	pool, loadErr := auxRecoveryPoolFn(ctx, provider, normalized)
 	if loadErr != nil {
-		slog.Debug(fmt.Sprintf("Auxiliary client: could not load pool for %s recovery: %v", normalized, loadErr))
+		pkgLog().Debug(fmt.Sprintf("Auxiliary client: could not load pool for %s recovery: %v", normalized, loadErr))
 		return false
 	}
 	if pool == nil || !pool.HasCredentials() {
@@ -340,16 +339,6 @@ func auxRefreshCodexCredentials(ctx context.Context, _ string) (bool, error) {
 	return auxCredsHaveAPIKey(creds), nil
 }
 
-// True when a forced Nous refresh yields an api key
-func auxRefreshNousCredentials(ctx context.Context, _ string) (bool, error) {
-	timeout := envFloat("ICEBATH_NOUS_TIMEOUT_SECONDS", 15)
-	creds, err := auxResolveNousRuntimeCredentialsFn(ctx, NousResolveOptions{Timeout: secondsDuration(timeout), ForceRefresh: true})
-	if err != nil {
-		return false, err
-	}
-	return auxCredsHaveAPIKey(creds), nil
-}
-
 // Refreshes only the failed Anthropic key, through its pool entry or the matching Claude Code login
 func auxRefreshAnthropicCredentials(ctx context.Context, failedAPIKey string) (bool, error) {
 	if failedAPIKey == "" {
@@ -392,7 +381,6 @@ func auxRefreshVertexCredentials(ctx context.Context, _ string) (bool, error) {
 // Refreshers keyed by provider, each true when a usable credential exists afterwards
 var auxCredentialRefreshers = map[string]func(ctx context.Context, failedAPIKey string) (bool, error){
 	"openai-codex": auxRefreshCodexCredentials,
-	"nous":         auxRefreshNousCredentials,
 	"anthropic":    auxRefreshAnthropicCredentials,
 	"xai-oauth":    auxRefreshXaiOAuthCredentials,
 	"vertex":       auxRefreshVertexCredentials,
@@ -420,7 +408,7 @@ func auxRefreshProviderCredentials(ctx context.Context, provider, failedAPIKey s
 		}
 	})
 	if err != nil {
-		slog.Debug(fmt.Sprintf("Auxiliary provider credential refresh failed for %s: %v", normalized, err))
+		pkgLog().Debug(fmt.Sprintf("Auxiliary provider credential refresh failed for %s: %v", normalized, err))
 		return false
 	}
 	if !refreshed {

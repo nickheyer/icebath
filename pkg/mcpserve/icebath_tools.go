@@ -107,7 +107,7 @@ func makeToolHandler(ctx context.Context, env *tools.Env, toolName string) func(
 		}
 		defer func() {
 			if r := recover(); r != nil {
-				toolsLog.Error(fmt.Sprintf("tool %s raised\n%s", toolName, raisedText(r)))
+				pkgLog().Error(fmt.Sprintf("tool %s raised\n%s", toolName, raisedText(r)))
 				result = dumps(pyjson.ObjectOf("error", raisedText(r), "tool", toolName), false)
 			}
 		}()
@@ -226,7 +226,7 @@ func registerIcebathTools(ctx context.Context, server *provider.MCPToolServer, r
 		server.AddTool(s.name, description, provider.MCPToolParamsFromSchema(params), params, makeToolHandler(ctx, env, s.name))
 		count++
 	}
-	toolsLog.Info(fmt.Sprintf("registered %d/%d Icebath tools", count, len(ExposedTools)))
+	pkgLog().Info(fmt.Sprintf("registered %d/%d Icebath tools", count, len(ExposedTools)))
 	return count, nil
 }
 

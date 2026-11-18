@@ -3,7 +3,6 @@ package gateway
 import (
 	"context"
 	"fmt"
-	"log/slog"
 	"maps"
 	"os"
 	"slices"
@@ -81,7 +80,7 @@ func warnExplicitDisableBeatsEnv(ctx context.Context, platform Platform) {
 		creds = "its credentials"
 	}
 	p := string(platform)
-	slog.Warn(fmt.Sprintf("Platform '%s' is explicitly disabled by platforms.%s.enabled: false in "+
+	pkgLog().Warn(fmt.Sprintf("Platform '%s' is explicitly disabled by platforms.%s.enabled: false in "+
 		"config.yaml, so the credentials found in the environment (%s) will NOT "+
 		"start its adapter. Environment credentials no longer override an "+
 		"explicit disable. Remove the key or set platforms.%s.enabled: true to "+
@@ -170,7 +169,7 @@ func pluginProbeSeed(ctx context.Context, entry *PlatformEntry) (seed map[string
 	}
 	defer func() {
 		if r := recover(); r != nil {
-			slog.Debug(fmt.Sprintf("env_enablement_fn for %s raised: %v", entry.Name, r))
+			pkgLog().Debug(fmt.Sprintf("env_enablement_fn for %s raised: %v", entry.Name, r))
 			seed = nil
 		}
 	}()
@@ -184,7 +183,7 @@ func pluginProbeSeed(ctx context.Context, entry *PlatformEntry) (seed map[string
 func pluginIsConfigured(ctx context.Context, entry *PlatformEntry, existingExtra, seed map[string]any) (configured bool) {
 	defer func() {
 		if r := recover(); r != nil {
-			slog.Debug(fmt.Sprintf("is_connected for %s raised: %v — skipping enablement", entry.Name, r))
+			pkgLog().Debug(fmt.Sprintf("is_connected for %s raised: %v — skipping enablement", entry.Name, r))
 			configured = false
 		}
 	}()
@@ -197,11 +196,11 @@ func pluginIsConfigured(ctx context.Context, entry *PlatformEntry, existingExtra
 	view.Enabled, view.Extra = true, existingExtra
 	ok, err := entry.IsConnected(ctx, view)
 	if err != nil {
-		slog.Debug(fmt.Sprintf("is_connected for %s raised: %s — skipping enablement", entry.Name, err))
+		pkgLog().Debug(fmt.Sprintf("is_connected for %s raised: %s — skipping enablement", entry.Name, err))
 		return false
 	}
 	if !ok {
-		slog.Debug(fmt.Sprintf("Plugin platform '%s' available but not configured (is_connected returned False) — skipping enable", entry.Name))
+		pkgLog().Debug(fmt.Sprintf("Plugin platform '%s' available but not configured (is_connected returned False) — skipping enable", entry.Name))
 	}
 	return ok
 }
@@ -210,12 +209,12 @@ func pluginIsConfigured(ctx context.Context, entry *PlatformEntry, existingExtra
 func entryDepsOK(ctx context.Context, entry *PlatformEntry) (ok bool) {
 	defer func() {
 		if r := recover(); r != nil {
-			slog.Debug(fmt.Sprintf("check_fn for %s raised: %v", entry.Name, r))
+			pkgLog().Debug(fmt.Sprintf("check_fn for %s raised: %v", entry.Name, r))
 			ok = false
 		}
 	}()
 	if entry.CheckFn == nil {
-		slog.Debug(fmt.Sprintf("check_fn for %s raised: 'NoneType' object is not callable", entry.Name))
+		pkgLog().Debug(fmt.Sprintf("check_fn for %s raised: 'NoneType' object is not callable", entry.Name))
 		return false
 	}
 	return entry.RunCheck(ctx)
@@ -225,7 +224,7 @@ func entryDepsOK(ctx context.Context, entry *PlatformEntry) (ok bool) {
 func enablePluginPlatform(ctx context.Context, cfg *GatewayConfig, entry *PlatformEntry) {
 	platform, err := ParsePlatform(ctx, entry.Name)
 	if err != nil {
-		slog.Debug(fmt.Sprintf("unknown platform name %s: %s", pyrepr.Repr(entry.Name), err))
+		pkgLog().Debug(fmt.Sprintf("unknown platform name %s: %s", pyrepr.Repr(entry.Name), err))
 		return
 	}
 	existing, has := cfg.Platforms[platform]
@@ -281,7 +280,7 @@ func configPlatformNames(cfg *GatewayConfig) []string {
 func configuredPluginEntriesFor(ctx context.Context, cfg *GatewayConfig) (out []*PlatformEntry) {
 	defer func() {
 		if r := recover(); r != nil {
-			slog.Debug(fmt.Sprintf("Plugin platform discovery for env overrides failed: %v", r))
+			pkgLog().Debug(fmt.Sprintf("Plugin platform discovery for env overrides failed: %v", r))
 			out = []*PlatformEntry{}
 		}
 	}()
@@ -347,11 +346,11 @@ func platformRank(ctx context.Context, name string) int {
 func runEnvStep(ctx context.Context, cfg *GatewayConfig, name string, step EnvStep) {
 	defer func() {
 		if r := recover(); r != nil {
-			slog.Debug(fmt.Sprintf("env override for %s raised: %v", name, r))
+			pkgLog().Debug(fmt.Sprintf("env override for %s raised: %v", name, r))
 		}
 	}()
 	if err := step.Apply(ctx, cfg); err != nil {
-		slog.Debug(fmt.Sprintf("env override for %s raised: %s", name, err))
+		pkgLog().Debug(fmt.Sprintf("env override for %s raised: %s", name, err))
 	}
 }
 
@@ -376,7 +375,7 @@ func enablePluginPlatformsFromEnv(ctx context.Context, cfg *GatewayConfig, entri
 		func() {
 			defer func() {
 				if r := recover(); r != nil {
-					slog.Debug(fmt.Sprintf("Plugin platform enable pass failed for %s: %v", entry.Name, r))
+					pkgLog().Debug(fmt.Sprintf("Plugin platform enable pass failed for %s: %v", entry.Name, r))
 				}
 			}()
 			enablePluginPlatform(ctx, cfg, entry)
@@ -418,14 +417,14 @@ func applyRelayEnv(ctx context.Context, cfg *GatewayConfig) {
 		switch {
 		case statusRead(ctx):
 		case pyrepr.Truthy(pc.Extra["_enabled_explicit"]):
-			slog.Warn(fmt.Sprintf("Relay connector is configured via GATEWAY_RELAY_URL; "+
+			pkgLog().Warn(fmt.Sprintf("Relay connector is configured via GATEWAY_RELAY_URL; "+
 				"disabling directly-connected platform '%s' even though "+
 				"it is explicitly enabled in this profile's configuration. "+
 				"All messaging goes through the connector on this "+
 				"deployment. Set GATEWAY_RELAY_ALLOW_DIRECT_PLATFORMS=true "+
 				"to keep direct platforms alongside the relay.", platform))
 		default:
-			slog.Info(fmt.Sprintf("Relay connector is configured via GATEWAY_RELAY_URL; disabling directly-connected platform '%s'.", platform))
+			pkgLog().Info(fmt.Sprintf("Relay connector is configured via GATEWAY_RELAY_URL; disabling directly-connected platform '%s'.", platform))
 		}
 		pc.Enabled = false
 	}

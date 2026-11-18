@@ -77,7 +77,7 @@ func TestRelayDiscoveredPluginFilesFollowRelaysUserAndSystemRules(t *testing.T) 
 	}
 }
 
-func TestRelayDemandedByPluginFilesPluginVariablesAndRegisteredConsumers(t *testing.T) {
+func TestRelayDemandedByPluginFilesAndPluginVariables(t *testing.T) {
 	home := isolateRelayDemand(t)
 	ctx := context.Background()
 	if RelayDemanded(ctx) {
@@ -100,19 +100,8 @@ func TestRelayDemandedByPluginFilesPluginVariablesAndRegisteredConsumers(t *test
 	if err := os.Remove(file); err != nil {
 		t.Fatal(err)
 	}
-	consumer := false
-	RegisterRelayDemand("test.consumer", func(context.Context) bool { return consumer })
-	t.Cleanup(func() { RegisterRelayDemand("test.consumer", nil) })
 	if RelayDemanded(ctx) {
-		t.Fatal("idle registered consumer")
-	}
-	consumer = true
-	if !RelayDemanded(ctx) {
-		t.Fatal("registered consumer")
-	}
-	RegisterRelayDemand("test.consumer", nil)
-	if RelayDemanded(ctx) {
-		t.Fatal("removed consumer")
+		t.Fatal("removed plugins file")
 	}
 }
 
@@ -138,12 +127,13 @@ func relayProvisioningBinding(t *testing.T, failure error) (ready *bool, loads *
 	return ready, loads
 }
 
-func TestTurnWithoutARelayConsumerPassesWhileTheRuntimeIsProvisioned(t *testing.T) {
+func TestTurnWithoutARelayConsumerPassesSilentlyWhileTheRuntimeIsUnprovisioned(t *testing.T) {
 	isolateRelayDemand(t)
-	ready, loads := relayProvisioningBinding(t, errors.New("the binding must not load before the runtime is ready"))
+	ready, loads := relayProvisioningBinding(t, errors.New("the binding must not load before the runtime is provisioned"))
+	logs := captureRegistryLog(t)
 	ctx := context.Background()
 	host, ok := RelayHosts.ForProfile(ctx, "", true).(NoopRelayRuntime)
-	if !ok || !host.Provisioning || host.Reason != relayProvisioningReason || *loads != 0 {
+	if !ok || !host.Retry || host.Reason != relayUnconfiguredReason || *loads != 0 {
 		t.Fatalf("host %#v after %d loads", host, *loads)
 	}
 	if cached := RelayHosts.ForProfile(ctx, "", false); cached != nil {
@@ -154,22 +144,24 @@ func TestTurnWithoutARelayConsumerPassesWhileTheRuntimeIsProvisioned(t *testing.
 		t.Fatalf("lease %#v after %d loads", lease, *loads)
 	}
 	RelayCoordinator.ReleaseConversation(lease)
+	if got := logs.String(); strings.Contains(got, "Relay") || strings.Contains(got, "relay") {
+		t.Fatalf("a session without a Relay consumer logged %q", got)
+	}
 	*ready = true
 	if rt := GetRelayRuntime(ctx, true, ""); rt == nil || *loads != 1 {
-		t.Fatalf("runtime %v after %d loads once ready", rt, *loads)
+		t.Fatalf("runtime %v after %d loads once provisioned", rt, *loads)
 	}
 }
 
-func TestTurnWithARelayConsumerWaitsForTheRuntimeAndRecoversOnceItIsProvisioned(t *testing.T) {
+func TestTurnWithARelayConsumerUsesTheRuntimeOnceItIsProvisioned(t *testing.T) {
 	isolateRelayDemand(t)
-	RegisterRelayDemand("test.consumer", func(context.Context) bool { return true })
-	t.Cleanup(func() { RegisterRelayDemand("test.consumer", nil) })
+	t.Setenv(LegacyRelayExportEnvVars[0], "1")
 	failure := errors.New("the runtime environment /venv is not provisioned: download failed")
 	ready, loads := relayProvisioningBinding(t, failure)
 	logs := captureRegistryLog(t)
 	ctx := context.Background()
 	host, ok := RelayHosts.ForProfile(ctx, "", true).(NoopRelayRuntime)
-	if !ok || !host.Provisioning || host.Reason != failure.Error() || *loads != 1 {
+	if !ok || !host.Retry || host.Reason != failure.Error() || *loads != 1 {
 		t.Fatalf("host %#v after %d loads", host, *loads)
 	}
 	if again := RelayHosts.ForProfile(ctx, "", true); again != host || *loads != 1 {
@@ -191,7 +183,7 @@ func TestBindingThatFailsWhileReadyKeepsItsReducedHost(t *testing.T) {
 	*ready = false
 	ctx := context.Background()
 	host, ok := RelayHosts.ForProfile(ctx, "", true).(NoopRelayRuntime)
-	if !ok || host.Provisioning || *loads != 1 {
+	if !ok || host.Retry || *loads != 1 {
 		t.Fatalf("host %#v after %d loads", host, *loads)
 	}
 	if again := RelayHosts.ForProfile(ctx, "", true); again != host || *loads != 1 {

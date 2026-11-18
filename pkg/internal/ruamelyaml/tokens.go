@@ -48,11 +48,11 @@ type token struct {
 	start *Mark
 	end   *Mark
 	// directive name and value
-	name       string
-	hasValue   bool
-	ver        version
-	tagHandle  string
-	tagPrefix  string
+	name      string
+	hasValue  bool
+	ver       version
+	tagHandle string
+	tagPrefix string
 	// alias, anchor, scalar and comment text
 	value string
 	plain bool
@@ -67,7 +67,9 @@ type token struct {
 
 func (t *token) id() string { return tokenIDs[t.kind] }
 
-func newToken(kind tokenKind, start, end *Mark) *token { return &token{kind: kind, start: start, end: end} }
+func newToken(kind tokenKind, start, end *Mark) *token {
+	return &token{kind: kind, start: start, end: end}
+}
 
 // Assigns the post comment slot, refusing a comment already in the new style
 func (t *token) addPostComment(c any) {

@@ -40,7 +40,7 @@ type ApprovalDecision struct {
 	Pattern string
 }
 
-// GuardResult is the full approval verdict of one gate, the dict shape hermes gates return
+// The full approval verdict of one gate in the dict shape gates return
 type GuardResult struct {
 	Approved        bool
 	Message         string

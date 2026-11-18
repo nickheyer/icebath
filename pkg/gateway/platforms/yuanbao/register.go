@@ -113,7 +113,7 @@ type yuanbaoPlatformPlugin struct{}
 
 func (yuanbaoPlatformPlugin) Manifest() plugins.Manifest {
 	return plugins.Manifest{Name: "yuanbao-platform", Version: "1.0.0", Kind: "platform", Source: "bundled", Key: "platforms/yuanbao",
-		Author: "NousResearch",
+		Author: "Icebath",
 		Description: "Tencent Yuanbao gateway adapter for Icebath Agent. Connects to Yuanbao IM Bot over a persistent WebSocket " +
 			"(HMAC-signed sign token) and relays DMs and group messages between Yuanbao and the Icebath agent. Supports native " +
 			"media/stickers, DM/group access policies, and home-channel cron delivery.\n",

@@ -42,8 +42,8 @@ func TestMultiplexGatewayRoutesProfileRecordsToTheirOwnLogs(t *testing.T) {
 	if !enableMultiplexLogRouting(ctx, cfg) {
 		t.Fatal("a multiplex gateway must enable the profile routers")
 	}
-	logging.GetLogger("gateway.run").LogContext(home.WithOverride(ctx, betaHome), logging.LevelWarning, "BETA-GATEWAY-WARN")
-	logging.GetLogger("gateway.run").LogContext(home.WithOverride(ctx, defaultHome), logging.LevelInfo, "DEFAULT-GATEWAY-INFO")
+	logging.GetLogger("gatewayrun").LogContext(home.WithOverride(ctx, betaHome), logging.LevelWarning, "BETA-GATEWAY-WARN")
+	logging.GetLogger("gatewayrun").LogContext(home.WithOverride(ctx, defaultHome), logging.LevelInfo, "DEFAULT-GATEWAY-INFO")
 	logging.FlushLogQueue()
 	for _, filename := range []string{"agent.log", "errors.log", "gateway.log"} {
 		if !logContains(betaHome, filename, "BETA-GATEWAY-WARN") || logContains(defaultHome, filename, "BETA-GATEWAY-WARN") {

@@ -5,7 +5,7 @@ import (
 	"fmt"
 
 	"github.com/nickheyer/icebath/pkg/gateway"
-	"github.com/nickheyer/icebath/pkg/tuigateway"
+	"github.com/nickheyer/icebath/pkg/tuihost"
 )
 
 // Disarms the loop liveness watchdog, floor timer and heartbeat task before shutdown loads the loop
@@ -39,7 +39,7 @@ func (r *GatewayRunner) stopLoopLivenessGuards() {
 		func() {
 			defer func() {
 				if rec := recover(); rec != nil {
-					runLog().Debug(fmt.Sprintf("Failed to %s", g.what), "exc_info", rec)
+					pkgLog().Debug(fmt.Sprintf("Failed to %s", g.what), "exc_info", rec)
 				}
 			}()
 			g.stop()
@@ -53,7 +53,7 @@ func (r *GatewayRunner) stopHostedRoomWorker(ctx context.Context, timeout float6
 		return gateway.StopHostedService(ctx, r, timeout)
 	}
 	result := make(chan bool, 1)
-	go func() { result <- tuigateway.StopHostedRoomService(timeout) }()
+	go func() { result <- tuihost.StopHostedRoomService(timeout) }()
 	select {
 	case stopped := <-result:
 		return stopped

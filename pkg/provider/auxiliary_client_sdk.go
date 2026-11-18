@@ -516,11 +516,6 @@ func (c *auxOpenAIClient) create(ctx context.Context, path string, kwargs map[st
 	return out, err
 }
 
-// Sends one chat completions request like with_raw_response, the parsed completion and the final response headers
-func (c *auxOpenAIClient) CreateChatCompletionRaw(ctx context.Context, kwargs map[string]any) (any, http.Header, error) {
-	return c.createRaw(ctx, "chat/completions", kwargs)
-}
-
 // SDK retry loop over the attempts, returning the last attempt's result with its response headers
 func (c *auxOpenAIClient) createRaw(ctx context.Context, path string, kwargs map[string]any) (any, http.Header, error) {
 	if c.initErr != nil {

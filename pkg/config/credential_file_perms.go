@@ -20,7 +20,7 @@ func WarnIfCredentialFileBroadlyReadable(path, label string, log *slog.Logger) b
 		return false
 	}
 	if log == nil {
-		log = slog.Default().With("logger", "utils")
+		log = pkgLog()
 	}
 	prefix := ""
 	if label != "" {

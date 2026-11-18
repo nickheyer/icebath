@@ -16,7 +16,7 @@ func boundModelErrorText(env *Env, text string) string {
 	if n <= maxToolErrorChars {
 		return text
 	}
-	toolsLogger(env).Debug(fmt.Sprintf("tool error body truncated for context (%d chars): %s", n, pystr.Slice(text, 0, maxLoggedErrorChars)))
+	envLog(env).Debug(fmt.Sprintf("tool error body truncated for context (%d chars): %s", n, pystr.Slice(text, 0, maxLoggedErrorChars)))
 	return pystr.Slice(text, 0, maxToolErrorChars) + toolErrorTruncationMarker
 }
 

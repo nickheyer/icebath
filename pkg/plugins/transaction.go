@@ -111,10 +111,10 @@ func publishPlugin(ctx context.Context, staged, target string, oldMetadata, newM
 	}}})
 }
 
-// Effective enabled plugin trees, swapped by tests that pin the selection the way hermes patches it
+// Effective enabled plugin trees, swapped by tests that pin the selection
 var enabledPluginDirs = pm.EnabledPluginDirs
 
-// Venv sync of staged publications and validate deps, swapped by tests the way hermes patches pm.sync_venv
+// Venv sync of staged publications and validate deps, swapped by tests
 var syncVenv = pm.SyncVenv
 
 // File bytes, nil when the file cannot be read

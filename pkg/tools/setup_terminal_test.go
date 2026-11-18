@@ -119,46 +119,13 @@ func TestDockerWizardReportsTheResolvedPodmanRuntime(t *testing.T) {
 	}
 }
 
-// Makes the managed modal checks pass for the wizard
-func withManagedModal(t *testing.T) {
-	prevTools, prevGateway, prevAuth := setupManagedNousToolsEnabled, setupManagedGatewayReady, NousSubscriptionAuthPresent
-	setupManagedNousToolsEnabled = func(*Env) bool { return true }
-	setupManagedGatewayReady = func(_ *Env, vendor string) bool { return vendor == "modal" }
-	NousSubscriptionAuthPresent = func(*Env, map[string]any) bool { return true }
-	t.Cleanup(func() {
-		setupManagedNousToolsEnabled, setupManagedGatewayReady, NousSubscriptionAuthPresent = prevTools, prevGateway, prevAuth
-	})
-}
-
-func backendChoice(t *testing.T, backendIdx, billingIdx int) func(string, []string, int) int {
+func backendChoice(t *testing.T, backendIdx int) func(string, []string, int) int {
 	return func(q string, choices []string, def int) int {
-		switch q {
-		case "Select terminal backend:":
+		if q == "Select terminal backend:" {
 			return backendIdx
-		case "Select how Modal execution should be billed:":
-			if billingIdx >= 0 {
-				return billingIdx
-			}
 		}
 		t.Fatalf("Unexpected prompt_choice call: %s", q)
 		return 0
-	}
-}
-
-// Choosing an own Modal account persists the direct mode
-func TestModalSetupPersistsDirectModeWhenUserChoosesTheirOwnAccount(t *testing.T) {
-	env := newTestToolEnv(t)
-	t.Setenv("ICEBATH_HOME", env.Home)
-	withManagedModal(t)
-	console := &fakeSetupConsole{choice: backendChoice(t, 2, 1), prompt: answersFrom(t, "token-id", "token-secret", "")}
-	withSetupConsole(t, console, "MODAL_TOKEN_ID", "MODAL_TOKEN_SECRET")
-	cfg := loadSetupConfig(t, env)
-	if err := SetupTerminalBackend(context.Background(), env, cfg); err != nil {
-		t.Fatal(err)
-	}
-	terminal := cfg["terminal"].(map[string]any)
-	if terminal["backend"] != "modal" || terminal["modal_mode"] != "direct" {
-		t.Fatalf("terminal %v", terminal)
 	}
 }
 
@@ -171,7 +138,7 @@ func clearVercelEnv() []string {
 func TestVercelSetupConfiguresAccessTokenAuth(t *testing.T) {
 	env := newTestToolEnv(t)
 	t.Setenv("ICEBATH_HOME", env.Home)
-	console := &fakeSetupConsole{choice: backendChoice(t, 5, -1),
+	console := &fakeSetupConsole{choice: backendChoice(t, 5),
 		prompt: answersFrom(t, "vercel/sandbox/python:3.14", "yes", "2", "4096", "token", "project", "team")}
 	withSetupConsole(t, console, clearVercelEnv()...)
 	os.Setenv("VERCEL_OIDC_TOKEN", "old-oidc")
@@ -211,7 +178,7 @@ func TestVercelSetupPrefillsProjectAndTeamFromLinkFile(t *testing.T) {
 	t.Chdir(nested)
 	answers := []string{"", "no", "1", "5120", "token", "", ""}
 	defaults := map[string]string{}
-	console := &fakeSetupConsole{choice: backendChoice(t, 5, -1), prompt: func(q, def string, password bool) string {
+	console := &fakeSetupConsole{choice: backendChoice(t, 5), prompt: func(q, def string, password bool) string {
 		defaults[q] = def
 		a := answers[0]
 		answers = answers[1:]

@@ -9,7 +9,6 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
-	"log/slog"
 	"math"
 	mrand "math/rand/v2"
 	"net"
@@ -58,8 +57,6 @@ var nativeSTTLabels = map[string]string{
 	"local": "local faster-whisper", "local_command": "local command", "groq": "Groq", "openai": "OpenAI",
 	"mistral": "Mistral Voxtral", "xai": "xAI Grok STT", "elevenlabs": "ElevenLabs Scribe", "deepinfra": "DeepInfra",
 }
-
-func voiceLog() *slog.Logger { return slog.Default().With("logger", "tools.voice_mode") }
 
 // Audio import failure where this build has no dynamic library loader for PortAudio
 type audioImportError struct{ msg string }
@@ -135,7 +132,7 @@ func playInt16ThroughFile(audio []int16, sampleRate int) {
 		}
 	}
 	if err != nil {
-		voiceLog().Debug(fmt.Sprintf("Tone tempfile playback failed: %s", err))
+		pkgLog().Debug(fmt.Sprintf("Tone tempfile playback failed: %s", err))
 		return
 	}
 	PlayAudioFile(tmpPath)
@@ -245,7 +242,7 @@ func termuxAPIAppInstalled() bool {
 		}
 	}
 	if _, ok := voiceWhich("termux-microphone-record"); inconclusive && ok {
-		voiceLog().Debug("Termux package-manager probes inconclusive; trusting termux-microphone-record binary on PATH (issue #31015).")
+		pkgLog().Debug("Termux package-manager probes inconclusive; trusting termux-microphone-record binary on PATH (issue #31015).")
 		return true
 	}
 	return false
@@ -519,7 +516,7 @@ func mulInPlace(window, factors []float64) error {
 func PlayBeep(ctx context.Context, frequency int, duration float64, count int) {
 	audio, err := beepSamples(frequency, duration, count, getBeepVolume(ctx))
 	if err != nil {
-		voiceLog().Debug(fmt.Sprintf("Beep playback failed: %s", err))
+		pkgLog().Debug(fmt.Sprintf("Beep playback failed: %s", err))
 		return
 	}
 	if !soundDeviceOutputAllowed() {
@@ -529,12 +526,12 @@ func PlayBeep(ctx context.Context, frequency int, duration float64, count int) {
 	sd, err := importAudio()
 	if err != nil {
 		if !isAudioImportError(err) && !isAudioOSError(err) {
-			voiceLog().Debug(fmt.Sprintf("Beep playback failed: %s", err))
+			pkgLog().Debug(fmt.Sprintf("Beep playback failed: %s", err))
 		}
 		return
 	}
 	if err := sdPlayBlocking(sd, audio, voiceSampleRate, 2.0, 0); err != nil {
-		voiceLog().Debug(fmt.Sprintf("Beep playback failed: %s", err))
+		pkgLog().Debug(fmt.Sprintf("Beep playback failed: %s", err))
 	}
 }
 
@@ -618,7 +615,7 @@ func thinkingSoundLoop(ctx context.Context, stop *pythread.Event, shouldPlay fun
 	sd, err := importAudio()
 	if err != nil {
 		if !isAudioImportError(err) && !isAudioOSError(err) {
-			voiceLog().Error(fmt.Sprintf("Exception in thread voice-thinking-sound: %s", err))
+			pkgLog().Error(fmt.Sprintf("Exception in thread voice-thinking-sound: %s", err))
 		}
 		return
 	}
@@ -626,7 +623,7 @@ func thinkingSoundLoop(ctx context.Context, stop *pythread.Event, shouldPlay fun
 	i := 0
 	for !stop.IsSet() {
 		if err := playThinkingBlip(sd, stop, shouldPlay, blips, &i); err != nil {
-			voiceLog().Debug(fmt.Sprintf("Thinking sound blip failed: %s", err))
+			pkgLog().Debug(fmt.Sprintf("Thinking sound blip failed: %s", err))
 			return
 		}
 		stop.Wait(0.8 + mrand.Float64()*0.4)
@@ -775,7 +772,7 @@ func StopPlayback() {
 	playbackMu.Unlock()
 	if proc != nil {
 		if _, exited := proc.Poll(); !exited && proc.Terminate() == nil {
-			voiceLog().Info("Audio playback interrupted")
+			pkgLog().Info("Audio playback interrupted")
 		}
 	}
 	if sd, err := importAudio(); err == nil {
@@ -825,7 +822,7 @@ func playWAVViaSoundDevice(filePath string) bool {
 	}
 	var pathErr *fs.PathError
 	if !isAudioImportError(err) && !isAudioOSError(err) && !errors.As(err, &pathErr) {
-		voiceLog().Debug(fmt.Sprintf("sounddevice playback failed: %s", err))
+		pkgLog().Debug(fmt.Sprintf("sounddevice playback failed: %s", err))
 	}
 	return false
 }
@@ -954,7 +951,7 @@ func runSystemPlayer(cmd []string) bool {
 		proc, err = startPlayerProcess(cmd, env)
 	}
 	if err != nil {
-		voiceLog().Debug(fmt.Sprintf("System player %s failed: %s", cmd[0], err))
+		pkgLog().Debug(fmt.Sprintf("System player %s failed: %s", cmd[0], err))
 		return false
 	}
 	setActivePlayback(proc)
@@ -962,24 +959,24 @@ func runSystemPlayer(cmd []string) bool {
 	var timeout *pysubprocess.TimeoutExpired
 	switch {
 	case errors.As(err, &timeout):
-		voiceLog().Warn(fmt.Sprintf("System player %s timed out, killing process", cmd[0]))
+		pkgLog().Warn(fmt.Sprintf("System player %s timed out, killing process", cmd[0]))
 		_ = proc.Kill()
 		_, _ = proc.Wait(0)
 		return false
 	case err != nil:
-		voiceLog().Debug(fmt.Sprintf("System player %s failed: %s", cmd[0], err))
+		pkgLog().Debug(fmt.Sprintf("System player %s failed: %s", cmd[0], err))
 		return false
 	case rc == 0:
 		return true
 	}
-	voiceLog().Debug(fmt.Sprintf("System player %s exited with code %d, trying next", cmd[0], rc))
+	pkgLog().Debug(fmt.Sprintf("System player %s exited with code %d, trying next", cmd[0], rc))
 	return false
 }
 
 // Plays an existing file through sounddevice for WAV, then each available system player in turn
 func playAudioFileFromDisk(filePath string) bool {
 	if info, err := os.Stat(filePath); err != nil || !info.Mode().IsRegular() {
-		voiceLog().Warn(fmt.Sprintf("Audio file not found: %s", filePath))
+		pkgLog().Warn(fmt.Sprintf("Audio file not found: %s", filePath))
 		return false
 	}
 	if strings.HasSuffix(filePath, ".wav") && soundDeviceOutputAllowed() && playWAVViaSoundDevice(filePath) {
@@ -990,7 +987,7 @@ func playAudioFileFromDisk(filePath string) bool {
 			return true
 		}
 	}
-	voiceLog().Warn(fmt.Sprintf("No audio player available for %s", filePath))
+	pkgLog().Warn(fmt.Sprintf("No audio player available for %s", filePath))
 	return false
 }
 
@@ -1010,7 +1007,7 @@ func checkPluginSTTProvider(ctx context.Context, name string) bool {
 		}
 		return nil
 	}); err != nil {
-		voiceLog().Debug(fmt.Sprintf("STT plugin requirements check skipped for '%s': %s", key, err))
+		pkgLog().Debug(fmt.Sprintf("STT plugin requirements check skipped for '%s': %s", key, err))
 		return false
 	}
 	if p == nil {
@@ -1021,7 +1018,7 @@ func checkPluginSTTProvider(ctx context.Context, name string) bool {
 		available = p.IsAvailable()
 		return nil
 	}); err != nil {
-		voiceLog().Warn(fmt.Sprintf("STT plugin provider '%s' is_available() raised during requirements check: %s - treating as unavailable", key, err))
+		pkgLog().Warn(fmt.Sprintf("STT plugin provider '%s' is_available() raised during requirements check: %s - treating as unavailable", key, err))
 		return false
 	}
 	return available
@@ -1095,7 +1092,7 @@ func CheckVoiceRequirements(ctx context.Context) (VoiceRequirements, error) {
 func CleanupTempRecordings(maxAgeSeconds int) int {
 	deleted := pyfs.UnlinkFilesOlderThan(voiceTempDir(), "recording_*.wav", float64(maxAgeSeconds), nil)
 	if deleted > 0 {
-		voiceLog().Debug(fmt.Sprintf("Cleaned up %d old voice recordings", deleted))
+		pkgLog().Debug(fmt.Sprintf("Cleaned up %d old voice recordings", deleted))
 	}
 	return deleted
 }

@@ -9,7 +9,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/state"
-	"github.com/nickheyer/icebath/pkg/tuigateway"
+	"github.com/nickheyer/icebath/pkg/tuihost"
 )
 
 // Value under the key path of nested dicts, a KeyError when a key is absent
@@ -140,7 +140,7 @@ func prepareWorkspace(ctx context.Context, a *SessionAuthority, live *LiveSessio
 	if info, statErr := os.Stat(cwd); statErr != nil || !info.IsDir() {
 		return nil, state.NewRuntimeStoreError("invalid_params", nil, nil)
 	}
-	branch, root := tuigateway.Branch(cwd), tuigateway.CommonRepoRoot(cwd)
+	branch, root := tuihost.Branch(cwd), tuihost.CommonRepoRoot(cwd)
 	loaded, err := pyjson.Loads(old.TerminalJSON)
 	if err != nil {
 		return nil, err

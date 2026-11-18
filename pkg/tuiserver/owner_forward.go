@@ -17,6 +17,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/memory"
 	"github.com/nickheyer/icebath/pkg/tuigateway"
+	"github.com/nickheyer/icebath/pkg/tuihost"
 )
 
 // Ledger states a forwarded prompt may wait behind, each ends on its own
@@ -72,7 +73,7 @@ func connectOwner(ctx context.Context, profileHome string, endpoint *gateway.Gat
 }
 
 // Whether a ledger refusal of this prompt.submit can go to the owner instead
-func ownerForwardable(refusal *activesessions.Refusal, session *tuigateway.Session, text any, params map[string]any) bool {
+func ownerForwardable(refusal *activesessions.Refusal, session *tuihost.Session, text any, params map[string]any) bool {
 	if refusal == nil || !forwardableLedgerStates[refusal.LedgerStatus] {
 		return false
 	}
@@ -90,9 +91,28 @@ func ownerForwardable(refusal *activesessions.Refusal, session *tuigateway.Sessi
 
 // Owner payload projected onto this wire's contract for the event, nil to drop it
 func ownerPayloadFor(eventType string, payload any) map[string]any {
-	contract := tuigateway.Events[eventType]
 	fields, isDict := payload.(map[string]any)
-	if contract == nil || contract.Payload == nil || !isDict {
+	if !isDict {
+		return nil
+	}
+	if typed := tuigateway.Lookup(tuigateway.KindEvent, eventType); typed != nil {
+		shaped := map[string]any{}
+		for _, name := range typed.ResultNames() {
+			if value, present := fields[name]; present {
+				shaped[name] = value
+			}
+		}
+		if misfit := typed.CheckResult(shaped); misfit != nil {
+			if eventType != "message.complete" {
+				return nil
+			}
+			text, _ := fields["text"].(string)
+			shaped = map[string]any{"text": text}
+		}
+		return shaped
+	}
+	contract := tuihost.Events[eventType]
+	if contract == nil || contract.Payload == nil {
 		return nil
 	}
 	shaped := map[string]any{}
@@ -120,7 +140,7 @@ type ownerAdmission struct {
 // One forwarded prompt, its admission future and the relay of its owner frames onto the forwarding session
 type ownerRelay struct {
 	sid, key, home, text string
-	session              *tuigateway.Session
+	session              *tuihost.Session
 	endpoint             *gateway.GatewayEndpoint
 	emit                 func(event, sid string, payload map[string]any)
 	listed               []map[string]any
@@ -154,7 +174,7 @@ func (r *ownerRelay) run(ctx context.Context) {
 		}
 	}
 	if err != nil && !r.settle(nil, err) {
-		logger().Warn(fmt.Sprintf("owner relay for %s ended: %s", r.key, err), "error", err)
+		pkgLog().Warn(fmt.Sprintf("owner relay for %s ended: %s", r.key, err), "error", err)
 	}
 }
 
@@ -187,7 +207,7 @@ func (r *ownerRelay) attach(ctx context.Context) error {
 		return &OwnerUnavailableError{Msg: "the gateway did not admit it"}
 	}
 	r.settle(receipt, nil)
-	logger().Info(fmt.Sprintf("forwarded prompt for %s to the owner FIFO: admission=%s", r.key, admissionID))
+	pkgLog().Info(fmt.Sprintf("forwarded prompt for %s to the owner FIFO: admission=%s", r.key, admissionID))
 	return r.relay(ctx, client, admissionID)
 }
 
@@ -302,7 +322,7 @@ func forwardRPC(ctx context.Context, profileHome string, endpoint *gateway.Gatew
 }
 
 // Admits the text into the owner FIFO for this session and returns the owner receipt
-func forwardPrompt(ctx context.Context, sid string, session *tuigateway.Session, text string, emit func(event, sid string, payload map[string]any), profileHome string) (map[string]any, error) {
+func forwardPrompt(ctx context.Context, sid string, session *tuihost.Session, text string, emit func(event, sid string, payload map[string]any), profileHome string) (map[string]any, error) {
 	key := pyrepr.Str(orEmpty(session.Get("session_key")))
 	if key == "" {
 		return nil, &OwnerUnavailableError{Msg: "the chat has no stored session yet"}
@@ -322,7 +342,7 @@ func forwardPrompt(ctx context.Context, sid string, session *tuigateway.Session,
 		return nil, err
 	}
 	if emit == nil {
-		emit = func(event, sid string, payload map[string]any) { tuigateway.Emit(ctx, event, sid, payload) }
+		emit = func(event, sid string, payload map[string]any) { tuihost.Emit(ctx, event, sid, payload) }
 	}
 	relay := &ownerRelay{sid: sid, session: session, key: key, home: resolved, endpoint: endpoint, text: text, emit: emit,
 		requestID: "owner-forward-" + strings.ReplaceAll(uuid.NewString(), "-", ""), admitted: make(chan ownerAdmission, 1)}

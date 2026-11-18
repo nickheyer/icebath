@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 )
 
@@ -34,7 +35,7 @@ func SessionBusyMode(ctx context.Context, runner AuthorityRunner, live *LiveSess
 	if policy == nil {
 		busy, ok := runner.(busyInputModeRunner)
 		if !ok {
-			return "", fmt.Errorf("AttributeError: %s object has no attribute '_effective_busy_input_mode'", pyrepr.TypeName(runner))
+			return "", fmt.Errorf("the gateway runner (%T) cannot report the busy input mode", runner)
 		}
 		return busy.EffectiveBusyInputMode(ctx, live.Source), nil
 	}
@@ -46,7 +47,7 @@ func SessionBusyMode(ctx context.Context, runner AuthorityRunner, live *LiveSess
 	if display := cfg["display"]; pyrepr.Truthy(display) {
 		section, ok := display.(map[string]any)
 		if !ok {
-			return "", fmt.Errorf("AttributeError: '%s' object has no attribute 'get'", pyrepr.TypeName(display))
+			return "", fmt.Errorf("display settings are %s, expected a mapping", errchain.Kind(display))
 		}
 		value = section["busy_input_mode"]
 	}

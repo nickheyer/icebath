@@ -261,7 +261,7 @@ func spawnRemoteKernel(ctx context.Context, env *tools.Env, envr tools.Environme
 			}
 		}
 		if !isPyDigit(pid) {
-			logger(env).Warn("remote kernel spawn returned no PID: " + pyrepr.Repr(started))
+			pkgLog(env).Warn("remote kernel spawn returned no PID: " + pyrepr.Repr(started))
 			return nil
 		}
 		candidate := &remoteKernel{envr: envr, envType: envType, kernelDir: kernelDir, pid: pid, rpcToken: rpcToken,
@@ -269,12 +269,12 @@ func spawnRemoteKernel(ctx context.Context, env *tools.Env, envr tools.Environme
 		if candidate.isAlive() {
 			kernel = candidate
 		} else if log, err := remoteSh(ctx, envr, "cat "+qDir+"/runner.log", 10); err == nil {
-			logger(env).Warn("remote kernel died at spawn: " + pystr.Slice(log, 0, 500))
+			pkgLog(env).Warn("remote kernel died at spawn: " + pystr.Slice(log, 0, 500))
 		}
 		return nil
 	}()
 	if err != nil {
-		logger(env).Warn("remote kernel spawn failed", "error", err)
+		pkgLog(env).Warn("remote kernel spawn failed", "error", err)
 	}
 	if kernel == nil {
 		_, _ = remoteSh(ctx, envr, "rm -rf "+qDir, 15)
@@ -398,7 +398,7 @@ func objGet(o *pyjson.Object, key string, def any) any {
 }
 
 // Debug log of a swallowed failure with its error
-func slogDebug(env *tools.Env, msg string, err error) { logger(env).Debug(msg, "error", err) }
+func slogDebug(env *tools.Env, msg string, err error) { pkgLog(env).Debug(msg, "error", err) }
 
 // Runs one cell in the owner's remote kernel, nil when no kernel could be spawned so the caller runs per call
 func executeInRemoteKernel(ctx context.Context, env *tools.Env, envr tools.Environment, code string, c remoteCell) (*pyjson.Object, error) {

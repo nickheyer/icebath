@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
-	"log/slog"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -39,7 +38,7 @@ func spawnPruneChild(scratch string) {
 	}
 	exe, err := os.Executable()
 	if err != nil {
-		slog.Debug(fmt.Sprintf("scratch prune: could not start the detached pass for %s: %s", scratch, err))
+		pkgLog().Debug(fmt.Sprintf("scratch prune: could not start the detached pass for %s: %s", scratch, err))
 		return
 	}
 	chain, ok := LineageWithStartTimes()
@@ -54,7 +53,7 @@ func spawnPruneChild(scratch string) {
 		cmd, err = start(false)
 	}
 	if err != nil {
-		slog.Debug(fmt.Sprintf("scratch prune: could not start the detached pass for %s: %s", scratch, err))
+		pkgLog().Debug(fmt.Sprintf("scratch prune: could not start the detached pass for %s: %s", scratch, err))
 		return
 	}
 	go func() { _ = cmd.Wait() }()

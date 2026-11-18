@@ -1,3 +1,5 @@
+//go:build !icebath_core && !icebath_noextras
+
 package pm
 
 import (
@@ -11,14 +13,10 @@ import (
 	"runtime"
 	"strings"
 	"time"
-	"unicode"
 	"unicode/utf8"
 
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
-
-// Characters Python str patterns match with a backslash s class
-const pyWhitespaceClass = `\t\n\x0b\x0c\r\x1c-\x1f \x{85}\x{a0}\x{1680}\x{2000}-\x{200a}\x{2028}\x{2029}\x{202f}\x{205f}\x{3000}`
 
 var (
 	failedInstallPrefix = regexp.MustCompile(`(?i)failed to install: `)
@@ -53,9 +51,6 @@ func validPackageName(name string) string {
 	}
 	return ""
 }
-
-// Reports a character Python str patterns count as a word character, a letter, a number or underscore
-func pyIsWord(r rune) bool { return r == '_' || unicode.IsLetter(r) || unicode.IsNumber(r) }
 
 // Wheel names uv's install step reports, the shortest run ending in a whl suffix at a word boundary
 func failedWheels(output string) []string {

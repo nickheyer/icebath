@@ -9,13 +9,14 @@ import (
 	"time"
 
 	"github.com/gorilla/websocket"
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/state"
 )
 
-// Meta key prefix of an adopted pre authority local row, hermes_state_local_migration LEGACY_PREFIX
+// Meta key prefix of an adopted pre authority local row
 const localLegacyPrefix = "gateway.local_legacy.v1:"
 
 // Owner creation label a LOCAL peer refresh keeps, the fallback for every other transport
@@ -45,15 +46,15 @@ func a2aStorageSource(ctx context.Context, db SessionStoreDB, source *SessionSou
 	}
 	policy, ok := receipt.Get("policy")
 	if !ok {
-		return "", errors.New("KeyError: 'policy'")
+		return "", errors.New("the session receipt has no policy")
 	}
 	policyObj, ok := policy.(*pyjson.Object)
 	if !ok {
-		return "", fmt.Errorf("TypeError: receipt policy is %T", policy)
+		return "", fmt.Errorf("the session receipt policy is %s, expected a mapping", errchain.Kind(policy))
 	}
 	labelValue, ok := policyObj.Get("source")
 	if !ok {
-		return "", errors.New("KeyError: 'source'")
+		return "", errors.New("the session receipt policy has no source")
 	}
 	label, _ := labelValue.(string)
 	if legacyID, ok := receipt.Get("legacy_session_id"); ok {
@@ -82,12 +83,12 @@ func receiptLineage(receipt *pyjson.Object) (map[string]bool, error) {
 	ids := map[string]bool{}
 	sid, ok := receipt.Get("session_id")
 	if !ok {
-		return nil, errors.New("KeyError: 'session_id'")
+		return nil, errors.New("the session receipt has no session_id")
 	}
 	if lineage, ok := receipt.Get("lineage"); ok {
 		items, isList := lineage.([]any)
 		if !isList {
-			return nil, fmt.Errorf("TypeError: receipt lineage is %T", lineage)
+			return nil, fmt.Errorf("the session receipt lineage is %s, expected a list", errchain.Kind(lineage))
 		}
 		for _, item := range items {
 			if id, isText := item.(string); isText {
@@ -196,7 +197,7 @@ func ForwardToOwner(ctx context.Context, home string, forward A2AForward, timeou
 		}
 		status, ok := receipt["status"]
 		if !ok {
-			return nil, errors.New("KeyError: 'status'")
+			return nil, errors.New("the owner's forward reply has no status")
 		}
 		if status == "unknown" {
 			return nil, &GatewayClientError{Msg: "unknown_execution"}
@@ -206,7 +207,7 @@ func ForwardToOwner(ctx context.Context, home string, forward A2AForward, timeou
 		}
 		admissionID, ok := receipt["admission_id"]
 		if !ok {
-			return nil, errors.New("KeyError: 'admission_id'")
+			return nil, errors.New("the owner's forward reply has no admission_id")
 		}
 		tick, stop := context.WithTimeout(ctx, backoff)
 		err = a2aCompletion(tick, client, admissionID)

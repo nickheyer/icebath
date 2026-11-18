@@ -2,7 +2,6 @@ package media
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
@@ -150,95 +149,14 @@ func TestFalModelResolution(t *testing.T) {
 	}
 }
 
-// Managed submitter double replaying errors and handles
-type fakeFalSubmitter struct {
-	results []any
-	headers []map[string]string
-}
-
-func (f *fakeFalSubmitter) Submit(_ context.Context, _ string, _ map[string]any, o falSubmitOptions) (*falRequestHandle, error) {
-	f.headers = append(f.headers, o.Headers)
-	r := f.results[0]
-	if len(f.results) > 1 {
-		f.results = f.results[1:]
-	}
-	if err, ok := r.(error); ok {
-		return nil, err
-	}
-	return r.(*falRequestHandle), nil
-}
-
-func mockFalHTTPError(status int, payload any) error {
-	raw, _ := json.Marshal(payload)
-	return &falClientHTTPError{Message: http.StatusText(status), StatusCode: status,
-		Response: &falResponse{StatusCode: status, Header: http.Header{"Content-Type": {"application/json"}}, Body: raw}}
-}
-
-func useManagedSubmitter(t *testing.T, s *fakeFalSubmitter) {
-	oldGW, oldClient := resolveManagedFalGatewayHook, getManagedFalClientHook
-	resolveManagedFalGatewayHook = func(*tools.Env) (*tools.ManagedToolGatewayConfig, error) {
-		return &tools.ManagedToolGatewayConfig{GatewayOrigin: "https://fal-queue-gateway.example.com", NousUserToken: "test-token"}, nil
-	}
-	getManagedFalClientHook = func(*tools.ManagedToolGatewayConfig) (falSubmitter, error) { return s, nil }
-	t.Cleanup(func() { resolveManagedFalGatewayHook, getManagedFalClientHook = oldGW, oldClient })
-}
-
-func TestManagedGatewayErrorTranslation(t *testing.T) {
-	env := &tools.Env{Home: t.TempDir(), Config: config.Tree{}}
-	bad := mockFalHTTPError(403, map[string]any{"detail": "Forbidden"})
-	useManagedSubmitter(t, &fakeFalSubmitter{results: []any{bad}})
-	_, err := submitFalRequest(context.Background(), env, "fal-ai/nano-banana-pro", map[string]any{"prompt": "x"})
-	var ve *imageValueError
-	if !errors.As(err, &ve) || !strings.Contains(err.Error(), "fal-ai/nano-banana-pro") || !strings.Contains(err.Error(), "403") {
-		t.Fatalf("got %v", err)
-	}
-
-	billing := mockFalHTTPError(409, map[string]any{"error": map[string]any{"code": "BILLING_ERROR", "message": "Charge authorization failed",
-		"details": map[string]any{"upstreamPayload": map[string]any{"code": "unsupported_pricing_meter", "error": "Unsupported resolver usage meter"}}}})
-	useManagedSubmitter(t, &fakeFalSubmitter{results: []any{billing}})
-	_, err = submitFalRequest(context.Background(), env, "openai/gpt-image-2.5/flare/text-to-image", map[string]any{"prompt": "x"})
-	for _, want := range []string{"Charge authorization failed", "BILLING_ERROR", "unsupported_pricing_meter"} {
-		if err == nil || !strings.Contains(err.Error(), want) {
-			t.Fatalf("billing %v", err)
-		}
-	}
-	if strings.Contains(err.Error(), "may not yet be enabled") {
-		t.Fatal("billing called model unavailable")
-	}
-
-	conn := errors.New("network down")
-	useManagedSubmitter(t, &fakeFalSubmitter{results: []any{conn}})
-	if _, err = submitFalRequest(context.Background(), env, "fal-ai/flux-2-pro", map[string]any{}); err != conn {
-		t.Fatalf("non HTTP error rewrapped %v", err)
-	}
-
-	limited := func(after any) error {
-		return mockFalHTTPError(429, map[string]any{"error": map[string]any{"code": "RATE_LIMIT_EXCEEDED", "message": "Rate limit exceeded.", "retryAfter": after}})
-	}
-	sub := &fakeFalSubmitter{results: []any{limited(0), &falRequestHandle{RequestID: "handle"}}}
-	useManagedSubmitter(t, sub)
-	h, err := submitFalRequest(context.Background(), env, "fal-ai/gpt-image-2", map[string]any{})
-	if err != nil || h.RequestID != "handle" || len(sub.headers) != 2 || sub.headers[0]["x-idempotency-key"] == sub.headers[1]["x-idempotency-key"] {
-		t.Fatalf("short 429 %v %v", err, sub.headers)
-	}
-
-	sub = &fakeFalSubmitter{results: []any{limited(120)}}
-	useManagedSubmitter(t, sub)
-	_, err = submitFalRequest(context.Background(), env, "fal-ai/gpt-image-2", map[string]any{})
-	if err == nil || !strings.Contains(err.Error(), "120") || strings.Contains(err.Error(), "may not yet be enabled") || len(sub.headers) != 1 {
-		t.Fatalf("long 429 %v", err)
-	}
-}
-
-func TestImageWaitFalResultPollsAtGatewayCadence(t *testing.T) {
+func TestImageWaitFalResultPollsAtQueueCadence(t *testing.T) {
 	f := newFalFixture(t)
 	f.replies = append(f.replies, f.accepted(), falReply{status: 200, body: map[string]any{"status": "IN_QUEUE", "queue_position": 0}},
 		falReply{status: 200, body: map[string]any{"status": "IN_PROGRESS", "logs": nil}},
 		falReply{status: 200, body: map[string]any{"status": "COMPLETED", "logs": nil}},
 		falReply{status: 200, body: map[string]any{"status": "COMPLETED", "logs": nil}},
 		falReply{status: 200, body: map[string]any{"images": []any{"done"}}})
-	client, _ := newManagedFalSyncClient(f.mod, "token", f.srv.URL)
-	h, err := client.Submit(context.Background(), "app", map[string]any{}, falSubmitOptions{})
+	h, err := falSubmitRequest(context.Background(), f.mod.Client, f.mod.NewSyncClient("token"), f.srv.URL+"/app", map[string]any{}, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -294,7 +212,15 @@ func TestImageWaitFalResultPropagatesHandlerError(t *testing.T) {
 }
 
 func TestImageUpscaleInterruptPropagates(t *testing.T) {
-	useManagedSubmitter(t, &fakeFalSubmitter{results: []any{blockingFalHandle(t, nil)}})
+	mod := newFalClientModule()
+	mod.Submit = func(context.Context, *tools.Env, string, map[string]any, map[string]string) (*falRequestHandle, error) {
+		return blockingFalHandle(t, nil), nil
+	}
+	imageFalClientMu.Lock()
+	prev := imageFalClient
+	imageFalClient = mod
+	imageFalClientMu.Unlock()
+	t.Cleanup(func() { imageFalClientMu.Lock(); imageFalClient = prev; imageFalClientMu.Unlock() })
 	id := tools.NewWorkerID()
 	ctx := tools.WithWorker(context.Background(), id)
 	go func() {

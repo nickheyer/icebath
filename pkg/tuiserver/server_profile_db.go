@@ -57,7 +57,7 @@ func openBrowseSessionDB(ctx context.Context, dbPath string) (*state.DB, error) 
 		if _, reconcileErr := state.ReconcileDriftForBrowse(ctx, dbPath); reconcileErr != nil {
 			var drift *state.DeclarativeDriftError
 			if errors.As(reconcileErr, &drift) {
-				logger().Warn(fmt.Sprintf("session store at %s is behind SCHEMA_SQL: %s", dbPath, drift.Error()))
+				pkgLog().Warn(fmt.Sprintf("session store at %s is behind SCHEMA_SQL: %s", dbPath, drift.Error()))
 			}
 			return nil, reconcileErr
 		}
@@ -120,7 +120,7 @@ func profileDB(ctx context.Context, params map[string]any, writer bool) (*state.
 		return openBrowseSessionDB(ctx, dbPath)
 	}()
 	if err != nil || db == nil {
-		logger().Warn(fmt.Sprintf("TUI profile session store unavailable for %s: %v", profile, err))
+		pkgLog().Warn(fmt.Sprintf("TUI profile session store unavailable for %s: %v", profile, err))
 		return nil, func() {}, nil
 	}
 	return db, func() { suppress(func() { _ = db.Close() }) }, nil

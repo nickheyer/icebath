@@ -22,16 +22,15 @@ var managedResultFields = []string{"final_response", "failed", "interrupted", "c
 	"cache_read_tokens", "cache_write_tokens", "reasoning_tokens",
 	"estimated_cost_usd", "cost_status", "cost_source", "service_tier", "failure_reason",
 	"session_id", "requested_model", "served_model", "_turn_input_tokens", "_turn_output_tokens",
-	"failure_retryable", "failure_resets_at", "billing_block", "free_tier", "usage_window_message"}
+	"failure_retryable", "failure_resets_at", "billing_block"}
 
 // Structured result fields and the keys each may carry
 var managedStructuredFields = map[string][]string{
-	"billing_block": {"provider", "provider_label", "model", "billing_url", "is_nous", "message", "unverified"},
-	"free_tier":     {"kind", "message"},
+	"billing_block": {"provider", "provider_label", "model", "billing_url", "message", "unverified"},
 }
 
 // Ordered names of the structured result fields
-var managedStructuredOrder = []string{"billing_block", "free_tier"}
+var managedStructuredOrder = []string{"billing_block"}
 
 // Whether a value is None, a bool, int or float, or a string of at most 4096 characters
 func managedScalar(value any) bool {

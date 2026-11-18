@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/nickheyer/icebath/pkg/config"
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 )
 
@@ -18,7 +19,7 @@ func BlankSlateMinimalToolsets(ctx context.Context, cfg config.Tree) error {
 		cfg["platform_toolsets"] = platformToolsets
 	}
 	if !ok {
-		return fmt.Errorf("TypeError: '%s' object does not support item assignment", pyrepr.TypeName(cfg["platform_toolsets"]))
+		return fmt.Errorf("platform_toolsets in config is %s, expected a mapping", errchain.Kind(cfg["platform_toolsets"]))
 	}
 	kept := []any{}
 	for _, k := range sortedSet(keep) {
@@ -39,7 +40,7 @@ func BlankSlateMinimalToolsets(ctx context.Context, cfg config.Tree) error {
 	}
 	for _, k := range staticToolsetNames() {
 		spec, _ := staticToolset(k)
-		if strings.HasPrefix(k, "icebath-") || strings.HasPrefix(k, "hermes-") || len(spec.Includes) > 0 || spec.Posture {
+		if strings.HasPrefix(k, BundlePrefix) || len(spec.Includes) > 0 || spec.Posture {
 			continue
 		}
 		if !allKeys[k] && subsetOfAnyToolSet(Default.ResolveToolset(ctx, "", k), configurableToolSets) {
@@ -99,7 +100,7 @@ func blankSlateSection(cfg config.Tree, key string) (map[string]any, error) {
 	}
 	section, ok := pyDictOf(v)
 	if !ok {
-		return nil, fmt.Errorf("TypeError: '%s' object does not support item assignment", pyrepr.TypeName(v))
+		return nil, fmt.Errorf("%s in config is %s, expected a mapping", key, errchain.Kind(v))
 	}
 	return section, nil
 }

@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"log/slog"
 	"strings"
 	"time"
 
@@ -23,7 +22,7 @@ func logAPIErrorAttempt(ctx context.Context, a *AIAgent, s *LoopState, e *apiErr
 	if !retryable {
 		attempt += ", not retryable"
 	}
-	conversationLoopLog().Warn(fmt.Sprintf("API call failed (%s) error_type=%s %s summary=%s", attempt, errorType, a.ClientLogContext(), summary))
+	pkgLog().Warn(fmt.Sprintf("API call failed (%s) error_type=%s %s summary=%s", attempt, errorType, a.ClientLogContext(), summary))
 	providerName, baseURL, model := a.provider, a.baseURL, a.model
 	blines(a, fmt.Sprintf("⚠️  %s%s failed: %s", strings.ToUpper(attempt[:1]), attempt[1:], summary))
 	if a.verboseLogging {
@@ -112,11 +111,8 @@ func computeErrorBackoff(a *AIAgent, apiError error, retryCount, maxRetries int,
 	if adaptive {
 		reset = provider.ResetHint(apiError, time.Now())
 	}
-	freeBusy := isRateLimited && provider.OnFreeModel(a.provider, a.apiKey, baseURL)
 	waitReason := "Rate limited"
-	if freeBusy {
-		waitReason = "The free model is busy"
-	} else if isZAICodingOverload && !isRateLimited {
+	if isZAICodingOverload && !isRateLimited {
 		waitReason = "Provider overloaded"
 	}
 	var status string
@@ -140,29 +136,14 @@ func computeErrorBackoff(a *AIAgent, apiError error, retryCount, maxRetries int,
 	liveReason := "waiting on provider —"
 	if reset != "" {
 		liveReason = fmt.Sprintf("%s — resets in %s,", strings.ToLower(waitReason), reset)
-	} else if freeBusy {
-		liveReason = "the free model is busy —"
 	}
 	a.emitDiagnosticWait(fmt.Sprintf("⏳ %s retrying in %.0fs (attempt %d/%d)", liveReason, wait.Seconds(), retryCount, maxRetries))
 	if policy == "" {
 		policy = "default"
 	}
-	conversationLoopLog().Warn(fmt.Sprintf("Retrying API call in %ss (attempt %d/%d) %s policy=%s error=%s",
+	pkgLog().Warn(fmt.Sprintf("Retrying API call in %ss (attempt %d/%d) %s policy=%s error=%s",
 		pyrepr.Float(wait.Seconds()), retryCount, maxRetries, a.ClientLogContext(), policy, apiError))
 	return wait.Seconds()
-}
-
-// An attended free model session facing a cooldown longer than a person sits through
-func freeTierCooldownEndsTurn(a *AIAgent, apiError error, baseURL string) bool {
-	if !(provider.OnFreeModel(a.provider, a.apiKey, baseURL) && IsAttended(a)) {
-		return false
-	}
-	cooldown, ok := providerRetryAfterSeconds(apiError)
-	return ok && cooldown > provider.LiveRetryWaitCap
-}
-
-func fallbackCooldownLog() *slog.Logger {
-	return slog.Default().With("logger", "agent.fallback_cooldown")
 }
 
 // Records a Codex ChatGPT account 400 rejecting the model once no pool entry remains eligible for it
@@ -194,7 +175,7 @@ func markEntitlementRejectedModel(a *AIAgent, apiError error) bool {
 		return true
 	}
 	a.entitlementRejectedModels[key] = true
-	fallbackCooldownLog().Warn(fmt.Sprintf("Model entitlement rejection: this account is not entitled to %s via %s; treating it as unavailable for this session", model, providerName))
+	pkgLog().Warn(fmt.Sprintf("Model entitlement rejection: this account is not entitled to %s via %s; treating it as unavailable for this session", model, providerName))
 	a.BufferDiagnosticStatus(fmt.Sprintf("🚫 This account is not entitled to %s via %s; it will be skipped until restart. Switch to an entitled model via /model or `icebath model`.", model, providerName))
 	return true
 }

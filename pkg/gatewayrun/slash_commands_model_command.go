@@ -344,7 +344,7 @@ func (r *GatewayRunner) handleModelReset(ctx context.Context, event *gateway.Mes
 		s.conversation.modelOverride, s.conversation.oneTurnRestore = nil, nil
 	})
 	if err := r.slashStore().SetModelOverride(ctx, sessionKey, nil); err != nil {
-		runLog().Warn("Failed to clear persisted session model override", "error", err)
+		pkgLog().Warn("Failed to clear persisted session model override", "error", err)
 	}
 	shown := defaultModel
 	if shown == "" {
@@ -363,7 +363,7 @@ func (r *GatewayRunner) handleModelReset(ctx context.Context, event *gateway.Mes
 			return db.DB().SetSessionModel(ctx, entry.SessionID, defaultModel, defaultProvider, "", "")
 		}()
 		if err != nil {
-			runLog().Debug("Failed to persist model reset to DB", "error", err)
+			pkgLog().Debug("Failed to persist model reset to DB", "error", err)
 		}
 	}
 	r.stageSessionNote(&r.pendingModelNotes, sessionKey, fmt.Sprintf("[Note: the session model override was cleared; model changed from %s back to the default %s. Adjust your self-identification accordingly.]",

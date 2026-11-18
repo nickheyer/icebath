@@ -7,7 +7,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"log/slog"
 	"math"
 	"math/big"
 	"math/rand"
@@ -218,12 +217,12 @@ func remuxAACToM4A(ctx context.Context, aacData []byte) ([]byte, bool) {
 		}
 	}
 	if !found {
-		slog.Debug("Signal: ffmpeg not found, skipping AAC→M4A remux")
+		pkgLog().Debug("Signal: ffmpeg not found, skipping AAC→M4A remux")
 		return nil, false
 	}
 	src, err := os.CreateTemp("", "tmp*.aac")
 	if err != nil {
-		slog.Error("Signal: AAC→M4A remux error", "error", err)
+		pkgLog().Error("Signal: AAC→M4A remux error", "error", err)
 		return nil, false
 	}
 	srcPath := src.Name()
@@ -237,7 +236,7 @@ func remuxAACToM4A(ctx context.Context, aacData []byte) ([]byte, bool) {
 		werr = cerr
 	}
 	if werr != nil {
-		slog.Error("Signal: AAC→M4A remux error", "error", werr)
+		pkgLog().Error("Signal: AAC→M4A remux error", "error", werr)
 		return nil, false
 	}
 	proc, err := pysubprocess.RunWith(ctx, []string{ffmpeg, "-y", "-loglevel", "error", "-i", srcPath, "-c:a", "copy", "-movflags", "+faststart", dstPath},
@@ -245,19 +244,19 @@ func remuxAACToM4A(ctx context.Context, aacData []byte) ([]byte, bool) {
 	var timeout *pysubprocess.TimeoutExpired
 	switch {
 	case errors.As(err, &timeout):
-		slog.Warn("Signal: AAC→M4A remux timed out (>10s)")
+		pkgLog().Warn("Signal: AAC→M4A remux timed out (>10s)")
 		return nil, false
 	case err != nil:
-		slog.Error("Signal: AAC→M4A remux error", "error", err)
+		pkgLog().Error("Signal: AAC→M4A remux error", "error", err)
 		return nil, false
 	}
 	if proc.Returncode != 0 {
-		slog.Warn(fmt.Sprintf("Signal: AAC→M4A remux failed (ffmpeg exit %d): %s", proc.Returncode, pystr.Slice(pystr.DecodeUTF8Replace(proc.Stderr), 0, 300)))
+		pkgLog().Warn(fmt.Sprintf("Signal: AAC→M4A remux failed (ffmpeg exit %d): %s", proc.Returncode, pystr.Slice(pystr.DecodeUTF8Replace(proc.Stderr), 0, 300)))
 		return nil, false
 	}
 	out, err := os.ReadFile(dstPath)
 	if err != nil {
-		slog.Error("Signal: AAC→M4A remux error", "error", err)
+		pkgLog().Error("Signal: AAC→M4A remux error", "error", err)
 		return nil, false
 	}
 	return out, true
@@ -478,7 +477,7 @@ func NewSignalAdapter(ctx context.Context, config *gateway.PlatformConfig) (*Sig
 	if len(a.groupAllowFrom) > 0 {
 		groupsState = "enabled"
 	}
-	slog.Info(fmt.Sprintf("Signal adapter initialized: url=%s account=%s groups=%s", a.httpURL, gateway.RedactPhone(a.account), groupsState))
+	pkgLog().Info(fmt.Sprintf("Signal adapter initialized: url=%s account=%s groups=%s", a.httpURL, gateway.RedactPhone(a.account), groupsState))
 	return a, nil
 }
 
@@ -515,7 +514,7 @@ func (a *SignalAdapter) get(ctx context.Context, client *http.Client, rawURL str
 // Connects to the signal-cli daemon under the phone lock and starts the SSE listener and health monitor
 func (a *SignalAdapter) Connect(ctx context.Context, isReconnect bool) (connected bool, err error) {
 	if a.httpURL == "" || a.account == "" {
-		slog.Error("Signal: SIGNAL_HTTP_URL and SIGNAL_ACCOUNT are required")
+		pkgLog().Error("Signal: SIGNAL_HTTP_URL and SIGNAL_ACCOUNT are required")
 		return false, nil
 	}
 	lockAcquired := false
@@ -524,7 +523,7 @@ func (a *SignalAdapter) Connect(ctx context.Context, isReconnect bool) (connecte
 	case lockErr != nil && ctx.Err() != nil:
 		return false, ctx.Err()
 	case lockErr != nil:
-		slog.Warn(fmt.Sprintf("Signal: Could not acquire phone lock (non-fatal): %s", errText(lockErr)))
+		pkgLog().Warn(fmt.Sprintf("Signal: Could not acquire phone lock (non-fatal): %s", errText(lockErr)))
 	case !acquired:
 		return false, nil
 	default:
@@ -547,11 +546,11 @@ func (a *SignalAdapter) Connect(ctx context.Context, isReconnect bool) (connecte
 		if ctx.Err() != nil {
 			return false, ctx.Err()
 		}
-		slog.Error(fmt.Sprintf("Signal: cannot reach signal-cli at %s: %s", a.httpURL, errText(err)))
+		pkgLog().Error(fmt.Sprintf("Signal: cannot reach signal-cli at %s: %s", a.httpURL, errText(err)))
 		return false, nil
 	}
 	if resp.StatusCode != 200 {
-		slog.Error(fmt.Sprintf("Signal: health check failed (status %d)", resp.StatusCode))
+		pkgLog().Error(fmt.Sprintf("Signal: health check failed (status %d)", resp.StatusCode))
 		return false, nil
 	}
 	a.SetRunning(true)
@@ -561,7 +560,7 @@ func (a *SignalAdapter) Connect(ctx context.Context, isReconnect bool) (connecte
 	a.mu.Lock()
 	a.sseTask, a.healthMonitorTask = sse, health
 	a.mu.Unlock()
-	slog.Info(fmt.Sprintf("Signal: connected to %s", a.httpURL))
+	pkgLog().Info(fmt.Sprintf("Signal: connected to %s", a.httpURL))
 	a.WirePluginHandlers(ctx, nil)
 	return true, nil
 }
@@ -593,7 +592,7 @@ func (a *SignalAdapter) Disconnect(ctx context.Context) error {
 	}
 	a.closeClient()
 	a.ReleasePlatformLock()
-	slog.Info("Signal: disconnected")
+	pkgLog().Info("Signal: disconnected")
 	return nil
 }
 
@@ -613,14 +612,14 @@ func (a *SignalAdapter) handleSSELine(ctx context.Context, line string) error {
 	a.touchSSEActivity()
 	envelope, err := pyjson.Loads(dataStr)
 	if err != nil {
-		slog.Debug(fmt.Sprintf("Signal SSE: invalid JSON: %s", pystr.Slice(dataStr, 0, 100)))
+		pkgLog().Debug(fmt.Sprintf("Signal SSE: invalid JSON: %s", pystr.Slice(dataStr, 0, 100)))
 		return nil
 	}
 	if err := a.handleEnvelope(ctx, envelope); err != nil {
 		if ctx.Err() != nil {
 			return ctx.Err()
 		}
-		slog.Error("Signal SSE: error handling event", "error", err)
+		pkgLog().Error("Signal SSE: error handling event", "error", err)
 	}
 	return nil
 }
@@ -647,7 +646,7 @@ func (a *SignalAdapter) readSSEStream(ctx context.Context, rawURL string, backof
 	a.lastSSEActivity = wallClock()
 	a.mu.Unlock()
 	*backoff = sseRetryDelayInitial
-	slog.Info("Signal SSE: connected")
+	pkgLog().Info("Signal SSE: connected")
 	a.mu.Lock()
 	response.consumed = true
 	a.mu.Unlock()
@@ -677,7 +676,7 @@ func (a *SignalAdapter) sseListener(ctx context.Context) error {
 	rawURL := a.httpURL + "/api/v1/events?account=" + pyurl.Quote(a.account, "")
 	backoff := sseRetryDelayInitial
 	for a.IsConnected() {
-		slog.Debug(fmt.Sprintf("Signal SSE: connecting to %s", rawURL))
+		pkgLog().Debug(fmt.Sprintf("Signal SSE: connecting to %s", rawURL))
 		err := a.readSSEStream(ctx, rawURL, &backoff)
 		if ctx.Err() != nil {
 			break
@@ -685,9 +684,9 @@ func (a *SignalAdapter) sseListener(ctx context.Context) error {
 		if err != nil && a.IsConnected() {
 			var pe *pyErr
 			if errors.As(err, &pe) && (pe.kind == "ConnectError" || pe.kind == "ReadError") {
-				slog.Warn(fmt.Sprintf("Signal SSE: HTTP error: %s (reconnecting in %.0fs)", errText(err), backoff))
+				pkgLog().Warn(fmt.Sprintf("Signal SSE: HTTP error: %s (reconnecting in %.0fs)", errText(err), backoff))
 			} else {
-				slog.Warn(fmt.Sprintf("Signal SSE: error: %s (reconnecting in %.0fs)", errText(err), backoff))
+				pkgLog().Warn(fmt.Sprintf("Signal SSE: error: %s (reconnecting in %.0fs)", errText(err), backoff))
 			}
 		}
 		if a.IsConnected() {
@@ -718,7 +717,7 @@ func (a *SignalAdapter) healthMonitor(ctx context.Context) error {
 		if elapsed <= healthCheckStaleThreshold {
 			continue
 		}
-		slog.Warn(fmt.Sprintf("Signal: SSE idle for %.0fs, checking daemon health", elapsed))
+		pkgLog().Warn(fmt.Sprintf("Signal: SSE idle for %.0fs, checking daemon health", elapsed))
 		var resp *pyhttpx.Response
 		var err error
 		if client := a.httpClient(); client == nil {
@@ -730,15 +729,15 @@ func (a *SignalAdapter) healthMonitor(ctx context.Context) error {
 			return nil
 		}
 		if err != nil {
-			slog.Warn(fmt.Sprintf("Signal: health check error: %s, forcing reconnect", errText(err)))
+			pkgLog().Warn(fmt.Sprintf("Signal: health check error: %s, forcing reconnect", errText(err)))
 			a.forceReconnect(ctx)
 			continue
 		}
 		if resp.StatusCode == 200 {
 			a.touchSSEActivity()
-			slog.Debug("Signal: daemon healthy, SSE idle")
+			pkgLog().Debug("Signal: daemon healthy, SSE idle")
 		} else {
-			slog.Warn(fmt.Sprintf("Signal: health check failed (%d), forcing reconnect", resp.StatusCode))
+			pkgLog().Warn(fmt.Sprintf("Signal: health check failed (%d), forcing reconnect", resp.StatusCode))
 			a.forceReconnect(ctx)
 		}
 	}
@@ -821,7 +820,7 @@ func (a *SignalAdapter) applyGroupMentionRules(text string, dataMessage map[stri
 			}
 		}
 		if !mentionedInText && !mentionedInMetadata {
-			slog.Debug("Signal: ignoring group message (require_mention=true, bot not mentioned)")
+			pkgLog().Debug("Signal: ignoring group message (require_mention=true, bot not mentioned)")
 			return false, text, nil
 		}
 	}
@@ -871,7 +870,7 @@ func (a *SignalAdapter) collectAttachments(ctx context.Context, attachmentsData 
 			return nil, nil, err
 		}
 		if tooLarge {
-			slog.Warn(fmt.Sprintf("Signal: attachment too large (%s bytes), skipping", pyrepr.Str(att["size"])))
+			pkgLog().Warn(fmt.Sprintf("Signal: attachment too large (%s bytes), skipping", pyrepr.Str(att["size"])))
 			continue
 		}
 		cachedPath, ext, err := a.fetchAttachment(ctx, attID)
@@ -879,7 +878,7 @@ func (a *SignalAdapter) collectAttachments(ctx context.Context, attachmentsData 
 			if ctx.Err() != nil {
 				return nil, nil, ctx.Err()
 			}
-			slog.Error(fmt.Sprintf("Signal: failed to fetch attachment %s", pyrepr.Str(attID)), "error", err)
+			pkgLog().Error(fmt.Sprintf("Signal: failed to fetch attachment %s", pyrepr.Str(attID)), "error", err)
 			continue
 		}
 		if cachedPath != "" {
@@ -944,7 +943,7 @@ func (a *SignalAdapter) handleEnvelope(ctx context.Context, envelope any) error 
 	senderUUIDRaw := getOr(envelopeData, "sourceUuid", "")
 	a.rememberRecipientIdentifiers(senderRaw, senderUUIDRaw)
 	if !pyrepr.Truthy(senderRaw) {
-		slog.Debug("Signal: ignoring envelope with no sender")
+		pkgLog().Debug("Signal: ignoring envelope with no sender")
 		return nil
 	}
 	sender := identText(senderRaw)
@@ -1038,7 +1037,7 @@ func (a *SignalAdapter) handleEnvelope(ctx context.Context, envelope any) error 
 		}
 	}
 	if pystr.Strip(text) == "" && len(mediaURLs) == 0 {
-		slog.Debug(fmt.Sprintf("Signal: skipping contentless envelope from %s (%d attachments)", gateway.RedactPhone(sender), len(mediaURLs)))
+		pkgLog().Debug(fmt.Sprintf("Signal: skipping contentless envelope from %s (%d attachments)", gateway.RedactPhone(sender), len(mediaURLs)))
 		return nil
 	}
 	fields := gateway.SourceFields{ChatType: "dm", UserID: &sender}
@@ -1096,14 +1095,14 @@ func (a *SignalAdapter) handleEnvelope(ctx context.Context, envelope any) error 
 	event.ReplyToAuthorID = replyToAuthor
 	event.ReplyToAuthorName = optText(pyrepr.Or(quoteData["authorName"], quoteData["authorProfileName"]))
 	event.ReplyToIsOwnMessage = a.quoteReferencesOwnMessage(replyToID, replyToAuthor)
-	slog.Debug(fmt.Sprintf("Signal: message from %s in %s: %s", gateway.RedactPhone(sender), pystr.Slice(chatID, 0, 20), pystr.Slice(text, 0, 50)))
+	pkgLog().Debug(fmt.Sprintf("Signal: message from %s in %s: %s", gateway.RedactPhone(sender), pystr.Slice(chatID, 0, 20), pystr.Slice(text, 0, 50)))
 	return a.HandleMessage(ctx, event)
 }
 
 // Group policy from the group allowlist, unset disabling groups and a star allowing all
 func (a *SignalAdapter) groupAllowed(groupID string) bool {
 	if len(a.groupAllowFrom) == 0 {
-		slog.Debug("Signal: ignoring group message (no SIGNAL_GROUP_ALLOWED_USERS)")
+		pkgLog().Debug("Signal: ignoring group message (no SIGNAL_GROUP_ALLOWED_USERS)")
 		return false
 	}
 	if !a.groupAllowFrom["*"] && !a.groupAllowFrom[groupID] {
@@ -1111,7 +1110,7 @@ func (a *SignalAdapter) groupAllowed(groupID string) bool {
 		if groupID != "" {
 			label = pystr.Slice(groupID, 0, 8)
 		}
-		slog.Debug(fmt.Sprintf("Signal: group %s not in allowlist", label))
+		pkgLog().Debug(fmt.Sprintf("Signal: group %s not in allowlist", label))
 		return false
 	}
 	return true
@@ -1270,7 +1269,7 @@ func (a *SignalAdapter) fetchAttachment(ctx context.Context, attachmentID any) (
 	if m, isDict := pyjson.Dict(result); isDict {
 		result = m["data"]
 		if !pyrepr.Truthy(result) {
-			slog.Warn("Signal: attachment response missing 'data' key")
+			pkgLog().Warn("Signal: attachment response missing 'data' key")
 			return "", "", nil
 		}
 	}

@@ -29,7 +29,7 @@ var (
 		return reapOrphanedBrowserSessions(tools.WithEnvHome(ctx, env), env)
 	}
 	janitorJoin = 5 * time.Second
-	// Teardown collaborators the hermes lifecycle tests patch
+	// Teardown collaborators the lifecycle tests patch
 	sessionStopBrowser     = func(ctx context.Context, _ *tools.Env, key string) { stopBrowser(ctx, key) }
 	lifecycleCleanupAll    = func(ctx context.Context, env *tools.Env) { cleanupAllBrowsers(tools.WithEnvHome(ctx, env), env) }
 	lifecycleCleanupSingle = func(ctx context.Context, env *tools.Env, key string) error {

@@ -105,7 +105,7 @@ func gitProcRunning(env *Env) bool {
 	}
 	res, err := gitlockSubprocessRun(context.Background(), argv, pysubprocess.Options{Timeout: 10 * time.Second, Attr: gitlockHideAttr()})
 	if err != nil {
-		toolsLogger(env).Debug("git process probe failed; assuming git may be running")
+		envLog(env).Debug("git process probe failed; assuming git may be running")
 		return true
 	}
 	if gitlockWindows {
@@ -127,7 +127,7 @@ func gitProcRunning(env *Env) bool {
 func psutilGitRunning(env *Env) bool {
 	pids, err := proc.PIDs()
 	if err != nil {
-		toolsLogger(env).Debug("git process scan failed; assuming git may be running")
+		envLog(env).Debug("git process scan failed; assuming git may be running")
 		return true
 	}
 	for _, pid := range pids {
@@ -136,7 +136,7 @@ func psutilGitRunning(env *Env) bool {
 			if errors.Is(err, proc.ErrNoSuchProcess) || errors.Is(err, fs.ErrNotExist) || !proc.Exists(pid) {
 				continue
 			}
-			toolsLogger(env).Debug("git process scan failed; assuming git may be running")
+			envLog(env).Debug("git process scan failed; assuming git may be running")
 			return true
 		}
 		if pm.GitProgram(name) != "" {
@@ -153,7 +153,7 @@ func sweepStaleGitDebris(env *Env, directory string, candidates func() []string,
 		return nil
 	}
 	if checkpointGitProcRunning(env) {
-		toolsLogger(env).Debug(skipMsg)
+		envLog(env).Debug(skipMsg)
 		return nil
 	}
 	age := defaultAge
@@ -166,7 +166,7 @@ func sweepStaleGitDebris(env *Env, directory string, candidates func() []string,
 		st, err := os.Stat(entry)
 		if err != nil {
 			if !checkpointPathMissing(err) {
-				toolsLogger(env).Warn(fmt.Sprintf("Could not clear %s (skipping): %v", entry, err))
+				envLog(env).Warn(fmt.Sprintf("Could not clear %s (skipping): %v", entry, err))
 			}
 			continue
 		}
@@ -177,7 +177,7 @@ func sweepStaleGitDebris(env *Env, directory string, candidates func() []string,
 			os.Chmod(entry, 0o666)
 		}
 		if err := gitlockRemove(entry); err != nil {
-			toolsLogger(env).Warn(fmt.Sprintf("Could not clear %s (skipping): %v", entry, err))
+			envLog(env).Warn(fmt.Sprintf("Could not clear %s (skipping): %v", entry, err))
 			continue
 		}
 		removed = append(removed, entry)
@@ -199,7 +199,7 @@ func gitJoinAll(dir string, names []string) []string {
 func sweepGitLocks(env *Env, gitDir string, candidates func() []string, minAge *int) []string {
 	return sweepStaleGitDebris(env, gitDir, candidates, minAge, StaleLockMinAgeSeconds,
 		"git process running; skipping stale-lock sweep",
-		func(p string, _ int64) { toolsLogger(env).Info("Removed stale git lock " + p) })
+		func(p string, _ int64) { envLog(env).Info("Removed stale git lock " + p) })
 }
 
 // Removes abandoned locks under the checkout git dir older than the floor while no git runs, returning their paths
@@ -211,7 +211,7 @@ func ClearStaleGitLocks(repoRoot string, minAge *int) []string {
 	}, minAge)
 }
 
-// Removes only the stale object store locks under a git dir Hermes does not own
+// Removes only the stale object store locks under a git dir icebath does not own
 func ClearStaleObjectStoreLocks(gitDir string) []string {
 	return sweepGitLocks(nil, gitDir, func() []string { return gitJoinAll(gitDir, ObjectStoreLockNames) }, nil)
 }
@@ -261,7 +261,7 @@ func MarkUnmarkedPacksPromisor(repoRoot string) int {
 		f, err := os.OpenFile(marker, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o666)
 		if err != nil {
 			if !errors.Is(err, fs.ErrExist) {
-				toolsLogger(nil).Warn(fmt.Sprintf("Could not mark %s as a partial-clone pack: %v", pack, err))
+				envLog(nil).Warn(fmt.Sprintf("Could not mark %s as a partial-clone pack: %v", pack, err))
 			}
 			continue
 		}
@@ -269,7 +269,7 @@ func MarkUnmarkedPacksPromisor(repoRoot string) int {
 		marked++
 	}
 	if marked > 0 {
-		toolsLogger(nil).Info(fmt.Sprintf("Marked %d pack(s) in %s as partial-clone packs", marked, repoRoot))
+		envLog(nil).Info(fmt.Sprintf("Marked %d pack(s) in %s as partial-clone packs", marked, repoRoot))
 	}
 	return marked
 }
@@ -298,14 +298,14 @@ func DisableTree0AutoMaintenance(ctx context.Context, repoRoot string) {
 			_, err = gitlockConfigRun(ctx, repoRoot, true, "config", "--local", kv[0], kv[1])
 		}
 		if err != nil {
-			toolsLogger(nil).Warn(fmt.Sprintf("Could not set %s=%s in %s", kv[0], kv[1], repoRoot))
+			envLog(nil).Warn(fmt.Sprintf("Could not set %s=%s in %s", kv[0], kv[1], repoRoot))
 		}
 	}
 }
 
 // Removes the maintenance keys earlier cuts persisted, only under their fingerprint
 func migrateEarlierMaintenanceKeys(ctx context.Context, repoRoot string) {
-	fail := func() { toolsLogger(nil).Warn("Could not migrate earlier maintenance keys in " + repoRoot) }
+	fail := func() { envLog(nil).Warn("Could not migrate earlier maintenance keys in " + repoRoot) }
 	local := map[string]string{}
 	for _, line := range GitlockStdoutLines(ctx, repoRoot, []string{"config", "--local", "--get-regexp",
 		`^(maintenance\.auto|maintenance\.commit-graph\.enabled|fetch\.writecommitgraph|gc\.auto)$`}) {
@@ -358,7 +358,7 @@ func clearStaleTmpPacks(env *Env, repoRoot string, minAge *int) []string {
 	return sweepStaleGitDebris(env, packDir, candidates, minAge, StaleTmpPackMinAgeSeconds,
 		"git process running; skipping tmp-pack sweep",
 		func(p string, size int64) {
-			toolsLogger(env).Info(fmt.Sprintf("Removed aborted-write git debris %s (%d bytes)", p, size))
+			envLog(env).Info(fmt.Sprintf("Removed aborted-write git debris %s (%d bytes)", p, size))
 		})
 }
 
@@ -371,7 +371,7 @@ func ClearStaleTmpPacks(repoRoot string, minAge *int) []string {
 func GitlockStdoutLines(ctx context.Context, repoRoot string, args []string) []string {
 	res, err := gitlockRunGit(ctx, []string{"git"}, args, pysubprocess.Options{Dir: repoRoot, Timeout: 10 * time.Second, Attr: gitlockHideAttr()})
 	if err != nil {
-		toolsLogger(nil).Debug(fmt.Sprintf("git query failed: %s", pyrepr.Repr(anySlice(args))))
+		envLog(nil).Debug(fmt.Sprintf("git query failed: %s", pyrepr.Repr(anySlice(args))))
 		return nil
 	}
 	if res.Returncode != 0 {
@@ -407,7 +407,7 @@ func batchMissingParents(ctx context.Context, repoRoot string, candidates []stri
 	}
 	result, err := batchMissingParentsErr(ctx, repoRoot, candidates)
 	if err != nil {
-		toolsLogger(nil).Debug("parent-object probe failed for " + repoRoot)
+		envLog(nil).Debug("parent-object probe failed for " + repoRoot)
 		return nil
 	}
 	return result
@@ -591,7 +591,7 @@ func shallowLines(original []byte) ([]string, error) {
 func RepairBrokenShallowBoundaries(ctx context.Context, repoRoot string) int {
 	n, err := repairBrokenShallowBoundaries(ctx, repoRoot)
 	if err != nil {
-		toolsLogger(nil).Debug("shallow boundary repair failed for " + repoRoot)
+		envLog(nil).Debug("shallow boundary repair failed for " + repoRoot)
 		return 0
 	}
 	return n
@@ -658,7 +658,7 @@ func repairBrokenShallowBoundaries(ctx context.Context, repoRoot string) (int, e
 			if err := os.WriteFile(shallowPath, original, 0o666); err != nil {
 				return 0, err
 			}
-			toolsLogger(nil).Debug("shallow boundary repair self-check failed; file restored")
+			envLog(nil).Debug("shallow boundary repair self-check failed; file restored")
 			repaired = 0
 			return 0, nil
 		}
@@ -667,7 +667,7 @@ func repairBrokenShallowBoundaries(ctx context.Context, repoRoot string) (int, e
 	if err != nil || n == 0 {
 		return 0, err
 	}
-	toolsLogger(nil).Info(fmt.Sprintf("Restored %d broken shallow boundary(ies) in %s", n, repoRoot))
+	envLog(nil).Info(fmt.Sprintf("Restored %d broken shallow boundary(ies) in %s", n, repoRoot))
 	return n, nil
 }
 
@@ -675,7 +675,7 @@ func repairBrokenShallowBoundaries(ctx context.Context, repoRoot string) (int, e
 func PruneStaleShallowGrafts(ctx context.Context, repoRoot string) int {
 	n, err := pruneStaleShallowGrafts(ctx, repoRoot)
 	if err != nil {
-		toolsLogger(nil).Debug("shallow graft prune failed for " + repoRoot)
+		envLog(nil).Debug("shallow graft prune failed for " + repoRoot)
 		return 0
 	}
 	return n
@@ -740,7 +740,7 @@ func pruneStaleShallowGrafts(ctx context.Context, repoRoot string) (int, error) 
 			if err := os.WriteFile(shallowPath, original, 0o666); err != nil {
 				return 0, err
 			}
-			toolsLogger(nil).Debug("shallow prune self-check failed; grafts restored")
+			envLog(nil).Debug("shallow prune self-check failed; grafts restored")
 			return 0, nil
 		}
 		return len(lines) - len(keep), nil
@@ -748,7 +748,7 @@ func pruneStaleShallowGrafts(ctx context.Context, repoRoot string) (int, error) 
 	if err != nil || n == 0 {
 		return 0, err
 	}
-	toolsLogger(nil).Info(fmt.Sprintf("Pruned %d stale shallow graft(s) in %s", n, repoRoot))
+	envLog(nil).Info(fmt.Sprintf("Pruned %d stale shallow graft(s) in %s", n, repoRoot))
 	return n, nil
 }
 
@@ -867,7 +867,7 @@ func FetchWithPartialCloneRecovery(runner func(gitCmd, args []string) (*pysubpro
 		return result, nil
 	}
 	MarkUnmarkedPacksPromisor(repoRoot)
-	toolsLogger(nil).Info("pack-objects crash on a partial clone; retrying the fetch")
+	envLog(nil).Info("pack-objects crash on a partial clone; retrying the fetch")
 	return runner(gitCmd, fetchArgs)
 }
 
@@ -1020,7 +1020,7 @@ func historyTreesComplete(ctx context.Context, repoRoot string, kw pysubprocess.
 func SettlePartialCloneMaintenance(ctx context.Context, repoRoot string) {
 	filter, err := PartialCloneFilter(ctx, repoRoot, pysubprocess.Options{Attr: gitlockHideAttr()})
 	if err != nil {
-		toolsLogger(nil).Debug("partial-clone maintenance settings failed for " + repoRoot)
+		envLog(nil).Debug("partial-clone maintenance settings failed for " + repoRoot)
 		return
 	}
 	if filter != "" {

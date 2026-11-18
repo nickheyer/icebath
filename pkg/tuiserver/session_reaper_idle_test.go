@@ -8,7 +8,7 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tools"
-	"github.com/nickheyer/icebath/pkg/tuigateway"
+	"github.com/nickheyer/icebath/pkg/tuihost"
 )
 
 // Agent exposing the persist contract of the flush, recording each flushed transcript
@@ -42,14 +42,14 @@ func (a *flushAgent) calls() int {
 }
 
 // Registers one in memory session holding the agent for the case
-func registerFlushSession(t *testing.T, sid string, a flushableAgent, extra map[string]any) *tuigateway.Session {
+func registerFlushSession(t *testing.T, sid string, a flushableAgent, extra map[string]any) *tuihost.Session {
 	t.Helper()
 	fields := map[string]any{"agent": a, "session_key": sid, "running": false}
 	for k, v := range extra {
 		fields[k] = v
 	}
-	session := tuigateway.NewSession(fields)
-	swapSessions(t, map[string]*tuigateway.Session{sid: session})
+	session := tuihost.NewSession(fields)
+	swapSessions(t, map[string]*tuihost.Session{sid: session})
 	return session
 }
 
@@ -63,7 +63,7 @@ func swapFlushInterval(t *testing.T, seconds float64) {
 
 // Installs the three shutdown steps a case replaces and restores the real ones after it
 func swapShutdownSteps(t *testing.T, flush func(*float64) int, release func() bool,
-	closeSession func(context.Context, string, string, func(*tuigateway.Session) bool) bool) {
+	closeSession func(context.Context, string, string, func(*tuihost.Session) bool) bool) {
 	t.Helper()
 	savedFlush, savedRelease, savedClose := shutdownFlushSessions, shutdownReleaseWakeOwner, shutdownCloseSession
 	shutdownFlushSessions, shutdownReleaseWakeOwner, shutdownCloseSession = flush, release, closeSession
@@ -81,13 +81,13 @@ func TestShutdownSessionsFlushesBeforeTeardown(t *testing.T) {
 		defer mu.Unlock()
 		order = append(order, "flush")
 		return 0
-	}, func() bool { return false }, func(_ context.Context, sid, _ string, _ func(*tuigateway.Session) bool) bool {
+	}, func() bool { return false }, func(_ context.Context, sid, _ string, _ func(*tuihost.Session) bool) bool {
 		mu.Lock()
 		defer mu.Unlock()
 		order = append(order, "close:"+sid)
 		return true
 	})
-	swapSessions(t, map[string]*tuigateway.Session{"sess-order": tuigateway.NewSession(map[string]any{"agent": nil, "session_key": "sess-order"})})
+	swapSessions(t, map[string]*tuihost.Session{"sess-order": tuihost.NewSession(map[string]any{"agent": nil, "session_key": "sess-order"})})
 	shutdownSessions()
 	mu.Lock()
 	defer mu.Unlock()

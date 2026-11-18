@@ -26,7 +26,7 @@ func (r *GatewayRunner) hmBundleSlashRewrite(ctx context.Context, event *gateway
 	scope := skills.NewScope(home.Dir(ctx), nil)
 	bundleKey, ok, err := scope.ResolveBundleCommandKey(command)
 	if err != nil {
-		runLog().Warn(fmt.Sprintf("Bundle dispatch failed: %s", err))
+		pkgLog().Warn(fmt.Sprintf("Bundle dispatch failed: %s", err))
 		return false
 	}
 	if !ok {
@@ -34,7 +34,7 @@ func (r *GatewayRunner) hmBundleSlashRewrite(ctx context.Context, event *gateway
 	}
 	text, _, missing, built, err := scope.BuildBundleInvocationMessage(ctx, bundleKey, pystr.Strip(event.GetCommandArgs()), quickKey, sourcePlatformValue(source))
 	if err != nil {
-		runLog().Warn(fmt.Sprintf("Bundle dispatch failed: %s", err))
+		pkgLog().Warn(fmt.Sprintf("Bundle dispatch failed: %s", err))
 		return false
 	}
 	if !built {
@@ -42,7 +42,7 @@ func (r *GatewayRunner) hmBundleSlashRewrite(ctx context.Context, event *gateway
 	}
 	event.Text = text
 	if len(missing) > 0 {
-		runLog().Info(fmt.Sprintf("Bundle %s skipped missing skills: %s", bundleKey, strings.Join(missing, ", ")))
+		pkgLog().Info(fmt.Sprintf("Bundle %s skipped missing skills: %s", bundleKey, strings.Join(missing, ", ")))
 	}
 	return true
 }
@@ -59,7 +59,7 @@ func hmUnknownSlashReply(ctx context.Context, command string, source *gateway.Se
 	if platform == "" {
 		platform = "?"
 	}
-	runLog().Warn(fmt.Sprintf("Unrecognized slash command /%s from %s — replying with unknown-command notice", command, platform))
+	pkgLog().Warn(fmt.Sprintf("Unrecognized slash command /%s from %s — replying with unknown-command notice", command, platform))
 	reply := i18n.T(ctx, "gateway.unknown_command", "", map[string]any{"command": command})
 	return &reply
 }
@@ -75,7 +75,7 @@ func (r *GatewayRunner) hmBoundCommandRewrite(ctx context.Context, event *gatewa
 	}
 	message, err := gateway.RunBoundTurn(ctx, bound.Name, pystr.Strip(event.GetCommandArgs()), quickKey, sourcePlatformValue(source))
 	if err != nil {
-		runLog().Warn(fmt.Sprintf("Bound command /%s failed: %s", bound.Name, err))
+		pkgLog().Warn(fmt.Sprintf("Bound command /%s failed: %s", bound.Name, err))
 		reply := i18n.T(ctx, "cli.plugin.command_error", "", map[string]any{"error": err.Error()})
 		return true, &reply
 	}
@@ -90,7 +90,7 @@ func (r *GatewayRunner) hmSkillSlashRewrite(ctx context.Context, event *gateway.
 	}
 	reply, err := r.skillSlashRewrite(ctx, event, source, quickKey, command)
 	if err != nil {
-		runLog().Debug(fmt.Sprintf("Skill command check failed (non-fatal): %s", err))
+		pkgLog().Debug(fmt.Sprintf("Skill command check failed (non-fatal): %s", err))
 		return nil
 	}
 	return reply
@@ -116,7 +116,7 @@ func (r *GatewayRunner) skillSlashRewrite(ctx context.Context, event *gateway.Me
 	}
 	entry, ok := skillCmds[cmdKey]
 	if !ok {
-		return nil, fmt.Errorf("KeyError: %s", pyrepr.Repr(cmdKey))
+		return nil, fmt.Errorf("no skill command %s", cmdKey)
 	}
 	nameOf := func(info map[string]any) string { return pyrepr.Str(pyrepr.Or(info["name"], "")) }
 	skillName := ""

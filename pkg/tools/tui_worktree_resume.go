@@ -68,7 +68,7 @@ func tuiRecordField(entry *pyjson.Object, key string) string {
 
 // Remembers a tree the TUI worktree launcher created or a worktree new moved a session into, never raising
 func RecordTUIWorktree(ctx context.Context, wtInfo map[string]string) {
-	log := toolsLogger(nil)
+	log := envLog(nil)
 	path := tuiWorktreeRecordPath(ctx)
 	release, err := acquireFileLock(path+".lock", tuiWorktreeLockHolder, 5*time.Second, "Timed out waiting for the TUI worktree record lock")
 	if err != nil {
@@ -153,7 +153,7 @@ func RecreateTUIWorktree(ctx context.Context, cwd, sessionID string) string {
 	if env == nil {
 		return ""
 	}
-	log := toolsLogger(nil)
+	log := envLog(nil)
 	worktreeGitQuiet([]string{"worktree", "prune"}, repoRoot, 15*time.Second, "", env)
 	if err := os.MkdirAll(filepath.Dir(tree), 0o777); err != nil {
 		log.Warn(fmt.Sprintf("could not recreate worktree %s: %s", tree, pypath.OSErrorText(err)))

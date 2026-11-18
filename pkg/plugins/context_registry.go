@@ -37,7 +37,7 @@ func (c *Context) ignoredAfterAbandonedLoad(method string) bool {
 	if !c.loadAbandoned.Load() {
 		return false
 	}
-	logPlugins.warn(fmt.Sprintf("Plugin '%s' called %s() after its load timed out; ignored", c.manifest.Name, method))
+	pkgLog().Warn(fmt.Sprintf("Plugin '%s' called %s() after its load timed out; ignored", c.manifest.Name, method))
 	return true
 }
 
@@ -75,7 +75,7 @@ func (c *Context) trackReplacement(kind, key string, slot, current, previous any
 // Stores and leases a manager mapping entry then logs the registration at debug
 func registerEntry[V comparable](c *Context, kind, key string, mapping map[string]V, entry V, previous *V, logMsg string) *Registration {
 	handle := trackMappingEntry(c, kind, key, mapping, entry, previous)
-	logPlugins.debug(logMsg)
+	pkgLog().Debug(logMsg)
 	return handle
 }
 
@@ -133,11 +133,11 @@ func (c *Context) RegisterSystemPromptSection(id string, content any, opts ...Se
 func (c *Context) Emit(ctx context.Context, event string, payload map[string]any) (int, error) {
 	key := c.PluginID()
 	if event == "" {
-		logPlugins.warn(fmt.Sprintf("Plugin '%s' tried to emit an invalid event name %s", key, config.PyRepr(event)))
+		pkgLog().Warn(fmt.Sprintf("Plugin '%s' tried to emit an invalid event name %s", key, config.PyRepr(event)))
 		return 0, fmt.Errorf("Plugin '%s' emit() requires a non-empty event name", key)
 	}
 	if strings.Contains(event, ":") {
-		logPlugins.warn(fmt.Sprintf("Plugin '%s' tried to emit namespaced/reserved event '%s' — a plugin may only emit bare event names under its own '%s:' namespace (the '%s:' prefix is reserved for core, and foreign namespaces are forbidden)",
+		pkgLog().Warn(fmt.Sprintf("Plugin '%s' tried to emit namespaced/reserved event '%s' — a plugin may only emit bare event names under its own '%s:' namespace (the '%s:' prefix is reserved for core, and foreign namespaces are forbidden)",
 			key, event, key, CoreEventNamespace))
 		return 0, fmt.Errorf("Plugin '%s' may not emit '%s': emit only the bare event name; the namespace is forced to '%s:' and the '%s:' prefix is reserved for core",
 			key, event, key, CoreEventNamespace)
@@ -159,6 +159,6 @@ func (c *Context) Subscribe(event string, fn EventFunc) error {
 	if err := c.manager.subscribeEvent(c.PluginID(), event, fn); err != nil {
 		return err
 	}
-	logPlugins.debug(fmt.Sprintf("Plugin %s subscribed to event: %s", c.manifest.Name, event))
+	pkgLog().Debug(fmt.Sprintf("Plugin %s subscribed to event: %s", c.manifest.Name, event))
 	return nil
 }

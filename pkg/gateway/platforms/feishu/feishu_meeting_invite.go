@@ -2,7 +2,6 @@ package feishu
 
 import (
 	"context"
-	"log/slog"
 	"math/big"
 	"strings"
 
@@ -251,7 +250,7 @@ func firstText(vals ...*string) *string {
 func HandleMeetingInvitedEvent(ctx context.Context, adapter MeetingInviteHost, data any) error {
 	payload := ParseMeetingInvitedEvent(data)
 	if payload == nil {
-		slog.Warn("[Feishu-MeetingInvite] Dropping malformed meeting invite event")
+		pkgLog().Warn("[Feishu-MeetingInvite] Dropping malformed meeting invite event")
 		return nil
 	}
 	dedupKey := meetingDedupKey(payload)
@@ -261,13 +260,13 @@ func HandleMeetingInvitedEvent(ctx context.Context, adapter MeetingInviteHost, d
 			return err
 		}
 		if dup {
-			slog.Debug("[Feishu-MeetingInvite] Dropping duplicate event: " + dedupKey)
+			pkgLog().Debug("[Feishu-MeetingInvite] Dropping duplicate event: " + dedupKey)
 			return nil
 		}
 	}
 	inviter := payload.Inviter
 	if inviter.OpenID == "" {
-		slog.Warn("[Feishu-MeetingInvite] Missing inviter open_id, cannot route reply safely (user_id=" + pyrepr.Repr(inviter.UserID) +
+		pkgLog().Warn("[Feishu-MeetingInvite] Missing inviter open_id, cannot route reply safely (user_id=" + pyrepr.Repr(inviter.UserID) +
 			" union_id=" + pyrepr.Repr(inviter.UnionID) + ")")
 		return nil
 	}

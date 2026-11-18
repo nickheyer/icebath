@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
-	"log/slog"
 	"strings"
 
 	"github.com/nickheyer/icebath/pkg/config"
@@ -35,7 +34,7 @@ func pluginPreToolCall(ctx context.Context, _ *tools.Env, name string, args map[
 	details, err := plugins.PreToolCallDirectiveDetails(ctx, name, args, plugins.PreToolCallIDs{TaskID: ids.TaskID, SessionID: ids.SessionID,
 		ToolCallID: ids.ToolCallID, TurnID: ids.TurnID, APIRequestID: ids.APIRequestID, MiddlewareTrace: trace})
 	if err != nil {
-		slog.Default().Debug("pre_tool_call hook error: " + err.Error())
+		pkgLog().Debug("pre_tool_call hook error: " + err.Error())
 		return tools.PreToolDirective{}
 	}
 	action := details.Action
@@ -106,7 +105,7 @@ func pluginToolRequestMiddleware(ctx context.Context, _ *tools.Env, name string,
 	kwargs["skip_relay"] = true
 	result, err := plugins.ApplyToolRequestMiddleware(ctx, name, args, originalArgs, kwargs)
 	if err != nil {
-		slog.Default().Debug("tool_request middleware error: " + err.Error())
+		pkgLog().Debug("tool_request middleware error: " + err.Error())
 		return tools.RequestMiddlewareDirective{}
 	}
 	payload, isMap := result.Payload.(map[string]any)

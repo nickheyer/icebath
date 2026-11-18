@@ -48,9 +48,9 @@ var installHooks = struct {
 	refreshPlist       func(ctx context.Context) (bool, error)
 }{
 	unitPath: GetSystemdUnitPath, generateUnit: GenerateSystemdUnit, requireRoot: requireRootForSystemService,
-	hasLegacy: hasLegacyHermesUnits, removeLegacy: removeLegacyHermesUnits, legacyWarning: printLegacyUnitWarning,
+	hasLegacy: hasLegacyIcebathUnits, removeLegacy: removeLegacyIcebathUnits, legacyWarning: printLegacyUnitWarning,
 	conflictWarning: printSystemdScopeConflictWarning, prepareLauncher: prepareServiceLauncher,
-	syncHome: SyncHermesHomeFromSystemdUnit, unitIsCurrent: SystemdUnitIsCurrent, refreshUnit: refreshSystemdUnitIfNeeded,
+	syncHome: SyncIcebathHomeFromSystemdUnit, unitIsCurrent: SystemdUnitIsCurrent, refreshUnit: refreshSystemdUnitIfNeeded,
 	readUser: readSystemdUserFromUnit, getpwnam: pypwd.Getpwnam, waitUserBus: waitForTargetUserBus, unitIsActive: SystemdUnitIsActive,
 	enableLinger: loginctlEnableLinger, unitBelongs: unitBelongsToCaller,
 	definitionBelongs: definitionBelongsToHome, supervising: LaunchctlLabelSupervisingProcess, supervisedPID: LaunchctlSupervisedPID,
@@ -96,7 +96,7 @@ type legacyUnit struct {
 }
 
 // Legacy gateway units on disk whose ExecStart runs the gateway, unreadable files skipped
-func findLegacyHermesUnits(ctx context.Context) []legacyUnit {
+func findLegacyIcebathUnits(ctx context.Context) []legacyUnit {
 	var out []legacyUnit
 	for _, dir := range legacyUnitSearchPaths(ctx) {
 		for _, name := range legacyServiceNames {
@@ -121,11 +121,11 @@ func findLegacyHermesUnits(ctx context.Context) []legacyUnit {
 }
 
 // Whether any legacy gateway unit file exists
-func hasLegacyHermesUnits(ctx context.Context) bool { return len(findLegacyHermesUnits(ctx)) > 0 }
+func hasLegacyIcebathUnits(ctx context.Context) bool { return len(findLegacyIcebathUnits(ctx)) > 0 }
 
 // Warns about installed legacy gateway units, printing nothing when there are none
 func printLegacyUnitWarning(ctx context.Context, w io.Writer) {
-	legacy := findLegacyHermesUnits(ctx)
+	legacy := findLegacyIcebathUnits(ctx)
 	if len(legacy) == 0 {
 		return
 	}
@@ -141,8 +141,8 @@ func printLegacyUnitWarning(ctx context.Context, w io.Writer) {
 }
 
 // Stops, disables and removes legacy units, returning the removed count and the paths left behind
-func removeLegacyHermesUnits(ctx context.Context, w io.Writer, interactive, dryRun bool) (int, []string, error) {
-	legacy := findLegacyHermesUnits(ctx)
+func removeLegacyIcebathUnits(ctx context.Context, w io.Writer, interactive, dryRun bool) (int, []string, error) {
+	legacy := findLegacyIcebathUnits(ctx)
 	if len(legacy) == 0 {
 		fmt.Fprintln(w, "No legacy Icebath gateway units found.")
 		return 0, nil, nil
@@ -323,7 +323,7 @@ func ensureLingerEnabled(ctx context.Context, w io.Writer, username string, syst
 	}
 	res, err := installHooks.enableLinger(ctx, username)
 	if err != nil {
-		return false, printLingerEnableWarning(ctx, w, username, pythonExceptionText(err), system)
+		return false, printLingerEnableWarning(ctx, w, username, err.Error(), system)
 	}
 	if res.ReturnCode != 0 {
 		failure := completedProcessDetail(res)
@@ -533,6 +533,9 @@ func launchdInstall(ctx context.Context, w io.Writer, force, startNow, forceUnit
 		if !owns {
 			return &SystemExitError{Code: 1}
 		}
+	}
+	if _, _, _, err := removeRetired(ctx, w, retiredLaunchdServices, removeRetiredLaunchdService); err != nil {
+		return err
 	}
 	load := startNow || installHooks.supervising(ctx, label)
 	forceOldPid, haveOld := 0, false

@@ -3,7 +3,6 @@ package state
 import (
 	"context"
 	"fmt"
-	"log/slog"
 	"os"
 	"path/filepath"
 	"sort"
@@ -283,7 +282,7 @@ func sqlSessionLastActiveByID(sessionIDExpr string) string {
 }
 
 // Declared schema version, drift detected by the read probe rather than this number
-const SchemaVersion = 32
+const SchemaVersion = 34
 
 // Freelist fraction above which auto maintenance runs VACUUM
 const AutoVacuumMinFreelistRatio = 0.25
@@ -436,12 +435,12 @@ func (d *DB) EmitSessionDeleted(ctx context.Context, deletedIDs []string, reason
 	sort.Strings(ids)
 	defer func() {
 		if r := recover(); r != nil {
-			slog.Warn("on_session_delete dispatch failed", "error", fmt.Sprint(r))
+			pkgLog().Warn("on_session_delete dispatch failed", "error", fmt.Sprint(r))
 		}
 	}()
 	abs, err := filepath.Abs(d.path)
 	if err != nil {
-		slog.Warn("on_session_delete dispatch failed", "error", err)
+		pkgLog().Warn("on_session_delete dispatch failed", "error", err)
 		return
 	}
 	storeHome := filepath.Dir(abs)
@@ -470,7 +469,7 @@ func (d *DB) EmitSessionDeleted(ctx context.Context, deletedIDs []string, reason
 		return
 	}
 	if _, err := invoke(ctx, "on_session_delete", payload); err != nil {
-		slog.Warn("on_session_delete dispatch failed", "error", err)
+		pkgLog().Warn("on_session_delete dispatch failed", "error", err)
 	}
 }
 
@@ -515,12 +514,12 @@ func jsonOr(raw, fallback any, warning string) (any, error) {
 		}
 		text = decoded
 	default:
-		slog.Warn(warning)
+		pkgLog().Warn(warning)
 		return fallback, nil
 	}
 	v, err := pyLoads(text)
 	if err != nil {
-		slog.Warn(warning)
+		pkgLog().Warn(warning)
 		return fallback, nil
 	}
 	return v, nil

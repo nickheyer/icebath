@@ -7,7 +7,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/state"
 )
 
-// Bare agent on the route the case names, the object.__new__ shape the hermes cases build
+// Bare agent on the route the case names, the object.__new__ shape the tests build
 func echoAgent(providerName, model, baseURL string) *AIAgent {
 	a := &AIAgent{provider: providerName, model: model}
 	a.setBaseURL(baseURL)

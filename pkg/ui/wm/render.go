@@ -182,7 +182,7 @@ func (m *Model) paintEmpty(dx int, veil float64) {
 	parts := []string{"nothing open"}
 	for _, id := range m.empty {
 		a, ok := m.keys.Action(id)
-		k := keys.Format(m.keys.First(id))
+		k := m.keys.Display(id)
 		if !ok || k == "" {
 			continue
 		}
@@ -862,13 +862,26 @@ func (m *Model) paintHints(face screen, e *entry, sx, w, h int) {
 	uv.NewStyledString(sb.String()).Draw(face, uv.Rect(2, h-1, used+1, 1))
 }
 
-// Key and label a hint paints, the key empty when its action is unbound
+// Key and label a hint paints, the key empty when the terminal can send none of its chords
 func (m *Model) hintText(h Hint) (string, string) {
-	key := m.keys.First(h.Action)
-	if h.Pair != "" {
-		key = keys.Pair(m.keys.First(h.Action), m.keys.First(h.Pair))
-	} else {
-		key = keys.Format(key)
+	first := func(id string) string {
+		if c := m.keys.Sendable(id); len(c) > 0 {
+			return c[0]
+		}
+		return ""
+	}
+	var key string
+	switch {
+	case h.Pair != "":
+		key = keys.Pair(first(h.Action), first(h.Pair))
+	case h.All:
+		shown := []string{}
+		for _, c := range m.keys.Sendable(h.Action) {
+			shown = append(shown, keys.Format(c))
+		}
+		key = strings.Join(shown, "/")
+	default:
+		key = m.keys.Display(h.Action)
 	}
 	if key == "" {
 		return "", ""

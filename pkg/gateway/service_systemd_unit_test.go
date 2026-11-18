@@ -226,7 +226,7 @@ func currentUnitWithDropin(t *testing.T, dropinText string) (string, string, *[]
 	return unit, dropin, calls
 }
 
-func TestRefreshRetiresTheHermesReplaceDropinEvenWhenTheUnitTextIsCurrent(t *testing.T) {
+func TestRefreshRetiresTheIcebathReplaceDropinEvenWhenTheUnitTextIsCurrent(t *testing.T) {
 	unit, dropin, calls := currentUnitWithDropin(t, legacyReplaceDropin)
 	out := captureLifecycleOut(t)
 	before, _ := os.ReadFile(unit)

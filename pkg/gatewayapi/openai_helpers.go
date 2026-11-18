@@ -151,8 +151,8 @@ func responseStatus(result map[string]any) string {
 	return "completed"
 }
 
-// Hermes completion extras with the error code the finish reason implies
-func hermesExtras(completed, isPartial, isFailed bool, errMsg any, finish string, exhausted bool) *pyjson.Object {
+// Icebath completion extras with the error code the finish reason implies
+func completionExtras(completed, isPartial, isFailed bool, errMsg any, finish string, exhausted bool) *pyjson.Object {
 	code := "agent_error"
 	if finish == "length" {
 		code = "output_truncated"

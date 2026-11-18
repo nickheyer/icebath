@@ -4,10 +4,10 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"github.com/go-telegram/bot/models"
-	"log/slog"
 	"slices"
 	"sync"
+
+	"github.com/go-telegram/bot/models"
 
 	"github.com/nickheyer/icebath/pkg/gateway"
 )
@@ -124,7 +124,7 @@ type updateTurn struct {
 
 func newBoundedProcessor(maxConcurrent int) (*boundedProcessor, error) {
 	if maxConcurrent < 1 {
-		return nil, errors.New("ValueError: `max_concurrent_updates` must be a positive integer!")
+		return nil, errors.New("max_concurrent_updates must be a positive whole number")
 	}
 	return &boundedProcessor{max: maxConcurrent}, nil
 }
@@ -332,7 +332,7 @@ func (a *Application) addErrorHandlerEntry(key, call *Callback, block BlockMode)
 	defer a.mu.Unlock()
 	for _, e := range a.errorHandlers {
 		if e.key == key {
-			slog.Warn("The callback is already registered as an error handler. Ignoring.")
+			pkgLog().Warn("The callback is already registered as an error handler. Ignoring.")
 			return
 		}
 	}
@@ -391,7 +391,7 @@ func (a *Application) processUpdate(ctx context.Context, update any) error {
 			continue
 		}
 		if errors.Is(err, ErrApplicationHandlerStop) {
-			slog.Debug("Stopping further handlers due to ApplicationHandlerStop")
+			pkgLog().Debug("Stopping further handlers due to ApplicationHandlerStop")
 			break
 		}
 		if errors.Is(err, context.Canceled) {
@@ -402,7 +402,7 @@ func (a *Application) processUpdate(ctx context.Context, update any) error {
 			return perr
 		}
 		if stop {
-			slog.Debug("Error handler stopped further handlers.")
+			pkgLog().Debug("Error handler stopped further handlers.")
 			break
 		}
 	}
@@ -414,7 +414,7 @@ func (a *Application) processError(ctx context.Context, update any, failure erro
 	entries := append([]errorHandlerEntry(nil), a.errorHandlers...)
 	a.mu.Unlock()
 	if len(entries) == 0 {
-		slog.Error("No error handlers are registered, logging exception.", "error", failure)
+		pkgLog().Error("No error handlers are registered, logging exception.", "error", failure)
 		return false, nil
 	}
 	for _, e := range entries {
@@ -433,7 +433,7 @@ func (a *Application) processError(ctx context.Context, update any, failure erro
 		case errors.Is(err, context.Canceled):
 			return false, err
 		default:
-			slog.Error("An error was raised and an uncaught error was raised while handling the error with an error_handler.", "error", err)
+			pkgLog().Error("An error was raised and an uncaught error was raised while handling the error with an error_handler.", "error", err)
 		}
 	}
 	return false, nil
@@ -459,9 +459,9 @@ func (a *Application) spawnTask(ctx context.Context, fn func(ctx context.Context
 		}
 		switch {
 		case errors.Is(err, ErrApplicationHandlerStop):
-			slog.Warn("ApplicationHandlerStop is not supported with handlers running non-blocking.")
+			pkgLog().Warn("ApplicationHandlerStop is not supported with handlers running non-blocking.")
 		case isErrorHandler:
-			slog.Error("An error was raised and an uncaught error was raised while handling the error with an error_handler.", "error", err)
+			pkgLog().Error("An error was raised and an uncaught error was raised while handling the error with an error_handler.", "error", err)
 		default:
 			if _, perr := a.impl.processError(tctx, update, err); perr != nil {
 				return fmt.Errorf("%w (while handling %w)", perr, err)
@@ -519,15 +519,15 @@ func (a *Application) Stop(ctx context.Context) error {
 		tasks = append(tasks, t)
 	}
 	a.mu.Unlock()
-	slog.Info("Application is stopping. This might take a moment.")
+	pkgLog().Info("Application is stopping. This might take a moment.")
 	if len(tasks) > 0 {
-		slog.Debug("Waiting for `create_task` calls to be processed")
+		pkgLog().Debug("Waiting for `create_task` calls to be processed")
 		for _, t := range tasks {
 			if err := t.Wait(ctx); err != nil && ctx.Err() != nil {
 				return ctx.Err()
 			}
 		}
 	}
-	slog.Info("Application.stop() complete")
+	pkgLog().Info("Application.stop() complete")
 	return nil
 }

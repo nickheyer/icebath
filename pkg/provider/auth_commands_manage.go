@@ -13,13 +13,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/config"
 )
 
-// The two line free tier rendering shared by every auth display surface
-func authFreeTierLines() (string, string) {
-	return FreeTierLabel + " · " + GuestModel, UpgradeHint
-}
-
-func authIsFreeTierEntry(entry PooledCredential) bool { return isGuestState(entry.Extra) }
-
 // icebath auth list, every pooled provider or the one named, free tier rows rendered as the upgrade hint
 func (c *authCLI) list() error {
 	providerFilter := c.normalizeProvider(authTextOr(c.ns["provider"]))
@@ -57,13 +50,6 @@ func (c *authCLI) list() error {
 			continue
 		}
 		current, hasCurrent := pool.Peek()
-		if provider == "nous" && authAllFreeTier(entries) {
-			label, hint := authFreeTierLines()
-			fmt.Fprintf(c.out, "%s: %s\n", provider, label)
-			fmt.Fprintf(c.out, "  %s\n", hint)
-			fmt.Fprintln(c.out)
-			continue
-		}
 		fmt.Fprintf(c.out, "%s (%d credentials):\n", provider, len(entries))
 		for idx, entry := range entries {
 			marker := "  "
@@ -80,15 +66,6 @@ func (c *authCLI) list() error {
 		c.printExternalLoginNotice()
 	}
 	return nil
-}
-
-func authAllFreeTier(entries []PooledCredential) bool {
-	for _, entry := range entries {
-		if !authIsFreeTierEntry(entry) {
-			return false
-		}
-	}
-	return true
 }
 
 // One line saying why no Codex CLI or Claude Code login shows up when adoption is off
@@ -193,11 +170,6 @@ func (c *authCLI) refresh() error {
 	if !IsRefreshableOAuthProvider(provider) || matched.AuthType != AuthTypeOAuth || matched.RefreshToken == "" {
 		return authExit(fmt.Sprintf("%s credential #%d (%s) is not a refreshable OAuth credential.", provider, index, matched.Label))
 	}
-	if provider == "nous" && matched.Source != "device_code" {
-		return authExit(fmt.Sprintf("nous credential #%d (%s) is not a refreshable OAuth "+
-			"credential: only the device_code singleton supports refresh. "+
-			"Reauthenticate with `icebath auth add nous --type oauth`.", index, matched.Label))
-	}
 	refreshed, ok := pool.TryRefreshMatching("", matched.ID)
 	if !ok {
 		stillPooled := false
@@ -234,11 +206,11 @@ func (c *authCLI) movedAuthHint(action, provider string) string {
 	return MovedCommandHint(c.ctx, "icebath auth", provider, action)
 }
 
-// icebath auth status, the provider's login state with its account fields and Nous handoff lines
+// icebath auth status, the provider's login state with its account fields
 func (c *authCLI) status() error {
 	provider := c.normalizeProvider(authTextOr(c.ns["provider"]))
 	if provider == "" {
-		return authExit("Provider is required. Example: `icebath auth status nous`.")
+		return authExit("Provider is required. Example: `icebath auth status openai-codex`.")
 	}
 	if owned, err := dispatchPluginAuth("status", c.pluginArgs(), provider); err != nil || owned {
 		return err
@@ -251,12 +223,6 @@ func (c *authCLI) status() error {
 	}
 	status := GetAuthStatus(c.env, provider)
 	c.printOAuthHealNotices()
-	if pyTruthy(status["free_tier"]) {
-		label, hint := authFreeTierLines()
-		fmt.Fprintf(c.out, "%s: %s\n", provider, label)
-		fmt.Fprintf(c.out, "  %s\n", hint)
-		return nil
-	}
 	if !pyTruthy(status["logged_in"]) {
 		line := provider + ": logged out"
 		if reason := status["error"]; pyTruthy(reason) {
@@ -272,18 +238,6 @@ func (c *authCLI) status() error {
 	for _, key := range []string{"auth_type", "client_id", "redirect_uri", "scope", "expires_at", "api_base_url"} {
 		if value := status[key]; pyTruthy(value) {
 			fmt.Fprintf(c.out, "  %s: %s\n", key, pyStr(value))
-		}
-	}
-	if provider == "nous" {
-		if _, err := guestHandoffDrain(c.env); err != nil {
-			return err
-		}
-		handoff, err := guestHandoffStatus(c.env)
-		if err != nil {
-			return err
-		}
-		for _, line := range guestHandoffStatusLines(handoff) {
-			fmt.Fprintf(c.out, "  %s\n", line)
 		}
 	}
 	return nil
@@ -422,18 +376,6 @@ func (c *authCLI) printAzureEntraStatus() {
 		}
 	}
 	fmt.Fprintln(c.out)
-}
-
-// icebath auth upgrade, signs the free tier into a Nous account keeping its connectors
-func (c *authCLI) upgrade() error {
-	code, err := UpgradeGuest(c.env, UpgradeGuestArgs{Timeout: authTimeout(c.ns, 0), NoBrowser: nsFlag(c.ns, "no_browser")}, c.out)
-	if err != nil {
-		return err
-	}
-	if code != 0 {
-		return &AuthExitError{Code: code}
-	}
-	return nil
 }
 
 var authStrategyOrder = []string{StrategyFillFirst, StrategyRoundRobin, StrategyLeastUsed, StrategyRandom}

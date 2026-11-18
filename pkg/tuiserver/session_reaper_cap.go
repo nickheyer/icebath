@@ -6,7 +6,7 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/activesessions"
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
-	"github.com/nickheyer/icebath/pkg/tuigateway"
+	"github.com/nickheyer/icebath/pkg/tuihost"
 )
 
 // Configured live session cap, top level else under gateway, zero when unset or unusable
@@ -37,12 +37,12 @@ func enforceSessionCap(ctx context.Context) {
 		return
 	}
 	sessionsLock.Lock()
-	live := tuigateway.LiveSessions()
+	live := tuihost.LiveSessions()
 	if len(live) <= limit {
 		sessionsLock.Unlock()
 		return
 	}
-	var evictable []tuigateway.LiveSession
+	var evictable []tuihost.LiveSession
 	for _, entry := range live {
 		if sessionIsReapable(ctx, entry.SID, entry.Session) {
 			evictable = append(evictable, entry)
@@ -54,18 +54,18 @@ func enforceSessionCap(ctx context.Context) {
 	})
 	for _, entry := range evictable {
 		sessionsLock.Lock()
-		full := len(tuigateway.LiveSessions()) <= limit
+		full := len(tuihost.LiveSessions()) <= limit
 		sessionsLock.Unlock()
 		if full {
 			break
 		}
 		sid := entry.SID
-		closeSessionByID(ctx, sid, "lru_evict", func(session *tuigateway.Session) bool { return sessionIsReapable(ctx, sid, session) })
+		closeSessionByID(ctx, sid, "lru_evict", func(session *tuihost.Session) bool { return sessionIsReapable(ctx, sid, session) })
 	}
 }
 
 // Float of a session's last activity stamp, zero when unset
-func lastActiveOf(session *tuigateway.Session) float64 {
+func lastActiveOf(session *tuihost.Session) float64 {
 	value := session.Get("last_active")
 	if !truthy(value) {
 		return 0

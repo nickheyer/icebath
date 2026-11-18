@@ -22,7 +22,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/proc"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/pm"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/tools"
@@ -34,7 +33,7 @@ const GatewayRestartWatcherEntry = "gateway-restart-watcher"
 // Seconds the detached restart watcher waits for the old pid to exit before giving up
 const GatewayRestartWatcherTimeoutS = 120.0
 
-// Package seams of the restart watcher spawn the tests swap as hermes monkeypatches subprocess
+// Package seams of the restart watcher spawn the tests swap
 var (
 	restartWatcherBinary = func() string {
 		if binary := pm.ResolveInstallBinary(serviceDefProjectRoot()); binary != "" {
@@ -258,7 +257,7 @@ func parseRestartWatcherArgs(args []string) (string, map[string]string, int, []s
 	}
 	pid, err := strconv.Atoi(strings.TrimSpace(args[2]))
 	if err != nil {
-		return "", nil, 0, nil, fmt.Errorf("ValueError: invalid literal for int() with base 10: %s", pyrepr.Repr(args[2]))
+		return "", nil, 0, nil, fmt.Errorf("restart watcher argument %s is not a whole number", args[2])
 	}
 	return respawnCwd, overlay, pid, args[3:], nil
 }

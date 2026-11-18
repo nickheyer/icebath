@@ -203,30 +203,6 @@ func TestRenameProfileRenamesDirectory(t *testing.T) {
 	}
 }
 
-func TestRenameProfileRenamesRootHonchoHostWithoutChangingAiPeer(t *testing.T) {
-	tmp := manageEnv(t)
-	captureOut(t)
-	ctx := context.Background()
-	if _, err := CreateProfile(ctx, "ssi_health", CreateOptions{}); err != nil {
-		t.Fatal(err)
-	}
-	honcho := filepath.Join(tmp, ".icebath", "honcho.json")
-	writeFile(t, honcho, `{"hosts": {"icebath.ssi_health": {"recallMode": "hybrid", "writeFrequency": "async", "sessionStrategy": "per-session", "saveMessages": true, "peerName": "user-peer", "aiPeer": "ssi_health", "workspace": "icebath", "enabled": true}}}`)
-	skipAliasCollision(t)
-	if _, err := RenameProfile(ctx, "ssi_health", "heimdall"); err != nil {
-		t.Fatal(err)
-	}
-	cfg := readJSONObject(t, honcho)
-	hosts, _ := cfg["hosts"].(map[string]any)
-	if _, stale := hosts["icebath.ssi_health"]; stale {
-		t.Fatalf("legacy host kept %v", hosts)
-	}
-	block, _ := hosts["icebath_heimdall"].(map[string]any)
-	if block["aiPeer"] != "ssi_health" || block["peerName"] != "user-peer" {
-		t.Fatalf("%v", hosts)
-	}
-}
-
 func TestRenameProfileRenameMigratesSessionIdentityWithoutLiveGateway(t *testing.T) {
 	tmp := manageEnv(t)
 	captureStreams(t)

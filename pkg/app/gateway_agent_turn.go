@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"log/slog"
 	"strings"
 	"time"
 
@@ -474,7 +473,7 @@ func (a *GatewayAgent) pump(ctx context.Context, streamCallback func(string), st
 func (a *GatewayAgent) dispatchSafely(kind string, payload map[string]any, streamCallback func(string), starts map[string]time.Time) {
 	defer func() {
 		if recovered := recover(); recovered != nil {
-			slog.Debug(fmt.Sprintf("event %s dispatch failed: %v", kind, recovered))
+			pkgLog().Debug(fmt.Sprintf("event %s dispatch failed: %v", kind, recovered))
 		}
 	}()
 	a.dispatch(kind, payload, streamCallback, starts)

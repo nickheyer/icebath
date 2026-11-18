@@ -1,12 +1,8 @@
 package agent
 
 import (
-	"context"
 	"reflect"
-	"strings"
 	"testing"
-
-	"github.com/nickheyer/icebath/pkg/provider"
 )
 
 func failedSurfaceResult(reason, errText string, extra map[string]any) map[string]any {
@@ -39,7 +35,7 @@ func TestErrorSurfaceResultLayers(t *testing.T) {
 		{"", "something odd", "", nil, map[string]any{"layer": LayerProvider, "code": "unknown", "retryable": true}},
 		{"", "The provider's stream connection keeps dropping", "", nil, map[string]any{"layer": LayerStreaming, "code": "stream_drop", "retryable": true}},
 		{"server_error", "OSError: [Errno 28] No space left on device", "", nil, map[string]any{"layer": LayerDisk, "code": "disk_full", "retryable": false}},
-		{"rate_limit", "provider exploded", "", map[string]any{"billing_block": map[string]any{"provider": "nous"}}, map[string]any{"layer": LayerBilling, "code": "rate_limit", "retryable": false}},
+		{"rate_limit", "provider exploded", "", map[string]any{"billing_block": map[string]any{"provider": "openrouter"}}, map[string]any{"layer": LayerBilling, "code": "rate_limit", "retryable": false}},
 		{"unknown", "provider exploded", "", map[string]any{"failure_retryable": false}, map[string]any{"layer": LayerProvider, "code": "unknown", "retryable": false}},
 		{"format_error", "provider exploded", "", map[string]any{"failure_retryable": true}, map[string]any{"layer": LayerProvider, "code": "format_error", "retryable": true}},
 	}
@@ -71,9 +67,9 @@ func TestErrorSurfaceResultLayers(t *testing.T) {
 }
 
 func TestErrorSurfaceIdentityLabelsAndAuthKind(t *testing.T) {
-	oauth := buildErrorSurfaceFromResult(failedSurfaceResult("auth", "x", nil), "nous", "")
-	if oauth["auth_kind"] != "oauth" || oauth["provider_label"] != "Nous Portal" {
-		t.Fatalf("nous %v", oauth)
+	oauth := buildErrorSurfaceFromResult(failedSurfaceResult("auth", "x", nil), "xai-oauth", "")
+	if oauth["auth_kind"] != "oauth" || oauth["provider_label"] != "xAI Grok OAuth (SuperGrok / Premium+)" {
+		t.Fatalf("xai-oauth %v", oauth)
 	}
 	if s := buildErrorSurfaceFromResult(failedSurfaceResult("timeout", "x", nil), "opencode-go", ""); s["provider_label"] != "OpenCode Go" {
 		t.Fatalf("label %v", s)
@@ -87,25 +83,6 @@ func TestErrorSurfaceIdentityLabelsAndAuthKind(t *testing.T) {
 	}
 	if s := buildErrorSurfaceFromResult(failedSurfaceResult("rate_limit", "x", nil), "", ""); s["provider"] != nil || s["model"] != nil {
 		t.Fatalf("identity without provider %v", s)
-	}
-}
-
-func TestErrorSurfaceFreeTierBlocks(t *testing.T) {
-	s := buildErrorSurfaceFromResult(failedSurfaceResult("auth_permanent", "HTTP 403: no permissions", map[string]any{
-		"free_tier": map[string]any{"kind": "disabled", "message": "Using Hermes without signing in is switched off."}}), "nous", "nous/welcome")
-	if s["layer"] != LayerProvider || s["code"] != "free_tier_disabled" || s["retryable"] != false || s["auth_kind"] != nil ||
-		s["message"] != "Using Hermes without signing in is switched off." {
-		t.Fatalf("free tier %v", s)
-	}
-	kinds := map[string]bool{"rate_limited": true, "at_capacity": true, "outage": true, "disabled": false, "model_not_free": false, "route": false, "refused": false}
-	for kind, retryable := range kinds {
-		s := buildErrorSurfaceFromResult(failedSurfaceResult("rate_limit", "x", map[string]any{"free_tier": map[string]any{"kind": kind}}), "nous", "")
-		if s["code"] != "free_tier_"+kind || s["retryable"] != retryable || s["message"] != nil {
-			t.Fatalf("%s %v", kind, s)
-		}
-	}
-	if s := buildErrorSurfaceFromResult(failedSurfaceResult("auth_permanent", "x", map[string]any{"free_tier": map[string]any{}}), "nous", ""); s["code"] != "auth_permanent" || s["layer"] != LayerAuth {
-		t.Fatalf("kindless free tier %v", s)
 	}
 }
 
@@ -136,47 +113,5 @@ func TestModelCausedCodesStayOnTheProviderLayerAndRuntimeCodesOnGateway(t *testi
 	}
 	if layers["session_busy"] != LayerGateway || layers["loop_error"] != LayerGateway {
 		t.Fatalf("runtime layers %v", layers)
-	}
-}
-
-func TestResultAndErrorSurfaceCarryTheUsageWindowSentence(t *testing.T) {
-	caseHome(t)
-	saved := billingOrEntitlementMessage
-	t.Cleanup(func() { billingOrEntitlementMessage = saved })
-	billingOrEntitlementMessage = func(context.Context, string, string, string, string, bool) string {
-		return "Add credits to keep going now: https://x"
-	}
-	classified := &provider.Classified{Reason: "billing"}
-	build := func(window UsageWindowRefusal) map[string]any {
-		return billingFailureResult(context.Background(), classified, "HTTP 402", nil, 1, "nous", "https://inference-api.nousresearch.com/v1", "m", nil, window)
-	}
-	sentence := "You've hit your daily limit · resets 15:56 · /topup to add credits"
-	limit := map[string]any{"gauge_id": "day", "scope": "all", "message": sentence, "credits": map[string]any{"action": "add_credits"},
-		"suggestions": []any{map[string]any{"model": "a/b:free", "label": "A", "note": "free", "provider": "nous"}}}
-	resets := 1_800_000_000.0
-	result := build(UsageWindowRefusal{Message: sentence, ResetsAt: &resets, Limit: limit})
-	if result["final_response"] != sentence || result["failure_reason"] != "billing" || !reflect.DeepEqual(result["usage_limit"], limit) {
-		t.Fatalf("result %v", result)
-	}
-	surface := buildErrorSurfaceFromResult(result, "nous", "m")
-	if surface["layer"] != "billing" || surface["code"] != "usage_window" || surface["message"] != sentence || !reflect.DeepEqual(surface["usage_limit"], limit) {
-		t.Fatalf("surface %v", surface)
-	}
-	if surface["retryable"] != true || surface["resets_at"] != resets {
-		t.Fatalf("retry at reset %v %v", surface["retryable"], surface["resets_at"])
-	}
-	two := build(UsageWindowRefusal{Message: sentence, ResetsAt: &resets})
-	if _, ok := two["usage_limit"]; ok {
-		t.Fatalf("two item window carried a limit %v", two)
-	}
-	if _, ok := buildErrorSurfaceFromResult(two, "nous", "m")["usage_limit"]; ok {
-		t.Fatal("two item surface carried a limit")
-	}
-	plain := build(UsageWindowRefusal{})
-	if _, ok := plain["usage_window_message"]; ok || !strings.HasPrefix(plain["final_response"].(string), "Billing or credits exhausted") {
-		t.Fatalf("plain %v", plain)
-	}
-	if buildErrorSurfaceFromResult(plain, "nous", "m")["code"] != "billing" {
-		t.Fatal("plain surface code")
 	}
 }

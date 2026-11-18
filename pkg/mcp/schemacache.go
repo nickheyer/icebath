@@ -5,7 +5,6 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"math"
 	"os"
 	"path/filepath"
@@ -16,6 +15,8 @@ import (
 	"sync"
 	"time"
 	"unicode/utf16"
+
+	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/home"
@@ -119,6 +120,12 @@ func pyJSONCompactASCII(v any) string {
 				enc(x[k])
 			}
 			b.WriteByte('}')
+		case *pyjson.Object:
+			if x == nil {
+				b.WriteString("null")
+				return
+			}
+			enc(x.Vals)
 		default:
 			enc(pyStr(v))
 		}
@@ -189,13 +196,13 @@ func loadSchemaCache(ctx context.Context) map[string]any {
 	raw, err := os.ReadFile(p)
 	if err != nil {
 		if !os.IsNotExist(err) {
-			mcpLogger().Debug(fmt.Sprintf("Could not read MCP schema cache %s: %v", p, err))
+			pkgLog().Debug(fmt.Sprintf("Could not read MCP schema cache %s: %v", p, err))
 		}
 		return map[string]any{}
 	}
 	data, err := pyjson.Loads(strings.TrimPrefix(string(raw), "\ufeff"))
 	if err != nil {
-		mcpLogger().Debug(fmt.Sprintf("Could not read MCP schema cache %s: %v", p, err))
+		pkgLog().Debug(fmt.Sprintf("Could not read MCP schema cache %s: %v", p, err))
 		return map[string]any{}
 	}
 	m, ok := schemaCacheTree(data, false).(map[string]any)

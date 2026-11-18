@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"log/slog"
 	"sort"
 
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
@@ -645,6 +644,6 @@ func (a *SessionAuthority) releaseRefusedCapture(ctx context.Context, request Su
 		err = a.DB.CollectRetiredMedia(ctx)
 	}
 	if err != nil {
-		slog.Error(fmt.Sprintf("Releasing refused attachments of request %s failed", request.RequestID), "error", err)
+		pkgLog().Error(fmt.Sprintf("Releasing refused attachments of request %s failed", request.RequestID), "error", err)
 	}
 }

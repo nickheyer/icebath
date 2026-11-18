@@ -22,7 +22,7 @@ type HostedProfile struct {
 	Calls     map[string]HostedProfileCall
 	PluginDir string
 	Module    string
-	// Why hermes would import this profile in process, its create_client then serving a live host client
+	// Why this profile is imported in process, its create_client then serving a live host client
 	InProcess string
 }
 

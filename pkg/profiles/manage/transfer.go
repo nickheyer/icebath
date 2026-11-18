@@ -256,7 +256,7 @@ func walkNoFollow(root string, out *[]string) error {
 // Text file an export adds to the staged tree at an archive relative path, applied in order
 type ExportExtraFile struct{ Rel, Content string }
 
-// Profile lookup the export resolves its source through, the get_profile_dir attribute hermes tests replace
+// Profile lookup the export resolves its source through, the get_profile_dir attribute tests replace
 var existingProfileDir = profiles.ExistingProfileDir
 
 // Replaces the export profile lookup for callers outside the package until the returned restore runs

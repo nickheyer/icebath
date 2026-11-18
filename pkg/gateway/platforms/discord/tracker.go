@@ -3,7 +3,6 @@ package discord
 import (
 	"context"
 	"fmt"
-	"log/slog"
 	"os"
 	"path/filepath"
 	"sync"
@@ -45,7 +44,7 @@ func (t *nonConversationalTracker) load() []string {
 	raw, err := os.ReadFile(t.path)
 	if err != nil {
 		if !os.IsNotExist(err) {
-			slog.Debug(fmt.Sprintf("[%s] Failed to load non-conversational Discord IDs", "Discord"))
+			pkgLog().Debug(fmt.Sprintf("[%s] Failed to load non-conversational Discord IDs", "Discord"))
 		}
 		return nil
 	}
@@ -65,7 +64,7 @@ func (t *nonConversationalTracker) load() []string {
 			return nil
 		}
 	}
-	slog.Debug(fmt.Sprintf("[%s] Failed to load non-conversational Discord IDs", "Discord"))
+	pkgLog().Debug(fmt.Sprintf("[%s] Failed to load non-conversational Discord IDs", "Discord"))
 	return nil
 }
 
@@ -86,7 +85,7 @@ func (t *nonConversationalTracker) snapshot() []string {
 // Writes the ids as a compact JSON list, logging a failure
 func (t *nonConversationalTracker) save(ctx context.Context, ids []string) {
 	if err := config.AtomicJSONWriteWith(ctx, t.path, ids); err != nil {
-		slog.Debug(fmt.Sprintf("[%s] Failed to save non-conversational Discord IDs", "Discord"), "err", err)
+		pkgLog().Debug(fmt.Sprintf("[%s] Failed to save non-conversational Discord IDs", "Discord"), "err", err)
 	}
 }
 

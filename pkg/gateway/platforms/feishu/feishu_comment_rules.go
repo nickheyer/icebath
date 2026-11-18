@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
-	"log/slog"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -165,7 +164,7 @@ func readJSONObject(path string) (*pyjson.Object, error) {
 		value, err = pyjson.Loads(text)
 	}
 	if err != nil {
-		slog.Warn(fmt.Sprintf("[Feishu-Rules] Failed to read %s, using empty config", path))
+		pkgLog().Warn(fmt.Sprintf("[Feishu-Rules] Failed to read %s, using empty config", path))
 		return pyjson.NewObject(), nil
 	}
 	if obj, ok := value.(*pyjson.Object); ok {

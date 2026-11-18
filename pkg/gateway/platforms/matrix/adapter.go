@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"log/slog"
 	"net/http"
 	"net/url"
 	"os"
@@ -134,7 +133,7 @@ type MatrixAdapter struct {
 
 // Profile home directory of the store holding E2EE keys and sync state
 func storeDirFor(ctx context.Context) string {
-	return home.HermesDir(home.Dir(ctx), "platforms/matrix/store", "matrix/store")
+	return home.IcebathDir(home.Dir(ctx), "platforms/matrix/store", "matrix/store")
 }
 
 // Store directory pinned to the active profile and cached so later reads report the store in use
@@ -227,7 +226,7 @@ func NewMatrixAdapter(ctx context.Context, cfg *gateway.PlatformConfig) (*Matrix
 	}
 	a.proxyURL = proxyURL
 	if a.proxyURL != "" {
-		slog.Info(fmt.Sprintf("Matrix: proxy configured — %s", a.proxyURL))
+		pkgLog().Info(fmt.Sprintf("Matrix: proxy configured — %s", a.proxyURL))
 	}
 	a.maxMediaBytes = envInt(ctx, "MATRIX_MAX_MEDIA_BYTES", matrixDefaultMaxMediaBytes)
 	delay, err := pyint.ParseFloat(envOr("ICEBATH_MATRIX_TEXT_BATCH_DELAY_SECONDS", "0.6"))
@@ -257,7 +256,7 @@ func NewMatrixAdapter(ctx context.Context, cfg *gateway.PlatformConfig) (*Matrix
 	for _, pattern := range sortedKeys(csvSet(rawPatterns)) {
 		re, err := pyre.Compile(pattern)
 		if err != nil {
-			slog.Warn(fmt.Sprintf("Matrix: ignoring invalid MATRIX_IGNORE_USER_PATTERNS entry %s: %v", pyrepr.Repr(pattern), err))
+			pkgLog().Warn(fmt.Sprintf("Matrix: ignoring invalid MATRIX_IGNORE_USER_PATTERNS entry %s: %v", pyrepr.Repr(pattern), err))
 			continue
 		}
 		a.ignoredUserPatterns = append(a.ignoredUserPatterns, re)

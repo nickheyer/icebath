@@ -2,7 +2,6 @@ package commands
 
 import (
 	"context"
-	"log/slog"
 	"os"
 	"regexp"
 	"strings"
@@ -52,7 +51,7 @@ func pluginCommandInstallHint(ctx context.Context, prog, value string) string {
 	h := home.Dir(ctx)
 	cfg, _ := config.LoadReadonly(ctx, h, nil)
 	cwd, _ := os.Getwd()
-	if memory.FindProviderDir(ctx, &tools.Env{Home: h, Config: cfg, Cwd: cwd, Log: slog.Default()}, value) != "" {
+	if memory.FindProviderDir(ctx, &tools.Env{Home: h, Config: cfg, Cwd: cwd, Log: pkgLog()}, value) != "" {
 		return ""
 	}
 	return memory.CatalogInstallHint(ctx, value, "memory")
@@ -62,7 +61,7 @@ func pluginCommandInstallHint(ctx context.Context, prog, value string) string {
 func subcommandChoices(cmd *cobra.Command) []string {
 	var names []string
 	for _, sub := range cmd.Commands() {
-		if strings.HasPrefix(sub.Name(), "__") {
+		if strings.HasPrefix(sub.Name(), "__") || (!cmd.HasParent() && cliTierHidden(sub.Name())) {
 			continue
 		}
 		names = append(names, sub.Name())

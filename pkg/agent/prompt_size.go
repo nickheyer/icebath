@@ -12,6 +12,7 @@ import (
 	"strings"
 
 	"github.com/nickheyer/icebath/pkg/config"
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
@@ -142,7 +143,7 @@ func buildInspectionAgent(ctx context.Context, env *tools.Env, platform string) 
 	if raw := cfg["agent"]; pyrepr.Truthy(raw) {
 		m, ok := raw.(map[string]any)
 		if !ok {
-			return nil, fmt.Errorf("AttributeError: '%s' object has no attribute 'get'", pyrepr.TypeName(raw))
+			return nil, fmt.Errorf("the agent section of the config is %s, expected a mapping", errchain.Kind(raw))
 		}
 		agentCfg = m
 	}

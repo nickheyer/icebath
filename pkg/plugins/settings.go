@@ -137,12 +137,12 @@ func manifestSettingsSchema(pluginDir string) []schemaEntry {
 	if st, err := os.Stat(manifest); err == nil && st.Mode().IsRegular() {
 		raw, err := os.ReadFile(manifest)
 		if err != nil {
-			logPluginsSettings.debug(fmt.Sprintf("plugin settings: cannot read the manifest in %s: %v", pluginDir, err))
+			pkgLog().Debug(fmt.Sprintf("plugin settings: cannot read the manifest in %s: %v", pluginDir, err))
 			return nil
 		}
 		var doc yaml.Node
 		if err := yaml.Unmarshal(stripBOM(raw), &doc); err != nil {
-			logPluginsSettings.debug(fmt.Sprintf("plugin settings: cannot read the manifest in %s: %v", pluginDir, err))
+			pkgLog().Debug(fmt.Sprintf("plugin settings: cannot read the manifest in %s: %v", pluginDir, err))
 			return nil
 		}
 		if len(doc.Content) == 0 || doc.Content[0].Kind != yaml.MappingNode {
@@ -166,10 +166,10 @@ func manifestSettingsSchema(pluginDir string) []schemaEntry {
 		_, _, err = DecodeOrderedObject(stripBOM(raw))
 	}
 	if err != nil {
-		logPluginsSettings.debug(fmt.Sprintf("plugin settings: cannot read the manifest in %s: %v", pluginDir, err))
+		pkgLog().Debug(fmt.Sprintf("plugin settings: cannot read the manifest in %s: %v", pluginDir, err))
 		return nil
 	}
-	keys, values, err := orderedJSONPath(stripBOM(raw), "extensions", portableExtension, "config_schema")
+	keys, values, err := orderedJSONPath(stripBOM(raw), "extensions", PortableExtension, "config_schema")
 	if err != nil || values == nil {
 		return nil
 	}

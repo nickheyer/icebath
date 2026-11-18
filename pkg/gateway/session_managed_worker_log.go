@@ -6,7 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"log/slog"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -148,7 +147,7 @@ func drainWorkerStderr(ctx context.Context, stream io.ReadCloser, path string, p
 		}
 		if werr := appendWorkerLog(ctx, path, entry); werr != nil && !warned {
 			warned = true
-			slog.Warn(fmt.Sprintf("managed worker log %s not written (%s); dropping its lines", path, pypath.OSErrorClass(werr)))
+			pkgLog().Warn(fmt.Sprintf("managed worker log %s not written (%s); dropping its lines", path, pypath.OSErrorClass(werr)))
 		}
 		if err != nil {
 			return

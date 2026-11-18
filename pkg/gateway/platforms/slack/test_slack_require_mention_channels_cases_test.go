@@ -8,7 +8,7 @@ import (
 	"testing"
 )
 
-// Clears the mention env the hermes autouse fixture deletes
+// Clears the mention env the autouse fixture deletes
 func cleanMentionEnv(t *testing.T) {
 	for _, k := range []string{"SLACK_REQUIRE_MENTION", "SLACK_REQUIRE_MENTION_CHANNELS", "SLACK_FREE_RESPONSE_CHANNELS", "SLACK_STRICT_MENTION", "SLACK_THREAD_REQUIRE_MENTION"} {
 		t.Setenv(k, "")

@@ -14,6 +14,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/i18n"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/state"
+	"github.com/nickheyer/icebath/pkg/tools"
 )
 
 // Writer resolving the process stdout at every write, as print reads sys.stdout when it runs
@@ -71,6 +72,12 @@ func deliverKeptStartupNotices(ctx context.Context, a *AIAgent) {
 	}
 	for _, message := range provider.ClaimKeptNotices(ctx) {
 		a.emitStartupWarning(message)
+	}
+	if !a.relayNoticeChecked {
+		a.relayNoticeChecked = true
+		if notice := tools.RelayUnprovisionedNotice(ctx); notice != "" {
+			a.emitStartupWarning(notice)
+		}
 	}
 }
 
@@ -147,7 +154,7 @@ func (a *AIAgent) callCallback(name string, cb any, origin string, args ...any) 
 	}
 	defer func() {
 		if r := recover(); r != nil {
-			runAgentLog().Debug(fmt.Sprintf("%s error in %s", name, origin), "error", r)
+			pkgLog().Debug(fmt.Sprintf("%s error in %s", name, origin), "error", r)
 		}
 	}()
 	callDynamic(fn, args)
@@ -157,7 +164,7 @@ func (a *AIAgent) callCallback(name string, cb any, origin string, args ...any) 
 func callDynamic(fn reflect.Value, args []any) {
 	ft := fn.Type()
 	if !ft.IsVariadic() && ft.NumIn() != len(args) {
-		panic(fmt.Sprintf("TypeError: callback takes %d positional arguments but %d were given", ft.NumIn(), len(args)))
+		panic(fmt.Sprintf("status callback takes %d arguments but %d were given", ft.NumIn(), len(args)))
 	}
 	in := make([]reflect.Value, len(args))
 	for i, arg := range args {

@@ -57,10 +57,10 @@ func TestHostedLineOffersTypedMenusAsLists(t *testing.T) {
 func TestHostedOutputNamesTheTUICommands(t *testing.T) {
 	var out bytes.Buffer
 	trail := &hostedOutput{w: &out}
-	fmt.Fprint(trail, "Sign-in did not complete; run `icebath portal` to try again.\nRun `icebath auth add copilot` to sign in.\n")
+	fmt.Fprint(trail, "Sign-in did not complete; run `icebath model` to try again.\nRun `icebath auth add copilot` to sign in.\n")
 	fmt.Fprint(trail, "  API key cleared.  Re-run `icebath setup` to configure X again.\nRun `icebath setup tts` next. Partial")
 	trail.flush()
-	want := "Sign-in did not complete; run `/setup model nous` to try again.\nRun `/setup model copilot` to sign in.\n" +
+	want := "Sign-in did not complete; run `/setup model` to try again.\nRun `/setup model copilot` to sign in.\n" +
 		"  API key cleared.  Re-run `/setup` to configure X again.\nRun `/setup tts` next. Partial\n"
 	if out.String() != want {
 		t.Fatalf("wording %q", out.String())
@@ -69,7 +69,7 @@ func TestHostedOutputNamesTheTUICommands(t *testing.T) {
 
 func TestHostSetupFlowPutsEveryPromptToTheHostAndRestoresTheTerminal(t *testing.T) {
 	seams := []any{flowLineInputFn, flowRawInputFn, flowSecretInputFn, flowCursesChoiceFn, flowRadiolistFn, pickerRadiolistFn, pickerInputFn,
-		pickerLineInputFn, setupRadiolist, setupChecklist, nousSubChecklistFn, secretFieldFn, secretGetpass, oauthPromptFn, flowStdinIsTTYFn,
+		pickerLineInputFn, setupRadiolist, setupChecklist, secretFieldFn, secretGetpass, oauthPromptFn, flowStdinIsTTYFn,
 		pickerConsoleFn, anthRunOAuthSetupTokenFn, authCmdInputFn, authCmdLineInputFn, authCmdMaskedSecretPromptFn}
 	pointers := func() []uintptr {
 		out := make([]uintptr, len(seams))
@@ -112,9 +112,6 @@ func TestHostSetupFlowPutsEveryPromptToTheHostAndRestoresTheTerminal(t *testing.
 		if picked := PromptChecklist("Tools", []string{"a", "b", "c"}, nil); !reflect.DeepEqual(picked, []int{0, 2}) {
 			t.Fatalf("checklist %v", picked)
 		}
-		if picked, err := nousSubChecklistFn("Nous tools", []string{"web", "image", "tts"}, []int{1}); err != nil || !reflect.DeepEqual(picked, []int{0, 2}) {
-			t.Fatalf("tool gateway checklist %v %v", picked, err)
-		}
 		if yes := promptYesNo("Open browser? [Y/n] ", "y"); yes {
 			t.Fatal("the No row must answer no")
 		}
@@ -132,8 +129,8 @@ func TestHostSetupFlowPutsEveryPromptToTheHostAndRestoresTheTerminal(t *testing.
 	for _, p := range asked {
 		kinds = append(kinds, p.Kind)
 	}
-	want := []string{HostedText, HostedSecret, HostedSecret, HostedChoice, HostedChoice, HostedChecklist, HostedChecklist, HostedChoice, HostedCommand}
-	if !reflect.DeepEqual(kinds, want) || !reflect.DeepEqual(asked[8].Argv, []string{"example-cli", "login"}) {
+	want := []string{HostedText, HostedSecret, HostedSecret, HostedChoice, HostedChoice, HostedChecklist, HostedChoice, HostedCommand}
+	if !reflect.DeepEqual(kinds, want) || !reflect.DeepEqual(asked[7].Argv, []string{"example-cli", "login"}) {
 		t.Fatalf("asked %v", asked)
 	}
 	if !strings.Contains(out.String(), "printed on standard output\n") || !strings.Contains(out.String(), "Run `/setup model` again\n") {
@@ -188,7 +185,7 @@ func TestRunHostedModelSectionSavesACustomEndpoint(t *testing.T) {
 }
 
 func TestHostedModelEntryNamesPickerRows(t *testing.T) {
-	for _, entry := range []string{"", "nous", "openai-codex", "aux-config", "reasoning", "custom", "llamacpp"} {
+	for _, entry := range []string{"", "openai-codex", "aux-config", "reasoning", "custom", "llamacpp"} {
 		if !HostedModelEntry(entry) {
 			t.Fatalf("%q refused", entry)
 		}

@@ -147,8 +147,8 @@ func TestSessionAuxiliaryScopeReplacesTheLiveConfig(t *testing.T) {
 	a := newAuxTaskHome(t)
 	withPluginAuxTasks(t)
 	a.set(map[string]any{"vision": map[string]any{"provider": "openrouter", "model": "live"}})
-	ctx := SessionAuxiliaryScope(context.Background(), map[string]any{"vision": map[string]any{"provider": "nous", "model": "frozen"}})
-	if got := a.resolve(ctx, "vision"); !reflect.DeepEqual(got, map[string]any{"provider": "nous", "model": "frozen"}) {
+	ctx := SessionAuxiliaryScope(context.Background(), map[string]any{"vision": map[string]any{"provider": "deepseek", "model": "frozen"}})
+	if got := a.resolve(ctx, "vision"); !reflect.DeepEqual(got, map[string]any{"provider": "deepseek", "model": "frozen"}) {
 		t.Fatalf("session section must win over config.yaml, got %v", got)
 	}
 	if got := a.resolve(SessionAuxiliaryScope(context.Background(), "not a mapping"), "vision"); len(got) != 0 {

@@ -78,10 +78,10 @@ func stopGroup() error {
 	return restore()
 }
 
-// Window size, job control stops and continues, handled until the returned stop is called
+// Window size, job control stops and continues, terminate and hangup, handled until the returned stop is called
 func (p *Program) signals() func() {
 	ch := make(chan os.Signal, 4)
-	signal.Notify(ch, syscall.SIGWINCH, syscall.SIGTSTP, syscall.SIGCONT)
+	signal.Notify(ch, syscall.SIGWINCH, syscall.SIGTSTP, syscall.SIGCONT, syscall.SIGTERM, syscall.SIGHUP)
 	quit := make(chan struct{})
 	sizes := make(chan [2]int, 1)
 	var wg sync.WaitGroup
@@ -119,6 +119,8 @@ func (p *Program) signals() func() {
 					p.stopSignal()
 				case syscall.SIGCONT:
 					p.contSignal()
+				case syscall.SIGTERM, syscall.SIGHUP:
+					p.terminate(s.(syscall.Signal))
 				}
 			}
 		}
@@ -130,30 +132,32 @@ func (p *Program) signals() func() {
 	}
 }
 
-// Gives the terminal back, writes the line and stops the process group until the shell continues it, the terminal taken again after
-func (p *Program) suspend(line string) {
+// Stops the group until the shell continues it, the terminal given back with the line, false without job control
+func (p *Program) suspend(line string) bool {
+	if !JobControl() {
+		return false
+	}
 	p.release()
 	if line != "" {
 		if _, err := p.out.WriteString(line); err != nil {
 			p.mu.Lock()
 			p.failLocked(fmt.Errorf("tty: writing the suspend line: %w", err))
 			p.mu.Unlock()
-			return
+			return true
 		}
 	}
-	if JobControl() {
+	p.mu.Lock()
+	p.conts++
+	p.mu.Unlock()
+	if err := stopGroup(); err != nil {
 		p.mu.Lock()
-		p.conts++
+		p.conts--
+		p.failLocked(fmt.Errorf("tty: stopping the process group: %w", err))
 		p.mu.Unlock()
-		if err := stopGroup(); err != nil {
-			p.mu.Lock()
-			p.conts--
-			p.failLocked(fmt.Errorf("tty: stopping the process group: %w", err))
-			p.mu.Unlock()
-			return
-		}
+		return true
 	}
 	p.reclaim()
+	return true
 }
 
 // Takes a stop signal, stopping the group in place while a command owns the terminal, else suspending on the event loop

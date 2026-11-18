@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"log/slog"
 	"os"
 	"os/exec"
 	"path"
@@ -46,7 +45,6 @@ var updateCriticalFiles = []string{
 	"icebath_constants.py"}
 
 var (
-	updateLog = slog.Default().With("logger", "hermes_cli.update_cmd")
 	// Clock and sleep of the gateway prompt poll
 	updateMonotonic = func() float64 { return float64(time.Now().UnixNano()) / 1e9 }
 	updateSleep     = time.Sleep
@@ -142,7 +140,7 @@ func noPromptGitKwargs() ChildOptions {
 	return ChildOptions{Stdin: DevNull, Env: env, Attr: tools.WindowsHideAttr()}
 }
 
-// The updater's git runner, the function hermes tests replace to script git
+// The updater's git runner, the function tests replace to script git
 var updateGitRunner = runUpdateGit
 
 // Runs git through the updater's runner, the checkout as the working directory when cwd is empty
@@ -215,80 +213,39 @@ func healStaleShallowCheckout(ctx context.Context, w io.Writer, repoRoot, branch
 	return nil
 }
 
-// Traceback lines Python prints for a SyntaxError alone, the file line, source, carets and message
-func formatSyntaxErrorOnly(se *pyast.SyntaxError, filename string) string {
+// Words of a compiler error class, IndentationError reading indentation error
+func compileErrorWords(class string) string {
+	if class == "" {
+		class = "SyntaxError"
+	}
 	var b strings.Builder
-	suffix := ""
-	if se.HasLineno {
-		name := filename
-		if name == "" {
-			name = "<string>"
+	for i, r := range class {
+		if i > 0 && unicode.IsUpper(r) {
+			b.WriteByte(' ')
 		}
-		fmt.Fprintf(&b, "  File \"%s\", line %d\n", name, se.Lineno)
-	} else if filename != "" {
-		suffix = " (" + filename + ")"
+		b.WriteRune(unicode.ToLower(r))
 	}
-	if se.HasText {
-		textLen := utf8.RuneCountInString(se.Text)
-		rtext := strings.TrimRight(se.Text, "\n")
-		ltext := []rune(strings.TrimLeft(rtext, " \n\f"))
-		rlen := utf8.RuneCountInString(rtext)
-		spaces := rlen - len(ltext)
-		offset, endOffset := se.Offset, rlen+1
-		if se.HasEnd && se.Lineno == se.EndLineno {
-			endOffset = offset
-			if se.EndOffset != 0 {
-				endOffset = se.EndOffset
-			}
-		}
-		if textLen > 0 && offset > textLen {
-			offset = textLen + 1
-		}
-		if textLen > 0 && endOffset > textLen {
-			endOffset = textLen + 1
-		}
-		if offset >= endOffset || endOffset < 0 {
-			endOffset = offset + 1
-		}
-		colno, endColno := offset-1-spaces, endOffset-1-spaces
-		fmt.Fprintf(&b, "    %s\n", string(ltext))
-		if colno >= 0 {
-			b.WriteString("    ")
-			for i := 0; i < colno && i < len(ltext); i++ {
-				if unicode.IsSpace(ltext[i]) {
-					b.WriteRune(ltext[i])
-				} else {
-					b.WriteByte(' ')
-				}
-			}
-			b.WriteString(strings.Repeat("^", max(endColno-colno, 0)))
-			b.WriteByte('\n')
-		}
-	}
-	msg := se.Msg
-	if msg == "" {
-		msg = "<no detail available>"
-	}
-	fmt.Fprintf(&b, "SyntaxError: %s%s\n", msg, suffix)
 	return b.String()
 }
 
-// Message py_compile raises for a source that does not compile
+// One line naming where a Python source fails to compile and why
 func pyCompileErrorMessage(err error, file string) string {
 	var se *pyast.SyntaxError
 	if errors.As(err, &se) {
-		if se.Class == "SyntaxError" || se.Class == "" {
-			return formatSyntaxErrorOnly(se, file)
+		msg := se.Msg
+		if msg == "" {
+			msg = "no detail available"
 		}
-		named := *se
-		named.Filename = filepath.Base(file)
-		return fmt.Sprintf("Sorry: %s: %s", se.Class, named.Error())
+		if se.HasLineno {
+			return fmt.Sprintf("%s at line %d, column %d: %s", compileErrorWords(se.Class), se.Lineno, max(se.Offset, 1), msg)
+		}
+		return compileErrorWords(se.Class) + ": " + msg
 	}
 	var limit *pyast.LimitError
 	if errors.As(err, &limit) {
-		return fmt.Sprintf("Sorry: %s: %s", limit.Class, limit.Msg)
+		return "the source exceeds a compiler limit: " + limit.Msg
 	}
-	return fmt.Sprintf("Sorry: %s: %s", pm.ErrorClass(err), err.Error())
+	return "the source does not compile: " + err.Error()
 }
 
 // Compiles each existing file under root, reporting the first that fails with its path and error
@@ -314,7 +271,7 @@ func validateCriticalFilesSyntax(root string) (bool, string, string) {
 	return validatePythonFilesSyntax(root, updateCriticalFiles)
 }
 
-// The gateway prompt the config migration and stash restore ask through, replaced by hermes tests
+// The gateway prompt the config migration and stash restore ask through, replaced by tests
 var updateGatewayPrompt = gatewayPrompt
 
 // Asks the gateway to relay a prompt through marker files and polls for the answer, the default on timeout

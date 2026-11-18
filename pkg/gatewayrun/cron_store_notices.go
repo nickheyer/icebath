@@ -106,7 +106,7 @@ func logNoticeFailure(done *gatewayFuture, event, store string) {
 		return
 	}
 	if _, err := done.wait(context.Background()); err != nil {
-		runLog().Warn(fmt.Sprintf("Cron store %s notice for %s failed", event, store), "exc_info", err)
+		pkgLog().Warn(fmt.Sprintf("Cron store %s notice for %s failed", event, store), "exc_info", err)
 	}
 }
 
@@ -117,7 +117,7 @@ func sendCronStoreNotice(ctx context.Context, r *GatewayRunner, event string, re
 	if event == "unwritable" {
 		key = "gateway.cron_store.unwritable"
 	}
-	runLog().Info(fmt.Sprintf("Broadcasting cron store %s notice for %s", event, record.Store))
+	pkgLog().Info(fmt.Sprintf("Broadcasting cron store %s notice for %s", event, record.Store))
 	for _, target := range r.servedHomeChannelTransports(ctx) {
 		servedHome := ""
 		if target.profile != nil && r.servedProfileHomes != nil {

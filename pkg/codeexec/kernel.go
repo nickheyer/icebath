@@ -884,11 +884,11 @@ func backgroundReaper(env *tools.Env) {
 		func() {
 			defer func() {
 				if r := recover(); r != nil {
-					logger(env).Error("kernel idle reaper pass failed; retrying next interval", "error", r)
+					pkgLog(env).Error("kernel idle reaper pass failed; retrying next interval", "error", r)
 				}
 			}()
 			if err := reapOnce(env); err != nil {
-				logger(env).Error("kernel idle reaper pass failed; retrying next interval", "error", err)
+				pkgLog(env).Error("kernel idle reaper pass failed; retrying next interval", "error", err)
 			}
 		}()
 	}
@@ -1121,7 +1121,7 @@ func runCell(ctx context.Context, env *tools.Env, kernel *sessionKernel, key ker
 		stdin := kernel.stdin
 		kernel.mu.Unlock()
 		if stdin == nil {
-			return "", errors.New("[Errno 32] Broken pipe")
+			return "", errors.New("the kernel input pipe is closed")
 		}
 		if _, err := stdin.Write([]byte(line + "\n")); err != nil {
 			return "", err
@@ -1140,7 +1140,7 @@ func runCell(ctx context.Context, env *tools.Env, kernel *sessionKernel, key ker
 	if err == nil {
 		return result
 	}
-	logger(env).Error(fmt.Sprintf("session kernel failed: %s: %s", errorTypeName(err), err.Error()))
+	pkgLog(env).Error(fmt.Sprintf("session kernel failed: %s: %s", errorTypeName(err), err.Error()))
 	registry.discard(key, kernel)
 	return errorResult(err.Error(), kernel.budget.callCount(), elapsedSeconds(execStart), "")
 }

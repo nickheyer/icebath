@@ -51,7 +51,7 @@ func (r *GatewayRunner) busyStartCommand(ctx context.Context, event *gateway.Mes
 	if err := busyAccepted(ctx); err != nil {
 		return nil, err
 	}
-	runLog().Info(fmt.Sprintf("Ignoring /start platform ping for active session %s", quickKey))
+	pkgLog().Info(fmt.Sprintf("Ignoring /start platform ping for active session %s", quickKey))
 	return "", nil
 }
 
@@ -75,7 +75,7 @@ func (r *GatewayRunner) busyStopCommand(ctx context.Context, event *gateway.Mess
 	if err := r.interruptAndClearSession(ctx, quickKey, source, interruptReasonStop, "stop_command", true); err != nil {
 		return nil, err
 	}
-	runLog().Info(fmt.Sprintf("STOP for session %s — agent interrupted, session lock released", quickKey))
+	pkgLog().Info(fmt.Sprintf("STOP for session %s — agent interrupted, session lock released", quickKey))
 	return gateway.NewEphemeralReply(i18n.T(ctx, "gateway.stop.stopped", "", nil), nil), nil
 }
 
@@ -172,7 +172,7 @@ func (r *GatewayRunner) busySteerCommand(ctx context.Context, event *gateway.Mes
 		return steerRunningAgent(runningAgent, withOrigin), ""
 	}()
 	if failure != "" {
-		runLog().Warn(fmt.Sprintf("Steer failed for session %s: %s", quickKey, failure))
+		pkgLog().Warn(fmt.Sprintf("Steer failed for session %s: %s", quickKey, failure))
 		return i18n.T(ctx, "gateway.steer.failed", "", map[string]any{"error": failure}), nil
 	}
 	if !accepted {

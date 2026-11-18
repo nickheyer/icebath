@@ -10,7 +10,7 @@ import (
 
 var relayCwdSentinels = map[string]bool{"": true, ".": true, "./": true, "auto": true, "cwd": true}
 
-// Lookups the relay cwd resolution reads, each failing the way its hermes counterpart raises
+// Lookups the relay cwd resolution reads, each failing the way its counterpart raises
 var (
 	relayRecordedSessionCwd = func(env *tools.Env, key string) (any, error) {
 		if cwd, ok := tools.GetSessionCwd(env, key); ok {
@@ -69,12 +69,12 @@ func resolveRelayScopeCwds(a *AIAgent, taskID, sessionID, platform string) (*str
 	}
 	taskCwd, err := relayRecordedCwd(env, taskID)
 	if err != nil {
-		runAgentLog().Debug(fmt.Sprintf("Unable to read the Relay turn cwd: %v", err))
+		pkgLog().Debug(fmt.Sprintf("Unable to read the Relay turn cwd: %v", err))
 		taskCwd = ""
 	}
 	sessionCwd := ""
 	if scoped, err := relayScopedSessionCwd(env); err != nil {
-		runAgentLog().Debug(fmt.Sprintf("Unable to read the scoped Relay session cwd: %v", err))
+		pkgLog().Debug(fmt.Sprintf("Unable to read the scoped Relay session cwd: %v", err))
 	} else {
 		sessionCwd = cleanRelayCwd(scoped)
 	}
@@ -101,7 +101,7 @@ func resolveRelayScopeCwds(a *AIAgent, taskID, sessionID, platform string) (*str
 			}
 			return nil
 		}(); err != nil {
-			runAgentLog().Debug(fmt.Sprintf("Unable to read the recorded Relay session cwd: %v", err))
+			pkgLog().Debug(fmt.Sprintf("Unable to read the recorded Relay session cwd: %v", err))
 		}
 	}
 	if sessionCwd == "" {
@@ -122,16 +122,16 @@ func resolveRelayScopeCwds(a *AIAgent, taskID, sessionID, platform string) (*str
 			sessionCwd = cleanRelayCwd(cwd)
 			return nil
 		}(); err != nil {
-			runAgentLog().Debug(fmt.Sprintf("Unable to read the configured Relay session cwd: %v", err))
+			pkgLog().Debug(fmt.Sprintf("Unable to read the configured Relay session cwd: %v", err))
 		}
 	}
 	if sessionCwd == "" && (platform == "" || platform == "cli") && (backend == "" || backend == "local") {
 		if resolved, err := relayResolveAgentCwd(env); err != nil {
-			runAgentLog().Debug(fmt.Sprintf("Unable to resolve the local Relay session cwd: %v", err))
+			pkgLog().Debug(fmt.Sprintf("Unable to resolve the local Relay session cwd: %v", err))
 		} else if pypath.IsAbs(resolved) {
 			sessionCwd = cleanRelayCwd(resolved)
 		} else if absolute, err := pypath.Resolve(resolved); err != nil {
-			runAgentLog().Debug(fmt.Sprintf("Unable to resolve the local Relay session cwd: %v", err))
+			pkgLog().Debug(fmt.Sprintf("Unable to resolve the local Relay session cwd: %v", err))
 		} else {
 			sessionCwd = cleanRelayCwd(absolute)
 		}

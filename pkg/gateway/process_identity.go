@@ -9,7 +9,7 @@ import (
 )
 
 // True when text names icebath at a path segment or token boundary
-func textNamesHermes(text string) bool {
+func textNamesIcebath(text string) bool {
 	tokens := strings.FieldsFunc(strings.ToLower(text), func(r rune) bool {
 		return pystr.IsSpace(r) || strings.ContainsRune("\\/=,;\"'", r)
 	})
@@ -22,7 +22,7 @@ func textNamesHermes(text string) bool {
 }
 
 // True when the command line or executable of pid names icebath, false when either is unreadable
-func processCommandIsHermes(pid int) bool {
+func processCommandIsIcebath(pid int) bool {
 	argv, err := proc.Cmdline(pid)
 	if err != nil {
 		return false
@@ -31,11 +31,11 @@ func processCommandIsHermes(pid int) bool {
 	if err != nil {
 		return false
 	}
-	return textNamesHermes(strings.Join(argv, " ") + " " + exe)
+	return textNamesIcebath(strings.Join(argv, " ") + " " + exe)
 }
 
 // Whether a force stop may target pid, its start time unchanged since discovery and on Windows its command icebath
-func pidIsHermes(pid int, expectedStartTime any) bool {
+func pidIsIcebath(pid int, expectedStartTime any) bool {
 	if pid <= 0 {
 		return false
 	}
@@ -49,5 +49,5 @@ func pidIsHermes(pid int, expectedStartTime any) bool {
 	if expectedStartTime != nil && current != expectedStartTime {
 		return false
 	}
-	return processCommandIsHermes(pid)
+	return processCommandIsIcebath(pid)
 }

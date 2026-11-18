@@ -151,11 +151,11 @@ func TestAuxUnhealthyCacheCallLlmMarksProviderUnhealthyOn402(t *testing.T) {
 	t.Setenv("OPENROUTER_API_KEY", "or-key")
 	auxNoConfiguredChains(t)
 	primary := auxScriptedCallClient("https://openrouter.ai/api/v1/", "k", auxExc("Payment Required: insufficient credits", 402))
-	nous := auxScriptedCallClient("https://inference-api.nousresearch.com/v1", "n", auxCallOK("ok"))
+	backup := auxScriptedCallClient("https://api.deepseek.com/v1", "n", auxCallOK("ok"))
 	auxSwapCachedClient(t, primary, "google/gemini-3-flash-preview")
 	auxFixedTaskRoute(t, auxTaskRoute{Provider: "auto", Model: "google/gemini-3-flash-preview"})
 	auxTryPaymentFallbackFn = func(context.Context, string, string, string, string, FailureScope, map[string]any) (AuxClient, string, string, error) {
-		return nous, "n-model", "nous", nil
+		return backup, "n-model", "deepseek", nil
 	}
 	if auxIsProviderUnhealthy(ctx, "openrouter", "") {
 		t.Fatal("openrouter unhealthy before the call")

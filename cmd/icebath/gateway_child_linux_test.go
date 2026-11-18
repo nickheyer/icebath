@@ -21,7 +21,7 @@ type gatewayChild struct {
 	stopped bool
 }
 
-// Case homes of a hermes gateway subprocess, the state home with its config and a separate user home
+// Case homes of a gateway subprocess, the state home with its config and a separate user home
 func gatewayCaseHomes(t *testing.T, config map[string]any) (tmp, h, user string) {
 	t.Helper()
 	tmp = t.TempDir()
@@ -42,7 +42,7 @@ func gatewayCaseHomes(t *testing.T, config map[string]any) (tmp, h, user string)
 	return tmp, h, user
 }
 
-// Environment of a hermes gateway subprocess, the inherited path and locale with the case homes and extras
+// Environment of a gateway subprocess, the inherited path and locale with the case homes and extras
 func gatewayChildEnv(h, user string, extra ...string) []string {
 	var env []string
 	for _, name := range []string{"PATH", "LANG", "TZ", "TIRITH_ENABLED"} {

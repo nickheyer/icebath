@@ -481,12 +481,6 @@ func (c *Composer) tracked(before composerSnap) {
 // Drops both trails when the prompt is replaced from outside the typing
 func (c *Composer) forget() { c.undo, c.redo = nil, nil }
 
-// Whether an undo has an edit to take back
-func (c *Composer) CanUndo() bool { return len(c.undo) > 0 }
-
-// Whether a redo has an undone edit to bring back
-func (c *Composer) CanRedo() bool { return len(c.redo) > 0 }
-
 // Steps back or forward one edit, the prompt left behind recorded on the other trail
 func (c *Composer) swap(from, to *[]composerSnap) {
 	n := len(*from)

@@ -5,7 +5,6 @@ import (
 	"context"
 	"encoding/base64"
 	"fmt"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"image"
 	"image/color"
 	"image/png"
@@ -18,6 +17,8 @@ import (
 	"sync/atomic"
 	"testing"
 	"time"
+
+	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 
 	"github.com/nickheyer/icebath/pkg/state"
 )

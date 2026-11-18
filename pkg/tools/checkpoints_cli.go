@@ -14,7 +14,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
 
-// Store status, prune and console input of the checkpoints command, the module attributes hermes tests patch
+// Store status, prune and console input of the checkpoints command, the module attributes tests patch
 var (
 	checkpointsStoreStatusFn = CheckpointStoreStatus
 	checkpointsPruneFn       = PruneCheckpoints

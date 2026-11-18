@@ -2,7 +2,6 @@ package a2a
 
 import (
 	"context"
-	"log/slog"
 
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
@@ -104,7 +103,7 @@ type a2aPlatformPlugin struct{}
 
 func (a2aPlatformPlugin) Manifest() plugins.Manifest {
 	return plugins.Manifest{Name: "a2a-platform", Version: "1.0.0", Kind: "platform", Source: "bundled", Key: "platforms/a2a",
-		Author: "Nous Research",
+		Author: "Icebath",
 		Description: "A2A (Agent-to-Agent) protocol v1.0 support for Icebath Agent \u2014 both directions of the open Linux Foundation standard " +
 			"for inter-agent communication.\n" +
 			"OUTBOUND (client tools): a2a_discover, a2a_call, a2a_list, a2a_history, and a2a_orchestrate let the agent fetch another " +
@@ -125,7 +124,7 @@ func (a2aPlatformPlugin) Manifest() plugins.Manifest {
 // Registers the client tools then the inbound platform, logging and swallowing a failure of either
 func (p a2aPlatformPlugin) Register(ctx *plugins.Context) error {
 	if err := p.RegisterTools(ctx); err != nil {
-		slog.Warn("A2A: failed to register client tools", "exc_info", err)
+		pkgLog().Warn("A2A: failed to register client tools", "exc_info", err)
 	}
 	_, err := ctx.RegisterPlatform(plugins.PlatformSpec{
 		Name: "a2a", Label: "A2A",
@@ -152,7 +151,7 @@ func (p a2aPlatformPlugin) Register(ctx *plugins.Context) error {
 		},
 	})
 	if err != nil {
-		slog.Warn("A2A: failed to register platform adapter", "exc_info", err)
+		pkgLog().Warn("A2A: failed to register platform adapter", "exc_info", err)
 	}
 	return nil
 }

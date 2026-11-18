@@ -68,7 +68,7 @@ func relayAdmit(ctx context.Context, a *RelayAdapter, runner any, event *Message
 			if !relayPermanentRefusals[refusal.Reason] {
 				return err
 			}
-			relayAdapterLog().Warn(fmt.Sprintf("relay inbound refused (%s) for %s chat=%s; acknowledged, not replayed",
+			pkgLog().Warn(fmt.Sprintf("relay inbound refused (%s) for %s chat=%s; acknowledged, not replayed",
 				refusal.Reason, string(event.Source.Platform), event.Source.ChatID))
 			return nil
 		}

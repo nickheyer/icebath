@@ -24,7 +24,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyzip"
 )
 
-// Skips a case the hermes suite marks POSIX only
+// Skips a case the suite marks POSIX only
 func posixOnly(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("POSIX file permissions only")
@@ -409,7 +409,7 @@ func TestImportPreservesRuntimePidAndProcessFiles(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if lock["hermes_home"] != canonical {
+	if lock["icebath_home"] != canonical {
 		t.Fatalf("lock %v, want home %s", lock, canonical)
 	}
 }
@@ -424,7 +424,7 @@ func TestImportRestoresSecretFilesWith0600Perms(t *testing.T) {
 	zipPath := filepath.Join(tmp, "backup.zip")
 	writeZip(t, zipPath, pyzip.Stored,
 		zmember{"config.yaml", "model: openrouter\n"}, zmember{".env", "OPENROUTER_API_KEY=sk-secret\n"},
-		zmember{"auth.json", `{"providers": {"nous": "token"}}`}, zmember{"state.db", "SQLite format 3\x00"},
+		zmember{"auth.json", `{"providers": {"openrouter": "token"}}`}, zmember{"state.db", "SQLite format 3\x00"},
 		zmember{"profiles/coder/.env", "ANTHROPIC_API_KEY=sk-ant-secret\n"})
 	runImport(t, zipPath, true)
 	for _, rel := range []string{".env", "auth.json", "state.db", "profiles/coder/.env"} {
@@ -751,7 +751,7 @@ func overrideBackupZip(t *testing.T, tmp string) string {
 	return zipPath
 }
 
-func TestImportHonorsHermesHomeOverrideImportTargetsNamedProfileHome(t *testing.T) {
+func TestImportHonorsIcebathHomeOverrideImportTargetsNamedProfileHome(t *testing.T) {
 	tmp := t.TempDir()
 	root := filepath.Join(tmp, "icebath-root")
 	profile := filepath.Join(root, "profiles", "coder")
@@ -779,7 +779,7 @@ func useNativeDefault(t *testing.T, native string) {
 	t.Cleanup(func() { platformDefaultHome = old })
 }
 
-func TestImportHonorsHermesHomeOverrideImportSkipsGatewayInstallForNonDefaultHome(t *testing.T) {
+func TestImportHonorsIcebathHomeOverrideImportSkipsGatewayInstallForNonDefaultHome(t *testing.T) {
 	tmp := t.TempDir()
 	native := filepath.Join(tmp, "native-default")
 	sandbox := filepath.Join(tmp, "sandbox-home")
@@ -794,7 +794,7 @@ func TestImportHonorsHermesHomeOverrideImportSkipsGatewayInstallForNonDefaultHom
 	}
 }
 
-func TestImportHonorsHermesHomeOverrideImportInstallsGatewayWhenDefaultHomeIsTarget(t *testing.T) {
+func TestImportHonorsIcebathHomeOverrideImportInstallsGatewayWhenDefaultHomeIsTarget(t *testing.T) {
 	tmp := t.TempDir()
 	native := filepath.Join(tmp, "native-default")
 	os.MkdirAll(native, 0o755)

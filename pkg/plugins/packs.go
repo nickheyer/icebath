@@ -697,23 +697,16 @@ func InstallPackPlugins(ctx context.Context, pack *PluginPack, resolved []Resolv
 			continue
 		}
 		console.Print(fmt.Sprintf("[dim]Installing %s @ %s...[/dim]", display, pystr.Slice(rp.Entry.Ref, 0, 12)))
-		catalogName := rp.Entry.Name
-		if rp.Entry.Repo != "" {
-			catalogName = ""
-		}
-		identifier, ref := rp.Identifier, rp.Entry.Ref
-		_, manifest, installedName, err := recordedInstall(ctx, h, func() (string, map[string]any, string, error) {
-			return packInstallCore(ctx, identifier, installCoreOptions{Force: force, Ref: ref})
-		}, catalogName, identifier)
+		_, manifest, installedName, err := packInstallCore(ctx, rp.Identifier, installCoreOptions{Force: force, Ref: rp.Entry.Ref})
 		if err != nil {
 			if _, isOp := err.(*PluginOperationError); !isOp {
-				logPluginPacks.error("pack install failed for "+display, "error", err)
+				pkgLog().Error("pack install failed for "+display, "error", err)
 			}
 			failed(display, pyErrorText(err))
 			continue
 		}
 		if err := packPromptEnv(ctx, h, manifest, console); err != nil {
-			logPluginPacks.debug("requires_env prompt failed for "+installedName, "error", err)
+			pkgLog().Debug("requires_env prompt failed for "+installedName, "error", err)
 		}
 		if err := packSetEnabled(ctx, h, installedName, true, nil, nil); err != nil {
 			if refused, ok := err.(*AdmissionRefused); ok {

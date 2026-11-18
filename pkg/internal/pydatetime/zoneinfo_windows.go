@@ -9,7 +9,7 @@ import (
 // Windows CPython is built without a TZPATH
 func platformTZPath() []string { return nil }
 
-// Windows ships the tzdata package with hermes, every IANA key resolves from the embedded database
+// Every IANA key resolves from the embedded tzdata database on Windows
 func tzdataPackageZone(key string) (*time.Location, bool) {
 	if key == "Local" {
 		return nil, false

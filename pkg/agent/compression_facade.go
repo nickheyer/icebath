@@ -72,13 +72,13 @@ func timeoutFallbackPrompt(ctx context.Context, a *AIAgent, systemMessage *strin
 	}
 	defer func() {
 		if r := recover(); r != nil {
-			runAgentLog().Debug("compress_context timeout fallback prompt rebuild failed; using raw system_message", "error", r)
+			pkgLog().Debug("compress_context timeout fallback prompt rebuild failed; using raw system_message", "error", r)
 			prompt = raw
 		}
 	}()
 	built, err := facadeBuildSystemPrompt(ctx, a, systemMessage)
 	if err != nil {
-		runAgentLog().Debug("compress_context timeout fallback prompt rebuild failed; using raw system_message", "error", err)
+		pkgLog().Debug("compress_context timeout fallback prompt rebuild failed; using raw system_message", "error", err)
 		return raw
 	}
 	return built
@@ -88,9 +88,9 @@ func timeoutFallbackPrompt(ctx context.Context, a *AIAgent, systemMessage *strin
 func reportCompressionTimeout(a *AIAgent, idle, waited, sinceProgress, totalCeiling float64, totalExhausted, progressObserved bool) {
 	markContextCompressionTimedOut(a)
 	if totalExhausted {
-		runAgentLog().Warn(fmt.Sprintf("Context compression reached its total ceiling after %.1fs (progress observed=%s); continuing without compression", waited, pyBoolStr(progressObserved)))
+		pkgLog().Warn(fmt.Sprintf("Context compression reached its total ceiling after %.1fs (progress observed=%s); continuing without compression", waited, pyBoolStr(progressObserved)))
 	} else {
-		runAgentLog().Warn(fmt.Sprintf("Context compression made no progress for %.1fs (total wait %.1fs, ceiling %.1fs); continuing without compression", sinceProgress, waited, totalCeiling))
+		pkgLog().Warn(fmt.Sprintf("Context compression made no progress for %.1fs (total wait %.1fs, ceiling %.1fs); continuing without compression", sinceProgress, waited, totalCeiling))
 	}
 	a.touchActivity("context compression timed out", string(state.ActivityProvenanceAgentCompressionTimeout), false)
 	if rec, ok := a.contextCompressor.(timeoutFailureRecorder); ok && !isNilEngine(a.contextCompressor) {
@@ -214,14 +214,14 @@ func rebindCallerSessionContext(ctx context.Context, a *AIAgent) {
 // Compresses under a published commit fence and the progress timeout with the ambient conversation and affinity tags
 func (a *AIAgent) compressContext(ctx context.Context, messages []map[string]any, systemMessage *string, o compressContextOptions) ([]map[string]any, string, error) {
 	resetContextCompressionTimeoutOutcome(a)
-	if provider.PortalConversationContext(ctx) == "" {
+	if provider.ConversationContext(ctx) == "" {
 		if root := a.conversationRootID(); root != "" {
-			ctx = provider.WithPortalConversationContext(ctx, root)
+			ctx = provider.WithConversationContext(ctx, root)
 		}
 	}
-	if provider.PortalAffinityScope(ctx) == "" {
+	if provider.AffinityScope(ctx) == "" {
 		if declared := provider.DeclaredConversationScopeSafe(a.cacheScopeAgent()); declared != "" {
-			ctx = provider.WithPortalAffinityScope(ctx, declared)
+			ctx = provider.WithAffinityScope(ctx, declared)
 		}
 	}
 	activeFence := o.CommitFence

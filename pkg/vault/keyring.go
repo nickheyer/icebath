@@ -24,7 +24,7 @@ type keyringChainer interface {
 	keyringChildren() []keyringBackend
 }
 
-// Exception a keyring backend raises, its python class name kept for the messages hermes formats
+// Exception a keyring backend raises, its python class name kept for the formatted messages
 type keyringError struct {
 	Class string
 	Msg   string
@@ -32,7 +32,7 @@ type keyringError struct {
 
 func (e *keyringError) Error() string { return e.Msg }
 
-// Python exception class name of an error for the type(exc).__name__ hermes reports
+// Python exception class name of an error as messages report it
 func pyErrorClass(err error) string {
 	var ke *keyringError
 	var de *dbusError

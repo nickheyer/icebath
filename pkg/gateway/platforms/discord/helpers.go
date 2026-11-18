@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
-	"log/slog"
 	"net"
 	"net/http"
 	"net/url"
@@ -53,7 +52,7 @@ var discordNonconversationalHistoryMessagePatterns = func() []*regexp2.Regexp {
 		`^\s*💾\s+Skill\s+['"].+?['"]\s+(?:created|updated|improved|patched)\.?\s*$`,
 		`^\s*⏳\s+Working\s+—\s+\d+\s+min(?:\s|$)`,
 		`^\s*\[Background process\s+\S+\s+(?:finished with exit code|is still running~)[\s\S]*\]\s*$`,
-		`^\s*(?:✅|❌)\s+Hermes update\s+(?:finished|failed|timed out)[\s\S]*$`,
+		`^\s*(?:✅|❌)\s+(?:Icebath|Hermes) update\s+(?:finished|failed|timed out)[\s\S]*$`,
 		`^\s*♻️?\s+Gateway\s+(?:restarted successfully|online\b)[\s\S]*$`,
 	} {
 		re, err := pyre.CompileIgnoreCase(p)
@@ -521,7 +520,7 @@ func discordReadyTimeoutSeconds() float64 {
 			}
 			return 0
 		}
-		slog.Warn(fmt.Sprintf("Ignoring invalid ICEBATH_GATEWAY_PLATFORM_CONNECT_TIMEOUT=%s", pyrepr.Repr(raw)))
+		pkgLog().Warn(fmt.Sprintf("Ignoring invalid ICEBATH_GATEWAY_PLATFORM_CONNECT_TIMEOUT=%s", pyrepr.Repr(raw)))
 	}
 	return 30.0
 }

@@ -7,11 +7,8 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/internal/pyacp"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/logging"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
-
-var editApprovalLog = logging.GetLogger("acp_adapter.edit_approval")
 
 var editPermissionRequestIDs atomic.Int64
 
@@ -42,9 +39,9 @@ func MakeACPEditApprovalRequester(requestPermission RequestPermissionFunc, loop 
 		if autoApprove != nil {
 			policy, cwd, err := autoApprove()
 			if err != nil {
-				editApprovalLog.Debug("ACP edit auto-approval policy check failed")
+				pkgLog().Debug("ACP edit auto-approval policy check failed")
 			} else if tools.ShouldAutoApproveEdit(proposal, policy, cwd) {
-				editApprovalLog.Info(fmt.Sprintf("Auto-approved ACP edit under policy %s: %s", policy, proposal.Path))
+				pkgLog().Info(fmt.Sprintf("Auto-approved ACP edit under policy %s: %s", policy, proposal.Path))
 				return true, nil
 			}
 		}

@@ -23,7 +23,7 @@ func ownedStopHome(t *testing.T) string {
 	}
 	t.Setenv("ICEBATH_HOME", h)
 	t.Setenv("ICEBATH_GATEWAY_LOCK_DIR", filepath.Join(tmp, "locks"))
-	swapSetup(t, &homeForPIDHook, func(context.Context, int, bool) (string, bool, error) { return processHermesHome(), true, nil })
+	swapSetup(t, &homeForPIDHook, func(context.Context, int, bool) (string, bool, error) { return processIcebathHome(), true, nil })
 	swapSetup(t, &reapTaskState, func(context.Context, string) (string, bool) { return "", false })
 	return h
 }
@@ -353,10 +353,10 @@ func TestWindowsScheduledTaskSupervisorGuardWindowsScheduledTaskRunningReturnsFa
 		t.Fatal("subprocess must not run off Windows")
 		return CommandResult{}, nil
 	})
-	if windowsScheduledTaskSupervises(context.Background(), "HermesGateway") {
+	if windowsScheduledTaskSupervises(context.Background(), "IcebathGateway") {
 		t.Fatal("supervised off Windows")
 	}
-	if state, ok := windowsScheduledTaskState(context.Background(), "HermesGateway"); ok {
+	if state, ok := windowsScheduledTaskState(context.Background(), "IcebathGateway"); ok {
 		t.Fatalf("state %q", state)
 	}
 }

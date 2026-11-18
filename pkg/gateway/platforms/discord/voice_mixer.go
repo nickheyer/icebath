@@ -6,7 +6,6 @@ import (
 	"encoding/binary"
 	"errors"
 	"fmt"
-	"log/slog"
 	"math"
 	"os"
 	"os/exec"
@@ -262,17 +261,17 @@ func decodeToPCM(ctx context.Context, path string, timeout time.Duration) []byte
 		for _, a := range append([]string{exe}, args...) {
 			argv = append(argv, a)
 		}
-		slog.Warn(fmt.Sprintf("decode_to_pcm failed for %s: Command '%s' timed out after %s seconds", path, pyrepr.Repr(argv),
+		pkgLog().Warn(fmt.Sprintf("decode_to_pcm failed for %s: Command '%s' timed out after %s seconds", path, pyrepr.Repr(argv),
 			pyrepr.Repr(timeout.Seconds())))
 		return nil
 	}
 	var exitErr *exec.ExitError
 	if err != nil && !errors.As(err, &exitErr) {
-		slog.Warn(fmt.Sprintf("decode_to_pcm failed for %s: %s", path, err))
+		pkgLog().Warn(fmt.Sprintf("decode_to_pcm failed for %s: %s", path, err))
 		return nil
 	}
 	if rc := pyReturnCode(cmd.ProcessState); rc != 0 {
-		slog.Warn(fmt.Sprintf("ffmpeg decode failed for %s (rc=%d): %s", path, rc, cut(pystr.DecodeUTF8Replace(stderr.Bytes()), 200)))
+		pkgLog().Warn(fmt.Sprintf("ffmpeg decode failed for %s (rc=%d): %s", path, rc, cut(pystr.DecodeUTF8Replace(stderr.Bytes()), 200)))
 		return nil
 	}
 	if stdout.Len() == 0 {

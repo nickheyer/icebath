@@ -8,11 +8,11 @@ import (
 	"github.com/nickheyer/icebath/pkg/agent"
 	"github.com/nickheyer/icebath/pkg/botmode"
 	"github.com/nickheyer/icebath/pkg/state"
-	"github.com/nickheyer/icebath/pkg/tuigateway"
+	"github.com/nickheyer/icebath/pkg/tuihost"
 )
 
 // Builds a replacement agent on the session profile, carrying its pins, and hands it the dedicated db handle
-func rebuildSessionAgent(ctx context.Context, sid string, session *tuigateway.Session, kw makeAgentOptions, modelOverrideSet bool) (rebuilt *agent.AIAgent, err error) {
+func rebuildSessionAgent(ctx context.Context, sid string, session *tuihost.Session, kw makeAgentOptions, modelOverrideSet bool) (rebuilt *agent.AIAgent, err error) {
 	oldAgent := sessionAgent(session)
 	profileHome := strOr(session.Get("profile_home"))
 	var sessionDB *state.DB
@@ -96,7 +96,7 @@ func rebuildSessionAgent(ctx context.Context, sid string, session *tuigateway.Se
 }
 
 // Rebuilds a Bot Chat session agent for the same session when its capability fingerprint changed
-func syncBotCapabilities(ctx context.Context, sid string, session *tuigateway.Session) {
+func syncBotCapabilities(ctx context.Context, sid string, session *tuihost.Session) {
 	a := sessionAgent(session)
 	if a == nil {
 		return
@@ -144,9 +144,9 @@ func syncBotCapabilities(ctx context.Context, sid string, session *tuigateway.Se
 		}()
 		panicIf(err)
 		rebuilt.SetSessionTitleHint("Bot Chat")
-		tuigateway.Emit(ctx, "notice", sid, map[string]any{"message": "Capabilities updated — this bot's tools and prompt were refreshed."})
+		tuihost.Emit(ctx, "notice", sid, map[string]any{"message": "Capabilities updated — this bot's tools and prompt were refreshed."})
 	})
 	if failure != nil {
-		logger().Warn("Bot capability sync failed for " + sid + ": " + failureText(failure))
+		pkgLog().Warn("Bot capability sync failed for " + sid + ": " + failureText(failure))
 	}
 }

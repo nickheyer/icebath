@@ -22,7 +22,7 @@ func writePortableAppPlugin(t *testing.T, root, app, osKey string) {
 		osKey = hostinfo.OSFamily()
 	}
 	manifest, _ := json.Marshal(map[string]any{"$schema": plugins.PluginSchemaV1, "name": "example-plugin",
-		"extensions": map[string]any{"com.nousresearch.hermes": map[string]any{"servers": map[string]any{"worker": map[string]any{
+		"extensions": map[string]any{"app.icebath": map[string]any{"servers": map[string]any{"worker": map[string]any{
 			"app":      map[string]any{osKey: map[string]any{"presence": "executable", "location": app}},
 			"requires": map[string]any{"app": true},
 		}}}}})

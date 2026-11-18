@@ -33,7 +33,7 @@ func ucRun(t *testing.T, cwd string, args ...string) (string, int) {
 	return strings.TrimSpace(out.String()), 0
 }
 
-// Keeps the update check offline and admitted, the two fakes the hermes check cases install
+// Keeps the update check offline and admitted, the two fakes the check cases install
 func ucOfflineCheck(t *testing.T, root string) {
 	t.Helper()
 	t.Setenv("ICEBATH_HOME", t.TempDir())

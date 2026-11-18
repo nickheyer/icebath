@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"log/slog"
 	"sync"
 	"unicode/utf8"
 	"weak"
@@ -15,7 +14,7 @@ import (
 // Inbound events held across a disconnect window before the oldest is dropped
 const HeldInboundMax = 64
 
-// Adapter surface the held inbound queue reads, the TelegramAdapter methods the hermes mixin calls
+// Adapter surface the held inbound queue reads, the TelegramAdapter methods the mixin calls
 type HeldInboundHost interface {
 	gateway.PlatformAdapter
 	IsPermanentFatal() bool
@@ -46,7 +45,7 @@ func (h *HeldInbound) Events() []*gateway.MessageEvent {
 	return append([]*gateway.MessageEvent(nil), h.events...)
 }
 
-// Replaces the held events, the assignment hermes tests make to the queue list
+// Replaces the held events, the assignment tests make to the queue list
 func (h *HeldInbound) SetEvents(events []*gateway.MessageEvent) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
@@ -109,7 +108,7 @@ func (h *HeldInbound) ScheduleHeldInboundRedispatch(ctx context.Context) {
 // Preserves an undispatchable inbound event capped and identity deduped while a permanent fatal discards it
 func (h *HeldInbound) HoldInboundEvent(ctx context.Context, event *gateway.MessageEvent, where string, schedule bool) {
 	if h.host.IsPermanentFatal() {
-		slog.Warn(fmt.Sprintf("[Telegram] Discarding inbound under non-retryable fatal (%s, %d chars)", where, eventChars(event)))
+		pkgLog().Warn(fmt.Sprintf("[Telegram] Discarding inbound under non-retryable fatal (%s, %d chars)", where, eventChars(event)))
 		return
 	}
 	h.mu.Lock()
@@ -138,7 +137,7 @@ func (h *HeldInbound) HoldInboundEvent(ctx context.Context, event *gateway.Messa
 		}
 		dropped := h.events[0]
 		h.events = append(h.events[:0:0], h.events[1:]...)
-		slog.Warn(fmt.Sprintf("[Telegram] Held-inbound queue full (%d); dropping oldest (%d chars)", maxN, eventChars(dropped)))
+		pkgLog().Warn(fmt.Sprintf("[Telegram] Held-inbound queue full (%d); dropping oldest (%d chars)", maxN, eventChars(dropped)))
 	}
 	h.events = append(h.events, event)
 	queued := len(h.events)
@@ -151,7 +150,7 @@ func (h *HeldInbound) HoldInboundEvent(ctx context.Context, event *gateway.Messa
 	} else if schedule {
 		suffix = " - scheduling redispatch"
 	}
-	slog.Warn(fmt.Sprintf("[Telegram] Holding inbound (%s, %d chars, queue=%d)%s", where, eventChars(event), queued, suffix))
+	pkgLog().Warn(fmt.Sprintf("[Telegram] Holding inbound (%s, %d chars, queue=%d)%s", where, eventChars(event), queued, suffix))
 	if schedule && !h.host.ShouldDropDelayedDelivery() {
 		h.ScheduleHeldInboundRedispatch(ctx)
 	}
@@ -213,7 +212,7 @@ func (h *HeldInbound) redispatchHeldInbound(ctx context.Context, prior *gateway.
 	}
 	if h.host.IsPermanentFatal() {
 		if n := h.Clear(); n > 0 {
-			slog.Warn(fmt.Sprintf("[Telegram] Redispatch aborted; discarded %d held inbound under non-retryable fatal", n))
+			pkgLog().Warn(fmt.Sprintf("[Telegram] Redispatch aborted; discarded %d held inbound under non-retryable fatal", n))
 		}
 		return nil
 	}
@@ -225,7 +224,7 @@ func (h *HeldInbound) redispatchHeldInbound(ctx context.Context, prior *gateway.
 	events := append([]*gateway.MessageEvent(nil), h.events...)
 	h.events = h.events[:0]
 	h.mu.Unlock()
-	slog.Warn(fmt.Sprintf("[Telegram] Redispatching %d held inbound message(s)", len(events)))
+	pkgLog().Warn(fmt.Sprintf("[Telegram] Redispatching %d held inbound message(s)", len(events)))
 	allowFollowupSchedule := true
 	defer func() {
 		h.mu.Lock()
@@ -246,7 +245,7 @@ func (h *HeldInbound) redispatchHeldInbound(ctx context.Context, prior *gateway.
 			return err
 		}
 		if err != nil {
-			slog.Error(fmt.Sprintf("[Telegram] Failed to redispatch held inbound (%d chars); re-holding", eventChars(event)), "error", err)
+			pkgLog().Error(fmt.Sprintf("[Telegram] Failed to redispatch held inbound (%d chars); re-holding", eventChars(event)), "error", err)
 			h.reholdFrom(ctx, events, idx, "redispatch-failed")
 			allowFollowupSchedule = false
 			return nil

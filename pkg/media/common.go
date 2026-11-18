@@ -31,9 +31,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/tools"
 )
 
-// Provider value every managed Nous Subscription picker row writes
-const NousManagedProvider = "nous"
-
 // Age in hours after which transient media caches are swept
 const MediaCacheMaxAgeHours = 24
 
@@ -179,17 +176,28 @@ func positiveInt(v any) int {
 // Logger of the environment or a discarding one
 func logOf(env *tools.Env) *slog.Logger {
 	if env != nil && env.Log != nil {
-		return env.Log
+		return env.Log.With("logger", logName)
 	}
 	return slog.New(slog.NewTextHandler(io.Discard, nil))
 }
 
-// Config tree of the environment or an empty tree
+// Config tree of the environment, else the live config of its home, else an empty tree
 func cfgOf(env *tools.Env) config.Tree {
-	if env == nil || env.Config == nil {
+	if env == nil || (env.Config == nil && strings.TrimSpace(env.Home) == "") {
 		return config.Tree{}
 	}
-	return env.Config
+	if env.Config != nil {
+		return env.Config
+	}
+	lookup := config.NewSecrets(env.Home).Lookup()
+	if env.Secrets != nil {
+		lookup = env.Secrets.Lookup()
+	}
+	tree, err := config.LoadReadonly(home.WithOverride(context.Background(), env.Home), env.Home, lookup)
+	if err != nil {
+		return config.Tree{}
+	}
+	return tree
 }
 
 // Home directory of the environment or the process default

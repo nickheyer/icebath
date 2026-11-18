@@ -8,7 +8,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tools"
-	"github.com/nickheyer/icebath/pkg/tuigateway"
+	"github.com/nickheyer/icebath/pkg/tuihost"
 )
 
 // Stop a restart or shutdown latched before the generation's managed worker existed, with its cause
@@ -80,7 +80,7 @@ func requestHardInterrupt(agent any) bool {
 }
 
 // Transport a principal's connection publishes events through, nil when it registered none
-func (a *SessionAuthority) transportOf(actor Principal) tuigateway.Transport {
+func (a *SessionAuthority) transportOf(actor Principal) tuihost.Transport {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	return a.Events[actor.TransportID]
@@ -151,7 +151,7 @@ func (a *SessionAuthority) joinStream(ctx context.Context, actor Principal, ref 
 			live.EventStream.CatchUp(transport, replayFrom.Epoch, int(replayFrom.Sequence))
 		}
 		live.EventStream.Fanout.Attach(transport)
-		live.EventStream.OnOverflow = func(dropped tuigateway.Transport) { a.retireOverflowed(ref.SessionID, dropped) }
+		live.EventStream.OnOverflow = func(dropped tuihost.Transport) { a.retireOverflowed(ref.SessionID, dropped) }
 	}
 	var activeGeneration *int64
 	if handle.ExecutionState == "running" {
@@ -188,7 +188,7 @@ func (a *SessionAuthority) joinStream(ctx context.Context, actor Principal, ref 
 }
 
 // Ends the subscriptions of a peer whose backlog the fanout dropped
-func (a *SessionAuthority) retireOverflowed(sessionID string, transport tuigateway.Transport) {
+func (a *SessionAuthority) retireOverflowed(sessionID string, transport tuihost.Transport) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	live := a.Sessions[sessionID]

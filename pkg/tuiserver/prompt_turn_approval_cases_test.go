@@ -12,7 +12,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tools"
-	"github.com/nickheyer/icebath/pkg/tuigateway"
+	"github.com/nickheyer/icebath/pkg/tuihost"
 )
 
 // Frames of the recorder decoded into plain values
@@ -39,7 +39,7 @@ func TestADangerousCommandOfATurnAsksTheClientAndADenyBlocksIt(t *testing.T) {
 	for _, name := range []string{"ICEBATH_GATEWAY_SESSION", "ICEBATH_EXEC_ASK", "ICEBATH_INTERACTIVE"} {
 		t.Setenv(name, "1")
 	}
-	if err := fakellm.WriteHome(h, srv.BaseURL(), "", "approvals:\n  mode: manual\n", 0); err != nil {
+	if err := fakellm.WriteHome(h, srv.BaseURL(), "", "approvals:\n  mode: manual\n"); err != nil {
 		t.Fatal(err)
 	}
 	db, err := state.NewSessionDB(context.Background(), filepath.Join(h, "state.db"), false)
@@ -49,7 +49,7 @@ func TestADangerousCommandOfATurnAsksTheClientAndADenyBlocksIt(t *testing.T) {
 	t.Cleanup(func() { db.Close() })
 	useSharedDB(t, db)
 	recorder := &frameRecorder{}
-	ctx := tuigateway.BindTransport(context.Background(), recorder)
+	ctx := tuihost.BindTransport(context.Background(), recorder)
 	opts := agent.AIAgentOptions{Model: fakellm.ModelID, Provider: "custom", BaseURL: srv.BaseURL(), APIKey: "sk-fake-e2e",
 		APIMode: "chat_completions", SessionID: "approval-key", Platform: "tui", QuietMode: true, SkipContextFiles: true, SkipMemory: true,
 		MaxIterations: new(10), SessionDB: db, EnabledToolsets: []string{"terminal"}}

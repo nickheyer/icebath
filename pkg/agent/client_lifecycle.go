@@ -141,17 +141,17 @@ func (a *AIAgent) closeOpenAIClient(client any, reason string, shared bool) {
 	logCtx := a.ClientLogContext()
 	forceClosed := forceCloseTCPSockets(client)
 	if err := closeClient(client); err != nil {
-		runAgentLog().Debug(fmt.Sprintf("OpenAI client close failed (%s, shared=%s) %s error=%v", reason, pyBoolStr(shared), logCtx, err))
+		pkgLog().Debug(fmt.Sprintf("OpenAI client close failed (%s, shared=%s) %s error=%v", reason, pyBoolStr(shared), logCtx, err))
 		return
 	}
-	runAgentLog().Info(fmt.Sprintf("OpenAI client closed (%s, shared=%s, tcp_force_closed=%d) %s", reason, pyBoolStr(shared), forceClosed, logCtx))
+	pkgLog().Info(fmt.Sprintf("OpenAI client closed (%s, shared=%s, tcp_force_closed=%d) %s", reason, pyBoolStr(shared), forceClosed, logCtx))
 }
 
 // Close of a client exposing Close, a panic surfacing as the close error
 func closeClient(client any) (err error) {
 	c, ok := client.(interface{ Close() error })
 	if !ok {
-		return fmt.Errorf("AttributeError: '%T' object has no attribute 'close'", client)
+		return fmt.Errorf("the API client (%T) cannot be closed", client)
 	}
 	defer func() {
 		if r := recover(); r != nil {
@@ -168,11 +168,11 @@ func (a *AIAgent) retireSharedOpenAIClient(client any, reason string) {
 	}
 	defer func() {
 		if r := recover(); r != nil {
-			runAgentLog().Debug(fmt.Sprintf("Shared OpenAI client retire failed (%s) %s error=%v", reason, a.ClientLogContext(), r))
+			pkgLog().Debug(fmt.Sprintf("Shared OpenAI client retire failed (%s) %s error=%v", reason, a.ClientLogContext(), r))
 		}
 	}()
 	shutdown := forceCloseTCPSockets(client)
-	runAgentLog().Info(fmt.Sprintf("Shared OpenAI client retired (%s, tcp_shutdown=%d, fd_release=deferred_to_gc) %s", reason, shutdown, a.ClientLogContext()))
+	pkgLog().Info(fmt.Sprintf("Shared OpenAI client retired (%s, tcp_shutdown=%d, fd_release=deferred_to_gc) %s", reason, shutdown, a.ClientLogContext()))
 }
 
 // Socket shutdown of every client an abandoned worker may block on, returning the sockets shut
@@ -181,7 +181,7 @@ func (a *AIAgent) drainTransportsAfterAbandonment(reason string) int {
 	guard := func(label string, fn func()) {
 		defer func() {
 			if r := recover(); r != nil {
-				runAgentLog().Debug("Abandoned-worker drain: "+label, "error", r)
+				pkgLog().Debug("Abandoned-worker drain: "+label, "error", r)
 			}
 		}()
 		fn()
@@ -216,7 +216,7 @@ func (a *AIAgent) drainTransportsAfterAbandonment(reason string) int {
 	guard("active request abort failed", func() {
 		a.abortActiveRequest(reason)
 	})
-	runAgentLog().Info(fmt.Sprintf("Abandoned-worker transports drained (%s, tcp_shutdown=%d, fd_release=deferred_to_worker) %s", reason, drained, a.ClientLogContext()))
+	pkgLog().Info(fmt.Sprintf("Abandoned-worker transports drained (%s, tcp_shutdown=%d, fd_release=deferred_to_worker) %s", reason, drained, a.ClientLogContext()))
 	return drained
 }
 
@@ -235,7 +235,7 @@ func (a *AIAgent) replacePrimaryOpenAIClient(reason string) bool {
 	}
 	if err != nil {
 		lock.Unlock()
-		runAgentLog().Warn(fmt.Sprintf("Failed to rebuild shared primary client (%s) %s error=%v", reason, a.ClientLogContext(), err))
+		pkgLog().Warn(fmt.Sprintf("Failed to rebuild shared primary client (%s) %s error=%v", reason, a.ClientLogContext(), err))
 		return false
 	}
 	a.client = newClient
@@ -256,12 +256,12 @@ func (a *AIAgent) ensurePrimaryOpenAIClient(ctx context.Context, reason string) 
 	newClient, err := a.createOpenAIClient(ctx, a.clientKwargs, reason, true)
 	if err != nil {
 		lock.Unlock()
-		runAgentLog().Warn(fmt.Sprintf("Failed to recreate closed OpenAI client (%s) %s error=%v", reason, a.ClientLogContext(), err))
+		pkgLog().Warn(fmt.Sprintf("Failed to recreate closed OpenAI client (%s) %s error=%v", reason, a.ClientLogContext(), err))
 		return nil, fmt.Errorf("Failed to recreate closed OpenAI client: %w", err)
 	}
 	a.client = newClient
 	lock.Unlock()
-	runAgentLog().Warn(fmt.Sprintf("Detected closed shared OpenAI client; recreated before use (%s) %s", reason, a.ClientLogContext()))
+	pkgLog().Warn(fmt.Sprintf("Detected closed shared OpenAI client; recreated before use (%s) %s", reason, a.ClientLogContext()))
 	a.closeOpenAIClient(client, "replace:"+reason, true)
 	return newClient, nil
 }
@@ -420,13 +420,13 @@ func (a *AIAgent) abortRequestSlotClient(slotAttr string, client any, reason str
 	lock.Unlock()
 	defer func() {
 		if r := recover(); r != nil {
-			runAgentLog().Debug(fmt.Sprintf("%s client abort failed (%s, shared=False) %s error=%v", label, reason, logCtx, r))
+			pkgLog().Debug(fmt.Sprintf("%s client abort failed (%s, shared=False) %s error=%v", label, reason, logCtx, r))
 		}
 	}()
 	switch c := client.(type) {
 	case interface{ Cancel() error }:
 		if err := c.Cancel(); err != nil {
-			runAgentLog().Debug(fmt.Sprintf("%s client abort failed (%s, shared=False) %s error=%v", label, reason, logCtx, err))
+			pkgLog().Debug(fmt.Sprintf("%s client abort failed (%s, shared=False) %s error=%v", label, reason, logCtx, err))
 		}
 		return
 	case interface{ Cancel() }:
@@ -436,10 +436,10 @@ func (a *AIAgent) abortRequestSlotClient(slotAttr string, client any, reason str
 	shutdown := forceCloseTCPSockets(client)
 	msg := fmt.Sprintf("%s client aborted (%s, shared=False, tcp_force_closed=%d, deferred_close=stranger_thread) %s", label, reason, shutdown, logCtx)
 	if shutdown == 0 {
-		runAgentLog().Warn(msg + noSocketsSuffix)
+		pkgLog().Warn(msg + noSocketsSuffix)
 		return
 	}
-	runAgentLog().Info(msg)
+	pkgLog().Info(msg)
 }
 
 // Request scoped OpenAI client reusing the warm slot, image requests keyed apart by their route headers
@@ -568,7 +568,7 @@ func (a *AIAgent) createRequestAnthropicClient(ctx context.Context, reason strin
 	if err != nil {
 		return nil, err
 	}
-	runAgentLog().Debug(fmt.Sprintf("Anthropic request client created (%s, shared=False) %s", reason, a.anthropicLogContext()))
+	pkgLog().Debug(fmt.Sprintf("Anthropic request client created (%s, shared=False) %s", reason, a.anthropicLogContext()))
 	a.storeRequestSlot(anthropicSlot, client, key)
 	return client, nil
 }
@@ -580,10 +580,10 @@ func (a *AIAgent) closeRequestAnthropicClient(client any, reason string) {
 	}
 	forceCloseTCPSockets(client)
 	if err := closeClient(client); err != nil {
-		runAgentLog().Debug(fmt.Sprintf("Anthropic client close failed (%s, shared=False) %s error=%v", reason, a.anthropicLogContext(), err))
+		pkgLog().Debug(fmt.Sprintf("Anthropic client close failed (%s, shared=False) %s error=%v", reason, a.anthropicLogContext(), err))
 		return
 	}
-	runAgentLog().Info(fmt.Sprintf("Anthropic client closed (%s, shared=False) %s", reason, a.anthropicLogContext()))
+	pkgLog().Info(fmt.Sprintf("Anthropic client closed (%s, shared=False) %s", reason, a.anthropicLogContext()))
 }
 
 // Teardown close of the cached Anthropic request client, aborted instead while a worker holds it

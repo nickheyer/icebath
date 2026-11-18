@@ -1,3 +1,5 @@
+//go:build !icebath_core && !icebath_noextras
+
 package pm
 
 import (
@@ -269,23 +271,11 @@ func RestartNeeded(ctx context.Context, projectRoot string) (string, error) {
 		filepath.Base(filepath.Dir(selected)), filepath.Base(filepath.Dir(running))), nil
 }
 
-var restartPending struct {
-	sync.Mutex
-	reason string
-}
-
 // Records that an install this process ran can only load in a new process
 func NoteRestartPending(reason string) {
 	restartPending.Lock()
 	restartPending.reason = reason
 	restartPending.Unlock()
-}
-
-// Reason a restart is pending, empty when none was noted
-func RestartPending() string {
-	restartPending.Lock()
-	defer restartPending.Unlock()
-	return restartPending.reason
 }
 
 // Moves this process onto the selected generation, true when it runs it, adopted it or runs from none

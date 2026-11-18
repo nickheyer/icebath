@@ -440,13 +440,13 @@ func TestDeliveryWithHmacSignature(t *testing.T) {
 	if payload["hook_event_name"] != "on_session_end" || payload["session_id"] != "sess_e2e" || extra["completed"] != true || extra["model"] != "test-model" {
 		t.Fatalf("%v", payload)
 	}
-	if req.Headers.Get("X-Hermes-Event") != "on_session_end" || req.Headers.Get("X-Hermes-Delivery") == "" {
+	if req.Headers.Get("X-Icebath-Event") != "on_session_end" || req.Headers.Get("X-Icebath-Delivery") == "" {
 		t.Fatal(req.Headers)
 	}
 	mac := hmac.New(sha256.New, []byte(secret))
 	mac.Write(req.Body)
-	if req.Headers.Get("X-Hermes-Signature-256") != "sha256="+hex.EncodeToString(mac.Sum(nil)) {
-		t.Fatal(req.Headers.Get("X-Hermes-Signature-256"))
+	if req.Headers.Get("X-Icebath-Signature-256") != "sha256="+hex.EncodeToString(mac.Sum(nil)) {
+		t.Fatal(req.Headers.Get("X-Icebath-Signature-256"))
 	}
 }
 
@@ -459,7 +459,7 @@ func TestDeliveryUnsignedDeliveryHasNoSignatureHeader(t *testing.T) {
 		t.Fatal("queue must drain")
 	}
 	records := server.records()
-	if len(records) != 1 || records[0].Headers.Get("X-Hermes-Signature-256") != "" {
+	if len(records) != 1 || records[0].Headers.Get("X-Icebath-Signature-256") != "" {
 		t.Fatal(records)
 	}
 }
@@ -523,7 +523,7 @@ func TestDeliveryIdMatchesHeaderAndBody(t *testing.T) {
 		t.Fatal("queue must drain")
 	}
 	req := server.records()[0]
-	if decodePayload(t, req.Body)["delivery_id"] != req.Headers.Get("X-Hermes-Delivery") {
+	if decodePayload(t, req.Body)["delivery_id"] != req.Headers.Get("X-Icebath-Delivery") {
 		t.Fatal("delivery id must match the header")
 	}
 }

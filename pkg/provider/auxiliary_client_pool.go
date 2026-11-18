@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"log/slog"
 	"os"
 	"strings"
 )
@@ -28,7 +27,7 @@ func auxRecoverRaise(fn func()) (err error) {
 func auxLoadPoolWithCredentials(ctx context.Context, provider, note string) *Pool {
 	var pool *Pool
 	if err := auxRecoverRaise(func() { pool = LoadPool(modelsPoolEnv(ctx), provider) }); err != nil {
-		slog.Debug(fmt.Sprintf("Auxiliary client: could not load pool for %s%s: %v", provider, note, err))
+		pkgLog().Debug(fmt.Sprintf("Auxiliary client: could not load pool for %s%s: %v", provider, note, err))
 		return nil
 	}
 	if pool == nil || !pool.HasCredentials() {
@@ -46,7 +45,7 @@ func auxSelectPoolEntry(ctx context.Context, provider string) (bool, *PooledCred
 	var entry PooledCredential
 	var found bool
 	if err := auxRecoverRaise(func() { entry, found = pool.Select("") }); err != nil {
-		slog.Debug(fmt.Sprintf("Auxiliary client: could not select pool entry for %s: %v", provider, err))
+		pkgLog().Debug(fmt.Sprintf("Auxiliary client: could not select pool entry for %s: %v", provider, err))
 		return true, nil
 	}
 	if !found {
@@ -71,7 +70,7 @@ func auxPeekPoolEntry(ctx context.Context, provider string, pool *Pool) *PooledC
 		}
 	})
 	if err != nil {
-		slog.Debug(fmt.Sprintf("Auxiliary client: could not peek pool entry for %s: %v", provider, err))
+		pkgLog().Debug(fmt.Sprintf("Auxiliary client: could not peek pool entry for %s: %v", provider, err))
 		return nil
 	}
 	if !found {
@@ -92,15 +91,10 @@ func auxPoolRuntimeAPIKey(entry *PooledCredential) string {
 	return pyStripSpace(key)
 }
 
-// Runtime base URL of a pool entry with the Nous operator override first and the fallback last, trailing slashes removed
+// Runtime base URL of a pool entry with the fallback last, trailing slashes removed
 func auxPoolRuntimeBaseURL(ctx context.Context, entry *PooledCredential, fallback string) string {
 	if entry == nil {
 		return strings.TrimRight(pyStripSpace(fallback), "/")
-	}
-	if entry.Provider == "nous" {
-		if envURL := nousInferenceEnvOverrideIn(modelsPoolEnv(ctx)); envURL != "" {
-			return envURL
-		}
 	}
 	url := entry.RuntimeBaseURL()
 	for _, next := range []string{entry.InferenceBaseURL, entry.BaseURL, fallback} {
@@ -130,19 +124,6 @@ func auxIsAnthropicCompatibleHost(url string) bool {
 	}
 	path := strings.ToLower(strings.TrimRight(parsed.path, "/"))
 	return strings.HasSuffix(path, "/anthropic") || strings.HasSuffix(path, "/anthropic/v1")
-}
-
-// Minimum remaining Nous agent key lifetime in seconds, never below 60 and 1800 for an unset or invalid value
-func auxNousMinKeyTTLSeconds() int64 {
-	raw, ok := os.LookupEnv("ICEBATH_NOUS_MIN_KEY_TTL_SECONDS")
-	if !ok {
-		raw = "1800"
-	}
-	n, valid := pyIntText(raw)
-	if !valid {
-		return 1800
-	}
-	return max(60, n)
 }
 
 // Secret reader the scoped key lookup goes through, swapped by tests for a failing scope resolver

@@ -176,7 +176,7 @@ func vaultCfg(ctx context.Context) (map[string]any, error) {
 	return map[string]any{}, nil
 }
 
-// Config section reader of the vault, the module attribute hermes tests patch
+// Config section reader of the vault, the module attribute tests patch
 var vaultCfgFn = vaultCfg
 
 // Identity and constructor of one external password manager backend
@@ -185,7 +185,7 @@ type externalLoginBackend struct {
 	new                       func(ctx context.Context, cfg map[string]any) LoginBackend
 }
 
-// The external manager backends in their hermes order, 1Password then Bitwarden
+// The external manager backends in their order, 1Password then Bitwarden
 func externalBackendClasses() []externalLoginBackend {
 	return []externalLoginBackend{
 		{name: "onepassword", prefix: "op:", displayName: "1Password", new: func(ctx context.Context, cfg map[string]any) LoginBackend {
@@ -231,10 +231,10 @@ func IsLoginBackendEnabled(ctx context.Context, name string) (bool, error) {
 	return isLoginBackendInstalledFn(ctx, name)
 }
 
-// Install probe of an external manager, the module attribute hermes tests patch
+// Install probe of an external manager, the module attribute tests patch
 var isLoginBackendInstalledFn = IsLoginBackendInstalled
 
-// Enablement reader of an external manager, the module attribute hermes tests patch
+// Enablement reader of an external manager, the module attribute tests patch
 var isLoginBackendEnabledFn = IsLoginBackendEnabled
 
 // Local first, then every detected external manager the user has not turned off, then the enabled plugin backends
@@ -261,7 +261,7 @@ func EnabledLoginBackends(ctx context.Context) ([]LoginBackend, error) {
 	return append(out, EnabledPluginLoginBackends(ctx, cfg)...), nil
 }
 
-// Enabled backend lister, the module attribute hermes tests patch
+// Enabled backend lister, the module attribute tests patch
 var enabledLoginBackendsFn = EnabledLoginBackends
 
 // The enabled backend whose namespace a handle carries, nil when none owns it

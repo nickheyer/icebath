@@ -54,7 +54,7 @@ func TestOverlayProviderRowMergesConfiguredModels(t *testing.T) {
 	rows := mustListProviders(t, ctx, AuthenticatedProvidersOptions{CurrentProvider: "azure-foundry", MaxModels: intPtr(50),
 		UserProviders: map[string]any{"azure-foundry": map[string]any{"models": []any{"gpt-5.5", "shared", "gpt-4.1-mini"}}}})
 	row := pickerRow(rows, "azure-foundry")
-	if row == nil || row["source"] != "hermes" {
+	if row == nil || row["source"] != "icebath" {
 		t.Fatalf("row %v", row)
 	}
 	if !reflect.DeepEqual(rowModels(row), []string{"gpt-5.5", "shared", "gpt-4.1-mini", "gpt-5.6-sol"}) || row["total_models"] != 4 {

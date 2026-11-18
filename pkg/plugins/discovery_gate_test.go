@@ -37,8 +37,8 @@ func TestPluginInBothListsWarnsInsteadOfSilentDebugSkip(t *testing.T) {
 	}
 }
 
-// Each refusing gate outcome logs the hermes gate_manifest message at its level
-func TestGateManifestLogsTheHermesMessages(t *testing.T) {
+// Each refusing gate outcome logs the gate_manifest message at its level
+func TestGateManifestLogsTheIcebathMessages(t *testing.T) {
 	h := t.TempDir()
 	target := filepath.Join(h, "plugins", "later-killed")
 	for path, v := range map[string]any{

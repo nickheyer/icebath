@@ -137,10 +137,8 @@ func imageErrorResponse(errText, errorType, provider, model, prompt, aspectRatio
 	}
 }
 
-var imageGenLog = slog.Default().With("logger", "agent.image_gen_registry")
-
 var imageGenRegistry = provider.NewProviderRegistry[ImageGenProvider](provider.ProviderRegistryOptions{
-	Label: "Image gen", Logger: imageGenLog,
+	Label: "Image gen", Logger: pkgLog(),
 })
 
 // ResetImageGenRegistry empties the image generation registry, the registry's _reset_for_tests
@@ -199,16 +197,16 @@ func envContext(ctx context.Context, env *tools.Env) context.Context {
 // Configured provider even when unavailable, else the single available one, else an available fal
 func GetActiveImageGenProvider(ctx context.Context, env *tools.Env) ImageGenProvider {
 	ctx = envContext(ctx, env)
-	configured := provider.ConfiguredProviderName(ctx, "image_gen", imageGenLog)
+	configured := provider.ConfiguredProviderName(ctx, "image_gen", pkgLog())
 	snapshot := imageGenRegistry.Merged(ctx, "")
 	if configured != "" {
 		if p, ok := snapshot.Get(configured); ok && p != nil {
 			return p
 		}
-		imageGenLog.Debug(fmt.Sprintf("image_gen.provider='%s' configured but not registered; falling back", configured))
+		pkgLog().Debug(fmt.Sprintf("image_gen.provider='%s' configured but not registered; falling back", configured))
 	}
 	available := func(p ImageGenProvider) bool {
-		return provider.IsAvailableSafe(scopedImageGenProvider{p, ctx}, imageGenLog, "image_gen provider %s.is_available() raised %s", slog.LevelDebug, false)
+		return provider.IsAvailableSafe(scopedImageGenProvider{p, ctx}, pkgLog(), "image_gen provider %s.is_available() raised %s", slog.LevelDebug, false)
 	}
 	var avail []ImageGenProvider
 	for _, p := range snapshot.Values() {

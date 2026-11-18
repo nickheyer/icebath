@@ -12,7 +12,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
-	"github.com/nickheyer/icebath/pkg/observability"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tools"
@@ -38,7 +37,7 @@ var KanbanBudgetExhaustedHook func(ctx context.Context, kanbanTask string, apiCa
 // Records a timed out terminal outcome for a kanban worker whose iteration budget ran out
 var recordKanbanBudgetExhausted = func(ctx context.Context, kanbanTask string, apiCallCount, maxIterations int) {
 	if err := KanbanBudgetExhaustedHook(ctx, kanbanTask, apiCallCount, maxIterations); err != nil {
-		conversationLoopLog().Warn(fmt.Sprintf("Failed to record budget-exhausted failure for task %s", kanbanTask), "error", err)
+		pkgLog().Warn(fmt.Sprintf("Failed to record budget-exhausted failure for task %s", kanbanTask), "error", err)
 	}
 }
 
@@ -102,7 +101,7 @@ func guardedCleanup(label string, fn func() error, errs *[]string) {
 	}()
 	if err != nil {
 		*errs = append(*errs, fmt.Sprintf("%s: %s", label, err))
-		conversationLoopLog().Error(fmt.Sprintf("finalize_turn: _%s failed: %s", label, err))
+		pkgLog().Error(fmt.Sprintf("finalize_turn: _%s failed: %s", label, err))
 	}
 }
 
@@ -263,7 +262,7 @@ func microCompactAfterTurn(ctx context.Context, a *AIAgent, messages *[]*state.M
 			if isUserInterruptPanic(r) {
 				panic(r)
 			}
-			conversationLoopLog().Info(fmt.Sprintf("Micro-compaction failed: %v", r))
+			pkgLog().Info(fmt.Sprintf("Micro-compaction failed: %v", r))
 		}
 	}()
 	c, ok := a.contextCompressor.(*ContextCompressor)
@@ -274,7 +273,7 @@ func microCompactAfterTurn(ctx context.Context, a *AIAgent, messages *[]*state.M
 	rows := messagesToRows(*messages)
 	compacted, err := c.microCompact(rows, compactionTurnSessionID(a))
 	if err != nil {
-		conversationLoopLog().Info(fmt.Sprintf("Micro-compaction failed: %v", err))
+		pkgLog().Info(fmt.Sprintf("Micro-compaction failed: %v", err))
 		return
 	}
 	if c.flushScanCursorInvalidated {
@@ -289,7 +288,7 @@ func microCompactAfterTurn(ctx context.Context, a *AIAgent, messages *[]*state.M
 		}
 	}
 	if before != len(*messages) {
-		conversationLoopLog().Info(fmt.Sprintf("Micro-compaction: %d -> %d messages", before, len(*messages)))
+		pkgLog().Info(fmt.Sprintf("Micro-compaction: %d -> %d messages", before, len(*messages)))
 	}
 }
 
@@ -312,7 +311,7 @@ func logTurnExit(a *AIAgent, messages []*state.Message, final any, apiCallCount 
 	func() {
 		defer func() {
 			if r := recover(); r != nil {
-				conversationLoopLog().Debug("turn-end activity stamp failed", "error", fmt.Sprint(r))
+				pkgLog().Debug("turn-end activity stamp failed", "error", fmt.Sprint(r))
 			}
 		}()
 		a.TouchActivity("turn end logged")
@@ -351,17 +350,17 @@ func logTurnExit(a *AIAgent, messages []*state.Message, final any, apiCallCount 
 		diag += " origin=" + a.turnOrigin
 	}
 	if lastRole == "tool" && !interrupted {
-		conversationLoopLog().Warn("Turn ended with pending tool result (agent may appear stuck). " + diag + " last_tool=" + lastTool)
+		pkgLog().Warn("Turn ended with pending tool result (agent may appear stuck). " + diag + " last_tool=" + lastTool)
 		return
 	}
-	conversationLoopLog().Info(diag)
+	pkgLog().Info(diag)
 }
 
 // Appends the verifier advisory when failed file writes were never superseded by a successful write
 func appendFileMutationFooter(ctx context.Context, a *AIAgent, final any) any {
 	defer func() {
 		if r := recover(); r != nil {
-			conversationLoopLog().Debug(fmt.Sprintf("file-mutation verifier footer failed: %v", r))
+			pkgLog().Debug(fmt.Sprintf("file-mutation verifier footer failed: %v", r))
 		}
 	}()
 	failed := a.turnFailedFileMutations
@@ -375,7 +374,7 @@ func appendFileMutationFooter(ctx context.Context, a *AIAgent, final any) any {
 		return final
 	}
 	if !ok {
-		conversationLoopLog().Debug(fmt.Sprintf("file-mutation verifier footer failed: %T has no rstrip", final))
+		pkgLog().Debug(fmt.Sprintf("file-mutation verifier footer failed: %T has no rstrip", final))
 		return final
 	}
 	return pystr.Rstrip(text) + "\n\n" + footer
@@ -385,7 +384,7 @@ func appendFileMutationFooter(ctx context.Context, a *AIAgent, final any) any {
 func explainAbnormalExit(ctx context.Context, a *AIAgent, final, exitReason any, preserved bool) any {
 	defer func() {
 		if r := recover(); r != nil {
-			conversationLoopLog().Debug(fmt.Sprintf("turn-completion explainer failed: %v", r))
+			pkgLog().Debug(fmt.Sprintf("turn-completion explainer failed: %v", r))
 		}
 	}()
 	if !a.turnCompletionExplainerEnabled(ctx) {
@@ -395,7 +394,7 @@ func explainAbnormalExit(ctx context.Context, a *AIAgent, final, exitReason any,
 	if pyTruthy(final) {
 		text, ok := final.(string)
 		if !ok {
-			conversationLoopLog().Debug(fmt.Sprintf("turn-completion explainer failed: %T has no strip", final))
+			pkgLog().Debug(fmt.Sprintf("turn-completion explainer failed: %T has no strip", final))
 			return final
 		}
 		stripped = pystr.Strip(text)
@@ -453,7 +452,7 @@ func applyOutputHooks(ctx context.Context, a *AIAgent, final string, platform, t
 	token, err := issueSideQuestionToken(ctx, a, rows, turnID)
 	if err != nil {
 		token = nil
-		conversationLoopLog().Warn("side question lease failed", "error", err)
+		pkgLog().Warn("side question lease failed", "error", err)
 	}
 	invokeHookSafely(ctx, "post_llm_call", map[string]any{
 		"session_id": a.sessionID, "task_id": taskID, "turn_id": turnID, "user_message": originalUserMessage,
@@ -551,7 +550,6 @@ func finalizeTurn(ctx context.Context, a *AIAgent, s *LoopState) (map[string]any
 		(apiCalls < a.maxIterations || strings.HasPrefix(pyrepr.Str(exitReason), "text_response("))
 
 	rollbackInterruptedPreflightDisplay(a, interrupted)
-	observability.FinishTurn(ctx, a, exitReason, final, interrupted, failed)
 
 	var cleanupErrors []string
 	guardedCleanup("start_deferred_title_upgrade", func() error { startDeferredTitleUpgrade(a); return nil }, &cleanupErrors)

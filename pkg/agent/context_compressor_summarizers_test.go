@@ -186,7 +186,7 @@ func TestSummarizeToolResultOutcome(t *testing.T) {
 		want          string
 	}{
 		{"read_file", obj("path", "gone.py", "offset", 1), obj("error", "File not found: gone.py"), "[read_file] read gone.py from line 1 (36 chars) FAILED: File not found: gone.py"},
-		{"web_search", obj("query", "hermes"), obj("error", "rate limited"), "[web_search] query='hermes' (25 chars result) FAILED: rate limited"},
+		{"web_search", obj("query", "icebath"), obj("error", "rate limited"), "[web_search] query='icebath' (25 chars result) FAILED: rate limited"},
 		{"memory", obj("action", "add", "target", "a note"), obj("error", "unknown action"), "[memory] add on a note FAILED: unknown action"},
 		{"text_to_speech", obj(), obj("error", "no voice available"), "[text_to_speech] generated audio (31 chars) FAILED: no voice available"},
 		{"cronjob_manage", obj("action", "create"), obj("success", false), "[cronjob] create FAILED"},
@@ -195,7 +195,7 @@ func TestSummarizeToolResultOutcome(t *testing.T) {
 		{"some_mcp_tool", obj("a", 1), obj("error", "boom"), "[some_mcp_tool] a=1 (17 chars result) FAILED: boom"},
 		{"delegate_task", obj("goal", "ship it"), obj("error", "Unknown action"), "[delegate_task] 'ship it' (27 chars result) FAILED: Unknown action"},
 		{"write_file", obj("path", "a.md", "content", "line 1\nline 2"), obj("error", "Refusing to overwrite a.md: stale", "stale_write_blocked", true), "[write_file] a.md FAILED: Refusing to overwrite a.md: stale"},
-		{"web_search", obj("query", "hermes"), obj("results", []any{obj("title", "hit")}), "[web_search] query='hermes' (31 chars result)"},
+		{"web_search", obj("query", "icebath"), obj("results", []any{obj("title", "hit")}), "[web_search] query='icebath' (31 chars result)"},
 		{"write_file", obj("path", "a.md", "content", "line 1\nline 2"), obj("bytes_written", 13), "[write_file] wrote to a.md (2 lines)"},
 		{"text_to_speech", obj(), obj("success", true, "path", "/tmp/out.wav"), "[text_to_speech] generated audio (41 chars)"},
 		{"cronjob_manage", obj("action", "poll"), obj("success", true, "job", obj("error", "last run failed", "execution_success", true)), "[cronjob] poll"},
@@ -385,9 +385,9 @@ func TestMemoryProviderSectionAndToday(t *testing.T) {
 	if !strings.Contains(got, "<memory-provider-context>\n\"likes \\u003cb\\u003e\\u0026\\u003c/b\\u003e\"\n</memory-provider-context>") {
 		t.Fatalf("got %q", got)
 	}
-	saved := hermesNow
-	defer func() { hermesNow = saved }()
-	hermesNow = func(context.Context) time.Time { return time.Date(2026, 3, 7, 23, 59, 0, 0, time.UTC) }
+	saved := icebathNow
+	defer func() { icebathNow = saved }()
+	icebathNow = func(context.Context) time.Time { return time.Date(2026, 3, 7, 23, 59, 0, 0, time.UTC) }
 	if day := todayForPrompt(context.Background()); day != "2026-03-07" {
 		t.Fatalf("got %q", day)
 	}
@@ -464,7 +464,7 @@ func TestUserOriginatedTurnViews(t *testing.T) {
 	}
 }
 
-func TestNewContextCompressorAppliesHermesDefaults(t *testing.T) {
+func TestNewContextCompressorAppliesDefaults(t *testing.T) {
 	o := DefaultContextCompressorOptions("test/model")
 	o.MaxTokens, o.ThresholdTokensCap, o.TailMode, o.SummaryTargetRatio, o.ProactivePruneMinResultChars = "abc", 5000, "bogus", 0.95, 50
 	c := NewContextCompressor(context.Background(), o)

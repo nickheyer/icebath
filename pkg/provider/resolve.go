@@ -33,7 +33,7 @@ type Overrides struct {
 	ConfigError error
 }
 
-// Resolve walks the hermes ladder from explicit request through config, env keys, pooled logins, and auto detection
+// Walks the ladder from explicit request through config, env keys, pooled logins, and auto detection
 func Resolve(ctx context.Context, cfg config.Tree, secrets *config.Secrets, home string, creds CredentialSource, over Overrides) (Route, error) {
 	return resolveRuntimeLadder(ctx, cfg, secrets, home, creds, over)
 }

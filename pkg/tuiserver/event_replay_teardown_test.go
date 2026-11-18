@@ -6,7 +6,7 @@ import (
 	"testing"
 
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/tuigateway"
+	"github.com/nickheyer/icebath/pkg/tuihost"
 )
 
 // Event frame of one session as write_json stamps it
@@ -16,50 +16,50 @@ func replayFrame(sid string) *pyjson.Object {
 }
 
 // Clean replay state for one case and a finalizer standing in for the full teardown
-func swapTeardown(t *testing.T, fn func(context.Context, *tuigateway.Session, string)) {
+func swapTeardown(t *testing.T, fn func(context.Context, *tuihost.Session, string)) {
 	t.Helper()
-	tuigateway.ResetReplayState()
+	tuihost.ResetReplayState()
 	prev := teardownSessionFn
 	teardownSessionFn = fn
 	t.Cleanup(func() {
 		teardownSessionFn = prev
-		tuigateway.ResetReplayState()
+		tuihost.ResetReplayState()
 	})
 }
 
 func TestSessionTeardownReleasesTheReplayRing(t *testing.T) {
-	swapTeardown(t, func(context.Context, *tuigateway.Session, string) {})
+	swapTeardown(t, func(context.Context, *tuihost.Session, string) {})
 	for range 3 {
-		tuigateway.StampEvent(replayFrame("closed-sid"))
+		tuihost.StampEvent(replayFrame("closed-sid"))
 	}
-	tuigateway.StampEvent(replayFrame("live-sid"))
-	if !teardownPoppedSession(context.Background(), tuigateway.NewSession(map[string]any{"_sid": "closed-sid"}), "tui_shutdown") {
+	tuihost.StampEvent(replayFrame("live-sid"))
+	if !teardownPoppedSession(context.Background(), tuihost.NewSession(map[string]any{"_sid": "closed-sid"}), "tui_shutdown") {
 		t.Fatal("teardown reported no session")
 	}
-	if got := tuigateway.EventsSince("closed-sid", 0); len(got) != 0 {
+	if got := tuihost.EventsSince("closed-sid", 0); len(got) != 0 {
 		t.Fatalf("closed ring still holds %v", got)
 	}
-	if !tuigateway.IsTruncated("closed-sid", 0) {
+	if !tuihost.IsTruncated("closed-sid", 0) {
 		t.Fatal("a client at seq 0 must refetch the closed session")
 	}
-	if got := tuigateway.EventsSince("live-sid", 0); len(got) != 1 {
+	if got := tuihost.EventsSince("live-sid", 0); len(got) != 1 {
 		t.Fatalf("live ring holds %v", got)
 	}
 }
 
 func TestARaisingTeardownStillReleasesTheReplayRing(t *testing.T) {
 	boom := errors.New("finalize failed")
-	swapTeardown(t, func(context.Context, *tuigateway.Session, string) { panic(boom) })
-	tuigateway.StampEvent(replayFrame("failed-sid"))
+	swapTeardown(t, func(context.Context, *tuihost.Session, string) { panic(boom) })
+	tuihost.StampEvent(replayFrame("failed-sid"))
 	func() {
 		defer func() {
 			if failure := recover(); failure != boom {
 				t.Fatalf("teardown raised %v", failure)
 			}
 		}()
-		teardownPoppedSession(context.Background(), tuigateway.NewSession(map[string]any{"_sid": "failed-sid"}), "tui_shutdown")
+		teardownPoppedSession(context.Background(), tuihost.NewSession(map[string]any{"_sid": "failed-sid"}), "tui_shutdown")
 	}()
-	if got := tuigateway.EventsSince("failed-sid", 0); len(got) != 0 {
+	if got := tuihost.EventsSince("failed-sid", 0); len(got) != 0 {
 		t.Fatalf("failed ring still holds %v", got)
 	}
 }

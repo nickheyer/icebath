@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"log/slog"
 	"net"
 	"net/http"
 	"net/url"
@@ -39,8 +38,6 @@ var (
 	malformedSleepURLLogged   bool
 	malformedSleepURLLoggedMu sync.Mutex
 )
-
-func scaleToZeroLog() *slog.Logger { return slog.Default().With("logger", "gateway.scale_to_zero") }
 
 // Stripped value of key from env, the process environment when env is nil
 func scaleToZeroEnvStr(env map[string]string, key string) string {
@@ -113,7 +110,7 @@ func BrokeredSleepURL(env map[string]string) *string {
 		malformedSleepURLLogged = true
 		malformedSleepURLLoggedMu.Unlock()
 		if first {
-			scaleToZeroLog().Warn(fmt.Sprintf("scale-to-zero: ignoring malformed %s (want an absolute https URL)", SleepURLEnv))
+			pkgLog().Warn(fmt.Sprintf("scale-to-zero: ignoring malformed %s (want an absolute https URL)", SleepURLEnv))
 		}
 		return nil
 	}
@@ -134,12 +131,12 @@ func RequestBrokeredSuspend(ctx context.Context, rawURL string, timeout float64,
 	defer cancel()
 	req, err := http.NewRequestWithContext(reqCtx, http.MethodPost, rawURL, strings.NewReader(""))
 	if err != nil {
-		scaleToZeroLog().Warn(fmt.Sprintf("scale-to-zero: brokered suspend request failed: %v", err))
+		pkgLog().Warn(fmt.Sprintf("scale-to-zero: brokered suspend request failed: %v", err))
 		return false
 	}
 	resp, err := client.Do(req)
 	if err != nil {
-		scaleToZeroLog().Warn(fmt.Sprintf("scale-to-zero: brokered suspend request failed: %v", err))
+		pkgLog().Warn(fmt.Sprintf("scale-to-zero: brokered suspend request failed: %v", err))
 		return false
 	}
 	_, _ = io.Copy(io.Discard, resp.Body)
@@ -147,14 +144,14 @@ func RequestBrokeredSuspend(ctx context.Context, rawURL string, timeout float64,
 	status := resp.StatusCode
 	if status >= 400 {
 		reason := strings.TrimPrefix(resp.Status, strconv.Itoa(status)+" ")
-		scaleToZeroLog().Warn(fmt.Sprintf("scale-to-zero: brokered suspend rejected: %d %s", status, reason))
+		pkgLog().Warn(fmt.Sprintf("scale-to-zero: brokered suspend rejected: %d %s", status, reason))
 		return false
 	}
 	ok := status >= 200 && status < 300
 	if ok {
-		scaleToZeroLog().Info(fmt.Sprintf("scale-to-zero: machine suspend accepted by NAS (%d)", status))
+		pkgLog().Info(fmt.Sprintf("scale-to-zero: machine suspend accepted by NAS (%d)", status))
 	} else {
-		scaleToZeroLog().Warn(fmt.Sprintf("scale-to-zero: brokered suspend returned %d", status))
+		pkgLog().Warn(fmt.Sprintf("scale-to-zero: brokered suspend returned %d", status))
 	}
 	return ok
 }
@@ -163,7 +160,7 @@ func RequestBrokeredSuspend(ctx context.Context, rawURL string, timeout float64,
 func SuspendSelf(env map[string]string, socketPath string, timeout float64) bool {
 	app, machineID := scaleToZeroEnvStr(env, FlyAppNameEnv), scaleToZeroEnvStr(env, FlyMachineIDEnv)
 	if app == "" || machineID == "" {
-		scaleToZeroLog().Warn("scale-to-zero: suspend_self called without Fly machine identity")
+		pkgLog().Warn("scale-to-zero: suspend_self called without Fly machine identity")
 		return false
 	}
 	if socketPath == "" {
@@ -200,7 +197,7 @@ func SuspendSelf(env map[string]string, socketPath string, timeout float64) bool
 		return out, nil
 	}()
 	if err != nil {
-		scaleToZeroLog().Warn(fmt.Sprintf("scale-to-zero: flaps suspend request failed: %v", err))
+		pkgLog().Warn(fmt.Sprintf("scale-to-zero: flaps suspend request failed: %v", err))
 		return false
 	}
 	statusLine, _, _ := strings.Cut(string(response), "\r\n")
@@ -213,7 +210,7 @@ func SuspendSelf(env map[string]string, socketPath string, timeout float64) bool
 		}
 	}
 	if ok {
-		scaleToZeroLog().Info(fmt.Sprintf("scale-to-zero: machine suspend accepted by flaps (%s)", statusLine))
+		pkgLog().Info(fmt.Sprintf("scale-to-zero: machine suspend accepted by flaps (%s)", statusLine))
 		return true
 	}
 	body := response
@@ -224,6 +221,6 @@ func SuspendSelf(env map[string]string, socketPath string, timeout float64) bool
 		body = body[:scaleToZeroRejectedBodyMaxBytes]
 	}
 	dumped, _ := pyjson.Dumps(pystr.DecodeUTF8Replace(body))
-	scaleToZeroLog().Warn(fmt.Sprintf("scale-to-zero: flaps suspend rejected: %s %s", statusLine, pystr.Slice(dumped, 0, scaleToZeroRejectedBodyMaxBytes)))
+	pkgLog().Warn(fmt.Sprintf("scale-to-zero: flaps suspend rejected: %s %s", statusLine, pystr.Slice(dumped, 0, scaleToZeroRejectedBodyMaxBytes)))
 	return false
 }

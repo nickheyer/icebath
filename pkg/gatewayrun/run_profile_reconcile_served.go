@@ -22,7 +22,7 @@ func forEachServedProfile(ctx context.Context, r *GatewayRunner, body func(ctx c
 		func() {
 			defer func() {
 				if rec := recover(); rec != nil {
-					runLog().Debug(fmt.Sprintf("Housekeeping for profile %s skipped: %v", p.Name, rec))
+					pkgLog().Debug(fmt.Sprintf("Housekeeping for profile %s skipped: %v", p.Name, rec))
 				}
 			}()
 			// A profile unserved since the listing keeps its home untouched, and its release waits for this pass
@@ -32,7 +32,7 @@ func forEachServedProfile(ctx context.Context, r *GatewayRunner, body func(ctx c
 			}
 			defer leave()
 			if err := body(gateway.ProfileRuntimeScope(ctx, p.Home, true), p.Name); err != nil {
-				runLog().Debug(fmt.Sprintf("Housekeeping for profile %s skipped: %s", p.Name, pyrepr.ExceptionMessage(err)))
+				pkgLog().Debug(fmt.Sprintf("Housekeeping for profile %s skipped: %s", p.Name, pyrepr.ExceptionMessage(err)))
 			}
 		}()
 	}

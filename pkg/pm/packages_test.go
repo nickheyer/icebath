@@ -256,7 +256,7 @@ func TestCatPythonBionicRowMatchesSupplier(t *testing.T) {
 }
 
 func TestCatNodeBionicRowMatchesSupplier(t *testing.T) {
-	catAssertPinnedBionicRow(t, "node", `nodejs_(?P<ver>[0-9.]+)-1_aarch64\.deb$`)
+	catAssertPinnedBionicRow(t, "node", `nodejs_(?P<ver>[0-9.]+(?:-[0-9]+)?)_aarch64\.deb$`)
 }
 
 func TestCatUvBionicRowMatchesSupplier(t *testing.T) {
@@ -546,7 +546,7 @@ func TestCatCuaDriverProbeNeverMintsTelemetryState(t *testing.T) {
 		t.Fatalf("probe env = %v", env)
 	}
 	catSwap(t, &CuaDriverChildEnv, func() (map[string]string, error) { return nil, errors.New("config unreadable") })
-	if env, err := newCuaDriver().ProbeEnv(); err != nil || env["CUA_DRIVER_RS_TELEMETRY_ENABLED"] != "0" {
+	if env, err := newCuaDriver().ProbeEnv(); err != nil || env["CUA_DRIVER_RS_TELEMETRY_ENABLED"] != "false" || env["DO_NOT_TRACK"] != "1" {
 		t.Fatalf("failed child env kept telemetry %v, %v", env, err)
 	}
 }
@@ -588,7 +588,7 @@ func TestArm64WindowsRipgrepStagesPythonsVCRuntimeBesideRg(t *testing.T) {
 }
 
 func TestPythonInstallsBeforeRipgrepSoStagingCanReadIt(t *testing.T) {
-	order, err := Walk([]string{"ripgrep"})
+	order, err := WalkTarget([]string{"ripgrep"}, "win32-arm64")
 	if err != nil {
 		t.Fatal(err)
 	}

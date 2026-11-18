@@ -3,7 +3,6 @@ package email
 import (
 	"context"
 	"fmt"
-	"log/slog"
 	"strings"
 
 	"github.com/dlclark/regexp2/v2"
@@ -431,7 +430,7 @@ func extractAttachments(ctx context.Context, msg *pyemail.Message, skipAttachmen
 		if ext := pystr.Lower(pypath.PathSuffix(filename)); imageExts[ext] {
 			path, err := mediacache.CacheImageFromBytes(ctx, home.Dir(ctx), payload, ext)
 			if _, invalid := err.(*mediacache.ValueError); invalid {
-				slog.Debug(fmt.Sprintf("Skipping non-image attachment %s (invalid magic bytes)", filename))
+				pkgLog().Debug(fmt.Sprintf("Skipping non-image attachment %s (invalid magic bytes)", filename))
 				continue
 			}
 			if err != nil {

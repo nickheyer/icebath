@@ -2,7 +2,6 @@ package agent
 
 import (
 	"context"
-	"fmt"
 	"strings"
 
 	"github.com/nickheyer/icebath/pkg/provider"
@@ -26,14 +25,6 @@ func (a *AIAgent) swapCredential(ctx context.Context, entry provider.PooledCrede
 		runtimeBase = provider.NormalizeActualBaseURL(runtimeBase)
 	}
 	strippedBase := strings.TrimRight(runtimeBase, "/")
-	if !provider.RouteCanServeModel(a.provider, strippedBase, a.model) {
-		id := entry.ID
-		if id == "" {
-			id = "?"
-		}
-		clientLifecycleLog().Info(fmt.Sprintf("Credential %s skipped: its route cannot serve model %s", id, a.model))
-		return false, nil
-	}
 	if actualRoute {
 		a.apiMode = "chat_completions"
 		clear(a.transportCache)

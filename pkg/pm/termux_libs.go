@@ -14,6 +14,7 @@ import (
 	"strings"
 	"unicode/utf8"
 
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 
@@ -131,18 +132,6 @@ func poolPackage(fields map[string]string) (PoolPackage, bool) {
 		return PoolPackage{}, false
 	}
 	return PoolPackage{Name: name, Version: fields["Version"], URL: TermuxPool + filename, SHA256: sha}, true
-}
-
-// Fetches and parses the pool's current package index
-func TermuxIndex() (map[string]PoolPackage, error) { return termuxIndex() }
-
-// Index fetch behind TermuxIndex, the termux_libs index a test replaces
-var termuxIndex = func() (map[string]PoolPackage, error) {
-	text, err := GetText(TermuxIndexURL, nil)
-	if err != nil {
-		return nil, err
-	}
-	return ParseTermuxIndex(text), nil
 }
 
 // Archive hasher repair uses without a verifier, the termux_libs hash_url a test replaces
@@ -292,17 +281,13 @@ type Retired struct {
 	Replacement *PoolPackage
 }
 
-// Python error for subscripting a decoded value with a string key it does not hold
+// Failure reading key from a decoded value that lacks it or is no mapping, classed for the worker wire
 func pySubscriptError(v any, key string) error {
 	switch v.(type) {
 	case *OrderedObject, map[string]any:
-		return fmt.Errorf("KeyError: %s", pyrepr.StrRepr(key))
-	case string:
-		return errors.New("TypeError: string indices must be integers, not 'str'")
-	case []any:
-		return errors.New("TypeError: list indices must be integers or slices, not str")
+		return &PyError{Class: "KeyError", Message: "the table entry has no " + key}
 	}
-	return fmt.Errorf("TypeError: '%s' object is not subscriptable", pyrepr.TypeName(v))
+	return &PyError{Class: "TypeError", Message: fmt.Sprintf("cannot read %s from %s, expected a mapping", key, errchain.Kind(v))}
 }
 
 // Field of an ordered row the way Python subscripting reads it, raising for a missing key or non dict
@@ -330,7 +315,7 @@ func TermuxPins(table *OrderedObject, lockfile *Lockfile) ([]Pin, error) {
 	if libsValue, _ := table.Get("libs"); truthyOrdered(libsValue) {
 		libs, ok := libsValue.(*OrderedObject)
 		if !ok {
-			return nil, fmt.Errorf("AttributeError: '%s' object has no attribute 'items'", pyrepr.TypeName(libsValue))
+			return nil, &PyError{Class: "AttributeError", Message: fmt.Sprintf("the libs table is %s, expected a mapping", errchain.Kind(libsValue))}
 		}
 		for _, name := range libs.Keys {
 			u, err := orderedField(libs.Values[name], "url")
@@ -449,7 +434,7 @@ func repointPin(table *OrderedObject, lockfile *Lockfile, entry Retired) error {
 		artifacts := lockfile.PinnedArtifacts(name)
 		rows, ok := artifacts[target]
 		if !ok {
-			return fmt.Errorf("KeyError: %s", pyrepr.StrRepr(target))
+			return &PyError{Class: "KeyError", Message: fmt.Sprintf("the lockfile pins no %s artifacts for target %s", name, target)}
 		}
 		pinPkg, err := PackageOf(pin.URL)
 		if err != nil {
@@ -458,7 +443,7 @@ func repointPin(table *OrderedObject, lockfile *Lockfile, entry Retired) error {
 		for _, row := range artifactRows(rows) {
 			m, ok := row.(map[string]any)
 			if !ok {
-				return fmt.Errorf("AttributeError: '%s' object has no attribute 'get'", pyrepr.TypeName(row))
+				return &PyError{Class: "AttributeError", Message: fmt.Sprintf("a pinned artifact row is %s, expected a mapping", errchain.Kind(row))}
 			}
 			u, _ := m["url"].(string)
 			rowPkg, err := PackageOf(u)
@@ -487,10 +472,7 @@ func repointPin(table *OrderedObject, lockfile *Lockfile, entry Retired) error {
 	}
 	obj, ok := row.(*OrderedObject)
 	if !ok {
-		if _, isList := row.([]any); isList {
-			return errors.New("TypeError: list indices must be integers or slices, not str")
-		}
-		return fmt.Errorf("TypeError: '%s' object does not support item assignment", pyrepr.TypeName(row))
+		return &PyError{Class: "TypeError", Message: fmt.Sprintf("the %s pin entry is %s, expected a mapping", pin.Scope, errchain.Kind(row))}
 	}
 	obj.Set("url", replacement.URL)
 	obj.Set("sha256", replacement.SHA256)

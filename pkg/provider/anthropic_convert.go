@@ -64,6 +64,15 @@ func deepCopyAny(v any) any {
 			out[k] = deepCopyAny(val)
 		}
 		return out
+	case *pyjson.Object:
+		if t == nil {
+			return v
+		}
+		out := pyjson.NewObject()
+		for _, k := range t.Keys {
+			out.Set(k, deepCopyAny(t.Vals[k]))
+		}
+		return out
 	case []any:
 		out := make([]any, len(t))
 		for i, val := range t {

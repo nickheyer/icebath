@@ -3,7 +3,6 @@ package state
 import (
 	"context"
 	"fmt"
-	"log/slog"
 	"math"
 	"math/big"
 	"slices"
@@ -179,16 +178,16 @@ func (s *sessionSchema) deferStaleFTSForHolders(ctx context.Context, conn SQLite
 		for i, pid := range holderPIDs {
 			named[i] = fmt.Sprintf("pid %d: %s", pid, holderCmdline(pid))
 		}
-		slog.Error(fmt.Sprintf("state.db FTS repair has been blocked by the same holder(s) for %s deferrals over %s min "+
+		pkgLog().Error(fmt.Sprintf("state.db FTS repair has been blocked by the same holder(s) for %s deferrals over %s min "+
 			"(%s); waiting is futile. Stop ONLY the other holder(s) — this process keeps running and its "+
 			"own retry admits the rebuild within %ss of the holder leaving. `icebath doctor` shows this.",
 			holdersAttempts.String(), pyFixed0((now-holdersSince)/60.0), strings.Join(named, ", "), pyFixed0(ftsStaleRetrySeconds)))
 	} else if escalate {
-		slog.Error(fmt.Sprintf("state.db FTS repair remains blocked after %s deferrals by holder(s) %s. Stop the listed "+
+		pkgLog().Error(fmt.Sprintf("state.db FTS repair remains blocked after %s deferrals by holder(s) %s. Stop the listed "+
 			"processes (this process's own retry then rebuilds), or run `icebath sessions optimize-storage` "+
 			"with every holder stopped. `icebath doctor` reports this degraded state.", attempts.String(), holdersRepr(foreignHolders)))
 	}
-	slog.Warn(fmt.Sprintf("Deferred stale state.db FTS rebuild while foreign processes "+
+	pkgLog().Warn(fmt.Sprintf("Deferred stale state.db FTS rebuild while foreign processes "+
 		"hold the database or WAL sidecars (%s); canonical writes and LIKE search remain available (deferral %s).",
 		holdersRepr(foreignHolders), attempts.String()))
 	return true, nil
@@ -216,7 +215,7 @@ func (s *sessionSchema) recoverStaleFTS(ctx context.Context, conn SQLiteConn, le
 	recovered := false
 	err = startupRebuildAdmission(s.host.dbPath(), timeoutSeconds, func(admitted bool) error {
 		if !admitted {
-			slog.Warn("Deferred stale state.db FTS rebuild: another process holds the rebuild authority; " +
+			pkgLog().Warn("Deferred stale state.db FTS rebuild: another process holds the rebuild authority; " +
 				"canonical writes and LIKE search remain available.")
 			return nil
 		}
@@ -270,7 +269,7 @@ func (s *sessionSchema) RetryDeferredFTSRecovery(ctx context.Context) (bool, err
 	s.retryMu.Unlock()
 	recovered, err := s.retryDeferredFTSRecoveryLocked(ctx)
 	if err != nil {
-		slog.Warn("In-process retry of the deferred stale state.db FTS rebuild failed; will retry later.", "error", err)
+		pkgLog().Warn("In-process retry of the deferred stale state.db FTS rebuild failed; will retry later.", "error", err)
 		return false, nil
 	}
 	return recovered, nil
@@ -372,20 +371,20 @@ func (s *sessionSchema) recoverStaleFTSLocked(ctx context.Context, conn SQLiteCo
 		if cerr := endTransaction(ctx, conn, "COMMIT"); cerr != nil {
 			return false, cerr
 		}
-		slog.Error(fmt.Sprintf("Automatic rebuild of stale FTS indexes failed (%s); "+
+		pkgLog().Error(fmt.Sprintf("Automatic rebuild of stale FTS indexes failed (%s); "+
 			"canonical writes remain enabled with FTS detached.", errText(err)))
 		return false, nil
 	}
 	s.fts.ftsStale.Store(false)
 	s.fts.ftsEnabled.Store(true)
 	s.fts.trigramAvailable.Store(includeTrigram)
-	slog.Warn("Rebuilt stale state.db FTS indexes from canonical messages and restored sync triggers.")
+	pkgLog().Warn("Rebuilt stale state.db FTS indexes from canonical messages and restored sync triggers.")
 	return true, nil
 }
 
 // Probes the trigram tokenizer through a temp table that never outlives the probe
 func (s *sessionSchema) trigramTokenizerAvailable(ctx context.Context, conn SQLiteConn) (bool, error) {
-	const probe = "temp.hermes_fts5_trigram_probe"
+	const probe = "temp.icebath_fts5_trigram_probe"
 	if _, err := conn.ExecContext(ctx, "DROP TABLE IF EXISTS "+probe); err != nil {
 		return false, err
 	}

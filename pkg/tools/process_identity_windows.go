@@ -36,7 +36,7 @@ func attachSelfToKillOnCloseJob() bool {
 		return false
 	}
 	jobHandle = job
-	identityLogger().Debug("attached to kill-on-close job object")
+	pkgLog().Debug("attached to kill-on-close job object")
 	return true
 }
 

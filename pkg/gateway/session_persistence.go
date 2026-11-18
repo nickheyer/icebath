@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"log/slog"
 	"maps"
 	"os"
 	"path/filepath"
@@ -34,7 +33,7 @@ type SessionStoreDB interface {
 	ExecuteWrite(ctx context.Context, fn func(conn state.SQLiteConn) error) error
 }
 
-// Routing index loader of hermes_state_gateway load_gateway_routing_entries, key to entry JSON
+// Routing index loader of, key to entry JSON
 type gatewayRoutingLoader interface {
 	LoadGatewayRoutingEntries(ctx context.Context, scope string) (map[string]string, error)
 }
@@ -259,9 +258,9 @@ func (s *SessionStore) profileHomeForKey(sessionKey string) string {
 	if profile == "" {
 		return ""
 	}
-	s.mu.Lock()
+	s.homeMu.Lock()
 	cached, ok := s.profileHomeCache[profile]
-	s.mu.Unlock()
+	s.homeMu.Unlock()
 	if ok {
 		return cached
 	}
@@ -270,13 +269,13 @@ func (s *SessionStore) profileHomeForKey(sessionKey string) string {
 		if dir, err := profiles.GetProfileDir(profile); err == nil {
 			home = dir
 		} else {
-			slog.Debug(fmt.Sprintf("Could not resolve profile home for %q: %v", sessionKey, err))
+			pkgLog().Debug(fmt.Sprintf("Could not resolve profile home for %q: %v", sessionKey, err))
 		}
 	}
 	if home != "" {
-		s.mu.Lock()
+		s.homeMu.Lock()
 		s.profileHomeCache[profile] = home
-		s.mu.Unlock()
+		s.homeMu.Unlock()
 	}
 	return home
 }
@@ -299,7 +298,7 @@ func (s *SessionStore) dbForKey(ctx context.Context, sessionKey string) SessionS
 	}
 	home := s.profileHomeForKey(sessionKey)
 	if home == "" {
-		slog.Warn(fmt.Sprintf("gateway.session: profile %q has no resolvable home (key %q); refusing to fall back to the ambient store", profile, sessionKey))
+		pkgLog().Warn(fmt.Sprintf("gateway.session: profile %q has no resolvable home (key %q); refusing to fall back to the ambient store", profile, sessionKey))
 		return nil
 	}
 	db, err := s.openSessionDBForActiveScope(ctx, filepath.Join(home, "state.db"))
@@ -420,7 +419,7 @@ func (s *SessionStore) loadRoutingRowsLocked(ctx context.Context) bool {
 	}
 	rows, err := loader.LoadGatewayRoutingEntries(ctx, s.routingScope())
 	if err != nil {
-		slog.Warn(fmt.Sprintf("gateway.session: state.db routing load failed: %v", err))
+		pkgLog().Warn(fmt.Sprintf("gateway.session: state.db routing load failed: %v", err))
 		return false
 	}
 	for _, key := range slices.Sorted(maps.Keys(rows)) {
@@ -435,7 +434,7 @@ func (s *SessionStore) loadRoutingRowsLocked(ctx context.Context) bool {
 func routingEntryFromJSON(ctx context.Context, key, entryJSON string) *SessionEntry {
 	parsed, err := pyjson.Loads(entryJSON)
 	if err != nil {
-		slog.Warn(fmt.Sprintf("Skipping invalid routing entry %q: %v", key, err))
+		pkgLog().Warn(fmt.Sprintf("Skipping invalid routing entry %q: %v", key, err))
 		return nil
 	}
 	obj, ok := parsed.(*pyjson.Object)
@@ -444,7 +443,7 @@ func routingEntryFromJSON(ctx context.Context, key, entryJSON string) *SessionEn
 	}
 	entry, err := SessionEntryFromDict(ctx, obj)
 	if err != nil {
-		slog.Warn(fmt.Sprintf("Skipping invalid routing entry %q: %v", key, err))
+		pkgLog().Warn(fmt.Sprintf("Skipping invalid routing entry %q: %v", key, err))
 		return nil
 	}
 	return entry
@@ -469,11 +468,11 @@ func (s *SessionStore) ensureLoadedLocked(ctx context.Context) {
 	}
 	if mirrorRetired > 0 && dbLoaded {
 		if err := s.save(ctx); err != nil {
-			slog.Warn(fmt.Sprintf("gateway.session: routing save after retired import failed: %v", err))
+			pkgLog().Warn(fmt.Sprintf("gateway.session: routing save after retired import failed: %v", err))
 		}
 		if !s.writeSessionsJSON {
 			if err := s.StripRetiredMirrorRoutes(ctx, nil); err != nil {
-				slog.Warn(fmt.Sprintf("gateway.session: could not strip retired routes from sessions.json: %v", err))
+				pkgLog().Warn(fmt.Sprintf("gateway.session: could not strip retired routes from sessions.json: %v", err))
 			}
 		}
 	}
@@ -541,12 +540,12 @@ func (s *SessionStore) importLegacySessionsJSON(ctx context.Context, dbHadEntrie
 		}
 		entryData, ok := obj.Vals[key].(*pyjson.Object)
 		if !ok {
-			slog.Warn(fmt.Sprintf("Skipping invalid session entry %q: expected dict, got %s", key, jsonTypeName(obj.Vals[key])))
+			pkgLog().Warn(fmt.Sprintf("Skipping invalid session entry %q: expected dict, got %s", key, jsonTypeName(obj.Vals[key])))
 			continue
 		}
 		sid, hasID := entryData.Get("session_id")
 		if !hasID {
-			slog.Warn(fmt.Sprintf("Skipping invalid session entry %q: 'session_id'", key))
+			pkgLog().Warn(fmt.Sprintf("Skipping invalid session entry %q: 'session_id'", key))
 			continue
 		}
 		if db := s.routingDB(ctx); db != nil {
@@ -562,7 +561,7 @@ func (s *SessionStore) importLegacySessionsJSON(ctx context.Context, dbHadEntrie
 		}
 		entry, err := SessionEntryFromDict(ctx, entryData)
 		if err != nil {
-			slog.Warn(fmt.Sprintf("Skipping invalid session entry %q: %v", key, err))
+			pkgLog().Warn(fmt.Sprintf("Skipping invalid session entry %q: %v", key, err))
 			continue
 		}
 		s.entries.set(key, entry)
@@ -573,7 +572,7 @@ func (s *SessionStore) importLegacySessionsJSON(ctx context.Context, dbHadEntrie
 		if imported == 1 {
 			plural = "y"
 		}
-		slog.Info(fmt.Sprintf("gateway.session: imported %d legacy sessions.json entr%s missing from state.db routing table", imported, plural))
+		pkgLog().Info(fmt.Sprintf("gateway.session: imported %d legacy sessions.json entr%s missing from state.db routing table", imported, plural))
 	}
 	return retired
 }
@@ -614,7 +613,7 @@ func (s *SessionStore) pruneStaleSessionsLocked(ctx context.Context) {
 		}
 		row, err := db.GetSession(ctx, entry.SessionID)
 		if err != nil {
-			slog.Warn(fmt.Sprintf("gateway.session: stale-entry pruning skipped due to DB error: %v", err))
+			pkgLog().Warn(fmt.Sprintf("gateway.session: stale-entry pruning skipped due to DB error: %v", err))
 			return
 		}
 		if row == nil {
@@ -636,7 +635,7 @@ func (s *SessionStore) pruneStaleSessionsLocked(ctx context.Context) {
 	}
 	if len(stale) > 0 || recovered > 0 {
 		if err := s.save(ctx); err != nil {
-			slog.Warn(fmt.Sprintf("gateway.session: stale-entry pruning skipped due to DB error: %v", err))
+			pkgLog().Warn(fmt.Sprintf("gateway.session: stale-entry pruning skipped due to DB error: %v", err))
 		}
 	}
 }
@@ -650,7 +649,7 @@ func (s *SessionStore) staleEntryVerdict(ctx context.Context, key string, entry 
 		}
 		repointed := *entry
 		repointed.SessionID = target
-		slog.Warn(fmt.Sprintf("gateway.session: repointing stale sessions.json entry %q from ended %s (end_reason=%s) to its local receipt target %s",
+		pkgLog().Warn(fmt.Sprintf("gateway.session: repointing stale sessions.json entry %q from ended %s (end_reason=%s) to its local receipt target %s",
 			key, entry.SessionID, pyReprValue(endReason), target))
 		return false, &repointed
 	}
@@ -659,12 +658,12 @@ func (s *SessionStore) staleEntryVerdict(ctx context.Context, key string, entry 
 		var err error
 		recoveredEntry, err = s.recoverSessionFromDB(ctx, key, entry.Origin, sessionNow(), true)
 		if err != nil {
-			slog.Debug(fmt.Sprintf("gateway.session: recovery lookup failed for stale sessions.json entry %q -> %s: %v", key, entry.SessionID, err))
+			pkgLog().Debug(fmt.Sprintf("gateway.session: recovery lookup failed for stale sessions.json entry %q -> %s: %v", key, entry.SessionID, err))
 			return false, nil
 		}
 	}
 	if recoveredEntry != nil && recoveredEntry.SessionID != entry.SessionID {
-		slog.Warn(fmt.Sprintf("gateway.session: repointing stale sessions.json entry %q from ended %s (end_reason=%s) to recovered %s",
+		pkgLog().Warn(fmt.Sprintf("gateway.session: repointing stale sessions.json entry %q from ended %s (end_reason=%s) to recovered %s",
 			key, entry.SessionID, pyReprValue(endReason), recoveredEntry.SessionID))
 		if entry.PromptPin != nil && entry.PromptPin.Len() > 0 && s.compressionTipForSessionID(ctx, entry.SessionID) == recoveredEntry.SessionID {
 			recoveredEntry.PromptPin = entry.PromptPin
@@ -672,11 +671,11 @@ func (s *SessionStore) staleEntryVerdict(ctx context.Context, key string, entry 
 		return false, recoveredEntry
 	}
 	if recoveredEntry != nil {
-		slog.Info(fmt.Sprintf("gateway.session: reopened ended session %s for sessions.json entry %q (end_reason=%s); keeping route",
+		pkgLog().Info(fmt.Sprintf("gateway.session: reopened ended session %s for sessions.json entry %q (end_reason=%s); keeping route",
 			entry.SessionID, key, pyReprValue(endReason)))
 		return false, nil
 	}
-	slog.Warn(fmt.Sprintf("gateway.session: pruning stale sessions.json entry %q -> %s (end_reason=%s); left by a crashed gateway",
+	pkgLog().Warn(fmt.Sprintf("gateway.session: pruning stale sessions.json entry %q -> %s (end_reason=%s); left by a crashed gateway",
 		key, entry.SessionID, pyReprValue(endReason)))
 	return true, nil
 }
@@ -714,7 +713,7 @@ func (s *SessionStore) reconcileRecoveredRoutingLocked(ctx context.Context) {
 	}
 	durable, err := loader.LoadGatewayRoutingEntries(ctx, s.routingScope())
 	if err != nil {
-		slog.Warn(fmt.Sprintf("gateway.session: recovered state.db routing load failed: %v", err))
+		pkgLog().Warn(fmt.Sprintf("gateway.session: recovered state.db routing load failed: %v", err))
 		return
 	}
 	current := s.entriesAsDicts()
@@ -771,7 +770,7 @@ func (s *SessionStore) persistRoutingData(ctx context.Context, data *pyjson.Obje
 		}
 		retired, err := replacer.ReplaceGatewayRoutingEntries(ctx, encoded, s.routingScope())
 		if err != nil {
-			slog.Warn(fmt.Sprintf("gateway.session: state.db routing save failed: %v", err))
+			pkgLog().Warn(fmt.Sprintf("gateway.session: state.db routing save failed: %v", err))
 		} else {
 			dbSaved = true
 			if len(retired) > 0 {
@@ -787,7 +786,7 @@ func (s *SessionStore) persistRoutingData(ctx context.Context, data *pyjson.Obje
 			if !dbSaved {
 				return err
 			}
-			slog.Warn(fmt.Sprintf("gateway.session: sessions.json mirror save failed after state.db commit: %v", err))
+			pkgLog().Warn(fmt.Sprintf("gateway.session: sessions.json mirror save failed after state.db commit: %v", err))
 		}
 	}
 	s.persistedRoutingGeneration = generation
@@ -861,7 +860,7 @@ func (s *SessionStore) saveEntry(ctx context.Context, sessionKey string, entryDa
 		if saveErr == nil {
 			return nil
 		}
-		slog.Warn(fmt.Sprintf("gateway.session: single-entry routing save failed for %q (%v); falling back to full index rewrite", sessionKey, saveErr))
+		pkgLog().Warn(fmt.Sprintf("gateway.session: single-entry routing save failed for %q (%v); falling back to full index rewrite", sessionKey, saveErr))
 	}
 	if entryData != nil {
 		if !lockHeld {

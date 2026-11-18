@@ -31,7 +31,7 @@ func sudoCacheScope(ctx context.Context, env *Env, sessionKey string) string {
 	return "asker:" + envIdentity(env)
 }
 
-// Sudo cache scope of one worker with no password callback, the thread scope of hermes
+// Sudo cache scope of one worker with no password callback
 func threadSudoScope(id WorkerID) string { return "thread:" + strconv.FormatInt(int64(id), 10) }
 
 // Drops the sudo password a reused worker cached under its thread scope

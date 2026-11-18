@@ -2,8 +2,6 @@ package provider
 
 import (
 	"context"
-	"log/slog"
-	"time"
 
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/home"
@@ -79,13 +77,6 @@ func (c *homeCredentials) RuntimeCredential(provider string) (Credential, error)
 	var creds map[string]any
 	var err error
 	switch provider {
-	case "nous":
-		var seconds float64
-		seconds, err = nousBillingFloat(c.env.scope().GetSecretStr("ICEBATH_NOUS_TIMEOUT_SECONDS", "15"))
-		if err != nil {
-			return Credential{}, err
-		}
-		creds, err = resolveNousRuntimeCredentialsWith(c.env, NousResolveOptions{Timeout: time.Duration(seconds * float64(time.Second))})
 	case "openai-codex":
 		creds, err = resolveCodexRuntimeCredentials(c.env, CodexResolveOptions{})
 	case "xai-oauth":
@@ -107,17 +98,14 @@ func (c *homeCredentials) RuntimeCredential(provider string) (Credential, error)
 	return Credential{APIKey: anyString(creds["api_key"]), BaseURL: anyString(creds["base_url"]), Source: anyString(creds["source"])}, nil
 }
 
-// auth.json active provider when it is a registry provider reporting logged in, a guest without inference excluded
-func (c *homeCredentials) ActiveLoggedInProvider(skipFreeTier bool) string {
+// auth.json active provider when it is a registry provider reporting logged in
+func (c *homeCredentials) ActiveLoggedInProvider() string {
 	data, err := c.env.Store.Load()
 	if err != nil {
-		slog.Default().Debug("Could not pre-read active auth provider", "error", err)
+		pkgLog().Debug("Could not pre-read active auth provider", "error", err)
 		return ""
 	}
 	maybe, _ := data["active_provider"].(string)
-	if maybe == "nous" && hasGuest(c.env) && (skipFreeTier || !profileFreeInferenceActive(c.env)) {
-		return ""
-	}
 	if maybe == "" {
 		return ""
 	}
@@ -129,9 +117,6 @@ func (c *homeCredentials) ActiveLoggedInProvider(skipFreeTier bool) string {
 	}
 	return ""
 }
-
-// Welcome trial guest carrying inference on this install
-func (c *homeCredentials) FreeInferenceActive() bool { return profileFreeInferenceActive(c.env) }
 
 // Logged in and configured flags get_auth_status reports for the provider in the bound home
 func providerAuthStatus(ctx context.Context, provider string) (loggedIn, configured bool) {

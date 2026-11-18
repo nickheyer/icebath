@@ -3,7 +3,6 @@ package agent
 import (
 	"encoding/json"
 	"fmt"
-	"log/slog"
 	"regexp"
 	"strings"
 	"unicode/utf8"
@@ -68,7 +67,7 @@ func (a *AIAgent) assistantReasoningText(resp *provider.Response) any {
 		return nil
 	}
 	if a.verboseLogging {
-		slog.Debug(fmt.Sprintf("Captured reasoning (%d chars): %s", utf8.RuneCountInString(reasoning), reasoning))
+		pkgLog().Debug(fmt.Sprintf("Captured reasoning (%d chars): %s", utf8.RuneCountInString(reasoning), reasoning))
 	}
 	if a.reasoningCallback != nil && a.streamDeltaCallback == nil && a.streamCallback == nil {
 		callQuietly(a.reasoningCallback, reasoning)

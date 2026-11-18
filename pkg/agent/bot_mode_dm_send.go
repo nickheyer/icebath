@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"log/slog"
 	"os"
 	"regexp"
 	"runtime"
@@ -20,7 +19,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pyshlex"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
-	"github.com/nickheyer/icebath/pkg/observability"
 	"github.com/nickheyer/icebath/pkg/pm"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/state"
@@ -37,8 +35,6 @@ var (
 
 // Terminal tool the delivery runner is launched through, the seam a test swaps
 var botDMTerminalTool = tools.TerminalTool
-
-func botModeDMLog() *slog.Logger { return slog.Default().With("logger", "tools.bot_mode_dm") }
 
 func init() {
 	tools.RegisterInlineToolExecutor(messageAgentToolName, agentInlineExecutor(messageAgentToolName,
@@ -124,7 +120,6 @@ func messageAgentTool(ctx context.Context, a *AIAgent, target, message, taskID s
 	if refusal, refused := botModeGate(a, h); refused {
 		return refusal, nil
 	}
-	observability.RecordFeatureUsed(ctx, "bot_mode", h)
 
 	root, me := botmode.InstallRoot(h), botmode.ProfileName(h)
 	rosterHomes := map[string]string{}
@@ -306,7 +301,7 @@ func spawnDelivery(ctx context.Context, command, label, dmFile, deliveryID, task
 	transferred := false
 	defer func() {
 		if rec := recover(); rec != nil {
-			botModeDMLog().Error(fmt.Sprintf("message_agent delivery spawn failed: %v", rec))
+			pkgLog().Error(fmt.Sprintf("message_agent delivery spawn failed: %v", rec))
 			answer = botDMErr(fmt.Sprintf("Delivery to %s could not be started: %v", label, rec), nil, nil)
 		}
 		if dmFile != "" && !transferred {
@@ -400,7 +395,7 @@ func persistReplyWhenDone(ctx context.Context, procID string, a *AIAgent) bool {
 			"display_metadata": map[string]any{"display_text": tools.ProcessCompletionDisplayText([]map[string]any{evt})},
 		}, state.AppendGuards{})
 		if err != nil {
-			botModeDMLog().Warn(fmt.Sprintf("message_agent: could not persist the reply of %s into session %s: %s",
+			pkgLog().Warn(fmt.Sprintf("message_agent: could not persist the reply of %s into session %s: %s",
 				procID, sessionID, dmdelivery.ExcText(err)))
 		}
 	}()

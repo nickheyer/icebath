@@ -12,7 +12,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/agent"
 	"github.com/nickheyer/icebath/pkg/mcp"
 	"github.com/nickheyer/icebath/pkg/state"
-	"github.com/nickheyer/icebath/pkg/tuigateway"
+	"github.com/nickheyer/icebath/pkg/tuihost"
 )
 
 // Personalities a config offers, the built ins merged with its own, assigned by the command wiring
@@ -41,7 +41,7 @@ func isPivotMarker(entry any) bool {
 }
 
 // Rebuilds and stores the system prompt of a live session after its runtime identity changed
-func persistLiveSessionSystemPrompt(ctx context.Context, session *tuigateway.Session) {
+func persistLiveSessionSystemPrompt(ctx context.Context, session *tuihost.Session) {
 	a, sessionKey, db, ok := liveSessionAgentDB(ctx, session)
 	if !ok {
 		return
@@ -51,7 +51,7 @@ func persistLiveSessionSystemPrompt(ctx context.Context, session *tuigateway.Ses
 	defer clearSessionContext(env)
 	defer func() {
 		if r := recover(); r != nil {
-			logger().Warn(fmt.Sprintf("failed to persist live session system prompt for session %s", sessionKey), "error", r)
+			pkgLog().Warn(fmt.Sprintf("failed to persist live session system prompt for session %s", sessionKey), "error", r)
 		}
 	}()
 	scoped := sessionProfileRuntimeScope(sessionCtx, session, true)
@@ -99,7 +99,7 @@ func startUsageTicker(ctx context.Context, sid string, a *agent.AIAgent, interva
 					return
 				default:
 				}
-				tuigateway.Emit(ctx, "session.usage", sid, map[string]any{"usage": usage})
+				tuihost.Emit(ctx, "session.usage", sid, map[string]any{"usage": usage})
 			})
 			if stopped {
 				return
@@ -127,7 +127,7 @@ func transferDBToAgent(ctx context.Context, a *agent.AIAgent, db *state.DB) (tra
 		return false
 	}
 	if db == getDB(ctx) {
-		logger().Warn("Refused transfer of the shared launch SessionDB to a session agent — the caller's owns_db gate should have prevented this.")
+		pkgLog().Warn("Refused transfer of the shared launch SessionDB to a session agent — the caller's owns_db gate should have prevented this.")
 		return false
 	}
 	a.SetOwnsSessionDB(true)
@@ -194,7 +194,7 @@ func scheduleMCPLateRefresh(ctx context.Context, sid string, a *agent.AIAgent) {
 		func() {
 			sessionsLock.Lock()
 			defer sessionsLock.Unlock()
-			session := tuigateway.SessionRecord(sid)
+			session := tuihost.SessionRecord(sid)
 			if session == nil || sessionAgent(session) != a {
 				return
 			}
@@ -205,7 +205,7 @@ func scheduleMCPLateRefresh(ctx context.Context, sid string, a *agent.AIAgent) {
 			failed := func() (failed bool) {
 				defer func() {
 					if r := recover(); r != nil {
-						logger().Warn(fmt.Sprintf("Late MCP refresh: tool snapshot rebuild failed for %s: %v", sid, r))
+						pkgLog().Warn(fmt.Sprintf("Late MCP refresh: tool snapshot rebuild failed for %s: %v", sid, r))
 						failed = true
 					}
 				}()
@@ -218,7 +218,7 @@ func scheduleMCPLateRefresh(ctx context.Context, sid string, a *agent.AIAgent) {
 			info = sessionInfo(ctx, a, session)
 		}()
 		if info != nil {
-			tuigateway.Emit(ctx, "session.info", sid, info)
+			tuihost.Emit(ctx, "session.info", sid, info)
 		}
 	}()
 }
@@ -231,7 +231,7 @@ func hydrateSessionCwd(ctx context.Context, sid, key string, sessionDB *state.DB
 	} else if db == nil {
 		opened, err := openProfileSessionDB(ctx, profileHome)
 		if err != nil {
-			logger().Warn(fmt.Sprintf("profile session store unavailable for %s — skipping cwd hydration instead of touching the launch state.db", profileHome), "error", err)
+			pkgLog().Warn(fmt.Sprintf("profile session store unavailable for %s — skipping cwd hydration instead of touching the launch state.db", profileHome), "error", err)
 		} else {
 			db, ownsDB = opened, true
 		}
@@ -257,7 +257,7 @@ func hydrateSessionCwd(ctx context.Context, sid, key string, sessionDB *state.DB
 		func() {
 			sessionsLock.Lock()
 			defer sessionsLock.Unlock()
-			if live := tuigateway.SessionRecord(sid); live != nil {
+			if live := tuihost.SessionRecord(sid); live != nil {
 				live.Set("cwd", storedCwd)
 				if remote {
 					live.Set("explicit_cwd", true)
@@ -268,20 +268,20 @@ func hydrateSessionCwd(ctx context.Context, sid, key string, sessionDB *state.DB
 			func() {
 				defer func() {
 					if r := recover(); r != nil {
-						logger().Debug("failed to enrich resumed session git metadata", "error", r)
+						pkgLog().Debug("failed to enrich resumed session git metadata", "error", r)
 					}
 				}()
-				persistSessionCwdAndScheduleGitMeta(ctx, tuigateway.SessionRecord(sid), strOr(storedCwd), db)
+				persistSessionCwdAndScheduleGitMeta(ctx, tuihost.SessionRecord(sid), strOr(storedCwd), db)
 			}()
 		}
 		return
 	}
-	live := tuigateway.SessionRecord(sid)
+	live := tuihost.SessionRecord(sid)
 	if (row == nil || !truthy(storedCwd) || isOtherProfilesCwd(ctx, strOr(storedCwd), profileHome)) && !isRemoteLaunchCwd(ctx, live) {
 		func() {
 			defer func() {
 				if r := recover(); r != nil {
-					logger().Debug("failed to persist resumed session cwd", "error", r)
+					pkgLog().Debug("failed to persist resumed session cwd", "error", r)
 				}
 			}()
 			persistSessionCwdAndScheduleGitMeta(ctx, live, strOr(live.Get("cwd")), db)

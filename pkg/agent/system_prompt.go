@@ -2,8 +2,8 @@ package agent
 
 import (
 	"context"
+	"errors"
 	"fmt"
-	"log/slog"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -72,8 +72,8 @@ var (
 	buildSkillsSystemPromptFn = (*skills.Scope).BuildSkillsSystemPrompt
 	codingSystemPromptPartsFn = tools.CodingSystemPromptParts
 	renderPromptSectionsFn    = plugins.RenderSystemPromptSections
-	hermesNow                 = config.TimeNow
-	hermesTimezone            = config.TimeZone
+	icebathNow                = config.TimeNow
+	icebathTimezone           = config.TimeZone
 	safeStrftime              = config.SafeStrftime
 )
 
@@ -84,8 +84,6 @@ var (
 	skillToolNames       = []string{"skills_list", "skill_view", "skill_manage"}
 	truthyStrings        = map[string]bool{"1": true, "true": true, "yes": true, "on": true}
 )
-
-func systemPromptLog() *slog.Logger { return slog.Default().With("logger", "agent.system_prompt") }
 
 // Reports whether an environment variable holds one of the shared truthy strings
 func envTruthy(name string) bool {
@@ -230,11 +228,11 @@ func renderPluginPromptSections(ctx context.Context, a *AIAgent) (rendered []plu
 			panic(r)
 		}
 		if len(a.pluginSectionsPrevious) > 0 {
-			systemPromptLog().Warn(fmt.Sprintf("Plugin system prompt sections failed to re-render (%v); keeping the previous frozen sections", r))
+			pkgLog().Warn(fmt.Sprintf("Plugin system prompt sections failed to re-render (%v); keeping the previous frozen sections", r))
 			rendered = a.pluginSectionsPrevious
 			return
 		}
-		systemPromptLog().Warn(fmt.Sprintf("Plugin system prompt sections could not be rendered: %v", r))
+		pkgLog().Warn(fmt.Sprintf("Plugin system prompt sections could not be rendered: %v", r))
 		rendered = nil
 	}()
 	return renderPromptSectionsFn(ctx, pluginSessionInfo(ctx, a))
@@ -472,7 +470,7 @@ func autoLoadParts(ctx context.Context, a *AIAgent) []string {
 			res.prompt, res.loaded, res.missing = scope.BuildAutoLoadPrompt(sctx, a.sessionID, nil)
 		}
 		if len(res.missing) > 0 {
-			systemPromptLog().Warn("skills.auto_load: skill(s) not found or disabled, skipped: " + strings.Join(res.missing, ", "))
+			pkgLog().Warn("skills.auto_load: skill(s) not found or disabled, skipped: " + strings.Join(res.missing, ", "))
 		}
 		a.autoLoadSkillsResult, a.autoLoadSkillsResolved = res, true
 	}
@@ -679,8 +677,8 @@ func zoneBits(now time.Time, tz *time.Location, haveTZ bool) []string {
 
 // Date only conversation start line with zone, an as of line on later rebuild days, and the session trailer
 func timestampLine(ctx context.Context, a *AIAgent) string {
-	now := hermesNow(ctx)
-	tz, haveTZ := hermesTimezone(ctx)
+	now := icebathNow(ctx)
+	tz, haveTZ := icebathTimezone(ctx)
 	bits := zoneBits(now, tz, haveTZ)
 	zoneSuffix := ""
 	if len(bits) > 0 {
@@ -862,7 +860,7 @@ func sessionPrompt(a *AIAgent) string {
 	}
 	row, err := a.sessionDB.GetSession(context.Background(), a.sessionID)
 	if err != nil {
-		systemPromptLog().Debug(fmt.Sprintf("workspace snapshot: session row read failed (session=%s)", a.sessionID), "err", err)
+		pkgLog().Debug(fmt.Sprintf("workspace snapshot: session row read failed (session=%s)", a.sessionID), "err", err)
 		return ""
 	}
 	if row == nil {
@@ -1049,7 +1047,7 @@ func InvalidateSystemPrompt(ctx context.Context, a *AIAgent) error {
 	return nil
 }
 
-// Parts builder of the static prefix rebuild, swapped by tests like the hermes module patch
+// Parts builder of the static prefix rebuild, swapped by tests like the module patch
 var reconstructPartsBuilder = BuildSystemPromptParts
 
 // ReconstructStaticPrefix rebuilds the stable tier for a stored prompt, kept only when the prompt starts with it
@@ -1064,7 +1062,7 @@ func ReconstructStaticPrefix(ctx context.Context, a *AIAgent, systemMessage *str
 		return
 	}
 	if err != nil {
-		systemPromptLog().Debug("static system-prefix reconstruction failed on "+logLabel, "err", err)
+		pkgLog().Debug("static system-prefix reconstruction failed on "+logLabel, "err", err)
 	}
 	a.cachedSystemPromptStatic, a.staticRebuildFailedFor = "", stored
 }
@@ -1079,11 +1077,11 @@ func FormatToolsForSystemMessage(a *AIAgent) (string, error) {
 		tool, _ := pyDict(t)
 		fn, ok := pyDict(tool["function"])
 		if !ok {
-			return "", fmt.Errorf("KeyError: 'function'")
+			return "", errors.New("a tool schema has no function")
 		}
 		name, ok := fn["name"]
 		if !ok {
-			return "", fmt.Errorf("KeyError: 'name'")
+			return "", errors.New("a tool schema has no name")
 		}
 		description, ok := fn["description"]
 		if !ok {

@@ -110,17 +110,17 @@ var meetJoinSchema = meetSchema("meet_join",
 	pyjson.ObjectOf(
 		"url", strProp("Full https://meet.google.com/... URL. Required."),
 		"mode", pyjson.ObjectOf("type", "string", "enum", []any{"transcribe", "realtime"},
-			"description", "transcribe (default): listen-only, scrape captions. " +
-				"realtime: also enable agent speech via meet_say " +
+			"description", "transcribe (default): listen-only, scrape captions. "+
+				"realtime: also enable agent speech via meet_say "+
 				"(requires OpenAI Realtime key + platform audio bridge)."),
 		"guest_name", strProp("Display name to use when joining as guest. Defaults to 'Icebath Agent'."),
-		"duration", strProp("Optional max duration before auto-leave (e.g. '30m', " +
+		"duration", strProp("Optional max duration before auto-leave (e.g. '30m', "+
 			"'2h', '90s'). Omit to stay until meet_leave is called."),
 		"headed", pyjson.ObjectOf("type", "boolean",
 			"description", "Run Chromium headed instead of headless (debug only). Default false."),
-		"node", strProp("Name of a registered remote node to run the bot on (useful when the gateway " +
-			"runs on a headless Linux box but the user's Chrome with a signed-in Google " +
-			"profile lives on their Mac). Pass 'auto' to use the single registered node. " +
+		"node", strProp("Name of a registered remote node to run the bot on (useful when the gateway "+
+			"runs on a headless Linux box but the user's Chrome with a signed-in Google "+
+			"profile lives on their Mac). Pass 'auto' to use the single registered node. "+
 			"Default: run locally. Nodes are approved via `icebath meet node approve`."),
 	), "url")
 
@@ -134,7 +134,7 @@ var meetTranscriptSchema = meetSchema("meet_transcript",
 		"full transcript unless 'last' is set, in which case returns the last N lines only.",
 	pyjson.ObjectOf(
 		"last", pyjson.ObjectOf("type", "integer",
-			"description", "Optional: return only the last N caption lines. Useful " +
+			"description", "Optional: return only the last N caption lines. Useful "+
 				"for polling during a meeting without re-reading the whole transcript.",
 			"minimum", 1),
 		"node", nodeProp(),

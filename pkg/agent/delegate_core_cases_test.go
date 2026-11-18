@@ -220,31 +220,6 @@ func TestDelegateTaskChildDedicatedDbFollowsParentsDbPath(t *testing.T) {
 	closeChild(child, "")
 }
 
-func TestDelegateTaskNousChildRederivesApiModeFromModel(t *testing.T) {
-	parent := mockDelegateParent(t, 0)
-	if err := writeFileInHome(parent.env.Home, "config.yaml", "nous:\n  anthropic_wire: native\n"); err != nil {
-		t.Fatal(err)
-	}
-	parent.baseURL, parent.apiKey, parent.provider = "https://inference-api.nousresearch.com/v1", "portal-jwt", "nous"
-	parent.apiMode, parent.model = "anthropic_messages", "anthropic/claude-opus-4.8"
-	built := captureChildBuilds(t, parent.env)
-	ctx := tools.WithToolEnv(context.Background(), parent.env)
-	if _, err := buildChildAgent(ctx, childSpec(parent, "Stay on chat completions", "hermes-4-405b", 10, "leaf")); err != nil {
-		t.Fatal(err)
-	}
-	first := (*built)[0]
-	if first.Provider != "nous" || first.Model != "hermes-4-405b" || first.APIMode != "chat_completions" {
-		t.Fatalf("first child %+v", first)
-	}
-	parent.apiMode, parent.model = "chat_completions", "hermes-4-405b"
-	if _, err := buildChildAgent(ctx, childSpec(parent, "Move onto Messages", "anthropic/claude-opus-4.8", 10, "leaf")); err != nil {
-		t.Fatal(err)
-	}
-	if second := (*built)[1]; second.APIMode != "anthropic_messages" {
-		t.Fatalf("second child %+v", second)
-	}
-}
-
 func TestToolNamePreservationGlobalToolNamesRestoredAfterDelegation(t *testing.T) {
 	parent := mockDelegateParent(t, 0)
 	original := []string{"terminal", "read_file", "web_search", "execute_code", "delegate_task"}

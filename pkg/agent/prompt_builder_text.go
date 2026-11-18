@@ -2,11 +2,11 @@ package agent
 
 import "github.com/nickheyer/icebath/pkg/state"
 
-// Help pointer to the docs and the icebath-agent skill for sessions with skill_view
-const IcebathAgentHelpGuidance = "For help with Icebath Agent itself — configuring, setting up, using, extending, or troubleshooting it — or to understand your own features, tools, or capabilities, the documentation at https://hermes-agent.nousresearch.com/docs is your authoritative reference and always holds the latest, most up-to-date information. The `icebath-agent` skill has the actual commands and proven workflows — load it with skill_view(name='icebath-agent') before configuring, modifying, or troubleshooting Icebath so you don't guess or invent workarounds."
+// Help pointer to icebath's own help and the icebath-agent skill for sessions with skill_view
+const IcebathAgentHelpGuidance = "For help with Icebath Agent itself — configuring, setting up, using, extending, or troubleshooting it — or to understand your own features, tools, or capabilities, icebath's own help is the authoritative reference: `icebath --help` and `icebath <command> --help` for every command and option, `/help` for the slash commands, and the sections of `cli-config.yaml.example` (shipped beside the icebath binary) for every config key. The `icebath-agent` skill has the actual commands and proven workflows — load it with skill_view(name='icebath-agent') before configuring, modifying, or troubleshooting Icebath so you don't guess or invent workarounds."
 
-// Help pointer to the docs for sessions without the skills toolset
-const IcebathAgentHelpGuidanceNoSkills = "For help with Icebath Agent itself — configuring, setting up, using, extending, or troubleshooting it — or to understand your own features, tools, or capabilities, the documentation at https://hermes-agent.nousresearch.com/docs is the authoritative reference and always holds the latest, most up-to-date information. Point the user there (or read it yourself if you have a way to fetch web content)."
+// Help pointer to icebath's own help for sessions without the skills toolset
+const IcebathAgentHelpGuidanceNoSkills = "For help with Icebath Agent itself — configuring, setting up, using, extending, or troubleshooting it — or to understand your own features, tools, or capabilities, icebath's own help is the authoritative reference: `icebath --help` and `icebath <command> --help` for every command and option, `/help` for the slash commands, and the sections of `cli-config.yaml.example` (shipped beside the icebath binary) for every config key. Run them yourself when you have a terminal, or point the user there."
 
 // Guidance on recalling earlier sessions through session_search
 const SessionSearchGuidance = "When the user references something from a past conversation or you suspect relevant cross-session context exists, use session_search to recall it before asking them to repeat themselves."
@@ -68,7 +68,6 @@ const WSLEnvironmentHint = "You are running inside WSL (Windows Subsystem for Li
 var backendFallbackDescriptions = map[string]string{
 	"docker":         "a Docker container (Linux)",
 	"modal":          "a Modal sandbox (Linux)",
-	"managed_modal":  "a managed Modal sandbox (Linux)",
 	"daytona":        "a Daytona workspace (Linux)",
 	"vercel_sandbox": "a Vercel sandbox (Linux)",
 	"ssh":            "a remote host reached over SSH (likely Linux)",

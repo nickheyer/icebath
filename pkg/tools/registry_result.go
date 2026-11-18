@@ -23,7 +23,7 @@ func NormalizeHandlerResult(env *Env, name string, result any) string {
 		}
 	}
 	resultType := handlerResultTypeName(result)
-	toolsLogger(env).Error(fmt.Sprintf("Tool %s handler returned unsupported result type: %s", name, resultType))
+	envLog(env).Error(fmt.Sprintf("Tool %s handler returned unsupported result type: %s", name, resultType))
 	body := pyjson.NewObject()
 	body.Set("error", boundModelErrorText(env, "Tool handler returned unsupported result type: "+resultType))
 	body.Set("error_type", "tool_result_contract")

@@ -63,7 +63,7 @@ var (
 	telegramMediaTimeout   = 20 * time.Second
 )
 
-// Constructor of the Bot API client, replaced by tests the way hermes patches telegram.Bot
+// Constructor of the Bot API client, replaced by tests
 var newTelegramBot = func(token any, proxy string) (telegramBotAPI, error) {
 	if !pyrepr.Truthy(token) {
 		return nil, newTelegramError("InvalidToken", "You must pass the token you received from https://t.me/Botfather!")

@@ -43,13 +43,13 @@ func installEntrySignals(e *stdioEntry) {
 func closeRPCStdinOnExec() {
 	file, isFile := entryStdin.(*os.File)
 	if !isFile {
-		entryLogger().Debug("could not give the TUI gateway a private RPC stdin", "exc_info", "stdin has no handle")
+		pkgLog().Debug("could not give the TUI gateway a private RPC stdin", "exc_info", "stdin has no handle")
 		return
 	}
 	proc := windows.CurrentProcess()
 	var private windows.Handle
 	if err := windows.DuplicateHandle(proc, windows.Handle(file.Fd()), proc, &private, 0, false, windows.DUPLICATE_SAME_ACCESS); err != nil {
-		entryLogger().Debug("could not give the TUI gateway a private RPC stdin", "exc_info", err.Error())
+		pkgLog().Debug("could not give the TUI gateway a private RPC stdin", "exc_info", err.Error())
 		return
 	}
 	name, _ := windows.UTF16PtrFromString("NUL")
@@ -57,7 +57,7 @@ func closeRPCStdinOnExec() {
 		windows.OPEN_EXISTING, 0, 0)
 	if err != nil {
 		windows.CloseHandle(private)
-		entryLogger().Debug("could not give the TUI gateway a private RPC stdin", "exc_info", err.Error())
+		pkgLog().Debug("could not give the TUI gateway a private RPC stdin", "exc_info", err.Error())
 		return
 	}
 	_ = file.Close()

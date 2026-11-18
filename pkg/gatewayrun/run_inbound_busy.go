@@ -73,7 +73,7 @@ func (r *GatewayRunner) hmEvictIdleStaleAgent(ctx context.Context, quickKey stri
 	shouldEvict := staleAgent != agentPendingSentinel && ((summaryValid && rawStaleTimeout > 0 && staleIdle >= rawStaleTimeout) ||
 		(!summaryValid && staleAge > wallTTL))
 	if shouldEvict {
-		runLog().Warn(fmt.Sprintf("Evicting stale _running_agents entry for %s (age: %ss, idle: %ss, timeout: %ss)%s",
+		pkgLog().Warn(fmt.Sprintf("Evicting stale _running_agents entry for %s (age: %ss, idle: %ss, timeout: %ss)%s",
 			quickKey, zeroDecimals(staleAge), zeroDecimals(staleIdle), zeroDecimals(rawStaleTimeout), staleDetail))
 		r.hmEvictRunningAgent(ctx, quickKey, "stale_running_agent_eviction")
 	}
@@ -86,7 +86,7 @@ func (r *GatewayRunner) hmEvictReapedAgent(ctx context.Context, quickKey string)
 	}
 	sid, ok := r.sessionStore.PeekSessionID(quickKey)
 	if ok && sid != "" && r.sessionStore.IsSessionEndedInDB(ctx, sid, "") {
-		runLog().Warn(fmt.Sprintf("Evicting stale _running_agents entry for %s — durable session %s is ended (reaped) in state.db; healing routing on next message (#99106)", quickKey, sid))
+		pkgLog().Warn(fmt.Sprintf("Evicting stale _running_agents entry for %s — durable session %s is ended (reaped) in state.db; healing routing on next message (#99106)", quickKey, sid))
 		r.hmEvictRunningAgent(ctx, quickKey, "reaped_session_eviction")
 	}
 }
@@ -199,7 +199,7 @@ func (r *GatewayRunner) hmBusyTelegramGraceQueue(ctx context.Context, event *gat
 		grace > 0 && startedAt != 0 && now-startedAt <= grace) {
 		return false, nil
 	}
-	runLog().Debug(fmt.Sprintf("Telegram follow-up arrived %.2fs after run start for %s — queueing without interrupt", now-startedAt, quickKey))
+	pkgLog().Debug(fmt.Sprintf("Telegram follow-up arrived %.2fs after run start for %s — queueing without interrupt", now-startedAt, quickKey))
 	if effectiveBusyInputMode != "queue" {
 		return true, r.hmMergePendingForSource(ctx, source, quickKey, event, true)
 	}

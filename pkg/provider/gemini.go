@@ -154,12 +154,12 @@ func probeGeminiTier(ctx context.Context, apiKey, baseURL, model string, timeout
 	defer cancel()
 	req, err := http.NewRequestWithContext(rctx, http.MethodPost, endpoint, bytes.NewReader(payload))
 	if err != nil {
-		catalogLog.Debug("probe_gemini_tier: network error: " + err.Error())
+		pkgLog().Debug("probe_gemini_tier: network error: " + err.Error())
 		return "unknown"
 	}
 	tr, err := httpxWireTransport(httpxDefaultLimits, timeout, nil)
 	if err != nil {
-		catalogLog.Debug("probe_gemini_tier: network error: " + err.Error())
+		pkgLog().Debug("probe_gemini_tier: network error: " + err.Error())
 		return "unknown"
 	}
 	defer tr.CloseIdleConnections()
@@ -168,7 +168,7 @@ func probeGeminiTier(ctx context.Context, apiKey, baseURL, model string, timeout
 	req.Host = httpxHost(req.URL)
 	resp, err := (&http.Client{Transport: pyhttpx.WireTransport{Base: tr, Decoders: httpxDecoders}, CheckRedirect: httpxNoRedirects}).Do(pyhttpx.WithWire(req, lines))
 	if err != nil {
-		catalogLog.Debug("probe_gemini_tier: network error: " + err.Error())
+		pkgLog().Debug("probe_gemini_tier: network error: " + err.Error())
 		return "unknown"
 	}
 	defer resp.Body.Close()
@@ -467,7 +467,7 @@ func geminiPlain(o *omap) map[string]any {
 	return out
 }
 
-// hermes reasoning_config shape of a request reasoning ask, nil when unset
+// Reasoning config shape of a request reasoning ask, nil when unset
 func geminiReasoningConfig(r Reasoning) map[string]any {
 	rc := reasoningFromRequest(r)
 	if !rc.set {
@@ -797,7 +797,7 @@ func (c *geminiNativeClient) produceStream(ctx context.Context, p *geminiPrepare
 				send(geminiStreamMsg{err: c.apiError(gerr)})
 				return
 			}
-			catalogLog.Warn(fmt.Sprintf("Gemini stream dropped (%s); resuming from its last checkpoint", dropErr.err))
+			pkgLog().Warn(fmt.Sprintf("Gemini stream dropped (%s); resuming from its last checkpoint", dropErr.err))
 		}
 		if resume == "" || sends >= geminiMaxTokenSends {
 			send(geminiStreamMsg{done: true})

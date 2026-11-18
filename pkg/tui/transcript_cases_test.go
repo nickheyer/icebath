@@ -46,50 +46,25 @@ func TestToTranscriptMessages(t *testing.T) {
 		got := toTranscriptMessages(rowsOf(map[string]any{"role": "user", "text": "do work"}, map[string]any{"role": "assistant", "text": "done"},
 			map[string]any{"role": "user", "text": "[IMPORTANT: delegation done]", "display_kind": "async_delegation_complete", "display_metadata": map[string]any{"task_count": float64(3)}},
 			map[string]any{"role": "assistant", "text": "merged"}))
-		if len(got) != 4 || got[2].Kind != "event" || !strings.Contains(got[2].Text, "3") || got[3].Text != "merged" {
+		if len(got) != 4 || got[2].Kind != "delegation" || !strings.Contains(got[2].Label, "3") || got[2].Text != "[IMPORTANT: delegation done]" || got[3].Text != "merged" {
 			t.Fatalf("got %#v", got)
 		}
 	})
-	t.Run("uses the display-only completion title without exposing the model payload", func(t *testing.T) {
+	t.Run("heads the folded result with the display-only completion title", func(t *testing.T) {
 		text := "[ASYNC DELEGATION BATCH COMPLETE — private]\nFull result evidence"
 		title := "Subagent Task Failed: Review changes"
 		got := toTranscriptMessages(rowsOf(map[string]any{"role": "user", "text": text, "display_kind": "async_delegation_complete", "display_metadata": map[string]any{"display_text": title}}))
-		if got[0].Kind != "event" || got[0].Role != "system" || got[0].Text != title {
+		if got[0].Kind != "delegation" || got[0].Role != "system" || got[0].Label != title || got[0].Text != text {
 			t.Fatalf("got %#v", got)
 		}
 		if plain := toTranscriptMessages(rowsOf(map[string]any{"role": "user", "text": text})); plain[0].Text != text {
 			t.Fatalf("plain %#v", plain)
 		}
 	})
-	t.Run("projects async_delegation_complete without metadata as generic text", func(t *testing.T) {
+	t.Run("projects async_delegation_complete without metadata under the generic title", func(t *testing.T) {
 		got := toTranscriptMessages(rowsOf(map[string]any{"role": "user", "text": "event", "display_kind": "async_delegation_complete"}))
-		if got[0].Kind != "event" || got[0].Text == "" || got[0].Text == "event" {
+		if got[0].Kind != "delegation" || got[0].Label == "" || got[0].Label == "event" || got[0].Text != "event" {
 			t.Fatalf("got %#v", got)
-		}
-	})
-}
-
-func TestUpsert(t *testing.T) {
-	t.Run("appends when last role differs", func(t *testing.T) {
-		if got := upsert([]msg{{Role: "user", Text: "hi"}}, "assistant", "hello"); len(got) != 2 {
-			t.Fatalf("got %#v", got)
-		}
-	})
-	t.Run("replaces when last role matches", func(t *testing.T) {
-		if got := upsert([]msg{{Role: "assistant", Text: "partial"}}, "assistant", "full"); got[0].Text != "full" {
-			t.Fatalf("got %#v", got)
-		}
-	})
-	t.Run("appends to empty", func(t *testing.T) {
-		if got := upsert(nil, "user", "first"); !reflect.DeepEqual(got, []msg{{Role: "user", Text: "first"}}) {
-			t.Fatalf("got %#v", got)
-		}
-	})
-	t.Run("does not mutate", func(t *testing.T) {
-		prev := []msg{{Role: "user", Text: "hi"}}
-		upsert(prev, "assistant", "yo")
-		if len(prev) != 1 {
-			t.Fatal("mutated")
 		}
 	})
 }
@@ -124,36 +99,6 @@ func TestDisplayTimestamps(t *testing.T) {
 		kept := appendTranscriptMessage(nil, msg{CreatedAt: &at, Role: "user", Text: "then"}, func() float64 { return 1 })
 		if *kept[0].CreatedAt != 123 {
 			t.Fatalf("kept %#v", kept)
-		}
-	})
-}
-
-func TestStickyPromptFromViewport(t *testing.T) {
-	turns := []msg{{Role: "user", Text: "older prompt"}, {Role: "assistant", Text: "older answer"}, {Role: "user", Text: "current prompt"}, {Role: "assistant", Text: "current answer"}}
-	current := []msg{{Role: "user", Text: "current prompt"}, {Role: "assistant", Text: "current answer"}}
-	t.Run("hides the sticky prompt when a newer user message is already visible", func(t *testing.T) {
-		if got := stickyPromptFromViewport(turns, []int{0, 2, 10, 12, 20}, 8, 16, false); got != "" {
-			t.Fatalf("got %q", got)
-		}
-	})
-	t.Run("shows the latest user message above the viewport when no user message is visible", func(t *testing.T) {
-		if got := stickyPromptFromViewport(turns, []int{0, 2, 10, 12, 20}, 16, 20, false); got != "current prompt" {
-			t.Fatalf("got %q", got)
-		}
-	})
-	t.Run("shows the last prompt once the viewport starts after the history tail", func(t *testing.T) {
-		if got := stickyPromptFromViewport([]msg{{Role: "user", Text: "current prompt"}, {Role: "assistant", Text: "completed answer"}}, []int{0, 2, 5}, 8, 14, false); got != "current prompt" {
-			t.Fatalf("got %q", got)
-		}
-	})
-	t.Run("shows a prompt as soon as its full row is above the viewport", func(t *testing.T) {
-		if got := stickyPromptFromViewport(current, []int{0, 2, 10}, 2, 8, false); got != "current prompt" {
-			t.Fatalf("got %q", got)
-		}
-	})
-	t.Run("hides the sticky prompt at the bottom", func(t *testing.T) {
-		if got := stickyPromptFromViewport(current, []int{0, 2, 10}, 8, 10, true); got != "" {
-			t.Fatalf("got %q", got)
 		}
 	})
 }
@@ -237,33 +182,6 @@ func TestBlockRenders(t *testing.T) {
 	t.Run("keeps todo trails visible even when details are hidden", func(t *testing.T) {
 		if !blockRenders(todos, detailsCtx{DetailsMode: "hidden", CommandOverride: true}) {
 			t.Fatal("todos hidden")
-		}
-	})
-}
-
-func TestPrevRenderedMsg(t *testing.T) {
-	hidden, shown := detailsCtx{CommandOverride: true, DetailsMode: "hidden"}, detailsCtx{DetailsMode: "collapsed"}
-	rows := []msg{{Role: "user", Text: "q"}, {Role: "system", Kind: "trail", Tools: []string{"Edit foo.ts"}}, {Role: "assistant", Text: "first"},
-		{Role: "system", Kind: "trail", Tools: []string{"Edit bar.ts"}}, {Role: "assistant", Text: "second"}}
-	at := func(i int) *msg {
-		if i < 0 || i >= len(rows) {
-			return nil
-		}
-		return &rows[i]
-	}
-	t.Run("returns the literal predecessor when everything renders", func(t *testing.T) {
-		if prevRenderedMsg(at, 2, shown) != &rows[1] || prevRenderedMsg(at, 4, shown) != &rows[3] {
-			t.Fatal("predecessor")
-		}
-	})
-	t.Run("skips hidden trails so grouping sees the nearest visible block", func(t *testing.T) {
-		if prevRenderedMsg(at, 2, hidden) != &rows[0] || prevRenderedMsg(at, 4, hidden) != &rows[2] {
-			t.Fatal("skip")
-		}
-	})
-	t.Run("returns undefined at the top of the transcript", func(t *testing.T) {
-		if prevRenderedMsg(at, 0, shown) != nil {
-			t.Fatal("top")
 		}
 	})
 }

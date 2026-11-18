@@ -48,7 +48,7 @@ func stringHeaders(v any) map[string]string {
 func namedCustomProviderCatalogs(ctx context.Context) []namedCatalog {
 	cfg, err := config.LoadContext(ctx, home.Dir(ctx), nil)
 	if err != nil {
-		serverLog.Debug("Could not load named custom providers")
+		pkgLog().Debug("Could not load named custom providers")
 		return nil
 	}
 	entries := provider.CompatibleCustomProviders(map[string]any(cfg))

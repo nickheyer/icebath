@@ -3,7 +3,6 @@ package whatsappcloud
 import (
 	"context"
 	"fmt"
-	"log/slog"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -34,7 +33,7 @@ func isHTTPSource(source string) bool {
 
 // Inbound media cache directory under the profile home, the legacy whatsapp_cloud/media when populated
 func inboundMediaCache(ctx context.Context) string {
-	return home.HermesDir(home.Dir(ctx), "platforms/whatsapp_cloud/media", "whatsapp_cloud/media")
+	return home.IcebathDir(home.Dir(ctx), "platforms/whatsapp_cloud/media", "whatsapp_cloud/media")
 }
 
 // Mime of a path from its extension, the per kind default when it guesses none
@@ -89,7 +88,7 @@ func (a *WhatsAppCloudAdapter) uploadMedia(ctx context.Context, filePath, mediaK
 		if ctx.Err() != nil {
 			return nil, "", ctx.Err()
 		}
-		slog.Error("[whatsapp_cloud] media upload failed: " + err.Error())
+		pkgLog().Error("[whatsapp_cloud] media upload failed: " + err.Error())
 		return nil, pyrepr.ExceptionMessage(err), nil
 	}
 	if resp.StatusCode != http.StatusOK {
@@ -223,7 +222,7 @@ func (a *WhatsAppCloudAdapter) convertToOpus(ctx context.Context, mp3Path string
 		a.warnedNoFFmpeg = true
 		a.mu.Unlock()
 		if warn {
-			slog.Warn("[whatsapp_cloud] ffmpeg not found on PATH — voice messages will be delivered as MP3 audio " +
+			pkgLog().Warn("[whatsapp_cloud] ffmpeg not found on PATH — voice messages will be delivered as MP3 audio " +
 				"attachments instead of native voice notes (green waveform bubble). Install ffmpeg to enable: " +
 				"Windows `winget install Gyan.FFmpeg`, macOS `brew install ffmpeg`, Linux package manager.")
 		}
@@ -247,11 +246,11 @@ func (a *WhatsAppCloudAdapter) graphGet(ctx context.Context, client *http.Client
 		if ctx.Err() != nil {
 			return nil, ctx.Err()
 		}
-		slog.Error(fmt.Sprintf("[whatsapp_cloud] media %s fetch raised (id=%s): %s", what, mediaID, err.Error()))
+		pkgLog().Error(fmt.Sprintf("[whatsapp_cloud] media %s fetch raised (id=%s): %s", what, mediaID, err.Error()))
 		return nil, nil
 	}
 	if resp.StatusCode != http.StatusOK {
-		slog.Warn(fmt.Sprintf("[whatsapp_cloud] media %s fetch failed (id=%s, status=%d)", what, mediaID, resp.StatusCode))
+		pkgLog().Warn(fmt.Sprintf("[whatsapp_cloud] media %s fetch failed (id=%s, status=%d)", what, mediaID, resp.StatusCode))
 		return nil, nil
 	}
 	return resp, nil
@@ -269,7 +268,7 @@ func (a *WhatsAppCloudAdapter) downloadMediaToCache(ctx context.Context, mediaID
 		if len(short) > 64 {
 			short = short[:64]
 		}
-		slog.Warn("[whatsapp_cloud] refusing malformed media id " + pyrepr.Repr(string(short)))
+		pkgLog().Warn("[whatsapp_cloud] refusing malformed media id " + pyrepr.Repr(string(short)))
 		return "", "", nil
 	}
 	metaResp, err := a.graphGet(ctx, client, fmt.Sprintf("%s/%s/%s", graphAPIBase, a.apiVersion, mediaID), "metadata", mediaID)
@@ -310,7 +309,7 @@ func (a *WhatsAppCloudAdapter) downloadMediaToCache(ctx context.Context, mediaID
 		return "", "", &pyErr{pypath.OSErrorClass(err), pypath.OSErrorText(err)}
 	}
 	if err := os.WriteFile(outPath, blobResp.Content, 0o666); err != nil {
-		slog.Error(fmt.Sprintf("[whatsapp_cloud] failed to write cached media (id=%s): %s", mediaID, pypath.OSErrorText(err)))
+		pkgLog().Error(fmt.Sprintf("[whatsapp_cloud] failed to write cached media (id=%s): %s", mediaID, pypath.OSErrorText(err)))
 		return "", "", nil
 	}
 	return outPath, mimeText, nil

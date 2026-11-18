@@ -6,22 +6,17 @@ import (
 	"path/filepath"
 	"slices"
 
-	"github.com/nickheyer/icebath/pkg/agent"
 	"github.com/nickheyer/icebath/pkg/gateway"
-	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/state"
-	"github.com/nickheyer/icebath/pkg/tools"
 )
 
 // Declares the stored session listing methods on the session module registry
 func registerSessionListHandlers() {
 	sessionRegistry.method("session.list", withProfileDB(5006, sessionList))
 	sessionRegistry.method("session.most_recent", sessionMostRecent)
-	sessionRegistry.method("project.facts", projectFacts)
-	sessionRegistry.scopedMethod("verification.status", verificationStatusMethod)
 }
 
 // Live message count field of a stored transcript read, empty when the store cannot count it
@@ -103,7 +98,7 @@ func unarchiveRecoverable(ctx context.Context, db *state.DB, sessionID string) (
 	}
 	writer, err := state.Acquire(ctx, db.Path())
 	if err != nil {
-		logger().Warn(fmt.Sprintf("Bot Chat unarchive skipped: writer unavailable for %s", db.Path()), "exc_info", err.Error())
+		pkgLog().Warn(fmt.Sprintf("Bot Chat unarchive skipped: writer unavailable for %s", db.Path()), "exc_info", err.Error())
 		return false, nil
 	}
 	defer suppress(func() { _ = writer.Close() })
@@ -208,42 +203,10 @@ func sessionMostRecent(ctx context.Context, rid any, params map[string]any) map[
 			return
 		}
 	}); failure != nil {
-		logger().Error("session.most_recent failed", "exc_info", failureText(failure))
+		pkgLog().Error("session.most_recent failed", "exc_info", failureText(failure))
 	}
 	if found != nil {
 		return ok(rid, found)
 	}
 	return ok(rid, map[string]any{"session_id": nil})
-}
-
-// Coding context facts of a cwd the system prompt would detect, null when not code
-func projectFacts(ctx context.Context, rid any, params map[string]any) map[string]any {
-	var facts any
-	if failure := catchPanic(func() {
-		if detected := tools.ProjectFactsFor(strOr(params["cwd"])); detected != nil {
-			facts = detected
-		}
-	}); failure != nil {
-		logger().Error("project.facts failed", "exc_info", failureText(failure))
-		facts = nil
-	}
-	return ok(rid, map[string]any{"facts": facts})
-}
-
-// Best known verification evidence of a cwd or session, read only
-func verificationStatusMethod(ctx context.Context, rid any, params map[string]any) map[string]any {
-	sessionID := strOr(params["session_id"])
-	if !truthy(params["session_id"]) {
-		sessionID = strOr(params["session_key"])
-	}
-	var status map[string]any
-	if failure := catchPanic(func() {
-		resolved, err := agent.VerificationStatus(ctx, &tools.Env{Home: home.Dir(ctx)}, sessionID, strOr(params["cwd"]))
-		panicIf(err)
-		status = resolved
-	}); failure != nil {
-		logger().Error("verification.status failed", "exc_info", failureText(failure))
-		return ok(rid, map[string]any{"verification": map[string]any{"status": "unknown", "evidence": nil}})
-	}
-	return ok(rid, map[string]any{"verification": status})
 }

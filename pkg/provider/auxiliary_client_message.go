@@ -2,7 +2,6 @@ package provider
 
 import (
 	"fmt"
-	"log/slog"
 	"reflect"
 	"regexp"
 	"slices"
@@ -166,7 +165,7 @@ func ExtractContentOrReasoning(response any, maxReasoningChars int) string {
 	}
 	text := strings.Join(parts, "\n\n")
 	if runes := []rune(text); maxReasoningChars >= 0 && len(runes) > maxReasoningChars {
-		slog.Warn(fmt.Sprintf("fell back to reasoning fields (%d chars); truncating to %d", len(runes), maxReasoningChars))
+		pkgLog().Warn(fmt.Sprintf("fell back to reasoning fields (%d chars); truncating to %d", len(runes), maxReasoningChars))
 		return string(runes[:maxReasoningChars])
 	}
 	return text

@@ -88,7 +88,7 @@ var videoResolveActiveProvider = resolveActiveVideoProviderWithRefresh
 func resolveActiveVideoProviderWithRefresh(ctx context.Context, env *tools.Env) (p VideoGenProvider) {
 	defer func() {
 		if r := recover(); r != nil {
-			videoGenLog.Debug(fmt.Sprintf("video_gen provider resolution failed: %v", r))
+			pkgLog().Debug(fmt.Sprintf("video_gen provider resolution failed: %v", r))
 			p = nil
 		}
 	}()
@@ -312,11 +312,11 @@ func videoGenerate(ctx context.Context, env *tools.Env, args map[string]any, tas
 	result, err := safeVideoGenerate(envContext(ctx, env), p, env, req)
 	if err != nil {
 		if isPyTypeError(err) {
-			videoGenLog.Warn(fmt.Sprintf("video_gen provider '%s' rejected kwargs (signature too narrow): %v", pname, err))
+			pkgLog().Warn(fmt.Sprintf("video_gen provider '%s' rejected kwargs (signature too narrow): %v", pname, err))
 			return fail(fmt.Sprintf("Provider '%s' signature is out of date with the video_generate schema. Report this to the plugin author.", pname),
 				"provider_contract"), nil
 		}
-		videoGenLog.Warn(fmt.Sprintf("video_gen provider '%s' raised: %v", pname, err))
+		pkgLog().Warn(fmt.Sprintf("video_gen provider '%s' raised: %v", pname, err))
 		return fail(fmt.Sprintf("Provider '%s' error: %v", pname, err), "provider_exception"), nil
 	}
 	if result == nil {

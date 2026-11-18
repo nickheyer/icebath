@@ -375,3 +375,5 @@ func TestAgentNonstreamWatchdogPolicyHighEffortFloorsTtfbAndIdle(t *testing.T) {
 		t.Fatalf("non codex %+v", w)
 	}
 }
+
+func strPtr(s string) *string { return &s }

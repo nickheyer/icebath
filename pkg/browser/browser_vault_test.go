@@ -668,7 +668,7 @@ func TestBrowserVaultToolsPaymentFillRequiresConfirmationThenFillsCardFields(t *
 }
 
 func TestVaultHardeningReadBlockVaultDirAndContents(t *testing.T) {
-	h := filepath.Join(t.TempDir(), "hermes_home")
+	h := filepath.Join(t.TempDir(), "icebath_home")
 	vaultDir := filepath.Join(h, "vault")
 	if err := os.MkdirAll(vaultDir, 0o755); err != nil {
 		t.Fatal(err)
@@ -684,7 +684,7 @@ func TestVaultHardeningReadBlockVaultDirAndContents(t *testing.T) {
 }
 
 func TestVaultHardeningReadBlockLeavesSiblingDirsAlone(t *testing.T) {
-	h := filepath.Join(t.TempDir(), "hermes_home")
+	h := filepath.Join(t.TempDir(), "icebath_home")
 	other := filepath.Join(h, "vaults-notes")
 	if err := os.MkdirAll(other, 0o755); err != nil {
 		t.Fatal(err)

@@ -126,7 +126,6 @@ func terminalValues(extra map[string]any) map[string]any {
 	values := map[string]any{
 		"terminal.plugin_backends":      []any{map[string]any{"name": "singularity", "display_name": "Singularity/Apptainer", "description": "HPC-friendly rootless container"}},
 		"terminal.docker":               map[string]any{"path": "/usr/bin/docker", "runtime": "Docker"},
-		"terminal.modal_managed":        false,
 		"terminal.ssh_defaults":         map[string]any{"user": "nick", "key": "/home/nick/.ssh/id_rsa"},
 		"terminal.vercel_linked:" + cwd: map[string]any{},
 		"terminal.vercel_default_image": "vercel/sandbox/universal:latest",
@@ -149,7 +148,7 @@ func TestTerminalSectionKeepSavesTheWholeConfigWithoutAnswers(t *testing.T) {
 	for _, key := range g.loaded["config_keys"].([]any) {
 		keys[key] = true
 	}
-	if len(g.loaded["values"].([]any)) != 6 || !keys["terminal.vercel_runtime"] || !keys["terminal.container_disk"] {
+	if len(g.loaded["values"].([]any)) != 5 || !keys["terminal.vercel_runtime"] || !keys["terminal.container_disk"] {
 		t.Fatalf("load %+v", g.loaded)
 	}
 }
@@ -178,39 +177,11 @@ func TestTerminalSectionDockerReportsTheRuntimeAndEnablesTheFirewall(t *testing.
 	}
 }
 
-func TestTerminalSectionModalManagedBillingStartsOnDirectWithSavedTokens(t *testing.T) {
-	values := terminalValues(map[string]any{"terminal.modal_managed": true})
-	load := sectionLoad(map[string]any{"terminal.modal_mode": "auto"}, map[string]any{}, []any{"MODAL_TOKEN_ID"}, values)
-	a := testApp(t)
-	a.events.gw = &sectionGateway{load: load}
-	drain(a, a.runSection(terminalSection()))
-	backend := a.wm.Overlay().(*wm.Palette)
-	for _, item := range backend.Matches() {
-		if strings.Contains(item.Title, "Modal") {
-			a.wm.Dismiss()
-			drain(a, item.Run())
-		}
-	}
-	billing := a.wm.Overlay().(*wm.Palette).Matches()
-	if !strings.HasPrefix(billing[0].Title, "● Use my own Modal account") {
-		t.Fatalf("billing menu %+v", billing)
-	}
-	g, shown := walkSection(t, terminalSection(), load, "Modal", "Nous subscription")
-	want := [][3]any{{"config", "terminal.backend", "modal"}, {"config", "terminal.modal_mode", "managed"}, {"env", "TERMINAL_ENV", "modal"},
-		{"env", "TERMINAL_MODAL_MODE", "managed"}}
-	if got := savedWrites(g); !reflect.DeepEqual(got, want) {
-		t.Fatalf("writes %+v", got)
-	}
-	if !strings.Contains(shown, "pinned to managed mode") {
-		t.Fatalf("transcript\n%s", shown)
-	}
-}
-
 func TestTerminalSectionModalDirectReplacesTheTokenPair(t *testing.T) {
 	load := sectionLoad(map[string]any{}, map[string]any{}, []any{"MODAL_TOKEN_ID", "MODAL_TOKEN_SECRET"}, terminalValues(nil))
 	g, shown := walkSection(t, terminalSection(), load, "Modal", "Update", "new-id", "new-secret")
-	want := [][3]any{{"config", "terminal.modal_mode", "direct"}, {"config", "terminal.backend", "modal"}, {"env", "MODAL_TOKEN_ID", "new-id"},
-		{"env", "MODAL_TOKEN_SECRET", "new-secret"}, {"env", "TERMINAL_ENV", "modal"}, {"env", "TERMINAL_MODAL_MODE", "direct"}}
+	want := [][3]any{{"config", "terminal.backend", "modal"}, {"env", "MODAL_TOKEN_ID", "new-id"},
+		{"env", "MODAL_TOKEN_SECRET", "new-secret"}, {"env", "TERMINAL_ENV", "modal"}}
 	if got := savedWrites(g); !reflect.DeepEqual(got, want) {
 		t.Fatalf("writes %+v", got)
 	}
@@ -218,7 +189,7 @@ func TestTerminalSectionModalDirectReplacesTheTokenPair(t *testing.T) {
 		t.Fatalf("transcript\n%s", shown)
 	}
 	g, _ = walkSection(t, terminalSection(), load, "Modal", "Keep")
-	if got := savedWrites(g); len(got) != 4 {
+	if got := savedWrites(g); len(got) != 2 {
 		t.Fatalf("kept tokens were written %+v", got)
 	}
 }
@@ -262,9 +233,9 @@ func TestTerminalSectionVercelUsesLinkedIdsAndKeepsTheResolvedToken(t *testing.T
 		"terminal.container_memory": 5120, "terminal.container_persistent": true}
 	g, shown := walkSection(t, terminalSection(), sectionLoad(held, map[string]any{}, []any{"VERCEL_TOKEN"}, values),
 		"Vercel", "", "Do not persist", "", "", "", "", "")
-	want := [][3]any{{"config", "terminal.container_disk", 51200}, {"config", "terminal.backend", "vercel_sandbox"},
+	want := [][3]any{{"config", "terminal.container_disk", int64(51200)}, {"config", "terminal.backend", "vercel_sandbox"},
 		{"config", "terminal.vercel_image", "vercel/sandbox/universal:latest"}, {"env", "TERMINAL_VERCEL_IMAGE", "vercel/sandbox/universal:latest"},
-		{"config", "terminal.container_persistent", false}, {"config", "terminal.container_cpu", 4.0}, {"config", "terminal.container_memory", 5120},
+		{"config", "terminal.container_persistent", false}, {"config", "terminal.container_cpu", 4.0}, {"config", "terminal.container_memory", int64(5120)},
 		{"env", "VERCEL_TOKEN", "held"}, {"env", "VERCEL_PROJECT_ID", "prj_L"}, {"env", "VERCEL_TEAM_ID", "team_L"}, {"env", "TERMINAL_ENV", "vercel_sandbox"}}
 	if got := savedWrites(g); !reflect.DeepEqual(got, want) {
 		t.Fatalf("writes %+v", got)

@@ -16,7 +16,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pythread"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/tools"
-	"github.com/nickheyer/icebath/pkg/tuigateway"
+	"github.com/nickheyer/icebath/pkg/tuihost"
 )
 
 // Words config.set accepts for a boolean value
@@ -32,7 +32,7 @@ var displayToggleKeys = map[string]bool{"display.message_reactions": true, "disp
 var sessionScopedConfigKeys = map[string]bool{"model": true, "fast": true, "yolo": true, "reasoning": true}
 
 // One config.set key handler
-type configSetter func(ctx context.Context, rid any, params map[string]any, key string, value any, session *tuigateway.Session) map[string]any
+type configSetter func(ctx context.Context, rid any, params map[string]any, key string, value any, session *tuihost.Session) map[string]any
 
 var configSetRegistry = &handlerRegistry{}
 
@@ -129,7 +129,7 @@ func cfgKV(rid any, key string, value any, extra ...any) map[string]any {
 }
 
 // Waits for an in progress agent build, its error envelope or 5032 when no agent came of it
-func cfgsetAwaitAgent(ctx context.Context, session *tuigateway.Session, rid any) map[string]any {
+func cfgsetAwaitAgent(ctx context.Context, session *tuihost.Session, rid any) map[string]any {
 	if initErr := waitAgent(ctx, session, rid, 30.0); initErr != nil {
 		return initErr
 	}
@@ -146,7 +146,7 @@ func cfgsetModelOK(rid any, key string, value any, warning, confirmMessage, scop
 }
 
 // Stashes a model pick for the next turn start, a guard warning answered instead of stashing
-func stashPendingModelSwitch(ctx context.Context, rid any, key string, value any, session *tuigateway.Session, confirmed bool, parsed provider.ModelSwitchRequest) map[string]any {
+func stashPendingModelSwitch(ctx context.Context, rid any, key string, value any, session *tuihost.Session, confirmed bool, parsed provider.ModelSwitchRequest) map[string]any {
 	pendingModel := parsed.ModelInput()
 	pendingProvider := pystr.Strip(parsed.ExplicitProvider)
 	isReset := parsed.IsReset()
@@ -173,7 +173,7 @@ func stashPendingModelSwitch(ctx context.Context, rid any, key string, value any
 
 // Setter whose uncaught failure answers 5001, a config backend refusal passing through to config.set
 func cfgsetGuarded(fn configSetter) configSetter {
-	return func(ctx context.Context, rid any, params map[string]any, key string, value any, session *tuigateway.Session) (res map[string]any) {
+	return func(ctx context.Context, rid any, params map[string]any, key string, value any, session *tuihost.Session) (res map[string]any) {
 		failure := catchPanic(func() { res = fn(ctx, rid, params, key, value, session) })
 		if failure == nil {
 			return res
@@ -186,7 +186,7 @@ func cfgsetGuarded(fn configSetter) configSetter {
 }
 
 // Live or deferred model switch of a session, a sessionless once switch, else the live session refusal
-func setModel(ctx context.Context, rid any, params map[string]any, key string, value any, session *tuigateway.Session) map[string]any {
+func setModel(ctx context.Context, rid any, params map[string]any, key string, value any, session *tuihost.Session) map[string]any {
 	if !truthy(value) {
 		return rpcErr(rid, 4002, "model value required", nil)
 	}
@@ -226,7 +226,7 @@ func setModel(ctx context.Context, rid any, params map[string]any, key string, v
 		}
 		scoped := sessionProfileRuntimeScope(ctx, session, true)
 		switched, err := applyModelSwitch(scoped, sid, session, raw, modelSwitchOptions{confirmExpensiveModel: confirmed,
-			pinSessionOverride: true, parsedFlags: &parsedFlags, countSwitch: true})
+			pinSessionOverride: true, parsedFlags: &parsedFlags})
 		panicIf(err)
 		result = switched
 		if failedAgentInit && !truthy(result["confirm_required"]) {
@@ -241,8 +241,8 @@ func setModel(ctx context.Context, rid any, params map[string]any, key string, v
 			return rpcErr(rid, 4001, "config.set model requires a live session; to change the "+
 				"profile default run /setup or `icebath model`", nil)
 		}
-		switched, err := applyModelSwitch(ctx, "", tuigateway.NewSession(map[string]any{"agent": nil}), raw,
-			modelSwitchOptions{confirmExpensiveModel: confirmed, pinSessionOverride: true, countSwitch: true})
+		switched, err := applyModelSwitch(ctx, "", tuihost.NewSession(map[string]any{"agent": nil}), raw,
+			modelSwitchOptions{confirmExpensiveModel: confirmed, pinSessionOverride: true})
 		panicIf(err)
 		result = switched
 	}
@@ -267,7 +267,7 @@ var fastWords = map[string]string{"fast": "fast", "on": "fast", "normal": "norma
 	"auto": "auto", "cold": "cold", "ultrafast": "ultrafast", "ultra": "ultrafast"}
 
 // Session scoped service tier switch, validated against the selected model and mirrored onto a live agent
-func setFast(ctx context.Context, rid any, params map[string]any, key string, value any, session *tuigateway.Session) map[string]any {
+func setFast(ctx context.Context, rid any, params map[string]any, key string, value any, session *tuihost.Session) map[string]any {
 	raw := cfgWord(value)
 	a := sessionAgent(session)
 	var currentTier string
@@ -363,7 +363,7 @@ func setFast(ctx context.Context, rid any, params map[string]any, key string, va
 }
 
 // Busy input mode status, else the word setter
-func setBusy(ctx context.Context, rid any, params map[string]any, key string, value any, session *tuigateway.Session) map[string]any {
+func setBusy(ctx context.Context, rid any, params map[string]any, key string, value any, session *tuihost.Session) map[string]any {
 	if w := cfgWord(value); w == "" || w == "status" {
 		return cfgKV(rid, key, loadBusyInputMode(ctx))
 	}
@@ -371,7 +371,7 @@ func setBusy(ctx context.Context, rid any, params map[string]any, key string, va
 }
 
 // Sets or cycles the tool progress mode, mirrored onto the session and its agent
-func setVerbose(ctx context.Context, rid any, params map[string]any, key string, value any, session *tuigateway.Session) map[string]any {
+func setVerbose(ctx context.Context, rid any, params map[string]any, key string, value any, session *tuihost.Session) map[string]any {
 	cycle := []string{"off", "new", "all", "verbose"}
 	var nv string
 	if truthy(value) && value != "cycle" {
@@ -403,14 +403,14 @@ func setVerbose(ctx context.Context, rid any, params map[string]any, key string,
 }
 
 // Focus view on stashes the tool progress mode and pins it off, off restores the stashed mode
-func setFocus(ctx context.Context, rid any, params map[string]any, key string, value any, session *tuigateway.Session) map[string]any {
+func setFocus(ctx context.Context, rid any, params map[string]any, key string, value any, session *tuihost.Session) map[string]any {
 	dF := displayCfg(ctx)
 	curFocus := truthy(dF["focus_view"])
 	arg := ""
 	if truthy(value) {
 		arg = pyrepr.Str(value)
 	}
-	action, target := tuigateway.ResolveFocusArg(arg, curFocus)
+	action, target := tuihost.ResolveFocusArg(arg, curFocus)
 	if action == "usage" {
 		return rpcErr(rid, 4002, fmt.Sprintf("unknown focus value: %s (use on|off|status)", pyrepr.Str(value)), nil)
 	}
@@ -431,14 +431,14 @@ func setFocus(ctx context.Context, rid any, params map[string]any, key string, v
 		if !truthy(saved) {
 			saved = loadToolProgressMode(ctx)
 		}
-		updates = append(updates, config.KeyValue{Key: "display.focus_saved_tool_progress", Value: tuigateway.NormalizeToolProgressMode(saved, "all")})
+		updates = append(updates, config.KeyValue{Key: "display.focus_saved_tool_progress", Value: tuihost.NormalizeToolProgressMode(saved, "all")})
 		effective = "off"
 	} else {
 		saved := dF["focus_saved_tool_progress"]
 		if !truthy(saved) {
 			saved = "all"
 		}
-		effective = tuigateway.NormalizeToolProgressMode(saved, "all")
+		effective = tuihost.NormalizeToolProgressMode(saved, "all")
 	}
 	updates = append(updates, config.KeyValue{Key: "display.tool_progress", Value: effective}, config.KeyValue{Key: "display.focus_view", Value: *target})
 	panicIf(writeConfigKeys(ctx, updates))
@@ -457,12 +457,12 @@ func setFocus(ctx context.Context, rid any, params map[string]any, key string, v
 }
 
 // Legacy alias of approvals.mode reporting the real key
-func setApprovalMode(ctx context.Context, rid any, params map[string]any, key string, value any, session *tuigateway.Session) map[string]any {
+func setApprovalMode(ctx context.Context, rid any, params map[string]any, key string, value any, session *tuihost.Session) map[string]any {
 	return setWord(ctx, rid, params, "approvals.mode", value, session)
 }
 
 // Session yolo toggle, the global approvals.mode flip, or the process flag without a session
-func setYolo(ctx context.Context, rid any, params map[string]any, key string, value any, session *tuigateway.Session) map[string]any {
+func setYolo(ctx context.Context, rid any, params map[string]any, key string, value any, session *tuihost.Session) map[string]any {
 	scopeRaw := params["scope"]
 	if !truthy(scopeRaw) {
 		scopeRaw = "session"
@@ -553,7 +553,7 @@ var (
 )
 
 // Reasoning display words write display fields, effort levels pin the session or write the global effort
-func setReasoning(ctx context.Context, rid any, params map[string]any, key string, value any, session *tuigateway.Session) map[string]any {
+func setReasoning(ctx context.Context, rid any, params map[string]any, key string, value any, session *tuihost.Session) map[string]any {
 	arg := cfgWord(value)
 	scope := cfgWord(params["scope"])
 	for _, spec := range reasoningDisplayWords {
@@ -643,7 +643,7 @@ func wordSetters() map[string]wordSetter {
 }
 
 // Applies an accepted word setter value, 4002 for any other word
-func setWord(ctx context.Context, rid any, params map[string]any, key string, value any, session *tuigateway.Session) map[string]any {
+func setWord(ctx context.Context, rid any, params map[string]any, key string, value any, session *tuihost.Session) map[string]any {
 	spec := wordSetters()[key]
 	raw := spec.norm(value)
 	if !slices.Contains(spec.allowed, raw) {
@@ -654,7 +654,7 @@ func setWord(ctx context.Context, rid any, params map[string]any, key string, va
 }
 
 // Per section details mode override, an empty value clearing it
-func setDetailsSection(ctx context.Context, rid any, params map[string]any, key string, value any, session *tuigateway.Session) map[string]any {
+func setDetailsSection(ctx context.Context, rid any, params map[string]any, key string, value any, session *tuihost.Session) map[string]any {
 	section := strings.SplitN(key, ".", 2)[1]
 	if !slices.Contains(detailSectionNames, section) {
 		return rpcErr(rid, 4002, "unknown section: "+section, nil)
@@ -701,7 +701,7 @@ func toggleSetters() map[string]toggleSetter {
 		statusbarAliases[mode] = mode
 	}
 	mouseAliases := map[string]any{}
-	for alias, mode := range tuigateway.MouseTrackingAliases {
+	for alias, mode := range tuihost.MouseTrackingAliases {
 		mouseAliases[alias] = mode
 	}
 	return map[string]toggleSetter{
@@ -733,7 +733,7 @@ func toggleSetters() map[string]toggleSetter {
 }
 
 // Flips or sets one display toggle, 4002 for an unknown word
-func setToggle(ctx context.Context, rid any, params map[string]any, key string, value any, session *tuigateway.Session) map[string]any {
+func setToggle(ctx context.Context, rid any, params map[string]any, key string, value any, session *tuihost.Session) map[string]any {
 	spec := toggleSetters()[key]
 	raw := spec.norm(value)
 	var nv any
@@ -750,7 +750,7 @@ func setToggle(ctx context.Context, rid any, params map[string]any, key string, 
 }
 
 // Persists an existing working directory, publishing it to the launch process only for the launch profile
-func setCwd(ctx context.Context, rid any, params map[string]any, key string, value any, session *tuigateway.Session) map[string]any {
+func setCwd(ctx context.Context, rid any, params map[string]any, key string, value any, session *tuihost.Session) map[string]any {
 	raw := ""
 	if truthy(value) {
 		raw = pystr.Strip(pyrepr.Str(value))
@@ -771,7 +771,7 @@ func setCwd(ctx context.Context, rid any, params map[string]any, key string, val
 }
 
 // Sets or clears the custom prompt, one explicit key when no config file backs the profile
-func setPrompt(ctx context.Context, rid any, params map[string]any, key string, value any, session *tuigateway.Session) map[string]any {
+func setPrompt(ctx context.Context, rid any, params map[string]any, key string, value any, session *tuihost.Session) map[string]any {
 	reported := value
 	if value == "clear" {
 		reported = ""
@@ -798,7 +798,7 @@ func setPrompt(ctx context.Context, rid any, params map[string]any, key string, 
 }
 
 // Persists a personality and applies its prompt to the session
-func setPersonality(ctx context.Context, rid any, params map[string]any, key string, value any, session *tuigateway.Session) map[string]any {
+func setPersonality(ctx context.Context, rid any, params map[string]any, key string, value any, session *tuihost.Session) map[string]any {
 	text := ""
 	if truthy(value) {
 		text = pyrepr.Str(value)
@@ -820,15 +820,15 @@ func setPersonality(ctx context.Context, rid any, params map[string]any, key str
 }
 
 // Persists the skin and repaints every surface, syncing the watcher baseline
-func setSkin(ctx context.Context, rid any, params map[string]any, key string, value any, session *tuigateway.Session) map[string]any {
+func setSkin(ctx context.Context, rid any, params map[string]any, key string, value any, session *tuihost.Session) map[string]any {
 	panicIf(writeConfigKey(ctx, "display.skin", value))
 	broadcastGlobalEvent("skin.changed", resolveSkin(ctx))
-	tuigateway.NoteSkinBroadcast(ctx)
+	tuihost.NoteSkinBroadcast(ctx)
 	return cfgKV(rid, key, value)
 }
 
 // Boolean renderer switch the agent sees
-func setDisplayToggle(ctx context.Context, rid any, params map[string]any, key string, value any, session *tuigateway.Session) map[string]any {
+func setDisplayToggle(ctx context.Context, rid any, params map[string]any, key string, value any, session *tuihost.Session) map[string]any {
 	on, known := boolWords[pystr.Lower(pystr.Strip(pyrepr.Str(value)))]
 	if !known {
 		return rpcErr(rid, 4002, key+" takes true or false", nil)
@@ -838,7 +838,7 @@ func setDisplayToggle(ctx context.Context, rid any, params map[string]any, key s
 }
 
 // Profile wide daybreak flag every turn reads
-func setDaybreak(ctx context.Context, rid any, params map[string]any, key string, value any, session *tuigateway.Session) map[string]any {
+func setDaybreak(ctx context.Context, rid any, params map[string]any, key string, value any, session *tuihost.Session) map[string]any {
 	on, known := boolWords[pystr.Lower(pystr.Strip(pyrepr.Str(value)))]
 	if !known {
 		return rpcErr(rid, 4002, key+" takes true or false", nil)
@@ -854,7 +854,7 @@ func configSet(ctx context.Context, rid any, params map[string]any) (res map[str
 	if !has {
 		value = ""
 	}
-	session := tuigateway.SessionRecord(strOr(params["session_id"]))
+	session := tuihost.SessionRecord(strOr(params["session_id"]))
 	if session == nil && truthy(params["session_id"]) && sessionScopedConfigKeys[key] && cfgWord(params["scope"]) != "global" {
 		_, errResp := sessNowait(ctx, params, rid)
 		return errResp

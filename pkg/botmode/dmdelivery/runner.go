@@ -15,11 +15,11 @@ import (
 	"syscall"
 
 	"github.com/nickheyer/icebath/pkg/botmode"
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pyshutil"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/internal/pysubprocess"
@@ -253,7 +253,8 @@ func DeliveryMain(ctx context.Context, args []string, stdout, stderr io.Writer) 
 	}
 	payload, dumpErr := pyjson.Dumps(pyjson.ObjectOf("error", excText(err), "reason", tools.DeliveryFailureReason(reasonErr)))
 	if dumpErr != nil {
-		fmt.Fprintf(stderr, "Traceback (most recent call last):\n%s: %s\n", pyrepr.ExceptionName(dumpErr), excText(dumpErr))
+		fmt.Fprintf(stderr, "DM delivery failed (%s) and its failure report could not be encoded: %s\n", err, dumpErr)
+		pkgLog().Error("DM delivery failure report could not be encoded: "+dumpErr.Error(), "delivery_error_chain", errchain.Text(err), "error_chain", errchain.Text(dumpErr))
 		return 1
 	}
 	fmt.Fprintln(stdout, payload)

@@ -207,7 +207,7 @@ func cwdFollowsHostMount(cwd, mount string) bool {
 var containerBackends = map[string]bool{"docker": true, "modal": true, "daytona": true, "vercel_sandbox": true}
 
 // Every backend shipped in this package
-var builtinBackends = map[string]bool{"docker": true, "modal": true, "daytona": true, "vercel_sandbox": true, "local": true, "ssh": true, "managed_modal": true}
+var builtinBackends = map[string]bool{"docker": true, "modal": true, "daytona": true, "vercel_sandbox": true, "local": true, "ssh": true}
 
 // Every shipped terminal backend name in sorted order
 func BuiltinTerminalBackends() []string { return slices.Sorted(maps.Keys(builtinBackends)) }

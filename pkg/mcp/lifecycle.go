@@ -12,7 +12,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/tools"
-	"github.com/nickheyer/icebath/pkg/tuigateway"
+	"github.com/nickheyer/icebath/pkg/tuihost"
 )
 
 // Stdio child ledgers guarded by mcpMu, live pids with their owner, orphans awaiting the sweep, groups and start times
@@ -69,7 +69,7 @@ func reregisterOrphanedAdopters(ctx context.Context, env *tools.Env) {
 		func() {
 			defer func() {
 				if r := recover(); r != nil {
-					mcpLogger().Debug(fmt.Sprintf("MCP: re-registration for profile scope %s failed: %v", adopter, r))
+					pkgLog().Debug(fmt.Sprintf("MCP: re-registration for profile scope %s failed: %v", adopter, r))
 				}
 			}()
 			actx := withSecretScope(home.WithOverride(ctx, adopter), adopterSecretScope(adopter), adopter)
@@ -174,7 +174,7 @@ func ShutdownMCPServers(ctx context.Context, scope *string, names []string, time
 				go func(srv *serverTask) {
 					defer func() {
 						if r := recover(); r != nil {
-							mcpLogger().Debug(fmt.Sprintf("Error closing MCP server '%s': %v", srv.name, r))
+							pkgLog().Debug(fmt.Sprintf("Error closing MCP server '%s': %v", srv.name, r))
 						}
 						done <- struct{}{}
 					}()
@@ -194,13 +194,13 @@ func ShutdownMCPServers(ctx context.Context, scope *string, names []string, time
 			mcpMu.Unlock()
 		})
 		if err != nil {
-			mcpLogger().Debug(fmt.Sprintf("MCP shutdown: failed to schedule: %v", err))
+			pkgLog().Debug(fmt.Sprintf("MCP shutdown: failed to schedule: %v", err))
 		} else {
 			t := time.NewTimer(timeout)
 			select {
 			case <-finished:
 			case <-t.C:
-				mcpLogger().Debug(fmt.Sprintf("Error during MCP shutdown: timed out after %.1fs", timeout.Seconds()))
+				pkgLog().Debug(fmt.Sprintf("Error during MCP shutdown: timed out after %.1fs", timeout.Seconds()))
 			}
 			t.Stop()
 		}
@@ -263,17 +263,17 @@ func takeReapablePIDs(includeActive bool, serverName string) (map[int]string, ma
 func signalMCPProcess(pid int, force bool, serverName string, pgid int, hasPGID bool, myPGID int, hasMy bool, expectedStart int64, hasStart bool) {
 	if hasStart {
 		if current, ok := reaper.startTime(pid); ok && !tools.StartTimeFingerprintsMatch(expectedStart, current) {
-			mcpLogger().Debug(fmt.Sprintf("Skip signalling MCP pid %d (%s): start-time mismatch — PID was recycled; refusing to kill an unrelated process group.", pid, serverName))
+			pkgLog().Debug(fmt.Sprintf("Skip signalling MCP pid %d (%s): start-time mismatch — PID was recycled; refusing to kill an unrelated process group.", pid, serverName))
 			return
 		}
 	}
 	if hasPGID && groupSignalSupported {
 		if hasMy && pgid == myPGID {
-			mcpLogger().Warn(fmt.Sprintf("MCP server '%s' pgid %d matches gateway pgid; skipping killpg to avoid self-kill and using per-pid kill — any grandchildren in this group may not be reaped", serverName, pgid))
+			pkgLog().Warn(fmt.Sprintf("MCP server '%s' pgid %d matches gateway pgid; skipping killpg to avoid self-kill and using per-pid kill — any grandchildren in this group may not be reaped", serverName, pgid))
 		} else if err := reaper.killpg(pgid, signalNumber(force)); err == nil {
 			return
 		} else {
-			mcpLogger().Debug(fmt.Sprintf("killpg(%d, %d) failed for MCP server '%s': %v; falling back to kill(pid)", pgid, signalNumber(force), serverName, err))
+			pkgLog().Debug(fmt.Sprintf("killpg(%d, %d) failed for MCP server '%s': %v; falling back to kill(pid)", pgid, signalNumber(force), serverName, err))
 		}
 	}
 	reaper.kill(pid, signalNumber(force))
@@ -298,7 +298,7 @@ func killOrphanedMCPChildren(includeActive bool, serverName string) {
 		pg, hasPG := pgids[pid]
 		st, hasSt := starts[pid]
 		signalMCPProcess(pid, false, owner, pg, hasPG, myPGID, hasMy, st, hasSt)
-		mcpLogger().Debug(fmt.Sprintf("Sent SIGTERM to orphaned MCP process %d (%s)", pid, owner))
+		pkgLog().Debug(fmt.Sprintf("Sent SIGTERM to orphaned MCP process %d (%s)", pid, owner))
 	}
 	reaper.sleep(orphanKillGrace)
 	for pid, owner := range pids {
@@ -306,7 +306,7 @@ func killOrphanedMCPChildren(includeActive bool, serverName string) {
 		st, hasSt := starts[pid]
 		if reaper.pidExists(pid) || recordedGroupAlive(pg, hasPG, myPGID, hasMy) {
 			signalMCPProcess(pid, true, owner, pg, hasPG, myPGID, hasMy, st, hasSt)
-			mcpLogger().Warn(fmt.Sprintf("Force-killed MCP process %d (%s) after SIGTERM timeout", pid, owner))
+			pkgLog().Warn(fmt.Sprintf("Force-killed MCP process %d (%s) after SIGTERM timeout", pid, owner))
 		}
 	}
 	groups := make([]int, 0, len(pgids))
@@ -321,7 +321,7 @@ func stopMCPLoopIfIdle() bool { return stopMCPLoop(true) }
 
 // Argv markers of gateway children that race into a spawn window and are never MCP servers, matched against argv[1:]
 var nonMCPChildCmdlineMarkers = []string{
-	tuigateway.SlashWorkerEntry, tuigateway.TUIGatewayEntry,
+	tuihost.SlashWorkerEntry, tuihost.TUIGatewayEntry,
 	"-dorg.eclipse.equinox.launcher", "eclipse.jdt.ls", "org.eclipse.equinox.launcher_",
 }
 

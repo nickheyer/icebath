@@ -16,6 +16,8 @@ import (
 	"sync"
 	"time"
 
+	"github.com/nickheyer/icebath/pkg/browser/quiet"
+	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/internal/pydeadline"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyshlex"
@@ -25,8 +27,8 @@ import (
 // DesktopUser is the account the desktop and browser run as inside a sandbox image that has it
 const DesktopUser = "pn"
 
-// SandboxImageHint names the published image carrying the desktop stack
-const SandboxImageHint = "nousresearch/hermes-sandbox:desktop"
+// SandboxImageHint names the image icebath builds with the desktop stack
+const SandboxImageHint = config.DefaultSandboxImage
 
 var sandboxRequired = []string{"Xvnc", "xfwm4", "xfce4-panel", "xfdesktop", "xfsettingsd", "dbus-run-session", "xauth", "xdpyinfo", "xprop"}
 
@@ -36,7 +38,7 @@ var launcherScript []byte
 //go:embed wallpaper.png
 var wallpaperPNG []byte
 
-// Python class name of a terminal environment as hermes logs and records it, the bare type name otherwise
+// Class name of a terminal environment as logs and records name it, the bare type name otherwise
 func envClassName(e tools.Environment) string {
 	if c, ok := e.(interface{ ClassName() string }); ok {
 		return c.ClassName()
@@ -59,7 +61,7 @@ func PluginImageAdvice(backend string) string {
 	if backend == "" || slices.Contains(tools.BuiltinTerminalBackends(), backend) {
 		return ""
 	}
-	return fmt.Sprintf("give the %s plugin's sandbox the desktop stack through the plugin's own image setting (%s has it)", backend, SandboxImageHint)
+	return fmt.Sprintf("give the %s plugin's sandbox the desktop stack through the plugin's own image setting (the %s image icebath builds has it)", backend, SandboxImageHint)
 }
 
 // Host side record of the sandbox owning the screen
@@ -138,7 +140,7 @@ func MarkerSandboxAlive(marker map[string]any) bool {
 	return alive
 }
 
-// Per environment probe results hermes caches as attributes on the env object
+// Per environment probe results cached on the env object
 var envCache sync.Map
 
 type envFacts struct {
@@ -161,6 +163,21 @@ func remoteDir(e tools.Environment, profile string) string {
 // Runs argv inside the sandbox as user with a timeout in seconds
 func runIn(e tools.Environment, argv []string, childEnv map[string]string, user string, timeoutS float64) (*tools.RunInResult, error) {
 	return tools.RunIn(context.Background(), e, argv, childEnv, user, time.Duration(timeoutS*float64(time.Second)), nil)
+}
+
+// Writes the agent profile preferences into the sandbox browser profile as the desktop user
+func SeedSandboxBrowserProfile(e tools.Environment, userDataDir string) error {
+	user, err := userFor(e)
+	if err != nil {
+		return err
+	}
+	return quiet.SeedRemoteProfile(userDataDir, true, func(argv []string, stdin []byte) ([]byte, int, error) {
+		proc, err := tools.RunIn(context.Background(), e, argv, nil, user, 30*time.Second, stdin)
+		if err != nil {
+			return nil, 0, err
+		}
+		return proc.Stdout, proc.ReturnCode, nil
+	})
 }
 
 // Desktop user when the sandbox has it, empty for the exec default, cached per env
@@ -392,7 +409,7 @@ func SandboxStart(env *tools.Env, e tools.Environment, profile, geometry string,
 	if len(missing) > 0 {
 		advice := PluginImageAdvice(pluginBackendName(e))
 		if advice == "" {
-			advice = fmt.Sprintf("use %s (the default sandbox base plus the desktop stack) as terminal.docker_image / modal_image", SandboxImageHint)
+			advice = fmt.Sprintf("use %s (the sandbox icebath builds, desktop stack included) as terminal.docker_image / modal_image", SandboxImageHint)
 		}
 		return nil, fmt.Errorf("Bot Desktop needs %s inside the terminal backend's sandbox. The configured image "+
 			"does not have them; %s, or set bot_desktop.placement: gateway.", strings.Join(missing, ", "), advice)
@@ -513,15 +530,45 @@ func SandboxStop(env *tools.Env, e tools.Environment, profile string) (bool, err
 	return proc.ReturnCode == 0, nil
 }
 
-// Command and args running cua-driver mcp on the sandbox display through the backend exec prefix
-func CuaMCPInvocation(e tools.Environment, profile string, published map[string]string) (string, []string, error) {
+// Switches every Cua program honours to keep its maker's product telemetry off
+func CuaTelemetryOff() map[string]string {
+	return map[string]string{"CUA_DRIVER_RS_TELEMETRY_ENABLED": "false", "CUA_TELEMETRY_ENABLED": "false", "CUA_TELEMETRY": "0", "DO_NOT_TRACK": "1"}
+}
+
+// Switch stopping cua-driver from asking GitHub for releases, icebath installs the versions it runs
+const CuaUpdateCheckVar = "CUA_DRIVER_RS_UPDATE_CHECK"
+
+// Command and args running cua-driver mcp on the sandbox display, telemetry off unless the user opted in
+func CuaMCPInvocation(e tools.Environment, profile string, published map[string]string, telemetryOptIn bool) (string, []string, error) {
+	child := make(map[string]string, len(published)+5)
+	for k, v := range published {
+		child[k] = v
+	}
+	telemetry := CuaTelemetryOff()
+	if telemetryOptIn {
+		telemetry = map[string]string{"CUA_DRIVER_RS_TELEMETRY_ENABLED": "true", "CUA_TELEMETRY_ENABLED": "true", "CUA_TELEMETRY": "", "DO_NOT_TRACK": ""}
+	}
+	for k, v := range telemetry {
+		child[k] = v
+	}
+	child[CuaUpdateCheckVar] = "false"
+	return displayCommand(e, child, []string{"cua-driver", "mcp", "--no-overlay"}, "host cua-driver")
+}
+
+// Command and args running argv as the desktop user on the sandbox display through the backend exec prefix
+func SandboxDisplayCommand(e tools.Environment, published map[string]string, argv []string) (string, []string, error) {
+	return displayCommand(e, published, argv, "run "+argv[0])
+}
+
+// Local argv of a sandbox display command, the refusal naming what the backend cannot do
+func displayCommand(e tools.Environment, published map[string]string, argv []string, what string) (string, []string, error) {
 	user, err := userFor(e)
 	if err != nil {
 		return "", nil, err
 	}
-	argv := tools.RemoteCommand(e, []string{"cua-driver", "mcp", "--no-overlay"}, published, user, true)
-	if argv == nil {
-		return "", nil, fmt.Errorf("%s cannot host cua-driver", envClassName(e))
+	full := tools.RemoteCommand(e, argv, published, user, true)
+	if full == nil {
+		return "", nil, fmt.Errorf("%s cannot %s", envClassName(e), what)
 	}
-	return argv[0], argv[1:], nil
+	return full[0], full[1:], nil
 }

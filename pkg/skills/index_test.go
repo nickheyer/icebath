@@ -130,14 +130,14 @@ func TestSkillShouldShow(t *testing.T) {
 func TestBuildSkillsSystemPromptConditional(t *testing.T) {
 	t.Run("test_requires_skill_hidden_when_toolset_missing", func(t *testing.T) {
 		s, h := indexScope(t)
-		writeIndexSkill(t, filepath.Join(h, "skills"), "iot/openhue", "---\nname: openhue\ndescription: Hue lights\nmetadata:\n  hermes:\n    requires_toolsets: [terminal]\n---\n")
+		writeIndexSkill(t, filepath.Join(h, "skills"), "iot/openhue", "---\nname: openhue\ndescription: Hue lights\nmetadata:\n  icebath:\n    requires_toolsets: [terminal]\n---\n")
 		if out := buildIndex(t, s, SkillsPromptOptions{AvailableTools: map[string]bool{}, AvailableToolsets: map[string]bool{}}); strings.Contains(out, "openhue") {
 			t.Fatal(out)
 		}
 	})
 	t.Run("test_no_args_shows_all_skills", func(t *testing.T) {
 		s2, h2 := indexScope(t)
-		writeIndexSkill(t, filepath.Join(h2, "skills"), "search/duckduckgo", "---\nname: duckduckgo\ndescription: Free web search\nmetadata:\n  hermes:\n    fallback_for_toolsets: [web]\n---\n")
+		writeIndexSkill(t, filepath.Join(h2, "skills"), "search/duckduckgo", "---\nname: duckduckgo\ndescription: Free web search\nmetadata:\n  icebath:\n    fallback_for_toolsets: [web]\n---\n")
 		if out := buildIndex(t, s2, SkillsPromptOptions{}); !strings.Contains(out, "duckduckgo") {
 			t.Fatal(out)
 		}
@@ -150,7 +150,7 @@ func TestSessionPlatformGate(t *testing.T) {
 		for i, x := range p {
 			list[i] = x
 		}
-		return extractSkillConditions(map[string]any{"metadata": map[string]any{"hermes": map[string]any{"session_platforms": list}}})
+		return extractSkillConditions(map[string]any{"metadata": map[string]any{"icebath": map[string]any{"session_platforms": list}}})
 	}
 	term := map[string]bool{"terminal": true}
 	cases := []struct {

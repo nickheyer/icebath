@@ -17,14 +17,6 @@ func nativeArchImpl() string {
 	return ProcessArch()
 }
 
-func ramTotalImpl() int64 {
-	v, err := unix.SysctlUint64("hw.memsize")
-	if err != nil {
-		return 0
-	}
-	return int64(v)
-}
-
 func gpuClassImpl() string {
 	if NativeArch() == "arm64" {
 		return "apple_silicon"

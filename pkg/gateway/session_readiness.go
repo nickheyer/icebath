@@ -3,7 +3,6 @@ package gateway
 import (
 	"context"
 	"fmt"
-	"log/slog"
 	"path/filepath"
 
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
@@ -14,11 +13,6 @@ import (
 // Setup status verb, whether the profile has any provider configured
 func (c *AuthorityConnection) setupStatus(ctx context.Context, ref SessionRef, params *pyjson.Object) (any, error) {
 	return readiness(ctx, c.authority, c.actor, params, false)
-}
-
-// Setup runtime check verb, the readiness verdict of the runtime a session would build with
-func (c *AuthorityConnection) setupRuntimeCheck(ctx context.Context, ref SessionRef, params *pyjson.Object) (any, error) {
-	return readiness(ctx, c.authority, c.actor, params, true)
 }
 
 // Profile bound setup probe that reports a failure in its answer instead of raising
@@ -56,7 +50,7 @@ func readiness(ctx context.Context, a *SessionAuthority, actor Principal, params
 		requested, _ := params.GetOr("provider", "").(string)
 		answer, err := CheckRuntimeReadiness(scoped, requested, true)
 		if err != nil {
-			slog.Debug(fmt.Sprintf("readiness probe failed: %s", err))
+			pkgLog().Debug(fmt.Sprintf("readiness probe failed: %s", err))
 			return ReadinessFailure(err), nil
 		}
 		return answer, nil

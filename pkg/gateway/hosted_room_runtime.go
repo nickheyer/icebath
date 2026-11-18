@@ -4,8 +4,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"log/slog"
 	"sort"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -25,10 +25,6 @@ const (
 )
 
 var hostedStopAckStatuses = map[string]bool{"cancelled": true, "interrupted": true}
-
-func hostedRuntimeLog() *slog.Logger {
-	return slog.Default().With("logger", "tui_gateway.hosted_room_driver")
-}
 
 // Member route that cannot carry the turn's files, refused before submit
 type AttachmentsUnsupportedError struct{ Msg string }
@@ -618,7 +614,56 @@ func (r *HostedRoomRuntime) terminalFromHistory(transport InternalSessionRPC, pr
 	if err != nil {
 		return nil, err
 	}
-	return hostedFindTerminalReceipt(history, hrTaskIdentity(task), hrTaskInt(task, "execution_generation")), nil
+	identity, generation := hrTaskIdentity(task), hrTaskInt(task, "execution_generation")
+	found := hostedFindTerminalReceipt(history, identity, generation)
+	if found == nil {
+		return nil, nil
+	}
+	if found.result, err = r.terminalResult(identity, generation, found.status, found.result, memberOnThisGateway(transport)); err != nil {
+		return nil, err
+	}
+	return found, nil
+}
+
+// Whether the member's turn ran on this machine, so the paths its reply names are files here
+func memberOnThisGateway(transport InternalSessionRPC) bool {
+	_, peer := transport.(*PeerHostedRoomTransport)
+	return !peer
+}
+
+// Stored result of a member receipt, reply files read from disk here or taken verified from a peer route
+func (r *HostedRoomRuntime) terminalResult(identity TaskIdentity, generation int64, status string, receipt map[string]any, local bool) (map[string]any, error) {
+	if status != "settled" {
+		return hostedBoundedTerminalResult(receipt), nil
+	}
+	shaped := make(map[string]any, len(receipt))
+	for key, value := range receipt {
+		shaped[key] = value
+	}
+	var files []any
+	if local {
+		text := ""
+		if pyrepr.Truthy(receipt["text"]) {
+			text = pyrepr.Str(receipt["text"])
+		}
+		prefix := fmt.Sprintf("reply.%s.g%d", strings.TrimPrefix(identity.TaskID, "dtask:"), generation)
+		cleaned, stored, err := memberReplyFiles(r.ctx, r.DBPath, identity.RoomID, prefix, text)
+		if err != nil {
+			return nil, err
+		}
+		shaped["text"], files = cleaned, stored
+	} else if raw, has := receipt["attachments"]; has {
+		manifest, err := ValidateAttachmentManifest(raw)
+		if err != nil {
+			return nil, err
+		}
+		files = toAnyList(manifest)
+	}
+	result := hostedBoundedTerminalResult(shaped)
+	if len(files) > 0 {
+		result["attachments"] = files
+	}
+	return result, nil
 }
 
 // Probes a peer's exact durable terminal Stop receipt before reading history
@@ -829,6 +874,7 @@ func hostedBoundedTerminalResult(receipt map[string]any) map[string]any {
 	return out
 }
 
+// Newest terminal row of the attempt with its raw text and files, unbounded until the runtime stores it
 func hostedFindTerminalReceipt(history []map[string]any, identity TaskIdentity, executionGeneration int64) *hostedTerminalReceipt {
 	for i := len(history) - 1; i >= 0; i-- {
 		message := history[i]
@@ -845,8 +891,11 @@ func hostedFindTerminalReceipt(history []map[string]any, identity TaskIdentity, 
 		if !has {
 			content = ""
 		}
-		return &hostedTerminalReceipt{status: status, settlementID: receiptID,
-			result: hostedBoundedTerminalResult(map[string]any{"message_id": receiptID, "text": content})}
+		raw := map[string]any{"message_id": receiptID, "text": content}
+		if files, has := message["attachments"]; has {
+			raw["attachments"] = files
+		}
+		return &hostedTerminalReceipt{status: status, settlementID: receiptID, result: raw}
 	}
 	return nil
 }

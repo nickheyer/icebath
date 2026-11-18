@@ -28,7 +28,7 @@ func WaitForLaunchdServicePID(ctx context.Context, label string, oldPid int, hav
 func GetRestartDrainTimeout(ctx context.Context) (float64, error) { return getRestartDrainTimeout(ctx) }
 
 // Whether pid is still the icebath process born at the expected start time
-func PidIsHermes(pid int, expectedStartTime any) bool { return pidIsHermes(pid, expectedStartTime) }
+func PidIsIcebath(pid int, expectedStartTime any) bool { return pidIsIcebath(pid, expectedStartTime) }
 
 // Records the gateway pids a start vouched for so a later death is reported
 func WriteStartAttestation(ctx context.Context, pids []int, via string) {

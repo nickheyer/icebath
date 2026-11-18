@@ -7,15 +7,17 @@ import (
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/media"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
+
+// SpeechInterruptedNote is prepended to the model bound message after a barge in on a spoken reply
+const SpeechInterruptedNote = "[Note: the user interrupted your previous spoken reply before it finished.]"
 
 // Model bound note of a committed surface, the barge in note first then the HUD or spoken delegation note
 func SurfaceNote(committed *pyjson.Object, validToolNames map[string]bool) string {
 	var notes []string
 	if pyrepr.Truthy(committed.GetOr("interrupted", nil)) {
-		notes = append(notes, media.SpeechInterruptedNote)
+		notes = append(notes, SpeechInterruptedNote)
 	}
 	switch committed.GetOr("surface", nil) {
 	case "hud":

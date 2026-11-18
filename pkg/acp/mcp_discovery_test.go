@@ -50,11 +50,11 @@ func blockedDiscovery(t *testing.T, threadName string) (release func(), done <-c
 	return release, finished
 }
 
-func discoverySession(t *testing.T, fake *mockAgent) (*HermesACPAgent, *SessionState) {
+func discoverySession(t *testing.T, fake *mockAgent) (*IcebathACPAgent, *SessionState) {
 	t.Helper()
 	noStore(t)
 	m := NewSessionManager(func() any { return fake }, nil)
-	return NewHermesACPAgent(m), mustCreate(t, m, ".")
+	return NewIcebathACPAgent(m), mustCreate(t, m, ".")
 }
 
 func lateRefreshAgent() *mockAgent {

@@ -66,7 +66,7 @@ func snapshotFixture(t *testing.T) (*tools.Env, string, string) {
 	t.Helper()
 	dir := t.TempDir()
 	src := makeProfile(t, filepath.Join(dir, "real"))
-	h := filepath.Join(dir, "hermes-home")
+	h := filepath.Join(dir, "icebath-home")
 	t.Setenv("ICEBATH_HOME", h)
 	return &tools.Env{Home: h}, src, filepath.Join(h, "browser-profile", "chrome")
 }
@@ -696,7 +696,7 @@ func TestWindowsLockedProfileCopyLockedCookieDbCopiedViaBackup(t *testing.T) {
 		t.Fatal(err)
 	}
 	for i := range 42 {
-		if _, err := holder.Exec("insert into cookies values(?,?)", "nous.ai", "c"+strings.Repeat("x", i)); err != nil {
+		if _, err := holder.Exec("insert into cookies values(?,?)", "example.org", "c"+strings.Repeat("x", i)); err != nil {
 			t.Fatal(err)
 		}
 	}

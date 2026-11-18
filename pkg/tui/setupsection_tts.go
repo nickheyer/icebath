@@ -3,6 +3,8 @@ package tui
 import (
 	"runtime"
 	"strings"
+
+	"github.com/nickheyer/icebath/pkg/tuigateway"
 )
 
 // Keyed speech providers in menu order
@@ -19,9 +21,6 @@ var ttsKeyEnvs = map[string][]string{
 
 // Speech provider picked in this walk, empty when the current one is kept
 func ttsPicked(run *sectionRun) string {
-	if picked, answered := run.answers["provider_nous"].(string); answered {
-		return picked
-	}
 	picked, _ := run.answers["provider"].(string)
 	return picked
 }
@@ -48,8 +47,6 @@ func ttsOutcome(run *sectionRun) string {
 	picked := ttsPicked(run)
 	fell := false
 	switch picked {
-	case "nous-openai":
-		return "openai"
 	case "xai":
 		fell = !run.facts["env:XAI_API_KEY"] && !run.facts["xai.oauth"] && run.answers["xai_login"] != true && run.answers["xai_key"] == nil
 	case "neutts", "kittentts":
@@ -81,13 +78,9 @@ func espeakInstall() []string {
 	return []string{"sudo", "apt", "install", "-y", "espeak-ng"}
 }
 
-// Speech provider menu, the managed Nous route first when the subscription offers it
-func ttsProviders(nous bool) []sectionChoice {
-	choices := []sectionChoice{{nil, tr("setupFlow.tts.keep"), tr("setupFlow.tts.keepDetail")}}
-	if nous {
-		choices = append(choices, sectionChoice{"nous-openai", "Nous Subscription", tr("setupFlow.tts.provider.nous")})
-	}
-	return append(choices,
+// Speech provider menu, the current one kept first
+func ttsProviders() []sectionChoice {
+	return []sectionChoice{{nil, tr("setupFlow.tts.keep"), tr("setupFlow.tts.keepDetail")},
 		sectionChoice{"edge", "Edge TTS", tr("setupFlow.tts.provider.edge")},
 		sectionChoice{"elevenlabs", "ElevenLabs", tr("setupFlow.tts.provider.elevenlabs")},
 		sectionChoice{"openai", "OpenAI TTS", tr("setupFlow.tts.provider.openai")},
@@ -96,7 +89,7 @@ func ttsProviders(nous bool) []sectionChoice {
 		sectionChoice{"mistral", "Mistral Voxtral TTS", tr("setupFlow.tts.provider.mistral")},
 		sectionChoice{"gemini", "Google Gemini TTS", tr("setupFlow.tts.provider.gemini")},
 		sectionChoice{"neutts", "NeuTTS", tr("setupFlow.tts.provider.neutts")},
-		sectionChoice{"kittentts", "KittenTTS", tr("setupFlow.tts.provider.kittentts")})
+		sectionChoice{"kittentts", "KittenTTS", tr("setupFlow.tts.provider.kittentts")}}
 }
 
 // Questions of one local speech engine, its platform support, install offer, system package and install run
@@ -129,7 +122,7 @@ func ttsEngineFields(engine, name string) []sectionField {
 		ready = allOf(ready, notCond(answerIs("espeak_run", false)))
 	}
 	return append(fields,
-		sectionField{id: sync, kind: fieldAction, action: "tts.install." + engine, label: tr("setupFlow.tts.installing"), when: ready},
+		sectionField{id: sync, kind: fieldAction, action: tuigateway.SetupAction("tts.install." + engine), label: tr("setupFlow.tts.installing"), when: ready},
 		sectionField{id: engine + "_failed", kind: fieldNotice, label: tr("setupFlow.tts.installFailed", name),
 			when: allOf(answerIs(install, true), notCond(answerIs(sync, true)))})
 }
@@ -138,16 +131,11 @@ func ttsEngineFields(engine, name string) []sectionField {
 func ttsSection() sectionSpec {
 	provider := []sectionTarget{{key: "tts.provider"}}
 	settled := func(run *sectionRun, _ any) any { return ttsOutcome(run) }
-	nous := factHolds("nous.managed_tools")
-	facts := []string{"nous.managed_tools", "xai.oauth", "env:XAI_API_KEY", "extra:neutts", "extra:kittentts", "module:neutts", "module:kittentts",
+	facts := []string{"xai.oauth", "env:XAI_API_KEY", "extra:neutts", "extra:kittentts", "module:neutts", "module:kittentts",
 		"binary:espeak-ng", "binary:espeak"}
 	fields := []sectionField{
 		{id: "provider", kind: fieldChoice, label: tr("setupFlow.tts.providerLabel"), targets: provider, fallback: "edge",
-			choices: ttsProviders(false), when: notCond(nous), settle: settled},
-		{id: "provider_nous", kind: fieldChoice, label: tr("setupFlow.tts.providerLabel"), targets: provider, fallback: "edge",
-			choices: ttsProviders(true), when: nous, settle: settled},
-		{id: "nous_managed", kind: fieldNotice, label: tr("setupFlow.tts.nousManaged"), when: ttsPickedIs("nous-openai")},
-		{id: "nous_direct", kind: fieldNotice, label: tr("setupFlow.tts.nousDirect"), when: allOf(ttsPickedIs("nous-openai"), ttsKeyHeld("openai"))},
+			choices: ttsProviders(), settle: settled},
 	}
 	for _, name := range ttsKeyed {
 		for _, key := range ttsKeyEnvs[name] {

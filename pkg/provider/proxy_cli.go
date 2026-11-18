@@ -29,7 +29,7 @@ func proxyErr(errw io.Writer, msg string) {
 func cmdProxyStart(cli *proxyCLI) (int, error) {
 	provider := nsText(cli.ns, "provider")
 	if provider == "" {
-		provider = "nous"
+		provider = "xai"
 	}
 	adapter, err := getAdapter(cli.env, provider)
 	if err != nil {
@@ -128,7 +128,7 @@ func CmdProxy(ctx context.Context, h string, ns map[string]any, w, errw io.Write
 		"OAuth-authenticated provider credentials to outbound requests.\n"+
 		"\n"+
 		"Subcommands:\n"+
-		"  icebath proxy start [--provider nous|xai] [--host 127.0.0.1] [--port 8645]\n"+
+		"  icebath proxy start [--provider xai] [--host 127.0.0.1] [--port 8645]\n"+
 		"      Run the proxy in the foreground.\n"+
 		"  icebath proxy status\n"+
 		"      Show which upstream adapters are ready.\n"+

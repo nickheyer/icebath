@@ -3,7 +3,6 @@ package provider
 import (
 	"context"
 	"errors"
-	"log/slog"
 	"math"
 	"strings"
 	"sync"
@@ -31,9 +30,6 @@ func inlineHarness(t *testing.T) (context.Context, *RetrySession, func() []Strea
 func TestStalledInlineCallIsAbortedAndFeedsTheStaleBreaker(t *testing.T) {
 	ctx, s, events := inlineHarness(t)
 	logs := captureLogs(t)
-	prevLog := nonStreamLog
-	nonStreamLog = slog.Default()
-	t.Cleanup(func() { nonStreamLog = prevLog })
 	_, err := runNonStreamRequest(ctx, "m", 1200, 0.2, func(ctx context.Context) (*Response, error) {
 		<-ctx.Done()
 		return nil, ctx.Err()

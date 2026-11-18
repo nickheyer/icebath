@@ -13,7 +13,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/proc"
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 )
 
 // Hidden entry of the install binary that runs a gateway restart once the old pid exits or the wait runs out
@@ -29,17 +28,17 @@ func DispatchDetachedRestartWatcherEntry(ctx context.Context) {
 // Waits up to the bound for the pid to exit, then spawns the command detached with its output discarded
 func DetachedRestartWatcherMain(ctx context.Context, args []string, stderr io.Writer) int {
 	if len(args) < 2 {
-		fmt.Fprintln(stderr, "IndexError: list index out of range")
+		fmt.Fprintln(stderr, "restart watcher needs a pid, a delay in seconds and the command to run")
 		return 1
 	}
 	pid, err := strconv.Atoi(strings.TrimSpace(args[0]))
 	if err != nil {
-		fmt.Fprintf(stderr, "ValueError: invalid literal for int() with base 10: %s\n", pyrepr.Repr(args[0]))
+		fmt.Fprintf(stderr, "restart watcher pid %s is not a whole number\n", args[0])
 		return 1
 	}
 	restartAfterS, err := pyint.ParseFloat(args[1])
 	if err != nil {
-		fmt.Fprintf(stderr, "ValueError: could not convert string to float: %s\n", pyrepr.Repr(args[1]))
+		fmt.Fprintf(stderr, "restart watcher delay %s is not a number of seconds\n", args[1])
 		return 1
 	}
 	command := args[2:]
@@ -51,7 +50,7 @@ func DetachedRestartWatcherMain(ctx context.Context, args []string, stderr io.Wr
 		time.Sleep(200 * time.Millisecond)
 	}
 	if len(command) == 0 {
-		fmt.Fprintln(stderr, "IndexError: list index out of range")
+		fmt.Fprintln(stderr, "restart watcher has no command to run")
 		return 1
 	}
 	cmd := exec.Command(command[0], command[1:]...)

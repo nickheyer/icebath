@@ -61,7 +61,7 @@ func TestMatchesOverride(t *testing.T) {
 	r.sessionState(switchKey).conversation.modelOverride = map[string]any{
 		"model": a.Model(), "provider": "openai", "api_key": "key", "base_url": "", "api_mode": "chat_completions",
 	}
-	if !r.isIntentionalModelSwitch(switchKey, a, "openai/gpt-5") {
+	if !r.isIntentionalModelSwitch(switchKey, a) {
 		t.Fatal("a model the session override names was treated as drift")
 	}
 }
@@ -69,7 +69,7 @@ func TestMatchesOverride(t *testing.T) {
 // test_model_switch_persistence.py TestIsIntentionalModelSwitch test_plain_drift_is_not_intentional
 func TestPlainDriftIsNotIntentional(t *testing.T) {
 	r := &GatewayRunner{}
-	if r.isIntentionalModelSwitch(switchKey, modelAgent(t, "fallback/model"), "primary/model") {
+	if r.isIntentionalModelSwitch(switchKey, modelAgent(t, "fallback/model")) {
 		t.Fatal("plain drift was treated as intentional")
 	}
 }

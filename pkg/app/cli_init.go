@@ -16,7 +16,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/tools"
 )
 
-// CLIOptions carries the HermesCLI constructor arguments, CLI args winning over config
+// Constructor arguments of the CLI, command line args winning over config
 type CLIOptions struct {
 	Model         string
 	Toolsets      []string
@@ -288,7 +288,7 @@ func (c *CLI) initPromptAndReasoning(reasoning string) {
 	if strings.TrimSpace(reasoning) != "" {
 		cliReasoning := parseReasoningConfig(reasoning)
 		if cliReasoning == nil {
-			cliLogger.Warn(fmt.Sprintf("Unknown --reasoning '%s', keeping the configured level", reasoning))
+			pkgLog().Warn(fmt.Sprintf("Unknown --reasoning '%s', keeping the configured level", reasoning))
 		} else {
 			c.reasoningConfig = cliReasoning
 			c.explicitReasoningConfig = cliReasoning
@@ -363,7 +363,6 @@ func (c *CLI) initUIState() {
 	c.commandRunning = false
 	c.attachedImages = []string{}
 	c.imageCounter = 0
-	c.promptStash = config.NewPromptStash()
 	c.preloadedSkills = []string{}
 	c.autoLoadSkillsResult = nil
 	c.preloadSkillsDone = nil

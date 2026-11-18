@@ -17,7 +17,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tools"
-	"github.com/nickheyer/icebath/pkg/tuigateway"
+	"github.com/nickheyer/icebath/pkg/tuihost"
 )
 
 // Plugin collaborators of a gateway process, the registries the bundled platform and provider plugins load into
@@ -61,17 +61,17 @@ func joinGatewayTasks(t *testing.T) func() {
 	}
 }
 
-// Clears the process wide state a gateway test leaves behind, the per test resets of the hermes conftest
+// Clears the process wide state a gateway test leaves behind, the per test resets of the test setup
 func processState(services *plugins.Services) hermetic.Fixture {
 	return func(t *testing.T) func() {
 		return func() {
 			if !gateway.FlushRuntimeStatus(30 * time.Second) {
 				t.Error("gateway runtime status was still being written 30s after the test")
 			}
-			if !tuigateway.StopHostedRoomService(30) {
+			if !tuihost.StopHostedRoomService(30) {
 				t.Error("hosted room worker was still running 30s after the test")
 			}
-			tuigateway.BindHostedRoomServer(nil, nil)
+			tuihost.BindHostedRoomServer(nil, nil)
 			provider.SetMultiplexActive(false)
 			home.PinProcess("", true)
 			provider.ResetLaunchEnvSnapshotForTests()

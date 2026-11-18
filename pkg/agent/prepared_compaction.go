@@ -5,7 +5,6 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
-	"log/slog"
 	"slices"
 	"strings"
 	"sync"
@@ -17,7 +16,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/internal/pythread"
 	"github.com/nickheyer/icebath/pkg/memory"
-	"github.com/nickheyer/icebath/pkg/observability"
 	"github.com/nickheyer/icebath/pkg/plugins"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/state"
@@ -95,9 +93,6 @@ type PreparedCompactionCompressor interface {
 	RecordSummarySuccess(summary string)
 }
 
-// Counts one prepared compaction event in opt in shared metrics, swapped by tests to observe events
-var recordPrepared = observability.RecordPreparedCompaction
-
 type preparedWindow struct {
 	SessionID     string
 	CompressStart int
@@ -112,7 +107,6 @@ type PreparedSummary struct {
 	Body      string
 	CallState map[string]any
 	Telemetry map[string]any
-	Waited    *float64
 }
 
 type pendingPass struct {
@@ -287,11 +281,6 @@ func blockedForPlatform(a *AIAgent, origin string) bool {
 	return a.agentIsOneshot(context.Background())
 }
 
-type busyWindow struct {
-	sessionID  string
-	start, end int
-}
-
 // PreparedCompaction is the prepared summary state one context compressor owns
 type PreparedCompaction struct {
 	mu                   sync.Mutex
@@ -299,8 +288,6 @@ type PreparedCompaction struct {
 	pending              *pendingPass
 	retryAfter           float64
 	needsProviderContext bool
-	busyWindow           *busyWindow
-	taken                *PreparedSummary
 	splicedAttemptID     any
 	boundaries           int
 }
@@ -315,23 +302,11 @@ func (p *PreparedCompaction) SplicedAttemptID() any {
 	return p.splicedAttemptID
 }
 
-// Counts once a taken summary that no splice adopted
-func (p *PreparedCompaction) countUnspliced(ctx context.Context) {
-	p.mu.Lock()
-	taken := p.taken
-	p.taken = nil
-	p.mu.Unlock()
-	if taken != nil {
-		recordPrepared(ctx, "discarded", "", "compaction_aborted", "", taken.Waited)
-	}
-}
-
 // Drops the candidate and cancels a running pass, code empty meaning session_boundary
 func (p *PreparedCompaction) Discard(ctx context.Context, reason, code string) {
 	if code == "" {
 		code = "session_boundary"
 	}
-	p.countUnspliced(ctx)
 	p.mu.Lock()
 	entry, pending := p.entry, p.pending
 	p.entry, p.pending = nil, nil
@@ -342,9 +317,6 @@ func (p *PreparedCompaction) Discard(ctx context.Context, reason, code string) {
 		p.boundaries++
 	}
 	p.mu.Unlock()
-	if entry != nil || pending != nil {
-		recordPrepared(ctx, "discarded", "", code, "", nil)
-	}
 	var dropped *preparedWindow
 	if entry != nil {
 		dropped = &entry.preparedWindow
@@ -356,7 +328,7 @@ func (p *PreparedCompaction) Discard(ctx context.Context, reason, code string) {
 		if entry != nil {
 			running = ""
 		}
-		slog.Info(fmt.Sprintf("prepared compaction: dropped session=%s window=%d-%d reason=%s%s", dropped.SessionID,
+		pkgLog().Info(fmt.Sprintf("prepared compaction: dropped session=%s window=%d-%d reason=%s%s", dropped.SessionID,
 			dropped.CompressStart, dropped.CompressEnd, reason, running))
 	}
 }
@@ -368,8 +340,7 @@ func (p *PreparedCompaction) StopForProviderContext(ctx context.Context) {
 	p.needsProviderContext = true
 	p.mu.Unlock()
 	if first {
-		slog.Info("prepared compaction: off for this agent (memory provider supplies compaction context)")
-		recordPrepared(ctx, "auto_disabled", "", "provider_context", "", nil)
+		pkgLog().Info("prepared compaction: off for this agent (memory provider supplies compaction context)")
 	}
 }
 
@@ -381,7 +352,6 @@ func (p *PreparedCompaction) providerContextNeeded() bool {
 
 // The candidate still covering the same messages after the head, else what a fitting running pass publishes
 func (p *PreparedCompaction) Take(ctx context.Context, messages []map[string]any, sessionID string, start int, eligible bool) *PreparedSummary {
-	p.countUnspliced(ctx)
 	p.mu.Lock()
 	entry, pending := p.entry, p.pending
 	p.entry = nil
@@ -398,7 +368,6 @@ func (p *PreparedCompaction) Take(ctx context.Context, messages []map[string]any
 	if reason == nil && entry != nil {
 		reason = preparedMismatch(entry.preparedWindow, messages, sessionID, start)
 	}
-	var waited *float64
 	func() {
 		defer func() {
 			p.mu.Lock()
@@ -417,10 +386,7 @@ func (p *PreparedCompaction) Take(ctx context.Context, messages []map[string]any
 		}()
 		if eligible && (entry == nil || reason != nil) {
 			if pending != nil && preparedMismatch(pending.window, messages, sessionID, start) == nil {
-				waitStarted := pythread.Monotonic()
 				entry, reason = p.await(ctx, pending)
-				w := pythread.Monotonic() - waitStarted
-				waited = &w
 				p.mu.Lock()
 				crossed := p.boundaries != boundaries
 				p.mu.Unlock()
@@ -438,20 +404,12 @@ func (p *PreparedCompaction) Take(ctx context.Context, messages []map[string]any
 	}()
 	if reason != nil || entry == nil {
 		if entry != nil || pending != nil {
-			slog.Info(fmt.Sprintf("prepared compaction: splice miss session=%s reason=%s", sessionID, reason.Text))
-			if reason.Code != "discarded_while_waiting" {
-				recordPrepared(ctx, "discarded", "", reason.Code, "", waited)
-			}
+			pkgLog().Info(fmt.Sprintf("prepared compaction: splice miss session=%s reason=%s", sessionID, reason.Text))
 		}
 		return nil
 	}
-	slog.Info(fmt.Sprintf("prepared compaction: splice hit session=%s window=%d-%d", sessionID, entry.CompressStart, entry.CompressEnd))
-	taken := *entry
-	taken.Waited = waited
-	p.mu.Lock()
-	p.taken = &taken
-	p.mu.Unlock()
-	return &taken
+	pkgLog().Info(fmt.Sprintf("prepared compaction: splice hit session=%s window=%d-%d", sessionID, entry.CompressStart, entry.CompressEnd))
+	return entry
 }
 
 // Waits for the pending pass while its progress and prompt reading feed this compaction's hooks
@@ -459,7 +417,7 @@ func (p *PreparedCompaction) await(ctx context.Context, pending *pendingPass) (*
 	pending.setHooks(provider.CurrentAuxProgressHook(ctx), provider.CurrentPromptReadingHook(ctx))
 	cancelCheck := provider.CaptureAuxCancelCheck(ctx)
 	fallback := time.Now().Add(time.Duration(provider.EffectiveAuxTimeout(ctx, "compression", nil) * float64(time.Second)))
-	slog.Info(fmt.Sprintf("prepared compaction: waiting for the running pass session=%s window=%d-%d",
+	pkgLog().Info(fmt.Sprintf("prepared compaction: waiting for the running pass session=%s window=%d-%d",
 		pending.window.SessionID, pending.window.CompressStart, pending.window.CompressEnd))
 	deadline := func() time.Time {
 		if d, ok := provider.CurrentAuxStreamDeadline(ctx); ok {
@@ -558,11 +516,9 @@ func (p *PreparedCompaction) MaybePrepare(ctx context.Context, a *AIAgent, compr
 			token.done.Set()
 			_ = preparedSlots.Release()
 		}
-		slog.Debug("prepared compaction: maybe_prepare failed", "error", r)
-		recordPrepared(ctx, "internal_error", origin, "", "exception", nil)
+		pkgLog().Debug("prepared compaction: maybe_prepare failed", "error", r)
 		thread = nil
 	}()
-	p.countUnspliced(ctx)
 	if p.blocked(a, compressor, origin) {
 		return nil
 	}
@@ -588,16 +544,6 @@ func (p *PreparedCompaction) MaybePrepare(ctx context.Context, a *AIAgent, compr
 	focus := worker.DeriveAutoFocusTopic(working)
 	window := preparedWindow{compressor.CompressorSessionID(), start, end, PrefixIdentities(working, end)}
 	if !preparedSlots.Acquire(false) {
-		key := busyWindow{window.SessionID, start, end}
-		p.mu.Lock()
-		fresh := p.busyWindow == nil || *p.busyWindow != key
-		if fresh {
-			p.busyWindow = &key
-		}
-		p.mu.Unlock()
-		if fresh {
-			recordPrepared(ctx, "skipped_busy", origin, "", "", nil)
-		}
 		return nil
 	}
 	p.mu.Lock()
@@ -615,7 +561,6 @@ func (p *PreparedCompaction) MaybePrepare(ctx context.Context, a *AIAgent, compr
 		p.runPass(ctx, worker, turnsCopy, focus, pass, origin)
 	})
 	thread.Start()
-	recordPrepared(ctx, "pass_started", origin, "", "", nil)
 	return thread
 }
 
@@ -623,21 +568,16 @@ func (p *PreparedCompaction) MaybePrepare(ctx context.Context, a *AIAgent, compr
 func (p *PreparedCompaction) runPass(ctx context.Context, worker PreparedCompactionCompressor, turns []map[string]any, focus *string, token *pendingPass, origin string) {
 	window := token.window
 	var entry *PreparedSummary
-	event, failureClass := "pass_cancelled", ""
 	started := pythread.Monotonic()
 	logCancelled := func() {
-		slog.Info(fmt.Sprintf("prepared compaction: pass cancelled session=%s after %.1fs (%s)", window.SessionID,
+		pkgLog().Info(fmt.Sprintf("prepared compaction: pass cancelled session=%s after %.1fs (%s)", window.SessionID,
 			pythread.Monotonic()-started, token.reason()))
 	}
 	defer func() {
 		if r := recover(); r != nil && !isUserInterruptPanic(r) {
-			slog.Warn(fmt.Sprintf("prepared compaction: pass crashed session=%s", window.SessionID), "error", r)
-			event, failureClass = "internal_error", "exception"
+			pkgLog().Warn(fmt.Sprintf("prepared compaction: pass crashed session=%s", window.SessionID), "error", r)
 		}
 		p.mu.Lock()
-		if entry != nil && p.pending == token {
-			event = "pass_completed"
-		}
 		if p.pending == token {
 			p.pending = nil
 			if entry != nil {
@@ -649,13 +589,8 @@ func (p *PreparedCompaction) runPass(ctx context.Context, worker PreparedCompact
 		p.mu.Unlock()
 		token.done.Set()
 		_ = preparedSlots.Release()
-		reason := ""
-		if event == "pass_cancelled" {
-			reason = token.reason()
-		}
-		recordPrepared(ctx, event, origin, reason, failureClass, nil)
 	}()
-	slog.Info(fmt.Sprintf("prepared compaction: pass started session=%s origin=%s window=%d-%d turns=%d",
+	pkgLog().Info(fmt.Sprintf("prepared compaction: pass started session=%s origin=%s window=%d-%d turns=%d",
 		window.SessionID, origin, window.CompressStart, window.CompressEnd, len(turns)))
 	passCtx := tools.ThreadScopedSilence(ctx)
 	passCtx = provider.AuxInterruptProtection(passCtx, true, nil, &token.cancelled)
@@ -668,8 +603,7 @@ func (p *PreparedCompaction) runPass(ctx context.Context, worker PreparedCompact
 			logCancelled()
 			return
 		}
-		slog.Warn(fmt.Sprintf("prepared compaction: pass crashed session=%s", window.SessionID), "error", err)
-		event, failureClass = "internal_error", "exception"
+		pkgLog().Warn(fmt.Sprintf("prepared compaction: pass crashed session=%s", window.SessionID), "error", err)
 		return
 	}
 	switch {
@@ -692,32 +626,16 @@ func (p *PreparedCompaction) runPass(ctx context.Context, worker PreparedCompact
 		}
 		entry = &PreparedSummary{preparedWindow: window, Summary: *summary, Body: worker.PreviousSummary(),
 			CallState: callState, Telemetry: values}
-		slog.Info(fmt.Sprintf("prepared compaction: pass completed session=%s window=%d-%d in %.1fs",
+		pkgLog().Info(fmt.Sprintf("prepared compaction: pass completed session=%s window=%d-%d in %.1fs",
 			window.SessionID, window.CompressStart, window.CompressEnd, pythread.Monotonic()-started))
 	default:
 		why := worker.LastSummaryError()
 		if why == "" {
 			why = "summariser returned nothing"
 		}
-		slog.Warn(fmt.Sprintf("prepared compaction: pass failed session=%s after %.1fs: %s", window.SessionID,
+		pkgLog().Warn(fmt.Sprintf("prepared compaction: pass failed session=%s after %.1fs: %s", window.SessionID,
 			pythread.Monotonic()-started, why))
-		event, failureClass = "pass_failed", passFailureClass(worker)
 	}
-}
-
-// Failure class an inline attempt logs for this failed summary call, a terminal failure first
-func passFailureClass(worker PreparedCompactionCompressor) string {
-	for _, f := range terminalSummaryFailures {
-		if worker.SummaryFailureFlag(f.Flag) {
-			return f.Class
-		}
-	}
-	if telemetry := worker.ActiveCompressionTelemetry(); telemetry != nil {
-		if v, _ := telemetry.Get("failure_class"); pyrepr.Truthy(v) {
-			return pyrepr.Str(v)
-		}
-	}
-	return "summary_generation_failed"
 }
 
 func preparedStateOf(engine ContextEngine) (PreparedCompactionCompressor, *PreparedCompaction) {
@@ -736,14 +654,11 @@ func ReleaseForAgent(ctx context.Context, a *AIAgent) {
 }
 
 // Leaves the live compressor as the inline summary call would, the pass summary as the iterative base
-func AdoptPreparedSummary(ctx context.Context, compressor PreparedCompactionCompressor, prepared *PreparedSummary) {
+func AdoptPreparedSummary(compressor PreparedCompactionCompressor, prepared *PreparedSummary) {
 	st := compressor.PreparedCompactionState()
 	telemetry := compressor.ActiveCompressionTelemetry()
 	if st != nil {
 		st.mu.Lock()
-		if st.taken == prepared {
-			st.taken = nil
-		}
 		st.splicedAttemptID = nil
 		if telemetry != nil {
 			st.splicedAttemptID, _ = telemetry.Get("attempt_id")
@@ -764,11 +679,6 @@ func AdoptPreparedSummary(ctx context.Context, compressor PreparedCompactionComp
 		}
 		telemetry.Set("prepared_summary", true)
 	}
-	reason := ""
-	if pyrepr.Truthy(prepared.Telemetry["fallback_used"]) {
-		reason = "aux_fallback_main"
-	}
-	recordPrepared(ctx, "used", "", reason, "", prepared.Waited)
 }
 
 // Turn loop hook starting a prepared pass, nothing unless prepare ahead gave the compressor state

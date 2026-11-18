@@ -16,7 +16,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pythread"
 	"github.com/nickheyer/icebath/pkg/memory"
 	"github.com/nickheyer/icebath/pkg/tools"
-	"github.com/nickheyer/icebath/pkg/tuigateway"
+	"github.com/nickheyer/icebath/pkg/tuihost"
 )
 
 // Pid of a live descendant of this process named name whose arguments carry marker, zero when none runs yet
@@ -109,7 +109,7 @@ func TestShutdownMidToolKillsTheCommandAndKeepsItsResult(t *testing.T) {
 	defer syscall.Kill(sleeper, syscall.SIGKILL)
 	var atTeardown [][]map[string]any
 	swapShutdownSteps(t, func(*float64) int { return 0 }, func() bool { return false },
-		func(context.Context, string, string, func(*tuigateway.Session) bool) bool {
+		func(context.Context, string, string, func(*tuihost.Session) bool) bool {
 			mu.Lock()
 			defer mu.Unlock()
 			atTeardown = append(atTeardown, append([]map[string]any(nil), messages...))
@@ -118,9 +118,9 @@ func TestShutdownMidToolKillsTheCommandAndKeepsItsResult(t *testing.T) {
 	savedSettle := exitTurnSettleS
 	exitTurnSettleS = 10.0
 	defer func() { exitTurnSettleS = savedSettle }()
-	session := tuigateway.NewSession(map[string]any{"agent": &midToolAgent{worker: worker}, "session_key": "sess-mid-tool",
+	session := tuihost.NewSession(map[string]any{"agent": &midToolAgent{worker: worker}, "session_key": "sess-mid-tool",
 		"running": true, "_run_thread": runThread, "history_lock": &pythread.RLock{}})
-	swapSessions(t, map[string]*tuigateway.Session{"sess-mid-tool": session})
+	swapSessions(t, map[string]*tuihost.Session{"sess-mid-tool": session})
 	shutdownSessions()
 	if !waitProcessGone(sleeper, 15*time.Second) {
 		t.Fatal("foreground command survived gateway shutdown")

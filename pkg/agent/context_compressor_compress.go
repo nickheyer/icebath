@@ -3,7 +3,6 @@ package agent
 import (
 	"context"
 	"fmt"
-	"log/slog"
 	"slices"
 	"strings"
 
@@ -125,7 +124,7 @@ func (c *ContextCompressor) ensureLastAssistantMessageInTail(messages []map[stri
 	}
 	newCut := c.alignBoundaryBackward(messages, last)
 	if !c.quietMode {
-		slog.Debug(fmt.Sprintf("Anchoring tail cut to last assistant message at index %d (was %d, aligned to %d) to keep the previously-visible reply out of the compaction summary (#29824)", last, cutIdx, newCut))
+		pkgLog().Debug(fmt.Sprintf("Anchoring tail cut to last assistant message at index %d (was %d, aligned to %d) to keep the previously-visible reply out of the compaction summary (#29824)", last, cutIdx, newCut))
 	}
 	return max(newCut, headEnd+1)
 }
@@ -137,13 +136,13 @@ func (c *ContextCompressor) ensureLastUserMessageInTail(messages []map[string]an
 		return cutIdx
 	}
 	if !c.quietMode {
-		slog.Debug(fmt.Sprintf("Anchoring tail cut to last user message at index %d (was %d) to prevent active-task loss after compression", last, cutIdx))
+		pkgLog().Debug(fmt.Sprintf("Anchoring tail cut to last user message at index %d (was %d) to prevent active-task loss after compression", last, cutIdx))
 	}
 	adjusted := max(last, headEnd+1)
 	if adjusted > last {
 		pairEnd := c.findTurnPairEnd(messages, last)
 		if !c.quietMode {
-			slog.Debug(fmt.Sprintf("Causal Coupling: cut would split turn-pair at user %d; pushing cut forward to pair_end %d so the completed pair is summarised together (#22523)", last, pairEnd))
+			pkgLog().Debug(fmt.Sprintf("Causal Coupling: cut would split turn-pair at user %d; pushing cut forward to pair_end %d so the completed pair is summarised together (#22523)", last, pairEnd))
 		}
 		return max(pairEnd, headEnd+1)
 	}
@@ -220,7 +219,7 @@ func (c *ContextCompressor) reappendInflightUserTask(compressed []map[string]any
 		return compressed
 	}
 	if !c.quietMode {
-		slog.Info("Re-appending the in-flight user task after the compaction handoff so it stays actionable (#100818)")
+		pkgLog().Info("Re-appending the in-flight user task after the compaction handoff so it stays actionable (#100818)")
 	}
 	lastVisible, _ := lastTemplateVisibleRole(compressed)
 	var replay map[string]any
@@ -350,7 +349,7 @@ func shallowRow(m map[string]any) map[string]any {
 	return out
 }
 
-// Tail cut used by the compression window, swapped by tests like the hermes instance patch
+// Tail cut used by the compression window, swapped by tests like the instance patch
 var compressorFindTailCutByTokens = (*ContextCompressor).findTailCutByTokens
 
 // Tail start index from a backward token walk, keeping anchors and never splitting tool groups
@@ -395,7 +394,7 @@ func (c *ContextCompressor) findTailCut(messages []map[string]any, headEnd int, 
 		if walked, _ := c.walkTailBudget(messages, userAnchored, softCeiling, 0, false, nil); walked > userAnchored {
 			splitOversized = true
 			if !c.quietMode {
-				slog.Debug(fmt.Sprintf("Active turn exceeds protected-tail soft ceiling; keeping tool-group-aligned mid-turn cut at index %d instead of anchoring user message %d (#80449)", cutIdx, lastUser))
+				pkgLog().Debug(fmt.Sprintf("Active turn exceeds protected-tail soft ceiling; keeping tool-group-aligned mid-turn cut at index %d instead of anchoring user message %d (#80449)", cutIdx, lastUser))
 			}
 		}
 	}
@@ -412,7 +411,7 @@ func (c *ContextCompressor) findTailCut(messages []map[string]any, headEnd int, 
 		}
 		if overCeiling {
 			if !c.quietMode {
-				slog.Debug(fmt.Sprintf("Assistant reply anchor would retain an over-ceiling region; keeping tool-group-aligned cut at index %d instead of anchoring to %d (#131412)", cutIdx, asstAnchored))
+				pkgLog().Debug(fmt.Sprintf("Assistant reply anchor would retain an over-ceiling region; keeping tool-group-aligned cut at index %d instead of anchoring to %d (#131412)", cutIdx, asstAnchored))
 			}
 		} else {
 			cutIdx = asstAnchored
@@ -558,9 +557,9 @@ func (c *ContextCompressor) dropBlankEchoes(messages []map[string]any) []map[str
 }
 
 func (c *ContextCompressor) logCompressionStart(displayTokens, start, end, nTurns, tailMsgs int) {
-	slog.Info(fmt.Sprintf("Context compression triggered (%d tokens >= %d threshold)", displayTokens, c.thresholdTokensValue()))
-	slog.Info(fmt.Sprintf("Model context limit: %d tokens (%.0f%% = %d)", c.contextLength(), c.ThresholdPercent*100, c.thresholdTokensValue()))
-	slog.Info(fmt.Sprintf("Summarizing turns %d-%d (%d turns), protecting %d head + %d tail messages", start+1, end, nTurns, start, tailMsgs))
+	pkgLog().Info(fmt.Sprintf("Context compression triggered (%d tokens >= %d threshold)", displayTokens, c.thresholdTokensValue()))
+	pkgLog().Info(fmt.Sprintf("Model context limit: %d tokens (%.0f%% = %d)", c.contextLength(), c.ThresholdPercent*100, c.thresholdTokensValue()))
+	pkgLog().Info(fmt.Sprintf("Summarizing turns %d-%d (%d turns), protecting %d head + %d tail messages", start+1, end, nTurns, start, tailMsgs))
 }
 
 // Aborts with messages unchanged on a terminal failure or when configured to, true when aborted
@@ -587,7 +586,7 @@ func (c *ContextCompressor) abortOnSummaryFailureAttempt(ctx context.Context, te
 		c.previousSummary = previousBefore
 	}
 	if !c.quietMode {
-		slog.Warn(fmt.Sprintf(message, nSkipped))
+		pkgLog().Warn(fmt.Sprintf(message, nSkipped))
 	}
 	return true
 }
@@ -617,9 +616,9 @@ func (c *ContextCompressor) assembleHead(messages []map[string]any, start int) [
 // Deterministic fallback summary for the window, recorded as the new iterative base
 func (c *ContextCompressor) fallbackSummaryForWindow(telemetry *pyjson.Object, turns []map[string]any, nDropped int, feasibilitySkip bool) string {
 	if !c.quietMode && feasibilitySkip {
-		slog.Info("Pre-LLM summary skip — inserting deterministic fallback context summary")
+		pkgLog().Info("Pre-LLM summary skip — inserting deterministic fallback context summary")
 	} else if !c.quietMode {
-		slog.Warn("Summary generation failed — inserting deterministic fallback context summary")
+		pkgLog().Warn("Summary generation failed — inserting deterministic fallback context summary")
 	}
 	c.LastSummaryDroppedCount = nDropped
 	c.LastSummaryFallbackUsed = true
@@ -732,20 +731,20 @@ func (c *ContextCompressor) finalizeCompressed(ctx context.Context, compressed, 
 	}
 	c.lastCompressionSavingsPct = savingsPct
 	if !c.quietMode {
-		slog.Info(fmt.Sprintf("Compressed: %d -> %d messages (~%d tokens saved, %.0f%%)", nMessages, len(compressed), saved, savingsPct))
-		slog.Info(fmt.Sprintf("Compression #%d complete", c.ContextEngineBase.CompressionCount))
+		pkgLog().Info(fmt.Sprintf("Compressed: %d -> %d messages (~%d tokens saved, %.0f%%)", nMessages, len(compressed), saved, savingsPct))
+		pkgLog().Info(fmt.Sprintf("Compression #%d complete", c.ContextEngineBase.CompressionCount))
 	}
 	stripPersistenceMarkers(compressed)
 	prunedReplay := pruneStaleReasoningReplay(compressed)
 	if prunedReplay > 0 && !c.quietMode {
-		slog.Info(fmt.Sprintf("Pruned stale replay items from %d assistant message(s) during compaction", prunedReplay))
+		pkgLog().Info(fmt.Sprintf("Pruned stale replay items from %d assistant message(s) during compaction", prunedReplay))
 	}
 	c.RecordEffect(ctx, nMessages, compressed, pre, prunedCount, prunedReplay)
 	c.lastCompressionMadeProgress = true
 	func() {
 		defer func() {
 			if r := recover(); r != nil {
-				slog.Debug(fmt.Sprintf("post-compression memory trim failed: %v", r))
+				pkgLog().Debug(fmt.Sprintf("post-compression memory trim failed: %v", r))
 			}
 		}()
 		memory.TrimMemory(ctx, c.env, memory.TrimOptions{Reason: "post-compression", AllocatorOnly: true})
@@ -790,7 +789,7 @@ func (c *ContextCompressor) compressPass(ctx context.Context, messages []map[str
 	canonical := c.dropBlankEchoes(messages)
 	messages, prunedCount, start, end := c.planCompactionWindow(messages)
 	if prunedCount > 0 && !c.quietMode {
-		slog.Info(fmt.Sprintf("Pre-compression: pruned %d old tool result(s)", prunedCount))
+		pkgLog().Info(fmt.Sprintf("Pre-compression: pruned %d old tool result(s)", prunedCount))
 	}
 	nMessages = len(messages)
 	if start >= end {

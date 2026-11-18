@@ -5,11 +5,11 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"log/slog"
 	"net/http"
 	"strings"
 	"time"
 
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
@@ -24,7 +24,7 @@ import (
 const (
 	qrGenerateURL  = "https://work.weixin.qq.com/ai/qc/generate"
 	qrQueryURL     = "https://work.weixin.qq.com/ai/qc/query_result"
-	qrCodePage     = "https://work.weixin.qq.com/ai/qc/gen?source=hermes&scode="
+	qrCodePage     = "https://work.weixin.qq.com/ai/qc/gen?source=icebath&scode="
 	qrPollInterval = 3.0
 	qrPollTimeout  = 300
 )
@@ -70,7 +70,7 @@ var qrMonotonic = func() float64 { return time.Since(qrClockBase).Seconds() }
 func dictGet(v any, key string) (any, error) {
 	o, ok := v.(*pyjson.Object)
 	if !ok {
-		return nil, fmt.Errorf("AttributeError: '%s' object has no attribute 'get'", pyrepr.TypeName(v))
+		return nil, fmt.Errorf("expected a mapping, got %s", errchain.Kind(v))
 	}
 	return o.Vals[key], nil
 }
@@ -97,12 +97,12 @@ func qrScanForBotInfo(ctx context.Context, timeoutSeconds int) (string, string, 
 	watch := gateway.WatchInterrupt()
 	defer watch.Stop()
 	fail := func(logMsg string, detail any, shown string) (string, string, bool, error) {
-		slog.Error(fmt.Sprintf(logMsg, pyrepr.Str(detail)))
+		pkgLog().Error(fmt.Sprintf(logMsg, pyrepr.Str(detail)))
 		fmt.Fprintf(out, " failed: %s\n", shown)
 		return "", "", false, nil
 	}
 	fmt.Fprint(out, "  Connecting to WeCom...")
-	raw, err := qrGetJSON(ctx, qrGenerateURL+"?source=hermes", 15*time.Second)
+	raw, err := qrGetJSON(ctx, qrGenerateURL+"?source=icebath", 15*time.Second)
 	if err != nil {
 		return fail("WeCom QR: failed to fetch QR code: %s", err.Error(), err.Error())
 	}
@@ -140,7 +140,7 @@ func qrScanForBotInfo(ctx context.Context, timeoutSeconds int) (string, string, 
 	for qrMonotonic() < deadline {
 		result, err := qrGetJSON(ctx, queryURL, 10*time.Second)
 		if err != nil {
-			slog.Debug(fmt.Sprintf("WeCom QR poll error: %s", err.Error()))
+			pkgLog().Debug(fmt.Sprintf("WeCom QR poll error: %s", err.Error()))
 			result = pyjson.NewObject()
 		} else {
 			fmt.Fprint(out, ".")
@@ -178,7 +178,7 @@ func qrScanForBotInfo(ctx context.Context, timeoutSeconds int) (string, string, 
 			fmt.Fprintln(out)
 			return botID, secret, true, nil
 		}
-		slog.Warn(fmt.Sprintf("WeCom QR: scan reported success but bot_info missing or incomplete: %s", pyrepr.Str(resultData)))
+		pkgLog().Warn(fmt.Sprintf("WeCom QR: scan reported success but bot_info missing or incomplete: %s", pyrepr.Str(resultData)))
 		fmt.Fprintln(out, "\n  QR scan reported success but no bot credentials were returned.\n"+
 			"  This usually means the bot was not actually created on the WeCom side.\n  Falling back to manual credential entry.")
 		return "", "", false, nil

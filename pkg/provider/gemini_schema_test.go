@@ -1,8 +1,8 @@
 package provider
 
 import (
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"context"
+	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"net/http"
 	"testing"
 )
@@ -170,7 +170,10 @@ func TestGeminiNativeTypeArraysPreserveAlternatives(t *testing.T) {
 				case "anyOf":
 					out = gemAt(out, 0)
 				}
-				om := out.(map[string]any)
+				om, isDict := pyjson.Dict(out)
+				if !isDict {
+					t.Fatalf("%v/%s: translated node %v", types, location, out)
+				}
 				expected := map[string]bool{}
 				if isList {
 					for _, x := range list {
@@ -196,7 +199,10 @@ func TestGeminiNativeTypeArraysPreserveAlternatives(t *testing.T) {
 				}
 				actual := map[string]bool{}
 				for _, raw := range branches {
-					b := raw.(map[string]any)
+					b, isDict := pyjson.Dict(raw)
+					if !isDict {
+						t.Fatalf("%v/%s: branch %v", types, location, raw)
+					}
 					bt, ok := b["type"].(string)
 					if !ok {
 						t.Fatalf("%v/%s: branch type %v", types, location, b["type"])

@@ -4,10 +4,8 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"os"
-	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -212,79 +210,6 @@ func TestOpenRouterPaidLaneGuardPaidLaneWarnsOnce(t *testing.T) {
 	}
 }
 
-// Pool fake whose selection is stale until refreshed
-type auxStaleNousPool struct {
-	stale, fresh PooledCredential
-	refreshed    bool
-}
-
-func (p *auxStaleNousPool) HasCredentials() bool                   { return true }
-func (p *auxStaleNousPool) Select(string) (PooledCredential, bool) { return p.stale, true }
-func (p *auxStaleNousPool) TryRefreshCurrent() (PooledCredential, bool) {
-	p.refreshed = true
-	return p.fresh, true
-}
-
-func TestTryNousRefreshesStalePoolEntry(t *testing.T) {
-	ctx := auxMainTestHome(t, "")
-	entry := func(token string) PooledCredential {
-		return PooledCredential{Provider: "nous", AccessToken: "pooled-access-token", AgentKey: token, AgentKeyExpiresAt: "2099-01-01T00:00:00+00:00",
-			InferenceBaseURL: "https://inference.pool.example/v1", Extra: map[string]any{"scope": "inference:invoke"}}
-	}
-	fresh := nousJWT(3600, "inference:invoke", "test-user", nil)
-	pool := &auxStaleNousPool{stale: entry(nousJWT(-60, "inference:invoke", "test-user", nil)), fresh: entry(fresh)}
-	oldPool, oldRec := auxLoadNousPoolFn, auxGetNousRecommendedAuxModelFn
-	t.Cleanup(func() { auxLoadNousPoolFn, auxGetNousRecommendedAuxModelFn = oldPool, oldRec })
-	auxLoadNousPoolFn = func(context.Context) auxRefreshablePool { return pool }
-	auxGetNousRecommendedAuxModelFn = func(context.Context, bool, bool) string { return "" }
-	client, model, err := auxTryNous(ctx, false)
-	if err != nil || !pool.refreshed || client == nil || model != auxNousModel {
-		t.Fatalf("got %v %q %v refreshed %v", client, model, err, pool.refreshed)
-	}
-	if client.APIKey() != fresh || strings.TrimRight(client.BaseURL(), "/") != "https://inference.pool.example/v1" {
-		t.Fatalf("key %q base %q", client.APIKey(), client.BaseURL())
-	}
-}
-
-func TestRefreshNousRecommendedModelFallsBackWhenPortalUnavailable(t *testing.T) {
-	ctx := auxMainTestHome(t, "")
-	old := auxGetNousRecommendedAuxModelFn
-	t.Cleanup(func() { auxGetNousRecommendedAuxModelFn = old })
-	auxGetNousRecommendedAuxModelFn = func(context.Context, bool, bool) string { panic(errors.New("portal down")) }
-	if got := auxRefreshNousRecommendedModel(ctx, false, "some/dead-model"); got != auxNousModel {
-		t.Fatalf("got %q", got)
-	}
-	if got := auxRefreshNousRecommendedModel(ctx, false, auxNousModel); got != "" {
-		t.Fatalf("stale default gave %q", got)
-	}
-}
-
-func TestReadNousAuthFromAuthJSON(t *testing.T) {
-	ctx := auxMainTestHome(t, "")
-	auxFixedPoolEntry(t, false, nil)
-	if got := auxReadNousAuth(ctx); got != nil {
-		t.Fatalf("missing file gave %v", got)
-	}
-	auxWriteAuthJSON(t, ctx, map[string]any{"active_provider": "openrouter", "providers": map[string]any{"nous": map[string]any{"access_token": "a"}}})
-	if got := auxReadNousAuth(ctx); got != nil {
-		t.Fatalf("inactive provider gave %v", got)
-	}
-	auxWriteAuthJSON(t, ctx, map[string]any{"active_provider": "nous", "providers": map[string]any{"nous": map[string]any{"refresh_token": "r"}}})
-	if got := auxReadNousAuth(ctx); got != nil {
-		t.Fatalf("tokenless state gave %v", got)
-	}
-	auxWriteAuthJSON(t, ctx, map[string]any{"active_provider": "nous", "providers": map[string]any{"nous": map[string]any{"agent_key": "k", "x": 1.0}}})
-	if got := auxReadNousAuth(ctx); got["agent_key"] != "k" || got["x"] != 1.0 {
-		t.Fatalf("got %v", got)
-	}
-	if err := os.WriteFile(filepath.Join(filepath.Dir(auxAuthJSONPath(ctx)), "auth.json"), []byte("[1]"), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	if got := auxReadNousAuth(ctx); got != nil {
-		t.Fatalf("list payload gave %v", got)
-	}
-}
-
 func TestUnhealthyCacheExpiresAndLogsSkipOncePerMinute(t *testing.T) {
 	ctx := auxMainTestHome(t, "")
 	auxResetAuxUnhealthyCache()
@@ -294,13 +219,13 @@ func TestUnhealthyCacheExpiresAndLogsSkipOncePerMinute(t *testing.T) {
 	t.Cleanup(func() { auxUnhealthyNow = old })
 	auxUnhealthyNow = func() float64 { return now }
 	logs := auxCaptureLogs(t)
-	auxMarkProviderUnhealthy(ctx, "Codex", 60, "", "no usable Nous inference JWT", -4)
-	if !auxIsProviderUnhealthy(ctx, "openai-codex", "") || auxIsProviderUnhealthy(ctx, "nous", "") {
-		t.Fatal("codex alias not hidden or nous hidden")
+	auxMarkProviderUnhealthy(ctx, "Codex", 60, "", "no usable access token", -4)
+	if !auxIsProviderUnhealthy(ctx, "openai-codex", "") || auxIsProviderUnhealthy(ctx, "openrouter", "") {
+		t.Fatal("codex alias not hidden or openrouter hidden")
 	}
 	auxLogSkipUnhealthy(ctx, "openai-codex", "", "")
 	auxLogSkipUnhealthy(ctx, "openai-codex", "", "")
-	if got := logs.matching("Auxiliary call: skipping openai-codex (no usable Nous inference JWT, retry in 60s)"); len(got) != 1 {
+	if got := logs.matching("Auxiliary call: skipping openai-codex (no usable access token, retry in 60s)"); len(got) != 1 {
 		t.Fatalf("skip logs %d", len(got))
 	}
 	now += 60

@@ -24,7 +24,7 @@ const portableSettingsManifest = `{
   "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
   "name": "portable-demo",
   "version": "1.0.0",
-  "extensions": {"com.nousresearch.hermes": {"config_schema": {
+  "extensions": {"app.icebath": {"config_schema": {
     "show_chip": {"type": "bool", "default": true},
     "api_key": {"type": "secret", "env": "PORTABLE_DEMO_KEY"}
   }}}

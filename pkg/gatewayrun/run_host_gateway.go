@@ -21,7 +21,7 @@ func bestEffort[T any](fn func() (T, error), debugMsg string) (out T, ok bool) {
 	defer func() {
 		if rec := recover(); rec != nil {
 			if debugMsg != "" {
-				runLog().Debug(fmt.Sprintf(debugMsg, rec))
+				pkgLog().Debug(fmt.Sprintf(debugMsg, rec))
 			}
 			var zero T
 			out, ok = zero, false
@@ -30,7 +30,7 @@ func bestEffort[T any](fn func() (T, error), debugMsg string) (out T, ok bool) {
 	value, err := fn()
 	if err != nil {
 		if debugMsg != "" {
-			runLog().Debug(fmt.Sprintf(debugMsg, pyrepr.ExceptionMessage(err)))
+			pkgLog().Debug(fmt.Sprintf(debugMsg, pyrepr.ExceptionMessage(err)))
 		}
 		return out, false
 	}
@@ -62,7 +62,7 @@ func waitForPidExit(ctx context.Context, pid, attempts int, delay time.Duration)
 func replaceTargetIsHostServingUs(ctx context.Context, existingPid int) (serves bool) {
 	defer func() {
 		if rec := recover(); rec != nil {
-			runLog().Debug(fmt.Sprintf("host served-set ownership probe failed for PID %d", existingPid), "error", rec)
+			pkgLog().Debug(fmt.Sprintf("host served-set ownership probe failed for PID %d", existingPid), "error", rec)
 			serves = false
 		}
 	}()
@@ -74,7 +74,7 @@ func replaceTargetIsHostServingUs(ctx context.Context, existingPid int) (serves 
 	if names == "" {
 		names = "unknown"
 	}
-	runLog().Warn(fmt.Sprintf("--replace target PID %d is the host gateway serving %d profile(s) (%s); "+
+	pkgLog().Warn(fmt.Sprintf("--replace target PID %d is the host gateway serving %d profile(s) (%s); "+
 		"replacing it restarts the host process for all of them.", existingPid, len(owner.Profiles), names))
 	return true
 }
@@ -86,13 +86,13 @@ func replaceTargetBelongsToOtherProfile(ctx context.Context, existingPid int) (r
 	}
 	defer func() {
 		if rec := recover(); rec != nil {
-			runLog().Warn(fmt.Sprintf("cross-profile --replace ownership probe failed for PID %d; refusing to signal", existingPid), "error", rec)
+			pkgLog().Warn(fmt.Sprintf("cross-profile --replace ownership probe failed for PID %d; refusing to signal", existingPid), "error", rec)
 			refused = true
 		}
 	}()
 	ourHome := gateway.ProcessHome()
 	refuse := func(level slog.Level, msg string) bool {
-		runLog().Log(ctx, level, "Refusing --replace: "+msg)
+		pkgLog().Log(ctx, level, "Refusing --replace: "+msg)
 		return true
 	}
 	record := gateway.ReadPidRecord(gateway.PidPath())
@@ -114,12 +114,12 @@ func replaceTargetBelongsToOtherProfile(ctx context.Context, existingPid int) (r
 	if !gateway.PyValuesEqual(gateway.GetProcessStartTime(existingPid), recordedStart) {
 		return refuse(slog.LevelWarn, fmt.Sprintf("pid record start-time does not match the live process %d (stale/PID-reuse record).", existingPid))
 	}
-	recordedHome, _ := record.Get("hermes_home")
+	recordedHome, _ := home.RecordValue(record.Get, home.RecordKey)
 	homeText, isText := recordedHome.(string)
 	if !isText || strings.TrimSpace(homeText) == "" {
-		return refuse(slog.LevelWarn, fmt.Sprintf("pid record predates hermes_home stampings; ownership of PID %d unprovable.", existingPid))
+		return refuse(slog.LevelWarn, fmt.Sprintf("pid record carries no home; ownership of PID %d unprovable.", existingPid))
 	}
-	same, err := gateway.SameHermesHome(homeText, ourHome)
+	same, err := gateway.SameIcebathHome(homeText, ourHome)
 	if err != nil {
 		panic(err)
 	}
@@ -200,7 +200,7 @@ func migrateCommand() string { return gateway.HostMigrateCommand }
 func ownerIsStandalone(ctx context.Context) (standalone bool) {
 	defer func() {
 		if rec := recover(); rec != nil {
-			runLog().Debug("standalone-owner probe failed; keeping the second-gateway refusal", "error", rec)
+			pkgLog().Debug("standalone-owner probe failed; keeping the second-gateway refusal", "error", rec)
 			standalone = false
 		}
 	}()
@@ -225,7 +225,7 @@ func refuseSecondHostGateway(owner *gateway.HostRecord) error {
 		"   Or stop the other gateway first, then start this one.\n"+
 		"   Or start one anyway (skips the host-lock check):  icebath gateway run --force\n"+
 		"   (--replace does not skip this check; it only replaces an owner that serves this profile.)", who, migrateCommand())
-	runLog().Error(fmt.Sprintf("Refusing to start a second gateway on this host: %s", who))
+	pkgLog().Error(fmt.Sprintf("Refusing to start a second gateway on this host: %s", who))
 	fmt.Println(message)
 	return &gateway.SystemExitError{Code: gateway.GatewayServiceRestartExitCode}
 }
@@ -246,7 +246,7 @@ func claimHostGatewayRole(ctx context.Context, force bool) error {
 	claimed := func() (done bool) {
 		defer func() {
 			if rec := recover(); rec != nil {
-				runLog().Debug("host gateway rendezvous failed", "error", rec)
+				pkgLog().Debug("host gateway rendezvous failed", "error", rec)
 				done = true
 			}
 		}()
@@ -257,7 +257,7 @@ func claimHostGatewayRole(ctx context.Context, force bool) error {
 			gateway.HostCleanupOnExit(gateway.RoleGateway)
 			return true
 		case gateway.HostLockCouldNotOpen:
-			runLog().Warn(fmt.Sprintf("Host gateway lock could not be opened (%s); this gateway is not discoverable. "+
+			pkgLog().Warn(fmt.Sprintf("Host gateway lock could not be opened (%s); this gateway is not discoverable. "+
 				"No second gateway is implied — the lock directory itself is unusable.", pyrepr.ExceptionMessage(openErr)))
 			return true
 		}
@@ -270,7 +270,7 @@ func claimHostGatewayRole(ctx context.Context, force bool) error {
 	func() {
 		defer func() {
 			if rec := recover(); rec != nil {
-				runLog().Debug("host gateway record unreadable", "error", rec)
+				pkgLog().Debug("host gateway record unreadable", "error", rec)
 			}
 		}()
 		owner = gateway.ReadHostRecord(gateway.RoleGateway, true)
@@ -280,7 +280,7 @@ func claimHostGatewayRole(ctx context.Context, force bool) error {
 		if owner != nil {
 			who = gateway.DescribeHostRecord(owner)
 		}
-		runLog().Warn(fmt.Sprintf("--force: starting a second gateway although %s owns this host.", who))
+		pkgLog().Warn(fmt.Sprintf("--force: starting a second gateway although %s owns this host.", who))
 		return nil
 	}
 	if owner != nil {
@@ -289,7 +289,7 @@ func claimHostGatewayRole(ctx context.Context, force bool) error {
 			return err
 		}
 		if other {
-			runLog().Warn(fmt.Sprintf("Another Icebath home's gateway owns this host (%s); starting this home's gateway beside it.",
+			pkgLog().Warn(fmt.Sprintf("Another Icebath home's gateway owns this host (%s); starting this home's gateway beside it.",
 				gateway.DescribeHostRecord(owner)))
 			return nil
 		}
@@ -317,7 +317,7 @@ func claimHostGatewayRole(ctx context.Context, force bool) error {
 		if owner != nil {
 			who = gateway.DescribeHostRecord(owner)
 		}
-		runLog().Warn(fmt.Sprintf("Another profile's standalone gateway owns this host (%s); starting beside it rather "+
+		pkgLog().Warn(fmt.Sprintf("Another profile's standalone gateway owns this host (%s); starting beside it rather "+
 			"than retrying a race no second profile can win. Fold every profile onto one gateway "+
 			"with: %s", who, migrateCommand()))
 		return nil
@@ -329,7 +329,7 @@ func claimHostGatewayRole(ctx context.Context, force bool) error {
 func logStandaloneProfilesAtBoot(ctx context.Context, r *GatewayRunner) {
 	defer func() {
 		if rec := recover(); rec != nil {
-			runLog().Warn("standalone-profile boot notice failed", "error", rec)
+			pkgLog().Warn("standalone-profile boot notice failed", "error", rec)
 		}
 	}()
 	if !r.multiplexing() {
@@ -352,7 +352,7 @@ func logStandaloneProfilesAtBoot(ctx context.Context, r *GatewayRunner) {
 			panic(err)
 		}
 		if standalone {
-			runLog().Warn(fmt.Sprintf("profile '%s' is standalone (gateway.standalone: true); not served by "+
+			pkgLog().Warn(fmt.Sprintf("profile '%s' is standalone (gateway.standalone: true); not served by "+
 				"this gateway. %s", p.Name, gateway.StandaloneDeprecationNotice))
 		}
 	}
@@ -362,7 +362,7 @@ func logStandaloneProfilesAtBoot(ctx context.Context, r *GatewayRunner) {
 func refreshHostGatewayRecord(ctx context.Context, r *GatewayRunner) {
 	defer func() {
 		if rec := recover(); rec != nil {
-			runLog().Debug("host gateway record refresh failed", "error", rec)
+			pkgLog().Debug("host gateway record refresh failed", "error", rec)
 		}
 	}()
 	if !gateway.OwnsHostLock(gateway.RoleGateway) {
@@ -381,7 +381,7 @@ func refreshHostGatewayRecord(ctx context.Context, r *GatewayRunner) {
 // Attaches to, refuses beside or replaces the one host gateway, nil to start normally
 func hostAttachOrNone(ctx context.Context, replace, force bool) (*bool, error) {
 	if force {
-		runLog().Warn("--force: starting a gateway without asking the host owner.")
+		pkgLog().Warn("--force: starting a gateway without asking the host owner.")
 		return nil, nil
 	}
 	decision, err := gateway.DecideHostAttach(ctx, home.Dir(ctx), replace)
@@ -396,11 +396,11 @@ func hostAttachOrNone(ctx context.Context, replace, force bool) (*bool, error) {
 	}
 	switch {
 	case decision.Outcome == gateway.HostAttachAttach:
-		runLog().Info(fmt.Sprintf("Attaching to the host gateway instead of starting a second one: %s", describe()))
+		pkgLog().Info(fmt.Sprintf("Attaching to the host gateway instead of starting a second one: %s", describe()))
 		fmt.Println(decision.Message)
 		return boolRef(true), nil
 	case decision.Outcome == gateway.HostAttachRefuse:
-		runLog().Error(fmt.Sprintf("Refusing to start a second gateway on this host: %s", describe()))
+		pkgLog().Error(fmt.Sprintf("Refusing to start a second gateway on this host: %s", describe()))
 		fmt.Println(decision.Message)
 		return boolRef(false), nil
 	case decision.Outcome == gateway.HostAttachReplaceHost && decision.Owner != nil:

@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 
 	"github.com/nickheyer/icebath/pkg/agent"
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
@@ -64,7 +65,7 @@ func pyNumAdd(a, b any) any {
 			f, _ := new(big.Float).SetInt(n).Float64()
 			return f
 		}
-		panic(fmt.Sprintf("TypeError: unsupported operand type(s) for +: '%s' and '%s'", pyrepr.TypeName(a), pyrepr.TypeName(b)))
+		panic(fmt.Sprintf("cannot add %s and %s as usage counts", errchain.Kind(a), errchain.Kind(b)))
 	}
 	x, okA := toBig(a)
 	y, okB := toBig(b)

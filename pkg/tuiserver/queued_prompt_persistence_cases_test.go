@@ -9,11 +9,11 @@ import (
 	"testing"
 
 	"github.com/nickheyer/icebath/pkg/state"
-	"github.com/nickheyer/icebath/pkg/tuigateway"
+	"github.com/nickheyer/icebath/pkg/tuihost"
 )
 
 // TUI session over a fresh store with its lazy row written and turn A's prompt in the transcript
-func queuedPromptSession(t *testing.T) (*state.SessionDB, string, *tuigateway.Session, string) {
+func queuedPromptSession(t *testing.T) (*state.SessionDB, string, *tuihost.Session, string) {
 	t.Helper()
 	sessionCaseScope(t)
 	ctx := context.Background()
@@ -23,7 +23,7 @@ func queuedPromptSession(t *testing.T) (*state.SessionDB, string, *tuigateway.Se
 	}
 	t.Cleanup(func() { _ = db.Close() })
 	sid, key := submitRowSession(t, db)
-	session := tuigateway.SessionRecord(sid)
+	session := tuihost.SessionRecord(sid)
 	if session == nil {
 		t.Fatalf("no live session %s", sid)
 	}
@@ -35,7 +35,7 @@ func queuedPromptSession(t *testing.T) (*state.SessionDB, string, *tuigateway.Se
 }
 
 // Marks the session running with turn A in flight
-func queuedPromptBusy(session *tuigateway.Session) {
+func queuedPromptBusy(session *tuihost.Session) {
 	unlock := lockHistory(session)
 	session.Set("running", true)
 	startInflightTurn(session, "prompt A", "", nil)
@@ -43,7 +43,7 @@ func queuedPromptBusy(session *tuigateway.Session) {
 }
 
 // Turn A concludes and the session goes idle
-func queuedPromptConcludeA(t *testing.T, db *state.SessionDB, session *tuigateway.Session, key string) {
+func queuedPromptConcludeA(t *testing.T, db *state.SessionDB, session *tuihost.Session, key string) {
 	t.Helper()
 	if _, err := db.AppendMessage(context.Background(), key, map[string]any{"role": "assistant", "content": "reply A"}, state.AppendGuards{}); err != nil {
 		t.Fatal(err)
@@ -55,7 +55,7 @@ func queuedPromptConcludeA(t *testing.T, db *state.SessionDB, session *tuigatewa
 }
 
 // Accepts a prompt while the session is busy and requires it queued
-func queuedPromptAccept(t *testing.T, sid string, session *tuigateway.Session, rid, text string) {
+func queuedPromptAccept(t *testing.T, sid string, session *tuihost.Session, rid, text string) {
 	t.Helper()
 	resp := handleBusySubmit(context.Background(), rid, sid, session, text, "ws-1", true, nil, "")
 	if result, _ := resp["result"].(map[string]any); result["status"] != "queued" {
@@ -68,7 +68,7 @@ func queuedPromptRunTurns(t *testing.T, db *state.SessionDB, key, reply string) 
 	t.Helper()
 	saved := runPromptSubmit
 	t.Cleanup(func() { runPromptSubmit = saved })
-	runPromptSubmit = func(ctx context.Context, _ any, _ string, session *tuigateway.Session, text any, _ promptSubmitOptions) bool {
+	runPromptSubmit = func(ctx context.Context, _ any, _ string, session *tuihost.Session, text any, _ promptSubmitOptions) bool {
 		a := submitRowFlushAgent(t, db, key)
 		adoptSubmitUserRow(ctx, session, a, text, text)
 		userMsg, _ := a.StageTurnUserMessage(text, text)

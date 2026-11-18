@@ -3,13 +3,14 @@ package mcp
 import (
 	"context"
 	"encoding/json"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"log/slog"
 	"reflect"
 	"strings"
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 
 	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tools"
@@ -165,7 +166,7 @@ func TestSamplingCallbackText(t *testing.T) {
 		if _, rpcErr := h.CreateMessage(context.Background(), params); rpcErr != nil {
 			t.Fatal(rpcErr)
 		}
-		want := `[{"function":{"description":"Ask Crawl4AI","name":"ask","parameters":{"properties":{},"required":[],"type":"object"}},"type":"function"}]`
+		want := `[{"function":{"name":"ask","description":"Ask Crawl4AI","parameters":{"type":"object","properties":{},"required":[]}},"type":"function"}]`
 		if got := mustJSON(t, aux.calls[0].toolDefs); got != want {
 			t.Fatalf("tools = %s", got)
 		}

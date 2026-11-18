@@ -6,7 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"log/slog"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -19,13 +18,10 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
-	"github.com/nickheyer/icebath/pkg/observability"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/tools"
-	"github.com/nickheyer/icebath/pkg/tuigateway"
+	"github.com/nickheyer/icebath/pkg/tuihost"
 )
-
-func entryLogger() *slog.Logger { return slog.Default().With("logger", "tui_gateway.entry") }
 
 // Seconds of orderly shutdown a termination signal gets before the hard exit
 const defaultShutdownGraceS = 1.0
@@ -38,7 +34,7 @@ func shutdownGraceSeconds() float64 {
 	return defaultShutdownGraceS
 }
 
-// Collaborators of the stdio entry, the real functions swapped only where a hermes case installs a fake
+// Collaborators of the stdio entry, the real functions swapped only where a test installs a fake
 var (
 	entryStdin               io.Reader = os.Stdin
 	entryEnsureMCPDiscovery            = ensureMCPDiscoveryStarted
@@ -47,9 +43,9 @@ var (
 	entryScheduleOrphanSweep           = scheduleStartupOrphanSweep
 	entryEnsureSkinWatcher             = ensureSkinWatcher
 	entryPrewarmPickerCache            = func(ctx context.Context) { provider.PrewarmPickerCacheAsync(ctx) }
-	entryHandleSpuriousEOF             = tuigateway.HandleSpuriousEOF
+	entryHandleSpuriousEOF             = tuihost.HandleSpuriousEOF
 	entryLogExit                       = logExit
-	entryWriteJSON                     = tuigateway.WriteJSON
+	entryWriteJSON                     = tuihost.WriteJSON
 	entryDispatch                      = func(ctx context.Context, req any) map[string]any { return Dispatch(ctx, req, nil) }
 	entryAppendCrashLog                = appendCrashLog
 	entryOSExit                        = os.Exit
@@ -74,9 +70,8 @@ func appendCrashLog(header string, dump func(io.Writer)) {
 	})
 }
 
-// Stamps a clean exit, kills every live foreground command tree at once and ends the process with status 0
+// Kills every live foreground command tree at once and ends the process with status 0
 func hardExit() {
-	suppress(func() { observability.StampExit("clean", "none") })
 	suppress(func() { tools.KillLiveForegroundProcesses(true) })
 	entryOSExit(0)
 }
@@ -132,7 +127,7 @@ type stdioEntry struct {
 
 // Runs the stdio gateway when the binary was re-executed as it, ending the process through exit
 func DispatchTUIGatewayEntry(ctx context.Context, exit func(int)) {
-	if len(os.Args) < 2 || os.Args[1] != tuigateway.TUIGatewayEntry {
+	if len(os.Args) < 2 || os.Args[1] != tuihost.TUIGatewayEntry {
 		return
 	}
 	runStdioEntry(ctx, exit)
@@ -232,22 +227,20 @@ func (e *stdioEntry) writeOrExit(payload *pyjson.Object, reason string) bool {
 // Announces readiness on stdout and answers one JSON RPC request per stdin line until the peer closes it
 func (e *stdioEntry) serve() error {
 	ctx := e.ctx
-	tuigateway.SetStdioIsRPCChannel(true)
+	tuihost.SetStdioIsRPCChannel(true)
 	func() {
 		defer func() {
 			if failure := recover(); failure != nil {
-				entryLogger().Warn("TUI message injector did not install", "exc_info", failureText(failure))
+				pkgLog().Warn("TUI message injector did not install", "exc_info", failureText(failure))
 			}
 		}()
 		InstallTUIMessageInjector(ctx, nil)
 	}()
 	closeRPCStdinOnExec()
-	observability.BeginProcess(ctx, "tui")
-	observability.SetProcessSurface("tui_gateway")
 	func() {
 		defer func() {
 			if failure := recover(); failure != nil {
-				entryLogger().Debug("truststore install skipped", "exc_info", failureText(failure))
+				pkgLog().Debug("truststore install skipped", "exc_info", failureText(failure))
 			}
 		}()
 		provider.InstallTrustStore()
@@ -259,7 +252,7 @@ func (e *stdioEntry) serve() error {
 		func() {
 			defer func() {
 				if failure := recover(); failure != nil {
-					entryLogger().Warn(fmt.Sprintf("%s failed", step.what), "exc_info", failureText(failure))
+					pkgLog().Warn(fmt.Sprintf("%s failed", step.what), "exc_info", failureText(failure))
 				}
 			}()
 			step.start(ctx)
@@ -267,8 +260,8 @@ func (e *stdioEntry) serve() error {
 	}
 	entryEnsureMCPDiscovery(ctx)
 	ready := pyjson.ObjectOf("jsonrpc", "2.0", "method", "event", "params", pyjson.ObjectOf("type", "gateway.ready",
-		"payload", pyjson.ObjectOf("skin", pyjsonValue(entryResolveSkin(ctx)), "change_events", true,
-			"replay_epoch", tuigateway.ReplayEpoch())))
+		"payload", tuihost.SealPayload("gateway.ready", map[string]any{"skin": entryResolveSkin(ctx), "change_events": true,
+			"replay_epoch": tuihost.ReplayEpoch()})))
 	if !e.writeOrExit(ready, "startup write failed (broken stdout pipe before first event)") {
 		return nil
 	}
@@ -276,7 +269,7 @@ func (e *stdioEntry) serve() error {
 	func() {
 		defer func() {
 			if failure := recover(); failure != nil {
-				entryLogger().Debug("picker cache prewarm (tui) failed to start", "exc_info", failureText(failure))
+				pkgLog().Debug("picker cache prewarm (tui) failed to start", "exc_info", failureText(failure))
 			}
 		}()
 		entryPrewarmPickerCache(ctx)
@@ -323,7 +316,7 @@ func (e *stdioEntry) answer(line string) bool {
 				return
 			}
 			trace := fmt.Sprintf("%s\n%s", failureText(failure), debugStack())
-			entryLogger().Error(fmt.Sprintf("inline RPC handler failed for method=%s id=%s", pyrepr.Repr(method), pyrepr.Repr(rid)),
+			pkgLog().Error(fmt.Sprintf("inline RPC handler failed for method=%s id=%s", pyrepr.Repr(method), pyrepr.Repr(rid)),
 				"exc_info", trace)
 			entryAppendCrashLog(fmt.Sprintf("inline dispatch crash · %s · method=%s", time.Now().Format("2006-01-02 15:04:05"),
 				pyrepr.Repr(method)), func(w io.Writer) { io.WriteString(w, trace) })

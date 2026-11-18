@@ -16,7 +16,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
 )
 
-// Seams over the lock probes and the unscoped runtime fallback that hermes tests patch
+// Seams over the lock probes and the unscoped runtime fallback that tests patch
 var (
 	statusIsGatewayRuntimeLockActive       = isGatewayRuntimeLockActiveLive
 	statusIsGatewayRuntimeLockActiveStrict = isGatewayRuntimeLockActiveStrictLive
@@ -25,7 +25,7 @@ var (
 
 // Reserves the launch profile home, false when another owner holds it or the lock cannot be opened
 func AcquireGatewayRuntimeLock(ctx context.Context) bool {
-	if err := ProcessOwnership.Reserve(ctx, []string{processHermesHome()}, ""); err != nil {
+	if err := ProcessOwnership.Reserve(ctx, []string{processIcebathHome()}, ""); err != nil {
 		return false
 	}
 	clearRunningPidCache()
@@ -39,7 +39,7 @@ func ReleaseGatewayRuntimeLock() {
 }
 
 // Whether this process holds the runtime reservation of its launch home
-func OwnsGatewayRuntimeLock() bool { return ProcessOwnership.Owns(processHermesHome()) }
+func OwnsGatewayRuntimeLock() bool { return ProcessOwnership.Owns(processIcebathHome()) }
 
 // Whether another process holds the lock behind f, a won probe released and f always closed
 func probeLockFile(f *os.File) bool {
@@ -238,7 +238,7 @@ func acquireScopedLockAt(ctx context.Context, lockPath, scope, identity string, 
 	}
 	record.Set("metadata", metadata)
 	record.Set("updated_at", utcNowISO())
-	if profile := statusProfileLabelForHome(processHermesHome()); profile != "" {
+	if profile := statusProfileLabelForHome(processIcebathHome()); profile != "" {
 		record.Set("profile", profile)
 	}
 	existing := readJSONFile(lockPath, false)

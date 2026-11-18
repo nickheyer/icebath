@@ -2,11 +2,8 @@ package provider
 
 import (
 	"context"
-	"errors"
 	"fmt"
-	"log/slog"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
@@ -31,34 +28,8 @@ type ProviderNotConfiguredError struct{ Message string }
 func (e *ProviderNotConfiguredError) Error() string { return e.Message }
 
 var (
-	auxNousMu            sync.Mutex
-	auxLastNousDetail    string
-	auxHasLastNousDetail bool
-	auxWarnedNousDetails = map[string]bool{}
-	auxUnavailableClock  = time.Now
+	auxUnavailableClock = time.Now
 )
-
-// Persisted terminal quarantine marker in place of the error, either sentence terminated
-func auxQuarantinedNousError(env PoolEnv, err error) error {
-	if state, serr := env.Store.GetProviderAuthState("nous"); serr == nil {
-		if marker := nousTerminalQuarantineMarker(state); marker != nil {
-			if msg, ok := marker["message"]; ok && msg != nil && pyStr(msg) != "" {
-				code := ""
-				if c := marker["code"]; c != nil {
-					code = pyStr(c)
-				}
-				return &AuthError{Message: auxSentence(pyStr(msg)), Provider: "nous", Code: code, ReloginRequired: true}
-			}
-		}
-	}
-	var authErr *AuthError
-	if errors.As(err, &authErr) {
-		return &AuthError{Message: auxSentence(authErr.Error()), Provider: authErr.Provider, Code: authErr.Code,
-			ReloginRequired: authErr.ReloginRequired, RetryAfter: authErr.RetryAfter, HasRetryAfter: authErr.HasRetryAfter,
-			Retryable: authErr.Retryable}
-	}
-	return err
-}
 
 func auxSentence(text string) string {
 	return strings.TrimRight(pystr.Strip(text), ".") + "."
@@ -196,70 +167,4 @@ func MissingProviderCredentialsMessage(ctx context.Context, providerID string) s
 		return fmt.Sprintf("Provider '%s' is set in config.yaml but %s. %s, or %s", providerID, problem, remedy, switchText)
 	}
 	return fmt.Sprintf("Provider '%s' is set in config.yaml but %s. %s", providerID, problem, pystr.Capitalize(switchText))
-}
-
-// True when a Nous credential exists that failed, a coded error or persisted Nous state
-func auxNousCredentialPresent(env PoolEnv, err error) bool {
-	var authErr *AuthError
-	if errors.As(err, &authErr) && authErr.Code != "" {
-		return true
-	}
-	state, serr := env.Store.GetProviderAuthState("nous")
-	return serr == nil && len(state) > 0
-}
-
-// RecordNousCredentialFailure remembers the latest Nous credential failure and logs each distinct one once
-func RecordNousCredentialFailure(ctx context.Context, err error) string {
-	env := modelsPoolEnv(ctx)
-	err = auxQuarantinedNousError(env, err)
-	var message string
-	var authErr *AuthError
-	if errors.As(err, &authErr) {
-		message = formatAuthError(authErr)
-	} else {
-		message = err.Error()
-	}
-	message = pystr.Strip(message)
-	if message == "" {
-		message = auxPyExceptionName(err)
-	}
-	if authErr != nil && authErr.Code != "" && !strings.Contains(message, authErr.Code) {
-		message = fmt.Sprintf("%s (code: %s)", message, authErr.Code)
-	}
-	detail := "Nous Portal runtime credentials unavailable: " + message
-	auxNousMu.Lock()
-	auxLastNousDetail, auxHasLastNousDetail = detail, true
-	first := !auxWarnedNousDetails[detail]
-	auxWarnedNousDetails[detail] = true
-	auxNousMu.Unlock()
-	if first {
-		level := slog.LevelDebug
-		if auxNousCredentialPresent(env, err) {
-			level = slog.LevelWarn
-		}
-		slog.Log(ctx, level, "Auxiliary Nous client unavailable: "+detail)
-	}
-	return detail
-}
-
-// ClearNousCredentialFailure forgets the latest Nous credential failure after a successful resolution
-func ClearNousCredentialFailure() {
-	auxNousMu.Lock()
-	auxLastNousDetail, auxHasLastNousDetail = "", false
-	auxNousMu.Unlock()
-}
-
-// NousCredentialFailureDetail is the latest recorded Nous credential failure
-func NousCredentialFailureDetail() (string, bool) {
-	auxNousMu.Lock()
-	defer auxNousMu.Unlock()
-	return auxLastNousDetail, auxHasLastNousDetail
-}
-
-// Drops the remembered Nous failure and the warned set as a fresh process starts
-func auxResetNousCredentialFailures() {
-	auxNousMu.Lock()
-	auxLastNousDetail, auxHasLastNousDetail = "", false
-	auxWarnedNousDetails = map[string]bool{}
-	auxNousMu.Unlock()
 }

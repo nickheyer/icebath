@@ -50,6 +50,43 @@ type HostedMemberDispatch struct {
 	CapabilityDigest      string
 	ExecutionPolicyDigest string
 	TraceID               string
+	Attachments           []map[string]any
+}
+
+// Files a dispatch names, each a manifest item with the digest of the bytes the target already holds
+func hostedDispatchAttachments(value any) ([]map[string]any, error) {
+	list, ok := pyjson.Plain(value).([]any)
+	if !ok || len(list) == 0 {
+		return nil, &HostedRoomPeerError{"attachments must be a non-empty list"}
+	}
+	stripped := make([]any, len(list))
+	digests := make([]string, len(list))
+	for i, raw := range list {
+		item, ok := raw.(map[string]any)
+		if !ok {
+			return nil, &HostedRoomPeerError{"each attachment must be an object"}
+		}
+		digest, err := hostedDigest(item["sha256"], "attachment sha256")
+		if err != nil {
+			return nil, err
+		}
+		digests[i] = digest
+		rest := map[string]any{}
+		for key, field := range item {
+			if key != "sha256" {
+				rest[key] = field
+			}
+		}
+		stripped[i] = rest
+	}
+	manifest, err := validateTaskManifest(stripped)
+	if err != nil {
+		return nil, &HostedRoomPeerError{err.Error()}
+	}
+	for i := range manifest {
+		manifest[i]["sha256"] = digests[i]
+	}
+	return manifest, nil
 }
 
 // Dispatch fields in validation order with the checker kind of each
@@ -143,6 +180,15 @@ func HostedMemberDispatchFromMapping(value any) (*HostedMemberDispatch, error) {
 	for _, field := range hostedDispatchFields {
 		required[field.name] = true
 	}
+	mapping, _ := hostedMapping(value)
+	var attachments []map[string]any
+	if raw, present := mapping["attachments"]; present {
+		var err error
+		if attachments, err = hostedDispatchAttachments(raw); err != nil {
+			return nil, err
+		}
+		required["attachments"] = true
+	}
 	fields, err := hostedExactFields(value, "dispatch", required)
 	if err != nil {
 		return nil, err
@@ -193,7 +239,7 @@ func HostedMemberDispatchFromMapping(value any) (*HostedMemberDispatch, error) {
 		ExecutionGeneration: ints["execution_generation"], SourceEventSeq: ints["source_event_seq"],
 		CancellationScopeID: texts["cancellation_scope_id"], Prompt: prompt, PromptDigest: promptDigest,
 		CapabilityDigest: texts["capability_digest"], ExecutionPolicyDigest: texts["execution_policy_digest"],
-		TraceID: texts["trace_id"]}, nil
+		TraceID: texts["trace_id"], Attachments: attachments}, nil
 }
 
 // Home install, room, member and target profile a hosted member dispatch names

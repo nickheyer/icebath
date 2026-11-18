@@ -40,7 +40,7 @@ type ComputerUseCLI struct {
 // ComputerUseCommand is the set_defaults func of the computer-use parser answering the exit code
 type ComputerUseCommand func(ctx context.Context, cli *ComputerUseCLI, ns ComputerUseArgs) (int, error)
 
-// Permission status the CLI reads at call time, swapped by tests as hermes patches the permissions module
+// Permission status the CLI reads at call time, swapped by tests
 var cliComputerUseStatus = computerUseStatus
 
 // Leaf command paths of the computer-use tree the CLI binds to the dispatcher

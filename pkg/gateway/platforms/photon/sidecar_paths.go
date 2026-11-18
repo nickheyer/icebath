@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"context"
 	"fmt"
-	"log/slog"
 	"os"
 	"path/filepath"
 	"sync"
@@ -16,7 +15,8 @@ import (
 )
 
 // Files that define the sidecar, node_modules stays out so npm installs inside the mirror
-var mirrorFiles = []string{"index.mjs", "package.json", "package-lock.json", "patch-spectrum-mixed-attachments.mjs"}
+var mirrorFiles = []string{"index.mjs", "package.json", "package-lock.json", "patch-spectrum-mixed-attachments.mjs",
+	"send-format.mjs", "stream-staleness.mjs"}
 
 // NpmErrorLogMaxChars caps how much of the persisted npm failure log is surfaced
 const NpmErrorLogMaxChars = 300
@@ -136,6 +136,9 @@ func ResolveSidecarDir(ctx context.Context, sourceDir string) string {
 	if override := os.Getenv("PHOTON_SIDECAR_DIR"); override != "" {
 		return override
 	}
+	if !exists(source) {
+		return embeddedSidecarMirror(ctx)
+	}
 	if dirWritable(source) {
 		return source
 	}
@@ -144,7 +147,7 @@ func ResolveSidecarDir(ctx context.Context, sourceDir string) string {
 	}
 	mirror := filepath.Join(home.Dir(ctx), "photon", "sidecar")
 	if err := refreshMirror(source, mirror); err != nil {
-		slog.Warn(fmt.Sprintf("[photon] install tree is read-only and mirroring the sidecar to %s failed (%v) — falling back to the read-only source dir; dependency installs will not be possible", mirror, err))
+		pkgLog().Warn(fmt.Sprintf("[photon] install tree is read-only and mirroring the sidecar to %s failed (%v) — falling back to the read-only source dir; dependency installs will not be possible", mirror, err))
 		return source
 	}
 	return mirror

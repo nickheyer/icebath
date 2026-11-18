@@ -26,7 +26,7 @@ func checkpointsMixedStatus() CheckpointStatus {
 	}
 }
 
-// Swaps the store status and prune seams, recording every prune call the way the hermes fixture does
+// Swaps the store status and prune seams, recording every prune call the way the test fixture does
 func patchCheckpointManager(t *testing.T, status CheckpointStatus) *[]CheckpointPruneOptions {
 	t.Helper()
 	var calls []CheckpointPruneOptions

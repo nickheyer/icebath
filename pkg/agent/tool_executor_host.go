@@ -6,7 +6,6 @@ import (
 	"math/rand/v2"
 	"sync"
 
-	"github.com/nickheyer/icebath/pkg/observability"
 	"github.com/nickheyer/icebath/pkg/plugins"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/state"
@@ -124,25 +123,6 @@ func (a *AIAgent) toolExecutor() *tools.Executor {
 	return a.toolExec
 }
 
-// Agent copy of the tool env whose events record tool metrics before reaching the host listener
-func withToolMetricSink(ctx context.Context, env *tools.Env) *tools.Env {
-	if env == nil {
-		return nil
-	}
-	metricsCtx := context.WithoutCancel(ctx)
-	out := *env
-	prev := env.Notify
-	out.Notify = func(ev tools.Event) {
-		if observability.RecordToolMetricEvent(metricsCtx, &out, ev) {
-			return
-		}
-		if prev != nil {
-			prev(ev)
-		}
-	}
-	return &out
-}
-
 // Context of the running tool round, the background context outside one
 func (a *AIAgent) toolContext() context.Context {
 	if a.toolCallCtx != nil {
@@ -227,38 +207,12 @@ func (a *AIAgent) SetCurrentTool(name string) {
 // Feeds the turn end verifier, a failed identity probe logged like the executor swallows it
 func (a *AIAgent) RecordFileMutationResult(name string, args map[string]any, result string, isError bool, taskID string) {
 	if err := a.recordFileMutationResult(name, args, result, isError, taskID); err != nil {
-		runAgentLog().Warn("file mutation result not recorded", "tool", name, "error", err)
+		pkgLog().Warn("file mutation result not recorded", "tool", name, "error", err)
 	}
 }
 
-func (a *AIAgent) ObserveToolOutcome(name string, isError bool) {
-	observability.ObserveToolOutcome(a.toolContext(), a, name, isError)
-}
-
-func recordGuardrailDecision(a *AIAgent, action, code string) {
-	observability.RecordGuardrailDecision(a.toolContext(), a, action, code)
-}
-
-func recordGuardrailWarnings(a *AIAgent, d tools.ToolGuardrailDecision, stallKind string) {
-	observability.RecordGuardrailWarnings(a.toolContext(), a, &d, stallKind)
-}
-
-// Records the tool result for observability, then repaints automation cards a tool moved mid turn
-func (a *AIAgent) NoteToolResult(name, toolCallID, result, persisted string) {
-	observability.NoteToolResult(a.toolContext(), a, name, toolCallID, result, persisted)
-	a.publishControlIfChanged()
-}
-
-// Efficiency rows of the finished batch through their dict views
-func (a *AIAgent) RecordToolBatch(batch []*state.Message, contentsBefore []any) {
-	rows := make([]map[string]any, len(batch))
-	for i, m := range batch {
-		if m != nil {
-			rows[i] = state.MessageToDict(m)
-		}
-	}
-	observability.RecordToolBatch(a.toolContext(), a, rows, contentsBefore)
-}
+// Repaints automation cards a tool moved mid turn
+func (a *AIAgent) ToolResultCommitted() { a.publishControlIfChanged() }
 
 // Hint text for directories this call visits first, empty without a tracker
 func (a *AIAgent) SubdirectoryHints(name string, args map[string]any) string {
@@ -384,7 +338,7 @@ func (a *AIAgent) ApplyPendingSteer(messages *[]*state.Message, numTools int) {
 	if r := []rune(steerText); len(r) > 120 {
 		preview = string(r[:120]) + "..."
 	}
-	runAgentLog().Info(fmt.Sprintf("Delivered /steer to agent after tool batch (%d chars) as new user message: %s", len([]rune(steerText)), preview))
+	pkgLog().Info(fmt.Sprintf("Delivered /steer to agent after tool batch (%d chars) as new user message: %s", len([]rune(steerText)), preview))
 }
 
 func (a *AIAgent) RedactToolArgsForDisplay(name string, args map[string]any) map[string]any {

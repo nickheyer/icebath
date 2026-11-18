@@ -74,65 +74,15 @@ func TestKreaModelNormalization(t *testing.T) {
 	}
 }
 
-func TestManagedKreaRoutingSkipsNonKreaModel(t *testing.T) {
-	env := imageGenEnv(t, map[string]any{"model": "fal-ai/flux-2/klein/9b"})
-	if _, handled := maybeRouteManagedModel(context.Background(), env, "p", "square", imageSources{}, nil); handled {
-		t.Fatal("non krea model routed")
-	}
-}
-
-func TestManagedKreaRoutingReachesKreaPlugin(t *testing.T) {
-	env := imageGenEnv(t, map[string]any{"model": "krea-2-large"})
-	prev := resolveManagedKreaGatewayHook
-	resolveManagedKreaGatewayHook = func(*tools.Env) *tools.ManagedToolGatewayConfig {
-		return &tools.ManagedToolGatewayConfig{Vendor: "krea", GatewayOrigin: "https://krea-gateway.example.com", NousUserToken: "tok", ManagedMode: true}
-	}
-	t.Cleanup(func() { resolveManagedKreaGatewayHook = prev })
-	krea := &fakeImageProvider{name: "krea", generate: func(ImageGenRequest) (map[string]any, error) {
-		return map[string]any{"success": true, "image": "/tmp/x.png"}, nil
-	}}
-	usePluginProviders(t, krea)
-	out, handled := maybeRouteManagedModel(context.Background(), env, "a cat", "portrait", imageSources{}, nil)
-	if !handled || decodeResult(t, out)["success"] != true {
-		t.Fatalf("%v %s", handled, out)
-	}
-	req := krea.calls[0]
-	if req.Kwargs["model"] != "krea-2-large" || req.Prompt != "a cat" || req.AspectRatio != "portrait" {
-		t.Fatalf("%+v", req)
-	}
-}
-
-func TestManagedPortalRoutingReachesNousPlugin(t *testing.T) {
-	env := imageGenEnv(t, map[string]any{"provider": "nous", "model": "openai/gpt-5.4-image-2"})
-	nous := &fakeImageProvider{name: "nous", generate: func(ImageGenRequest) (map[string]any, error) {
-		return map[string]any{"success": true, "image": "/tmp/x.png"}, nil
-	}}
-	usePluginProviders(t, nous)
-	out, _ := maybeRouteManagedModel(context.Background(), env, "a cat", "square", imageSources{}, nil)
-	if decodeResult(t, out)["success"] != true || nous.calls[0].Kwargs["model"] != "openai/gpt-5.4-image-2" {
-		t.Fatal(out)
-	}
-}
-
-func TestManagedPortalModelWithoutPluginErrorsInsteadOfBillingFal(t *testing.T) {
-	env := imageGenEnv(t, map[string]any{"provider": "nous", "model": "openai/gpt-5.4-image-2"})
-	usePluginProviders(t)
-	out, handled := maybeRouteManagedModel(context.Background(), env, "a cat", "square", imageSources{}, nil)
-	if !handled || decodeResult(t, out)["success"] != false {
-		t.Fatal(out)
-	}
-}
-
 // Runs the FAL path with a native result and a recording upscaler
 func runUpscaleOptIn(t *testing.T, model string, upscale any, upscaled any) (map[string]any, []string) {
 	t.Helper()
 	t.Setenv("FAL_IMAGE_MODEL", model)
 	t.Setenv("FAL_KEY", "test-key")
-	prevGW, prevSubmit, prevUp := resolveManagedFalGatewayHook, submitFalRequestHook, upscaleImageHook
+	prevSubmit, prevUp := submitFalRequestHook, upscaleImageHook
 	t.Cleanup(func() {
-		resolveManagedFalGatewayHook, submitFalRequestHook, upscaleImageHook = prevGW, prevSubmit, prevUp
+		submitFalRequestHook, upscaleImageHook = prevSubmit, prevUp
 	})
-	resolveManagedFalGatewayHook = func(*tools.Env) (*tools.ManagedToolGatewayConfig, error) { return nil, nil }
 	submitFalRequestHook = func(context.Context, *tools.Env, string, map[string]any) (*falRequestHandle, error) {
 		return completedFalHandle(map[string]any{"images": []any{map[string]any{"url": "https://fal/native.png", "width": 1024, "height": 768}}}), nil
 	}
@@ -200,9 +150,6 @@ func TestUpscaleDispatchForwarding(t *testing.T) {
 
 func TestFalKeyWhitespaceIsUnset(t *testing.T) {
 	t.Setenv("FAL_KEY", "   ")
-	prev := resolveManagedFalGatewayHook
-	resolveManagedFalGatewayHook = func(*tools.Env) (*tools.ManagedToolGatewayConfig, error) { return nil, nil }
-	t.Cleanup(func() { resolveManagedFalGatewayHook = prev })
 	if checkFalAPIKey(imageGenEnv(t, nil)) {
 		t.Fatal("whitespace FAL_KEY counted as configured")
 	}
@@ -210,9 +157,6 @@ func TestFalKeyWhitespaceIsUnset(t *testing.T) {
 
 func TestImageGenerateToolReturnsActionableErrorWhenNoBackend(t *testing.T) {
 	t.Setenv("FAL_KEY", "")
-	prev := resolveManagedFalGatewayHook
-	resolveManagedFalGatewayHook = func(*tools.Env) (*tools.ManagedToolGatewayConfig, error) { return nil, nil }
-	t.Cleanup(func() { resolveManagedFalGatewayHook = prev })
 	out := decodeResult(t, imageGenerateTool(context.Background(), imageGenEnv(t, nil), imageToolArgs{Prompt: "a cat"}))
 	if out["success"] != false || out["error"] == "" || out["error"] == nil {
 		t.Fatal(out)
@@ -234,83 +178,6 @@ func TestHandlerForwardsOnlyDeclaredCreativeControls(t *testing.T) {
 	}
 	if _, has := rec.calls[0].Kwargs["creativity"]; has {
 		t.Fatal("undeclared control forwarded")
-	}
-}
-
-// Replaces the dispatch seams so a managed Krea error reaches the FAL fallback
-func useKreaFallbackSeams(t *testing.T, kreaError map[string]any, enabled bool, fal func(imageToolArgs) string) {
-	t.Helper()
-	prevD, prevM, prevT, prevE := dispatchToPluginProviderHook, maybeRouteManagedModelHook, imageGenerateToolHook, kreaFallbackToFalEnabledHook
-	t.Cleanup(func() {
-		dispatchToPluginProviderHook, maybeRouteManagedModelHook, imageGenerateToolHook, kreaFallbackToFalEnabledHook = prevD, prevM, prevT, prevE
-	})
-	dispatchToPluginProviderHook = func(context.Context, *tools.Env, string, string, imageSources, map[string]any) (string, bool) {
-		return "", false
-	}
-	maybeRouteManagedModelHook = func(context.Context, *tools.Env, string, string, imageSources, map[string]any) (string, bool) {
-		raw, _ := json.Marshal(kreaError)
-		return string(raw), true
-	}
-	imageGenerateToolHook = func(_ context.Context, _ *tools.Env, a imageToolArgs) string { return fal(a) }
-	kreaFallbackToFalEnabledHook = func(*tools.Env) bool { return enabled }
-}
-
-func TestManagedKreaFailureFallsBackToFalOnlyWhenSafe(t *testing.T) {
-	for _, tc := range []struct {
-		eligible              bool
-		imageURL              string
-		enabled, falOK, falls bool
-	}{
-		{true, "", true, true, true},
-		{false, "", true, true, false},
-		{true, "https://x/ref.png", true, true, false},
-		{true, "", false, true, false},
-		{true, "", true, false, true},
-	} {
-		var falCalls []imageToolArgs
-		useKreaFallbackSeams(t, map[string]any{"success": false, "image": nil, "error": "Krea connection error",
-			"error_type": "connection_error", "fallback_eligible": tc.eligible}, tc.enabled, func(a imageToolArgs) string {
-			falCalls = append(falCalls, a)
-			if tc.falOK {
-				return `{"success": true, "image": "/tmp/fal.png", "modality": "text", "upscaled": false}`
-			}
-			return `{"success": false, "image": null, "error": "FAL down", "error_type": "api_error"}`
-		})
-		args := map[string]any{"prompt": "draw cat", "aspect_ratio": "square"}
-		if tc.imageURL != "" {
-			args["image_url"] = tc.imageURL
-		}
-		out := decodeResult(t, handleImageGenerate(context.Background(), &tools.Call{Env: imageGenEnv(t, nil), Args: args}))
-		if !tc.falls {
-			if len(falCalls) != 0 || out["error"] != "Krea connection error" || out["fallback_from"] != nil {
-				t.Fatalf("%+v %v", tc, out)
-			}
-			continue
-		}
-		note, _ := out["note"].(string)
-		want := "also failed"
-		if tc.falOK {
-			want = "generated on FAL"
-		}
-		if len(falCalls) != 1 || falCalls[0].FalModel != falDefaultModel || out["fallback_from"] != "krea" ||
-			out["fallback_reason"] != "Krea connection error" || out["success"] != tc.falOK || !strings.Contains(note, want) {
-			t.Fatalf("%+v %v", tc, out)
-		}
-	}
-}
-
-func TestFallbackKeepsUpscaleAndNamesFalUpscaler(t *testing.T) {
-	var falCalls []imageToolArgs
-	useKreaFallbackSeams(t, map[string]any{"success": false, "image": nil, "error": "refused", "error_type": "connection_error",
-		"fallback_eligible": true}, true, func(a imageToolArgs) string {
-		falCalls = append(falCalls, a)
-		return `{"success": true, "image": "/tmp/fal.png", "modality": "text", "upscaled": true}`
-	})
-	out := decodeResult(t, handleImageGenerate(context.Background(), &tools.Call{Env: imageGenEnv(t, nil),
-		Args: map[string]any{"prompt": "draw cat", "aspect_ratio": "square", "upscale": true}}))
-	note, _ := out["note"].(string)
-	if falCalls[0].Upscale != true || !strings.Contains(note, upscalerModel) || !strings.Contains(note, "Krea Enhance") {
-		t.Fatal(out)
 	}
 }
 

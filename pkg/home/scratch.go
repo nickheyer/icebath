@@ -43,13 +43,16 @@ func ResetScratchPruneLatch() { scratchPrunedOnce.Store(false) }
 // Creates and secures the scratch dir of h or the active home and starts its hourly detached prune
 func EnsureScratchDir(ctx context.Context, h string) string { return scratchDir(ctx, h, true) }
 
-// Scratch dir of h, created and permissioned where the filesystem allows, a creation failure ignored
+// Scratch dir of h, created and permissioned where the filesystem allows unless its home was erased, a creation failure ignored
 func scratchDir(ctx context.Context, h string, prune bool) string {
 	base := h
 	if base == "" {
 		base = Dir(ctx)
 	}
 	scratch := ScratchDir(base)
+	if erasedHomeOf(scratch) != "" {
+		return scratch
+	}
 	if pathMkdir(scratch, 0o777, true, true) == nil && runtime.GOOS != "windows" {
 		ApplySecureDirPolicy(ctx, scratch, base)
 	}

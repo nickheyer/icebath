@@ -7,13 +7,13 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/internal/pythread"
 	"github.com/nickheyer/icebath/pkg/memory"
-	"github.com/nickheyer/icebath/pkg/tuigateway"
+	"github.com/nickheyer/icebath/pkg/tuihost"
 )
 
 const removedProvider = "Unknown provider 'custom:llama-local'."
 
 // Live session record of a stop case, removed when the test ends
-func stopRecord(t *testing.T, state map[string]any) *tuigateway.Session {
+func stopRecord(t *testing.T, state map[string]any) *tuihost.Session {
 	t.Helper()
 	t.Setenv("ICEBATH_HOME", t.TempDir())
 	sid := "stop-" + t.Name()
@@ -22,9 +22,9 @@ func stopRecord(t *testing.T, state map[string]any) *tuigateway.Session {
 	for k, v := range state {
 		values[k] = v
 	}
-	session := tuigateway.NewSession(values)
-	tuigateway.SetSessionRecord(sid, session)
-	t.Cleanup(func() { tuigateway.SetSessionRecord(sid, nil) })
+	session := tuihost.NewSession(values)
+	tuihost.SetSessionRecord(sid, session)
+	t.Cleanup(func() { tuihost.SetSessionRecord(sid, nil) })
 	return session
 }
 
@@ -77,29 +77,5 @@ func TestStopDoesNotBuildAnAgentForAResumedSession(t *testing.T) {
 	interruptStatus(t)
 	if session.Get("agent_build_started") != nil || session.Get("agent") != nil || session.Get("agent_ready").(*pythread.Event).IsSet() {
 		t.Fatalf("stop started a build: started %v agent %v", session.Get("agent_build_started"), session.Get("agent"))
-	}
-}
-
-// test_free_tier_task_done.py test_a_correction_rpc_during_the_task_disqualifies_it
-func TestACorrectionRpcDuringTheTaskDisqualifiesIt(t *testing.T) {
-	for _, c := range []struct{ name, method, text string }{
-		{"steer", "session.steer", "also check my calendar"}, {"redirect", "session.redirect", "actually only Monday"},
-	} {
-		t.Run(c.name, func(t *testing.T) {
-			ctx := freeTierHome(t)
-			a := freeTierAgent(t, true)
-			armFreeTier(t, ctx)
-			session := freeTierSession(a, nil)
-			tuigateway.SetSessionRecord("sid", session)
-			defer tuigateway.SetSessionRecord("sid", nil)
-			resp := handleRequest(ctx, map[string]any{"id": "1", "method": c.method, "params": map[string]any{"session_id": "sid", "text": c.text}})
-			if _, answered := resp["result"]; !answered {
-				t.Fatalf("response %v", resp)
-			}
-			noteTaskDone(ctx, session, cleanTaskResult(), a, "")
-			if _, pending := offerRecorded(t, ctx); pending {
-				t.Fatal("a corrected task armed the offer")
-			}
-		})
 	}
 }

@@ -189,10 +189,10 @@ func TestSchedulerRegistrationFailureKeepsSavedJob(t *testing.T) {
 	bad := pyjson.NewObject()
 	bad.Set("prompt", "p")
 	bad.Set("bogus", 1)
-	if _, err := s.createJobWithSchedulerRegistration(context.Background(), bad); err == nil || err.Error() != "TypeError: create_job() got an unexpected keyword argument 'bogus'" {
+	if _, err := s.createJobWithSchedulerRegistration(context.Background(), bad); err == nil || err.Error() != "unknown cron job field bogus" {
 		t.Fatal(err)
 	}
-	if _, err := s.createJobWithSchedulerRegistration(context.Background(), pyjson.NewObject()); err == nil || err.Error() != "TypeError: create_job() missing 2 required positional arguments: 'prompt' and 'schedule'" {
+	if _, err := s.createJobWithSchedulerRegistration(context.Background(), pyjson.NewObject()); err == nil || err.Error() != "a cron job spec needs prompt and schedule" {
 		t.Fatal(err)
 	}
 }

@@ -11,7 +11,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/agent"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/provider"
-	"github.com/nickheyer/icebath/pkg/tuigateway"
+	"github.com/nickheyer/icebath/pkg/tuihost"
 )
 
 const sharedRelayURL = "https://relay.example/v1"
@@ -56,7 +56,7 @@ func TestTUIRuntimeConfigAndSessionInfoKeepRequestedCustomSlug(t *testing.T) {
 	if cfg["provider"] != "custom:beta" {
 		t.Fatalf("runtime config provider %v", cfg["provider"])
 	}
-	info := sessionInfo(ctx, a, tuigateway.NewSession(map[string]any{"agent": a, "session_key": "s1", "profile_home": h}))
+	info := sessionInfo(ctx, a, tuihost.NewSession(map[string]any{"agent": a, "session_key": "s1", "profile_home": h}))
 	if info["provider"] != "custom:beta" {
 		t.Fatalf("session info provider %v", info["provider"])
 	}

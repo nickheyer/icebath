@@ -1,3 +1,5 @@
+//go:build !icebath_core && !icebath_noextras
+
 package agent
 
 import (
@@ -67,21 +69,12 @@ func TestCronAgentRunsTheCronTurnUnderItsTaskID(t *testing.T) {
 	if built.SessionID() != "cron_probe_1" || linked.Platform() != "cron" || linked.Model() != "test-model" || linked.BaseURL() != srv.URL+"/v1" {
 		t.Fatalf("agent %q %q %q %q", built.SessionID(), linked.Platform(), linked.Model(), linked.BaseURL())
 	}
-	prevStart := startTaskRunFn
-	t.Cleanup(func() { startTaskRunFn = prevStart })
-	var started [][2]string
-	startTaskRunFn = func(_ context.Context, _ *tools.Env, sessionID, taskID, _, _ string) {
-		started = append(started, [2]string{sessionID, taskID})
-	}
 	result, err := built.RunConversation(ctx, "edit main.py", "task-77")
 	if err != nil {
 		t.Fatal(err)
 	}
 	if result["final_response"] != "Edited main.py." || built.SessionAPICalls() != 1 {
 		t.Fatalf("result %v after %d calls", result["final_response"], built.SessionAPICalls())
-	}
-	if !reflect.DeepEqual(started, [][2]string{{"cron_probe_1", "task-77"}}) {
-		t.Fatalf("task runs started %v", started)
 	}
 }
 

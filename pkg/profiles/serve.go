@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"io/fs"
-	"log/slog"
 	"os"
 	"path/filepath"
 	"strings"
@@ -55,6 +54,10 @@ func standaloneTruthy(value any) bool {
 
 // Classifies a raw config read failure as a YAML error, a transient OS or Unicode error, or neither
 func standaloneReadError(err error) (isYAML, caught bool) {
+	var ye *config.YAMLError
+	if errors.As(err, &ye) {
+		return ye.PyTypeName() != "UnicodeDecodeError", true
+	}
 	if config.IsOSError(err) || strings.Contains(err.Error(), "UTF-8") {
 		return false, true
 	}
@@ -83,7 +86,7 @@ func ProfileIsStandalone(ctx context.Context, home string) (bool, error) {
 		standaloneMu.Lock()
 		prev, ok := standaloneMemos[key]
 		if !ok || !signaturesEqual(prev.signature, sig) || prev.result == nil || *prev.result {
-			slog.Warn("Cannot read gateway.standalone from " + cfgPath + " (" + pyExceptionName(err) + "); treating as not standalone")
+			pkgLog().Warn("Cannot read gateway.standalone from " + cfgPath + " (" + pyExceptionName(err) + "); treating as not standalone")
 		}
 		standaloneMemos[key] = standaloneMemo{sig, boolPtr(false)}
 		standaloneMu.Unlock()
@@ -107,7 +110,7 @@ func ProfileIsStandalone(ctx context.Context, home string) (bool, error) {
 			}
 			standaloneMu.Lock()
 			if !haveCached || !signaturesEqual(cached.signature, signature) {
-				slog.Warn("Cannot read gateway.standalone from " + cfgPath + " (" + pyExceptionName(err) + "); treating as not standalone")
+				pkgLog().Warn("Cannot read gateway.standalone from " + cfgPath + " (" + pyExceptionName(err) + "); treating as not standalone")
 			}
 			memo := standaloneMemo{signature: signature}
 			if isYAML {
@@ -126,7 +129,7 @@ func ProfileIsStandalone(ctx context.Context, home string) (bool, error) {
 	defer standaloneMu.Unlock()
 	if filepath.Clean(home) == filepath.Clean(DefaultHome()) {
 		if result && !standaloneWarned {
-			slog.Warn(standaloneDefaultWarning)
+			pkgLog().Warn(standaloneDefaultWarning)
 			standaloneWarned = true
 		}
 		result = false
@@ -150,6 +153,10 @@ func pyExceptionName(err error) string {
 		return "NotADirectoryError"
 	case config.IsOSError(err):
 		return "OSError"
+	case config.IsYAMLError(err):
+		var ye *config.YAMLError
+		errors.As(err, &ye)
+		return ye.PyTypeName()
 	case strings.Contains(err.Error(), "UTF-8"):
 		return "UnicodeDecodeError"
 	}
@@ -172,7 +179,7 @@ func ProfilesToServe(ctx context.Context, multiplex, includeStandalone, includeP
 	if ProfileIsParked(def) {
 		standaloneMu.Lock()
 		if !parkedDefaultWarned[def] {
-			slog.Warn("Ignoring gateway.parked for the default profile; stop the host gateway instead")
+			pkgLog().Warn("Ignoring gateway.parked for the default profile; stop the host gateway instead")
 			parkedDefaultWarned[def] = true
 		}
 		standaloneMu.Unlock()

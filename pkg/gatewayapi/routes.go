@@ -97,13 +97,13 @@ func (a *APIServerAdapter) handlePlatformEventCallback(ctx context.Context, requ
 	verified, code := func() (ok bool, code string) {
 		defer func() {
 			if rec := recover(); rec != nil {
-				apiLog().Error(fmt.Sprintf("Platform HTTP event verifier failed for %s", platformName), "error", rec)
+				pkgLog().Error(fmt.Sprintf("Platform HTTP event verifier failed for %s", platformName), "error", rec)
 				ok, code = false, "platform_event_verifier_error"
 			}
 		}()
 		ok, code, err := events.VerifyHTTPEventRequest(ctx, authHeader)
 		if err != nil {
-			apiLog().Error(fmt.Sprintf("Platform HTTP event verifier failed for %s", platformName), "error", err)
+			pkgLog().Error(fmt.Sprintf("Platform HTTP event verifier failed for %s", platformName), "error", err)
 			return false, "platform_event_verifier_error"
 		}
 		return ok, code
@@ -136,7 +136,7 @@ func (a *APIServerAdapter) handlePlatformEventCallback(ctx context.Context, requ
 			return errorResponse(parked.Error(), gateway.ParkedRouteRefusedStatus, errOpts{Type: "server_error",
 				Code: gateway.ParkedRouteRefusedCode, Headers: gateway.ParkedRouteRefusedHeaders}), nil
 		}
-		apiLog().Error(fmt.Sprintf("Platform HTTP event dispatch failed for %s", platformName), "error", err)
+		pkgLog().Error(fmt.Sprintf("Platform HTTP event dispatch failed for %s", platformName), "error", err)
 		return errorResponse("Platform event dispatch failed", http.StatusInternalServerError, errOpts{Type: "server_error",
 			Code: "platform_event_dispatch_failed"}), nil
 	}
@@ -226,8 +226,8 @@ func (a *APIServerAdapter) httpRouteTable() []httpRoute {
 		{"POST", "/api/jobs/{job_id}/run", a.handleRunJob},
 	}
 	routes = append(routes, a.roomGrantHTTPRoutes()...)
+	routes = append(routes, a.roomShareHTTPRoutes()...)
 	routes = append(routes, a.runHTTPRoutes()...)
-	routes = append(routes, httpRoute{"POST", "/api/cron/fire", a.handleCronFire})
 	return routes
 }
 
@@ -259,7 +259,7 @@ func (a *APIServerAdapter) declaredConversationSession(ctx context.Context, gate
 	}
 	row, err := db.FindLatestGatewaySessionForPeer(ctx, state.GatewayPeerQuery{Source: sessionSource, SessionKey: &key})
 	if err != nil {
-		apiLog().Debug(fmt.Sprintf("[%s] declared-conversation lookup failed", a.Name()), "error", err)
+		pkgLog().Debug(fmt.Sprintf("[%s] declared-conversation lookup failed", a.Name()), "error", err)
 		return ""
 	}
 	if row == nil {
@@ -285,7 +285,7 @@ func (a *APIServerAdapter) bindDeclaredConversation(ctx context.Context, session
 	}
 	existing, err := db.GetSession(ctx, sid)
 	if err != nil {
-		apiLog().Debug(fmt.Sprintf("[%s] declared-conversation bind failed for %s", a.Name(), sid), "error", err)
+		pkgLog().Debug(fmt.Sprintf("[%s] declared-conversation bind failed for %s", a.Name(), sid), "error", err)
 		return
 	}
 	current := ""
@@ -295,12 +295,12 @@ func (a *APIServerAdapter) bindDeclaredConversation(ctx context.Context, session
 		}
 	}
 	if current != "" && current != key {
-		apiLog().Debug(fmt.Sprintf("[%s] refusing to rebind session %s from a different declared conversation", a.Name(), sid))
+		pkgLog().Debug(fmt.Sprintf("[%s] refusing to rebind session %s from a different declared conversation", a.Name(), sid))
 		return
 	}
 	if err := db.RecordGatewaySessionPeer(ctx, sid, state.GatewayPeer{Source: sessionSource, SessionKey: &key,
 		IncludeCompressionAncestors: true}); err != nil {
-		apiLog().Debug(fmt.Sprintf("[%s] declared-conversation bind failed for %s", a.Name(), sid), "error", err)
+		pkgLog().Debug(fmt.Sprintf("[%s] declared-conversation bind failed for %s", a.Name(), sid), "error", err)
 	}
 }
 
@@ -308,13 +308,13 @@ var sessionHeaderUnsafeRE = regexp.MustCompile("[\r\n\x00]")
 
 // Validated session key header, a 403 without an API key and a 400 for unsafe or long values
 func (a *APIServerAdapter) parseSessionKeyHeader(request *gateway.WebRequest) (string, *gateway.WebResponse) {
-	raw := strings.TrimSpace(request.Header.Get("X-Hermes-Session-Key"))
+	raw := strings.TrimSpace(request.Header.Get("X-Icebath-Session-Key"))
 	if raw == "" {
 		return "", nil
 	}
 	if a.apiKey == "" {
-		apiLog().Warn("X-Hermes-Session-Key rejected: no API key configured. Set API_SERVER_KEY to enable long-term memory scoping.")
-		return "", errorResponse("X-Hermes-Session-Key requires API key authentication. "+
+		pkgLog().Warn("X-Icebath-Session-Key rejected: no API key configured. Set API_SERVER_KEY to enable long-term memory scoping.")
+		return "", errorResponse("X-Icebath-Session-Key requires API key authentication. "+
 			"Configure API_SERVER_KEY to enable this feature.", http.StatusForbidden, errOpts{})
 	}
 	if sessionHeaderUnsafeRE.MatchString(raw) {
@@ -395,7 +395,7 @@ func (a *APIServerAdapter) closeCachedSessionDBs() {
 		func() {
 			defer func() {
 				if rec := recover(); rec != nil {
-					apiLog().Debug("Failed to close API-server SessionDB", "error", rec)
+					pkgLog().Debug("Failed to close API-server SessionDB", "error", rec)
 				}
 			}()
 			state.ReleaseOrClose(db)
@@ -421,7 +421,7 @@ func (a *APIServerAdapter) ensureSessionDB(ctx context.Context) *state.SessionDB
 	}
 	db, err := a.openAndCacheSessionDB(ctx, home.Dir(ctx))
 	if err != nil {
-		apiLog().Debug(fmt.Sprintf("SessionDB unavailable for API server: %v", err))
+		pkgLog().Debug(fmt.Sprintf("SessionDB unavailable for API server: %v", err))
 		return nil
 	}
 	return db

@@ -39,7 +39,8 @@ const (
 	peerDefaultProfileHandle  = "icebath"
 	peerUnknownProfileError   = "Unknown or unconfigured profile"
 	peerListTimeout           = 30 * time.Second
-	peerChatQueuedObject      = "hermes.session.chat.queued"
+	peerChatQueuedObject      = "icebath.session.chat.queued"
+	peerLegacyQueuedObject    = "hermes.session.chat.queued"
 	peerRedirectLoopPrefix    = "The HTTP server returned a redirect error that would lead to an infinite loop.\nThe last 30x error message was:\n"
 	peerRemoteDisconnectedMsg = "Remote end closed connection without response"
 )
@@ -966,7 +967,7 @@ func peerDM(c *peerCLI, ns map[string]any, message, peerName, profile, base, key
 		}
 		return peerFailure(c, peerName, err), nil
 	}
-	if object, ok := result.GetOr("object", nil).(string); ok && object == peerChatQueuedObject {
+	if object, ok := result.GetOr("object", nil).(string); ok && (object == peerChatQueuedObject || object == peerLegacyQueuedObject) {
 		queuedIn := peerOr(result.GetOr("session_id", nil), sessionID)
 		payload := pyjson.ObjectOf("peer", peerName, "profile", peerProfileValue(profile), "session_id", queuedIn,
 			"status", peerOr(result.GetOr("status", nil), "queued"), "delivery_id", result.GetOr("delivery_id", nil))

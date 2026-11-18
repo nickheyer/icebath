@@ -24,7 +24,6 @@ import (
 	"fmt"
 	"hash"
 	"io"
-	"log/slog"
 	"net/http"
 	"net/url"
 	"os"
@@ -61,9 +60,11 @@ const (
 
 var (
 	entraNow        = time.Now
-	entraHTTPClient = func() *http.Client { return &http.Client{Timeout: 30 * time.Second} }
-	entraSleep      = gcpBackoffSleep
-	entraTenantRe   = regexp.MustCompile(`^[0-9A-Za-z.-]+$`)
+	entraHTTPClient = func() *http.Client {
+		return &http.Client{Timeout: 30 * time.Second, Transport: pyhttpx.EnvProxyTransport()}
+	}
+	entraSleep    = gcpBackoffSleep
+	entraTenantRe = regexp.MustCompile(`^[0-9A-Za-z.-]+$`)
 )
 
 // Entra knobs icebath manages, everything else flows through the standard AZURE_ variables
@@ -488,7 +489,7 @@ func newEntraEnvironmentCredential() (*entraEnvironmentCredential, error) {
 		return nil, err
 	}
 	if inner != nil {
-		slog.Default().Info("Environment is configured for " + inner.Name())
+		pkgLog().Info("Environment is configured for " + inner.Name())
 	}
 	return &entraEnvironmentCredential{inner: inner}, nil
 }
@@ -553,7 +554,7 @@ func newEntraManagedIdentityCredential(clientID string, excludeWorkload, inChain
 		c.kind = "imds"
 	}
 	if c.kind != "" {
-		slog.Default().Info("ManagedIdentityCredential will use " + strings.ReplaceAll(c.kind, "_", " "))
+		pkgLog().Info("ManagedIdentityCredential will use " + strings.ReplaceAll(c.kind, "_", " "))
 	}
 	return c
 }
@@ -595,7 +596,7 @@ func (c *entraManagedIdentityCredential) request(ctx context.Context, resource s
 		if c.clientID != "" {
 			q.Set("client_id", c.clientID)
 		}
-		client.Transport = &http.Transport{Proxy: http.ProxyFromEnvironment, TLSClientConfig: &tls.Config{InsecureSkipVerify: true, MinVersion: tls.VersionTLS12}}
+		client.Transport = &http.Transport{Proxy: pyhttpx.EnvProxy, TLSClientConfig: &tls.Config{InsecureSkipVerify: true, MinVersion: tls.VersionTLS12}}
 	case "azure_ml":
 		endpoint, headers["secret"] = env("MSI_ENDPOINT"), env("MSI_SECRET")
 		q.Set("api-version", "2017-09-01")
@@ -1268,7 +1269,7 @@ func (c *entraDefaultAzureCredential) GetToken(ctx context.Context, scopes ...st
 	for _, cred := range c.creds {
 		tok, err := cred.GetToken(chain, scopes...)
 		if err == nil {
-			slog.Default().Info(fmt.Sprintf("DefaultAzureCredential acquired a token from %s", cred.Name()))
+			pkgLog().Info(fmt.Sprintf("DefaultAzureCredential acquired a token from %s", cred.Name()))
 			c.mu.Lock()
 			c.successful = cred
 			c.mu.Unlock()
@@ -1458,11 +1459,11 @@ func entraProbeToken(ctx context.Context, cfg EntraIdentityConfig, timeout time.
 func HasAzureIdentityCredentials(ctx context.Context, cfg *EntraIdentityConfig, scope string, timeout time.Duration) bool {
 	result := entraProbeToken(ctx, resolveEntraConfig(cfg, scope, true), timeout)
 	if result == nil {
-		slog.Default().Debug(fmt.Sprintf("Entra token service probe timed out after %vs", timeout.Seconds()))
+		pkgLog().Debug(fmt.Sprintf("Entra token service probe timed out after %vs", timeout.Seconds()))
 		return false
 	}
 	if e, ok := result["error"]; ok {
-		slog.Default().Debug(fmt.Sprintf("Entra credential probe failed: %v", e))
+		pkgLog().Debug(fmt.Sprintf("Entra credential probe failed: %v", e))
 		return false
 	}
 	tok, _ := result["token"].(EntraAccessToken)
@@ -1605,7 +1606,7 @@ func (t *EntraBearerTransport) RoundTrip(req *http.Request) (*http.Response, err
 	name, value := "", ""
 	switch {
 	case err != nil:
-		slog.Default().Warn(fmt.Sprintf("Bearer hook: Entra ID token provider returned empty (%v) — stripping Authorization headers. "+
+		pkgLog().Warn(fmt.Sprintf("Bearer hook: Entra ID token provider returned empty (%v) — stripping Authorization headers. "+
 			"Azure will respond 401. Run `icebath doctor` or `az login` to recover.", err))
 	case t.SendsAsAPIKey != nil && t.SendsAsAPIKey(token):
 		name, value = "x-api-key", token

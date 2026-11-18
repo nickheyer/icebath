@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"log/slog"
 	"regexp"
 	"strings"
 	"sync"
@@ -290,7 +289,7 @@ func resolveReasoning(model string, p codexParams) (string, bool) {
 			unprojectableDisableWarnedMu.Lock()
 			if !unprojectableDisableWarned[model] {
 				unprojectableDisableWarned[model] = true
-				codexLog.Warn(fmt.Sprintf("reasoning_effort: none cannot be sent for %s — its route accepts only %s, so the model's default effort stays on (an omitted reasoning field does not disable it).", model, strings.Join(supported, ", ")))
+				pkgLog().Warn(fmt.Sprintf("reasoning_effort: none cannot be sent for %s — its route accepts only %s, so the model's default effort stays on (an omitted reasoning field does not disable it).", model, strings.Join(supported, ", ")))
 			}
 			unprojectableDisableWarnedMu.Unlock()
 		}
@@ -419,7 +418,7 @@ func profileDeclaredEfforts(ctx context.Context, provider, model, baseURL string
 		}
 	}
 	if err != nil {
-		slog.Debug(fmt.Sprintf("profile-declared efforts lookup failed: %s", err))
+		pkgLog().Debug(fmt.Sprintf("profile-declared efforts lookup failed: %s", err))
 		return nil, false
 	}
 	return declared, ok
@@ -611,7 +610,7 @@ func (t *codexTransport) RejectAllTurns(err error) bool {
 	}
 	t.allTurnsRejected[t.lastIssuerModel] = true
 	t.lastSentAllTurns = false
-	codexLog.Warn(fmt.Sprintf("reasoning.context rejected by %s; omitting it for this session", t.lastIssuerModel))
+	pkgLog().Warn(fmt.Sprintf("reasoning.context rejected by %s; omitting it for this session", t.lastIssuerModel))
 	return true
 }
 
@@ -741,7 +740,7 @@ func (t *codexTransport) buildKwargs(model string, messages []*state.Message, to
 	if _, has := kwargs["prompt_cache_options"]; has {
 		delete(kwargs, "prompt_cache_options")
 		promptCacheOptionsDropOnce.Do(func() {
-			codexLog.Warn("Dropped prompt_cache_options: not a Responses.create() kwarg (use request_overrides={'extra_body': ...} for wire-only fields).")
+			pkgLog().Warn("Dropped prompt_cache_options: not a Responses.create() kwarg (use request_overrides={'extra_body': ...} for wire-only fields).")
 		})
 	}
 	sanitizeAstraRequestKwargs(kwargs, model, p.baseURL)

@@ -3,7 +3,6 @@ package manage
 import (
 	"context"
 	"fmt"
-	"log/slog"
 	"os"
 	"path/filepath"
 	"slices"
@@ -37,7 +36,7 @@ func recordProfileRename(ctx context.Context, newDir, oldCanon string) {
 		history = append(history, oldCanon)
 	}
 	if err := writeProfileMeta(ctx, newDir, profiles.MetaUpdate{PreviousNames: &history}); err != nil {
-		slog.Default().Debug(fmt.Sprintf("profile rename: could not record previous name %s in %s: %v", pyrepr.Repr(oldCanon), newDir, err))
+		pkgLog().Debug(fmt.Sprintf("profile rename: could not record previous name %s in %s: %v", pyrepr.Repr(oldCanon), newDir, err))
 	}
 }
 
@@ -101,7 +100,9 @@ func RenameProfile(ctx context.Context, oldName, newName string) (string, error)
 	if gwRunning {
 		stopGatewayProcess(oldDir)
 	}
-	stopBotDesktop(ctx, oldDir)
+	if stopBotDesktop != nil {
+		stopBotDesktop(ctx, oldDir)
+	}
 	liveMux := liveDefaultMultiplexer()
 	if liveMux {
 		if err := home.MarkProfileDeleted(oldDir); err != nil {
@@ -129,9 +130,6 @@ func RenameProfile(ctx context.Context, oldName, newName string) (string, error)
 		}
 	}
 	recordProfileRename(ctx, newDir, oldCanon)
-	if err := migrateHonchoProfileHost(ctx, oldCanon, newCanon, newDir); err != nil {
-		return "", err
-	}
 	if _, err := profiles.RemoveWrapperScript(oldCanon); err != nil {
 		return "", err
 	}

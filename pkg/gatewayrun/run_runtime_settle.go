@@ -27,21 +27,21 @@ func (r *GatewayRunner) settleGatewayRuntime(ctx context.Context, budget float64
 			pending = waitTasks(ctx, tasks, time.Duration(wait*float64(time.Second)))
 		}
 		if pending > 0 {
-			runtimeLog().Warn(fmt.Sprintf("%d authority task(s) did not settle within %.0fs; left for recovery", pending, wait))
+			pkgLog().Warn(fmt.Sprintf("%d authority task(s) did not settle within %.0fs; left for recovery", pending, wait))
 		}
 	}
 	for _, a := range authorities {
 		err := gateway.JoinAuthorityWork(ctx, a, 0)
 		var timeout *gateway.PyError
 		if errors.As(err, &timeout) && timeout.Kind == "TimeoutError" {
-			runtimeLog().Warn(fmt.Sprintf("Profile %s still has live writers at shutdown; its admissions stay for recovery", a.ProfileID))
+			pkgLog().Warn(fmt.Sprintf("Profile %s still has live writers at shutdown; its admissions stay for recovery", a.ProfileID))
 		} else if err != nil {
 			return err
 		}
 	}
 	for _, a := range gateway.AllAuthorities(r) {
 		if _, err := gateway.EndIdleACPSessions(ctx, a); err != nil {
-			runtimeLog().Warn(fmt.Sprintf("ACP sessions of %s not ended at shutdown", a.ProfileID), "exc_info", err)
+			pkgLog().Warn(fmt.Sprintf("ACP sessions of %s not ended at shutdown", a.ProfileID), "exc_info", err)
 		}
 	}
 	if store := r.sessionTicketStore; store != nil {

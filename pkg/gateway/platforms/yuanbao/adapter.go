@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"log/slog"
 	"math/big"
 	"strings"
 	"sync"
@@ -328,7 +327,7 @@ func (a *YuanbaoAdapter) getCachedToken(ctx context.Context) (map[string]any, er
 // The adapter gates intake through its own access policy
 func (a *YuanbaoAdapter) EnforcesOwnAccessPolicy() bool { return true }
 
-// Whether the pairing store approved a sender, a package var the way hermes tests patch PairingStore
+// Whether the pairing store approved a sender, a package var the way tests patch PairingStore
 var pairingApprovedFn = func(ctx context.Context, sender string) (bool, error) {
 	store, err := gateway.NewPairingStore(ctx, "")
 	if err != nil {
@@ -395,7 +394,7 @@ func (a *YuanbaoAdapter) Disconnect(ctx context.Context) error {
 			task.Cancel()
 		}
 	}
-	slog.Info(fmt.Sprintf("[%s] Disconnected", a.Name()))
+	pkgLog().Info(fmt.Sprintf("[%s] Disconnected", a.Name()))
 	return nil
 }
 
@@ -425,7 +424,7 @@ func (a *YuanbaoAdapter) StopTyping(ctx context.Context, chatID string, metadata
 	return nil
 }
 
-// Turn processing of the base adapter, a package var the way hermes tests patch the base method
+// Turn processing of the base adapter, a package var the way tests patch the base method
 var baseProcessMessageBackground = func(ctx context.Context, adapter *YuanbaoAdapter, event *gateway.MessageEvent, sessionKey string) error {
 	return adapter.BasePlatformAdapter.ProcessMessageBackground(ctx, event, sessionKey)
 }
@@ -471,7 +470,7 @@ func (a *YuanbaoAdapter) wsQuery(ctx context.Context, label, groupCode string, e
 			return nil, err
 		}
 		if status := dictGetOr(head, "status", int64(0)); !equalsInt(status, 0) {
-			slog.Warn(fmt.Sprintf("[%s] %s failed: status=%s", name, label, pyrepr.Str(status)))
+			pkgLog().Warn(fmt.Sprintf("[%s] %s failed: status=%s", name, label, pyrepr.Str(status)))
 			return nil, nil
 		}
 		bizData, isBytes := pyrepr.Or(dictGetOr(fields, "data", []byte{}), dictGetOr(fields, "body", []byte{})).([]byte)
@@ -486,9 +485,9 @@ func (a *YuanbaoAdapter) wsQuery(ctx context.Context, label, groupCode string, e
 	case ctx.Err() != nil:
 		return nil, ctx.Err()
 	case isTimeout(err):
-		slog.Warn(fmt.Sprintf("[%s] %s timeout: group=%s", name, label, groupCode))
+		pkgLog().Warn(fmt.Sprintf("[%s] %s timeout: group=%s", name, label, groupCode))
 	default:
-		slog.Warn(fmt.Sprintf("[%s] %s failed: %s", name, label, errText(err)))
+		pkgLog().Warn(fmt.Sprintf("[%s] %s failed: %s", name, label, errText(err)))
 	}
 	return nil, nil
 }

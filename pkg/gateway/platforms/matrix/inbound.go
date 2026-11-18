@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"log/slog"
 	"slices"
 	"strings"
 	"time"
@@ -70,7 +69,7 @@ func (a *MatrixAdapter) noteLateGraceDrop(eventTS float64) {
 		a.lateGraceDrops = 1
 	}
 	if a.lateGraceDrops >= 3 {
-		slog.Warn(fmt.Sprintf("Matrix: dropped %d consecutive live events as 'too old' more than 30s after startup "+
+		pkgLog().Warn(fmt.Sprintf("Matrix: dropped %d consecutive live events as 'too old' more than 30s after startup "+
 			"(skew ≈ %.0fs). The host system clock is likely set ahead of real time, which causes "+
 			"the startup grace filter to silently discard every incoming message. Run "+
 			"`timedatectl set-ntp true` (or sync NTP) and restart the bot.", a.lateGraceDrops, skew))
@@ -97,22 +96,22 @@ func objectOf(v any) map[string]any {
 func (a *MatrixAdapter) onRoomMessage(ctx context.Context, evt *event.Event) error {
 	roomID := string(evt.RoomID)
 	sender := string(evt.Sender)
-	slog.Debug(fmt.Sprintf("Matrix: callback fired — event %s from %s in %s", evt.ID, sender, roomID))
+	pkgLog().Debug(fmt.Sprintf("Matrix: callback fired — event %s from %s in %s", evt.ID, sender, roomID))
 	if a.isSelfSender(sender) {
 		return nil
 	}
 	if isSystemOrBridgeSender(sender) {
-		slog.Debug(fmt.Sprintf("Matrix: ignoring system/bridge sender %s in %s", sender, roomID))
+		pkgLog().Debug(fmt.Sprintf("Matrix: ignoring system/bridge sender %s in %s", sender, roomID))
 		return nil
 	}
 	for _, pattern := range a.ignoredUserPatterns {
 		if reSearch(pattern, sender) {
-			slog.Debug(fmt.Sprintf("Matrix: ignoring sender %s in %s due to configured ignore pattern", sender, roomID))
+			pkgLog().Debug(fmt.Sprintf("Matrix: ignoring sender %s in %s due to configured ignore pattern", sender, roomID))
 			return nil
 		}
 	}
 	if !a.isAllowedMatrixRoomEvent(ctx, roomID) {
-		slog.Info(fmt.Sprintf("Matrix: ignoring message from unauthorized room %s", roomID))
+		pkgLog().Info(fmt.Sprintf("Matrix: ignoring message from unauthorized room %s", roomID))
 		return nil
 	}
 	eventID := string(evt.ID)
@@ -171,7 +170,7 @@ func (a *MatrixAdapter) resolveMessageContext(ctx context.Context, roomID, sende
 	isMentioned := mentionClaimed || a.contentMentionsBot(body, sourceContent)
 	if !isDM {
 		if len(a.allowedRooms) > 0 && !a.allowedRooms[roomID] {
-			slog.Debug(fmt.Sprintf("Matrix: ignoring message %s in %s — room not in MATRIX_ALLOWED_ROOMS whitelist", eventID, roomID))
+			pkgLog().Debug(fmt.Sprintf("Matrix: ignoring message %s in %s — room not in MATRIX_ALLOWED_ROOMS whitelist", eventID, roomID))
 			return nil, nil
 		}
 		isFreeRoom := a.freeRooms[roomID]
@@ -181,12 +180,12 @@ func (a *MatrixAdapter) resolveMessageContext(ctx context.Context, roomID, sende
 				if voiceGate != nil {
 					a.parkedVoices.Park(roomID, sender, voiceGate, eventID, sourceContent, relatesTo)
 				}
-				slog.Debug(fmt.Sprintf("Matrix: ignoring message %s in %s — no @mention "+
+				pkgLog().Debug(fmt.Sprintf("Matrix: ignoring message %s in %s — no @mention "+
 					"(set MATRIX_REQUIRE_MENTION=false to disable)", eventID, roomID))
 				return nil, nil
 			}
 		} else if a.threadRequireMention && inBotThread && !isFreeRoom && !isMentioned {
-			slog.Debug(fmt.Sprintf("Matrix: ignoring message %s in thread %s — no @mention (thread_require_mention=true)", eventID, threadID))
+			pkgLog().Debug(fmt.Sprintf("Matrix: ignoring message %s in thread %s — no @mention (thread_require_mention=true)", eventID, threadID))
 			return nil, nil
 		}
 	}
@@ -334,7 +333,7 @@ func (a *MatrixAdapter) handleMediaMessage(ctx context.Context, roomID, sender, 
 	body, _ := sourceContent["body"].(string)
 	url := strOf(sourceContent["url"])
 	if url != "" && !strings.HasPrefix(url, "mxc://") {
-		slog.Warn(fmt.Sprintf("[Matrix] Rejecting inbound media %s with non-MXC URL", eventID))
+		pkgLog().Warn(fmt.Sprintf("[Matrix] Rejecting inbound media %s with non-MXC URL", eventID))
 		return nil
 	}
 	contentInfo := objectOf(sourceContent["info"])
@@ -346,14 +345,14 @@ func (a *MatrixAdapter) handleMediaMessage(ctx context.Context, roomID, sender, 
 		}
 	}
 	if eventSize != 0 && eventSize > a.maxMediaBytes {
-		slog.Warn(fmt.Sprintf("[Matrix] Rejecting oversized inbound media %s (%d > %d bytes)", eventID, eventSize, a.maxMediaBytes))
+		pkgLog().Warn(fmt.Sprintf("[Matrix] Rejecting oversized inbound media %s (%d > %d bytes)", eventID, eventSize, a.maxMediaBytes))
 		return nil
 	}
 	fileContent, fileIsObject := sourceContent["file"].(map[string]any)
 	if url == "" && fileIsObject {
 		url = strOf(fileContent["url"])
 		if url != "" && !strings.HasPrefix(url, "mxc://") {
-			slog.Warn(fmt.Sprintf("[Matrix] Rejecting inbound encrypted media %s with non-MXC URL", eventID))
+			pkgLog().Warn(fmt.Sprintf("[Matrix] Rejecting inbound encrypted media %s with non-MXC URL", eventID))
 			return nil
 		}
 	}
@@ -378,7 +377,7 @@ func (a *MatrixAdapter) handleMediaMessage(ctx context.Context, roomID, sender, 
 		}
 		path, err := a.downloadAndCacheMedia(ctx, url, eventID, encrypted, msgType, mediaType, isVoiceMessage, body)
 		if err != nil {
-			slog.Warn(fmt.Sprintf("[Matrix] Failed to cache media: %v", err))
+			pkgLog().Warn(fmt.Sprintf("[Matrix] Failed to cache media: %v", err))
 		}
 		cachedPath = path
 	}
@@ -454,7 +453,7 @@ func (a *MatrixAdapter) downloadAndCacheMedia(ctx context.Context, url, eventID 
 		}
 		ivValue := strOf(encryptedFile["iv"])
 		if keyValue == "" || hashValue == "" || ivValue == "" {
-			slog.Warn(fmt.Sprintf("[Matrix] Encrypted media event missing decryption metadata for %s", eventID))
+			pkgLog().Warn(fmt.Sprintf("[Matrix] Encrypted media event missing decryption metadata for %s", eventID))
 			return "", nil
 		}
 		if fileBytes, err = decryptAttachment(fileBytes, keyValue, hashValue, ivValue); err != nil {
@@ -472,7 +471,7 @@ func (a *MatrixAdapter) downloadAndCacheMedia(ctx context.Context, url, eventID 
 		if err != nil {
 			return "", err
 		}
-		slog.Info(fmt.Sprintf("[Matrix] Cached user image at %s", cachedPath))
+		pkgLog().Info(fmt.Sprintf("[Matrix] Cached user image at %s", cachedPath))
 		return cachedPath, nil
 	case gateway.MessageTypeAudio, gateway.MessageTypeVoice:
 		name := body
@@ -541,10 +540,10 @@ func (a *MatrixAdapter) onInvite(ctx context.Context, evt *event.Event) error {
 	isDirect := pyTruthy(evt.Content.Raw["is_direct"])
 	inviter := string(evt.Sender)
 	if !a.isAuthorizedUser(inviter, roomID) {
-		slog.Warn(fmt.Sprintf("Matrix: rejecting invite to %s from unauthorized user %s", roomID, inviter))
+		pkgLog().Warn(fmt.Sprintf("Matrix: rejecting invite to %s from unauthorized user %s", roomID, inviter))
 		return nil
 	}
-	slog.Info(fmt.Sprintf("Matrix: invited to %s — joining (is_direct=%s)", roomID, pyBool(isDirect)))
+	pkgLog().Info(fmt.Sprintf("Matrix: invited to %s — joining (is_direct=%s)", roomID, pyBool(isDirect)))
 	a.scheduleInviteJoin(ctx, roomID, isDirect && inviter != "", inviter)
 	return nil
 }
@@ -567,18 +566,18 @@ func (a *MatrixAdapter) joinRoomByID(ctx context.Context, roomID string) (bool, 
 	}
 	client := a.currentClient()
 	if client == nil {
-		slog.Warn(fmt.Sprintf("Matrix: error joining %s: 'NoneType' object has no attribute 'join_room'", roomID))
+		pkgLog().Warn(fmt.Sprintf("Matrix: error joining %s: 'NoneType' object has no attribute 'join_room'", roomID))
 		return false, nil
 	}
 	if _, err := client.JoinRoomByID(ctx, id.RoomID(roomID)); err != nil {
 		if ctx.Err() != nil {
 			return false, ctx.Err()
 		}
-		slog.Warn(fmt.Sprintf("Matrix: error joining %s: %v", roomID, err))
+		pkgLog().Warn(fmt.Sprintf("Matrix: error joining %s: %v", roomID, err))
 		msg := pystr.Lower(err.Error())
 		if strings.Contains(msg, "no servers") || strings.Contains(msg, "room not found") {
 			if _, lerr := client.LeaveRoom(ctx, id.RoomID(roomID)); lerr == nil {
-				slog.Info(fmt.Sprintf("Matrix: declined dead invite to %s", roomID))
+				pkgLog().Info(fmt.Sprintf("Matrix: declined dead invite to %s", roomID))
 			}
 		}
 		return false, nil
@@ -587,7 +586,7 @@ func (a *MatrixAdapter) joinRoomByID(ctx context.Context, roomID string) (bool, 
 	a.joinedRooms[roomID] = true
 	a.invalidateRoomIdentitiesLocked(roomID)
 	a.mu.Unlock()
-	slog.Info(fmt.Sprintf("Matrix: joined %s", roomID))
+	pkgLog().Info(fmt.Sprintf("Matrix: joined %s", roomID))
 	a.refreshDMCache(ctx)
 	if ctx.Err() != nil {
 		return false, ctx.Err()
@@ -618,7 +617,7 @@ func (a *MatrixAdapter) scheduleInviteJoin(ctx context.Context, roomID string, i
 		joined, err := a.joinRoomByID(jctx, roomID)
 		cancel()
 		if errors.Is(err, context.DeadlineExceeded) && tctx.Err() == nil {
-			slog.Warn(fmt.Sprintf("Matrix: timed out joining invite %s", roomID))
+			pkgLog().Warn(fmt.Sprintf("Matrix: timed out joining invite %s", roomID))
 			return
 		}
 		if err != nil {
@@ -648,10 +647,10 @@ func (a *MatrixAdapter) schedulePendingInviteJoins(ctx context.Context, resp *ma
 		}
 		isDirect, inviter := a.extractInviteDMSignal(resp.Rooms.Invite[id.RoomID(roomID)])
 		if !a.isAuthorizedUser(inviter, roomID) {
-			slog.Warn(fmt.Sprintf("Matrix: rejecting invite to %s from unauthorized user %s", roomID, inviter))
+			pkgLog().Warn(fmt.Sprintf("Matrix: rejecting invite to %s from unauthorized user %s", roomID, inviter))
 			continue
 		}
-		slog.Info(fmt.Sprintf("Matrix: reconciling pending invite for %s (is_direct=%s)", roomID, pyBool(isDirect)))
+		pkgLog().Info(fmt.Sprintf("Matrix: reconciling pending invite for %s (is_direct=%s)", roomID, pyBool(isDirect)))
 		a.scheduleInviteJoin(ctx, roomID, isDirect, inviter)
 	}
 }

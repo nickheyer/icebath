@@ -32,7 +32,6 @@ const (
 	commitGraphLock        = "icebath-commit-graph.lock"
 	commitGraphFreshStamp  = "icebath-commit-graph.fresh"
 	commitGraphKillGrace   = 5 * time.Second
-	commitGraphLoggerName  = "hermes_cli.git_commit_graph"
 )
 
 // Hidden first argument the detached refresh child carries, dispatched before any other parsing
@@ -133,7 +132,7 @@ func runBoundedGit(ctx context.Context, repoRoot string, args []string, timeout 
 	if !child.WaitExit(time.Duration(timeout * float64(time.Second))) {
 		KillChildTree(child, commitGraphKillGrace)
 		ReleaseProcessGroupOnceEmpty(cmd.Process.Pid, nil, time.Second)
-		toolsLogger(nil).Warn(fmt.Sprintf("git %s in %s exceeded %ss; killed", args[0], repoRoot, strconv.FormatFloat(timeout, 'g', -1, 64)))
+		envLog(nil).Warn(fmt.Sprintf("git %s in %s exceeded %ss; killed", args[0], repoRoot, strconv.FormatFloat(timeout, 'g', -1, 64)))
 		return 0, true, nil
 	}
 	ReleaseProcessGroupOnceEmpty(cmd.Process.Pid, nil, time.Second)
@@ -161,7 +160,7 @@ func runBoundedGit(ctx context.Context, repoRoot string, args []string, timeout 
 				break
 			}
 		}
-		toolsLogger(nil).Warn(fmt.Sprintf("git %s in %s failed (exit %d): %s", args[0], repoRoot, rc, cause))
+		envLog(nil).Warn(fmt.Sprintf("git %s in %s failed (exit %d): %s", args[0], repoRoot, rc, cause))
 	}
 	return rc, false, nil
 }
@@ -226,12 +225,12 @@ func commonGitDir(repoRoot string) (string, error) {
 // Clears what a killed writer stranded, then writes the graph bounded, niced and never lazy fetching
 func refreshCommitGraph(ctx context.Context, repoRoot, gitDir string) error {
 	if commitGraphDisabled(repoRoot) {
-		toolsLogger(nil).Info(fmt.Sprintf("core.commitGraph=false in %s; not writing a commit-graph", repoRoot))
+		envLog(nil).Info(fmt.Sprintf("core.commitGraph=false in %s; not writing a commit-graph", repoRoot))
 		return nil
 	}
 	ClearStaleObjectStoreLocks(gitDir)
 	ClearStaleTmpPacks(gitDir, nil)
-	toolsLogger(nil).Info("git commit-graph missing or stale — writing it in background")
+	envLog(nil).Info("git commit-graph missing or stale — writing it in background")
 	env := NoninteractiveGitEnv(nil)
 	env["GIT_NO_LAZY_FETCH"] = "1"
 	rc, killed, err := runBoundedGit(ctx, repoRoot, commitGraphWrite, commitGraphTimeout, env)
@@ -244,7 +243,7 @@ func refreshCommitGraph(ctx context.Context, repoRoot, gitDir string) error {
 	if graphOnDisk(gitDir) {
 		return touchFile(filepath.Join(gitDir, commitGraphFreshStamp))
 	}
-	toolsLogger(nil).Info(fmt.Sprintf("git commit-graph write in %s exited 0 but left no graph (no commits yet?)", repoRoot))
+	envLog(nil).Info(fmt.Sprintf("git commit-graph write in %s exited 0 but left no graph (no commits yet?)", repoRoot))
 	return nil
 }
 
@@ -359,7 +358,7 @@ func (h *logDirOnFailureHandler) WithGroup(string) slog.Handler { return h }
 
 // Body of the detached child, a failure is appended to the home's agent.log and nothing is raised
 func refreshInChild(ctx context.Context, repoRoot, gitDir, logFile string) {
-	logger := slog.New(&logDirOnFailureHandler{path: logFile}).With("logger", commitGraphLoggerName)
+	logger := slog.New(&logDirOnFailureHandler{path: logFile}).With("logger", logName)
 	slog.SetDefault(logger)
 	if err := refreshCommitGraph(ctx, repoRoot, gitDir); err != nil {
 		logger.Warn(fmt.Sprintf("Background commit-graph refresh of %s failed\n%s", repoRoot, err))

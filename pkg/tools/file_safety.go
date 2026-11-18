@@ -1424,14 +1424,6 @@ func isSecretFileArg(env *Env, arg string) bool {
 	return isUnderIcebathHome(env, path)
 }
 
-// Boolean config value at a path, the fallback when the env resolves no tree
-func cfgBool(env *Env, path string, fallback bool) bool {
-	if tree := homeConfigTree(env); tree != nil {
-		return tree.Bool(path, fallback)
-	}
-	return fallback
-}
-
 // Integer config value at a path, the fallback when the env resolves no tree
 func cfgInt(env *Env, path string, fallback int) int {
 	if tree := homeConfigTree(env); tree != nil {

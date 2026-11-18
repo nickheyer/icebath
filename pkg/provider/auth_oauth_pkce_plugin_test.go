@@ -115,7 +115,7 @@ func (idp *fakePKCEIdP) holds(refresh string) bool {
 }
 
 func (idp *fakePKCEIdP) config() OAuthPKCEConfig {
-	cfg := NewOAuthPKCEConfig("hermes-example", idp.base+"/authorize", idp.base+"/token")
+	cfg := NewOAuthPKCEConfig("icebath-example", idp.base+"/authorize", idp.base+"/token")
 	cfg.Scopes = []string{"inference"}
 	cfg.TimeoutSeconds = 5
 	return cfg
@@ -176,7 +176,7 @@ func TestPKCEHandlerAddStatusRefreshLogoutAgainstFakeIdP(t *testing.T) {
 		t.Fatalf("exchange %v", exchange)
 	}
 	rows := poolRows(t, h, pkceTestProvider)
-	if len(rows) != 1 || rows[0]["auth_type"] != "oauth" || rows[0]["source"] != PKCEPoolSource || rows[0]["oauth_pkce"].(map[string]any)["client_id"] != "hermes-example" {
+	if len(rows) != 1 || rows[0]["auth_type"] != "oauth" || rows[0]["source"] != PKCEPoolSource || rows[0]["oauth_pkce"].(map[string]any)["client_id"] != "icebath-example" {
 		t.Fatalf("rows %v", rows)
 	}
 	if !idp.holds(anyString(rows[0]["refresh_token"])) || !truthyAny(rows[0]["expires_at_ms"]) {
@@ -199,7 +199,7 @@ func TestPKCEHandlerAddStatusRefreshLogoutAgainstFakeIdP(t *testing.T) {
 		t.Fatalf("rotated %+v", rotated)
 	}
 	reqs = idp.requests()
-	want := map[string]string{"grant_type": "refresh_token", "refresh_token": before, "scope": "inference", "client_id": "hermes-example"}
+	want := map[string]string{"grant_type": "refresh_token", "refresh_token": before, "scope": "inference", "client_id": "icebath-example"}
 	if !reflect.DeepEqual(reqs[len(reqs)-1], want) || idp.holds(before) {
 		t.Fatalf("refresh request %v", reqs[len(reqs)-1])
 	}

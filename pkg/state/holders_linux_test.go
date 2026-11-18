@@ -316,7 +316,7 @@ func TestUninspectableDescriptorOfAnIcebathProcessIsAHolder(t *testing.T) {
 	installFakeProc(t, tmp, nil, []int{222, 333})
 	installFakeArgv(t, map[int][]string{222: ambiguousArgv})
 	got := mustHolders(t, dbPath)
-	want := []Holder{{222, "uninspectable descriptor: /proc/222/fd/3: [Errno 13] Permission denied: '/proc/222/fd/3'"}}
+	want := []Holder{{222, "uninspectable descriptor: /proc/222/fd/3: permission denied: /proc/222/fd/3"}}
 	if !slices.Equal(got, want) {
 		t.Fatalf("holders = %v, want %v", got, want)
 	}
@@ -334,7 +334,7 @@ func TestWatchedFileStatFailureFailsClosed(t *testing.T) {
 		return stat(path)
 	}
 	got := mustHolders(t, dbPath)
-	want := []Holder{{-1, "watched-file stat failed: " + dbPath + "-wal: [Errno 13] Permission denied: '" + dbPath + "-wal'"}}
+	want := []Holder{{-1, "watched-file stat failed: " + dbPath + "-wal: permission denied: " + dbPath + "-wal"}}
 	if !slices.Equal(got, want) {
 		t.Fatalf("holders = %v, want %v", got, want)
 	}
@@ -348,7 +348,7 @@ func TestProcListingFailureIsAnUnknownHolder(t *testing.T) {
 		return nil, &os.PathError{Op: "open", Path: path, Err: syscall.EIO}
 	}
 	got := mustHolders(t, dbPath)
-	want := []Holder{{-1, "open-file scan failed: [Errno 5] Input/output error: '/proc'"}}
+	want := []Holder{{-1, "open-file scan failed: input/output error: /proc"}}
 	if !slices.Equal(got, want) {
 		t.Fatalf("holders = %v, want %v", got, want)
 	}

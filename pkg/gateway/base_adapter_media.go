@@ -3,7 +3,6 @@ package gateway
 import (
 	"context"
 	"fmt"
-	"log/slog"
 	"strings"
 	"time"
 
@@ -52,7 +51,7 @@ func (b *BasePlatformAdapter) SendMultipleImages(ctx context.Context, chatID str
 		if len(alt) > 30 {
 			alt = alt[:30]
 		}
-		slog.Info(fmt.Sprintf("[%s] Sending image: %s (alt=%s)", name, SafeURLForLog(image.URL, 80), string(alt)))
+		pkgLog().Info(fmt.Sprintf("[%s] Sending image: %s (alt=%s)", name, SafeURLForLog(image.URL, 80), string(alt)))
 		var result SendResult
 		var err error
 		switch {
@@ -67,11 +66,11 @@ func (b *BasePlatformAdapter) SendMultipleImages(ctx context.Context, chatID str
 			result, err = self.SendImage(ctx, chatID, image.URL, image.Alt, "", metadata)
 		}
 		if err != nil {
-			slog.Error(fmt.Sprintf("[%s] Error sending image: %v", name, err))
+			pkgLog().Error(fmt.Sprintf("[%s] Error sending image: %v", name, err))
 			continue
 		}
 		if !result.Success {
-			slog.Error(fmt.Sprintf("[%s] Failed to send image: %v", name, result.Error))
+			pkgLog().Error(fmt.Sprintf("[%s] Failed to send image: %v", name, result.Error))
 		} else {
 			delivered = true
 		}

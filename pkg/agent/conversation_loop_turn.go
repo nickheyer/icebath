@@ -117,12 +117,6 @@ func (a *AIAgent) runPerformAPICall(ctx context.Context, s *LoopState) (string, 
 // One API call with its retry and recovery loop, a turn result when a phase ends the turn
 func runAPIRetryLoop(ctx context.Context, a *AIAgent, s *LoopState) (map[string]any, error) {
 	for s.RetryCount < s.MaxRetries {
-		switch guard := nousRateLimitGuard(ctx, a, s); guard.Action {
-		case "return":
-			return guard.Result, nil
-		case "break":
-			return nil, nil
-		}
 		var verdict PhaseVerdict
 		err := guardPhase(func() error {
 			if err := buildAPIRequest(ctx, a, s); err != nil {
@@ -144,10 +138,6 @@ func runAPIRetryLoop(ctx context.Context, a *AIAgent, s *LoopState) (map[string]
 				return nil, nil
 			}
 			continue
-		}
-		var rateLimited *provider.DoError
-		if errors.As(err, &rateLimited) && rateLimited.Failure == provider.FailNousRateLimited {
-			return a.nousRateLimitResult(ctx, rateLimited, s.Messages, s.ConversationHistory, s.APICallCount)
 		}
 		var interrupted *provider.InterruptedError
 		if errors.As(err, &interrupted) {
@@ -260,7 +250,7 @@ func runConversationTurn(ctx context.Context, a *AIAgent, userMessage any, o Run
 	a.lastCompressionAttemptInPlace = nil
 	beginFastModeTurn(a, o.ConversationHistory)
 	if _, err := a.tryRefreshEnvClientCredentials(ctx); err != nil {
-		conversationLoopLog().Debug("per-turn env credential refresh failed", "error", err)
+		pkgLog().Debug("per-turn env credential refresh failed", "error", err)
 	}
 	held := plugins.HeldStreamTransforms(ctx)
 	a.heldTransforms, a.holdStream = nil, len(held) > 0
@@ -496,7 +486,7 @@ func CloseDurableFailedTurn(ctx context.Context, a *AIAgent, result map[string]a
 			if isUserInterruptPanic(r) {
 				panic(r)
 			}
-			conversationLoopLog().Debug("failed-turn boundary not written", "error", fmt.Sprint(r))
+			pkgLog().Debug("failed-turn boundary not written", "error", fmt.Sprint(r))
 		}
 	}()
 	if result == nil || result["completed"] == true {
@@ -511,7 +501,7 @@ func CloseDurableFailedTurn(ctx context.Context, a *AIAgent, result map[string]a
 	}
 	role, err := a.sessionDB.LatestConversationRole(ctx, a.sessionID)
 	if err != nil {
-		conversationLoopLog().Debug("failed-turn boundary not written", "error", err)
+		pkgLog().Debug("failed-turn boundary not written", "error", err)
 		return
 	}
 	if !OpenTurnTailRoles[role] {
@@ -528,6 +518,6 @@ func CloseDurableFailedTurn(ctx context.Context, a *AIAgent, result map[string]a
 	appendLiveMessage(&messages, boundary)
 	result["messages"] = messages
 	guardedFlush(func() { a.flushLiveMessages(messages, nil) }, func(exc *OuterLoopError) {
-		conversationLoopLog().Debug("failed-turn boundary not written", "exc_info", exc.Stack, "error", exc)
+		pkgLog().Debug("failed-turn boundary not written", "exc_info", exc.Stack, "error", exc)
 	})
 }

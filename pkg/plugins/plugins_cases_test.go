@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -13,6 +12,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 
 	"github.com/nickheyer/icebath/pkg/skills"
 	"github.com/nickheyer/icebath/pkg/tools"

@@ -138,7 +138,7 @@ func TestRunDoctorIgnoresInvalidDirectKeysWhenOauthFallbackIsHealthy(t *testing.
 	}
 	for _, c := range cases {
 		t.Run(c.envKey, func(t *testing.T) {
-			d, buf := doctorRawHome(t, "model:\n  provider: nous\n  default: moonshotai/kimi-k2.6\nnetwork:\n  force_ipv4: true\n", "")
+			d, buf := doctorRawHome(t, "model:\n  provider: openrouter\n  default: moonshotai/kimi-k2.6\nnetwork:\n  force_ipv4: true\n", "")
 			t.Setenv(c.envKey, c.badKey)
 			doctorSeedOAuth(t, d.Home, c.oauthProvider, c.oauthState)
 			doctorFakeDefaultTransport(t, func(target string) int {
@@ -186,7 +186,7 @@ func doctorDamagedAuthHome(t *testing.T) (*Doctor, *bytes.Buffer) {
 func TestDoctorXaiOAuthStatusImportFailureDoesNotAffectOtherProviders(t *testing.T) {
 	d, buf := doctorDamagedAuthHome(t)
 	out, _ := doctorWalk(t, d, buf, map[string]any{"fix": false}, doctorAuthEntry)
-	for _, want := range []string{"Nous Portal auth", "OpenAI Codex auth", "MiniMax OAuth", "logged in"} {
+	for _, want := range []string{"OpenAI Codex auth", "MiniMax OAuth", "logged in"} {
 		if !strings.Contains(out, want) {
 			t.Fatalf("%q missing from %q", want, out)
 		}
@@ -279,7 +279,7 @@ func doctorFailingInstalls(t *testing.T) *[]string {
 	return calls
 }
 
-const doctorCopilotAuxConfig = "model:\n  provider: nous\nauxiliary:\n  vision:\n    provider: copilot\n    model: gpt-4.1\n"
+const doctorCopilotAuxConfig = "model:\n  provider: openrouter\nauxiliary:\n  vision:\n    provider: copilot\n    model: gpt-4.1\n"
 
 func TestDoctorInATerminalFrontEndLeavesKeptNoticesForTheNextAgent(t *testing.T) {
 	d, buf := doctorRawHome(t, doctorCopilotAuxConfig, "")

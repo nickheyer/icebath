@@ -3,7 +3,6 @@ package browser
 import (
 	"context"
 	"fmt"
-	"log/slog"
 	"regexp"
 	"sort"
 	"strings"
@@ -15,7 +14,7 @@ import (
 
 // Profile scoped login backends registered by trusted in process plugins
 var loginBackendRegistry = providerregistry.New[LoginBackend](providerregistry.Options{
-	Label: "Login backend", ProviderCls: "LoginBackend", Logger: slog.Default().With("logger", "agent.vault_backend_registry"),
+	Label: "Login backend", ProviderCls: "LoginBackend", Logger: pkgLog(),
 })
 
 var loginBackendNameRe = regexp.MustCompile(`^[a-z][a-z0-9_]*$`)

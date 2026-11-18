@@ -54,28 +54,11 @@ func interruptHelp(verb string) string {
 	return verb + " without asking even while sessions are live (turns, cron jobs, background delegations): they are interrupted. Without it the command names the live work and asks y/N (refuses when there is no terminal). --interrupt is the same flag"
 }
 
-func nousLoginFlags(cmd *cobra.Command, suffix string) {
-	sf(cmd, "portal-url", "", "", "Portal base URL"+suffix+" (default: production portal)")
-	sf(cmd, "inference-url", "", "", "Inference API base URL"+suffix+" (default: production inference API)")
-	sf(cmd, "client-id", "", "", "OAuth client id to use"+suffix+" (default: icebath-cli)")
-	sf(cmd, "scope", "", "", "OAuth scope to request"+suffix)
-	bf(cmd, "no-browser", "", "Do not attempt to open the browser automatically"+ternary(suffix != "", " during Nous login", ""))
-	ff(cmd, "timeout", "", 15.0, "HTTP request timeout in seconds"+suffix+" (default: 15)")
-	sf(cmd, "ca-bundle", "", "", "Path to CA bundle PEM file for"+ternary(suffix != "", " Nous", "")+" TLS verification")
-	bf(cmd, "insecure", "", "Disable TLS verification"+suffix+" (testing only)")
-}
-
-func ternary(cond bool, a, b string) string {
-	if cond {
-		return a
-	}
-	return b
-}
-
 func (c *CLI) addTreeA(root *cobra.Command) {
 	model := c.newCmd(root, "model", "Select default model and provider", "Interactively select your inference provider and default model")
 	bf(model, "refresh", "", "Wipe the model picker disk cache and re-fetch every provider's live /v1/models list.")
-	nousLoginFlags(model, " for Nous login")
+	bf(model, "no-browser", "", "Do not attempt to open the browser automatically during OAuth login")
+	ff(model, "timeout", "", 15.0, "HTTP request timeout in seconds for OAuth login (default: 15)")
 
 	moa := c.newCmd(root, "moa", "Configure Mixture of Agents provider/model slots", "Configure the provider/model set used by /moa <prompt>.")
 	c.newCmd(moa, "list", "Show current MoA model slots", "", "ls")
@@ -176,9 +159,9 @@ func (c *CLI) addTreeA(root *cobra.Command) {
 	bf(mXai, "apply", "", "Rewrite config.yaml in-place (default: dry-run, no writes)")
 	bf(mXai, "no-backup", "", "Skip the timestamped backup of config.yaml when applying")
 	mRelay := c.newCmd(migrate, "relay", "Convert legacy ICEBATH_NEMO_RELAY_ATIF_*/ATOF_* exporter vars into relay-plugins.toml",
-		"The NeMo Relay cutover stopped reading the legacy exporter variables. Generate <icebath home>/relay-plugins.toml from them, point ICEBATH_NEMO_RELAY_PLUGINS_TOML at it, and comment the legacy lines out. `icebath update` runs this for every profile automatically.")
+		"The NeMo Relay cutover stopped reading the legacy exporter variables. Generate <icebath home>/relay-plugins.toml from them, point ICEBATH_NEMO_RELAY_PLUGINS_TOML at it, and comment the legacy lines out. Before validating it provisions the NeMo Relay runtime those plugins need, showing its progress. `icebath update` runs this for every profile automatically and validates only through a runtime already provisioned.")
 	bf(mRelay, "all-profiles", "", "Migrate the default home and every named profile (what `icebath update` does)")
-	bf(mRelay, "no-validate", "", "Skip activating the generated file through Relay's validator before writing it")
+	bf(mRelay, "no-validate", "", "Skip provisioning Relay and activating the generated file through its validator before writing it")
 	for _, src := range ImportSources {
 		sub := c.newCmd(migrate, src.Name, "Import your "+src.Label+" setup into Icebath",
 			"Import your "+src.Label+" setup into the active profile (same as `icebath import-agent "+src.Name+"`). Always previews first and asks before changing anything.")
@@ -196,7 +179,7 @@ func (c *CLI) addTreeA(root *cobra.Command) {
 	}
 
 	codex := c.helpCmd(root, "codex-runtime", "Manage the optional codex app-server runtime (migrate MCP config)",
-		"Noninteractive counterpart of the /codex-runtime slash command. Toggling the runtime itself stays in the chat command (`/codex-runtime on|off`); `migrate` re-projects Icebath' mcp_servers + installed codex plugins into the managed block of ~/.codex/config.toml for the selected profile.", 0)
+		"Noninteractive counterpart of the /codex-runtime slash command. Toggling the runtime itself stays in the chat command (`/codex-runtime on|off`); `migrate` re-projects Icebath's mcp_servers + installed codex plugins into the managed block of ~/.codex/config.toml for the selected profile.", 0)
 	cxMigrate := c.newCmd(codex, "migrate", "Regenerate the icebath-managed block in codex's config.toml",
 		"Idempotent: replaces the managed block, keeps user text verbatim, skips Icebath servers whose name the user already declares outside the block, validates the result as TOML before writing atomically.")
 	bf(cxMigrate, "dry-run", "", "Report what would be written without touching config.toml")
@@ -229,11 +212,10 @@ func (c *CLI) addTreeA(root *cobra.Command) {
 	login := c.newCmd(root, "login", "", "Deprecated. Use `icebath auth` to manage credentials, `icebath model` to select a provider, or start `icebath` and type `/setup` for full setup.")
 	login.Hidden = true
 	sf(login, "provider", "", "", "(deprecated) Provider name; ignored — see `icebath model`")
-	nousLoginFlags(login, "")
 
 	logout := c.newCmd(root, "logout", "Clear authentication for an inference provider", "Remove stored credentials and reset provider config")
 	sf(logout, "provider", "", "", "Provider to log out from (default: active provider)")
-	c.choice(logout, "provider", "nous", "openai-codex", "xai-oauth")
+	c.choice(logout, "provider", "openai-codex", "xai-oauth")
 
 	auth := c.newCmd(root, "auth", "Manage pooled provider credentials", "")
 	aAdd := c.newCmd(auth, "add", "Add a pooled credential", "")
@@ -243,15 +225,9 @@ func (c *CLI) addTreeA(root *cobra.Command) {
 	sf(aAdd, "label", "", "", "Optional display label")
 	inf(aAdd, "priority", "", -1, "Place the new credential at this priority (0 = tried first under fill_first); appends last when omitted")
 	sf(aAdd, "api-key", "", "", "API key value (otherwise prompted securely)")
-	sf(aAdd, "portal-url", "", "", "Nous portal base URL")
-	sf(aAdd, "inference-url", "", "", "Nous inference base URL")
-	sf(aAdd, "client-id", "", "", "OAuth client id")
-	sf(aAdd, "scope", "", "", "OAuth scope override")
 	bf(aAdd, "no-browser", "", "Do not auto-open a browser for OAuth login")
 	bf(aAdd, "browser", "", "openai-codex only: sign in with the browser authorization-code (PKCE) flow on http://localhost:1455/auth/callback instead of the default device-code flow; falls back to device code when that port is busy (config: auth.codex_login_flow)")
 	ff(aAdd, "timeout", "", 0, "OAuth/network timeout in seconds")
-	bf(aAdd, "insecure", "", "Disable TLS verification for OAuth login")
-	sf(aAdd, "ca-bundle", "", "", "Custom CA bundle for OAuth login")
 	aList := c.newCmd(auth, "list", "List pooled credentials", "")
 	c.pos(aList, pOpt("provider"))
 	aRemove := c.newCmd(auth, "remove", "Remove a pooled credential by index, id, or label", "")
@@ -266,9 +242,6 @@ func (c *CLI) addTreeA(root *cobra.Command) {
 	c.pos(aStatus, p("provider"))
 	aLogout := c.newCmd(auth, "logout", "Log out a provider and clear stored auth state", "")
 	c.pos(aLogout, p("provider"))
-	aUpgrade := c.newCmd(auth, "upgrade", "Sign in with a Nous account, keeping your connectors", "")
-	bf(aUpgrade, "no-browser", "", "Do not auto-open a browser for sign-in")
-	ff(aUpgrade, "timeout", "", 0, "Network timeout in seconds")
 
 	status := c.newCmd(root, "status", "Show status of all components", "Display status of Icebath Agent components")
 	bf(status, "full", "", "Show every section (keys redacted) instead of the one-screen summary")
@@ -387,16 +360,16 @@ func (c *CLI) addGateway(root *cobra.Command) {
 	bf(gmigrate, "dry-run", "", "Print the plan and blockers without changing anything")
 	bf(gmigrate, "yes", "y", "Apply without confirmation")
 	enroll := c.newCmd(gw, "enroll", "Enroll this gateway with a relay connector (writes relay auth creds to .env)",
-		"Redeem a single-use enrollment token with a relay connector. Authenticates as your Nous Portal account (the connector derives the authoritative tenant from it), mints this gateway's per-gateway secret and per-tenant delivery key, and writes GATEWAY_RELAY_ID / GATEWAY_RELAY_SECRET / GATEWAY_RELAY_DELIVERY_KEY into ~/.icebath/.env. Requires being logged in (start icebath and type /setup model). Not available in managed installs.")
+		"Redeem a single-use enrollment token with a relay connector. Authenticates with a caller identity token from the IdP configured in gateway.idp (or the GATEWAY_RELAY_IDP_* env vars), from which the connector derives the authoritative tenant, mints this gateway's per-gateway secret and per-tenant delivery key, and writes GATEWAY_RELAY_ID / GATEWAY_RELAY_SECRET / GATEWAY_RELAY_DELIVERY_KEY into ~/.icebath/.env. Requires gateway.idp.token_url. Not available in managed installs.")
 	sf(enroll, "token", "", "", "The single-use enrollment token from the connector (delivered with your gateway config). Also settable via GATEWAY_RELAY_ENROLL_TOKEN.")
 	sf(enroll, "connector-url", "", "", "The connector base/relay URL, e.g. wss://connector.example.com/relay or https://connector.example.com. Also settable via GATEWAY_RELAY_URL / gateway.relay_url in config.yaml.")
 	sf(enroll, "gateway-id", "", "", "A stable id for this gateway instance (kill-switch granularity). Defaults to gw-<hostname>.")
 	sf(enroll, "wake-url", "", "", "Phase 5 §5.2 wake URL: a reachable URL the connector pokes (payload-free GET) to wake this gateway when buffered work arrives while it's idle/suspended, so it reconnects and drains. Persisted as GATEWAY_RELAY_WAKE_URL in ~/.icebath/.env and forwarded at provision. Optional — without it the gateway still drains whenever it next reconnects on its own.")
 
 	proxy := c.newCmd(root, "proxy", "Local OpenAI-compatible proxy to OAuth providers",
-		"Run a local HTTP server that forwards OpenAI-compatible requests to an OAuth-authenticated provider (e.g. Nous Portal). External apps can point at the proxy with any bearer token; the proxy attaches your real credentials.")
+		"Run a local HTTP server that forwards OpenAI-compatible requests to an OAuth-authenticated provider (e.g. xAI Grok). External apps can point at the proxy with any bearer token; the proxy attaches your real credentials.")
 	pStart := c.newCmd(proxy, "start", "Run the proxy in the foreground", "")
-	sf(pStart, "provider", "", "nous", "Upstream provider: nous or xai (default: nous). See `icebath proxy providers`.")
+	sf(pStart, "provider", "", "xai", "Upstream provider: xai (default: xai). See `icebath proxy providers`.")
 	sf(pStart, "host", "", "", "Bind address (default: 127.0.0.1). Use 0.0.0.0 to expose on LAN.")
 	inf(pStart, "port", "", 0, "Bind port (default: 8645)")
 	c.newCmd(proxy, "status", "Show which proxy upstreams are ready", "")
@@ -459,9 +432,9 @@ func (c *CLI) addCron(root *cobra.Command) {
 	sf(create, "workdir", "", "", "Absolute path for the job to run from. Injects AGENTS.md / CLAUDE.md / .cursorrules from that directory and uses it as the cwd for terminal/file/code_exec tools. Omit to preserve old behaviour (no project context files).")
 	sf(create, "model", "", "", "Pin this job to a specific inference model (user-owned; the agent's cronjob tool cannot set this). Omit to follow cron.model, then the main agent model (`icebath model`), at fire time.")
 	bf(create, "pin", "", "Lock the CURRENT main agent model (and its provider) onto this job so later `icebath model` changes never touch it. Ignored when --model is given.")
-	sf(create, "provider", "", "", "Inference provider paired with --model (e.g. 'openrouter', 'nous').")
+	sf(create, "provider", "", "", "Inference provider paired with --model (e.g. 'openrouter', 'anthropic').")
 	sf(create, "reasoning-effort", "", "", "Pin this job's reasoning (thinking) effort: none, minimal, low, medium, high, xhigh, max, or ultra. Overrides agent.reasoning_effort and agent.reasoning_overrides for this job; unsupported levels are clamped by the provider at request time. Omit to follow config.")
-	sf(create, "interpreter", "", "", "Absolute or ~ path to a Python in your own venv (e.g. ~/venvs/report/bin/python) for a .py --script / --monitor-script, so it can import packages Icebath does not ship. .sh/.bash still run under bash. Omit to use Icebath' Python.")
+	sf(create, "interpreter", "", "", "Absolute or ~ path to a Python in your own venv (e.g. ~/venvs/report/bin/python) for a .py --script / --monitor-script, so it can import packages Icebath does not ship. .sh/.bash still run under bash. Omit to use Icebath's Python.")
 	sf(create, "timezone", "", "", "IANA zone for this job's schedule (e.g. Asia/Hong_Kong), so the cron expression is read as THAT zone's wall clock whatever the profile's timezone is. Omit to inherit the profile timezone.")
 	sf(create, "grace-minutes", "", "", "Catch-up window override in minutes (0-1440) for a cron schedule. Default: half the period, clamped to 2-120 minutes. 0 = never catch up (a missed occurrence is skipped, not run late).")
 	bf(create, "continuity", "", "Each run wakes up with the job's own previous output injected into its prompt, so it can dedupe against what was already reported and continue where the last run left off (scouts, monitors, incremental digests). First run is unchanged.")
@@ -495,7 +468,7 @@ func (c *CLI) addCron(root *cobra.Command) {
 	edit.MarkFlagsMutuallyExclusive("pin", "unpin")
 	sf(edit, "provider", "", "", "Inference provider paired with --model. Pass empty string to clear.")
 	sf(edit, "reasoning-effort", "", "", "Pin this job's reasoning (thinking) effort: none, minimal, low, medium, high, xhigh, max, or ultra. Pass empty string to clear the pin and follow config resolution.")
-	sf(edit, "interpreter", "", "", "Absolute or ~ path to a Python for a .py script / monitor script. Pass empty string to clear (back to Icebath' Python).")
+	sf(edit, "interpreter", "", "", "Absolute or ~ path to a Python for a .py script / monitor script. Pass empty string to clear (back to Icebath's Python).")
 	sf(edit, "timezone", "", "", "IANA zone for this job's schedule. Pass empty string to clear the pin (back to the profile timezone); next_run_at is recomputed in the new zone.")
 	sf(edit, "grace-minutes", "", "", "Catch-up window override in minutes (0-1440). 0 = never catch up. Pass empty string to restore the computed window.")
 	pause := c.newCmd(cron, "pause", "Pause a scheduled job", "")

@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"log/slog"
 	"os"
 	"strings"
 	"time"
@@ -101,8 +100,6 @@ func pySub(re *regexp2.Regexp, text string, repl func(m regexp2.Match) string) s
 	return out
 }
 
-func sendLog() *slog.Logger { return slog.Default().With("logger", "tools.send_message_tool") }
-
 // Lowercased extension of a path
 func lowerExt(path string) string {
 	_, ext := pypath.Splitext(path)
@@ -180,7 +177,7 @@ func sendTelegramMessageWithRetry(ctx context.Context, bot telegramBotAPI, attem
 		if !ok || attempt >= attempts-1 {
 			return nil, err
 		}
-		sendLog().Warn(fmt.Sprintf("Transient Telegram send failure (attempt %d/%d), retrying in %.1fs: %s",
+		pkgLog().Warn(fmt.Sprintf("Transient Telegram send failure (attempt %d/%d), retrying in %.1fs: %s",
 			attempt+1, attempts, delay, sanitizeErrorText(err)))
 		if err := telegramRetrySleep(ctx, delay); err != nil {
 			return nil, err
@@ -204,13 +201,13 @@ func telegramBot(ctx context.Context, token any) (telegramBotAPI, error) {
 		if proxy == "" {
 			return newTelegramBot(token, "")
 		}
-		sendLog().Info(fmt.Sprintf("send_message: standalone Telegram send routed through proxy %s", proxy))
+		pkgLog().Info(fmt.Sprintf("send_message: standalone Telegram send routed through proxy %s", proxy))
 		return newTelegramBot(token, proxy)
 	}()
 	if err == nil {
 		return bot, nil
 	}
-	sendLog().Warn(fmt.Sprintf("send_message: failed to attach Telegram proxy (%s), falling back to direct connection", err))
+	pkgLog().Warn(fmt.Sprintf("send_message: failed to attach Telegram proxy (%s), falling back to direct connection", err))
 	return newTelegramBot(token, "")
 }
 
@@ -289,12 +286,12 @@ func telegramSendTextChunk(ctx context.Context, bot telegramBotAPI, chatID any, 
 	if isTelegramThreadNotFound(err) && textKwargs["message_thread_id"] != nil {
 		tid := textKwargs["message_thread_id"]
 		delete(textKwargs, "message_thread_id")
-		sendLog().Warn(fmt.Sprintf("Thread %s not found in _send_telegram, retrying without message_thread_id", pyrepr.Str(tid)))
+		pkgLog().Warn(fmt.Sprintf("Thread %s not found in _send_telegram, retrying without message_thread_id", pyrepr.Str(tid)))
 		return send(chunk, parseMode)
 	}
 	errText := pystr.Lower(err.Error())
 	if strings.Contains(errText, "parse") || strings.Contains(errText, "markdown") || strings.Contains(errText, "html") {
-		sendLog().Warn(fmt.Sprintf("Parse mode %s failed in _send_telegram, falling back to plain text: %s",
+		pkgLog().Warn(fmt.Sprintf("Parse mode %s failed in _send_telegram, falling back to plain text: %s",
 			pyrepr.Str(parseMode), sanitizeErrorText(err)))
 		if hasHTML {
 			return send(chunk, nil)
@@ -351,9 +348,9 @@ func telegramSendOneMedia(ctx context.Context, bot telegramBotAPI, chatID any, m
 	case isTelegramThreadNotFound(err) && pyrepr.Truthy(mediaKwargs["message_thread_id"]):
 		tid := mediaKwargs["message_thread_id"]
 		delete(mediaKwargs, "message_thread_id")
-		sendLog().Warn(fmt.Sprintf("Thread %s not found for media send, retrying without message_thread_id", pyrepr.Str(tid)))
+		pkgLog().Warn(fmt.Sprintf("Thread %s not found for media send, retrying without message_thread_id", pyrepr.Str(tid)))
 	case pyrepr.Truthy(mediaKwargs["parse_mode"]) && (strings.Contains(errText, "parse") || strings.Contains(errText, "caption")):
-		sendLog().Warn(fmt.Sprintf("Caption parse failed for media send, retrying plain: %s", sanitizeErrorText(err)))
+		pkgLog().Warn(fmt.Sprintf("Caption parse failed for media send, retrying plain: %s", sanitizeErrorText(err)))
 		delete(mediaKwargs, "parse_mode")
 		if c, _ := mediaKwargs["caption"].(string); !hasHTML && c != "" {
 			mediaKwargs["caption"] = stripMdv2Safe(c)
@@ -412,14 +409,14 @@ func sendTelegram(ctx context.Context, token any, chatID, message string, mediaF
 		for _, m := range mediaFiles {
 			if !pathExists(m.Path) {
 				warnings = append(warnings, "Media file not found, skipping: "+m.Path)
-				sendLog().Warn(warnings[len(warnings)-1])
+				pkgLog().Warn(warnings[len(warnings)-1])
 				if tgCaption != nil && lastMsg == nil {
 					kwargs := map[string]any{"chat_id": intChatID, "text": *tgCaption, "parse_mode": sendParseMode}
 					for k, v := range textKwargs {
 						kwargs[k] = v
 					}
 					if msg, capErr := sendTelegramMessageWithRetry(ctx, bot, 3, kwargs); capErr != nil {
-						sendLog().Warn(fmt.Sprintf("Telegram caption-fallback send failed for missing media: %s", sanitizeErrorText(capErr)))
+						pkgLog().Warn(fmt.Sprintf("Telegram caption-fallback send failed for missing media: %s", sanitizeErrorText(capErr)))
 					} else {
 						lastMsg, tgCaption = msg, nil
 					}
@@ -432,7 +429,7 @@ func sendTelegram(ctx context.Context, token any, chatID, message string, mediaF
 					return nil, mediaErr
 				}
 				warnings = append(warnings, sanitizeErrorText(fmt.Sprintf("Failed to send media %s: %s", m.Path, mediaErr)))
-				sendLog().Error(warnings[len(warnings)-1])
+				pkgLog().Error(warnings[len(warnings)-1])
 				continue
 			}
 			lastMsg = msg
@@ -469,7 +466,7 @@ func liveAdapter(ctx context.Context, platform gateway.Platform, lookupFailedWar
 	defer func() {
 		if r := recover(); r != nil {
 			if lookupFailedWarning != "" {
-				sendLog().Warn(lookupFailedWarning, "error", fmt.Sprint(r))
+				pkgLog().Warn(lookupFailedWarning, "error", fmt.Sprint(r))
 			}
 			adapter = nil
 		}

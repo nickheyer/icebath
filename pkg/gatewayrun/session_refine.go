@@ -258,7 +258,7 @@ func (r *GatewayRunner) refineLocalSession(ctx context.Context, source *gateway.
 			finishLiveReviewRun(live, run)
 			go func() {
 				if err := gateway.RetireAfterReview(context.WithoutCancel(bodyCtx), authority, ref, live); err != nil {
-					runLog().Error("Exception in callback retire_after_review", "error", err)
+					pkgLog().Error("Exception in callback retire_after_review", "error", err)
 				}
 			}()
 		}()

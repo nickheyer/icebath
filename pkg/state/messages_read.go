@@ -4,12 +4,12 @@ import (
 	"bytes"
 	"context"
 	"fmt"
-	"log/slog"
 	"reflect"
 	"runtime"
 	"slices"
 	"strconv"
 
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 )
 
@@ -388,7 +388,7 @@ func (d *SessionDB) GetMessages(ctx context.Context, sessionID string, o GetMess
 	return out, nil
 }
 
-// A ValueError carrying hermes' message
+// A ValueError carrying message
 type stateValueError struct{ msg string }
 
 func (e *stateValueError) Error() string      { return e.msg }
@@ -636,8 +636,6 @@ func (d *SessionDB) rowsToConversation(rows []*pyjson.Object, sessionID string, 
 		if pyTruthy(row["display_metadata"]) {
 			if decoded := decodeDisplayMetadata(row["display_metadata"]); decoded != nil {
 				put("display_metadata", decoded)
-				LiftDataUse(msg)
-				order = appendNewKeys(order, msg)
 			}
 		}
 		if includeSummaryMarkers && pyTruthy(row["_compressed_summary"]) {
@@ -726,7 +724,7 @@ func (d *SessionDB) rowsToConversation(rows []*pyjson.Object, sessionID string, 
 	for _, item := range stripped {
 		m, ok := item.(map[string]any)
 		if !ok {
-			return nil, fmt.Errorf("TypeError: restored message is %T, not a dict", item)
+			return nil, fmt.Errorf("a restored message is %s, expected a mapping", errchain.Kind(item))
 		}
 		messages = append(messages, m)
 	}
@@ -736,7 +734,7 @@ func (d *SessionDB) rowsToConversation(rows []*pyjson.Object, sessionID string, 
 			return nil, err
 		}
 		if repaired > 0 {
-			slog.Info(fmt.Sprintf("Repaired %d message-alternation violation(s) while restoring session %s — durable transcript kept them, see repair_message_sequence", repaired, sessionID))
+			pkgLog().Info(fmt.Sprintf("Repaired %d message-alternation violation(s) while restoring session %s — durable transcript kept them, see repair_message_sequence", repaired, sessionID))
 		}
 	}
 	if !includeAncestors || repairAlternation {

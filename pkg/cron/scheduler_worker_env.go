@@ -36,7 +36,7 @@ var installedPurelib = func() (string, bool) {
 func committedDependencySitePackages(s *Store, ctx context.Context, projectRoot string) (string, error) {
 	environment, err := pm.CommittedVenv(ctx, projectRoot)
 	if err != nil {
-		s.logAs("cron.scheduler_worker_env").Warn(fmt.Sprintf("cron worker: could not read the committed dependency environment: %s", err))
+		s.log.Warn(fmt.Sprintf("cron worker: could not read the committed dependency environment: %s", err))
 		return "", nil
 	}
 	if environment == "" {
@@ -53,7 +53,7 @@ func committedDependencySitePackages(s *Store, ctx context.Context, projectRoot 
 }
 
 // Prepends the tree and the committed generation to the worker env's own PYTHONPATH unless the tree is purelib
-func pinHermesTreeOnPythonpath(s *Store, ctx context.Context, workerEnv map[string]string, repoRoot string) (map[string]string, error) {
+func pinIcebathTreeOnPythonpath(s *Store, ctx context.Context, workerEnv map[string]string, repoRoot string) (map[string]string, error) {
 	root := repoRoot
 	purelib, ok := installedPurelib()
 	resolved, err := pypath.Resolve(root)

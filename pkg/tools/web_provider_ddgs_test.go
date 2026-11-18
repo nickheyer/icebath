@@ -224,9 +224,6 @@ func TestDDGSBackendWiring(t *testing.T) {
 	if !isWebBackendAvailable(env, "ddgs") {
 		t.Fatal("ddgs backend unavailable with the package importable")
 	}
-	for _, k := range []string{"FIRECRAWL_GATEWAY_URL", "TOOL_GATEWAY_DOMAIN", "TOOL_GATEWAY_USER_TOKEN", "TOOL_GATEWAY_SCHEME"} {
-		t.Setenv(k, "")
-	}
 	if got := getWebBackend(env); got != "ddgs" {
 		t.Fatalf("autodetect picked %q", got)
 	}

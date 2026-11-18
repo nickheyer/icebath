@@ -6,7 +6,6 @@ import (
 	"encoding/hex"
 	"fmt"
 	"io"
-	"log/slog"
 	"math/big"
 	"os"
 	"regexp"
@@ -120,7 +119,7 @@ func (s *GatewaySessionStore) Reader(ctx context.Context) *SurfaceLabelReader {
 		}
 		db, err := state.NewSessionDB(ctx, path, true)
 		if err != nil {
-			slog.Debug(fmt.Sprintf("read-only state.db unavailable: %s", err.Error()))
+			pkgLog().Debug(fmt.Sprintf("read-only state.db unavailable: %s", err.Error()))
 			return nil
 		}
 		s.reader = NewSurfaceLabelReader(db)
@@ -573,7 +572,7 @@ func (s *GatewaySessionStore) DeleteSession(ctx context.Context, sessionID strin
 				if !isClientError(derr) {
 					return false, derr
 				}
-				slog.Debug(fmt.Sprintf("session.detach after a refused delete failed: %s", derr.Error()))
+				pkgLog().Debug(fmt.Sprintf("session.detach after a refused delete failed: %s", derr.Error()))
 			}
 		}
 		return false, err
@@ -610,7 +609,7 @@ func (s *GatewaySessionStore) EndSession(ctx context.Context, sessionID, reason 
 			if !isClientError(err) {
 				return err
 			}
-			slog.Debug(fmt.Sprintf("redial for session.detach failed: %s", err.Error()))
+			pkgLog().Debug(fmt.Sprintf("redial for session.detach failed: %s", err.Error()))
 			reachable = false
 		}
 	}
@@ -624,7 +623,7 @@ func (s *GatewaySessionStore) EndSession(ctx context.Context, sessionID, reason 
 			if !isClientError(err) {
 				return err
 			}
-			slog.Debug(fmt.Sprintf("session.detach failed: %s", err.Error()))
+			pkgLog().Debug(fmt.Sprintf("session.detach failed: %s", err.Error()))
 		}
 	}
 	s.mu.Lock()
@@ -645,7 +644,7 @@ func (s *GatewaySessionStore) DeleteSessionIfEmpty(ctx context.Context, sessionI
 		" AND NOT EXISTS (SELECT 1 FROM messages WHERE messages.session_id = sessions.id)"+
 		" AND NOT EXISTS (SELECT 1 FROM sessions child WHERE child.parent_session_id = sessions.id)", sessionID)
 	if err != nil {
-		slog.Debug(fmt.Sprintf("empty-session probe failed: %s", err.Error()))
+		pkgLog().Debug(fmt.Sprintf("empty-session probe failed: %s", err.Error()))
 		return false, nil
 	}
 	if len(rows) == 0 {
@@ -656,7 +655,7 @@ func (s *GatewaySessionStore) DeleteSessionIfEmpty(ctx context.Context, sessionI
 		if !isClientError(err) {
 			return false, err
 		}
-		slog.Debug(fmt.Sprintf("empty session prune refused: %s", err.Error()))
+		pkgLog().Debug(fmt.Sprintf("empty session prune refused: %s", err.Error()))
 		return false, nil
 	}
 	return deleted, nil

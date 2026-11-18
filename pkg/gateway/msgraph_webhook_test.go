@@ -12,7 +12,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 )
 
-// Graph adapter with the hermes test defaults overridden by the given extra keys
+// Graph adapter with the test defaults overridden by the given extra keys
 func makeMSGraphAdapter(t *testing.T, overrides map[string]any) *MSGraphWebhookAdapter {
 	t.Helper()
 	extra := map[string]any{"host": "127.0.0.1", "client_state": "expected-client-state",
@@ -30,7 +30,7 @@ func makeMSGraphAdapter(t *testing.T, overrides map[string]any) *MSGraphWebhookA
 	return adapter
 }
 
-// Request with the given query, JSON body, declared length and peer, the hermes fake request
+// Request with the given query, JSON body, declared length and peer, the fake request
 func msgraphFakeRequest(query map[string]string, body string, contentLength int64, remote string) *WebRequest {
 	values := url.Values{}
 	for k, v := range query {

@@ -129,7 +129,7 @@ func findSQLite3CLI() (string, bool) {
 	}
 	if version, ok := lfParseSQLite3CLIVersion(binary); ok && state.IsSQLiteWALResetVulnerable(version) {
 		text := version[0].String() + "." + version[1].String() + "." + version[2].String()
-		cliLogger.Warn(fmt.Sprintf("sqlite3 CLI %s reports version %s, which still carries the "+
+		pkgLog().Warn(fmt.Sprintf("sqlite3 CLI %s reports version %s, which still carries the "+
 			"WAL-reset opener bug; refusing to use it for salvage", binary, text))
 		lfSetRefusal(pyjson.ObjectOf("reason", "wal_reset_vulnerable", "binary", binary, "version", text,
 			"detail", "reports version "+text+", which has "+lfWALResetVulnerableGuidance))

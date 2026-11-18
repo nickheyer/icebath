@@ -49,13 +49,13 @@ func serveFiles(files map[string]fakeFile, next func(method string, params map[s
 	}
 }
 
-// Private chat message of the hermes _make_message helper
+// Private chat message of the make message helper
 func docMessage(caption string) *models.Message {
 	return &models.Message{ID: 42, Caption: caption, Chat: models.Chat{ID: 100, Type: "private", FirstName: "Test", LastName: "User"},
 		From: &models.User{ID: 1, FirstName: "Test", LastName: "User"}}
 }
 
-// Document of the hermes _make_document helper
+// Document of the make document helper
 func docOf(fileName, mimeType string, size int64) *models.Document {
 	return &models.Document{FileID: "doc-file", FileUniqueID: "u", FileName: fileName, MimeType: mimeType, FileSize: size}
 }

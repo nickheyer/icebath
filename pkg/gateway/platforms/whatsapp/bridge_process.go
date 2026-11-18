@@ -7,7 +7,6 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
-	"log/slog"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -274,7 +273,7 @@ func killPortProcess(port int) {
 		}
 		for _, pid := range pids {
 			if pid <= 0 || !pidLooksLikeNodeBridge(pid) {
-				slog.Warn(fmt.Sprintf("[whatsapp] Not killing PID %d on port %d: process is not a node bridge (or identity unverifiable)", pid, port))
+				pkgLog().Warn(fmt.Sprintf("[whatsapp] Not killing PID %d on port %d: process is not a node bridge (or identity unverifiable)", pid, port))
 				continue
 			}
 			if isWindows {
@@ -294,11 +293,11 @@ func killPortProcess(port int) {
 	survivors := waitPidsExit(signalled, sigtermGrace)
 	for _, pid := range survivors {
 		if !pidLooksLikeNodeBridge(pid) {
-			slog.Warn(fmt.Sprintf("[whatsapp] Not SIGKILLing PID %d on port %d: identity no longer verifiable", pid, port))
+			pkgLog().Warn(fmt.Sprintf("[whatsapp] Not SIGKILLing PID %d on port %d: identity no longer verifiable", pid, port))
 			continue
 		}
 		if signalPid(pid, syscall.SIGKILL) == nil {
-			slog.Warn(fmt.Sprintf("[whatsapp] SIGKILLed node bridge PID %d on port %d after it ignored SIGTERM", pid, port))
+			pkgLog().Warn(fmt.Sprintf("[whatsapp] SIGKILLed node bridge PID %d on port %d after it ignored SIGTERM", pid, port))
 		}
 	}
 	waitPidsExit(survivors, time.Second)
@@ -376,12 +375,12 @@ func killStaleBridgeByPidfile(sessionPath string) {
 		stopInProcessBridge(sessionPath)
 	case bridgePidIsOurs(*pid, recordedStart):
 		if signalPid(*pid, syscall.SIGTERM) == nil {
-			slog.Info(fmt.Sprintf("[whatsapp] Killed stale bridge PID %d from pidfile", *pid))
+			pkgLog().Info(fmt.Sprintf("[whatsapp] Killed stale bridge PID %d from pidfile", *pid))
 		}
 		if !isWindows {
 			if len(waitPidsExit([]int{*pid}, sigtermGrace)) > 0 && bridgePidIsOurs(*pid, recordedStart) {
 				if signalPid(*pid, syscall.SIGKILL) == nil {
-					slog.Warn(fmt.Sprintf("[whatsapp] SIGKILLed stale bridge PID %d after it ignored SIGTERM", *pid))
+					pkgLog().Warn(fmt.Sprintf("[whatsapp] SIGKILLed stale bridge PID %d after it ignored SIGTERM", *pid))
 				}
 			}
 			waitPidsExit([]int{*pid}, time.Second)
@@ -391,7 +390,7 @@ func killStaleBridgeByPidfile(sessionPath string) {
 		if recordedStart == nil {
 			reason = "legacy pidfile lacks a start-time fingerprint and cmdline substring evidence can name a stranger"
 		}
-		slog.Warn(fmt.Sprintf("[whatsapp] Not killing pidfile PID %d: %s; skipping to avoid killing a stranger.", *pid, reason))
+		pkgLog().Warn(fmt.Sprintf("[whatsapp] Not killing pidfile PID %d: %s; skipping to avoid killing a stranger.", *pid, reason))
 	}
 	unlinkQuietly(pidFile)
 }

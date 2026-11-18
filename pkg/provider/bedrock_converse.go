@@ -204,7 +204,7 @@ func callBedrockConverse(ctx context.Context, region string, in bedrockConverseI
 			return bedrockConverseFinish(bedrockConverseSend(ctx, region, retry, false))
 		}
 		if isBedrockStaleConnectionError(err) {
-			bedrockLog.Warn(fmt.Sprintf("bedrock: stale-connection error on converse(region=%s, model=%s): %s — evicting cached client so the next call reconnects.",
+			pkgLog().Warn(fmt.Sprintf("bedrock: stale-connection error on converse(region=%s, model=%s): %s — evicting cached client so the next call reconnects.",
 				region, in.Model, pyTypeNameOfError(err)))
 			InvalidateBedrockRuntimeClient(ctx, region)
 		}
@@ -333,7 +333,7 @@ func bedrockStreamModel(kwargs map[string]any) string {
 
 // Ends a Bedrock stream silent past its stale budget, evicting the region client and feeding the breaker
 func bedrockStreamStaleKill(ctx context.Context, region, model string, elapsed, stale float64, emit func(StreamEvent) error) error {
-	bedrockLog.Warn(fmt.Sprintf("Bedrock stream stale for %.0fs (threshold %.0fs) — no events received. region=%s model=%s. Aborting call.", elapsed, stale, region, model))
+	pkgLog().Warn(fmt.Sprintf("Bedrock stream stale for %.0fs (threshold %.0fs) — no events received. region=%s model=%s. Aborting call.", elapsed, stale, region, model))
 	_ = emit(StreamEvent{Kind: EventStatus, Text: fmt.Sprintf("⚠️ No events from Bedrock for %ds (model: %s). Aborting...", int(elapsed), model)})
 	bumpStaleStreak(ctx)
 	InvalidateBedrockRuntimeClient(ctx, region)

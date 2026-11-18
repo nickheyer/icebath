@@ -435,7 +435,7 @@ func TestNewOpenAIClientExportBuildsTheSDKClient(t *testing.T) {
 
 func TestAddOpenAIClientResponseHookRunsOncePerMarkOnEveryResponse(t *testing.T) {
 	served := "gpt-4o-2024-11-20"
-	completion := map[string]any{"id": "c", "object": "chat.completion", "created": 0, "model": "hermes-router",
+	completion := map[string]any{"id": "c", "object": "chat.completion", "created": 0, "model": "auto-router",
 		"choices": []any{map[string]any{"index": 0, "message": map[string]any{"role": "assistant", "content": "ok"}, "finish_reason": "stop"}}}
 	srv, _ := auxSDKServer(t, func(w http.ResponseWriter, r *http.Request) {
 		headers := map[string]string{}
@@ -454,7 +454,7 @@ func TestAddOpenAIClientResponseHookRunsOncePerMarkOnEveryResponse(t *testing.T)
 	if len(c.responseHooks) != 1 {
 		t.Fatalf("idempotent per mark, got %d hooks", len(c.responseHooks))
 	}
-	req := map[string]any{"model": "hermes-router", "messages": []any{map[string]any{"role": "user", "content": "hi"}}}
+	req := map[string]any{"model": "auto-router", "messages": []any{map[string]any{"role": "user", "content": "hi"}}}
 	if _, err := c.CreateChatCompletion(context.Background(), req); err != nil {
 		t.Fatal(err)
 	}

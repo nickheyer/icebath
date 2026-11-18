@@ -121,7 +121,7 @@ func readJSON(path string) any {
 		parsed, err = pyjson.Loads(string(data))
 	}
 	if err != nil {
-		bridgeLog.Debug(fmt.Sprintf("Failed to load %s: %s", filepath.Base(path), err.Error()))
+		pkgLog().Debug(fmt.Sprintf("Failed to load %s: %s", filepath.Base(path), err.Error()))
 		return pyjson.NewObject()
 	}
 	return parsed
@@ -131,7 +131,7 @@ func readJSON(path string) any {
 func getSessionDB(ctx context.Context) *state.DB {
 	db, err := state.Acquire(ctx, "")
 	if err != nil {
-		bridgeLog.Debug(fmt.Sprintf("SessionDB unavailable: %s", err.Error()))
+		pkgLog().Debug(fmt.Sprintf("SessionDB unavailable: %s", err.Error()))
 		return nil
 	}
 	return db
@@ -140,7 +140,7 @@ func getSessionDB(ctx context.Context) *state.DB {
 // Closes a session database handle, logging a failure at debug
 func closeQuietly(db *state.DB, what string) {
 	if err := db.Close(); err != nil {
-		bridgeLog.Debug(fmt.Sprintf("Failed to close MCP %s SessionDB", what), "error", err)
+		pkgLog().Debug(fmt.Sprintf("Failed to close MCP %s SessionDB", what), "error", err)
 	}
 }
 
@@ -278,7 +278,7 @@ func loadSessionsIndexFromDB(ctx context.Context) (index *pyjson.Object) {
 	defer db.Close()
 	defer func() {
 		if r := recover(); r != nil {
-			bridgeLog.Debug(fmt.Sprintf("Failed to load gateway sessions from state.db: %s", raisedText(r)))
+			pkgLog().Debug(fmt.Sprintf("Failed to load gateway sessions from state.db: %s", raisedText(r)))
 			index = pyjson.NewObject()
 		}
 	}()
@@ -543,7 +543,7 @@ func (b *EventBridge) Start() {
 	b.running.Store(true)
 	b.done = make(chan struct{})
 	go b.pollLoop(b.done)
-	bridgeLog.Debug("EventBridge started")
+	pkgLog().Debug("EventBridge started")
 }
 
 // Ends the polling loop, wakes every waiter and closes the version gate
@@ -559,7 +559,7 @@ func (b *EventBridge) Stop() {
 		timer.Stop()
 	}
 	b.dbVersion.close()
-	bridgeLog.Debug("EventBridge stopped")
+	pkgLog().Debug("EventBridge stopped")
 }
 
 // Event dicts after a cursor, filtered to one session key when given, at most limit
@@ -690,7 +690,7 @@ func (b *EventBridge) pollLoop(done chan struct{}) {
 	defer close(done)
 	db := getSessionDB(b.ctx)
 	if db == nil {
-		bridgeLog.Warn("EventBridge: SessionDB unavailable, event polling disabled")
+		pkgLog().Warn("EventBridge: SessionDB unavailable, event polling disabled")
 		return
 	}
 	defer closeQuietly(db, "polling")
@@ -698,7 +698,7 @@ func (b *EventBridge) pollLoop(done chan struct{}) {
 		func() {
 			defer func() {
 				if r := recover(); r != nil {
-					bridgeLog.Debug(fmt.Sprintf("EventBridge poll error: %s", raisedText(r)))
+					pkgLog().Debug(fmt.Sprintf("EventBridge poll error: %s", raisedText(r)))
 				}
 			}()
 			b.pollOnce(db)

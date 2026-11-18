@@ -49,7 +49,7 @@ func appendSpawnTreeIndex(sessionDir string, entry map[string]any) {
 		}
 	}
 	if err != nil {
-		logger().Debug("spawn_tree index append failed: " + err.Error())
+		pkgLog().Debug("spawn_tree index append failed: " + err.Error())
 	}
 }
 

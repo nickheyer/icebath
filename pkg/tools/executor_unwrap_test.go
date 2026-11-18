@@ -2,8 +2,9 @@ package tools
 
 import (
 	"context"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"testing"
+
+	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 )
 
 func unwrapExecutor(t *testing.T, enabled ...string) *Executor {

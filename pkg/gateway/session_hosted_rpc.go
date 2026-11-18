@@ -5,7 +5,6 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
-	"log/slog"
 	"slices"
 	"strings"
 	"sync"
@@ -455,7 +454,7 @@ func (r *HostedRoomAuthorityRPC) submit(ctx context.Context, params map[string]a
 		go func() {
 			<-waiter.done
 			if err := r.completed(ctx, receipt.AdmissionID, waiter); err != nil {
-				slog.Default().With("logger", "asyncio").Error("Exception in callback HostedRoomAuthorityRPC._completed", "exc_info", err)
+				pkgLog().Error("Exception in callback HostedRoomAuthorityRPC._completed", "exc_info", err)
 			}
 		}()
 	}

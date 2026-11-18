@@ -3,7 +3,6 @@ package gateway
 import (
 	"context"
 	"errors"
-	"log/slog"
 	"maps"
 	"os"
 	"path/filepath"
@@ -271,7 +270,7 @@ func trackReceiptTask(a *SessionAuthority, task *adapterTask) {
 		delete(a.botReceiptTasks, task)
 		a.mu.Unlock()
 		if task.err != nil && !errors.Is(task.err, context.Canceled) {
-			slog.Warn("Bot receipt projection failed: " + pyrepr.ExceptionName(task.err))
+			pkgLog().Warn("Bot receipt projection failed: " + pyrepr.ExceptionName(task.err))
 		}
 	}()
 }

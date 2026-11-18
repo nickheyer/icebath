@@ -4,9 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"io"
-	"log/slog"
 	"net/http"
 	"os"
 	"regexp"
@@ -14,6 +12,8 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+
+	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/home"
@@ -33,15 +33,10 @@ type ModelCredentialSource interface {
 
 // ActiveLoginSource names the auth store active provider when it reports logged in
 type ActiveLoginSource interface {
-	ActiveLoggedInProvider(skipFreeTier bool) string
+	ActiveLoggedInProvider() string
 }
 
-// FreeTierSource reports whether the Nous welcome trial carries inference for this install
-type FreeTierSource interface {
-	FreeInferenceActive() bool
-}
-
-// Runtime is one resolved provider runtime, the dict hermes hands the agent
+// One resolved provider runtime, the dict handed to the agent
 type Runtime struct {
 	Provider          string
 	APIMode           APIMode
@@ -70,7 +65,7 @@ type Runtime struct {
 	CredentialPool    *Pool
 }
 
-// Credential as the hermes runtime dict holds it, the callable token source when no static key was resolved
+// Credential as the runtime dict holds it, the callable token source when no static key was resolved
 func (rt *Runtime) APIKeyValue() any {
 	if rt.APIKey == "" && rt.TokenSource != nil {
 		return rt.TokenSource
@@ -136,7 +131,7 @@ func newResolver(ctx context.Context, cfg config.Tree, secrets *config.Secrets, 
 // Process global env names a routed profile may still read from the environment
 var globalEnvExact = map[string]bool{
 	"ICEBATH_HOME": true, "ICEBATH_PROFILE": true, "ICEBATH_GATEWAY_LOCK_DIR": true, "ICEBATH_MAX_ITERATIONS": true,
-	"ICEBATH_API_TIMEOUT": true, "ICEBATH_REDACT_SECRETS": true, "ICEBATH_NOUS_TIMEOUT_SECONDS": true, "_ICEBATH_GATEWAY": true,
+	"ICEBATH_API_TIMEOUT": true, "ICEBATH_REDACT_SECRETS": true, "_ICEBATH_GATEWAY": true,
 	"PATH": true, "HOME": true, "USER": true, "LANG": true, "LC_ALL": true, "TZ": true, "PWD": true, "SHELL": true, "TMPDIR": true,
 	"VIRTUAL_ENV": true, "PYTHONPATH": true, "SSL_CERT_FILE": true,
 	"ICEBATH_KANBAN_DB": true, "ICEBATH_KANBAN_WORKSPACES_ROOT": true, "ICEBATH_KANBAN_BOARD": true,
@@ -242,7 +237,7 @@ func (r *resolver) autoDetectLocalModel(baseURL string) string {
 	client.Timeout = 5e9
 	resp, err := client.Do(req)
 	if err != nil {
-		slog.Default().Debug(fmt.Sprintf("Auto-detect model from %s failed: %v", baseURL, err))
+		pkgLog().Debug(fmt.Sprintf("Auto-detect model from %s failed: %v", baseURL, err))
 		return ""
 	}
 	defer resp.Body.Close()
@@ -391,24 +386,11 @@ func (r *resolver) fallbackAPIMode(provider, baseURL, model string) APIMode {
 	if detected := detectAPIModeForURL(baseURL); detected != "" {
 		return detected
 	}
-	declared := determineModeCtx(r.ctx, provider, baseURL, model, r.nousAnthropicWire())
+	declared := determineModeCtx(r.ctx, provider, baseURL, model)
 	if declared == ModeAnthropicMessages && !onDeclaredAnthropicEndpoint(r.ctx, provider, baseURL) {
 		return ModeChatCompletions
 	}
 	return declared
-}
-
-// The configured Nous anthropic wire preference
-func (r *resolver) nousAnthropicWire() string {
-	if nous, ok := r.cfg["nous"].(map[string]any); ok {
-		return cfgString(nous["anthropic_wire"])
-	}
-	return ""
-}
-
-// NousAPIMode is the Portal wire of a model under the configured nous.anthropic_wire
-func NousAPIMode(ctx context.Context, model string) string {
-	return string(NousMode(model, modelsResolver(ctx).nousAnthropicWire()))
 }
 
 // Whether the base URL is the provider's own anthropic protocol endpoint
@@ -440,7 +422,7 @@ func (r *resolver) resolvePlainCustomAPIMode(modelCfg map[string]any, baseURL st
 		if target == "" {
 			target = "(unknown)"
 		}
-		slog.Default().Info("Ignoring persisted custom api_mode=codex_responses for non-OpenAI endpoint " + target)
+		pkgLog().Info("Ignoring persisted custom api_mode=codex_responses for non-OpenAI endpoint " + target)
 		configured = ""
 	}
 	if configured != "" {
@@ -581,7 +563,7 @@ func modelAPIMode(ctx context.Context, profile *perModelHookProfile, model strin
 			apiModeWarned[profile.name] = true
 			apiModeWarnedMu.Unlock()
 			if first {
-				slog.Default().WarnContext(ctx, fmt.Sprintf("provider %s: api_mode_for_model failed; using its declared api_mode", profile.name),
+				pkgLog().WarnContext(ctx, fmt.Sprintf("provider %s: api_mode_for_model failed; using its declared api_mode", profile.name),
 					"exc_info", fmt.Sprintf("%v\n%s", rec, debug.Stack()))
 			}
 			mode = profile.mode
@@ -649,7 +631,7 @@ func azureInferredAPIMode(model string, apiMode APIMode) APIMode {
 func (r *resolver) configuredOrFallbackAPIMode(provider string, modelCfg map[string]any, baseURL, model string, opencodeByModel bool) APIMode {
 	if provider == "actual" {
 		if configured := r.configuredAPIMode(provider, modelCfg); configured != "" && configured != ModeChatCompletions {
-			slog.Default().Info(fmt.Sprintf("Routing built-in Actual through chat_completions instead of persisted api_mode=%s", configured))
+			pkgLog().Info(fmt.Sprintf("Routing built-in Actual through chat_completions instead of persisted api_mode=%s", configured))
 		}
 		return ModeChatCompletions
 	}
@@ -872,11 +854,6 @@ func HostGatedEnvKeyCandidates(ctx context.Context, h, baseURL string, ollama bo
 	return modelsResolver(ctxForHome(ctx, h)).hostGatedEnvKeyCandidates(baseURL, ollama)
 }
 
-// User set NOUS_INFERENCE_BASE_URL override with the trailing slash stripped
-func (r *resolver) nousInferenceEnvOverride() string {
-	return optionalBaseURLValue(r.secret("NOUS_INFERENCE_BASE_URL"))
-}
-
 // LM Studio OpenAI compatible runtime base URL from either the native or the /v1 form
 func normalizeLMStudioRuntimeBaseURL(baseURL string) string {
 	root := strings.TrimRight(strings.TrimSpace(baseURL), "/")
@@ -933,7 +910,7 @@ func finalizeBaseURL(provider string, apiMode APIMode, baseURL string) string {
 	return baseURL
 }
 
-// ---- usable secrets (hermes_cli/auth.py) ----
+// Usable secrets
 
 var placeholderSecretValues = map[string]bool{
 	"*": true, "**": true, "***": true, "changeme": true, "your_api_key": true, "your_api_key_here": true,
@@ -1019,7 +996,7 @@ func usableDeclaredSecret(providerID, value, source string) string {
 		return ""
 	}
 	if prefixes := knownProviderKeyPrefixes[providerID]; len(prefixes) > 0 && !matchesKeyPrefix(providerID, val) {
-		slog.Default().Warn(fmt.Sprintf("Ignoring %s for provider %q: value does not match the expected key prefix (%s). "+
+		pkgLog().Warn(fmt.Sprintf("Ignoring %s for provider %q: value does not match the expected key prefix (%s). "+
 			"Falling back to the next credential source. Fix or remove the malformed key to silence this warning.",
 			source, providerID, strings.Join(prefixes, " or ")))
 		return ""
@@ -1027,7 +1004,7 @@ func usableDeclaredSecret(providerID, value, source string) string {
 	return val
 }
 
-// ---- api key provider credentials (hermes_cli/auth.py resolve_api_key_provider_credentials) ----
+// Api key provider credentials )
 
 // apiKeyCreds is a resolved api key provider login with its base URL and source
 type apiKeyCreds struct {
@@ -1268,7 +1245,7 @@ func authNormalizeProviderCtx(ctx context.Context, name string) string {
 
 // True when a provider alias resolves to custom
 func (r *resolver) resolvesToCustom(name string) bool {
-	resolved, err := r.resolveProvider(name, "", "", false)
+	resolved, err := r.resolveProvider(name, "", "")
 	return err == nil && resolved == "custom"
 }
 
@@ -1319,12 +1296,12 @@ func (r *resolver) openrouterAutoDetected() bool {
 }
 
 // auth.json active_provider when it is a registry provider that reports logged in
-func (r *resolver) loggedInOAuthActiveProvider(skipFreeTier bool) string {
+func (r *resolver) loggedInOAuthActiveProvider() string {
 	src, ok := r.creds.(ActiveLoginSource)
 	if !ok {
 		return ""
 	}
-	active := src.ActiveLoggedInProvider(skipFreeTier)
+	active := src.ActiveLoggedInProvider()
 	if _, known := registryProfileCtx(r.ctx, active); !known {
 		return ""
 	}
@@ -1376,7 +1353,7 @@ func (r *resolver) envKeyAutoDetected(oauthActive string) string {
 		for _, envVar := range pconfig.KeyEnvNames() {
 			if hasUsableSecret(r.secret(envVar)) {
 				if oauthActive != "" && oauthActive != pid {
-					slog.Default().Warn(fmt.Sprintf("Provider resolved to %q via %s, preempting your logged-in OAuth provider %q. "+
+					pkgLog().Warn(fmt.Sprintf("Provider resolved to %q via %s, preempting your logged-in OAuth provider %q. "+
 						"If you meant to use the OAuth login, unset %s or set `model.provider` explicitly.", pid, envVar, oauthActive, envVar))
 				}
 				return pid
@@ -1407,7 +1384,7 @@ func (r *resolver) unknownProviderHint(providerName string) string {
 }
 
 // Which inference provider to use, explicit intent beating a stale OAuth login on the auto path
-func (r *resolver) resolveProvider(requested, explicitAPIKey, explicitBaseURL string, skipFreeTier bool) (string, error) {
+func (r *resolver) resolveProvider(requested, explicitAPIKey, explicitBaseURL string) (string, error) {
 	normalized := strings.ToLower(strings.TrimSpace(requested))
 	if normalized == "" {
 		normalized = "auto"
@@ -1440,26 +1417,21 @@ func (r *resolver) resolveProvider(requested, explicitAPIKey, explicitBaseURL st
 		}
 		return "openrouter", nil
 	}
-	oauthActive := r.loggedInOAuthActiveProvider(skipFreeTier)
+	oauthActive := r.loggedInOAuthActiveProvider()
 	if envPid := r.envKeyAutoDetected(oauthActive); envPid != "" {
 		return envPid, nil
 	}
 	if oauthActive != "" {
 		if len(modelCfg) > 0 && !truthy(modelCfg["provider"]) {
-			slog.Default().Warn(fmt.Sprintf("Provider resolved to logged-in OAuth provider %q because config.yaml `model` has no `provider` key. "+
+			pkgLog().Warn(fmt.Sprintf("Provider resolved to logged-in OAuth provider %q because config.yaml `model` has no `provider` key. "+
 				"If you meant a different provider, set `model.provider` explicitly.", oauthActive))
 		}
 		return oauthActive, nil
 	}
-	if !skipFreeTier {
-		if ft, ok := r.creds.(FreeTierSource); ok && ft.FreeInferenceActive() {
-			return "nous", nil
-		}
-	}
 	if hasAWSCredentials(r.ctx, true) {
 		return "bedrock", nil
 	}
-	return "", newAuthErr("", fmt.Sprintf("Icebath is not connected to any AI provider yet. Run `icebath model` to pick one, type `/login` in chat, "+
+	return "", newAuthErr("", fmt.Sprintf("Icebath is not connected to any AI provider yet. Run `icebath model` to pick one, type `/setup model` in chat, "+
 		"or add a key with `icebath auth add <provider>`. (Advanced: put an API key such as OPENROUTER_API_KEY in %s/.env.)",
 		displayHome(r.home)), "no_provider_configured", false)
 }
@@ -1538,13 +1510,6 @@ func (r *resolver) poolEntryModeAndURL(provider string, cred Credential, modelCf
 			u = AnthropicBaseURL
 		}
 		return ModeAnthropicMessages, u
-	}
-	if provider == "nous" {
-		u := r.nousInferenceEnvOverride()
-		if u == "" {
-			u = baseURL
-		}
-		return NousMode(model, r.nousAnthropicWire()), u
 	}
 	if perModelProfileCtx(r.ctx, provider) != nil {
 		mode := r.profileRuntimeAPIMode(provider, modelCfg, cred.APIKey, model)
@@ -1629,7 +1594,7 @@ func (r *resolver) resolveFromPool(provider, requestedProvider string, modelCfg 
 	if !ok {
 		return nil
 	}
-	if p := getProviderProfile(r.ctx, provider); provider != "nous" && p != nil && p.PreparePoolEntryHook != nil {
+	if p := getProviderProfile(r.ctx, provider); p != nil && p.PreparePoolEntryHook != nil {
 		entry := PooledCredential{Provider: provider, AuthType: AuthTypeAPIKey, AccessToken: cred.APIKey, BaseURL: cred.BaseURL}
 		cred.APIKey = p.PreparePoolEntry(r.hookCtx(), &entry, cred.APIKey)
 		cred.BaseURL = entry.RuntimeBaseURL()
@@ -1685,8 +1650,6 @@ func oauthMissingLoginError(provider string) *AuthError {
 		return xaiErr("No xAI OAuth credentials stored. Select xAI Grok OAuth (SuperGrok / Premium+) in `icebath model`.", "xai_auth_missing", true)
 	case "qwen-oauth":
 		return qwenErr("Qwen OAuth access token missing. Re-run 'icebath auth qwen-oauth'.", "qwen_access_token_missing", true)
-	case "nous":
-		return nousErr("Icebath is not logged into Nous Portal.", "nous_auth_missing", true)
 	case "minimax-oauth":
 		return minimaxErr("MiniMax OAuth credentials not found. Run `icebath auth add minimax-oauth` to sign in.", "minimax_auth_missing", true)
 	}
@@ -1745,24 +1708,6 @@ func (r *resolver) explicitQwen(requestedProvider string, modelCfg map[string]an
 		return nil, err
 	}
 	rt := r.runtime("qwen-oauth", ModeChatCompletions, baseURL, key, source)
-	rt.TokenSource = src
-	rt.RequestedProvider = requestedProvider
-	return rt, nil
-}
-
-func (r *resolver) explicitNous(requestedProvider string, modelCfg map[string]any, apiKey, explicitBaseURL, targetModel string) (*Runtime, error) {
-	base := explicitBaseURL
-	if base == "" {
-		base = r.nousInferenceEnvOverride()
-	}
-	if base == "" {
-		base = NousInferenceBaseURL
-	}
-	key, baseURL, src, source, err := r.credsFallback("nous", apiKey, explicitBaseURL, base)
-	if err != nil {
-		return nil, err
-	}
-	rt := r.runtime("nous", NousMode(effectiveModel(modelCfg, targetModel), r.nousAnthropicWire()), baseURL, key, source)
 	rt.TokenSource = src
 	rt.RequestedProvider = requestedProvider
 	return rt, nil
@@ -1850,8 +1795,6 @@ func (r *resolver) resolveExplicitRuntime(provider, requestedProvider string, mo
 		return r.explicitAnthropic(requestedProvider, modelCfg, explicitAPIKey, explicitBaseURL, targetModel)
 	case "openai-codex":
 		return r.explicitCodex(requestedProvider, modelCfg, explicitAPIKey, explicitBaseURL, targetModel)
-	case "nous":
-		return r.explicitNous(requestedProvider, modelCfg, explicitAPIKey, explicitBaseURL, targetModel)
 	case "qwen-oauth":
 		return r.explicitQwen(requestedProvider, modelCfg, explicitAPIKey, explicitBaseURL, targetModel)
 	case "azure-foundry":
@@ -1875,8 +1818,6 @@ type oauthRuntimeSpec struct {
 
 // Env and auth store OAuth providers resolved by a single credential call
 var oauthRuntimeProviders = map[string]oauthRuntimeSpec{
-	"nous": {func(m string, r *resolver) APIMode { return NousMode(m, r.nousAnthropicWire()) }, "portal",
-		"Auto-detected Nous provider but credentials failed", ""},
 	"openai-codex": {func(string, *resolver) APIMode { return ModeCodexResponses }, "icebath-auth-store",
 		"Auto-detected Codex provider but credentials failed", ""},
 	"xai-oauth": {func(string, *resolver) APIMode { return ModeCodexResponses }, "icebath-auth-store",
@@ -2035,7 +1976,7 @@ func missingCredentialsSuffix(ctx context.Context, provider string) (out string)
 			missingHintsMu.Lock()
 			if !missingHintFailuresLogged[name] {
 				missingHintFailuresLogged[name] = true
-				slog.Default().Warn(name + " missing_credentials_hint failed; showing the error without it")
+				pkgLog().Warn(name + " missing_credentials_hint failed; showing the error without it")
 			}
 			missingHintsMu.Unlock()
 			out = ""
@@ -2172,7 +2113,7 @@ func (r *resolver) ladderRungs(requestedProvider, explicitAPIKey, explicitBaseUR
 			return rt, nil
 		}
 	}
-	provider, err := r.resolveProvider(requestedProvider, explicitAPIKey, explicitBaseURL, false)
+	provider, err := r.resolveProvider(requestedProvider, explicitAPIKey, explicitBaseURL)
 	if err != nil {
 		return nil, err
 	}
@@ -2191,7 +2132,7 @@ func (r *resolver) ladderRungs(requestedProvider, explicitAPIKey, explicitBaseUR
 			if !isAuth || requestedProvider != "auto" {
 				return nil, err
 			}
-			slog.Default().Info(spec.failureMsg + "; falling through to next provider.")
+			pkgLog().Info(spec.failureMsg + "; falling through to next provider.")
 			swallowed = authErr
 		} else if rt != nil {
 			return rt, nil
@@ -2221,7 +2162,7 @@ func (r *resolver) ladderRungs(requestedProvider, explicitAPIKey, explicitBaseUR
 	return fallback, nil
 }
 
-// ResolveRuntime walks the hermes ladder and returns the full runtime for a requested provider
+// Walks the ladder and returns the full runtime for a requested provider
 func (r *resolver) ResolveRuntime(requested, explicitAPIKey, explicitBaseURL string, explicitToken func(context.Context) (string, error), targetModel string) (*Runtime, error) {
 	requestedProvider := r.resolveRequestedProvider(requested)
 	recoverLeftCoreProvider(r.ctx, r.home, requestedProvider)
@@ -2242,7 +2183,7 @@ func (r *resolver) ResolveRuntime(requested, explicitAPIKey, explicitBaseURL str
 	}
 	mode := r.maybeApplyCodexAppServerRuntime(rt.Provider, rt.APIMode, r.modelConfig(), requestedAlias)
 	if mode != rt.APIMode {
-		slog.Default().Info(fmt.Sprintf("model.openai_runtime=codex_app_server overrides the %s runtime (source=%s); its credential/endpoint "+
+		pkgLog().Info(fmt.Sprintf("model.openai_runtime=codex_app_server overrides the %s runtime (source=%s); its credential/endpoint "+
 			"is not used — the app-server authenticates with its own login", rt.Provider, rt.Source))
 	}
 	rt.APIMode = mode
@@ -2299,15 +2240,15 @@ func (r *resolver) ResolveRuntimeWithFallback(requested, targetModel, explicitBa
 		runtime, err := fb.ResolveRuntime(provider, entryKey, baseURL, nil, model)
 		if err != nil {
 			if _, ok := err.(*AuthError); ok {
-				slog.Default().Debug(fmt.Sprintf("Fallback entry %s/%s failed: %v", provider, model, err))
+				pkgLog().Debug(fmt.Sprintf("Fallback entry %s/%s failed: %v", provider, model, err))
 			} else {
-				slog.Default().Warn(fmt.Sprintf("Fallback entry %s/%s is misconfigured and was skipped: %v", provider, model, err))
+				pkgLog().Warn(fmt.Sprintf("Fallback entry %s/%s is misconfigured and was skipped: %v", provider, model, err))
 			}
 			continue
 		}
 		runtime.Provider = EffectiveRuntimeProvider(entry, runtime)
 		phrase, _ := primaryFailureWording(primary)
-		slog.Default().Warn(fmt.Sprintf("Primary provider %s (%v). Falling back to %s/%s", phrase, primary, provider, model))
+		pkgLog().Warn(fmt.Sprintf("Primary provider %s (%v). Falling back to %s/%s", phrase, primary, provider, model))
 		return runtime, entry, nil
 	}
 	return nil, nil, primary

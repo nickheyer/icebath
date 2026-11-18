@@ -39,7 +39,7 @@ func (r *GatewayRunner) instantiateAdapter(ctx context.Context, platform gateway
 		logSuppressed(slog.LevelDebug, err, "Platform registry lookup for '%s' failed: %s", platform)
 	} else if registered {
 		if created == nil {
-			runLog().Error(fmt.Sprintf("Platform '%s' is registered but adapter creation failed (check dependencies and config)", platform))
+			pkgLog().Error(fmt.Sprintf("Platform '%s' is registered but adapter creation failed (check dependencies and config)", platform))
 			return nil, nil
 		}
 		adapter, ok := created.(gateway.PlatformAdapter)

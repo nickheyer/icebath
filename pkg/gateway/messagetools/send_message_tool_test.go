@@ -3,7 +3,6 @@ package messagetools
 import (
 	"context"
 	"errors"
-	"github.com/nickheyer/icebath/pkg/internal/pydict"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -11,6 +10,8 @@ import (
 	"sync"
 	"testing"
 	"unicode/utf8"
+
+	"github.com/nickheyer/icebath/pkg/internal/pydict"
 
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/gateway/platforms/telegram"

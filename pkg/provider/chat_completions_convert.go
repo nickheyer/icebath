@@ -7,7 +7,6 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
-	"log/slog"
 	"math/big"
 	"net"
 	"net/http"
@@ -208,10 +207,7 @@ func newCCRoute(r Route) *ccRoute {
 
 func (c *ccRoute) hostIs(domain string) bool { return hostMatches(c.baseURL, domain) }
 
-func (c *ccRoute) isOpenRouter() bool { return c.provider == "openrouter" || c.hostIs("openrouter.ai") }
-func (c *ccRoute) isNous() bool {
-	return c.provider == "nous" || c.provider == "nous-portal" || c.provider == "nousresearch" || c.hostIs("nousresearch.com")
-}
+func (c *ccRoute) isOpenRouter() bool   { return c.provider == "openrouter" || c.hostIs("openrouter.ai") }
 func (c *ccRoute) isQwenPortal() bool   { return c.hostIs("portal.qwen.ai") }
 func (c *ccRoute) isDirectOpenAI() bool { return c.host == "api.openai.com" }
 func (c *ccRoute) isAzureOpenAI() bool  { return c.hostIs("openai.azure.com") }
@@ -246,13 +242,13 @@ func isVertexExpressBaseURL(normalized string) bool {
 
 // Provider names with a declared profile, the legacy host flag path serves every other name
 var knownProviders = map[string]bool{
-	"openrouter": true, "nous": true, "nous-portal": true, "nousresearch": true, "deepseek": true, "kimi-coding": true,
+	"openrouter": true, "deepseek": true, "kimi-coding": true,
 	"kimi-coding-cn": true, "qwen-oauth": true, "lmstudio": true, "azure-foundry": true, "ollama-cloud": true,
 	"minimax": true, "minimax-cn": true, "minimax-oauth": true, "xai": true, "xai-oauth": true, "zai": true, "custom": true,
 	"openai-codex": true, "alibaba": true, "alibaba-cn": true, "alibaba-token-plan": true, "alibaba-token-plan-cn": true,
 	"alibaba-coding-plan": true, "alibaba-coding-plan-cn": true, "gemini": true, "tencent-tokenhub": true, "nvidia": true,
 	"actual": true, "opencode-zen": true, "opencode-go": true, "meta-ai": true, "fireworks": true, "upstage": true,
-	"nebius-token-factory": true, "solstice": true, "commandcode": true, "commandcode-anthropic": true, "deepinfra": true,
+	"nebius-token-factory": true, "commandcode": true, "commandcode-anthropic": true, "deepinfra": true,
 	"kilocode": true, "ai-gateway": true, "novita": true, "gmi": true, "stepfun": true, "arcee": true, "xiaomi": true,
 	"huggingface": true, "router": true, "openai": true, "openai-api": true, "anthropic": true, "bedrock": true, "vertex": true,
 }
@@ -681,7 +677,7 @@ func carrierSet(keys ...string) map[string]bool {
 var reasoningCarrierRoutes = []carrierRoute{
 	{carrierSet(), carrierSet("mistral", "groq", "cerebras", "sambanova"), []string{"mistral.ai", "groq.com", "cerebras.ai", "sambanova.ai", "hunyuan.cloud.tencent.com"}},
 	{carrierSet(carrierRC), carrierSet("fireworks"), []string{"fireworks.ai"}},
-	{carrierSet(carrierRC, carrierR, carrierRD), carrierSet("openrouter", "kilocode", "ai-gateway", "nous"), []string{"openrouter.ai", "kilo.ai", "ai-gateway.vercel.sh", "nousresearch.com"}},
+	{carrierSet(carrierRC, carrierR, carrierRD), carrierSet("openrouter", "kilocode", "ai-gateway"), []string{"openrouter.ai", "kilo.ai", "ai-gateway.vercel.sh"}},
 	{carrierSet(carrierRC, carrierRD), carrierSet("novita", "tencent-tokenhub", "minimax", "minimax-cn"), []string{"novita.ai", "tokenhub.tencentmaas.com", "tokenhub-intl.tencentcloudmaas.com", "minimax.io", "minimaxi.com"}},
 	{carrierSet(carrierRC, carrierR), carrierSet("ollama-cloud", "custom", "lmstudio", "upstage"), []string{"ollama.com", "upstage.ai"}},
 }
@@ -875,8 +871,11 @@ func mistralToolID(key string) string {
 // DeveloperRoleModels are model name substrings whose system prompt is sent under the developer role
 var DeveloperRoleModels = []string{"gpt-5", "codex"}
 
-// Private reasoning_details record type carrying provider native assistant carriers
-const nativeCarrierType = "icebath.native_assistant"
+// Private reasoning_details record type of native assistant carriers, and the type older builds stored
+const (
+	nativeCarrierType        = "icebath.native_assistant"
+	retiredNativeCarrierType = "hermes.native_assistant"
+)
 
 // Reports whether the route consumes Gemini thought signatures
 func modelConsumesThoughtSignature(model, baseURL, provider string) bool {
@@ -930,24 +929,6 @@ func qwenNormalizeContent(content any) any {
 		}
 	}
 	return content
-}
-
-// Union of connector data use requirements over tool messages
-func dataUseRequirement(msgs []*state.Message) map[string]bool {
-	out := map[string]bool{}
-	for _, m := range msgs {
-		if m.DisplayMetadata == nil {
-			continue
-		}
-		if list, ok := m.DisplayMetadata["data_use"].([]any); ok {
-			for _, v := range list {
-				if s, ok := v.(string); ok && s != "" {
-					out[s] = true
-				}
-			}
-		}
-	}
-	return out
 }
 
 // Wire copies of the request messages for the chat completions route
@@ -1116,7 +1097,7 @@ func splitNativeCarrier(raw json.RawMessage) ([]any, map[string]any) {
 	for _, d := range list {
 		if dm, ok := d.(map[string]any); ok {
 			if t, _ := dm["type"].(string); strings.HasSuffix(t, ".native_assistant") {
-				if t == nativeCarrierType || t == "hermes.native_assistant" {
+				if t == nativeCarrierType || t == retiredNativeCarrierType {
 					record = dm
 				}
 				continue
@@ -1556,7 +1537,7 @@ func (c *ccRoute) responseFormatUnsupported(ctx context.Context, model string, f
 	return known, err
 }
 
-// ---- OpenRouter and Nous reasoning capability catalogs ----
+// ---- OpenRouter reasoning capability catalog ----
 
 // Per model reasoning capability a catalog advertises
 type reasoningCaps struct {
@@ -1695,7 +1676,7 @@ func (c *capsCatalog) saveDisk(ctx context.Context, caps map[string]reasoningCap
 	entry.Set("caps", rows)
 	data.Set(c.url, entry)
 	if err := modelsWriteJSONCache(ctx, path, data, pyjson.Indent(0), pyjson.Separators(",", ":")); err != nil {
-		catalogLog.Debug(fmt.Sprintf("Failed to save reasoning-caps disk cache: %v", err))
+		pkgLog().Debug(fmt.Sprintf("Failed to save reasoning-caps disk cache: %v", err))
 	}
 }
 
@@ -1788,14 +1769,6 @@ const openRouterCatalogURL = "https://openrouter.ai/api/v1/models"
 
 func openRouterCaps(model string) (reasoningCaps, bool) {
 	return catalogFor(openRouterCatalogURL).lookup(model)
-}
-
-func nousCaps(baseURL, model string) (reasoningCaps, bool) {
-	base := strings.TrimRight(baseURL, "/")
-	if base == "" {
-		base = "https://inference-api.nousresearch.com/v1"
-	}
-	return catalogFor(base + "/models").lookup(model)
 }
 
 // ---- local server probes ----
@@ -1964,7 +1937,7 @@ var openRouterReasoningPrefixes = []string{"deepseek/", "anthropic/", "openai/",
 
 // Reports whether a reasoning extra body is safe to send on this route
 func (c *ccRoute) supportsReasoning() bool {
-	if c.hostIs("nousresearch.com") || c.hostIs("ai-gateway.vercel.sh") {
+	if c.hostIs("ai-gateway.vercel.sh") {
 		return true
 	}
 	if c.provider == "lmstudio" {
@@ -2431,33 +2404,6 @@ func (c *ccRoute) applyProviderReasoning(req *Request, rcfg reasoningCfg, suppor
 		if sticky != "" && hasAnyPrefix(c.modelLower, grokAggregatorPrefixes) {
 			top["extra_headers"] = map[string]string{"x-grok-conv-id": sticky}
 		}
-	case c.isNous() && known:
-		tags := []any{"product=icebath-agent", "client=icebath-client-v" + baseVersion()}
-		if conv := firstNonEmpty(req.CacheScope, req.SessionID); conv != "" {
-			tags = append(tags, "conversation="+conv)
-		}
-		extra.Set("tags", tags)
-		if sticky != "" {
-			extra.Set("session_id", sticky)
-		}
-		if du := dataUseRequirement(req.Messages); len(du) > 0 {
-			prov := map[string]any{"data_collection": "deny"}
-			if du["zero_retention"] {
-				prov["zdr"] = true
-			}
-			extra.Set("provider", prov)
-		}
-		if supports {
-			if !rcfg.set {
-				extra.Set("reasoning", map[string]any{"enabled": true, "effort": "medium"})
-			} else if rcfg.disabled {
-				if caps, ok := nousCaps(c.baseURL, req.Model); ok && caps.supports && !caps.mandatory {
-					extra.Set("reasoning", rcfg.object())
-				}
-			} else {
-				extra.Set("reasoning", rcfg.object())
-			}
-		}
 	case c.provider == "deepseek" || (c.provider == "commandcode" && strings.HasPrefix(c.modelLower, "deepseek/")):
 		m := c.bare
 		if c.provider == "commandcode" {
@@ -2832,7 +2778,7 @@ func validatedOpenRouterProviderSort(raw any) (string, bool) {
 	case "throughput", "latency", "price":
 		return value, true
 	}
-	slog.Warn(fmt.Sprintf("Ignoring invalid OpenRouter provider.sort value %s (allowed: latency, price, throughput)", pyrepr.Repr(raw)))
+	pkgLog().Warn(fmt.Sprintf("Ignoring invalid OpenRouter provider.sort value %s (allowed: latency, price, throughput)", pyrepr.Repr(raw)))
 	return "", false
 }
 

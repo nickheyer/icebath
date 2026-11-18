@@ -78,11 +78,11 @@ func TestParkedMemoryProviderIsReportedAndNeverReinstalled(t *testing.T) {
 	_ = os.WriteFile(filepath.Join(plugin, "__init__.py"), []byte("from agent.memory_provider import MemoryProvider\n"), 0o644)
 	_ = os.WriteFile(filepath.Join(h, "config.yaml"), []byte("memory:\n  provider: parkedmem\nplugins:\n  disabled: [parkedmem]\n  disabled_by_update:\n"+
 		"    parkedmem: {enabled: true, reason: requires Python <3.14}\n"), 0o644)
-	saved := recoverMemoryProviderAtStartup
-	t.Cleanup(func() { recoverMemoryProviderAtStartup = saved })
-	recoverMemoryProviderAtStartup = func(context.Context, string, func(string)) (bool, error) {
-		t.Fatal("a parked provider must not be re-installed")
-		return false, nil
+	saved := reportMissingMemoryProvider
+	t.Cleanup(func() { reportMissingMemoryProvider = saved })
+	reportMissingMemoryProvider = func(context.Context, string, func(string)) error {
+		t.Fatal("a parked provider must not be reported missing")
+		return nil
 	}
 	var said []string
 	say := func(s string) { said = append(said, s) }
@@ -93,29 +93,6 @@ func TestParkedMemoryProviderIsReportedAndNeverReinstalled(t *testing.T) {
 		}
 	}
 	if len(said) != 1 || !strings.Contains(said[0], "icebath plugins enable parkedmem") || !strings.Contains(said[0], "requires Python <3.14") {
-		t.Fatalf("said %q", said)
-	}
-}
-
-func TestMemoryProviderThatStillFailsAfterRecoveryIsReported(t *testing.T) {
-	t.Setenv("ICEBATH_HOME", t.TempDir())
-	ctx, h, _ := memoryWarnHome(t)
-	plugin := filepath.Join(h, "plugins", "brokenmem")
-	saved := recoverMemoryProviderAtStartup
-	t.Cleanup(func() { recoverMemoryProviderAtStartup = saved })
-	recoverMemoryProviderAtStartup = func(_ context.Context, name string, say func(string)) (bool, error) {
-		if err := os.MkdirAll(plugin, 0o755); err != nil {
-			return false, err
-		}
-		_ = os.WriteFile(filepath.Join(plugin, "__init__.py"), []byte("from agent.memory_provider import MemoryProvider\nimport icebath_missing_package_for_test\n"), 0o644)
-		say("Installed memory provider '" + name + "'.")
-		return true, nil
-	}
-	var said []string
-	if p, err := resolveMemoryProvider(ctx, &tools.Env{Home: h}, "brokenmem", func(s string) { said = append(said, s) }); p != nil || err != nil {
-		t.Fatalf("resolved %v %v", p, err)
-	}
-	if len(said) != 2 || !strings.Contains(said[1], "failed to load") {
 		t.Fatalf("said %q", said)
 	}
 }

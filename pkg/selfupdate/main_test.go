@@ -3,6 +3,11 @@ package selfupdate
 import (
 	"context"
 
+	"os"
+	"strings"
+	"testing"
+	"time"
+
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/gateway"
 	_ "github.com/nickheyer/icebath/pkg/gateway/platforms/bundled"
@@ -13,10 +18,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tools"
-	"os"
-	"strings"
-	"testing"
-	"time"
 )
 
 // Hidden first argument that routes a re-executed test binary to one of its child stand-ins
@@ -73,7 +74,7 @@ func TestMain(m *testing.M) {
 	os.Exit(code)
 }
 
-// Clears the process wide state a test leaves behind, the per test resets of the hermes conftest
+// Clears the process wide state a test leaves behind, the per test resets of the test setup
 func processState(t *testing.T) func() {
 	return func() {
 		if !gateway.FlushRuntimeStatus(30 * time.Second) {

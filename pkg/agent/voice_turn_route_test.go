@@ -104,7 +104,7 @@ func writeVoiceHome(t *testing.T, baseURL, extra string) string {
 	t.Helper()
 	h := t.TempDir()
 	cfg := "model:\n  provider: custom\n  base_url: " + baseURL + "\n  default: fake-model\n  context_length: 128000\n" +
-		"agent:\n  api_max_retries: 1\ntelemetry:\n  shared_metrics:\n    enabled: false\n    send: false\n" + extra
+		"agent:\n  api_max_retries: 1\n" + extra
 	if err := os.WriteFile(filepath.Join(h, "config.yaml"), []byte(cfg), 0o600); err != nil {
 		t.Fatal(err)
 	}

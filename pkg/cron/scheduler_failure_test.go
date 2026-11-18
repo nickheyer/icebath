@@ -52,7 +52,7 @@ func TestAuthFailureNamesThePinnedProviderAndTheFailingProfile(t *testing.T) {
 func TestRateAndUsageLimitPhrasesStillYieldAProviderNotice(t *testing.T) {
 	s := noChainStore(t)
 	for _, text := range []string{
-		"Nous Portal rate limit active until 15:00",
+		"Provider rate limit active until 15:00",
 		"RuntimeError: usage limit reached for this key",
 		"You have hit your weekly usage limit",
 		"insufficient quota",
@@ -296,7 +296,7 @@ func TestPerProfileYieldGate(t *testing.T) {
 		a, b := ownershipHomes(t)
 		boot, disk := strings.Repeat("a", 40), strings.Repeat("b", 40)
 		withCodeSkew(t, boot, disk)
-		foreignGateway(map[string]any{"pid": int64(4321), "code_sha": disk, "hermes_home": a})
+		foreignGateway(map[string]any{"pid": int64(4321), "code_sha": disk, "icebath_home": a})
 		registerTickedHomes([]string{a, b})
 		if _, _, ok := openCronStore(a, nil).shouldYieldTickToFreshGateway(); !ok {
 			t.Fatal("profile A must yield to the fresher gateway serving it")

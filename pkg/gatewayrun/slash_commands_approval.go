@@ -69,7 +69,7 @@ func (r *GatewayRunner) handleApproveCommand(ctx context.Context, event *gateway
 		form = "plural"
 	}
 	confirmation := i18n.T(ctx, "gateway.approve."+choice+"_"+form, "", map[string]any{"count": count})
-	runLog().Info(fmt.Sprintf("User approved %d dangerous command(s) via /approve (%s)", count, choice))
+	pkgLog().Info(fmt.Sprintf("User approved %d dangerous command(s) via /approve (%s)", count, choice))
 	return r.deliverApprovalConfirmation(ctx, event, confirmation, "approve")
 }
 
@@ -106,7 +106,7 @@ func (r *GatewayRunner) handleDenyCommand(ctx context.Context, event *gateway.Me
 	} else {
 		key += "_singular"
 	}
-	runLog().Info(fmt.Sprintf("User denied %d dangerous command(s) via /deny%s", count, withReason))
+	pkgLog().Info(fmt.Sprintf("User denied %d dangerous command(s) via /deny%s", count, withReason))
 	confirmation := i18n.T(ctx, key, "", map[string]any{"count": count, "reason": reason})
 	return r.deliverApprovalConfirmation(ctx, event, confirmation, "deny")
 }
@@ -129,7 +129,7 @@ func (r *GatewayRunner) deliverApprovalConfirmation(ctx context.Context, event *
 		replyTo = *event.MessageID
 	}
 	if _, err := adapter.Send(ctx, source.ChatID, confirmation, replyTo, map[string]any{"is_approval_prompt": true, "force_proactive_send": true}); err != nil {
-		runLog().Warn(fmt.Sprintf("Failed to send /%s confirmation to %s: %s", verb, source.ChatID, err))
+		pkgLog().Warn(fmt.Sprintf("Failed to send /%s confirmation to %s: %s", verb, source.ChatID, err))
 	}
 	return nil, nil
 }

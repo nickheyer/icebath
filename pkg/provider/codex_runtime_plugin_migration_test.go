@@ -482,14 +482,14 @@ func TestCodexMigrationPluginQuery(t *testing.T) {
 }
 
 func TestCodexMigrationIcebathHomeLeakGuard(t *testing.T) {
-	t.Run("test_real_hermes_home_propagates", func(t *testing.T) {
+	t.Run("test_real_icebath_home_propagates", func(t *testing.T) {
 		t.Setenv("ICEBATH_HOME", "/Users/alice/.icebath")
 		env, _ := codexBuildToolsMCPEntry().Get("env")
 		if v, _ := env.(*pyjson.Object).Get("ICEBATH_HOME"); v != "/Users/alice/.icebath" {
 			t.Fatalf("env %v", env)
 		}
 	})
-	t.Run("test_unset_hermes_home_omits_env_key", func(t *testing.T) {
+	t.Run("test_unset_icebath_home_omits_env_key", func(t *testing.T) {
 		t.Setenv("ICEBATH_HOME", "")
 		os.Unsetenv("ICEBATH_HOME")
 		env, _ := codexBuildToolsMCPEntry().Get("env")

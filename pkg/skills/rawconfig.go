@@ -2,7 +2,6 @@ package skills
 
 import (
 	"context"
-	"log/slog"
 	"strings"
 	"sync"
 
@@ -73,7 +72,7 @@ func loadRawConfig(ctx context.Context, h string) map[string]any {
 	}
 	doc, err := rawConfigSteps.read(ctx, configPath)
 	if err != nil {
-		slog.Default().Debug("Could not read skill config", "path", configPath, "err", err)
+		pkgLog().Debug("Could not read skill config", "path", configPath, "err", err)
 		return map[string]any{}
 	}
 	parsed, ok := doc.(map[string]any)

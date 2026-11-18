@@ -8,13 +8,9 @@ import (
 	"github.com/nickheyer/icebath/pkg/home"
 )
 
-// Waits before each retry of an unexpired Nous key that keeps answering 401
-var TransientAuthBackoff = []time.Duration{5 * time.Second, 15 * time.Second, 30 * time.Second}
-
 const (
 	// Cap on same entry OAuth refreshes during one persistent auth failure
-	maxAuthRefreshAttempts    = 2
-	authRecoveryActivityTouch = 30 * time.Second
+	maxAuthRefreshAttempts = 2
 	// A 401 this long after the episode's last one starts a new episode
 	authEpisodeIdle = 120 * time.Second
 )
@@ -29,9 +25,6 @@ func OAuthReloginCommand(provider string) string {
 
 func oauthReloginCommandIn(h, provider string) string {
 	slug := strings.ToLower(strings.TrimSpace(provider))
-	if slug == "nous" {
-		return "icebath " + ProfileCLISelector(h) + "portal"
-	}
 	return "icebath " + ProfileCLISelector(h) + "auth add " + slug + " --type oauth"
 }
 
@@ -60,9 +53,6 @@ func ReloginCommandHint(h, provider string) string {
 type AuthRecoveryAgent interface {
 	Provider() string
 	APIMode() APIMode
-	Interrupted() bool
-	TouchActivity(message string)
-	Print(message string)
 	// Adopts the entry as the live credential, false when its route cannot serve the model
 	SwapCredential(entry PooledCredential) bool
 	AuthEpisodes() map[string]*AuthEpisode
@@ -71,7 +61,6 @@ type AuthRecoveryAgent interface {
 // AuthEpisode is the per turn auth failure state for one pool entry
 type AuthEpisode struct {
 	Refreshes int
-	Waits     int
 	Last      time.Time
 }
 
@@ -89,58 +78,6 @@ func authEpisode(agent AuthRecoveryAgent, provider, entryID string) *AuthEpisode
 	}
 	ep.Last = now
 	return ep
-}
-
-// NousPoolRefreshedThisTurn is true once the pool spent this turn's forced Nous refresh
-func NousPoolRefreshedThisTurn(agent AuthRecoveryAgent) bool {
-	for key, ep := range agent.AuthEpisodes() {
-		if strings.HasPrefix(key, "nous\x00") && ep.Refreshes > 0 {
-			return true
-		}
-	}
-	return false
-}
-
-// Sleeps in 200ms slices touching activity every 30s, false when the user interrupted
-func interruptibleWait(agent AuthRecoveryAgent, wait time.Duration) bool {
-	deadline := nowFunc().Add(wait)
-	nextTouch := nowFunc().Add(authRecoveryActivityTouch)
-	for nowFunc().Before(deadline) {
-		if agent.Interrupted() {
-			return false
-		}
-		remaining := deadline.Sub(nowFunc())
-		if remaining > 200*time.Millisecond {
-			remaining = 200 * time.Millisecond
-		}
-		if remaining > 0 {
-			sleepFunc(remaining)
-		}
-		if !nowFunc().Before(nextTouch) {
-			agent.TouchActivity("waiting out a Nous 401 on a valid key")
-			nextTouch = nowFunc().Add(authRecoveryActivityTouch)
-		}
-	}
-	return true
-}
-
-func poolEntryFor(pool *Pool, credentialID, apiKeyHint string) (PooledCredential, bool) {
-	entries := pool.Entries()
-	if credentialID != "" {
-		for _, e := range entries {
-			if e.ID == credentialID {
-				return e, true
-			}
-		}
-	}
-	if apiKeyHint != "" {
-		for _, e := range entries {
-			if e.RuntimeAPIKey() == apiKeyHint {
-				return e, true
-			}
-		}
-	}
-	return PooledCredential{}, false
 }
 
 // IsEntitlement403 is a 403 that looks like an auth failure but refresh cannot fix
@@ -169,33 +106,6 @@ func IsEntitlement403(agent AuthRecoveryAgent, statusCode int, errorContext map[
 	return false
 }
 
-// Waits out a server side 401 on an unexpired key then retries with the store's current key
-func retryAfterBackoff(agent AuthRecoveryAgent, pool *Pool, ep *AuthEpisode, failedKey, entryID, credentialID string, hasRetried429 bool) (bool, bool) {
-	log := pool.env.log().With("logger", "run_agent")
-	step := ep.Waits
-	if step >= len(TransientAuthBackoff) {
-		log.Warn(fmt.Sprintf("Credential auth failure persists for pool entry %s after one refresh and %d backoff retries — treating as unrecoverable and allowing fallback to activate.", entryID, step))
-		return false, hasRetried429
-	}
-	wait := TransientAuthBackoff[step]
-	ep.Waits = step + 1
-	log.Info(fmt.Sprintf("Credential auth failure on an unexpired key for pool entry %s — transient 401, retrying in %.0fs (backoff %d/%d, no further refresh)", entryID, wait.Seconds(), step+1, len(TransientAuthBackoff)))
-	agent.Print(fmt.Sprintf("🔐 Nous rejected a still-valid key (transient); retrying in %.0fs...", wait.Seconds()))
-	if !interruptibleWait(agent, wait) {
-		return false, hasRetried429
-	}
-	lookup := credentialID
-	if lookup == "" {
-		lookup = entryID
-	}
-	if entry, ok := poolEntryFor(pool, lookup, failedKey); ok {
-		if !agent.SwapCredential(pool.syncNousEntryFromAuthStore(entry, false)) {
-			return false, hasRetried429
-		}
-	}
-	return true, hasRetried429
-}
-
 // AuthRecoveryRequest carries the failed request identity into the recovery
 type AuthRecoveryRequest struct {
 	StatusCode    int
@@ -209,7 +119,7 @@ type AuthRecoveryRequest struct {
 
 // RecoverAuthFailure refreshes or rotates the dispatched credential after a 401 or 403, returning recovered and the 429 flag
 func RecoverAuthFailure(agent AuthRecoveryAgent, pool *Pool, req AuthRecoveryRequest) (bool, bool) {
-	log := pool.env.log().With("logger", "run_agent")
+	log := pool.env.log()
 	if IsEntitlement403(agent, req.StatusCode, req.ErrorContext) {
 		status := "auth"
 		if req.StatusCode != 0 {
@@ -223,17 +133,6 @@ func RecoverAuthFailure(agent AuthRecoveryAgent, pool *Pool, req AuthRecoveryReq
 		return false, req.HasRetried429
 	}
 	provider := agent.Provider()
-	nous := provider == "nous" && req.StatusCode == 401
-	entryID := req.CredentialID
-	if nous {
-		if found, ok := poolEntryFor(pool, req.CredentialID, req.APIKeyHint); ok && found.ID != "" {
-			entryID = found.ID
-		}
-		ep := authEpisode(agent, provider, entryID)
-		if ep.Refreshes >= 1 {
-			return retryAfterBackoff(agent, pool, ep, req.APIKeyHint, entryID, req.CredentialID, req.HasRetried429)
-		}
-	}
 	refreshed, ok := pool.TryRefreshMatching(req.APIKeyHint, req.CredentialID)
 	if !ok {
 		if req.RotateAndSwap(401, "auth refresh failed") {
@@ -242,17 +141,7 @@ func RecoverAuthFailure(agent AuthRecoveryAgent, pool *Pool, req AuthRecoveryReq
 		return false, req.HasRetried429
 	}
 	refreshedID := refreshed.ID
-	if nous {
-		key := refreshedID
-		if key == "" {
-			key = entryID
-		}
-		ep := authEpisode(agent, provider, key)
-		ep.Refreshes++
-		if req.APIKeyHint != "" && refreshed.RuntimeAPIKey() == req.APIKeyHint {
-			return retryAfterBackoff(agent, pool, ep, req.APIKeyHint, refreshedID, req.CredentialID, req.HasRetried429)
-		}
-	} else if refreshedID != "" {
+	if refreshedID != "" {
 		ep := authEpisode(agent, provider, refreshedID)
 		ep.Refreshes++
 		if ep.Refreshes > maxAuthRefreshAttempts {

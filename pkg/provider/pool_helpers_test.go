@@ -19,7 +19,7 @@ import (
 var seedableEnvVars = []string{
 	"OPENROUTER_API_KEY", "OPENROUTER_API_KEY_2", "ANTHROPIC_API_KEY", "ANTHROPIC_TOKEN", "CLAUDE_CODE_OAUTH_TOKEN",
 	"DEEPSEEK_API_KEY", "DEEPSEEK_API_KEY_2", "DEEPSEEK_API_KEY_3", "DEEPSEEK_API_KEY_5", "OPENROUTER_API_KEY_3", "OPENROUTER_API_KEY_5",
-	"ICEBATH_CODEX_BASE_URL", "XAI_API_KEY", "NOUS_API_KEY",
+	"ICEBATH_CODEX_BASE_URL", "XAI_API_KEY",
 }
 
 // Isolated icebath home with the host's provider env and Claude Code login kept out

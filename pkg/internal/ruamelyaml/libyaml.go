@@ -128,10 +128,10 @@ type yamlEvent struct {
 	plainImplicit  bool
 	quotedImplicit bool
 	flow           bool
-	anchor        []byte
-	tag           []byte
-	value         []byte
-	tagDirectives []yamlTagDirective
+	anchor         []byte
+	tag            []byte
+	value          []byte
+	tagDirectives  []yamlTagDirective
 }
 
 type yamlTagDirective struct {
@@ -225,7 +225,6 @@ type yamlParser struct {
 	tagDirectives    []yamlTagDirective
 	tagDirectivesCap int
 }
-
 
 // Appends to a C stack whose capacity doubles from 16, failing like yaml_stack_extend at INT_MAX over two bytes
 func libyamlPush[T any](p *yamlParser, stack *[]T, capacity *int, elemSize int, v T) bool {

@@ -4,25 +4,25 @@ import (
 	"context"
 
 	"github.com/nickheyer/icebath/pkg/internal/pythread"
-	"github.com/nickheyer/icebath/pkg/tuigateway"
+	"github.com/nickheyer/icebath/pkg/tuihost"
 )
 
 // Hard exemptions of both reapers, never mid turn, awaiting input, building, delegating or on a live transport
-func sessionIsLRUEvictable(ctx context.Context, sid string, session *tuigateway.Session) bool {
+func sessionIsLRUEvictable(ctx context.Context, sid string, session *tuihost.Session) bool {
 	if truthy(session.Get("running")) || sessionPendingKind(sid) != "" || sessionHasActiveDelegations(ctx, sid, session) {
 		return false
 	}
 	if ready, isEvent := session.Get("agent_ready").(*pythread.Event); isEvent && ready != nil && !ready.IsSet() && !truthy(session.Get("lazy")) {
 		return false
 	}
-	transport, _ := session.Get("transport").(tuigateway.Transport)
-	return tuigateway.TransportIsDead(transport)
+	transport, _ := session.Get("transport").(tuihost.Transport)
+	return tuihost.TransportIsDead(transport)
 }
 
 // Whether no session but the excluded one is busy, building, awaiting input, delegating or on a live transport
 func sessionsQuiescent(exclude string) bool {
 	ctx := context.Background()
-	for _, live := range tuigateway.LiveSessions() {
+	for _, live := range tuihost.LiveSessions() {
 		if live.SID == exclude {
 			continue
 		}
@@ -34,7 +34,7 @@ func sessionsQuiescent(exclude string) bool {
 }
 
 // Reaper eligibility, the LRU exemptions and not the sole receiver of a pending loop, heartbeat or process notice
-func sessionIsReapable(ctx context.Context, sid string, session *tuigateway.Session) bool {
+func sessionIsReapable(ctx context.Context, sid string, session *tuihost.Session) bool {
 	return sessionIsLRUEvictable(ctx, sid, session) && !sessionOwnsLiveWakeupSchedule(ctx, session) &&
 		!sessionOwnsPendingProcessNotification(ctx, session)
 }

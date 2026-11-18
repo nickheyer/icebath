@@ -40,16 +40,16 @@ func TestLegacyLaunchdLabelsForInstallOnlyUnitsPinnedToThisInstallsHomesAreCredi
 	}
 	t.Setenv("ICEBATH_HOME", root)
 	venvPython := filepath.Join(tmp, "install", ".venv", "bin", "python")
-	writeLegacyLaunchdPlist(t, agents, "ai.icebath.gateway-398559f7", venvPython, filepath.Join(root, "profiles", "gopod"))
-	writeLegacyLaunchdPlist(t, agents, "ai.icebath.gateway-1a2b3c4d", venvPython, root)
-	writeLegacyLaunchdPlist(t, agents, "ai.icebath.gateway-gopod", venvPython, filepath.Join(root, "profiles", "gopod"))
-	writeLegacyLaunchdPlist(t, agents, "ai.icebath.gateway-5db8084b", venvPython, filepath.Join(tmp, "other-root", "profiles", "gopod"))
-	writeLegacyLaunchdPlist(t, agents, "ai.icebath.gateway-nohome", venvPython, "")
-	if err := os.WriteFile(filepath.Join(agents, "ai.icebath.gateway-broken.plist"), []byte("not a plist at all"), 0o644); err != nil {
+	writeLegacyLaunchdPlist(t, agents, "app.icebath.gateway-398559f7", venvPython, filepath.Join(root, "profiles", "gopod"))
+	writeLegacyLaunchdPlist(t, agents, "app.icebath.gateway-1a2b3c4d", venvPython, root)
+	writeLegacyLaunchdPlist(t, agents, "app.icebath.gateway-gopod", venvPython, filepath.Join(root, "profiles", "gopod"))
+	writeLegacyLaunchdPlist(t, agents, "app.icebath.gateway-5db8084b", venvPython, filepath.Join(tmp, "other-root", "profiles", "gopod"))
+	writeLegacyLaunchdPlist(t, agents, "app.icebath.gateway-nohome", venvPython, "")
+	if err := os.WriteFile(filepath.Join(agents, "app.icebath.gateway-broken.plist"), []byte("not a plist at all"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	got := LegacyLaunchdLabelsForInstall(context.Background(), map[string]bool{"ai.icebath.gateway-gopod": true, "ai.icebath.gateway": true})
-	if want := []string{"ai.icebath.gateway-1a2b3c4d", "ai.icebath.gateway-398559f7"}; !reflect.DeepEqual(got, want) {
+	got := LegacyLaunchdLabelsForInstall(context.Background(), map[string]bool{"app.icebath.gateway-gopod": true, "app.icebath.gateway": true})
+	if want := []string{"app.icebath.gateway-1a2b3c4d", "app.icebath.gateway-398559f7"}; !reflect.DeepEqual(got, want) {
 		t.Fatalf("labels = %v, want %v", got, want)
 	}
 }

@@ -784,21 +784,6 @@ func validateAnthropicMessages(ctx context.Context, req *modelValidateRequest) *
 		"\n  The model name has been accepted without verification.")
 }
 
-// Lowercased ids of the Portal free and paid recommended feeds, empty on any failure
-func nousPortalRecommendedNames(ctx context.Context) map[string]bool {
-	out := map[string]bool{}
-	payload := fetchNousRecommendedModelsFn(ctx, resolveNousPortalURL(ctx), false)
-	for _, tier := range []string{"freeRecommendedModels", "paidRecommendedModels"} {
-		entries, _ := payload[tier].([]any)
-		for _, entry := range entries {
-			if name := extractModelName(entry); name != "" {
-				out[strings.ToLower(name)] = true
-			}
-		}
-	}
-	return out
-}
-
 // A model staged in the managed llama.cpp library accepts, anything else falls through to the live listing
 func validateManagedLocal(ctx context.Context, req *modelValidateRequest) *ModelVerdict {
 	want := strings.ToLower(strings.TrimSpace(req.lookup))
@@ -881,10 +866,6 @@ func validateLiveListing(ctx context.Context, req *modelValidateRequest) *ModelV
 	if !listingAuthoritative && modelInProviderCatalog(ctx, strings.ToLower(curatedKey), providerKeys(req.normalized)) {
 		return verdictAcceptWithNote(fmt.Sprintf("Note: `%s` was not found in the live /v1/models listing ", req.requested) +
 			"but exists in the curated catalog — accepted.")
-	}
-	if req.normalized == "nous" && nousPortalRecommendedNames(ctx)[strings.ToLower(req.lookup)] {
-		return verdictAcceptWithNote(fmt.Sprintf("Note: `%s` was not found in the live /v1/models listing ", req.requested) +
-			"but is a current Nous Portal recommendation — accepted.")
 	}
 	return verdictReject(fmt.Sprintf("Model `%s` was not found in this provider's model listing.%s", req.requested, match.suggestionText))
 }

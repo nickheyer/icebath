@@ -9,11 +9,11 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/tools"
-	"github.com/nickheyer/icebath/pkg/tuigateway"
+	"github.com/nickheyer/icebath/pkg/tuihost"
 )
 
 // Runs a body against the session agent's checkpoint manager and the session working directory
-func withCheckpoints[T any](ctx context.Context, session *tuigateway.Session, fn func(mgr *tools.CheckpointManager, cwd string) T) T {
+func withCheckpoints[T any](ctx context.Context, session *tuihost.Session, fn func(mgr *tools.CheckpointManager, cwd string) T) T {
 	a := sessionAgent(session)
 	if a == nil {
 		panic(fmt.Errorf("'NoneType' object has no attribute '_checkpoint_mgr'"))

@@ -11,7 +11,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/setupflow"
-	"github.com/nickheyer/icebath/pkg/tuigateway"
+	"github.com/nickheyer/icebath/pkg/tuihost"
 )
 
 // Setup flows the terminal UI can run on the gateway, each asking through the asker it is given
@@ -41,7 +41,7 @@ type setupFlowSession struct {
 	failure  string
 	ctx      context.Context
 	cancel   context.CancelFunc
-	owner    tuigateway.Transport
+	owner    tuihost.Transport
 }
 
 var (
@@ -162,7 +162,7 @@ func (s *setupFlowSession) Check(question string, items []setupflow.Item, select
 }
 
 func (s *setupFlowSession) Text(question, def string, secret bool) (string, error) {
-	answer, err := s.ask(map[string]any{"kind": "text", "question": question, "default": def, "secret": secret})
+	answer, err := s.ask(map[string]any{"kind": "text", "question": question, "default_text": def, "secret": secret})
 	if err != nil {
 		return "", err
 	}
@@ -199,7 +199,7 @@ func setupFlowStart(ctx context.Context, rid any, params map[string]any) (map[st
 		return rpcErr(rid, 4006, "managed install — the configuration is read-only", nil), nil
 	}
 	flowCtx, cancel := context.WithCancel(context.WithoutCancel(ctx))
-	session := &setupFlowSession{changed: make(chan struct{}, 1), ctx: flowCtx, cancel: cancel, owner: tuigateway.CurrentTransport(ctx)}
+	session := &setupFlowSession{changed: make(chan struct{}, 1), ctx: flowCtx, cancel: cancel, owner: tuihost.CurrentTransport(ctx)}
 	setupFlowsMu.Lock()
 	setupFlowCounter++
 	id := "flow-" + strconv.Itoa(setupFlowCounter)

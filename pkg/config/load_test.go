@@ -51,21 +51,21 @@ func TestRootLevelProviderOverride(t *testing.T) {
 	})
 	t.Run("test_nested_dict_default_flattens_model_and_provider", func(t *testing.T) {
 		result := normalizeModelKeys(map[string]any{"model": map[string]any{
-			"default": map[string]any{"provider": "nous", "model": "nested-default-model"}}})
-		if model(result)["default"] != "nested-default-model" || model(result)["provider"] != "nous" {
+			"default": map[string]any{"provider": "deepseek", "model": "nested-default-model"}}})
+		if model(result)["default"] != "nested-default-model" || model(result)["provider"] != "deepseek" {
 			t.Fatalf("%v", result)
 		}
 	})
 	t.Run("test_nested_dict_default_provider_wins_over_auto", func(t *testing.T) {
 		result := normalizeModelKeys(map[string]any{"model": map[string]any{
-			"default": map[string]any{"provider": "nous", "model": "nested-default-model"}, "provider": "auto"}})
-		if model(result)["default"] != "nested-default-model" || model(result)["provider"] != "nous" {
+			"default": map[string]any{"provider": "deepseek", "model": "nested-default-model"}, "provider": "auto"}})
+		if model(result)["default"] != "nested-default-model" || model(result)["provider"] != "deepseek" {
 			t.Fatalf("%v", result)
 		}
 	})
 	t.Run("test_nested_dict_default_never_overrides_explicit_provider", func(t *testing.T) {
 		result := normalizeModelKeys(map[string]any{"model": map[string]any{
-			"default": map[string]any{"provider": "nous", "model": "nested-default-model"}, "provider": "anthropic"}})
+			"default": map[string]any{"provider": "deepseek", "model": "nested-default-model"}, "provider": "anthropic"}})
 		if model(result)["default"] != "nested-default-model" || model(result)["provider"] != "anthropic" {
 			t.Fatalf("%v", result)
 		}

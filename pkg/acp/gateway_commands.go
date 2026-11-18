@@ -155,7 +155,7 @@ func gatewayDiscardUnknown(ctx context.Context, a *GatewayACPAgent, sessionID, c
 		return "", nil, err
 	}
 	if !dhas(lost, "execution_generation") {
-		return "", nil, errors.New("KeyError: 'execution_generation'")
+		return "", nil, errors.New("the gateway receipt has no execution_generation")
 	}
 	if _, err := a.rpc(ctx, link, "prompt.resolve_unknown", map[string]any{"session_id": sessionID, "admission_id": admissionID,
 		"execution_generation": dget(lost, "execution_generation")}); err != nil {
@@ -184,7 +184,7 @@ func gatewayForward(ctx context.Context, a *GatewayACPAgent, link gatewayLink, s
 			}
 		}
 		if !dhas(reply, "message") {
-			return "", nil, errors.New("KeyError: 'message'")
+			return "", nil, errors.New("the gateway reply has no message")
 		}
 		message := pyStr(dget(reply, "message"))
 		return "", &message, nil
@@ -305,7 +305,7 @@ func gatewaySteer(ctx context.Context, a *GatewayACPAgent, sessionID, text strin
 		return "", nil
 	}
 	if !dhas(receipt, "execution_generation") {
-		return "", errors.New("KeyError: 'execution_generation'")
+		return "", errors.New("the gateway receipt has no execution_generation")
 	}
 	result, err := a.rpc(ctx, link, "session.steer", map[string]any{"session_id": sessionID, "text": text,
 		"execution_generation": dget(receipt, "execution_generation")})
@@ -375,7 +375,7 @@ func gatewayMutate(ctx context.Context, a *GatewayACPAgent, link gatewayLink, se
 		case "reset":
 			reply = "Conversation history cleared."
 		default:
-			return "", fmt.Errorf("KeyError: '%s'", operation)
+			return "", fmt.Errorf("unknown gateway session operation %s", operation)
 		}
 	}
 	a.mutations.Acknowledge(sessionID, operation, payload)
@@ -395,7 +395,7 @@ var unchangedReplies = map[string]func(ctx context.Context, result map[string]an
 	"preview": func(ctx context.Context, result map[string]any) (string, error) {
 		raw, ok := result["lines"]
 		if !ok {
-			return "", errors.New("KeyError: 'lines'")
+			return "", errors.New("the cancel result has no lines")
 		}
 		items, _ := raw.([]any)
 		lines := make([]string, len(items))

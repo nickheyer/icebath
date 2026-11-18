@@ -39,8 +39,8 @@ func TestEmbeddedPayloadEqualsManifest(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(got) != 401 || len(want) != 401 {
-		t.Fatalf("embedded %d files, manifest %d, want 401", len(got), len(want))
+	if len(got) != 398 || len(want) != 398 {
+		t.Fatalf("embedded %d files, manifest %d, want 398", len(got), len(want))
 	}
 	for p, sum := range want {
 		if got[p] != sum {

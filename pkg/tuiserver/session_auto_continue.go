@@ -8,7 +8,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
-	"github.com/nickheyer/icebath/pkg/tuigateway"
+	"github.com/nickheyer/icebath/pkg/tuihost"
 )
 
 const autoContinueFreshnessMinutesDefault = 15
@@ -35,7 +35,7 @@ func autoContinueConfig(ctx context.Context) (bool, float64, int) {
 }
 
 // Home the session's durable state lives in, its profile home else the launch home
-func sessionHome(ctx context.Context, session *tuigateway.Session) string {
+func sessionHome(ctx context.Context, session *tuihost.Session) string {
 	if h := strOr(session.Get("profile_home")); h != "" {
 		return h
 	}
@@ -43,26 +43,26 @@ func sessionHome(ctx context.Context, session *tuigateway.Session) string {
 }
 
 // Drops the crash marker of the session key and of each rotated key right before the terminal frame
-func retireTurnMarker(ctx context.Context, session *tuigateway.Session, keys ...string) {
+func retireTurnMarker(ctx context.Context, session *tuihost.Session, keys ...string) {
 	h := sessionHome(ctx, session)
 	seen := map[string]bool{}
 	for _, key := range append(append([]string{}, keys...), strOr(session.Get("session_key"))) {
 		if key != "" && !seen[key] {
 			seen[key] = true
-			tuigateway.ClearTurnMarker(h, key)
+			tuihost.ClearTurnMarker(h, key)
 		}
 	}
 }
 
 // System note of an auto continued turn embedding the interrupted request
 func autoContinueNote(prompt string) string {
-	return tuigateway.AutoContinueNotePrefix + " — the app or its backend process stopped before the turn could finish. " +
+	return tuihost.AutoContinueNotePrefix + " — the app or its backend process stopped before the turn could finish. " +
 		"Some of the work may already be complete; check the current state before redoing anything, then " +
 		"finish the task. The interrupted request was:]\n\n" + prompt
 }
 
 // Stripped user text of the live turn
-func acInflightOriginal(session *tuigateway.Session) string {
+func acInflightOriginal(session *tuihost.Session) string {
 	turn, ok := session.Get("inflight_turn").(map[string]any)
 	if !ok {
 		return ""
@@ -71,7 +71,7 @@ func acInflightOriginal(session *tuigateway.Session) string {
 }
 
 // Queues a message for the next turn, merging text only arrivals, nil when it duplicates the live prompt
-func enqueuePrompt(ctx context.Context, session *tuigateway.Session, text any, transport any, imagePaths []string, turnAuthor ...map[string]any) map[string]any {
+func enqueuePrompt(ctx context.Context, session *tuihost.Session, text any, transport any, imagePaths []string, turnAuthor ...map[string]any) map[string]any {
 	images := append([]string{}, imagePaths...)
 	var author map[string]any
 	if len(turnAuthor) > 0 {
@@ -149,7 +149,7 @@ func sanitizeQueuedEntryVsInflightUser(entry any, original string) map[string]an
 }
 
 // Removes queue copies of the live turn's original user text so a redirect never restarts the original
-func dropQueuedDuplicatesOfInflightUser(session *tuigateway.Session) {
+func dropQueuedDuplicatesOfInflightUser(session *tuihost.Session) {
 	original := acInflightOriginal(session)
 	if original == "" {
 		return
@@ -171,7 +171,7 @@ func dropQueuedDuplicatesOfInflightUser(session *tuigateway.Session) {
 }
 
 // Writes entries back as the queued head and the rest
-func acSetQueue(session *tuigateway.Session, entries []any) {
+func acSetQueue(session *tuihost.Session, entries []any) {
 	if len(entries) > 0 {
 		session.Set("queued_prompt", entries[0])
 	} else {
@@ -185,7 +185,7 @@ func acSetQueue(session *tuigateway.Session, entries []any) {
 }
 
 // Applies a steer or redirect to the live turn and records the correction, nil when the agent refused it
-func acTryCorrection(rid any, session *tuigateway.Session, a any, method, plainText, status string) map[string]any {
+func acTryCorrection(rid any, session *tuihost.Session, a any, method, plainText, status string) map[string]any {
 	accepted := false
 	if failure := catchPanic(func() {
 		if method == "steer" {
@@ -205,7 +205,7 @@ func acTryCorrection(rid any, session *tuigateway.Session, a any, method, plainT
 }
 
 // Whether a compression lock is held for the session's durable id
-func sessionCompressionInFlight(ctx context.Context, session *tuigateway.Session) bool {
+func sessionCompressionInFlight(ctx context.Context, session *tuihost.Session) bool {
 	if truthy(session.Get("_manual_compress_active")) {
 		return true
 	}
@@ -226,14 +226,14 @@ func sessionCompressionInFlight(ctx context.Context, session *tuigateway.Session
 		}
 		holder = h
 	}); failure != nil {
-		logger().Debug("compression in-flight check failed for session "+sid, "error", pyrepr.Str(failure))
+		pkgLog().Debug("compression in-flight check failed for session "+sid, "error", pyrepr.Str(failure))
 		return false
 	}
 	return holder != nil && *holder != ""
 }
 
 // Closes a failed turn with the error message complete frame, retaining it for a resuming client
-func emitTerminalTurnError(ctx context.Context, sid string, session *tuigateway.Session, failure any, errorSurface map[string]any, retireMarker bool) {
+func emitTerminalTurnError(ctx context.Context, sid string, session *tuihost.Session, failure any, errorSurface map[string]any, retireMarker bool) {
 	a := sessionAgent(session)
 	if err, isErr := failure.(error); errorSurface == nil && isErr {
 		providerName, model := "", ""
@@ -283,11 +283,11 @@ func emitTerminalTurnError(ctx context.Context, sid string, session *tuigateway.
 	if retireMarker {
 		retireTurnMarker(ctx, session)
 	}
-	tuigateway.Emit(ctx, "message.complete", sid, payload)
+	tuihost.Emit(ctx, "message.complete", sid, payload)
 }
 
 // Keeps a failed turn's working transcript so the next prompt sees what the agent persisted
-func restoreAgentHistoryAfterTurnError(session *tuigateway.Session, a *agent.AIAgent) bool {
+func restoreAgentHistoryAfterTurnError(session *tuihost.Session, a *agent.AIAgent) bool {
 	if a == nil {
 		return false
 	}

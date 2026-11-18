@@ -11,7 +11,4 @@ type runnerSlashState struct {
 	kanbanDispatcherLockHandle *os.File
 	kanbanSubFailCounts        map[kanbanSubKey]int
 	telegramCapabilityHintTS   map[string]float64
-	loginLock                  sync.Mutex
-	loginAttempts              map[string]*signInAttempt
-	loginExec                  *threadPoolExecutor
 }

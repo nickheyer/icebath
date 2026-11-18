@@ -7,6 +7,7 @@ import (
 	"strings"
 	"unicode/utf8"
 
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/internal/pydatetime"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 )
@@ -665,7 +666,7 @@ func mergedUserRun(ctx context.Context, conn SQLiteConn, sessionID string, messa
 	for _, item := range retiredRows {
 		retired, isMap := dictValue(item)
 		if !isMap {
-			return nil, false, fmt.Errorf("AttributeError: '%s' object has no attribute 'get'", seqTypeName(item))
+			return nil, false, fmt.Errorf("a merged user message part is %s, expected a mapping", errchain.Kind(item))
 		}
 		if pyTruthy(retired[OwnRow]) {
 			continue

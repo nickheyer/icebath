@@ -3,10 +3,8 @@ package agent
 import (
 	"context"
 	"fmt"
-	"maps"
 	"time"
 
-	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/tools"
@@ -67,34 +65,6 @@ func eagerFallbackStatus(classified *provider.Classified, isUpstream, isTranspor
 	return "⚠️ Rate limited — switching to fallback provider..."
 }
 
-// Records a genuine account level Nous 429 to the cross session breaker, leaving upstream capacity 429s alone
-func isGenuineNousRateLimit(ctx context.Context, a *AIAgent, apiError error, errorContext map[string]any, classified *provider.Classified) (genuine bool) {
-	defer func() {
-		if r := recover(); r != nil {
-			genuine = false
-		}
-	}()
-	headers := apiErrorHeaders(apiError)
-	anonymous := provider.IsAnonymousRequest(a.provider, a.apiKey)
-	classifiedCtx := classified.Context
-	genuine = (anonymous && provider.IsLongWelcomeRateLimit(classifiedCtx)) ||
-		provider.IsGenuineNousRateLimit(headers, a.creditsCapture().RateLimit(), time.Now())
-	if !genuine {
-		conversationLoopLog().Info("Nous 429 looks like upstream capacity (no exhausted bucket in headers or last-known state) -- not tripping cross-session breaker.")
-		return false
-	}
-	merged := maps.Clone(errorContext)
-	if merged == nil {
-		merged = map[string]any{}
-	}
-	maps.Copy(merged, classifiedCtx)
-	guard := &provider.NousRateGuard{Home: home.Dir(ctx), Anonymous: anonymous}
-	if err := guard.Record(headers, provider.ContextResetAt(merged), 300*time.Second); err != nil {
-		provider.LogNousRateLimitWriteFailure(err)
-	}
-	return true
-}
-
 // Tool schemas of the agent as maps, nil when it has none
 func agentToolMaps(a *AIAgent) []map[string]any {
 	if len(a.tools) == 0 {
@@ -127,7 +97,7 @@ func routeClassifiedError(ctx context.Context, a *AIAgent, s *LoopState, e *apiE
 			"❌ The conversation is too long for the model and automatic shrinking is off (compression.enabled: false).",
 			"   💡 Run /compress to shrink it now, /new to start fresh, "+
 				"pick a model with a bigger context window, or remove attachments.")
-		conversationLoopLog().Error(fmt.Sprintf("%sContext overflow (%s) with auto-compaction disabled — not compressing.", a.logPrefix, classified.Reason))
+		pkgLog().Error(fmt.Sprintf("%sContext overflow (%s) with auto-compaction disabled — not compressing.", a.logPrefix, classified.Reason))
 		if err := a.persistSession(&s.Messages, s.ConversationHistory); err != nil {
 			return PhaseVerdict{}, err
 		}
@@ -200,10 +170,5 @@ func routeClassifiedError(ctx context.Context, a *AIAgent, s *LoopState, e *apiE
 		}
 	}
 
-	if e.isRateLimited && a.provider == "nous" && classified.Reason == provider.ReasonRateLimit && !e.recoveredWithPool &&
-		isGenuineNousRateLimit(ctx, a, apiError, e.errorContext, classified) {
-		s.RetryCount = max(0, s.MaxRetries-1)
-		return PhaseVerdict{Action: "continue"}, nil
-	}
 	return PhaseVerdict{Action: "fallthrough"}, nil
 }

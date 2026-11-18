@@ -10,7 +10,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"log/slog"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -363,7 +362,7 @@ func (s *contextTokenStore) restore(accountID string) error {
 		}
 	}
 	if err != nil {
-		slog.Warn(fmt.Sprintf("weixin: failed to restore context tokens for %s: %s", safeID(accountID), errText(err)))
+		pkgLog().Warn(fmt.Sprintf("weixin: failed to restore context tokens for %s: %s", safeID(accountID), errText(err)))
 		return nil
 	}
 	tokens, ok := data.(*pyjson.Object)
@@ -380,7 +379,7 @@ func (s *contextTokenStore) restore(accountID string) error {
 	}
 	s.mu.Unlock()
 	if restored > 0 {
-		slog.Info(fmt.Sprintf("weixin: restored %d context token(s) for %s", restored, safeID(accountID)))
+		pkgLog().Info(fmt.Sprintf("weixin: restored %d context token(s) for %s", restored, safeID(accountID)))
 	}
 	return nil
 }
@@ -426,7 +425,7 @@ func (s *contextTokenStore) set(ctx context.Context, accountID, userID, token st
 	}
 	s.mu.Unlock()
 	if err := config.AtomicJSONWrite(ctx, filepath.Join(s.root, accountID+".context-tokens.json"), payload); err != nil {
-		slog.Warn(fmt.Sprintf("weixin: failed to persist context tokens for %s: %s", safeID(accountID), errText(err)))
+		pkgLog().Warn(fmt.Sprintf("weixin: failed to persist context tokens for %s: %s", safeID(accountID), errText(err)))
 	}
 }
 

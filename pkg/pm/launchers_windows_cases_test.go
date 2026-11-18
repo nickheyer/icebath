@@ -286,7 +286,7 @@ func TestInstalledCheckoutTakesItsCommandsBack(t *testing.T) {
 	}
 }
 
-// test_hermes_home_shared_launchers.py test_dead_exe_never_shadows_kept_cmd
+// A dead launcher exe never shadows the kept cmd launcher
 func TestDeadExeNeverShadowsKeptCmd(t *testing.T) {
 	tmp := t.TempDir()
 	t.Setenv("LOCALAPPDATA", filepath.Join(tmp, "local"))

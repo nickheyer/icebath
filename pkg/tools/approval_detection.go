@@ -18,7 +18,7 @@ import (
 
 const (
 	sshSensitivePath   = `(?:~|\$home|\$\{home\})/\.ssh(?:/|$)`
-	icebathHomePrefix  = `(?:~\/\.(?:icebath|hermes)/|(?:\$home|\$\{home\})/\.(?:icebath|hermes)/|(?:\$icebath_home|\$\{icebath_home\}|\$hermes_home|\$\{hermes_home\})/)`
+	icebathHomePrefix  = `(?:~\/\.icebath/|(?:\$home|\$\{home\})/\.icebath/|(?:\$icebath_home|\$\{icebath_home\}|\$hermes_home|\$\{hermes_home\})/)`
 	icebathEnvPath     = icebathHomePrefix + `\.env\b`
 	icebathConfigPath  = icebathHomePrefix + `config\.yaml\b`
 	projectEnvPath     = `(?:(?:/|\.{1,2}/)?(?:[^\s/"'` + "`" + `]+/)*\.env(?:\.[^/\s"'` + "`" + `]+)*)`
@@ -119,7 +119,7 @@ var DangerousPatterns = []DangerPattern{
 	{`\bstop-service\b[^\n]*\s-force\b`, "force stop service (Stop-Service -Force)"},
 	{`\bsc(?:\.exe)?\s+(?:stop|delete)\b`, "stop/delete service (sc)"},
 	{`\busers[\\/][^\\/\s]+[\\/]\.ssh\b`, "access to SSH keys (Windows path)"},
-	{`\bappdata[\\/](?:local|roaming)[\\/](?:icebath|hermes)[^\n]*\.env\b`, "access to Icebath secrets (Windows path)"},
+	{`\bappdata[\\/](?:local|roaming)[\\/]icebath[^\n]*\.env\b`, "access to Icebath secrets (Windows path)"},
 	{`\bchmod\s+(-[^\s]*\s+)*(777|666|o\+[rwx]*w|a\+[rwx]*w)\b`, "world/other-writable permissions"},
 	{`\bchmod\s+--recursive\b.*(777|666|o\+[rwx]*w|a\+[rwx]*w)`, "recursive world/other-writable (long flag)"},
 	{`\bchown\s+(-[^\s]*)?R\s+root`, "recursive chown to root"},
@@ -158,8 +158,8 @@ var DangerousPatterns = []DangerPattern{
 	{cmdPos + `find\s[^;|&\n]*(?<!\S)-(?:\{[^}\s]*(?:delete|exec(?:dir)?)[^}\s]*\}|(?:del(?:ete?)?|exec(?:dir)?)[*?\[])`, "find dynamic shell word may expand to destructive flag"},
 	{`\bfind\b.*-delete\b`, "find -delete"},
 	{`\b(?:rg|sort|ag|man)\b[^;|&\n]*(?<!\S)--(?:pre|hostname-bin|compress-program|pager|html)(?:\{|[*?\[])`, "dynamic shell word may expand to arbitrary program execution flag"},
-	{`\b(?:icebath|hermes)\s+` + globalFlags + `gateway\s+(stop|restart)\b`, "stop/restart icebath gateway (kills running agents)"},
-	{`\b(?:icebath|hermes)\s+update\b`, "icebath update (restarts gateway, kills running agents)"},
+	{`\bicebath\s+` + globalFlags + `gateway\s+(stop|restart)\b`, "stop/restart icebath gateway (kills running agents)"},
+	{`\bicebath\s+update\b`, "icebath update (restarts gateway, kills running agents)"},
 	{`\bdocker\s+` + containerGlobFlags + `(?:-h|--host)[=\s]+\S+`, "docker with remote daemon redirect (-H/--host)"},
 	{`\bdocker\s+` + containerGlobFlags + `(?:-c|--context)[=\s]+\S+`, "docker with daemon redirect (--context: alternate daemon)"},
 	{`\bdocker\s+context\s+use\b`, "docker context use (switches default daemon for future commands)"},
@@ -170,10 +170,10 @@ var DangerousPatterns = []DangerPattern{
 	{`\bdocker\s+` + containerGlobFlags + `(restart|stop|kill)\b`, "docker restart/stop/kill (container lifecycle)"},
 	{`gateway\s+run\b.*(&\s*$|&\s*;|\bdisown\b|\bsetsid\b)`, "start gateway outside systemd (use 'systemctl --user restart icebath-gateway')"},
 	{`\bnohup\b.*gateway\s+run\b`, "start gateway outside systemd (use 'systemctl --user restart icebath-gateway')"},
-	{`\b(pkill|killall)\b.*\b(icebath|hermes|gateway|cli\.py)\b`, "kill icebath/gateway process (self-termination)"},
+	{`\b(pkill|killall)\b.*\b(icebath|gateway|cli\.py)\b`, "kill icebath/gateway process (self-termination)"},
 	{`\bkill\b.*\$\(\s*(pgrep|pidof)\b`, "kill process via pgrep/pidof expansion (self-termination)"},
 	{`\bkill\b.*` + "`" + `\s*(pgrep|pidof)\b`, "kill process via backtick pgrep/pidof expansion (self-termination)"},
-	{`\A(?=[\s\S]*\blaunchctl\s+(?:stop|kickstart|bootout|unload|kill|disable|remove)\b)(?=[\s\S]*\b(?:icebath|hermes|ai\.icebath|ai\.hermes)\b)`, "stop/restart icebath launchd service (kills running agents)"},
+	{`\A(?=[\s\S]*\blaunchctl\s+(?:stop|kickstart|bootout|unload|kill|disable|remove)\b)(?=[\s\S]*\b(?:icebath|ai\.icebath)\b)`, "stop/restart icebath launchd service (kills running agents)"},
 	{`\b(cp|mv|install)\b.*\s` + systemConfigPath, "copy/move file into system config path"},
 	{`\b(cp|mv|install)\b.*\s["']?` + projectSensitiveWr + `["']?` + commandTail, "overwrite project env/config file"},
 	{`\b(cp|mv|install)\b.*\s["']?` + sensitiveWriteTgt + `[^\s"']*["']?` + commandTail, "copy/move file into sensitive credential/SSH/shell-rc path"},
@@ -1763,7 +1763,7 @@ func DenyCommandVariants(command string) []string {
 var (
 	windowsPathRe        = regexp.MustCompile(`(?:[A-Za-z]:|\\\\)[\\\\]`)
 	detectWindowsDriveRe = regexp.MustCompile(`[A-Za-z]:\\`)
-	verificationNameRe   = regexp.MustCompile(`\A(?:icebath|hermes)-(?:verify|ad-hoc)-[A-Za-z0-9_.-]+\z`)
+	verificationNameRe   = regexp.MustCompile(`\Aicebath-(?:verify|ad-hoc)-[A-Za-z0-9_.-]+\z`)
 )
 
 // CommandVariants lists every detection spelling of a command in scan order

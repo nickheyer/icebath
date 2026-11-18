@@ -292,19 +292,13 @@ func ordinaryHandshake(t *testing.T, h string, descriptor map[string]any) {
 	if status["provider_configured"] != true {
 		t.Fatalf("setup.status = %v", status)
 	}
-	readiness := sessionResult(t, ws, "setup.runtime_check", map[string]any{"provider": "custom"})
-	if readiness["ok"] != true || readiness["provider"] != "custom" {
-		t.Fatalf("setup.runtime_check = %v", readiness)
-	}
-	for _, method := range []string{"setup.status", "setup.runtime_check"} {
-		sessionRefusal(t, ws, method, "profile_mismatch", map[string]any{"profile": "foreign-profile"})
-	}
+	sessionRefusal(t, ws, "setup.status", "profile_mismatch", map[string]any{"profile": "foreign-profile"})
 	created := sessionResult(t, ws, "session.create", map[string]any{"request_id": "ordinary-launch", "source": "cli"})
 	sid, _ := created["session_id"].(string)
 	if sid == "" || sid != created["stored_session_id"] {
 		t.Fatalf("session.create = %v", created)
 	}
-	initial := sessionResult(t, ws, "session.resume", map[string]any{"session_id": sid})
+	sessionResult(t, ws, "session.resume", map[string]any{"session_id": sid})
 	admitted := sessionResult(t, ws, "prompt.submit", map[string]any{"session_id": sid, "input_id": "ordinary-input", "text": "WS_SHARED"})
 	if admitted["status"] != "queued" {
 		t.Fatalf("prompt.submit = %v", admitted)
@@ -316,55 +310,20 @@ func ordinaryHandshake(t *testing.T, h string, descriptor map[string]any) {
 	for deadline := time.Now().Add(25 * time.Second); ; {
 		snapshot = sessionResult(t, viewer, "session.resume", map[string]any{"session_id": sid})
 		messages, _ := json.Marshal(snapshot["messages"])
-		if strings.Contains(string(messages), "LOCAL_ACK_WS_SHARED") {
+		pending, _ := snapshot["pending"].([]any)
+		if strings.Contains(string(messages), "LOCAL_ACK_WS_SHARED") && snapshot["running"] == false && len(pending) == 0 {
 			break
 		}
 		if time.Now().After(deadline) {
-			t.Fatalf("the reply never reached the transcript: %v\n%s", snapshot["messages"], homeFailureLines(h))
+			t.Fatalf("the turn never settled with its reply in the transcript: running %v pending %v messages %v\n%s",
+				snapshot["running"], pending, snapshot["messages"], homeFailureLines(h))
 		}
 		time.Sleep(50 * time.Millisecond)
 	}
 	if snapshot["stored_session_id"] != sid {
 		t.Fatalf("stored_session_id = %v", snapshot["stored_session_id"])
 	}
-	var completed []map[string]any
-	var replay map[string]any
-	for deadline := time.Now().Add(25 * time.Second); len(completed) == 0; {
-		replay = sessionResult(t, viewer, "session.events.since", map[string]any{"session_id": sid,
-			"replay_epoch": initial["replay_epoch"], "last_sequence": initial["last_sequence"]})
-		if replay["snapshot_required"] == true {
-			t.Fatalf("replay needs a snapshot: %v", replay)
-		}
-		events, _ := replay["events"].([]any)
-		for _, raw := range events {
-			if event, isDict := raw.(map[string]any); isDict && event["type"] == "message.complete" {
-				completed = append(completed, event)
-			}
-		}
-		if len(completed) == 0 {
-			if time.Now().After(deadline) {
-				var types []any
-				for _, raw := range events {
-					if event, isDict := raw.(map[string]any); isDict {
-						types = append(types, event["type"])
-					}
-				}
-				t.Fatalf("the turn never completed, replayed %v\n%s", types, homeFailureLines(h))
-			}
-			time.Sleep(50 * time.Millisecond)
-		}
-	}
-	if len(completed) != 1 {
-		t.Fatalf("completed = %v", replay)
-	}
-	payload, _ := completed[0]["payload"].(map[string]any)
-	if text, _ := payload["text"].(string); !strings.Contains(text, "LOCAL_ACK_WS_SHARED") {
-		t.Fatalf("message.complete = %v", completed[0])
-	}
 	snapshot = sessionResult(t, viewer, "session.resume", map[string]any{"session_id": sid})
-	if seq, last := completed[0]["seq"].(float64), snapshot["last_sequence"].(float64); seq > last {
-		t.Fatalf("seq %v after last_sequence %v", seq, last)
-	}
 	edit := map[string]any{"session_id": sid, "request_id": "ordinary-rename", "expected_revision": snapshot["revision"],
 		"operation": "rename", "payload": map[string]any{"title": "Shared metadata receipt"}}
 	renamed := sessionResult(t, viewer, "session.mutate", edit)

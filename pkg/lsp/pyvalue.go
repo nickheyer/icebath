@@ -14,6 +14,7 @@ import (
 	"syscall"
 	"unicode/utf8"
 
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
@@ -120,24 +121,23 @@ func pyInt(v any) (int64, error) {
 		if ok && n.IsInt64() {
 			return n.Int64(), nil
 		}
-		return 0, errors.New("OverflowError: Python int too large to convert to C int")
+		return 0, errors.New("the number is too large for a whole number field")
 	case float64:
 		if math.IsInf(t, 0) {
-			return 0, errors.New("OverflowError: cannot convert float infinity to integer")
+			return 0, errors.New("infinity is not a whole number")
 		}
 		if math.IsNaN(t) {
-			return 0, errors.New("ValueError: cannot convert float NaN to integer")
+			return 0, errors.New("NaN is not a whole number")
 		}
 		return int64(t), nil
 	case string:
 		n, ok := pyint.Parse(t)
 		if !ok || !n.IsInt64() {
-			return 0, errors.New("ValueError: invalid literal for int() with base 10: " + pyrepr.StrRepr(t))
+			return 0, errors.New(t + " is not a whole number")
 		}
 		return n.Int64(), nil
 	}
-	return 0, errors.New("TypeError: int() argument must be a string, a bytes-like object or a real number, not " +
-		pyrepr.StrRepr(pyrepr.TypeName(v)))
+	return 0, errors.New("expected a whole number, got " + errchain.Kind(v))
 }
 
 // Python int of a value at any magnitude, floats truncated toward zero
@@ -160,27 +160,26 @@ func pyBigInt(v any) (*big.Int, error) {
 		}
 		f, err := t.Float64()
 		if err != nil {
-			return nil, errors.New("ValueError: invalid literal for int() with base 10: " + pyrepr.StrRepr(string(t)))
+			return nil, errors.New(string(t) + " is not a whole number")
 		}
 		return pyBigInt(f)
 	case float64:
 		if math.IsInf(t, 0) {
-			return nil, errors.New("OverflowError: cannot convert float infinity to integer")
+			return nil, errors.New("infinity is not a whole number")
 		}
 		if math.IsNaN(t) {
-			return nil, errors.New("ValueError: cannot convert float NaN to integer")
+			return nil, errors.New("NaN is not a whole number")
 		}
 		n, _ := new(big.Float).SetFloat64(t).Int(nil)
 		return n, nil
 	case string:
 		n, ok := pyint.Parse(t)
 		if !ok {
-			return nil, errors.New("ValueError: invalid literal for int() with base 10: " + pyrepr.StrRepr(t))
+			return nil, errors.New(t + " is not a whole number")
 		}
 		return n, nil
 	}
-	return nil, errors.New("TypeError: int() argument must be a string, a bytes-like object or a real number, not " +
-		pyrepr.StrRepr(pyrepr.TypeName(v)))
+	return nil, errors.New("expected a whole number, got " + errchain.Kind(v))
 }
 
 // Numeric value for Python equality and hashing, false for non numbers

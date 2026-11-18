@@ -6,8 +6,6 @@ import (
 	tea "charm.land/bubbletea/v2"
 )
 
-const resizeCoalesceInterval = 32 * time.Millisecond
-
 // Leading and trailing throttle of terminal resizes, at most one reflow per interval and always the last
 type resizeCoalescer struct {
 	interval time.Duration
@@ -47,20 +45,3 @@ func (r *resizeCoalescer) fire(m resizeReflowMsg) bool {
 	return true
 }
 
-// Drops the armed trailing reflow
-func (r *resizeCoalescer) cancel() {
-	r.gen++
-	r.pending = false
-}
-
-// Live session list of the gateway, every stored session on a canonical gateway or the active ones otherwise
-func requestLiveSessions(gw turnGateway, currentSid string, then func(any, error) tea.Cmd) tea.Cmd {
-	if gw.canonical() {
-		return gatewayCall(gw, "session.list", map[string]any{"limit": 200}, then)
-	}
-	var current any
-	if currentSid != "" {
-		current = currentSid
-	}
-	return gatewayCall(gw, "session.active_list", map[string]any{"current_session_id": current}, then)
-}

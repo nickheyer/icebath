@@ -11,7 +11,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/tools"
 )
 
-// Agent with no prompt overrides, the hermes _bare_agent whose prompt attributes are deleted
+// Agent with no prompt overrides, the bare agent whose prompt attributes are deleted
 func brBareAgent(t *testing.T) *AIAgent {
 	t.Helper()
 	t.Setenv("ICEBATH_HOME", t.TempDir())
@@ -112,7 +112,7 @@ func TestRoutedReviewFallsBackToProviderDefault(t *testing.T) {
 // Client declaring whether it can carry tool calls back
 type brGuardClient struct{ supports bool }
 
-func (c brGuardClient) SupportsHermesToolCalls() bool { return c.supports }
+func (c brGuardClient) SupportsToolCalls() bool { return c.supports }
 
 // Client saying nothing about the capability
 type brPlainClient struct{}

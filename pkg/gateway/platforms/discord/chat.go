@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"log/slog"
 	"math"
 	"net/http"
 	"os"
@@ -116,10 +115,10 @@ func (a *DiscordAdapter) SendTyping(ctx context.Context, chatID string, metadata
 				}
 				retryAfter := extractDiscordRetryAfter(err)
 				if retryAfter == nil {
-					slog.Debug(fmt.Sprintf("Discord typing indicator failed for %s: %s", chatID, dpyError(err)))
+					pkgLog().Debug(fmt.Sprintf("Discord typing indicator failed for %s: %s", chatID, dpyError(err)))
 					return
 				}
-				slog.Warn(fmt.Sprintf("Typing indicator rate-limited for %s; retrying in %.1fs", chatID, *retryAfter))
+				pkgLog().Warn(fmt.Sprintf("Typing indicator rate-limited for %s; retrying in %.1fs", chatID, *retryAfter))
 				wait = *retryAfter
 			}
 			select {
@@ -153,7 +152,7 @@ func (a *DiscordAdapter) GetChatInfo(ctx context.Context, chatID string) (map[st
 	}
 	ch, err := a.resolveChannel(ctx, chatID)
 	if err != nil {
-		slog.Error(fmt.Sprintf("[%s] Failed to get chat info for %s: %s", a.Name(), chatID, err))
+		pkgLog().Error(fmt.Sprintf("[%s] Failed to get chat info for %s: %s", a.Name(), chatID, err))
 		return map[string]any{"name": chatID, "type": "dm", "error": err.Error()}, nil
 	}
 	if ch == nil {
@@ -234,7 +233,7 @@ func (a *DiscordAdapter) resolveAllowedUsernames(ctx context.Context) {
 	for _, g := range client.State.Guilds {
 		members, err := guildMembers(ctx, client, g)
 		if err != nil {
-			slog.Warn(fmt.Sprintf("Failed to fetch members for guild %s: %s", g.Name, err))
+			pkgLog().Warn(fmt.Sprintf("Failed to fetch members for guild %s: %s", g.Name, err))
 			continue
 		}
 		for _, m := range members {

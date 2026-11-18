@@ -21,7 +21,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/state"
 )
 
-// Runs a re-exec child mode of the async delegation tests and exits, the hermes subprocess producers
+// Runs a re-exec child mode of the async delegation tests and exits, the subprocess producers
 func asyncDelegationChildEntry() {
 	if mode := os.Getenv("ICEBATH_ASYNC_CHILD"); mode != "" {
 		os.Exit(asyncChildMain(mode, os.Getenv("ICEBATH_HOME"), os.Getenv("ICEBATH_ASYNC_ID")))

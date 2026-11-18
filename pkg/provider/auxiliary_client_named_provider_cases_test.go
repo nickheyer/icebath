@@ -117,8 +117,6 @@ func TestVisionAutoSkipsKimiCodingKimiCodingSkippedFallsThroughToOpenrouter(t *t
 		switch provider {
 		case "openrouter":
 			return fakeOR, "google/gemini-3-flash-preview", nil
-		case "nous":
-			return nil, "", nil
 		}
 		msg := fmt.Sprintf("strict vision backend should not be called for %q when main provider is kimi-coding", provider)
 		record(msg)

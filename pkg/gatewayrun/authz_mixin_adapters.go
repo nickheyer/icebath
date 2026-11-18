@@ -282,7 +282,7 @@ func (r *GatewayRunner) restoredSource(ctx context.Context, entry *gateway.Sessi
 func ProfileAdaptersAndConfig(ctx context.Context, runner any, profile string) (*gateway.AdapterMap, *gateway.GatewayConfig, error) {
 	r, ok := runner.(*GatewayRunner)
 	if !ok {
-		return nil, nil, fmt.Errorf("AttributeError: '%T' object has no attribute 'adapters'", runner)
+		return nil, nil, fmt.Errorf("the gateway runner (%T) has no adapters", runner)
 	}
 	if profile == "" {
 		return r.primaryAdapters(), r.config, nil

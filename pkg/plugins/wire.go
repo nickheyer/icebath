@@ -639,7 +639,7 @@ func (c *Channel) dispatchFrame(line []byte) {
 		if len(text) > 200 {
 			text = text[:200]
 		}
-		logPlugins.warn(fmt.Sprintf("%s: dropped a malformed frame: %s", c.name, text))
+		pkgLog().Warn(fmt.Sprintf("%s: dropped a malformed frame: %s", c.name, text))
 		return
 	}
 	if _, isRequest := message["method"]; isRequest {
@@ -708,7 +708,7 @@ func (c *Channel) serve(message map[string]any, frame []byte) {
 				if ui, ok := r.(*UserInterrupt); ok {
 					typeName, r = "KeyboardInterrupt", ui.Err
 				}
-				logPlugins.warn(fmt.Sprintf("%s: request %s raised %s", c.name, config.PyStr(message["method"]), typeName))
+				pkgLog().Warn(fmt.Sprintf("%s: request %s raised %s", c.name, config.PyStr(message["method"]), typeName))
 				reply = map[string]any{"id": id, "error": map[string]any{"type": typeName, "message": config.PyStr(r)}}
 			}
 		}()
@@ -779,7 +779,7 @@ func (c *Channel) close(reason string) {
 		func() {
 			defer func() {
 				if r := recover(); r != nil {
-					logPlugins.debug(fmt.Sprintf("%s: on_close raised", c.name))
+					pkgLog().Debug(fmt.Sprintf("%s: on_close raised", c.name))
 				}
 			}()
 			c.onClose(reason)

@@ -19,7 +19,7 @@ const goalContinuationPrefix = "[Continuing toward your standing goal]\nGoal:"
 
 // Metadata that must match for two pending events to merge into one slot
 var securityMetadataKeys = []string{
-	"hermes_plugin_id", "hermes_plugin_injection", "gateway_session_key",
+	"icebath_plugin_id", "icebath_plugin_injection", "gateway_session_key",
 	"gateway_session_id", "gateway_session_strict", "gateway_proven_session_id",
 	"notification_category",
 }
@@ -124,7 +124,7 @@ func (r *GatewayRunner) deferPastExhaustionReset(result map[string]any, adapter 
 		pendingEvent.ChannelPrompt = steerPrompt
 	}
 	adapter.Base().SetPendingMessage(sessionKey, pendingEvent)
-	runLog().Info(fmt.Sprintf("Deferring queued follow-up for session %s until after its compression-exhausted reset", sessionKey))
+	pkgLog().Info(fmt.Sprintf("Deferring queued follow-up for session %s until after its compression-exhausted reset", sessionKey))
 }
 
 // Folds a leftover steer into the post turn drain, the next turn or ahead of or behind the pending event
@@ -136,7 +136,7 @@ func (r *GatewayRunner) mergeLeftoverSteer(result map[string]any, adapter gatewa
 	switch {
 	case pending == "" && pendingEvent == nil:
 		pending = leftoverSteer
-		runLog().Debug(fmt.Sprintf("Delivering leftover /steer as next turn: '%s...'", headRunes(pending, 40)))
+		pkgLog().Debug(fmt.Sprintf("Delivering leftover /steer as next turn: '%s...'", headRunes(pending, 40)))
 	case pendingEvent != nil && adapter != nil && sessionKey != "":
 		base := adapter.Base()
 		if promoted, _ := base.PeekPendingMessage(sessionKey); promoted != nil {
@@ -145,7 +145,7 @@ func (r *GatewayRunner) mergeLeftoverSteer(result map[string]any, adapter gatewa
 		base.SetPendingMessage(sessionKey, pendingEvent)
 		pendingEvent = nil
 		pending = leftoverSteer
-		runLog().Debug(fmt.Sprintf("Delivering leftover /steer before queued event for session %s: '%s...'", sessionKey, headRunes(pending, 40)))
+		pkgLog().Debug(fmt.Sprintf("Delivering leftover /steer before queued event for session %s: '%s...'", sessionKey, headRunes(pending, 40)))
 	case pending != "" && pendingEvent == nil:
 		steerPrompt, steerSource := r.pinnedChannelInputs(sessionKey, nil, source, true)
 		steerEvent := gateway.NewMessageEvent(leftoverSteer)
@@ -158,7 +158,7 @@ func (r *GatewayRunner) mergeLeftoverSteer(result map[string]any, adapter gatewa
 		if key == "" {
 			key = "?"
 		}
-		runLog().Debug(fmt.Sprintf("Enqueued leftover /steer behind pending message for session %s: '%s...'", key, headRunes(leftoverSteer, 40)))
+		pkgLog().Debug(fmt.Sprintf("Enqueued leftover /steer behind pending message for session %s: '%s...'", key, headRunes(leftoverSteer, 40)))
 	}
 	return pendingEvent, pending
 }
@@ -190,9 +190,9 @@ func (r *GatewayRunner) rescueOrphanedOverflow(sessionKey string, adapter gatewa
 	if len(popped) > 1 {
 		base.SetPendingMessage(sessionKey, popped[1])
 	}
-	runLog().Warn(fmt.Sprintf("Rescued orphaned FIFO overflow event for idle session %s — it was queued during a busy window but the post-turn drain never promoted it (#99882)", sessionKey))
+	pkgLog().Warn(fmt.Sprintf("Rescued orphaned FIFO overflow event for idle session %s — it was queued during a busy window but the post-turn drain never promoted it (#99882)", sessionKey))
 	if remaining > 0 {
-		runLog().Warn(fmt.Sprintf("%d overflow event(s) still queued for session %s after rescue staging (will drain via normal promotion)", remaining, sessionKey))
+		pkgLog().Warn(fmt.Sprintf("%d overflow event(s) still queued for session %s after rescue staging (will drain via normal promotion)", remaining, sessionKey))
 	}
 	return popped[0]
 }
@@ -275,7 +275,7 @@ func (r *GatewayRunner) queueOrReplacePendingEvent(ctx context.Context, sessionK
 		}
 	}
 	if r.queueDepth(sessionKey, adapter) >= busyQueueMaxPending {
-		runLog().Warn(fmt.Sprintf("Dropping busy-mode follow-up for session %s — pending queue at cap (%d).", sessionKey, busyQueueMaxPending))
+		pkgLog().Warn(fmt.Sprintf("Dropping busy-mode follow-up for session %s — pending queue at cap (%d).", sessionKey, busyQueueMaxPending))
 		return nil
 	}
 	r.enqueueFIFO(sessionKey, event, adapter)

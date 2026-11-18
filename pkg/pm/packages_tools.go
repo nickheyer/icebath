@@ -36,7 +36,7 @@ func newGit() *Git {
 }
 
 func (p *Git) FetchURL(version, target string) (string, error) {
-	tag, build, err := unpackTwo(strings.Split(version, "+"))
+	tag, build, err := unpackTwo(version, "+", "git version")
 	if err != nil {
 		return "", err
 	}
@@ -46,21 +46,6 @@ func (p *Git) FetchURL(version, target string) (string, error) {
 	}
 	return "https://github.com/git-for-windows/git/releases/download/" +
 		fmt.Sprintf("v%s.windows.%s/PortableGit-%s.%s-%s.7z.exe", tag, build, tag, build, arch), nil
-}
-
-// Release tags like v2.53.0.windows.3 become lock versions like 2.53.0+3
-func (p *Git) LatestVersions(target, locked string) ([]string, error) {
-	tags, err := GithubReleaseTags("git-for-windows/git", "v")
-	if err != nil {
-		return nil, err
-	}
-	var out []string
-	for _, tag := range tags {
-		if base, build, found := strings.Cut(tag, ".windows."); found {
-			out = append(out, base+"+"+build)
-		}
-	}
-	return out, nil
 }
 
 // Runs a scratch copy of the PortableGit self extractor into the staged tree, refusing hosts that cannot run PE images
@@ -129,27 +114,23 @@ func (p *Gh) FetchURL(version, target string) (string, error) {
 	if MuslTargets[target] {
 		lookup = strings.TrimSuffix(target, "-musl")
 	}
-	osname, arch, err := unpackTwo(strings.Split(lookup, "-"))
+	osname, arch, err := unpackTwo(lookup, "-", "target")
 	if err != nil {
 		return "", err
 	}
 	plat, ok := map[string]string{"win32": "windows", "linux": "linux", "darwin": "macOS"}[osname]
 	if !ok {
-		return "", keyError(osname)
+		return "", missingKey("no download for operating system " + osname)
 	}
 	archName, ok := map[string]string{"x64": "amd64", "arm64": "arm64"}[arch]
 	if !ok {
-		return "", keyError(arch)
+		return "", missingKey("no download for architecture " + arch)
 	}
 	ext := "tar.gz"
 	if osname == "win32" || osname == "darwin" {
 		ext = "zip"
 	}
 	return fmt.Sprintf("https://github.com/cli/cli/releases/download/v%s/gh_%s_%s_%s.%s", version, version, plat, archName, ext), nil
-}
-
-func (p *Gh) LatestVersions(target, locked string) ([]string, error) {
-	return GithubReleaseTags("cli/cli", "v")
 }
 
 // Ffmpeg is BtbN on Windows and Linux, martin-riedl on macOS and the termux deb on bionic
@@ -177,48 +158,6 @@ func newFfmpeg() *Ffmpeg {
 	return p
 }
 
-// Resolves the exact advertised asset for the version and target, refusing to relabel other bytes
-func (p *Ffmpeg) FetchURL(version, target string) (string, error) {
-	if target == bionicTarget {
-		return fmt.Sprintf("https://packages.termux.dev/apt/termux-main/pool/main/f/ffmpeg/ffmpeg_%s_aarch64.deb", version), nil
-	}
-	if MuslTargets[target] {
-		return "", NewInstallError(p.Name, fmt.Sprintf("unavailable on %s: %s", target, pyNoneStr(p.dispatch().MissingReason(target))), "")
-	}
-	osname, arch, err := unpackTwo(strings.Split(target, "-"))
-	if err != nil {
-		return "", err
-	}
-	if osname == "win32" || osname == "linux" {
-		index, err := BtbnIndex()
-		if err != nil {
-			return "", err
-		}
-		if artifact, ok := index[target][version]; ok {
-			return fmt.Sprintf("https://github.com/BtbN/FFmpeg-Builds/releases/download/%s/%s", artifact[0], artifact[1]), nil
-		}
-	} else if epoch, ok := MartinRiedlIndex()[target][version]; ok {
-		sourceArch := arch
-		if arch == "x64" {
-			sourceArch = "amd64"
-		}
-		return fmt.Sprintf("https://ffmpeg.martin-riedl.de/download/macos/%s/%s_%s/ffmpeg.zip", sourceArch, epoch, version), nil
-	}
-	return "", NewInstallError(p.Name, fmt.Sprintf("no advertised %s artifact for %s", version, target),
-		"retry when the upstream index is available, or keep the existing pin")
-}
-
-func (p *Ffmpeg) LatestVersions(target, locked string) ([]string, error) {
-	if MuslTargets[target] {
-		return nil, nil
-	}
-	switch target {
-	case "win32-x64", "win32-arm64", "linux-x64", "linux-arm64":
-		return BtbnVersions(target)
-	}
-	return MartinRiedlVersions(target), nil
-}
-
 // Python str of an optional string, None for the empty answer
 func pyNoneStr(s string) string {
 	if s == "" {
@@ -234,7 +173,7 @@ type Ripgrep struct {
 
 func newRipgrep() *Ripgrep {
 	p := &Ripgrep{BinaryPackage{
-		BasePackage: BasePackage{Name: "ripgrep", Deps: []string{"python"}},
+		BasePackage: BasePackage{Name: "ripgrep", TargetDeps: map[string][]string{"win32-arm64": {"python"}}},
 		BinaryRel:   map[string]string{"win32": "rg.exe", "posix": "rg"},
 	}}
 	p.bind(p)
@@ -266,7 +205,7 @@ func (p *Ripgrep) Stage(store *Store, staged, version, target string) error {
 	}
 	entryName, present := fact["entry"]
 	if !present {
-		return keyError("entry")
+		return missingKey("the python install record has no entry")
 	}
 	vcRuntime := filepath.Join(location.Store.Entry(pyrepr.Str(entryName)), "vcruntime140.dll")
 	if !isRegularFile(vcRuntime) {
@@ -288,7 +227,7 @@ func (p *Ripgrep) FetchURL(version, target string) (string, error) {
 	}
 	triple, ok := rustTriple[target]
 	if !ok {
-		return "", keyError(target)
+		return "", missingKey("no download for target " + target)
 	}
 	triple = strings.ReplaceAll(triple, "-unknown-linux-gnu", "-unknown-linux-musl")
 	ext := "tar.gz"
@@ -296,10 +235,6 @@ func (p *Ripgrep) FetchURL(version, target string) (string, error) {
 		ext = "zip"
 	}
 	return fmt.Sprintf("https://github.com/BurntSushi/ripgrep/releases/download/%s/ripgrep-%s-%s.%s", version, version, triple, ext), nil
-}
-
-func (p *Ripgrep) LatestVersions(target, locked string) ([]string, error) {
-	return GithubReleaseTags("BurntSushi/ripgrep", "")
 }
 
 // Computer use driver child environment, set by the binary, an error where Python's cua_driver_child_env raises
@@ -335,7 +270,7 @@ func (p *CuaDriver) FetchURL(version, target string) (string, error) {
 		"linux-arm64": "linux-arm64", "win32-x64": "windows-x86_64", "win32-arm64": "windows-arm64",
 	}[target]
 	if !ok {
-		return "", keyError(target)
+		return "", missingKey("no download for target " + target)
 	}
 	ext := "tar.gz"
 	if strings.HasPrefix(target, "win32") {
@@ -347,10 +282,6 @@ func (p *CuaDriver) FetchURL(version, target string) (string, error) {
 	}
 	return "https://github.com/trycua/cua/releases/download/" +
 		fmt.Sprintf("cua-driver-rs-v%s/cua-driver-rs-%s-%s%s.%s", version, version, arch, variant, ext), nil
-}
-
-func (p *CuaDriver) LatestVersions(target, locked string) ([]string, error) {
-	return GithubReleaseTags("trycua/cua", "cua-driver-rs-v")
 }
 
 // Hoists the release directory and drops the bundled SDK
@@ -370,7 +301,8 @@ func (p *CuaDriver) ProbeEnv() (map[string]string, error) {
 		return env, nil
 	}
 	env := environMap()
-	env["CUA_DRIVER_RS_TELEMETRY_ENABLED"] = "0"
+	env["CUA_DRIVER_RS_TELEMETRY_ENABLED"], env["CUA_TELEMETRY_ENABLED"], env["CUA_TELEMETRY"], env["DO_NOT_TRACK"] = "false", "false", "0", "1"
+	env["CUA_DRIVER_RS_UPDATE_CHECK"] = "false"
 	return env, nil
 }
 
@@ -413,7 +345,7 @@ func (p *Chromium) FetchURL(version, target string) (string, error) {
 	}
 	mirror, ok := p.Mirror[target]
 	if !ok {
-		return "", keyError(target)
+		return "", missingKey("no download for target " + target)
 	}
 	return fmt.Sprintf("%s/dbazure/download/playwright/builds/chromium/%s/chromium-%s.zip", p.CDN, revision, mirror), nil
 }

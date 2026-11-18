@@ -34,11 +34,11 @@ func (r *GatewayRunner) transferTelegramRootDM(ctx context.Context, source *gate
 			return creator.CreateDMTopic(ctx, chatID, i18n.T(ctx, "gateway.topic.default_title", "", nil), nil, nil)
 		}()
 		if err != nil {
-			runLog().Debug("Failed to auto-transfer Telegram root DM into a new topic", "exc_info", err)
+			pkgLog().Debug("Failed to auto-transfer Telegram root DM into a new topic", "exc_info", err)
 		}
 	}
 	if thread != nil && *thread != 0 {
-		runLog().Info(fmt.Sprintf("telegram topic auto-transfer: chat=%s user=%s root -> new topic %d", source.ChatID, pyrepr.Str(optAny(source.UserID)), *thread))
+		pkgLog().Info(fmt.Sprintf("telegram topic auto-transfer: chat=%s user=%s root -> new topic %d", source.ChatID, pyrepr.Str(optAny(source.UserID)), *thread))
 		return fmt.Sprint(*thread), true, true, nil
 	}
 	recovered := r.recoverTelegramLobbyThreadID(ctx, source)

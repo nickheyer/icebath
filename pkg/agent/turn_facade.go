@@ -8,7 +8,6 @@ import (
 
 	"github.com/google/uuid"
 
-	"github.com/nickheyer/icebath/pkg/observability"
 	"github.com/nickheyer/icebath/pkg/plugins"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/state"
@@ -71,9 +70,6 @@ type relayTurnCoordinator interface {
 // Relay coordinator of a live turn, replaced by tests recording the relay calls
 var relayCoordinatorFn = func() relayTurnCoordinator { return tools.RelayCoordinator }
 
-// Task run start of a live turn, replaced by tests recording its position among the relay calls
-var startTaskRunFn = observability.StartTaskRun
-
 // RunConversation admits one text turn under the durable session lease and relay scopes
 func (a *AIAgent) RunConversation(ctx context.Context, userMessage string, o RunConversationOptions) (map[string]any, error) {
 	return a.RunConversationContent(ctx, userMessage, o)
@@ -104,7 +100,6 @@ func (a *AIAgent) RunConversationContent(ctx context.Context, userMessage any, o
 	var relayLease *tools.ConversationLease
 	var relayTurn *tools.RelayTurnContext
 	var lease turnLease
-	taskStarted, taskFinished := false, false
 	relayOutcome := "failed"
 	turnCtx := ctx
 
@@ -118,14 +113,6 @@ func (a *AIAgent) RunConversationContent(ctx context.Context, userMessage any, o
 			relayOutcome = relayOutcomeForFailure(turnCtx, failure)
 			if relayTurn != nil {
 				coord.FinishLogicalCalls(turnCtx, relayTurn, relayOutcome)
-			}
-			if taskStarted && !taskFinished {
-				taskFinished = true
-				failErr, ok := failure.(error)
-				if !ok {
-					failErr = fmt.Errorf("%v", failure)
-				}
-				observability.FinishTaskRun(turnCtx, sessionID, effectiveTaskID, platform, nil, failErr)
 			}
 		}
 		func() {
@@ -188,12 +175,8 @@ func (a *AIAgent) RunConversationContent(ctx context.Context, userMessage any, o
 	if err != nil {
 		return nil, err
 	}
-	if relayTurn == nil || relayTurn.RelayEnabled() {
-		startTaskRunFn(ctx, a.env, sessionID, effectiveTaskID, platform, a.parentSessionID)
-		taskStarted = true
-	}
-	turnCtx = provider.WithPortalConversationContext(turnCtx, a.conversationRootID())
-	turnCtx = provider.WithPortalAffinityScope(turnCtx, provider.DeclaredConversationScopeSafe(a.cacheScopeAgent()))
+	turnCtx = provider.WithConversationContext(turnCtx, a.conversationRootID())
+	turnCtx = provider.WithAffinityScope(turnCtx, provider.DeclaredConversationScopeSafe(a.cacheScopeAgent()))
 	turnCtx = provider.SetAccountingContext(turnCtx, auxUsageRecorderFor(a.sessionDB), a.sessionID)
 	result, err = func() (map[string]any, error) {
 		loopCtx := bindSubagentParent(turnCtx, a)
@@ -219,10 +202,6 @@ func (a *AIAgent) RunConversationContent(ctx context.Context, userMessage any, o
 		relayOutcome = "success"
 	}
 	coord.FinishLogicalCalls(turnCtx, relayTurn, relayOutcome)
-	if taskStarted {
-		taskFinished = true
-		observability.FinishTaskRun(turnCtx, sessionID, effectiveTaskID, platform, result, nil)
-	}
 	return result, nil
 }
 

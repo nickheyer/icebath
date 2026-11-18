@@ -100,7 +100,7 @@ func auxInstallAttributionWire(t *testing.T) *auxAttributionWire {
 func auxAssertWireIdentity(t *testing.T, r auxWireRequest, accountID string) {
 	t.Helper()
 	h := r.req.Header
-	if h.Get("originator") != "icebath-agent" || h.Get("User-Agent") != "IcebathAgent/"+Version || h.Get("ChatGPT-Account-ID") != accountID {
+	if h.Get("originator") != "icebath-agent" || h.Get("User-Agent") != userAgent("IcebathAgent") || h.Get("ChatGPT-Account-ID") != accountID {
 		t.Fatalf("identity headers %v", h)
 	}
 	if _, leaked := r.body["extra_headers"]; leaked {
@@ -154,7 +154,7 @@ func TestNewIdentityIsLimitedToTheOfficialEndpoint(t *testing.T) {
 		headers := codexCloudflareHeaders(auxAttributionJWT("acct-attribution-test"), c.baseURL)
 		wantOriginator, wantAgent := "codex_cli_rs", "codex_cli_rs/0.0.0 (Icebath Agent)"
 		if c.attributed {
-			wantOriginator, wantAgent = "icebath-agent", "IcebathAgent/"+Version
+			wantOriginator, wantAgent = "icebath-agent", userAgent("IcebathAgent")
 		}
 		if headers["originator"] != wantOriginator || headers["User-Agent"] != wantAgent {
 			t.Fatalf("%s: headers %v", c.baseURL, headers)

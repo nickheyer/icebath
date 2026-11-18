@@ -12,6 +12,11 @@ import (
 	"github.com/nickheyer/icebath/pkg/ui/theme"
 )
 
+// Cell buffer measured by grapheme width, as the window manager draws it
+type cells struct{ *uv.Buffer }
+
+func (cells) WidthMethod() uv.WidthMethod { return uv.WidthMethod(ansi.GraphemeWidth) }
+
 // Writes text, boxes and panels into the cells of a painted card in the theme
 type Painter struct {
 	buf cells

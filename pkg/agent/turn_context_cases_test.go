@@ -133,7 +133,7 @@ const (
 	sidecarVCNote    = "[Voice channel now: dev-vc (2 members)]"
 )
 
-// Real agent trimmed to what the prologue touches, the stand in for the hermes fake agent
+// Real agent trimmed to what the prologue touches, the stand in for the fake agent
 func prologueAgent(t *testing.T) *AIAgent {
 	t.Helper()
 	a := newFixtureAgent(t, AIAgentOptions{BaseURL: "https://openrouter.ai/api/v1", Model: "test/model", Platform: "cli", EnabledToolsets: []string{}})
@@ -143,7 +143,7 @@ func prologueAgent(t *testing.T) *AIAgent {
 	return a
 }
 
-// Replaces the plugin hook dispatch for the case the way the hermes cases patch plugins.invoke_hook
+// Replaces the plugin hook dispatch for the case the way the tests patch plugins.invoke_hook
 func patchPluginHooks(t *testing.T, fn func(hook string, kwargs map[string]any) []any) {
 	prev := lifecyclePluginInvokeHook
 	lifecyclePluginInvokeHook = func(_ context.Context, hook string, kwargs map[string]any) []any { return fn(hook, kwargs) }

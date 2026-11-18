@@ -10,7 +10,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/fakellm"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/state"
-	"github.com/nickheyer/icebath/pkg/tuigateway"
+	"github.com/nickheyer/icebath/pkg/tuihost"
 )
 
 // A live session whose real agent talks to a scripted loopback provider, every frame recorded
@@ -18,12 +18,12 @@ type turnHarness struct {
 	srv      *fakellm.Server
 	ctx      context.Context
 	sid, key string
-	session  *tuigateway.Session
+	session  *tuihost.Session
 	recorder *frameRecorder
 	home     string
 }
 
-// Session of a real agent on the scripted provider registered through initSession, in place of the hermes fake agent
+// Session of a real agent on the scripted provider registered through initSession, in place of the fake agent
 func newTurnHarness(t *testing.T, script []any, extraConfig string) *turnHarness {
 	t.Helper()
 	srv, err := fakellm.New(script, fakellm.Options{})
@@ -33,7 +33,7 @@ func newTurnHarness(t *testing.T, script []any, extraConfig string) *turnHarness
 	t.Cleanup(srv.Stop)
 	h := sessionCaseScope(t)
 	t.Setenv("ICEBATH_ISO_CERTIFY_SYNTH_TURN", "")
-	if err := fakellm.WriteHome(h, srv.BaseURL(), "", extraConfig, 0); err != nil {
+	if err := fakellm.WriteHome(h, srv.BaseURL(), "", extraConfig); err != nil {
 		t.Fatal(err)
 	}
 	db, err := state.NewSessionDB(context.Background(), filepath.Join(h, "state.db"), false)
@@ -43,7 +43,7 @@ func newTurnHarness(t *testing.T, script []any, extraConfig string) *turnHarness
 	t.Cleanup(func() { db.Close() })
 	useSharedDB(t, db)
 	recorder := &frameRecorder{}
-	ctx := tuigateway.BindTransport(context.Background(), recorder)
+	ctx := tuihost.BindTransport(context.Background(), recorder)
 	hz := &turnHarness{srv: srv, ctx: ctx, sid: "sid", key: "session-key", recorder: recorder, home: h}
 	opts := agent.AIAgentOptions{Model: fakellm.ModelID, Provider: "custom", BaseURL: srv.BaseURL(), APIKey: "sk-fake-e2e",
 		APIMode: "chat_completions", SessionID: hz.key, Platform: "tui", QuietMode: true, SkipContextFiles: true, SkipMemory: true,
@@ -54,7 +54,7 @@ func newTurnHarness(t *testing.T, script []any, extraConfig string) *turnHarness
 		t.Fatal(err)
 	}
 	initSession(ctx, hz.sid, hz.key, built, []any{}, 80, h, nil, "", "", false)
-	hz.session = tuigateway.SessionRecord(hz.sid)
+	hz.session = tuihost.SessionRecord(hz.sid)
 	t.Cleanup(func() { closeSessionByID(context.Background(), hz.sid, "test_cleanup", nil) })
 	return hz
 }

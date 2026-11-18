@@ -190,7 +190,7 @@ func bufferAnthropicToolInput(apiKwargs map[string]any, baseURL string) {
 // Classifies a failed attempt, true to retry, false to stop with the error recorded
 func streamingCallHandleError(c *streamingCall, err error, attempt, maxRetries int) bool {
 	if c.requestCancelled.Load() {
-		streamingCallLog.Debug(fmt.Sprintf("Streaming worker caught %s after request cancellation — exiting without retry.", pyrepr.TypeName(err)))
+		pkgLog().Debug(fmt.Sprintf("Streaming worker caught %s after request cancellation — exiting without retry.", pyrepr.TypeName(err)))
 		return false
 	}
 	err = c.asLifetimeError(err)
@@ -209,7 +209,7 @@ func streamingCallHandleError(c *streamingCall, err error, attempt, maxRetries i
 		if status := streamErrorStatusAttr(err); status != 0 {
 			statusText = fmt.Sprint(status)
 		}
-		streamingCallLog.Info(fmt.Sprintf("Endpoint rejected stream_options (HTTP %s); retrying without it for this session.", statusText))
+		pkgLog().Info(fmt.Sprintf("Endpoint rejected stream_options (HTTP %s); retrying without it for this session.", statusText))
 		c.cancelCurrentStreamAttempt("stream_options_rejected_retry")
 		_ = c.clients.closeOnce("stream_options_rejected_retry", c.worker)
 		return true
@@ -217,7 +217,7 @@ func streamingCallHandleError(c *streamingCall, err error, attempt, maxRetries i
 	partialToolInFlight := c.forgetInvisibleDeltas(err)
 	if c.deltasWereSent.Load() {
 		if !(partialToolInFlight && isTransient && attempt < maxRetries) {
-			streamingCallLog.Warn(fmt.Sprintf("Streaming failed after partial delivery, not retrying: %v", err))
+			pkgLog().Warn(fmt.Sprintf("Streaming failed after partial delivery, not retrying: %v", err))
 			c.setResult(nil, err)
 			return false
 		}
@@ -247,7 +247,7 @@ func streamingCallHandleError(c *streamingCall, err error, attempt, maxRetries i
 		}
 	} else {
 		c.maybeDisableStreaming(err)
-		streamingCallLog.Error(fmt.Sprintf("Streaming failed before delivery: %v", err), "exc_info", err)
+		pkgLog().Error(fmt.Sprintf("Streaming failed before delivery: %v", err), "exc_info", err)
 		if c.unmaskServerErrorWithNonstreaming(err) {
 			return false
 		}
@@ -288,7 +288,7 @@ func (c *streamingCall) maybeDisableStreaming(err error) {
 	}
 	if isProviderStreamEmptyFrameError(err) {
 		c.agent.DisableStreaming()
-		streamingCallLog.Warn(fmt.Sprintf("Provider stream returned an empty SSE frame (keepalive, no payload) before any delta — switching %s/%s to non-streaming for this session.",
+		pkgLog().Warn(fmt.Sprintf("Provider stream returned an empty SSE frame (keepalive, no payload) before any delta — switching %s/%s to non-streaming for this session.",
 			orUnknownName(c.agent.Provider()), orUnknownName(c.agent.Model())))
 		c.agent.EmitWarning("⚠️ Provider stream returned an empty keepalive frame — retrying this turn without streaming (streaming stays off for this session).")
 		return
@@ -356,21 +356,21 @@ func (c *streamingCall) unmaskServerErrorWithNonstreaming(err error) bool {
 			return true
 		}
 		if probeStatus, ok := streamErrorStatus(probeErr); ok && probeStatus < 500 {
-			streamingCallLog.Info(fmt.Sprintf("Non-streaming unmask probe surfaced the underlying error: %v", probeErr))
+			pkgLog().Info(fmt.Sprintf("Non-streaming unmask probe surfaced the underlying error: %v", probeErr))
 			c.setResult(nil, probeErr)
 			return true
 		}
-		streamingCallLog.Info(fmt.Sprintf("Non-streaming unmask probe failed: %v", probeErr))
+		pkgLog().Info(fmt.Sprintf("Non-streaming unmask probe failed: %v", probeErr))
 		return false
 	}
-	streamingCallLog.Info(fmt.Sprintf("Streaming 5xx re-issued non-streaming successfully for %s/%s (not latched: the 5xx may be transient).",
+	pkgLog().Info(fmt.Sprintf("Streaming 5xx re-issued non-streaming successfully for %s/%s (not latched: the 5xx may be transient).",
 		orUnknownName(c.agent.Provider()), orUnknownName(c.agent.Model())))
 	quietCall(func() {
 		c.agent.BufferStatus("⚠  Streaming failed with a provider server error; the non-streaming retry succeeded.")
 	})
 	replayed, replayErr := WithStreamEmitters(c.agent, func() (any, error) { return c.replayFinalResponse(probe), nil })
 	if replayErr != nil {
-		streamingCallLog.Error(fmt.Sprintf("Non-streaming unmask probe response could not be replayed: %v", replayErr), "exc_info", replayErr)
+		pkgLog().Error(fmt.Sprintf("Non-streaming unmask probe response could not be replayed: %v", replayErr), "exc_info", replayErr)
 		return false
 	}
 	c.setResult(replayed, nil)

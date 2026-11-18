@@ -237,7 +237,7 @@ func genericPoll(t *testing.T, poster *scriptedPoster, expiresIn int, cancelled 
 		},
 		onNonJSONError: func(*oauthHTTPResponse) error { return errors.New("non json") },
 		onError: func(_ *oauthHTTPResponse, payload map[string]any) error {
-			return DeviceFlowError(anyString(payload["error"]), anyString(payload["error_description"]), "icebath portal")
+			return DeviceFlowError(anyString(payload["error"]), anyString(payload["error_description"]), "icebath model")
 		},
 		onTimeout: func(cause error) error { return &DeviceCodeExpiredError{Message: "expired", Cause: cause} },
 		cancelled: cancelled,
@@ -315,64 +315,6 @@ func TestPollDeviceTokenGenericTimeoutAndCancel(t *testing.T) {
 	var flowCancelled *DeviceFlowCancelledError
 	if !errors.As(err, &flowCancelled) || poster.calls != 0 || !IsCancelled(err) {
 		t.Fatalf("cancel must end the poll before a request: %v calls %d", err, poster.calls)
-	}
-}
-
-func TestPollForTokenAndRequestDeviceCode(t *testing.T) {
-	var hits int
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "application/json")
-		switch r.URL.Path {
-		case "/api/oauth/device/code":
-			_ = r.ParseForm()
-			if r.Form.Get("scope") != "inference:invoke" {
-				w.WriteHeader(400)
-				_, _ = w.Write([]byte(`{"error": "bad scope"}`))
-				return
-			}
-			_, _ = w.Write([]byte(`{"device_code": "dc", "user_code": "UC", "verification_uri": "https://p/x", "expires_in": 600, "interval": 5}`))
-		case "/api/oauth/token":
-			hits++
-			_ = r.ParseForm()
-			if r.Form.Get("grant_type") != DeviceCodeGrantType || r.Form.Get("device_code") != "dc" {
-				w.WriteHeader(400)
-				_, _ = w.Write([]byte(`{"error": "invalid_request", "error_description": "bad form"}`))
-				return
-			}
-			if hits == 1 {
-				w.WriteHeader(400)
-				_, _ = w.Write([]byte(`{"error": "authorization_pending"}`))
-				return
-			}
-			_, _ = w.Write([]byte(`{"access_token": "at", "refresh_token": "rt"}`))
-		}
-	}))
-	defer server.Close()
-	prev := oauthSleep
-	oauthSleep = func(time.Duration) {}
-	t.Cleanup(func() { oauthSleep = prev })
-	_, env := codexTestEnv(t)
-	client := oauthHTTPClient(env, 5*time.Second, defaultOAuthVerify())
-	_, err := requestDeviceCode(context.Background(), client, server.URL, "icebath-cli", "inference:invoke")
-	if err == nil || !strings.Contains(err.Error(), "Device code response missing fields: verification_uri_complete") {
-		t.Fatalf("missing field error %v", err)
-	}
-	_, err = requestDeviceCode(context.Background(), client, server.URL, "icebath-cli", "")
-	var statusErr *HTTPStatusError
-	if !errors.As(err, &statusErr) || statusErr.Status != 400 {
-		t.Fatalf("status error %v", err)
-	}
-	payload, err := pollForToken(context.Background(), client, server.URL, "icebath-cli", "dc", 600, 5, nil)
-	if err != nil || payload["access_token"] != "at" || hits != 2 {
-		t.Fatalf("payload %v err %v hits %d", payload, err, hits)
-	}
-	_, err = pollForToken(context.Background(), client, server.URL, "icebath-cli", "other", 600, 5, nil)
-	var copyErr *SignInCopyError
-	if !errors.As(err, &copyErr) || !strings.HasPrefix(copyErr.Message, "Sign-in did not complete: bad form. Run `icebath portal` to try again.") {
-		t.Fatalf("error copy %v", err)
-	}
-	if msg := nousDeviceAuthTimeoutMessage(""); !strings.Contains(msg, "icebath portal") || !strings.Contains(msg, DefaultNousPortalURL+"/login") {
-		t.Fatalf("timeout message %q", msg)
 	}
 }
 

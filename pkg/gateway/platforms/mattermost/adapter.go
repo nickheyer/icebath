@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"log/slog"
 	"math/rand"
 	"net/http"
 	"os"
@@ -162,7 +161,7 @@ func validateMattermostConfig(ctx context.Context, config *gateway.PlatformConfi
 		return false, attributeError(token, "strip")
 	}
 	if pystr.Strip(tokenText) == "" {
-		slog.Debug("Mattermost: MATTERMOST_TOKEN not set")
+		pkgLog().Debug("Mattermost: MATTERMOST_TOKEN not set")
 		return false, nil
 	}
 	urlText, ok := serverURL.(string)
@@ -170,7 +169,7 @@ func validateMattermostConfig(ctx context.Context, config *gateway.PlatformConfi
 		return false, attributeError(serverURL, "strip")
 	}
 	if pystr.Strip(urlText) == "" {
-		slog.Warn("Mattermost: MATTERMOST_URL not set")
+		pkgLog().Warn("Mattermost: MATTERMOST_URL not set")
 		return false, nil
 	}
 	return true, nil
@@ -258,7 +257,7 @@ func (a *MattermostAdapter) headers() map[string]string {
 // One REST v4 call returning the decoded reply, an empty dict on a refused or failed call, POST recording its status and error
 func (a *MattermostAdapter) api(ctx context.Context, method, path string, payload *pyjson.Object) (any, error) {
 	if strings.Contains(path, "..") {
-		slog.Error(fmt.Sprintf("MM API path traversal blocked: %s", path))
+		pkgLog().Error(fmt.Sprintf("MM API path traversal blocked: %s", path))
 		return map[string]any{}, nil
 	}
 	target := a.baseURL + "/api/v4/" + pystr.LstripChars(path, "/")
@@ -286,7 +285,7 @@ func (a *MattermostAdapter) api(ctx context.Context, method, path string, payloa
 			a.lastPostError = ce.text
 			a.mu.Unlock()
 		}
-		slog.Error(fmt.Sprintf("MM API %s %s network error: %s", method, path, ce.text))
+		pkgLog().Error(fmt.Sprintf("MM API %s %s network error: %s", method, path, ce.text))
 		return map[string]any{}, nil
 	}
 	resp, err := a.request(ctx, method, target, a.headers(), "", body, 30*time.Second)
@@ -306,7 +305,7 @@ func (a *MattermostAdapter) api(ctx context.Context, method, path string, payloa
 			a.lastPostError = text
 			a.mu.Unlock()
 		}
-		slog.Error(fmt.Sprintf("MM API %s %s → %d: %s", method, path, resp.status, pystr.Slice(text, 0, 200)))
+		pkgLog().Error(fmt.Sprintf("MM API %s %s → %d: %s", method, path, resp.status, pystr.Slice(text, 0, 200)))
 		return map[string]any{}, nil
 	}
 	data, err := resp.json()
@@ -369,7 +368,7 @@ func (a *MattermostAdapter) postPreservingThread(ctx context.Context, chatID str
 		message = *text
 	}
 	flat.Set("message", message)
-	slog.Warn(fmt.Sprintf("Mattermost: falling back to flat channel delivery for notify-worthy post in %s", chatID))
+	pkgLog().Warn(fmt.Sprintf("Mattermost: falling back to flat channel delivery for notify-worthy post in %s", chatID))
 	return a.apiPost(ctx, "posts", flat)
 }
 
@@ -419,7 +418,7 @@ func (a *MattermostAdapter) uploadFile(ctx context.Context, channelID string, fi
 		return nil, err
 	}
 	if resp.status >= 400 {
-		slog.Error(fmt.Sprintf("MM file upload → %d: %s", resp.status, pystr.Slice(resp.text(), 0, 200)))
+		pkgLog().Error(fmt.Sprintf("MM file upload → %d: %s", resp.status, pystr.Slice(resp.text(), 0, 200)))
 		return nil, nil
 	}
 	data, err := resp.json()
@@ -451,7 +450,7 @@ func (a *MattermostAdapter) uploadFile(ctx context.Context, channelID string, fi
 // Authenticates the bot against the REST API and starts the WebSocket listener
 func (a *MattermostAdapter) Connect(ctx context.Context, isReconnect bool) (bool, error) {
 	if a.baseURL == "" || !pyrepr.Truthy(a.token) {
-		slog.Error("Mattermost: URL or token not configured")
+		pkgLog().Error("Mattermost: URL or token not configured")
 		return false, nil
 	}
 	a.mu.Lock()
@@ -465,7 +464,7 @@ func (a *MattermostAdapter) Connect(ctx context.Context, isReconnect bool) (bool
 	meMap, _ := me.(map[string]any)
 	id, hasID := meMap["id"]
 	if !pyrepr.Truthy(me) || !hasID {
-		slog.Error("Mattermost: failed to authenticate — check MATTERMOST_TOKEN and MATTERMOST_URL")
+		pkgLog().Error("Mattermost: failed to authenticate — check MATTERMOST_TOKEN and MATTERMOST_URL")
 		a.closeSession()
 		return false, nil
 	}
@@ -476,7 +475,7 @@ func (a *MattermostAdapter) Connect(ctx context.Context, isReconnect bool) (bool
 	a.mu.Lock()
 	a.botUserID, a.botUsername = id, username
 	a.mu.Unlock()
-	slog.Info(fmt.Sprintf("Mattermost: authenticated as @%s (%s) on %s", pyrepr.Str(username), pyrepr.Str(id), a.baseURL))
+	pkgLog().Info(fmt.Sprintf("Mattermost: authenticated as @%s (%s) on %s", pyrepr.Str(username), pyrepr.Str(id), a.baseURL))
 	task := gateway.SpawnAdapterTask(ctx, a.wsLoop)
 	a.mu.Lock()
 	a.wsTask = task
@@ -518,7 +517,7 @@ func (a *MattermostAdapter) Disconnect(ctx context.Context) error {
 	if session != nil && !closed {
 		a.closeSession()
 	}
-	slog.Info("Mattermost: disconnected")
+	pkgLog().Info("Mattermost: disconnected")
 	return nil
 }
 
@@ -649,7 +648,7 @@ func (a *MattermostAdapter) sendURLAsFile(ctx context.Context, chatID, rawURL, c
 		return a.Send(ctx, chatID, pystr.Strip(caption+"\n"+rawURL), replyTo, metadata)
 	}
 	if !tools.IsSafeURL(gateway.URLSafetyEnv(ctx), rawURL) {
-		slog.Warn("Mattermost: blocked unsafe URL (SSRF protection)")
+		pkgLog().Warn("Mattermost: blocked unsafe URL (SSRF protection)")
 		return fallback()
 	}
 	var fileData []byte
@@ -661,13 +660,13 @@ func (a *MattermostAdapter) sendURLAsFile(ctx context.Context, chatID, rawURL, c
 		switch {
 		case errors.As(err, &ce) || errors.As(err, &te):
 			if attempt == 2 {
-				slog.Warn(fmt.Sprintf("Mattermost: failed to download %s after %d attempts: %s", rawURL, attempt+1, err.Error()))
+				pkgLog().Warn(fmt.Sprintf("Mattermost: failed to download %s after %d attempts: %s", rawURL, attempt+1, err.Error()))
 				return fallback()
 			}
 		case err != nil:
 			return gateway.SendResult{}, err
 		case (resp.status >= 500 || resp.status == 429) && attempt < 2:
-			slog.Debug(fmt.Sprintf("Mattermost download retry %d/2 for %s (status %d)", attempt+1, pystr.Slice(rawURL, 0, 80), resp.status))
+			pkgLog().Debug(fmt.Sprintf("Mattermost download retry %d/2 for %s (status %d)", attempt+1, pystr.Slice(rawURL, 0, 80), resp.status))
 		case resp.status >= 400:
 			return fallback()
 		default:
@@ -705,7 +704,7 @@ func guessType(name, fallback string) string {
 // Uploads a local file and attaches it to a post, a missing file skipped as a success without an id
 func (a *MattermostAdapter) sendLocalFile(ctx context.Context, chatID, filePath, caption, replyTo, fileName string, metadata map[string]any) (gateway.SendResult, error) {
 	if _, err := os.Stat(filePath); err != nil {
-		slog.Warn(fmt.Sprintf("Mattermost: local file not found, skipping: %s", filePath))
+		pkgLog().Warn(fmt.Sprintf("Mattermost: local file not found, skipping: %s", filePath))
 		return gateway.SendResult{Success: true}, nil
 	}
 	fname := fileName
@@ -738,7 +737,7 @@ func (a *MattermostAdapter) loadBatchImage(ctx context.Context, imageURL string,
 	if strings.HasPrefix(imageURL, "file://") {
 		localPath := pyurl.Unquote(imageURL[7:])
 		if _, err := os.Stat(localPath); err != nil {
-			slog.Warn(fmt.Sprintf("Mattermost: skipping missing image %s", localPath))
+			pkgLog().Warn(fmt.Sprintf("Mattermost: skipping missing image %s", localPath))
 			return nil, nil
 		}
 		data, err := os.ReadFile(localPath)
@@ -749,7 +748,7 @@ func (a *MattermostAdapter) loadBatchImage(ctx context.Context, imageURL string,
 		return &batchImage{data: data, filename: name, contentType: guessType(name, "image/png")}, nil
 	}
 	if !tools.IsSafeURL(gateway.URLSafetyEnv(ctx), imageURL) {
-		slog.Warn("Mattermost: blocked unsafe image URL in batch")
+		pkgLog().Warn("Mattermost: blocked unsafe image URL in batch")
 		return nil, nil
 	}
 	resp, err := a.request(ctx, "GET", imageURL, nil, "", nil, 30*time.Second)
@@ -757,11 +756,11 @@ func (a *MattermostAdapter) loadBatchImage(ctx context.Context, imageURL string,
 		if ctx.Err() != nil {
 			return nil, ctx.Err()
 		}
-		slog.Warn(fmt.Sprintf("Mattermost: download failed for %s: %s", pystr.Slice(imageURL, 0, 80), err.Error()))
+		pkgLog().Warn(fmt.Sprintf("Mattermost: download failed for %s: %s", pystr.Slice(imageURL, 0, 80), err.Error()))
 		return nil, nil
 	}
 	if resp.status >= 400 {
-		slog.Warn(fmt.Sprintf("Mattermost: failed to download image (HTTP %d): %s", resp.status, pystr.Slice(imageURL, 0, 80)))
+		pkgLog().Warn(fmt.Sprintf("Mattermost: failed to download image (HTTP %d): %s", resp.status, pystr.Slice(imageURL, 0, 80)))
 		return nil, nil
 	}
 	contentType := "image/png"
@@ -799,13 +798,13 @@ func (a *MattermostAdapter) SendMultipleImages(ctx context.Context, chatID strin
 			continue
 		}
 		if err != nil {
-			slog.Warn(fmt.Sprintf("Mattermost: multi-image send failed (chunk %d/%d), falling back: %s", chunkIdx+1, len(chunks),
+			pkgLog().Warn(fmt.Sprintf("Mattermost: multi-image send failed (chunk %d/%d), falling back: %s", chunkIdx+1, len(chunks),
 				pyrepr.ExceptionMessage(err)), "error", err)
 		} else if posted {
 			delivered = true
 			continue
 		} else {
-			slog.Warn("Mattermost: multi-image post failed, falling back")
+			pkgLog().Warn("Mattermost: multi-image post failed, falling back")
 		}
 		fallback, err := a.BasePlatformAdapter.SendMultipleImages(ctx, chatID, chunk, metadata, humanDelay)
 		if err != nil {
@@ -845,7 +844,7 @@ func (a *MattermostAdapter) postImageChunk(ctx context.Context, chatID string, c
 	if len(fileIDs) == 0 {
 		return false, true, nil
 	}
-	slog.Info(fmt.Sprintf("Mattermost: sending %d image(s) as single post (chunk %d/%d)", len(fileIDs), chunkIdx+1, total))
+	pkgLog().Info(fmt.Sprintf("Mattermost: sending %d image(s) as single post (chunk %d/%d)", len(fileIDs), chunkIdx+1, total))
 	data, err := a.postMessage(ctx, chatID, strings.Join(captionParts, "\n"), "", metadata, fileIDs)
 	if err != nil {
 		return false, false, err
@@ -878,13 +877,13 @@ func (a *MattermostAdapter) wsLoop(ctx context.Context) error {
 			}
 			var handshake *pyaiohttpws.HandshakeError
 			if errors.As(err, &handshake) && (handshake.Status == 401 || handshake.Status == 403) {
-				slog.Error(fmt.Sprintf("Mattermost WS auth failed (HTTP %d) — stopping reconnect", handshake.Status))
+				pkgLog().Error(fmt.Sprintf("Mattermost WS auth failed (HTTP %d) — stopping reconnect", handshake.Status))
 				a.SetFatalError(ctx, "mattermost_auth_error", fmt.Sprintf("Mattermost WebSocket authentication rejected (HTTP %d). "+
 					"The bot token is invalid, revoked, or lacks permission — check MATTERMOST_TOKEN and the bot account in "+
 					"the System Console.", handshake.Status), false)
 				return a.NotifyFatalError(ctx)
 			}
-			slog.Warn(fmt.Sprintf("Mattermost WS error: %s — reconnecting in %.0fs", pyrepr.ExceptionMessage(err), delay))
+			pkgLog().Warn(fmt.Sprintf("Mattermost WS error: %s — reconnecting in %.0fs", pyrepr.ExceptionMessage(err), delay))
 		}
 		if a.isClosing() {
 			return nil
@@ -908,7 +907,7 @@ func (a *MattermostAdapter) wsConnectAndListen(ctx context.Context) error {
 		return err
 	}
 	wsURL := scheme + "/api/v4/websocket"
-	slog.Info(fmt.Sprintf("Mattermost: connecting to %s", wsURL))
+	pkgLog().Info(fmt.Sprintf("Mattermost: connecting to %s", wsURL))
 	a.mu.Lock()
 	closed := a.session == nil || a.sessionClosed
 	a.mu.Unlock()
@@ -936,7 +935,7 @@ func (a *MattermostAdapter) wsConnectAndListen(ctx context.Context) error {
 	if err := ws.SendStr(challenge); err != nil {
 		return err
 	}
-	slog.Info("Mattermost: WebSocket connected and authenticated")
+	pkgLog().Info("Mattermost: WebSocket connected and authenticated")
 	for {
 		msg, err := ws.Receive(ctx)
 		if err != nil {
@@ -969,7 +968,7 @@ func (a *MattermostAdapter) wsConnectAndListen(ctx context.Context) error {
 				return err
 			}
 		case pyaiohttpws.Error:
-			slog.Info(fmt.Sprintf("Mattermost: WebSocket closed (%s)", msg.Type))
+			pkgLog().Info(fmt.Sprintf("Mattermost: WebSocket closed (%s)", msg.Type))
 			return nil
 		}
 	}
@@ -986,7 +985,7 @@ func (a *MattermostAdapter) applyChannelGating(ctx context.Context, channelID, m
 		return "", false, err
 	}
 	if allowed := channelIDSet(allowedRaw); len(allowed) > 0 && !allowed[channelID] {
-		slog.Debug(fmt.Sprintf("Mattermost: ignoring message in non-allowed channel: %s", channelID))
+		pkgLog().Debug(fmt.Sprintf("Mattermost: ignoring message in non-allowed channel: %s", channelID))
 		return "", false, nil
 	}
 	requireRaw, err := read("require_mention", "MATTERMOST_REQUIRE_MENTION", "true")
@@ -1015,7 +1014,7 @@ func (a *MattermostAdapter) applyChannelGating(ctx context.Context, channelID, m
 		}
 	}
 	if requireMention && !freeChannels[channelID] && !hasMention {
-		slog.Debug(fmt.Sprintf("Mattermost: skipping non-DM message without @mention (channel=%s)", channelID))
+		pkgLog().Debug(fmt.Sprintf("Mattermost: skipping non-DM message without @mention (channel=%s)", channelID))
 		return "", false, nil
 	}
 	if hasMention {
@@ -1044,7 +1043,7 @@ func (a *MattermostAdapter) downloadAttachments(ctx context.Context, fileIDs []a
 			return nil, nil, ctx.Err()
 		}
 		if err != nil {
-			slog.Warn(fmt.Sprintf("Mattermost: error downloading file %s: %s", id, pyrepr.ExceptionMessage(err)))
+			pkgLog().Warn(fmt.Sprintf("Mattermost: error downloading file %s: %s", id, pyrepr.ExceptionMessage(err)))
 			continue
 		}
 		if skip {
@@ -1071,7 +1070,7 @@ func (a *MattermostAdapter) downloadAttachment(ctx context.Context, fid string) 
 		return "", "", false, err
 	}
 	if resp.status >= 400 {
-		slog.Warn(fmt.Sprintf("Mattermost: failed to download file %s: HTTP %d", fid, resp.status))
+		pkgLog().Warn(fmt.Sprintf("Mattermost: failed to download file %s: HTTP %d", fid, resp.status))
 		return "", "", true, nil
 	}
 	mime, ok := mimeValue.(string)

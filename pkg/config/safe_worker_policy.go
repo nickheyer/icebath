@@ -10,10 +10,7 @@ import (
 )
 
 // Runtime components whose start forbids binding a worker policy afterwards
-var runtimeImportNames = map[string]bool{
-	"run_agent": true, "model_tools": true, "hermes_cli.config": true, "hermes_cli.env_loader": true,
-	"hermes_cli.plugins": true, "providers": true, "agent.agent_init": true,
-}
+var runtimeImportNames = map[string]bool{"config": true}
 
 // Frozen bootstrap policy of an admission owned worker
 type SafeWorkerPolicy struct {
@@ -143,7 +140,7 @@ func ConfigFromJSON(v any) any {
 	return v
 }
 
-// Clears the process worker policy and runtime marks, the seam hermes tests reach by replacing _policy
+// Clears the process worker policy and runtime marks, the seam tests reach by replacing policy
 func ResetWorkerPolicyForTests() {
 	workerPolicy.Store(nil)
 	runtimeImportsMu.Lock()

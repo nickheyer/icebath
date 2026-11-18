@@ -16,7 +16,7 @@ func (r *GatewayRunner) SessionModelOverrideFor(ctx context.Context, sessionKey 
 	func() {
 		defer func() {
 			if rec := recover(); rec != nil {
-				runLog().Debug("api_server failed to rehydrate session /model override for "+sessionKey, "error", rec)
+				pkgLog().Debug("api_server failed to rehydrate session /model override for "+sessionKey, "error", rec)
 			}
 		}()
 		r.rehydrateSessionModelOverride(ctx, sessionKey)

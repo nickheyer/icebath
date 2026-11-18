@@ -150,7 +150,7 @@ type streamClient struct {
 // Client for the app credentials logging as the SDK client logger
 func newStreamClient(clientID, clientSecret any) *streamClient {
 	return &streamClient{clientID: clientID, clientSecret: clientSecret, handlers: map[string]callbackHandler{},
-		logger: slog.Default().With("logger", "dingtalk_stream.client")}
+		logger: pkgLog()}
 }
 
 // Logger the client reports through

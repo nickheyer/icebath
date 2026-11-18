@@ -10,7 +10,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 )
 
-// Core whose config extra carries the overrides of the hermes _make_adapter helper
+// Core whose config extra carries the overrides of the make adapter helper
 func authCore(extra map[string]any) *adapterCore {
 	core := newTestCore()
 	core.base.Config.Extra = extra
@@ -18,7 +18,7 @@ func authCore(extra map[string]any) *adapterCore {
 	return core
 }
 
-// Message of the hermes _make_message helper
+// Message of the make message helper
 func authMessage(fromUserID, chatID int64, chatType string) *models.Message {
 	return &models.Message{ID: 42, Text: "hello", Chat: models.Chat{ID: chatID, Type: models.ChatType(chatType), Title: "Test"},
 		From: &models.User{ID: fromUserID, FirstName: "Test", LastName: "User"}}

@@ -7,7 +7,7 @@
 # Schema version of this file. The installers copy it to seed config.yaml, and
 # `icebath update` uses it to know which one-time migrations the file already
 # has. icebath manages it: do not copy it into another config.
-_config_version: 58
+_config_version: 66
 
 # =============================================================================
 # Database Configuration
@@ -54,14 +54,14 @@ runtime:
 # Where the TUI gateway stages session file attachments (file uploads and
 # pasted text). Read per profile: a session bound to profile X follows X's own
 # config.yaml, so each agent's attachments stay with its workspace.
-#   hermes-home  (default) <profile home>/attachments — the directory container
+#   icebath-home (default) <profile home>/attachments — the directory container
 #                 backends bind-mount, so @file: refs resolve inside the sandbox.
 #   workspace    <session workspace>/.icebath/attachments — staging lands inside
 #                 the allowed reference root, so the profile's agent can always
 #                 read its own attachments back. A remote (ssh) workspace keeps
 #                 the profile home directory either way.
 attachments:
-  storage: "hermes-home"
+  storage: "icebath-home"
 
 # =============================================================================
 # Plugin Installation
@@ -83,8 +83,6 @@ model:
   # Inference provider selection:
   #   "auto"         - Auto-detect from credentials (default)
   #   "openrouter"   - OpenRouter (requires: OPENROUTER_API_KEY or OPENAI_API_KEY)
-  #   "nous"         - Nous Portal OAuth (requires: icebath auth add nous)
-  #   "nous-api"     - Nous Portal API key (requires: NOUS_API_KEY)
   #   "anthropic"    - Direct Anthropic API (requires: ANTHROPIC_API_KEY)
   #   "openai-codex" - OpenAI Codex (requires: icebath auth)
   #   "gemini"      - Use Google AI Studio direct (requires: GOOGLE_API_KEY or GEMINI_API_KEY)
@@ -499,13 +497,15 @@ terminal:
 # OPTION 3: Docker container
 # Commands run in an isolated Docker container
 # Great for: reproducible environments, testing, isolation
+# The sandbox image icebath builds ships a desktop, Chromium and cua-driver;
+# icebath starts cua-driver with its maker's product telemetry and release check off.
 # -----------------------------------------------------------------------------
 # terminal:
 #   backend: "docker"
 #   cwd: "/workspace"  # Path INSIDE the container (default: /)
 #   timeout: 180
 #   lifetime_seconds: 300
-#   docker_image: "nousresearch/hermes-sandbox:desktop"
+#   docker_image: "localhost/icebath-sandbox:desktop"  # Built by icebath from its own Dockerfile on first use
 #   docker_mount_cwd_to_workspace: true   # Explicit opt-in: mount your launch cwd into /workspace
 #   # Optional: run the container as your host user's uid:gid so files written
 #   # into bind-mounted dirs are owned by you, not root. Drops SETUID/SETGID
@@ -526,17 +526,17 @@ terminal:
 #   #   - "SETUID"
 
 # -----------------------------------------------------------------------------
-# OPTION 4: Singularity/Apptainer container (the official `singularity` plugin)
-# Commands run in a Singularity container (common in HPC environments)
+# OPTION 4: Singularity/Apptainer container (built into icebath)
+# Commands run in a Singularity or Apptainer container (common in HPC environments)
 # Great for: HPC clusters, shared compute environments
-# Install it first: icebath plugins install singularity
+# Requires apptainer or singularity on PATH; an unprivileged Apptainer install works
 # -----------------------------------------------------------------------------
 # terminal:
 #   backend: "singularity"
 #   cwd: "/workspace"  # Path INSIDE the container (default: /root)
 #   timeout: 180
 #   lifetime_seconds: 300
-#   singularity_image: "docker://nousresearch/hermes-sandbox:desktop"
+#   singularity_image: "docker://localhost/icebath-sandbox:desktop"  # SIF converted from icebath's docker build, or built with --fakeroot without docker
 
 # -----------------------------------------------------------------------------
 # OPTION 5: Modal cloud execution
@@ -548,7 +548,7 @@ terminal:
 #   cwd: "/workspace"  # Path INSIDE the sandbox (default: /root)
 #   timeout: 180
 #   lifetime_seconds: 300
-#   modal_image: "nousresearch/hermes-sandbox:desktop"
+#   modal_image: "localhost/icebath-sandbox:desktop"  # Modal builds it from icebath's Dockerfile
 
 # -----------------------------------------------------------------------------
 # OPTION 6: Daytona cloud execution
@@ -561,7 +561,7 @@ terminal:
 #   cwd: "~"
 #   timeout: 180
 #   lifetime_seconds: 300
-#   daytona_image: "nousresearch/hermes-sandbox:desktop"
+#   daytona_image: "localhost/icebath-sandbox:desktop"  # Daytona builds it from icebath's Dockerfile
 #   container_disk: 10240          # Daytona max is 10GB per sandbox
 
 #
@@ -901,11 +901,11 @@ prompt_caching:
 # browser screenshot analysis, web page summarization, TTS audio-tag insertion,
 # and context compression.
 #
-# By default these use Gemini Flash via OpenRouter or Nous Portal and are
-# auto-detected from your credentials.  You do NOT need to change anything
+# By default these follow your main provider or use Gemini Flash via OpenRouter,
+# and are auto-detected from your credentials.  You do NOT need to change anything
 # here for normal usage.
 #
-# WARNING: Overriding these with providers other than OpenRouter or Nous Portal
+# WARNING: Overriding these with providers other than OpenRouter
 # is EXPERIMENTAL and may not work.  Not all models/providers support vision,
 # produce usable summaries, or accept the same API format.  Change at your own
 # risk — if things break, reset to "auto" / empty values.
@@ -915,9 +915,8 @@ prompt_caching:
 # local endpoint for compression (just needs text).
 #
 # Provider options:
-#   "auto"       - Best available: OpenRouter → Nous Portal → main endpoint (default)
+#   "auto"       - Best available: main provider → OpenRouter → custom endpoint (default)
 #   "openrouter" - Force OpenRouter (requires OPENROUTER_API_KEY)
-#   "nous"       - Force Nous Portal (requires: icebath auth add nous)
 #   "gemini"      - Force Google AI Studio direct (requires: GOOGLE_API_KEY or GEMINI_API_KEY)
 #   "ollama-cloud" - Ollama Cloud (requires: OLLAMA_API_KEY)
 #   "codex"       - Force Codex OAuth (requires: icebath model → Codex).
@@ -927,7 +926,7 @@ prompt_caching:
 #                  endpoint.  Also falls back to Codex OAuth and API-key providers.
 #
 # Model: leave empty to use the provider's default.  When empty, OpenRouter
-# uses "google/gemini-3-flash-preview" and Nous uses "gemini-3-flash".
+# uses "google/gemini-3-flash-preview".
 # Other providers pick a sensible default automatically.
 #
 # Native vision embeds (vision_analyze / browser screenshots when the MAIN model
@@ -1370,7 +1369,7 @@ agent:
   # Enable verbose logging
   verbose: false
   
-  # Reasoning effort level (OpenRouter and Nous Portal)
+  # Reasoning effort level (models with reasoning support)
   # Controls how much "thinking" the model does before responding.
   # Options: "xhigh" (max), "high", "medium", "low", "minimal", "none" (disable)
   # Providers with bespoke thinking tiers (a relay serving fast/thinking): use the
@@ -1772,7 +1771,7 @@ stt:
   #   local_command/xai/
   #   elevenlabs             -> unsupported; DEBUG log, then continue
   #   plugin providers       -> `prompt` in `**extra`; plugin owns limits
-  # prompt: "icebath, Teknium, Nous Research, kanban"
+  # prompt: "icebath, Kubernetes, PostgreSQL, kanban"
   local:
     model: "base"              # tiny | base | small | medium | large-v3 | turbo
     # language: ""             # auto-detect; set to "en", "es", "fr", etc. to force
@@ -1831,13 +1830,15 @@ stt:
 # "Hey icebath" hands-free wake word (off by default; toggle with /wake).
 # The wake word listens on this machine's PortAudio microphone. With provider
 # auto, "hey icebath" and any other phrase run on the open vocabulary sherpa
-# engine (its keyword model downloads on first use); "hey hermes" runs on the
-# bundled openWakeWord model.
+# engine (its keyword model downloads on first use); openWakeWord runs instead
+# when openwakeword.model names a model file trained for the phrase.
 # wake_word:
 #   enabled: false
 #   input_device: null   # PortAudio input index or name, null for the system default
 #   provider: "auto"     # auto | sherpa | openwakeword | porcupine
 #   phrase: "hey icebath"
+#   openwakeword:
+#     model: ""          # path of an openWakeWord .tflite model, empty for none
 
 # Image generation. Each provider plugin reads its own ``image_gen.<name>``
 # block; deepinfra discovers models live from
@@ -1848,6 +1849,18 @@ stt:
 #   deepinfra:
 #     # Leave `model` blank for the first live `image-gen`-tagged result.
 #     model: ""
+#   openrouter:
+#     # Blank `model` tries openai/gpt-5.4-image-2, then google/gemini-3-pro-image.
+#     model: ""
+#     count: 1             # Images per Image API call, clamped to the model's cap
+#     quality: ""          # Image API knobs, dropped with a note when the model lacks them:
+#     resolution: ""       #   quality, resolution, background, output_format,
+#     background: ""       #   output_compression (0-100), seed, aspect_ratio
+#     output_format: ""
+#     surface: ""          # "images" or "chat" forces the endpoint, blank picks by catalog
+#     timeout: 300         # Seconds per Image API request
+#     # Every key but model also reads OPENROUTER_IMAGE_API_<KEY> (e.g. OPENROUTER_IMAGE_API_COUNT);
+#     # model reads OPENROUTER_IMAGE_MODEL.
 
 # =============================================================================
 # Response Pacing (Messaging Platforms)
@@ -1936,7 +1949,7 @@ delegation:
   # model: "google/gemini-3-flash-preview"    # Override model for subagents (empty = inherit parent)
   # provider: "openrouter"                    # Override provider for subagents (empty = inherit parent)
   #                                           # Resolves full credentials (base_url, api_key) automatically.
-  #                                           # Supported: openrouter, nous, zai, kimi-coding, minimax
+  #                                           # Supported: openrouter, zai, kimi-coding, minimax
   #                                           # Cost tip: keep the parent on a frontier model and pin
   #                                           # delegation.model to an inexpensive one — children carry the
   #                                           # vast majority of tokens, so this is where spend is cut while
@@ -1946,18 +1959,28 @@ delegation:
   #     model: "deepseek/deepseek-chat"       # unpinned children inherit when unset. [] disables fallback (#65038).
 
 # =============================================================================
-# Honcho Integration (Cross-Session User Modeling)
+# External Memory Providers (Cross-Session Memory)
 # =============================================================================
-# AI-native persistent memory via Honcho (https://honcho.dev/).
-# Builds a deeper understanding of the user across sessions and tools.
-# Runs alongside USER.md — additive, not a replacement.
+# One external provider can run alongside MEMORY.md and USER.md — additive, not
+# a replacement. Pick it with memory.provider; empty, "builtin" or "none" keeps
+# the built-in store only. `icebath memory setup` lists the providers and asks
+# for their settings; `icebath memory status` shows the active one.
 #
-# Requires: icebath plugins install honcho (Plastic Labs' plugin from the catalog)
-# Config: ~/.honcho/config.json (shared with Claude Code, Cursor, etc.)
-# API key: HONCHO_API_KEY in ~/.icebath/.env or ~/.honcho/config.json
+# ByteRover — persistent knowledge tree with tiered retrieval via the brv CLI.
+# Requires: brv (curl -fsSL https://byterover.dev/install.sh | sh)
+# API key (optional, for cloud sync): BRV_API_KEY in ~/.icebath/.env
+# memory:
+#   provider: "byterover"
+#   byterover:
+#     auto_extract: true    # Curate completed turns and compression/memory hooks
 #
-# icebath-specific overrides (optional — most config comes from ~/.honcho/config.json):
-# honcho: {}
+# RetainDB — cloud memory API with hybrid search and 7 memory types.
+# API key: RETAINDB_API_KEY in ~/.icebath/.env (RETAINDB_BASE_URL and
+# RETAINDB_PROJECT override the endpoint and project)
+# memory:
+#   provider: "retaindb"
+#   retaindb:
+#     base_url: "https://api.retaindb.com"
 
 # =============================================================================
 # Display
@@ -2224,38 +2247,6 @@ display:
 #     - command: "~/.icebath/agent-hooks/log-orchestration.sh"
 #
 # hooks_auto_accept: false
-
-
-# =============================================================================
-# Telemetry
-# =============================================================================
-# Shared metrics are disabled by default. When enabled, icebath writes only
-# allowlisted aggregate counters and immutable JSON
-# packages under $ICEBATH_HOME/telemetry/shared_metrics.
-# Packages include a random profile-scoped ID that stays stable until this
-# directory is deleted. It is not derived from hardware, account, or host data.
-# Successfully exported local history is retained for 30 days; pending deltas
-# are retained until they can be exported.
-# This profile-owned choice is not overridden by managed-scope configuration.
-#
-# Nothing is uploaded unless you also set `send: true`. That is a separate
-# opt-in and requires `enabled`; it never turns collection on by itself.
-# When sending is on:
-#   * only packages whose entire collection period falls within one
-#     continuous recorded consent window are ever sent. Consent windows open
-#     when you enable sending and close when you disable it, so data
-#     collected before you opted in — or during any gap between opt-ins —
-#     stays on this machine;
-#   * each package carries the profile-scoped ID as-is. It is a random UUID
-#     with no hardware, account, or host-derived content, and deleting the
-#     shared-metrics directory resets it.
-# Type /setup telemetry inside icebath to review the consent and identity
-# terms and to change the choice.
-telemetry:
-  shared_metrics:
-    enabled: false
-    send: false
-    # endpoint: https://telemetry.nousresearch.com/v1/telemetry
 
 
 # =============================================================================

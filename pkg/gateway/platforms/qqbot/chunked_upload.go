@@ -8,7 +8,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"log/slog"
 	"math"
 	"os"
 	"strconv"
@@ -238,7 +237,7 @@ func (u *ChunkedUploader) Upload(ctx context.Context, chatType, targetID, filePa
 		return nil, err
 	}
 	job := &uploadJob{chatType: chatType, targetID: targetID, filePath: filePath, fileSize: fi.Size()}
-	slog.Info(fmt.Sprintf("[%s] Chunked upload start: file=%s size=%s type=%d", u.logTag, fileName, FormatSize(job.fileSize), fileType))
+	pkgLog().Info(fmt.Sprintf("[%s] Chunked upload start: file=%s size=%s type=%d", u.logTag, fileName, FormatSize(job.fileSize), fileType))
 	hashes, err := computeFileHashes(filePath, job.fileSize)
 	if err != nil {
 		return nil, err
@@ -254,11 +253,11 @@ func (u *ChunkedUploader) Upload(ctx context.Context, chatType, targetID, filePa
 		retry = partFinishDefaultTimeout
 	}
 	job.retryTimeout = math.Min(retry, partFinishMaxTimeout)
-	slog.Info(fmt.Sprintf("[%s] Prepared: upload_id=%s block_size=%s parts=%d concurrency=%d", u.logTag, job.uploadID, FormatSize(job.blockSize), job.totalParts, maxConcurrent))
+	pkgLog().Info(fmt.Sprintf("[%s] Prepared: upload_id=%s block_size=%s parts=%d concurrency=%d", u.logTag, job.uploadID, FormatSize(job.blockSize), job.totalParts, maxConcurrent))
 	if err := u.uploadParts(ctx, job, prepare.parts, int(max(maxConcurrent, 1))); err != nil {
 		return nil, err
 	}
-	slog.Info(fmt.Sprintf("[%s] All %d parts uploaded, completing…", u.logTag, job.totalParts))
+	pkgLog().Info(fmt.Sprintf("[%s] All %d parts uploaded, completing…", u.logTag, job.totalParts))
 	return u.complete(ctx, job)
 }
 
@@ -318,7 +317,7 @@ func (u *ChunkedUploader) uploadOnePart(ctx context.Context, job *uploadJob, par
 	}
 	sum := md5.Sum(data)
 	md5Hex := hex.EncodeToString(sum[:])
-	slog.Debug(fmt.Sprintf("[%s] Part %d/%d: uploading %s (offset=%d md5=%s)", u.logTag, partIndex, totalParts, FormatSize(length), offset, md5Hex))
+	pkgLog().Debug(fmt.Sprintf("[%s] Part %d/%d: uploading %s (offset=%d md5=%s)", u.logTag, partIndex, totalParts, FormatSize(length), offset, md5Hex))
 	if err := u.putToPresignedURL(ctx, part.presignedURL, data, partIndex, totalParts); err != nil {
 		return err
 	}
@@ -329,7 +328,7 @@ func (u *ChunkedUploader) uploadOnePart(ctx context.Context, job *uploadJob, par
 	job.completed++
 	completed := job.completed
 	job.mu.Unlock()
-	slog.Debug(fmt.Sprintf("[%s] Part %d/%d done (%d/%d total)", u.logTag, partIndex, totalParts, completed, totalParts))
+	pkgLog().Debug(fmt.Sprintf("[%s] Part %d/%d done (%d/%d total)", u.logTag, partIndex, totalParts, completed, totalParts))
 	return nil
 }
 
@@ -344,7 +343,7 @@ func (u *ChunkedUploader) withRetries(ctx context.Context, attempt func() (any, 
 		lastErr = err
 		if i < maxRetries {
 			delay := baseDelay * math.Pow(2, float64(i))
-			slog.Warn(fmt.Sprintf("[%s] %s attempt %d failed, retry in %.1fs: %v", u.logTag, label, i+1, delay, err))
+			pkgLog().Warn(fmt.Sprintf("[%s] %s attempt %d failed, retry in %.1fs: %v", u.logTag, label, i+1, delay, err))
 			if err := uploadSleep(ctx, time.Duration(delay*float64(time.Second))); err != nil {
 				return nil, err
 			}
@@ -384,7 +383,7 @@ func (u *ChunkedUploader) putToPresignedURL(ctx context.Context, url string, dat
 			return nil, err
 		}
 		if resp.StatusCode >= 200 && resp.StatusCode < 300 {
-			slog.Debug(fmt.Sprintf("[%s] PUT part %d/%d: %d OK", u.logTag, partIndex, totalParts, resp.StatusCode))
+			pkgLog().Debug(fmt.Sprintf("[%s] PUT part %d/%d: %d OK", u.logTag, partIndex, totalParts, resp.StatusCode))
 			return nil, nil
 		}
 		preview := []rune(resp.Text)
@@ -417,7 +416,7 @@ func (u *ChunkedUploader) partFinishWithRetry(ctx context.Context, job *uploadJo
 				strconv.FormatFloat(job.retryTimeout, 'f', 0, 64), attempt, err)}
 		}
 		attempt++
-		slog.Debug(fmt.Sprintf("[%s] part_finish retryable error, attempt %d, elapsed=%.1fs: %v", u.logTag, attempt, elapsed, err))
+		pkgLog().Debug(fmt.Sprintf("[%s] part_finish retryable error, attempt %d, elapsed=%.1fs: %v", u.logTag, attempt, elapsed, err))
 		if err := uploadSleep(ctx, partFinishRetryInterval); err != nil {
 			return err
 		}

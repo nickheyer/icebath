@@ -1,7 +1,7 @@
 package termlab
 
 import (
-	"bytes"
+	"encoding/binary"
 	"image"
 	"image/color"
 	"testing"
@@ -41,15 +41,26 @@ func TestImageHelpers(t *testing.T) {
 	}
 }
 
-func TestDecodePPM(t *testing.T) {
-	img, err := decodePPM(bytes.NewReader(append([]byte("P6\n2 1\n255\n"), 1, 2, 3, 4, 5, 6)))
+func TestDecodeXWD(t *testing.T) {
+	header := func(bpp uint32) []byte {
+		words := []uint32{100, 7, 2, 24, 2, 1, 0, 0, 32, 0, 32, bpp, 8, 4, 0xff0000, 0xff00, 0xff, 8, 256, 0, 2, 1, 0, 0, 0}
+		b := make([]byte, 0, 100)
+		for _, w := range words {
+			b = binary.BigEndian.AppendUint32(b, w)
+		}
+		return b
+	}
+	img, err := decodeXWD(append(header(32), 3, 2, 1, 0, 6, 5, 4, 0), image.Rectangle{})
 	if err != nil {
 		t.Fatal(err)
 	}
 	if img.Bounds() != image.Rect(0, 0, 2, 1) || img.RGBAAt(0, 0) != (color.RGBA{1, 2, 3, 255}) || img.RGBAAt(1, 0) != (color.RGBA{4, 5, 6, 255}) {
 		t.Errorf("decoded %v %v %v", img.Bounds(), img.RGBAAt(0, 0), img.RGBAAt(1, 0))
 	}
-	if _, err := decodePPM(bytes.NewReader([]byte("P3\n1 1\n255\n0 0 0"))); err == nil {
-		t.Error("a plain text pixmap decoded")
+	if part, err := decodeXWD(append(header(32), 3, 2, 1, 0, 6, 5, 4, 0), image.Rect(1, 0, 2, 1)); err != nil || part.Bounds() != image.Rect(1, 0, 2, 1) || part.RGBAAt(1, 0) != (color.RGBA{4, 5, 6, 255}) {
+		t.Errorf("region %v %v", part, err)
+	}
+	if _, err := decodeXWD(append(header(16), 0, 0, 0, 0, 0, 0, 0, 0), image.Rectangle{}); err == nil {
+		t.Error("a 16 bit pixmap decoded")
 	}
 }

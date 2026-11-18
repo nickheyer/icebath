@@ -8,7 +8,6 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
-	"log/slog"
 	"math"
 	"os"
 	"path/filepath"
@@ -214,7 +213,7 @@ func pruneSpilloverOnce(env *Env) {
 		return
 	}
 	if removed := CleanupSpilloverCache(env, -1); removed > 0 {
-		storageLog(env).Debug(fmt.Sprintf("Pruned %d expired spillover file(s)", removed))
+		envLog(env).Debug(fmt.Sprintf("Pruned %d expired spillover file(s)", removed))
 	}
 }
 
@@ -230,31 +229,26 @@ func isHostSideEnvironment(sandbox Environment) bool {
 	return sandbox == nil || sandbox.UsesHostFilesystem()
 }
 
-// Logger named like the reference tool result storage module
-func storageLog(env *Env) *slog.Logger {
-	return toolsLogger(env).With("logger", "tools.tool_result_storage")
-}
-
 // Writes host side under cache/spillover with the size verified before the model hears about it
 func writeToSpillover(env *Env, content, filename string) string {
 	data := []byte(content)
 	dir := SpilloverDir(env)
 	if err := mkdirParentsExistOK(dir); err != nil {
-		storageLog(env).Warn(fmt.Sprintf("Spillover write failed for %s: %s", filename, pypath.OSErrorText(err)))
+		envLog(env).Warn(fmt.Sprintf("Spillover write failed for %s: %s", filename, pypath.OSErrorText(err)))
 		return ""
 	}
 	path := filepath.Join(dir, filename)
 	if err := os.WriteFile(path, data, 0o666); err != nil {
-		storageLog(env).Warn(fmt.Sprintf("Spillover write failed for %s: %s", filename, pypath.OSErrorText(err)))
+		envLog(env).Warn(fmt.Sprintf("Spillover write failed for %s: %s", filename, pypath.OSErrorText(err)))
 		return ""
 	}
 	st, err := os.Stat(path)
 	if err != nil {
-		storageLog(env).Warn(fmt.Sprintf("Spillover write failed for %s: %s", filename, pypath.OSErrorText(err)))
+		envLog(env).Warn(fmt.Sprintf("Spillover write failed for %s: %s", filename, pypath.OSErrorText(err)))
 		return ""
 	}
 	if st.Size() != int64(len(data)) {
-		storageLog(env).Warn(fmt.Sprintf("Spillover write for %s is not lossless (%d bytes on disk, expected %d) — discarding archive", filename, st.Size(), len(data)))
+		envLog(env).Warn(fmt.Sprintf("Spillover write for %s is not lossless (%d bytes on disk, expected %d) — discarding archive", filename, st.Size(), len(data)))
 		os.Remove(path)
 		return ""
 	}
@@ -298,7 +292,7 @@ func sandboxVisibleSpilloverPath(ctx context.Context, env *Env, hostPath string,
 		func() {
 			defer func() {
 				if r := recover(); r != nil {
-					storageLog(env).Debug(fmt.Sprintf("Spillover sync failed: %v", r))
+					envLog(env).Debug(fmt.Sprintf("Spillover sync failed: %v", r))
 				}
 			}()
 			syncer.SyncFiles(true)
@@ -306,7 +300,7 @@ func sandboxVisibleSpilloverPath(ctx context.Context, env *Env, hostPath string,
 	}
 	res, err := sandbox.Execute(ctx, "test -r "+shQuote(visible), ExecOptions{Timeout: 15})
 	if err != nil {
-		storageLog(env).Debug(fmt.Sprintf("Spillover readability probe failed: %v", err))
+		envLog(env).Debug(fmt.Sprintf("Spillover readability probe failed: %v", err))
 		return ""
 	}
 	if res == nil || res.ReturnCode != 0 {
@@ -421,7 +415,7 @@ func writeToSandbox(ctx context.Context, env *Env, content, remotePath string, s
 	expected := len(content)
 	probe, err := sandbox.Execute(ctx, "wc -c < "+shQuote(remotePath), ExecOptions{Timeout: 15})
 	if err != nil {
-		storageLog(env).Debug(fmt.Sprintf("Sandbox size probe failed for %s: %v", remotePath, err))
+		envLog(env).Debug(fmt.Sprintf("Sandbox size probe failed for %s: %v", remotePath, err))
 		return true
 	}
 	if probe == nil || probe.ReturnCode != 0 {
@@ -438,7 +432,7 @@ func writeToSandbox(ctx context.Context, env *Env, content, remotePath string, s
 	if persisted == expected {
 		return true
 	}
-	storageLog(env).Warn(fmt.Sprintf("Sandbox spill for %s is not lossless (%d bytes in sandbox, expected %d) — discarding archive", remotePath, persisted, expected))
+	envLog(env).Warn(fmt.Sprintf("Sandbox spill for %s is not lossless (%d bytes in sandbox, expected %d) — discarding archive", remotePath, persisted, expected))
 	sandbox.Execute(ctx, "rm -f "+shQuote(remotePath), ExecOptions{Timeout: 15})
 	return false
 }
@@ -491,7 +485,7 @@ func MaybePersistToolResult(ctx context.Context, env *Env, sandbox Environment, 
 	filename := safeResultFilename(toolUseID)
 	preview, hasMore := GeneratePreview(persistedContent, cfg.PreviewSize)
 	persisted := func(path, hostSuffix string) string {
-		storageLog(env).Info(fmt.Sprintf("Persisted large tool result: %s (%s, %d chars -> %s%s)", toolName, toolUseID, pystr.Len(persistedContent), path, hostSuffix))
+		envLog(env).Info(fmt.Sprintf("Persisted large tool result: %s (%s, %d chars -> %s%s)", toolName, toolUseID, pystr.Len(persistedContent), path, hostSuffix))
 		return BuildPersistedMessage(preview, hasMore, pystr.Len(persistedContent), path)
 	}
 	hostPath := writeToSpillover(env, persistedContent, filename)
@@ -512,7 +506,7 @@ func MaybePersistToolResult(ctx context.Context, env *Env, sandbox Environment, 
 			return persisted(remotePath, "")
 		}
 	}
-	storageLog(env).Info(fmt.Sprintf("Inline-truncating large tool result: %s (%d chars, no sandbox write)", toolName, pystr.Len(content)))
+	envLog(env).Info(fmt.Sprintf("Inline-truncating large tool result: %s (%d chars, no sandbox write)", toolName, pystr.Len(content)))
 	return fmt.Sprintf("%s\n\n[Truncated: tool response was %s chars. Full output could not be saved to sandbox.]", preview, commaInt(pystr.Len(content)))
 }
 
@@ -614,7 +608,7 @@ func EnforceTurnBudget(ctx context.Context, env *Env, sandbox Environment, toolM
 			if saved > 0 {
 				total -= saved
 				msg.Content = newParts
-				storageLog(env).Info(fmt.Sprintf("Budget enforcement: persisted a text part of tool result %s (%d chars)", toolUseID, saved))
+				envLog(env).Info(fmt.Sprintf("Budget enforcement: persisted a text part of tool result %s (%d chars)", toolUseID, saved))
 			}
 			continue
 		}
@@ -623,7 +617,7 @@ func EnforceTurnBudget(ctx context.Context, env *Env, sandbox Environment, toolM
 		if replacement != content {
 			total += pystr.Len(replacement) - c.size
 			msg.Content = replacement
-			storageLog(env).Info(fmt.Sprintf("Budget enforcement: persisted tool result %s (%d chars)", toolUseID, c.size))
+			envLog(env).Info(fmt.Sprintf("Budget enforcement: persisted tool result %s (%d chars)", toolUseID, c.size))
 		}
 	}
 	return toolMessages
@@ -703,7 +697,7 @@ func SpillIfOversized(env *Env, text, sessionID, source string, cfg *SpillConfig
 	savedPath := ""
 	spillDir := resolveSpillDir(env, c.Directory, sessionID)
 	if err := EnsureSpillDir(spillDir, true); err != nil {
-		toolsLogger(env).With("logger", "tools.hook_output_spill").Warn(fmt.Sprintf("hook output spill failed: %v", err))
+		envLog(env).Warn(fmt.Sprintf("hook output spill failed: %v", err))
 	} else {
 		spillPath := filepath.Join(spillDir, strings.ReplaceAll(uuid.NewString(), "-", "")+".txt")
 		body := text
@@ -711,7 +705,7 @@ func SpillIfOversized(env *Env, text, sessionID, source string, cfg *SpillConfig
 			body += "\n"
 		}
 		if err := WriteTextExclusive(spillPath, body, true, false); err != nil {
-			toolsLogger(env).With("logger", "tools.hook_output_spill").Warn(fmt.Sprintf("hook output spill failed: %v", err))
+			envLog(env).Warn(fmt.Sprintf("hook output spill failed: %v", err))
 		} else {
 			savedPath = spillPath
 		}

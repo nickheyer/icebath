@@ -3,7 +3,6 @@ package provider
 import (
 	"context"
 	"fmt"
-	"log/slog"
 	"math"
 	"net/http"
 	"net/url"
@@ -74,7 +73,7 @@ func (s *RetrySession) RetryRecoveredLocalServer(apiMode APIMode, provider, base
 	if giveup <= 0 || streak < giveup || (apiMode != "" && apiMode != ModeChatCompletions) || !IsManagedProvider(provider, baseURL) || !localServerAnswers(baseURL) {
 		return false
 	}
-	slog.Info(fmt.Sprintf("Local model server answers its health check after %d stale attempts; trying once more.", streak))
+	pkgLog().Info(fmt.Sprintf("Local model server answers its health check after %d stale attempts; trying once more.", streak))
 	s.staleStreak.Store(int64(giveup - 1))
 	return true
 }
@@ -94,7 +93,7 @@ func managedLocalLoadNotice(baseURL, model string, estTokens int) (string, bool)
 	}
 	processed, ok, err := prefillProgress(model)
 	if err != nil {
-		slog.Debug("local load notice unavailable", "err", err)
+		pkgLog().Debug("local load notice unavailable", "err", err)
 		return "", false
 	}
 	if !ok {

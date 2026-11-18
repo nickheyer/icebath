@@ -585,7 +585,7 @@ func discussionValidateMemberMessage(payload, actor map[string]any, room Discuss
 	if err := discussionTurnCoordinates(out, room); err != nil {
 		return nil, err
 	}
-	if text, ok := out["text"].(string); !ok || pystr.Strip(text) == "" || IsPassText(text) {
+	if text, ok := out["text"].(string); !ok || (out["attachments"] == nil && (pystr.Strip(text) == "" || IsPassText(text))) {
 		return nil, discussionInvalid("message.member text must be a non-pass string")
 	}
 	member, err := discussionMemberByID(room, out["member_id"])

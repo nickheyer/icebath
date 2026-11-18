@@ -3,7 +3,6 @@ package gateway
 import (
 	"context"
 	"fmt"
-	"log/slog"
 	"math"
 	"math/big"
 	"os"
@@ -69,23 +68,23 @@ func MirrorToSession(ctx context.Context, platform, chatID, messageText string, 
 	if sessionID == "" {
 		found, err := findMirrorSessionID(ctx, platform, chatID, opts.ThreadID, opts.UserID)
 		if err != nil {
-			slog.Warn(fmt.Sprintf("Mirror failed for %s:%s thread=%s user=%s session=None: %v", platform, chatID,
+			pkgLog().Warn(fmt.Sprintf("Mirror failed for %s:%s thread=%s user=%s session=None: %v", platform, chatID,
 				optText(opts.ThreadID), optText(opts.UserID), err))
 			return false
 		}
 		sessionID = found
 	}
 	if sessionID == "" {
-		slog.Warn(fmt.Sprintf("Mirror: no session found for %s:%s thread=%s user=%s (explicit_id=none, origin-scan bailed)",
+		pkgLog().Warn(fmt.Sprintf("Mirror: no session found for %s:%s thread=%s user=%s (explicit_id=none, origin-scan bailed)",
 			platform, chatID, optText(opts.ThreadID), optText(opts.UserID)))
 		return false
 	}
 	if err := appendMirrorMessage(ctx, sessionID, opts.Role, messageText); err != nil {
-		slog.Warn(fmt.Sprintf("Mirror failed for %s:%s thread=%s user=%s session=%s: %v", platform, chatID,
+		pkgLog().Warn(fmt.Sprintf("Mirror failed for %s:%s thread=%s user=%s session=%s: %v", platform, chatID,
 			optText(opts.ThreadID), optText(opts.UserID), sessionID, err))
 		return false
 	}
-	slog.Debug(fmt.Sprintf("Mirror: wrote to session %s (from %s)", sessionID, opts.SourceLabel))
+	pkgLog().Debug(fmt.Sprintf("Mirror: wrote to session %s (from %s)", sessionID, opts.SourceLabel))
 	return true
 }
 
@@ -99,7 +98,7 @@ func findMirrorSessionID(ctx context.Context, platform, chatID string, threadID,
 		defer mirrorReleaseDB(db)
 		return state.FindSessionByOrigin(ctx, db, platform, chatID, threadID, userID)
 	}(); err != nil {
-		slog.Debug(fmt.Sprintf("Mirror state.db session lookup failed: %v", err))
+		pkgLog().Debug(fmt.Sprintf("Mirror state.db session lookup failed: %v", err))
 	} else if id != "" {
 		return id, nil
 	}

@@ -23,7 +23,7 @@ func physicalTarget(ctx context.Context, a *SessionAuthority, ref SessionRef) (s
 	}
 	entry, ok := receipt.GetOr("entry", nil).(*pyjson.Object)
 	if !ok {
-		return "", fmt.Errorf("TypeError: receipt entry is not subscriptable")
+		return "", fmt.Errorf("the local receipt of session %s has no entry mapping", ref.SessionID)
 	}
 	sessionID, ok := entry.Get("session_id")
 	if !ok {

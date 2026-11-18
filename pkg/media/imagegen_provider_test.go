@@ -3,7 +3,6 @@ package media
 import (
 	"context"
 	"encoding/base64"
-	"github.com/nickheyer/icebath/pkg/provider"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -132,11 +131,11 @@ func TestImageRegistryNoneWhenEmpty(t *testing.T) {
 
 func TestImageRegistryFallbacks(t *testing.T) {
 	resetImageRegistry(t)
-	env := imageEnv(t, config.Tree{"image_gen": map[string]any{"provider": "nous"}})
+	env := imageEnv(t, config.Tree{"image_gen": map[string]any{"provider": "fal"}})
 	_ = RegisterImageGenProvider(&fakeImageProvider{name: "fal", unavailable: true}, "")
 	_ = RegisterImageGenProvider(&fakeImageProvider{name: "openai"}, "")
 	if p := GetActiveImageGenProvider(context.Background(), env); p == nil || p.Name() != "fal" {
-		t.Fatalf("nous selection must map to fal even when unavailable, got %v", p)
+		t.Fatalf("fal selection must return fal even when unavailable, got %v", p)
 	}
 	setImageConfig(t, env, config.Tree{})
 	if p := GetActiveImageGenProvider(context.Background(), env); p == nil || p.Name() != "openai" {
@@ -283,93 +282,6 @@ func TestGeneratedDirIsMountedFromTheWritersLocation(t *testing.T) {
 	real, _ := filepath.EvalSymlinks(host)
 	if rp, _ := filepath.EvalSymlinks(path); !strings.HasPrefix(rp, real+string(filepath.Separator)) {
 		t.Fatalf("%s not under %s", rp, real)
-	}
-}
-
-func TestManagedModelsResolveToTheirOwnGateway(t *testing.T) {
-	if managedBackendForModel(nil) != managedFal {
-		t.Fatal("unset model")
-	}
-	for id := range falModels {
-		if managedBackendForModel(id) != managedFal {
-			t.Fatal(id)
-		}
-	}
-	for id := range kreaModelIDs {
-		if managedBackendForModel(id) != managedKrea {
-			t.Fatal(id)
-		}
-	}
-	if managedBackendForModel("vendor/some-portal-only-model") != managedPortal {
-		t.Fatal("portal")
-	}
-}
-
-func TestManagedUnionCatalogListsEachModelOnce(t *testing.T) {
-	krea := &fakeImageProvider{name: "krea"}
-	for id := range kreaModelIDs {
-		krea.models = append(krea.models, map[string]any{"id": id, "display": id})
-	}
-	nous := &fakeImageProvider{name: "nous", models: []map[string]any{
-		{"id": "microsoft/mai-image-2.5-pro"}, {"id": "krea/krea-2-medium"}, {"id": "google/gemini-3-pro-image"}, {"id": "vendor/portal-only"}}}
-	usePluginProviders(t, krea, nous)
-	order, catalog, def := managedImageCatalog(context.Background(), &tools.Env{}, true, true)
-	if def != falDefaultModel || len(order) != len(catalog) {
-		t.Fatalf("default %s", def)
-	}
-	var portal []string
-	for id, meta := range catalog {
-		if meta["backend"] == managedPortal {
-			portal = append(portal, id)
-		}
-		if strings.HasPrefix(id, "fal-ai/krea/") {
-			t.Fatal(id)
-		}
-	}
-	if len(portal) != 1 || portal[0] != "vendor/portal-only" || catalog["microsoft/mai-image-2.5-pro"]["backend"] != managedFal {
-		t.Fatalf("portal %v", portal)
-	}
-	for id := range kreaModelIDs {
-		if catalog[id] == nil {
-			t.Fatal(id)
-		}
-	}
-}
-
-func TestManagedRouteFollowsTheStoredModel(t *testing.T) {
-	cases := []struct {
-		provider, model any
-		want            string
-	}{
-		{"nous", "krea-2-medium", managedKrea},
-		{nil, falDefaultModel, managedFal},
-		{"nous", "openai/gpt-image-2", managedPortal},
-		{nil, "openai/gpt-image-2", managedFal},
-		{"  ", "openai/gpt-image-2", managedFal},
-		{"openai", "gpt-image-2", ""},
-	}
-	for _, c := range cases {
-		if got := managedRoute(c.provider, c.model); got != c.want {
-			t.Fatalf("%v/%v -> %q", c.provider, c.model, got)
-		}
-	}
-}
-
-func TestNousSubscriptionManagedImagePartnerFollowsTheStoredModel(t *testing.T) {
-	for _, row := range []struct {
-		cfg     map[string]any
-		partner string
-	}{
-		{map[string]any{"provider": "nous", "model": "krea-2-medium"}, "Krea"},
-		{map[string]any{"model": "fal-ai/flux-2/klein/9b"}, "FAL"},
-		{map[string]any{"provider": "nous", "model": "openai/gpt-image-2"}, "Nous Portal"},
-		{map[string]any{"model": "openai/gpt-image-2"}, "FAL"},
-		{map[string]any{"use_gateway": true, "model": "openai/gpt-image-2"}, "FAL"},
-		{map[string]any{"provider": "openai", "model": "gpt-image-2"}, ""},
-	} {
-		if got := provider.ManagedImagePartner(map[string]any{"image_gen": row.cfg}); got != row.partner {
-			t.Fatalf("%v partner = %q", row.cfg, got)
-		}
 	}
 }
 

@@ -52,7 +52,7 @@ func requestError(t *testing.T, base string) error {
 	prev := httpTimeout
 	httpTimeout = 400 * time.Millisecond
 	t.Cleanup(func() { httpTimeout = prev })
-	_, err := Request(context.Background(), "GET", t.TempDir(), "p", "", nil, "tok")
+	_, err := Request(context.Background(), "GET", "p", "", nil, "tok")
 	return err
 }
 
@@ -62,8 +62,8 @@ func TestBaseURLAndInstanceIDStripLikePythonStr(t *testing.T) {
 		t.Fatalf("base url %q", got)
 	}
 	t.Setenv(URLEnv, "\x1f \x1e")
-	if got := BaseURL(); got != DefaultURL {
-		t.Fatalf("a blank setting falls back to the default, got %q", got)
+	if got := BaseURL(); got != "" {
+		t.Fatalf("a blank setting leaves no plane, got %q", got)
 	}
 	t.Setenv(InstanceEnv, "\x1einst-1\x1f\n")
 	if got := InstanceID(); got != "inst-1" {

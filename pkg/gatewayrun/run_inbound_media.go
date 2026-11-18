@@ -3,7 +3,6 @@ package gatewayrun
 import (
 	"context"
 	"fmt"
-	"log/slog"
 	"os"
 	"path/filepath"
 	"strings"
@@ -14,9 +13,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
-
-// Logger carrying the record name of the hermes runner module
-func inboundLog() *slog.Logger { return slog.Default().With("logger", "gateway.run") }
 
 // Regular file check of pathlib, ignored stat errors read as false and others returned
 func inboundIsFile(path string) (bool, error) {
@@ -57,7 +53,7 @@ func rehomeInboundMedia(ctx context.Context, event *gateway.MessageEvent) {
 			_, err = pyfs.Move(raw, dest)
 		}
 		if err != nil {
-			inboundLog().Warn(fmt.Sprintf("Could not move inbound attachment %s into the routed profile's cache", raw), "exc_info", err)
+			pkgLog().Warn(fmt.Sprintf("Could not move inbound attachment %s into the routed profile's cache", raw), "exc_info", err)
 			continue
 		}
 		rewritten[i] = dest

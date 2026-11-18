@@ -31,7 +31,7 @@ func openChildSessionDB(ctx context.Context, parent *AIAgent) (SessionStore, err
 	}
 	db, err := state.Acquire(ctx, sessionStorePath(parent.sessionDB))
 	if err != nil {
-		delegateLog().Debug("subagent: failed to open dedicated SessionDB; child persistence disabled", "error", err)
+		pkgLog().Debug("subagent: failed to open dedicated SessionDB; child persistence disabled", "error", err)
 		return nil, nil
 	}
 	return db, nil
@@ -248,7 +248,7 @@ func runSingleChild(ctx context.Context, taskIndex int, goal string, child, pare
 		if err, ok := r.(error); ok {
 			msg = err.Error()
 		}
-		delegateLog().Error(fmt.Sprintf("[subagent-%d] failed", taskIndex), "error", r)
+		pkgLog().Error(fmt.Sprintf("[subagent-%d] failed", taskIndex), "error", r)
 		entry = run.finishFailed(fabricatedEntry(taskIndex, "error", msg, child, run.elapsed()), late, msg, msg, "failed")
 	}()
 	heartbeat.start(ctx)

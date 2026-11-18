@@ -12,7 +12,7 @@ import (
 	"testing"
 )
 
-const ucFeed = "version: 1.2.0\nreleased: 2026-09-03T00:00:00Z\nmin_hermes: 0.27.0\nartifacts:\n  git: https://example/o/r\n  bundle: https://example/o/r/plug-1.2.0.zip\n"
+const ucFeed = "version: 1.2.0\nreleased: 2026-09-03T00:00:00Z\nmin_icebath: 0.27.0\nartifacts:\n  git: https://example/o/r\n  bundle: https://example/o/r/plug-1.2.0.zip\n"
 
 func ucGitProv(path string, row map[string]any) Provenance {
 	full := map[string]any{"pinned": false, "revision": strings.Repeat("a", 40), "source": "https://example/o/r"}

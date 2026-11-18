@@ -1,3 +1,5 @@
+//go:build !icebath_core && !icebath_noextras
+
 package pm
 
 import (
@@ -20,9 +22,13 @@ func InstallConfiguredFeaturesMissingDeps(ctx context.Context, projectRoot strin
 	if len(missing) == 0 {
 		return nil
 	}
-	names, err := declaredExtras(projectRoot)
-	if err != nil {
-		return err
+	names := KnownExtras()
+	if !runtimeOnlyProject(projectRoot) {
+		declared, err := declaredExtras(projectRoot)
+		if err != nil {
+			return err
+		}
+		names = declared
 	}
 	declined, err := declinedExtras(ctx, projectRoot)
 	if err != nil {

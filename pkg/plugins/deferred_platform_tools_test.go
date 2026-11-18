@@ -43,7 +43,7 @@ func (p *deferredProbe) write(t *testing.T, name, body string) {
 	writeFile(t, filepath.Join(p.dir, name), deferredProbePreamble(p.probe)+body)
 }
 
-// Bundled style platform plugin whose adapter import is deferred into register, the hermes _write_platform_plugin twin
+// Bundled style platform plugin whose adapter import is deferred into register, the write platform plugin twin
 func writeDeferredPlatform(t *testing.T, platform string, withTools bool, declares bool) *deferredProbe {
 	t.Helper()
 	root := t.TempDir()

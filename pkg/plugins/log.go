@@ -13,49 +13,11 @@ import (
 // Logger every plugin subsystem message goes through, replaceable by the host
 var Logger = slog.Default()
 
-// Logger name of the reference module a plugin subsystem file records under, bound to the base logger at each call
-type moduleLog string
+// Logger name every record of this package carries
+const logName = "plugins"
 
-func (m moduleLog) logger() *slog.Logger          { return Logger.With("logger", string(m)) }
-func (m moduleLog) warn(msg string, args ...any)  { m.logger().Warn(msg, args...) }
-func (m moduleLog) info(msg string, args ...any)  { m.logger().Info(msg, args...) }
-func (m moduleLog) debug(msg string, args ...any) { m.logger().Debug(msg, args...) }
-func (m moduleLog) error(msg string, args ...any) { m.logger().Error(msg, args...) }
-
-// Reference module loggers of the plugin subsystem
-const (
-	logPlugins               moduleLog = "hermes_cli.plugins"
-	logPluginsActivation     moduleLog = "hermes_cli.plugins_activation"
-	logPluginsActivationLive moduleLog = "hermes_cli.plugins_activation_live"
-	logPluginsCapabilityCtx  moduleLog = "hermes_cli.plugins_capability_ctx"
-	logPluginsCmd            moduleLog = "hermes_cli.plugins_cmd"
-	logPluginsCmdCatalog     moduleLog = "hermes_cli.plugins_cmd_catalog"
-	logPluginsCmdInstall     moduleLog = "hermes_cli.plugins_cmd_install"
-	logPluginsCmdToggle      moduleLog = "hermes_cli.plugins_cmd_toggle"
-	logPluginsCmdUpdateAll   moduleLog = "hermes_cli.plugins_cmd_update_all"
-	logPluginsRegistrars     moduleLog = "hermes_cli.plugins_registrars"
-	logPluginsSettings       moduleLog = "hermes_cli.plugins_settings"
-	logPluginCapabilities    moduleLog = "hermes_cli.plugin_capabilities"
-	logPluginCatalog         moduleLog = "hermes_cli.plugin_catalog"
-	logPluginCatalogPresence moduleLog = "hermes_cli.plugin_catalog_presence"
-	logPluginChoices         moduleLog = "hermes_cli.plugin_choices"
-	logPluginEvents          moduleLog = "hermes_cli.plugin_events"
-	logPluginPacks           moduleLog = "hermes_cli.plugin_packs"
-	logPluginValidateLocales moduleLog = "hermes_cli.plugin_validate_locales"
-	logPlatformActions       moduleLog = "hermes_cli.platform_actions"
-	logGithubAPI             moduleLog = "hermes_cli.github_api"
-	logSecurityAdvisories    moduleLog = "hermes_cli.security_advisories"
-	logShellHooks            moduleLog = "agent.shell_hooks"
-	logOutboundWebhooks      moduleLog = "agent.outbound_webhooks"
-	logPluginLLM             moduleLog = "agent.plugin_llm"
-	logPluginStreamHooks     moduleLog = "agent.plugin_stream_hooks"
-	logMemory                moduleLog = "plugins.memory"
-	logContextEngine         moduleLog = "plugins.context_engine"
-	logComputerUse           moduleLog = "plugins.computer_use"
-	logCronProviders         moduleLog = "plugins.cron_providers"
-	logPluginLoader          moduleLog = "plugins.plugin_loader"
-	logProviders             moduleLog = "providers"
-)
+// Logger named after this package on the host replaceable base
+func pkgLog() *slog.Logger { return Logger.With("logger", logName) }
 
 // EnvPluginsDebug tees verbose plugin discovery logs to stderr when truthy
 const EnvPluginsDebug = "ICEBATH_PLUGINS_DEBUG"
@@ -93,7 +55,7 @@ func installPluginDebugHandler(force bool) {
 	Logger = slog.New(&debugTeeHandler{base: Logger.Handler(), out: debugStderr, mu: &sync.Mutex{}})
 	pluginsDebugState.installed = true
 	pluginsDebugState.Unlock()
-	logPlugins.debug("ICEBATH_PLUGINS_DEBUG=1 — verbose plugin discovery logging enabled")
+	pkgLog().Debug("ICEBATH_PLUGINS_DEBUG=1 — verbose plugin discovery logging enabled")
 }
 
 // Error detail a debug run attaches to a failure warning, the panic stack for a recovered plugin panic
@@ -116,16 +78,16 @@ type debugTeeHandler struct {
 	logger string
 }
 
-// Whether records of the named logger reach the tee, the hermes_cli.plugins logger and its children
+// Whether records of the named logger reach the tee, the plugins logger and its children
 func (h *debugTeeHandler) tees() bool {
-	return h.logger == string(logPlugins) || strings.HasPrefix(h.logger, string(logPlugins)+".")
+	return h.logger == logName || strings.HasPrefix(h.logger, logName+"/")
 }
 
 func (h *debugTeeHandler) Enabled(ctx context.Context, level slog.Level) bool {
 	return (h.tees() && level >= slog.LevelDebug) || h.base.Enabled(ctx, level)
 }
 
-// Writes a hermes_cli.plugins record to stderr in the plugins debug format and forwards every record the base accepts
+// Writes a plugins record to stderr in the plugins debug format and forwards every record the base accepts
 func (h *debugTeeHandler) Handle(ctx context.Context, r slog.Record) error {
 	if !h.tees() {
 		if h.base.Enabled(ctx, r.Level) {

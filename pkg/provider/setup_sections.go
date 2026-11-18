@@ -4,39 +4,35 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"log/slog"
 	"maps"
 	"os"
 
 	"github.com/nickheyer/icebath/pkg/cliui"
 	"github.com/nickheyer/icebath/pkg/config"
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
-	"github.com/nickheyer/icebath/pkg/logging"
-	"github.com/nickheyer/icebath/pkg/observability"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
 
 // Help command the provider setup screen points to
 const SetupProviderHelp = "icebath model --help"
 
-var setupLog = logging.GetLogger("hermes_cli.setup")
-
-// Seam over the shared provider picker, the hermes_cli.main.select_provider_and_model the setup tests patch
+// Seam over the shared provider picker, the setup tests patch
 var setupSelectProviderAndModel = SelectProviderAndModel
 
-// SetupAttributeError is the AttributeError a setup section raises on a config value of the wrong type
+// SetupAttributeError is a setup section refusing a config value of the wrong kind
 type SetupAttributeError struct{ Msg string }
 
-func (e *SetupAttributeError) Error() string { return "AttributeError: " + e.Msg }
+func (e *SetupAttributeError) Error() string { return e.Msg }
 
-// SetupTypeError is the TypeError a setup section raises assigning into a config value that is not a mapping
+// SetupTypeError is a setup section refusing to write into a config value that is not a mapping
 type SetupTypeError struct{ Msg string }
 
-func (e *SetupTypeError) Error() string { return "TypeError: " + e.Msg }
+func (e *SetupTypeError) Error() string { return e.Msg }
 
-// SetdefaultDict is cfg.setdefault(key, {}) followed by an item assignment, a TypeError when the value is not a mapping
+// SetdefaultDict is the section under key, created when absent, a SetupTypeError when the value is not a mapping
 func SetdefaultDict(cfg map[string]any, key string) (map[string]any, error) {
 	v, ok := cfg[key]
 	if !ok {
@@ -50,14 +46,13 @@ func SetdefaultDict(cfg map[string]any, key string) (map[string]any, error) {
 	case config.Tree:
 		return m, nil
 	}
-	return nil, &SetupTypeError{Msg: fmt.Sprintf("'%s' object does not support item assignment", pyrepr.TypeName(v))}
+	return nil, &SetupTypeError{Msg: fmt.Sprintf("%s in config is %s, expected a mapping", key, errchain.Kind(v))}
 }
 
 // SetupSystemExit is the exit code and message of a Python SystemExit leaving a setup flow, false for any other error
 func SetupSystemExit(err error) (code int, message string, ok bool) {
 	var setupExit SetupExit
 	var authExit *AuthExitError
-	var nousExit *NousLoginExitError
 	var oauthExit *OAuthLoginExitError
 	var moaExit *MoAExitError
 	switch {
@@ -65,8 +60,6 @@ func SetupSystemExit(err error) (code int, message string, ok bool) {
 		return setupExit.Code, "", true
 	case errors.As(err, &authExit):
 		return authExit.Code, authExit.Message, true
-	case errors.As(err, &nousExit):
-		return nousExit.Code, "", true
 	case errors.As(err, &oauthExit):
 		return oauthExit.Code, "", true
 	case errors.As(err, &moaExit):
@@ -92,9 +85,7 @@ func runSetupProviderPicker(ctx context.Context) (skipped bool, err error) {
 			panic(r)
 		}
 	}()
-	err = observability.ProviderSetupSurface(ctx, "cli_setup", func(ctx context.Context) error {
-		return setupSelectProviderAndModel(ctx, nil)
-	})
+	err = setupSelectProviderAndModel(ctx, nil)
 	if _, _, exit := SetupSystemExit(err); err != nil && (exit || isSetupKeyboardInterrupt(err)) {
 		return true, nil
 	}
@@ -110,7 +101,7 @@ func SetupModelProvider(ctx context.Context, cfg config.Tree) error {
 	case skipped:
 		SetupInfo(nil, "Provider setup skipped.")
 	case err != nil:
-		setupLog.Debug(fmt.Sprintf("select_provider_and_model error during setup: %v", err))
+		pkgLog().Debug(fmt.Sprintf("select_provider_and_model error during setup: %v", err))
 		lines := ProviderSetupFailureLines(err, "icebath model")
 		SetupPrintWarning(lines[0])
 		for _, line := range lines[1:] {
@@ -165,7 +156,7 @@ func SetupToolsEnv(ctx context.Context) *tools.Env {
 	h := home.Dir(ctx)
 	cfg, _ := config.LoadReadonly(ctx, h, nil)
 	cwd, _ := os.Getwd()
-	return &tools.Env{Home: h, Config: cfg, Cwd: cwd, Log: slog.Default()}
+	return &tools.Env{Home: h, Config: cfg, Cwd: cwd, Log: pkgLog()}
 }
 
 // Setup console of the terminal backend section, the setup prompts and prints
@@ -231,7 +222,7 @@ func ModelSectionHasCredentials(ctx context.Context, cfg map[string]any) (bool, 
 		if raw := modelCfg["provider"]; pyrepr.Truthy(raw) {
 			text, isText := raw.(string)
 			if !isText {
-				return false, &SetupAttributeError{Msg: fmt.Sprintf("'%s' object has no attribute 'strip'", pyrepr.TypeName(raw))}
+				return false, &SetupAttributeError{Msg: fmt.Sprintf("model.provider is %s, expected text", errchain.Kind(raw))}
 			}
 			providerID = pystr.Lower(pystr.Strip(text))
 		}

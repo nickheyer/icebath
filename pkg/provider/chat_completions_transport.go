@@ -13,7 +13,7 @@ import (
 var ccStripMsgKeys = map[string]bool{
 	"codex_reasoning_items": true, "codex_message_items": true, "tool_name": true, "effect_disposition": true, "timestamp": true,
 	"platform_message_id": true, "message_id": true, "api_content": true, "anthropic_content_blocks": true,
-	"bedrock_content_blocks": true, "message_uid": true, "data_use": true,
+	"bedrock_content_blocks": true, "message_uid": true,
 }
 
 var ccStripTCKeys = []string{"call_id", "response_item_id"}
@@ -241,32 +241,6 @@ func chatCompletionsSanitizeMessages(messages []map[string]any, kwargs map[strin
 // Transport convert_messages over message maps with only the model and base URL kwargs
 func chatCompletionsConvertMessages(messages []map[string]any, model, baseURL string) []map[string]any {
 	out, _ := chatCompletionsSanitizeMessages(messages, map[string]any{"model": model, "base_url": baseURL}).([]map[string]any)
-	return out
-}
-
-// Union of the data_use requirements the messages carry
-func dataUseOfDicts(messages []map[string]any) map[string]bool {
-	out := map[string]bool{}
-	for _, m := range messages {
-		switch v := m["data_use"].(type) {
-		case []any:
-			for _, r := range v {
-				if s, ok := r.(string); ok {
-					out[s] = true
-				}
-			}
-		case []string:
-			for _, s := range v {
-				out[s] = true
-			}
-		case map[string]bool:
-			for s, on := range v {
-				if on {
-					out[s] = true
-				}
-			}
-		}
-	}
 	return out
 }
 
@@ -555,7 +529,7 @@ func mergeInto(dst map[string]any, src map[string]any) {
 func chatCompletionsBuildKwargs(model string, messages []map[string]any, tools []map[string]any, params map[string]any) (map[string]any, error) {
 	params = copyDict(params)
 	profile := transportProfile(params["provider_profile"])
-	params["data_use"] = dataUseOfDicts(messages)
+
 	sanitized := chatCompletionsSanitizeMessages(messages, map[string]any{
 		"model": model, "base_url": params["base_url"], "provider_profile": params["provider_profile"], "provider": params["provider_name"],
 	}).([]map[string]any)
@@ -681,7 +655,7 @@ func buildKwargsFromProfile(profile *Profile, model string, sanitized []map[stri
 	bodyCtx := map[string]any{
 		"session_id": params["session_id"], "provider_preferences": params["provider_preferences"], "model": model,
 		"base_url": params["base_url"], "reasoning_config": reasoning,
-		"openrouter_min_coding_score": params["openrouter_min_coding_score"], "data_use": params["data_use"],
+		"openrouter_min_coding_score": params["openrouter_min_coding_score"],
 	}
 	if c, ok := params[hookCtxKey]; ok {
 		extrasCtx[hookCtxKey] = c

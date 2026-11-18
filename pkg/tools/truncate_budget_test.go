@@ -3,11 +3,12 @@ package tools
 import (
 	"context"
 	"fmt"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"regexp"
 	"strconv"
 	"strings"
 	"testing"
+
+	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 
 	"github.com/nickheyer/icebath/pkg/config"
 )

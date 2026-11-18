@@ -50,9 +50,9 @@ func (c *bcaLogs) warnings() []string {
 // Captures the Bedrock logger for one test
 func bcaCaptureBedrockLog(t *testing.T) *bcaLogs {
 	logs := &bcaLogs{}
-	prev := bedrockLog
-	bedrockLog = slog.New(logs)
-	t.Cleanup(func() { bedrockLog = prev })
+	prev := slog.Default()
+	slog.SetDefault(slog.New(logs))
+	t.Cleanup(func() { slog.SetDefault(prev) })
 	return logs
 }
 

@@ -285,7 +285,7 @@ func pinnedTrace(recs []loggerRecord) bool {
 }
 
 func TestParentWithoutSessionDBWarnsAndSkipsPin(t *testing.T) {
-	recs := captureLogger(t, "tools.delegate_tool", slog.LevelWarn)
+	recs := captureLogger(t, "agent", slog.LevelWarn)
 	if got := parentLiveHome(&AIAgent{}); got != "" {
 		t.Fatalf("home %q", got)
 	}
@@ -315,7 +315,7 @@ func TestParentSessionDBPinsHome(t *testing.T) {
 }
 
 func TestMockParentDBPathIsNotPinned(t *testing.T) {
-	recs := captureLogger(t, "tools.delegate_tool", slog.LevelDebug)
+	recs := captureLogger(t, "agent", slog.LevelDebug)
 	if got := parentLiveHome(&AIAgent{sessionDB: &state.SessionDB{}}); got != "" {
 		t.Fatalf("home %q", got)
 	}

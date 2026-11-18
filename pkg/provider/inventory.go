@@ -34,7 +34,6 @@ type ModelsPayloadOptions struct {
 	PricingCacheOnly           bool
 	Capabilities               bool
 	Featured                   bool
-	ForceFreshNousTier         bool
 	Refresh                    bool
 	ProbeCustomProviders       bool
 	ProbeCurrentCustomProvider bool
@@ -67,15 +66,9 @@ var (
 		return config.LoadReadonly(ctx, h, config.NewSecrets(h).Lookup())
 	}
 	inventoryPricingFn          = GetPricingForProvider
-	inventoryCheckNousTierFn    = CheckNousFreeTier
-	inventoryPartitionFn        = PartitionNousModelsByTier
-	inventoryCachedNousTierFn   = GetCachedNousFreeTier
-	inventoryNousPickerUsageFn  = nousPickerUsageIn
 	inventoryStagedModelsFn     = stagedModelIDs
 	inventoryStateEndpointFn    = stateEndpoint
-	inventoryNousCapsFn         = NousModelReasoningCapabilities
 	inventoryOpenRouterCapsFn   = OpenRouterModelReasoningCapabilities
-	inventoryWarmNousCapsFn     = WarmNousReasoningCapsAsync
 	inventoryWarmOpenRouterFn   = WarmOpenRouterReasoningCapsAsync
 	inventoryRefreshUsageFn     = refreshAccountUsageAsync
 	inventoryRefreshEntriesFn   = refreshAccountUsageEntriesAsync
@@ -217,7 +210,7 @@ func buildModelsRows(ctx context.Context, pc PickerConfigContext, opts ModelsPay
 	}
 	rows, err := inventoryListProvidersFn(ctx, AuthenticatedProvidersOptions{
 		CurrentProvider: pc.CurrentProvider, CurrentBaseURL: pc.CurrentBaseURL, CurrentModel: pc.CurrentModel,
-		UserProviders: pc.UserProviders, CustomProviders: pc.CustomProviders, ForceFreshNousTier: opts.ForceFreshNousTier,
+		UserProviders: pc.UserProviders, CustomProviders: pc.CustomProviders,
 		MaxModels: opts.MaxModels, Refresh: opts.Refresh, SkipCustomProviderProbe: !opts.ProbeCustomProviders,
 		ProbeCurrentCustomProvider: opts.ProbeCurrentCustomProvider, ForPicker: opts.ForPicker,
 		ExcludedProviders: excluded, NonBlockingCatalogs: opts.NonBlockingCatalogs, FastCustomProbe: opts.FastCustomProbe,
@@ -263,7 +256,7 @@ func buildModelsRows(ctx context.Context, pc PickerConfigContext, opts ModelsPay
 		rows = reorderCanonical(rows)
 	}
 	if opts.Pricing {
-		applyPricing(ctx, rows, opts.ForceFreshNousTier, opts.PricingCacheOnly)
+		applyPricing(ctx, rows, opts.PricingCacheOnly)
 	}
 	var metadataConfig map[string]any
 	if opts.Capabilities || opts.Featured {
@@ -369,7 +362,7 @@ func BuildModelOptionsPayload(ctx context.Context, pc PickerConfigContext, expli
 		return nil, err
 	}
 	if !refresh {
-		inventoryPrewarmFn(ctx, rows, pc.CurrentProvider, pc.CurrentBaseURL)
+		inventoryPrewarmFn(ctx, rows)
 	}
 	return payload, nil
 }
@@ -417,12 +410,12 @@ func applyLimits(ctx context.Context, rows []map[string]any) error {
 	}
 	for _, row := range rows {
 		slug := pyOrStr(row["slug"])
-		if len(pools[slug]) == 0 || pyTruthy(row["is_user_defined"]) || pyTruthy(row["plan_usage"]) {
+		if len(pools[slug]) == 0 || pyTruthy(row["is_user_defined"]) {
 			continue
 		}
 		pool := inventoryLoadPoolFn(ctx, slug)
 		if pool == nil {
-			modelsLog.Debug("Pool limit read failed", "provider", slug)
+			pkgLog().Debug("Pool limit read failed", "provider", slug)
 			continue
 		}
 		state := pool.LimitState(inventoryModels(row))
@@ -532,7 +525,7 @@ var accountStateRank = map[string]int{"limited": 3, "ready": 2, "unknown": 1, "u
 func poolUsageAccounts(ctx context.Context, slug string, entryRequests *[]map[string]any) []any {
 	pool := inventoryLoadPoolFn(ctx, slug)
 	if pool == nil {
-		modelsLog.Debug("Pool usage read failed", "provider", slug)
+		pkgLog().Debug("Pool usage read failed", "provider", slug)
 		return nil
 	}
 	entries := pool.Entries()
@@ -681,9 +674,6 @@ func FormatAuxPickerEntries(rows []map[string]any, currentProvider, currentBaseU
 // Cache only per model reasoning capability reader of an aggregator that publishes one, warming it first
 func reasoningCatalogReader(ctx context.Context, slug string) func(model string) (ReasoningCapabilities, bool) {
 	switch slug {
-	case "nous":
-		inventoryWarmNousCapsFn(ctx)
-		return func(model string) (ReasoningCapabilities, bool) { return inventoryNousCapsFn(ctx, model, 0, false) }
 	case "openrouter":
 		inventoryWarmOpenRouterFn(ctx)
 		return func(model string) (ReasoningCapabilities, bool) {
@@ -936,7 +926,7 @@ func appendUnconfiguredRows(ctx context.Context, rows []map[string]any, pc Picke
 // True when Anthropic was authenticated through OAuth, device flow, Claude Code login or a pooled OAuth entry
 func anthropicOAuthCredentialsPresent(ctx context.Context) bool {
 	env := modelsPoolEnv(ctx)
-	for _, read := range []func(PoolEnv) map[string]any{ReadHermesOAuthCredentials, ReadClaudeCodeCredentials} {
+	for _, read := range []func(PoolEnv) map[string]any{ReadIcebathOAuthCredentials, ReadClaudeCodeCredentials} {
 		if pyTruthy(read(env)["accessToken"]) {
 			return true
 		}
@@ -1056,62 +1046,12 @@ func reorderCanonical(rows []map[string]any) []map[string]any {
 	return append(append([]map[string]any{}, canon...), extras...)
 }
 
-// Stamps the Nous window plan usage on the row and feeds the usage chip, nil without a window plan
-func attachNousPlanUsage(ctx context.Context, row map[string]any, warm bool) *PickerUsage {
-	usage := inventoryNousPickerUsageFn(ctx, warm, !warm)
-	if usage == nil {
-		return nil
-	}
-	row["plan_usage"] = usage.ToPayload()
-	if usage.PausedReason != "" || pyTruthy(row["usage"]) {
-		return usage
-	}
-	for _, g := range usage.Gauges {
-		if g.LeftFraction <= 0.0 {
-			return usage
-		}
-	}
-	windows := []any{}
-	for _, g := range usage.Gauges {
-		if g.ResetsAtMs != nil && *g.ResetsAtMs != 0 {
-			windows = append(windows, planUsageWindow(g))
-		}
-	}
-	if len(windows) > 0 {
-		row["usage"] = map[string]any{"windows": windows}
-	}
-	return usage
-}
-
-// One window plan allowance in the provider usage window shape
-func planUsageWindow(g UsageGauge) map[string]any {
-	title := g.Title
-	if title == "" {
-		title = g.Label
-	}
-	scope := "model"
-	if g.Scope == ScopeAll {
-		scope = "account"
-	}
-	var ms int64
-	if g.ResetsAtMs != nil {
-		ms = *g.ResetsAtMs
-	}
-	return map[string]any{
-		"label":        GaugeTitle(WindowGauge{ID: g.Label, Scope: g.Scope, Label: title, UsedBp: 0}),
-		"used_percent": pyRoundPlaces(g.UsedFraction()*100.0, 2),
-		"resets_at":    inventoryISOFromEpoch(float64(ms) / 1000),
-		"scope":        scope,
-	}
-}
-
-// Attaches per model pricing and for Nous the free tier entitlement and plan usage
-func applyPricing(ctx context.Context, rows []map[string]any, forceFreshNousTier, cachedOnly bool) {
-	var nousFreeTier *bool
+// Attaches per model pricing to every row whose catalog prices its models
+func applyPricing(ctx context.Context, rows []map[string]any, cachedOnly bool) {
 	for _, row := range rows {
 		slug := strings.ToLower(pyStr(pyGetAny(row, "slug", "")))
 		models := inventoryModels(row)
-		if len(models) == 0 || pyTruthy(row["free_tier_row"]) {
+		if len(models) == 0 {
 			continue
 		}
 		baseURL := ""
@@ -1119,33 +1059,7 @@ func applyPricing(ctx context.Context, rows []map[string]any, forceFreshNousTier
 			baseURL = pyOrStr(row["api_url"])
 		}
 		rawPricing := inventoryPricingFn(ctx, slug, baseURL, false, cachedOnly)
-		var cachedNousTier *bool
-		var planUsage *PickerUsage
-		if slug == "nous" {
-			planUsage = attachNousPlanUsage(ctx, row, !cachedOnly)
-		}
-		if slug == "nous" && cachedOnly {
-			tier, known := inventoryCachedNousTierFn(ctx)
-			if !known {
-				row["free_tier_pending"] = true
-				row["unavailable_models"] = stringsToAny(models)
-				if !pyTruthy(row["warning"]) {
-					row["warning"] = "Checking Nous plan entitlement… models unlock on the next picker open or refresh."
-				}
-				continue
-			}
-			cachedNousTier = &tier
-		}
 		if len(rawPricing) == 0 {
-			if slug == "nous" {
-				free := cachedNousTier != nil && *cachedNousTier
-				row["free_tier"] = free
-				row["pricing_pending"] = true
-				row["unavailable_models"] = []any{}
-				if free {
-					row["unavailable_models"] = stringsToAny(models)
-				}
-			}
 			continue
 		}
 		formatted := map[string]any{}
@@ -1154,47 +1068,16 @@ func applyPricing(ctx context.Context, rows []map[string]any, forceFreshNousTier
 			if len(p) == 0 {
 				continue
 			}
-			formatted[mid] = formatModelPricing(slug, p)
+			formatted[mid] = formatModelPricing(p)
 		}
 		if len(formatted) > 0 {
 			row["pricing"] = formatted
 		}
-		if slug != "nous" {
-			continue
-		}
-		if nousFreeTier == nil {
-			tier := false
-			if cachedOnly {
-				tier = cachedNousTier != nil && *cachedNousTier
-			} else {
-				tier = inventoryCheckNousTierFn(ctx, forceFreshNousTier, false)
-			}
-			nousFreeTier = &tier
-		}
-		row["free_tier"] = *nousFreeTier
-		row["unavailable_models"] = []any{}
-		if *nousFreeTier {
-			_, unavailable := inventoryPartitionFn(models, rawPricing, true)
-			row["unavailable_models"] = stringsToAny(unavailable)
-		}
-		if planUsage != nil {
-			row["usage_levels"] = UsageLevels(models, PricingTableAsAny(rawPricing))
-			perModel := map[string]any{}
-			for _, m := range models {
-				if p, ok := rawPricing[m]; ok {
-					perModel[m] = p
-				} else {
-					perModel[m] = nil
-				}
-			}
-			row["plan_usage"] = planUsage.WithPricing(perModel).ToPayload()
-			delete(row, "pricing")
-		}
 	}
 }
 
-// Formatted input, output, cache and free flags of one model price, with Nous sale chrome
-func formatModelPricing(slug string, p map[string]any) map[string]any {
+// Formatted input, output, cache and free flags of one model price
+func formatModelPricing(p map[string]any) map[string]any {
 	inpRaw, outRaw := pricingField(p, "prompt"), pricingField(p, "completion")
 	cacheRaw := pricingField(p, "input_cache_read")
 	formatRaw := func(raw any) string {
@@ -1208,19 +1091,7 @@ func formatModelPricing(slug string, p map[string]any) map[string]any {
 	if pyTruthy(cacheRaw) {
 		cache = FormatPricePerMtok(rawPriceString(cacheRaw))
 	}
-	entry := map[string]any{"input": inp, "output": out, "cache": cache, "free": inp == "free" && (out == "free" || out == "")}
-	if slug == "nous" {
-		if sale, ok := ComputeSaleDiscount(rawPriceString(inpRaw), rawPriceString(outRaw), p["original"]); ok {
-			entry["discount_percent"] = sale.Percent
-			if sale.WasPrompt != "" {
-				entry["was_input"] = FormatPricePerMtok(sale.WasPrompt)
-			}
-			if sale.WasCompletion != "" {
-				entry["was_output"] = FormatPricePerMtok(sale.WasCompletion)
-			}
-		}
-	}
-	return entry
+	return map[string]any{"input": inp, "output": out, "cache": cache, "free": inp == "free" && (out == "free" || out == "")}
 }
 
 // Local row of staged GGUF models, current by alias or by the managed server endpoint, nil when none staged
@@ -1240,7 +1111,7 @@ func localRuntimeRow(ctx context.Context, pc PickerConfigContext) map[string]any
 }
 
 // Warms picker pricing caches in the background, one live worker per profile and endpoint scope
-func prewarmPricingAsync(ctx context.Context, rows []map[string]any, currentProvider, currentBaseURL string) <-chan struct{} {
+func prewarmPricingAsync(ctx context.Context, rows []map[string]any) <-chan struct{} {
 	slugs := map[[2]string]bool{}
 	for _, row := range rows {
 		if !pyTruthy(row["slug"]) {
@@ -1255,7 +1126,7 @@ func prewarmPricingAsync(ctx context.Context, rows []map[string]any, currentProv
 	}
 	var scope [][2]string
 	for pair := range slugs {
-		scope = append(scope, [2]string{pair[0], inventoryPricingScopeFn(ctx, pair[0], pair[1], currentProvider, currentBaseURL)})
+		scope = append(scope, [2]string{pair[0], inventoryPricingScopeFn(ctx, pair[0], pair[1])})
 	}
 	sort.Slice(scope, func(i, j int) bool {
 		if scope[i][0] != scope[j][0] {
@@ -1299,7 +1170,7 @@ func prewarmPricingAsync(ctx context.Context, rows []map[string]any, currentProv
 			inventoryPricingPrewarmMu.Unlock()
 			close(done)
 		}()
-		applyPricing(workerCtx, workerRows, false, false)
+		applyPricing(workerCtx, workerRows, false)
 	}()
 	return done
 }

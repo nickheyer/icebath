@@ -2,7 +2,6 @@ package gateway
 
 import (
 	"fmt"
-	"log/slog"
 	"sync"
 
 	"github.com/nickheyer/icebath/pkg/activesessions"
@@ -48,6 +47,6 @@ func leaseIOWorker() {
 // Releases one lease, a failure logged at debug
 func releaseQueuedLease(lease LeaseReleaser) {
 	if err := lease.Release(); err != nil {
-		slog.Debug(fmt.Sprintf("Failed to release active session slot: %v", err))
+		pkgLog().Debug(fmt.Sprintf("Failed to release active session slot: %v", err))
 	}
 }

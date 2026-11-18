@@ -63,7 +63,7 @@ func (d *SessionDB) appendDetachedResult(ctx context.Context, sessionID, content
 		if err := d.checkTranscriptWriteGuards(ctx, conn, sessionID, transcriptGuards{rejectActiveTurnLease: true}); err != nil {
 			return err
 		}
-		res, err := conn.ExecContext(ctx, hermesInsertMessageSQL, row...)
+		res, err := conn.ExecContext(ctx, icebathInsertMessageSQL, row...)
 		if err != nil {
 			return err
 		}

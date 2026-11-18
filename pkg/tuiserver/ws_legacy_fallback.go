@@ -9,6 +9,7 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/tuigateway"
+	"github.com/nickheyer/icebath/pkg/tuihost"
 )
 
 // Context key of the non launch profile home a legacy fallback request's ticket is bound to
@@ -19,12 +20,11 @@ var sessionNamespaces = []string{"session.", "prompt.", "message."}
 
 // Store wide session reads and foreign imports a legacy handler may still serve
 var sessionFallbackAllowed = map[string]bool{
-	"session.most_recent": true, "session.active_list": true, "session.events.stats": true,
-	"session.foreign.list": true, "session.foreign.preview": true, "session.foreign.import": true,
+	"session.most_recent": true, "session.active_list": true,
 }
 
 // Sidecar verbs acting on process global state, never reachable through the legacy fallback
-var processGlobal = map[string]bool{"process.stop": true, "delegation.pause": true, "reload.mcp": true, "reload.env": true, "agents.list": true}
+var processGlobal = map[string]bool{"process.stop": true, "delegation.pause": true, "reload.mcp": true, "reload.env": true}
 
 // Whether a connection's grant covers the interactive purpose and the method is no authority owned or process global verb
 func legacyFallbackAllowed(capabilities []string, method string) bool {
@@ -107,8 +107,13 @@ func ticketProfileRequest(req map[string]any, ticketHome string) (map[string]any
 		return resp, target, ok
 	}
 	method, _ := req["method"].(string)
-	contract := tuigateway.Methods[method]
-	if contract == nil || !slices.Contains(contract.Params.ModelFields(), "profile") {
+	takesProfile := false
+	if typed := tuigateway.Lookup(tuigateway.KindMethod, method); typed != nil {
+		takesProfile = typed.TakesParam("profile")
+	} else if contract := tuihost.Methods[method]; contract != nil {
+		takesProfile = slices.Contains(contract.Params.ModelFields(), "profile")
+	}
+	if !takesProfile {
 		return req, ticketHome, true
 	}
 	name, _ := gateway.ProfileNameForHome(ticketHome)
@@ -168,7 +173,7 @@ func ownProfileRead(ctx context.Context, req map[string]any, ticketHome string) 
 	}
 	current := strOr(params["current_session_id"])
 	rows := []any{}
-	for _, live := range tuigateway.LiveSessions() {
+	for _, live := range tuihost.LiveSessions() {
 		owner := strOr(live.Session.Get("profile_home"))
 		if owner == "" {
 			owner = launchHome()

@@ -72,7 +72,7 @@ func (c *wakeAudioCapture) Read(stop wakeWaiter) ([]int16, bool, error) {
 			}
 			stalled += wakeReadPollSeconds
 			if stalled >= wakeReadStallFallbackSeconds {
-				wakeLog().Warn(fmt.Sprintf("wake word: read_available stuck below frame length for %.1fs — falling back to blocking reads", stalled))
+				pkgLog().Warn(fmt.Sprintf("wake word: read_available stuck below frame length for %.1fs — falling back to blocking reads", stalled))
 				c.skipAvailablePoll = true
 				break
 			}
@@ -266,7 +266,7 @@ func (d *WakeWordDetector) dispatchWake() {
 	onWake := d.onWake
 	d.mu.Unlock()
 	if err := onWake(); err != nil {
-		wakeLog().Warn(fmt.Sprintf("wake word callback failed: %s", err))
+		pkgLog().Warn(fmt.Sprintf("wake word callback failed: %s", err))
 	}
 }
 
@@ -275,7 +275,7 @@ func (d *WakeWordDetector) openAudioCapture(frameLength int) (wakeCapture, error
 	sd, err := importAudio()
 	if err != nil {
 		if isAudioImportError(err) || isAudioOSError(err) {
-			wakeLog().Error(fmt.Sprintf("wake word: audio libraries unavailable: %s", err))
+			pkgLog().Error(fmt.Sprintf("wake word: audio libraries unavailable: %s", err))
 		}
 		return nil, err
 	}
@@ -300,7 +300,7 @@ func (d *WakeWordDetector) openAudioCapture(frameLength int) (wakeCapture, error
 	if details.DefaultSamplerate != nil && *details.DefaultSamplerate != 0 {
 		defaultRate = pyrepr.Str(*details.DefaultSamplerate)
 	}
-	wakeLog().Info(fmt.Sprintf("wake word: opening microphone device=%s selector=%s hostapi=%s default_rate=%s capture_rate=%d engine_rate=%d",
+	pkgLog().Info(fmt.Sprintf("wake word: opening microphone device=%s selector=%s hostapi=%s default_rate=%s capture_rate=%d engine_rate=%d",
 		name, pyrepr.Repr(d.inputDevice), hostapi, defaultRate, c.rate, WakeSampleRate))
 	stream, err := sd.InputStream(pysounddevice.StreamParams{Device: d.inputDevice, Samplerate: float64(c.rate), Blocksize: c.frameLength, Channels: 1}, nil)
 	if err == nil {
@@ -309,7 +309,7 @@ func (d *WakeWordDetector) openAudioCapture(frameLength int) (wakeCapture, error
 	}
 	if err != nil {
 		c.Close()
-		wakeLog().Error(fmt.Sprintf("wake word: failed to open microphone: %s", err))
+		pkgLog().Error(fmt.Sprintf("wake word: failed to open microphone: %s", err))
 		return nil, err
 	}
 	return c, nil
@@ -334,13 +334,13 @@ func (d *WakeWordDetector) noteSilence(frame []int16, present bool, silentAlertF
 		if d.silentFrames == silentAlertFrames {
 			d.audioSilent.Store(true)
 			if present {
-				wakeLog().Warn(fmt.Sprintf("wake word: mic delivers only silence (peak<=%d for %ds); %s",
+				pkgLog().Warn(fmt.Sprintf("wake word: mic delivers only silence (peak<=%d for %ds); %s",
 					wakeSilencePeak, int(wakeSilenceAlertSeconds), SilentAudioHint(d.InputDeviceDetails())))
 			}
 		}
 	} else if d.silentFrames != 0 {
 		if d.audioSilent.Load() {
-			wakeLog().Info("wake word: mic audio detected — stream healthy")
+			pkgLog().Info("wake word: mic audio detected — stream healthy")
 		}
 		d.silentFrames = 0
 		d.audioSilent.Store(false)
@@ -351,11 +351,11 @@ func (d *WakeWordDetector) noteSilence(frame []int16, present bool, silentAlertF
 func (d *WakeWordDetector) fire() {
 	now := pythread.Monotonic()
 	if now-d.lastFire < d.cooldown {
-		wakeLog().Debug("wake word: detection within cooldown — ignored")
+		pkgLog().Debug("wake word: detection within cooldown — ignored")
 		return
 	}
 	d.lastFire = now
-	wakeLog().Info("wake word: phrase detected — firing callback")
+	pkgLog().Info("wake word: phrase detected — firing callback")
 	if !d.callbackInflight.IsSet() {
 		d.callbackInflight.Set()
 		go d.dispatchWake()
@@ -383,13 +383,13 @@ func (d *WakeWordDetector) recoverCapture(frameLength int, retries *wakeRetries)
 		if !ok {
 			break
 		}
-		wakeLog().Warn(fmt.Sprintf("wake word: reopening microphone in %.1fs", delay))
+		pkgLog().Warn(fmt.Sprintf("wake word: reopening microphone in %.1fs", delay))
 		if d.stop.Wait(delay) {
 			return nil
 		}
 		c, err := d.openCapture(frameLength)
 		if err != nil {
-			wakeLog().Warn(fmt.Sprintf("wake word: microphone reopen failed: %s", err))
+			pkgLog().Warn(fmt.Sprintf("wake word: microphone reopen failed: %s", err))
 			continue
 		}
 		_ = d.Engine.Reset()
@@ -397,7 +397,7 @@ func (d *WakeWordDetector) recoverCapture(frameLength int, retries *wakeRetries)
 		d.silentFrames = 0
 		return c
 	}
-	wakeLog().Warn("wake word: microphone recovery exhausted; toggle wake word to retry")
+	pkgLog().Warn("wake word: microphone recovery exhausted; toggle wake word to retry")
 	return nil
 }
 
@@ -412,7 +412,7 @@ func (d *WakeWordDetector) run(ready *pythread.Event, startupErrors *[]error) {
 	}
 	d.setCap(c)
 	_ = d.Engine.Reset()
-	wakeLog().Info(fmt.Sprintf("wake word: listening (frame=%d, rate=%d)", frameLength, WakeSampleRate))
+	pkgLog().Info(fmt.Sprintf("wake word: listening (frame=%d, rate=%d)", frameLength, WakeSampleRate))
 	ready.Set()
 	failed := false
 	retries := &wakeRetries{delays: []float64{0.5, 1.0, 2.0}}
@@ -421,7 +421,7 @@ func (d *WakeWordDetector) run(ready *pythread.Event, startupErrors *[]error) {
 		if c != nil {
 			c.Close()
 		}
-		wakeLog().Info("wake word: stream closed")
+		pkgLog().Info("wake word: stream closed")
 		if failed && d.onFailure != nil {
 			d.onFailure(d)
 		}
@@ -429,7 +429,7 @@ func (d *WakeWordDetector) run(ready *pythread.Event, startupErrors *[]error) {
 	for !d.stop.IsSet() {
 		data, ok, err := c.Read(d.stop)
 		if err != nil {
-			wakeLog().Warn(fmt.Sprintf("wake word: stream read error: %s", err))
+			pkgLog().Warn(fmt.Sprintf("wake word: stream read error: %s", err))
 			c.Close()
 			c = nil
 			if !d.stop.IsSet() {
@@ -453,7 +453,7 @@ func (d *WakeWordDetector) run(ready *pythread.Event, startupErrors *[]error) {
 		d.noteSilence(frame, true, silentAlertFrames)
 		fired, err := d.Engine.Process(frame)
 		if err != nil {
-			wakeLog().Debug(fmt.Sprintf("wake word: engine error: %s", err))
+			pkgLog().Debug(fmt.Sprintf("wake word: engine error: %s", err))
 			continue
 		}
 		if fired {

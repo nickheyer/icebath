@@ -45,7 +45,7 @@ func (r *GatewayRunner) connectOneStartup(ctx context.Context, p pendingConnect)
 		result.outcome = "aborted"
 		return result, nil
 	}
-	runLog().Info(fmt.Sprintf("Connecting to %s...", p.platform))
+	pkgLog().Info(fmt.Sprintf("Connecting to %s...", p.platform))
 	r.updatePlatformRuntimeStatus(ctx, string(p.platform), platformStatus{state: optStr("connecting")})
 	ok, connectErr := func() (ok bool, err error) {
 		defer func() {
@@ -160,7 +160,7 @@ func (r *GatewayRunner) startHandleNoConnections(ctx context.Context, connectedC
 	if connectedCount != 0 {
 		if len(nonretryable) > 0 {
 			r.startupParkedPlatforms = true
-			runLog().Error(fmt.Sprintf("%d configured platform(s) failed to start and are parked (fix the reported error, "+
+			pkgLog().Error(fmt.Sprintf("%d configured platform(s) failed to start and are parked (fix the reported error, "+
 				"then `icebath gateway restart`): %s. The gateway is DEGRADED — it serves the "+
 				"remaining platform(s) with those unserved.", len(nonretryable), strings.Join(nonretryable, "; ")))
 		}
@@ -169,32 +169,32 @@ func (r *GatewayRunner) startHandleNoConnections(ctx context.Context, connectedC
 	if len(nonretryable) > 0 && len(retryable) == 0 {
 		if r.startupOwnershipConflict {
 			reason := strings.Join(nonretryable, "; ")
-			runLog().Error(fmt.Sprintf("Gateway hit a non-retryable startup conflict: %s", reason))
+			pkgLog().Error(fmt.Sprintf("Gateway hit a non-retryable startup conflict: %s", reason))
 			r.startupFailFatalConfig(ctx, reason)
 			return true
 		}
 		r.startupParkedPlatforms = true
-		runLog().Error(fmt.Sprintf("%d configured platform(s) failed to start and are parked (fix the reported error, then "+
+		pkgLog().Error(fmt.Sprintf("%d configured platform(s) failed to start and are parked (fix the reported error, then "+
 			"`icebath gateway restart`): %s. The gateway is DEGRADED — it serves local clients and "+
 			"cron with no messaging platform.", len(nonretryable), strings.Join(nonretryable, "; ")))
 		return false
 	}
 	if len(nonretryable) > 0 {
 		r.startupParkedPlatforms = true
-		runLog().Error(fmt.Sprintf("%d platform(s) fatally misconfigured and parked: %s. "+
+		pkgLog().Error(fmt.Sprintf("%d platform(s) fatally misconfigured and parked: %s. "+
 			"Staying alive so retryable platforms can recover.", len(nonretryable), strings.Join(nonretryable, "; ")))
 	}
 	if enabledPlatformCount <= 0 {
-		runLog().Warn("No messaging platforms enabled.")
-		runLog().Info("Gateway will continue running for cron job execution.")
+		pkgLog().Warn("No messaging platforms enabled.")
+		pkgLog().Info("Gateway will continue running for cron job execution.")
 		return false
 	}
 	if len(retryable) > 0 {
-		runLog().Warn(fmt.Sprintf("Gateway started with no connected platforms — %d platform(s) queued for retry: %s",
+		pkgLog().Warn(fmt.Sprintf("Gateway started with no connected platforms — %d platform(s) queued for retry: %s",
 			len(retryable), strings.Join(retryable, "; ")))
 		writeRuntimeStatusQuiet(ctx, gateway.RuntimeStatusUpdate{Fields: map[string]any{"gateway_state": "degraded", "exit_reason": nil}})
 	}
-	runLog().Warn(fmt.Sprintf("No adapter could be created for any of the %d configured platform(s). "+
+	pkgLog().Warn(fmt.Sprintf("No adapter could be created for any of the %d configured platform(s). "+
 		"Check that required dependencies are installed and credentials are set. "+
 		"Gateway will continue for cron job execution; platforms whose plugin may still register "+
 		"are queued for background retry.", enabledPlatformCount))

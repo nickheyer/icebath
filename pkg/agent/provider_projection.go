@@ -3,7 +3,6 @@ package agent
 import (
 	"encoding/json"
 	"fmt"
-	"log/slog"
 	"math"
 	"strings"
 
@@ -39,7 +38,7 @@ func spliceProviderProjection(a *AIAgent, response any, messages *[]*state.Messa
 		appendLiveMessage(messages, row)
 	}
 	if len(rows) > 0 {
-		slog.Default().With("logger", "agent.provider_projection").Debug(
+		pkgLog().Debug(
 			fmt.Sprintf("spliced %d provider-projected transcript row(s) from %s", len(rows), a.provider))
 	}
 	if iterations := providerToolIterations(state.ToolCallField(response, ProviderToolIterationsAttr)); iterations > 0 {

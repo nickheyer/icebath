@@ -674,16 +674,16 @@ func isMultiPoseOutlier(width, height, medW, medH int) bool {
 // Rejects rows where one frame is really several poses
 func validateExtractedFrames(frames []*image.NRGBA, frameCount int) error {
 	if len(frames) != frameCount {
-		return fmt.Errorf("ValueError: expected %d frames, got %d", frameCount, len(frames))
+		return fmt.Errorf("expected %d frames, got %d", frameCount, len(frames))
 	}
 	var boxes []Box
 	for i, f := range frames {
 		b, ok := getbbox(f)
 		if !ok {
-			return fmt.Errorf("ValueError: frame %d is empty", i)
+			return fmt.Errorf("frame %d is empty", i)
 		}
 		if len(significantSubjectBoxes(f, 32)) >= 3 {
-			return fmt.Errorf("ValueError: frame %d contains multiple separated subjects", i)
+			return fmt.Errorf("frame %d contains multiple separated subjects", i)
 		}
 		boxes = append(boxes, b)
 	}
@@ -693,7 +693,7 @@ func validateExtractedFrames(frames []*image.NRGBA, frameCount int) error {
 	medW, medH := medianBoxSize(boxes)
 	for i, b := range boxes {
 		if isMultiPoseOutlier(b[2]-b[0], b[3]-b[1], medW, medH) {
-			return fmt.Errorf("ValueError: frame %d is a multi-pose width outlier", i)
+			return fmt.Errorf("frame %d is a multi-pose width outlier", i)
 		}
 	}
 	return nil
@@ -712,7 +712,7 @@ func ExtractStripFrames(path string, frameCount int, method string, fit bool) ([
 	}
 	if frames == nil {
 		if method == "components" {
-			return nil, fmt.Errorf("ValueError: could not segment %d padded sprites from strip", frameCount)
+			return nil, fmt.Errorf("could not segment %d padded sprites from the strip", frameCount)
 		}
 		frames = componentCrops(strip, frameCount, false)
 	}

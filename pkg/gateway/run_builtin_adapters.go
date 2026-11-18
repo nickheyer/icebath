@@ -3,7 +3,6 @@ package gateway
 import (
 	"context"
 	"fmt"
-	"log/slog"
 
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 )
@@ -64,7 +63,7 @@ func BuiltinAdapterImport(module, adapterName, requirement string) (*AdapterClas
 	qualified := "gateway.platforms." + module
 	attrs, ok := builtinPlatformModules[module]
 	if !ok {
-		return nil, nil, &PyError{Kind: "ModuleNotFoundError", Msg: fmt.Sprintf("No module named '%s'", qualified)}
+		return nil, nil, &PyError{Kind: "ModuleNotFoundError", Msg: fmt.Sprintf("icebath has no built in platform module %s", qualified)}
 	}
 	for _, name := range []string{adapterName, requirement} {
 		if _, has := attrs[name]; !has {
@@ -94,7 +93,7 @@ func InstantiateBuiltinAdapter(ctx context.Context, platform Platform, config *P
 		return nil, err
 	}
 	if !requirementsMet(probe) {
-		slog.Default().With("logger", "gateway.run").WarnContext(ctx, spec.Warning)
+		pkgLog().WarnContext(ctx, spec.Warning)
 		return nil, nil
 	}
 	return cls.New(ctx, config)

@@ -5,7 +5,6 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"log/slog"
 	"net/http"
 	"os"
 	"slices"
@@ -192,7 +191,7 @@ func sdkStringMap(fn, name string, v any) (map[string]string, error) {
 func sdkToolsEnv(ctx context.Context, h string) *tools.Env {
 	cfg, _ := config.LoadReadonly(ctx, h, nil)
 	cwd, _ := os.Getwd()
-	return &tools.Env{Home: h, Config: cfg, Cwd: cwd, Log: slog.Default()}
+	return &tools.Env{Home: h, Config: cfg, Cwd: cwd, Log: pkgLog()}
 }
 
 // Stream downloads a provider URL into the media cache of the home under the SSRF guard, the cached path

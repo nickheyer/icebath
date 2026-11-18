@@ -19,6 +19,7 @@ func csrWorld(t *testing.T) (string, string, *[][]string) {
 	ctx := context.Background()
 	repo := sttMkdir(t, filepath.Join(tmp, "repo"))
 	sttMkdir(t, filepath.Join(repo, "venv"))
+	peWrite(t, filepath.Join(repo, "pyproject.toml"), "[project]\nname = \"fixture\"\nversion = \"1\"\n\n[project.optional-dependencies]\nbedrock = []\nvoice = []\n")
 	peSwap(t, &repoRoot, func() string { return repo })
 	peSwap(t, &processPrefix, func() (string, error) { return filepath.Join(tmp, "foreign-python"), nil })
 	selected := svGeneration(t, ctx, repo, "first")

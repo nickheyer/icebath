@@ -6,7 +6,6 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
-	"log/slog"
 	"path/filepath"
 	"strings"
 	"weak"
@@ -175,7 +174,7 @@ func canonicalIdentity(ctx context.Context, source *SessionSource, runner Transp
 	identity, err := resolveIdentity(ctx, source, runner, adapter, transportProfile, "")
 	var unresolved *IdentityUnresolved
 	if errors.As(err, &unresolved) {
-		slog.Debug(fmt.Sprintf("identity unresolved: %s", unresolved.Reason))
+		pkgLog().Debug(fmt.Sprintf("identity unresolved: %s", unresolved.Reason))
 		return nil, nil
 	}
 	return identity, err

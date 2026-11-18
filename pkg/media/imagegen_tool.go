@@ -4,25 +4,23 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"net/url"
 	"os"
 	"strings"
 	"sync"
 	"time"
 
+	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
+
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
 
 var (
-	imageFalClient         *falClientModule
-	imageFalClientMu       sync.Mutex
-	managedFalClient       *managedFalSyncClient
-	managedFalClientConfig [2]string
-	managedFalClientMu     sync.Mutex
-	imageDebugMu           sync.Mutex
-	imageDebug             *tools.DebugSession
+	imageFalClient   *falClientModule
+	imageFalClientMu sync.Mutex
+	imageDebugMu     sync.Mutex
+	imageDebug       *tools.DebugSession
 )
 
 // FAL client module loaded once, keeping a test installed module
@@ -59,7 +57,6 @@ func (e *imageGenerationInterrupted) PyTypeName() string { return "ImageGenerati
 
 func (e *falClientHTTPError) PyTypeName() string      { return "FalClientHTTPError" }
 func (falMissingCredentialsError) PyTypeName() string { return "MissingCredentialsError" }
-func (e *falRateLimitError) PyTypeName() string       { return "ValueError" }
 
 // Python exception class name of an error for the error_type field
 func pyErrorTypeName(err error) string {
@@ -75,47 +72,6 @@ func pyErrorTypeName(err error) string {
 		return "ConnectError"
 	}
 	return "ValueError"
-}
-
-// Managed gateway for the stored selection, nil for direct FAL, an error naming a broken selection
-func resolveManagedFalGateway(env *tools.Env) (*tools.ManagedToolGatewayConfig, error) {
-	selected := tools.ReadSelection(env, "image_gen")
-	if selected == tools.NousManagedProvider {
-		gw, err := tools.ResolveManagedToolGateway(env, "fal-queue", nil, nil)
-		if err != nil {
-			return nil, err
-		}
-		if gw == nil {
-			return nil, &imageValueError{tools.SelectionError("image_gen", tools.NousManagedProvider,
-				"the Nous Tool Gateway is not available (not entitled or unreachable)")}
-		}
-		return gw, nil
-	}
-	if selected != "" {
-		if tools.FalKeyIsConfigured(env) {
-			return nil, nil
-		}
-		return nil, &imageValueError{tools.SelectionError("image_gen", selected, "FAL_KEY is not set")}
-	}
-	if tools.FalKeyIsConfigured(env) {
-		return nil, nil
-	}
-	return tools.ResolveManagedToolGateway(env, "fal-queue", nil, nil)
-}
-
-// Managed FAL client reused while the gateway origin and token stay the same
-func getManagedFalClient(gw *tools.ManagedToolGatewayConfig) (*managedFalSyncClient, error) {
-	cfg := [2]string{strings.TrimRight(gw.GatewayOrigin, "/"), gw.NousUserToken}
-	managedFalClientMu.Lock()
-	defer managedFalClientMu.Unlock()
-	if managedFalClient == nil || managedFalClientConfig != cfg {
-		c, err := newManagedFalSyncClient(loadFalClient(), gw.NousUserToken, gw.GatewayOrigin)
-		if err != nil {
-			return nil, err
-		}
-		managedFalClient, managedFalClientConfig = c, cfg
-	}
-	return managedFalClient, nil
 }
 
 // Waits for the FAL result while polling the interrupt bit, abandoning the worker on interrupt
@@ -148,44 +104,20 @@ func waitFalResult(ctx context.Context, h *falRequestHandle, pollSeconds float64
 	}
 }
 
-// Submits through direct FAL credentials or the managed queue, translating gateway 4xx rejections
+// Submits to the FAL queue with the profile's FAL key and a fresh idempotency key
 func submitFalRequest(ctx context.Context, env *tools.Env, model string, arguments map[string]any) (*falRequestHandle, error) {
-	mod := loadFalClient()
-	headers := map[string]string{"x-idempotency-key": uuid4()}
-	gw, err := resolveManagedFalGatewayHook(env)
-	if err != nil {
-		return nil, err
+	return loadFalClient().Submit(ctx, env, model, arguments, map[string]string{"x-idempotency-key": uuid4()})
+}
+
+// Error naming why FAL cannot serve image generation, nil when FAL_KEY is configured
+func falKeyMissingError(env *tools.Env) error {
+	if tools.FalKeyIsConfigured(env) {
+		return nil
 	}
-	if gw == nil {
-		return mod.Submit(ctx, env, model, arguments, headers)
+	if selected := tools.ReadSelection(env, "image_gen"); selected != "" {
+		return &imageValueError{tools.SelectionError("image_gen", selected, "FAL_KEY is not set")}
 	}
-	h, err := submitManagedFalWithRateLimitRetry(ctx, func(hdr map[string]string) (*falRequestHandle, error) {
-		c, cerr := getManagedFalClientHook(gw)
-		if cerr != nil {
-			return nil, cerr
-		}
-		return c.Submit(ctx, model, arguments, falSubmitOptions{Headers: hdr})
-	}, "image model", model)
-	if err == nil {
-		return h, nil
-	}
-	status, ok := extractHTTPStatus(err)
-	var rl *falRateLimitError
-	if errors.As(err, &rl) || !ok || status < 400 || status >= 500 {
-		return nil, err
-	}
-	if billing := managedFalBillingError(err, "model"); billing != "" {
-		return nil, &imageValueError{fmt.Sprintf("Nous Subscription gateway rejected model '%s' (HTTP %d): %s", model, status, billing)}
-	}
-	gatewayMessage := ""
-	if status == 401 || status == 402 || status == 403 {
-		gatewayMessage = "\n\n" + tools.NousToolGatewayUnavailableMessage(env, "managed FAL image generation", true)
-	}
-	return nil, &imageValueError{fmt.Sprintf("Nous Subscription gateway rejected model '%s' (HTTP %d). This model "+
-		"may not yet be enabled on the Nous Portal's FAL proxy. Either:\n"+
-		"  • Set FAL_KEY in your environment to use FAL.ai directly, or\n"+
-		"  • Pick a different model via `icebath tools` → Image Generation."+
-		"%s", model, status, gatewayMessage)}
+	return &imageValueError{buildNoBackendSetupMessage()}
 }
 
 // Stripped image_gen key string from config, empty when unset
@@ -194,7 +126,8 @@ func readImageGenKey(env *tools.Env, key string) string {
 	if sec == nil {
 		return ""
 	}
-	return configString(sec[key])
+	s, _ := sec[key].(string)
+	return strings.TrimSpace(s)
 }
 
 // Configured image_gen.model, empty when unset
@@ -203,10 +136,10 @@ func readConfiguredImageModel(env *tools.Env) string { return readImageGenKey(en
 // Configured image_gen.provider, empty when unset
 func readConfiguredImageProvider(env *tools.Env) string { return readImageGenKey(env, "provider") }
 
-// Configured provider that dispatches through the plugin registry, empty for unset, fal and nous
+// Configured provider that dispatches through the plugin registry, empty for unset and fal
 func pluginProviderName(env *tools.Env) string {
 	configured := readConfiguredImageProvider(env)
-	if configured == "" || configured == "fal" || configured == tools.NousManagedProvider {
+	if configured == "" || configured == "fal" {
 		return ""
 	}
 	return configured
@@ -352,7 +285,7 @@ func upscaleImage(ctx context.Context, env *tools.Env, imageURL, originalPrompt 
 	upm, _ := up.(map[string]any)
 	u, ok := upm["url"]
 	if !ok {
-		log.Error(fmt.Sprintf("Error upscaling image: %v", "KeyError: 'url'"))
+		log.Error("Error upscaling image: the upscale reply has no url")
 		return nil, nil
 	}
 	width, height := any(0), any(0)
@@ -412,7 +345,7 @@ func formatImages(ctx context.Context, env *tools.Env, images []any, shouldUpsca
 
 const falInlineBudget = 3_500_000
 
-// Inlines local sources as data URLs through the guarded resolver and shrinks them to the gateway budget
+// Inlines local sources as data URLs through the guarded resolver and shrinks them to the inline budget
 func inlineFalSources(ctx context.Context, env *tools.Env, sources []string) ([]string, error) {
 	urls := make([]string, len(sources))
 	for i, s := range sources {
@@ -450,14 +383,8 @@ func prepareFalRequest(ctx context.Context, env *tools.Env, modelID string, meta
 	if strings.TrimSpace(prompt) == "" {
 		return "", nil, &imageValueError{"Prompt is required and must be a non-empty string"}
 	}
-	if !tools.FalKeyIsConfigured(env) {
-		gw, err := resolveManagedFalGateway(env)
-		if err != nil {
-			return "", nil, err
-		}
-		if gw == nil {
-			return "", nil, &imageValueError{buildNoBackendSetupMessage(env)}
-		}
+	if err := falKeyMissingError(env); err != nil {
+		return "", nil, err
 	}
 	editEndpoint, _ := meta["edit_endpoint"].(string)
 	display, ok := meta["display"].(string)
@@ -635,39 +562,16 @@ func imageGenerateTool(ctx context.Context, env *tools.Env, a imageToolArgs) str
 	return finish([]string{"success", "image", "modality", "upscaled"}, map[string]any{"success": true, "image": formatted[0]["url"], "modality": modality, "upscaled": formatted[0]["upscaled"] == true})
 }
 
-// Reports whether the selected FAL backend, or any FAL backend when unconfigured, is available
-func checkFalAPIKey(env *tools.Env) bool {
-	gw, err := resolveManagedFalGateway(env)
-	if err != nil {
-		var ve *imageValueError
-		if errors.As(err, &ve) {
-			return false
-		}
-		return false
-	}
-	return gw != nil || tools.FalKeyIsConfigured(env)
-}
+// Reports whether FAL_KEY is configured for the profile
+func checkFalAPIKey(env *tools.Env) bool { return tools.FalKeyIsConfigured(env) }
 
-// Setup guidance when neither FAL_KEY nor the managed gateway can serve image generation
-func buildNoBackendSetupMessage(env *tools.Env) string {
-	managed := tools.ManagedNousToolsEnabled(env, false)
-	lines := []string{"Image generation is unavailable in this environment.", "", "Missing requirements:"}
-	if managed {
-		lines = append(lines, "  - FAL_KEY is not set and the managed FAL gateway is unreachable")
-	} else {
-		lines = append(lines, "  - FAL_KEY environment variable is not set")
-		if msg := tools.NousToolGatewayUnavailableMessage(env, "managed FAL image generation", false); msg != "" {
-			lines = append(lines, "  - "+msg)
-		}
-	}
-	lines = append(lines, "", "To enable image generation, do one of:",
-		"  1. Get a free API key at https://fal.ai and set FAL_KEY=<your-key> (then restart the session)")
-	if managed {
-		lines = append(lines, "  2. Sign in to a Nous account that has the managed FAL gateway enabled (start `icebath` and type `/setup model`)")
-	}
-	lines = append(lines, "  3. Configure a different image_gen provider via `icebath tools` → Image Generation "+
-		"(run `icebath plugins list` to see installed backends)")
-	return strings.Join(lines, "\n")
+// Setup guidance when FAL_KEY is not set and no other image backend is configured
+func buildNoBackendSetupMessage() string {
+	return strings.Join([]string{"Image generation is unavailable in this environment.", "", "Missing requirements:",
+		"  - FAL_KEY environment variable is not set", "", "To enable image generation, do one of:",
+		"  1. Get a free API key at https://fal.ai and set FAL_KEY=<your-key> (then restart the session)",
+		"  2. Configure a different image_gen provider via `icebath tools` → Image Generation " +
+			"(run `icebath plugins list` to see installed backends)"}, "\n")
 }
 
 // JSON text of the map with keys in the given insertion order
@@ -680,14 +584,7 @@ func dumpOrdered(keys []string, m map[string]any, opts ...pyjson.Option) string 
 	return s
 }
 
-// Queue submitter the managed FAL client satisfies
-type falSubmitter interface {
-	Submit(ctx context.Context, application string, arguments map[string]any, o falSubmitOptions) (*falRequestHandle, error)
-}
-
 var (
-	resolveManagedFalGatewayHook = resolveManagedFalGateway
-	submitFalRequestHook         = submitFalRequest
-	upscaleImageHook             = upscaleImage
-	getManagedFalClientHook      = func(gw *tools.ManagedToolGatewayConfig) (falSubmitter, error) { return getManagedFalClient(gw) }
+	submitFalRequestHook = submitFalRequest
+	upscaleImageHook     = upscaleImage
 )

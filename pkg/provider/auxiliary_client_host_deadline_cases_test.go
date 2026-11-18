@@ -41,7 +41,7 @@ func auxElapsedHostDeadline(ctx context.Context) context.Context {
 	return AuxStreamDeadline(ctx, AuxStreamDeadlineAt(time.Now().Add(-time.Second)))
 }
 
-// Aggregates the stream under the hermes test's 2400 second ceiling
+// Aggregates the stream under the test's 2400 second ceiling
 func auxAggregateUnderCeiling(ctx context.Context, stream AuxChatStream) (any, error) {
 	ceiling := 2400.0
 	return auxAggregateChatStream(ctx, stream, "m", &ceiling, nil)

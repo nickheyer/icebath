@@ -6,7 +6,6 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
-	"log/slog"
 	"regexp"
 	"sort"
 	"strings"
@@ -538,7 +537,7 @@ func captureTransitionLocked(ctx context.Context, conn state.SQLiteConn, roomID 
 	}
 	var invalid *InvalidStoredWorkRecord
 	if errors.As(captureErr, &invalid) {
-		slog.Warn(fmt.Sprintf("Hosted work evidence invalid for room %s", roomID))
+		pkgLog().Warn(fmt.Sprintf("Hosted work evidence invalid for room %s", roomID))
 		return nil
 	}
 	var workErr *WorkRecordError
@@ -547,7 +546,7 @@ func captureTransitionLocked(ctx context.Context, conn state.SQLiteConn, roomID 
 		if _, err := conn.ExecContext(ctx, "ROLLBACK TO work_transition_capture"); err != nil {
 			return err
 		}
-		slog.Warn(fmt.Sprintf("Hosted work evidence unavailable for room %s", roomID), "error", captureErr)
+		pkgLog().Warn(fmt.Sprintf("Hosted work evidence unavailable for room %s", roomID), "error", captureErr)
 		return nil
 	}
 	return captureErr

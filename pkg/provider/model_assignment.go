@@ -4,16 +4,13 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"log/slog"
 	"os"
-	"sort"
 	"strings"
 
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/plugins"
-	"github.com/nickheyer/icebath/pkg/tools"
 )
 
 // Built in auxiliary task slots in canonical order
@@ -23,7 +20,7 @@ var auxTaskSlotsBuiltin = []string{"vision", "compression", "skills_hub", "appro
 // Bare selectors whose submitted URL defines a route of its own
 var bareCustomSelectors = map[string]bool{"custom": true, "local": true}
 
-// Model switch pipeline and print destination of the assignment chain, the attributes hermes tests patch
+// Model switch pipeline and print destination of the assignment chain, the attributes tests patch
 var (
 	assignmentSwitchModel           = SwitchModel
 	assignmentOut         io.Writer = os.Stdout
@@ -45,14 +42,14 @@ func assignKey(m map[string]any, key string, value any) {
 	m[key] = value
 }
 
-// Plugin auxiliary task lookup of hermes_cli.plugins, the module attribute hermes tests patch
+// Plugin auxiliary task lookup of, the module attribute tests patch
 var pluginAuxiliaryTasksFn = plugins.GetPluginAuxiliaryTasks
 
 // Plugin registered auxiliary tasks of the home in ctx whose keys are not built in slots, empty when discovery fails
 func pluginAuxTasks(ctx context.Context) (out []map[string]any) {
 	defer func() {
 		if failure := recover(); failure != nil {
-			slog.Debug("plugin auxiliary task lookup failed", "error", failure)
+			pkgLog().Debug("plugin auxiliary task lookup failed", "error", failure)
 			out = []map[string]any{}
 		}
 	}()
@@ -121,7 +118,7 @@ func normalizeMainModelAssignment(ctx context.Context, provider, model string) (
 	return provIn, modelIn
 }
 
-// ModelsNormalizeProvider is hermes_cli.models.normalize_provider, aliases collapsed and an empty name meaning openrouter
+// Is, aliases collapsed and an empty name meaning openrouter
 func ModelsNormalizeProvider(provider string) string { return modelsNormalizeProvider(provider) }
 
 // Provider alias collapsed onto its canonical id, an empty name meaning openrouter
@@ -272,21 +269,6 @@ func resolveAssignmentCredentials(ctx context.Context, modelCfg map[string]any, 
 	return nil
 }
 
-// Routes unconfigured tools through the Nous Tool Gateway after a main switch to Nous, the sorted changed keys
-func applyNousGatewayDefaults(ctx context.Context, cfg map[string]any) []string {
-	var enabled []string
-	for name := range tools.Default.PlatformTools(ctx, tools.ScopeKey(home.Dir(ctx)), config.Tree(cfg), "cli", tools.PlatformToolsOptions{}) {
-		enabled = append(enabled, name)
-	}
-	changed := ApplyNousManagedDefaults(modelsPoolEnv(ctx), cfg, enabled, true)
-	out := []string{}
-	for key := range changed {
-		out = append(out, key)
-	}
-	sort.Strings(out)
-	return out
-}
-
 // Whether base_url is already an endpoint of the inline model block, a providers entry or a custom_providers row
 func endpointKnownToConfig(cfg map[string]any, baseURL string) bool {
 	wanted := pystr.Lower(strings.TrimRight(pystr.Strip(baseURL), "/"))
@@ -322,7 +304,7 @@ func endpointKnownToConfig(cfg map[string]any, baseURL string) bool {
 func registerCustomEndpoint(ctx context.Context, baseURL, apiKey, model string) {
 	run := &ModelFlowRun{Ctx: ctx, Env: modelsPoolEnv(ctx), Out: assignmentOut}
 	if err := saveCustomProvider(run, baseURL, apiKey, model, 0, autoProviderName(baseURL), "", ""); err != nil {
-		slog.Debug(fmt.Sprintf("custom_providers registration skipped: %v", err))
+		pkgLog().Debug(fmt.Sprintf("custom_providers registration skipped: %v", err))
 	}
 }
 
@@ -409,22 +391,14 @@ func applyMainAssignmentSync(ctx context.Context, cfg map[string]any, provider, 
 		}
 	}
 	assignKey(cfg, "model", modelCfg)
-	gatewayTools := []string{}
-	if providerLC == "nous" {
-		gatewayTools = applyNousGatewayDefaults(ctx, cfg)
-	}
 	if err := configSaveFn(config.RefusingLockedOmissions(ctx, "model"), cfg); err != nil {
 		return nil, err
 	}
 	if bareCustomSelectors[providerLC] && baseURL != "" && !endpointAlreadyKnown {
 		registerCustomEndpoint(ctx, baseURL, apiKey, model)
 	}
-	ReconcileSetupRecord(modelsPoolEnv(ctx))
 	out := map[string]any{"ok": true, "scope": "main", "provider": provider, "model": model,
-		"base_url": pyGetAny(modelCfg, "base_url", ""), "gateway_tools": gatewayTools, "stale_aux": staleAuxPins(ctx, cfg, providerLC)}
-	if result.UsageNotice != "" {
-		out["notice"] = result.UsageNotice
-	}
+		"base_url": pyGetAny(modelCfg, "base_url", ""), "stale_aux": staleAuxPins(ctx, cfg, providerLC)}
 	return out, nil
 }
 

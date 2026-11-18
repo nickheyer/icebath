@@ -61,7 +61,7 @@ func probeContainer(argv []string, backend string, viaSudo bool) (int, bool) {
 	return code, false
 }
 
-// ExecInContainer replaces this process with the same command inside the managed container, hermes_cli/main_container.py exec_in_container
+// Replaces this process with the same command inside the managed container
 func ExecInContainer(info *ContainerExecInfo, cliArgs []string) (code int, err error) {
 	defer func() {
 		if r := recover(); r != nil {

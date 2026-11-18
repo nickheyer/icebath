@@ -24,7 +24,7 @@ type choiceSupervisor struct {
 	fail    bool
 }
 
-// Home under /dev/shm the temp home guard accepts, with the command boundary faked like the hermes supervisor fixture
+// Home under /dev/shm the temp home guard accepts, with the command boundary faked like the supervisor fixture
 func newChoiceSupervisor(t *testing.T) *choiceSupervisor {
 	t.Helper()
 	dir, err := os.MkdirTemp("/dev/shm", "icebath-choice-")

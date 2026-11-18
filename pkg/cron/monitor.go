@@ -79,7 +79,7 @@ func (s *Store) readLastMonitorOutput(jobID string) string {
 			return ""
 		}
 	}
-	s.logAs("cron.monitor").Warn(fmt.Sprintf("Monitor: failed to read last output for %s: %v", pyrepr.Repr(jobID), err))
+	s.log.Warn(fmt.Sprintf("Monitor: failed to read last output for %s: %v", pyrepr.Repr(jobID), err))
 	return ""
 }
 
@@ -92,7 +92,7 @@ func (s *Store) writeLastMonitorOutput(jobID, output string) {
 		}
 	}
 	if err != nil {
-		s.logAs("cron.monitor").Warn(fmt.Sprintf("Monitor: failed to persist last output for %s: %v", pyrepr.Repr(jobID), err))
+		s.log.Warn(fmt.Sprintf("Monitor: failed to persist last output for %s: %v", pyrepr.Repr(jobID), err))
 	}
 }
 
@@ -201,6 +201,6 @@ func (s *Store) persistMonitorState(ctx context.Context, jobID, newHash, output 
 	s.writeLastMonitorOutput(jobID, output)
 	state := map[string]any{"last_output_hash": newHash, "last_changed_at": FormatISO(s.clk.now())}
 	if _, err := s.updateJob(home.WithOverride(ctx, s.home), jobID, map[string]any{"monitor_state": state}); err != nil {
-		s.logAs("cron.monitor").Warn(fmt.Sprintf("Monitor: failed to persist state for %s: %v", pyrepr.Repr(jobID), err))
+		s.log.Warn(fmt.Sprintf("Monitor: failed to persist state for %s: %v", pyrepr.Repr(jobID), err))
 	}
 }

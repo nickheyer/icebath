@@ -1,8 +1,10 @@
 package provider
 
 import (
+	"context"
 	"strings"
 
+	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
 
@@ -66,4 +68,19 @@ func (xaiCredentialPoolSource) RefreshMatching(env *tools.Env, providerID, apiKe
 	}
 	token, baseURL = pooledBearer(entry)
 	return token, baseURL, true
+}
+
+// Credential environment of a tool env, its home, secrets and logger, the process home when no env is bound
+func toolsPoolEnv(env *tools.Env) PoolEnv {
+	if env == nil {
+		return credentialLifecycleEnv(context.Background(), home.Process())
+	}
+	pe := credentialLifecycleEnv(context.Background(), env.Home)
+	if env.Secrets != nil {
+		pe.Secrets = env.Secrets
+	}
+	if env.Log != nil {
+		pe.Log = env.Log
+	}
+	return pe
 }

@@ -3,6 +3,7 @@ package tui
 import (
 	"errors"
 	"fmt"
+	"github.com/nickheyer/icebath/pkg/tuigateway"
 	"os"
 	"path/filepath"
 	"sort"
@@ -30,18 +31,14 @@ func previewOf(text string) string {
 }
 
 // Compare and swap mutation whose payload is built from the session snapshot, nothing sent when the builder finds no target
-func (s *tuiStore) mutateCanonicalFrom(gw turnGateway, sid, operation string, build func(snapshot map[string]any) (map[string]any, error), stale func() bool, then func(*mutationOutcome, error) tea.Cmd) tea.Cmd {
+func (s *tuiStore) mutateCanonicalFrom(gw turnGateway, sid, operation string, build func(snapshot *tuigateway.CanonicalSnapshot) (map[string]any, error), stale func() bool, then func(*mutationOutcome, error) tea.Cmd) tea.Cmd {
 	if s.pendingMutations == nil {
 		s.pendingMutations = map[string]pendingMutation{}
 	}
 	key := sid + "\x00" + operation + "\x00snapshot"
 	s.retireCanonicalControls(sid, key)
-	send := func(params map[string]any) tea.Cmd {
-		return gatewayCall(gw, "session.mutate", params, func(v any, err error) tea.Cmd {
-			result := asRPCResult(v)
-			if err == nil && result == nil {
-				err = errors.New(tr("session.common.invalidResponse", "session.mutate"))
-			}
+	send := func(params tuigateway.SessionMutateParams) tea.Cmd {
+		return call(gw, tuigateway.CanonicalSessionMutate, params, func(result *tuigateway.SessionMutateResult, err error) tea.Cmd {
 			if err != nil {
 				if hasRefusalReason(err) {
 					delete(s.pendingMutations, key)
@@ -49,29 +46,25 @@ func (s *tuiStore) mutateCanonicalFrom(gw turnGateway, sid, operation string, bu
 				return then(nil, err)
 			}
 			delete(s.pendingMutations, key)
-			return then(&mutationOutcome{Result: result, ExpectedGeneration: jsNumberOf(params["expected_generation"])}, nil)
+			return then(&mutationOutcome{Result: result, ExpectedGeneration: val(params.ExpectedGeneration)}, nil)
 		})
 	}
 	if pending, has := s.pendingMutations[key]; has {
 		return send(pending.params)
 	}
-	return gatewayCall(gw, "session.resume", map[string]any{"session_id": sid}, func(v any, err error) tea.Cmd {
+	return call(gw, tuigateway.CanonicalSessionResume, tuigateway.CanonicalResumeParams{SessionID: sid}, func(snapshot *tuigateway.CanonicalSnapshot, err error) tea.Cmd {
 		if err != nil {
 			return then(nil, err)
 		}
-		snapshot := asRPCResult(v)
 		if stale() {
 			return then(nil, nil)
-		}
-		if !isSafeInteger(snapshot["revision"]) || !isSafeInteger(snapshot["execution_generation"]) {
-			return then(nil, errors.New(tr("canonical.controls.identityUnavailable")))
 		}
 		payload, err := build(snapshot)
 		if err != nil || payload == nil {
 			return then(nil, err)
 		}
-		params := map[string]any{"session_id": sid, "request_id": uuid.NewString(), "expected_revision": snapshot["revision"],
-			"expected_generation": snapshot["execution_generation"], "operation": operation, "payload": payload}
+		params := tuigateway.SessionMutateParams{SessionID: sid, RequestID: uuid.NewString(), ExpectedRevision: snapshot.Revision,
+			ExpectedGeneration: ptr(snapshot.ExecutionGeneration), Operation: operation, Payload: payload}
 		s.pendingMutations[key] = pendingMutation{sid: sid, params: params}
 		return send(params)
 	})
@@ -99,24 +92,21 @@ func dropLastExchange(items []msg) []msg {
 }
 
 // Newest row a user typed, compaction summaries and archived rows passed over
-func lastUserTurn(snapshot map[string]any) map[string]any {
-	rows, _ := snapshot["stored_messages"].([]any)
-	if rows == nil {
-		rows, _ = snapshot["messages"].([]any)
-	}
+func lastUserTurn(snapshot *tuigateway.CanonicalSnapshot) *tuigateway.TranscriptMessage {
+	rows := snapshot.Messages
 	for i := len(rows) - 1; i >= 0; i-- {
-		row, _ := rows[i].(map[string]any)
-		kind, _ := row["display_kind"].(string)
-		if row["role"] != "user" || (kind != "" && kind != "steer") || !isSafeInteger(row["row_id"]) || truthyJS(row["archived"]) {
+		row := rows[i]
+		kind := val(row.DisplayKind)
+		if row.Role != "user" || (kind != "" && kind != "steer") || row.RowID == nil || val(row.Archived) {
 			continue
 		}
-		content, _ := row["content"].(string)
+		content, _ := row.Content.(string)
 		marked := false
 		for _, marker := range compactionMarkers {
 			marked = marked || strings.Contains(content, marker)
 		}
 		if !marked {
-			return row
+			return &rows[i]
 		}
 	}
 	return nil
@@ -160,13 +150,13 @@ func (r *slashRun) canonicalRewind(retry bool) tea.Cmd {
 	if retry {
 		nothing = tr("slashCmd.core.retry.nothing")
 	}
-	build := func(snapshot map[string]any) (map[string]any, error) {
+	build := func(snapshot *tuigateway.CanonicalSnapshot) (map[string]any, error) {
 		target := lastUserTurn(snapshot)
 		if target == nil {
 			return nil, nil
 		}
 		if retry {
-			text, sendable := retryText(target["content"])
+			text, sendable := retryText(target.Content)
 			if !sendable {
 				return nil, errors.New(tr("canonical.controls.retryUnsupported"))
 			}
@@ -174,7 +164,7 @@ func (r *slashRun) canonicalRewind(retry bool) tea.Cmd {
 				return nil, nil
 			}
 		}
-		return map[string]any{"target_message_id": target["row_id"]}, nil
+		return map[string]any{"target_message_id": *target.RowID}, nil
 	}
 	return a.store.mutateCanonicalFrom(a.gw, r.sid, "rewind", build, r.stale, func(m *mutationOutcome, err error) tea.Cmd {
 		if r.stale() {
@@ -184,9 +174,9 @@ func (r *slashRun) canonicalRewind(retry bool) tea.Cmd {
 			r.fail(err)
 			return nil
 		}
-		removed := 0.0
+		removed := int64(0)
 		if m != nil {
-			removed = jsNumberOf(m.Result["rewound_count"])
+			removed = val(m.Result.RewoundCount)
 		}
 		if m == nil || removed <= 0 {
 			r.sys(nothing)
@@ -198,11 +188,14 @@ func (r *slashRun) canonicalRewind(retry bool) tea.Cmd {
 			if removed == 1 {
 				key = "slashCmd.core.undo.undidOne"
 			}
-			r.sys(tr(key, jsString(removed)))
+			r.sys(tr(key, strconv.FormatInt(removed, 10)))
 			return nil
 		}
-		target, _ := m.Result["target_message"].(map[string]any)
-		if text, sendable := retryText(target["content"]); sendable && text != "" {
+		var content any
+		if m.Result.TargetMessage != nil {
+			content = m.Result.TargetMessage.Content
+		}
+		if text, sendable := retryText(content); sendable && text != "" {
 			return a.sendExpanded(text, true, "", submitOpts{})
 		}
 		r.sys(nothing)
@@ -211,16 +204,14 @@ func (r *slashRun) canonicalRewind(retry bool) tea.Cmd {
 }
 
 // File a session export is written to, a named file under the session folder or the saved sessions of the home
-func writeSessionExport(payload map[string]any, filename, cwd string) (string, error) {
-	content, _ := payload["content"].(string)
-	format, _ := payload["format"].(string)
+func writeSessionExport(payload *tuigateway.SessionExportResult, filename, cwd string) (string, error) {
 	path := filename
 	userHome, _ := os.UserHomeDir()
 	switch {
 	case filename == "":
-		name, _ := payload["filename"].(string)
+		name := payload.Filename
 		if name == "" {
-			name = "icebath_conversation_" + time.Now().Format("20060102_150405") + "." + format
+			name = "icebath_conversation_" + time.Now().Format("20060102_150405") + "." + payload.Format
 		}
 		path = filepath.Join(home.Process(), "sessions", "saved", filepath.Base(name))
 	case filename == "~" || strings.HasPrefix(filename, "~/"):
@@ -231,7 +222,7 @@ func writeSessionExport(payload map[string]any, filename, cwd string) (string, e
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return "", err
 	}
-	return path, os.WriteFile(path, []byte(content), 0o644)
+	return path, os.WriteFile(path, []byte(payload.Content), 0o644)
 }
 
 // Runs a command through the gateway's own command worker and shows what it printed
@@ -384,9 +375,9 @@ func (a *app) transcriptCommands() []slashCommand {
 			}
 			return a.pasteClipboardImage(false)
 		}},
-		{name: "image", help: "attach an image file to the next prompt", usage: "<path>", run: func(r *slashRun) tea.Cmd {
+		{name: "image", help: "attach an image, or the pages of a PDF, to the next prompt", usage: "<path> [pages]", run: func(r *slashRun) tea.Cmd {
 			if trimJS(r.arg) == "" {
-				r.sys("usage: /image <path>")
+				r.sys("usage: /image <path> [pages]")
 				return nil
 			}
 			return a.attachImagePath(r.arg)
@@ -422,7 +413,7 @@ func (a *app) transcriptCommands() []slashCommand {
 					continue
 				}
 				index := strconv.Itoa(len(blocks) + 1)
-				tag := tr("slashCmd.core.history.hermesTag", index)
+				tag := tr("slashCmd.core.history.agentTag", index)
 				if m.Role == "user" {
 					tag = tr("slashCmd.core.history.youTag", index)
 				}
@@ -461,8 +452,11 @@ func (a *app) transcriptCommands() []slashCommand {
 				return nil
 			}
 			if !a.gw.canonical() {
-				return r.rpc("session.save", map[string]any{"session_id": r.sid}, func(res map[string]any) tea.Cmd {
-					if file, _ := res["file"].(string); file != "" {
+				return ask(r.rpc, a.sys, tuigateway.SessionSave, tuigateway.SessionSaveParams{SessionID: r.sid}, func(res *tuigateway.SessionSaveResult) tea.Cmd {
+					if res == nil {
+						return nil
+					}
+					if file := val(res.File); file != "" {
 						r.sys(tr("slashCmd.core.save.saved", file))
 					} else {
 						r.sys(tr("slashCmd.core.save.failed"))
@@ -489,7 +483,10 @@ func (a *app) transcriptCommands() []slashCommand {
 			if cwd == "" {
 				cwd, _ = os.Getwd()
 			}
-			return r.rpc("session.export", map[string]any{"format": format, "redact": redact, "session_id": r.sid}, func(res map[string]any) tea.Cmd {
+			return ask(r.rpc, a.sys, tuigateway.CanonicalSessionExport, tuigateway.SessionExportParams{SessionID: r.sid, Format: &format, Redact: redact}, func(res *tuigateway.SessionExportResult) tea.Cmd {
+				if res == nil {
+					return nil
+				}
 				path, err := writeSessionExport(res, filename, cwd)
 				if err != nil {
 					r.sys(tr("slashCmd.core.save.failed") + ": " + err.Error())
@@ -632,8 +629,8 @@ func (a *app) transcriptCommands() []slashCommand {
 				return nil
 			}
 			params := map[string]any{"session_id": r.sid, "text": payload}
-			if generation, has := a.store.ui.Info["execution_generation"]; has && a.gw.canonical() {
-				params["execution_generation"] = generation
+			if generation := infoOf(a.store.ui.Info).ExecutionGeneration; generation != nil && a.gw.canonical() {
+				params["execution_generation"] = *generation
 			}
 			return r.rpc("session.steer", params, func(res map[string]any) tea.Cmd {
 				if res["status"] == "queued" {
@@ -653,18 +650,20 @@ func (a *app) transcriptCommands() []slashCommand {
 			if a.gw.canonical() {
 				return r.canonicalRewind(false)
 			}
-			return r.rpc("session.undo", map[string]any{"session_id": r.sid}, func(res map[string]any) tea.Cmd {
-				removed, _ := res["removed"].(float64)
-				if removed <= 0 {
+			return ask(r.rpc, a.sys, tuigateway.SessionUndo, tuigateway.SessionUndoParams{SessionID: r.sid}, func(res *tuigateway.SessionUndoResult) tea.Cmd {
+				if res == nil {
+					return nil
+				}
+				if res.Removed <= 0 {
 					r.sys(tr("slashCmd.core.undo.nothing"))
 					return nil
 				}
 				a.setHistoryItems(dropLastExchange)
 				key := "slashCmd.core.undo.undidOther"
-				if removed == 1 {
+				if res.Removed == 1 {
 					key = "slashCmd.core.undo.undidOne"
 				}
-				r.sys(tr(key, jsString(removed)))
+				r.sys(tr(key, strconv.FormatInt(res.Removed, 10)))
 				return nil
 			})
 		}},
@@ -680,8 +679,11 @@ func (a *app) transcriptCommands() []slashCommand {
 			if r.sid == "" {
 				return a.sendExpanded(last, true, "", submitOpts{})
 			}
-			return r.rpc("session.undo", map[string]any{"intent": "retry", "session_id": r.sid}, func(res map[string]any) tea.Cmd {
-				if removed, _ := res["removed"].(float64); removed <= 0 {
+			return ask(r.rpc, a.sys, tuigateway.SessionUndo, tuigateway.SessionUndoParams{SessionID: r.sid}, func(res *tuigateway.SessionUndoResult) tea.Cmd {
+				if res == nil {
+					return nil
+				}
+				if res.Removed <= 0 {
 					r.sys(tr("slashCmd.core.retry.nothing"))
 					return nil
 				}

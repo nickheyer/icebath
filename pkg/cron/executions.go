@@ -20,7 +20,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/monitoring"
-	"github.com/nickheyer/icebath/pkg/observability"
 	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
@@ -570,7 +569,6 @@ func (l *Ledger) Finish(ctx context.Context, executionID string, success bool, e
 		return nil, err
 	}
 	emitExecutionStateSafe(record, deliveryOutcome)
-	observability.RecordCronFinish(ctx, record, deliveryOutcome)
 	return record, nil
 }
 
@@ -656,7 +654,6 @@ func (l *Ledger) RecoverReceipted(ctx context.Context, executionID, jobID string
 		return nil, err
 	}
 	emitExecutionStateSafe(record, deliveryOutcome)
-	observability.RecordCronFinish(ctx, record, deliveryOutcome)
 	return record, nil
 }
 
@@ -690,7 +687,7 @@ func (l *Ledger) SettleDeliveryOutcome(ctx context.Context, executionID, outcome
 // Closes the receipt of a run that never started, logging a ledger failure instead of raising it
 func (l *Ledger) SettleUnstarted(ctx context.Context, executionID, jobID, errText string) {
 	if _, err := l.Finish(ctx, executionID, false, &errText, nil, false); err != nil {
-		l.s.logAs("cron.executions").Error(fmt.Sprintf("Job '%s': failed to close execution receipt %s (%s): %v", jobID, executionID, errText, err))
+		l.s.log.Error(fmt.Sprintf("Job '%s': failed to close execution receipt %s (%s): %v", jobID, executionID, errText, err))
 	}
 }
 

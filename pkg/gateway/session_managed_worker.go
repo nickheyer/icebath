@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"log/slog"
 	"path/filepath"
 	"slices"
 	"time"
@@ -883,7 +882,7 @@ func superviseManaged(ctx context.Context, a *SessionAuthority, ref SessionRef, 
 func loseManaged(ctx context.Context, a *SessionAuthority, ref SessionRef, row *pyjson.Object, policy *LocalSessionPolicy,
 	worker *managedWorker, scope *pyjson.Object, cause error) (any, error) {
 	reason := lossReason(cause)
-	slog.Warn(fmt.Sprintf("Managed worker lost: %s", reason))
+	pkgLog().Warn(fmt.Sprintf("Managed worker lost: %s", reason))
 	if scope == nil {
 		if isCancellation(cause) || isRuntimeRefusal(cause, "managed_worker_stopped") {
 			return interruptedBeforeBootstrap(a, row, worker.cause()), nil

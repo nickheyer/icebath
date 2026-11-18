@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"log/slog"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -13,6 +12,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
@@ -42,7 +42,7 @@ type Bws struct {
 func (b *Bws) FetchURL(version, target string) (string, error) {
 	triple, ok := rustTriple[target]
 	if !ok {
-		return "", fmt.Errorf("KeyError: %s", pyrepr.StrRepr(target))
+		return "", missingKey("no download for target " + target)
 	}
 	triple = strings.ReplaceAll(triple, "linux-gnu", "linux-musl")
 	platform := triple
@@ -164,14 +164,14 @@ var urlUsesParams = map[string]bool{
 func archiveFilename(archive map[string]any) (string, error) {
 	raw, ok := archive["url"]
 	if !ok {
-		return "", errors.New("KeyError: 'url'")
+		return "", &PyError{Class: "KeyError", Message: "the archive entry has no url"}
 	}
 	rawURL, isString := raw.(string)
 	if !isString {
 		if pyrepr.Truthy(raw) {
-			return "", fmt.Errorf("AttributeError: '%s' object has no attribute 'decode'", pyrepr.TypeName(raw))
+			return "", &PyError{Class: "AttributeError", Message: fmt.Sprintf("the archive url is %s, expected text", errchain.Kind(raw))}
 		}
-		return "", errors.New("TypeError: argument should be a str or an os.PathLike object where __fspath__ returns a str, not 'bytes'")
+		return "", &PyError{Class: "TypeError", Message: fmt.Sprintf("the archive url is %s, expected text", errchain.Kind(raw))}
 	}
 	parts, err := pyURLSplit(rawURL)
 	if err != nil {
@@ -219,14 +219,10 @@ func (p *IronProxy) FetchURL(version, target string) (string, error) {
 	if MuslTargets[target] {
 		lookup = strings.TrimSuffix(target, "-musl")
 	}
-	parts := strings.Split(lookup, "-")
-	if len(parts) > 2 {
-		return "", fmt.Errorf("ValueError: too many values to unpack (expected 2, got %d)", len(parts))
+	platform, arch, err := unpackTwo(lookup, "-", "target")
+	if err != nil {
+		return "", err
 	}
-	if len(parts) < 2 {
-		return "", fmt.Errorf("ValueError: not enough values to unpack (expected 2, got %d)", len(parts))
-	}
-	platform, arch := parts[0], parts[1]
 	if arch == "x64" {
 		arch = "amd64"
 	}
@@ -245,7 +241,7 @@ func (p *IronProxy) FetchURLs(version, target string) ([]string, error) {
 func (p *IronProxy) VerifyProvenance(directory string) error {
 	gpg, err := exec.LookPath("gpg")
 	if err != nil {
-		slog.Warn("gpg unavailable; iron-proxy archive checksum remains enforced")
+		pkgLog().Warn("gpg unavailable; iron-proxy archive checksum remains enforced")
 		return nil
 	}
 	homeDir, err := os.MkdirTemp("", "icebath-iron-signature-")
@@ -262,7 +258,7 @@ func (p *IronProxy) VerifyProvenance(directory string) error {
 	if code, err := runGPG(gpg, append(append([]string{}, args...), "--import", Native(key))); err != nil {
 		return err
 	} else if code != 0 {
-		slog.Warn("Could not import iron-proxy signing key; archive checksum remains enforced")
+		pkgLog().Warn("Could not import iron-proxy signing key; archive checksum remains enforced")
 		return nil
 	}
 	code, err := runGPG(gpg, append(append([]string{}, args...), "--verify", Native(signature), Native(filepath.Join(directory, "checksums.txt"))))

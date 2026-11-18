@@ -71,11 +71,11 @@ func dbgRestoreSeams(t *testing.T) {
 	t.Helper()
 	pasteRS, dpaste, stderr, console, now := debugPasteRSURL, debugDpasteComURL, debugStderr, debugConsole, debugNow
 	sweep, del, sched, upRS, upDp, upload := debugBestEffortSweep, debugDeletePaste, debugScheduleAutoDelete, debugUploadPasteRS, debugUploadDpasteCom, debugUploadToPastebin
-	resolve, dump, report, bundle, nous, runDump := debugResolveLogPath, debugCaptureDump, debugCollectDebugReport, debugCollectShareBundle, debugShareToNous, debugRunDump
+	resolve, dump, report, bundle, runDump := debugResolveLogPath, debugCaptureDump, debugCollectDebugReport, debugCollectShareBundle, debugRunDump
 	t.Cleanup(func() {
 		debugPasteRSURL, debugDpasteComURL, debugStderr, debugConsole, debugNow = pasteRS, dpaste, stderr, console, now
 		debugBestEffortSweep, debugDeletePaste, debugScheduleAutoDelete, debugUploadPasteRS, debugUploadDpasteCom, debugUploadToPastebin = sweep, del, sched, upRS, upDp, upload
-		debugResolveLogPath, debugCaptureDump, debugCollectDebugReport, debugCollectShareBundle, debugShareToNous, debugRunDump = resolve, dump, report, bundle, nous, runDump
+		debugResolveLogPath, debugCaptureDump, debugCollectDebugReport, debugCollectShareBundle, debugRunDump = resolve, dump, report, bundle, runDump
 	})
 }
 
@@ -271,7 +271,7 @@ func TestCaptureLogSnapshotRedactionRedactsCompleteLogLinesBeforeApplyingByteLim
 
 // Share namespace with a truthy yes and no_redact the way an unset MagicMock attribute reads
 func dbgMagicArgs(over map[string]any) map[string]any {
-	ns := map[string]any{"lines": 50, "expire": 7, "local": false, "nous": false, "yes": true, "no_redact": true}
+	ns := map[string]any{"lines": 50, "expire": 7, "local": false, "yes": true, "no_redact": true}
 	for k, v := range over {
 		ns[k] = v
 	}
@@ -399,7 +399,7 @@ func TestRunDebugShareRedactionFallbackSecretFieldsMaskedByRepoPolicy(t *testing
 			dbgNoSweep()
 			debugScheduleAutoDelete = func(context.Context, []string, int) error { return nil }
 			uploaded := dbgRecordUploads()
-			dbgRun(t, map[string]any{"lines": 20, "expire": 1, "local": false, "nous": false, "no_redact": false, "yes": true})
+			dbgRun(t, map[string]any{"lines": 20, "expire": 1, "local": false, "no_redact": false, "yes": true})
 			if !dbgLeaks(*uploaded, "backup-model") || dbgLeaks(*uploaded, c[2]) {
 				t.Fatal(*uploaded)
 			}
@@ -707,75 +707,8 @@ func dbgEnvelope(t *testing.T, blob []byte) map[string]any {
 	return env
 }
 
-func TestBuildNousBundleEnvelopeShapeAndGzip(t *testing.T) {
-	b := &debugBundle{vals: map[string]string{}}
-	b.set("report", "hello")
-	b.set("agent.log", "log line")
-	blob, err := debugBuildNousBundle(b, true, time.Now())
-	if err != nil {
-		t.Fatal(err)
-	}
-	env := dbgEnvelope(t, blob)
-	files, _ := env["files"].(map[string]any)
-	if env["format"] != "hermes-debug-share/1" || env["redacted"] != true || len(files) != 2 || files["report"] != "hello" ||
-		files["agent.log"] != "log line" || env["created"] == nil {
-		t.Fatal(env)
-	}
-}
-
-func TestBuildNousBundleRedactedFalseRecorded(t *testing.T) {
-	b := &debugBundle{vals: map[string]string{}}
-	b.set("report", "x")
-	blob, _ := debugBuildNousBundle(b, false, time.Now())
-	if env := dbgEnvelope(t, blob); env["redacted"] != false {
-		t.Fatal(env)
-	}
-}
-
-func dbgNousArgs() map[string]any {
-	return map[string]any{"lines": 50, "expire": 7, "local": false, "nous": true, "no_redact": false, "yes": true}
-}
-
-func TestRunDebugShareNousNousSuccessPrintsViewURL(t *testing.T) {
-	dbgHome(t)
-	dbgPinDump("")
-	var blob []byte
-	debugShareToNous = func(_ context.Context, b []byte) (*pyjson.Object, error) {
-		blob = b
-		return pyjson.ObjectOf("id", "id-1", "viewUrl", "https://support.example.com/diagnostics/id-1", "expiresAt", "2026-06-20T00:00:00Z"), nil
-	}
-	out, _, _ := dbgRun(t, dbgNousArgs())
-	if !strings.Contains(out, "https://support.example.com/diagnostics/id-1") || !strings.Contains(out, "2026-06-20T00:00:00Z") ||
-		len(blob) < 2 || blob[0] != 0x1f || blob[1] != 0x8b {
-		t.Fatal(out)
-	}
-}
-
-func TestRunDebugShareNousNousFailureSuggestsLocal(t *testing.T) {
-	dbgHome(t)
-	dbgPinDump("")
-	debugShareToNous = func(context.Context, []byte) (*pyjson.Object, error) { return nil, errors.New("service down") }
-	_, errOut, code := dbgRun(t, dbgNousArgs())
-	if code != 1 || !strings.Contains(errOut, "--local") {
-		t.Fatal(code, errOut)
-	}
-}
-
-func TestRunDebugShareNousNousDoesNotTouchPastebin(t *testing.T) {
-	dbgHome(t)
-	dbgPinDump("")
-	debugShareToNous = func(context.Context, []byte) (*pyjson.Object, error) {
-		return pyjson.ObjectOf("id", "id-1", "viewUrl", "https://v"), nil
-	}
-	captured := dbgRecordUploads()
-	dbgRun(t, dbgNousArgs())
-	if len(*captured) != 0 {
-		t.Fatal(*captured)
-	}
-}
-
 func dbgConsentArgs(over map[string]any) map[string]any {
-	ns := map[string]any{"lines": 50, "expire": 7, "local": false, "nous": false, "no_redact": false, "yes": false}
+	ns := map[string]any{"lines": 50, "expire": 7, "local": false, "no_redact": false, "yes": false}
 	for k, v := range over {
 		ns[k] = v
 	}

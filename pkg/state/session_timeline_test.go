@@ -13,7 +13,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
 
-// Fresh store with the timeline-root desktop session the hermes fixture creates
+// Fresh store with the timeline-root desktop session the test fixture creates
 func timelineStore(t *testing.T) (*SessionDB, string) {
 	t.Helper()
 	db := usageDB(t)

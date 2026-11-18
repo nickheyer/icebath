@@ -7,6 +7,8 @@ import (
 	"net/http/httptest"
 	"reflect"
 	"testing"
+
+	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 )
 
 const chatBypassSSE = "data: {\"id\":\"1\",\"object\":\"chat.completion.chunk\",\"created\":1,\"model\":\"m\"," +
@@ -38,7 +40,7 @@ func chatBypassWireBody() map[string]any {
 		"stream":         true,
 		"temperature":    0.7,
 		"stream_options": map[string]any{"include_usage": true},
-		"extra_body":     map[string]any{"reasoning": map[string]any{"effort": "high"}, "provider": map[string]any{"order": []any{"nous"}}},
+		"extra_body":     map[string]any{"reasoning": map[string]any{"effort": "high"}, "provider": map[string]any{"order": []any{"deepseek"}}},
 	}
 }
 
@@ -81,7 +83,7 @@ func TestChatSDKBypassBulkFieldsRideInExtraBodyAndTheWireBytesAreIdentical(t *te
 	client, send := chatBypassRecorder(t)
 	body := chatBypassWireBody()
 	moved := BypassChatSDKRequestTransform(copyMap(body), client)
-	extra := moved["extra_body"].(map[string]any)
+	extra := pyjson.Plain(moved["extra_body"]).(map[string]any)
 	if m, _ := moved["messages"].([]any); m == nil || len(m) != 0 {
 		t.Fatalf("messages slot %v", moved["messages"])
 	}

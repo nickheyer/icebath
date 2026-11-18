@@ -34,7 +34,7 @@ type rpcOptions struct {
 func (a *SignalAdapter) rpc(ctx context.Context, method string, params *pyjson.Object, o rpcOptions) (any, error) {
 	client := a.httpClient()
 	if client == nil {
-		slog.Warn("Signal: RPC called but client not connected")
+		pkgLog().Warn("Signal: RPC called but client not connected")
 		return nil, nil
 	}
 	rpcID := o.rpcID
@@ -189,7 +189,7 @@ func stylesForChunk(textStyles []string, chunkStart, chunkEnd int) []string {
 			}
 		}
 		if !ok {
-			slog.Debug(fmt.Sprintf("[Signal] Ignoring malformed textStyle range: %s", pyrepr.Repr(styleString)))
+			pkgLog().Debug(fmt.Sprintf("[Signal] Ignoring malformed textStyle range: %s", pyrepr.Repr(styleString)))
 			continue
 		}
 		overlapStart, overlapEnd := max(start, chunkStart), min(start+length, chunkEnd)
@@ -274,7 +274,7 @@ func (a *SignalAdapter) Send(ctx context.Context, chatID, content, replyTo strin
 		} else if len(chunk.styles) > 0 {
 			params.Set("textStyles", chunk.styles)
 		}
-		slog.Info(fmt.Sprintf("[Signal] Sending response chunk %d/%d (%d chars) to %s", idx+1, len(chunks), pystr.Len(chunk.text), chatID))
+		pkgLog().Info(fmt.Sprintf("[Signal] Sending response chunk %d/%d (%d chars) to %s", idx+1, len(chunks), pystr.Len(chunk.text), chatID))
 		result, failed, err := a.rpcSend(ctx, params, "RPC send failed")
 		if err != nil {
 			return gateway.SendResult{}, err
@@ -391,11 +391,11 @@ func (a *SignalAdapter) resolveImagePath(ctx context.Context, imageURL string) (
 func logSkippedImage(reason, imageURL string, detail any) {
 	switch reason {
 	case "download":
-		slog.Warn(fmt.Sprintf("Signal: failed to download image %s: %s", imageURL, errText(detail.(error))))
+		pkgLog().Warn(fmt.Sprintf("Signal: failed to download image %s: %s", imageURL, errText(detail.(error))))
 	case "missing":
-		slog.Warn(fmt.Sprintf("Signal: image file not found for %s", imageURL))
+		pkgLog().Warn(fmt.Sprintf("Signal: image file not found for %s", imageURL))
 	case "oversize":
-		slog.Warn(fmt.Sprintf("Signal: image too large (%d bytes), skipping %s", detail.(int64), imageURL))
+		pkgLog().Warn(fmt.Sprintf("Signal: image too large (%d bytes), skipping %s", detail.(int64), imageURL))
 	}
 }
 
@@ -405,7 +405,7 @@ func (a *SignalAdapter) SendMultipleImages(ctx context.Context, chatID string, i
 		return gateway.SendResult{Success: false, Error: "no images to send"}, nil
 	}
 	scheduler := GetScheduler()
-	slog.Info(fmt.Sprintf("Signal send_multiple_images: received %d image(s) for %s — scheduler state: %s", len(images),
+	pkgLog().Info(fmt.Sprintf("Signal send_multiple_images: received %d image(s) for %s — scheduler state: %s", len(images),
 		pystr.Slice(chatID, 0, 30), pyrepr.Str(scheduler.State())))
 	if err := a.stopTypingIndicator(ctx, chatID); err != nil {
 		return gateway.SendResult{}, err
@@ -425,11 +425,11 @@ func (a *SignalAdapter) SendMultipleImages(ctx context.Context, chatID string, i
 		logSkippedImage(reason, image.URL, detail)
 	}
 	if len(attachments) == 0 {
-		slog.Error(fmt.Sprintf("Signal: no valid images in batch of %d (download=%d missing=%d oversize=%d)", len(images),
+		pkgLog().Error(fmt.Sprintf("Signal: no valid images in batch of %d (download=%d missing=%d oversize=%d)", len(images),
 			skipped["download"], skipped["missing"], skipped["oversize"]))
 		return gateway.SendResult{Success: false, Error: "no valid images in batch"}, nil
 	}
-	slog.Info(fmt.Sprintf("Signal send_multiple_images: %d/%d images valid, sending in chunks", len(attachments), len(images)))
+	pkgLog().Info(fmt.Sprintf("Signal send_multiple_images: %d/%d images valid, sending in chunks", len(attachments), len(images)))
 	baseParams, err := a.withTarget(ctx, pyjson.ObjectOf("account", a.account, "message", ""), chatID, true)
 	if err != nil {
 		return gateway.SendResult{}, err
@@ -442,7 +442,7 @@ func (a *SignalAdapter) SendMultipleImages(ctx context.Context, chatID string, i
 	for idx, batch := range batches {
 		n := len(batch)
 		estimated := scheduler.EstimateWait(n)
-		slog.Debug(fmt.Sprintf("Signal batch %d/%d: %d attachments, estimated wait=%.1fs", idx+1, len(batches), n, estimated))
+		pkgLog().Debug(fmt.Sprintf("Signal batch %d/%d: %d attachments, estimated wait=%.1fs", idx+1, len(batches), n, estimated))
 		if estimated >= SignalBatchPacingNoticeThreshold {
 			if err := a.notifyBatchPacing(ctx, chatID, idx+1, len(batches), estimated); err != nil {
 				return gateway.SendResult{}, err
@@ -481,10 +481,10 @@ func (a *SignalAdapter) sendAttachmentBatch(ctx context.Context, scheduler *Sign
 				retryAfter = fmt.Sprintf("%.0fs", *rateLimit.RetryAfter)
 			}
 			if attempt >= maxAttempts {
-				slog.Error(fmt.Sprintf("Signal: rate-limit retries exhausted on batch %s (%d attachments lost, server retry_after=%s)", label, n, retryAfter))
+				pkgLog().Error(fmt.Sprintf("Signal: rate-limit retries exhausted on batch %s (%d attachments lost, server retry_after=%s)", label, n, retryAfter))
 				return false, nil
 			}
-			slog.Warn(fmt.Sprintf("Signal: rate-limited on batch %s (attempt %d/%d, server retry_after=%s); scheduler will pace the retry",
+			pkgLog().Warn(fmt.Sprintf("Signal: rate-limited on batch %s (attempt %d/%d, server retry_after=%s); scheduler will pace the retry",
 				label, attempt, maxAttempts, retryAfter))
 			continue
 		}
@@ -502,20 +502,20 @@ func (a *SignalAdapter) sendAttachmentBatch(ctx context.Context, scheduler *Sign
 		if success {
 			a.trackSentTimestamp(result)
 			scheduler.ReportRPCDuration(duration, n)
-			slog.Info(fmt.Sprintf("Signal batch %s: %d attachments sent in %.1fs (attempt %d/%d)", label, n, duration, attempt, maxAttempts))
+			pkgLog().Info(fmt.Sprintf("Signal batch %s: %d attachments sent in %.1fs (attempt %d/%d)", label, n, duration, attempt, maxAttempts))
 			return true, nil
 		}
 		suffix := ""
 		if result != nil {
 			suffix = ": " + errMsg
 		}
-		slog.Error(fmt.Sprintf("Signal: RPC send failed for batch %s (%d attachments, attempt %d/%d, rpc_duration=%.1fs)%s",
+		pkgLog().Error(fmt.Sprintf("Signal: RPC send failed for batch %s (%d attachments, attempt %d/%d, rpc_duration=%.1fs)%s",
 			label, n, attempt, maxAttempts, duration, suffix))
 		if attempt >= maxAttempts {
 			return false, nil
 		}
 		backoff := math.Pow(2.0, float64(attempt))
-		slog.Info(fmt.Sprintf("Signal: retrying batch %s after %.1fs backoff", label, backoff))
+		pkgLog().Info(fmt.Sprintf("Signal: retrying batch %s after %.1fs backoff", label, backoff))
 		if err := signalSleep(ctx, backoff); err != nil {
 			return false, err
 		}
@@ -530,7 +530,7 @@ func (a *SignalAdapter) notifyBatchPacing(ctx context.Context, chatID string, ne
 		if ctx.Err() != nil {
 			return ctx.Err()
 		}
-		slog.Warn(fmt.Sprintf("Signal: failed to send pacing notice: %s", errText(err)))
+		pkgLog().Warn(fmt.Sprintf("Signal: failed to send pacing notice: %s", errText(err)))
 	}
 	return nil
 }
@@ -547,7 +547,7 @@ func (a *SignalAdapter) SendImage(ctx context.Context, chatID, imageURL, caption
 	switch reason {
 	case "download":
 		text := errText(detail.(error))
-		slog.Warn(fmt.Sprintf("Signal: failed to download image: %s", text))
+		pkgLog().Warn(fmt.Sprintf("Signal: failed to download image: %s", text))
 		return gateway.SendResult{Success: false, Error: text}, nil
 	case "missing":
 		return gateway.SendResult{Success: false, Error: "Image file not found"}, nil
@@ -659,7 +659,7 @@ func (a *SignalAdapter) sendReaction(ctx context.Context, chatID, emoji string, 
 		return false, err
 	}
 	if !ok {
-		slog.Debug(fmt.Sprintf("Signal: sendReaction failed (chat=%s, emoji=%s)", pystr.Slice(chatID, 0, 20), emoji))
+		pkgLog().Debug(fmt.Sprintf("Signal: sendReaction failed (chat=%s, emoji=%s)", pystr.Slice(chatID, 0, 20), emoji))
 	}
 	return ok, nil
 }

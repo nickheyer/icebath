@@ -30,9 +30,9 @@ func TestResultAuthReasonsMapToAuthLayer(t *testing.T) {
 }
 
 func TestAuthSurfaceNamesOauthVsApiKeyRecovery(t *testing.T) {
-	oauth := buildErrorSurfaceFromResult(failedSurfaceResult("auth", "provider exploded", nil), "nous", "")
-	if oauth["auth_kind"] != "oauth" || oauth["provider_label"] != "Nous Portal" {
-		t.Fatalf("nous %v", oauth)
+	oauth := buildErrorSurfaceFromResult(failedSurfaceResult("auth", "provider exploded", nil), "xai-oauth", "")
+	if oauth["auth_kind"] != "oauth" || oauth["provider_label"] != "xAI Grok OAuth (SuperGrok / Premium+)" {
+		t.Fatalf("xai-oauth %v", oauth)
 	}
 	key := buildErrorSurfaceFromResult(failedSurfaceResult("auth", "provider exploded", nil), "openrouter", "")
 	if key["auth_kind"] != "api_key" || key["api_key_env"] != "OPENROUTER_API_KEY" {
@@ -44,7 +44,7 @@ func TestAuthSurfaceNamesOauthVsApiKeyRecovery(t *testing.T) {
 	if s := buildErrorSurfaceFromResult(failedSurfaceResult("auth", "provider exploded", nil), "opencode-go", ""); s["api_key_env"] != "OPENCODE_GO_API_KEY" {
 		t.Fatalf("opencode %v", s)
 	}
-	if s := buildErrorSurfaceFromResult(failedSurfaceResult("rate_limit", "provider exploded", nil), "nous", ""); s["auth_kind"] != nil {
+	if s := buildErrorSurfaceFromResult(failedSurfaceResult("rate_limit", "provider exploded", nil), "xai-oauth", ""); s["auth_kind"] != nil {
 		t.Fatalf("non auth layer carries auth_kind %v", s)
 	}
 }
@@ -59,7 +59,7 @@ func TestEveryProviderSurfaceCarriesTheDisplayLabel(t *testing.T) {
 }
 
 func TestResultBillingBlockWins(t *testing.T) {
-	s := buildErrorSurfaceFromResult(failedSurfaceResult("rate_limit", "provider exploded", map[string]any{"billing_block": map[string]any{"provider": "nous"}}), "", "")
+	s := buildErrorSurfaceFromResult(failedSurfaceResult("rate_limit", "provider exploded", map[string]any{"billing_block": map[string]any{"provider": "openrouter"}}), "", "")
 	if s["layer"] != LayerBilling || s["retryable"] != false {
 		t.Fatalf("%v", s)
 	}
@@ -135,37 +135,6 @@ func TestResultUnclassifiedFailureDefaultsToProviderUnknown(t *testing.T) {
 func TestResultDiskFullWinsOverReason(t *testing.T) {
 	s := buildErrorSurfaceFromResult(failedSurfaceResult("server_error", "OSError: [Errno 28] No space left on device", nil), "", "")
 	if s["layer"] != LayerDisk || s["retryable"] != false {
-		t.Fatalf("%v", s)
-	}
-}
-
-func TestFreeTierBlockGetsItsOwnCodeAndCarriesTheSentence(t *testing.T) {
-	s := buildErrorSurfaceFromResult(failedSurfaceResult("auth_permanent", "HTTP 403: no permissions", map[string]any{
-		"free_tier": map[string]any{"kind": "disabled", "message": "Using Hermes without signing in is switched off."}}), "nous", "nous/welcome")
-	if s["layer"] != LayerProvider || s["code"] != "free_tier_disabled" || s["retryable"] != false || s["auth_kind"] != nil ||
-		s["message"] != "Using Hermes without signing in is switched off." {
-		t.Fatalf("%v", s)
-	}
-}
-
-func TestFreeTierKindsSayWhetherALaterSendCanSucceed(t *testing.T) {
-	kinds := []struct {
-		kind      string
-		retryable bool
-	}{{"rate_limited", true}, {"at_capacity", true}, {"outage", true}, {"disabled", false}, {"model_not_free", false}, {"route", false}, {"refused", false}}
-	for _, k := range kinds {
-		s := buildErrorSurfaceFromResult(failedSurfaceResult("rate_limit", "provider exploded", map[string]any{"free_tier": map[string]any{"kind": k.kind}}), "nous", "")
-		if s["code"] != "free_tier_"+k.kind || s["retryable"] != k.retryable {
-			t.Fatalf("%s %v", k.kind, s)
-		}
-		if _, has := s["message"]; has {
-			t.Fatalf("%s carries a message %v", k.kind, s)
-		}
-	}
-}
-
-func TestAFreeTierBlockWithoutAKindIsIgnored(t *testing.T) {
-	if s := buildErrorSurfaceFromResult(failedSurfaceResult("auth_permanent", "provider exploded", map[string]any{"free_tier": map[string]any{}}), "nous", ""); s["code"] != "auth_permanent" || s["layer"] != LayerAuth {
 		t.Fatalf("%v", s)
 	}
 }

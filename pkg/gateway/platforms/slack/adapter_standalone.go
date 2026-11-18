@@ -5,7 +5,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"log/slog"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -56,7 +55,7 @@ func loadSlackBotTokens(ctx context.Context, rawToken string, quiet bool) []stri
 		return tokens
 	}
 	if !quiet {
-		config.WarnIfCredentialFileBroadlyReadable(tokensFile, "[Slack]", slog.Default())
+		config.WarnIfCredentialFileBroadlyReadable(tokensFile, "[Slack]", pkgLog())
 	}
 	raw, err := os.ReadFile(tokensFile)
 	var saved any
@@ -87,13 +86,13 @@ func loadSlackBotTokens(ctx context.Context, rawToken string, quiet bool) []stri
 					if isMap {
 						label = pyrepr.Str(getOr(entryMap, "team_name", teamID))
 					}
-					slog.Info(fmt.Sprintf("[Slack] Loaded saved token for workspace %s", label))
+					pkgLog().Info(fmt.Sprintf("[Slack] Loaded saved token for workspace %s", label))
 				}
 			}
 		}
 	}
 	if err != nil && !quiet {
-		slog.Warn(fmt.Sprintf("[Slack] Failed to read %s: %v", tokensFile, err))
+		pkgLog().Warn(fmt.Sprintf("[Slack] Failed to read %s: %v", tokensFile, err))
 	}
 	return tokens
 }
@@ -151,7 +150,7 @@ func resolveSlackUserDM(ctx context.Context, token, userID string) string {
 	}
 	data, err := slackJSONPost(ctx, standaloneHTTPClient(ctx, 15*time.Second), token, "conversations.open", map[string]any{"users": userID})
 	if err != nil {
-		slog.Warn(fmt.Sprintf("[Slack] conversations.open exception for %s: %v", userID, err))
+		pkgLog().Warn(fmt.Sprintf("[Slack] conversations.open exception for %s: %v", userID, err))
 		return ""
 	}
 	if pyrepr.Truthy(data["ok"]) {
@@ -163,7 +162,7 @@ func resolveSlackUserDM(ctx context.Context, token, userID string) string {
 			return channelID
 		}
 	}
-	slog.Warn(fmt.Sprintf("[Slack] conversations.open failed for %s: %s", userID, pyrepr.Str(getOr(data, "error", "unknown"))))
+	pkgLog().Warn(fmt.Sprintf("[Slack] conversations.open failed for %s: %s", userID, pyrepr.Str(getOr(data, "error", "unknown"))))
 	return ""
 }
 
@@ -265,12 +264,12 @@ func standaloneSendMedia(ctx context.Context, token, chatID string, mediaFiles [
 	for _, media := range mediaFiles {
 		if _, err := os.Stat(media.Path); err != nil {
 			warning := "Media file not found, skipping: " + media.Path
-			slog.Warn("[Slack] " + warning)
+			pkgLog().Warn("[Slack] " + warning)
 			warnings = append(warnings, warning)
 			if captionPending {
 				fb, err := standalonePostText(ctx, client, chatID, formattedCaption, unfurlKwargs, threadID)
 				if err != nil {
-					slog.Warn("[Slack] Caption-fallback send failed for missing media", "error", err)
+					pkgLog().Warn("[Slack] Caption-fallback send failed for missing media", "error", err)
 				} else if pyrepr.Truthy(getOr(fb, "ok", true)) {
 					lastMessageID = firstTruthyValue(fb["ts"], lastMessageID)
 					captionPending = false
@@ -285,7 +284,7 @@ func standaloneSendMedia(ctx context.Context, token, chatID string, mediaFiles [
 		uploadResult, err := standaloneUploadFile(ctx, client, chatID, media.Path, comment, threadID)
 		if err != nil {
 			warning := fmt.Sprintf("Failed to send media %s: %v", media.Path, err)
-			slog.Error("[Slack] " + warning)
+			pkgLog().Error("[Slack] " + warning)
 			warnings = append(warnings, warning)
 			continue
 		}
@@ -361,7 +360,7 @@ func standaloneSend(ctx context.Context, kwargs map[string]any) (map[string]any,
 		return standaloneSendMedia(ctx, token, chatID, mediaFiles, threadID, formatted, formattedCaption, unfurlKwargs), nil
 	}
 	if pystr.Strip(formatted) == "" {
-		slog.Debug("[Slack] _standalone_send: skipping empty/whitespace message")
+		pkgLog().Debug("[Slack] _standalone_send: skipping empty/whitespace message")
 		return map[string]any{"success": true, "platform": "slack", "skipped": "empty_text"}, nil
 	}
 	client := standaloneHTTPClient(ctx, 30*time.Second)

@@ -51,9 +51,6 @@ const (
 // Valid local engines, chrome reads as auto
 var validEngines = map[string]bool{"auto": true, "lightpanda": true}
 
-// Managed Nous gateway selection name served by the Browser Use provider
-const nousManagedProvider = "nous"
-
 // Dialog policies the supervisor accepts
 const (
 	DialogPolicyMustRespond = "must_respond"
@@ -92,11 +89,12 @@ func (s settings) section() config.Tree {
 	return config.Tree(user).Sub("browser")
 }
 
+// Logger of the tool env or the process default, named after this package
 func (s settings) logger() *slog.Logger {
 	if s.env != nil && s.env.Log != nil {
-		return s.env.Log
+		return s.env.Log.With("logger", logName)
 	}
-	return slog.Default()
+	return pkgLog()
 }
 
 // Secret from the home's .env, then the process environment
@@ -242,15 +240,6 @@ func (s settings) cloudProviderSelection() (string, bool) {
 		return "", false
 	}
 	return strings.ToLower(strings.TrimSpace(sec.String("cloud_provider", ""))), true
-}
-
-// Reports whether the Nous gateway flag or picker row selects the managed browser
-func (s settings) useGateway() bool {
-	if truthy(s.section().Get("use_gateway")) {
-		return true
-	}
-	sel, _ := s.cloudProviderSelection()
-	return sel == nousManagedProvider
 }
 
 // Dialog policy and timeout with the supervisor defaults for absent or invalid values

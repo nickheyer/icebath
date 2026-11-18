@@ -3,7 +3,6 @@ package agent
 import (
 	"context"
 	"errors"
-	"log/slog"
 	"os"
 	"strings"
 
@@ -36,8 +35,6 @@ const sideQuestionOneshotInstructions = "You are the same AI assistant that is c
 	"information to answer, say so plainly instead of guessing.\n- Be concise and direct."
 
 var sideQuestionRoleLabels = map[string]string{"user": "USER", "assistant": "ASSISTANT", "tool": "TOOL RESULT"}
-
-var sideQuestionLog = slog.Default().With("logger", "agent.side_question")
 
 // Plain transcript fitted newest first to the budget, tool calls named, results truncated, system rows skipped
 func RenderHistoryForSideQuestion(history []map[string]any, charBudget int) string {
@@ -175,17 +172,17 @@ func NewSideQuestionOptions() SideQuestionOptions {
 func AnswerSideQuestion(ctx context.Context, question string, history []map[string]any, o SideQuestionOptions) (string, error) {
 	question = pystr.Strip(question)
 	if question == "" {
-		return "", errors.New("ValueError: answer_side_question requires a non-empty question")
+		return "", errors.New("the side question is empty")
 	}
 	if o.Parent != nil {
 		answer, err := answerViaFork(ctx, o.Parent, question, history, o.OnFork)
 		switch {
 		case err != nil:
-			sideQuestionLog.Warn("/btw cache-parity fork failed; falling back to one-shot", "exc_info", err)
+			pkgLog().Warn("/btw cache-parity fork failed; falling back to one-shot", "exc_info", err)
 		case answer != "":
 			return answer, nil
 		default:
-			sideQuestionLog.Warn("/btw fork returned an empty answer; falling back to one-shot")
+			pkgLog().Warn("/btw fork returned an empty answer; falling back to one-shot")
 		}
 	}
 	if o.ShouldStop != nil && o.ShouldStop() {

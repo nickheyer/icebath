@@ -152,7 +152,7 @@ func (s *cliSubcommand) cobraCommand() *cobra.Command {
 func registerCLI(parser any) {
 	root, ok := parser.(*cobra.Command)
 	if !ok {
-		panic(fmt.Sprintf("AttributeError: '%s' object has no attribute 'add_subparsers'", pyrepr.TypeName(parser)))
+		panic(fmt.Sprintf("the CLI parser is %T, expected an argument parser", parser))
 	}
 	for i := range teamsSubcommands {
 		root.AddCommand(teamsSubcommands[i].cobraCommand())

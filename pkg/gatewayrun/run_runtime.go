@@ -5,7 +5,6 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"fmt"
-	"log/slog"
 	"path/filepath"
 	"sync"
 
@@ -16,9 +15,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/profiles"
 	"github.com/nickheyer/icebath/pkg/state"
 )
-
-// Records of the session runtime lifecycle carry the run_runtime module name
-func runtimeLog() *slog.Logger { return slog.Default().With("logger", "gateway.run_runtime") }
 
 // Realpath of a home the way Path.resolve settles it
 func resolveHome(h string) string {
@@ -75,7 +71,7 @@ func (r *GatewayRunner) prewarmProfileStores(ctx context.Context, homes []profil
 func pinLaunchStore(ctx context.Context) *state.DB {
 	db, err := state.Acquire(ctx, "")
 	if err != nil {
-		runtimeLog().Debug("launch state.db prewarm failed; the store open reports it", "error", err)
+		pkgLog().Debug("launch state.db prewarm failed; the store open reports it", "error", err)
 		return nil
 	}
 	return db
@@ -136,7 +132,7 @@ func (r *GatewayRunner) buildProfileAuthority(ctx context.Context, name, profile
 
 // Parks a secondary whose store is unusable, releasing its reservation so boot serves every other profile
 func (r *GatewayRunner) parkReservedProfile(ctx context.Context, name, profileHome string, cause error) error {
-	runtimeLog().Error(fmt.Sprintf("[MULTIPLEX] Profile '%s' not served: its session store is unusable (%s): %s",
+	pkgLog().Error(fmt.Sprintf("[MULTIPLEX] Profile '%s' not served: its session store is unusable (%s): %s",
 		name, profileHome, pyrepr.ExceptionMessage(cause)))
 	if err := r.releaseProfileHome(ctx, profileHome); err != nil {
 		return err
@@ -191,7 +187,7 @@ func recordParkedProfiles(ctx context.Context, parked map[string]any) {
 		snapshot[k] = v
 	}
 	if _, err := gateway.WriteRuntimeStatus(ctx, gateway.RuntimeStatusUpdate{Fields: map[string]any{"parked_profiles": snapshot}}, false, nil); err != nil {
-		runtimeLog().Debug("could not record parked_profiles", "error", err)
+		pkgLog().Debug("could not record parked_profiles", "error", err)
 	}
 }
 
@@ -331,7 +327,7 @@ func (r *GatewayRunner) recoverServedNativeRows(ctx context.Context) {
 	}
 	for _, authority := range gateway.ServingAuthorities(r) {
 		if _, err := gateway.RecoverProfileNativeSessions(ctx, r, authority); err != nil {
-			runtimeLog().Error(fmt.Sprintf("Native session recovery failed for %s", authority.ProfileID), "error", err)
+			pkgLog().Error(fmt.Sprintf("Native session recovery failed for %s", authority.ProfileID), "error", err)
 		}
 	}
 }

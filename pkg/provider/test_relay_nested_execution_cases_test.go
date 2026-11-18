@@ -86,7 +86,7 @@ func relayNestedAuxCallFromWorker(ctx context.Context) (map[string]any, error) {
 // Depth of managed callbacks the context sits inside, zero when no guard ever set it
 func relayNestedCallbackDepth(ctx context.Context) any {
 	for _, item := range pyctx.Current(ctx).Items() {
-		if item.Var.Name() == "hermes_relay_managed_callback_depth" {
+		if item.Var.Name() == "icebath_relay_managed_callback_depth" {
 			return item.Value
 		}
 	}

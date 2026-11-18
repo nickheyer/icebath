@@ -225,7 +225,7 @@ func (r *GatewayRunner) startColdRefine(ctx context.Context, source *gateway.Ses
 			return
 		}
 		if startedSet {
-			runLog().Warn("cold /refine failed after it started", "error", pyrepr.ExceptionMessage(err))
+			pkgLog().Warn("cold /refine failed after it started", "error", pyrepr.ExceptionMessage(err))
 			return
 		}
 		started <- err

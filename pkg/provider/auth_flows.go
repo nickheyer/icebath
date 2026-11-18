@@ -8,182 +8,13 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/home"
 )
 
-// ---- resolve_nous_access_token ----
-
-// Per process memo collapsing a burst of managed tool checks into one Portal round trip, keyed by home
-var (
-	resolveTokenCacheMu sync.Mutex
-	resolveTokenCache   = map[string]resolvedNousToken{}
-)
-
-type resolvedNousToken struct {
-	at    time.Time
-	token string
-}
-
-const resolveTokenCacheTTL = 5 * time.Second
-
-// NousAccessTokenOptions tune the refresh aware Portal token resolution
-type NousAccessTokenOptions struct {
-	Timeout     time.Duration
-	Insecure    *bool
-	CABundle    string
-	RefreshSkew time.Duration
-}
-
-func (o NousAccessTokenOptions) timeout() time.Duration {
-	if o.Timeout <= 0 {
-		return 15 * time.Second
-	}
-	return o.Timeout
-}
-
-func (o NousAccessTokenOptions) refreshSkew() time.Duration {
-	if o.RefreshSkew <= 0 {
-		return AccessTokenRefreshSkew
-	}
-	return o.RefreshSkew
-}
-
-// ResolveNousAccessToken is the refresh aware Portal bearer for managed tools, connectors, and account reads
-func ResolveNousAccessToken(env PoolEnv, opts NousAccessTokenOptions) (string, error) {
-	return runWithChallenge(env, func() (string, error) { return resolveNousAccessToken(env, opts) })
-}
-
-// Memo key for the active store so a multiplexed sibling profile never receives this profile's bearer
-func resolveTokenMemoKey(env PoolEnv) string {
-	if env.Store == nil {
-		return homeKey(home.Process())
-	}
-	return homeKey(env.Store.Home())
-}
-
-func resolveNousAccessToken(env PoolEnv, opts NousAccessTokenOptions) (string, error) {
-	memoable := (opts.Insecure == nil || !*opts.Insecure) && opts.CABundle == ""
-	cacheKey := resolveTokenMemoKey(env)
-	if memoable {
-		resolveTokenCacheMu.Lock()
-		cached, ok := resolveTokenCache[cacheKey]
-		resolveTokenCacheMu.Unlock()
-		if ok && time.Since(cached.at) < resolveTokenCacheTTL {
-			return cached.token, nil
-		}
-	}
-	memo := func(token string) string {
-		if memoable {
-			resolveTokenCacheMu.Lock()
-			resolveTokenCache[cacheKey] = resolvedNousToken{at: time.Now(), token: token}
-			resolveTokenCacheMu.Unlock()
-		}
-		return token
-	}
-	timeout := opts.timeout()
-	skew := opts.refreshSkew()
-	result := ""
-	err := env.Store.ProviderTransaction("nous", AuthLockTimeout, func(tx *ProviderTxn) error {
-		state := tx.State
-		if len(state) == 0 {
-			return nousErr("Icebath is not logged into Nous Portal.", "nous_auth_missing", true)
-		}
-		portalBaseURL := nousPortalBaseURL(state)
-		clientID := anyString(state["client_id"])
-		if clientID == "" {
-			clientID = DefaultNousClientID
-		}
-		verify := resolveOAuthVerify(env, opts.Insecure, opts.CABundle, state)
-		persist := func() error { return tx.SaveState(state) }
-		lockTimeout := timeout + 5*time.Second
-		if lockTimeout < AuthLockTimeout {
-			lockTimeout = AuthLockTimeout
-		}
-		unlock, err := nousSharedStoreLock(env, lockTimeout)
-		if err != nil {
-			return err
-		}
-		defer unlock()
-		if isGuestState(state) {
-			if accessToken := heldConnectorsToken(state, skew); accessToken != "" {
-				result = memo(accessToken)
-				return nil
-			}
-			client := oauthHTTPClient(env, timeout, verify)
-			minted, err := refreshGuestState(env, state, client, "connectors")
-			if err != nil {
-				return err
-			}
-			if err := persist(); err != nil {
-				return err
-			}
-			writeSharedNousState(env, state, true)
-			result = memo(minted)
-			return nil
-		}
-		mergedShared := mergeSharedNousOAuthState(env, state)
-		accessToken, _ := state["access_token"].(string)
-		refreshToken, _ := state["refresh_token"].(string)
-		if accessToken == "" {
-			return nousErr("No access token found for Nous Portal login.", "nous_auth_missing_access_token", true)
-		}
-		if !IsExpiring(state["expires_at"], skew) {
-			if mergedShared {
-				if err := persist(); err != nil {
-					return err
-				}
-			}
-			result = memo(accessToken)
-			return nil
-		}
-		if refreshToken == "" {
-			return nousErr("Session expired and no refresh token is available.", "nous_auth_missing_refresh_token", true)
-		}
-		client := oauthHTTPClient(env, timeout, verify)
-		refreshed, err := refreshNousOrQuarantine(env, client, tx, state, portalBaseURL, clientID, refreshToken, "managed_access_token_refresh_failure", persist)
-		if err != nil {
-			return err
-		}
-		applyNousRefreshedTokens(state, refreshed, refreshToken, "")
-		state["portal_base_url"] = portalBaseURL
-		state["client_id"] = clientID
-		state["tls"] = tlsStateFromVerify(verify.Insecure, verify.CABundle)
-		if err := persist(); err != nil {
-			return err
-		}
-		writeSharedNousState(env, state, true)
-		result = memo(anyString(state["access_token"]))
-		return nil
-	})
-	if err != nil {
-		return "", err
-	}
-	return result, nil
-}
-
 // ---- status helpers ----
-
-const nousAuthStatusCacheTTL = 15 * time.Second
-
-type nousAuthStatusEntry struct {
-	at         time.Time
-	fileKey    string
-	version    string
-	hasVersion bool
-	status     map[string]any
-}
-
-var (
-	nousAuthStatusMu    sync.Mutex
-	nousAuthStatusCache *nousAuthStatusEntry
-)
-
-// Uncached Nous status builder the memo wraps, swappable so tests can count computations
-var computeNousAuthStatusFn = computeNousAuthStatus
 
 // Symlink resolved absolute form of a store path
 func authStoreKey(path string) string {
@@ -204,30 +35,6 @@ func authFileCacheKey(env PoolEnv) (string, string, bool) {
 		return authStoreKey(authFile), "", false
 	}
 	return authStoreKey(authFile), version, true
-}
-
-// InvalidateNousAuthStatusCache clears the Nous status memo for writers that bypass auth.json
-func InvalidateNousAuthStatusCache() {
-	nousAuthStatusMu.Lock()
-	defer nousAuthStatusMu.Unlock()
-	nousAuthStatusCache = nil
-}
-
-// GetNousAuthStatus is the Nous status snapshot memoised fifteen seconds per auth.json version
-func GetNousAuthStatus(env PoolEnv) map[string]any {
-	now := time.Now()
-	fileKey, version, hasVersion := authFileCacheKey(env)
-	nousAuthStatusMu.Lock()
-	cached := nousAuthStatusCache
-	nousAuthStatusMu.Unlock()
-	if cached != nil && cached.fileKey == fileKey && cached.version == version && cached.hasVersion == hasVersion && now.Sub(cached.at) < nousAuthStatusCacheTTL {
-		return copyStatus(cached.status)
-	}
-	status := computeNousAuthStatusFn(env)
-	nousAuthStatusMu.Lock()
-	nousAuthStatusCache = &nousAuthStatusEntry{at: now, fileKey: fileKey, version: version, hasVersion: hasVersion, status: copyStatus(status)}
-	nousAuthStatusMu.Unlock()
-	return status
 }
 
 func copyStatus(status map[string]any) map[string]any {
@@ -267,11 +74,6 @@ func (f OAuthProviderFlow) IsTerminalRefreshError(err error) bool {
 	return authErr.Provider == f.ProviderID && f.TerminalRefreshCodes[authErr.Code] && authErr.ReloginRequired
 }
 
-// Nous state shape failures raised before any refresh POST that a retry cannot fix either
-var nousAuthMissingCodes = map[string]bool{
-	"nous_auth_missing": true, "nous_auth_missing_access_token": true, "nous_auth_missing_refresh_token": true,
-}
-
 func codeSet(sets ...map[string]bool) map[string]bool {
 	out := map[string]bool{}
 	for _, set := range sets {
@@ -291,15 +93,6 @@ func init() {
 
 func builtinOAuthProviderFlows() map[string]OAuthProviderFlow {
 	return map[string]OAuthProviderFlow{
-		"nous": {
-			ProviderID: "nous",
-			Resolve: func(env PoolEnv, opts OAuthResolveOptions) (map[string]any, error) {
-				return resolveNousRuntimeCredentials(env, opts.ForceRefresh, opts.StaleAccessToken)
-			},
-			Status:               GetNousAuthStatus,
-			TerminalRefreshCodes: codeSet(oauthGrantDeadCodes, nousAuthMissingCodes),
-			LogoutFromConfig:     true,
-		},
 		"openai-codex": {
 			ProviderID: "openai-codex",
 			Resolve: func(env PoolEnv, opts OAuthResolveOptions) (map[string]any, error) {
@@ -341,8 +134,6 @@ func builtinOAuthProviderFlows() map[string]OAuthProviderFlow {
 func isTerminalRefreshError(err error, provider string) bool {
 	return OAuthProviderFlows[provider].IsTerminalRefreshError(err)
 }
-
-func isTerminalNousRefreshError(err error) bool { return isTerminalRefreshError(err, "nous") }
 
 func isTerminalXAIOAuthRefreshError(err error) bool { return isTerminalRefreshError(err, "xai-oauth") }
 
@@ -831,13 +622,6 @@ func LogoutCommand(env PoolEnv, providerID string, out io.Writer) error {
 		fmt.Fprintln(out, "No provider is currently logged in.")
 		return nil
 	}
-	if target == "nous" {
-		state, _ := env.Store.GetProviderAuthState("nous")
-		if isGuestState(state) {
-			fmt.Fprintln(out, freeTierNotSignedIn())
-			return nil
-		}
-	}
 	shouldResetConfig := shouldResetConfigProviderOnLogout(env, target)
 	providerName := authProviderDisplayName(target)
 	cleared, err := env.Store.ClearProviderAuth(target)
@@ -847,9 +631,6 @@ func LogoutCommand(env PoolEnv, providerID string, out io.Writer) error {
 	if !cleared && !shouldResetConfig {
 		fmt.Fprintf(out, "No auth state found for %s.\n", providerName)
 		return nil
-	}
-	if target == "nous" {
-		clearSharedNousState(env, "logout")
 	}
 	if shouldResetConfig {
 		if _, err := resetConfigProvider(env); err != nil {
@@ -870,7 +651,7 @@ func LogoutCommand(env PoolEnv, providerID string, out io.Writer) error {
 
 // ---- format_auth_error ----
 
-// Entitlement failures get fixed generic copy, Nous a Portal aware message
+// Entitlement failures get fixed generic copy
 var genericEntitlementMessages = map[string]string{
 	"subscription_required": "No active paid subscription found. Please purchase/activate a subscription, then retry.",
 	"insufficient_credits":  "Subscription credits are exhausted. Top up/renew credits, then retry.",
@@ -893,9 +674,6 @@ func formatAuthError(err *AuthError) string {
 		return fmt.Sprintf("%s Run `icebath %smodel` to re-authenticate.", err.Error(), ProfileCLISelector(home.Process()))
 	}
 	if entitlementErrorCodes[err.Code] {
-		if err.Provider == "nous" {
-			return formatNousEntitlementAuthError(err)
-		}
 		if generic := genericEntitlementMessages[err.Code]; generic != "" {
 			return generic
 		}

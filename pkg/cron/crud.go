@@ -537,7 +537,7 @@ func (s *Store) nextRunOrRejectPastOneshot(sched *Schedule, label string, fallba
 		if sched.RunAt != "" {
 			runAt = sched.RunAt
 		}
-		s.logAs("cron.jobs").Warn(fmt.Sprintf("Rejecting one-shot cron job %s'%s': run_at %s is outside the %ds grace window",
+		s.log.Warn(fmt.Sprintf("Rejecting one-shot cron job %s'%s': run_at %s is outside the %ds grace window",
 			what, label, pyrepr.Str(runAt), oneshotGraceSeconds))
 		return nil, oneshotPastGraceError(runAt)
 	}
@@ -1225,7 +1225,7 @@ func (s *Store) resumeJob(ctx context.Context, ref string) (*Job, error) {
 	}
 	if isRecurring(job) && parsed && instantAtOrBefore(storedAt, s.clk.now()) {
 		next = &stored
-		s.logAs("cron.jobs").Info(fmt.Sprintf("Job '%s' resumed with occurrence %s that elapsed while paused kept due; the next "+
+		s.log.Info(fmt.Sprintf("Job '%s' resumed with occurrence %s that elapsed while paused kept due; the next "+
 			"tick fires it (late/catch-up) or logs the skip.", job.Name, stored))
 	} else if next, err = s.computeNextRun(sched, nil, job.Timezone); err != nil {
 		return nil, err
@@ -1362,7 +1362,7 @@ func (s *Store) removeJob(ctx context.Context, ref string) (bool, error) {
 			}
 		}
 		if err := clearNotepad(s, id); err != nil {
-			s.logAs("cron.jobs").Debug(fmt.Sprintf("Failed to clear notepad for removed job %s: %v", id, err))
+			s.log.Debug(fmt.Sprintf("Failed to clear notepad for removed job %s: %v", id, err))
 		}
 		fireFenceMu.Lock()
 		delete(fireFenceLocks, s.resolvedCronDir()+"::"+id)

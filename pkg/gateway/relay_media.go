@@ -6,7 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"log/slog"
 	"net/http"
 	"os"
 	"strings"
@@ -20,8 +19,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
-
-func mediaLog() *slog.Logger { return slog.Default().With("logger", "gateway.relay.media") }
 
 // RelayMediaMaxBytes mirrors the connector media store cap so oversize files fail before the round trip
 const RelayMediaMaxBytes = 25 * 1024 * 1024
@@ -85,11 +82,11 @@ func (c *RelayMediaClient) UploadWithError(ctx context.Context, filePath string,
 	}
 	data, err := os.ReadFile(filePath)
 	if err != nil {
-		mediaLog().Warn(fmt.Sprintf("relay media upload: cannot read %s", filePath))
+		pkgLog().Warn(fmt.Sprintf("relay media upload: cannot read %s", filePath))
 		return "", "attachment file is unreadable", nil
 	}
 	if len(data) == 0 || len(data) > RelayMediaMaxBytes {
-		mediaLog().Warn(fmt.Sprintf("relay media upload: %s size %d outside (0, %d]", filePath, len(data), RelayMediaMaxBytes))
+		pkgLog().Warn(fmt.Sprintf("relay media upload: %s size %d outside (0, %d]", filePath, len(data), RelayMediaMaxBytes))
 		return "", fmt.Sprintf("attachment size %d outside (0, %d]", len(data), RelayMediaMaxBytes), nil
 	}
 	baseName := pypath.Name(filePath)
@@ -118,7 +115,7 @@ func (c *RelayMediaClient) UploadWithError(ctx context.Context, filePath string,
 		reason = why
 		if ref != "" {
 			if attempt > 1 {
-				mediaLog().Info(fmt.Sprintf("relay media upload of %s succeeded on attempt %d", name, attempt))
+				pkgLog().Info(fmt.Sprintf("relay media upload of %s succeeded on attempt %d", name, attempt))
 			}
 			return ref, "", nil
 		}
@@ -126,12 +123,12 @@ func (c *RelayMediaClient) UploadWithError(ctx context.Context, filePath string,
 			break
 		}
 		delay := relayUploadRetryDelays[attempt-1]
-		mediaLog().Warn(fmt.Sprintf("relay media upload of %s failed (attempt %d/%d): %s; retrying in %.0fs", name, attempt, attempts, reason, delay))
+		pkgLog().Warn(fmt.Sprintf("relay media upload of %s failed (attempt %d/%d): %s; retrying in %.0fs", name, attempt, attempts, reason, delay))
 		if err := sleepSeconds(ctx, delay); err != nil {
 			return "", "", err
 		}
 	}
-	mediaLog().Warn(fmt.Sprintf("relay media upload of %s failed (attempt %d/%d): %s", name, attempt, attempts, reason))
+	pkgLog().Warn(fmt.Sprintf("relay media upload of %s failed (attempt %d/%d): %s", name, attempt, attempts, reason))
 	return "", reason, nil
 }
 
@@ -207,7 +204,7 @@ func (c *RelayMediaClient) DownloadWithName(ctx context.Context, url string, sug
 		return "", "", false, ctxErr
 	}
 	if err != nil {
-		mediaLog().Warn(fmt.Sprintf("relay media download failed for %s: %s", url, err))
+		pkgLog().Warn(fmt.Sprintf("relay media download failed for %s: %s", url, err))
 		return "", "", false, nil
 	}
 	if path == "" {
@@ -234,7 +231,7 @@ func (c *RelayMediaClient) fetchMedia(url string, headers http.Header, suggested
 			return "", "", fmt.Errorf("invalid literal for int() with base 10: %s", pyrepr.Repr(raw))
 		}
 		if n.Int64() > RelayMediaMaxBytes || !n.IsInt64() {
-			mediaLog().Warn(fmt.Sprintf("relay media download too large: %s", url))
+			pkgLog().Warn(fmt.Sprintf("relay media download too large: %s", url))
 			return "", "", nil
 		}
 	}

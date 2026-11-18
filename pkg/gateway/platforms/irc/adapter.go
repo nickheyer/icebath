@@ -6,7 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"log/slog"
 	"math/big"
 	"net"
 	"strconv"
@@ -30,7 +29,7 @@ import (
 // Lowercased env values that read as true
 var truthyValues = map[string]bool{"1": true, "true": true, "yes": true}
 
-// Markdown to plain text rewrites in hermes order, images before links
+// Markdown to plain text rewrites in order, images before links
 var markdownRules = []struct {
 	re   *regexp2.Regexp
 	repl string
@@ -216,7 +215,7 @@ func connectErrorText(err error) string {
 	var errno syscall.Errno
 	if errors.As(err, &opErr) && opErr.Op == "dial" && errors.As(err, &errno) {
 		if addr, ok := opErr.Addr.(*net.TCPAddr); ok {
-			return fmt.Sprintf("[Errno %d] Connect call failed (%s, %d)", int(errno), pyrepr.StrRepr(addr.IP.String()), addr.Port)
+			return fmt.Sprintf("could not connect to %s port %d: %s", addr.IP.String(), addr.Port, errno.Error())
 		}
 	}
 	return pyhttpx.OSErrorText(err)
@@ -419,7 +418,7 @@ func (a *IRCAdapter) liveConn() net.Conn {
 // Connects to the server, registers, identifies with NickServ when configured and joins the channel
 func (a *IRCAdapter) Connect(ctx context.Context, isReconnect bool) (bool, error) {
 	if !pyrepr.Truthy(a.server) || !pyrepr.Truthy(a.channel) {
-		slog.Error("IRC: server and channel must be configured")
+		pkgLog().Error("IRC: server and channel must be configured")
 		return a.fail(ctx, "config_missing", "IRC_SERVER and IRC_CHANNEL must be set", false), nil
 	}
 	server, nickname := pyrepr.Str(a.server), pyrepr.Str(a.nickname)
@@ -433,7 +432,7 @@ func (a *IRCAdapter) Connect(ctx context.Context, isReconnect bool) (bool, error
 			return false, ctx.Err()
 		}
 		text := connectErrorText(err)
-		slog.Error(fmt.Sprintf("IRC: failed to connect to %s:%d — %s", server, a.port, text))
+		pkgLog().Error(fmt.Sprintf("IRC: failed to connect to %s:%d — %s", server, a.port, text))
 		return a.fail(ctx, "connect_failed", text, true), nil
 	}
 	a.mu.Lock()
@@ -459,7 +458,7 @@ func (a *IRCAdapter) Connect(ctx context.Context, isReconnect bool) (bool, error
 	select {
 	case <-a.registrationEvent.Done():
 	case <-timer.C:
-		slog.Error("IRC: registration timed out")
+		pkgLog().Error("IRC: registration timed out")
 		if err := a.Disconnect(ctx); err != nil {
 			return false, err
 		}
@@ -483,7 +482,7 @@ func (a *IRCAdapter) Connect(ctx context.Context, isReconnect bool) (bool, error
 	a.mu.Lock()
 	currentNick := pyrepr.Str(a.currentNick)
 	a.mu.Unlock()
-	slog.Info(fmt.Sprintf("IRC: connected to %s:%d as %s, joined %s", server, a.port, currentNick, channel))
+	pkgLog().Info(fmt.Sprintf("IRC: connected to %s:%d as %s, joined %s", server, a.port, currentNick, channel))
 	a.WirePluginHandlers(ctx, nil)
 	return true, nil
 }
@@ -577,7 +576,7 @@ func (a *IRCAdapter) receiveLoop(ctx context.Context, conn net.Conn) (err error)
 	defer stop()
 	defer func() {
 		if a.IsConnected() {
-			slog.Warn("IRC: connection lost, marking disconnected")
+			pkgLog().Warn("IRC: connection lost, marking disconnected")
 			a.SetFatalError(ctx, "connection_lost", "IRC connection closed unexpectedly", true)
 			if nerr := a.NotifyFatalError(ctx); nerr != nil && err == nil {
 				err = nerr
@@ -593,7 +592,7 @@ func (a *IRCAdapter) receiveLoop(ctx context.Context, conn net.Conn) (err error)
 		}
 		if n == 0 {
 			if rerr != nil && !isStreamEOF(rerr) {
-				slog.Error(fmt.Sprintf("IRC: receive loop error: %s", pyhttpx.OSErrorText(rerr)))
+				pkgLog().Error(fmt.Sprintf("IRC: receive loop error: %s", pyhttpx.OSErrorText(rerr)))
 			}
 			return nil
 		}
@@ -609,12 +608,12 @@ func (a *IRCAdapter) receiveLoop(ctx context.Context, conn net.Conn) (err error)
 				if ctx.Err() != nil {
 					return ctx.Err()
 				}
-				slog.Warn(fmt.Sprintf("IRC: error handling line: %s", pyrepr.ExceptionMessage(herr)))
+				pkgLog().Warn(fmt.Sprintf("IRC: error handling line: %s", pyrepr.ExceptionMessage(herr)))
 			}
 		}
 		if rerr != nil {
 			if !isStreamEOF(rerr) {
-				slog.Error(fmt.Sprintf("IRC: receive loop error: %s", pyhttpx.OSErrorText(rerr)))
+				pkgLog().Error(fmt.Sprintf("IRC: receive loop error: %s", pyhttpx.OSErrorText(rerr)))
 			}
 			return nil
 		}
@@ -740,7 +739,7 @@ func (a *IRCAdapter) handlePrivmsg(ctx context.Context, senderNick, target, text
 		}
 	}
 	if len(a.allowedLower) > 0 && !a.allowedLower[pystr.Lower(senderNick)] {
-		slog.Debug(fmt.Sprintf("IRC: ignoring message from unauthorized user %s", senderNick))
+		pkgLog().Debug(fmt.Sprintf("IRC: ignoring message from unauthorized user %s", senderNick))
 		return nil
 	}
 	chatID, chatType := senderNick, "dm"

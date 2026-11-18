@@ -257,12 +257,12 @@ func (r *GatewayRunner) handleVoiceChannelInput(ctx context.Context, guildID, us
 		return err
 	}
 	if !authorized {
-		runLog().Debug(fmt.Sprintf("Unauthorized voice input from user %d, ignoring", userID))
+		pkgLog().Debug(fmt.Sprintf("Unauthorized voice input from user %d, ignoring", userID))
 		return nil
 	}
 	binding := [3]any{ownerProfileValue(adapter), guildID, textChannelID}
 	if r.isDuplicateVoiceTranscript(binding, userID, transcript) {
-		runLog().Info(fmt.Sprintf("Suppressing duplicate voice transcript for guild=%d user=%d: %s", guildID, userID, runePrefix(transcript, 100)))
+		pkgLog().Info(fmt.Sprintf("Suppressing duplicate voice transcript for guild=%d user=%d: %s", guildID, userID, runePrefix(transcript, 100)))
 		return nil
 	}
 	if cache, ok := adapter.(discordVoiceCache); ok {

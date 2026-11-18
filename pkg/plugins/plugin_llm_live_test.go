@@ -1,7 +1,5 @@
 package plugins
 
-import ()
-
 const llmProbePlugin = `
 import asyncio, json
 from agent.plugin_llm import PluginLlmTextInput, PluginLlmTrustError

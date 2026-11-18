@@ -46,7 +46,7 @@ func identifyRuntime(r *GatewayRunner) *pyjson.Object {
 	return payload
 }
 
-// Control socket start, the real method swapped only where a hermes case installs a fake
+// Control socket start, the real method swapped only where a test installs a fake
 var controlServerStart = (*gateway.GatewayControlServer).Start
 
 // Starts the gateway control socket answering identify, status and the gateway verbs, nil when unavailable
@@ -122,7 +122,7 @@ func startGatewayStartControlSocket(ctx context.Context, r *GatewayRunner, loop 
 		return server, nil
 	}()
 	if err != nil {
-		runLog().Error("Control socket startup failed; the gateway cannot start without it: " + err.Error())
+		pkgLog().Error("Control socket startup failed; the gateway cannot start without it: " + err.Error())
 		return nil
 	}
 	return server

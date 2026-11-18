@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"log/slog"
 	"os"
 	"path/filepath"
 	"sort"
@@ -25,10 +24,6 @@ var (
 	containerBootLogRotate = int64(256 * 1024)
 	procRoot               = "/proc"
 )
-
-func containerBootLog() *slog.Logger {
-	return slog.Default().With("logger", "hermes_cli.container_boot")
-}
 
 // What the boot reconcile did with one profile slot
 type ReconcileAction struct {
@@ -65,7 +60,7 @@ func namedProfileDirs(home string) [][2]string {
 			continue
 		}
 		if e.Name() == "default" {
-			containerBootLog().Warn("profiles/default/ exists — skipping to avoid colliding with the reserved root-profile s6 slot")
+			pkgLog().Warn("profiles/default/ exists — skipping to avoid colliding with the reserved root-profile s6 slot")
 			continue
 		}
 		found = append(found, [2]string{e.Name(), dir})
@@ -110,7 +105,7 @@ func ReconcileProfileGateways(ctx context.Context, home, scandir string, dryRun 
 	}
 	fold := FoldNamedSlotIntent(defaultPrior, states)
 	if len(fold.Folded) > 0 && (defaultPrior == nil || !AutostartStates[*defaultPrior]) {
-		containerBootLog().Warn(BootNotice(fold.Folded))
+		pkgLog().Warn(BootNotice(fold.Folded))
 	}
 	if !dryRun {
 		cleanupStaleRuntimeFiles(home)
@@ -270,7 +265,7 @@ func readDesiredState(profileDir string) *string {
 		err = json.Unmarshal(bytes.TrimPrefix(raw, []byte("\xef\xbb\xbf")), &data)
 	}
 	if err != nil {
-		containerBootLog().Warn(fmt.Sprintf("could not read %s; treating as no prior state", stateFile))
+		pkgLog().Warn(fmt.Sprintf("could not read %s; treating as no prior state", stateFile))
 		return nil
 	}
 	if desired, ok := data["desired_state"]; ok && desired != nil {
@@ -375,7 +370,7 @@ func writeReconcileLog(home string, actions []ReconcileAction) error {
 	logPath := filepath.Join(logDir, "container-boot.log")
 	if info, err := os.Stat(logPath); err == nil && info.Size() >= containerBootLogRotate {
 		if err := os.Rename(logPath, filepath.Join(logDir, "container-boot.log.1")); err != nil {
-			containerBootLog().Warn(fmt.Sprintf("could not rotate %s: %s", logPath, err))
+			pkgLog().Warn(fmt.Sprintf("could not rotate %s: %s", logPath, err))
 		}
 	}
 	ts := time.Now().Format("2006-01-02T15:04:05-0700")

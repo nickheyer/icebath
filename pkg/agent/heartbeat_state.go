@@ -3,7 +3,6 @@ package agent
 import (
 	"context"
 	"fmt"
-	"log/slog"
 	"math/big"
 
 	"github.com/nickheyer/icebath/pkg/goals"
@@ -15,8 +14,6 @@ import (
 )
 
 const heartbeatMetaPrefix = "heartbeat:"
-
-func heartbeatLogger() *slog.Logger { return slog.Default().With("logger", "hermes_cli.heartbeat") }
 
 // Serializable per session heartbeat
 type HeartbeatState struct {
@@ -77,7 +74,7 @@ func LoadHeartbeat(ctx context.Context, sessionID string) *HeartbeatState {
 	}
 	raw, _, err := db.GetMeta(ctx, heartbeatMetaPrefix+sessionID)
 	if err != nil {
-		heartbeatLogger().Debug(fmt.Sprintf("HeartbeatManager: get_meta failed: %s", err))
+		pkgLog().Debug(fmt.Sprintf("HeartbeatManager: get_meta failed: %s", err))
 		return nil
 	}
 	if raw == "" {
@@ -85,7 +82,7 @@ func LoadHeartbeat(ctx context.Context, sessionID string) *HeartbeatState {
 	}
 	st, err := HeartbeatStateFromJSON(raw)
 	if err != nil {
-		heartbeatLogger().Warn(fmt.Sprintf("HeartbeatManager: could not parse stored heartbeat for %s: %s", sessionID, err))
+		pkgLog().Warn(fmt.Sprintf("HeartbeatManager: could not parse stored heartbeat for %s: %s", sessionID, err))
 		return nil
 	}
 	if st.Status == "cleared" {
@@ -109,7 +106,7 @@ func SaveHeartbeat(ctx context.Context, sessionID string, st *HeartbeatState) {
 		err = db.SetMeta(ctx, heartbeatMetaPrefix+sessionID, raw)
 	}
 	if err != nil {
-		heartbeatLogger().Debug(fmt.Sprintf("HeartbeatManager: set_meta failed: %s", err))
+		pkgLog().Debug(fmt.Sprintf("HeartbeatManager: set_meta failed: %s", err))
 	}
 }
 

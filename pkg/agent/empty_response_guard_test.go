@@ -13,7 +13,7 @@ type guardResponse struct {
 }
 
 func guardAgent() *AIAgent {
-	return &AIAgent{model: "anthropic/claude-fable-5", provider: "nous", apiMode: "chat_completions"}
+	return &AIAgent{model: "anthropic/claude-fable-5", provider: "openrouter", apiMode: "chat_completions"}
 }
 
 func guardUsageResponse(promptTokens, completionTokens int) guardResponse {

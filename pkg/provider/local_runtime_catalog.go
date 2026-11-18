@@ -8,7 +8,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"log/slog"
 	"math"
 	"net/http"
 	"path"
@@ -188,7 +187,7 @@ func SelectVariant(entry CatalogEntry, budget HardwareBudget) *VariantChoice {
 	return &VariantChoice{Variant: variant, ZeroSpill: true, ReasonKey: reason}
 }
 
-// Variant fit the recommendation and the local models routes read, the module attribute hermes tests patch
+// Variant fit the recommendation and the local models routes read, a seam tests replace
 var catalogSelectVariantFn = SelectVariant
 
 // Memory bandwidth classes in GB per second for discrete cards, unified memory and spilled host DRAM
@@ -311,7 +310,7 @@ func RecommendedEntry(budget HardwareBudget, entries []CatalogEntry, backend str
 var packagedCatalogJSON []byte
 
 const (
-	catalogURL           = "https://raw.githubusercontent.com/NousResearch/hermes-agent/main/hermes_cli/local_runtime/catalog.json"
+	catalogURL           = "https://icebath.app/api/local-runtime-catalog.json"
 	catalogSchemaVersion = 3
 	catalogRefreshTTL    = 6 * time.Hour
 )
@@ -384,7 +383,7 @@ func catalogKey(m any, key string) (any, error) {
 	}
 	v, ok := obj[key]
 	if !ok {
-		return nil, fmt.Errorf("KeyError: %s", pyRepr(key))
+		return nil, fmt.Errorf("a local model catalog entry has no %s", key)
 	}
 	return v, nil
 }
@@ -727,11 +726,11 @@ func RefreshCatalog(force bool) bool {
 	catalogRefreshMu.Unlock()
 	fetched, err := catalogFetchAndLoad()
 	if err != nil {
-		slog.Debug(fmt.Sprintf("catalog refresh skipped: %v", err))
+		pkgLog().Debug(fmt.Sprintf("catalog refresh skipped: %v", err))
 		return false
 	}
 	if !reflect.DeepEqual(fetched, Catalog()) {
-		slog.Info(fmt.Sprintf("catalog refreshed from repo (%d models)", len(fetched)))
+		pkgLog().Info(fmt.Sprintf("catalog refreshed from repo (%d models)", len(fetched)))
 	}
 	setCatalog(fetched)
 	return true

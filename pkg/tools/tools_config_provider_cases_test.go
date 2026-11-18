@@ -63,7 +63,7 @@ func section(cfg config.Tree, key string) map[string]any {
 func TestPostSetupGateCuaDriverMissingForcesSetup(t *testing.T) {
 	s, _ := newTestToolsSetup(t, "")
 	t.Setenv("PATH", t.TempDir())
-	needs, err := s.toolsetNeedsConfigurationPrompt("computer_use", config.Tree{}, false)
+	needs, err := s.toolsetNeedsConfigurationPrompt("computer_use", config.Tree{})
 	if err != nil || !needs {
 		t.Fatalf("needs %v %v", needs, err)
 	}
@@ -72,7 +72,7 @@ func TestPostSetupGateCuaDriverMissingForcesSetup(t *testing.T) {
 func TestPostSetupGateIncompatibleCuaDriverForcesSetup(t *testing.T) {
 	s, _ := newTestToolsSetup(t, "")
 	swapHook(t, &ToolsConfigHooks.CuaDriverInstallReady, func(*Env) (bool, error) { return false, nil })
-	if needs, err := s.toolsetNeedsConfigurationPrompt("computer_use", config.Tree{}, false); err != nil || !needs {
+	if needs, err := s.toolsetNeedsConfigurationPrompt("computer_use", config.Tree{}); err != nil || !needs {
 		t.Fatalf("needs %v %v", needs, err)
 	}
 }
@@ -80,7 +80,7 @@ func TestPostSetupGateIncompatibleCuaDriverForcesSetup(t *testing.T) {
 func TestPostSetupGateCompatibleCuaDriverSkipsSetup(t *testing.T) {
 	s, _ := newTestToolsSetup(t, "")
 	swapHook(t, &ToolsConfigHooks.CuaDriverInstallReady, func(*Env) (bool, error) { return true, nil })
-	if needs, err := s.toolsetNeedsConfigurationPrompt("computer_use", config.Tree{}, false); err != nil || needs {
+	if needs, err := s.toolsetNeedsConfigurationPrompt("computer_use", config.Tree{}); err != nil || needs {
 		t.Fatalf("needs %v %v", needs, err)
 	}
 }
@@ -102,14 +102,14 @@ func TestPostSetupGatePostSetupPredicateExceptionDoesNotBlock(t *testing.T) {
 func TestBrowserBackendPromptBrowserCloudProviderSetSkipsProviderPicker(t *testing.T) {
 	s, _ := newTestToolsSetup(t, "")
 	cfg := config.Tree{"browser": map[string]any{"cloud_provider": "local"}}
-	if needs, err := s.toolsetNeedsConfigurationPrompt("browser", cfg, false); err != nil || needs {
+	if needs, err := s.toolsetNeedsConfigurationPrompt("browser", cfg); err != nil || needs {
 		t.Fatalf("needs %v %v", needs, err)
 	}
 }
 
 func TestBrowserBackendPromptBrowserEmptyStillPrompts(t *testing.T) {
 	s, _ := newTestToolsSetup(t, "")
-	if needs, err := s.toolsetNeedsConfigurationPrompt("browser", config.Tree{"browser": nil}, false); err != nil || !needs {
+	if needs, err := s.toolsetNeedsConfigurationPrompt("browser", config.Tree{"browser": nil}); err != nil || !needs {
 		t.Fatalf("needs %v %v", needs, err)
 	}
 }
@@ -130,36 +130,32 @@ func loaderHome(t *testing.T, body string) (*ToolsSetup, config.Tree) {
 
 func TestBrowserBackendPromptThroughLoaderUnsetBrowserStillPrompts(t *testing.T) {
 	s, cfg := loaderHome(t, "cli: {}\n")
-	if needs, err := s.toolsetNeedsConfigurationPrompt("browser", cfg, false); err != nil || !needs {
+	if needs, err := s.toolsetNeedsConfigurationPrompt("browser", cfg); err != nil || !needs {
 		t.Fatalf("needs %v %v", needs, err)
 	}
 }
 
 func TestBrowserBackendPromptThroughLoaderExplicitCloudProviderSkipsPrompt(t *testing.T) {
 	s, cfg := loaderHome(t, "browser:\n  cloud_provider: browser-use\n")
-	if needs, err := s.toolsetNeedsConfigurationPrompt("browser", cfg, false); err != nil || needs {
+	if needs, err := s.toolsetNeedsConfigurationPrompt("browser", cfg); err != nil || needs {
 		t.Fatalf("needs %v %v", needs, err)
 	}
 }
 
 func TestConfigWritesWriteProviderConfigSetsSttProvider(t *testing.T) {
 	s, _ := newTestToolsSetup(t, "")
-	cfg := config.Tree{"stt": map[string]any{"use_gateway": true}}
-	if err := s.writeProviderConfig(categoryRow(t, "stt", "Groq"), cfg, ""); err != nil {
+	cfg := config.Tree{"stt": map[string]any{}}
+	if err := s.writeProviderConfig(categoryRow(t, "stt", "Groq"), cfg); err != nil {
 		t.Fatal(err)
 	}
 	stt := section(cfg, "stt")
 	if stt["provider"] != "groq" {
 		t.Fatalf("stt %v", stt)
 	}
-	if _, has := stt["use_gateway"]; has {
-		t.Fatalf("use_gateway kept %v", stt)
-	}
 }
 
 func TestConfigWritesApplyProviderSelectionStt(t *testing.T) {
 	s, _ := newTestToolsSetup(t, "")
-	swapHook(t, &ToolsConfigHooks.NousFeatures, nousFeaturesDouble(false, map[string]NousToolFeature{}, nil))
 	cfg := config.Tree{}
 	if err := s.ApplyProviderSelection("stt", "OpenAI", cfg); err != nil {
 		t.Fatal(err)
@@ -172,17 +168,17 @@ func TestConfigWritesApplyProviderSelectionStt(t *testing.T) {
 func TestActiveDetectionActiveMatchesConfig(t *testing.T) {
 	s, _ := newTestToolsSetup(t, "")
 	cfg := config.Tree{"stt": map[string]any{"provider": "groq"}}
-	if ok, err := s.IsProviderActive(categoryRow(t, "stt", "Groq"), cfg, false); err != nil || !ok {
+	if ok, err := s.IsProviderActive(categoryRow(t, "stt", "Groq"), cfg); err != nil || !ok {
 		t.Fatalf("groq %v %v", ok, err)
 	}
-	if ok, err := s.IsProviderActive(categoryRow(t, "stt", "OpenAI"), cfg, false); err != nil || ok {
+	if ok, err := s.IsProviderActive(categoryRow(t, "stt", "OpenAI"), cfg); err != nil || ok {
 		t.Fatalf("openai %v %v", ok, err)
 	}
 }
 
 func TestActiveDetectionUnsetProviderDefaultsToLocal(t *testing.T) {
 	s, _ := newTestToolsSetup(t, "")
-	if ok, err := s.IsProviderActive(categoryRow(t, "stt", "Local Whisper"), config.Tree{}, false); err != nil || !ok {
+	if ok, err := s.IsProviderActive(categoryRow(t, "stt", "Local Whisper"), config.Tree{}); err != nil || !ok {
 		t.Fatalf("local %v %v", ok, err)
 	}
 }
@@ -215,7 +211,7 @@ func TestConfigOnlyExclusionSttExcludedFromChecklistUniverse(t *testing.T) {
 func TestVideoPluginProviderActiveActiveWhenVideoGenProviderMatches(t *testing.T) {
 	s, _ := newTestToolsSetup(t, "")
 	row := caseRow("name", "xAI Grok Imagine", "video_gen_plugin_name", "xai")
-	if ok, err := s.IsProviderActive(row, config.Tree{"video_gen": map[string]any{"provider": "xai"}}, false); err != nil || !ok {
+	if ok, err := s.IsProviderActive(row, config.Tree{"video_gen": map[string]any{"provider": "xai"}}); err != nil || !ok {
 		t.Fatalf("active %v %v", ok, err)
 	}
 }
@@ -228,101 +224,61 @@ func TestVideoPluginProviderActiveDetectActiveIndexPicksVideoPluginMatch(t *test
 		caseRow("name", "xAI Grok Imagine", "env_vars", []any{}, "video_gen_plugin_name", "xai"),
 		caseRow("name", "FAL.ai", "env_vars", []any{caseRow("key", "FAL_KEY", "prompt", "FAL")}, "video_gen_plugin_name", "fal"),
 	}
-	if idx, err := s.detectActiveProviderIndex(providers, cfg, false); err != nil || idx != 0 {
+	if idx, err := s.detectActiveProviderIndex(providers, cfg); err != nil || idx != 0 {
 		t.Fatalf("index %d %v", idx, err)
 	}
 }
 
-// Selector run with the model pickers answering their default, the hermes _quiet fixture
+// Selector run with the model pickers answering their default, the quiet fixture
 func quietSelectors(t *testing.T) *ToolsSetup {
 	s, _ := newTestToolsSetup(t, "")
 	swapHook(t, &toolsPromptChoice, func(_ *ToolsSetup, _ string, _ []string, def int) (int, error) { return def, nil })
 	return s
 }
 
-func TestImageGenSelectorPreservesManagedSelection(t *testing.T) {
-	s := quietSelectors(t)
-	cfg := config.Tree{}
-	if err := s.writeProviderConfig(caseRow("image_gen_plugin_name", "fal"), cfg, "image_gen"); err != nil {
-		t.Fatal(err)
-	}
-	imageGen := section(cfg, "image_gen")
-	if _, has := imageGen["use_gateway"]; imageGen["provider"] != "nous" || has {
-		t.Fatalf("managed write %v", imageGen)
-	}
-	if err := s.selectPluginImageGenProvider("fal", cfg, true); err != nil {
-		t.Fatal(err)
-	}
-	imageGen = section(cfg, "image_gen")
-	if _, has := imageGen["use_gateway"]; imageGen["provider"] != "nous" || has {
-		t.Fatalf("selector clobbered %v", imageGen)
-	}
-}
-
 func TestImageGenSelectorDirectKeyPickWritesVendor(t *testing.T) {
 	s := quietSelectors(t)
-	cfg := config.Tree{"image_gen": map[string]any{"use_gateway": true}}
-	if err := s.selectPluginImageGenProvider("fal", cfg, false); err != nil {
+	cfg := config.Tree{"image_gen": map[string]any{}}
+	if err := s.selectPluginImageGenProvider("fal", cfg); err != nil {
 		t.Fatal(err)
 	}
 	imageGen := section(cfg, "image_gen")
-	if _, has := imageGen["use_gateway"]; imageGen["provider"] != "fal" || has {
+	if imageGen["provider"] != "fal" {
 		t.Fatalf("direct pick %v", imageGen)
 	}
 }
 
 func TestImageAndVideoSelectorsShareTheSelectionContract(t *testing.T) {
 	s := quietSelectors(t)
-	for _, c := range []struct {
-		useGateway bool
-		want       string
-	}{{true, "nous"}, {false, "fal"}} {
-		cfg := config.Tree{"image_gen": map[string]any{"use_gateway": !c.useGateway}, "video_gen": map[string]any{"use_gateway": !c.useGateway}}
-		if err := s.selectPluginImageGenProvider("fal", cfg, c.useGateway); err != nil {
-			t.Fatal(err)
-		}
-		if err := s.selectPluginVideoGenProvider("fal", cfg, c.useGateway); err != nil {
-			t.Fatal(err)
-		}
-		for _, key := range []string{"image_gen", "video_gen"} {
-			sec := section(cfg, key)
-			if _, has := sec["use_gateway"]; sec["provider"] != c.want || has {
-				t.Fatalf("%v %s %v", c.useGateway, key, sec)
-			}
-		}
-	}
-}
-
-// Reconfigure run with the prints and model picker quiet and the Portal access gate green
-func quietReconfigure(t *testing.T) *ToolsSetup {
-	s := quietSelectors(t)
-	swapHook(t, &ToolsConfigHooks.EnsureNousPortalAccess, func(context.Context, string, io.Writer, string, string) bool { return true })
-	return s
-}
-
-func TestReconfigureManagedFalRowKeepsManagedSelection(t *testing.T) {
-	s := quietReconfigure(t)
-	row := caseRow("name", "Nous Subscription", "env_vars", []any{}, "requires_nous_auth", true, "managed_nous_feature", "image_gen",
-		"override_env_vars", []any{"FAL_KEY"}, "imagegen_backend", "fal")
-	cfg := config.Tree{"image_gen": map[string]any{"model": "fal-ai/gpt-image-2", "use_gateway": true}}
-	if err := s.reconfigureProvider(row, cfg, true); err != nil {
+	cfg := config.Tree{"image_gen": map[string]any{}, "video_gen": map[string]any{}}
+	if err := s.selectPluginImageGenProvider("fal", cfg); err != nil {
 		t.Fatal(err)
 	}
-	imageGen := section(cfg, "image_gen")
-	if _, has := imageGen["use_gateway"]; imageGen["provider"] != "nous" || has {
-		t.Fatalf("managed reconfigure %v", imageGen)
+	if err := s.selectPluginVideoGenProvider("fal", cfg); err != nil {
+		t.Fatal(err)
 	}
+	for _, key := range []string{"image_gen", "video_gen"} {
+		if sec := section(cfg, key); sec["provider"] != "fal" {
+			t.Fatalf("%s %v", key, sec)
+		}
+	}
+}
+
+// Reconfigure run with the prints and model picker quiet
+func quietReconfigure(t *testing.T) *ToolsSetup {
+	s := quietSelectors(t)
+	return s
 }
 
 func TestReconfigureDirectFalRowWritesVendorSelection(t *testing.T) {
 	s := quietReconfigure(t)
 	row := caseRow("name", "FAL.ai", "env_vars", []any{}, "imagegen_backend", "fal")
-	cfg := config.Tree{"image_gen": map[string]any{"use_gateway": true}}
-	if err := s.reconfigureProvider(row, cfg, true); err != nil {
+	cfg := config.Tree{"image_gen": map[string]any{}}
+	if err := s.reconfigureProvider(row, cfg); err != nil {
 		t.Fatal(err)
 	}
 	imageGen := section(cfg, "image_gen")
-	if _, has := imageGen["use_gateway"]; imageGen["provider"] != "fal" || has {
+	if imageGen["provider"] != "fal" {
 		t.Fatalf("direct reconfigure %v", imageGen)
 	}
 }
@@ -450,52 +406,6 @@ func TestImagegenModelPickerPluginPickerFallsBackWhenDefaultIsMissingFromCatalog
 	}
 }
 
-func TestVisibleProvidersReusesLoggedOutFeatureSnapshot(t *testing.T) {
-	s, _ := newTestToolsSetup(t, "")
-	swapHook(t, &ToolsConfigHooks.NousFeatures, func(context.Context, string, map[string]any, bool) NousToolFeatures {
-		t.Fatal("feature snapshot was resolved again")
-		return NousToolFeatures{}
-	})
-	features := &NousToolFeatures{Features: map[string]NousToolFeature{}, Account: accountDouble(false, nil, false)}
-	rows, err := s.VisibleProviders(categoryOf("image_gen"), config.Tree{}, false, features)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !slices.ContainsFunc(rows, func(p *pyjson.Object) bool { return managedFeatureOf(p) == "image_gen" }) {
-		t.Fatalf("managed image row hidden %v", rows)
-	}
-}
-
-func TestVisibleProvidersReusesPoolVideoFeatureSnapshot(t *testing.T) {
-	s, _ := newTestToolsSetup(t, "")
-	swapHook(t, &ToolsConfigHooks.NousFeatures, func(context.Context, string, map[string]any, bool) NousToolFeatures {
-		t.Fatal("feature snapshot was resolved again")
-		return NousToolFeatures{}
-	})
-	features := &NousToolFeatures{NousAuthPresent: true, Features: map[string]NousToolFeature{}, Account: accountDouble(true, boolRef(false), true)}
-	rows, err := s.VisibleProviders(categoryOf("video_gen"), config.Tree{}, false, features)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if slices.ContainsFunc(rows, func(p *pyjson.Object) bool { return managedFeatureOf(p) == "video_gen" }) {
-		t.Fatalf("managed video row offered to a pool only account %v", rows)
-	}
-}
-
-func TestPluginProviderActiveOverridesManagedNousActiveLabel(t *testing.T) {
-	s, _ := newTestToolsSetup(t, "")
-	swapHook(t, &ToolsConfigHooks.NousFeatures, nousFeaturesDouble(false, map[string]NousToolFeature{"image_gen": {ManagedByNous: true}}, nil))
-	cfg := config.Tree{"image_gen": map[string]any{"provider": "openai", "use_gateway": false}}
-	nous := caseRow("name", "Nous Subscription", "managed_nous_feature", "image_gen")
-	openai := caseRow("name", "OpenAI", "image_gen_plugin_name", "openai")
-	if ok, err := s.IsProviderActive(openai, cfg, false); err != nil || !ok {
-		t.Fatalf("openai %v %v", ok, err)
-	}
-	if ok, err := s.IsProviderActive(nous, cfg, false); err != nil || ok {
-		t.Fatalf("nous %v %v", ok, err)
-	}
-}
-
 func TestCodexOAuthBootstrapHookHookStartsCodexOauthOnlyWhenCredentialsMissing(t *testing.T) {
 	for _, loggedIn := range []bool{false, true} {
 		t.Run(map[bool]string{false: "logged_out", true: "logged_in"}[loggedIn], func(t *testing.T) {
@@ -547,7 +457,7 @@ func TestCodexOAuthBootstrapHookReadinessReportsCodexRowFromAuthStore(t *testing
 		want     string
 	}{{false, "needs_auth"}, {true, "ready"}} {
 		swapHook(t, &ToolsConfigHooks.CodexAuthStatus, func(context.Context, string) map[string]any { return map[string]any{"logged_in": c.loggedIn} })
-		if got, err := s.ProviderReadinessStatus(row, config.Tree{}, nil, nil); err != nil || got != c.want {
+		if got, err := s.ProviderReadinessStatus(row, config.Tree{}, nil); err != nil || got != c.want {
 			t.Fatalf("logged_in %v: %q %v", c.loggedIn, got, err)
 		}
 	}

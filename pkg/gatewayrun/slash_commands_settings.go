@@ -168,7 +168,7 @@ func (r *GatewayRunner) handleVerboseCommand(ctx context.Context, event *gateway
 	}
 	description := i18n.T(ctx, "gateway.verbose.mode_"+newMode, "", nil)
 	if err := writeRawConfigLeaf(ctx, configPath, []string{"display", "platforms", platformKey, "tool_progress"}, newMode); err != nil {
-		runLog().Warn(fmt.Sprintf("Failed to save tool_progress mode: %s", pyrepr.ExceptionMessage(err)))
+		pkgLog().Warn(fmt.Sprintf("Failed to save tool_progress mode: %s", pyrepr.ExceptionMessage(err)))
 		return description + "\n" + i18n.T(ctx, "gateway.verbose.save_failed", "", map[string]any{"error": pyrepr.ExceptionMessage(err)}), nil
 	}
 	return description + "\n" + i18n.T(ctx, "gateway.verbose.saved_suffix", "", map[string]any{"platform": platformKey}), nil
@@ -252,7 +252,7 @@ func (r *GatewayRunner) handleFooterCommand(ctx context.Context, event *gateway.
 	}
 	leaf = append(leaf, "runtime_footer", "enabled")
 	if err := writeRawConfigLeaf(ctx, configPath, leaf, newState); err != nil {
-		runLog().Warn(fmt.Sprintf("Failed to save runtime_footer.enabled: %s", pyrepr.ExceptionMessage(err)))
+		pkgLog().Warn(fmt.Sprintf("Failed to save runtime_footer.enabled: %s", pyrepr.ExceptionMessage(err)))
 		return i18n.T(ctx, "gateway.config_save_failed", "", map[string]any{"error": pyrepr.ExceptionMessage(err)}), nil
 	}
 	example := ""

@@ -113,7 +113,7 @@ type emailPlatformPlugin struct{}
 
 func (emailPlatformPlugin) Manifest() plugins.Manifest {
 	return plugins.Manifest{Name: "email-platform", Version: "1.0.0", Kind: "platform", Source: "bundled", Key: "platforms/email",
-		Author: "NousResearch",
+		Author: "Icebath",
 		Description: "Email gateway adapter for Icebath Agent. Polls an IMAP mailbox for inbound messages and replies over SMTP, " +
 			"relaying email threads to and from the Icebath agent.\n",
 		RequiresEnv: []plugins.EnvSpec{

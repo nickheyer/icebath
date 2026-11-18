@@ -10,6 +10,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pydict"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/tuigateway"
+	"github.com/nickheyer/icebath/pkg/tuihost"
 )
 
 // Authority over a real store whose profile id is the state database's home, as the local source label cases build it
@@ -64,7 +65,7 @@ func TestRuntimeDescribeCarriesTheProfilesResolvedSkin(t *testing.T) {
 	if branding, _ := skin["branding"].(map[string]any); len(branding) == 0 {
 		t.Fatalf("branding %v", skin["branding"])
 	}
-	if invalid := tuigateway.CanonicalMethods["runtime.describe"].Result.ModelValidate(result); invalid != nil {
+	if invalid := tuigateway.Lookup(tuigateway.KindCanonical, "runtime.describe").CheckResult(result); invalid != nil {
 		t.Fatal(invalid)
 	}
 }
@@ -76,7 +77,7 @@ func TestRuntimeDescribeAdvertisesClarifyBatch(t *testing.T) {
 	if !slices.Contains(capabilities, any("clarify-batch-v1")) {
 		t.Fatalf("capabilities %v", result["capabilities"])
 	}
-	if !slices.Contains(tuigateway.CanonicalMethods["prompt.submit"].Params.ModelFields(), "clarify_batch") {
+	if !slices.Contains(tuihost.CanonicalMethods["prompt.submit"].Params.ModelFields(), "clarify_batch") {
 		t.Fatal("prompt.submit declares no clarify_batch")
 	}
 }

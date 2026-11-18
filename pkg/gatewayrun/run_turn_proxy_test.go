@@ -87,8 +87,8 @@ func TestReturnsNoneWhenNotConfigured(t *testing.T) {
 
 func TestReadsFromConfigYaml(t *testing.T) {
 	t.Setenv("GATEWAY_PROXY_URL", "")
-	r, _, hermesHome := updateRunner(t)
-	writeHomeFile(t, hermesHome, "config.yaml", []byte("gateway:\n  proxy_url: http://10.0.0.1:8642\n"))
+	r, _, icebathHome := updateRunner(t)
+	writeHomeFile(t, icebathHome, "config.yaml", []byte("gateway:\n  proxy_url: http://10.0.0.1:8642\n"))
 	if got := r.getProxyURL(context.Background()); got != "http://10.0.0.1:8642" {
 		t.Fatalf("proxy url = %q", got)
 	}

@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"log/slog"
 	"math/big"
 	"regexp"
 	"strings"
@@ -44,8 +43,6 @@ var (
 	errDecimalNaNCompare              = errors.New("[<class 'decimal.InvalidOperation'>]")
 	estimateEmptyAttemptCostFn        = estimateEmptyAttemptCost
 )
-
-func emptyGuardLog() *slog.Logger { return slog.Default().With("logger", "agent.empty_response_guard") }
 
 // Decimal of a str() form with the Python grammar, an error where Decimal raises InvalidOperation
 func parseGuardDecimal(s string) (guardDecimal, error) {
@@ -122,7 +119,7 @@ func resolveGuardSettings(raw any) (bool, guardDecimal) {
 				sign, err = candidate.sign()
 			}
 			if err != nil {
-				emptyGuardLog().Debug(fmt.Sprintf("empty-guard: invalid cost_threshold_usd %s, using default", pyrepr.Repr(thresholdRaw)))
+				pkgLog().Debug(fmt.Sprintf("empty-guard: invalid cost_threshold_usd %s, using default", pyrepr.Repr(thresholdRaw)))
 			} else if sign > 0 {
 				threshold = candidate
 			}
@@ -160,7 +157,7 @@ func (a *AIAgent) emptyGuardUsage(response any, what string) (usage provider.Can
 	}
 	defer func() {
 		if rec := recover(); rec != nil {
-			emptyGuardLog().Debug(fmt.Sprintf("empty-guard: %s failed", what), "error", rec)
+			pkgLog().Debug(fmt.Sprintf("empty-guard: %s failed", what), "error", rec)
 			usage, ok = provider.CanonicalUsage{}, false
 		}
 	}()
@@ -175,7 +172,7 @@ func estimateEmptyAttemptCost(ctx context.Context, a *AIAgent, response any) (co
 	}
 	defer func() {
 		if rec := recover(); rec != nil {
-			emptyGuardLog().Debug("empty-guard: cost estimation failed", "error", rec)
+			pkgLog().Debug("empty-guard: cost estimation failed", "error", rec)
 			cost = nil
 		}
 	}()

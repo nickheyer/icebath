@@ -22,7 +22,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/tools"
-	"github.com/nickheyer/icebath/pkg/tuigateway"
+	"github.com/nickheyer/icebath/pkg/tuihost"
 )
 
 // JSON RPC handler of one registered method
@@ -110,7 +110,7 @@ func approvalRequestPayload(ctx context.Context, data map[string]any) map[string
 
 // Server to client requests still waiting on a session's renderer
 func openRequests(sid string) []any {
-	reqs := tuigateway.OpenRequests(sid)
+	reqs := tuihost.OpenRequests(sid)
 	out := make([]any, len(reqs))
 	for i, req := range reqs {
 		out[i] = req
@@ -122,7 +122,7 @@ func openRequests(sid string) []any {
 func pendingApprovalRequestPayload(ctx context.Context, sessionKey string) (payload map[string]any) {
 	defer func() {
 		if r := recover(); r != nil {
-			logger().Debug("failed to read pending approval for "+sessionKey, "error", r)
+			pkgLog().Debug("failed to read pending approval for "+sessionKey, "error", r)
 			payload = nil
 		}
 	}()
@@ -137,7 +137,7 @@ func pendingApprovalRequestPayload(ctx context.Context, sessionKey string) (payl
 func emitApprovalRequest(ctx context.Context, sid string, data map[string]any) {
 	payload := approvalRequestPayload(ctx, data)
 	requestID := strOr(payload["request_id"])
-	sessionKey := strOr(tuigateway.SessionRecord(sid).Get("session_key"))
+	sessionKey := strOr(tuihost.SessionRecord(sid).Get("session_key"))
 	onResult := func(result *pyjson.Object) {
 		if result == nil {
 			if requestID != "" {
@@ -152,7 +152,7 @@ func emitApprovalRequest(ctx context.Context, sid string, data map[string]any) {
 		}
 		tools.ResolveGatewayApproval(sessionKey, choice, truthy(result.GetOr("all", nil)), "", requestID)
 	}
-	settle, err := tuigateway.SendAsync("approval", sid, objectOf(payload), onResult)
+	settle, err := tuihost.SendAsync("approval", sid, objectOf(payload), onResult)
 	if err != nil {
 		panic(err)
 	}
@@ -177,7 +177,7 @@ func statusUpdate(ctx context.Context, sid, kind string, text *string) {
 	if outKind == "lifecycle" && agent.IsCompactionProgressStatus(body) {
 		outKind = "compacting"
 	}
-	tuigateway.Emit(ctx, "status.update", sid, map[string]any{"kind": outKind, "text": body})
+	tuihost.Emit(ctx, "status.update", sid, map[string]any{"kind": outKind, "text": body})
 }
 
 // Attachment name with its pixel size and a rough tile based token estimate when the image decodes
@@ -214,8 +214,8 @@ func coerceIntConfigValue(value any, def, minValue int) int {
 }
 
 // First live record holding the session key
-func sessionForKey(sessionKey string) *tuigateway.Session {
-	for _, live := range tuigateway.LiveSessions() {
+func sessionForKey(sessionKey string) *tuihost.Session {
+	for _, live := range tuihost.LiveSessions() {
 		if live.Session.Get("session_key") == sessionKey {
 			return live.Session
 		}
@@ -224,7 +224,7 @@ func sessionForKey(sessionKey string) *tuigateway.Session {
 }
 
 // Session db source of a record, its own source else the resolved platform
-func sessionSource(session *tuigateway.Session) string {
+func sessionSource(session *tuihost.Session) string {
 	if source := strings.TrimSpace(strOr(session.Get("source"))); source != "" {
 		return source
 	}
@@ -240,7 +240,7 @@ func setSessionContext(ctx context.Context, sessionKey string, cwd *string, uiSe
 				env = nil
 			}
 		}()
-		var sess *tuigateway.Session
+		var sess *tuihost.Session
 		if sessionKey != "" {
 			sess = sessionForKey(sessionKey)
 		}
@@ -291,7 +291,7 @@ var askRequest = ask
 
 // Server to client request answered by one string, empty when skipped, timed out or cancelled
 func ask(ctx context.Context, method, sid string, params map[string]any, timeout *float64) string {
-	result := sendResult(ctx, tuigateway.Send)(method, sid, objectOf(params), timeout, nil)
+	result := sendResult(ctx, tuihost.Send)(method, sid, objectOf(params), timeout, nil)
 	if result == nil {
 		return ""
 	}
@@ -334,7 +334,7 @@ func clarifyBlock(ctx context.Context, sid string, questions []map[string]any) m
 			"multi_select": truthy(entry["multi_select"])})
 		qids = append(qids, strOr(entry["qid"]))
 	}
-	result := sendResult(ctx, tuigateway.Send)("clarify", sid, objectOf(map[string]any{"questions": wire}), clarifyTimeoutSeconds(ctx), qids)
+	result := sendResult(ctx, tuihost.Send)("clarify", sid, objectOf(map[string]any{"questions": wire}), clarifyTimeoutSeconds(ctx), qids)
 	if result == nil {
 		return map[string]any{"answers": map[string]any{}, "outcome": "undelivered"}
 	}
@@ -356,7 +356,7 @@ func objectOf(payload map[string]any) *pyjson.Object {
 }
 
 // Locks the history lock of a session record, creating it on first use, and returns the unlock
-func lockHistory(session *tuigateway.Session) func() {
+func lockHistory(session *tuihost.Session) func() {
 	lock, _ := session.SetDefault("history_lock", &sync.Mutex{}).(sync.Locker)
 	if lock == nil {
 		return func() {}

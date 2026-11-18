@@ -591,7 +591,7 @@ type MentionPatternOptions struct {
 func CompileMentionPatterns(raw any, opts MentionPatternOptions) []*regexp2.Regexp {
 	log := opts.Logger
 	if log == nil {
-		log = slog.Default()
+		log = pkgLog()
 	}
 	compile := func(patterns []string, warn func(pattern string, err error)) []*regexp2.Regexp {
 		var compiled []*regexp2.Regexp

@@ -293,7 +293,7 @@ func branchHeadSuffix(ctx context.Context, gitCmd []string, cwd string) string {
 // Whether a parked feature branch may be switched back to the update target, with the reason or unmerged count
 func assessParkedBranchSwitch(ctx context.Context, gitCmd []string, cwd, currentBranch, targetBranch string) (bool, string, error) {
 	if cfg, err := updatesConfig(ctx); err != nil {
-		updateLog.Debug(fmt.Sprintf("Could not read updates.auto_switch_parked_branch: %s", launchErrorText(err)))
+		pkgLog().Debug(fmt.Sprintf("Could not read updates.auto_switch_parked_branch: %s", launchErrorText(err)))
 	} else if value, set := cfg["auto_switch_parked_branch"]; set && !pyrepr.Truthy(value) {
 		return false, "disabled", nil
 	}
@@ -506,7 +506,7 @@ func (e *UpstreamTargetBroken) Error() string {
 	return "upstream/main (" + short(e.SHA) + ") has a syntax error in " + e.Path
 }
 
-// Upstream remote probe and commit counter the fork sync reads, the pair hermes tests replace
+// Upstream remote probe and commit counter the fork sync reads, the pair tests replace
 var (
 	upstreamRemotePresent = hasUpstreamRemote
 	upstreamCommitCount   = countCommitsBetween

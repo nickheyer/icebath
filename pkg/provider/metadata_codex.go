@@ -215,12 +215,12 @@ func fetchCodexOAuthContextLengthsWithSource(ctx context.Context, accessToken, b
 	client := newProbeClient(ctx, "", headers, 5*time.Second, 10*time.Second)
 	entries, status, err := FetchCodexCatalogEntries(func(u string) (*probeResponse, error) { return client.Get(u, nil) }, baseURL)
 	if err != nil {
-		metadataLog.Debug("Codex /models probe failed", "error", err)
+		pkgLog().Debug("Codex /models probe failed", "error", err)
 		rememberNoCodexCatalog(cacheKey)
 		return map[string]int{}, false
 	}
 	if status != 200 {
-		metadataLog.Debug("Codex /models probe returned non 200, falling back to hardcoded defaults", "status", status)
+		pkgLog().Debug("Codex /models probe returned non 200, falling back to hardcoded defaults", "status", status)
 		rememberNoCodexCatalog(cacheKey)
 		return map[string]int{}, false
 	}
@@ -289,7 +289,7 @@ func resolveCodexOAuthContextLengthWithSource(ctx context.Context, model, access
 			if catalogMax > 0 && catalogMax < bumped {
 				bumped = catalogMax
 			}
-			metadataLog.Debug(fmt.Sprintf("Codex OAuth context for %s: advertised %d raised to live-verified %d", modelBare, n, bumped))
+			pkgLog().Debug(fmt.Sprintf("Codex OAuth context for %s: advertised %d raised to live-verified %d", modelBare, n, bumped))
 			return bumped, source
 		}
 		return n, source

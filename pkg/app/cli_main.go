@@ -261,7 +261,7 @@ func (c *CLI) finalizePreloadedSkills() error {
 	}
 	auto := c.autoLoadSkillsResult
 	if auto != nil && len(auto.Missing) > 0 {
-		cliLogger.Warn(fmt.Sprintf("skills.auto_load: skill(s) not found or disabled, skipped: %s", strings.Join(auto.Missing, ", ")))
+		pkgLog().Warn(fmt.Sprintf("skills.auto_load: skill(s) not found or disabled, skipped: %s", strings.Join(auto.Missing, ", ")))
 	}
 	c.preloadedSkills = []string{}
 	if auto != nil {
@@ -275,7 +275,7 @@ func (c *CLI) finalizePreloadedSkills() error {
 		if len(result.Loaded) == 0 {
 			return errors.New(skills.FormatMissingSkills(result.Missing))
 		}
-		cliLogger.Warn(fmt.Sprintf("Skipping %s. Continuing with: %s. List available skills with `icebath skills list`.",
+		pkgLog().Warn(fmt.Sprintf("Skipping %s. Continuing with: %s. List available skills with `icebath skills list`.",
 			skills.FormatMissingSkills(result.Missing), strings.Join(result.Loaded, ", ")))
 	}
 	if result.Prompt != "" {
@@ -302,7 +302,7 @@ func (c *CLI) claimActiveSession(surface string, stderr bool) bool {
 	}
 	lease, message, err := TryAcquireActiveSession(c.ctx, c.sessionID, surface, c.config, map[string]any{"live_session_id": c.sessionID})
 	if err != nil {
-		cliLogger.Warn(fmt.Sprintf("Failed to claim active session slot: %v", err))
+		pkgLog().Warn(fmt.Sprintf("Failed to claim active session slot: %v", err))
 		return true
 	}
 	if message != nil && message.Message != "" {
@@ -324,7 +324,7 @@ func (c *CLI) releaseActiveSession() {
 		return
 	}
 	if err := lease.Release(); err != nil {
-		cliLogger.Debug(fmt.Sprintf("Failed to release active session slot: %v", err))
+		pkgLog().Debug(fmt.Sprintf("Failed to release active session slot: %v", err))
 	}
 	c.activeSessionLease = nil
 }
@@ -376,7 +376,7 @@ func startWorktreeSetup(ctx context.Context, listTools, listToolsets, worktree, 
 	go func() {
 		defer func() {
 			if r := recover(); r != nil {
-				cliLogger.Debug(fmt.Sprintf("tool prewarm failed: %v", r))
+				pkgLog().Debug(fmt.Sprintf("tool prewarm failed: %v", r))
 			}
 		}()
 		tools.Default.ToolDefinitions(ctx, env, tools.DefinitionOptions{Quiet: true})
@@ -386,7 +386,7 @@ func startWorktreeSetup(ctx context.Context, listTools, listToolsets, worktree, 
 	go func() {
 		defer func() {
 			if r := recover(); r != nil {
-				cliLogger.Debug(fmt.Sprintf("worktree setup failed: %v", r))
+				pkgLog().Debug(fmt.Sprintf("worktree setup failed: %v", r))
 				result <- nil
 			}
 		}()

@@ -49,7 +49,7 @@ func TestToolsConfigBridgeExposesTheMediaCatalogs(t *testing.T) {
 	if !hooks.TTSRegistry.BuiltinNames["edge"] || hooks.ImageGenRegistry.BuiltinNames != nil {
 		t.Fatal("builtin names wrong")
 	}
-	if hooks.DeepInfraModelIDs == nil || hooks.ManagedImageCatalog == nil {
+	if hooks.DeepInfraModelIDs == nil {
 		t.Fatal("catalog lookups not installed")
 	}
 }

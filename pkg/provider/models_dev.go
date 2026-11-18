@@ -31,7 +31,7 @@ const (
 	modelsDevReadLimit     = 10 * time.Second
 )
 
-var modelsDevLog = catalogLog
+var modelsDevLog = pkgLog()
 
 // Clock behind the models.dev freshness and backoff windows
 var modelsDevClock = time.Now
@@ -144,7 +144,7 @@ type ModelCapabilities struct {
 	ModelFamily       string
 }
 
-// Static hermes provider ids to models.dev provider ids
+// Static icebath provider ids to models.dev provider ids
 var providerToModelsDev = map[string]string{
 	"openrouter": "openrouter", "novita": "novita-ai", "anthropic": "anthropic",
 	"openai": "openai", "openai-api": "openai", "openai-codex": "openai", "zai": "zai",
@@ -180,7 +180,7 @@ func profileModelsDevIDs() map[string]string {
 	return out
 }
 
-// ModelsDevProviderMap returns hermes provider id to models.dev id, static map then profile declarations
+// Icebath provider id to models.dev id, static map then profile declarations
 func ModelsDevProviderMap() map[string]string {
 	out := make(map[string]string, len(providerToModelsDev))
 	for k, v := range providerToModelsDev {
@@ -192,7 +192,7 @@ func ModelsDevProviderMap() map[string]string {
 	return out
 }
 
-// ModelsDevIDFor returns the models.dev id for an exact hermes provider id
+// The models.dev id for an exact icebath provider id
 func ModelsDevIDFor(provider string) (string, bool) {
 	key := strings.TrimSpace(provider)
 	if key == "" {
@@ -205,13 +205,13 @@ func ModelsDevIDFor(provider string) (string, bool) {
 	return v, ok
 }
 
-// Hermes provider ids that map to one models.dev id
-func modelsDevToHermesIDs(mdevID string) []string {
+// Provider ids that map to one models.dev id
+func modelsDevToIcebathIDs(mdevID string) []string {
 	modelsDevToProviderOnce.Do(func() {
 		modelsDevToProvider = map[string][]string{}
-		for _, hermesID := range sortedStringKeys(providerToModelsDev) {
-			mapped := providerToModelsDev[hermesID]
-			modelsDevToProvider[mapped] = append(modelsDevToProvider[mapped], hermesID)
+		for _, icebathID := range sortedStringKeys(providerToModelsDev) {
+			mapped := providerToModelsDev[icebathID]
+			modelsDevToProvider[mapped] = append(modelsDevToProvider[mapped], icebathID)
 		}
 	})
 	out := cloneStrings(modelsDevToProvider[mdevID])
@@ -291,7 +291,7 @@ func configuredCatalogProvider(provider string, cfg map[string]any) string {
 	return strings.TrimSpace(alias)
 }
 
-// models.dev provider id for a hermes provider, custom providers only through catalog_provider
+// models.dev provider id for a provider, custom providers only through catalog_provider
 func modelsDevID(h, provider string, cfg map[string]any) string {
 	key := strings.TrimSpace(provider)
 	if mdevID, ok := ModelsDevIDFor(key); ok {
@@ -812,7 +812,7 @@ func modelsDevRegistryModels(h, mdevID string, allowNetwork bool) map[string]any
 	return models
 }
 
-// Models map for a hermes provider or nil when it is unknown to the registry
+// Models map for a provider or nil when it is unknown to the registry
 func modelsDevProviderModels(h, provider string, allowNetwork bool, cfg map[string]any) map[string]any {
 	mdevID := modelsDevID(h, provider, cfg)
 	if mdevID == "" {
@@ -950,7 +950,7 @@ func loadModelOverrides(cfg map[string]any) map[string]any {
 	return dictOrEmpty(v)
 }
 
-// Override section for a provider keyed by hermes or models.dev id
+// Override section for a provider keyed by icebath or models.dev id
 func providerOverrideSection(provider string, cfg map[string]any) map[string]any {
 	overrides := loadModelOverrides(cfg)
 	key := strings.TrimSpace(provider)
@@ -961,7 +961,7 @@ func providerOverrideSection(provider string, cfg map[string]any) map[string]any
 	if mapped, ok := ModelsDevIDFor(key); ok {
 		candidates = append(candidates, mapped)
 	}
-	candidates = append(candidates, modelsDevToHermesIDs(key)...)
+	candidates = append(candidates, modelsDevToIcebathIDs(key)...)
 	for _, c := range candidates {
 		if c == "" {
 			continue
@@ -1464,7 +1464,7 @@ func parseModelsDevProvider(providerID string, raw map[string]any) ModelsDevProv
 	return ModelsDevProvider{ID: providerID, Name: name, Env: env, API: stringOf(raw["api"]), Doc: stringOf(raw["doc"]), ModelCount: len(dictOrEmpty(raw["models"]))}
 }
 
-// ModelsDevProviderInfo returns provider metadata by hermes or models.dev id
+// Provider metadata by icebath or models.dev id
 func ModelsDevProviderInfo(ctx context.Context, providerID string, allowNetwork bool) (ModelsDevProvider, bool) {
 	h := home.Dir(ctx)
 	return modelsDevProviderInfoIn(h, providerID, allowNetwork, loadConfigTree(h))

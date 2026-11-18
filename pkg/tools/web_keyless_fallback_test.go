@@ -423,7 +423,7 @@ func TestKeylessTierAndRingMembership(t *testing.T) {
 
 func TestGetBackendAndAPIKeyGateWithTheKeylessTier(t *testing.T) {
 	t.Setenv("ICEBATH_HOME", t.TempDir())
-	for _, k := range []string{"FIRECRAWL_API_KEY", "FIRECRAWL_API_URL", "TAVILY_API_KEY", "KEENABLE_API_KEY", "BRAVE_SEARCH_API_KEY", "SEARXNG_URL", "TOOL_GATEWAY_USER_TOKEN"} {
+	for _, k := range []string{"FIRECRAWL_API_KEY", "FIRECRAWL_API_URL", "TAVILY_API_KEY", "KEENABLE_API_KEY", "BRAVE_SEARCH_API_KEY", "SEARXNG_URL"} {
 		t.Setenv(k, "")
 	}
 	swapDDGS(t, &ddgsClientAvailable, func(*Env) bool { return false })

@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"log/slog"
 	"path/filepath"
 	"slices"
 	"time"
@@ -213,7 +212,7 @@ func (d *SessionDB) PurgeStaleToolCallMarkers(ctx context.Context, dryRun, backu
 			return nil, err
 		}
 		backupPath = target
-		slog.Info(fmt.Sprintf("Backed up state.db to %s before clean-markers write", target))
+		pkgLog().Info(fmt.Sprintf("Backed up state.db to %s before clean-markers write", target))
 	}
 	if err := d.executeWrite(ctx, func(conn SQLiteConn) error {
 		ids, err := findAffected(conn)
@@ -231,7 +230,7 @@ func (d *SessionDB) PurgeStaleToolCallMarkers(ctx context.Context, dryRun, backu
 		return nil, err
 	}
 	if len(affected) > 0 {
-		slog.Info(fmt.Sprintf("Permanently cleared %d stale tool-call marker row(s) in state.db (#78148)", len(affected)))
+		pkgLog().Info(fmt.Sprintf("Permanently cleared %d stale tool-call marker row(s) in state.db (#78148)", len(affected)))
 	}
 	return result(affected, backupPath), nil
 }

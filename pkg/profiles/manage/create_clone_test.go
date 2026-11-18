@@ -27,9 +27,9 @@ func TestCloneConfigCopiesOnlyTheActiveMemoryProvidersConfig(t *testing.T) {
 	captureOut(t)
 	def := filepath.Join(tmp, ".icebath")
 	writeFile(t, filepath.Join(def, "config.yaml"), "memory:\n  provider: hindsight\n")
-	payload := `{"mode": "local_embedded", "bank_id": "hermes", "apiKey": "hs-secret"}`
+	payload := `{"mode": "local_embedded", "bank_id": "icebath", "apiKey": "hs-secret"}`
 	writeFile(t, filepath.Join(def, "hindsight", "config.json"), payload)
-	writeFile(t, filepath.Join(def, "mem0.json"), `{"agent_id": "hermes"}`)
+	writeFile(t, filepath.Join(def, "mem0.json"), `{"agent_id": "icebath"}`)
 	dir := cloneConfig(t, "coder", false)
 	cloned := filepath.Join(dir, "hindsight", "config.json")
 	if readText(t, cloned) != payload {

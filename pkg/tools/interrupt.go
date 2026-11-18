@@ -2,7 +2,6 @@ package tools
 
 import (
 	"context"
-	"log/slog"
 	"os"
 	"sync"
 	"sync/atomic"
@@ -10,7 +9,7 @@ import (
 
 // Per worker interrupt signaling so stopping one session never kills another session's tools
 
-// WorkerID identifies one tool execution worker the way a thread ident does in hermes
+// Identifies one tool execution worker like a thread ident
 type WorkerID int64
 
 var (
@@ -81,7 +80,7 @@ func SetInterrupt(id WorkerID, active bool, reason string) {
 	}
 	interruptMu.Unlock()
 	if debugInterrupt {
-		slog.Info("[interrupt-debug] set_interrupt", "active", active, "target", id, "current_set", snapshot)
+		pkgLog().Info("[interrupt-debug] set_interrupt", "active", active, "target", id, "current_set", snapshot)
 	}
 }
 

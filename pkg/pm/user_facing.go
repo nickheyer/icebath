@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"io/fs"
-	"log/slog"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -132,7 +131,7 @@ func copyDirs(ctx context.Context, name string) ([]string, error) {
 	location, err := userFacingWritableCopy(ctx, name)
 	if err != nil {
 		if isInstallOrOSError(err) {
-			slog.Debug("user-facing " + name + " stays the packaged copy: " + err.Error())
+			pkgLog().Debug("user-facing " + name + " stays the packaged copy: " + err.Error())
 			return nil, nil
 		}
 		return nil, err

@@ -10,7 +10,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"log/slog"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -142,7 +141,7 @@ func File(ctx context.Context, a Asset) (string, error) {
 	}
 	defer os.Remove(part.Name())
 	defer part.Close()
-	slog.Info("downloading "+a.Name, "bytes", a.Size, "url", a.URL)
+	pkgLog().Info("downloading "+a.Name, "bytes", a.Size, "url", a.URL)
 	for attempt := 1; ; attempt++ {
 		err = download(ctx, a, part)
 		if err == nil {

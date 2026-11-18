@@ -24,7 +24,7 @@ var SupportedImageDocumentTypes = map[string]string{
 	".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".png": "image/png", ".webp": "image/webp", ".gif": "image/gif",
 }
 
-// Extension order of the document, video and image tables as hermes declares them
+// Extension order of the document, video and image tables in declaration order
 var (
 	documentTypeOrder = []string{".pdf", ".md", ".txt", ".csv", ".log", ".json", ".xml", ".yaml", ".yml", ".toml", ".ini",
 		".cfg", ".zip", ".doc", ".xls", ".ppt", ".docx", ".xlsx", ".pptx", ".ts", ".py", ".sh"}
@@ -57,7 +57,7 @@ func LastDocumentExtForMime(mime string) string {
 	return ext
 }
 
-// Byte cache writers under the active profile home, swappable the way hermes module globals are
+// Byte cache writers under the active profile home, swappable by tests
 var (
 	cacheImageFromBytes = func(ctx context.Context, data []byte, ext string) (string, error) {
 		return mediacache.CacheImageFromBytes(ctx, home.Dir(ctx), data, ext)

@@ -14,7 +14,7 @@ const (
 		"'message': 'Your API key is invalid, blocked or out of funds...'}}"
 	fixtureNoProvider = "agent init failed: No LLM provider configured. Run `icebath model` to select " +
 		"a provider, or start `icebath` and type `/setup` for first-time configuration."
-	fixtureNoToken     = "agent init failed: No access token found for Nous Portal login."
+	fixtureNoToken     = "agent init failed: No access token found for xAI Grok OAuth login."
 	fixtureTargetScope = "Icebath could not read this profile's API key (an internal profile-scoping bug on the " +
 		"multiplexed gateway, not your configuration). Run `icebath gateway restart`; if it keeps " +
 		"happening, report it with `icebath debug share`."

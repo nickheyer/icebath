@@ -7,7 +7,7 @@ import (
 	"golang.org/x/sys/unix"
 )
 
-// Extended attribute listing the ACL check reads, replaced by tests the way hermes tests monkeypatch os.listxattr
+// Extended attribute listing the ACL check reads, replaced by tests
 var aclListxattr = unix.Llistxattr
 
 // Whether a POSIX access ACL is present on path or its absence cannot be established

@@ -12,21 +12,9 @@ import (
 )
 
 type tbhAccount struct {
-	NousAccountSource
-	enabled bool
-	msg     string
-	pool    map[string]string
-	seen    []string
-	supp    map[string]bool
-}
-
-func (a *tbhAccount) ManagedToolsEnabled(env *Env, forceFresh bool) bool { return a.enabled }
-
-func (a *tbhAccount) UnavailableMessage(env *Env, capability string, forceFresh bool) string {
-	if a.msg == "" {
-		return ""
-	}
-	return a.msg + " " + capability
+	pool map[string]string
+	seen []string
+	supp map[string]bool
 }
 
 func (a *tbhAccount) PoolAPIKey(env *Env, providerID string) string {
@@ -38,10 +26,10 @@ func (a *tbhAccount) SourceSuppressed(env *Env, providerID, source string) bool 
 	return a.supp[providerID+"|"+source]
 }
 
-func tbhInstall(t *testing.T, a NousAccountSource) {
-	prev := NousAccount
-	NousAccount = a
-	t.Cleanup(func() { NousAccount = prev })
+func tbhInstall(t *testing.T, a PoolKeySource) {
+	prev := PoolKeys
+	PoolKeys = a
+	t.Cleanup(func() { PoolKeys = prev })
 }
 
 func tbhEnv(t *testing.T, dotenv string, cfg map[string]any) *Env {
@@ -86,40 +74,9 @@ func TestScopedCredentialReadsTheEnvSecrets(t *testing.T) {
 	}
 }
 
-func TestManagedNousToolsEnabledGate(t *testing.T) {
-	tbhInstall(t, &tbhAccount{enabled: false})
-	if managedNousToolsEnabled(nil, false) {
-		t.Fatal("logged out account enabled the gateway")
-	}
-	tbhInstall(t, nil)
-	if managedNousToolsEnabled(nil, false) {
-		t.Fatal("missing account source enabled the gateway")
-	}
-}
-
-func TestNousToolGatewayUnavailableMessageUsesAccountGuidance(t *testing.T) {
-	tbhInstall(t, &tbhAccount{msg: "credits are exhausted at https://portal.example.test/billing for"})
-	msg := nousToolGatewayUnavailableMessage(nil, "managed image generation", false)
-	if !strings.Contains(msg, "credits are exhausted") || !strings.Contains(msg, "managed image generation") || !strings.Contains(msg, "https://portal.example.test/billing") {
-		t.Fatalf("message %q", msg)
-	}
-	tbhInstall(t, &tbhAccount{})
-	if got := nousToolGatewayUnavailableMessage(nil, "", false); got != "the Nous Tool Gateway is unavailable. Run `icebath model` to refresh your Nous Portal login and billing status." {
-		t.Fatalf("fallback %q", got)
-	}
-}
-
-func TestNormalizeBrowserCloudProviderAndCoerceModalMode(t *testing.T) {
+func TestNormalizeBrowserCloudProvider(t *testing.T) {
 	if NormalizeBrowserCloudProvider("") != "local" || NormalizeBrowserCloudProvider(" BrowserBase ") != "browserbase" {
 		t.Fatal("browser provider normalization")
-	}
-	for _, v := range []string{"auto", "direct", "managed"} {
-		if CoerceModalMode(v) != v || NormalizeModalMode(v) != v {
-			t.Fatalf("mode %s", v)
-		}
-	}
-	if CoerceModalMode("") != "auto" || CoerceModalMode("  managed  ") != "managed" || CoerceModalMode("bogus") != "auto" {
-		t.Fatal("modal mode coercion")
 	}
 }
 
@@ -170,39 +127,6 @@ func TestHasDirectModalCredentialsIgnoresDefaultProfileEnvironUnderMultiplex(t *
 	}
 	if !HasDirectModalCredentials(tbhEnv(t, "MODAL_TOKEN_ID=a\nMODAL_TOKEN_SECRET=b\n", nil)) {
 		t.Fatal("profile scoped tokens ignored")
-	}
-}
-
-func TestPrefersGatewayQuotedBooleans(t *testing.T) {
-	if PrefersGateway(&Env{Config: config.Tree{"web": map[string]any{"use_gateway": "false"}}}, "web") {
-		t.Fatal("quoted false preferred the gateway")
-	}
-	if !PrefersGateway(&Env{Config: config.Tree{"web": map[string]any{"use_gateway": "true"}}}, "web") {
-		t.Fatal("quoted true ignored")
-	}
-	if PrefersGateway(&Env{Config: config.Tree{"web": map[string]any{"use_gateway": "y"}}}, "web") {
-		t.Fatal("y is outside the truthy set")
-	}
-}
-
-func TestResolveModalBackendStateMatrix(t *testing.T) {
-	on, off := true, false
-	r := ResolveModalBackendState(nil, "auto", true, true, &on)
-	if r.SelectedBackend != "managed" {
-		t.Fatalf("auto %+v", r)
-	}
-	if r := ResolveModalBackendState(nil, "direct", true, true, &on); r.SelectedBackend != "direct" {
-		t.Fatalf("direct %+v", r)
-	}
-	if r := ResolveModalBackendState(nil, "direct", false, true, &on); r.SelectedBackend != "" {
-		t.Fatalf("direct without credentials %+v", r)
-	}
-	if r := ResolveModalBackendState(nil, "managed", true, true, &off); r.SelectedBackend != "" || !r.ManagedModeBlocked {
-		t.Fatalf("managed blocked %+v", r)
-	}
-	tbhInstall(t, &tbhAccount{enabled: false})
-	if r := ResolveModalBackendState(nil, "bogus", true, false, nil); r.RequestedMode != "auto" || r.Mode != "auto" || r.SelectedBackend != "direct" {
-		t.Fatalf("invalid mode %+v", r)
 	}
 }
 
@@ -338,7 +262,7 @@ func TestReadSelectionAndSelectionConfigKeys(t *testing.T) {
 		"web":       map[string]any{"search_backend": "Exa"},
 		"image_gen": map[string]any{"backend": "fal"},
 	})
-	if ReadSelection(env, "browser") != "browserbase" || ReadSelection(env, "tts") != NousManagedProvider || ReadSelection(env, "stt") != "" {
+	if ReadSelection(env, "browser") != "browserbase" || ReadSelection(env, "tts") != "openai" || ReadSelection(env, "stt") != "" {
 		t.Fatal("read selection")
 	}
 	if ReadSelection(env, "image_gen") != "fal" || ReadSelection(env, "video_gen") != "" {
@@ -351,13 +275,13 @@ func TestReadSelectionAndSelectionConfigKeys(t *testing.T) {
 		t.Fatal("selection exists")
 	}
 	keys := SelectionConfigKeys()
-	for _, k := range []string{"browser.cloud_provider", "browser.use_gateway", "web.backend", "web.search_backend", "web.extract_backend",
-		"tts.provider", "stt.cloud_provider", "image_gen.backend", "video_gen.use_gateway"} {
+	for _, k := range []string{"browser.cloud_provider", "web.backend", "web.search_backend", "web.extract_backend",
+		"tts.provider", "stt.cloud_provider", "image_gen.backend", "video_gen.provider"} {
 		if !keys[k] {
 			t.Fatalf("missing %s", k)
 		}
 	}
-	if keys["browser.backend"] || len(keys) != 2+4+4*4 {
+	if keys["browser.backend"] || keys["browser.use_gateway"] || len(keys) != 1+3+4*3 {
 		t.Fatalf("keys %v", keys)
 	}
 }
@@ -373,17 +297,6 @@ func TestFalKeyIsConfigured(t *testing.T) {
 	t.Setenv("FAL_KEY", "   ")
 	if FalKeyIsConfigured(tbhEnv(t, "", nil)) {
 		t.Fatal("blank key counted")
-	}
-}
-
-func TestManagedNousGatewayExportsMatchTheBackendGate(t *testing.T) {
-	t.Setenv("XAI_API_KEY", "")
-	env := &Env{Home: t.TempDir(), Config: config.Tree{}}
-	if ManagedNousToolsEnabled(env, false) != managedNousToolsEnabled(env, false) {
-		t.Fatal("managed nous gate diverges")
-	}
-	if NousToolGatewayUnavailableMessage(env, "image generation", false) != nousToolGatewayUnavailableMessage(env, "image generation", false) {
-		t.Fatal("gateway message diverges")
 	}
 }
 

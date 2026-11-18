@@ -3,7 +3,6 @@ package provider
 import (
 	"errors"
 	"fmt"
-	"log/slog"
 	"os"
 	"sort"
 	"strings"
@@ -371,7 +370,7 @@ func (s *CodexAppServerSession) EnsureStarted() (string, error) {
 		s.clientMu.Lock()
 		s.client, client = created, created
 		s.clientMu.Unlock()
-		if _, err := client.Initialize("icebath", "Icebath Agent", Version, nil, 10*time.Second); err != nil {
+		if _, err := client.Initialize("icebath", "Icebath Agent", baseVersion(), nil, 10*time.Second); err != nil {
 			return "", err
 		}
 	}
@@ -397,7 +396,7 @@ func (s *CodexAppServerSession) EnsureStarted() (string, error) {
 		}
 		threadID = resumed
 		s.serviceTierSent = codexTierState{unknown: true}
-		slog.Info(fmt.Sprintf("codex app-server thread resumed: id=%s cwd=%s", pystr.Slice(threadID, 0, 8), s.cwd))
+		pkgLog().Info(fmt.Sprintf("codex app-server thread resumed: id=%s cwd=%s", pystr.Slice(threadID, 0, 8), s.cwd))
 	} else {
 		if s.historySeed != "" {
 			var parts []string
@@ -427,7 +426,7 @@ func (s *CodexAppServerSession) EnsureStarted() (string, error) {
 		}
 		threadID = cxIDText(raw)
 		s.serviceTierSent = codexTierState{}
-		slog.Info(fmt.Sprintf("codex app-server thread started: id=%s profile=%s cwd=%s", pystr.Slice(threadID, 0, 8), s.permissionProfile, s.cwd))
+		pkgLog().Info(fmt.Sprintf("codex app-server thread started: id=%s profile=%s cwd=%s", pystr.Slice(threadID, 0, 8), s.permissionProfile, s.cwd))
 	}
 	s.threadID = threadID
 	return threadID, nil
@@ -499,7 +498,7 @@ func (s *CodexAppServerSession) RequestSteer(text string) (bool, error) {
 	response, err := client.Request("turn/steer", params, 10*time.Second)
 	if err != nil {
 		if codexIsAppServerOrTimeout(err) {
-			slog.Debug("turn/steer rejected for active Codex turn", "error", err)
+			pkgLog().Debug("turn/steer rejected for active Codex turn", "error", err)
 			return false, nil
 		}
 		return false, err
@@ -648,7 +647,7 @@ func (s *CodexAppServerSession) absorbNotification(result *CodexTurnResult, proj
 		func() {
 			defer func() {
 				if r := recover(); r != nil {
-					slog.Debug("on_event callback raised", "panic", r)
+					pkgLog().Debug("on_event callback raised", "panic", r)
 				}
 			}()
 			s.onEvent(note)
@@ -762,7 +761,7 @@ func (s *CodexAppServerSession) runStartedTurn(result *CodexTurnResult, ts any, 
 			return false
 		}
 		lastToolCompletionAt = nil
-		slog.Warn(fmt.Sprintf("codex has emitted no events for %.0fs after a tool result; still waiting (turn deadline %.0fs)", opts.PostToolQuietTimeout, opts.TurnTimeout))
+		pkgLog().Warn(fmt.Sprintf("codex has emitted no events for %.0fs after a tool result; still waiting (turn deadline %.0fs)", opts.PostToolQuietTimeout, opts.TurnTimeout))
 		return false
 	}
 	onServerRequest := func(sreq any) (bool, error) {
@@ -773,7 +772,7 @@ func (s *CodexAppServerSession) runStartedTurn(result *CodexTurnResult, ts any, 
 				break
 			}
 			if !codexNotificationBelongsToTurn(pending, s.threadID, result.TurnID) {
-				slog.Debug(fmt.Sprintf("ignoring foreign codex notification while draining server request: method=%s", pyrepr.Str(cxGet(pending, "method"))))
+				pkgLog().Debug(fmt.Sprintf("ignoring foreign codex notification while draining server request: method=%s", pyrepr.Str(cxGet(pending, "method"))))
 				continue
 			}
 			proj, aborted := s.absorbNotification(result, projector, pending)
@@ -873,13 +872,13 @@ func (s *CodexAppServerSession) driveTurn(result *CodexTurnResult, o codexDriveO
 			continue
 		}
 		if !codexNotificationBelongsToTurn(note, s.threadID, result.TurnID) {
-			slog.Debug(fmt.Sprintf("ignoring foreign codex notification: method=%s", method))
+			pkgLog().Debug(fmt.Sprintf("ignoring foreign codex notification: method=%s", method))
 			continue
 		}
 		turnComplete = o.onNote(note, method)
 	}
 	if o.acceptFinalTextAtDeadline && !turnComplete && !result.Interrupted && result.FinalText != "" && result.Error == "" {
-		slog.Warn("codex app-server turn reached deadline after a completed assistant message but before " +
+		pkgLog().Warn("codex app-server turn reached deadline after a completed assistant message but before " +
 			"turn/completed; accepting the assistant text as the terminal response")
 		turnComplete = true
 	}
@@ -921,16 +920,16 @@ func (s *CodexAppServerSession) CompactThread(turnTimeout, notificationPollTimeo
 		observedThread, observedTurn := codexNotificationScopeIDs(note)
 		if method == "turn/started" {
 			if observedThread != nil && pyrepr.Str(observedThread) != s.threadID {
-				slog.Debug(fmt.Sprintf("ignoring foreign compact turn/started: thread=%s", pyrepr.Str(observedThread)))
+				pkgLog().Debug(fmt.Sprintf("ignoring foreign compact turn/started: thread=%s", pyrepr.Str(observedThread)))
 				return false
 			}
 			if observedTurn == nil {
-				slog.Debug("ignoring compact turn/started without a turn id")
+				pkgLog().Debug("ignoring compact turn/started without a turn id")
 				return false
 			}
 			result.TurnID = pyrepr.Str(observedTurn)
 		} else if observedTurn != nil || method == "item/completed" || method == "turn/completed" {
-			slog.Debug(fmt.Sprintf("ignoring codex notification before compact turn start: method=%s", method))
+			pkgLog().Debug(fmt.Sprintf("ignoring codex notification before compact turn start: method=%s", method))
 			return false
 		}
 		return true
@@ -980,9 +979,9 @@ func (s *CodexAppServerSession) issueInterrupt(turnID string) {
 		var appErr *CodexAppServerError
 		switch {
 		case errors.As(err, &appErr):
-			slog.Debug(fmt.Sprintf("turn/interrupt non-fatal: %s", err.Error()))
+			pkgLog().Debug(fmt.Sprintf("turn/interrupt non-fatal: %s", err.Error()))
 		case codexIsTimeout(err):
-			slog.Warn("turn/interrupt timed out")
+			pkgLog().Warn("turn/interrupt timed out")
 		}
 	}
 }
@@ -1010,7 +1009,7 @@ func (s *CodexAppServerSession) handleServerRequest(req any) error {
 	case "mcpServer/elicitation/request":
 		reply = codexRespondElicitation(params)
 	default:
-		slog.Warn(fmt.Sprintf("Unknown codex server request: %s", method))
+		pkgLog().Warn(fmt.Sprintf("Unknown codex server request: %s", method))
 		return client.RespondError(rid, -32601, "Unsupported method: "+method, nil)
 	}
 	return client.Respond(rid, reply)
@@ -1040,13 +1039,13 @@ func (s *CodexAppServerSession) runApprovalCallback(autoApprove bool, prompt fun
 	command, description := prompt()
 	defer func() {
 		if r := recover(); r != nil {
-			slog.Error(fmt.Sprintf("approval_callback raised on %s", logLabel), "panic", r)
+			pkgLog().Error(fmt.Sprintf("approval_callback raised on %s", logLabel), "panic", r)
 			decision = "decline"
 		}
 	}()
 	choice, err := s.approvalCallback(command, description, false)
 	if err != nil {
-		slog.Error(fmt.Sprintf("approval_callback raised on %s", logLabel), "error", err)
+		pkgLog().Error(fmt.Sprintf("approval_callback raised on %s", logLabel), "error", err)
 		return "decline"
 	}
 	return codexApprovalChoiceToDecision(choice)

@@ -117,7 +117,7 @@ func TestClarifyLogPrivacyClarifyResolutionLogsIndexNotTextAtInfo(t *testing.T) 
 	a.handleClarifyAction(context.Background(), (&ackRecorder{}).ack, map[string]any{"message": map[string]any{"ts": "9.9", "blocks": []any{
 		map[string]any{"type": "section", "text": map[string]any{"type": "mrkdwn", "text": "❓ Pick"}}}},
 		"channel": map[string]any{"id": "C1"}, "user": map[string]any{"name": "norbert", "id": "U_NORBERT"}},
-		map[string]any{"action_id": "hermes_clarify_choice_1", "value": "cid-priv|1"})
+		map[string]any{"action_id": "icebath_clarify_choice_1", "value": "cid-priv|1"})
 	resolved, debugHas := false, false
 	for _, r := range logs.records {
 		if r.level >= slog.LevelInfo {

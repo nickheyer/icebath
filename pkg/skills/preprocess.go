@@ -206,7 +206,7 @@ func hubLockEntries(lockPath string) ([]map[string]any, error) {
 	}
 	raw, ok := doc["installed"]
 	if !ok {
-		return nil, errors.New("KeyError: 'installed'")
+		return nil, errors.New("the skills hub lock has no installed table")
 	}
 	installed, ok := raw.(map[string]any)
 	if !ok {

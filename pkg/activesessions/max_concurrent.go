@@ -2,7 +2,6 @@ package activesessions
 
 import (
 	"fmt"
-	"log/slog"
 	"math"
 	"math/big"
 
@@ -23,20 +22,20 @@ func CoerceMaxConcurrentSessions(value any, key string) *big.Int {
 	f, isFloat := value.(float64)
 	switch {
 	case isBool || (isFloat && (math.IsInf(f, 0) || math.IsNaN(f) || f != math.Trunc(f))):
-		err = fmt.Errorf("ValueError: %s", pyrepr.Repr(value))
+		err = fmt.Errorf("%v is not a whole number", value)
 	default:
 		if s, ok := value.(string); ok {
 			if n, good := pyint.Parse(pystr.Strip(s)); good {
 				parsed = n
 			} else {
-				err = fmt.Errorf("ValueError: %s", s)
+				err = fmt.Errorf("%s is not a whole number", s)
 			}
 		} else {
 			parsed, err = pyint.Of(value)
 		}
 	}
 	if err != nil {
-		slog.Warn(fmt.Sprintf("Ignoring invalid %s=%s (expected a positive integer; 0/null disables)", key, pyrepr.Repr(value)))
+		pkgLog().Warn(fmt.Sprintf("Ignoring invalid %s=%s (expected a positive integer; 0/null disables)", key, pyrepr.Repr(value)))
 		return nil
 	}
 	if parsed.Sign() <= 0 {

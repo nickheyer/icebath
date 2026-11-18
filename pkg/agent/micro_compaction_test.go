@@ -348,7 +348,7 @@ func microTelemetryPayloads(t *testing.T, logs *bytes.Buffer) []*pyjson.Object {
 		if !ok {
 			continue
 		}
-		rest = strings.TrimSuffix(rest, `"`)
+		rest, _, _ = strings.Cut(rest, `" logger=`)
 		rest = strings.ReplaceAll(rest, `\"`, `"`)
 		v, err := pyjson.Loads(rest)
 		if err != nil {

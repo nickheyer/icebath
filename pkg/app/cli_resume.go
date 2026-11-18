@@ -195,7 +195,7 @@ func (c *CLI) endCurrentSession(reason string) {
 		g.flushMessagesToSessionDB()
 	}
 	if err := c.sessionDB.EndSession(c.ctx, c.sessionID, reason); err != nil {
-		cliLogger.Debug(fmt.Sprintf("end_session %s failed: %v", c.sessionID, err))
+		pkgLog().Debug(fmt.Sprintf("end_session %s failed: %v", c.sessionID, err))
 	}
 }
 

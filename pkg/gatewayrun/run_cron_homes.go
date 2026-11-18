@@ -10,7 +10,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/profiles"
 )
 
-// Liveness answer the cron profile gate reads, replaced by tests the way hermes tests monkeypatch gateway.status
+// Liveness answer the cron profile gate reads, replaced by tests
 var cronGateLiveness = gateway.ResolveGatewayLiveness
 
 // Profile homes the in process cron ticker visits, the served set plus the launch profile
@@ -39,7 +39,7 @@ func cronTickProfileHomes(ctx context.Context, cfg *gateway.GatewayConfig) ([]pr
 func cronProfileGate(name, profileHome string) (tick bool) {
 	defer func() {
 		if rec := recover(); rec != nil {
-			runLog().Debug(fmt.Sprintf("Cron profile gate probe failed for %s (ticking it): %v", name, rec))
+			pkgLog().Debug(fmt.Sprintf("Cron profile gate probe failed for %s (ticking it): %v", name, rec))
 			tick = true
 		}
 	}()
@@ -57,7 +57,7 @@ func enableMultiplexLogRouting(ctx context.Context, cfg *gateway.GatewayConfig) 
 	}
 	homes, err := gateway.MultiplexProfileHomes(ctx, cfg)
 	if err != nil {
-		runLog().Debug("could not enable per-profile log routing", "error", err)
+		pkgLog().Debug("could not enable per-profile log routing", "error", err)
 		return false
 	}
 	paths := make([]string, 0, len(homes))
@@ -66,7 +66,7 @@ func enableMultiplexLogRouting(ctx context.Context, cfg *gateway.GatewayConfig) 
 	}
 	enabled, err := logging.EnableProfileLogRouting(paths)
 	if err != nil {
-		runLog().Debug("could not enable per-profile log routing", "error", err)
+		pkgLog().Debug("could not enable per-profile log routing", "error", err)
 		return false
 	}
 	return enabled

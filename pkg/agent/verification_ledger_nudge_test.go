@@ -72,7 +72,7 @@ func TestRecordVerifyRunRecordsFailure(t *testing.T) {
 	}
 }
 
-func TestNudgeMentionsHermesVerifyWhenRecipeHasStart(t *testing.T) {
+func TestNudgeMentionsIcebathVerifyWhenRecipeHasStart(t *testing.T) {
 	project := ledgerNudgeWorkspace(t, map[string]any{"test": "vitest", "dev": "vite"}, nil)
 	nudge := editedProjectNudge(t, project)
 	if !strings.Contains(nudge, "icebath verify --json") || !strings.Contains(nudge, "npm run test") {
@@ -80,7 +80,7 @@ func TestNudgeMentionsHermesVerifyWhenRecipeHasStart(t *testing.T) {
 	}
 }
 
-func TestNudgeMentionsHermesVerifyWhenManifestExists(t *testing.T) {
+func TestNudgeMentionsIcebathVerifyWhenManifestExists(t *testing.T) {
 	project := ledgerNudgeWorkspace(t, map[string]any{"test": "vitest"}, map[string]any{"name": "Fake", "test": []any{"echo ok"}})
 	if nudge := editedProjectNudge(t, project); !strings.Contains(nudge, "icebath verify --json") {
 		t.Fatalf("nudge = %q", nudge)

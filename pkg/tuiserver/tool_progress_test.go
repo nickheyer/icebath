@@ -7,15 +7,15 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/agent"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/tuigateway"
+	"github.com/nickheyer/icebath/pkg/tuihost"
 )
 
 // Live session record under sid for one case, dropped at cleanup
-func liveSession(t *testing.T, sid string, fields map[string]any) *tuigateway.Session {
+func liveSession(t *testing.T, sid string, fields map[string]any) *tuihost.Session {
 	t.Helper()
-	session := tuigateway.NewSession(fields)
-	tuigateway.SetSessionRecord(sid, session)
-	t.Cleanup(func() { tuigateway.SetSessionRecord(sid, nil) })
+	session := tuihost.NewSession(fields)
+	tuihost.SetSessionRecord(sid, session)
+	t.Cleanup(func() { tuihost.SetSessionRecord(sid, nil) })
 	return session
 }
 
@@ -60,7 +60,7 @@ func todoAgent(t *testing.T, revision int) *agent.AIAgent {
 
 func TestLiveSnapshotPrefersTheHighestRevision(t *testing.T) {
 	cached, _ := pyjson.AsObject(map[string]any{"todos": []any{map[string]any{"id": "1", "content": "Current", "status": "pending"}}, "revision": 5})
-	session := tuigateway.NewSession(map[string]any{"agent": todoAgent(t, 4), "todo_state": cached})
+	session := tuihost.NewSession(map[string]any{"agent": todoAgent(t, 4), "todo_state": cached})
 	payload := attachTodoState(map[string]any{}, session)
 	state, _ := payload["todo_state"].(*pyjson.Object)
 	if state == nil || todoRevision(state) != 5 {
@@ -69,7 +69,7 @@ func TestLiveSnapshotPrefersTheHighestRevision(t *testing.T) {
 }
 
 func TestUnusedStoreIsNotAttached(t *testing.T) {
-	session := tuigateway.NewSession(map[string]any{"agent": todoAgent(t, 0)})
+	session := tuihost.NewSession(map[string]any{"agent": todoAgent(t, 0)})
 	if payload := attachTodoState(map[string]any{}, session); payload["todo_state"] != nil {
 		t.Fatalf("payload = %v", payload)
 	}
@@ -77,7 +77,7 @@ func TestUnusedStoreIsNotAttached(t *testing.T) {
 
 func TestEmptyListAtNonzeroRevisionIsARealClear(t *testing.T) {
 	raw, _ := pyjson.AsObject(map[string]any{"todos": []any{}, "revision": 2})
-	state := tuigateway.NormalizeTodoState(raw)
+	state := tuihost.NormalizeTodoState(raw)
 	if state == nil || !reflect.DeepEqual(pyjson.Plain(state), map[string]any{"todos": []any{}, "revision": int64(2)}) {
 		t.Fatalf("state = %v", state)
 	}

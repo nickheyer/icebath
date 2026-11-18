@@ -3,15 +3,12 @@ package kanban
 import (
 	"context"
 	"fmt"
-	"log/slog"
 	"reflect"
 
 	"github.com/nickheyer/icebath/pkg/i18n"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
-
-var resumeGuardLog = slog.Default().With("logger", "hermes_cli.kanban_resume_guard")
 
 // Session store able to classify a session as a Kanban worker transcript
 type kanbanOwnershipProbe interface {
@@ -37,7 +34,7 @@ func KanbanResumeRefusal(ctx context.Context, db any, sessionID string) string {
 	}
 	owned, err := probe.IsKanbanOwnedSession(ctx, sessionID)
 	if err != nil {
-		resumeGuardLog.Warn(fmt.Sprintf("kanban resume probe failed for %s (proceeding unclassified)", sessionID), "exc_info", err.Error())
+		pkgLog().Warn(fmt.Sprintf("kanban resume probe failed for %s (proceeding unclassified)", sessionID), "exc_info", err.Error())
 		return ""
 	}
 	if !owned {

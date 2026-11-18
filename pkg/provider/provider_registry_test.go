@@ -218,7 +218,7 @@ func TestProviderRegistryReregistrationOverwritesAndLogs(t *testing.T) {
 	}
 }
 
-// Empty labels fail construction as the label index does in hermes
+// Empty labels fail construction as the label index does
 func TestProviderRegistryEmptyLabelPanics(t *testing.T) {
 	defer func() {
 		if rec := recover(); rec != "string index out of range" {
@@ -343,14 +343,14 @@ func TestProviderRegistryRestoreRefusesReplacedProvider(t *testing.T) {
 	}
 	before := registry.RegistryGeneration(ctx, "")
 	if !registry.RestoreRegistration("testbox", nil, nil, "") || registry.RegistryGeneration(ctx, "") == before {
-		t.Fatal("nil current over an empty slot is restorable and bumps as in hermes")
+		t.Fatal("nil current over an empty slot is restorable and bumps")
 	}
 	scope := prDir(t, "scope")
 	if registry.RestoreRegistration("testbox", p1, nil, scope) {
 		t.Fatal("restore into an empty scope")
 	}
 	if slot, ok := registry.Export().ScopedProviders.Get(home.Key(scope)); !ok || slot.Len() != 0 {
-		t.Fatal("refused scoped restore leaves the created empty scope as hermes does")
+		t.Fatal("refused scoped restore leaves the created empty scope")
 	}
 }
 
@@ -523,7 +523,7 @@ func TestIsAvailableSafe(t *testing.T) {
 	}
 }
 
-// Configured provider names come stripped from the read only config with nous read as fal and failures as none
+// Configured provider names come stripped from the read only config with failures as none
 func TestConfiguredProviderName(t *testing.T) {
 	ctx := context.Background()
 	write := func(body string) {
@@ -537,8 +537,6 @@ func TestConfiguredProviderName(t *testing.T) {
 	for body, want := range map[string]string{
 		"image_gen:\n  provider: '  openai  '\n": "openai",
 		"image_gen:\n  provider: '   '\n":        "",
-		"image_gen:\n  provider: Nous\n":         "fal",
-		"image_gen:\n  provider: nous\n":         "fal",
 		"image_gen:\n  model: x\n":               "",
 		"image_gen: openai\n":                    "",
 		"image_gen:\n  provider: 7\n":            "",

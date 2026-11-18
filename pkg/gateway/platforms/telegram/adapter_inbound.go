@@ -27,7 +27,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/tools"
 )
 
-// Image cache writer of inbound photos and stickers, the cache_image_from_bytes_async hermes imports
+// Image cache writer of inbound photos and stickers
 var cacheImageFromBytesAsync = gateway.CacheImageFromBytesAsync
 
 // Boolean gate of the scoped env, then the extra key and its fallbacks, then the default
@@ -174,7 +174,7 @@ func (a *TelegramAdapter) ignoredThreads(ctx context.Context) map[int64]bool {
 		}
 		n, convErr := strconv.ParseInt(text, 10, 64)
 		if convErr != nil {
-			slog.Warn(fmt.Sprintf("[%s] Ignoring invalid Telegram thread id: %s", a.Name(), pyrepr.Repr(value)))
+			pkgLog().Warn(fmt.Sprintf("[%s] Ignoring invalid Telegram thread id: %s", a.Name(), pyrepr.Repr(value)))
 			continue
 		}
 		out[n] = true
@@ -290,7 +290,7 @@ func (a *TelegramAdapter) noteBotUsername(username string) {
 	a.botIdentityCheckedAt = &now
 	a.mu.Unlock()
 	if previous != "" {
-		slog.Info(fmt.Sprintf("[%s] Telegram bot username changed: @%s -> @%s (mention routing now follows the new handle)", a.Name(), previous, handle))
+		pkgLog().Info(fmt.Sprintf("[%s] Telegram bot username changed: @%s -> @%s (mention routing now follows the new handle)", a.Name(), previous, handle))
 	}
 }
 
@@ -335,7 +335,7 @@ func (a *TelegramAdapter) refreshBotIdentity(ctx context.Context, force bool) {
 		if known == "" {
 			known = "unknown"
 		}
-		slog.Debug(fmt.Sprintf("[%s] Telegram identity refresh failed (keeping @%s): %s", a.Name(), known, pyrepr.ExceptionMessage(ptbError(err))))
+		pkgLog().Debug(fmt.Sprintf("[%s] Telegram identity refresh failed (keeping @%s): %s", a.Name(), known, pyrepr.ExceptionMessage(ptbError(err))))
 		return
 	}
 	a.mu.Lock()
@@ -579,7 +579,7 @@ func (a *TelegramAdapter) topicGatesPass(ctx context.Context, threadID *string, 
 			if !warnNonNumeric {
 				return &blocked
 			}
-			slog.Warn(fmt.Sprintf("[%s] Ignoring non-numeric Telegram message_thread_id: %s", a.Name(), pyrepr.Repr(*threadID)))
+			pkgLog().Warn(fmt.Sprintf("[%s] Ignoring non-numeric Telegram message_thread_id: %s", a.Name(), pyrepr.Repr(*threadID)))
 		} else if a.ignoredThreads(ctx)[n] {
 			return &blocked
 		}
@@ -772,7 +772,7 @@ func (a *TelegramAdapter) downloadObservedMedia(ctx context.Context, m *models.M
 		cached, err = gateway.CacheMediaBytes(ctx, data, filename, src.mime, src.kind)
 	}
 	if err != nil {
-		slog.Warn(fmt.Sprintf("[Telegram] Failed to cache %s: %s", what, redactTelegramErrorText(err)))
+		pkgLog().Warn(fmt.Sprintf("[Telegram] Failed to cache %s: %s", what, redactTelegramErrorText(err)))
 		return "failed", nil, 0
 	}
 	if cached == nil {
@@ -788,7 +788,7 @@ func (a *TelegramAdapter) cacheObservedMedia(ctx context.Context, m *models.Mess
 	case "oversized":
 		event.Text = appendObservedNote(event.Text, fmt.Sprintf("[Observed Telegram attachment too large or unverifiable. Maximum: %d MB.]",
 			a.maxDocBytes/(1024*1024)))
-		slog.Info(fmt.Sprintf("[Telegram] Observed group attachment skipped (size=%s)", pyrepr.Str(sizeValue(size))))
+		pkgLog().Info(fmt.Sprintf("[Telegram] Observed group attachment skipped (size=%s)", pyrepr.Str(sizeValue(size))))
 	case "unreadable":
 		event.Text = appendObservedNote(event.Text, "[Observed Telegram attachment could not be read, not cached.]")
 	case "ok":
@@ -797,7 +797,7 @@ func (a *TelegramAdapter) cacheObservedMedia(ctx context.Context, m *models.Mess
 	}
 }
 
-// File size as the hermes log shows it, None for an unknown size
+// File size as the log shows it, None for an unknown size
 func sizeValue(size int64) any {
 	if size == 0 {
 		return nil
@@ -813,7 +813,7 @@ func (a *TelegramAdapter) attachCached(event *gateway.MessageEvent, cached *gate
 		event.MessageType = mtype
 	}
 	event.Text = appendObservedNote(event.Text, note)
-	slog.Info(fmt.Sprintf(logFmt, cached.Kind, cached.Path))
+	pkgLog().Info(fmt.Sprintf(logFmt, cached.Kind, cached.Path))
 }
 
 // Caches media of the message this turn replies to
@@ -865,7 +865,7 @@ func (a *TelegramAdapter) surfaceMediaCacheFailure(ctx context.Context, m *model
 	if notice != nil && *notice != "" {
 		a.AcceptUpdate(scoped)
 		if err := a.replyText(scoped, m, *notice); err != nil {
-			slog.Warn(fmt.Sprintf("[Telegram] Failed to notify user about %s cache failure: %s", kind, pyrepr.ExceptionMessage(err)))
+			pkgLog().Warn(fmt.Sprintf("[Telegram] Failed to notify user about %s cache failure: %s", kind, pyrepr.ExceptionMessage(err)))
 		}
 		event.Text = appendObservedNote(event.Text, fmt.Sprintf("[The user attempted to send a %s%s but it could not be downloaded (%s); they have been asked to retry.]",
 			kind, named, exceptionClassName(exc)))
@@ -916,14 +916,14 @@ func (a *TelegramAdapter) observeUnmentionedGroupMessage(ctx context.Context, m 
 	}
 	if err != nil {
 		a.failUpdatePreparation(ctx)
-		slog.Warn(fmt.Sprintf("[%s] Failed to observe Telegram group message: %s", a.Name(), pyrepr.ExceptionMessage(err)))
+		pkgLog().Warn(fmt.Sprintf("[%s] Failed to observe Telegram group message: %s", a.Name(), pyrepr.ExceptionMessage(err)))
 		return
 	}
 	userID := "unknown"
 	if event.Source.UserID != nil && *event.Source.UserID != "" {
 		userID = *event.Source.UserID
 	}
-	slog.Info(fmt.Sprintf("[%s] Telegram group message observed (no bot trigger): chat=%d from=%s", a.Name(), m.Chat.ID, userID))
+	pkgLog().Info(fmt.Sprintf("[%s] Telegram group message observed (no bot trigger): chat=%d from=%s", a.Name(), m.Chat.ID, userID))
 }
 
 // Whether the bot itself sent the message
@@ -1009,11 +1009,11 @@ func (a *TelegramAdapter) ensureForumCommands(ctx context.Context, m *models.Mes
 		a.mu.Lock()
 		a.forumCommandRegistered[chatID] = true
 		a.mu.Unlock()
-		slog.Info(fmt.Sprintf("[%s] Lazy-registered %d commands for forum chat %d", a.Name(), len(commands), chatID))
+		pkgLog().Info(fmt.Sprintf("[%s] Lazy-registered %d commands for forum chat %d", a.Name(), len(commands), chatID))
 		return nil
 	}()
 	if err != nil {
-		slog.Warn(fmt.Sprintf("[%s] Forum command lazy-registration failed: %s", a.Name(), redactTelegramErrorText(err)))
+		pkgLog().Warn(fmt.Sprintf("[%s] Forum command lazy-registration failed: %s", a.Name(), redactTelegramErrorText(err)))
 	}
 }
 
@@ -1023,7 +1023,7 @@ func logBlockedUser(m *models.Message, level slog.Level, what string) {
 	if m.From != nil {
 		userID = m.From.ID
 	}
-	slog.Log(context.Background(), level, fmt.Sprintf("[Telegram] Blocked %s %s in chat %d", what, pyrepr.Str(userID), m.Chat.ID))
+	pkgLog().Log(context.Background(), level, fmt.Sprintf("[Telegram] Blocked %s %s in chat %d", what, pyrepr.Str(userID), m.Chat.ID))
 }
 
 // Group trigger gate that observes unaddressed chatter when configured, true to proceed
@@ -1225,7 +1225,7 @@ func (a *TelegramAdapter) TextBatchDelayFor(pending *gateway.MessageEvent) float
 func (a *TelegramAdapter) FlushTextBatch(ctx context.Context, key string) error {
 	slots := flushSlots{owner: a.TextBatchTask, release: a.ReleaseTextBatchTask}
 	return a.flushBuffered(ctx, slots, a.PopTextBatch, key, a.TextBatchDelayFor(a.PendingTextBatch(key)), "text", func(ev *gateway.MessageEvent) {
-		slog.Info(fmt.Sprintf("[Telegram] Flushing text batch %s (%d chars)", key, utf8.RuneCountInString(ev.Text)))
+		pkgLog().Info(fmt.Sprintf("[Telegram] Flushing text batch %s (%d chars)", key, utf8.RuneCountInString(ev.Text)))
 	})
 }
 
@@ -1272,7 +1272,7 @@ func (a *TelegramAdapter) flushPhotoBatch(ctx context.Context, key string) error
 	return a.flushBuffered(ctx, a.mapSlots(func() map[string]*gateway.AdapterTask { return a.pendingPhotoBatchTasks }),
 		a.mapPop(func() map[string]*gateway.MessageEvent { return a.pendingPhotoBatches }), key, a.mediaBatchDelaySeconds, "photo",
 		func(ev *gateway.MessageEvent) {
-			slog.Info(fmt.Sprintf("[Telegram] Flushing photo batch %s with %d image(s)", key, len(ev.MediaURLs)))
+			pkgLog().Info(fmt.Sprintf("[Telegram] Flushing photo batch %s with %d image(s)", key, len(ev.MediaURLs)))
 		})
 }
 
@@ -1348,7 +1348,7 @@ func (a *TelegramAdapter) cacheInboundAV(ctx context.Context, m *models.Message,
 			if note != nil {
 				event.Text = appendObservedNote(event.Text, *note)
 			}
-			slog.Info(fmt.Sprintf("[Telegram] Skipped oversized user %s (size=%s)", kind, pyrepr.Str(sizeValue(src.fileSize))))
+			pkgLog().Info(fmt.Sprintf("[Telegram] Skipped oversized user %s (size=%s)", kind, pyrepr.Str(sizeValue(src.fileSize))))
 			return errOversizedDispatched
 		}
 		data, filePath, err := a.downloadFile(ctx, src.fileID)
@@ -1370,14 +1370,14 @@ func (a *TelegramAdapter) cacheInboundAV(ctx context.Context, m *models.Message,
 			return err
 		}
 		event.MediaURLs, event.MediaTypes = []string{cachedPath}, []string{mime}
-		slog.Info(fmt.Sprintf("[Telegram] Cached user %s at %s", kind, cachedPath))
+		pkgLog().Info(fmt.Sprintf("[Telegram] Cached user %s at %s", kind, cachedPath))
 		return nil
 	}()
 	if err == errOversizedDispatched {
 		return true, a.HandleMessage(ctx, event)
 	}
 	if err != nil {
-		slog.Warn(fmt.Sprintf("[Telegram] Failed to cache %s: %s", kind, redactTelegramErrorText(err)))
+		pkgLog().Warn(fmt.Sprintf("[Telegram] Failed to cache %s: %s", kind, redactTelegramErrorText(err)))
 		a.surfaceMediaCacheFailure(ctx, m, event, label, err, "")
 	}
 	return false, nil
@@ -1394,7 +1394,7 @@ func (a *TelegramAdapter) dispatchWithText(ctx context.Context, event *gateway.M
 // Sets the cached media path, MIME and message type of an event
 func setCachedMedia(event *gateway.MessageEvent, path, mime string, mtype gateway.MessageType, logFmt string) {
 	event.MediaURLs, event.MediaTypes, event.MessageType = []string{path}, []string{mime}, mtype
-	slog.Info(fmt.Sprintf(logFmt, path))
+	pkgLog().Info(fmt.Sprintf(logFmt, path))
 }
 
 var telegramImageExtensions = map[string]bool{".png": true, ".jpg": true, ".jpeg": true, ".webp": true, ".gif": true}
@@ -1433,7 +1433,7 @@ func (a *TelegramAdapter) cacheInboundDocument(ctx context.Context, m *models.Me
 		}
 		display := joinFirst(original, docMime, ext, "unknown")
 		if doc.FileSize == 0 || doc.FileSize > a.maxDocBytes {
-			slog.Info(fmt.Sprintf("[Telegram] Document too large: %s bytes", pyrepr.Str(sizeValue(doc.FileSize))))
+			pkgLog().Info(fmt.Sprintf("[Telegram] Document too large: %s bytes", pyrepr.Str(sizeValue(doc.FileSize))))
 			return a.dispatchWithText(ctx, event, fmt.Sprintf("The document is too large or its size could not be verified. Maximum: %d MB.",
 				a.maxDocBytes/(1024*1024)))
 		}
@@ -1452,7 +1452,7 @@ func (a *TelegramAdapter) cacheInboundDocument(ctx context.Context, m *models.Me
 			cachedPath, err := cacheImageFromBytesAsync(ctx, data, imageExt)
 			if err != nil {
 				if isValueError(err) {
-					slog.Warn(fmt.Sprintf("[Telegram] Failed to cache image document: %s", redactTelegramErrorText(err)))
+					pkgLog().Warn(fmt.Sprintf("[Telegram] Failed to cache image document: %s", redactTelegramErrorText(err)))
 					return a.dispatchWithText(ctx, event, fmt.Sprintf("Image document '%s' could not be read as an image.", display))
 				}
 				return false, err
@@ -1505,7 +1505,7 @@ func (a *TelegramAdapter) cacheInboundDocument(ctx context.Context, m *models.Me
 		if cached.Kind == "audio" {
 			event.MessageType = gateway.MessageTypeAudio
 		}
-		slog.Info(fmt.Sprintf("[Telegram] Cached user %s at %s (%s)", cached.Kind, cached.Path, cached.MediaType))
+		pkgLog().Info(fmt.Sprintf("[Telegram] Cached user %s at %s (%s)", cached.Kind, cached.Path, cached.MediaType))
 		const maxTextInjectBytes = 100 * 1024
 		isText := gateway.TextInjectExtensions[ext] || strings.HasPrefix(docMime, "text/")
 		if isText && len(raw) <= maxTextInjectBytes && utf8.Valid(raw) {
@@ -1525,7 +1525,7 @@ func (a *TelegramAdapter) cacheInboundDocument(ctx context.Context, m *models.Me
 		if ctx.Err() != nil {
 			return false, ctx.Err()
 		}
-		slog.Warn(fmt.Sprintf("[Telegram] Failed to cache document: %s", redactTelegramErrorText(err)))
+		pkgLog().Warn(fmt.Sprintf("[Telegram] Failed to cache document: %s", redactTelegramErrorText(err)))
 		a.surfaceMediaCacheFailure(ctx, m, event, "attachment", err, doc.FileName)
 		return false, nil
 	}
@@ -1604,7 +1604,7 @@ func (a *TelegramAdapter) handleMediaMessage(ctx context.Context, update *Update
 		if err == nil {
 			return a.routePhotoEvent(ctx, m, event)
 		}
-		slog.Warn(fmt.Sprintf("[Telegram] Failed to cache photo: %s", redactTelegramErrorText(err)))
+		pkgLog().Warn(fmt.Sprintf("[Telegram] Failed to cache photo: %s", redactTelegramErrorText(err)))
 		a.surfaceMediaCacheFailure(ctx, m, event, "photo", err, "")
 	}
 	switch {
@@ -1686,7 +1686,7 @@ func (a *TelegramAdapter) handleSticker(ctx context.Context, m *models.Message, 
 			cachedSet = pyrepr.Str(v)
 		}
 		event.Text = gateway.BuildStickerInjection(pyrepr.Str(cached["description"]), cachedEmoji, cachedSet)
-		slog.Info(fmt.Sprintf("[Telegram] Sticker cache hit: %s", sticker.FileUniqueID))
+		pkgLog().Info(fmt.Sprintf("[Telegram] Sticker cache hit: %s", sticker.FileUniqueID))
 		return
 	}
 	fallback := "a sticker"
@@ -1702,7 +1702,7 @@ func (a *TelegramAdapter) handleSticker(ctx context.Context, m *models.Message, 
 		if err != nil {
 			return err
 		}
-		slog.Info(fmt.Sprintf("[Telegram] Analyzing sticker at %s", cachedPath))
+		pkgLog().Info(fmt.Sprintf("[Telegram] Analyzing sticker at %s", cachedPath))
 		a.AcceptUpdate(ctx)
 		raw := visionAnalyzeTool(ctx, urlSafetyEnv(ctx), cachedPath, gateway.StickerVisionPrompt)
 		var result map[string]any
@@ -1724,7 +1724,7 @@ func (a *TelegramAdapter) handleSticker(ctx context.Context, m *models.Message, 
 		return nil
 	}()
 	if err != nil {
-		slog.Warn(fmt.Sprintf("[Telegram] Sticker analysis error: %s", redactTelegramErrorText(err)))
+		pkgLog().Warn(fmt.Sprintf("[Telegram] Sticker analysis error: %s", redactTelegramErrorText(err)))
 		event.Text = gateway.BuildStickerInjection(fallback, emoji, setName)
 	}
 }

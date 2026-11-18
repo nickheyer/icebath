@@ -67,7 +67,7 @@ func TestSwitchModelExplicitLlamacppProvider(t *testing.T) {
 	ctx, _ := switchAliasHome(t, "")
 	writeManagedLocalState(t, port, "sk-managed")
 	fakeSwitchPipeline(t, false)
-	res := mustSwitch(t, ctx, SwitchModelOptions{RawInput: "stub-model-a", CurrentProvider: "nous", ExplicitProvider: "llamacpp"})
+	res := mustSwitch(t, ctx, SwitchModelOptions{RawInput: "stub-model-a", CurrentProvider: "deepseek", ExplicitProvider: "llamacpp"})
 	if !res.Success {
 		t.Fatal(res.ErrorMessage)
 	}
@@ -88,7 +88,7 @@ func TestStagedLocalModelResolvesWithoutARunningServer(t *testing.T) {
 		t.Fatalf("pdef %+v", pdef)
 	}
 	fakeSwitchPipeline(t, false)
-	res := mustSwitch(t, ctx, SwitchModelOptions{RawInput: "Qwen3.8-27B-IQ3_S-mtp", CurrentProvider: "nous", ExplicitProvider: LlamacppProviderID})
+	res := mustSwitch(t, ctx, SwitchModelOptions{RawInput: "Qwen3.8-27B-IQ3_S-mtp", CurrentProvider: "deepseek", ExplicitProvider: LlamacppProviderID})
 	if res.Success {
 		t.Fatalf("result %+v", res)
 	}
@@ -104,7 +104,7 @@ func TestExternalServerOnAConfiguredDetectPortIsUsed(t *testing.T) {
 	stageLocalGGUF(t, h, "ext-model")
 	noDefaultProbePorts(t)
 	fakeSwitchPipeline(t, false)
-	res := mustSwitch(t, ctx, SwitchModelOptions{RawInput: "ext-model", CurrentProvider: "nous", ExplicitProvider: "llamacpp"})
+	res := mustSwitch(t, ctx, SwitchModelOptions{RawInput: "ext-model", CurrentProvider: "deepseek", ExplicitProvider: "llamacpp"})
 	if !res.Success {
 		t.Fatal(res.ErrorMessage)
 	}

@@ -3,7 +3,6 @@ package gateway
 import (
 	"context"
 	"fmt"
-	"log/slog"
 	"net/http"
 	"net/url"
 	"strings"
@@ -113,10 +112,10 @@ func PublishSharedIngress(ctx context.Context, adapter PlatformAdapter, app *HTT
 		platform = "adapter"
 	}
 	if base != "" {
-		slog.Info(fmt.Sprintf("[%s] profile '%s' is served on the default profile's shared listener: %s "+
+		pkgLog().Info(fmt.Sprintf("[%s] profile '%s' is served on the default profile's shared listener: %s "+
 			"(point the vendor's callback URL at this path behind your public host)", platform, profile, published.URL))
 	} else {
-		slog.Warn(fmt.Sprintf("[%s] profile '%s' is in shared-listener mode but the default profile has no live api_server "+
+		pkgLog().Warn(fmt.Sprintf("[%s] profile '%s' is in shared-listener mode but the default profile has no live api_server "+
 			"or webhook listener yet; it will be reachable at <listener>%s%s once one is up", platform, profile, prefix, ingressPath))
 	}
 	b.writeRuntimeStatusSafe(ctx, "shared_ingress", map[string]any{"ingress_url": published.URL})

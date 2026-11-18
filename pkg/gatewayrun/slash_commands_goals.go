@@ -83,7 +83,7 @@ func (r *GatewayRunner) handleGoalCommand(ctx context.Context, event *gateway.Me
 func (r *GatewayRunner) clearGoalContinuations(ctx context.Context, event *gateway.MessageEvent, verb string) {
 	adapter, quickKey, err := r.adapterAndKeyFor(ctx, event)
 	if err != nil {
-		runLog().Debug(fmt.Sprintf("goal %s: pending continuation cleanup failed: %s", verb, pyrepr.ExceptionMessage(err)))
+		pkgLog().Debug(fmt.Sprintf("goal %s: pending continuation cleanup failed: %s", verb, pyrepr.ExceptionMessage(err)))
 		return
 	}
 	if adapter != nil && quickKey != "" {
@@ -103,7 +103,7 @@ func (r *GatewayRunner) enqueueGoalTurn(ctx context.Context, event *gateway.Mess
 	}
 	adapter, quickKey, err := r.adapterAndKeyFor(ctx, event)
 	if err != nil {
-		runLog().Debug(fmt.Sprintf("goal %s failed: %s", label, pyrepr.ExceptionMessage(err)))
+		pkgLog().Debug(fmt.Sprintf("goal %s failed: %s", label, pyrepr.ExceptionMessage(err)))
 		return
 	}
 	if text == "" || adapter == nil || quickKey == "" {

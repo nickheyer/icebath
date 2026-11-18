@@ -24,20 +24,20 @@ const dialogDescription = "Accept or dismiss a native JS dialog (alert/confirm/p
 // Static browser_dialog schema
 func BrowserDialogSchema() *pyjson.Object {
 	return pyjson.ObjectOf(
-		"name",        "browser_dialog",
+		"name", "browser_dialog",
 		"description", dialogDescription,
 		"parameters", pyjson.ObjectOf(
 			"type", "object",
 			"properties", pyjson.ObjectOf(
 				"action", pyjson.ObjectOf("type", "string", "enum", []any{"accept", "dismiss"},
-					"description", "'accept' clicks OK / returns the prompt text. " +
-						"'dismiss' clicks Cancel / returns null from prompt(). " +
-						"For ``beforeunload`` dialogs: 'accept' allows the " +
+					"description", "'accept' clicks OK / returns the prompt text. "+
+						"'dismiss' clicks Cancel / returns null from prompt(). "+
+						"For ``beforeunload`` dialogs: 'accept' allows the "+
 						"navigation, 'dismiss' keeps the page."),
-				"prompt_text", pyjson.ObjectOf("type", "string", "description", "Response string for a ``prompt()`` dialog. Ignored for " +
+				"prompt_text", pyjson.ObjectOf("type", "string", "description", "Response string for a ``prompt()`` dialog. Ignored for "+
 					"other dialog types. Defaults to empty string."),
-				"dialog_id", pyjson.ObjectOf("type", "string", "description", "Specific dialog to respond to, from " +
-					"the candidate ids a previous call listed. Required " +
+				"dialog_id", pyjson.ObjectOf("type", "string", "description", "Specific dialog to respond to, from "+
+					"the candidate ids a previous call listed. Required "+
 					"only when multiple dialogs are queued."),
 			),
 			"required", []any{"action"},

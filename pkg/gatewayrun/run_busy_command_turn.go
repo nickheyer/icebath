@@ -88,7 +88,7 @@ func (r *GatewayRunner) queueCommandTurn(ctx context.Context, sessionKey string,
 func (r *GatewayRunner) sendAfterCommit(ctx context.Context, adapter gateway.PlatformAdapter, event *gateway.MessageEvent, text string) {
 	task := gateway.SpawnAdapterTask(ctx, func(ctx context.Context) error {
 		if err := r.sendBusyReply(ctx, event, adapter, text, false); err != nil {
-			runLog().Warn(fmt.Sprintf("Queued-turn acknowledgement failed: %s", err))
+			pkgLog().Warn(fmt.Sprintf("Queued-turn acknowledgement failed: %s", err))
 		}
 		return nil
 	})

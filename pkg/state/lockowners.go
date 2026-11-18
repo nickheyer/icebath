@@ -2,7 +2,6 @@ package state
 
 import (
 	"fmt"
-	"log/slog"
 	"math"
 	"math/big"
 	"os"
@@ -234,7 +233,7 @@ func LogWriteLockHolders(dbPath string, patienceS float64) error {
 	if len(holders) > 0 {
 		detail = strings.Join(holders, " | ")
 	}
-	slog.Warn(fmt.Sprintf("state.db write lock unavailable for %ss (%s): %s", pyPercentF0(patienceS), pathlibName(dbPath), detail))
+	pkgLog().Warn(fmt.Sprintf("state.db write lock unavailable for %ss (%s): %s", pyPercentF0(patienceS), pathlibName(dbPath), detail))
 	return nil
 }
 

@@ -1,10 +1,12 @@
 package tui
 
 import (
-	"bytes"
+	"context"
 	"encoding/json"
+	"fmt"
+	"github.com/nickheyer/icebath/pkg/tuigateway"
+	"math"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -14,8 +16,6 @@ import (
 	tea "charm.land/bubbletea/v2"
 	"github.com/charmbracelet/x/ansi"
 
-	"github.com/nickheyer/icebath/pkg/memory"
-	"github.com/nickheyer/icebath/pkg/tools"
 	"github.com/nickheyer/icebath/pkg/ui/keys"
 	"github.com/nickheyer/icebath/pkg/ui/wm"
 )
@@ -37,7 +37,7 @@ func attachScripted(t *testing.T, a *app, answers map[string]func(params map[str
 	a.gw.dial = d.dial
 	a.gw.start()
 	eventually(t, "the socket", func() bool { return d.count() == 1 })
-	quiet := map[string]func(map[string]any) map[string]any{"command.observe": fixed(map[string]any{}), "shared_metrics.slash_command": fixed(map[string]any{})}
+	quiet := map[string]func(map[string]any) map[string]any{"command.observe": fixed(map[string]any{})}
 	for method, answer := range answers {
 		quiet[method] = answer
 	}
@@ -145,85 +145,95 @@ func wantScreen(t *testing.T, a *app, wants ...string) {
 func TestToolsDisableRefusesAToolsetThePlatformCannotHost(t *testing.T) {
 	a := testApp(t)
 	g := attachScripted(t, a, map[string]func(map[string]any) map[string]any{
-		"tools.configure": fixed(map[string]any{"changed": []any{"web"}, "unknown": []any{"nosuch"}, "missing_servers": []any{}, "enabled_toolsets": []any{}, "reset": true}),
-		"session.create":  fixed(map[string]any{"session_id": "sid-2", "info": map[string]any{"model": "fake-model"}}),
+		"tools.configure": func(p map[string]any) map[string]any {
+			for _, name := range p["names"].([]any) {
+				if name == "discord" {
+					return map[string]any{"rpc_error": map[string]any{"code": 4001, "message": "invalid_params",
+						"data": map[string]any{"reason": "invalid_params", "detail": "Toolset 'discord' is not available on platform 'cli' (only: discord)"}}}
+				}
+			}
+			return map[string]any{"changed": []any{"web"}, "unknown": []any{"nosuch"}, "missing_servers": []any{}, "enabled_toolsets": []any{}, "reset": true}
+		},
+		"session.create": fixed(map[string]any{"session_id": "sid-2", "info": map[string]any{"model": "fake-model"}}),
 	})
 	a.store.ui.Sid = "sid-1"
 	drain(a, a.dispatchSubmission("/tools disable nosuch discord web"))
+	wantScreen(t, a, "Disabling nosuch, discord, web...", "Toolset 'discord' is not available on platform 'cli' (only: discord)")
+	if a.store.ui.Sid != "sid-1" {
+		t.Fatalf("session %q after a refused change", a.store.ui.Sid)
+	}
+	drain(a, a.dispatchSubmission("/tools disable nosuch web"))
 	configured := g.sent("tools.configure")
-	if len(configured) != 1 {
+	if len(configured) != 2 {
 		t.Fatalf("tools.configure calls %v", configured)
 	}
-	if names, _ := configured[0]["names"].([]any); len(names) != 2 || names[0] != "nosuch" || names[1] != "web" {
-		t.Fatalf("names %v", configured[0]["names"])
+	if names, _ := configured[1]["names"].([]any); len(names) != 2 || names[0] != "nosuch" || names[1] != "web" {
+		t.Fatalf("names %v", configured[1]["names"])
 	}
-	wantScreen(t, a, "Disabling nosuch, discord, web...", "✗ Unknown toolset 'nosuch'",
-		"✗ Toolset 'discord' is not available on platform 'cli' (only: discord)", "✓ Disabled: web",
-		"Session reset. New tool configuration is active.")
+	wantScreen(t, a, "✗ Unknown toolset 'nosuch'", "✓ Disabled: web", "Session reset. New tool configuration is active.")
 	if a.store.ui.Sid != "sid-2" {
 		t.Fatalf("session %q after the reset", a.store.ui.Sid)
 	}
 }
 
-func TestToolsEnableOfOnlyRestrictedToolsetsResetsWithoutAConfigureCall(t *testing.T) {
-	a := testApp(t)
-	g := attachScripted(t, a, map[string]func(map[string]any) map[string]any{
-		"session.create": fixed(map[string]any{"session_id": "sid-2", "info": map[string]any{"model": "fake-model"}}),
-	})
-	a.store.ui.Sid = "sid-1"
-	drain(a, a.dispatchSubmission("/tools enable discord_admin"))
-	if calls := g.sent("tools.configure"); len(calls) != 0 {
-		t.Fatalf("tools.configure sent %v", calls)
+// Text on screen with the pager's text in front when one is open, short output landing in the transcript
+func shownText(a *app) string {
+	if pager, isPager := a.wm.Overlay().(*pagerCard); isPager {
+		return pager.text + "\n" + screen(a)
 	}
-	wantScreen(t, a, "Enabling discord_admin...", "✗ Toolset 'discord_admin' is not available on platform 'cli' (only: discord)",
-		"Session reset. New tool configuration is active.")
-	if got := toolsetPlatformRefusal(t.Context(), "web", "cli"); got != "" {
-		t.Fatalf("web refused %q", got)
-	}
-	if got := toolsetPlatformRefusal(t.Context(), "discord", "discord"); got != "" {
-		t.Fatalf("discord refused on discord %q", got)
+	return screen(a)
+}
+
+// Fails unless the pager or the screen holds every wanted line, a wrapped line counting as whole
+func wantShown(t *testing.T, a *app, wants ...string) {
+	t.Helper()
+	got := shownText(a)
+	joined := strings.Join(strings.Fields(got), "")
+	for _, want := range wants {
+		if !strings.Contains(got, want) && !strings.Contains(joined, strings.Join(strings.Fields(want), "")) {
+			t.Fatalf("output lacks %q:\n%s", want, got)
+		}
 	}
 }
 
 func TestExportAndImportMoveAProfileThroughAnArchive(t *testing.T) {
-	userHome := t.TempDir()
-	t.Setenv("HOME", userHome)
-	t.Setenv("ICEBATH_HOME", filepath.Join(userHome, ".icebath"))
-	if err := os.MkdirAll(filepath.Join(userHome, ".icebath", "skills"), 0o755); err != nil {
-		t.Fatal(err)
+	a := testApp(t)
+	work := t.TempDir()
+	t.Chdir(work)
+	archive := filepath.Join(work, "shared.tar.gz")
+	profileDir := filepath.Join(t.TempDir(), "profiles", "copied")
+	g := attachScripted(t, a, map[string]func(map[string]any) map[string]any{
+		"profiles.export": func(p map[string]any) map[string]any {
+			if p["name"] == "nosuch" {
+				return map[string]any{"rpc_error": map[string]any{"code": 5000, "message": "Profile 'nosuch' does not exist."}}
+			}
+			return map[string]any{"name": "default", "path": p["output"]}
+		},
+		"profiles.import": func(p map[string]any) map[string]any {
+			if p["archive"] != archive {
+				return map[string]any{"rpc_error": map[string]any{"code": 5000, "message": "Archive not found: " + p["archive"].(string)}}
+			}
+			return map[string]any{"name": "copied", "path": profileDir, "wrapper": nil}
+		},
+	})
+	drain(a, a.dispatchSubmission("/export -o"))
+	wantShown(t, a, "Usage: /export [profile] [-o output.tar.gz]")
+	drain(a, a.dispatchSubmission("/export -o shared.tar.gz"))
+	if sent := g.sent("profiles.export"); len(sent) != 1 || sent[0]["output"] != archive || sent[0]["name"] != nil {
+		t.Fatalf("export params %v", sent)
 	}
-	if err := os.WriteFile(filepath.Join(userHome, ".icebath", "config.yaml"), []byte("model:\n  default: fake-model\n"), 0o644); err != nil {
-		t.Fatal(err)
+	wantShown(t, a, "✓ Exported 'default' to "+archive, "/import")
+	drain(a, a.dispatchSubmission("/export nosuch -o "+archive))
+	wantShown(t, a, "Error: Profile 'nosuch' does not exist.")
+	drain(a, a.dispatchSubmission("/import"))
+	wantShown(t, a, "Usage: /import <archive.tar.gz> [--name <name>]")
+	drain(a, a.dispatchSubmission("/import /nowhere/missing.tar.gz"))
+	wantShown(t, a, "Error: Archive not found: /nowhere/missing.tar.gz")
+	drain(a, a.dispatchSubmission("/import shared.tar.gz --name copied"))
+	if sent := g.sent("profiles.import"); len(sent) != 2 || sent[1]["archive"] != archive || sent[1]["name"] != "copied" {
+		t.Fatalf("import params %v", sent)
 	}
-	ctx := t.Context()
-	if got := exportProfileLines(ctx, "-o"); len(got) != 1 || got[0] != "Usage: /export [profile] [-o output.tar.gz]" {
-		t.Fatalf("export usage %q", got)
-	}
-	archive := filepath.Join(t.TempDir(), "shared.tar.gz")
-	got := exportProfileLines(ctx, "-o "+archive)
-	if len(got) != 2 || got[0] != "✓ Exported 'default' to "+archive || !strings.Contains(got[1], "/import") {
-		t.Fatalf("export lines %q", got)
-	}
-	if got := exportProfileLines(ctx, "nosuch -o "+archive); len(got) != 1 || !strings.HasPrefix(got[0], "Error: ") {
-		t.Fatalf("export of a missing profile %q", got)
-	}
-	if got := importProfileLines(ctx, ""); len(got) != 1 || got[0] != "Usage: /import <archive.tar.gz> [--name <name>]" {
-		t.Fatalf("import usage %q", got)
-	}
-	if got := importProfileLines(ctx, archive+" --name"); len(got) != 1 || !strings.HasPrefix(got[0], "Usage: /import") {
-		t.Fatalf("import without a name value %q", got)
-	}
-	if got := importProfileLines(ctx, "/nowhere/missing.tar.gz"); len(got) != 1 || got[0] != "Error: Archive not found: /nowhere/missing.tar.gz" {
-		t.Fatalf("import of a missing archive %q", got)
-	}
-	got = importProfileLines(ctx, archive+" --name copied")
-	profileDir := filepath.Join(userHome, ".icebath", "profiles", "copied")
-	if got[0] != "✓ Imported profile 'copied' at "+profileDir || got[len(got)-1] != "Use it: icebath -p copied" {
-		t.Fatalf("import lines %q", got)
-	}
-	if _, err := os.Stat(filepath.Join(profileDir, "config.yaml")); err != nil {
-		t.Fatalf("imported profile lacks its config: %v", err)
-	}
+	wantShown(t, a, "✓ Imported profile 'copied' at "+profileDir, "Use it: icebath -p copied")
 }
 
 // Learned skill and two memories in the home of the app
@@ -245,35 +255,93 @@ func seedJourney(t *testing.T) string {
 	return h
 }
 
-// Gateway answering the learning verbs from the seeded home the way the server does
+// Gateway answering the learning verbs over the seeded nodes the way the server shapes its answers
 func journeyGateway(t *testing.T, a *app) *scriptedGateway {
 	t.Helper()
-	env := &tools.Env{Home: os.Getenv("ICEBATH_HOME")}
-	answer := func(res map[string]any, err error) map[string]any {
-		if err != nil {
-			return map[string]any{"rpc_error": map[string]any{"code": 5000, "message": err.Error()}}
-		}
-		return res
+	var mu sync.Mutex
+	nodes := []map[string]any{
+		{"id": "tidy-notes", "kind": "skill", "label": "tidy-notes", "timestamp": 1.7e9, "content": "Sort the notes."},
+		{"id": "memory:0", "kind": "memory", "label": "Project uses pytest with xdist", "timestamp": 1.7e9 + 60, "content": "Project uses pytest with xdist"},
+		{"id": "memory:1", "kind": "memory", "label": "User prefers concise responses", "timestamp": 1.7e9 + 120, "content": "User prefers concise responses"},
 	}
-	text := func(p map[string]any, key string) string { s, _ := p[key].(string); return s }
-	return attachScripted(t, a, map[string]func(map[string]any) map[string]any{
-		"learning.graph": func(map[string]any) map[string]any { return answer(memory.BuildLearningGraph(t.Context(), env)) },
-		"learning.frames": func(p map[string]any) map[string]any {
-			graph, err := memory.BuildLearningGraph(t.Context(), env)
-			if err != nil {
-				return answer(nil, err)
+	find := func(id string) map[string]any {
+		for _, n := range nodes {
+			if n["id"] == id {
+				return n
 			}
-			size := func(key string) int { n, _ := p[key].(float64); return int(n) }
-			return answer(memory.RenderFrames(graph, max(20, size("cols")), max(10, size("rows")), size("frames")))
+		}
+		return nil
+	}
+	return attachScripted(t, a, map[string]func(map[string]any) map[string]any{
+		"learning.graph": func(map[string]any) map[string]any {
+			mu.Lock()
+			defer mu.Unlock()
+			list, memories := []any{}, 0
+			for _, n := range nodes {
+				list = append(list, n)
+				if n["kind"] == "memory" {
+					memories++
+				}
+			}
+			return map[string]any{"nodes": list, "edges": []any{}, "clusters": []any{}, "memory": []any{},
+				"stats": map[string]any{"memory_nodes": memories, "skill_nodes": len(nodes) - memories}}
+		},
+		"learning.frames": func(p map[string]any) map[string]any {
+			mu.Lock()
+			defer mu.Unlock()
+			count, _ := p["frames"].(float64)
+			memories, rows := 0, []any{}
+			for _, n := range nodes {
+				glyph, style := "●", "skill"
+				if n["kind"] == "memory" {
+					glyph, style = "◆", "memory"
+					memories++
+				}
+				rows = append(rows, map[string]any{"id": n["id"], "glyph": glyph, "label": n["label"], "fullLabel": n["label"],
+					"meta": "17 Nov 2023", "body": n["content"], "style": style})
+			}
+			frames := []any{}
+			for i := 0; i < max(1, int(count)); i++ {
+				reveal := 1.0
+				if count > 1 {
+					reveal = float64(i) / (count - 1)
+				}
+				frames = append(frames, map[string]any{"grid": []any{[]any{[]any{"██", "skill"}}}, "date": "17 Nov 2023",
+					"reveal": reveal, "visible": int(math.Round(reveal * float64(len(nodes))))})
+			}
+			return map[string]any{"frames": frames, "count": len(nodes), "axis": map[string]any{"start": "17 Nov 2023", "end": "now"},
+				"legend": []any{map[string]any{"glyph": "●", "style": "skill", "label": fmt.Sprintf("skills (%d)", len(nodes)-memories)},
+					map[string]any{"glyph": "◆", "style": "memory", "label": fmt.Sprintf("memories (%d)", memories)}},
+				"buckets": []any{map[string]any{"label": "Nov 2023", "date": "17 Nov 2023", "skills": len(nodes) - memories, "memories": memories, "nodes": rows}}}
 		},
 		"learning.detail": func(p map[string]any) map[string]any {
-			return answer(memory.NodeDetail(t.Context(), env, text(p, "id")))
+			mu.Lock()
+			defer mu.Unlock()
+			n := find(p["id"].(string))
+			if n == nil {
+				return map[string]any{"ok": false, "message": "not found"}
+			}
+			return map[string]any{"ok": true, "id": n["id"], "kind": n["kind"], "label": n["label"], "content": n["content"]}
 		},
 		"learning.delete": func(p map[string]any) map[string]any {
-			return answer(memory.DeleteNode(t.Context(), env, text(p, "id")))
+			mu.Lock()
+			defer mu.Unlock()
+			for i, n := range nodes {
+				if n["id"] == p["id"] {
+					nodes = append(nodes[:i:i], nodes[i+1:]...)
+					return map[string]any{"ok": true, "message": fmt.Sprintf("'%s' archived", p["id"])}
+				}
+			}
+			return map[string]any{"ok": false, "message": "not found"}
 		},
 		"learning.edit": func(p map[string]any) map[string]any {
-			return answer(memory.EditNode(t.Context(), env, text(p, "id"), text(p, "content")))
+			mu.Lock()
+			defer mu.Unlock()
+			if n := find(p["id"].(string)); n != nil {
+				n["content"] = p["content"]
+				return map[string]any{"ok": true, "message": "updated"}
+			}
+			return map[string]any{"ok": false, "message": "not found"}
 		},
 	})
 }
@@ -408,28 +476,14 @@ func TestJourneyListDeleteAndJSONRunFromTheCommand(t *testing.T) {
 	drain(a, a.dispatchSubmission("/journey delete"))
 }
 
-// Clone of the fixture bundle in a fresh directory, a repository with history and no remote
-func gitRepo(t *testing.T) string {
-	t.Helper()
-	bundle, err := filepath.Abs(filepath.Join("testdata", "worktree-fixture.bundle"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Setenv("GIT_CONFIG_GLOBAL", os.DevNull)
-	dir := filepath.Join(t.TempDir(), "repo")
-	for _, args := range [][]string{{"clone", "-q", bundle, dir}, {"-C", dir, "remote", "remove", "origin"}} {
-		if out, err := exec.Command("git", args...).CombinedOutput(); err != nil {
-			t.Fatalf("git %v: %v %s", args, err, out)
-		}
-	}
-	return dir
-}
-
 func TestWorktreeOutsideARepositoryRefusesEachForm(t *testing.T) {
 	t.Chdir(t.TempDir())
 	a := testApp(t)
-	attachScripted(t, a, nil)
-	a.store.ui.Info = map[string]any{"cwd": t.TempDir()}
+	outside := map[string]any{"repo_root": nil, "launch": nil, "lines": []any{}, "tree": nil}
+	attachScripted(t, a, map[string]func(map[string]any) map[string]any{
+		"worktree.status": fixed(outside), "worktree.create": fixed(outside), "worktree.list": fixed(outside),
+	})
+	a.store.ui.Info = &tuigateway.SessionInfo{Cwd: ptr(t.TempDir())}
 	for _, line := range []string{"/worktree", "/worktree new", "/worktree list", "/worktree frob"} {
 		settle(a, a.dispatchSubmission(line))
 	}
@@ -438,34 +492,57 @@ func TestWorktreeOutsideARepositoryRefusesEachForm(t *testing.T) {
 		"Unknown /worktree subcommand: frob", "Usage: /worktree [new [name] | list]")
 }
 
-// App whose profile creates trees from the local HEAD without reaching a remote
-func worktreeApp(t *testing.T) *app {
+// Gateway answering the worktree verbs for one repository, creating the tree directory a create names
+func worktreeGateway(t *testing.T, a *app, repo string, moved map[string]any) *scriptedGateway {
 	t.Helper()
-	a := testApp(t)
-	if err := os.WriteFile(filepath.Join(os.Getenv("ICEBATH_HOME"), "config.yaml"), []byte("worktree_sync: false\n"), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	return a
+	tree := filepath.Join(repo, ".worktrees", "feat")
+	return attachScripted(t, a, map[string]func(map[string]any) map[string]any{
+		"session.workspace.move": fixed(moved),
+		"worktree.status":        fixed(map[string]any{"repo_root": repo, "launch": nil}),
+		"worktree.create": func(p map[string]any) map[string]any {
+			if err := os.MkdirAll(tree, 0o755); err != nil {
+				t.Error(err)
+			}
+			return map[string]any{"repo_root": repo, "lines": []any{"✓ Worktree created: " + tree, "  Branch: icebath/feat", "  Base:   HEAD"},
+				"tree": map[string]any{"path": tree, "branch": "icebath/feat", "repo_root": repo}}
+		},
+		"worktree.list":   fixed(map[string]any{"repo_root": repo, "lines": []any{repo + "  0000000 [main]", tree + "  0000000 [icebath/feat]"}}),
+		"worktree.prune":  fixed(map[string]any{"repo_root": repo, "actions": []any{}, "preserved": []any{}, "error": nil}),
+		"worktree.record": fixed(map[string]any{"ok": true}),
+		"worktree.settle": func(map[string]any) map[string]any {
+			if err := os.RemoveAll(tree); err != nil {
+				t.Error(err)
+			}
+			return map[string]any{"lines": []any{"✓ Worktree cleaned up: " + tree}}
+		},
+	})
 }
 
-func TestWorktreeNewMovesTheSessionAndQuitRemovesTheCleanTree(t *testing.T) {
-	repo := gitRepo(t)
+func TestWorktreeNewMovesTheSessionAndQuitHandsTheTreeToTheLauncher(t *testing.T) {
+	repo := t.TempDir()
 	t.Chdir(t.TempDir())
-	a := worktreeApp(t)
-	g := attachScripted(t, a, map[string]func(map[string]any) map[string]any{
-		"session.workspace.move": func(p map[string]any) map[string]any { return map[string]any{"cwd": p["cwd"]} },
-	})
+	a := testApp(t)
+	g := worktreeGateway(t, a, repo, map[string]any{"cwd": filepath.Join(repo, ".worktrees", "feat")})
+	var settled []Worktree
+	var settledActive string
+	a.host.SettleWorktrees = func(_ context.Context, trees []Worktree, active string) { settled, settledActive = trees, active }
 	a.store.ui.Sid, a.store.ui.StoredSid = "sid-1", "stored-1"
-	a.store.ui.Info = map[string]any{"cwd": repo}
+	a.store.ui.Info = &tuigateway.SessionInfo{Cwd: ptr(repo)}
 	t.Cleanup(func() { newWorktrees.active, newWorktrees.created = nil, nil })
 	settle(a, a.dispatchSubmission("/worktree"))
 	wantScreen(t, a, "No active worktree for this session.", "/worktree new [name]")
 	settle(a, a.dispatchSubmission("/worktree new feat"))
 	tree := filepath.Join(repo, ".worktrees", "feat")
 	wantScreen(t, a, "✓ Worktree created: "+tree, "✅ Worktree ready: "+tree, "Branch: icebath/feat", "Terminal and file tools now operate in the worktree.")
+	if created := g.sent("worktree.create"); len(created) != 1 || created[0]["name"] != "feat" || created[0]["cwd"] != repo || created[0]["pid"] != float64(os.Getpid()) {
+		t.Fatalf("worktree.create calls %v", created)
+	}
 	moved := g.sent("session.workspace.move")
 	if len(moved) != 1 || moved[0]["cwd"] != tree || moved[0]["session_key"] != "stored-1" {
 		t.Fatalf("workspace moves %v", moved)
+	}
+	if recorded := g.sent("worktree.record"); len(recorded) != 1 || recorded[0]["path"] != tree {
+		t.Fatalf("worktree.record calls %v", recorded)
 	}
 	if cwd, _ := os.Getwd(); cwd != tree || os.Getenv("TERMINAL_CWD") != tree || a.store.sessionCwd() != tree {
 		t.Fatalf("process cwd %q terminal %q session %q", cwd, os.Getenv("TERMINAL_CWD"), a.store.sessionCwd())
@@ -473,34 +550,31 @@ func TestWorktreeNewMovesTheSessionAndQuitRemovesTheCleanTree(t *testing.T) {
 	settle(a, a.dispatchSubmission("/worktree status"))
 	wantScreen(t, a, "Active worktree: "+tree)
 	settle(a, a.dispatchSubmission("/worktree list"))
-	listed := screen(a)
-	if pager, isPager := a.wm.Overlay().(*pagerCard); isPager {
-		listed = pager.text
-	}
-	if !strings.Contains(listed, tree) || !strings.Contains(listed, "[icebath/feat]") {
-		t.Fatalf("list:\n%s", listed)
-	}
+	wantShown(t, a, tree, "[icebath/feat]")
 	settle(a, a.dispatchSubmission("/worktree prune --dry-run"))
-	var out bytes.Buffer
-	settleNewWorktrees(t.Context(), &out)
-	if _, err := os.Stat(tree); !os.IsNotExist(err) || !strings.Contains(out.String(), tree) {
-		t.Fatalf("tree after quit: %v, printed %q", err, out.String())
+	if pruned := g.sent("worktree.prune"); len(pruned) != 1 || pruned[0]["dry_run"] != true || pruned[0]["keep"] != tree {
+		t.Fatalf("worktree.prune calls %v", pruned)
+	}
+	a.settleNewWorktrees()
+	if len(settled) != 1 || settled[0].Path != tree || settled[0].Branch != "icebath/feat" || settledActive != tree {
+		t.Fatalf("trees handed to the launcher %v active %q", settled, settledActive)
 	}
 }
 
 func TestWorktreeNewRefusedByTheGatewayRemovesTheFreshTree(t *testing.T) {
-	repo := gitRepo(t)
+	repo := t.TempDir()
 	t.Chdir(t.TempDir())
-	a := worktreeApp(t)
-	attachScripted(t, a, map[string]func(map[string]any) map[string]any{
-		"session.workspace.move": fixed(map[string]any{"rpc_error": map[string]any{"code": 4009, "message": "session busy"}}),
-	})
+	a := testApp(t)
+	g := worktreeGateway(t, a, repo, map[string]any{"rpc_error": map[string]any{"code": 4009, "message": "session busy"}})
 	a.store.ui.Sid = "sid-1"
-	a.store.ui.Info = map[string]any{"cwd": repo}
+	a.store.ui.Info = &tuigateway.SessionInfo{Cwd: ptr(repo)}
 	t.Cleanup(func() { newWorktrees.active, newWorktrees.created = nil, nil })
 	settle(a, a.dispatchSubmission("/worktree new busy"))
 	wantScreen(t, a, "⚠ Created worktree but could not enter it: session busy")
-	if _, err := os.Stat(filepath.Join(repo, ".worktrees", "busy")); !os.IsNotExist(err) {
+	if settles := g.sent("worktree.settle"); len(settles) != 1 || settles[0]["path"] != filepath.Join(repo, ".worktrees", "feat") {
+		t.Fatalf("worktree.settle calls %v", settles)
+	}
+	if _, err := os.Stat(filepath.Join(repo, ".worktrees", "feat")); !os.IsNotExist(err) {
 		t.Fatalf("refused tree kept: %v", err)
 	}
 	if newWorktrees.active != nil {
@@ -566,18 +640,16 @@ func TestHandoffReportsTheGatewayRefusalAndAFailedTransfer(t *testing.T) {
 	wantScreen(t, a, "Agent is busy. Wait for the current turn to finish, then retry /handoff.")
 }
 
-func TestUsageReadsSessionUsageWithItsCreditLines(t *testing.T) {
+func TestUsageReadsSessionUsageTotals(t *testing.T) {
 	a := testApp(t)
 	g := attachScripted(t, a, map[string]func(map[string]any) map[string]any{
 		"session.usage": fixed(map[string]any{"calls": 3, "input": 1200, "output": 80, "total": 1280, "model": "fake-model",
-			"context_max": 128000, "context_used": 1280, "context_percent": 1,
-			"credits_lines": []any{"Subscription credits: $9.00", "Top-up credits: $3.00"}}),
+			"context_max": 128000, "context_used": 1280, "context_percent": 1}),
 	})
 	a.store.ui.Sid = "sid-1"
 	drain(a, a.dispatchSubmission("/usage"))
 	if sent := g.sent("session.usage"); len(sent) != 1 || sent[0]["session_id"] != "sid-1" {
 		t.Fatalf("session.usage calls %v", sent)
 	}
-	wantScreen(t, a, "Subscription credits: $9.00", "Top-up credits: $3.00", "1,280", "Context: 1,280 / 128,000 (1%)",
-		"Run /subscription to change plan · /topup to add to your balance")
+	wantScreen(t, a, "1,280", "Context: 1,280 / 128,000 (1%)")
 }

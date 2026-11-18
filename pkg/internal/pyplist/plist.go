@@ -18,6 +18,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/nickheyer/icebath/pkg/internal/pybase64"
+	"github.com/nickheyer/icebath/pkg/internal/pydatetime"
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 )
@@ -412,19 +413,11 @@ func dateFromString(s string) (Date, error) {
 }
 
 func validDatetime(y, mo, d, h, mi, s int) error {
-	switch {
-	case y < 1 || y > 9999:
-		return &Error{Class: "ValueError", Msg: fmt.Sprintf("year %d is out of range", y)}
-	case mo < 1 || mo > 12:
-		return &Error{Class: "ValueError", Msg: "month must be in 1..12"}
-	case d < 1 || d > time.Date(y, time.Month(mo)+1, 0, 0, 0, 0, 0, time.UTC).Day():
-		return &Error{Class: "ValueError", Msg: "day is out of range for month"}
-	case h > 23:
-		return &Error{Class: "ValueError", Msg: "hour must be in 0..23"}
-	case mi > 59:
-		return &Error{Class: "ValueError", Msg: "minute must be in 0..59"}
-	case s > 59:
-		return &Error{Class: "ValueError", Msg: "second must be in 0..59"}
+	if msg := pydatetime.DateArgsError(y, mo, d); msg != "" {
+		return &Error{Class: "ValueError", Msg: msg}
+	}
+	if msg := pydatetime.TimeArgsError(h, mi, s); msg != "" {
+		return &Error{Class: "ValueError", Msg: msg}
 	}
 	return nil
 }

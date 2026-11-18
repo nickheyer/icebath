@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"io"
 	"net/http"
-	"testing"
 )
 
 // Builds a JSON response for the request with the status, payload bytes or encoding, and extra headers
@@ -37,49 +36,4 @@ func jsonMap(v any) map[string]any {
 		panic(err)
 	}
 	return out
-}
-
-var (
-	testSettleAfterUpgradeCalls int
-	testBillingInvalidateCalls  int
-	testSaveModelChoiceCalls    []string
-	testGuestHandoffDrainResult []map[string]any
-)
-
-// Guest handoff replacement notes recorded by installNousRecorders
-var testGuestHandoffNotes [][2]map[string]any
-
-// Replaces the Nous login sibling steps with recorders and restores every Nous seam at cleanup
-func installNousRecorders(t *testing.T) {
-	t.Helper()
-	prompt, save, drain, settle, invalidate, entitlement := nousPromptModelSelectionFn, nousSaveModelChoiceFn, nousGuestHandoffDrainFn, nousSettleAfterUpgradeFn, nousBillingInvalidateFn, nousEntitlementMessageFn
-	testBillingInvalidateCalls, testSettleAfterUpgradeCalls, testSaveModelChoiceCalls, testGuestHandoffDrainResult = 0, 0, nil, nil
-	nousSaveModelChoiceFn = func(env PoolEnv, modelID string) error {
-		testSaveModelChoiceCalls = append(testSaveModelChoiceCalls, modelID)
-		return nil
-	}
-	nousGuestHandoffDrainFn = func(env PoolEnv) ([]map[string]any, error) { return testGuestHandoffDrainResult, nil }
-	note := nousGuestHandoffNoteFn
-	testGuestHandoffNotes = nil
-	nousGuestHandoffNoteFn = func(env PoolEnv, previous, next map[string]any) error {
-		testGuestHandoffNotes = append(testGuestHandoffNotes, [2]map[string]any{previous, next})
-		return nil
-	}
-	t.Cleanup(func() { nousGuestHandoffNoteFn = note })
-	nousSettleAfterUpgradeFn = func(env PoolEnv, state map[string]any) { testSettleAfterUpgradeCalls++ }
-	nousBillingInvalidateFn = func() { testBillingInvalidateCalls++ }
-	scriptPickerAccounts(t, nil, nil)
-	t.Cleanup(func() {
-		nousPromptModelSelectionFn, nousSaveModelChoiceFn, nousGuestHandoffDrainFn, nousSettleAfterUpgradeFn, nousBillingInvalidateFn, nousEntitlementMessageFn = prompt, save, drain, settle, invalidate, entitlement
-	})
-}
-
-// Scripts the post login picker with a function of the prompt alone
-func scriptNousPicker(pick func(p ModelSelectionPrompt) (string, bool)) {
-	nousPromptModelSelectionFn = func(env PoolEnv, out io.Writer, p ModelSelectionPrompt) (string, bool) { return pick(p) }
-}
-
-// Scripts the account entitlement lookup with a fixed message
-func scriptNousEntitlement(message string) {
-	nousEntitlementMessageFn = func(env PoolEnv, capability string) (string, error) { return message, nil }
 }

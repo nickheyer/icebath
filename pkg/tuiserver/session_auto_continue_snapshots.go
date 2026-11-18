@@ -3,11 +3,11 @@ package tuiserver
 import (
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
-	"github.com/nickheyer/icebath/pkg/tuigateway"
+	"github.com/nickheyer/icebath/pkg/tuihost"
 )
 
 // Replayable projection of the in flight turn, nil when it carries no prompt, text, stream or error
-func inflightSnapshot(session *tuigateway.Session) map[string]any {
+func inflightSnapshot(session *tuihost.Session) map[string]any {
 	turn, isDict := session.Get(inflightTurnKey).(map[string]any)
 	if !isDict {
 		return nil
@@ -64,7 +64,7 @@ func inflightSnapshot(session *tuigateway.Session) map[string]any {
 }
 
 // Accepted next turn prompt without its transport handle, nil when nothing is queued
-func queuedPromptSnapshot(session *tuigateway.Session) map[string]any {
+func queuedPromptSnapshot(session *tuihost.Session) map[string]any {
 	queued, isDict := session.Get("queued_prompt").(map[string]any)
 	user := ""
 	if isDict {

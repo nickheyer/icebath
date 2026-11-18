@@ -1,7 +1,5 @@
 package tools
 
-import "log/slog"
-
 // MCPTransferSession moves a chat's MCP spend total to a new session key, registered by the mcp package
 var MCPTransferSession func(oldKey, newKey string)
 
@@ -11,7 +9,7 @@ func persistSessionYolo(persist func(enabled bool) error, enabled bool, sessionK
 		return
 	}
 	if err := persist(enabled); err != nil {
-		slog.Default().Warn("failed to persist session yolo", "enabled", enabled, "session", sessionKey, "error", err)
+		pkgLog().Warn("failed to persist session yolo", "enabled", enabled, "session", sessionKey, "error", err)
 	}
 }
 

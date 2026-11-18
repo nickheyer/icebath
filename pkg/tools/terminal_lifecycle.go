@@ -46,7 +46,7 @@ func teardownEnv(env *Env, e Environment, taskID string, forceRemove bool, doneM
 	} else {
 		err = cleanupEnv(e, forceRemove)
 	}
-	log := envLog(env).With("logger", "tools.terminal_tool")
+	log := envLog(env)
 	if err == nil {
 		log.Info(fmt.Sprintf(doneMsg, taskID))
 		return
@@ -325,7 +325,7 @@ func CleanupAllEnvironments(env *Env) int {
 		cleaned++
 	}
 	if cleaned > 0 {
-		envLog(env).With("logger", "tools.terminal_tool").Info(fmt.Sprintf("Cleaned %d environments", cleaned))
+		envLog(env).Info(fmt.Sprintf("Cleaned %d environments", cleaned))
 	}
 	return cleaned
 }

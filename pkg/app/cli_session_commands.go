@@ -65,20 +65,20 @@ func resetModelToConfigDefault(c *CLI, silent bool) {
 	}
 	defer func() {
 		if r := recover(); r != nil {
-			cliLogger.Debug("/new model reset to config default failed")
+			pkgLog().Debug("/new model reset to config default failed")
 		}
 	}()
 	r, err := provider.SwitchModel(c.ctx, provider.SwitchModelOptions{RawInput: configModel, CurrentProvider: c.provider,
 		CurrentBaseURL: c.baseURL, CurrentAPIKey: c.apiKey, IsGlobal: false, ExplicitProvider: configProvider})
 	if err != nil || !r.Success {
 		if err != nil {
-			cliLogger.Debug("/new model reset to config default failed")
+			pkgLog().Debug("/new model reset to config default failed")
 		}
 		return
 	}
 	if c.agentRef() != nil && !c.gatewaySessionOpen {
 		if _, err := c.agentRef().SwitchModel(r.NewModel, r.TargetProvider, false, false, ""); err != nil {
-			cliLogger.Debug("/new model reset to config default failed")
+			pkgLog().Debug("/new model reset to config default failed")
 			return
 		}
 	}
@@ -329,7 +329,7 @@ func (c *CLI) newSession(silent bool, title string) {
 			g.flushMessagesToSessionDB()
 		}
 		if err := c.sessionDB.EndSession(c.ctx, oldSessionID, "new_session"); err != nil {
-			cliLogger.Debug(fmt.Sprintf("end_session %s failed: %v", oldSessionID, err))
+			pkgLog().Debug(fmt.Sprintf("end_session %s failed: %v", oldSessionID, err))
 		}
 		c.discardSessionIfEmpty(oldSessionID)
 	}
@@ -533,18 +533,18 @@ func (c *CLI) retryLast() (string, bool) {
 	return lastMessage, true
 }
 
-// Backs up n user turns, rewinding the store and prefilling the composer, the count undone or zero
-func (c *CLI) undoLast(n int, prefill bool) int {
+// Backs up n user turns, rewinding the store and prefilling the composer
+func (c *CLI) undoLast(n int, prefill bool) {
 	if len(c.conversationHistory) == 0 {
 		printLines(c.t("cli.session.undo_no_messages", nil))
-		return 0
+		return
 	}
 	n = max(n, 1)
 	warmHistory := append([]map[string]any(nil), c.conversationHistory...)
 	userIndices := userTurnIndices(warmHistory)
 	if len(userIndices) == 0 {
 		printLines(c.t("cli.session.undo_no_user_message", nil))
-		return 0
+		return
 	}
 	turnsUndone := min(n, len(userIndices))
 	targetOrdinal := len(userIndices) - turnsUndone
@@ -559,9 +559,9 @@ func (c *CLI) undoLast(n int, prefill bool) int {
 	if c.sessionDB != nil && c.sessionID != "" {
 		outcome, err := c.sessionDB.RewindUserTurn(c.ctx, c.sessionID, targetOrdinal, state.RewindUserTurnOptions{WarmHistory: warmHistory, HasWarmHistory: true})
 		if err != nil {
-			cliLogger.Debug(fmt.Sprintf("undo: durable rewind failed: %v", err))
+			pkgLog().Debug(fmt.Sprintf("undo: durable rewind failed: %v", err))
 			printLines(c.t("cli.session.undo_failed", map[string]any{"error": err.Error()}))
-			return 0
+			return
 		}
 		truncated = outcome.Prefix
 		if outcome.LiveText != "" {
@@ -584,7 +584,6 @@ func (c *CLI) undoLast(n int, prefill bool) int {
 	}
 	printLines(c.t(key, map[string]any{"count": turnsUndone, "messages": messages, "backup": backup}))
 	printLines("  " + c.t("cli.session.undo_remaining", map[string]any{"count": len(c.conversationHistory)}))
-	return turnsUndone
 }
 
 // Flattens message content, a string or content part list, to plain text

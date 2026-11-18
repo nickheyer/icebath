@@ -137,6 +137,22 @@ func (g *Tabs) Selectable() bool {
 // Takes every key as typed while the active tab does
 func (g *Tabs) Raw() bool { return raw(g.current()) }
 
+// Keeps the frame clock running while any tab needs it
+func (g *Tabs) Awake() bool {
+	for _, c := range g.cards {
+		if wakes(c) {
+			return true
+		}
+	}
+	return false
+}
+
+// Lets the keys the active tab passes reach the manager while it takes keys raw
+func (g *Tabs) Passes(k tea.KeyPressMsg) bool { return passes(g.current(), k) }
+
+// Tracks the pointer while the active tab does
+func (g *Tabs) Tracks() bool { return tracks(g.current()) }
+
 func (g *Tabs) Status() string {
 	if s, ok := g.current().(Statuser); ok {
 		return s.Status()
@@ -185,8 +201,19 @@ func (g *Tabs) Update(msg tea.Msg) (Card, tea.Cmd) {
 			return g, g.cycle(-1)
 		}
 		return g, g.forward(msg)
-	case tea.KeyPressMsg:
+	case tea.KeyPressMsg, tea.KeyReleaseMsg, tea.PasteMsg, tea.PasteStartMsg, tea.PasteEndMsg, tea.ClipboardMsg:
 		return g, g.forward(msg)
+	case Addressed:
+		for i, c := range g.cards {
+			if c == msg.Addressee() {
+				next, cmd := c.Update(msg)
+				if next != nil {
+					g.cards[i] = next
+				}
+				return g, cmd
+			}
+		}
+		return g, nil
 	case tea.MouseClickMsg:
 		if msg.Y == 0 {
 			if i := g.tabAt(msg.X); i >= 0 && msg.Button == tea.MouseLeft {
@@ -326,7 +353,7 @@ func (g *Tabs) Animate(dt float64) bool {
 	return moved
 }
 
-// Actions of the active tab, then the tab switching one
+// Actions of the active tab, then the tab switching one that reaches the manager even past a raw tab
 func (g *Tabs) Hints() []Hint {
-	return append(append([]Hint(nil), hintsOf(g.current())...), Hint{Action: "tabs.next", Label: "next tab"})
+	return append(append([]Hint(nil), hintsOf(g.current())...), Hint{Action: "tabs.cycle", Label: "next tab"})
 }

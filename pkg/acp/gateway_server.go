@@ -14,6 +14,7 @@ import (
 
 	"github.com/google/uuid"
 
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/i18n"
@@ -22,13 +23,10 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
-	"github.com/nickheyer/icebath/pkg/logging"
 	"github.com/nickheyer/icebath/pkg/pm"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
-
-var gatewayServerLog = logging.GetLogger("acp_adapter.gateway_server")
 
 // Owner connection the gateway agent projects, requests answered as ordered objects
 type gatewayLink interface {
@@ -259,7 +257,7 @@ func NewAgent(sessionManager Sessions) any {
 	if sessionManager == nil {
 		return NewGatewayACPAgent()
 	}
-	return NewHermesACPAgent(sessionManager)
+	return NewIcebathACPAgent(sessionManager)
 }
 
 // Stores the editor connection and observes its raw initialize message
@@ -414,7 +412,7 @@ func (a *GatewayACPAgent) reattach(ctx context.Context, link gatewayLink) error 
 			if !errors.As(err, &refused) {
 				return err
 			}
-			gatewayServerLog.Info(fmt.Sprintf("ACP session %s not re-attached after reconnect\n%s", sessionID, err))
+			pkgLog().Info(fmt.Sprintf("ACP session %s not re-attached after reconnect\n%s", sessionID, err))
 			a.snapshots.Delete(sessionID)
 			continue
 		}
@@ -458,7 +456,7 @@ func (a *GatewayACPAgent) requestLiveReasoning(ctx context.Context, link gateway
 		if isCancelled(err) {
 			return err
 		}
-		gatewayServerLog.Debug(fmt.Sprintf("ACP session %s keeps its reasoning hidden\n%s", sessionID, err))
+		pkgLog().Debug(fmt.Sprintf("ACP session %s keeps its reasoning hidden\n%s", sessionID, err))
 	}
 	return nil
 }
@@ -550,7 +548,7 @@ func (a *GatewayACPAgent) NewSession(ctx context.Context, req *pyacp.NewSessionR
 		return nil, err
 	}
 	if !dhas(snapshot, "session_id") {
-		return nil, errors.New("KeyError: 'session_id'")
+		return nil, errors.New("the gateway session snapshot has no session_id")
 	}
 	sessionID := pyStr(dget(snapshot, "session_id"))
 	if err := a.adopt(ctx, sessionID, snapshot, nil); err != nil {
@@ -686,7 +684,7 @@ func (a *GatewayACPAgent) afterAttach(ctx context.Context, sessionID, editorID s
 		if isCancelled(err) {
 			return err
 		}
-		gatewayServerLog.Debug(fmt.Sprintf("ACP post-attach notices for %s not delivered\n%s", sessionID, err))
+		pkgLog().Debug(fmt.Sprintf("ACP post-attach notices for %s not delivered\n%s", sessionID, err))
 	}
 	return nil
 }
@@ -706,7 +704,7 @@ func (a *GatewayACPAgent) attachInfo(ctx context.Context, link gatewayLink, sess
 		return nil, err
 	}
 	if !dhas(adopted, "subscription_id") {
-		return nil, errors.New("KeyError: 'subscription_id'")
+		return nil, errors.New("the gateway attach reply has no subscription_id")
 	}
 	if _, err := a.rpc(ctx, link, "session.detach", map[string]any{"session_id": sessionID, "subscription_id": dget(adopted, "subscription_id")}); err != nil {
 		return nil, err
@@ -787,7 +785,7 @@ func (a *GatewayACPAgent) resume(ctx context.Context, cwd, heldID string, server
 	}
 	if a.conn != nil {
 		if !dhas(snapshot, "messages") {
-			return nil, errors.New("KeyError: 'messages'")
+			return nil, errors.New("the gateway session snapshot has no messages")
 		}
 		for _, update := range historyReplayUpdates(liveMessages(dget(snapshot, "messages"))) {
 			if err := a.sessionUpdate(ctx, heldID, update); err != nil {
@@ -983,7 +981,7 @@ func (a *GatewayACPAgent) ForkSession(ctx context.Context, req *pyacp.ForkSessio
 		return nil, err
 	}
 	if _, ok := result["branched_session_id"]; !ok {
-		return nil, errors.New("KeyError: 'branched_session_id'")
+		return nil, errors.New("the gateway fork reply has no branched_session_id")
 	}
 	child := pyStr(result["branched_session_id"])
 	if a.moved(info, req.Cwd) {
@@ -1135,7 +1133,7 @@ func (a *GatewayACPAgent) confirmDeferredPick(ctx context.Context, sessionID, ed
 	}()
 	var refused *gateway.GatewayClientError
 	if err != nil && errors.As(err, &refused) {
-		gatewayServerLog.Info(fmt.Sprintf("Deferred model pick on %s not confirmed: %s", sessionID, err))
+		pkgLog().Info(fmt.Sprintf("Deferred model pick on %s not confirmed: %s", sessionID, err))
 		return say(refusedPickText(committed(refused.Msg)))
 	}
 	return err
@@ -1153,7 +1151,7 @@ func (a *GatewayACPAgent) modelConfirmer(sessionID string) MutationConfirm {
 			target = pyStr(v)
 		}
 		if _, ok := refusal["confirm_message"]; !ok {
-			return false, errors.New("KeyError: 'confirm_message'")
+			return false, errors.New("the gateway refusal has no confirm_message")
 		}
 		guards := []any{}
 		if warnings, ok := refusal["warnings"].([]any); ok {
@@ -1543,7 +1541,7 @@ func (a *GatewayACPAgent) admissionFromReceipt(ctx context.Context, link gateway
 		return "", false, nil
 	}
 	if !dhas(receipt, "admission_id") {
-		return "", false, errors.New("KeyError: 'admission_id'")
+		return "", false, errors.New("the gateway receipt has no admission_id")
 	}
 	admissionID := pyStr(dget(receipt, "admission_id"))
 	a.admissions[sessionID] = admissionID
@@ -1642,7 +1640,7 @@ func (a *GatewayACPAgent) afterAck(ctx context.Context, sessionID, admissionID s
 // Owner connection in use, an error when none is attached
 func (a *GatewayACPAgent) currentGateway() (gatewayLink, error) {
 	if a.gateway == nil {
-		return nil, errors.New("AttributeError: 'NoneType' object has no attribute 'rpc'")
+		return nil, errors.New("no gateway is connected")
 	}
 	return a.gateway, nil
 }
@@ -1695,7 +1693,7 @@ func (a *GatewayACPAgent) recover(ctx context.Context, sessionID, admissionID st
 // Reports a turn that already settled from its terminal receipt, once
 func (a *GatewayACPAgent) settledReceipt(ctx context.Context, link gatewayLink, heldID, sessionID string, receipt, saved *pyjson.Object) error {
 	if !dhas(receipt, "admission_id") {
-		return errors.New("KeyError: 'admission_id'")
+		return errors.New("the gateway receipt has no admission_id")
 	}
 	admissionID := pyStr(dget(receipt, "admission_id"))
 	if !truthy(saved) {
@@ -1906,7 +1904,7 @@ func (a *GatewayACPAgent) events(ctx context.Context) error {
 	if isCancelled(err) && ctx.Err() != nil {
 		return err
 	}
-	gatewayServerLog.Debug(fmt.Sprintf("ACP gateway event projection stopped\n%s", err))
+	pkgLog().Debug(fmt.Sprintf("ACP gateway event projection stopped\n%s", err))
 	a.failure = err
 	a.loop.notifyAll()
 	return nil
@@ -1938,7 +1936,7 @@ func (a *GatewayACPAgent) project(ctx context.Context, event *pyjson.Object) err
 		return a.permission(sid, payload)
 	case "approval.settled", "clarify.settled":
 		if !dhas(payload, "prompt_id") || !dhas(payload, "execution_generation") {
-			return errors.New("KeyError: 'prompt_id'")
+			return errors.New("the gateway prompt has no prompt_id or execution_generation")
 		}
 		key := permissionKey{sid, pyrepr.Repr(dget(payload, "prompt_id")), pyrepr.Repr(dget(payload, "execution_generation"))}
 		if task, ok := a.permissions[key]; ok {
@@ -2027,7 +2025,7 @@ func (a *GatewayACPAgent) gapGuard(ctx context.Context, kind, sid, aid string) (
 		for _, raw := range pending {
 			if row := asObject(raw); dget(row, "status") == "started" {
 				if !dhas(row, "admission_id") {
-					return false, errors.New("KeyError: 'admission_id'")
+					return false, errors.New("the gateway receipt has no admission_id")
 				}
 				add(pyStr(dget(row, "admission_id")))
 			}
@@ -2199,7 +2197,7 @@ func (a *GatewayACPAgent) permission(sessionID string, raw any) error {
 		return nil
 	}
 	if !dhas(prompt, "prompt_id") || !dhas(prompt, "execution_generation") {
-		return errors.New("KeyError: 'prompt_id'")
+		return errors.New("the gateway prompt has no prompt_id or execution_generation")
 	}
 	key := permissionKey{sessionID, pyrepr.Repr(dget(prompt, "prompt_id")), pyrepr.Repr(dget(prompt, "execution_generation"))}
 	if _, open := a.permissions[key]; !open {
@@ -2276,7 +2274,7 @@ func (a *GatewayACPAgent) answerClarify(ctx context.Context, sessionID string, p
 		return nil
 	}()
 	if err != nil && !isCancelled(err) {
-		gatewayServerLog.Info("ACP clarify viewer detached or control expired\n" + err.Error())
+		pkgLog().Info("ACP clarify viewer detached or control expired\n" + err.Error())
 	}
 	return answered && err == nil
 }
@@ -2291,7 +2289,7 @@ func (a *GatewayACPAgent) answerPermission(ctx context.Context, sessionID string
 	}
 	var options []pyacp.PermissionOption
 	for _, option := range buildPermissionOptions(choices["always"], choices["session"], false) {
-		if choices[optionIDToHermes[option.OptionID]] {
+		if choices[optionIDToIcebath[option.OptionID]] {
 			options = append(options, option)
 		}
 	}
@@ -2337,14 +2335,14 @@ func (a *GatewayACPAgent) answerPermission(ctx context.Context, sessionID string
 			return err
 		}
 		if _, err := a.rpc(ctx, link, "approval.respond", map[string]any{"session_id": sessionID, "prompt_id": dget(prompt, "prompt_id"),
-			"execution_generation": dget(prompt, "execution_generation"), "choice": optionIDToHermes[allowed.OptionID]}); err != nil {
+			"execution_generation": dget(prompt, "execution_generation"), "choice": optionIDToIcebath[allowed.OptionID]}); err != nil {
 			return err
 		}
 		answered = true
 		return nil
 	}()
 	if err != nil && !isCancelled(err) {
-		gatewayServerLog.Info("ACP permission viewer detached or control expired\n" + err.Error())
+		pkgLog().Info("ACP permission viewer detached or control expired\n" + err.Error())
 	}
 	return answered && err == nil
 }
@@ -2353,7 +2351,7 @@ func (a *GatewayACPAgent) answerPermission(ctx context.Context, sessionID string
 func editProposalOf(raw any) (*tools.EditProposal, error) {
 	edit, ok := raw.(*pyjson.Object)
 	if !ok {
-		return nil, fmt.Errorf("TypeError: EditProposal() argument after ** must be a mapping, not %T", raw)
+		return nil, fmt.Errorf("an edit proposal is %s, expected a mapping", errchain.Kind(raw))
 	}
 	proposal := &tools.EditProposal{}
 	for _, key := range edit.Keys {
@@ -2378,12 +2376,12 @@ func editProposalOf(raw any) (*tools.EditProposal, error) {
 				}
 			}
 		default:
-			return nil, fmt.Errorf("TypeError: EditProposal.__init__() got an unexpected keyword argument '%s'", key)
+			return nil, fmt.Errorf("unknown edit proposal field %s", key)
 		}
 	}
 	for _, required := range []string{"tool_name", "path", "old_text", "new_text", "arguments"} {
 		if !dhas(edit, required) {
-			return nil, fmt.Errorf("TypeError: EditProposal.__init__() missing 1 required positional argument: '%s'", required)
+			return nil, fmt.Errorf("an edit proposal has no %s", required)
 		}
 	}
 	return proposal, nil

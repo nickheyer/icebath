@@ -11,7 +11,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/tools"
 )
 
-// Directory names of the platform plugins hermes ships under plugins/platforms
+// Directory names of the bundled platform plugins under plugins/platforms
 var shippedPlatformDirs = []string{"a2a", "bluebubbles", "buzz", "dingtalk", "discord", "email", "feishu", "google_chat", "irc",
 	"line", "matrix", "mattermost", "ntfy", "photon", "qqbot", "raft", "signal", "simplex", "slack", "sms", "teams", "telegram",
 	"wecom", "weixin", "whatsapp", "whatsapp_cloud", "yuanbao"}

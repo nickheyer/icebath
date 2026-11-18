@@ -454,9 +454,9 @@ var SlackReservedCommands = map[string]bool{
 
 // SlackViaIcebathOnly lists canonical commands reachable on Slack only through the /icebath slash
 var SlackViaIcebathOnly = map[string]bool{
-	"topup": true, "moa": true, "debug": true, "egress": true, "init": true, "version": true, "diff": true,
+	"moa": true, "debug": true, "egress": true, "init": true, "version": true, "diff": true,
 	"update": true, "heartbeat": true, "refine": true, "review": true, "pause": true, "whoami": true,
-	"platform": true, "insights": true, "login": true, "discard": true, "autoprune": true,
+	"platform": true, "insights": true, "discard": true, "autoprune": true,
 }
 
 // SanitizeSlackName lowers, strips invalid characters and edge punctuation and clamps to 32
@@ -490,7 +490,7 @@ func SlackNativeSlashes(ctx context.Context, r *Registry, cfg config.Tree) []Sla
 	for _, p := range iterPluginCommandEntries(ctx, r) {
 		wanted = append(wanted, SlackSlash{p.Name, p.Description, p.ArgsHint})
 	}
-	entries := []SlackSlash{{"icebath", i18n.T(ctx, "slash.hermes.description", "", nil), "[subcommand] [args]"}}
+	entries := []SlackSlash{{"icebath", i18n.T(ctx, "slash.icebath.description", "", nil), "[subcommand] [args]"}}
 	seen := map[string]bool{"icebath": true}
 	for _, w := range wanted {
 		name := SanitizeSlackName(w.Name)

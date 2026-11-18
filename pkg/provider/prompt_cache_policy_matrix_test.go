@@ -41,7 +41,6 @@ const (
 	pcpGateway  = "https://gateway.example.com/anthropic"
 	pcpEdge     = "https://models.example.net/v1"
 	pcpLitellm  = "https://litellm.internal.example.com/v1"
-	pcpNous     = "https://inference-api.nousresearch.com/v1"
 	pcpOpencode = "https://opencode.ai/v1"
 )
 
@@ -107,8 +106,6 @@ func TestAnthropicPromptCachePolicyMatrix(t *testing.T) {
 		{"test_custom_openai_wire_does_not_cache_even_with_claude_name", pcpAgent("custom", "https://api.fireworks.ai/inference/v1", pcpCC, "claude-sonnet-4"), CacheDestination{}, false, false},
 		{"test_qwen_on_opencode_go_caches_with_envelope_layout", pcpAgent("opencode-go", pcpOpencode, pcpCC, "qwen3.6-plus"), CacheDestination{}, true, false},
 		{"test_qwen_on_opencode_zen_caches", pcpAgent("opencode", pcpOpencode, pcpCC, "qwen3-coder-plus"), CacheDestination{}, true, false},
-		{"test_qwen_on_nous_portal_caches_with_envelope_layout", pcpAgent("nous", pcpNous, pcpCC, "qwen3.6-plus"), CacheDestination{}, true, false},
-		{"test_non_qwen_non_claude_on_nous_portal_does_not_cache", pcpAgent("nous", pcpNous, pcpCC, "openai/gpt-5.4"), CacheDestination{}, false, false},
 		{"test_deepseek_on_direct_alibaba_does_not_cache", pcpAgent("alibaba", "https://dashscope.aliyuncs.com/compatible-mode/v1", pcpCC, "deepseek-v4-pro"), CacheDestination{}, false, false},
 		{"test_deepseek_on_openrouter_does_not_cache", pcpAgent("openrouter", pcpOR, pcpCC, "deepseek/deepseek-chat"), CacheDestination{}, false, false},
 		{"test_litellm_claude_operator_disable_still_wins", disabled(pcpAgent("litellm", pcpLitellm, pcpCC, "claude-opus-4.8")), CacheDestination{}, false, false},
@@ -117,8 +114,6 @@ func TestAnthropicPromptCachePolicyMatrix(t *testing.T) {
 		{"test_capability_declared_true_keeps_envelope_layout_on_openai_wire", withCustom(pcpAgent("custom:litellm", pcpLitellm, pcpCC, "claude-opus-4.8"), pcpCustom("litellm", pcpLitellm, "claude-opus-4.8", map[string]any{"prompt_caching": true})), CacheDestination{}, true, false},
 		{"test_capability_declared_false_wins_over_openrouter_grant", withCustom(pcpAgent("custom:litellm", pcpOR, pcpCC, "claude-opus-4.8"), pcpCustom("litellm", pcpOR, "claude-opus-4.8", map[string]any{"prompt_caching": false})), CacheDestination{}, false, false},
 		{"test_litellm_provider_on_lookalike_host_still_grants", pcpAgent("custom:litellm", "https://notlitellm.attacker.example/v1", pcpCC, "claude-opus-4.8"), CacheDestination{}, true, false},
-		{"test_portal_claude_on_the_messages_wire_uses_the_native_layout", pcpAgent("nous", pcpNous, pcpAM, "anthropic/claude-opus-4.8"), CacheDestination{}, true, true},
-		{"test_portal_claude_on_chat_completions_keeps_the_envelope_layout", pcpAgent("nous", pcpNous, pcpCC, "anthropic/claude-opus-4.8"), CacheDestination{}, true, false},
 		{"test_overrides_take_precedence_over_self", pcpAgent("openrouter", pcpOR, pcpCC, "openai/gpt-5.4"), CacheDestination{Model: pcpStr("anthropic/claude-sonnet-4.6")}, true, false},
 		{"test_fallback_target_evaluated_independently", pcpAgent("anthropic", "https://api.anthropic.com", pcpAM, "claude-opus-4.6"), CacheDestination{Provider: pcpStr("openrouter"), BaseURL: pcpStr(pcpOR), APIMode: pcpStr(pcpCC), Model: pcpStr("anthropic/claude-sonnet-4.6")}, true, false},
 	}

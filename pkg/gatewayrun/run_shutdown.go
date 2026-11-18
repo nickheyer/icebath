@@ -32,7 +32,7 @@ func exitWithFailureVerdict(r *GatewayRunner) bool {
 		return false
 	}
 	if reason := r.ExitReason(); reason != nil && *reason != "" {
-		runLog().Error(fmt.Sprintf("Gateway exiting with failure: %s", *reason))
+		pkgLog().Error(fmt.Sprintf("Gateway exiting with failure: %s", *reason))
 	}
 	return true
 }
@@ -46,12 +46,12 @@ func resolveGatewayExitVerdict(r *GatewayRunner, signalInitiatedShutdown bool) (
 		return false, &gateway.SystemExitError{Code: *code}
 	}
 	if signalInitiatedShutdown && !r.restartRequested {
-		runLog().Info("Exiting with code 1 (signal-initiated shutdown without restart " +
+		pkgLog().Info("Exiting with code 1 (signal-initiated shutdown without restart " +
 			"request) so the service manager can revive the gateway.")
 		return false, nil
 	}
 	if r.restartViaService {
-		runLog().Info(fmt.Sprintf("Exiting with code %d (service-restart requested) so the service "+
+		pkgLog().Info(fmt.Sprintf("Exiting with code %d (service-restart requested) so the service "+
 			"manager relaunches the gateway.", gateway.GatewayServiceRestartExitCode))
 		return false, &gateway.SystemExitError{Code: gateway.GatewayServiceRestartExitCode}
 	}
@@ -110,7 +110,7 @@ func (r *GatewayRunner) activeAPIWorkerCount() (n int) {
 func (r *GatewayRunner) interruptAPIServerRuns(reason string) (n int) {
 	defer func() {
 		if rec := recover(); rec != nil {
-			runLog().Debug(fmt.Sprintf("Failed interrupting api_server runs during shutdown: %v", rec))
+			pkgLog().Debug(fmt.Sprintf("Failed interrupting api_server runs during shutdown: %v", rec))
 			n = 0
 		}
 	}()
@@ -126,7 +126,7 @@ func (r *GatewayRunner) interruptAPIServerRuns(reason string) (n int) {
 func (r *GatewayRunner) markAPIRunsShutdownRequested() (n int) {
 	defer func() {
 		if rec := recover(); rec != nil {
-			runLog().Debug(fmt.Sprintf("Failed marking api_server runs as shutdown-requested: %v", rec))
+			pkgLog().Debug(fmt.Sprintf("Failed marking api_server runs as shutdown-requested: %v", rec))
 			n = 0
 		}
 	}()
@@ -164,7 +164,7 @@ func (r *GatewayRunner) interruptDeferredAgentWorkers(reason string) int {
 		func() {
 			defer func() {
 				if rec := recover(); rec != nil {
-					runLog().Debug(fmt.Sprintf("Failed interrupting deferred agent worker during shutdown: %v", rec))
+					pkgLog().Debug(fmt.Sprintf("Failed interrupting deferred agent worker during shutdown: %v", rec))
 				}
 			}()
 			agent.RequestHardInterrupt(w.agent, reason, interruptToolReasonGatewayShutdown)
@@ -201,7 +201,7 @@ func (r *GatewayRunner) scaleToZeroHasLiveBackgroundWork() bool {
 		active := func() (active bool) {
 			defer func() {
 				if rec := recover(); rec != nil {
-					runLog().Debug(fmt.Sprintf("scale-to-zero %s check failed", p.label), "exc_info", rec)
+					pkgLog().Debug(fmt.Sprintf("scale-to-zero %s check failed", p.label), "exc_info", rec)
 					active = false
 				}
 			}()
@@ -265,7 +265,7 @@ func (r *GatewayRunner) restartLoopGuardConfig(ctx context.Context) (int, int, i
 func (r *GatewayRunner) scaleToZeroActiveMessagingPlatforms() (active []string) {
 	defer func() {
 		if rec := recover(); rec != nil {
-			runLog().Debug("scale-to-zero: active messaging platforms unreadable — staying awake", "exc_info", rec)
+			pkgLog().Debug("scale-to-zero: active messaging platforms unreadable — staying awake", "exc_info", rec)
 			active = []string{"<unavailable>"}
 		}
 	}()
@@ -326,7 +326,7 @@ func (r *GatewayRunner) scaleToZeroShouldArm(ctx context.Context) bool {
 func (r *GatewayRunner) logScaleToZeroNotArmedReason(ctx context.Context) {
 	defer func() {
 		if rec := recover(); rec != nil {
-			runLog().Debug("scale-to-zero: not-armed reason logging failed", "exc_info", rec)
+			pkgLog().Debug("scale-to-zero: not-armed reason logging failed", "exc_info", rec)
 		}
 	}()
 	if !gateway.ScaleToZeroEnabled(nil) {
@@ -341,7 +341,7 @@ func (r *GatewayRunner) logScaleToZeroNotArmedReason(ctx context.Context) {
 	if w := relayWakeURLOrNone(ctx); w != nil && *w != "" {
 		wake = "set"
 	}
-	runLog().Info(fmt.Sprintf("scale-to-zero: NOT armed despite opt-in — relay_only_or_absent=%s (enabled platforms=%s), "+
+	pkgLog().Info(fmt.Sprintf("scale-to-zero: NOT armed despite opt-in — relay_only_or_absent=%s (enabled platforms=%s), "+
 		"wake_url=%s. Need relay-only messaging + a registered wake URL.",
 		pyrepr.Repr(gateway.MessagingIsRelayOnlyOrAbsent(active)), enabled, wake))
 }
@@ -350,7 +350,7 @@ func (r *GatewayRunner) logScaleToZeroNotArmedReason(ctx context.Context) {
 func readOrAwake[T any](label string, fn func() T, busy T) (out T) {
 	defer func() {
 		if rec := recover(); rec != nil {
-			runLog().Debug(fmt.Sprintf("scale-to-zero: %s unreadable — staying awake", label), "exc_info", rec)
+			pkgLog().Debug(fmt.Sprintf("scale-to-zero: %s unreadable — staying awake", label), "exc_info", rec)
 			out = busy
 		}
 	}()
@@ -378,7 +378,7 @@ func (r *GatewayRunner) scaleToZeroNoteRealInbound(ctx context.Context) {
 func (r *GatewayRunner) scaleToZeroStatus(ctx context.Context, state, failMsg string) {
 	defer func() {
 		if rec := recover(); rec != nil {
-			runLog().Debug(failMsg, "exc_info", rec)
+			pkgLog().Debug(failMsg, "exc_info", rec)
 		}
 	}()
 	r.updateRuntimeStatus(ctx, &state, nil)
@@ -428,7 +428,7 @@ func (r *GatewayRunner) scaleToZeroWatcher(ctx context.Context, interval float64
 func (r *GatewayRunner) scaleToZeroWatcherTick(ctx context.Context, interval float64) (err error) {
 	defer func() {
 		if rec := recover(); rec != nil {
-			runLog().Debug("scale-to-zero watcher iteration error", "exc_info", rec)
+			pkgLog().Debug("scale-to-zero watcher iteration error", "exc_info", rec)
 			err = nil
 		}
 	}()
@@ -445,7 +445,7 @@ func (r *GatewayRunner) scaleToZeroWatcherTick(ctx context.Context, interval flo
 	if !gateway.MessagingIsRelayOnlyOrAbsent(active) {
 		if !r.scaleToZeroDirectPlatformLogged {
 			r.scaleToZeroDirectPlatformLogged = true
-			runLog().Info(fmt.Sprintf("scale-to-zero: idle, but directly connected messaging platform(s) %s "+
+			pkgLog().Info(fmt.Sprintf("scale-to-zero: idle, but directly connected messaging platform(s) %s "+
 				"hold a live socket that a suspended instance cannot wake from — staying "+
 				"awake. Route them through the relay connector or disable them to allow "+
 				"suspend.", strings.Join(active, ", ")))
@@ -460,17 +460,17 @@ func (r *GatewayRunner) scaleToZeroWatcherTick(ctx context.Context, interval flo
 	if !gateway.SuspendAvailable(nil) {
 		if !r.scaleToZeroNoSuspendLogged {
 			r.scaleToZeroNoSuspendLogged = true
-			runLog().Info("scale-to-zero: idle, but this platform offers no suspend lever (no " +
+			pkgLog().Info("scale-to-zero: idle, but this platform offers no suspend lever (no " +
 				"in-machine API and no brokered sleep URL); staying connected rather " +
 				"than quiescing")
 		}
 		return nil
 	}
-	runLog().Info(fmt.Sprintf("scale-to-zero: gateway idle for >= %.0fs — going dormant "+
+	pkgLog().Info(fmt.Sprintf("scale-to-zero: gateway idle for >= %.0fs — going dormant "+
 		"(relay buffered, socket closed) then self-suspending", r.scaleToZeroIdleTimeoutSeconds(ctx)))
 	r.scaleToZeroStatus(ctx, "draining", "scale-to-zero: status mark failed")
 	if !r.scaleToZeroHoldRedial(true) {
-		runLog().Warn("scale-to-zero: could not hold the relay re-dial — staying awake rather " +
+		pkgLog().Warn("scale-to-zero: could not hold the relay re-dial — staying awake rather " +
 			"than suspending unprotected")
 		r.scaleToZeroAbandonSuspend(ctx)
 		return nil
@@ -478,7 +478,7 @@ func (r *GatewayRunner) scaleToZeroWatcherTick(ctx context.Context, interval flo
 	dormantOK := func() (ok bool) {
 		defer func() {
 			if rec := recover(); rec != nil {
-				runLog().Debug("scale-to-zero: go_dormant failed", "exc_info", rec)
+				pkgLog().Debug("scale-to-zero: go_dormant failed", "exc_info", rec)
 				ok = false
 			}
 		}()
@@ -487,11 +487,11 @@ func (r *GatewayRunner) scaleToZeroWatcherTick(ctx context.Context, interval flo
 			if ctx.Err() != nil {
 				return false
 			}
-			runLog().Debug("scale-to-zero: go_dormant failed", "exc_info", err)
+			pkgLog().Debug("scale-to-zero: go_dormant failed", "exc_info", err)
 			return false
 		}
 		if !acked {
-			runLog().Warn("scale-to-zero: connector did not ack going_idle — staying awake " +
+			pkgLog().Warn("scale-to-zero: connector did not ack going_idle — staying awake " +
 				"rather than freezing a live destination")
 			return false
 		}
@@ -506,7 +506,7 @@ func (r *GatewayRunner) scaleToZeroWatcherTick(ctx context.Context, interval flo
 		return nil
 	}
 	if !r.scaleToZeroIsIdle(ctx) {
-		runLog().Info("scale-to-zero: inbound arrived during quiesce — skipping suspend")
+		pkgLog().Info("scale-to-zero: inbound arrived during quiesce — skipping suspend")
 		r.scaleToZeroAbandonSuspend(ctx)
 		return nil
 	}
@@ -517,7 +517,7 @@ func (r *GatewayRunner) scaleToZeroWatcherTick(ctx context.Context, interval flo
 func (r *GatewayRunner) scaleToZeroSelfSuspend(ctx context.Context) (err error) {
 	defer func() {
 		if rec := recover(); rec != nil {
-			runLog().Debug("scale-to-zero: self-suspend failed", "exc_info", rec)
+			pkgLog().Debug("scale-to-zero: self-suspend failed", "exc_info", rec)
 			r.scaleToZeroAbandonSuspend(ctx)
 			err = nil
 		}
@@ -539,7 +539,7 @@ func (r *GatewayRunner) scaleToZeroSelfSuspend(ctx context.Context) (err error) 
 		url := gateway.BrokeredSleepURL(nil)
 		if url == nil {
 			r.scaleToZeroAbandonSuspend(ctx)
-			runLog().Debug("scale-to-zero: no suspend lever available — dormant without platform suspend")
+			pkgLog().Debug("scale-to-zero: no suspend lever available — dormant without platform suspend")
 			return nil
 		}
 		accepted = gateway.RequestBrokeredSuspend(ctx, *url, gateway.BrokeredSuspendTimeoutS, nil)
@@ -549,7 +549,7 @@ func (r *GatewayRunner) scaleToZeroSelfSuspend(ctx context.Context) (err error) 
 		}
 	}
 	if !accepted {
-		runLog().Warn(fmt.Sprintf("scale-to-zero: %s not accepted — machine stays awake (fail-awake); will "+
+		pkgLog().Warn(fmt.Sprintf("scale-to-zero: %s not accepted — machine stays awake (fail-awake); will "+
 			"retry on the next idle window", lever))
 	}
 	return nil
@@ -579,7 +579,7 @@ func (r *GatewayRunner) scaleToZeroAbandonSuspend(ctx context.Context) {
 func (r *GatewayRunner) scaleToZeroHoldRedial(held bool) (took bool) {
 	defer func() {
 		if rec := recover(); rec != nil {
-			runLog().Debug("scale-to-zero: redial hold toggle failed", "exc_info", rec)
+			pkgLog().Debug("scale-to-zero: redial hold toggle failed", "exc_info", rec)
 			took = false
 		}
 	}()
@@ -601,7 +601,7 @@ func (r *GatewayRunner) enterExternalDrain(ctx context.Context) {
 		return
 	}
 	r.externalDrainActive = true
-	runLog().Info(fmt.Sprintf("External drain ENGAGED (.drain_request.json present) — refusing "+
+	pkgLog().Info(fmt.Sprintf("External drain ENGAGED (.drain_request.json present) — refusing "+
 		"new turns; %d in-flight turn(s) will finish. Process stays up.", r.activeWorkCount()))
 	r.updateRuntimeStatus(ctx, optStr("draining"), nil)
 }
@@ -613,11 +613,11 @@ func (r *GatewayRunner) exitExternalDrain(ctx context.Context) {
 	}
 	r.externalDrainActive = false
 	if r.draining.Load() || !r.running.Load() {
-		runLog().Info("External drain marker cleared during shutdown — not reverting " +
+		pkgLog().Info("External drain marker cleared during shutdown — not reverting " +
 			"to running (shutdown takes precedence).")
 		return
 	}
-	runLog().Info(fmt.Sprintf("External drain RELEASED (.drain_request.json removed) — "+
+	pkgLog().Info(fmt.Sprintf("External drain RELEASED (.drain_request.json removed) — "+
 		"re-accepting new turns; gateway_state -> %s.", r.servingState()))
 	r.updateRuntimeStatus(ctx, optStr(r.servingState()), nil)
 }
@@ -628,7 +628,7 @@ func (r *GatewayRunner) drainControlWatcher(ctx context.Context, interval float6
 		func() {
 			defer func() {
 				if rec := recover(); rec != nil {
-					runLog().Debug(fmt.Sprintf("Drain-control watcher tick error: %v", rec), "exc_info", rec)
+					pkgLog().Debug(fmt.Sprintf("Drain-control watcher tick error: %v", rec), "exc_info", rec)
 				}
 			}()
 			requested := make(chan bool, 1)
@@ -669,7 +669,7 @@ func (r *GatewayRunner) pauseFailedPlatform(ctx context.Context, platform gatewa
 	if n, ok := info["attempts"].(int); ok {
 		attempts = n
 	}
-	runLog().Warn(fmt.Sprintf("%s paused after %d consecutive failures (%s) — fix the underlying issue then run `/platform "+
+	pkgLog().Warn(fmt.Sprintf("%s paused after %d consecutive failures (%s) — fix the underlying issue then run `/platform "+
 		"resume %s` to retry, or `icebath gateway restart` to restart the gateway.", platform, attempts, reason, platform))
 }
 
@@ -684,6 +684,6 @@ func (r *GatewayRunner) resumePausedPlatform(ctx context.Context, platform gatew
 	info["attempts"] = 0
 	info["next_retry"] = pythread.Monotonic()
 	r.updatePlatformRuntimeStatus(ctx, string(platform), platformStatus{state: optStr("retrying")})
-	runLog().Info(fmt.Sprintf("%s resumed — retrying on next watcher tick", platform))
+	pkgLog().Info(fmt.Sprintf("%s resumed — retrying on next watcher tick", platform))
 	return true
 }

@@ -1,26 +1,22 @@
 package gateway
 
 import (
-	"errors"
 	"fmt"
 	"io/fs"
-	"log/slog"
 	"sync"
-	"syscall"
 
 	"github.com/nickheyer/icebath/pkg/home"
 )
 
 // The scoped lock directory this token cannot create, read or replace locks in, a permission error
 type ScopedLockDirUnusable struct {
-	Errno syscall.Errno
 	Msg   string
 	Dir   string
 	Cause error
 }
 
 func (e *ScopedLockDirUnusable) Error() string {
-	return fmt.Sprintf("[Errno %d] %s: '%s'", int(e.Errno), e.Msg, e.Dir)
+	return e.Msg
 }
 
 func (e *ScopedLockDirUnusable) Unwrap() error { return e.Cause }
@@ -42,13 +38,11 @@ func unusableLockDir(lockDir string, cause error) error {
 		"by an elevated (administrator) Icebath. Platforms that need a token lock stay down until it "+
 		"is repaired. To repair, %s", lockDir, cause, home.UnusableDirRemedy(lockDir))
 	if warned {
-		slog.Debug(msg)
+		pkgLog().Debug(msg)
 	} else {
-		slog.Warn(msg)
+		pkgLog().Warn(msg)
 	}
-	var errno syscall.Errno
-	errors.As(cause, &errno)
-	return &ScopedLockDirUnusable{Errno: errno, Msg: fmt.Sprintf("gateway lock directory is not usable: %v", cause), Dir: lockDir, Cause: cause}
+	return &ScopedLockDirUnusable{Msg: fmt.Sprintf("gateway lock directory is not usable: %v", cause), Dir: lockDir, Cause: cause}
 }
 
 // Forgets the report of lockDir once a lock was taken in it

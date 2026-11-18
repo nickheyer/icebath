@@ -18,6 +18,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyshlex"
 	"github.com/nickheyer/icebath/pkg/plugins"
 	"github.com/nickheyer/icebath/pkg/pm"
+	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
 
@@ -291,6 +292,12 @@ func (m *MemorySetup) catalogInstallHint(ctx context.Context, name string) strin
 	return CatalogInstallHint(ctx, name, "memory")
 }
 
+// Names the providers icebath ships and the profile command that installs any other one as a plugin
+func (m *MemorySetup) printOtherProvidersHint() {
+	m.printf("  Icebath ships built-in memory, ByteRover and RetainDB. Other providers are plugins you install with: %s\n",
+		provider.PluginInstallCommand("<source>", envHome(m.Env)))
+}
+
 // Normalizes the memory block and reports whether the provider's own post setup took over
 func (m *MemorySetup) postSetupHook(ctx context.Context, p Provider, cfg map[string]any) (bool, error) {
 	if _, ok := cfg["memory"].(map[string]any); !ok {
@@ -310,6 +317,7 @@ func (m *MemorySetup) CmdSetupProvider(ctx context.Context, name string) error {
 		if install := m.catalogInstallHint(ctx, name); install != "" {
 			m.printf("  It is a catalog plugin that is not installed. Install it with: %s\n\n", install)
 		} else {
+			m.printOtherProvidersHint()
 			m.printf("  Run 'icebath memory setup' to see available providers.\n\n")
 		}
 		return nil
@@ -658,7 +666,7 @@ func (m *MemorySetup) CmdStatus(ctx context.Context) error {
 			if install := m.catalogInstallHint(ctx, providerName); install != "" {
 				m.printf("  Install it with: %s\n", install)
 			} else {
-				m.printf("  Install the '%s' memory plugin to %s\n", providerName, home.Display(home.PluginsDir(envHome(m.Env))))
+				m.printOtherProvidersHint()
 			}
 		}
 	}

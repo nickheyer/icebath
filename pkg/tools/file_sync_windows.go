@@ -32,7 +32,7 @@ func deferInterruptSignal(env *Env) func() {
 		signal.Stop(ch)
 		select {
 		case <-ch:
-			toolsLogger(env).Debug("sync_back: SIGINT deferred until sync completes")
+			envLog(env).Debug("sync_back: SIGINT deferred until sync completes")
 			windows.GenerateConsoleCtrlEvent(windows.CTRL_C_EVENT, 0)
 		default:
 		}

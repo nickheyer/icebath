@@ -17,7 +17,7 @@ const auxUnhealthyPaymentReason = "payment / credit error"
 
 // Resolved provider and explicit config names mapped to chain labels
 var auxUnhealthyLabelAliases = map[string]string{
-	"openrouter": "openrouter", "nous": "nous", "custom": "local/custom",
+	"openrouter": "openrouter", "custom": "local/custom",
 	"local/custom": "local/custom", "openai-codex": "openai-codex", "codex": "openai-codex",
 }
 
@@ -57,7 +57,7 @@ func auxMarkProviderUnhealthy(ctx context.Context, provider string, ttl float64,
 	auxUnhealthyReason[key] = reason
 	auxUnhealthyMu.Unlock()
 	clock := time.Unix(0, int64(expiresAt*1e9)).Local().Format("15:04:05")
-	slog.Log(ctx, level, fmt.Sprintf("Auxiliary: marking %s unhealthy for %ds (%s). "+
+	pkgLog().Log(ctx, level, fmt.Sprintf("Auxiliary: marking %s unhealthy for %ds (%s). "+
 		"Subsequent auxiliary calls will skip it until %s.", label, int(ttl), reason, clock))
 }
 
@@ -104,7 +104,7 @@ func auxLogSkipUnhealthy(ctx context.Context, label, task, baseURL string) {
 	if task == "" {
 		task = "call"
 	}
-	slog.Info(fmt.Sprintf("Auxiliary %s: skipping %s (%s, retry in %ds)", task, label, reason, max(0, int(expiresAt-now))))
+	pkgLog().Info(fmt.Sprintf("Auxiliary %s: skipping %s (%s, retry in %ds)", task, label, reason, max(0, int(expiresAt-now))))
 }
 
 // Clears every hidden provider endpoint

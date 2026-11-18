@@ -832,7 +832,7 @@ func (a *AIAgent) handleContentPolicyRefusal(ctx context.Context, r RefusalReque
 	if pyrepr.Truthy(rawStopDetails) {
 		details = pyrepr.Str(rawStopDetails)
 	}
-	conversationLoopLog().Warn(fmt.Sprintf("%sModel declined to respond (finish_reason=content_filter). model=%s provider=%s native_stop_reason=%s stop_details=%s refusal=%s",
+	pkgLog().Warn(fmt.Sprintf("%sModel declined to respond (finish_reason=content_filter). model=%s provider=%s native_stop_reason=%s stop_details=%s refusal=%s",
 		a.logPrefix, a.model, a.provider, nativeStop, details, refusalLog))
 	a.emitDiagnosticStatus("⚠️ The model declined to respond to this request (safety refusal).")
 	summary := refusalText

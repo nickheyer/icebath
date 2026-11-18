@@ -172,7 +172,7 @@ func TestMissingCatalogProviderRecoveryNamesTheProfileInstallCommand(t *testing.
 	if err := m.CmdSetupProvider(ctx, "honcho"); err != nil {
 		t.Fatal(err)
 	}
-	if got := strings.Count(out.String(), "icebath -p work plugins install honcho"); got != 2 {
+	if got := strings.Count(out.String(), "icebath -p work plugins install <source>"); got != 2 {
 		t.Fatalf("install command named %d times in\n%s", got, out.String())
 	}
 }

@@ -1306,7 +1306,7 @@ func runPauseResume(ctx context.Context, token map[string]any) (failure string) 
 	}
 	pauseWarn(pauseStderr, "→ Restarting gateway(s) paused by an interrupted `icebath update`...")
 	if pauseGatewayResumer == nil {
-		return "No module named 'hermes_cli.update_cmd_windows'"
+		return "the gateway resumer is not installed (pkg/selfupdate is not linked into this program)"
 	}
 	if err := pauseGatewayResumer(ctx, token, pauseStderr); err != nil {
 		return err.Error()

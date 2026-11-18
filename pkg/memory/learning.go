@@ -21,6 +21,7 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/home"
+	"github.com/nickheyer/icebath/pkg/internal/pydatetime"
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/skills"
 	"github.com/nickheyer/icebath/pkg/tools"
@@ -50,7 +51,7 @@ type SkillRoot struct {
 	FS     fs.FS
 }
 
-// Top level frontmatter key or the icebath metadata copy, hermes metadata accepted as alias
+// Top level frontmatter key or the icebath metadata copy, the older metadata spelling accepted
 func fmField(fm map[string]any, key string) any {
 	if pyTruthy(fm[key]) {
 		return fm[key]
@@ -59,11 +60,10 @@ func fmField(fm map[string]any, key string) any {
 	if !ok {
 		return nil
 	}
-	if own, ok := meta["icebath"].(map[string]any); ok {
-		return own[key]
-	}
-	if alias, ok := meta["hermes"].(map[string]any); ok {
-		return alias[key]
+	for _, metaKey := range skills.MetadataKeys {
+		if own, ok := meta[metaKey].(map[string]any); ok {
+			return own[key]
+		}
 	}
 	return nil
 }
@@ -236,7 +236,7 @@ func pyFromISOFormat(s string) (time.Time, error) {
 		if aware {
 			offset = time.Duration(offSeconds)*time.Second + time.Duration(offMicro)*time.Microsecond
 			if offset <= -24*time.Hour || offset >= 24*time.Hour {
-				return time.Time{}, fmt.Errorf("offset must be a timedelta strictly between -timedelta(hours=24) and timedelta(hours=24), not %s", pyTimedeltaRepr(offset))
+				return time.Time{}, fmt.Errorf("offset must be a timedelta strictly between -timedelta(hours=24) and timedelta(hours=24), not %s.", pyTimedeltaRepr(offset))
 			}
 		}
 	}
@@ -255,23 +255,11 @@ func pyFromISOFormat(s string) (time.Time, error) {
 			}
 		}
 	}
-	if year < 1 || year > 9999 {
-		return time.Time{}, fmt.Errorf("year %d is out of range", year)
+	if msg := pydatetime.DateArgsError(year, month, day); msg != "" {
+		return time.Time{}, fmt.Errorf("%s", msg)
 	}
-	if month < 1 || month > 12 {
-		return time.Time{}, fmt.Errorf("month must be in 1..12")
-	}
-	if day < 1 || day > daysInMonth(year, month) {
-		return time.Time{}, fmt.Errorf("day %d must be in range 1..%d for month %d in year %d", day, daysInMonth(year, month), month, year)
-	}
-	if hour > 23 {
-		return time.Time{}, fmt.Errorf("hour must be in 0..23")
-	}
-	if minute > 59 {
-		return time.Time{}, fmt.Errorf("minute must be in 0..59")
-	}
-	if second > 59 {
-		return time.Time{}, fmt.Errorf("second must be in 0..59")
+	if msg := pydatetime.TimeArgsError(hour, minute, second); msg != "" {
+		return time.Time{}, fmt.Errorf("%s", msg)
 	}
 	return time.Date(year, time.Month(month), day, hour, minute, second, micro*1000, time.UTC).Add(-offset), nil
 }

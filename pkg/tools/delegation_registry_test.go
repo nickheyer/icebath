@@ -4,13 +4,14 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"os"
 	"path/filepath"
 	"reflect"
 	"strings"
 	"sync"
 	"testing"
+
+	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/home"
@@ -291,7 +292,7 @@ func TestAMissingBackendFailsClosedNamingTheFix(t *testing.T) {
 	}
 }
 
-// The delegate_task registration carries the hermes toolset, emoji, check and static schema
+// The delegate_task registration carries the toolset, emoji, check and static schema
 func TestDelegateTaskRegistersInTheDelegationToolset(t *testing.T) {
 	def := Default.Get("delegate_task")
 	if def == nil || def.Toolset != "delegation" || def.Emoji != "\U0001F500" || !def.Check(nil) {

@@ -9,7 +9,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tools"
-	"github.com/nickheyer/icebath/pkg/tuigateway"
+	"github.com/nickheyer/icebath/pkg/tuihost"
 )
 
 // Launch store of the case home holding a tui row for each key
@@ -82,7 +82,7 @@ func TestWsOrphanReapReleasesResumeLockBeforeSlowTeardown(t *testing.T) {
 	case <-time.After(10 * time.Second):
 		t.Fatal("teardown never started")
 	}
-	if tuigateway.SessionRecord("slow-orphan") != nil {
+	if tuihost.SessionRecord("slow-orphan") != nil {
 		t.Fatal("reaped session still registered")
 	}
 	acquired := false
@@ -114,7 +114,7 @@ func TestWsOrphanReapRetriesWhenDelegationLookupFails(t *testing.T) {
 	scheduleWSOrphanReap(context.Background(), "lookup-error-sid", nil, nil)
 	first := pendingReap("lookup-error-sid")
 	fireReap(first, 20, 20)
-	if tuigateway.SessionRecord("lookup-error-sid") != session || truthy(session.Get("_finalized")) {
+	if tuihost.SessionRecord("lookup-error-sid") != session || truthy(session.Get("_finalized")) {
 		t.Fatal("session reaped while the delegation lookup failed")
 	}
 	if next := pendingReap("lookup-error-sid"); next == nil || next == first {
@@ -137,22 +137,22 @@ func TestResumeRebindCancelsPendingWsOrphanReap(t *testing.T) {
 
 func TestClaimOrReuseLiveWinnerCancelsPendingReap(t *testing.T) {
 	winner := serverCaseSession(t, "winner-sid", map[string]any{"session_key": "stored-claim"})
-	t.Cleanup(func() { tuigateway.SetSessionRecord("fresh-sid", nil) })
+	t.Cleanup(func() { tuihost.SetSessionRecord("fresh-sid", nil) })
 	scheduleWSOrphanReap(context.Background(), "winner-sid", nil, nil)
 	timer := pendingReap("winner-sid")
 	if timer == nil {
 		t.Fatal("no pending reap")
 	}
-	fresh := tuigateway.NewSession(map[string]any{"agent": &struct{}{}, "session_key": "session-key", "history": []any{}})
+	fresh := tuihost.NewSession(map[string]any{"agent": &struct{}{}, "session_key": "session-key", "history": []any{}})
 	liveSID, live, reused := claimOrReuseLive(context.Background(), "fresh-sid", "stored-claim", fresh, nil)
 	if !reused || liveSID != "winner-sid" || live != winner {
 		t.Fatalf("claim %s %v", liveSID, reused)
 	}
-	if pendingReap("winner-sid") != timer || winner.Get("transport") != tuigateway.DetachedWSTransport() {
+	if pendingReap("winner-sid") != timer || winner.Get("transport") != tuihost.DetachedWSTransport() {
 		t.Fatal("unguarded claim touched the winner")
 	}
 	transport := &liveWritePeer{}
-	ctx := tuigateway.BindTransport(context.Background(), transport)
+	ctx := tuihost.BindTransport(context.Background(), transport)
 	response := resumeReuseLive(newResumeCtx(ctx, 1, map[string]any{"omit_messages": true}, "stored-claim"), liveSID, live)
 	if resultOf(t, response)["session_id"] != "winner-sid" || winner.Get("transport") != transport {
 		t.Fatalf("reuse %v", response)
@@ -165,7 +165,7 @@ func TestClaimOrReuseLiveWinnerCancelsPendingReap(t *testing.T) {
 func TestSupersededRuntimeFinalizedWithoutReclaimedBroadcast(t *testing.T) {
 	old := serverCaseSession(t, "old-sid", map[string]any{"session_key": "stored-super"})
 	db := reapLedger(t, "stored-super")
-	t.Cleanup(func() { tuigateway.SetSessionRecord("new-sid", nil); cancelWSOrphanReap("new-sid") })
+	t.Cleanup(func() { tuihost.SetSessionRecord("new-sid", nil); cancelWSOrphanReap("new-sid") })
 	var broadcastsMu sync.Mutex
 	var broadcasts []string
 	swapVar(t, &broadcastGlobalEvent, func(event string, _ map[string]any) {
@@ -178,8 +178,8 @@ func TestSupersededRuntimeFinalizedWithoutReclaimedBroadcast(t *testing.T) {
 	if timer == nil {
 		t.Fatal("no pending reap")
 	}
-	tuigateway.SetSessionRecord("old-sid", nil)
-	fresh := tuigateway.NewSession(map[string]any{"agent": &struct{}{}, "session_key": "stored-super", "history": []any{}})
+	tuihost.SetSessionRecord("old-sid", nil)
+	fresh := tuihost.NewSession(map[string]any{"agent": &struct{}{}, "session_key": "stored-super", "history": []any{}})
 	sessionsLock.Lock()
 	type claimed struct {
 		sid    string
@@ -191,13 +191,13 @@ func TestSupersededRuntimeFinalizedWithoutReclaimedBroadcast(t *testing.T) {
 		result <- claimed{sid, reused}
 	}()
 	waitBlockedIn(t, "claimOrReuseLive")
-	tuigateway.SetSessionRecord("old-sid", old)
+	tuihost.SetSessionRecord("old-sid", old)
 	sessionsLock.Unlock()
 	got := <-result
 	if got.reused || got.sid != "" {
 		t.Fatalf("claim %v", got)
 	}
-	if tuigateway.SessionRecord("new-sid") != fresh || tuigateway.SessionRecord("old-sid") != nil {
+	if tuihost.SessionRecord("new-sid") != fresh || tuihost.SessionRecord("old-sid") != nil {
 		t.Fatal("fresh runtime not registered or the parked one kept")
 	}
 	if pendingReap("old-sid") != nil || reapArmed(timer) {
@@ -222,7 +222,7 @@ func TestLazyUnpersistedResumeRebindsTransportAndCancelsReap(t *testing.T) {
 		t.Fatal("no pending reap")
 	}
 	transport := &liveWritePeer{}
-	resp := handleRequest(tuigateway.BindTransport(context.Background(), transport), map[string]any{"id": "lz1", "method": "session.resume",
+	resp := handleRequest(tuihost.BindTransport(context.Background(), transport), map[string]any{"id": "lz1", "method": "session.resume",
 		"params": map[string]any{"session_id": "stored-lazy", "omit_messages": true}})
 	if resultOf(t, resp)["session_id"] != "lazy-sid" || session.Get("transport") != transport {
 		t.Fatalf("resume %v", resp)

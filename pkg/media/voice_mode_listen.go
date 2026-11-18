@@ -59,7 +59,7 @@ func ListenForSpeech(shouldStop func() bool, o ListenOptions) (bool, string) {
 	}
 	tripped, path, err := listenForSpeech(sd, shouldStop, o)
 	if err != nil {
-		voiceLog().Debug(fmt.Sprintf("Barge-in listener failed: %s", err))
+		pkgLog().Debug(fmt.Sprintf("Barge-in listener failed: %s", err))
 		return false, ""
 	}
 	return tripped, path
@@ -135,17 +135,17 @@ func listenForSpeech(sd pysounddevice.Module, shouldStop func() bool, o ListenOp
 				consecutive = 0
 			}
 			if consecutive > 0 {
-				voiceLog().Debug(fmt.Sprintf("VAD above-trigger: block=%d rms=%.0f floor=%.0f trigger=%.0f consec=%d/%d min_floor=%.0f window_len=%d",
+				pkgLog().Debug(fmt.Sprintf("VAD above-trigger: block=%d rms=%.0f floor=%.0f trigger=%.0f consec=%d/%d min_floor=%.0f window_len=%d",
 					blockIdx, rms, floor, trigger, consecutive, tripBlocks, minFloor, len(floorWindow.items)))
 			}
 			if consecutive < tripBlocks {
 				continue
 			}
-			voiceLog().Info(fmt.Sprintf("VAD TRIPPED: block=%d rms=%.0f floor=%.0f trigger=%.0f consec=%d min_floor=%.0f — cutting TTS playback",
+			pkgLog().Info(fmt.Sprintf("VAD TRIPPED: block=%d rms=%.0f floor=%.0f trigger=%.0f consec=%d min_floor=%.0f — cutting TTS playback",
 				blockIdx, rms, floor, trigger, consecutive, minFloor))
 			if o.OnTrigger != nil {
 				if err := callQuietly(o.OnTrigger); err != nil {
-					voiceLog().Debug(fmt.Sprintf("Barge-in trigger callback failed: %s", err))
+					pkgLog().Debug(fmt.Sprintf("Barge-in trigger callback failed: %s", err))
 				}
 			}
 			tripped = true
@@ -179,7 +179,7 @@ func callQuietly(fn func()) (err error) {
 
 // Debug logs a VAD line, echoed to stderr when ICEBATH_VOICE_DEBUG is 1
 func vadLog(msg string) {
-	voiceLog().Debug(msg)
+	pkgLog().Debug(msg)
 	if pystr.Strip(os.Getenv("ICEBATH_VOICE_DEBUG")) == "1" {
 		fmt.Fprintln(os.Stderr, "[voice-vad] "+msg)
 	}
@@ -381,7 +381,7 @@ func FullDuplexListen(shouldStop func() bool, o DuplexOptions) string {
 			}
 			if o.OnTrigger != nil {
 				if err := callQuietly(func() { o.OnTrigger(phase) }); err != nil {
-					voiceLog().Debug(fmt.Sprintf("full-duplex trigger callback failed: %s", err))
+					pkgLog().Debug(fmt.Sprintf("full-duplex trigger callback failed: %s", err))
 				}
 			}
 			path, err = captureUntilQuiet(stream, block, preRoll.items, endpointBlocks, max(1, pyFloorDivMS(o.MaxUtteranceMS)))
@@ -390,7 +390,7 @@ func FullDuplexListen(shouldStop func() bool, o DuplexOptions) string {
 		return nil
 	})
 	if err != nil {
-		voiceLog().Debug(fmt.Sprintf("Full-duplex listener failed: %s", err))
+		pkgLog().Debug(fmt.Sprintf("Full-duplex listener failed: %s", err))
 		return ""
 	}
 	return path

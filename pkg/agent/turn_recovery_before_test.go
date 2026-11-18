@@ -142,11 +142,11 @@ func TestSanitizesToolDescriptionAndParameterDescriptions(t *testing.T) {
 }
 
 func TestSanitizesNestedDictStructure(t *testing.T) {
-	headers := map[string]any{"X-Title": "Hermes │ Agent", "User-Agent": "Hermes/1.0 🤖"}
+	headers := map[string]any{"X-Title": "Icebath │ Agent", "User-Agent": "Icebath/1.0 🤖"}
 	if !state.SanitizeStructureNonASCII(map[string]any{"default_headers": headers}) {
 		t.Fatal("no change reported")
 	}
-	if headers["X-Title"] != "Hermes  Agent" || headers["User-Agent"] != "Hermes/1.0 " {
+	if headers["X-Title"] != "Icebath  Agent" || headers["User-Agent"] != "Icebath/1.0 " {
 		t.Fatalf("headers %v", headers)
 	}
 }
@@ -277,9 +277,9 @@ func replayTurn() map[string]any {
 		"reasoning_details": cloneMessageForSend(replayDetails)}
 }
 
-func nousLane(model string, db *state.DB) *AIAgent {
+func gatewayLane(model string, db *state.DB) *AIAgent {
 	a, _ := quietAgent()
-	a.provider, a.model, a.baseURL, a.apiMode = "nous", model, "https://inference-api.nousresearch.com/v1", "chat_completions"
+	a.provider, a.model, a.baseURL, a.apiMode = "ai-gateway", model, "https://ai-gateway.vercel.sh/v1", "chat_completions"
 	if db != nil {
 		a.sessionID, a.sessionDB = "s1", db
 	}
@@ -306,7 +306,7 @@ func TestNamedFieldRejectionStripsOncePerModelAndNeverLoops(t *testing.T) {
 	if err := db.CreateSession(state.NewSession{ID: "s1", Source: "cli", Model: model}); err != nil {
 		t.Fatal(err)
 	}
-	lane := nousLane(model, db)
+	lane := gatewayLane(model, db)
 	sent := []any{map[string]any{"role": "user", "content": "hi"}, replayTurn()}
 	body := "Extra inputs are not permitted, field: 'messages[1].reasoning_details'"
 	if recoverRejection(t, lane, "Provider returned error", sent) {
@@ -318,11 +318,11 @@ func TestNamedFieldRejectionStripsOncePerModelAndNeverLoops(t *testing.T) {
 	if !recoverRejection(t, lane, body, sent) {
 		t.Fatal("named rejection not retried")
 	}
-	rejected := lane.reasoningRejectingRoutes[[3]string{"nous", "inference-api.nousresearch.com", model}]
+	rejected := lane.reasoningRejectingRoutes[[3]string{"ai-gateway", "ai-gateway.vercel.sh", model}]
 	if !reflect.DeepEqual(rejected, map[string]bool{"reasoning": true, "reasoning_details": true}) {
 		t.Fatalf("rejected %v", rejected)
 	}
-	route := provider.ReasoningReplayRouteFor("chat_completions", "nous", lane.model, lane.baseURL, false, rejected)
+	route := provider.ReasoningReplayRouteFor("chat_completions", "ai-gateway", lane.model, lane.baseURL, false, rejected)
 	reapplyReasoningEcho(sent, route.Pad, route.Carriers)
 	turn := sent[1].(map[string]any)
 	_, hasR := turn["reasoning"]
@@ -333,11 +333,11 @@ func TestNamedFieldRejectionStripsOncePerModelAndNeverLoops(t *testing.T) {
 	if recoverRejection(t, lane, body, []any{map[string]any{"role": "assistant", "reasoning_details": cloneMessageForSend(replayDetails)}}) {
 		t.Fatal("known rejection looped")
 	}
-	resumed, err := nousLane(model, db).rejectedReasoningCarriers()
+	resumed, err := gatewayLane(model, db).rejectedReasoningCarriers()
 	if err != nil || !reflect.DeepEqual(resumed, map[string]bool{"reasoning": true, "reasoning_details": true}) {
 		t.Fatalf("resumed carriers %v %v", resumed, err)
 	}
-	if !provider.ReasoningReplayRouteFor("chat_completions", "nous", "moonshotai/kimi-k3", lane.baseURL, false, nil).Carriers["reasoning_details"] {
+	if !provider.ReasoningReplayRouteFor("chat_completions", "ai-gateway", "moonshotai/kimi-k3", lane.baseURL, false, nil).Carriers["reasoning_details"] {
 		t.Fatal("sibling model lost a carrier")
 	}
 }

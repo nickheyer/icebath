@@ -1,3 +1,5 @@
+//go:build !icebath_core && !icebath_noextras
+
 package pm
 
 import (
@@ -70,7 +72,7 @@ func metadataVersion(path string) (string, error) {
 }
 
 // Whether a distribution the requirement accepts is installed in a site directory, known false when it cannot be probed
-func DistInstalled(req, site string) (installed, known bool) {
+func managedDistInstalled(req, site string) (installed, known bool) {
 	dist := RequirementDistName(req)
 	if dist == "" {
 		return false, false
@@ -94,7 +96,7 @@ func DistInstalled(req, site string) (installed, known bool) {
 }
 
 // Whether the environment marker of a requirement admits this machine, true for one that cannot be read
-func RequirementAppliesHere(ctx context.Context, req string) bool {
+func managedRequirementAppliesHere(ctx context.Context, req string) bool {
 	if !strings.Contains(req, ";") {
 		return true
 	}
@@ -114,22 +116,12 @@ func RequirementAppliesHere(ctx context.Context, req string) bool {
 }
 
 // Site packages directory of the dependency environment the install currently selects
-func SelectedSitePackages(ctx context.Context) (string, error) {
+func managedSelectedSitePackages(ctx context.Context) (string, error) {
 	venv, err := SelectedVenv(ctx, RepoRoot())
 	if err != nil {
 		return "", err
 	}
 	return SitePackages(venv)
-}
-
-// One entry point an installed distribution declares, with the distribution it came from
-type EntryPoint struct {
-	Name        string
-	Value       string
-	Group       string
-	DistName    string
-	DistVersion string
-	DistSummary string
 }
 
 // Value of a header of a distribution metadata file, empty when absent
@@ -154,7 +146,7 @@ func distMetadataHeader(path, header string) string {
 }
 
 // Entry points every distribution of the selected dependency environment declares, in directory order
-func SelectedEntryPoints(ctx context.Context) ([]EntryPoint, error) {
+func managedSelectedEntryPoints(ctx context.Context) ([]EntryPoint, error) {
 	site, err := SelectedSitePackages(ctx)
 	if err != nil {
 		return nil, err
@@ -242,7 +234,7 @@ func selectedImportPath(ctx context.Context) ([]string, error) {
 }
 
 // Source file of a module of the selected environment found without importing it, false when it has none
-func ResolveModuleOrigin(ctx context.Context, moduleName string) (string, bool) {
+func managedResolveModuleOrigin(ctx context.Context, moduleName string) (string, bool) {
 	var parts []string
 	for _, part := range strings.Split(moduleName, ".") {
 		if part != "" {

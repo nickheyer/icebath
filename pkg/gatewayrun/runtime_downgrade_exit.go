@@ -83,7 +83,7 @@ func stopOrExit(ctx context.Context, runner downgradeRunner, hardExit func(int))
 		return runner.downgradeStop(ctx)
 	}()
 	if err != nil {
-		runLog().Error("Gateway stop failed on the downgraded checkout; exiting now", "exc_info", err)
+		pkgLog().Error("Gateway stop failed on the downgraded checkout; exiting now", "exc_info", err)
 		hardExit(1)
 	}
 }
@@ -143,7 +143,7 @@ func runtimeDowngradeWatcher(ctx context.Context, runner downgradeRunner, w down
 			seen = 0
 		}
 		if seen >= runtimeDowngradeConfirmations {
-			runLog().Error(reason)
+			pkgLog().Error(reason)
 			runner.downgradeExit(reason, gateway.GatewayServiceRestartExitCode)
 			runner.keepDowngradeStop(spawnGatewayTask(context.WithoutCancel(ctx), "runtime-downgrade-stop", func(c context.Context) (any, error) {
 				stopOrExit(c, runner, os.Exit)

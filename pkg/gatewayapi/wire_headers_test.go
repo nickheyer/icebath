@@ -3,38 +3,36 @@ package gatewayapi
 import (
 	"net/http"
 	"testing"
+
+	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 )
 
-// An icebath request header reaches handlers under the hermes name, the icebath value winning a clash
-func TestIcebathRequestHeadersFeedHermesNames(t *testing.T) {
+// An old prefix request header reaches handlers under the icebath name, the icebath value winning a clash
+func TestLegacyRequestHeadersReachIcebathNames(t *testing.T) {
 	h := http.Header{}
 	h.Set("X-Icebath-Session-Id", "new")
 	h.Set("X-Hermes-Session-Id", "old")
-	h.Set("X-Icebath-Session-Key", "key")
-	icebathRequestHeaders(h)
-	if h.Get("X-Hermes-Session-Id") != "new" || h.Get("X-Hermes-Session-Key") != "key" {
+	h.Set("X-Hermes-Session-Key", "key")
+	acceptLegacyRequestHeaders(h)
+	if h.Get("X-Icebath-Session-Id") != "new" || h.Get("X-Icebath-Session-Key") != "key" {
 		t.Fatalf("%v", h)
 	}
-	legacy := http.Header{}
-	legacy.Set("X-Hermes-Session-Id", "old")
-	icebathRequestHeaders(legacy)
-	if legacy.Get("X-Hermes-Session-Id") != "old" {
-		t.Fatalf("%v", legacy)
+	plain := http.Header{}
+	plain.Set("X-Icebath-Session-Id", "s")
+	acceptLegacyRequestHeaders(plain)
+	if plain.Get("X-Icebath-Session-Id") != "s" || len(plain) != 1 {
+		t.Fatalf("%v", plain)
 	}
 }
 
-// Every hermes response header also goes out under its icebath name
-func TestIcebathResponseHeadersTwinHermesNames(t *testing.T) {
-	h := http.Header{}
-	h.Set("X-Hermes-Session-Id", "s")
-	h.Set("X-Hermes-Completed", "false")
-	h.Set("Content-Type", "application/json")
-	icebathResponseHeaders(h)
-	if h.Get("X-Icebath-Session-Id") != "s" || h.Get("X-Icebath-Completed") != "false" || h.Get("X-Icebath-Content-Type") != "" {
-		t.Fatalf("%v", h)
+// A replay record an older icebath stored answers under the icebath header names
+func TestStoredReplayHeadersUseIcebathNames(t *testing.T) {
+	old := storedHeaders(pyjson.ObjectOf("X-Hermes-Session-Id", "s", "X-Hermes-Session-Key", "k"))
+	if old["X-Icebath-Session-Id"] != "s" || old["X-Icebath-Session-Key"] != "k" || len(old) != 2 {
+		t.Fatalf("%v", old)
 	}
-	m := withIcebathTwins(map[string]string{"X-Hermes-Session-Key": "k", "Cache-Control": "no-cache"})
-	if m["X-Icebath-Session-Key"] != "k" || len(m) != 3 {
-		t.Fatalf("%v", m)
+	current := storedHeaders(pyjson.ObjectOf("X-Icebath-Session-Id", "s"))
+	if current["X-Icebath-Session-Id"] != "s" || len(current) != 1 || len(storedHeaders(nil)) != 0 {
+		t.Fatalf("%v", current)
 	}
 }

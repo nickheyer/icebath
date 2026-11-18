@@ -49,9 +49,10 @@ func checkProvenanced(ctx context.Context, prov Provenance, fetch, lsRemote func
 	if pyrepr.Truthy(catalogName) {
 		name := pyrepr.Str(catalogName)
 		result := &CheckResult{Name: prov.Name, Class: "catalog", Current: strOrEmpty(row["revision"])}
+		port := portCatalogEntry(name) != nil
 		var removed *RemovedEntry
 		if allow, _ := row["allow_removed"].(bool); !allow {
-			if removed = FindRemoved(ctx, name, ""); removed == nil {
+			if removed = findRemovedFor(ctx, port, name); removed == nil {
 				repo := catalog["repo"]
 				if !pyrepr.Truthy(repo) {
 					repo = row["source"]
@@ -59,14 +60,14 @@ func checkProvenanced(ctx context.Context, prov Provenance, fetch, lsRemote func
 						repo = ""
 					}
 				}
-				removed = FindRemoved(ctx, strings.SplitN(pyrepr.Str(repo), "#", 2)[0], "")
+				removed = findRemovedFor(ctx, port, strings.SplitN(pyrepr.Str(repo), "#", 2)[0])
 			}
 		}
 		if removed != nil {
 			result.Reason = "removed from catalog: " + removed.Reason
 			return result
 		}
-		entry := portPinnedEntry(GetLiveCatalogEntry(ctx, name))
+		entry := catalogEntryFor(ctx, name)
 		if entry == nil {
 			result.Reason = "catalog entry is unavailable; installed pin retained"
 			return result

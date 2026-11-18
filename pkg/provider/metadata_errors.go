@@ -23,7 +23,7 @@ func ContextCacheKey(model, baseURL string) string { return contextCacheKey(mode
 // SaveContextLength persists a discovered window under model at base url, source marks Bedrock provenance
 func SaveContextLength(ctx context.Context, model, baseURL string, length int, source string) {
 	if length <= 0 {
-		metadataLog.Warn(fmt.Sprintf("Refusing to cache non-positive context length %s@%s -> %d tokens", model, baseURL, length))
+		pkgLog().Warn(fmt.Sprintf("Refusing to cache non-positive context length %s@%s -> %d tokens", model, baseURL, length))
 		return
 	}
 	key := contextCacheKey(model, baseURL)
@@ -45,10 +45,10 @@ func SaveContextLength(ctx context.Context, model, baseURL string, length int, s
 		}
 		cache[key] = length
 		if err := writeContextCache(ctx, cache, confirmed); err != nil {
-			metadataLog.Debug("failed to save context length cache", "error", err)
+			pkgLog().Debug("failed to save context length cache", "error", err)
 			return
 		}
-		metadataLog.Info(fmt.Sprintf("Cached context length %s -> %s tokens", key, formatWithCommas(length)))
+		pkgLog().Info(fmt.Sprintf("Cached context length %s -> %s tokens", key, formatWithCommas(length)))
 	})
 }
 

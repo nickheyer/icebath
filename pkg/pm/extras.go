@@ -1,12 +1,12 @@
+//go:build !icebath_core && !icebath_noextras
+
 package pm
 
 import (
-	"bufio"
 	"context"
 	"errors"
 	"fmt"
 	"io/fs"
-	"log/slog"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -15,20 +15,22 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
 
-// Anchors maps each extra of the Python tool runtimes to the imports that prove it installed
-var Anchors = map[string][]string{
-	"neutts": {"neutts"}, "kittentts": {"kittentts", "soundfile"},
-	"voice": {"faster_whisper"}, "stt-whisper": {"faster_whisper"},
-	"silk": {"pilk"}, "wake": {"pyopen_wakeword"}, "wake-openwakeword": {"pyopen_wakeword"},
-	"wake-porcupine": {"pvporcupine"},
-	"google":         {"googleapiclient", "google.auth", "google_auth_oauthlib.flow", "google_auth_httplib2"},
-	"google-meet":    {"playwright.sync_api", "websockets"}, "youtube": {"youtube_transcript_api"},
-	"documents":     {"docx", "openpyxl", "pptx", "reportlab", "pypdf"},
-	"documents-pdf": {"pdfplumber", "pypdfium2"},
+// Anchors maps each extra the binary carries to the imports that prove it installed
+var Anchors = lockAnchors()
+
+// Anchor table of the embedded extras lock, aliases sharing their extra's imports
+func lockAnchors() map[string][]string {
+	out := map[string][]string{}
+	for name, entry := range extrasLock().Extras {
+		out[name] = entry.Anchors
+		for _, alias := range entry.Aliases {
+			out[alias] = entry.Anchors
+		}
+	}
+	return out
 }
 
 // Imports proving an extra, the extra's own name with underscores when the table lacks it
@@ -39,8 +41,11 @@ func anchors(extra string) []string {
 	return []string{strings.ReplaceAll(extra, "-", "_")}
 }
 
-// Reports whether the selected environment holds an anchor module, read from its package folders and PYTHONPATH
+// Reports whether an extra environment or the selected environment holds an anchor module, read from package folders and PYTHONPATH
 var anchorImportable = func(ctx context.Context, anchor string) bool {
+	if extraAnchorImportable(ctx, anchor) {
+		return true
+	}
 	venv, err := SelectedVenv(ctx, RepoRoot())
 	if err != nil {
 		return false
@@ -58,11 +63,38 @@ var anchorImportable = func(ctx context.Context, anchor string) bool {
 	return moduleInstalled(roots, anchor)
 }
 
-// AnchorImportable reports whether the selected environment holds the module
-func AnchorImportable(ctx context.Context, anchor string) bool { return anchorImportable(ctx, anchor) }
+// Whether a provisioned extra that names the anchor holds it in its own environment
+func extraAnchorImportable(ctx context.Context, anchor string) bool {
+	for _, site := range AnchorSitePackages(ctx, anchor) {
+		if moduleInstalled(moduleRoots(site), anchor) {
+			return true
+		}
+	}
+	return false
+}
+
+// Site packages of every provisioned extra that names the anchor among its imports
+func managedAnchorSitePackages(ctx context.Context, anchor string) []string {
+	lock := extrasLock()
+	var out []string
+	for _, name := range sortedKeys(lock.Extras) {
+		if !containsString(lock.Extras[name].Anchors, anchor) {
+			continue
+		}
+		if site, ok := ExtraSitePackages(ctx, name); ok {
+			out = append(out, site)
+		}
+	}
+	return out
+}
+
+// AnchorImportable reports whether an extra environment or the selected environment holds the module
+func managedAnchorImportable(ctx context.Context, anchor string) bool {
+	return anchorImportable(ctx, anchor)
+}
 
 // Reports every anchor of an extra importable and its platform gate admitting this machine
-func Available(ctx context.Context, extra string) (bool, error) {
+func managedAvailable(ctx context.Context, extra string) (bool, error) {
 	supported, err := extraSupported(ctx, extra, nil, nil)
 	if err != nil || !supported {
 		return false, err
@@ -152,6 +184,15 @@ func extraSupported(ctx context.Context, extra string, environment map[string]st
 	if all {
 		return true, nil
 	}
+	if _, entry, known := ResolveExtra(extra); known {
+		target, err := CurrentTarget()
+		if err != nil {
+			return false, err
+		}
+		if _, gone := entry.Unsupported[target]; gone {
+			return false, nil
+		}
+	}
 	gates, err := platformGates()
 	if err != nil {
 		return false, err
@@ -167,7 +208,7 @@ func extraSupported(ctx context.Context, extra string, environment map[string]st
 }
 
 // ExtraSupported reports an extra installable on this machine, an installed anchor set beating its platform gate
-func ExtraSupported(ctx context.Context, extra string) (bool, error) {
+func managedExtraSupported(ctx context.Context, extra string) (bool, error) {
 	return extraSupported(ctx, extra, nil, nil)
 }
 
@@ -192,111 +233,8 @@ func SwapAnchorImportable(fn func(ctx context.Context, anchor string) bool) func
 	return saved
 }
 
-// The one command users run for a missing extra
-func InstallHint(extra string) string { return "icebath pm install --extra " + extra }
-
-// Reports a prompt application owning stdin, set by the binary so a prompt never reads under it
-var InteractiveAppRunning func() bool
-
-// Client sync a lazy extra install goes through
+// Client sync a configured feature install goes through
 var clientSyncVenv = SyncVenv
-
-// Reports stdin and stdout both terminals, the only case a lazy install asks first
-var promptTerminals = func() bool { return isTerminalStream(os.Stdin) && isTerminalStream(os.Stdout) }
-
-// Writes a prompt to stdout and reads one line from stdin, failing at end of input with nothing read
-var promptInput = func(prompt string) (string, error) {
-	fmt.Fprint(os.Stdout, prompt)
-	line, err := bufio.NewReader(os.Stdin).ReadString('\n')
-	if err != nil && line == "" {
-		return "", err
-	}
-	return strings.TrimSuffix(line, "\n"), nil
-}
-
-// Makes an extra available, asking first on a terminal, syncing it, then adopting or demanding a restart
-func EnsureImport(ctx context.Context, extra string) error {
-	available, err := Available(ctx, extra)
-	if err != nil || available {
-		return err
-	}
-	supported, err := extraSupported(ctx, extra, nil, nil)
-	if err != nil {
-		return err
-	}
-	if !supported {
-		gates, err := platformGates()
-		if err != nil {
-			return err
-		}
-		return NewInstallError("venv", fmt.Sprintf("extra %s is not supported on this platform (gate: %s); the adapter degrades without it",
-			pyrepr.StrRepr(extra), pyrepr.StrRepr(gates[extra])), "")
-	}
-	appRunning := InteractiveAppRunning()
-	if !appRunning && promptTerminals() {
-		answer, err := promptInput(fmt.Sprintf("\nThis needs icebath's optional %s feature, which isn't installed yet.\nInstall it now? [Y/n] ", pyrepr.StrRepr(extra)))
-		if err != nil {
-			answer = "n"
-		}
-		answer = pystr.Lower(pystr.Strip(answer))
-		if answer != "" && answer != "y" && answer != "yes" {
-			return NewInstallError("venv", fmt.Sprintf("installation of extra %s declined", pyrepr.StrRepr(extra)), "")
-		}
-	}
-	if err := clientSyncVenv(ctx, SyncVenvOptions{Extras: []string{extra}}); err != nil {
-		return err
-	}
-	if !isRegularFile(RuntimeFactsPath(ctx)) {
-		return nil
-	}
-	root := RepoRoot()
-	if _, err := AdoptSelected(ctx, root); err != nil {
-		return err
-	}
-	venv, err := SelectedVenv(ctx, root)
-	if err != nil {
-		return err
-	}
-	site, err := SitePackages(venv)
-	if err != nil {
-		return err
-	}
-	selected := resolvePath(site)
-	for _, entry := range importPathEntries() {
-		if resolvePath(entry) == selected {
-			return nil
-		}
-	}
-	reason, err := RestartNeeded(ctx, root)
-	if err != nil {
-		return err
-	}
-	if reason == "" {
-		reason = "this process does not run from the install's dependency environment"
-	}
-	NoteRestartPending(extra + " installed (" + reason + ")")
-	return NewInstallError("venv", fmt.Sprintf("%s installed; restart icebath to activate it (%s)", extra, reason), "")
-}
-
-// Ensures an extra then merges the bindings importer returns into target, false when either step fails
-func EnsureAndBind(ctx context.Context, extra string, importer func() (map[string]any, error), target map[string]any) (bool, error) {
-	if err := EnsureImport(ctx, extra); err != nil {
-		slog.Warn(fmt.Sprintf("extra %s unavailable: %s", pyrepr.StrRepr(extra), err))
-		return false, nil
-	}
-	bindings, err := importer()
-	if err != nil {
-		if errorClass(err) != "ImportError" && errorClass(err) != "ModuleNotFoundError" {
-			return false, err
-		}
-		slog.Warn(fmt.Sprintf("import after installing %s failed: %s", pyrepr.StrRepr(extra), err))
-		return false, nil
-	}
-	for k, v := range bindings {
-		target[k] = v
-	}
-	return true, nil
-}
 
 // Anchors of an extra the selected environment cannot import
 func Missing(ctx context.Context, extra string) []string {
@@ -475,10 +413,10 @@ func sameNotes(a, b map[string]string) bool {
 	return true
 }
 
-// Declared extras install without may drop, neither all nor anything all pulls in, none for a binary install
+// Declared extras install without may drop, neither all nor anything all pulls in, every carried extra for a binary install
 func DroppableExtras(projectRoot string) ([]string, error) {
 	if runtimeOnlyProject(projectRoot) {
-		return nil, nil
+		return KnownExtras(), nil
 	}
 	data, err := loadPyproject(projectRoot)
 	if err != nil {

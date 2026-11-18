@@ -8,14 +8,11 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"math"
 	"net"
 	"net/http"
-	"net/url"
 	"os"
 	"path/filepath"
 	"regexp"
-	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -194,352 +191,8 @@ func writeOpenrouterCatalogDisk(ctx context.Context, curated []CatalogModel) {
 		rows = append(rows, []string{c.ID, c.Description})
 	}
 	if err := modelsWriteJSONCache(ctx, openrouterCatalogDiskPath(ctx), pyjson.ObjectOf("fetched_at", float64(modelsClock().UnixNano())/1e9, "curated", rows), pyjson.Indent(2)); err != nil {
-		modelsLog.Debug("openrouter curated catalog disk write failed", "error", err)
+		pkgLog().Debug("openrouter curated catalog disk write failed", "error", err)
 	}
-}
-
-// ---- Nous Portal tiers ----
-
-// PartitionNousModelsByTier splits Nous models into selectable and unavailable rows for a free tier account
-func PartitionNousModelsByTier(modelIDs []string, pricing PricingTable, freeTier bool) ([]string, []string) {
-	if !freeTier || len(pricing) == 0 {
-		return cloneStrings(modelIDs), []string{}
-	}
-	anyPricing := PricingTableAsAny(pricing)
-	selectable, unavailable := []string{}, []string{}
-	for _, mid := range modelIDs {
-		if IsModelFree(mid, anyPricing) {
-			selectable = append(selectable, mid)
-		} else {
-			unavailable = append(unavailable, mid)
-		}
-	}
-	return selectable, unavailable
-}
-
-func clonePricing(pricing PricingTable) PricingTable {
-	out := make(PricingTable, len(pricing))
-	for k, v := range pricing {
-		out[k] = v
-	}
-	return out
-}
-
-// Appends the Portal's tier recommendations missing from the curated ids
-func unionWithPortalRecommendations(ctx context.Context, tierKey string, curated []string, pricing PricingTable, portalBaseURL string, forceRefresh, synthesizeFreePricing bool) ([]string, PricingTable) {
-	payload := fetchNousRecommendedModelsFn(ctx, portalBaseURL, forceRefresh)
-	entries, _ := asList(payload[tierKey])
-	var portalIDs []string
-	for _, entry := range entries {
-		if name := extractModelName(entry); name != "" {
-			portalIDs = append(portalIDs, name)
-		}
-	}
-	if len(portalIDs) == 0 {
-		return cloneStrings(curated), clonePricing(pricing)
-	}
-	augmented := clonePricing(pricing)
-	if synthesizeFreePricing {
-		for _, mid := range portalIDs {
-			if _, ok := augmented[mid]; !ok {
-				augmented[mid] = map[string]any{"prompt": "0", "completion": "0"}
-			}
-		}
-	}
-	seen := map[string]bool{}
-	for _, mid := range curated {
-		seen[mid] = true
-	}
-	out := cloneStrings(curated)
-	for _, mid := range portalIDs {
-		if !seen[mid] {
-			out = append(out, mid)
-		}
-	}
-	return out, augmented
-}
-
-// UnionWithPortalFreeRecommendations adds the Portal's free picks with a synthetic zero rate card
-func UnionWithPortalFreeRecommendations(ctx context.Context, curated []string, pricing PricingTable, portalBaseURL string, forceRefresh bool) ([]string, PricingTable) {
-	return unionWithPortalRecommendations(ctx, "freeRecommendedModels", curated, pricing, portalBaseURL, forceRefresh, true)
-}
-
-// UnionWithPortalPaidRecommendations adds the Portal's paid picks leaving pricing untouched
-func UnionWithPortalPaidRecommendations(ctx context.Context, curated []string, pricing PricingTable, portalBaseURL string, forceRefresh bool) ([]string, PricingTable) {
-	return unionWithPortalRecommendations(ctx, "paidRecommendedModels", curated, pricing, portalBaseURL, forceRefresh, false)
-}
-
-// UnionWithNousOnSaleModels appends every discounted paid chat model the gateway lists, deepest discount first
-func UnionWithNousOnSaleModels(curated []string, pricing PricingTable) []string {
-	seen := map[string]bool{}
-	for _, mid := range curated {
-		seen[mid] = true
-	}
-	type sale struct {
-		negPercent int
-		id         string
-	}
-	var onSale []sale
-	for mid, entry := range pricing {
-		if seen[mid] || entry == nil || entry["tools"] == false || truthy(entry["generation"]) {
-			continue
-		}
-		disc, ok := ComputeSaleDiscount(stringOf(entry["prompt"]), stringOf(entry["completion"]), entry["original"])
-		paid := false
-		for _, key := range []string{"prompt", "completion"} {
-			if rate, ok := priceFloat(entry[key], true); ok && !math.IsInf(rate, 0) && !math.IsNaN(rate) {
-				paid = true
-			}
-		}
-		if _, isMap := asMap(entry["original"]); ok && isMap && paid {
-			onSale = append(onSale, sale{-disc.Percent, mid})
-		}
-	}
-	sort.Slice(onSale, func(i, j int) bool {
-		if onSale[i].negPercent != onSale[j].negPercent {
-			return onSale[i].negPercent < onSale[j].negPercent
-		}
-		return onSale[i].id < onSale[j].id
-	})
-	out := cloneStrings(curated)
-	for _, s := range onSale {
-		out = append(out, s.id)
-	}
-	return out
-}
-
-// ---- free tier detection cache, per profile ----
-
-const freeTierCacheTTL = 180 * time.Second
-
-type freeTierEntry struct {
-	result bool
-	at     time.Time
-}
-
-var (
-	freeTierCacheMu sync.Mutex
-	freeTierCache   = map[string]freeTierEntry{}
-)
-
-// GetCachedNousFreeTier returns this profile's live cached entitlement, false when unknown or expired
-func GetCachedNousFreeTier(ctx context.Context) (bool, bool) {
-	freeTierCacheMu.Lock()
-	defer freeTierCacheMu.Unlock()
-	cached, ok := freeTierCache[pricingProfileKey(ctx)]
-	if !ok || modelsClock().Sub(cached.at) >= freeTierCacheTTL {
-		return false, false
-	}
-	return cached.result, true
-}
-
-// CheckNousFreeTier is true only when the Portal user is known to be free tier, cached for three minutes
-func CheckNousFreeTier(ctx context.Context, forceFresh, cachedOnly bool) bool {
-	now := modelsClock()
-	profileKey := pricingProfileKey(ctx)
-	if !forceFresh {
-		if cached, ok := GetCachedNousFreeTier(ctx); ok {
-			return cached
-		}
-	}
-	if cachedOnly {
-		return false
-	}
-	result, err := nousPortalAccountIsFreeTierFn(ctx, forceFresh)
-	if err != nil {
-		result = false
-	}
-	freeTierCacheMu.Lock()
-	freeTierCache[profileKey] = freeTierEntry{result: result, at: now}
-	freeTierCacheMu.Unlock()
-	return result
-}
-
-// ---- Nous Portal recommended models ----
-
-// NousRecommendedModelsMirror is the R2 mirror of the Portal's public recommended models document
-const NousRecommendedModelsMirror = "https://web-assets.nousresearch.com/dynamic"
-
-const (
-	nousMirrorTimeout       = 2 * time.Second
-	nousRecommendedCacheTTL = 600 * time.Second
-)
-
-type nousRecommendedEntry struct {
-	data map[string]any
-	at   time.Time
-}
-
-type nousRecommendedKey struct{ profile, base string }
-
-var (
-	nousRecommendedMu    sync.Mutex
-	nousRecommendedCache = map[nousRecommendedKey]nousRecommendedEntry{}
-)
-
-func nousRecommendedDiskPath(ctx context.Context) string {
-	return filepath.Join(home.CacheDir(home.Dir(ctx)), "nous_recommended_cache.json")
-}
-
-// Last good payload for a Portal base plus its age
-func readNousRecommendedDisk(ctx context.Context, base string) (map[string]any, time.Duration, bool) {
-	blob := modelsReadJSONCache(nousRecommendedDiskPath(ctx))
-	entry, _ := asMap(blob[base])
-	data, _ := asMap(entry["data"])
-	if len(data) == 0 {
-		return nil, 0, false
-	}
-	age := time.Duration(math.Inf(1))
-	if ts, ok := floatOf(entry["ts"]); ok {
-		age = time.Duration((float64(modelsClock().UnixNano())/1e9 - ts) * float64(time.Second))
-	}
-	return data, age, true
-}
-
-// Merges a Portal payload into the per base disk map atomically
-func writeNousRecommendedDisk(ctx context.Context, base string, data map[string]any) {
-	if len(data) == 0 {
-		return
-	}
-	path := nousRecommendedDiskPath(ctx)
-	blob := modelsReadJSONCache(path)
-	if blob == nil {
-		blob = map[string]any{}
-	}
-	blob[base] = map[string]any{"data": data, "ts": float64(modelsClock().UnixNano()) / 1e9}
-	if err := modelsWriteJSONCache(ctx, path, blob, pyjson.Indent(2)); err != nil {
-		modelsLog.Debug("nous recommended-models disk cache write failed", "error", err)
-	}
-}
-
-// FetchNousRecommendedModels reads the Portal's public recommended models from its mirror then the Portal, cached ten minutes
-func FetchNousRecommendedModels(ctx context.Context, portalBaseURL string, timeout time.Duration, forceRefresh bool) map[string]any {
-	base := strings.TrimRight(portalBaseURL, "/")
-	if base == "" {
-		base = "https://portal.nousresearch.com"
-	}
-	if timeout <= 0 {
-		timeout = 5 * time.Second
-	}
-	now := modelsClock()
-	key := nousRecommendedKey{pricingProfileKey(ctx), base}
-	nousRecommendedMu.Lock()
-	cached, ok := nousRecommendedCache[key]
-	nousRecommendedMu.Unlock()
-	if !forceRefresh && ok && now.Sub(cached.at) < nousRecommendedCacheTTL {
-		return cached.data
-	}
-	diskData, diskAge, diskOK := readNousRecommendedDisk(ctx, base)
-	if !forceRefresh && diskOK && diskAge >= 0 && diskAge < nousRecommendedCacheTTL {
-		nousRecommendedMu.Lock()
-		nousRecommendedCache[key] = nousRecommendedEntry{data: diskData, at: now.Add(-diskAge)}
-		nousRecommendedMu.Unlock()
-		return diskData
-	}
-	type origin struct {
-		url     string
-		timeout time.Duration
-	}
-	var origins []origin
-	if parsed, err := url.Parse(base); err == nil && !IsLoopbackHost(parsed.Hostname()) {
-		mirrorTimeout := timeout
-		if nousMirrorTimeout < mirrorTimeout {
-			mirrorTimeout = nousMirrorTimeout
-		}
-		origins = append(origins, origin{NousRecommendedModelsMirror + "/" + parsed.Host, mirrorTimeout})
-	}
-	origins = append(origins, origin{base, timeout})
-	var data map[string]any
-	for _, o := range origins {
-		payload, err := modelsGetJSON(ctx, o.url+"/api/nous/recommended-models", o.timeout,
-			pyhttpx.OrderedHeaderMap(pyhttpx.HeaderLine{Name: "Accept", Value: "application/json"}, pyhttpx.HeaderLine{Name: "Accept-Encoding", Value: "gzip"}), nil)
-		if err != nil {
-			continue
-		}
-		if m, ok := asMap(payload); ok && len(m) > 0 {
-			data = m
-			writeNousRecommendedDisk(ctx, base, data)
-			break
-		}
-	}
-	if data == nil {
-		data = map[string]any{}
-		if diskOK {
-			data = diskData
-		}
-	}
-	nousRecommendedMu.Lock()
-	nousRecommendedCache[key] = nousRecommendedEntry{data: data, at: now}
-	nousRecommendedMu.Unlock()
-	return data
-}
-
-// Seam form the catalog refresh command drives
-func fetchNousRecommendedModels(ctx context.Context, portalURL string, forceRefresh bool) map[string]any {
-	return FetchNousRecommendedModels(ctx, portalURL, 5*time.Second, forceRefresh)
-}
-
-// Portal base URL the profile is authed against, the default Portal otherwise
-func resolveNousPortalURL(ctx context.Context) string {
-	store := NewStore(home.Dir(ctx))
-	data, err := store.Load()
-	if err != nil {
-		return "https://portal.nousresearch.com"
-	}
-	state := store.ProviderState(data, "nous")
-	portal := strings.TrimSpace(stringOf(state["portal_base_url"]))
-	if portal == "" {
-		portal = DefaultNousPortalURL
-	}
-	return strings.TrimRight(portal, "/")
-}
-
-// ResolveNousPortalURL is the exported form of the Portal base URL lookup
-func ResolveNousPortalURL(ctx context.Context) string { return resolveNousPortalURL(ctx) }
-
-// The modelName field of a recommended model entry, empty otherwise
-func extractModelName(entry any) string {
-	m, ok := asMap(entry)
-	if !ok {
-		return ""
-	}
-	name, ok := m["modelName"].(string)
-	if !ok {
-		return ""
-	}
-	return strings.TrimSpace(name)
-}
-
-// GetNousRecommendedAuxModel is the Portal's compaction or vision pick for the account's tier
-func GetNousRecommendedAuxModel(ctx context.Context, vision bool, freeTier *bool, portalBaseURL string, forceRefresh bool) string {
-	base := portalBaseURL
-	if base == "" {
-		base = resolveNousPortalURL(ctx)
-	}
-	payload := fetchNousRecommendedModelsFn(ctx, base, forceRefresh)
-	if len(payload) == 0 {
-		return ""
-	}
-	free := false
-	if freeTier == nil {
-		free = checkNousFreeTierFn(ctx, false, false)
-	} else {
-		free = *freeTier
-	}
-	kind := "Compaction"
-	if vision {
-		kind = "Vision"
-	}
-	tiers := []string{"paid", "free"}
-	if free {
-		tiers = []string{"free"}
-	}
-	for _, t := range tiers {
-		if name := extractModelName(payload[t+"Recommended"+kind+"Model"]); name != "" {
-			return name
-		}
-	}
-	return ""
 }
 
 // ---- OpenRouter and AI Gateway live catalogs ----
@@ -681,14 +334,6 @@ func OpenRouterModelIDs(ctx context.Context, forceRefresh bool) []string {
 	return CatalogModelIDs(FetchOpenRouterModels(ctx, FetchModelsOptions{ForceRefresh: forceRefresh}))
 }
 
-// GetCuratedNousModelIDs is the remote manifest's Nous row else the in repo snapshot
-func GetCuratedNousModelIDs(ctx context.Context) []string {
-	if remote := CuratedNousModels(ctx); len(remote) > 0 {
-		return cloneStrings(remote)
-	}
-	return staticCatalogModels("nous")
-}
-
 func aiGatewayModelIsFree(pricing any) bool {
 	return zeroPriced(pricing, [2]string{"input", "output"}, "0")
 }
@@ -813,7 +458,7 @@ var deepinfraSurfaceTags = map[string]bool{"chat": true, "embed": true, "image-g
 const (
 	// DeepinfraDefaultBaseURL is the OpenAI compatible DeepInfra root
 	DeepinfraDefaultBaseURL = "https://api.deepinfra.com/v1/openai"
-	deepinfraModelsQuery    = "filter=true&sort_by=hermes"
+	deepinfraModelsQuery    = "filter=true&sort_by=icebath"
 	deepinfraCatalogNegTTL  = 60 * time.Second
 )
 
@@ -829,7 +474,7 @@ func modelsPoolEnv(ctx context.Context) PoolEnv {
 		ctx = context.Background()
 	}
 	h := home.Dir(ctx)
-	return PoolEnv{Store: NewStore(h), Secrets: config.NewSecrets(h), Scope: SecretScopeFrom(ctx), Config: ConfigLoader(h), Log: modelsLog, Ctx: ctx}
+	return PoolEnv{Store: NewStore(h), Secrets: config.NewSecrets(h), Scope: SecretScopeFrom(ctx), Config: ConfigLoader(h), Log: pkgLog(), Ctx: ctx}
 }
 
 // Profile scoped .env then environ read of a DeepInfra setting
@@ -997,12 +642,6 @@ func ResetModelsFetchCaches() {
 	aiGatewayCatalogMu.Lock()
 	aiGatewayCatalogCache = nil
 	aiGatewayCatalogMu.Unlock()
-	nousRecommendedMu.Lock()
-	nousRecommendedCache = map[nousRecommendedKey]nousRecommendedEntry{}
-	nousRecommendedMu.Unlock()
-	freeTierCacheMu.Lock()
-	freeTierCache = map[string]freeTierEntry{}
-	freeTierCacheMu.Unlock()
 	deepinfraCatalogMu.Lock()
 	deepinfraCatalogCache = map[string][]map[string]any{}
 	deepinfraCatalogNegCache = map[string]time.Time{}

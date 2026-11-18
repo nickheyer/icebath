@@ -3,7 +3,6 @@ package gatewayrun
 import (
 	"context"
 	"fmt"
-	"log/slog"
 	"slices"
 	"sync"
 	"time"
@@ -18,7 +17,7 @@ type executorWorker interface {
 	isAlive() bool
 }
 
-// Pool the runner submits blocking work to, the concurrent.futures executor of hermes
+// Pool the runner submits blocking work to
 type gatewayExecutor interface {
 	submit(fn func(ctx context.Context) (any, error)) (*concurrentFuture, error)
 	shutdown(wait, cancelFutures bool)
@@ -85,7 +84,7 @@ func (e *unboundedThreadExecutor) park(worker *turnWorker) *executorItem {
 	reusable := func() (ok bool) {
 		defer func() {
 			if rec := recover(); rec != nil {
-				slog.Default().With("logger", "gateway.turn_executor").Warn("turn worker state reset failed; retiring the thread", "error", rec)
+				pkgLog().Warn("turn worker state reset failed; retiring the thread", "error", rec)
 				ok = false
 			}
 		}()

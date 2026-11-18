@@ -2,7 +2,6 @@ package telegram
 
 import (
 	"context"
-	"log/slog"
 	"os"
 	"strings"
 
@@ -108,7 +107,7 @@ func resolveNotificationsMode(ctx context.Context) string {
 		mode = "important"
 	}
 	if mode != "all" && mode != "important" {
-		slog.Warn("Unknown telegram notifications mode '" + mode + "', defaulting to 'important' (valid: all, important)")
+		pkgLog().Warn("Unknown telegram notifications mode '" + mode + "', defaulting to 'important' (valid: all, important)")
 		mode = "important"
 	}
 	return mode

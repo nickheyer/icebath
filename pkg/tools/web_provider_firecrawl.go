@@ -10,8 +10,6 @@ import (
 	"time"
 )
 
-const nousManagedProvider = NousManagedProvider
-
 var firecrawlCloudAPIURL = "https://api.firecrawl.dev"
 
 const (
@@ -19,7 +17,7 @@ const (
 	firecrawlUnsafeRedirect   = "Blocked: URL targets a private or internal network address"
 )
 
-// firecrawlClient is a minimal REST client for the keyed, self hosted, managed, and keyless Firecrawl routes
+// firecrawlClient is a minimal REST client for the keyed, self hosted, and keyless Firecrawl routes
 type firecrawlClient struct {
 	apiURL string
 	apiKey string
@@ -97,7 +95,7 @@ func asFloat(v any) float64 {
 	return 0
 }
 
-// Search rows across the REST, SDK, and gateway response shapes
+// Search rows across the Firecrawl v1 and v2 response shapes
 func firecrawlWebSearchResults(resp any) []WebSearchHit {
 	plain := asMap(resp)
 	if plain == nil {
@@ -179,48 +177,16 @@ func directFirecrawlConfig(env *Env) *firecrawlConfig {
 	return nil
 }
 
-func firecrawlGatewayReady(env *Env) bool {
-	return IsManagedToolGatewayReady(env, "firecrawl", nil, peekNousAccessToken)
-}
-
-// Routes through the keyless ring only without credentials and when the managed gateway is not selected
-func firecrawlUseKeylessRing(env *Env, capability string) bool {
+// Routes through the keyless ring only without Firecrawl credentials
+func firecrawlUseKeylessRing(env *Env) bool {
 	if firecrawlEnv(env, "FIRECRAWL_API_KEY") != "" || firecrawlEnv(env, "FIRECRAWL_API_URL") != "" {
-		return false
-	}
-	if ReadWebCapabilitySelection(env, capability) == NousManagedProvider {
-		return false
-	}
-	if firecrawlGatewayReady(env) && !isExplicitFirecrawlSelection(env) {
 		return false
 	}
 	return useKeyless(env, "firecrawl", "")
 }
 
-// CheckFirecrawlAPIKey reports whether the selected or any Firecrawl route is usable
-func CheckFirecrawlAPIKey(env *Env) bool {
-	usable := func(selected string) bool {
-		if selected == NousManagedProvider {
-			return firecrawlGatewayReady(env)
-		}
-		return directFirecrawlConfig(env) != nil || (selected == "" && firecrawlGatewayReady(env))
-	}
-	for _, cap := range []string{"search", "extract"} {
-		if usable(ReadWebCapabilitySelection(env, cap)) {
-			return true
-		}
-	}
-	return false
-}
-
-// FirecrawlIsManagedRoute reports whether calls for a capability go through the Nous Tool Gateway
-func FirecrawlIsManagedRoute(env *Env, capability string) bool {
-	selected := ReadWebCapabilitySelection(env, capability)
-	if selected != "" || isExplicitFirecrawlSelection(env) {
-		return selected == NousManagedProvider
-	}
-	return directFirecrawlConfig(env) == nil && firecrawlGatewayReady(env)
-}
+// CheckFirecrawlAPIKey reports whether a keyed, self hosted or explicitly selected keyless Firecrawl route is usable
+func CheckFirecrawlAPIKey(env *Env) bool { return directFirecrawlConfig(env) != nil }
 
 var firecrawlClients = struct {
 	sync.Mutex
@@ -233,36 +199,16 @@ var firecrawlClients = struct {
 	client *firecrawlClient
 }{}}
 
-func firecrawlUnconfiguredMessage(env *Env) string {
-	message := "Web tools are not configured. Set FIRECRAWL_API_KEY for cloud Firecrawl or set FIRECRAWL_API_URL for a self-hosted Firecrawl instance."
-	if managedNousToolsEnabled(env, false) {
-		return message + " With your Nous subscription you can also use the Tool Gateway. run `icebath tools` and select Nous Subscription as the web provider."
-	}
-	return message + " " + nousToolGatewayUnavailableMessage(env, "managed Firecrawl web tools", false)
-}
+const firecrawlUnconfiguredMessage = "Web tools are not configured. Set FIRECRAWL_API_KEY for cloud Firecrawl or set FIRECRAWL_API_URL for a self-hosted Firecrawl instance."
 
 // Resolves the Firecrawl client for a capability under strict stored selection semantics
 func firecrawlClientFor(env *Env, capability string) (*firecrawlClient, error) {
 	selected := ReadWebCapabilitySelection(env, capability)
 	direct := directFirecrawlConfig(env)
-	managed := func() (*firecrawlConfig, error) {
-		gw, err := ResolveManagedToolGateway(env, "firecrawl", nil, readNousAccessToken)
-		if err != nil || gw == nil {
-			return nil, err
-		}
-		return &firecrawlConfig{mode: "sdk", apiURL: gw.GatewayOrigin, apiKey: gw.NousUserToken, key: "tool-gateway|" + gw.GatewayOrigin + "|" + gw.NousUserToken}, nil
-	}
 	var resolved *firecrawlConfig
 	var logMsg string
 	var message func() string
-	var err error
 	switch {
-	case selected == NousManagedProvider:
-		resolved, err = managed()
-		logMsg = "the Nous Subscription web selection is stored but the tool gateway is unavailable."
-		message = func() string {
-			return SelectionError("web", NousManagedProvider, "the Nous Tool Gateway is not available (not entitled or unreachable)")
-		}
 	case selected != "" || isExplicitFirecrawlSelection(env):
 		resolved = direct
 		logMsg = "direct Firecrawl selected but FIRECRAWL_API_KEY/FIRECRAWL_API_URL is not set."
@@ -276,12 +222,8 @@ func firecrawlClientFor(env *Env, capability string) (*firecrawlClient, error) {
 	case direct != nil:
 		resolved = direct
 	default:
-		resolved, err = managed()
-		logMsg = "missing direct config and tool-gateway auth."
-		message = func() string { return firecrawlUnconfiguredMessage(env) }
-	}
-	if err != nil {
-		return nil, err
+		logMsg = "neither FIRECRAWL_API_KEY nor FIRECRAWL_API_URL is set."
+		message = func() string { return firecrawlUnconfiguredMessage }
 	}
 	if resolved == nil {
 		envLog(env).Error("Firecrawl client initialization failed", "reason", logMsg)
@@ -396,8 +338,8 @@ func (p *firecrawlProvider) Search(ctx context.Context, env *Env, query string, 
 	if IsInterrupted(ctx) {
 		return searchFail("Interrupted"), nil
 	}
-	if firecrawlUseKeylessRing(env, "search") {
-		envLog(env).With("logger", "plugins.web.firecrawl.provider").Info(fmt.Sprintf("Firecrawl keyless search: '%s' (limit=%d)", query, limit))
+	if firecrawlUseKeylessRing(env) {
+		envLog(env).Info(fmt.Sprintf("Firecrawl keyless search: '%s' (limit=%d)", query, limit))
 		return keylessSearchWithFailover(ctx, env, "firecrawl", query, limit)
 	}
 	envLog(env).Info("Firecrawl search", "query", query, "limit", limit)
@@ -420,7 +362,7 @@ func (p *firecrawlProvider) Extract(ctx context.Context, env *Env, urls []string
 	if IsInterrupted(ctx) {
 		return extractInterrupted(urls), nil
 	}
-	if firecrawlUseKeylessRing(env, "extract") {
+	if firecrawlUseKeylessRing(env) {
 		envLog(env).Info("Firecrawl keyless extract", "urls", len(urls))
 		return keylessExtractWithFailover(ctx, env, "firecrawl", urls)
 	}
@@ -441,8 +383,8 @@ func (p *firecrawlProvider) Extract(ctx context.Context, env *Env, urls []string
 
 // SetupSchema is the icebath tools picker entry
 func (p *firecrawlProvider) SetupSchema() map[string]any {
-	return setupSchema("Firecrawl", "keyless/paid · optional gateway",
-		"Full search + extract; supports keyless cloud, direct API, and Nous tool-gateway routing.",
+	return setupSchema("Firecrawl", "keyless/paid · optional self-hosted",
+		"Full search + extract; supports keyless cloud, direct API, and self-hosted Firecrawl.",
 		"FIRECRAWL_API_KEY", "Firecrawl API key (optional; blank = keyless cloud or self-hosted)", "https://docs.firecrawl.dev/introduction", nil)
 }
 

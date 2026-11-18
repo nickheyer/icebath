@@ -227,7 +227,7 @@ func fastCatalogIDs(names ...string) PricingTable {
 func TestCatalogMatchPrefersRollingAliasOverPinnedID(t *testing.T) {
 	ctx := contextWithTempHome(t)
 	fakeFastCatalog(t, fastCatalogIDs("z-ai/glm-5.2", "openai/gpt-5.4-mini", "~openai/gpt-mini-latest", "stepfun/step-3.7-flash:free"))
-	if got := auxFastModelFromCatalog(ctx, "nous"); got != "~openai/gpt-mini-latest" {
+	if got := auxFastModelFromCatalog(ctx, "openrouter"); got != "~openai/gpt-mini-latest" {
 		t.Fatalf("got %q", got)
 	}
 }
@@ -235,7 +235,7 @@ func TestCatalogMatchPrefersRollingAliasOverPinnedID(t *testing.T) {
 func TestCatalogMatchSkipsReasoningBatchAndEmbeddingLookalikes(t *testing.T) {
 	ctx := contextWithTempHome(t)
 	fakeFastCatalog(t, fastCatalogIDs("openai/o3-mini", "openai/gpt-5.4-mini:batch", "sentence-transformers/all-minilm-l6-v2", "google/gemini-3.6-flash"))
-	if got := auxFastModelFromCatalog(ctx, "nous"); got != "google/gemini-3.6-flash" {
+	if got := auxFastModelFromCatalog(ctx, "openrouter"); got != "google/gemini-3.6-flash" {
 		t.Fatalf("got %q", got)
 	}
 }
@@ -243,7 +243,7 @@ func TestCatalogMatchSkipsReasoningBatchAndEmbeddingLookalikes(t *testing.T) {
 func TestCatalogMatchSkipsTheNonChatSiblingsOfAChatModel(t *testing.T) {
 	ctx := contextWithTempHome(t)
 	fakeFastCatalog(t, fastCatalogIDs("openai/gpt-4o-mini-tts", "openai/gpt-4o-mini-transcribe", "openai/gpt-4o-mini-search-preview", "openai/gpt-4o-mini"))
-	if got := auxFastModelFromCatalog(ctx, "nous"); got != "openai/gpt-4o-mini" {
+	if got := auxFastModelFromCatalog(ctx, "openrouter"); got != "openai/gpt-4o-mini" {
 		t.Fatalf("got %q", got)
 	}
 }
@@ -251,7 +251,7 @@ func TestCatalogMatchSkipsTheNonChatSiblingsOfAChatModel(t *testing.T) {
 func TestCatalogMatchTakesTheNewestOfAFamily(t *testing.T) {
 	ctx := contextWithTempHome(t)
 	fakeFastCatalog(t, fastCatalogIDs("openai/gpt-3.5-mini", "openai/gpt-9-mini", "openai/gpt-10-mini"))
-	if got := auxFastModelFromCatalog(ctx, "nous"); got != "openai/gpt-10-mini" {
+	if got := auxFastModelFromCatalog(ctx, "openrouter"); got != "openai/gpt-10-mini" {
 		t.Fatalf("got %q", got)
 	}
 }
@@ -286,7 +286,7 @@ func TestFastTierIsOptIn(t *testing.T) {
 	called := false
 	auxFastModelFromCatalogFn = func(context.Context, string) string { called = true; return "" }
 	t.Cleanup(func() { auxFastModelFromCatalogFn = old })
-	auxGetAuxModelForProvider(ctx, "nous")
+	auxGetAuxModelForProvider(ctx, "openrouter")
 	if called {
 		t.Fatal("the live catalog was read without prefer_fast")
 	}
@@ -381,7 +381,7 @@ func TestActualAliasesAndProfileMetadata(t *testing.T) {
 	if got := auxNormalizeAuxProvider(ctx, "aci"); got != "actual" {
 		t.Fatalf("aux %q", got)
 	}
-	if got := determineModeCtx(ctx, "actual", "https://api.actual.inc", "", ""); got != ModeChatCompletions {
+	if got := determineModeCtx(ctx, "actual", "https://api.actual.inc", ""); got != ModeChatCompletions {
 		t.Fatalf("api mode %q", got)
 	}
 }
@@ -455,8 +455,8 @@ func TestExportedFixedTemperatureAndPortalWire(t *testing.T) {
 	}
 	t.Setenv("ICEBATH_HOME", t.TempDir())
 	ctx := context.Background()
-	if NousAPIMode(ctx, "anthropic/claude") != "chat_completions" || ParseConfigAPIMode(ctx, "responses") != "codex_responses" || GetNamedCustomProvider(ctx, "nope") != nil {
-		t.Fatal("portal wire, api mode or named provider")
+	if ParseConfigAPIMode(ctx, "responses") != "codex_responses" || GetNamedCustomProvider(ctx, "nope") != nil {
+		t.Fatal("api mode or named provider")
 	}
 	if CarrierRecord(ctx, map[string]any{}) != nil {
 		t.Fatal("empty carrier record")

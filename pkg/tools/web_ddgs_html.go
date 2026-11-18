@@ -902,7 +902,7 @@ func (t *lxmlTree) xpathText(ctx *html.Node, expr string) (string, error) {
 	var b strings.Builder
 	for _, n := range set {
 		if n.attr < 0 && n.n.Type == html.ElementNode {
-			return "", fmt.Errorf("TypeError: sequence item 0: expected str instance, lxml.html.HtmlElement found")
+			return "", fmt.Errorf("the search page path %s selects an element, expected text", expr)
 		}
 		b.WriteString(n.str())
 	}

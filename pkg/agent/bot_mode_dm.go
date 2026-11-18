@@ -71,7 +71,7 @@ func messageAgentToolSchema() map[string]any {
 func messageAgentAuthorized(a *AIAgent) (ok bool) {
 	defer func() {
 		if rec := recover(); rec != nil {
-			turnContextLog().Debug("message_agent_authorized failed", "error", rec)
+			pkgLog().Debug("message_agent_authorized failed", "error", rec)
 			ok = false
 		}
 	}()
@@ -85,7 +85,7 @@ func messageAgentAuthorized(a *AIAgent) (ok bool) {
 func ensureMessageAgentTool(ctx context.Context, a *AIAgent) (ok bool) {
 	defer func() {
 		if rec := recover(); rec != nil {
-			turnContextLog().Debug("ensure_message_agent_tool failed", "error", rec)
+			pkgLog().Debug("ensure_message_agent_tool failed", "error", rec)
 			ok = false
 		}
 	}()

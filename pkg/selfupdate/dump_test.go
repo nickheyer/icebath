@@ -91,7 +91,7 @@ func TestS6SupervisedGatewayWithoutPidIsRunningNotUnknown(t *testing.T) {
 	}
 }
 
-// Swaps the version info and code identity seams the way the hermes tests patch version_info
+// Swaps the version info and code identity seams the way the tests patch version_info
 func dumpSwapVersion(t *testing.T, info updaterecord.VersionInfo) {
 	t.Helper()
 	prevInfo, prevIdentity := dumpVersionInfo, dumpCodeIdentity

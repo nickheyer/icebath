@@ -65,11 +65,7 @@ func TestBuildToolPreview(t *testing.T) {
 func TestLabelsAndVerbs(t *testing.T) {
 	SetFriendlyToolLabels(true)
 	defer SetFriendlyToolLabels(true)
-	label, ok := LabelForToolName(nil, "connectors__github__GITHUB_CREATE_ISSUE", map[string]any{"connector_alias": "work"})
-	if !ok || label.Kind != "connector" || label.App != "GitHub" || label.Action != "create issue (work)" || label.Text() != "GitHub · create issue (work)" {
-		t.Fatalf("connector label %+v", label)
-	}
-	label, _ = LabelForToolName(nil, "mcp_stripe_mcp__list_customers", nil)
+	label, _ := LabelForToolName(nil, "mcp_stripe_mcp__list_customers", nil)
 	if label.Kind != "mcp" || label.App != "Stripe" || label.Action != "list customers" || label.Emoji != MCPEmoji {
 		t.Fatalf("mcp label %+v", label)
 	}

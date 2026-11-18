@@ -189,7 +189,7 @@ func (a *fakePollingApp) Shutdown(context.Context) error {
 	return nil
 }
 
-// Mock application of the hermes tests, a running updater and explicit polling and general requests
+// Mock application of the tests, a running updater and explicit polling and general requests
 func newMockApp() *fakePollingApp {
 	return &fakePollingApp{bot: &fakePollingBot{}, updater: &fakeUpdater{running: true}, polling: &fakeRequest{},
 		general: &fakeRequest{}}
@@ -284,7 +284,7 @@ func (h *fakePollingHost) notifyCount() int {
 	return h.notifies
 }
 
-// Lifecycle over a fake host with zero backoff, like the hermes tests patching asyncio.sleep
+// Lifecycle over a fake host with zero backoff, like the tests patching asyncio.sleep
 func newTestLifecycle(t *testing.T, app pollingApp) (*pollingLifecycle, *fakePollingHost) {
 	t.Helper()
 	host := &fakePollingHost{}

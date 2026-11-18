@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"log/slog"
 	"math/big"
 	"os"
 	"path/filepath"
@@ -112,11 +111,11 @@ func loadDiscoveryCache() *pyjson.Object {
 func saveDiscoveryCache(ctx context.Context, cache *pyjson.Object) {
 	path := discoveryCachePath()
 	if _, err := home.Mkdir(ctx, filepath.Dir(path)); err != nil {
-		slog.Debug(fmt.Sprintf("Could not write tool discovery cache %s: %s", path, err))
+		pkgLog().Debug(fmt.Sprintf("Could not write tool discovery cache %s: %s", path, err))
 		return
 	}
 	if err := config.AtomicJSONWriteWith(ctx, path, cache, pyjson.Indent(0)); err != nil {
-		slog.Debug(fmt.Sprintf("Could not write tool discovery cache %s: %s", path, err))
+		pkgLog().Debug(fmt.Sprintf("Could not write tool discovery cache %s: %s", path, err))
 	}
 }
 
@@ -159,7 +158,7 @@ func discoverToolModules(ctx context.Context, toolsDir string) ([]string, error)
 		parts := strings.Split(filepath.ToSlash(rel), "/")
 		if len(parts) > 1 {
 			if _, err := os.Stat(filepath.Join(filepath.Dir(path), "__init__.py")); err != nil {
-				slog.Warn(fmt.Sprintf("Skipping %s: package %s has no __init__.py", path, filepath.Base(filepath.Dir(path))))
+				pkgLog().Warn(fmt.Sprintf("Skipping %s: package %s has no __init__.py", path, filepath.Base(filepath.Dir(path))))
 				continue
 			}
 		}

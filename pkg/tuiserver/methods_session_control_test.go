@@ -14,7 +14,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/agent"
 	"github.com/nickheyer/icebath/pkg/goals"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/tuigateway"
+	"github.com/nickheyer/icebath/pkg/tuihost"
 )
 
 // Transport recording every frame written to it
@@ -45,15 +45,15 @@ func controlSession(t *testing.T) (string, string) {
 	goals.ClearSessionDBCache()
 	sid := fmt.Sprintf("sid-control-%d", time.Now().UnixNano())
 	key := fmt.Sprintf("control-%d", time.Now().UnixNano())
-	session := tuigateway.NewSession(map[string]any{"session_key": key, "history": []any{}, "history_version": 0,
+	session := tuihost.NewSession(map[string]any{"session_key": key, "history": []any{}, "history_version": 0,
 		"running": false, "attached_images": []any{}, "cols": 120, "agent": nil, "created_at": float64(time.Now().Unix())})
-	tuigateway.SetSessionRecord(sid, session)
+	tuihost.SetSessionRecord(sid, session)
 	t.Cleanup(func() {
 		ctx := context.Background()
 		goals.NewGoalManager(ctx, key, 0).Clear()
 		agent.NewLoopManager(ctx, key).Clear(ctx)
 		agent.NewHeartbeatManager(ctx, key).Clear()
-		tuigateway.SetSessionRecord(sid, nil)
+		tuihost.SetSessionRecord(sid, nil)
 		goals.ClearSessionDBCache()
 	})
 	return sid, key
@@ -75,15 +75,6 @@ func readControl(t *testing.T, sid string) map[string]any {
 	return control
 }
 
-func errorCode(t *testing.T, resp map[string]any) any {
-	t.Helper()
-	errObj, isMap := resp["error"].(map[string]any)
-	if !isMap {
-		t.Fatalf("no error in %v", resp)
-	}
-	return errObj["code"]
-}
-
 // Replaces a registered method for the test
 func swapMethod(t *testing.T, name string, fn Handler) {
 	t.Helper()
@@ -99,14 +90,6 @@ func swapMethod(t *testing.T, name string, fn Handler) {
 		} else {
 			delete(methods, name)
 		}
-	})
-}
-
-// Fails the test when a manager only action reaches command.dispatch
-func forbidDispatch(t *testing.T) {
-	swapMethod(t, "command.dispatch", func(context.Context, any, map[string]any) map[string]any {
-		t.Error("manager-only action must not call command.dispatch")
-		return map[string]any{}
 	})
 }
 
@@ -226,157 +209,6 @@ func TestRevisionIsStableThenChangesForEachVisibleControl(t *testing.T) {
 	}
 }
 
-// test_session_control.py TestManagerOnlyMutations test_subgoal_add_remove_clear_are_real_one_based_mutations_without_dispatch
-func TestSubgoalAddRemoveClearAreRealOneBasedMutationsWithoutDispatch(t *testing.T) {
-	sid, key := controlSession(t)
-	ctx := context.Background()
-	saveGoal(key, func(st *goals.GoalState) { st.Subgoals = []string{"First criterion"} })
-	forbidDispatch(t)
-	added := controlCall(ctx, "session.control", map[string]any{"session_id": sid, "action": "subgoal.add", "args": map[string]any{"text": "Second criterion"}})
-	if _, failed := added["error"]; failed {
-		t.Fatalf("add %v", added)
-	}
-	if got := goals.LoadGoal(ctx, key).Subgoals; !reflect.DeepEqual(got, []string{"First criterion", "Second criterion"}) {
-		t.Fatalf("subgoals %v", got)
-	}
-	removed := controlCall(ctx, "session.control", map[string]any{"session_id": sid, "action": "subgoal.remove", "args": map[string]any{"index": int64(1)}})
-	if _, failed := removed["error"]; failed {
-		t.Fatalf("remove %v", removed)
-	}
-	if got := goals.LoadGoal(ctx, key).Subgoals; !reflect.DeepEqual(got, []string{"Second criterion"}) {
-		t.Fatalf("subgoals %v", got)
-	}
-	cleared := controlCall(ctx, "session.control", map[string]any{"session_id": sid, "action": "subgoal.clear"})
-	if _, failed := cleared["error"]; failed {
-		t.Fatalf("clear %v", cleared)
-	}
-	if got := goals.LoadGoal(ctx, key).Subgoals; len(got) != 0 {
-		t.Fatalf("subgoals %v", got)
-	}
-}
-
-// test_session_control.py TestManagerOnlyMutations test_subgoal_requires_a_goal_and_valid_arguments_without_dispatch
-func TestSubgoalRequiresAGoalAndValidArgumentsWithoutDispatch(t *testing.T) {
-	sid, key := controlSession(t)
-	ctx := context.Background()
-	forbidDispatch(t)
-	resp := controlCall(ctx, "session.control", map[string]any{"session_id": sid, "action": "subgoal.add", "args": map[string]any{"text": "criterion"}})
-	if code := errorCode(t, resp); code != 4004 {
-		t.Fatalf("no goal code %v", code)
-	}
-	saveGoal(key, func(st *goals.GoalState) { st.Subgoals = []string{"Only criterion"} })
-	for _, args := range []map[string]any{{"text": "   "}, {"index": "1"}, {"index": 1.5}, {"index": true}, {"index": int64(0)}, {"index": int64(2)}} {
-		action := "subgoal.remove"
-		if _, hasText := args["text"]; hasText {
-			action = "subgoal.add"
-		}
-		resp := controlCall(ctx, "session.control", map[string]any{"session_id": sid, "action": action, "args": args})
-		if code := errorCode(t, resp); code != 4004 {
-			t.Fatalf("args %v code %v", args, code)
-		}
-	}
-}
-
-// test_session_control.py TestManagerOnlyMutations test_heartbeat_pause_resume_clear_and_no_heartbeat_messages_do_not_dispatch
-func TestHeartbeatPauseResumeClearAndNoHeartbeatMessagesDoNotDispatch(t *testing.T) {
-	sid, key := controlSession(t)
-	ctx := context.Background()
-	forbidDispatch(t)
-	for _, action := range []string{"heartbeat.pause", "heartbeat.resume", "heartbeat.clear"} {
-		empty := controlCall(ctx, "session.control", map[string]any{"session_id": sid, "action": action})
-		result, _ := empty["result"].(map[string]any)
-		control, _ := result["control"].(map[string]any)
-		if _, failed := empty["error"]; failed || control["heartbeat"] != nil {
-			t.Fatalf("%s on no heartbeat %v", action, empty)
-		}
-	}
-	saveHeartbeat(key, func(st *agent.HeartbeatState) { st.Status, st.LastFiredAt = "active", 1.0 })
-	heartbeatOf := func(resp map[string]any) map[string]any {
-		result, _ := resp["result"].(map[string]any)
-		control, _ := result["control"].(map[string]any)
-		hb, _ := control["heartbeat"].(map[string]any)
-		return hb
-	}
-	paused := controlCall(ctx, "session.control", map[string]any{"session_id": sid, "action": "heartbeat.pause"})
-	if hb := heartbeatOf(paused); hb["status"] != "paused" {
-		t.Fatalf("paused %v", paused)
-	}
-	resumed := controlCall(ctx, "session.control", map[string]any{"session_id": sid, "action": "heartbeat.resume"})
-	if fired, _ := heartbeatOf(resumed)["last_fired_at"].(float64); fired <= 1.0 {
-		t.Fatalf("resumed %v", resumed)
-	}
-	cleared := controlCall(ctx, "session.control", map[string]any{"session_id": sid, "action": "heartbeat.clear"})
-	result, _ := cleared["result"].(map[string]any)
-	control, _ := result["control"].(map[string]any)
-	if control["heartbeat"] != nil {
-		t.Fatalf("cleared %v", cleared)
-	}
-}
-
-// test_session_control.py TestErrorsAndEvents test_invalid_actions_and_malformed_args_return_4004_without_dispatch
-func TestInvalidActionsAndMalformedArgsReturn4004WithoutDispatch(t *testing.T) {
-	cases := []struct {
-		action string
-		args   any
-	}{{"", map[string]any{}}, {"not.allowed", map[string]any{}}, {"goal.gate.add", map[string]any{"command": "echo should-not-run"}},
-		{"subgoal.add", []any{}}}
-	for _, c := range cases {
-		t.Run(c.action, func(t *testing.T) {
-			sid, _ := controlSession(t)
-			forbidDispatch(t)
-			resp := controlCall(context.Background(), "session.control", map[string]any{"session_id": sid, "action": c.action, "args": c.args})
-			if code := errorCode(t, resp); code != 4004 {
-				t.Fatalf("code %v", code)
-			}
-		})
-	}
-}
-
-// test_session_control.py TestErrorsAndEvents test_unknown_session_returns_4001
-func TestUnknownSessionReturns4001(t *testing.T) {
-	t.Setenv("ICEBATH_HOME", t.TempDir())
-	ctx := context.Background()
-	if code := errorCode(t, controlCall(ctx, "session.control", map[string]any{"session_id": "gone", "action": "goal.pause"})); code != 4001 {
-		t.Fatalf("control code %v", code)
-	}
-	if code := errorCode(t, controlCall(ctx, "session.control.read", map[string]any{"session_id": "gone"})); code != 4001 {
-		t.Fatalf("read code %v", code)
-	}
-}
-
-// test_session_control.py TestErrorsAndEvents test_dispatch_error_emits_no_update
-func TestDispatchErrorEmitsNoUpdate(t *testing.T) {
-	sid, key := controlSession(t)
-	saveGoal(key, nil)
-	recorder := &frameRecorder{}
-	ctx := tuigateway.BindTransport(context.Background(), recorder)
-	swapMethod(t, "command.dispatch", func(_ context.Context, rid any, _ map[string]any) map[string]any {
-		return rpcErr(rid, 4018, "dispatch failed", nil)
-	})
-	resp := controlCall(ctx, "session.control", map[string]any{"session_id": sid, "action": "goal.pause"})
-	if code := errorCode(t, resp); code != 4018 {
-		t.Fatalf("code %v", code)
-	}
-	if n := recorder.count(); n != 0 {
-		t.Fatalf("%d frames emitted", n)
-	}
-}
-
-// test_session_control.py TestErrorsAndEvents test_adapter_error_becomes_4004_and_emits_no_update
-func TestAdapterErrorBecomes4004AndEmitsNoUpdate(t *testing.T) {
-	sid, key := controlSession(t)
-	saveGoal(key, func(st *goals.GoalState) { st.Status = "cleared" })
-	recorder := &frameRecorder{}
-	ctx := tuigateway.BindTransport(context.Background(), recorder)
-	resp := controlCall(ctx, "session.control", map[string]any{"session_id": sid, "action": "subgoal.add", "args": map[string]any{"text": "criterion"}})
-	if code := errorCode(t, resp); code != 4004 {
-		t.Fatalf("code %v", code)
-	}
-	if n := recorder.count(); n != 0 {
-		t.Fatalf("%d frames emitted", n)
-	}
-}
-
 // Transport stalling every frame of one session until released, recording the session of each frame written
 type stallingTransport struct {
 	stallSID string
@@ -413,14 +245,14 @@ func (s *stallingTransport) Close() {}
 func TestAStalledClientWriteNeverDelaysAnotherSessionsPublish(t *testing.T) {
 	sid, key := controlSession(t)
 	saveGoal(key, nil)
-	entry := tuigateway.SessionRecord(sid)
+	entry := tuihost.SessionRecord(sid)
 	otherSID, otherKey := fmt.Sprintf("sid-control-other-%d", time.Now().UnixNano()), fmt.Sprintf("control-other-%d", time.Now().UnixNano())
-	other := tuigateway.NewSession(map[string]any{"session_key": otherKey, "history": []any{}, "history_version": 0,
+	other := tuihost.NewSession(map[string]any{"session_key": otherKey, "history": []any{}, "history_version": 0,
 		"running": false, "attached_images": []any{}, "cols": 120, "agent": nil})
-	tuigateway.SetSessionRecord(otherSID, other)
+	tuihost.SetSessionRecord(otherSID, other)
 	saveGoal(otherKey, nil)
 	transport := &stallingTransport{stallSID: sid, stalled: make(chan struct{}), release: make(chan struct{})}
-	ctx := tuigateway.BindTransport(context.Background(), transport)
+	ctx := tuihost.BindTransport(context.Background(), transport)
 	slowDone := make(chan struct{})
 	go func() {
 		defer close(slowDone)
@@ -429,7 +261,7 @@ func TestAStalledClientWriteNeverDelaysAnotherSessionsPublish(t *testing.T) {
 	defer func() {
 		close(transport.release)
 		<-slowDone
-		tuigateway.SetSessionRecord(otherSID, nil)
+		tuihost.SetSessionRecord(otherSID, nil)
 		goals.NewGoalManager(context.Background(), otherKey, 0).Clear()
 	}()
 	select {

@@ -23,8 +23,15 @@ import (
 )
 
 const (
-	ArchiveFormat        = "hermes-kanban-board"
+	ArchiveFormat        = "icebath-kanban-board"
 	ArchiveFormatVersion = 1
+	archiveVersionKey    = "icebath_version"
+)
+
+// Format name and version key of the archives older builds exported, still imported
+const (
+	retiredArchiveFormat     = "hermes-kanban-board"
+	retiredArchiveVersionKey = "hermes_version"
 )
 
 var (
@@ -239,7 +246,7 @@ func ExportBoard(ctx context.Context, board *string, outputPath string, includeA
 	allCounts.Set("log_files", logs)
 	manifest := pyjson.ObjectOf(
 		"format", ArchiveFormat, "format_version", ArchiveFormatVersion, "board", slug, "board_name", boardName,
-		"exported_at", time.Now().Unix(), "hermes_version", info.BaseVersion,
+		"exported_at", time.Now().Unix(), archiveVersionKey, info.BaseVersion,
 		"includes", pyjson.ObjectOf("attachments", includeAttachments, "logs", includeLogs),
 		"counts", allCounts,
 	)
@@ -299,7 +306,7 @@ func readManifest(root string) (*pyjson.Object, error) {
 	if ok {
 		format, _ = manifest.Get("format")
 	}
-	if !ok || format != ArchiveFormat {
+	if !ok || (format != ArchiveFormat && format != retiredArchiveFormat) {
 		var shown any
 		if ok {
 			shown = format
@@ -547,11 +554,14 @@ func ImportBoard(ctx context.Context, archivePath string, slug *string, activate
 	}
 	srcBoard, _ := manifest.Get("board")
 	exportedAt, _ := manifest.Get("exported_at")
-	version, _ := manifest.Get("hermes_version")
+	version, has := manifest.Get(archiveVersionKey)
+	if !has {
+		version, _ = manifest.Get(retiredArchiveVersionKey)
+	}
 	return pyjson.ObjectOf(
 		"board", target, "requested_board", requested, "renamed", target != requested, "name", name,
 		"path", boardRoot, "db_path", dbPath,
-		"source", pyjson.ObjectOf("board", srcBoard, "exported_at", exportedAt, "hermes_version", version),
+		"source", pyjson.ObjectOf("board", srcBoard, "exported_at", exportedAt, archiveVersionKey, version),
 		"counts", counts, "attachments_restored", rehomed, "tasks_parked", parked,
 		"warnings", stringsAny(warnings), "activated", activate,
 	), nil

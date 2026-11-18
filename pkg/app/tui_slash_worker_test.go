@@ -8,7 +8,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/tools"
 )
 
-func TestSlashWorkerChildForwardsProviderToHermesCli(t *testing.T) {
+func TestSlashWorkerChildForwardsProviderToIcebathCli(t *testing.T) {
 	t.Setenv("ICEBATH_HOME", t.TempDir())
 	t.Setenv("ICEBATH_SESSION_KEY", "")
 	t.Setenv("ICEBATH_INTERACTIVE", "")

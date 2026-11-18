@@ -77,7 +77,7 @@ func (p *OwnAccessPolicyMixin) PurgeAllowlistSnapshots(keep func(entry string) b
 // Policy of a host, refused like a class with no platform prefix is at creation
 func NewOwnAccessPolicyMixin(host, prefix string) (*OwnAccessPolicyMixin, error) {
 	if pystr.Strip(prefix) == "" {
-		return nil, fmt.Errorf("TypeError: %s mixes in OwnAccessPolicyMixin but sets no ALLOW_ALL_ENV_PREFIX", host)
+		return nil, fmt.Errorf("platform %s has its own access policy but no environment variable prefix for allowing all users", host)
 	}
 	return &OwnAccessPolicyMixin{AllowAllEnvPrefix: prefix, AllowFrom: map[string]bool{}, GroupAllowFrom: map[string]bool{}}, nil
 }

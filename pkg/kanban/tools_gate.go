@@ -214,7 +214,7 @@ func kanbanHandler(toolName string, fn func(k *kanbanCall) (string, error)) tool
 				return rejected.payload
 			}
 			if !isValueError(err) {
-				kanbanToolsLog.Error(toolName+" failed", "exc_info", excText(err))
+				pkgLog().Error(toolName+" failed", "exc_info", excText(err))
 			}
 			return kanbanToolError(fmt.Sprintf("%s: %s", toolName, excText(err)))
 		}

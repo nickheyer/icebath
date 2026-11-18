@@ -175,7 +175,7 @@ func TestExhaustedCopyNamesResetWindowAndLifetimeCap(t *testing.T) {
 		t.Fatalf("plain: %q", got)
 	}
 	reset := 30960.0
-	if got := ExhaustedCopy("rate_limit", "Nous Portal", 2, "s", &reset, nil); !strings.Contains(got, "its usage limit resets in ~9h. Send /retry after that") {
+	if got := ExhaustedCopy("rate_limit", "OpenRouter", 2, "s", &reset, nil); !strings.Contains(got, "its usage limit resets in ~9h. Send /retry after that") {
 		t.Fatalf("reset: %q", got)
 	}
 	short := 90.0
@@ -225,8 +225,8 @@ func TestNonretryableCopyPicksTemplateByVerdict(t *testing.T) {
 	if !strings.Contains(got, "rejected your API key") {
 		t.Fatalf("api key auth: %q", got)
 	}
-	got, _ = NonretryableCopy(ctx, &provider.Classified{Reason: provider.ReasonAuthPermanent}, "nous", nil, "401", "")
-	if !strings.Contains(got, "Sign in again: `icebath portal`.") {
+	got, _ = NonretryableCopy(ctx, &provider.Classified{Reason: provider.ReasonAuthPermanent}, "xai-oauth", nil, "401", "")
+	if !strings.Contains(got, "Sign in again: `icebath auth add xai-oauth --type oauth`.") {
 		t.Fatalf("oauth auth: %q", got)
 	}
 	got, _ = NonretryableCopy(ctx, &provider.Classified{Reason: provider.ReasonUnknown}, "openrouter", nil, "400", "")

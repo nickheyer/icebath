@@ -13,7 +13,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
-	"github.com/nickheyer/icebath/pkg/observability"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
@@ -99,7 +98,6 @@ func runOneJob(ctx context.Context, s *Store, job *Job, o runOneJobOptions) (boo
 		job.ExecutionID = strPtr(pyStrOrEmpty(execution["id"]))
 	}
 	executionID := *job.ExecutionID
-	observability.NoteCronExecution(job)
 	if os.Getenv(externalWorkerEnv) != executionID {
 		handedOff, handoffErr := launchExternalCronWorkerSeam(s, ctx, job)
 		if handoffErr != nil {
@@ -119,7 +117,7 @@ func runOneJob(ctx context.Context, s *Store, job *Job, o runOneJobOptions) (boo
 					return true, nil
 				}
 			}
-			s.logAs("cron.scheduler").Error(fmt.Sprintf("Job '%s': %s", job.ID, errText))
+			s.log.Error(fmt.Sprintf("Job '%s': %s", job.ID, errText))
 			owner := ""
 			if job.FireClaim != nil {
 				owner = job.FireClaim.By
@@ -324,7 +322,7 @@ func (f *fireOwnership) sampleLost(ctx context.Context) bool {
 	latched := f.claimLost != nil && f.claimLost.IsSet()
 	owns, err := f.s.heartbeatFireClaim(ctx, f.job.ID, *f.owner)
 	if err != nil {
-		f.s.logAs("cron.scheduler").Debug(fmt.Sprintf("Job '%s': fire_claim ownership validation failed", f.job.ID), "error", err)
+		f.s.log.Debug(fmt.Sprintf("Job '%s': fire_claim ownership validation failed", f.job.ID), "error", err)
 		return latched
 	}
 	if owns {
@@ -378,7 +376,7 @@ func (s *Store) saveComposeDeliver(ctx context.Context, d *runDelivery, fence *f
 		return err
 	}
 	if o.Verbose && outputFile != nil {
-		s.logAs("cron.scheduler").Info(fmt.Sprintf("Output saved to: %s", *outputFile))
+		s.log.Info(fmt.Sprintf("Output saved to: %s", *outputFile))
 	}
 	if d.success && s.isInterrupted(job.ID, token) {
 		d.success = false
@@ -394,16 +392,16 @@ func (s *Store) saveComposeDeliver(ctx context.Context, d *runDelivery, fence *f
 		}
 		if willRetry {
 			d.shouldDeliver = false
-			s.logAs("cron.scheduler").Info(fmt.Sprintf("Job '%s': suppressing failure notice — automatic re-run pending", job.ID))
+			s.log.Info(fmt.Sprintf("Job '%s': suppressing failure notice — automatic re-run pending", job.ID))
 		}
 	}
 	if d.shouldDeliver && d.success && isCronSilenceResponse(composed.content) {
-		s.logAs("cron.scheduler").Info(fmt.Sprintf("Job '%s': agent returned %s — skipping delivery", job.ID, SilentMarker))
+		s.log.Info(fmt.Sprintf("Job '%s': agent returned %s — skipping delivery", job.ID, SilentMarker))
 		d.shouldDeliver = false
 	}
 	if d.shouldDeliver && fence.lost(ctx) {
 		d.shouldDeliver = false
-		s.logAs("cron.scheduler").Warn(fmt.Sprintf("Job '%s': skipping delivery after fire claim ownership loss", job.ID))
+		s.log.Warn(fmt.Sprintf("Job '%s': skipping delivery after fire claim ownership loss", job.ID))
 	}
 	if !d.shouldDeliver {
 		return nil
@@ -458,7 +456,7 @@ func (s *Store) saveComposeDeliver(ctx context.Context, d *runDelivery, fence *f
 			return err
 		}
 		d.deliveryError = strPtr(err.Error())
-		s.logAs("cron.scheduler").Error(fmt.Sprintf("Delivery failed for job %s: %v", job.ID, err))
+		s.log.Error(fmt.Sprintf("Delivery failed for job %s: %v", job.ID, err))
 	}
 	return nil
 }
@@ -477,12 +475,12 @@ func (s *Store) deliverCrashFailure(ctx context.Context, job *Job, errText strin
 		defer func() {
 			if r := recover(); r != nil {
 				out = strPtr(fmt.Sprint(r))
-				s.logAs("cron.scheduler").Error(fmt.Sprintf("Delivery failed for job %s: %v", job.ID, r))
+				s.log.Error(fmt.Sprintf("Delivery failed for job %s: %v", job.ID, r))
 			}
 		}()
 		errOut, err := s.deliverResult(ctx, job, s.summarizeCronFailureForDelivery(job, &errText)+s.failureStreakNudge(job), adapters, loop, true)
 		if err != nil {
-			s.logAs("cron.scheduler").Error(fmt.Sprintf("Delivery failed for job %s: %v", job.ID, err))
+			s.log.Error(fmt.Sprintf("Delivery failed for job %s: %v", job.ID, err))
 			return strPtr(err.Error())
 		}
 		return errOut
@@ -565,19 +563,19 @@ func (s *Store) runOneJobBody(ctx context.Context, job *Job, o runOneJobOptions,
 		var unknown *CronExecutionUnknown
 		if errors.As(cause, &unknown) {
 			if perr := s.pauseForUnknown(home.WithOverride(ctx, s.home), job.ID, executionID, cause.Error()); perr != nil {
-				s.logAs("cron.scheduler").Error(fmt.Sprintf("Cron %s pause for unknown admission failed: %v", job.ID, perr))
+				s.log.Error(fmt.Sprintf("Cron %s pause for unknown admission failed: %v", job.ID, perr))
 			}
 			if _, gerr := ledger.GiveUp(ctx, executionID, cause.Error()); gerr != nil {
-				s.logAs("cron.scheduler").Error(fmt.Sprintf("Cron %s give up failed: %v", job.ID, gerr))
+				s.log.Error(fmt.Sprintf("Cron %s give up failed: %v", job.ID, gerr))
 			}
-			s.logAs("cron.scheduler").Error(fmt.Sprintf("Cron %s paused with unverified admission: %s", job.ID, cause.Error()))
+			s.log.Error(fmt.Sprintf("Cron %s paused with unverified admission: %s", job.ID, cause.Error()))
 			return false, nil
 		}
 		errText := cause.Error()
 		if errText == "" {
 			errText = cronExceptionName(cause)
 		}
-		s.logAs("cron.scheduler").Error(fmt.Sprintf("Error processing job %s: %s", job.ID, errText))
+		s.log.Error(fmt.Sprintf("Error processing job %s: %s", job.ID, errText))
 		outcome := "suppressed"
 		if contained && !deliveryAttempted && !errors.Is(cause, errFireClaimLostDuringSideEffect) && !fence.lost(ctx) {
 			deliveryError, outcome = deliverCrashFailureSeam(s, ctx, job, errText, o.Adapters, o.Loop)
@@ -589,12 +587,12 @@ func (s *Store) runOneJobBody(ctx context.Context, job *Job, o runOneJobOptions,
 					mark.DeliveryError = deliveryError
 				}
 				if _, merr := markJobRunSeam(s, ctx, job.ID, false, mark); merr != nil {
-					s.logAs("cron.scheduler").Error(fmt.Sprintf("Failed to record interrupted run for job %s: %v", job.ID, merr))
+					s.log.Error(fmt.Sprintf("Failed to record interrupted run for job %s: %v", job.ID, merr))
 				}
 			}
 		}
 		if _, ferr := ledger.Finish(ctx, executionID, false, &errText, &outcome, false); ferr != nil {
-			s.logAs("cron.scheduler").Error(fmt.Sprintf("Failed to finish execution record for job %s: %v", job.ID, ferr))
+			s.log.Error(fmt.Sprintf("Failed to finish execution record for job %s: %v", job.ID, ferr))
 		}
 		return false, nil
 	}
@@ -616,7 +614,7 @@ func (s *Store) runOneJobBody(ctx context.Context, job *Job, o runOneJobOptions,
 			if name == "" {
 				name = job.ID
 			}
-			s.logAs("cron.scheduler").Info(fmt.Sprintf("Job '%s': one-shot dispatch limit reached — skipping", name))
+			s.log.Info(fmt.Sprintf("Job '%s': one-shot dispatch limit reached — skipping", name))
 			_, err := ledger.Finish(ctx, executionID, false, strPtr("Dispatch claim rejected; execution was not started."), nil, false)
 			return true, err
 		}
@@ -625,7 +623,7 @@ func (s *Store) runOneJobBody(ctx context.Context, job *Job, o runOneJobOptions,
 			return false, err
 		}
 		if !owned {
-			s.logAs("cron.scheduler").Warn(fmt.Sprintf("Cron job %s lost execution ownership before start; skipping", job.ID))
+			s.log.Warn(fmt.Sprintf("Cron job %s lost execution ownership before start; skipping", job.ID))
 			return true, nil
 		}
 		runCtx = tools.WithProfileTerminalScope(runCtx, s.home, nil)
@@ -670,10 +668,10 @@ func (s *Store) runOneJobBody(ctx context.Context, job *Job, o runOneJobOptions,
 		if fence.lost(runCtx) {
 			transportCancelled := fence.transportCancelled()
 			if d.deliveryAttempted && d.deliveryError == nil && !transportCancelled {
-				s.logAs("cron.scheduler").Warn(fmt.Sprintf("Job '%s': fire claim ownership lost after completed delivery; recording the delivered run's terminal status", job.ID))
+				s.log.Warn(fmt.Sprintf("Job '%s': fire claim ownership lost after completed delivery; recording the delivered run's terminal status", job.ID))
 			} else {
 				if transportCancelled {
-					s.logAs("cron.scheduler").Warn(fmt.Sprintf("Job '%s': transport cancellation arrived before terminal completion; recording the interrupted run", job.ID))
+					s.log.Warn(fmt.Sprintf("Job '%s': transport cancellation arrived before terminal completion; recording the interrupted run", job.ID))
 				}
 				return true, s.recordFireOwnershipLost(ctx, job, fireOwner, executionID)
 			}

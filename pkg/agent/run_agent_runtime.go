@@ -48,7 +48,7 @@ func (a *AIAgent) getSessionDBForRecall(ctx context.Context) *state.DB {
 	}
 	db, err := state.Acquire(ctx, "")
 	if err != nil {
-		runAgentLog().Debug("SessionDB unavailable for recall", "err", err)
+		pkgLog().Debug("SessionDB unavailable for recall", "err", err)
 		return nil
 	}
 	a.sessionDB = db
@@ -101,7 +101,7 @@ func (a *AIAgent) ensureLMStudioRuntimeLoaded(ctx context.Context, configContext
 		mode = "explicit"
 	}
 	if strings.ToLower(strings.TrimSpace(mode)) == "jit" {
-		runAgentLog().Debug("LM Studio explicit preload skipped: lmstudio_load_mode=jit")
+		pkgLog().Debug("LM Studio explicit preload skipped: lmstudio_load_mode=jit")
 		return nil
 	}
 	target := a.configContextLength
@@ -420,7 +420,7 @@ func modelRequiresResponsesAPI(model string) bool {
 // True when the provider and model pair should use the Responses API
 func providerModelRequiresResponsesAPI(ctx context.Context, model, providerName string) bool {
 	normalized := strings.ToLower(strings.TrimSpace(providerName))
-	if normalized == "nous" || normalized == "custom" || provider.IsActualRoute(providerName, "") {
+	if normalized == "custom" || provider.IsActualRoute(providerName, "") {
 		return false
 	}
 	if provider.IsExternalProcessProvider(ctx, normalized) {
@@ -571,7 +571,7 @@ func (a *AIAgent) workerRecallDB(ctx context.Context) *state.DB {
 	}
 	db, err := state.NewSessionDB(ctx, filepath.Join(home.Dir(a.homeContext()), "state.db"), true)
 	if err != nil {
-		runAgentLog().Debug("SessionDB unavailable for session_search", "err", err)
+		pkgLog().Debug("SessionDB unavailable for session_search", "err", err)
 		return nil
 	}
 	a.recallDB = db

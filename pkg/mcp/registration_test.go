@@ -5,11 +5,12 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"slices"
 	"sort"
 	"strings"
 	"testing"
+
+	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 
 	"github.com/nickheyer/icebath/pkg/tools"
 )

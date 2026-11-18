@@ -7,7 +7,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"log/slog"
 	"net/http"
 	"net/url"
 	"os"
@@ -89,7 +88,7 @@ func (v *inboundTokenValidator) validate(raw, serviceURL string) (string, error)
 			caller = claims["appid"]
 		}
 		if id, ok := caller.(string); !ok || strings.ToLower(id) != agent365PlatformAppID {
-			slog.Warn(fmt.Sprintf("Entra inbound token caller app is not allowed: %v", caller))
+			pkgLog().Warn(fmt.Sprintf("Entra inbound token caller app is not allowed: %v", caller))
 			return "", errors.New("Entra inbound token caller app is not allowed")
 		}
 	} else if claims, err = v.verify(raw, v.service, []string{botFrameworkIssuer}, serviceURL); err != nil {

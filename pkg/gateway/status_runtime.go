@@ -3,12 +3,12 @@ package gateway
 import (
 	"context"
 	"fmt"
-	"log/slog"
 	"math"
 	"strings"
 	"sync"
 	"time"
 
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/internal/pycopy"
 	"github.com/nickheyer/icebath/pkg/internal/pydatetime"
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
@@ -174,11 +174,11 @@ func (w *RuntimeStatusWriter) run(ctx context.Context) {
 		w.mu.Unlock()
 		switch {
 		case err == nil && logged:
-			slog.Info("Gateway runtime-status persistence recovered")
+			pkgLog().Info("Gateway runtime-status persistence recovered")
 		case err != nil && !logged:
-			slog.Warn(fmt.Sprintf("Failed to persist gateway runtime status; later updates will retry: %v", err))
+			pkgLog().Warn(fmt.Sprintf("Failed to persist gateway runtime status; later updates will retry: %v", err))
 		case err != nil:
-			slog.Debug(fmt.Sprintf("Failed to persist gateway runtime status: %v", err))
+			pkgLog().Debug(fmt.Sprintf("Failed to persist gateway runtime status: %v", err))
 		}
 	}
 }
@@ -219,6 +219,22 @@ func FlushRuntimeStatus(timeout time.Duration) bool {
 	w := runtimeStatusWriter
 	runtimeStatusStateMu.Unlock()
 	return w == nil || w.Flush(timeout)
+}
+
+// Longest a stopping adapter waits for its final runtime status to reach disk
+const adapterStopStatusWait = 2 * time.Second
+
+// Waits boundedly until the snapshot of the generation or a later one settled, at once for generation zero
+func awaitRuntimeStatus(generation int, timeout time.Duration) {
+	if generation <= 0 {
+		return
+	}
+	runtimeStatusStateMu.Lock()
+	w := runtimeStatusWriter
+	runtimeStatusStateMu.Unlock()
+	if w != nil {
+		_, _ = w.Wait(generation, &timeout)
+	}
 }
 
 // Flush that returns early with the context error when the caller stops waiting
@@ -294,10 +310,10 @@ func pyList(v any) ([]any, error) {
 		}
 		return out, nil
 	}
-	return nil, fmt.Errorf("TypeError: '%s' object is not iterable", pyrepr.TypeName(v))
+	return nil, fmt.Errorf("expected a list, got %s", errchain.Kind(v))
 }
 
-// Coerces one explicitly passed field the way the hermes writer does
+// Coerces one explicitly passed field the way the writer does
 func coerceStatusField(key string, v any) (any, error) {
 	switch key {
 	case "restart_requested", "needs_attention":
@@ -332,7 +348,7 @@ func coerceStatusField(key string, v any) (any, error) {
 			}
 		default:
 			if pyrepr.Truthy(v) {
-				return nil, fmt.Errorf("TypeError: cannot convert '%s' object to dict", pyrepr.TypeName(v))
+				return nil, fmt.Errorf("parked_profiles must map each profile to its reason, got %s", errchain.Kind(v))
 			}
 		}
 		return out, nil
@@ -377,7 +393,7 @@ func applySetFields(target *pyjson.Object, passed map[string]any, fields []statu
 func prepareRuntimeStatusUpdateLocked(u RuntimeStatusUpdate, loadExisting, reloadExisting bool) (string, *pyjson.Object, *pyjson.Object, error) {
 	for key := range u.Fields {
 		if !runtimeStatusFieldNames[key] {
-			return "", nil, nil, fmt.Errorf("TypeError: _prepare_runtime_status_update() got an unexpected keyword argument '%s'", key)
+			return "", nil, nil, fmt.Errorf("unknown runtime status field %s", key)
 		}
 	}
 	path := runtimeStatusPath()

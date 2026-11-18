@@ -12,7 +12,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pythread"
 	"github.com/nickheyer/icebath/pkg/logging"
-	"github.com/nickheyer/icebath/pkg/observability"
 )
 
 // Polls for the planned stop marker naming this process and drives the shutdown handler on the loop once
@@ -22,7 +21,7 @@ func runPlannedStopWatcher(stop *pythread.Event, r *GatewayRunner, loop gateway.
 		fired := func() (fired bool) {
 			defer func() {
 				if rec := recover(); rec != nil {
-					runLog().Debug(fmt.Sprintf("Planned-stop watcher tick error: %v", rec))
+					pkgLog().Debug(fmt.Sprintf("Planned-stop watcher tick error: %v", rec))
 					fired = false
 				}
 			}()
@@ -31,14 +30,14 @@ func runPlannedStopWatcher(stop *pythread.Event, r *GatewayRunner, loop gateway.
 			}
 			targetsSelf, err := gateway.PlannedStopMarkerTargetsSelf()
 			if err != nil {
-				runLog().Debug(fmt.Sprintf("Planned-stop watcher tick error: %v", err))
+				pkgLog().Debug(fmt.Sprintf("Planned-stop watcher tick error: %v", err))
 				return false
 			}
 			if !targetsSelf {
 				return false
 			}
 			if err := loop.CallSoonThreadsafe(func() { shutdownHandler(nil) }); err != nil {
-				runLog().Debug(fmt.Sprintf("Planned-stop watcher tick error: %v", err))
+				pkgLog().Debug(fmt.Sprintf("Planned-stop watcher tick error: %v", err))
 				return false
 			}
 			return true
@@ -73,13 +72,8 @@ func exitAfterGracefulShutdown(ctx context.Context, exitCode int) {
 			return struct{}{}, nil
 		},
 		func() (struct{}, error) {
-			observability.StampExit("clean", "none")
 			code := exitCode
 			gateway.MarkExited(ctx, &code, "graceful_shutdown", "")
-			return struct{}{}, nil
-		},
-		func() (struct{}, error) {
-			observability.FlushBeforeHardExit(ctx, observability.ExitFlushTimeout)
 			return struct{}{}, nil
 		},
 		func() (struct{}, error) {

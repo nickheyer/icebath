@@ -8,7 +8,7 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tools"
-	"github.com/nickheyer/icebath/pkg/tuigateway"
+	"github.com/nickheyer/icebath/pkg/tuihost"
 )
 
 const (
@@ -18,7 +18,7 @@ const (
 )
 
 // Session of the loud deny cases, its stored row gateway owned so the finalize leaves the approval queue to teardown
-func loudDenySession(t *testing.T) *tuigateway.Session {
+func loudDenySession(t *testing.T) *tuihost.Session {
 	t.Helper()
 	t.Setenv("ICEBATH_HOME", t.TempDir())
 	profile := t.TempDir()
@@ -30,7 +30,7 @@ func loudDenySession(t *testing.T) *tuigateway.Session {
 		t.Fatal(err)
 	}
 	db.Close()
-	return tuigateway.NewSession(map[string]any{"_sid": loudDenySID, "session_key": loudDenySessionKey, "history": []any{},
+	return tuihost.NewSession(map[string]any{"_sid": loudDenySID, "session_key": loudDenySessionKey, "history": []any{},
 		"running": false, "queued_prompt": nil, "agent": nil, "profile_home": profile})
 }
 
@@ -167,7 +167,7 @@ func TestTeardownWithoutPendingStaysSilent(t *testing.T) {
 func TestInterruptMissingSessionKeyDoesNotCrash(t *testing.T) {
 	t.Setenv("ICEBATH_HOME", t.TempDir())
 	events := captureBroadcasts(t)
-	interruptSessionTurn(context.Background(), loudDenySID, tuigateway.NewSession(map[string]any{"running": false}), false)
+	interruptSessionTurn(context.Background(), loudDenySID, tuihost.NewSession(map[string]any{"running": false}), false)
 	if got := cancelledEvents(events); len(got) != 0 {
 		t.Fatalf("cancelled %v", got)
 	}

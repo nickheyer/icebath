@@ -130,7 +130,7 @@ func preflightStdioCommand(ctx context.Context, serverName, command string, args
 		}
 		malware = v.msg
 	case <-t.C:
-		mcpLogger().Warn(fmt.Sprintf("MCP server '%s': OSV malware preflight timed out after %.0fs (network slow/unreachable) — proceeding without the check.",
+		pkgLog().Warn(fmt.Sprintf("MCP server '%s': OSV malware preflight timed out after %.0fs (network slow/unreachable) — proceeding without the check.",
 			serverName, osvMalwareCheckTimeout.Seconds()))
 	case <-ctx.Done():
 		return "", nil, ctx.Err()
@@ -144,7 +144,7 @@ func preflightStdioCommand(ctx context.Context, serverName, command string, args
 			return "", nil, err
 		}
 		if ok {
-			mcpLogger().Debug(fmt.Sprintf("MCP server '%s': running %s on the packaged node", serverName, pargs[0]))
+			pkgLog().Debug(fmt.Sprintf("MCP server '%s': running %s on the packaged node", serverName, pargs[0]))
 			return pc, pargs, nil
 		}
 		dc, dargs, ok, err := npxCacheLookup(args)
@@ -152,7 +152,7 @@ func preflightStdioCommand(ctx context.Context, serverName, command string, args
 			return "", nil, err
 		}
 		if ok {
-			mcpLogger().Debug(fmt.Sprintf("MCP server '%s': using cached npx binary %s (skipping the resident `npm exec` parent)", serverName, dc))
+			pkgLog().Debug(fmt.Sprintf("MCP server '%s': using cached npx binary %s (skipping the resident `npm exec` parent)", serverName, dc))
 			command, args = dc, dargs
 		}
 	}
@@ -221,7 +221,7 @@ func (s *serverTask) serveSession(ctx context.Context, sess *Session, connectTim
 		return "", err
 	}
 	if label != "" && reason == "reconnect" {
-		mcpLogger().Info(fmt.Sprintf("MCP server '%s': reconnect requested — tearing down %s session", s.name, label))
+		pkgLog().Info(fmt.Sprintf("MCP server '%s': reconnect requested — tearing down %s session", s.name, label))
 	}
 	return reason, nil
 }
@@ -252,7 +252,7 @@ func (s *serverTask) reconnectOrReraise(ctx context.Context, drop *sessionDropEr
 	if s.shutdownEv.IsSet() || ctx.Err() != nil || !s.ready.IsSet() || isProcessExit(drop.err) || firstProcessExitLeaf(drop.err) != nil || carriesCancellation(drop.err) {
 		return "", drop.err
 	}
-	mcpLogger().Debug(fmt.Sprintf("MCP server '%s': transport TaskGroup exited after a live session (%s) — reconnecting immediately instead of backing off", s.name, excStr(drop.err)))
+	pkgLog().Debug(fmt.Sprintf("MCP server '%s': transport TaskGroup exited after a live session (%s) — reconnecting immediately instead of backing off", s.name, excStr(drop.err)))
 	return "reconnect", nil
 }
 
@@ -281,7 +281,7 @@ func (s *serverTask) trackSpawnedChildren(ctx context.Context, pids []int) {
 	mcpMu.Unlock()
 	for _, pid := range pids {
 		if !tools.RegisterChild(ctx, pid, "mcp-helper", "") {
-			mcpLogger().Debug(fmt.Sprintf("spawn-ledger register_child failed for MCP helper pid %d", pid))
+			pkgLog().Debug(fmt.Sprintf("spawn-ledger register_child failed for MCP helper pid %d", pid))
 		}
 	}
 	groups := make([]int, 0, len(pgids))
@@ -330,7 +330,7 @@ func configArgs(v any) []string {
 func (s *serverTask) runStdio(ctx context.Context, r *Rendered) (string, error) {
 	cfg := r.Config
 	if v, ok := cfg["identity_header"]; ok && v != nil {
-		mcpLogger().Warn(fmt.Sprintf("MCP server '%s': identity_header is only supported on HTTP/SSE transports — ignored for stdio servers", s.name))
+		pkgLog().Warn(fmt.Sprintf("MCP server '%s': identity_header is only supported on HTTP/SSE transports — ignored for stdio servers", s.name))
 	}
 	if !pyTruthy(cfg["command"]) {
 		return "", fmt.Errorf("MCP server '%s' has no 'command' in config", s.name)
@@ -352,7 +352,7 @@ func (s *serverTask) runStdio(ctx context.Context, r *Rendered) (string, error) 
 		safeEnv = nil
 	}
 	if !tools.AttachSelfToKillOnCloseJob() {
-		mcpLogger().Debug("job-object self-attach failed before stdio spawn")
+		pkgLog().Debug("job-object self-attach failed before stdio spawn")
 	}
 	killOrphanedMCPChildren(false, "")
 	writeStderrLogHeader(ctx, s.name)
@@ -471,7 +471,7 @@ func (s *serverTask) buildOAuthAuth(ctx context.Context, url string, cfg map[str
 	oauthCfg, _ := cfg["oauth"].(map[string]any)
 	p, err := getManager().getOrBuildProvider(ctx, s.name, url, oauthCfg, transport)
 	if err != nil {
-		mcpLogger().Warn(fmt.Sprintf("MCP OAuth setup failed for '%s': %s", s.name, excStr(err)))
+		pkgLog().Warn(fmt.Sprintf("MCP OAuth setup failed for '%s': %s", s.name, excStr(err)))
 		return nil, err
 	}
 	return p, nil
@@ -487,7 +487,7 @@ func (s *serverTask) runHTTP(ctx context.Context, r *Rendered) (string, error) {
 	digest := identityDigest(inputs)
 	url := inputs[0].(string)
 	headers := inputs[1].(map[string]string)
-	mcpLogger().Debug(fmt.Sprintf("MCP server '%s': connecting to %s", s.name, url))
+	pkgLog().Debug(fmt.Sprintf("MCP server '%s': connecting to %s", s.name, url))
 	s.mu.Lock()
 	s.resolvedIdentity = digest
 	s.httpRejection = HTTPRejection{}
@@ -528,7 +528,7 @@ func (s *serverTask) runHTTP(ctx context.Context, r *Rendered) (string, error) {
 	latched := s.sseFallback
 	s.mu.Unlock()
 	if latched {
-		mcpLogger().Info(fmt.Sprintf("MCP server '%s': using latched SSE fallback transport", s.name))
+		pkgLog().Info(fmt.Sprintf("MCP server '%s': using latched SSE fallback transport", s.name))
 		return s.serveTransport(ctx, openSSE, "SSE", connectTimeout)
 	}
 	reason, err := s.serveTransport(ctx, func() (Transport, error) { return StartStreamableHTTP(opts) }, "HTTP", connectTimeout)
@@ -546,7 +546,7 @@ func (s *serverTask) runHTTP(ctx context.Context, r *Rendered) (string, error) {
 		}
 		return "", err
 	}
-	mcpLogger().Warn(fmt.Sprintf("MCP server '%s': Streamable HTTP rejected the initial connect (%s) — retrying over SSE. If this connects, set `transport: sse` for this server in config.yaml to skip the failed attempt on future startups.", s.name, detail))
+	pkgLog().Warn(fmt.Sprintf("MCP server '%s': Streamable HTTP rejected the initial connect (%s) — retrying over SSE. If this connects, set `transport: sse` for this server in config.yaml to skip the failed attempt on future startups.", s.name, detail))
 	s.mu.Lock()
 	s.sseFallback = true
 	s.mu.Unlock()
@@ -577,7 +577,7 @@ func (s *serverTask) discoverTools(ctx context.Context) error {
 		return nil
 	}
 	if !s.advertisesTools() {
-		mcpLogger().Info(fmt.Sprintf("MCP server '%s': does not advertise 'tools' capability — skipping tools/list (prompts/resources remain available)", s.name))
+		pkgLog().Info(fmt.Sprintf("MCP server '%s': does not advertise 'tools' capability — skipping tools/list (prompts/resources remain available)", s.name))
 		s.mu.Lock()
 		s.tools = nil
 		s.mu.Unlock()

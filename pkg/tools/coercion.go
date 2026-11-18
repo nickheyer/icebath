@@ -3,7 +3,6 @@ package tools
 import (
 	"context"
 	"fmt"
-	"log/slog"
 	"math"
 	"net/url"
 	"reflect"
@@ -281,14 +280,14 @@ func coerceToolArgsWith(ctx context.Context, r *Registry, env *Env, toolName str
 					continue
 				}
 				if strings.HasPrefix(strings.TrimSpace(s), "[") {
-					coerceLog().Warn(fmt.Sprintf("coerce_tool_args: %s.%s looks like a JSON array string but could not be parsed — model may have emitted a JSON-encoded string instead of a native array. Falling back to single-element list.", toolName, key))
+					pkgLog().Warn(fmt.Sprintf("coerce_tool_args: %s.%s looks like a JSON array string but could not be parsed — model may have emitted a JSON-encoded string instead of a native array. Falling back to single-element list.", toolName, key))
 				}
 				args[key] = []any{s}
-				coerceLog().Info(fmt.Sprintf("coerce_tool_args: wrapped bare string in list for %s.%s", toolName, key))
+				pkgLog().Info(fmt.Sprintf("coerce_tool_args: wrapped bare string in list for %s.%s", toolName, key))
 				continue
 			}
 			args[key] = []any{value}
-			coerceLog().Info(fmt.Sprintf("coerce_tool_args: wrapped bare %s in list for %s.%s", pyrepr.TypeName(value), toolName, key))
+			pkgLog().Info(fmt.Sprintf("coerce_tool_args: wrapped bare %s in list for %s.%s", pyrepr.TypeName(value), toolName, key))
 			continue
 		}
 		s, isString := value.(string)
@@ -563,22 +562,22 @@ func coerceJSON(value string, expected string) (any, bool) {
 func coerceJSONWith(decode coerceDecoder, value string, expected string) (any, bool) {
 	parsed, err := decode(value)
 	if err != nil {
-		coerceLog().Warn(fmt.Sprintf("coerce_tool_args: failed to parse string as JSON for expected type %s: %s", expected, err))
+		pkgLog().Warn(fmt.Sprintf("coerce_tool_args: failed to parse string as JSON for expected type %s: %s", expected, err))
 		return value, false
 	}
 	switch parsed.(type) {
 	case []any:
 		if expected == "list" {
-			coerceLog().Debug(fmt.Sprintf("coerce_tool_args: coerced string to %s via json.loads", expected))
+			pkgLog().Debug(fmt.Sprintf("coerce_tool_args: coerced string to %s via json.loads", expected))
 			return parsed, true
 		}
 	case map[string]any, *pyjson.Object:
 		if expected == "dict" {
-			coerceLog().Debug(fmt.Sprintf("coerce_tool_args: coerced string to %s via json.loads", expected))
+			pkgLog().Debug(fmt.Sprintf("coerce_tool_args: coerced string to %s via json.loads", expected))
 			return parsed, true
 		}
 	}
-	coerceLog().Warn(fmt.Sprintf("coerce_tool_args: JSON-parsed value is %s, expected %s — skipping coercion", pyrepr.TypeName(parsed), expected))
+	pkgLog().Warn(fmt.Sprintf("coerce_tool_args: JSON-parsed value is %s, expected %s — skipping coercion", pyrepr.TypeName(parsed), expected))
 	return value, false
 }
 
@@ -625,6 +624,3 @@ func coerceBoolean(value string) (any, bool) {
 	}
 	return value, false
 }
-
-// Logger named like the reference model_tools module the coercion lines come from
-func coerceLog() *slog.Logger { return slog.Default().With("logger", "model_tools") }

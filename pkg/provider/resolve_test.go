@@ -20,7 +20,6 @@ type fakeCreds struct {
 	byModel map[string]map[string]Credential
 	benched map[string]bool
 	active  string
-	free    bool
 	errs    map[string]*AuthError
 	scoped  func(poolKey string, entry map[string]any) (Credential, bool)
 	calls   []string
@@ -49,9 +48,7 @@ func (f *fakeCreds) TokenBenchedForModel(provider, token, model string) bool {
 	return f.benched[token+"|"+model]
 }
 
-func (f *fakeCreds) ActiveLoggedInProvider(bool) string { return f.active }
-
-func (f *fakeCreds) FreeInferenceActive() bool { return f.free }
+func (f *fakeCreds) ActiveLoggedInProvider() string { return f.active }
 
 func (f *fakeCreds) RuntimeCredential(provider string) (Credential, error) {
 	if cred, ok := f.Credential(provider); ok && (cred.APIKey != "" || cred.TokenSource != nil) {
@@ -83,7 +80,7 @@ func clearProviderEnv(t *testing.T) {
 	}
 	for _, v := range []string{"OPENAI_API_KEY", "OPENROUTER_API_KEY", "ANTHROPIC_API_KEY", "ANTHROPIC_TOKEN", "CLAUDE_CODE_OAUTH_TOKEN",
 		"OPENAI_BASE_URL", "OPENROUTER_BASE_URL", "CUSTOM_BASE_URL", "ICEBATH_INFERENCE_PROVIDER", "ICEBATH_CODEX_BASE_URL",
-		"ICEBATH_QWEN_BASE_URL", "AZURE_FOUNDRY_API_KEY", "AZURE_FOUNDRY_BASE_URL", "AZURE_ANTHROPIC_KEY", "NOUS_INFERENCE_BASE_URL",
+		"ICEBATH_QWEN_BASE_URL", "AZURE_FOUNDRY_API_KEY", "AZURE_FOUNDRY_BASE_URL", "AZURE_ANTHROPIC_KEY",
 		"AWS_BEARER_TOKEN_BEDROCK", "DEEPSEEK_API_KEY", "OLLAMA_API_KEY", "LM_API_KEY", "LM_BASE_URL", "XAI_API_KEY", "XAI_BASE_URL"} {
 		t.Setenv(v, "")
 	}
@@ -332,8 +329,8 @@ func TestOAuthAutoFallthroughOnAuthFailure(t *testing.T) {
 	}
 }
 
-func TestAutoDetectedNousAuthFailureFallsThroughToOpenRouter(t *testing.T) {
-	creds := &fakeCreds{active: "nous", errs: map[string]*AuthError{"nous": {Message: "Refresh session has been revoked", Provider: "nous", Code: "invalid_grant", ReloginRequired: true}}}
+func TestAutoDetectedOAuthFailureFallsThroughToOpenRouter(t *testing.T) {
+	creds := &fakeCreds{active: "xai-oauth", errs: map[string]*AuthError{"xai-oauth": {Message: "Refresh session has been revoked", Provider: "xai-oauth", Code: "invalid_grant", ReloginRequired: true}}}
 	r := testResolver(t, nil, creds, "OPENROUTER_API_KEY=test-or-key\n")
 	rt := mustResolve(t, r, "auto", "", "", "")
 	if rt.Provider != "openrouter" || rt.APIKey != "test-or-key" {
@@ -455,7 +452,7 @@ func TestOpenRouterKeySelection(t *testing.T) {
 		t.Fatalf("legacy sk-or key: %+v", rt)
 	}
 	r = testResolver(t, nil, &fakeCreds{}, "OPENAI_API_KEY=sk-proj-real-openai-key\n")
-	if p, err := r.resolveProvider("auto", "", "", false); err != nil || p != "openai-api" {
+	if p, err := r.resolveProvider("auto", "", ""); err != nil || p != "openai-api" {
 		t.Fatalf("real openai key auto detects openai-api: %q %v", p, err)
 	}
 	rt := r.resolveOpenRouterRuntime("openrouter", "", "")
@@ -750,7 +747,7 @@ func TestNamedCustomPoolResultIncludesExtrasAndTargetModel(t *testing.T) {
 func TestRemovedKeylessFreeProviderPointsAtReplacements(t *testing.T) {
 	r := testResolver(t, nil, &fakeCreds{}, "")
 	for _, name := range []string{"opencode-free", "free", "opencode_free"} {
-		_, err := r.resolveProvider(name, "", "", false)
+		_, err := r.resolveProvider(name, "", "")
 		authErr := authErrOf(t, err)
 		if authErr.Code != "invalid_provider" || !strings.Contains(authErr.Message, "opencode-zen") || !strings.Contains(authErr.Message, "opencode-go") {
 			t.Fatalf("%s: %+v", name, authErr)
@@ -1076,17 +1073,10 @@ func TestDisabledProviderGuardAndUnknownProvider(t *testing.T) {
 	if authErr := authErrOf(t, err); authErr.Code != "no_provider_configured" {
 		t.Fatalf("nothing configured: %+v", authErr)
 	}
-	r = testResolver(t, nil, &fakeCreds{free: true}, "")
-	if p, err := r.resolveProvider("auto", "", "", false); err != nil || p != "nous" {
-		t.Fatalf("free tier: %q %v", p, err)
-	}
-	if p, err := r.resolveProvider("auto", "", "", true); err == nil || p != "" {
-		t.Fatalf("free tier skipped: %q %v", p, err)
-	}
 	r = testResolver(t, nil, &fakeCreds{}, "")
 	r.cfgError = errors.New("bad yaml")
 	t.Setenv("OPENROUTER_API_KEY", "sk-or-v1-abcdef")
-	if _, err := r.resolveProvider("auto", "", "", false); err == nil || authErrOf(t, err).Code != "corrupt_config" {
+	if _, err := r.resolveProvider("auto", "", ""); err == nil || authErrOf(t, err).Code != "corrupt_config" {
 		t.Fatalf("corrupt config: %v", err)
 	}
 }
@@ -1107,13 +1097,13 @@ func TestConfiguredCustomEndpointResolvesAsAProvider(t *testing.T) {
 	}
 	for _, c := range cases {
 		r := testResolver(t, c.cfg, &fakeCreds{}, "")
-		got, err := r.resolveProvider("auto", "", "", false)
+		got, err := r.resolveProvider("auto", "", "")
 		if err != nil || got != c.want {
 			t.Errorf("%s: got %q %v", c.name, got, err)
 		}
 	}
 	r := testResolver(t, map[string]any{"model": map[string]any{"default": "some/model", "base_url": "https://api.z.ai/v1"}}, &fakeCreds{}, "")
-	if _, err := r.resolveProvider("auto", "", "", false); err == nil {
+	if _, err := r.resolveProvider("auto", "", ""); err == nil {
 		t.Fatal("stale remote url without a pin is not a provider")
 	}
 }
@@ -1121,7 +1111,7 @@ func TestConfiguredCustomEndpointResolvesAsAProvider(t *testing.T) {
 func TestEnvKeyAutoDetectionPrefersOpenRouterAndWarnsOverOAuth(t *testing.T) {
 	r := testResolver(t, nil, &fakeCreds{active: "openai-codex"}, "DEEPSEEK_API_KEY=sk-deepseek-1234\n")
 	logs := captureLogs(t)
-	p, err := r.resolveProvider("auto", "", "", false)
+	p, err := r.resolveProvider("auto", "", "")
 	if err != nil || p != "deepseek" {
 		t.Fatalf("got %q %v", p, err)
 	}
@@ -1129,17 +1119,17 @@ func TestEnvKeyAutoDetectionPrefersOpenRouterAndWarnsOverOAuth(t *testing.T) {
 		t.Fatalf("warning: %v", logs.lines)
 	}
 	r = testResolver(t, nil, &fakeCreds{active: "openai-codex"}, "")
-	if p, _ := r.resolveProvider("auto", "", "", false); p != "openai-codex" {
+	if p, _ := r.resolveProvider("auto", "", ""); p != "openai-codex" {
 		t.Fatalf("oauth last resort: %q", p)
 	}
 	r = testResolver(t, nil, &fakeCreds{}, "")
-	if p, _ := r.resolveProvider("auto", "k", "", false); p != "openrouter" {
+	if p, _ := r.resolveProvider("auto", "k", ""); p != "openrouter" {
 		t.Fatalf("explicit creds mean openrouter: %q", p)
 	}
-	if p, _ := r.resolveProvider("kimi", "", "", false); p != "kimi-coding" {
+	if p, _ := r.resolveProvider("kimi", "", ""); p != "kimi-coding" {
 		t.Fatalf("auth alias table: %q", p)
 	}
-	if p, _ := r.resolveProvider("openai", "", "", false); p != "" {
+	if p, _ := r.resolveProvider("openai", "", ""); p != "" {
 		t.Fatalf("openai is not an auth alias: %q", p)
 	}
 }

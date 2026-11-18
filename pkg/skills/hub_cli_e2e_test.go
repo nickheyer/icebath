@@ -80,7 +80,6 @@ func urlInstallCLI(t *testing.T, home string) (*HubCLI, *bytes.Buffer) {
 	x.C, x.Stdout = &pyrich.Console{Out: sink, Width: 80}, &bytes.Buffer{}
 	x.Input = func(string) (string, error) { t.Fatal("unexpected prompt"); return "", nil }
 	x.LineInput = x.Input
-	x.seams.recordInstall = func(context.Context, string, string, any, string, any, any, error) {}
 	x.Sources = func() []SkillSource { return []SkillSource{NewUrlSource(h)} }
 	return x, sink
 }

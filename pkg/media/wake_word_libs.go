@@ -12,9 +12,9 @@ import (
 	"github.com/nickheyer/icebath/pkg/pm"
 )
 
-// Directory of an installed Python package on this process's import path or in the selected environment, else ModuleNotFoundError
+// Directory of an installed Python package in its extra's environment, the import path or the selected environment, else ModuleNotFoundError
 func wakeInstalledPackage(ctx context.Context, name string) (string, error) {
-	roots := pm.ImportPathEntries()
+	roots := append(pm.AnchorSitePackages(ctx, name), pm.ImportPathEntries()...)
 	venv, envErr := pm.SelectedVenv(ctx, pm.RepoRoot())
 	if envErr == nil && venv != "" {
 		var site string
@@ -28,7 +28,7 @@ func wakeInstalledPackage(ctx context.Context, name string) (string, error) {
 			return dir, nil
 		}
 	}
-	return "", &WakeWordError{Class: "ModuleNotFoundError", Msg: "No module named '" + name + "'", Cause: envErr}
+	return "", &WakeWordError{Class: "ModuleNotFoundError", Msg: "the Python package " + name + " is not installed in the wake word environment", Cause: envErr}
 }
 
 type pyOpenWakeWordLib struct{ module *pyopenwakeword.Module }

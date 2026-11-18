@@ -10,7 +10,6 @@ func TestAuthLockTimeoutContentionGetsTheWaitCopy(t *testing.T) {
 	for name, text := range map[string]string{
 		"auth-store-with-holder": "Timed out waiting for auth store lock (/home/u/.icebath/profiles/coder/auth.lock); another icebath process (pid 4242) probably still holds it",
 		"auth-store-no-holder":   "Timed out waiting for auth store lock (/home/u/.icebath/profiles/coder/auth.lock)",
-		"shared-nous-store":      "Timed out waiting for shared Nous auth lock (/home/u/.icebath/shared/nous.lock)",
 	} {
 		t.Run(name, func(t *testing.T) {
 			message := agentInitFailedMessage(errors.New(text))

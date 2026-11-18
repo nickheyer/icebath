@@ -36,7 +36,7 @@ func (r *GatewayRunner) handleTopicCommand(ctx context.Context, event *gateway.M
 		return sessionDBUnavailableReply(ctx), nil
 	}
 	if authorized, err := r.isUserAuthorizedForSource(ctx, source, false); err != nil {
-		runLog().Debug("Topic auth check failed", "exc_info", err)
+		pkgLog().Debug("Topic auth check failed", "exc_info", err)
 	} else if !authorized {
 		return i18n.T(ctx, "gateway.topic.unauthorized", "", nil), nil
 	}
@@ -74,7 +74,7 @@ func (r *GatewayRunner) handleTopicCommand(ctx context.Context, event *gateway.M
 			ProfileName: profileName, HasTopicsEnabled: capabilityFlag(capabilities["has_topics_enabled"]),
 			AllowsUsersToCreateTopics: capabilityFlag(capabilities["allows_users_to_create_topics"])})
 	}); err != nil {
-		runLog().Error("Failed to enable Telegram topic mode", "exc_info", err)
+		pkgLog().Error("Failed to enable Telegram topic mode", "exc_info", err)
 		return i18n.T(ctx, "gateway.topic.enable_failed", "", map[string]any{"error": pyrepr.ExceptionMessage(err)}), nil
 	}
 	if sattr(source.ThreadID) == "" {
@@ -85,7 +85,7 @@ func (r *GatewayRunner) handleTopicCommand(ctx context.Context, event *gateway.M
 		return d.GetTelegramTopicBinding(ctx, source.ChatID, *source.ThreadID, profileName)
 	})
 	if err != nil {
-		runLog().Debug("Failed to read Telegram topic binding", "exc_info", err)
+		pkgLog().Debug("Failed to read Telegram topic binding", "exc_info", err)
 		binding = nil
 	}
 	if binding == nil || binding.Len() == 0 {

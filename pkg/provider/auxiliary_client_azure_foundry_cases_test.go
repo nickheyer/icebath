@@ -11,7 +11,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/config"
 )
 
-// Entra credential minting jwt-for-<scope> like the hermes fake azure.identity module
+// Entra credential minting jwt-for-<scope> like the fake azure.identity module
 type auxFakeEntraCredential struct{}
 
 func (auxFakeEntraCredential) GetToken(_ context.Context, scopes ...string) (EntraAccessToken, error) {
@@ -36,7 +36,7 @@ func auxFakeAzureIdentity(t *testing.T) {
 	})
 }
 
-// Temp home plus the model config the hermes patch_load_config fixture installs
+// Temp home plus the model config the patch_load_config fixture installs
 func auxAzureFoundryConfig(t *testing.T, modelCfg map[string]any) context.Context {
 	t.Helper()
 	t.Setenv("ICEBATH_HOME", t.TempDir())

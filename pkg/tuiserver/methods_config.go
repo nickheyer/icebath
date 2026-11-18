@@ -10,10 +10,11 @@ import (
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
+	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/tools"
-	"github.com/nickheyer/icebath/pkg/tuigateway"
+	"github.com/nickheyer/icebath/pkg/tuihost"
 )
 
 // Active personality name of a config, the personality owner assigned at startup
@@ -104,7 +105,7 @@ func cfgGetProject(ctx context.Context, params map[string]any) map[string]any {
 // Effective reasoning effort of the session or config with whether reasoning shows
 func cfgGetReasoning(ctx context.Context, params map[string]any) map[string]any {
 	cfg := loadCfg(ctx)
-	session := tuigateway.SessionRecord(strOr(params["session_id"]))
+	session := tuihost.SessionRecord(strOr(params["session_id"]))
 	var reasoning any
 	if session != nil {
 		reasoning = session.Get("create_reasoning_override")
@@ -164,7 +165,7 @@ func cfgGetReasoning(ctx context.Context, params map[string]any) map[string]any 
 
 // Fast tier of the session pin or live agent, else the configured tier
 func cfgGetFast(ctx context.Context, params map[string]any) map[string]any {
-	session := tuigateway.SessionRecord(strOr(params["session_id"]))
+	session := tuihost.SessionRecord(strOr(params["session_id"]))
 	tier, known := "", false
 	if a := sessionAgent(session); session != nil && a != nil {
 		tier = a.ServiceTier()
@@ -316,4 +317,12 @@ func configGet(ctx context.Context, rid any, params map[string]any) (resp map[st
 		}()
 	}
 	return ok(rid, getter(ctx, params))
+}
+
+// str of a param value
+func pyStrOf(v any) string {
+	if text, isText := v.(string); isText {
+		return text
+	}
+	return pyrepr.Str(v)
 }

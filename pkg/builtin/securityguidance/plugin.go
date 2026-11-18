@@ -3,7 +3,6 @@ package securityguidance
 import (
 	"context"
 	"fmt"
-	"log/slog"
 	"os"
 	"strings"
 
@@ -64,7 +63,7 @@ func compileRules(rules []Rule) []compiledRule {
 		if r.Regex != "" {
 			re, err := pyre.Compile(r.Regex)
 			if err != nil {
-				slog.Warn(fmt.Sprintf("security-guidance: skipping rule %s — invalid regex %s: %v", r.RuleName, pyrepr.Repr(r.Regex), err))
+				pkgLog().Warn(fmt.Sprintf("security-guidance: skipping rule %s — invalid regex %s: %v", r.RuleName, pyrepr.Repr(r.Regex), err))
 				continue
 			}
 			c.re = re
@@ -218,7 +217,7 @@ func (Plugin) Manifest() plugins.Manifest {
 		Name:          "security-guidance",
 		Version:       "0.1.0",
 		Description:   "Append security warnings to file-write tool results when the new content contains known-dangerous patterns (pickle.load, yaml.load, eval(, os.system, dangerouslySetInnerHTML, verify=False, ECB, XXE, GitHub Actions injection, ...). 25 regex/substring rules forked from Anthropic's claude-plugins-official under Apache-2.0. Non-blocking — the file is written and the warning rides back to the model in the next turn so it can self-correct.",
-		Author:        "Anthropic (patterns, Apache-2.0) / NousResearch (plugin port)",
+		Author:        "Anthropic (patterns, Apache-2.0) / Icebath (plugin port)",
 		ProvidesHooks: []string{"transform_tool_result", "pre_tool_call"},
 	}
 }

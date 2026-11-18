@@ -420,7 +420,7 @@ func loopExceptionHandler(r any) {
 	if err, ok := r.(error); ok && errors.Is(err, errLoopClosed) {
 		return
 	}
-	mcpLogger().Error(fmt.Sprintf("Unhandled exception in MCP loop task: %v", r))
+	pkgLog().Error(fmt.Sprintf("Unhandled exception in MCP loop task: %v", r))
 }
 
 // Queues the start of fn as a loop task behind earlier callbacks, false when the loop stopped accepting work
@@ -561,7 +561,7 @@ func runOnLoop[T any](ctx context.Context, timeout time.Duration, fn func(ctx co
 		done <- outcome{v, err}
 	}) {
 		cancel()
-		mcpLogger().Debug(fmt.Sprintf("MCP scheduling failed: %s", errLoopClosed))
+		pkgLog().Debug(fmt.Sprintf("MCP scheduling failed: %s", errLoopClosed))
 		return zero, errors.New("MCP event loop unavailable (failed to schedule)")
 	}
 	start := time.Now()
@@ -609,7 +609,7 @@ func drainMCPLoopTasks(l *mcpLoop, timeout time.Duration) {
 		l.cancel()
 		return
 	}
-	mcpLogger().Debug(fmt.Sprintf("Draining %d pending task(s) from the MCP loop", pending))
+	pkgLog().Debug(fmt.Sprintf("Draining %d pending task(s) from the MCP loop", pending))
 	l.cancel()
 	finished := make(chan struct{})
 	go func() {
@@ -622,7 +622,7 @@ func drainMCPLoopTasks(l *mcpLoop, timeout time.Duration) {
 		l.mu.Lock()
 		still := l.pending
 		l.mu.Unlock()
-		mcpLogger().Warn(fmt.Sprintf("%d MCP loop task(s) still pending after %.1fs drain", still, timeout.Seconds()))
+		pkgLog().Warn(fmt.Sprintf("%d MCP loop task(s) still pending after %.1fs drain", still, timeout.Seconds()))
 	}
 }
 
@@ -631,7 +631,7 @@ func stopMCPLoop(onlyIfIdle bool) bool {
 	mcpMu.Lock()
 	if onlyIfIdle && (len(mcpServers) > 0 || len(serverConnecting) > 0) {
 		mcpMu.Unlock()
-		mcpLogger().Debug("Leaving MCP event loop running; active servers are registered or connecting")
+		pkgLog().Debug("Leaving MCP event loop running; active servers are registered or connecting")
 		return false
 	}
 	l := mcpLoopState
@@ -644,26 +644,26 @@ func stopMCPLoop(onlyIfIdle bool) bool {
 	if l.isRunning() {
 		done, err := l.scheduleDrainAndStop()
 		if err != nil {
-			mcpLogger().Warn(fmt.Sprintf("MCP loop drain: failed to schedule: %s", excStr(err)))
+			pkgLog().Warn(fmt.Sprintf("MCP loop drain: failed to schedule: %s", excStr(err)))
 		} else {
 			future = done
 			wait := mcpLoopDrainTimeout + time.Second
 			select {
 			case res := <-done:
 				if res.err != nil {
-					mcpLogger().Warn(fmt.Sprintf("Error draining MCP loop tasks: %s", excStr(res.err)))
+					pkgLog().Warn(fmt.Sprintf("Error draining MCP loop tasks: %s", excStr(res.err)))
 				}
 			case <-time.After(wait):
-				mcpLogger().Warn(fmt.Sprintf("Timed out waiting for MCP loop drain after %.1fs", wait.Seconds()))
+				pkgLog().Warn(fmt.Sprintf("Timed out waiting for MCP loop drain after %.1fs", wait.Seconds()))
 			}
 		}
 	} else if !l.isClosed() {
 		if done, err := l.scheduleDrainAndStop(); err != nil {
-			mcpLogger().Warn(fmt.Sprintf("Error draining stopped MCP loop tasks: %s", excStr(err)))
+			pkgLog().Warn(fmt.Sprintf("Error draining stopped MCP loop tasks: %s", excStr(err)))
 		} else {
 			l.runForever(l.markRunning())
 			if res := <-done; res.err != nil {
-				mcpLogger().Warn(fmt.Sprintf("Error draining stopped MCP loop tasks: %s", excStr(res.err)))
+				pkgLog().Warn(fmt.Sprintf("Error draining stopped MCP loop tasks: %s", excStr(res.err)))
 			}
 		}
 	}
@@ -673,10 +673,10 @@ func stopMCPLoop(onlyIfIdle bool) bool {
 	select {
 	case <-l.exitedChan():
 	case <-time.After(mcpLoopJoinTimeout):
-		mcpLogger().Warn(fmt.Sprintf("MCP event loop thread did not stop within %.1fs", mcpLoopJoinTimeout.Seconds()))
+		pkgLog().Warn(fmt.Sprintf("MCP event loop thread did not stop within %.1fs", mcpLoopJoinTimeout.Seconds()))
 	}
 	if err := l.close(); err != nil {
-		mcpLogger().Warn(fmt.Sprintf("Unable to close MCP event loop cleanly: %s", excStr(err)))
+		pkgLog().Warn(fmt.Sprintf("Unable to close MCP event loop cleanly: %s", excStr(err)))
 	}
 	killOrphanedMCPChildren(true, "")
 	return true
@@ -797,7 +797,7 @@ func signalReconnectAndWait(serverName string, srv reconnectable, opDescription 
 		return false
 	}
 	old := srv.currentSession()
-	mcpLogger().Info(fmt.Sprintf("MCP server '%s': %s requesting transport reconnect", serverName, opDescription))
+	pkgLog().Info(fmt.Sprintf("MCP server '%s': %s requesting transport reconnect", serverName, opDescription))
 	if l.callSoon(func() {
 		if ready := srv.readyEvent(); ready != nil {
 			ready.Clear()
@@ -899,7 +899,7 @@ func (s *Session) read() {
 			if ch != nil {
 				ch <- msg
 			} else {
-				mcpLogger().Debug(fmt.Sprintf("MCP server '%s': response for unknown request id %s", s.opts.Name, string(msg.ID)))
+				pkgLog().Debug(fmt.Sprintf("MCP server '%s': response for unknown request id %s", s.opts.Name, string(msg.ID)))
 			}
 		case msg.IsRequest():
 			reqCtx, cancel := context.WithCancel(s.ctx)
@@ -954,7 +954,7 @@ func (s *Session) handleRequest(ctx context.Context, msg *Message) {
 		return
 	}
 	if err := s.t.Send(s.ctx, reply); err != nil {
-		mcpLogger().Debug(fmt.Sprintf("MCP server '%s': failed to answer %s: %v", s.opts.Name, msg.Method, err))
+		pkgLog().Debug(fmt.Sprintf("MCP server '%s': failed to answer %s: %v", s.opts.Name, msg.Method, err))
 	}
 }
 
@@ -1002,14 +1002,14 @@ func (s *Session) answerElicitation(ctx context.Context, msg *Message) *Message 
 func (s *Session) handleNotification(msg *Message) {
 	switch msg.Method {
 	case methodToolsListChanged:
-		mcpLogger().Info(fmt.Sprintf("MCP server '%s': received tools/list_changed notification", s.opts.Name))
+		pkgLog().Info(fmt.Sprintf("MCP server '%s': received tools/list_changed notification", s.opts.Name))
 		if s.opts.OnToolsListChanged != nil {
 			s.opts.OnToolsListChanged()
 		}
 	case methodPromptsListChanged:
-		mcpLogger().Debug(fmt.Sprintf("MCP server '%s': prompts/list_changed (ignored)", s.opts.Name))
+		pkgLog().Debug(fmt.Sprintf("MCP server '%s': prompts/list_changed (ignored)", s.opts.Name))
 	case methodResourcesListChanged:
-		mcpLogger().Debug(fmt.Sprintf("MCP server '%s': resources/list_changed (ignored)", s.opts.Name))
+		pkgLog().Debug(fmt.Sprintf("MCP server '%s': resources/list_changed (ignored)", s.opts.Name))
 	case methodLoggingMessage:
 		s.onServerLog(msg.Params)
 	case methodProgress:
@@ -1048,7 +1048,7 @@ func (s *Session) onServerLog(raw json.RawMessage) {
 		Data   json.RawMessage `json:"data"`
 	}
 	if err := json.Unmarshal(raw, &p); err != nil {
-		mcpLogger().Debug(fmt.Sprintf("Failed to handle MCP log notification from '%s'", s.opts.Name), "error", err)
+		pkgLog().Debug(fmt.Sprintf("Failed to handle MCP log notification from '%s'", s.opts.Name), "error", err)
 		return
 	}
 	levelName := "info"
@@ -1075,7 +1075,7 @@ func (s *Session) onServerLog(raw json.RawMessage) {
 	if p.Logger != nil && pyTruthy(p.Logger) {
 		origin = s.opts.Name + "/" + pyStr(p.Logger)
 	}
-	mcpLogger().Log(context.Background(), level, fmt.Sprintf("MCP server log [%s]: %s", origin, data))
+	pkgLog().Log(context.Background(), level, fmt.Sprintf("MCP server log [%s]: %s", origin, data))
 }
 
 // Python json.dumps rendering of raw JSON with key order kept, spaced separators and no ASCII escaping
@@ -1424,7 +1424,7 @@ func negotiateSession(ctx context.Context, serverName, mode string, s handshaker
 		if isTimeout(fallbackErr) || primary != "initialize" || !handshakeAnsweredWithUnsupportedVersion(err) {
 			return nil, fallbackErr
 		}
-		mcpLogger().Info(fmt.Sprintf("MCP server '%s': server/discover also failed (%v) \u2014 completing the handshake at %s, the version this client offered",
+		pkgLog().Info(fmt.Sprintf("MCP server '%s': server/discover also failed (%v) \u2014 completing the handshake at %s, the version this client offered",
 			serverName, fallbackErr, LatestHandshakeVersion))
 		cctx, cancel := context.WithTimeout(ctx, connectTimeout)
 		defer cancel()
@@ -1433,17 +1433,17 @@ func negotiateSession(ctx context.Context, serverName, mode string, s handshaker
 	switch mode {
 	case "stateless", "modern", "2026-07-28":
 		return attempt("discover", "initialize", func(error) bool { return true }, func(err error) {
-			mcpLogger().Info(fmt.Sprintf("MCP server '%s': server/discover rejected (%v) despite protocol=%s \u2014 falling back to the legacy handshake", serverName, err, mode))
+			pkgLog().Info(fmt.Sprintf("MCP server '%s': server/discover rejected (%v) despite protocol=%s \u2014 falling back to the legacy handshake", serverName, err, mode))
 		})
 	case "legacy", "handshake":
 		return call("initialize")
 	case "auto":
 	default:
-		mcpLogger().Warn(fmt.Sprintf("MCP server '%s': unknown protocol=%s \u2014 treating as 'auto' (valid: auto, stateless, legacy)", serverName, pyReprStr(mode)))
+		pkgLog().Warn(fmt.Sprintf("MCP server '%s': unknown protocol=%s \u2014 treating as 'auto' (valid: auto, stateless, legacy)", serverName, pyReprStr(mode)))
 	}
 	_, canDiscover := s.(discoverer)
 	return attempt("initialize", "discover", func(err error) bool { return handshakeRejectedAsModern(err) && canDiscover }, func(err error) {
-		mcpLogger().Info(fmt.Sprintf("MCP server '%s': legacy handshake rejected (%v) \u2014 retrying via server/discover (2026-07-28 stateless server)", serverName, err))
+		pkgLog().Info(fmt.Sprintf("MCP server '%s': legacy handshake rejected (%v) \u2014 retrying via server/discover (2026-07-28 stateless server)", serverName, err))
 	})
 }
 
@@ -1472,7 +1472,7 @@ func paginate[T any](ctx context.Context, s *Session, method, itemsAttr string, 
 	cursor := ""
 	for page := 0; ; page++ {
 		if page == listMaxPages {
-			mcpLogger().Warn(fmt.Sprintf("MCP server '%s': %s pagination exceeded %d pages; truncating at %d items", s.opts.Name, itemsAttr, listMaxPages, len(out)))
+			pkgLog().Warn(fmt.Sprintf("MCP server '%s': %s pagination exceeded %d pages; truncating at %d items", s.opts.Name, itemsAttr, listMaxPages, len(out)))
 			break
 		}
 		var params any

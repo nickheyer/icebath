@@ -45,7 +45,7 @@ func seedPromptSizeSkill(t *testing.T, h, name, description string) {
 
 func TestRunsOfflineWithoutCredentials(t *testing.T) {
 	_, env := promptSizeHome(t)
-	for _, v := range []string{"OPENROUTER_API_KEY", "OPENAI_API_KEY", "NOUS_API_KEY", "ANTHROPIC_API_KEY"} {
+	for _, v := range []string{"OPENROUTER_API_KEY", "OPENAI_API_KEY", "ANTHROPIC_API_KEY"} {
 		t.Setenv(v, "")
 		os.Unsetenv(v)
 	}

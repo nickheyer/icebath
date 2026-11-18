@@ -43,7 +43,7 @@ func auxSeedOwnedAnthropic(t *testing.T) (context.Context, string, *[]string) {
 		t.Fatal(err)
 	}
 	auth, _ := json.Marshal(map[string]any{"credential_pool": map[string]any{"anthropic": []any{map[string]any{
-		"id": "owned", "source": "manual:hermes_pkce", "auth_type": "oauth",
+		"id": "owned", "source": "manual:icebath_pkce", "auth_type": "oauth",
 		"access_token": "owned-token", "refresh_token": "owned-refresh",
 		"expires_at": time.Now().UnixMilli() + 3600000, "priority": 0}}}})
 	if err := os.WriteFile(filepath.Join(dir, "auth.json"), auth, 0o600); err != nil {
@@ -98,7 +98,7 @@ func TestAnthropicOwnedRouting(t *testing.T) {
 			steps = append(steps, step)
 			return map[string]any{"choices": []any{}}, nil
 		}
-		if _, _, raised := auxLadderCredentialRungs(ctx, yield, authErr, route, map[string]any{}, false); raised != nil {
+		if _, _, raised := auxLadderCredentialRungs(ctx, yield, authErr, route, map[string]any{}); raised != nil {
 			t.Fatal(raised)
 		}
 		if len(steps) == 0 || steps[0].Kind != "retry_same_provider" {

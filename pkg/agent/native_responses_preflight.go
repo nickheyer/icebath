@@ -22,7 +22,7 @@ func nativeResponsesReplayItems(a *AIAgent, messages []*state.Message) ([]map[st
 	}
 	items, err := provider.NativeResponsesReplayInput(messages, route, a.baseURL, model, a.codexReasoningReplayEnabled)
 	if err != nil {
-		agentRuntimeHelpersLog().Debug("native Responses replay conversion failed; using the generic fallback", "error", err)
+		pkgLog().Debug("native Responses replay conversion failed; using the generic fallback", "error", err)
 		return nil, false
 	}
 	return items, true

@@ -3,7 +3,6 @@ package gateway
 import (
 	"context"
 	"crypto/subtle"
-	"log/slog"
 	"strings"
 
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
@@ -31,7 +30,7 @@ func refreshProfileHooks(ctx context.Context, policy *LocalSessionPolicy) {
 	}
 	defer func() {
 		if recovered := recover(); recovered != nil {
-			slog.Warn("shell-hook re-sync failed; keeping the registered hooks", "error", recovered)
+			pkgLog().Warn("shell-hook re-sync failed; keeping the registered hooks", "error", recovered)
 		}
 	}()
 	plugins.SyncShellHooksFromConfig(ctx, func() any { return loadGatewayConfig(ctx, "") })

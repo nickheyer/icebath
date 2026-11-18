@@ -3,7 +3,6 @@ package tools
 import (
 	"bytes"
 	"context"
-	"log/slog"
 	"os/exec"
 	"strings"
 	"sync"
@@ -15,7 +14,7 @@ import (
 const envProbeWaitTimeout = 10 * time.Second
 
 var envProbeRemoteBackends = map[string]bool{
-	"docker": true, "modal": true, "daytona": true, "ssh": true, "managed_modal": true, "vercel_sandbox": true,
+	"docker": true, "modal": true, "daytona": true, "ssh": true, "vercel_sandbox": true,
 }
 
 type envProbeState struct {
@@ -114,7 +113,7 @@ func (p *envProbeState) pipPythonVersion() string {
 func resolveTerminalBackend(env *Env) string {
 	policy, err := terminalPolicy(env)
 	if err != nil {
-		slog.Debug("terminal backend resolution failed", "error", err)
+		pkgLog().Debug("terminal backend resolution failed", "error", err)
 		return "local"
 	}
 	backend := strings.ToLower(strings.TrimSpace(policy.Get("TERMINAL_ENV", "local")))
@@ -225,7 +224,7 @@ func EnvironmentProbeLine(env *Env, forceRefresh bool) string {
 		p.waitTimedOut = true
 		p.mu.Unlock()
 		if first {
-			toolsLogger(env).Warn("env_probe did not finish in time; building the system prompt without the Python toolchain line",
+			envLog(env).Warn("env_probe did not finish in time; building the system prompt without the Python toolchain line",
 				"seconds", envProbeWaitTimeout.Seconds())
 		}
 		return ""

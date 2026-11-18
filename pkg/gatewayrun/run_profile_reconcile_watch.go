@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"log/slog"
 	"path/filepath"
 	"reflect"
 	"slices"
@@ -20,15 +19,10 @@ import (
 	"github.com/nickheyer/icebath/pkg/mcp"
 	"github.com/nickheyer/icebath/pkg/plugins"
 	"github.com/nickheyer/icebath/pkg/profiles"
-	"github.com/nickheyer/icebath/pkg/profiles/manage"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
-
-func reconcileLog() *slog.Logger {
-	return slog.Default().With("logger", "gateway.run_profile_reconcile")
-}
 
 // Why a single profile boot must stay standalone now that a second profile exists, empty when nothing blocks it
 func addedProfileBlocker(ctx context.Context, launch string) (string, error) {
@@ -85,7 +79,7 @@ func (r *GatewayRunner) profileReconcileWatcher(ctx context.Context, interval fl
 			if ctx.Err() != nil {
 				return ctx.Err()
 			}
-			reconcileLog().Warn("Served-profile reconcile failed; retrying next cycle", "exc_info", err)
+			pkgLog().Warn("Served-profile reconcile failed; retrying next cycle", "exc_info", err)
 		}
 	}
 	return nil
@@ -136,7 +130,7 @@ func (r *GatewayRunner) resyncChangedHookConsent(ctx context.Context, homes []st
 			return nil
 		}()
 		if failed != nil {
-			reconcileLog().Warn(fmt.Sprintf("shell-hook re-sync failed for %s; retrying next cycle", resolved), "exc_info", failed)
+			pkgLog().Warn(fmt.Sprintf("shell-hook re-sync failed for %s; retrying next cycle", resolved), "exc_info", failed)
 			continue
 		}
 		current[resolved] = sig
@@ -259,9 +253,9 @@ func (r *GatewayRunner) reconcileServedProfiles(ctx context.Context, reason stri
 			timedOut[name] = true
 			msg := fmt.Sprintf("[MULTIPLEX] Own-gateway probe for profile '%s' timed out; not serving it this cycle", name)
 			if timeoutWarned[name] {
-				reconcileLog().Debug(msg)
+				pkgLog().Debug(msg)
 			} else {
-				reconcileLog().Warn(msg)
+				pkgLog().Warn(msg)
 			}
 			live.Delete(name)
 			continue
@@ -272,7 +266,7 @@ func (r *GatewayRunner) reconcileServedProfiles(ctx context.Context, reason stri
 		if res != nil {
 			blocked[name] = true
 			if !warned[name] {
-				reconcileLog().Warn(fmt.Sprintf("[MULTIPLEX] Profile '%s' still runs its own gateway; "+
+				pkgLog().Warn(fmt.Sprintf("[MULTIPLEX] Profile '%s' still runs its own gateway; "+
 					"stop it before the host can serve this profile", name))
 			}
 			live.Delete(name)
@@ -388,7 +382,7 @@ func (r *GatewayRunner) applyProfileChanges(ctx context.Context, current *pydict
 		var configErr *MultiplexConfigError
 		switch {
 		case errors.As(err, &configErr):
-			reconcileLog().Error(fmt.Sprintf("[MULTIPLEX] Profile '%s' not served: %s", name, configErr))
+			pkgLog().Error(fmt.Sprintf("[MULTIPLEX] Profile '%s' not served: %s", name, configErr))
 			current.Delete(name)
 			if err := r.unserveProfile(ctx, name, profileHome); err != nil {
 				return nil, err
@@ -401,17 +395,17 @@ func (r *GatewayRunner) applyProfileChanges(ctx context.Context, current *pydict
 			if ctx.Err() != nil {
 				return nil, ctx.Err()
 			}
-			reconcileLog().Error(fmt.Sprintf("[MULTIPLEX] Failed to start adapters for profile '%s'", name), "exc_info", err)
+			pkgLog().Error(fmt.Sprintf("[MULTIPLEX] Failed to start adapters for profile '%s'", name), "exc_info", err)
 			connected = 0
 			transientFailed[name] = true
 		default:
 			sigs[name] = scanSignature
 		}
 		if slices.Contains(added, name) {
-			reconcileLog().Info(fmt.Sprintf("[MULTIPLEX] Now serving profile '%s' (%d adapter(s) connected; %s)", name, connected, reason))
+			pkgLog().Info(fmt.Sprintf("[MULTIPLEX] Now serving profile '%s' (%d adapter(s) connected; %s)", name, connected, reason))
 			resultAppend(result, "added", name)
 		} else {
-			reconcileLog().Info(fmt.Sprintf("[MULTIPLEX] Re-scanned profile '%s' after config/.env change (%d adapter(s) connected)", name, connected))
+			pkgLog().Info(fmt.Sprintf("[MULTIPLEX] Re-scanned profile '%s' after config/.env change (%d adapter(s) connected)", name, connected))
 			resultAppend(result, "rescanned", name)
 		}
 	}
@@ -535,7 +529,7 @@ func (r *GatewayRunner) multiplexForAddedProfile(ctx context.Context) (bool, err
 	}
 	if blocker, _ := found.(string); blocker != "" {
 		if r.singleProfileBlockerLogged == nil || blocker != *r.singleProfileBlockerLogged {
-			reconcileLog().Warn(fmt.Sprintf("[MULTIPLEX] A new profile exists but this gateway stays standalone: %s", blocker))
+			pkgLog().Warn(fmt.Sprintf("[MULTIPLEX] A new profile exists but this gateway stays standalone: %s", blocker))
 			r.singleProfileBlockerLogged = &blocker
 		}
 		if blocker == gateway.AutoMigrationOptedOutReason {
@@ -566,7 +560,7 @@ func (r *GatewayRunner) multiplexForAddedProfile(ctx context.Context) (bool, err
 	}
 	r.recordServedProfiles(ctx, "default", launchHomes)
 	gateway.LogMultiplexDecision(ctx, gateway.MultiplexDecision{Enabled: true, Source: "default", Reason: "a second profile was created"})
-	reconcileLog().Info("[MULTIPLEX] A second profile exists; serving every profile from this process (no restart)")
+	pkgLog().Info("[MULTIPLEX] A second profile exists; serving every profile from this process (no restart)")
 	return true, nil
 }
 
@@ -577,7 +571,7 @@ func (r *GatewayRunner) serveReservedProfile(ctx context.Context, name, profileH
 		if !errors.As(err, &conflict) && !pypath.IsOSError(err) {
 			return "", err
 		}
-		reconcileLog().Error(fmt.Sprintf("[MULTIPLEX] Profile '%s' not served: %s", name, err))
+		pkgLog().Error(fmt.Sprintf("[MULTIPLEX] Profile '%s' not served: %s", name, err))
 		return fmt.Sprintf("home owned by another gateway: %s", err), nil
 	}
 	if r.sessionAuthorities == nil {
@@ -588,11 +582,11 @@ func (r *GatewayRunner) serveReservedProfile(ctx context.Context, name, profileH
 			return "", ctx.Err()
 		}
 		if r.sessionAuthorities.ForHome(profileHome) != nil {
-			reconcileLog().Error(fmt.Sprintf("[MULTIPLEX] Profile '%s' not served (%s); a turn outlived its Stop, "+
+			pkgLog().Error(fmt.Sprintf("[MULTIPLEX] Profile '%s' not served (%s); a turn outlived its Stop, "+
 				"ownership retained", name, err), "exc_info", err)
 			return fmt.Sprintf("stopping after a failed serve; ownership retained: %s", err), nil
 		}
-		reconcileLog().Error(fmt.Sprintf("[MULTIPLEX] Profile '%s' not served: its session store is unusable (%s): %s",
+		pkgLog().Error(fmt.Sprintf("[MULTIPLEX] Profile '%s' not served: its session store is unusable (%s): %s",
 			name, profileHome, err), "exc_info", err)
 		if releaseErr := r.releaseProfileHome(ctx, profileHome); releaseErr != nil {
 			return "", releaseErr
@@ -607,7 +601,7 @@ func (r *GatewayRunner) afterProfilesAdded(ctx context.Context, profileHomes []p
 	func() {
 		defer func() {
 			if rec := recover(); rec != nil {
-				reconcileLog().Debug("log routing refresh failed", "exc_info", recoveredError(rec))
+				pkgLog().Debug("log routing refresh failed", "exc_info", recoveredError(rec))
 			}
 		}()
 		enableMultiplexLogRouting(ctx, r.config)
@@ -616,7 +610,7 @@ func (r *GatewayRunner) afterProfilesAdded(ctx context.Context, profileHomes []p
 		scoped := mcp.SuppressInteractiveOAuth(gateway.ProfileRuntimeScope(ctx, p.Home, true))
 		env := &tools.Env{Home: home.Dir(scoped), TerminalScope: tools.GetTerminalScope(scoped)}
 		if _, err := mcp.ConnectAll(scoped, env, nil); err != nil {
-			reconcileLog().Warn(fmt.Sprintf("MCP tool discovery failed for profile '%s'", p.Name), "exc_info", err)
+			pkgLog().Warn(fmt.Sprintf("MCP tool discovery failed for profile '%s'", p.Name), "exc_info", err)
 		}
 	}
 }
@@ -714,28 +708,25 @@ func (r *GatewayRunner) unserveProfile(ctx context.Context, name, profileHome st
 		func() {
 			defer func() {
 				if rec := recover(); rec != nil {
-					reconcileLog().Debug(fmt.Sprintf("agent eviction failed for %s", key), "exc_info", recoveredError(rec))
+					pkgLog().Debug(fmt.Sprintf("agent eviction failed for %s", key), "exc_info", recoveredError(rec))
 				}
 			}()
 			r.evictCachedAgent(scoped, key, false, false)
 		}()
 	}
 	if !retired {
-		reconcileLog().Error(fmt.Sprintf("[MULTIPLEX] Profile '%s' unrouted, but a turn outlived its Stop; ownership retained", name))
+		pkgLog().Error(fmt.Sprintf("[MULTIPLEX] Profile '%s' unrouted, but a turn outlived its Stop; ownership retained", name))
 		return nil
 	}
 	state.CloseAllUnder(profileHome)
-	if _, err := manage.MemoryStoreReleaseAllUnder(profileHome); err != nil {
-		reconcileLog().Debug("memory-store release failed", "exc_info", err)
-	}
 	scope := home.Key(profileHome)
 	mcp.ShutdownMCPServers(scoped, &scope, nil, 15*time.Second)
 	if _, err := logging.ReleaseProfileLogHandlers(profileHome); err != nil {
-		reconcileLog().Debug("profile log handler release failed", "exc_info", err)
+		pkgLog().Debug("profile log handler release failed", "exc_info", err)
 	}
 	if err := r.releaseProfileHome(scoped, profileHome); err != nil {
 		return err
 	}
-	reconcileLog().Info(fmt.Sprintf("[MULTIPLEX] Profile '%s' unserved — %d adapter(s) stopped and unrouted", name, adapters.Len()))
+	pkgLog().Info(fmt.Sprintf("[MULTIPLEX] Profile '%s' unserved — %d adapter(s) stopped and unrouted", name, adapters.Len()))
 	return nil
 }

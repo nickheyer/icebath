@@ -2,10 +2,11 @@ package tools
 
 import (
 	"context"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"reflect"
 	"strings"
 	"testing"
+
+	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 )
 
 func availabilitySchema(name string) *pyjson.Object {
@@ -46,7 +47,8 @@ func TestGetDefinitionsReturnsOpenAIFormat(t *testing.T) {
 		if d["type"] != "function" {
 			t.Fatalf("type %v", d["type"])
 		}
-		names[d["function"].(map[string]any)["name"].(string)] = true
+		fn, _ := pyjson.Dict(d["function"])
+		names[fn["name"].(string)] = true
 	}
 	if len(defs) != 2 || !names["t1"] || !names["t2"] {
 		t.Fatalf("defs %v", defs)

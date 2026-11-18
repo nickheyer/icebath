@@ -6,7 +6,6 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/observability"
 	"github.com/nickheyer/icebath/pkg/plugins"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/state"
@@ -90,7 +89,7 @@ func applyLLMRequestMiddleware(ctx context.Context, a *AIAgent, s *LoopState, ap
 			if isUserInterruptPanic(r) {
 				panic(r)
 			}
-			conversationLoopLog().Warn("LLM request middleware failed; sending the request unmodified", "error", fmt.Sprint(r))
+			pkgLog().Warn("LLM request middleware failed; sending the request unmodified", "error", fmt.Sprint(r))
 			original = make(map[string]any, len(apiKwargs))
 			for k, v := range apiKwargs {
 				original[k] = v
@@ -120,7 +119,7 @@ func applyLLMRequestMiddleware(ctx context.Context, a *AIAgent, s *LoopState, ap
 	return payload, original, trace
 }
 
-// Request kwargs builder of the attempt, swapped by tests like the hermes instance patch
+// Request kwargs builder of the attempt, swapped by tests like the instance patch
 var loopBuildAPIKwargs = func(ctx context.Context, a *AIAgent, apiMessages, toolsForAPI []map[string]any, toolsOverride bool) (map[string]any, error) {
 	return a.buildAPIKwargsIn(ctx, apiMessages, toolsForAPI, toolsOverride)
 }
@@ -136,7 +135,6 @@ func buildRequestPayload(ctx context.Context, a *AIAgent, s *LoopState) error {
 	a.stripImagesForRejectingModel(&rows)
 	apiMessages = mapRows(rows)
 	s.APIMessages = rows
-	observability.ObserveRequestTools(ctx, a, s.ToolsForAPI)
 	apiKwargs, err := loopBuildAPIKwargs(ctx, a, apiMessages, s.ToolsForAPI, !sameToolSurface(s.ToolsForAPI, a.tools))
 	if err != nil {
 		return err
@@ -182,7 +180,7 @@ func buildAPIRequest(ctx context.Context, a *AIAgent, s *LoopState) error {
 		if moaClientConsumesPreparedRequest(a.client) {
 			s.APIKwargs["_moa_prepared_request"] = s.MoaPreparedRequest
 		} else {
-			conversationLoopLog().Warn(fmt.Sprintf("MoA client replaced mid-turn (client=%s); sending the prepared prompt without the MoA handshake", pyrepr.TypeName(a.client)))
+			pkgLog().Warn(fmt.Sprintf("MoA client replaced mid-turn (client=%s); sending the prepared prompt without the MoA handshake", pyrepr.TypeName(a.client)))
 		}
 	}
 	return nil

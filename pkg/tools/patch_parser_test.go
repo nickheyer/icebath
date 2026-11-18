@@ -7,7 +7,7 @@ import (
 	"testing"
 )
 
-// Map backed file backend mirroring the hermes test double
+// Map backed file backend mirroring the test double
 type fakePatchOps struct {
 	files    map[string]string
 	failRead map[string]bool

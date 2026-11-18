@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/nickheyer/icebath/pkg/home"
+	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 )
 
 // Temp home with the config text bound to the environment and the returned context
@@ -230,8 +231,8 @@ func TestRelayAuxCallScopeAndMetadata(t *testing.T) {
 	if !ok || provider != "openrouter" || model != "unknown" || meta["retry_count"] != 0 || meta["call_role"] != "auxiliary:unknown" || meta["api_mode"] != "chat_completions" {
 		t.Fatalf("first attempt %s %s %v", provider, model, meta)
 	}
-	provider, _, meta, _ = auxRelayAuxiliaryMetadata(scoped, "nous", "codex_responses")
-	if provider != "nous" || meta["retry_count"] != 1 || meta["api_mode"] != "codex_responses" || meta["api_request_id"] != record["request_id"] {
+	provider, _, meta, _ = auxRelayAuxiliaryMetadata(scoped, "deepseek", "codex_responses")
+	if provider != "deepseek" || meta["retry_count"] != 1 || meta["api_mode"] != "codex_responses" || meta["api_request_id"] != record["request_id"] {
 		t.Fatalf("second attempt %s %v", provider, meta)
 	}
 	info := map[string]string{}
@@ -247,7 +248,7 @@ func TestBypassChatSDKRequestTransform(t *testing.T) {
 	req := map[string]any{"model": "m", "messages": msgs, "extra_body": map[string]any{"tools": "kept"}}
 	sdk := newAuxOpenAIClient("k", "https://api.example.com/v1", auxOpenAIOptions{})
 	got := BypassChatSDKRequestTransform(req, sdk)
-	extra := got["extra_body"].(map[string]any)
+	extra, _ := pyjson.Dict(got["extra_body"])
 	if slot, ok := got["messages"].([]any); !ok || len(slot) != 0 || extra["tools"] != "kept" || len(extra["messages"].([]any)) != 1 {
 		t.Fatalf("bypassed %v", got)
 	}

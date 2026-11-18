@@ -50,8 +50,8 @@ func bundledInstallCLI(t *testing.T) (*HubCLI, string) {
 }
 
 func TestInstallByNameRestoresTheBundledSkillItNames(t *testing.T) {
-	for _, identifier := range []string{"computer-use", "NousResearch/hermes-agent/skills/productivity/pdf",
-		"skills-sh/nousresearch/hermes-agent/google-workspace"} {
+	for _, identifier := range []string{"computer-use", "nickheyer/icebath/pkg/skills/bundled/productivity/pdf",
+		"skills-sh/nickheyer/icebath/google-workspace"} {
 		t.Run(identifier, func(t *testing.T) {
 			x, tmp := bundledInstallCLI(t)
 			ctx := context.Background()
@@ -136,13 +136,9 @@ func TestInstallByNameRestoresTheBundledSkillItNames(t *testing.T) {
 	}
 }
 
-func TestBuiltInRestoreSurvivesLeftoversAndRecordsEveryOutcomeAsBundled(t *testing.T) {
+func TestBuiltInRestoreSurvivesLeftoversAndSymlinkedCategories(t *testing.T) {
 	x, tmp := bundledInstallCLI(t)
 	ctx := context.Background()
-	var rows [][2]string
-	x.seams.recordInstall = func(_ context.Context, _, source string, _ any, outcome string, _, _ any, _ error) {
-		rows = append(rows, [2]string{source, outcome})
-	}
 	dest := filepath.Join(x.S.SkillsDir(), path.Base(path.Dir(bundledSkillDir(t, "obsidian"))), "obsidian")
 	o := HubInstallOptions{SkipConfirm: true, Console: &pyrich.Console{Out: &bytes.Buffer{}, Width: 80}}
 	writeTestFile(t, filepath.Join(dest, "wiki", "index.md"), "mine\n")
@@ -165,8 +161,5 @@ func TestBuiltInRestoreSurvivesLeftoversAndRecordsEveryOutcomeAsBundled(t *testi
 	os.Remove(filepath.Join(real, "obsidian", "SKILL.md"))
 	if got, err := x.DoInstall(ctx, "obsidian", o); err != nil || got != HubFailed {
 		t.Fatalf("missing behind the symlink = %v %v", got, err)
-	}
-	if len(rows) != 2 || rows[0] != [2]string{"bundled", "success"} || rows[1] != [2]string{"bundled", "failed"} {
-		t.Fatalf("recorded %v", rows)
 	}
 }

@@ -40,7 +40,7 @@ func TestValidatorShapes(t *testing.T) {
 			[]string{"OS persistence surface"}},
 		{"clean npx", map[string]any{"command": "npx", "args": []any{"-y", "clean-mcp"}}, nil},
 		{"python with curl word", map[string]any{"command": "python3", "args": []any{"-c", "curl"}}, nil},
-		{"ioc in env", map[string]any{"command": "node", "env": map[string]any{"X": "118.182.244.156"}}, []string{"indicator-of-compromise ('118.182.244.156')"}},
+		{"ioc in env", map[string]any{"command": "node", "env": map[string]any{"X": "118.182.244.156"}}, []string{"indicator-of-compromise of the June 2026 MCP backdoor campaign ('118.182.244.156')"}},
 		{"curl inside word", map[string]any{"command": "bash", "args": []any{"-c", "echo mycurl.sh"}}, nil},
 		{"egress without exfil", map[string]any{"command": "zsh", "args": []any{"-c", "wget http://x"}}, []string{"network egress in args"}},
 	}

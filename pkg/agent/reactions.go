@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"github.com/dlclark/regexp2/v2"
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/internal/pyre"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 )
@@ -39,7 +40,7 @@ func detectReaction(text any) string {
 	}
 	s, ok := text.(string)
 	if !ok {
-		panic(fmt.Sprintf("TypeError: expected string or bytes-like object, got '%s'", pyrepr.TypeName(text)))
+		panic(fmt.Sprintf("reaction text is %s, expected text", errchain.Kind(text)))
 	}
 	if m, _ := vibeRe.MatchString(s); m {
 		return Vibe

@@ -336,7 +336,7 @@ func TestHookManifestBuildersRoutesSupportedHookBuildersAndLeavesOtherProvidersA
 			t.Errorf("no manifest for %s", provider)
 		}
 	}
-	for _, provider := range []string{"omp", "devin", "hermes", "unrecognized"} {
+	for _, provider := range []string{"omp", "devin", "icebath", "unrecognized"} {
 		if hooksJSONFor(provider, "") != nil {
 			t.Errorf("manifest built for %s", provider)
 		}

@@ -122,7 +122,7 @@ type dingtalkPlatformPlugin struct{}
 
 func (dingtalkPlatformPlugin) Manifest() plugins.Manifest {
 	return plugins.Manifest{Name: "dingtalk-platform", Version: "1.0.0", Kind: "platform", Source: "bundled", Key: "platforms/dingtalk",
-		Author: "NousResearch",
+		Author: "Icebath",
 		Description: "DingTalk gateway adapter for Icebath Agent. Connects to DingTalk via the dingtalk-stream SDK (Stream Mode) " +
 			"and relays messages between DingTalk chats and the Icebath agent. Supports text, images, audio, video, rich text, " +
 			"files, group @mention gating, free-response chats, and per-user allowlists.\n",

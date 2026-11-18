@@ -140,7 +140,7 @@ func (s *S) AddModel(name string, script []any, opts fakellm.Options) *fakellm.S
 	return m
 }
 
-// Marks the scenario as reproducing an open entry of SCENARIO_FINDINGS.md until the product matches hermes
+// Marks the scenario as reproducing an open entry of SCENARIO_FINDINGS.md until the product is fixed
 func (s *S) Finding(id string) { s.finding = id }
 
 // Fails the scenario, reported as the open finding when one is marked

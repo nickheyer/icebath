@@ -220,10 +220,10 @@ func textPrompt(sessionID, text string) *pyacp.PromptRequest {
 	return &pyacp.PromptRequest{SessionID: sessionID, Prompt: []pyacp.ContentBlock{pyacp.TextBlock(text)}}
 }
 
-func newTestAgent(t *testing.T) (*HermesACPAgent, *SessionManager) {
+func newTestAgent(t *testing.T) (*IcebathACPAgent, *SessionManager) {
 	t.Helper()
 	m := newMockManager(t)
-	return NewHermesACPAgent(m), m
+	return NewIcebathACPAgent(m), m
 }
 
 func newMockManager(t *testing.T) *SessionManager {

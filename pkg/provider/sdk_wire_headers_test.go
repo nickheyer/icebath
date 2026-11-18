@@ -107,10 +107,10 @@ func TestOpenAISDKWireHeadMatchesThePinnedSDK(t *testing.T) {
 		t.Fatalf("plain head\n%q\nwant\n%q", got, want)
 	}
 	custom := newAuxOpenAIClient("sk-k", base, auxOpenAIOptions{MaxRetries: &zero, Timeout: 1800.0,
-		DefaultHeaders: map[string]string{"HTTP-Referer": "https://r", "X-Title": "T", "User-Agent": "HermesAgent/1"}})
+		DefaultHeaders: map[string]string{"HTTP-Referer": "https://r", "X-Title": "T", "User-Agent": "IcebathAgent/1"}})
 	extra := pyjson.ObjectOf("x-grok-conv-id", "c1", "X-Title", "T2")
 	if got, want := call(custom, map[string]any{"extra_headers": extra, "timeout": 30.0}), sdkGoldenHead(addr, "Authorization: Bearer sk-k",
-		"Accept: application/json", "Content-Type: application/json", "User-Agent: HermesAgent/1", "PLATFORM", "HTTP-Referer: https://r",
+		"Accept: application/json", "Content-Type: application/json", "User-Agent: IcebathAgent/1", "PLATFORM", "HTTP-Referer: https://r",
 		"X-Title: T2", "X-Stainless-Async: false", "x-grok-conv-id: c1", "x-stainless-retry-count: 0", "x-stainless-read-timeout: 30.0"); got != want {
 		t.Fatalf("custom head\n%q\nwant\n%q", got, want)
 	}

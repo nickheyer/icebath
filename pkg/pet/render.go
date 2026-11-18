@@ -9,7 +9,6 @@ import (
 	_ "image/gif"
 	_ "image/jpeg"
 	"image/png"
-	"log/slog"
 	"math"
 	"os"
 	"slices"
@@ -23,7 +22,6 @@ import (
 )
 
 var (
-	renderLog   = slog.Default().With("logger", "agent.pet.render")
 	RenderModes = []string{"auto", "kitty", "iterm", "sixel", "unicode", "off"}
 )
 
@@ -161,19 +159,19 @@ func rawFrames(sheetPath, state string, frameW, frameH, framesPerState int) []*i
 	return rawFrameCache.get(frameKey{sheet: sheetPath, state: state, frameW: frameW, frameH: frameH, frames: framesPerState}, func() (frames []*image.NRGBA) {
 		defer func() {
 			if r := recover(); r != nil {
-				renderLog.Debug(fmt.Sprintf("pet frame decode failed (%s, %s): %v", sheetPath, state, r))
+				pkgLog().Debug(fmt.Sprintf("pet frame decode failed (%s, %s): %v", sheetPath, state, r))
 				frames = nil
 			}
 		}()
 		f, err := os.Open(sheetPath)
 		if err != nil {
-			renderLog.Debug(fmt.Sprintf("pet frame decode failed (%s, %s): %s", sheetPath, state, err))
+			pkgLog().Debug(fmt.Sprintf("pet frame decode failed (%s, %s): %s", sheetPath, state, err))
 			return nil
 		}
 		defer f.Close()
 		decoded, _, err := image.Decode(f)
 		if err != nil {
-			renderLog.Debug(fmt.Sprintf("pet frame decode failed (%s, %s): %s", sheetPath, state, err))
+			pkgLog().Debug(fmt.Sprintf("pet frame decode failed (%s, %s): %s", sheetPath, state, err))
 			return nil
 		}
 		return SheetFrames(pypil.ToNRGBA(decoded), state, frameW, frameH, framesPerState)
@@ -456,7 +454,7 @@ func (r *Renderer) Frame(state string, index int) string {
 	return func() (out string) {
 		defer func() {
 			if rec := recover(); rec != nil {
-				renderLog.Debug(fmt.Sprintf("pet frame encode failed (mode=%s): %v", r.Mode, rec))
+				pkgLog().Debug(fmt.Sprintf("pet frame encode failed (mode=%s): %v", r.Mode, rec))
 				out = ""
 			}
 		}()

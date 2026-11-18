@@ -6,7 +6,6 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
-	"log/slog"
 	"path/filepath"
 	"reflect"
 	"sort"
@@ -699,7 +698,7 @@ func recoverConfigSecretsSkipping(ctx context.Context, owner launchSecretOwner, 
 		if ok {
 			kind = fault.Kind
 		}
-		slog.Warn(fmt.Sprintf("Frozen config reference unreadable: %s", kind))
+		pkgLog().Warn(fmt.Sprintf("Frozen config reference unreadable: %s", kind))
 		return nil, credentialsRefusal("config_secret_ref", "unreadable ("+kind+")")
 	}
 	return nil, err
@@ -793,7 +792,7 @@ func recoverReferencedSecrets(ctx context.Context, owner launchSecretOwner, poli
 				}
 				return nil, credentialsRefusal(secretField(path), how+" config.yaml since this session started")
 			}
-			slog.Warn(fmt.Sprintf("Session %s: frozen config secret %s no longer matches the profile config; skipping it",
+			pkgLog().Warn(fmt.Sprintf("Session %s: frozen config secret %s no longer matches the profile config; skipping it",
 				pyrepr.Str(source["session"]), pyrepr.Str([]any(path))))
 			values.dropped = append(values.dropped, path)
 			continue
@@ -909,7 +908,7 @@ func disableDroppedSecrets(ctx context.Context, config map[string]any, dropped [
 		}
 		replaced["provider"] = "main"
 		auxiliary[task] = replaced
-		slog.Warn(fmt.Sprintf("Session %s: auxiliary task %s returned to the primary route: its credential changed in "+
+		pkgLog().Warn(fmt.Sprintf("Session %s: auxiliary task %s returned to the primary route: its credential changed in "+
 			"config.yaml since this session started", pyrepr.Str(session), task))
 	}
 	owners := map[string]bool{}
@@ -947,7 +946,7 @@ func disableDroppedSecrets(ctx context.Context, config map[string]any, dropped [
 				owner = entryOwnerPath(ctx, m, config)
 			}
 			if own || (owner != nil && owners[pathKey(owner)]) {
-				slog.Warn(fmt.Sprintf("Session %s: fallback %s/%s removed: its credential changed in config.yaml since this "+
+				pkgLog().Warn(fmt.Sprintf("Session %s: fallback %s/%s removed: its credential changed in config.yaml since this "+
 					"session started", pyrepr.Str(session), fallbackLabel(entry, "provider"), fallbackLabel(entry, "model")))
 				continue
 			}

@@ -3,7 +3,8 @@ package slack
 import (
 	"context"
 	"fmt"
-	"log/slog"
+	"regexp"
+	"slices"
 	"strconv"
 	"strings"
 
@@ -18,31 +19,61 @@ import (
 
 // Action ids of the model picker select menus and buttons
 const (
-	modelPickerProviderAction = "hermes_model_provider"
-	modelPickerModelAction    = "hermes_model_model"
-	modelPickerBackAction     = "hermes_model_back"
-	modelPickerCancelAction   = "hermes_model_cancel"
+	modelPickerProviderAction = "icebath_model_provider"
+	modelPickerModelAction    = "icebath_model_model"
+	modelPickerBackAction     = "icebath_model_back"
+	modelPickerCancelAction   = "icebath_model_cancel"
 )
+
+// Action ids of the feedback and clarify buttons
+const (
+	feedbackActionID     = "icebath_feedback"
+	clarifyOtherActionID = "icebath_clarify_other"
+)
+
+// Prefix of every built in action id, and the one buttons an older icebath posted still send
+const (
+	actionIDPrefix       = "icebath_"
+	legacyActionIDPrefix = "hermes_"
+)
+
+var clarifyChoiceActionRE = regexp.MustCompile(`^icebath_clarify_choice_\d+$`)
+
+// Icebath action id of a built in button an older icebath posted, any other id unchanged
+func currentActionID(id string) string {
+	rest, legacy := strings.CutPrefix(id, legacyActionIDPrefix)
+	if !legacy {
+		return id
+	}
+	current := actionIDPrefix + rest
+	_, approval := approvalChoices[current]
+	_, confirm := confirmChoices[current]
+	if approval || confirm || slices.Contains(modelPickerActionIDs, current) || current == feedbackActionID ||
+		current == clarifyOtherActionID || clarifyChoiceActionRE.MatchString(current) {
+		return current
+	}
+	return id
+}
 
 var modelPickerActionIDs = []string{modelPickerProviderAction, modelPickerModelAction, modelPickerBackAction, modelPickerCancelAction}
 
 // Approval button action ids mapped to their choices, in declaration order
 var (
-	approvalActionOrder = []string{"hermes_approve_once", "hermes_approve_session", "hermes_approve_always", "hermes_deny"}
+	approvalActionOrder = []string{"icebath_approve_once", "icebath_approve_session", "icebath_approve_always", "icebath_deny"}
 	approvalChoices     = map[string]string{
-		"hermes_approve_once": "once", "hermes_approve_session": "session",
-		"hermes_approve_always": "always", "hermes_deny": "deny"}
+		"icebath_approve_once": "once", "icebath_approve_session": "session",
+		"icebath_approve_always": "always", "icebath_deny": "deny"}
 	approvalDecisionKeys = map[string]string{
 		"once": "platform.slack.approval.resolved_once", "session": "platform.slack.approval.resolved_session",
 		"always": "platform.slack.approval.resolved_always", "deny": "platform.slack.approval.resolved_deny"}
-	confirmActionOrder = []string{"hermes_confirm_once", "hermes_confirm_always", "hermes_confirm_cancel"}
+	confirmActionOrder = []string{"icebath_confirm_once", "icebath_confirm_always", "icebath_confirm_cancel"}
 	confirmChoices     = map[string]string{
-		"hermes_confirm_once": "once", "hermes_confirm_always": "always", "hermes_confirm_cancel": "cancel"}
+		"icebath_confirm_once": "once", "icebath_confirm_always": "always", "icebath_confirm_cancel": "cancel"}
 	confirmDecisionKeys = map[string]string{
 		"once": "platform.slack.approval.resolved_once", "always": "platform.slack.confirm.resolved_always",
 		"cancel": "platform.slack.confirm.resolved_cancel"}
-	eaActionIDs = map[string]string{"once": "hermes_approve_once", "session": "hermes_approve_session",
-		"always": "hermes_approve_always", "deny": "hermes_deny"}
+	eaActionIDs = map[string]string{"once": "icebath_approve_once", "session": "icebath_approve_session",
+		"always": "icebath_approve_always", "deny": "icebath_deny"}
 )
 
 // Section text cap past which Slack rejects the blocks and no buttons render
@@ -117,7 +148,7 @@ func (a *SlackAdapter) sendInteractivePrompt(ctx context.Context, chatID string,
 	text, blocks := build()
 	result, err := a.postInteractiveBlocks(ctx, chatID, text, blocks, metadata, sanitize, teamScopedKey)
 	if err != nil {
-		slog.Error(fmt.Sprintf("[Slack] %s failed: %v", label, err))
+		pkgLog().Error(fmt.Sprintf("[Slack] %s failed: %v", label, err))
 		return gateway.SendResult{Success: false, Error: err.Error()}
 	}
 	msgTS := pyrepr.Str(getOr(result.Data, "ts", ""))
@@ -192,9 +223,9 @@ func (a *SlackAdapter) SendSlashConfirm(ctx context.Context, chatID, title, mess
 		blocks := []any{
 			map[string]any{"type": "section", "text": map[string]any{"type": "mrkdwn", "text": "*" + t + "*\n\n" + body}},
 			map[string]any{"type": "actions", "elements": []any{
-				button(label("platform.slack.confirm.approve_once"), "hermes_confirm_once", value, "primary", false),
-				button(label("platform.slack.confirm.always_approve"), "hermes_confirm_always", value, "", false),
-				button(label("platform.slack.confirm.cancel"), "hermes_confirm_cancel", value, "danger", false)}}}
+				button(label("platform.slack.confirm.approve_once"), "icebath_confirm_once", value, "primary", false),
+				button(label("platform.slack.confirm.always_approve"), "icebath_confirm_always", value, "", false),
+				button(label("platform.slack.confirm.cancel"), "icebath_confirm_cancel", value, "danger", false)}}}
 		return t + ": " + pystr.Slice(body, 0, 100), blocks
 	}
 	return a.sendInteractivePrompt(ctx, chatID, metadata, build, "send_slash_confirm", nil, 0, true, true), nil
@@ -284,16 +315,7 @@ func (a *SlackAdapter) buildModelPickerModelBlocks(ctx context.Context, provider
 			parts := strings.Split(modelID, "/")
 			short = parts[len(parts)-1]
 		}
-		var row any
-		if provider != nil {
-			row = provider
-		}
-		suffix := providerPickerRowSuffix(row, modelID)
-		text := pystr.Slice(short, 0, 75)
-		if suffix != "" {
-			text = pystr.Slice(short, 0, 75-pystr.Len(suffix)-3) + " · " + suffix
-		}
-		options = append(options, pickerOption(text, idx))
+		options = append(options, pickerOption(pystr.Slice(short, 0, 75), idx))
 	}
 	total := int64(len(models))
 	if provider != nil {
@@ -324,13 +346,10 @@ func (a *SlackAdapter) buildModelPickerModelBlocks(ctx context.Context, provider
 		map[string]any{"type": "actions", "elements": elements}}
 }
 
-// Approval resolution of a session, a package var the way hermes tests patch resolve_gateway_approval
+// Approval resolution of a session, a package var the way tests patch resolve_gateway_approval
 var resolveGatewayApprovalFn = tools.ResolveGatewayApproval
 
-// Window plan suffix of a picker row, a package var the way hermes tests patch picker_row_suffix
-var providerPickerRowSuffix = provider.PickerRowSuffix
-
-// Provider display label, a package var the way hermes tests patch get_label
+// Provider display label, a package var the way tests patch get_label
 var providerLabelFn = provider.GetProviderLabel
 
 // Interactive two step provider then model Block Kit picker
@@ -353,7 +372,7 @@ func (a *SlackAdapter) SendModelPicker(ctx context.Context, chatID string, provi
 	}
 	result, err := a.getClient(chatID, teamID).call(ctx, "chat.postMessage", kwargs)
 	if err != nil {
-		slog.Error(fmt.Sprintf("[Slack] send_model_picker failed: %v", err))
+		pkgLog().Error(fmt.Sprintf("[Slack] send_model_picker failed: %v", err))
 		return gateway.SendResult{Success: false, Error: err.Error()}, nil
 	}
 	msgTS := pyrepr.Str(getOr(result.Data, "ts", ""))
@@ -374,7 +393,7 @@ func (a *SlackAdapter) updatePickerMessage(ctx context.Context, channelID, teamI
 	_, err := a.getClient(channelID, teamID).call(ctx, "chat.update", map[string]any{"channel": channelID, "ts": msgTS, "text": text,
 		"blocks": SanitizeBlocks([]any{map[string]any{"type": "section", "text": map[string]any{"type": "mrkdwn", "text": text}}})})
 	if err != nil {
-		slog.Warn(fmt.Sprintf("[Slack] Failed to update model picker message: %v", err))
+		pkgLog().Warn(fmt.Sprintf("[Slack] Failed to update model picker message: %v", err))
 	}
 }
 
@@ -382,14 +401,14 @@ func (a *SlackAdapter) updatePickerMessage(ctx context.Context, channelID, teamI
 func (a *SlackAdapter) handleModelPickerAction(ctx context.Context, ack ackFunc, body, action map[string]any) {
 	_ = ack(nil)
 	teamID := eventTeamID(map[string]any{}, body)
-	actionID := pyrepr.Str(getOr(action, "action_id", ""))
+	actionID := currentActionID(pyrepr.Str(getOr(action, "action_id", "")))
 	msgTS := pyrepr.Str(getOr(asMap(getOr(body, "message", map[string]any{})), "ts", ""))
 	channelID := pyrepr.Str(getOr(asMap(getOr(body, "channel", map[string]any{})), "id", ""))
 	user := asMap(getOr(body, "user", map[string]any{}))
 	userName := pyrepr.Str(getOr(user, "name", "unknown"))
 	userID := pyrepr.Str(getOr(user, "id", ""))
 	if !a.isInteractiveUserAuthorized(ctx, userID, channelID, &userName, teamID) {
-		slog.Warn(fmt.Sprintf("[Slack] Unauthorized model picker click by %s (%s) - ignoring", userName, userID))
+		pkgLog().Warn(fmt.Sprintf("[Slack] Unauthorized model picker click by %s (%s) - ignoring", userName, userID))
 		return
 	}
 	var marker any = workspaceMessageMarker(teamID, msgTS)
@@ -400,7 +419,7 @@ func (a *SlackAdapter) handleModelPickerAction(ctx context.Context, ack ackFunc,
 	state, _ := a.modelPickerState.Get(marker)
 	a.mu.Unlock()
 	if state == nil {
-		slog.Debug(fmt.Sprintf("[Slack] Model picker state not found for marker=%s", pyrepr.Repr(marker)))
+		pkgLog().Debug(fmt.Sprintf("[Slack] Model picker state not found for marker=%s", pyrepr.Repr(marker)))
 		a.updatePickerMessage(ctx, channelID, teamID, msgTS, modelPickerExpiredNotice(ctx))
 		return
 	}
@@ -421,7 +440,7 @@ func (a *SlackAdapter) handleModelPickerAction(ctx context.Context, ack ackFunc,
 			picked = providers[idx]
 		}
 		if picked == nil {
-			slog.Warn(fmt.Sprintf("[Slack] Invalid provider picker index token: %s", pyrepr.Repr(idxToken)))
+			pkgLog().Warn(fmt.Sprintf("[Slack] Invalid provider picker index token: %s", pyrepr.Repr(idxToken)))
 			dropState()
 			a.updatePickerMessage(ctx, channelID, teamID, msgTS, modelPickerExpiredNotice(ctx))
 			return
@@ -440,7 +459,7 @@ func (a *SlackAdapter) handleModelPickerAction(ctx context.Context, ack ackFunc,
 			"text":   i18n.T(ctx, "platform.slack.picker.fallback_model", "", map[string]any{"provider": pyrepr.Str(getOr(picked, "name", providerSlug))}),
 			"blocks": SanitizeBlocks(blocks)})
 		if err != nil {
-			slog.Warn(fmt.Sprintf("[Slack] Failed to update model picker (provider→model): %v", err))
+			pkgLog().Warn(fmt.Sprintf("[Slack] Failed to update model picker (provider→model): %v", err))
 		}
 	case actionID == modelPickerBackAction:
 		a.mu.Lock()
@@ -451,7 +470,7 @@ func (a *SlackAdapter) handleModelPickerAction(ctx context.Context, ack ackFunc,
 		_, err := a.getClient(channelID, teamID).call(ctx, "chat.update", map[string]any{"channel": channelID, "ts": msgTS,
 			"text": i18n.T(ctx, "platform.slack.picker.fallback_provider", "", nil), "blocks": SanitizeBlocks(blocks)})
 		if err != nil {
-			slog.Warn(fmt.Sprintf("[Slack] Failed to update model picker (back): %v", err))
+			pkgLog().Warn(fmt.Sprintf("[Slack] Failed to update model picker (back): %v", err))
 		}
 	case actionID == modelPickerModelAction && state.stage == "model":
 		idxToken := getOr(asMap(getOr(action, "selected_option", map[string]any{})), "value", "")
@@ -463,7 +482,7 @@ func (a *SlackAdapter) handleModelPickerAction(ctx context.Context, ack ackFunc,
 			modelID, found = models[idx], true
 		}
 		if !found {
-			slog.Warn(fmt.Sprintf("[Slack] Invalid model picker index token: %s", pyrepr.Repr(idxToken)))
+			pkgLog().Warn(fmt.Sprintf("[Slack] Invalid model picker index token: %s", pyrepr.Repr(idxToken)))
 			dropState()
 			a.updatePickerMessage(ctx, channelID, teamID, msgTS, modelPickerExpiredNotice(ctx))
 			return
@@ -478,7 +497,7 @@ func (a *SlackAdapter) handleModelPickerAction(ctx context.Context, ack ackFunc,
 		switchFailed := false
 		confirmation, err := state.onModelSelected(ctx, state.chatID, modelID, providerSlug)
 		if err != nil {
-			slog.Error(fmt.Sprintf("[Slack] Model picker callback failed: %v", err))
+			pkgLog().Error(fmt.Sprintf("[Slack] Model picker callback failed: %v", err))
 			confirmation = i18n.T(ctx, "platform.slack.picker.switch_failed", "", map[string]any{"error": err.Error()})
 			switchFailed = true
 		} else if prefix := pystr.Strip(i18n.T(ctx, "gateway.model.error_prefix", "", map[string]any{"error": ""})); prefix != "" && strings.HasPrefix(confirmation, prefix) {
@@ -522,9 +541,9 @@ func (a *SlackAdapter) SendClarify(ctx context.Context, chatID, question string,
 			if label == "" {
 				label = i18n.T(ctx, "platform.slack.clarify.option_n", "", map[string]any{"n": strconv.Itoa(idx + 1)})
 			}
-			elements = append(elements, button(pystr.Slice(label, 0, 75), fmt.Sprintf("hermes_clarify_choice_%d", idx), fmt.Sprintf("%s|%d", clarifyID, idx), "", true))
+			elements = append(elements, button(pystr.Slice(label, 0, 75), fmt.Sprintf("icebath_clarify_choice_%d", idx), fmt.Sprintf("%s|%d", clarifyID, idx), "", true))
 		}
-		elements = append(elements, button(pystr.Slice(i18n.T(ctx, "platform.slack.clarify.other", "", nil), 0, 75), "hermes_clarify_other", clarifyID+"|other", "", true))
+		elements = append(elements, button(pystr.Slice(i18n.T(ctx, "platform.slack.clarify.other", "", nil), 0, 75), clarifyOtherActionID, clarifyID+"|other", "", true))
 		blocks := []any{map[string]any{"type": "section", "text": map[string]any{"type": "mrkdwn", "text": body}}}
 		for start := 0; start < len(elements); start += 5 {
 			blocks = append(blocks, map[string]any{"type": "actions", "elements": elements[start:min(start+5, len(elements))]})
@@ -578,7 +597,7 @@ func (a *SlackAdapter) isInteractiveUserAuthorized(ctx context.Context, userID, 
 		if err == nil {
 			return ok
 		}
-		slog.Debug(fmt.Sprintf("[Slack] Falling back to env-only interactive auth for user %s: %v", normalized, err))
+		pkgLog().Debug(fmt.Sprintf("[Slack] Falling back to env-only interactive auth for user %s: %v", normalized, err))
 	}
 	env := func(name string) string { return pystr.Lower(gateway.PlatformGateEnv(ctx, name, "")) }
 	switch env("SLACK_ALLOW_ALL_USERS") {
@@ -616,7 +635,7 @@ func interactionFields(body, action map[string]any) interaction {
 	message := asMap(getOr(body, "message", map[string]any{}))
 	user := asMap(getOr(body, "user", map[string]any{}))
 	return interaction{
-		actionID: pyrepr.Str(getOr(action, "action_id", "")), value: pyrepr.Str(getOr(action, "value", "")),
+		actionID: currentActionID(pyrepr.Str(getOr(action, "action_id", ""))), value: pyrepr.Str(getOr(action, "value", "")),
 		message: message, msgTS: pyrepr.Str(getOr(message, "ts", "")),
 		channelID: pyrepr.Str(getOr(asMap(getOr(body, "channel", map[string]any{})), "id", "")),
 		userName:  pyrepr.Str(getOr(user, "name", "unknown")), userID: pyrepr.Str(getOr(user, "id", ""))}
@@ -632,7 +651,7 @@ func (a *SlackAdapter) beginInteraction(ctx context.Context, ack ackFunc, body, 
 		authTeam = in.teamID
 	}
 	if !a.isInteractiveUserAuthorized(ctx, in.userID, in.channelID, &in.userName, authTeam) {
-		slog.Warn(fmt.Sprintf("[Slack] Unauthorized %s click by %s (%s) - ignoring", kind, in.userName, in.userID))
+		pkgLog().Warn(fmt.Sprintf("[Slack] Unauthorized %s click by %s (%s) - ignoring", kind, in.userName, in.userID))
 		return nil
 	}
 	return &in
@@ -667,7 +686,7 @@ func (a *SlackAdapter) finalizeInteractiveMessage(ctx context.Context, channelID
 		blocks = SanitizeBlocks(blocks)
 	}
 	if _, err := a.getClient(channelID, teamID).call(ctx, "chat.update", map[string]any{"channel": channelID, "ts": msgTS, "text": decisionText, "blocks": blocks}); err != nil {
-		slog.Warn(fmt.Sprintf("[Slack] Failed to update %s message: %v", label, err))
+		pkgLog().Warn(fmt.Sprintf("[Slack] Failed to update %s message: %v", label, err))
 	}
 }
 
@@ -679,7 +698,7 @@ func (a *SlackAdapter) handleSlashConfirmAction(ctx context.Context, ack ackFunc
 	}
 	sessionKey, confirmID, ok := strings.Cut(in.value, "|")
 	if !ok {
-		slog.Warn("[Slack] Malformed slash-confirm value: " + in.value)
+		pkgLog().Warn("[Slack] Malformed slash-confirm value: " + in.value)
 		return
 	}
 	choice, known := confirmChoices[in.actionID]
@@ -689,7 +708,7 @@ func (a *SlackAdapter) handleSlashConfirmAction(ctx context.Context, ack ackFunc
 	decisionText := i18n.T(ctx, confirmDecisionKeys[choice], "", map[string]any{"user": in.userName})
 	a.finalizeInteractiveMessage(ctx, in.channelID, in.msgTS, sectionText(in.message, 3000), decisionText, "Confirmation prompt", "slash-confirm", in.teamID, true)
 	if gateway.SlashConfirmResolve == nil {
-		slog.Error("Failed to resolve slash-confirm from Slack button: slash confirm resolver is not installed")
+		pkgLog().Error("Failed to resolve slash-confirm from Slack button: slash confirm resolver is not installed")
 		return
 	}
 	if resultText := gateway.SlashConfirmResolve(ctx, sessionKey, confirmID, choice); resultText != "" {
@@ -702,11 +721,11 @@ func (a *SlackAdapter) handleSlashConfirmAction(ctx context.Context, ack ackFunc
 			kwargs["thread_ts"] = threadTS
 		}
 		if _, err := a.getClient(in.channelID, in.teamID).call(ctx, "chat.postMessage", kwargs); err != nil {
-			slog.Error(fmt.Sprintf("Failed to resolve slash-confirm from Slack button: %v", err))
+			pkgLog().Error(fmt.Sprintf("Failed to resolve slash-confirm from Slack button: %v", err))
 			return
 		}
 	}
-	slog.Info(fmt.Sprintf("Slack button resolved slash-confirm for session %s (choice=%s, user=%s)", sessionKey, choice, in.userName))
+	pkgLog().Info(fmt.Sprintf("Slack button resolved slash-confirm for session %s (choice=%s, user=%s)", sessionKey, choice, in.userName))
 }
 
 // Acks Slack AI feedback button clicks and logs the choice
@@ -716,7 +735,7 @@ func (a *SlackAdapter) handleFeedbackAction(_ context.Context, ack ackFunc, body
 	message := asMap(firstTruthyValue(body["message"], map[string]any{}))
 	channelID := pyrepr.Str(getOr(asMap(firstTruthyValue(body["channel"], map[string]any{})), "id", ""))
 	userID := pyrepr.Str(getOr(asMap(firstTruthyValue(body["user"], map[string]any{})), "id", ""))
-	slog.Info(fmt.Sprintf("[Slack] Feedback button clicked: value=%s user=%s channel=%s ts=%s", value, userID, channelID, pyrepr.Str(getOr(message, "ts", ""))))
+	pkgLog().Info(fmt.Sprintf("[Slack] Feedback button clicked: value=%s user=%s channel=%s ts=%s", value, userID, channelID, pyrepr.Str(getOr(message, "ts", ""))))
 }
 
 // Approval button click resolving the waiting approval once and rewriting the prompt
@@ -741,7 +760,7 @@ func (a *SlackAdapter) handleApprovalAction(ctx context.Context, ack ackFunc, bo
 		return
 	}
 	count := resolveGatewayApprovalFn(sessionKey, choice, false, "", "")
-	slog.Info(fmt.Sprintf("Slack button resolved %d approval(s) for session %s (choice=%s, user=%s)", count, sessionKey, choice, in.userName))
+	pkgLog().Info(fmt.Sprintf("Slack button resolved %d approval(s) for session %s (choice=%s, user=%s)", count, sessionKey, choice, in.userName))
 	decisionText := i18n.T(ctx, approvalDecisionKeys[choice], "", map[string]any{"user": in.userName})
 	if count == 0 {
 		decisionText = i18n.T(ctx, "platform.shared.approval_expired", "", nil)
@@ -779,7 +798,7 @@ func (a *SlackAdapter) handleClarifyAction(ctx context.Context, ack ackFunc, bod
 	}
 	clarifyID, token, ok := strings.Cut(in.value, "|")
 	if !ok {
-		slog.Warn("[Slack] Malformed clarify value: " + in.value)
+		pkgLog().Warn("[Slack] Malformed clarify value: " + in.value)
 		return
 	}
 	a.mu.Lock()
@@ -795,7 +814,7 @@ func (a *SlackAdapter) handleClarifyAction(ctx context.Context, ack ackFunc, bod
 		a.clarifyMessages.Delete(clarifyID)
 		a.mu.Unlock()
 	}
-	if in.actionID == "hermes_clarify_other" || token == "other" {
+	if in.actionID == clarifyOtherActionID || token == "other" {
 		if !tools.MarkClarifyAwaitingText(clarifyID) {
 			dropMessage()
 			a.updateClarifyMessage(ctx, in.channelID, in.msgTS, originalText, expiredText)
@@ -806,7 +825,7 @@ func (a *SlackAdapter) handleClarifyAction(ctx context.Context, ack ackFunc, bod
 	}
 	idx, err := strconv.Atoi(pystr.Strip(token))
 	if err != nil {
-		slog.Warn("[Slack] Invalid clarify choice token: " + token)
+		pkgLog().Warn("[Slack] Invalid clarify choice token: " + token)
 		return
 	}
 	dropMessage()
@@ -826,10 +845,10 @@ func (a *SlackAdapter) handleClarifyAction(ctx context.Context, ack ackFunc, bod
 	if tools.ResolveGatewayClarify(clarifyID, *resolvedText) {
 		a.updateClarifyMessage(ctx, in.channelID, in.msgTS, originalText,
 			i18n.T(ctx, "platform.slack.clarify.resolved", "", map[string]any{"user": in.userName, "choice": displayText}))
-		slog.Info(fmt.Sprintf("Slack button resolved clarify (id=%s, choice_index=%d, user=%s)", clarifyID, idx, in.userName))
-		slog.Debug(fmt.Sprintf("Slack clarify choice text (id=%s): %s", clarifyID, pystr.Slice(pyrepr.Repr(*resolvedText), 0, 100)))
+		pkgLog().Info(fmt.Sprintf("Slack button resolved clarify (id=%s, choice_index=%d, user=%s)", clarifyID, idx, in.userName))
+		pkgLog().Debug(fmt.Sprintf("Slack clarify choice text (id=%s): %s", clarifyID, pystr.Slice(pyrepr.Repr(*resolvedText), 0, 100)))
 		return
 	}
 	a.updateClarifyMessage(ctx, in.channelID, in.msgTS, originalText, expiredText)
-	slog.Warn(fmt.Sprintf("[Slack] clarify resolve returned False (id=%s) — expired/reset", clarifyID))
+	pkgLog().Warn(fmt.Sprintf("[Slack] clarify resolve returned False (id=%s) — expired/reset", clarifyID))
 }

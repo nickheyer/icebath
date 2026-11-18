@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"log/slog"
 	"strings"
 
 	"github.com/bwmarrin/discordgo"
@@ -223,6 +222,6 @@ func (a *DiscordAdapter) deferUnlessExpired(ctx context.Context, i *discordgo.In
 	if !isDiscordUnknownInteraction(err) {
 		return false, dpyError(err)
 	}
-	slog.Warn(fmt.Sprintf(warnFmt, warnArgs...))
+	pkgLog().Warn(fmt.Sprintf(warnFmt, warnArgs...))
 	return false, nil
 }

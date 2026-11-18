@@ -283,7 +283,7 @@ func (a *APIServerAdapter) spawnStreamAgentWith(ctx context.Context, q *streamQu
 				func() {
 					defer func() {
 						if rec := recover(); rec != nil {
-							apiLog().Debug("[api_server] stream on_done hook failed", "error", rec)
+							pkgLog().Debug("[api_server] stream on_done hook failed", "error", rec)
 						}
 					}()
 					onDone(outcome.result, outcome.err)
@@ -333,13 +333,13 @@ func (a *APIServerAdapter) handleChatCompletions(ctx context.Context, request *g
 	if keyErr != nil {
 		return keyErr, nil
 	}
-	providedSessionID := strings.TrimSpace(request.Header.Get("X-Hermes-Session-Id"))
+	providedSessionID := strings.TrimSpace(request.Header.Get("X-Icebath-Session-Id"))
 	var sessionID string
 	var historyRows []map[string]any
 	useStored := false
 	if providedSessionID != "" {
 		if a.apiKey == "" {
-			apiLog().Warn("Session continuation via X-Hermes-Session-Id rejected: no API key configured.  Set API_SERVER_KEY to enable session continuity.")
+			pkgLog().Warn("Session continuation via X-Icebath-Session-Id rejected: no API key configured.  Set API_SERVER_KEY to enable session continuity.")
 			return errorResponse("Session continuation requires API key authentication. Configure API_SERVER_KEY to enable this feature.",
 				http.StatusForbidden, errOpts{}), nil
 		}
@@ -354,7 +354,7 @@ func (a *APIServerAdapter) handleChatCompletions(ctx context.Context, request *g
 			sessionID = a.resolveLiveSessionID(ctx, providedSessionID)
 			rows, err := db.GetMessagesAsConversation(ctx, sessionID, state.ConversationOptions{})
 			if err != nil {
-				apiLog().Warn(fmt.Sprintf("Failed to load session history for %s: %v", sessionID, err))
+				pkgLog().Warn(fmt.Sprintf("Failed to load session history for %s: %v", sessionID, err))
 				rows = []map[string]any{}
 			}
 			historyRows, useStored = rows, true
@@ -410,7 +410,7 @@ func (a *APIServerAdapter) handleChatCompletions(ctx context.Context, request *g
 		run.sessionHistoryDelivery = "1"
 	}
 	a.applyAuthorityChatKwargs(&run, request, providedSessionID)
-	if providedSessionID != "" && body.GetOr("hermes_notification_category", nil) == "diagnostic" {
+	if providedSessionID != "" && body.GetOr("icebath_notification_category", nil) == "diagnostic" {
 		run.notificationCategory = "diagnostic"
 	}
 	if stream {
@@ -457,7 +457,7 @@ func (a *APIServerAdapter) handleChatCompletions(ctx context.Context, request *g
 		return [2]map[string]any{result, usage}, err
 	}
 	outcome, errResp := a.runIdempotent(ctx, request, body, compute, "chat completions",
-		[]string{"model", "provider", "model_options", "messages", "tools", "tool_choice", "stream", "hermes_notification_category"},
+		[]string{"model", "provider", "model_options", "messages", "tools", "tool_choice", "stream", "icebath_notification_category"},
 		"chat_completions")
 	if errResp != nil {
 		return errResp, nil
@@ -484,9 +484,9 @@ func (a *APIServerAdapter) chatCompletionResponse(ctx context.Context, result, u
 			echoed = pyrepr.Str(result["session_id"])
 		}
 	}
-	headers := map[string]string{"X-Hermes-Session-Id": echoed}
+	headers := map[string]string{"X-Icebath-Session-Id": echoed}
 	if gatewaySessionKey != "" {
-		headers["X-Hermes-Session-Key"] = gatewaySessionKey
+		headers["X-Icebath-Session-Key"] = gatewaySessionKey
 	}
 	partialFlag := "false"
 	if isPartial {
@@ -502,9 +502,9 @@ func (a *APIServerAdapter) chatCompletionResponse(ctx context.Context, result, u
 		}
 		errBody := openAIError(message, "server_error", nil, "agent_incomplete")
 		inner, _ := errBody.Get("error")
-		inner.(*pyjson.Object).Set("hermes", pyjson.ObjectOf("completed", completed, "partial", isPartial, "failed", isFailed))
-		headers["X-Hermes-Completed"] = "false"
-		headers["X-Hermes-Partial"] = partialFlag
+		inner.(*pyjson.Object).Set("icebath", pyjson.ObjectOf("completed", completed, "partial", isPartial, "failed", isFailed))
+		headers["X-Icebath-Completed"] = "false"
+		headers["X-Icebath-Partial"] = partialFlag
 		return jsonResponse(errBody, http.StatusBadGateway, headers)
 	}
 	content := finalResponse
@@ -523,11 +523,11 @@ func (a *APIServerAdapter) chatCompletionResponse(ctx context.Context, result, u
 		if muted {
 			extrasErr = ""
 		}
-		data.Set("hermes", hermesExtras(completed, isPartial, isFailed, extrasErr, finish, exhausted))
-		headers["X-Hermes-Completed"] = "false"
-		headers["X-Hermes-Partial"] = partialFlag
+		data.Set("icebath", completionExtras(completed, isPartial, isFailed, extrasErr, finish, exhausted))
+		headers["X-Icebath-Completed"] = "false"
+		headers["X-Icebath-Partial"] = partialFlag
 		if pyrepr.Truthy(errMsg) && !muted {
-			headers["X-Hermes-Error"] = redactAPIErrorText(errMsg, 200)
+			headers["X-Icebath-Error"] = redactAPIErrorText(errMsg, 200)
 		}
 	}
 	return jsonResponse(data, http.StatusOK, headers)

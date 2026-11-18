@@ -15,7 +15,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyrich"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/skills"
-	"github.com/nickheyer/icebath/pkg/tuigateway"
+	"github.com/nickheyer/icebath/pkg/tuihost"
 )
 
 // One skills.manage action handler given the raw query param
@@ -160,7 +160,7 @@ var skillsActions = map[string]skillsAction{
 }
 
 // Skills hub backend listing the profile skills or searching, browsing, inspecting and installing from the hub
-func skillsManage(ctx context.Context, rid any, params map[string]any, _ *tuigateway.Session) (map[string]any, error) {
+func skillsManage(ctx context.Context, rid any, params map[string]any, _ *tuihost.Session) (map[string]any, error) {
 	query, present := params["query"]
 	if !present {
 		query = ""

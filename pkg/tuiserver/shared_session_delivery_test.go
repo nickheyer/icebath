@@ -8,7 +8,7 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/tuigateway"
+	"github.com/nickheyer/icebath/pkg/tuihost"
 )
 
 // Observer peer recording frames, writes failing once it closed
@@ -55,12 +55,12 @@ func TestReattachPreservesTerminalDelivery(t *testing.T) {
 	t.Setenv("ICEBATH_HOME", t.TempDir())
 	ctx := context.Background()
 	first, second := &deliveryPeer{id: 1}, &deliveryPeer{id: 2}
-	session := tuigateway.NewSession(map[string]any{"transport": first, "history_lock": &sync.Mutex{}, "running": true})
-	swapSessions(t, map[string]*tuigateway.Session{"shared": session})
+	session := tuihost.NewSession(map[string]any{"transport": first, "history_lock": &sync.Mutex{}, "running": true})
+	swapSessions(t, map[string]*tuihost.Session{"shared": session})
 	unlock := lockHistory(session)
 	rebindLiveTransport(ctx, "shared", session, second)
 	unlock()
-	tuigateway.Emit(ctx, "message.complete", "shared", map[string]any{"text": "finished"})
+	tuihost.Emit(ctx, "message.complete", "shared", map[string]any{"text": "finished"})
 	got1, got2 := first.received(1), second.received(1)
 	if len(got1) != 1 || !reflect.DeepEqual(got1, got2) {
 		t.Fatalf("first %v second %v", got1, got2)
@@ -69,12 +69,12 @@ func TestReattachPreservesTerminalDelivery(t *testing.T) {
 	if reaped, detached := closeSessionsForTransport(ctx, second, "ws_disconnect"); reaped != 0 || detached != 0 {
 		t.Fatalf("counts %d %d", reaped, detached)
 	}
-	if viewers, _ := session.Get("viewers").(map[tuigateway.Transport]float64); viewers != nil {
+	if viewers, _ := session.Get("viewers").(map[tuihost.Transport]float64); viewers != nil {
 		if _, kept := viewers[second]; kept {
 			t.Fatal("departed peer still a viewer")
 		}
 	}
-	tuigateway.Emit(ctx, "message.complete", "shared", map[string]any{"text": "still attached"})
+	tuihost.Emit(ctx, "message.complete", "shared", map[string]any{"text": "still attached"})
 	if got := first.received(2); len(got) != 2 {
 		t.Fatalf("first %v", got)
 	}

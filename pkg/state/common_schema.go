@@ -212,7 +212,7 @@ CREATE TABLE IF NOT EXISTS gateway_hygiene_state (
 
 -- Monotonic conversation generation per routing peer (#96811).
 --
--- A host-declared conversation key (X-Hermes-Session-Key / build_session_key)
+-- A host-declared conversation key (X-Icebath-Session-Key / build_session_key)
 -- is per-CHAT and outlives any single conversation on it, so the prompt-cache
 -- affinity scope derived from it must be qualified by which conversation is
 -- currently live. Deriving that from the session rows themselves

@@ -41,9 +41,9 @@ func sttTestEnv(t *testing.T) context.Context {
 	}
 	saved := []func(){}
 	keep := func(restore func()) { saved = append(saved, restore) }
-	ensure, find, fw, pi := sttEnsureImport, safeFindSpec, hasFasterWhisper, hasPilk
+	find, fw, pi := safeFindSpec, hasFasterWhisper, hasPilk
 	keep(func() {
-		sttEnsureImport, safeFindSpec, hasFasterWhisper, hasPilk = ensure, find, fw, pi
+		safeFindSpec, hasFasterWhisper, hasPilk = find, fw, pi
 	})
 	sel, inst, bin, sys, client, getProv, prep := sttReadSelection, sttPMInstalled, sttFindBinary, sttPlatformSystem, sttNewOpenAIClient, sttGetProvider, sttPrepareAudio
 	keep(func() {
@@ -53,7 +53,6 @@ func sttTestEnv(t *testing.T) context.Context {
 	keep(func() {
 		sttRunQuiet, whisperModelCtor, sttBuiltinHandlers, loadSTTConfig, hasLocalCommand, sttResolveXAICredentials = run, ctor, handlers, load, hasCmd, xai
 	})
-	sttEnsureImport = func(context.Context, string) error { return nil }
 	safeFindSpec = func(string) bool { return false }
 	hasFasterWhisper, hasPilk = func() bool { return true }, func() bool { return false }
 	sttReadSelection = func(context.Context) string { return "" }

@@ -5,7 +5,7 @@ import (
 	"testing"
 )
 
-func TestCustomHermesHomeInsideACheckoutUsesASiblingStore(t *testing.T) {
+func TestCustomIcebathHomeInsideACheckoutUsesASiblingStore(t *testing.T) {
 	tmp := t.TempDir()
 	checkout := filepath.Join(tmp, "checkout")
 	gitFileCheckout(t, checkout)

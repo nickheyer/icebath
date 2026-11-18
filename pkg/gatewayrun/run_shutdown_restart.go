@@ -24,7 +24,7 @@ import (
 )
 
 // Icebath argv for update and restart, this install's own binary, else icebath on PATH, else nil
-func resolveHermesBin() []string {
+func resolveIcebathBin() []string {
 	if exe, err := os.Executable(); err == nil && exe != "" {
 		return []string{exe}
 	}
@@ -98,7 +98,7 @@ func envList(env map[string]string) []string {
 }
 
 // Spawns the detached Windows watcher, retrying once without job breakaway
-func spawnWindowsRestartWatcher(ctx context.Context, hermesCmd []string, currentPID int, restartAfterS float64) error {
+func spawnWindowsRestartWatcher(ctx context.Context, icebathCmd []string, currentPID int, restartAfterS float64) error {
 	watcherEnv, err := restartWatcherEnv(ctx)
 	if err != nil {
 		return err
@@ -113,7 +113,7 @@ func spawnWindowsRestartWatcher(ctx context.Context, hermesCmd []string, current
 		return err
 	}
 	argv := append([]string{watcherBinary, gateway.GatewayDetachedRestartWatcherEntry, fmt.Sprint(currentPID),
-		pyrepr.Str(restartAfterS)}, hermesCmd...)
+		pyrepr.Str(restartAfterS)}, icebathCmd...)
 	argv = append(argv, "gateway", "restart")
 	start := func(breakaway bool) error {
 		cmd := exec.Command(argv[0], argv[1:]...)
@@ -136,7 +136,7 @@ func spawnWindowsRestartWatcher(ctx context.Context, hermesCmd []string, current
 				label = "winerror"
 			}
 		}
-		runLog().Warn(fmt.Sprintf("Detached restart watcher was not started after the "+
+		pkgLog().Warn(fmt.Sprintf("Detached restart watcher was not started after the "+
 			"no-breakaway retry (%s; %s=%s). The gateway will not "+
 			"be respawned by this restart attempt.", filepath.Base(watcherBinary), label, pyrepr.Repr(code)))
 	}
@@ -145,9 +145,9 @@ func spawnWindowsRestartWatcher(ctx context.Context, hermesCmd []string, current
 
 // Launches the detached helper that runs the gateway restart once this process exits or the wait runs out
 func (r *GatewayRunner) launchDetachedRestartCommand(ctx context.Context) error {
-	hermesCmd := resolveHermesBin()
-	if len(hermesCmd) == 0 {
-		runLog().Error("Could not locate icebath binary for detached /restart")
+	icebathCmd := resolveIcebathBin()
+	if len(icebathCmd) == 0 {
+		pkgLog().Error("Could not locate icebath binary for detached /restart")
 		return nil
 	}
 	if r.detachedRestartHelperStarted {
@@ -157,10 +157,10 @@ func (r *GatewayRunner) launchDetachedRestartCommand(ctx context.Context) error 
 	currentPID := os.Getpid()
 	restartAfterS := max(r.restartDrainTimeout+5.0, 5.0)
 	if runtime.GOOS == "windows" {
-		return spawnWindowsRestartWatcher(ctx, hermesCmd, currentPID, restartAfterS)
+		return spawnWindowsRestartWatcher(ctx, icebathCmd, currentPID, restartAfterS)
 	}
-	quoted := make([]string, len(hermesCmd))
-	for i, part := range hermesCmd {
+	quoted := make([]string, len(icebathCmd))
+	for i, part := range icebathCmd {
 		quoted[i] = pyshlex.Quote(part)
 	}
 	shellCmd := fmt.Sprintf("deadline=$(( $(date +%%s) + %d )); "+
@@ -263,7 +263,7 @@ func (r *GatewayRunner) awaitActiveWorkBeforeRestart(ctx context.Context) (bool,
 		return true, nil
 	}
 	if r.awaitableWorkCount(ctx) <= 0 {
-		runLog().Warn(fmt.Sprintf("Restart requested with %d active work unit(s), none awaitable "+
+		pkgLog().Warn(fmt.Sprintf("Restart requested with %d active work unit(s), none awaitable "+
 			"(%d wedged past the inactivity timeout, %d in restart-safe external cron "+
 			"workers that outlive this process); skipping the after-turn wait and "+
 			"proceeding to stop()/drain", active, r.wedgedAgentCount(ctx), r.restartSafeCronCount(ctx)))
@@ -271,11 +271,11 @@ func (r *GatewayRunner) awaitActiveWorkBeforeRestart(ctx context.Context) (bool,
 	}
 	timeout := r.restartAfterTurnTimeout
 	if timeout <= 0 {
-		runLog().Info(fmt.Sprintf("Restart requested with %d active work unit(s); "+
+		pkgLog().Info(fmt.Sprintf("Restart requested with %d active work unit(s); "+
 			"restart_after_turn_timeout=0 — entering stop()/drain immediately", active))
 		return false, nil
 	}
-	runLog().Info(fmt.Sprintf("Restart requested with %d active work unit(s); "+
+	pkgLog().Info(fmt.Sprintf("Restart requested with %d active work unit(s); "+
 		"deferring stop() until they finish (cap=%.0fs) so in-flight "+
 		"turns are not amputated (#77184)", active, timeout))
 	r.scaleToZeroStatus(ctx, "draining", "restart wait: status mark failed")
@@ -284,13 +284,13 @@ func (r *GatewayRunner) awaitActiveWorkBeforeRestart(ctx context.Context) (bool,
 	for r.awaitableWorkCount(ctx) > 0 {
 		now := pythread.Monotonic()
 		if now >= deadline {
-			runLog().Warn(fmt.Sprintf("Restart after-turn wait timed out after %.0fs with %d "+
+			pkgLog().Warn(fmt.Sprintf("Restart after-turn wait timed out after %.0fs with %d "+
 				"still active; proceeding to stop()/drain which may "+
 				"interrupt remaining work (#77184)", timeout, r.activeWorkCount()))
 			return false, nil
 		}
 		if now-lastStatusAt >= 30.0 {
-			runLog().Info(fmt.Sprintf("Restart deferred: waiting on %d active work unit(s) "+
+			pkgLog().Info(fmt.Sprintf("Restart deferred: waiting on %d active work unit(s) "+
 				"(%d wedged and excluded, %d restart-safe and excluded; "+
 				"%.0fs remaining before force drain): %s",
 				r.awaitableWorkCount(ctx), r.wedgedAgentCount(ctx), r.restartSafeCronCount(ctx), deadline-now,
@@ -303,12 +303,12 @@ func (r *GatewayRunner) awaitActiveWorkBeforeRestart(ctx context.Context) (bool,
 		}
 	}
 	if r.activeWorkCount() > 0 {
-		runLog().Warn(fmt.Sprintf("Restart deferred wait: %d excluded work unit(s) remain "+
+		pkgLog().Warn(fmt.Sprintf("Restart deferred wait: %d excluded work unit(s) remain "+
 			"(%d wedged, %d restart-safe external cron); proceeding to stop()/drain",
 			r.activeWorkCount(), r.wedgedAgentCount(ctx), r.restartSafeCronCount(ctx)))
 		return false, nil
 	}
-	runLog().Info("Restart deferred wait complete — active work drained; proceeding to stop()")
+	pkgLog().Info("Restart deferred wait complete — active work drained; proceeding to stop()")
 	return true, nil
 }
 

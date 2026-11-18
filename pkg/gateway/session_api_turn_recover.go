@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"log/slog"
 
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
@@ -45,7 +44,7 @@ func recoverAuthorityAPITurns(ctx context.Context, a *SessionAuthority) error {
 		err := recoverAPISession(ctx, a, sid)
 		var refusal *state.RuntimeStoreError
 		if errors.As(err, &refusal) {
-			slog.Warn(fmt.Sprintf("API session %s paused: %s", sid, refusal.Reason))
+			pkgLog().Warn(fmt.Sprintf("API session %s paused: %s", sid, refusal.Reason))
 			continue
 		}
 		if err != nil {

@@ -6,7 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"log/slog"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -473,7 +472,7 @@ func PopenPostCommit(ctx context.Context, argv []string, label string, opts Chil
 	return child.cmd, nil
 }
 
-// Custody runner of an updater git outside the owner watched path, the update_custody.run hermes tests spy on
+// Custody runner of an updater git outside the owner watched path, the update_custody.run tests spy on
 var runInCustody = Run
 
 // Runs git in the updater's custody, the lock files only into local mutators, a partial clone prefetched first
@@ -600,7 +599,7 @@ func prefetchForMove(ctx context.Context, gitCmd, args []string, opts ChildOptio
 		if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
 			return err
 		}
-		slog.Debug(fmt.Sprintf("Could not prefetch the objects for git %s: %v", sub, err))
+		pkgLog().Debug(fmt.Sprintf("Could not prefetch the objects for git %s: %v", sub, err))
 	}
 	return nil
 }
@@ -622,7 +621,7 @@ func reportRefusedJoin(ctx context.Context, report string, argv []string) *strin
 	if len(head) > 2 {
 		head = head[:2]
 	}
-	slog.Warn(note + ": " + strings.Join(head, " "))
+	pkgLog().Warn(note + ": " + strings.Join(head, " "))
 	updaterecord.RecordStep(ctx, "update_custody", false, note+": "+strings.Join(head, " "))
 	return &note
 }

@@ -11,7 +11,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/agent"
 	"github.com/nickheyer/icebath/pkg/memory"
 	"github.com/nickheyer/icebath/pkg/state"
-	"github.com/nickheyer/icebath/pkg/tuigateway"
+	"github.com/nickheyer/icebath/pkg/tuihost"
 )
 
 // Memory provider counting the session end commits it receives
@@ -63,8 +63,8 @@ func persistDB(t *testing.T) *state.DB {
 }
 
 // Live session record of the finalize cases
-func persistSession(a *agent.AIAgent, history []any, sessionKey string) *tuigateway.Session {
-	return tuigateway.NewSession(map[string]any{"agent": a, "history": history, "session_key": sessionKey, "_finalized": false})
+func persistSession(a *agent.AIAgent, history []any, sessionKey string) *tuihost.Session {
+	return tuihost.NewSession(map[string]any{"agent": a, "history": history, "session_key": sessionKey, "_finalized": false})
 }
 
 func TestFinalizeSessionPersistCommitMemoryStillCalled(t *testing.T) {

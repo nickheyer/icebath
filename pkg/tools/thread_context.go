@@ -116,7 +116,7 @@ func PropagateContextToThread(ctx context.Context, env *Env, target func(ctx con
 func captureThreadCallbacks(ctx context.Context) (installs []threadInstall, ok bool) {
 	defer func() {
 		if r := recover(); r != nil {
-			toolsLogger(nil).Debug("Could not capture parent approval/sudo callbacks", "panic", r)
+			envLog(nil).Debug("Could not capture parent approval/sudo callbacks", "panic", r)
 			installs, ok = nil, false
 		}
 	}()
@@ -130,7 +130,7 @@ func captureThreadCallbacks(ctx context.Context) (installs []threadInstall, ok b
 func installThreadCallbacks(ctx context.Context, installs []threadInstall) {
 	defer func() {
 		if r := recover(); r != nil {
-			toolsLogger(nil).Debug("Failed to install propagated approval/sudo callbacks; dangerous-command approval will fail closed", "panic", r)
+			envLog(nil).Debug("Failed to install propagated approval/sudo callbacks; dangerous-command approval will fail closed", "panic", r)
 		}
 	}()
 	for _, in := range installs {
@@ -144,7 +144,7 @@ func installThreadCallbacks(ctx context.Context, installs []threadInstall) {
 func clearThreadCallbacks(ctx context.Context, installs []threadInstall) {
 	defer func() {
 		if r := recover(); r != nil {
-			toolsLogger(nil).Debug("Failed to clear propagated approval/sudo callbacks", "panic", r)
+			envLog(nil).Debug("Failed to clear propagated approval/sudo callbacks", "panic", r)
 		}
 	}()
 	for _, in := range installs {

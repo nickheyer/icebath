@@ -2,10 +2,8 @@ package relaytest
 
 import (
 	"archive/zip"
-	"context"
 	"crypto/sha256"
 	"encoding/hex"
-	"errors"
 	"fmt"
 	"io"
 	"io/fs"
@@ -165,36 +163,6 @@ func hasAll(s string, tokens []string) bool {
 		}
 	}
 	return !(strings.Contains(s, "musllinux") && tokens[0] == "manylinux")
-}
-
-// Toolchain a provisioning child of the test binary looks up, a uv and python pair or a failure cause
-const childToolchainEnv = "RELAYTEST_CHILD_TOOLCHAIN"
-
-// Points this process's toolchain lookup at the one its parent test chose, called first in TestMain
-func ChildToolchain() {
-	spec, ok := os.LookupEnv(childToolchainEnv)
-	if !ok {
-		return
-	}
-	if cause, failing := strings.CutPrefix(spec, "fail:"); failing {
-		pm.SwapToolchain(func(context.Context, bool, bool) (string, string, bool, error) {
-			return "", "", false, errors.New(cause)
-		})
-		return
-	}
-	uv, python, _ := strings.Cut(spec, string(os.PathListSeparator))
-	pm.SwapToolchain(func(context.Context, bool, bool) (string, string, bool, error) { return uv, python, true, nil })
-}
-
-// Makes provisioning children of the test binary use the pinned test toolchain, or fail its lookup with a given cause
-func ChildUsesToolchain(t testing.TB, cause string) {
-	t.Helper()
-	if cause != "" {
-		t.Setenv(childToolchainEnv, "fail:"+cause)
-		return
-	}
-	uv, python := Toolchain(t)
-	t.Setenv(childToolchainEnv, uv+string(os.PathListSeparator)+python)
 }
 
 // Registers the real binding over the provisioned environment, failing when provisioning failed

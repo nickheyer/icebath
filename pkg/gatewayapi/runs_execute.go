@@ -78,7 +78,7 @@ func (a *APIServerAdapter) executeRunViaLiveOwner(ctx context.Context, run *runL
 			finish("cancelled", "completed", false, "partial", false, "interrupted", true)
 			return
 		}
-		apiLog().Error(fmt.Sprintf("[api_server] run %s (live Bot Chat) failed", runID), "error", err)
+		pkgLog().Error(fmt.Sprintf("[api_server] run %s (live Bot Chat) failed", runID), "error", err)
 		finish("failed", "completed", false, "partial", false, "interrupted", false, "error", err.Error())
 		return
 	}
@@ -235,13 +235,13 @@ func (a *APIServerAdapter) executeRun(ctx context.Context, run *runLaunch) {
 		case errors.Is(err, context.Canceled):
 			finish("cancelled", nil)
 		case errors.As(err, &authErr):
-			apiLog().Warn(fmt.Sprintf("Provider resolution failed for run=%s: %v", runID, authErr))
+			pkgLog().Warn(fmt.Sprintf("Provider resolution failed for run=%s: %v", runID, authErr))
 			finish("failed", nil, "error", authErr.userText(ctx))
 		case errors.As(err, &runtimeErr) && runtimeErr.Reason == "admission_queued":
 			a.setRunStatus(ctx, runID, "queued", "last_event", "run.queued")
 			run.putEvent(runEvent(runID, "run.queued", "message", err.Error()))
 		default:
-			apiLog().Error(fmt.Sprintf("[api_server] run %s failed", runID), "error", err)
+			pkgLog().Error(fmt.Sprintf("[api_server] run %s failed", runID), "error", err)
 			finish("failed", nil, "error", redactAPIErrorText(err.Error(), -1))
 		}
 		return

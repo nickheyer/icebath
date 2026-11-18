@@ -6,7 +6,6 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
-	"log/slog"
 	"strings"
 	"sync"
 	"time"
@@ -212,7 +211,7 @@ func (s *Streamer) sendReplyQueued(ctx context.Context, reqID string, body *pyjs
 	queue.PendingAck = frame
 	s.mu.Unlock()
 	id, finish := streamDesc(body)
-	slog.Debug(fmt.Sprintf("[%s] _send_reply_queued: req_id=%s is_final=%s skip_if_pending=%s stream_id=%s finish=%s content_len=%d",
+	pkgLog().Debug(fmt.Sprintf("[%s] _send_reply_queued: req_id=%s is_final=%s skip_if_pending=%s stream_id=%s finish=%s content_len=%d",
 		s.Host.Name(), normalized, pyrepr.Str(isFinal), pyrepr.Str(skipIfPending), id, finish, pystr.Len(pyrepr.Str(getOr(streamOf(body), "content", "")))))
 	if err := s.Host.SendJSON(ctx, obj("cmd", AppCmdResponse, "headers", obj("req_id", normalized), "body", body)); err != nil {
 		s.mu.Lock()
@@ -242,7 +241,7 @@ func (s *Streamer) sendReplyQueued(ctx context.Context, reqID string, body *pyjs
 		return frame.future.payload, nil
 	case <-timer.C:
 		frame.future.finish(nil, nil, true)
-		slog.Warn(fmt.Sprintf("[%s] Final frame ack timeout (req_id=%s) — treating as delivered (matches official wecom-openclaw-plugin behaviour). No fallback send.", s.Host.Name(), normalized))
+		pkgLog().Warn(fmt.Sprintf("[%s] Final frame ack timeout (req_id=%s) — treating as delivered (matches official wecom-openclaw-plugin behaviour). No fallback send.", s.Host.Name(), normalized))
 		return obj("errcode", int64(0), "errmsg", "ack_timeout_assumed_delivered", "ack_pending", true), nil
 	case <-ctx.Done():
 		frame.future.finish(nil, nil, true)
@@ -256,7 +255,7 @@ func (s *Streamer) drainPendingAck(ctx context.Context, queue *ReplyQueue, reqID
 	pending := queue.PendingAck
 	s.mu.Unlock()
 	id, finish := streamDesc(pending.Body)
-	slog.Debug(fmt.Sprintf("[%s] _send_reply_queued: final waiting for pending ack drain — req_id=%s pending_stream_id=%s pending_finish=%s pending_sent_at=%.1fs_ago",
+	pkgLog().Debug(fmt.Sprintf("[%s] _send_reply_queued: final waiting for pending ack drain — req_id=%s pending_stream_id=%s pending_finish=%s pending_sent_at=%.1fs_ago",
 		s.Host.Name(), reqID, id, finish, elapsed(pending.SentAt)))
 	timer := time.NewTimer(replyAckTimeout)
 	defer timer.Stop()
@@ -264,7 +263,7 @@ func (s *Streamer) drainPendingAck(ctx context.Context, queue *ReplyQueue, reqID
 	case <-pending.future.done:
 	case <-ctx.Done():
 	case <-timer.C:
-		slog.Warn(fmt.Sprintf("[%s] Reply ack timeout waiting for pending (req_id=%s) — pending_stream_id=%s pending_finish=%s elapsed=%.1fs. Possible causes: ack cmd filtered, ack req_id mismatch, or WeCom did not ack.",
+		pkgLog().Warn(fmt.Sprintf("[%s] Reply ack timeout waiting for pending (req_id=%s) — pending_stream_id=%s pending_finish=%s elapsed=%.1fs. Possible causes: ack cmd filtered, ack req_id mismatch, or WeCom did not ack.",
 			s.Host.Name(), reqID, id, finish, elapsed(pending.SentAt)))
 	}
 	s.mu.Lock()
@@ -287,7 +286,7 @@ func (s *Streamer) ResolveReplyAck(reqID string, payload *pyjson.Object) bool {
 		if body == nil {
 			body = pyjson.NewObject()
 		}
-		slog.Debug(fmt.Sprintf("[%s] _resolve_reply_ack: resolved req_id=%s is_final=%s elapsed=%.2fs errcode=%s",
+		pkgLog().Debug(fmt.Sprintf("[%s] _resolve_reply_ack: resolved req_id=%s is_final=%s elapsed=%.2fs errcode=%s",
 			s.Host.Name(), reqID, pyrepr.Str(frame.IsFinal), elapsed(frame.SentAt), pyrepr.Str(getOr(body, "errcode", "N/A"))))
 		frame.future.finish(payload, nil, false)
 	}
@@ -410,7 +409,7 @@ func (s *Streamer) keepaliveSend(ctx context.Context, turn *StreamTurn, turnID s
 		return
 	}
 	if err != nil {
-		slog.Debug(fmt.Sprintf("[%s] keep-alive send failed (chat=%s, turn=%s): %v", s.Host.Name(), turn.ChatID, turn.StreamID, err))
+		pkgLog().Debug(fmt.Sprintf("[%s] keep-alive send failed (chat=%s, turn=%s): %v", s.Host.Name(), turn.ChatID, turn.StreamID, err))
 		s.armKeepalive(turn, turnID)
 		return
 	}
@@ -436,7 +435,7 @@ func (s *Streamer) sendStreamReply(ctx context.Context, reqID, streamID, content
 		return nil, err
 	}
 	if pystr.Len(content) != pystr.Len(truncated) {
-		slog.Warn(fmt.Sprintf("[%s] Stream content truncated for stream_id=%s", s.Host.Name(), streamID))
+		pkgLog().Warn(fmt.Sprintf("[%s] Stream content truncated for stream_id=%s", s.Host.Name(), streamID))
 	}
 	body := obj("msgtype", "stream", "stream", obj("id", streamID, "finish", finish, "content", truncated))
 	if !finish {
@@ -456,7 +455,7 @@ func (s *Streamer) sendStreamReply(ctx context.Context, reqID, streamID, content
 		return nil, &WeComStreamExpiredError{Errcode: errcode, Errmsg: msg}
 	}
 	if pyjson.Equal(errcode, int64(StreamVersionConflictErrcode)) {
-		slog.Info(fmt.Sprintf("[%s] finalize hit errcode 6000 (version conflict) — bubble already replaced by a newer frame; treating as delivered.", s.Host.Name()))
+		pkgLog().Info(fmt.Sprintf("[%s] finalize hit errcode 6000 (version conflict) — bubble already replaced by a newer frame; treating as delivered.", s.Host.Name()))
 		return response, nil
 	}
 	if err := s.Host.RaiseForWeComError(response, "send stream reply"); err != nil {
@@ -469,7 +468,7 @@ func (s *Streamer) sendStreamReply(ctx context.Context, reqID, streamID, content
 func (s *Streamer) SendStreamFrame(ctx context.Context, text string, finalize bool, chatID, replyTo, turnID string) (bool, error) {
 	chat := pystr.Strip(chatID)
 	if chat == "" {
-		slog.Warn(fmt.Sprintf("[%s] send_stream_frame: chat_id required", s.Host.Name()))
+		pkgLog().Warn(fmt.Sprintf("[%s] send_stream_frame: chat_id required", s.Host.Name()))
 		return false, nil
 	}
 	s.mu.Lock()
@@ -499,11 +498,11 @@ func (s *Streamer) locateTurn(chat, replyTo string, finalize bool, turnID string
 			return turn
 		}
 		if finalize {
-			slog.Debug(fmt.Sprintf("[%s] send_stream_frame: cannot finalize non-existent turn (turn_id=%s, chat=%s)", name, turnID, chat))
+			pkgLog().Debug(fmt.Sprintf("[%s] send_stream_frame: cannot finalize non-existent turn (turn_id=%s, chat=%s)", name, turnID, chat))
 			return nil
 		}
 	} else if existing := s.findActiveTurnForChat(chat); existing != nil {
-		slog.Debug(fmt.Sprintf("[%s] send_stream_frame: reusing existing turn %s for chat %s", name, existing.StreamID, chat))
+		pkgLog().Debug(fmt.Sprintf("[%s] send_stream_frame: reusing existing turn %s for chat %s", name, existing.StreamID, chat))
 		return existing
 	}
 	suffix := ""
@@ -516,9 +515,9 @@ func (s *Streamer) locateTurn(chat, replyTo string, finalize bool, turnID string
 	}
 	if reqID == "" {
 		if s.expiredChats[chat] {
-			slog.Debug(fmt.Sprintf("[%s] send_stream_frame: chat %s is expired, cannot create new turn%s", name, chat, suffix))
+			pkgLog().Debug(fmt.Sprintf("[%s] send_stream_frame: chat %s is expired, cannot create new turn%s", name, chat, suffix))
 		} else {
-			slog.Debug(fmt.Sprintf("[%s] send_stream_frame: no req_id available for chat %s%s", name, chat, suffix))
+			pkgLog().Debug(fmt.Sprintf("[%s] send_stream_frame: no req_id available for chat %s%s", name, chat, suffix))
 		}
 		return nil
 	}
@@ -535,7 +534,7 @@ func (s *Streamer) locateTurn(chat, replyTo string, finalize bool, turnID string
 	if turnID != "" {
 		desc = "turn_id=" + turnID + ", req_id=" + reqID
 	}
-	slog.Debug(fmt.Sprintf("[%s] send_stream_frame: created new turn %s (%s) for chat %s", name, turn.StreamID, desc, chat))
+	pkgLog().Debug(fmt.Sprintf("[%s] send_stream_frame: created new turn %s (%s) for chat %s", name, turn.StreamID, desc, chat))
 	return turn
 }
 
@@ -544,7 +543,7 @@ func (s *Streamer) finalizeTurn(ctx context.Context, turn *StreamTurn, text, cha
 	s.mu.Lock()
 	if !s.KeepaliveEnabled {
 		if age := time.Since(turn.StartTime).Seconds(); age >= s.SafeDurationSeconds {
-			slog.Info(fmt.Sprintf("[%s] Stream age %.0fs >= safe duration %.0fs for chat %s — declining finalize frame, falling back to proactive send (Layer 2 clock fallback).",
+			pkgLog().Info(fmt.Sprintf("[%s] Stream age %.0fs >= safe duration %.0fs for chat %s — declining finalize frame, falling back to proactive send (Layer 2 clock fallback).",
 				s.Host.Name(), age, s.SafeDurationSeconds, chat))
 			s.expireTurn(turn, turnID)
 			s.mu.Unlock()
@@ -629,10 +628,10 @@ func (s *Streamer) sendStreamFrameInner(ctx context.Context, text, chat, replyTo
 	defer s.mu.Unlock()
 	if _, ok := err.(*WeComStreamExpiredError); ok {
 		if !finalize {
-			slog.Info(fmt.Sprintf("[%s] Intermediate stream frame expired (errcode=%d) for chat %s — dropping frame, stream stays live", name, StreamExpiredErrcode, chat))
+			pkgLog().Info(fmt.Sprintf("[%s] Intermediate stream frame expired (errcode=%d) for chat %s — dropping frame, stream stays live", name, StreamExpiredErrcode, chat))
 			return true, nil
 		}
-		slog.Info(fmt.Sprintf("[%s] Stream expired (errcode=%d) for chat %s — switching to proactive send", name, StreamExpiredErrcode, chat))
+		pkgLog().Info(fmt.Sprintf("[%s] Stream expired (errcode=%d) for chat %s — switching to proactive send", name, StreamExpiredErrcode, chat))
 		if turn == nil {
 			s.expiredChats[chat] = true
 		} else {
@@ -641,10 +640,10 @@ func (s *Streamer) sendStreamFrameInner(ctx context.Context, text, chat, replyTo
 		return false, nil
 	}
 	if !finalize {
-		slog.Info(fmt.Sprintf("[%s] Intermediate stream frame failed (chat=%s): %v — dropping frame, stream stays live", name, chat, err))
+		pkgLog().Info(fmt.Sprintf("[%s] Intermediate stream frame failed (chat=%s): %v — dropping frame, stream stays live", name, chat, err))
 		return true, nil
 	}
-	slog.Warn(fmt.Sprintf("[%s] Stream frame failed (chat=%s): %v", name, chat, err))
+	pkgLog().Warn(fmt.Sprintf("[%s] Stream frame failed (chat=%s): %v", name, chat, err))
 	if turn != nil {
 		s.retireTurn(turn, turnID)
 	}

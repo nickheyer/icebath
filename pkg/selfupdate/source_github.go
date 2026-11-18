@@ -6,7 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"log/slog"
 	"net"
 	"net/http"
 	"net/url"
@@ -139,7 +138,7 @@ func sourceRequest(ctx context.Context, target, accept string) (string, error) {
 	if !authenticated || (httpErr.Code != 401 && httpErr.Code != 403) || spent {
 		return "", &githubRequestError{Err: err, Authenticated: authenticated}
 	}
-	slog.Debug("GitHub rejected the configured token; retrying anonymously")
+	pkgLog().Debug("GitHub rejected the configured token; retrying anonymously")
 	text, err = sourceRequestWith(ctx, target, accept, "")
 	if err != nil && errors.As(err, &httpErr) {
 		return "", &githubRequestError{Err: err, Authenticated: false}

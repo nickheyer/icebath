@@ -36,7 +36,7 @@ func TestStrptimeNumericDirectivesMatchCPython(t *testing.T) {
 		{"2026-04-28T13:40:53+02:0030", "%Y-%m-%dT%H:%M:%S%z", "Inconsistent use of :"},
 		{"2026-04-28T13:40:53+2400", "%Y-%m-%dT%H:%M:%S%z", "strictly between"},
 		{"2026-02-30 13:40:53", "%Y-%m-%d %H:%M:%S", "must be in range"},
-		{"0000-01-01 00:00:00", "%Y-%m-%d %H:%M:%S", "out of range"},
+		{"0000-01-01 00:00:00", "%Y-%m-%d %H:%M:%S", "year must be in 1..9999, not 0"},
 		{"2026-04-28 13:40:60", "%Y-%m-%d %H:%M:%S", "second must be"},
 		{"2026-04-28 13:40:53 extra", "%Y-%m-%d %H:%M:%S", "unconverted data remains:  extra"},
 		{"2026", "%Y %q", "bad directive"},

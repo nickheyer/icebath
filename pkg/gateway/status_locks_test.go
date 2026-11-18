@@ -178,12 +178,12 @@ func TestScopedLockOwnerLabel(t *testing.T) {
 		record any
 		want   string
 	}{
-		{rec("profile", "coder", "hermes_home", "/opt/data/profiles/other"), "coder"},
+		{rec("profile", "coder", "icebath_home", "/opt/data/profiles/other"), "coder"},
 		{rec("profile", "Bad Name!"), ""},
 		{rec("profile", "  "), ""},
 		{rec("profile", int64(42)), ""},
-		{rec("profile", "bad; rm -rf /", "hermes_home", "/opt/data/profiles/zerocool"), "zerocool"},
-		{rec("pid", int64(559), "hermes_home", "/opt/data/profiles/zerocool"), "zerocool"},
+		{rec("profile", "bad; rm -rf /", "icebath_home", "/opt/data/profiles/zerocool"), "zerocool"},
+		{rec("pid", int64(559), "icebath_home", "/opt/data/profiles/zerocool"), "zerocool"},
 		{rec("pid", int64(99999)), ""},
 		{nil, ""},
 		{"not-a-dict", ""},
@@ -204,7 +204,7 @@ func TestTakeoverMarker(t *testing.T) {
 	}
 	p := readRecord(t, marker)
 	if !pyEq(recGet(p, "target_pid"), 12345) || !pyEq(recGet(p, "target_start_time"), 42) || !pyEq(recGet(p, "replacer_pid"), int64(os.Getpid())) ||
-		recGet(p, "written_at") == nil || recGet(p, "replacer_hermes_home") != dir {
+		recGet(p, "written_at") == nil || recGet(p, "replacer_icebath_home") != dir {
 		t.Fatal("marker fields")
 	}
 	patch(t, &statusProcessStartTime, fixedInt(nil))
@@ -220,7 +220,7 @@ func TestTakeoverMarker(t *testing.T) {
 	patch(t, &statusProcessStartTime, fixedInt(int64(100)))
 	now := utcNowISO()
 	writeRecord(t, marker, rec("target_pid", int64(os.Getpid()), "target_start_time", int64(100), "replacer_pid", int64(99999),
-		"replacer_hermes_home", filepath.Join(dir, "profiles", "other"), "written_at", now))
+		"replacer_icebath_home", filepath.Join(dir, "profiles", "other"), "written_at", now))
 	if ok, _ := ConsumeTakeoverMarkerForSelf(); ok {
 		t.Fatal("foreign profile marker consumed")
 	}
@@ -238,7 +238,7 @@ func TestTakeoverMarker(t *testing.T) {
 
 func ownerRecord(t *testing.T, targetHome string, pid int64) *pyjson.Object {
 	r := rec("pid", pid, "kind", "icebath-gateway", "argv", strs("python", "-m", "icebath_cli.main", "gateway", "run"),
-		"start_time", int64(123), "hermes_home", targetHome)
+		"start_time", int64(123), "icebath_home", targetHome)
 	writeRecord(t, filepath.Join(targetHome, "gateway.pid"), r)
 	return r
 }
@@ -258,7 +258,7 @@ func TestVerifiedDistinctHomeHandoffMarksTargetBeforeSigterm(t *testing.T) {
 	var calls [][2]any
 	patch(t, &statusTerminatePid, func(pid int, force bool, _ any) error {
 		m := readRecord(t, filepath.Join(target, ".gateway-takeover.json"))
-		if recGet(m, "target_hermes_home") != target || recGet(m, "replacer_hermes_home") != replacer {
+		if recGet(m, "target_icebath_home") != target || recGet(m, "replacer_icebath_home") != replacer {
 			t.Error("marker homes")
 		}
 		calls = append(calls, [2]any{pid, force})

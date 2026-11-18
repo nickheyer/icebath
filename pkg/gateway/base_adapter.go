@@ -4,12 +4,12 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"log/slog"
 	"math"
 	"reflect"
 	"runtime"
 	"sync"
 
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/i18n"
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
@@ -45,7 +45,7 @@ func consumeDetachedHandlerException(err error) {
 	if err == nil || errors.Is(err, context.Canceled) {
 		return
 	}
-	slog.Error(fmt.Sprintf("Detached fatal-error handler task failed: %v", err))
+	pkgLog().Error(fmt.Sprintf("Detached fatal-error handler task failed: %v", err))
 }
 
 // Map behind the pointer, created on first use for adapters built without the constructor
@@ -83,7 +83,7 @@ type AdapterTraits struct {
 	EAActionStyles               map[string]string
 }
 
-// Class attribute defaults of the hermes base adapter
+// Class attribute defaults of the base adapter
 func DefaultAdapterTraits() AdapterTraits {
 	return AdapterTraits{SupportsAsyncDelivery: true, TypedCommandPrefix: "/", InteractiveResume: true,
 		SupportsMessageEditing: true, EACodeOpen: "```\n", EACodeClose: "\n```\n", EADeadlinePrefix: "\n\n",
@@ -131,7 +131,7 @@ type sessionProfileResolver interface {
 	ResolveProfileForKey(source *SessionSource) (any, error)
 }
 
-// PlatformAdapter is the overridable method set hermes platform subclasses override
+// The overridable method set every platform adapter overrides
 type PlatformAdapter interface {
 	Base() *BasePlatformAdapter
 	Connect(ctx context.Context, isReconnect bool) (bool, error)
@@ -297,7 +297,7 @@ func (t *adapterTask) finished() bool {
 	}
 }
 
-// One adapter owned goroutine with cancellation and completion, the asyncio task of hermes
+// One adapter owned goroutine with cancellation and completion
 type adapterTask struct {
 	cancel    context.CancelFunc
 	done      chan struct{}
@@ -334,10 +334,10 @@ func (t *adapterTask) settle() {
 // Adapter owned goroutine handle the platform adapters hold and cancel
 type AdapterTask = adapterTask
 
-// Whether the task has finished, the asyncio Task done of hermes
+// Whether the task has finished
 func (t *adapterTask) Done() bool { return t.finished() }
 
-// Base adapter bound to the concrete adapter that embeds it, with the hermes constructor defaults
+// Base adapter bound to the concrete adapter that embeds it, with the constructor defaults
 func NewBasePlatformAdapter(config *PlatformConfig, platform Platform, self PlatformAdapter) *BasePlatformAdapter {
 	b := &BasePlatformAdapter{Config: config, Platform: platform, Traits: DefaultAdapterTraits(), self: self}
 	b.fatalErrorRetryable = true
@@ -603,8 +603,8 @@ func (b *BasePlatformAdapter) MarkDisconnected(ctx context.Context) {
 	b.running = false
 	b.mu.Unlock()
 	if !b.HasFatalError() {
-		b.writeRuntimeStatusSafe(ctx, "disconnected", map[string]any{"platform_state": "disconnected", "error_code": nil,
-			"error_message": nil})
+		awaitRuntimeStatus(b.writeRuntimeStatusSafe(ctx, "disconnected", map[string]any{"platform_state": "disconnected", "error_code": nil,
+			"error_message": nil}), adapterStopStatusWait)
 	}
 }
 
@@ -615,11 +615,12 @@ func (b *BasePlatformAdapter) SetFatalError(ctx context.Context, code, message s
 	b.fatalErrorCode, b.fatalErrorMessage = &code, &message
 	b.fatalErrorRetryable = retryable
 	b.mu.Unlock()
-	b.writeRuntimeStatusSafe(ctx, "fatal", map[string]any{"platform_state": "fatal", "error_code": code, "error_message": message})
+	awaitRuntimeStatus(b.writeRuntimeStatusSafe(ctx, "fatal", map[string]any{"platform_state": "fatal", "error_code": code, "error_message": message}),
+		adapterStopStatusWait)
 }
 
-// Publishes runtime status, logging a failure once at warning then at debug per context
-func (b *BasePlatformAdapter) writeRuntimeStatusSafe(ctx context.Context, statusContext string, fields map[string]any) {
+// Publishes runtime status and returns the queued generation, logging a failure once at warning then at debug per context
+func (b *BasePlatformAdapter) writeRuntimeStatusSafe(ctx context.Context, statusContext string, fields map[string]any) int {
 	key := b.Traits.RuntimeStatusPlatformKey
 	if key == "" {
 		key = string(b.Platform)
@@ -628,9 +629,9 @@ func (b *BasePlatformAdapter) writeRuntimeStatusSafe(ctx context.Context, status
 	for k, v := range fields {
 		payload[k] = v
 	}
-	_, err := publishRuntimeStatusFn(ctx, RuntimeStatusUpdate{Fields: payload})
+	generation, err := publishRuntimeStatusFn(ctx, RuntimeStatusUpdate{Fields: payload})
 	if err == nil {
-		return
+		return generation
 	}
 	b.mu.Lock()
 	logged := lazyAttr(&b.statusWriteLogged)
@@ -639,14 +640,15 @@ func (b *BasePlatformAdapter) writeRuntimeStatusSafe(ctx context.Context, status
 	logged[mark] = struct{}{}
 	b.mu.Unlock()
 	if !seen {
-		slog.Warn(fmt.Sprintf("Failed to write runtime status (%s) for %s: %v (further failures at debug level)", statusContext,
+		pkgLog().Warn(fmt.Sprintf("Failed to write runtime status (%s) for %s: %v (further failures at debug level)", statusContext,
 			string(b.Platform), err))
-		return
+		return 0
 	}
-	slog.Debug(fmt.Sprintf("Failed to write runtime status (%s) for %s: %v", statusContext, string(b.Platform), err))
+	pkgLog().Debug(fmt.Sprintf("Failed to write runtime status (%s) for %s: %v", statusContext, string(b.Platform), err))
+	return 0
 }
 
-// Runtime status publisher, a package var the way hermes tests patch the status module
+// Runtime status publisher, a package var the way tests patch the status module
 var publishRuntimeStatusFn = PublishRuntimeStatus
 
 // Runs the fatal error handler shielded from the caller's cancellation, a detached run logs its own failure
@@ -695,10 +697,10 @@ func (b *BasePlatformAdapter) SetPlatformLockTakeoverAllowed(allowed bool) {
 	b.mu.Unlock()
 }
 
-// Scoped lock acquire hook, a package var the way hermes tests patch the status module
+// Scoped lock acquire hook, a package var the way tests patch the status module
 var acquireScopedLockFn = AcquireScopedLock
 
-// Scoped lock takeover hook, a package var the way hermes tests patch the status module
+// Scoped lock takeover hook, a package var the way tests patch the status module
 var takeOverScopedLockHolderFn = func(ctx context.Context, record *pyjson.Object) (int, bool) {
 	return TakeOverScopedLockHolder(ctx, record, 20, 20)
 }
@@ -737,12 +739,12 @@ func (b *BasePlatformAdapter) AcquirePlatformLock(ctx context.Context, scope, id
 	b.mu.Unlock()
 	if armed {
 		if ownerPID, ok := takeOverScopedLockHolderFn(ctx, existing); ok {
-			slog.Warn(fmt.Sprintf("[%s] %s was held by gateway PID %d — explicit --replace handoff completed", name, resourceDesc, ownerPID))
+			pkgLog().Warn(fmt.Sprintf("[%s] %s was held by gateway PID %d — explicit --replace handoff completed", name, resourceDesc, ownerPID))
 			if acquired, existing, err = acquireScopedLockFn(ctx, scope, identity, meta); err != nil {
 				return false, err
 			}
 			if acquired {
-				slog.Info(fmt.Sprintf("[%s] Acquired %s after taking over PID %d", name, resourceDesc, ownerPID))
+				pkgLog().Info(fmt.Sprintf("[%s] Acquired %s after taking over PID %d", name, resourceDesc, ownerPID))
 				return true, nil
 			}
 		}
@@ -767,7 +769,7 @@ func (b *BasePlatformAdapter) AcquirePlatformLock(ctx context.Context, scope, id
 		remedy = fmt.Sprintf(" Stop that gateway first (icebath --profile %s gateway stop).", ownerLabel)
 	}
 	message := fmt.Sprintf("%s already in use%s.%s", resourceDesc, holder, remedy)
-	slog.Error(fmt.Sprintf("[%s] %s", name, message))
+	pkgLog().Error(fmt.Sprintf("[%s] %s", name, message))
 	b.Self().SetFatalError(ctx, scope+"_lock", message, true)
 	return false, nil
 }
@@ -793,7 +795,7 @@ func (b *BasePlatformAdapter) PlatformLockIdentity() string {
 	return b.platformLockIdentity
 }
 
-// Plugin native handler factories of a platform, a package var the way hermes tests patch the plugin manager
+// Plugin native handler factories of a platform, a package var the way tests patch the plugin manager
 var platformHandlerFactoriesFn = func(ctx context.Context, platform string) ([]*plugins.PlatformHandlerFactory, error) {
 	manager := plugins.GetPluginManager(ctx)
 	if manager == nil {
@@ -832,7 +834,7 @@ func callHandlerFactory(factory any, native any, adapter PlatformAdapter) (err e
 	case func(native any, adapter PlatformAdapter) error:
 		return f(native, adapter)
 	}
-	return fmt.Errorf("TypeError: '%s' object is not callable", pyrepr.TypeName(factory))
+	return fmt.Errorf("the platform handler factory is %s, expected a function", errchain.Kind(factory))
 }
 
 // Runs every plugin native handler factory not yet wired on this native client, each isolated
@@ -840,7 +842,7 @@ func (b *BasePlatformAdapter) WirePluginHandlers(ctx context.Context, native any
 	name := b.Self().Name()
 	factories, err := platformHandlerFactoriesFn(ctx, string(b.Platform))
 	if err != nil {
-		slog.Warn(fmt.Sprintf("[%s] Could not load plugin handler factories: %v", name, err))
+		pkgLog().Warn(fmt.Sprintf("[%s] Could not load plugin handler factories: %v", name, err))
 		return
 	}
 	b.mu.Lock()
@@ -858,9 +860,9 @@ func (b *BasePlatformAdapter) WirePluginHandlers(ctx context.Context, native any
 			continue
 		}
 		if err := callHandlerFactory(entry.Factory, native, b.Self()); err != nil {
-			slog.Error(fmt.Sprintf("[%s] Plugin '%s' handler factory raised: %v", name, entry.Plugin, err))
+			pkgLog().Error(fmt.Sprintf("[%s] Plugin '%s' handler factory raised: %v", name, entry.Plugin, err))
 		} else {
-			slog.Info(fmt.Sprintf("[%s] Wired native handlers from plugin '%s'", name, entry.Plugin))
+			pkgLog().Info(fmt.Sprintf("[%s] Wired native handlers from plugin '%s'", name, entry.Plugin))
 		}
 		b.mu.Lock()
 		b.pluginHandlersWired[key] = struct{}{}
@@ -900,9 +902,6 @@ func (b *BasePlatformAdapter) RewirePluginHandlers(ctx context.Context) {
 
 // Title cased platform value
 func (b *BasePlatformAdapter) Name() string { return pystr.Title(string(b.Platform)) }
-
-// Platform value the shared metrics label this adapter's deliveries with
-func (b *BasePlatformAdapter) MetricsPlatform() any { return string(b.Platform) }
 
 // Whether the adapter is connected
 func (b *BasePlatformAdapter) IsConnected() bool {
@@ -958,7 +957,7 @@ func (b *BasePlatformAdapter) applyTopicRecovery(event *MessageEvent) {
 	}
 	recovered, err := recoverFn(source)
 	if err != nil {
-		slog.Debug(fmt.Sprintf("topic recovery hook failed: %v", err))
+		pkgLog().Debug(fmt.Sprintf("topic recovery hook failed: %v", err))
 		return
 	}
 	current := ""
@@ -1018,13 +1017,13 @@ func (b *BasePlatformAdapter) IsSenderAuthorized(userID string, chatType, chatID
 	name := b.Self().Name()
 	result, err := check(userID, chatType, chatID, opts)
 	if err != nil {
-		slog.Warn(fmt.Sprintf("[%s] Authorization check raised for user %s; treating as unknown: %v", name, userID, err))
+		pkgLog().Warn(fmt.Sprintf("[%s] Authorization check raised for user %s; treating as unknown: %v", name, userID, err))
 		return nil
 	}
 	if v, ok := result.(bool); ok {
 		return &v
 	}
-	slog.Warn(fmt.Sprintf("[%s] Authorization check returned %s for user %s; treating as unknown", name, pyrepr.TypeName(result), userID))
+	pkgLog().Warn(fmt.Sprintf("[%s] Authorization check returned %s for user %s; treating as unknown", name, pyrepr.TypeName(result), userID))
 	return nil
 }
 
@@ -1097,7 +1096,7 @@ func (b *BasePlatformAdapter) canonicalize(ctx context.Context, source *SessionS
 	}
 	identity, err := canonicalIdentity(ctx, source, runner, b.Self(), b.ownerTransportProfile())
 	if err != nil {
-		slog.Debug(fmt.Sprintf("[%s] identity resolution failed; using legacy key readers: %v", b.Self().Name(), err))
+		pkgLog().Debug(fmt.Sprintf("[%s] identity resolution failed; using legacy key readers: %v", b.Self().Name(), err))
 		return nil
 	}
 	return identity
@@ -1156,7 +1155,7 @@ func (b *BasePlatformAdapter) coerceFloatExtra(key string, def, minValue float64
 	}
 	parsed = math.Max(parsed, minValue)
 	if maxValue != nil && parsed > *maxValue {
-		slog.Warn(fmt.Sprintf("%s=%s exceeds the %s ceiling; clamped", key, pyrepr.Float(parsed), pyrepr.Float(*maxValue)))
+		pkgLog().Warn(fmt.Sprintf("%s=%s exceeds the %s ceiling; clamped", key, pyrepr.Float(parsed), pyrepr.Float(*maxValue)))
 		parsed = *maxValue
 	}
 	return parsed

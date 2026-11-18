@@ -27,7 +27,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/tools"
 )
 
-// Launch defaults, labels and vendor hooks a provider customises, the class attributes of hermes subclasses
+// Launch defaults, labels and vendor hooks a provider customises
 type Vendor struct {
 	DefaultCommand           string
 	DefaultArgs              []string

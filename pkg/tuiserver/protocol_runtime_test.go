@@ -12,7 +12,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/agent"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pythread"
-	"github.com/nickheyer/icebath/pkg/tuigateway"
+	"github.com/nickheyer/icebath/pkg/tuihost"
 )
 
 // Already set agent ready event of a built session
@@ -34,12 +34,12 @@ func TestEnforceSessionCapEvictsOldestDetachedOnly(t *testing.T) {
 	t.Setenv("ICEBATH_HOME", h)
 	writeFile(t, filepath.Join(h, "config.yaml"), "max_live_sessions: 2\n")
 	useSharedDB(t, ledgerHandle(t, filepath.Join(h, "state.db")))
-	detached := tuigateway.DetachedWSTransport()
-	record := func(fields map[string]any) *tuigateway.Session {
+	detached := tuihost.DetachedWSTransport()
+	record := func(fields map[string]any) *tuihost.Session {
 		fields["agent_ready"] = readyEvent()
-		return tuigateway.NewSession(fields)
+		return tuihost.NewSession(fields)
 	}
-	swapSessions(t, map[string]*tuigateway.Session{
+	swapSessions(t, map[string]*tuihost.Session{
 		"old_detached":     record(map[string]any{"transport": detached, "last_active": 100.0}),
 		"new_detached":     record(map[string]any{"transport": detached, "last_active": 300.0}),
 		"running_detached": record(map[string]any{"transport": detached, "last_active": 50.0, "running": true}),
@@ -47,7 +47,7 @@ func TestEnforceSessionCapEvictsOldestDetachedOnly(t *testing.T) {
 	})
 	enforceSessionCap(context.Background())
 	for sid, kept := range map[string]bool{"old_detached": false, "new_detached": false, "running_detached": true, "focused_live": true} {
-		if (tuigateway.SessionRecord(sid) != nil) != kept {
+		if (tuihost.SessionRecord(sid) != nil) != kept {
 			t.Fatalf("%s kept=%v", sid, !kept)
 		}
 	}
@@ -73,29 +73,29 @@ func TestIdleReaperRearmsMissingWsOrphanTimer(t *testing.T) {
 				t.Fatalf("sibling lease %v %v %v", siblingLease, refusal, err)
 			}
 			t.Cleanup(func() { _ = siblingLease.Release() })
-			record := func(key string, lease *activesessions.Lease, transport tuigateway.Transport) *tuigateway.Session {
+			record := func(key string, lease *activesessions.Lease, transport tuihost.Transport) *tuihost.Session {
 				now := nowSeconds()
-				return tuigateway.NewSession(map[string]any{"active_session_lease": lease, "created_at": now, "history": []any{},
+				return tuihost.NewSession(map[string]any{"active_session_lease": lease, "created_at": now, "history": []any{},
 					"last_active": now, "session_key": key, "source": "tui", "transport": transport})
 			}
-			var dead tuigateway.Transport = tuigateway.DetachedWSTransport()
+			var dead tuihost.Transport = tuihost.DetachedWSTransport()
 			if closedTransport {
 				dead = &closedPeer{}
 			}
-			swapSessions(t, map[string]*tuigateway.Session{sid: record(sid, orphanLease, dead), siblingSID: record(siblingSID, siblingLease, &orphanRacePeer{id: 21})})
+			swapSessions(t, map[string]*tuihost.Session{sid: record(sid, orphanLease, dead), siblingSID: record(siblingSID, siblingLease, &orphanRacePeer{id: 21})})
 			t.Cleanup(func() { cancelWSOrphanReap(sid) })
 			prevGrace, prevTTL := wsOrphanReapGraceS, sessionTTLS
 			wsOrphanReapGraceS, sessionTTLS = func() float64 { return 0.05 }, 3600
 			t.Cleanup(func() { wsOrphanReapGraceS, sessionTTLS = prevGrace, prevTTL })
 			reapIdleSessions(ctx)
 			deadline := time.Now().Add(2 * time.Second)
-			for (tuigateway.SessionRecord(sid) != nil || !orphanLease.Released()) && time.Now().Before(deadline) {
+			for (tuihost.SessionRecord(sid) != nil || !orphanLease.Released()) && time.Now().Before(deadline) {
 				time.Sleep(10 * time.Millisecond)
 			}
-			if tuigateway.SessionRecord(sid) != nil || !orphanLease.Released() {
+			if tuihost.SessionRecord(sid) != nil || !orphanLease.Released() {
 				t.Fatal("detached lane kept its record or lease")
 			}
-			if tuigateway.SessionRecord(siblingSID) == nil {
+			if tuihost.SessionRecord(siblingSID) == nil {
 				t.Fatal("live sibling was reaped")
 			}
 			assertRegistrySessions := func() {
@@ -123,7 +123,7 @@ func TestSyncSessionKeyAfterCompressReanchorsActiveSessionLease(t *testing.T) {
 		t.Fatalf("lease %v %v %v", lease, refusal, err)
 	}
 	t.Cleanup(func() { _ = lease.Release() })
-	session := tuigateway.NewSession(map[string]any{"active_session_lease": lease,
+	session := tuihost.NewSession(map[string]any{"active_session_lease": lease,
 		"agent": rotated, "session_key": "session-old"})
 	syncSessionKeyAfterCompress(ctx, "ui-1", session, true, false)
 	if session.Get("session_key") != "session-new" || lease.SessionID() != "session-new" {
@@ -165,14 +165,6 @@ func TestConfigRoundtrip(t *testing.T) {
 	}
 }
 
-func TestCliExecBlocked(t *testing.T) {
-	for _, argv := range [][]string{{}, {"setup"}, {"gateway"}, {"sessions", "browse"}, {"config", "edit"}} {
-		if cliExecBlocked(argv) == "" {
-			t.Fatalf("%v not blocked", argv)
-		}
-	}
-}
-
 // session.create through the real dispatcher under a fresh home with synthetic agent builds
 func createCall(t *testing.T, rid string, params map[string]any) map[string]any {
 	t.Helper()
@@ -196,7 +188,7 @@ func createdSID(t *testing.T, resp map[string]any) string {
 func idempotencyScope(t *testing.T) {
 	t.Helper()
 	sessionCaseScope(t)
-	swapSessions(t, map[string]*tuigateway.Session{})
+	swapSessions(t, map[string]*tuihost.Session{})
 }
 
 func TestSessionCreateIdempotencyKeyDedupesRetry(t *testing.T) {
@@ -204,13 +196,13 @@ func TestSessionCreateIdempotencyKeyDedupesRetry(t *testing.T) {
 	params := map[string]any{"cols": 96, "source": "tui", "messages": []any{map[string]any{"role": "user", "content": "branch me"}},
 		"parent_session_id": "parent-1", "idempotency_key": "branch-retry-abc"}
 	first := createdSID(t, createCall(t, "c1", params))
-	if n := len(tuigateway.LiveSessions()); n != 1 {
+	if n := len(tuihost.LiveSessions()); n != 1 {
 		t.Fatalf("%d live sessions", n)
 	}
 	if second := createdSID(t, createCall(t, "c2", params)); second != first {
 		t.Fatalf("retry created %s, first %s", second, first)
 	}
-	if n := len(tuigateway.LiveSessions()); n != 1 {
+	if n := len(tuihost.LiveSessions()); n != 1 {
 		t.Fatalf("%d live sessions after retry", n)
 	}
 }
@@ -219,8 +211,8 @@ func TestSessionCreateNoIdempotencyKeyCreatesDistinctSessions(t *testing.T) {
 	idempotencyScope(t)
 	params := map[string]any{"cols": 96, "source": "tui"}
 	first, second := createdSID(t, createCall(t, "c1", params)), createdSID(t, createCall(t, "c2", params))
-	if first == second || len(tuigateway.LiveSessions()) != 2 {
-		t.Fatalf("sessions %s %s live %d", first, second, len(tuigateway.LiveSessions()))
+	if first == second || len(tuihost.LiveSessions()) != 2 {
+		t.Fatalf("sessions %s %s live %d", first, second, len(tuihost.LiveSessions()))
 	}
 }
 
@@ -228,9 +220,9 @@ func TestSessionCreateIdempotencyKeyExpiresWithSession(t *testing.T) {
 	idempotencyScope(t)
 	params := map[string]any{"cols": 96, "source": "tui", "idempotency_key": "branch-retry-xyz"}
 	first := createdSID(t, createCall(t, "c1", params))
-	tuigateway.SetSessionRecord(first, nil)
+	tuihost.SetSessionRecord(first, nil)
 	second := createdSID(t, createCall(t, "c2", params))
-	if second == first || len(tuigateway.LiveSessions()) != 1 {
-		t.Fatalf("second %s first %s live %d", second, first, len(tuigateway.LiveSessions()))
+	if second == first || len(tuihost.LiveSessions()) != 1 {
+		t.Fatalf("second %s first %s live %d", second, first, len(tuihost.LiveSessions()))
 	}
 }

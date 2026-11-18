@@ -14,14 +14,6 @@ import (
 func TestProviderConfigRegistryFields(t *testing.T) {
 	t.Setenv("ICEBATH_HOME", t.TempDir())
 	ctx := context.Background()
-	nous, err := providerConfig(ctx, "nous")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if nous.DisplayName != "Nous Portal" || nous.AuthType != AuthTypeOAuthDeviceCode || nous.PortalBaseURL != DefaultNousPortalURL ||
-		nous.BaseURL != DefaultNousInferenceURL || nous.ClientID != DefaultNousClientID || nous.Scope != DefaultNousScope {
-		t.Fatalf("nous config %+v", nous)
-	}
 	mm, err := providerConfig(ctx, "minimax-oauth")
 	if err != nil {
 		t.Fatal(err)
@@ -31,7 +23,7 @@ func TestProviderConfigRegistryFields(t *testing.T) {
 		mm.ClientID != MinimaxOAuthClientID || mm.Scope != MinimaxOAuthScope || !reflect.DeepEqual(mm.Extra, wantExtra) {
 		t.Fatalf("minimax config %+v", mm)
 	}
-	if _, err := providerConfig(ctx, "openrouter"); err == nil || err.Error() != "KeyError: 'openrouter'" {
+	if _, err := providerConfig(ctx, "openrouter"); err == nil || err.Error() != "no provider config named openrouter" {
 		t.Fatalf("openrouter must be absent from the auth registry: %v", err)
 	}
 }

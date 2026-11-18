@@ -320,12 +320,12 @@ func prepareGeminiToolParameters(parameters any) *pyjson.Object {
 	if !ok || src == nil || src.Len() == 0 {
 		return pyjson.ObjectOf("type", "object", "properties", pyjson.NewObject())
 	}
-	schema := pyjson.Clone(src).(*pyjson.Object)
+	schema := pyjson.Ordered(src).(*pyjson.Object)
 	schema.Delete("$schema")
 	budget := geminiMaxRefExpansions
 	inlined, err := inlineGeminiRefs(schema, schema, &budget, nil)
 	if err != nil {
-		catalogLog.Debug("Gemini tool schema kept as-is ($ref inlining skipped): " + err.Error())
+		pkgLog().Debug("Gemini tool schema kept as-is ($ref inlining skipped): " + err.Error())
 		return schema
 	}
 	schema = inlined.(*pyjson.Object)

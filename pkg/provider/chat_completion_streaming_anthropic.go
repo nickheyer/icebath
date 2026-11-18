@@ -11,6 +11,7 @@ import (
 	"sync"
 	"syscall"
 
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/internal/pyhttpx"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
@@ -113,7 +114,7 @@ func (s *anthSDKMessageStream) Next(ctx context.Context) (any, error) {
 		}
 		event, ok := pyjson.Plain(decoded).(map[string]any)
 		if !ok {
-			return nil, fmt.Errorf("TypeError: Unexpected event runtime type, after deserialising twice - %s - %s", pyrepr.Repr(decoded), pyrepr.TypeName(decoded))
+			return nil, fmt.Errorf("an Anthropic stream event is still %s after decoding it twice, expected a mapping", errchain.Kind(decoded))
 		}
 		if _, has := event["type"]; !has && f.Event != "completion" {
 			event["type"] = f.Event
@@ -361,7 +362,7 @@ func streamingCallAnthropicWire(c *streamingCall, client any) (any, error) {
 		anthSanitizeKwargs(finalKwargs, c.agent.LogPrefix())
 		streamer, ok := client.(anthMessagesStreamer)
 		if !ok {
-			return nil, fmt.Errorf("AttributeError: '%T' object has no attribute 'messages'", client)
+			return nil, fmt.Errorf("the Anthropic client (%T) has no messages API", client)
 		}
 		raw, err := streamer.MessagesStream(c.ctx, finalKwargs)
 		if err != nil {

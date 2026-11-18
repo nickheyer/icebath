@@ -11,7 +11,7 @@ func AwaitGatewayDecisionForTests(ctx context.Context, env *Env, sessionKey stri
 // Notifier registered for a session, nil when none is
 func GatewayNotifyForTests(sessionKey string) GatewayNotifyFunc { return gatewayNotifyCb(sessionKey) }
 
-// Appends a pending gateway approval entry to a session queue the way a hermes case seeds _gateway_queues
+// Appends a pending gateway approval entry to a session queue the way a test seeds gateway queues
 func QueueGatewayApprovalForTests(sessionKey string, data map[string]any) *ApprovalEntry {
 	entry := newApprovalEntry(data)
 	approvalState.Lock()

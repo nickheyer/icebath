@@ -10,7 +10,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/codeexec"
 	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tools"
-	"github.com/nickheyer/icebath/pkg/tuigateway"
+	"github.com/nickheyer/icebath/pkg/tuihost"
 )
 
 func TestFinalizeSessionUsesAgentSessionIdFinalizeTargetsAgentSessionIdNotStaleKey(t *testing.T) {
@@ -26,7 +26,7 @@ func TestFinalizeSessionUsesAgentSessionIdFinalizeTargetsAgentSessionIdNotStaleK
 		t.Fatal(err)
 	}
 	a := testAgent(t, agent.AIAgentOptions{Model: "test", Provider: "custom", APIMode: "chat_completions", SessionID: "continuation-session", Platform: "tui"})
-	session := tuigateway.NewSession(map[string]any{"agent": a, "session_key": "parent-session", "history": []any{map[string]any{"role": "user", "content": "hello"}},
+	session := tuihost.NewSession(map[string]any{"agent": a, "session_key": "parent-session", "history": []any{map[string]any{"role": "user", "content": "hello"}},
 		"history_lock": &sync.Mutex{}, "history_version": 0, "running": false, "attached_images": []any{}, "image_counter": 0, "cols": 80,
 		"slash_worker": nil, "show_reasoning": false, "tool_progress_mode": "all", "pending_title": nil})
 	finalizeSession(context.Background(), session, "tui_close")
@@ -56,8 +56,8 @@ func liveKernel(t *testing.T, source string) (registered, stopped func() bool) {
 }
 
 // Session record of the kernel cases
-func kernelSession() *tuigateway.Session {
-	return tuigateway.NewSession(map[string]any{"active_session_lease": nil, "agent": nil, "history": []any{}, "history_lock": &sync.Mutex{},
+func kernelSession() *tuihost.Session {
+	return tuihost.NewSession(map[string]any{"active_session_lease": nil, "agent": nil, "history": []any{}, "history_lock": &sync.Mutex{},
 		"profile_home": nil, "session_key": kernelSessionKey, "slash_worker": nil, "source": "tui"})
 }
 

@@ -96,12 +96,12 @@ func TestGoalManagerSetThenStatus(t *testing.T) {
 }
 
 func TestGoalManagerContinuationPromptShape(t *testing.T) {
-	mgr := managerWithGoal(t, "cont-sid", "port goal command to hermes", 0)
+	mgr := managerWithGoal(t, "cont-sid", "port goal command to icebath", 0)
 	prompt := mgr.NextContinuationPrompt()
-	if prompt == nil || !strings.Contains(*prompt, "port goal command to hermes") || strings.TrimSpace(*prompt) == "" {
+	if prompt == nil || !strings.Contains(*prompt, "port goal command to icebath") || strings.TrimSpace(*prompt) == "" {
 		t.Fatalf("prompt %v", prompt)
 	}
-	want := "[Continuing toward your standing goal]\nGoal: port goal command to hermes\n\nContinue working toward this goal. Take the next concrete step. " +
+	want := "[Continuing toward your standing goal]\nGoal: port goal command to icebath\n\nContinue working toward this goal. Take the next concrete step. " +
 		"If you believe the goal is complete, state so explicitly and stop. If you are blocked and need input from the user, say so clearly and stop."
 	if *prompt != want {
 		t.Fatalf("prompt %q", *prompt)
@@ -739,7 +739,7 @@ func TestKanbanGoalLoopNudgesFinalizesBlocksAndBindsThePerTaskAffinityScope(t *t
 		saved := goalJudgeFn
 		defer func() { goalJudgeFn = saved }()
 		goalJudgeFn = func(ctx context.Context, goal, response string, _ JudgeOptions) JudgeResult {
-			scopes = append(scopes, provider.PortalAffinityScope(ctx))
+			scopes = append(scopes, provider.AffinityScope(ctx))
 			verdict := "continue"
 			if len(verdicts) > 0 {
 				verdict, verdicts = verdicts[0], verdicts[1:]
@@ -803,12 +803,12 @@ func TestKanbanGoalLoopNudgesFinalizesBlocksAndBindsThePerTaskAffinityScope(t *t
 	if result.Outcome != "stopped" || !strings.HasPrefix(result.Reason, "run_turn error: ") {
 		t.Fatalf("turn error %+v", result)
 	}
-	bound := provider.WithPortalAffinityScope(context.Background(), "session:abc")
+	bound := provider.WithAffinityScope(context.Background(), "session:abc")
 	saved := goalJudgeFn
 	defer func() { goalJudgeFn = saved }()
 	seen := ""
 	goalJudgeFn = func(ctx context.Context, _, _ string, _ JudgeOptions) JudgeResult {
-		seen = provider.PortalAffinityScope(ctx)
+		seen = provider.AffinityScope(ctx)
 		return JudgeResult{Verdict: "blocked", Reason: "r"}
 	}
 	kanbanLoop(t, bound, GoalLoopOptions{TaskID: "t9", GoalText: "g", FirstResponse: "f", TaskStatus: statusOf("ready"), Block: func(string) error { return errors.New("board gone") },
@@ -848,7 +848,7 @@ func TestGoalLoopJudgeBindsPerTaskAffinityScope(t *testing.T) {
 	saved := goalJudgeFn
 	defer func() { goalJudgeFn = saved }()
 	goalJudgeFn = func(ctx context.Context, goal, lastResponse string, _ JudgeOptions) JudgeResult {
-		seen = append(seen, provider.PortalAffinityScope(ctx))
+		seen = append(seen, provider.AffinityScope(ctx))
 		return JudgeResult{Verdict: "continue", Reason: "not yet"}
 	}
 	ctx := context.Background()
@@ -861,7 +861,7 @@ func TestGoalLoopJudgeBindsPerTaskAffinityScope(t *testing.T) {
 	if !slices.Equal(seen, []string{"kanban:task-7", "kanban:task-7"}) {
 		t.Fatalf("judge scopes %v", seen)
 	}
-	if scope := provider.PortalAffinityScope(ctx); scope != "" {
+	if scope := provider.AffinityScope(ctx); scope != "" {
 		t.Fatalf("the loop left the caller bound to %q", scope)
 	}
 }

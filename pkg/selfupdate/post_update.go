@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"log/slog"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -22,15 +21,13 @@ import (
 	"github.com/nickheyer/icebath/pkg/skills"
 )
 
-var postUpdateLog = slog.Default().With("logger", "icebath_cli.post_update")
-
 // One named home or machine maintenance step
 type PostUpdateStep struct {
 	Name string
 	Run  func(ctx context.Context) (map[string]any, error)
 }
 
-// Home steps in their hermes order, boot bootstrap gating them with the per home record
+// Home steps in their order, boot bootstrap gating them with the per home record
 var HomeSteps = []PostUpdateStep{
 	{"adopt_blessed_checkout", func(ctx context.Context) (map[string]any, error) { return StepAdoptBlessedCheckout(ctx, "") }},
 	{"migrate_config", StepMigrateConfig},
@@ -56,7 +53,7 @@ func bootHomeStepsOf(steps []PostUpdateStep) []PostUpdateStep {
 	return out
 }
 
-// Collaborators of the config migration step, the module attributes hermes tests patch
+// Collaborators of the config migration step, the module attributes tests patch
 var (
 	stampMissingConfigFn = func(ctx context.Context, h string) (bool, error) {
 		return config.StampMissingConfig(ctx, h, provider.ConfigFacadeStampHooks())
@@ -73,7 +70,7 @@ var (
 	}
 )
 
-// Collaborators of the runtime provisioning step, the pm attributes hermes tests patch
+// Collaborators of the runtime provisioning step, the pm attributes tests patch
 var (
 	pmDriftFn               = func(ctx context.Context) (*pm.DriftReport, error) { return pm.Drift(ctx, true) }
 	pmSealedFn              = pm.Sealed
@@ -192,7 +189,7 @@ func StepMigrateConfig(ctx context.Context) (map[string]any, error) {
 		return map[string]any{"ok": true, "skipped": "up-to-date"}, nil
 	}
 	if current < config.SupportFloorVersion && !(stamp == nil && agentBrowserEnvPendingFn(h)) {
-		postUpdateLog.Warn("config migration skipped: " + config.SupportFloorMessage(h))
+		pkgLog().Warn("config migration skipped: " + config.SupportFloorMessage(h))
 		return map[string]any{"ok": true, "skipped": "below-support-floor"}, nil
 	}
 	backups, err := backupExisting([]string{home.ConfigPath(h), home.EnvPath(h)})
@@ -259,7 +256,7 @@ func StepStateDBGuard(ctx context.Context) (map[string]any, error) {
 	if message == "" {
 		message = "unknown error"
 	}
-	postUpdateLog.Error(fmt.Sprintf("state.db failed integrity check after a code update: %s — "+
+	pkgLog().Error(fmt.Sprintf("state.db failed integrity check after a code update: %s — "+
 		"restore a backup with `icebath backup` tooling or contact support", message))
 	return map[string]any{"ok": false, "error": message}, nil
 }
@@ -335,17 +332,17 @@ func StepAdoptBlessedCheckout(ctx context.Context, projectRoot string) (map[stri
 	}
 	identified, err := WriteSourceStamp(root, true)
 	if err != nil {
-		postUpdateLog.Debug(fmt.Sprintf("blessed-checkout adoption skipped (unwritable): %s", pypath.OSErrorText(err)))
+		pkgLog().Debug(fmt.Sprintf("blessed-checkout adoption skipped (unwritable): %s", pypath.OSErrorText(err)))
 		return map[string]any{"ok": true, "skipped": "unwritable: " + pypath.OSErrorText(err)}, nil
 	}
 	if identified == nil {
 		stamp := pyjson.ObjectOf("schemaVersion", 2, "updateMechanism", "self", "source", "adoption", "adoptedAt", pyISONowUTC())
 		if err := writeJSONViaTemp(root, ".install-stamp.", stampPath, stamp); err != nil {
-			postUpdateLog.Debug(fmt.Sprintf("blessed-checkout adoption skipped (unwritable): %s", pypath.OSErrorText(err)))
+			pkgLog().Debug(fmt.Sprintf("blessed-checkout adoption skipped (unwritable): %s", pypath.OSErrorText(err)))
 			return map[string]any{"ok": true, "skipped": "unwritable: " + pypath.OSErrorText(err)}, nil
 		}
 	}
-	postUpdateLog.Info(fmt.Sprintf("adopted blessed checkout at %s (updateMechanism: self)", root))
+	pkgLog().Info(fmt.Sprintf("adopted blessed checkout at %s (updateMechanism: self)", root))
 	return map[string]any{"ok": true, "adopted": root}, nil
 }
 
@@ -377,7 +374,7 @@ func StepProvisionRuntimes(ctx context.Context) (map[string]any, error) {
 			err = pmEnsureFn(ctx, name)
 		}
 		if err != nil {
-			postUpdateLog.Warn(fmt.Sprintf("provision_runtimes: %s failed: %s", name, err.Error()))
+			pkgLog().Warn(fmt.Sprintf("provision_runtimes: %s failed: %s", name, err.Error()))
 			errors = append(errors, name+": "+err.Error())
 			continue
 		}
@@ -389,7 +386,7 @@ func StepProvisionRuntimes(ctx context.Context) (map[string]any, error) {
 	return map[string]any{"ok": true, "refreshed": refreshed}, nil
 }
 
-// Publishes the durable commands, hermes_cli/_launchers.py expose_cli over this checkout
+// Publishes the durable commands, over this checkout
 func StepExposeCLI(ctx context.Context) (map[string]any, error) {
 	result, err := pm.ExposeCLI(ctx, pm.RepoRoot(), true)
 	if err != nil {
@@ -421,7 +418,7 @@ func RunSteps(ctx context.Context, steps []PostUpdateStep) map[string]map[string
 	for _, step := range steps {
 		result, err := runStepGuarded(ctx, step)
 		if err != nil {
-			postUpdateLog.Warn(fmt.Sprintf("post-update step %s failed: %s", step.Name, err.Error()))
+			pkgLog().Warn(fmt.Sprintf("post-update step %s failed: %s", step.Name, err.Error()))
 			results[step.Name] = map[string]any{"ok": false, "error": err.Error()}
 			continue
 		}

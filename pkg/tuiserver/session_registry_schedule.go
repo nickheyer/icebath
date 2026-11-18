@@ -8,7 +8,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/memory"
 	"github.com/nickheyer/icebath/pkg/state"
-	"github.com/nickheyer/icebath/pkg/tuigateway"
+	"github.com/nickheyer/icebath/pkg/tuihost"
 )
 
 var (
@@ -30,10 +30,10 @@ func scheduleAgentBuildTimer(ctx context.Context, sid string, delay float64) {
 	time.AfterFunc(time.Duration(delay*float64(time.Second)), func() {
 		defer func() {
 			if failure := recover(); failure != nil {
-				logger().Error("Exception in thread agent-build-timer", "exc_info", failureText(failure))
+				pkgLog().Error("Exception in thread agent-build-timer", "exc_info", failureText(failure))
 			}
 		}()
-		if session := tuigateway.SessionRecord(sid); session != nil {
+		if session := tuihost.SessionRecord(sid); session != nil {
 			startAgentBuild(ctx, sid, session)
 			maybeNotifyAutoPrune(ctx, sid, strOr(session.Get("profile_home")))
 		}
@@ -62,11 +62,11 @@ func maybeNotifyAutoPrune(ctx context.Context, sid, profileHome string) {
 		defer threadExceptHook("auto-prune-advice")
 		advice, err := state.AutoPruneAdvise(ctx, h)
 		if err != nil {
-			logger().Error("Exception in thread auto-prune-advice", "exc_info", err.Error())
+			pkgLog().Error("Exception in thread auto-prune-advice", "exc_info", err.Error())
 			return
 		}
 		if advice != nil && state.AutoPruneShouldAsk(ctx, h) != nil {
-			tuigateway.Emit(ctx, "notification.show", sid, objectMap(state.AutoPruneNoticePayload(*advice)))
+			tuihost.Emit(ctx, "notification.show", sid, objectMap(state.AutoPruneNoticePayload(*advice)))
 			return
 		}
 		autoPruneNotifiedMu.Lock()

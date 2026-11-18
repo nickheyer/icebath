@@ -89,7 +89,7 @@ func retaindbQuiet[T any](env *tools.Env, label string, fn func() (T, error)) (T
 		return err
 	})
 	if err != nil {
-		moduleLog(env, "plugins.memory.retaindb").Debug(fmt.Sprintf("RetainDB %s failed: %s", label, err))
+		envLog(env).Debug(fmt.Sprintf("RetainDB %s failed: %s", label, err))
 		var zero T
 		return zero, false
 	}
@@ -556,7 +556,7 @@ func (q *retaindbWriteQueue) enqueue(userID, sessionID string, messages []any) e
 // Ingests one row, deleting it on success and recording the error for the next startup replay on failure
 func (q *retaindbWriteQueue) flushRow(ctx context.Context, row retaindbRow) error {
 	if _, err := q.client.ingestSession(ctx, row.userID, row.sessionID, row.messages); err != nil {
-		moduleLog(q.env, "plugins.memory.retaindb").Warn(fmt.Sprintf("RetainDB ingest failed (will retry): %s", err))
+		envLog(q.env).Warn(fmt.Sprintf("RetainDB ingest failed (will retry): %s", err))
 		if _, uerr := q.db.Exec("UPDATE pending SET last_error = ? WHERE id = ?", err.Error(), row.id); uerr != nil {
 			return uerr
 		}
@@ -574,7 +574,7 @@ func (q *retaindbWriteQueue) loop(ctx context.Context) {
 			return
 		}
 		if err := callProvider(func() error { return q.flushRow(ctx, row) }); err != nil {
-			moduleLog(q.env, "plugins.memory.retaindb").Error(fmt.Sprintf("RetainDB writer error: %s", err))
+			envLog(q.env).Error(fmt.Sprintf("RetainDB writer error: %s", err))
 		}
 	}
 }
@@ -945,7 +945,7 @@ func (p *RetainDBProvider) QueuePrefetch(ctx context.Context, query, sessionID s
 	}
 	for _, t := range previous {
 		if t.Alive() {
-			moduleLog(p.env, "plugins.memory.retaindb").Debug("RetainDB prefetch still running; skipping new batch")
+			envLog(p.env).Debug("RetainDB prefetch still running; skipping new batch")
 			return nil
 		}
 	}

@@ -96,8 +96,7 @@ func (c *authCLI) interactiveAdd() error {
 		return nil
 	}
 	ns := map[string]any{"provider": provider, "auth_type": authType, "label": nil, "api_key": nil,
-		"portal_url": nil, "inference_url": nil, "client_id": nil, "scope": nil,
-		"no_browser": false, "timeout": nil, "insecure": false, "ca_bundle": nil}
+		"no_browser": false, "timeout": nil}
 	if label != "" {
 		ns["label"] = label
 	}
@@ -188,8 +187,6 @@ func (c *authCLI) run() error {
 		return c.status()
 	case "logout":
 		return c.logout()
-	case "upgrade":
-		return c.upgrade()
 	}
 	return c.interactiveAuth()
 }

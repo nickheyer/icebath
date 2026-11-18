@@ -111,7 +111,7 @@ func TestHealLogEscalation(t *testing.T) {
 	t.Run("test_warning_then_one_error_then_silence", func(t *testing.T) {
 		resetHealLog(t)
 		healThresholdHome(t, "3")
-		records := captureLogger(t, "run_agent", slog.LevelWarn)
+		records := captureLogger(t, "agent", slog.LevelWarn)
 		durable := poisonedRows()
 		for range 5 {
 			rows := make([]map[string]any, len(durable))
@@ -130,7 +130,7 @@ func TestHealLogEscalation(t *testing.T) {
 	t.Run("test_sessions_do_not_share_heal_counters", func(t *testing.T) {
 		resetHealLog(t)
 		healThresholdHome(t, "3")
-		records := captureLogger(t, "run_agent", slog.LevelWarn)
+		records := captureLogger(t, "agent", slog.LevelWarn)
 		healN("sess-a", 1)
 		healN("sess-b", 1)
 		if w, e := countLevels(records()); w != 2 || e != 0 {
@@ -193,7 +193,7 @@ func TestOneTimeUserNotice(t *testing.T) {
 	t.Run("test_threshold_zero_disables_escalation", func(t *testing.T) {
 		resetHealLog(t)
 		healThresholdHome(t, "0")
-		records := captureLogger(t, "run_agent", slog.LevelWarn)
+		records := captureLogger(t, "agent", slog.LevelWarn)
 		healN("sess-off", 6)
 		if consumePendingSanitizerHealNotice("sess-off") != "" {
 			t.Fatal("notice with escalation disabled")

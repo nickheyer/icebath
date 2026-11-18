@@ -23,7 +23,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tools"
-	"github.com/nickheyer/icebath/pkg/tuigateway"
+	"github.com/nickheyer/icebath/pkg/tuihost"
 )
 
 // Save, export, reload, delegation pause, rollback, context breakdown and history verbs of the shared owner
@@ -382,7 +382,7 @@ func runRollback(ctx context.Context, kind string, kwargs map[string]any, termin
 			stat = ""
 		}
 		payload := pyjson.ObjectOf("stat", stat, "diff", raw)
-		if rendered, ok := tuigateway.RenderDiff(raw, 80); ok && rendered != "" {
+		if rendered, ok := tuihost.RenderDiff(raw, 80); ok && rendered != "" {
 			payload.Set("rendered", rendered)
 		}
 		return payload, nil

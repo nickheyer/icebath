@@ -85,8 +85,11 @@ func localSandboxFixture(t *testing.T) (*tools.Env, string) {
 		t.Fatal(err)
 	}
 	sandbox := &localSandbox{}
-	pin(t, &sandboxRunIn, func(_ tools.Environment, argv []string, childEnv map[string]string, _ string, timeoutS float64) (*tools.RunInResult, error) {
+	pin(t, &sandboxRunIn, func(_ tools.Environment, argv []string, childEnv map[string]string, _ string, timeoutS float64, stdin []byte) (*tools.RunInResult, error) {
 		cmd := exec.Command(argv[0], argv[1:]...)
+		if stdin != nil {
+			cmd.Stdin = bytes.NewReader(stdin)
+		}
 		cmd.Env = os.Environ()
 		for k, v := range childEnv {
 			cmd.Env = append(cmd.Env, k+"="+v)

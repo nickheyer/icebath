@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"log/slog"
 	"os"
 	"path/filepath"
 	"slices"
@@ -33,7 +32,6 @@ var EnvVarsByVersion = map[int][]string{
 	4:  {"VOICE_TOOLS_OPENAI_KEY", "ELEVENLABS_API_KEY"},
 	5:  {"WHATSAPP_ENABLED", "WHATSAPP_MODE", "WHATSAPP_ALLOWED_USERS", "SLACK_BOT_TOKEN", "SLACK_APP_TOKEN", "SLACK_ALLOWED_USERS"},
 	10: {"TAVILY_API_KEY"},
-	11: {"TERMINAL_MODAL_MODE"},
 }
 
 // Collaborators migrate_config reaches in packages that import config
@@ -98,7 +96,7 @@ func persistMigration(ctx context.Context, h string, cfg map[string]any) error {
 		}
 		return backend.ApplyInMemory(ctx, filepath.Dir(GetConfigPath(h)), cfg)
 	}
-	return SaveConfig(AppliedWrite(ctx), h, cfg, SaveOptions{})
+	return SaveConfig(ctx, h, cfg, SaveOptions{})
 }
 
 // Reads one line from the facade input like input, io.EOF when the stream ends before any text
@@ -337,7 +335,7 @@ func disableSuspiciousMCPServers(ctx context.Context, h string, results *Migrati
 func warnInvalidPlatformToolsets(ctx context.Context, h string, results *MigrationResults, quiet bool) {
 	check := migrateCollaborators().PlatformToolsetWarnings
 	if check == nil {
-		slog.Debug("platform_toolsets validation skipped: toolset validation is not registered")
+		pkgLog().Debug("platform_toolsets validation skipped: toolset validation is not registered")
 		return
 	}
 	cfg, err := ReadRawConfig(ctx, h)
@@ -346,7 +344,7 @@ func warnInvalidPlatformToolsets(ctx context.Context, h string, results *Migrati
 		warnings, err = check(cfg)
 	}
 	if err != nil {
-		slog.Debug(fmt.Sprintf("platform_toolsets validation skipped: %v", err))
+		pkgLog().Debug(fmt.Sprintf("platform_toolsets validation skipped: %v", err))
 		return
 	}
 	for _, w := range warnings {
@@ -513,7 +511,7 @@ func GetMissingSkillConfigVars(ctx context.Context, h string) ([]SkillConfigVar,
 	}
 	all, err := discover()
 	if err != nil {
-		slog.Debug(fmt.Sprintf("discover_all_skill_config_vars failed: %v", err))
+		pkgLog().Debug(fmt.Sprintf("discover_all_skill_config_vars failed: %v", err))
 		return nil, nil
 	}
 	if len(all) == 0 {

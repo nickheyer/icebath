@@ -38,7 +38,7 @@ func repairFlush(t *testing.T, db *SessionDB, sid string, msgs []map[string]any)
 	return n
 }
 
-func TestTranscriptRowSnapshotMatchesHermesDigest(t *testing.T) {
+func TestTranscriptRowSnapshotMatchesItsDigest(t *testing.T) {
 	row := map[string]any{"content": "héllo", "token_count": int64(7), "observed": int64(0), "_compressed_summary": int64(1),
 		"reasoning": 1.5, "tool_calls": []byte{0, 1}, "finish_reason": 1e16, "display_kind": "ignored", "api_content": "ignored"}
 	if got := TranscriptRowSnapshot(row); got != "198870bdd83591e5a7568b82a4e485e4" {

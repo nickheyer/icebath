@@ -7,7 +7,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/provider"
 )
 
-// Clears the multi profile hosting latch, launch env snapshot and served homes for one case like the hermes conftest
+// Clears the multi profile hosting latch, launch env snapshot and served homes for one case like the test setup
 func isolateProfileHosting(t *testing.T) {
 	t.Helper()
 	prevMultiplex := provider.IsMultiplexActive(context.Background())

@@ -8,7 +8,6 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
-	"log/slog"
 	"math/big"
 	"net/http"
 	"os"
@@ -58,9 +57,9 @@ func deliveryWarn(set map[string]bool, key, msg string) {
 	set[key] = true
 	deliveryWarnMu.Unlock()
 	if seen {
-		slog.Debug(msg)
+		pkgLog().Debug(msg)
 	} else {
-		slog.Warn(msg)
+		pkgLog().Warn(msg)
 	}
 }
 
@@ -221,15 +220,9 @@ func HasMailbox(profileHome string) bool {
 }
 
 // Mailbox directory this token cannot list, create or lock inside, a permission error
-type MailboxUnusable struct {
-	Errno    syscall.Errno
-	Strerror string
-	Filename string
-}
+type MailboxUnusable struct{ Msg string }
 
-func (e *MailboxUnusable) Error() string {
-	return fmt.Sprintf("[Errno %d] %s: %s", int(e.Errno), e.Strerror, pyrepr.Repr(e.Filename))
-}
+func (e *MailboxUnusable) Error() string { return e.Msg }
 
 func (e *MailboxUnusable) Unwrap() error { return fs.ErrPermission }
 
@@ -239,28 +232,17 @@ func mailboxUnusable(root string, cause error) *MailboxUnusable {
 	deliveryWarn(warnedUnusableMailbox, root, fmt.Sprintf("bot_live_delivery: mailbox directory %s (owner %s) is not usable by this process (%s); "+
 		"Bot Chat deliveries are paused until it is repaired, other clients are unaffected. To repair, %s",
 		root, dirOwner(root), deliveryOSErrorText(cause), remedy))
-	var errno syscall.Errno
-	errors.As(cause, &errno)
-	return &MailboxUnusable{Errno: errno, Strerror: "bot mailbox directory is not usable: " + deliveryOSErrorText(cause), Filename: root}
+	return &MailboxUnusable{Msg: "bot mailbox directory is not usable: " + deliveryOSErrorText(cause)}
 }
 
-// Python str of an OSError with errno and filename, the plain text otherwise
+// Reason and path of a filesystem failure, the error text otherwise
 func deliveryOSErrorText(err error) string {
 	var pathErr *fs.PathError
 	var errno syscall.Errno
 	if errors.As(err, &pathErr) && errors.As(err, &errno) {
-		return fmt.Sprintf("[Errno %d] %s: %s", int(errno), deliveryStrerror(errno), pyrepr.Repr(pathErr.Path))
+		return fmt.Sprintf("%s: %s", errno.Error(), pathErr.Path)
 	}
 	return err.Error()
-}
-
-// Capitalised strerror text as Python prints it
-func deliveryStrerror(errno syscall.Errno) string {
-	text := errno.Error()
-	if text == "" {
-		return text
-	}
-	return strings.ToUpper(text[:1]) + text[1:]
 }
 
 func deliveryPermission(err error) bool { return errors.Is(err, fs.ErrPermission) }
@@ -589,7 +571,7 @@ func CompleteDelivery(ctx context.Context, profileHome, deliveryID, status, repl
 		}
 		current, has := record["status"]
 		if !has {
-			return fmt.Errorf("KeyError: 'status'")
+			return fmt.Errorf("delivery record %s has no status", deliveryID)
 		}
 		if s, _ := current.(string); deliveryTerminal[s] {
 			for k, v := range outcome {
@@ -634,7 +616,7 @@ func CancelQueuedDelivery(ctx context.Context, profileHome, deliveryID, errText,
 		}
 		current, has := record["status"]
 		if !has {
-			return fmt.Errorf("KeyError: 'status'")
+			return fmt.Errorf("delivery record %s has no status", deliveryID)
 		}
 		if current != "queued" || deliveryTruthy(record["admission_id"]) {
 			out = record
@@ -717,7 +699,7 @@ func AwaitDelivery(ctx context.Context, profileHome, deliveryID string, timeout 
 		}
 		status, has := record["status"]
 		if !has {
-			return nil, fmt.Errorf("KeyError: 'status'")
+			return nil, fmt.Errorf("delivery record %s has no status", deliveryID)
 		}
 		if status != "queued" && status != "claimed" {
 			return record, nil

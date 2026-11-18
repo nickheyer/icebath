@@ -31,7 +31,7 @@ var ErrEventLoopClosed = errors.New("Event loop is closed")
 // Logs why work could not be scheduled, the default logger and message standing in when none is given
 func LogScheduleFailure(ctx context.Context, log *slog.Logger, logMessage string, level slog.Level, err error) {
 	if log == nil {
-		log = slog.Default().With("logger", "agent.async_utils")
+		log = pkgLog()
 	}
 	if logMessage == "" {
 		logMessage = "Failed to schedule coroutine on loop"

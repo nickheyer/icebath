@@ -3,7 +3,6 @@ package telegram
 import (
 	"context"
 	"fmt"
-	"log/slog"
 	"os"
 	"slices"
 	"strings"
@@ -59,16 +58,16 @@ func buildPTBRequests(ctx context.Context, name string, extra map[string]any, li
 	if len(fallbackIPs) == 0 && !disableFallback {
 		zero := 0.0
 		discoveryTimeout := envFloatClamped("ICEBATH_TELEGRAM_FALLBACK_DISCOVERY_TIMEOUT", 5.0, &zero, nil)
-		slog.Warn(fmt.Sprintf("[%s] Discovering Telegram API fallback IPs via DNS-over-HTTPS…", name))
+		pkgLog().Warn(fmt.Sprintf("[%s] Discovering Telegram API fallback IPs via DNS-over-HTTPS…", name))
 		discovered, err := awaitWithThreadDeadline(ctx, func(ctx context.Context) (any, error) { return DiscoverFallbackIPs(ctx), nil },
 			discoveryTimeout, nil, "telegram", true)
 		if err != nil {
-			slog.Warn(fmt.Sprintf("[%s] Telegram fallback-IP discovery failed after %.0fs; using seed IPv4 Telegram API IPs so a blackholed IPv6 hostname path cannot hang initialize() (#87015): %s",
+			pkgLog().Warn(fmt.Sprintf("[%s] Telegram fallback-IP discovery failed after %.0fs; using seed IPv4 Telegram API IPs so a blackholed IPv6 hostname path cannot hang initialize() (#87015): %s",
 				name, discoveryTimeout, redactTelegramErrorText(err)))
 			fallbackIPs = slices.Clone(SeedFallbackIPs)
 		} else {
 			fallbackIPs, _ = discovered.([]string)
-			slog.Info(fmt.Sprintf("[%s] Auto-discovered Telegram fallback IPs: %s", name, strings.Join(fallbackIPs, ", ")))
+			pkgLog().Info(fmt.Sprintf("[%s] Auto-discovered Telegram fallback IPs: %s", name, strings.Join(fallbackIPs, ", ")))
 		}
 	}
 	configured := ""
@@ -83,18 +82,18 @@ func buildPTBRequests(ctx context.Context, name string, extra map[string]any, li
 	general, updates := settings, settings
 	switch {
 	case len(fallbackIPs) > 0 && proxyURL == "" && !disableFallback:
-		slog.Info(fmt.Sprintf("[%s] Telegram fallback IPs active: %s", name, strings.Join(fallbackIPs, ", ")))
+		pkgLog().Info(fmt.Sprintf("[%s] Telegram fallback IPs active: %s", name, strings.Join(fallbackIPs, ", ")))
 		keepalive := TCPKeepaliveSocketOptions()
 		general.transport = TransportOptions{Limits: &poolLimits, SocketOptions: &keepalive, TLSConfig: tlsConfig}
 		updates.transport = TransportOptions{Limits: &updatesLimits, SocketOptions: &keepalive, TLSConfig: tlsConfig}
 		general.fallbackIPs, updates.fallbackIPs = fallbackIPs, fallbackIPs
 	case proxyURL != "":
-		slog.Info(fmt.Sprintf("[%s] Proxy detected; passing explicitly to HTTPXRequest: %s", name, proxyURL))
+		pkgLog().Info(fmt.Sprintf("[%s] Proxy detected; passing explicitly to HTTPXRequest: %s", name, proxyURL))
 		general.transport = TransportOptions{Proxy: &proxyURL, Limits: &poolLimits, TLSConfig: tlsConfig}
 		updates.transport = TransportOptions{Proxy: &proxyURL, Limits: &updatesLimits, TLSConfig: tlsConfig}
 	default:
 		if disableFallback {
-			slog.Info(fmt.Sprintf("[%s] Telegram fallback-IP transport disabled via env", name))
+			pkgLog().Info(fmt.Sprintf("[%s] Telegram fallback-IP transport disabled via env", name))
 		}
 		general.transport = TransportOptions{Limits: &poolLimits, TLSConfig: tlsConfig}
 		updates.transport = TransportOptions{Limits: &updatesLimits, TLSConfig: tlsConfig}

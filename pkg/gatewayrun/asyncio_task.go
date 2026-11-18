@@ -10,10 +10,10 @@ import (
 	"github.com/nickheyer/icebath/pkg/gateway"
 )
 
-// Error a cancelled task or future settles with, the asyncio.CancelledError of hermes
+// Error a cancelled task or future settles with
 var errTaskCancelled = errors.New("task cancelled")
 
-// Settable result with completion callbacks, the asyncio.Future of hermes
+// Settable result with completion callbacks
 type gatewayFuture struct {
 	mu        sync.Mutex
 	done      chan struct{}
@@ -87,7 +87,7 @@ func (f *gatewayFuture) wait(ctx context.Context) (any, error) {
 	}
 }
 
-// Goroutine with cancellation and a future of its outcome, the asyncio.Task of hermes
+// Goroutine with cancellation and a future of its outcome
 type gatewayTask struct {
 	*gatewayFuture
 	name   string

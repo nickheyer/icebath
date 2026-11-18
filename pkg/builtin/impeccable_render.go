@@ -13,7 +13,7 @@ import (
 
 const impeccableSkillRoot = "impeccable/skill"
 
-// Hermes provider token values from PROVIDER_PLACEHOLDERS
+// Icebath provider token values from PROVIDER_PLACEHOLDERS
 var impeccableProviderTokens = map[string]string{
 	"model":           "the model",
 	"config_file":     "AGENTS.md",
@@ -23,7 +23,7 @@ var impeccableProviderTokens = map[string]string{
 
 // Markdown block tags compileProviderBlocks recognises
 var providerBlockTags = map[string]bool{"agents": true, "antigravity": true, "claude": true, "claude-code": true, "codex": true,
-	"cursor": true, "devin": true, "dsh": true, "gemini": true, "github": true, "grok": true, "hermes": true, "kiro": true,
+	"cursor": true, "devin": true, "dsh": true, "gemini": true, "github": true, "grok": true, "icebath": true, "kiro": true,
 	"opencode": true, "pi": true, "omp": true, "qoder": true, "rovo-dev": true, "trae": true, "trae-cn": true, "vibe": true, "veto": true}
 
 var excludedFromSuggestions = map[string]bool{"impeccable": true, "teach-impeccable": true, "frontend-design": true}
@@ -92,7 +92,7 @@ func stripRuleMarkers(content string) string {
 	return ruleMarkerRe.ReplaceAllString(content, "")
 }
 
-// Substitutes the hermes command prefix and model name tokens and the available commands list
+// Substitutes the icebath command prefix and model name tokens and the available commands list
 func replacePlaceholders(content string, commandNames []string) string {
 	prefix := impeccableProviderTokens["command_prefix"]
 	var nonExcluded []string
@@ -117,10 +117,10 @@ func replacePlaceholders(content string, commandNames []string) string {
 	return r.Replace(content)
 }
 
-// Renders the provider markers in an executable script for the hermes build
+// Renders the provider markers in an executable script for the icebath build
 func replaceScriptProviderMarker(content string) string {
 	content = strings.Replace(content, "export const IMPECCABLE_COMMAND_PREFIX = '/'; // @impeccable-provider-command-prefix", `export const IMPECCABLE_COMMAND_PREFIX = "/";`, 1)
-	return strings.Replace(content, "export const IMPECCABLE_PROVIDER_ID = 'source'; // @impeccable-provider-id", `export const IMPECCABLE_PROVIDER_ID = "hermes";`, 1)
+	return strings.Replace(content, "export const IMPECCABLE_PROVIDER_ID = 'source'; // @impeccable-provider-id", `export const IMPECCABLE_PROVIDER_ID = "icebath";`, 1)
 }
 
 // One ordered frontmatter entry, a string, bool, list or nested ordered map
@@ -364,7 +364,7 @@ func impeccableCommandHint() (string, error) {
 	return strings.Join(groups, " · "), nil
 }
 
-// Hermes build of skill/ keyed by path below the skill directory, scripts path substituted
+// Icebath build of skill/ keyed by path below the skill directory, scripts path substituted
 func renderImpeccableSkill(scriptsPath string) (map[string]treeFile, error) {
 	src, err := payloadFile(impeccableSkillRoot + "/SKILL.src.md")
 	if err != nil {
@@ -393,7 +393,7 @@ func renderImpeccableSkill(scriptsPath string) (map[string]treeFile, error) {
 		}
 	}
 	render := func(text string, names []string) string {
-		text = compileProviderBlocks(text, []string{"hermes"})
+		text = compileProviderBlocks(text, []string{"icebath"})
 		text = replacePlaceholders(text, names)
 		return stripRuleMarkers(text)
 	}

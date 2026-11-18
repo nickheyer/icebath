@@ -7,7 +7,6 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
-	"log/slog"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -700,7 +699,7 @@ func hostedImportLegacyRooms(ctx context.Context, conn state.SQLiteConn, dbPath 
 		hostedLegacyFailed.Lock()
 		hostedLegacyFailed.sources[source] = true
 		hostedLegacyFailed.Unlock()
-		slog.Warn(fmt.Sprintf("hosted rooms: could not import the pre-isolation %s (%v); will retry on the next start", source, err))
+		pkgLog().Warn(fmt.Sprintf("hosted rooms: could not import the pre-isolation %s (%v); will retry on the next start", source, err))
 		return nil
 	}
 	if _, err := conn.ExecContext(ctx, "CREATE TABLE IF NOT EXISTS "+hostedLegacyMarkerTable+
@@ -715,7 +714,7 @@ func hostedImportLegacyRooms(ctx context.Context, conn state.SQLiteConn, dbPath 
 		return err
 	}
 	if copied > 0 {
-		slog.Info(fmt.Sprintf("hosted rooms: imported %d pre-isolation Group Chat(s) from %s", copied, source))
+		pkgLog().Info(fmt.Sprintf("hosted rooms: imported %d pre-isolation Group Chat(s) from %s", copied, source))
 	}
 	return nil
 }

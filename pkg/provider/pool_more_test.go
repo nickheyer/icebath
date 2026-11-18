@@ -173,7 +173,7 @@ func TestPluginMetadataSurvivesLoadSaveLoad(t *testing.T) {
 	if len(extra) != 2 || extra["tenant"] != "acme" || extra["region"] != "eu" {
 		t.Fatalf("extra must round trip exactly: %v", extra)
 	}
-	if PooledCredentialFromMap("nous", map[string]any{"access_token": "t", "org_id": "o1"}).ExtraString("org_id") != "o1" {
+	if PooledCredentialFromMap("openai-codex", map[string]any{"access_token": "t", "org_id": "o1"}).ExtraString("org_id") != "o1" {
 		t.Fatal("core known extra keys keep their attribute surface")
 	}
 	withProvider := map[string]any{}
@@ -450,28 +450,28 @@ func (rt rewriteTransport) RoundTrip(req *http.Request) (*http.Response, error) 
 	return http.DefaultTransport.RoundTrip(clone)
 }
 
-func TestHermesPKCERefreshWritesBackToSingleton(t *testing.T) {
+func TestIcebathPKCERefreshWritesBackToSingleton(t *testing.T) {
 	h := newTestHome(t)
 	writeAuthStore(t, h, map[string]any{"version": 1, "active_provider": "anthropic", "providers": map[string]any{}})
 	env := testEnv(t, h)
-	if err := WriteHermesOAuthCredentials(env, "sk-ant-oat-rt0", "rt0", 0, ""); err != nil {
+	if err := WriteIcebathOAuthCredentials(env, "sk-ant-oat-rt0", "rt0", 0, ""); err != nil {
 		t.Fatal(err)
 	}
 	anthropicTokenServer(t, &env, func(refreshToken string) (map[string]any, int) {
 		return map[string]any{"access_token": "sk-ant-oat-rt1", "refresh_token": "rt1", "expires_in": 3600}, 200
 	})
-	entry := PooledCredential{Provider: "anthropic", ID: "pool-entry", Label: "cred", AuthType: AuthTypeOAuth, Source: "hermes_pkce", AccessToken: "sk-ant-oat-rt0", RefreshToken: "rt0", Extra: map[string]any{}}
+	entry := PooledCredential{Provider: "anthropic", ID: "pool-entry", Label: "cred", AuthType: AuthTypeOAuth, Source: "icebath_pkce", AccessToken: "sk-ant-oat-rt0", RefreshToken: "rt0", Extra: map[string]any{}}
 	pool := NewPool(env, "anthropic", []PooledCredential{entry})
 	updated, ok := pool.refreshEntry(entry, true, "", false)
 	if !ok || updated.RefreshToken != "rt1" {
 		t.Fatalf("refresh expected: %+v", updated)
 	}
-	if ReadHermesOAuthCredentials(env)["refreshToken"] != "rt1" {
+	if ReadIcebathOAuthCredentials(env)["refreshToken"] != "rt1" {
 		t.Fatal("the singleton must carry the rotated pair")
 	}
 	var reloaded []PooledCredential
 	for _, e := range LoadPool(env, "anthropic").Entries() {
-		if strings.HasSuffix(e.Source, "hermes_pkce") {
+		if strings.HasSuffix(e.Source, "icebath_pkce") {
 			reloaded = append(reloaded, e)
 		}
 	}
@@ -480,20 +480,20 @@ func TestHermesPKCERefreshWritesBackToSingleton(t *testing.T) {
 	}
 }
 
-func TestManualHermesPKCERefreshDoesNotCreateDuplicateSingleton(t *testing.T) {
+func TestManualIcebathPKCERefreshDoesNotCreateDuplicateSingleton(t *testing.T) {
 	h := newTestHome(t)
 	writeAuthStore(t, h, map[string]any{"version": 1, "active_provider": "anthropic", "providers": map[string]any{}})
 	env := testEnv(t, h)
 	anthropicTokenServer(t, &env, func(string) (map[string]any, int) {
 		return map[string]any{"access_token": "manual-at-1", "refresh_token": "manual-rt-1", "expires_in": 3600}, 200
 	})
-	entry := PooledCredential{Provider: "anthropic", ID: "manual-entry", Label: "cred", AuthType: AuthTypeOAuth, Source: "manual:hermes_pkce", AccessToken: "manual-at-0", RefreshToken: "manual-rt-0", Extra: map[string]any{}}
+	entry := PooledCredential{Provider: "anthropic", ID: "manual-entry", Label: "cred", AuthType: AuthTypeOAuth, Source: "manual:icebath_pkce", AccessToken: "manual-at-0", RefreshToken: "manual-rt-0", Extra: map[string]any{}}
 	pool := NewPool(env, "anthropic", []PooledCredential{entry})
 	refreshed, ok := pool.refreshEntry(entry, true, "", false)
 	if !ok || refreshed.RefreshToken != "manual-rt-1" {
 		t.Fatalf("refresh expected: %+v", refreshed)
 	}
-	if fileExists(HermesOAuthFile(env)) {
+	if fileExists(IcebathOAuthFile(env)) {
 		t.Fatal("a pool owned manual row must not create a singleton")
 	}
 	var matching []PooledCredential
@@ -502,7 +502,7 @@ func TestManualHermesPKCERefreshDoesNotCreateDuplicateSingleton(t *testing.T) {
 			matching = append(matching, e)
 		}
 	}
-	if len(matching) != 1 || matching[0].Source != "manual:hermes_pkce" || matching[0].RefreshToken != "manual-rt-1" {
+	if len(matching) != 1 || matching[0].Source != "manual:icebath_pkce" || matching[0].RefreshToken != "manual-rt-1" {
 		t.Fatalf("the manual row must persist its rotation: %+v", matching)
 	}
 }
@@ -577,18 +577,18 @@ func TestClaudeCodeWriterRaisesInsteadOfSwallowing(t *testing.T) {
 	}
 }
 
-func TestHermesOAuthWriterRaisesInsteadOfSwallowing(t *testing.T) {
+func TestIcebathOAuthWriterRaisesInsteadOfSwallowing(t *testing.T) {
 	_, env := persistFailureHome(t)
-	if err := WriteHermesOAuthCredentials(env, staleAccess, staleRefresh, 1000, ""); err != nil {
+	if err := WriteIcebathOAuthCredentials(env, staleAccess, staleRefresh, 1000, ""); err != nil {
 		t.Fatal(err)
 	}
-	breakDurableWrite(t, HermesOAuthFile(env))
-	err := WriteHermesOAuthCredentials(env, rotatedAccess, rotatedRefresh, 1000+3_600_000, "")
+	breakDurableWrite(t, IcebathOAuthFile(env))
+	err := WriteIcebathOAuthCredentials(env, rotatedAccess, rotatedRefresh, 1000+3_600_000, "")
 	var persistErr *CredentialPersistError
 	if !errors.As(err, &persistErr) {
 		t.Fatalf("CredentialPersistError expected, got %v", err)
 	}
-	if ReadHermesOAuthCredentials(env)["refreshToken"] != staleRefresh {
+	if ReadIcebathOAuthCredentials(env)["refreshToken"] != staleRefresh {
 		t.Fatal("stale pair must survive")
 	}
 }
@@ -670,13 +670,13 @@ func TestReauthenticationClearsThePersistFailureQuarantine(t *testing.T) {
 	}
 }
 
-func TestPoolHermesPKCEFailsClosedAndReloadCannotResurrect(t *testing.T) {
+func TestPoolIcebathPKCEFailsClosedAndReloadCannotResurrect(t *testing.T) {
 	_, env := persistFailureHome(t)
-	if err := WriteHermesOAuthCredentials(env, staleAccess, staleRefresh, 1000, ""); err != nil {
+	if err := WriteIcebathOAuthCredentials(env, staleAccess, staleRefresh, 1000, ""); err != nil {
 		t.Fatal(err)
 	}
-	breakDurableWrite(t, HermesOAuthFile(env))
-	entry := staleAnthropicEntry("hermes_pkce")
+	breakDurableWrite(t, IcebathOAuthFile(env))
+	entry := staleAnthropicEntry("icebath_pkce")
 	pool := NewPool(env, "anthropic", []PooledCredential{entry})
 	if _, ok := pool.refreshEntry(entry, true, "", false); ok {
 		t.Fatal("uncommitted rotation must fail closed")
@@ -685,12 +685,12 @@ func TestPoolHermesPKCEFailsClosedAndReloadCannotResurrect(t *testing.T) {
 	if quarantined.LastStatus != StatusDead || quarantined.LastErrorReason != CredentialPersistFailedReason || quarantined.RefreshToken != staleRefresh {
 		t.Fatalf("quarantine expected: %+v", quarantined)
 	}
-	if ReadHermesOAuthCredentials(env)["refreshToken"] != staleRefresh {
+	if ReadIcebathOAuthCredentials(env)["refreshToken"] != staleRefresh {
 		t.Fatal("singleton must stay stale")
 	}
 	var reloaded []PooledCredential
 	for _, e := range LoadPool(env, "anthropic").Entries() {
-		if e.Source == "hermes_pkce" {
+		if e.Source == "icebath_pkce" {
 			reloaded = append(reloaded, e)
 		}
 	}
@@ -757,14 +757,14 @@ func raceEntry(source string) PooledCredential {
 	return PooledCredential{Provider: "anthropic", ID: "pool-entry", Label: "anthropic oauth", AuthType: AuthTypeOAuth, Source: source, AccessToken: "stale-at", RefreshToken: "stale-rt", Extra: map[string]any{}}
 }
 
-func TestConcurrentHermesPKCERefreshRecoversViaPoolStore(t *testing.T) {
+func TestConcurrentIcebathPKCERefreshRecoversViaPoolStore(t *testing.T) {
 	ResetSpentRotationsForTests()
 	h := newTestHome(t)
 	writeAuthStore(t, h, map[string]any{"version": 1, "active_provider": "anthropic", "providers": map[string]any{}})
 	env := testEnv(t, h)
 	server := &singleUseTokenServer{spent: map[string]bool{}}
 	anthropicTokenServer(t, &env, server.refresh)
-	entry := raceEntry("manual:hermes_pkce")
+	entry := raceEntry("manual:icebath_pkce")
 	poolA := NewPool(env, "anthropic", []PooledCredential{entry})
 	poolB := NewPool(env, "anthropic", []PooledCredential{entry})
 	poolA.persist(false, nil, nil)
@@ -847,7 +847,7 @@ func deadEntry(provider, source string) PooledCredential {
 }
 
 func TestTerminalRefreshQuarantineWarnsWithReauthHint(t *testing.T) {
-	for _, provider := range []string{"openai-codex", "nous"} {
+	for provider, code := range map[string]string{"openai-codex": "invalid_grant", "xai-oauth": "xai_refresh_failed"} {
 		t.Run(provider, func(t *testing.T) {
 			sink := &recordingHandler{}
 			pool := barePool(t, provider, sink)
@@ -855,7 +855,7 @@ func TestTerminalRefreshQuarantineWarnsWithReauthHint(t *testing.T) {
 			pool.mu.Lock()
 			pool.entries = []PooledCredential{entry}
 			pool.mu.Unlock()
-			cause := &AuthError{Message: "invalid_grant", Provider: provider, Code: "invalid_grant", ReloginRequired: true}
+			cause := &AuthError{Message: "invalid_grant", Provider: provider, Code: code, ReloginRequired: true}
 			if _, ok := pool.recoverFailedRefresh(entry, cause, false); ok {
 				t.Fatal("a terminal refresh recovers nothing")
 			}
@@ -873,7 +873,7 @@ func TestTerminalRefreshQuarantineWarnsWithReauthHint(t *testing.T) {
 func TestAnthropicDeadGrantWarnsAndMarksDead(t *testing.T) {
 	sink := &recordingHandler{}
 	pool := barePool(t, "anthropic", sink)
-	entry := deadEntry("anthropic", "manual:hermes_pkce")
+	entry := deadEntry("anthropic", "manual:icebath_pkce")
 	pool.mu.Lock()
 	pool.entries = []PooledCredential{entry}
 	pool.mu.Unlock()
@@ -894,7 +894,7 @@ func TestAnthropicDeadGrantWarnsAndMarksDead(t *testing.T) {
 func TestAnthropicTransientRefreshFailureStaysExhausted(t *testing.T) {
 	sink := &recordingHandler{}
 	pool := barePool(t, "anthropic", sink)
-	entry := deadEntry("anthropic", "manual:hermes_pkce")
+	entry := deadEntry("anthropic", "manual:icebath_pkce")
 	pool.mu.Lock()
 	pool.entries = []PooledCredential{entry}
 	pool.mu.Unlock()
@@ -926,10 +926,10 @@ func TestSurvivingManualEntryIsMarkedDeadAfterTerminalRefresh(t *testing.T) {
 	}
 }
 
-func TestNousTransientErrorStillBenched(t *testing.T) {
+func TestTransientRefreshErrorStillBenched(t *testing.T) {
 	sink := &recordingHandler{}
-	pool := barePool(t, "nous", sink)
-	entry := deadEntry("nous", "device_code")
+	pool := barePool(t, "xai-oauth", sink)
+	entry := deadEntry("xai-oauth", "device_code")
 	pool.mu.Lock()
 	pool.entries = []PooledCredential{entry}
 	pool.mu.Unlock()
@@ -941,114 +941,6 @@ func TestNousTransientErrorStillBenched(t *testing.T) {
 	}
 	if len(sink.containing("terminally invalid")) != 0 {
 		t.Fatal("no terminal WARNING")
-	}
-}
-
-// ---- test_credential_pool_nous_refresh_stampede.py and credential_auth_recovery ----
-
-func nousInvokeJWT(seconds float64) string {
-	return jwtWithClaims(map[string]any{"sub": "u", "scope": "inference:invoke", "exp": int(nowEpoch() + seconds)})
-}
-
-func seedNous(t *testing.T, h, token, refreshToken string) {
-	t.Helper()
-	writeAuthStore(t, h, map[string]any{"version": 1, "active_provider": "nous", "providers": map[string]any{"nous": map[string]any{
-		"client_id": "icebath-cli", "portal_base_url": DefaultNousPortalURL, "inference_base_url": DefaultNousInferenceURL, "token_type": "Bearer",
-		"scope": DefaultNousScope, "access_token": token, "refresh_token": refreshToken, "expires_at": isoIn(3000), "expires_in": 3000}}})
-}
-
-// Stands in for the Portal, rotating the stored pair under the auth store the way the real resolver does
-func fakeNousResolver(t *testing.T, posts *[]string) {
-	t.Helper()
-	prev := nousRuntimeCredentialsFunc
-	nousRuntimeCredentialsFunc = func(env PoolEnv, force bool, stale string) (map[string]any, error) {
-		return nil, env.Store.Update(func(data AuthData) (bool, error) {
-			state := env.Store.ProviderState(data, "nous")
-			*posts = append(*posts, anyString(state["refresh_token"]))
-			state["access_token"] = nousInvokeJWT(3600)
-			state["refresh_token"] = "rt-minted-" + string(rune('0'+len(*posts)))
-			env.Store.StoreProviderState(data, "nous", state, false)
-			return true, nil
-		})
-	}
-	t.Cleanup(func() { nousRuntimeCredentialsFunc = prev })
-}
-
-func TestForcedRefreshNeverAdoptsTheBearerThatJustFailed(t *testing.T) {
-	h := newTestHome(t)
-	seedNous(t, h, nousInvokeJWT(2000), "rt-old")
-	env := testEnv(t, h)
-	pool := LoadPool(env, "nous")
-	entry := pool.Entries()[0]
-	failing := nousInvokeJWT(3000)
-	seedNous(t, h, failing, "rt-current")
-	var posts []string
-	fakeNousResolver(t, &posts)
-	refreshed, ok := pool.TryRefreshMatching(failing, entry.ID)
-	if !ok {
-		t.Fatal("refresh expected")
-	}
-	if refreshed.RuntimeAPIKey() == failing {
-		t.Fatal("the refresh handed back the bearer that just failed")
-	}
-	if len(posts) != 1 || posts[0] != "rt-current" {
-		t.Fatalf("exactly one refresh POST expected, got %v", posts)
-	}
-}
-
-type fakeAuthAgent struct {
-	apiKey   string
-	swapped  []string
-	episodes map[string]*AuthEpisode
-}
-
-func (a *fakeAuthAgent) Provider() string                      { return "nous" }
-func (a *fakeAuthAgent) APIMode() APIMode                      { return ModeChatCompletions }
-func (a *fakeAuthAgent) Interrupted() bool                     { return false }
-func (a *fakeAuthAgent) TouchActivity(string)                  {}
-func (a *fakeAuthAgent) Print(string)                          {}
-func (a *fakeAuthAgent) AuthEpisodes() map[string]*AuthEpisode { return a.episodes }
-func (a *fakeAuthAgent) SwapCredential(entry PooledCredential) bool {
-	a.apiKey = entry.RuntimeAPIKey()
-	a.swapped = append(a.swapped, a.apiKey)
-	return true
-}
-
-func TestOneRefreshPerEpisodeThenBoundedBackoff(t *testing.T) {
-	h := newTestHome(t)
-	key := nousInvokeJWT(3000)
-	seedNous(t, h, key, "rt-seed")
-	env := testEnv(t, h)
-	pool := LoadPool(env, "nous")
-	entry := pool.Entries()[0]
-	var posts []string
-	fakeNousResolver(t, &posts)
-	prevBackoff := TransientAuthBackoff
-	TransientAuthBackoff = []time.Duration{10 * time.Millisecond, 20 * time.Millisecond, 30 * time.Millisecond}
-	t.Cleanup(func() { TransientAuthBackoff = prevBackoff })
-	agent := &fakeAuthAgent{apiKey: key, episodes: map[string]*AuthEpisode{}}
-	var outcomes []bool
-	for i := 0; i < 5; i++ {
-		recovered, _ := RecoverAuthFailure(agent, pool, AuthRecoveryRequest{StatusCode: 401, ErrorContext: map[string]any{"message": "authentication required"},
-			APIKeyHint: agent.apiKey, CredentialID: entry.ID, RotateAndSwap: func(int, string) bool { return false }})
-		outcomes = append(outcomes, recovered)
-	}
-	want := []bool{true, true, true, true, false}
-	for i := range want {
-		if outcomes[i] != want[i] {
-			t.Fatalf("outcomes %v, want %v", outcomes, want)
-		}
-	}
-	if len(posts) != 1 {
-		t.Fatalf("one 401 episode redeemed the refresh token %d times", len(posts))
-	}
-	if len(agent.swapped) == 0 {
-		t.Fatal("the fresh key must be swapped in")
-	}
-	for _, k := range agent.swapped[1:] {
-		if k != agent.swapped[0] {
-			t.Fatal("backoff retries must keep the freshly minted key")
-		}
 	}
 }
 

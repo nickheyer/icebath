@@ -19,7 +19,6 @@ import (
 	"testing"
 	"time"
 
-	"fmt"
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
@@ -298,80 +297,11 @@ func TestModalParamsAndSnapshotStore(t *testing.T) {
 	if err := modalStreamStdin(w, []byte(payload)); err != nil || sink.Len() != len(payload) {
 		t.Fatal(err, sink.Len())
 	}
-	data, err := decodeBase64Loose("aGVs\nbG8")
-	if err != nil || string(data) != "hello" {
-		t.Fatal(string(data), err)
-	}
 }
 
 type nopWriteCloser struct{ io.Writer }
 
 func (nopWriteCloser) Close() error { return nil }
-
-func TestManagedModalExecutePollsToCompletion(t *testing.T) {
-	polls := 0
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.Header.Get("Authorization") != "Bearer tok" {
-			w.WriteHeader(401)
-			return
-		}
-		switch {
-		case r.URL.Path == "/v1/sandboxes" && r.Method == "POST":
-			var body map[string]any
-			json.NewDecoder(r.Body).Decode(&body)
-			if body["logicalKey"] != "task-1" || body["persistentFilesystem"] != true || r.Header.Get("x-idempotency-key") == "" {
-				w.WriteHeader(400)
-				return
-			}
-			json.NewEncoder(w).Encode(map[string]any{"id": "sb1"})
-		case r.URL.Path == "/v1/sandboxes/sb1/execs" && r.Method == "POST":
-			var body map[string]any
-			json.NewDecoder(r.Body).Decode(&body)
-			json.NewEncoder(w).Encode(map[string]any{"execId": body["execId"], "status": "running"})
-		case strings.HasPrefix(r.URL.Path, "/v1/sandboxes/sb1/execs/") && r.Method == "GET":
-			polls++
-			if polls < 2 {
-				json.NewEncoder(w).Encode(map[string]any{"status": "running"})
-				return
-			}
-			json.NewEncoder(w).Encode(map[string]any{"status": "completed", "output": "hi\n", "returncode": 0})
-		case strings.HasSuffix(r.URL.Path, "/terminate"):
-			json.NewEncoder(w).Encode(map[string]any{})
-		default:
-			w.WriteHeader(404)
-		}
-	}))
-	defer srv.Close()
-	env := remoteTestEnv(t)
-	m := &managedModalEnv{gatewayOrigin: srv.URL, userToken: "tok", taskID: "task-1", persistent: true, image: "img", kwargs: map[string]any{"cpu": 2},
-		idempotency: "idem", connectTO: time.Second, pollReadTO: time.Second, cancelReadTO: time.Second}
-	m.stdinMode = "payload"
-	initBaseEnv(&m.baseEnv, m, env, "/root", 30, nil, true)
-	id, err := m.createSandbox()
-	if err != nil || id != "sb1" {
-		t.Fatal(id, err)
-	}
-	m.sandboxID = id
-	res, err := m.Execute(context.Background(), "echo hi", ExecOptions{})
-	if err != nil || res.ReturnCode != 0 || res.Output != "hi\n" {
-		t.Fatalf("%+v %v", res, err)
-	}
-	if got := managedModalFormatError("x", &http.Response{StatusCode: 500}, []byte(`{"error":"boom"}`)); got != "x: boom" {
-		t.Fatal(got)
-	}
-	if got := managedModalFormatError("x", &http.Response{StatusCode: 502}, []byte("")); got != "x: HTTP 502" {
-		t.Fatal(got)
-	}
-	if managedModalResultFromBody(map[string]any{"status": "running"}) != nil {
-		t.Fatal("running is not terminal")
-	}
-	if r := managedModalResultFromBody(map[string]any{"status": "timeout", "output": "o"}); r.ReturnCode != 1 || r.Output != "o" {
-		t.Fatalf("%+v", r)
-	}
-	if err := m.Cleanup(false); err != nil || m.sandboxID != "" {
-		t.Fatal(err)
-	}
-}
 
 func TestVercelCredentialsAndAuthStatus(t *testing.T) {
 	env := remoteTestEnv(t)
@@ -615,110 +545,5 @@ func TestVercelPayloadStdinIsStagedByteExactNotInArgv(t *testing.T) {
 	mu.Lock()
 	if err != nil || code != 1 || len(staged) != 1 || len(args) != 1 {
 		t.Fatalf("unencodable payload: code %d err %v staged %d commands %d", code, err, len(staged), len(args))
-	}
-}
-
-func TestManagedModalStdinPayloadEscapesSurrogatesLikeRequests(t *testing.T) {
-	var body []byte
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path == "/v1/sandboxes/sb1/execs" && r.Method == "POST" {
-			body, _ = io.ReadAll(r.Body)
-			json.NewEncoder(w).Encode(map[string]any{"status": "completed", "output": "", "returncode": 0})
-			return
-		}
-		w.WriteHeader(404)
-	}))
-	defer srv.Close()
-	m := &managedModalEnv{gatewayOrigin: srv.URL, userToken: "tok", taskID: "task-1", image: "img", idempotency: "idem",
-		connectTO: time.Second, pollReadTO: time.Second, cancelReadTO: time.Second, sandboxID: "sb1"}
-	m.stdinMode = "payload"
-	initBaseEnv(&m.baseEnv, m, remoteTestEnv(t), "/root", 30, nil, false)
-	stdin := "caf\xc3\xa9 " + pystr.SurrogateEscapeDecode([]byte{0xff}) + "<"
-	if res, err := m.Execute(context.Background(), "cat > /tmp/out", ExecOptions{Stdin: &stdin}); err != nil || res.ReturnCode != 0 {
-		t.Fatalf("%+v %v", res, err)
-	}
-	if !bytes.Contains(body, []byte(`"stdinData":"caf\u00e9 \udcff<"`)) {
-		t.Fatalf("body %s", body)
-	}
-}
-
-func TestManagedModalFormatErrorPicksAndDumpsAsPythonDoes(t *testing.T) {
-	resp := &http.Response{StatusCode: 500}
-	for body, want := range map[string]string{
-		`{"error": {"x": 1}, "message": "boom", "n": 1.0, "i": 1}`: `x: {"error": {"x": 1}, "message": "boom", "n": 1.0, "i": 1}`,
-		`{"code": 7, "b": 1e2, "a": "é<"}`:                         `x: {"code": 7, "b": 100.0, "a": "é<"}`,
-		`{"error": "", "message": "m"}`:                            "x: m",
-		`{"error": 0, "message": null, "code": "E1"}`:              "x: E1",
-		`null`:     "x: null",
-		`[1, 1.0]`: "x: [1, 1.0]",
-	} {
-		if got := managedModalFormatError("x", resp, []byte(body)); got != want {
-			t.Errorf("body %s: %q, want %q", body, got, want)
-		}
-	}
-}
-
-func TestManagedModalBodiesThatAreNotObjectsAnswerAsHermesDoes(t *testing.T) {
-	var create, start, poll string
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		switch {
-		case r.URL.Path == "/v1/sandboxes":
-			io.WriteString(w, create)
-		case r.URL.Path == "/v1/sandboxes/sb1/execs":
-			body := start
-			if body == "echo" {
-				var sent map[string]any
-				json.NewDecoder(r.Body).Decode(&sent)
-				body = `{"execId": "` + sent["execId"].(string) + `", "status": "running"}`
-			}
-			io.WriteString(w, body)
-		case strings.HasPrefix(r.URL.Path, "/v1/sandboxes/sb1/execs/") && r.Method == "GET":
-			io.WriteString(w, poll)
-		}
-	}))
-	defer srv.Close()
-	env := remoteTestEnv(t)
-	m := &managedModalEnv{gatewayOrigin: srv.URL, userToken: "tok", taskID: "task-1", image: "img", kwargs: map[string]any{},
-		idempotency: "idem", connectTO: time.Second, pollReadTO: time.Second, cancelReadTO: time.Second}
-	m.stdinMode = "payload"
-	initBaseEnv(&m.baseEnv, m, env, "/root", 30, nil, true)
-	for body, want := range map[string]string{
-		"not json":      "Expecting value: line 1 column 1 (char 0)",
-		`[1]`:           "'list' object has no attribute 'get'",
-		`{"id": 7}`:     "Managed Modal create did not return a sandbox id",
-		`{"id": "sb1"}`: "",
-	} {
-		create = body
-		_, err := m.createSandbox()
-		if got := fmt.Sprint(err); (want == "" && err != nil) || (want != "" && got != want) {
-			t.Errorf("create body %s: %v, want %q", body, err, want)
-		}
-	}
-	m.sandboxID = "sb1"
-	for body, want := range map[string]string{
-		"null":     "Managed Modal exec failed: null",
-		"not json": "Managed Modal exec failed: Expecting value: line 1 column 1 (char 0)",
-	} {
-		start = body
-		res, err := m.Execute(context.Background(), "echo hi", ExecOptions{})
-		if err != nil || res.Output != want || res.ReturnCode != 1 {
-			t.Errorf("start body %s: %+v %v, want %q", body, res, err, want)
-		}
-	}
-	start = `"text"`
-	if res, err := m.Execute(context.Background(), "echo hi", ExecOptions{}); res != nil || fmt.Sprint(err) != "'str' object has no attribute 'get'" {
-		t.Errorf("start body of a string: %+v %v", res, err)
-	}
-	start = "echo"
-	for body, want := range map[string]string{
-		`[1.0]`: "Managed Modal exec failed: 'list' object has no attribute 'get'",
-		`null`:  "Managed Modal exec failed: 'NoneType' object has no attribute 'get'",
-		`{"a":`: "Managed Modal exec failed: Expecting value: line 1 column 6 (char 5)",
-	} {
-		poll = body
-		res, err := m.Execute(context.Background(), "echo hi", ExecOptions{})
-		if err != nil || res.Output != want || res.ReturnCode != 1 {
-			t.Errorf("poll body %s: %+v %v, want %q", body, res, err, want)
-		}
 	}
 }

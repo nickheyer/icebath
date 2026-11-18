@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"log/slog"
 	"os"
 	"sort"
 	"time"
@@ -24,7 +23,7 @@ func pluginEnv(ctx context.Context) *tools.Env {
 	h := home.Dir(ctx)
 	cfg, _ := config.LoadReadonly(ctx, h, nil)
 	cwd, _ := os.Getwd()
-	return &tools.Env{Home: h, Config: cfg, Secrets: config.NewSecrets(h), Cwd: cwd, Log: slog.Default()}
+	return &tools.Env{Home: h, Config: cfg, Secrets: config.NewSecrets(h), Cwd: cwd, Log: pkgLog()}
 }
 
 // MCP configuration, registration and naming the plugin activation path reaches through the wiring

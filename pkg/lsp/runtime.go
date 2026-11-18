@@ -42,16 +42,16 @@ func (rt *Runtime) logger() *slog.Logger {
 	if rt != nil && rt.Log != nil {
 		return rt.Log
 	}
-	return slog.Default()
+	return pkgLog()
 }
 
-// Logs one printf style message under a Python logger name
-func (rt *Runtime) logf(level slog.Level, name, format string, args ...any) {
+// Logs one printf style message under the logger name of this package
+func (rt *Runtime) logf(level slog.Level, format string, args ...any) {
 	l := rt.logger()
 	if !l.Enabled(context.Background(), level) {
 		return
 	}
-	l.Log(context.Background(), level, fmt.Sprintf(format, args...), "logger", name)
+	l.Log(context.Background(), level, fmt.Sprintf(format, args...), "logger", logName)
 }
 
 // Current lsp config section, empty when none is attached

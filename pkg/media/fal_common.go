@@ -15,12 +15,9 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/internal/pyhttpx"
-	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
-
-const managedFalRateLimitRetryCapSeconds = 30.0
 
 const falQueuePollSeconds = 2.0
 
@@ -87,14 +84,11 @@ type falHTTPRequest struct {
 	Headers map[string]string
 }
 
-// Internal client module helpers the managed adapter drives, any of them nil on an older SDK surface
+// Internal client module helpers the queue submit and poll paths drive
 type falClientInternals struct {
 	MaybeRetryRequest func(ctx context.Context, c *http.Client, method, rawURL string, req falHTTPRequest) (*falResponse, error)
 	RaiseForStatus    func(resp *falResponse) error
 	SyncRequestHandle func(requestID, responseURL, statusURL, cancelURL string, c *http.Client) *falRequestHandle
-	AddHintHeader     func(hint string, headers map[string]string)
-	AddPriorityHeader func(priority string, headers map[string]string)
-	AddTimeoutHeader  func(timeout float64, headers map[string]string)
 	Sleep             func(seconds float64)
 }
 
@@ -214,9 +208,6 @@ func newFalClientInternals() *falClientInternals {
 	in.SyncRequestHandle = func(requestID, responseURL, statusURL, cancelURL string, c *http.Client) *falRequestHandle {
 		return &falRequestHandle{RequestID: requestID, ResponseURL: responseURL, StatusURL: statusURL, CancelURL: cancelURL, Client: c, internals: in}
 	}
-	in.AddHintHeader = func(hint string, h map[string]string) { h["X-Fal-Runner-Hint"] = hint }
-	in.AddPriorityHeader = func(priority string, h map[string]string) { h["X-Fal-Queue-Priority"] = priority }
-	in.AddTimeoutHeader = func(timeout float64, h map[string]string) { h["X-Fal-Request-Timeout"] = pyrepr.Float(timeout) }
 	return in
 }
 
@@ -283,7 +274,7 @@ func falHandleFromResponse(in *falClientInternals, resp *falResponse, c *http.Cl
 	field := func(k string) (string, error) {
 		s, ok := data[k].(string)
 		if !ok {
-			return "", fmt.Errorf("KeyError: %s", pyrepr.Repr(k))
+			return "", fmt.Errorf("the fal.ai queue reply has no %s", k)
 		}
 		return s, nil
 	}
@@ -404,15 +395,6 @@ var defaultFalClientModule = newFalClientModule()
 // The FAL client module, compiled in so no runtime package acquisition is needed
 func importFalClient() *falClientModule { return defaultFalClientModule }
 
-// Trimmed queue origin with exactly one trailing slash
-func normalizeFalQueueURLFormat(origin string) (string, error) {
-	normalized := strings.TrimRight(strings.TrimSpace(origin), "/")
-	if normalized == "" {
-		return "", errors.New("Managed FAL queue origin is required")
-	}
-	return normalized + "/", nil
-}
-
 // HTTP status of a FAL or HTTP error, the response status first
 func extractHTTPStatus(err error) (int, bool) {
 	var rs interface{ ResponseStatus() (int, bool) }
@@ -440,234 +422,4 @@ func errorResponseJSON(err error) (map[string]any, bool) {
 	}
 	m, ok := v.(map[string]any)
 	return m, ok
-}
-
-// Readable tail for a managed gateway BILLING_ERROR response, empty otherwise
-func managedFalBillingError(err error, what string) string {
-	payload, ok := errorResponseJSON(err)
-	if !ok {
-		return ""
-	}
-	e, _ := payload["error"].(map[string]any)
-	if e == nil || e["code"] != "BILLING_ERROR" {
-		return ""
-	}
-	details, _ := e["details"].(map[string]any)
-	upstream, _ := details["upstreamPayload"].(map[string]any)
-	code := firstTruthy(upstream["code"], details["chargeIntentErrorCode"], "billing_error")
-	detail := firstTruthy(upstream["error"], "Nous Portal rejected the charge authorization")
-	message := firstTruthy(e["message"], "Charge authorization failed")
-	return fmt.Sprintf("%s (BILLING_ERROR; %s: %s). ", message, code, detail) +
-		"This is a Nous Portal billing configuration issue, not a missing local API key. " +
-		fmt.Sprintf("The managed route cannot run this %s until Nous enables its billing meter; ", what) +
-		"a direct FAL_KEY is an optional bypass."
-}
-
-// Python or chain over values rendered with str
-func firstTruthy(values ...any) string {
-	for _, v := range values {
-		if pyrepr.Truthy(v) {
-			return pyrepr.Str(v)
-		}
-	}
-	return pyrepr.Str(values[len(values)-1])
-}
-
-// Seconds a 429 asked to wait from Retry-After then the body retryAfter
-func managedFalRetryAfterSeconds(err error) (float64, bool) {
-	var fe *falClientHTTPError
-	if !errors.As(err, &fe) || fe.Response == nil {
-		return 0, false
-	}
-	if s, ok := extractHTTPStatus(err); !ok || s != 429 {
-		return 0, false
-	}
-	var raw any
-	if vals, ok := fe.Response.Header["Retry-After"]; ok && len(vals) > 0 {
-		raw = vals[0]
-	} else {
-		payload, ok := errorResponseJSON(err)
-		if !ok {
-			return 0, false
-		}
-		e, _ := payload["error"].(map[string]any)
-		raw = e["retryAfter"]
-	}
-	return pyFloat(raw)
-}
-
-// Python float() of a string or number, false where it would raise
-func pyFloat(v any) (float64, bool) {
-	switch x := v.(type) {
-	case float64:
-		return x, true
-	case int:
-		return float64(x), true
-	case bool:
-		if x {
-			return 1, true
-		}
-		return 0, true
-	case string:
-		f, err := pyint.ParseFloat(x)
-		return f, err == nil
-	}
-	return 0, false
-}
-
-// Message naming a managed gateway rate limit and its retry hint
-func managedFalRateLimitMessage(what, name string, retryAfter float64, hasRetry bool) string {
-	hint := "no Retry-After given"
-	if hasRetry {
-		g, _ := pyrepr.Format(retryAfter, "g")
-		hint = "retry after " + g + "s"
-	}
-	return fmt.Sprintf("Nous Subscription gateway rate-limited %s '%s' (HTTP 429; %s). ", what, name, hint) +
-		"The model is enabled — retry later instead of switching models or setting FAL_KEY."
-}
-
-var (
-	falMonotonic = time.Now
-	falWaitSleep = time.Sleep
-)
-
-// Wrapped rate limit error that keeps the 429 cause
-type falRateLimitError struct {
-	msg   string
-	cause error
-}
-
-func (e *falRateLimitError) Error() string { return e.msg }
-func (e *falRateLimitError) Unwrap() error { return e.cause }
-
-// Submits with a fresh idempotency key, waiting out one capped 429 Retry-After before one resubmit
-func submitManagedFalWithRateLimitRetry(ctx context.Context, submit func(headers map[string]string) (*falRequestHandle, error), what, name string) (*falRequestHandle, error) {
-	for attempt := 1; attempt <= 2; attempt++ {
-		handle, err := submit(map[string]string{"x-idempotency-key": uuid4()})
-		if err == nil {
-			return handle, nil
-		}
-		if s, ok := extractHTTPStatus(err); !ok || s != 429 {
-			return nil, err
-		}
-		retryAfter, has := managedFalRetryAfterSeconds(err)
-		if attempt == 2 || !has || retryAfter > managedFalRateLimitRetryCapSeconds {
-			return nil, &falRateLimitError{msg: managedFalRateLimitMessage(what, name, retryAfter, has), cause: err}
-		}
-		deadline := falMonotonic().Add(time.Duration(retryAfter * float64(time.Second)))
-		for falMonotonic().Before(deadline) {
-			if tools.IsInterrupted(ctx) {
-				return nil, &falRateLimitError{msg: managedFalRateLimitMessage(what, name, retryAfter, has), cause: err}
-			}
-			falWaitSleep(min(500*time.Millisecond, max(0, deadline.Sub(falMonotonic()))))
-		}
-	}
-	return nil, nil
-}
-
-// Missing SDK surface error for managed gateway mode
-func falRequire(ok bool, what string) error {
-	if !ok {
-		return fmt.Errorf("%s is required for managed FAL gateway mode", what)
-	}
-	return nil
-}
-
-// Drives a Nous managed fal queue gateway through the FAL client primitives
-type managedFalSyncClient struct {
-	queueURLFormat string
-	syncClient     *falSyncClient
-	httpClient     *http.Client
-	internals      *falClientInternals
-}
-
-// Managed client over the given module surface, refusing an incomplete surface up front
-func newManagedFalSyncClient(mod *falClientModule, key, queueRunOrigin string) (*managedFalSyncClient, error) {
-	if err := falRequire(mod != nil && mod.NewSyncClient != nil, "fal_client.SyncClient"); err != nil {
-		return nil, err
-	}
-	if err := falRequire(mod.Client != nil, "fal_client.client"); err != nil {
-		return nil, err
-	}
-	format, err := normalizeFalQueueURLFormat(queueRunOrigin)
-	if err != nil {
-		return nil, err
-	}
-	sc := mod.NewSyncClient(key)
-	if err := falRequire(sc != nil && sc.HTTP != nil, "fal_client.SyncClient._client"); err != nil {
-		return nil, err
-	}
-	in := mod.Client
-	if in.MaybeRetryRequest == nil || in.RaiseForStatus == nil {
-		return nil, errors.New("fal_client.client request helpers are required for managed FAL gateway mode")
-	}
-	if err := falRequire(in.SyncRequestHandle != nil, "fal_client.client.SyncRequestHandle"); err != nil {
-		return nil, err
-	}
-	return &managedFalSyncClient{queueURLFormat: format, syncClient: sc, httpClient: sc.HTTP, internals: in}, nil
-}
-
-// Optional submit arguments of the managed client
-type falSubmitOptions struct {
-	Path         string
-	Hint         *string
-	WebhookURL   *string
-	Priority     *string
-	Headers      map[string]string
-	StartTimeout *float64
-}
-
-// Posts to the gateway queue, retrying only requests without an idempotency key
-func (c *managedFalSyncClient) Submit(ctx context.Context, application string, arguments map[string]any, o falSubmitOptions) (*falRequestHandle, error) {
-	rawURL := c.queueURLFormat + application
-	if o.Path != "" {
-		rawURL += "/" + strings.TrimLeft(o.Path, "/")
-	}
-	if o.WebhookURL != nil {
-		rawURL += "?" + url.Values{"fal_webhook": {*o.WebhookURL}}.Encode()
-	}
-	headers := map[string]string{}
-	for k, v := range o.Headers {
-		headers[k] = v
-	}
-	if o.Hint != nil && c.internals.AddHintHeader != nil {
-		c.internals.AddHintHeader(*o.Hint, headers)
-	}
-	if o.Priority != nil {
-		if c.internals.AddPriorityHeader == nil {
-			return nil, errors.New("fal_client.client.add_priority_header is required for priority requests")
-		}
-		c.internals.AddPriorityHeader(*o.Priority, headers)
-	}
-	if o.StartTimeout != nil {
-		if c.internals.AddTimeoutHeader == nil {
-			return nil, errors.New("fal_client.client.add_timeout_header is required for timeout requests")
-		}
-		c.internals.AddTimeoutHeader(*o.StartTimeout, headers)
-	}
-	timeout := 120.0
-	if c.syncClient != nil && c.syncClient.DefaultTimeout != nil {
-		timeout = *c.syncClient.DefaultTimeout
-	}
-	req := falHTTPRequest{JSON: arguments, Timeout: timeout, Headers: headers}
-	keyed := false
-	for k := range headers {
-		if strings.EqualFold(k, "x-idempotency-key") {
-			keyed = true
-		}
-	}
-	var resp *falResponse
-	var err error
-	if keyed {
-		resp, err = falDo(ctx, c.httpClient, http.MethodPost, rawURL, req)
-	} else {
-		resp, err = c.internals.MaybeRetryRequest(ctx, c.httpClient, http.MethodPost, rawURL, req)
-	}
-	if err != nil {
-		return nil, err
-	}
-	if err := c.internals.RaiseForStatus(resp); err != nil {
-		return nil, err
-	}
-	return falHandleFromResponse(c.internals, resp, c.httpClient)
 }

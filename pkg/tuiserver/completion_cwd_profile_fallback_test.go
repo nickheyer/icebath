@@ -5,7 +5,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/nickheyer/icebath/pkg/tuigateway"
+	"github.com/nickheyer/icebath/pkg/tuihost"
 )
 
 // Writes a profile home whose config.yaml sets terminal cwd, or an empty config for none
@@ -41,12 +41,12 @@ func fakeProfileHome(t *testing.T, h string) {
 func setLaunchHome(t *testing.T, h string) {
 	t.Helper()
 	servedProfileMu.Lock()
-	saved := hermesHome
-	hermesHome = h
+	saved := icebathHome
+	icebathHome = h
 	servedProfileMu.Unlock()
 	t.Cleanup(func() {
 		servedProfileMu.Lock()
-		hermesHome = saved
+		icebathHome = saved
 		servedProfileMu.Unlock()
 	})
 }
@@ -130,7 +130,7 @@ func TestTerminalTaskCwdNamedProfilePlaceholderUsesOwnHome(t *testing.T) {
 	if cwd != h {
 		t.Fatalf("cwd = %q want %q", cwd, h)
 	}
-	session := tuigateway.NewSession(map[string]any{"cwd": cwd, "profile_home": h, "explicit_cwd": false})
+	session := tuihost.NewSession(map[string]any{"cwd": cwd, "profile_home": h, "explicit_cwd": false})
 	if got := terminalTaskCwd(t.Context(), session); got != h {
 		t.Fatalf("task cwd = %q want %q", got, h)
 	}

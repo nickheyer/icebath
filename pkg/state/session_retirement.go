@@ -366,7 +366,7 @@ func (d *SessionDB) CollectRetiredMedia(ctx context.Context) error {
 		}
 		path, has := o.Get("path")
 		if !has {
-			return fmt.Errorf("KeyError: 'path'")
+			return errors.New("a retired media row has no path")
 		}
 		ps, ok := path.(string)
 		if !ok {

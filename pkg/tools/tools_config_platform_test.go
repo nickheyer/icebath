@@ -65,12 +65,12 @@ func TestPlatformToolsetWarnings(t *testing.T) {
 		}
 	})
 	t.Run("test_valid_platform_toolsets_no_runtime_warning", func(t *testing.T) {
-		if warnsAllInvalid(t, buf, []any{"hermes-cli"}) {
+		if warnsAllInvalid(t, buf, []any{"icebath-cli"}) {
 			t.Fatalf("valid list must not warn, got %q", buf.String())
 		}
 	})
 	t.Run("test_partially_valid_platform_toolsets_no_runtime_warning", func(t *testing.T) {
-		if warnsAllInvalid(t, buf, []any{"hermes-cli", "bogus"}) {
+		if warnsAllInvalid(t, buf, []any{"icebath-cli", "bogus"}) {
 			t.Fatalf("partially valid list must not warn, got %q", buf.String())
 		}
 	})
@@ -98,7 +98,7 @@ func unloadedPluginPlatformsDoNotWarn(t *testing.T, buf *bytes.Buffer) {
 	for _, p := range []string{"teams", "google_chat", "homeassistant"} {
 		buf.Reset()
 		discardPlatformToolsetsWarning(p)
-		platformTools(config.Tree{"platform_toolsets": map[string]any{p: []any{"hermes-" + p}}}, p, true)
+		platformTools(config.Tree{"platform_toolsets": map[string]any{p: []any{"icebath-" + p}}}, p, true)
 		if strings.Contains(buf.String(), "#38798") {
 			t.Fatalf("unloaded plugin platform %s must not warn, got %q", p, buf.String())
 		}
@@ -135,7 +135,7 @@ func TestPlatformToolsetsFallBackToPlatformDefault(t *testing.T) {
 func TestDiscordToolsetsDoNotLeakAndLegacyAliasExpands(t *testing.T) {
 	isolatePlatformResolver(t)
 	t.Run("test_discord_toolsets_do_not_leak_to_other_platforms", func(t *testing.T) {
-		got := platformTools(config.Tree{"platform_toolsets": map[string]any{"telegram": []any{"hermes-telegram", "discord"}}}, "telegram", true)
+		got := platformTools(config.Tree{"platform_toolsets": map[string]any{"telegram": []any{"icebath-telegram", "discord"}}}, "telegram", true)
 		if got["discord"] || got["discord_admin"] {
 			t.Fatalf("discord leaked to telegram: %v", got)
 		}
@@ -316,13 +316,13 @@ func TestRecentlyShippedToolsets(t *testing.T) {
 	isolatePlatformResolver(t)
 	shipped := withRecentlyShipped(t)
 	t.Run("test_saved_list_gains_toolsets_that_shipped_after_it_was_written", func(t *testing.T) {
-		onComposite := platformTools(config.Tree{"platform_toolsets": map[string]any{"cli": []any{"hermes-cli"}}}, "cli", false)
+		onComposite := platformTools(config.Tree{"platform_toolsets": map[string]any{"cli": []any{"icebath-cli"}}}, "cli", false)
 		if !onComposite[shipped] || !platformTools(savedListFromBefore("cli"), "cli", false)[shipped] {
 			t.Fatalf("saved list must gain %s", shipped)
 		}
 	})
 	t.Run("test_unchecking_the_new_toolset_sticks", func(t *testing.T) {
-		cfg := config.Tree{"platform_toolsets": map[string]any{"cli": []any{"hermes-cli"}}}
+		cfg := config.Tree{"platform_toolsets": map[string]any{"cli": []any{"icebath-cli"}}}
 		enabled := platformTools(cfg, "cli", false)
 		delete(enabled, shipped)
 		if err := Default.SavePlatformTools(context.Background(), "", cfg, "cli", enabled, map[string]bool{}); err != nil {
@@ -352,7 +352,7 @@ func TestRecentlyShippedToolsets(t *testing.T) {
 func TestDisabledCompositePrunesConstituentToolsets(t *testing.T) {
 	isolatePlatformResolver(t)
 	ctx := context.Background()
-	cfg := config.Tree{"platform_toolsets": map[string]any{"cli": []any{"hermes-cli"}}, "agent": map[string]any{"disabled_toolsets": []any{"debugging"}}}
+	cfg := config.Tree{"platform_toolsets": map[string]any{"cli": []any{"icebath-cli"}}, "agent": map[string]any{"disabled_toolsets": []any{"debugging"}}}
 	enabled := platformTools(cfg, "cli", false)
 	t.Run("test_disabled_composite_debugging_prunes_constituent_platform_toolsets", func(t *testing.T) {
 		for _, n := range []string{"terminal", "file", "web"} {
@@ -379,7 +379,7 @@ func TestExplicitPluginToolsetAdmitted(t *testing.T) {
 	isolatePlatformResolver(t)
 	t.Run("test_explicit_plugin_toolset_admitted_in_platform_toolsets", func(t *testing.T) {
 		PluginToolsetCatalog.KeysNowait = func(context.Context) map[string]bool { return map[string]bool{"dplat_client": true} }
-		cfg := config.Tree{"platform_toolsets": map[string]any{"cli": []any{"hermes-cli", "dplat_client"}}}
+		cfg := config.Tree{"platform_toolsets": map[string]any{"cli": []any{"icebath-cli", "dplat_client"}}}
 		if got := Default.PlatformTools(context.Background(), "", cfg, "cli", PlatformToolsOptions{IncludeDefaultMCPServers: true}); !got["dplat_client"] {
 			t.Fatalf("plugin toolset dropped: %v", got)
 		}
@@ -438,54 +438,7 @@ func TestToolsConfigScalarHelpers(t *testing.T) {
 	}
 }
 
-// The _config helper of the shared metrics cases, a telemetry section holding one shared_metrics mapping
-func sharedMetricsConfig(shared map[string]any) config.Tree {
-	return config.Tree{"telemetry": map[string]any{"shared_metrics": shared}}
-}
-
-func TestSharedMetricsMenuAndChecklistDiff(t *testing.T) {
-	t.Run("test_missing_telemetry_section_is_off", func(t *testing.T) {
-		if enabled, send := sharedMetricsState(config.Tree{}); enabled || send {
-			t.Fatalf("state %v %v", enabled, send)
-		}
-	})
-	t.Run("test_malformed_section_does_not_raise", func(t *testing.T) {
-		if enabled, send := sharedMetricsState(config.Tree{"telemetry": "nonsense"}); enabled || send {
-			t.Fatalf("state %v %v", enabled, send)
-		}
-	})
-	t.Run("test_reads_both_flags", func(t *testing.T) {
-		if enabled, send := sharedMetricsState(sharedMetricsConfig(map[string]any{"enabled": true, "send": true})); !enabled || !send {
-			t.Fatalf("state %v %v", enabled, send)
-		}
-	})
-	t.Run("test_sending_state_names_the_destination", func(t *testing.T) {
-		if label := sharedMetricsMenuLabel(sharedMetricsConfig(map[string]any{"enabled": true, "send": true})); !strings.Contains(label, "(sending to Nous)") {
-			t.Fatalf("label %q", label)
-		}
-	})
-	t.Run("test_retired_collect_only_answer_is_named_rather_than_read_off", func(t *testing.T) {
-		if label := sharedMetricsMenuLabel(sharedMetricsConfig(map[string]any{"enabled": true, "send": false})); !strings.Contains(label, "(collecting locally)") {
-			t.Fatalf("label %q", label)
-		}
-	})
-	t.Run("test_off", func(t *testing.T) {
-		if label := sharedMetricsMenuLabel(sharedMetricsConfig(map[string]any{"enabled": false, "send": false})); !strings.Contains(label, "(off)") {
-			t.Fatalf("label %q", label)
-		}
-	})
-	for _, c := range []struct {
-		cfg  config.Tree
-		want string
-	}{
-		{config.Tree{}, "Configure shared metrics  (off)"},
-		{config.Tree{"telemetry": "on"}, "Configure shared metrics  (off)"},
-		{config.Tree{"telemetry": map[string]any{"shared_metrics": map[string]any{"enabled": "true", "send": true}}}, "Configure shared metrics  (off)"},
-	} {
-		if got := sharedMetricsMenuLabel(c.cfg); got != c.want {
-			t.Fatalf("%v: %q", c.cfg, got)
-		}
-	}
+func TestChecklistDiffAndProviderEnvReady(t *testing.T) {
 	isolatePlatformResolver(t)
 	added, removed := checklistDiff(context.Background(), map[string]bool{"web": true, "browser": true}, map[string]bool{"web": true, "terminal": true, "mcp-github": true}, "cli")
 	if !maps.Equal(added, map[string]bool{"browser": true}) || !maps.Equal(removed, map[string]bool{"terminal": true}) {

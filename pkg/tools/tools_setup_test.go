@@ -45,10 +45,6 @@ func guardInteractiveHooks(t *testing.T) {
 		return nil, nil
 	})
 	swapHook(t, &ToolsConfigHooks.SaveCodexTokens, func(context.Context, string, map[string]any, string, bool) error { fail("SaveCodexTokens"); return nil })
-	swapHook(t, &ToolsConfigHooks.EnsureNousPortalAccess, func(context.Context, string, io.Writer, string, string) bool {
-		fail("EnsureNousPortalAccess")
-		return false
-	})
 	swapHook(t, &ToolsConfigHooks.InstallCuaDriver, func(context.Context, *Env, *cliui.Console) (bool, error) { fail("InstallCuaDriver"); return false, nil })
 	swapHook(t, &postSetupSyncVenv, func(context.Context, pm.SyncVenvOptions) error { fail("pm.SyncVenv"); return nil })
 	swapHook(t, &postSetupEnsure, func(context.Context, string, pm.EnsureOptions) error { fail("pm.Ensure"); return nil })
@@ -130,12 +126,12 @@ func TestToolsSetupHomeAndContext(t *testing.T) {
 }
 
 func TestToolsConfigHookPanicsWhenUninstalled(t *testing.T) {
-	swapHook(t, &ToolsConfigHooks.NousFeatures, nil)
+	swapHook(t, &ToolsConfigHooks.FALModels, nil)
 	defer func() {
-		if r := recover(); r != "tools.ToolsConfigHooks.NousFeatures is not installed" {
+		if r := recover(); r != "tools.ToolsConfigHooks.FALModels is not installed" {
 			t.Fatalf("recovered %v", r)
 		}
 	}()
 	s, _ := newTestToolsSetup(t, "")
-	s.nousFeatures(config.Tree{}, false)
+	s.falModelCatalog(config.Tree{})
 }

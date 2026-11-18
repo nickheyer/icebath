@@ -1,16 +1,13 @@
 package browser
 
 import (
-	"crypto/rand"
 	"fmt"
 	"os"
 	"strings"
-	"sync"
 
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pyrequests"
 	"github.com/nickheyer/icebath/pkg/plugins"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
@@ -34,7 +31,7 @@ type BrowserbaseBrowserProvider struct{ CloudBrowserProvider }
 
 func newBrowserbaseProvider() *BrowserbaseBrowserProvider {
 	p := &BrowserbaseBrowserProvider{CloudBrowserProvider{providerID: "browserbase", label: "Browserbase",
-		module: "plugins.browser.browserbase.provider", releaseMethod: "post", releasePath: "/v1/sessions/{session_id}",
+		releaseMethod: "post", releasePath: "/v1/sessions/{session_id}",
 		missingCredentialsError: "Browserbase requires BROWSERBASE_API_KEY and BROWSERBASE_PROJECT_ID environment variables.",
 		closeFailFmt:            "Failed to close session %s: HTTP %s - %s", setupTag: "Cloud browser with stealth and proxies",
 		setupEnvVars: [][3]string{{"BROWSERBASE_API_KEY", "Browserbase API key", "https://browserbase.com"},
@@ -151,115 +148,38 @@ func (p *BrowserbaseBrowserProvider) CreateSession(env *tools.Env, taskID string
 	return map[string]any{"session_name": name, "bb_session_id": id, "cdp_url": cdp, "features": features}, nil
 }
 
-const (
-	browserUseBaseURL            = "https://api.browser-use.com/api/v3"
-	browserUseManagedTimeoutMins = 5
-	browserUseManagedProxyCC     = "us"
-)
-
-// Managed create idempotency keys per task, kept across a retryable failure
+// Selection lookup and API origin of the Browser Use route, the points tests patch
 var (
-	pendingCreateMu   sync.Mutex
-	pendingCreateKeys = map[string]string{}
+	browserUseReadSelection = tools.ReadSelection
+	browserUseBaseURL       = "https://api.browser-use.com/api/v3"
 )
 
-// Selection and managed gateway lookups of the Browser Use route, the points hermes tests patch
-var (
-	browserUseReadSelection  = tools.ReadSelection
-	browserUseResolveGateway = tools.ResolveManagedToolGateway
-)
-
-func pendingCreateKey(taskID string) string {
-	pendingCreateMu.Lock()
-	defer pendingCreateMu.Unlock()
-	if existing := pendingCreateKeys[taskID]; existing != "" {
-		return existing
-	}
-	buf := make([]byte, 16)
-	rand.Read(buf)
-	created := fmt.Sprintf("browser-use-session-create:%x", buf)
-	pendingCreateKeys[taskID] = created
-	return created
-}
-
-func clearPendingCreateKey(taskID string) {
-	pendingCreateMu.Lock()
-	delete(pendingCreateKeys, taskID)
-	pendingCreateMu.Unlock()
-}
-
-// Retryable failure keeping the key, any 5xx or a 409 whose error message says the request is in progress
-func shouldPreservePendingCreateKey(r *pyrequests.Response) bool {
-	if r.Status >= 500 {
-		return true
-	}
-	if r.Status != 409 {
-		return false
-	}
-	payload, err := responseJSON(r)
-	if err != nil {
-		return false
-	}
-	errVal, _, _ := jsonGet(payload, "error")
-	msg, _, isObject := jsonGet(errVal, "message")
-	if !isObject {
-		return false
-	}
-	if !pyrepr.Truthy(msg) {
-		msg = ""
-	}
-	return strings.Contains(strings.ToLower(pyrepr.Str(msg)), "already in progress")
-}
-
-// Browser Use cloud browser, direct BROWSER_USE_API_KEY or the managed Nous tool gateway
+// Browser Use cloud browser on the user's BROWSER_USE_API_KEY
 type BrowserUseBrowserProvider struct{ CloudBrowserProvider }
 
 func newBrowserUseProvider() *BrowserUseBrowserProvider {
 	p := &BrowserUseBrowserProvider{CloudBrowserProvider{providerID: "browser-use", label: "Browser Use",
-		module: "plugins.browser.browser_use.provider", releaseMethod: "patch", releasePath: "/browsers/{session_id}"}}
+		releaseMethod: "patch", releasePath: "/browsers/{session_id}"}}
 	p.hooks = p
 	return p
 }
 
-// Availability without the synchronous OAuth refresh
+// Availability from the configured BROWSER_USE_API_KEY
 func (p *BrowserUseBrowserProvider) IsAvailable(env *tools.Env) bool {
-	c, err := p.configOrNoneRefresh(env, false)
+	c, err := p.configOrNone(env)
 	if err != nil {
 		panic(err)
 	}
 	return c != nil
 }
 
+// Direct config when BROWSER_USE_API_KEY is set, nil otherwise
 func (p *BrowserUseBrowserProvider) configOrNone(env *tools.Env) (*cloudConfig, error) {
-	return p.configOrNoneRefresh(env, true)
-}
-
-// Strict selection, nous managed only, another stored vendor direct only, none stored direct then managed
-func (p *BrowserUseBrowserProvider) configOrNoneRefresh(env *tools.Env, refreshToken bool) (*cloudConfig, error) {
-	managed := func() (*cloudConfig, error) {
-		var reader func(*tools.Env) string
-		if !refreshToken {
-			reader = tools.PeekNousAccessToken
-		}
-		gw, err := browserUseResolveGateway(env, "browser-use", nil, reader)
-		if err != nil || gw == nil {
-			return nil, err
-		}
-		return &cloudConfig{APIKey: gw.NousUserToken, BaseURL: strings.TrimRight(gw.GatewayOrigin, "/"), ManagedMode: true}, nil
-	}
 	apiKey := cfgOf(env).rawSecret("BROWSER_USE_API_KEY")
-	selected := browserUseReadSelection(env, "browser")
-	var direct *cloudConfig
-	if apiKey != "" {
-		direct = &cloudConfig{APIKey: apiKey, BaseURL: browserUseBaseURL}
+	if apiKey == "" {
+		return nil, nil
 	}
-	if selected == tools.NousManagedProvider {
-		return managed()
-	}
-	if selected != "" || direct != nil {
-		return direct, nil
-	}
-	return managed()
+	return &cloudConfig{APIKey: apiKey, BaseURL: browserUseBaseURL}, nil
 }
 
 // Config or the ValueError naming why the selected or default route is unavailable
@@ -268,16 +188,8 @@ func (p *BrowserUseBrowserProvider) config(env *tools.Env) (*cloudConfig, error)
 	if err != nil || c != nil {
 		return c, err
 	}
-	selected := browserUseReadSelection(env, "browser")
-	if selected == tools.NousManagedProvider {
-		return nil, valueError(tools.SelectionError("browser", tools.NousManagedProvider,
-			"the Nous Tool Gateway is not available (not entitled or unreachable)"))
-	}
-	if selected != "" {
+	if selected := browserUseReadSelection(env, "browser"); selected != "" {
 		return nil, valueError(tools.SelectionError("browser", selected, "BROWSER_USE_API_KEY is not set"))
-	}
-	if tools.ManagedNousToolsEnabled(env, false) {
-		return nil, valueError("Browser Use requires either a direct BROWSER_USE_API_KEY credential or a managed Browser Use gateway configuration.")
 	}
 	return nil, valueError("Browser Use requires a direct BROWSER_USE_API_KEY credential.")
 }
@@ -294,25 +206,16 @@ func (p *BrowserUseBrowserProvider) releaseBody(*cloudConfig) any {
 	return map[string]any{"action": "stop"}
 }
 
-// Creates a browser, managed mode forwarding its idempotency key and propagating raw network errors
+// Creates a browser, wrapping network errors in the provider's create failure
 func (p *BrowserUseBrowserProvider) CreateSession(env *tools.Env, taskID string) (map[string]any, error) {
 	c, err := p.config(env)
 	if err != nil {
 		return nil, err
 	}
 	headers, _ := p.headers(env, c)
-	payload := pyjson.NewObject()
-	if c.ManagedMode {
-		headers["X-Idempotency-Key"] = pendingCreateKey(taskID)
-		payload.Set("timeout", browserUseManagedTimeoutMins)
-		payload.Set("proxyCountryCode", browserUseManagedProxyCC)
-	}
-	resp, err := p.postCreate(c.BaseURL+"/browsers", headers, payload, !c.ManagedMode)
+	resp, err := p.postCreate(c.BaseURL+"/browsers", headers, pyjson.NewObject(), true)
 	if err != nil {
 		return nil, err
-	}
-	if !responseOK(resp) && c.ManagedMode && !shouldPreservePendingCreateKey(resp) {
-		clearPendingCreateKey(taskID)
 	}
 	if err := p.checkCreated(resp); err != nil {
 		return nil, err
@@ -320,9 +223,6 @@ func (p *BrowserUseBrowserProvider) CreateSession(env *tools.Env, taskID string)
 	data, err := responseJSON(resp)
 	if err != nil {
 		return nil, err
-	}
-	if c.ManagedMode {
-		clearPendingCreateKey(taskID)
 	}
 	name := cloudSessionName(taskID)
 	p.log(env).Info("Created Browser Use session " + name)
@@ -338,12 +238,8 @@ func (p *BrowserUseBrowserProvider) CreateSession(env *tools.Env, taskID string)
 		cdp = ""
 	}
 	expires, _, _ := jsonGet(data, "timeoutAt")
-	var callID any
-	if values := resp.Header.Values("x-external-call-id"); c.ManagedMode && len(values) > 0 {
-		callID = strings.Join(values, ", ")
-	}
 	return map[string]any{"session_name": name, "bb_session_id": id, "cdp_url": cdp, "expires_at": expires,
-		"features": map[string]any{"browser_use": true}, "external_call_id": callID}, nil
+		"features": map[string]any{"browser_use": true}}, nil
 }
 
 const firecrawlBaseURL = "https://api.firecrawl.dev"
@@ -353,7 +249,7 @@ type FirecrawlBrowserProvider struct{ CloudBrowserProvider }
 
 func newFirecrawlProvider() *FirecrawlBrowserProvider {
 	p := &FirecrawlBrowserProvider{CloudBrowserProvider{providerID: "firecrawl", label: "Firecrawl",
-		module: "plugins.browser.firecrawl.provider", releaseMethod: "delete", releasePath: "/v2/browser/{session_id}",
+		releaseMethod: "delete", releasePath: "/v2/browser/{session_id}",
 		createLabelSuffix: " browser", setupTag: "Cloud browser with remote execution",
 		setupEnvVars: [][3]string{{"FIRECRAWL_API_KEY", "Firecrawl API key", "https://firecrawl.dev"}}}}
 	p.hooks = p
@@ -435,7 +331,7 @@ type browserBackendPlugin struct {
 
 func (b browserBackendPlugin) Manifest() plugins.Manifest {
 	return plugins.Manifest{Name: "browser-" + strings.ReplaceAll(b.dir, "_", "-"), Version: "1.0.0", Description: b.description,
-		Author: "NousResearch", Kind: "backend", Source: "bundled", Key: "browser/" + b.dir}
+		Author: "Icebath", Kind: "backend", Source: "bundled", Key: "browser/" + b.dir}
 }
 
 func (b browserBackendPlugin) Register(ctx *plugins.Context) error {
@@ -445,7 +341,7 @@ func (b browserBackendPlugin) Register(ctx *plugins.Context) error {
 
 // The bundled cloud browser plugins in plugins/browser directory order
 var bundledBrowserPlugins = []browserBackendPlugin{
-	{dir: "browser_use", description: "Browser Use (https://browser-use.com) cloud browser backend. Supports both direct BROWSER_USE_API_KEY and the managed Nous tool gateway. Also powers the 'Nous Subscription' UX flow that bills usage to a Nous subscription.",
+	{dir: "browser_use", description: "Browser Use (https://browser-use.com) cloud browser backend. Requires BROWSER_USE_API_KEY.",
 		provider: func() BrowserProvider { return newBrowserUseProvider() }},
 	{dir: "browserbase", description: "Browserbase (https://browserbase.com) cloud browser backend. Requires BROWSERBASE_API_KEY + BROWSERBASE_PROJECT_ID. Supports stealth, proxies, and keep-alive sessions; auto-falls-back when paid features are unavailable.",
 		provider: func() BrowserProvider { return newBrowserbaseProvider() }},

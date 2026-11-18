@@ -194,7 +194,7 @@ func (r *GatewayRunner) armProcessWatcher(watcher map[string]any) bool {
 		})
 	})
 	if err != nil {
-		runLog().Debug("Live process watcher arming failed", "error", err)
+		pkgLog().Debug("Live process watcher arming failed", "error", err)
 		return false
 	}
 	return true
@@ -234,7 +234,7 @@ func (r *GatewayRunner) watchProcess(ctx context.Context, watcher map[string]any
 	}
 	agentNotify := pyrepr.Truthy(watcher["notify_on_complete"])
 	notifyMode := loadBackgroundNotificationsMode(ctx)
-	runLog().Debug(fmt.Sprintf("Process watcher started: %s (every %ss, notify=%s, agent_notify=%s)",
+	pkgLog().Debug(fmt.Sprintf("Process watcher started: %s (every %ss, notify=%s, agent_notify=%s)",
 		sessionID, pyrepr.Str(watcher["check_interval"]), notifyMode, pyrepr.Str(agentNotify)))
 	silent := notifyMode == "off" && !agentNotify
 	lastOutputLen := 0
@@ -315,22 +315,22 @@ func (r *GatewayRunner) watchProcess(ctx context.Context, watcher map[string]any
 				if scopeErr == nil {
 					receipt, admissionErr := gateway.CompletionAdmission(scoped, r, completionEvt)
 					if admissionErr != nil {
-						runLog().Debug("Process watcher: admission recheck failed for "+sessionID, "error", admissionErr)
+						pkgLog().Debug("Process watcher: admission recheck failed for "+sessionID, "error", admissionErr)
 					} else {
 						committed = receipt != nil
 					}
 				} else {
-					runLog().Debug("Process watcher: admission recheck failed for "+sessionID, "error", scopeErr)
+					pkgLog().Debug("Process watcher: admission recheck failed for "+sessionID, "error", scopeErr)
 				}
 				if committed {
 					break
 				}
 			}
-			runLog().Warn(fmt.Sprintf("Process watcher: completion for %s was refused %d times; falling back to the notify_mode=%s notice",
+			pkgLog().Warn(fmt.Sprintf("Process watcher: completion for %s was refused %d times; falling back to the notify_mode=%s notice",
 				sessionID, completionAttempts, notifyMode))
 		}
 		if registry.IsCompletionConsumed(sessionID) {
-			runLog().Debug(fmt.Sprintf("Process watcher: completion for %s already consumed via wait/log — skipping raw notification (#65379)", sessionID))
+			pkgLog().Debug(fmt.Sprintf("Process watcher: completion for %s already consumed via wait/log — skipping raw notification (#65379)", sessionID))
 			break
 		}
 		if finalMessageSurfaces(notifyMode, fields.ExitCode) {
@@ -348,6 +348,6 @@ func (r *GatewayRunner) watchProcess(ctx context.Context, watcher map[string]any
 	if silent {
 		suffix = " (silent)"
 	}
-	runLog().Debug(fmt.Sprintf("Process watcher ended%s: %s", suffix, sessionID))
+	pkgLog().Debug(fmt.Sprintf("Process watcher ended%s: %s", suffix, sessionID))
 	return nil
 }

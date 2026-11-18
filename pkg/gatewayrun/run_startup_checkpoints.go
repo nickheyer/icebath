@@ -35,7 +35,7 @@ func (r *GatewayRunner) recoverSecondaryProcessCheckpoints(ctx context.Context, 
 		scoped = tools.WithProfileTerminalScope(scoped, profile.Home, nil)
 		count, err := registry.RecoverFromCheckpoint(scoped, &tools.Env{Home: home.Dir(scoped), TerminalScope: tools.GetTerminalScope(scoped)})
 		if err != nil {
-			runLog().Warn(fmt.Sprintf("Process checkpoint recovery for profile '%s' failed", profile.Name), "exc_info", err)
+			pkgLog().Warn(fmt.Sprintf("Process checkpoint recovery for profile '%s' failed", profile.Name), "exc_info", err)
 			continue
 		}
 		recovered += count

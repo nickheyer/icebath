@@ -16,7 +16,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/state"
 )
 
-// Compression chain length one walk of the lineage covers, hermes_state_compression _CHAIN_CAP
+// Compression chain length one walk of the lineage covers
 const recoverChainCap = 1000
 
 func recoverTUIParams(cwd string) map[string]any {

@@ -62,11 +62,6 @@ var (
 	webhookAuthorityForProfileID = authorityForHome
 )
 
-// Logger of the webhook adapter module
-func webhookLog() *slog.Logger {
-	return slog.Default().With("logger", "gateway.platforms.webhook")
-}
-
 // Seconds since the epoch as a float, the value time.time returns
 func webhookNow() float64 { return float64(time.Now().UnixNano()) / 1e9 }
 
@@ -143,7 +138,7 @@ func webhookTimestampFresh(raw, staleMsg string) bool {
 	}
 	age := new(big.Int).Sub(big.NewInt(time.Now().Unix()), stamp)
 	if age.Abs(age).Cmp(big.NewInt(webhookV2ReplayWindowSeconds)) > 0 {
-		webhookLog().Warn(staleMsg)
+		pkgLog().Warn(staleMsg)
 		return false
 	}
 	return true
@@ -169,7 +164,7 @@ func webhookValidateSvixSignature(body []byte, secret, msgID, timestamp, signatu
 	if strings.HasPrefix(secret, "whsec_") {
 		decoded, err := pybase64.B64DecodeValidate(strings.TrimPrefix(secret, "whsec_"))
 		if err != nil {
-			webhookLog().Debug("[webhook] Invalid whsec_ Svix signing secret")
+			pkgLog().Debug("[webhook] Invalid whsec_ Svix signing secret")
 			return false
 		}
 		if strings.Trim(string(decoded), "\x00 \t\r\n\x0b\x0c") == "" {
@@ -177,7 +172,7 @@ func webhookValidateSvixSignature(body []byte, secret, msgID, timestamp, signatu
 		}
 		key = decoded
 	} else {
-		webhookLog().Debug("[webhook] Validating Svix-style signature with raw secret")
+		pkgLog().Debug("[webhook] Validating Svix-style signature with raw secret")
 		key = []byte(secret)
 	}
 	mac := hmac.New(sha256.New, key)
@@ -447,7 +442,7 @@ func (a *WebhookAdapter) Connect(ctx context.Context, isReconnect bool) (bool, e
 		if a.host != nil {
 			hostText = *a.host
 		}
-		webhookLog().Error(fmt.Sprintf("[webhook] Could not bind %s:%d: %s. Set a different host or port in config.yaml under "+
+		pkgLog().Error(fmt.Sprintf("[webhook] Could not bind %s:%d: %s. Set a different host or port in config.yaml under "+
 			"platforms.webhook.extra.", hostText, a.port, err.Error()))
 		return false, nil
 	}
@@ -461,7 +456,7 @@ func (a *WebhookAdapter) Connect(ctx context.Context, isReconnect bool) (bool, e
 	if names == "" {
 		names = "(none configured)"
 	}
-	webhookLog().Info(fmt.Sprintf("[webhook] Listening on %s:%d — routes: %s", hostText, a.port, names))
+	pkgLog().Info(fmt.Sprintf("[webhook] Listening on %s:%d — routes: %s", hostText, a.port, names))
 	a.WirePluginHandlers(ctx, nil)
 	return true, nil
 }
@@ -476,19 +471,19 @@ func (a *WebhookAdapter) Disconnect(ctx context.Context) error {
 		a.runner = nil
 	}
 	a.MarkDisconnected(ctx)
-	webhookLog().Info("[webhook] Disconnected")
+	pkgLog().Info("[webhook] Disconnected")
 	return nil
 }
 
 // Delivers the agent response to the destination retained for its opaque chat id
 func (a *WebhookAdapter) Send(ctx context.Context, chatID, content, replyTo string, metadata map[string]any) (SendResult, error) {
 	if IsAutonomousSilenceResponse(content) {
-		webhookLog().Info(fmt.Sprintf("[webhook] Response for %s is a silence marker — not delivering", chatID))
+		pkgLog().Info(fmt.Sprintf("[webhook] Response for %s is a silence marker — not delivering", chatID))
 		return SendResult{Success: true}, nil
 	}
 	delivery, err := webhookRetainedDestination(ctx, a, chatID)
 	if err != nil {
-		webhookLog().Warn(fmt.Sprintf("[webhook] Destination unavailable for %s", chatID), "error", err)
+		pkgLog().Warn(fmt.Sprintf("[webhook] Destination unavailable for %s", chatID), "error", err)
 		return SendResult{Success: false, Error: "Webhook destination unavailable or unauthorized"}, nil
 	}
 	return a.deliverTo(ctx, delivery, chatID, content)
@@ -503,14 +498,14 @@ func (a *WebhookAdapter) deliverTo(ctx context.Context, delivery *pyjson.Object,
 	deliverType := pyrepr.Str(raw)
 	switch {
 	case pyrepr.Equal(raw, "log"):
-		webhookLog().Info(fmt.Sprintf("[webhook] Response for %s: %s", chatID, pySliceRunes(content, 200)))
+		pkgLog().Info(fmt.Sprintf("[webhook] Response for %s: %s", chatID, pySliceRunes(content, 200)))
 		return SendResult{Success: true}, nil
 	case pyrepr.Equal(raw, "github_comment"):
 		return a.deliverGitHubComment(ctx, content, delivery)
 	case a.GatewayRunner != nil && webhookKnownPlatform(ctx, deliverType):
 		return a.deliverCrossPlatform(ctx, raw, content, delivery)
 	}
-	webhookLog().Warn("[webhook] Unknown deliver type: " + deliverType)
+	pkgLog().Warn("[webhook] Unknown deliver type: " + deliverType)
 	return SendResult{Success: false, Error: "Unknown deliver type: " + deliverType}, nil
 }
 
@@ -626,17 +621,17 @@ func (a *WebhookAdapter) handleHealth(ctx context.Context, request *WebRequest) 
 func (a *WebhookAdapter) dynamicRouteAllowed(name string, route *pyjson.Object) bool {
 	secret := route.GetOr("secret", a.globalSecret)
 	if !WebhookIsUsableSecret(secret) {
-		webhookLog().Warn(fmt.Sprintf("[webhook] Dynamic route '%s' skipped: 'secret' is missing, blank, or not a string. "+
+		pkgLog().Warn(fmt.Sprintf("[webhook] Dynamic route '%s' skipped: 'secret' is missing, blank, or not a string. "+
 			"Set a valid HMAC secret, or use '%s' to explicitly disable auth (testing only).", name, webhookInsecureNoAuth))
 		return false
 	}
 	if secret == webhookInsecureNoAuth && !webhookIsLoopbackHost(a.host) {
-		webhookLog().Warn(fmt.Sprintf("[webhook] Dynamic route '%s' skipped: INSECURE_NO_AUTH is only allowed on loopback "+
+		pkgLog().Warn(fmt.Sprintf("[webhook] Dynamic route '%s' skipped: INSECURE_NO_AUTH is only allowed on loopback "+
 			"hosts. Current host: '%s'.", name, pyHostText(a.host)))
 		return false
 	}
 	if err := ValidateCoalesceConfig(name, route); err != nil {
-		webhookLog().Warn(fmt.Sprintf("[webhook] Dynamic route '%s' skipped: %s", name, pyrepr.ExceptionMessage(err)))
+		pkgLog().Warn(fmt.Sprintf("[webhook] Dynamic route '%s' skipped: %s", name, pyrepr.ExceptionMessage(err)))
 		return false
 	}
 	return true
@@ -644,7 +639,7 @@ func (a *WebhookAdapter) dynamicRouteAllowed(name string, route *pyjson.Object) 
 
 // Reloads agent created subscriptions when the stat identity of the subscriptions file changes
 func (a *WebhookAdapter) ReloadDynamicRoutes(ctx context.Context) {
-	log := webhookLog()
+	log := pkgLog()
 	subsPath := filepath.Join(home.Dir(ctx), webhookDynamicRoutesFilename)
 	a.stateMu.Lock()
 	defer a.stateMu.Unlock()
@@ -819,7 +814,7 @@ func (a *WebhookAdapter) readAuthenticatedBody(request *WebRequest, routeName st
 			resp, err := webhookJSONError("Payload too large", http.StatusRequestEntityTooLarge)
 			return nil, resp, err
 		}
-		webhookLog().Error("[webhook] Failed to read body: " + pyrepr.ExceptionMessage(err))
+		pkgLog().Error("[webhook] Failed to read body: " + pyrepr.ExceptionMessage(err))
 		resp, err := webhookJSONError("Bad request", http.StatusBadRequest)
 		return nil, resp, err
 	}
@@ -829,12 +824,12 @@ func (a *WebhookAdapter) readAuthenticatedBody(request *WebRequest, routeName st
 	}
 	secret := routeConfig.GetOr("secret", a.globalSecret)
 	if !WebhookIsUsableSecret(secret) {
-		webhookLog().Error(fmt.Sprintf("[webhook] Route %s HMAC secret is missing, blank, or not a string; refusing request", routeName))
+		pkgLog().Error(fmt.Sprintf("[webhook] Route %s HMAC secret is missing, blank, or not a string; refusing request", routeName))
 		resp, err := webhookJSONError("Webhook route is missing an HMAC secret", http.StatusForbidden)
 		return nil, resp, err
 	}
 	if secret != webhookInsecureNoAuth && !a.ValidateSignature(request, rawBody, secret.(string)) {
-		webhookLog().Warn("[webhook] Invalid signature for route " + routeName)
+		pkgLog().Warn("[webhook] Invalid signature for route " + routeName)
 		resp, err := webhookJSONError("Invalid signature", http.StatusUnauthorized)
 		return nil, resp, err
 	}
@@ -875,19 +870,19 @@ func (a *WebhookAdapter) handleDeliverOnly(ctx context.Context, prompt string, p
 	delivery := pyjson.ObjectOf("deliver", routeConfig.GetOr("deliver", "log"), "payload", payload, "profile", profileValue,
 		"deliver_extra", extra, "route", routeName, "mirror", routeConfig.GetOr("mirror_to_session", nil) == true)
 	target := delivery.GetOr("deliver", nil)
-	webhookLog().Info(fmt.Sprintf("[webhook] direct-deliver event=%s route=%s target=%s msg_len=%d delivery=%s", pyrepr.Str(eventType),
+	pkgLog().Info(fmt.Sprintf("[webhook] direct-deliver event=%s route=%s target=%s msg_len=%d delivery=%s", pyrepr.Str(eventType),
 		routeName, pyrepr.Str(target), runeLen(prompt), deliveryID))
 	failed := pyjson.ObjectOf("status", "error", "error", "Delivery failed", "delivery_id", deliveryID)
 	result, err := a.directDeliver(ctx, prompt, delivery)
 	if err != nil {
-		webhookLog().Error(fmt.Sprintf("[webhook] direct-deliver failed route=%s delivery=%s", routeName, deliveryID), "error", err)
+		pkgLog().Error(fmt.Sprintf("[webhook] direct-deliver failed route=%s delivery=%s", routeName, deliveryID), "error", err)
 		return WebJSONResponse(failed, http.StatusBadGateway, nil)
 	}
 	if result.Success {
 		return WebJSONResponse(pyjson.ObjectOf("status", "delivered", "route", routeName, "target", target,
 			"delivery_id", deliveryID), http.StatusOK, nil)
 	}
-	webhookLog().Warn(fmt.Sprintf("[webhook] direct-deliver target rejected route=%s target=%s error=%s", routeName,
+	pkgLog().Warn(fmt.Sprintf("[webhook] direct-deliver target rejected route=%s target=%s error=%s", routeName,
 		pyrepr.Str(target), pyrepr.Str(result.Error)))
 	return WebJSONResponse(failed, http.StatusBadGateway, nil)
 }
@@ -902,7 +897,7 @@ func (a *WebhookAdapter) handleCronTrigger(ctx context.Context, prompt string, r
 	jobRef := pyrepr.Str(rawJob)
 	eventContext := fmt.Sprintf("This run was triggered by webhook event '%s' on route '%s' (not the schedule).\n\n%s",
 		pyrepr.Str(eventType), routeName, prompt)
-	webhookLog().Info(fmt.Sprintf("[webhook] cron-trigger event=%s route=%s job=%s delivery=%s", pyrepr.Str(eventType), routeName, jobRef, deliveryID))
+	pkgLog().Info(fmt.Sprintf("[webhook] cron-trigger event=%s route=%s job=%s delivery=%s", pyrepr.Str(eventType), routeName, jobRef, deliveryID))
 	task := spawnAdapterTask(context.WithoutCancel(ctx), func(taskCtx context.Context) error {
 		a.fireCronJob(taskCtx, jobRef, eventContext, routeName, profile)
 		return nil
@@ -915,7 +910,7 @@ func (a *WebhookAdapter) handleCronTrigger(ctx context.Context, prompt string, r
 // Runs the cron job under the routed profile scope, logging an unclean or failed run
 func (a *WebhookAdapter) fireCronJob(ctx context.Context, jobRef, eventContext, routeName string, profile *string) {
 	failed := func(err any) {
-		webhookLog().Error(fmt.Sprintf("[webhook] cron-trigger failed job=%s route=%s", jobRef, routeName), "error", err)
+		pkgLog().Error(fmt.Sprintf("[webhook] cron-trigger failed job=%s route=%s", jobRef, routeName), "error", err)
 	}
 	defer func() {
 		if rec := recover(); rec != nil {
@@ -937,7 +932,7 @@ func (a *WebhookAdapter) fireCronJob(ctx context.Context, jobRef, eventContext, 
 		return
 	}
 	if !pyrepr.Truthy(result["success"]) {
-		webhookLog().Warn(fmt.Sprintf("[webhook] cron-trigger job=%s route=%s did not complete cleanly: %s", jobRef, routeName,
+		pkgLog().Warn(fmt.Sprintf("[webhook] cron-trigger job=%s route=%s did not complete cleanly: %s", jobRef, routeName,
 			pyrepr.Str(result["error"])))
 	}
 }
@@ -967,7 +962,7 @@ func (a *WebhookAdapter) resolveRoute(ctx context.Context, request *WebRequest) 
 		if profile != nil {
 			label = *profile
 		}
-		webhookLog().Warn(fmt.Sprintf("[webhook] Route %s is not authorized for profile %s", routeName, pyrepr.Repr(label)))
+		pkgLog().Warn(fmt.Sprintf("[webhook] Route %s is not authorized for profile %s", routeName, pyrepr.Repr(label)))
 		resp, err := webhookJSONError("Unknown route: "+routeName, http.StatusNotFound)
 		return routeName, nil, profile, resp, err
 	}
@@ -980,7 +975,7 @@ func (a *WebhookAdapter) resolveRoute(ctx context.Context, request *WebRequest) 
 
 // Prompt replaced by the first configured skill that exists, unchanged when none loads
 func webhookApplySkills(ctx context.Context, prompt string, skillList any) string {
-	log := webhookLog()
+	log := pkgLog()
 	names, err := msgraphIterate(skillList)
 	if err != nil {
 		log.Warn("[webhook] Skill loading failed: " + pyrepr.ExceptionMessage(err))
@@ -1090,7 +1085,7 @@ func (a *WebhookAdapter) handleWebhook(ctx context.Context, request *WebRequest)
 			return nil, err
 		}
 		if !member {
-			webhookLog().Debug(fmt.Sprintf("[webhook] Ignoring event %s for route %s (allowed: %s)", pyrepr.Str(eventType), routeName, pyrepr.Str(allowed)))
+			pkgLog().Debug(fmt.Sprintf("[webhook] Ignoring event %s for route %s (allowed: %s)", pyrepr.Str(eventType), routeName, pyrepr.Str(allowed)))
 			return WebJSONResponse(pyjson.ObjectOf("status", "ignored", "event", eventType), http.StatusOK, nil)
 		}
 	}
@@ -1099,7 +1094,7 @@ func (a *WebhookAdapter) handleWebhook(ctx context.Context, request *WebRequest)
 		return nil, err
 	}
 	if !matched {
-		webhookLog().Info(fmt.Sprintf("[webhook] filtered event=%s route=%s", pyrepr.Str(eventType), routeName))
+		pkgLog().Info(fmt.Sprintf("[webhook] filtered event=%s route=%s", pyrepr.Str(eventType), routeName))
 		return WebJSONResponse(pyjson.ObjectOf("status", "ignored", "reason", "filter", "route", routeName), http.StatusOK, nil)
 	}
 	scoped, err := a.WebhookProfileScope(ctx, profile)
@@ -1112,7 +1107,7 @@ func (a *WebhookAdapter) handleWebhook(ctx context.Context, request *WebRequest)
 			return nil, err
 		}
 		if !keep {
-			webhookLog().Info(fmt.Sprintf("[webhook] script ignored event=%s route=%s", pyrepr.Str(eventType), routeName))
+			pkgLog().Info(fmt.Sprintf("[webhook] script ignored event=%s route=%s", pyrepr.Str(eventType), routeName))
 			return WebJSONResponse(pyjson.ObjectOf("status", "ignored", "reason", "script", "route", routeName), http.StatusOK, nil)
 		}
 		if transformed != nil && transformed.Len() > 0 {
@@ -1136,7 +1131,7 @@ func (a *WebhookAdapter) handleWebhook(ctx context.Context, request *WebRequest)
 	coalesce, coalesceIsDict := routeConfig.GetOr("coalesce", nil).(*pyjson.Object)
 	nonDurable := pyrepr.Truthy(routeConfig.GetOr("deliver_only", nil)) || pyrepr.Truthy(routeConfig.GetOr("cron_job", nil)) || coalesceIsDict
 	if nonDurable && !a.recordDeliveryID(identity, now) {
-		webhookLog().Info(fmt.Sprintf("[webhook] Skipping duplicate delivery %s on route %s", deliveryID, routeName))
+		pkgLog().Info(fmt.Sprintf("[webhook] Skipping duplicate delivery %s on route %s", deliveryID, routeName))
 		return WebJSONResponse(pyjson.ObjectOf("status", "duplicate", "delivery_id", deliveryID), http.StatusOK, nil)
 	}
 	if pyrepr.Truthy(routeConfig.GetOr("cron_job", nil)) {
@@ -1162,7 +1157,7 @@ func (a *WebhookAdapter) handleWebhook(ctx context.Context, request *WebRequest)
 // Admits the run and acknowledges only once the authority committed the delivery
 func (a *WebhookAdapter) dispatchAgentRun(ctx context.Context, request *WebRequest, routeConfig *pyjson.Object, routeName string, profile *string,
 	payload any, prompt string, eventType any, deliveryID string, now float64) (*WebResponse, error) {
-	webhookLog().Info(fmt.Sprintf("[webhook] %s event=%s route=%s prompt_len=%d delivery=%s", request.Method, pyrepr.Str(eventType),
+	pkgLog().Info(fmt.Sprintf("[webhook] %s event=%s route=%s prompt_len=%d delivery=%s", request.Method, pyrepr.Str(eventType),
 		routeName, runeLen(prompt), deliveryID))
 	outcome, err := a.admitAgentRun(ctx, payload, prompt, deliveryID, now, WebhookDispatchArgs{RouteConfig: routeConfig,
 		RouteName: routeName, Profile: profile, EventType: eventType})
@@ -1188,7 +1183,7 @@ func (a *WebhookAdapter) spawnAgentRun(payload any, prompt, deliveryID string, n
 			return err
 		}
 		if outcome == "" {
-			webhookLog().Error(fmt.Sprintf("[webhook] Coalesced delivery %s on route %s was not admitted", deliveryID, args.RouteName))
+			pkgLog().Error(fmt.Sprintf("[webhook] Coalesced delivery %s on route %s was not admitted", deliveryID, args.RouteName))
 			a.stateMu.Lock()
 			for _, released := range append(append([]string(nil), superseded...), deliveryID) {
 				delete(a.seenDeliveries, webhookIdentityFromParts(args.Profile, args.RouteName, released))
@@ -1244,7 +1239,7 @@ func (a *WebhookAdapter) admitAgentRun(ctx context.Context, payload any, prompt,
 	event.Timestamp = time.Unix(0, 0).UTC()
 	receipt, err := webhookAdmitProducer(ctx, a, event)
 	if err != nil {
-		webhookLog().Error("[webhook] Durable admission failed for "+deliveryID, "error", err)
+		pkgLog().Error("[webhook] Durable admission failed for "+deliveryID, "error", err)
 		return "", nil
 	}
 	if event.WebhookDuplicate() {
@@ -1317,7 +1312,7 @@ func (a *WebhookAdapter) finalizeDelivery(ctx context.Context, event *MessageEve
 		return a.endWebhookSession(ctx, event)
 	}()
 	if err != nil {
-		webhookLog().Error("[webhook] Could not finalize admitted delivery "+receipt.AdmissionID, "error", err)
+		pkgLog().Error("[webhook] Could not finalize admitted delivery "+receipt.AdmissionID, "error", err)
 	}
 }
 
@@ -1370,7 +1365,7 @@ func (a *WebhookAdapter) ValidateSignature(request *WebRequest, body []byte, sec
 	if v2Sig := webhookHeader(header, "X-Webhook-Signature-V2"); v2Sig != "" {
 		v2Timestamp := webhookHeader(header, "X-Webhook-Timestamp")
 		if v2Timestamp == "" {
-			webhookLog().Warn(fmt.Sprintf("[webhook] Route '%s' sent X-Webhook-Signature-V2 with no X-Webhook-Timestamp — "+
+			pkgLog().Warn(fmt.Sprintf("[webhook] Route '%s' sent X-Webhook-Signature-V2 with no X-Webhook-Timestamp — "+
 				"rejecting rather than falling back to legacy V1", routeName))
 			return false
 		}
@@ -1385,13 +1380,13 @@ func (a *WebhookAdapter) ValidateSignature(request *WebRequest, body []byte, sec
 		a.v1SignatureWarned[routeName] = true
 		a.stateMu.Unlock()
 		if !warned {
-			webhookLog().Warn(fmt.Sprintf("[webhook] Route '%s' uses legacy body-only HMAC (no timestamp), which is vulnerable "+
+			pkgLog().Warn(fmt.Sprintf("[webhook] Route '%s' uses legacy body-only HMAC (no timestamp), which is vulnerable "+
 				"to replay attacks. Add an 'X-Webhook-Timestamp' header and switch to "+
 				"'X-Webhook-Signature-V2' (HMAC-SHA256 of '<timestamp>.<body>').", routeName))
 		}
 		return webhookHMACStrEqual(genericSig, webhookHexHMAC(secret, body))
 	}
-	webhookLog().Debug("[webhook] Secret configured but no signature header found")
+	pkgLog().Debug("[webhook] Secret configured but no signature header found")
 	return false
 }
 
@@ -1480,7 +1475,7 @@ func (a *WebhookAdapter) directDeliver(ctx context.Context, content string, deli
 	deliverType := delivery.GetOr("deliver", "log")
 	switch {
 	case pyrepr.Equal(deliverType, "log"):
-		webhookLog().Info("[webhook] direct-deliver log-only: " + pySliceRunes(content, 200))
+		pkgLog().Info("[webhook] direct-deliver log-only: " + pySliceRunes(content, 200))
 		return SendResult{Success: true}, nil
 	case pyrepr.Equal(deliverType, "github_comment"):
 		return a.deliverGitHubComment(ctx, content, delivery)
@@ -1506,7 +1501,7 @@ func (a *WebhookAdapter) deliverGitHubComment(ctx context.Context, content strin
 	}
 	repo, prNumber := extra.GetOr("repo", ""), extra.GetOr("pr_number", "")
 	if !pyrepr.Truthy(repo) || !pyrepr.Truthy(prNumber) {
-		webhookLog().Error("[webhook] github_comment delivery missing repo or pr_number")
+		pkgLog().Error("[webhook] github_comment delivery missing repo or pr_number")
 		return SendResult{Success: false, Error: "Missing repo or pr_number"}, nil
 	}
 	prInt, err := pyint.Of(prNumber)
@@ -1517,7 +1512,7 @@ func (a *WebhookAdapter) deliverGitHubComment(ctx context.Context, content strin
 		var pyErr *pyint.Error
 		var gwErr *PyError
 		if errors.As(err, &pyErr) && (pyErr.Kind == "ValueError" || pyErr.Kind == "TypeError") || errors.As(err, &gwErr) {
-			webhookLog().Error("[webhook] invalid pr_number: " + pyrepr.Repr(prNumber))
+			pkgLog().Error("[webhook] invalid pr_number: " + pyrepr.Repr(prNumber))
 			return SendResult{Success: false, Error: "Invalid pr_number"}, nil
 		}
 		return SendResult{}, err
@@ -1527,19 +1522,19 @@ func (a *WebhookAdapter) deliverGitHubComment(ctx context.Context, content strin
 		return SendResult{}, &PyError{Kind: "TypeError", Msg: "expected string or bytes-like object, got '" + pyrepr.TypeName(repo) + "'"}
 	}
 	if !webhookRepoRE.MatchString(repoText) {
-		webhookLog().Error("[webhook] invalid repo format: " + pyrepr.Repr(repo))
+		pkgLog().Error("[webhook] invalid repo format: " + pyrepr.Repr(repo))
 		return SendResult{Success: false, Error: "Invalid repo format"}, nil
 	}
 	env, err := a.githubEnv(ctx, delivery.GetOr("profile", nil))
 	if err != nil {
-		webhookLog().Error("[webhook] github_comment delivery error: " + pyrepr.ExceptionMessage(err))
+		pkgLog().Error("[webhook] github_comment delivery error: " + pyrepr.ExceptionMessage(err))
 		return SendResult{Success: false, Error: pyrepr.ExceptionMessage(err)}, nil
 	}
 	argv := []string{"gh", "pr", "comment", prInt.String(), "--repo", repoText, "--body", content}
 	result, err := pysubprocess.RunWith(ctx, argv, pysubprocess.Options{Env: env, Timeout: 30 * time.Second})
 	if err != nil {
 		if errors.Is(err, exec.ErrNotFound) {
-			webhookLog().Error("[webhook] 'gh' CLI not found — install GitHub CLI for github_comment delivery")
+			pkgLog().Error("[webhook] 'gh' CLI not found — install GitHub CLI for github_comment delivery")
 			return SendResult{Success: false, Error: "gh CLI not installed"}, nil
 		}
 		text := webhookExecErrorText(err)
@@ -1547,15 +1542,15 @@ func (a *WebhookAdapter) deliverGitHubComment(ctx context.Context, content strin
 		if errors.As(err, &timeout) {
 			text = timeout.Error()
 		}
-		webhookLog().Error("[webhook] github_comment delivery error: " + text)
+		pkgLog().Error("[webhook] github_comment delivery error: " + text)
 		return SendResult{Success: false, Error: text}, nil
 	}
 	if result.Returncode == 0 {
-		webhookLog().Info(fmt.Sprintf("[webhook] Posted comment on %s#%s", repoText, pyrepr.Str(prNumber)))
+		pkgLog().Info(fmt.Sprintf("[webhook] Posted comment on %s#%s", repoText, pyrepr.Str(prNumber)))
 		return SendResult{Success: true}, nil
 	}
 	stderr := strings.ToValidUTF8(string(result.Stderr), "�")
-	webhookLog().Error("[webhook] gh pr comment failed: " + stderr)
+	pkgLog().Error("[webhook] gh pr comment failed: " + stderr)
 	return SendResult{Success: false, Error: stderr}, nil
 }
 
@@ -1701,7 +1696,7 @@ func (a *WebhookAdapter) mirrorDelivery(ctx context.Context, platformName, chatI
 	}
 	defer func() {
 		if rec := recover(); rec != nil {
-			webhookLog().Debug(fmt.Sprintf("[webhook] Route '%s' delivery mirror into %s:%s failed: %v", route, platformName, chatID, rec))
+			pkgLog().Debug(fmt.Sprintf("[webhook] Route '%s' delivery mirror into %s:%s failed: %v", route, platformName, chatID, rec))
 		}
 	}()
 	var thread *string
@@ -1715,5 +1710,5 @@ func (a *WebhookAdapter) mirrorDelivery(ctx context.Context, platformName, chatI
 	if !ok {
 		level, verb = slog.LevelDebug, "not "
 	}
-	webhookLog().Log(ctx, level, fmt.Sprintf("[webhook] Route '%s' delivery %smirrored into %s:%s session", route, verb, platformName, chatID))
+	pkgLog().Log(ctx, level, fmt.Sprintf("[webhook] Route '%s' delivery %smirrored into %s:%s session", route, verb, platformName, chatID))
 }

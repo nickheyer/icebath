@@ -640,4 +640,3 @@ func (p *parser) parseFlowMappingEmptyValue() *event {
 func (p *parser) processEmptyScalar(mark *Mark, comment *tokenComment) *event {
 	return &event{kind: evScalar, implicit: [2]bool{true, false}, value: "", start: mark, end: mark, comment: comment}
 }
-

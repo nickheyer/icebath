@@ -79,22 +79,22 @@ func loadPrefillMessages(ctx context.Context) []any {
 		path = filepath.Join(home.Dir(ctx), path)
 	}
 	if _, err := os.Stat(path); err != nil {
-		runLog().Warn(fmt.Sprintf("Prefill messages file not found: %s", path))
+		pkgLog().Warn(fmt.Sprintf("Prefill messages file not found: %s", path))
 		return nil
 	}
 	raw, err := os.ReadFile(path)
 	if err != nil {
-		runLog().Warn(fmt.Sprintf("Failed to load prefill messages from %s: %v", path, err))
+		pkgLog().Warn(fmt.Sprintf("Failed to load prefill messages from %s: %v", path, err))
 		return nil
 	}
 	data, err := pyjson.Loads(strings.TrimPrefix(string(raw), "\ufeff"))
 	if err != nil {
-		runLog().Warn(fmt.Sprintf("Failed to load prefill messages from %s: %v", path, err))
+		pkgLog().Warn(fmt.Sprintf("Failed to load prefill messages from %s: %v", path, err))
 		return nil
 	}
 	list, ok := data.([]any)
 	if !ok {
-		runLog().Warn(fmt.Sprintf("Prefill messages file must contain a JSON array: %s", path))
+		pkgLog().Warn(fmt.Sprintf("Prefill messages file must contain a JSON array: %s", path))
 		return nil
 	}
 	return list
@@ -183,7 +183,7 @@ func (r *GatewayRunner) roomAllowSilence(ctx context.Context, source *gateway.Se
 		return getChannelOverride(cfg, source.Platform, source.ChatID, source.ThreadID, source.ParentChatID), nil
 	}()
 	if err != nil {
-		runLog().Warn(fmt.Sprintf("Room allow_silence lookup failed for %s; keeping the reply rule: %v", source.ChatID, err))
+		pkgLog().Warn(fmt.Sprintf("Room allow_silence lookup failed for %s; keeping the reply rule: %v", source.ChatID, err))
 		return nil
 	}
 	if override == nil {
@@ -325,7 +325,7 @@ func busyTextTimingFromConfig(cfg map[string]any) [2]float64 {
 		}
 		value, err := pyint.Float(raw)
 		if err != nil || value < 0 || math.IsNaN(value) {
-			runLog().Warn(fmt.Sprintf("display.%s=%s is not a non-negative number; using %s", spec.key, pyrepr.Repr(raw), pyrepr.Str(spec.def)))
+			pkgLog().Warn(fmt.Sprintf("display.%s=%s is not a non-negative number; using %s", spec.key, pyrepr.Repr(raw), pyrepr.Str(spec.def)))
 			value = spec.def
 		}
 		out[i] = value
@@ -349,7 +349,7 @@ func humanDelayFromConfig(cfg map[string]any) *[2]int {
 	bounds := defaultHumanDelayRangeMS
 	if mode != "natural" {
 		if mode != "custom" {
-			runLog().Warn(fmt.Sprintf("human_delay.mode=%s is not off/natural/custom; using natural", pyrepr.Repr(mode)))
+			pkgLog().Warn(fmt.Sprintf("human_delay.mode=%s is not off/natural/custom; using natural", pyrepr.Repr(mode)))
 			natural := defaultHumanDelayRangeMS
 			return &natural
 		}
@@ -360,7 +360,7 @@ func humanDelayFromConfig(cfg map[string]any) *[2]int {
 			if raw != nil && raw != "" {
 				parsed, err := pyint.Int64(raw)
 				if err != nil || parsed < 0 {
-					runLog().Warn(fmt.Sprintf("human_delay.%s=%s is not a non-negative integer; using %d", key, pyrepr.Repr(raw), def))
+					pkgLog().Warn(fmt.Sprintf("human_delay.%s=%s is not a non-negative integer; using %d", key, pyrepr.Repr(raw), def))
 				} else {
 					value = int(parsed)
 				}
@@ -368,7 +368,7 @@ func humanDelayFromConfig(cfg map[string]any) *[2]int {
 			bounds[i] = value
 		}
 		if bounds[0] > bounds[1] {
-			runLog().Warn(fmt.Sprintf("human_delay.min_ms=%d exceeds human_delay.max_ms=%d; using natural range", bounds[0], bounds[1]))
+			pkgLog().Warn(fmt.Sprintf("human_delay.min_ms=%d exceeds human_delay.max_ms=%d; using natural range", bounds[0], bounds[1]))
 			bounds = defaultHumanDelayRangeMS
 		}
 	}
@@ -436,7 +436,7 @@ func (r *GatewayRunner) effectiveBusyTextMode(ctx context.Context, source *gatew
 // Warns when a supplied timeout is not a number the parser could read
 func warnUnparsableTimeout(cfgKey string, raw any, def float64) {
 	if _, err := pyint.Float(raw); err != nil {
-		runLog().Warn(fmt.Sprintf("Invalid %s '%s', using default %.0fs", cfgKey, pyrepr.Str(raw), def))
+		pkgLog().Warn(fmt.Sprintf("Invalid %s '%s', using default %.0fs", cfgKey, pyrepr.Str(raw), def))
 	}
 }
 
@@ -462,11 +462,11 @@ func loadLaunchdExitTimeout(drainTimeout float64) *float64 {
 	}
 	effective := gateway.ResolveLaunchdCappedDrain(drainTimeout, *exitTimeout, nil)
 	if effective < drainTimeout {
-		runLog().Warn(fmt.Sprintf("restart_drain_timeout=%.0fs exceeds the live launchd exit timeout (%.0fs) for %s; "+
+		pkgLog().Warn(fmt.Sprintf("restart_drain_timeout=%.0fs exceeds the live launchd exit timeout (%.0fs) for %s; "+
 			"signal-driven stops will drain at most %.0fs so teardown finishes before launchd "+
 			"SIGKILLs (launchd clamps ExitTimeOut in the per-user domain).", drainTimeout, *exitTimeout, label, effective))
 	} else {
-		runLog().Info(fmt.Sprintf("launchd exit timeout for %s is %.0fs (drain %.0fs fits)", label, *exitTimeout, drainTimeout))
+		pkgLog().Info(fmt.Sprintf("launchd exit timeout for %s is %.0fs (drain %.0fs fits)", label, *exitTimeout, drainTimeout))
 	}
 	return exitTimeout
 }
@@ -535,7 +535,7 @@ func loadBackgroundNotificationsMode(ctx context.Context) string {
 	case "concise", "all", "result", "error", "off":
 		return mode
 	}
-	runLog().Warn(fmt.Sprintf("Unknown background_process_notifications '%s', defaulting to 'concise'", mode))
+	pkgLog().Warn(fmt.Sprintf("Unknown background_process_notifications '%s', defaulting to 'concise'", mode))
 	return "concise"
 }
 
@@ -576,7 +576,7 @@ func (r *GatewayRunner) refreshFallbackModel(ctx context.Context) []map[string]a
 		cfg, err = config.LoadUserEffectiveFailClosed(cfgPath, os.LookupEnv)
 	}
 	if err != nil {
-		runLog().Debug(fmt.Sprintf("fallback_providers refresh: config.yaml read failed; keeping last known-good chain: %v", err))
+		pkgLog().Debug(fmt.Sprintf("fallback_providers refresh: config.yaml read failed; keeping last known-good chain: %v", err))
 		if known, ok := r.fallbackModelByHome[homeKey]; ok {
 			r.fallbackModel = known
 		}

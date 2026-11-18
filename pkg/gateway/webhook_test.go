@@ -20,7 +20,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 )
 
-// Webhook adapter with the hermes test defaults, extra keys overriding them
+// Webhook adapter with the test defaults, extra keys overriding them
 func makeWebhookAdapter(t *testing.T, routes map[string]any, overrides map[string]any) *WebhookAdapter {
 	t.Helper()
 	t.Setenv("ICEBATH_HOME", t.TempDir())
@@ -293,7 +293,7 @@ func TestOversizedPayloadRejected(t *testing.T) {
 	}
 }
 
-// Platform adapter recording every send, the AsyncMock target of the hermes delivery cases
+// Platform adapter recording every send, the AsyncMock target of the delivery cases
 type webhookTargetAdapter struct {
 	*BasePlatformAdapter
 	mu     sync.Mutex

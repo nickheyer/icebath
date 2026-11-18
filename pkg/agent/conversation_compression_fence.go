@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"log/slog"
 	"math"
 	"reflect"
 	"sort"
@@ -27,17 +26,15 @@ const (
 	CompactionDoneStatus      = "✓ Context compaction complete — continuing turn..."
 )
 
-var compressionLog = func() *slog.Logger { return slog.Default().With("logger", "agent.conversation_compression") }
-
 // Runs fn and logs a returned error or panic at debug instead of propagating it
 func swallowCompression(message string, excInfo bool, fn func() error) {
 	defer func() {
 		if r := recover(); r != nil {
-			compressionLog().Debug(message, "error", fmt.Sprint(r), "exc_info", excInfo)
+			pkgLog().Debug(message, "error", fmt.Sprint(r), "exc_info", excInfo)
 		}
 	}()
 	if err := fn(); err != nil {
-		compressionLog().Debug(message, "error", err.Error(), "exc_info", excInfo)
+		pkgLog().Debug(message, "error", err.Error(), "exc_info", excInfo)
 	}
 }
 
@@ -170,7 +167,7 @@ func refreshAgentToolDefinitions(ctx context.Context, a *AIAgent) bool {
 			names = append(names, n)
 		}
 		sort.Strings(names)
-		compressionLog().Info(fmt.Sprintf("Compaction tool refresh added tools: %v", pyListRepr(names)))
+		pkgLog().Info(fmt.Sprintf("Compaction tool refresh added tools: %v", pyListRepr(names)))
 	}
 	return len(added) > 0
 }
@@ -185,7 +182,7 @@ func pyListRepr(names []string) string {
 
 var compressorCooldownStateFields = []string{"_summary_failure_cooldown_until", "_last_summary_error", "_cooldown_persist_failed"}
 
-// Engine whose per attempt bookkeeping can be snapshotted and restored by its hermes attribute names
+// Engine whose per attempt bookkeeping can be snapshotted and restored by its attribute names
 type AttemptStateSnapshotter interface {
 	SnapshotAttemptState() map[string]any
 	RestoreAttemptState(values map[string]any)
@@ -344,7 +341,7 @@ func pyTimeNow() float64 { return float64(time.Now().UnixNano()) / 1e9 }
 // Restores the per attempt snapshot after a pre commit hard cancel unless a newer attempt owns the compressor
 func restoreCompressorAttemptState(compressor any, snapshot map[string]any, durableAuthoritative *bool, durableState *state.CompressionCooldownRow, attemptGeneration *int) error {
 	if attemptGeneration != nil && !compressorAttemptIsCurrent(compressor, *attemptGeneration) {
-		compressionLog().Warn(fmt.Sprintf("Skipping stale compressor attempt-state restore: attempt generation %d no longer owns the compressor (current: %d). A newer (stall-fallback) attempt's state is preserved.",
+		pkgLog().Warn(fmt.Sprintf("Skipping stale compressor attempt-state restore: attempt generation %d no longer owns the compressor (current: %d). A newer (stall-fallback) attempt's state is preserved.",
 			*attemptGeneration, currentAttemptGeneration(compressor)))
 		return nil
 	}
@@ -354,7 +351,7 @@ func restoreCompressorAttemptState(compressor any, snapshot map[string]any, dura
 		defer lock.Unlock()
 	}
 	if attemptGeneration != nil && *attemptGeneration != 0 && currentAttemptGeneration(compressor) != *attemptGeneration {
-		compressionLog().Warn(fmt.Sprintf("Skipping stale compressor attempt-state restore at write time: attempt generation %d lost the compressor mid-restore.", *attemptGeneration))
+		pkgLog().Warn(fmt.Sprintf("Skipping stale compressor attempt-state restore at write time: attempt generation %d lost the compressor mid-restore.", *attemptGeneration))
 		return nil
 	}
 	if _, has := snapshot["_summary_failure_cooldown_until"]; has && !(durableAuthoritative != nil && !*durableAuthoritative) {
@@ -391,7 +388,7 @@ func captureAuthoritativeCooldownUnderLease(compressor any, attemptSnapshot map[
 	}
 	row, err := db.GetCompressionFailureCooldownRow(c.sessionID)
 	if err != nil {
-		compressionLog().Debug(fmt.Sprintf("authoritative compression cooldown capture failed: %v", err))
+		pkgLog().Debug(fmt.Sprintf("authoritative compression cooldown capture failed: %v", err))
 		return &no, nil
 	}
 	c.GetActiveCompressionFailureCooldown(true)

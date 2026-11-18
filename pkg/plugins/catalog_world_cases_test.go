@@ -36,8 +36,8 @@ func TestCatalogPlatformMismatchRefusesBeforeInstall(t *testing.T) {
 }
 
 func TestOwnerRepoHashSubdirShorthandResolvesLikeTheCatalogSpelling(t *testing.T) {
-	url, subdir, err := resolveGitURL("plastic-labs/honcho#hermes-plugin-honcho")
-	if err != nil || url != "https://github.com/plastic-labs/honcho.git" || subdir != "hermes-plugin-honcho" {
+	url, subdir, err := resolveGitURL("plastic-labs/honcho#icebath-plugin-honcho")
+	if err != nil || url != "https://github.com/plastic-labs/honcho.git" || subdir != "icebath-plugin-honcho" {
 		t.Fatalf("subdir shorthand %q %q %v", url, subdir, err)
 	}
 	url, subdir, err = resolveGitURL("owner/repo")

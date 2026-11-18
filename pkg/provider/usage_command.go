@@ -11,7 +11,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 )
 
-// Where the usage command reports a missing snapshot, stderr like the hermes command
+// Where the usage command reports a missing snapshot, stderr like the command
 var usageCommandErrOutput io.Writer = os.Stderr
 
 // UsageSnapshotDocument is the icebath usage --json document, keys stable and extended only by adding keys

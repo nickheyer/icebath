@@ -144,7 +144,7 @@ func mapsEqual(a, b map[string]string) bool {
 func TestPublicCloneAttemptsAnonymouslyWhenCredentialResolves(t *testing.T) {
 	dir := t.TempDir()
 	upstream := seedBareUpstream(t, dir)
-	target := "https://github.com/robbyczgw-cla/hermes-web-search-plus.git"
+	target := "https://github.com/acme/web-search-plus.git"
 	var cloneCalls [][]string
 	patch(t, &runProcess, func(ctx context.Context, spec runSpec) (runResult, error) {
 		if slices.Contains(spec.argv, "clone") {

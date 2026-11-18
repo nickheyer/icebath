@@ -3,7 +3,6 @@ package tools
 import (
 	"context"
 	"fmt"
-	"log/slog"
 	"math"
 	"os"
 	"os/exec"
@@ -25,8 +24,6 @@ const (
 	defaultOneshotMaxChildren      = 2
 	delegationChildTimeoutFloorSec = 30.0
 )
-
-var delegateToolLog = slog.Default().With("logger", "tools.delegate_tool")
 
 var highConcurrencyWarned, legacyMaxAsyncWarned atomic.Bool
 
@@ -76,13 +73,13 @@ func delegationEnvContext(env *Env) context.Context {
 
 // Dangerous command refusal a subagent sees by default, logged for audit
 func subagentAutoDeny(command, description string, _ map[string]any) string {
-	delegateToolLog.Warn(fmt.Sprintf("Subagent auto-denied dangerous command: %s (%s). Set delegation.subagent_auto_approve: true to allow.", command, description))
+	pkgLog().Warn(fmt.Sprintf("Subagent auto-denied dangerous command: %s (%s). Set delegation.subagent_auto_approve: true to allow.", command, description))
 	return "deny"
 }
 
 // One time approval a subagent gets under delegation.subagent_auto_approve, logged for audit
 func subagentAutoApprove(command, description string, _ map[string]any) string {
-	delegateToolLog.Warn(fmt.Sprintf("Subagent auto-approved dangerous command: %s (%s)", command, description))
+	pkgLog().Warn(fmt.Sprintf("Subagent auto-approved dangerous command: %s (%s)", command, description))
 	return "once"
 }
 
@@ -103,7 +100,7 @@ func delegationKnob[T any](ctx context.Context, key, envVar string, parse func(a
 	if val := LoadDelegationConfig(ctx)[key]; val != nil {
 		got, err := parse(val)
 		if err != nil {
-			delegateToolLog.Warn(strings.Replace(invalidMsg, "%r", pyrepr.Repr(val), 1))
+			pkgLog().Warn(strings.Replace(invalidMsg, "%r", pyrepr.Repr(val), 1))
 			return def
 		}
 		return got
@@ -149,7 +146,7 @@ func MaxConcurrentChildren(ctx context.Context) int {
 	}, DefaultMaxConcurrentChildren,
 		fmt.Sprintf("delegation.max_concurrent_children=%%r is not a valid integer; using default %d", DefaultMaxConcurrentChildren))
 	if result > 10 && LoadDelegationConfig(ctx)["max_concurrent_children"] != nil && highConcurrencyWarned.CompareAndSwap(false, true) {
-		delegateToolLog.Warn(fmt.Sprintf("delegation.max_concurrent_children=%d: each child consumes API tokens "+
+		pkgLog().Warn(fmt.Sprintf("delegation.max_concurrent_children=%d: each child consumes API tokens "+
 			"independently. High values multiply cost linearly.", result))
 	}
 	return result
@@ -220,7 +217,7 @@ func WorktreeIsolation(ctx context.Context) bool {
 // Background delegation cap equal to the concurrent child limit, a legacy max_async_children key warned once
 func MaxAsyncChildren(ctx context.Context) int {
 	if LoadDelegationConfig(ctx)["max_async_children"] != nil && legacyMaxAsyncWarned.CompareAndSwap(false, true) {
-		delegateToolLog.Warn("delegation.max_async_children is deprecated and ignored; " +
+		pkgLog().Warn("delegation.max_async_children is deprecated and ignored; " +
 			"delegation.max_concurrent_children now caps background " +
 			"delegations too. Remove the stale key from config.yaml.")
 	}
@@ -254,7 +251,7 @@ func MaxSpawnDepth(ctx context.Context) int {
 			return 0, err
 		}
 		if n < minSpawnDepth {
-			delegateToolLog.Warn(fmt.Sprintf("delegation.max_spawn_depth=%d below floor %d; using %d", n, minSpawnDepth, minSpawnDepth))
+			pkgLog().Warn(fmt.Sprintf("delegation.max_spawn_depth=%d below floor %d; using %d", n, minSpawnDepth, minSpawnDepth))
 		}
 		return max(minSpawnDepth, n), nil
 	}, DelegationMaxDepth, fmt.Sprintf("delegation.max_spawn_depth=%%r is not a valid integer; using default %d", DelegationMaxDepth))

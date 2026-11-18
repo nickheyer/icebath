@@ -120,18 +120,18 @@ func claimDueWorktreeRepos(repos []string, intervalSeconds float64) []string {
 // Prunes the due repos discover reports one sweep at a time, never propagating a failure
 func (s *Store) runWorktreeSweep(ctx context.Context, discover func(context.Context) []string, intervalSeconds float64, waitSeconds *float64) {
 	if !claimSweepSlot(waitSeconds) {
-		s.logAs("cron.scheduler_worktree_maintenance").Debug("Cron worktree maintenance skipped: another sweep is still running")
+		s.log.Debug("Cron worktree maintenance skipped: another sweep is still running")
 		return
 	}
 	defer releaseSweepSlot()
 	defer func() {
 		if r := recover(); r != nil {
-			s.logAs("cron.scheduler_worktree_maintenance").Debug(fmt.Sprintf("Cron worktree maintenance skipped: %v", r))
+			s.log.Debug(fmt.Sprintf("Cron worktree maintenance skipped: %v", r))
 		}
 	}()
 	for _, repo := range claimDueWorktreeRepos(discover(ctx), intervalSeconds) {
 		if err := worktreePruneStaleWorktrees(ctx, repo); err != nil {
-			s.logAs("cron.scheduler_worktree_maintenance").Debug(fmt.Sprintf("Cron worktree maintenance failed for %s: %s", repo, err))
+			s.log.Debug(fmt.Sprintf("Cron worktree maintenance failed for %s: %s", repo, err))
 		}
 	}
 }

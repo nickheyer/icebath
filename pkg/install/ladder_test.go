@@ -32,21 +32,6 @@ func isolatedLadder(t *testing.T, repo, commit string) (*Runner, *bytes.Buffer, 
 	return r, &out, homeDir, userHome
 }
 
-// Pending install receipt the run parked under the home metrics dir
-func ladderReceipt(t *testing.T, homeDir string) map[string]any {
-	t.Helper()
-	found, _ := filepath.Glob(filepath.Join(homeDir, "telemetry", "shared_metrics", "pending_installs", "*.json"))
-	if len(found) != 1 {
-		t.Fatalf("install receipts %v", found)
-	}
-	raw, _ := os.ReadFile(found[0])
-	var receipt map[string]any
-	if err := json.Unmarshal(raw, &receipt); err != nil {
-		t.Fatal(err)
-	}
-	return receipt
-}
-
 // One unattended ladder against a loopback release installs, publishes and records the pinned commit
 func TestInstallLadderInstallsAReleaseEndToEnd(t *testing.T) {
 	if runtime.GOOS == "windows" {
@@ -91,12 +76,9 @@ func TestInstallLadderInstallsAReleaseEndToEnd(t *testing.T) {
 	if err != nil || json.Unmarshal(raw, &marker) != nil || marker["pinnedCommit"] != commit || marker["pinnedBranch"] != "main" {
 		t.Fatalf("install receipt marker %q %v", raw, err)
 	}
-	if receipt := ladderReceipt(t, homeDir); receipt["outcome"] != "success" || receipt["failed_stage"] != "none" {
-		t.Fatalf("receipt %v", receipt)
-	}
 }
 
-// A digest mismatch fails the repository stage, keeps no binary and records the failure class
+// A digest mismatch fails the repository stage and keeps no binary
 func TestInstallLadderRefusesABinaryWhoseChecksumDisagrees(t *testing.T) {
 	goos, goarch := hostKey()
 	commit := strings.Repeat("cd", 20)
@@ -121,9 +103,5 @@ func TestInstallLadderRefusesABinaryWhoseChecksumDisagrees(t *testing.T) {
 		if _, err := os.Stat(p); err == nil {
 			t.Fatalf("%s left behind", p)
 		}
-	}
-	receipt := ladderReceipt(t, homeDir)
-	if receipt["outcome"] != "failed" || receipt["failed_stage"] != "repository" || receipt["failure_class"] != "download_digest_mismatch" {
-		t.Fatalf("receipt %v", receipt)
 	}
 }

@@ -5,7 +5,6 @@ import (
 	"strings"
 
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/observability"
 )
 
 // SendResult is the outcome of one adapter send or edit, gateway/platforms/base.py SendResult
@@ -156,17 +155,4 @@ func sendResultAttr(result any, name string) (any, bool) {
 		return *p, true
 	}
 	return v, true
-}
-
-// Fields of the result the shared metrics read, the raw response only when it is a dict
-func (r SendResult) MetricsSendResult() *observability.SendResult {
-	raw, _ := r.RawResponse.(map[string]any)
-	out := &observability.SendResult{Success: r.Success, RawResponse: raw, Error: r.Error, Retryable: r.Retryable}
-	if r.RetryAfter != nil {
-		out.RetryAfter = *r.RetryAfter
-	}
-	if r.ErrorKind != nil {
-		out.ErrorKind = *r.ErrorKind
-	}
-	return out
 }

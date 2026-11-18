@@ -147,17 +147,17 @@ func SendRelayPolicy(ctx context.Context) (bool, error) {
 		}
 		status, err := relayPostPolicy(policyURL, token, policy)
 		if err != nil {
-			relayLog().Warn(fmt.Sprintf("relay policy declaration failed for platform=%s (%s); continuing", platform, relayExcStr(err)))
+			pkgLog().Warn(fmt.Sprintf("relay policy declaration failed for platform=%s (%s); continuing", platform, relayExcStr(err)))
 			continue
 		}
 		if status == 200 {
 			anyDeclared = true
 			scopes, _ := policy.GetOr("freeResponseScopes", nil).([]any)
-			relayLog().Info(fmt.Sprintf("relay policy declared (platform=%s require_address=%s free_scopes=%d allow_bots=%s)",
+			pkgLog().Info(fmt.Sprintf("relay policy declared (platform=%s require_address=%s free_scopes=%d allow_bots=%s)",
 				pyrepr.Str(policy.GetOr("platform", nil)), pyrepr.Str(policy.GetOr("requireAddress", nil)), len(scopes),
 				pyrepr.Str(policy.GetOr("allowOtherBots", nil))))
 		} else {
-			relayLog().Warn(fmt.Sprintf("relay policy declaration for platform=%s returned HTTP %d; connector keeps prior/default policy", platform, status))
+			pkgLog().Warn(fmt.Sprintf("relay policy declaration for platform=%s returned HTTP %d; connector keeps prior/default policy", platform, status))
 		}
 	}
 	return anyDeclared, nil

@@ -121,10 +121,13 @@ func (a *app) stageImage(path string, then func(image *stagedImage, err error) t
 	})
 }
 
-// Attaches the image at a path to the draft, as /image and a dropped file do
+// Attaches the image at a path to the draft, as /image and a dropped file do, every page of a PDF as its own image
 func (a *app) attachImagePath(path string) tea.Cmd {
 	if a.store.ui.Sid == "" || trimJS(path) == "" {
 		return nil
+	}
+	if pdf, pages, isPDF := isPDFPath(path, a.store.typedPathBase()); isPDF {
+		return a.attachPDFPages(pdf, pages)
 	}
 	return a.stageImage(path, func(image *stagedImage, err error) tea.Cmd {
 		if err != nil {
@@ -466,13 +469,18 @@ func (a *app) tuiAction(id string) (tea.Cmd, bool) {
 	return a.stashAction(id)
 }
 
-// Stops to the shell with the line the classic CLI prints, the unsupported line on a platform without job control
+// Stops to the shell with the line saying fg brings the UI back
 func (a *app) suspend() tea.Cmd {
+	return tty.Suspend("\n" + i18n.T(a.ctx, "cli.tui.suspended", "", map[string]any{"agent_name": a.store.ui.Theme.Brand.Name}))
+}
+
+// Line of a suspend refused for want of job control, the Windows one or the one naming the shell
+func (a *app) suspendRefused() {
 	if runtime.GOOS == "windows" {
 		a.sys(i18n.T(a.ctx, "cli.tui.suspend_unsupported", "", nil))
-		return nil
+		return
 	}
-	return tty.Suspend("\n" + i18n.T(a.ctx, "cli.tui.suspended", "", map[string]any{"agent_name": a.store.ui.Theme.Brand.Name}))
+	a.sys(i18n.T(a.ctx, "cli.tui.suspend_no_job_control", "", map[string]any{"agent_name": a.store.ui.Theme.Brand.Name}))
 }
 
 // Messages of the composer and widget machinery the root update hands on
@@ -485,13 +493,19 @@ func (a *app) updateExtras(m tea.Msg) (bool, tea.Cmd) {
 			return true, a.pasted(m.text)
 		}
 		return true, a.pasteClipboardImage(false)
-	case widgetTickMsg:
-		return true, a.widgets.onTick(m)
+	case widgetTickedMsg:
+		a.widgets.onTicked(m)
+		return true, nil
 	case widgetsLoadedMsg:
 		a.widgets.loaded = true
 		return true, nil
 	case dieMsg:
 		return true, a.die(m.code)
+	case tty.SuspendRefusedMsg:
+		a.suspendRefused()
+		return true, nil
+	case tty.TerminateMsg:
+		return true, a.die(signalExitCode(m.Signal))
 	case completionDueMsg:
 		return true, a.askCompletion(m)
 	}

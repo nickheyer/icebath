@@ -325,7 +325,7 @@ func TestPromptCacheKeyStabilityTranscriptIdentityIsNotRewritten(t *testing.T) {
 
 func TestProviderStickyKeysDeclaredScopePinsTheStickyKey(t *testing.T) {
 	scope := DeclaredConversationScope(declaredAgent(nil, declaredRun1, declaredChatKey))
-	ctx := WithPortalAffinityScope(context.Background(), scope)
+	ctx := WithAffinityScope(context.Background(), scope)
 	first, second := declaredStickyKey(t, ctx, declaredRun1), declaredStickyKey(t, ctx, declaredRun2)
 	if first != second || first != scope {
 		t.Fatalf("%q %q %q", first, second, scope)
@@ -333,8 +333,8 @@ func TestProviderStickyKeysDeclaredScopePinsTheStickyKey(t *testing.T) {
 }
 
 func TestProviderStickyKeysWithoutADeclarationTheConversationIdStillWins(t *testing.T) {
-	ctx := WithPortalConversationContext(context.Background(), "parent-root")
-	if PortalAffinityScope(ctx) != "" {
+	ctx := WithConversationContext(context.Background(), "parent-root")
+	if AffinityScope(ctx) != "" {
 		t.Fatal("affinity scope set")
 	}
 	if got := declaredStickyKey(t, ctx, "delegate-child"); got != "parent-root" {
@@ -344,24 +344,10 @@ func TestProviderStickyKeysWithoutADeclarationTheConversationIdStillWins(t *test
 
 func TestProviderStickyKeysGrokConvIdFollowsTheDeclaredScope(t *testing.T) {
 	scope := DeclaredConversationScope(declaredAgent(nil, declaredRun1, declaredChatKey))
-	ctx := WithPortalAffinityScope(context.Background(), scope)
+	ctx := WithAffinityScope(context.Background(), scope)
 	headers, next := declaredGrokHeaders(t, ctx, declaredRun1), declaredGrokHeaders(t, ctx, declaredRun2)
 	if headers["x-grok-conv-id"] != scope || next["x-grok-conv-id"] != scope {
 		t.Fatalf("%v %v", headers, next)
-	}
-}
-
-func TestProviderStickyKeysNousStickyKeyFollowsTheDeclaredScope(t *testing.T) {
-	scope := DeclaredConversationScope(declaredAgent(nil, declaredRun1, declaredChatKey))
-	ctx := WithPortalAffinityScope(context.Background(), scope)
-	p := getProviderProfile(ctx, "nous")
-	if p == nil {
-		t.Fatal("nous profile missing")
-	}
-	body := p.BuildExtraBody(declaredRun1, map[string]any{hookCtxKey: ctx})
-	next := p.BuildExtraBody(declaredRun2, map[string]any{hookCtxKey: ctx})
-	if stringOf(body.Vals["session_id"]) != scope || stringOf(next.Vals["session_id"]) != scope {
-		t.Fatalf("%v %v", body, next)
 	}
 }
 

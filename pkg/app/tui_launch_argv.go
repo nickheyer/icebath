@@ -19,10 +19,7 @@ func LaunchTUI(ctx context.Context, l TUILaunch) int {
 		setupWorktree: func(ctx context.Context) (map[string]any, error) {
 			return setupTUIWorktree(ctx, os.Stderr)
 		},
-		run: runTerminalUI,
-		printSummary: func(ctx context.Context, sessionID, activeSessionFile string) {
-			printTUIExitSummary(ctx, os.Stdout, sessionID, activeSessionFile)
-		},
+		run:      runTerminalUI,
 		relaunch: relaunch,
 		stdout:   os.Stdout,
 		stderr:   os.Stderr,

@@ -15,8 +15,8 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 	"github.com/gorilla/websocket"
-	"github.com/nickheyer/icebath/pkg/gateway"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+
+	"github.com/nickheyer/icebath/pkg/tuigateway"
 )
 
 const (
@@ -51,7 +51,10 @@ type gatewayEventMsg struct {
 	Type      string
 	SessionID string
 	Payload   map[string]any
-	Params    map[string]any
+	Frame     tuigateway.EventEnvelope
+	// Owner epoch and execution generation a canonical frame or its payload stamps, nil when unstamped
+	Epoch      *int64
+	Generation *int64
 }
 
 // Request the gateway sent the terminal UI, answered once through respond, fail or decline
@@ -71,14 +74,6 @@ type serverRequestMsg struct{ Request *serverRequest }
 
 // Gateway transport ended with its close code, the client already scheduling its reconnect
 type gatewayExitMsg struct{ Code int }
-
-// Grant of the local bootstrap, the private WebSocket target of the shared owner
-type localGrant struct {
-	URL        string
-	Protocols  []string
-	ProfileID  string
-	InstanceID string
-}
 
 // Clock the client schedules its timers on, wall time in production
 type gatewayClock interface {
@@ -145,16 +140,13 @@ func terminalBootstrapLine(message string) string {
 	return ""
 }
 
-// Grant of the in process bootstrap within the bootstrap deadline
-func localBootstrap(ctx context.Context, start, recover bool) (localGrant, error) {
-	ctx, cancel := context.WithTimeout(ctx, bootstrapTimeout)
-	defer cancel()
-	return GatewayBootstrap(ctx, start, recover)
-}
-
-// Socket on a gateway URL with no frame size cap
-func dialGatewaySocket(ctx context.Context, target string, protocols []string) (gateway.GatewaySocket, error) {
-	return gateway.DialGatewaySocket(ctx, target, protocols, 0)
+// Owner attach of the launcher held to the bootstrap deadline
+func boundedAttach(attach func(context.Context, bool, bool) (Grant, error)) func(context.Context, bool, bool) (Grant, error) {
+	return func(ctx context.Context, start, recover bool) (Grant, error) {
+		ctx, cancel := context.WithTimeout(ctx, bootstrapTimeout)
+		defer cancel()
+		return attach(ctx, start, recover)
+	}
 }
 
 // Lookup over the environment the TUI launched with, kept before the bootstrap scrubs the process env
@@ -175,8 +167,8 @@ type gatewayConn struct {
 	dialErr error
 	cancel  context.CancelFunc
 
-	sock   gateway.GatewaySocket
-	link   *gateway.GatewayClient
+	sock   wireSocket
+	link   *wireLink
 	open   bool
 	closed bool
 }
@@ -185,7 +177,7 @@ type gatewayConn struct {
 func (g *gatewayConn) shut() {
 	g.cancel()
 	if g.link != nil {
-		go g.link.Close()
+		go g.link.close()
 	}
 }
 
@@ -210,8 +202,8 @@ type unsettledCreate struct {
 
 // Shared gateway client with bootstrap, attach, readiness, heartbeat and reconnect
 type gatewayClient struct {
-	bootstrap func(ctx context.Context, start, recover bool) (localGrant, error)
-	dial      func(ctx context.Context, target string, protocols []string) (gateway.GatewaySocket, error)
+	bootstrap func(ctx context.Context, start, recover bool) (Grant, error)
+	dial      func(ctx context.Context, target string, protocols []string) (wireSocket, error)
 	clock     gatewayClock
 	env       func(string) string
 	timeout   time.Duration
@@ -243,7 +235,7 @@ type gatewayClient struct {
 	recoveries      []time.Time
 
 	isCanonical     bool
-	contract        *creationContract
+	contract        *tuigateway.SessionCreateDescriptor
 	describedSkin   map[string]any
 	capabilities    []string
 	describing      *describeFlight
@@ -263,9 +255,9 @@ type gatewayClient struct {
 	pingSeq        int
 }
 
-// Client of the local shared gateway, started by start and subscribed by attach
-func newGatewayClient() *gatewayClient {
-	return &gatewayClient{bootstrap: localBootstrap, dial: dialGatewaySocket, clock: systemClock{}, env: launchEnv(), timeout: requestTimeout()}
+// Client of the local shared gateway reached through the launcher's attach, started by start and subscribed by attach
+func newGatewayClient(attach func(context.Context, bool, bool) (Grant, error)) *gatewayClient {
+	return &gatewayClient{bootstrap: boundedAttach(attach), dial: dialGatewaySocket, clock: systemClock{}, env: launchEnv(), timeout: requestTimeout()}
 }
 
 // Whether the client attaches an explicit or granted WebSocket
@@ -364,13 +356,27 @@ func (c *gatewayClient) locked(step func()) {
 
 // Event of a gateway frame's params, its payload an object or empty
 func wireEvent(params map[string]any) gatewayEventMsg {
-	ev := gatewayEventMsg{Payload: map[string]any{}, Params: params}
-	ev.Type, _ = params["type"].(string)
-	ev.SessionID, _ = params["session_id"].(string)
+	ev := gatewayEventMsg{Payload: map[string]any{}}
+	_ = tuigateway.Loose(params, &ev.Frame)
+	ev.Type, ev.SessionID = ev.Frame.Type, ev.Frame.SessionID
 	if payload, isDict := params["payload"].(map[string]any); isDict {
 		ev.Payload = payload
 	}
 	return ev
+}
+
+// Stamp of a canonical frame, the frame's own first and the payload's when the frame carries none
+func frameStamp(frame *int64, payload map[string]any, key string) *int64 {
+	if frame != nil {
+		return frame
+	}
+	var stamp struct {
+		Value *int64 `json:"value"`
+	}
+	if raw, has := payload[key]; has && tuigateway.Loose(map[string]any{"value": raw}, &stamp) == nil {
+		return stamp.Value
+	}
+	return nil
 }
 
 // Event off the socket, stamped with the owner's execution epoch on a canonical gateway and held for a pending attach
@@ -386,26 +392,9 @@ func (c *gatewayClient) publishWireLocked(conn *gatewayConn, ev gatewayEventMsg)
 		return
 	}
 	if c.isCanonical {
-		payload := canonicalEvent(ev).Payload
-		stamp := func(name string) (any, bool) {
-			if v, has := ev.Params[name]; has && v != nil {
-				return v, true
-			}
-			v, has := payload[name]
-			return v, has
-		}
-		out := make(map[string]any, len(payload)+2)
-		for k, v := range payload {
-			out[k] = v
-		}
-		if epoch, has := stamp("authority_epoch"); has {
-			out["execution_epoch"] = jsString(epoch)
-		}
-		if generation, has := stamp("execution_generation"); has {
-			out["execution_generation"] = generation
-		}
-		ev.Payload = out
-		if c.hold != nil && ev.Params["session_id"] == c.hold.sid {
+		ev.Epoch = frameStamp(ev.Frame.AuthorityEpoch, ev.Payload, "authority_epoch")
+		ev.Generation = frameStamp(ev.Frame.ExecutionGeneration, ev.Payload, "execution_generation")
+		if c.hold != nil && ev.Frame.SessionID == c.hold.sid {
 			c.hold.frames = append(c.hold.frames, ev)
 			return
 		}
@@ -473,20 +462,19 @@ func (c *gatewayClient) describeRuntime(ctx context.Context) error {
 	}
 	c.mu.Unlock()
 	if owner {
-		value, err := c.requestOverWebSocket(context.Background(), "runtime.describe", map[string]any{}, 0)
+		value, err := c.requestOverWebSocket(context.Background(), tuigateway.CanonicalRuntimeDescribe.Name(), wireParams(tuigateway.RuntimeDescribeParams{}), 0)
+		var description tuigateway.RuntimeDescribeResult
+		if err == nil {
+			description, err = tuigateway.CanonicalRuntimeDescribe.Result(value)
+		}
 		c.mu.Lock()
 		if err == nil {
-			description, _ := value.(map[string]any)
-			c.contract = parseCreationContract(description["session_create"])
-			c.capabilities = nil
-			if list, isList := description["capabilities"].([]any); isList {
-				for _, item := range list {
-					if s, isStr := item.(string); isStr {
-						c.capabilities = append(c.capabilities, s)
-					}
-				}
+			c.contract = &description.SessionCreate
+			c.capabilities = description.Capabilities
+			c.describedSkin = nil
+			if description.Skin != nil {
+				c.describedSkin = wireParams(description.Skin)
 			}
-			c.describedSkin, _ = description["skin"].(map[string]any)
 		} else if c.describing == flight {
 			c.describing = nil
 		}
@@ -500,25 +488,6 @@ func (c *gatewayClient) describeRuntime(ctx context.Context) error {
 	case <-ctx.Done():
 		return ctx.Err()
 	}
-}
-
-// Creation contract of a runtime.describe answer, nil when it carries none
-func parseCreationContract(v any) *creationContract {
-	raw, isDict := v.(map[string]any)
-	if !isDict {
-		return nil
-	}
-	strs := func(list any) []string {
-		var out []string
-		items, _ := list.([]any)
-		for _, item := range items {
-			if s, isStr := item.(string); isStr {
-				out = append(out, s)
-			}
-		}
-		return out
-	}
-	return &creationContract{Sources: strs(raw["sources"]), Parameters: strs(raw["parameters"])}
 }
 
 func (c *gatewayClient) clearReadyTimerLocked() {
@@ -652,7 +621,7 @@ func (c *gatewayClient) holdAttach(sessionID string) *attachHold {
 }
 
 // Ends a hold, replaying only the frames past the applied snapshot's fence, or all of them without one
-func (c *gatewayClient) settleAttach(hold *attachHold, snapshot map[string]any) {
+func (c *gatewayClient) settleAttach(hold *attachHold, snapshot *tuigateway.CanonicalSnapshot) {
 	c.locked(func() {
 		if hold == nil || c.hold != hold {
 			return
@@ -663,71 +632,31 @@ func (c *gatewayClient) settleAttach(hold *attachHold, snapshot map[string]any) 
 				c.publishLocked(ev)
 				continue
 			}
-			fence := float64(-1)
-			if last, has := snapshot["last_sequence"]; has && last != nil {
-				fence = jsNumberOf(last)
-			}
-			seq, isNum := ev.Params["seq"].(float64)
-			epoch, hasEpoch := ev.Params["replay_epoch"]
-			want, hasWant := snapshot["replay_epoch"]
-			if hasEpoch == hasWant && jsStrictEqual(epoch, want) && isNum && seq > fence {
+			seq := ev.Frame.Seq
+			if ev.Frame.ReplayEpoch != nil && *ev.Frame.ReplayEpoch == snapshot.ReplayEpoch && seq != nil && *seq > snapshot.LastSequence {
 				c.publishLocked(ev)
 			}
 		}
 	})
 }
 
-// Number of a JSON value as JavaScript Number converts it, NaN when it has none
-func jsNumberOf(v any) float64 {
-	switch t := v.(type) {
-	case float64:
-		return t
-	case bool:
-		if t {
-			return 1
-		}
-		return 0
-	case string:
-		if f, ok := jsNumber(t); ok {
-			return f
-		}
-	case nil:
-		return 0
-	}
-	return math.NaN()
-}
-
-// Whether two decoded JSON values are equal under JavaScript ===, compound values never
-func jsStrictEqual(a, b any) bool {
-	switch a.(type) {
-	case nil, bool, float64, string:
-		return a == b
-	}
-	return false
-}
-
 // Publishes a resumed session's shared prompts and redelivers its open server requests
-func (c *gatewayClient) hydrateSharedPrompts(result map[string]any) {
+func (c *gatewayClient) hydrateSharedPrompts(snapshot *tuigateway.CanonicalSnapshot) {
 	c.locked(func() {
-		if !c.isCanonical {
+		if !c.isCanonical || snapshot == nil {
 			return
 		}
-		sid, _ := result["session_id"].(string)
-		prompts, _ := result["prompts"].([]any)
-		for _, item := range prompts {
-			prompt, _ := item.(map[string]any)
-			payload := withKeys(prompt, "execution_epoch", jsString(result["authority_epoch"]))
-			c.publishLocalEventLocked(gatewayEventMsg{Type: jsString(prompt["kind"]) + ".request", SessionID: sid, Payload: payload})
+		for _, prompt := range snapshot.Prompts {
+			generation := prompt.ExecutionGeneration
+			c.publishLocalEventLocked(gatewayEventMsg{Type: string(prompt.Kind) + ".request", SessionID: snapshot.SessionID,
+				Payload: wireParams(prompt), Epoch: ptr(snapshot.AuthorityEpoch), Generation: &generation})
 		}
-		open, _ := result["open_requests"].([]any)
-		for _, item := range open {
-			req, _ := item.(map[string]any)
-			params, _ := req["params"].(map[string]any)
+		for _, req := range snapshot.OpenRequests {
+			params := req.Params
 			if params == nil {
 				params = map[string]any{}
 			}
-			method, _ := req["method"].(string)
-			c.deliverRequestLocked(req["id"], method, params, true)
+			c.deliverRequestLocked(req.ID, req.Method, params, true)
 		}
 	})
 }
@@ -738,11 +667,7 @@ func (c *gatewayClient) publishLocalEvent(ev gatewayEventMsg) {
 }
 
 func (c *gatewayClient) publishLocalEventLocked(ev gatewayEventMsg) {
-	params := map[string]any{"type": ev.Type, "payload": ev.Payload}
-	if ev.SessionID != "" {
-		params["session_id"] = ev.SessionID
-	}
-	ev.Params = params
+	ev.Frame = tuigateway.EventEnvelope{Type: ev.Type, SessionID: ev.SessionID, Payload: ev.Payload}
 	c.publishLocked(ev)
 }
 
@@ -853,12 +778,8 @@ func (c *gatewayClient) startAttachedGatewayLocked(target string, protocols []st
 				c.pushLogLocked(fmt.Sprintf("[lifecycle] stale websocket close ignored code=%d", closeAbnormal))
 				return
 			}
-			link := gateway.NewGatewayClient(sock)
-			link.SetFrameHooks(gateway.FrameHooks{
-				Inbound:   func(_ string, frame *pyjson.Object) { c.inbound(conn, frame) },
-				Malformed: func(raw string) { c.malformed(conn, raw) },
-			})
-			conn.sock, conn.link, conn.open = sock, link.Start(), true
+			link := newWireLink(sock, func(frame map[string]any) { c.inbound(conn, frame) }, func(raw string) { c.malformed(conn, raw) })
+			conn.sock, conn.link, conn.open = sock, link.start(), true
 			go c.pump(conn)
 			if c.isCanonical {
 				c.describeThenReadyLocked(conn, map[string]any{})
@@ -878,14 +799,14 @@ func (c *gatewayClient) transportErrorLocked(conn *gatewayConn) {
 }
 
 // Liveness and heartbeat acknowledgement of every frame the current socket reads
-func (c *gatewayClient) inbound(conn *gatewayConn, frame *pyjson.Object) {
+func (c *gatewayClient) inbound(conn *gatewayConn, frame map[string]any) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	if c.conn != conn {
 		return
 	}
 	c.lastLiveness = c.clock.Now()
-	if id, isStr := frame.Vals["id"].(string); isStr {
+	if id, isStr := frame["id"].(string); isStr {
 		if i := slices.Index(c.pings, id); i >= 0 {
 			c.pings = slices.Delete(c.pings, i, i+1)
 		}
@@ -904,14 +825,10 @@ func (c *gatewayClient) malformed(conn *gatewayConn, raw string) {
 
 // Routes the frames of one socket generation to the subscriber until its reader ends with the close
 func (c *gatewayClient) pump(conn *gatewayConn) {
-	q := conn.link.EventQueue()
 	for {
-		item, err := q.Get(context.Background())
-		if err != nil {
-			return
-		}
-		if _, isErr := item.(error); isErr {
-			code, clean := closeCode(conn.link.ReadError())
+		frame, more := conn.link.next()
+		if !more {
+			code, clean := closeCode(conn.link.readError())
 			c.locked(func() {
 				conn.closed = true
 				if !clean {
@@ -921,7 +838,7 @@ func (c *gatewayClient) pump(conn *gatewayConn) {
 			})
 			return
 		}
-		c.route(conn, item)
+		c.route(conn, frame)
 	}
 }
 
@@ -950,15 +867,9 @@ func (c *gatewayClient) onSocketCloseLocked(conn *gatewayConn, code int) {
 }
 
 // Routes one frame of the current socket, an event to the wire publisher and a method with an id as a server request
-func (c *gatewayClient) route(conn *gatewayConn, item any) {
-	decoded, err := jsValue(item)
-	frame, isDict := decoded.(map[string]any)
+func (c *gatewayClient) route(conn *gatewayConn, frame map[string]any) {
 	c.locked(func() {
 		if c.conn != conn {
-			return
-		}
-		if err != nil || !isDict {
-			c.protocolErrorLocked("malformed websocket frame", fmt.Sprint(item), "(empty frame)")
 			return
 		}
 		method, isMethod := frame["method"].(string)
@@ -1035,7 +946,7 @@ func (r *serverRequest) send(member string, value any) {
 	conn := r.client.conn
 	r.client.mu.Unlock()
 	if conn != nil && conn.link != nil {
-		_ = conn.link.SendFrame(raw)
+		_ = conn.link.sendFrame(raw)
 	}
 }
 
@@ -1045,16 +956,6 @@ func (r *serverRequest) respond(result any) { r.send("result", result) }
 // Answers the request with an error
 func (r *serverRequest) fail(code int, message string) {
 	r.send("error", map[string]any{"code": code, "message": message})
-}
-
-// Declines a request this client did not show, answered only to a backend that counts declines
-func (r *serverRequest) decline(message string) {
-	r.client.mu.Lock()
-	counts := r.client.countsDeclines
-	r.client.mu.Unlock()
-	if counts {
-		r.send("error", map[string]any{"code": jsonRPCSessionNotShown, "message": message})
-	}
 }
 
 // Answers a request no handler took with method not found and logs it
@@ -1198,12 +1099,12 @@ func (c *gatewayClient) call(ctx context.Context, conn *gatewayConn, method stri
 	if params == nil {
 		params = map[string]any{}
 	}
-	result, err := conn.link.RPCTimeout(callCtx, method, wireValue(params).(map[string]any), -1)
+	value, err := conn.link.call(callCtx, method, params)
 	if err != nil {
-		if refusal, isRefusal := err.(*gateway.GatewayRPCError); isRefusal {
-			return nil, rpcErrorFromFrame(refusal.Raw)
+		if refusal, isRefusal := err.(*wireRefusal); isRefusal {
+			return nil, rpcErrorFromFrame(refusal.member)
 		}
-		var gone *gateway.GatewayClientError
+		var gone *linkGoneError
 		if errors.As(err, &gone) && ctx.Err() == nil {
 			<-reqCtx.Done()
 		}
@@ -1216,18 +1117,13 @@ func (c *gatewayClient) call(ctx context.Context, conn *gatewayConn, method stri
 		}
 		return nil, err
 	}
-	value, err := jsValue(result)
-	if err != nil {
-		return nil, err
-	}
 	c.deliverOpenRequests(value)
 	return value, nil
 }
 
 // Typed refusal of a response frame's error member, the fallback message when it carries none
 func rpcErrorFromFrame(member any) *rpcError {
-	decoded, _ := jsValue(member)
-	raw, _ := decoded.(map[string]any)
+	raw, _ := member.(map[string]any)
 	out := &rpcError{Message: "Icebath RPC failed"}
 	if message, isStr := raw["message"].(string); isStr && message != "" {
 		out.Message = message
@@ -1389,7 +1285,7 @@ func (c *gatewayClient) createCanonical(ctx context.Context, prepared map[string
 		}
 		return nil, err
 	}
-	return canonicalResult("session.create", value, params), nil
+	return value, nil
 }
 
 // Detaches for good with no reconnect and every request failed, the shared gateway running on for other clients
@@ -1466,7 +1362,7 @@ func (c *gatewayClient) heartbeatTick(conn *gatewayConn, token *int) {
 	c.armHeartbeatLocked(conn, token)
 	link := conn.link
 	c.mu.Unlock()
-	if err := link.SendFrame(`{"jsonrpc":"2.0","id":"` + id + `","method":"gateway.ping","params":{}}`); err != nil {
+	if err := link.sendFrame(`{"jsonrpc":"2.0","id":"` + id + `","method":"gateway.ping","params":{}}`); err != nil {
 		c.locked(func() {
 			if c.heartbeatToken == token {
 				c.stopHeartbeatLocked()
@@ -1482,46 +1378,4 @@ func (c *gatewayClient) stopHeartbeatLocked() {
 		c.heartbeatStop()
 	}
 	c.heartbeatStop, c.heartbeatToken = nil, nil
-}
-
-// Request value as it goes on the wire, whole numbers as integers so the owner reads counts and revisions as such
-func wireValue(v any) any {
-	switch x := v.(type) {
-	case map[string]any:
-		out := make(map[string]any, len(x))
-		for k, item := range x {
-			out[k] = wireValue(item)
-		}
-		return out
-	case []any:
-		out := make([]any, len(x))
-		for i, item := range x {
-			out[i] = wireValue(item)
-		}
-		return out
-	case []map[string]any:
-		out := make([]any, len(x))
-		for i, item := range x {
-			out[i] = wireValue(item)
-		}
-		return out
-	case float64:
-		if x == math.Trunc(x) && math.Abs(x) < 1<<53 {
-			return int64(x)
-		}
-	}
-	return v
-}
-
-// Value in the JSON data model the wire carries, objects as maps and numbers as float64
-func jsValue(v any) (any, error) {
-	raw, err := pyjson.Dumps(v, pyjson.SortKeys(false))
-	if err != nil {
-		return nil, err
-	}
-	var out any
-	if err := json.Unmarshal([]byte(raw), &out); err != nil {
-		return nil, err
-	}
-	return out, nil
 }

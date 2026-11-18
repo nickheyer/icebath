@@ -56,7 +56,7 @@ func (a *RelayAdapter) Disconnect(ctx context.Context) error {
 	}
 	remaining := math.Max(0, budget-time.Since(started).Seconds())
 	if err := a.transport.Disconnect(context.WithoutCancel(ctx), &remaining); err != nil {
-		relayAdapterLog().Debug("relay transport disconnect failed during drain", "exc_info", err)
+		pkgLog().Debug("relay transport disconnect failed during drain", "exc_info", err)
 	}
 	return ctx.Err()
 }
@@ -92,7 +92,7 @@ func (a *RelayAdapter) ReleaseRedial() bool {
 func relayToggleRedial(name string, toggle func()) (took bool) {
 	defer func() {
 		if r := recover(); r != nil {
-			relayAdapterLog().Debug(fmt.Sprintf("relay %s failed", name), "exc_info", fmt.Errorf("%v", r))
+			pkgLog().Debug(fmt.Sprintf("relay %s failed", name), "exc_info", fmt.Errorf("%v", r))
 			took = false
 		}
 	}()
@@ -379,7 +379,7 @@ func (a *RelayAdapter) DeleteMessage(ctx context.Context, chatID, messageID stri
 		if ctx.Err() != nil {
 			return false, err
 		}
-		relayAdapterLog().Debug("relay delete_message failed", "exc_info", err)
+		pkgLog().Debug("relay delete_message failed", "exc_info", err)
 		return false, nil
 	}
 	return pyrepr.Truthy(result["success"]), nil
@@ -420,7 +420,7 @@ func (a *RelayAdapter) typingFrame(ctx context.Context, chatID string, metadata 
 		if ctx.Err() != nil {
 			return err
 		}
-		relayAdapterLog().Debug(fmt.Sprintf("relay %s failed for %s", lane, chatID), "exc_info", err)
+		pkgLog().Debug(fmt.Sprintf("relay %s failed for %s", lane, chatID), "exc_info", err)
 	}
 	return nil
 }

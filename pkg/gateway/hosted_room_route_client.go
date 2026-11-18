@@ -162,6 +162,16 @@ func (c *routeStatusPeerClient) Stop(ctx context.Context, dispatch *pyjson.Objec
 	return trackedCall(c, "stop", func() (map[string]any, error) { return c.client.Stop(ctx, dispatch, grant) })
 }
 
+func (c *routeStatusPeerClient) Probe(grant string) (map[string]any, error) {
+	return trackedCall(c, "probe", func() (map[string]any, error) { return c.client.(peerProber).Probe(grant) })
+}
+
+func (c *routeStatusPeerClient) SendFile(ctx context.Context, grant string, file map[string]any, data []byte) (map[string]any, error) {
+	return trackedCall(c, "send_file", func() (map[string]any, error) {
+		return c.client.(peerFileSender).SendFile(ctx, grant, file, data)
+	})
+}
+
 func (c *routeStatusPeerClient) StopReceipt(ctx context.Context, taskID string, executionGeneration int64, grant string) (map[string]any, error) {
 	return trackedCall(c, "stop_receipt", func() (map[string]any, error) {
 		return c.client.(peerStopReceipter).StopReceipt(ctx, taskID, executionGeneration, grant)

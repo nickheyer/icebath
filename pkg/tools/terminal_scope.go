@@ -6,7 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
-	"log/slog"
 	"os"
 	"path/filepath"
 	"sort"
@@ -51,7 +50,7 @@ func (e *TerminalPolicyUnavailable) Error() string {
 var terminalConfigEnvMap = func() map[string]string {
 	m := map[string]string{"backend": "TERMINAL_ENV"}
 	for _, key := range []string{
-		"modal_mode", "degraded_mode", "cwd", "temp_dir", "timeout", "lifetime_seconds",
+		"degraded_mode", "cwd", "temp_dir", "timeout", "lifetime_seconds",
 		"docker_image", "docker_forward_env", "modal_image",
 		"daytona_image", "vercel_runtime", "vercel_image", "ssh_host", "ssh_user", "ssh_port", "ssh_key",
 		"container_cpu", "container_memory", "container_disk", "container_persistent",
@@ -356,7 +355,7 @@ func PrepareProfileTerminalScope(ctx context.Context, h string, envOverlay map[s
 	if errors.As(err, &unavailable) {
 		reason = unavailable.Reason
 	}
-	slog.Default().Warn(fmt.Sprintf("terminal policy unavailable: %s", reason))
+	pkgLog().Warn(fmt.Sprintf("terminal policy unavailable: %s", reason))
 	return &TerminalScope{Refusal: &TerminalPolicyRefusal{Reason: reason}}
 }
 

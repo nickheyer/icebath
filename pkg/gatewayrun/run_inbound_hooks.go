@@ -27,7 +27,7 @@ func (r *GatewayRunner) hmPreGatewayDispatchHook(ctx context.Context, event *gat
 	results := func() (results []any) {
 		defer func() {
 			if rec := recover(); rec != nil {
-				inboundLog().Warn(fmt.Sprintf("pre_gateway_dispatch invocation failed: %s", pyrepr.Str(rec)))
+				pkgLog().Warn(fmt.Sprintf("pre_gateway_dispatch invocation failed: %s", pyrepr.Str(rec)))
 				results = nil
 			}
 		}()
@@ -51,7 +51,7 @@ func (r *GatewayRunner) hmPreGatewayDispatchHook(ctx context.Context, event *gat
 			if source.ChatID != "" {
 				chat = source.ChatID
 			}
-			inboundLog().Info(fmt.Sprintf("pre_gateway_dispatch skip: reason=%s platform=%s chat=%s", pyrepr.Str(result["reason"]), platform, chat))
+			pkgLog().Info(fmt.Sprintf("pre_gateway_dispatch skip: reason=%s platform=%s chat=%s", pyrepr.Str(result["reason"]), platform, chat))
 			return nil
 		case "rewrite":
 			if text, ok := result["text"].(string); ok {

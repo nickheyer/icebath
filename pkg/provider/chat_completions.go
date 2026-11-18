@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"io"
 	"net"
 	"net/http"
@@ -14,6 +13,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/state"
@@ -318,7 +319,7 @@ func (c *chatCompletionsClient) Stream(ctx context.Context, req *Request, fn Str
 			c.streamOptionsRejected = true
 			c.mu.Unlock()
 			if !already {
-				catalogLog.Info(fmt.Sprintf("Endpoint rejected stream_options (HTTP %d); retrying without it for this client.", apiErr.StatusCode))
+				pkgLog().Info(fmt.Sprintf("Endpoint rejected stream_options (HTTP %d); retrying without it for this client.", apiErr.StatusCode))
 				continue
 			}
 		}
@@ -388,7 +389,7 @@ func (c *chatCompletionsClient) streamOnce(ctx context.Context, req *Request, p 
 				return nil, false, c.httpError(resp, data)
 			}
 		}
-		catalogLog.Info(fmt.Sprintf("Streaming request returned a final response object instead of an iterator; switching %s/%s to non-streaming for this session.", orUnknown2(c.route.Provider), orUnknown2(c.route.Model)))
+		pkgLog().Info(fmt.Sprintf("Streaming request returned a final response object instead of an iterator; switching %s/%s to non-streaming for this session.", orUnknown2(c.route.Provider), orUnknown2(c.route.Model)))
 		c.mu.Lock()
 		c.nonStreaming = true
 		c.mu.Unlock()

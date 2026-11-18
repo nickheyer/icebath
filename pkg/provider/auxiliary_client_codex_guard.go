@@ -6,7 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"log/slog"
 	"net"
 	"net/http"
 	"runtime"
@@ -77,7 +76,7 @@ func auxCloseQuietly(target any, failureNote string) {
 		return
 	}
 	if err := closer.Close(); err != nil && failureNote != "" {
-		slog.Debug("Codex auxiliary: "+failureNote, "error", err)
+		pkgLog().Debug("Codex auxiliary: "+failureNote, "error", err)
 	}
 }
 
@@ -216,14 +215,14 @@ func (g *auxCodexStreamGuard) closeClientOnTimeout(owner bool) {
 	} else {
 		if err := auxRecoverRaise(func() {
 			count := forceCloseTCPSockets(g.client)
-			slog.Info(fmt.Sprintf("Codex auxiliary client aborted (timeout, tcp_force_closed=%d, deferred_close=stranger_thread)", count))
+			pkgLog().Info(fmt.Sprintf("Codex auxiliary client aborted (timeout, tcp_force_closed=%d, deferred_close=stranger_thread)", count))
 		}); err != nil {
-			slog.Debug("Codex auxiliary: client abort during timeout failed", "error", err)
+			pkgLog().Debug("Codex auxiliary: client abort during timeout failed", "error", err)
 		}
 		g.closeAttemptStream("attempt stream close during stranger-thread timeout failed", false)
 	}
 	if err := auxRecoverRaise(func() { auxEvictCachedClientInstance(g.client) }); err != nil {
-		slog.Debug("Codex auxiliary: cache eviction on timeout failed", "error", err)
+		pkgLog().Debug("Codex auxiliary: cache eviction on timeout failed", "error", err)
 	}
 }
 

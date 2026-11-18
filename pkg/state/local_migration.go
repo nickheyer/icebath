@@ -111,14 +111,24 @@ func LegacyCreationSource(row *pyjson.Object) (any, error) {
 	return source, nil
 }
 
-// Whether the row's user_id is the Nous account label a legacy client history row carried, not an owner
+// Prefix of the account label client history rows of the retired hosted sign in carry as user_id
+const retiredAccountLabelPrefix = "nous:"
+
+// Whether the row's user_id is the retired hosted account label a client history row carried, not an owner
 func LegacyAccountLabel(row *pyjson.Object) (bool, error) {
 	source, err := rowSource(row)
 	if err != nil {
 		return false, err
 	}
 	userID, ok := rowGet(row, "user_id").(string)
-	return source == ClientHistorySource && ok && strings.HasPrefix(userID, "nous:"), nil
+	return source == ClientHistorySource && ok && strings.HasPrefix(userID, retiredAccountLabelPrefix), nil
+}
+
+// Clears the retired hosted account label from stored client history rows so they read as having no owner
+func clearRetiredAccountLabels(ctx context.Context, conn SQLiteConn) error {
+	_, err := conn.ExecContext(ctx, "UPDATE sessions SET user_id = NULL WHERE source = ? AND substr(user_id, 1, ?) = ?",
+		ClientHistorySource, len(retiredAccountLabelPrefix), retiredAccountLabelPrefix)
+	return err
 }
 
 // Whether the subject owns the login stamp a legacy row carries

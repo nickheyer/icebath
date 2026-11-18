@@ -30,5 +30,5 @@ func CheckRuntime(ctx context.Context, projectRoot string) (string, error) {
 	return "install out of sync (" + strings.Join(problems, "; ") + ") — " + remedy, nil
 }
 
-// Store activation the startup verdict runs, the pm.activate attribute hermes tests replace
+// Store activation the startup verdict runs, the pm.activate attribute tests replace
 var checkRuntimeActivate = pm.Activate

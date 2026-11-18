@@ -54,7 +54,7 @@ func (r *GatewayRunner) claimActiveSessionSlot(ctx context.Context, sessionKey s
 		"platform": platform, "chat_id": chatID, "user_id": userID, "live_session_id": sessionKey,
 	}, "", false)
 	if err != nil {
-		runLog().Warn(fmt.Sprintf("Failed to claim active session slot: %v", err))
+		pkgLog().Warn(fmt.Sprintf("Failed to claim active session slot: %v", err))
 		return nil, nil
 	}
 	return lease, refusal

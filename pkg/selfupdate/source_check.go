@@ -3,7 +3,6 @@ package selfupdate
 import (
 	"context"
 	"fmt"
-	"log/slog"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -24,7 +23,7 @@ import (
 )
 
 const (
-	UpdateAvailableNoCount         = -1
+	UpdateAvailableNoCount         = updaterecord.UpdateAvailableNoCount
 	updateCheckCacheSeconds        = 24 * 3600
 	updateCheckFailureCacheSeconds = 3600
 )
@@ -365,7 +364,7 @@ func writeCheckCache(ctx context.Context, cacheFile string, identity *pyjson.Obj
 		err = config.AtomicJSONWrite(ctx, cacheFile, pyjson.ObjectOf("identity", identity, "ts", now, "status", result))
 	}
 	if err != nil {
-		slog.Debug(fmt.Sprintf("Could not cache source check: %v", err))
+		pkgLog().Debug(fmt.Sprintf("Could not cache source check: %v", err))
 	}
 }
 
@@ -489,7 +488,7 @@ func githubPredatesRuntime(ctx context.Context, repository, sha, cacheFile strin
 		err = config.AtomicJSONWrite(ctx, cacheFile, updated)
 	}
 	if err != nil {
-		slog.Debug(fmt.Sprintf("Could not cache the release schema verdict: %v", err))
+		pkgLog().Debug(fmt.Sprintf("Could not cache the release schema verdict: %v", err))
 	}
 	return verdict
 }
@@ -674,6 +673,11 @@ type SourceCheckOptions struct {
 	Force       bool
 	Passive     bool
 	Git         string
+}
+
+// Passive source update status of an install for the version output
+func PassiveCheckForUpdates(ctx context.Context, installRoot, home string) (*pyjson.Object, error) {
+	return CheckForUpdates(ctx, SourceCheckOptions{InstallRoot: installRoot, Home: home, Passive: true})
 }
 
 // Presentation ready source update status of one install and profile, never fetching or writing git state

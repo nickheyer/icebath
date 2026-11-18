@@ -11,7 +11,7 @@ func (r *backgroundReviewRun) CancelForLiveTurn(message, toolReason string) {
 		interruptBackgroundReview(reviewAgent, message, toolReason)
 	}
 	if !awaitReviewAck(r, backgroundReviewCancelTimeoutSeconds) {
-		backgroundReviewLog().Warn(fmt.Sprintf("Background review did not acknowledge cancellation within %.1fs; proceeding (%s)",
+		pkgLog().Warn(fmt.Sprintf("Background review did not acknowledge cancellation within %.1fs; proceeding (%s)",
 			backgroundReviewCancelTimeoutSeconds, message))
 	}
 }

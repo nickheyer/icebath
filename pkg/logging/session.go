@@ -24,7 +24,7 @@ var (
 )
 
 var (
-	errRedactUnlinked = errors.New("ModuleNotFoundError: No module named 'agent.redact' (pkg/tools sets the logging redaction hooks)")
+	errRedactUnlinked = errors.New("the logging redaction hooks are not installed (pkg/tools sets them)")
 	errRedactDropped  = errors.New("RuntimeError: the redaction hook did not pass the formatted line on")
 )
 
@@ -44,7 +44,7 @@ func makeRecord(ctx context.Context, name string, level int, msg string, created
 			rec.SessionTag = " [" + sid + "]"
 		}
 	}
-	rec.HermesHome = recordHome(ctx)
+	rec.Home = recordHome(ctx)
 	return rec
 }
 

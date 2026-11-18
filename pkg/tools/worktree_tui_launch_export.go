@@ -12,7 +12,7 @@ func TreeStillServed(dbPath, worktreePath string) string {
 	return treeStillServed(dbPath, worktreePath)
 }
 
-// Relocks a tree an exiting launcher retains under the session that uses it, the name hermes tests replace
+// Relocks a tree an exiting launcher retains under the session that uses it, the name tests replace
 var RetainWorktreeForSession = retainWorktreeForSession
 
 // Whether another live process still works in the tree after the grace period

@@ -2,7 +2,6 @@ package telegram
 
 import (
 	"fmt"
-	"log/slog"
 
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
 )
@@ -62,7 +61,7 @@ func coldBootDropPending(name string, dropPendingOnColdBoot, isReconnect bool) b
 		if dropPendingOnColdBoot {
 			setting = "true"
 		}
-		slog.Info(fmt.Sprintf("[%s] Cold boot: %s Telegram updates queued while offline (platforms.telegram.extra.drop_pending_on_cold_boot: %s)",
+		pkgLog().Info(fmt.Sprintf("[%s] Cold boot: %s Telegram updates queued while offline (platforms.telegram.extra.drop_pending_on_cold_boot: %s)",
 			name, action, setting))
 	}
 	return dropPending

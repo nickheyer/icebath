@@ -136,13 +136,7 @@ func withFakeFal(t *testing.T, result func(endpoint string) map[string]any) *fak
 	prevMod := videoFalClient
 	videoFalClient = mod
 	videoFalClientMu.Unlock()
-	managedFalVideoClientMu.Lock()
-	managedFalVideoClient, managedFalVideoClientConfig, managedFalVideoClientConfigured = nil, [2]string{}, false
-	managedFalVideoClientMu.Unlock()
-	prevGW := resolveManagedFalVideoGateway
-	resolveManagedFalVideoGateway = func(*tools.Env) (*tools.ManagedToolGatewayConfig, error) { return nil, nil }
 	t.Cleanup(func() {
-		resolveManagedFalVideoGateway = prevGW
 		videoFalClientMu.Lock()
 		videoFalClient = prevMod
 		videoFalClientMu.Unlock()
@@ -419,49 +413,11 @@ func TestUpscalePassNoUpscaleByDefault(t *testing.T) {
 func TestUpscalePassUpscaleFailureFallsBackToNative(t *testing.T) {
 	withFakeFal(t, upscaleResult)
 	prev := falUpscaleVideo
-	falUpscaleVideo = func(context.Context, *tools.Env, string, string) string { return "" }
+	falUpscaleVideo = func(context.Context, *tools.Env, string) string { return "" }
 	t.Cleanup(func() { falUpscaleVideo = prev })
 	res, err := newFalVideoGenProvider().Generate(context.Background(), nil,
 		VideoGenRequest{Prompt: "a dog", Model: "pixverse-v6", Kwargs: map[string]any{"upscale": true}})
 	if err != nil || res["success"] != true || res["video"] != "https://fake/native.mp4" || res["upscaled"] != false {
 		t.Fatal(res, err)
-	}
-}
-
-// Managed gateway resolved and the submit seam replaced by the given function
-func withManagedVideoSubmit(t *testing.T, submit func(endpoint string, arguments map[string]any) (*falRequestHandle, error)) {
-	t.Helper()
-	prevGW, prevSubmit := resolveManagedFalVideoGateway, submitFalVideoRequest
-	resolveManagedFalVideoGateway = func(*tools.Env) (*tools.ManagedToolGatewayConfig, error) {
-		return &tools.ManagedToolGatewayConfig{}, nil
-	}
-	submitFalVideoRequest = func(_ context.Context, _ *tools.Env, endpoint string, arguments map[string]any) (*falRequestHandle, error) {
-		return submit(endpoint, arguments)
-	}
-	t.Cleanup(func() { resolveManagedFalVideoGateway, submitFalVideoRequest = prevGW, prevSubmit })
-}
-
-func TestUpscalePassManagedUpscaleBindsTheSourceRequest(t *testing.T) {
-	var captured map[string]any
-	withManagedVideoSubmit(t, func(_ string, arguments map[string]any) (*falRequestHandle, error) {
-		captured = arguments
-		return completedFalHandle(map[string]any{"video": map[string]any{"url": "https://fake/upscaled.mp4"}}), nil
-	})
-	if got := falUpscaleVideo(context.Background(), nil, "https://fake/native.mp4", "source-request-1"); got != "https://fake/upscaled.mp4" {
-		t.Fatal(got)
-	}
-	if captured["source_request_id"] != "source-request-1" {
-		t.Fatal(captured)
-	}
-}
-
-func TestUpscalePassManagedUpscaleWithoutSourceRequestFallsBack(t *testing.T) {
-	called := false
-	withManagedVideoSubmit(t, func(string, map[string]any) (*falRequestHandle, error) { called = true; return nil, nil })
-	if got := falUpscaleVideo(context.Background(), nil, "https://fake/native.mp4", ""); got != "" {
-		t.Fatal(got)
-	}
-	if called {
-		t.Fatal("submitted without the source request")
 	}
 }

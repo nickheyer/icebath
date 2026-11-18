@@ -22,11 +22,10 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pyshlex"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
-	"github.com/nickheyer/icebath/pkg/observability"
 	"github.com/nickheyer/icebath/pkg/profiles/manage"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/tools"
-	"github.com/nickheyer/icebath/pkg/tuigateway"
+	"github.com/nickheyer/icebath/pkg/tuihost"
 )
 
 var (
@@ -258,8 +257,7 @@ func backendDirEntries(ctx context.Context, searchDir, sessionKey string) (entri
 		}()
 		timeout := 3
 		command := "sh -c " + pyshlex.Quote(backendListingCode) + " sh " + pyshlex.Quote(searchDir)
-		listing := observability.UnmeteredBackendCalls(ctx)
-		raw := terminalTool(listing, tools.EnvForProfileHome(listing, tools.ToolEnvFrom(listing), home.Dir(listing)),
+		raw := terminalTool(ctx, tools.EnvForProfileHome(ctx, tools.ToolEnvFrom(ctx), home.Dir(ctx)),
 			tools.TerminalRequest{Command: command, TaskID: sessionKey, Timeout: &timeout, Force: true})
 		decoded, err := pyjson.Loads(raw)
 		if err != nil {
@@ -420,7 +418,7 @@ func completePath(ctx context.Context, rid any, params map[string]any) (map[stri
 	if !isStr {
 		return nil, fmt.Errorf("'%s' object has no attribute 'startswith'", pyrepr.TypeName(rawWord))
 	}
-	session := tuigateway.SessionRecord(strOr(params["session_id"]))
+	session := tuihost.SessionRecord(strOr(params["session_id"]))
 	local := effectiveTerminalBackend(ctx) == "local"
 	clientCwd := params["cwd"]
 	if session != nil && pyrepr.Equal(clientCwd, session.Get("cwd")) && isRemoteLaunchCwd(ctx, session) {
@@ -496,7 +494,7 @@ func pathCompletionItems(ctx context.Context, word, root, sessionKey string, loc
 
 // Slash popup completions bound to the calling session's profile and workspace, or a draft's named profile
 func completeSlash(ctx context.Context, rid any, params map[string]any) (map[string]any, error) {
-	session := tuigateway.SessionRecord(strOr(params["session_id"]))
+	session := tuihost.SessionRecord(strOr(params["session_id"]))
 	cwd, err := completionCwd(ctx, params)
 	if err != nil {
 		return nil, err
@@ -518,7 +516,7 @@ func completeSlash(ctx context.Context, rid any, params map[string]any) (map[str
 
 // Live agent of the session the params name, nil when none
 func paramsSessionAgent(params map[string]any) *agent.AIAgent {
-	session := tuigateway.SessionRecord(strOr(params["session_id"]))
+	session := tuihost.SessionRecord(strOr(params["session_id"]))
 	if session == nil {
 		return nil
 	}
@@ -582,15 +580,9 @@ func modelSaveKey(ctx context.Context, rid any, params map[string]any) (map[stri
 	if len(pconfig.KeyEnv) == 0 {
 		return rpcErr(rid, 4004, "no env var defined for "+pconfig.Label(), nil), nil
 	}
-	envVar := pconfig.KeyEnv[0]
-	previous, hadPrevious := config.LoadEnv(h)[envVar]
-	if _, err := provider.SaveProviderEnvCredential(ctx, h, envVar, apiKey); err != nil {
+	if _, err := provider.SaveProviderEnvCredential(ctx, h, pconfig.KeyEnv[0], apiKey); err != nil {
 		return nil, err
 	}
-	if !hadPrevious || apiKey != previous {
-		observability.RecordProviderSetupDone(ctx, sessionPlatform, slug, h, true)
-	}
-	provider.ReconcileSetupRecord(scopedPoolEnv(ctx))
 	pc, err := modelPickerContext(ctx, paramsSessionAgent(params))
 	if err != nil {
 		return nil, err

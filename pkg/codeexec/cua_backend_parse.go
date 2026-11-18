@@ -18,7 +18,7 @@ import (
 )
 
 var (
-	nonAppWindowTitlePrefixes = []string{"@!", "Desktop", "gnome-shell", "GNOME Shell"}
+	nonAppWindowTitlePrefixes = []string{"@!", "Desktop", "gnome-shell", "GNOME Shell", "xfce4-panel"}
 	elementLineRE             = regexp2.MustCompile(`^\s*(?:-\s+)?\[(\d+)\]\s+(\w+)`+
 		`(?:\s*=\s*"([^"]*)"|\s+"([^"]*)"|\s+\((?!\d+\))([^)]*)\))?`+
 		`(?:\s+(?:\(\d+\)\s+)?id=([^\s\[\]]+))?`, regexp2.Multiline|regexp2.Unicode)

@@ -186,7 +186,7 @@ type auxFallbackRebuild func(provider string, client AuxClient, model string) (a
 // Destination, first attempt kwargs and the credential retry rebuild of a fallback candidate
 func auxPlanFallbackCandidate(ctx context.Context, fbClient AuxClient, fbModel, fbLabel string, req auxFallbackRequest, applyFastLane bool) (auxFallbackDestination, map[string]any, auxFallbackRebuild, error) {
 	if fbTimeout, ok := auxFallbackEntryTimeout(ctx, req.Task, fbLabel); ok && fbTimeout != req.EffectiveTimeout {
-		auxClientLog().Info(fmt.Sprintf("Auxiliary %s: %s using its configured timeout %.0fs (task-level was %.0fs)",
+		pkgLog().Info(fmt.Sprintf("Auxiliary %s: %s using its configured timeout %.0fs (task-level was %.0fs)",
 			auxTaskOrCall(req.Task), fbLabel, fbTimeout, req.EffectiveTimeout))
 		req.EffectiveTimeout = fbTimeout
 	}
@@ -238,7 +238,7 @@ func auxQuarantineFallbackCandidate(ctx context.Context, task, fbLabel, fbProvid
 	if reason != "" {
 		why = fmt.Sprintf("is out of capacity (%s)", reason)
 	}
-	auxClientLog().Warn(fmt.Sprintf("Auxiliary %s%s: fallback candidate %s %s (%v) — skipping to next fallback", auxTaskOrCall(task), tag, fbLabel, why, fbErr))
+	pkgLog().Warn(fmt.Sprintf("Auxiliary %s%s: fallback candidate %s %s (%v) — skipping to next fallback", auxTaskOrCall(task), tag, fbLabel, why, fbErr))
 }
 
 type auxFallbackRetry struct {
@@ -378,12 +378,12 @@ func auxTryPaymentFallback(ctx context.Context, failedProvider, task, reason, fa
 			return nil, "", "", err
 		}
 		if client != nil {
-			auxClientLog().Info(fmt.Sprintf("Auxiliary %s: %s on %s — falling back to %s (%s)", auxTaskOrCall(task), reason, failedProvider, entry.label, auxOrDefault(model, "default")))
+			pkgLog().Info(fmt.Sprintf("Auxiliary %s: %s on %s — falling back to %s (%s)", auxTaskOrCall(task), reason, failedProvider, entry.label, auxOrDefault(model, "default")))
 			return client, model, entry.label, nil
 		}
 		tried = append(tried, entry.label)
 	}
-	auxClientLog().Warn(fmt.Sprintf("Auxiliary %s: %s on %s and no fallback available (tried: %s)", auxTaskOrCall(task), reason, failedProvider, strings.Join(tried, ", ")))
+	pkgLog().Warn(fmt.Sprintf("Auxiliary %s: %s on %s and no fallback available (tried: %s)", auxTaskOrCall(task), reason, failedProvider, strings.Join(tried, ", ")))
 	return nil, "", "", nil
 }
 
@@ -422,7 +422,7 @@ func auxTryMainAgentModelFallback(ctx context.Context, failedProvider, task, rea
 		return nil, "", "", nil
 	}
 	if task == "vision" && (auxProvidersWithoutVision[mainProvider] || !auxMainModelSupportsVision(ctx, mainProvider, mainModel)) {
-		auxClientLog().Info(fmt.Sprintf("Auxiliary vision: %s on %s — main agent provider %s accepts no image input, not falling back", reason, failedProvider, mainProvider))
+		pkgLog().Info(fmt.Sprintf("Auxiliary vision: %s on %s — main agent provider %s accepts no image input, not falling back", reason, failedProvider, mainProvider))
 		return nil, "", "", nil
 	}
 	mainBaseURL := auxCustomHealthBaseURL(ctx, mainProvider, "")
@@ -442,7 +442,7 @@ func auxTryMainAgentModelFallback(ctx context.Context, failedProvider, task, rea
 	if model == "" {
 		model = mainModel
 	}
-	auxClientLog().Info(fmt.Sprintf("Auxiliary %s: %s on %s — falling back to main agent model %s (%s)", auxTaskOrCall(task), reason, failedProvider, label, model))
+	pkgLog().Info(fmt.Sprintf("Auxiliary %s: %s on %s — falling back to main agent model %s (%s)", auxTaskOrCall(task), reason, failedProvider, label, model))
 	return client, model, label, nil
 }
 
@@ -469,7 +469,7 @@ func auxCandidateContextWindow(ctx context.Context, provider, model, baseURL, ap
 	if err := auxRecoverRaise(func() {
 		window = auxModelContextLengthFn(ctx, ContextLengthRequest{Model: model, BaseURL: baseURL, APIKey: apiKey, Provider: provider})
 	}); err != nil {
-		auxClientLog().Debug(fmt.Sprintf("Auxiliary fallback: could not resolve context window for %s/%s: %v", provider, model, err))
+		pkgLog().Debug(fmt.Sprintf("Auxiliary fallback: could not resolve context window for %s/%s: %v", provider, model, err))
 		return 0, false
 	}
 	return window, window > 0
@@ -485,9 +485,9 @@ func auxContextTooSmall(ctx context.Context, entry map[string]any, provider, mod
 		return ""
 	}
 	if nameModel {
-		auxClientLog().Info(fmt.Sprintf("Auxiliary %s: skipping %s (%s context=%d < min=%d), continuing chain", task, label, model, fbCtx, minCtx))
+		pkgLog().Info(fmt.Sprintf("Auxiliary %s: skipping %s (%s context=%d < min=%d), continuing chain", task, label, model, fbCtx, minCtx))
 	} else {
-		auxClientLog().Info(fmt.Sprintf("Auxiliary %s: skipping %s (context=%d < min=%d), continuing chain", auxTaskOrCall(task), label, fbCtx, minCtx))
+		pkgLog().Info(fmt.Sprintf("Auxiliary %s: skipping %s (context=%d < min=%d), continuing chain", auxTaskOrCall(task), label, fbCtx, minCtx))
 	}
 	return fmt.Sprintf("%s (context too small: %d<%d)", label, fbCtx, minCtx)
 }
@@ -543,13 +543,13 @@ func auxTryConfiguredFallbackChain(ctx context.Context, task, failedProvider, re
 			if model == "" {
 				model = fbModelRaw
 			}
-			auxClientLog().Info(fmt.Sprintf("Auxiliary %s: %s on %s — configured fallback to %s (%s)", task, reason, failedProvider, label, auxOrDefault(model, "default")))
+			pkgLog().Info(fmt.Sprintf("Auxiliary %s: %s on %s — configured fallback to %s (%s)", task, reason, failedProvider, label, auxOrDefault(model, "default")))
 			return fbClient, model, label, nil
 		}
 		tried = append(tried, label)
 	}
 	if len(tried) > 0 {
-		auxClientLog().Debug(fmt.Sprintf("Auxiliary %s: configured fallback_chain exhausted (tried: %s)", task, strings.Join(tried, ", ")))
+		pkgLog().Debug(fmt.Sprintf("Auxiliary %s: configured fallback_chain exhausted (tried: %s)", task, strings.Join(tried, ", ")))
 	}
 	return nil, "", "", nil
 }
@@ -619,7 +619,7 @@ func auxTryMainFallbackChain(ctx context.Context, task, failedProvider, reason, 
 		}
 		chain = GetFallbackChain(map[string]any(cfg))
 	}); err != nil {
-		auxClientLog().Debug(fmt.Sprintf("Auxiliary %s: could not load main fallback chain: %v", auxTaskOrCall(task), err))
+		pkgLog().Debug(fmt.Sprintf("Auxiliary %s: could not load main fallback chain: %v", auxTaskOrCall(task), err))
 		return nil, "", "", nil
 	}
 	if len(chain) == 0 {
@@ -651,7 +651,7 @@ func auxTryMainFallbackChain(ctx context.Context, task, failedProvider, reason, 
 		}
 		fbClient, resolvedModel, err := auxResolveFallbackEntryFn(ctx, entry)
 		if err != nil {
-			auxClientLog().Debug(fmt.Sprintf("Auxiliary %s: main fallback %s failed to resolve: %v", auxTaskOrCall(task), label, err))
+			pkgLog().Debug(fmt.Sprintf("Auxiliary %s: main fallback %s failed to resolve: %v", auxTaskOrCall(task), label, err))
 			fbClient, resolvedModel = nil, ""
 		}
 		if fbClient != nil {
@@ -667,13 +667,13 @@ func auxTryMainFallbackChain(ctx context.Context, task, failedProvider, reason, 
 			if failed == "" {
 				failed = "auto"
 			}
-			auxClientLog().Info(fmt.Sprintf("Auxiliary %s: %s on %s — main fallback chain to %s (%s)", auxTaskOrCall(task), reason, failed, label, model))
+			pkgLog().Info(fmt.Sprintf("Auxiliary %s: %s on %s — main fallback chain to %s (%s)", auxTaskOrCall(task), reason, failed, label, model))
 			return fbClient, model, fbProvider, nil
 		}
 		tried = append(tried, label)
 	}
 	if len(tried) > 0 {
-		auxClientLog().Debug(fmt.Sprintf("Auxiliary %s: main fallback chain exhausted (tried: %s)", auxTaskOrCall(task), strings.Join(tried, ", ")))
+		pkgLog().Debug(fmt.Sprintf("Auxiliary %s: main fallback chain exhausted (tried: %s)", auxTaskOrCall(task), strings.Join(tried, ", ")))
 	}
 	return nil, "", "", nil
 }
@@ -689,7 +689,7 @@ func auxWarnStaleOpenAIBaseURL(ctx context.Context, runtimeProvider string) {
 		cfgProvider = auxReadMainProvider(ctx)
 	}
 	if envBase != "" && cfgProvider != "" && cfgProvider != "custom" && !strings.HasPrefix(cfgProvider, "custom:") {
-		auxClientLog().Warn(fmt.Sprintf("OPENAI_BASE_URL is set (%s) but model.provider is '%s'. "+
+		pkgLog().Warn(fmt.Sprintf("OPENAI_BASE_URL is set (%s) but model.provider is '%s'. "+
 			"Auxiliary clients may route to the wrong endpoint. "+
 			"Run: icebath model to reconfigure, or remove "+
 			"OPENAI_BASE_URL from ~/.icebath/.env", envBase, cfgProvider))
@@ -722,7 +722,7 @@ func auxMainRouteTarget(ctx context.Context, runtime map[string]any, task string
 	}
 	if prefersFast && t.Provider != "" && t.Provider != "auto" {
 		if fast := auxAuxModelForProvider(ctx, t.Provider, true); fast != "" && fast != t.Model {
-			auxClientLog().Debug(fmt.Sprintf("Auxiliary task %s: preferring fast model %s over main model %s", task, fast, t.Model))
+			pkgLog().Debug(fmt.Sprintf("Auxiliary task %s: preferring fast model %s over main model %s", task, fast, t.Model))
 			t.Model = fast
 		}
 	}
@@ -777,7 +777,7 @@ func auxTryMainProviderRoute(ctx context.Context, t auxMainTarget) (AuxClient, s
 	if resolved == "" {
 		resolved = t.Model
 	}
-	auxClientLog().Info(fmt.Sprintf("Auxiliary auto-detect: using main provider %s (%s)", t.Provider, resolved))
+	pkgLog().Info(fmt.Sprintf("Auxiliary auto-detect: using main provider %s (%s)", t.Provider, resolved))
 	return client, resolved, resolvedProvider, nil
 }
 
@@ -786,7 +786,7 @@ func auxDiscoveryChainAllowed(mainProvider, task string) bool {
 	if p := strings.ToLower(strings.TrimSpace(mainProvider)); p == "" || p == "auto" {
 		return true
 	}
-	auxClientLog().Warn(fmt.Sprintf("Auxiliary %s: main provider %s is unavailable and no fallback_chain / fallback_providers is "+
+	pkgLog().Warn(fmt.Sprintf("Auxiliary %s: main provider %s is unavailable and no fallback_chain / fallback_providers is "+
 		"configured — refusing to guess another logged-in provider. Re-authenticate (`icebath model`) "+
 		"or declare a fallback.", auxTaskOrCall(task), mainProvider))
 	return false
@@ -808,15 +808,15 @@ func auxTryDiscoveryChain(ctx context.Context) (AuxClient, string, string, error
 		}
 		if client != nil {
 			if len(tried) > 0 {
-				auxClientLog().Info(fmt.Sprintf("Auxiliary auto-detect: using %s (%s) — skipped: %s", entry.label, auxOrDefault(model, "default"), strings.Join(tried, ", ")))
+				pkgLog().Info(fmt.Sprintf("Auxiliary auto-detect: using %s (%s) — skipped: %s", entry.label, auxOrDefault(model, "default"), strings.Join(tried, ", ")))
 			} else {
-				auxClientLog().Info(fmt.Sprintf("Auxiliary auto-detect: using %s (%s)", entry.label, auxOrDefault(model, "default")))
+				pkgLog().Info(fmt.Sprintf("Auxiliary auto-detect: using %s (%s)", entry.label, auxOrDefault(model, "default")))
 			}
 			return client, model, entry.label, nil
 		}
 		tried = append(tried, entry.label)
 	}
-	auxClientLog().Warn(fmt.Sprintf("Auxiliary auto-detect: no provider available (tried: %s). "+
+	pkgLog().Warn(fmt.Sprintf("Auxiliary auto-detect: no provider available (tried: %s). "+
 		"Compression, summarization, and memory flush will not work. "+
 		"Set OPENROUTER_API_KEY or configure a local model in config.yaml.", strings.Join(tried, ", ")))
 	return nil, "", "", nil
@@ -858,7 +858,7 @@ func auxResolveAutoRoute(ctx context.Context, mainRuntime map[string]any, task s
 	return auxTryDiscoveryChain(ctx)
 }
 
-// Fallback walk seams that tests swap the way hermes tests patch the module functions
+// Fallback walk seams that tests swap
 var (
 	auxTryMainProviderRouteFn       func(ctx context.Context, t auxMainTarget) (AuxClient, string, string, error)
 	auxTryConfiguredFallbackChainFn func(ctx context.Context, task, failedProvider, reason, failedModel, failedBaseURL string, scope FailureScope) (AuxClient, string, string, error)
@@ -879,6 +879,3 @@ func init() {
 
 // Auto route seam the cached auto route test swaps
 var auxResolveAutoRouteFn = auxResolveAutoRoute
-
-// Logger of the reference module agent.auxiliary_client
-func auxClientLog() *slog.Logger { return slog.Default().With("logger", "agent.auxiliary_client") }

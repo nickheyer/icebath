@@ -33,7 +33,7 @@ func ResolveProfilePolicy(profileHome string) {
 	NoteEnvPolicy(key, envRaw)
 	tree, err := config.LoadReadonly(home.WithOverride(context.Background(), profileHome), profileHome, nil)
 	if err != nil {
-		slog.Debug(fmt.Sprintf("redaction policy for %s not read: %s", profileHome, err))
+		pkgLog().Debug(fmt.Sprintf("redaction policy for %s not read: %s", profileHome, err))
 		return
 	}
 	security := tree["security"]
@@ -43,7 +43,7 @@ func ResolveProfilePolicy(profileHome string) {
 	}
 	section, ok := security.(map[string]any)
 	if !ok {
-		slog.Debug(fmt.Sprintf("redaction policy for %s not read: '%s' object has no attribute 'get'", profileHome, pyrepr.TypeName(security)))
+		pkgLog().Debug(fmt.Sprintf("redaction policy for %s not read: '%s' object has no attribute 'get'", profileHome, pyrepr.TypeName(security)))
 		return
 	}
 	NoteConfigPolicy(key, section["redact_secrets"])

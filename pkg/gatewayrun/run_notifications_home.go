@@ -26,7 +26,7 @@ func safeDeliveryTransport(ctx context.Context, platform gateway.Platform, confi
 			if profile != nil && *profile != "" {
 				prefix = *profile + ":"
 			}
-			inboundLog().Debug(fmt.Sprintf("Home-channel transport unavailable for %s%s: %s", prefix, platform, pyrepr.Str(rec)))
+			pkgLog().Debug(fmt.Sprintf("Home-channel transport unavailable for %s%s: %s", prefix, platform, pyrepr.Str(rec)))
 			transport = nil
 		}
 	}()
@@ -105,11 +105,11 @@ func (r *GatewayRunner) sendHomeChannelMessage(ctx context.Context, platform gat
 		err = fmt.Errorf("'%T' object has no attribute 'send'", transport.Adapter)
 	}
 	if err != nil {
-		inboundLog().Warn(fmt.Sprintf(failureFmt, platform, home.ChatID, err))
+		pkgLog().Warn(fmt.Sprintf(failureFmt, platform, home.ChatID, err))
 		return false
 	}
 	if sendFailed(result) {
-		inboundLog().Warn(fmt.Sprintf(failureFmt, platform, home.ChatID, sendError(result)))
+		pkgLog().Warn(fmt.Sprintf(failureFmt, platform, home.ChatID, sendError(result)))
 		return false
 	}
 	return true

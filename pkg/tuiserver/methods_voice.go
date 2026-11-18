@@ -2,31 +2,27 @@ package tuiserver
 
 import (
 	"fmt"
-	"log/slog"
 	"sync"
 
 	"github.com/nickheyer/icebath/pkg/media"
-	"github.com/nickheyer/icebath/pkg/tuigateway"
+	"github.com/nickheyer/icebath/pkg/tuihost"
 )
 
 var (
 	wakeMu             sync.Mutex
-	wakeOwnerTransport tuigateway.Transport
+	wakeOwnerTransport tuihost.Transport
 	wakeOwnerSurface   string
 )
 
-// Logger the voice handlers write through
-func voiceLogger() *slog.Logger { return slog.Default().With("logger", "tui_gateway.methods_voice") }
-
 // Gateway wake lease owner transport and the surface it named, read under the wake lock
-func wakeOwnerSnapshot() (tuigateway.Transport, string) {
+func wakeOwnerSnapshot() (tuihost.Transport, string) {
 	wakeMu.Lock()
 	defer wakeMu.Unlock()
 	return wakeOwnerTransport, wakeOwnerSurface
 }
 
 // Releases the wake lease and stops the detector when the transport is the current gateway owner
-func releaseWakeForTransport(transport tuigateway.Transport) bool {
+func releaseWakeForTransport(transport tuihost.Transport) bool {
 	wakeMu.Lock()
 	if wakeOwnerTransport != transport {
 		wakeMu.Unlock()
@@ -37,7 +33,7 @@ func releaseWakeForTransport(transport tuigateway.Transport) bool {
 	func() {
 		defer func() {
 			if r := recover(); r != nil {
-				voiceLogger().Debug(fmt.Sprintf("wake stop failed: %s", panicMessage(r)))
+				pkgLog().Debug(fmt.Sprintf("wake stop failed: %s", panicMessage(r)))
 			}
 		}()
 		media.StopListening(transport)

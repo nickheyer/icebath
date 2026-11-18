@@ -65,7 +65,7 @@ func (a *AIAgent) liveClientAPIKey() (key string) {
 			if isUserInterruptPanic(r) {
 				panic(r)
 			}
-			runAgentLog().Debug(fmt.Sprintf("Could not extract API key for debug dump: %v", r))
+			pkgLog().Debug(fmt.Sprintf("Could not extract API key for debug dump: %v", r))
 			key = ""
 		}
 	}()
@@ -92,7 +92,7 @@ func (a *AIAgent) dumpAPIRequestDebug(ctx context.Context, apiKwargs map[string]
 				panic(r)
 			}
 			if a.verboseLogging {
-				agentRuntimeHelpersLog().Warn(fmt.Sprintf("Failed to dump API request debug payload: %v", r))
+				pkgLog().Warn(fmt.Sprintf("Failed to dump API request debug payload: %v", r))
 			}
 			path = ""
 		}

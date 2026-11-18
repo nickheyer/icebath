@@ -3,7 +3,6 @@ package gateway
 import (
 	"context"
 	"errors"
-	"log/slog"
 	"sync"
 
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
@@ -201,7 +200,7 @@ func retireRestored(ctx context.Context, a *SessionAuthority, sessionID string, 
 		retired, err = retireIdle(ctx, a, sessionID, live, target)
 	}
 	if err != nil {
-		slog.Error("Exception in callback retire_restored: " + pyExceptionRepr(err))
+		pkgLog().Error("Exception in callback retire_restored: " + pyExceptionRepr(err))
 		return
 	}
 	if !retired {

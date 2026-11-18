@@ -2,6 +2,7 @@ package agent
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"maps"
 	"time"
@@ -33,7 +34,7 @@ func apiErrorClassName(err error) string {
 func runtimeField(rt map[string]any, key string) (any, error) {
 	v, ok := rt[key]
 	if !ok {
-		return nil, fmt.Errorf("KeyError: '%s'", key)
+		return nil, fmt.Errorf("the agent runtime has no %s", key)
 	}
 	return v, nil
 }
@@ -95,7 +96,7 @@ func applyPrimaryRuntimeFields(a *AIAgent, rt map[string]any) error {
 	}
 	kwargs, ok := raw.(map[string]any)
 	if !ok {
-		return fmt.Errorf("TypeError: 'client_kwargs' is not a dict")
+		return errors.New("the agent runtime client_kwargs is not a mapping")
 	}
 	a.clientKwargs = maps.Clone(kwargs)
 	return nil
@@ -159,14 +160,8 @@ func (a *AIAgent) tryRecoverPrimaryTransport(ctx context.Context, apiError error
 	if a.fallbackActivated || !transientTransportErrors[errorType] || a.isOpenRouterURL() {
 		return false
 	}
-	switch pystr.Lower(pystr.Strip(a.provider)) {
-	case "nous", "nous-portal", "nousresearch":
-		if a.apiMode != "anthropic_messages" {
-			return false
-		}
-	}
 	if err := a.rebuildPrimaryTransport(ctx, errorType, retryCount); err != nil {
-		agentRuntimeHelpersLog().Warn(fmt.Sprintf("Primary transport recovery failed: %s", err))
+		pkgLog().Warn(fmt.Sprintf("Primary transport recovery failed: %s", err))
 		return false
 	}
 	return true

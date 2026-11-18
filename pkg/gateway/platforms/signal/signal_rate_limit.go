@@ -3,12 +3,12 @@ package signal
 import (
 	"context"
 	"fmt"
-	"log/slog"
 	"math"
 	"strings"
 	"sync"
 	"time"
 
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/i18n"
 	"github.com/nickheyer/icebath/pkg/internal/pyhttpx"
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
@@ -84,7 +84,7 @@ func dictOrEmpty(v any) (map[string]any, error) {
 	}
 	m, ok := v.(map[string]any)
 	if !ok {
-		return nil, fmt.Errorf("AttributeError: '%s' object has no attribute 'get'", pyrepr.TypeName(v))
+		return nil, fmt.Errorf("expected a mapping, got %s", errchain.Kind(v))
 	}
 	return m, nil
 }
@@ -115,7 +115,7 @@ func extractRetryAfterSeconds(err any) (float64, bool, error) {
 		case string, map[string]any:
 		default:
 			if pyrepr.Truthy(results) {
-				return 0, false, fmt.Errorf("TypeError: '%s' object is not iterable", pyrepr.TypeName(results))
+				return 0, false, fmt.Errorf("the Signal rate limit results are %s, expected a list", errchain.Kind(results))
 			}
 		}
 		if found {
@@ -210,7 +210,7 @@ func (s *SignalAttachmentScheduler) Acquire(ctx context.Context, n int) (float64
 		s.refill()
 		if s.Tokens >= float64(n) {
 			if !firstPass || totalSlept > 0 {
-				slog.Debug(fmt.Sprintf("Signal scheduler: tokens sufficient for %d (remaining=%.1f, total_slept=%.1fs)", n, s.Tokens, totalSlept))
+				pkgLog().Debug(fmt.Sprintf("Signal scheduler: tokens sufficient for %d (remaining=%.1f, total_slept=%.1fs)", n, s.Tokens, totalSlept))
 			}
 			s.mu.Unlock()
 			return totalSlept, nil
@@ -220,7 +220,7 @@ func (s *SignalAttachmentScheduler) Acquire(ctx context.Context, n int) (float64
 		s.mu.Unlock()
 		wait := deficit / rate
 		if firstPass {
-			slog.Info(fmt.Sprintf("Signal scheduler: pausing %.1fs for %d tokens (available=%.1f, deficit=%.1f, refill=%.4f/s ≈ %.1fs/token)", wait, n, tokens, deficit, rate, 1.0/rate))
+			pkgLog().Info(fmt.Sprintf("Signal scheduler: pausing %.1fs for %d tokens (available=%.1f, deficit=%.1f, refill=%.4f/s ≈ %.1fs/token)", wait, n, tokens, deficit, rate, 1.0/rate))
 			firstPass = false
 		}
 		if err := signalSleep(ctx, wait); err != nil {
@@ -243,9 +243,9 @@ func (s *SignalAttachmentScheduler) ReportRPCDuration(rpcDuration float64, nAtta
 	s.mu.Unlock()
 	msg := fmt.Sprintf("Signal scheduler: RPC for %d att took %.1fs — tokens %.1f → %.1f (deducted=%d, no upload refill credited, refill=%.4fs⁻¹)", nAttachments, rpcDuration, before, after, nAttachments, rate)
 	if rpcDuration > 10 && nAttachments > 5 {
-		slog.Info(msg)
+		pkgLog().Info(msg)
 	} else {
-		slog.Debug(msg)
+		pkgLog().Debug(msg)
 	}
 }
 
@@ -255,7 +255,7 @@ func (s *SignalAttachmentScheduler) Feedback(retryAfter *float64, nAttempted int
 	defer s.mu.Unlock()
 	if retryAfter != nil && *retryAfter > 0 {
 		if newRate := 1.0 / *retryAfter; newRate != s.RefillRate {
-			slog.Info(fmt.Sprintf("Signal scheduler: calibrating refill_rate to %.4f tokens/sec (server retry_after=%.1fs per token)", newRate, *retryAfter))
+			pkgLog().Info(fmt.Sprintf("Signal scheduler: calibrating refill_rate to %.4f tokens/sec (server retry_after=%.1fs per token)", newRate, *retryAfter))
 			s.RefillRate = newRate
 		}
 	}
@@ -284,7 +284,7 @@ func GetScheduler() *SignalAttachmentScheduler {
 	defer scheduler.Unlock()
 	if scheduler.s == nil {
 		scheduler.s = NewSignalAttachmentScheduler(SignalRateLimitBucketCapacity, SignalRateLimitDefaultRetryAfter)
-		slog.Info(fmt.Sprintf("Signal scheduler: created (capacity=%d tokens, refill=%.4f/s ≈ %.1fs/token)", int(scheduler.s.Capacity), scheduler.s.RefillRate, 1.0/scheduler.s.RefillRate))
+		pkgLog().Info(fmt.Sprintf("Signal scheduler: created (capacity=%d tokens, refill=%.4f/s ≈ %.1fs/token)", int(scheduler.s.Capacity), scheduler.s.RefillRate, 1.0/scheduler.s.RefillRate))
 	}
 	return scheduler.s
 }

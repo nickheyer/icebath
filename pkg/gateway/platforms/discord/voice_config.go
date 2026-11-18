@@ -3,7 +3,6 @@ package discord
 import (
 	"context"
 	"fmt"
-	"log/slog"
 )
 
 const (
@@ -17,7 +16,7 @@ func loadVoiceFXConfig(ctx context.Context) map[string]any {
 		"speech_gain": 1.0, "lead_silence_ms": 200, "ack_enabled": true, "ack_phrases": nil}
 	section, ok := rawSection(ctx, "discord")
 	if !ok {
-		slog.Debug("Could not load discord.voice_fx config: 'discord' is not a mapping")
+		pkgLog().Debug("Could not load discord.voice_fx config: 'discord' is not a mapping")
 		return defaults
 	}
 	fx, isMap := section["voice_fx"].(map[string]any)
@@ -36,7 +35,7 @@ func loadVoiceFXConfig(ctx context.Context) map[string]any {
 func loadDiscordIntConfig(ctx context.Context, key string, def, minimum int) int {
 	section, ok := rawSection(ctx, "discord")
 	if !ok {
-		slog.Debug(fmt.Sprintf("Could not load discord.%s config: 'discord' is not a mapping", key))
+		pkgLog().Debug(fmt.Sprintf("Could not load discord.%s config: 'discord' is not a mapping", key))
 		return def
 	}
 	raw, present := section[key]
@@ -45,7 +44,7 @@ func loadDiscordIntConfig(ctx context.Context, key string, def, minimum int) int
 	}
 	n, ok, err := configInt(raw)
 	if err != nil || !ok || !n.IsInt64() {
-		slog.Debug(fmt.Sprintf("Could not load discord.%s config: %v", key, raw))
+		pkgLog().Debug(fmt.Sprintf("Could not load discord.%s config: %v", key, raw))
 		return def
 	}
 	return max(minimum, int(n.Int64()))

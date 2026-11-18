@@ -81,7 +81,7 @@ func TestSameEndpoint(t *testing.T) {
 	if SameEndpoint(ident("a", "m", "http://h1/v1"), ident("a2", "m", "http://h2/v1")) {
 		t.Fatal("different urls differ")
 	}
-	if !SameEndpoint(ident("openrouter", "m1", ""), ident("openrouter", "m2", "")) || SameEndpoint(ident("openrouter", "m", ""), ident("nous", "m", "")) {
+	if !SameEndpoint(ident("openrouter", "m1", ""), ident("openrouter", "m2", "")) || SameEndpoint(ident("openrouter", "m", ""), ident("deepseek", "m", "")) {
 		t.Fatal("unknown url falls back to the provider default")
 	}
 }
@@ -115,14 +115,12 @@ func readConfig(t *testing.T, h string) map[string]any {
 }
 
 func TestChainSkipsSameBackendAndUnusableEntries(t *testing.T) {
-	h := t.TempDir()
 	primary := Route{Provider: "openrouter", Model: "gpt-5.4", BaseURL: "https://openrouter.ai/api/v1"}
-	store := NewStore(h)
 	pools := map[string]PoolProbe{"zai": &fakePool{provider: "zai", entries: 1, available: false, nextAt: time.Now().Add(time.Hour), hasNext: true}}
-	chain := NewChain(ChainOptions{Primary: primary, Store: store, LoadPool: func(ctx context.Context, provider string) PoolProbe { return pools[provider] },
+	chain := NewChain(ChainOptions{Primary: primary, LoadPool: func(ctx context.Context, provider string) PoolProbe { return pools[provider] },
 		Fallbacks: []Route{
 			{Provider: "openrouter", Model: "gpt-5.4", BaseURL: "https://openrouter.ai/api/v1/"},
-			{Provider: "nous", Model: "Hermes-4"},
+			{Provider: "openai", Model: ""},
 			{Provider: "zai", Model: "glm-5.2"},
 			{Provider: "", Model: "x"},
 			{Provider: "anthropic", Model: "claude-sonnet-4-6"},

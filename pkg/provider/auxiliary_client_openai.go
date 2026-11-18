@@ -59,5 +59,5 @@ func auxCreateOpenAIClient(ctx context.Context, apiKey any, baseURL string, opts
 	return auxOpenAIConstructorFn(apiKey, baseURL, opts)
 }
 
-// OpenAI SDK constructor of the auxiliary routes, the class the hermes tests patch
+// OpenAI SDK constructor of the auxiliary routes, the class the tests patch
 var auxOpenAIConstructorFn = newAuxOpenAIClient

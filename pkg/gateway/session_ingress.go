@@ -4,13 +4,10 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"log/slog"
 	"sync"
-
-	"github.com/nickheyer/icebath/pkg/observability"
 )
 
-// One shot outcome many goroutines await without owning it, the asyncio Future of hermes
+// One shot outcome many goroutines await without owning it
 type busyFuture struct {
 	mu        sync.Mutex
 	done      chan struct{}
@@ -64,7 +61,7 @@ func (f *busyFuture) wait(ctx context.Context) error {
 	}
 }
 
-// Whether an error is the cancellation of a task, the asyncio CancelledError of hermes
+// Whether an error is the cancellation of a task
 func isCancelled(err error) bool { return errors.Is(err, context.Canceled) }
 
 // Waits until every channel closes, returning the context error when the caller is cancelled first
@@ -104,39 +101,6 @@ type busyIngressState struct {
 	durablePersist func(ctx context.Context) error
 }
 
-// Busy arrival accessor view of a message event for the observability busy metrics
-type busyEventView struct{ e *MessageEvent }
-
-func busyEventOf(e *MessageEvent) busyEventView { return busyEventView{e} }
-
-func (v busyEventView) BusyArrival() *observability.Arrival {
-	eventTurnStateMu.Lock()
-	defer eventTurnStateMu.Unlock()
-	return v.e.busyArrival
-}
-
-func (v busyEventView) SetBusyArrival(a *observability.Arrival) {
-	eventTurnStateMu.Lock()
-	v.e.busyArrival = a
-	eventTurnStateMu.Unlock()
-}
-
-func (v busyEventView) Internal() bool { return v.e.Internal }
-
-func (v busyEventView) Command() string {
-	cmd, _ := v.e.GetCommand()
-	return cmd
-}
-
-func (v busyEventView) Source() any { return v.e.Source }
-
-func (v busyEventView) ChatID() any {
-	if v.e.Source == nil {
-		return nil
-	}
-	return v.e.Source.ChatID
-}
-
 // Copy of the event over a copy of its source with only the dataclass fields, as dataclasses replace builds it
 func replaceMessageEvent(event *MessageEvent) *MessageEvent {
 	gatewayAcceptedMu.Lock()
@@ -149,9 +113,8 @@ func replaceMessageEvent(event *MessageEvent) *MessageEvent {
 	copied.pendingSTTClips, copied.pendingSTTEchoed = nil, 0
 	copied.turnMarkerHandoff, copied.activeTurnToken, copied.markerReleased = false, nil, nil
 	copied.activeTurnSessionKey, copied.turnRefusal, copied.streamedFinalResponse = nil, nil, nil
-	copied.heartbeatSessionID, copied.lastChunkLen, copied.busyArrival = nil, 0, nil
+	copied.heartbeatSessionID, copied.lastChunkLen = nil, 0
 	copied.botLoopAdmitted, copied.fifoOnly, copied.stopEpoch = false, false, 0
-	copied.slashCommandCounted = false
 	if event.Source != nil {
 		source := *event.Source
 		source.identity, source.transportAdapterRef = nil, nil
@@ -249,7 +212,6 @@ func (b *BasePlatformAdapter) observeSharedBusy(ctx context.Context, adapter Pla
 	event.setTurnMarkerHandoff(b.GatewayRunner != nil)
 	fctx := context.WithoutCancel(ctx)
 	defer func() {
-		observability.SettleBusyArrival(ctx, busyEventOf(event), false)
 		if err := b.releaseTurnMarker(fctx, deliveryEvent); err != nil {
 			retErr = err
 			return
@@ -268,7 +230,7 @@ func (b *BasePlatformAdapter) observeSharedBusy(ctx context.Context, adapter Pla
 		handler := b.messageHandler
 		b.mu.Unlock()
 		if handler == nil {
-			return errors.New("TypeError: 'NoneType' object is not callable")
+			return errors.New("no message handler is set on this platform adapter")
 		}
 		response, err := handler(ctx, event)
 		if err != nil {
@@ -285,7 +247,7 @@ func (b *BasePlatformAdapter) observeSharedBusy(ctx context.Context, adapter Pla
 	if isCancelled(err) || !accepted.isDone() {
 		return err
 	}
-	slog.Error(fmt.Sprintf("[%s] Queued busy follow-up failed: %v", adapter.Name(), err), "error", err)
+	pkgLog().Error(fmt.Sprintf("[%s] Queued busy follow-up failed: %v", adapter.Name(), err), "error", err)
 	b.notifyTurnError(ctx, deliveryEvent, err)
 	return nil
 }

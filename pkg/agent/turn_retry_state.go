@@ -4,8 +4,6 @@ package agent
 type TurnRetryState struct {
 	CodexAuthRetryAttempted               bool
 	AnthropicAuthRetryAttempted           bool
-	NousAuthRetryAttempted                bool
-	NousPaidEntitlementRefreshAttempted   bool
 	WelcomeModelSwitchAttempted           bool
 	WelcomeRouteHealAttempted             bool
 	ProviderAuthRefreshAttempted          bool

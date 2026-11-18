@@ -6,9 +6,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
-	"math/big"
 	"os"
-	"reflect"
 	"strings"
 	"sync"
 
@@ -16,15 +14,13 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/tuigateway"
+	"github.com/nickheyer/icebath/pkg/tuihost"
 )
 
 // Wire order of groups.capabilities methods, every one running on the RPC pool
 var groupsMethods = []string{"groups.capabilities", "groups.list", "groups.create", "groups.state", "groups.send",
-	"groups.rename", "groups.log", "groups.disband", "groups.replicate", "groups.replica_state",
-	"groups.promote", "groups.demote", "groups.stop", "groups.retry", "groups.approve",
-	"groups.peer.invite", "groups.peer.revoke", "groups.peer.register", "groups.attachment.upload",
-	"groups.attachment.download"}
+	"groups.rename", "groups.log", "groups.disband", "groups.replica_state", "groups.promote", "groups.stop",
+	"groups.retry", "groups.approve", "groups.attachment.upload", "groups.attachment.download"}
 
 // Refusal texts of a missing hosted room worker and driver
 const (
@@ -52,9 +48,6 @@ var groupsRegistry = &handlerRegistry{}
 
 func init() {
 	groupsRegistry.method("groups.capabilities", groupsCapabilities)
-	roomMethod("groups.peer.invite", roomMethodSpec{code: 4120, db: true}, groupsPeerInvite)
-	roomMethod("groups.peer.revoke", roomMethodSpec{code: 4122, db: true}, groupsPeerRevoke)
-	roomMethod("groups.peer.register", roomMethodSpec{code: 5120, serviceCode: 4121}, groupsPeerRegister)
 	roomMethod("groups.list", roomMethodSpec{code: 5110, db: true}, groupsListLocal)
 	roomMethod("groups.create", roomMethodSpec{code: 5111, roomCode: 4110, serviceCode: 4123, serviceMessage: groupsWorkerUnavailable}, groupsCreate)
 	roomMethod("groups.state", roomMethodSpec{code: 5115, roomCode: 4114, db: true}, groupsState)
@@ -80,13 +73,6 @@ func init() {
 		}
 		return ok(rid, result), nil
 	})
-	roomMethod("groups.replicate", roomMethodSpec{code: 5116, roomCode: 4116, replicaOnly: true, noReason: true, db: true}, func(ctx context.Context, rid any, p map[string]any, _ *gateway.HostedRoomService, dbPath string) (map[string]any, error) {
-		result, err := gateway.IngestReplicaPage(ctx, dbPath, p["room_id"], p["room_name"], p["members"], p["page"], nil)
-		if err != nil {
-			return nil, err
-		}
-		return ok(rid, result), nil
-	})
 	roomMethod("groups.replica_state", roomMethodSpec{code: 5117, roomCode: 4117, replicaOnly: true, noReason: true, db: true}, func(ctx context.Context, rid any, p map[string]any, _ *gateway.HostedRoomService, dbPath string) (map[string]any, error) {
 		result, err := gateway.ReplicaState(ctx, dbPath, p["room_id"])
 		if err != nil {
@@ -95,20 +81,13 @@ func init() {
 		return ok(rid, result), nil
 	})
 	roomMethod("groups.promote", roomMethodSpec{code: 5118, roomCode: 4118, noReason: true, db: true}, groupsPromote)
-	roomMethod("groups.demote", roomMethodSpec{code: 5119, roomCode: 4119, replicaOnly: true, noReason: true, db: true}, func(ctx context.Context, rid any, p map[string]any, _ *gateway.HostedRoomService, dbPath string) (map[string]any, error) {
-		result, err := gateway.DemoteRoom(ctx, dbPath, p["room_id"], p["observed_gateway_id"], p["observed_epoch"], nil)
-		if err != nil {
-			return nil, err
-		}
-		return ok(rid, result), nil
-	})
 	groupsRegistry.install()
 	addLongHandlers(append(append([]string(nil), groupsMethods...), "groups.discard")...)
 }
 
 // Live hosted room service of this process, nil unless its lifecycle owner started it and it is running
 func hostedRoomService() *gateway.HostedRoomService {
-	service, _ := tuigateway.GetHostedRoomService().(*gateway.HostedRoomService)
+	service, _ := tuihost.GetHostedRoomService().(*gateway.HostedRoomService)
 	return service
 }
 
@@ -182,17 +161,6 @@ func groupsLocalCatalog(ctx context.Context, installationID, profile string, pol
 	text := true
 	return gateway.LocalCatalogMapping(ctx, gateway.CatalogOptions{InstallationID: installationID, ProtocolVersions: []any{gateway.HostedProtocolVersion},
 		LinkModes: []string{"direct"}, Text: &text, Attachments: false, TargetProfile: profile, ExecutionPolicy: policy})
-}
-
-// Status expiry of grant claims, the grant expiry when it carries none
-func grantExpiry(claims *pyjson.Object) (float64, error) {
-	value, present := claims.Get("status_expires_at")
-	if !present {
-		if value, present = claims.Get("expires_at"); !present {
-			return 0, errors.New("'expires_at'")
-		}
-	}
-	return pyint.Float(value)
 }
 
 // Registers a room method under the shared envelope, forwarding to an owning gateway first
@@ -337,187 +305,6 @@ func groupsInt(value any) (int64, error) {
 		return 0, fmt.Errorf("Python int too large to convert to C long")
 	}
 	return n.Int64(), nil
-}
-
-// Mints one target issued room and profile grant for a prospective home
-func groupsPeerInvite(ctx context.Context, rid any, params map[string]any, _ *gateway.HostedRoomService, dbPath string) (map[string]any, error) {
-	if !roomLinkRunStorageDurable(ctx) {
-		return nil, errors.New("durable run idempotency storage is required")
-	}
-	installationID, err := gateway.LocalAuthorityGatewayID(ctx)
-	if err != nil {
-		return nil, err
-	}
-	profile, err := groupsRequestedProfile(ctx, params)
-	if err != nil {
-		return nil, err
-	}
-	ttl := 3600.0
-	if raw, present := params["ttl_seconds"]; present {
-		value, err := pyint.Float(raw)
-		if err != nil {
-			return nil, err
-		}
-		ttl = value
-	}
-	if !(60 <= ttl && ttl <= 24*60*60) {
-		return nil, errors.New("ttl_seconds must be between 60 and 86400")
-	}
-	secret, err := gateway.GatewayRoomGrantSecret(ctx, "")
-	if err != nil {
-		return nil, err
-	}
-	policy, err := groupsExecutionPolicy(ctx, profile)
-	if err != nil {
-		return nil, err
-	}
-	epoch, err := groupsInt(params["authority_epoch"])
-	if err != nil {
-		return nil, err
-	}
-	grantID := relayString(params["grant_id"])
-	if grantID == "" {
-		grantID = "grant-" + randomHexID(16)
-	}
-	token, err := gateway.IssueRoomGrant(ctx, secret, gateway.RoomGrantIssue{GrantID: grantID, RoomID: relayString(params["room_id"]),
-		HomeInstallID: relayString(params["home_install_id"]), AuthorityGatewayID: relayString(params["authority_gateway_id"]),
-		AuthorityEpoch: big.NewInt(epoch), MemberID: relayString(params["member_id"]), TargetInstallID: installationID, TargetProfile: profile,
-		ExecutionPolicyDigest: relayString(policy.GetOr("policy_digest", nil)), TTLSeconds: &ttl})
-	if err != nil {
-		return nil, err
-	}
-	claims, err := gateway.DecodeRoomGrant(secret, token, "status", nil)
-	if err != nil {
-		return nil, err
-	}
-	expiry, err := grantExpiry(claims)
-	if err != nil {
-		return nil, err
-	}
-	if err := gateway.ReservePeerRoom(ctx, dbPath, claims, expiry, nil); err != nil {
-		return nil, err
-	}
-	catalog, err := groupsLocalCatalog(ctx, installationID, profile, policy)
-	if err != nil {
-		return nil, err
-	}
-	plain := pyjson.Plain(catalog).(map[string]any)
-	return ok(rid, map[string]any{"grant": token, "target_profile": profile, "catalog": plain, "endpoint": plain["endpoint"]}), nil
-}
-
-// Revokes one target issued grant using its exact profile scope
-func groupsPeerRevoke(ctx context.Context, rid any, params map[string]any, _ *gateway.HostedRoomService, dbPath string) (map[string]any, error) {
-	profile, err := groupsRequestedProfile(ctx, params)
-	if err != nil {
-		return nil, err
-	}
-	secret, err := gateway.GatewayRoomGrantSecret(ctx, "")
-	if err != nil {
-		return nil, err
-	}
-	claims, err := gateway.DecodeRoomGrant(secret, relayString(params["grant"]), "status", nil)
-	if err != nil {
-		return nil, err
-	}
-	installationID, err := gateway.LocalAuthorityGatewayID(ctx)
-	if err != nil {
-		return nil, err
-	}
-	if !pyjson.Equal(claims.GetOr("target_profile", nil), profile) || !pyjson.Equal(claims.GetOr("target_install_id", nil), installationID) {
-		return nil, errors.New("room grant target does not match this profile")
-	}
-	expiry, err := grantExpiry(claims)
-	if err != nil {
-		return nil, err
-	}
-	if err := gateway.RevokeRoomGrantScope(ctx, dbPath, claims, expiry, nil); err != nil {
-		return nil, err
-	}
-	return ok(rid, map[string]any{"revoked": true}), nil
-}
-
-// Registers and probes one scoped target route on the room home
-func groupsPeerRegister(ctx context.Context, rid any, params map[string]any, service *gateway.HostedRoomService, _ string) (map[string]any, error) {
-	targetURL, transportSecurity, err := gateway.ValidateRoomLinkURL(params["target_url"])
-	if err != nil {
-		return nil, err
-	}
-	catalog, err := gateway.GatewayRoomCatalogFromMapping(params["catalog"])
-	if err != nil {
-		return nil, err
-	}
-	supported := false
-	for _, version := range catalog.ProtocolVersions {
-		supported = supported || version.Cmp(big.NewInt(gateway.HostedProtocolVersion)) == 0
-	}
-	if !supported {
-		return nil, fmt.Errorf("target does not support RoomLink protocol v%d", gateway.HostedProtocolVersion)
-	}
-	direct := false
-	for _, mode := range catalog.LinkModes {
-		direct = direct || mode == "direct"
-	}
-	if !direct {
-		return nil, errors.New("target does not support a direct RoomLink")
-	}
-	targetProfile, grant := relayString(params["target_profile"]), relayString(params["grant"])
-	client, err := gateway.NewPeerRunsHTTPClient(ctx, targetURL, "", 0, service.StorePath(), 0, 0, nil)
-	if err != nil {
-		return nil, err
-	}
-	probe, err := client.Probe(grant)
-	if err != nil {
-		return nil, err
-	}
-	live, err := gateway.GatewayRoomCatalogFromMapping(probe["catalog"])
-	if err != nil {
-		return nil, err
-	}
-	if !reflect.DeepEqual(*live, *catalog) {
-		return nil, errors.New("target capability catalog changed during setup")
-	}
-	roomID, memberID := relayString(params["room_id"]), relayString(params["member_id"])
-	homeInstallID, err := gateway.LocalAuthorityGatewayID(ctx)
-	if err != nil {
-		return nil, err
-	}
-	homeRoom, err := gateway.RoomState(ctx, service.StorePath(), roomID, false)
-	if err != nil {
-		return nil, err
-	}
-	expected := map[string]any{"room_id": roomID, "home_install_id": homeInstallID, "authority_gateway_id": homeRoom["authority_gateway_id"],
-		"member_id": memberID, "target_profile": targetProfile}
-	mismatch := false
-	for key, value := range expected {
-		mismatch = mismatch || !pyjson.Equal(probe[key], value)
-	}
-	probeEpoch, err := groupsInt(probe["authority_epoch"])
-	if err != nil {
-		return nil, err
-	}
-	homeEpoch, err := groupsInt(homeRoom["authority_epoch"])
-	if err != nil {
-		return nil, err
-	}
-	if mismatch || probeEpoch != homeEpoch {
-		return nil, errors.New("room grant scope does not match this route")
-	}
-	cancellation := relayString(params["cancellation_scope_id"])
-	if cancellation == "" {
-		cancellation = "cancel-" + relayString(params["room_id"])
-	}
-	traceID := relayString(params["trace_id"])
-	if traceID == "" {
-		traceID = "trace-" + randomHexID(16)
-	}
-	route := gateway.PeerMemberRoute{HomeInstallID: homeInstallID, MemberID: memberID, TargetInstallID: catalog.InstallationID,
-		TargetProfile: targetProfile, CapabilityDigest: catalog.CatalogDigest, ExecutionPolicyDigest: catalog.ExecutionPolicy.PolicyDigest,
-		CancellationScopeID: cancellation, TraceID: traceID, Grant: grant}
-	if err := service.RegisterPeerRoute(roomID, memberID, route, client, &targetURL, catalog); err != nil {
-		return nil, err
-	}
-	return ok(rid, map[string]any{"registered": true, "mode": "direct", "transport_security": transportSecurity,
-		"target_install_id": catalog.InstallationID, "target_profile": targetProfile}), nil
 }
 
 // Rooms hosted by this gateway with the next page offset
@@ -746,4 +533,12 @@ func groupsPromote(ctx context.Context, rid any, params map[string]any, _ *gatew
 		return nil, err
 	}
 	return ok(rid, result), nil
+}
+
+// Value of a param or its default when the key is absent
+func paramOr(params map[string]any, key string, def any) any {
+	if v, present := params[key]; present {
+		return v
+	}
+	return def
 }

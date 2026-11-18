@@ -17,12 +17,12 @@ func TestYAMLTimestamp(t *testing.T) {
 		{"2002-1-4 01:02:03", "datetime.datetime(2002, 1, 4, 1, 2, 3)", "2002-01-04 01:02:03", "datetime", ""},
 		{"2002-12-14 01:02:03.9999996", "datetime.datetime(2002, 12, 14, 1, 2, 3)", "2002-12-14 01:02:03", "datetime", ""},
 		{"2002-12-14 01:02:03.0000015+05:30", "datetime.datetime(2002, 12, 14, 1, 2, 3, 2, tzinfo=datetime.timezone(datetime.timedelta(seconds=19800), '+05:30'))", "2002-12-14 01:02:03.000002+05:30", "datetime", ""},
-		{"2001-13-01", "", "", "", "month must be in 1..12"},
-		{"2001-02-29", "", "", "", "day is out of range for month"},
-		{"0000-01-01", "", "", "", "year 0 is out of range"},
-		{"2001-01-01 24:00:00", "", "", "", "hour must be in 0..23"},
-		{"2001-01-01 23:60:00", "", "", "", "minute must be in 0..59"},
-		{"2001-01-01 23:00:61", "", "", "", "second must be in 0..59"},
+		{"2001-13-01", "", "", "", "month must be in 1..12, not 13"},
+		{"2001-02-29", "", "", "", "day 29 must be in range 1..28 for month 2 in year 2001"},
+		{"0000-01-01", "", "", "", "year must be in 1..9999, not 0"},
+		{"2001-01-01 24:00:00", "", "", "", "hour must be in 0..23, not 24"},
+		{"2001-01-01 23:60:00", "", "", "", "minute must be in 0..59, not 60"},
+		{"2001-01-01 23:00:61", "", "", "", "second must be in 0..59, not 61"},
 		{"2001-01-01 23:00:00+24", "", "", "", "offset must be a timedelta strictly between -timedelta(hours=24) and timedelta(hours=24), not datetime.timedelta(days=1)."},
 	} {
 		v, ok, err := YAMLTimestamp(c.in)

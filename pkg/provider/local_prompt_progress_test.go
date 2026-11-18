@@ -5,6 +5,8 @@ import (
 	"reflect"
 	"testing"
 	"time"
+
+	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 )
 
 // Chat chunk wire map with a delta, a finish reason and an optional prompt progress payload
@@ -38,7 +40,7 @@ func TestPromptProgressHelpers(t *testing.T) {
 	}
 	kwargs := map[string]any{"model": "m", "extra_body": map[string]any{"cache_prompt": true}}
 	out := WithPromptProgressKwargs(kwargs)
-	if !reflect.DeepEqual(out["extra_body"], map[string]any{"cache_prompt": true, "return_progress": true}) ||
+	if !reflect.DeepEqual(pyjson.Plain(out["extra_body"]), map[string]any{"cache_prompt": true, "return_progress": true}) ||
 		!reflect.DeepEqual(kwargs["extra_body"], map[string]any{"cache_prompt": true}) {
 		t.Fatalf("with_prompt_progress_merges_extra_body %v %v", out, kwargs)
 	}

@@ -86,7 +86,7 @@ func useLeaseStores(t *testing.T) map[*AIAgent]turnLeaseAdmissionStore {
 	return stores
 }
 
-// Disables the liveness watchdog as the hermes tests do by resolving a None timeout
+// Disables the liveness watchdog as the tests do by resolving a None timeout
 func disableLivenessWatchdog(t *testing.T) {
 	t.Helper()
 	prev := turnLivenessConfig

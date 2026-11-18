@@ -124,10 +124,10 @@ func TestToolSearchClassification(t *testing.T) {
 
 func TestThresholdGate(t *testing.T) {
 	cfg := ToolSearchConfigFromRaw(map[string]any{"enabled": "off"})
-	if ShouldActivate(cfg, 999999, 200000, false) {
+	if ShouldActivate(cfg, 999999, 200000) {
 		t.Fatal("off activated")
 	}
-	if !ShouldActivate(ToolSearchConfigFromRaw(nil), 1, 200000, false) {
+	if !ShouldActivate(ToolSearchConfigFromRaw(nil), 1, 200000) {
 		t.Fatal("deferrable tokens did not activate")
 	}
 	small := EstimateTokensFromSchemas([]map[string]any{toolDef("a", "x", nil)})

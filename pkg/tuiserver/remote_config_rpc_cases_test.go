@@ -2,8 +2,6 @@ package tuiserver
 
 import (
 	"context"
-	"os"
-	"path/filepath"
 	"reflect"
 	"strings"
 	"testing"
@@ -14,7 +12,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/testfakes/configplane"
 	"github.com/nickheyer/icebath/pkg/testfakes/configplane/remoteplane"
-	"github.com/nickheyer/icebath/pkg/tuigateway"
+	"github.com/nickheyer/icebath/pkg/tuihost"
 )
 
 // Remote plane fixture with the raw config cache of the server cleared
@@ -177,29 +175,11 @@ func TestTuiSectionAndPromptSettersRefuseLockedEdits(t *testing.T) {
 	}
 }
 
-// The consent setter refuses a locked answer and records no consent change
-func TestTuiSharedMetricsSetRefusesALockedConsent(t *testing.T) {
-	p := tuiRemotePlane(t)
-	p.Upper = map[string]any{"telemetry": map[string]any{"shared_metrics": map[string]any{"enabled": false, "send": false}}}
-	p.UpperLocks = []map[string]any{{"path": "telemetry.shared_metrics", "level": "tenant"}}
-	answer := callMethod(t, "shared_metrics.set", map[string]any{"enabled": true, "send": true})
-	rpcError, _ := answer["error"].(map[string]any)
-	if rpcError == nil || rpcError["code"] != 4002 || !strings.Contains(rpcError["message"].(string), "locked") {
-		t.Fatalf("answer %v", answer)
-	}
-	if n := len(p.Patches()); n != 0 {
-		t.Fatalf("%d patches", n)
-	}
-	if _, err := os.Stat(filepath.Join(p.Home, "telemetry", "shared_metrics", "metrics.sqlite3")); !os.IsNotExist(err) {
-		t.Fatalf("consent change recorded %v", err)
-	}
-}
-
 // Registers an empty live session record for the test
-func liveRecord(t *testing.T, sid string) *tuigateway.Session {
+func liveRecord(t *testing.T, sid string) *tuihost.Session {
 	t.Helper()
-	record := tuigateway.NewSession(nil)
-	tuigateway.SetSessionRecord(sid, record)
-	t.Cleanup(func() { tuigateway.SetSessionRecord(sid, nil) })
+	record := tuihost.NewSession(nil)
+	tuihost.SetSessionRecord(sid, record)
+	t.Cleanup(func() { tuihost.SetSessionRecord(sid, nil) })
 	return record
 }

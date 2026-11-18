@@ -9,7 +9,7 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/tuigateway"
+	"github.com/nickheyer/icebath/pkg/tuihost"
 )
 
 // Gates of the read lane cases, a method waiting on its gate when one is installed
@@ -38,7 +38,7 @@ func wsTestReadRig(t *testing.T) (*wsTestSocket, *wsTestGates, *wsTestLog) {
 	wsTestNoOrphanGrace(t)
 	gates, log := &wsTestGates{gates: map[string]chan struct{}{}}, &wsTestLog{}
 	prevDispatch, prevClose := wsDispatchRequestFn, wsCloseSessionsForTransport
-	wsDispatchRequestFn = func(ctx context.Context, _ authorityConn, req any, method string, _ *tuigateway.WSTransport) (any, error) {
+	wsDispatchRequestFn = func(ctx context.Context, _ authorityConn, req any, method string, _ *tuihost.WSTransport) (any, error) {
 		id := pyrepr.Str(req.(*pyjson.Object).GetOr("id", nil))
 		log.add("start:" + id)
 		if gate := gates.of(method); gate != nil {
@@ -52,7 +52,7 @@ func wsTestReadRig(t *testing.T) (*wsTestSocket, *wsTestGates, *wsTestLog) {
 		log.add("done:" + id)
 		return pyjson.ObjectOf("jsonrpc", "2.0", "id", req.(*pyjson.Object).GetOr("id", nil), "result", pyjson.NewObject()), nil
 	}
-	wsCloseSessionsForTransport = func(context.Context, tuigateway.Transport, string) (int, int) {
+	wsCloseSessionsForTransport = func(context.Context, tuihost.Transport, string) (int, int) {
 		log.add("teardown")
 		return 0, 0
 	}

@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"log/slog"
 	"math/big"
 	"os"
 	"path/filepath"
@@ -104,7 +103,7 @@ func AutoPruneDiskSnapshot(ctx context.Context, h string) *DiskSnapshot {
 func autoPruneSessions(ctx context.Context, h string) (map[string]any, bool) {
 	cfg, err := config.LoadUserEffectiveFailClosed(filepath.Join(pruneAdvisorHome(ctx, h), "config.yaml"), os.LookupEnv)
 	if err != nil {
-		slog.Debug(fmt.Sprintf("auto-prune advice: config unreadable: %s", err))
+		pkgLog().Debug(fmt.Sprintf("auto-prune advice: config unreadable: %s", err))
 		return nil, false
 	}
 	sessions, ok := cfg["sessions"].(map[string]any)
@@ -283,7 +282,7 @@ func AutoPruneAdvise(ctx context.Context, h string) (*PruneAdvice, error) {
 	estimateOK := true
 	prunable, total, prunableBytes, totalBytes, err := autoPruneEstimate(ctx, h, retention, snap)
 	if err != nil {
-		slog.Debug(fmt.Sprintf("auto-prune advice: reclaim estimate unavailable: %s", err))
+		pkgLog().Debug(fmt.Sprintf("auto-prune advice: reclaim estimate unavailable: %s", err))
 		estimateOK = false
 	}
 	reclaim := int64(0)
@@ -335,7 +334,7 @@ func autoPruneStoreEstimate(ctx context.Context, h string, pairs ...any) {
 		data.Set(key+"_at", now)
 	}
 	if err := config.AtomicJSONWrite(ctx, filepath.Join(pruneAdvisorHome(ctx, h), AutoPruneEstimateFile), data); err != nil {
-		slog.Debug(fmt.Sprintf("auto-prune advice: estimate not cached: %s", err))
+		pkgLog().Debug(fmt.Sprintf("auto-prune advice: estimate not cached: %s", err))
 	}
 }
 
@@ -537,11 +536,11 @@ func AutoPruneDecide(ctx context.Context, enable bool, h string) bool {
 	}
 	path := filepath.Join(pruneAdvisorHome(ctx, h), "config.yaml")
 	if _, err := home.Mkdir(ctx, filepath.Dir(path)); err != nil {
-		slog.Warn(fmt.Sprintf("Could not save sessions.auto_prune: %s", err))
+		pkgLog().Warn(fmt.Sprintf("Could not save sessions.auto_prune: %s", err))
 		return false
 	}
 	if err := config.WriteConfigKey(ctx, path, "sessions.auto_prune", enable); err != nil {
-		slog.Warn(fmt.Sprintf("Could not save sessions.auto_prune: %s", err))
+		pkgLog().Warn(fmt.Sprintf("Could not save sessions.auto_prune: %s", err))
 		return false
 	}
 	_ = os.Remove(autoPruneSnoozePath(ctx, h))

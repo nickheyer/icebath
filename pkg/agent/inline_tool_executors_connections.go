@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"slices"
 
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/tools"
@@ -28,8 +29,7 @@ func setupMCPShimInline(a *AIAgent, ctx context.Context, args map[string]any, ic
 	if !ok {
 		server = ""
 	}
-	return manageConnectionsInline(a, ctx, map[string]any{"action": action,
-		"connectors": []any{map[string]any{"name": server, "mcp": true}}}, ictx)
+	return manageConnectionsInline(a, ctx, map[string]any{"action": action, "connectors": []any{server}}, ictx)
 }
 
 // Executor over the agent behind the executor host, an error on any other host
@@ -73,9 +73,8 @@ func manageConnectionsInline(a *AIAgent, ctx context.Context, args map[string]an
 	if err != nil {
 		return "", err
 	}
-	env := a.env
-	result := tools.ManageConnections(ctx, env, args, tools.ManageOptions{SessionID: a.sessionID, ToolCallID: ictx.ToolCallID,
-		TurnID: a.currentTurnID, Callback: callback, ConnectorsAvailable: func() bool { return tools.ConnectorsAvailable(env) }})
+	result := tools.ManageConnections(ctx, a.env, args, tools.ManageOptions{SessionID: a.sessionID, ToolCallID: ictx.ToolCallID,
+		Callback: callback})
 	if err := scopeInConnectedMCPServers(a, result); err != nil {
 		return "", err
 	}
@@ -106,7 +105,7 @@ func scopeInConnectedMCPServers(a *AIAgent, result string) error {
 		targets = v
 	case string, *pyjson.Object:
 	default:
-		return fmt.Errorf("TypeError: '%s' object is not iterable", pyrepr.TypeName(raw))
+		return fmt.Errorf("connection targets are %s, expected a list", errchain.Kind(raw))
 	}
 	var added []string
 	for _, item := range targets {

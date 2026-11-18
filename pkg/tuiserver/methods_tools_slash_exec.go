@@ -14,7 +14,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pysubprocess"
 	"github.com/nickheyer/icebath/pkg/memory"
 	"github.com/nickheyer/icebath/pkg/tools"
-	"github.com/nickheyer/icebath/pkg/tuigateway"
+	"github.com/nickheyer/icebath/pkg/tuihost"
 )
 
 // CLI commands that queue onto pending input, routed to command.dispatch since the slash worker cannot read them
@@ -46,7 +46,7 @@ func init() {
 }
 
 // Whether a base is a skill of the session profile, an error when the skill scan failed
-func profileSkillCommand(ctx context.Context, session *tuigateway.Session, base string) (hit bool, scanErr any) {
+func profileSkillCommand(ctx context.Context, session *tuihost.Session, base string) (hit bool, scanErr any) {
 	scanErr = catchPanic(func() {
 		scoped, err := sessionHomeScope(session, "", "")(ctx)
 		panicIf(err)
@@ -88,7 +88,7 @@ func isRegistryCommand(base string) (found bool) {
 }
 
 // Session slash worker, spawned once under the session spawn lock on first use
-func sessionSlashWorker(ctx context.Context, sid string, session *tuigateway.Session) (any, error) {
+func sessionSlashWorker(ctx context.Context, sid string, session *tuihost.Session) (any, error) {
 	if worker := session.Get("slash_worker"); truthy(worker) {
 		return worker, nil
 	}

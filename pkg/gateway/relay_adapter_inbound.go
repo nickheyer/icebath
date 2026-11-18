@@ -28,7 +28,7 @@ func (a *RelayAdapter) onInbound(ctx context.Context, event *MessageEvent) (Rela
 		a.mu.Lock()
 		if a.seenInbound.has(dedupeKey) {
 			a.mu.Unlock()
-			relayAdapterLog().Info(fmt.Sprintf("relay inbound dropped as replay (dedupe key=%s)", dedupeKey))
+			pkgLog().Info(fmt.Sprintf("relay inbound dropped as replay (dedupe key=%s)", dedupeKey))
 			return nil, nil
 		}
 		a.seenInbound.add(dedupeKey)
@@ -130,7 +130,7 @@ func (a *RelayAdapter) localizeInboundMedia(ctx context.Context, event *MessageE
 			if ctx.Err() != nil {
 				return err
 			}
-			relayAdapterLog().Debug("relay inbound media localization failed", "exc_info", err)
+			pkgLog().Debug("relay inbound media localization failed", "exc_info", err)
 			return nil
 		}
 		if ok {

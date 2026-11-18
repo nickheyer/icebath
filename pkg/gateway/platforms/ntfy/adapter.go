@@ -7,7 +7,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"log/slog"
 	"mime"
 	"net/http"
 	"strings"
@@ -96,7 +95,7 @@ func publishHeaders(token any, markdown, authFirst bool) ([][2]string, error) {
 // Body cut to the ntfy character limit as UTF-8, a warning tagged with the context when it cut
 func truncateBody(message, context string) []byte {
 	if n := utf8.RuneCountInString(message); n > maxMessageLength {
-		slog.Warn(fmt.Sprintf("%s: truncating message from %d to %d chars (ntfy limit)", context, n, maxMessageLength))
+		pkgLog().Warn(fmt.Sprintf("%s: truncating message from %d to %d chars (ntfy limit)", context, n, maxMessageLength))
 	}
 	return []byte(pystr.Slice(message, 0, maxMessageLength))
 }
@@ -224,7 +223,7 @@ func newHTTPClient() *http.Client {
 // Starts the streaming subscription task and marks the adapter connected, false without a topic
 func (a *NtfyAdapter) Connect(ctx context.Context, isReconnect bool) (bool, error) {
 	if !pyrepr.Truthy(a.topic) {
-		slog.Warn(fmt.Sprintf("[%s] NTFY_TOPIC not configured", a.Name()))
+		pkgLog().Warn(fmt.Sprintf("[%s] NTFY_TOPIC not configured", a.Name()))
 		return false, nil
 	}
 	a.mu.Lock()
@@ -235,7 +234,7 @@ func (a *NtfyAdapter) Connect(ctx context.Context, isReconnect bool) (bool, erro
 	a.mu.Lock()
 	a.streamTask = task
 	a.mu.Unlock()
-	slog.Info(fmt.Sprintf("[%s] Connected — subscribing to %s/%s", a.Name(), a.server, pyrepr.Str(a.topic)))
+	pkgLog().Info(fmt.Sprintf("[%s] Connected — subscribing to %s/%s", a.Name(), a.server, pyrepr.Str(a.topic)))
 	a.WirePluginHandlers(ctx, nil)
 	return true, nil
 }
@@ -249,7 +248,7 @@ func (a *NtfyAdapter) runStream(ctx context.Context) error {
 		return err
 	}
 	for a.IsConnected() {
-		slog.Debug(fmt.Sprintf("[%s] Opening stream to %s", a.Name(), streamURL))
+		pkgLog().Debug(fmt.Sprintf("[%s] Opening stream to %s", a.Name(), streamURL))
 		streamStart := time.Now()
 		err := a.consumeStream(ctx, streamURL, headers)
 		if ctx.Err() != nil {
@@ -264,7 +263,7 @@ func (a *NtfyAdapter) runStream(ctx context.Context) error {
 			if !a.IsConnected() {
 				return nil
 			}
-			slog.Warn(fmt.Sprintf("[%s] Stream error: %s", a.Name(), streamErrorText(err)))
+			pkgLog().Warn(fmt.Sprintf("[%s] Stream error: %s", a.Name(), streamErrorText(err)))
 		}
 		if !a.IsConnected() {
 			return nil
@@ -273,7 +272,7 @@ func (a *NtfyAdapter) runStream(ctx context.Context) error {
 			backoffIdx = 0
 		}
 		delay := reconnectBackoff[min(backoffIdx, len(reconnectBackoff)-1)]
-		slog.Info(fmt.Sprintf("[%s] Reconnecting in %ds...", a.Name(), delay))
+		pkgLog().Info(fmt.Sprintf("[%s] Reconnecting in %ds...", a.Name(), delay))
 		timer := time.NewTimer(time.Duration(delay) * time.Second)
 		select {
 		case <-timer.C:
@@ -309,10 +308,10 @@ func (a *NtfyAdapter) fatalStatus(ctx context.Context, statusCode int) error {
 	var code, detail, reason string
 	switch statusCode {
 	case 401:
-		slog.Error(fmt.Sprintf("[%s] Authentication failed (401) — stopping reconnect loop. Check NTFY_TOKEN.", a.Name()))
+		pkgLog().Error(fmt.Sprintf("[%s] Authentication failed (401) — stopping reconnect loop. Check NTFY_TOKEN.", a.Name()))
 		code, detail, reason = "ntfy_unauthorized", "ntfy server rejected auth (401). Check NTFY_TOKEN.", "401 Unauthorized"
 	case 404:
-		slog.Error(fmt.Sprintf("[%s] Topic not found (404): %s — stopping reconnect loop.", a.Name(), pyrepr.Str(a.topic)))
+		pkgLog().Error(fmt.Sprintf("[%s] Topic not found (404): %s — stopping reconnect loop.", a.Name(), pyrepr.Str(a.topic)))
 		code, detail = "ntfy_topic_not_found", fmt.Sprintf("ntfy topic '%s' returned 404. Check NTFY_TOPIC.", pyrepr.Str(a.topic))
 		reason = "404 Not Found"
 	default:
@@ -518,7 +517,7 @@ func (a *NtfyAdapter) Disconnect(ctx context.Context) error {
 		client.CloseIdleConnections()
 	}
 	a.dedup.Clear()
-	slog.Info(fmt.Sprintf("[%s] Disconnected", a.Name()))
+	pkgLog().Info(fmt.Sprintf("[%s] Disconnected", a.Name()))
 	return nil
 }
 
@@ -553,7 +552,7 @@ func (a *NtfyAdapter) onMessage(ctx context.Context, event *pyjson.Object) error
 		msgID = strings.ReplaceAll(uuid.NewString(), "-", "")
 	}
 	if a.dedup.IsDuplicate(msgID) {
-		slog.Debug(fmt.Sprintf("[%s] Duplicate message %s, skipping", a.Name(), msgID))
+		pkgLog().Debug(fmt.Sprintf("[%s] Duplicate message %s, skipping", a.Name(), msgID))
 		return nil
 	}
 	tags, _ := event.Get("tags")
@@ -562,7 +561,7 @@ func (a *NtfyAdapter) onMessage(ctx context.Context, event *pyjson.Object) error
 		return err
 	}
 	if echo {
-		slog.Debug(fmt.Sprintf("[%s] Skipping own message (echo tag)", a.Name()))
+		pkgLog().Debug(fmt.Sprintf("[%s] Skipping own message (echo tag)", a.Name()))
 		return nil
 	}
 	text := ""
@@ -574,7 +573,7 @@ func (a *NtfyAdapter) onMessage(ctx context.Context, event *pyjson.Object) error
 		text = pystr.Strip(s)
 	}
 	if text == "" {
-		slog.Debug(fmt.Sprintf("[%s] Empty message body, skipping", a.Name()))
+		pkgLog().Debug(fmt.Sprintf("[%s] Empty message body, skipping", a.Name()))
 		return nil
 	}
 	topicValue, _ := event.Get("topic")
@@ -603,7 +602,7 @@ func (a *NtfyAdapter) onMessage(ctx context.Context, event *pyjson.Object) error
 	messageEvent.MessageID = &msgID
 	messageEvent.RawMessage = event
 	messageEvent.Timestamp = timestamp
-	slog.Debug(fmt.Sprintf("[%s] Message on topic %s: %s", a.Name(), topic, pystr.Slice(text, 0, 80)))
+	pkgLog().Debug(fmt.Sprintf("[%s] Message on topic %s: %s", a.Name(), topic, pystr.Slice(text, 0, 80)))
 	return a.HandleMessage(ctx, messageEvent)
 }
 
@@ -627,7 +626,7 @@ func (a *NtfyAdapter) Send(ctx context.Context, chatID, content, replyTo string,
 		return gateway.SendResult{}, err
 	}
 	if n := utf8.RuneCountInString(content); n > maxMessageLength {
-		slog.Warn(fmt.Sprintf("[%s] Message truncated from %d to %d chars (ntfy limit)", a.Name(), n, maxMessageLength))
+		pkgLog().Warn(fmt.Sprintf("[%s] Message truncated from %d to %d chars (ntfy limit)", a.Name(), n, maxMessageLength))
 	}
 	body := []byte(pystr.Slice(content, 0, maxMessageLength))
 	resp, err := publish(ctx, client, a.server+"/"+pyrepr.Str(publishTopic), body, headers)
@@ -640,14 +639,14 @@ func (a *NtfyAdapter) Send(ctx context.Context, chatID, content, replyTo string,
 			return gateway.SendResult{Success: false, Error: "Timeout publishing to ntfy"}, nil
 		}
 		text := pyhttpx.ErrorText(err)
-		slog.Error(fmt.Sprintf("[%s] Send error: %s", a.Name(), text))
+		pkgLog().Error(fmt.Sprintf("[%s] Send error: %s", a.Name(), text))
 		return gateway.SendResult{Success: false, Error: text}, nil
 	}
 	if resp.StatusCode < 300 {
 		return gateway.SendResult{Success: true, MessageID: responseMessageID(resp)}, nil
 	}
 	bodyText := pystr.Slice(resp.Text(), 0, 200)
-	slog.Warn(fmt.Sprintf("[%s] Send failed HTTP %d: %s", a.Name(), resp.StatusCode, bodyText))
+	pkgLog().Warn(fmt.Sprintf("[%s] Send failed HTTP %d: %s", a.Name(), resp.StatusCode, bodyText))
 	return gateway.SendResult{Success: false, Error: fmt.Sprintf("HTTP %d: %s", resp.StatusCode, bodyText)}, nil
 }
 

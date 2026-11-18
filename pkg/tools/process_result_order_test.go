@@ -6,7 +6,7 @@ import (
 	"testing"
 )
 
-func TestProcessResultsKeepTheKeyOrderHermesInserts(t *testing.T) {
+func TestProcessResultsKeepTheirInsertionKeyOrder(t *testing.T) {
 	env, _ := cpProcEnv(t)
 	r := NewProcessRegistry()
 	proc := cpSleepProc(t)

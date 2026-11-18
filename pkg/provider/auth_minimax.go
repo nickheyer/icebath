@@ -251,11 +251,11 @@ func minimaxOAuthLogin(env PoolEnv, out io.Writer, region string, openBrowser bo
 	if region == "cn" {
 		cnPortal, ok := pconfig.Extra["cn_portal_base_url"].(string)
 		if !ok {
-			return nil, errors.New("KeyError: 'cn_portal_base_url'")
+			return nil, errors.New("the MiniMax region config has no cn_portal_base_url")
 		}
 		cnInference, ok := pconfig.Extra["cn_inference_base_url"].(string)
 		if !ok {
-			return nil, errors.New("KeyError: 'cn_inference_base_url'")
+			return nil, errors.New("the MiniMax region config has no cn_inference_base_url")
 		}
 		portalBaseURL, inferenceBaseURL = cnPortal, cnInference
 	}

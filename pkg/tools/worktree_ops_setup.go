@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -27,14 +28,14 @@ func cleanupFailedWorktreeAdd(repoRoot, wtPath, branchName string) {
 	worktreeGitQuiet([]string{"worktree", "remove", "--force", wtPath}, repoRoot, 15*time.Second, "", nil)
 	if _, err := os.Lstat(wtPath); err == nil {
 		if err := os.RemoveAll(wtPath); err != nil {
-			toolsLogger(nil).Debug(fmt.Sprintf("cleanup after failed worktree add: %s", err))
+			envLog(nil).Debug(fmt.Sprintf("cleanup after failed worktree add: %s", err))
 		}
 	}
 	worktreeGitQuiet([]string{"worktree", "prune"}, repoRoot, 15*time.Second, "", NoninteractiveGitEnv(nil))
 	worktreeGitQuiet([]string{"branch", "-D", branchName}, repoRoot, 15*time.Second, "", NoninteractiveGitEnv(nil))
 }
 
-// Pack sprawl threshold, repack timeout, slot interval and slot lock name, the module attributes hermes tests patch
+// Pack sprawl threshold, repack timeout, slot interval and slot lock name, the module attributes tests patch
 var (
 	packSprawlThreshold = 15
 	repackTimeout       = 1800.0
@@ -47,7 +48,7 @@ func claimRepackSlot(gitDir string) (bool, error) {
 	return claimMaintenanceSlot(gitDir, repackLock, repackMinInterval)
 }
 
-// Repack step of the pack health pass, the module attribute hermes tests patch
+// Repack step of the pack health pass, the module attribute tests patch
 var runBoundedRepackFn = runBoundedRepack
 
 // Incremental geometric repack whose whole process tree dies with the timeout or with this process
@@ -58,7 +59,7 @@ func runBoundedRepack(ctx context.Context, repoRoot string) {
 // Repacks on pack sprawl and keeps the commit graph fresh, every failure logged at debug
 func maintainPackHealth(ctx context.Context, repoRoot string) {
 	if err := maintainPackHealthErr(ctx, repoRoot); err != nil {
-		toolsLogger(nil).Debug(fmt.Sprintf("pack maintenance skipped: %s", err))
+		envLog(nil).Debug(fmt.Sprintf("pack maintenance skipped: %s", err))
 	}
 }
 
@@ -89,7 +90,7 @@ func maintainPackHealthErr(ctx context.Context, repoRoot string) error {
 		}
 		if claimed {
 			ClearStaleTmpPacks(gitDir, nil)
-			toolsLogger(nil).Info(fmt.Sprintf("git pack sprawl (%d packs) — repacking in background", len(packs)))
+			envLog(nil).Info(fmt.Sprintf("git pack sprawl (%d packs) — repacking in background", len(packs)))
 			runBoundedRepackFn(ctx, repoRoot)
 			if _, err := worktreeGit([]string{"worktree", "prune"}, repoRoot, 60*time.Second, NoninteractiveGitEnv(nil)); err != nil {
 				return err
@@ -106,7 +107,7 @@ func maintainPackHealthErr(ctx context.Context, repoRoot string) error {
 	return nil
 }
 
-// Git runner of the base resolution, the subprocess.run hermes tests spy on and stall
+// Git runner of the base resolution, the subprocess.run tests spy on and stall
 var resolveBaseGitFn = worktreeGit
 
 // Freshest base ref to branch a new worktree from with its banner label, one capped fetch at most
@@ -151,14 +152,14 @@ func resolveWorktreeBase(repoRoot string, fetchTimeout, freshnessWindow float64)
 			reason = fmt.Sprintf("fetch error: %s", err)
 		}
 		if refExists(ref) {
-			toolsLogger(nil).Debug(fmt.Sprintf("worktree base: %s — using cached %s", reason, ref))
+			envLog(nil).Debug(fmt.Sprintf("worktree base: %s — using cached %s", reason, ref))
 			return ref, fmt.Sprintf("%s (cached — %s)", ref, reason)
 		}
 		return "HEAD", fmt.Sprintf("HEAD (local — %s, no cached %s)", reason, ref)
 	}
 	up, err := run([]string{"rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{upstream}"}, 20)
 	if err != nil {
-		toolsLogger(nil).Debug(fmt.Sprintf("worktree base: upstream resolution failed: %s", err))
+		envLog(nil).Debug(fmt.Sprintf("worktree base: upstream resolution failed: %s", err))
 	} else if up.Returncode == 0 {
 		if upstream := pystr.Strip(up.Stdout); upstream != "" && strings.Contains(upstream, "/") {
 			remote, branch, _ := strings.Cut(upstream, "/")
@@ -167,7 +168,7 @@ func resolveWorktreeBase(repoRoot string, fetchTimeout, freshnessWindow float64)
 	}
 	headRef, err := run([]string{"symbolic-ref", "--quiet", "refs/remotes/origin/HEAD"}, 20)
 	if err != nil {
-		toolsLogger(nil).Debug(fmt.Sprintf("worktree base: default-branch resolution failed: %s", err))
+		envLog(nil).Debug(fmt.Sprintf("worktree base: default-branch resolution failed: %s", err))
 		return "HEAD", "HEAD (local — could not reach remote)"
 	}
 	defaultRef := ""
@@ -177,7 +178,7 @@ func resolveWorktreeBase(repoRoot string, fetchTimeout, freshnessWindow float64)
 	if defaultRef == "" {
 		show, err := run([]string{"remote", "show", "origin"}, max(fetchTimeout, 5))
 		if err != nil {
-			toolsLogger(nil).Debug(fmt.Sprintf("worktree base: default-branch resolution failed: %s", err))
+			envLog(nil).Debug(fmt.Sprintf("worktree base: default-branch resolution failed: %s", err))
 			return "HEAD", "HEAD (local — could not reach remote)"
 		}
 		for _, line := range pystr.Splitlines(show.Stdout, false) {
@@ -210,7 +211,7 @@ func ensureWorktreesGitignored(repoRoot string) {
 	if raw, err := os.ReadFile(gitignore); err == nil {
 		existing = pystr.DecodeUTF8Replace(bytes.TrimPrefix(raw, []byte("\xef\xbb\xbf")))
 	} else if !errors.Is(err, os.ErrNotExist) {
-		toolsLogger(nil).Debug(fmt.Sprintf("Could not update .gitignore: %s", err))
+		envLog(nil).Debug(fmt.Sprintf("Could not update .gitignore: %s", err))
 		return
 	}
 	for _, line := range pystr.Splitlines(existing, false) {
@@ -220,7 +221,7 @@ func ensureWorktreesGitignored(repoRoot string) {
 	}
 	f, err := os.OpenFile(gitignore, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644)
 	if err != nil {
-		toolsLogger(nil).Debug(fmt.Sprintf("Could not update .gitignore: %s", err))
+		envLog(nil).Debug(fmt.Sprintf("Could not update .gitignore: %s", err))
 		return
 	}
 	defer f.Close()
@@ -229,15 +230,15 @@ func ensureWorktreesGitignored(repoRoot string) {
 		text = "\n" + text
 	}
 	if _, err := f.WriteString(text); err != nil {
-		toolsLogger(nil).Debug(fmt.Sprintf("Could not update .gitignore: %s", err))
+		envLog(nil).Debug(fmt.Sprintf("Could not update .gitignore: %s", err))
 	}
 }
 
 // Creates the worktree with a local HEAD retry, every failed attempt swept, false when it failed
-func worktreeAdd(repoRoot, wtPath, branchName, baseRef, baseLabel string) (string, string, bool) {
+func worktreeAdd(repoRoot, wtPath, branchName, baseRef, baseLabel string, cprint func(string)) (string, string, bool) {
 	env := NoninteractiveRepoGitEnv(repoRoot, nil)
 	if env == nil {
-		WorktreeCprint("\x1b[31m✗ Failed to create worktree: could not read the repository's filter config\x1b[0m")
+		cprint("\x1b[31m✗ Failed to create worktree: could not read the repository's filter config\x1b[0m")
 		return "", "", false
 	}
 	create := func(cfg []string) (*worktreeGitResult, error) {
@@ -247,20 +248,20 @@ func worktreeAdd(repoRoot, wtPath, branchName, baseRef, baseLabel string) (strin
 	result, err := create([]string{"-c", "checkout.workers=8", "-c", "checkout.thresholdForParallelism=100"})
 	if err == nil && result.Returncode != 0 {
 		if baseRef != "HEAD" {
-			toolsLogger(nil).Warn(fmt.Sprintf("worktree add from %s failed (%s); retrying from local HEAD", baseRef, pystr.Strip(result.Stderr)))
+			envLog(nil).Warn(fmt.Sprintf("worktree add from %s failed (%s); retrying from local HEAD", baseRef, pystr.Strip(result.Stderr)))
 			cleanupFailedWorktreeAdd(repoRoot, wtPath, branchName)
 			baseRef, baseLabel = "HEAD", "HEAD (fallback — remote base failed)"
 			result, err = create(nil)
 		}
 		if err == nil && result.Returncode != 0 {
 			cleanupFailedWorktreeAdd(repoRoot, wtPath, branchName)
-			WorktreeCprint(fmt.Sprintf("\x1b[31m✗ Failed to create worktree: %s\x1b[0m", pystr.Strip(result.Stderr)))
+			cprint(fmt.Sprintf("\x1b[31m✗ Failed to create worktree: %s\x1b[0m", pystr.Strip(result.Stderr)))
 			return "", "", false
 		}
 	}
 	if err != nil {
 		cleanupFailedWorktreeAdd(repoRoot, wtPath, branchName)
-		WorktreeCprint(fmt.Sprintf("\x1b[31m✗ Failed to create worktree: %s\x1b[0m", err))
+		cprint(fmt.Sprintf("\x1b[31m✗ Failed to create worktree: %s\x1b[0m", err))
 		return "", "", false
 	}
 	return baseRef, baseLabel, true
@@ -270,12 +271,21 @@ var worktreeNameUnsafeRe = regexp.MustCompile(`[^A-Za-z0-9._-]+`)
 
 // Creates an isolated git worktree and returns its path, branch, repo root and base, nil on failure
 func SetupWorktree(ctx context.Context, repoRoot string, syncBase bool, name string, retainDB *string) map[string]string {
+	return SetupWorktreeFor(ctx, repoRoot, syncBase, name, retainDB, os.Getpid(), nil)
+}
+
+// Creates a worktree locked for the owner process, its lines written to out or the CLI printers when out is nil
+func SetupWorktreeFor(ctx context.Context, repoRoot string, syncBase bool, name string, retainDB *string, ownerPid int, out io.Writer) map[string]string {
+	cprint, plain := WorktreeCprint, pysys.Stdout
+	if out != nil {
+		cprint, plain = func(text string) { fmt.Fprintln(out, text) }, out
+	}
 	if repoRoot == "" {
 		repoRoot = gitRepoRoot()
 	}
 	if repoRoot == "" {
-		WorktreeCprint("\x1b[31m✗ --worktree requires being inside a git repository.\x1b[0m")
-		fmt.Fprintln(pysys.Stdout, "  cd into your project repo first, then run icebath -w")
+		cprint("\x1b[31m✗ --worktree requires being inside a git repository.\x1b[0m")
+		fmt.Fprintln(plain, "  cd into your project repo first, then run icebath -w")
 		return nil
 	}
 	wtName := ""
@@ -288,13 +298,13 @@ func SetupWorktree(ctx context.Context, repoRoot string, syncBase bool, name str
 	branchName := "icebath/" + wtName
 	worktreesDir := filepath.Join(repoRoot, ".worktrees")
 	if err := os.MkdirAll(worktreesDir, 0o777); err != nil {
-		WorktreeCprint(fmt.Sprintf("\x1b[31m✗ Failed to create worktree: %s\x1b[0m", err))
+		cprint(fmt.Sprintf("\x1b[31m✗ Failed to create worktree: %s\x1b[0m", err))
 		return nil
 	}
 	wtPath := filepath.Join(worktreesDir, wtName)
 	if _, err := os.Lstat(wtPath); name != "" && err == nil {
-		WorktreeCprint(fmt.Sprintf("\x1b[31m✗ Worktree already exists: %s\x1b[0m", wtPath))
-		fmt.Fprintf(pysys.Stdout, "  Pick a different name, or remove it with: git worktree remove %s\n", wtPath)
+		cprint(fmt.Sprintf("\x1b[31m✗ Worktree already exists: %s\x1b[0m", wtPath))
+		fmt.Fprintf(plain, "  Pick a different name, or remove it with: git worktree remove %s\n", wtPath)
 		return nil
 	}
 	ensureWorktreesGitignored(repoRoot)
@@ -302,26 +312,26 @@ func SetupWorktree(ctx context.Context, repoRoot string, syncBase bool, name str
 	if syncBase {
 		baseRef, baseLabel = resolveWorktreeBase(repoRoot, 5, 300)
 	}
-	baseRef, baseLabel, ok := worktreeAdd(repoRoot, wtPath, branchName, baseRef, baseLabel)
+	baseRef, baseLabel, ok := worktreeAdd(repoRoot, wtPath, branchName, baseRef, baseLabel, cprint)
 	if !ok {
 		return nil
 	}
 	copyWorktreeIncludes(repoRoot, wtPath)
-	reason := fmt.Sprintf("icebath pid=%d", os.Getpid())
+	reason := fmt.Sprintf("icebath pid=%d", ownerPid)
 	if retainDB != nil {
 		reason += " db=" + *retainDB
 	}
 	if _, err := worktreeGit([]string{"worktree", "lock", "--reason", reason, wtPath}, repoRoot, 10*time.Second, nil); err != nil {
-		toolsLogger(nil).Debug(fmt.Sprintf("git worktree lock failed (non-fatal): %s", err))
+		envLog(nil).Debug(fmt.Sprintf("git worktree lock failed (non-fatal): %s", err))
 	} else {
-		toolsLogger(nil).Debug(fmt.Sprintf("Worktree locked: %s (pid=%d)", wtPath, os.Getpid()))
+		envLog(nil).Debug(fmt.Sprintf("Worktree locked: %s (pid=%d)", wtPath, ownerPid))
 	}
 	WorktreeRecordRepo(ctx, repoRoot)
 	if retainDB != nil {
 		RecordTUIWorktree(ctx, map[string]string{"path": wtPath, "branch": branchName, "repo_root": repoRoot})
 	}
-	WorktreeCprint(fmt.Sprintf("\x1b[32m✓ Worktree created:\x1b[0m %s", wtPath))
-	fmt.Fprintf(pysys.Stdout, "  Branch: %s\n", branchName)
-	fmt.Fprintf(pysys.Stdout, "  Base:   %s\n", baseLabel)
+	cprint(fmt.Sprintf("\x1b[32m✓ Worktree created:\x1b[0m %s", wtPath))
+	fmt.Fprintf(plain, "  Branch: %s\n", branchName)
+	fmt.Fprintf(plain, "  Base:   %s\n", baseLabel)
 	return map[string]string{"path": wtPath, "branch": branchName, "repo_root": repoRoot, "base": baseRef}
 }

@@ -9,7 +9,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/tools"
 )
 
-// Run recorder standing in for the worker's agent, the SimpleNamespace of the hermes case
+// Run recorder standing in for the worker's agent, the SimpleNamespace of the test
 type recordedWorkerTurn struct {
 	text any
 	o    RunConversationOptions

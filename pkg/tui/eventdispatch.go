@@ -2,8 +2,10 @@ package tui
 
 import (
 	"errors"
+	"github.com/nickheyer/icebath/pkg/tuigateway"
 	"regexp"
 	"slices"
+	"strconv"
 	"strings"
 	"time"
 
@@ -32,9 +34,6 @@ func (s *tuiStore) noteCanonicalCompletion(sid string, admissionID any) {
 	}
 	s.lastAdmission[sid] = id
 }
-
-// Records an explicit wake off so a reconnect does not arm the listener again
-func (s *tuiStore) setWakeUserDisabled(disabled bool) { s.wakeUserDisabled = disabled }
 
 // List with x appended unless it is already last, keeping the newest max entries
 func pushUnique(xs []string, x string, max int) []string {
@@ -122,31 +121,33 @@ func (h *eventHandler) handle(ev gatewayEventMsg) {
 			}
 		}
 	case "gateway.ready":
-		skin, _ := p["skin"].(map[string]any)
-		h.handleReady(gatewaySkinOf(skin))
-	case "skin.changed":
-		if p != nil {
-			h.queue(h.store.applySkin(gatewaySkinOf(p)))
+		if ready, ok := eventPayload(h, tuigateway.GatewayReadyEvent, p); ok {
+			h.handleReady(gatewaySkinOf(ready.Skin))
 		}
-	case "free_tier.challenge":
-		h.showChallenge(p)
+	case "skin.changed":
+		if skin, ok := eventPayload(h, tuigateway.SkinChangedEvent, p); ok && p != nil {
+			h.queue(h.store.applySkin(gatewaySkinOf(&skin)))
+		}
 	case "session.info":
-		h.applySessionInfo(p)
+		h.applySessionInfo(ev)
 	case "session.updated":
-		h.applyDeferredPickOutcome(p, sid)
+		if update, ok := eventPayload(h, tuigateway.SessionUpdatedEvent, p); ok {
+			h.applyDeferredPickOutcome(update, sid)
+		}
 	case "session.replay_gap":
 		if sid != "" {
 			h.queue(h.app.resumeByID(sid, nil))
 		}
 	case "session.usage":
-		if usage := usageFromTick(p); usage != nil {
-			h.store.ui.Usage = spreadUsage(h.store.ui.Usage, usage)
+		if tick, ok := eventPayload(h, tuigateway.SessionUsageEvent, p); ok {
+			h.store.ui.Usage = mergeUsageStable(h.store.ui.Usage, usageOfCounters(tick))
 		}
 	case "thinking.delta":
 		h.thinkingDelta(p)
 	case "session.control.update":
-		control, _ := p["control"].(map[string]any)
-		h.store.applyControlSnapshot(sid, control)
+		if update, ok := eventPayload(h, tuigateway.SessionControlUpdateEvent, p); ok {
+			h.store.applyControlSnapshot(sid, update.Control)
+		}
 	case "message.start":
 		h.agentsNudgedThisTurn = false
 		h.turn.startMessage()
@@ -156,8 +157,6 @@ func (h *eventHandler) handle(ev gatewayEventMsg) {
 		h.showGatewayNotice(p)
 	case "notification.clear":
 		h.turn.clearNotice(paramStr(p["key"]))
-	case "billing.step_up.verification":
-		h.showBillingVerification(p)
 	case "gateway.stderr":
 		if p != nil {
 			if line := jsTemplate(p, "line"); stderrLooksLikeProblem(line) {
@@ -173,6 +172,18 @@ func (h *eventHandler) handle(ev gatewayEventMsg) {
 		}
 	case "voice.transcript":
 		h.handleVoiceTranscript(p)
+	case "voice.interrupted":
+		h.setStatus(tr("gatewayMsg.status.voiceInterrupted"))
+		h.turn.restoreStatusAfter(statusNoteHold)
+	case "session.resume_progress":
+		h.resumeProgress(sid, p)
+	case "session.reclaimed":
+		h.sessionReclaimed(p)
+	case "display.status", "display.lease":
+		h.setStatus(screenEventNote(ev))
+		h.turn.restoreStatusAfter(statusNoteHold)
+	case "display.install.log", "display.install.done":
+		h.app.sys(screenInstallLine(ev))
 	case "wake.detected":
 		h.handleWakeDetected(p)
 	case "gateway.start_timeout":
@@ -318,8 +329,7 @@ func (h *eventHandler) handle(ev gatewayEventMsg) {
 	case "message.complete":
 		h.messageComplete(ev)
 	case "error":
-		_, stamped := field(current, "execution_generation")
-		h.handleErrorEvent(p, genericError && stamped)
+		h.handleErrorEvent(p, genericError && infoOf(current).ExecutionGeneration != nil)
 	}
 }
 
@@ -502,8 +512,13 @@ func (h *eventHandler) messageComplete(ev gatewayEventMsg) {
 	if truthyJS(p["warning"]) {
 		h.turn.pushActivity(jsValueString(p["warning"]), "warn", "")
 	}
-	if usage, _ := p["usage"].(map[string]any); truthyJS(p["usage"]) {
-		h.store.ui.Usage = mergeUsageStable(h.store.ui.Usage, usage)
+	if raw, has := p["usage"]; has && raw != nil {
+		var usage tuigateway.Usage
+		if err := tuigateway.Loose(raw, &usage); err != nil {
+			h.app.sys("error: " + tr("session.common.invalidResponse", "message.complete") + " " + err.Error())
+		} else {
+			h.store.ui.Usage = mergeUsageStable(h.store.ui.Usage, &usage)
+		}
 	}
 	h.confirmBillingWall(p)
 }
@@ -530,60 +545,53 @@ func (h *eventHandler) handleErrorEvent(p map[string]any, versionedGenericError 
 	h.setStatus("ready")
 }
 
-// Usage with the fields of a live tick laid over it
-func spreadUsage(prev, next map[string]any) map[string]any {
-	merged := make(map[string]any, len(prev)+len(next))
-	for k, v := range prev {
-		merged[k] = v
-	}
-	for k, v := range next {
-		merged[k] = v
-	}
-	return merged
-}
-
 // Session info push, admitted bubbles, running state, stored id and usage, ignored for another profile
-func (h *eventHandler) applySessionInfo(incoming map[string]any) {
+func (h *eventHandler) applySessionInfo(ev gatewayEventMsg) {
+	incoming, ok := eventPayload(h, tuigateway.SessionInfoEvent, ev.Payload)
+	if !ok {
+		return
+	}
+	if ev.Epoch != nil {
+		incoming.AuthorityEpoch = ev.Epoch
+	}
+	if ev.Generation != nil {
+		incoming.ExecutionGeneration = ev.Generation
+	}
 	current := h.store.ui.Info
-	if incoming == nil {
+	if name, held := val(incoming.ProfileName), val(infoOf(current).ProfileName); name != "" && held != "" && name != held {
 		return
 	}
-	if truthyJS(incoming["profile_name"]) && truthyJS(current["profile_name"]) && !jsStrictEqual(incoming["profile_name"], current["profile_name"]) {
-		return
-	}
-	info := make(map[string]any, len(current)+len(incoming))
-	for k, v := range current {
-		info[k] = v
-	}
-	for k, v := range incoming {
-		info[k] = v
-	}
-	for _, started := range h.store.newlyStartedRows(current["pending_submissions"], incoming["pending_submissions"]) {
+	info := patchedInfo(current, incoming)
+	for _, started := range h.store.newlyStartedRows(current, &incoming) {
 		h.store.markBubbleShown(paramStr(started["input_id"]))
-		h.app.appendMessage(msg{Role: "user", Text: paramStr(started["user"])})
+		row := map[string]any{"role": "user", "text": paramStr(started["user"]),
+			"display_kind": started["display_kind"], "display_metadata": started["display_metadata"]}
+		for _, shown := range toTranscriptMessages([]any{row}) {
+			h.app.appendMessage(shown)
+		}
 	}
-	if incoming["running"] == true {
+	if running := incoming.Running; running != nil && *running {
 		h.store.ui.Busy, h.store.ui.Status = true, "running…"
 	}
-	if incoming["running"] == false {
+	if running := incoming.Running; running != nil && !*running {
 		h.turn.clearStatusTimer()
 		h.turn.idle(true)
 		h.setStatus("ready")
 	}
 	storedSid := h.store.ui.StoredSid
-	if truthyJS(info["stored_session_id"]) {
-		storedSid = jsValueString(info["stored_session_id"])
+	if stored := val(info.StoredSessionID); stored != "" {
+		storedSid = stored
 	}
 	if storedSid != "" {
-		info["stored_session_id"] = storedSid
+		info.StoredSessionID = &storedSid
 	}
 	h.store.ui.Info = info
 	if h.store.ui.Status == tr("session.status.startingAgent") {
 		h.store.ui.Status = "ready"
 	}
 	h.store.ui.StoredSid = storedSid
-	if usage, _ := info["usage"].(map[string]any); truthyJS(info["usage"]) {
-		h.store.ui.Usage = mergeUsageStable(h.store.ui.Usage, usage)
+	if info.Usage != nil {
+		h.store.ui.Usage = mergeUsageStable(h.store.ui.Usage, info.Usage)
 	}
 	h.app.setHistoryItems(func(prev []msg) []msg {
 		next := slices.Clone(prev)
@@ -596,52 +604,59 @@ func (h *eventHandler) applySessionInfo(incoming map[string]any) {
 	})
 }
 
+// Typed payload of an event, a misfit printed as an invalid response naming the field
+func eventPayload[T any](h *eventHandler, ev tuigateway.Event[T], p map[string]any) (T, bool) {
+	payload, err := ev.Payload(p)
+	if err != nil {
+		h.app.sys("error: " + tr("session.common.invalidResponse", ev.Name()) + " " + err.Error())
+		return payload, false
+	}
+	return payload, true
+}
+
 // Model pick that did not apply at the turn boundary, a refusal named or a guarded target asked again
-func (h *eventHandler) applyDeferredPickOutcome(update map[string]any, sid string) {
-	if update["operation"] != "model" || sid == "" {
+func (h *eventHandler) applyDeferredPickOutcome(update tuigateway.SessionMutateResult, sid string) {
+	if update.Operation != "model" || sid == "" {
 		return
 	}
-	if update["status"] == "refused" {
-		if info := h.store.ui.Info; info != nil {
-			if model, isStr := update["model"].(string); isStr && model != "" {
-				next := make(map[string]any, len(info)+2)
-				for k, v := range info {
-					next[k] = v
-				}
-				next["model"] = model
-				if provider, isStr := update["provider"].(string); isStr {
-					next["provider"] = provider
-				}
-				h.store.ui.Info = next
-			}
+	status := val(update.Status)
+	if status == "refused" {
+		if model := val(update.Model); model != "" && h.store.ui.Info != nil {
+			h.store.ui.Info = patchedInfo(h.store.ui.Info, tuigateway.SessionInfo{Model: update.Model, Provider: update.Provider})
 		}
-		h.app.sys(tr("slashCmd.session.model.deferredRefused", stringOr(update["target_model"], ""), stringOr(update["reason"], "refused")))
+		reason := val(update.Reason)
+		if reason == "" {
+			reason = "refused"
+		}
+		h.app.sys(tr("slashCmd.session.model.deferredRefused", val(update.TargetModel), reason))
 		return
 	}
-	confirm, isStr := update["confirm"].(string)
-	if update["status"] != "confirmation_required" || !isStr {
+	confirm := val(update.Confirm)
+	if status != "confirmation_required" || update.Confirm == nil {
 		return
 	}
-	pick, _ := update["payload"].(map[string]any)
-	arg := stringOr(pick["model"], "")
-	if truthyJS(pick["provider"]) {
-		arg += " --provider " + jsValueString(pick["provider"])
+	pick := update.Payload
+	if pick == nil {
+		pick = &tuigateway.ModelPick{}
 	}
-	if truthyJS(pick["reasoning"]) {
-		arg += " --reasoning " + jsValueString(pick["reasoning"])
+	arg := pick.Model
+	if provider := val(pick.Provider); provider != "" {
+		arg += " --provider " + provider
 	}
-	target := update["target_model"]
-	if target == nil {
-		target = pick["model"]
+	if reasoning := val(pick.Reasoning); reasoning != "" {
+		arg += " --reasoning " + reasoning
 	}
-	detail, _ := update["confirm_message"].(string)
-	h.store.openModelConfirmation(detail, stringOr(target, ""), func() tea.Cmd {
+	target := pick.Model
+	if update.TargetModel != nil {
+		target = *update.TargetModel
+	}
+	h.store.openModelConfirmation(val(update.ConfirmMessage), target, func() tea.Cmd {
 		return h.store.mutateCanonicalSession(h.gw, sid, "model", arg, func() bool { return false }, confirm, func(m *mutationOutcome, err error) tea.Cmd {
 			if err != nil {
 				h.app.sys("error: " + err.Error())
 				return nil
 			}
-			if m != nil && m.Result["status"] == "confirmation_required" {
+			if m != nil && val(m.Result.Status) == "confirmation_required" {
 				h.app.sys(tr("slashCmd.session.model.confirmStale"))
 			}
 			return nil
@@ -649,23 +664,15 @@ func (h *eventHandler) applyDeferredPickOutcome(update map[string]any, sid strin
 	})
 }
 
-// Billing wall of a completed turn, a window plan's limit dialog or the out of credits dialog
+// Out of credits dialog of a turn the provider refused for billing, opening its billing page or the model picker
 func (h *eventHandler) confirmBillingWall(p map[string]any) {
-	surface, _ := p["error_surface"].(map[string]any)
-	if limit, _ := surface["usage_limit"].(map[string]any); truthyJS(surface["usage_limit"]) {
-		h.confirmUsageLimit(limit)
-		return
-	}
 	block, _ := p["billing"].(map[string]any)
-	if !truthyJS(p["billing"]) || surface["code"] == "usage_window" {
+	if !truthyJS(p["billing"]) {
 		return
 	}
 	copy := billingDialogCopy(block)
 	h.store.overlay.Confirm = &confirmReq{CancelLabel: copy.CancelLabel, ConfirmLabel: copy.ConfirmLabel, Detail: copy.Detail, Title: copy.Title, OnConfirm: func() tea.Cmd {
-		switch {
-		case truthyJS(block["is_nous"]):
-			return h.app.submit("/topup")
-		case truthyJS(block["billing_url"]):
+		if truthyJS(block["billing_url"]) {
 			openExternalURL(jsValueString(block["billing_url"]))
 			return nil
 		}
@@ -673,45 +680,30 @@ func (h *eventHandler) confirmBillingWall(p map[string]any) {
 	}}
 }
 
-// Window plan limit dialog, switching this session to the recommended model and sending again, or the top up
-func (h *eventHandler) confirmUsageLimit(limit map[string]any) {
-	dialog := usageLimitDialog(limit)
-	h.store.overlay.Confirm = &confirmReq{CancelLabel: dialog.CancelLabel, ConfirmLabel: dialog.ConfirmLabel, Detail: dialog.Detail, Title: dialog.Title, OnConfirm: func() tea.Cmd {
-		if dialog.SwitchValue == "" {
-			return h.app.submit("/topup")
-		}
-		sid := h.store.ui.Sid
-		if h.gw.canonical() && sid != "" {
-			return h.store.switchCanonicalModel(h.gw, sid, dialog.SwitchValue, h.app.sys, func() tea.Cmd { return h.app.submit("/retry") }, "", func(err error) tea.Cmd {
-				if err != nil {
-					h.app.sys("error: " + rpcErrorMessage(err))
-				}
-				return nil
-			})
-		}
-		params := map[string]any{"key": "model", "session_id": nil, "value": dialog.SwitchValue}
-		if sid != "" {
-			params["session_id"] = sid
-		}
-		return h.rpc("config.set", params, func(result map[string]any) tea.Cmd {
-			if h.store.ui.Sid != sid {
-				return nil
-			}
-			if !truthyJS(result["value"]) {
-				h.app.sys("error: model switch failed")
-				return nil
-			}
-			value := jsValueString(result["value"])
-			h.app.sys("model → " + value)
-			if info := h.store.ui.Info; info != nil {
-				next := make(map[string]any, len(info)+1)
-				for k, v := range info {
-					next[k] = v
-				}
-				next["model"] = value
-				h.store.ui.Info = next
-			}
-			return h.app.submit("/retry")
-		})
-	}}
+// Status of a deferred history load of the session in view, loading then the count of messages read
+func (h *eventHandler) resumeProgress(sid string, p map[string]any) {
+	progress, ok := eventPayload(h, tuigateway.SessionResumeProgressEvent, p)
+	if !ok || sid == "" || sid != h.store.ui.Sid {
+		return
+	}
+	switch progress.Status {
+	case "loading":
+		h.setStatus(tr("gatewayMsg.status.loadingHistory"))
+	case "complete":
+		h.setStatus(tr("gatewayMsg.status.historyLoaded", strconv.FormatInt(val(progress.MessageCount), 10)))
+		h.turn.restoreStatusAfter(statusNoteHold)
+	}
+}
+
+// Warns that the gateway closed the session in view, naming the reason and the resume that reopens it
+func (h *eventHandler) sessionReclaimed(p map[string]any) {
+	reclaimed, ok := eventPayload(h, tuigateway.SessionReclaimedEvent, p)
+	live, stored := reclaimed.SessionID, reclaimed.StoredSessionID
+	if !ok || live == "" || (live != h.store.ui.Sid && (stored == "" || stored != h.store.ui.StoredSid)) {
+		return
+	}
+	if stored == "" {
+		stored = live
+	}
+	h.app.sys("warning: " + tr("session.lifecycle.reclaimed", reclaimed.Reason, stored))
 }

@@ -70,7 +70,7 @@ func (t *TurnRunner) schedule(fn func(ctx context.Context) (any, error), logMess
 // Hops a coroutine onto the given loop, nil with a logged reason when the loop is missing or refuses
 func (t *TurnRunner) scheduleOn(loop gateway.EventLoop, fn func(ctx context.Context) (any, error), logMessage string) *concurrentFuture {
 	if loop == nil {
-		runLog().Debug(fmt.Sprintf("%s: loop is None", logMessage))
+		pkgLog().Debug(fmt.Sprintf("%s: loop is None", logMessage))
 		return nil
 	}
 	fut := newConcurrentFuture()
@@ -84,7 +84,7 @@ func (t *TurnRunner) scheduleOn(loop gateway.EventLoop, fn func(ctx context.Cont
 		})
 	})
 	if err != nil {
-		runLog().Debug(fmt.Sprintf("%s: %s", logMessage, err))
+		pkgLog().Debug(fmt.Sprintf("%s: %s", logMessage, err))
 		return nil
 	}
 	return fut
@@ -132,7 +132,7 @@ func (t *TurnRunner) progressSubagentNotice(preview any, kwargs map[string]any) 
 	status := kwargs["status"]
 	defer func() {
 		if r := recover(); r != nil {
-			runLog().Debug(fmt.Sprintf("subagent failure notice failed: %v", r))
+			pkgLog().Debug(fmt.Sprintf("subagent failure notice failed: %v", r))
 		}
 	}()
 	if !agent.IsSubagentFailureStatus(status) || !tc.runStillCurrent() {
@@ -154,7 +154,7 @@ func (t *TurnRunner) progressSubagentNotice(preview any, kwargs map[string]any) 
 		return nil
 	}, string(tc.source.Platform), false, tc.userConfig)
 	if err != nil {
-		runLog().Debug(fmt.Sprintf("subagent failure notice failed: %s", err))
+		pkgLog().Debug(fmt.Sprintf("subagent failure notice failed: %s", err))
 	}
 }
 
@@ -167,7 +167,7 @@ func (t *TurnRunner) progressLiveStatus(eventType string, toolName string, args 
 	}
 	defer func() {
 		if r := recover(); r != nil {
-			runLog().Debug(fmt.Sprintf("live status update failed: %v", r))
+			pkgLog().Debug(fmt.Sprintf("live status update failed: %v", r))
 		}
 	}()
 	if eventType == "tool.started" && toolName != "" && tc.runStillCurrent() {

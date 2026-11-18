@@ -14,10 +14,11 @@ import (
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
+	"github.com/nickheyer/icebath/pkg/pm"
 )
 
 var (
-	toggleStdinTTY         = func() bool { return xterm.IsTerminal(os.Stdin.Fd()) }
+	toggleStdinTTY        = func() bool { return xterm.IsTerminal(os.Stdin.Fd()) }
 	toggleUI               = cliui.Default
 	toggleContextEngines   = DiscoverContextEngines
 	toggleProviderCategory = providerCategories
@@ -286,7 +287,7 @@ func persistPluginSelection(ctx context.Context, keys []string, chosen, initial 
 	if len(off) > 0 {
 		shownOff = pyListRepr(off)
 	}
-	logPluginsCmdToggle.info(fmt.Sprintf("plugins picker: enabled %s; disabled %s", shownOn, shownOff))
+	pkgLog().Info(fmt.Sprintf("plugins picker: enabled %s; disabled %s", shownOn, shownOff))
 	return on, off, nil
 }
 
@@ -445,7 +446,11 @@ func runCompositeUI(ctx context.Context, ui *cliui.Console, keys, labels []strin
 	var refused *AdmissionRefused
 	if errors.As(err, &refused) {
 		console.Print("[red]✗[/red] Plugin selection refused, not saved: " + refused.Error())
-		console.Print("[dim]config.yaml and the active environment are unchanged. Run `icebath pm install` to resolve, then retry.[/dim]")
+		if pm.BinaryInstall() {
+			console.Print("[dim]config.yaml and the active environment are unchanged.[/dim]")
+		} else {
+			console.Print("[dim]config.yaml and the active environment are unchanged. Run `icebath pm install` to resolve, then retry.[/dim]")
+		}
 		return nil
 	}
 	if err != nil {

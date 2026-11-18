@@ -9,7 +9,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/state"
 )
 
-// Real session store under a temp home, the hermes SessionDB(db_path=tmp_path / "state.db") fixture
+// Real session store under a temp home, the SessionDB(db_path=tmp_path / "state.db") fixture
 func scopeRealDB(t *testing.T) *state.SessionDB {
 	t.Helper()
 	h := t.TempDir()
@@ -219,7 +219,7 @@ func TestPerResponseRunNonceIsolationDistinctIdsKeepDistinctAffinityKeys(t *test
 }
 
 func TestPerResponseRunNonceIsolationDistinctIdsKeepDistinctProviderStickyKeys(t *testing.T) {
-	for _, p := range []struct{ provider, base string }{{"openrouter", "https://openrouter.ai/api/v1"}, {"nous", "https://inference-api.nousresearch.com/v1"}} {
+	for _, p := range []struct{ provider, base string }{{"openrouter", "https://openrouter.ai/api/v1"}} {
 		t.Run(p.provider, func(t *testing.T) {
 			var keys []any
 			for _, sid := range []string{nonceResponse1, nonceResponse2} {
@@ -241,7 +241,7 @@ func TestPerResponseRunNonceIsolationDistinctIdsKeepDistinctProviderStickyKeys(t
 	}
 }
 
-// Review fork double from the hermes test, the parent scope inherited and the tag applied after compaction
+// Review fork double from the test, the parent scope inherited and the tag applied after compaction
 func reviewForkAgent(provider, model, tag string, compactions int) *CacheScopeAgent {
 	count := compactions
 	return &CacheScopeAgent{SessionID: "parent-sess", Provider: provider, Model: model, PromptCacheForkTag: tag,

@@ -13,7 +13,7 @@ import (
 // Registers the shell hooks and outbound webhooks of the current scope config, a failure logged at level
 func RegisterWorkerConfigHooks(ctx context.Context, failureMessage string, level slog.Level) {
 	if err := registerConfigHooks(ctx); err != nil {
-		slog.Default().With("logger", "gateway.run").Log(ctx, level, failureMessage, "exc_info", err)
+		pkgLog().Log(ctx, level, failureMessage, "exc_info", err)
 	}
 }
 

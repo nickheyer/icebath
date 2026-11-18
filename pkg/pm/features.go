@@ -1,3 +1,5 @@
+//go:build !icebath_core && !icebath_noextras
+
 package pm
 
 import (
@@ -18,16 +20,6 @@ import (
 
 // FeaturesFilename is the enabled features file beside a payload or the runtime store
 const FeaturesFilename = "enabled-features.json"
-
-// FeatureProbeError is a failed inventory, never read as an empty feature list
-type FeatureProbeError struct{ Message string }
-
-func (e *FeatureProbeError) Error() string { return e.Message }
-
-// RuntimeError class callers catch it as
-func (e *FeatureProbeError) Unwrap() error {
-	return &PyError{Class: "RuntimeError", Message: e.Message}
-}
 
 // Enabled features file in baseDir, or beside the byte store of this process when baseDir is empty
 func FeaturesPath(ctx context.Context, baseDir string) (string, error) {

@@ -25,7 +25,7 @@ type TerminalBackendRow struct {
 func SetupTerminalBackendRows(ctx context.Context, env *Env) (rows []TerminalBackendRow) {
 	defer func() {
 		if r := recover(); r != nil {
-			toolsLogger(env).Debug(fmt.Sprintf("terminal backend plugin listing failed: %v", r))
+			envLog(env).Debug(fmt.Sprintf("terminal backend plugin listing failed: %v", r))
 		}
 	}()
 	discoverErr := errPluginDiscoveryUnwired
@@ -57,17 +57,6 @@ func SetupDockerRuntime(env *Env) (path, runtime string) {
 		runtime = DockerRuntimeName(path)
 	}
 	return path, runtime
-}
-
-// Whether Modal can bill through the managed Nous gateway, managed tools on, Nous auth present and the gateway ready
-func SetupModalManagedAvailable(env *Env, cfg map[string]any) (bool, error) {
-	if !setupManagedNousToolsEnabled(env) {
-		return false, nil
-	}
-	if NousSubscriptionAuthPresent == nil {
-		return false, errNousFeaturesUnwired
-	}
-	return NousSubscriptionAuthPresent(env, cfg) && setupManagedGatewayReady(env, "modal"), nil
 }
 
 // Non blank projectId and orgId of the nearest .vercel/project.json at or above start, the working directory when start is empty

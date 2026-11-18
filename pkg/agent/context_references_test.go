@@ -34,7 +34,7 @@ func sampleRepo(t *testing.T) string {
 		}
 	}
 	git("init")
-	git("config", "user.name", "Hermes Tests")
+	git("config", "user.name", "Icebath Tests")
 	git("config", "user.email", "tests@example.com")
 	write := func(rel, text string) {
 		if err := os.WriteFile(filepath.Join(repo, rel), []byte(text), 0o644); err != nil {
@@ -527,7 +527,7 @@ func TestCanonicalGuardFailsClosedWhenLookupRaises(t *testing.T) {
 }
 
 func TestFormatReferenceValueRoundTripsThroughTheParser(t *testing.T) {
-	for _, value := range []string{"/tmp/plain.png", "/Users/me/Library/Application Support/Hermes/composer-images/a.png", `C:\Users\John Doe\Pictures\cat.png`,
+	for _, value := range []string{"/tmp/plain.png", "/Users/me/Library/Application Support/Icebath/composer-images/a.png", `C:\Users\John Doe\Pictures\cat.png`,
 		"/tmp/report (final).pdf", "/tmp/it's here.png", `/tmp/say "hi".png`} {
 		t.Run(value, func(t *testing.T) {
 			matches := findAllReferenceMatches(ReferencePattern, "@file:"+state.FormatReferenceValue(value))

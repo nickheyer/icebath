@@ -3,7 +3,6 @@ package app
 import (
 	"context"
 	"fmt"
-	"log/slog"
 	"strings"
 	"sync"
 	"time"
@@ -226,7 +225,7 @@ func (a *GatewayAgent) setTodos(snapshot map[string]any) {
 	}
 	defer func() {
 		if recovered := recover(); recovered != nil {
-			slog.Debug(fmt.Sprintf("todo snapshot not mirrored: %v", recovered))
+			pkgLog().Debug(fmt.Sprintf("todo snapshot not mirrored: %v", recovered))
 		}
 	}()
 	a.TodoStore().Restore(todos, snapshot["revision"])
@@ -403,7 +402,7 @@ func (a *GatewayAgent) ConnectionRespond(opID string, result any) (any, error) {
 		"owner": map[string]any{"type": "session", "session_id": a.SessionID()}})
 }
 
-// Asks the gateway to mint a failed or expired connector row again on the open operation
+// Asks the gateway to run a failed MCP row of the open operation again
 func (a *GatewayAgent) ConnectionRetry(name string) (any, error) {
 	return a.connection.Call(a.ctx, "connectors.connect", map[string]any{"connectors": []any{name}, "reconnect": true,
 		"owner": map[string]any{"type": "session", "session_id": a.SessionID()}})
@@ -418,7 +417,7 @@ func (a *GatewayAgent) answerRequest(frame *pyjson.Object, method string, params
 	answer := func() (answer any) {
 		defer func() {
 			if recovered := recover(); recovered != nil {
-				slog.Debug(fmt.Sprintf("server request %s failed: %v", method, recovered))
+				pkgLog().Debug(fmt.Sprintf("server request %s failed: %v", method, recovered))
 				if method == "clarify" {
 					answer = map[string]any{"outcome": "cancelled"}
 				} else {
@@ -449,7 +448,7 @@ func (a *GatewayAgent) onRequestWithdrawn(payload map[string]any) {
 	}
 	defer func() {
 		if recovered := recover(); recovered != nil {
-			slog.Debug(fmt.Sprintf("modal withdraw for %s failed: %v", current.method, recovered))
+			pkgLog().Debug(fmt.Sprintf("modal withdraw for %s failed: %v", current.method, recovered))
 		}
 	}()
 	a.opts.ModalWithdrawCallback(current.method)

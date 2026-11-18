@@ -6,7 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"log/slog"
 	"math"
 	"net/http"
 	"strconv"
@@ -16,16 +15,10 @@ import (
 	"unicode/utf8"
 
 	"github.com/google/uuid"
+	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
 
 const (
-	accountUsageDepletedLine        = "Status: access depleted — top up to restore"
-	accountUsageTopTierUsedUp       = "Monthly large-model usage is used up."
-	accountUsagePausedLine          = "Status: included usage paused. Your subscription payment failed. Update your card to restore it. Until then, Icebath uses your credits."
-	accountUsagePausedOtherLine     = "Status: included usage paused. See Billing in the Portal. Until then, Icebath uses your credits."
-	accountUsageKeepGoingOffLine    = "Keep going on credits: off. Icebath waits for the reset (turn on in /topup)."
-	accountUsageKeepGoingOnLine     = "Keep going on credits: on. Uses your credits when included usage runs out."
-	accountUsageDevFixtureTail      = "(dev fixture — ICEBATH_DEV_CREDITS_FIXTURE)"
 	codexWindowExhaustedPercent     = 100.0
 	codexUsageRequestTimeout        = 15 * time.Second
 	openrouterUsageRequestTimeout   = 10 * time.Second
@@ -60,12 +53,8 @@ var (
 	openrouterUsageRuntimeFn   = func(ctx context.Context, baseURL, apiKey string) (*Runtime, error) {
 		return modelsResolver(ctx).ResolveRuntime("openrouter", apiKey, baseURL, nil, "")
 	}
-	accountUsageProfileFn   = GetProviderProfile
-	portalAccountFetchFn    = GetNousPortalAccountInfo
-	accountUsageLoggedInFn  = NousLoggedIn
-	accountUsageFixtureFn   = DevFixtureCreditsState
-	accountUsageEnvFn       = modelsPoolEnv
-	errPortalAccountTimeout = errors.New("portal account fetch timed out")
+	accountUsageProfileFn = GetProviderProfile
+	accountUsageEnvFn     = modelsPoolEnv
 )
 
 // codexUsagePool is the credential pool surface the Codex usage reads need
@@ -118,7 +107,7 @@ func titleCaseSlug(value any) string {
 	if cleaned == "" {
 		return ""
 	}
-	return pyTitle(strings.NewReplacer("_", " ", "-", " ").Replace(cleaned))
+	return pystr.Title(strings.NewReplacer("_", " ", "-", " ").Replace(cleaned))
 }
 
 // Reset time of epoch seconds or ISO text, nil for empty or unparseable text, an error for an out of range epoch
@@ -289,381 +278,6 @@ func fmtUsageUSD(d float64) string {
 
 func finiteRef(v *float64) bool { return v != nil && !math.IsNaN(*v) && !math.IsInf(*v, 0) }
 
-// Nous snapshot with tail lines appended, nil when there is nothing to show
-func nousUsageSnapshot(windows []AccountUsageWindow, details, tail []string, source, plan string, usageWindow bool) *AccountUsageSnapshot {
-	if len(windows) == 0 && len(details) == 0 {
-		return nil
-	}
-	s := NewAccountUsageSnapshot("nous", source, windows, append(details, tail...))
-	s.Title, s.Plan, s.UsageWindow = "Nous credits", plan, usageWindow
-	return s
-}
-
-// One usage window gauge row from basis points and an epoch ms reset, unknown resets keep the row
-func bpWindow(label string, usedBp int, resetsAtMs *int64) AccountUsageWindow {
-	var resetAt *time.Time
-	if resetsAtMs != nil {
-		t := time.UnixMilli(*resetsAtMs).UTC()
-		resetAt = &t
-	}
-	used := math.Max(0, math.Min(100, float64(usedBp)/BPFull*100))
-	return accountWindow(label, &used, resetAt, "")
-}
-
-// Large model used up line with the local reset date, pointing at other included usage when keep going is off
-func windowTopTierLine(resetAt *time.Time, keepGoing *bool) string {
-	resets := ""
-	if resetAt != nil {
-		local := resetAt.Local()
-		resets = fmt.Sprintf(" Resets %s %d.", local.Format("Jan"), local.Day())
-	}
-	tail := " Past this, large models use your credits."
-	if keepGoing != nil && !*keepGoing {
-		tail = " Your other included usage is still available."
-	}
-	return accountUsageTopTierUsedUp + resets + tail
-}
-
-// One row per server allowance in server order plus top tier, paused and keep going lines
-func usageWindowRows(gauges []WindowGauge, pausedReason string, keepGoing *bool) ([]AccountUsageWindow, []string) {
-	if len(gauges) == 0 || len(AllScope(gauges)) == 0 {
-		return nil, nil
-	}
-	var out []AccountUsageWindow
-	var topRow *AccountUsageWindow
-	topFull := false
-	for _, g := range gauges {
-		row := bpWindow(GaugeTitle(g), g.UsedBp, g.ResetsAtMs)
-		out = append(out, row)
-		if g.Scope == ScopeTopTier {
-			r := row
-			topRow, topFull = &r, g.Full()
-		}
-	}
-	var lines []string
-	if topFull {
-		var resetAt *time.Time
-		if topRow != nil {
-			resetAt = topRow.ResetAt
-		}
-		lines = append(lines, windowTopTierLine(resetAt, keepGoing))
-	}
-	switch {
-	case pausedReason != "" && PausedForPayment(pausedReason):
-		lines = append(lines, accountUsagePausedLine)
-	case pausedReason != "":
-		lines = append(lines, accountUsagePausedOtherLine)
-	case keepGoing != nil && !*keepGoing:
-		lines = append(lines, accountUsageKeepGoingOffLine)
-	case keepGoing != nil:
-		lines = append(lines, accountUsageKeepGoingOnLine)
-	}
-	return out, lines
-}
-
-// BuildNousCreditsSnapshot turns portal account info into the usage snapshot, nil when logged out or empty
-func BuildNousCreditsSnapshot(info *NousPortalAccountInfo) *AccountUsageSnapshot {
-	if info == nil || !info.LoggedIn {
-		return nil
-	}
-	access, sub := info.PaidServiceAccessInfo, info.Subscription
-	plan := ""
-	if sub != nil && sub.Plan != nil {
-		plan = *sub.Plan
-	}
-	var windows []AccountUsageWindow
-	var details, windowLines []string
-	if uw := info.UsageWindow; uw != nil {
-		windows, windowLines = usageWindowRows(uw.Gauges, uw.PausedReason, uw.KeepGoingOnCredits)
-	}
-	if len(windows) > 0 {
-		details = append(details, windowLines...)
-		if access != nil && finiteRef(access.PurchasedCreditsRemaining) {
-			details = append(details, "Top-up credits: "+fmtUsageUSD(*access.PurchasedCreditsRemaining))
-		}
-		if info.PaidServiceAccess != nil && !*info.PaidServiceAccess && len(windowLines) == 0 {
-			details = append(details, accountUsageDepletedLine)
-		}
-		if sub != nil && sub.CurrentPeriodEnd != nil && *sub.CurrentPeriodEnd != "" {
-			renews, ok := FormatRenews(*sub.CurrentPeriodEnd)
-			if !ok || renews == "" {
-				renews = *sub.CurrentPeriodEnd
-			}
-			details = append(details, "Renews: "+renews)
-		}
-		return nousUsageSnapshot(windows, details, []string{"Top up via /topup"}, "portal-account", plan, true)
-	}
-	if sub != nil {
-		capV, remaining := sub.MonthlyCredits, sub.CreditsRemaining
-		if finiteRef(capV) && *capV > 0 && finiteRef(remaining) && *remaining <= *capV {
-			used := math.Max(0, math.Min(100, (*capV-*remaining) / *capV * 100))
-			windows = append(windows, accountWindow("Subscription", &used, nil,
-				fmtUsageUSD(*remaining)+" of "+fmtUsageUSD(*capV)+" left"))
-		}
-	}
-	if access != nil {
-		for _, f := range []struct {
-			v     *float64
-			label string
-		}{{access.SubscriptionCreditsRemaining, "Subscription credits"}, {access.PurchasedCreditsRemaining, "Top-up credits"},
-			{access.TotalUsableCredits, "Total usable"}} {
-			if finiteRef(f.v) {
-				details = append(details, f.label+": "+fmtUsageUSD(*f.v))
-			}
-		}
-	}
-	if sub != nil {
-		if finiteRef(sub.RolloverCredits) && *sub.RolloverCredits > 0 {
-			details = append(details, "Rollover: "+fmtUsageUSD(*sub.RolloverCredits))
-		}
-		if sub.CurrentPeriodEnd != nil && *sub.CurrentPeriodEnd != "" {
-			details = append(details, "Renews: "+*sub.CurrentPeriodEnd)
-		}
-	}
-	if info.PaidServiceAccess != nil && !*info.PaidServiceAccess {
-		details = append(details, accountUsageDepletedLine)
-	}
-	return nousUsageSnapshot(windows, details, []string{"Top up: " + NousPortalTopupURL(info), "(or run /topup)"},
-		"portal-account", plan, false)
-}
-
-// FetchPortalAccount fetches the portal account fresh, releasing the caller at timeout while the worker runs on
-func FetchPortalAccount(ctx context.Context, timeout time.Duration) (*NousPortalAccountInfo, error) {
-	if ctx == nil {
-		ctx = context.Background()
-	}
-	fetch := portalAccountFetchFn
-	type result struct {
-		info *NousPortalAccountInfo
-		err  error
-	}
-	done := make(chan result, 1)
-	go func() {
-		defer func() {
-			if r := recover(); r != nil {
-				done <- result{err: fmt.Errorf("portal account fetch failed: %v", r)}
-			}
-		}()
-		done <- result{info: fetch(ctx, true)}
-	}()
-	timer := time.NewTimer(timeout)
-	defer timer.Stop()
-	select {
-	case r := <-done:
-		return r.info, r.err
-	case <-timer.C:
-		return nil, errPortalAccountTimeout
-	case <-ctx.Done():
-		return nil, ctx.Err()
-	}
-}
-
-func headerGaugePercent(bp int, ok bool) *float64 {
-	if !ok {
-		return nil
-	}
-	v := math.Max(0, math.Min(100, float64(bp)/BPFull*100))
-	return &v
-}
-
-// ApplyHeaderGauge raises window percents to the last response headers when those run ahead of the portal
-func ApplyHeaderGauge(snapshot *AccountUsageSnapshot, state *CreditsState) *AccountUsageSnapshot {
-	if snapshot == nil || !snapshot.UsageWindow || state == nil || !state.FromHeader || !state.IsUsageWindow() {
-		return snapshot
-	}
-	type headerGauge struct {
-		bp      int
-		resetMs *int64
-	}
-	mapping := map[string]headerGauge{}
-	for _, g := range state.Gauges {
-		mapping[GaugeTitle(g)] = headerGauge{g.UsedBp, g.ResetsAtMs}
-	}
-	nowMs := accountUsageNow().UnixMilli()
-	windows := make([]AccountUsageWindow, 0, len(snapshot.Windows))
-	changed := false
-	for _, w := range snapshot.Windows {
-		hg, ok := mapping[w.Label]
-		stale := ok && hg.resetMs != nil && nowMs >= *hg.resetMs
-		header := headerGaugePercent(hg.bp, ok && !stale)
-		if header == nil || w.UsedPercent == nil || *header <= *w.UsedPercent {
-			windows = append(windows, w)
-			continue
-		}
-		changed = true
-		w.UsedPercent = header
-		windows = append(windows, w)
-	}
-	if !changed {
-		return snapshot
-	}
-	details := append([]string(nil), snapshot.Details...)
-	if top := state.TopTierGauge(); top != nil {
-		title := GaugeTitle(*top)
-		for _, w := range windows {
-			if w.Label != title {
-				continue
-			}
-			if w.UsedPercent != nil && *w.UsedPercent >= 100 {
-				already := false
-				for _, line := range details {
-					already = already || strings.HasPrefix(line, accountUsageTopTierUsedUp)
-				}
-				if !already {
-					details = append(details, windowTopTierLine(w.ResetAt, state.KeepGoingOnCredits))
-				}
-			}
-			break
-		}
-	}
-	out := *snapshot
-	out.Windows, out.Details = windows, details
-	return &out
-}
-
-// NousCreditsLines is the rendered Nous credits usage block, empty when there is nothing to show
-func NousCreditsLines(ctx context.Context, markdown bool, timeout time.Duration, state *CreditsState) []string {
-	lines, _ := NousCreditsView(ctx, markdown, timeout, state)
-	return lines
-}
-
-// NousCreditsView is the credits block plus whether it uses the usage window layout, failing open to nothing
-func NousCreditsView(ctx context.Context, markdown bool, timeout time.Duration, state *CreditsState) (lines []string, isWindow bool) {
-	if fixture := safeDevFixture(); fixture != nil {
-		snapshot := snapshotFromCreditsState(fixture)
-		return RenderAccountUsageLines(snapshot, markdown), snapshot != nil && snapshot.UsageWindow
-	}
-	if !accountUsageLoggedInFn(ctx) {
-		return []string{}, false
-	}
-	defer func() {
-		if r := recover(); r != nil {
-			accountUsageLog().Debug("credits ▸ /usage portal fetch/render failed (fail-open)", "panic", r)
-			lines, isWindow = []string{}, false
-		}
-	}()
-	info, err := FetchPortalAccount(ctx, timeout)
-	if err != nil {
-		accountUsageLog().Debug("credits ▸ /usage portal fetch/render failed (fail-open)", "err", err)
-		return []string{}, false
-	}
-	snapshot := ApplyHeaderGauge(BuildNousCreditsSnapshot(info), state)
-	return RenderAccountUsageLines(snapshot, markdown), snapshot != nil && snapshot.UsageWindow
-}
-
-func safeDevFixture() (state *CreditsState) {
-	defer func() {
-		if r := recover(); r != nil {
-			accountUsageLog().Debug("Dev credits fixture unavailable", "panic", r)
-			state = nil
-		}
-	}()
-	return accountUsageFixtureFn()
-}
-
-func accountUsageLog() *slog.Logger { return modelsLog }
-
-// NousCreditsUsageFields is the session usage credits_lines and credits_usage_window fields from live header state
-func NousCreditsUsageFields(ctx context.Context, state *CreditsState) map[string]any {
-	lines, isWindow := NousCreditsView(ctx, false, 10*time.Second, state)
-	if len(lines) == 0 {
-		return map[string]any{}
-	}
-	out := map[string]any{"credits_lines": lines}
-	if isWindow {
-		out["credits_usage_window"] = true
-	}
-	return out
-}
-
-// Header shaped dev fixture state as a usage snapshot in the same shape as the portal path
-func snapshotFromCreditsState(state *CreditsState) *AccountUsageSnapshot {
-	if state == nil {
-		return nil
-	}
-	var windows []AccountUsageWindow
-	var details []string
-	if state.IsUsageWindow() {
-		var windowLines []string
-		windows, windowLines = usageWindowRows(state.Gauges, state.PausedReason, state.KeepGoingOnCredits)
-		details = append(details, windowLines...)
-		if state.PurchasedUSD != "" {
-			details = append(details, "Top-up credits: $"+state.PurchasedUSD)
-		}
-		if !state.PaidAccess && len(windowLines) == 0 {
-			details = append(details, accountUsageDepletedLine)
-		}
-		return nousUsageSnapshot(windows, details, []string{accountUsageDevFixtureTail}, "dev-fixture", "", true)
-	}
-	capUSD := ""
-	if state.SubscriptionLimitUSD != nil {
-		capUSD = *state.SubscriptionLimitUSD
-	}
-	if uf, ok := state.UsedFraction(); ok && !math.IsNaN(uf) && !math.IsInf(uf, 0) {
-		used := math.Max(0, math.Min(100, uf*100))
-		detail := ""
-		if state.SubscriptionUSD != "" && capUSD != "" {
-			detail = "$" + state.SubscriptionUSD + " of $" + capUSD + " left"
-		}
-		windows = append(windows, accountWindow("Subscription", &used, nil, detail))
-	}
-	for _, f := range [][2]string{{state.SubscriptionUSD, "Subscription credits"}, {state.PurchasedUSD, "Top-up credits"},
-		{state.RemainingUSD, "Total usable"}} {
-		if f[0] != "" {
-			details = append(details, f[1]+": $"+f[0])
-		}
-	}
-	if !state.PaidAccess {
-		details = append(details, accountUsageDepletedLine)
-	}
-	return nousUsageSnapshot(windows, details, []string{accountUsageDevFixtureTail}, "dev-fixture", "", false)
-}
-
-// CreditsView is the topup balance view shared by every money surface
-type CreditsView struct {
-	LoggedIn     bool
-	BalanceLines []string
-	IdentityLine string
-	TopupURL     string
-	Depleted     bool
-}
-
-// BuildCreditsView builds the topup balance block, identity line and top up URL from one portal fetch
-func BuildCreditsView(ctx context.Context, markdown bool, timeout time.Duration) CreditsView {
-	if !accountUsageLoggedInFn(ctx) {
-		return CreditsView{}
-	}
-	account, err := FetchPortalAccount(ctx, timeout)
-	if err != nil {
-		accountUsageLog().Debug("credits ▸ /topup portal fetch failed (fail-open)", "err", err)
-		return CreditsView{}
-	}
-	if account == nil || !account.LoggedIn {
-		return CreditsView{}
-	}
-	balance := []string{}
-	for _, line := range RenderAccountUsageLines(BuildNousCreditsSnapshot(account), markdown) {
-		trimmed := strings.TrimLeft(line, " \t\n\r\v\f")
-		if strings.HasPrefix(trimmed, "Top up:") || strings.HasPrefix(trimmed, "Top up via") || strings.HasPrefix(trimmed, "(or run") {
-			continue
-		}
-		balance = append(balance, line)
-	}
-	var who []string
-	if account.Email != "" {
-		who = append(who, account.Email)
-	}
-	if account.OrgName != "" {
-		who = append(who, "org "+account.OrgName)
-	}
-	identity := ""
-	if len(who) > 0 {
-		identity = "Topping up as " + strings.Join(who, " / ")
-	}
-	return CreditsView{LoggedIn: true, BalanceLines: balance, IdentityLine: identity, TopupURL: NousPortalTopupURL(account),
-		Depleted: account.PaidServiceAccess != nil && !*account.PaidServiceAccess}
-}
-
 // Codex usage, reset credit list and consume endpoints by the Codex CLI path style split
 func codexBackendURLs(baseURL string) (string, string, string) {
 	normalized := strings.TrimRight(strings.TrimSpace(baseURL), "/")
@@ -723,7 +337,7 @@ func resolveCodexUsageCredentials(ctx context.Context, baseURL, apiKey string, f
 		case terr == nil:
 			accountID = strings.TrimSpace(auStr(tokens["account_id"]))
 		case isAuthErr(terr):
-			accountUsageLog().Debug("codex ▸ /usage account_id read failed (best-effort)", "err", terr)
+			pkgLog().Debug("codex ▸ /usage account_id read failed (best-effort)", "err", terr)
 		default:
 			return codexUsageCreds{}, terr
 		}
@@ -736,7 +350,7 @@ func resolveCodexUsageCredentials(ctx context.Context, baseURL, apiKey string, f
 	if !isAuthErr(err) {
 		return codexUsageCreds{}, err
 	}
-	accountUsageLog().Debug("codex ▸ /usage runtime resolver returned no creds; trying pool", "err", err)
+	pkgLog().Debug("codex ▸ /usage runtime resolver returned no creds; trying pool", "err", err)
 	var entry PooledCredential
 	ok := false
 	if pool := codexUsageLoadPoolFn(env); pool != nil {
@@ -1056,7 +670,7 @@ func codexResetOutcome(ctx context.Context, body map[string]any, bodyRepr string
 		func() {
 			defer func() {
 				if r := recover(); r != nil {
-					accountUsageLog().Debug("Failed to clear Codex pool cooldowns after reset redemption", "panic", r)
+					pkgLog().Debug("Failed to clear Codex pool cooldowns after reset redemption", "panic", r)
 				}
 			}()
 			codexUsageClearCooldownsFn(accountUsageEnvFn(ctx))

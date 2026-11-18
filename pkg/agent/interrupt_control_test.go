@@ -12,7 +12,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/state"
 )
 
-// Agent carrying only the interrupt and steer slots, matching a hermes agent built without __init__
+// Agent carrying only the interrupt and steer slots, matching an agent built without its constructor
 func bareSteerAgent() *AIAgent {
 	return &AIAgent{pendingSteerLock: &sync.Mutex{}, pendingRedirectLock: &sync.Mutex{},
 		modelRequestActive: &pythread.Event{}, activeChildrenLock: &sync.Mutex{}, quietMode: true, apiMode: "chat_completions"}

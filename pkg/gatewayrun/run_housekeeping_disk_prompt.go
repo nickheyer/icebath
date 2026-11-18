@@ -78,7 +78,7 @@ func maybePostAutoPrunePrompt(ctx context.Context, r *GatewayRunner, loop gatewa
 				outcome <- autoPrunePostResult{delivered: delivered, err: err}
 			})
 		}); err != nil {
-			housekeepingDiskLog().Debug(fmt.Sprintf("Auto-prune prompt scheduling error: %s", err))
+			pkgLog().Debug(fmt.Sprintf("Auto-prune prompt scheduling error: %s", err))
 			continue
 		}
 		select {

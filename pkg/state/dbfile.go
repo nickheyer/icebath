@@ -9,7 +9,6 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
-	"log/slog"
 	"math/big"
 	"os"
 	"path/filepath"
@@ -373,7 +372,7 @@ func iterDarwinSidecarHolders(dbPath string) ([]Holder, error) {
 		}
 		return res.holders, nil
 	case <-timer.C:
-		slog.Warn(fmt.Sprintf("deleted-WAL holder scan timed out after %.1fs for %s; continuing fail-open", timeout, dbPath))
+		pkgLog().Warn(fmt.Sprintf("deleted-WAL holder scan timed out after %.1fs for %s; continuing fail-open", timeout, dbPath))
 		return []Holder{}, nil
 	}
 }
@@ -411,7 +410,7 @@ func IterDeletedSQLiteSidecarHolders(dbPath string) []Holder {
 		}
 	}
 	if err != nil {
-		slog.Debug(fmt.Sprintf("deleted-WAL holder scan failed for %s: %s", dbPath, errText(err)))
+		pkgLog().Debug(fmt.Sprintf("deleted-WAL holder scan failed for %s: %s", dbPath, errText(err)))
 	}
 	return holders
 }
@@ -421,7 +420,7 @@ func RefuseDeletedWALGeneration(dbPath string) error {
 	if len(IterDeletedSQLiteSidecarHolders(dbPath)) == 0 {
 		return nil
 	}
-	slog.Error(DeletedWalGenerationMsg)
+	pkgLog().Error(DeletedWalGenerationMsg)
 	return &DeletedWalGenerationError{Msg: DeletedWalGenerationMsg}
 }
 
@@ -779,7 +778,7 @@ func QuarantineInvalidStateDB(path string, alreadyLocked bool) (string, error) {
 	}
 	defer release()
 	if !acquired {
-		slog.Error(fmt.Sprintf("quarantine lock for %s not acquired within 5s — refusing to "+
+		pkgLog().Error(fmt.Sprintf("quarantine lock for %s not acquired within 5s — refusing to "+
 			"quarantine without the cross-process lock. The invalid file "+
 			"is left in place. If sessions fail to load, run `icebath sessions recover "+
 			"--source <state.db> --inspect-only`, or restore a snapshot with "+
@@ -793,11 +792,11 @@ func QuarantineInvalidStateDB(path string, alreadyLocked bool) (string, error) {
 func doQuarantine(path string) string {
 	exists := func(p string) bool { _, err := os.Stat(p); return err == nil }
 	if !exists(path) {
-		slog.Info(fmt.Sprintf("quarantine_invalid_state_db: %s already moved by another process", path))
+		pkgLog().Info(fmt.Sprintf("quarantine_invalid_state_db: %s already moved by another process", path))
 		return ""
 	}
 	if !HasInvalidSQLiteHeaderPreopen(path, 100, false) {
-		slog.Info(fmt.Sprintf("quarantine_invalid_state_db: %s is no longer invalid (another "+
+		pkgLog().Info(fmt.Sprintf("quarantine_invalid_state_db: %s is no longer invalid (another "+
 			"process quarantined it and a fresh DB was created)", path))
 		return ""
 	}
@@ -812,7 +811,7 @@ func doQuarantine(path string) string {
 		dest = filepath.Join(dir, fmt.Sprintf("%s-%d.bak", stem, n))
 	}
 	if err := os.Rename(path, dest); err != nil {
-		slog.Error(fmt.Sprintf("Failed to quarantine invalid %s: %s", path, pypath.OSErrorText(err)))
+		pkgLog().Error(fmt.Sprintf("Failed to quarantine invalid %s: %s", path, pypath.OSErrorText(err)))
 		return ""
 	}
 	for _, suffix := range []string{"-wal", "-shm"} {
@@ -858,7 +857,7 @@ func CollectStateDBStats(dbPath string) (*pyjson.Object, error) {
 		conn, err = connectTrackedDB(uri, WithTrackingPath(dbPath), WithURI(), WithTimeout(2.0))
 	}
 	if err != nil {
-		slog.Debug(fmt.Sprintf("collect_state_db_stats: cannot open %s read-only: %s", dbPath, errText(err)))
+		pkgLog().Debug(fmt.Sprintf("collect_state_db_stats: cannot open %s read-only: %s", dbPath, errText(err)))
 		return stats, nil
 	}
 	defer conn.Close()

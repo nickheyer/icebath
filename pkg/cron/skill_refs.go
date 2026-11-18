@@ -47,7 +47,7 @@ func (s *Store) referencedSkillNames(ctx context.Context) map[string]bool {
 	out := map[string]bool{}
 	jobs, err := s.loadJobs(home.WithOverride(ctx, s.home), nil)
 	if err != nil {
-		s.logAs("cron.jobs").Debug(fmt.Sprintf("referenced_skill_names: failed to load cron jobs: %v", err))
+		s.log.Debug(fmt.Sprintf("referenced_skill_names: failed to load cron jobs: %v", err))
 		return out
 	}
 	for _, job := range jobs {
@@ -121,7 +121,7 @@ func (s *Store) rewriteSkillRefs(ctx context.Context, consolidated *pyjson.Objec
 			if err := s.saveJobsLocked(home.WithOverride(ctx, s.home), tx, jobs, nil, false); err != nil {
 				return err
 			}
-			s.logAs("cron.jobs").Info(fmt.Sprintf("Curator rewrote skill references in %d cron job(s)", len(report.Rewrites)))
+			s.log.Info(fmt.Sprintf("Curator rewrote skill references in %d cron job(s)", len(report.Rewrites)))
 		}
 		return nil
 	})

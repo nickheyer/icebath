@@ -199,19 +199,19 @@ func (a *RelayAdapter) consumePromptResponse(ctx context.Context, event *Message
 		return false, nil
 	}
 	if !a.mintedHere(promptID) {
-		relayAdapterLog().Debug(fmt.Sprintf("relay prompt_response %s (option=%s) belongs to another gateway instance — ignoring", promptID, optionID))
+		pkgLog().Debug(fmt.Sprintf("relay prompt_response %s (option=%s) belongs to another gateway instance — ignoring", promptID, optionID))
 		return true, nil
 	}
 	a.mu.Lock()
 	repeat := a.resolvedPrompts.has(promptID)
 	a.mu.Unlock()
 	if repeat {
-		relayAdapterLog().Debug(fmt.Sprintf("relay prompt_response %s (option=%s) already resolved — ignoring repeat", promptID, optionID))
+		pkgLog().Debug(fmt.Sprintf("relay prompt_response %s (option=%s) already resolved — ignoring repeat", promptID, optionID))
 		return true, nil
 	}
 	state := a.popPrompt(promptID)
 	if state == nil {
-		relayAdapterLog().Info(fmt.Sprintf("relay prompt_response for unknown/expired prompt %s (option=%s)", promptID, optionID))
+		pkgLog().Info(fmt.Sprintf("relay prompt_response for unknown/expired prompt %s (option=%s)", promptID, optionID))
 		a.notifyPromptExpired(ctx, event)
 		return true, nil
 	}
@@ -232,13 +232,13 @@ func (a *RelayAdapter) consumePromptResponse(ctx context.Context, event *Message
 	case "clarify":
 		err = a.resolveClarify(ctx, state, optionID, chatID, ackMeta)
 	default:
-		relayAdapterLog().Warn(fmt.Sprintf("relay prompt_response with unknown kind %s", pyrepr.Repr(kind)))
+		pkgLog().Warn(fmt.Sprintf("relay prompt_response with unknown kind %s", pyrepr.Repr(kind)))
 	}
 	if err != nil {
 		if ctx.Err() != nil {
 			return true, err
 		}
-		relayAdapterLog().Warn("relay prompt_response resolution failed", "exc_info", err)
+		pkgLog().Warn("relay prompt_response resolution failed", "exc_info", err)
 	}
 	return true, nil
 }
@@ -304,7 +304,7 @@ func (a *RelayAdapter) resolveClarify(ctx context.Context, state map[string]any,
 func (a *RelayAdapter) sendLifecycleAck(ctx context.Context, chatID, text string, metadata map[string]any) {
 	task := spawnAdapterTask(ctx, func(tctx context.Context) error {
 		if _, err := a.Send(tctx, chatID, text, "", metadata); err != nil {
-			relayAdapterLog().Debug("relay lifecycle ack failed", "exc_info", err)
+			pkgLog().Debug("relay lifecycle ack failed", "exc_info", err)
 		}
 		return nil
 	})

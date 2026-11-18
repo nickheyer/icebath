@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
-	"log/slog"
 	"net"
 	"net/http"
 	"strconv"
@@ -28,7 +27,7 @@ func (u *sdkUpdater) webhookHandler(ctx context.Context, path, secretToken strin
 			w.WriteHeader(http.StatusMethodNotAllowed)
 			return
 		}
-		slog.Debug("Webhook triggered")
+		pkgLog().Debug("Webhook triggered")
 		if r.Header.Get("Content-Type") != "application/json" {
 			w.WriteHeader(http.StatusForbidden)
 			return
@@ -36,12 +35,12 @@ func (u *sdkUpdater) webhookHandler(ctx context.Context, path, secretToken strin
 		if secretToken != "" {
 			token := r.Header.Get("X-Telegram-Bot-Api-Secret-Token")
 			if token == "" {
-				slog.Debug("Request did not include the secret token")
+				pkgLog().Debug("Request did not include the secret token")
 				http.Error(w, "Request did not include the secret token", http.StatusForbidden)
 				return
 			}
 			if token != secretToken {
-				slog.Debug("Request had the wrong secret token")
+				pkgLog().Debug("Request had the wrong secret token")
 				http.Error(w, "Request had the wrong secret token", http.StatusForbidden)
 				return
 			}
@@ -53,7 +52,7 @@ func (u *sdkUpdater) webhookHandler(ctx context.Context, path, secretToken strin
 		}
 		var update models.Update
 		if err := json.Unmarshal(body, &update); err != nil {
-			slog.Error("Exception in TelegramHandler", "error", err)
+			pkgLog().Error("Exception in TelegramHandler", "error", err)
 			http.Error(w, "Update could not be processed", http.StatusBadRequest)
 			return
 		}
@@ -92,7 +91,7 @@ func (u *sdkUpdater) StartWebhook(ctx context.Context, listen string, port int, 
 	go func() {
 		defer close(server.done)
 		if serveErr := server.srv.Serve(ln); serveErr != nil && !errors.Is(serveErr, http.ErrServerClosed) {
-			slog.Error("Error while serving the webhook", "error", serveErr)
+			pkgLog().Error("Error while serving the webhook", "error", serveErr)
 		}
 	}()
 	params := &bot.SetWebhookParams{URL: webhookURL, AllowedUpdates: allUpdateTypes, DropPendingUpdates: dropPendingUpdates,

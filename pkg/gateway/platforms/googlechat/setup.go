@@ -22,7 +22,10 @@ Walkthrough:
      point at the topic, enable 1:1 + group, restrict visibility.
   8. Install the bot in a space (fires ADDED_TO_SPACE and resolves its user_id).
 
-Full guide: website/docs/user-guide/messaging/google_chat.md
+Full guide:
+  /setup gateway in the terminal UI (or icebath gateway setup) runs this setup again
+  icebath google_chat oauth --check reports the token for native attachments
+  .env.example, section GOOGLE CHAT INTEGRATION, lists every setting
 `
 
 // Google Chat wizard of icebath gateway setup writing the GCP settings, allowlist and home space to the home .env

@@ -5,7 +5,7 @@ version: 1.0.0
 description: >
   QQ Bot gateway adapter (Official QQ Bot API v2). WebSocket gateway for
   inbound events, REST for outbound text and media.
-author: Nous Research
+author: Icebath
 requires_env:
   - name: QQ_APP_ID
     description: "QQ Bot App ID from QQ Open Platform (q.qq.com)"

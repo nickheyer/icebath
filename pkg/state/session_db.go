@@ -5,7 +5,6 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
-	"log/slog"
 	"math/big"
 	"math/rand/v2"
 	"os"
@@ -286,7 +285,7 @@ func (c *sessionCore) setConnLocked(conn SQLiteConn) {
 func (c *sessionCore) closeConnLogged(conn SQLiteConn, label string) {
 	c.forgetTraced(conn)
 	if err := conn.Close(); err != nil {
-		slog.Warn(fmt.Sprintf("%s close failed for %s: %s", label, pathlibStr(c.path), errText(err)))
+		pkgLog().Warn(fmt.Sprintf("%s close failed for %s: %s", label, pathlibStr(c.path), errText(err)))
 	}
 }
 
@@ -306,7 +305,7 @@ func (d *SessionDB) openWriter(ctx context.Context) error {
 		if !isDatabaseError(err) || !IsMalformedSchemaError(err) || !claimRepairAttempt(d.path) {
 			return err
 		}
-		slog.Error(fmt.Sprintf("state.db schema is malformed (%s) — attempting automatic repair (a backup copy is made first).", errText(err)))
+		pkgLog().Error(fmt.Sprintf("state.db schema is malformed (%s) — attempting automatic repair (a backup copy is made first).", errText(err)))
 		d.mu.Lock()
 		conn := d.conn
 		d.setConnLocked(nil)
@@ -346,7 +345,7 @@ func (d *SessionDB) openWriterGuarded(ctx context.Context) error {
 		}
 		defer release()
 		if !acquired {
-			slog.Warn(fmt.Sprintf("startup quarantine lock for %s not acquired within 5s; proceeding", pathlibStr(d.path)))
+			pkgLog().Warn(fmt.Sprintf("startup quarantine lock for %s not acquired within 5s; proceeding", pathlibStr(d.path)))
 		}
 		if err := PreflightDBWritability(ctx, d.path, "state.db", false); err != nil {
 			return err
@@ -455,7 +454,7 @@ func (c *sessionCore) handleQuarantineIfInvalid(alreadyLocked bool) error {
 		"fresh, empty session database. To bring old sessions back, run "+
 		"`icebath sessions recover --source %s --inspect-only`, or restore a "+
 		"snapshot with `/snapshot list` then `/snapshot restore <id>` (terminal `icebath` chat only).", zsize, where, source)
-	slog.Error(msg)
+	pkgLog().Error(msg)
 	setLastInitError(msg)
 	if qpath == "" && pathlibExists(c.path) && HasInvalidSQLiteHeaderPreopen(c.path, 100, false) {
 		return &SQLiteError{Class: SQLiteDatabaseError, Msg: msg}
@@ -569,7 +568,7 @@ func (d *SessionDB) getReadConn(ctx context.Context) (SQLiteConn, error) {
 		return nil, err
 	}
 	if !ok {
-		slog.Debug(fmt.Sprintf("read pool at capacity (%d) for %s; serving this read from the locked writer connection", readPoolMax, pathlibStr(d.path)))
+		pkgLog().Debug(fmt.Sprintf("read pool at capacity (%d) for %s; serving this read from the locked writer connection", readPoolMax, pathlibStr(d.path)))
 		return nil, nil
 	}
 	conn, err := d.connectReadOnly(readBusyTimeoutS)
@@ -592,7 +591,7 @@ func (d *SessionDB) getReadConn(ctx context.Context) (SQLiteConn, error) {
 		d.readConnsMu.Lock()
 		d.readOpenFailedAt = monotonicSeconds()
 		d.readConnsMu.Unlock()
-		slog.Debug(fmt.Sprintf("read-only connection open failed for %s: %s", pathlibStr(d.path), errText(err)))
+		pkgLog().Debug(fmt.Sprintf("read-only connection open failed for %s: %s", pathlibStr(d.path), errText(err)))
 		return nil, nil
 	}
 	return conn, nil
@@ -630,7 +629,7 @@ func (c *sessionCore) evictOneIdleReadConn() bool {
 		return false
 	}
 	if err := c.closeReadConn(conn); err != nil {
-		slog.Warn(fmt.Sprintf("read-conn permit release failed for %s: %s", pathlibStr(c.path), errText(err)))
+		pkgLog().Warn(fmt.Sprintf("read-conn permit release failed for %s: %s", pathlibStr(c.path), errText(err)))
 	}
 	return true
 }
@@ -719,7 +718,7 @@ func (d *SessionDB) readCtx(ctx context.Context, reopen bool, fn func(conn SQLit
 	return fn(conn)
 }
 
-// Runs fn on a read connection of the store, the hermes _read_ctx
+// Runs fn on a read connection of the store, the read ctx
 func (d *SessionDB) ReadCtx(ctx context.Context, fn func(conn SQLiteConn) error) error {
 	return d.readCtx(ctx, false, fn)
 }
@@ -738,7 +737,7 @@ func (d *SessionDB) reopenAfterCloseLocked(context string) error {
 	if err := d.haltIfDBGenerationChanged(); err != nil {
 		return err
 	}
-	slog.Warn(fmt.Sprintf("state.db connection for %s was closed while a %s was still in "+
+	pkgLog().Warn(fmt.Sprintf("state.db connection for %s was closed while a %s was still in "+
 		"flight — reopening (teardown/worker race, #94736)", pathlibStr(d.path), context))
 	conn, err := d.openWriterConn(d.openCtx)
 	if err != nil {
@@ -1031,7 +1030,7 @@ func (c *sessionCore) ensureDBFileGeneration() error {
 	}
 	err := stamp()
 	if _, isSQLite := sqliteClassOf(err); err != nil && isSQLite {
-		slog.Debug(fmt.Sprintf("state.db generation stamp skipped: %s", errText(err)))
+		pkgLog().Debug(fmt.Sprintf("state.db generation stamp skipped: %s", errText(err)))
 		return nil
 	}
 	return err
@@ -1144,7 +1143,7 @@ func (c *sessionCore) haltIfDBGenerationChanged() error {
 	if c.dbReplaced.Load() || c.dbFileWasReplaced() {
 		c.dbReplaced.Store(true)
 		c.disableCloseTimeCheckpoint()
-		slog.Error(StateDBReplacedMsg)
+		pkgLog().Error(StateDBReplacedMsg)
 		return &StateDBReplacedError{Msg: StateDBReplacedMsg}
 	}
 	lost := c.dbWALGenerationLost.Load()
@@ -1162,10 +1161,10 @@ func (c *sessionCore) haltIfDBGenerationChanged() error {
 			if !errors.As(err, &capture) {
 				return err
 			}
-			slog.Error(fmt.Sprintf("Could not capture the retired WAL generation of %s at halt: %s. close() retries "+
+			pkgLog().Error(fmt.Sprintf("Could not capture the retired WAL generation of %s at halt: %s. close() retries "+
 				"the capture and refuses to settle without it.", pathlibStr(c.path), errText(err)))
 		}
-		slog.Error(DeletedWalGenerationMsg)
+		pkgLog().Error(DeletedWalGenerationMsg)
 		return &DeletedWalGenerationError{Msg: DeletedWalGenerationMsg}
 	}
 	return nil
@@ -1192,7 +1191,7 @@ func (c *sessionCore) captureRetiredGeneration(trigger string) (string, error) {
 	}
 	c.retiredGenerationCapture = artifact
 	c.retiredCaptureMu.Unlock()
-	slog.Warn(fmt.Sprintf("Captured the retired WAL generation of %s at %s to %s; read its manifest.json before deciding "+
+	pkgLog().Warn(fmt.Sprintf("Captured the retired WAL generation of %s at %s to %s; read its manifest.json before deciding "+
 		"whether those frames belong on top of the file now at the path.", pathlibStr(c.path), trigger, artifact))
 	return artifact, nil
 }
@@ -1237,7 +1236,7 @@ func (c *sessionCore) haltDBCorrupt(exc error) error {
 	c.corruptMu.Unlock()
 	MarkStorageCorrupt(c.path, exc)
 	c.disableCloseTimeCheckpoint()
-	slog.Error(fmt.Sprintf("state.db %s reported structural corruption outside the FTS "+
+	pkgLog().Error(fmt.Sprintf("state.db %s reported structural corruption outside the FTS "+
 		"indexes (%s); quarantining this handle: no further writes, no "+
 		"automatic reopen, no explicit WAL checkpoint at close. Stop the "+
 		"gateway and run `icebath sessions recover --source %s --inspect-only`.", pathlibStr(c.path), errText(exc), pathlibStr(c.path)))
@@ -1253,7 +1252,7 @@ func (c *sessionCore) disableCloseTimeCheckpoint() bool {
 		return false
 	}
 	if err := setNoCheckpointOnClose(conn); err != nil {
-		slog.Error(fmt.Sprintf("Could not disable SQLite's close-time checkpoint on the quarantined handle for %s; "+
+		pkgLog().Error(fmt.Sprintf("Could not disable SQLite's close-time checkpoint on the quarantined handle for %s; "+
 			"closing it may checkpoint retired frames over the newer generation: %s", pathlibStr(c.path), errText(err)))
 		return false
 	}
@@ -1279,16 +1278,16 @@ func (c *sessionCore) settleLostGenerationLocked() (bool, error) {
 			if retireWithoutClose {
 				c.pinConnection(c.conn)
 			}
-			slog.Error(fmt.Sprintf("Could not capture the retired WAL generation of %s at close: %s. The handle stays open "+
+			pkgLog().Error(fmt.Sprintf("Could not capture the retired WAL generation of %s at close: %s. The handle stays open "+
 				"and close() retries the capture; those frames are NOT yet preserved.", pathlibStr(c.path), errText(err)))
 		}
 		return false, err
 	}
-	slog.Warn(fmt.Sprintf("Skipping the close-time WAL checkpoint for %s: this handle's WAL/SHM generation "+
+	pkgLog().Warn(fmt.Sprintf("Skipping the close-time WAL checkpoint for %s: this handle's WAL/SHM generation "+
 		"was deleted or replaced; the retired generation is captured at %s. Stop the other "+
 		"writers before reopening and inspect the capture before deciding its disposition.", pathlibStr(c.path), artifact))
 	if retireWithoutClose {
-		slog.Warn(fmt.Sprintf("Retaining the quarantined connection for %s unclosed: this runtime cannot "+
+		pkgLog().Warn(fmt.Sprintf("Retaining the quarantined connection for %s unclosed: this runtime cannot "+
 			"switch off SQLite's close-time checkpoint.", pathlibStr(c.path)))
 	}
 	return retireWithoutClose, nil
@@ -1373,11 +1372,11 @@ func (c *sessionCore) tryWALCheckpoint() {
 	}
 	var busy, logPages, checkpointed int64
 	if err := c.conn.QueryRowContext(c.openCtx, "PRAGMA wal_checkpoint(PASSIVE)").Scan(&busy, &logPages, &checkpointed); err != nil {
-		slog.Warn(fmt.Sprintf("WAL checkpoint (PASSIVE) failed: %s", errText(err)))
+		pkgLog().Warn(fmt.Sprintf("WAL checkpoint (PASSIVE) failed: %s", errText(err)))
 		return
 	}
 	if logPages > 0 {
-		slog.Debug(fmt.Sprintf("WAL checkpoint: %d/%d pages checkpointed", checkpointed, logPages))
+		pkgLog().Debug(fmt.Sprintf("WAL checkpoint: %d/%d pages checkpointed", checkpointed, logPages))
 	}
 }
 
@@ -1430,12 +1429,12 @@ func (c *sessionCore) closeHandle() error {
 		reason, quarantined = c.quarantineReason()
 	}
 	if quarantined {
-		slog.Warn(fmt.Sprintf("Skipping the close-time WAL checkpoint for %s: this "+
+		pkgLog().Warn(fmt.Sprintf("Skipping the close-time WAL checkpoint for %s: this "+
 			"handle observed %s. Take a snapshot of state.db, -wal and -shm "+
 			"before restarting, then run `icebath sessions recover --source %s --inspect-only`.", pathlibStr(c.path), reason, pathlibStr(c.path)))
 	} else if !c.isReadOnly && !generationLost {
 		if _, err := c.conn.ExecContext(c.openCtx, "PRAGMA wal_checkpoint(PASSIVE)"); err != nil {
-			slog.Debug(fmt.Sprintf("WAL checkpoint (PASSIVE) at close failed: %s", errText(err)))
+			pkgLog().Debug(fmt.Sprintf("WAL checkpoint (PASSIVE) at close failed: %s", errText(err)))
 		}
 	}
 	lockGuardRelease(c.walLockGuard)

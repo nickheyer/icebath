@@ -12,11 +12,9 @@ import (
 
 // ToolsCommandHooks are the provider, setup wizard and MCP entry points the tools command reaches, each installed by its package
 var ToolsCommandHooks struct {
-	ApplyNousManagedDefaults func(ctx context.Context, h string, cfg map[string]any, enabledToolsets []string, forceFresh bool) map[string]bool
-	VisionClientReady        func(ctx context.Context, h string) (bool, error)
-	SetupTelemetry           func(ctx context.Context, h string, out io.Writer, cfg map[string]any) error
-	ConfigureMCPTools        func(ctx context.Context, con *cliui.Console, cfg config.Tree) error
-	ToolsAction              func(ctx context.Context, con *cliui.Console, action, platform string, names []string) error
+	VisionClientReady func(ctx context.Context, h string) (bool, error)
+	ConfigureMCPTools func(ctx context.Context, con *cliui.Console, cfg config.Tree) error
+	ToolsAction       func(ctx context.Context, con *cliui.Console, action, platform string, names []string) error
 }
 
 // Panics naming a tools command hook its package never installed
@@ -28,24 +26,10 @@ func requireToolsCommandHook(name, owner string, installed bool) {
 
 // Seams over the names tools_config imports, the targets its tests patch
 var (
-	applyNousManagedDefaults = func(s *ToolsSetup, cfg config.Tree, enabledToolsets map[string]bool, forceFresh bool) map[string]bool {
-		fn := ToolsCommandHooks.ApplyNousManagedDefaults
-		requireToolsCommandHook("ApplyNousManagedDefaults", "pkg/provider", fn != nil)
-		return fn(s.ctx(), s.home(), map[string]any(cfg), sortedSet(enabledToolsets), forceFresh)
-	}
 	resolveVisionProviderClient = func(s *ToolsSetup) (bool, error) {
 		fn := ToolsCommandHooks.VisionClientReady
 		requireToolsCommandHook("VisionClientReady", "pkg/provider", fn != nil)
 		return fn(s.ctx(), s.home())
-	}
-	setupTelemetry = func(s *ToolsSetup, cfg config.Tree) error {
-		if s.Ask != nil {
-			requireFlowHook("Consent", s.Flow.Consent != nil)
-			return s.Flow.Consent(s.ctx(), s.home(), cfg, s.Ask)
-		}
-		fn := ToolsCommandHooks.SetupTelemetry
-		requireToolsCommandHook("SetupTelemetry", "pkg/provider", fn != nil)
-		return fn(s.ctx(), s.home(), s.Con.Out, map[string]any(cfg))
 	}
 	configureMCPToolsInteractive = func(s *ToolsSetup, cfg config.Tree) error {
 		if s.Ask != nil {

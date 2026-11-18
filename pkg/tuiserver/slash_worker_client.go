@@ -21,7 +21,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/pm"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/tools"
-	"github.com/nickheyer/icebath/pkg/tuigateway"
+	"github.com/nickheyer/icebath/pkg/tuihost"
 )
 
 // Owned child spawner of the worker, the process identity ledger spawn
@@ -117,7 +117,7 @@ func newSlashWorker(ctx context.Context, sessionKey, model, profileHome, provide
 	if err != nil {
 		return nil, err
 	}
-	argv := []string{tuigateway.SlashWorkerEntry, "--session-key", sessionKey}
+	argv := []string{tuihost.SlashWorkerEntry, "--session-key", sessionKey}
 	if model != "" {
 		argv = append(argv, "--model", model)
 	}

@@ -94,7 +94,7 @@ func (c *streamingCall) firstChunkSeen() bool {
 func streamingCallMonitorLoop(c *streamingCall) {
 	defer func() {
 		if r := recover(); r != nil {
-			streamMonitorLog.Error("stream watchdog monitor loop aborted abnormally", "panic", r)
+			pkgLog().Error("stream watchdog monitor loop aborted abnormally", "panic", r)
 			panic(r)
 		}
 	}()
@@ -114,7 +114,7 @@ func (c *streamingCall) pollUntilDone() {
 	stale := c.currentStaleTimeout()
 	lifeCap := resolveStreamMaxLifetime(loadWireSettings(c.ctx).streamMaxLifetime, stale)
 	c.mon.lifetime = streamingLifetime{cap: lifeCap, started: time.Now()}
-	streamMonitorLog.Debug(fmt.Sprintf("stream watchdog armed: stale=%.0fs cap=%.0fs model=%s", stale, lifeCap, c.kwargsModel("unknown")))
+	pkgLog().Debug(fmt.Sprintf("stream watchdog armed: stale=%.0fs cap=%.0fs model=%s", stale, lifeCap, c.kwargsModel("unknown")))
 	for !c.callIsDone() {
 		select {
 		case <-c.callDone:
@@ -165,7 +165,7 @@ func (c *streamingCall) skipSleep(slept float64) {
 	gap := secondsDuration(slept)
 	c.lastChunk.Store(minTime(c.lastChunkTime().Add(gap), now).UnixNano())
 	c.mon.lastHeartbeat = minTime(c.mon.lastHeartbeat.Add(gap), now)
-	streamMonitorLog.Info(fmt.Sprintf("Computer slept for %.0fs during a model request; the stall timer skips that time.", slept))
+	pkgLog().Info(fmt.Sprintf("Computer slept for %.0fs during a model request; the stall timer skips that time.", slept))
 	c.agent.TouchActivity(fmt.Sprintf("resumed after the computer slept for %ds", int(slept)))
 }
 
@@ -270,7 +270,7 @@ func (c *streamingCall) checkStreamLifetime() {
 	}
 	model := c.kwargsModel("unknown")
 	capSeconds := c.mon.lifetime.cap
-	streamMonitorLog.Warn(fmt.Sprintf("Stream still running after %.0fs (stream_max_lifetime %.0fs) — killing connection. model=%s", elapsed, capSeconds, model))
+	pkgLog().Warn(fmt.Sprintf("Stream still running after %.0fs (stream_max_lifetime %.0fs) — killing connection. model=%s", elapsed, capSeconds, model))
 	c.agent.BufferDiagnosticStatus(fmt.Sprintf("⚠️ Response still streaming after %ds (stream_max_lifetime %ds, model: %s). Aborting...", int(elapsed), int(capSeconds), model))
 	c.mu.Lock()
 	killed := c.attemptResponse
@@ -340,7 +340,7 @@ func (c *streamingCall) noteAttemptKill(elapsed float64, kind string) bool {
 		return true
 	}
 	if c.mon.withheldAt.IsZero() {
-		streamMonitorLog.Error(fmt.Sprintf("Inline streaming call did not unwind after %d %s kills of attempt %d; no longer reporting it as active, so the inactivity watchdog can end it. model=%s",
+		pkgLog().Error(fmt.Sprintf("Inline streaming call did not unwind after %d %s kills of attempt %d; no longer reporting it as active, so the inactivity watchdog can end it. model=%s",
 			c.mon.sameKills, kind, attempt, c.kwargsModel("unknown")))
 	}
 	c.mon.withheldAt = c.lastChunkTime()
@@ -349,7 +349,7 @@ func (c *streamingCall) noteAttemptKill(elapsed float64, kind string) bool {
 
 // Leaves the wedged worker behind and ends the call with a retryable timeout naming the kill kind
 func (c *streamingCall) abandonWedgedWorker(elapsed float64, attempt int, kind string) {
-	streamMonitorLog.Error(fmt.Sprintf("Streaming worker did not unwind after %d %s kills of attempt %d (%.0fs); abandoning the request. model=%s",
+	pkgLog().Error(fmt.Sprintf("Streaming worker did not unwind after %d %s kills of attempt %d (%.0fs); abandoning the request. model=%s",
 		c.mon.sameKills, kind, attempt, elapsed, c.kwargsModel("unknown")))
 	c.requestCancelled.Store(true)
 	var abandon error
@@ -389,7 +389,7 @@ func (c *streamingCall) countStaleAttempt() {
 func (c *streamingCall) killStaleStream(elapsed float64) {
 	est := EstimateRequestContextTokens(c.ctx, c.apiKwargs)
 	model := c.kwargsModel("unknown")
-	streamingCallLog.Warn(fmt.Sprintf("Stream stale for %.0fs (threshold %.0fs) — no chunks received. model=%s context=~%s tokens. Killing connection.",
+	pkgLog().Warn(fmt.Sprintf("Stream stale for %.0fs (threshold %.0fs) — no chunks received. model=%s context=~%s tokens. Killing connection.",
 		elapsed, c.currentStaleTimeout(), model, commaInt(est)))
 	c.agent.BufferDiagnosticStatus(fmt.Sprintf("⚠️ No response from provider for %ds (model: %s, context: ~%s tokens). Reconnecting...", int(elapsed), model, commaInt(est)))
 	c.mu.Lock()
@@ -413,7 +413,7 @@ func (c *streamingCall) abortForInterrupt(staleElapsed float64) {
 		c.mu.Unlock()
 	}
 	c.requestCancelled.Store(true)
-	streamingCallLog.Debug("Force-closing streaming httpx client due to interrupt (not a network error).")
+	pkgLog().Debug("Force-closing streaming httpx client due to interrupt (not a network error).")
 	c.mu.Lock()
 	killed := c.attemptResponse
 	c.mu.Unlock()
@@ -438,15 +438,15 @@ func streamingCallShutdownAttemptSocket(c *streamingCall, resp *http.Response) {
 	}
 	defer func() {
 		if r := recover(); r != nil {
-			streamingCallLog.Debug("Stale stream socket shutdown failed", "exc_info", r)
+			pkgLog().Debug("Stale stream socket shutdown failed", "exc_info", r)
 		}
 	}()
 	if connOf != nil {
 		if conn := connOf(); conn != nil {
 			auxShutdownConn(conn)
-			streamingCallLog.Info(fmt.Sprintf("Shut down the stale stream's socket to unblock the reader (attempt superseded; model=%s).", c.kwargsModel("unknown")))
+			pkgLog().Info(fmt.Sprintf("Shut down the stale stream's socket to unblock the reader (attempt superseded; model=%s).", c.kwargsModel("unknown")))
 			return
 		}
 	}
-	streamingCallLog.Debug("Stale stream socket shutdown found no socket; pool sweep is the only abort")
+	pkgLog().Debug("Stale stream socket shutdown found no socket; pool sweep is the only abort")
 }

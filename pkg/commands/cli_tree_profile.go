@@ -296,8 +296,8 @@ func renderDistributionPlan(p *profileIO, plan *manage.InstallPlan) {
 	if mf.Author != "" {
 		p.println("  Author:   %s", mf.Author)
 	}
-	if mf.HermesRequires != "" {
-		p.println("  Requires: Icebath %s", mf.HermesRequires)
+	if mf.IcebathRequires != "" {
+		p.println("  Requires: Icebath %s", mf.IcebathRequires)
 	}
 	p.println("  Source:   %s", plan.Provenance)
 	p.println("  Target:   %s", plan.TargetDir)
@@ -576,7 +576,7 @@ func profileCreate(p *profileIO, a ProfileArgs) error {
 	return printCreateNextSteps(p, a, name, profileDir)
 }
 
-// What a clone carried over, the channel notice and the Honcho config clone
+// What a clone carried over and the channel notice
 func printCloneSummary(p *profileIO, a ProfileArgs, name, sourceLabel, profileDir string) error {
 	if a.CloneAll {
 		p.println("Full copy from %s (excluding session history, cron jobs, backups, and snapshots).", sourceLabel)
@@ -597,18 +597,7 @@ func printCloneSummary(p *profileIO, a ProfileArgs, name, sourceLabel, profileDi
 	if a.CloneAll {
 		cloneFlag = "--clone-all"
 	}
-	if err := printChannelCloneNotice(p, name, sourceLabel, a.CloneChannels, cloneFlag); err != nil {
-		return err
-	}
-	clonedHoncho, err := memory.CloneHonchoForProfile(p.ctx, name)
-	var refused *memory.ConfigWriteRefused
-	switch {
-	case err == nil && clonedHoncho:
-		p.println("Honcho config cloned (peer: %s)", name)
-	case errors.As(err, &refused):
-		p.println("Honcho config not cloned: %s", refused.Error())
-	}
-	return nil
+	return printChannelCloneNotice(p, name, sourceLabel, a.CloneChannels, cloneFlag)
 }
 
 // Creates the profile wrapper unless its name collides, warning when the wrapper dir is off PATH
@@ -1120,7 +1109,7 @@ var profileInfoFields = [][2]string{
 	{"description", "Description:  "},
 	{"author", "Author:       "},
 	{"license", "License:      "},
-	{"hermes_requires", "Requires:     Icebath "},
+	{"icebath_requires", "Requires:     Icebath "},
 	{"source", "Source:       "},
 	{"installed_at", "Installed:    "},
 }
@@ -1144,6 +1133,9 @@ func profileInfo(p *profileIO, a ProfileArgs) error {
 	}
 	p.println("\nDistribution: %s", pyrepr.Str(data["name"]))
 	p.println("Version:      %s", pyrepr.Str(version))
+	if _, has := data["icebath_requires"]; !has {
+		data["icebath_requires"] = data[profiles.RetiredRequiresKey]
+	}
 	for _, field := range profileInfoFields {
 		if v := data[field[0]]; pyrepr.Truthy(v) {
 			p.println("%s%s", field[1], pyrepr.Str(v))

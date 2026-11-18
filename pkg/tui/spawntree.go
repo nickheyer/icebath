@@ -1450,7 +1450,9 @@ func (a *app) dockRows(width int, rc renderCtx) []string {
 		return nil
 	}
 	cols := max(width-2, 8)
-	ink := func(text string) string { return "  " + spawnInk(ansi.Truncate(text, cols, "…"), t.Color.Accent, true, "") }
+	ink := func(text string) string {
+		return "  " + spawnInk(ansi.Truncate(text, cols, "…"), t.Color.Accent, true, "")
+	}
 	if a.agentDockCollapsed {
 		var counts []string
 		if running > 0 {

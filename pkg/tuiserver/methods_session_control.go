@@ -4,18 +4,12 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
-	"fmt"
-	"math"
-	"math/big"
-	"strings"
 	"sync"
 
 	"github.com/nickheyer/icebath/pkg/agent"
 	"github.com/nickheyer/icebath/pkg/goals"
-	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/tuigateway"
+	"github.com/nickheyer/icebath/pkg/tuihost"
 )
 
 // Stable frontend safe goal fields, nil for no goal or a cleared one
@@ -69,10 +63,10 @@ func extractWaitBarrier(state *goals.GoalState) map[string]any {
 		return map[string]any{"type": "until", "until_at": state.WaitingUntil, "reason": reason}
 	}
 	if state.WaitingOnSession != nil {
-		return map[string]any{"type": "session", "target": *state.WaitingOnSession, "reason": reason}
+		return map[string]any{"type": "session", "session_id": *state.WaitingOnSession, "reason": reason}
 	}
 	if state.WaitingOnPID != nil {
-		return map[string]any{"type": "pid", "target": *state.WaitingOnPID, "reason": reason}
+		return map[string]any{"type": "pid", "pid": *state.WaitingOnPID, "reason": reason}
 	}
 	return nil
 }
@@ -104,7 +98,7 @@ func safeHeartbeatSnapshot(state *agent.HeartbeatState) map[string]any {
 		"created_at": state.CreatedAt, "last_fired_at": state.LastFiredAt, "fire_count": state.FireCount}
 }
 
-// Snapshot reader every control path calls, the real one swapped only where a hermes case stalls a read
+// Snapshot reader every control path calls, the real one swapped only where a test stalls a read
 var snapshotControlFn = snapshotControl
 
 // Persisted session control state serialized once without wall clock churn
@@ -172,7 +166,7 @@ func snapshotUpdatedAt(goalState *goals.GoalState, loopState *agent.SessionLoopS
 var publishLockGuard sync.Mutex
 
 // Per session lock serializing the snapshot read, revision compare and emit
-func sessionPublishLock(session *tuigateway.Session) *sync.Mutex {
+func sessionPublishLock(session *tuihost.Session) *sync.Mutex {
 	if lock, ok := session.Get("control_publish_lock").(*sync.Mutex); ok {
 		return lock
 	}
@@ -183,7 +177,7 @@ func sessionPublishLock(session *tuigateway.Session) *sync.Mutex {
 }
 
 // Publishes session.control.update for one live session, skipping an absent or unchanged snapshot when asked
-func publishSessionControlSnapshot(ctx context.Context, sid string, session *tuigateway.Session, onlyIfPresent, onlyIfChanged bool) {
+func publishSessionControlSnapshot(ctx context.Context, sid string, session *tuihost.Session, onlyIfPresent, onlyIfChanged bool) {
 	if session == nil {
 		return
 	}
@@ -203,30 +197,16 @@ func publishSessionControlSnapshot(ctx context.Context, sid string, session *tui
 			return
 		}
 		session.Set("control_revision", revision)
-		tuigateway.Emit(ctx, "session.control.update", sid, map[string]any{"control": control})
+		tuihost.Emit(ctx, "session.control.update", sid, map[string]any{"control": control})
 	}); failure != nil {
-		logger().Debug("session.control.update publish failed for "+sid, "error", errorMessage(failure))
+		pkgLog().Debug("session.control.update publish failed for "+sid, "error", errorMessage(failure))
 	}
-}
-
-// Goal and loop control actions routed through their slash command, name and argument
-var actionCommandMap = map[string][2]string{
-	"goal.pause": {"goal", "pause"}, "goal.resume": {"goal", "resume"}, "goal.clear": {"goal", "clear"},
-	"goal.unwait": {"goal", "unwait"}, "loop.pause": {"loop", "pause"}, "loop.resume": {"loop", "resume"},
-	"loop.stop": {"loop", "stop"},
-}
-
-// Control actions with no slash command, run through the manager APIs
-var managerActions = map[string]bool{
-	"subgoal.add": true, "subgoal.remove": true, "subgoal.clear": true,
-	"heartbeat.pause": true, "heartbeat.resume": true, "heartbeat.clear": true,
 }
 
 var sessionControlRegistry = &handlerRegistry{}
 
 func init() {
 	sessionControlRegistry.scopedMethod("session.control.read", sessionControlRead)
-	sessionControlRegistry.scopedMethod("session.control", sessionControl)
 	sessionControlRegistry.install()
 }
 
@@ -246,211 +226,8 @@ func sessionControlRead(ctx context.Context, rid any, params map[string]any) map
 		control, err = snapshotControlFn(ctx, sessionKey)
 		panicIf(err)
 	}); failure != nil {
-		logger().Debug("session.control.read failed: " + errorMessage(failure))
+		pkgLog().Debug("session.control.read failed: " + errorMessage(failure))
 		return rpcErr(rid, 5031, "session.control.read failed: "+errorMessage(failure), nil)
 	}
 	return ok(rid, map[string]any{"control": control})
-}
-
-// Runs one allowlisted control action and answers with its exact resulting snapshot
-func sessionControl(ctx context.Context, rid any, params map[string]any) map[string]any {
-	rawAction, isText := params["action"].(string)
-	action := strings.TrimSpace(rawAction)
-	if !isText || action == "" {
-		return rpcErr(rid, 4004, "action is required", nil)
-	}
-	if strings.HasPrefix(action, "goal.gate") {
-		return rpcErr(rid, 4004, "gate actions are not allowed through session.control", nil)
-	}
-	if _, command := actionCommandMap[action]; !command && !managerActions[action] {
-		return rpcErr(rid, 4004, "unknown action: "+action, nil)
-	}
-	args := map[string]any{}
-	if raw, present := params["args"]; present {
-		object, isObject := raw.(map[string]any)
-		if !isObject {
-			return rpcErr(rid, 4004, "args must be an object", nil)
-		}
-		args = object
-	}
-	validated, validationError := validateActionArgs(rid, action, args)
-	if validationError != nil {
-		return validationError
-	}
-	session, errResp := sessNowait(ctx, params, rid)
-	if errResp != nil {
-		return errResp
-	}
-	sessionKey := strOr(session.Get("session_key"))
-	if sessionKey == "" {
-		return rpcErr(rid, 4001, "session has no stored key", nil)
-	}
-	var sessionID any = ""
-	if truthy(params["session_id"]) {
-		sessionID = params["session_id"]
-	}
-	var actionResult map[string]any
-	if command, isCommand := actionCommandMap[action]; isCommand {
-		actionResult = dispatchControlCommand(ctx, rid, sessionID, command[0], command[1])
-	} else {
-		result, err := executeManagerAction(ctx, sessionKey, action, validated)
-		if err != nil {
-			if kind := pyExceptionKind(err); kind != "RuntimeError" && kind != "ValueError" && kind != "IndexError" {
-				panic(err)
-			}
-			return rpcErr(rid, 4004, managerErrorMessage(action, err), nil)
-		}
-		actionResult = result
-	}
-	if _, failed := actionResult["error"]; failed {
-		return actionResult
-	}
-	var control map[string]any
-	if failure := catchPanic(func() {
-		var err error
-		control, err = snapshotControlFn(ctx, sessionKey)
-		panicIf(err)
-	}); failure != nil {
-		logger().Debug("session.control snapshot after " + action + " failed: " + errorMessage(failure))
-		return rpcErr(rid, 5031, "session.control snapshot failed: "+errorMessage(failure), nil)
-	}
-	if _, isCommand := actionCommandMap[action]; !isCommand {
-		publishSessionControlSnapshot(ctx, strOr(sessionID), session, false, false)
-	}
-	return ok(rid, map[string]any{"control": control, "dispatch": dispatchEnvelope(actionResult)})
-}
-
-// Validated arguments of the only actions with input, or the 4004 error response
-func validateActionArgs(rid any, action string, args map[string]any) (map[string]any, map[string]any) {
-	switch action {
-	case "subgoal.add":
-		text, isText := args["text"].(string)
-		text = strings.TrimSpace(text)
-		if !isText || text == "" {
-			return nil, rpcErr(rid, 4004, "subgoal text is required", nil)
-		}
-		return map[string]any{"text": text}, nil
-	case "subgoal.remove":
-		index, isInt := pyrepr.Int(args["index"])
-		if !isInt {
-			return nil, rpcErr(rid, 4004, "subgoal index must be an integer", nil)
-		}
-		if index.Sign() < 1 {
-			return nil, rpcErr(rid, 4004, "subgoal index must be >= 1", nil)
-		}
-		return map[string]any{"index": index}, nil
-	}
-	return map[string]any{}, nil
-}
-
-// Delegates a fixed intent to the registered command dispatcher
-func dispatchControlCommand(ctx context.Context, rid, sessionID any, name, arg string) (out map[string]any) {
-	handler := lookupMethod("command.dispatch")
-	if handler == nil {
-		return rpcErr(rid, 5031, "command.dispatch unavailable", nil)
-	}
-	if failure := catchPanic(func() {
-		out = handler(ctx, rid, map[string]any{"session_id": sessionID, "name": name, "arg": arg})
-	}); failure != nil {
-		logger().Debug("command.dispatch " + name + " " + arg + " failed: " + errorMessage(failure))
-		return rpcErr(rid, 5031, "dispatch failed: "+errorMessage(failure), nil)
-	}
-	return out
-}
-
-// Runs a control that has no slash command through the subgoal or heartbeat manager
-func executeManagerAction(ctx context.Context, sessionKey, action string, args map[string]any) (map[string]any, error) {
-	if strings.HasPrefix(action, "subgoal.") {
-		return executeSubgoalAction(ctx, sessionKey, action, args)
-	}
-	return executeHeartbeatAction(ctx, sessionKey, action), nil
-}
-
-// Adds, removes or clears a subgoal of the session goal
-func executeSubgoalAction(ctx context.Context, sessionKey, action string, args map[string]any) (map[string]any, error) {
-	manager := goals.NewGoalManager(ctx, sessionKey, 0)
-	var output string
-	switch action {
-	case "subgoal.add":
-		text, err := manager.AddSubgoal(args["text"].(string))
-		if err != nil {
-			return nil, err
-		}
-		output = fmt.Sprintf("✓ Added subgoal %d: %s", len(manager.State().Subgoals), text)
-	case "subgoal.remove":
-		index := args["index"].(*big.Int)
-		position := int64(math.MaxInt64)
-		if index.IsInt64() {
-			position = index.Int64()
-		}
-		text, err := manager.RemoveSubgoal(position)
-		if err != nil {
-			return nil, err
-		}
-		output = fmt.Sprintf("✓ Removed subgoal %s: %s", index.String(), text)
-	default:
-		count, err := manager.ClearSubgoals()
-		if err != nil {
-			return nil, err
-		}
-		output = "No subgoals to clear."
-		if count != 0 {
-			plural := "s"
-			if count == 1 {
-				plural = ""
-			}
-			output = fmt.Sprintf("✓ Cleared %d subgoal%s.", count, plural)
-		}
-	}
-	return map[string]any{"result": map[string]any{"type": "exec", "output": output}}, nil
-}
-
-// Pauses, resumes or clears the session heartbeat
-func executeHeartbeatAction(ctx context.Context, sessionKey, action string) map[string]any {
-	manager := agent.NewHeartbeatManager(ctx, sessionKey)
-	var output string
-	switch action {
-	case "heartbeat.pause":
-		output = "No heartbeat set."
-		if state := manager.Pause(); state != nil {
-			output = "⏸ Heartbeat paused: " + state.Prompt
-		}
-	case "heartbeat.resume":
-		output = "No heartbeat to resume."
-		if state := manager.Resume(); state != nil {
-			output = fmt.Sprintf("▶ Heartbeat resumed (every %s): %s", agent.FormatHeartbeatInterval(state.IntervalSeconds), state.Prompt)
-		}
-	case "heartbeat.clear":
-		output = "No heartbeat set."
-		if manager.Clear() {
-			output = "✓ Heartbeat cleared."
-		}
-	default:
-		return rpcErr(nil, 4004, "unknown heartbeat action: "+action, nil)
-	}
-	return map[string]any{"result": map[string]any{"type": "exec", "output": output}}
-}
-
-// Python exception class an error stands for
-func pyExceptionKind(err error) string {
-	if e, isPy := err.(*pyint.Error); isPy {
-		return e.Kind
-	}
-	return fmt.Sprintf("%T", err)
-}
-
-// Manager failure text prefixed with the slash form of the action
-func managerErrorMessage(action string, err error) string {
-	prefix := map[string]string{"subgoal.add": "/subgoal", "subgoal.remove": "/subgoal remove", "subgoal.clear": "/subgoal clear"}[action]
-	if prefix == "" {
-		prefix = action
-	}
-	return prefix + ": " + err.Error()
-}
-
-// User visible envelope of a command result without model facing data
-func dispatchEnvelope(response map[string]any) map[string]any {
-	result, _ := response["result"].(map[string]any)
-	return map[string]any{"type": result["type"], "output": result["output"], "notice": result["notice"],
-		"message": result["message"], "display": result["display"]}
 }

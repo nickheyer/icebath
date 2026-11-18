@@ -104,7 +104,7 @@ func TestRejectionMemoIsPerModelAndIgnoresSchemaValidationErrors(t *testing.T) {
 func TestWithoutStructuredOutputFormatRemovesExtraBodyEntryAndKeepsSiblings(t *testing.T) {
 	kwargs := map[string]any{"model": "m", "extra_body": map[string]any{"response_format": auxTitleResponseFormat(), "metadata": map[string]any{"user_id": "u1"}}}
 	result := auxWithoutStructuredOutputFormat(kwargs)
-	if result == nil || !reflect.DeepEqual(result["extra_body"], map[string]any{"metadata": map[string]any{"user_id": "u1"}}) {
+	if result == nil || !reflect.DeepEqual(pyjson.Plain(result["extra_body"]), map[string]any{"metadata": map[string]any{"user_id": "u1"}}) {
 		t.Fatalf("result = %v", result)
 	}
 	if _, ok := kwargs["extra_body"].(map[string]any)["response_format"]; !ok {

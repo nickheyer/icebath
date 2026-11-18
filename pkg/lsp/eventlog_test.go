@@ -13,7 +13,7 @@ func TestDisabledEmitsAtDebug(t *testing.T) {
 	logDisabled(rt, "pyright", "/x.py", "feature off")
 	logDisabled(rt, "pyright", "/x.py", "ext not mapped")
 	for _, r := range h.all() {
-		if r.level != slog.LevelDebug || r.logger != eventLogger {
+		if r.level != slog.LevelDebug || r.logger != logName {
 			t.Fatalf("%+v", r)
 		}
 	}

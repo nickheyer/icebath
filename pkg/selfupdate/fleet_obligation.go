@@ -7,12 +7,12 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
-	"log/slog"
 	"os"
 	"path/filepath"
 	"strings"
 	"unicode/utf8"
 
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
@@ -23,7 +23,6 @@ import (
 )
 
 var (
-	fleetObligationLog     = slog.Default().With("logger", "hermes_cli.update_cmd")
 	fleetCollectVersions   = func() []*pyjson.Object { return CollectFleetVersions(nil, nil) }
 	fleetReadCheckoutSHA   = updaterecord.ReadCheckoutSHA
 	fleetLatestReceipt     = updaterecord.ReadLatestReceipt
@@ -52,11 +51,11 @@ func supervisedServeRow(row any) bool {
 	return (kind == "serve" || kind == "dashboard") && supervisedServeBackends[supervisor]
 }
 
-// Identity of a gateway profile value, an error for a value Python cannot hash into a set
+// Identity of a gateway profile value, an error for a list or mapping value
 func gatewayOf(profile any) (gatewayIdentity, error) {
 	switch profile.(type) {
 	case map[string]any, []any, *pyjson.Object:
-		return gatewayIdentity{}, fmt.Errorf("TypeError: unhashable type: '%s'", pyrepr.TypeName(profile))
+		return gatewayIdentity{}, fmt.Errorf("a gateway profile is %s, expected a profile name", errchain.Kind(profile))
 	}
 	return gatewayIdentity{"gateway", profile}, nil
 }
@@ -73,7 +72,7 @@ func writeFleetRestartPendingMarker(ctx context.Context, expectedSHA string, run
 	}
 	marker := fleetRestartPendingMarkerPath(ctx)
 	if testOwnsLiveCheckout(filepath.Dir(marker)) {
-		fleetObligationLog.Debug("Skipping fleet-restart-pending obligation under pytest (live checkout)")
+		pkgLog().Debug("Skipping fleet-restart-pending obligation under pytest (live checkout)")
 		return true, nil
 	}
 	return updaterecord.ArmHostObligation(ctx, marker, expectedSHA, runtimes, currentProfileName(ctx), owner)
@@ -95,7 +94,7 @@ func currentProfileName(ctx context.Context) (name string) {
 // Removes an update recovery breadcrumb, a missing file fine and any other failure logged
 func clearMarkerFile(path, label string) {
 	if err := os.Remove(path); err != nil && !errors.Is(err, fs.ErrNotExist) {
-		fleetObligationLog.Debug(fmt.Sprintf("Could not clear %s marker: %s", label, pypath.OSErrorText(err)))
+		pkgLog().Debug(fmt.Sprintf("Could not clear %s marker: %s", label, pypath.OSErrorText(err)))
 	}
 }
 
@@ -219,7 +218,7 @@ func receiptOwedGateways(receipt any) (map[gatewayIdentity]bool, bool, error) {
 	var plan any = map[string]any{}
 	if p := rowValue(receipt, "plan"); pyrepr.Truthy(p) {
 		if !isRowDict(p) {
-			return nil, false, fmt.Errorf("AttributeError: '%s' object has no attribute 'get'", pyrepr.TypeName(p))
+			return nil, false, fmt.Errorf("an update receipt gateway entry is %s, expected a mapping", errchain.Kind(p))
 		}
 		plan = p
 	}
@@ -305,7 +304,7 @@ func liveFleetCoversReceipt(expectedSHA string, receipt any, owed map[gatewayIde
 	}
 	defer func() {
 		if r := recover(); r != nil {
-			fleetObligationLog.Debug(fmt.Sprintf("Could not reconcile pending fleet identities: %v", r))
+			pkgLog().Debug(fmt.Sprintf("Could not reconcile pending fleet identities: %v", r))
 			covers = false
 		}
 	}()
@@ -403,7 +402,7 @@ func dischargeGatewaylessMarker(ctx context.Context, checkoutSHA, expectedSHA st
 	func() {
 		defer func() {
 			if r := recover(); r != nil {
-				fleetObligationLog.Debug(fmt.Sprintf("Gateway-less host probe failed; keeping fleet-restart-pending marker: %v", r))
+				pkgLog().Debug(fmt.Sprintf("Gateway-less host probe failed; keeping fleet-restart-pending marker: %v", r))
 				gatewayless = false
 			}
 		}()
@@ -420,7 +419,7 @@ func dischargeGatewaylessMarker(ctx context.Context, checkoutSHA, expectedSHA st
 		return false
 	}
 	clearFleetRestartPendingMarker(ctx)
-	fleetObligationLog.Debug(fmt.Sprintf("Fleet-restart-pending marker discharged: host runs no gateway at %s", pystr.Slice(checkoutSHA, 0, 10)))
+	pkgLog().Debug(fmt.Sprintf("Fleet-restart-pending marker discharged: host runs no gateway at %s", pystr.Slice(checkoutSHA, 0, 10)))
 	return true
 }
 
@@ -445,7 +444,7 @@ func markerOnlyRestartObsolete(ctx context.Context) (bool, error) {
 	}
 	if recorded && len(owed) == 0 {
 		clearFleetRestartPendingMarker(ctx)
-		fleetObligationLog.Debug("Fleet-restart-pending marker discharged: no gateway obligation recorded")
+		pkgLog().Debug("Fleet-restart-pending marker discharged: no gateway obligation recorded")
 		return true, nil
 	}
 	if recorded && expectedSHA == "" {
@@ -467,7 +466,7 @@ func markerOnlyRestartObsolete(ctx context.Context) (bool, error) {
 	}
 	fleet, probeErr := probeLiveFleet()
 	if probeErr != nil {
-		fleetObligationLog.Debug(fmt.Sprintf("Fleet probe failed; keeping fleet-restart-pending marker: %v", probeErr))
+		pkgLog().Debug(fmt.Sprintf("Fleet probe failed; keeping fleet-restart-pending marker: %v", probeErr))
 		return false, nil
 	}
 	allExternal := true
@@ -518,7 +517,7 @@ func markerOnlyRestartObsolete(ctx context.Context) (bool, error) {
 		}
 	}
 	clearFleetRestartPendingMarker(ctx)
-	fleetObligationLog.Debug(fmt.Sprintf("Fleet-restart-pending marker discharged: %d gateway(s) already serve %s", len(fleet), pystr.Slice(targetSHA, 0, 10)))
+	pkgLog().Debug(fmt.Sprintf("Fleet-restart-pending marker discharged: %d gateway(s) already serve %s", len(fleet), pystr.Slice(targetSHA, 0, 10)))
 	return true, nil
 }
 

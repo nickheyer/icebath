@@ -124,9 +124,9 @@ func readEnvBytes(t *testing.T, path string) []byte {
 func captureEnvLoaderLog(t *testing.T) *bytes.Buffer {
 	t.Helper()
 	buf := &bytes.Buffer{}
-	prev := envLoaderLog
-	envLoaderLog = slog.New(slog.NewTextHandler(buf, &slog.HandlerOptions{Level: slog.LevelDebug}))
-	t.Cleanup(func() { envLoaderLog = prev })
+	prev := slog.Default()
+	slog.SetDefault(slog.New(slog.NewTextHandler(buf, &slog.HandlerOptions{Level: slog.LevelDebug})))
+	t.Cleanup(func() { slog.SetDefault(prev) })
 	return buf
 }
 
@@ -184,7 +184,7 @@ func utf32LE(s string) []byte {
 
 func TestRecoveredUpdateRetrySkipsExternalSecretSources(t *testing.T) {
 	root := envLoaderRoot(t)
-	h := envLoaderProfile(t, root, "hermes")
+	h := envLoaderProfile(t, root, "icebath")
 	envFile := filepath.Join(h, ".env")
 	writeEnvBytes(t, envFile, []byte("UPDATE_RETRY_DOTENV=loaded\n"))
 	envLoaderUnset(t, "UPDATE_RETRY_DOTENV")
@@ -202,7 +202,7 @@ func TestRecoveredUpdateRetrySkipsExternalSecretSources(t *testing.T) {
 
 func TestUTF8BOMDoesNotMangleFirstKey(t *testing.T) {
 	root := envLoaderRoot(t)
-	h := envLoaderProfile(t, root, "hermes")
+	h := envLoaderProfile(t, root, "icebath")
 	envFile := filepath.Join(h, ".env")
 	writeEnvBytes(t, envFile, []byte("\xef\xbb\xbfFIRST_KEY=first-value\nSECOND_KEY=second-value\n"))
 	envLoaderUnset(t, "FIRST_KEY", "SECOND_KEY", "\ufeffFIRST_KEY")
@@ -216,7 +216,7 @@ func TestUTF8BOMDoesNotMangleFirstKey(t *testing.T) {
 
 func TestBOMFirstKeyIsSeenByInstallerAndScrubAlike(t *testing.T) {
 	root := envLoaderRoot(t)
-	h := envLoaderProfile(t, root, "hermes")
+	h := envLoaderProfile(t, root, "icebath")
 	envFile := filepath.Join(h, ".env")
 	writeEnvBytes(t, envFile, []byte("\xef\xbb\xbfFIRST_KEY=first-value\n"+
 		"export EXPORTED_KEY='quoted # not a comment'\n"+
@@ -253,7 +253,7 @@ func TestBOMFirstKeyIsSeenByInstallerAndScrubAlike(t *testing.T) {
 
 func TestUTF8BOMPlusInvalidUTF8PreservesFirstKey(t *testing.T) {
 	root := envLoaderRoot(t)
-	h := envLoaderProfile(t, root, "hermes")
+	h := envLoaderProfile(t, root, "icebath")
 	envFile := filepath.Join(h, ".env")
 	writeEnvBytes(t, envFile, []byte("\xef\xbb\xbfANTHROPIC_API_KEY=sk-test-123\nBAD=caf\xe9\n"))
 	envLoaderUnset(t, "ANTHROPIC_API_KEY", "BAD", "\ufeffANTHROPIC_API_KEY")
@@ -267,7 +267,7 @@ func TestUTF8BOMPlusInvalidUTF8PreservesFirstKey(t *testing.T) {
 
 func TestLatin1FallbackStreamHonorsOverride(t *testing.T) {
 	root := envLoaderRoot(t)
-	h := envLoaderProfile(t, root, "hermes")
+	h := envLoaderProfile(t, root, "icebath")
 	envFile := filepath.Join(h, ".env")
 	writeEnvBytes(t, envFile, []byte("OVERRIDE_PROBE=from-file\nLATIN1_VALUE=caf\xe9\n"))
 	t.Setenv("OVERRIDE_PROBE", "from-shell")
@@ -286,7 +286,7 @@ func TestLatin1FallbackStreamHonorsOverride(t *testing.T) {
 
 func TestLatin1FallbackStreamPreservesInterpolation(t *testing.T) {
 	root := envLoaderRoot(t)
-	h := envLoaderProfile(t, root, "hermes")
+	h := envLoaderProfile(t, root, "icebath")
 	envFile := filepath.Join(h, ".env")
 	writeEnvBytes(t, envFile, []byte("FOO=bar\nBAR=${FOO}\nLATIN1_VALUE=caf\xe9\n"))
 	envLoaderUnset(t, "FOO", "BAR", "LATIN1_VALUE")
@@ -300,7 +300,7 @@ func TestLatin1FallbackStreamPreservesInterpolation(t *testing.T) {
 
 func TestUTF16LEBOMPreservesNonASCIIValues(t *testing.T) {
 	root := envLoaderRoot(t)
-	h := envLoaderProfile(t, root, "hermes")
+	h := envLoaderProfile(t, root, "icebath")
 	envFile := filepath.Join(h, ".env")
 	writeEnvBytes(t, envFile, utf16LE("GREETING=café\nCJK_LABEL=日本語\n"))
 	envLoaderUnset(t, "GREETING", "CJK_LABEL")
@@ -352,7 +352,7 @@ func TestUTF32WarningFiresOncePerPath(t *testing.T) {
 
 func TestPlainUTF8EnvRegression(t *testing.T) {
 	root := envLoaderRoot(t)
-	h := envLoaderProfile(t, root, "hermes")
+	h := envLoaderProfile(t, root, "icebath")
 	envFile := filepath.Join(h, ".env")
 	before := []byte("OPENAI_API_KEY=sk-plain\nSECOND_KEY=ok\n")
 	writeEnvBytes(t, envFile, before)
@@ -369,7 +369,7 @@ func TestPlainUTF8EnvRegression(t *testing.T) {
 
 func TestCP1252EnvRegressionDoesNotCrash(t *testing.T) {
 	root := envLoaderRoot(t)
-	h := envLoaderProfile(t, root, "hermes")
+	h := envLoaderProfile(t, root, "icebath")
 	envFile := filepath.Join(h, ".env")
 	before := []byte("ASCII_KEY=ok\nLATIN1_VALUE=caf\xe9\n")
 	writeEnvBytes(t, envFile, before)
@@ -386,7 +386,7 @@ func TestCP1252EnvRegressionDoesNotCrash(t *testing.T) {
 
 func TestKnownKeysAbsentFromUserEnvAreCleared(t *testing.T) {
 	root := envLoaderRoot(t)
-	h := envLoaderProfile(t, root, "hermes")
+	h := envLoaderProfile(t, root, "icebath")
 	writeEnvBytes(t, filepath.Join(h, ".env"), []byte("OPENAI_BASE_URL=https://profile.example/v1\n"))
 	t.Setenv("OPENAI_BASE_URL", "https://stale.example/v1")
 	t.Setenv("ICEBATH_ACP_AUTH_METHOD", "cursor_login")
@@ -401,7 +401,7 @@ func TestKnownKeysAbsentFromUserEnvAreCleared(t *testing.T) {
 
 func TestEmptyAssignmentInUserEnvIsPreserved(t *testing.T) {
 	root := envLoaderRoot(t)
-	h := envLoaderProfile(t, root, "hermes")
+	h := envLoaderProfile(t, root, "icebath")
 	writeEnvBytes(t, filepath.Join(h, ".env"), []byte("ICEBATH_ACP_AUTH_METHOD=\n"))
 	t.Setenv("ICEBATH_ACP_AUTH_METHOD", "cursor_login")
 	t.Setenv("COPILOT_CLI_PATH", "/usr/bin/sneaky")
@@ -412,7 +412,7 @@ func TestEmptyAssignmentInUserEnvIsPreserved(t *testing.T) {
 
 func TestNoUserEnvDoesNotClearAnything(t *testing.T) {
 	root := envLoaderRoot(t)
-	h := envLoaderProfile(t, root, "hermes")
+	h := envLoaderProfile(t, root, "icebath")
 	t.Setenv("ICEBATH_ACP_AUTH_METHOD", "cursor_login")
 	t.Setenv("PATH", "/usr/bin:/bin")
 	mustLoad(t, DotenvLoadOptions{Home: h})
@@ -424,7 +424,7 @@ func TestNoUserEnvDoesNotClearAnything(t *testing.T) {
 func knownKeyDefinedInUserEnvIsKept(t *testing.T, line string) {
 	t.Helper()
 	root := envLoaderRoot(t)
-	h := envLoaderProfile(t, root, "hermes")
+	h := envLoaderProfile(t, root, "icebath")
 	writeEnvBytes(t, filepath.Join(h, ".env"), []byte(line))
 	t.Setenv("ICEBATH_ACP_AUTH_METHOD", "cursor_login")
 	mustLoad(t, DotenvLoadOptions{Home: h})
@@ -441,7 +441,7 @@ func TestExportPrefixedKnownKeyInUserEnvIsKept(t *testing.T) {
 
 func TestShellExportedCredentialsSurviveCleanup(t *testing.T) {
 	root := envLoaderRoot(t)
-	h := envLoaderProfile(t, root, "hermes")
+	h := envLoaderProfile(t, root, "icebath")
 	writeEnvBytes(t, filepath.Join(h, ".env"), []byte("SOME_OTHER_KEY=x\n"))
 	envLoaderUnset(t, "SOME_OTHER_KEY")
 	t.Setenv("OPENAI_API_KEY", "sk-from-shell")
@@ -469,7 +469,7 @@ func TestCleanupScopeIsTheProfileManagedSet(t *testing.T) {
 func seedTerminalHome(t *testing.T, configYAML, envText string) string {
 	t.Helper()
 	root := envLoaderRoot(t)
-	h := envLoaderProfile(t, root, "hermes")
+	h := envLoaderProfile(t, root, "icebath")
 	if configYAML != "" {
 		writeEnvBytes(t, filepath.Join(h, "config.yaml"), []byte(configYAML))
 	}
@@ -546,7 +546,7 @@ func selfReferenceHome(t *testing.T) (string, string) {
 	root := envLoaderRoot(t)
 	t.Setenv("PATH", dotenvBasePath)
 	t.Setenv("ICEBATH_MULTIPLEX_PROFILES", "0")
-	return root, envLoaderProfile(t, root, "hermes")
+	return root, envLoaderProfile(t, root, "icebath")
 }
 
 func TestDotenvSameFileReloadedThreeTimesLeavesPathUnchanged(t *testing.T) {
@@ -650,7 +650,7 @@ func unreadableProfile(t *testing.T, root string) (string, string) {
 	if os.Geteuid() == 0 {
 		t.Fatal("read denial through file modes needs a non root user")
 	}
-	h := envLoaderProfile(t, root, "hermes")
+	h := envLoaderProfile(t, root, "icebath")
 	envFile := filepath.Join(h, ".env")
 	writeEnvBytes(t, envFile, []byte("OPENAI_API_KEY=from-file\n"))
 	if err := os.Chmod(envFile, 0); err != nil {
@@ -848,7 +848,7 @@ func reloadRestoreHome(t *testing.T, envText, preserve string) string {
 	return h
 }
 
-func TestSourceSecretSurvivesSecondLoadHermesDotenv(t *testing.T) {
+func TestSourceSecretSurvivesSecondLoadIcebathDotenv(t *testing.T) {
 	h := reloadRestoreHome(t, "GLM_API_KEY=__BITWARDEN_MANAGED__\n", "")
 	registerFakeBulkSource(t, map[string]string{"GLM_API_KEY": "vault-value"}, true)
 	mustLoad(t, DotenvLoadOptions{Home: h})

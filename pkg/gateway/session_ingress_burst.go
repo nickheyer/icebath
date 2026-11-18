@@ -3,10 +3,8 @@ package gateway
 import (
 	"context"
 	"fmt"
-	"log/slog"
 
 	"github.com/nickheyer/icebath/pkg/internal/pythread"
-	"github.com/nickheyer/icebath/pkg/observability"
 )
 
 // One held same sender busy burst, its merged head, hold window, timer, commit task and absorbed inputs
@@ -89,7 +87,6 @@ var burstGate = func(ctx context.Context, adapter PlatformAdapter, event *Messag
 // Shared runtime dispatch of one busy input, merging a same sender photo or queue mode text burst first
 func dispatchBusyBurst(ctx context.Context, adapter PlatformAdapter, event *MessageEvent, sessionKey string) error {
 	b := adapter.Base()
-	observability.StampBusyArrival(adapter, busyEventOf(event))
 	kind := b.burstKind(event)
 	bi := &b.busyIngress
 	for {
@@ -101,7 +98,6 @@ func dispatchBusyBurst(ctx context.Context, adapter PlatformAdapter, event *Mess
 		if kind != "" && kind == b.burstKind(burst.head) && b.canMergeTextDebounceEvents(burst.head, event) {
 			MergePendingMessageEvent(map[string]*MessageEvent{sessionKey: burst.head}, sessionKey, event, kind == "text")
 			burst.absorbed = append(burst.absorbed, event)
-			observability.NoteBusyMerged(busyEventOf(burst.head), busyEventOf(event))
 			burst.lastTS = pythread.Monotonic()
 			b.armBurstLocked(ctx, adapter, sessionKey, burst)
 			bi.mu.Unlock()
@@ -228,7 +224,7 @@ func commitBurst(ctx context.Context, adapter PlatformAdapter, sessionKey string
 	if err == nil || isCancelled(err) || !serialReceiveLoop(adapter) {
 		return err
 	}
-	slog.Error(fmt.Sprintf("[%s] Busy burst for %s was not queued", adapter.Name(), sessionKey), "error", err)
+	pkgLog().Error(fmt.Sprintf("[%s] Busy burst for %s was not queued", adapter.Name(), sessionKey), "error", err)
 	return nil
 }
 
@@ -291,7 +287,7 @@ func WhenReturnedInputsDurable(ctx context.Context, adapter PlatformAdapter, per
 	return nil
 }
 
-// Drops the route's held burst as hermes main dropped its debounce buffer, nothing was acknowledged
+// Drops the route's held burst with its debounce buffer, nothing was acknowledged
 func discardBusyBurst(adapter PlatformAdapter, sessionKey string) {
 	bi := &adapter.Base().busyIngress
 	bi.mu.Lock()
@@ -304,6 +300,5 @@ func discardBusyBurst(adapter PlatformAdapter, sessionKey string) {
 	if burst == nil {
 		return
 	}
-	observability.SettleBusyArrival(context.Background(), busyEventOf(burst.head), true)
 	burst.done.settle(nil, false)
 }

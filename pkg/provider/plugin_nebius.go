@@ -15,7 +15,7 @@ func nebiusPluginProfiles() []Profile {
 		keys: []string{"NEBIUS_API_KEY", "NEBIUS_TOKEN_FACTORY_API_KEY", "NEBIUS_BASE_URL"}, base: "https://api.tokenfactory.nebius.com/v1",
 		modelsURL: "https://api.tokenfactory.nebius.com/v1/models?verbose=true", authType: AuthTypeAPIKey,
 		fallbacks: []string{"Qwen/Qwen3.5-397B-A17B-fast", "deepseek-ai/DeepSeek-V4-Pro", "zai-org/GLM-5.1", "moonshotai/Kimi-K2.5-fast",
-			"MiniMaxAI/MiniMax-M2.5-fast", "deepseek-ai/DeepSeek-V3.2-fast", "NousResearch/Hermes-4-70B",
+			"MiniMaxAI/MiniMax-M2.5-fast", "deepseek-ai/DeepSeek-V3.2-fast",
 			"openai/gpt-oss-120b-fast", "meta-llama/Llama-3.3-70B-Instruct"},
 	}, "nebius", "nebius-tokenfactory", "nebius-tf", "token-factory", "tokenfactory")
 	p.DefaultAuxModel = "nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B"

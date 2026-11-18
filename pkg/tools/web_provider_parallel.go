@@ -320,7 +320,7 @@ func (p *parallelProvider) Search(ctx context.Context, env *Env, query string, l
 			return nil, err
 		}
 		if useKeyless(env, "parallel", key) {
-			envLog(env).With("logger", "plugins.web.parallel.provider").Info(fmt.Sprintf("Parallel keyless search: '%s' (limit=%d)", query, limit))
+			envLog(env).Info(fmt.Sprintf("Parallel keyless search: '%s' (limit=%d)", query, limit))
 			return keylessSearchWithFailover(ctx, env, "parallel", query, limit)
 		}
 		mode := resolveParallelSearchMode(env)

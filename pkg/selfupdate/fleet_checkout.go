@@ -3,7 +3,6 @@ package selfupdate
 import (
 	"context"
 	"fmt"
-	"log/slog"
 	"sort"
 	"strings"
 	"time"
@@ -15,7 +14,6 @@ import (
 )
 
 var (
-	fleetCheckoutLog = slog.Default().With("logger", "hermes_cli.update_cmd_fleet_checkout")
 	fleetProjectRoot = pm.RepoRoot
 )
 
@@ -49,7 +47,7 @@ func CheckoutContains(ctx context.Context, sha string) (bool, error) {
 	result, err := RunGit(ctx, []string{"git"}, []string{"merge-base", "--is-ancestor", sha, "HEAD"},
 		ChildOptions{Dir: fleetProjectRoot(), Capture: true, Text: true, Timeout: 10 * time.Second, Env: offlineGitEnv()})
 	if err != nil {
-		fleetCheckoutLog.Debug(fmt.Sprintf("Checkout ancestry probe for %s failed: %s", pystr.Slice(sha, 0, 10), err))
+		pkgLog().Debug(fmt.Sprintf("Checkout ancestry probe for %s failed: %s", pystr.Slice(sha, 0, 10), err))
 		return false, nil
 	}
 	return result.ReturnCode == 0, nil

@@ -3,7 +3,6 @@ package pet
 import (
 	"context"
 	"errors"
-	"log/slog"
 	"net/http"
 	"net/url"
 	"sync"
@@ -24,8 +23,6 @@ const (
 	downloadTimeout = 60 * time.Second
 	petdexUserAgent = "icebath-agent-petdex"
 )
-
-var manifestLog = slog.Default().With("logger", "agent.pet.manifest")
 
 // One pet row of the public petdex manifest
 type ManifestEntry struct {
@@ -90,7 +87,7 @@ func Prefetch(ctx context.Context, env *tools.Env) {
 			manifestCache.Unlock()
 		}()
 		if _, err := FetchManifest(context.WithoutCancel(ctx), env, false); err != nil {
-			manifestLog.Debug("petdex manifest prefetch failed: " + err.Error())
+			pkgLog().Debug("petdex manifest prefetch failed: " + err.Error())
 		}
 	}()
 }

@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"log/slog"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -20,12 +19,10 @@ import (
 	"github.com/nickheyer/icebath/pkg/selfupdate/updaterecord"
 )
 
-var installRepairLog = slog.Default().With("logger", "icebath_cli.main_install_repair")
-
-// Windows gate of the launcher heal and quarantine sweep, the module attribute hermes tests patch
+// Windows gate of the launcher heal and quarantine sweep, the module attribute tests patch
 var installRepairIsWindows = func() bool { return runtime.GOOS == "windows" }
 
-// Rename the quarantine restore retries, the os attribute hermes tests patch
+// Rename the quarantine restore retries, the os attribute tests patch
 var quarantineRename = os.Rename
 
 // Backoff in milliseconds between restore attempts of a quarantined shim
@@ -190,7 +187,7 @@ func filterPendingShimRenames(entries []string, shims []string) ([]string, int) 
 	return kept, removed
 }
 
-// Pending shim rename sweep, the module attribute hermes tests patch
+// Pending shim rename sweep, the module attribute tests patch
 var cleanupPendingShimRenamesFn = cleanupPendingShimRenames
 
 // Sweeps and rescues quarantined exe shims of earlier updates, a live update's quarantine left alone
@@ -336,7 +333,7 @@ func EnsureWindowsBinLaunchers(root string, windows *bool, userPathEntries []str
 // Recovers gateways a killed update left paused, the update command and a booting gateway excepted
 func RecoverPausedGateways(ctx context.Context, argv []string) {
 	if err := updaterecord.RecoverPauses(ctx, argv); err != nil {
-		installRepairLog.Debug(fmt.Sprintf("paused gateway recovery failed: %s", err.Error()))
+		pkgLog().Debug(fmt.Sprintf("paused gateway recovery failed: %s", err.Error()))
 	}
 }
 
@@ -369,7 +366,7 @@ func configuredFeaturesMissingDeps(ctx context.Context) []pm.ConfiguredFeatureGa
 		}
 		return nil
 	}(); err != nil {
-		installRepairLog.Debug(fmt.Sprintf("configured-platform dependency check skipped: %s", err.Error()))
+		pkgLog().Debug(fmt.Sprintf("configured-platform dependency check skipped: %s", err.Error()))
 	}
 	return missing
 }

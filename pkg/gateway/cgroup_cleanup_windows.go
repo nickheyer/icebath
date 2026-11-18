@@ -2,9 +2,9 @@ package gateway
 
 import "errors"
 
-// Fails as the signal module does on Windows, where SIGKILL is absent
+// Refuses on Windows, which has no SIGKILL to stop a process group with
 func cgroupSigkill(int) error {
-	return errors.New("AttributeError: module 'signal' has no attribute 'SIGKILL'")
+	return errors.New("Windows has no SIGKILL to stop a process group with")
 }
 
 // Never skips a kill failure on Windows

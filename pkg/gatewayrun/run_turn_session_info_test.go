@@ -23,9 +23,9 @@ func TestFormatSessionInfoLocalEndpointShown(t *testing.T) {
 }
 
 func TestFormatSessionInfoMoaPresetNamesTheBilledAggregator(t *testing.T) {
-	runtimeTestHome(t, "model:\n  default: review\n  provider: moa\nmoa:\n  presets:\n    review:\n      reference_models:\n        - provider: openai\n          model: gpt-5.5\n      aggregator:\n        provider: nous\n        model: claude-opus-4.8\n", nil)
+	runtimeTestHome(t, "model:\n  default: review\n  provider: moa\nmoa:\n  presets:\n    review:\n      reference_models:\n        - provider: openai\n          model: gpt-5.5\n      aggregator:\n        provider: openrouter\n        model: claude-opus-4.8\n", nil)
 	info := allocGatewayRunner().formatSessionInfo(context.Background())
-	if !strings.Contains(info, "nous:claude-opus-4.8") {
+	if !strings.Contains(info, "openrouter:claude-opus-4.8") {
 		t.Fatalf("info %q", info)
 	}
 }

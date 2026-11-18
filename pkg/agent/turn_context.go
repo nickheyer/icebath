@@ -3,7 +3,6 @@ package agent
 import (
 	"context"
 	"fmt"
-	"log/slog"
 	"os"
 	"reflect"
 	"slices"
@@ -19,7 +18,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pythread"
 	"github.com/nickheyer/icebath/pkg/mcp"
 	"github.com/nickheyer/icebath/pkg/memory"
-	"github.com/nickheyer/icebath/pkg/observability"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/skills"
 	"github.com/nickheyer/icebath/pkg/state"
@@ -50,8 +48,6 @@ func reanchorCurrentTurnUserIdx(messages []*state.Message, userMessage any) int 
 	}
 	return fallback
 }
-
-func turnContextLog() *slog.Logger { return slog.Default().With("logger", "agent.turn_context") }
 
 const PreLLMBlockExitReason = "blocked_by_plugin_pre_llm_call"
 
@@ -219,7 +215,7 @@ func maybeTitleSessionAtTurnStart(ctx context.Context, a *AIAgent, messages []*s
 	}
 	defer func() {
 		if r := recover(); r != nil {
-			turnContextLog().Debug("Turn-start auto-title dispatch failed", "error", r)
+			pkgLog().Debug("Turn-start auto-title dispatch failed", "error", r)
 		}
 	}()
 	userText := ""
@@ -243,7 +239,7 @@ func maybeTitleSessionAtTurnStart(ctx context.Context, a *AIAgent, messages []*s
 	}
 	if !a.sessionDBCreated {
 		if err := a.ensureDBSession(); err != nil {
-			turnContextLog().Debug("Turn-start auto-title dispatch failed", "error", err)
+			pkgLog().Debug("Turn-start auto-title dispatch failed", "error", err)
 			return
 		}
 		if !a.sessionDBCreated {
@@ -333,7 +329,7 @@ func failClosedAfterPreflightTimeout(a *AIAgent, requestTokens int) error {
 		return nil
 	}
 	if fits := requestExceedsModelWindow(a, requestTokens); fits != nil && !*fits {
-		turnContextLog().Warn(fmt.Sprintf("Preflight compression timed out but the request (~%s tokens) fits the model window (%s); sending it uncompressed this turn",
+		pkgLog().Warn(fmt.Sprintf("Preflight compression timed out but the request (~%s tokens) fits the model window (%s); sending it uncompressed this turn",
 			groupThousands(requestTokens), groupThousands(engineContextLength(a.contextCompressor))))
 		return nil
 	}
@@ -388,7 +384,7 @@ func persistUnderLock(a *AIAgent, fn func() error, failureMsg string, pendingCLI
 	func() {
 		defer func() {
 			if r := recover(); r != nil {
-				turnContextLog().Warn(fmt.Sprintf(failureMsg, orNone(a.sessionID)), "error", r)
+				pkgLog().Warn(fmt.Sprintf(failureMsg, orNone(a.sessionID)), "error", r)
 			}
 		}()
 		if a.sessionPersistLock != nil {
@@ -396,7 +392,7 @@ func persistUnderLock(a *AIAgent, fn func() error, failureMsg string, pendingCLI
 			defer a.sessionPersistLock.Unlock()
 		}
 		if err := fn(); err != nil {
-			turnContextLog().Warn(fmt.Sprintf(failureMsg, orNone(a.sessionID)), "error", err)
+			pkgLog().Warn(fmt.Sprintf(failureMsg, orNone(a.sessionID)), "error", err)
 		}
 	}()
 	if pendingCLIMessage == nil || a.sharedDictPersisted(pendingCLIMessage) {
@@ -428,7 +424,7 @@ func publishRuntimeMain(ctx context.Context, a *AIAgent) (out context.Context) {
 func refreshMCPToolsBetweenTurns(ctx context.Context, a *AIAgent) {
 	defer func() {
 		if r := recover(); r != nil {
-			turnContextLog().Debug("between-turns MCP tool refresh skipped", "error", r)
+			pkgLog().Debug("between-turns MCP tool refresh skipped", "error", r)
 		}
 	}()
 	mcp.AdoptLateConnections(ctx, a)
@@ -562,7 +558,7 @@ func hydrateFromHistory(ctx context.Context, a *AIAgent, history []map[string]an
 		func() {
 			defer func() {
 				if r := recover(); r != nil {
-					turnContextLog().Debug("restored native checkpoint hydration skipped", "error", r)
+					pkgLog().Debug("restored native checkpoint hydration skipped", "error", r)
 				}
 			}()
 			if hasReplayableNativeCompactionCheckpoint(a, history) {
@@ -655,7 +651,7 @@ func withholdBlockedPrompt(ctx context.Context, a *AIAgent, turnUserMsg *state.M
 		session = a.sessionID
 	}
 	if _, err := a.sessionDB.SetUserMessageContent(ctx, session, rowID, withheld, metadata); err != nil {
-		turnContextLog().Warn(fmt.Sprintf("withheld-prompt rewrite failed for session=%s", orNone(a.sessionID)), "error", err)
+		pkgLog().Warn(fmt.Sprintf("withheld-prompt rewrite failed for session=%s", orNone(a.sessionID)), "error", err)
 	}
 }
 
@@ -675,7 +671,7 @@ func collectPreLLMCallContext(ctx context.Context, a *AIAgent, effectiveTaskID, 
 	}
 	defer func() {
 		if r := recover(); r != nil {
-			turnContextLog().Warn(fmt.Sprintf("pre_llm_call hook failed: %v", r))
+			pkgLog().Warn(fmt.Sprintf("pre_llm_call hook failed: %v", r))
 			out = ""
 		}
 	}()
@@ -838,7 +834,7 @@ func stampAPIContentSidecar(ctx context.Context, a *AIAgent, messages []*state.M
 		_, err = a.sessionDB.SetLatestUserAPIContent(ctx, a.sessionID, durable, *apiContent)
 	}
 	if err != nil {
-		turnContextLog().Warn(fmt.Sprintf("api_content backfill failed for session=%s", orNone(a.sessionID)), "error", err)
+		pkgLog().Warn(fmt.Sprintf("api_content backfill failed for session=%s", orNone(a.sessionID)), "error", err)
 	}
 }
 
@@ -858,7 +854,7 @@ func appendMultimodalContext(ctx context.Context, a *AIAgent, turnUserMsg *state
 		content = durableContent(content)
 	}
 	if _, err := a.sessionDB.SetUserMessageContent(ctx, a.sessionID, rowID, content, nil); err != nil {
-		turnContextLog().Warn(fmt.Sprintf("multimodal context backfill failed for session=%s", orNone(a.sessionID)), "error", err)
+		pkgLog().Warn(fmt.Sprintf("multimodal context backfill failed for session=%s", orNone(a.sessionID)), "error", err)
 	}
 }
 
@@ -878,7 +874,7 @@ func persistTurnStart(a *AIAgent, messages, conversationHistory []*state.Message
 	}, "Early turn-start session persistence failed for session=%s", pendingCLIMessage)
 }
 
-// Rotated session recovery of the prologue, swapped by tests like the hermes module patch
+// Rotated session recovery of the prologue, swapped by tests like the module patch
 var turnRecoverRotatedSession = recoverRotatedCompressionSession
 
 // Runs the once per turn setup and returns the loop's input context
@@ -922,7 +918,7 @@ func buildTurnContext(ctx context.Context, a *AIAgent, r TurnContextRequest) (*T
 	if a.turnOrigin != "" {
 		line += " origin=" + a.turnOrigin
 	}
-	turnContextLog().Info(line)
+	pkgLog().Info(line)
 	messages := make([]*state.Message, 0, len(conversationHistory)+1)
 	for _, m := range conversationHistory {
 		messages = append(messages, state.MessageFromDict(m))
@@ -967,7 +963,7 @@ func buildTurnContext(ctx context.Context, a *AIAgent, r TurnContextRequest) (*T
 	func() {
 		defer func() {
 			if rec := recover(); rec != nil {
-				turnContextLog().Debug("message_agent injection skipped", "error", rec)
+				pkgLog().Debug("message_agent injection skipped", "error", rec)
 			}
 		}()
 		ensureMessageAgentTool(ctx, a)
@@ -1058,7 +1054,7 @@ func sanitizeModelFor(a *AIAgent, moaConfig map[string]any) string {
 	return model
 }
 
-// Wire dict of a message without the Go only row bookkeeping keys hermes dicts never carry
+// Wire dict of a message without the row bookkeeping keys only stored rows carry
 func wireDictOf(m *state.Message) map[string]any {
 	d := state.MessageToDict(m)
 	for _, k := range []string{"id", "active", "compacted"} {
@@ -1197,7 +1193,6 @@ func applyPerTurnResetState(a *AIAgent) {
 	a.reusedResponseText = nil
 	a.mutePostResponse, a.unicodeSanitizationPasses = false, 0
 	a.toolGuardrailHaltDecision = nil
-	observability.ResetHarnessTurn(a)
 	a.iterationBudgetWarningInjected = false
 	a.runBudgetWrapupInjected, a.verificationStopNudges = false, 0
 	a.preVerifyNudges, a.lspTurnEndNotes = 0, 0

@@ -6,7 +6,7 @@ import (
 	"io"
 )
 
-// ResumeCommand lifts the emergency stop icebath pause engaged, hermes_cli/subcommands/pause.py cmd_resume
+// Lifts the emergency stop icebath pause engaged
 func ResumeCommand(ctx context.Context, h string, args []string, w io.Writer) (int, error) {
 	if Disengage(ctx) {
 		fmt.Fprintln(w, "▶️  Icebath resumed — dispatch picks up on the next tick.")
@@ -16,7 +16,7 @@ func ResumeCommand(ctx context.Context, h string, args []string, w io.Writer) (i
 	return 0, nil
 }
 
-// PauseCommand engages the emergency stop with an optional reason, hermes_cli/subcommands/pause.py cmd_pause
+// Engages the emergency stop with an optional reason
 func PauseCommand(ctx context.Context, ns map[string]any, w io.Writer) (int, error) {
 	reason, _ := ns["reason"].(string)
 	already := IsEngaged(ctx)

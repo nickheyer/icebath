@@ -7,7 +7,7 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/tuigateway"
+	"github.com/nickheyer/icebath/pkg/tuihost"
 )
 
 // Sorted key value pairs of the compression and context keys that must apply on the next turn
@@ -41,7 +41,7 @@ func tuiCompressionConfigSignature(ctx context.Context, cfg map[string]any) []an
 }
 
 // Adopts compression and context length edits at turn start by updating the live compressor in place
-func syncAgentCompressionWithConfig(ctx context.Context, sid string, session *tuigateway.Session) {
+func syncAgentCompressionWithConfig(ctx context.Context, sid string, session *tuihost.Session) {
 	a := sessionAgent(session)
 	if a == nil {
 		return
@@ -68,6 +68,6 @@ func syncAgentCompressionWithConfig(ctx context.Context, sid string, session *tu
 		}
 	}()
 	if failure != nil {
-		logger().Warn("Could not apply live compression config for " + sid + ": " + failureText(failure))
+		pkgLog().Warn("Could not apply live compression config for " + sid + ": " + failureText(failure))
 	}
 }

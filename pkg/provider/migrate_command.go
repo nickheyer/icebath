@@ -12,7 +12,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/plugins"
 )
 
-// MigrateCommand dispatches icebath migrate, hermes_cli/migrate.py cmd_migrate with the xai, relay and agent subtypes
+// Dispatches icebath migrate, with the xai, relay and agent subtypes
 func MigrateCommand(ctx context.Context, h string, ns map[string]any, w, errw io.Writer) (code int, err error) {
 	restore := WithSetupOutput(w)
 	defer restore()

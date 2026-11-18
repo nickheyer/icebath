@@ -51,7 +51,7 @@ func joinCancelledWorker(future *tools.PoolFuture, graceSeconds float64) bool {
 		return false
 	}
 	if _, err := future.Result(0); err != nil && !errors.Is(err, tools.ErrFutureCancelled) {
-		compressionLog().Debug("cancelled compression worker exited with an exception", "error", err.Error())
+		pkgLog().Debug("cancelled compression worker exited with an exception", "error", err.Error())
 	}
 	return true
 }
@@ -80,7 +80,7 @@ type compressionExecutor interface {
 	Submit(ctx context.Context, fn func(ctx context.Context) (any, error)) (*tools.PoolFuture, error)
 }
 
-// Executor the timed runner submits to, the hermes module level executor getter tests replace
+// Executor the timed runner submits to, the module level executor getter tests replace
 var compressTimeoutExecutorFor = func() compressionExecutor { return getCompressTimeoutExecutor() }
 
 // Process wide pool every timed compression worker runs on
@@ -142,12 +142,12 @@ func recordStallInterruptedBackoff(ctx context.Context, a *AIAgent, fence *Compr
 	errText := StallInterruptedFailureClass + ":" + stallSourceFingerprint(a, messages, approxTokens)
 	defer func() {
 		if r := recover(); r != nil {
-			compressionLog().Debug("stall-interrupted compression cooldown persist failed", "error", fmt.Sprint(r))
+			pkgLog().Debug("stall-interrupted compression cooldown persist failed", "error", fmt.Sprint(r))
 			recorded = false
 		}
 	}()
 	record.RecordTimeoutFailure(errText, "stall_interrupted")
-	compressionLog().Info(fmt.Sprintf("Recorded stall-interrupted compression backoff (session=%s, %s)", pyStrOr(a.sessionID, "none"), errText))
+	pkgLog().Info(fmt.Sprintf("Recorded stall-interrupted compression backoff (session=%s, %s)", pyStrOr(a.sessionID, "none"), errText))
 	return true
 }
 
@@ -155,7 +155,7 @@ func recordStallInterruptedBackoff(ctx context.Context, a *AIAgent, fence *Compr
 func resolveCompressionFallbackRoute(ctx context.Context) map[string]any {
 	cfg, err := provider.AuxiliaryTaskConfig(ctx, "compression")
 	if err != nil {
-		compressionLog().Debug("compression fallback_chain lookup failed", "error", err.Error())
+		pkgLog().Debug("compression fallback_chain lookup failed", "error", err.Error())
 		return nil
 	}
 	chain, ok := cfg["fallback_chain"].([]any)
@@ -291,19 +291,19 @@ func runPinnedCompressionRetry(ctx context.Context, route map[string]any, o comp
 	deterministic := route["deterministic"] == true
 	label := pyStr(route["label"])
 	if !deterministic && pythread.Monotonic() >= precommitDeadline {
-		compressionLog().Info(fmt.Sprintf("Skipping compression stall fallback on %s: the shared pre-commit ceiling is spent", label))
+		pkgLog().Info(fmt.Sprintf("Skipping compression stall fallback on %s: the shared pre-commit ceiling is spent", label))
 		return nil, "", false
 	}
 	var retryFence *CompressionCommitFence
 	if o.NewFence != nil {
 		f, err := callFenceFactory(o.NewFence)
 		if err != nil {
-			compressionLog().Warn("compression stall-fallback fence factory failed; the retry will run on an unpublished fence (a /stop mid-retry cannot serialize against its commit boundary)", "error", err.Error())
+			pkgLog().Warn("compression stall-fallback fence factory failed; the retry will run on an unpublished fence (a /stop mid-retry cannot serialize against its commit boundary)", "error", err.Error())
 		}
 		retryFence = f
 	}
 	if retryFence == nil {
-		compressionLog().Warn("compression stall-fallback retry running on an unpublished fence; hard-interrupt admission will read the aborted attempt's fence rather than the retry's commit boundary")
+		pkgLog().Warn("compression stall-fallback retry running on an unpublished fence; hard-interrupt admission will read the aborted attempt's fence rather than the retry's commit boundary")
 		retryFence = NewCompressionCommitFence()
 	}
 	idle := o.IdleTimeoutSeconds
@@ -320,15 +320,15 @@ func runPinnedCompressionRetry(ctx context.Context, route map[string]any, o comp
 		deadline = &d
 		if ceiling <= 0 {
 			retryFence.RevokeCommitAdmission()
-			compressionLog().Info(fmt.Sprintf("Skipping compression stall fallback on %s: its setup spent the shared pre-commit ceiling", label))
+			pkgLog().Info(fmt.Sprintf("Skipping compression stall fallback on %s: its setup spent the shared pre-commit ceiling", label))
 			return nil, "", false
 		}
 		idle = math.Min(idle, ceiling)
 	}
 	if deterministic {
-		compressionLog().Warn(fmt.Sprintf("Context compression stalled on every summary route — committing the %s (no summary model) before continuing without compression", label))
+		pkgLog().Warn(fmt.Sprintf("Context compression stalled on every summary route — committing the %s (no summary model) before continuing without compression", label))
 	} else {
-		compressionLog().Warn(fmt.Sprintf("Context compression stalled on the configured summary route — retrying once on %s (%s) within %.1fs of the shared pre-commit budget before continuing without compression", label, pyStr(route["model"]), ceiling))
+		pkgLog().Warn(fmt.Sprintf("Context compression stalled on the configured summary route — retrying once on %s (%s) within %.1fs of the shared pre-commit budget before continuing without compression", label, pyStr(route["model"]), ceiling))
 	}
 	streakBefore := fallbackStreakOf(o.TelemetryAgent)
 	var msgs []map[string]any
@@ -343,22 +343,22 @@ func runPinnedCompressionRetry(ctx context.Context, route map[string]any, o comp
 		return runErr
 	})
 	if err != nil {
-		compressionLog().Warn(fmt.Sprintf("Context compression fallback attempt on %s failed", label), "error", err.Error())
+		pkgLog().Warn(fmt.Sprintf("Context compression fallback attempt on %s failed", label), "error", err.Error())
 		return nil, "", false
 	}
 	if sameMessageList(msgs, o.Messages) {
-		compressionLog().Warn(fmt.Sprintf("Context compression fallback attempt on %s produced no compression; continuing without compression", label))
+		pkgLog().Warn(fmt.Sprintf("Context compression fallback attempt on %s produced no compression; continuing without compression", label))
 		return nil, "", false
 	}
 	if deterministic || fallbackStreakOf(o.TelemetryAgent) > streakBefore {
-		compressionLog().Warn(fmt.Sprintf("Context compression committed a deterministic fallback summary on %s after the primary summary route stalled (no summary model produced output)", label))
+		pkgLog().Warn(fmt.Sprintf("Context compression committed a deterministic fallback summary on %s after the primary summary route stalled (no summary model produced output)", label))
 	} else {
-		compressionLog().Info(fmt.Sprintf("Context compression recovered on %s after the primary summary route stalled", label))
+		pkgLog().Info(fmt.Sprintf("Context compression recovered on %s after the primary summary route stalled", label))
 	}
 	return msgs, prompt, true
 }
 
-// Calls the fence factory, turning a panic into the error the hermes except branch logs
+// Calls the fence factory, turning a panic into the error the except branch logs
 func callFenceFactory(newFence func() (*CompressionCommitFence, error)) (f *CompressionCommitFence, err error) {
 	defer func() {
 		if r := recover(); r != nil {
@@ -426,7 +426,7 @@ func awaitWorkerWithinBudget(future *tools.PoolFuture, fence *CompressionCommitF
 			timer.Stop()
 			out, err := settledOutcome(future)
 			if err != nil && (isPyTimeoutError(err) || errors.Is(err, context.DeadlineExceeded)) {
-				compressionLog().Info(fmt.Sprintf("Context compression worker exited with %v — taking the stall path", err))
+				pkgLog().Info(fmt.Sprintf("Context compression worker exited with %v — taking the stall path", err))
 				return false, workerOutcome{}, nil
 			}
 			return err == nil, out, err
@@ -437,13 +437,13 @@ func awaitWorkerWithinBudget(future *tools.PoolFuture, fence *CompressionCommitF
 			if err == nil {
 				return true, out, nil
 			}
-			compressionLog().Info(fmt.Sprintf("Context compression worker exited with %v — taking the stall path", err))
+			pkgLog().Info(fmt.Sprintf("Context compression worker exited with %v — taking the stall path", err))
 			return false, workerOutcome{}, nil
 		}
 		waited := pythread.Monotonic() - waitStarted
 		sinceProgress := fence.SecondsSinceProgress()
 		if !fence.DeadlineExceeded() && sinceProgress < idle {
-			compressionLog().Info(fmt.Sprintf("Context compression still streaming after %.0fs (last progress %.1fs ago) — extending wait (ceiling %.0fs)", waited, sinceProgress, ceiling))
+			pkgLog().Info(fmt.Sprintf("Context compression still streaming after %.0fs (last progress %.1fs ago) — extending wait (ceiling %.0fs)", waited, sinceProgress, ceiling))
 			continue
 		}
 		return false, workerOutcome{}, nil
@@ -462,9 +462,9 @@ func awaitInFlightCommit(future *tools.PoolFuture, ceiling, waitStarted float64,
 			overrunReports++
 			msg := fmt.Sprintf("Context compression SessionDB commit still running %.1fs past the total ceiling (waited %.1fs, ceiling %.1fs); commit cannot be abandoned mid-flight — continuing to wait (check SessionDB health if this persists)", waited-ceiling, waited, ceiling)
 			if overrunReports <= 2 {
-				compressionLog().Warn(msg)
+				pkgLog().Warn(msg)
 			} else {
-				compressionLog().Error(msg)
+				pkgLog().Error(msg)
 			}
 			if !overrunSurfaced && onCommitOverrun != nil {
 				overrunSurfaced = true
@@ -500,7 +500,7 @@ func releaseCancelledWorker(future *tools.PoolFuture, fence *CompressionCommitFe
 		if joinCancelledWorker(future, grace) {
 			fence.AllowCancelledLockRelease()
 		} else {
-			compressionLog().Warn(fmt.Sprintf("Cancelled compression worker did not exit within %.1fs grace — orphaning it behind the poison fence (late result will be discarded); retaining the session compression lease until it exits so no new attempt overlaps it", grace))
+			pkgLog().Warn(fmt.Sprintf("Cancelled compression worker did not exit within %.1fs grace — orphaning it behind the poison fence (late result will be discarded); retaining the session compression lease until it exits so no new attempt overlaps it", grace))
 		}
 	}
 	fence.ReleaseCancelledCompressionLock()
@@ -542,7 +542,7 @@ func runCompressContextWithProgressTimeout(ctx context.Context, o compressionTim
 	escalateDeterministic := stallFallback && (o.RequestExceedsWindow || priorTimeoutFailures(o.TelemetryAgent) >= 1)
 	executor := compressTimeoutExecutorFor()
 	if !tryAdmitCompressionJob() {
-		compressionLog().Warn(fmt.Sprintf("Context compression pool saturated (%d workers busy) — refusing new compression this cycle and continuing without compression. Wedged workers are fence-cancelled and free their slot when they return; if this persists, check the summary provider health.", compressExecutorMaxWorkers))
+		pkgLog().Warn(fmt.Sprintf("Context compression pool saturated (%d workers busy) — refusing new compression this cycle and continuing without compression. Wedged workers are fence-cancelled and free their slot when they return; if this persists, check the summary provider health.", compressExecutorMaxWorkers))
 		if o.TelemetryAgent != nil {
 			emitCompressionAttemptTelemetry(ctx, o.TelemetryAgent, attemptTelemetryEmit{StartedAt: time.Now(), CommitStatus: "aborted", SplitStatus: "aborted",
 				FailureClass: "pool_saturated", ExcludeLastTelemetry: true})
@@ -555,7 +555,7 @@ func runCompressContextWithProgressTimeout(ctx context.Context, o compressionTim
 			return nil, errCompressionDeadlineStart
 		}
 		if fence.IsCancelled() {
-			compressionLog().Info("Skipping stale compression job: fence cancelled before start")
+			pkgLog().Info("Skipping stale compression job: fence cancelled before start")
 			return workerOutcome{messages: o.Messages}, nil
 		}
 		msgs, prompt, err := worker(ctx, fence)
@@ -601,7 +601,7 @@ func runCompressContextWithProgressTimeout(ctx context.Context, o compressionTim
 				return nil
 			})
 		} else {
-			compressionLog().Warn(fmt.Sprintf("Context compression made no progress for %.1fs (total wait %.1fs, ceiling %.1fs); continuing without compression", sinceProgress, waited, ceiling))
+			pkgLog().Warn(fmt.Sprintf("Context compression made no progress for %.1fs (total wait %.1fs, ceiling %.1fs); continuing without compression", sinceProgress, waited, ceiling))
 		}
 		return o.Messages, o.fallbackPrompt(), nil
 	}

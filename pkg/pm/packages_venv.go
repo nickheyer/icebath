@@ -1,3 +1,5 @@
+//go:build !icebath_core && !icebath_noextras
+
 package pm
 
 import (
@@ -6,7 +8,6 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
-	"log/slog"
 	"os"
 	"path/filepath"
 	"sort"
@@ -63,7 +64,7 @@ func (v *Venv) Stamp(ctx context.Context, extras []string, pluginDirs []MemberDi
 	for _, artifact := range lock.Artifacts("python", target) {
 		sha, ok := artifact["sha256"]
 		if !ok {
-			return "", keyError("sha256")
+			return "", missingKey("a locked python artifact has no sha256")
 		}
 		digests = append(digests, sha)
 	}
@@ -127,7 +128,7 @@ func (v *Venv) Prepare(ctx context.Context, extras []string, opts VenvApplyOptio
 	if err != nil {
 		return nil, err
 	}
-	toolchainCtx, err := coreToolchainContext(ctx, project)
+	toolchainCtx, err := coreToolchainContext(ctx, project, SyncOutput(ctx))
 	if err != nil {
 		return nil, err
 	}
@@ -318,7 +319,11 @@ func copySeedLink(src, dst string) error {
 // Merges one payload bucket into the machine cache, testing links before directories so links stay links
 var seedTree func(src, dst string) error
 
-func init() { seedTree = mergeSeedTree }
+// Binds the seed tree merge and registers the project venv package
+func init() {
+	seedTree = mergeSeedTree
+	MustRegister(newVenv(""))
+}
 
 func mergeSeedTree(src, dst string) error {
 	if err := os.MkdirAll(dst, 0o777); err != nil {
@@ -381,7 +386,7 @@ func UvCacheDir(ctx context.Context) (string, error) {
 		return machine, nil
 	}
 	if err := seedPayloadCache(payloadCache, machine); err != nil {
-		slog.Warn(fmt.Sprintf("uv cache seed incomplete, retrying on the next install: %s", pypath.OSErrorText(err)))
+		pkgLog().Warn(fmt.Sprintf("uv cache seed incomplete, retrying on the next install: %s", pypath.OSErrorText(err)))
 		return machine, nil
 	}
 	if err := os.MkdirAll(filepath.Dir(marker), 0o777); err == nil {

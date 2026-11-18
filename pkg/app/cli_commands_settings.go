@@ -142,7 +142,7 @@ func (c *CLI) handleBranchCommand(cmdOriginal string) {
 	}
 	c.endCurrentSession("branched")
 	if _, err := c.sessionDB.SetSessionTitle(c.ctx, newSessionID, branchTitle); err != nil {
-		cliLogger.Debug(fmt.Sprintf("branch title %s failed: %v", newSessionID, err))
+		pkgLog().Debug(fmt.Sprintf("branch title %s failed: %v", newSessionID, err))
 	}
 	tools.TransferSessionYolo(c.sessionID, newSessionID)
 	c.sessionID, c.sessionStart, c.pendingTitle = newSessionID, now, ""

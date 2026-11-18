@@ -196,14 +196,14 @@ func (s *ssSession) open(secret []any) ([]byte, error) {
 	}
 	iv, _ := secret[1].([]byte)
 	if len(iv) != 0x10 || len(value) == 0 || len(value)%0x10 != 0 {
-		return nil, errors.New("ValueError: malformed encrypted secret")
+		return nil, errors.New("the Secret Service returned a malformed encrypted secret")
 	}
 	block, _ := aes.NewCipher(s.aesKey)
 	plain := make([]byte, len(value))
 	cipher.NewCBCDecrypter(block, iv).CryptBlocks(plain, value)
 	pad := int(plain[len(plain)-1])
 	if pad > len(plain) {
-		return nil, errors.New("ValueError: bad padding")
+		return nil, errors.New("the Secret Service secret has bad padding")
 	}
 	return plain[:len(plain)-pad], nil
 }

@@ -3,7 +3,6 @@ package kanban
 import (
 	"context"
 	"fmt"
-	"log/slog"
 	"os"
 	"strings"
 	"time"
@@ -14,8 +13,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/state"
 )
-
-var recoveryLog = slog.Default().With("logger", "agent.kanban_turn_recovery")
 
 // Recovery attempts made when ICEBATH_KANBAN_TURN_RECOVERY is unset
 const DefaultMaxRecoveryAttempts = 3
@@ -184,7 +181,7 @@ func WorkerClaimIsLive(ctx context.Context, proof ClaimProof) (bool, error) {
 		if dbPath != "" {
 			shown = pyrepr.Repr(dbPath)
 		}
-		recoveryLog.Warn(fmt.Sprintf("kanban claim check: pinned board db %s not found — not retrying in place", shown))
+		pkgLog().Warn(fmt.Sprintf("kanban claim check: pinned board db %s not found — not retrying in place", shown))
 		return false, nil
 	}
 	runIDEnv := pystr.Strip(os.Getenv("ICEBATH_KANBAN_RUN_ID"))
@@ -196,13 +193,13 @@ func WorkerClaimIsLive(ctx context.Context, proof ClaimProof) (bool, error) {
 		lockEnv = pystr.Strip(*proof.ClaimLock)
 	}
 	if runIDEnv == "" || lockEnv == "" {
-		recoveryLog.Warn("kanban claim check: missing dispatcher-pinned run-id/claim-lock carrier — no exact authority to re-prove, not retrying in place")
+		pkgLog().Warn("kanban claim check: missing dispatcher-pinned run-id/claim-lock carrier — no exact authority to re-prove, not retrying in place")
 		return false, nil
 	}
 	now := recoveryNow()
 	live, err := claimRowsAreLive(ctx, dbPath, taskID, runIDEnv, lockEnv, now, !proof.SkipPid)
 	if err != nil {
-		recoveryLog.Warn("kanban claim check failed — not retrying in place", "exc_info", err.Error())
+		pkgLog().Warn("kanban claim check failed — not retrying in place", "exc_info", err.Error())
 		return false, nil
 	}
 	return live, nil
@@ -336,7 +333,7 @@ func emitRecoveryLine(emit func(string), message string) {
 	}
 	defer func() {
 		if r := recover(); r != nil {
-			recoveryLog.Debug("kanban turn-recovery emit failed", "exc_info", fmt.Sprint(r))
+			pkgLog().Debug("kanban turn-recovery emit failed", "exc_info", fmt.Sprint(r))
 		}
 	}()
 	emit(message)
@@ -349,7 +346,7 @@ func emitRecoverySkipped(emit func(string), taskID *string) {
 		task = "task"
 	}
 	message := fmt.Sprintf("[kanban] in-place recovery skipped for %s: this worker no longer holds a live run/claim (already settled, reclaimed, or unverifiable)", task)
-	recoveryLog.Warn(message)
+	pkgLog().Warn(message)
 	emitRecoveryLine(emit, message)
 }
 
@@ -393,7 +390,7 @@ func RecoverFailedKanbanTurnsWith(ctx context.Context, turnFn func(nudge string)
 		}
 		message := fmt.Sprintf("[kanban] provider failure on %s — retrying the turn in place (attempt %d/%d) after %ds; session context preserved",
 			task, attempts, MaxRecoveryAttempts(), int(delay))
-		recoveryLog.Warn(message)
+		pkgLog().Warn(message)
 		emitRecoveryLine(o.Emit, message)
 		sleep(delay)
 		live, err = check()

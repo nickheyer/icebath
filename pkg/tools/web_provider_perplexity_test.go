@@ -109,7 +109,7 @@ func TestPerplexityQueryForURLs(t *testing.T) {
 	}
 }
 
-func TestPerplexityErrorsAndManagedRoute(t *testing.T) {
+func TestPerplexityErrors(t *testing.T) {
 	srv, _ := recordingServer(t, func(r recordedRequest, w http.ResponseWriter) {
 		w.WriteHeader(401)
 		w.Write([]byte(`{"error":"invalid key"}`))
@@ -117,13 +117,6 @@ func TestPerplexityErrorsAndManagedRoute(t *testing.T) {
 	env := httpxProviderEnv(t, "PERPLEXITY_API_KEY=bad\nPERPLEXITY_BASE_URL="+srv.URL+"\n", nil)
 	if res, _ := perplexityP().Search(context.Background(), env, "x", 5); res.Error != `{"error":"invalid key"}` {
 		t.Fatalf("%+v", res)
-	}
-	managed := httpxProviderEnv(t, "", map[string]any{"web.search_backend": "nous"})
-	if managedWebSearch(managed) {
-		res, _ := perplexityP().Search(context.Background(), managed, "x", 5)
-		if res.Error != SelectionError("web", NousManagedProvider, perplexityNoIdentityFailure) {
-			t.Fatalf("%+v", res)
-		}
 	}
 	if _, err := normalizePerplexitySnippets(decodeAny(`{"results":[{"url":["x"]}]}`), nil); err == nil || err.Error() != "unhashable type: 'list'" {
 		t.Fatalf("%v", err)

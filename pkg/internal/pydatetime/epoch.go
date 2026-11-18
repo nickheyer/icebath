@@ -2,7 +2,6 @@ package pydatetime
 
 import (
 	"fmt"
-	"log/slog"
 	"math"
 	"time"
 
@@ -63,7 +62,7 @@ func CoerceEpoch(value any, sessionID, field string) (float64, bool) {
 		if sessionID != "" {
 			suffix = " on session " + sessionID
 		}
-		slog.Warn(fmt.Sprintf("Ignoring corrupt %s %s%s", field, pyrepr.Repr(value), suffix), "logger", "hermes_cli.timefmt")
+		pkgLog().Warn(fmt.Sprintf("Ignoring corrupt %s %s%s", field, pyrepr.Repr(value), suffix))
 		return 0, false
 	}
 	return ts, true

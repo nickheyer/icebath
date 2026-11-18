@@ -3,7 +3,6 @@ package tools
 import (
 	"encoding/json"
 	"fmt"
-	"log/slog"
 	"math"
 	"regexp"
 	"sort"
@@ -177,7 +176,7 @@ func schemaRenamePropertyKeys(props any, path string) map[string]string {
 		}
 		taken[candidate] = true
 		renames[key] = candidate
-		slog.Debug("schema_sanitizer: renamed property key (provider key-pattern compat)",
+		pkgLog().Debug("schema_sanitizer: renamed property key (provider key-pattern compat)",
 			"path", path, "from", key, "to", candidate)
 	}
 	return renames
@@ -255,7 +254,7 @@ func schemaStripTopLevelCombinators(params *pyjson.Object, path string) *pyjson.
 	out := params.Copy()
 	for _, key := range schemaTopLevelForbiddenKeys {
 		if _, ok := out.Get(key); ok {
-			slog.Debug("schema_sanitizer: stripped top-level combinator from tool parameters (strict-backend compat)",
+			pkgLog().Debug("schema_sanitizer: stripped top-level combinator from tool parameters (strict-backend compat)",
 				"path", path, "key", key)
 			out.Delete(key)
 		}
@@ -486,13 +485,13 @@ func schemaSanitizeNode(node any, path string) any {
 	switch t := node.(type) {
 	case string:
 		if schemaBareTypeNames[t] {
-			slog.Debug("schema_sanitizer: replacing bare-string schema with type object", "path", path, "type", t)
+			pkgLog().Debug("schema_sanitizer: replacing bare-string schema with type object", "path", path, "type", t)
 			if t == "object" {
 				return schemaEmptyObject()
 			}
 			return pyjson.ObjectOf("type", t)
 		}
-		slog.Debug("schema_sanitizer: replacing non-schema string with empty object schema", "path", path, "value", t)
+		pkgLog().Debug("schema_sanitizer: replacing non-schema string with empty object schema", "path", path, "value", t)
 		return schemaEmptyObject()
 	case []any:
 		out := make([]any, len(t))
@@ -715,7 +714,7 @@ func schemaReactiveStrip(tools []map[string]any, stripNode func(any) int, logMsg
 		}
 	}
 	if stripped > 0 {
-		slog.Info(logMsg, "count", stripped)
+		pkgLog().Info(logMsg, "count", stripped)
 	}
 	return tools, stripped
 }

@@ -5,7 +5,6 @@ import (
 	"crypto/tls"
 	"errors"
 	"fmt"
-	"log/slog"
 	"os"
 	"sort"
 	"strings"
@@ -93,7 +92,7 @@ func normalizeSecurity(value any, def string) string {
 	}
 	mode, known := securityAliases[raw]
 	if raw != "" && !known {
-		slog.Warn(fmt.Sprintf("Unknown email security mode %s; using %s", pyrepr.Repr(value), pyrepr.Repr(def)))
+		pkgLog().Warn(fmt.Sprintf("Unknown email security mode %s; using %s", pyrepr.Repr(value), pyrepr.Repr(def)))
 	}
 	if !known {
 		return def
@@ -107,7 +106,7 @@ func tlsContext(verify bool, host string) *tls.Config {
 		return &tls.Config{}
 	}
 	if host != "127.0.0.1" && host != "::1" && host != "localhost" {
-		slog.Warn(fmt.Sprintf("TLS verification disabled for non-loopback host %s", host))
+		pkgLog().Warn(fmt.Sprintf("TLS verification disabled for non-loopback host %s", host))
 	}
 	return &tls.Config{InsecureSkipVerify: true}
 }
@@ -145,7 +144,7 @@ func sendIMAPID(imap *pyimaplib.IMAP4) {
 		advertised = advertised || capability == "ID"
 	}
 	if !advertised {
-		slog.Debug("[Email] Server does not advertise IMAP ID capability; skipping ID")
+		pkgLog().Debug("[Email] Server does not advertise IMAP ID capability; skipping ID")
 		return
 	}
 	version := "0"
@@ -154,7 +153,7 @@ func sendIMAPID(imap *pyimaplib.IMAP4) {
 	}
 	if _, _, err := imap.Xatom("ID", fmt.Sprintf(`("name" "icebath-agent" "version" "%s" `+
 		`"vendor" "Icebath" "support-url" "https://github.com/nickheyer/icebath/issues")`, version)); err != nil {
-		slog.Debug(fmt.Sprintf("[Email] IMAP ID command not accepted: %s", err.Error()))
+		pkgLog().Debug(fmt.Sprintf("[Email] IMAP ID command not accepted: %s", err.Error()))
 	}
 }
 
@@ -344,7 +343,7 @@ func NewEmailAdapter(ctx context.Context, config *gateway.PlatformConfig) (*Emai
 		return nil, err
 	}
 	a.authservID = pystr.Lower(authservText)
-	slog.Info(fmt.Sprintf("[Email] Adapter initialized for %s", a.address))
+	pkgLog().Info(fmt.Sprintf("[Email] Adapter initialized for %s", a.address))
 	return a, nil
 }
 
@@ -373,7 +372,7 @@ func (a *EmailAdapter) trimSeenUIDs() {
 	}
 	a.seenUIDs = kept
 	if numeric {
-		slog.Debug(fmt.Sprintf("[Email] Trimmed seen UIDs to %d entries", len(a.seenUIDs)))
+		pkgLog().Debug(fmt.Sprintf("[Email] Trimmed seen UIDs to %d entries", len(a.seenUIDs)))
 	}
 }
 
@@ -428,7 +427,7 @@ func (a *EmailAdapter) connectSMTP(ctx context.Context) (*pysmtplib.SMTP, error)
 
 // Logs the error, records a fatal error for the reconnect machinery and reports the connect as failed
 func (a *EmailAdapter) fail(ctx context.Context, logFmt string, err any, code, detail string, retryable bool) bool {
-	slog.Error(fmt.Sprintf(logFmt, pyrepr.Str(err)))
+	pkgLog().Error(fmt.Sprintf(logFmt, pyrepr.Str(err)))
 	a.SetFatalError(ctx, code, detail, retryable)
 	return false
 }
@@ -469,7 +468,7 @@ func (a *EmailAdapter) probeIMAP(ctx context.Context, isReconnect bool) bool {
 			}
 		}
 		a.trimSeenUIDs()
-		slog.Info(fmt.Sprintf(passed, len(a.seenUIDs)))
+		pkgLog().Info(fmt.Sprintf(passed, len(a.seenUIDs)))
 		return nil
 	})
 	if err != nil {
@@ -507,7 +506,7 @@ func (a *EmailAdapter) probeSMTP(ctx context.Context) bool {
 		return loginErr
 	}()
 	if err == nil {
-		slog.Info("[Email] SMTP connection test passed.")
+		pkgLog().Info("[Email] SMTP connection test passed.")
 		return true
 	}
 	var smtpErr *pysmtplib.Error
@@ -543,7 +542,7 @@ func (a *EmailAdapter) Connect(ctx context.Context, isReconnect bool) (bool, err
 		accountState.missingPinWarned[a.address] = true
 		accountState.Unlock()
 		if !warned {
-			slog.Warn(fmt.Sprintf("[Email] %s: %s.%s", a.address, missingAuthservReason, missingAuthservHint))
+			pkgLog().Warn(fmt.Sprintf("[Email] %s: %s.%s", a.address, missingAuthservReason, missingAuthservHint))
 		}
 	}
 	a.SetRunning(true)
@@ -564,7 +563,7 @@ func (a *EmailAdapter) Disconnect(ctx context.Context) error {
 	a.pollTask = nil
 	a.mu.Unlock()
 	gateway.CancelTask(ctx, task)
-	slog.Info("[Email] Disconnected.")
+	pkgLog().Info("[Email] Disconnected.")
 	return nil
 }
 
@@ -576,7 +575,7 @@ func (a *EmailAdapter) pollLoop(ctx context.Context) error {
 			return nil
 		}
 		if err != nil {
-			slog.Error(fmt.Sprintf("[Email] Poll error: %s", pyrepr.ExceptionMessage(err)))
+			pkgLog().Error(fmt.Sprintf("[Email] Poll error: %s", pyrepr.ExceptionMessage(err)))
 		}
 		timer := time.NewTimer(time.Duration(a.pollInterval) * time.Second)
 		select {
@@ -632,7 +631,7 @@ func (a *EmailAdapter) markUIDConsumed(imap *pyimaplib.IMAP4, uid string) error 
 		return err
 	}
 	if status != "OK" {
-		slog.Warn(fmt.Sprintf("[Email] Could not mark rejected UID %s seen", uidRepr(uid)))
+		pkgLog().Warn(fmt.Sprintf("[Email] Could not mark rejected UID %s seen", uidRepr(uid)))
 	}
 	return nil
 }
@@ -661,7 +660,7 @@ func (a *EmailAdapter) fetchNewMessages(ctx context.Context, preauthorize func(*
 			}
 			rawHeaders, ok := imapPayload(headerData)
 			if !ok || len(rawHeaders) > maxPreauthHeaderBytes {
-				slog.Warn(fmt.Sprintf("[Email] Unusable pre-authorization headers for UID %s, skipping", uidRepr(uid)))
+				pkgLog().Warn(fmt.Sprintf("[Email] Unusable pre-authorization headers for UID %s, skipping", uidRepr(uid)))
 				if err := a.markUIDConsumed(imap, uid); err != nil {
 					return err
 				}
@@ -673,7 +672,7 @@ func (a *EmailAdapter) fetchNewMessages(ctx context.Context, preauthorize func(*
 				accepted, authErr = preauthorize(candidate)
 			}
 			if authErr != nil {
-				slog.Error(fmt.Sprintf("[Email] Failed to authorize message UID %s, skipping: %s", uidRepr(uid), pyrepr.ExceptionMessage(authErr)))
+				pkgLog().Error(fmt.Sprintf("[Email] Failed to authorize message UID %s, skipping: %s", uidRepr(uid), pyrepr.ExceptionMessage(authErr)))
 				accepted = false
 			}
 			if !accepted {
@@ -695,12 +694,12 @@ func (a *EmailAdapter) fetchNewMessages(ctx context.Context, preauthorize func(*
 			a.mu.Unlock()
 			rawEmail, ok := imapPayload(msgData)
 			if !ok {
-				slog.Warn(fmt.Sprintf("[Email] Unexpected IMAP response structure for UID %s, skipping", uidRepr(uid)))
+				pkgLog().Warn(fmt.Sprintf("[Email] Unexpected IMAP response structure for UID %s, skipping", uidRepr(uid)))
 				continue
 			}
 			parsed, parseErr := a.parseFetchedMessage(ctx, uid, rawEmail)
 			if parseErr != nil {
-				slog.Error(fmt.Sprintf("[Email] Failed to process message UID %s, skipping: %s", uidRepr(uid), pyrepr.ExceptionMessage(parseErr)))
+				pkgLog().Error(fmt.Sprintf("[Email] Failed to process message UID %s, skipping: %s", uidRepr(uid), pyrepr.ExceptionMessage(parseErr)))
 				continue
 			}
 			if parsed != nil {
@@ -710,7 +709,7 @@ func (a *EmailAdapter) fetchNewMessages(ctx context.Context, preauthorize func(*
 		return nil
 	})
 	if err != nil {
-		slog.Error(fmt.Sprintf("[Email] IMAP fetch error: %s", err.Error()))
+		pkgLog().Error(fmt.Sprintf("[Email] IMAP fetch error: %s", err.Error()))
 		a.mu.Lock()
 		a.lastFetchFailed, a.lastFetchError = true, err.Error()
 		a.mu.Unlock()
@@ -724,7 +723,7 @@ func (a *EmailAdapter) messageMetadata(uid string, msg *pyemail.Message) (*fetch
 	from, _ := msg.Get("From")
 	senderAddr := extractEmailAddress(from.Str())
 	if senderAddr == "" {
-		slog.Debug(fmt.Sprintf("[Email] Dropping message with no parseable From address: %s", pyrepr.Repr(from.Str())))
+		pkgLog().Debug(fmt.Sprintf("[Email] Dropping message with no parseable From address: %s", pyrepr.Repr(from.Str())))
 		return nil, nil
 	}
 	senderName := decodeHeaderValue(from)
@@ -746,7 +745,7 @@ func (a *EmailAdapter) messageMetadata(uid string, msg *pyemail.Message) (*fetch
 		return nil, err
 	}
 	if automated {
-		slog.Debug(fmt.Sprintf("[Email] Skipping automated sender: %s", senderAddr))
+		pkgLog().Debug(fmt.Sprintf("[Email] Skipping automated sender: %s", senderAddr))
 		return nil, nil
 	}
 	authenticated, reason := verifySenderAuthentication(msg, senderAddr, a.authservID)
@@ -807,7 +806,7 @@ func (a *EmailAdapter) senderAccepted(ctx context.Context, senderAddr string, ms
 		return false, nil
 	}
 	if automated, _ := isAutomatedSender(senderAddr, nil); automated {
-		slog.Debug(fmt.Sprintf("[Email] Dropping automated sender at dispatch: %s", senderAddr))
+		pkgLog().Debug(fmt.Sprintf("[Email] Dropping automated sender at dispatch: %s", senderAddr))
 		return false, nil
 	}
 	allowedSecret, err := secret(ctx, "EMAIL_ALLOWED_USERS")
@@ -841,7 +840,7 @@ func (a *EmailAdapter) senderAccepted(ctx context.Context, senderAddr string, ms
 	case isListed:
 		granted = true
 	case listed[pystr.Lower(localPart)]:
-		slog.Debug(fmt.Sprintf("[Email] Dropping sender whose local part alone matches an allowlist entry: %s", senderAddr))
+		pkgLog().Debug(fmt.Sprintf("[Email] Dropping sender whose local part alone matches an allowlist entry: %s", senderAddr))
 		return false, nil
 	default:
 		dm := "dm"
@@ -854,7 +853,7 @@ func (a *EmailAdapter) senderAccepted(ctx context.Context, senderAddr string, ms
 		}
 	}
 	if !granted && !a.answersUnknownSenders() {
-		slog.Debug(fmt.Sprintf("[Email] Dropping unauthorized sender at dispatch (unknown senders are ignored): %s", senderAddr))
+		pkgLog().Debug(fmt.Sprintf("[Email] Dropping unauthorized sender at dispatch (unknown senders are ignored): %s", senderAddr))
 		return false, nil
 	}
 	if a.requireAuthenticatedSender && !msg.senderAuthenticated {
@@ -864,13 +863,13 @@ func (a *EmailAdapter) senderAccepted(ctx context.Context, senderAddr string, ms
 		}
 		hint := dropHints[authReason]
 		if isListed || (granted && hint != "") {
-			slog.Warn(fmt.Sprintf("[Email] Dropping sender with unauthenticated From: %s (%s).%s", senderAddr, authReason, hint))
+			pkgLog().Warn(fmt.Sprintf("[Email] Dropping sender with unauthenticated From: %s (%s).%s", senderAddr, authReason, hint))
 		} else {
 			kind := "unknown"
 			if granted {
 				kind = "authorized"
 			}
-			slog.Debug(fmt.Sprintf("[Email] Dropping %s sender with unauthenticated From: %s (%s)", kind, senderAddr, authReason))
+			pkgLog().Debug(fmt.Sprintf("[Email] Dropping %s sender with unauthenticated From: %s (%s)", kind, senderAddr, authReason))
 		}
 		return false, nil
 	}
@@ -923,7 +922,7 @@ func (a *EmailAdapter) dispatchMessage(ctx context.Context, msg *fetchedMessage)
 		inReplyTo := msg.inReplyTo
 		event.ReplyToMessageID = &inReplyTo
 	}
-	slog.Info(fmt.Sprintf("[Email] New message from %s: %s", senderAddr, subject))
+	pkgLog().Info(fmt.Sprintf("[Email] New message from %s: %s", senderAddr, subject))
 	return a.HandleMessage(ctx, event)
 }
 
@@ -942,7 +941,7 @@ func (a *EmailAdapter) runSend(ctx context.Context, fn func() (string, error), l
 	case res := <-done:
 		if res.err != nil {
 			text := pyrepr.ExceptionMessage(res.err)
-			slog.Error(fmt.Sprintf(logFmt, append(logArgs, text)...))
+			pkgLog().Error(fmt.Sprintf(logFmt, append(logArgs, text)...))
 			return gateway.SendResult{Success: false, Error: text}, nil
 		}
 		return gateway.SendResult{Success: true, MessageID: res.id}, nil
@@ -1022,7 +1021,7 @@ func (a *EmailAdapter) sendEmail(ctx context.Context, toAddr, body, replyToMsgID
 	if err := a.smtpSend(ctx, msg); err != nil {
 		return "", err
 	}
-	slog.Info(fmt.Sprintf("[Email] Sent reply to %s (subject: %s)", toAddr, subject))
+	pkgLog().Info(fmt.Sprintf("[Email] Sent reply to %s (subject: %s)", toAddr, subject))
 	return msgID, nil
 }
 
@@ -1052,7 +1051,7 @@ func (a *EmailAdapter) sendWithFiles(ctx context.Context, toAddr, body string, f
 			if !lenient {
 				return "", err
 			}
-			slog.Warn(fmt.Sprintf("[Email] Failed to attach %s: %s", file.path, pyrepr.ExceptionMessage(err)))
+			pkgLog().Warn(fmt.Sprintf("[Email] Failed to attach %s: %s", file.path, pyrepr.ExceptionMessage(err)))
 		}
 	}
 	if err := a.smtpSend(ctx, msg); err != nil {
@@ -1084,7 +1083,7 @@ func (a *EmailAdapter) SendMultipleImages(ctx context.Context, chatID string, im
 		if _, err := os.Stat(localPath); err == nil {
 			localPaths = append(localPaths, localPath)
 		} else {
-			slog.Warn(fmt.Sprintf("[Email] Skipping missing image: %s", localPath))
+			pkgLog().Warn(fmt.Sprintf("[Email] Skipping missing image: %s", localPath))
 		}
 	}
 	if len(localPaths) == 0 && len(bodyParts) == 0 {
@@ -1103,7 +1102,7 @@ func (a *EmailAdapter) SendMultipleImages(ctx context.Context, chatID string, im
 	select {
 	case res := <-done:
 		if res.err != nil {
-			slog.Error(fmt.Sprintf("[Email] Multi-image send failed, falling back: %s", pyrepr.ExceptionMessage(res.err)), "error", res.err)
+			pkgLog().Error(fmt.Sprintf("[Email] Multi-image send failed, falling back: %s", pyrepr.ExceptionMessage(res.err)), "error", res.err)
 			return a.BasePlatformAdapter.SendMultipleImages(ctx, chatID, images, metadata, humanDelay)
 		}
 		return gateway.SendResult{Success: true, MessageID: res.id}, nil
@@ -1122,7 +1121,7 @@ func (a *EmailAdapter) sendEmailWithAttachments(ctx context.Context, toAddr, bod
 	if err != nil {
 		return "", err
 	}
-	slog.Info(fmt.Sprintf("[Email] Sent multi-attachment email to %s (%d files)", toAddr, len(filePaths)))
+	pkgLog().Info(fmt.Sprintf("[Email] Sent multi-attachment email to %s (%d files)", toAddr, len(filePaths)))
 	return msgID, nil
 }
 

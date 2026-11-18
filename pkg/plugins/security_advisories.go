@@ -59,7 +59,7 @@ var Advisories = []Advisory{
 		Remediation: []string{
 			"Run: icebath pm update --uv  (re-resolves the managed Python environment past mistralai 2.4.6)",
 			"Rotate API keys in {icebath_home}/.env (OpenRouter, Anthropic, OpenAI, " +
-				"Nous, GitHub, AWS, Google, Mistral, etc.).",
+				"xAI, GitHub, AWS, Google, Mistral, etc.).",
 			"Audit ~/.npmrc, ~/.pypirc, ~/.aws/credentials, ~/.config/gh/hosts.yml, " +
 				"and any other credential files for tokens that may have been read.",
 			"Check GitHub for unexpected new SSH keys, deploy keys, or webhook " +
@@ -89,7 +89,7 @@ var advisoryInstalledVersion = func(ctx context.Context, pkgName string) (string
 			return version, found && version != ""
 		}
 	}
-	logSecurityAdvisories.debug(fmt.Sprintf("managed environment version of %s unreadable", pkgName), "error", err)
+	pkgLog().Debug(fmt.Sprintf("managed environment version of %s unreadable", pkgName), "error", err)
 	return "", false
 }
 
@@ -112,12 +112,12 @@ func GetAckedAdvisoryIDs(ctx context.Context) map[string]bool {
 	out := map[string]bool{}
 	cfg, err := config.LoadContext(ctx, home.Dir(ctx), nil)
 	if err != nil {
-		logSecurityAdvisories.debug("Could not load config for advisory acks", "error", err)
+		pkgLog().Debug("Could not load config for advisory acks", "error", err)
 		return out
 	}
 	security, ok := cfg["security"].(map[string]any)
 	if cfg["security"] != nil && pyrepr.Truthy(cfg["security"]) && !ok {
-		logSecurityAdvisories.debug("Could not load config for advisory acks", "error", "security is not a mapping")
+		pkgLog().Debug("Could not load config for advisory acks", "error", "security is not a mapping")
 		return out
 	}
 	raw, _ := security["acked_advisories"].([]any)
@@ -136,7 +136,7 @@ func AckAdvisory(ctx context.Context, advisoryID string) bool {
 		return false
 	}
 	fail := func(err error) bool {
-		logSecurityAdvisories.error(fmt.Sprintf("Failed to persist advisory ack for %s", advisoryID), "error", err)
+		pkgLog().Error(fmt.Sprintf("Failed to persist advisory ack for %s", advisoryID), "error", err)
 		return false
 	}
 	h := home.Dir(ctx)
@@ -327,7 +327,7 @@ func advisoryWriteBannerCache(ctx context.Context, seen []advisoryBannerSeen) {
 		lines = append(lines, s.id+" "+pyrepr.Float(s.ts))
 	}
 	if err := os.WriteFile(p, []byte(strings.Join(lines, "\n")+"\n"), 0o666); err != nil {
-		logSecurityAdvisories.debug("Could not write advisory banner cache", "error", err)
+		pkgLog().Debug("Could not write advisory banner cache", "error", err)
 	}
 }
 

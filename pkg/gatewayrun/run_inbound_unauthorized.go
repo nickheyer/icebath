@@ -48,7 +48,7 @@ func pairingRateLimitedReply(ctx context.Context) string {
 }
 
 // Owner hint naming the dropped sender with mention and link sigils stripped and the allowlist fix
-func unauthorizedOwnerHint(ctx context.Context, platformName, userID, userName, hermesHome string) string {
+func unauthorizedOwnerHint(ctx context.Context, platformName, userID, userName, icebathHome string) string {
 	safeName := gateway.NeutralizeUntrustedInlineText(userName, maxSenderNameChars)
 	safeName = pystr.Strip(strings.Map(func(r rune) rune {
 		if strings.ContainsRune(unauthorizedSigils, r) {
@@ -62,10 +62,10 @@ func unauthorizedOwnerHint(ctx context.Context, platformName, userID, userName, 
 	}
 	allowlist := i18n.T(ctx, "gateway.unauthorized.owner_hint_generic", "", nil)
 	if envVar := gateway.AllowlistEnvForPlatform(ctx, platformName); envVar != "" {
-		allowlist = i18n.T(ctx, "gateway.unauthorized.owner_hint_env", "", map[string]any{"env_var": envVar, "home": hermesHome})
+		allowlist = i18n.T(ctx, "gateway.unauthorized.owner_hint_env", "", map[string]any{"env_var": envVar, "home": icebathHome})
 	}
 	return i18n.T(ctx, "gateway.unauthorized.owner_notice", "", map[string]any{
-		"platform": platformName, "who": who, "allowlist": allowlist, "home": hermesHome,
+		"platform": platformName, "who": who, "allowlist": allowlist, "home": icebathHome,
 	})
 }
 
@@ -130,7 +130,7 @@ func (r *GatewayRunner) hmReportIgnoredDM(ctx context.Context, source *gateway.S
 		userName = *source.UserName
 	}
 	hint := unauthorizedOwnerHint(ctx, platformName, userID, userName, home.Display(home.Dir(ctx)))
-	inboundLog().Warn("Unauthorized user (ignored): " + hint)
+	pkgLog().Warn("Unauthorized user (ignored): " + hint)
 	if r.unauthorizedOwnerNotifier == nil {
 		r.unauthorizedOwnerNotifier = NewUnauthorizedOwnerNotifier(maxSeenSenders)
 	}

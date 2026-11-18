@@ -43,7 +43,7 @@ func (r *GatewayRunner) handoffResolveScope(ctx context.Context, profileName *st
 	}
 	cfg, err := gateway.LoadGatewayConfig(ctx)
 	if err != nil {
-		runLog().Error(fmt.Sprintf("Handoff: could not load config for profile %s; failing the handoff instead of delivering via the primary's config", *profileName), "exc_info", err)
+		pkgLog().Error(fmt.Sprintf("Handoff: could not load config for profile %s; failing the handoff instead of delivering via the primary's config", *profileName), "exc_info", err)
 		return nil, nil, fmt.Errorf("could not load config for profile '%s': %s", *profileName, err)
 	}
 	return cfg, secondary, nil
@@ -85,7 +85,7 @@ func (r *GatewayRunner) handoffResolveDestination(ctx context.Context, row map[s
 	if adapter != nil {
 		created, ok, err := adapter.CreateHandoffThread(ctx, homeChatID, i18n.T(ctx, "gateway.startup.handoff_thread_title", "", map[string]any{"title": cliTitle}))
 		if err != nil {
-			runLog().Debug(fmt.Sprintf("Handoff: create_handoff_thread raised on %s: %s", platformName, err), "exc_info", err)
+			pkgLog().Debug(fmt.Sprintf("Handoff: create_handoff_thread raised on %s: %s", platformName, err), "exc_info", err)
 		} else if ok && created != "" {
 			newThreadID = &created
 		}
@@ -152,7 +152,7 @@ func (r *GatewayRunner) handoffResolveDestination(ctx context.Context, row map[s
 func handoffHomeIsDM(ctx context.Context, adapter gateway.PlatformAdapter, homeChatID string) bool {
 	info, err := adapter.GetChatInfo(ctx, homeChatID)
 	if err != nil {
-		runLog().Debug(fmt.Sprintf("Handoff: get_chat_info failed for %s", homeChatID), "exc_info", err)
+		pkgLog().Debug(fmt.Sprintf("Handoff: get_chat_info failed for %s", homeChatID), "exc_info", err)
 		return false
 	}
 	return info != nil && info["type"] == "dm"
@@ -171,7 +171,7 @@ func (r *GatewayRunner) handoffSessionKey(ctx context.Context, dest *handoffDest
 	if handoffProfile == "" && r.sessionStore != nil {
 		resolved, err := r.sessionStore.ResolveProfileForKey(dest.source)
 		if err != nil {
-			runLog().Debug("Handoff: could not resolve profile namespace", "exc_info", err)
+			pkgLog().Debug("Handoff: could not resolve profile namespace", "exc_info", err)
 		} else if text, ok := resolved.(string); ok && pystr.Strip(text) != "" {
 			handoffProfile = text
 		}

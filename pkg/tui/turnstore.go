@@ -11,6 +11,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/nickheyer/icebath/pkg/tuigateway"
 )
 
 const spawnHistoryLimit = 10
@@ -102,7 +104,7 @@ type uiState struct {
 	StatusBar                  string
 	StatusBarFields            map[string]bool
 	Timestamps                 bool
-	Info                       map[string]any
+	Info                       *tuigateway.SessionInfo
 	InlineDiffs                bool
 	Notice                     *notice
 	ShowReasoning              bool
@@ -111,7 +113,7 @@ type uiState struct {
 	StoredSid                  string
 	Streaming                  bool
 	Theme                      theme
-	Usage                      map[string]any
+	Usage                      *tuigateway.Usage
 	Arena                      any
 	Pet                        any
 }
@@ -174,8 +176,7 @@ type tuiStore struct {
 	connectionOp           *connectionOperation
 	settledOperations      []string
 	dismissedOperations    []string
-	goalSnapshot           controlSnapshot
-	loopSnapshot           controlSnapshot
+	controls               controlState
 	loopTickGen            int
 	processSnapshot        processSnapshot
 	agentSnapshot          agentSnapshot
@@ -200,9 +201,6 @@ func (s *tuiStore) takeVoiceTranscript() *string {
 func newTUIStore() *tuiStore {
 	return &tuiStore{ui: newUIState(), now: time.Now, themes: themeSync{configPinned: loadBootTheme().seededPin}}
 }
-
-// Collapses or expands the live task list
-func (s *tuiStore) toggleTodoCollapsed() { s.turn.TodoCollapsed = !s.turn.TodoCollapsed }
 
 // Moves the turn's task list into a transcript trail row, collapsed when every item finished
 func (s *tuiStore) archiveTodosAtTurnEnd() []msg {
@@ -441,16 +439,16 @@ func (s *tuiStore) captureDestination() (submissionDestination, error) {
 	if err != nil {
 		return submissionDestination{}, err
 	}
-	info := s.ui.Info
+	info := infoOf(s.ui.Info)
 	d := submissionDestination{Sid: s.ui.Sid, Profile: "default", ProfileHome: profileHome, OwnerHome: profileHome}
-	if stored, _ := info["stored_session_id"].(string); stored != "" {
+	if stored := val(info.StoredSessionID); stored != "" {
 		d.StoredSid = stored
 	}
-	if profile, _ := info["profile_name"].(string); profile != "" {
+	if profile := val(info.ProfileName); profile != "" {
 		d.Profile = profile
 	}
 	if attachURLEnv() != "" {
-		if owner, _ := info["profile_id"].(string); owner != "" {
+		if owner := val(info.ProfileID); owner != "" {
 			d.OwnerHome = owner
 		}
 	}

@@ -11,7 +11,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/state"
 )
 
-// Parent agent stand in exposing only the attributes the hermes fake sets
+// Parent agent stand in exposing only the attributes the fake sets
 type fakeBackgroundParent struct {
 	model    string
 	provider string
@@ -108,7 +108,7 @@ func TestBackgroundAgentKwargsHandlesNullAgentConfig(t *testing.T) {
 	}
 }
 
-// Parent stand in holding a dedicated store, the hermes SimpleNamespace with _session_db
+// Parent stand in holding a dedicated store, the SimpleNamespace with session db
 type fakeStoreParent struct {
 	fakeBackgroundParent
 	store agent.SessionStore

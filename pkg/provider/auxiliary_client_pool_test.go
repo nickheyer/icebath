@@ -42,7 +42,7 @@ func TestCodexStallIsLadderTimeoutMessage(t *testing.T) {
 
 func multiplexSecondaryScope(t *testing.T) context.Context {
 	t.Helper()
-	for _, name := range []string{"OPENAI_BASE_URL", "XAI_BASE_URL", "ICEBATH_XAI_BASE_URL", "NOUS_INFERENCE_BASE_URL",
+	for _, name := range []string{"OPENAI_BASE_URL", "XAI_BASE_URL", "ICEBATH_XAI_BASE_URL",
 		"GATEWAY_PROXY_URL", "FIRECRAWL_API_URL", "BROWSERBASE_BASE_URL", "XAI_API_KEY"} {
 		t.Setenv(name, "https://"+strings.ToLower(name)+".default.example/v1")
 	}
@@ -60,19 +60,6 @@ func TestBaseURLsFollowTheScopedKeyNotDefaultEnviron(t *testing.T) {
 	}
 	if v, err := auxScopedKeyEnv(ctx, "OPENAI_BASE_URL"); v != "" || err != nil {
 		t.Fatalf("scoped base url %q %v", v, err)
-	}
-	if v := nousInferenceEnvOverrideIn(modelsPoolEnv(ctx)); v != "" {
-		t.Fatalf("nous override %q", v)
-	}
-}
-
-func TestUnscopedSingleProfileReadsKeepEnviron(t *testing.T) {
-	newTestHome(t)
-	SetMultiplexActive(false)
-	ctx := WithSecretScope(context.Background(), nil, "")
-	t.Setenv("NOUS_INFERENCE_BASE_URL", "https://nous.mine.example/v1/")
-	if v := nousInferenceEnvOverrideIn(modelsPoolEnv(ctx)); v != "https://nous.mine.example/v1" {
-		t.Fatalf("nous override %q", v)
 	}
 }
 

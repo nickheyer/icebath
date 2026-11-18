@@ -101,7 +101,7 @@ func TestRunJobSummaryResultShapesAndStoredNotification(t *testing.T) {
 		return obj("summary", "x"), nil
 	}
 	if job, err = pipeline.RunNotification(context.Background(), flowNotification("n-noref")); err != nil || job.Status != "failed" ||
-		!pyjson.Equal(job.ErrorInfo, obj("message", "'meeting_ref'", "type", "KeyError")) {
+		!pyjson.Equal(job.ErrorInfo, obj("message", "the meeting summary payload has no meeting_ref", "type", "KeyError")) {
 		t.Fatalf("summary without meeting_ref %q %v err %v", job.Status, pyrepr.Repr(job.ErrorInfo), err)
 	}
 

@@ -15,7 +15,7 @@ import (
 const ugRateLimitStderr = "error: RPC failed; HTTP 429 curl 22 The requested URL returned error: 429\n" +
 	"fatal: expected flush after ref listing"
 
-const ugCurl429Stderr = "fatal: unable to access 'https://github.com/NousResearch/hermes-agent.git/':" +
+const ugCurl429Stderr = "fatal: unable to access 'https://github.com/nickheyer/icebath.git/':" +
 	" The requested URL returned error: 429"
 
 func TestClassifyFetchFailureHttp429RpcFailureReportsRateLimit(t *testing.T) {

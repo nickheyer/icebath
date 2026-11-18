@@ -16,7 +16,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/tools"
 )
 
-// RunVerifyCommand detects a project's run recipe and smoke tests it, hermes_cli/verify_cmd.py run_verify_command
+// Detects a project's run recipe and smoke tests it
 func RunVerifyCommand(ctx context.Context, ns map[string]any, w, errw io.Writer) int {
 	root := nsVerifyString(ns, "path")
 	if root == "" {

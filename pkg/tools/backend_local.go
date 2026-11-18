@@ -264,7 +264,7 @@ func resolveSafeCwd(env *Env, cwd string) string {
 		return cwd
 	}
 	if st, err := os.Stat(cwd); cwd != "" && err == nil && st.IsDir() {
-		toolsLogger(env).Warn(fmt.Sprintf("Configured terminal cwd %q exists but is not accessible to this user (uid=%s) — falling back to the nearest usable directory. If this is a gateway/cron process, check for root-owned paths leaking into terminal.cwd / TERMINAL_CWD (#65583).", cwd, currentUID()))
+		envLog(env).Warn(fmt.Sprintf("Configured terminal cwd %q exists but is not accessible to this user (uid=%s) — falling back to the nearest usable directory. If this is a gateway/cron process, check for root-owned paths leaking into terminal.cwd / TERMINAL_CWD (#65583).", cwd, currentUID()))
 	}
 	parent := ""
 	if cwd != "" {
@@ -548,7 +548,7 @@ func (o *envOrder) note(child map[string]string, added ...string) {
 	o.keys = append(kept, rest...)
 }
 
-// Names the profile home stage inserts, in the order hermes assigns them
+// Names the profile home stage inserts, in assignment order
 func profileHomeEnvOrder() []string {
 	names := append([]string{"ICEBATH_HOME", "ICEBATH_REAL_HOME", "HOME"}, home.ScratchTmpEnvVars...)
 	return append(names, home.ScratchDirMarkerEnv)
@@ -692,7 +692,7 @@ type SubprocessEnvOptions struct {
 	SeparateProcess bool
 }
 
-// ChildEnv is a child process environment with its names in the insertion order of the hermes dict
+// A child process environment with its names in the insertion order of the dict
 type ChildEnv struct {
 	Keys []string
 	Vars map[string]string
@@ -991,7 +991,7 @@ func platformGateEnvPrefixes() map[string]bool {
 // IsProfileGateEnv reports whether a name is a platform authorization gate a routed child must not inherit
 func IsProfileGateEnv(name string, prefixes map[string]bool) bool {
 	upper := strings.ToUpper(name)
-	if strings.HasPrefix(upper, "ICEBATH_") || strings.HasPrefix(upper, "HERMES_") || strings.HasPrefix(upper, "_") {
+	if strings.HasPrefix(upper, "ICEBATH_") || strings.HasPrefix(upper, "_") {
 		return false
 	}
 	marked := false
@@ -1056,8 +1056,7 @@ var alwaysStripKeysStatic = []string{
 
 // Left core names that are secrets rather than private settings
 var leftCoreSecretEnv = []string{
-	"HASS_TOKEN", "ICEBATH_LANGFUSE_SECRET_KEY", "ICEBATH_LANGFUSE_PUBLIC_KEY",
-	"HERMES_LANGFUSE_SECRET_KEY", "HERMES_LANGFUSE_PUBLIC_KEY", "CAMOFOX_API_KEY", "COPILOT_GITHUB_TOKEN",
+	"HASS_TOKEN", "ICEBATH_LANGFUSE_SECRET_KEY", "ICEBATH_LANGFUSE_PUBLIC_KEY", "CAMOFOX_API_KEY", "COPILOT_GITHUB_TOKEN",
 }
 
 // Upper cased tier one strip set including every declared adapter secret
@@ -1491,7 +1490,7 @@ func NewLocalEnvironment(ctx context.Context, env *Env, cwd string, timeout int,
 // EnvType names the backend
 func (l *localEnv) EnvType() string { return "local" }
 
-// Python class name of the environment as hermes logs and records it
+// Python class name of the environment as logs and records name it
 func (l *localEnv) ClassName() string { return "LocalEnvironment" }
 
 var _ interface{ ClassName() string } = (*localEnv)(nil)
@@ -1582,7 +1581,7 @@ func (l *localEnv) recoverCwd() {
 		return
 	}
 	if safe != msysToWindowsPath(current) {
-		toolsLogger(l.env).Warn(fmt.Sprintf("LocalEnvironment cwd %q is missing on disk; falling back to %q so terminal commands keep working.", current, safe))
+		envLog(l.env).Warn(fmt.Sprintf("LocalEnvironment cwd %q is missing on disk; falling back to %q so terminal commands keep working.", current, safe))
 	}
 	l.SetCwd(safe)
 }

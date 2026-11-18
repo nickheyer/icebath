@@ -5,7 +5,6 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
-	"log/slog"
 	"slices"
 	"strings"
 	"sync"
@@ -34,6 +33,7 @@ type CanonicalHostedRoomService struct {
 	transportInstalled bool
 	readyImportStarted bool
 	flagsMu            sync.Mutex
+	shares             *roomSharePump
 }
 
 // Hosted room service over the authority's own room store, producers dispatching onto the owner loop
@@ -791,7 +791,7 @@ func ImportAfterReady(authorities []*SessionAuthority) {
 		go func(authority *SessionAuthority, service hostedLifecycleService) {
 			imported, err := ImportStandaloneRooms(ownerScope(context.Background(), authority, false), target, &epoch)
 			if err != nil {
-				slog.Default().With("logger", "threading").Error("Exception in thread hosted-rooms-ready-import", "exc_info", err)
+				pkgLog().Error("Exception in thread hosted-rooms-ready-import", "exc_info", err)
 				return
 			}
 			if imported > 0 {

@@ -6,7 +6,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/state"
-	"github.com/nickheyer/icebath/pkg/tuigateway"
+	"github.com/nickheyer/icebath/pkg/tuihost"
 )
 
 // Durable identities of a row, its message uid and absorbed uids else its integer row id
@@ -59,7 +59,7 @@ func legacyDisplayAnchor(display []any, memory []any) int {
 	prefix := make([]roleText, len(display))
 	for i, msg := range display {
 		m, _ := msg.(map[string]any)
-		prefix[i] = roleText{role: m["role"], text: tuigateway.CoerceMessageText(m["content"], true)}
+		prefix[i] = roleText{role: m["role"], text: tuihost.CoerceMessageText(m["content"], true)}
 	}
 	cursor := 0
 	for index, msg := range memory {
@@ -67,7 +67,7 @@ func legacyDisplayAnchor(display []any, memory []any) int {
 		if !isDict {
 			continue
 		}
-		value := roleText{role: m["role"], text: tuigateway.CoerceMessageText(m["content"], true)}
+		value := roleText{role: m["role"], text: tuihost.CoerceMessageText(m["content"], true)}
 		found := -1
 		for i := cursor; i < len(prefix); i++ {
 			if pyrepr.Equal(prefix[i].role, value.role) && prefix[i].text == value.text {
@@ -119,12 +119,12 @@ func reconcileDisplayWithLive(dbDisplay, inMemory []any) []any {
 }
 
 // Session info of a live session, the lazy shape of its own workspace while the agent is unbuilt
-func fallbackSessionInfo(ctx context.Context, session *tuigateway.Session) map[string]any {
+func fallbackSessionInfo(ctx context.Context, session *tuihost.Session) map[string]any {
 	if session.Get("agent") != nil {
 		return sessionInfo(ctx, sessionAgent(session), session)
 	}
 	cwd := sessionCwd(ctx, session)
-	info := map[string]any{"cwd": cwd, "branch": tuigateway.Branch(cwd), "project": projectInfoForCwd(ctx, cwd), "lazy": true}
+	info := map[string]any{"cwd": cwd, "branch": tuihost.Branch(cwd), "project": projectInfoForCwd(ctx, cwd), "lazy": true}
 	for key, value := range lazyInfoRoute(ctx, session, map[string]any{}) {
 		info[key] = value
 	}

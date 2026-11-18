@@ -116,6 +116,16 @@ func TestImpeccableSlashExecHandsTheTUIItsSkillTurnAndRefusesMidTurn(t *testing.
 	if err := os.Mkdir(work, 0o755); err != nil {
 		t.Fatal(err)
 	}
+	pluginDir := filepath.Join(h, "plugins", "impeccable")
+	if err := os.MkdirAll(pluginDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(pluginDir, "plugin.yaml"), []byte("name: impeccable\nkind: standalone\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(h, "plugins", ".install-metadata.json"), []byte(`{"impeccable": {"source": "builtin:impeccable"}}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
 	cache := filepath.Join(h, "cache", "models_dev_cache.json")
 	if err := os.MkdirAll(filepath.Dir(cache), 0o755); err != nil {
 		t.Fatal(err)

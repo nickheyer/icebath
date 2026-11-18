@@ -20,7 +20,7 @@ func publishSettledInfo(ctx context.Context, t *TurnRunner, a *agent.AIAgent) {
 		return
 	}
 	if err := publishSettledInfoBody(ctx, t, a); err != nil {
-		runLog().Debug(fmt.Sprintf("settled session info failed: %s", err))
+		pkgLog().Debug(fmt.Sprintf("settled session info failed: %s", err))
 	}
 }
 
@@ -61,7 +61,7 @@ func publishSettledInfoBody(ctx context.Context, t *TurnRunner, a *agent.AIAgent
 		}
 		found, perr := gateway.LocalPolicyForSource(ctx, runner, live.Source)
 		if perr != nil {
-			runLog().Debug(fmt.Sprintf("one-turn policy route unavailable: %s", perr))
+			pkgLog().Debug(fmt.Sprintf("one-turn policy route unavailable: %s", perr))
 		} else {
 			policy = found
 		}

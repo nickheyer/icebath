@@ -239,7 +239,7 @@ func (s *Store) openContinuableCronThread(ctx context.Context, job *Job, adapter
 		if errors.Is(err, errFutureTimeout) {
 			future.cancel()
 		}
-		s.logAs("cron.scheduler").Debug(fmt.Sprintf("Job '%s': create_handoff_thread failed on %s — falling back to DM-session mirror: %v", jobIDOr(job, "?"), name, err))
+		s.log.Debug(fmt.Sprintf("Job '%s': create_handoff_thread failed on %s — falling back to DM-session mirror: %v", jobIDOr(job, "?"), name, err))
 		return ""
 	}
 	if !pyTruthy(v) {
@@ -288,11 +288,11 @@ func (s *Store) seedCronThreadSession(ctx context.Context, job *Job, adapter any
 	ok, err := s.seedCronSession(ctx, job, adapter, platform, chatID, text, &threadID, chatType, strPtr("system:cron"), strPtr("Cron"), chatName, scopeID, true)
 	switch {
 	case err != nil:
-		s.logAs("cron.scheduler").Warn(fmt.Sprintf("Job '%s': seeding cron thread session failed for %s:%s:%s: %v", jobIDOr(job, "?"), platform, chatID, threadID, err))
+		s.log.Warn(fmt.Sprintf("Job '%s': seeding cron thread session failed for %s:%s:%s: %v", jobIDOr(job, "?"), platform, chatID, threadID, err))
 	case ok:
-		s.logAs("cron.scheduler").Info(fmt.Sprintf("Job '%s': opened continuable thread %s on %s:%s and seeded the brief", jobIDOr(job, "?"), threadID, platform, chatID))
+		s.log.Info(fmt.Sprintf("Job '%s': opened continuable thread %s on %s:%s and seeded the brief", jobIDOr(job, "?"), threadID, platform, chatID))
 	default:
-		s.logAs("cron.scheduler").Warn(fmt.Sprintf("Job '%s': thread seed did NOT land on %s:%s thread=%s — an in-thread reply will not see this brief", jobIDOr(job, "?"), platform, chatID, threadID))
+		s.log.Warn(fmt.Sprintf("Job '%s': thread seed did NOT land on %s:%s thread=%s — an in-thread reply will not see this brief", jobIDOr(job, "?"), platform, chatID, threadID))
 	}
 }
 
@@ -312,11 +312,11 @@ func (s *Store) seedCronChannelSession(ctx context.Context, job *Job, adapter an
 	}
 	ok, err := s.seedCronSession(ctx, job, adapter, platform, chatID, text, nil, chatType, uid, nil, chatName, scopeID, false)
 	if err != nil {
-		s.logAs("cron.scheduler").Warn(fmt.Sprintf("Job '%s': seeding in_channel session failed for %s:%s: %v", jobIDOr(job, "?"), platform, chatID, err))
+		s.log.Warn(fmt.Sprintf("Job '%s': seeding in_channel session failed for %s:%s: %v", jobIDOr(job, "?"), platform, chatID, err))
 		return false
 	}
 	if ok {
-		s.logAs("cron.scheduler").Info(fmt.Sprintf("Job '%s': seeded flat in_channel session on %s:%s (chat_type=%s)", jobIDOr(job, "?"), platform, chatID, chatType))
+		s.log.Info(fmt.Sprintf("Job '%s': seeded flat in_channel session on %s:%s (chat_type=%s)", jobIDOr(job, "?"), platform, chatID, chatType))
 	}
 	return ok
 }
@@ -493,7 +493,7 @@ func (s *Store) deliverToBotChatInner(ctx context.Context, job *Job, jobID, labe
 	}
 	status := pyrepr.Str(statusVal)
 	job.botChatReceipts().Set(target, newReceipt(status, key))
-	s.logAs("cron.scheduler").Info(fmt.Sprintf("Job '%s': Bot Chat %s receipt=%s status=%s", jobID, label, key, status))
+	s.log.Info(fmt.Sprintf("Job '%s': Bot Chat %s receipt=%s status=%s", jobID, label, key, status))
 	if status == "settled" {
 		return nil, nil
 	}
@@ -510,7 +510,7 @@ func (s *Store) deliverToBotChatInner(ctx context.Context, job *Job, jobID, labe
 }
 
 func noteTargetError(s *Store, jobID, msg string, errs *[]string) {
-	s.logAs("cron.scheduler").Warn(fmt.Sprintf("Job '%s': %s", jobID, msg))
+	s.log.Warn(fmt.Sprintf("Job '%s': %s", jobID, msg))
 	*errs = append(*errs, msg)
 }
 
@@ -644,7 +644,7 @@ func (s *Store) confirmAdapterDelivery(result any, jobID string, unverified *[]b
 	msgID, _ := resultField(result, "message_id")
 	raw, _ := resultField(result, "raw_response")
 	if msgID == nil && !pyTruthy(raw) {
-		s.logAs("cron.scheduler").Warn(fmt.Sprintf("Job '%s': live adapter reported success with no delivery evidence (no message_id, no raw_response) — treating as delivered but UNVERIFIED", jobID))
+		s.log.Warn(fmt.Sprintf("Job '%s': live adapter reported success with no delivery evidence (no message_id, no raw_response) — treating as delivered but UNVERIFIED", jobID))
 		if unverified != nil {
 			*unverified = append(*unverified, true)
 		}
@@ -667,13 +667,13 @@ func (s *Store) isChannelDMTopic(ctx context.Context, adapter any, chatID string
 		if errors.Is(err, errFutureTimeout) {
 			future.cancel()
 		}
-		s.logAs("cron.scheduler").Debug(fmt.Sprintf("Job '%s': get_chat_info probe failed for chat=%s — defaulting to message_thread_id routing", jobID, chatID))
+		s.log.Debug(fmt.Sprintf("Job '%s': get_chat_info probe failed for chat=%s — defaulting to message_thread_id routing", jobID, chatID))
 		return false
 	}
 	m, isMap := info.(map[string]any)
 	isChannel := isMap && strings.ToLower(pyStrOrEmpty(m["type"])) == "channel"
 	if isChannel {
-		s.logAs("cron.scheduler").Info(fmt.Sprintf("Job '%s': chat=%s is a channel — routing via direct_messages_topic_id", jobID, chatID))
+		s.log.Info(fmt.Sprintf("Job '%s': chat=%s is a channel — routing via direct_messages_topic_id", jobID, chatID))
 	}
 	return isChannel
 }
@@ -740,7 +740,7 @@ func (s *Store) recordDeliveryVerification(ctx context.Context, job *Job, unveri
 		job.LastDeliveryQueued = want
 	}
 	if _, err := s.updateJob(home.WithOverride(ctx, s.home), job.ID, values); err != nil {
-		s.logAs("cron.scheduler").Debug(fmt.Sprintf("Job '%s': could not record delivery verification: %v", job.ID, err))
+		s.log.Debug(fmt.Sprintf("Job '%s': could not record delivery verification: %v", job.ID, err))
 	}
 }
 
@@ -805,9 +805,9 @@ func (t *targetDelivery) where() string {
 
 func (s *Store) warnLiveLaneFailure(job *Job, msg string, isRelay bool) {
 	if isRelay {
-		s.logAs("cron.scheduler").Warn(fmt.Sprintf("Job '%s': %s", job.ID, msg))
+		s.log.Warn(fmt.Sprintf("Job '%s': %s", job.ID, msg))
 	} else {
-		s.logAs("cron.scheduler").Warn(fmt.Sprintf("Job '%s': %s, falling back to standalone", job.ID, msg))
+		s.log.Warn(fmt.Sprintf("Job '%s': %s, falling back to standalone", job.ID, msg))
 	}
 }
 
@@ -924,11 +924,11 @@ func (s *Store) liveSendText(ctx context.Context, t *targetDelivery, text string
 		if gaveUp {
 			future.cancel()
 			msg := fmt.Sprintf("live adapter send to %s timed out before the coroutine was dispatched", t.where())
-			s.logAs("cron.scheduler").Warn(fmt.Sprintf("Job '%s': %s, falling back to standalone", job.ID, msg))
+			s.log.Warn(fmt.Sprintf("Job '%s': %s, falling back to standalone", job.ID, msg))
 			*targetErrors = append(*targetErrors, msg)
 			return false, false, nil, nil
 		}
-		s.logAs("cron.scheduler").Warn(fmt.Sprintf("Job '%s': live adapter send to %s:%s timed out after 60s; already dispatched (in flight), assuming delivered (skipping standalone fallback to avoid duplicate)", job.ID, t.platformName, t.chatID))
+		s.log.Warn(fmt.Sprintf("Job '%s': live adapter send to %s:%s timed out after 60s; already dispatched (in flight), assuming delivered (skipping standalone fallback to avoid duplicate)", job.ID, t.platformName, t.chatID))
 		return true, true, nil, nil
 	}
 	var partial *gateway.PartialDeliveryError
@@ -1039,13 +1039,13 @@ func (s *Store) seedLiveDeliverySessions(ctx context.Context, t *targetDelivery,
 	if t.inChannelSurface && t.inchannelContinuable && !threadSeeded {
 		inchannelSeeded = s.seedCronChannelSession(ctx, job, t.runtimeAdapter, t.platformName, t.chatID, t.mirrorText, t.isDMTarget, t.originUserID, chatName, scopeID)
 		if !inchannelSeeded {
-			s.logAs("cron.scheduler").Warn(fmt.Sprintf("Job '%s': in_channel seed did NOT land on %s:%s — a plain reply will not see this brief", job.ID, t.platformName, t.chatID))
+			s.log.Warn(fmt.Sprintf("Job '%s': in_channel seed did NOT land on %s:%s — a plain reply will not see this brief", job.ID, t.platformName, t.chatID))
 		}
 		if pyTruthy(deliveredMessageID) {
 			s.seedCronThreadSession(ctx, job, t.runtimeAdapter, t.platformName, t.chatID, pyrepr.Str(deliveredMessageID), t.mirrorText, chatName, t.isDMTarget, scopeID)
 		}
 	} else if t.inChannelSurface && !t.inchannelContinuable {
-		s.logAs("cron.scheduler").Warn(fmt.Sprintf("Job '%s': in_channel delivery to %s:%s is not a continuable target (origin=%s:%s thread=%s; not the origin conversation, and not a mirror-eligible fallback/opted-in target the seed can key) — seed skipped; the plain mirror below may still apply", job.ID, t.platformName, t.chatID, pyrepr.Str(origin["platform"]), pyrepr.Str(origin["chat_id"]), pyrepr.Str(origin["thread_id"])))
+		s.log.Warn(fmt.Sprintf("Job '%s': in_channel delivery to %s:%s is not a continuable target (origin=%s:%s thread=%s; not the origin conversation, and not a mirror-eligible fallback/opted-in target the seed can key) — seed skipped; the plain mirror below may still apply", job.ID, t.platformName, t.chatID, pyrepr.Str(origin["platform"]), pyrepr.Str(origin["chat_id"]), pyrepr.Str(origin["thread_id"])))
 	}
 	s.maybeMirrorCronDelivery(ctx, job, t.platformName, t.chatID, t.mirrorText, t.threadID, t.originUserID, t.mirrorThisTarget && !threadSeeded && !inchannelSeeded)
 }
@@ -1109,7 +1109,7 @@ func (s *Store) deliverViaLiveAdapter(ctx context.Context, t *targetDelivery, cl
 		if messageID != nil {
 			idLog = pyrepr.Str(messageID)
 		}
-		s.logAs("cron.scheduler").Info(fmt.Sprintf("Job '%s': delivered to %s:%s via live adapter thread=%s message_id=%s", job.ID, t.platformName, t.chatID, threadLog, idLog))
+		s.log.Info(fmt.Sprintf("Job '%s': delivered to %s:%s via live adapter thread=%s message_id=%s", job.ID, t.platformName, t.chatID, threadLog, idLog))
 		delivered = true
 		s.seedLiveDeliverySessions(ctx, t, messageID)
 	}
@@ -1128,7 +1128,7 @@ func (s *Store) standaloneSend(ctx context.Context, t *targetDelivery, content s
 	shutdownMsg := fmt.Sprintf("delivery to %s skipped — interpreter is shutting down", t.where())
 	timeout := s.getStandaloneSendTimeout()
 	warned := func(msg string) (map[string]any, *string) {
-		s.logAs("cron.scheduler").Warn(fmt.Sprintf("Job '%s': %s", job.ID, msg))
+		s.log.Warn(fmt.Sprintf("Job '%s': %s", job.ID, msg))
 		return nil, &msg
 	}
 	if interpreterShuttingDown(nil) {
@@ -1163,7 +1163,7 @@ func (s *Store) standaloneSend(ctx context.Context, t *targetDelivery, content s
 	case <-sendCtx.Done():
 		if ctx.Err() == nil {
 			msg := fmt.Sprintf("standalone send to %s timed out after %ds (the send may still be in flight)", t.where(), timeout)
-			s.logAs("cron.scheduler").Error(fmt.Sprintf("Job '%s': %s", job.ID, msg))
+			s.log.Error(fmt.Sprintf("Job '%s': %s", job.ID, msg))
 			return nil, &msg
 		}
 		o = outcome{err: ctx.Err()}
@@ -1173,7 +1173,7 @@ func (s *Store) standaloneSend(ctx context.Context, t *targetDelivery, content s
 			return warned(shutdownMsg)
 		}
 		msg := fmt.Sprintf("delivery to %s failed: %v", t.where(), o.err)
-		s.logAs("cron.scheduler").Error(fmt.Sprintf("Job '%s': %s", job.ID, msg))
+		s.log.Error(fmt.Sprintf("Job '%s': %s", job.ID, msg))
 		return nil, &msg
 	}
 	return o.result, nil
@@ -1218,14 +1218,14 @@ func (s *Store) queueForLiveReconnect(ctx context.Context, t *targetDelivery, co
 		return
 	}
 	if err != nil {
-		s.logAs("cron.scheduler").Warn(fmt.Sprintf("Job '%s': could not queue %s for post-reconnect redelivery: %v", jobIDOr(t.job, "None"), t.where(), err))
+		s.log.Warn(fmt.Sprintf("Job '%s': could not queue %s for post-reconnect redelivery: %v", jobIDOr(t.job, "None"), t.where(), err))
 		return
 	}
 	note := fmt.Sprintf("queued text for %s for redelivery once the live adapter reconnects", t.where())
 	if len(media) > 0 {
 		note += fmt.Sprintf(" (%d attachment(s) not queued)", len(media))
 	}
-	s.logAs("cron.scheduler").Warn(fmt.Sprintf("Job '%s': %s", jobIDOr(t.job, "None"), note))
+	s.log.Warn(fmt.Sprintf("Job '%s': %s", jobIDOr(t.job, "None"), note))
 	*deliveryErrors = append(*deliveryErrors, note)
 }
 
@@ -1252,7 +1252,7 @@ func (s *Store) sendStandalone(ctx context.Context, t *targetDelivery, content s
 	result, errText := s.standaloneSend(ctx, t, content, media)
 	if errText == nil && len(result) > 0 && pyTruthy(result["error"]) {
 		errText = strPtr(fmt.Sprintf("delivery error: %s (target %s)", pyrepr.Str(result["error"]), t.where()))
-		s.logAs("cron.scheduler").Error(fmt.Sprintf("Job '%s': %s", job.ID, *errText))
+		s.log.Error(fmt.Sprintf("Job '%s': %s", job.ID, *errText))
 	}
 	if errText != nil {
 		*targetErrors = append(*targetErrors, *errText)
@@ -1263,11 +1263,11 @@ func (s *Store) sendStandalone(ctx context.Context, t *targetDelivery, content s
 	if warnings, ok := result["warnings"].([]any); ok {
 		for _, w := range warnings {
 			msg := fmt.Sprintf("delivery warning: %s (target %s)", pyrepr.Str(w), t.where())
-			s.logAs("cron.scheduler").Error(fmt.Sprintf("Job '%s': %s", job.ID, msg))
+			s.log.Error(fmt.Sprintf("Job '%s': %s", job.ID, msg))
 			*deliveryErrors = append(*deliveryErrors, msg)
 		}
 	}
-	s.logAs("cron.scheduler").Info(fmt.Sprintf("Job '%s': delivered to %s:%s", job.ID, t.platformName, t.chatID))
+	s.log.Info(fmt.Sprintf("Job '%s': delivered to %s:%s", job.ID, t.platformName, t.chatID))
 	s.maybeMirrorCronDelivery(ctx, job, t.platformName, t.chatID, t.mirrorText, t.threadID, t.originUserID, t.mirrorThisTarget)
 }
 
@@ -1283,9 +1283,9 @@ func (s *Store) prepareTargetDelivery(ctx context.Context, job *Job, target Targ
 		if job.Deliver != nil {
 			deliver = *job.Deliver
 		}
-		s.logAs("cron.scheduler").Warn(fmt.Sprintf("Job '%s': origin has thread_id=%s but delivery target lost it (deliver=%s, target=%s)", job.ID, pyrepr.Str(origin["thread_id"]), deliver, pyrepr.Str(target.dict())))
+		s.log.Warn(fmt.Sprintf("Job '%s': origin has thread_id=%s but delivery target lost it (deliver=%s, target=%s)", job.ID, pyrepr.Str(origin["thread_id"]), deliver, pyrepr.Str(target.dict())))
 	} else if threadID != "" {
-		s.logAs("cron.scheduler").Debug(fmt.Sprintf("Job '%s': delivering to %s:%s thread_id=%s", job.ID, platformName, chatID, threadID))
+		s.log.Debug(fmt.Sprintf("Job '%s': delivering to %s:%s thread_id=%s", job.ID, platformName, chatID, threadID))
 	}
 	originTarget := targetMatchesOrigin(origin, platformName, chatID, threadID)
 	mirrorThis := mirrorEnabled && targetMirrorEligible(job, target, mirrorEnabled, &originTarget)
@@ -1310,7 +1310,7 @@ func (s *Store) prepareTargetDelivery(ctx context.Context, job *Job, target Targ
 	ready := resolved.runtimeAdapter != nil && loop != nil && isLoop && l.IsRunning()
 	inChannel := resolveCronSurfaceMode(resolved.pconfig, platformName) == "in_channel"
 	if inChannel && resolved.runtimeAdapter != nil && !inchannelSurfaceSupported(resolved.runtimeAdapter, platformName) {
-		s.logAs("cron.scheduler").Debug(fmt.Sprintf("Job '%s': cron_continuable_surface=in_channel not supported on %s, using thread", jobIDOr(job, "?"), platformName))
+		s.log.Debug(fmt.Sprintf("Job '%s': cron_continuable_surface=in_channel not supported on %s, using thread", jobIDOr(job, "?"), platformName))
 		inChannel = false
 	}
 	if inChannel && continuable && ready {
@@ -1333,11 +1333,11 @@ func (s *Store) unresolvedDeliveryOutcome(job *Job, forFailure bool) *string {
 	}
 	if deliver == "origin" {
 		name := jobNameOr(job, jobIDOr(job, "?"))
-		s.logAs("cron.scheduler").Info(fmt.Sprintf("Job '%s': deliver=origin but no origin or home channels — skipping delivery (output saved in last_output)", name))
+		s.log.Info(fmt.Sprintf("Job '%s': deliver=origin but no origin or home channels — skipping delivery (output saved in last_output)", name))
 		return nil
 	}
 	msg := "no delivery target resolved for deliver=" + deliver
-	s.logAs("cron.scheduler").Warn(fmt.Sprintf("Job '%s': %s", job.ID, msg))
+	s.log.Warn(fmt.Sprintf("Job '%s': %s", job.ID, msg))
 	return &msg
 }
 
@@ -1417,7 +1417,7 @@ func (s *Store) deliverJobResult(ctx context.Context, job *Job, content string, 
 	gwCfg, err := loadGatewayConfig(ctx)
 	if err != nil {
 		msg := fmt.Sprintf("failed to load gateway config: %v", err)
-		s.logAs("cron.scheduler").Error(fmt.Sprintf("Job '%s': %s", job.ID, msg))
+		s.log.Error(fmt.Sprintf("Job '%s': %s", job.ID, msg))
 		return &msg, nil
 	}
 	var deliveryErrors []string

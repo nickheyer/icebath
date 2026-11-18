@@ -3,15 +3,11 @@ package gateway
 import (
 	"context"
 	"fmt"
-	"log/slog"
 
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/state"
 )
-
-// Records of the session runtime lifecycle carry the run_runtime module name
-func runtimeLog() *slog.Logger { return slog.Default().With("logger", "gateway.run_runtime") }
 
 // Context scoped to the authority's owning profile, its secrets hydrated when asked
 func OwnerScope(ctx context.Context, a *SessionAuthority, hydrateSecrets bool) context.Context {
@@ -138,7 +134,7 @@ func RecoverProfileNativeSessions(ctx context.Context, runner any, authority *Se
 	}
 	for _, sid := range outcome.Keys {
 		verdict, _ := outcome.Get(sid)
-		runtimeLog().Info(fmt.Sprintf("Native session startup recovery %s (%s): %s", sid, authority.ProfileID, pyrepr.Str(verdict)))
+		pkgLog().Info(fmt.Sprintf("Native session startup recovery %s (%s): %s", sid, authority.ProfileID, pyrepr.Str(verdict)))
 	}
 	return outcome, nil
 }

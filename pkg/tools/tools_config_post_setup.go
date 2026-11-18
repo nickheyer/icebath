@@ -85,7 +85,7 @@ func localSTTModelSummary() string {
 	requireToolsConfigHook("STTDefaultLocalModel", defFn != nil)
 	models, ok := catalogFn("local")
 	if !ok {
-		panic("KeyError: 'local'")
+		panic("the speech to text model catalog has no local models")
 	}
 	parts := make([]string, len(models))
 	for i, m := range models {

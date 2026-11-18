@@ -3,7 +3,6 @@ package agent
 import (
 	"errors"
 	"fmt"
-	"log/slog"
 	"maps"
 	"slices"
 	"strings"
@@ -16,7 +15,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/state"
 )
 
-// Single exchange summarizer and marker reader the passes call, swapped by tests as hermes patches the instance
+// Single exchange summarizer and marker reader the passes call, swapped by tests
 var (
 	compressorMicroSummarizeOne        = (*ContextCompressor).microSummarizeOne
 	compressorRollingSummaryFromMarker = rollingSummaryFromMarker
@@ -53,7 +52,7 @@ func (c *ContextCompressor) resolveCompactCursor(messages []map[string]any, head
 		if recovered != "" {
 			c.microCompactRollingSummary = recovered
 			messages[last][state.MicroCompactMarkerKey] = true
-			slog.Info(fmt.Sprintf("Micro-compaction: recovered rolling summary from transcript (%d chars)", pystr.Len(recovered)))
+			pkgLog().Info(fmt.Sprintf("Micro-compaction: recovered rolling summary from transcript (%d chars)", pystr.Len(recovered)))
 		}
 	}
 	c.microCompactCursor = cursor
@@ -155,11 +154,11 @@ func (c *ContextCompressor) microSummarizeOne(exchangeText string) (*string, err
 	}
 	response, err := compressorCallLLM(provider.AuxInterruptProtection(c.ctx, true, nil, nil), callKwargs)
 	if err != nil {
-		slog.Info("micro-summarization call failed: " + err.Error())
+		pkgLog().Info("micro-summarization call failed: " + err.Error())
 		return nil, nil
 	}
 	if responseFinishReason(response) == "length" {
-		slog.Warn("micro-summarization output hit the token cap (finish_reason=length) — discarding partial summary")
+		pkgLog().Warn("micro-summarization output hit the token cap (finish_reason=length) — discarding partial summary")
 		return nil, nil
 	}
 	content, err := microResponseContent(response)
@@ -168,11 +167,11 @@ func (c *ContextCompressor) microSummarizeOne(exchangeText string) (*string, err
 	}
 	content = pystr.Strip(provider.StripThinkBlocks(pystr.Strip(content)))
 	if content == "" {
-		slog.Info("micro-summarization returned empty content")
+		pkgLog().Info("micro-summarization returned empty content")
 		return nil, nil
 	}
 	if isRefusalResponse(response, content) {
-		slog.Warn("micro-summarization returned refusal content — discarding unusable summary")
+		pkgLog().Warn("micro-summarization returned refusal content — discarding unusable summary")
 		return nil, nil
 	}
 	return &content, nil
@@ -207,7 +206,7 @@ func (c *ContextCompressor) defragRollingSummary(messages []map[string]any) (boo
 			break
 		}
 	}
-	slog.Info(fmt.Sprintf("Micro-compaction defrag: rolling summary re-summarized (%d -> %d chars)", pystr.Len(oldSummary), pystr.Len(*fresh)))
+	pkgLog().Info(fmt.Sprintf("Micro-compaction defrag: rolling summary re-summarized (%d -> %d chars)", pystr.Len(oldSummary), pystr.Len(*fresh)))
 	return true, nil
 }
 
@@ -326,7 +325,7 @@ func (c *ContextCompressor) recordMicroFailure(exchangeStart, exchangeEnd int) s
 	if c.microCompactConsecutiveFailures < microCompactMaxConsecutiveFailures {
 		return "summarize_failed"
 	}
-	slog.Info(fmt.Sprintf("Micro-compaction: skipping exchange at cursor %d after %d consecutive failures", exchangeStart, c.microCompactConsecutiveFailures))
+	pkgLog().Info(fmt.Sprintf("Micro-compaction: skipping exchange at cursor %d after %d consecutive failures", exchangeStart, c.microCompactConsecutiveFailures))
 	c.microCompactCursor = exchangeEnd
 	c.resetMicroFailureTracking()
 	return "exchange_skipped"
@@ -406,10 +405,10 @@ func (c *ContextCompressor) emitMicroCompactionTelemetry(t microTelemetry) {
 	)
 	line, err := pyjson.Dumps(payload, pyjson.SortKeys(true), pyjson.Separators(",", ":"))
 	if err != nil {
-		slog.Debug("failed to emit micro-compaction telemetry: " + err.Error())
+		pkgLog().Debug("failed to emit micro-compaction telemetry: " + err.Error())
 		return
 	}
-	slog.Info("micro compaction telemetry: " + line)
+	pkgLog().Info("micro compaction telemetry: " + line)
 	record := map[string]any{}
 	for _, k := range payload.Keys {
 		record[k], _ = payload.Get(k)
@@ -430,10 +429,10 @@ func (c *ContextCompressor) microStartWatermark(held []map[string]any) (string, 
 	var stale *StaleHeldHistory
 	switch {
 	case errors.As(err, &stale):
-		slog.Info("micro-compaction: skipping this pass, " + err.Error())
+		pkgLog().Info("micro-compaction: skipping this pass, " + err.Error())
 		return "stale_generation", nil
 	case err != nil:
-		slog.Info("micro-compaction: watermark read failed, skipping this pass: " + err.Error())
+		pkgLog().Info("micro-compaction: watermark read failed, skipping this pass: " + err.Error())
 		return "watermark_unavailable", nil
 	}
 	return "", &watermark
@@ -449,10 +448,10 @@ func (c *ContextCompressor) syncMicroCompactToDB(compacted, held []map[string]an
 	var rewritten *state.HeldRowRewrittenError
 	switch {
 	case errors.As(err, &stale), errors.As(err, &rewritten):
-		slog.Info("Micro-compaction commit skipped, " + err.Error())
+		pkgLog().Info("Micro-compaction commit skipped, " + err.Error())
 		return false
 	case err != nil:
-		slog.Info("Micro-compaction DB sync failed — resume will double-load compacted messages until the next batch compression")
+		pkgLog().Info("Micro-compaction DB sync failed — resume will double-load compacted messages until the next batch compression")
 	}
 	return true
 }

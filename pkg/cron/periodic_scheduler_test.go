@@ -50,10 +50,7 @@ func TestPeriodicTwoIntervalsFireProportionallyAndCancelStopsOne(t *testing.T) {
 	if fast.count() <= slow.count() {
 		t.Fatalf("fast %d not above slow %d", fast.count(), slow.count())
 	}
-	sched.mu.Lock()
-	started := sched.started
-	sched.mu.Unlock()
-	if !started {
+	if !sched.Started() {
 		t.Fatal("scheduler loop never started")
 	}
 	hFast.Cancel(time.Second)
@@ -236,13 +233,13 @@ func TestPeriodicBlockedCallbackDoesNotStallDueSibling(t *testing.T) {
 func TestPeriodicWorkerStartFailureKeepsTimer(t *testing.T) {
 	sched := NewPeriodicScheduler()
 	var attempts atomic.Int32
-	real := sched.startWorker
-	sched.startWorker = func(run func()) error {
+	real := sched.WorkerStarter()
+	sched.SetWorkerStarter(func(run func()) error {
 		if attempts.CompareAndSwap(0, 1) {
 			return errors.New("no threads")
 		}
 		return real(run)
-	}
+	})
 	var fired periodicLog
 	handle := sched.Schedule(context.Background(), func(context.Context) bool { fired.hit(); return true }, 10*time.Millisecond)
 	defer handle.Cancel(time.Second)

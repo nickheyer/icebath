@@ -358,11 +358,17 @@ type TeamsMeetingSummaryPayload struct {
 	TeamsTarget     any
 }
 
+// Summary payload missing a mandatory key, classed KeyError for the job error record
+type missingPayloadKey struct{ key string }
+
+func (e *missingPayloadKey) Error() string      { return "the meeting summary payload has no " + e.key }
+func (e *missingPayloadKey) PyTypeName() string { return "KeyError" }
+
 // Summary payload whose meeting_ref key is mandatory and nested payloads read from snake case keys only
 func TeamsMeetingSummaryPayloadFromDict(payload *pyjson.Object) (*TeamsMeetingSummaryPayload, error) {
 	refRaw, ok := payload.Get("meeting_ref")
 	if !ok {
-		return nil, errors.New("KeyError: 'meeting_ref'")
+		return nil, &missingPayloadKey{"meeting_ref"}
 	}
 	refDict, err := asDict(refRaw)
 	if err != nil {

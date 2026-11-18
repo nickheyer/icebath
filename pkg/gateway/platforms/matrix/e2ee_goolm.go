@@ -7,7 +7,6 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
-	"log/slog"
 	"os"
 	"path/filepath"
 	"strings"
@@ -111,7 +110,7 @@ func (c *olmCrypto) RequestSession(ctx context.Context, roomID id.RoomID, sender
 	}
 	if err := c.mach.SendRoomKeyRequest(ctx, roomID, senderKey, sessionID, "", map[id.UserID][]id.DeviceID{
 		userID: {deviceID}, c.client.UserID: {"*"}}); err != nil {
-		slog.Warn(fmt.Sprintf("Matrix: room key request failed: %v", err))
+		pkgLog().Warn(fmt.Sprintf("Matrix: room key request failed: %v", err))
 	}
 }
 
@@ -122,7 +121,7 @@ func (c *olmCrypto) Init(context.Context) error { return nil }
 func (c *olmCrypto) handleEncrypted(ctx context.Context, evt *event.Event) {
 	decrypted, err := c.mach.DecryptMegolmEvent(ctx, evt)
 	if err != nil {
-		slog.Warn(fmt.Sprintf("Matrix: failed to decrypt %s: %v", evt.ID, err))
+		pkgLog().Warn(fmt.Sprintf("Matrix: failed to decrypt %s: %v", evt.ID, err))
 		return
 	}
 	decrypted.Mautrix.EventSource |= event.SourceDecrypted
@@ -196,7 +195,7 @@ func (s *cryptoStateStore) GetEncryptionEvent(ctx context.Context, roomID id.Roo
 	}
 	var content event.EncryptionEventContent
 	if err := s.client.StateEvent(ctx, roomID, event.StateEncryption, "", &content); err != nil {
-		slog.Debug(fmt.Sprintf("Matrix: homeserver encryption-info query failed for %s: %v", roomID, err))
+		pkgLog().Debug(fmt.Sprintf("Matrix: homeserver encryption-info query failed for %s: %v", roomID, err))
 		return nil, nil
 	}
 	if content.Algorithm == "" {
@@ -258,16 +257,16 @@ func (a *MatrixAdapter) reverifyKeysAfterUpload(ctx context.Context, client *mau
 	unverified := a.deviceIDUnverified
 	a.mu.Unlock()
 	if client.DeviceID == "" || unverified {
-		slog.Warn("Matrix: skipping post-upload key verification — device_id not yet established")
+		pkgLog().Warn("Matrix: skipping post-upload key verification — device_id not yet established")
 		return true
 	}
 	dev, err := queryOwnDeviceKeys(ctx, client)
 	if err != nil {
-		slog.Error(fmt.Sprintf("Matrix: post-upload key verification failed: %v", err))
+		pkgLog().Error(fmt.Sprintf("Matrix: post-upload key verification failed: %v", err))
 		return false
 	}
 	if dev != nil && extractServerEd25519(*dev) != localEd25519 {
-		slog.Error(fmt.Sprintf("Matrix: device %s has immutable identity keys that don't match this "+
+		pkgLog().Error(fmt.Sprintf("Matrix: device %s has immutable identity keys that don't match this "+
 			"installation. Generate a new access token with a fresh device.", client.DeviceID))
 		return false
 	}
@@ -281,13 +280,13 @@ func (a *MatrixAdapter) resetCryptoStoreIfDeviceChanged(ctx context.Context, sto
 	}
 	stored, err := store.FindDeviceID(ctx)
 	if err != nil {
-		slog.Warn(fmt.Sprintf("Matrix: could not read stored device ID: %v", err))
+		pkgLog().Warn(fmt.Sprintf("Matrix: could not read stored device ID: %v", err))
 		return false, nil
 	}
 	if stored == "" || string(stored) == deviceID {
 		return false, nil
 	}
-	slog.Warn(fmt.Sprintf("Matrix: access token belongs to a new device (%s -> %s) — resetting local Olm account "+
+	pkgLog().Warn(fmt.Sprintf("Matrix: access token belongs to a new device (%s -> %s) — resetting local Olm account "+
 		"so fresh identity keys are generated for this device", stored, deviceID))
 	for _, table := range []string{"crypto_account", "crypto_olm_session", "crypto_megolm_outbound_session"} {
 		if _, err := store.DB.Exec(ctx, "DELETE FROM "+table+" WHERE account_id=$1", store.AccountID); err != nil {
@@ -320,18 +319,18 @@ func (a *MatrixAdapter) migrateLegacyCryptoPickle(ctx context.Context, store *cr
 			continue
 		}
 		if err := a.repickleCryptoSessions(ctx, store, acctID, legacyKey, pickleKey); err != nil {
-			slog.Error(fmt.Sprintf("Matrix: pickle key migration failed while re-pickling sessions (%v) — leaving "+
+			pkgLog().Error(fmt.Sprintf("Matrix: pickle key migration failed while re-pickling sessions (%v) — leaving "+
 				"the account under the legacy key so the migration is retried on the next start.", err))
 			return false, nil
 		}
 		if err := store.PutAccount(ctx, account); err != nil {
 			return false, err
 		}
-		slog.Info("Matrix: re-pickled crypto store account and sessions under the current pickle key " +
+		pkgLog().Info("Matrix: re-pickled crypto store account and sessions under the current pickle key " +
 			"(device ID was configured after the account was created)")
 		return true, nil
 	}
-	slog.Error("Matrix: crypto store account exists but cannot be unpickled with the current or any " +
+	pkgLog().Error("Matrix: crypto store account exists but cannot be unpickled with the current or any " +
 		"legacy pickle key. If MATRIX_DEVICE_ID was changed manually, restore its previous value.")
 	return false, nil
 }
@@ -390,7 +389,7 @@ func (a *MatrixAdapter) repickleCryptoSessions(ctx context.Context, store *crypt
 			}
 			session, err := codec.unpickle(append([]byte(nil), r.session...), []byte(legacyKey))
 			if err != nil {
-				slog.Warn(fmt.Sprintf("Matrix: %s row %s cannot be unpickled with the current or legacy key; leaving "+
+				pkgLog().Warn(fmt.Sprintf("Matrix: %s row %s cannot be unpickled with the current or legacy key; leaving "+
 					"it in place, its sessions are unrecoverable: %v", codec.table, r.sessionID, err))
 				continue
 			}
@@ -413,24 +412,24 @@ func (a *MatrixAdapter) verifyDeviceKeysOnServer(ctx context.Context, client *ma
 	unverified := a.deviceIDUnverified
 	a.mu.Unlock()
 	if client.DeviceID == "" || unverified {
-		slog.Warn("Matrix: skipping device key verification — device_id not yet established")
+		pkgLog().Warn("Matrix: skipping device key verification — device_id not yet established")
 		return true
 	}
 	ourKeys, err := queryOwnDeviceKeys(ctx, client)
 	if err != nil {
-		slog.Error(fmt.Sprintf("Matrix: cannot verify device keys on server: %v — refusing E2EE", err))
+		pkgLog().Error(fmt.Sprintf("Matrix: cannot verify device keys on server: %v — refusing E2EE", err))
 		return false
 	}
 	localEd25519 := string(mach.OwnIdentity().SigningKey)
 	reupload := func(errorMsg func(err error) string) bool {
 		if err := mach.ShareKeys(ctx, -1); err != nil {
-			slog.Error(errorMsg(err))
+			pkgLog().Error(errorMsg(err))
 			return false
 		}
 		return a.reverifyKeysAfterUpload(ctx, client, localEd25519)
 	}
 	if ourKeys == nil {
-		slog.Warn("Matrix: device keys missing from server — re-uploading")
+		pkgLog().Warn("Matrix: device keys missing from server — re-uploading")
 		mach.GetAccount().Shared = false
 		return reupload(func(err error) string { return fmt.Sprintf("Matrix: failed to re-upload device keys: %v", err) })
 	}
@@ -438,13 +437,13 @@ func (a *MatrixAdapter) verifyDeviceKeysOnServer(ctx context.Context, client *ma
 		return true
 	}
 	if mach.GetAccount().Shared {
-		slog.Error(fmt.Sprintf("Matrix: server has different identity keys for device %s — local crypto state is "+
+		pkgLog().Error(fmt.Sprintf("Matrix: server has different identity keys for device %s — local crypto state is "+
 			"stale. Delete %s and restart.", client.DeviceID, a.cryptoDBPath()))
 		return false
 	}
-	slog.Warn(fmt.Sprintf("Matrix: server has stale keys for device %s — attempting re-upload", client.DeviceID))
+	pkgLog().Warn(fmt.Sprintf("Matrix: server has stale keys for device %s — attempting re-upload", client.DeviceID))
 	if _, err := client.MakeRequest(ctx, "DELETE", client.BuildClientURL("v3", "devices", client.DeviceID), nil, nil); err == nil {
-		slog.Info(fmt.Sprintf("Matrix: deleted stale device %s from server", client.DeviceID))
+		pkgLog().Info(fmt.Sprintf("Matrix: deleted stale device %s from server", client.DeviceID))
 	}
 	return reupload(func(err error) string {
 		return fmt.Sprintf("Matrix: cannot upload device keys for %s: %v. Try generating a new access token to get a fresh device.", client.DeviceID, err)
@@ -455,16 +454,16 @@ func (a *MatrixAdapter) verifyDeviceKeysOnServer(ctx context.Context, client *ma
 func (a *MatrixAdapter) verifyOrBootstrapCrossSigning(ctx context.Context, mach *crypto.OlmMachine, client *mautrix.Client) {
 	if recoveryKey := scopedRecoveryKey(ctx); recoveryKey != "" {
 		if err := mach.VerifyWithRecoveryKey(ctx, recoveryKey); err != nil {
-			slog.Warn(fmt.Sprintf("Matrix: recovery key verification failed: %v", err))
+			pkgLog().Warn(fmt.Sprintf("Matrix: recovery key verification failed: %v", err))
 		} else {
-			slog.Info("Matrix: cross-signing verified via recovery key")
+			pkgLog().Info("Matrix: cross-signing verified via recovery key")
 		}
 		return
 	}
 	ownXsign, err := mach.GetOwnCrossSigningPublicKeys(ctx)
 	if err != nil {
 		ownXsign = nil
-		slog.Warn(fmt.Sprintf("Matrix: cross-signing key lookup failed: %v", err))
+		pkgLog().Warn(fmt.Sprintf("Matrix: cross-signing key lookup failed: %v", err))
 	}
 	if ownXsign != nil {
 		return
@@ -481,13 +480,13 @@ func (a *MatrixAdapter) verifyOrBootstrapCrossSigning(ctx context.Context, mach 
 		default:
 			reason = fmt.Sprintf("is not usable: %s", outputError)
 		}
-		slog.Warn("Matrix: cross-signing keys are missing, but automatic bootstrap is skipped because " +
+		pkgLog().Warn("Matrix: cross-signing keys are missing, but automatic bootstrap is skipped because " +
 			"MATRIX_RECOVERY_KEY_OUTPUT_FILE " + reason)
 		return
 	}
 	newRecoveryKey, err := mach.GenerateAndVerifyWithRecoveryKey(ctx)
 	if err != nil {
-		slog.Warn(fmt.Sprintf("Matrix: cross-signing bootstrap failed (non-fatal — Element will show "+
+		pkgLog().Warn(fmt.Sprintf("Matrix: cross-signing bootstrap failed (non-fatal — Element will show "+
 			"'not verified by its owner'): %v", err))
 		return
 	}
@@ -497,14 +496,14 @@ func (a *MatrixAdapter) verifyOrBootstrapCrossSigning(ctx context.Context, mach 
 // Optional mode logs, disables E2EE and continues while required mode closes and refuses to connect
 func (a *MatrixAdapter) e2eeSetupFailed(what string, err error, client *mautrix.Client) bool {
 	if a.e2eeMode == "optional" {
-		slog.Warn(fmt.Sprintf("Matrix: failed to %s optional E2EE client; continuing without encrypted-room "+
+		pkgLog().Warn(fmt.Sprintf("Matrix: failed to %s optional E2EE client; continuing without encrypted-room "+
 			"support: %v.", what, err))
 		a.mu.Lock()
 		a.encryption = false
 		a.mu.Unlock()
 		return true
 	}
-	slog.Error(fmt.Sprintf("Matrix: failed to %s E2EE client: %v.", what, err))
+	pkgLog().Error(fmt.Sprintf("Matrix: failed to %s E2EE client: %v.", what, err))
 	return abortConnect(client, nil)
 }
 
@@ -532,7 +531,7 @@ func (a *MatrixAdapter) setupOlm(ctx context.Context, client *mautrix.Client, st
 	*phase = "create"
 	legacyPickle := filepath.Join(storeDir, "crypto_store.pickle")
 	if _, err := os.Stat(legacyPickle); err == nil {
-		slog.Info("Matrix: removing legacy crypto_store.pickle (migrated to SQLite)")
+		pkgLog().Info("Matrix: removing legacy crypto_store.pickle (migrated to SQLite)")
 		if err := os.Remove(legacyPickle); err != nil {
 			return false, err
 		}
@@ -580,7 +579,7 @@ func (a *MatrixAdapter) setupOlm(ctx context.Context, client *mautrix.Client, st
 			return false, err
 		}
 		if !migrated {
-			slog.Warn("Matrix: crypto pickle migration failed — E2EE may not work correctly")
+			pkgLog().Warn("Matrix: crypto pickle migration failed — E2EE may not work correctly")
 		}
 	}
 	cryptoState := &cryptoStateStore{ss: stateStore, joinedRooms: a.joinedRoomIDs, client: client, encInfo: map[id.RoomID]*event.EncryptionEventContent{}}
@@ -596,12 +595,12 @@ func (a *MatrixAdapter) setupOlm(ctx context.Context, client *mautrix.Client, st
 	}
 	if err := mach.ShareKeys(ctx, -1); err != nil {
 		if strings.Contains(err.Error(), "already exists") {
-			slog.Error(fmt.Sprintf("Matrix: device %s has stale one-time keys on the server signed with a "+
+			pkgLog().Error(fmt.Sprintf("Matrix: device %s has stale one-time keys on the server signed with a "+
 				"previous identity key. Delete the device from the homeserver and restart, "+
 				"or generate a new access token to get a fresh device ID.", client.DeviceID))
 			return abortConnect(client, db), nil
 		}
-		slog.Warn(fmt.Sprintf("Matrix: share_keys() warning during startup: %v", err))
+		pkgLog().Warn(fmt.Sprintf("Matrix: share_keys() warning during startup: %v", err))
 	}
 	a.verifyOrBootstrapCrossSigning(ctx, mach, client)
 	syncer, _ := client.Syncer.(*mautrix.DefaultSyncer)
@@ -621,6 +620,6 @@ func (a *MatrixAdapter) setupOlm(ctx context.Context, client *mautrix.Client, st
 	if client.DeviceID != "" {
 		suffix = fmt.Sprintf(", device_id=%s", client.DeviceID)
 	}
-	slog.Info(fmt.Sprintf("Matrix: E2EE enabled (store: %s%s)", a.cryptoDBPath(), suffix))
+	pkgLog().Info(fmt.Sprintf("Matrix: E2EE enabled (store: %s%s)", a.cryptoDBPath(), suffix))
 	return true, nil
 }

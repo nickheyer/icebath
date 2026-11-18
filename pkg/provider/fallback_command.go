@@ -59,7 +59,7 @@ func ExtractFallbackFromModelCfg(modelCfg any) (map[string]any, bool, error) {
 	if !ok {
 		return nil, false, nil
 	}
-	rawProvider, err := pyOrEmptyStr(m["provider"], "strip")
+	rawProvider, err := pyOrEmptyStr(m["provider"], "model.provider")
 	if err != nil {
 		return nil, false, err
 	}
@@ -67,7 +67,7 @@ func ExtractFallbackFromModelCfg(modelCfg any) (map[string]any, bool, error) {
 	if !pyTruthy(rawModel) {
 		rawModel = m["model"]
 	}
-	modelText, err := pyOrEmptyStr(rawModel, "strip")
+	modelText, err := pyOrEmptyStr(rawModel, "model.default")
 	if err != nil {
 		return nil, false, err
 	}
@@ -78,7 +78,7 @@ func ExtractFallbackFromModelCfg(modelCfg any) (map[string]any, bool, error) {
 	entry := map[string]any{"provider": provider, "model": model}
 	config.SetMappingKeys(entry, []string{"provider", "model"})
 	for _, key := range []string{"base_url", "api_mode"} {
-		raw, err := pyOrEmptyStr(m[key], "strip")
+		raw, err := pyOrEmptyStr(m[key], "model."+key)
 		if err != nil {
 			return nil, false, err
 		}
@@ -210,7 +210,7 @@ func DescribePrimary(cfg map[string]any) (string, error) {
 		if !pyTruthy(rawProvider) {
 			rawProvider = "?"
 		}
-		provider, err := pyOrEmptyStr(rawProvider, "strip")
+		provider, err := pyOrEmptyStr(rawProvider, "model.provider")
 		if err != nil {
 			return "", err
 		}
@@ -224,7 +224,7 @@ func DescribePrimary(cfg map[string]any) (string, error) {
 		if !pyTruthy(rawModel) {
 			rawModel = "?"
 		}
-		model, err := pyOrEmptyStr(rawModel, "strip")
+		model, err := pyOrEmptyStr(rawModel, "model.default")
 		if err != nil {
 			return "", err
 		}

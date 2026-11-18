@@ -20,8 +20,6 @@ var tsServers = map[string]bool{"typescript": true}
 
 var tsCommands = []string{"syntacticDiagnosticsSync", "semanticDiagnosticsSync"}
 
-const syncLogger = "agent.lsp.sync_diagnostics"
-
 // Whether the client answers what is wrong with a file now through a synchronous request
 func syncSupported(c *Client) bool { return tsServers[c.ServerID] && !c.syncUnsupported }
 
@@ -45,11 +43,11 @@ func syncRequest(ctx context.Context, c *Client, absPath string, timeout time.Du
 			case errors.As(err, &te):
 				return nil, false, &TimeoutError{msg: fmt.Sprintf("%s did not answer in %.1fs", command, timeout.Seconds())}
 			case errors.As(err, &re):
-				c.rt.logf(slog.LevelDebug, syncLogger, "[%s] %s rejected: %s", c.ServerID, command, err)
+				c.rt.logf(slog.LevelDebug, "[%s] %s rejected: %s", c.ServerID, command, err)
 				c.syncUnsupported = true
 				return nil, false, nil
 			case errors.As(err, &pe):
-				c.rt.logf(slog.LevelDebug, syncLogger, "[%s] %s failed: %s", c.ServerID, command, err)
+				c.rt.logf(slog.LevelDebug, "[%s] %s failed: %s", c.ServerID, command, err)
 				return nil, false, nil
 			}
 			return nil, false, err

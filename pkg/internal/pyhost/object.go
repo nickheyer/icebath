@@ -3,6 +3,7 @@ package pyhost
 import (
 	"errors"
 	"fmt"
+	"log/slog"
 	"runtime/debug"
 	"sync"
 	"sync/atomic"
@@ -71,10 +72,11 @@ func ensureCallbacks() {
 	})
 }
 
-// Converts a Go panic into a Python RuntimeError so it never unwinds through C frames
+// Converts a Go panic into a Python RuntimeError so it never unwinds through C frames, its stack logged only
 func guard(ret *uintptr) {
 	if p := recover(); p != nil {
-		pyErrSetString(excRuntimeError, fmt.Sprintf("Go panic in host callback: %v\n%s", p, debug.Stack()))
+		slog.Default().With("logger", "pyhost").Error("Go panic in host callback", "panic", fmt.Sprint(p), "stack", string(debug.Stack()))
+		pyErrSetString(excRuntimeError, fmt.Sprintf("Go panic in host callback: %v", p))
 		*ret = 0
 	}
 }

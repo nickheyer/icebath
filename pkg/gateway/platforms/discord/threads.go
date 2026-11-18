@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"log/slog"
 	"net/http"
 	"slices"
 	"strconv"
@@ -154,7 +153,7 @@ func (a *DiscordAdapter) autoCreateThread(ctx context.Context, m *inboundMessage
 			break
 		}
 	}
-	slog.Warn(fmt.Sprintf("[%s] Auto-thread creation failed after retry. Direct error: %v. Fallback error: %v", a.Name(), lastDirect, lastFallback))
+	pkgLog().Warn(fmt.Sprintf("[%s] Auto-thread creation failed after retry. Direct error: %v. Fallback error: %v", a.Name(), lastDirect, lastFallback))
 	return nil
 }
 
@@ -180,12 +179,12 @@ func (a *DiscordAdapter) CreateHandoffThread(ctx context.Context, parentChatID, 
 	parent := a.stateChannel(parentID)
 	if parent == nil {
 		if parent, err = client.Channel(parentID, discordgo.WithContext(ctx)); err != nil {
-			slog.Warn(fmt.Sprintf("[%s] Handoff thread: cannot resolve parent %s: %s", a.Name(), parentChatID, dpyError(err)))
+			pkgLog().Warn(fmt.Sprintf("[%s] Handoff thread: cannot resolve parent %s: %s", a.Name(), parentChatID, dpyError(err)))
 			return "", false, nil
 		}
 	}
 	if parent.Type == discordgo.ChannelTypeDM {
-		slog.Info(fmt.Sprintf("[%s] Handoff thread: parent %s is a DM; threads not supported here", a.Name(), parentChatID))
+		pkgLog().Info(fmt.Sprintf("[%s] Handoff thread: parent %s is a DM; threads not supported here", a.Name(), parentChatID))
 		return "", false, nil
 	}
 	threadName := pystr.Strip(name)
@@ -205,7 +204,7 @@ func (a *DiscordAdapter) CreateHandoffThread(ctx context.Context, parentChatID, 
 		if err == nil {
 			return th.ID, true, nil
 		}
-		slog.Debug(fmt.Sprintf("[%s] Handoff thread: direct create failed (%s); trying seed-message fallback", a.Name(), err))
+		pkgLog().Debug(fmt.Sprintf("[%s] Handoff thread: direct create failed (%s); trying seed-message fallback", a.Name(), err))
 	}
 	if !handoffSendTypes[parent.Type] {
 		return "", false, nil
@@ -220,6 +219,6 @@ func (a *DiscordAdapter) CreateHandoffThread(ctx context.Context, parentChatID, 
 	} else {
 		err = dpyError(err)
 	}
-	slog.Warn(fmt.Sprintf("[%s] Handoff thread: both create paths failed for parent %s: %s", a.Name(), parentChatID, err))
+	pkgLog().Warn(fmt.Sprintf("[%s] Handoff thread: both create paths failed for parent %s: %s", a.Name(), parentChatID, err))
 	return "", false, nil
 }

@@ -36,11 +36,11 @@ func RefreshSystemdUnitIfNeeded(ctx context.Context, system bool) (bool, error) 
 }
 
 // True when a pre rename gateway unit file exists in either scope
-func HasLegacyHermesUnits(ctx context.Context) bool { return hasLegacyHermesUnits(ctx) }
+func HasLegacyIcebathUnits(ctx context.Context) bool { return hasLegacyIcebathUnits(ctx) }
 
 // Pre rename gateway unit files on disk in discovery order
-func FindLegacyHermesUnits(ctx context.Context) []LegacyGatewayUnit {
-	found := findLegacyHermesUnits(ctx)
+func FindLegacyIcebathUnits(ctx context.Context) []LegacyGatewayUnit {
+	found := findLegacyIcebathUnits(ctx)
 	out := make([]LegacyGatewayUnit, len(found))
 	for i, unit := range found {
 		out[i] = LegacyGatewayUnit{Name: unit.name, Path: unit.path, System: unit.system}

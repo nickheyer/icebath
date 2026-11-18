@@ -39,7 +39,7 @@ func (r *GatewayRunner) hmAdmitEvent(ctx context.Context, event *gateway.Message
 	if !isInternal && source != nil && source.Platform == gateway.PlatformSlack {
 		slackAdapter, _ := r.intakeAdapterFor(ctx, source)
 		if isSlackIgnoredChannel(ctx, r.config, chatID, slackAdapter) {
-			runLog().Info(fmt.Sprintf("Dropping Slack message from configured ignored channel %s", chatID))
+			pkgLog().Info(fmt.Sprintf("Dropping Slack message from configured ignored channel %s", chatID))
 			return ctx, nil, nil
 		}
 	}
@@ -65,7 +65,7 @@ func (r *GatewayRunner) hmAdmitEvent(ctx context.Context, event *gateway.Message
 	}
 	if !authorized {
 		if source.UserID == nil {
-			runLog().Debug(fmt.Sprintf("Ignoring message with no user_id from %s", source.Platform))
+			pkgLog().Debug(fmt.Sprintf("Ignoring message with no user_id from %s", source.Platform))
 			return ctx, nil, nil
 		}
 		unauthorized := fmt.Sprintf("Unauthorized user: %s (%s) on %s", *source.UserID, derefOrNoneText(source.UserName), source.Platform)
@@ -76,15 +76,15 @@ func (r *GatewayRunner) hmAdmitEvent(ctx context.Context, event *gateway.Message
 		}
 		switch {
 		case behavior == "pair":
-			runLog().Warn(unauthorized)
+			pkgLog().Warn(unauthorized)
 			err = r.hmOfferPairingCode(ctx, source)
 		case behavior == "decline":
-			runLog().Warn(unauthorized)
+			pkgLog().Warn(unauthorized)
 			err = r.hmSendUnauthorizedDecline(ctx, source)
 		case pairableDM:
 			err = r.hmReportIgnoredDM(ctx, source)
 		default:
-			runLog().Warn(unauthorized)
+			pkgLog().Warn(unauthorized)
 		}
 		return ctx, nil, err
 	}

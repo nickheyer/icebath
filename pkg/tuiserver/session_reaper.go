@@ -14,7 +14,7 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	"github.com/nickheyer/icebath/pkg/state"
-	"github.com/nickheyer/icebath/pkg/tuigateway"
+	"github.com/nickheyer/icebath/pkg/tuihost"
 )
 
 // Seconds of a sessions orphan knob, the env override winning when set and the default on a bad value
@@ -60,7 +60,7 @@ var (
 	startupOrphanSweepRan bool
 )
 
-// Timer and config seams of the reaper, the real functions swapped only where a hermes case installs a fake
+// Timer and config seams of the reaper, the real functions swapped only where a test installs a fake
 var (
 	reaperAfterFunc            = time.AfterFunc
 	reaperLoadCfg              = loadCfg
@@ -74,9 +74,9 @@ func reaperDaemonTimer(delay float64, fn func(), failLog string, level string) {
 			if failure := recover(); failure != nil {
 				text := fmt.Sprintf("%s: %s", failLog, failureText(failure))
 				if level == "warning" {
-					logger().Warn(text)
+					pkgLog().Warn(text)
 				} else {
-					logger().Debug(text)
+					pkgLog().Debug(text)
 				}
 			}
 		}()
@@ -110,7 +110,7 @@ func sweepOrphanedSessionRows(ctx context.Context) []string {
 		return []string{}
 	}
 	liveIDs := map[string]bool{}
-	for _, live := range tuigateway.LiveSessions() {
+	for _, live := range tuihost.LiveSessions() {
 		candidates := []any{live.SID}
 		if a := sessionAgent(live.Session); a != nil {
 			candidates = append(candidates, a.SessionID())
@@ -136,7 +136,7 @@ func sweepOrphanedSessionRows(ctx context.Context) []string {
 		panic(err)
 	}
 	if len(swept) > 0 {
-		logger().Info(fmt.Sprintf("Closed %d orphaned session row(s) from a previous gateway process (startup_orphan_reap): %s",
+		pkgLog().Info(fmt.Sprintf("Closed %d orphaned session row(s) from a previous gateway process (startup_orphan_reap): %s",
 			len(swept), strings.Join(swept, ", ")))
 	}
 	return swept
@@ -170,7 +170,7 @@ func reaperHostname() string {
 	return name
 }
 
-// Heartbeat seams, the real functions swapped only where a hermes case installs a fake
+// Heartbeat seams, the real functions swapped only where a test installs a fake
 var (
 	reaperDB                = getDB
 	backendIDForThisProcess = backendIDOfProcess
@@ -191,7 +191,7 @@ func refreshHeartbeatRow(ctx context.Context) {
 	err := db.RegisterBackendHeartbeat(ctx, state.BackendHeartbeat{BackendID: backendIDForThisProcess(ctx), PID: os.Getpid(),
 		StartedAt: gatewayStartedAtOnce(), Profile: currentProfileName(ctx), Host: reaperHostname()})
 	if err != nil {
-		logger().Debug(fmt.Sprintf("backend heartbeat refresh failed: %s", err))
+		pkgLog().Debug(fmt.Sprintf("backend heartbeat refresh failed: %s", err))
 	}
 }
 
@@ -207,7 +207,7 @@ func startBackendHeartbeatRefresher(ctx context.Context) {
 	func() {
 		defer func() {
 			if failure := recover(); failure != nil {
-				logger().Debug(fmt.Sprintf("initial backend heartbeat write failed: %s", failureText(failure)))
+				pkgLog().Debug(fmt.Sprintf("initial backend heartbeat write failed: %s", failureText(failure)))
 			}
 		}()
 		refreshBackendHeartbeat(ctx)
@@ -228,7 +228,7 @@ func startBackendHeartbeatRefresher(ctx context.Context) {
 		}()
 	})
 	go func() {
-		defer threadExceptHook("hermes-gateway-heartbeat")
+		defer threadExceptHook("icebath-gateway-heartbeat")
 		ctx := context.Background()
 		for {
 			select {
@@ -239,7 +239,7 @@ func startBackendHeartbeatRefresher(ctx context.Context) {
 			func() {
 				defer func() {
 					if failure := recover(); failure != nil {
-						logger().Debug(fmt.Sprintf("heartbeat refresh loop iteration failed: %s", failureText(failure)))
+						pkgLog().Debug(fmt.Sprintf("heartbeat refresh loop iteration failed: %s", failureText(failure)))
 					}
 				}()
 				refreshBackendHeartbeat(ctx)

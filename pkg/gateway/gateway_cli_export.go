@@ -93,8 +93,8 @@ func ServiceHomeForUnit(ctx context.Context, unitPath string, system bool) (stri
 }
 
 // Removes legacy pre rename gateway units, returning the count and the removed paths
-func RemoveLegacyHermesUnits(ctx context.Context, w io.Writer, interactive, dryRun bool) (int, []string, error) {
-	return removeLegacyHermesUnits(ctx, w, interactive, dryRun)
+func RemoveLegacyIcebathUnits(ctx context.Context, w io.Writer, interactive, dryRun bool) (int, []string, error) {
+	return removeLegacyIcebathUnits(ctx, w, interactive, dryRun)
 }
 
 // Prints each line of text indented by two spaces through emit

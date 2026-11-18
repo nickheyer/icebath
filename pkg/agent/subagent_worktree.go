@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"context"
 	"fmt"
-	"log/slog"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -14,7 +13,6 @@ import (
 
 	"github.com/google/uuid"
 
-	"github.com/nickheyer/icebath/pkg/cron"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
@@ -24,14 +22,13 @@ import (
 
 const subagentGitTimeout = 30 * time.Second
 
-func subagentWorktreeLog() *slog.Logger {
-	return slog.Default().With("logger", "tools.subagent_worktree")
-}
-
 type gitRunResult struct {
 	code           int
 	stdout, stderr string
 }
+
+// Registries told about a repo that got an icebath made subagent worktree, installed by the tiers that sweep them
+var SubagentWorktreeRecorders []func(ctx context.Context, home, repoRoot string)
 
 // Runs hardened git with captured output, never failing on a non zero exit
 func subagentRunGit(args []string, cwd string, env map[string]string) (gitRunResult, error) {
@@ -88,7 +85,7 @@ func resolveRepoRoot(path string) string {
 	}
 	res, err := subagentRunGit([]string{"rev-parse", "--show-toplevel"}, candidate, nil)
 	if err != nil {
-		subagentWorktreeLog().Debug(fmt.Sprintf("subagent worktree: rev-parse failed: %v", err))
+		pkgLog().Debug(fmt.Sprintf("subagent worktree: rev-parse failed: %v", err))
 		return ""
 	}
 	if res.code != 0 {
@@ -104,7 +101,7 @@ func ensureWorktreesGitignore(repoRoot string) {
 	if b, err := os.ReadFile(gitignore); err == nil {
 		existing = strings.TrimPrefix(strings.ToValidUTF8(string(b), "�"), "\uFEFF")
 	} else if !os.IsNotExist(err) {
-		subagentWorktreeLog().Debug(fmt.Sprintf("subagent worktree: could not update .gitignore: %v", err))
+		pkgLog().Debug(fmt.Sprintf("subagent worktree: could not update .gitignore: %v", err))
 		return
 	}
 	for _, line := range pystr.Splitlines(existing, false) {
@@ -114,7 +111,7 @@ func ensureWorktreesGitignore(repoRoot string) {
 	}
 	f, err := os.OpenFile(gitignore, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644)
 	if err != nil {
-		subagentWorktreeLog().Debug(fmt.Sprintf("subagent worktree: could not update .gitignore: %v", err))
+		pkgLog().Debug(fmt.Sprintf("subagent worktree: could not update .gitignore: %v", err))
 		return
 	}
 	defer f.Close()
@@ -123,7 +120,7 @@ func ensureWorktreesGitignore(repoRoot string) {
 		sep = "\n"
 	}
 	if _, err := f.WriteString(sep + ".worktrees/\n"); err != nil {
-		subagentWorktreeLog().Debug(fmt.Sprintf("subagent worktree: could not update .gitignore: %v", err))
+		pkgLog().Debug(fmt.Sprintf("subagent worktree: could not update .gitignore: %v", err))
 	}
 }
 
@@ -141,13 +138,13 @@ func createSubagentWorktree(ctx context.Context, parentCwd, subagentID string) m
 	branch := "icebath-subagent/" + wtName
 	wtPath := filepath.Join(repoRoot, ".worktrees", wtName)
 	if err := os.MkdirAll(filepath.Dir(wtPath), 0o755); err != nil {
-		subagentWorktreeLog().Warn(fmt.Sprintf("subagent worktree: creation failed: %v", err))
+		pkgLog().Warn(fmt.Sprintf("subagent worktree: creation failed: %v", err))
 		return nil
 	}
 	ensureWorktreesGitignore(repoRoot)
 	base, err := subagentRunGit([]string{"rev-parse", "HEAD"}, repoRoot, nil)
 	if err != nil {
-		subagentWorktreeLog().Warn(fmt.Sprintf("subagent worktree: creation failed: %v", err))
+		pkgLog().Warn(fmt.Sprintf("subagent worktree: creation failed: %v", err))
 		return nil
 	}
 	baseCommit := ""
@@ -156,20 +153,22 @@ func createSubagentWorktree(ctx context.Context, parentCwd, subagentID string) m
 	}
 	addEnv := tools.NoninteractiveRepoGitEnv(repoRoot, nil)
 	if addEnv == nil {
-		subagentWorktreeLog().Warn("subagent worktree: filter discovery failed; not creating a worktree")
+		pkgLog().Warn("subagent worktree: filter discovery failed; not creating a worktree")
 		return nil
 	}
 	res, err := subagentRunGit([]string{"worktree", "add", wtPath, "-b", branch, "HEAD"}, repoRoot, addEnv)
 	if err != nil {
-		subagentWorktreeLog().Warn(fmt.Sprintf("subagent worktree: creation failed: %v", err))
+		pkgLog().Warn(fmt.Sprintf("subagent worktree: creation failed: %v", err))
 		return nil
 	}
 	if res.code != 0 {
-		subagentWorktreeLog().Warn("subagent worktree: git worktree add failed: " + strings.TrimSpace(res.stderr))
+		pkgLog().Warn("subagent worktree: git worktree add failed: " + strings.TrimSpace(res.stderr))
 		return nil
 	}
-	subagentWorktreeLog().Info(fmt.Sprintf("subagent worktree created: %s (branch %s)", wtPath, branch))
-	cron.RecordWorktreeRepo(ctx, home.Dir(ctx), repoRoot)
+	pkgLog().Info(fmt.Sprintf("subagent worktree created: %s (branch %s)", wtPath, branch))
+	for _, record := range SubagentWorktreeRecorders {
+		record(ctx, home.Dir(ctx), repoRoot)
+	}
 	return map[string]string{"path": wtPath, "branch": branch, "repo_root": repoRoot, "base_commit": baseCommit}
 }
 
@@ -191,7 +190,7 @@ func markWorktreePayloadUnproven(payload *pyjson.Object, reason, unmeasured stri
 	payload.Set("note", fmt.Sprintf("git inspection failed (%s): %s UNKNOWN — not proven "+
 		"zero/clean. The worktree and branch were preserved — inspect %v "+
 		"(branch %v) before assuming no work.", reason, unmeasured, path, branch))
-	subagentWorktreeLog().Warn(fmt.Sprintf("subagent worktree: git inspection failed (%s) — keeping %v (branch %v) "+
+	pkgLog().Warn(fmt.Sprintf("subagent worktree: git inspection failed (%s) — keeping %v (branch %v) "+
 		"for manual review", reason, path, branch))
 	return payload
 }
@@ -280,16 +279,16 @@ func finalizeSubagentWorktree(info map[string]string, prune bool) (*pyjson.Objec
 		removed, err := subagentRunGit([]string{"worktree", "remove", "--force", path}, cwd, nil)
 		switch {
 		case err != nil:
-			subagentWorktreeLog().Debug(fmt.Sprintf("subagent worktree: prune failed: %v", err))
+			pkgLog().Debug(fmt.Sprintf("subagent worktree: prune failed: %v", err))
 		case removed.code == 0:
 			if _, err := subagentRunGit([]string{"branch", "-D", branch}, cwd, nil); err != nil {
-				subagentWorktreeLog().Debug(fmt.Sprintf("subagent worktree: prune failed: %v", err))
+				pkgLog().Debug(fmt.Sprintf("subagent worktree: prune failed: %v", err))
 				return payload, nil
 			}
 			payload.Set("pruned", true)
-			subagentWorktreeLog().Info("subagent worktree pruned (no work): " + path)
+			pkgLog().Info("subagent worktree pruned (no work): " + path)
 		default:
-			subagentWorktreeLog().Debug("subagent worktree: prune failed: " + strings.TrimSpace(removed.stderr))
+			pkgLog().Debug("subagent worktree: prune failed: " + strings.TrimSpace(removed.stderr))
 		}
 	}
 	return payload, nil
@@ -303,7 +302,7 @@ func archiveFinishedWorktree(info map[string]string, payload *pyjson.Object) *py
 	}
 	path := info["path"]
 	if len(tools.LiveProcessPids([]string{path}, []int{os.Getpid()})[path]) > 0 {
-		subagentWorktreeLog().Info(fmt.Sprintf("subagent worktree: a live process works in %s; keeping it", path))
+		pkgLog().Info(fmt.Sprintf("subagent worktree: a live process works in %s; keeping it", path))
 		return payload
 	}
 	repoRoot := info["repo_root"]
@@ -312,7 +311,7 @@ func archiveFinishedWorktree(info map[string]string, payload *pyjson.Object) *py
 	}
 	res, err := tools.ArchiveThenRemove(repoRoot, path, "subagent finished", settings.ArchiveMaxFileMB, false, nil, true, []int{os.Getpid()})
 	if err != nil {
-		subagentWorktreeLog().Warn(fmt.Sprintf("subagent worktree: archive failed, keeping %s: %v", path, err))
+		pkgLog().Warn(fmt.Sprintf("subagent worktree: archive failed, keeping %s: %v", path, err))
 		return payload
 	}
 	payload.Set("archive", res.Ref)

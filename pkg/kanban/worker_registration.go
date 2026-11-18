@@ -3,15 +3,12 @@ package kanban
 import (
 	"context"
 	"fmt"
-	"log/slog"
 	"os"
 
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
-
-var kanbanToolsLog = slog.Default().With("logger", "tools.kanban_tools")
 
 // Environment value only when this worker is scoped to the task, not ok otherwise
 func ownTaskEnv(taskID, name string) (string, bool) {
@@ -60,7 +57,7 @@ func RegisterCurrentWorkerFromEnv(ctx context.Context) (registered bool) {
 		return true
 	}
 	fail := func(cause any) bool {
-		kanbanToolsLog.Debug(fmt.Sprintf("kanban worker registration for %s failed", taskID), "exc_info", fmt.Sprint(cause))
+		pkgLog().Debug(fmt.Sprintf("kanban worker registration for %s failed", taskID), "exc_info", fmt.Sprint(cause))
 		return true
 	}
 	defer func() {

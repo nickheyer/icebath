@@ -127,7 +127,7 @@ type engineSessionBinder interface {
 func callEngineHook(hook string, fn func()) {
 	defer func() {
 		if r := recover(); r != nil {
-			runAgentLog().Debug(fmt.Sprintf("context engine %s during transition: %v", hook, r))
+			pkgLog().Debug(fmt.Sprintf("context engine %s during transition: %v", hook, r))
 		}
 	}()
 	fn()
@@ -193,7 +193,7 @@ func (a *AIAgent) resetSessionState(previousMessages []map[string]any, oldSessio
 	binder, ok := a.contextCompressor.(engineSessionBinder)
 	if ok && a.sessionID != "" && a.sessionID != binder.BoundSessionID() {
 		if err := binder.BindSessionState(a.sessionDB, a.sessionID); err != nil {
-			runAgentLog().Debug(fmt.Sprintf("context engine bind_session_state during reset: %v", err))
+			pkgLog().Debug(fmt.Sprintf("context engine bind_session_state during reset: %v", err))
 		}
 	}
 }
@@ -235,7 +235,7 @@ func (a *AIAgent) ensureDBSession() error {
 		ProfileName: profiles.GetActiveProfileName(ctx),
 	})
 	if err != nil {
-		runAgentLog().Warn(fmt.Sprintf("Session DB creation failed (will retry next turn): %v", err))
+		pkgLog().Warn(fmt.Sprintf("Session DB creation failed (will retry next turn): %v", err))
 		return nil
 	}
 	a.sessionDBCreated = true

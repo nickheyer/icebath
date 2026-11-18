@@ -1,7 +1,6 @@
 package provider
 
 import (
-	"bytes"
 	"context"
 	"fmt"
 	"io"
@@ -33,26 +32,6 @@ func scriptAllInput(t *testing.T, answers ...string) {
 	swapFlowSeam(t, &flowLineInputFn, func(string) (string, error) { return next() })
 	swapFlowSeam(t, &flowRawInputFn, func(io.Writer, string) (string, error) { return next() })
 	swapFlowSeam(t, &flowSecretInputFn, func(string) (string, error) { return next() })
-}
-
-func TestUpgradeHermesModelSignsAConnectorFreeTierInInsteadOfRefusing(t *testing.T) {
-	_, env := installAnonPortal(t)
-	state, err := EnsurePortalIdentity(env, PortalIdentityOptions{Explicit: true})
-	if err != nil || !guestWithoutFreeTierIn(env, state) {
-		t.Fatalf("guest without free tier %v %v", state, err)
-	}
-	logins := 0
-	swapFlowSeam(t, &flowRunLoginFn, func(io.Writer, *Profile, func() error) bool {
-		logins++
-		return true
-	})
-	var out bytes.Buffer
-	if err := modelFlowNous(&ModelFlowRun{Ctx: env.ctx(), Env: env, Out: &out, Config: map[string]any{}}); err != nil {
-		t.Fatal(err)
-	}
-	if logins != 1 || strings.Contains(out.String(), UpgradeHint) {
-		t.Fatalf("logins %d out %q", logins, out.String())
-	}
 }
 
 func TestStaleOAuthTokenDetectionStaleOauthTokenTriggersReauth(t *testing.T) {
@@ -104,46 +83,7 @@ func TestModelFlowQwenOauthStaleTokenShowsReauthGuidance(t *testing.T) {
 	}
 }
 
-func TestModelFlowNousDoesNotRestoreStaleCustomApiKey(t *testing.T) {
-	h, ctx, out := pickerCaseHome(t)
-	writePickerConfig(t, h, "model:\n  provider: custom\n  default: glm-5.2\n  base_url: https://api.neuralwatt.com/v1\n  api_key: ${NEURALWATT_API_KEY}\n  api_mode: chat_completions\n")
-	raw, err := config.ReadUser(h)
-	if err != nil {
-		t.Fatal(err)
-	}
-	selected := "deepseek/deepseek-v4-flash"
-	swapFlowSeam(t, &flowNousAuthStateFn, func(*ModelFlowRun) (map[string]any, error) {
-		return map[string]any{"access_token": "nous-token", "portal_base_url": "https://portal.example.com"}, nil
-	})
-	swapFlowSeam(t, &flowResolveNousCredsFn, func(PoolEnv, bool, string) (map[string]any, error) {
-		return map[string]any{"base_url": "https://inference-api.nousresearch.com/v1", "api_key": "nous-key"}, nil
-	})
-	swapFlowSeam(t, &flowCuratedNousIDsFn, func(context.Context) []string { return []string{selected} })
-	swapFlowSeam(t, &flowPricingFn, func(context.Context, string, string, bool, bool) PricingTable { return PricingTable{} })
-	swapFlowSeam(t, &checkNousFreeTierFn, func(context.Context, bool, bool) bool { return false })
-	swapFlowSeam(t, &unionPortalPaidFn, func(_ context.Context, ids []string, pricing PricingTable, _ string, _ bool) ([]string, PricingTable) {
-		return ids, pricing
-	})
-	swapFlowSeam(t, &flowPromptModelSelectionFn, func(PoolEnv, io.Writer, ModelSelectionPrompt) (string, bool) { return selected, true })
-	swapFlowSeam(t, &flowEnableToolGatewayFn, func(PoolEnv, io.Writer, map[string]any, bool) (map[string]bool, error) { return nil, nil })
-	r := pickerCaseRun(t, ctx, h, out)
-	r.Config, r.CurrentModel = raw, "glm-5.2"
-	if err := modelFlowNous(r); err != nil {
-		t.Fatal(err)
-	}
-	model := readConfig(t, h)["model"].(map[string]any)
-	if model["provider"] != "nous" || model["default"] != selected || model["base_url"] != "https://inference-api.nousresearch.com/v1" {
-		t.Fatalf("model %v", model)
-	}
-	if _, has := model["api_key"]; has {
-		t.Fatalf("api_key kept %v", model)
-	}
-	if _, has := model["api_mode"]; has {
-		t.Fatalf("api_mode kept %v", model)
-	}
-}
-
-// Custom endpoint fixture home whose config model is the empty custom section the hermes cases load
+// Custom endpoint fixture home whose config model is the empty custom section the tests load
 func customFlowHome(t *testing.T) (string, *ModelFlowRun) {
 	t.Helper()
 	h, ctx, out := pickerCaseHome(t)
@@ -218,7 +158,7 @@ func TestModelFlowCustomPersistsSelectedApiMode(t *testing.T) {
 	}
 }
 
-// Records the request URL and Authorization header of every catalog request, the hermes picker_http fixture
+// Records the request URL and Authorization header of every catalog request, the picker_http fixture
 type pickerHTTPRecorder struct {
 	mu   sync.Mutex
 	seen [][2]string
@@ -289,7 +229,7 @@ func TestModelCommandPromptsToReuseOrReauthenticateCodexSession(t *testing.T) {
 		choices = choices[1:]
 		return c, nil
 	})
-	swapFlowSeam(t, &flowCodexStatusFn, func(PoolEnv) map[string]any { return map[string]any{"logged_in": true, "source": "hermes-auth-store"} })
+	swapFlowSeam(t, &flowCodexStatusFn, func(PoolEnv) map[string]any { return map[string]any{"logged_in": true, "source": "auth-store"} })
 	swapFlowSeam(t, &flowResolveCodexFn, func(PoolEnv, CodexResolveOptions) (map[string]any, error) {
 		return map[string]any{"api_key": "fresh-codex-token"}, nil
 	})
@@ -331,7 +271,7 @@ func TestProviderModelIdsPreferredKimiSetupFlowUsesSameCodingPlanCatalog(t *test
 	}
 }
 
-// Serves Ollama native /api/tags and rejects OpenAI /v1/models, recording every path like the hermes handler
+// Serves Ollama native /api/tags and rejects OpenAI /v1/models, recording every path like the handler
 func startFakeOllamaTagsServer(t *testing.T) (string, func() []string) {
 	t.Helper()
 	var mu sync.Mutex
@@ -358,7 +298,7 @@ func startFakeOllamaTagsServer(t *testing.T) (string, func() []string) {
 	}
 }
 
-// Radio list double recording the plain row labels and cancelling like the hermes side effect
+// Radio list double recording the plain row labels and cancelling like the side effect
 func captureMenuAndCancel(t *testing.T) *[]string {
 	t.Helper()
 	items := &[]string{}
@@ -410,42 +350,6 @@ func TestLocalOllamaModelDiscoveryNamedCustomModelFlowPreservesExplicitOllamaMod
 	seen := paths()
 	if !reflect.DeepEqual(*menu, []string{"curated-only", "Cancel"}) || containsPath(seen, "/api/tags") || containsPath(seen, "/v1/models") {
 		t.Fatalf("menu %v paths %v", *menu, seen)
-	}
-}
-
-// Scripts the Portal for the setup flow catalog and the GUI picker like the hermes _stub_portal helper
-func scriptNousPortalPickers(t *testing.T, freeTier bool, pricing PricingTable, allowed map[string]bool) {
-	t.Helper()
-	swapFlowSeam(t, &pickerNousPricingFn, func(context.Context) PricingTable { return pricing })
-	swapFlowSeam(t, &checkNousFreeTierFn, func(context.Context, bool, bool) bool { return freeTier })
-	swapFlowSeam(t, &fetchNousRecommendedModelsFn, func(context.Context, string, bool) map[string]any { return nil })
-	swapFlowSeam(t, &nousPolicyAllowedIDsFn, func(context.Context, bool) (map[string]bool, bool) { return allowed, allowed != nil })
-}
-
-func TestCliSetupFlowAndGuiPickerAgree(t *testing.T) {
-	h, ctx, out := pickerCaseHome(t)
-	pricing := PricingTable{"nous/a": cloneMap(listPrice), "sale/x": salePrice(80), "sale/y": salePrice(30)}
-	scriptNousPortalPickers(t, false, pricing, nil)
-	cli := nousModelCatalog(pickerCaseRun(t, ctx, h, out), false, "", []string{"nous/a"}, pricing)
-	if cli == nil {
-		t.Fatal("no catalog")
-	}
-	if gui := nousPickerModelIDs(ctx, map[string][]string{"nous": {"nous/a"}}, false); !reflect.DeepEqual(cli.modelIDs, gui) {
-		t.Fatalf("cli %v gui %v", cli.modelIDs, gui)
-	}
-}
-
-func TestAllThreePaidPickersAgree(t *testing.T) {
-	resetNousSeams(t)
-	pricing := PricingTable{"curated/only": cloneMap(listPrice), "sale/x": salePrice(80), "sale/y": salePrice(30)}
-	login := loginPickerIDs(t, false, pricing, nil)
-	h, ctx, out := pickerCaseHome(t)
-	scriptNousPortalPickers(t, false, pricing, nil)
-	cli := nousModelCatalog(pickerCaseRun(t, ctx, h, out), false, "", []string{"curated/only"}, pricing)
-	gui := nousPickerModelIDs(ctx, map[string][]string{"nous": {"curated/only"}}, false)
-	want := []string{"curated/only", "sale/x", "sale/y"}
-	if cli == nil || !reflect.DeepEqual(login, want) || !reflect.DeepEqual(cli.modelIDs, want) || !reflect.DeepEqual(gui, want) {
-		t.Fatalf("login %v cli %+v gui %v", login, cli, gui)
 	}
 }
 

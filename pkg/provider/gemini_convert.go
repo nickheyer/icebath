@@ -720,9 +720,9 @@ func buildGeminiRequest(in geminiRequestInput) map[string]any {
 	forcedCall := fcc["mode"] == "ANY"
 	if len(jsonOutput) > 0 && (forcedCall || (len(tools) > 0 && !isGemini3)) {
 		if forcedCall {
-			catalogLog.Debug("Gemini: dropping JSON response_format — tool_choice forces function calling (mode ANY)")
+			pkgLog().Debug("Gemini: dropping JSON response_format — tool_choice forces function calling (mode ANY)")
 		} else {
-			catalogLog.Debug("Gemini: dropping JSON response_format — pre-Gemini-3 model with tools")
+			pkgLog().Debug("Gemini: dropping JSON response_format — pre-Gemini-3 model with tools")
 		}
 		jsonOutput = map[string]any{}
 	}

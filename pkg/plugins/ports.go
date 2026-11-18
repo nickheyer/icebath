@@ -147,6 +147,22 @@ func portCatalogEntry(name string) *PluginCatalogEntry {
 	return GetCatalogEntry(name, "")
 }
 
+// Catalog entry of a name, the compiled pin of a catalog port without asking the live catalog
+func catalogEntryFor(ctx context.Context, name string) *PluginCatalogEntry {
+	if entry := portCatalogEntry(name); entry != nil {
+		return entry
+	}
+	return GetLiveCatalogEntry(ctx, name)
+}
+
+// Kill list entry naming a candidate, the bundled list alone for a catalog port whose files the binary carries
+func findRemovedFor(ctx context.Context, port bool, candidate string) *RemovedEntry {
+	if port {
+		return matchRemoved(candidate, loadRemovedList(""))
+	}
+	return FindRemoved(ctx, candidate, "")
+}
+
 // Bare repository url a source compares as, scheme and host kept, trailing slash and .git dropped
 func comparableRepo(url string) string {
 	return strings.TrimSuffix(strings.TrimRight(strings.TrimSpace(url), "/"), ".git")
@@ -168,17 +184,6 @@ func compiledCatalogTree(gitURL, subdir, revision string) (fs.FS, bool) {
 		return plugintree.CatalogTree(name)
 	}
 	return nil, false
-}
-
-// Catalog entry an install of a live entry uses, the in-tree entry at the compiled pin for a catalog port
-func portPinnedEntry(entry *PluginCatalogEntry) *PluginCatalogEntry {
-	if entry == nil {
-		return nil
-	}
-	if pinned := portCatalogEntry(entry.Name); pinned != nil {
-		return pinned
-	}
-	return entry
 }
 
 // Revision a catalog entry installs at, the explicit ref when one is given
@@ -380,10 +385,7 @@ func installBuiltinPortCommand(ctx context.Context, h string, console *Console, 
 	if strings.TrimSpace(opts.Ref) != "" {
 		return fail(console, fmt.Sprintf("[red]Error:[/red] --ref selects a Git revision; '%s' is compiled into Icebath and has none.", m.Name))
 	}
-	identifier := builtinPortSource + m.Name
-	target, manifest, name, err := recordedInstall(ctx, h, func() (string, map[string]any, string, error) {
-		return installBuiltinPort(ctx, m.Name, opts.Force, opts.YesDeps)
-	}, "", identifier)
+	target, manifest, name, err := installBuiltinPort(ctx, m.Name, opts.Force, opts.YesDeps)
 	var opErr *PluginOperationError
 	if errors.As(err, &opErr) {
 		return fail(console, fmt.Sprintf("[red]Error:[/red] %v", err))

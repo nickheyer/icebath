@@ -192,7 +192,7 @@ func TestLightpandaLaunchSpawnsServeOnLoopback(t *testing.T) {
 	if !slices.Equal(got.argv, want) {
 		t.Fatalf("argv %v", got.argv)
 	}
-	if len(got.procEnv) != 1 || got.procEnv["PATH"] != "/usr/bin" {
+	if len(got.procEnv) != 2 || got.procEnv["PATH"] != "/usr/bin" || got.procEnv[lightpandaTelemetryOff] != "true" {
 		t.Fatalf("env %v", got.procEnv)
 	}
 	if got.server.CDPURL() != "http://127.0.0.1:43111" || *got.server.StartTime != 111 {
@@ -701,8 +701,6 @@ func TestLegacyBrowserUseCloudConfig(t *testing.T) {
 		{map[string]any{}, "k", true},
 		{map[string]any{"cloud_provider": "browser-use"}, "k", true},
 		{map[string]any{"cloud_provider": "browserbase"}, "k", false},
-		{map[string]any{"cloud_provider": "nous"}, "k", false},
-		{map[string]any{"use_gateway": true}, "k", false},
 		{map[string]any{}, "", false},
 	} {
 		env := testEnv(t)

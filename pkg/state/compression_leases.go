@@ -3,7 +3,6 @@ package state
 import (
 	"context"
 	"fmt"
-	"log/slog"
 	"math"
 )
 
@@ -36,7 +35,7 @@ func claimLeaseRow(ctx context.Context, conn SQLiteConn, table, keyCol, key, hol
 // Write that logs a warning instead of failing on a database error
 func (d *SessionDB) writeSQLLogged(ctx context.Context, op, sessionID, query string, params []any) {
 	if err := d.writeSQL(ctx, query, params, false, nil); err != nil {
-		slog.Warn(fmt.Sprintf("%s(%s) failed: %s", op, sessionID, errText(err)))
+		pkgLog().Warn(fmt.Sprintf("%s(%s) failed: %s", op, sessionID, errText(err)))
 	}
 }
 
@@ -48,7 +47,7 @@ func (d *SessionDB) RefreshCompressionLock(sessionID, holder string, ttlSeconds 
 	n, err := d.writeRowcount(context.Background(), "UPDATE compression_locks SET expires_at = ? WHERE session_id = ? AND holder = ?",
 		[]any{now() + ttlSeconds, sessionID, holder}, nil)
 	if err != nil {
-		slog.Warn(fmt.Sprintf("refresh_compression_lock(%s) failed: %s", sessionID, errText(err)))
+		pkgLog().Warn(fmt.Sprintf("refresh_compression_lock(%s) failed: %s", sessionID, errText(err)))
 		return false
 	}
 	return n > 0
@@ -73,11 +72,11 @@ func (d *SessionDB) TryAcquireCompressionLock(sessionID, holder string, ttlSecon
 		return err
 	}, nil)
 	if err != nil {
-		slog.Warn(fmt.Sprintf("try_acquire_compression_lock(%s) failed: %s", sessionID, errText(err)))
+		pkgLog().Warn(fmt.Sprintf("try_acquire_compression_lock(%s) failed: %s", sessionID, errText(err)))
 		return false
 	}
 	if pyTruthy(reclaimed) {
-		slog.Warn(fmt.Sprintf("Reclaimed stale compression lock for session=%s (holder=%s)", sessionID, pyStr(reclaimed)))
+		pkgLog().Warn(fmt.Sprintf("Reclaimed stale compression lock for session=%s (holder=%s)", sessionID, pyStr(reclaimed)))
 	}
 	return acquired
 }
@@ -104,7 +103,7 @@ func (d *SessionDB) GetCompressionLockHolder(sessionID string) (*string, error) 
 	return &holder, nil
 }
 
-// Test overrides of the turn lease steps hermes tests monkeypatch, nil fields running the real step
+// Test overrides of the turn lease steps tests swap, nil fields running the real step
 type turnLeaseSeams struct {
 	keyOnConn  func(ctx context.Context, conn SQLiteConn, sessionID string) (string, error)
 	key        func(sessionID string) (string, error)

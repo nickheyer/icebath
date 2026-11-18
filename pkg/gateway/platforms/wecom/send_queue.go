@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"log/slog"
 	"sync"
 	"time"
 
@@ -117,7 +116,7 @@ func (q *ChatSendQueue) EnqueueChatSend(ctx context.Context, chatID string, send
 	queues, laneName := q.lane(isControl)
 	l, ok := queues[key]
 	if !ok {
-		slog.Debug(fmt.Sprintf("[%s] Creating %s queue + worker for chat %s", q.Name, laneName, key))
+		pkgLog().Debug(fmt.Sprintf("[%s] Creating %s queue + worker for chat %s", q.Name, laneName, key))
 		l = &sendLane{notify: make(chan struct{}, 1)}
 		queues[key] = l
 		go q.sendWorker(key, l, isControl)
@@ -125,7 +124,7 @@ func (q *ChatSendQueue) EnqueueChatSend(ctx context.Context, chatID string, send
 	q.mu.Unlock()
 	job := sendJob{send: send, result: make(chan sendResult, 1)}
 	l.mu.Lock()
-	slog.Debug(fmt.Sprintf("[%s] Enqueuing send for chat %s (lane=%s, qsize=%d)", q.Name, key, laneName, len(l.jobs)))
+	pkgLog().Debug(fmt.Sprintf("[%s] Enqueuing send for chat %s (lane=%s, qsize=%d)", q.Name, key, laneName, len(l.jobs)))
 	l.jobs = append(l.jobs, job)
 	l.mu.Unlock()
 	select {
@@ -165,7 +164,7 @@ func (q *ChatSendQueue) nextJob(l *sendLane) (sendJob, bool) {
 // Drains one lane under the token bucket, a shutdown abandoning the send in flight and failing the queued ones
 func (q *ChatSendQueue) sendWorker(chatKey string, l *sendLane, isControl bool) {
 	if !isControl {
-		slog.Debug(fmt.Sprintf("[%s] Normal send worker started for chat %s", q.Name, chatKey))
+		pkgLog().Debug(fmt.Sprintf("[%s] Normal send worker started for chat %s", q.Name, chatKey))
 	}
 	defer func() {
 		l.mu.Lock()
@@ -183,7 +182,7 @@ func (q *ChatSendQueue) sendWorker(chatKey string, l *sendLane, isControl bool) 
 		}
 		if wait := q.bucketTryConsume(chatKey, isControl); wait > 0 {
 			if !isControl {
-				slog.Debug(fmt.Sprintf("[%s] Normal worker rate-limited for chat %s, waiting %.1fs", q.Name, chatKey, wait))
+				pkgLog().Debug(fmt.Sprintf("[%s] Normal worker rate-limited for chat %s, waiting %.1fs", q.Name, chatKey, wait))
 			}
 			if sendSleep(q.ctx, wait) != nil {
 				return

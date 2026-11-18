@@ -41,7 +41,7 @@ func (r *GatewayRunner) hmEstopGate(ctx context.Context, event *gateway.MessageE
 		return "", false
 	}
 	if id := event.HeartbeatSessionID(); id != nil && *id != "" {
-		inboundLog().Debug("Heartbeat turn dropped by global emergency stop")
+		pkgLog().Debug("Heartbeat turn dropped by global emergency stop")
 		return "", true
 	}
 	platform, chat := "unknown", "unknown"
@@ -51,6 +51,6 @@ func (r *GatewayRunner) hmEstopGate(ctx context.Context, event *gateway.MessageE
 			chat = source.ChatID
 		}
 	}
-	inboundLog().Info(fmt.Sprintf("Gateway turn paused by global emergency stop (platform=%s chat=%s)", platform, chat))
+	pkgLog().Info(fmt.Sprintf("Gateway turn paused by global emergency stop (platform=%s chat=%s)", platform, chat))
 	return notice, true
 }

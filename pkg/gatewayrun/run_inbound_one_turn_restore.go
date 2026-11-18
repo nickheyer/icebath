@@ -9,7 +9,7 @@ func (r *GatewayRunner) restorePendingOneTurnModelOverride(ctx context.Context, 
 	}
 	defer func() {
 		if rec := recover(); rec != nil {
-			runLog().Debug("Failed to restore one-turn model override", "error", rec)
+			pkgLog().Debug("Failed to restore one-turn model override", "error", rec)
 		}
 	}()
 	var snapshot map[string]any

@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"log/slog"
 	"strings"
 	"time"
 
@@ -350,7 +349,7 @@ func isSkippablePlaceholder(text string, mediaCount int) bool {
 
 func (m *PlaceholderFilterMiddleware) Handle(ctx context.Context, ic *InboundContext, next func() error) error {
 	if isSkippablePlaceholder(ic.RawText, len(ic.MediaRefs)) {
-		slog.Debug(fmt.Sprintf("[%s] Skipping placeholder message: %s", ic.Adapter.Name(), pyrepr.StrRepr(ic.RawText)))
+		pkgLog().Debug(fmt.Sprintf("[%s] Skipping placeholder message: %s", ic.Adapter.Name(), pyrepr.StrRepr(ic.RawText)))
 		return nil
 	}
 	return next()
@@ -415,7 +414,7 @@ func (m *OwnerCommandMiddleware) Handle(ctx context.Context, ic *InboundContext,
 		return err
 	}
 	if matched != "" && !isOwner {
-		slog.Info(fmt.Sprintf("[%s] Reject non-owner slash command: chat=%s from=%s cmd=%s", adapter.Name(), ic.ChatID,
+		pkgLog().Info(fmt.Sprintf("[%s] Reject non-owner slash command: chat=%s from=%s cmd=%s", adapter.Name(), ic.ChatID,
 			pyrepr.Str(ic.FromAccount), matched))
 		chatID := ic.ChatID
 		denial := i18n.T(ctx, "platform.yuanbao.owner_command_denied", "", map[string]any{"command": matched})
@@ -426,7 +425,7 @@ func (m *OwnerCommandMiddleware) Handle(ctx context.Context, ic *InboundContext,
 		return nil
 	}
 	if matched != "" && isOwner && cmdLine != "" {
-		slog.Info(fmt.Sprintf("[%s] Bot owner slash command: chat=%s from=%s cmd=%s", adapter.Name(), ic.ChatID,
+		pkgLog().Info(fmt.Sprintf("[%s] Bot owner slash command: chat=%s from=%s cmd=%s", adapter.Name(), ic.ChatID,
 			pyrepr.Str(ic.FromAccount), matched))
 		ic.OwnerCommand = &matched
 		ic.RawText = cmdLine
@@ -555,7 +554,7 @@ func observeGroupMessage(ctx context.Context, adapter *YuanbaoAdapter, source *g
 		return store.AppendToTranscript(ctx, sessionEntry.SessionID, entry, false)
 	}()
 	if err != nil {
-		slog.Warn(fmt.Sprintf("[%s] Failed to observe group message: %s", adapter.Name(), errText(err)))
+		pkgLog().Warn(fmt.Sprintf("[%s] Failed to observe group message: %s", adapter.Name(), errText(err)))
 	}
 }
 
@@ -572,7 +571,7 @@ func (m *GroupAtGuardMiddleware) Handle(ctx context.Context, ic *InboundContext,
 				msgID = ic.MsgID
 			}
 			observeGroupMessage(ctx, adapter, ic.Source, pyrepr.Or(ic.SenderNickname, ic.FromAccount), ic.RawText, ic, msgID, ic.ForwardedRecords)
-			slog.Info(fmt.Sprintf("[%s] Group message observed (no @bot): chat=%s from=%s", adapter.Name(), ic.ChatID, pyrepr.Str(ic.FromAccount)))
+			pkgLog().Info(fmt.Sprintf("[%s] Group message observed (no @bot): chat=%s from=%s", adapter.Name(), ic.ChatID, pyrepr.Str(ic.FromAccount)))
 			return nil
 		}
 	}
@@ -740,9 +739,9 @@ func extractMediaRefsFromTranscript(ctx context.Context, ic *InboundContext) ([]
 		}
 		var unreadable *gateway.TranscriptReadError
 		if errors.As(err, &unreadable) {
-			slog.Warn(fmt.Sprintf("[%s] quote transcript lookup: transcript unreadable: %s", adapter.Name(), errText(err)))
+			pkgLog().Warn(fmt.Sprintf("[%s] quote transcript lookup: transcript unreadable: %s", adapter.Name(), errText(err)))
 		} else {
-			slog.Warn(fmt.Sprintf("[%s] quote transcript lookup failed: %s", adapter.Name(), errText(err)))
+			pkgLog().Warn(fmt.Sprintf("[%s] quote transcript lookup failed: %s", adapter.Name(), errText(err)))
 		}
 	}
 	return mediaRefs, nil

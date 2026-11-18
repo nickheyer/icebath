@@ -167,7 +167,7 @@ func (c *CLI) handleFastCommand(cmd string) {
 		"scope": c.scopeOutcome(explicitGlobal, saved)})))
 }
 
-// Handles /debug, uploading the debug report and logs, nous for the internal service and local for no upload
+// Handles /debug, uploading the debug report and logs, local for no upload
 func (c *CLI) handleDebugCommand(cmdOriginal string) {
 	words := map[string]bool{}
 	fields := strings.Fields(cmdOriginal)
@@ -175,7 +175,7 @@ func (c *CLI) handleDebugCommand(cmdOriginal string) {
 		words[pystr.Lower(w)] = true
 	}
 	local := words["local"]
-	ns := map[string]any{"debug_command": "share", "lines": 200, "expire": 7, "local": local, "nous": words["nous"] && !local, "yes": true}
+	ns := map[string]any{"debug_command": "share", "lines": 200, "expire": 7, "local": local, "yes": true}
 	if _, err := selfupdate.RunDebug(c.ctx, home.Dir(c.ctx), ns, c.console.Out); err != nil {
 		panic(err)
 	}

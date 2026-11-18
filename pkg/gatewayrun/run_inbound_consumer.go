@@ -3,7 +3,6 @@ package gatewayrun
 import (
 	"context"
 	"fmt"
-	"log/slog"
 
 	"github.com/nickheyer/icebath/pkg/agent"
 	"github.com/nickheyer/icebath/pkg/gateway"
@@ -12,9 +11,6 @@ import (
 )
 
 const postAdmissionHook = "post_gateway_admission"
-
-// Logger carrying the record name of the hermes consumer module
-func consumerLog() *slog.Logger { return slog.Default().With("logger", "gateway.run_inbound_consumer") }
 
 // Context scoped to the routed profile of the source when the runner multiplexes profiles
 func (r *GatewayRunner) routedScope(ctx context.Context, source *gateway.SessionSource) (context.Context, error) {
@@ -56,7 +52,7 @@ func runPostAdmissionHook(ctx context.Context, r *GatewayRunner, event *gateway.
 		if ctx.Err() != nil {
 			return false, nil, ctx.Err()
 		}
-		consumerLog().Warn(postAdmissionHook+" failed; continuing with the agent turn", "exc_info", err)
+		pkgLog().Warn(postAdmissionHook+" failed; continuing with the agent turn", "exc_info", err)
 		return false, nil, nil
 	}
 	for _, result := range results {
@@ -64,7 +60,7 @@ func runPostAdmissionHook(ctx context.Context, r *GatewayRunner, event *gateway.
 		if !ok || dict["action"] != "handled" {
 			continue
 		}
-		consumerLog().Info(fmt.Sprintf("%s: a plugin handled the message for session %s", postAdmissionHook, sessionKey))
+		pkgLog().Info(fmt.Sprintf("%s: a plugin handled the message for session %s", postAdmissionHook, sessionKey))
 		if text, ok := dict["reply"].(string); ok && pystr.Strip(text) != "" {
 			return true, &text, nil
 		}

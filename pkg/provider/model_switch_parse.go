@@ -23,7 +23,6 @@ type ModelSwitchResult struct {
 	RequestOverrides     map[string]any
 	ErrorMessage         string
 	WarningMessage       string
-	UsageNotice          string
 	ProviderLabel        string
 	ResolvedViaAlias     string
 	Capabilities         *ModelCapabilities

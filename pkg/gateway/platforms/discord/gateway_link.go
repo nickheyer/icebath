@@ -8,7 +8,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"log/slog"
 	"math"
 	"math/rand/v2"
 	"net"
@@ -214,7 +213,7 @@ func (l *gatewayLink) start(ctx context.Context, token string) error {
 			continue
 		}
 		retry := backoff.delay()
-		slog.Error(fmt.Sprintf("Attempting a reconnect in %.2fs: %s", retry.Seconds(), openErr))
+		pkgLog().Error(fmt.Sprintf("Attempting a reconnect in %.2fs: %s", retry.Seconds(), openErr))
 		select {
 		case <-time.After(retry):
 		case <-ctx.Done():

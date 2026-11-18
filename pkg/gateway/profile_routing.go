@@ -3,7 +3,6 @@ package gateway
 import (
 	"context"
 	"fmt"
-	"log/slog"
 	"sort"
 	"strings"
 
@@ -183,7 +182,7 @@ func coerceRouteID(value any) *string {
 		s := pyrepr.Str(value)
 		return &s
 	}
-	slog.Warn(fmt.Sprintf("Profile route discriminator %s (type %s) can never match an inbound id — quote it in config.yaml (e.g. chat_id: \"%s\").",
+	pkgLog().Warn(fmt.Sprintf("Profile route discriminator %s (type %s) can never match an inbound id — quote it in config.yaml (e.g. chat_id: \"%s\").",
 		pyrepr.Repr(value), pyrepr.TypeName(value), pyrepr.Str(value)))
 	s := pyrepr.Str(value)
 	return &s
@@ -221,7 +220,7 @@ func ParseProfileRoutes(ctx context.Context, raw any) ([]*ProfileRoute, error) {
 			profile = ""
 		}
 		if !pyrepr.Truthy(platform) || !pyrepr.Truthy(profile) {
-			slog.Warn(fmt.Sprintf("Skipping profile route %s: missing platform or profile", pyrepr.Str(name)))
+			pkgLog().Warn(fmt.Sprintf("Skipping profile route %s: missing platform or profile", pyrepr.Str(name)))
 			continue
 		}
 		normalized, err := profiles.NormalizeProfileNameValue(profile)
@@ -230,12 +229,12 @@ func ParseProfileRoutes(ctx context.Context, raw any) ([]*ProfileRoute, error) {
 			err = profiles.ValidateProfileName(normalized)
 		}
 		if err != nil {
-			slog.Warn(fmt.Sprintf("Skipping profile route %s: invalid profile name %s", pyrepr.Str(name), pyrepr.Repr(profile)))
+			pkgLog().Warn(fmt.Sprintf("Skipping profile route %s: invalid profile name %s", pyrepr.Str(name), pyrepr.Repr(profile)))
 			continue
 		}
 		userID, hasUser := entry["user_id"]
 		if s, isStr := userID.(string); hasUser && (userID == nil || isStr && pystr.Strip(s) == "") {
-			slog.Warn(fmt.Sprintf("Skipping profile route %s: user_id cannot be null or empty", pyrepr.Str(name)))
+			pkgLog().Warn(fmt.Sprintf("Skipping profile route %s: user_id cannot be null or empty", pyrepr.Str(name)))
 			continue
 		}
 		enabled, ok := entry["enabled"]
@@ -258,7 +257,7 @@ func ParseProfileRoutes(ctx context.Context, raw any) ([]*ProfileRoute, error) {
 		})
 	}
 	sort.SliceStable(routes, func(i, j int) bool { return routes[i].Specificity() > routes[j].Specificity() })
-	slog.Debug(fmt.Sprintf("Loaded %d profile routes (most-specific-first)", len(routes)))
+	pkgLog().Debug(fmt.Sprintf("Loaded %d profile routes (most-specific-first)", len(routes)))
 	return routes, nil
 }
 

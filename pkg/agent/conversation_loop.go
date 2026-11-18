@@ -15,9 +15,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/botmode"
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyurl"
 	"github.com/nickheyer/icebath/pkg/mcp"
-	"github.com/nickheyer/icebath/pkg/observability"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/skills"
 	"github.com/nickheyer/icebath/pkg/state"
@@ -48,7 +46,7 @@ var apiCallModules = map[string]bool{"chat_completion_helpers": true}
 
 var loopNow = func() float64 { return float64(time.Now().UnixNano()) / 1e9 }
 
-// Prompt builder, tool pin helpers and capability probe of the restore path, swapped by tests like the hermes patches
+// Prompt builder, tool pin helpers and capability probe of the restore path, swapped by tests
 var (
 	loopBuildSystemPrompt           = BuildSystemPrompt
 	loopRestoreAgentToolPrefix      = mcp.RestoreAgentToolPrefix
@@ -104,7 +102,7 @@ func maybeInjectRunBudgetWrapup(a *AIAgent, messages []*state.Message) bool {
 			return false
 		}
 		a.runBudgetWrapupInjected = true
-		conversationLoopLog().Info(fmt.Sprintf("Run budget wrap-up notice injected (budget=%.0fs, elapsed=%.0fs)", budget, loopNow()-started))
+		pkgLog().Info(fmt.Sprintf("Run budget wrap-up notice injected (budget=%.0fs, elapsed=%.0fs)", budget, loopNow()-started))
 		return true
 	}
 	return false
@@ -314,7 +312,7 @@ func ollamaContextLimitError(a *AIAgent, requestTokens int) string {
 		}
 		return s
 	}
-	conversationLoopLog().Warn(fmt.Sprintf("Ollama runtime context too small for Icebath tool use: model=%s provider=%s base_url=%s "+
+	pkgLog().Warn(fmt.Sprintf("Ollama runtime context too small for Icebath tool use: model=%s provider=%s base_url=%s "+
 		"runtime_context=%d minimum_context=%d estimated_request_tokens=%d tool_count=%d session=%s",
 		model, orUnknown(a.provider, "unknown"), orUnknown(a.baseURL, "unknown base URL"), runtimeCtx, provider.MinimumContextLength,
 		requestTokens, len(a.tools), orUnknown(a.sessionID, "none")))
@@ -364,21 +362,10 @@ func maybeGrowLocalWindow(a *AIAgent, compressor ContextEngine, requestTokens in
 	}
 	grown, ok, err := provider.MaybeGrowWindow(a.model, a.baseURL, requestTokens, current, nil)
 	if err != nil {
-		conversationLoopLog().Debug(fmt.Sprintf("local window growth check failed: %s", err))
+		pkgLog().Debug(fmt.Sprintf("local window growth check failed: %s", err))
 		return 0, false
 	}
 	return grown, ok
-}
-
-// Nous Portal entitlement copy, the usage window top up step first on a billing wall
-func nousEntitlementMessage(ctx context.Context, capability string, billing bool) string {
-	info := provider.GetNousPortalAccountInfo(ctx, true)
-	if billing {
-		if guidance := provider.FormatUsageWindowBlockGuidance(info); guidance != "" {
-			return guidance
-		}
-	}
-	return provider.FormatNousPortalEntitlementMessage(info, capability, true)
 }
 
 // Prints each line of the message as a hint, false when there is nothing to print
@@ -401,10 +388,6 @@ func pySplitLines(s string) []string {
 	return lines
 }
 
-func printNousEntitlementGuidance(ctx context.Context, a *AIAgent, capability string) bool {
-	return printGuidance(a, nousEntitlementMessage(ctx, capability, false))
-}
-
 // System prompt as sent to the provider for observability hooks, nil when the request carries none
 func systemPromptForHooks(apiKwargs map[string]any, requestMessages any) any {
 	if sp, ok := apiKwargs["system"]; ok && sp != nil {
@@ -422,19 +405,8 @@ func systemPromptForHooks(apiKwargs map[string]any, requestMessages any) any {
 	return nil
 }
 
-func isNousInferenceRoute(prov, baseURL string) bool {
-	if strings.ToLower(strings.TrimSpace(prov)) == "nous" {
-		return true
-	}
-	ok, _ := pyurl.BaseURLHostMatches(baseURL, "inference-api.nousresearch.com")
-	return ok
-}
-
 // Actionable billing or entitlement guidance for the active route
 var billingOrEntitlementMessage = func(ctx context.Context, capability, prov, baseURL, model string, unverified bool) string {
-	if isNousInferenceRoute(prov, baseURL) {
-		return nousEntitlementMessage(ctx, capability, true)
-	}
 	providerLabel := strings.TrimSpace(prov)
 	if providerLabel == "" {
 		providerLabel = "the selected provider"
@@ -506,108 +478,26 @@ func billingTerminalLabel(summary string, unverified bool) string {
 	return "Billing or credits exhausted: " + summary
 }
 
-// UsageWindowRefusal is a usage window refusal sentence, its reset time in epoch seconds and the structured limit
-type UsageWindowRefusal struct {
-	Message  string
-	ResetsAt *float64
-	Limit    map[string]any
-}
-
-// Usage window refusal in the words of the credits limit line, empty for every other billing failure
-func usageWindowRefusal(ctx context.Context, a *AIAgent, classified *provider.Classified, apiMessages []any) (out UsageWindowRefusal) {
-	if classified == nil || !pyTruthy(classified.Context["usage_window"]) {
-		return UsageWindowRefusal{}
-	}
-	defer func() {
-		if r := recover(); r != nil {
-			conversationLoopLog().Debug("Usage-window refusal parse failed", "error", fmt.Sprint(r))
-			out = UsageWindowRefusal{}
-		}
-	}()
-	capture := a.creditsCapture()
-	st := capture.Credits()
-	topTier := provider.CurrentModelIsTopTier(capture)
-	stop := ""
-	if st != nil {
-		stop, _ = provider.WindowHardStop(st, false, topTier)
-	}
-	display, _ := classified.Context["display_message"].(string)
-	serverMessage := strings.TrimSpace(classified.Message)
-	var message string
-	switch {
-	case strings.TrimSpace(display) != "":
-		message = strings.TrimSpace(display)
-	case stop != "":
-		message = strings.TrimSpace(strings.TrimPrefix(stop, "✕ "))
-	case serverMessage != "":
-		message = serverMessage
-	default:
-		return UsageWindowRefusal{}
-	}
-	var resetsMs *int64
-	if st != nil {
-		resetsMs = provider.WindowStopResetsAtMs(st, topTier)
-	}
-	var limit map[string]any
-	func() {
-		defer func() {
-			if r := recover(); r != nil {
-				conversationLoopLog().Debug("Usage-window limit payload unavailable", "error", fmt.Sprint(r))
-				limit = nil
-			}
-		}()
-		needed := 0
-		if len(apiMessages) > 0 {
-			needed = provider.EstimateMessagesTokens(apiRowsToMessages(apiMessages), provider.CurrentImageTokenCost(ctx), true)
-		}
-		if hit := provider.LimitHitFor(ctx, capture, message, needed); hit != nil {
-			limit = hit.ToPayload()
-		}
-	}()
-	out = UsageWindowRefusal{Message: message, Limit: limit}
-	if resetsMs != nil && *resetsMs > 0 {
-		v := float64(*resetsMs) / 1000
-		out.ResetsAt = &v
-	}
-	return out
-}
-
-// Terminal result of a billing classified failure, a usage window refusal reading as its stop line
+// Terminal result of a billing classified failure
 func billingFailureResult(ctx context.Context, classified *provider.Classified, summary string, messages []*state.Message, apiCallCount int,
-	prov, baseURL, model string, guidance *string, window UsageWindowRefusal) map[string]any {
+	prov, baseURL, model string, guidance *string) map[string]any {
 	unverified := classified.BillingUnverified()
-	if guidance == nil && window.Message == "" {
+	if guidance == nil {
 		g := billingOrEntitlementMessage(ctx, "model access", prov, baseURL, model, unverified)
 		guidance = &g
 	}
-	guidanceText := ""
-	if guidance != nil {
-		guidanceText = *guidance
-	}
-	final := window.Message
-	if final == "" {
-		final = billingTerminalLabel(summary, unverified)
-		if guidanceText != "" {
-			final += "\n\n" + guidanceText
-		}
+	final := billingTerminalLabel(summary, unverified)
+	if *guidance != "" {
+		final += "\n\n" + *guidance
 	}
 	result := map[string]any{}
-	if window.Message != "" {
-		result["usage_window_message"] = window.Message
-		if window.ResetsAt != nil {
-			result["failure_resets_at"] = *window.ResetsAt
-		}
-		if len(window.Limit) > 0 {
-			result["usage_limit"] = window.Limit
-		}
-	}
 	for k, v := range map[string]any{
 		"final_response": final, "messages": messages, "api_calls": apiCallCount,
 		"completed": false, "failed": true, "error": summary,
 		"failure_reason":     string(classified.Reason),
 		"failure_retryable":  classified.Retryable,
 		"billing_unverified": unverified,
-		"billing_block":      billingBlockDict(prov, baseURL, model, guidanceText, unverified),
+		"billing_block":      billingBlockDict(prov, baseURL, model, *guidance, unverified),
 	} {
 		result[k] = v
 	}
@@ -651,7 +541,7 @@ func persistSystemPrompt(ctx context.Context, a *AIAgent, failureMessage string,
 	}
 	prompt := a.cachedSystemPrompt
 	if err := a.sessionDB.UpdateSystemPrompt(ctx, a.sessionID, &prompt); err != nil {
-		conversationLoopLog().Warn(fmt.Sprintf(failureMessage, a.sessionID, err))
+		pkgLog().Warn(fmt.Sprintf(failureMessage, a.sessionID, err))
 		return
 	}
 	if persistTools {
@@ -675,7 +565,7 @@ func restorePinnedTools(ctx context.Context, a *AIAgent, sessionRow *pyjson.Obje
 	func() {
 		defer func() {
 			if r := recover(); r != nil {
-				conversationLoopLog().Debug("tool prefix restore skipped", "error", fmt.Sprint(r))
+				pkgLog().Debug("tool prefix restore skipped", "error", fmt.Sprint(r))
 			}
 		}()
 		if pyTruthy(pin) {
@@ -701,13 +591,13 @@ func refreshBotChatTools(ctx context.Context, a *AIAgent) {
 			if isUserInterruptPanic(r) {
 				panic(r)
 			}
-			conversationLoopLog().Warn(fmt.Sprintf("Bot Chat capability refresh kept the previous tools for session %s: %v", a.sessionID, r))
+			pkgLog().Warn(fmt.Sprintf("Bot Chat capability refresh kept the previous tools for session %s: %v", a.sessionID, r))
 		}
 	}()
 	if policy != nil {
 		launch, ok := policy.(*gateway.LocalSessionPolicy)
 		if !ok {
-			conversationLoopLog().Warn(fmt.Sprintf("Bot Chat capability refresh kept the previous tools for session %s: %s",
+			pkgLog().Warn(fmt.Sprintf("Bot Chat capability refresh kept the previous tools for session %s: %s",
 				a.sessionID, fmt.Sprintf("'%T' object has no attribute 'toolsets'", policy)))
 			return
 		}
@@ -720,7 +610,7 @@ func refreshBotChatTools(ctx context.Context, a *AIAgent) {
 
 // Restores the cached system prompt from the session row or builds and persists it fresh
 func restoreOrBuildSystemPrompt(ctx context.Context, a *AIAgent, systemMessage *string, conversationHistory []map[string]any) error {
-	log := conversationLoopLog()
+	log := pkgLog()
 	storedPrompt, storedState := "", "missing"
 	var sessionRow *pyjson.Object
 	if len(conversationHistory) > 0 && a.sessionDB != nil {
@@ -770,13 +660,6 @@ func restoreOrBuildSystemPrompt(ctx context.Context, a *AIAgent, systemMessage *
 		return err
 	}
 	a.cachedSystemPrompt = prompt
-	if len(conversationHistory) > 0 {
-		var stored any
-		if storedPrompt != "" {
-			stored = storedPrompt
-		}
-		observability.RecordPromptRebuild(ctx, a, stored, storedState, a.cachedSystemPrompt)
-	}
 	StageSurfaceSwitchNote(ctx, a, a.cachedSystemPrompt, conversationHistory)
 	NoteInertPinnedTools(a, built)
 	if !a.persistDisabled {
@@ -792,14 +675,6 @@ func restoreOrBuildSystemPrompt(ctx context.Context, a *AIAgent, systemMessage *
 			lifecycleInvokeHook(ctx, "on_session_start", map[string]any{"session_id": a.sessionID, "model": a.model, "platform": a.platform})
 		}()
 	}
-	func() {
-		defer func() {
-			if recover() != nil {
-				log.Debug("cold-start credits seed failed (fail-open)")
-			}
-		}()
-		provider.SeedCreditsAtSessionStart(a.creditsCapture())
-	}()
 	persistSystemPrompt(ctx, a, "Session DB update_system_prompt failed for session %s: %s. Subsequent turns will "+
 		"rebuild the system prompt and miss the prefix cache.", true)
 	stampPromptEpoch(a, refreshEpoch)
@@ -809,7 +684,7 @@ func restoreOrBuildSystemPrompt(ctx context.Context, a *AIAgent, systemMessage *
 // Reuses a stored prompt whose runtime identity matches, rebuilding on a Bot Chat epoch change or a refresh request
 func restoreStoredSystemPrompt(ctx context.Context, a *AIAgent, systemMessage *string, conversationHistory []map[string]any, storedPrompt string, sessionRow *pyjson.Object) error {
 	if botChatPromptStale(ctx, a, storedPrompt) {
-		conversationLoopLog().Info(fmt.Sprintf("Bot Chat capability epoch changed for session %s; rebuilding system prompt to "+
+		pkgLog().Info(fmt.Sprintf("Bot Chat capability epoch changed for session %s; rebuilding system prompt to "+
 			"adopt the new capability surface (one-time prefix-cache break).", a.sessionID))
 		a.sessionTitleHint = "Bot Chat"
 		refreshRequest := requestedEpoch(ctx, a)
@@ -823,7 +698,6 @@ func restoreStoredSystemPrompt(ctx context.Context, a *AIAgent, systemMessage *s
 			return err
 		}
 		a.cachedSystemPrompt = prompt
-		observability.RecordCacheBreak(ctx, a, "toolset_change")
 		StageSurfaceSwitchNote(ctx, a, a.cachedSystemPrompt, conversationHistory)
 		persistSystemPrompt(ctx, a, "Session DB update_system_prompt failed after Bot Chat capability refresh "+
 			"(session=%s): %s. The refresh will re-fire next turn.", true)
@@ -1073,7 +947,7 @@ func compressionDeferredResult(a *AIAgent, messages []*state.Message, apiCallCou
 		if !ok {
 			block = "unknown guard"
 		}
-		conversationLoopLog().Info(fmt.Sprintf("turn deferred: compression transiently blocked (%s) (session=%s) — not counting as "+
+		pkgLog().Info(fmt.Sprintf("turn deferred: compression transiently blocked (%s) (session=%s) — not counting as "+
 			"compression exhaustion", block, session))
 		final = "Context compression is temporarily paused after a recent failed attempt. Please retry " +
 			"in a moment — compression will resume automatically (or run /compress to force a retry now)."
@@ -1082,7 +956,7 @@ func compressionDeferredResult(a *AIAgent, messages []*state.Message, apiCallCou
 		if !ok {
 			holder = "unconfirmed"
 		}
-		conversationLoopLog().Info(fmt.Sprintf("turn deferred: compression lock held by another path (session=%s holder=%s) — not "+
+		pkgLog().Info(fmt.Sprintf("turn deferred: compression lock held by another path (session=%s holder=%s) — not "+
 			"counting as compression exhaustion", session, holder))
 		final = "Context compression is already running for this session. Please retry in a moment — " +
 			"your next message will be processed once the concurrent compression finishes."
@@ -1101,7 +975,7 @@ func compressionDeferredResult(a *AIAgent, messages []*state.Message, apiCallCou
 // Fails closed when a rebuilt request is still over threshold after recovery
 func providerOverflowExhaustedResult(ctx context.Context, a *AIAgent, messages, conversationHistory []*state.Message, apiCallCount, requestPressureTokens, maxCompressionAttempts int) (map[string]any, error) {
 	a.flushStatusBuffer()
-	conversationLoopLog().Error(fmt.Sprintf("%sContext compression failed after %d attempts; rebuilt request remains over threshold at ~%s tokens.",
+	pkgLog().Error(fmt.Sprintf("%sContext compression failed after %d attempts; rebuilt request remains over threshold at ~%s tokens.",
 		a.logPrefix, maxCompressionAttempts, groupThousands(requestPressureTokens)))
 	if err := a.persistSession(&messages, conversationHistory); err != nil {
 		return nil, err
@@ -1272,7 +1146,7 @@ func applyContextEngineSelection(a *AIAgent, apiMessages, conversationMessages [
 	failed := func() (failed bool) {
 		defer func() {
 			if r := recover(); r != nil {
-				conversationLoopLog().Warn(fmt.Sprintf("Context engine select_context hook failed; using unmodified request messages (session=%s)", sessionLabel), "error", fmt.Sprint(r))
+				pkgLog().Warn(fmt.Sprintf("Context engine select_context hook failed; using unmodified request messages (session=%s)", sessionLabel), "error", fmt.Sprint(r))
 				failed = true
 			}
 		}()
@@ -1290,7 +1164,7 @@ func applyContextEngineSelection(a *AIAgent, apiMessages, conversationMessages [
 		}
 	}
 	if !valid {
-		conversationLoopLog().Warn(fmt.Sprintf("Context engine select_context returned an invalid value "+
+		pkgLog().Warn(fmt.Sprintf("Context engine select_context returned an invalid value "+
 			"(not a non-empty list of dicts); ignoring (session=%s)", sessionLabel))
 		return apiMessages
 	}
@@ -1326,7 +1200,7 @@ func notifyContextEngineTurnComplete(a *AIAgent, messages []map[string]any, usag
 			if sid == "" {
 				sid = "-"
 			}
-			conversationLoopLog().Warn(fmt.Sprintf("Context engine on_turn_complete hook failed (session=%s)", sid), "error", fmt.Sprint(r))
+			pkgLog().Warn(fmt.Sprintf("Context engine on_turn_complete hook failed (session=%s)", sid), "error", fmt.Sprint(r))
 		}
 	}()
 	if meta == nil {
@@ -1353,7 +1227,7 @@ func decodeInlineMoaTurn(userMessage any, persistUserMessage any) (any, map[stri
 
 // Typed recovery result when turn start preflight compression timed out before any provider call
 func preflightTimeoutResult(a *AIAgent, exc error, conversationHistory []map[string]any) map[string]any {
-	conversationLoopLog().Warn(fmt.Sprintf("Turn-start preflight compression timed out — ending turn with typed recovery result: %s", exc))
+	pkgLog().Warn(fmt.Sprintf("Turn-start preflight compression timed out — ending turn with typed recovery result: %s", exc))
 	noteTurnPersisted(a)
 	return partialTurnResult(exc.Error(), rowsToMessages(conversationHistory), 0, map[string]any{
 		"failed": true, "compression_exhausted": true, "turn_exit_reason": "context_compression_timeout",

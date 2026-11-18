@@ -1,9 +1,10 @@
 package tui
 
 import (
-	"math"
 	"slices"
 	"strings"
+
+	"github.com/nickheyer/icebath/pkg/tuigateway"
 )
 
 // Field of a payload and whether the payload carries it at all
@@ -12,51 +13,26 @@ func field(m map[string]any, k string) (any, bool) {
 	return v, has
 }
 
-// Two optional fields strictly equal, both absent counting as equal
-func sameField(a map[string]any, b map[string]any, k string) bool {
-	av, aHas := field(a, k)
-	bv, bHas := field(b, k)
-	if !aHas || !bHas {
-		return aHas == bHas
-	}
-	return jsStrictEqual(av, bv)
-}
-
 // Error event with no execution stamp, a build or request failure rather than a turn settlement
 func isGenericErrorEvent(ev gatewayEventMsg) bool {
 	if ev.Type != "error" {
 		return false
 	}
-	_, epoch := field(ev.Payload, "execution_epoch")
-	_, generation := field(ev.Payload, "execution_generation")
-	return !epoch && !generation
-}
-
-// Whether a number is an integer JavaScript represents exactly
-func isSafeInteger(v any) bool {
-	n, isNum := v.(float64)
-	return isNum && n == math.Trunc(n) && math.Abs(n) <= 1<<53-1
+	return ev.Epoch == nil && ev.Generation == nil
 }
 
 // Drops lifecycle events of an older owner epoch or generation and advances the stamp of newer ones
 func (s *tuiStore) fenceLifecycleEvent(ev gatewayEventMsg, genericError bool) bool {
 	current := s.ui.Info
 	lifecycle := !genericError && slices.Contains([]string{"session.info", "message.start", "message.complete", "error"}, ev.Type)
-	if _, stamped := field(current, "execution_generation"); !lifecycle || current == nil || !stamped {
+	if !lifecycle || current == nil || current.ExecutionGeneration == nil {
 		return false
 	}
-	incoming := ev.Payload
-	generation, _ := incoming["execution_generation"].(float64)
-	if !sameField(incoming, current, "execution_epoch") || !isSafeInteger(incoming["execution_generation"]) || generation < jsNumberOf(current["execution_generation"]) {
+	if !sameStamp(ev.Epoch, current.AuthorityEpoch) || ev.Generation == nil || *ev.Generation < *current.ExecutionGeneration {
 		return true
 	}
 	if ev.Type != "session.info" {
-		next := make(map[string]any, len(current)+1)
-		for k, v := range current {
-			next[k] = v
-		}
-		next["execution_generation"] = incoming["execution_generation"]
-		s.ui.Info = next
+		s.ui.Info = patchedInfo(current, tuigateway.SessionInfo{ExecutionGeneration: ev.Generation})
 	}
 	return false
 }

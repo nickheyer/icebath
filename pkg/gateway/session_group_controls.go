@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
-	"log/slog"
 	"math/big"
 	"os"
 	"path/filepath"
@@ -23,10 +22,11 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
+	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/profiles"
 	"github.com/nickheyer/icebath/pkg/state"
-	"github.com/nickheyer/icebath/pkg/tuigateway"
+	"github.com/nickheyer/icebath/pkg/tuihost"
 )
 
 // Capability each room verb requires
@@ -45,12 +45,18 @@ var groupMethods = map[string]string{
 	"groups.retry":               "session:control",
 	"groups.discard":             "session:control",
 	"groups.approve":             "session:approve",
+	"groups.peers":               "session:read",
+	"groups.share":               "session:control",
+	"groups.unshare":             "session:control",
+	"groups.replica_state":       "session:read",
+	"groups.promote":             "session:control",
 }
 
 // Room verbs in their declaration order
 var groupMethodOrder = []string{"groups.capabilities", "groups.list", "groups.state", "groups.log", "groups.create",
 	"groups.rename", "groups.disband", "groups.send", "groups.attachment.upload", "groups.attachment.download",
-	"groups.stop", "groups.retry", "groups.discard", "groups.approve"}
+	"groups.stop", "groups.retry", "groups.discard", "groups.approve", "groups.peers", "groups.share", "groups.unshare",
+	"groups.replica_state", "groups.promote"}
 
 // Params each room verb and profiles.list accept besides profile
 var groupFields = map[string][]string{
@@ -68,6 +74,11 @@ var groupFields = map[string][]string{
 	"groups.retry":               {"room_id", "member_id", "task_id", "execution_generation"},
 	"groups.discard":             {"room_id", "member_id", "task_id", "execution_generation"},
 	"groups.approve":             {"room_id", "member_id", "task_id", "execution_generation", "choice", "request_id"},
+	"groups.peers":               {"room_id"},
+	"groups.share":               {"room_id", "peer"},
+	"groups.unshare":             {"room_id", "peer"},
+	"groups.replica_state":       {"room_id"},
+	"groups.promote":             {"room_id", "confirm", "reason"},
 	"profiles.list":              {"include_sessions"},
 }
 
@@ -161,10 +172,16 @@ func dispatchGroupControl(ctx context.Context, c *AuthorityConnection, method st
 		if errors.As(err, &reasoned) && reasoned.Reason() != "" {
 			reason = reasoned.Reason()
 		}
-		return nil, &state.RuntimeStoreError{Reason: reason, Cause: err}
+		detail := err.Error()
+		refusal := state.NewRuntimeStoreError(reason, nil, &detail)
+		refusal.Cause = err
+		return nil, refusal
 	}
 	if groupValueOrTypeError(err) {
-		return nil, &state.RuntimeStoreError{Reason: "invalid_params", Cause: err}
+		detail := err.Error()
+		refusal := state.NewRuntimeStoreError("invalid_params", nil, &detail)
+		refusal.Cause = err
+		return nil, refusal
 	}
 	return nil, err
 }
@@ -285,6 +302,16 @@ func groupControl(ctx context.Context, a *SessionAuthority, actor Principal, met
 		}
 		return nil, &PyError{Kind: "AttributeError", Msg: fmt.Sprintf("'%T' object has no attribute '%s'", hosted, attribute)}
 	}
+	if roomID, isText := params["room_id"].(string); isText && method != "groups.create" {
+		replica, err := groupIsReplica(ctx, dbPath, roomID)
+		if err != nil {
+			return nil, err
+		}
+		if replica {
+			service, _ := hosted.(*CanonicalHostedRoomService)
+			return groupReplicaControl(ctx, actor, service, method, params, dbPath, roomID)
+		}
+	}
 	var admit func(conn state.SQLiteConn) error
 	if roomID, hasRoom := params["room_id"]; hosted != nil && hasRoom {
 		if !hasAuthorizer {
@@ -311,7 +338,16 @@ func groupControl(ctx context.Context, a *SessionAuthority, actor Principal, met
 		if method == "groups.attachment.upload" {
 			return Upload(ctx, service, actor, params)
 		}
-		return Download(ctx, service, actor, params)
+		saved, err := Download(ctx, service, actor, params)
+		if err != nil {
+			roomID, _ := params["room_id"].(string)
+			eventID, _ := params["event_id"].(string)
+			attachmentID, _ := params["attachment_id"].(string)
+			if kept, keptErr := replicaFetchedFile(ctx, dbPath, roomID, eventID, attachmentID); keptErr == nil && kept != nil {
+				return kept, nil
+			}
+		}
+		return saved, err
 	case "groups.send", "groups.stop", "groups.retry", "groups.discard", "groups.approve":
 		if !running {
 			return nil, runtimeRefusal("runtime_coordination_required")
@@ -342,13 +378,55 @@ func groupControl(ctx context.Context, a *SessionAuthority, actor Principal, met
 		for i, name := range groupMethodOrder {
 			methods[i] = name
 		}
+		roomLink, err := groupRoomLinkStatus(ctx, gatewayID)
+		if err != nil {
+			return nil, err
+		}
 		return pyjson.ObjectOf("protocol_version", HostedProtocolVersion, "driver", running,
-			"persistent_process", true, "authority_gateway_id", gatewayID,
-			"room_link", pyjson.ObjectOf("enabled", false, "reason", "canonical_driver_required"),
-			"features", []any{"room_identity", "monotonic_log", "replayable_disband"}, "methods", methods,
+			"persistent_process", true, "authority_gateway_id", gatewayID, "room_link", roomLink,
+			"features", []any{"room_identity", "monotonic_log", "replayable_disband", "room_shares", "peer_members"}, "methods", methods,
 			"max_log_limit", MaxRoomLogLimit, "seatable_profiles", seatable), nil
 	case "groups.list":
-		return groupListing(ctx, a, actor, dbPath, params, hosted != nil, authorizer, hasAuthorizer)
+		listed, err := groupListing(ctx, a, actor, dbPath, params, hosted != nil, authorizer, hasAuthorizer)
+		if err != nil {
+			return nil, err
+		}
+		return groupWithReplicas(ctx, dbPath, params, listed)
+	case "groups.peers":
+		peers, err := RoomPeerRegistry(ctx)
+		if err != nil {
+			return nil, err
+		}
+		roomID, _ := params["room_id"].(string)
+		shares := []any{}
+		if roomID != "" {
+			if shares, err = RoomShares(ctx, dbPath, roomID); err != nil {
+				return nil, err
+			}
+		}
+		return pyjson.ObjectOf("peers", peers, "shares", shares), nil
+	case "groups.share", "groups.unshare":
+		if !running {
+			return nil, runtimeRefusal("runtime_coordination_required")
+		}
+		service, err := driver("share_room")
+		if err != nil {
+			return nil, err
+		}
+		roomID, _ := params["room_id"].(string)
+		peer, _ := params["peer"].(string)
+		var share map[string]any
+		if method == "groups.share" {
+			share, err = service.ShareRoom(roomID, peer)
+		} else {
+			share, err = service.UnshareRoom(roomID, peer)
+		}
+		if err != nil {
+			return nil, err
+		}
+		return pyjson.ObjectOf("share", share), nil
+	case "groups.replica_state", "groups.promote":
+		return nil, roomRefusal("invalid_params", "this room is hosted on this gateway")
 	case "groups.create":
 		var service *CanonicalHostedRoomService
 		if running {
@@ -503,6 +581,20 @@ func groupCreate(ctx context.Context, a *SessionAuthority, service *CanonicalHos
 	if err != nil {
 		return nil, err
 	}
+	var seats []peerSeat
+	if roomID, isText := params["room_id"].(string); isText && service != nil {
+		resolved, invited, err := service.invitePeerMembers(roomID, params["members"])
+		if err != nil {
+			return nil, err
+		}
+		params["members"], seats = resolved, invited
+	}
+	created := false
+	defer func() {
+		if !created {
+			service.revokeSeats(seats)
+		}
+	}()
 	if err := RefuseUnseatable(params["members"], refused); err != nil {
 		return nil, err
 	}
@@ -519,6 +611,14 @@ func groupCreate(ctx context.Context, a *SessionAuthority, service *CanonicalHos
 	members, err := ValidateRoster(params["members"], homes.Keys())
 	if err != nil {
 		return nil, membersRefusal(err)
+	}
+	if roomID, isText := params["room_id"].(string); isText {
+		if link, err := ReplicaLink(ctx, dbPath, roomID); err != nil || link != nil {
+			if err != nil {
+				return nil, err
+			}
+			return nil, roomRefusal("invalid_params", "this room id belongs to a room replicated from "+pyrepr.Str(link["home"]))
+		}
 	}
 	if service != nil {
 		if err := groupRequire(params, "room_id", "name", "members"); err != nil {
@@ -537,6 +637,14 @@ func groupCreate(ctx context.Context, a *SessionAuthority, service *CanonicalHos
 		room, err := service.CreateRoom(roomID, name, params["members"], admit)
 		if err != nil {
 			return nil, membersRefusal(err)
+		}
+		created = true
+		if err := service.registerPeerSeats(roomID, seats); err != nil {
+			service.revokeSeats(seats)
+			if _, disbandErr := DisbandRoom(ctx, dbPath, roomID, gatewayID, room["authority_epoch"], nil); disbandErr != nil {
+				return nil, disbandErr
+			}
+			return nil, err
 		}
 		return pyjson.ObjectOf("room", room), nil
 	}
@@ -727,7 +835,7 @@ type rosterReader struct {
 // Session fields of a roster row read from the authority's own store as actor, reused while the store has not moved
 func botSessions(ctx context.Context, a *SessionAuthority, actor Principal) (map[string]any, error) {
 	operator := actor.Capabilities["session:operator"]
-	return tuigateway.CachedReaderSessionFields(filepath.Dir(a.DB.Path()), rosterReader{actor.Subject, operator},
+	return tuihost.CachedReaderSessionFields(filepath.Dir(a.DB.Path()), rosterReader{actor.Subject, operator},
 		func() (map[string]any, error) { return readBotSessions(ctx, a.DB, actor.Subject, operator) })
 }
 
@@ -870,9 +978,9 @@ func siblingSessions(ctx context.Context, a *SessionAuthority, reader Principal)
 	if err != nil {
 		message := fmt.Sprintf("Bots roster: %s is metadata-only, its session store did not answer (%s)", a.ProfileID, err)
 		if groupMarkDegraded(a, true) {
-			slog.Debug(message)
+			pkgLog().Debug(message)
 		} else {
-			slog.Warn(message)
+			pkgLog().Warn(message)
 		}
 		return map[string]any{}
 	}
@@ -1078,7 +1186,7 @@ func namedProfileDirs() []string {
 	}
 	targets, err := profiles.IterNamedProfileDirs(true)
 	if err != nil {
-		slog.Warn(fmt.Sprintf("profiles.list: cannot list %s: %s", root, err))
+		pkgLog().Warn(fmt.Sprintf("profiles.list: cannot list %s: %s", root, err))
 		return []string{}
 	}
 	if ok {
@@ -1136,7 +1244,7 @@ func discoveredProfileMeta(name, metaPath string) any {
 		if errors.Is(err, fs.ErrNotExist) || errors.Is(err, syscall.ENOTDIR) || errors.Is(err, syscall.EISDIR) {
 			return map[string]any{}
 		}
-		slog.Warn(fmt.Sprintf("profiles.list: skipping unreadable profile.yaml for %s (%s): %s", name, metaPath, err))
+		pkgLog().Warn(fmt.Sprintf("profiles.list: skipping unreadable profile.yaml for %s (%s): %s", name, metaPath, err))
 		return map[string]any{}
 	}
 	profileMetaCache.mu.Lock()
@@ -1147,10 +1255,10 @@ func discoveredProfileMeta(name, metaPath string) any {
 	}
 	var meta any
 	if !utf8.Valid(raw) {
-		slog.Warn(fmt.Sprintf("profiles.list: skipping unreadable profile.yaml for %s (%s): %s", name, metaPath, "'utf-8' codec can't decode"))
+		pkgLog().Warn(fmt.Sprintf("profiles.list: skipping unreadable profile.yaml for %s (%s): %s", name, metaPath, "'utf-8' codec can't decode"))
 		meta = map[string]any{}
 	} else if meta, err = config.SafeLoad(string(raw)); err != nil {
-		slog.Warn(fmt.Sprintf("profiles.list: skipping unreadable profile.yaml for %s (%s): %s", name, metaPath, err))
+		pkgLog().Warn(fmt.Sprintf("profiles.list: skipping unreadable profile.yaml for %s (%s): %s", name, metaPath, err))
 		meta = map[string]any{}
 	}
 	profileMetaCache.mu.Lock()

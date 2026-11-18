@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
@@ -24,7 +25,7 @@ func installRecordOf(metadata map[string]any, name string) (map[string]any, erro
 	}
 	record, isMap := raw.(map[string]any)
 	if !isMap {
-		return nil, fmt.Errorf("AttributeError: '%s' object has no attribute 'get'", pyrepr.TypeName(raw))
+		return nil, fmt.Errorf("the install record of plugin %s is %s, expected a mapping", name, errchain.Kind(raw))
 	}
 	return record, nil
 }
@@ -332,7 +333,7 @@ func pyEqual(a, b any) bool {
 	return pyrepr.Repr(a) == pyrepr.Repr(b)
 }
 
-// Ordered check result mapping in the hermes to_json key order
+// Ordered check result mapping in the to_json key order
 func checkResultObject(r *CheckResult) *pyjson.Object {
 	m := r.ToJSON()
 	o := pyjson.NewObject()

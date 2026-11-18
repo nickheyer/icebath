@@ -7,7 +7,7 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/nickheyer/icebath/pkg/tuigateway"
+	"github.com/nickheyer/icebath/pkg/tuihost"
 )
 
 // One emitted session event
@@ -67,7 +67,7 @@ func childMirrorFixture(t *testing.T) *emitLog {
 	t.Cleanup(func() {
 		emitEvent = prev
 		for _, sid := range []string{"parent-sid", "live-1", "live-2"} {
-			tuigateway.SetSessionRecord(sid, nil)
+			tuihost.SetSessionRecord(sid, nil)
 		}
 		resetMirrors()
 	})
@@ -76,8 +76,8 @@ func childMirrorFixture(t *testing.T) *emitLog {
 
 // Drives the progress callback the way the delegate relay does on a live parent turn
 func relay(eventType string, payload map[string]any) {
-	if tuigateway.SessionRecord("parent-sid") == nil {
-		tuigateway.SetSessionRecord("parent-sid", tuigateway.NewSession(map[string]any{"session_key": "parent"}))
+	if tuihost.SessionRecord("parent-sid") == nil {
+		tuihost.SetSessionRecord("parent-sid", tuihost.NewSession(map[string]any{"session_key": "parent"}))
 	}
 	var name, preview any
 	if v, ok := payload["tool_name"]; ok {
@@ -102,7 +102,7 @@ func mirrorCount() int {
 }
 
 func liveChild(sid string, agentValue any) {
-	tuigateway.SetSessionRecord(sid, tuigateway.NewSession(map[string]any{"session_key": "child-1", "agent": agentValue}))
+	tuihost.SetSessionRecord(sid, tuihost.NewSession(map[string]any{"session_key": "child-1", "agent": agentValue}))
 }
 
 func eventNames(list []emitted) []string {
@@ -158,8 +158,8 @@ func TestWindowClosedMidrunDropsStateThenFreshTurnOnReopen(t *testing.T) {
 	if !present {
 		t.Fatal("mirror state missing")
 	}
-	tuigateway.SetSessionRecord("live-1", nil)
-	tuigateway.SetSessionRecord("parent-sid", nil)
+	tuihost.SetSessionRecord("live-1", nil)
+	tuihost.SetSessionRecord("parent-sid", nil)
 	relay("subagent.tool", map[string]any{"tool_name": "read_file", "child_session_id": "child-1"})
 	if mirrorCount() != 0 {
 		t.Fatal("mirror state kept after the window closed")

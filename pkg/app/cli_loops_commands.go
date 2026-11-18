@@ -3,7 +3,6 @@ package app
 import (
 	"errors"
 	"fmt"
-	"log/slog"
 	"strings"
 	"time"
 	"unicode"
@@ -17,7 +16,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pyrich"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
-	"github.com/nickheyer/icebath/pkg/observability"
 	"github.com/nickheyer/icebath/pkg/plugins"
 	"github.com/nickheyer/icebath/pkg/state"
 )
@@ -190,26 +188,10 @@ func (c *CLI) cmdNew(cmdOriginal string) {
 	c.newSession(false, title)
 }
 
-// Counts one retry or undo against the model of the session's last turn
-func (c *CLI) recordModelFriction(signal string, turns int) {
-	if c.slashMetricsOff {
-		return
-	}
-	opts := observability.FrictionOptions{SessionID: c.sessionID, Provider: c.provider, Model: c.model, Turns: turns}
-	if a := c.agentRef(); a != nil {
-		opts.Provider, opts.Model = a.Provider(), a.Model()
-		if sid := a.SessionID(); sid != "" {
-			opts.SessionID = sid
-		}
-	}
-	observability.RecordModelFriction(c.ctx, signal, opts)
-}
-
 // Handles /retry, queueing the last user message again after dropping its exchange
 func (c *CLI) cmdRetry(string) {
 	retryMsg, ok := c.retryLast()
 	if ok && retryMsg != "" {
-		c.recordModelFriction("retry", 1)
 		c.pendingInput.Put(retryMsg)
 	}
 }
@@ -236,9 +218,7 @@ func (c *CLI) cmdUndo(cmdOriginal string) {
 	if c.confirmDestructiveSlash("undo", desc, cmdOriginal) == "" {
 		return
 	}
-	if turns := c.undoLast(n, true); turns > 0 {
-		c.recordModelFriction("undo", turns)
-	}
+	c.undoLast(n, true)
 }
 
 // Handles /egress through the shared executor, printed as plain text
@@ -756,7 +736,7 @@ func (c *CLI) startHeartbeatWatchdog() {
 			func() {
 				defer func() {
 					if r := recover(); r != nil {
-						slog.Debug(fmt.Sprintf("heartbeat watchdog tick failed: %v", r))
+						pkgLog().Debug(fmt.Sprintf("heartbeat watchdog tick failed: %v", r))
 					}
 				}()
 				mgr := c.getHeartbeatManager()

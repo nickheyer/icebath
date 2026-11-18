@@ -57,6 +57,14 @@ jobs:
             || { echo "::error::WINGET_TOKEN cannot push to nickheyer/winget-pkgs, a fork of microsoft/winget-pkgs"; exit 1; }
       - run: go vet -tags goolm ./...
       - run: go test -tags goolm ./...
+      # Termux deletes superseded archives, so each release carries its own copy of every pool pin
+      - name: Fetch the Termux pool archives the pm pins name
+        run: packaging/termux/fetch.sh "$RUNNER_TEMP/termux-pool"
+      - uses: actions/upload-artifact@v7
+        with:
+          name: termux-pool
+          path: ${{ runner.temp }}/termux-pool
+          if-no-files-found: error
 
   goreleaser:
     needs: preflight
@@ -117,6 +125,19 @@ jobs:
   #       env:
   #         SNAPCRAFT_STORE_CREDENTIALS: ${{ secrets.SNAPCRAFT_STORE_CREDENTIALS }}
   #       run: for s in snaps/*.snap; do snapcraft upload --release=stable "$s"; done
+
+  termux-pool:
+    needs: goreleaser
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          name: termux-pool
+          path: termux-pool
+      - name: Upload the Termux pool archives pm falls back to
+        run: gh release upload "$GITHUB_REF_NAME" termux-pool/termux-* --clobber --repo "$GITHUB_REPOSITORY"
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
   chocolatey:
     needs: goreleaser

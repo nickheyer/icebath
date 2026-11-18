@@ -44,7 +44,6 @@ func (s *ToolsSetup) ToolsCommand(ns map[string]any, firstInstall bool, cfg conf
 	}
 	m.globalIdx = m.addRow("Configure all platforms (global)", len(m.platformKeys) > 1)
 	m.reconfigIdx = m.addRow("Reconfigure an existing tool's provider or API key", true)
-	m.metricsIdx = m.addRow(sharedMetricsMenuLabel(cfg), true)
 	m.mcpIdx = m.addRow("Configure MCP server tools", pyTruthy(cfg["mcp_servers"]))
 	doneIdx := m.addRow("Done", true)
 	for {
@@ -69,9 +68,9 @@ func (s *ToolsSetup) ToolsCommand(ns map[string]any, firstInstall bool, cfg conf
 
 // The returning user menu, platform rows first then the extra rows, an absent row at index -1
 type toolsMenu struct {
-	platformKeys                               []string
-	choices                                    []string
-	globalIdx, reconfigIdx, metricsIdx, mcpIdx int
+	platformKeys                   []string
+	choices                        []string
+	globalIdx, reconfigIdx, mcpIdx int
 }
 
 func (m *toolsMenu) addRow(label string, present bool) int {
@@ -86,13 +85,7 @@ func (m *toolsMenu) addRow(label string, present bool) int {
 func (s *ToolsSetup) runToolsMenuRow(cfg config.Tree, m *toolsMenu, idx int) error {
 	switch idx {
 	case m.reconfigIdx:
-		return s.reconfigureTool(cfg, true)
-	case m.metricsIdx:
-		if err := s.configureSharedMetricsInteractive(cfg); err != nil {
-			return err
-		}
-		m.choices[m.metricsIdx] = sharedMetricsMenuLabel(cfg)
-		return nil
+		return s.reconfigureTool(cfg)
 	case m.mcpIdx:
 		return configureMCPToolsInteractive(s, cfg)
 	case m.globalIdx:

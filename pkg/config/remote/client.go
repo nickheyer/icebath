@@ -25,7 +25,6 @@ import (
 )
 
 const (
-	DefaultURL  = "https://config-config.nousresearch.com"
 	URLEnv      = "ICEBATH_CONFIG_REMOTE_URL"
 	InstanceEnv = "ICEBATH_CONFIG_INSTANCE_ID"
 )
@@ -63,17 +62,27 @@ type TransportError struct{ Message string }
 
 func (e *TransportError) Error() string { return e.Message }
 
-// Configured plane origin and path prefix with trailing slashes dropped
+// Configured plane origin and path prefix with trailing slashes dropped, empty when none is set
 func BaseURL() string {
-	u := pystr.Strip(os.Getenv(URLEnv))
-	if u == "" {
-		u = DefaultURL
-	}
-	return strings.TrimRight(u, "/")
+	return strings.TrimRight(pystr.Strip(os.Getenv(URLEnv)), "/")
 }
 
-// Plane URL without user info for messages, describe and provenance
-func ShownURL() string { return DisplayURL(BaseURL()) }
+// Plane URL without user info for messages, describe and provenance, naming the unset variable when there is none
+func ShownURL() string {
+	if BaseURL() == "" {
+		return "(" + URLEnv + " not set)"
+	}
+	return DisplayURL(BaseURL())
+}
+
+// Checked plane address, refused with the variable named when unset since Remote Config has no default plane
+func planeURL() (string, error) {
+	if BaseURL() == "" {
+		return "", newCredentialDestinationError(URLEnv + " is not set; Remote Config has no default plane, " +
+			"so set it to the https:// address of the config plane you run")
+	}
+	return CheckedURL(BaseURL(), URLEnv)
+}
 
 func InstanceID() string { return pystr.Strip(os.Getenv(InstanceEnv)) }
 
@@ -187,23 +196,23 @@ func (p *requestPhase) reason(err error, https bool) string {
 	return pyhttpx.OSErrorText(err)
 }
 
-// Plane bearer of home, resolved only once the plane destination passed the policy
-func Bearer(ctx context.Context, home string) (string, error) {
-	if _, err := CheckedURL(BaseURL(), URLEnv); err != nil {
+// Plane bearer, resolved only once the plane destination passed the policy
+func Bearer(ctx context.Context) (string, error) {
+	if _, err := planeURL(); err != nil {
 		return "", err
 	}
-	return PlaneToken(ctx, home)
+	return planeToken(ctx)
 }
 
-// One call to the self route as the agent of home with token or a bearer resolved here, never following a redirect
-func Request(ctx context.Context, method, home, profile, etag string, body any, token string) (Response, error) {
-	plane, err := CheckedURL(BaseURL(), URLEnv)
+// One call to the self route with token or a bearer resolved here, never following a redirect
+func Request(ctx context.Context, method, profile, etag string, body any, token string) (Response, error) {
+	plane, err := planeURL()
 	if err != nil {
 		return Response{}, err
 	}
 	target := plane + "/v1/config/self?" + url.Values{"profile": {profile}}.Encode()
 	if token == "" {
-		if token, err = PlaneToken(ctx, home); err != nil {
+		if token, err = planeToken(ctx); err != nil {
 			return Response{}, err
 		}
 	}
@@ -222,7 +231,6 @@ func Request(ctx context.Context, method, home, profile, etag string, body any, 
 	}
 	https := req.URL.Scheme == "https"
 	req.Header.Set("Authorization", "Bearer "+token)
-	req.Header.Set("X-Hermes-Instance-Id", InstanceID())
 	req.Header.Set("X-Icebath-Instance-Id", InstanceID())
 	req.Header.Set("Accept", "application/json")
 	if body != nil {

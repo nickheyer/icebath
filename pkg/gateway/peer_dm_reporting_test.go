@@ -17,7 +17,7 @@ import (
 
 const peerReportingSession = "20260916_bot_chat"
 
-// Runs one dm with the Bot Chat resolution and the chat request replaced the way the hermes helper patches them
+// Runs one dm with the Bot Chat resolution and the chat request replaced the way the helper patches them
 func peerReportingRun(t *testing.T, base string, raiseOnPost, raiseOnSession error) (int, string) {
 	t.Helper()
 	swapSeam(t, &peerEnsureBotChat, func(context.Context, string, string) (string, error) {

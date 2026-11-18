@@ -14,7 +14,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/mcp"
 	"github.com/nickheyer/icebath/pkg/memory"
 	"github.com/nickheyer/icebath/pkg/plugins"
-	"github.com/nickheyer/icebath/pkg/tuigateway"
+	"github.com/nickheyer/icebath/pkg/tuihost"
 )
 
 // One plugins.manage action handler
@@ -392,7 +392,7 @@ func pluginsSettings(ctx context.Context, rid any, params map[string]any) (map[s
 					_, err := mcp.Restart(ctx, configEnv(ctx), servers)
 					panicIf(err)
 				}); failure != nil {
-					logger().Warn(fmt.Sprintf("Exception in thread %s: %s", thread, panicMessage(failure)))
+					pkgLog().Warn(fmt.Sprintf("Exception in thread %s: %s", thread, panicMessage(failure)))
 				}
 			}).Start()
 		}
@@ -478,7 +478,7 @@ func runAction[A any](rid any, params map[string]any, table map[string]A, label 
 }
 
 // Plugins hub backend listing, toggling, installing, inspecting, updating, removing and configuring plugins
-func pluginsManage(ctx context.Context, rid any, params map[string]any, _ *tuigateway.Session) (map[string]any, error) {
+func pluginsManage(ctx context.Context, rid any, params map[string]any, _ *tuihost.Session) (map[string]any, error) {
 	return runAction(rid, params, pluginsActions, "plugins", func(h pluginsAction) (map[string]any, error) { return h(ctx, rid, params) })
 }
 

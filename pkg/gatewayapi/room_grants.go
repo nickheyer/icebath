@@ -40,10 +40,10 @@ func roomGrantErrorResponse(err error) *gateway.WebResponse {
 	return errorResponse(message, status, errOpts{Type: "gateway_auth_error", Code: code})
 }
 
-// Room grant bearer token of a request, empty without the HermesRoom scheme
+// Room grant bearer token of a request, empty without the IcebathRoom scheme or the old one an older peer sends
 func roomGrantToken(request *gateway.WebRequest) string {
 	scheme, token, found := strings.Cut(request.Header.Get("Authorization"), " ")
-	if !found || strings.ToLower(scheme) != "hermesroom" {
+	if lower := strings.ToLower(scheme); !found || (lower != "icebathroom" && lower != "hermesroom") {
 		return ""
 	}
 	return strings.TrimSpace(token)
@@ -160,13 +160,13 @@ func (a *APIServerAdapter) roomGrantClaims(ctx context.Context, request *gateway
 	return claims, nil
 }
 
-// Room member routes the API server serves
+// Room member routes the API server serves, its file routes included
 func (a *APIServerAdapter) roomGrantHTTPRoutes() []httpRoute {
-	return []httpRoute{
+	return append([]httpRoute{
 		{"POST", "/v1/room-members/invitations", a.handleRoomMemberInvitation},
 		{"GET", "/v1/room-members/capabilities", a.handleRoomMemberCapabilities},
 		{"POST", "/v1/room-members/grants/refresh", a.handleRoomMemberGrantRefresh},
-		{"POST", "/v1/room-members/grants/revoke", a.handleRoomMemberGrantRevoke}}
+		{"POST", "/v1/room-members/grants/revoke", a.handleRoomMemberGrantRevoke}}, a.roomFileHTTPRoutes()...)
 }
 
 // Wall clock seconds
@@ -266,7 +266,7 @@ func (a *APIServerAdapter) handleRoomMemberInvitation(ctx context.Context, reque
 	if err != nil {
 		return nil, err
 	}
-	return jsonResponse(pyjson.ObjectOf("object", "hermes.room_member.invitation", "grant", token, "target_profile", profile,
+	return jsonResponse(pyjson.ObjectOf("object", "icebath.room_member.invitation", "grant", token, "target_profile", profile,
 		"catalog", catalog, "expires_at", expiresAt, "status_expires_at", statusExpiresAt), http.StatusCreated, nil), nil
 }
 
@@ -289,7 +289,7 @@ func (a *APIServerAdapter) handleRoomMemberCapabilities(ctx context.Context, req
 	if err != nil {
 		return roomGrantErrorResponse(err), nil
 	}
-	out := pyjson.ObjectOf("object", "hermes.room_member.capabilities")
+	out := pyjson.ObjectOf("object", "icebath.room_member.capabilities")
 	for _, field := range roomIdentityFields {
 		value, ok := claims.Get(field)
 		if !ok {
@@ -372,7 +372,7 @@ func (a *APIServerAdapter) handleRoomMemberGrantRefresh(ctx context.Context, req
 	if err != nil {
 		return roomGrantErrorResponse(err), nil
 	}
-	return jsonResponse(pyjson.ObjectOf("object", "hermes.room_member.grant", "grant", token, "expires_at", now+dispatchTTL,
+	return jsonResponse(pyjson.ObjectOf("object", "icebath.room_member.grant", "grant", token, "expires_at", now+dispatchTTL,
 		"status_expires_at", expiry, "execution_policy", executionPolicy), http.StatusOK, nil), nil
 }
 
@@ -402,5 +402,5 @@ func (a *APIServerAdapter) handleRoomMemberGrantRevoke(ctx context.Context, requ
 	if err != nil {
 		return roomGrantErrorResponse(nil), nil
 	}
-	return jsonResponse(pyjson.ObjectOf("object", "hermes.room_member.grant.revocation", "revoked", true), http.StatusOK, nil), nil
+	return jsonResponse(pyjson.ObjectOf("object", "icebath.room_member.grant.revocation", "revoked", true), http.StatusOK, nil), nil
 }

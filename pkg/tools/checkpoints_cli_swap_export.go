@@ -1,6 +1,6 @@
 package tools
 
-// Swaps the checkpoints command status, prune and input functions as hermes tests patch them, returning the restore
+// Swaps the checkpoints command status, prune and input functions as tests patch them, returning the restore
 func SwapCheckpointsCommandFns(status func(*Env, string) (CheckpointStatus, error),
 	prune func(*Env, CheckpointPruneOptions) (CheckpointPruneResult, error), input func(string) (string, error)) func() {
 	savedStatus, savedPrune, savedInput := checkpointsStoreStatusFn, checkpointsPruneFn, checkpointsInputFn

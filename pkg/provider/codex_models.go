@@ -206,7 +206,7 @@ func fetchCodexModelsFromAPI(ctx context.Context, accessToken, baseURL string) [
 		return client.Get(rawURL, nil)
 	}, catalogBase)
 	if err != nil {
-		modelsLog.Debug("Failed to fetch Codex models from API", "error", err)
+		pkgLog().Debug("Failed to fetch Codex models from API", "error", err)
 		return []string{}
 	}
 	return finalizeCodexModels(codexRankedSlugs(entries))

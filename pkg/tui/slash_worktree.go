@@ -1,265 +1,170 @@
 package tui
 
 import (
-	"bytes"
+	"github.com/nickheyer/icebath/pkg/tuigateway"
 	"context"
-	"fmt"
-	"io"
 	"os"
 	"strings"
 	"sync"
-	"time"
+	"unicode"
 
 	tea "charm.land/bubbletea/v2"
 
-	"github.com/nickheyer/icebath/pkg/config"
-	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/i18n"
-	"github.com/nickheyer/icebath/pkg/internal/pycodecs"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
-	"github.com/nickheyer/icebath/pkg/internal/pysubprocess"
-	"github.com/nickheyer/icebath/pkg/internal/pysys"
-	"github.com/nickheyer/icebath/pkg/tools"
 )
 
 // Trees /worktree new created in this process, the newest the active one, each settled on quit
 var newWorktrees struct {
 	sync.Mutex
-	active  map[string]string
-	created []map[string]string
+	active  *Worktree
+	created []Worktree
 }
 
 // Subcommands of /worktree and the handler each runs
 var worktreeHandlers = map[string]string{"prune": "prune", "gc": "prune", "clean": "prune", "list": "list", "ls": "list",
 	"new": "new", "add": "new", "create": "new"}
 
-// Held for a whole capture so two never swap the process streams out of order
-var stdioCapture sync.Mutex
-
-// Runs fn with the process stdout and stderr captured, returning what it printed without escapes
-func captureStdio(fn func()) string {
-	stdioCapture.Lock()
-	defer stdioCapture.Unlock()
-	var buf bytes.Buffer
-	var mu sync.Mutex
-	w := writerFunc(func(p []byte) (int, error) {
-		mu.Lock()
-		defer mu.Unlock()
-		return buf.Write(p)
-	})
-	restore := pysys.Patch(w, w)
-	defer restore()
-	fn()
-	return strings.TrimRight(tools.StripANSI(buf.String()), "\n")
-}
-
-// Writer of a function
-type writerFunc func(p []byte) (int, error)
-
-func (f writerFunc) Write(p []byte) (int, error) { return f(p) }
-
-// Tree this process locked with its -w launch, nil when the launch made none
-func launchWorktree(cwd string) map[string]string {
-	if cwd == "" {
-		return nil
-	}
-	res, err := pysubprocess.RunWith(context.Background(), []string{"git", "worktree", "list", "--porcelain"}, pysubprocess.Options{Dir: cwd, Timeout: 10 * time.Second})
-	if err != nil || res.Returncode != 0 {
-		return nil
-	}
-	text, _ := pycodecs.DecodeReplace(res.Stdout, "utf-8")
-	owner := fmt.Sprintf("icebath pid=%d", os.Getpid())
-	for _, block := range strings.Split(text, "\n\n") {
-		entry := map[string]string{}
-		for _, line := range strings.Split(block, "\n") {
-			key, value, _ := strings.Cut(line, " ")
-			entry[key] = value
-		}
-		reason, locked := entry["locked"]
-		if !locked || (reason != owner && !strings.HasPrefix(reason, owner+" ")) {
-			continue
-		}
-		return map[string]string{"path": entry["worktree"], "branch": strings.TrimPrefix(entry["branch"], "refs/heads/")}
-	}
-	return nil
-}
-
-// Tree the session works in, a /worktree new tree first, then the tree of a -w launch
-func (a *app) activeWorktree() map[string]string {
+// Tree /worktree new made active, nil when none is
+func activeNewWorktree() *Worktree {
 	newWorktrees.Lock()
-	active := newWorktrees.active
-	newWorktrees.Unlock()
-	if active != nil {
-		return active
-	}
-	return launchWorktree(os.Getenv("ICEBATH_CWD"))
+	defer newWorktrees.Unlock()
+	return newWorktrees.active
+}
+
+// Tree of a worktree answer, false when the answer names none
+func worktreeOf(v any) (Worktree, bool) {
+	m, _ := v.(map[string]any)
+	path, _ := m["path"].(string)
+	branch, _ := m["branch"].(string)
+	root, _ := m["repo_root"].(string)
+	return Worktree{Path: path, Branch: branch, RepoRoot: root}, path != ""
 }
 
 // Lines of the status form, the active tree or none, with the hints when inside a repository
-func worktreeStatusLines(ctx context.Context, active map[string]string, repoRoot string) []string {
+func worktreeStatusLines(ctx context.Context, active *Worktree, inRepo bool) []string {
 	var lines []string
 	if active != nil {
-		lines = append(lines, commandText(ctx, "worktree.active", map[string]any{"path": active["path"]}),
-			commandText(ctx, "worktree.branch", map[string]any{"branch": active["branch"]}))
+		lines = append(lines, commandText(ctx, "worktree.active", map[string]any{"path": active.Path}),
+			commandText(ctx, "worktree.branch", map[string]any{"branch": active.Branch}))
 	} else {
 		lines = append(lines, commandText(ctx, "worktree.none_active", nil))
 	}
-	if repoRoot != "" {
+	if inRepo {
 		return append(lines, commandText(ctx, "worktree.hint_new", nil), commandText(ctx, "worktree.hint_prune", nil))
 	}
 	return append(lines, commandText(ctx, "worktree.not_in_repo_note", nil))
 }
 
-// Lines of git worktree list for the repository, the list failed line when git fails
-func worktreeListLines(ctx context.Context, repoRoot string) []string {
-	res, err := pysubprocess.RunWith(ctx, []string{"git", "worktree", "list"}, pysubprocess.Options{Dir: repoRoot, Timeout: 10 * time.Second})
-	out := ""
-	if err == nil && res.Returncode == 0 {
-		text, _ := pycodecs.DecodeReplace(res.Stdout, "utf-8")
-		out = pystr.Strip(text)
+// Lines of a prune answer, the reclaimed or planned actions with their count and the trees kept for a reason
+func worktreePruneLines(ctx context.Context, res map[string]any, dryRun bool) []string {
+	if failure, failed := res["error"].(string); failed {
+		return []string{"error: " + failure}
 	}
-	if out == "" {
-		return []string{commandText(ctx, "worktree.list_failed", nil)}
+	lines := rpcStrings(res["actions"])
+	if len(lines) > 0 {
+		key := "worktree.actions_done"
+		if dryRun {
+			key = "worktree.actions_planned"
+		}
+		lines = append(lines, commandText(ctx, key, map[string]any{"count": len(lines)}))
+	} else {
+		lines = append(lines, commandText(ctx, "worktree.nothing_to_reclaim", nil))
 	}
-	return pystr.Splitlines(out, false)
+	preserved, _ := res["preserved"].([]any)
+	if len(preserved) > 0 {
+		lines = append(lines, commandText(ctx, "worktree.preserved", map[string]any{"count": len(preserved)}))
+		for _, item := range preserved {
+			kept, _ := item.(map[string]any)
+			lines = append(lines, "  "+jsValueString(kept["name"])+": "+jsValueString(kept["reason"]))
+		}
+	}
+	return lines
 }
 
-// Lines of a prune of stale trees and merged branches, never the active tree
-func worktreePruneLines(ctx context.Context, repoRoot, rest string, active map[string]string) ([]string, error) {
-	rest = pystr.Lower(rest)
-	dryRun := strings.Contains(rest, "--dry-run")
-	for _, word := range pystr.SplitWhitespace(rest, -1) {
-		dryRun = dryRun || word == "-n"
-	}
-	var lines []string
-	var failure error
-	printed := captureStdio(func() {
-		records, err := tools.AuditWorktrees(ctx, repoRoot, false, nil)
-		if err != nil {
-			failure = err
-			return
+// Asks the gateway for the folder's repository and the tree a -w launch of this process locked
+func (a *app) worktreeStatus(cwd string, then func(repoRoot string, launch *Worktree, err error) tea.Cmd) tea.Cmd {
+	params := map[string]any{"cwd": cwd, "launch_cwd": os.Getenv("ICEBATH_CWD"), "pid": os.Getpid()}
+	return gatewayCall(a.gw, "worktree.status", params, func(v any, err error) tea.Cmd {
+		res := asRPCResult(v)
+		root, _ := res["repo_root"].(string)
+		var launch *Worktree
+		if tree, named := worktreeOf(res["launch"]); named {
+			launch = &tree
 		}
-		kept := []tools.TreeRecord{}
-		for _, r := range records {
-			if active == nil || r.Path != active["path"] {
-				kept = append(kept, r)
-			}
-		}
-		actions, err := tools.ReclaimWorktrees(ctx, repoRoot, dryRun, kept)
-		if err != nil {
-			failure = err
-			return
-		}
-		branchActions, err := tools.ReclaimBranches(repoRoot, dryRun, nil)
-		if err != nil {
-			failure = err
-			return
-		}
-		actions = append(actions, branchActions...)
-		if len(actions) > 0 {
-			key := "worktree.actions_done"
-			if dryRun {
-				key = "worktree.actions_planned"
-			}
-			lines = append(append(lines, actions...), commandText(ctx, key, map[string]any{"count": len(actions)}))
-		} else {
-			lines = append(lines, commandText(ctx, "worktree.nothing_to_reclaim", nil))
-		}
-		var preserved []tools.TreeRecord
-		for _, r := range kept {
-			if r.Verdict == "keep" && !strings.Contains(r.Reason, "kanban") && !strings.Contains(r.Reason, "in use") {
-				preserved = append(preserved, r)
-			}
-		}
-		if len(preserved) > 0 {
-			lines = append(lines, commandText(ctx, "worktree.preserved", map[string]any{"count": len(preserved)}))
-			for _, r := range preserved {
-				lines = append(lines, "  "+r.Name+": "+r.Reason)
-			}
-		}
+		return then(root, launch, err)
 	})
-	if printed != "" {
-		lines = append(strings.Split(printed, "\n"), lines...)
-	}
-	return lines, failure
 }
 
-// Whether the profile syncs a new tree with its upstream base, on unless worktree_sync says otherwise
-func worktreeSyncBase(ctx context.Context) bool {
-	h := home.Dir(ctx)
-	cfg, err := config.Load(h, config.NewSecrets(h).Lookup())
-	if err != nil {
-		return true
-	}
-	if v, ok := cfg["worktree_sync"]; ok {
-		return pyrepr.Truthy(v)
-	}
-	return true
+// Tree the session works in, a /worktree new tree first, then the tree of a -w launch
+func (a *app) withActiveWorktree(cwd string, then func(active *Worktree, repoRoot string, err error) tea.Cmd) tea.Cmd {
+	return a.worktreeStatus(cwd, func(root string, launch *Worktree, err error) tea.Cmd {
+		if active := activeNewWorktree(); active != nil {
+			return then(active, root, err)
+		}
+		return then(launch, root, err)
+	})
 }
 
-// Creates a tree and moves the session into it, the printed creation lines first
-func (a *app) worktreeNew(r *slashRun, repoRoot, rest string) tea.Cmd {
-	ctx := a.ctx
-	return func() tea.Msg {
-		var info map[string]string
-		printed := captureStdio(func() { info = tools.SetupWorktree(ctx, repoRoot, worktreeSyncBase(ctx), rest, nil) })
-		return asyncDoneMsg{run: func() tea.Cmd {
-			if printed != "" {
-				r.sys(printed)
-			}
-			if len(info) == 0 {
-				return nil
-			}
-			return a.enterWorktree(r, info)
-		}}
-	}
+// Creates a tree through the gateway and moves the session into it, the creation report first
+func (a *app) worktreeNew(r *slashRun, cwd, name string) tea.Cmd {
+	return gatewayCall(a.gw, "worktree.create", map[string]any{"cwd": cwd, "name": name, "pid": os.Getpid()}, func(v any, err error) tea.Cmd {
+		if err != nil {
+			r.sys("error: " + rpcErrorMessage(err))
+			return nil
+		}
+		res := asRPCResult(v)
+		if _, inRepo := res["repo_root"].(string); !inRepo {
+			r.sys(commandText(a.ctx, "worktree.new_requires_repo", nil))
+			return nil
+		}
+		if lines := rpcStrings(res["lines"]); len(lines) > 0 {
+			r.sys(strings.Join(lines, "\n"))
+		}
+		tree, made := worktreeOf(res["tree"])
+		if !made {
+			return nil
+		}
+		return a.enterWorktree(r, tree)
+	})
 }
 
 // Moves the session's workspace into the tree through the gateway, then this process and later sessions follow
-func (a *app) enterWorktree(r *slashRun, info map[string]string) tea.Cmd {
+func (a *app) enterWorktree(r *slashRun, tree Worktree) tea.Cmd {
 	ctx := a.ctx
+	ref := map[string]any{"path": tree.Path, "branch": tree.Branch, "repo_root": tree.RepoRoot}
 	entered := func() tea.Cmd {
 		newWorktrees.Lock()
-		newWorktrees.active = info
-		newWorktrees.created = append(newWorktrees.created, info)
+		active := tree
+		newWorktrees.active = &active
+		newWorktrees.created = append(newWorktrees.created, tree)
 		newWorktrees.Unlock()
-		lines := []string{commandText(ctx, "worktree.ready", map[string]any{"path": info["path"]}),
-			commandText(ctx, "worktree.branch", map[string]any{"branch": info["branch"]}), commandText(ctx, "worktree.tools_in_worktree", nil)}
-		if err := a.followWorktree(info["path"]); err != nil {
-			lines = append(lines, i18n.T(ctx, "cli.session.cwd_enter_failed", "", map[string]any{"path": info["path"], "error": err.Error()}))
+		lines := []string{commandText(ctx, "worktree.ready", map[string]any{"path": tree.Path}),
+			commandText(ctx, "worktree.branch", map[string]any{"branch": tree.Branch}), commandText(ctx, "worktree.tools_in_worktree", nil)}
+		if err := a.followWorktree(tree.Path); err != nil {
+			lines = append(lines, i18n.T(ctx, "cli.session.cwd_enter_failed", "", map[string]any{"path": tree.Path, "error": err.Error()}))
 		}
 		r.sys(strings.Join(lines, "\n"))
-		return func() tea.Msg {
-			tools.RecordTUIWorktree(ctx, info)
-			return nil
-		}
-	}
-	settle := func() tea.Msg {
-		var echoed bytes.Buffer
-		printed := captureStdio(func() { settleWorktree(ctx, info, &echoed) })
-		shown := strings.TrimSpace(strings.Join([]string{printed, tools.StripANSI(echoed.String())}, "\n"))
-		return asyncDoneMsg{run: func() tea.Cmd {
-			if shown != "" {
-				r.sys(shown)
+		return gatewayCall(a.gw, "worktree.record", ref, func(_ any, err error) tea.Cmd {
+			if err != nil {
+				r.sys("error: " + rpcErrorMessage(err))
 			}
 			return nil
-		}}
+		})
 	}
 	refused := func(err error) tea.Cmd {
 		r.sys(commandText(ctx, "worktree.enter_failed", map[string]any{"error": rpcErrorMessage(err)}))
-		return settle
+		return a.settleRefusedWorktree(r, ref)
 	}
 	if r.sid == "" {
 		return entered()
 	}
 	if a.gw.canonical() {
-		return a.store.mutateCanonical(a.gw, r.sid, "workspace", map[string]any{"cwd": info["path"]}, r.stale, func(m *mutationOutcome, err error) tea.Cmd {
+		return a.store.mutateCanonical(a.gw, r.sid, "workspace", map[string]any{"cwd": tree.Path}, r.stale, func(m *mutationOutcome, err error) tea.Cmd {
 			switch {
 			case err != nil:
 				return refused(err)
 			case m == nil:
-				return settle
+				return a.settleRefusedWorktree(r, ref)
 			}
 			return entered()
 		})
@@ -268,7 +173,7 @@ func (a *app) enterWorktree(r *slashRun, info map[string]string) tea.Cmd {
 	if key == "" {
 		key = r.sid
 	}
-	return gatewayCall(a.gw, "session.workspace.move", map[string]any{"session_key": key, "cwd": info["path"]}, func(_ any, err error) tea.Cmd {
+	return call(a.gw, tuigateway.SessionWorkspaceMove, tuigateway.SessionWorkspaceMoveParams{SessionKey: key, Cwd: tree.Path}, func(_ *tuigateway.SessionWorkspaceMoveResult, err error) tea.Cmd {
 		if err != nil {
 			return refused(err)
 		}
@@ -276,10 +181,23 @@ func (a *app) enterWorktree(r *slashRun, info map[string]string) tea.Cmd {
 	})
 }
 
+// Removes a tree the session could not move into, or shows why the gateway kept it
+func (a *app) settleRefusedWorktree(r *slashRun, ref map[string]any) tea.Cmd {
+	return gatewayCall(a.gw, "worktree.settle", ref, func(v any, err error) tea.Cmd {
+		switch {
+		case err != nil:
+			r.sys("error: " + rpcErrorMessage(err))
+		case len(rpcStrings(asRPCResult(v)["lines"])) > 0:
+			r.sys(strings.Join(rpcStrings(asRPCResult(v)["lines"]), "\n"))
+		}
+		return nil
+	})
+}
+
 // Points this process, its terminal cwd and the sessions it creates next at the tree
 func (a *app) followWorktree(path string) error {
 	if info := a.store.ui.Info; info != nil {
-		info["cwd"] = path
+		info.Cwd = &path
 	}
 	if err := os.Chdir(path); err != nil {
 		return err
@@ -305,79 +223,42 @@ func (a *app) followWorktree(path string) error {
 	return nil
 }
 
-// Removes a clean tree and its branch, keeping one that holds uncommitted, unpushed or embedded work
-func settleWorktree(ctx context.Context, info map[string]string, out io.Writer) {
-	path, branch, repoRoot := info["path"], info["branch"], info["repo_root"]
-	if _, err := os.Stat(path); err != nil {
-		return
-	}
+// Hands the trees /worktree new made to the launcher once the terminal UI is gone
+func (a *app) settleNewWorktrees() {
 	newWorktrees.Lock()
-	if newWorktrees.active != nil && newWorktrees.active["path"] == path {
-		newWorktrees.active = nil
+	created := append([]Worktree(nil), newWorktrees.created...)
+	active := ""
+	if newWorktrees.active != nil {
+		active = newWorktrees.active.Path
 	}
 	newWorktrees.Unlock()
-	echo := func(text string) { fmt.Fprintln(out, text) }
-	anyInfo := map[string]any{}
-	for k, v := range info {
-		anyInfo[k] = v
+	if len(created) > 0 {
+		a.host.SettleWorktrees(a.ctx, created, active)
 	}
-	if tools.ApplyExitChoice(ctx, anyInfo, echo) {
-		return
-	}
-	text := func(key string) string { return i18n.T(ctx, "cli.worktree."+key, "", map[string]any{"path": path}) }
-	switch {
-	case tools.WorktreeIsDirty(path, repoRoot, 10*time.Second):
-		echo("\n\x1b[33m" + text("uncommitted_keeping") + "\x1b[0m")
-		return
-	case tools.WorktreeHasUnpushedCommits(path, 10*time.Second) && tools.RepoIsShallow(repoRoot, 10*time.Second):
-		echo("\n\x1b[33m" + text("shallow_clone_keeping") + "\x1b[0m")
-		echo("  " + text("next_session_deepens"))
-		return
-	case tools.WorktreeHasUnpushedCommits(path, 10*time.Second):
-		echo("\n\x1b[33m" + text("unpushed_keeping") + "\x1b[0m")
-		echo("  " + text("clean_up_manually"))
-		return
-	}
-	if blocked := tools.RemovalBlocked(path); blocked != nil {
-		echo("\n\x1b[33m" + i18n.T(ctx, "cli.worktree.kept_reason", "", map[string]any{"path": path, "reason": blocked.Reason}) + "\x1b[0m")
-		return
-	}
-	tools.ReleaseLspClients(path)
-	tools.WorktreeGitQuiet([]string{"worktree", "unlock", path}, repoRoot, 10*time.Second, "git worktree unlock failed (non-fatal)", nil)
-	tools.WorktreeGitQuiet([]string{"worktree", "remove", path, "--force"}, repoRoot, 15*time.Second, "Failed to remove worktree", nil)
-	tools.WorktreeGitQuiet([]string{"branch", "-D", branch}, repoRoot, 10*time.Second, fmt.Sprintf("Failed to delete branch %s", branch), nil)
-	echo("\x1b[32m" + text("cleaned_up") + "\x1b[0m")
 }
 
-// Settles every tree /worktree new made once the terminal UI is gone, asking about the active one first
-func settleNewWorktrees(ctx context.Context, out io.Writer) {
-	newWorktrees.Lock()
-	active, created := newWorktrees.active, append([]map[string]string(nil), newWorktrees.created...)
-	newWorktrees.Unlock()
-	for i := len(created) - 1; i >= 0; i-- {
-		info := created[i]
-		if active != nil && info["path"] == active["path"] {
-			anyInfo := map[string]any{}
-			for k, v := range info {
-				anyInfo[k] = v
-			}
-			tools.AskExitChoice(ctx, anyInfo)
-			if choice, _ := anyInfo["exit_choice"].(string); choice != "" {
-				info = copyWith(info, "exit_choice", choice)
-			}
+// Subcommand and the rest of a /worktree argument line
+func worktreeArgs(arg string) (string, string) {
+	arg = strings.TrimSpace(arg)
+	at := strings.IndexFunc(arg, unicode.IsSpace)
+	if at < 0 {
+		return strings.ToLower(arg), ""
+	}
+	return strings.ToLower(arg[:at]), strings.TrimSpace(arg[at:])
+}
+
+// Whether a prune argument asks for a dry run
+func worktreeDryRun(rest string) bool {
+	rest = strings.ToLower(rest)
+	if strings.Contains(rest, "--dry-run") {
+		return true
+	}
+	for _, word := range strings.Fields(rest) {
+		if word == "-n" {
+			return true
 		}
-		settleWorktree(ctx, info, out)
 	}
-}
-
-// Copy of a string map with one more key
-func copyWith(m map[string]string, key, value string) map[string]string {
-	out := make(map[string]string, len(m)+1)
-	for k, v := range m {
-		out[k] = v
-	}
-	out[key] = value
-	return out
+	return false
 }
 
 // Slash command of isolated git worktrees, status, list, new and prune
@@ -386,14 +267,7 @@ func (a *app) worktreeCommands() []slashCommand {
 		{name: "worktree", help: "show, list, create, or prune isolated git worktrees", usage: "[new [name]|list|prune [--dry-run]]",
 			suggest: func(string) []string { return []string{"new", "list", "prune"} },
 			run: func(r *slashRun) tea.Cmd {
-				parts := pystr.SplitWhitespace(r.cmd, 2)
-				sub, rest := "", ""
-				if len(parts) > 1 {
-					sub = pystr.Lower(parts[1])
-				}
-				if len(parts) > 2 {
-					rest = pystr.Strip(parts[2])
-				}
+				sub, rest := worktreeArgs(r.arg)
 				ctx, cwd := a.ctx, a.store.sessionCwd()
 				handler, known := worktreeHandlers[sub]
 				if sub == "" || sub == "status" || sub == "show" {
@@ -403,35 +277,57 @@ func (a *app) worktreeCommands() []slashCommand {
 					r.sys(commandText(ctx, "worktree.unknown_subcommand", map[string]any{"subcommand": sub}) + "\n" + commandText(ctx, "worktree.usage", nil))
 					return r.ran()
 				}
-				// Git lookups and tree work run here off the update loop, their lines shown back on it
-				return tea.Batch(r.ran(), func() tea.Msg {
-					repoRoot := tools.GitRepoRootOf(cwd)
-					var lines []string
-					switch {
-					case handler == "status":
-						lines = worktreeStatusLines(ctx, a.activeWorktree(), repoRoot)
-					case repoRoot == "" && handler == "new":
-						lines = []string{commandText(ctx, "worktree.new_requires_repo", nil)}
-					case repoRoot == "":
-						lines = []string{commandText(ctx, "worktree.not_in_repo", nil)}
-					case handler == "new":
-						return a.worktreeNew(r, repoRoot, rest)()
-					default:
-						var out []string
-						if handler == "list" {
-							out = worktreeListLines(ctx, repoRoot)
-						} else if pruned, err := worktreePruneLines(ctx, repoRoot, rest, a.activeWorktree()); err != nil {
-							out = append(pruned, "error: "+err.Error())
-						} else {
-							out = pruned
+				failed := func(err error) tea.Cmd {
+					r.sys("error: " + rpcErrorMessage(err))
+					return nil
+				}
+				switch handler {
+				case "status":
+					return tea.Batch(r.ran(), a.withActiveWorktree(cwd, func(active *Worktree, root string, err error) tea.Cmd {
+						if err != nil {
+							return failed(err)
 						}
-						return asyncDoneMsg{run: func() tea.Cmd { return a.showOutput(strings.Join(out, "\n"), "worktree") }}
-					}
-					return asyncDoneMsg{run: func() tea.Cmd {
-						r.sys(strings.Join(lines, "\n"))
+						r.sys(strings.Join(worktreeStatusLines(ctx, active, root != ""), "\n"))
 						return nil
-					}}
-				})
+					}))
+				case "new":
+					return tea.Batch(r.ran(), a.worktreeNew(r, cwd, rest))
+				case "list":
+					return tea.Batch(r.ran(), gatewayCall(a.gw, "worktree.list", map[string]any{"cwd": cwd}, func(v any, err error) tea.Cmd {
+						res := asRPCResult(v)
+						lines := rpcStrings(res["lines"])
+						switch _, inRepo := res["repo_root"].(string); {
+						case err != nil:
+							return failed(err)
+						case !inRepo:
+							r.sys(commandText(ctx, "worktree.not_in_repo", nil))
+							return nil
+						case len(lines) == 0:
+							lines = []string{commandText(ctx, "worktree.list_failed", nil)}
+						}
+						return a.showOutput(strings.Join(lines, "\n"), "worktree")
+					}))
+				}
+				dryRun := worktreeDryRun(rest)
+				return tea.Batch(r.ran(), a.withActiveWorktree(cwd, func(active *Worktree, root string, err error) tea.Cmd {
+					switch {
+					case err != nil:
+						return failed(err)
+					case root == "":
+						r.sys(commandText(ctx, "worktree.not_in_repo", nil))
+						return nil
+					}
+					params := map[string]any{"cwd": cwd, "dry_run": dryRun, "keep": nil}
+					if active != nil {
+						params["keep"] = active.Path
+					}
+					return gatewayCall(a.gw, "worktree.prune", params, func(v any, err error) tea.Cmd {
+						if err != nil {
+							return failed(err)
+						}
+						return a.showOutput(strings.Join(worktreePruneLines(ctx, asRPCResult(v), dryRun), "\n"), "worktree")
+					})
+				}))
 			}},
 	}
 }

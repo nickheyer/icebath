@@ -8,7 +8,7 @@ import (
 	"testing"
 )
 
-// Fixes the task route the call path resolves, as hermes tests patch _resolve_task_provider_model
+// Fixes the task route the call path resolves, as tests patch resolve task provider model
 func auxFixedTaskRoute(t *testing.T, route auxTaskRoute) {
 	t.Helper()
 	prev := auxResolveTaskProviderModelFn
@@ -44,7 +44,7 @@ func auxNoConfiguredChains(t *testing.T) {
 	auxTryConfiguredFallbackChainFn, auxTryMainFallbackChainFn = none, none
 }
 
-// Expired bearer error the way the hermes fixture class _AuxAuth401 raises it
+// Expired bearer error the way the test fixture class aux auth401 raises it
 func auxAuth401(message string) error {
 	return &AuxSDKError{Class: "_AuxAuth401", Message: message, StatusCode: 401}
 }

@@ -52,7 +52,7 @@ func (s *Store) bookMissed(job *Job, count int, first *string, detail string, ca
 		detail = fmt.Sprintf("%s; counting stopped at %d", detail, maxCountedSlots)
 	}
 	if err := recordMissedOccurrences(s, job.ID, count, first, detail); err != nil {
-		s.logAs("cron.jobs").Warn(fmt.Sprintf("Job '%s': could not book its missed occurrences", job.ID), "error", err)
+		s.log.Warn(fmt.Sprintf("Job '%s': could not book its missed occurrences", job.ID), "error", err)
 	}
 }
 
@@ -78,13 +78,12 @@ func fastForwardMissedRecurring(d *dueJob, grace int) (bool, error) {
 	first := d.nextRun
 	nextAt, _ := s.clk.parseAware(next, nil)
 	if instantAfter(nextAt, sc.now) && !s.jobCatchesUp(job) {
-		s.logAs("cron.jobs").Info(fmt.Sprintf("Job '%s' missed its scheduled time (%s, grace=%ds). Skipping %d missed occurrence(s) "+
+		s.log.Info(fmt.Sprintf("Job '%s' missed its scheduled time (%s, grace=%ds). Skipping %d missed occurrence(s) "+
 			"because catch-up is off for this job; next run: %s", d.label(), d.nextRun, grace, missed, next))
-		sc.onSaved = append(sc.onSaved, func() { recordCronMissed(sc.ctx, job) },
-			func() { s.bookMissed(job, missed, &first, "skipped, catch-up off; next run "+next, capped) })
+		sc.onSaved = append(sc.onSaved, func() { s.bookMissed(job, missed, &first, "skipped, catch-up off; next run "+next, capped) })
 		return true, nil
 	}
-	s.logAs("cron.jobs").Info(fmt.Sprintf("Job '%s' missed its scheduled time (%s, grace=%ds). Running now; next run provisionally "+
+	s.log.Info(fmt.Sprintf("Job '%s' missed its scheduled time (%s, grace=%ds). Running now; next run provisionally "+
 		"set to: %s (re-anchored on completion)", d.label(), d.nextRun, grace, next))
 	sc.onSaved = append(sc.onSaved, func() { s.recordCatchUpOccurrence(sc.ctx) })
 	if missed > 1 {
@@ -112,7 +111,7 @@ func retireExpiredOneshot(ctx context.Context, d *dueJob) (bool, error) {
 		return false, nil
 	}
 	if s.jobCatchesUp(job) {
-		s.logAs("cron.jobs").Info(fmt.Sprintf("Job '%s' missed its one-shot time %s; firing it once now (catch_up on).", d.label(), d.nextRun))
+		s.log.Info(fmt.Sprintf("Job '%s' missed its one-shot time %s; firing it once now (catch_up on).", d.label(), d.nextRun))
 		return false, nil
 	}
 	if OutageCovers(s.cronDir, dueAt, oneshotGraceSeconds) {
@@ -125,8 +124,7 @@ func retireExpiredOneshot(ctx context.Context, d *dueJob) (bool, error) {
 		first := d.nextRun
 		writeMissed(home.WithOverride(ctx, s.home), s, job, first)
 		sc.retire(job.ID)
-		sc.onSaved = append(sc.onSaved, func() { recordCronMissed(sc.ctx, job) },
-			func() { s.bookMissed(job, 1, &first, "one-shot past its grace window; catch-up off", false) })
+		sc.onSaved = append(sc.onSaved, func() { s.bookMissed(job, 1, &first, "one-shot past its grace window; catch-up off", false) })
 	}
 	return true, nil
 }

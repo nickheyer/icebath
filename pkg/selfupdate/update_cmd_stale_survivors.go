@@ -9,7 +9,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 )
 
-var staleSurvivorsLog = updateLog.With("logger", "hermes_cli.update_cmd_stale_survivors")
+var staleSurvivorsLog = pkgLog()
 
 // Process id of a fleet row when it is a positive integer
 func fleetRowPID(row any) (int, bool) {

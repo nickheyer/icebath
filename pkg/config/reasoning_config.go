@@ -2,7 +2,6 @@ package config
 
 import (
 	"fmt"
-	"log/slog"
 	"regexp"
 	"strings"
 
@@ -192,7 +191,7 @@ func ResolveReasoningConfig(cfg any, model string) map[string]any {
 	}
 	result := ParseReasoningEffort(effort)
 	if pyrepr.Truthy(effort) && pystr.Strip(pyrepr.Str(effort)) != "" && result == nil {
-		slog.Warn(fmt.Sprintf("Unknown reasoning_effort '%s', using default (medium)", pyrepr.Str(effort)))
+		pkgLog().Warn(fmt.Sprintf("Unknown reasoning_effort '%s', using default (medium)", pyrepr.Str(effort)))
 	}
 	return result
 }

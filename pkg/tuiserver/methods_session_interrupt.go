@@ -7,7 +7,7 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
-	"github.com/nickheyer/icebath/pkg/tuigateway"
+	"github.com/nickheyer/icebath/pkg/tuihost"
 )
 
 var sessionInterruptRegistry = &handlerRegistry{}
@@ -29,11 +29,11 @@ func init() {
 }
 
 // Transport of the current request, stdio when none is bound
-func callerTransport(ctx context.Context) tuigateway.Transport {
-	if transport := tuigateway.CurrentTransport(ctx); transport != nil {
+func callerTransport(ctx context.Context) tuihost.Transport {
+	if transport := tuihost.CurrentTransport(ctx); transport != nil {
 		return transport
 	}
-	return tuigateway.ModuleStdioTransport()
+	return tuihost.ModuleStdioTransport()
 }
 
 // Trimmed text of a param, the default for a missing or falsy value
@@ -53,8 +53,8 @@ func resumeWakeAfterInterrupt(ctx context.Context) {
 	voiceSidMu.Lock()
 	voiceOwner := voiceWakeOwner
 	voiceSidMu.Unlock()
-	var seen []tuigateway.Transport
-	for _, owner := range []tuigateway.Transport{callerTransport(ctx), voiceOwner} {
+	var seen []tuihost.Transport
+	for _, owner := range []tuihost.Transport{callerTransport(ctx), voiceOwner} {
 		if owner == nil || containsTransport(seen, owner) {
 			continue
 		}
@@ -63,7 +63,7 @@ func resumeWakeAfterInterrupt(ctx context.Context) {
 	}
 }
 
-func containsTransport(seen []tuigateway.Transport, owner tuigateway.Transport) bool {
+func containsTransport(seen []tuihost.Transport, owner tuihost.Transport) bool {
 	for _, item := range seen {
 		if item == owner {
 			return true
@@ -73,7 +73,7 @@ func containsTransport(seen []tuigateway.Transport, owner tuigateway.Transport) 
 }
 
 // Marks the running turn as touched by the user, popped by the turn's own finally
-func noteUserInput(session *tuigateway.Session) {
+func noteUserInput(session *tuihost.Session) {
 	unlock := historyLockOf(session)
 	defer unlock()
 	if truthy(session.Get("running")) {
@@ -88,7 +88,7 @@ func sessionInterrupt(ctx context.Context, rid any, params map[string]any) (out 
 	defer func() {
 		if resumeWake {
 			if failure := catchPanic(func() { resumeWakeAfterInterrupt(ctx) }); failure != nil {
-				logger().Debug("session.interrupt wake resume failed", "exc_info", errorMessage(failure))
+				pkgLog().Debug("session.interrupt wake resume failed", "exc_info", errorMessage(failure))
 			}
 		}
 	}()
@@ -124,7 +124,7 @@ func sessionInterrupt(ctx context.Context, rid any, params map[string]any) (out 
 }
 
 // Runs steer or redirect on the live agent, recording an accepted correction on the turn and purging its queued copies
-func applyCorrection(rid any, session *tuigateway.Session, verb, text, acceptedStatus string) map[string]any {
+func applyCorrection(rid any, session *tuihost.Session, verb, text, acceptedStatus string) map[string]any {
 	var accepted bool
 	if failure := catchPanic(func() {
 		switch a := session.Get("agent").(type) {

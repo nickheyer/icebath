@@ -1,6 +1,6 @@
 package tuiserver
 
-import "github.com/nickheyer/icebath/pkg/tuigateway"
+import "github.com/nickheyer/icebath/pkg/tuihost"
 
 // Withdraws the open server to client requests of one session, or of every session when sid is nil
 func clearPending(sid *string) {
@@ -8,5 +8,5 @@ func clearPending(sid *string) {
 	if sid != nil && *sid != "" {
 		reason = "interrupted"
 	}
-	tuigateway.Cancel(sid, reason, nil)
+	tuihost.Cancel(sid, reason, nil)
 }

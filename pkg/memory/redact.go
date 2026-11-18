@@ -7,6 +7,7 @@ import (
 	"strings"
 	"unicode"
 
+	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
 
@@ -729,6 +730,15 @@ func walkStrings(value any, fix func(string) string) any {
 		out := make(map[string]any, len(v))
 		for k, item := range v {
 			out[k] = walkStrings(item, fix)
+		}
+		return out
+	case *pyjson.Object:
+		if v == nil {
+			return value
+		}
+		out := pyjson.NewObject()
+		for _, k := range v.Keys {
+			out.Set(k, walkStrings(v.Vals[k], fix))
 		}
 		return out
 	case []any:

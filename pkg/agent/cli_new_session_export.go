@@ -2,7 +2,6 @@ package agent
 
 import (
 	"context"
-	"log/slog"
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/memory"
@@ -19,7 +18,7 @@ func (a *AIAgent) LaunchSessionBoundaryMemoryFlush(historySnapshot []map[string]
 		func() {
 			defer func() {
 				if r := recover(); r != nil {
-					slog.Debug("Context engine on_session_end failed at /new boundary")
+					pkgLog().Debug("Context engine on_session_end failed at /new boundary")
 				}
 			}()
 			engine.OnSessionEnd(sessionID, historySnapshot)

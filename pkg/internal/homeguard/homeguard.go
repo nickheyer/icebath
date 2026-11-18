@@ -37,7 +37,7 @@ var xdgHomes = []string{"XDG_CONFIG_HOME", "XDG_CACHE_HOME", "XDG_DATA_HOME", "X
 // Search path variables whose entries under the developer home are dropped
 var xdgSearchPaths = []string{"XDG_CONFIG_DIRS", "XDG_DATA_DIRS"}
 
-// Product home directory names under the developer home that a pointer variable must not keep
+// Agent homes under the developer home a pointer variable must not keep, icebath and the agent installed beside it
 var productDirs = []string{".icebath", ".hermes"}
 
 var guard struct {
@@ -223,7 +223,7 @@ func dropUnder(name, root string) {
 	os.Setenv(name, strings.Join(kept, string(os.PathListSeparator)))
 }
 
-// Unsets every ICEBATH_ and HERMES_ variable naming the developer home or a product home inside it
+// Unsets every ICEBATH_ variable naming the developer home or a product home inside it
 func dropProductPointers(original string) {
 	if original == "" {
 		return
@@ -231,7 +231,7 @@ func dropProductPointers(original string) {
 	root := resolve(original)
 	for _, entry := range os.Environ() {
 		name, value, _ := strings.Cut(entry, "=")
-		if !strings.HasPrefix(name, "ICEBATH_") && !strings.HasPrefix(name, "HERMES_") || value == "" {
+		if !strings.HasPrefix(name, "ICEBATH_") || value == "" {
 			continue
 		}
 		for _, part := range filepath.SplitList(value) {

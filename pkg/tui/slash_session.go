@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"github.com/nickheyer/icebath/pkg/tuigateway"
 	"strings"
 
 	tea "charm.land/bubbletea/v2"
@@ -106,12 +107,7 @@ func (a *app) sessionCommands() []slashCommand {
 						r.sys(tr("slashCmd.session.model.switched", model))
 					}
 					r.maybeWarn(res)
-					info := map[string]any{"skills": map[string]any{}, "tools": map[string]any{}}
-					for k, v := range a.store.ui.Info {
-						info[k] = v
-					}
-					info["model"] = model
-					a.store.ui.Info = info
+					a.store.ui.Info = patchedInfo(a.store.ui.Info, tuigateway.SessionInfo{Model: &model})
 					return nil
 				})
 			}
@@ -145,7 +141,15 @@ func (a *app) sessionCommands() []slashCommand {
 			return r.rpc("config.set", map[string]any{"key": "personality", "session_id": nilIfEmpty(r.sid), "value": r.arg}, func(res map[string]any) tea.Cmd {
 				reset := truthyJS(res["history_reset"])
 				if reset {
-					info, _ := res["info"].(map[string]any)
+					var info *tuigateway.SessionInfo
+					if raw := res["info"]; raw != nil {
+						var decoded tuigateway.SessionInfo
+						if err := tuigateway.Loose(raw, &decoded); err != nil {
+							r.sys("error: " + tr("session.common.invalidResponse", "config.set") + " " + err.Error())
+						} else {
+							info = &decoded
+						}
+					}
 					a.life.resetVisibleHistory(info)
 				}
 				value, _ := res["value"].(string)
@@ -326,13 +330,8 @@ func (a *app) sessionCommands() []slashCommand {
 					next := fastModeWord(res["value"])
 					r.sys(tr("slashCmd.session.fast.mode", next))
 					if a.store.ui.Info != nil {
-						info := map[string]any{}
-						for k, v := range a.store.ui.Info {
-							info[k] = v
-						}
-						info["fast"] = next != "normal"
-						info["service_tier"] = map[string]string{"fast": "priority", "normal": "", "ultrafast": "ultrafast"}[next]
-						a.store.ui.Info = info
+						fast, tier := next != "normal", map[string]string{"fast": "priority", "normal": "", "ultrafast": "ultrafast"}[next]
+						a.store.ui.Info = patchedInfo(a.store.ui.Info, tuigateway.SessionInfo{Fast: &fast, ServiceTier: &tier})
 					}
 					return nil
 				})

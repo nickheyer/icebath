@@ -45,7 +45,7 @@ func TestManagedDetectionMatchesNetlocNotSubstring(t *testing.T) {
 
 func TestRemoteProvidersUnaffected(t *testing.T) {
 	ctx := auxManagedState(t)
-	if auxProviderRequiresStream(ctx, "https://inference-api.nousresearch.com/v1/") {
+	if auxProviderRequiresStream(ctx, "https://api.deepseek.com/v1/") {
 		t.Fatal("remote provider must not require streaming")
 	}
 }

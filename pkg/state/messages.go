@@ -66,7 +66,7 @@ type Message struct {
 	Compacted    bool              `json:"-"`
 	// Set once the row exists so a flush never appends it again
 	Persisted bool `json:"-"`
-	// Dict keys the struct has no field for, such as underscore bookkeeping keys and data_use
+	// Dict keys the struct has no field for, such as underscore bookkeeping keys
 	Extra map[string]any `json:"-"`
 	// Dict key order of the source when known, the restore order for rows the live replay loaded
 	Keys []string `json:"-"`

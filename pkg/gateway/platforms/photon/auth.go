@@ -6,7 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
-	"log/slog"
 	"math"
 	"net/http"
 	"net/url"
@@ -33,7 +32,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/provider"
 )
 
-// Device flow token the dashboard API rejects, a RuntimeError in hermes
+// Device flow token the dashboard API rejects
 type PhotonDashboardAuthError struct {
 	Msg   string
 	Cause error
@@ -60,7 +59,7 @@ const (
 // E.164 phone number, a trailing newline accepted like the Python dollar anchor
 var E164RE = regexp.MustCompile(`^\+[1-9]\p{Nd}{6,14}\n?$`)
 
-// Python exception standing for the class hermes raises or catches
+// Python exception class name an error is reported under
 type pyError struct {
 	class string
 	msg   string
@@ -213,7 +212,7 @@ func loadAuth(ctx context.Context) (any, error) {
 	}
 	raw, err := os.ReadFile(path)
 	if err != nil {
-		slog.Warn(fmt.Sprintf("photon: could not read %s: %s", path, pyhttpx.OSErrorText(err)))
+		pkgLog().Warn(fmt.Sprintf("photon: could not read %s: %s", path, pyhttpx.OSErrorText(err)))
 		return pyjson.NewObject(), nil
 	}
 	raw = []byte(strings.TrimPrefix(string(raw), "\ufeff"))
@@ -222,7 +221,7 @@ func loadAuth(ctx context.Context) (any, error) {
 	}
 	data, err := pyjson.Loads(string(raw))
 	if err != nil {
-		slog.Warn(fmt.Sprintf("photon: could not read %s: %s", path, err))
+		pkgLog().Warn(fmt.Sprintf("photon: could not read %s: %s", path, err))
 		return pyjson.NewObject(), nil
 	}
 	if !pyrepr.Truthy(data) {
@@ -538,11 +537,11 @@ func StoreUserNumbers(ctx context.Context, phoneNumber, assignedPhoneNumber, use
 var persistRuntimeEnv = func(ctx context.Context, spectrumProjectID, projectSecret string) {
 	h := home.Dir(ctx)
 	if err := config.SaveEnvValueContext(ctx, h, "PHOTON_PROJECT_ID", spectrumProjectID); err != nil {
-		slog.Warn(fmt.Sprintf("photon: could not write project creds to .env: %s", err))
+		pkgLog().Warn(fmt.Sprintf("photon: could not write project creds to .env: %s", err))
 		return
 	}
 	if err := config.SaveEnvValueContext(ctx, h, "PHOTON_PROJECT_SECRET", projectSecret); err != nil {
-		slog.Warn(fmt.Sprintf("photon: could not write project creds to .env: %s", err))
+		pkgLog().Warn(fmt.Sprintf("photon: could not write project creds to .env: %s", err))
 	}
 }
 
@@ -823,7 +822,7 @@ func PollForToken(ctx context.Context, code DeviceCode, clientID string, timeout
 		resp, err := httpPost(ctx, tokenURL, grant, nil, httpTimeout)
 		if err != nil {
 			if _, transport := err.(*requestError); transport {
-				slog.Warn(fmt.Sprintf("photon: device-token poll failed: %s", err))
+				pkgLog().Warn(fmt.Sprintf("photon: device-token poll failed: %s", err))
 				continue
 			}
 			return "", err
@@ -879,7 +878,7 @@ func PollForToken(ctx context.Context, code DeviceCode, clientID string, timeout
 			}
 			return "", runtimeError("Photon device token error: %s", detail)
 		}
-		slog.Warn(fmt.Sprintf("photon: device-token unexpected status %d: %s", resp.StatusCode(), cutRunes(resp.Text(), 200)))
+		pkgLog().Warn(fmt.Sprintf("photon: device-token unexpected status %d: %s", resp.StatusCode(), cutRunes(resp.Text(), 200)))
 	}
 	return "", &pyError{class: "TimeoutError", msg: "Photon device login timed out"}
 }
@@ -1242,7 +1241,7 @@ func CreateUser(ctx context.Context, projectID, projectSecret, phoneNumber strin
 	}
 	body := pyjson.ObjectOf("type", "shared", "phoneNumber", phoneNumber)
 	if sendInvite {
-		slog.Debug("photon: send_invite is ignored by Spectrum shared-user creation")
+		pkgLog().Debug("photon: send_invite is ignored by Spectrum shared-user creation")
 	}
 	for _, kv := range [][2]string{{"firstName", fields.FirstName}, {"lastName", fields.LastName}, {"email", fields.Email}} {
 		if kv[1] != "" {
@@ -1383,7 +1382,7 @@ func WaitForOptedInUser(ctx context.Context, projectID, projectSecret, phoneNumb
 		case err != nil && !isProbeFailure(err):
 			return nil, err
 		case err != nil:
-			slog.Debug(fmt.Sprintf("photon: opt-in poll failed (attempt %d): %s", attempt, err))
+			pkgLog().Debug(fmt.Sprintf("photon: opt-in poll failed (attempt %d): %s", attempt, err))
 		}
 		if onWaiting != nil {
 			onWaiting(int(attempt))
@@ -1477,7 +1476,7 @@ func RefreshUserNumbers(ctx context.Context, projectID, projectSecret string) (s
 			if isBaseException(err) {
 				return "", "", err
 			}
-			slog.Debug(fmt.Sprintf("photon: could not refresh iMessage line for status: %s", err))
+			pkgLog().Debug(fmt.Sprintf("photon: could not refresh iMessage line for status: %s", err))
 		} else if line != "" {
 			assigned = line
 		}
@@ -1575,7 +1574,7 @@ func GetIMessageLine(ctx context.Context, token, projectID string, createIfMissi
 		if isBaseException(err) {
 			return nil, err
 		}
-		slog.Warn(fmt.Sprintf("photon: could not auto-provision iMessage line: %s", err))
+		pkgLog().Warn(fmt.Sprintf("photon: could not auto-provision iMessage line: %s", err))
 		return nil, nil
 	}
 	return added, nil

@@ -470,7 +470,7 @@ func (s *responsesStream) emitToolCompleted(payload *pyjson.Object) error {
 
 // Lifecycle status as a custom event outside the output items
 func (s *responsesStream) emitStatus(payload *pyjson.Object) error {
-	frame, err := gateway.APISSEFrame(payload, "hermes.status", true, nil)
+	frame, err := gateway.APISSEFrame(payload, "icebath.status", true, nil)
 	if err != nil {
 		return err
 	}
@@ -552,7 +552,7 @@ func (s *responsesStream) collectResult(result, usage map[string]any, runErr err
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if runErr != nil {
-		apiLog().Error(fmt.Sprintf("Error running agent for streaming responses: %v", runErr))
+		pkgLog().Error(fmt.Sprintf("Error running agent for streaming responses: %v", runErr))
 		s.agentError = redactAPIErrorText(runErr.Error(), -1)
 		return nil
 	}
@@ -676,7 +676,7 @@ func (s *responsesStream) emitCompleted() (*pyjson.Object, error) {
 	if s.durableKey != "" && !s.terminalReplay {
 		headers := pyjson.NewObject()
 		for k, values := range s.response.Headers {
-			if strings.HasPrefix(k, "X-Hermes-") && len(values) > 0 {
+			if strings.HasPrefix(k, headerPrefix) && len(values) > 0 {
 				headers.Set(k, values[0])
 			}
 		}

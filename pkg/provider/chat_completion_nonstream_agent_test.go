@@ -278,30 +278,6 @@ func TestRequestClientRegistryRoutesByKindAndOwner(t *testing.T) {
 
 func (a *fakeChatAgent) SessionID() string { return a.model + "-session" }
 
-func TestMergeNousPortalMessagesExtraBodyOnlyForNous(t *testing.T) {
-	t.Setenv("ICEBATH_HOME", t.TempDir())
-	kwargs := map[string]any{"model": "claude-opus-4-8", "messages": []any{}}
-	other := &fakeChatAgent{provider: "anthropic", model: "s"}
-	if got := MergeNousPortalMessagesExtraBody(t.Context(), other, kwargs, nil); got["extra_body"] != nil || len(got) != 2 {
-		t.Fatalf("non nous %v", got)
-	}
-	nous := &fakeChatAgent{provider: "nous", model: "sess-abc123"}
-	kwargs = map[string]any{"extra_body": map[string]any{"keep": 1}}
-	got := MergeNousPortalMessagesExtraBody(t.Context(), nous, kwargs, []map[string]any{{"role": "user", "content": "hi"}})
-	extra := got["extra_body"].(map[string]any)
-	if extra["keep"] != 1 || extra["session_id"] == nil || extra["provider_preferences"] != nil {
-		t.Fatalf("extra %v", extra)
-	}
-	tags, _ := extra["tags"].([]any)
-	if !slicesContainsAny(tags, "product=icebath-agent") || !slicesContainsAny(tags, "conversation=sess-abc123-session") {
-		t.Fatalf("tags %v", tags)
-	}
-	bad := map[string]any{"extra_body": "x"}
-	if got := MergeNousPortalMessagesExtraBody(t.Context(), nous, bad, nil); got["extra_body"] != "x" {
-		t.Fatalf("a non dict extra_body stays %v", got)
-	}
-}
-
 func slicesContainsAny(list []any, want string) bool {
 	for _, v := range list {
 		if v == want {

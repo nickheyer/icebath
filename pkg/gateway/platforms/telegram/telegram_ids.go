@@ -81,7 +81,7 @@ func ParseTelegramMessageID(value any) *big.Int {
 	return nil
 }
 
-// Integer value of a Go integer kind or big int, the isinstance int check of hermes
+// Integer value of a Go integer kind or big int
 func pyIntValue(value any) (*big.Int, bool) {
 	switch v := value.(type) {
 	case int:

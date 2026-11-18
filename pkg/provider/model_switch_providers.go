@@ -14,11 +14,10 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 )
 
 // Rows never capped by max models, aggregators with full catalogs and rows already curated
-var uncappedPickerProviders = map[string]bool{"opencode-zen": true, "opencode-go": true, "nous": true, "openrouter": true}
+var uncappedPickerProviders = map[string]bool{"opencode-zen": true, "opencode-go": true, "openrouter": true}
 
 // AuthenticatedProvidersOptions mirrors the list_authenticated_providers keyword arguments
 type AuthenticatedProvidersOptions struct {
@@ -27,7 +26,6 @@ type AuthenticatedProvidersOptions struct {
 	CurrentModel               string
 	UserProviders              map[string]any
 	CustomProviders            []any
-	ForceFreshNousTier         bool
 	MaxModels                  *int
 	Refresh                    bool
 	SkipCustomProviderProbe    bool
@@ -64,12 +62,10 @@ var (
 	pickerLMStudioFn          = FetchLMStudioModels
 	pickerDiscoverEndpointFn  = discoverEndpointModels
 	pickerSaveDiscoveredFn    = saveDiscoveredModelsToConfig
-	pickerNousModelIDsFn      = nousPickerModelIDs
 	pickerListAuthenticatedFn = ListAuthenticatedProviders
 	pickerOpenRouterModelsFn  = FetchOpenRouterModels
 	pickerCanonicalFn         = CanonicalProviders
 	pickerProviderInfoFn      = ModelsDevProviderInfo
-	pickerNousPricingFn       = func(ctx context.Context) PricingTable { return GetPricingForProvider(ctx, "nous", "", false, true) }
 	pickerPrewarmDone         atomic.Bool
 	pickerLoadPoolFn          = func(ctx context.Context, provider string) pickerPool {
 		if pool := LoadPool(modelsPoolEnv(ctx), provider); pool != nil {
@@ -313,18 +309,18 @@ func PrewarmPickerCacheAsync(ctx context.Context) <-chan struct{} {
 		defer close(done)
 		defer func() {
 			if r := recover(); r != nil {
-				modelsLog.Debug("picker cache prewarm failed", "error", r)
+				pkgLog().Debug("picker cache prewarm failed", "error", r)
 			}
 		}()
 		pc, err := loadPickerContext(ctx)
 		if err != nil {
-			modelsLog.Debug("picker cache prewarm failed", "error", err)
+			pkgLog().Debug("picker cache prewarm failed", "error", err)
 			return
 		}
 		if _, err := ListAuthenticatedProviders(ctx, AuthenticatedProvidersOptions{CurrentProvider: pc.CurrentProvider,
 			CurrentBaseURL: pc.CurrentBaseURL, CurrentModel: pc.CurrentModel, UserProviders: pc.UserProviders,
 			CustomProviders: pc.CustomProviders, ExcludedProviders: pc.ExcludedProviders}); err != nil {
-			modelsLog.Debug("picker cache prewarm failed", "error", err)
+			pkgLog().Debug("picker cache prewarm failed", "error", err)
 		}
 	}()
 	return done
@@ -392,7 +388,7 @@ func pickerSkip(seen, excluded map[string]bool, keys ...string) bool {
 	return false
 }
 
-// Auth registry row, nil for the openrouter and custom pseudo providers the hermes registry lacks
+// Auth registry row, nil for the openrouter and custom pseudo providers the registry lacks
 func authRegistryGet(ctx context.Context, key string) *Profile {
 	if key == "" || key == "openrouter" || key == "custom" {
 		return nil
@@ -409,7 +405,7 @@ func providerConfig(ctx context.Context, key string) (*Profile, error) {
 	if row := authRegistryGet(ctx, key); row != nil {
 		return row, nil
 	}
-	return nil, fmt.Errorf("KeyError: %s", pyrepr.StrRepr(key))
+	return nil, fmt.Errorf("no provider config named %s", key)
 }
 
 // Runtime resolution recognizes the provider identity, a capability check rather than a credential check
@@ -436,9 +432,9 @@ func isRuntimeProviderRoutable(env PoolEnv, providerID string) (bool, error) {
 }
 
 type builtinCandidate struct {
-	hermesID, mdevID string
-	pconfig          *Profile
-	envVars          []string
+	icebathID, mdevID string
+	pconfig           *Profile
+	envVars           []string
 }
 
 // Visits each models.dev mapped api_key provider that is routable, unclaimed and not an aggregator alias
@@ -446,26 +442,26 @@ func iterBuiltinCandidates(ctx context.Context, data map[string]any, excluded, s
 	env := modelsPoolEnv(ctx)
 	mapping := ModelsDevProviderMap()
 	aggregators := AggregatorProviders()
-	for _, hermesID := range sortedStringKeys(mapping) {
-		mdevID := mapping[hermesID]
-		if target := providerDefAliases[hermesID]; target != "" && target != hermesID && containsString(aggregators, target) {
+	for _, icebathID := range sortedStringKeys(mapping) {
+		mdevID := mapping[icebathID]
+		if target := providerDefAliases[icebathID]; target != "" && target != icebathID && containsString(aggregators, target) {
 			continue
 		}
-		if prof := getProviderProfile(ctx, hermesID); prof != nil && prof.Name != hermesID {
+		if prof := getProviderProfile(ctx, icebathID); prof != nil && prof.Name != icebathID {
 			continue
 		}
-		if seen[strings.ToLower(hermesID)] || excluded[strings.ToLower(hermesID)] || excluded[strings.ToLower(mdevID)] {
+		if seen[strings.ToLower(icebathID)] || excluded[strings.ToLower(icebathID)] || excluded[strings.ToLower(mdevID)] {
 			continue
 		}
 		pdata, ok := data[mdevID].(map[string]any)
 		if !ok {
 			continue
 		}
-		pconfig := authRegistryGet(ctx, hermesID)
+		pconfig := authRegistryGet(ctx, icebathID)
 		if pconfig != nil && pconfig.AuthType != "api_key" {
 			continue
 		}
-		routable, err := isRuntimeProviderRoutable(env, hermesID)
+		routable, err := isRuntimeProviderRoutable(env, icebathID)
 		if err != nil {
 			return err
 		}
@@ -488,7 +484,7 @@ func iterBuiltinCandidates(ctx context.Context, data map[string]any, excluded, s
 				envVars = append(envVars, pyStr(v))
 			}
 		}
-		if err := visit(builtinCandidate{hermesID: hermesID, mdevID: mdevID, pconfig: pconfig, envVars: envVars}); err != nil {
+		if err := visit(builtinCandidate{icebathID: icebathID, mdevID: mdevID, pconfig: pconfig, envVars: envVars}); err != nil {
 			return err
 		}
 	}
@@ -499,7 +495,7 @@ func iterBuiltinCandidates(ctx context.Context, data map[string]any, excluded, s
 func authStoreHasProvider(ctx context.Context, keys ...string) bool {
 	data, err := modelsPoolEnv(ctx).Store.Load()
 	if err != nil {
-		modelsLog.Debug("Auth store check failed", "keys", keys, "error", err)
+		pkgLog().Debug("Auth store check failed", "keys", keys, "error", err)
 		return false
 	}
 	if len(data) == 0 {
@@ -515,20 +511,20 @@ func authStoreHasProvider(ctx context.Context, keys ...string) bool {
 }
 
 // Section one pool check, consulted only when auth.json lists a raw pool entry
-func rawPoolUsable(ctx context.Context, hermesID string, forPicker bool) bool {
+func rawPoolUsable(ctx context.Context, icebathID string, forPicker bool) bool {
 	data, err := modelsPoolEnv(ctx).Store.Load()
 	if err != nil || len(data) == 0 {
 		return false
 	}
 	pool, _ := data["credential_pool"].(map[string]any)
-	if pyTruthy(pool[hermesID]) {
-		return credentialPoolIsUsable(ctx, hermesID, true, forPicker)
+	if pyTruthy(pool[icebathID]) {
+		return credentialPoolIsUsable(ctx, icebathID, true, forPicker)
 	}
 	return false
 }
 
 // Vertex OAuth, extra env vars, registry key vars or the Azure Entra config mark an overlay configured
-func overlayHasEnvCreds(ctx context.Context, pid, hermesSlug string, overlay IcebathOverlay, readEnv func(string) (string, error)) (bool, error) {
+func overlayHasEnvCreds(ctx context.Context, pid, icebathSlug string, overlay IcebathOverlay, readEnv func(string) (string, error)) (bool, error) {
 	hasCreds := false
 	if overlay.AuthType == "vertex" {
 		hasCreds = pickerVertexCredentialsFn(ctx)
@@ -540,7 +536,7 @@ func overlayHasEnvCreds(ctx context.Context, pid, hermesSlug string, overlay Ice
 		hasCreds = lit
 	}
 	if !hasCreds && overlay.AuthType == "api_key" {
-		for _, key := range []string{pid, hermesSlug} {
+		for _, key := range []string{pid, icebathSlug} {
 			if pcfg := authRegistryGet(ctx, key); pcfg != nil && len(pcfg.KeyEnv) > 0 {
 				lit, err := anyEnv(pcfg.KeyEnv, readEnv)
 				if err != nil {
@@ -552,7 +548,7 @@ func overlayHasEnvCreds(ctx context.Context, pid, hermesSlug string, overlay Ice
 			}
 		}
 	}
-	if !hasCreds && hermesSlug == "azure-foundry" {
+	if !hasCreds && icebathSlug == "azure-foundry" {
 		return azureEntraConfigured(ctx, readEnv)
 	}
 	return hasCreds, nil
@@ -630,55 +626,6 @@ func firstCurated(curated map[string][]string, keys []string) []string {
 // Bedrock live discovery reflects the active region, the curated list answering otherwise
 func awsLiveOrCuratedIDs(ctx context.Context, slug string, curated map[string][]string, fallbackKeys []string, nonBlocking bool) []string {
 	return liveOrCuratedIDs(ctx, slug, curated, fallbackKeys, false, nonBlocking)
-}
-
-// Nous curated agentic list with Portal recommendations and sale models, narrowed by org policy, plan picks first
-func nousPickerModelIDs(ctx context.Context, curated map[string][]string, forceFreshNousTier bool) []string {
-	ids := cloneStrings(curated["nous"])
-	pricing := pickerNousPricingFn(ctx)
-	if pricing == nil {
-		pricing = PricingTable{}
-	}
-	portal := ""
-	if state, err := modelsPoolEnv(ctx).Store.GetProviderAuthState("nous"); err == nil {
-		portal = pyOrStr(state["portal_base_url"])
-	}
-	if checkNousFreeTierFn(ctx, forceFreshNousTier, false) {
-		ids, _ = unionPortalFreeFn(ctx, ids, pricing, portal, false)
-	} else {
-		ids, _ = unionPortalPaidFn(ctx, ids, pricing, portal, false)
-		ids = UnionWithNousOnSaleModels(ids, pricing)
-	}
-	if allowed, ok := nousPolicyAllowedIDsFn(ctx, false); ok {
-		ids = RestrictToNousPolicy(ids, allowed, true)
-	}
-	if usage := nousPickerUsageIn(ctx, false, true); usage != nil {
-		ids = featuredFirst(ids, usage.FeaturedModelIDs)
-	}
-	return nonNilStrings(ids)
-}
-
-// Free tier rule for a Nous row, nil when guests are switched off
-func freeTierNousRow(ctx context.Context, row map[string]any) map[string]any {
-	env := modelsPoolEnv(ctx)
-	if !hasGuest(env) {
-		return row
-	}
-	if !guestAllowed(env) {
-		return nil
-	}
-	if !profileFreeInferenceActive(env) {
-		return row
-	}
-	out := make(map[string]any, len(row)+3)
-	for k, v := range row {
-		out[k] = v
-	}
-	out["name"] = FreeTierLabel
-	out["models"] = []any{GuestModel}
-	out["total_models"] = 1
-	out["free_tier_row"] = true
-	return out
 }
 
 // Applies max models, uncapped rows show everything while zero still means no models
@@ -862,7 +809,7 @@ func discoverEndpointModels(ctx context.Context, apiKey any, apiURL, nativeProvi
 	return nil, false, false
 }
 
-// Quick credential scan of sections one, two and two b for the parallel prefetch, Nous left out
+// Quick credential scan of sections one, two and two b for the parallel prefetch
 func collectAuthedProviderSlugs(ctx context.Context, data map[string]any, excluded []string) ([]string, error) {
 	excludedSet := map[string]bool{}
 	for _, p := range excluded {
@@ -884,31 +831,31 @@ func collectAuthedProviderSlugs(ctx context.Context, data map[string]any, exclud
 		if err != nil {
 			return err
 		}
-		if lit || rawPoolUsable(ctx, c.hermesID, false) {
-			emit(c.hermesID, c.hermesID)
+		if lit || rawPoolUsable(ctx, c.icebathID, false) {
+			emit(c.icebathID, c.icebathID)
 		}
 		return nil
 	})
 	if err != nil {
 		return nil, err
 	}
-	mdevToHermes := invertStringMap(ModelsDevProviderMap())
+	mdevToIcebath := invertStringMap(ModelsDevProviderMap())
 	overlays := IcebathOverlays(ctx)
 	for _, pid := range sortedStringKeys(overlays) {
 		overlay := overlays[pid]
-		hermesSlug := pid
-		if mapped, ok := mdevToHermes[pid]; ok {
-			hermesSlug = mapped
+		icebathSlug := pid
+		if mapped, ok := mdevToIcebath[pid]; ok {
+			icebathSlug = mapped
 		}
-		if pickerSkip(seen, excludedSet, pid, hermesSlug) || overlay.AuthType == "aws_sdk" {
+		if pickerSkip(seen, excludedSet, pid, icebathSlug) || overlay.AuthType == "aws_sdk" {
 			continue
 		}
-		has, err := overlayHasEnvCreds(ctx, pid, hermesSlug, overlay, readEnv)
+		has, err := overlayHasEnvCreds(ctx, pid, icebathSlug, overlay, readEnv)
 		if err != nil {
 			return nil, err
 		}
-		if has || authStoreHasProvider(ctx, pid, hermesSlug) || credentialPoolIsUsable(ctx, hermesSlug, false, false) {
-			emit(hermesSlug, pid, hermesSlug)
+		if has || authStoreHasProvider(ctx, pid, icebathSlug) || credentialPoolIsUsable(ctx, icebathSlug, false, false) {
+			emit(icebathSlug, pid, icebathSlug)
 		}
 	}
 	for _, cp := range pickerCanonicalFn() {
@@ -927,13 +874,10 @@ func collectAuthedProviderSlugs(ctx context.Context, data map[string]any, exclud
 			emit(cp.Slug, cp.Slug)
 		}
 	}
-	out := make([]string, 0, len(slugs))
-	for _, s := range slugs {
-		if s != "nous" {
-			out = append(out, s)
-		}
+	if slugs == nil {
+		slugs = []string{}
 	}
-	return out, nil
+	return slugs, nil
 }
 
 // Insertion ordered inverse of a mapping, the later key winning a shared value as a dict comprehension does
@@ -953,7 +897,6 @@ type pickerBuild struct {
 	currentModel               string
 	maxModels                  *int
 	forPicker                  bool
-	forceFreshNousTier         bool
 	probeCustomProviders       bool
 	probeCurrentCustomProvider bool
 	refresh                    bool
@@ -1018,12 +961,7 @@ func (b *pickerBuild) addBuiltinRow(slug, name string, isCurrent bool, modelIDs 
 	}
 	row := map[string]any{"slug": slug, "name": name, "is_current": isCurrent, "is_user_defined": false,
 		"models": stringsToAny(capModels(modelIDs, b.maxModels, capSlug)), "total_models": len(modelIDs), "source": source}
-	if slug == "nous" {
-		row = freeTierNousRow(b.ctx, row)
-	}
-	if row != nil {
-		b.results = append(b.results, row)
-	}
+	b.results = append(b.results, row)
 	b.seenSlugs[strings.ToLower(slug)] = true
 	b.recordBuiltinEndpoint(slug)
 }
@@ -1096,7 +1034,7 @@ func lapLMStudioRow(b *pickerBuild, userProviders map[string]any) {
 	if isDict {
 		configuredModels = declaredModelIDs(configured["models"])
 	}
-	b.addBuiltinRow("lmstudio", GetProviderLabel(b.ctx, "lmstudio"), isCurrent, uniqueConcat(configuredModels, b.curated["lmstudio"]), "hermes", true)
+	b.addBuiltinRow("lmstudio", GetProviderLabel(b.ctx, "lmstudio"), isCurrent, uniqueConcat(configuredModels, b.curated["lmstudio"]), "icebath", true)
 }
 
 // Section one, models.dev mapped providers with api_key auth
@@ -1107,12 +1045,12 @@ func lapBuiltinRows(b *pickerBuild, data, userProviders map[string]any) error {
 		if err != nil {
 			return err
 		}
-		if !lit && !rawPoolUsable(b.ctx, c.hermesID, b.forPicker) {
+		if !lit && !rawPoolUsable(b.ctx, c.icebathID, b.forPicker) {
 			return nil
 		}
-		ids := liveOrCuratedIDs(b.ctx, c.hermesID, b.curated, nil, true, b.nonBlockingCatalogs)
+		ids := liveOrCuratedIDs(b.ctx, c.icebathID, b.curated, nil, true, b.nonBlockingCatalogs)
 		var configuredModels []string
-		if configured, ok := userProviders[c.hermesID].(map[string]any); ok {
+		if configured, ok := userProviders[c.icebathID].(map[string]any); ok {
 			configuredModels = declaredModelIDs(configured["models"])
 		}
 		ids = uniqueConcat(configuredModels, ids)
@@ -1122,33 +1060,33 @@ func lapBuiltinRows(b *pickerBuild, data, userProviders map[string]any) error {
 		} else if info, ok := pickerProviderInfoFn(b.ctx, c.mdevID, true); ok {
 			displayName = info.Name
 		}
-		b.addBuiltinRow(c.hermesID, displayName, b.currentProvider == c.hermesID || b.currentProvider == c.mdevID, ids, "built-in", true)
+		b.addBuiltinRow(c.icebathID, displayName, b.currentProvider == c.icebathID || b.currentProvider == c.mdevID, ids, "built-in", true)
 		return nil
 	})
 }
 
 // Section two credential ladder, env or SDK, external process binary, auth store, pool, Claude credential files
-func overlayHasCreds(b *pickerBuild, pid, hermesSlug string, overlay IcebathOverlay) (bool, error) {
+func overlayHasCreds(b *pickerBuild, pid, icebathSlug string, overlay IcebathOverlay) (bool, error) {
 	var hasCreds bool
 	if overlay.AuthType == "aws_sdk" {
-		hasCreds = hasAWSSDKCredsForListing(b.ctx, hermesSlug, b.currentProvider)
+		hasCreds = hasAWSSDKCredsForListing(b.ctx, icebathSlug, b.currentProvider)
 	} else {
 		var err error
-		if hasCreds, err = overlayHasEnvCreds(b.ctx, pid, hermesSlug, overlay, pickerScopedEnv(b.ctx)); err != nil {
+		if hasCreds, err = overlayHasEnvCreds(b.ctx, pid, icebathSlug, overlay, pickerScopedEnv(b.ctx)); err != nil {
 			return false, err
 		}
 	}
 	env := modelsPoolEnv(b.ctx)
 	if !hasCreds && overlay.AuthType == "external_process" {
-		status := GetAuthStatus(env, hermesSlug)
+		status := GetAuthStatus(env, icebathSlug)
 		hasCreds = pyTruthy(status["logged_in"]) || pyTruthy(status["configured"])
 	}
-	hasCreds = hasCreds || authStoreHasProvider(b.ctx, pid, hermesSlug)
-	if !hasCreds && credentialPoolIsUsable(b.ctx, hermesSlug, false, b.forPicker) {
+	hasCreds = hasCreds || authStoreHasProvider(b.ctx, pid, icebathSlug)
+	if !hasCreds && credentialPoolIsUsable(b.ctx, icebathSlug, false, b.forPicker) {
 		hasCreds = true
 	}
-	if !hasCreds && hermesSlug == "anthropic" {
-		own := ReadHermesOAuthCredentials(env)
+	if !hasCreds && icebathSlug == "anthropic" {
+		own := ReadIcebathOAuthCredentials(env)
 		cc := ReadClaudeCodeCredentials(env)
 		if pyTruthy(own["accessToken"]) || pyTruthy(cc["accessToken"]) {
 			hasCreds = true
@@ -1159,18 +1097,18 @@ func overlayHasCreds(b *pickerBuild, pid, hermesSlug string, overlay IcebathOver
 
 // Section two, the provider overlays outside models.dev
 func lapOverlayRows(b *pickerBuild, userProviders map[string]any) error {
-	mdevToHermes := invertStringMap(ModelsDevProviderMap())
+	mdevToIcebath := invertStringMap(ModelsDevProviderMap())
 	overlays := IcebathOverlays(b.ctx)
 	for _, pid := range sortedStringKeys(overlays) {
 		overlay := overlays[pid]
-		hermesSlug := pid
-		if mapped, ok := mdevToHermes[pid]; ok {
-			hermesSlug = mapped
+		icebathSlug := pid
+		if mapped, ok := mdevToIcebath[pid]; ok {
+			icebathSlug = mapped
 		}
-		if pickerSkip(b.seenSlugs, b.excluded, pid, hermesSlug) {
+		if pickerSkip(b.seenSlugs, b.excluded, pid, icebathSlug) {
 			continue
 		}
-		has, err := overlayHasCreds(b, pid, hermesSlug, overlay)
+		has, err := overlayHasCreds(b, pid, icebathSlug, overlay)
 		if err != nil {
 			return err
 		}
@@ -1179,27 +1117,21 @@ func lapOverlayRows(b *pickerBuild, userProviders map[string]any) error {
 		}
 		var ids []string
 		switch {
-		case hermesSlug == "openai-codex":
-			ids = liveOrCuratedIDs(b.ctx, hermesSlug, b.curated, nil, false, b.nonBlockingCatalogs)
+		case icebathSlug == "openai-codex":
+			ids = liveOrCuratedIDs(b.ctx, icebathSlug, b.curated, nil, false, b.nonBlockingCatalogs)
 		case overlay.AuthType == "aws_sdk":
-			ids = awsLiveOrCuratedIDs(b.ctx, hermesSlug, b.curated, []string{hermesSlug, pid}, b.nonBlockingCatalogs)
-		case hermesSlug == "nous":
-			tierRow := freeTierNousRow(b.ctx, map[string]any{"name": GetProviderLabel(b.ctx, hermesSlug), "models": []any{}})
-			ids = []string{}
-			if tierRow != nil && len(tierRow["models"].([]any)) == 0 {
-				ids = pickerNousModelIDsFn(b.ctx, b.curated, b.forceFreshNousTier)
-			}
+			ids = awsLiveOrCuratedIDs(b.ctx, icebathSlug, b.curated, []string{icebathSlug, pid}, b.nonBlockingCatalogs)
 		default:
-			ids = liveOrCuratedIDs(b.ctx, hermesSlug, b.curated, []string{hermesSlug, pid}, true, b.nonBlockingCatalogs)
+			ids = liveOrCuratedIDs(b.ctx, icebathSlug, b.curated, []string{icebathSlug, pid}, true, b.nonBlockingCatalogs)
 		}
-		configured := userProviders[hermesSlug]
+		configured := userProviders[icebathSlug]
 		if !pyTruthy(configured) {
 			configured = userProviders[pid]
 		}
 		if cfg, ok := configured.(map[string]any); ok {
 			ids = uniqueConcat(declaredModelIDs(cfg["models"]), ids)
 		}
-		b.addBuiltinRow(hermesSlug, GetProviderLabel(b.ctx, hermesSlug), b.currentProvider == hermesSlug || b.currentProvider == pid, ids, "hermes", true)
+		b.addBuiltinRow(icebathSlug, GetProviderLabel(b.ctx, icebathSlug), b.currentProvider == icebathSlug || b.currentProvider == pid, ids, "icebath", true)
 		b.seenSlugs[strings.ToLower(pid)] = true
 	}
 	return nil
@@ -1514,7 +1446,7 @@ func lapCustomProviderRows(b *pickerBuild, customProviders []any) error {
 	return nil
 }
 
-// Curated lists per provider plus the Nous manifest, Ollama Cloud and a live LM Studio probe
+// Curated lists per provider plus Ollama Cloud and a live LM Studio probe
 func buildCuratedLists(ctx context.Context, currentProvider, currentBaseURL, currentModel string, nonBlocking bool) (map[string][]string, error) {
 	curated := map[string][]string{}
 	for k, v := range CuratedCatalogRows() {
@@ -1537,7 +1469,6 @@ func buildCuratedLists(ctx context.Context, currentProvider, currentBaseURL, cur
 			curated[p.Name] = cloneStrings(rows)
 		}
 	}
-	curated["nous"] = curatedNousModelIDsFn(ctx)
 	if _, ok := curated["ollama-cloud"]; !ok {
 		curated["ollama-cloud"] = nonNilStrings(pickerOllamaCloudFn(ctx, OllamaCloudFetch{CacheOnly: nonBlocking}))
 	}
@@ -1592,7 +1523,7 @@ func ListAuthenticatedProviders(ctx context.Context, opts AuthenticatedProviders
 		return nil, err
 	}
 	b := &pickerBuild{ctx: ctx, currentProvider: currentProvider, currentBaseURL: currentBaseURL, currentModel: currentModel,
-		maxModels: opts.MaxModels, forPicker: opts.ForPicker, forceFreshNousTier: opts.ForceFreshNousTier,
+		maxModels: opts.MaxModels, forPicker: opts.ForPicker,
 		probeCustomProviders: !opts.SkipCustomProviderProbe, probeCurrentCustomProvider: opts.ProbeCurrentCustomProvider,
 		refresh: opts.Refresh, excluded: excluded, nonBlockingCatalogs: nonBlocking, fastCustomProbe: opts.FastCustomProbe,
 		curated: curated, seenSlugs: map[string]bool{}, builtinEndpoints: map[string]bool{}, section3Pairs: map[[2]string]bool{}}
@@ -1739,50 +1670,5 @@ func ListPickerProviders(ctx context.Context, opts PickerProvidersOptions) ([]ma
 		}
 	}
 	DropUnofferableModelIDs(rows)
-	attachWindowModelNotes(ctx, filtered)
 	return filtered, nil
-}
-
-// Nous rows on a usage window plan carry Large or Free labels and, from a fresh snapshot, the limit line
-func attachWindowModelNotes(ctx context.Context, providers []map[string]any) {
-	var nous map[string]any
-	for _, p := range providers {
-		if strings.ToLower(pyOrStr(p["slug"])) == "nous" {
-			nous = p
-			break
-		}
-	}
-	if nous == nil {
-		return
-	}
-	fresh := nousPickerUsageIn(ctx, false, false)
-	usage := fresh
-	if usage == nil {
-		usage = nousPickerUsageIn(ctx, false, true)
-	}
-	if usage == nil {
-		return
-	}
-	pricing := PricingTableAsAny(GetPricingForProvider(ctx, "nous", "", false, true))
-	models := []string{}
-	if list, ok := nous["models"].([]any); ok {
-		for _, m := range list {
-			models = append(models, pyStr(m))
-		}
-	}
-	labels := map[string]any{}
-	for id, level := range usageTagLevels(models, pricing) {
-		if label := UsageLevelLabel(level, ""); label != "" {
-			labels[id] = label
-		}
-	}
-	if len(labels) > 0 {
-		nous["model_labels"] = labels
-	}
-	if fresh == nil {
-		return
-	}
-	if line := usage.LimitLine(""); line != "" {
-		nous["plan_line"] = line
-	}
 }

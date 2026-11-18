@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"io/fs"
 	"iter"
-	"log/slog"
 	"os"
 	"runtime"
 	"slices"
@@ -211,7 +210,7 @@ func excText(err error) string {
 }
 
 func warnRefused(path string, err error) {
-	slog.Warn(fmt.Sprintf("Not granting the current user access to %s while elevated (%s): an elevated grant "+
+	pkgLog().Warn(fmt.Sprintf("Not granting the current user access to %s while elevated (%s): an elevated grant "+
 		"never follows a junction or link out of the Icebath home. If this is your own link, "+
 		"point ICEBATH_HOME (or the link) at the real directory.", path, excText(err)))
 }
@@ -242,7 +241,7 @@ func GrantUserAccess(ctx context.Context, path string, elevated, repairChildren 
 		return false
 	}
 	if err != nil {
-		slog.Warn(fmt.Sprintf("Could not grant the current user access to %s created while elevated (%s); a "+
+		pkgLog().Warn(fmt.Sprintf("Could not grant the current user access to %s created while elevated (%s); a "+
 			"non-elevated Icebath may not be able to use it. To repair, from an elevated prompt run: "+
 			"icacls \"%s\" /reset /t", target, excText(err), target))
 		return false
@@ -260,7 +259,7 @@ func GrantUserAccess(ctx context.Context, path string, elevated, repairChildren 
 			}
 		}
 		if _, _, failed := grantEntries(target, real, entries, skipped); len(failed) > 0 {
-			slog.Debug(fmt.Sprintf("Granting the existing entries under %s failed for %d, e.g. %s: %s",
+			pkgLog().Debug(fmt.Sprintf("Granting the existing entries under %s failed for %d, e.g. %s: %s",
 				target, len(failed), failed[0].Path, failed[0].Reason))
 		}
 	}
@@ -356,7 +355,7 @@ func GrantTreeUserAccess(root string, pinRoot, elevated bool) (int, []string, []
 		if len(skipped) > 5 {
 			list += " ..."
 		}
-		slog.Warn(fmt.Sprintf("Elevated ACL repair skipped %d junction/symlink/hard-link entr%s under %s (never "+
+		pkgLog().Warn(fmt.Sprintf("Elevated ACL repair skipped %d junction/symlink/hard-link entr%s under %s (never "+
 			"granted through): %s", len(skipped), suffix, r, list))
 	}
 	return granted, skipped, failed, nil

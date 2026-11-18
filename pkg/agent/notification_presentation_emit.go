@@ -1,5 +1,5 @@
 package agent
 
-import "github.com/nickheyer/icebath/pkg/tuigateway"
+import "github.com/nickheyer/icebath/pkg/tuihost"
 
-func init() { tuigateway.SetEventPresentationMuted(EventPresentationMuted) }
+func init() { tuihost.SetEventPresentationMuted(EventPresentationMuted) }

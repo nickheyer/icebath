@@ -40,7 +40,7 @@ func localRoomCatalog(ctx context.Context, adapter PlatformAdapter, profile, ins
 	text := true
 	catalog, err := CatalogMapping(ctx, CatalogOptions{InstallationID: installationID,
 		ProtocolVersions: []any{int64(HostedProtocolVersion)}, LinkModes: []string{"direct"}, PersistentProcess: true,
-		Text: &text, TargetProfile: profile, ExecutionPolicy: policy})
+		Text: &text, Attachments: true, TargetProfile: profile, ExecutionPolicy: policy})
 	if err != nil {
 		return nil, nil, err
 	}

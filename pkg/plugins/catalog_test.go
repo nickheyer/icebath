@@ -73,8 +73,8 @@ func TestShippedCatalogEntriesAreAllValidAndPinned(t *testing.T) {
 			t.Fatalf("bad shipped entry %+v", e)
 		}
 	}
-	if got, err := GetPluginCatalogEntry("honcho"); err != nil || got == nil || got.Category != "memory" {
-		t.Fatalf("honcho entry %+v %v", got, err)
+	if got, err := GetPluginCatalogEntry("homeassistant"); err != nil || got == nil || got.Category != "platform" {
+		t.Fatalf("homeassistant entry %+v %v", got, err)
 	}
 	if got, err := GetPluginCatalogEntry("no-such-plugin"); err != nil || got != nil {
 		t.Fatalf("unknown entry %+v %v", got, err)

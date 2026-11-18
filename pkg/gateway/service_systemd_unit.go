@@ -41,7 +41,7 @@ var (
 	systemdServicePathDirs      = buildServicePathDirs
 	systemdUserLocalPaths       = buildUserLocalPaths
 	systemdPythonPath           = getServicePythonPath
-	systemdTargetHome           = hermesHomeForTargetUser
+	systemdTargetHome           = icebathHomeForTargetUser
 	systemdWSLInteropCandidates = []string{
 		"/mnt/c/WINDOWS/system32", "/mnt/c/WINDOWS", "/mnt/c/WINDOWS/System32/Wbem",
 		"/mnt/c/WINDOWS/System32/WindowsPowerShell/v1.0/", "/mnt/c/WINDOWS/System32/OpenSSH/",

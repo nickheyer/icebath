@@ -5,7 +5,7 @@ import (
 	"testing"
 
 	"github.com/nickheyer/icebath/pkg/agent"
-	"github.com/nickheyer/icebath/pkg/tuigateway"
+	"github.com/nickheyer/icebath/pkg/tuihost"
 )
 
 // Session info of a priority tier agent on the given route
@@ -20,7 +20,7 @@ func fastInfo(t *testing.T, o agent.AIAgentOptions) map[string]any {
 	if err != nil {
 		t.Fatal(err)
 	}
-	return sessionInfo(context.Background(), a, tuigateway.NewSession(map[string]any{"session_key": "k7", "agent": a}))
+	return sessionInfo(context.Background(), a, tuihost.NewSession(map[string]any{"session_key": "k7", "agent": a}))
 }
 
 func TestSessionInfoFastFollowsTheRouteFirstPartyRouteReportsFast(t *testing.T) {
@@ -58,7 +58,7 @@ func TestSessionInfoFastFollowsTheRoutePendingSwitchIsJudgedByTheNewRoute(t *tes
 	if err != nil {
 		t.Fatal(err)
 	}
-	session := tuigateway.NewSession(map[string]any{"session_key": "k8", "agent": a, "pending_model_switch": map[string]any{
+	session := tuihost.NewSession(map[string]any{"session_key": "k8", "agent": a, "pending_model_switch": map[string]any{
 		"display_model": "Qwen3.8-27B-UD-Q4_K_M", "display_provider": "llamacpp"}})
 	if fast := sessionInfo(context.Background(), a, session)["fast"]; fast != false {
 		t.Fatalf("local pending fast %v", fast)

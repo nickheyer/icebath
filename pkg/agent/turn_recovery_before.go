@@ -160,7 +160,7 @@ func recoverBeforeClassification(ctx context.Context, a *AIAgent, s *LoopState, 
 		extraBody, _ := pyjson.Dict(s.APIKwargs["extra_body"])
 		if provider.FastModeUnprovisioned(&provider.APIError{StatusCode: 429}, extraBody, apiErrorHeaders(apiError)) && a.markFastModeUnavailable() {
 			vlines(a, fmt.Sprintf("⚠️  Fast mode isn't available for %s on this Anthropic organization — using standard speed for this session, retrying...", a.model))
-			conversationLoopLog().Warn(fmt.Sprintf("%sFast mode: %s has a fast-mode limit of 0; standard speed for this session", a.logPrefix, a.model))
+			pkgLog().Warn(fmt.Sprintf("%sFast mode: %s has a fast-mode limit of 0; standard speed for this session", a.logPrefix, a.model))
 			return true, nil
 		}
 	}

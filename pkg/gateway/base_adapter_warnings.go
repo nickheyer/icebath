@@ -3,7 +3,6 @@ package gateway
 import (
 	"context"
 	"fmt"
-	"log/slog"
 	"regexp"
 
 	"github.com/nickheyer/icebath/pkg/config"
@@ -77,7 +76,7 @@ func StreamingTTSShouldSkipWholeFile(completedTurns map[string]struct{}, session
 
 // Friendly notice for a media kind the platform cannot send natively, never echoing the host path
 func (b *BasePlatformAdapter) sendMediaFallbackNotice(ctx context.Context, method, kind, path, chatID, caption, replyTo string, metadata map[string]any, fileName string) (SendResult, error) {
-	slog.Warn(fmt.Sprintf("[%s] %s fallback: native %s send unavailable for %s", b.Self().Name(), method, kind, path))
+	pkgLog().Warn(fmt.Sprintf("[%s] %s fallback: native %s send unavailable for %s", b.Self().Name(), method, kind, path))
 	text := mediaFailureText(ctx, kind, fileName)
 	return b.Self().EmitMediaWarning(ctx, chatID, text, caption, replyTo, metadata, metadata)
 }
@@ -215,7 +214,7 @@ func (b *BasePlatformAdapter) notifyMediaDeliveryFailure(ctx context.Context, ch
 		problem = notice.Error
 	}
 	if problem != nil {
-		slog.Debug(fmt.Sprintf("[%s] Could not send media-delivery-failure notice: %v", b.Self().Name(), problem))
+		pkgLog().Debug(fmt.Sprintf("[%s] Could not send media-delivery-failure notice: %v", b.Self().Name(), problem))
 	}
 }
 

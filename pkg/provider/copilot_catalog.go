@@ -3,7 +3,6 @@ package provider
 import (
 	"context"
 	"fmt"
-	"log/slog"
 	"math/big"
 	"regexp"
 	"strconv"
@@ -11,6 +10,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pycopy"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
@@ -251,7 +251,7 @@ func fetchGithubModels(ctx context.Context, apiKey string, timeout time.Duration
 func copilotPickerCatalog(ctx context.Context, _ bool) (live []string, ok bool) {
 	defer func() {
 		if r := recover(); r != nil {
-			slog.Default().Debug(fmt.Sprintf("copilot live catalog fetch failed: %v", r))
+			pkgLog().Debug(fmt.Sprintf("copilot live catalog fetch failed: %v", r))
 			live, ok = nil, false
 		}
 	}()
@@ -452,7 +452,7 @@ func copilotIterCapabilities(v any) []any {
 		}
 		return out
 	}
-	panic(fmt.Errorf("TypeError: '%s' object is not iterable", copilotJSONTypeName(v)))
+	panic(fmt.Errorf("Copilot model capabilities are %s, expected a list", errchain.Kind(v)))
 }
 
 // Reasoning efforts a Copilot visible model supports, the structured catalog list authoritative when present

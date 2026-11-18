@@ -3,7 +3,6 @@ package provider
 import (
 	"context"
 	"fmt"
-	"log/slog"
 	"reflect"
 	"strings"
 	"sync"
@@ -92,7 +91,7 @@ func CaptureAuxCancelCheck(ctx context.Context) AuxCancelCheck { return auxCaptu
 func auxCapturedAuxCancelRequested(check AuxCancelCheck) bool {
 	requested, err := check.CancelRequested()
 	if err != nil {
-		slog.Debug("captured aux cancel check failed", "error", err)
+		pkgLog().Debug("captured aux cancel check failed", "error", err)
 		return false
 	}
 	return requested
@@ -192,7 +191,7 @@ func auxTickHook(ctx context.Context, local AuxHookLocal, label string) {
 		return
 	}
 	if err := hook(); err != nil {
-		slog.Debug(fmt.Sprintf("aux %s hook failed", label), "error", err)
+		pkgLog().Debug(fmt.Sprintf("aux %s hook failed", label), "error", err)
 	}
 }
 

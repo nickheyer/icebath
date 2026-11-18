@@ -58,7 +58,7 @@ func (r *GatewayRunner) handleStopCommand(ctx context.Context, event *gateway.Me
 		if err := stop(runKey, "stop_command_pending"); err != nil {
 			return nil, err
 		}
-		runLog().Info(fmt.Sprintf("STOP (pending) for session %s — sentinel cleared", runKey))
+		pkgLog().Info(fmt.Sprintf("STOP (pending) for session %s — sentinel cleared", runKey))
 		return gateway.NewEphemeralReply(i18n.T(ctx, "gateway.stop.stopped_pending", "", nil), nil), nil
 	}
 	if running != nil {
@@ -88,7 +88,7 @@ func (r *GatewayRunner) handleStopCommand(ctx context.Context, event *gateway.Me
 					return nil, err
 				}
 			}
-			runLog().Info(fmt.Sprintf("STOP (%s) by %s — interrupted %d run(s): %s", reason, sessionKey, len(fallbackKeys),
+			pkgLog().Info(fmt.Sprintf("STOP (%s) by %s — interrupted %d run(s): %s", reason, sessionKey, len(fallbackKeys),
 				strings.Join(fallbackKeys, ", ")))
 			return gateway.NewEphemeralReply(i18n.T(ctx, "gateway.stop.stopped", "", nil), nil), nil
 		}
@@ -99,7 +99,7 @@ func (r *GatewayRunner) handleStopCommand(ctx context.Context, event *gateway.Me
 	if r.adapters != nil {
 		if adapter, ok := r.adapters.Get(source.Platform); ok && adapter != nil {
 			if err := gateway.StopTypingWithMetadata(ctx, adapter, source.ChatID, r.replyMetadata(event)); err != nil {
-				runLog().Debug("Failed to clear typing on /stop with no active agent", "error", err)
+				pkgLog().Debug("Failed to clear typing on /stop with no active agent", "error", err)
 			}
 		}
 	}
@@ -214,7 +214,7 @@ func (r *GatewayRunner) handleRestartCommand(ctx context.Context, event *gateway
 		if event.PlatformUpdateID != nil {
 			updateID = fmt.Sprint(*event.PlatformUpdateID)
 		}
-		runLog().Info(fmt.Sprintf("Ignoring redelivered /restart (platform=%s, update_id=%s) — "+
+		pkgLog().Info(fmt.Sprintf("Ignoring redelivered /restart (platform=%s, update_id=%s) — "+
 			"already processed by a previous gateway instance.", platform, updateID))
 		return "", nil
 	}
@@ -224,10 +224,10 @@ func (r *GatewayRunner) handleRestartCommand(ctx context.Context, event *gateway
 		}
 		return gateway.NewEphemeralReply(i18n.T(ctx, "gateway.restart.in_progress", "", nil), nil), nil
 	}
-	hermesHome := home.Dir(ctx)
+	icebathHome := home.Dir(ctx)
 	writeMarker := func(name string, build func() map[string]any, label string) {
-		if err := config.AtomicJSONWriteWith(ctx, filepath.Join(hermesHome, name), build()); err != nil {
-			runLog().Debug(fmt.Sprintf("Failed to write restart %s: %s", label, pyrepr.ExceptionMessage(err)))
+		if err := config.AtomicJSONWriteWith(ctx, filepath.Join(icebathHome, name), build()); err != nil {
+			pkgLog().Debug(fmt.Sprintf("Failed to write restart %s: %s", label, pyrepr.ExceptionMessage(err)))
 		}
 	}
 	notifyPayload := func() map[string]any {
@@ -374,7 +374,7 @@ func (r *GatewayRunner) handleSetHomeCommand(ctx context.Context, event *gateway
 		}
 		return config.SaveEnvValueContext(ctx, home.Dir(ctx), homeThreadEnvVar(ctx, platformName), threadText)
 	}(); err != nil {
-		runLog().Warn(fmt.Sprintf("Home config saved but legacy env persistence failed: %s", pyrepr.ExceptionMessage(err)))
+		pkgLog().Warn(fmt.Sprintf("Home config saved but legacy env persistence failed: %s", pyrepr.ExceptionMessage(err)))
 	}
 	platformConfig := r.config.Platforms[source.Platform]
 	if platformConfig == nil {

@@ -256,7 +256,7 @@ func TestRealCatalogAdvisoriesWellFormed(t *testing.T) {
 	}
 }
 
-func TestAdvisoryRemediationUsesActiveHermesHome(t *testing.T) {
+func TestAdvisoryRemediationUsesActiveIcebathHome(t *testing.T) {
 	tmp := t.TempDir()
 	work := filepath.Join(tmp, ".icebath", "profiles", "work")
 	if err := os.MkdirAll(work, 0o755); err != nil {

@@ -2,7 +2,6 @@ package provider
 
 import (
 	"fmt"
-	"log/slog"
 	"maps"
 	"net/url"
 	"os"
@@ -131,7 +130,7 @@ func warnOncePerProvider(providerKey, signature, msg string, args ...any) {
 		return
 	}
 	providerNormalizeWarned[dedup] = true
-	slog.Default().Warn(fmt.Sprintf(msg, args...))
+	pkgLog().Warn(fmt.Sprintf(msg, args...))
 }
 
 // Clears the once per provider warning memory for tests
@@ -161,7 +160,7 @@ func pickProviderBaseURL(entry map[string]any, providerKey string) string {
 		if parsed, err := url.Parse(candidate); err == nil && parsed.Scheme != "" && parsed.Host != "" {
 			return candidate
 		}
-		slog.Default().Warn(fmt.Sprintf("providers.%s: '%s' value '%s' is not a valid URL (no scheme or host) — skipped", label, urlKey, candidate))
+		pkgLog().Warn(fmt.Sprintf("providers.%s: '%s' value '%s' is not a valid URL (no scheme or host) — skipped", label, urlKey, candidate))
 	}
 	return ""
 }
@@ -488,7 +487,7 @@ func CompatibleCustomProviders(cfg map[string]any) []map[string]any {
 	if raw, ok := cfg["custom_providers"]; ok && raw != nil {
 		list, isList := asList(raw)
 		if !isList {
-			slog.Default().Warn(fmt.Sprintf("custom_providers is a %s, expected a list — skipping legacy entries; "+
+			pkgLog().Warn(fmt.Sprintf("custom_providers is a %s, expected a list — skipping legacy entries; "+
 				"'providers:' entries are still used. Move provider configs to the 'providers:' section.", config.PyTypeName(raw)))
 		}
 		legacy = list
@@ -1067,7 +1066,7 @@ var signInAuthTypes = map[string]bool{
 	AuthTypeOAuthDeviceCode: true, AuthTypeOAuthExternal: true, AuthTypeOAuthMiniMax: true, AuthTypeExternalProcess: true,
 }
 
-// CanonicalProviderEntry is one row of the hermes model picker universe
+// One row of the model picker universe
 type CanonicalProviderEntry struct {
 	Slug    string
 	Label   string

@@ -1228,9 +1228,9 @@ func verifyEnvContext(env *tools.Env) context.Context {
 // Logger of the tool env or the process default
 func verifyEnvLog(env *tools.Env) *slog.Logger {
 	if env != nil && env.Log != nil {
-		return env.Log
+		return env.Log.With("logger", logName)
 	}
-	return slog.Default()
+	return pkgLog()
 }
 
 func init() {

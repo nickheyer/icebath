@@ -1,3 +1,5 @@
+//go:build !icebath_core && !icebath_noextras
+
 package pm
 
 import (
@@ -135,9 +137,9 @@ func buildRequirementsEnvironment(ctx context.Context, opts BuildRequirementsEnv
 	return environment.Executable(), nil
 }
 
-// Refuses a closure that names application state instead of tools
-func toolClosure(names []string, refusal string) ([]Package, error) {
-	packages, err := Walk(names)
+// Closure on target, refused when it names application state instead of tools
+func toolClosure(names []string, target, refusal string) ([]Package, error) {
+	packages, err := WalkTarget(names, target)
 	if err != nil {
 		return nil, err
 	}
@@ -158,7 +160,7 @@ type PrepareToolsOptions struct {
 
 // Realizes an explicit tool closure in a build owned store instead of live state
 func prepareTools(ctx context.Context, opts PrepareToolsOptions) (string, error) {
-	packages, err := toolClosure(opts.Names, "prepare_tools accepts tools, not application state")
+	packages, err := toolClosure(opts.Names, opts.Target, "prepare_tools accepts tools, not application state")
 	if err != nil {
 		return "", err
 	}
@@ -241,7 +243,7 @@ func (v *VerifiedTools) Environment(base map[string]string) map[string]string {
 
 // Reads a pinned tool closure from a store without writes, acquisition or running any binary
 func ReadVerifiedTools(names []string, sourceStore, target string, lock *Lockfile) (*VerifiedTools, error) {
-	packages, err := toolClosure(names, "verified_tools accepts tool packages, not application state")
+	packages, err := toolClosure(names, target, "verified_tools accepts tool packages, not application state")
 	if err != nil {
 		return nil, err
 	}
@@ -322,7 +324,7 @@ func stageTools(ctx context.Context, opts StageToolsOptions) (string, error) {
 	if !isRegularFile(filepath.Join(sourceStore, "facts.json")) {
 		return "", NewInstallError("tools", "source facts missing: "+sourceStore, "")
 	}
-	packages, err := toolClosure(opts.Names, "stage_tools accepts tool packages, not application state")
+	packages, err := toolClosure(opts.Names, opts.Target, "stage_tools accepts tool packages, not application state")
 	if err != nil {
 		return "", err
 	}

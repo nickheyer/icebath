@@ -34,7 +34,7 @@ func (r *GatewayRunner) sessionHousekeepingWatcher(ctx context.Context, interval
 			if ctx.Err() != nil {
 				return ctx.Err()
 			}
-			runLog().Debug(fmt.Sprintf("Session housekeeping error: %s", pyrepr.ExceptionMessage(err)))
+			pkgLog().Debug(fmt.Sprintf("Session housekeeping error: %s", pyrepr.ExceptionMessage(err)))
 		}
 		if err := interruptibleSleep(ctx, r, interval); err != nil {
 			return err
@@ -47,7 +47,7 @@ func (r *GatewayRunner) sessionHousekeepingWatcher(ctx context.Context, interval
 func guardedSweep(label string, sweep func()) {
 	defer func() {
 		if rec := recover(); rec != nil {
-			runLog().Debug(fmt.Sprintf("%s: %s", label, pyrepr.Str(rec)))
+			pkgLog().Debug(fmt.Sprintf("%s: %s", label, pyrepr.Str(rec)))
 		}
 	}()
 	sweep()
@@ -57,7 +57,7 @@ func guardedSweep(label string, sweep func()) {
 func (r *GatewayRunner) sessionHousekeeping(ctx context.Context) error {
 	guardedSweep("Idle agent sweep failed", func() {
 		if evicted := r.sweepIdleCachedAgents(ctx); evicted > 0 {
-			runLog().Info(fmt.Sprintf("Agent cache idle sweep: evicted %d agent(s)", evicted))
+			pkgLog().Info(fmt.Sprintf("Agent cache idle sweep: evicted %d agent(s)", evicted))
 		}
 	})
 	guardedSweep("Agent cache pressure sweep failed", func() { r.sweepAgentCacheUnderPressure(ctx) })
@@ -70,9 +70,9 @@ func (r *GatewayRunner) sessionHousekeeping(ctx context.Context) error {
 		if maxAge > 0 {
 			n, err := r.asyncSessionStore.Store().PruneOldEntries(ctx, maxAge)
 			if err != nil {
-				runLog().Debug(fmt.Sprintf("SessionStore prune failed: %s", pyrepr.ExceptionMessage(err)))
+				pkgLog().Debug(fmt.Sprintf("SessionStore prune failed: %s", pyrepr.ExceptionMessage(err)))
 			} else if n > 0 {
-				runLog().Info(fmt.Sprintf("SessionStore prune: dropped %d stale entries", n))
+				pkgLog().Info(fmt.Sprintf("SessionStore prune: dropped %d stale entries", n))
 			}
 		}
 		r.lastSessionStorePruneTs = float64(time.Now().UnixNano()) / 1e9

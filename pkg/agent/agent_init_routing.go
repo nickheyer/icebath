@@ -8,13 +8,12 @@ import (
 	"github.com/nickheyer/icebath/pkg/provider"
 )
 
-// hermes_cli.model_normalize _AGGREGATOR_PROVIDERS, the providers whose model names keep their vendor prefix at init
-var modelNormalizeAggregators = map[string]bool{"openrouter": true, "nous": true, "ai-gateway": true, "kilocode": true}
+// the providers whose model names keep their vendor prefix at init
+var modelNormalizeAggregators = map[string]bool{"openrouter": true, "ai-gateway": true, "kilocode": true}
 
 var (
 	openrouterPrewarmDone atomic.Bool
 	openrouterPrewarmFn   = func(ctx context.Context) { provider.FetchModelMetadata(ctx, false) }
-	nousKeepaliveStart    = provider.StartNousAuthKeepalive
 	finalizeRoutingPanics = func(fn func()) {
 		defer func() { _ = recover() }()
 		fn()
@@ -33,17 +32,12 @@ func (a *AIAgent) finalizeRouting(ctx context.Context, apiMode string) {
 		}
 	}
 	finalizeRoutingPanics(func() { a.getTransport("") })
-	if a.provider == "nous" {
-		finalizeRoutingPanics(func() { nousKeepaliveStart(agentPoolEnv(ctx), provider.NousKeepaliveStartOptions{}) })
-	}
 	finalizeRoutingPanics(func() {
 		if !modelNormalizeAggregators[a.provider] {
 			a.model = provider.NormalizeModelForProviderCtx(ctx, a.model, a.provider)
 			a.modelNone = false
 		}
 	})
-	a.model = provider.PinModelForRoute(a.provider, a.baseURL, a.model)
-	a.modelNone = a.modelNone && a.model == ""
 	baseLower := strings.ToLower(a.baseURL)
 	if apiMode == "" && a.apiMode == "chat_completions" &&
 		!provider.IsActualRoute(a.provider, a.baseURL) &&

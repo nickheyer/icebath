@@ -3,12 +3,13 @@ package tools
 import (
 	"context"
 	"fmt"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"math"
 	"regexp"
 	"sort"
 	"strings"
 	"unicode/utf8"
+
+	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 
 	"github.com/dlclark/regexp2/v2"
 )

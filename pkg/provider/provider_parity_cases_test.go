@@ -46,39 +46,12 @@ func ppAt(t *testing.T, v any, path ...any) any {
 	return v
 }
 
-// Nous auth pool entry served only for the nous provider, the way the hermes test patches _read_nous_auth
-func ppNousPoolEntry(t *testing.T, entry *PooledCredential) {
+// Registry rows emptied so only the explicit seams decide the route
+func ppNoRegistry(t *testing.T) {
 	t.Helper()
-	old := auxSelectPoolEntryFn
-	t.Cleanup(func() { auxSelectPoolEntryFn = old })
-	auxSelectPoolEntryFn = func(_ context.Context, provider string) (bool, *PooledCredential) {
-		if provider == "nous" {
-			return true, entry
-		}
-		return false, nil
-	}
-}
-
-// Registry rows and the Nous runtime refresh emptied so only the explicit seams decide the route
-func ppNoRegistryNoNousRuntime(t *testing.T) {
-	t.Helper()
-	prevRows, prevNous := auxRegistryRowsFn, auxResolveNousRuntimeAPIFn
+	prevRows := auxRegistryRowsFn
 	auxRegistryRowsFn = func(context.Context) []*Profile { return nil }
-	auxResolveNousRuntimeAPIFn = func(context.Context, bool, string) (string, string, bool) { return "", "", false }
-	t.Cleanup(func() { auxRegistryRowsFn, auxResolveNousRuntimeAPIFn = prevRows, prevNous })
-}
-
-func TestBuildApiKwargsNousPortalAuxiliaryNousCallCarryingAConnectorResultAsksForANoTrainingRoute(t *testing.T) {
-	ctx := auxMainTestHome(t, "")
-	messages := []any{
-		map[string]any{"role": "user", "content": "title this"},
-		map[string]any{"role": "tool", "tool_call_id": "c1", "content": "inbox", "data_use": []any{"no_training"}},
-	}
-	kwargs, err := auxBuildCallKwargs(ctx, "nous", "hermes-4", messages, auxCallKwargsOptions{})
-	if err != nil {
-		t.Fatal(err)
-	}
-	sameJSON(t, ppAt(t, kwargs, "extra_body", "provider"), map[string]any{"data_collection": "deny"}, "provider routing")
+	t.Cleanup(func() { auxRegistryRowsFn = prevRows })
 }
 
 func TestChatMessagesToResponsesInputUserMessagePassesThrough(t *testing.T) {
@@ -224,28 +197,13 @@ func TestAuxiliaryClientProviderPriorityOpenrouterAlwaysWins(t *testing.T) {
 	}
 }
 
-func TestAuxiliaryClientProviderPriorityNousWhenNoOpenrouter(t *testing.T) {
-	ctx := auxMainTestHome(t, "")
-	auxClearUnhealthy(t)
-	t.Setenv("OPENROUTER_API_KEY", "")
-	ppNousPoolEntry(t, &PooledCredential{Provider: "nous", AccessToken: nousJWT(3600, "inference:invoke", "test-user", nil), Extra: map[string]any{"scope": "inference:invoke"}})
-	ppNoRegistryNoNousRuntime(t)
-	prevRec := auxGetNousRecommendedAuxModelFn
-	auxGetNousRecommendedAuxModelFn = func(context.Context, bool, bool) string { return "" }
-	t.Cleanup(func() { auxGetNousRecommendedAuxModelFn = prevRec })
-	client, model, err := GetTextAuxiliaryClient(ctx, "", nil)
-	if err != nil || client == nil || model != auxNousModel {
-		t.Fatalf("got %v %q %v", client, model, err)
-	}
-}
-
-func TestAuxiliaryClientProviderPriorityCustomEndpointWhenNoNous(t *testing.T) {
+func TestAuxiliaryClientProviderPriorityCustomEndpointWhenNoOpenRouter(t *testing.T) {
 	ctx := auxMainTestHome(t, "")
 	auxClearUnhealthy(t)
 	t.Setenv("OPENROUTER_API_KEY", "")
 	t.Setenv("OPENAI_API_KEY", "local-key")
 	auxFixedPoolEntry(t, false, nil)
-	ppNoRegistryNoNousRuntime(t)
+	ppNoRegistry(t)
 	prevCustom := auxResolveCustomRuntimeFn
 	auxResolveCustomRuntimeFn = func(context.Context) (string, any, string, error) {
 		return "http://localhost:1234/v1", "local-key", "openai-compatible", nil
@@ -267,7 +225,7 @@ func TestAuxiliaryClientProviderPriorityCodexNotInAutoFallback(t *testing.T) {
 		t.Setenv(name, "")
 	}
 	auxFixedPoolEntry(t, false, nil)
-	ppNoRegistryNoNousRuntime(t)
+	ppNoRegistry(t)
 	prevTok := auxReadCodexSingletonTokenFn
 	auxReadCodexSingletonTokenFn = func(context.Context) string { return "codex-tok" }
 	t.Cleanup(func() { auxReadCodexSingletonTokenFn = prevTok })

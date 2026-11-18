@@ -3,7 +3,6 @@ package media
 import (
 	"context"
 	"fmt"
-	"log/slog"
 	"os"
 	"strconv"
 	"strings"
@@ -13,7 +12,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pycodecs"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
-	"github.com/nickheyer/icebath/pkg/pm"
 )
 
 const (
@@ -78,9 +76,6 @@ func sttSet(names ...string) map[string]bool {
 	return out
 }
 
-// Logger shared by every STT module under the origin module name
-func sttLog() *slog.Logger { return slog.Default().With("logger", "tools.transcription_tools") }
-
 // Failure envelope with optional extra key value pairs
 func sttError(message string, extra ...any) map[string]any {
 	out := map[string]any{"success": false, "transcript": "", "error": message}
@@ -110,14 +105,6 @@ func normalizeXAISTTModel(model string) string {
 		return sttModelCatalog["xai"][0]
 	}
 	return value
-}
-
-// pm lazy install of an extra, the seam tests disable
-var sttEnsureImport = pm.EnsureImport
-
-// Offers the pm extra and swallows every failure
-func lazyEnsureQuietly(ctx context.Context, extra string) {
-	_ = pluginCall(func() error { return sttEnsureImport(ctx, extra) })
 }
 
 // Helper binary exited nonzero, outputs kept as string, bytes or nil like CalledProcessError
@@ -172,7 +159,7 @@ func processErrorDetail(e *sttProcessError) string {
 
 // Debug record that a backend ignores transcription prompts
 func logPromptUnsupported(label string) {
-	sttLog().Debug(fmt.Sprintf("%s does not support transcription prompts — proceeding without the prompt.", label))
+	pkgLog().Debug(fmt.Sprintf("%s does not support transcription prompts — proceeding without the prompt.", label))
 }
 
 // Config value cast to float, the default on a missing or bad value

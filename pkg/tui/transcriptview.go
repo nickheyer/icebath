@@ -2,6 +2,7 @@ package tui
 
 import (
 	"fmt"
+	"github.com/nickheyer/icebath/pkg/tuigateway"
 	"hash/fnv"
 	"strconv"
 	"strings"
@@ -39,6 +40,8 @@ type renderCtx struct {
 	focus bool
 	// No blank row between blocks
 	compact bool
+	// Chord that expands every folded detail, empty when unbound
+	expandKey string
 }
 
 // Scrollable rows of the transcript and the live turn, rendered once per content and width
@@ -121,7 +124,7 @@ func paintedFields(m msg) string {
 			fmt.Fprintf(h, "%q%q%q%q", title, text, s.Items, s.Rows)
 		}
 	}
-	fmt.Fprint(h, m.IsMoaReference, m.IsLiveReasoning, m.ThinkingTokens, m.ToolTokens, m.Todos)
+	fmt.Fprint(h, m.Label, m.IsMoaReference, m.IsLiveReasoning, m.ThinkingTokens, m.ToolTokens, m.Todos)
 	return strconv.FormatUint(h.Sum64(), 36)
 }
 
@@ -172,6 +175,8 @@ func (v *transcriptView) renderBlock(m msg, c renderCtx) []string {
 		lines = diffLines(m, c)
 	case m.Kind == "slash":
 		lines = wrapUnder(m.Text, c.width, "", toneStyle(c.t.Color.Accent))
+	case m.Kind == "delegation":
+		lines = delegationLines(m, c)
 	case m.Role == "user":
 		lead := toneStyle(c.t.Color.Prompt).Bold(true).Render(c.ut.Glyphs.Prompt + " ")
 		lines = userLines(m.Text, c, lead)
@@ -188,6 +193,38 @@ func (v *transcriptView) renderBlock(m msg, c renderCtx) []string {
 	}
 	if stamp, ok := fmtMsgTimestamp(m.CreatedAt); ok && c.timestamps && len(lines) > 0 && m.Kind != "intro" {
 		lines[0] = render.Fit(lines[0], max(c.width-ansi.StringWidth(stamp)-1, 1), c.ut) + " " + toneStyle(c.t.Color.Muted).Render(stamp)
+	}
+	return lines
+}
+
+// Lines a folded delegation result shows before its more line
+const delegationPreviewLines = 4
+
+// Delegation result under its header, its first lines and the keys that open it, every line once expanded
+func delegationLines(m msg, c renderCtx) []string {
+	pad := strings.Repeat(" ", transcriptIndent)
+	lines := []string{pad + toneStyle(c.t.Color.Tool).Render(truncateEnd("◇ "+m.Label, max(c.width-transcriptIndent, 8)))}
+	body := strings.Split(strings.TrimRight(stripAnsi(m.Text), "\n"), "\n")
+	shown := len(body)
+	switch sectionMode("subagents", c.details.DetailsMode, c.details.Sections, c.details.CommandOverride) {
+	case "hidden":
+		shown = 0
+	case "collapsed":
+		shown = min(shown, delegationPreviewLines)
+	}
+	muted := toneStyle(c.t.Color.Muted)
+	room := max(c.width-transcriptIndent-2, 8)
+	for _, row := range body[:shown] {
+		for _, part := range strings.Split(ansi.Wrap(row, room, ""), "\n") {
+			lines = append(lines, pad+"  "+muted.Render(part))
+		}
+	}
+	if rest := len(body) - shown; rest > 0 {
+		more := tr("transcript.delegation.moreCommand", rest)
+		if c.expandKey != "" {
+			more = tr("transcript.delegation.more", rest, c.expandKey)
+		}
+		lines = append(lines, pad+"  "+muted.Faint(true).Render(truncateEnd(more, room)))
 	}
 	return lines
 }
@@ -256,14 +293,15 @@ func (v *transcriptView) streamLines(text string, c renderCtx) []string {
 }
 
 // Session banner of a fresh or resumed session, the brand, model, folder and what the agent has loaded
-func introLines(info map[string]any, c renderCtx) []string {
+func introLines(raw *tuigateway.SessionInfo, c renderCtx) []string {
+	info := infoOf(raw)
 	pad := strings.Repeat(" ", transcriptIndent)
 	name := c.t.Brand.Name
 	if name == "" {
 		name = "icebath"
 	}
 	head := toneStyle(c.t.Color.Primary).Bold(true).Render(strings.TrimSpace(c.t.Brand.Icon + " " + name))
-	if version := infoText(info, "version"); version != "" && version != "unknown" {
+	if version := infoText(info.Version); version != "" && version != "unknown" {
 		head += toneStyle(c.t.Color.Muted).Render("  " + version)
 	}
 	lines := []string{pad + head}
@@ -275,45 +313,30 @@ func introLines(info map[string]any, c renderCtx) []string {
 			lines = append(lines, pad+toneStyle(c.t.Color.Label).Render(fmt.Sprintf("%-9s", label))+toneStyle(c.t.Color.Text).Render(truncateEnd(value, max(c.width-transcriptIndent-9, 8))))
 		}
 	}
-	row("model", infoText(info, "model"))
-	row("provider", infoText(info, "provider"))
-	row("cwd", shortCwd(infoText(info, "cwd"), max(c.width-14, 16)))
-	row("session", infoText(info, "stored_session_id"))
+	row("model", infoText(info.Model))
+	row("provider", infoText(info.Provider))
+	row("cwd", shortCwd(infoText(info.Cwd), max(c.width-14, 16)))
+	row("session", infoText(info.StoredSessionID))
 	counts := []string{}
-	for _, part := range [][2]string{{"tools", "tools"}, {"skills", "skills"}, {"mcp_servers", "MCP servers"}} {
-		if n := countOf(info[part[0]]); n > 0 {
-			counts = append(counts, strconv.Itoa(n)+" "+part[1])
+	for _, part := range []struct {
+		n     int
+		label string
+	}{{groupedCount(info.Tools), "tools"}, {groupedCount(info.Skills), "skills"}, {len(info.MCPServers), "MCP servers"}} {
+		if part.n > 0 {
+			counts = append(counts, strconv.Itoa(part.n)+" "+part.label)
 		}
 	}
 	row("loaded", strings.Join(counts, " · "))
 	return append(lines, pad+toneStyle(c.t.Color.Border).Render(strings.Repeat("─", max(min(c.width-transcriptIndent*2, 60), 4))))
 }
 
-// Text of a session info field, empty when the field is missing or not text
-func infoText(info map[string]any, key string) string {
-	text, _ := info[key].(string)
-	return trimJS(text)
-}
-
-// Entries of a list, of every list inside an object, or the number itself
-func countOf(v any) int {
-	switch v := v.(type) {
-	case []any:
-		return len(v)
-	case map[string]any:
-		n := 0
-		for _, inner := range v {
-			if list, isList := inner.([]any); isList {
-				n += len(list)
-			} else {
-				n++
-			}
-		}
-		return n
-	case float64:
-		return int(v)
+// Entries of every group of a grouped listing
+func groupedCount(groups map[string][]string) int {
+	n := 0
+	for _, entries := range groups {
+		n += len(entries)
 	}
-	return 0
+	return n
 }
 
 // Panel a slash command printed, its title then every section as text, items or aligned rows

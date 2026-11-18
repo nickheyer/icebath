@@ -4,7 +4,6 @@ import (
 	"encoding/base64"
 	"errors"
 	"fmt"
-	"log/slog"
 	"math/big"
 	"os"
 	"regexp"
@@ -15,6 +14,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
+	"github.com/nickheyer/icebath/pkg/tools"
 )
 
 // Python str pattern whitespace class
@@ -45,12 +45,41 @@ const (
 		"the desktop shell (wallpaper icons / taskbar) with elements"
 )
 
-// _NET_ACTIVE_WINDOW through xprop on an X11 session, nil on any failure, swapped by tests
-var linuxX11ActiveWindowID = func() *int64 {
-	if cuPlatform != "linux" || os.Getenv("DISPLAY") == "" {
+// Argv and env reading _NET_ACTIVE_WINDOW on the display the driver acts on, nil argv without an X11 display
+func activeWindowProbe(env *tools.Env) ([]string, map[string]string, error) {
+	xprop := []string{"xprop", "-root", "_NET_ACTIVE_WINDOW"}
+	if BotDesktopPlacementWhere(env) == botDesktopTerminal {
+		published := BotDesktopPublishedEnv(env)
+		if published["DISPLAY"] == "" {
+			return nil, nil, nil
+		}
+		sandbox, err := BotDesktopSandboxEnv(env, false)
+		if err != nil || sandbox == nil {
+			return nil, nil, err
+		}
+		command, args, err := BotDesktopSandboxCommand(sandbox, published, xprop)
+		if err != nil {
+			return nil, nil, err
+		}
+		return append([]string{command}, args...), map[string]string{"PATH": os.Getenv("PATH")}, nil
+	}
+	if cuPlatform != "linux" {
+		return nil, nil, nil
+	}
+	child := cuaDriverChildEnv(env, nil)
+	if child["DISPLAY"] == "" {
+		return nil, nil, nil
+	}
+	return xprop, child, nil
+}
+
+// X11 active window id of the driver display, nil on any failure, swapped by tests
+var linuxX11ActiveWindowID = func(env *tools.Env) *int64 {
+	argv, childEnv, err := activeWindowProbe(env)
+	if err != nil || argv == nil {
 		return nil
 	}
-	proc, err := runQuiet([]string{"xprop", "-root", "_NET_ACTIVE_WINDOW"}, 2, runOpts{})
+	proc, err := runQuiet(argv, 5, runOpts{Env: childEnv})
 	if err != nil || proc.Returncode != 0 {
 		return nil
 	}
@@ -58,6 +87,11 @@ var linuxX11ActiveWindowID = func() *int64 {
 		return &id
 	}
 	return nil
+}
+
+// Whether the driver runs on Linux, always for a desktop inside the terminal sandbox
+func driverOnLinux(env *tools.Env) bool {
+	return cuPlatform == "linux" || BotDesktopPlacementWhere(env) == botDesktopTerminal
 }
 
 // Python str of a row field with its default
@@ -82,7 +116,7 @@ func isCuaDriverSelfWindow(w *pyjson.Object) bool {
 }
 
 // Best window of a frontmost first list, skipping self windows and on Linux shell helpers and preferring the X11 active window
-func selectCaptureTarget(windows []*pyjson.Object, appRequested, exactTarget bool) *pyjson.Object {
+func selectCaptureTarget(windows []*pyjson.Object, appRequested, exactTarget, linux bool, activeWindow func() *int64) *pyjson.Object {
 	var pool []*pyjson.Object
 	for _, w := range windows {
 		if cuGet(w, "off_screen") != true {
@@ -100,7 +134,7 @@ func selectCaptureTarget(windows []*pyjson.Object, appRequested, exactTarget boo
 			pool = external
 		}
 	}
-	if !exactTarget && !appRequested && cuPlatform == "linux" {
+	if !exactTarget && !appRequested && linux {
 		var real []*pyjson.Object
 		for _, w := range pool {
 			if isRealAppWindow(w) {
@@ -111,7 +145,7 @@ func selectCaptureTarget(windows []*pyjson.Object, appRequested, exactTarget boo
 			pool = real
 		}
 		if len(pool) > 0 && zIndexUninformative(pool) {
-			if active := linuxX11ActiveWindowID(); active != nil {
+			if active := activeWindow(); active != nil {
 				for _, w := range pool {
 					if wid, ok := cuGet(w, "window_id").(int); ok && int64(wid) == *active {
 						return w
@@ -264,17 +298,17 @@ func (b *CuaDriverBackend) callCaptureTool(name string, args *pyjson.Object) (*p
 
 // One shot CLI transport call after an empty MCP result, nil on failure
 func (b *CuaDriverBackend) cliRefetch(name string, args *pyjson.Object, timeout float64, what, warning string) *pyjson.Object {
-	slog.Warn(warning)
+	pkgLog(nil).Warn(warning)
 	cliOut, err := b.session.callToolViaCLIFn(name, args, timeout)
 	if err != nil {
-		slog.Error(fmt.Sprintf("cua-driver CLI re-fetch for %s failed: %v", what, err))
+		pkgLog(nil).Error(fmt.Sprintf("cua-driver CLI re-fetch for %s failed: %v", what, err))
 		return nil
 	}
 	if cuGet(cliOut, "isError") != true {
 		return cliOut
 	}
 	if name == "list_windows" {
-		slog.Error("cua-driver CLI re-fetch for list_windows returned an error")
+		pkgLog(nil).Error("cua-driver CLI re-fetch for list_windows returned an error")
 	}
 	b.clearActiveTarget()
 	return nil
@@ -323,7 +357,7 @@ func (b *CuaDriverBackend) matchWindowsForApp(windows []*pyjson.Object, app stri
 	}
 	runningApps, err := b.ListApps()
 	if err != nil {
-		slog.Debug(fmt.Sprintf("computer_use list_apps fallback failed for %s: %v", pyrepr.Repr(app), err))
+		pkgLog(nil).Debug(fmt.Sprintf("computer_use list_apps fallback failed for %s: %v", pyrepr.Repr(app), err))
 		runningApps = nil
 	}
 	exactPIDs, partialPIDs := map[int]bool{}, map[int]bool{}
@@ -557,7 +591,7 @@ func (b *CuaDriverBackend) Capture(mode string, app *string, pid, windowID *int)
 		return failed, err
 	}
 	appRequested := app != nil && *app != ""
-	target := selectCaptureTarget(windows, appRequested, exactTarget)
+	target := selectCaptureTarget(windows, appRequested, exactTarget, driverOnLinux(b.env), func() *int64 { return linuxX11ActiveWindowID(b.env) })
 	b.setActiveTarget(target)
 	appName, _ := cuGet(target, "app_name").(string)
 	if appRequested || b.lastApp == nil || *b.lastApp == "" {
@@ -626,7 +660,7 @@ func (b *CuaDriverBackend) captureFullScreen(mode string) (*CaptureResult, error
 	cfgArgs := pyjson.NewObject()
 	cfgArgs.Set("session", b.sessionID)
 	if out, err := b.session.callTool("get_config", cfgArgs, 10.0); err != nil {
-		slog.Debug(fmt.Sprintf("cua-driver get_config before full-screen capture failed: %v", err))
+		pkgLog(nil).Debug(fmt.Sprintf("cua-driver get_config before full-screen capture failed: %v", err))
 	} else if sc, ok := cuGet(out, "structuredContent").(*pyjson.Object); ok {
 		if s, ok := cuGet(sc, "capture_scope").(string); ok {
 			previous = &s
@@ -644,7 +678,7 @@ func (b *CuaDriverBackend) captureFullScreen(mode string) (*CaptureResult, error
 		defer func() {
 			if previous != nil && *previous != "" && *previous != "desktop" {
 				if err := setScope(*previous); err != nil {
-					slog.Debug(fmt.Sprintf("cua-driver restore capture_scope failed: %v", err))
+					pkgLog(nil).Debug(fmt.Sprintf("cua-driver restore capture_scope failed: %v", err))
 				}
 			}
 		}()

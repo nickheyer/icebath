@@ -15,7 +15,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/tools"
 )
 
-// Manifest of the hermes fixture-approval plugin
+// Manifest of the test fixture-approval plugin
 func atManifest(name string) *Manifest {
 	return &Manifest{Name: name, Version: "1.0.0", Description: "fixture", Source: "user", Key: name}
 }
@@ -257,7 +257,7 @@ func TestHardlineBlocksBeforeSelectedTransport(t *testing.T) {
 	}
 }
 
-// Compiled-in twin of the hermes fixture-approval plugin recording every presentation into the home
+// Compiled-in twin of the test fixture-approval plugin recording every presentation into the home
 func atFixturePlugin() Plugin {
 	return ledgerBundled{m: Manifest{Name: "fixture-approval", Version: "1.0.0", Description: "approval transport fixture"}, register: func(ctx *Context) error {
 		return ctx.RegisterApprovalTransport(context.Background(), "fixture", func(_ context.Context, req tools.ApprovalRequest) (tools.ApprovalTransportDecision, error) {

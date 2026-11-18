@@ -16,12 +16,11 @@ import (
 
 	"github.com/google/uuid"
 
-	"github.com/nickheyer/icebath/pkg/codeexec"
-	"github.com/nickheyer/icebath/pkg/cron"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
+	"github.com/nickheyer/icebath/pkg/periodic"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tools"
@@ -38,6 +37,9 @@ var (
 	delegateDiagChildAttrs        = []string{"model", "provider", "api_mode", "base_url", "max_iterations", "quiet_mode", "skip_memory", "skip_context_files", "platform", "_delegate_role", "_delegate_depth"}
 	childRunNow                   = time.Now
 )
+
+// Steps releasing what a finished delegated child held, keyed by its session id, installed by owning tiers
+var DelegatedChildDisposers []func(childSessionID string)
 
 // Reserves a queued child's session row without completing its first turn persistence
 func reserveChildTranscript(child *AIAgent) error {
@@ -147,7 +149,7 @@ func closeChild(child *AIAgent, logMessage string) {
 	}
 	delegateQuiet(logMessage, func() {
 		if err := child.Close(); err != nil && logMessage != "" {
-			delegateLog().Debug(logMessage, "error", err)
+			pkgLog().Debug(logMessage, "error", err)
 		}
 	})
 }
@@ -200,7 +202,7 @@ func detachChild(parent, child *AIAgent) {
 			return
 		}
 	}
-	delegateLog().Debug("Could not remove child from active_children: list.remove(x): x not in list")
+	pkgLog().Debug("Could not remove child from active_children: list.remove(x): x not in list")
 }
 
 // Cooperative hard stop of a child with the fixed cause its tools see
@@ -214,7 +216,7 @@ func signalChildStop(child *AIAgent, reason, toolReason string) {
 	delegateQuiet("", func() { RequestHardInterrupt(child, reason, toolReason) })
 }
 
-// One diagnostic section, a failing producer rendered as its labelled error line like the hermes except branch
+// One diagnostic section, a failing producer rendered as its labelled error line like the except branch
 func diagSection(label string, produce func() ([]string, error)) (lines []string) {
 	defer func() {
 		if r := recover(); r != nil {
@@ -372,7 +374,7 @@ func dumpSubagentTimeoutDiagnostic(ctx context.Context, child *AIAgent, taskInde
 		"  Common causes: oversized prompt rejected by provider, transport hang,",
 		"  credential resolution stuck. See issue #14726 for context.")
 	if err := os.WriteFile(dumpPath, []byte(strings.Join(lines, "\n")), 0o644); err != nil {
-		delegateLog().Warn(fmt.Sprintf("Subagent timeout diagnostic dump failed: %v", err))
+		pkgLog().Warn(fmt.Sprintf("Subagent timeout diagnostic dump failed: %v", err))
 		return ""
 	}
 	return dumpPath
@@ -437,7 +439,7 @@ type childHeartbeat struct {
 	lastTool             any
 	lastTS               *float64
 	stale                int
-	handle               *cron.ScheduledHandle
+	handle               *periodic.ScheduledHandle
 	settled              chan struct{}
 	settleOnce           sync.Once
 	mu                   sync.Mutex
@@ -451,7 +453,7 @@ func newChildHeartbeat(child, parent *AIAgent, taskIndex int) *childHeartbeat {
 func (h *childHeartbeat) settle() { h.settleOnce.Do(func() { close(h.settled) }) }
 
 func (h *childHeartbeat) start(ctx context.Context) {
-	h.handle = cron.SchedulePeriodic(context.WithoutCancel(ctx), func(context.Context) bool { return h.tick() }, delegateHeartbeatInterval)
+	h.handle = periodic.SchedulePeriodic(context.WithoutCancel(ctx), func(context.Context) bool { return h.tick() }, delegateHeartbeatInterval)
 }
 
 func (h *childHeartbeat) stop() {
@@ -502,7 +504,7 @@ func (h *childHeartbeat) tick() bool {
 			if shown == "" {
 				shown = "<none>"
 			}
-			delegateLog().Warn(fmt.Sprintf("Subagent %d appears stale (no progress for %d heartbeat cycles, tool=%s) — abandoning its wait",
+			pkgLog().Warn(fmt.Sprintf("Subagent %d appears stale (no progress for %d heartbeat cycles, tool=%s) — abandoning its wait",
 				h.taskIndex, h.stale, shown))
 			threshold := float64(cycles) * delegateHeartbeatInterval.Seconds()
 			h.mu.Lock()
@@ -564,7 +566,7 @@ func createIsolatedWorktree(ctx context.Context, parent *AIAgent, parentTaskID, 
 	}
 	delegateQuiet("worktree isolation setup failed: %v", func() {
 		if !subagentLocalBackendActive(ctx) {
-			delegateLog().Debug("worktree isolation skipped: non-local terminal backend")
+			pkgLog().Debug("worktree isolation skipped: non-local terminal backend")
 			return
 		}
 		parentCwd, _ := tools.GetSessionCwd(parent.env, parentTaskID)
@@ -698,7 +700,7 @@ func validateChildOutputSchema(ctx context.Context, child *AIAgent, result map[s
 				if isUserInterruptPanic(r) {
 					panic(r)
 				}
-				delegateLog().Warn(fmt.Sprintf("Subagent %d schema-retry turn failed: %v", taskIndex, r))
+				pkgLog().Warn(fmt.Sprintf("Subagent %d schema-retry turn failed: %v", taskIndex, r))
 			}
 		}()
 		runCtx := tools.WithDelegatedChildContext(childProfileScope(ctx, child), true)
@@ -706,7 +708,7 @@ func validateChildOutputSchema(ctx context.Context, child *AIAgent, result map[s
 		defer tools.ScopedCurrentSessionID(child.env, &childSessionID)()
 		out, err := runChildConversationFn(runCtx, child, tools.BuildRetryMessage(errs), RunConversationOptions{TaskID: childTaskID, StreamCallback: relay})
 		if err != nil {
-			delegateLog().Warn(fmt.Sprintf("Subagent %d schema-retry turn failed: %v", taskIndex, err))
+			pkgLog().Warn(fmt.Sprintf("Subagent %d schema-retry turn failed: %v", taskIndex, err))
 			return
 		}
 		retry = out
@@ -939,7 +941,7 @@ func buildChildGoalMessage(ctx context.Context, goal string, images []string, ch
 			if isUserInterruptPanic(r) {
 				panic(r)
 			}
-			delegateLog().Warn("delegate_task: image forwarding failed; sending text-only goal", "error", r)
+			pkgLog().Warn("delegate_task: image forwarding failed; sending text-only goal", "error", r)
 			msg = goal
 		}
 	}()
@@ -967,7 +969,7 @@ func buildChildGoalMessage(ctx context.Context, goal string, images []string, ch
 			if len(shown) > 3 {
 				shown = shown[:3]
 			}
-			delegateLog().Warn(fmt.Sprintf("delegate_task: skipped %d unreadable image(s) for subagent: %s", len(skipped), strings.Join(shown, ", ")))
+			pkgLog().Warn(fmt.Sprintf("delegate_task: skipped %d unreadable image(s) for subagent: %s", len(skipped), strings.Join(shown, ", ")))
 		}
 		if len(dataURLs) > 0 {
 			if len(parts) == 0 {
@@ -985,14 +987,14 @@ func buildChildGoalMessage(ctx context.Context, goal string, images []string, ch
 		return goal
 	}
 	if len(dataURLs) > 0 {
-		delegateLog().Warn(fmt.Sprintf("delegate_task: %d inline data-URL image(s) dropped for a non-vision subagent", len(dataURLs)))
+		pkgLog().Warn(fmt.Sprintf("delegate_task: %d inline data-URL image(s) dropped for a non-vision subagent", len(dataURLs)))
 	}
 	var hints []string
 	for _, p := range paths {
 		if st, err := os.Stat(p); err == nil && st.Mode().IsRegular() {
 			hints = append(hints, "[Image attached at: "+p+"]")
 		} else {
-			delegateLog().Warn("delegate_task: image path not found, not forwarded: " + p)
+			pkgLog().Warn("delegate_task: image path not found, not forwarded: " + p)
 		}
 	}
 	for _, u := range urls {
@@ -1051,7 +1053,7 @@ func (r *childRun) attachWorktree(entry *pyjson.Object) *pyjson.Object {
 	if r.worktreeInfo != nil {
 		payload, err := finalizeSubagentWorktree(r.worktreeInfo, true)
 		if err != nil {
-			delegateLog().Warn(fmt.Sprintf("worktree finalize failed: %v", err))
+			pkgLog().Warn(fmt.Sprintf("worktree finalize failed: %v", err))
 			payload = unprovenWorktreePayload(r.worktreeInfo, fmt.Sprintf("finalize raised: %v", err))
 		}
 		entry.Set("worktree", payload)
@@ -1211,7 +1213,7 @@ func (r *childRun) awaitChild() (map[string]any, *pyjson.Object, bool) {
 		signalChildStop(child, "", "")
 		select {
 		case <-done:
-			delegateLog().Info(fmt.Sprintf("Subagent %d settled inside the %.1fs stale-result grace window — collecting its real result", taskIndex, delegateStaleResultGrace))
+			pkgLog().Info(fmt.Sprintf("Subagent %d settled inside the %.1fs stale-result grace window — collecting its real result", taskIndex, delegateStaleResultGrace))
 			return outcome.err
 		case <-time.After(time.Duration(delegateStaleResultGrace * float64(time.Second))):
 			return errChildWaitTimeout
@@ -1234,7 +1236,7 @@ func (r *childRun) awaitChild() (map[string]any, *pyjson.Object, bool) {
 	if isTimeout {
 		what = "timed out"
 	}
-	delegateLog().Warn(fmt.Sprintf("Subagent %d %s after %.1fs", taskIndex, what, duration))
+	pkgLog().Warn(fmt.Sprintf("Subagent %d %s after %.1fs", taskIndex, what, duration))
 	childAPICalls := childNumInt(child.GetActivitySummary()["api_call_count"])
 	beforeFirstCall := isTimeout && childAPICalls == 0
 	diagnosticPath := ""
@@ -1250,7 +1252,7 @@ func (r *childRun) awaitChild() (map[string]any, *pyjson.Object, bool) {
 		}
 		diagnosticPath = dumpSubagentTimeoutDiagnostic(r.ctx, child, taskIndex, cause, duration, stack, r.goal)
 		if diagnosticPath != "" {
-			delegateLog().Warn(fmt.Sprintf("Subagent %d 0-API-call timeout — diagnostic written to %s", taskIndex, diagnosticPath))
+			pkgLog().Warn(fmt.Sprintf("Subagent %d 0-API-call timeout — diagnostic written to %s", taskIndex, diagnosticPath))
 		}
 	}
 	var errText string
@@ -1509,9 +1511,9 @@ func (r *childRun) cleanup(pool *provider.Pool, leasedID string, closeDeferred b
 	if !closeDeferred {
 		closeChild(child, "Failed to close child agent after delegation")
 	}
-	delegateQuiet("Failed to dispose child execute_code kernels: %v", func() {
-		codeexec.ShutdownKernelsForDelegatedChild(child.sessionID)
-	})
+	for _, dispose := range DelegatedChildDisposers {
+		delegateQuiet("Failed to dispose child execute_code kernels: %v", func() { dispose(child.sessionID) })
+	}
 	delegateQuiet("Failed to close child Relay session after delegation", func() {
 		profileKey := tools.CurrentRelayProfileKey(r.ctx)
 		relay := tools.GetRelayRuntime(r.ctx, false, profileKey)

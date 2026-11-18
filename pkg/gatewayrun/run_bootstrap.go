@@ -28,7 +28,7 @@ var (
 	bootstrapAtExitFuncs []func()
 )
 
-// Queues fn to run at process exit after every later registration, the atexit.register of hermes
+// Queues fn to run at process exit after every later registration
 func registerBootstrapAtExit(fn func()) {
 	bootstrapAtExitMu.Lock()
 	bootstrapAtExitFuncs = append(bootstrapAtExitFuncs, fn)
@@ -59,7 +59,7 @@ func startDeferredStateDBIntegrityCheck(ctx context.Context, evidence *pyjson.Ob
 // Replaces a live gateway of this home with replace, or refuses, false when startup must abort
 func startGatewayReplaceExistingInstance(ctx context.Context, existingPid int, replace bool) (bool, error) {
 	if !replace {
-		runLog().Error(fmt.Sprintf("Another gateway instance is already running (PID %d, ICEBATH_HOME=%s) and did not "+
+		pkgLog().Error(fmt.Sprintf("Another gateway instance is already running (PID %d, ICEBATH_HOME=%s) and did not "+
 			"publish a host record this process could attach to.", existingPid, home.Dir(ctx)))
 		fmt.Printf("\n❌ A gateway already owns this host (PID %d).\n"+
 			"   One gateway per host serves every profile, so there is nothing to start here.\n"+
@@ -70,36 +70,36 @@ func startGatewayReplaceExistingInstance(ctx context.Context, existingPid int, r
 		return false, nil
 	}
 	if replaceTargetBelongsToOtherProfile(ctx, existingPid) {
-		runLog().Error(fmt.Sprintf("Refusing --replace: PID %d cannot be proven to belong "+
+		pkgLog().Error(fmt.Sprintf("Refusing --replace: PID %d cannot be proven to belong "+
 			"to this profile's gateway (ICEBATH_HOME %s). Remove the "+
 			"stale PID record or stop the owning profile explicitly.", existingPid, gateway.ProcessHome()))
 		wait := 5 * time.Second
 		if _, err := gateway.WriteRuntimeStatus(ctx, gateway.RuntimeStatusUpdate{Fields: map[string]any{
 			"gateway_state": "startup_failed", "exit_reason": "gateway_replace_ownership_unproven",
 		}}, false, &wait); err != nil {
-			runLog().Debug("Could not stamp runtime status after the ownership refusal", "error", err)
+			pkgLog().Debug("Could not stamp runtime status after the ownership refusal", "error", err)
 		}
 		return false, nil
 	}
 	existingStartTime := gateway.GetProcessStartTime(existingPid)
-	runLog().Info(fmt.Sprintf("Replacing existing gateway instance (PID %d) with --replace.", existingPid))
+	pkgLog().Info(fmt.Sprintf("Replacing existing gateway instance (PID %d) with --replace.", existingPid))
 	gateway.WriteTakeoverMarker(ctx, existingPid, "", nil, false)
 	oldGatewayChildren, _ := bestEffort(func() ([]gateway.GatewayChild, error) {
 		return gateway.SnapshotGatewayChildren(existingPid), nil
 	}, "")
 	if err := gateway.TerminatePid(existingPid, false, nil); err != nil && !errors.Is(err, os.ErrProcessDone) {
-		runLog().Error(fmt.Sprintf("Permission denied killing PID %d. Cannot replace.", existingPid))
+		pkgLog().Error(fmt.Sprintf("Permission denied killing PID %d. Cannot replace.", existingPid))
 		clearTakeoverMarkerQuiet()
 		return false, nil
 	}
 	if !waitForPidExit(ctx, existingPid, 20, 500*time.Millisecond) {
-		runLog().Warn(fmt.Sprintf("Old gateway (PID %d) did not exit after SIGTERM, sending SIGKILL.", existingPid))
+		pkgLog().Warn(fmt.Sprintf("Old gateway (PID %d) did not exit after SIGTERM, sending SIGKILL.", existingPid))
 		oldGatewayExited := false
 		if err := gateway.TerminatePid(existingPid, true, existingStartTime); errors.Is(err, os.ErrProcessDone) {
 			oldGatewayExited = true
 		}
 		if !oldGatewayExited && !waitForPidExit(ctx, existingPid, 20, 250*time.Millisecond) {
-			runLog().Error(fmt.Sprintf("Old gateway (PID %d) still appears alive after SIGKILL; "+
+			pkgLog().Error(fmt.Sprintf("Old gateway (PID %d) still appears alive after SIGKILL; "+
 				"aborting replacement to avoid a duplicate gateway.", existingPid))
 			clearTakeoverMarkerQuiet()
 			return false, nil
@@ -108,7 +108,7 @@ func startGatewayReplaceExistingInstance(ctx context.Context, existingPid int, r
 	func() {
 		defer func() {
 			if rec := recover(); rec != nil {
-				runLog().Debug(fmt.Sprintf("Child reap for replaced gateway PID %d failed", existingPid), "error", rec)
+				pkgLog().Debug(fmt.Sprintf("Child reap for replaced gateway PID %d failed", existingPid), "error", rec)
 			}
 		}()
 		gateway.ReapGatewayChildren(oldGatewayChildren, existingPid, 5*time.Second)
@@ -119,12 +119,12 @@ func startGatewayReplaceExistingInstance(ctx context.Context, existingPid int, r
 	func() {
 		defer func() {
 			if rec := recover(); rec != nil {
-				runLog().Debug(fmt.Sprintf("Stale scoped lock release for replaced gateway PID %d failed", existingPid), "error", rec)
+				pkgLog().Debug(fmt.Sprintf("Stale scoped lock release for replaced gateway PID %d failed", existingPid), "error", rec)
 			}
 		}()
 		pid := existingPid
 		if released := gateway.ReleaseAllScopedLocks(&pid, existingStartTime); released > 0 {
-			runLog().Info(fmt.Sprintf("Released %d stale scoped lock(s) from old gateway.", released))
+			pkgLog().Info(fmt.Sprintf("Released %d stale scoped lock(s) from old gateway.", released))
 		}
 	}()
 	return true, nil
@@ -137,18 +137,18 @@ func startGatewayClaimPidFile(ctx context.Context, force bool) (bool, error) {
 		return false, err
 	}
 	if running && currentPid != os.Getpid() {
-		runLog().Error(fmt.Sprintf("Another gateway instance (PID %d) started during our startup. "+
+		pkgLog().Error(fmt.Sprintf("Another gateway instance (PID %d) started during our startup. "+
 			"Exiting to avoid double-running.", currentPid))
 		return false, nil
 	}
 	if !gateway.AcquireGatewayRuntimeLock(ctx) {
-		runLog().Error("Gateway runtime lock is already held by another instance. Exiting.")
+		pkgLog().Error("Gateway runtime lock is already held by another instance. Exiting.")
 		return false, nil
 	}
 	if err := gateway.WritePidFile(ctx); err != nil {
 		if errors.Is(err, fs.ErrExist) {
 			gateway.ReleaseGatewayRuntimeLock()
-			runLog().Error("PID file race lost to another gateway instance. Exiting.")
+			pkgLog().Error("PID file race lost to another gateway instance. Exiting.")
 			return false, nil
 		}
 		return false, err
@@ -183,7 +183,7 @@ func launchHomeMayMultiplex(ctx context.Context, cfg *gateway.GatewayConfig) (bo
 			return true, nil
 		}
 	}
-	runLog().Error(fmt.Sprintf("gateway.multiplex_profiles is set on profile %s, but only the default profile can run the "+
+	pkgLog().Error(fmt.Sprintf("gateway.multiplex_profiles is set on profile %s, but only the default profile can run the "+
 		"multiplexer. Unset the flag in this profile's config.yaml, or start the gateway from the "+
 		"default profile (`icebath gateway run`), which serves this profile too.", pyrepr.Repr(name)))
 	writeRuntimeStatusQuiet(ctx, gateway.RuntimeStatusUpdate{Fields: map[string]any{
@@ -244,13 +244,13 @@ func startGatewayReserveProfiles(ctx context.Context, profileHomes []profiles.Se
 	case err == nil:
 		return true, nil
 	case errors.As(err, &conflict):
-		runLog().Error(fmt.Sprintf("Cannot reserve gateway profiles: %s", conflict.Error()))
+		pkgLog().Error(fmt.Sprintf("Cannot reserve gateway profiles: %s", conflict.Error()))
 		served, probeErr := gateway.CurrentProfileServedByRunningMultiplexer(ctx)
 		if probeErr != nil {
 			return false, probeErr
 		}
 		if served {
-			runLog().Error("The default gateway is running as a profile multiplexer and already serves this profile. " +
+			pkgLog().Error("The default gateway is running as a profile multiplexer and already serves this profile. " +
 				"Manage it with `icebath gateway restart` from the default profile instead of starting a " +
 				"second gateway for the profile.")
 			writeRuntimeStatusQuiet(ctx, gateway.RuntimeStatusUpdate{Fields: map[string]any{
@@ -259,7 +259,7 @@ func startGatewayReserveProfiles(ctx context.Context, profileHomes []profiles.Se
 		}
 		return false, nil
 	case pypath.IsOSError(err):
-		runLog().Error(fmt.Sprintf("Cannot reserve gateway profiles: %s", pyrepr.ExceptionMessage(err)))
+		pkgLog().Error(fmt.Sprintf("Cannot reserve gateway profiles: %s", pyrepr.ExceptionMessage(err)))
 		return false, nil
 	}
 	return false, err
@@ -269,12 +269,12 @@ func startGatewayReserveProfiles(ctx context.Context, profileHomes []profiles.Se
 func startGatewayEarlyEnvironmentProbe(ctx context.Context) {
 	defer func() {
 		if rec := recover(); rec != nil {
-			runLog().Debug("early environment probe did not start", "error", rec)
+			pkgLog().Debug("early environment probe did not start", "error", rec)
 		}
 	}()
 	cfg, err := config.LoadReadonly(ctx, home.Dir(ctx), nil)
 	if err != nil {
-		runLog().Debug("early environment probe did not start", "error", err)
+		pkgLog().Debug("early environment probe did not start", "error", err)
 		return
 	}
 	if agentCfg, ok := cfg["agent"].(map[string]any); ok {

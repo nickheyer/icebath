@@ -28,7 +28,6 @@ var (
 var (
 	switchCapabilitiesFn = ModelsDevCapabilities
 	switchModelInfoFn    = ModelsDevModelInfo
-	switchUsageNoticeFn  = LargeModelNoticeFor
 )
 
 // Normalizes and validates the model for the target, accepting config declared models the remote catalog lacks
@@ -91,17 +90,11 @@ func guardedSwitchValidation(ctx context.Context, model, provider string, opts V
 // Providers whose api mode follows the final model, keyed on the provider family or id
 var providerAPIModeOverrides = map[string]func(ctx context.Context, provider, model, apiKey string) string{
 	"opencode-zen": opencodeAPIMode, "opencode-go": opencodeAPIMode, "opencode": opencodeAPIMode,
-	"nous": nousSwitchAPIMode, "nous-portal": nousSwitchAPIMode, "nousresearch": nousSwitchAPIMode,
 }
 
 // OpenCode wire derived from the target model so a previous model mode never carries across switches
 func opencodeAPIMode(_ context.Context, provider, model, _ string) string {
 	return string(OpenCodeModelMode(provider, model))
-}
-
-// Nous Portal wire derived from the final model and the configured anthropic wire
-func nousSwitchAPIMode(ctx context.Context, _, model, _ string) string {
-	return string(NousMode(model, modelsResolver(ctx).nousAnthropicWire()))
 }
 
 // ModelDerivedAPIMode is the api mode re-derived from the final model, false when the endpoint fixes the wire
@@ -150,14 +143,7 @@ func buildSwitchResult(ctx context.Context, st *modelSwitch) ModelSwitchResult {
 	if info, ok := switchModelInfoFn(ctx, st.TargetProvider, st.NewModel, true); ok {
 		res.ModelInfo = &info
 	}
-	var warnings []string
-	for _, w := range []string{st.Validation.Message, checkHermesModelWarning(st.NewModel)} {
-		if w != "" {
-			warnings = append(warnings, w)
-		}
-	}
-	res.WarningMessage = strings.Join(warnings, " | ")
-	res.UsageNotice = switchUsageNoticeFn(ctx, st.NewModel, st.TargetProvider, true, "")
+	res.WarningMessage = st.Validation.Message
 	res.RequestOverrides = map[string]any{}
 	r := modelsResolver(ctx)
 	if cp := r.getNamedCustomProvider(st.TargetProvider, r.cfg, true); cp != nil {

@@ -155,7 +155,7 @@ func liveCachePath(h string) string {
 // Removes the cached live catalog of any home, logging at debug when removal fails
 func InvalidateLiveCacheForHome(h string) {
 	if err := os.Remove(liveCachePath(h)); err != nil && !os.IsNotExist(err) {
-		logPluginCatalog.debug("Plugin catalog: could not drop the live cache under "+h, "error", err)
+		pkgLog().Debug("Plugin catalog: could not drop the live cache under "+h, "error", err)
 	}
 }
 

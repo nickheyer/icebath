@@ -109,9 +109,12 @@ func wireValue(v any) (any, error) {
 	return v, nil
 }
 
-// Identity of a value before and after the walk, containers by their backing storage
+// Identity of a value before and after the walk, containers by their backing storage and untyped nil by itself
 func sameValue(a, b any) bool {
 	ra, rb := reflect.ValueOf(a), reflect.ValueOf(b)
+	if !ra.IsValid() || !rb.IsValid() {
+		return ra.IsValid() == rb.IsValid()
+	}
 	if ra.Kind() != rb.Kind() || ra.Type() != rb.Type() {
 		return false
 	}

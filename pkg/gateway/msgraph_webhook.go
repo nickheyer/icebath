@@ -7,7 +7,6 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
-	"log/slog"
 	"net/http"
 	"net/netip"
 	"regexp"
@@ -126,7 +125,7 @@ func msgraphParseAllowedSourceCIDRs(raw any) []netip.Prefix {
 		}
 		network, ok := pyipaddress.IPNetwork(chunk, false)
 		if !ok {
-			slog.Warn(fmt.Sprintf("[msgraph_webhook] Ignoring invalid allowed_source_cidrs entry: %s", pyrepr.Repr(chunk)))
+			pkgLog().Warn(fmt.Sprintf("[msgraph_webhook] Ignoring invalid allowed_source_cidrs entry: %s", pyrepr.Repr(chunk)))
 			continue
 		}
 		networks = append(networks, network)
@@ -325,11 +324,11 @@ func (a *MSGraphWebhookAdapter) sourceAllowlistRequiredButMissing(ctx context.Co
 // Starts the webhook listener, false without a client state or with a public bind lacking an allowlist
 func (a *MSGraphWebhookAdapter) Connect(ctx context.Context, isReconnect bool) (bool, error) {
 	if a.clientState == nil {
-		slog.Error("[msgraph_webhook] Refusing to start without extra.client_state configured")
+		pkgLog().Error("[msgraph_webhook] Refusing to start without extra.client_state configured")
 		return false, nil
 	}
 	if a.sourceAllowlistRequiredButMissing(ctx) {
-		slog.Error(fmt.Sprintf("[msgraph_webhook] Refusing to start: binding to %s requires extra.allowed_source_cidrs. "+
+		pkgLog().Error(fmt.Sprintf("[msgraph_webhook] Refusing to start: binding to %s requires extra.allowed_source_cidrs. "+
 			"Configure the Microsoft Graph source CIDRs or bind to loopback (127.0.0.1/::1) behind a "+
 			"tunnel or reverse proxy.", pyHostText(a.host)))
 		return false, nil
@@ -352,7 +351,7 @@ func (a *MSGraphWebhookAdapter) Connect(ctx context.Context, isReconnect bool) (
 	a.runner = runner
 	a.MarkConnected(ctx, "")
 	if a.runner != nil {
-		slog.Info(fmt.Sprintf("[msgraph_webhook] Listening on %s:%d%s", pyHostText(a.host), a.port, a.webhookPath))
+		pkgLog().Info(fmt.Sprintf("[msgraph_webhook] Listening on %s:%d%s", pyHostText(a.host), a.port, a.webhookPath))
 	}
 	return true, nil
 }
@@ -379,7 +378,7 @@ func (a *MSGraphWebhookAdapter) Disconnect(ctx context.Context) error {
 
 // Logs the response the internal turn produced, Graph has no reply channel
 func (a *MSGraphWebhookAdapter) Send(ctx context.Context, chatID, content, replyTo string, metadata map[string]any) (SendResult, error) {
-	slog.Info(fmt.Sprintf("[msgraph_webhook] Response for %s: %s", chatID, pySliceRunes(content, 200)))
+	pkgLog().Info(fmt.Sprintf("[msgraph_webhook] Response for %s: %s", chatID, pySliceRunes(content, 200)))
 	return SendResult{Success: true}, nil
 }
 
@@ -485,7 +484,7 @@ func (a *MSGraphWebhookAdapter) handleNotification(ctx context.Context, request 
 	for _, raw := range notifications {
 		outcome, err := a.ingestNotification(ctx, raw)
 		if err != nil {
-			slog.Error("[msgraph_webhook] Notification admission failed", "error", err)
+			pkgLog().Error("[msgraph_webhook] Notification admission failed", "error", err)
 			return NewWebResponse(http.StatusServiceUnavailable, nil), nil
 		}
 		counts[outcome]++

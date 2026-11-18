@@ -11,7 +11,7 @@ import (
 
 func TestMixinHostWithoutPrefixIsRejectedAtClassCreation(t *testing.T) {
 	_, err := NewOwnAccessPolicyMixin("Host", "")
-	if err == nil || !strings.Contains(err.Error(), "TypeError") || !strings.Contains(err.Error(), "ALLOW_ALL_ENV_PREFIX") {
+	if err == nil || !strings.Contains(err.Error(), "has its own access policy") || !strings.Contains(err.Error(), "environment variable prefix") {
 		t.Fatalf("err %v", err)
 	}
 }

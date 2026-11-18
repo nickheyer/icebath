@@ -3,16 +3,12 @@ package app
 import (
 	"context"
 	"fmt"
-	"log/slog"
 	"math"
-	"os"
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/agent"
-	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/gatewaycli"
-	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/i18n"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
@@ -74,7 +70,7 @@ func (a *GatewayAgent) result(ctx context.Context, history []map[string]any, use
 			if !isGatewayClientError(err) {
 				panic(err)
 			}
-			slog.Debug(fmt.Sprintf("prompt.receipt failed: %s", err.Error()))
+			pkgLog().Debug(fmt.Sprintf("prompt.receipt failed: %s", err.Error()))
 		}
 		receipt, _ = pyjson.Plain(raw).(map[string]any)
 	}
@@ -233,7 +229,7 @@ func (a *GatewayAgent) refreshStats(turn *gatewayTurn) bool {
 		if !isGatewayClientError(err) {
 			panic(err)
 		}
-		slog.Debug(fmt.Sprintf("session.stats unavailable: %s", err.Error()))
+		pkgLog().Debug(fmt.Sprintf("session.stats unavailable: %s", err.Error()))
 		return false
 	}
 	stats, _ := pyjson.Plain(raw).(map[string]any)
@@ -595,21 +591,16 @@ func (a *GatewayAgent) CompressionSummary() map[string]any {
 	return a.compressionSummary
 }
 
-// Credits capture of the session's route, created once and following the session id
-func (a *GatewayAgent) CreditsCapture() *provider.CreditsCapture {
+// Header capture of the session's provider, created once and following the live provider
+func (a *GatewayAgent) HeaderCapture() *provider.HeaderCapture {
 	a.mu.Lock()
 	defer a.mu.Unlock()
-	if a.credits == nil {
-		tree, err := config.LoadReadonly(a.ctx, home.Dir(a.ctx), os.LookupEnv)
-		if err != nil {
-			tree = nil
-		}
-		a.credits = provider.NewCreditsCapture(tree, a.provider, a.model, a.baseURL, a.sessionID)
-		return a.credits
+	if a.headerCapture == nil {
+		a.headerCapture = provider.NewHeaderCapture(a.provider)
+		return a.headerCapture
 	}
-	a.credits.SetRoute(a.provider, a.model, a.baseURL)
-	a.credits.SessionID = a.sessionID
-	return a.credits
+	a.headerCapture.SetProvider(a.provider)
+	return a.headerCapture
 }
 
 // Binds one foreground notification config for the turn, restored by the returned func

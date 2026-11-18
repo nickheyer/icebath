@@ -26,7 +26,6 @@ var idpKeys = []string{"token_url", "client_id", "client_secret", "scope"}
 var PlaneCredentialEnvNames = []string{
 	config.BackendEnv, URLEnv, InstanceEnv,
 	idpEnvPrefix + "TOKEN_URL", idpEnvPrefix + "CLIENT_ID", idpEnvPrefix + "CLIENT_SECRET", idpEnvPrefix + "SCOPE",
-	"ICEBATH_SHARED_AUTH_DIR", "ICEBATH_PORTAL_BASE_URL", "NOUS_PORTAL_BASE_URL",
 }
 
 // No plane credential could be obtained, Retryable false when only a configuration change helps
@@ -36,27 +35,6 @@ type PlaneCredentialError struct {
 }
 
 func (e *PlaneCredentialError) Error() string { return e.Message }
-
-// Failure of the Nous access token resolver, Fatal for a missing login or a revoked session
-type NousTokenError struct {
-	Err   error
-	Fatal bool
-}
-
-func (e *NousTokenError) Error() string { return e.Err.Error() }
-func (e *NousTokenError) Unwrap() error { return e.Err }
-
-var (
-	nousResolverMu sync.RWMutex
-	nousResolver   func(ctx context.Context, home string) (string, error)
-)
-
-// Installs the auth.json access token resolver the cloud plane credential comes from
-func RegisterNousAccessToken(resolve func(ctx context.Context, home string) (string, error)) {
-	nousResolverMu.Lock()
-	defer nousResolverMu.Unlock()
-	nousResolver = resolve
-}
 
 type idpCacheKey struct{ tokenURL, clientID, scope, secretDigest string }
 
@@ -78,36 +56,16 @@ func idpEnv() map[string]string {
 	return out
 }
 
-// Credential source in use, idp when an IdP token URL is configured and nous otherwise
-func CredentialKind() string {
-	if idpEnv()["token_url"] != "" {
-		return "idp"
-	}
-	return "nous"
-}
+// Plane credential source, replaced in tests
+var planeToken = PlaneToken
 
-// Fresh bearer for the requests of home, resolved again on every request
-func PlaneToken(ctx context.Context, home string) (string, error) {
-	if CredentialKind() == "idp" {
-		return idpToken(ctx)
+// Fresh bearer from the OAuth2 client credentials grant, an error naming the missing setting when none is configured
+func PlaneToken(ctx context.Context) (string, error) {
+	if idpEnv()["token_url"] == "" {
+		return "", &PlaneCredentialError{Message: "Remote Config needs a plane credential: set " + idpEnvPrefix + "TOKEN_URL, " +
+			idpEnvPrefix + "CLIENT_ID and " + idpEnvPrefix + "CLIENT_SECRET in .env (OAuth2 client-credentials grant)."}
 	}
-	return nousToken(ctx, home)
-}
-
-func nousToken(ctx context.Context, home string) (string, error) {
-	nousResolverMu.RLock()
-	resolve := nousResolver
-	nousResolverMu.RUnlock()
-	if resolve == nil {
-		return "", &PlaneCredentialError{Message: "cannot load the Nous auth module: no Nous access token resolver is registered"}
-	}
-	token, err := resolve(ctx, home)
-	if err != nil {
-		var nerr *NousTokenError
-		fatal := errors.As(err, &nerr) && nerr.Fatal
-		return "", &PlaneCredentialError{Message: fmt.Sprintf("no Nous access token for %s (auth.json): %v", home, err), Retryable: !fatal}
-	}
-	return token, nil
+	return idpToken(ctx)
 }
 
 func idpToken(ctx context.Context) (string, error) {

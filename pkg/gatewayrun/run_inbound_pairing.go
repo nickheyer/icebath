@@ -29,7 +29,7 @@ func (r *GatewayRunner) hmOfferPairingCode(ctx context.Context, source *gateway.
 	platformName := sourcePlatformName(source)
 	store := r.pairingStoreFor(source)
 	if store == nil {
-		inboundLog().Error(fmt.Sprintf("Cannot offer pairing code on %s: no pairing store", platformName))
+		pkgLog().Error(fmt.Sprintf("Cannot offer pairing code on %s: no pairing store", platformName))
 		return nil
 	}
 	userID := sourceUserID(source)
@@ -46,7 +46,7 @@ func (r *GatewayRunner) hmOfferPairingCode(ctx context.Context, source *gateway.
 	}
 	code, ok, err := store.GenerateCode(ctx, platformName, userID, userName)
 	if err != nil {
-		inboundLog().Warn(fmt.Sprintf("Could not record a pairing code on %s", platformName), "exc_info", err)
+		pkgLog().Warn(fmt.Sprintf("Could not record a pairing code on %s", platformName), "exc_info", err)
 		return nil
 	}
 	adapter, err := r.deliveryAdapterFor(ctx, source)
@@ -84,7 +84,7 @@ func (r *GatewayRunner) hmSendUnauthorizedDecline(ctx context.Context, source *g
 		return nil
 	}
 	if err := store.RecordDecline(ctx, platformName, userID); err != nil {
-		inboundLog().Warn(fmt.Sprintf("Could not record an unauthorized-DM decline on %s", platformName), "exc_info", err)
+		pkgLog().Warn(fmt.Sprintf("Could not record an unauthorized-DM decline on %s", platformName), "exc_info", err)
 		return nil
 	}
 	adapter, err := r.deliveryAdapterFor(ctx, source)
@@ -102,7 +102,7 @@ func (r *GatewayRunner) hmSendUnauthorizedDecline(ctx context.Context, source *g
 		text = gateway.DefaultUnauthorizedDMDeclineMessage
 	}
 	if _, err := adapter.Send(ctx, source.ChatID, text, "", nil); err != nil {
-		inboundLog().Warn(fmt.Sprintf("Failed to deliver unauthorized-DM decline on %s", platformName), "exc_info", err)
+		pkgLog().Warn(fmt.Sprintf("Failed to deliver unauthorized-DM decline on %s", platformName), "exc_info", err)
 	}
 	return nil
 }

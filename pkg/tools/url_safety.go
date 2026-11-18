@@ -489,7 +489,7 @@ var lookupHostIPs = func(ctx context.Context, hostname string) ([]netip.Addr, er
 	return out, nil
 }
 
-// SwapLookupHostIPs installs a resolver for the safety checks and returns the restore, the getaddrinfo patch of hermes tests
+// Installs a resolver for the safety checks and returns the restore, the getaddrinfo patch of tests
 func SwapLookupHostIPs(fn func(ctx context.Context, hostname string) ([]netip.Addr, error)) (restore func()) {
 	prev := lookupHostIPs
 	lookupHostIPs = fn

@@ -193,26 +193,15 @@ var ToolsetEnvRequirements = map[string][][2]string{"vision": {{"OPENROUTER_API_
 var ToolCategories = buildToolCategories()
 
 func buildToolCategories() *pyjson.Object {
-	nous := []any{"requires_nous_auth", true}
-	with := func(parts ...[]any) []any {
-		var out []any
-		for _, p := range parts {
-			out = append(out, p...)
-		}
-		return out
-	}
 	openAIVoice := toolKey("VOICE_TOOLS_OPENAI_KEY", "OpenAI API key", "https://platform.openai.com/api-keys")
 	eleven := toolKey("ELEVENLABS_API_KEY", "ElevenLabs API key", "https://elevenlabs.io/app/settings/api-keys")
 	deepinfra := toolKey("DEEPINFRA_API_KEY", "DeepInfra API key", "https://deepinfra.com/dash/api_keys")
 	mistral := func() *pyjson.Object {
 		return toolKey("MISTRAL_API_KEY", "Mistral API key", "https://console.mistral.ai/")
 	}
-	voiceOverride := []any{"VOICE_TOOLS_OPENAI_KEY", "OPENAI_API_KEY"}
 	return toolCategory(
 		"tts", toolCategory("name", "Text-to-Speech", "icon", "🔊", "providers", []any{
 			toolRow("Microsoft Edge TTS", "★ recommended · free", "Good quality, no API key needed", nil, "tts_provider", "edge"),
-			toolRow("Nous Subscription", "subscription", "Managed OpenAI TTS billed to your subscription", nil,
-				with([]any{"tts_provider", "openai"}, nous, []any{"managed_nous_feature", "tts", "override_env_vars", voiceOverride})...),
 			toolRow("OpenAI TTS", "paid", "High quality voices", []any{openAIVoice}, "tts_provider", "openai"),
 			toolRow("xAI TTS", "", "Grok voices — uses xAI Grok OAuth or XAI_API_KEY", nil, "tts_provider", "xai", "post_setup", "xai_grok"),
 			toolRow("ElevenLabs", "paid", "Most natural voices", []any{eleven}, "tts_provider", "elevenlabs"),
@@ -225,8 +214,6 @@ func buildToolCategories() *pyjson.Object {
 		}),
 		"stt", toolCategory("name", "Speech-to-Text", "icon", "🎙️", "providers", []any{
 			toolRow("Local Whisper", "★ recommended · free", "faster-whisper on-device, no API key", nil, "stt_provider", "local", "post_setup", "faster_whisper"),
-			toolRow("Nous Subscription", "subscription", "Managed OpenAI transcription billed to your subscription", nil,
-				with([]any{"stt_provider", "openai"}, nous, []any{"managed_nous_feature", "stt", "override_env_vars", voiceOverride})...),
 			toolRow("OpenAI", "paid", "whisper-1, gpt-4o-transcribe, gpt-transcribe", []any{openAIVoice}, "stt_provider", "openai"),
 			toolRow("Groq", "free tier", "whisper-large-v3-turbo, whisper-large-v3 — very fast",
 				[]any{toolKey("GROQ_API_KEY", "Groq API key", "https://console.groq.com/keys")}, "stt_provider", "groq"),
@@ -238,20 +225,11 @@ func buildToolCategories() *pyjson.Object {
 		"web", toolCategory("name", "Web Search & Extract", "setup_title", "Select Search Provider",
 			"setup_note", "A free DuckDuckGo search skill is also included — skip this if you don't need a premium provider.",
 			"icon", "🔍", "providers", []any{
-				toolCategory(with([]any{"name", "Nous Subscription", "badge", "subscription", "tag", "Managed web search and extract billed to your subscription",
-					"web_backend", "firecrawl", "env_vars", []any{}}, nous, []any{"managed_nous_feature", "web",
-					"override_env_vars", []any{"FIRECRAWL_API_KEY", "FIRECRAWL_API_URL", "PERPLEXITY_API_KEY"}})...),
 				toolCategory("name", "Firecrawl Self-Hosted", "badge", "free · self-hosted", "tag", "Run your own Firecrawl instance (Docker)",
 					"web_backend", "firecrawl", "env_vars", []any{toolKey("FIRECRAWL_API_URL", "Your Firecrawl instance URL (e.g., http://localhost:3002)", "")}),
 			}),
-		"image_gen", toolCategory("name", "Image Generation", "icon", "🎨", "providers", []any{
-			toolRow("Nous Subscription", "subscription", "Managed image generation (FAL, Krea 3 and Krea 2, Nous Portal models) billed to your subscription", nil,
-				with(nous, []any{"managed_nous_feature", "image_gen", "override_env_vars", []any{"FAL_KEY"}, "imagegen_backend", "nous"})...),
-		}),
-		"video_gen", toolCategory("name", "Video Generation", "icon", "🎬", "providers", []any{
-			toolRow("Nous Subscription", "subscription", "Managed FAL video generation billed to your subscription", nil,
-				with(nous, []any{"managed_nous_feature", "video_gen", "override_env_vars", []any{"FAL_KEY"}, "video_gen_plugin_name", "fal"})...),
-		}),
+		"image_gen", toolCategory("name", "Image Generation", "icon", "🎨", "providers", []any{}),
+		"video_gen", toolCategory("name", "Video Generation", "icon", "🎬", "providers", []any{}),
 		"x_search", toolCategory("name", "X (Twitter) Search", "setup_title", "Select xAI Credential Source",
 			"setup_note", "Icebath routes X searches through xAI's built-in x_search Responses tool for read-only public X "+
 				"discovery. Use the xurl skill for authenticated X API reads and account actions. Both credential "+
@@ -265,8 +243,6 @@ func buildToolCategories() *pyjson.Object {
 			toolRow("Local Browser", "★ recommended · free", "Headless Chromium, no API key needed", nil, "browser_provider", "local", "browser_engine", "auto", "post_setup", "chromium"),
 			toolRow("Lightpanda", "free · local · no Chromium", "Zig headless browser spawned by Icebath, text-only (no screenshots)", nil,
 				"browser_provider", "local", "browser_engine", "lightpanda", "post_setup", "lightpanda"),
-			toolRow("Nous Subscription (Browser Use cloud)", "subscription", "Managed Browser Use billed to your subscription", nil,
-				with([]any{"browser_provider", "browser-use"}, nous, []any{"managed_nous_feature", "browser", "override_env_vars", []any{"BROWSER_USE_API_KEY"}, "post_setup", "browserbase"})...),
 		}),
 		"computer_use", toolCategory("name", "Computer Use (macOS/Windows/Linux)", "icon", "🖱️", "platform_gate", []any{"darwin", "win32", "linux"}, "providers", []any{
 			toolRow("cua-driver (background)", "★ recommended · free · local",

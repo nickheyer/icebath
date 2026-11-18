@@ -99,7 +99,7 @@ func readEntries(path string, strict bool) ([]*pyjson.Object, error) {
 		if strict {
 			return nil, invalid("unreadable")
 		}
-		leaseLog.Warning(fmt.Sprintf("Ignoring corrupt active session registry at %s", path))
+		pkgLog().Warn(fmt.Sprintf("Ignoring corrupt active session registry at %s", path))
 		return nil, nil
 	}
 	entries := data

@@ -2,25 +2,20 @@ package pluginservices
 
 import (
 	"github.com/nickheyer/icebath/pkg/agent"
-	"github.com/nickheyer/icebath/pkg/browser"
-	"github.com/nickheyer/icebath/pkg/media"
 	"github.com/nickheyer/icebath/pkg/plugins"
 	"github.com/nickheyer/icebath/pkg/provider"
 )
 
-// Registry of every provider kind a plugin registers into, the one map the process wiring and the test binaries install
+// Registry of every provider kind a plugin registers into, the core kinds and those the linked tiers registered
 func ProviderRegistries() map[string]plugins.ScopedRegistry {
-	return map[string]plugins.ScopedRegistry{
-		"image_gen_provider":            media.ImageGenScopedRegistry(),
-		"video_gen_provider":            media.VideoGenScopedRegistry(),
-		"tts_provider":                  media.TTSScopedRegistry(),
-		"transcription_provider":        media.TranscriptionScopedRegistry(),
+	out := map[string]plugins.ScopedRegistry{
 		"web_search_provider":           agent.WebSearchScopedRegistry(),
-		"browser_provider":              browser.BrowserProviderRegistry.Scoped(),
-		"browser_page_backend":          browser.BrowserPageBackendScopedRegistry(),
 		"terminal_environment_provider": agent.TerminalEnvScopedRegistry(),
 		"secret_source":                 provider.SecretSourceScopedRegistry(),
 		"delegation_provider":           agent.DelegationScopedRegistry(),
-		"login_backend":                 browser.LoginBackendScopedRegistry(),
 	}
+	for kind, registry := range plugins.RegisteredProviderRegistries() {
+		out[kind] = registry
+	}
+	return out
 }

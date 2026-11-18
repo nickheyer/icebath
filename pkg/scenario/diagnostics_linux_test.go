@@ -49,7 +49,6 @@ func TestScenarioStatusAndDump(t *testing.T) {
 // Doctor reports the sections it checked and holds no complaint about an interpreter icebath does not need
 func TestScenarioDoctorHealthyHome(t *testing.T) {
 	s := Start(t, Setup{})
-	s.Finding("SF-4")
 	s.Run("config", "migrate").Exit(0)
 	doctor := s.RunStep(Step{Args: []string{"doctor"}, Timeout: 4 * time.Minute})
 	doctor.Has("Icebath Doctor", "◆ Security Advisories", "No active security advisories", "◆ Configuration Files",

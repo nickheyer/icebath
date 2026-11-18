@@ -3,57 +3,18 @@ package tuiserver
 import (
 	"math"
 	"reflect"
-	"regexp"
 	"slices"
 	"strings"
 
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
+	"github.com/nickheyer/icebath/pkg/tuigateway"
 )
-
-var slashTokenSplit = regexp.MustCompile(`[^a-z0-9]+`)
-
-// Exact, prefix and substring field predicates with their tier bump, in priority order
-var slashTiers = []struct {
-	bump float64
-	pred func(field, q string) bool
-}{
-	{0, func(field, q string) bool { return field == q || "/"+field == q }},
-	{1, func(field, q string) bool { return strings.HasPrefix(field, q) || strings.HasPrefix("/"+field, q) }},
-	{2, func(field, q string) bool { return strings.Contains(field, q) }},
-}
-
-// Lowercased value followed by its alphanumeric words
-func tokenizeSearchText(value string) []string {
-	normalized := pystr.Lower(value)
-	out := []string{normalized}
-	for _, t := range slashTokenSplit.Split(normalized, -1) {
-		if t != "" {
-			out = append(out, t)
-		}
-	}
-	return out
-}
-
-// Query trimmed, stripped of leading slashes and lowercased
-func normalizeSlashSearchQuery(query string) string {
-	return pystr.Lower(strings.TrimLeft(pystr.Strip(query), "/"))
-}
-
-// Best tier of any field plus offset, infinity on a miss
-func scoreFields(fields []string, query string, offset float64) float64 {
-	for _, tier := range slashTiers {
-		if slices.ContainsFunc(fields, func(f string) bool { return tier.pred(f, query) }) {
-			return offset + tier.bump
-		}
-	}
-	return math.Inf(1)
-}
 
 // Score of one completion item against the query from its name and description, lower is better
 func scoreSlashCompletionItem(item map[string]any, query string) float64 {
 	name := strings.TrimLeft(pystr.Strip(itemField(item, "text")), "/")
-	return math.Min(scoreFields(tokenizeSearchText(name), query, 0), scoreFields(tokenizeSearchText(itemField(item, "meta")), query, 3))
+	return math.Min(tuigateway.ScoreFields(tuigateway.TokenizeSearchText(name), query, 0), tuigateway.ScoreFields(tuigateway.TokenizeSearchText(itemField(item, "meta")), query, 3))
 }
 
 // str of an item field, empty when absent

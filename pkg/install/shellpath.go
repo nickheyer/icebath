@@ -95,10 +95,10 @@ func WireShellPath(userHome, shell string, report func(string)) error {
 func (r *Runner) wireShellPath() error {
 	userHome, err := os.UserHomeDir()
 	if err != nil {
-		return fail("cannot locate the user home for PATH setup: "+err.Error(), "filesystem_error")
+		return fail("cannot locate the user home for PATH setup: " + err.Error())
 	}
 	if err := WireShellPath(userHome, os.Getenv("SHELL"), r.logSuccess); err != nil {
-		return fail(err.Error(), "filesystem_error")
+		return fail(err.Error())
 	}
 	return nil
 }

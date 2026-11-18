@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"log/slog"
 	"math"
 	"strconv"
 	"strings"
@@ -334,7 +333,7 @@ func (c *ContextCompressor) buildStaticFallbackSummary(turns []map[string]any, r
 func (c *ContextCompressor) demoteStaleTailTools(messages []map[string]any, tailStart int) []map[string]any {
 	result, demoted := DemoteStaleTailTools(messages, tailStart, c.sessionID)
 	if demoted > 0 && !c.quietMode {
-		slog.Info(fmt.Sprintf("Lean tail: demoted %d stale tool result(s)", demoted))
+		pkgLog().Info(fmt.Sprintf("Lean tail: demoted %d stale tool result(s)", demoted))
 	}
 	return result
 }
@@ -568,7 +567,7 @@ func (c *ContextCompressor) fallbackToMainForCompression(err error, reason, fail
 	if shown == "" {
 		shown = "(auto)"
 	}
-	slog.Warn(fmt.Sprintf("Summary model '%s' %s (%v). Falling back to main model '%s' for compression.", shown, reason, err, c.model))
+	pkgLog().Warn(fmt.Sprintf("Summary model '%s' %s (%v). Falling back to main model '%s' for compression.", shown, reason, err, c.model))
 	c.LastAuxModelFailureError = shortErrorText(err, 220)
 	c.LastAuxModelFailureModel = failed
 	if t := c.Active; t != nil {
@@ -599,7 +598,7 @@ func (c *ContextCompressor) callSummaryLLM(ctx context.Context, prompt string, p
 	if model == "" {
 		model = c.model
 	}
-	slog.Info(fmt.Sprintf("Compression summary call dispatched: model=%s prompt_chars=%s prompt_build_ms=%v", model, groupedInt(utf8.RuneCountInString(prompt)), latency["prompt_build_ms"]))
+	pkgLog().Info(fmt.Sprintf("Compression summary call dispatched: model=%s prompt_chars=%s prompt_build_ms=%v", model, groupedInt(utf8.RuneCountInString(prompt)), latency["prompt_build_ms"]))
 	response, callErr := compressorCallLLM(provider.AuxInterruptProtection(ctx, true, nil, nil), callKwargs)
 	routeKnown := auxRoute["provider"] != "" && auxRoute["model"] != ""
 	auxModel := auxRoute["model"]
@@ -649,7 +648,7 @@ func (c *ContextCompressor) generateSummary(ctx context.Context, turns []map[str
 		return nil, &provider.AuxiliaryExplicitCancellation{}
 	}
 	if promptStartedAt < c.summaryFailureCooldownUntil && !bypassCooldown {
-		slog.Debug(fmt.Sprintf("Skipping context summary during cooldown (%.0fs remaining)", c.summaryFailureCooldownUntil-promptStartedAt))
+		pkgLog().Debug(fmt.Sprintf("Skipping context summary during cooldown (%.0fs remaining)", c.summaryFailureCooldownUntil-promptStartedAt))
 		return nil, nil
 	}
 	if focusTopic != nil && *focusTopic != "" {
@@ -831,7 +830,7 @@ func (c *ContextCompressor) onSummaryFailure(ctx context.Context, err error, tur
 		msg := "no auxiliary LLM provider configured"
 		c.recordCompressionFailureCooldown(summaryFailureCooldownSeconds, &msg)
 		c.lastSummaryError = &msg
-		slog.Warn(fmt.Sprintf("Context compression: no provider available for summary. Middle turns will be dropped without summary for %d seconds.", summaryFailureCooldownSeconds))
+		pkgLog().Warn(fmt.Sprintf("Context compression: no provider available for summary. Middle turns will be dropped without summary for %d seconds.", summaryFailureCooldownSeconds))
 		return nil, nil
 	}
 	kind := classifySummaryFailure(err)
@@ -850,7 +849,7 @@ func (c *ContextCompressor) onSummaryFailure(ctx context.Context, err error, tur
 		if baseShown == "" {
 			baseShown = "default"
 		}
-		slog.Error(fmt.Sprintf("Context compression failed: auxiliary LLM returned a non-JSON response. provider=%s summary_model=%s main_model=%s base_url=%s err=%v", providerShown, summaryShown, c.model, baseShown, err))
+		pkgLog().Error(fmt.Sprintf("Context compression failed: auxiliary LLM returned a non-JSON response. provider=%s summary_model=%s main_model=%s base_url=%s err=%v", providerShown, summaryShown, c.model, baseShown, err))
 	}
 	routeModel := c.summaryModel
 	if routeModel == "" {
@@ -890,6 +889,6 @@ func (c *ContextCompressor) onSummaryFailure(ctx context.Context, err error, tur
 			c.clearTerminalSummaryFailures()
 		}
 	}
-	slog.Warn(fmt.Sprintf("Failed to generate context summary: %v. Further summary attempts paused for %d seconds.", err, cooldown))
+	pkgLog().Warn(fmt.Sprintf("Failed to generate context summary: %v. Further summary attempts paused for %d seconds.", err, cooldown))
 	return nil, nil
 }

@@ -120,7 +120,7 @@ func gcArchiveUntracked(ctx context.Context, tree string, untracked []string) st
 		}
 		target := filepath.Join(dest, rel)
 		if err := os.MkdirAll(filepath.Dir(target), 0o777); err != nil {
-			toolsLogger(nil).Warn(fmt.Sprintf("Could not archive untracked files from %s: %s", tree, err))
+			envLog(nil).Warn(fmt.Sprintf("Could not archive untracked files from %s: %s", tree, err))
 			return ""
 		}
 		if lst.IsDir() {
@@ -129,7 +129,7 @@ func gcArchiveUntracked(ctx context.Context, tree string, untracked []string) st
 			err = pyshutil.Copy2(src, target)
 		}
 		if err != nil {
-			toolsLogger(nil).Warn(fmt.Sprintf("Could not archive untracked files from %s: %s", tree, err))
+			envLog(nil).Warn(fmt.Sprintf("Could not archive untracked files from %s: %s", tree, err))
 			return ""
 		}
 	}

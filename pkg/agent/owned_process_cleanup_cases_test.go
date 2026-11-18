@@ -8,7 +8,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/tools"
 )
 
-// Agent over the shared home env the way every hermes agent of one process shares its home
+// Agent over the shared home env the way every agent of one process shares its home
 func ownedProcessAgent(t *testing.T, env *tools.Env) *AIAgent {
 	t.Helper()
 	a, err := NewAIAgent(tools.WithToolEnv(context.Background(), env), AIAgentOptions{APIKey: "test", BaseURL: "http://127.0.0.1:9/v1", Provider: "openai-compat",

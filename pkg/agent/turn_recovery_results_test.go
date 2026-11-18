@@ -15,12 +15,12 @@ func classifiedFor(err error, status int, providerName, model string) *provider.
 func TestNonretryable401ResultClassifiesAsAuthForTheUi(t *testing.T) {
 	t.Setenv("ICEBATH_HOME", t.TempDir())
 	a, _ := quietAgent()
-	a.provider, a.model, a.persistDisabled = "nous", "m", true
+	a.provider, a.model, a.persistDisabled = "xai-oauth", "m", true
 	err := &statusHeaderErr{msg: "HTTP 401: User not found.", status: 401}
-	cl := classifiedFor(err, 401, "nous", "m")
+	cl := classifiedFor(err, 401, "xai-oauth", "m")
 	status := 401
 	e := &apiErrorTurn{apiError: err, classified: cl, statusCode: &status, errorContext: map[string]any{},
-		providerName: "nous", baseURL: "https://inference-api.nousresearch.com/v1", model: "m"}
+		providerName: "xai-oauth", baseURL: "https://api.x.ai/v1", model: "m"}
 	s := &LoopState{APIMessages: []any{}, APICallCount: 1, ApproxTokens: 10, Retry: &TurnRetryState{}}
 	result, rerr := nonretryableClientErrorResult(t.Context(), a, s, e, "")
 	if rerr != nil {
@@ -29,7 +29,7 @@ func TestNonretryable401ResultClassifiesAsAuthForTheUi(t *testing.T) {
 	if result["failure_reason"] != string(cl.Reason) || result["failure_retryable"] != false || cl.Retryable {
 		t.Fatalf("verdict %v %v", result["failure_reason"], result["failure_retryable"])
 	}
-	surface := buildErrorSurfaceFromResult(result, "nous", "m")
+	surface := buildErrorSurfaceFromResult(result, "xai-oauth", "m")
 	if surface["layer"] != LayerAuth || surface["retryable"] != false || surface["auth_kind"] != "oauth" {
 		t.Fatalf("surface %v", surface)
 	}

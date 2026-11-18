@@ -8,6 +8,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 )
 
@@ -105,10 +106,10 @@ func (r *requestClientRegistry) closeStreamHandle(stream any, reason string) {
 		return closeFn()
 	}()
 	if err != nil {
-		nonStreamLog.Debug(fmt.Sprintf("Streaming response handle close failed (%s): %s", reason, err))
+		pkgLog().Debug(fmt.Sprintf("Streaming response handle close failed (%s): %s", reason, err))
 		return
 	}
-	nonStreamLog.Info(fmt.Sprintf("Streaming response handle closed (%s)", reason))
+	pkgLog().Info(fmt.Sprintf("Streaming response handle closed (%s)", reason))
 }
 
 // Aborts the sockets from a stranger goroutine, else pops and fully closes the client by its kind
@@ -160,7 +161,7 @@ func staleSecondsOf(raw any) (float64, error) {
 		}
 		return 0, nil
 	}
-	return 0, fmt.Errorf("TypeError: '>' not supported between instances of 'float' and '%s'", pyrepr.TypeName(raw))
+	return 0, fmt.Errorf("the stale timeout is %s, expected a number", errchain.Kind(raw))
 }
 
 // Silence floor when the agent wire reasoning config is enabled at high or a stronger ladder level
@@ -231,16 +232,16 @@ func resolveAgentNonstreamWatchdogsOf(ctx context.Context, agent ChatCompletionA
 	case codex && !local:
 		disableAbove := envFloat(CodexTTFBDisableAboveEnv, 10000)
 		if !envTruthy(CodexTTFBStrictEnv) && disableAbove > 0 && float64(estTokens) >= disableAbove && ttfb < idleDefault {
-			nonStreamLog.Info(fmt.Sprintf("Scaling codex-responses no-event TTFB watchdog from %.0fs to %.0fs for large request (context=~%s tokens >= %.0f). Set %s=1 to keep the smaller cutoff.", ttfb, idleDefault, commaInt(estTokens), disableAbove, CodexTTFBStrictEnv))
+			pkgLog().Info(fmt.Sprintf("Scaling codex-responses no-event TTFB watchdog from %.0fs to %.0fs for large request (context=~%s tokens >= %.0f). Set %s=1 to keep the smaller cutoff.", ttfb, idleDefault, commaInt(estTokens), disableAbove, CodexTTFBStrictEnv))
 			ttfb = idleDefault
 		}
 		if ttfbCap := envFloat(CodexTTFBMaxEnv, 0); ttfbCap > 0 && ttfb > ttfbCap {
-			nonStreamLog.Info(fmt.Sprintf("Capping codex-responses no-event TTFB timeout from %.0fs to %.0fs (context=~%s tokens) per %s.", ttfb, ttfbCap, commaInt(estTokens), CodexTTFBMaxEnv))
+			pkgLog().Info(fmt.Sprintf("Capping codex-responses no-event TTFB timeout from %.0fs to %.0fs (context=~%s tokens) per %s.", ttfb, ttfbCap, commaInt(estTokens), CodexTTFBMaxEnv))
 			ttfb = ttfbCap
 		}
 	case !ttfbExplicit && local:
 		if localCeiling := localStreamStaleTimeoutDefault(ctx); localCeiling > ttfb {
-			nonStreamLog.Info(fmt.Sprintf("Local provider detected (%s) — no-event TTFB watchdog raised from %.0fs to %.0fs (agent.local_stream_stale_timeout); set %s for an explicit cutoff.", baseURL, ttfb, localCeiling, CodexTTFBTimeoutEnv))
+			pkgLog().Info(fmt.Sprintf("Local provider detected (%s) — no-event TTFB watchdog raised from %.0fs to %.0fs (agent.local_stream_stale_timeout); set %s for an explicit cutoff.", baseURL, ttfb, localCeiling, CodexTTFBTimeoutEnv))
 			ttfb = localCeiling
 		}
 	}
@@ -392,10 +393,10 @@ func (r *nonStreamAgentRequest) call(ctx context.Context) {
 		resp = nil
 		switch {
 		case r.retired():
-			nonStreamLog.Info(fmt.Sprintf("Codex worker caught %s after request retirement — discarding the stale partial instead of surfacing it as a completed response. %s", goErrorTypeName(err), r.agent.ClientLogContext()))
+			pkgLog().Info(fmt.Sprintf("Codex worker caught %s after request retirement — discarding the stale partial instead of surfacing it as a completed response. %s", goErrorTypeName(err), r.agent.ClientLogContext()))
 			err = nil
 		case r.wasCancelled():
-			nonStreamLog.Debug(fmt.Sprintf("Non-streaming worker caught %s after request cancellation — exiting without surfacing a network error.", goErrorTypeName(err)))
+			pkgLog().Debug(fmt.Sprintf("Non-streaming worker caught %s after request cancellation — exiting without surfacing a network error.", goErrorTypeName(err)))
 			err = nil
 		}
 	}
@@ -405,7 +406,7 @@ func (r *nonStreamAgentRequest) call(ctx context.Context) {
 		reason = "request_complete"
 	}
 	if cerr := r.clients.closeOnce(reason, r.worker); cerr != nil {
-		nonStreamLog.Error("Exception in non-streaming worker thread", "exc_info", cerr)
+		pkgLog().Error("Exception in non-streaming worker thread", "exc_info", cerr)
 	}
 	r.done <- nonStreamAgentResult{resp, err}
 	close(r.exited)
@@ -462,7 +463,7 @@ func withSilentHint(message, sep, hint string) string {
 // Kills a codex attempt that sent no parsed event within the first event cutoff so the retry reconnects
 func (r *nonStreamAgentRequest) ttfbKill(elapsed float64, finished bool, result nonStreamAgentResult) nonStreamAgentResult {
 	hint := codexSilentHangHintFor(r.agent, r.apiKwargs)
-	nonStreamLog.Warn(fmt.Sprintf("Codex stream produced no parsed stream event within TTFB cutoff (%.0fs > %.0fs, model=%s). Backend accepted the connection but sent no stream events. Killing connection so the retry loop can reconnect.", elapsed, r.wd.ttfb, r.model()))
+	pkgLog().Warn(fmt.Sprintf("Codex stream produced no parsed stream event within TTFB cutoff (%.0fs > %.0fs, model=%s). Backend accepted the connection but sent no stream events. Killing connection so the retry loop can reconnect.", elapsed, r.wd.ttfb, r.model()))
 	r.agent.BufferDiagnosticStatus(withSilentHint(fmt.Sprintf("⚠️ No first stream event from provider in %ds (codex stream, model: %s). Reconnecting.", int(elapsed), r.model()), " ", hint))
 	r.abortRequest("codex_ttfb_kill")
 	r.agent.EmitDiagnosticWait(fmt.Sprintf("⚠ no response from provider in %ds — reconnecting...", int(elapsed)))
@@ -472,7 +473,7 @@ func (r *nonStreamAgentRequest) ttfbKill(elapsed float64, finished bool, result 
 
 // Kills a codex attempt whose stream opened but never made model progress
 func (r *nonStreamAgentRequest) progressKill(elapsed float64, finished bool, result nonStreamAgentResult) nonStreamAgentResult {
-	nonStreamLog.Warn(fmt.Sprintf("Codex stream produced lifecycle events but no substantive model progress for %.0fs (threshold %.0fs, model=%s, context=~%s tokens). Reconnecting.", elapsed, r.wd.progress, r.model(), commaInt(r.wd.estTokens)))
+	pkgLog().Warn(fmt.Sprintf("Codex stream produced lifecycle events but no substantive model progress for %.0fs (threshold %.0fs, model=%s, context=~%s tokens). Reconnecting.", elapsed, r.wd.progress, r.model(), commaInt(r.wd.estTokens)))
 	r.agent.BufferDiagnosticStatus(fmt.Sprintf("⚠️ Codex stream opened but made no model progress for %ds (model: %s). Reconnecting.", int(elapsed), r.model()))
 	r.abortRequest("codex_progress_kill")
 	r.agent.TouchActivity(fmt.Sprintf("codex stream killed after %ds without model progress", int(elapsed)))
@@ -485,7 +486,7 @@ func (r *nonStreamAgentRequest) idleKill(idle float64, finished bool, result non
 	if r.wd.idleRequiresProgress {
 		armPoint = "model progress began"
 	}
-	nonStreamLog.Warn(fmt.Sprintf("Codex stream produced no SSE events for %.0fs after %s (threshold %.0fs, model=%s, context=~%s tokens). Killing connection so the retry loop can reconnect.", idle, armPoint, r.wd.idle, r.model(), commaInt(r.wd.estTokens)))
+	pkgLog().Warn(fmt.Sprintf("Codex stream produced no SSE events for %.0fs after %s (threshold %.0fs, model=%s, context=~%s tokens). Killing connection so the retry loop can reconnect.", idle, armPoint, r.wd.idle, r.model(), commaInt(r.wd.estTokens)))
 	r.agent.BufferDiagnosticStatus(fmt.Sprintf("⚠️ Codex stream sent no events for %ds after %s (model: %s). Reconnecting.", int(idle), armPoint, r.model()))
 	r.abortRequest("codex_stream_idle_kill")
 	r.agent.TouchActivity(fmt.Sprintf("codex stream killed after %ds with no SSE events", int(idle)))
@@ -509,7 +510,7 @@ func (r *nonStreamAgentRequest) interrupt(elapsed float64) error {
 	r.mu.Lock()
 	r.cancelled = true
 	r.mu.Unlock()
-	nonStreamLog.Debug("Force-closing httpx client due to interrupt (not a network error).")
+	pkgLog().Debug("Force-closing httpx client due to interrupt (not a network error).")
 	r.abortRequest("interrupt_abort")
 	joinWorkerForRelayTeardown(r.ctx, r.exited, "Non-streaming")
 	return &InterruptedError{Message: "Agent interrupted during API call"}

@@ -61,9 +61,9 @@ func TestUserCannotShadowManagedLiteralViaEnvref(t *testing.T) {
 func TestManagedNestedDictDefaultFlattensOnLoad(t *testing.T) {
 	h, write := managedHomes(t)
 	write("home", "model:\n  default: user/model\n")
-	write("managed", "model:\n  default:\n    provider: nous\n    model: managed/nested\n")
+	write("managed", "model:\n  default:\n    provider: deepseek\n    model: managed/nested\n")
 	cfg := moduleLoad(t, h)
-	if cfg.Get("model.default") != "managed/nested" || cfg.Get("model.provider") != "nous" {
+	if cfg.Get("model.default") != "managed/nested" || cfg.Get("model.provider") != "deepseek" {
 		t.Fatalf("model %v", cfg["model"])
 	}
 }

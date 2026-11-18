@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
-	"log/slog"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -459,7 +458,7 @@ func StaleChannelRecords(ctx context.Context, cfg any) ([]StaleChannelRecord, er
 		case err == nil || ignorableStatError(err):
 			stale = append(stale, StaleChannelRecord{sha16, record, "unclaimed"})
 		default:
-			slog.Debug("installs root unavailable", "error", err)
+			pkgLog().Debug("installs root unavailable", "error", err)
 		}
 	}
 	return stale, nil

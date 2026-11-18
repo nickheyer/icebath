@@ -22,9 +22,9 @@ func envMap(kv map[string]string) func(string) string { return func(k string) st
 func testApp(t *testing.T) *app {
 	t.Helper()
 	t.Setenv("ICEBATH_HOME", t.TempDir())
-	a := newApp(t.Context())
-	a.gw.bootstrap = func(context.Context, bool, bool) (localGrant, error) {
-		return localGrant{}, errors.New("gateway unavailable: no owner in this test")
+	a := newApp(t.Context(), Host{})
+	a.gw.bootstrap = func(context.Context, bool, bool) (Grant, error) {
+		return Grant{}, errors.New("gateway unavailable: no owner in this test")
 	}
 	a.Update(tea.WindowSizeMsg{Width: 110, Height: 36})
 	return a
@@ -106,6 +106,7 @@ func TestLocalSlashCommandsChangeTheView(t *testing.T) {
 func TestDestructiveCommandAsksThroughADialog(t *testing.T) {
 	a := testApp(t)
 	drain(a, a.dispatchSubmission("/new"))
+	a.Update(struct{}{})
 	d, isDialog := a.wm.Overlay().(*dialogCard)
 	if !isDialog || d.kind != "confirm" || !a.dialogs.waiting() {
 		t.Fatalf("overlay %T, waiting %v", a.wm.Overlay(), a.dialogs.waiting())
@@ -201,18 +202,7 @@ func TestEveryCatalogKeyTheAppNamesExists(t *testing.T) {
 	}
 }
 
-func TestPlanUsageLinesShowEachWindow(t *testing.T) {
-	now := float64(1_700_000_000_000)
-	plan := map[string]any{"kind": "usage_window", "plan": "Pro", "gauges": []any{
-		map[string]any{"title": "5 hour", "left_fraction": 0.75, "resets_at_ms": now + 90*60*1000},
-		map[string]any{"label": "week", "left_fraction": 0.999, "resets_at_ms": now + 3*24*3600*1000},
-		map[string]any{"label": "broken"},
-	}}
-	got := planUsageLines(plan, now)
-	want := []string{"Pro", "5 hour  [|||       ]  25% used  ·  resets in 1h 30m", "week    [|         ]  <1% used  ·  resets in 3d 0h"}
-	if strings.Join(got, "\n") != strings.Join(want, "\n") {
-		t.Fatalf("lines\n%s\nwant\n%s", strings.Join(got, "\n"), strings.Join(want, "\n"))
-	}
+func TestGroupDigitsSeparatesThousands(t *testing.T) {
 	if groupDigits(1234567) != "1,234,567" || groupDigits(999) != "999" {
 		t.Fatalf("grouping %s %s", groupDigits(1234567), groupDigits(999))
 	}

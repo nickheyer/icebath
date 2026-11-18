@@ -3,7 +3,6 @@ package codeexec
 import (
 	"context"
 	"fmt"
-	"log/slog"
 	"os"
 	"path/filepath"
 	"strings"
@@ -150,7 +149,7 @@ func loadComputerUseProviderFromDir(env *tools.Env, d cuProviderDir) (ComputerUs
 	module := cuUserNamespace + "." + d.name
 	what := fmt.Sprintf("plugin %s (loaded as %s)", pyrepr.Repr(d.name), module)
 	if refusal := plugins.InProcessImportRefusal(ctx, what, "user", nil); refusal != "" {
-		slog.Warn(refusal)
+		pkgLog(nil).Warn(refusal)
 		return nil, nil
 	}
 	obj, err := plugins.LoadComputerUseProviderInHost(ctx, d.dir, module)

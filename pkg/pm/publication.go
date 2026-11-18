@@ -1,3 +1,5 @@
+//go:build !icebath_core && !icebath_noextras
+
 package pm
 
 import (
@@ -101,7 +103,7 @@ func candidateMembersFor(ctx context.Context, extraDirs []string, selection *Ena
 }
 
 // Admitted package declaring trees of a proposed home selection, then the extra dirs that declare packages
-func CandidateMembers(ctx context.Context, extraDirs []string, proposedHome string, enabled, disabled []string) ([]string, error) {
+func managedCandidateMembers(ctx context.Context, extraDirs []string, proposedHome string, enabled, disabled []string) ([]string, error) {
 	members, err := candidateMembersFor(ctx, extraDirs, &EnabledPluginsOptions{ProposedHome: proposedHome, Enabled: enabled, Disabled: disabled})
 	if err != nil {
 		return nil, err
@@ -1007,6 +1009,5 @@ func dumpRoundtrip(doc *yaml.Node) ([]byte, error) {
 
 // Durable writes and renames at each publication boundary, replaced by crash tests to stop the process there
 var (
-	publicationWrite  = DurableWriteBytes
 	publicationRename = os.Rename
 )

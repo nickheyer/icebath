@@ -174,7 +174,7 @@ func TestAcquireTurnLeaseRetriesSqliteLock(t *testing.T) {
 	db.leaseSeams.tryAcquire = func(sid, h string, ttl float64, patience *float64) (bool, error) {
 		attempts++
 		if attempts == 1 {
-			return false, &SQLiteError{Class: SQLiteOperationalError, Msg: "database is locked (another Hermes process held the state.db write lock for over 20s)"}
+			return false, &SQLiteError{Class: SQLiteOperationalError, Msg: "database is locked (another icebath process held the state.db write lock for over 20s)"}
 		}
 		return db.TryAcquireSessionTurnLease(sid, h, ttl, patience)
 	}

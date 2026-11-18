@@ -58,7 +58,7 @@ var turnStackDumpFrameMarkers = []string{"RunConversation", "runSync", "runSyncW
 func dumpWedgedTurnStacks(taskID string) {
 	defer func() {
 		if rec := recover(); rec != nil {
-			runLog().Debug("Wedged-turn stack dump failed", "error", rec)
+			pkgLog().Debug("Wedged-turn stack dump failed", "error", rec)
 		}
 	}()
 	buf := make([]byte, 1<<20)
@@ -87,7 +87,7 @@ func dumpWedgedTurnStacks(taskID string) {
 		}
 		dumped++
 		if dumped > 8 {
-			runLog().Error(fmt.Sprintf("Wedged-turn stack dump for task %s truncated: more than 8 candidate threads", taskID))
+			pkgLog().Error(fmt.Sprintf("Wedged-turn stack dump for task %s truncated: more than 8 candidate threads", taskID))
 			break
 		}
 		lines := strings.Split(block, "\n")
@@ -95,10 +95,10 @@ func dumpWedgedTurnStacks(taskID string) {
 		if len(frames) > 50 {
 			frames = frames[len(frames)-50:]
 		}
-		runLog().Error(fmt.Sprintf("Wedged-turn stack dump (task=%s thread=%s):\n%s", taskID, header, strings.Join(frames, "\n")))
+		pkgLog().Error(fmt.Sprintf("Wedged-turn stack dump (task=%s thread=%s):\n%s", taskID, header, strings.Join(frames, "\n")))
 	}
 	if dumped == 0 {
-		runLog().Error(fmt.Sprintf("Wedged-turn stack dump for task %s: no thread with turn-machinery frames found (worker may have already exited)", taskID))
+		pkgLog().Error(fmt.Sprintf("Wedged-turn stack dump for task %s: no thread with turn-machinery frames found (worker may have already exited)", taskID))
 	}
 }
 
@@ -116,12 +116,11 @@ func abandonTimedOutGatewayTurn(ctx context.Context, tc *TurnContext, w *runAgen
 		func() {
 			defer func() {
 				if rec := recover(); rec != nil {
-					runLog().Debug("Timed-out agent interrupt failed", "error", rec)
+					pkgLog().Debug("Timed-out agent interrupt failed", "error", rec)
 				}
 			}()
 			agent.RequestHardInterrupt(a, interruptReasonTimeout, interruptToolReasonTimeout)
 		}()
-		a.RecordWatchdogTurnAbort(ctx)
 	}
 	reapGatewayTurnProcesses(ctx, w.taskID, w.processBaseline, "gateway_turn_timeout", w.isCurrent)
 	return true
@@ -234,7 +233,7 @@ func (r *GatewayRunner) runAgentInactivityWarning(ctx context.Context, w *runAge
 	remaining := max(int((*w.agentTimeout-*w.agentWarning)/60), 1)
 	text := i18n.T(ctx, "gateway.progress.stuck_warning", "", map[string]any{"minutes": minutes, "remaining": remaining})
 	if _, err := adapter.Base().EmitWarning(ctx, source.ChatID, text, "", interimMetadata(statusThreadMetadata), source.Platform); err != nil {
-		runLog().Debug(fmt.Sprintf("Inactivity warning send error: %s", err))
+		pkgLog().Debug(fmt.Sprintf("Inactivity warning send error: %s", err))
 	}
 }
 
@@ -251,7 +250,7 @@ func (r *GatewayRunner) runAgentTimeoutResult(ctx context.Context, w *runAgentWo
 	if s, ok := curTool.(string); ok && s != "" {
 		toolText = s
 	}
-	runLog().Error(fmt.Sprintf("Agent idle for %.0fs (timeout %.0fs) in session %s | last_activity=%v | iteration=%v/%v | tool=%s",
+	pkgLog().Error(fmt.Sprintf("Agent idle for %.0fs (timeout %.0fs) in session %s | last_activity=%v | iteration=%v/%v | tool=%s",
 		secsAgo, *w.agentTimeout, tc.sessionKey, lastDesc, iterN, iterMax, toolText))
 	if timedOut != nil {
 		agent.RequestHardInterrupt(timedOut, interruptReasonTimeout, interruptToolReasonTimeout)
@@ -335,12 +334,12 @@ func (r *GatewayRunner) runAgentMonitorForInterrupt(ctx context.Context, tc *Tur
 		fired := func() (fired bool) {
 			defer func() {
 				if rec := recover(); rec != nil {
-					runLog().Debug(fmt.Sprintf("monitor_for_interrupt error (will retry): %v", rec))
+					pkgLog().Debug(fmt.Sprintf("monitor_for_interrupt error (will retry): %v", rec))
 				}
 			}()
 			adapter, err := r.deliveryAdapterFor(ctx, tc.source)
 			if err != nil {
-				runLog().Debug(fmt.Sprintf("monitor_for_interrupt error (will retry): %s", err))
+				pkgLog().Debug(fmt.Sprintf("monitor_for_interrupt error (will retry): %s", err))
 				return false
 			}
 			if adapter == nil || !adapter.Base().HasPendingInterrupt(tc.sessionKey) {
@@ -351,7 +350,7 @@ func (r *GatewayRunner) runAgentMonitorForInterrupt(ctx context.Context, tc *Tur
 				return false
 			}
 			r.runAgentFirePendingInterrupt(ctx, adapter, a, tc, interruptDetected, "Voice-interrupt",
-				func() { runLog().Debug("Interrupt detected from adapter, signaling agent...") })
+				func() { pkgLog().Debug("Interrupt detected from adapter, signaling agent...") })
 			return true
 		}()
 		if fired {
@@ -375,7 +374,7 @@ func (r *GatewayRunner) runAgentBackupInterruptCheck(ctx context.Context, tc *Tu
 		if interruptMonitor.isDone() {
 			monitorState = "done"
 		}
-		runLog().Info(fmt.Sprintf("Backup interrupt detected for session %s (monitor task state: %s)", tc.sessionKey, monitorState))
+		pkgLog().Info(fmt.Sprintf("Backup interrupt detected for session %s (monitor task state: %s)", tc.sessionKey, monitorState))
 	})
 }
 

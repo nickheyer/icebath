@@ -188,6 +188,19 @@ func neuttsSamplesDir(ctx context.Context, env *tools.Env) (string, error) {
 	return dir, nil
 }
 
+// Bundled voice sample on disk with the words it speaks, the reference a speech to text check transcribes
+func SpeechSample(ctx context.Context) (string, string, error) {
+	dir, err := neuttsSamplesDir(ctx, scopedToolEnv(ctx))
+	if err != nil {
+		return "", "", err
+	}
+	text, err := os.ReadFile(filepath.Join(dir, "jo.txt"))
+	if err != nil {
+		return "", "", err
+	}
+	return filepath.Join(dir, "jo.wav"), strings.TrimSpace(string(text)), nil
+}
+
 // NeuTTS synthesis in a helper process so the large model exits after use
 func generateNeuTTS(ctx context.Context, env *tools.Env, text, outputPath string, ttsConfig map[string]any) (string, error) {
 	neuttsConfig, err := orEmptyDict(ttsConfig, "neutts")
@@ -198,7 +211,7 @@ func generateNeuTTS(ctx context.Context, env *tools.Env, text, outputPath string
 	if err != nil {
 		return "", err
 	}
-	python, err := managedPythonCommand(ctx)
+	python, err := managedPythonCommand(ctx, "neutts")
 	if err != nil {
 		return "", err
 	}
@@ -210,7 +223,7 @@ func generateNeuTTS(ctx context.Context, env *tools.Env, text, outputPath string
 		}
 		return pyrepr.Str(v)
 	}
-	cmd := append(append([]string(nil), python...), "-c", neuttsSynthScript,
+	cmd := append(append([]string(nil), python...), "-c", "import os\n"+shortEspeakDataScript+neuttsSynthScript,
 		"--text", text, "--out", wavPath,
 		"--ref-audio", pick("ref_audio", filepath.Join(samples, "jo.wav")),
 		"--ref-text", pick("ref_text", filepath.Join(samples, "jo.txt")),
@@ -250,7 +263,7 @@ var resolvePiperVoice = func(ctx context.Context, voice, voicesDir string) (spee
 	if local := filepath.Join(voicesDir, voice+".onnx"); fileExists(local) {
 		return speech.AdoptPiper(ctx, local)
 	}
-	ttsLog().Info(fmt.Sprintf("[Piper] Preparing voice '%s' (first use downloads it)", voice))
+	pkgLog().Info(fmt.Sprintf("[Piper] Preparing voice '%s' (first use downloads it)", voice))
 	return speech.FetchPiper(ctx, voice)
 }
 
@@ -276,7 +289,7 @@ func loadPiperVoiceForConfig(ctx context.Context, env *tools.Env, ttsConfig map[
 	if pyTruthy(piperConfig["voice"]) {
 		voiceName = pyrepr.Str(piperConfig["voice"])
 	}
-	voicesDir := home.HermesDir(ttsHome(ctx, env), "cache/piper-voices", "piper_voices_cache")
+	voicesDir := home.IcebathDir(ttsHome(ctx, env), "cache/piper-voices", "piper_voices_cache")
 	if pyTruthy(piperConfig["voices_dir"]) {
 		voicesDir = pypath.Expanduser(pyrepr.Str(piperConfig["voices_dir"]))
 	}
@@ -294,12 +307,12 @@ func loadPiperVoiceForConfig(ctx context.Context, env *tools.Env, ttsConfig map[
 	}
 	cacheKey := fmt.Sprintf("%s::cuda=%t::scales=%g,%g,%g", files.Model, useCUDA, files.LengthScale, files.NoiseScale, files.NoiseW)
 	v, err := ttsCacheGetOrLoad(piperVoiceCache, cacheKey, func() (any, error) {
-		ttsLog().Info(fmt.Sprintf("[Piper] Loading voice: %s", files.Model))
+		pkgLog().Info(fmt.Sprintf("[Piper] Loading voice: %s", files.Model))
 		voice, err := loadPiperVoice(ctx, files, useCUDA)
 		if err != nil {
 			return nil, err
 		}
-		ttsLog().Info("[Piper] Voice loaded")
+		pkgLog().Info("[Piper] Voice loaded")
 		return voice, nil
 	})
 	if err != nil {
@@ -372,12 +385,12 @@ func loadKittenTTSModelForConfig(ctx context.Context, ttsConfig map[string]any) 
 	ktConfig := ttsSection(ttsConfig, "kittentts")
 	modelName := pyrepr.Str(dictGetDefault(ktConfig, "model", defaultKittenTTSModel))
 	v, err := ttsCacheGetOrLoad(kittenTTSModelCache, modelName, func() (any, error) {
-		ttsLog().Info(fmt.Sprintf("[KittenTTS] Loading model: %s", modelName))
+		pkgLog().Info(fmt.Sprintf("[KittenTTS] Loading model: %s", modelName))
 		w, err := startLocalTTSWorker(ctx, map[string]any{"model_name": modelName})
 		if err != nil {
 			return nil, err
 		}
-		ttsLog().Info("[KittenTTS] Model loaded successfully")
+		pkgLog().Info("[KittenTTS] Model loaded successfully")
 		return w, nil
 	})
 	if err != nil {
@@ -420,11 +433,11 @@ type localTTSWorker struct {
 
 // Starts a model worker and waits for its load verdict
 var startLocalTTSWorker = func(ctx context.Context, spec map[string]any) (*localTTSWorker, error) {
-	python, err := managedPythonCommand(ctx)
+	python, err := managedPythonCommand(ctx, "kittentts")
 	if err != nil {
 		return nil, err
 	}
-	cmd := exec.Command(python[0], append(python[1:], "-c", localTTSWorkerScript)...)
+	cmd := exec.Command(python[0], append(python[1:], "-c", "import os\n"+shortEspeakDataScript+localTTSWorkerScript)...)
 	hideConsoleWindow(cmd)
 	cmd.Stderr = os.Stderr
 	stdin, err := cmd.StdinPipe()
@@ -487,6 +500,25 @@ func (w *localTTSWorker) Close() error {
 	return w.cmd.Wait()
 }
 
+// Python that moves eSpeak NG data under a short path, the C library failing on data paths of 160 or more bytes
+const shortEspeakDataScript = `
+def short_espeak_data(data):
+    import shutil, tempfile
+    import hashlib
+    if not data or len(data) < 150:
+        return data
+    tag = hashlib.sha256(data.encode()).hexdigest()[:16]
+    short = os.path.join(tempfile.gettempdir(), "icebath-espeak-ng-data-" + tag)
+    if not os.path.isfile(os.path.join(short, "phontab")):
+        staging = short + ".%d" % os.getpid()
+        shutil.copytree(data, staging)
+        try:
+            os.replace(staging, short)
+        except OSError:
+            shutil.rmtree(staging, ignore_errors=True)
+    return short
+`
+
 const localTTSWorkerScript = `import json, os, sys
 proto = os.fdopen(os.dup(1), "w", encoding="utf-8")
 os.dup2(2, 1)
@@ -497,6 +529,9 @@ def reply(obj):
 spec = json.loads(sys.stdin.readline())
 try:
     from kittentts import KittenTTS
+    import espeakng_loader
+    from phonemizer.backend.espeak.wrapper import EspeakWrapper
+    EspeakWrapper.set_data_path(short_espeak_data(espeakng_loader.get_data_path()))
     model = KittenTTS(spec["model_name"])
 except BaseException as exc:
     reply({"error": str(exc), "type": type(exc).__name__})
@@ -552,13 +587,25 @@ def main():
     try:
         from neutts import NeuTTS
     except ImportError:
-        print("Error: neutts not installed. Start icebath, type /setup tts and choose NeuTTS.", file=sys.stderr)
+        print("Error: neutts not installed. Run 'icebath pm install --extra neutts', or start icebath, type /setup tts and choose NeuTTS.", file=sys.stderr)
         sys.exit(1)
-    tts = NeuTTS(
-        backbone_repo=args.model,
-        backbone_device="gpu" if args.device == "cuda" else args.device,
-        codec_repo="neuphonic/neucodec",
-        codec_device=args.device)
+    if os.environ.get("ESPEAK_DATA_PATH"):
+        os.environ["ESPEAK_DATA_PATH"] = short_espeak_data(os.environ["ESPEAK_DATA_PATH"])
+        from phonemizer.backend.espeak.wrapper import EspeakWrapper
+        if hasattr(EspeakWrapper, "set_data_path"):
+            EspeakWrapper.set_data_path(os.environ["ESPEAK_DATA_PATH"])
+    try:
+        tts = NeuTTS(
+            backbone_repo=args.model,
+            backbone_device="gpu" if args.device == "cuda" else args.device,
+            codec_repo="neuphonic/neucodec",
+            codec_device=args.device)
+    except Exception as exc:
+        if type(exc).__name__ != "GatedRepoError":
+            raise
+        print(f"Error: Hugging Face serves {args.model} and neuphonic/neucodec only to signed in accounts. Accept their terms at "
+              f"https://huggingface.co/{args.model} and https://huggingface.co/neuphonic/neucodec, then set HF_TOKEN to a token of that account.", file=sys.stderr)
+        sys.exit(1)
     wav = tts.infer(args.text, tts.encode_reference(str(ref_audio)), ref_text)
     out_path = Path(args.out)
     out_path.parent.mkdir(parents=True, exist_ok=True)

@@ -5,7 +5,6 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
-	"log/slog"
 	"math"
 	"math/big"
 	"os"
@@ -22,7 +21,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/state"
 )
 
-var downNoticeRE = regexp.MustCompile(`\b(?:hermes|the agent|agent|the gateway|gateway|bmo)\s+(?:is|was|appears to be|is currently|was currently)\s+(?:down|offline|unavailable|not running)\b`)
+var downNoticeRE = regexp.MustCompile(`\b(?:icebath|the agent|agent|the gateway|gateway|bmo)\s+(?:is|was|appears to be|is currently|was currently)\s+(?:down|offline|unavailable|not running)\b`)
 
 // Current UTC time in Python isoformat
 func utcNowISO() string { return isoformat(time.Now().UTC()) }
@@ -390,7 +389,7 @@ func (a *DiscordAdapter) discordMessageAttemptsExhausted(ctx context.Context, me
 	}, false)
 	exhausted := v == true
 	if exhausted {
-		slog.Debug(fmt.Sprintf("[%s] Not re-dispatching Discord message %s: missed_message_backfill.max_attempts (%d) reached", a.Name(), messageID, maxAttempts))
+		pkgLog().Debug(fmt.Sprintf("[%s] Not re-dispatching Discord message %s: missed_message_backfill.max_attempts (%d) reached", a.Name(), messageID, maxAttempts))
 	}
 	return exhausted
 }

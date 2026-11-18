@@ -108,7 +108,7 @@ func (r *GatewayRunner) getTelegramTopicCapabilities(ctx context.Context, source
 	}
 	me, err := reader.GetMe(ctx)
 	if err != nil {
-		runLog().Debug("Failed to fetch Telegram getMe topic capabilities", "exc_info", err)
+		pkgLog().Debug("Failed to fetch Telegram getMe topic capabilities", "exc_info", err)
 		return map[string]any{"checked": false}
 	}
 	return map[string]any{"checked": true, "has_topics_enabled": botMeField(me, "has_topics_enabled"),
@@ -128,12 +128,12 @@ func (r *GatewayRunner) ensureTelegramSystemTopic(ctx context.Context, source *g
 	threadID, err := func() (*int64, error) {
 		chatID, ok := pystr.IntText(source.ChatID)
 		if !ok || !chatID.IsInt64() {
-			return nil, fmt.Errorf("ValueError: invalid literal for int() with base 10: %s", pyrepr.StrRepr(source.ChatID))
+			return nil, fmt.Errorf("Telegram chat id %s is not a whole number", source.ChatID)
 		}
 		return creator.CreateDMTopic(ctx, chatID.Int64(), i18n.T(ctx, "gateway.topic.system_topic_name", "", nil), nil, nil)
 	}()
 	if err != nil {
-		runLog().Debug("Failed to create Telegram System topic", "exc_info", err)
+		pkgLog().Debug("Failed to create Telegram System topic", "exc_info", err)
 		return
 	}
 	if threadID == nil || *threadID == 0 {
@@ -142,7 +142,7 @@ func (r *GatewayRunner) ensureTelegramSystemTopic(ctx context.Context, source *g
 	sent, err := adapter.Send(ctx, source.ChatID, i18n.T(ctx, "gateway.topic.system_topic_intro", "", nil), "",
 		map[string]any{"thread_id": fmt.Sprint(*threadID)})
 	if err != nil {
-		runLog().Debug("Failed to send Telegram System topic intro", "exc_info", err)
+		pkgLog().Debug("Failed to send Telegram System topic intro", "exc_info", err)
 		return
 	}
 	pinner, ok := func() (telegramMessagePinner, bool) {
@@ -168,7 +168,7 @@ func (r *GatewayRunner) ensureTelegramSystemTopic(ctx context.Context, source *g
 		return pinner.PinChatMessage(ctx, chatID.Int64(), messageID.Int64(), true)
 	}()
 	if err != nil {
-		runLog().Debug("Failed to pin Telegram System topic intro", "exc_info", err)
+		pkgLog().Debug("Failed to pin Telegram System topic intro", "exc_info", err)
 	}
 }
 
@@ -202,7 +202,7 @@ func (r *GatewayRunner) sendTelegramTopicSetupImage(ctx context.Context, source 
 		metadata = map[string]any{"thread_id": *source.ThreadID}
 	}
 	if _, err := adapter.SendImageFile(ctx, source.ChatID, imagePath, i18n.T(ctx, "gateway.topic.setup_image_caption", "", nil), "", metadata, nil); err != nil {
-		runLog().Debug("Failed to send Telegram topic setup image", "exc_info", err)
+		pkgLog().Debug("Failed to send Telegram topic setup image", "exc_info", err)
 	}
 }
 
@@ -227,7 +227,7 @@ func (r *GatewayRunner) disableTelegramTopicModeForChat(ctx context.Context, sou
 	if _, err := state.AsyncCall(ctx, asyncDB, func(d *state.SessionDB) (struct{}, error) {
 		return struct{}{}, db.DisableTelegramTopicMode(ctx, chatID, profileName, true)
 	}); err != nil {
-		runLog().Error("Failed to disable Telegram topic mode", "exc_info", err)
+		pkgLog().Error("Failed to disable Telegram topic mode", "exc_info", err)
 		return i18n.T(ctx, "gateway.topic.disable_failed", "", map[string]any{"error": pyrepr.ExceptionMessage(err)})
 	}
 	if key := telegramTopicCooldownKey(source); key != "" {
@@ -248,7 +248,7 @@ func (r *GatewayRunner) telegramTopicRootStatusMessage(ctx context.Context, sour
 		})
 	}
 	if err != nil {
-		runLog().Debug("Failed to list unlinked Telegram sessions", "exc_info", err)
+		pkgLog().Debug("Failed to list unlinked Telegram sessions", "exc_info", err)
 		sessions = nil
 	}
 	if len(sessions) == 0 {
@@ -281,7 +281,7 @@ func (r *GatewayRunner) restoreTelegramTopicSession(ctx context.Context, event *
 	source := event.Source
 	asyncDB := r.sessionDB(ctx)
 	if asyncDB == nil {
-		return "", errors.New("AttributeError: 'NoneType' object has no attribute 'resolve_session_id'")
+		return "", errors.New("the session database is not open, so the topic session cannot be resolved")
 	}
 	db := asyncDB.DB()
 	wanted := pystr.Strip(rawSessionID)

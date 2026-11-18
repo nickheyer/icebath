@@ -144,14 +144,18 @@ func pollReadiness(rawURL string, timeout float64, interval time.Duration) (bool
 	return false, nil, lastError, nil
 }
 
-// str of the URLError, OSError or TimeoutError urlopen raises, false for an exception the poll lets propagate
+// Plain reason of a readiness probe transport failure, false for a failure the poll lets propagate
 func urlopenErrorText(err error) (string, bool) {
 	var de *dialError
 	if errors.As(err, &de) {
 		if isTimeout(de.err) {
-			return "<urlopen error timed out>", true
+			return "timed out", true
 		}
-		return (&pyurl.URLError{Reason: pyhttpx.OSErrorText(de.err)}).Error(), true
+		var errno syscall.Errno
+		if errors.As(de.err, &errno) {
+			return errno.Error(), true
+		}
+		return de.err.Error(), true
 	}
 	switch {
 	case isTimeout(err):

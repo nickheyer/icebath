@@ -3,7 +3,6 @@ package feishu
 import (
 	"context"
 	"fmt"
-	"log/slog"
 	"os"
 	"path/filepath"
 	"strings"
@@ -100,7 +99,7 @@ func loopAcceptsCallbacks(loop *adapterLoop) bool { return loop != nil && !loop.
 // Schedules background work on the adapter loop, logging a failed schedule and a failed run
 func (a *FeishuAdapter) submitOnLoop(loop *adapterLoop, fn func(ctx context.Context) error) bool {
 	if !loopAcceptsCallbacks(loop) {
-		slog.Warn("[Feishu] Failed to schedule background callback work")
+		pkgLog().Warn("[Feishu] Failed to schedule background callback work")
 		return false
 	}
 	task := gateway.SpawnAdapterTask(loop.ctx, fn)
@@ -110,7 +109,7 @@ func (a *FeishuAdapter) submitOnLoop(loop *adapterLoop, fn func(ctx context.Cont
 
 func logBackgroundFailure(task *gateway.AdapterTask) {
 	if err := task.Wait(context.Background()); err != nil {
-		slog.Error("[Feishu] Background inbound processing failed: " + err.Error())
+		pkgLog().Error("[Feishu] Background inbound processing failed: " + err.Error())
 	}
 }
 
@@ -136,14 +135,14 @@ func (a *FeishuAdapter) enqueuePendingInboundEvent(data *larkim.P2MessageReceive
 		if dropped != nil && dropped.Event != nil && dropped.Event.Message != nil && sdkStr(dropped.Event.Message.MessageId) != "" {
 			messageID = *dropped.Event.Message.MessageId
 		}
-		slog.Error(fmt.Sprintf("[Feishu] Pending-inbound queue full (%d); dropped oldest event %s", a.pendingInboundMaxDepth, messageID))
+		pkgLog().Error(fmt.Sprintf("[Feishu] Pending-inbound queue full (%d); dropped oldest event %s", a.pendingInboundMaxDepth, messageID))
 	}
 	a.pendingInboundEvents = append(a.pendingInboundEvents, data)
 	depth := len(a.pendingInboundEvents)
 	shouldStart := !a.pendingDrainScheduled
 	a.pendingDrainScheduled = true
 	a.pendingInboundMu.Unlock()
-	slog.Warn(fmt.Sprintf("[Feishu] Queued inbound event for replay (loop not ready, queue depth=%d)", depth))
+	pkgLog().Warn(fmt.Sprintf("[Feishu] Queued inbound event for replay (loop not ready, queue depth=%d)", depth))
 	return shouldStart
 }
 
@@ -170,7 +169,7 @@ func (a *FeishuAdapter) drainPendingInboundEvents() {
 	for {
 		if !a.IsConnected() {
 			if dropped := len(takeAll()); dropped > 0 {
-				slog.Warn(fmt.Sprintf("[Feishu] Dropped %d queued inbound event(s) during shutdown", dropped))
+				pkgLog().Warn(fmt.Sprintf("[Feishu] Dropped %d queued inbound event(s) during shutdown", dropped))
 			}
 			return
 		}
@@ -196,7 +195,7 @@ func (a *FeishuAdapter) drainPendingInboundEvents() {
 				a.pendingInboundMu.Unlock()
 			}
 			if n := len(batch) - len(requeue); n > 0 {
-				slog.Info(fmt.Sprintf("[Feishu] Replayed %d queued inbound event(s)", n))
+				pkgLog().Info(fmt.Sprintf("[Feishu] Replayed %d queued inbound event(s)", n))
 			}
 			if len(requeue) == 0 && queueEmpty() {
 				return
@@ -204,7 +203,7 @@ func (a *FeishuAdapter) drainPendingInboundEvents() {
 			continue
 		}
 		if waited >= a.pendingMaxWait {
-			slog.Error(fmt.Sprintf("[Feishu] Adapter loop unavailable for %.0fs; dropped %d queued inbound event(s)", a.pendingMaxWait.Seconds(), len(takeAll())))
+			pkgLog().Error(fmt.Sprintf("[Feishu] Adapter loop unavailable for %.0fs; dropped %d queued inbound event(s)", a.pendingMaxWait.Seconds(), len(takeAll())))
 			return
 		}
 		time.Sleep(a.pendingPollInterval)
@@ -215,13 +214,13 @@ func (a *FeishuAdapter) drainPendingInboundEvents() {
 // Shared inbound handling of websocket and webhook message events through dedup and admission
 func (a *FeishuAdapter) handleMessageEventData(ctx context.Context, data *larkim.P2MessageReceiveV1) error {
 	if data == nil || data.Event == nil || data.Event.Message == nil || data.Event.Sender == nil || data.Event.Sender.SenderId == nil {
-		slog.Debug("[Feishu] Dropping malformed inbound event: missing message/sender")
+		pkgLog().Debug("[Feishu] Dropping malformed inbound event: missing message/sender")
 		return nil
 	}
 	message, sender := data.Event.Message, data.Event.Sender
 	messageID := sdkStr(message.MessageId)
 	if messageID == "" {
-		slog.Debug("[Feishu] Dropping duplicate/missing message_id: " + pyrepr.Str(ptrAny(message.MessageId)))
+		pkgLog().Debug("[Feishu] Dropping duplicate/missing message_id: " + pyrepr.Str(ptrAny(message.MessageId)))
 		return nil
 	}
 	dup, err := a.IsDuplicate(ctx, messageID)
@@ -229,11 +228,11 @@ func (a *FeishuAdapter) handleMessageEventData(ctx context.Context, data *larkim
 		return err
 	}
 	if dup {
-		slog.Debug("[Feishu] Dropping duplicate/missing message_id: " + messageID)
+		pkgLog().Debug("[Feishu] Dropping duplicate/missing message_id: " + messageID)
 		return nil
 	}
 	if reason := a.admit(sender, message); reason != "" {
-		slog.Debug("[Feishu] dropping inbound event: " + reason)
+		pkgLog().Debug("[Feishu] dropping inbound event: " + reason)
 		if reason == "group_policy_rejected" {
 			a.warnOnceEmptyAllowlistDeny(sdkStr(message.ChatId))
 		}
@@ -251,12 +250,12 @@ func ptrAny(p *string) any {
 
 // Ignores read receipts, whose event carries no message to name
 func (a *FeishuAdapter) onMessageReadEvent() {
-	slog.Debug("[Feishu] Ignoring message_read event: ")
+	pkgLog().Debug("[Feishu] Ignoring message_read event: ")
 }
 
 // Logs a bot membership change and forgets the chat's cached info
 func (a *FeishuAdapter) onBotMembershipChange(chatID, verb string) {
-	slog.Info(fmt.Sprintf("[Feishu] Bot %s chat: %s", verb, chatID))
+	pkgLog().Info(fmt.Sprintf("[Feishu] Bot %s chat: %s", verb, chatID))
 	a.mu.Lock()
 	delete(a.chatInfoCache, chatID)
 	a.mu.Unlock()
@@ -266,7 +265,7 @@ func (a *FeishuAdapter) onBotMembershipChange(chatID, verb string) {
 func (a *FeishuAdapter) submitIfReady(label string, fn func(ctx context.Context) error) {
 	loop := a.currentLoop()
 	if !loopAcceptsCallbacks(loop) {
-		slog.Warn(fmt.Sprintf("[Feishu] Dropping %s before adapter loop is ready", label))
+		pkgLog().Warn(fmt.Sprintf("[Feishu] Dropping %s before adapter loop is ready", label))
 		return
 	}
 	a.submitOnLoop(loop, fn)
@@ -296,7 +295,7 @@ func (a *FeishuAdapter) onReactionEvent(eventType string, e reactionEvent) {
 	if strings.Contains(eventType, "created") {
 		action = "added"
 	}
-	slog.Debug(fmt.Sprintf("[Feishu] Reaction %s on message %s (operator_type=%s, emoji=%s)", action, e.MessageID, e.OperatorType, e.EmojiType))
+	pkgLog().Debug(fmt.Sprintf("[Feishu] Reaction %s on message %s (operator_type=%s, emoji=%s)", action, e.MessageID, e.OperatorType, e.EmojiType))
 	loop := a.currentLoop()
 	if e.OperatorType == "bot" || e.OperatorType == "app" || e.MessageID == "" || !loopAcceptsCallbacks(loop) {
 		return
@@ -349,14 +348,14 @@ func (a *FeishuAdapter) onCardActionTriggerSDK(ctx context.Context, e *callback.
 func (a *FeishuAdapter) onCardActionTrigger(e cardActionEvent) *callback.CardActionTriggerResponse {
 	loop := a.currentLoop()
 	if !loopAcceptsCallbacks(loop) {
-		slog.Warn("[Feishu] Dropping card action before adapter loop is ready")
+		pkgLog().Warn("[Feishu] Dropping card action before adapter loop is ready")
 		return cardResponse(nil)
 	}
 	if value, ok := e.Value.(*pyjson.Object); ok {
-		if pyrepr.Truthy(dget(value, "hermes_action")) {
+		if pyrepr.Truthy(cardValue(value, cardApprovalKey, legacyCardApprovalKey, nil)) {
 			return a.handleApprovalCardAction(e, value, loop)
 		}
-		if pyrepr.Truthy(dget(value, "hermes_update_prompt_action")) {
+		if pyrepr.Truthy(cardValue(value, cardUpdatePromptKey, legacyCardUpdatePromptKey, nil)) {
 			return a.handleUpdatePromptCardAction(e, value, loop)
 		}
 	}
@@ -399,7 +398,7 @@ func (a *FeishuAdapter) isInteractiveOperatorAuthorized(openID, userID, unionID,
 	}
 	verdict := a.IsSenderAuthorized(principal, &chatType, chatPtr, gateway.AuthorizationOpts{})
 	if verdict == nil {
-		slog.Debug(fmt.Sprintf("[Feishu] No gateway authorization check for card operator %s; denying", normalized))
+		pkgLog().Debug(fmt.Sprintf("[Feishu] No gateway authorization check for card operator %s; denying", normalized))
 		return false
 	}
 	return *verdict
@@ -426,11 +425,11 @@ func (a *FeishuAdapter) validateCardAction(e cardActionEvent, state map[string]s
 		if who == "" {
 			who = "<unknown>"
 		}
-		slog.Warn(fmt.Sprintf("[Feishu] Unauthorized %s click by %s", label, who))
+		pkgLog().Warn(fmt.Sprintf("[Feishu] Unauthorized %s click by %s", label, who))
 		return "", "", "", false
 	}
 	if e.OpenChatID != "" && expected != "" && e.OpenChatID != expected {
-		slog.Warn(fmt.Sprintf("[Feishu] %s callback chat mismatch for %d (expected=%s, got=%s)", pystr.Capitalize(label), ident, expected, e.OpenChatID))
+		pkgLog().Warn(fmt.Sprintf("[Feishu] %s callback chat mismatch for %d (expected=%s, got=%s)", pystr.Capitalize(label), ident, expected, e.OpenChatID))
 		return "", "", "", false
 	}
 	userName := a.getCachedSenderName(e.OpenID)
@@ -469,7 +468,7 @@ func (a *FeishuAdapter) promptState(states map[int]map[string]string, id int) ma
 func (a *FeishuAdapter) handleApprovalCardAction(e cardActionEvent, value *pyjson.Object, loop *adapterLoop) *callback.CardActionTriggerResponse {
 	raw := dget(value, "approval_id")
 	if raw == nil {
-		slog.Debug("[Feishu] Card action missing approval_id, ignoring")
+		pkgLog().Debug("[Feishu] Card action missing approval_id, ignoring")
 		return cardResponse(nil)
 	}
 	approvalID, ok := stateIDOf(raw)
@@ -478,10 +477,10 @@ func (a *FeishuAdapter) handleApprovalCardAction(e cardActionEvent, value *pyjso
 		state = a.promptState(a.approvalState, approvalID)
 	}
 	if len(state) == 0 {
-		slog.Debug(fmt.Sprintf("[Feishu] Approval %s already resolved or unknown", pyrepr.Str(raw)))
+		pkgLog().Debug(fmt.Sprintf("[Feishu] Approval %s already resolved or unknown", pyrepr.Str(raw)))
 		return cardResponse(nil)
 	}
-	choice, ok := approvalChoiceMap[pyrepr.Str(dget(value, "hermes_action"))]
+	choice, ok := approvalChoiceMap[pyrepr.Str(cardValue(value, cardApprovalKey, legacyCardApprovalKey, nil))]
 	if !ok {
 		choice = "deny"
 	}
@@ -505,7 +504,7 @@ func (a *FeishuAdapter) handleApprovalCardAction(e cardActionEvent, value *pyjso
 func (a *FeishuAdapter) handleUpdatePromptCardAction(e cardActionEvent, value *pyjson.Object, loop *adapterLoop) *callback.CardActionTriggerResponse {
 	raw := dget(value, "update_prompt_id")
 	if raw == nil {
-		slog.Debug("[Feishu] Card action missing update_prompt_id, ignoring")
+		pkgLog().Debug("[Feishu] Card action missing update_prompt_id, ignoring")
 		return cardResponse(nil)
 	}
 	promptID, ok := stateIDOf(raw)
@@ -514,12 +513,12 @@ func (a *FeishuAdapter) handleUpdatePromptCardAction(e cardActionEvent, value *p
 		state = a.promptState(a.updatePromptState, promptID)
 	}
 	if len(state) == 0 {
-		slog.Debug(fmt.Sprintf("[Feishu] Update prompt %s already resolved or unknown", pyrepr.Str(raw)))
+		pkgLog().Debug(fmt.Sprintf("[Feishu] Update prompt %s already resolved or unknown", pyrepr.Str(raw)))
 		return cardResponse(nil)
 	}
-	answer := pystr.Lower(pystr.Strip(strOr(dgetDef(value, "hermes_update_prompt_action", ""))))
+	answer := pystr.Lower(pystr.Strip(strOr(cardValue(value, cardUpdatePromptKey, legacyCardUpdatePromptKey, ""))))
 	if answer != "y" && answer != "n" {
-		slog.Debug("[Feishu] Card action has invalid update prompt answer=" + pyrepr.Repr(answer))
+		pkgLog().Debug("[Feishu] Card action has invalid update prompt answer=" + pyrepr.Repr(answer))
 		return cardResponse(nil)
 	}
 	openID, chatID, userName, ok := a.validateCardAction(e, state, "update prompt", promptID)
@@ -539,7 +538,7 @@ func (a *FeishuAdapter) popValidatedPromptState(states map[int]map[string]string
 	operatorRepr, userID, unionID string) map[string]string {
 	state := a.promptState(states, ident)
 	if len(state) == 0 {
-		slog.Debug(fmt.Sprintf("[Feishu] %s %d already resolved or unknown", label, ident))
+		pkgLog().Debug(fmt.Sprintf("[Feishu] %s %d already resolved or unknown", label, ident))
 		return nil
 	}
 	target := state["chat_id"]
@@ -547,11 +546,11 @@ func (a *FeishuAdapter) popValidatedPromptState(states map[int]map[string]string
 		target = chatID
 	}
 	if !a.isInteractiveOperatorAuthorized(openID, userID, unionID, target) {
-		slog.Warn(fmt.Sprintf(unauthorizedFmt, operatorRepr, ident))
+		pkgLog().Warn(fmt.Sprintf(unauthorizedFmt, operatorRepr, ident))
 		return nil
 	}
 	if expected := state["chat_id"]; expected != "" && chatID != "" && expected != chatID {
-		slog.Warn(fmt.Sprintf("[Feishu] %s %d chat mismatch (expected=%s, got=%s)", label, ident, expected, chatID))
+		pkgLog().Warn(fmt.Sprintf("[Feishu] %s %d chat mismatch (expected=%s, got=%s)", label, ident, expected, chatID))
 		return nil
 	}
 	a.mu.Lock()
@@ -559,7 +558,7 @@ func (a *FeishuAdapter) popValidatedPromptState(states map[int]map[string]string
 	delete(states, ident)
 	a.mu.Unlock()
 	if len(popped) == 0 {
-		slog.Debug(fmt.Sprintf("[Feishu] %s %d already resolved while validating callback", label, ident))
+		pkgLog().Debug(fmt.Sprintf("[Feishu] %s %d already resolved while validating callback", label, ident))
 		return nil
 	}
 	return popped
@@ -577,7 +576,7 @@ func (a *FeishuAdapter) resolveApproval(ctx context.Context, approvalID int, cho
 		return nil
 	}
 	count := resolveGatewayApprovalFn(state["session_key"], choice, false, "", "")
-	slog.Info(fmt.Sprintf("Feishu button resolved %d approval(s) for session %s (choice=%s, user=%s)", count, state["session_key"], choice, userName))
+	pkgLog().Info(fmt.Sprintf("Feishu button resolved %d approval(s) for session %s (choice=%s, user=%s)", count, state["session_key"], choice, userName))
 	if count == 0 && choice != "deny" {
 		target := state["chat_id"]
 		if target == "" {
@@ -585,7 +584,7 @@ func (a *FeishuAdapter) resolveApproval(ctx context.Context, approvalID int, cho
 		}
 		if target != "" {
 			if _, err := a.Send(ctx, target, i18n.T(ctx, "platform.shared.approval_expired", "", nil), "", nil); err != nil {
-				slog.Debug("[Feishu] expired-approval notice failed")
+				pkgLog().Debug("[Feishu] expired-approval notice failed")
 			}
 		}
 	}
@@ -600,10 +599,10 @@ func (a *FeishuAdapter) resolveUpdatePrompt(ctx context.Context, promptID int, a
 		return nil
 	}
 	if err := writeUpdatePromptResponse(ctx, answer); err != nil {
-		slog.Error("Failed to resolve Feishu update prompt: " + err.Error())
+		pkgLog().Error("Failed to resolve Feishu update prompt: " + err.Error())
 		return nil
 	}
-	slog.Info(fmt.Sprintf("Feishu update prompt resolved for session %s (answer=%s, user=%s)", state["session_key"], answer, userName))
+	pkgLog().Info(fmt.Sprintf("Feishu update prompt resolved for session %s (answer=%s, user=%s)", state["session_key"], answer, userName))
 	return nil
 }
 
@@ -620,7 +619,7 @@ func (a *FeishuAdapter) handleReactionEvent(ctx context.Context, eventType strin
 		resp, err = client.GetMessage(ctx, req)
 		return err
 	}); err != nil {
-		slog.Debug("[Feishu] Failed to fetch message for reaction routing")
+		pkgLog().Debug("[Feishu] Failed to fetch message for reaction routing")
 		return nil
 	}
 	if !responseSucceeded(wrapResp(resp)) || resp.Data == nil || len(resp.Data.Items) == 0 || resp.Data.Items[0] == nil {
@@ -643,7 +642,7 @@ func (a *FeishuAdapter) handleReactionEvent(ctx context.Context, eventType strin
 	if strings.Contains(eventType, "created") {
 		action = "added"
 	}
-	slog.Info(fmt.Sprintf("[Feishu] Routing reaction %s:%s on bot message %s as synthetic event", action, emoji, e.MessageID))
+	pkgLog().Info(fmt.Sprintf("[Feishu] Routing reaction %s:%s on bot message %s as synthetic event", action, emoji, e.MessageID))
 	return a.dispatchSyntheticEvent(ctx, "reaction:"+action+":"+emoji, gateway.MessageTypeText, chatID, senderIDOf(e.UserID), chatTypeRaw, e.Raw, e.MessageID)
 }
 
@@ -667,11 +666,11 @@ func (a *FeishuAdapter) isCardActionDuplicate(token string) bool {
 // Routes a card button click as a synthetic card command
 func (a *FeishuAdapter) handleCardActionEvent(ctx context.Context, e cardActionEvent) error {
 	if e.Token != "" && a.isCardActionDuplicate(e.Token) {
-		slog.Debug("[Feishu] Dropping duplicate card action token: " + e.Token)
+		pkgLog().Debug("[Feishu] Dropping duplicate card action token: " + e.Token)
 		return nil
 	}
 	if e.OpenChatID == "" || e.OpenID == "" {
-		slog.Debug("[Feishu] Card action missing chat_id or operator open_id, dropping")
+		pkgLog().Debug("[Feishu] Card action missing chat_id or operator open_id, dropping")
 		return nil
 	}
 	tag := e.Tag
@@ -684,7 +683,7 @@ func (a *FeishuAdapter) handleCardActionEvent(ctx context.Context, e cardActionE
 			text += " " + dumped
 		}
 	}
-	slog.Info(fmt.Sprintf("[Feishu] Routing card action %s from %s in %s as synthetic command", pyrepr.Repr(tag), e.OpenID, e.OpenChatID))
+	pkgLog().Info(fmt.Sprintf("[Feishu] Routing card action %s from %s in %s as synthetic command", pyrepr.Repr(tag), e.OpenID, e.OpenChatID))
 	openID := e.OpenID
 	messageID := e.Token
 	if messageID == "" {
@@ -812,7 +811,7 @@ func (a *FeishuAdapter) removeReaction(ctx context.Context, messageID, reactionI
 // Shared add and remove outcome, logging a rejection or a raised call
 func (a *FeishuAdapter) reactionOutcome(err error, r *larkResp, verb, messageID, ident string) bool {
 	if err != nil {
-		slog.Warn(fmt.Sprintf("[Feishu] %s reaction %s on %s raised: %s", verb, ident, messageID, err))
+		pkgLog().Warn(fmt.Sprintf("[Feishu] %s reaction %s on %s raised: %s", verb, ident, messageID, err))
 		return false
 	}
 	if responseSucceeded(r) {
@@ -822,7 +821,7 @@ func (a *FeishuAdapter) reactionOutcome(err error, r *larkResp, verb, messageID,
 	if r != nil {
 		code, msg = r.code, r.msg
 	}
-	slog.Debug(fmt.Sprintf("[Feishu] %s reaction %s on %s rejected: code=%s msg=%s", verb, ident, messageID, pyrepr.Str(code), pyrepr.Str(msg)))
+	pkgLog().Debug(fmt.Sprintf("[Feishu] %s reaction %s on %s rejected: code=%s msg=%s", verb, ident, messageID, pyrepr.Str(code), pyrepr.Str(msg)))
 	return false
 }
 
@@ -898,7 +897,7 @@ func (a *FeishuAdapter) processInboundMessage(ctx context.Context, data *larkim.
 		}
 	}
 	if inboundType == gateway.MessageTypeText && text == "" && len(content.mediaURLs) == 0 {
-		slog.Debug("[Feishu] Ignoring empty text message id=" + messageID)
+		pkgLog().Debug("[Feishu] Ignoring empty text message id=" + messageID)
 		return nil
 	}
 	if inboundType != gateway.MessageTypeCommand {
@@ -934,7 +933,7 @@ func (a *FeishuAdapter) processInboundMessage(ctx context.Context, data *larkim.
 	if isBot {
 		who = "bot"
 	}
-	slog.Info(fmt.Sprintf("[Feishu] Inbound %s message received: id=%s type=%s chat_id=%s sender=%s:%s text=%s media=%d", kind, messageID,
+	pkgLog().Info(fmt.Sprintf("[Feishu] Inbound %s message received: id=%s type=%s chat_id=%s sender=%s:%s text=%s media=%d", kind, messageID,
 		string(inboundType), chatID, who, primary, pyrepr.Repr(pystr.Slice(text, 0, 120)), len(content.mediaURLs)))
 	info, _ := a.GetChatInfo(ctx, chatID)
 	profile, err := a.ResolveSenderProfile(ctx, sender, isBot)
@@ -1066,7 +1065,7 @@ func (a *FeishuAdapter) flushMediaBatchNow(ctx context.Context, key string) erro
 	if event == nil {
 		return nil
 	}
-	slog.Info(fmt.Sprintf("[Feishu] Flushing media batch %s with %d attachment(s)", key, len(event.MediaURLs)))
+	pkgLog().Info(fmt.Sprintf("[Feishu] Flushing media batch %s with %d attachment(s)", key, len(event.MediaURLs)))
 	return a.HandleMessageWithGuards(ctx, event)
 }
 
@@ -1185,7 +1184,7 @@ type extractedContent struct {
 // Normalized text, downloaded media and inlined text documents of an inbound message
 func (a *FeishuAdapter) extractMessageContent(ctx context.Context, message *larkim.EventMessage) extractedContent {
 	rawContent, rawType, messageID := sdkStr(message.Content), sdkStr(message.MessageType), sdkStr(message.MessageId)
-	slog.Info(fmt.Sprintf("[Feishu] Received raw message type=%s message_id=%s", rawType, messageID))
+	pkgLog().Info(fmt.Sprintf("[Feishu] Received raw message type=%s message_id=%s", rawType, messageID))
 	normalized := a.normalize(rawType, rawContent, mentionsFromEvent(message.Mentions))
 	urls, types := a.downloadFeishuMessageResources(ctx, messageID, normalized)
 	out := extractedContent{text: normalized.TextContent, inboundType: a.resolveNormalizedMessageType(normalized, types), mediaURLs: urls,
@@ -1267,7 +1266,7 @@ func (a *FeishuAdapter) maybeExtractTextDocument(cachedPath, mediaType string) s
 		return ""
 	}
 	fail := func() string {
-		slog.Warn("[Feishu] Failed to inject text document content from " + cachedPath)
+		pkgLog().Warn("[Feishu] Failed to inject text document content from " + cachedPath)
 		return ""
 	}
 	st, err := os.Stat(cachedPath)
@@ -1312,12 +1311,12 @@ func (a *FeishuAdapter) downloadFeishuImage(ctx context.Context, messageID, imag
 	}
 	resp, err := a.fetchMessageResource(ctx, messageID, imageKey, "image")
 	if err != nil {
-		slog.Warn("[Feishu] Failed to cache image resource " + imageKey)
+		pkgLog().Warn("[Feishu] Failed to cache image resource " + imageKey)
 		return "", ""
 	}
 	r := wrapResp(resp)
 	if !responseSucceeded(r) {
-		slog.Warn(fmt.Sprintf("[Feishu] Failed to download image %s: %s %s", imageKey, pyrepr.Str(respCode(r)), respMsg(r, "request failed")))
+		pkgLog().Warn(fmt.Sprintf("[Feishu] Failed to download image %s: %s %s", imageKey, pyrepr.Str(respCode(r)), respMsg(r, "request failed")))
 		return "", ""
 	}
 	data := readBinaryResponse(resp.File)
@@ -1332,7 +1331,7 @@ func (a *FeishuAdapter) downloadFeishuImage(ctx context.Context, messageID, imag
 	ext := guessExtension(filename, contentType, ".jpg", imageExtensions)
 	path, err := gateway.CacheImageFromBytesAsync(ctx, data, ext)
 	if err != nil {
-		slog.Warn("[Feishu] Failed to cache image resource " + imageKey)
+		pkgLog().Warn("[Feishu] Failed to cache image resource " + imageKey)
 		return "", ""
 	}
 	return path, normalizeMediaType(contentType, defaultImageMediaType(ext))
@@ -1358,7 +1357,7 @@ func (a *FeishuAdapter) downloadFeishuMessageResource(ctx context.Context, messa
 
 func (a *FeishuAdapter) downloadResourceAs(ctx context.Context, messageID, fileKey, requestType, fallbackFilename string) (string, string, bool) {
 	failed := func() (string, string, bool) {
-		slog.Warn(fmt.Sprintf("[Feishu] Failed to cache message resource %s/%s", messageID, fileKey))
+		pkgLog().Warn(fmt.Sprintf("[Feishu] Failed to cache message resource %s/%s", messageID, fileKey))
 		return "", "", false
 	}
 	resp, err := a.fetchMessageResource(ctx, messageID, fileKey, requestType)
@@ -1367,7 +1366,7 @@ func (a *FeishuAdapter) downloadResourceAs(ctx context.Context, messageID, fileK
 	}
 	r := wrapResp(resp)
 	if !responseSucceeded(r) {
-		slog.Debug(fmt.Sprintf("[Feishu] Resource download failed for %s/%s via type=%s: %s %s", messageID, fileKey, requestType,
+		pkgLog().Debug(fmt.Sprintf("[Feishu] Resource download failed for %s/%s via type=%s: %s %s", messageID, fileKey, requestType,
 			pyrepr.Str(respCode(r)), respMsg(r, "request failed")))
 		return "", "", false
 	}
@@ -1418,7 +1417,7 @@ func (a *FeishuAdapter) downloadResourceAs(ctx context.Context, messageID, fileK
 			mediaType = guessDocumentMediaType(filename)
 		}
 	}
-	slog.Info(fmt.Sprintf("[Feishu] Cached message %s resource at %s", kind, path))
+	pkgLog().Info(fmt.Sprintf("[Feishu] Cached message %s resource at %s", kind, path))
 	return path, mediaType, true
 }
 
@@ -1597,7 +1596,7 @@ func (a *FeishuAdapter) resolveSenderNameFromAPI(ctx context.Context, senderID s
 		resp, e = client.GetUser(ctx, req)
 		return e
 	}); err != nil {
-		slog.Debug("[Feishu] Failed to resolve sender name for " + senderID)
+		pkgLog().Debug("[Feishu] Failed to resolve sender name for " + senderID)
 		return nil
 	}
 	if !responseSucceeded(wrapResp(resp)) || resp.Data == nil || resp.Data.User == nil {
@@ -1635,7 +1634,7 @@ func (a *FeishuAdapter) fetchBotNames(ctx context.Context, botIDs []string) *pyd
 		return nil
 	}
 	fail := func() *pydict.Dict[string, string] {
-		slog.Debug(fmt.Sprintf("[Feishu] Failed to fetch bot names for %s", pyrepr.Repr(botIDs)))
+		pkgLog().Debug(fmt.Sprintf("[Feishu] Failed to fetch bot names for %s", pyrepr.Repr(botIDs)))
 		return nil
 	}
 	queries := make([][2]string, 0, len(botIDs))
@@ -1710,12 +1709,12 @@ func (a *FeishuAdapter) fetchMessageText(ctx context.Context, messageID string) 
 		resp, e = client.GetMessage(ctx, req)
 		return e
 	}); err != nil {
-		slog.Warn("[Feishu] Failed to fetch parent message " + messageID)
+		pkgLog().Warn("[Feishu] Failed to fetch parent message " + messageID)
 		return nil
 	}
 	r := wrapResp(resp)
 	if !responseSucceeded(r) {
-		slog.Warn(fmt.Sprintf("[Feishu] Failed to fetch parent message %s: [%s] %s", messageID, pyrepr.Str(respCode(r)), respMsg(r, "message lookup failed")))
+		pkgLog().Warn(fmt.Sprintf("[Feishu] Failed to fetch parent message %s: [%s] %s", messageID, pyrepr.Str(respCode(r)), respMsg(r, "message lookup failed")))
 		return nil
 	}
 	var msgType, rawContent string
@@ -1841,7 +1840,7 @@ func (a *FeishuAdapter) warnOnceEmptyAllowlistDeny(chatID string) {
 	}
 	if text, ok := emptyAllowlistDropWarning(chatID, rules, a.settings.DefaultGroupPolicy, users); ok {
 		a.warnedEmptyAllowlistDeny = true
-		slog.Warn(text)
+		pkgLog().Warn(text)
 	}
 }
 
@@ -1945,7 +1944,7 @@ func (a *FeishuAdapter) hydrateBotIdentity(ctx context.Context) {
 		return
 	}
 	if content, err := a.tenantGetRaw(ctx, "/open-apis/bot/v3/info", nil); err != nil {
-		slog.Debug("[Feishu] /bot/v3/info probe failed during hydration")
+		pkgLog().Debug("[Feishu] /bot/v3/info probe failed during hydration")
 	} else if len(content) > 0 {
 		a.applyBotInfo(content)
 	}
@@ -1962,13 +1961,13 @@ func (a *FeishuAdapter) hydrateBotIdentity(ctx context.Context) {
 		resp, e = client.GetApplication(ctx, req)
 		return e
 	}); err != nil {
-		slog.Debug("[Feishu] Failed to hydrate bot name from application info")
+		pkgLog().Debug("[Feishu] Failed to hydrate bot name from application info")
 		return
 	}
 	r := wrapResp(resp)
 	if !responseSucceeded(r) {
 		if r != nil && r.code == 99991672 {
-			slog.Warn("[Feishu] Unable to hydrate bot name from application info. " +
+			pkgLog().Warn("[Feishu] Unable to hydrate bot name from application info. " +
 				"Grant admin:app.info:readonly or application:application:self_manage " +
 				"so group @mention gating can resolve the bot name precisely.")
 		}
@@ -1989,17 +1988,17 @@ func (a *FeishuAdapter) hydrateBotIdentity(ctx context.Context) {
 func (a *FeishuAdapter) applyBotInfo(content []byte) {
 	payload, err := pyjson.Loads(string(content))
 	if err != nil {
-		slog.Debug("[Feishu] /bot/v3/info probe failed during hydration")
+		pkgLog().Debug("[Feishu] /bot/v3/info probe failed during hydration")
 		return
 	}
 	root, ok := payload.(*pyjson.Object)
 	if !ok {
-		slog.Debug("[Feishu] /bot/v3/info probe failed during hydration")
+		pkgLog().Debug("[Feishu] /bot/v3/info probe failed during hydration")
 		return
 	}
 	parsed, err := parseBotResponse(root)
 	if err != nil {
-		slog.Debug("[Feishu] /bot/v3/info probe failed during hydration")
+		pkgLog().Debug("[Feishu] /bot/v3/info probe failed during hydration")
 		return
 	}
 	openID, name := pystr.Strip(strOr(parsed["bot_open_id"])), pystr.Strip(strOr(parsed["bot_name"]))
@@ -2007,13 +2006,13 @@ func (a *FeishuAdapter) applyBotInfo(content []byte) {
 	defer a.mu.Unlock()
 	if openID != "" {
 		if a.botOpenID != "" && a.botOpenID != openID {
-			slog.Warn("[Feishu] FEISHU_BOT_OPEN_ID is stale; using /bot/v3/info open_id for group @mention gating.")
+			pkgLog().Warn("[Feishu] FEISHU_BOT_OPEN_ID is stale; using /bot/v3/info open_id for group @mention gating.")
 		}
 		a.botOpenID = openID
 	}
 	if name != "" {
 		if a.botName != "" && a.botName != name {
-			slog.Info("[Feishu] FEISHU_BOT_NAME differs from /bot/v3/info; using hydrated bot name for group @mention gating.")
+			pkgLog().Info("[Feishu] FEISHU_BOT_NAME differs from /bot/v3/info; using hydrated bot name for group @mention gating.")
 		}
 		a.botName = name
 	}

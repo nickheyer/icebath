@@ -57,7 +57,7 @@ func (a *app) syncCompletion() tea.Cmd {
 	return tea.Tick(completionDebounce, func(time.Time) tea.Msg { return completionDueMsg{value: value, req: req} })
 }
 
-// Sends the settled request, slash names carrying the session, and shows the answer while the draft still reads the same
+// Sends the settled request and shows the answer while the draft reads the same, filling what the gateway left out
 func (a *app) askCompletion(m completionDueMsg) tea.Cmd {
 	if a.completion.asked != m.value {
 		return nil
@@ -72,11 +72,7 @@ func (a *app) askCompletion(m completionDueMsg) tea.Cmd {
 			return nil
 		}
 		if err != nil {
-			meta := rpcErrorMessage(err)
-			if meta == "" {
-				meta = tr("libText.completion.unavailableMeta")
-			}
-			a.card.composer.Offer([]cards.Offer{{Display: tr("libText.completion.unavailable"), Meta: meta}}, m.req.ReplaceFrom)
+			a.card.composer.Offer(unavailableOffer(err), m.req.ReplaceFrom)
 			return nil
 		}
 		r := asRPCResult(raw)
@@ -89,18 +85,27 @@ func (a *app) askCompletion(m completionDueMsg) tea.Cmd {
 			}
 			offers = append(offers, cards.Offer{Text: stringOr(item["text"], ""), Display: stringOr(item["display"], ""), Meta: stringOr(item["meta"], "")})
 		}
-		if slash && !m.req.SkillsOnly {
-			offers = a.mergeWidgetOffers(m.value, offers)
+		if !slash || m.req.SkillsOnly {
+			a.card.composer.Offer(offers, m.req.ReplaceFrom)
+			return nil
 		}
-		replace := m.req.ReplaceFrom
-		if slash && !m.req.SkillsOnly {
-			replace = 1
-			if n, isNum := r["replace_from"].(float64); isNum {
-				replace = int(n)
+		replace := 1
+		if n, isNum := r["replace_from"].(float64); isNum {
+			replace = int(n)
+		}
+		show := func(shown []cards.Offer, at int) tea.Cmd {
+			if a.completion.asked == m.value {
+				a.card.composer.Offer(shown, at)
 			}
+			return nil
 		}
-		a.card.composer.Offer(offers, replace)
-		return nil
+		if !strings.Contains(m.value, " ") {
+			return show(a.mergeNameOffers(m.value, a.mergeWidgetOffers(m.value, offers)), replace)
+		}
+		if len(offers) > 0 {
+			return show(offers, replace)
+		}
+		return a.argOffers(m.value, show)
 	})
 }
 

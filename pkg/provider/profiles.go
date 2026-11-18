@@ -18,7 +18,7 @@ const (
 	modeCodexAppServer  APIMode = "codex_app_server"
 )
 
-// Hermes auth_type literals a profile declares
+// Auth_type literals a profile declares
 const (
 	AuthTypeAPIKey          = "api_key"
 	AuthTypeOAuthDeviceCode = "oauth_device_code"
@@ -174,7 +174,7 @@ type ModelsProbe struct {
 	ResolvedBaseURL string
 }
 
-// AuthKindOf maps a hermes auth_type literal onto the route credential style
+// Maps an auth_type literal onto the route credential style
 func AuthKindOf(authType string) AuthKind {
 	switch authType {
 	case AuthTypeOAuthDeviceCode, AuthTypeOAuthExternal, AuthTypeOAuthMiniMax, AuthTypeExternalProcess:
@@ -496,14 +496,6 @@ func DetectModeForURL(baseURL string) APIMode {
 	return ""
 }
 
-// NousMode picks the Portal wire for a model with anthropic slugs riding chat unless native is configured
-func NousMode(model, anthropicWire string) APIMode {
-	if strings.HasPrefix(strings.ToLower(strings.TrimSpace(model)), "anthropic/") && strings.ToLower(strings.TrimSpace(anthropicWire)) == "native" {
-		return ModeAnthropicMessages
-	}
-	return ModeChatCompletions
-}
-
 // ParseMode canonicalizes legacy api_mode spellings and rejects unknown ones
 func ParseMode(raw string) APIMode {
 	switch strings.ToLower(strings.TrimSpace(raw)) {
@@ -527,9 +519,6 @@ func ParseMode(raw string) APIMode {
 func UserAgent(product string) string {
 	return userAgent(product)
 }
-
-// Version is the agent version the Codex tools MCP server reports
-var Version = "dev"
 
 // Attribution headers aggregators use to credit the agent
 func attributionHeaders(product string) map[string]string {

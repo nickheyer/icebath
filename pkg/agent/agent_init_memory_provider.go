@@ -12,9 +12,9 @@ import (
 )
 
 var (
-	warnedUnavailableProviders     = map[[3]string]bool{}
-	warnedUnavailableProvidersMu   sync.Mutex
-	recoverMemoryProviderAtStartup = memory.RecoverMemoryProviderAtStartup
+	warnedUnavailableProviders   = map[[3]string]bool{}
+	warnedUnavailableProvidersMu sync.Mutex
+	reportMissingMemoryProvider  = memory.ReportMissingMemoryProvider
 )
 
 // Once key per profile home, provider and kind of trouble
@@ -38,7 +38,7 @@ func warnOnce(ctx context.Context, name, message string, say func(string), kind 
 	if seen {
 		return
 	}
-	runAgentLog().Warn(message)
+	pkgLog().Warn(message)
 	if say != nil {
 		say(message)
 	}
@@ -66,15 +66,10 @@ func resolveMemoryProvider(ctx context.Context, env *tools.Env, name string, say
 			return nil, nil
 		}
 		if memory.FindProviderDir(ctx, env, name) == "" {
-			recovered, err := recoverMemoryProviderAtStartup(ctx, name, say)
-			if err != nil {
+			if err := reportMissingMemoryProvider(ctx, name, say); err != nil {
 				return nil, err
 			}
-			if recovered {
-				p = memory.LoadMemoryProvider(ctx, env, name)
-			}
-		}
-		if p == nil && memory.FindProviderDir(ctx, env, name) != "" {
+		} else {
 			warnOnce(ctx, name, fmt.Sprintf("⚠ Memory provider '%s' is installed but failed to load, so external memory is off "+
 				"for this session (built-in memory still works). The log names the error; "+
 				"`icebath memory status` shows the plugin's state.", name), say, "load")
@@ -93,7 +88,7 @@ func resolveMemoryProvider(ctx context.Context, env *tools.Env, name string, say
 func providerUnavailableReason(ctx context.Context, p memory.Provider, name string) (reason string) {
 	defer func() {
 		if r := recover(); r != nil {
-			runAgentLog().Debug(fmt.Sprintf("unavailable_reason() failed for %s", name), "panic", r)
+			pkgLog().Debug(fmt.Sprintf("unavailable_reason() failed for %s", name), "panic", r)
 			reason = ""
 		}
 	}()

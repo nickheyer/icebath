@@ -18,7 +18,7 @@ import (
 const CodexQuotaProbeMinInterval = 300 * time.Second
 
 // SingleUseRefreshPoolProviders rotate a single use refresh token on every refresh
-var SingleUseRefreshPoolProviders = map[string]bool{"anthropic": true, "openai-codex": true, "xai-oauth": true, "nous": true}
+var SingleUseRefreshPoolProviders = map[string]bool{"anthropic": true, "openai-codex": true, "xai-oauth": true}
 
 type tokensSingletonSpec struct {
 	display, short string
@@ -33,14 +33,9 @@ var tokensSingletonProviders = map[string]tokensSingletonSpec{
 }
 
 // RefreshableOAuthProviders are the built in providers whose pooled OAuth rows the pool can refresh
-var RefreshableOAuthProviders = map[string]bool{"anthropic": true, "nous": true, "openai-codex": true, "xai-oauth": true}
+var RefreshableOAuthProviders = map[string]bool{"anthropic": true, "openai-codex": true, "xai-oauth": true}
 
 var singleUseRefreshProviders = map[string]bool{"openai-codex": true, "xai-oauth": true, "anthropic": true}
-
-// Nous runtime credential resolver the refresh path calls, swappable so tests can stand in for the Portal
-var nousRuntimeCredentialsFunc = func(env PoolEnv, forceRefresh bool, staleAccessToken string) (map[string]any, error) {
-	return resolveNousRuntimeCredentials(env, forceRefresh, staleAccessToken)
-}
 
 // Lock free window between consecutive auth store holds in a deferred refresh sweep
 const refreshSweepSpacing = 500 * time.Millisecond
@@ -48,7 +43,7 @@ const refreshSweepSpacing = 500 * time.Millisecond
 var refreshTimeoutEnvVars = map[string]string{"openai-codex": "ICEBATH_CODEX_REFRESH_TIMEOUT_SECONDS", "xai-oauth": "ICEBATH_XAI_REFRESH_TIMEOUT_SECONDS"}
 
 // Singleton seeded source whose exhausted or DEAD row a re-auth in another process may revive
-var resyncSource = map[string]string{"anthropic": "claude_code", "nous": "device_code", "openai-codex": "device_code", "xai-oauth": "device_code"}
+var resyncSource = map[string]string{"anthropic": "claude_code", "openai-codex": "device_code", "xai-oauth": "device_code"}
 
 // PoolEnv is the per home dependency set a credential pool reads and writes through
 type PoolEnv struct {
@@ -62,14 +57,12 @@ type PoolEnv struct {
 	Ctx    context.Context
 }
 
-// Logger of the pool environment bound to a reference module name
-func (env PoolEnv) logAs(module string) *slog.Logger { return env.log().With("logger", module) }
-
+// Logger of the pool environment or the process default, named after this package
 func (env PoolEnv) log() *slog.Logger {
 	if env.Log != nil {
-		return env.Log
+		return env.Log.With("logger", logName)
 	}
-	return slog.Default()
+	return pkgLog()
 }
 
 func (env PoolEnv) ctx() context.Context {
@@ -422,7 +415,7 @@ func (p *Pool) syncAnthropicEntryFromCredentialsFile(entry PooledCredential, hel
 	}
 	fileRefresh, fileAccess := anyString(creds["refreshToken"]), anyString(creds["accessToken"])
 	if (fileAccess != "" || fileRefresh != "") && ((fileAccess != "" && fileAccess != entry.AccessToken) || (fileRefresh != "" && fileRefresh != entry.RefreshToken)) {
-		p.env.logAs("agent.credential_pool").Debug(fmt.Sprintf("Pool entry %s: syncing tokens from credentials file (tokens changed)", entry.ID))
+		p.env.log().Debug(fmt.Sprintf("Pool entry %s: syncing tokens from credentials file (tokens changed)", entry.ID))
 		u := entry.Clone().ClearStatus()
 		if fileAccess != "" {
 			u.AccessToken = fileAccess
@@ -453,7 +446,7 @@ func (p *Pool) syncEntryFromPoolStore(entry PooledCredential, held bool) PooledC
 	}
 	rows, err := p.env.Store.ReadCredentialPool(p.provider)
 	if err != nil {
-		p.env.logAs("agent.credential_pool").Debug(fmt.Sprintf("Failed to sync %s OAuth entry from credential pool: %v", display, err))
+		p.env.log().Debug(fmt.Sprintf("Failed to sync %s OAuth entry from credential pool: %v", display, err))
 		return entry
 	}
 	var persisted map[string]any
@@ -473,7 +466,7 @@ func (p *Pool) syncEntryFromPoolStore(entry PooledCredential, held bool) PooledC
 		return entry
 	}
 	if stored.AccessToken != entry.AccessToken || stored.RefreshToken != entry.RefreshToken {
-		p.env.logAs("agent.credential_pool").Debug(fmt.Sprintf("Pool entry %s: adopting %s OAuth tokens rotated by another pool instance", entry.ID, display))
+		p.env.log().Debug(fmt.Sprintf("Pool entry %s: adopting %s OAuth tokens rotated by another pool instance", entry.ID, display))
 		p.replaceEntry(stored, true)
 		stored.scope = p.env.Scope
 		return stored
@@ -493,7 +486,7 @@ func (p *Pool) syncEntryFromAuthStore(entry PooledCredential, held bool) PooledC
 	}
 	state, err := p.lockedProviderState(p.provider)
 	if err != nil {
-		p.env.logAs("agent.credential_pool").Debug(fmt.Sprintf("Failed to sync %s entry from auth.json: %v", spec.display, err))
+		p.env.log().Debug(fmt.Sprintf("Failed to sync %s entry from auth.json: %v", spec.display, err))
 		return entry
 	}
 	tokens, ok := state["tokens"].(map[string]any)
@@ -506,17 +499,17 @@ func (p *Pool) syncEntryFromAuthStore(entry PooledCredential, held bool) PooledC
 	storeAccess, storeRefresh := anyString(tokens["access_token"]), anyString(tokens["refresh_token"])
 	shouldAdopt := storeAccess != "" && (storeAccess != entry.AccessToken || (storeRefresh != "" && storeRefresh != entry.RefreshToken))
 	if !shouldAdopt && isCodex && storeRefresh != "" && storeRefresh != entry.RefreshToken && storeAccess == "" {
-		p.env.logAs("agent.credential_pool").Info(fmt.Sprintf("Pool entry %s: auth.json has newer refresh_token but no access_token; adopting refresh_token to avoid replaying consumed token", entry.ID))
+		p.env.log().Info(fmt.Sprintf("Pool entry %s: auth.json has newer refresh_token but no access_token; adopting refresh_token to avoid replaying consumed token", entry.ID))
 		shouldAdopt = true
 	}
 	if shouldAdopt && singletonPredatesEntry(state, entry) {
-		p.env.logAs("agent.credential_pool").Info(fmt.Sprintf("Pool entry %s: auth.json singleton predates this entry's rotation (last_refresh %v < %s); keeping pool chain to avoid replaying the consumed refresh token", entry.ID, state["last_refresh"], entry.LastRefresh))
+		p.env.log().Info(fmt.Sprintf("Pool entry %s: auth.json singleton predates this entry's rotation (last_refresh %v < %s); keeping pool chain to avoid replaying the consumed refresh token", entry.ID, state["last_refresh"], entry.LastRefresh))
 		shouldAdopt = false
 	}
 	if !shouldAdopt {
 		return entry
 	}
-	p.env.logAs("agent.credential_pool").Debug(fmt.Sprintf("Pool entry %s: syncing %s tokens from auth.json (refreshed by another process)", entry.ID, spec.display))
+	p.env.log().Debug(fmt.Sprintf("Pool entry %s: syncing %s tokens from auth.json (refreshed by another process)", entry.ID, spec.display))
 	u := entry.Clone().ClearStatus()
 	if storeAccess != "" {
 		u.AccessToken = storeAccess
@@ -544,85 +537,10 @@ func (p *Pool) lockedProviderState(provider string) (map[string]any, error) {
 	return p.env.Store.ProviderState(data, provider), nil
 }
 
-var nousComparableKeys = []string{"access_token", "refresh_token", "expires_at", "agent_key", "agent_key_expires_at", "inference_base_url"}
-
-func nousEntryField(e PooledCredential, key string) string {
-	switch key {
-	case "access_token":
-		return e.AccessToken
-	case "refresh_token":
-		return e.RefreshToken
-	case "expires_at":
-		return e.ExpiresAt
-	case "agent_key":
-		return e.AgentKey
-	case "agent_key_expires_at":
-		return e.AgentKeyExpiresAt
-	case "inference_base_url":
-		return e.InferenceBaseURL
-	}
-	return ""
-}
-
-func setNousEntryField(e *PooledCredential, key, value string) {
-	switch key {
-	case "access_token":
-		e.AccessToken = value
-	case "refresh_token":
-		e.RefreshToken = value
-	case "expires_at":
-		e.ExpiresAt = value
-	case "agent_key":
-		e.AgentKey = value
-	case "agent_key_expires_at":
-		e.AgentKeyExpiresAt = value
-	case "inference_base_url":
-		e.InferenceBaseURL = value
-	}
-}
-
-// Syncs a Nous device_code entry from auth.json providers.nous when the state differs
-func (p *Pool) syncNousEntryFromAuthStore(entry PooledCredential, held bool) PooledCredential {
-	if p.provider != "nous" || entry.Source != "device_code" {
-		return entry
-	}
-	state, err := p.lockedProviderState("nous")
-	if err != nil {
-		p.env.logAs("agent.credential_pool").Debug(fmt.Sprintf("Failed to sync Nous entry from auth.json: %v", err))
-		return entry
-	}
-	if len(state) == 0 {
-		return entry
-	}
-	differs := false
-	for _, key := range nousComparableKeys {
-		if v := anyString(state[key]); v != "" && nousEntryField(entry, key) != v {
-			differs = true
-			break
-		}
-	}
-	if !differs {
-		return entry
-	}
-	p.env.logAs("agent.credential_pool").Debug(fmt.Sprintf("Pool entry %s: syncing Nous state from auth.json", entry.ID))
-	u := entry.Clone().ClearStatus()
-	for _, key := range nousComparableKeys {
-		if v := anyString(state[key]); v != "" {
-			setNousEntryField(&u, key, v)
-		}
-	}
-	for _, key := range nousExtraStateKeys {
-		if v, ok := state[key]; ok && v != nil {
-			u.Extra[key] = v
-		}
-	}
-	return p.adopt(u, held, true)
-}
-
 // Writes refreshed device_code tokens back to the provider's auth.json state, root only when the grant came from root
 func (p *Pool) syncDeviceCodeEntryToAuthStore(entry PooledCredential) {
 	_, tokensProvider := tokensSingletonProviders[p.provider]
-	if entry.Source != "device_code" || (p.provider != "nous" && !tokensProvider) {
+	if entry.Source != "device_code" || !tokensProvider {
 		return
 	}
 	err := func() error {
@@ -654,29 +572,12 @@ func (p *Pool) syncDeviceCodeEntryToAuthStore(entry PooledCredential) {
 		return p.env.Store.Save(data)
 	}()
 	if err != nil {
-		p.env.logAs("agent.credential_pool").Debug(fmt.Sprintf("Failed to sync %s pool entry back to auth store: %v", p.provider, err))
+		p.env.log().Debug(fmt.Sprintf("Failed to sync %s pool entry back to auth store: %v", p.provider, err))
 	}
 }
 
 // Copies the entry tokens into the provider's auth.json state in place
 func (p *Pool) applyEntryToSingletonState(entry PooledCredential, state map[string]any) bool {
-	if p.provider == "nous" {
-		state["access_token"] = entry.AccessToken
-		for _, key := range []string{"refresh_token", "expires_at", "agent_key", "agent_key_expires_at"} {
-			if v := nousEntryField(entry, key); v != "" {
-				state[key] = v
-			}
-		}
-		for _, key := range nousExtraStateKeys {
-			if v, ok := entry.Extra[key]; ok && v != nil {
-				state[key] = v
-			}
-		}
-		if entry.InferenceBaseURL != "" {
-			state["inference_base_url"] = entry.InferenceBaseURL
-		}
-		return true
-	}
 	tokens, ok := state["tokens"].(map[string]any)
 	if !ok {
 		return false
@@ -713,7 +614,7 @@ func (p *Pool) refreshEntry(entry PooledCredential, force bool, failedKey string
 	}
 	unlock, err := p.env.Store.Lock(p.singleUseRefreshLockTimeout())
 	if err != nil {
-		p.env.logAs("agent.credential_pool").Debug(fmt.Sprintf("Credential refresh failed for %s/%s: %v", p.provider, entry.ID, err))
+		p.env.log().Debug(fmt.Sprintf("Credential refresh failed for %s/%s: %v", p.provider, entry.ID, err))
 		return p.recoverFailedRefresh(entry, err, held)
 	}
 	defer unlock()
@@ -728,7 +629,7 @@ func (p *Pool) refreshEntry(entry PooledCredential, force bool, failedKey string
 	if p.provider == "anthropic" && synced.Source == "claude_code" {
 		unlockFile, err := p.env.Store.fileLock(ClaudeCodeCredentialsPath(), p.singleUseRefreshLockTimeout())
 		if err != nil {
-			p.env.logAs("agent.credential_pool").Debug(fmt.Sprintf("Credential refresh failed for %s/%s: %v", p.provider, entry.ID, err))
+			p.env.log().Debug(fmt.Sprintf("Credential refresh failed for %s/%s: %v", p.provider, entry.ID, err))
 			return p.recoverFailedRefresh(synced, err, held)
 		}
 		defer unlockFile()
@@ -750,7 +651,7 @@ func sameTokens(a, b PooledCredential) bool {
 
 // Quarantines an entry whose rotated pair never reached its store
 func (p *Pool) failClosedUnpersistedRotation(entry PooledCredential, cause error, store string, held bool) {
-	p.env.logAs("agent.credential_pool").Error(fmt.Sprintf("Anthropic %s refresh rotated the single-use token but could not commit it to %s (%v) — failing closed and quarantining the credential; re-authenticate to recover", entry.Source, store, cause))
+	p.env.log().Error(fmt.Sprintf("Anthropic %s refresh rotated the single-use token but could not commit it to %s (%v) — failing closed and quarantining the credential; re-authenticate to recover", entry.Source, store, cause))
 	MarkRotationConsumedUncommitted(SpentRotationSourcePath(p.env, entry.Source), entry.AccessToken, entry.RefreshToken)
 	p.markExhausted(entry, 0, map[string]any{"reason": CredentialPersistFailedReason,
 		"message": fmt.Sprintf("rotated credential was not durably written to %s: %v", store, cause)}, true, "", held)
@@ -784,7 +685,7 @@ func (p *Pool) commitAnthropicRotation(entry PooledCredential, refreshed map[str
 	switch entry.Source {
 	case "claude_code":
 		store = "~/.claude/.credentials.json"
-	case "hermes_pkce":
+	case IcebathPKCESource:
 		store = "~/.icebath/.anthropic_oauth.json"
 	default:
 		return nil
@@ -795,7 +696,7 @@ func (p *Pool) commitAnthropicRotation(entry PooledCredential, refreshed map[str
 	if entry.Source == "claude_code" {
 		err = WriteClaudeCodeCredentials(p.env, access, refresh, int64(ms), nil, entry.RefreshToken)
 	} else {
-		err = WriteHermesOAuthCredentials(p.env, access, refresh, int64(ms), singletonTargetForEntry(p, entry))
+		err = WriteIcebathOAuthCredentials(p.env, access, refresh, int64(ms), singletonTargetForEntry(p, entry))
 	}
 	if err != nil {
 		p.failClosedUnpersistedRotation(entry, err, store, held)
@@ -804,12 +705,12 @@ func (p *Pool) commitAnthropicRotation(entry PooledCredential, refreshed map[str
 	return nil
 }
 
-// Root .anthropic_oauth.json when the entry is a borrowed hermes_pkce row, else empty
+// Root .anthropic_oauth.json when the entry is a borrowed row, else empty
 func singletonTargetForEntry(p *Pool, entry PooledCredential) string {
-	if entry.Source != "hermes_pkce" || !p.borrowedRootIDs[entry.ID] {
+	if entry.Source != IcebathPKCESource || !p.borrowedRootIDs[entry.ID] {
 		return ""
 	}
-	return RootHermesOAuthFile(p.env)
+	return RootIcebathOAuthFile(p.env)
 }
 
 // POSTs the Anthropic refresh, commits to the singleton and returns the rotated unpersisted entry
@@ -823,7 +724,7 @@ func (p *Pool) refreshAnthropic(entry PooledCredential, held bool) (PooledCreden
 		p.failClosedUnpersistedRotation(entry, errors.New("credential pair was rotated by another process but the rotation never committed (spent-rotation sidecar verdict)"), store, held)
 		return PooledCredential{}, refreshDone{}
 	}
-	refreshed, err := RefreshAnthropicOAuthPure(p.env, entry.RefreshToken, strings.HasSuffix(entry.Source, "hermes_pkce"))
+	refreshed, err := RefreshAnthropicOAuthPure(p.env, entry.RefreshToken, strings.HasSuffix(entry.Source, IcebathPKCESource))
 	if err != nil {
 		return PooledCredential{}, err
 	}
@@ -870,29 +771,6 @@ func (p *Pool) refreshEntryImpl(entry PooledCredential, force bool, failedKey st
 		if err == nil {
 			updated = ApplyPluginRefreshResult(entry, rotated)
 		}
-	case p.provider == "nous":
-		staleKey := failedKey
-		if staleKey == "" {
-			staleKey = entry.RuntimeAPIKey()
-		}
-		if staleKey == "" {
-			staleKey = entry.AgentKey
-		}
-		if staleKey == "" {
-			staleKey = entry.AccessToken
-		}
-		synced := p.syncNousEntryFromAuthStore(entry, held)
-		if !sameNousState(synced, entry) {
-			entry = synced
-			if force && entry.RuntimeAPIKey() != "" && entry.RuntimeAPIKey() != staleKey {
-				p.env.logAs("agent.credential_pool").Debug(fmt.Sprintf("Nous entry %s: adopting peer-rotated token, skipping refresh", entry.ID))
-				return entry, true
-			}
-		}
-		_, err = nousRuntimeCredentialsFunc(p.env, force, staleKey)
-		if err == nil {
-			updated = p.syncNousEntryFromAuthStore(entry, held)
-		}
 	default:
 		return entry, true
 	}
@@ -901,7 +779,7 @@ func (p *Pool) refreshEntryImpl(entry PooledCredential, force bool, failedKey st
 		if errors.As(err, &done) {
 			return done.result, done.ok
 		}
-		p.env.logAs("agent.credential_pool").Debug(fmt.Sprintf("Credential refresh failed for %s/%s: %v", p.provider, entry.ID, err))
+		p.env.log().Debug(fmt.Sprintf("Credential refresh failed for %s/%s: %v", p.provider, entry.ID, err))
 		return p.recoverFailedRefresh(entry, err, held)
 	}
 	updated = updated.MarkOK()
@@ -909,15 +787,6 @@ func (p *Pool) refreshEntryImpl(entry PooledCredential, force bool, failedKey st
 	p.persist(held, nil, []string{updated.ID})
 	p.syncDeviceCodeEntryToAuthStore(updated)
 	return updated, true
-}
-
-func sameNousState(a, b PooledCredential) bool {
-	for _, key := range nousComparableKeys {
-		if nousEntryField(a, key) != nousEntryField(b, key) {
-			return false
-		}
-	}
-	return a.LastStatus == b.LastStatus
 }
 
 // After a failed refresh POST adopt a peer rotation, quarantine a dead grant, or bench the row
@@ -929,7 +798,7 @@ func (p *Pool) recoverFailedRefresh(entry PooledCredential, cause error, held bo
 			synced := p.syncAnthropicEntryFromCredentialsFile(entry, held)
 			if synced.RefreshToken != entry.RefreshToken {
 				log.Debug("Retrying refresh with synced token from credentials file")
-				refreshed, retryErr := RefreshAnthropicOAuthPure(p.env, synced.RefreshToken, strings.HasSuffix(synced.Source, "hermes_pkce"))
+				refreshed, retryErr := RefreshAnthropicOAuthPure(p.env, synced.RefreshToken, strings.HasSuffix(synced.Source, IcebathPKCESource))
 				if retryErr == nil {
 					if commitErr := p.commitAnthropicRotation(synced, refreshed, held); commitErr != nil {
 						var done refreshDone
@@ -975,26 +844,6 @@ func (p *Pool) recoverFailedRefresh(entry PooledCredential, cause error, held bo
 			log.Warn(fmt.Sprintf("%s OAuth refresh token is terminally invalid (%v); clearing local token state. Re-run 'icebath auth add %s' to sign in again.", spec.short, cause, p.provider))
 			p.clearTerminalTokensState(entry, cause)
 			p.quarantineSources(entry, map[string]bool{"device_code": true}, held)
-			p.markDeadRefreshGrant(entry, cause, held)
-			return PooledCredential{}, false
-		}
-	case p.provider == "nous":
-		synced := p.syncNousEntryFromAuthStore(entry, held)
-		if synced.RefreshToken != entry.RefreshToken {
-			log.Debug("Nous refresh failed but auth.json has newer tokens — adopting")
-			updated := p.adopt(synced.MarkOK(), held, true)
-			p.syncDeviceCodeEntryToAuthStore(updated)
-			return updated, true
-		}
-		var lockErr *LockTimeoutError
-		if errors.As(cause, &lockErr) {
-			log.Debug("Nous refresh skipped: auth store lock busy; not benching entry")
-			return entry, true
-		}
-		if isTerminalNousRefreshError(cause) {
-			log.Warn(fmt.Sprintf("Nous refresh token is terminally invalid (%v); clearing local token state. Re-run 'icebath auth add nous' to sign in again.", cause))
-			p.clearTerminalNousState(entry, cause)
-			p.quarantineSources(entry, map[string]bool{NousDeviceCodeSource: true, "manual:" + NousDeviceCodeSource: true}, held)
 			p.markDeadRefreshGrant(entry, cause, held)
 			return PooledCredential{}, false
 		}
@@ -1082,40 +931,7 @@ func (p *Pool) clearTerminalTokensState(entry PooledCredential, cause error) {
 		return p.env.Store.Save(data)
 	}()
 	if err != nil {
-		p.env.logAs("agent.credential_pool").Debug(fmt.Sprintf("Failed to clear terminal %s OAuth state: %v", spec.short, err))
-	}
-}
-
-func (p *Pool) clearTerminalNousState(entry PooledCredential, cause error) {
-	err := func() error {
-		unlock, err := p.env.Store.Lock(AuthLockTimeout)
-		if err != nil {
-			return err
-		}
-		defer unlock()
-		data, err := p.env.Store.Load()
-		if err != nil {
-			return err
-		}
-		state := p.env.Store.ProviderState(data, "nous")
-		if state == nil {
-			state = map[string]any{"client_id": entry.Extra["client_id"], "portal_base_url": entry.Extra["portal_base_url"],
-				"inference_base_url": nilIfEmpty(entry.InferenceBaseURL), "token_type": entry.Extra["token_type"],
-				"scope": entry.Extra["scope"], "tls": entry.Extra["tls"]}
-		}
-		storeRefresh := strings.TrimSpace(anyString(state["refresh_token"]))
-		if storeRefresh != "" && storeRefresh != strings.TrimSpace(entry.RefreshToken) {
-			return nil
-		}
-		quarantineNousOAuthState(state, cause, "credential_pool_refresh_failure")
-		quarantineNousPoolEntries(data, cause, "credential_pool_refresh_failure")
-		if err := p.env.Store.StoreProviderState(data, "nous", state, true); err != nil {
-			return err
-		}
-		return p.env.Store.Save(data)
-	}()
-	if err != nil {
-		p.env.logAs("agent.credential_pool").Debug(fmt.Sprintf("Failed to clear terminal Nous OAuth state: %v", err))
+		p.env.log().Debug(fmt.Sprintf("Failed to clear terminal %s OAuth state: %v", spec.short, err))
 	}
 }
 

@@ -80,7 +80,7 @@ func captureHook(t *testing.T, name string, fn plugins.HookFunc) {
 }
 
 func TestSlugValidationAcceptsValidAndEmptyReturnsNone(t *testing.T) {
-	for _, good := range []string{"default", "atm10-server", "hermes-agent", "proj_1", "a", "very-long-but-still-ok-slug-with-hyphens-and-numbers-1234"} {
+	for _, good := range []string{"default", "atm10-server", "icebath-agent", "proj_1", "a", "very-long-but-still-ok-slug-with-hyphens-and-numbers-1234"} {
 		if got, err := normalizeBoardSlug(&good); err != nil || got != good {
 			t.Fatal(good, got, err)
 		}

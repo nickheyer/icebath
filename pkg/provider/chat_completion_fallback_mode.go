@@ -47,10 +47,6 @@ func FallbackAPIModeResolved(ctx context.Context, agent FallbackAPIModeAgent, fb
 	if family := opencodeFamilyForCustom(fbProvider, fbBaseURL); family != "" {
 		return string(OpenCodeModelMode(family, fbModel)), nil
 	}
-	switch fbProvider {
-	case "nous", "nous-portal", "nousresearch":
-		return string(NousMode(fbModel, modelsResolver(ctx).nousAnthropicWire())), nil
-	}
 	if fbBaseURL != "" {
 		if _, err := pyurl.BaseURLHostname(fbBaseURL); err != nil {
 			return "", err

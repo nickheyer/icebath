@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"log/slog"
 	"net"
 	"net/http"
 	"net/url"
@@ -105,7 +104,7 @@ func ResolveSourceTarget(ctx context.Context, channel string, gitCmd []string, c
 func sourceProbe(ctx context.Context, gitCmd []string, cwd string, args ...string) *sourceGitResult {
 	result, err := runSourceGit(ctx, gitArgs(gitCmd, args...), cwd, 10*time.Second)
 	if err != nil {
-		slog.Debug(fmt.Sprintf("git %s did not answer: %v", strings.Join(args, " "), err))
+		pkgLog().Debug(fmt.Sprintf("git %s did not answer: %v", strings.Join(args, " "), err))
 		return nil
 	}
 	return result
@@ -389,7 +388,7 @@ func describeReleaseFailure(failure error) string {
 func resolveStable(ctx context.Context, repository string, gitCmd []string, cwd string) (SourceTarget, error) {
 	tag, commit, err := resolveRelease(ctx, ChannelStable, gitCmd, cwd, repository, false)
 	if err != nil {
-		slog.Warn(fmt.Sprintf("Could not resolve the stable source release: %v", err))
+		pkgLog().Warn(fmt.Sprintf("Could not resolve the stable source release: %v", err))
 		return SourceTarget{}, &ValueError{Msg: describeReleaseFailure(err)}
 	}
 	return SourceTarget{RequestedChannel: ChannelStable, Channel: ChannelStable, Repository: repository,
@@ -533,7 +532,7 @@ func resolveRelease(ctx context.Context, channel string, gitCmd []string, cwd, r
 func ResolveSourceRelease(ctx context.Context, channel string, gitCmd []string, cwd, repository string, pointer bool) (string, string) {
 	tag, sha, err := resolveRelease(ctx, channel, gitCmd, cwd, repository, pointer)
 	if err != nil {
-		slog.Warn(fmt.Sprintf("Could not resolve the %s source release: %v", channel, err))
+		pkgLog().Warn(fmt.Sprintf("Could not resolve the %s source release: %v", channel, err))
 		return "", ""
 	}
 	return tag, sha

@@ -120,7 +120,7 @@ func NewDaytonaEnvironment(ctx context.Context, env *Env, o DaytonaOptions) (*da
 	if d.sandbox == nil {
 		zero := 0
 		sb, err := client.Create(ctx, types.ImageParams{SandboxBaseParams: types.SandboxBaseParams{Name: name, Labels: labels, AutoStopInterval: &zero},
-			Image: o.Image, Resources: &types.Resources{CPU: o.CPU, Memory: memoryGiB, Disk: diskGiB}})
+			Image: daytonaSandboxImage(o.Image), Resources: &types.Resources{CPU: o.CPU, Memory: memoryGiB, Disk: diskGiB}})
 		if err != nil {
 			return nil, err
 		}
@@ -148,7 +148,7 @@ func NewDaytonaEnvironment(ctx context.Context, env *Env, o DaytonaOptions) (*da
 
 func (d *daytonaEnv) EnvType() string { return "daytona" }
 
-// Python class name of the environment as hermes logs and records it
+// Python class name of the environment as logs and records name it
 func (d *daytonaEnv) ClassName() string { return "DaytonaEnvironment" }
 
 var _ interface{ ClassName() string } = (*daytonaEnv)(nil)

@@ -23,7 +23,7 @@ func (a *nativeStreamFake) SendStreamFrame(ctx context.Context, text string, fin
 
 var _ NativeStreamAdapter = (*nativeStreamFake)(nil)
 
-// Adapter of the hermes helper, the class flag set unless bare
+// Adapter of the helper, the class flag set unless bare
 func newNativeStreamFake(classFlag, supports bool) *nativeStreamFake {
 	a := &nativeStreamFake{baseFakeAdapter: newBaseFake(Platform("wecom")), supports: supports}
 	a.Traits.MaxMessageLength = 4096

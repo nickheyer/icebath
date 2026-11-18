@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"log/slog"
 	"path/filepath"
 	"regexp"
 	"strings"
@@ -14,7 +13,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/profiles"
 	"github.com/nickheyer/icebath/pkg/state"
-	"github.com/nickheyer/icebath/pkg/tuigateway"
+	"github.com/nickheyer/icebath/pkg/tuihost"
 )
 
 // Refusal carrying the revision and execution generation a mutation conflict reports
@@ -95,11 +94,11 @@ func logRefusal(profile, method string, err error) {
 	}
 	switch {
 	case refusal.Reason == "session_busy" || (field == "" && detail == ""):
-		slog.Debug(line)
+		pkgLog().Debug(line)
 	case field == "request_id" && refusal.Reason == "admission_conflict":
-		slog.Info(line)
+		pkgLog().Info(line)
 	default:
-		slog.Warn(line)
+		pkgLog().Warn(line)
 	}
 }
 
@@ -122,10 +121,10 @@ func logStorageFailure(profile, method string, sessionID any, err error, class s
 	}
 	line := fmt.Sprintf("%s storage failure for profile=%s session_id=%s: %s", method, profileLabel(profile), shown, err)
 	if first {
-		slog.Warn(line, "exc_info", fmt.Sprintf("%s: %+v", class, err))
+		pkgLog().Warn(line, "exc_info", fmt.Sprintf("%s: %+v", class, err))
 		return
 	}
-	slog.Warn(line)
+	pkgLog().Warn(line)
 }
 
 // Short snake case label a detach may store as the session's end reason
@@ -134,13 +133,13 @@ var endReasonPattern = regexp.MustCompile(`^[a-z][a-z_]{0,31}$`)
 // Verbs whose closed param sets never carried a profile key
 var profileImplicitMethods = map[string]bool{"session.create": true, "session.list": true, "session.info": true,
 	"session.resume": true, "session.detach": true, "prompt.submit": true, "prompt.receipt": true, "prompt.cancel": true,
-	"prompt.resolve_unknown": true, "prompt.steer_queued": true, "prompt.replace_queued": true, "session.interrupt": true,
-	"session.events.since": true, "session.mutate": true, "session.stats": true, "approval.respond": true, "clarify.respond": true}
+	"prompt.resolve_unknown": true, "prompt.replace_queued": true, "session.interrupt": true,
+	"session.mutate": true, "session.stats": true, "approval.respond": true, "clarify.respond": true}
 
 // Authenticated projection of one client socket onto the authority, its principal, subscriptions and sibling routes
 type AuthorityConnection struct {
 	authority     *SessionAuthority
-	transport     tuigateway.Transport
+	transport     tuihost.Transport
 	actor         Principal
 	nativeOwner   bool
 	mu            sync.Mutex
@@ -153,7 +152,7 @@ type AuthorityConnection struct {
 }
 
 // Connection of a verified identity, its capabilities emptied for a missing user or a foreign instance
-func NewAuthorityConnection(a *SessionAuthority, transport tuigateway.Transport, identity map[string]any, operator bool) (*AuthorityConnection, error) {
+func NewAuthorityConnection(a *SessionAuthority, transport tuihost.Transport, identity map[string]any, operator bool) (*AuthorityConnection, error) {
 	capabilities := map[string]bool{"session:read": true, "session:submit": true, "session:control": true,
 		"session:approve": true, "session:respond": true}
 	if len(identity) > 0 {
@@ -268,7 +267,7 @@ func registryStarting(ctx context.Context, registry *SessionAuthorities, profile
 	return key, started, found, nil
 }
 
-// Sibling lookup of every profile routed dispatch, replaced by a case as the hermes cases patch _sibling_for
+// Sibling lookup of every profile routed dispatch, replaced by a case as the tests patch sibling for
 var connectionSiblingFor = (*AuthorityConnection).siblingFor
 
 // Connection bound to the sibling authority a profile param names, nil for this connection's own home

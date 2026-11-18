@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"log/slog"
 	"reflect"
 	"strings"
 	"sync"
@@ -81,7 +80,7 @@ func (e *SlackAPIError) Error() string { return e.Message }
 // Logs a Slack listing failure, missing_scope at debug and others as a warning once per hour per detail
 func reportSlackFailure(teamID string, errorCode any, detail string) {
 	if errorCode == any("missing_scope") {
-		slog.Debug(fmt.Sprintf("Channel directory: Slack team %s lacks channels:read; using session history only", teamID))
+		pkgLog().Debug(fmt.Sprintf("Channel directory: Slack team %s lacks channels:read; using session history only", teamID))
 		return
 	}
 	key := [2]string{teamID, detail}
@@ -94,10 +93,10 @@ func reportSlackFailure(teamID string, errorCode any, detail string) {
 	}
 	slackDirectoryWarningMu.Unlock()
 	if due {
-		slog.Warn(fmt.Sprintf("Channel directory: failed to list Slack channels for team %s: %s", teamID, detail))
+		pkgLog().Warn(fmt.Sprintf("Channel directory: failed to list Slack channels for team %s: %s", teamID, detail))
 		return
 	}
-	slog.Debug(fmt.Sprintf("Channel directory: suppressed repeated Slack channel list failure for team %s: %s", teamID, detail))
+	pkgLog().Debug(fmt.Sprintf("Channel directory: suppressed repeated Slack channel list failure for team %s: %s", teamID, detail))
 }
 
 // Builds the directory from connected adapters and session history, persists it and returns it
@@ -110,7 +109,7 @@ func BuildChannelDirectory(ctx context.Context, adapters *pydict.Dict[Platform, 
 			if ctx.Err() != nil {
 				return nil, ctx.Err()
 			}
-			slog.Warn(fmt.Sprintf("Channel directory: failed to build %s: %s", platform, err))
+			pkgLog().Warn(fmt.Sprintf("Channel directory: failed to build %s: %s", platform, err))
 		}
 	}
 	discover := func(name string) error {
@@ -141,7 +140,7 @@ func BuildChannelDirectory(ctx context.Context, adapters *pydict.Dict[Platform, 
 		if ctx.Err() != nil {
 			return nil, ctx.Err()
 		}
-		slog.Warn(fmt.Sprintf("Channel directory: failed to write: %s", err))
+		pkgLog().Warn(fmt.Sprintf("Channel directory: failed to write: %s", err))
 	}
 	return directory, nil
 }
@@ -206,7 +205,7 @@ func buildDiscord(ctx context.Context, adapter any) ([]any, error) {
 				}
 				name, has := ch.DiscordChannelName()
 				if !has {
-					return nil, fmt.Errorf("AttributeError: channel object has no attribute 'name'")
+					return nil, fmt.Errorf("a Discord channel in %v has no name", guild.GuildName())
 				}
 				channels = append(channels, pyjson.ObjectOf("id", fmt.Sprint(ch.DiscordChannelID()), "name", name, "guild", guild.GuildName(), "type", group.kind))
 			}
@@ -425,7 +424,7 @@ func slackResolveRawNames(ctx context.Context, client SlackDirectoryClient, chan
 	for _, base := range order {
 		wg.Go(func() {
 			if err := slackResolveBase(ctx, client, base, unresolved[base]); err != nil {
-				slog.Debug(fmt.Sprintf("Channel directory: failed to resolve %s: %s", base, err))
+				pkgLog().Debug(fmt.Sprintf("Channel directory: failed to resolve %s: %s", base, err))
 			}
 		})
 	}
@@ -460,7 +459,7 @@ func slackResolveBase(ctx context.Context, client SlackDirectoryClient, baseID s
 		if ok, _ := slackGetOr(userResp, "ok", nil); pyrepr.Truthy(ok) {
 			u, has := userResp["user"]
 			if !has {
-				return fmt.Errorf("KeyError: 'user'")
+				return fmt.Errorf("Slack users.info for %s returned no user", pyrepr.Str(user))
 			}
 			profile, err := slackGetOr(u, "profile", map[string]any{})
 			if err != nil {

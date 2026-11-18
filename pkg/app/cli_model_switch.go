@@ -14,7 +14,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyrich"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/internal/pyurl"
-	"github.com/nickheyer/icebath/pkg/observability"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/state"
 )
@@ -23,7 +22,7 @@ import (
 var modelRuntimeFields = []string{"model", "provider", "requested_provider", "_explicit_api_key", "_explicit_base_url",
 	"api_key", "base_url", "api_mode", "reasoning_config"}
 
-// Current runtime route fields of the CLI keyed by their hermes attribute names
+// Current runtime route fields of the CLI keyed by their attribute names
 func (c *CLI) runtimeFields() map[string]any {
 	var reasoning any
 	if c.reasoningConfig != nil {
@@ -34,7 +33,7 @@ func (c *CLI) runtimeFields() map[string]any {
 		"base_url": c.baseURL, "api_mode": c.apiMode, "reasoning_config": reasoning}
 }
 
-// Puts one runtime field back by its hermes attribute name
+// Puts one runtime field back by its attribute name
 func (c *CLI) setRuntimeField(key string, value any) {
 	text, _ := value.(string)
 	switch key {
@@ -139,7 +138,7 @@ func (c *CLI) restoreSessionModel(sessionMeta map[string]any, quiet bool) {
 			if storedBaseURL != "" {
 				c.baseURL = storedBaseURL
 			}
-			cliLogger.Debug(fmt.Sprintf("Credential re-resolution for resumed session provider %s failed; keeping ambient credentials", storedProvider))
+			pkgLog().Debug(fmt.Sprintf("Credential re-resolution for resumed session provider %s failed; keeping ambient credentials", storedProvider))
 			break
 		}
 		if rt.APIKey != "" {
@@ -155,7 +154,7 @@ func (c *CLI) restoreSessionModel(sessionMeta map[string]any, quiet bool) {
 		c.explicitAPIKey, c.explicitBaseURL = "", storedBaseURL
 		rt, err := provider.ResolveRuntimeProvider(c.ctx, home.Dir(c.ctx), storedProvider, c.model, "", "")
 		if err != nil {
-			cliLogger.Debug(fmt.Sprintf("Credential re-resolution for resumed session provider %s failed; keeping ambient credentials", storedProvider))
+			pkgLog().Debug(fmt.Sprintf("Credential re-resolution for resumed session provider %s failed; keeping ambient credentials", storedProvider))
 			break
 		}
 		if rt.APIKey != "" {
@@ -171,7 +170,7 @@ func (c *CLI) restoreSessionModel(sessionMeta map[string]any, quiet bool) {
 	c.resolveCLIReasoning()
 	if c.agentRef() != nil {
 		if _, err := c.agentRef().SwitchModel(c.model, c.provider, false, false, ""); err != nil {
-			cliLogger.Debug("In-place agent model swap on resume failed")
+			pkgLog().Debug("In-place agent model swap on resume failed")
 		}
 	}
 	msg := c.t("cli.model.restored_from_session", map[string]any{"model": storedModel})
@@ -220,7 +219,7 @@ func (c *CLI) restoreModelRuntimeSnapshot(snapshot map[string]any) {
 	}
 	restored, err := a.SwitchModel(snapshotText(snapshot, "model"), snapshotText(snapshot, "provider"), true, true, "")
 	if err != nil {
-		cliLogger.Warn(fmt.Sprintf("CLI one-turn model restore failed: %v", err))
+		pkgLog().Warn(fmt.Sprintf("CLI one-turn model restore failed: %v", err))
 	}
 	if err != nil || !restored {
 		for key, value := range oneTurn {
@@ -265,7 +264,7 @@ func (c *CLI) switchModelFrom(rawInput string, isGlobal bool, explicitProvider s
 	return &result, nil
 }
 
-// Switch resolver of the model switch paths, replaced by tests the way the hermes cases patch them
+// Switch resolver of the model switch paths, replaced by tests
 var switchModelResolve = provider.SwitchModel
 
 // Asks whether to switch anyway past a model guard, true only on an explicit yes
@@ -323,7 +322,7 @@ func (c *CLI) mergePreflightWarning(result *provider.ModelSwitchResult, customPr
 	}
 	defer func() {
 		if r := recover(); r != nil {
-			cliLogger.Debug(fmt.Sprintf("preflight-compression switch warning failed: %v", r))
+			pkgLog().Debug(fmt.Sprintf("preflight-compression switch warning failed: %v", r))
 		}
 	}()
 	var providers []map[string]any
@@ -443,9 +442,6 @@ func (c *CLI) printSwitchSummary(result *provider.ModelSwitchResult, oldModel st
 	if result.WarningMessage != "" {
 		cprint("    ⚠ " + result.WarningMessage)
 	}
-	if result.UsageNotice != "" {
-		cprint("    ⚠ " + result.UsageNotice)
-	}
 	return nil
 }
 
@@ -529,7 +525,7 @@ func persistModelSwitch(c *CLI, db modelSwitchWriter, result *provider.ModelSwit
 		return db.PatchSessionModelConfig(c.ctx, c.sessionID, patch)
 	}()
 	if err != nil {
-		cliLogger.Debug("Failed to persist model switch to session DB", "error", err)
+		pkgLog().Debug("Failed to persist model switch to session DB", "error", err)
 	}
 }
 
@@ -554,7 +550,7 @@ func noneIfEmpty(s string) any {
 
 // Stages and swaps a switch, prints its summary and persists it to the session row or config
 func (c *CLI) commitModelSwitch(result *provider.ModelSwitchResult, persistGlobal, oneTurn, picker bool, reasoningEffort string) error {
-	oldModel, oldProvider := c.model, c.provider
+	oldModel := c.model
 	var snapshot map[string]any
 	if oneTurn {
 		source := c.pendingOneTurnModelRestore
@@ -573,15 +569,6 @@ func (c *CLI) commitModelSwitch(result *provider.ModelSwitchResult, persistGloba
 	c.modelSwitchOneTurn = false
 	if !staged {
 		return nil
-	}
-	var sessionID any = c.sessionID
-	if c.agentRef() != nil && c.agentRef().SessionID() != "" {
-		sessionID = c.agentRef().SessionID()
-	} else if c.sessionID == "" {
-		sessionID = nil
-	}
-	if !c.slashWorker {
-		observability.RecordModelSwitch(c.ctx, oldProvider, result.TargetProvider, "cli", oldModel, sessionID)
 	}
 	if !picker {
 		c.pendingOneTurnModelRestore = snapshot
@@ -667,7 +654,7 @@ func (c *CLI) oneTurnSelectionContextFor() *provider.SelectionContext {
 	}
 	messages, err := c.sessionDB.GetMessagesAsConversation(c.ctx, c.sessionID, state.ConversationOptions{})
 	if err != nil {
-		cliLogger.Debug("one-turn selection context unavailable")
+		pkgLog().Debug("one-turn selection context unavailable")
 		return nil
 	}
 	reader := c.sessionDB.Reader(c.ctx)

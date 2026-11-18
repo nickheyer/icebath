@@ -84,11 +84,11 @@ func TestRemovalStepsCleanTheRightSource(t *testing.T) {
 	if len(result.Cleaned) != 1 || !env.Store.IsSourceSuppressed("openai-codex", "device_code") {
 		t.Fatalf("codex removal must clear the block and suppress device_code: %+v", result)
 	}
-	if err := WriteHermesOAuthCredentials(env, "a", "r", 1, ""); err != nil {
+	if err := WriteIcebathOAuthCredentials(env, "a", "r", 1, ""); err != nil {
 		t.Fatal(err)
 	}
-	step, _ = FindRemovalStep("anthropic", "hermes_pkce")
-	if result = step.Remove(env, "anthropic", PooledCredential{Source: "hermes_pkce"}); len(result.Cleaned) != 1 || fileExists(HermesOAuthFile(env)) {
+	step, _ = FindRemovalStep("anthropic", "icebath_pkce")
+	if result = step.Remove(env, "anthropic", PooledCredential{Source: "icebath_pkce"}); len(result.Cleaned) != 1 || fileExists(IcebathOAuthFile(env)) {
 		t.Fatal("the PKCE file is ours to delete")
 	}
 	step, _ = FindRemovalStep("anthropic", "claude_code")
@@ -113,7 +113,7 @@ func TestRemovalStepsCleanTheRightSource(t *testing.T) {
 
 func TestReloginCommands(t *testing.T) {
 	h := newTestHome(t)
-	if OAuthReloginCommand("nous") != "icebath portal" || OAuthReloginCommand("openai-codex") != "icebath auth add openai-codex --type oauth" {
+	if OAuthReloginCommand("xai-oauth") != "icebath auth add xai-oauth --type oauth" || OAuthReloginCommand("openai-codex") != "icebath auth add openai-codex --type oauth" {
 		t.Fatal("classic home has no selector")
 	}
 	profile := filepath.Join(h, "profiles", "work")

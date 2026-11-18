@@ -18,7 +18,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pythread"
 	"github.com/nickheyer/icebath/pkg/kanban"
 	"github.com/nickheyer/icebath/pkg/tools"
-	"github.com/nickheyer/icebath/pkg/tuigateway"
+	"github.com/nickheyer/icebath/pkg/tuihost"
 )
 
 // Kanban event kinds a TUI subscription claims
@@ -28,7 +28,7 @@ var kanbanNotifyKinds = []string{"completed", "blocked", "gave_up", "crashed", "
 const loopPollSeconds = kanbanPollSeconds
 
 // Routes a slash command loop wakeup through the slash pipeline, completing the tick unless it resolves to a prompt
-func notifSlashLoopTick(ctx context.Context, rid, sid string, session *tuigateway.Session, mgr *agent.LoopManager, wakeup string) {
+func notifSlashLoopTick(ctx context.Context, rid, sid string, session *tuihost.Session, mgr *agent.LoopManager, wakeup string) {
 	notifReleaseTurn(session)
 	sent := func() (sent bool) {
 		defer func() {
@@ -64,7 +64,7 @@ func notifSlashLoopTick(ctx context.Context, rid, sid string, session *tuigatewa
 }
 
 // Fires a due heartbeat prompt for an idle session this process owns, rewinding the fire when no turn starts
-func maybeFireTUIHeartbeatTick(ctx context.Context, sid string, session *tuigateway.Session) {
+func maybeFireTUIHeartbeatTick(ctx context.Context, sid string, session *tuihost.Session) {
 	sidKey := strOr(session.Get("session_key"))
 	if sidKey == "" {
 		return
@@ -88,7 +88,7 @@ func maybeFireTUIHeartbeatTick(ctx context.Context, sid string, session *tuigate
 				notifLogFailure("heartbeat dispatch failed", r)
 			}
 		}()
-		tuigateway.Emit(ctx, "status.update", sid, map[string]any{"kind": "heartbeat",
+		tuihost.Emit(ctx, "status.update", sid, map[string]any{"kind": "heartbeat",
 			"text": fmt.Sprintf("♥ heartbeat #%d firing…", mgr.State().FireCount)})
 		started = runPromptSubmit(ctx, fmt.Sprintf("__heartbeat__%d", time.Now().UnixMilli()), sid, session, prompt, promptSubmitOptions{})
 	}()
@@ -99,7 +99,7 @@ func maybeFireTUIHeartbeatTick(ctx context.Context, sid string, session *tuigate
 }
 
 // Fires a due loop wakeup for an idle session, claiming it first so a racing user prompt wins
-func maybeFireTUILoopTick(ctx context.Context, sid string, session *tuigateway.Session) {
+func maybeFireTUILoopTick(ctx context.Context, sid string, session *tuihost.Session) {
 	sidKey := strOr(session.Get("session_key"))
 	if sidKey == "" {
 		return
@@ -135,7 +135,7 @@ func maybeFireTUILoopTick(ctx context.Context, sid string, session *tuigateway.S
 		notifSlashLoopTick(ctx, rid, sid, session, mgr, wakeup)
 		return
 	}
-	tuigateway.Emit(ctx, "message.start", sid, nil)
+	tuihost.Emit(ctx, "message.start", sid, nil)
 	runPromptSubmit(ctx, rid, sid, session, wakeup, promptSubmitOptions{})
 }
 
@@ -339,7 +339,7 @@ func splitDiagnostic(text any) (string, bool) {
 }
 
 // Claims unseen terminal kanban events of this session's TUI subscriptions on every board
-func collectKanbanNotifications(ctx context.Context, session *tuigateway.Session) []any {
+func collectKanbanNotifications(ctx context.Context, session *tuihost.Session) []any {
 	sessionKey := strOr(session.Get("session_key"))
 	if sessionKey == "" || truthy(session.Get("_finalized")) {
 		return nil
@@ -369,12 +369,12 @@ func collectKanbanNotifications(ctx context.Context, session *tuigateway.Session
 }
 
 // One kanban poll under the session profile scope
-func notifPollKanban(ctx context.Context, sid string, session *tuigateway.Session) {
+func notifPollKanban(ctx context.Context, sid string, session *tuihost.Session) {
 	notifPollKanbanScoped(sessionProfileRuntimeScope(ctx, session, true), sid, session)
 }
 
 // Emits new kanban texts, buffers them and runs the buffered batch as a turn when idle
-func notifPollKanbanScoped(ctx context.Context, sid string, session *tuigateway.Session) {
+func notifPollKanbanScoped(ctx context.Context, sid string, session *tuihost.Session) {
 	var texts []any
 	func() {
 		defer func() {
@@ -388,7 +388,7 @@ func notifPollKanbanScoped(ctx context.Context, sid string, session *tuigateway.
 	for _, tagged := range texts {
 		text, diagnostic := splitDiagnostic(tagged)
 		_, _ = config.RenderNotification(ctx, func() error {
-			tuigateway.Emit(ctx, "status.update", sid, map[string]any{"kind": "process", "text": text})
+			tuihost.Emit(ctx, "status.update", sid, map[string]any{"kind": "process", "text": text})
 			return nil
 		}, "tui", diagnostic, nil)
 	}
@@ -427,12 +427,12 @@ func notifPollKanbanScoped(ctx context.Context, sid string, session *tuigateway.
 }
 
 // Poller of one session under its profile scope
-func notificationPollerLoop(ctx context.Context, stop *pythread.Event, sid string, session *tuigateway.Session) {
+func notificationPollerLoop(ctx context.Context, stop *pythread.Event, sid string, session *tuihost.Session) {
 	notificationPollerScopedLoop(sessionProfileRuntimeScope(ctx, session, true), stop, sid, session)
 }
 
 // Drains the completion queue for this session, claims parked events and polls loop, heartbeat and kanban wakeups
-func notificationPollerScopedLoop(ctx context.Context, stop *pythread.Event, sid string, session *tuigateway.Session) {
+func notificationPollerScopedLoop(ctx context.Context, stop *pythread.Event, sid string, session *tuihost.Session) {
 	registry := tools.DefaultProcessRegistry()
 	registry.RestoreCompletions()
 	queue := registry.CompletionQueue
@@ -449,7 +449,7 @@ func notificationPollerScopedLoop(ctx context.Context, stop *pythread.Event, sid
 			lastLoopPoll = now
 			for _, tick := range []struct {
 				what string
-				fire func(context.Context, string, *tuigateway.Session)
+				fire func(context.Context, string, *tuihost.Session)
 			}{{"loop wakeup", maybeFireTUILoopTick}, {"heartbeat", maybeFireTUIHeartbeatTick}} {
 				func() {
 					defer func() {
@@ -465,7 +465,7 @@ func notificationPollerScopedLoop(ctx context.Context, stop *pythread.Event, sid
 			lastKanbanPoll = now
 			notifPollKanban(ctx, sid, session)
 		}
-		parked := tuigateway.ClaimParked(func(evt map[string]any) bool { return sessionOwnsNotificationEvent(ctx, sid, session, evt) })
+		parked := tuihost.ClaimParked(func(evt map[string]any) bool { return sessionOwnsNotificationEvent(ctx, sid, session, evt) })
 		func() {
 			var ready []map[string]any
 			defer func() {
@@ -473,7 +473,7 @@ func notificationPollerScopedLoop(ctx context.Context, stop *pythread.Event, sid
 					notifLogFailure("notification dispatch failed", r)
 				}
 				tools.ReleaseEvents(ready)
-				tuigateway.UnholdParked(parked)
+				tuihost.UnholdParked(parked)
 			}()
 			wait := 500 * time.Millisecond
 			if len(parked) > 0 {
@@ -510,7 +510,7 @@ type notificationPoller struct {
 }
 
 // Starts the background notification poller of a session and returns its stop event
-func startNotificationPoller(ctx context.Context, sid string, session *tuigateway.Session) *pythread.Event {
+func startNotificationPoller(ctx context.Context, sid string, session *tuihost.Session) *pythread.Event {
 	stop := &pythread.Event{}
 	done := make(chan struct{})
 	notificationPollers.mu.Lock()

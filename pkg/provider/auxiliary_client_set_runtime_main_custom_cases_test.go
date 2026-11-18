@@ -10,7 +10,7 @@ import (
 func auxResolveAutoCustomHome(t *testing.T, configYAML string) context.Context {
 	t.Helper()
 	auxIsolateClientCache(t)
-	auxUnsetEnv(t, "OPENROUTER_API_KEY", "NOUS_API_KEY", "OPENAI_API_KEY", "OPENAI_BASE_URL")
+	auxUnsetEnv(t, "OPENROUTER_API_KEY", "OPENAI_API_KEY", "OPENAI_BASE_URL")
 	return ClearRuntimeMain(auxMainTestHome(t, configYAML))
 }
 

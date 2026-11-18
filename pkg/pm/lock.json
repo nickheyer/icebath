@@ -110,8 +110,8 @@
           "url": "https://github.com/BtbN/FFmpeg-Builds/releases/download/autobuild-2026-08-31-13-27/ffmpeg-n9.0.1-11-ge47273f4d9-linuxarm64-gpl-9.0.tar.xz"
         },
         "linux-arm64-bionic": {
-          "sha256": "07c8f7d6afb11396aab3a67564415658ad761b5a7d67a9bc598bc2c734651e0a",
-          "url": "https://packages.termux.dev/apt/termux-main/pool/main/f/ffmpeg/ffmpeg_8.1.3_aarch64.deb"
+          "sha256": "7a785ef62993ed8e0181fb0dcedae39ba7f62827c1150aa1bf805926d9bdf0da",
+          "url": "https://packages.termux.dev/apt/termux-main/pool/main/f/ffmpeg/ffmpeg_9.0.2-2_aarch64.deb"
         },
         "linux-x64": {
           "sha256": "182c1b509720e939bb47bfb47dc29cc0c298640401128e3dce8627d10707eb5a",
@@ -461,8 +461,8 @@
           "url": "https://nodejs.org/dist/v26.12.1/node-v26.12.1-linux-arm64.tar.xz"
         },
         "linux-arm64-bionic": {
-          "sha256": "eaf3ed8a6e4b72ebaa8c2cb3bad778c577cdf9ea87ca91761213d8a3940fc090",
-          "url": "https://packages.termux.dev/apt/termux-main/pool/main/n/nodejs/nodejs_26.4.0-1_aarch64.deb"
+          "sha256": "88351835fcfc5e51799891e42b93e90cf8c0e42793a825e13415e4ee372f3d47",
+          "url": "https://packages.termux.dev/apt/termux-main/pool/main/n/nodejs/nodejs_26.13.1_aarch64.deb"
         },
         "linux-arm64-musl": {
           "sha256": "87d822005776f222f2964c93df055f926d80595a63442b891d3aafe1f0a1dc67",
@@ -511,8 +511,8 @@
           "url": "https://github.com/astral-sh/python-build-standalone/releases/download/20261021/cpython-3.14.9+20261021-aarch64-unknown-linux-gnu-install_only.tar.gz"
         },
         "linux-arm64-bionic": {
-          "sha256": "3166e56c2b6c03fff41191fbb9d736302978e7c484702814d9f6dc99dd6006bd",
-          "url": "https://packages.termux.dev/apt/termux-main/pool/main/p/python/python_3.14.6-1_aarch64.deb"
+          "sha256": "1a5a300c8d844f2c18a3bb61cafbffb2e93fba9a7106ebe967f06c9628d1e434",
+          "url": "https://packages.termux.dev/apt/termux-main/pool/main/p/python/python_3.14.10_aarch64.deb"
         },
         "linux-arm64-musl": {
           "sha256": "ef171f00a80763ea5e3f547686217a1baf24cdb13905204ef8e647bfef511715",
@@ -601,8 +601,8 @@
           "url": "https://github.com/astral-sh/uv/releases/download/0.13.5/uv-aarch64-unknown-linux-gnu.tar.gz"
         },
         "linux-arm64-bionic": {
-          "sha256": "d174f8397eeff5aefdf798add7abeee1294e1662eeb6d52b6b160ae0e47f7f43",
-          "url": "https://packages.termux.dev/apt/termux-main/pool/main/u/uv/uv_0.12.23_aarch64.deb"
+          "sha256": "175576fbfe8198fa994e31a6b87986c5ffda19935770e0ffee64bc22885f7677",
+          "url": "https://packages.termux.dev/apt/termux-main/pool/main/u/uv/uv_0.13.9_aarch64.deb"
         },
         "linux-arm64-musl": {
           "sha256": "7906c79adb21c81abd559841ba76bb1d9af9d791acac7a041b2972e03ae16538",

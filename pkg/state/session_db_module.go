@@ -3,7 +3,6 @@ package state
 import (
 	"context"
 	"fmt"
-	"log/slog"
 	"math"
 	"os"
 	"path/filepath"
@@ -101,7 +100,7 @@ func (e *SessionExportTooLargeError) Error() string {
 
 func (e *SessionExportTooLargeError) PyTypeName() string { return "ValueError" }
 
-// Pid existence probe of lease holders, an error being probe doubt, swapped by tests as hermes swaps psutil
+// Pid existence probe of lease holders, an error being probe doubt, swapped by tests
 var holderPIDExists = func(pid int) (bool, error) { return psutilPIDExists(pid), nil }
 
 // Lock holder pid token of a compression lease
@@ -298,7 +297,7 @@ func stripStaleToolCallMarkers(messages []any) []any {
 		}
 	}
 	if repaired > 0 {
-		slog.Info(fmt.Sprintf("Cleared %d stale tool-call marker message(s) while restoring session (#78148)", repaired))
+		pkgLog().Info(fmt.Sprintf("Cleared %d stale tool-call marker message(s) while restoring session (#78148)", repaired))
 	}
 	return messages
 }

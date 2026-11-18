@@ -20,7 +20,7 @@ const moonshotDefaultURL = "https://api.moonshot.ai/v1"
 func apiKeyProvidersEnv(t *testing.T) PoolEnv {
 	t.Helper()
 	clearProviderEnv(t)
-	for _, name := range []string{"NOUS_API_KEY", "LM_BASE_URL", "KIMI_BASE_URL", "STEPFUN_BASE_URL", "KILOCODE_BASE_URL", "GMI_BASE_URL",
+	for _, name := range []string{"LM_BASE_URL", "KIMI_BASE_URL", "STEPFUN_BASE_URL", "KILOCODE_BASE_URL", "GMI_BASE_URL",
 		"OPENAI_BASE_URL", "ICEBATH_COPILOT_ACP_COMMAND", "COPILOT_CLI_PATH", "ICEBATH_COPILOT_ACP_ARGS", "COPILOT_ACP_BASE_URL", "GLM_BASE_URL"} {
 		t.Setenv(name, "")
 		os.Unsetenv(name)
@@ -83,7 +83,7 @@ func TestAutoDetectsAPIKeyProviders(t *testing.T) {
 	} {
 		t.Run(c.want, func(t *testing.T) {
 			env := apiKeyProvidersEnv(t)
-			anonNoAWS(t)
+			noAWSCredentials(t)
 			for k, v := range c.env {
 				t.Setenv(k, v)
 			}
@@ -96,7 +96,7 @@ func TestAutoDetectsAPIKeyProviders(t *testing.T) {
 
 func TestAutoDoesNotSelectCopilotFromGithubToken(t *testing.T) {
 	env := apiKeyProvidersEnv(t)
-	anonNoAWS(t)
+	noAWSCredentials(t)
 	t.Setenv("GITHUB_TOKEN", "gh-test-token")
 	_, err := resolveProvider(env, "auto")
 	var ae *AuthError
@@ -146,7 +146,7 @@ func TestRuntimeAPIKeyProviders(t *testing.T) {
 
 func TestRuntimeAutoDetectsAPIKeyProvider(t *testing.T) {
 	r := testResolver(t, nil, &fakeCreds{}, "")
-	anonNoAWS(t)
+	noAWSCredentials(t)
 	t.Setenv("KIMI_API_KEY", "auto-kimi-key")
 	if rt := mustResolve(t, r, "auto", "", "", ""); rt.Provider != "kimi-coding" || rt.APIKey != "auto-kimi-key" {
 		t.Fatalf("auto %+v", rt)
@@ -329,4 +329,19 @@ func TestHuggingFaceModelMetadataHasContextLengths(t *testing.T) {
 			t.Errorf("HF model %q missing from the default context lengths", m)
 		}
 	}
+}
+
+// Removes every AWS credential source so the Bedrock rung of auto detection never answers
+func noAWSCredentials(t *testing.T) {
+	t.Helper()
+	dir := t.TempDir()
+	for _, name := range []string{"AWS_ACCESS_KEY_ID", "AWS_SECRET_ACCESS_KEY", "AWS_SESSION_TOKEN", "AWS_SECURITY_TOKEN", "AWS_PROFILE",
+		"AWS_DEFAULT_PROFILE", "AWS_BEARER_TOKEN_BEDROCK", "AWS_CONTAINER_CREDENTIALS_FULL_URI", "AWS_CONTAINER_CREDENTIALS_RELATIVE_URI",
+		"AWS_WEB_IDENTITY_TOKEN_FILE", "AWS_ROLE_ARN"} {
+		t.Setenv(name, "")
+		os.Unsetenv(name)
+	}
+	t.Setenv("AWS_SHARED_CREDENTIALS_FILE", filepath.Join(dir, "credentials"))
+	t.Setenv("AWS_CONFIG_FILE", filepath.Join(dir, "config"))
+	t.Setenv("AWS_EC2_METADATA_DISABLED", "true")
 }

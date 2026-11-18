@@ -259,7 +259,7 @@ func (a *APIServerAdapter) runAgent(ctx context.Context, o runAgentOptions) (map
 		if err != nil {
 			var authErr *providerAuthResolutionError
 			if errors.As(err, &authErr) {
-				apiLog().Warn(fmt.Sprintf("Provider resolution failed for session=%s: %v", o.sessionID, authErr))
+				pkgLog().Warn(fmt.Sprintf("Provider resolution failed for session=%s: %v", o.sessionID, authErr))
 				result := map[string]any{"final_response": authErr.userText(scoped), "messages": []any{}, "api_calls": int64(0), "tools": []any{}}
 				if muted {
 					result["_notification_presentation_suppressed"] = true

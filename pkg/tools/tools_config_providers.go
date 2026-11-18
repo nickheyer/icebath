@@ -4,13 +4,13 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"io"
 	"slices"
 	"strings"
 	"unicode/utf8"
 
 	"github.com/nickheyer/icebath/pkg/cliui"
 	"github.com/nickheyer/icebath/pkg/config"
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
@@ -51,17 +51,14 @@ func pyExcText(err error) string {
 	return pyrepr.ExceptionMessage(err)
 }
 
-// Managed Nous feature a row names, empty for an unmanaged row
-func managedFeatureOf(p *pyjson.Object) string { return pyOrStr(rowGet(p, "managed_nous_feature")) }
-
-// Rows of a category, the AttributeError of a provider entry that is not a dict raised as a panic
+// Rows of a category, a panic for a provider entry that is not a mapping
 func catProviders(cat *pyjson.Object) []*pyjson.Object {
 	raw, _ := cat.GetOr("providers", []any{}).([]any)
 	out := make([]*pyjson.Object, 0, len(raw))
 	for _, item := range raw {
 		row, ok := item.(*pyjson.Object)
 		if !ok {
-			panic(fmt.Sprintf("AttributeError: '%s' object has no attribute 'get'", pyrepr.TypeName(item)))
+			panic(fmt.Sprintf("a tool provider entry is %s, expected a mapping", errchain.Kind(item)))
 		}
 		out = append(out, row)
 	}
@@ -85,11 +82,11 @@ func providerIn(provider *pyjson.Object, rows []*pyjson.Object) bool {
 	return false
 }
 
-// Set membership of a value, the TypeError hermes raises when the value is unhashable
+// Membership of a value among members, an error for a list or mapping value
 func pySetContains(v any, members ...any) (bool, error) {
 	switch v.(type) {
 	case []any, []string, map[string]any, config.Tree, *pyjson.Object:
-		return false, fmt.Errorf("TypeError: unhashable type: '%s'", pyrepr.TypeName(v))
+		return false, fmt.Errorf("expected a single name, got %s", errchain.Kind(v))
 	}
 	for _, m := range members {
 		if pyjson.Equal(v, m) {
@@ -109,7 +106,7 @@ func cfgDictOr(cfg map[string]any, key string) (map[string]any, bool) {
 }
 
 // Python setdefault of a dict section, the error of using a non dict existing value the way op does
-func setdefaultSection(cfg map[string]any, key, op string) (map[string]any, error) {
+func setdefaultSection(cfg map[string]any, key string) (map[string]any, error) {
 	v, ok := cfg[key]
 	if !ok {
 		m := map[string]any{}
@@ -119,10 +116,7 @@ func setdefaultSection(cfg map[string]any, key, op string) (map[string]any, erro
 	if m, ok := pyDictOf(v); ok {
 		return m, nil
 	}
-	if op == "pop" {
-		return nil, fmt.Errorf("AttributeError: '%s' object has no attribute 'pop'", pyrepr.TypeName(v))
-	}
-	return nil, fmt.Errorf("TypeError: '%s' object does not support item assignment", pyrepr.TypeName(v))
+	return nil, fmt.Errorf("%s in config is %s, expected a mapping", key, errchain.Kind(v))
 }
 
 // Value with plugin schema dicts turned into ordered rows, the key prompt url order first then the rest sorted
@@ -192,7 +186,7 @@ func pyIterDicts(v any) []map[string]any {
 		}
 	case string, map[string]any:
 	default:
-		panic(fmt.Sprintf("TypeError: '%s' object is not iterable", pyrepr.TypeName(v)))
+		panic(fmt.Sprintf("expected a list of mappings, got %s", errchain.Kind(v)))
 	}
 	return out
 }
@@ -229,31 +223,31 @@ var webPickerRegistry = &PickerRegistry{
 	},
 }
 
-// Installed registry of a hermes registry module, nil when no package provides it
-func pickerRegistryFor(module string) *PickerRegistry {
-	switch module {
-	case "agent.image_gen_registry":
+// Installed picker registry of a plugin category, nil when no package provides it
+func pickerRegistryFor(category string) *PickerRegistry {
+	switch category {
+	case "image_gen":
 		return ToolsConfigHooks.ImageGenRegistry
-	case "agent.video_gen_registry":
+	case "video_gen":
 		return ToolsConfigHooks.VideoGenRegistry
-	case "agent.web_search_registry":
+	case "web":
 		return webPickerRegistry
-	case "agent.browser_registry":
+	case "browser":
 		return ToolsConfigHooks.BrowserRegistry
-	case "agent.tts_registry":
+	case "tts":
 		return ToolsConfigHooks.TTSRegistry
 	}
 	return nil
 }
 
-// Plugin registry of a module after plugin discovery, nil on any failure
-func (s *ToolsSetup) pluginRegistry(module string) (reg *PickerRegistry) {
+// Plugin registry of a category after plugin discovery, nil on any failure
+func (s *ToolsSetup) pluginRegistry(category string) (reg *PickerRegistry) {
 	defer func() {
 		if recover() != nil {
 			reg = nil
 		}
 	}()
-	reg = pickerRegistryFor(module)
+	reg = pickerRegistryFor(category)
 	if reg == nil || EnsurePluginsDiscovered == nil {
 		return nil
 	}
@@ -274,8 +268,8 @@ func pickerSchema(p PickerProvider) (schema map[string]any, ok bool) {
 }
 
 // Picker rows of a plugin registry, every marker key set to the provider name so config writes route through it
-func (s *ToolsSetup) pluginProviderRows(module string, markerKeys []string, requireName, skipBuiltin, flattenVariants bool) []*pyjson.Object {
-	reg := s.pluginRegistry(module)
+func (s *ToolsSetup) pluginProviderRows(category string, markerKeys []string, requireName, skipBuiltin, flattenVariants bool) []*pyjson.Object {
+	reg := s.pluginRegistry(category)
 	if reg == nil {
 		return []*pyjson.Object{}
 	}
@@ -346,28 +340,27 @@ func mapGetOr(m map[string]any, key string, def any) any {
 	return def
 }
 
-// Registry module, marker keys and row options of one plugin backed category
+// Marker keys and row options of one plugin backed category
 type pluginRowSpec struct {
-	module                                    string
 	markers                                   []string
 	requireName, skipBuiltin, flattenVariants bool
 }
 
 var pluginProviderRowSpecs = map[string]pluginRowSpec{
-	"image_gen": {module: "agent.image_gen_registry", markers: []string{"image_gen_plugin_name"}},
-	"video_gen": {module: "agent.video_gen_registry", markers: []string{"video_gen_plugin_name"}},
-	"web":       {module: "agent.web_search_registry", markers: []string{"web_backend", "web_search_plugin_name"}, requireName: true, flattenVariants: true},
-	"browser":   {module: "agent.browser_registry", markers: []string{"browser_provider", "browser_plugin_name"}, requireName: true},
-	"tts":       {module: "agent.tts_registry", markers: []string{"tts_provider", "tts_plugin_name"}, requireName: true, skipBuiltin: true},
+	"image_gen": {markers: []string{"image_gen_plugin_name"}},
+	"video_gen": {markers: []string{"video_gen_plugin_name"}},
+	"web":       {markers: []string{"web_backend", "web_search_plugin_name"}, requireName: true, flattenVariants: true},
+	"browser":   {markers: []string{"browser_provider", "browser_plugin_name"}, requireName: true},
+	"tts":       {markers: []string{"tts_provider", "tts_plugin_name"}, requireName: true, skipBuiltin: true},
 }
 
 // Picker rows of the plugin registered providers of one category
 func (s *ToolsSetup) pluginRowsFor(category string) []*pyjson.Object {
 	spec, ok := pluginProviderRowSpecs[category]
 	if !ok {
-		panic("KeyError: " + pyrepr.StrRepr(category))
+		panic("unknown provider category " + category)
 	}
-	return s.pluginProviderRows(spec.module, spec.markers, spec.requireName, spec.skipBuiltin, spec.flattenVariants)
+	return s.pluginProviderRows(category, spec.markers, spec.requireName, spec.skipBuiltin, spec.flattenVariants)
 }
 
 func (s *ToolsSetup) pluginImageGenProviders() []*pyjson.Object  { return s.pluginRowsFor("image_gen") }
@@ -434,27 +427,9 @@ func (s *ToolsSetup) computerUseProviderRows() ([]*pyjson.Object, error) {
 	return rows, nil
 }
 
-func isTrue(b *bool) bool { return b != nil && *b }
-
-// Provider rows visible for the auth and config state, managed rows always shown and plugin rows after the catalog rows
-func (s *ToolsSetup) VisibleProviders(cat *pyjson.Object, cfg config.Tree, forceFresh bool, features *NousToolFeatures) ([]*pyjson.Object, error) {
-	if features == nil {
-		f := s.nousFeatures(cfg, forceFresh)
-		features = &f
-	}
-	acct := features.Account
-	poolOnly := acct != nil && acct.LoggedIn && !isTrue(acct.PaidServiceAccess) && acct.ToolGatewayEntitled
-	visible := []*pyjson.Object{}
-	for _, provider := range catProviders(cat) {
-		managed := rowGet(provider, "managed_nous_feature")
-		if pyTruthy(rowGet(provider, "requires_nous_auth")) && !pyTruthy(managed) && !features.NousAuthPresent {
-			continue
-		}
-		if poolOnly && pyjson.Equal(managed, "video_gen") && !(acct != nil && acct.EntitledFor("fal-video")) {
-			continue
-		}
-		visible = append(visible, provider)
-	}
+// Provider rows of a category, plugin rows after the catalog rows
+func (s *ToolsSetup) VisibleProviders(cat *pyjson.Object) ([]*pyjson.Object, error) {
+	visible := append([]*pyjson.Object{}, catProviders(cat)...)
 	if name, ok := rowGet(cat, "name").(string); ok {
 		if builder, ok := pluginRowBuilders[name]; ok {
 			rows, err := builder(s)
@@ -468,7 +443,7 @@ func (s *ToolsSetup) VisibleProviders(cat *pyjson.Object, cfg config.Tree, force
 }
 
 // Readiness of a picker row, ready, needs_keys, needs_auth or needs_setup
-func (s *ToolsSetup) ProviderReadinessStatus(provider *pyjson.Object, cfg config.Tree, features *NousToolFeatures, isActive *bool) (string, error) {
+func (s *ToolsSetup) ProviderReadinessStatus(provider *pyjson.Object, cfg config.Tree, isActive *bool) (string, error) {
 	if pyTruthy(rowGetOr(provider, "env_vars", []any{})) {
 		ready, err := providerEnvReady(s.ctx(), s.home(), provider)
 		if err != nil {
@@ -478,31 +453,6 @@ func (s *ToolsSetup) ProviderReadinessStatus(provider *pyjson.Object, cfg config
 			return "ready", nil
 		}
 		return "needs_keys", nil
-	}
-	managedFeature := rowGet(provider, "managed_nous_feature")
-	if pyTruthy(rowGet(provider, "requires_nous_auth")) || pyTruthy(managedFeature) {
-		if features == nil {
-			f := s.nousFeatures(cfg, false)
-			features = &f
-		}
-		if !features.NousAuthPresent {
-			return "needs_auth", nil
-		}
-		if pyTruthy(managedFeature) {
-			acct := features.Account
-			category := managedCoverageCategory(pyrepr.Str(managedFeature))
-			entitled := false
-			if acct != nil && acct.LoggedIn {
-				if category != "" {
-					entitled = acct.EntitledFor(category)
-				} else {
-					entitled = acct.ToolGatewayEntitled
-				}
-			}
-			if !entitled {
-				return "needs_auth", nil
-			}
-		}
 	}
 	if postSetup := rowGet(provider, "post_setup"); pyTruthy(postSetup) {
 		key := pyrepr.Str(postSetup)
@@ -519,7 +469,7 @@ func (s *ToolsSetup) ProviderReadinessStatus(provider *pyjson.Object, cfg config
 			return "needs_setup", nil
 		}
 		if isActive == nil {
-			active, err := s.IsProviderActive(provider, cfg, false)
+			active, err := s.IsProviderActive(provider, cfg)
 			if err != nil {
 				return "", err
 			}
@@ -547,14 +497,6 @@ func (s *ToolsSetup) readyPredicate(predicate func(*ToolsSetup) (bool, error)) (
 	return ok, false
 }
 
-// Coverage category gating a managed feature, empty when the feature has none
-func managedCoverageCategory(feature string) string {
-	fn := ToolsConfigHooks.ManagedCoverageCategory
-	requireToolsConfigHook("ManagedCoverageCategory", fn != nil)
-	category, _ := fn(feature)
-	return category
-}
-
 // Keyless untiered web rows read ready only when their registry provider is available
 func (s *ToolsSetup) webRegistryReadiness(provider *pyjson.Object) string {
 	backend := rowGet(provider, "web_backend")
@@ -570,13 +512,13 @@ func (s *ToolsSetup) webRegistryReadiness(provider *pyjson.Object) string {
 }
 
 // Whether enabling a toolset should open provider setup
-func (s *ToolsSetup) toolsetNeedsConfigurationPrompt(tsKey string, cfg config.Tree, forceFresh bool) (bool, error) {
+func (s *ToolsSetup) toolsetNeedsConfigurationPrompt(tsKey string, cfg config.Tree) (bool, error) {
 	cat := catalogCategory(tsKey)
 	if cat == nil || cat.Len() == 0 {
-		has, err := s.toolsetHasKeys(tsKey, cfg, forceFresh, nil)
+		has, err := s.toolsetHasKeys(tsKey, cfg)
 		return !has, err
 	}
-	providers, err := s.VisibleProviders(cat, cfg, forceFresh, nil)
+	providers, err := s.VisibleProviders(cat)
 	if err != nil {
 		return false, err
 	}
@@ -594,18 +536,18 @@ func (s *ToolsSetup) toolsetNeedsConfigurationPrompt(tsKey string, cfg config.Tr
 		return !has, nil
 	}
 	if tsKey == "image_gen" {
-		return !FalKeyIsConfigured(s.toolEnv()) && !s.anyPluginProviderAvailable("agent.image_gen_registry"), nil
+		return !FalKeyIsConfigured(s.toolEnv()) && !s.anyPluginProviderAvailable("image_gen"), nil
 	}
 	if tsKey == "video_gen" {
-		return !s.anyPluginProviderAvailable("agent.video_gen_registry"), nil
+		return !s.anyPluginProviderAvailable("video_gen"), nil
 	}
-	has, err := s.toolsetHasKeys(tsKey, cfg, forceFresh, nil)
+	has, err := s.toolsetHasKeys(tsKey, cfg)
 	return !has, err
 }
 
 // Whether any provider of a plugin registry reports itself available
-func (s *ToolsSetup) anyPluginProviderAvailable(module string) (found bool) {
-	reg := s.pluginRegistry(module)
+func (s *ToolsSetup) anyPluginProviderAvailable(category string) (found bool) {
+	reg := s.pluginRegistry(category)
 	defer func() {
 		if recover() != nil {
 			found = false
@@ -634,12 +576,12 @@ func pickerAvailable(p PickerProvider) (ok bool) {
 }
 
 // Provider selection for a tool category, then key setup for the chosen row
-func (s *ToolsSetup) configureToolCategory(tsKey string, cat *pyjson.Object, cfg config.Tree, forceFresh, reconfigure bool) error {
+func (s *ToolsSetup) configureToolCategory(tsKey string, cat *pyjson.Object, cfg config.Tree, reconfigure bool) error {
 	name, ok := cat.Get("name")
 	if !ok {
-		return fmt.Errorf("KeyError: 'name'")
+		return errors.New("a tool category has no name")
 	}
-	providers, err := s.VisibleProviders(cat, cfg, forceFresh, nil)
+	providers, err := s.VisibleProviders(cat)
 	if err != nil {
 		return err
 	}
@@ -661,19 +603,12 @@ func (s *ToolsSetup) configureToolCategory(tsKey string, cat *pyjson.Object, cfg
 		s.Con.PrintInfo("  " + rowText(cat, "setup_note"))
 	}
 	if single {
-		return s.configureProvider(providers[0], cfg, forceFresh, reconfigure)
+		return s.configureProvider(providers[0], cfg, reconfigure)
 	}
 	s.println("")
-	nousLoggedIn := false
-	if !reconfigure {
-		func() {
-			defer func() { _ = recover() }()
-			nousLoggedIn = s.nousFeatures(cfg, forceFresh).NousAuthPresent
-		}()
-	}
 	choices, options := []string{}, []setupflow.Option{}
 	for _, p := range providers {
-		badge, tag, configured, subMarker := "", "", "", ""
+		badge, tag, configured := "", "", ""
 		if pyTruthy(rowGet(p, "badge")) {
 			badge = " [" + rowText(p, "badge") + "]"
 		}
@@ -685,7 +620,7 @@ func (s *ToolsSetup) configureToolCategory(tsKey string, cat *pyjson.Object, cfg
 			return err
 		}
 		if ready {
-			active, err := s.IsProviderActive(p, cfg, forceFresh)
+			active, err := s.IsProviderActive(p, cfg)
 			if err != nil {
 				return err
 			}
@@ -695,29 +630,19 @@ func (s *ToolsSetup) configureToolCategory(tsKey string, cat *pyjson.Object, cfg
 				configured = " [configured]"
 			}
 		}
-		if !reconfigure && pyTruthy(rowGet(p, "managed_nous_feature")) {
-			subMarker = "★ via Nous Portal (login on select)"
-			if nousLoggedIn {
-				subMarker = "★ Included with your Nous subscription"
-			}
-		}
 		label := rowText(p, "name") + badge
 		if tag != "" {
 			label += " — " + tag
 		}
 		label += configured
-		if subMarker != "" {
-			label += "  " + subMarker
-		}
 		choices = append(choices, label)
-		options = append(options, setupflow.Option{Title: rowText(p, "name") + badge + configured,
-			Detail: strings.TrimSpace(strings.Join([]string{tag, subMarker}, "  "))})
+		options = append(options, setupflow.Option{Title: rowText(p, "name") + badge + configured, Detail: strings.TrimSpace(tag)})
 	}
 	if !reconfigure {
 		choices = append(choices, "Skip — keep defaults / configure later")
 		options = append(options, setupflow.Option{Title: "Skip — keep defaults / configure later"})
 	}
-	defaultIdx, err := s.detectActiveProviderIndex(providers, cfg, forceFresh)
+	defaultIdx, err := s.detectActiveProviderIndex(providers, cfg)
 	if err != nil {
 		return err
 	}
@@ -733,10 +658,10 @@ func (s *ToolsSetup) configureToolCategory(tsKey string, cat *pyjson.Object, cfg
 		s.Con.PrintInfo("  Skipped " + pyrepr.Str(name))
 		return nil
 	}
-	return s.configureProvider(providers[idx], cfg, forceFresh, reconfigure)
+	return s.configureProvider(providers[idx], cfg, reconfigure)
 }
 
-// Provider env lookup of the tier auto detection, swapped by tests like hermes patches get_provider_env
+// Provider env lookup of the tier auto detection, swapped by tests
 var webTierProviderEnv = providerEnv
 
 // Whether a tiered web row matches the configured tier, auto meaning paid exactly when the vendor key is present
@@ -755,7 +680,7 @@ func (s *ToolsSetup) webTierMatches(provider *pyjson.Object, cfg config.Tree) bo
 	}
 	backendValue, has := provider.Get("web_backend")
 	if !has {
-		panic("KeyError: 'web_backend'")
+		panic("a web provider row has no web_backend")
 	}
 	backend := pyrepr.Str(backendValue)
 	configured := pystr.Strip(pystr.Lower(pyOrStr(mapGetOr(tiers, backend, ""))))
@@ -794,10 +719,7 @@ func webServingBackends(cfg config.Tree) map[string]bool {
 		}
 		return ""
 	}
-	shared := NousManagedProvider
-	if !truthyValue(webCfg["use_gateway"], false) {
-		shared = name("backend")
-	}
+	shared := name("backend")
 	serving := map[string]bool{}
 	for _, key := range []string{"search_backend", "extract_backend"} {
 		v := name(key)
@@ -840,54 +762,12 @@ func (s *ToolsSetup) webBackendActive(provider *pyjson.Object, cfg config.Tree) 
 	return true, nil
 }
 
-// Managed row marker, config section and key the pick writes, in check order
-var managedSelectionKeys = [][3]string{
-	{"tts_provider", "tts", "provider"}, {"stt_provider", "stt", "provider"}, {"browser_provider", "browser", "cloud_provider"},
-}
-
 // Browser provider markers test membership since a local row carries an empty one, every other marker truthiness
 func hasMarker(provider *pyjson.Object, marker string) bool {
 	if marker == "browser_provider" {
 		return rowHas(provider, marker)
 	}
 	return pyTruthy(rowGet(provider, marker))
-}
-
-// Active check of a Nous managed row, the feature managed and the category selection the vendor or nous
-func (s *ToolsSetup) managedProviderActive(provider *pyjson.Object, cfg config.Tree, managedFeature string, forceFresh bool) (bool, error) {
-	feature, ok := s.nousFeatures(cfg, forceFresh).Features[managedFeature]
-	if !ok {
-		return false, nil
-	}
-	if managedFeature == "image_gen" || managedFeature == "video_gen" {
-		if genCfg, ok := cfgDictOr(cfg, managedFeature); ok {
-			configured := genCfg["provider"]
-			allowed, err := pySetContains(configured, nil, "", "fal", NousManagedProvider)
-			if err != nil {
-				return false, err
-			}
-			if !allowed {
-				return false, nil
-			}
-			if !pyjson.Equal(configured, NousManagedProvider) && genCfg["use_gateway"] != nil && !truthyValue(genCfg["use_gateway"], false) {
-				return false, nil
-			}
-		}
-		return feature.ManagedByNous, nil
-	}
-	if hasMarker(provider, "web_backend") {
-		return feature.ManagedByNous && webServingBackends(cfg)[NousManagedProvider], nil
-	}
-	for _, sel := range managedSelectionKeys {
-		if hasMarker(provider, sel[0]) {
-			if !feature.ManagedByNous {
-				return false, nil
-			}
-			current, _ := config.CfgGet(cfg, sel[1], sel[2])
-			return pySetContains(current, rowGet(provider, sel[0]), NousManagedProvider)
-		}
-	}
-	return feature.ManagedByNous, nil
 }
 
 // Whether a browser row matches the configured cloud provider and, for the local engine rows, the engine
@@ -914,13 +794,10 @@ func imagegenBackendActive(provider *pyjson.Object, cfg config.Tree) (bool, erro
 		return false, nil
 	}
 	allowed, err := pySetContains(imageCfg["provider"], nil, "", "fal")
-	if err != nil || !allowed {
-		return false, err
-	}
-	return !truthyValue(imageCfg["use_gateway"], false), nil
+	return allowed && err == nil, err
 }
 
-// Unmanaged active checks in order, the first marker a row carries decides
+// Active checks in order, the first marker a row carries decides
 var activeChecks = []struct {
 	marker string
 	check  func(s *ToolsSetup, p *pyjson.Object, c config.Tree) (bool, error)
@@ -948,20 +825,12 @@ var activeChecks = []struct {
 }
 
 // Whether a provider row matches the active config
-func (s *ToolsSetup) IsProviderActive(provider *pyjson.Object, cfg config.Tree, forceFresh bool) (bool, error) {
-	managedFeature := managedFeatureOf(provider)
+func (s *ToolsSetup) IsProviderActive(provider *pyjson.Object, cfg config.Tree) (bool, error) {
 	for _, section := range []string{"image_gen", "video_gen"} {
-		pluginName := rowGet(provider, section+"_plugin_name")
-		if pyTruthy(pluginName) && managedFeature == "" {
+		if pluginName := rowGet(provider, section+"_plugin_name"); pyTruthy(pluginName) {
 			genCfg, ok := cfgDictOr(cfg, section)
-			if !(ok && pyjson.Equal(genCfg["provider"], pluginName)) {
-				return false, nil
-			}
-			return section == "video_gen" || !truthyValue(genCfg["use_gateway"], false), nil
+			return ok && pyjson.Equal(genCfg["provider"], pluginName), nil
 		}
-	}
-	if managedFeature != "" {
-		return s.managedProviderActive(provider, cfg, managedFeature, forceFresh)
 	}
 	for _, c := range activeChecks {
 		if hasMarker(provider, c.marker) {
@@ -972,9 +841,9 @@ func (s *ToolsSetup) IsProviderActive(provider *pyjson.Object, cfg config.Tree, 
 }
 
 // Index of the active provider row, else the first keyed row whose keys are present, else 0
-func (s *ToolsSetup) detectActiveProviderIndex(providers []*pyjson.Object, cfg config.Tree, forceFresh bool) (int, error) {
+func (s *ToolsSetup) detectActiveProviderIndex(providers []*pyjson.Object, cfg config.Tree) (int, error) {
 	for i, p := range providers {
-		active, err := s.IsProviderActive(p, cfg, forceFresh)
+		active, err := s.IsProviderActive(p, cfg)
 		if err != nil {
 			return 0, err
 		}
@@ -1031,16 +900,6 @@ func (s *ToolsSetup) falModelCatalog(cfg config.Tree) (*modelCatalog, string) {
 	return catalogOf(ids, meta), def
 }
 
-// Managed union catalog without the gateways a free pool account cannot use
-func (s *ToolsSetup) managedImageCatalog(cfg config.Tree) (*modelCatalog, string) {
-	fn := ToolsConfigHooks.ManagedImageCatalog
-	requireToolsConfigHook("ManagedImageCatalog", fn != nil)
-	acct := s.nousFeatures(cfg, false).Account
-	poolOnly := acct != nil && acct.LoggedIn && !isTrue(acct.PaidServiceAccess)
-	ids, meta, def := fn(s.ctx(), s.toolEnv(), !poolOnly || acct.EntitledFor("krea"), !poolOnly)
-	return catalogOf(ids, meta), def
-}
-
 // One in tree image backend, its display name, config section and catalog
 type imagegenBackend struct {
 	display   string
@@ -1049,13 +908,12 @@ type imagegenBackend struct {
 }
 
 var imagegenBackends = map[string]imagegenBackend{
-	"fal":  {display: "FAL.ai", configKey: "image_gen", catalogFn: (*ToolsSetup).falModelCatalog},
-	"nous": {display: "Nous Subscription", configKey: "image_gen", catalogFn: (*ToolsSetup).managedImageCatalog},
+	"fal": {display: "FAL.ai", configKey: "image_gen", catalogFn: (*ToolsSetup).falModelCatalog},
 }
 
 // Catalog and default model of a plugin provider, empty when unregistered or without models
-func (s *ToolsSetup) pluginModelCatalog(module, pluginName string) (cat *modelCatalog, def string) {
-	reg := s.pluginRegistry(module)
+func (s *ToolsSetup) pluginModelCatalog(category, pluginName string) (cat *modelCatalog, def string) {
+	reg := s.pluginRegistry(category)
 	defer func() {
 		if recover() != nil {
 			cat, def = newModelCatalog(), ""
@@ -1086,14 +944,14 @@ func (s *ToolsSetup) pluginModelCatalog(module, pluginName string) (cat *modelCa
 }
 
 func (s *ToolsSetup) pluginImageGenCatalog(pluginName string) (*modelCatalog, string) {
-	return s.pluginModelCatalog("agent.image_gen_registry", pluginName)
+	return s.pluginModelCatalog("image_gen", pluginName)
 }
 
 func (s *ToolsSetup) pluginVideoGenCatalog(pluginName string) (*modelCatalog, string) {
-	return s.pluginModelCatalog("agent.video_gen_registry", pluginName)
+	return s.pluginModelCatalog("video_gen", pluginName)
 }
 
-// Text of a metadata field the widths measure, the TypeError len raises on a non string
+// Text of a metadata field the widths measure, an error for a value that is no text
 func metaText(meta map[string]any, key string) (string, error) {
 	v, ok := meta[key]
 	if !ok {
@@ -1101,7 +959,7 @@ func metaText(meta map[string]any, key string) (string, error) {
 	}
 	text, ok := v.(string)
 	if !ok {
-		return "", fmt.Errorf("TypeError: object of type '%s' has no len()", pyrepr.TypeName(v))
+		return "", fmt.Errorf("model metadata %s is %s, expected text", key, errchain.Kind(v))
 	}
 	return text, nil
 }
@@ -1271,21 +1129,16 @@ func (s *ToolsSetup) configureXAIImagineStorage(sectionName string, cfg config.T
 	return nil
 }
 
-// Writes the vendor, or nous for a managed pick, into cfg[section][key] and drops the legacy use_gateway key
-func selectInto(cfg config.Tree, section, key string, vendor any, managed bool) map[string]any {
+// Writes the vendor into cfg[section][key]
+func selectInto(cfg config.Tree, section, key string, vendor any) map[string]any {
 	sec := cfgSection(cfg, section)
-	if managed {
-		sec[key] = NousManagedProvider
-	} else {
-		sec[key] = vendor
-	}
-	delete(sec, "use_gateway")
+	sec[key] = vendor
 	return sec
 }
 
 // Persists a plugin image or video provider pick then runs its model picker
-func (s *ToolsSetup) selectPluginGenProvider(section, pluginName string, cfg config.Tree, useGateway bool) error {
-	sec := selectInto(cfg, section, "provider", pluginName, useGateway)
+func (s *ToolsSetup) selectPluginGenProvider(section, pluginName string, cfg config.Tree) error {
+	sec := selectInto(cfg, section, "provider", pluginName)
 	s.Con.PrintSuccess("  " + section + ".provider set to: " + pyrepr.Str(sec["provider"]))
 	if err := s.configureGenModelForPlugin(section, pluginName, cfg); err != nil {
 		return err
@@ -1296,12 +1149,12 @@ func (s *ToolsSetup) selectPluginGenProvider(section, pluginName string, cfg con
 	return nil
 }
 
-func (s *ToolsSetup) selectPluginImageGenProvider(pluginName string, cfg config.Tree, useGateway bool) error {
-	return s.selectPluginGenProvider("image_gen", pluginName, cfg, useGateway)
+func (s *ToolsSetup) selectPluginImageGenProvider(pluginName string, cfg config.Tree) error {
+	return s.selectPluginGenProvider("image_gen", pluginName, cfg)
 }
 
-func (s *ToolsSetup) selectPluginVideoGenProvider(pluginName string, cfg config.Tree, useGateway bool) error {
-	return s.selectPluginGenProvider("video_gen", pluginName, cfg, useGateway)
+func (s *ToolsSetup) selectPluginVideoGenProvider(pluginName string, cfg config.Tree) error {
+	return s.selectPluginGenProvider("video_gen", pluginName, cfg)
 }
 
 // Static STT model list of a provider, false when the catalog has none
@@ -1345,45 +1198,25 @@ func (s *ToolsSetup) configureSTTModel(sttProvider string, cfg config.Tree) erro
 	return nil
 }
 
-// Row marker key to the config section it selects into, in check order
-var providerMarkerSections = [][2]string{
-	{"tts_provider", "tts"}, {"stt_provider", "stt"}, {"browser_provider", "browser"}, {"web_backend", "web"},
-	{"image_gen_plugin_name", "image_gen"}, {"imagegen_backend", "image_gen"}, {"video_gen_plugin_name", "video_gen"},
-}
-
-// Persists the provider and backend keys of a picked row, one provider string per category and no legacy use_gateway
-func (s *ToolsSetup) writeProviderConfig(provider *pyjson.Object, cfg config.Tree, managedFeature string) error {
-	managed := managedFeature != ""
+// Persists the provider and backend keys of a picked row, one provider string per category
+func (s *ToolsSetup) writeProviderConfig(provider *pyjson.Object, cfg config.Tree) error {
 	for _, pair := range [][2]string{{"tts_provider", "tts"}, {"stt_provider", "stt"}} {
 		if v := rowGet(provider, pair[0]); pyTruthy(v) {
-			selectInto(cfg, pair[1], "provider", v, managed)
+			selectInto(cfg, pair[1], "provider", v)
 		}
 	}
-	if rowHas(provider, "browser_provider") {
-		bp := rowGet(provider, "browser_provider")
-		if pyTruthy(bp) || managed {
-			selectInto(cfg, "browser", "cloud_provider", bp, managed)
-		} else {
-			browser, err := setdefaultSection(cfg, "browser", "pop")
-			if err != nil {
-				return err
-			}
-			delete(browser, "use_gateway")
-		}
+	if bp := rowGet(provider, "browser_provider"); pyTruthy(bp) {
+		selectInto(cfg, "browser", "cloud_provider", bp)
 	}
 	if engine := rowGet(provider, "browser_engine"); pyTruthy(engine) {
-		browser, err := setdefaultSection(cfg, "browser", "setitem")
+		browser, err := setdefaultSection(cfg, "browser")
 		if err != nil {
 			return err
 		}
 		browser["engine"] = engine
 	}
 	if backend := rowGet(provider, "web_backend"); pyTruthy(backend) {
-		webCfg := selectInto(cfg, "web", "backend", backend, managed)
-		if managed {
-			delete(webCfg, "search_backend")
-			delete(webCfg, "extract_backend")
-		}
+		webCfg := selectInto(cfg, "web", "backend", backend)
 		tier := rowGet(provider, "web_tier")
 		var tiers any
 		if pyTruthy(tier) {
@@ -1403,41 +1236,11 @@ func (s *ToolsSetup) writeProviderConfig(provider *pyjson.Object, cfg config.Tre
 		}
 	}
 	if cu := rowGet(provider, "computer_use_backend"); pyTruthy(cu) {
-		section, err := setdefaultSection(cfg, "computer_use", "setitem")
+		section, err := setdefaultSection(cfg, "computer_use")
 		if err != nil {
 			return err
 		}
 		section["backend"] = cu
-	}
-	switch {
-	case managed && !slices.Contains([]string{"web", "tts", "stt", "browser"}, managedFeature):
-		if _, ok := cfg[managedFeature]; !ok {
-			cfg[managedFeature] = map[string]any{}
-		}
-		if section, ok := pyDictOf(cfg[managedFeature]); ok {
-			section["provider"] = NousManagedProvider
-			delete(section, "use_gateway")
-		}
-	case !managed:
-		var sections []string
-		for _, pair := range providerMarkerSections {
-			if rowHas(provider, pair[0]) {
-				sections = append(sections, pair[1])
-			}
-		}
-		if len(sections) == 0 {
-			for _, catKey := range ToolCategories.Keys {
-				if cat := catalogCategory(catKey); cat != nil && providerIn(provider, catProviders(cat)) {
-					sections = []string{catKey}
-					break
-				}
-			}
-		}
-		for _, sectionKey := range sections {
-			if section, ok := pyDictOf(cfg[sectionKey]); ok {
-				delete(section, "use_gateway")
-			}
-		}
 	}
 	return nil
 }
@@ -1449,7 +1252,7 @@ func (s *ToolsSetup) ApplyProviderSelection(tsKey, providerName string, cfg conf
 	if !ok || cat == nil {
 		return &ProviderSelectionError{"Toolset has no configurable category: " + tsKey}
 	}
-	providers, err := s.VisibleProviders(cat, cfg, true, nil)
+	providers, err := s.VisibleProviders(cat)
 	if err != nil {
 		return err
 	}
@@ -1463,12 +1266,11 @@ func (s *ToolsSetup) ApplyProviderSelection(tsKey, providerName string, cfg conf
 	if provider == nil {
 		return &ProviderSelectionError{"Unknown provider " + pyrepr.StrRepr(providerName) + " for toolset " + pyrepr.StrRepr(tsKey)}
 	}
-	managedFeature := managedFeatureOf(provider)
-	if err := s.writeProviderConfig(provider, cfg, managedFeature); err != nil {
+	if err := s.writeProviderConfig(provider, cfg); err != nil {
 		return err
 	}
 	var falVendor any
-	if pyTruthy(rowGet(provider, "imagegen_backend")) && managedFeature == "" {
+	if pyTruthy(rowGet(provider, "imagegen_backend")) {
 		falVendor = "fal"
 	}
 	selections := []struct {
@@ -1481,73 +1283,33 @@ func (s *ToolsSetup) ApplyProviderSelection(tsKey, providerName string, cfg conf
 	}
 	for _, sel := range selections {
 		if pyTruthy(sel.vendor) {
-			selectInto(cfg, sel.section, "provider", sel.vendor, managedFeature != "")
+			selectInto(cfg, sel.section, "provider", sel.vendor)
 		}
 	}
 	return nil
 }
 
-// Selection gate of Nous rows, swapped by tests the way hermes monkeypatches the module attribute
-var nousProviderGateFn = (*ToolsSetup).nousProviderGate
-
-// False after printing why when a Nous gated row cannot be selected, managed rows running the inline Portal login
-func (s *ToolsSetup) nousProviderGate(provider *pyjson.Object, cfg config.Tree, managedFeature string, forceFresh bool) bool {
-	if managedFeature != "" {
-		ensure := ToolsConfigHooks.EnsureNousPortalAccess
-		if s.Ask != nil {
-			requireFlowHook("PortalAccess", s.Flow.PortalAccess != nil)
-			ensure = func(ctx context.Context, h string, out io.Writer, capability, coverage string) bool {
-				return s.Flow.PortalAccess(ctx, h, out, capability, coverage, s.Ask)
-			}
-		}
-		requireToolsConfigHook("EnsureNousPortalAccess", ensure != nil)
-		capability := pyrepr.Str(rowGetOr(provider, "name", "the Nous Tool Gateway"))
-		if !ensure(s.ctx(), s.home(), s.Con.Out, capability, managedCoverageCategory(managedFeature)) {
-			s.Con.PrintWarning("  Not enabled — Nous Portal access is required for this backend.")
-			return false
-		}
-		return true
-	}
-	if pyTruthy(rowGet(provider, "requires_nous_auth")) {
-		features := s.nousFeatures(cfg, forceFresh)
-		entitled := features.Account != nil && isTrue(features.Account.PaidServiceAccess)
-		if !features.NousAuthPresent || !entitled {
-			format := ToolsConfigHooks.NousEntitlementMessage
-			requireToolsConfigHook("NousEntitlementMessage", format != nil)
-			message := format(features.Account, pyrepr.Str(rowGetOr(provider, "name", "Nous Subscription")))
-			if message == "" {
-				message = "Nous Subscription is only available after logging into Nous Portal."
-			}
-			s.Con.PrintWarning("  " + message)
-			return false
-		}
-	}
-	return true
-}
-
 // Model pickers that follow a provider pick, plugin image or video gen, the in tree image backend, then STT
-func (s *ToolsSetup) finishProviderSelection(provider *pyjson.Object, cfg config.Tree, managedFeature string) error {
-	managed := managedFeature != ""
+func (s *ToolsSetup) finishProviderSelection(provider *pyjson.Object, cfg config.Tree) error {
 	for _, section := range []string{"image_gen", "video_gen"} {
 		if pluginName := rowGet(provider, section+"_plugin_name"); pyTruthy(pluginName) {
-			return s.selectPluginGenProvider(section, pyrepr.Str(pluginName), cfg, managed)
+			return s.selectPluginGenProvider(section, pyrepr.Str(pluginName), cfg)
 		}
 	}
 	if backend := rowGet(provider, "imagegen_backend"); pyTruthy(backend) {
 		if err := s.configureImagegenModel(pyrepr.Str(backend), cfg); err != nil {
 			return err
 		}
-		selectInto(cfg, "image_gen", "provider", "fal", managed)
+		selectInto(cfg, "image_gen", "provider", "fal")
 	}
-	if stt := rowGet(provider, "stt_provider"); pyTruthy(stt) && !managed {
+	if stt := rowGet(provider, "stt_provider"); pyTruthy(stt) {
 		return s.configureSTTModel(pyrepr.Str(stt), cfg)
 	}
 	return nil
 }
 
 // Status lines announcing the backend and provider keys a pick writes
-func (s *ToolsSetup) printProviderSelection(provider *pyjson.Object, managedFeature string, reconfigure bool) {
-	managed := managedFeature != ""
+func (s *ToolsSetup) printProviderSelection(provider *pyjson.Object, reconfigure bool) {
 	if reconfigure && pyTruthy(rowGet(provider, "tts_provider")) {
 		s.Con.PrintSuccess("  TTS provider set to: " + rowText(provider, "tts_provider"))
 	}
@@ -1557,12 +1319,6 @@ func (s *ToolsSetup) printProviderSelection(provider *pyjson.Object, managedFeat
 	if rowHas(provider, "browser_provider") {
 		bp := rowGet(provider, "browser_provider")
 		switch {
-		case reconfigure && managed:
-			name := "nous"
-			if pyTruthy(bp) {
-				name = pyrepr.Str(bp)
-			}
-			s.Con.PrintSuccess("  Browser cloud provider set to: " + name)
 		case pyjson.Equal(bp, "local"):
 			s.Con.PrintSuccess("  Browser set to local mode")
 		case pyTruthy(bp):
@@ -1577,43 +1333,11 @@ func (s *ToolsSetup) printProviderSelection(provider *pyjson.Object, managedFeat
 		if reconfigure && pyTruthy(rowGet(provider, "web_tier")) {
 			tier = " (" + rowText(provider, "web_tier") + " tier)"
 		}
-		name := pyrepr.Str(backend)
-		if managed {
-			name = NousManagedProvider
-		}
-		s.Con.PrintSuccess("  Web backend set to: " + name + tier)
+		s.Con.PrintSuccess("  Web backend set to: " + pyrepr.Str(backend) + tier)
 	}
 	if reconfigure && pyTruthy(rowGet(provider, "computer_use_backend")) {
 		s.Con.PrintSuccess("  Computer Use backend set to: " + rowText(provider, "computer_use_backend"))
 	}
-}
-
-// Whether a keyed row shares its category with a managed sibling while the user lacks Nous auth
-func (s *ToolsSetup) showPortalHint(provider *pyjson.Object, cfg config.Tree, managedFeature string, forceFresh bool) (hint bool) {
-	if managedFeature != "" || pyTruthy(rowGet(provider, "requires_nous_auth")) {
-		return false
-	}
-	defer func() {
-		if recover() != nil {
-			hint = false
-		}
-	}()
-	for _, catKey := range ToolCategories.Keys {
-		cat := catalogCategory(catKey)
-		if cat == nil {
-			continue
-		}
-		rows := catProviders(cat)
-		if !providerIn(provider, rows) {
-			continue
-		}
-		for _, sib := range rows {
-			if pyTruthy(rowGet(sib, "managed_nous_feature")) {
-				return !s.nousFeatures(cfg, forceFresh).NousAuthPresent
-			}
-		}
-	}
-	return false
 }
 
 // One env var prompt, true unless the new enable flow skipped the key
@@ -1672,7 +1396,7 @@ func envVarRow(v any) (*pyjson.Object, error) {
 	case map[string]any:
 		return pickerValue(x).(*pyjson.Object), nil
 	}
-	return nil, fmt.Errorf("TypeError: '%s' object is not subscriptable", pyrepr.TypeName(v))
+	return nil, fmt.Errorf("an env_vars entry is %s, expected a mapping", errchain.Kind(v))
 }
 
 // Prompts for a provider's env vars, true when every key ended up configured
@@ -1685,7 +1409,7 @@ func (s *ToolsSetup) promptEnvVars(envVars []any, reconfigure bool) (bool, error
 		}
 		keyValue, ok := row.Get("key")
 		if !ok {
-			return false, fmt.Errorf("KeyError: 'key'")
+			return false, errors.New("an env_vars entry has no key")
 		}
 		key := pyrepr.Str(keyValue)
 		if !reconfigure {
@@ -1726,14 +1450,10 @@ func envVarList(v any) []any {
 }
 
 // Configures one provider, prompting for its keys, writing its config and running its post setup hook
-func (s *ToolsSetup) configureProvider(provider *pyjson.Object, cfg config.Tree, forceFresh, reconfigure bool) error {
+func (s *ToolsSetup) configureProvider(provider *pyjson.Object, cfg config.Tree, reconfigure bool) error {
 	envVars := rowGetOr(provider, "env_vars", []any{})
-	managedFeature := managedFeatureOf(provider)
-	if !nousProviderGateFn(s, provider, cfg, managedFeature, forceFresh) {
-		return nil
-	}
-	s.printProviderSelection(provider, managedFeature, reconfigure)
-	if err := s.writeProviderConfig(provider, cfg, managedFeature); err != nil {
+	s.printProviderSelection(provider, reconfigure)
+	if err := s.writeProviderConfig(provider, cfg); err != nil {
 		return err
 	}
 	postSetup := rowGet(provider, "post_setup")
@@ -1744,13 +1464,7 @@ func (s *ToolsSetup) configureProvider(provider *pyjson.Object, cfg config.Tree,
 			}
 		}
 		s.Con.PrintSuccess("  " + rowText(provider, "name") + " - no configuration needed!")
-		if managedFeature != "" {
-			s.Con.PrintInfo("  Requests for this tool will be billed to your Nous subscription.")
-		}
-		return s.finishProviderSelection(provider, cfg, managedFeature)
-	}
-	if !reconfigure && s.showPortalHint(provider, cfg, managedFeature, forceFresh) {
-		s.Con.PrintInfo("  Available through Nous Portal subscription.")
+		return s.finishProviderSelection(provider, cfg)
 	}
 	allConfigured, err := s.promptEnvVars(envVarList(envVars), reconfigure)
 	if err != nil {
@@ -1765,14 +1479,14 @@ func (s *ToolsSetup) configureProvider(provider *pyjson.Object, cfg config.Tree,
 		if !reconfigure {
 			s.Con.PrintSuccess("  " + rowText(provider, "name") + " configured!")
 		}
-		return s.finishProviderSelection(provider, cfg, managedFeature)
+		return s.finishProviderSelection(provider, cfg)
 	}
 	return nil
 }
 
 // Reconfigures a provider, re-prompting every key
-func (s *ToolsSetup) reconfigureProvider(provider *pyjson.Object, cfg config.Tree, forceFresh bool) error {
-	return s.configureProvider(provider, cfg, forceFresh, true)
+func (s *ToolsSetup) reconfigureProvider(provider *pyjson.Object, cfg config.Tree) error {
+	return s.configureProvider(provider, cfg, true)
 }
 
 // Interactive vision backend choice over auxiliary.vision, auto clearing every pinned key
@@ -1869,7 +1583,7 @@ func (s *ToolsSetup) configureVisionBackend() error {
 	return nil
 }
 
-// Missing provider inventory, the import failure hermes reports when it cannot load the picker rows
+// Missing provider inventory, the import failure reported when the picker rows cannot load
 var errInventoryUnwired = errors.New("provider inventory is not installed")
 
 // Aux picker rows of the vision task, the detection failure returned as an error
@@ -1959,7 +1673,7 @@ func (s *ToolsSetup) configureSimpleRequirements(tsKey string, reconfigure bool)
 		if reconfigure {
 			return s.configureVisionBackend()
 		}
-		has, err := s.toolsetHasKeys("vision", nil, false, nil)
+		has, err := s.toolsetHasKeys("vision", nil)
 		if err != nil {
 			return err
 		}

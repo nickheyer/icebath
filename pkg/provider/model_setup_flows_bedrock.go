@@ -255,7 +255,6 @@ func modelFlowBedrock(r *ModelFlowRun) error {
 		modelList = staticCatalogModels("bedrock")
 		if len(modelList) == 0 {
 			fmt.Fprintln(r.Out, "  No models found. Check IAM permissions for bedrock:ListFoundationModels.")
-			noteSetupFailure("no_models")
 			return nil
 		}
 		fmt.Fprintf(r.Out, "  Using %d curated models (live discovery unavailable)\n", len(modelList))

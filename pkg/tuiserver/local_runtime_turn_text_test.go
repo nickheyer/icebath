@@ -80,10 +80,10 @@ func TestChatTextSuggestsRetryOnlyWhileTheServerCanComeUp(t *testing.T) {
 				t.Fatalf("hint %q with enabled=%v", hint, enabled)
 			}
 			if !enabled {
-				if !strings.Contains(hint, "icebath model") || !strings.Contains(hint, "/model") {
+				if !strings.Contains(hint, "`/setup model`") || !strings.Contains(hint, "/model") {
 					t.Fatalf("hint %q", hint)
 				}
-				if !strings.Contains(exc.Error(), "icebath model") {
+				if !strings.Contains(exc.Error(), "`/setup model`") {
 					t.Fatalf("backend sentence %q", exc.Error())
 				}
 			}

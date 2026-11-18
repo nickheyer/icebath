@@ -3,6 +3,7 @@ package logging
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"os"
 	"strings"
 	"sync"
@@ -41,7 +42,7 @@ type Record struct {
 	Msg        string
 	Created    time.Time
 	SessionTag string
-	HermesHome string
+	Home       string
 	Thread     uint64
 	PC         uintptr
 	// Error logged with the record, its text already below Msg
@@ -60,7 +61,7 @@ type Handler interface {
 	Close() error
 }
 
-// Named node of the dotted logger hierarchy with its level, handlers and propagation switch
+// Named node of the package logger hierarchy with its level, handlers and propagation switch
 type Logger struct {
 	name      string
 	mu        sync.Mutex
@@ -85,7 +86,7 @@ var disableLevel atomic.Int64
 // Drops records at or below level on every logger, the manager wide logging.disable switch
 func Disable(level int) { disableLevel.Store(int64(level)) }
 
-// Logger for a dotted name, the root logger for an empty name or root
+// Logger for a slash separated package name, the root logger for an empty name or root
 func GetLogger(name string) *Logger {
 	if name == "" || name == "root" {
 		return root
@@ -100,7 +101,7 @@ func GetLogger(name string) *Logger {
 	return l
 }
 
-// Nearest existing ancestor in the dotted hierarchy, root at the top
+// Nearest existing ancestor in the slash separated package hierarchy, root at the top
 func parentOf(l *Logger) *Logger {
 	if l == root {
 		return nil
@@ -108,7 +109,7 @@ func parentOf(l *Logger) *Logger {
 	name := l.name
 	registryMu.Lock()
 	defer registryMu.Unlock()
-	for i := strings.LastIndexByte(name, '.'); i > 0; i = strings.LastIndexByte(name, '.') {
+	for i := strings.LastIndexByte(name, '/'); i > 0; i = strings.LastIndexByte(name, '/') {
 		name = name[:i]
 		if p, ok := loggers[name]; ok {
 			return p
@@ -117,7 +118,10 @@ func parentOf(l *Logger) *Logger {
 	return root
 }
 
-// Dotted name of the logger
+// slog logger whose records reach this logger through the bridge
+func (l *Logger) Slog() *slog.Logger { return slog.Default().With("logger", l.name) }
+
+// Package name of the logger
 func (l *Logger) Name() string { return l.name }
 
 // Level set on this logger, zero when it defers to its ancestors

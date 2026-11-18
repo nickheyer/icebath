@@ -6,7 +6,7 @@ import (
 )
 
 // Published Client ID Metadata Document, on an origin that never redirects as CIMD fetchers require
-const cimdClientMetadataURL = "https://nousresearch.github.io/hermes-agent/docs/oauth/client-metadata.json"
+const cimdClientMetadataURL = "https://icebath.app/oauth/client-metadata.json"
 
 // Loopback callback ports the published document declares, below the Linux ephemeral floor
 var cimdPorts = []int{27890, 27891, 27892, 27893, 27894}

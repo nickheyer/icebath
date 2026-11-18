@@ -3,7 +3,6 @@ package gatewayrun
 import (
 	"context"
 	"fmt"
-	"log/slog"
 
 	"github.com/nickheyer/icebath/pkg/botmode"
 	"github.com/nickheyer/icebath/pkg/home"
@@ -11,10 +10,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/mediacache"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
-
-func housekeepingDiskLog() *slog.Logger {
-	return slog.Default().With("logger", "gateway.run_housekeeping_disk")
-}
 
 // Hourly prune of every media cache past 24 hours, spillover kept for the session retention window
 func housekeepingMediaCaches(ctx context.Context) {
@@ -44,7 +39,7 @@ func housekeepingMediaCaches(ctx context.Context) {
 				return err
 			}
 			if removed > 0 {
-				housekeepingDiskLog().Info(fmt.Sprintf("%s cache cleanup: removed %d stale file(s)", c.name, removed))
+				pkgLog().Info(fmt.Sprintf("%s cache cleanup: removed %d stale file(s)", c.name, removed))
 			}
 			return nil
 		})

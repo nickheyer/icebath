@@ -49,7 +49,7 @@ func TestMetaAndValidationMissingFileDefaultsEmpty(t *testing.T) {
 	}
 }
 
-func TestMetaAndValidationBotTitleReadFromHermesBotsUiMeta(t *testing.T) {
+func TestMetaAndValidationBotTitleReadFromIcebathBotsUiMeta(t *testing.T) {
 	def := displayEnv(t)
 	writeFile(t, filepath.Join(def, "profile.yaml"), "ui_meta:\n  icebath-bots:\n    title: JordyV\n")
 	if got := profiles.ReadProfileMeta(def).BotTitle; got != "JordyV" {

@@ -14,7 +14,7 @@ func TestOpencodeGoStripsDeepseekPrefix(t *testing.T) {
 	}
 }
 
-func TestOverlayProviderUsesHermesSlug(t *testing.T) {
+func TestOverlayProviderUsesIcebathSlug(t *testing.T) {
 	ctx := pickerCredentialHome(t, map[string]any{})
 	t.Setenv("KIMI_API_KEY", "fake-kimi")
 	rows := mustListProviders(t, ctx, AuthenticatedProvidersOptions{CurrentProvider: "kimi-coding"})

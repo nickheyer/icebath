@@ -120,7 +120,7 @@ func gatewayStatus() GatewayStatusProbeSet {
 	return p
 }
 
-// Seams over liveness and the poll sleep, replaced by tests the way hermes tests monkeypatch the module
+// Seams over liveness and the poll sleep, replaced by tests
 var (
 	pidAlive      = pidAliveLive
 	dispatchSleep = time.Sleep
@@ -402,7 +402,7 @@ func EnforceMaxRuntime(ctx context.Context, conn state.SQLiteConn, signalFn Sign
 		pid := int(pid64)
 		startedAt := rowGet(row, "worker_started_at", nil)
 		if startedAt == UnverifiedWorkerFingerprint && pidAlive(pid) {
-			log.Warn(fmt.Sprintf("kanban: task %s worker pid %d exceeded max runtime but has no verified identity; not signalled", tid, pid))
+			pkgLog().Warn(fmt.Sprintf("kanban: task %s worker pid %d exceeded max runtime but has no verified identity; not signalled", tid, pid))
 			continue
 		}
 		killed := false

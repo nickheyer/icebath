@@ -16,9 +16,9 @@ import (
 func TestNormalizeEntryKeepsExtraHeaders(t *testing.T) {
 	n := NormalizeCustomProviderEntry(map[string]any{
 		"name": "my-proxy", "base_url": "https://llm.internal.example.com/v1",
-		"extra_headers": map[string]any{"X-Custom-Auth": "tok", "X-Client-Name": "hermes"},
+		"extra_headers": map[string]any{"X-Custom-Auth": "tok", "X-Client-Name": "icebath"},
 	}, "")
-	if n == nil || !reflect.DeepEqual(n["extra_headers"], map[string]string{"X-Custom-Auth": "tok", "X-Client-Name": "hermes"}) {
+	if n == nil || !reflect.DeepEqual(n["extra_headers"], map[string]string{"X-Custom-Auth": "tok", "X-Client-Name": "icebath"}) {
 		t.Fatalf("got %v", n)
 	}
 }
@@ -157,13 +157,13 @@ func TestEveryAPIKeyProviderVarIsDeclaredInCore(t *testing.T) {
 	}
 }
 
-// Profile double of the hermes cases with a title cased display name and the env vars in tuple order
+// Profile double of the tests with a title cased display name and the env vars in tuple order
 func envCaseProfile(name, authType string, envVars ...string) Profile {
 	return Profile{Name: name, DisplayName: strings.ToUpper(name[:1]) + name[1:], AuthType: authType, KeyEnv: envVars,
 		SignupURL: "https://" + name + ".test/keys"}
 }
 
-// Table of the hermes fixture over one core name and one platform name, armed with the provider fill
+// Table of the test fixture over one core name and one platform name, armed with the provider fill
 func providerEnvCaseTable(t *testing.T) *config.OptionalEnvTable {
 	t.Helper()
 	providerEnvMu.Lock()

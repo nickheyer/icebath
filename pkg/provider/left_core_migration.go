@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"log/slog"
 	"os"
 	"path/filepath"
 	"sort"
@@ -285,7 +284,7 @@ func leftCorePluginLists(h, plugin string) (bool, bool) {
 	feature := leftCoreFeatureByPlugin(plugin)
 	cfg, err := leftCoreYAMLLayers(h)
 	if err != nil {
-		slog.Default().Debug("left-core: unreadable config", "home", h, "error", err)
+		pkgLog().Debug("left-core: unreadable config", "home", h, "error", err)
 		return false, false
 	}
 	plugins := anyMap(cfg["plugins"])
@@ -336,13 +335,10 @@ func leftCoreHomeEnv(h, name string, processEnv bool) string {
 	return value
 }
 
-// Camofox ran in core when no CDP endpoint or managed gateway won and the stored selection or CAMOFOX_URL chose it
+// Camofox ran in core when no CDP endpoint won and the stored selection or CAMOFOX_URL chose it
 func camofoxInUse(h string, processEnv bool) bool {
 	browser := anyMap(leftCoreReadConfig(h)["browser"])
 	if strings.TrimSpace(pyOrStr(browser["cdp_url"])) != "" || leftCoreHomeEnv(h, "BROWSER_CDP_URL", processEnv) != "" {
-		return false
-	}
-	if isTruthyValue(browser["use_gateway"]) {
 		return false
 	}
 	selected := ""
@@ -359,7 +355,7 @@ func camofoxInUse(h string, processEnv bool) bool {
 func leftCoreRouteSlots(h string) []map[string]any {
 	cfg, err := leftCoreYAMLLayers(h)
 	if err != nil {
-		slog.Default().Debug("left-core: unreadable config", "home", h, "error", err)
+		pkgLog().Debug("left-core: unreadable config", "home", h, "error", err)
 		cfg = map[string]any{}
 	}
 	withChain := func(slot map[string]any) []map[string]any {
@@ -480,7 +476,7 @@ func ProvidersSelected(h string, names []string, processEnv bool) map[string]boo
 func namesCustomEndpoint(h, name string) bool {
 	cfg, err := leftCoreYAMLLayers(h)
 	if err != nil {
-		slog.Default().Debug("left-core: unreadable config", "home", h, "error", err)
+		pkgLog().Debug("left-core: unreadable config", "home", h, "error", err)
 		return false
 	}
 	r := newResolver(context.Background(), config.Tree(cfg), config.NewSecrets(h), h, nil)
@@ -688,7 +684,7 @@ func MovedCommandHint(ctx context.Context, prog, value, action string) string {
 
 // DeferStartupNotice logs a message and keeps it for the active home's next watched turn
 func DeferStartupNotice(ctx context.Context, message string) {
-	slog.Default().Warn(message)
+	pkgLog().Warn(message)
 	queueLeftCoreNotice(home.Dir(ctx), message)
 }
 
@@ -793,7 +789,7 @@ func queueLeftCoreNotice(h, message string) {
 		return fh.Close()
 	})
 	if err != nil {
-		slog.Default().Debug("left-core notice not kept", "home", h, "error", err)
+		pkgLog().Debug("left-core notice not kept", "home", h, "error", err)
 	}
 }
 
@@ -1169,7 +1165,7 @@ func leftCorePending(ctx context.Context, h string, say func(string), processEnv
 			continue
 		}
 		if backoff && LeftCoreFailedRecently(h, f.Plugin) {
-			slog.Default().Info(fmt.Sprintf("%s plugin install failed recently for %s; retrying later or on `icebath update`", f.Label, h))
+			pkgLog().Info(fmt.Sprintf("%s plugin install failed recently for %s; retrying later or on `icebath update`", f.Label, h))
 			continue
 		}
 		if _, listed := leftCoreHooks().CatalogEntry(f.Plugin); !listed {
@@ -1256,7 +1252,7 @@ func leftCoreInstallOne(ctx context.Context, h string, f *LeftCoreFeature, insta
 	if pyTruthy(result["ok"]) {
 		RefreshBoundHome(home.WithOverride(context.Background(), h))
 		if err := leftCoreRecordMigration(ctx, h, f); err != nil {
-			slog.Default().Debug("left-core install marker not written", "home", h, "error", err)
+			pkgLog().Debug("left-core install marker not written", "home", h, "error", err)
 		}
 		say(leftCoreNoticed(fmt.Sprintf("  \u2713 %s moved out of core \u2014 installed the '%s' plugin from the catalog (%s).",
 			f.Label, f.Plugin, f.Unchanged), h, f, processEnv))
@@ -1389,7 +1385,7 @@ func RecoverLeftCoreAtStartup(ctx context.Context, say func(string), gatewayStar
 		func() {
 			defer func() {
 				if r := recover(); r != nil {
-					slog.Default().Debug("left-core migration notification failed", "error", r)
+					pkgLog().Debug("left-core migration notification failed", "error", r)
 				}
 			}()
 			say(message)
@@ -1409,7 +1405,7 @@ func RecoverLeftCoreAtStartup(ctx context.Context, say func(string), gatewayStar
 	leftCoreAttemptedMu.Unlock()
 	report := func(message string) {
 		message = strings.TrimSpace(message)
-		slog.Default().Warn(message)
+		pkgLog().Warn(message)
 		deliver(message)
 	}
 	features := leftCorePending(ctx, h, report, true, true)

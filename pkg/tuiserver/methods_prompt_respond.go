@@ -6,14 +6,13 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/tools"
-	"github.com/nickheyer/icebath/pkg/tuigateway"
+	"github.com/nickheyer/icebath/pkg/tuihost"
 )
 
 var promptRespondRegistry = &handlerRegistry{}
 
 func init() {
 	promptRespondRegistry.method("clarify.lock", clarifyLock)
-	promptRespondRegistry.method("request.answer", requestAnswer)
 	promptRespondRegistry.method("approval.respond", approvalRespond)
 	promptRespondRegistry.install()
 }
@@ -33,7 +32,7 @@ func clarifyLock(ctx context.Context, rid any, params map[string]any) map[string
 		panicIf(err)
 		answer = encoded
 	}
-	remaining, open, err := tuigateway.LockAnswer(requestID, questionID, answer)
+	remaining, open, err := tuihost.LockAnswer(requestID, questionID, answer)
 	if err != nil {
 		return rpcErr(rid, 4002, err.Error(), nil)
 	}
@@ -41,23 +40,6 @@ func clarifyLock(ctx context.Context, rid any, params map[string]any) map[string
 		return ok(rid, map[string]any{"status": "expired"})
 	}
 	return ok(rid, map[string]any{"status": "ok", "remaining": remaining})
-}
-
-// Answers an open server to client request for a client that never received it
-func requestAnswer(ctx context.Context, rid any, params map[string]any) map[string]any {
-	requestID := strOr(params["id"])
-	result, isDict := params["result"].(map[string]any)
-	if requestID == "" || !isDict {
-		return rpcErr(rid, 4002, "id and an object result required", nil)
-	}
-	frame := pyjson.NewObject()
-	frame.Set("jsonrpc", "2.0")
-	frame.Set("id", requestID)
-	frame.Set("result", result)
-	if tuigateway.ResolveResponse(frame, nil) {
-		return ok(rid, map[string]any{"status": "ok"})
-	}
-	return ok(rid, map[string]any{"status": "expired"})
 }
 
 // Approval call result under its key, 5004 on any failure
@@ -70,11 +52,11 @@ func approvalReply(rid any, resultKey string, call func() any) map[string]any {
 }
 
 // Live session of a stale sid found by its pending request id, else by its id as a stored key
-func approvalRespondSessionFallback(params map[string]any) *tuigateway.Session {
+func approvalRespondSessionFallback(params map[string]any) *tuihost.Session {
 	if requestID := strOr(params["request_id"]); requestID != "" {
-		var found *tuigateway.Session
+		var found *tuihost.Session
 		if failure := catchPanic(func() {
-			for _, live := range tuigateway.LiveSessions() {
+			for _, live := range tuihost.LiveSessions() {
 				key := strOr(live.Session.Get("session_key"))
 				if key == "" {
 					continue
@@ -87,20 +69,20 @@ func approvalRespondSessionFallback(params map[string]any) *tuigateway.Session {
 				}
 			}
 		}); failure != nil {
-			logger().Debug("approval.respond request_id fallback failed", "error", failure)
+			pkgLog().Debug("approval.respond request_id fallback failed", "error", failure)
 		}
 		if found != nil {
 			return found
 		}
 	}
 	if target := strOr(params["session_id"]); target != "" {
-		var found *tuigateway.Session
+		var found *tuihost.Session
 		if failure := catchPanic(func() {
 			if _, live, ok := findLiveSessionByKey(target, "", true); ok {
 				found = live
 			}
 		}); failure != nil {
-			logger().Debug("approval.respond stored-id fallback failed", "error", failure)
+			pkgLog().Debug("approval.respond stored-id fallback failed", "error", failure)
 		}
 		return found
 	}

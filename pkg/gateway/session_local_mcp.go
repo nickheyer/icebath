@@ -7,6 +7,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/state"
@@ -145,7 +146,7 @@ func validateServers(servers any) error {
 	servers = pyjson.Plain(servers)
 	list, ok := servers.([]any)
 	if !ok {
-		return invalidParams("editor.mcp_servers", "must be a list, got "+pyrepr.TypeName(servers))
+		return invalidParams("editor.mcp_servers", "must be a list, got "+errchain.Kind(servers))
 	}
 	if len(list) > 16 {
 		return invalidParams("editor.mcp_servers", fmt.Sprintf("at most 16 servers, got %d", len(list)))
@@ -171,7 +172,7 @@ func validateServers(servers any) error {
 func serverSpecProblem(spec any, names map[string]bool) string {
 	fields, ok := spec.(map[string]any)
 	if !ok {
-		return "AttributeError"
+		return "a server spec must be a mapping"
 	}
 	kind, has := fields["type"]
 	if !has {
@@ -179,10 +180,10 @@ func serverSpecProblem(spec any, names map[string]bool) string {
 	}
 	switch k := kind.(type) {
 	case []any, map[string]any:
-		return "TypeError"
+		return "type must be stdio, http or sse"
 	case string:
 		if k != "stdio" && k != "http" && k != "sse" {
-			return "KeyError"
+			return "type must be stdio, http or sse"
 		}
 		v := &acpValidator{}
 		name, valid := v.server(k, fields)
@@ -195,7 +196,7 @@ func serverSpecProblem(spec any, names map[string]bool) string {
 		names[name] = true
 		return ""
 	default:
-		return "KeyError"
+		return "type must be stdio, http or sse"
 	}
 }
 
@@ -205,7 +206,7 @@ func privateEditorRequest(request map[string]any, private *RecoveredSecrets) err
 	if raw := pyjson.Plain(request["editor"]); pyrepr.Truthy(raw) {
 		m, ok := raw.(map[string]any)
 		if !ok {
-			return fmt.Errorf("AttributeError: '%s' object has no attribute 'get'", pyrepr.TypeName(raw))
+			return fmt.Errorf("editor settings are %s, expected a mapping", errchain.Kind(raw))
 		}
 		editor = m
 	}

@@ -153,7 +153,7 @@ func TestHubModelHelpers(t *testing.T) {
 	if len(hits) != 2 || hits[1].Name != "ca" {
 		t.Fatal(hits)
 	}
-	fm := hubParseFrontmatter("\xEF\xBB\xBF---\nname: x\nmetadata:\n  hermes:\n    tags: [a, b]\n---\nbody")
+	fm := hubParseFrontmatter("\xEF\xBB\xBF---\nname: x\nmetadata:\n  icebath:\n    tags: [a, b]\n---\nbody")
 	if fm["name"] != "x" || !reflect.DeepEqual(hubTags(fm), []any{"a", "b"}) || len(hubParseFrontmatter("no fm")) != 0 || len(hubParseFrontmatter("---\n: [\n---\n")) != 0 {
 		t.Fatal(fm)
 	}

@@ -68,7 +68,7 @@ func TestDefaultAndUncomputableStillCatchUp(t *testing.T) {
 			job := mustCreate(t, s, CreateJobOptions{Prompt: prompt("default"), Schedule: "every 1h", Model: "fixture", Deliver: prompt("local")})
 			editJobs(t, s, func(j *Job) { j.NextRunAt = strPtr(FormatISO(s.clk.now().Add(-4 * time.Hour))) })
 			if uncomputable {
-				patchChronos(t, &computeNextRunFn, func(*Store, *Schedule, *string, *string) (*string, error) { return nil, nil })
+				patchSeam(t, &computeNextRunFn, func(*Store, *Schedule, *string, *string) (*string, error) { return nil, nil })
 			}
 			if due := jobIDs(mustDue(t, s)); !reflect.DeepEqual(due, []string{job.ID}) {
 				t.Fatalf("due %v", due)

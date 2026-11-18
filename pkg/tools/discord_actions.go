@@ -91,8 +91,8 @@ func discordLoadCapsFromDisk(env *Env, token string) *pyjson.Object {
 	if !ok {
 		return nil
 	}
-	ts, valid := portalFloat(entry.GetOr("ts", int64(0)))
-	if !valid || portalNow()-ts > discordCapabilityDiskTTLSeconds {
+	ts, valid := jsonFloat(entry.GetOr("ts", int64(0)))
+	if !valid || epochSeconds()-ts > discordCapabilityDiskTTLSeconds {
 		return nil
 	}
 	caps, ok := entry.GetOr("caps", nil).(*pyjson.Object)
@@ -113,7 +113,7 @@ func discordSaveCapsToDisk(env *Env, token string, caps *pyjson.Object) {
 			return err
 		}
 		data := discordReadCapsFile(path)
-		data.Set(discordTokenCacheKey(token), pyjson.ObjectOf("caps", caps, "ts", portalNow()))
+		data.Set(discordTokenCacheKey(token), pyjson.ObjectOf("caps", caps, "ts", epochSeconds()))
 		text, err := pyjson.Dumps(data)
 		if err != nil {
 			return err
@@ -268,7 +268,7 @@ func discordList(v any) []any {
 
 // Numeric sort key of a decoded value, ints and floats compared by value
 func discordSortKey(v any) float64 {
-	f, _ := portalFloat(v)
+	f, _ := jsonFloat(v)
 	return f
 }
 
@@ -904,3 +904,30 @@ func registerDiscordTools() {
 		RegisterSchemaRewriter(tool.name, discordRewriter(tool.core, tool.name))
 	}
 }
+
+// Python float() of a decoded JSON value, false where float() raises
+func jsonFloat(v any) (float64, bool) {
+	switch t := v.(type) {
+	case bool:
+		if t {
+			return 1, true
+		}
+		return 0, true
+	case int:
+		return float64(t), true
+	case int64:
+		return float64(t), true
+	case float64:
+		return t, true
+	case *big.Int:
+		f, _ := new(big.Float).SetInt(t).Float64()
+		return f, true
+	case string:
+		f, err := strconv.ParseFloat(strings.TrimSpace(strings.ReplaceAll(t, "_", "")), 64)
+		return f, err == nil
+	}
+	return 0, false
+}
+
+// Seconds since the epoch as time.time answers
+func epochSeconds() float64 { return float64(time.Now().UnixNano()) / 1e9 }

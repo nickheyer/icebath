@@ -3,7 +3,6 @@ package provider
 import (
 	"context"
 	"fmt"
-	"log/slog"
 	"net/url"
 	"strings"
 	"sync"
@@ -615,7 +614,7 @@ func (p Profile) FetchModels(ctx context.Context, apiKey, baseURL string, timeou
 	headers := pyhttpx.OrderedHeaderMap(lines...)
 	data, err := modelsGetJSON(ctx, target, timeout, headers, nil)
 	if err != nil {
-		slog.Debug("fetch_models(" + p.Name + "): " + err.Error())
+		pkgLog().Debug("fetch_models(" + p.Name + "): " + err.Error())
 		return nil, false
 	}
 	items := data
@@ -625,7 +624,7 @@ func (p Profile) FetchModels(ctx context.Context, apiKey, baseURL string, timeou
 			items = []any{}
 		}
 	} else if _, ok := data.([]any); !ok {
-		slog.Debug("fetch_models(" + p.Name + "): payload is neither a list nor an object")
+		pkgLog().Debug("fetch_models(" + p.Name + "): payload is neither a list nor an object")
 		return nil, false
 	}
 	return ChatCatalogIDs(items), true
@@ -813,7 +812,7 @@ func routeProfileIsStaleCredentialError(ctx context.Context, route Route, status
 	defer func() {
 		if r := recover(); r != nil {
 			if _, seen := errorPathWarned.LoadOrStore([2]string{p.Name, "is_stale_credential_error"}, true); !seen {
-				slog.Warn(fmt.Sprintf("provider %s: %s hook failed; handling the API error without it", p.Name, "is_stale_credential_error"), "panic", r)
+				pkgLog().Warn(fmt.Sprintf("provider %s: %s hook failed; handling the API error without it", p.Name, "is_stale_credential_error"), "panic", r)
 			}
 			stale = false
 		}

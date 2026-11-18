@@ -2,7 +2,6 @@ package state
 
 import (
 	"errors"
-	"fmt"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -10,7 +9,6 @@ import (
 	"slices"
 	"strings"
 	"syscall"
-	"unicode"
 )
 
 // Python os.path.normpath, posixpath rules keeping a double leading slash, ntpath rules on Windows
@@ -174,19 +172,19 @@ func pathlibStr(p string) string {
 	return "."
 }
 
-// Python str of an OSError, the errno tag, strerror and quoted filename around a Go error
+// Reason of an operating system failure followed by the paths or the call it concerns
 func pyOSErrorStr(err error) string {
 	var pe *fs.PathError
 	if errors.As(err, &pe) {
 		if text, ok := pyErrnoText(pe.Err); ok {
-			return text + ": " + pyRepr(pe.Path)
+			return text + ": " + pe.Path
 		}
 		return err.Error()
 	}
 	var le *os.LinkError
 	if errors.As(err, &le) {
 		if text, ok := pyErrnoText(le.Err); ok {
-			return text + ": " + pyRepr(le.Old) + " -> " + pyRepr(le.New)
+			return text + ": " + le.Old + " -> " + le.New
 		}
 		return err.Error()
 	}
@@ -194,7 +192,7 @@ func pyOSErrorStr(err error) string {
 	if errors.As(err, &se) {
 		var errno syscall.Errno
 		if errors.As(se.Err, &errno) {
-			return fmt.Sprintf("[Errno %d] (originated from %s)", uint(errno), se.Syscall)
+			return se.Syscall + ": " + errno.Error()
 		}
 		return err.Error()
 	}
@@ -204,7 +202,7 @@ func pyOSErrorStr(err error) string {
 	return err.Error()
 }
 
-// Bracketed errno and C strerror text of a syscall error, WinError and its trimmed message on Windows
+// Reason text of a syscall error, trimmed of its trailing period on Windows
 func pyErrnoText(err error) (string, bool) {
 	var errno syscall.Errno
 	if !errors.As(err, &errno) {
@@ -213,13 +211,8 @@ func pyErrnoText(err error) (string, bool) {
 	msg := errno.Error()
 	if runtime.GOOS == "windows" {
 		msg = strings.TrimRightFunc(msg, func(r rune) bool { return r <= ' ' || r == '.' })
-		return fmt.Sprintf("[WinError %d] %s", uint(errno), msg), true
 	}
-	if r := []rune(msg); len(r) > 0 {
-		r[0] = unicode.ToUpper(r[0])
-		msg = string(r)
-	}
-	return fmt.Sprintf("[Errno %d] %s", uint(errno), msg), true
+	return msg, true
 }
 
 // Whether every rune of a non empty name is a decimal digit, like str.isdigit on procfs names

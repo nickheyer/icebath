@@ -14,7 +14,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/kanban"
 	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tools"
-	"github.com/nickheyer/icebath/pkg/tuigateway"
+	"github.com/nickheyer/icebath/pkg/tuihost"
 )
 
 // Declares session.resume on the session module registry
@@ -75,7 +75,7 @@ func (r *resumeCtx) mint(prompts bool) (string, string, string) {
 }
 
 // Deferred record with this resume's common fields, stored overrides restoring the persisted route
-func (r *resumeCtx) record(source, cwd string, history []any, overrides map[string]any, hasOverrides bool, o deferredRecordOptions) *tuigateway.Session {
+func (r *resumeCtx) record(source, cwd string, history []any, overrides map[string]any, hasOverrides bool, o deferredRecordOptions) *tuihost.Session {
 	modelConfig, followsProfile := map[string]any{}, false
 	if hasOverrides {
 		o.modelOverride = overrides["model_override"]
@@ -106,7 +106,7 @@ func (r *resumeCtx) foundValue(key string) any {
 }
 
 // Registers record live or reuses a concurrent winner, repairing a named profile's row like the eager build
-func (r *resumeCtx) claim(sid string, record *tuigateway.Session) map[string]any {
+func (r *resumeCtx) claim(sid string, record *tuihost.Session) map[string]any {
 	liveSID, live, found := claimOrReuseLive(r.ctx, sid, r.target, record, nil)
 	if !found {
 		if r.profileHome != "" && !r.lazy {
@@ -150,7 +150,7 @@ func (r *resumeCtx) messages(display []any) []any {
 	if r.omitMessages {
 		return []any{}
 	}
-	messages, err := tuigateway.HistoryToMessages(r.ctx, display, r.profileHome, r.inline)
+	messages, err := tuihost.HistoryToMessages(r.ctx, display, r.profileHome, r.inline)
 	panicIf(err)
 	return messages
 }
@@ -187,7 +187,7 @@ func planSnapshotValue(o *pyjson.Object) any {
 
 // Runtime id of a live unpersisted session of a home matched by stored key or pending title
 func findLiveUnpersisted(needle, profileHomeDir string) string {
-	for _, live := range tuigateway.LiveSessions() {
+	for _, live := range tuihost.LiveSessions() {
 		record := live.Session
 		if strOr(record.Get("profile_home")) != profileHomeDir {
 			continue
@@ -200,7 +200,7 @@ func findLiveUnpersisted(needle, profileHomeDir string) string {
 }
 
 // Reattaches a live lazy session that has no stored row yet
-func resumeLiveUnpersisted(r *resumeCtx, liveSID string, live *tuigateway.Session) map[string]any {
+func resumeLiveUnpersisted(r *resumeCtx, liveSID string, live *tuihost.Session) map[string]any {
 	if r.ownsDB {
 		releaseDB(r.db)
 	}
@@ -210,7 +210,7 @@ func resumeLiveUnpersisted(r *resumeCtx, liveSID string, live *tuigateway.Sessio
 		return refusal
 	}
 	live.Set("last_active", nowSeconds())
-	if transport := tuigateway.CurrentTransport(r.ctx); transport != nil {
+	if transport := tuihost.CurrentTransport(r.ctx); transport != nil {
 		unlock := lockHistory(live)
 		rebindLiveTransport(r.ctx, liveSID, live, transport)
 		unlock()
@@ -253,14 +253,14 @@ func resumeAdoptStranded(r *resumeCtx) {
 		if profile == "" {
 			profile = "?"
 		}
-		logger().Info(fmt.Sprintf("adopted stranded session %s (lineage of %d segment(s)) from default store into profile %s", donorID, segments, profile))
+		pkgLog().Info(fmt.Sprintf("adopted stranded session %s (lineage of %d segment(s)) from default store into profile %s", donorID, segments, profile))
 		r.found, err = r.db.GetSession(r.ctx, donorID)
 		panicIf(err)
 		if r.foundAny() {
 			r.target = strOr(r.found.GetOr("id", nil))
 		}
 	}); failure != nil {
-		logger().Error(fmt.Sprintf("stranded-session adoption failed for %s", r.target), "exc_info", failureText(failure))
+		pkgLog().Error(fmt.Sprintf("stranded-session adoption failed for %s", r.target), "exc_info", failureText(failure))
 	}
 }
 
@@ -276,9 +276,9 @@ func resumeMaterializeMinted(r *resumeCtx) {
 		found, err := r.db.GetSession(r.ctx, r.target)
 		panicIf(err)
 		r.found = found
-		logger().Info(fmt.Sprintf("materialized session row for minted-but-unpersisted key %s (resume no longer 4007s)", r.target))
+		pkgLog().Info(fmt.Sprintf("materialized session row for minted-but-unpersisted key %s (resume no longer 4007s)", r.target))
 	}); failure != nil {
-		logger().Warn(fmt.Sprintf("failed to materialize session row for %s", r.target), "exc_info", failureText(failure))
+		pkgLog().Warn(fmt.Sprintf("failed to materialize session row for %s", r.target), "exc_info", failureText(failure))
 	}
 }
 
@@ -302,7 +302,7 @@ func resumeLocate(r *resumeCtx) map[string]any {
 		return nil
 	}
 	if liveSID := findLiveUnpersisted(r.target, r.profileHome); liveSID != "" {
-		if live := tuigateway.SessionRecord(liveSID); live != nil {
+		if live := tuihost.SessionRecord(liveSID); live != nil {
 			return resumeLiveUnpersisted(r, liveSID, live)
 		}
 	}
@@ -359,20 +359,20 @@ func resumeGuard(r *resumeCtx) map[string]any {
 		if errors.As(err, &tooLarge) {
 			return rpcErr(r.rid, 4130, err.Error(), nil)
 		}
-		logger().Warn(fmt.Sprintf("resume safety check failed for %s (proceeding without guard): %s", r.target, err))
+		pkgLog().Warn(fmt.Sprintf("resume safety check failed for %s (proceeding without guard): %s", r.target, err))
 	}
 	return nil
 }
 
 // Reattaches an already live session under the resume lock
-func resumeReuseLive(r *resumeCtx, sid string, session *tuigateway.Session) map[string]any {
+func resumeReuseLive(r *resumeCtx, sid string, session *tuihost.Session) map[string]any {
 	sessionResumeLock.Lock()
 	defer sessionResumeLock.Unlock()
 	return resumeReuseLiveLocked(r, sid, session)
 }
 
 // Reattach with the resume lock already held
-func resumeReuseLiveLocked(r *resumeCtx, sid string, session *tuigateway.Session) map[string]any {
+func resumeReuseLiveLocked(r *resumeCtx, sid string, session *tuihost.Session) map[string]any {
 	if refusal := reattachRefusal(r.rid, sid, session); refusal != nil {
 		return refusal
 	}
@@ -414,7 +414,7 @@ type resumeResponseOptions struct {
 }
 
 // Common resume payload, an omitted transcript still reporting the stored size
-func resumeResponse(r *resumeCtx, sid string, record *tuigateway.Session, o resumeResponseOptions) map[string]any {
+func resumeResponse(r *resumeCtx, sid string, record *tuihost.Session, o resumeResponseOptions) map[string]any {
 	messages := o.messages
 	if messages == nil {
 		messages = r.messages(o.display)
@@ -459,14 +459,14 @@ func resumeLazy(r *resumeCtx) map[string]any {
 		return rpcErr(r.rid, 5000, resumeFailedMessage(failure), nil)
 	}
 	record := r.record(source, cwd, anyRows(history), nil, false, deferredRecordOptions{lazy: true,
-		todoState: planSnapshotValue(tuigateway.TodoStateFromHistory(history))})
+		todoState: planSnapshotValue(tuihost.TodoStateFromHistory(history))})
 	if reused := r.claim(sid, record); reused != nil {
 		return reused
 	}
 	running := childRunActive(r.target, r.homeKey())
 	display := anyRows(history)
 	if verbatim, err := r.childHistory(false); err != nil {
-		logger().Debug("child-watch display projection read failed", "exc_info", err.Error())
+		pkgLog().Debug("child-watch display projection read failed", "exc_info", err.Error())
 	} else {
 		display = anyRows(verbatim)
 	}
@@ -512,7 +512,7 @@ func resumeCold(r *resumeCtx) map[string]any {
 	}
 	overrides := storedSessionRuntimeOverrides(profileBuildScope(r.ctx, r.profileHome), r.found)
 	record := r.record(source, cwd, history, overrides, true, deferredRecordOptions{displayHistoryPrefix: r.displayPrefix(),
-		todoState: planSnapshotValue(tuigateway.TodoStateFromHistory(historyDicts(history)))})
+		todoState: planSnapshotValue(tuihost.TodoStateFromHistory(historyDicts(history)))})
 	if reused := r.claim(sid, record); reused != nil {
 		return reused
 	}
@@ -548,7 +548,7 @@ func resumeEager(r *resumeCtx) map[string]any {
 		prefix = r.displayPrefix()
 		stored = storedSessionRuntimeOverrides(scoped, r.found)
 		options := makeAgentOptions{sessionDB: r.db, platformOverride: source, cwdOverride: r.profileResumeCwd,
-			authUserID: tuigateway.TransportAuthUserID(tuigateway.CurrentTransport(r.ctx))}
+			authUserID: tuihost.TransportAuthUserID(tuihost.CurrentTransport(r.ctx))}
 		options.applyOverrides(stored)
 		built, err = makeAgentInContext(scoped, sid, r.target, options)
 		panicIf(err)
@@ -568,7 +568,7 @@ func resumeEager(r *resumeCtx) map[string]any {
 			transferDBToAgent(scoped, a, r.db)
 		}
 		r.ownsDB = false
-		session := tuigateway.SessionRecord(sid)
+		session := tuihost.SessionRecord(sid)
 		if session == nil {
 			return
 		}
@@ -593,16 +593,16 @@ func resumeEager(r *resumeCtx) map[string]any {
 	if failure != nil {
 		if r.ownsDB {
 			sessionsLock.Lock()
-			tuigateway.SetSessionRecord(sid, nil)
+			tuihost.SetSessionRecord(sid, nil)
 			sessionsLock.Unlock()
 		}
 		sessionResumeLock.Unlock()
 		return rpcErr(r.rid, 5000, resumeFailedMessage(failure), nil)
 	}
-	session := tuigateway.SessionRecord(sid)
+	session := tuihost.SessionRecord(sid)
 	sessionResumeLock.Unlock()
 	if session == nil {
-		session = tuigateway.NewSession(nil)
+		session = tuihost.NewSession(nil)
 	}
 	startedAt := nowSeconds()
 	if value := session.Get("created_at"); truthy(value) {
@@ -611,7 +611,7 @@ func resumeEager(r *resumeCtx) map[string]any {
 		startedAt = stamp
 	}
 	var autoContinue map[string]any
-	if tuigateway.SessionRecord(sid) == session {
+	if tuihost.SessionRecord(sid) == session {
 		autoContinue = maybeScheduleAutoContinue(r.ctx, sid, session, r.target)
 	}
 	a, _ := built.(*agent.AIAgent)

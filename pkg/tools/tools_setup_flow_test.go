@@ -9,7 +9,6 @@ import (
 	"testing"
 
 	"github.com/nickheyer/icebath/pkg/config"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/setupflow"
 )
 
@@ -94,14 +93,6 @@ func toolsFlowHome(t *testing.T) string {
 // Hooks that fail the case when a step it did not expect reaches them
 func strictFlowHooks(t *testing.T) ToolsFlowHooks {
 	return ToolsFlowHooks{
-		Consent: func(context.Context, string, config.Tree, setupflow.Asker) error {
-			t.Fatal("consent asked")
-			return nil
-		},
-		PortalAccess: func(context.Context, string, io.Writer, string, string, setupflow.Asker) bool {
-			t.Fatal("portal access asked")
-			return false
-		},
 		ConfigureMCP: func(context.Context, config.Tree, setupflow.Asker) error { t.Fatal("mcp asked"); return nil },
 		XAILogin:     func(context.Context, string, io.Writer) bool { t.Fatal("xai login asked"); return false },
 	}
@@ -114,18 +105,17 @@ func TestToolsFlowMenuOffersGlobalAndMCPRowsAndSavesOnDone(t *testing.T) {
 		t.Fatal(err)
 	}
 	hooks := strictFlowHooks(t)
-	consented, mcpRan := 0, 0
-	hooks.Consent = func(_ context.Context, _ string, cfg config.Tree, _ setupflow.Asker) error {
-		consented++
-		cfg["telemetry"] = map[string]any{"shared_metrics": map[string]any{"enabled": true, "send": true}}
+	mcpRan := 0
+	hooks.ConfigureMCP = func(_ context.Context, cfg config.Tree, _ setupflow.Asker) error {
+		mcpRan++
+		cfg["mcp_servers"].(map[string]any)["files"].(map[string]any)["enabled"] = false
 		return nil
 	}
-	hooks.ConfigureMCP = func(context.Context, config.Tree, setupflow.Asker) error { mcpRan++; return nil }
 	var menus [][]string
 	menu := func(label string) func(string, []string) (any, error) {
 		return func(_ string, choices []string) (any, error) { menus = append(menus, choices); return label, nil }
 	}
-	ask := &flowScript{t: t, answers: []func(string, []string) (any, error){menu("shared metrics"), menu("MCP"), menu("Done")}}
+	ask := &flowScript{t: t, answers: []func(string, []string) (any, error){menu("MCP"), menu("Done")}}
 	if err := RunToolsFlow(context.Background(), &Env{Home: h}, ask, hooks); err != nil {
 		t.Fatal(err)
 	}
@@ -133,11 +123,11 @@ func TestToolsFlowMenuOffersGlobalAndMCPRowsAndSavesOnDone(t *testing.T) {
 	if !strings.Contains(first, "Configure Telegram") || !strings.Contains(first, "Configure all platforms (global)") || !strings.Contains(first, "Configure MCP server tools") {
 		t.Fatalf("menu %v", menus[0])
 	}
-	if consented != 1 || mcpRan != 1 || !strings.Contains(strings.Join(menus[1], "|"), "shared metrics  (sending to Nous)") {
-		t.Fatalf("consent %d mcp %d relabelled %v", consented, mcpRan, menus[1])
+	if mcpRan != 1 {
+		t.Fatalf("mcp %d", mcpRan)
 	}
 	saved, _ := os.ReadFile(filepath.Join(h, "config.yaml"))
-	if !strings.Contains(string(saved), "send: true") || !strings.Contains(strings.Join(ask.said, "\n"), "Tool configuration saved to") {
+	if !strings.Contains(string(saved), "enabled: false") || !strings.Contains(strings.Join(ask.said, "\n"), "Tool configuration saved to") {
 		t.Fatalf("config\n%s\nsaid %v", saved, ask.said)
 	}
 }
@@ -204,29 +194,6 @@ func TestToolsFlowCodexStepSignsInOrSkips(t *testing.T) {
 			answer == "Skip" && !strings.Contains(said, "remain inactive until you sign in") {
 			t.Fatalf("%s said %v saved %d", answer, ask.said, saved)
 		}
-	}
-}
-
-func TestToolsFlowManagedRowWithoutPortalAccessWritesNothing(t *testing.T) {
-	h := toolsFlowHome(t)
-	hooks := strictFlowHooks(t)
-	var capability string
-	hooks.PortalAccess = func(_ context.Context, _ string, _ io.Writer, c, _ string, _ setupflow.Asker) bool {
-		capability = c
-		return false
-	}
-	ask := &flowScript{t: t}
-	f := &ToolsSetup{Ctx: context.Background(), Env: &Env{Home: h}, Con: flowConsole(ask), Ask: ask, Flow: hooks}
-	row := pyjson.NewObject()
-	row.Set("name", "Nous Subscription")
-	row.Set("managed_nous_feature", "web")
-	row.Set("web_backend", "firecrawl")
-	cfg := config.Tree{}
-	if err := f.configureProvider(row, cfg, false, false); err != nil {
-		t.Fatal(err)
-	}
-	if capability != "Nous Subscription" || len(cfg) != 0 || !strings.Contains(strings.Join(ask.said, "\n"), "Nous Portal access is required") {
-		t.Fatalf("capability %q cfg %v said %v", capability, cfg, ask.said)
 	}
 }
 

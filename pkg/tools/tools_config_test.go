@@ -114,14 +114,6 @@ func TestToolsConfigCategoriesListEveryProviderEnvKey(t *testing.T) {
 	if !isConfigurableToolset("tts") || !isConfigurableToolset("vision") || isConfigurableToolset("terminal") {
 		t.Fatal("configurable")
 	}
-	tts, _ := ToolCategories.Get("tts")
-	providers, _ := tts.(interface{ Get(string) (any, bool) }).Get("providers")
-	row := providers.([]any)[1].(interface {
-		Get(string) (any, bool)
-	})
-	if v, _ := row.Get("requires_nous_auth"); v != true {
-		t.Fatal("nous marker")
-	}
 }
 
 func TestPortableMCPServerSetExport(t *testing.T) {

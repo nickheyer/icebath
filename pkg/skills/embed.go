@@ -8,8 +8,8 @@ import (
 	"github.com/nickheyer/icebath/pkg/tarzst"
 )
 
-//go:generate go run ../../cmd/packtree -out bundled.tar.zst -manifest bundled_manifest.txt
-//go:generate go run ../../cmd/packtree -out optional.tar.zst -manifest optional_manifest.txt
+//go:generate go run ../../cmd/packtree pack -dir bundled -out bundled.tar.zst -manifest bundled_manifest.txt
+//go:generate go run ../../cmd/packtree pack -dir optional -out optional.tar.zst -manifest optional_manifest.txt
 
 //go:embed bundled.tar.zst
 var bundledArchive []byte

@@ -219,7 +219,7 @@ func CreateWrapperScript(name, target string) (string, error) {
 	return path, nil
 }
 
-// Python text of an OS error, errno number and description followed by the quoted path
+// Reason of a file failure followed by its path
 func pyOSErrorText(err error) string {
 	var pe *os.PathError
 	if !errors.As(err, &pe) {
@@ -227,19 +227,12 @@ func pyOSErrorText(err error) string {
 	}
 	var errno syscall.Errno
 	if errors.As(pe.Err, &errno) {
-		return fmt.Sprintf("[Errno %d] %s: '%s'", int(errno), pyErrnoText(errno), pe.Path)
+		return errno.Error() + ": " + pe.Path
 	}
-	return fmt.Sprintf("%s: '%s'", pyErrnoText(pe.Err), pe.Path)
+	return pe.Err.Error() + ": " + pe.Path
 }
 
 // Errno description capitalized as Python strerror spells it
-func pyErrnoText(err error) string {
-	s := err.Error()
-	if s == "" {
-		return s
-	}
-	return strings.ToUpper(s[:1]) + s[1:]
-}
 
 // Removes the generated wrapper of a profile alias, reporting whether one was removed
 func RemoveWrapperScript(name string) (bool, error) {

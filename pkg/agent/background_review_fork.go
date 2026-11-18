@@ -2,8 +2,8 @@ package agent
 
 import (
 	"context"
+	"errors"
 	"fmt"
-	"log/slog"
 	"strings"
 	"sync"
 
@@ -27,10 +27,6 @@ const (
 
 // Usage counter keys a review fork snapshot carries, api_calls last
 var reviewUsageCounters = []string{"input_tokens", "output_tokens", "cache_read_tokens", "cache_write_tokens", "reasoning_tokens", "api_calls"}
-
-func backgroundReviewLog() *slog.Logger {
-	return slog.Default().With("logger", "agent.background_review")
-}
 
 // Agent constructor the cache parity fork goes through, replaced by tests recording the keywords
 var newCacheParityForkAgent = NewAIAgent
@@ -80,7 +76,7 @@ func reviewUsageStr(v any) *string {
 func recordReviewUsageToParent(ctx context.Context, parent *AIAgent, usage map[string]any, task, sessionID string) {
 	defer func() {
 		if r := recover(); r != nil {
-			backgroundReviewLog().Debug(fmt.Sprintf(reviewUsageRecordingFailedMessage, r))
+			pkgLog().Debug(fmt.Sprintf(reviewUsageRecordingFailedMessage, r))
 		}
 	}()
 	if task == "" {
@@ -95,7 +91,7 @@ func recordReviewUsageToParent(ctx context.Context, parent *AIAgent, usage map[s
 	for _, key := range reviewUsageCounters {
 		n, err := reviewUsageInt(usage[key])
 		if err != nil {
-			backgroundReviewLog().Debug(fmt.Sprintf(reviewUsageRecordingFailedMessage, err))
+			pkgLog().Debug(fmt.Sprintf(reviewUsageRecordingFailedMessage, err))
 			return
 		}
 		counts[key] = n
@@ -121,7 +117,7 @@ func recordReviewUsageToParent(ctx context.Context, parent *AIAgent, usage map[s
 		ReasoningTokens: int64(counts["reasoning_tokens"]),
 	})
 	if err != nil {
-		backgroundReviewLog().Debug(fmt.Sprintf(reviewUsageRecordingFailedMessage, err))
+		pkgLog().Debug(fmt.Sprintf(reviewUsageRecordingFailedMessage, err))
 	}
 }
 
@@ -163,7 +159,7 @@ func logReviewCompletion(usage map[string]any, result string) {
 		v, _ := reviewUsageInt(usage[key])
 		return v
 	}
-	backgroundReviewLog().Info(fmt.Sprintf("Background review complete: thread=bg-review calls=%d in=%d out=%d cache_read=%d result=%s",
+	pkgLog().Info(fmt.Sprintf("Background review complete: thread=bg-review calls=%d in=%d out=%d cache_read=%d result=%s",
 		n("api_calls"), n("input_tokens"), n("output_tokens"), n("cache_read_tokens"), result))
 }
 
@@ -205,7 +201,7 @@ func warnIgnoredReasoningEffort(ctx context.Context, a *AIAgent, taskCfg map[str
 		defer func() { _ = recover() }()
 		a.emitWarning(message)
 	}()
-	backgroundReviewLog().Warn(message)
+	pkgLog().Warn(message)
 }
 
 // Context engine hook rebinding its session state, implemented by engines owning persistence
@@ -228,7 +224,7 @@ func detachForkCompression(reviewAgent *AIAgent) {
 		if err == nil {
 			detached = true
 		} else {
-			backgroundReviewLog().Warn("background-review compressor detachment failed; keeping compression DISABLED on this review fork "+
+			pkgLog().Warn("background-review compressor detachment failed; keeping compression DISABLED on this review fork "+
 				"(fail-closed, issue #93057 / #38727)", "exc_info", err.Error())
 		}
 	}
@@ -247,7 +243,7 @@ func routedReasoningConfig(ctx context.Context, taskCfg map[string]any) map[stri
 	}
 	parsed := config.ParseReasoningEffort(effort)
 	if parsed == nil {
-		backgroundReviewLog().Warn(fmt.Sprintf("auxiliary.background_review.reasoning_effort %s is not a valid level (none, %s) — using "+
+		pkgLog().Warn(fmt.Sprintf("auxiliary.background_review.reasoning_effort %s is not a valid level (none, %s) — using "+
 			"the routed provider's default", pyrepr.Repr(effort), strings.Join(config.ValidReasoningEfforts, ", ")))
 	}
 	return parsed
@@ -290,11 +286,11 @@ func inheritParentToolSurface(reviewAgent, a *AIAgent) error {
 		entry, _ := tool.(map[string]any)
 		fn, ok := pyjson.Dict(entry["function"])
 		if !ok {
-			return fmt.Errorf("KeyError: 'function'")
+			return errors.New("a parent tool schema has no function")
 		}
 		name, ok := fn["name"]
 		if !ok {
-			return fmt.Errorf("KeyError: 'name'")
+			return errors.New("a parent tool schema has no name")
 		}
 		names[pyrepr.Str(name)] = true
 	}

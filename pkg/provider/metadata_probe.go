@@ -379,10 +379,10 @@ func FetchModelMetadata(ctx context.Context, forceRefresh bool) map[string]map[s
 		modelMetadataCache = cache
 		modelMetadataCacheTime = wallNow()
 		saveModelMetadataDiskCache(ctx, cache)
-		metadataLog.Debug("fetched OpenRouter model metadata", "models", len(cache))
+		pkgLog().Debug("fetched OpenRouter model metadata", "models", len(cache))
 		return cache
 	}
-	metadataLog.Warn("Failed to fetch model metadata from OpenRouter", "error", err)
+	pkgLog().Warn("Failed to fetch model metadata from OpenRouter", "error", err)
 	if len(modelMetadataCache) > 0 {
 		return modelMetadataCache
 	}
@@ -612,7 +612,7 @@ func FetchEndpointModelMetadata(ctx context.Context, baseURL, apiKey string, for
 		target := strings.TrimRight(requestCandidate, "/") + "/models"
 		resp, err := client.Get(target, nil)
 		if err == nil && (resp.StatusCode == 401 || resp.StatusCode == 403) {
-			metadataLog.Debug("model metadata probe rejected, stopping candidate probing", "status", resp.StatusCode, "url", target)
+			pkgLog().Debug("model metadata probe rejected, stopping candidate probing", "status", resp.StatusCode, "url", target)
 			break
 		}
 		if err == nil {
@@ -638,7 +638,7 @@ func FetchEndpointModelMetadata(ctx context.Context, baseURL, apiKey string, for
 		return rememberEndpointModels(key, cache)
 	}
 	if lastErr != nil {
-		metadataLog.Debug("failed to fetch model metadata", "url", normalized+"/models", "error", lastErr)
+		pkgLog().Debug("failed to fetch model metadata", "url", normalized+"/models", "error", lastErr)
 	}
 	return rememberEndpointModels(key, map[string]map[string]any{})
 }
@@ -992,7 +992,7 @@ func queryLocalContextLengthUncached(ctx context.Context, model, baseURL, apiKey
 	return 0
 }
 
-// Dots to dashes so Nous ids compare with OpenRouter spellings
+// Dots to dashes so dotted and dashed version spellings of one model compare equal
 func normalizeModelVersion(model string) string { return strings.ReplaceAll(model, ".", "-") }
 
 // Anthropic models max_input_tokens for console keys, OAuth tokens are skipped
@@ -1004,7 +1004,7 @@ func queryAnthropicContextLength(ctx context.Context, model, baseURL, apiKey str
 	headers := pyhttpx.OrderedHeaderMap(pyhttpx.HeaderLine{Name: "x-api-key", Value: apiKey}, pyhttpx.HeaderLine{Name: "anthropic-version", Value: "2023-06-01"})
 	resp, err := newProbeClient(ctx, baseURL, headers, 5*time.Second, 10*time.Second).Get(base+"/v1/models?limit=1000", nil)
 	if err != nil {
-		metadataLog.Debug("Anthropic /v1/models query failed", "error", err)
+		pkgLog().Debug("Anthropic /v1/models query failed", "error", err)
 		return 0
 	}
 	if resp.StatusCode != 200 {

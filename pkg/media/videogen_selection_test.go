@@ -30,35 +30,19 @@ func videoSelectionEnv(t *testing.T, provider string) *tools.Env {
 	return imageEnv(t, config.Tree{"video_gen": map[string]any{"provider": provider}})
 }
 
-func TestVideoFalStrictSelectionNousSelectionRoutesManagedEvenWithFalKey(t *testing.T) {
-	t.Setenv("FAL_QUEUE_GATEWAY_URL", "https://gateway.nousresearch.com")
-	t.Setenv("TOOL_GATEWAY_USER_TOKEN", "managed-token")
-	t.Setenv("FAL_KEY", "fal-key")
-	useNousAccount(t, true)
-	gw, err := resolveManagedFalVideoGateway(videoSelectionEnv(t, "nous"))
-	if err != nil || gw == nil || gw.GatewayOrigin != "https://gateway.nousresearch.com" || gw.NousUserToken != "managed-token" {
-		t.Fatalf("%+v %v", gw, err)
-	}
-}
-
-func TestVideoFalStrictSelectionFalSelectionMissingKeyErrorsWithoutManagedCall(t *testing.T) {
+func TestVideoFalStrictSelectionFalSelectionMissingKeyErrors(t *testing.T) {
 	t.Setenv("FAL_KEY", "")
-	acct := useNousAccount(t, true)
-	_, err := resolveManagedFalVideoGateway(videoSelectionEnv(t, "fal"))
+	err := falVideoSelectionError(videoSelectionEnv(t, "fal"))
 	var ve *imageValueError
 	if !errors.As(err, &ve) || !strings.Contains(err.Error(), "video_gen is configured to use fal") || !strings.Contains(err.Error(), "FAL_KEY") {
 		t.Fatal(err)
-	}
-	if acct.calls != 0 {
-		t.Fatal("managed gateway probed", acct.calls)
 	}
 }
 
 func TestVideoFalStrictSelectionNeverConfiguredAutodetectUnchanged(t *testing.T) {
 	t.Setenv("FAL_KEY", "fal-key")
-	gw, err := resolveManagedFalVideoGateway(videoSelectionEnv(t, ""))
-	if err != nil || gw != nil {
-		t.Fatal(gw, err)
+	if err := falVideoSelectionError(videoSelectionEnv(t, "")); err != nil {
+		t.Fatal(err)
 	}
 }
 

@@ -109,7 +109,7 @@ func FindEngineDir(ctx context.Context, name string) (string, bool) {
 func LoadContextEngine(ctx context.Context, name string) *HostedObject {
 	engineDir, ok := FindEngineDir(ctx, name)
 	if !ok {
-		logContextEngine.debug(fmt.Sprintf("Context engine '%s' not found in bundled or user plugins", name))
+		pkgLog().Debug(fmt.Sprintf("Context engine '%s' not found in bundled or user plugins", name))
 		return nil
 	}
 	instance, _ := LoadNamed(name, engineDir, func(dir string) (any, error) {
@@ -185,14 +185,14 @@ func (e *engineCollector) registerCommand(m *Manager, rawName any, handler Plugi
 	}
 	clean := strings.ReplaceAll(strings.TrimLeft(pyStrip(strings.ToLower(nameText)), "/"), " ", "-")
 	if clean == "" {
-		logContextEngine.warn(fmt.Sprintf("Context engine '%s' tried to register a command with an empty name.", e.name))
+		pkgLog().Warn(fmt.Sprintf("Context engine '%s' tried to register a command with an empty name.", e.name))
 		return
 	}
 	conflict := "Context engine '%s' tried to register command '/%s' which %s Skipping."
 	if s := installedServices(); s != nil && s.ResolveBuiltinCommand != nil {
 		builtin := false
 		if callGuarded(func() error { builtin = s.ResolveBuiltinCommand(clean); return nil }) == nil && builtin {
-			logContextEngine.warn(fmt.Sprintf(conflict, e.name, clean, "conflicts with a built-in command."))
+			pkgLog().Warn(fmt.Sprintf(conflict, e.name, clean, "conflicts with a built-in command."))
 			return
 		}
 	}
@@ -207,11 +207,11 @@ func (e *engineCollector) registerCommand(m *Manager, rawName any, handler Plugi
 	m.mu.Lock()
 	if _, taken := m.pluginCommands[clean]; taken {
 		m.mu.Unlock()
-		logContextEngine.warn(fmt.Sprintf(conflict, e.name, clean, "is already registered by a plugin."))
+		pkgLog().Warn(fmt.Sprintf(conflict, e.name, clean, "is already registered by a plugin."))
 		return
 	}
 	m.notePluginCommandOrderLocked(clean)
 	m.pluginCommands[clean] = &PluginCommand{Handler: handler, Description: desc, Plugin: "context-engine:" + e.name, ArgsHint: hint}
 	m.mu.Unlock()
-	logContextEngine.debug(fmt.Sprintf("Context engine '%s' registered command: /%s", e.name, clean))
+	pkgLog().Debug(fmt.Sprintf("Context engine '%s' registered command: /%s", e.name, clean))
 }

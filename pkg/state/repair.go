@@ -8,7 +8,6 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
-	"log/slog"
 	"math/big"
 	"os"
 	"path/filepath"
@@ -51,7 +50,7 @@ var (
 	integrityMissingIndexRE         = mustPyRe(`missing from index (\S+)`)
 )
 
-// Outcome of one schema repair pass, empty strings standing for the None values of the hermes report dict
+// Outcome of one schema repair pass, empty strings standing for the None values of the report dict
 type RepairReport struct {
 	Repaired             bool
 	Strategy             string
@@ -118,7 +117,7 @@ func openLockFile(dbPath, suffix, what, tail string) (string, *os.File) {
 		handle, err = os.OpenFile(lockPath, os.O_RDWR|os.O_CREATE|os.O_APPEND, 0o666)
 	}
 	if err != nil {
-		slog.Warn(fmt.Sprintf("Could not open state.db %s lock %s (%s) — %s", what, lockPath, pyOSErrorStr(err), tail))
+		pkgLog().Warn(fmt.Sprintf("Could not open state.db %s lock %s (%s) — %s", what, lockPath, pyOSErrorStr(err), tail))
 		return lockPath, nil
 	}
 	return lockPath, handle
@@ -148,7 +147,7 @@ func crossProcessRepairLock(dbPath string, fn func(holding bool) error) error {
 		if err != nil {
 			return err
 		}
-		slog.Warn(fmt.Sprintf("state.db repair lock %s held by another process for more than %ss — skipping schema "+
+		pkgLog().Warn(fmt.Sprintf("state.db repair lock %s held by another process for more than %ss — skipping schema "+
 			"surgery in this process to avoid racing the repairer. Recorded holder: %s.",
 			lockPath, pyFixed0(repairLockTimeoutSeconds), holder))
 	}
@@ -185,7 +184,7 @@ func bumpSchemaCookie(ctx context.Context, conn SQLiteConn) {
 		}
 	}
 	if err != nil {
-		slog.Warn(fmt.Sprintf("Could not bump state.db schema cookie: %s", errText(err)))
+		pkgLog().Warn(fmt.Sprintf("Could not bump state.db schema cookie: %s", errText(err)))
 	}
 }
 
@@ -469,7 +468,7 @@ func recordRepairOutcome(dbPath string, repaired bool) {
 		return os.WriteFile(ledgerPath, []byte(text), 0o666)
 	}()
 	if err != nil {
-		slog.Warn(fmt.Sprintf("Could not update state.db repair ledger: %s", pyOSErrorStr(err)))
+		pkgLog().Warn(fmt.Sprintf("Could not update state.db repair ledger: %s", pyOSErrorStr(err)))
 	}
 }
 
@@ -513,7 +512,7 @@ func pruneMalformedBackups(dbPath string, keep int) {
 	for _, stale := range backups[keep:] {
 		for _, victim := range append([]string{stale}, sidecars(stale)...) {
 			if err := os.Remove(victim); err != nil && !errors.Is(err, fs.ErrNotExist) {
-				slog.Warn(fmt.Sprintf("Could not prune stale DB backup %s: %s", victim, pyOSErrorStr(err)))
+				pkgLog().Warn(fmt.Sprintf("Could not prune stale DB backup %s: %s", victim, pyOSErrorStr(err)))
 			}
 		}
 	}
@@ -565,7 +564,7 @@ func backupDBFile(dbPath string) (string, string) {
 	if HasLiveConnection(dbPath) {
 		reason := fmt.Sprintf("a connection to %s is still open in this process; raw-copying it would cancel that "+
 			"connection's POSIX advisory locks. Close all SessionDB handles first.", dbPath)
-		slog.Error(fmt.Sprintf("Refusing to raw-copy %s for backup: %s", dbPath, reason))
+		pkgLog().Error(fmt.Sprintf("Refusing to raw-copy %s for backup: %s", dbPath, reason))
 		return "", reason
 	}
 	stamp := time.Now().Format("20060102_150405")
@@ -593,17 +592,17 @@ func backupDBFile(dbPath string) (string, string) {
 	if newest := existingMalformedBackups(dbPath); len(newest) > 0 {
 		if srcID, ok := backupContentIdentity(dbPath); ok {
 			if newestID, ok := backupContentIdentity(newest[0]); ok && newestID == srcID {
-				slog.Info(fmt.Sprintf("Reusing existing forensic backup %s (identical to the damaged DB).", newest[0]))
+				pkgLog().Info(fmt.Sprintf("Reusing existing forensic backup %s (identical to the damaged DB).", newest[0]))
 				return newest[0], ""
 			}
 		}
 	}
 	if reason := backupFreeSpaceError(dbPath); reason != "" {
-		slog.Error(fmt.Sprintf("Refusing forensic backup of %s: %s", dbPath, reason))
+		pkgLog().Error(fmt.Sprintf("Refusing forensic backup of %s: %s", dbPath, reason))
 		return "", reason
 	}
 	if err := publishBackupBundle(dbPath, fmt.Sprintf("%s.backup-staging-%s", dbPath, stamp), backupPath); err != nil {
-		slog.Warn(fmt.Sprintf("Could not back up malformed DB %s: %s", dbPath, pyOSErrorStr(err)))
+		pkgLog().Warn(fmt.Sprintf("Could not back up malformed DB %s: %s", dbPath, pyOSErrorStr(err)))
 		return "", fmt.Sprintf("backup copy failed: %s", pyOSErrorStr(err))
 	}
 	pruneMalformedBackups(dbPath, maxMalformedBackups)
@@ -681,7 +680,7 @@ func PreflightDBWritability(ctx context.Context, dbPath, dbLabel string, directo
 			}
 		}
 		if inScope && osAccess(p, accessRW) {
-			slog.Info(fmt.Sprintf("%s preflight: repaired read-only %s (chmod u+rw%s)", dbLabel, p, x))
+			pkgLog().Info(fmt.Sprintf("%s preflight: repaired read-only %s (chmod u+rw%s)", dbLabel, p, x))
 			continue
 		}
 		walNote := ""
@@ -981,7 +980,7 @@ func dbProbeOn(ctx context.Context, conn SQLiteConn) (string, bool, error) {
 			return fmt.Sprintf("fts5 read probe failed on %s: %s", table, errText(err)), true, nil
 		}
 	}
-	probeSessionID := fmt.Sprintf("_hermes_fts_health_probe_%d", time.Now().UnixNano())
+	probeSessionID := fmt.Sprintf("_icebath_fts_health_probe_%d", time.Now().UnixNano())
 	defer func() { _, _ = conn.ExecContext(ctx, "ROLLBACK") }()
 	err = func() error {
 		if _, err := conn.ExecContext(ctx, "BEGIN IMMEDIATE"); err != nil {
@@ -1032,7 +1031,7 @@ func repairSkip(report *RepairReport, verb, message string, cause error) *Repair
 		report.repairAttempted = true
 	}
 	report.Error = message
-	slog.Error(fmt.Sprintf("state.db repair %s: %s", verb, message))
+	pkgLog().Error(fmt.Sprintf("state.db repair %s: %s", verb, message))
 	return report
 }
 
@@ -1137,12 +1136,12 @@ func restoreJournalModeAfterRepair(ctx context.Context, dbPath, beforeMode strin
 		if _, ok := sqliteClassOf(err); !ok && !isOSError(err) {
 			return err
 		}
-		slog.Warn(fmt.Sprintf("state.db repair at %s: post-surgery journal-mode restore failed (%s); verify with PRAGMA "+
+		pkgLog().Warn(fmt.Sprintf("state.db repair at %s: post-surgery journal-mode restore failed (%s); verify with PRAGMA "+
 			"journal_mode on the next open", dbPath, errText(err)))
 		return nil
 	}
 	if beforeMode != "" && after != beforeMode {
-		slog.Warn(fmt.Sprintf("state.db repair changed journal_mode %s -> %s (pre-surgery probe %s; restore resolved "+
+		pkgLog().Warn(fmt.Sprintf("state.db repair changed journal_mode %s -> %s (pre-surgery probe %s; restore resolved "+
 			"through apply_wal_with_fallback per database.journal_mode and the WAL-reset gate)",
 			pyRepr(beforeMode), pyRepr(after), pyRepr(beforeMode)))
 	}
@@ -1194,7 +1193,7 @@ func repairStateDBSchemaLocked(ctx context.Context, dbPath string, backup bool, 
 		}
 		defer func() {
 			if cleanupError := repairUnlinkFn(scratch); cleanupError != "" {
-				slog.Warn(fmt.Sprintf("Could not remove state.db repair snapshot after repair: %s", cleanupError))
+				pkgLog().Warn(fmt.Sprintf("Could not remove state.db repair snapshot after repair: %s", cleanupError))
 			}
 		}()
 		report.repairAttempted = true
@@ -1206,16 +1205,16 @@ func repairStateDBSchemaLocked(ctx context.Context, dbPath string, backup bool, 
 				report.Repaired, report.Strategy = false, ""
 				report.repairAttempted = repairFailureConsumesAttempt(err)
 				report.Error = fmt.Sprintf("repaired snapshot could not be promoted transactionally: %s", errText(err))
-				slog.Error(fmt.Sprintf("state.db repair promotion failed: %s", errText(err)))
+				pkgLog().Error(fmt.Sprintf("state.db repair promotion failed: %s", errText(err)))
 			} else {
-				slog.Warn(fmt.Sprintf("state.db repaired via '%s' and promoted transactionally: %s", report.Strategy, dbPath))
+				pkgLog().Warn(fmt.Sprintf("state.db repaired via '%s' and promoted transactionally: %s", report.Strategy, dbPath))
 				if err := restoreJournalModeAfterRepair(ctx, dbPath, journalModeBefore, liveGuard); err != nil {
 					return err
 				}
 			}
 		}
 		if !report.Repaired {
-			slog.Error(fmt.Sprintf("state.db schema repair could not recover %s automatically (no committed canonical "+
+			pkgLog().Error(fmt.Sprintf("state.db schema repair could not recover %s automatically (no committed canonical "+
 				"data was modified or lost; backup: %s); manual restore from backup may be required.",
 				dbPath, noneOr(report.BackupPath)))
 		}
@@ -1390,12 +1389,12 @@ func runRepairStrategies(ctx context.Context, dbPath string, report *RepairRepor
 			}
 			reason, sick = errText(err), true
 			if s.failureMsg != "" {
-				slog.Warn(fmt.Sprintf(s.failureMsg, errText(err)))
+				pkgLog().Warn(fmt.Sprintf(s.failureMsg, errText(err)))
 			}
 		}
 		if !sick {
 			report.Repaired, report.Strategy = true, s.name
-			slog.Warn(fmt.Sprintf(s.successMsg, dbPath))
+			pkgLog().Warn(fmt.Sprintf(s.successMsg, dbPath))
 			return nil
 		}
 		if s.failureMsg == "" {

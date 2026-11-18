@@ -5,6 +5,8 @@ import (
 	"reflect"
 	"strings"
 	"testing"
+
+	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 )
 
 // Seeds the OpenRouter reasoning capability catalog the profile clamp reads
@@ -53,7 +55,7 @@ func TestOpenRouterParetoMinCodingScoreEmittedForParetoModel(t *testing.T) {
 	p := bundledPluginProfile(t, "openrouter")
 	body := p.BuildExtraBody("", map[string]any{"model": "openrouter/pareto-code", "openrouter_min_coding_score": 0.65})
 	want := []any{map[string]any{"id": "pareto-router", "min_coding_score": 0.65}}
-	if !reflect.DeepEqual(body.Vals["plugins"], want) {
+	if !reflect.DeepEqual(pyjson.Plain(body.Vals["plugins"]), want) {
 		t.Fatalf("plugins = %#v", body.Vals["plugins"])
 	}
 	for _, bad := range []any{"x", 1.5, -0.1, ""} {
@@ -61,7 +63,7 @@ func TestOpenRouterParetoMinCodingScoreEmittedForParetoModel(t *testing.T) {
 			t.Fatalf("plugins emitted for score %#v", bad)
 		}
 	}
-	if body := p.BuildExtraBody("", map[string]any{"model": "openrouter/pareto-code", "openrouter_min_coding_score": "0.5"}); !reflect.DeepEqual(body.Vals["plugins"], []any{map[string]any{"id": "pareto-router", "min_coding_score": 0.5}}) {
+	if body := p.BuildExtraBody("", map[string]any{"model": "openrouter/pareto-code", "openrouter_min_coding_score": "0.5"}); !reflect.DeepEqual(pyjson.Plain(body.Vals["plugins"]), []any{map[string]any{"id": "pareto-router", "min_coding_score": 0.5}}) {
 		t.Fatalf("string score plugins = %#v", body.Vals["plugins"])
 	}
 	if _, ok := p.BuildExtraBody("", map[string]any{"model": "x/y", "openrouter_min_coding_score": 0.65}).Vals["plugins"]; ok {
@@ -126,7 +128,7 @@ func TestOpenRouterSpeedTierSlugsPinEndpointsAndRewriteWireModel(t *testing.T) {
 		if wire != pin.base {
 			t.Fatalf("%s wire model %s", slug, wire)
 		}
-		if !reflect.DeepEqual(body.Vals["provider"], map[string]any{"ignore": []any{"deepinfra"}, "only": pin.tags}) {
+		if !reflect.DeepEqual(pyjson.Plain(body.Vals["provider"]), map[string]any{"ignore": []any{"deepinfra"}, "only": pin.tags}) {
 			t.Fatalf("%s provider %#v", slug, body.Vals["provider"])
 		}
 		var tiered []string
@@ -140,13 +142,13 @@ func TestOpenRouterSpeedTierSlugsPinEndpointsAndRewriteWireModel(t *testing.T) {
 		}
 	}
 	base := "openai/gpt-6-astra"
-	if body := p.BuildExtraBody("", map[string]any{"model": base, "provider_preferences": map[string]any{"only": []any{"azure"}}}); !reflect.DeepEqual(body.Vals["provider"], map[string]any{"only": []any{"azure"}}) {
+	if body := p.BuildExtraBody("", map[string]any{"model": base, "provider_preferences": map[string]any{"only": []any{"azure"}}}); !reflect.DeepEqual(pyjson.Plain(body.Vals["provider"]), map[string]any{"only": []any{"azure"}}) {
 		t.Fatalf("explicit only on the base slug %#v", body.Vals["provider"])
 	}
 	if _, tl := p.BuildAPIKwargsExtras(nil, map[string]any{"model": "openai/gpt-5.6-sol"}); tl["model"] != nil {
 		t.Fatalf("unpinned model rewritten %#v", tl)
 	}
-	if body := p.BuildExtraBody("", map[string]any{"model": "openai/gpt-5.6-sol", "provider_preferences": map[string]any{"ignore": []any{"x"}}}); !reflect.DeepEqual(body.Vals["provider"], map[string]any{"ignore": []any{"x"}}) {
+	if body := p.BuildExtraBody("", map[string]any{"model": "openai/gpt-5.6-sol", "provider_preferences": map[string]any{"ignore": []any{"x"}}}); !reflect.DeepEqual(pyjson.Plain(body.Vals["provider"]), map[string]any{"ignore": []any{"x"}}) {
 		t.Fatalf("prefs %#v", body.Vals["provider"])
 	}
 }
@@ -156,7 +158,7 @@ func TestOpenRouterClampAppliedInBuildAPIKwargsExtras(t *testing.T) {
 	seedOpenRouterReasoningCaps(t, openrouterCapsItem("qwen/qwen3-plus", []any{"low", "medium", "high"}, false))
 	eb, _ := p.BuildAPIKwargsExtras(&Reasoning{Enabled: bptr(true), Effort: "ultra"},
 		map[string]any{"supports_reasoning": true, "model": "qwen/qwen3-plus", hookCtxKey: context.Background()})
-	if eb.Vals["reasoning"].(map[string]any)["effort"] != "high" {
+	if pyjson.Plain(eb.Vals["reasoning"]).(map[string]any)["effort"] != "high" {
 		t.Fatalf("extra body %#v", eb)
 	}
 }
@@ -166,7 +168,7 @@ func TestOpenRouterNoClampWhenCatalogUnknown(t *testing.T) {
 	seedOpenRouterReasoningCaps(t, openrouterCapsItem("a/b", []any{"low"}, false))
 	eb, _ := p.BuildAPIKwargsExtras(&Reasoning{Enabled: bptr(true), Effort: "ultra"},
 		map[string]any{"supports_reasoning": true, "model": "unlisted/model"})
-	if eb.Vals["reasoning"].(map[string]any)["effort"] != "ultra" {
+	if pyjson.Plain(eb.Vals["reasoning"]).(map[string]any)["effort"] != "ultra" {
 		t.Fatalf("extra body %#v", eb)
 	}
 }
@@ -182,11 +184,11 @@ func TestOpenRouterDisableOmittedForMandatoryRouteKeptOtherwise(t *testing.T) {
 		}
 	}
 	eb, _ := p.BuildAPIKwargsExtras(&Reasoning{Enabled: bptr(false)}, map[string]any{"supports_reasoning": true, "model": "z-ai/glm-5.1"})
-	if !reflect.DeepEqual(eb.Vals["reasoning"], map[string]any{"enabled": false}) {
+	if !reflect.DeepEqual(pyjson.Plain(eb.Vals["reasoning"]), map[string]any{"enabled": false}) {
 		t.Fatalf("extra body %#v", eb)
 	}
 	eb, _ = p.BuildAPIKwargsExtras(nil, map[string]any{"supports_reasoning": true, "model": "z-ai/glm-5.1"})
-	if !reflect.DeepEqual(eb.Vals["reasoning"], map[string]any{"enabled": true, "effort": "medium"}) {
+	if !reflect.DeepEqual(pyjson.Plain(eb.Vals["reasoning"]), map[string]any{"enabled": true, "effort": "medium"}) {
 		t.Fatalf("default reasoning %#v", eb)
 	}
 }

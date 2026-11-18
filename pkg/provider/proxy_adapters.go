@@ -54,8 +54,7 @@ func describeAdapter(a UpstreamAdapter) string {
 
 // Adapter constructors keyed by the icebath proxy start --provider value
 var proxyAdapters = map[string]func(env PoolEnv) UpstreamAdapter{
-	"nous": func(env PoolEnv) UpstreamAdapter { return newNousPortalAdapter(env) },
-	"xai":  func(env PoolEnv) UpstreamAdapter { return newXAIGrokAdapter(env) },
+	"xai": func(env PoolEnv) UpstreamAdapter { return newXAIGrokAdapter(env) },
 }
 
 // Registered adapter names in sorted order

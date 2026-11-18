@@ -5,7 +5,6 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
-	"log/slog"
 	"os"
 	"path/filepath"
 	"sort"
@@ -118,7 +117,7 @@ func LoadSyncManifest(targetRoot string) *pyjson.Object {
 		data, err = pyjson.Loads(text)
 	}
 	if err != nil {
-		slog.Warn(fmt.Sprintf("Unreadable %s — starting a fresh sync manifest", path))
+		pkgLog().Warn(fmt.Sprintf("Unreadable %s — starting a fresh sync manifest", path))
 		return emptyManifest()
 	}
 	o, ok := asObject(data)
@@ -223,7 +222,7 @@ func syncImportedAgents(ctx context.Context, args Args) error {
 		}()
 		if err != nil {
 			c.PrintError(fmt.Sprintf("%s: sync failed: %s", name, pyErrText(err)))
-			slog.Debug("import-agent sync error", "error", err)
+			pkgLog().Debug("import-agent sync error", "error", err)
 			failed++
 			continue
 		}
@@ -234,7 +233,7 @@ func syncImportedAgents(ctx context.Context, args Args) error {
 		}
 		if !args.DryRun {
 			if err := UpdateSyncManifest(ctx, name, sourceDir, h, overwrite, report, !hadErrors); err != nil {
-				slog.Warn(fmt.Sprintf("Could not update import sync manifest: %s", pyErrText(err)))
+				pkgLog().Warn(fmt.Sprintf("Could not update import sync manifest: %s", pyErrText(err)))
 			}
 		}
 		synced++

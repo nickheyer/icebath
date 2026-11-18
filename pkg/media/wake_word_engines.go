@@ -95,25 +95,20 @@ type openWakeWordEngine struct {
 	labels        []string
 }
 
-// Builds the openWakeWord engine on the bundled hey_hermes model unless a custom model is configured
+// Builds the openWakeWord engine on the configured model file, a ValueError naming the setting when none is set
 func newOpenWakeWordEngine(ctx context.Context, cfg map[string]any) (WakeEngine, error) {
-	if err := wakeEnsureImport(ctx, "wake-openwakeword"); err != nil {
+	modelRef := wakeOpenWakeWordModel(cfg)
+	if modelRef == "" {
+		return nil, &WakeWordError{Class: "ValueError", Msg: "wake_word.openwakeword.model is not set. openWakeWord detects only the phrase " +
+			"its model file was trained for; set the path of that file, or set wake_word.provider to auto so the open vocabulary engine detects " +
+			pyrepr.StrRepr(WakePhrase(ctx, cfg)) + "."}
+	}
+	if err := wakeRequireExtra(ctx, "wake-openwakeword"); err != nil {
 		return nil, err
 	}
-	sub := wakeSub(cfg, "openwakeword")
 	lib, err := wakeImportPyOpenWakeWord(ctx)
 	if err != nil {
 		return nil, err
-	}
-	ref := any(wakeBundledModelName)
-	if pyTruthy(sub["model"]) {
-		ref = sub["model"]
-	}
-	modelRef := pystr.Strip(pyrepr.Str(ref))
-	if wakeBundledModelAliases[pystr.Lower(modelRef)] {
-		if modelRef, err = bundledWakewordPath(ctx); err != nil {
-			return nil, err
-		}
 	}
 	e := &openWakeWordEngine{wakeEngineBase: wakeEngineBase{frameLength: 1280}}
 	if e.threshold, err = wakeSensitivity(cfg); err != nil {
@@ -201,7 +196,7 @@ func ensureSherpaModel(ctx context.Context, root string) (string, error) {
 	if target := filepath.Join(root, sherpaKWSModelDir); fileExists(filepath.Join(target, "tokens.txt")) {
 		return target, nil
 	}
-	wakeLog().Info("wake word: preparing the sherpa KWS model (first use downloads about 17 MB)")
+	pkgLog().Info("wake word: preparing the sherpa KWS model (first use downloads about 17 MB)")
 	tree, err := fetch.Tree(ctx, sherpaKWSModel)
 	if err != nil {
 		return "", err
@@ -448,7 +443,7 @@ type porcupineEngine struct {
 
 // Builds the Porcupine engine from PORCUPINE_ACCESS_KEY and a built in keyword or keyword file
 func newPorcupineEngine(ctx context.Context, cfg map[string]any) (WakeEngine, error) {
-	if err := wakeEnsureImport(ctx, "wake-porcupine"); err != nil {
+	if err := wakeRequireExtra(ctx, "wake-porcupine"); err != nil {
 		return nil, err
 	}
 	sub := wakeSub(cfg, "porcupine")

@@ -3,7 +3,6 @@ package codeexec
 import (
 	"context"
 	"fmt"
-	"log/slog"
 	"regexp"
 	"sort"
 	"strings"
@@ -158,8 +157,8 @@ var (
 	cuScreenshotMu    sync.Mutex
 	cuLastScreenshot  = map[string]*screenshotState{}
 	cuDedupMaxStreak  = 2
-	cuWarnEscalation  = func(msg string) { slog.Warn(msg) }
-	cuDebugStopFailed = func(msg string) { slog.Debug(msg) }
+	cuWarnEscalation  = func(msg string) { pkgLog(nil).Warn(msg) }
+	cuDebugStopFailed = func(msg string) { pkgLog(nil).Debug(msg) }
 )
 
 // True when the frame repeats the previous one of the same target below the streak cap, any miss storing it
@@ -533,7 +532,7 @@ func cuArgOr(args map[string]any, key string, def any) any {
 	return def
 }
 
-// One line approval prompt of an action, the foreground suffix appended where hermes appends it
+// One line approval prompt of an action with the foreground suffix appended
 func summarizeAction(action string, args map[string]any) string {
 	fg := ""
 	if args["delivery_mode"] == "foreground" {

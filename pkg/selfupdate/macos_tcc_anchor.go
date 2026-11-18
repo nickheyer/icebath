@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
-	"log/slog"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -30,7 +29,6 @@ var (
 	tccStoreCommonMarkers = []string{"cpython-", "-macos-"}
 	tccStoreRootMarkers   = []string{"/uv/python/", "/.icebath-runtime/python/"}
 	tccAliasPattern       = regexp.MustCompile(`^python3(\.\d+)?$`)
-	tccLog                = slog.Default().With("logger", "hermes_cli.macos_tcc_anchor")
 	tccIsMacOS            = func() bool { return runtime.GOOS == "darwin" }
 	tccSignManagedPython  = pm.SignManagedPython
 	tccCopy2              = pyshutil.Copy2
@@ -243,12 +241,12 @@ func tccProvisionLibpython(venvDir, sourceFile string, refresh bool) {
 	}
 	dstLib := filepath.Join(venvDir, "lib")
 	if err := os.MkdirAll(dstLib, 0o777); err != nil {
-		tccLog.Debug("libpython provision skipped", "err", err)
+		pkgLog().Debug("libpython provision skipped", "err", err)
 		return
 	}
 	matches, err := filepath.Glob(filepath.Join(srcLib, "libpython*"))
 	if err != nil {
-		tccLog.Debug("libpython provision skipped", "err", err)
+		pkgLog().Debug("libpython provision skipped", "err", err)
 		return
 	}
 	for _, src := range matches {
@@ -266,7 +264,7 @@ func tccProvisionLibpython(venvDir, sourceFile string, refresh bool) {
 		}
 		if os.Link(src, dst) != nil {
 			if err := pyshutil.Copy2(src, dst); err != nil {
-				tccLog.Debug(fmt.Sprintf("libpython provision failed for %s", src), "err", err)
+				pkgLog().Debug(fmt.Sprintf("libpython provision failed for %s", src), "err", err)
 			}
 		}
 	}
@@ -309,7 +307,7 @@ var tccCopyAlias = func(venvBin, name, anchor string) bool {
 			return true
 		}
 	}
-	tccLog.Warn(fmt.Sprintf("TCC anchor alias %s not materialized: %s", name, pyfs.OSErrorText(err)))
+	pkgLog().Warn(fmt.Sprintf("TCC anchor alias %s not materialized: %s", name, pyfs.OSErrorText(err)))
 	tccDiscard(tmp)
 	return false
 }
@@ -380,10 +378,10 @@ var tccPassesBootGate = func(staged, venvDir string) bool {
 	}
 	if err != nil {
 		if errors.Is(err, syscall.ENOENT) || errors.Is(err, syscall.ENOEXEC) || errors.Is(err, exec.ErrNotFound) {
-			tccLog.Debug(fmt.Sprintf("boot gate skipped: cannot execute %s (%s)", staged, pyfs.OSErrorText(err)))
+			pkgLog().Debug(fmt.Sprintf("boot gate skipped: cannot execute %s (%s)", staged, pyfs.OSErrorText(err)))
 			return true
 		}
-		tccLog.Warn("boot gate: staged copy not executable: " + pyfs.OSErrorText(err))
+		pkgLog().Warn("boot gate: staged copy not executable: " + pyfs.OSErrorText(err))
 		return false
 	}
 	if code != 0 {
@@ -417,7 +415,7 @@ func tccInstallAnchor(ctx context.Context, venvDir, sourceFile string) error {
 	if err := func() error {
 		defer func() {
 			if r := recover(); r != nil {
-				tccLog.Debug("anchor copy signing skipped", "err", fmt.Sprint(r))
+				pkgLog().Debug("anchor copy signing skipped", "err", fmt.Sprint(r))
 			}
 		}()
 		tccSignManagedPython(tmp)
@@ -438,7 +436,7 @@ func tccInstallAnchor(ctx context.Context, venvDir, sourceFile string) error {
 			return err
 		}
 	} else {
-		tccLog.Warn("TCC anchor installed but alias materialization was incomplete; leaving anchor unmarked so the next run retries")
+		pkgLog().Warn("TCC anchor installed but alias materialization was incomplete; leaving anchor unmarked so the next run retries")
 	}
 	return nil
 }
@@ -464,9 +462,9 @@ func ensureMacosTCCAnchor(ctx context.Context, projectRoot string) (string, erro
 	if err := tccInstallAnchor(ctx, venvDir, sourceFile); err != nil {
 		var gate *tccBootGateFailed
 		if errors.As(err, &gate) {
-			tccLog.Warn("macOS TCC anchor boot-gate refused install: " + gate.msg)
+			pkgLog().Warn("macOS TCC anchor boot-gate refused install: " + gate.msg)
 		} else {
-			tccLog.Warn("macOS TCC anchor install failed: " + pyfs.OSErrorText(err))
+			pkgLog().Warn("macOS TCC anchor install failed: " + pyfs.OSErrorText(err))
 		}
 		return "", nil
 	}

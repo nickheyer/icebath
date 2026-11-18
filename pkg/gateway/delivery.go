@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"log/slog"
 	"os"
 	"path/filepath"
 	"strings"
@@ -271,7 +270,7 @@ func (r *DeliveryRouter) Deliver(ctx context.Context, content string, targets []
 		}
 		tracked := target.Platform != PlatformLocal && target.ChatID != ""
 		if tracked && r.DeadTargets.IsDead(string(target.Platform), target.ChatID) {
-			slog.Info(fmt.Sprintf("Skipping delivery to known-dead target %s:%s (send to it again to clear)", target.Platform, target.ChatID))
+			pkgLog().Info(fmt.Sprintf("Skipping delivery to known-dead target %s:%s (send to it again to clear)", target.Platform, target.ChatID))
 			results[key] = DeliveryOutcome{"success": false, "skipped": "dead_target", "error": "target previously confirmed unreachable"}
 			continue
 		}
@@ -358,12 +357,12 @@ func (r *DeliveryRouter) capOversizedOutput(ctx context.Context, adapter any, co
 	}
 	savedPath, err := saveFullOutput(ctx, content, jobID)
 	if err != nil {
-		slog.Warn(fmt.Sprintf("Audit save failed for cron output (%d chars, job=%s): %v — delivery proceeds without audit copy", len(runes), jobID, err))
+		pkgLog().Warn(fmt.Sprintf("Audit save failed for cron output (%d chars, job=%s): %v — delivery proceeds without audit copy", len(runes), jobID, err))
 		savedPath = ""
 	}
 	if splitter, ok := adapter.(LongMessageSplitter); ok && splitter.SplitsLongMessages() {
 		if savedPath != "" {
-			slog.Info(fmt.Sprintf("Cron output preserved for chunking adapter (%d chars) — full output saved to %s", len(runes), savedPath))
+			pkgLog().Info(fmt.Sprintf("Cron output preserved for chunking adapter (%d chars) — full output saved to %s", len(runes), savedPath))
 		}
 		return content, nil
 	}
@@ -373,7 +372,7 @@ func (r *DeliveryRouter) capOversizedOutput(ctx context.Context, adapter any, co
 		}
 	}
 	footer := fmt.Sprintf("\n\n... [truncated, full output saved to %s]", savedPath)
-	slog.Info(fmt.Sprintf("Cron output truncated (%d chars) — full output: %s", len(runes), savedPath))
+	pkgLog().Info(fmt.Sprintf("Cron output truncated (%d chars) — full output: %s", len(runes), savedPath))
 	keep := MaxPlatformOutput - len([]rune(footer))
 	if keep < 0 {
 		keep = 0
@@ -407,7 +406,7 @@ func (r *DeliveryRouter) DeliverToPlatform(ctx context.Context, target DeliveryT
 		if len(head) > 40 {
 			head = head[:40]
 		}
-		slog.Warn(fmt.Sprintf("Dropped silence-narration outbound to %s (chat=%s): %s", target.Platform, target.ChatID, pyrepr.Repr(string(head))))
+		pkgLog().Warn(fmt.Sprintf("Dropped silence-narration outbound to %s (chat=%s): %s", target.Platform, target.ChatID, pyrepr.Repr(string(head))))
 		return map[string]any{"success": true, "filtered": "silence_narration", "delivered": false}, nil
 	}
 	sendMetadata := map[string]any{}

@@ -208,7 +208,7 @@ func PromptAPIKey(env PoolEnv, out io.Writer, pconfig Profile, existingKey, prov
 	return existingKey, false, nil
 }
 
-// Claude Code credential seams, swappable so tests script the setup token run like the hermes monkeypatches
+// Claude Code credential seams, swappable so tests script the setup token run like the swaps
 var (
 	anthRunOAuthSetupTokenFn        = RunOAuthSetupToken
 	anthReadClaudeCodeCredentialsFn = ReadClaudeCodeCredentials

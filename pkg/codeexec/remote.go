@@ -101,7 +101,7 @@ func envTempDir(envr tools.Environment) (string, error) {
 // Error result of a remote run that raised, logged with its duration and call count
 func remoteFailure(env *tools.Env, err error, execStart time.Time, toolCallsMade int) string {
 	duration := elapsedSeconds(execStart)
-	logger(env).Error(fmt.Sprintf("execute_code remote failed after %ss with %d tool calls: %s: %s",
+	pkgLog(env).Error(fmt.Sprintf("execute_code remote failed after %ss with %d tool calls: %s: %s",
 		pyrepr.Str(duration), toolCallsMade, errorTypeName(err), err.Error()))
 	return errorResult(err.Error(), toolCallsMade, duration, "")
 }
@@ -241,7 +241,7 @@ func runRemotePerCall(ctx context.Context, env *tools.Env, envr tools.Environmen
 				}
 			}
 			if _, err := envr.Execute(context.Background(), "rm -rf "+pyshlex.Quote(sandboxDir), tools.ExecOptions{Cwd: "/", Timeout: 15}); err != nil {
-				logger(env).Debug("Failed to clean up remote sandbox " + sandboxDir)
+				pkgLog(env).Debug("Failed to clean up remote sandbox " + sandboxDir)
 			}
 		}()
 		if _, err := executeChecked(ctx, envr, privateDirsCmd(sandboxDir, sandboxDir+"/rpc"), "remote sandbox setup", 10, nil); err != nil {
@@ -264,7 +264,7 @@ func runRemotePerCall(ctx context.Context, env *tools.Env, envr tools.Environmen
 			return err
 		}
 		short := string([]rune(r.taskID)[:min(8, len([]rune(r.taskID)))])
-		logger(env).Info(fmt.Sprintf("Executing code on %s backend (task %s)...", r.envType, short))
+		pkgLog(env).Info(fmt.Sprintf("Executing code on %s backend (task %s)...", r.envType, short))
 		scriptResult, err := envr.Execute(ctx, launch, tools.ExecOptions{Timeout: execTimeout(r.timeout)})
 		if err != nil {
 			return err
@@ -290,7 +290,7 @@ func runRemotePerCall(ctx context.Context, env *tools.Env, envr tools.Environmen
 	case status == "timeout":
 		applyTimeout(result, fmt.Sprintf("Script timed out after %ss and was killed.", r.timeoutText))
 		duration, _ := result.Get("duration_seconds")
-		logger(env).Warn(fmt.Sprintf("execute_code (remote) timed out after %ss (limit %ss) with %d tool calls",
+		pkgLog(env).Warn(fmt.Sprintf("execute_code (remote) timed out after %ss (limit %ss) with %d tool calls",
 			pyrepr.Str(duration), r.timeoutText, budget.callCount()))
 	case status == "interrupted":
 		out, _ := result.Get("output")
@@ -347,7 +347,7 @@ func executeRemote(ctx context.Context, env *tools.Env, code, taskID string, ena
 			sandboxTools: sandboxTools, timeout: timeout, maxToolCalls: maxToolCalls, reset: reset, idleExit: idle})
 	}()
 	if err != nil {
-		logger(env).Warn("remote session-kernel path failed; falling back to per-call", "error", err)
+		pkgLog(env).Warn("remote session-kernel path failed; falling back to per-call", "error", err)
 		kernelResult = nil
 	}
 	if kernelResult != nil {
@@ -357,7 +357,7 @@ func executeRemote(ctx context.Context, env *tools.Env, code, taskID string, ena
 		}
 		return out
 	}
-	logger(env).Info(fmt.Sprintf("remote session kernel unavailable on %s; using per-call path", envType))
+	pkgLog(env).Info(fmt.Sprintf("remote session kernel unavailable on %s; using per-call path", envType))
 	return runRemotePerCall(ctx, env, envr, code, remoteRun{envType: envType, taskID: effectiveTaskID, sandboxTools: sandboxTools,
 		timeout: timeout, timeoutText: timeoutText, maxToolCalls: maxToolCalls, execStart: execStart})
 }

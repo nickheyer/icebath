@@ -10,7 +10,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pythread"
 )
 
-// Agent built the way hermes _bare_agent seeds the interrupt slots without __init__
+// Bare agent with only its interrupt slots seeded, built without its constructor
 func bareIssuerAgent() *AIAgent {
 	return &AIAgent{hardInterruptRequested: &pythread.Event{}, activeChildrenLock: &sync.Mutex{}, quietMode: true}
 }

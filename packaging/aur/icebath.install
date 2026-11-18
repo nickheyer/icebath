@@ -1,18 +1,4 @@
-# Provisions the NeMo Relay runtime beside the packaged binary through its pm, removed with the package
-post_install() {
-    home="$(mktemp -d)"
-    ICEBATH_HOME="$home" /usr/lib/icebath/icebath pm install --extra nemo-relay
-    status=$?
-    rm -rf "$home"
-    [ "$status" -eq 0 ] || return "$status"
-    rm -rf /usr/lib/icebath/venv-runtime/uv-cache
-    chmod -R a+rX,go-w /usr/lib/icebath/venv /usr/lib/icebath/venv-runtime
-}
-
+# Removes the relay runtime environments that earlier versions provisioned beside the packaged binary
 post_upgrade() {
-    post_install
-}
-
-pre_remove() {
     rm -rf /usr/lib/icebath/venv /usr/lib/icebath/venv-runtime
 }

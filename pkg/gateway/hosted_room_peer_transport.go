@@ -5,8 +5,10 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
+	"fmt"
 
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pythread"
 )
 
@@ -48,6 +50,11 @@ type peerRoomScopeBinder interface {
 // Peer client that stops an attempt from its durable receipt alone
 type peerStopReceipter interface {
 	StopReceipt(ctx context.Context, taskID string, executionGeneration int64, grant string) (map[string]any, error)
+}
+
+// Peer client that hands a member's turn files to the peer before the turn, resuming from what the peer holds
+type peerFileSender interface {
+	SendFile(ctx context.Context, grant string, file map[string]any, data []byte) (map[string]any, error)
 }
 
 // Peer failure classified for failover, retryable on another link unless ambiguous
@@ -159,6 +166,29 @@ func (f *FailoverHostedRoomPeerClient) Stop(ctx context.Context, dispatch *pyjso
 	return failoverCall(f, func(c HostedRoomPeerClient) (map[string]any, error) { return c.Stop(ctx, dispatch, grant) })
 }
 
+// Reads the live catalog over the active link of the same target
+func (f *FailoverHostedRoomPeerClient) Probe(grant string) (map[string]any, error) {
+	return failoverCall(f, func(c HostedRoomPeerClient) (map[string]any, error) {
+		prober, ok := peerHook[peerProber](c)
+		if !ok {
+			return nil, errors.New("this RoomLink cannot read the peer's catalog")
+		}
+		return prober.Probe(grant)
+	})
+}
+
+// Sends the file over the active link of the same target, refused when a candidate cannot carry files
+func (f *FailoverHostedRoomPeerClient) SendFile(ctx context.Context, grant string, file map[string]any, data []byte) (map[string]any, error) {
+	return failoverCall(f, func(c HostedRoomPeerClient) (map[string]any, error) {
+		sender, ok := peerHook[peerFileSender](c)
+		if !ok {
+			size, _ := hostedStrictInt(file["size"])
+			return nil, &PeerFileRefusedError{Name: pyrepr.Str(file["name"]), Size: size, Detail: "this RoomLink cannot carry files"}
+		}
+		return sender.SendFile(ctx, grant, file, data)
+	})
+}
+
 // Binds the room scope into every candidate that takes one
 func (f *FailoverHostedRoomPeerClient) BindRoomScope(scope PeerRoomScope) error {
 	for _, c := range f.Candidates {
@@ -182,19 +212,61 @@ type PeerMemberRoute struct {
 	TraceID               string
 	Grant                 string
 	ExecutionPolicyDigest string
+	Attachments           bool
 }
 
-// Fully fenced member dispatch shared by submit and recovery
-func BuildMemberDispatch(binding HostedRoomBinding, route PeerMemberRoute, roomID, taskID, targetProfile string, executionGeneration, sourceEventSeq int64, prompt, traceID string) (*HostedMemberDispatch, error) {
+// Fully fenced member dispatch shared by submit and recovery, naming the files the peer holds for the turn
+func BuildMemberDispatch(binding HostedRoomBinding, route PeerMemberRoute, roomID, taskID, targetProfile string, executionGeneration, sourceEventSeq int64, prompt, traceID string, files []map[string]any) (*HostedMemberDispatch, error) {
 	digest := sha256.Sum256([]byte(prompt))
-	return HostedMemberDispatchFromMapping(map[string]any{
+	mapping := map[string]any{
 		"protocol_version": int64(HostedProtocolVersion), "room_id": roomID, "home_install_id": route.HomeInstallID,
 		"authority_gateway_id": binding.GatewayID, "authority_epoch": binding.AuthorityEpoch, "member_id": route.MemberID,
 		"target_install_id": route.TargetInstallID, "target_profile": targetProfile, "task_id": taskID,
 		"execution_generation": executionGeneration, "source_event_seq": sourceEventSeq,
 		"cancellation_scope_id": route.CancellationScopeID, "prompt": prompt, "prompt_digest": hex.EncodeToString(digest[:]),
 		"capability_digest": route.CapabilityDigest, "execution_policy_digest": route.ExecutionPolicyDigest, "trace_id": traceID,
-	})
+	}
+	if len(files) > 0 {
+		items := make([]any, len(files))
+		for i, file := range files {
+			items[i] = file
+		}
+		mapping["attachments"] = items
+	}
+	return HostedMemberDispatchFromMapping(mapping)
+}
+
+// Dispatch items of a turn's bound files with the digests the home store verified, their bytes when wanted
+func peerTurnFiles(ctx context.Context, dbPath, roomID, memberID string, attachments []any, withBytes bool) ([]map[string]any, [][]byte, error) {
+	manifest, err := validateBoundTaskManifest(attachments)
+	if err != nil {
+		return nil, nil, err
+	}
+	store, err := NewHostedRoomAttachmentStore(ctx, dbPath, AttachmentStoreOptions{})
+	if err != nil {
+		return nil, nil, err
+	}
+	files := make([]map[string]any, 0, len(manifest))
+	var data [][]byte
+	for _, item := range manifest {
+		var saved map[string]any
+		if withBytes {
+			read, err := store.Read(roomID, item["attachment_id"], memberID, item["event_id"], false)
+			if err != nil {
+				return nil, nil, err
+			}
+			saved = read.Attachment
+			data = append(data, read.Data)
+		} else if saved, err = store.Describe(roomID, item["attachment_id"], memberID, item["event_id"]); err != nil {
+			return nil, nil, err
+		}
+		if !hostedItemMatches(saved, item) {
+			return nil, nil, runtimeRefusal("permission_denied")
+		}
+		files = append(files, map[string]any{"attachment_id": item["attachment_id"], "kind": item["kind"], "mime": item["mime"],
+			"name": item["name"], "size": item["size"], "sha256": saved["sha256"]})
+	}
+	return files, data, nil
 }
 
 // Translates runtime session operations into recipient validated peer RPC
@@ -205,8 +277,40 @@ type PeerHostedRoomTransport struct {
 	SourceEventSeq      int64
 	TaskID              *string
 	ExecutionGeneration *int64
+	StorePath           string
+	AdoptCatalog        func(grant string, catalog *GatewayRoomCatalog) error
 	sessionID           *string
 	dispatch            *HostedMemberDispatch
+}
+
+// Peer client that reads the target's live catalog under a room grant
+type peerProber interface {
+	Probe(grant string) (map[string]any, error)
+}
+
+// Takes the peer's live catalog when it changed under the same execution policy, the route following it
+func (t *PeerHostedRoomTransport) refreshCatalog() error {
+	prober, ok := peerHook[peerProber](t.Client)
+	if !ok || t.AdoptCatalog == nil {
+		return nil
+	}
+	probe, err := prober.Probe(t.Route.Grant)
+	if err != nil {
+		return err
+	}
+	live, err := GatewayRoomCatalogFromMapping(probe["catalog"])
+	if err != nil {
+		return err
+	}
+	if live.CatalogDigest == t.Route.CapabilityDigest {
+		return nil
+	}
+	if err := t.AdoptCatalog(t.Route.Grant, live); err != nil {
+		return err
+	}
+	pkgLog().Info(fmt.Sprintf("hosted room %s: member %s took the peer's changed catalog, files %v", t.Binding.RoomID, t.Route.MemberID, live.Attachments))
+	t.Route.CapabilityDigest, t.Route.Attachments = live.CatalogDigest, live.Attachments
+	return nil
 }
 
 // Peer transport of one member route, its client bound to the room scope
@@ -227,8 +331,45 @@ func NewPeerHostedRoomTransport(binding HostedRoomBinding, route PeerMemberRoute
 	return t, nil
 }
 
-// A member dispatch has no field for files
-func (t *PeerHostedRoomTransport) AcceptsAttachments() bool { return false }
+// Whether the peer's catalog takes room files and the home store is there to send them from
+func (t *PeerHostedRoomTransport) AcceptsAttachments() bool {
+	return t.Route.Attachments && t.StorePath != ""
+}
+
+// Bound files of a turn as dispatch items with their bytes from the home store
+type peerTurnBytes struct {
+	items []map[string]any
+	data  [][]byte
+}
+
+// Hands each bound file to the peer under a fresh grant, a refusal naming the file and the peer's rule
+func (t *PeerHostedRoomTransport) sendFiles(ctx context.Context, dispatch *HostedMemberDispatch, files peerTurnBytes) error {
+	sender, ok := peerHook[peerFileSender](t.Client)
+	if !ok {
+		return &HostedAttemptError{Err: errors.New("this member's RoomLink cannot carry files"), RefusedBeforeSubmit: true}
+	}
+	if tracked, ok := t.Client.(*routeStatusPeerClient); ok {
+		grant, err := tracked.refreshGrant(dispatch.AsMapping(), t.Route.Grant)
+		if err != nil {
+			return &HostedAttemptError{Err: err, NotAdmitted: true}
+		}
+		t.Route.Grant = grant
+	}
+	for i, file := range files.items {
+		if _, err := sender.SendFile(ctx, t.Route.Grant, file, files.data[i]); err != nil {
+			var refused *PeerFileRefusedError
+			var transfer *PeerFileTransferError
+			switch {
+			case errors.As(err, &refused):
+				return &HostedAttemptError{Err: err, RefusedBeforeSubmit: true}
+			case errors.As(err, &transfer):
+				return err
+			}
+			return &HostedAttemptError{Err: err, NotAdmitted: true}
+		}
+	}
+	return nil
+}
 
 func (t *PeerHostedRoomTransport) validateCoordinates(profile, source string, title *string) error {
 	if source != RoomSessionSource {
@@ -282,10 +423,10 @@ func (t *PeerHostedRoomTransport) Resume(ctx context.Context, profile, sessionID
 	return session, nil
 }
 
-// Dispatches the fenced member turn, reporting an immediately terminal result
+// Dispatches the fenced member turn after its files reached the peer, reporting an immediately terminal result
 func (t *PeerHostedRoomTransport) Submit(ctx context.Context, req HostedSubmit) (map[string]any, error) {
-	if len(req.Attachments) > 0 {
-		return nil, &RoomValueError{Msg: "attachments_unsupported_on_route: peer route cannot carry files"}
+	if len(req.Attachments) > 0 && !t.AcceptsAttachments() {
+		return nil, &HostedAttemptError{Err: &AttachmentsUnsupportedError{Msg: hostedFilesRefusal(req.Attachments, t)}, RefusedBeforeSubmit: true}
 	}
 	if req.MemberID != nil && *req.MemberID != t.Route.MemberID {
 		return nil, &RoomValueError{Msg: "peer room transport member does not match its grant"}
@@ -300,14 +441,40 @@ func (t *PeerHostedRoomTransport) Submit(ctx context.Context, req HostedSubmit) 
 	if traceID == "" {
 		traceID = "trace-" + uuid4HexString()
 	}
-	dispatch, err := BuildMemberDispatch(t.Binding, t.Route, req.Task.RoomID, req.Task.TaskID, req.Profile, req.ExecutionGeneration, t.SourceEventSeq, req.Prompt, traceID)
+	var files peerTurnBytes
+	if len(req.Attachments) > 0 {
+		var err error
+		if files, err = PrepareBeforeSubmit(func() (peerTurnBytes, error) {
+			items, data, err := peerTurnFiles(ctx, t.StorePath, t.Binding.RoomID, t.Route.MemberID, req.Attachments, true)
+			return peerTurnBytes{items, data}, err
+		}); err != nil {
+			return nil, err
+		}
+	}
+	dispatch, err := BuildMemberDispatch(t.Binding, t.Route, req.Task.RoomID, req.Task.TaskID, req.Profile, req.ExecutionGeneration, t.SourceEventSeq, req.Prompt, traceID, files.items)
 	if err != nil {
 		return nil, err
+	}
+	if len(files.items) > 0 {
+		if err := t.sendFiles(ctx, dispatch, files); err != nil {
+			return nil, err
+		}
 	}
 	t.dispatch = dispatch
 	sessionID := req.SessionID
 	t.sessionID = &sessionID
 	result, err := t.Client.Dispatch(ctx, dispatch.AsMapping(), t.Route.Grant)
+	var drift *PeerRunsHTTPError
+	if errors.As(err, &drift) && drift.ErrorCode == peerCapabilityChange[0] {
+		if err := t.refreshCatalog(); err != nil {
+			return nil, err
+		}
+		if dispatch, err = BuildMemberDispatch(t.Binding, t.Route, req.Task.RoomID, req.Task.TaskID, req.Profile, req.ExecutionGeneration, t.SourceEventSeq, req.Prompt, traceID, files.items); err != nil {
+			return nil, err
+		}
+		t.dispatch = dispatch
+		result, err = t.Client.Dispatch(ctx, dispatch.AsMapping(), t.Route.Grant)
+	}
 	if err != nil {
 		return nil, err
 	}

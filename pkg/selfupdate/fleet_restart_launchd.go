@@ -12,7 +12,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
 
-// Launchd calls of the restart phase the hermes tests replace
+// Launchd calls of the restart phase the tests replace
 var (
 	fleetLaunchdLabel          = gateway.GetLaunchdLabel
 	fleetLaunchdRestart        = gateway.LaunchdRestart

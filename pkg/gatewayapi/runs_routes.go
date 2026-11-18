@@ -58,10 +58,13 @@ func (a *APIServerAdapter) loadOwnedRun(ctx context.Context, request *gateway.We
 	return runID, status, ag, task, nil, nil
 }
 
-// Pollable run status for external UIs
+// Pollable run status for external UIs, a finished room member run listing its reply files
 func (a *APIServerAdapter) handleGetRun(ctx context.Context, request *gateway.WebRequest) (*gateway.WebResponse, error) {
-	_, status, _, _, errResp, err := a.loadOwnedRun(ctx, request, "status", true)
+	runID, status, _, _, errResp, err := a.loadOwnedRun(ctx, request, "status", true)
 	if err != nil || errResp != nil {
+		return errResp, err
+	}
+	if status, errResp, err = a.roomRunFiles(ctx, request, runID, status); err != nil || errResp != nil {
 		return errResp, err
 	}
 	return jsonResponse(status, http.StatusOK, nil), nil
@@ -172,7 +175,7 @@ func (a *APIServerAdapter) handleRunEvents(ctx context.Context, request *gateway
 				return ctx.Err()
 			case it := <-sub.items:
 				if it.overflow {
-					apiLog().Debug("[api_server] closing slow SSE subscriber for run " + runID)
+					pkgLog().Debug("[api_server] closing slow SSE subscriber for run " + runID)
 					return nil
 				}
 				if it.event == nil {
@@ -189,7 +192,7 @@ func (a *APIServerAdapter) handleRunEvents(ctx context.Context, request *gateway
 		}
 	}()
 	if streamErr != nil {
-		apiLog().Debug(fmt.Sprintf("[api_server] SSE stream error for run %s: %v", runID, streamErr))
+		pkgLog().Debug(fmt.Sprintf("[api_server] SSE stream error for run %s: %v", runID, streamErr))
 	}
 	return response.WebResponse, nil
 }
@@ -280,7 +283,7 @@ func (a *APIServerAdapter) handleRunApproval(ctx context.Context, request *gatew
 		return tools.ResolveGatewayApproval(approvalSessionKey, choice, resolveAll, "", requestID), nil
 	}()
 	if err != nil {
-		apiLog().Error(fmt.Sprintf("[api_server] approval resolution failed for run %s", runID), "error", err)
+		pkgLog().Error(fmt.Sprintf("[api_server] approval resolution failed for run %s", runID), "error", err)
 		return jsonError(err.Error(), "", http.StatusInternalServerError), nil
 	}
 	if resolved <= 0 {
@@ -292,7 +295,7 @@ func (a *APIServerAdapter) handleRunApproval(ctx context.Context, request *gatew
 	}
 	fields = append(fields, "resolved", int64(resolved))
 	a.markRunEvent(ctx, runID, "approval.responded", fields...)
-	out := pyjson.ObjectOf("object", "hermes.run.approval_response", "run_id", runID)
+	out := pyjson.ObjectOf("object", "icebath.run.approval_response", "run_id", runID)
 	for i := 0; i+1 < len(fields); i += 2 {
 		out.Set(fields[i].(string), fields[i+1])
 	}
@@ -372,7 +375,7 @@ func (a *APIServerAdapter) handleSteerRun(ctx context.Context, request *gateway.
 		}
 		if latched {
 			a.markRunEvent(ctx, runID, "run.steered", "accepted", true)
-			return jsonResponse(pyjson.ObjectOf("object", "hermes.run.steer", "run_id", runID, "accepted", true), http.StatusOK, nil), nil
+			return jsonResponse(pyjson.ObjectOf("object", "icebath.run.steer", "run_id", runID, "accepted", true), http.StatusOK, nil), nil
 		}
 		ag = steered
 	}
@@ -385,14 +388,14 @@ func (a *APIServerAdapter) handleSteerRun(ctx context.Context, request *gateway.
 		return ag.Steer(steerText), nil
 	}()
 	if err != nil {
-		apiLog().Error(fmt.Sprintf("[api_server] steer failed for run %s", runID), "error", err)
+		pkgLog().Error(fmt.Sprintf("[api_server] steer failed for run %s", runID), "error", err)
 		return jsonError(redactAPIErrorText(err.Error(), -1), "steer_failed", http.StatusInternalServerError), nil
 	}
 	if !accepted {
 		return jsonError("Run did not accept steer text: "+runID, "steer_not_accepted", http.StatusConflict), nil
 	}
 	a.markRunEvent(ctx, runID, "run.steered", "accepted", true)
-	return jsonResponse(pyjson.ObjectOf("object", "hermes.run.steer", "run_id", runID, "accepted", true), http.StatusOK, nil), nil
+	return jsonResponse(pyjson.ObjectOf("object", "icebath.run.steer", "run_id", runID, "accepted", true), http.StatusOK, nil), nil
 }
 
 // Interrupts a running agent, an authority run stopped through the session authority

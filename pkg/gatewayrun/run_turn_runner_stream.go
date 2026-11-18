@@ -2,7 +2,6 @@ package gatewayrun
 
 import (
 	"context"
-	"log/slog"
 	"strings"
 
 	"github.com/nickheyer/icebath/pkg/gateway"
@@ -38,7 +37,7 @@ func (t *TurnRunner) setupStreamConsumer(ctx context.Context, platformKey string
 	wantInterimMessages := tc.interimAssistantMessagesEnabled && !tc.scheduledHeartbeat && !held && !finiteViewerTurn(ctx)
 	if wantStreamDeltas || wantInterimMessages {
 		if err := t.buildStreamConsumer(ctx, scfg, wantStreamDeltas, wantInterimMessages, &streamConsumer); err != nil {
-			slog.Debug("Could not set up stream consumer: " + err.Error())
+			pkgLog().Debug("Could not set up stream consumer: " + err.Error())
 		}
 	}
 	var deltaSinks []func(text *string)

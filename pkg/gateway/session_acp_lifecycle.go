@@ -3,7 +3,6 @@ package gateway
 import (
 	"context"
 	"errors"
-	"log/slog"
 	"strings"
 
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
@@ -48,14 +47,14 @@ func localReceiptTarget(ctx context.Context, a *SessionAuthority, sessionID stri
 func endIdleLocalRow(ctx context.Context, a *SessionAuthority, sessionID string, target any, reason, label string) (bool, error) {
 	targetID, ok := target.(string)
 	if !ok {
-		slog.Warn(label + " session " + sessionID + " not ended")
+		pkgLog().Warn(label + " session " + sessionID + " not ended")
 		return false, nil
 	}
 	changed, err := a.DB.EndIdleLocalSession(ctx, a.Epoch, sessionID, targetID, reason)
 	if err != nil {
 		var refusal *state.RuntimeStoreError
 		if errors.As(err, &refusal) {
-			slog.Warn(label+" session "+sessionID+" not ended", "error", err)
+			pkgLog().Warn(label+" session "+sessionID+" not ended", "error", err)
 			return false, nil
 		}
 		return false, err

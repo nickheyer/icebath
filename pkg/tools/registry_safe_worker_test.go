@@ -2,10 +2,11 @@ package tools
 
 import (
 	"context"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"reflect"
 	"slices"
 	"testing"
+
+	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 )
 
 func withSafeWorker(t *testing.T, on bool) {

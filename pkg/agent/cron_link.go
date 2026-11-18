@@ -1,3 +1,5 @@
+//go:build !icebath_core && !icebath_noextras
+
 package agent
 
 import (
@@ -7,13 +9,14 @@ import (
 	"github.com/nickheyer/icebath/pkg/provider"
 )
 
-// Installs the agent constructor, hard interrupt, turn explainer, client cleanup and handoff check the cron run path calls
+// Installs the agent constructor, hard interrupt, turn explainer, client cleanup, handoff check and worktree record cron uses
 func init() {
 	cron.SetAgentFactory(newCronAgent)
 	cron.SetRequestHardInterrupt(cronRequestHardInterrupt)
 	cron.SetFormatTurnCompletionExplanation(cronTurnCompletionExplanation)
 	cron.SetCleanupStaleAsyncClients(provider.CleanupStaleAsyncClients)
 	cron.SetMaxIterationHandoffCheck(IsMaxIterationHandoff)
+	SubagentWorktreeRecorders = append(SubagentWorktreeRecorders, cron.RecordWorktreeRepo)
 }
 
 // AIAgent in the shape the cron run path drives

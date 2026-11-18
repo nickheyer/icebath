@@ -64,6 +64,11 @@ type provenanceRunner interface {
 	AdapterCredentialFingerprint(adapter PlatformAdapter) *string
 }
 
+// Runner fingerprinting an adapter credential under the salt an older icebath hashed stored connectors with
+type legacyFingerprintRunner interface {
+	LegacyAdapterCredentialFingerprint(adapter PlatformAdapter) *string
+}
+
 // Runner holding the adapter maps of its served secondary profiles
 type servedProfileAdaptersRunner interface {
 	ProfileAdapters() *pydict.Dict[string, *pydict.Dict[Platform, PlatformAdapter]]
@@ -462,6 +467,22 @@ func provenanceBinding(ctx context.Context, runner AuthorityRunner, source *Sess
 	return adapter, homePath, runtimeHome, provenance, nil
 }
 
+// Whether recorded provenance equals expected once its connector is the fingerprint an older icebath hashed
+func legacyConnectorMatches(runner AuthorityRunner, adapter PlatformAdapter, recorded, expected *pyjson.Object) bool {
+	bound, ok := runner.(provenanceRunner)
+	legacy, hasLegacy := runner.(legacyFingerprintRunner)
+	if !ok || !hasLegacy {
+		return false
+	}
+	current, old := bound.AdapterCredentialFingerprint(adapter), legacy.LegacyAdapterCredentialFingerprint(adapter)
+	if current == nil || old == nil || !pyrepr.Equal(expected.GetOr("connector", nil), *current) {
+		return false
+	}
+	variant := expected.Copy()
+	variant.Set("connector", *old)
+	return pyrepr.Equal(recorded, variant)
+}
+
 // Provenance of the native callback event a server created, nil for an event no callback carries
 func captureProvenance(ctx context.Context, runner AuthorityRunner, event *MessageEvent) (*pyjson.Object, error) {
 	boundRunner, boundEvent, boundHome, profile, ok := nativeCallbackOf(ctx)
@@ -532,7 +553,7 @@ func restoreProvenance(ctx context.Context, runner AuthorityRunner, source *Sess
 	if err != nil {
 		return nil, err
 	}
-	if !pyrepr.Equal(recorded, expected) {
+	if !pyrepr.Equal(recorded, expected) && !legacyConnectorMatches(runner, adapter, recorded, expected) {
 		return nil, runtimeRefusal("profile_mismatch")
 	}
 	source.DeliveredViaUpstreamRelay = candidate.DeliveredViaUpstreamRelay

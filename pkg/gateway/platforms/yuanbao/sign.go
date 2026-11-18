@@ -9,7 +9,6 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
-	"log/slog"
 	"net/http"
 	"runtime"
 	"strconv"
@@ -65,7 +64,7 @@ const (
 	msgContentCacheN = 200
 )
 
-// Reconnect attempts before the adapter gives up, a package var the way hermes tests patch it
+// Reconnect attempts before the adapter gives up, a package var the way tests patch it
 var maxReconnectAttempts = 100
 
 // Close codes of permanent errors the adapter never reconnects after
@@ -358,7 +357,7 @@ func signFetch(ctx context.Context, appKey, appSecret, apiDomain, routeEnv strin
 		if attempt > 0 {
 			retry = fmt.Sprintf(" (retry %d/%d)", attempt, signMaxRetries)
 		}
-		slog.Info(fmt.Sprintf("Sign token request: url=%s%s", rawURL, retry))
+		pkgLog().Info(fmt.Sprintf("Sign token request: url=%s%s", rawURL, retry))
 		resp, err := pyhttpx.Do(client, req, signHTTPTimeout)
 		if err != nil {
 			if ctx.Err() != nil {
@@ -383,13 +382,13 @@ func signFetch(ctx context.Context, appKey, appSecret, apiDomain, routeEnv strin
 			if !isDict {
 				return nil, valueError("Sign token response missing 'data' field: " + pyrepr.Str(decoded))
 			}
-			slog.Info(fmt.Sprintf("Sign token success: bot_id=%s", pyrepr.Str(data["bot_id"])))
+			pkgLog().Info(fmt.Sprintf("Sign token success: bot_id=%s", pyrepr.Str(data["bot_id"])))
 			return data, nil
 		}
 		if !equalsInt(code, signRetryableCode) || attempt >= signMaxRetries {
 			return nil, runtimeError(fmt.Sprintf("Sign token error: code=%s, msg=%s", pyrepr.Str(code), pyrepr.Str(dictGetOr(result, "msg", ""))))
 		}
-		slog.Warn(fmt.Sprintf("Sign token retryable: code=%s, retrying in %ss (attempt=%d/%d)", pyrepr.Str(code), pyrepr.Float(signRetryDelayS),
+		pkgLog().Warn(fmt.Sprintf("Sign token retryable: code=%s, retrying in %ss (attempt=%d/%d)", pyrepr.Str(code), pyrepr.Float(signRetryDelayS),
 			attempt+1, signMaxRetries))
 		if err := sleep(ctx, signRetryDelayS); err != nil {
 			return nil, err
@@ -436,7 +435,7 @@ func signCached(appKey string) map[string]any {
 func signGetToken(ctx context.Context, appKey, appSecret, apiDomain, routeEnv string) (map[string]any, error) {
 	signPurgeExpired()
 	if cached := signCached(appKey); len(cached) > 0 && signCacheValid(cached) {
-		slog.Info(fmt.Sprintf("Using cached token (%ds remaining)", int64(numberOf(cached["expire_ts"])-wallClock())))
+		pkgLog().Info(fmt.Sprintf("Using cached token (%ds remaining)", int64(numberOf(cached["expire_ts"])-wallClock())))
 		return cached, nil
 	}
 	lock := signRefreshLock(appKey)
@@ -453,7 +452,7 @@ func signGetToken(ctx context.Context, appKey, appSecret, apiDomain, routeEnv st
 
 // Clears the cached token of an app key and signs again
 func signForceRefresh(ctx context.Context, appKey, appSecret, apiDomain, routeEnv string) (map[string]any, error) {
-	slog.Warn(fmt.Sprintf("[force-refresh] Clearing cache and re-signing token: app_key=****%s", pystr.Slice(appKey, -4, pystr.Len(appKey))))
+	pkgLog().Warn(fmt.Sprintf("[force-refresh] Clearing cache and re-signing token: app_key=****%s", pystr.Slice(appKey, -4, pystr.Len(appKey))))
 	lock := signRefreshLock(appKey)
 	lock.Lock()
 	defer lock.Unlock()

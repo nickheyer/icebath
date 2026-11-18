@@ -2,7 +2,6 @@ package provider
 
 import (
 	"fmt"
-	"log/slog"
 	"runtime"
 
 	"github.com/nickheyer/icebath/pkg/internal/proc"
@@ -25,7 +24,7 @@ func lrReapOrphans(exe string, ownPid int) {
 		if procExe != exe || pid == ownPid || (ppid != 0 && lrReapPidExists(ppid)) {
 			continue
 		}
-		slog.Warn(fmt.Sprintf("reaping orphaned llama-server child pid=%d", pid))
+		pkgLog().Warn(fmt.Sprintf("reaping orphaned llama-server child pid=%d", pid))
 		_ = lrReapKill(pid)
 	}
 }

@@ -156,12 +156,12 @@ func relaySelfProvision(ctx context.Context) (string, error) {
 		return relaySkipped, nil
 	}
 	if existingID, existingSecret := RelayConnectionAuth(ctx); existingID != "" && existingSecret != "" {
-		relayLog().Info("relay self-provision skipped: GATEWAY_RELAY_SECRET already set")
+		pkgLog().Info("relay self-provision skipped: GATEWAY_RELAY_SECRET already set")
 		return relaySkipped, nil
 	}
 	accessToken, err := ResolveRelayIdentityToken(ctx)
 	if err != nil {
-		relayLog().Warn(fmt.Sprintf("relay self-provision skipped: could not resolve identity token (%s)", relayExcStr(err)))
+		pkgLog().Warn(fmt.Sprintf("relay self-provision skipped: could not resolve identity token (%s)", relayExcStr(err)))
 		return relayFailed, nil
 	}
 	identities := RelayPlatformIdentities()
@@ -196,7 +196,7 @@ func relaySelfProvision(ctx context.Context) (string, error) {
 		names[i] = id[0]
 	}
 	if len(provisioned) == 0 {
-		relayLog().Warn(fmt.Sprintf("relay self-provision failed for ALL platforms (%s); gateway will boot without relay auth"+
+		pkgLog().Warn(fmt.Sprintf("relay self-provision failed for ALL platforms (%s); gateway will boot without relay auth"+
 			" and retry in the background", strings.Join(names, ",")))
 		if refused == len(identities) {
 			return relayRefused, nil
@@ -204,7 +204,7 @@ func relaySelfProvision(ctx context.Context) (string, error) {
 		return relayFailed, nil
 	}
 	if os.Getenv("GATEWAY_RELAY_SECRET") == "" {
-		relayLog().Warn(fmt.Sprintf("relay self-provision withheld credentials for ALL platforms (%s): the connector "+
+		pkgLog().Warn(fmt.Sprintf("relay self-provision withheld credentials for ALL platforms (%s): the connector "+
 			"holds a binding for gateway_id=%s this caller could not prove ownership of; "+
 			"gateway will boot without relay auth. Recover with POST /relay/rotate or pin "+
 			"GATEWAY_RELAY_SECRET", strings.Join(provisioned, ","), gatewayID))
@@ -228,7 +228,7 @@ func relaySelfProvision(ctx context.Context) (string, error) {
 	if wakeURL != "" {
 		wake = "yes"
 	}
-	relayLog().Info(fmt.Sprintf("relay self-provisioned (gateway_id=%s tenant=%s platforms=%s routes=%d inbound=%s instance=%s wake=%s)",
+	pkgLog().Info(fmt.Sprintf("relay self-provisioned (gateway_id=%s tenant=%s platforms=%s routes=%d inbound=%s instance=%s wake=%s)",
 		loggedID, tenant, strings.Join(provisioned, ","), len(routeKeys), inbound, instance, wake))
 	return relayProvisioned, nil
 }
@@ -252,7 +252,7 @@ func relayProvisionEachPlatform(identities [][2]string, gatewayID string, post r
 			if isRefusal {
 				refused++
 			}
-			relayLog().Warn(fmt.Sprintf("relay self-provision failed for platform=%s (%s); continuing with the rest", id[0], err.Error()))
+			pkgLog().Warn(fmt.Sprintf("relay self-provision failed for platform=%s (%s); continuing with the rest", id[0], err.Error()))
 			continue
 		}
 		result = payload
@@ -288,11 +288,11 @@ func RetrySelfProvisionWith(ctx context.Context, onProvisioned func(), sleep fun
 			return false, ctx.Err()
 		}
 		if err != nil {
-			relayLog().Warn(fmt.Sprintf("relay self-provision retry %d raised", attempt), "exc_info", err)
+			pkgLog().Warn(fmt.Sprintf("relay self-provision retry %d raised", attempt), "exc_info", err)
 			outcome = relayFailed
 		}
 		if outcome == relayProvisioned {
-			relayLog().Info(fmt.Sprintf("relay credentials obtained on self-provision retry %d; reconnecting the relay", attempt))
+			pkgLog().Info(fmt.Sprintf("relay credentials obtained on self-provision retry %d; reconnecting the relay", attempt))
 			relayRunOffLoop(ctx, func() (string, error) {
 				_, err := SendRelayPolicy(ctx)
 				return "", err
@@ -313,7 +313,7 @@ func RetrySelfProvisionWith(ctx context.Context, onProvisioned func(), sleep fun
 		} else {
 			delay = relayProvisionRetryDelays[min(attempt, len(relayProvisionRetryDelays)-1)]
 		}
-		relayLog().Info(fmt.Sprintf("relay self-provision retry %d %s; next attempt in %ds", attempt, outcome, int(delay)))
+		pkgLog().Info(fmt.Sprintf("relay self-provision retry %d %s; next attempt in %ds", attempt, outcome, int(delay)))
 	}
 }
 

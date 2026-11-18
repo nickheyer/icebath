@@ -2,9 +2,10 @@ package tools
 
 import (
 	"context"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"strings"
 	"sync/atomic"
+
+	"github.com/nickheyer/icebath/pkg/internal/pystr"
 
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/home"
@@ -485,7 +486,7 @@ func decideImageInputMode(ctx context.Context, env *Env, provider, model string,
 
 // Providers whose tool results accept image content
 var toolResultMediaProviders = setOf(
-	"openrouter", "nous", "vertex", "bedrock", "anthropic-vertex", "google-vertex",
+	"openrouter", "vertex", "bedrock", "anthropic-vertex", "google-vertex",
 	"anthropic", "claude", "anthropic-direct",
 	"openai", "openai-chat", "openai-codex", "azure-openai",
 )

@@ -63,8 +63,8 @@ func TestBuildToolTitleTitleDerivesFromDisplayPreview(t *testing.T) {
 		{"terminal", obj("command", "git status --short")},
 		{"read_file", obj("path", "/etc/hosts", "offset", int64(10))},
 		{"search_files", obj("pattern", "TODO", "path", "src")},
-		{"web_search", obj("query", "hermes agent acp")},
-		{"execute_code", obj("code", "\nfrom hermes_tools import terminal\nprint('done')")},
+		{"web_search", obj("query", "icebath agent acp")},
+		{"execute_code", obj("code", "\nfrom icebath_tools import terminal\nprint('done')")},
 		{"skill_view", obj("name", "github", "file_path", "references/x.md")},
 	} {
 		limit := 80

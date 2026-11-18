@@ -13,6 +13,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/nickheyer/icebath/pkg/config"
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
@@ -332,7 +333,7 @@ func pyIntOf(v any) (int64, error) {
 		return n, nil
 	case float64:
 		if n != n || n > 9.2e18 || n < -9.2e18 {
-			return 0, fmt.Errorf("ValueError: cannot convert float %s to integer", pyrepr.Repr(n))
+			return 0, fmt.Errorf("%v is not a whole number", n)
 		}
 		return int64(n), nil
 	case bool:
@@ -347,9 +348,9 @@ func pyIntOf(v any) (int64, error) {
 				return out, nil
 			}
 		}
-		return 0, fmt.Errorf("ValueError: invalid literal for int() with base 10: %s", pyrepr.Repr(n))
+		return 0, fmt.Errorf("%s is not a whole number", n)
 	}
-	return 0, fmt.Errorf("TypeError: int() argument must be a string, a bytes-like object or a real number, not '%T'", v)
+	return 0, fmt.Errorf("expected a whole number, got %s", errchain.Kind(v))
 }
 
 func pyFloorDiv(a, b int64) int64 {

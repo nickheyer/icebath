@@ -11,7 +11,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/home"
 
 	"github.com/nickheyer/icebath/pkg/state"
-	"github.com/nickheyer/icebath/pkg/tuigateway"
+	"github.com/nickheyer/icebath/pkg/tuihost"
 )
 
 // Column of a stored row, failing the case when the row is missing
@@ -33,123 +33,12 @@ func envelopeResult(t *testing.T, envelope map[string]any) map[string]any {
 	return result
 }
 
-// test_session_archive_rpc.py test_archive_resolves_stored_id_without_live_session
-func TestArchiveResolvesStoredIDWithoutLiveSession(t *testing.T) {
-	db := listingDB(t)
-	seedCounted(t, db, "stored-chat", "tui", 1)
-	if sid, _, found := findLiveSessionByKey("stored-chat", "", false); found {
-		t.Fatalf("live %s", sid)
-	}
-	result := envelopeResult(t, sessionCall("session.archive", map[string]any{"session_id": "stored-chat", "archived": true}))
-	if result["archived"] != true || result["session_key"] != "stored-chat" || storedColumn(t, db, "stored-chat", "archived") != int64(1) {
-		t.Fatalf("archive %v", result)
-	}
-	result = envelopeResult(t, sessionCall("session.archive", map[string]any{"session_id": "stored-chat", "archived": false}))
-	if result["archived"] != false || storedColumn(t, db, "stored-chat", "archived") != int64(0) {
-		t.Fatalf("unarchive %v", result)
-	}
-}
-
-// test_session_archive_rpc.py test_archive_accepts_session_key_alias
-func TestArchiveAcceptsSessionKeyAlias(t *testing.T) {
-	db := listingDB(t)
-	seedCounted(t, db, "keyed-chat", "tui", 1)
-	envelopeResult(t, sessionCall("session.archive", map[string]any{"session_key": "keyed-chat", "archived": true}))
-	if storedColumn(t, db, "keyed-chat", "archived") != int64(1) {
-		t.Fatalf("not archived")
-	}
-}
-
-// test_session_archive_rpc.py test_archive_unknown_id_still_errors
-func TestArchiveUnknownIDStillErrors(t *testing.T) {
-	listingDB(t)
-	if envelope := sessionCall("session.archive", map[string]any{"session_id": "no-such-session", "archived": true}); envelope["error"] == nil {
-		t.Fatalf("envelope %v", envelope)
-	}
-}
-
-// test_session_archive_rpc.py test_archive_through_the_dispatcher_validates_params
-func TestArchiveThroughTheDispatcherValidatesParams(t *testing.T) {
-	listingDB(t)
-	resp := handleRequest(context.Background(), map[string]any{"id": "1", "method": "session.archive", "params": map[string]any{}})
-	if code := resumeErrCode(resp); code != 4006 {
-		t.Fatalf("missing id %v", resp)
-	}
-	resp = handleRequest(context.Background(), map[string]any{"id": "2", "method": "session.archive",
-		"params": map[string]any{"session_id": "x", "bogus": 1}})
-	if code := resumeErrCode(resp); code != 4000 {
-		t.Fatalf("bogus param %v", resp)
-	}
-}
-
-// test_session_archive_rpc.py test_archive_live_runtime_session_defers_until_row_exists
-func TestArchiveLiveRuntimeSessionDefersUntilRowExists(t *testing.T) {
-	db := listingDB(t)
-	sid := "live-draft"
-	session := tuigateway.NewSession(map[string]any{"session_key": "20260927_000000_draft", "history": []any{}, "running": false})
-	tuigateway.SetSessionRecord(sid, session)
-	t.Cleanup(func() { tuigateway.SetSessionRecord(sid, nil) })
-	result := envelopeResult(t, sessionCall("session.archive", map[string]any{"session_id": sid, "archived": true}))
-	if result["session_key"] != "20260927_000000_draft" {
-		t.Fatalf("result %v", result)
-	}
-	if row, _ := db.GetSession(context.Background(), "20260927_000000_draft"); row != nil {
-		t.Fatalf("row before persist %v", row)
-	}
-	if !ensureSessionDBRow(context.Background(), session) {
-		t.Fatalf("row not persisted")
-	}
-	if storedColumn(t, db, "20260927_000000_draft", "archived") != int64(1) {
-		t.Fatalf("row not born archived")
-	}
-}
-
-// test_session_hidden_rpc.py test_set_hidden_resolves_stored_id_without_live_session
-func TestSetHiddenResolvesStoredIDWithoutLiveSession(t *testing.T) {
-	db := listingDB(t)
-	seedCounted(t, db, "stored-chat", "tui", 1)
-	if sid, _, found := findLiveSessionByKey("stored-chat", "", false); found {
-		t.Fatalf("live %s", sid)
-	}
-	result := envelopeResult(t, sessionCall("session.set_hidden", map[string]any{"session_id": "stored-chat", "hidden": true}))
-	if result["hidden"] != true || storedColumn(t, db, "stored-chat", "hidden") != int64(1) {
-		t.Fatalf("hide %v", result)
-	}
-	envelopeResult(t, sessionCall("session.set_hidden", map[string]any{"session_id": "stored-chat", "hidden": false}))
-	if storedColumn(t, db, "stored-chat", "hidden") != int64(0) {
-		t.Fatalf("not unhidden")
-	}
-}
-
-// test_session_hidden_rpc.py test_set_hidden_unknown_id_still_errors
-func TestSetHiddenUnknownIDStillErrors(t *testing.T) {
-	listingDB(t)
-	if envelope := sessionCall("session.set_hidden", map[string]any{"session_id": "no-such-session", "hidden": true}); envelope["error"] == nil {
-		t.Fatalf("envelope %v", envelope)
-	}
-}
-
-// test_session_hidden_rpc.py test_set_hidden_without_flag_leaves_visible_session_alone
-func TestSetHiddenWithoutFlagLeavesVisibleSessionAlone(t *testing.T) {
-	db := listingDB(t)
-	seedCounted(t, db, "plain-chat", "tui", 1)
-	if storedColumn(t, db, "plain-chat", "hidden") != int64(0) {
-		t.Fatalf("seeded hidden")
-	}
-	if envelope := sessionCall("session.set_hidden", map[string]any{"session_id": "plain-chat"}); envelope["error"] == nil {
-		t.Fatalf("envelope %v", envelope)
-	}
-	if storedColumn(t, db, "plain-chat", "hidden") != int64(0) {
-		t.Fatalf("hidden without flag")
-	}
-}
-
 // test_session_delete_rpc.py test_session_delete_requires_session_id
 func TestSessionDeleteRequiresSessionID(t *testing.T) {
 	db := listingDB(t)
 	seedCounted(t, db, "kept", "tui", 1)
 	resp := handleRequest(context.Background(), map[string]any{"id": "1", "method": "session.delete", "params": map[string]any{}})
-	if resumeErrCode(resp) != 4006 {
+	if failure, _ := resp["error"].(map[string]any); resumeErrCode(resp) != 4000 || failure["message"] != "invalid params for session.delete: session_id: field required" {
 		t.Fatalf("resp %v", resp)
 	}
 	storedColumn(t, db, "kept", "id")
@@ -159,8 +48,8 @@ func TestSessionDeleteRequiresSessionID(t *testing.T) {
 func TestSessionDeleteRefusesActiveSession(t *testing.T) {
 	db := listingDB(t)
 	seedCounted(t, db, "key-live", "tui", 1)
-	tuigateway.SetSessionRecord("live", tuigateway.NewSession(map[string]any{"session_key": "key-live"}))
-	t.Cleanup(func() { tuigateway.SetSessionRecord("live", nil) })
+	tuihost.SetSessionRecord("live", tuihost.NewSession(map[string]any{"session_key": "key-live"}))
+	t.Cleanup(func() { tuihost.SetSessionRecord("live", nil) })
 	resp := handleRequest(context.Background(), map[string]any{"id": "1", "method": "session.delete", "params": map[string]any{"session_id": "key-live"}})
 	if resumeErrCode(resp) != 4023 {
 		t.Fatalf("resp %v", resp)

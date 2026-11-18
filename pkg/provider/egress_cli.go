@@ -18,7 +18,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
 
-// Iron proxy module surface as the egress CLI reaches it, the attributes hermes tests patch
+// Iron proxy module surface as the egress CLI reaches it, the attributes tests patch
 type egressBackend struct {
 	installIronProxy           func(force bool) (string, error)
 	findIronProxy              func(installIfMissing bool) string

@@ -53,7 +53,7 @@ func EstimateTokens(text string) int {
 
 var imagePartTypes = map[string]bool{"image": true, "image_url": true, "input_image": true}
 
-// Persistence only message fields of hermes plus the token_count column a stored message row carries
+// Persistence only message fields plus the token_count column a stored message row carries
 var persistenceOnlyFields = func() map[string]bool {
 	fields := maps.Clone(state.PersistenceOnlyMessageFields)
 	fields["token_count"] = true
@@ -64,7 +64,7 @@ var persistenceOnlyFields = func() map[string]bool {
 var rowBookkeepingFields = map[string]bool{"id": true, "active": true, "compacted": true}
 
 // Replay carriers priced at zero, opaque signatures, duplicate reasoning copies and ordered sidecars
-var unpricedCoreFields = []string{"_anthropic_content_blocks", "reasoning_details", "extra_content", "bedrock_content_blocks", "data_use"}
+var unpricedCoreFields = []string{"_anthropic_content_blocks", "reasoning_details", "extra_content", "bedrock_content_blocks"}
 
 // Core unpriced carriers plus every message carrier key a registered profile declares
 func unpricedReplayFields() map[string]bool {

@@ -37,7 +37,7 @@ func connectPluginMCP(ctx context.Context, activation map[string]any, portable m
 		configured, _ = v.(map[string]any)
 	}
 	if err != nil {
-		logPluginsActivationLive.warn("plugin MCP activation could not read server config: " + err.Error())
+		pkgLog().Warn("plugin MCP activation could not read server config: " + err.Error())
 		for _, n := range names {
 			rows = append(rows, map[string]any{"name": n, "connected": false, "tools": []any{}, "error": err.Error()})
 		}

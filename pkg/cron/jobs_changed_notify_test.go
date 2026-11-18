@@ -50,7 +50,7 @@ func notifySpec() *pyjson.Object {
 func TestNotifyHelperCallsProviderOnJobsChanged(t *testing.T) {
 	s, _ := newTestStore(t)
 	spy := &spyCronProvider{minimalProvider: minimalProvider{"spy"}}
-	patchChronos(t, &schedulerResolver, func(*Store) CronScheduler { return spy })
+	patchSeam(t, &schedulerResolver, func(*Store) CronScheduler { return spy })
 	s.notifyProviderJobsChanged()
 	if !reflect.DeepEqual(spy.calls, []int{1}) {
 		t.Fatalf("calls %v", spy.calls)
@@ -64,7 +64,7 @@ func TestCreateRegistersFirstTriggerWithActiveProvider(t *testing.T) {
 		registered = append(registered, job)
 		return nil
 	}}
-	patchChronos(t, &schedulerResolver, func(*Store) CronScheduler { return provider })
+	patchSeam(t, &schedulerResolver, func(*Store) CronScheduler { return provider })
 	job, err := s.createJobWithSchedulerRegistration(context.Background(), notifySpec())
 	if err != nil {
 		t.Fatal(err)
@@ -77,7 +77,7 @@ func TestCreateRegistersFirstTriggerWithActiveProvider(t *testing.T) {
 func TestCreateFailurePreservesJobAndHidesProviderDetails(t *testing.T) {
 	s, _ := newTestStore(t)
 	provider := &registeringProvider{name: "failing", register: failRegistration}
-	patchChronos(t, &schedulerResolver, func(*Store) CronScheduler { return provider })
+	patchSeam(t, &schedulerResolver, func(*Store) CronScheduler { return provider })
 	_, err := s.createJobWithSchedulerRegistration(context.Background(), notifySpec())
 	var regErr *CronSchedulerRegistrationError
 	if !errors.As(err, &regErr) {
@@ -107,7 +107,7 @@ func TestToolCreateRegistersProviderBeforeReportingSuccess(t *testing.T) {
 		registered = append(registered, job.ID)
 		return nil
 	}}
-	patchChronos(t, &schedulerResolver, func(*Store) CronScheduler { return provider })
+	patchSeam(t, &schedulerResolver, func(*Store) CronScheduler { return provider })
 	out := dispatchCronjob(t, s, map[string]any{"action": "create", "prompt": "echo hi", "schedule": "every 5m", "name": "w"})
 	if out["success"] != true || !reflect.DeepEqual(registered, []string{out["job_id"].(string)}) {
 		t.Fatalf("out %v registered %v", out, registered)
@@ -117,7 +117,7 @@ func TestToolCreateRegistersProviderBeforeReportingSuccess(t *testing.T) {
 func TestToolCreateReportsPartialRegistrationFailure(t *testing.T) {
 	s, _ := newTestStore(t)
 	provider := &registeringProvider{name: "failing", register: failRegistration}
-	patchChronos(t, &schedulerResolver, func(*Store) CronScheduler { return provider })
+	patchSeam(t, &schedulerResolver, func(*Store) CronScheduler { return provider })
 	out := dispatchCronjob(t, s, map[string]any{"action": "create", "prompt": "echo hi", "schedule": "every 5m", "name": "w"})
 	if out["success"] != false || out["job_saved"] != true || out["scheduler_registered"] != false || out["retry_create"] != false {
 		t.Fatalf("out %v", out)

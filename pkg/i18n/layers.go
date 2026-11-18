@@ -3,7 +3,6 @@ package i18n
 import (
 	"fmt"
 	"io/fs"
-	"log/slog"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -11,6 +10,7 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 
 	"github.com/nickheyer/icebath/pkg/home"
@@ -161,7 +161,7 @@ func LoadLocaleSource(source any) (map[string]string, error) {
 	case string:
 		return ParseLocaleFile(s)
 	}
-	return nil, fmt.Errorf("TypeError: locale source must be a mapping or a path to a YAML file, got %s", pyrepr.TypeName(source))
+	return nil, fmt.Errorf("a locale source must be a mapping or a path to a YAML file, got %s", errchain.Kind(source))
 }
 
 // LocaleFile is one locale YAML found in a directory
@@ -198,7 +198,7 @@ func scanLocaleFS(fsys fs.FS, label string) []LocaleFile {
 		}
 		path := filepath.Join(label, e.Name())
 		if !surfaceKnown(surface) {
-			slog.Warn(fmt.Sprintf("Ignoring locale file %s: unknown surface %s (expected one of %s)", path, pyrepr.StrRepr(surface), strings.Join(Surfaces, ", ")))
+			pkgLog().Warn(fmt.Sprintf("Ignoring locale file %s: unknown surface %s (expected one of %s)", path, pyrepr.StrRepr(surface), strings.Join(Surfaces, ", ")))
 			continue
 		}
 		found = append(found, LocaleFile{Lang: m[1], Surface: surface, Path: path})
@@ -254,7 +254,7 @@ func RegisterPack(lang, surface string, messages map[string]string, source, endo
 	packs = append(packs, entry)
 	layerMu.Unlock()
 	ResetLanguageCache()
-	slog.Debug(fmt.Sprintf("i18n pack registered: %s/%s from %s (%d keys)", langID, surface, source, len(copied)))
+	pkgLog().Debug(fmt.Sprintf("i18n pack registered: %s/%s from %s (%d keys)", langID, surface, source, len(copied)))
 	return entry, nil
 }
 
@@ -363,7 +363,7 @@ func OverlayLayer(h, lang, surface string) map[string]string {
 	if info, err := os.Stat(path); err == nil && info.Mode().IsRegular() {
 		parsed, err := ParseLocaleFile(path)
 		if err != nil {
-			slog.Warn(fmt.Sprintf("Failed to load i18n overlay %s: %v", path, err))
+			pkgLog().Warn(fmt.Sprintf("Failed to load i18n overlay %s: %v", path, err))
 		} else {
 			flat = parsed
 		}

@@ -9,6 +9,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
@@ -208,11 +209,11 @@ func pyFloat(v any) float64 {
 	case string:
 		f, err := strconv.ParseFloat(n, 64)
 		if err != nil {
-			panic(fmt.Sprintf("ValueError: could not convert string to float: %s", pyrepr.Repr(n)))
+			panic(fmt.Sprintf("%s is not a number", n))
 		}
 		return f
 	}
-	panic(fmt.Sprintf("TypeError: float() argument must be a string or a real number, not '%s'", pyrepr.TypeName(v)))
+	panic(fmt.Sprintf("expected a number, got %s", errchain.Kind(v)))
 }
 
 // Writes the terminal result record once and returns the process exit code it reports

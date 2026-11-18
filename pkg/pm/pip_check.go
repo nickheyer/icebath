@@ -1,3 +1,5 @@
+//go:build !icebath_core && !icebath_noextras
+
 package pm
 
 import (
@@ -6,7 +8,6 @@ import (
 	"regexp"
 	"strings"
 	"unicode"
-	"unicode/utf8"
 
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
@@ -159,25 +160,6 @@ func OverrideRequirements(lock string) ([]string, error) {
 	return lines, nil
 }
 
-// Python truthiness of a decoded value
-func tomlTruthy(v any) bool {
-	switch t := v.(type) {
-	case string:
-		return t != ""
-	case bool:
-		return t
-	case int64:
-		return t != 0
-	case float64:
-		return t != 0
-	case []any:
-		return len(t) > 0
-	case *OrderedObject:
-		return len(t.Keys) > 0
-	}
-	return true
-}
-
 // Locked versions of every dependency the lock's manifest overrides, keyed by normalized name
 func OverriddenVersions(lock string) (map[string]map[string]bool, error) {
 	text, err := readUTF8(lock)
@@ -240,23 +222,6 @@ func UnexpectedIncompatibilities(report, lock string) ([]string, error) {
 		}
 	}
 	return unexpected, nil
-}
-
-// Joined report lines kept to their last characters the way a Python slice keeps them
-func lastChars(s string, n int) string {
-	start, count := len(s), 0
-	for start > 0 && count < n {
-		_, width := utf8.DecodeLastRuneInString(s[:start])
-		start -= width
-		count++
-	}
-	if start == 0 {
-		return s
-	}
-	if tail := s[start:]; utf8.ValidString(tail) {
-		return strings.Clone(tail)
-	}
-	return string([]rune(s[start:]))
 }
 
 // Reports whether any of the needles occurs in text

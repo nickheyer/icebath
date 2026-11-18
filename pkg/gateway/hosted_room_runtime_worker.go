@@ -66,7 +66,7 @@ func (r *HostedRoomRuntime) workerLoop() {
 			}
 		}
 		if err := r.releaseIdleLeases(); err != nil {
-			hostedRuntimeLog().Error("Exception in thread hosted-room-driver-supervisor", "exc_info", err)
+			pkgLog().Error("Exception in thread hosted-room-driver-supervisor", "exc_info", err)
 		}
 	}()
 	for !r.stop.IsSet() {
@@ -376,7 +376,11 @@ func (r *HostedRoomRuntime) executeAttempt(binding HostedRoomBinding, task map[s
 		r.recordTaskError(attempt, "fenced: "+err.Error())
 		return nil
 	}
-	hostedRuntimeLog().Warn(fmt.Sprintf("hosted room task %s: %s", attempt.Identity.TaskID, hostedAttemptReason(err)))
+	pkgLog().Warn(fmt.Sprintf("hosted room task %s: %s", attempt.Identity.TaskID, hostedAttemptReason(err)))
+	var transfer *PeerFileTransferError
+	if errors.As(err, &transfer) {
+		return r.deferTransfer(binding, attempt, transfer)
+	}
 	notAdmitted, refused := hostedAttemptMarks(err)
 	switch {
 	case refused:
@@ -401,13 +405,51 @@ func (r *HostedRoomRuntime) executeAttempt(binding HostedRoomBinding, task map[s
 	return r.settleFailureIfCurrent(attempt, err)
 }
 
+// Defers an attempt whose files did not reach the peer, the room told why and its retry resuming the transfer
+func (r *HostedRoomRuntime) deferTransfer(binding HostedRoomBinding, attempt TaskAttempt, transfer *PeerFileTransferError) error {
+	deferred, err := DriverDeferNotAdmittedTask(r.ctx, r.DBPath, attempt, transfer.Error(), r.driverClock())
+	if errAs[*StaleLeaseError](err) || errAs[*StaleTaskError](err) {
+		r.dropLease(binding.RoomID)
+		r.recordTaskError(attempt, "deferral lost its fence: "+err.Error())
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	r.recordTaskError(attempt, "deferred: "+transfer.Error())
+	_, err = r.publish(binding, deferred)
+	return err
+}
+
+// Names the turn's files and why this member's route cannot take them
+func hostedFilesRefusal(attachments []any, transport InternalSessionRPC) string {
+	names := make([]string, 0, len(attachments))
+	for _, raw := range attachments {
+		item, _ := hostedMapping(raw)
+		size, _ := hostedStrictInt(item["size"])
+		names = append(names, fmt.Sprintf("%v (%s)", item["name"], roomBytes(size)))
+	}
+	why := "this member's route is not connected"
+	if _, peer := transport.(*PeerHostedRoomTransport); peer {
+		why = "the gateway this member lives on takes text only, update icebath there to send it files"
+	} else if transport != nil {
+		why = "this member's route takes text only"
+	}
+	return "could not take " + strings.Join(names, ", ") + ": " + why
+}
+
 func (r *HostedRoomRuntime) runAttempt(binding HostedRoomBinding, task map[string]any, attempt TaskAttempt, profile string, attachments []any) (bool, error) {
 	transport, err := r.transportFor(binding, task)
 	if err != nil {
 		return false, err
 	}
+	if peer, ok := transport.(*PeerHostedRoomTransport); ok && len(attachments) > 0 && !peer.AcceptsAttachments() {
+		if err := peer.refreshCatalog(); err != nil {
+			return false, &HostedAttemptError{Err: err, NotAdmitted: true}
+		}
+	}
 	if len(attachments) > 0 && (transport == nil || !transport.AcceptsAttachments()) {
-		return false, &AttachmentsUnsupportedError{Msg: "attachments_unsupported_on_route: this member's route cannot carry attached files"}
+		return false, &AttachmentsUnsupportedError{Msg: hostedFilesRefusal(attachments, transport)}
 	}
 	release, err := r.turnLock(profile)
 	if err != nil {
@@ -426,10 +468,11 @@ func (r *HostedRoomRuntime) runAttempt(binding HostedRoomBinding, task map[strin
 	payload, _ := hostedMapping(task["payload"])
 	prompt, _ := payload["prompt"].(string)
 	memberID := hostedMemberID(task)
+	local := memberOnThisGateway(transport)
 	if _, err := transport.Submit(r.ctx, HostedSubmit{
 		Profile: profile, SessionID: sessionID, Prompt: prompt, Source: RoomSessionSource, Task: attempt.Identity,
 		ExecutionGeneration: attempt.ExecutionGeneration, Attachments: attachments, MemberID: &memberID,
-		OnTerminal: func(receipt map[string]any) error { return r.onTerminal(binding, attempt, receipt) },
+		OnTerminal: func(receipt map[string]any) error { return r.onTerminal(binding, attempt, receipt, local) },
 	}); err != nil {
 		return true, err
 	}
@@ -451,17 +494,22 @@ func (r *HostedRoomRuntime) markAmbiguous(binding HostedRoomBinding, attempt Tas
 	r.statusLock.Unlock()
 }
 
-// Durably commits one in process terminal receipt of the attempt
-func (r *HostedRoomRuntime) onTerminal(binding HostedRoomBinding, attempt TaskAttempt, receipt map[string]any) error {
+// Durably commits one in process terminal receipt of the attempt, its reply files stored in the room
+func (r *HostedRoomRuntime) onTerminal(binding HostedRoomBinding, attempt TaskAttempt, receipt map[string]any, local bool) error {
 	status := receipt["status"]
 	if status == "cancelled" {
 		r.Wakeup()
 		return nil
 	}
-	terminal := hostedTerminalReceipt{status: "failed", result: hostedBoundedTerminalResult(receipt)}
+	terminal := hostedTerminalReceipt{status: "failed"}
 	if status == "settled" {
 		terminal.status = "settled"
 	}
+	result, err := r.terminalResult(attempt.Identity, attempt.ExecutionGeneration, terminal.status, receipt, local)
+	if err != nil {
+		return err
+	}
+	terminal.result = result
 	var settlementID any = receipt["settlement_id"]
 	if !pyrepr.Truthy(settlementID) {
 		settlementID = fmt.Sprintf("reply:%s:%d", attempt.Identity.TaskID, attempt.ExecutionGeneration)
@@ -878,12 +926,18 @@ func (r *HostedRoomRuntime) resolveOrCreate(transport InternalSessionRPC, profil
 	return transport.Resume(r.ctx, profile, sessionID, RoomSessionSource)
 }
 
+// Fails the current attempt with the refusal's own words when it carries them
 func (r *HostedRoomRuntime) settleFailureIfCurrent(attempt TaskAttempt, cause error) error {
+	text := cause.Error()
+	var refusal *state.RuntimeStoreError
+	if errors.As(cause, &refusal) && refusal.Detail != nil && *refusal.Detail != "" {
+		text = *refusal.Detail
+	}
 	_, err := DriverSettleTask(r.ctx, r.DBPath, attempt, fmt.Sprintf("failure:%s:%d", attempt.Identity.TaskID, attempt.ExecutionGeneration),
-		"failed", map[string]any{"error": cause.Error()}, r.driverClock())
+		"failed", map[string]any{"error": text}, r.driverClock())
 	if err != nil && !errAs[*DriverStateError](err) && !errAs[*RoomUnavailableError](err) {
 		return err
 	}
-	r.recordTaskError(attempt, "failed: "+cause.Error())
+	r.recordTaskError(attempt, "failed: "+text)
 	return nil
 }

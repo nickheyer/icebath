@@ -1,7 +1,5 @@
 package plugins
 
-import ()
-
 const hostStatePlugin = `
 import json, os
 def register(ctx):

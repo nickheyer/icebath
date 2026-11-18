@@ -8,9 +8,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pycopy"
 )
 
-// Runtime fields a one turn override captures and restores
-var runtimeKeys = []string{"model", "provider", "api_key", "base_url", "api_mode"}
-
 // Live model runtime of an agent captured for a one turn restore
 func snapshotAgentModelRuntime(a *agent.AIAgent) map[string]any {
 	var reasoning, primary any
@@ -49,7 +46,7 @@ func restoreAgentModelRuntime(ctx context.Context, a *agent.AIAgent, snapshot ma
 			return a.RestorePrimarySnapshot(ctx, primary)
 		}()
 		if err != nil {
-			logger().Debug("TUI one-turn model restore via primary runtime failed", "error", err)
+			pkgLog().Debug("TUI one-turn model restore via primary runtime failed", "error", err)
 		} else if restored {
 			if hasReasoning {
 				a.SetReasoningConfig(snapshotReasoning(snapshot))

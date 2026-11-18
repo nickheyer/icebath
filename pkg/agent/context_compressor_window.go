@@ -63,6 +63,6 @@ func (c *ContextCompressor) takePreparedSummary(ctx context.Context, messages []
 
 // Adopts a prepared summary as an inline summary call would have left it and returns the handoff text
 func (c *ContextCompressor) adoptPreparedSummary(ctx context.Context, prepared *PreparedSummary) string {
-	AdoptPreparedSummary(ctx, c, prepared)
+	AdoptPreparedSummary(c, prepared)
 	return prepared.Summary
 }

@@ -3,7 +3,6 @@ package telegram
 import (
 	"context"
 	"fmt"
-	"log/slog"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -114,7 +113,7 @@ type TelegramAdapter struct {
 	homeDir                 string
 }
 
-// Adapter of the platform config with every hermes __init__ default and extra derived setting
+// Adapter of the platform config with every constructor default and extra derived setting
 func NewTelegramAdapter(ctx context.Context, cfg *gateway.PlatformConfig) *TelegramAdapter {
 	a := &TelegramAdapter{reconnectWaitSeconds: reconnectWaitSeconds, reconnectPollInterval: reconnectPollInterval,
 		notificationsMode: "important", retriggerTasks: map[string]*gateway.AdapterTask{}, retriggerAt: map[string]float64{},
@@ -243,7 +242,7 @@ func (a *TelegramAdapter) SetFatalError(ctx context.Context, code, message strin
 	a.BasePlatformAdapter.SetFatalError(ctx, code, message, retryable)
 	if !retryable {
 		if n := a.HeldInbound.Clear(); n > 0 {
-			slog.Warn(fmt.Sprintf("[Telegram] Non-retryable fatal (%s); discarding %d held inbound message(s)", code, n))
+			pkgLog().Warn(fmt.Sprintf("[Telegram] Non-retryable fatal (%s); discarding %d held inbound message(s)", code, n))
 		}
 	}
 }
@@ -291,7 +290,7 @@ func (a *TelegramAdapter) waitForReconnection(ctx context.Context) (bool, error)
 		return false, nil
 	}
 	waitS, pollS := a.reconnectWaitSeconds, a.reconnectPollInterval
-	slog.Info(fmt.Sprintf("[%s] Not connected — waiting for reconnection (up to %.0fs)", a.Name(), waitS))
+	pkgLog().Info(fmt.Sprintf("[%s] Not connected — waiting for reconnection (up to %.0fs)", a.Name(), waitS))
 	waited := 0.0
 	for waited < waitS {
 		if !sleepCtx(ctx, pollS) {
@@ -302,11 +301,11 @@ func (a *TelegramAdapter) waitForReconnection(ctx context.Context) (bool, error)
 			return false, nil
 		}
 		if a.currentBot() != nil || a.replacementTelegramAdapter() != nil {
-			slog.Info(fmt.Sprintf("[%s] Reconnected after %.1fs", a.Name(), waited))
+			pkgLog().Info(fmt.Sprintf("[%s] Reconnected after %.1fs", a.Name(), waited))
 			return true, nil
 		}
 	}
-	slog.Warn(fmt.Sprintf("[%s] Still not connected after %.0fs", a.Name(), waitS))
+	pkgLog().Warn(fmt.Sprintf("[%s] Still not connected after %.0fs", a.Name(), waitS))
 	return false, nil
 }
 

@@ -2,10 +2,10 @@ package agent
 
 import (
 	"context"
-	"log/slog"
 	"math/big"
 	"time"
 
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/state"
@@ -22,7 +22,7 @@ func OneshotAuxiliaryUsage(ctx context.Context, db *state.SessionDB, sessionID s
 	}
 	usage, err := db.AuxiliaryUsageByTask(ctx, sessionID)
 	if err != nil {
-		slog.Debug("oneshot: auxiliary usage read failed", "error", err)
+		pkgLog().Debug("oneshot: auxiliary usage read failed", "error", err)
 		return pyjson.NewObject()
 	}
 	return usage
@@ -108,5 +108,5 @@ func auxFloat(v any) float64 {
 		f, _ := new(big.Float).SetInt(n).Float64()
 		return f
 	}
-	panic("TypeError: unsupported operand type(s) for -: '" + pyrepr.TypeName(v) + "'")
+	panic("auxiliary usage value is " + errchain.Kind(v) + ", expected a number")
 }

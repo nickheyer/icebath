@@ -157,7 +157,7 @@ func NewConnection(handler MethodHandler, writer io.Writer, reader io.Reader, li
 		ctx:      ctx,
 		cancel:   cancel,
 		outgoing: map[int64]chan outcome{},
-		log:      logging.GetLogger("root"),
+		log:      pkgLog(),
 	}
 	if listening {
 		c.tasks.Add(1)

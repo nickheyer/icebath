@@ -35,14 +35,14 @@ func TestOTLPAttrsRedactStringsAndNeverExportProfile(t *testing.T) {
 
 func TestResourceAttributesAreAllowlistedAndSanitized(t *testing.T) {
 	attrs := SafeResourceAttributes(map[string]any{
-		"service.name":                "hermes-gateway",
+		"service.name":                "icebath-gateway",
 		"service.instance.id":         "install-1",
 		"deployment.environment.name": "staging",
 		"user.email":                  "user@example.com",
 		"authorization":               "Bearer top-secret-token-0123456789",
 		"custom.request.id":           "unbounded",
 	})
-	if len(attrs) != 3 || attrs["service.name"] != "hermes-gateway" || attrs["deployment.environment.name"] != "staging" {
+	if len(attrs) != 3 || attrs["service.name"] != "icebath-gateway" || attrs["deployment.environment.name"] != "staging" {
 		t.Fatalf("attrs %v", attrs)
 	}
 	id := attrs["service.instance.id"]
@@ -135,7 +135,7 @@ func TestGatewayHealthMetricsReachLoopbackCollector(t *testing.T) {
 			names[n] = true
 		}
 	}
-	if !names["hermes.gateway.up"] {
+	if !names["icebath.gateway.up"] {
 		t.Fatalf("names %v", names)
 	}
 }

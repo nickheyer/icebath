@@ -20,7 +20,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pythread"
 	"github.com/nickheyer/icebath/pkg/logging"
-	"github.com/nickheyer/icebath/pkg/observability"
 	"github.com/nickheyer/icebath/pkg/tools"
 
 	"github.com/nickheyer/icebath/pkg/home"
@@ -146,7 +145,7 @@ func (h *LoopFloorTimerHandle) tick() error {
 
 func (h *LoopFloorTimerHandle) onTimer() {
 	if err := h.tick(); err != nil {
-		slog.Error(fmt.Sprintf("Exception in callback _LoopFloorTimerHandle._tick(): %v", err))
+		pkgLog().Error(fmt.Sprintf("Exception in callback _LoopFloorTimerHandle._tick(): %v", err))
 	}
 }
 
@@ -209,7 +208,7 @@ func StartLoopLivenessWatchdog(ctx context.Context, loop EventLoop, probeInterva
 	go pprof.Do(context.Background(), pprof.Labels("name", "gateway-loop-liveness-watchdog"), func(context.Context) {
 		defer close(h.finished)
 		if err := loopLivenessWatch(ctx, loop, h.stopEvent, probeInterval, probeTimeout, maxStrikes, exitCode); err != nil {
-			slog.Error(fmt.Sprintf("Exception in thread gateway-loop-liveness-watchdog: %v", err))
+			pkgLog().Error(fmt.Sprintf("Exception in thread gateway-loop-liveness-watchdog: %v", err))
 		}
 	})
 	return h
@@ -226,7 +225,7 @@ func loopLivenessWatch(ctx context.Context, loop EventLoop, stop *pythread.Event
 		probe := &pythread.Event{}
 		if err := loop.CallSoonThreadsafe(probe.Set); err != nil {
 			if !errors.Is(err, ErrLoopClosed) {
-				slog.Debug(fmt.Sprintf("Failed to schedule gateway loop liveness probe: %v", err))
+				pkgLog().Debug(fmt.Sprintf("Failed to schedule gateway loop liveness probe: %v", err))
 			}
 			return nil
 		}
@@ -258,7 +257,7 @@ func loopLivenessWatch(ctx context.Context, loop EventLoop, stop *pythread.Event
 		if stop.IsSet() {
 			return nil
 		}
-		slog.Log(context.Background(), logLevelCritical, fmt.Sprintf("Gateway event loop missed %d consecutive liveness probes; dumping all thread "+
+		pkgLog().Log(context.Background(), logLevelCritical, fmt.Sprintf("Gateway event loop missed %d consecutive liveness probes; dumping all thread "+
 			"stacks and exiting with code %d so the service supervisor can restart it.", strikes, exitCode))
 		writeWatchdogDump(GetShutdownWatchdogDumpPath(context.Background(), ""), probeTimeout*float64(strikes),
 			rec2("strikes", int64(strikes), "probe_interval_s", probeInterval), "loop_liveness_watchdog_fired")
@@ -295,7 +294,6 @@ func markExitedQuietly(ctx context.Context, exitCode int, reason string) {
 		fn()
 	}
 	quietly(func() { MarkExited(context.Background(), &exitCode, reason, "") })
-	quietly(func() { observability.StampExit("watchdog", "none") })
 	quietly(func() {
 		fields := map[string]any{"gateway_state": "degraded", "exit_reason": reason}
 		if exitCode == GatewayServiceRestartExitCode {
@@ -329,7 +327,7 @@ func WriteLoopHeartbeat(ctx context.Context, pid *int, startTime *float64, h str
 		}
 	}
 	if err := config.AtomicJSONWriteWith(ctx, path, payload); err != nil {
-		slog.Debug(fmt.Sprintf("Failed to write gateway loop heartbeat: %v", err))
+		pkgLog().Debug(fmt.Sprintf("Failed to write gateway loop heartbeat: %v", err))
 	}
 	return path
 }
@@ -415,7 +413,7 @@ func ArmShutdownWatchdog(ctx context.Context, delayS any, opts ShutdownWatchdogO
 		}
 		writeWatchdogDump(target, delay, snapshot, "shutdown_watchdog_fired")
 		shown, _ := pyrepr.Format(delay, ".0f")
-		slog.Log(context.Background(), logLevelCritical, fmt.Sprintf("Shutdown watchdog fired after %ss — forcing process exit "+
+		pkgLog().Log(context.Background(), logLevelCritical, fmt.Sprintf("Shutdown watchdog fired after %ss — forcing process exit "+
 			"(asyncio drain path appears wedged; see %s)", shown, target))
 		os.Stdout.Sync()
 		os.Stderr.Sync()
@@ -517,7 +515,7 @@ func LoopHeartbeatForever(ctx context.Context, loop EventLoop, opts LoopHeartbea
 	listener, tickSocketPath, tickTCPPort, err := openTickServer(ctx, opts.Home)
 	if err != nil {
 		listener, tickTCPPort = nil, nil
-		slog.Warn(fmt.Sprintf("Loop tick socket unavailable — liveness probes will have no "+
+		pkgLog().Warn(fmt.Sprintf("Loop tick socket unavailable — liveness probes will have no "+
 			"loop-scheduling witness and will not escalate on a stale heartbeat: %v", err))
 	}
 	if listener != nil {

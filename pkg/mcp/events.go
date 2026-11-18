@@ -500,7 +500,7 @@ func subscribeRoute(ctx context.Context, sess *Session, h, routeName string, rou
 		_, err := sendEventsRequest(ctx, sess, "events/unsubscribe",
 			map[string]any{"name": event["name"], "arguments": event["arguments"], "delivery": map[string]any{"url": url}})
 		if err != nil {
-			mcpLogger().Warn(fmt.Sprintf("MCP events: releasing subscription %s after its route was removed failed: %s", routeName, eventErrorText(err)))
+			pkgLog().Warn(fmt.Sprintf("MCP events: releasing subscription %s after its route was removed failed: %s", routeName, eventErrorText(err)))
 		}
 	}
 	return stored, nil
@@ -551,7 +551,7 @@ func refreshServerSubscriptions(ctx context.Context, srv *serverTask, force bool
 			}
 			if err != nil {
 				if e := eventsRPCError(err); e != nil && terminalRefreshCodes[e.Code] {
-					mcpLogger().Warn(fmt.Sprintf("MCP server '%s': event subscription %s refused by the server (%s); removing it",
+					pkgLog().Warn(fmt.Sprintf("MCP server '%s': event subscription %s refused by the server (%s); removing it",
 						srv.name, routeName, rpcErrorRepr(e)))
 					if err := writeEventRoute(h, routeName, nil); err != nil {
 						return nextDue, err
@@ -563,7 +563,7 @@ func refreshServerSubscriptions(ctx context.Context, srv *serverTask, force bool
 				delay := math.Min(refreshMaxSleep, refreshMinSleep*math.Pow(2, float64(min(count-1, 10))))
 				due = epochSeconds(eventsNow()) + delay
 				failures[routeName] = refreshFailure{count: count, retryAt: due}
-				mcpLogger().Warn(fmt.Sprintf("MCP server '%s': refreshing event subscription %s failed (attempt %d, next in %.0fs): %s",
+				pkgLog().Warn(fmt.Sprintf("MCP server '%s': refreshing event subscription %s failed (attempt %d, next in %.0fs): %s",
 					srv.name, routeName, count, delay, eventErrorText(err)))
 			} else if stored == nil {
 				delete(failures, routeName)
@@ -623,7 +623,7 @@ func runRefreshLoop(ctx context.Context, srv *serverTask) {
 			return
 		}
 		if err != nil {
-			mcpLogger().Warn(fmt.Sprintf("MCP server '%s': event subscription refresh failed: %v", srv.name, err))
+			pkgLog().Warn(fmt.Sprintf("MCP server '%s': event subscription refresh failed: %v", srv.name, err))
 			nextDue = epochSeconds(eventsNow()) + refreshMinSleep
 		}
 		force = false
@@ -813,7 +813,7 @@ func unsubscribeEvent(ctx context.Context, srv *serverTask, args map[string]any)
 			return nil, err
 		}
 		if e.Code != eventCodeNotFound {
-			mcpLogger().Warn(fmt.Sprintf("MCP server '%s': events/unsubscribe for %s failed: %s", srv.name, routeName, rpcErrorRepr(e)))
+			pkgLog().Warn(fmt.Sprintf("MCP server '%s': events/unsubscribe for %s failed: %s", srv.name, routeName, rpcErrorRepr(e)))
 		}
 	}
 	if err := writeEventRoute(h, routeName, nil); err != nil {

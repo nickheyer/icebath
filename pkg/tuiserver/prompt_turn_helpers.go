@@ -4,14 +4,14 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/tuigateway"
+	"github.com/nickheyer/icebath/pkg/tuihost"
 )
 
 // Python equality of two decoded values
 func pyjsonEqual(a, b any) bool { return pyjson.Equal(a, b) }
 
 // Session key of a record, else the fallback id
-func sessionKeyOr(session *tuigateway.Session, fallback string) string {
+func sessionKeyOr(session *tuihost.Session, fallback string) string {
 	if key := strOr(session.Get("session_key")); key != "" {
 		return key
 	}

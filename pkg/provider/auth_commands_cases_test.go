@@ -221,77 +221,6 @@ func TestAuthAddExplicitCustomProviderKeepsPrefixedPoolKey(t *testing.T) {
 	}
 }
 
-func authNousLoginCreds(token string) map[string]any {
-	return map[string]any{
-		"portal_base_url": "https://portal.example.com", "inference_base_url": "https://inference.example.com/v1",
-		"client_id": "hermes-cli", "scope": "inference:invoke", "token_type": "Bearer",
-		"access_token": token, "refresh_token": "refresh-token",
-		"obtained_at": "2026-03-23T10:00:00+00:00", "expires_at": "2026-03-23T11:00:00+00:00", "expires_in": 3600,
-		"agent_key": token, "agent_key_id": nil, "agent_key_expires_at": "2026-03-23T10:30:00+00:00",
-		"agent_key_expires_in": 1800, "agent_key_reused": false, "agent_key_obtained_at": "2026-03-23T10:00:10+00:00",
-		"tls": map[string]any{"insecure": false, "ca_bundle": nil}}
-}
-
-func authNousOAuthNS(label any) map[string]any {
-	return map[string]any{"auth_action": "add", "provider": "nous", "auth_type": "oauth", "api_key": nil, "label": label,
-		"portal_url": nil, "inference_url": nil, "client_id": nil, "scope": nil, "no_browser": false, "timeout": nil,
-		"insecure": false, "ca_bundle": nil}
-}
-
-func TestAuthAddNousOauthPersistsPoolEntry(t *testing.T) {
-	h, env := authTestHome(t)
-	writeAuthStore(t, h, map[string]any{"version": 1, "providers": map[string]any{}})
-	token := authJWTWithEmail("nous@example.com")
-	prev := nousDeviceCodeLoginFn
-	nousDeviceCodeLoginFn = func(PoolEnv, io.Writer, NousDeviceLoginArgs) (map[string]any, error) {
-		return authNousLoginCreds(token), nil
-	}
-	defer func() { nousDeviceCodeLoginFn = prev }()
-	authMust(t, env, authNousOAuthNS(nil))
-	entries := authPoolEntries(t, h, "nous")
-	var deviceCode []map[string]any
-	for _, item := range entries {
-		if item["source"] == "manual:device_code" {
-			t.Fatalf("duplicate manual:device_code row in %v", entries)
-		}
-		if item["source"] == "device_code" {
-			deviceCode = append(deviceCode, item)
-		}
-	}
-	if len(deviceCode) != 1 {
-		t.Fatalf("device_code entries %v", entries)
-	}
-	entry := deviceCode[0]
-	if entry["agent_key"] != token || entry["portal_base_url"] != "https://portal.example.com" {
-		t.Fatalf("entry %v", entry)
-	}
-	singleton, _ := readAuthStore(t, h)["providers"].(map[string]any)["nous"].(map[string]any)
-	if singleton["access_token"] != token || singleton["refresh_token"] != "refresh-token" || singleton["agent_key"] != token ||
-		singleton["portal_base_url"] != "https://portal.example.com" || singleton["inference_base_url"] != "https://inference.example.com/v1" {
-		t.Fatalf("providers.nous %v", singleton)
-	}
-}
-
-func TestAuthAddNousOauthHonorsCustomLabel(t *testing.T) {
-	h, env := authTestHome(t)
-	writeAuthStore(t, h, map[string]any{"version": 1, "providers": map[string]any{}})
-	token := authJWTWithEmail("nous@example.com")
-	prev := nousDeviceCodeLoginFn
-	nousDeviceCodeLoginFn = func(PoolEnv, io.Writer, NousDeviceLoginArgs) (map[string]any, error) {
-		return authNousLoginCreds(token), nil
-	}
-	defer func() { nousDeviceCodeLoginFn = prev }()
-	authMust(t, env, authNousOAuthNS("my-nous"))
-	entries := authPoolEntries(t, h, "nous")
-	if len(entries) == 0 || entries[0]["source"] != "device_code" || entries[0]["label"] != "my-nous" {
-		t.Fatalf("pool entries %v", entries)
-	}
-	singleton, _ := readAuthStore(t, h)["providers"].(map[string]any)["nous"].(map[string]any)
-	if singleton["label"] != "my-nous" {
-		t.Fatalf("providers.nous %v", singleton)
-	}
-}
-
 // Scripted device code logins handed out in order
 func authScriptCodexLogins(t *testing.T, logins []map[string]any) {
 	t.Helper()
@@ -484,7 +413,7 @@ func TestClearProviderAuthRemovesProviderPoolEntries(t *testing.T) {
 	writeAuthStore(t, h, map[string]any{"version": 1, "active_provider": "anthropic",
 		"providers": map[string]any{"anthropic": map[string]any{"access_token": "legacy-token"}},
 		"credential_pool": map[string]any{
-			"anthropic":  []any{map[string]any{"id": "cred-1", "label": "primary", "auth_type": "oauth", "priority": 0, "source": "manual:hermes_pkce", "access_token": "pool-token"}},
+			"anthropic":  []any{map[string]any{"id": "cred-1", "label": "primary", "auth_type": "oauth", "priority": 0, "source": "manual:icebath_pkce", "access_token": "pool-token"}},
 			"openrouter": []any{map[string]any{"id": "cred-2", "label": "other-provider", "auth_type": "api_key", "priority": 0, "source": "manual", "access_token": "sk-or-test"}}}})
 	cleared, err := env.Store.ClearProviderAuth("anthropic")
 	if err != nil || !cleared {
@@ -531,10 +460,10 @@ func TestUnsuppressCredentialSourcePreservesOtherMarkers(t *testing.T) {
 	}
 }
 
-func TestSeedFromSingletonsRespectsHermesPkceSuppression(t *testing.T) {
+func TestSeedFromSingletonsRespectsIcebathPkceSuppression(t *testing.T) {
 	h, env := authTestHome(t)
 	writeConfigYAML(t, h, "model:\n  provider: anthropic\n  model: claude\n")
-	writeAuthStore(t, h, map[string]any{"version": 1, "providers": map[string]any{}, "suppressed_sources": map[string]any{"anthropic": []any{"hermes_pkce"}}})
+	writeAuthStore(t, h, map[string]any{"version": 1, "providers": map[string]any{}, "suppressed_sources": map[string]any{"anthropic": []any{"icebath_pkce"}}})
 	raw, _ := json.Marshal(map[string]any{"accessToken": "tok", "refreshToken": "r", "expiresAt": 9999999999000})
 	if err := os.WriteFile(filepath.Join(h, ".anthropic_oauth.json"), raw, 0o600); err != nil {
 		t.Fatal(err)
@@ -542,9 +471,9 @@ func TestSeedFromSingletonsRespectsHermesPkceSuppression(t *testing.T) {
 	var entries []PooledCredential
 	_, active := seedFromSingletons(env, "anthropic", &entries)
 	if len(entries) != 0 {
-		t.Fatalf("suppressed hermes_pkce seeded %v", entries)
+		t.Fatalf("suppressed icebath_pkce seeded %v", entries)
 	}
-	if active["hermes_pkce"] {
+	if active["icebath_pkce"] {
 		t.Fatalf("active sources %v", active)
 	}
 }

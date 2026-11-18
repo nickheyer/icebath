@@ -3,7 +3,7 @@ package app
 import (
 	"fmt"
 
-	"github.com/nickheyer/icebath/pkg/tuigateway"
+	"github.com/nickheyer/icebath/pkg/tuihost"
 )
 
 const (
@@ -16,12 +16,12 @@ var toolProgressVisibleModes = map[string]bool{"new": true, "all": true, "verbos
 
 // Coerces a raw config or attribute value into a known tool progress mode, log kept as a gateway mode
 func normalizeToolProgressMode(mode any, def string) string {
-	return tuigateway.NormalizeToolProgressMode(mode, def)
+	return tuihost.NormalizeToolProgressMode(mode, def)
 }
 
 // Maps a focus argument onto its action and the requested enabled state for set
 func resolveFocusArg(arg string, current bool) (string, *bool) {
-	return tuigateway.ResolveFocusArg(arg, current)
+	return tuihost.ResolveFocusArg(arg, current)
 }
 
 // Reports whether the CLI would have committed a scrollback line for this tool call under the mode
@@ -56,10 +56,10 @@ func focusStatusbarSegment(enabled bool) string {
 
 // Human readable focus status body without ANSI
 func formatFocusStatus(enabled bool, configuredMode any) string {
-	return tuigateway.FormatFocusStatus(enabled, configuredMode)
+	return tuihost.FormatFocusStatus(enabled, configuredMode)
 }
 
 // Confirmation line printed when focus view is switched without ANSI
 func formatFocusToggleMessage(enabled bool, configuredMode any) string {
-	return tuigateway.FormatFocusToggleMessage(enabled, configuredMode)
+	return tuihost.FormatFocusToggleMessage(enabled, configuredMode)
 }

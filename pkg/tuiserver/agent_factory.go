@@ -20,7 +20,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/skills"
 	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tools"
-	"github.com/nickheyer/icebath/pkg/tuigateway"
+	"github.com/nickheyer/icebath/pkg/tuihost"
 )
 
 // Session overlay prompt of the personality commands package, assigned by the command wiring
@@ -36,7 +36,7 @@ var (
 	codingSelection      = tools.CodingSelection
 	platformTools        = tools.Default.PlatformTools
 	loadDisabledToolsets = loadDisabledToolsetsConfig
-	// Effective config of the active home with defaults merged, the hermes load_config read
+	// Effective config of the active home with defaults merged, the load_config read
 	loadConfig = func(ctx context.Context) (config.Tree, error) { return config.LoadContext(ctx, home.Dir(ctx), nil) }
 )
 
@@ -58,7 +58,7 @@ func resolveSessionSource(explicit string) string {
 func resolveAgentPlatform(source string) string { return resolveSessionSource(source) }
 
 // Custom adapter entry an agent runs, resolved in the session's own profile
-func scopedSessionProvider(ctx context.Context, a *agent.AIAgent, session *tuigateway.Session) string {
+func scopedSessionProvider(ctx context.Context, a *agent.AIAgent, session *tuihost.Session) string {
 	profileHome := strOr(session.Get("profile_home"))
 	if profileHome == "" {
 		profileHome = importedHome()
@@ -476,7 +476,7 @@ func parseModelConfig(raw any, quiet bool) (map[string]any, error) {
 			if !quiet {
 				return nil, err
 			}
-			logger().Debug("failed to parse stored session model_config", "error", err)
+			pkgLog().Debug("failed to parse stored session model_config", "error", err)
 			return map[string]any{}, nil
 		}
 		switch p := parsed.(type) {
@@ -533,13 +533,13 @@ func storedSessionRuntimeOverrides(ctx context.Context, row *pyjson.Object) map[
 		func() {
 			defer func() {
 				if r := recover(); r != nil {
-					logger().Debug("custom provider identity recovery failed", "error", r)
+					pkgLog().Debug("custom provider identity recovery failed", "error", r)
 				}
 			}()
 			healed = provider.CanonicalCustomIdentity(ctx, baseURL, "", model, "")
 		}()
 		if healed != "" {
-			logger().Info(fmt.Sprintf("healed stale session provider %s to %s", pyrepr.Repr(providerName), pyrepr.Repr(healed)))
+			pkgLog().Info(fmt.Sprintf("healed stale session provider %s to %s", pyrepr.Repr(providerName), pyrepr.Repr(healed)))
 			providerName, baseURL = healed, ""
 		} else {
 			providerName, baseURL, apiMode = "", "", ""
@@ -572,7 +572,7 @@ func storedSessionRuntimeOverrides(ctx context.Context, row *pyjson.Object) map[
 }
 
 // Live agent, session key and owning session store of a record, ok false when any is missing
-func liveSessionAgentDB(ctx context.Context, session *tuigateway.Session) (*agent.AIAgent, string, *state.DB, bool) {
+func liveSessionAgentDB(ctx context.Context, session *tuihost.Session) (*agent.AIAgent, string, *state.DB, bool) {
 	a := sessionAgent(session)
 	sessionKey := strings.TrimSpace(strOr(session.Get("session_key")))
 	if a == nil || sessionKey == "" {
@@ -589,14 +589,14 @@ func liveSessionAgentDB(ctx context.Context, session *tuigateway.Session) (*agen
 }
 
 // Persists the active session runtime so a later resume restores the same footer
-func persistLiveSessionRuntime(ctx context.Context, session *tuigateway.Session) {
+func persistLiveSessionRuntime(ctx context.Context, session *tuihost.Session) {
 	a, sessionKey, db, ok := liveSessionAgentDB(ctx, session)
 	if !ok {
 		return
 	}
 	defer func() {
 		if r := recover(); r != nil {
-			logger().Debug("failed to persist live session runtime", "error", r)
+			pkgLog().Debug("failed to persist live session runtime", "error", r)
 		}
 	}()
 	row, err := db.GetSession(ctx, sessionKey)
@@ -651,7 +651,7 @@ func coerceStatusbar(raw any) string {
 
 // Mouse tracking mode of the display config, legacy tui_mouse only when mouse_tracking is absent
 func displayMouseTracking(display any) string {
-	return tuigateway.DisplayMouseTracking(display)
+	return tuihost.DisplayMouseTracking(display)
 }
 
 // Reasoning config of a model through the shared resolver, per model override over the global effort
@@ -734,7 +734,7 @@ func loadToolProgressMode(ctx context.Context) string {
 
 // Tool progress mode a live session runs, all by default
 func sessionToolProgressMode(sid string) string {
-	raw, present := tuigateway.SessionRecord(sid).Lookup("tool_progress_mode")
+	raw, present := tuihost.SessionRecord(sid).Lookup("tool_progress_mode")
 	if !present {
 		raw = "all"
 	}
@@ -749,7 +749,7 @@ func sessionVerbose(sid string) bool { return sessionToolProgressMode(sid) == "v
 
 // Session reasoning display flag, the config default when the session sets none
 func sessionShowReasoning(ctx context.Context, sid string) bool {
-	if raw, present := tuigateway.SessionRecord(sid).Lookup("show_reasoning"); present {
+	if raw, present := tuihost.SessionRecord(sid).Lookup("show_reasoning"); present {
 		return truthy(raw)
 	}
 	return loadShowReasoning(ctx)
@@ -803,7 +803,7 @@ func resolveRuntimeWithFallback(ctx context.Context, args runtimeResolveArgs) (*
 			continue
 		}
 		wording, _ := provider.PrimaryFailureWording(primary)
-		logger().Warn(fmt.Sprintf("Primary %s (%s), falling back to %s model %s", wording, primary, fbProvider, fbModel))
+		pkgLog().Warn(fmt.Sprintf("Primary %s (%s), falling back to %s model %s", wording, primary, fbProvider, fbModel))
 		return runtime, fbModel, true, nil
 	}
 	return nil, "", false, primaryErr
@@ -909,7 +909,7 @@ func startupSystemPrompt(ctx context.Context, cfg map[string]any, taskID string)
 		if len(loadedSkills) == 0 {
 			return "", &pypath.ValueError{Msg: skills.FormatMissingSkills(missingSkills)}
 		}
-		logger().Warn(fmt.Sprintf("Skipping %s. Continuing with: %s. List available skills with `icebath skills list`.",
+		pkgLog().Warn(fmt.Sprintf("Skipping %s. Continuing with: %s. List available skills with `icebath skills list`.",
 			skills.FormatMissingSkills(missingSkills), strings.Join(loadedSkills, ", ")))
 	}
 	if skillsPrompt != "" {

@@ -13,7 +13,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/vault"
 )
 
-// Temp ICEBATH_HOME with an in memory keychain, the hermes fixture of the vault CLI tests
+// Temp ICEBATH_HOME with an in memory keychain, the test fixture of the vault CLI tests
 func vaultCLIHome(t *testing.T) (string, *vault.MemoryKeyring) {
 	t.Helper()
 	h := t.TempDir()

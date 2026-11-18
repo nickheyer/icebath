@@ -73,7 +73,7 @@ func TestExtractLoggerNameNoMatch(t *testing.T) {
 }
 
 func TestGatewayNested(t *testing.T) {
-	line := "2026-04-11 10:23:45 INFO plugins.platforms.telegram.adapter: msg"
+	line := "2026-04-11 10:23:45 INFO gateway/platforms/telegram: msg"
 	if !lineMatchesComponent(line, logging.ComponentPrefixes["gateway"]) {
 		t.Fatal("gateway component missed")
 	}
@@ -95,7 +95,7 @@ func TestLevelFilter(t *testing.T) {
 }
 
 func TestCombinedFilters(t *testing.T) {
-	line := "2026-04-11 10:00:00 WARNING [sess_1] gateway.run: connection lost"
+	line := "2026-04-11 10:00:00 WARNING [sess_1] gateway: connection lost"
 	f := logFilters{minLevel: strPtr("WARNING"), sessionFilter: strPtr("sess_1"), componentPrefixes: []string{"gateway"}, hasComponent: true}
 	if !matchesLogFilters(line, f) {
 		t.Fatal("gateway rejected")
@@ -136,9 +136,9 @@ func TestUnstampedLinesShareTheVerdictOfTheRecordAbove(t *testing.T) {
 	frames := "Traceback (most recent call last):\n  File \"x.py\", line 1, in f\n"
 	path := filepath.Join(t.TempDir(), "errors.log")
 	os.WriteFile(path, []byte("orphan tail of a record that started before the window\n"+
-		old+" ERROR gateway.run: old failure\n"+frames+"ValueError: old\n"+
+		old+" ERROR gatewayrun: old failure\n"+frames+"ValueError: old\n"+
 		recent+" INFO tools.x: multi-line info\n"+"  info continuation\n"+
-		recent+" ERROR gateway.run: new failure\n"+frames+"ValueError: new\n"), 0o644)
+		recent+" ERROR gatewayrun: new failure\n"+frames+"ValueError: new\n"), 0o644)
 	since := naiveLocalNow().Add(-time.Hour)
 	read := func(f logFilters) string {
 		lines, err := readLogTail(path, 50, true, f)
@@ -147,7 +147,7 @@ func TestUnstampedLinesShareTheVerdictOfTheRecordAbove(t *testing.T) {
 		}
 		return strings.Join(lines, "")
 	}
-	newFailure := recent + " ERROR gateway.run: new failure\n" + frames + "ValueError: new\n"
+	newFailure := recent + " ERROR gatewayrun: new failure\n" + frames + "ValueError: new\n"
 	if got := read(logFilters{since: &since}); got != recent+" INFO tools.x: multi-line info\n  info continuation\n"+newFailure {
 		t.Fatalf("since %q", got)
 	}

@@ -11,6 +11,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/tuigateway"
+	"github.com/nickheyer/icebath/pkg/tuihost"
 )
 
 // Set of the given names
@@ -123,7 +124,7 @@ func (p *rpcWorkerPool) Shutdown(cancelFutures bool) {
 	}
 }
 
-// Worker pool of the long handlers, swapped only where a hermes case installs its own executor
+// Worker pool of the long handlers, swapped only where a test installs its own executor
 var rpcPool = newRPCWorkerPool(max(2, envInt("ICEBATH_TUI_RPC_POOL_WORKERS", 8)))
 
 func init() {
@@ -185,11 +186,14 @@ func handleRequest(ctx context.Context, req any) map[string]any {
 	}
 	fn := lookupMethod(method)
 	if fn == nil {
-		return rpcErr(rid, -32601, tuigateway.UnknownMethodMessage(method), nil)
+		return rpcErr(rid, -32601, tuihost.UnknownMethodMessage(method), nil)
 	}
-	contract := tuigateway.Methods[method]
+	if typed := tuigateway.Lookup(tuigateway.KindMethod, method); typed != nil {
+		return handleTyped(ctx, typed, fn, rid, method, params)
+	}
+	contract := tuihost.Methods[method]
 	if contract != nil {
-		validated, problem := tuigateway.ValidateParams(contract, params)
+		validated, problem := tuihost.ValidateParams(contract, params)
 		if problem != "" {
 			return rpcErr(rid, 4000, problem, nil)
 		}
@@ -201,8 +205,25 @@ func handleRequest(ctx context.Context, req any) map[string]any {
 	}
 	if contract != nil && response != nil {
 		if result, isDict := response["result"].(map[string]any); isDict {
-			tuigateway.CheckParamsAccepted(contract, params)
-			tuigateway.CheckResult(contract, result)
+			tuihost.CheckParamsAccepted(contract, params)
+			tuihost.CheckResult(contract, result)
+		}
+	}
+	return response
+}
+
+// Runs a typed method, its params fitted to the params type and its answer checked against the result type
+func handleTyped(ctx context.Context, typed *tuigateway.Entry, fn Handler, rid any, method string, params map[string]any) map[string]any {
+	if err := typed.FitParams(params); err != nil {
+		return rpcErr(rid, 4000, err.Error(), nil)
+	}
+	response, outage := callHandler(context.WithValue(ctx, currentRPCMethodKey{}, method), fn, rid, params)
+	if outage != nil {
+		return outage
+	}
+	if result, answered := response["result"]; answered && response["error"] == nil {
+		if err := typed.CheckResult(result); err != nil {
+			tuihost.ReportMisfit("result of", method, err)
 		}
 	}
 	return response
@@ -237,15 +258,15 @@ func callHandler(ctx context.Context, fn Handler, rid any, params map[string]any
 }
 
 // Routes one inbound RPC, a long handler to the pool returning nil and every other inline with its response
-func Dispatch(ctx context.Context, req any, transport tuigateway.Transport) map[string]any {
+func Dispatch(ctx context.Context, req any, transport tuihost.Transport) map[string]any {
 	t := transport
 	if t == nil {
-		t = tuigateway.ModuleStdioTransport()
+		t = tuihost.ModuleStdioTransport()
 	}
-	ctx = tuigateway.BindTransport(ctx, t)
-	if frame := frameObject(req); frame != nil && tuigateway.IsResponseFrame(frame) {
-		if !tuigateway.ResolveResponse(frame, t) {
-			logger().Debug(fmt.Sprintf("dropping response for unknown server request id=%s", pyrepr.Repr(frame.GetOr("id", nil))))
+	ctx = tuihost.BindTransport(ctx, t)
+	if frame := frameObject(req); frame != nil && tuihost.IsResponseFrame(frame) {
+		if !tuihost.ResolveResponse(frame, t) {
+			pkgLog().Debug(fmt.Sprintf("dropping response for unknown server request id=%s", pyrepr.Repr(frame.GetOr("id", nil))))
 		}
 		return nil
 	}

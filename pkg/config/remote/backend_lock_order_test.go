@@ -53,17 +53,18 @@ func TestSameThreadReentryRaisesWhileOtherThreadsWait(t *testing.T) {
 			mu.Unlock()
 		}
 	}
-	RegisterNousAccessToken(func(ctx context.Context, _ string) (string, error) {
+	originalToken := planeToken
+	planeToken = func(ctx context.Context) (string, error) {
 		if count() == 0 {
 			reenter(ctx)
 		}
-		return configplane.NousToken, nil
-	})
-	t.Cleanup(func() { RegisterNousAccessToken(nil) })
+		return configplane.Token, nil
+	}
+	t.Cleanup(func() { planeToken = originalToken })
 	var other *profileState
 	waited := make(chan struct{})
 	original := request
-	request = func(ctx context.Context, method, rh, profile, etag string, body any, token string) (Response, error) {
+	request = func(ctx context.Context, method, profile, etag string, body any, token string) (Response, error) {
 		if method == "GET" && count() == 1 {
 			reenter(ctx)
 			go func() {
@@ -79,7 +80,7 @@ func TestSameThreadReentryRaisesWhileOtherThreadsWait(t *testing.T) {
 				time.Sleep(10 * time.Millisecond)
 			}
 		}
-		return original(ctx, method, rh, profile, etag, body, token)
+		return original(ctx, method, profile, etag, body, token)
 	}
 	t.Cleanup(func() { request = original })
 	p.Upper = map[string]any{"display": map[string]any{"skin": "ares"}}
@@ -155,8 +156,8 @@ func TestNothingIsLoggedUnderABackendLock(t *testing.T) {
 	slog.SetDefault(slog.New(lockProbe{b: b, mu: &mu, seen: &seen}))
 	t.Cleanup(func() { slog.SetDefault(prev) })
 	original := request
-	request = func(ctx context.Context, method, h, profile, etag string, body any, token string) (Response, error) {
-		resp, err := original(ctx, method, h, profile, etag, body, token)
+	request = func(ctx context.Context, method, profile, etag string, body any, token string) (Response, error) {
+		resp, err := original(ctx, method, profile, etag, body, token)
 		p.Mu.Lock()
 		p.FailStatus = 0
 		p.Mu.Unlock()

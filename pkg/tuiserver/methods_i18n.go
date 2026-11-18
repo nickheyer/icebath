@@ -3,7 +3,6 @@ package tuiserver
 import (
 	"context"
 	"fmt"
-	"log/slog"
 	"slices"
 	"strings"
 
@@ -16,7 +15,6 @@ const i18nErr = 5400
 var i18nRegistry = &handlerRegistry{}
 
 func init() {
-	i18nRegistry.scopedMethod("i18n.languages", i18nLanguages)
 	i18nRegistry.scopedMethod("i18n.catalog", i18nCatalog)
 	i18nRegistry.install()
 	addLongHandlers(i18nRegistry.names()...)
@@ -26,7 +24,7 @@ func init() {
 func loadLanguagePacks(ctx context.Context) {
 	defer func() {
 		if r := recover(); r != nil {
-			slog.Default().With("logger", "tui_gateway.methods_i18n").Warn("i18n: plugin discovery failed; serving languages without plugin packs", "error", r)
+			pkgLog().Warn("i18n: plugin discovery failed; serving languages without plugin packs", "error", r)
 		}
 	}()
 	discoverPlugins(ctx, false)
@@ -38,25 +36,6 @@ func panicMessage(r any) string {
 		return e.Error()
 	}
 	return pyrepr.Str(r)
-}
-
-// Every supported language of the profile with its endonym, direction, source and surfaces
-func i18nLanguages(ctx context.Context, rid any, params map[string]any) (resp map[string]any) {
-	defer func() {
-		if r := recover(); r != nil {
-			resp = rpcErr(rid, i18nErr, panicMessage(r), nil)
-		}
-	}()
-	loadLanguagePacks(ctx)
-	languages := []any{}
-	for _, opt := range i18n.LanguageOptions(ctx) {
-		surfaces := make([]any, 0, len(opt.Surfaces))
-		for _, s := range opt.Surfaces {
-			surfaces = append(surfaces, s)
-		}
-		languages = append(languages, map[string]any{"id": opt.ID, "endonym": opt.Endonym, "rtl": opt.RTL, "source": opt.Source, "surfaces": surfaces})
-	}
-	return ok(rid, map[string]any{"languages": languages})
 }
 
 // Pack and overlay messages of one surface for the resolved language, nothing bundled

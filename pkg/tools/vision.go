@@ -6,7 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"log/slog"
 	"math"
 	"net/http"
 	"net/url"
@@ -253,7 +252,7 @@ func downloadMedia(ctx context.Context, env *Env, rawURL, destination string, ma
 	if err := os.MkdirAll(filepath.Dir(destination), 0o777); err != nil {
 		return err
 	}
-	log := visionLog(env)
+	log := envLog(env)
 	var lastErr error
 	for attempt := 0; attempt < maxRetries; attempt++ {
 		err := downloadMediaOnce(ctx, env, rawURL, destination, o)
@@ -352,7 +351,7 @@ func downloadMediaOnce(ctx context.Context, env *Env, rawURL, destination string
 	fail := func(err error) error {
 		f.Close()
 		if rmErr := os.Remove(tmp); rmErr != nil && !os.IsNotExist(rmErr) {
-			visionLog(env).Debug("Could not delete partial download", "path", tmp, "error", rmErr)
+			envLog(env).Debug("Could not delete partial download", "path", tmp, "error", rmErr)
 		}
 		return err
 	}
@@ -595,7 +594,7 @@ func resizeImageForVision(env *Env, path, mime string, o ResizeOptions) (string,
 	if err != nil {
 		return "", err
 	}
-	log := visionLog(env)
+	log := envLog(env)
 	fileSize := st.Size()
 	estimated := (fileSize*4)/3 + 100
 	dataURL := ""
@@ -882,7 +881,7 @@ func visionAnalyzeNative(ctx context.Context, env *Env, sessionID string, imageU
 		}
 	}()
 	failed := func(err error) string {
-		visionLog(env).Warn("Native vision fast path failed", "error", err)
+		envLog(env).Warn("Native vision fast path failed", "error", err)
 		return visionToolError("Native vision failed: " + err.Error())
 	}
 	if IsInterrupted(ctx) {
@@ -1021,9 +1020,6 @@ func debugCallData(kind, source, userPrompt, model string) map[string]any {
 	}
 }
 
-// Logger named like the reference vision tools module
-func visionLog(env *Env) *slog.Logger { return envLog(env).With("logger", "tools.vision_tools") }
-
 // Aux vision completion retrying once when the first answer came back empty
 func callVisionLLM(ctx context.Context, env *Env, msgs []*state.Message, opts AuxOptions, emptyLog string, first *string) (string, error) {
 	if env == nil || env.AuxClient() == nil {
@@ -1039,7 +1035,7 @@ func callVisionLLM(ctx context.Context, env *Env, msgs []*state.Message, opts Au
 		}
 	}
 	if analysis == "" {
-		visionLog(env).Warn(emptyLog)
+		envLog(env).Warn(emptyLog)
 		return env.AuxClient().Complete(ctx, msgs, opts)
 	}
 	return analysis, nil
@@ -1067,7 +1063,7 @@ func runAnalysis(ctx context.Context, env *Env, kind, source, userPrompt, model 
 	spec := analysisKinds[kind]
 	debug := debugCallData(kind, source, userPrompt, model)
 	var tempPaths []string
-	log := visionLog(env)
+	log := envLog(env)
 	defer func() {
 		for _, p := range tempPaths {
 			if p == "" {
@@ -1140,7 +1136,7 @@ func VisionAnalyzeTool(ctx context.Context, env *Env, imageURL, userPrompt strin
 func visionAnalyzeTool(ctx context.Context, env *Env, imageURL any, userPrompt, model, taskID string, region any) string {
 	source := pyStrOrEmpty(imageURL)
 	return runAnalysis(ctx, env, "image", source, userPrompt, model, func(prompt string, debug map[string]any, tempPaths *[]string) (string, string, error) {
-		log := visionLog(env)
+		log := envLog(env)
 		p, err := prepareImage(ctx, env, imageURL, taskID, region, false)
 		if err != nil {
 			return "", "", err
@@ -1303,7 +1299,7 @@ func handleVisionAnalyze(ctx context.Context, call *Call) string {
 	}
 	region := call.Args["region"]
 	if ShouldUseNativeVisionFastPath(ctx, env) {
-		visionLog(env).Info("vision_analyze: native fast path")
+		envLog(env).Info("vision_analyze: native fast path")
 		return visionAnalyzeNative(ctx, env, call.SessionID, imageURL, question, call.TaskID, region)
 	}
 	fullPrompt := "Fully describe and explain everything about this image, then answer the following question:\n\n" + argPyStr(call.Args, "question")
@@ -1329,7 +1325,7 @@ func unsupportedVideoFormat(suffix string) string {
 
 // Local video path for a sandbox path, host file, or http URL, only files made here join tempPaths
 func materializeVideo(ctx context.Context, env *Env, videoURL, taskID string, tempPaths *[]string) (string, error) {
-	log := visionLog(env)
+	log := envLog(env)
 	source := strings.TrimPrefix(videoURL, "file://")
 	localPath := pyExpandUser(source)
 	lowered := strings.ToLower(strings.TrimSpace(videoURL))
@@ -1394,7 +1390,7 @@ func materializeVideo(ctx context.Context, env *Env, videoURL, taskID string, te
 func videoAnalyzeTool(ctx context.Context, env *Env, videoURL any, userPrompt, model, taskID string) string {
 	source := pyStrOrEmpty(videoURL)
 	return runAnalysis(ctx, env, "video", source, userPrompt, model, func(prompt string, debug map[string]any, tempPaths *[]string) (string, string, error) {
-		log := visionLog(env)
+		log := envLog(env)
 		src, isStr := videoURL.(string)
 		if !isStr {
 			return "", "", errors.New("Invalid video source. Provide an HTTP/HTTPS URL or a valid local file path.")

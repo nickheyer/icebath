@@ -2,7 +2,6 @@ package gateway
 
 import (
 	"errors"
-	"log/slog"
 	"reflect"
 
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
@@ -19,8 +18,6 @@ const StopTailReserveSeconds = 10.0
 type sideAgentInterruptible interface {
 	HolderAgent() any
 }
-
-func runRuntimeLog() *slog.Logger { return slog.Default().With("logger", "gateway.run_runtime") }
 
 // Hard stop of any agent value with a message and tool reason, false when it has no interrupt
 func requestHardInterruptWith(agent any, message, toolReason string) bool {
@@ -74,7 +71,7 @@ func StopAuthorityTurns(runner any, a *SessionAuthority, inProcess bool, reason 
 			if !errors.As(err, &refusal) {
 				panic(err)
 			}
-			runRuntimeLog().Debug("managed Stop not queued (" + refusal.Reason + "); the latch escalates it")
+			pkgLog().Debug("managed Stop not queued (" + refusal.Reason + "); the latch escalates it")
 		}
 		signalled++
 	}

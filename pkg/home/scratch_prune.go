@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
-	"log/slog"
 	"math"
 	"os"
 	"os/exec"
@@ -89,22 +88,20 @@ type pruneAudit struct {
 	path string
 }
 
-// Audit writer on logFile with its directory created, slog only when logFile is empty or uncreatable
+// Audit writer on logFile, its directory created by the first record, slog only when logFile is empty
 func openPruneLog(logFile string) *pruneAudit {
-	if logFile == "" {
-		return &pruneAudit{}
-	}
-	if err := os.MkdirAll(filepath.Dir(logFile), 0o777); err != nil {
-		slog.Warn(fmt.Sprintf("scratch prune: cannot create %s: %s", filepath.Dir(logFile), pypath.OSErrorText(err)))
-		return &pruneAudit{}
-	}
 	return &pruneAudit{path: logFile}
 }
 
-// Appends one timestamped record, rotating first when it would reach the size cap
+// Appends one timestamped record, rotating first when it would reach the size cap, slog only once the log directory is uncreatable
 func (a *pruneAudit) info(msg string) {
-	slog.Info(msg)
+	pkgLog().Info(msg)
 	if a.path == "" {
+		return
+	}
+	if err := os.MkdirAll(filepath.Dir(a.path), 0o777); err != nil {
+		pkgLog().Warn(fmt.Sprintf("scratch prune: cannot create %s: %s", filepath.Dir(a.path), pypath.OSErrorText(err)))
+		a.path = ""
 		return
 	}
 	line := time.Now().Format("2006-01-02 15:04:05,000") + " " + msg + "\n"
@@ -666,7 +663,7 @@ func reapProcessesRootedIn(scratchRoot string, doomed *[]string, audit *pruneAud
 		}
 		audit.info(fmt.Sprintf("scratch prune: sent KILL pid=%d (still running after TERM)", c.pid))
 	}
-	slog.Info(fmt.Sprintf("scratch prune: reaped %d process(es) rooted in pruned entries", len(remaining)))
+	pkgLog().Info(fmt.Sprintf("scratch prune: reaped %d process(es) rooted in pruned entries", len(remaining)))
 	return len(remaining), nil
 }
 
@@ -723,7 +720,7 @@ func ReleaseGitWorktrees(repos map[string]bool) {
 		cmd := exec.CommandContext(ctx, "git", "-C", repo, "worktree", "prune")
 		var exitErr *exec.ExitError
 		if _, err := cmd.CombinedOutput(); err != nil && (ctx.Err() != nil || !errors.As(err, &exitErr)) {
-			slog.Debug(fmt.Sprintf("git worktree prune in %s failed: %s", repo, err))
+			pkgLog().Debug(fmt.Sprintf("git worktree prune in %s failed: %s", repo, err))
 		}
 		cancel()
 	}

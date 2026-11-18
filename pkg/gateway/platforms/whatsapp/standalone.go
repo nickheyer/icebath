@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"log/slog"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -178,7 +177,7 @@ func standaloneSend(ctx context.Context, kwargs map[string]any) (result map[stri
 		if _, statErr := os.Stat(item.Path); statErr != nil {
 			if mediaCaption != "" {
 				if _, _, err := post("send", mentionFirst(map[string]any{"chatId": normalizedChatID, "message": mediaCaption}), 30*time.Second, ""); err != nil {
-					slog.Warn("WhatsApp caption-fallback send failed for missing media")
+					pkgLog().Warn("WhatsApp caption-fallback send failed for missing media")
 				}
 			}
 			return gateway.SendError("WhatsApp media file not found: " + item.Path), nil

@@ -54,6 +54,14 @@ func doctorLiveTestEnv(t *testing.T, cfg map[string]any) (*doctorLiveEnv, *bytes
 	}
 	e.loadConfig = func() (map[string]any, error) { return cfg, nil }
 	e.browserAvailable = func() bool { return false }
+	spoken := filepath.Join(t.TempDir(), "check.ogg")
+	e.speak = func(string, string) (string, error) {
+		return `{"success": true, "file_path": "` + spoken + `"}`, os.WriteFile(spoken, []byte("OggS"), 0o644)
+	}
+	e.transcribe = func(string) (map[string]any, error) {
+		return map[string]any{"success": true, "transcript": doctorLiveSentence}, nil
+	}
+	e.sample = func() (string, string, error) { return spoken, doctorLiveSentence, nil }
 	return e, out
 }
 
@@ -111,7 +119,8 @@ func TestConfiguredOnlySelectionUnconfiguredBackendsDoNotTouchNetwork(t *testing
 		return 0, nil
 	}
 	for _, r := range doctorLiveRun(t, e, nil) {
-		if r.Status != "skip" {
+		local := r.Name == "TTS" || r.Name == "STT"
+		if (local && r.Status != "pass") || (!local && r.Status != "skip") {
 			t.Fatalf("%s is %s", r.Name, r.Status)
 		}
 	}
@@ -175,7 +184,7 @@ func TestConfiguredOnlySelectionMcpServersProbedPerConfiguredServer(t *testing.T
 
 func TestConfiguredOnlySelectionTtsLocalProviderSkipped(t *testing.T) {
 	e, _ := doctorLiveTestEnv(t, map[string]any{"tts": map[string]any{"provider": "edge"}})
-	if got := doctorLiveByName(doctorLiveRun(t, e, nil))["TTS"]; got.Status != "skip" {
+	if got := doctorLiveByName(doctorLiveRun(t, e, nil))["TTS"]; got.Status != "pass" {
 		t.Fatalf("TTS = %#v", got)
 	}
 }

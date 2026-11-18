@@ -3,7 +3,6 @@ package tools
 import (
 	"errors"
 	"fmt"
-	"log/slog"
 
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
@@ -45,7 +44,7 @@ func validateRegistrationSchema(d Def) error {
 
 // Logs and returns the refusal of a plugin shadowing a global tool without override
 func rejectGlobalShadow(owner, name string) error {
-	slog.Error(fmt.Sprintf("Tool registration REJECTED: plugin %s attempted to shadow global tool %s without override=True",
+	pkgLog().Error(fmt.Sprintf("Tool registration REJECTED: plugin %s attempted to shadow global tool %s without override=True",
 		pyrepr.StrRepr(owner), pyrepr.StrRepr(name)))
 	return fmt.Errorf("%w: plugin %s would shadow global tool %s", ErrRegistrationRejected, pyrepr.StrRepr(owner), pyrepr.StrRepr(name))
 }
@@ -54,15 +53,15 @@ func rejectGlobalShadow(owner, name string) error {
 func crossToolsetVerdict(d Def, owner, existingToolset string, denied bool) error {
 	if d.Override {
 		if denied {
-			slog.Error(fmt.Sprintf("Tool registration REJECTED: plugin %s attempted to override built-in tool %s (existing toolset %s) without operator opt-in. "+
+			pkgLog().Error(fmt.Sprintf("Tool registration REJECTED: plugin %s attempted to override built-in tool %s (existing toolset %s) without operator opt-in. "+
 				"Set plugins.entries.<plugin_id>.allow_tool_override: true in config.yaml to allow it.",
 				pyrepr.StrRepr(owner), pyrepr.StrRepr(d.Name), pyrepr.StrRepr(existingToolset)))
 			return &overrideDeniedError{owner: owner, name: d.Name}
 		}
-		slog.Info(fmt.Sprintf("Tool '%s': toolset '%s' overriding existing toolset '%s' (override=True opt-in)", d.Name, d.Toolset, existingToolset))
+		pkgLog().Info(fmt.Sprintf("Tool '%s': toolset '%s' overriding existing toolset '%s' (override=True opt-in)", d.Name, d.Toolset, existingToolset))
 		return nil
 	}
-	slog.Error(fmt.Sprintf("Tool registration REJECTED: '%s' (toolset '%s') would shadow existing tool from toolset '%s'. "+
+	pkgLog().Error(fmt.Sprintf("Tool registration REJECTED: '%s' (toolset '%s') would shadow existing tool from toolset '%s'. "+
 		"Pass override=True to register() if the replacement is intentional, or deregister the existing tool first.", d.Name, d.Toolset, existingToolset))
 	return fmt.Errorf("%w: %s (toolset %s) would shadow existing tool from toolset %s", ErrRegistrationRejected,
 		pyrepr.StrRepr(d.Name), pyrepr.StrRepr(d.Toolset), pyrepr.StrRepr(existingToolset))
@@ -70,7 +69,7 @@ func crossToolsetVerdict(d Def, owner, existingToolset string, denied bool) erro
 
 // Logs and returns the refusal of a plugin removing a tool it neither owns nor may override
 func rejectForeignDeregister(caller, name, toolset string) error {
-	slog.Error(fmt.Sprintf("Tool deregistration REJECTED: plugin %s attempted to remove tool %s (toolset %s) it does not own, without operator opt-in. "+
+	pkgLog().Error(fmt.Sprintf("Tool deregistration REJECTED: plugin %s attempted to remove tool %s (toolset %s) it does not own, without operator opt-in. "+
 		"Set plugins.entries.%s.allow_tool_override: true in config.yaml to allow it.",
 		pyrepr.StrRepr(caller), pyrepr.StrRepr(name), pyrepr.StrRepr(toolset), caller))
 	return &deregisterDeniedError{msg: fmt.Sprintf("Plugin module %s cannot deregister tool %s (toolset %s) without operator opt-in (allow_tool_override).",

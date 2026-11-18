@@ -3,11 +3,11 @@ package provider
 import (
 	"context"
 	"fmt"
-	"log/slog"
 	"strings"
 	"sync"
 	"time"
 
+	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
@@ -24,11 +24,9 @@ var (
 
 var auxDisabledEfforts = map[string]bool{"none": true, "off": true, "disabled": true, "false": true, "0": true}
 
-var auxNousProviders = map[string]bool{"nous": true, "nous-portal": true, "nousresearch": true}
-
 // True for a reasoning config map whose enabled flag is exactly false
 func auxReasoningDisabled(reasoningConfig any) bool {
-	m, ok := reasoningConfig.(map[string]any)
+	m, ok := pyjson.Dict(reasoningConfig)
 	if !ok {
 		return false
 	}
@@ -66,21 +64,28 @@ func WithReasoningFloor(kwargs map[string]any) map[string]any {
 		retry["_reasoning_config"] = FloorReasoningConfig(retry["_reasoning_config"])
 		changed = true
 	}
-	if extraBody, ok := retry["extra_body"].(map[string]any); ok {
+	if extraBody, ok := pyjson.Dict(retry["extra_body"]); ok {
 		reasoning := extraBody["reasoning"]
-		rm, isMap := reasoning.(map[string]any)
+		rm, isMap := pyjson.Dict(reasoning)
 		effortOff := false
 		if isMap {
 			effort, present := rm["effort"]
 			effortOff = auxDisabledEffort(effort, present)
 		}
 		if auxReasoningDisabled(reasoning) || effortOff {
-			merged := make(map[string]any, len(extraBody)+1)
-			for k, v := range extraBody {
-				merged[k] = v
+			floor := map[string]any{"enabled": true, "effort": ReasoningFloorEffort}
+			if ordered, isObject := retry["extra_body"].(*pyjson.Object); isObject {
+				merged := ordered.Copy()
+				merged.Set("reasoning", floor)
+				retry["extra_body"] = merged
+			} else {
+				merged := make(map[string]any, len(extraBody)+1)
+				for k, v := range extraBody {
+					merged[k] = v
+				}
+				merged["reasoning"] = floor
+				retry["extra_body"] = merged
 			}
-			merged["reasoning"] = map[string]any{"enabled": true, "effort": ReasoningFloorEffort}
-			retry["extra_body"] = merged
 			changed = true
 		}
 	}
@@ -122,9 +127,7 @@ func auxReasoningFloored(route, model string) bool {
 // Catalog seams for the OpenRouter and Portal reasoning lookups and their background warms
 var (
 	auxOpenRouterReasoningCapsFn = OpenRouterModelReasoningCapabilities
-	auxNousReasoningCapsFn       = NousModelReasoningCapabilities
 	auxWarmOpenRouterCapsFn      = WarmOpenRouterReasoningCapsAsync
-	auxWarmNousCapsFn            = WarmNousReasoningCapsAsync
 )
 
 // True when the cached route catalog flags the model reasoning mandatory, warming a cold catalog
@@ -140,8 +143,6 @@ func auxCatalogMarksMandatory(ctx context.Context, provider, baseURL, model stri
 	switch {
 	case providerNorm == "openrouter" || host == "openrouter.ai" || strings.HasSuffix(host, ".openrouter.ai"):
 		lookup, warm = auxOpenRouterReasoningCapsFn, auxWarmOpenRouterCapsFn
-	case auxNousProviders[providerNorm]:
-		lookup, warm = auxNousReasoningCapsFn, auxWarmNousCapsFn
 	default:
 		return false, nil
 	}
@@ -181,7 +182,7 @@ func KnownReasoningFloor(ctx context.Context, reasoningConfig any, provider, bas
 	if modelLabel == "" {
 		modelLabel = "model"
 	}
-	slog.Info(fmt.Sprintf("Auxiliary %s: %s (%s) cannot disable reasoning; sending effort=%s up front",
+	pkgLog().Info(fmt.Sprintf("Auxiliary %s: %s (%s) cannot disable reasoning; sending effort=%s up front",
 		label, routeLabel, modelLabel, ReasoningFloorEffort))
 	return FloorReasoningConfig(reasoningConfig), nil
 }

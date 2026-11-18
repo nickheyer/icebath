@@ -6,7 +6,6 @@ import (
 	"encoding/base64"
 	"encoding/binary"
 	"fmt"
-	"log/slog"
 	"net/http"
 	"os"
 	"strings"
@@ -33,8 +32,6 @@ const (
 
 // Raster types the Codex edit endpoint accepts, the shared sniffer also knowing SVG, TIFF and ICO
 var codexAcceptedInputMime = map[string]bool{"image/png": true, "image/jpeg": true, "image/gif": true, "image/webp": true}
-
-var codexImageLog = slog.Default().With("logger", "plugins.image_gen.openai-codex")
 
 // httpx.Client construction seam of the images request, nil when no HTTP client is linked
 var codexImagesHTTPClient = func() *http.Client { return pyhttpx.PlainClient(false) }
@@ -66,13 +63,13 @@ func resolveCodexImageModel(env *tools.Env) (string, map[string]any) {
 func readCodexImageCredential(ctx context.Context) (token, baseURL string) {
 	defer func() {
 		if r := recover(); r != nil {
-			codexImageLog.Debug(fmt.Sprintf("Could not resolve Codex credential: %v", r))
+			pkgLog().Debug(fmt.Sprintf("Could not resolve Codex credential: %v", r))
 			token, baseURL = "", ""
 		}
 	}()
 	tok, base, err := provider.ResolveCodexCredentialAndBase(ctx)
 	if err != nil {
-		codexImageLog.Debug(fmt.Sprintf("Could not resolve Codex credential: %v", err))
+		pkgLog().Debug(fmt.Sprintf("Could not resolve Codex credential: %v", err))
 		return "", ""
 	}
 	if t := pystr.Strip(tok); t != "" {
@@ -318,7 +315,7 @@ func (p *openAICodexImageGenProvider) Generate(ctx context.Context, env *tools.E
 	}
 	payload, err := postCodexImageRequest(ctx, token, prompt, size, meta["quality"], inputImages, baseURL)
 	if err != nil {
-		codexImageLog.Debug("Codex image generation failed", "error", err)
+		pkgLog().Debug("Codex image generation failed", "error", err)
 		return fail("OpenAI image generation via Codex auth failed: "+err.Error(), "api_error"), nil
 	}
 	data, _ := payload.Get("data")

@@ -56,6 +56,7 @@ var (
 	}
 	uninstallRunCommand            = runUninstallCommand
 	uninstallLaunchdGatewayPlist   = gateway.GetLaunchdPlistPath
+	uninstallRemoveRetired         = gateway.RemoveRetiredGatewayServices
 	uninstallRunDataMode           = RunDataUninstall
 	uninstallRunAgentMode          = RunUninstall
 	uninstallGatewayServiceRemover = map[string]gatewayServiceRemover{
@@ -65,8 +66,8 @@ var (
 	}
 )
 
-// Both gateway LaunchAgent naming schemes, the current label and the one older builds installed
-var launchdGatewayPlistPatterns = []string{"ai.icebath.gateway*.plist", "io.nousresearch.icebath-agent.gateway*.plist"}
+// Every gateway LaunchAgent naming scheme, the current label and the ones earlier releases installed
+var launchdGatewayPlistPatterns = gateway.LaunchdGatewayPlistPatterns()
 
 func uninstallInfo(w io.Writer, msg string)    { uninstallLine(w, "→", cliui.Cyan, msg) }
 func uninstallSuccess(w io.Writer, msg string) { uninstallLine(w, "✓", cliui.Green, msg) }
@@ -364,6 +365,9 @@ func removeSystemdGateway(ctx context.Context, w io.Writer) (bool, error) {
 			if err := uninstallRunCommand(append(slices.Clone(cmd), "daemon-reload"), 0); err != nil {
 				return err
 			}
+			if err := uninstallRunCommand(append(slices.Clone(cmd), "reset-failed", svcName), 0); err != nil {
+				return err
+			}
 			uninstallSuccess(w, fmt.Sprintf("Removed %s gateway service (%s)", scope.name, unitPath))
 			removedAny = true
 			return nil
@@ -372,7 +376,11 @@ func removeSystemdGateway(ctx context.Context, w io.Writer) (bool, error) {
 			uninstallWarn(w, fmt.Sprintf("Could not remove %s gateway service: %s", scope.name, uninstallErrText(err)))
 		}
 	}
-	return removedAny, nil
+	retired, _, _, err := uninstallRemoveRetired(ctx, w)
+	if err != nil {
+		uninstallWarn(w, fmt.Sprintf("Could not remove retired gateway service: %s", uninstallErrText(err)))
+	}
+	return removedAny || retired, nil
 }
 
 // Every gateway LaunchAgent plist of both label schemes under the real account home, sorted
@@ -701,6 +709,7 @@ func RunDataUninstall(ctx context.Context, ns map[string]any, w io.Writer) (int,
 		uninstallWarn(w, "No data removed: "+dataErrText(err))
 		return 1, nil
 	}
+	home.MarkHomeErased(plan.Home)
 	for _, p := range removed {
 		uninstallSuccess(w, "Removed "+p)
 	}
@@ -738,8 +747,12 @@ func RunUninstall(ctx context.Context, ns map[string]any, w io.Writer) (int, err
 	fmt.Fprintln(w)
 	uninstallBox(w, "│            ☤ Icebath Agent Uninstaller                 │", cliui.Magenta)
 	fmt.Fprintln(w)
+	managed := install.InstallerCreated(projectRoot)
 	fmt.Fprintln(w, cliui.Color("Current Installation:", cliui.Cyan, cliui.Bold))
 	fmt.Fprintf(w, "  Code:    %s\n", projectRoot)
+	if !managed {
+		fmt.Fprintf(w, "           %s, uninstall leaves it in place\n", install.UnmanagedTreeDescription(projectRoot))
+	}
 	fmt.Fprintf(w, "  Config:  %s\n", filepath.Join(h, "config.yaml"))
 	fmt.Fprintf(w, "  Secrets: %s\n", filepath.Join(h, ".env"))
 	fmt.Fprintf(w, "  Data:    %s, %s, %s\n", filepath.Join(h, "cron"), filepath.Join(h, "sessions"), filepath.Join(h, "logs"))
@@ -757,7 +770,11 @@ func RunUninstall(ctx context.Context, ns map[string]any, w io.Writer) (int, err
 	}
 	fmt.Fprintln(w, cliui.Color("Uninstall Options:", cliui.Yellow, cliui.Bold))
 	fmt.Fprintln(w)
-	fmt.Fprintln(w, "  1) "+cliui.Color("Keep data", cliui.Green)+" - Remove code only, keep configs/sessions/logs")
+	if managed {
+		fmt.Fprintln(w, "  1) "+cliui.Color("Keep data", cliui.Green)+" - Remove code only, keep configs/sessions/logs")
+	} else {
+		fmt.Fprintln(w, "  1) "+cliui.Color("Keep data", cliui.Green)+" - Remove the gateway service and the icebath command, keep configs/sessions/logs")
+	}
 	fmt.Fprintln(w, "     (Recommended - you can reinstall later with your settings intact)")
 	fmt.Fprintln(w)
 	fmt.Fprintln(w, "  2) "+cliui.Color("Full uninstall", cliui.Red)+" - Remove everything including all data")
@@ -800,8 +817,10 @@ func RunUninstall(ctx context.Context, ns map[string]any, w io.Writer) (int, err
 		if removeProfiles {
 			fmt.Fprintln(w, cliui.Color(fmt.Sprintf("   Plus %d profile(s): %s", nProfiles, profileNames), cliui.Red))
 		}
-	} else {
+	} else if managed {
 		fmt.Fprintln(w, "This will remove the Icebath code but keep your configuration and data.")
+	} else {
+		fmt.Fprintln(w, "This will remove the gateway service and the icebath command but keep your configuration, your data and "+projectRoot+".")
 	}
 	fmt.Fprintln(w)
 	if !uninstallConfirmYes(w, "to confirm") {
@@ -820,11 +839,16 @@ func printUninstallDryRun(ctx context.Context, w io.Writer, projectRoot, h strin
 	fmt.Fprintln(w, "  • Gateway services and standalone gateway processes")
 	fmt.Fprintln(w, "  • Icebath PATH entries from shell configs / Windows User PATH")
 	fmt.Fprintln(w, "  • Icebath wrapper scripts and Icebath-managed node/npm/npx symlinks")
-	fmt.Fprintf(w, "  • Code checkout: %s\n", projectRoot)
+	if install.InstallerCreated(projectRoot) {
+		fmt.Fprintf(w, "  • Code checkout: %s\n", projectRoot)
+	} else {
+		fmt.Fprintf(w, "  • Code: %s, uninstall leaves it in place\n", install.UnmanagedTreeDescription(projectRoot))
+	}
 	if !fullUninstall {
 		fmt.Fprintf(w, "  • Keep Icebath config/data: %s\n", h)
 	} else {
 		fmt.Fprintf(w, "  • Icebath config/data: %s\n", h)
+		fmt.Fprintf(w, "  • Gateway records and locks of this home in %s\n", gateway.GatewayLockDir())
 		var profiles []manage.ProfileInfo
 		if uninstallIsDefaultHome(h) {
 			profiles = uninstallDiscoverProfiles(ctx, w)
@@ -937,8 +961,12 @@ func performUninstall(ctx context.Context, w io.Writer, projectRoot, h string, f
 	} else {
 		uninstallInfo(w, "No app caches or leftovers found")
 	}
-	uninstallInfo(w, "Removing installation directory...")
-	uninstallRmtreeStep(w, projectRoot, "", true)
+	if install.InstallerCreated(projectRoot) {
+		uninstallInfo(w, "Removing installation directory...")
+		uninstallRmtreeStep(w, projectRoot, "", true)
+	} else {
+		uninstallInfo(w, install.UnmanagedTreeDescription(projectRoot)+", so uninstall leaves it in place")
+	}
 	if windows {
 		removeStep(w, "Removing Windows installer artifacts (PortableGit, Node, gateway-service)...",
 			func() []string { return removePortableToolingWindows(w, h) }, "Removed {}", "No Windows installer artifacts to remove")
@@ -958,7 +986,16 @@ func performUninstall(ctx context.Context, w io.Writer, projectRoot, h string, f
 			}
 		}
 		uninstallInfo(w, "Removing configuration and data...")
-		uninstallRmtreeStep(w, h, "", true)
+		resolvedHome, _ := filepath.EvalSymlinks(h)
+		if kept, inside := treeInsideHome(projectRoot, h); inside && !install.InstallerCreated(projectRoot) {
+			removeHomeKeeping(w, h, kept)
+		} else {
+			uninstallRmtreeStep(w, h, "", true)
+		}
+		home.MarkHomeErased(h)
+		for _, p := range gateway.RemoveErasedHomeRendezvous(h, resolvedHome) {
+			uninstallSuccess(w, "Removed "+p)
+		}
 	} else {
 		uninstallInfo(w, "Keeping configuration and data in "+h)
 	}
@@ -987,6 +1024,44 @@ func performUninstall(ctx context.Context, w io.Writer, projectRoot, h string, f
 	fmt.Fprintln(w)
 	fmt.Fprintln(w, "Thank you for using Icebath Agent! ☤")
 	fmt.Fprintln(w)
+}
+
+// Path of the tree relative to the home when the tree lies inside it, both resolved first
+func treeInsideHome(tree, h string) (string, bool) {
+	resolvedTree, errTree := filepath.EvalSymlinks(tree)
+	resolvedHome, errHome := filepath.EvalSymlinks(h)
+	if errTree != nil || errHome != nil {
+		return "", false
+	}
+	rel, err := filepath.Rel(resolvedHome, resolvedTree)
+	if err != nil || rel == "." || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+		return "", false
+	}
+	return rel, true
+}
+
+// Removes every entry of the home except the directories leading down to the kept tree
+func removeHomeKeeping(w io.Writer, h, rel string) {
+	dir := h
+	for _, part := range strings.Split(rel, string(filepath.Separator)) {
+		entries, err := os.ReadDir(dir)
+		if err != nil {
+			uninstallWarn(w, fmt.Sprintf("Could not fully remove %s: %s", dir, uninstallErrText(err)))
+			uninstallInfo(w, "You may need to manually remove it")
+			return
+		}
+		for _, entry := range entries {
+			if entry.Name() == part {
+				continue
+			}
+			p := filepath.Join(dir, entry.Name())
+			if removed, _ := removePathOrTree(p); !removed {
+				uninstallWarn(w, "Could not remove "+p)
+			}
+		}
+		dir = filepath.Join(dir, part)
+	}
+	uninstallSuccess(w, "Removed "+h+" except "+dir+", the tree uninstall leaves in place")
 }
 
 // Dispatches icebath uninstall to the data or agent path, gating on a terminal only when it prompts

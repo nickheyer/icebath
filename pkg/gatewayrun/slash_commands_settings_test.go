@@ -136,7 +136,7 @@ func TestYoloSurvivesGatewayRestartAndDiesAtSessionBoundary(t *testing.T) {
 // Home whose config.yaml holds the text, with a bare runner and a Telegram verbose event
 func verboseFixture(t *testing.T, configText string) (string, *GatewayRunner, *gateway.MessageEvent) {
 	t.Helper()
-	h := filepath.Join(t.TempDir(), "hermes")
+	h := filepath.Join(t.TempDir(), "icebath")
 	if err := os.MkdirAll(h, 0o755); err != nil {
 		t.Fatal(err)
 	}

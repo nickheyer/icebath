@@ -3,7 +3,6 @@ package provider
 import (
 	"context"
 	"errors"
-	"net/http"
 	"strings"
 	"sync"
 	"testing"
@@ -155,53 +154,5 @@ func TestInterruptedProviderWaitCountsOnlyPreResponseStalls(t *testing.T) {
 	}
 	if !recordInterruptedProviderWait(ctx, 30, false) || session.StaleStreak() != 1 {
 		t.Fatalf("stall not counted, streak %d", session.StaleStreak())
-	}
-}
-
-func TestNonStreamingSuccessFeedsTheHeaderCapture(t *testing.T) {
-	window := cwHeaders(cwDefaultH())
-	if !chatCompletionCapturesHeaders("nous", cwState(cwDefaults()), window) {
-		t.Fatal("window session and response did not capture")
-	}
-	var seen []string
-	rl := func(h http.Header) { seen = append(seen, "rl") }
-	credits := func(h http.Header) { seen = append(seen, "credits") }
-	none := func(http.Header) {}
-	runHeaderCaptures(window, rl, credits, none, none)
-	if strings.Join(seen, ",") != "rl,credits" {
-		t.Fatalf("captures %q", seen)
-	}
-	seen = nil
-	runHeaderCaptures(window, func(http.Header) { panic("bad header") }, credits, none, none)
-	if strings.Join(seen, ",") != "credits" {
-		t.Fatalf("captures after a failing one %q", seen)
-	}
-	if chatCompletionCapturesHeaders("example", cwState(cwDefaults()), window) {
-		t.Fatal("another provider captured")
-	}
-	capture := &CreditsCapture{}
-	capture.SetRoute("nous", "m", "https://inference-api.nousresearch.com/v1")
-	seeded := cwState(cwDefaults())
-	capture.adoptCredits(seeded)
-	chatCompletionCapturingHeaders("nous", capture, window)
-	if got := capture.Credits(); got == nil || got == seeded || !got.FromHeader {
-		t.Fatalf("credits state not refreshed from the response: %+v", got)
-	}
-}
-
-func TestNonStreamingNonWindowKeepsMainsBehaviour(t *testing.T) {
-	grant := cwWith(cwHeaders(cwDefaultH()), "x-nous-credits-denominator-kind", "subscription_cap")
-	remaining := http.Header{}
-	remaining.Set("x-nous-credits-remaining-micros", "1")
-	for i, h := range []http.Header{{}, grant, remaining} {
-		if chatCompletionCapturesHeaders("nous", cwState(cwDefaults()), h) {
-			t.Fatalf("non window response %d captured", i)
-		}
-	}
-	window := cwHeaders(cwDefaultH())
-	for i, state := range []*CreditsState{nil, cwState(cwDefaults(), func(s *CreditsState) { s.DenominatorKind = "subscription_cap" })} {
-		if chatCompletionCapturesHeaders("nous", state, window) {
-			t.Fatalf("session %d not on a window plan captured", i)
-		}
 	}
 }

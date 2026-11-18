@@ -104,7 +104,7 @@ func ownerPayload(t *testing.T, h string, pid int, startTime any) *pyjson.Object
 	if err != nil {
 		t.Fatal(err)
 	}
-	v, err := pyjson.Loads(fmt.Sprintf(`{"protocol": 1, "kind": %q, "pid": %d, "start_time": %s, "hermes_home": %q, "supervisor": "manual"}`, gatewayKind, pid, start, h))
+	v, err := pyjson.Loads(fmt.Sprintf(`{"protocol": 1, "kind": %q, "pid": %d, "start_time": %s, "icebath_home": %q, "supervisor": "manual"}`, gatewayKind, pid, start, h))
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -243,7 +243,7 @@ func (s *UsageAnchorState) Persist(anchor *UsageAnchor) {
 		blob = a.toObject()
 	}
 	if err := s.Store.PatchModelConfig(s.SessionID, map[string]any{UsageAnchorModelConfigKey: blob}); err != nil {
-		modelsLog.Debug("usage anchor persist failed", "err", err)
+		pkgLog().Debug("usage anchor persist failed", "err", err)
 	}
 }
 
@@ -263,7 +263,7 @@ func (s *UsageAnchorState) Restore(history []*state.Message, haveHistory bool) {
 	}
 	raw, _, err := s.Store.GetModelConfigValue(s.SessionID, UsageAnchorModelConfigKey)
 	if err != nil {
-		modelsLog.Debug("usage anchor load failed", "err", err)
+		pkgLog().Debug("usage anchor load failed", "err", err)
 		return
 	}
 	anchor := usageAnchorFromAny(raw)
@@ -284,7 +284,7 @@ func PersistedAnchorTokens(ctx context.Context, store UsageAnchorStore, sessionI
 	}
 	raw, _, err := store.GetModelConfigValue(sessionID, UsageAnchorModelConfigKey)
 	if err != nil {
-		modelsLog.Debug("usage anchor load failed", "err", err)
+		pkgLog().Debug("usage anchor load failed", "err", err)
 		return 0, false
 	}
 	return AnchoredContextTokens(ctx, messages, usageAnchorFromAny(raw), true)

@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"context"
 	"fmt"
-	"log/slog"
 	"os"
 	"path/filepath"
 	"sort"
@@ -162,13 +161,13 @@ func RestoreCronPromptFieldsIfDegraded(ctx context.Context, h, snapshotID string
 	}
 	restoredIDs, err := restoreUnderCronLock(ctx, h, snapPrompts)
 	if err != nil {
-		slog.Error(fmt.Sprintf("Cron job prompts were degraded during update but auto-restore failed: %s", err))
+		pkgLog().Error(fmt.Sprintf("Cron job prompts were degraded during update but auto-restore failed: %s", err))
 		return nil, nil
 	}
 	if len(restoredIDs) == 0 {
 		return nil, nil
 	}
-	slog.Warn(fmt.Sprintf("Restored %d cron job prompt(s) from pre-update snapshot %s — job(s) %s had their prompt replaced by the job name (#82990)",
+	pkgLog().Warn(fmt.Sprintf("Restored %d cron job prompt(s) from pre-update snapshot %s — job(s) %s had their prompt replaced by the job name (#82990)",
 		len(restoredIDs), snapshotID, strings.Join(restoredIDs, ", ")))
 	return &CronPromptRestore{Restored: true, Prompts: len(restoredIDs), JobIDs: restoredIDs, SnapshotID: snapshotID}, nil
 }
@@ -193,7 +192,7 @@ func siblingProfileHomes(invoking string) [][2]string {
 	entries, err := os.ReadDir(root)
 	if err != nil {
 		if !os.IsNotExist(err) {
-			slog.Debug(fmt.Sprintf("Sibling profile enumeration failed: %s", err))
+			pkgLog().Debug(fmt.Sprintf("Sibling profile enumeration failed: %s", err))
 		}
 		return homes
 	}
@@ -227,7 +226,7 @@ func RestoreCronPromptFieldsAllProfiles(ctx context.Context, snapshots []Profile
 		}
 		result, err := RestoreCronPromptFieldsIfDegraded(ctx, profileHome, snap.SnapshotID)
 		if err != nil {
-			slog.Debug(fmt.Sprintf("Cron prompt-field restore check for profile %s failed: %s", snap.Name, err))
+			pkgLog().Debug(fmt.Sprintf("Cron prompt-field restore check for profile %s failed: %s", snap.Name, err))
 			continue
 		}
 		if result != nil {

@@ -2,6 +2,7 @@ package gatewayrun
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"os"
@@ -291,7 +292,7 @@ func (r *GatewayRunner) deliverPlatformNotice(ctx context.Context, source *gatew
 	}
 	cfg := r.config
 	if cfg != nil && source.Platform == gateway.PlatformSlack && isSlackIgnoredChannel(ctx, cfg, source.ChatID, adapter) {
-		inboundLog().Info(fmt.Sprintf("Skipping Slack platform notice for configured ignored channel %s", source.ChatID))
+		pkgLog().Info(fmt.Sprintf("Skipping Slack platform notice for configured ignored channel %s", source.ChatID))
 		return nil
 	}
 	noticeDelivery := "public"
@@ -308,7 +309,7 @@ func (r *GatewayRunner) deliverPlatformNotice(ctx context.Context, source *gatew
 	if noticeDelivery == "private" && source.UserID != nil && *source.UserID != "" {
 		result, err := adapter.SendPrivateNotice(ctx, source.ChatID, source.UserID, content, "", metadata)
 		if err != nil {
-			inboundLog().Debug(fmt.Sprintf("[%s] send_private_notice failed, falling back to public", source.Platform), "error", err)
+			pkgLog().Debug(fmt.Sprintf("[%s] send_private_notice failed, falling back to public", source.Platform), "error", err)
 		} else if result.Success {
 			return nil
 		}
@@ -354,7 +355,7 @@ func (r *GatewayRunner) deliverMediaFromResponse(ctx context.Context, response s
 		if len(images) > 0 || len(urlImages) > 0 {
 			images = append(images, urlImages...)
 			if _, err := adapter.SendMultipleImages(ctx, chatID, images, meta, 0); err != nil {
-				inboundLog().Warn(fmt.Sprintf("[%s] Post-stream image batch delivery failed: %s", adapter.Name(), err))
+				pkgLog().Warn(fmt.Sprintf("[%s] Post-stream image batch delivery failed: %s", adapter.Name(), err))
 			}
 		}
 		for _, m := range others {
@@ -369,7 +370,7 @@ func (r *GatewayRunner) deliverMediaFromResponse(ctx context.Context, response s
 				_, err = adapter.SendDocument(ctx, chatID, m.Path, "", "", "", meta, nil)
 			}
 			if err != nil {
-				inboundLog().Warn(fmt.Sprintf("[%s] Post-stream media delivery failed: %s", adapter.Name(), err))
+				pkgLog().Warn(fmt.Sprintf("[%s] Post-stream media delivery failed: %s", adapter.Name(), err))
 			}
 		}
 		return nil
@@ -412,12 +413,12 @@ func (r *GatewayRunner) deliverQueuedFirstResponse(ctx context.Context, response
 			if sealed != "" && sealed != "__no_edit__" && !consumer.TurnSplitDelivery() {
 				edit, err := adapter.EditMessage(ctx, source.ChatID, sealed, text, true)
 				if err != nil {
-					inboundLog().Debug(fmt.Sprintf("Queued-lane reconcile edit failed (%s); falling back to send.", err))
+					pkgLog().Debug(fmt.Sprintf("Queued-lane reconcile edit failed (%s); falling back to send.", err))
 				} else if edit.Success {
 					reconciled = true
-					inboundLog().Info(fmt.Sprintf("Queued-lane final reconciled by editing message %s in place (no duplicate send).", sealed))
+					pkgLog().Info(fmt.Sprintf("Queued-lane final reconciled by editing message %s in place (no duplicate send).", sealed))
 				} else if gateway.DeclinedSend(&edit) {
-					inboundLog().Warn("Queued-lane reconcile edit DECLINED by the connector's egress guard; not falling back to a send (the destination is not approved).")
+					pkgLog().Warn("Queued-lane reconcile edit DECLINED by the connector's egress guard; not falling back to a send (the destination is not approved).")
 					return true, nil
 				}
 			}
@@ -458,7 +459,7 @@ func (r *GatewayRunner) sendQueuedFinalText(ctx context.Context, adapter gateway
 		if reason == "" {
 			reason = "no result"
 		}
-		inboundLog().Warn(fmt.Sprintf("Queued-lane final send to %s failed: %s", source.ChatID, reason))
+		pkgLog().Warn(fmt.Sprintf("Queued-lane final send to %s failed: %s", source.ChatID, reason))
 	}
 	return result, nil
 }
@@ -479,7 +480,7 @@ func (r *GatewayRunner) sendRestartNotification(ctx context.Context) *restartNot
 	defer os.Remove(notifyPath)
 	target, err := r.deliverRestartNotification(ctx, notifyPath)
 	if err != nil {
-		inboundLog().Warn(fmt.Sprintf("Restart notification failed: %s", err))
+		pkgLog().Warn(fmt.Sprintf("Restart notification failed: %s", err))
 		return nil
 	}
 	return target
@@ -505,11 +506,11 @@ func (r *GatewayRunner) deliverRestartNotification(ctx context.Context, notifyPa
 	}
 	transport := gateway.ResolveDeliveryTransport(ctx, platform, r.config, live)
 	if transport == nil {
-		inboundLog().Debug(fmt.Sprintf("Restart notification skipped: no live transport for %s", pyrepr.Str(platformStr)))
+		pkgLog().Debug(fmt.Sprintf("Restart notification skipped: no live transport for %s", pyrepr.Str(platformStr)))
 		return nil, nil
 	}
 	if platformCfg := r.config.Platforms[platform]; platformCfg != nil && !platformCfg.GatewayRestartNotification {
-		inboundLog().Info(fmt.Sprintf("Restart notification suppressed: %s has gateway_restart_notification=false", pyrepr.Str(platformStr)))
+		pkgLog().Info(fmt.Sprintf("Restart notification suppressed: %s has gateway_restart_notification=false", pyrepr.Str(platformStr)))
 		return nil, nil
 	}
 	chat := pyrepr.Str(chatID)
@@ -532,10 +533,10 @@ func (r *GatewayRunner) deliverRestartNotification(ctx context.Context, notifyPa
 		return nil, err
 	}
 	if sendFailed(result) {
-		inboundLog().Warn(fmt.Sprintf("Restart notification to %s:%s was not delivered: %s", pyrepr.Str(platformStr), chat, sendError(result)))
+		pkgLog().Warn(fmt.Sprintf("Restart notification to %s:%s was not delivered: %s", pyrepr.Str(platformStr), chat, sendError(result)))
 		return nil, nil
 	}
-	inboundLog().Info(fmt.Sprintf("Sent restart notification to %s:%s", pyrepr.Str(platformStr), chat))
+	pkgLog().Info(fmt.Sprintf("Sent restart notification to %s:%s", pyrepr.Str(platformStr), chat))
 	target := &restartNoticeTarget{platform: pyrepr.Str(platformStr), chatID: chat}
 	if pyrepr.Truthy(threadID) {
 		thread := pyrepr.Str(threadID)
@@ -585,7 +586,7 @@ func (r *GatewayRunner) replayPendingPlannedRestartNotification(ctx context.Cont
 		return
 	}
 	if err := r.replayPlannedRestartMarker(ctx, path); err != nil {
-		inboundLog().Warn("Planned-restart notification remains pending", "error", err)
+		pkgLog().Warn("Planned-restart notification remains pending", "error", err)
 	}
 }
 
@@ -599,12 +600,12 @@ func (r *GatewayRunner) replayPlannedRestartMarker(ctx context.Context, path str
 	if raw, ok := data.Get("delivered_targets"); ok {
 		items, isList := raw.([]any)
 		if !isList {
-			return fmt.Errorf("TypeError: delivered_targets is not a list")
+			return errors.New("the restart marker delivered_targets is not a list")
 		}
 		for _, item := range items {
 			parts, isList := item.([]any)
 			if !isList || len(parts) != 3 {
-				return fmt.Errorf("TypeError: delivered target %s is not a triple", pyrepr.Repr(item))
+				return errors.New("a restart marker delivered target is not a platform, chat and thread")
 			}
 			key := noticeTargetKey{platform: pyrepr.Str(parts[0]), chatID: pyrepr.Str(parts[1])}
 			if parts[2] != nil {
@@ -660,7 +661,7 @@ func (r *GatewayRunner) sendHomeChannelStartupNotifications(ctx context.Context,
 	}
 	for _, t := range targets {
 		if !t.cfg.GatewayRestartNotification {
-			inboundLog().Info(fmt.Sprintf("Home-channel startup notification suppressed: %s has gateway_restart_notification=false", t.platform))
+			pkgLog().Info(fmt.Sprintf("Home-channel startup notification suppressed: %s has gateway_restart_notification=false", t.platform))
 			continue
 		}
 		target := servedNoticeTargetKey(t.profile, string(t.platform), t.home.ChatID, optionalValue(t.home.ThreadID))
@@ -675,7 +676,7 @@ func (r *GatewayRunner) sendHomeChannelStartupNotifications(ctx context.Context,
 		if r.sendHomeChannelMessage(ctx, t.platform, t.home, t.transport, message, "Home-channel startup notification failed for %s:%s: %s") {
 			notifiedChats[chat] = true
 			delivered[target] = true
-			inboundLog().Info(fmt.Sprintf("Sent home-channel startup notification to %s:%s", t.platform, t.home.ChatID))
+			pkgLog().Info(fmt.Sprintf("Sent home-channel startup notification to %s:%s", t.platform, t.home.ChatID))
 		}
 	}
 	return delivered
@@ -690,7 +691,7 @@ func (r *GatewayRunner) sendSessionDBWarningNotifications(ctx context.Context) {
 	if r.sessionDBHandleCache != nil {
 		_, _ = r.openSessionDBForActiveScope(ctx, false)
 		if r.sessionDBInitError == nil || *r.sessionDBInitError == "" {
-			inboundLog().Info("state.db recovered before the home-channel warning went out; not broadcasting")
+			pkgLog().Info("state.db recovered before the home-channel warning went out; not broadcasting")
 			return
 		}
 		failure = *r.sessionDBInitError
@@ -712,7 +713,7 @@ func (r *GatewayRunner) sendSessionDBWarningNotifications(ctx context.Context) {
 		}
 		message = i18n.T(ctx, "gateway.startup.db_unavailable", "", map[string]any{"cause": described.Gloss, "action": action})
 	}
-	inboundLog().Warn(fmt.Sprintf("Broadcasting state.db failure warning to home channels: %s", failure))
+	pkgLog().Warn(fmt.Sprintf("Broadcasting state.db failure warning to home channels: %s", failure))
 	for _, t := range r.homeChannelTransports(ctx) {
 		target := t
 		_, err := config.PresentNotification(ctx, func(ctx context.Context) error {
@@ -720,7 +721,7 @@ func (r *GatewayRunner) sendSessionDBWarningNotifications(ctx context.Context) {
 			return nil
 		}, string(target.platform), true, nil)
 		if err != nil {
-			inboundLog().Debug(fmt.Sprintf("state.db warning presenter failed: %s", err))
+			pkgLog().Debug(fmt.Sprintf("state.db warning presenter failed: %s", err))
 		}
 	}
 }

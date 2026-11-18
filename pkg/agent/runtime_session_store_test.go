@@ -20,7 +20,7 @@ func cannedCall(fn func(method string, params *pyjson.Object) (any, error)) Work
 	return func(_ context.Context, method string, params *pyjson.Object) (any, error) { return fn(method, params) }
 }
 
-// Worker call that persists straight into the canonical store, the hermes_state conftest rpc
+// Worker call that persists straight into the canonical store, the test setup rpc
 func dbWorkerCall(db *state.SessionDB) WorkerCall {
 	return func(ctx context.Context, _ string, p *pyjson.Object) (any, error) {
 		num := func(k string) int64 { n, _ := p.GetOr(k, int64(0)).(int64); return n }

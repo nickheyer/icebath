@@ -7,19 +7,19 @@ import (
 	"testing"
 
 	"github.com/nickheyer/icebath/pkg/tools"
-	"github.com/nickheyer/icebath/pkg/tuigateway"
+	"github.com/nickheyer/icebath/pkg/tuihost"
 )
 
 // Detached idle TUI session with an isolated process registry and a twenty second orphan grace
-func detachedProcSession(t *testing.T) (string, *tuigateway.Session, *tools.ProcessRegistry) {
+func detachedProcSession(t *testing.T) (string, *tuihost.Session, *tools.ProcessRegistry) {
 	t.Helper()
 	t.Setenv("ICEBATH_HOME", t.TempDir())
 	registry := tools.DefaultProcessRegistry()
 	t.Cleanup(tools.IsolateProcessRegistryForTests(registry))
 	sid := "sid-detached-proc"
-	session := tuigateway.NewSession(map[string]any{"session_key": "tui-proc-session", "transport": tuigateway.DetachedWSTransport(),
+	session := tuihost.NewSession(map[string]any{"session_key": "tui-proc-session", "transport": tuihost.DetachedWSTransport(),
 		"running": false, "history_lock": &sync.Mutex{}, "last_active": 0.0, "created_at": 0.0})
-	swapSessions(t, map[string]*tuigateway.Session{sid: session})
+	swapSessions(t, map[string]*tuihost.Session{sid: session})
 	swapVar(t, &wsOrphanReapGraceS, func() float64 { return 20 })
 	t.Cleanup(func() { cancelWSOrphanReap(sid) })
 	return sid, session, registry
@@ -39,7 +39,7 @@ func TestOrphanReapRearmsWhileProcessWillNotify(t *testing.T) {
 	scheduleWSOrphanReap(context.Background(), sid, nil, nil)
 	first := pendingReap(sid)
 	fireReap(first, 20, 20)
-	if tuigateway.SessionRecord(sid) != session || truthy(session.Get("_finalized")) {
+	if tuihost.SessionRecord(sid) != session || truthy(session.Get("_finalized")) {
 		t.Fatal("session with a pending process notice was reaped")
 	}
 	if next := pendingReap(sid); next == nil || next == first {
@@ -53,14 +53,14 @@ func TestForeignNoticeInAnotherSessionsPostTurnDrainKeepsItsOwner(t *testing.T) 
 	proc := spawnOwnedProcess(registry, "tui-proc-session", true)
 	tools.FinishProcessForTests(ctx, registry, proc, 0)
 	otherSID := "other-sid"
-	other := tuigateway.NewSession(map[string]any{"session_key": "other-owner", "transport": tuigateway.DetachedWSTransport(),
+	other := tuihost.NewSession(map[string]any{"session_key": "other-owner", "transport": tuihost.DetachedWSTransport(),
 		"running": false, "history_lock": &sync.Mutex{}, "last_active": 0.0, "created_at": 0.0})
-	tuigateway.SetSessionRecord(otherSID, other)
-	t.Cleanup(func() { tuigateway.SetSessionRecord(otherSID, nil) })
+	tuihost.SetSessionRecord(otherSID, other)
+	t.Cleanup(func() { tuihost.SetSessionRecord(otherSID, nil) })
 	realOwns := sessionOwnsNotificationEvent
 	type observation struct{ queueEmpty, reapable bool }
 	var observed []observation
-	swapVar(t, &sessionOwnsNotificationEvent, func(ctx context.Context, drainingSID string, draining *tuigateway.Session, evt map[string]any) bool {
+	swapVar(t, &sessionOwnsNotificationEvent, func(ctx context.Context, drainingSID string, draining *tuihost.Session, evt map[string]any) bool {
 		if drainingSID == otherSID && evt["owner_task_id"] == "tui-proc-session" {
 			observed = append(observed, observation{registry.CompletionQueue.Empty(), sessionIsReapable(ctx, sid, session)})
 			scheduleWSOrphanReap(ctx, sid, nil, nil)
@@ -69,7 +69,7 @@ func TestForeignNoticeInAnotherSessionsPostTurnDrainKeepsItsOwner(t *testing.T) 
 		return realOwns(ctx, drainingSID, draining, evt)
 	})
 	var routed [][]map[string]any
-	swapVar(t, &notifHandleReady, func(_ context.Context, _ string, _ *tuigateway.Session, events []map[string]any, _ map[string]bool,
+	swapVar(t, &notifHandleReady, func(_ context.Context, _ string, _ *tuihost.Session, events []map[string]any, _ map[string]bool,
 		_ *tools.ProcessRegistry, _ func(map[string]any) string, _ *[]map[string]any, _ bool) {
 		routed = append(routed, events)
 	})
@@ -77,7 +77,7 @@ func TestForeignNoticeInAnotherSessionsPostTurnDrainKeepsItsOwner(t *testing.T) 
 	if len(observed) != 1 || observed[0] != (observation{true, false}) {
 		t.Fatalf("observed %v, the notice was in the drainer's hands so its owner stays protected", observed)
 	}
-	if tuigateway.SessionRecord(sid) != session || truthy(session.Get("_finalized")) {
+	if tuihost.SessionRecord(sid) != session || truthy(session.Get("_finalized")) {
 		t.Fatal("owner of the notice was reaped")
 	}
 	queued := registry.CompletionQueue.Snapshot()

@@ -11,8 +11,8 @@ import (
 	"github.com/nickheyer/icebath/pkg/tools"
 )
 
-// Keys hermes _discover_all_plugins lists as bundled from its shipped plugins tree
-var shippedBundledListingKeys = []string{"browser/browser_use", "browser/browserbase", "browser/firecrawl", "cron_providers/chronos",
+// Keys plugin discovery lists as bundled from the shipped plugins tree
+var shippedBundledListingKeys = []string{"browser/browser_use", "browser/browserbase", "browser/firecrawl",
 	"delegation/default", "disk-cleanup", "google_meet", "image_gen/deepinfra", "image_gen/fal", "image_gen/krea", "image_gen/meta-ai",
 	"image_gen/openai", "image_gen/openai-codex", "image_gen/openrouter", "image_gen/xai", "platforms/a2a", "platforms/bluebubbles",
 	"platforms/buzz", "platforms/dingtalk", "platforms/discord", "platforms/email", "platforms/feishu", "platforms/google_chat",

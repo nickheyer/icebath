@@ -106,7 +106,7 @@ func (s *Store) advanceAfterRun(job *Job, now string, ladderRung bool) error {
 			job.LastError = strPtr("Failed to compute next run for recurring schedule (is the 'croniter' package " +
 				"installed in the gateway's Python env?)")
 		}
-		s.logAs("cron.jobs").Error(fmt.Sprintf("Job '%s' (%s) could not compute next_run_at; leaving enabled and marking "+
+		s.log.Error(fmt.Sprintf("Job '%s' (%s) could not compute next_run_at; leaving enabled and marking "+
 			"state=error so the job is not silently disabled.", job.Label(), kind))
 	default:
 		completeJobRecord(job)
@@ -122,7 +122,7 @@ func (s *Store) markJobRun(ctx context.Context, jobID string, success bool, o Ma
 				return true, nil
 			}
 			if o.ExpectedFireOwner != nil && (job.FireClaim == nil || job.FireClaim.By != *o.ExpectedFireOwner) {
-				s.logAs("cron.jobs").Warn(fmt.Sprintf("mark_job_run: job_id %s fire claim owner changed; discarding stale completion", jobID))
+				s.log.Warn(fmt.Sprintf("mark_job_run: job_id %s fire claim owner changed; discarding stale completion", jobID))
 				return false, nil
 			}
 			now := s.clk.nowISO()
@@ -160,7 +160,7 @@ func (s *Store) markJobRun(ctx context.Context, jobID string, success bool, o Ma
 			return true, s.saveJobsLocked(home.WithOverride(ctx, s.home), tx, jobs, nil, false)
 		})
 		if err == nil && !found {
-			s.logAs("cron.jobs").Warn(fmt.Sprintf("mark_job_run: job_id %s not found, skipping save", jobID))
+			s.log.Warn(fmt.Sprintf("mark_job_run: job_id %s not found, skipping save", jobID))
 		}
 		return ok, err
 	})
@@ -186,7 +186,7 @@ func (s *Store) claimDispatch(ctx context.Context, jobID string) (bool, error) {
 				if err := s.saveJobsLocked(home.WithOverride(ctx, s.home), tx, jobs, nil, false); err != nil {
 					return false, err
 				}
-				s.logAs("cron.jobs").Info(fmt.Sprintf("Job '%s': dispatch limit reached (%d/%d) — marking completed", label, completed, times))
+				s.log.Info(fmt.Sprintf("Job '%s': dispatch limit reached (%d/%d) — marking completed", label, completed, times))
 				return false, nil
 			}
 			kept := append(append([]*Job{}, jobs[:i]...), jobs[i+1:]...)
@@ -194,7 +194,7 @@ func (s *Store) claimDispatch(ctx context.Context, jobID string) (bool, error) {
 				return false, err
 			}
 			writeWedged(home.WithOverride(ctx, s.home), s, job)
-			s.logAs("cron.jobs").Info(fmt.Sprintf("Job '%s': dispatch limit reached (%d/%d) — removing", label, completed, times))
+			s.log.Info(fmt.Sprintf("Job '%s': dispatch limit reached (%d/%d) — removing", label, completed, times))
 			return false, nil
 		}
 		repeat.Completed = completed + 1
@@ -202,11 +202,11 @@ func (s *Store) claimDispatch(ctx context.Context, jobID string) (bool, error) {
 		if err := s.saveJobsLocked(home.WithOverride(ctx, s.home), tx, jobs, nil, false); err != nil {
 			return false, err
 		}
-		s.logAs("cron.jobs").Debug(fmt.Sprintf("Job '%s': claimed dispatch %d/%d", label, repeat.Completed, times))
+		s.log.Debug(fmt.Sprintf("Job '%s': claimed dispatch %d/%d", label, repeat.Completed, times))
 		return true, nil
 	})
 	if err == nil && !found {
-		s.logAs("cron.jobs").Debug(fmt.Sprintf("claim_dispatch: job_id %s not in store — proceeding without claim "+
+		s.log.Debug(fmt.Sprintf("claim_dispatch: job_id %s not in store — proceeding without claim "+
 			"(handed-in job dict; nothing to persist a claim against)", jobID))
 		return true, nil
 	}

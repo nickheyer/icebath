@@ -3,7 +3,6 @@ package browser
 import (
 	"context"
 	"fmt"
-	"log/slog"
 	"maps"
 	"math"
 	"math/big"
@@ -31,6 +30,7 @@ const (
 	realProfileFallbackSentinel = "_ICEBATH_BU_REAL_PROFILE_FALLBACK"
 	localFallbackSentinel       = "_ICEBATH_BU_LOCAL_FALLBACK"
 	cloudBrowserSentinel        = "_ICEBATH_BU_CLOUD_BROWSER"
+	screenBrowserSentinel       = "_ICEBATH_BU_SCREEN_BROWSER"
 	activateNever               = "never"
 	activateAlways              = "always"
 	fenceTakeoverPrefix         = "A human took over the bot's screen while this browser command ran"
@@ -141,7 +141,7 @@ func workspaceDir(env *tools.Env, taskID string) string {
 	}
 	path := filepath.Join(cfgOf(env).homeDir(), "cache", "browser-use", "workspace", safe)
 	if err := os.MkdirAll(path, 0o777); err != nil {
-		slog.Default().Debug(fmt.Sprintf("browser_exec workspace unavailable: %s", pypath.OSErrorText(err)))
+		pkgLog().Debug(fmt.Sprintf("browser_exec workspace unavailable: %s", pypath.OSErrorText(err)))
 		return ""
 	}
 	return path
@@ -155,12 +155,12 @@ func nativeScreenshotResult(ctx context.Context, env *tools.Env, result *pyjson.
 	dataURL, err := execResizeForVision(env, path, "image/png", tools.ResizeOptions{
 		MaxBase64Bytes: tools.ResolveEmbedTargetBytes(env), MaxDimension: tools.VisionEmbedMaxDimension, ForceJPEG: true})
 	if err != nil {
-		slog.Default().Debug(fmt.Sprintf("Native screenshot attach failed (falling back to text): %s", err))
+		pkgLog().Debug(fmt.Sprintf("Native screenshot attach failed (falling back to text): %s", err))
 		return ""
 	}
 	text, err := pyjson.Dumps(result, pyjson.EnsureASCII(false))
 	if err != nil {
-		slog.Default().Debug(fmt.Sprintf("Native screenshot attach failed (falling back to text): %s", err))
+		pkgLog().Debug(fmt.Sprintf("Native screenshot attach failed (falling back to text): %s", err))
 		return ""
 	}
 	attached := text + "\n\nThe screenshot from this call is attached — inspect it with your native vision."
@@ -265,8 +265,17 @@ func resolveLocalCDP(ctx context.Context, env *tools.Env, penv map[string]string
 	err := exportSessionCDP(penv, mergingSessionInfo(tools.WithEnvHome(ctx, env), env, session), key, fail, "The local browser session returned no CDP endpoint.")
 	if err == "" {
 		markLocalBrowser(penv, session, key)
+		if drivesScreenBrowser(env, session) {
+			penv[screenBrowserSentinel] = activateAlways
+		}
 	}
 	return err
+}
+
+// True for the headed Chromium shown on the Bot Desktop screen, never the user's own profile or Lightpanda
+func drivesScreenBrowser(env *tools.Env, session map[string]any) bool {
+	features := featuresOf(session)
+	return sharesBotDesktopBrowser(env, session) && !pyrepr.Truthy(features["real_profile"]) && !pyrepr.Truthy(features["lightpanda"])
 }
 
 // Routes to the configured backend, operator overrides first, then sidecar, provider and local engine
@@ -283,7 +292,7 @@ func resolveBackendCDP(ctx context.Context, env *tools.Env, penv map[string]stri
 	}
 	prov, perr := execCloudProvider(env)
 	if perr != nil {
-		slog.Default().Debug(fmt.Sprintf("Cloud provider lookup failed: %s", perr))
+		pkgLog().Debug(fmt.Sprintf("Cloud provider lookup failed: %s", perr))
 		prov = nil
 	}
 	if prov == nil {
@@ -300,7 +309,7 @@ func resolveBackendCDP(ctx context.Context, env *tools.Env, penv map[string]stri
 		fmt.Sprintf("Cloud browser provider %s returned no CDP endpoint, so browser_exec "+
 			"cannot drive it. Pick a CDP-capable provider via `icebath tools` → Browser Automation.", providerName))
 	if pyrepr.Truthy(session["fallback_from_cloud"]) {
-		slog.Default().Warn(fmt.Sprintf("browser_exec: %s failed (%s); using local Chromium for this session",
+		pkgLog().Warn(fmt.Sprintf("browser_exec: %s failed (%s); using local Chromium for this session",
 			providerName, pyrepr.Str(session["fallback_reason"])))
 		if err == "" {
 			markLocalBrowser(penv, session, key)
@@ -352,7 +361,7 @@ func attachVaultSupervisor(ctx context.Context, env *tools.Env, penv map[string]
 	}
 	policy, timeoutS := cfgOf(env).dialogPolicyConfig()
 	if err := execAttachSupervisor(env, taskID, ResolveCDPOverride(ctx, cdp), policy, timeoutS); err != nil {
-		slog.Default().Debug(fmt.Sprintf("browser_exec: CDP supervisor attach failed (non-fatal): %s", err))
+		pkgLog().Debug(fmt.Sprintf("browser_exec: CDP supervisor attach failed (non-fatal): %s", err))
 	}
 }
 
@@ -535,7 +544,7 @@ func execChildEnv(env *tools.Env, route map[string]string, workspace string) map
 }
 
 // Runs the model's Python on the user's interpreter against the routed browser and returns its output
-func browserExec(ctx context.Context, env *tools.Env, code, sessionName string, timeoutS any, taskID string, local bool, localEngine *string) (string, error) {
+func browserExec(ctx context.Context, env *tools.Env, code, sessionName string, timeoutS any, taskID string, local bool) (string, error) {
 	if pystr.Strip(code) == "" {
 		return toolErr(`No code provided. Pass Python that uses the pre-imported helpers, e.g. new_tab("https://example.com") then print(page_info()).`), nil
 	}
@@ -575,9 +584,6 @@ func browserExec(ctx context.Context, env *tools.Env, code, sessionName string, 
 	execRouteIsSidecar[routeKey] = localSidecar
 	execStateMu.Unlock()
 	engine := route[botDesktopBrowserSentinel]
-	if localEngine != nil {
-		*localEngine = engine
-	}
 	workspace := workspaceDir(env, taskID)
 	timeout := clampTimeout(timeoutS)
 	started := time.Now()
@@ -589,7 +595,7 @@ func browserExec(ctx context.Context, env *tools.Env, code, sessionName string, 
 		return "", err
 	}
 	run := execRun{python: python, childEnv: childEnv, route: route, code: code, workspace: workspace,
-		timeout: timeout, activate: route[cloudBrowserSentinel] == activateAlways, ownTab: sessionName != "" && route[privateBrowserSentinel] == ""}
+		timeout: timeout, activate: route[cloudBrowserSentinel] == activateAlways || route[screenBrowserSentinel] == activateAlways, ownTab: sessionName != "" && route[privateBrowserSentinel] == ""}
 	dispatch := func() map[string]any {
 		attachVaultSupervisor(ctx, env, route, taskID)
 		proc := execRunCode(tools.WithEnvHome(ctx, env), env, run)

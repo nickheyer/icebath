@@ -66,7 +66,7 @@ func (r *overflowRecovery) failTurn(finalResponse string, f overflowFailure) (Ph
 		}
 	}
 	if f.log != "" {
-		conversationLoopLog().Error(f.log)
+		pkgLog().Error(f.log)
 	}
 	if err := a.persistSession(&r.s.Messages, r.s.ConversationHistory); err != nil {
 		return PhaseVerdict{}, err
@@ -253,7 +253,7 @@ func (r *overflowRecovery) compressForOutputCap(requestInputEstimate int) (defer
 				panic(rec)
 			}
 			deferred, err = nil, nil
-			conversationLoopLog().Warn(fmt.Sprintf("%sOutput-cap compression hit an error; retrying on max_tokens only.", r.a.logPrefix))
+			pkgLog().Warn(fmt.Sprintf("%sOutput-cap compression hit an error; retrying on max_tokens only.", r.a.logPrefix))
 		}
 	}()
 	v, _, _, cerr := r.compressScoredByTokens(requestInputEstimate, false)
@@ -261,7 +261,7 @@ func (r *overflowRecovery) compressForOutputCap(requestInputEstimate int) (defer
 		if tools.IsKeyboardInterrupt(r.ctx, cerr) {
 			return nil, cerr
 		}
-		conversationLoopLog().Warn(fmt.Sprintf("%sOutput-cap compression hit an error; retrying on max_tokens only.", r.a.logPrefix))
+		pkgLog().Warn(fmt.Sprintf("%sOutput-cap compression hit an error; retrying on max_tokens only.", r.a.logPrefix))
 		return nil, nil
 	}
 	return v, nil

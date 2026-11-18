@@ -17,13 +17,10 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
-	"github.com/nickheyer/icebath/pkg/logging"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/skills"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
-
-var setupQuickLog = logging.GetLogger("hermes_cli.setup")
 
 // Seams over the bundled skill calls, the walkthrough and the macOS probe, the names the setup_quick tests patch
 var (
@@ -93,56 +90,30 @@ func importedModelLabel(ctx context.Context, cfg config.Tree) (string, error) {
 	return provider.ProviderLabel(resolved) + " · " + pystr.Strip(text), nil
 }
 
-// Asks whether to keep the model an import brought or switch to Nous Portal, true keeping it
-func keepImportedModel(ctx context.Context, cfg config.Tree, importedFrom string) (bool, error) {
+// Keeps the model an import brought, else tells the user to configure a provider
+func quickSetupModel(ctx context.Context, cfg config.Tree, importedFrom string) error {
 	label := ""
 	if importedFrom != "" {
 		var err error
 		if label, err = importedModelLabel(ctx, cfg); err != nil {
-			return false, err
-		}
-	}
-	if label == "" {
-		return false, nil
-	}
-	provider.PrintSetupHeader("Model & Provider", true)
-	provider.SetupInfo("Settings were imported from " + importedFrom + ".")
-	return provider.PromptChoice("Keep your imported model ("+label+") or switch to Nous Portal?", []string{
-		"Keep " + label,
-		"Switch to Nous Portal — free OAuth login, 300+ models plus the Tool Gateway",
-	}, 0, "  Settings were imported from "+importedFrom+".") == 0, nil
-}
-
-// Quick Setup's Nous Portal step, the OAuth login and model pick, then the config resynced from disk
-func quickSetupNousPortal(ctx context.Context, cfg config.Tree) error {
-	provider.PrintSetupHeader("Nous Portal", true)
-	provider.SetupInfo("One subscription, 300+ models, plus the Tool Gateway:",
-		"  web search, image generation, TTS, browser automation.",
-		"Sign up: https://portal.nousresearch.com/manage-subscription", nil)
-	onError := func(err error) {
-		lines := provider.ProviderSetupFailureLines(err, "icebath model")
-		provider.SetupPrintWarning(lines[0])
-		for _, line := range lines[1:] {
-			provider.SetupPrintInfo(line)
-		}
-	}
-	if _, err := provider.RunNousFlow(ctx, cfg, "quick setup", false, []any{nil, "Nous Portal setup cancelled."}, onError); err != nil {
-		return err
-	}
-	return provider.ReloadSetupConfig(ctx, cfg, false)
-}
-
-// First time Quick Setup through Nous Portal or an imported model, then terminal and messaging with defaults elsewhere
-func runFirstTimeQuickSetup(ctx context.Context, cfg config.Tree, icebathHome, importedFrom string) error {
-	h := home.Dir(ctx)
-	keep, err := keepImportedModel(ctx, cfg, importedFrom)
-	if err != nil {
-		return err
-	}
-	if !keep {
-		if err := quickSetupNousPortal(ctx, cfg); err != nil {
 			return err
 		}
+	}
+	provider.PrintSetupHeader("Model & Provider", true)
+	if label == "" {
+		provider.SetupPrintWarning("No model provider is configured yet.")
+		provider.SetupPrintInfo("Pick one with: icebath model")
+		return nil
+	}
+	provider.SetupInfo("Settings were imported from " + importedFrom + ", keeping " + label + ".")
+	return nil
+}
+
+// First time Quick Setup keeping an imported model, then terminal and messaging with defaults elsewhere
+func runFirstTimeQuickSetup(ctx context.Context, cfg config.Tree, icebathHome, importedFrom string) error {
+	h := home.Dir(ctx)
+	if err := quickSetupModel(ctx, cfg, importedFrom); err != nil {
+		return err
 	}
 	if err := setupTerminalBackendFn(ctx, cfg); err != nil {
 		return err
@@ -206,7 +177,7 @@ func setBundledSkillsOptOut(ctx context.Context, optOut bool, logLabel string, o
 	setupSetBundledSkillsOptOut(ctx, optOut)
 	result, err := setupSyncSkills(ctx, true)
 	if err != nil {
-		setupQuickLog.Debug(fmt.Sprintf("blank-slate %s error: %v", logLabel, err))
+		pkgLog().Debug(fmt.Sprintf("blank-slate %s error: %v", logLabel, err))
 		if onError != nil {
 			onError(err)
 		}
@@ -301,7 +272,7 @@ func blankSlateWalkthrough(ctx context.Context, cfg config.Tree, icebathHome str
 			err = provider.ReloadSetupConfig(ctx, cfg, false)
 		}
 		if err != nil {
-			setupQuickLog.Debug(fmt.Sprintf("blank-slate tools_command error: %v", err))
+			pkgLog().Debug(fmt.Sprintf("blank-slate tools_command error: %v", err))
 			provider.SetupPrintWarning(fmt.Sprintf("Tool selector encountered an error: %v", err))
 		}
 	} else {

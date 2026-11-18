@@ -32,15 +32,10 @@ type FacadeHooks struct {
 }
 
 var (
-	facadeMu      sync.RWMutex
-	facadeHooks   FacadeHooks
-	policyNote    func(setter, homeKey string, raw any)
-	savedObserver func(h string, oldRaw, newConfig map[string]any)
-	rawRecorder   RawConfigWriteRecorder
+	facadeMu    sync.RWMutex
+	facadeHooks FacadeHooks
+	policyNote  func(setter, homeKey string, raw any)
 )
-
-// Runner of one raw user config write that reports what it changed in the file it replaced
-type RawConfigWriteRecorder func(ctx context.Context, h, configPath string, userConfig map[string]any, write func(configPath string, userConfig map[string]any) error) error
 
 // Installs the facade collaborators, called from an init of the package that owns them
 func RegisterConfigFacade(h FacadeHooks) {
@@ -53,20 +48,6 @@ func RegisterConfigFacade(h FacadeHooks) {
 func RegisterPolicyNote(note func(setter, homeKey string, raw any)) {
 	facadeMu.Lock()
 	policyNote = note
-	facadeMu.Unlock()
-}
-
-// Installs the observer a user saved config is reported to after the write with the home that owns it
-func RegisterConfigSavedObserver(observe func(h string, oldRaw, newConfig map[string]any)) {
-	facadeMu.Lock()
-	savedObserver = observe
-	facadeMu.Unlock()
-}
-
-// Installs the recorder every raw user config write runs through
-func RegisterRawConfigWriteRecorder(record RawConfigWriteRecorder) {
-	facadeMu.Lock()
-	rawRecorder = record
 	facadeMu.Unlock()
 }
 
@@ -404,7 +385,7 @@ func copyIfWanted(t Tree, wantDeepcopy bool) Tree {
 
 // Effective config through the signature cache, rebuilt under the config lock on a miss
 func loadConfigImpl(ctx context.Context, h string, lookup Lookup, wantDeepcopy bool) (Tree, error) {
-	NoteRuntimeImport("hermes_cli.config")
+	NoteRuntimeImport("config")
 	if lookup == nil {
 		lookup = processLookup
 	}

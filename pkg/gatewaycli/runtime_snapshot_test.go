@@ -7,7 +7,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/home"
 )
 
-func TestGatewayRuntimeSnapshotRunningAndMismatchFollowHermes(t *testing.T) {
+func TestGatewayRuntimeSnapshotRunningAndMismatch(t *testing.T) {
 	stopped := GatewayRuntimeSnapshot{Manager: "manual process"}
 	if stopped.Running() || stopped.HasProcessServiceMismatch() {
 		t.Fatalf("stopped %+v", stopped)

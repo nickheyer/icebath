@@ -48,23 +48,23 @@ func TestRelaunchWindowsPropagatesChildExitCode(t *testing.T) {
 	}
 }
 
-func TestResolveHermesBinWindowsPyGuardWindowsRejectsPyArgv0FallsThroughToPath(t *testing.T) {
+func TestResolveIcebathBinWindowsPyGuardWindowsRejectsPyArgv0FallsThroughToPath(t *testing.T) {
 	dir := t.TempDir()
 	script := writeExecutable(t, filepath.Join(dir, "main.py"), "# source launcher")
 	onPath := writeExecutable(t, filepath.Join(dir, "Scripts", "icebath.exe"), "MZ native")
 	setRelaunchArgv(t, script, "chat")
 	t.Setenv("PATH", filepath.Dir(onPath))
-	if got, ok := resolveHermesBin(); !ok || got != onPath {
+	if got, ok := resolveIcebathBin(); !ok || got != onPath {
 		t.Fatalf("resolved %q %v, want %q", got, ok, onPath)
 	}
 }
 
-func TestResolveHermesBinWindowsPyGuardWindowsPyArgv0WithNoHermesOnPathReturnsNone(t *testing.T) {
+func TestResolveIcebathBinWindowsPyGuardWindowsPyArgv0WithNoIcebathOnPathReturnsNone(t *testing.T) {
 	dir := t.TempDir()
 	script := writeExecutable(t, filepath.Join(dir, "main.py"), "# source launcher")
 	setRelaunchArgv(t, script, "chat")
 	t.Setenv("PATH", t.TempDir())
-	if got, ok := resolveHermesBin(); ok {
+	if got, ok := resolveIcebathBin(); ok {
 		t.Fatalf("resolved %q", got)
 	}
 }

@@ -94,15 +94,15 @@ func resolvePluginLoadTimeout(h string) float64 {
 	}
 	timeout, ok := pyFloat(section["load_timeout_seconds"])
 	if !ok || math.IsNaN(timeout) {
-		logPlugins.warn(fmt.Sprintf("plugins.load_timeout_seconds is not a number; using default %gs", loadTimeoutDefault))
+		pkgLog().Warn(fmt.Sprintf("plugins.load_timeout_seconds is not a number; using default %gs", loadTimeoutDefault))
 		return loadTimeoutDefault
 	}
 	if timeout < 0 {
-		logPlugins.warn(fmt.Sprintf("plugins.load_timeout_seconds=%g is negative; using default %gs", timeout, loadTimeoutDefault))
+		pkgLog().Warn(fmt.Sprintf("plugins.load_timeout_seconds=%g is negative; using default %gs", timeout, loadTimeoutDefault))
 		return loadTimeoutDefault
 	}
 	if timeout > maxLoadTimeout {
-		logPlugins.warn(fmt.Sprintf("plugins.load_timeout_seconds=%g exceeds max %gs; clamping", timeout, maxLoadTimeout))
+		pkgLog().Warn(fmt.Sprintf("plugins.load_timeout_seconds=%g exceeds max %gs; clamping", timeout, maxLoadTimeout))
 		return maxLoadTimeout
 	}
 	return timeout
@@ -265,7 +265,7 @@ func (m *Manager) validatePluginConfigSchema(mf *Manifest) {
 		}
 	}
 	for _, warning := range ValidateConfigSchema(pluginID, mf.ConfigSchema, settings) {
-		logPlugins.warn(fmt.Sprintf("Plugin %s config: %s", pluginID, warning))
+		pkgLog().Warn(fmt.Sprintf("Plugin %s config: %s", pluginID, warning))
 	}
 }
 
@@ -280,14 +280,14 @@ func (m *Manager) loadPlugin(ctx context.Context, mf *Manifest) error {
 func (m *Manager) loadPluginScoped(ctx context.Context, mf *Manifest) error {
 	loaded := &LoadedPlugin{Manifest: mf}
 	key := mf.ID()
-	logPlugins.debug(fmt.Sprintf("Loading plugin '%s' (source=%s, kind=%s, path=%s)", key, mf.Source, mf.Kind, mf.Path))
+	pkgLog().Debug(fmt.Sprintf("Loading plugin '%s' (source=%s, kind=%s, path=%s)", key, mf.Source, mf.Kind, mf.Path))
 	if mf.Portable {
 		m.loadPortablePlugin(ctx, mf, loaded)
 		return nil
 	}
 	if reason := icebathFitError(mf); reason != "" {
 		loaded.Error = reason
-		logPlugins.warn(fmt.Sprintf("Plugin '%s' skipped: %s", key, reason))
+		pkgLog().Warn(fmt.Sprintf("Plugin '%s' skipped: %s", key, reason))
 		m.storeLoaded(key, loaded)
 		return nil
 	}
@@ -331,7 +331,7 @@ func (m *Manager) loadPluginScoped(ctx context.Context, mf *Manifest) error {
 				reason = "the plugin is Python source; " + PluginFormsText
 			}
 			attempt.fail(reason)
-			logPlugins.warn(fmt.Sprintf("Plugin '%s' not loaded: %s", mf.Name, reason))
+			pkgLog().Warn(fmt.Sprintf("Plugin '%s' not loaded: %s", mf.Name, reason))
 			return false, nil
 		}
 		return true, plugin.Register(pctx)
@@ -359,7 +359,7 @@ func (m *Manager) loadPluginScoped(ctx context.Context, mf *Manifest) error {
 		m.forgetRegistrations(owned)
 		loaded.Error = loadErrorText(err)
 		m.removePluginSubscriptions(key)
-		logPlugins.warn(fmt.Sprintf("Failed to load plugin '%s': %s", mf.Name, loadErrorText(err)), excInfo(err)...)
+		pkgLog().Warn(fmt.Sprintf("Failed to load plugin '%s': %s", mf.Name, loadErrorText(err)), excInfo(err)...)
 	}
 	if !loaded.Enabled {
 		m.mu.Lock()
@@ -461,7 +461,7 @@ func (m *Manager) registerDeclaredLocales(mf *Manifest, pctx *Context) {
 	}
 	for _, lang := range mf.ProvidesLocales {
 		if !registered[lang] {
-			logPlugins.warn(fmt.Sprintf("Plugin '%s' declares provides_locales %s but %s has no %s.yaml", mf.Name, config.PyRepr(lang), dir, lang))
+			pkgLog().Warn(fmt.Sprintf("Plugin '%s' declares provides_locales %s but %s has no %s.yaml", mf.Name, config.PyRepr(lang), dir, lang))
 		}
 	}
 }
@@ -530,7 +530,7 @@ func (m *Manager) attributeRegistrations(loaded *LoadedPlugin, key string, start
 			cli++
 		}
 	}
-	logPlugins.debug(fmt.Sprintf("  registered: %d tool(s), %d hook(s), %d middleware, %d slash command(s), %d CLI command(s)",
+	pkgLog().Debug(fmt.Sprintf("  registered: %d tool(s), %d hook(s), %d middleware, %d slash command(s), %d CLI command(s)",
 		len(loaded.ToolsRegistered), len(loaded.HooksRegistered), len(loaded.MiddlewareRegistered), len(loaded.CommandsRegistered), cli))
 }
 
@@ -544,18 +544,18 @@ func (m *Manager) loadPortablePlugin(ctx context.Context, mf *Manifest, loaded *
 		}
 		pctx := newContext(mf, m)
 		for _, d := range pkg.Diagnostics {
-			logPlugins.warn(fmt.Sprintf("Agent Plugin '%s' [%s]: %s", key, d.Scope, d.Message))
+			pkgLog().Warn(fmt.Sprintf("Agent Plugin '%s' [%s]: %s", key, d.Scope, d.Message))
 		}
 		for _, skill := range pkg.Skills {
 			if _, err := pctx.RegisterSkill(skill.Name, skill.SkillMD, skill.Description, skill.Frontmatter); err != nil {
-				logPlugins.warn(fmt.Sprintf("Agent Plugin '%s' skill '%s' skipped: %v", key, skill.Name, err))
+				pkgLog().Warn(fmt.Sprintf("Agent Plugin '%s' skill '%s' skipped: %v", key, skill.Name, err))
 			}
 		}
 		return m.registerPortableMCP(mf, pkg)
 	})
 	if err != nil {
 		loaded.Error = loadErrorText(err)
-		logPlugins.warn(fmt.Sprintf("Agent Plugin '%s' disabled: %s", key, loaded.Error))
+		pkgLog().Warn(fmt.Sprintf("Agent Plugin '%s' disabled: %s", key, loaded.Error))
 	} else {
 		loaded.Enabled = true
 	}
@@ -596,7 +596,7 @@ func (m *Manager) registerPortableMCP(mf *Manifest, pkg *AgentPluginPackage) (er
 			if owner == "" {
 				owner = "?"
 			}
-			logPlugins.warn(fmt.Sprintf("Agent Plugin '%s' MCP server '%s' skipped: name already taken by plugin '%s'; rename one server", key, internal, owner))
+			pkgLog().Warn(fmt.Sprintf("Agent Plugin '%s' MCP server '%s' skipped: name already taken by plugin '%s'; rename one server", key, internal, owner))
 			continue
 		}
 		copied := map[string]any{}
@@ -719,9 +719,9 @@ func (m *Manager) RearmFailedPlatform(ctx context.Context, platformName string) 
 		}
 	}
 	abandonedMu.Unlock()
-	logPlugins.info("Re-arming failed platform plugin load: " + platformName)
+	pkgLog().Info("Re-arming failed platform plugin load: " + platformName)
 	if err := m.registerDeferredPlatform(ctx, failed); err != nil {
-		logPlugins.debug(fmt.Sprintf("re-armed platform %s load interrupted: %v", platformName, err))
+		pkgLog().Debug(fmt.Sprintf("re-armed platform %s load interrupted: %v", platformName, err))
 	}
 	return true
 }
@@ -745,7 +745,7 @@ func (m *Manager) leaseDeferredPlatform(mf *Manifest, key string) bool {
 					return
 				}
 				if err := m.loadPluginScoped(ctx, mf); err != nil {
-					logPlugins.debug(fmt.Sprintf("deferred platform %s load interrupted: %v", name, err))
+					pkgLog().Debug(fmt.Sprintf("deferred platform %s load interrupted: %v", name, err))
 				}
 			}
 			previous := registry.Snapshot(name, scope)
@@ -759,11 +759,11 @@ func (m *Manager) leaseDeferredPlatform(mf *Manifest, key string) bool {
 			if current.Entry == nil && current.Loader == loader {
 				m.leasePlatform(mf, name, registry, current, previous)
 			}
-			logPlugins.debug(fmt.Sprintf("Registered deferred platform loader: %s (plugin=%s)", name, key))
+			pkgLog().Debug(fmt.Sprintf("Registered deferred platform loader: %s (plugin=%s)", name, key))
 			return nil
 		})
 		if err != nil {
-			logPlugins.debug(fmt.Sprintf("Deferred platform registration failed for '%s'; eager-loading", key), "error", err)
+			pkgLog().Debug(fmt.Sprintf("Deferred platform registration failed for '%s'; eager-loading", key), "error", err)
 			return
 		}
 		ok = true
@@ -786,7 +786,7 @@ func (m *Manager) registerDeferredPlatformTools(ctx context.Context, mf *Manifes
 	plugin, compiled := bundledPlugin(key)
 	if mf.Path != "" || !compiled {
 		if mf.Path == "" || !isFile(filepath.Join(mf.Path, "tools.py")) {
-			logPlugins.warn(fmt.Sprintf("Plugin '%s' declares provides_tools %s but has no tools.py; those tools will not be available in CLI/TUI sessions.", key, declared))
+			pkgLog().Warn(fmt.Sprintf("Plugin '%s' declares provides_tools %s but has no tools.py; those tools will not be available in CLI/TUI sessions.", key, declared))
 			return
 		}
 	}
@@ -835,7 +835,7 @@ func (m *Manager) registerDeferredPlatformTools(ctx context.Context, mf *Manifes
 		} else {
 			registrar, ok := plugin.(ToolsRegistrar)
 			if !ok {
-				logPlugins.warn(fmt.Sprintf("Plugin '%s' declares provides_tools %s but its tools.py has no register_tools(ctx); those tools will not be available in CLI/TUI sessions.", key, declared))
+				pkgLog().Warn(fmt.Sprintf("Plugin '%s' declares provides_tools %s but its tools.py has no register_tools(ctx); those tools will not be available in CLI/TUI sessions.", key, declared))
 				return nil
 			}
 			if err := registrar.RegisterTools(pctx); err != nil {
@@ -843,7 +843,7 @@ func (m *Manager) registerDeferredPlatformTools(ctx context.Context, mf *Manifes
 			}
 		}
 		registered := credit()
-		logPlugins.debug(fmt.Sprintf("Deferred platform '%s': pre-registered %d client tool(s) %s", key, len(registered), config.PyRepr(anyList(registered))))
+		pkgLog().Debug(fmt.Sprintf("Deferred platform '%s': pre-registered %d client tool(s) %s", key, len(registered), config.PyRepr(anyList(registered))))
 		return nil
 	})
 	if err == nil {
@@ -864,7 +864,7 @@ func (m *Manager) registerDeferredPlatformTools(ctx context.Context, mf *Manifes
 	if !complete {
 		tail = " The remainder will be missing from CLI/TUI sessions."
 	}
-	logPlugins.warn(fmt.Sprintf("Plugin '%s': client-tool pre-registration failed %s (%v).%s", key, where, err, tail), excInfo(err)...)
+	pkgLog().Warn(fmt.Sprintf("Plugin '%s': client-tool pre-registration failed %s (%v).%s", key, where, err, tail), excInfo(err)...)
 }
 
 func isFile(path string) bool {

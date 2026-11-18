@@ -9,7 +9,7 @@ import (
 
 const (
 	blockKitRichMD    = "# Title\n\n- a\n  - nested\n\n---\n\nbody text"
-	blockKitRichTable = "| Item | Status | Note |\n|---|---:|---|\n| Hermes | ok | table |"
+	blockKitRichTable = "| Item | Status | Note |\n|---|---:|---|\n| Icebath | ok | table |"
 )
 
 // Harness adapter of the block kit cases with its config extras and the update answering the message ts
@@ -46,11 +46,11 @@ func TestSendMessageBlocksDisabledByDefaultNoBlocks(t *testing.T) {
 // test_slack_block_kit_adapter.py TestSendMessageBlocks.test_unfurl_config_suppresses_previews_without_changing_link_text
 func TestSendMessageBlocksUnfurlConfigSuppressesPreviewsWithoutChangingLinkText(t *testing.T) {
 	a, f := blockKitAdapter(t, map[string]any{"unfurl_links": false, "unfurl_media": false})
-	if _, err := a.Send(context.Background(), "C1", "[Hermes](https://example.com/hermes)", "", nil); err != nil {
+	if _, err := a.Send(context.Background(), "C1", "[Icebath](https://example.com/icebath)", "", nil); err != nil {
 		t.Fatal(err)
 	}
 	kwargs := lastArgs(t, f, "chat.postMessage")
-	if kwargs["text"] != "<https://example.com/hermes|Hermes>" || kwargs["unfurl_links"] != false || kwargs["unfurl_media"] != false {
+	if kwargs["text"] != "<https://example.com/icebath|Icebath>" || kwargs["unfurl_links"] != false || kwargs["unfurl_media"] != false {
 		t.Fatalf("kwargs = %v", kwargs)
 	}
 }
@@ -84,7 +84,7 @@ func TestSendMessageBlocksFeedbackButtonsOptInAppendedToBlocks(t *testing.T) {
 	feedback, _ := blocks[len(blocks)-1].(map[string]any)
 	elements, _ := feedback["elements"].([]any)
 	first, _ := elements[0].(map[string]any)
-	if feedback["type"] != "context_actions" || first["type"] != "feedback_buttons" || first["action_id"] != "hermes_feedback" {
+	if feedback["type"] != "context_actions" || first["type"] != "feedback_buttons" || first["action_id"] != "icebath_feedback" {
 		t.Fatalf("feedback block = %v", feedback)
 	}
 }

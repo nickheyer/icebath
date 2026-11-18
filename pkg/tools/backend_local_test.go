@@ -15,7 +15,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/home"
 )
 
-// Local environment without the snapshot bootstrap, like LocalEnvironment.__new__ in the hermes tests
+// Local environment without the snapshot bootstrap, like LocalEnvironment.__new__ in the tests
 func newUninitLocalEnv(t *testing.T, env *Env, cwd string, childEnv map[string]string) *localEnv {
 	t.Helper()
 	l := &localEnv{}
@@ -730,7 +730,7 @@ func TestSupervisedIdentityAndProfileGates(t *testing.T) {
 	cases := map[string]bool{
 		"DISCORD_ALLOWED_CHANNELS": true, "TELEGRAM_ALLOW_ALL_USERS": true, "GATEWAY_ALLOWED_USERS": true,
 		"WHATSAPP_GROUP_ALLOW_FROM": true, "QQ_ALLOWED_USERS": true, "DEMO_ALLOWED_SENDER": false,
-		"ICEBATH_MEDIA_ALLOW_DIRS": false, "HERMES_ALLOW_PRIVATE_URLS": false, "_DISCORD_ALLOWED_X": false, "DISCORD_TOKEN": false,
+		"ICEBATH_MEDIA_ALLOW_DIRS": false, "ICEBATH_ALLOW_PRIVATE_URLS": false, "_DISCORD_ALLOWED_X": false, "DISCORD_TOKEN": false,
 	}
 	for name, want := range cases {
 		if got := IsProfileGateEnv(name, nil); got != want {

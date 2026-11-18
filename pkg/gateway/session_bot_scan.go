@@ -3,7 +3,6 @@ package gateway
 import (
 	"errors"
 	"fmt"
-	"log/slog"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -131,7 +130,7 @@ func scanBotRecords(root string, pins *[]botMailboxPin) []botMailboxRecord {
 			continue
 		}
 		if problem != "" {
-			slog.Warn(fmt.Sprintf("Skipping malformed Bot mailbox receipt %s (%s)", path, problem))
+			pkgLog().Warn(fmt.Sprintf("Skipping malformed Bot mailbox receipt %s (%s)", path, problem))
 			continue
 		}
 		if record != nil {

@@ -76,9 +76,9 @@ func TestTTSRegistryRegistration(t *testing.T) {
 			t.Run(builtin, func(t *testing.T) {
 				resetTTSRegistry(t)
 				var buf bytes.Buffer
-				saved := ttsRegistryLog
-				ttsRegistryLog = slog.New(slog.NewTextHandler(&buf, &slog.HandlerOptions{Level: slog.LevelWarn}))
-				t.Cleanup(func() { ttsRegistryLog = saved })
+				saved := slog.Default()
+				slog.SetDefault(slog.New(slog.NewTextHandler(&buf, &slog.HandlerOptions{Level: slog.LevelWarn})))
+				t.Cleanup(func() { slog.SetDefault(saved) })
 				if err := RegisterTTSProvider(newFakeTTSProvider(builtin), ""); err != nil {
 					t.Fatal(err)
 				}

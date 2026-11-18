@@ -28,7 +28,7 @@ func (r *GatewayRunner) selfPostAPIServer(ctx context.Context, adapter gateway.P
 		served, err := r.servedAPIServerWakeProfile(ctx, evt, rawSID)
 		var lookup *lookupError
 		if errors.As(err, &lookup) {
-			inboundLog().Warn(fmt.Sprintf(fail, rawSID, err))
+			pkgLog().Warn(fmt.Sprintf(fail, rawSID, err))
 			return false, nil
 		}
 		if err != nil {
@@ -52,9 +52,9 @@ func (r *GatewayRunner) selfPostAPIServer(ctx context.Context, adapter gateway.P
 				SessionID: rawSID, Profile: served, NotificationCategory: category})
 		}
 	}
-	inboundLog().Info(fmt.Sprintf(info, rawSID))
+	pkgLog().Info(fmt.Sprintf(info, rawSID))
 	if err := deliver(scope); err != nil {
-		inboundLog().Warn(fmt.Sprintf(fail, rawSID, err))
+		pkgLog().Warn(fmt.Sprintf(fail, rawSID, err))
 		return false, nil
 	}
 	return true, nil
@@ -132,6 +132,6 @@ func settleDurableClaim(ctx context.Context, kind, delegationID, claimID string)
 		if kind == "complete" {
 			level = slog.LevelWarn
 		}
-		inboundLog().Log(ctx, level, op.failMsg, "error", err)
+		pkgLog().Log(ctx, level, op.failMsg, "error", err)
 	}
 }

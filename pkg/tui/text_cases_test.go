@@ -5,75 +5,6 @@ import (
 	"testing"
 )
 
-func float(v float64) *float64 { return &v }
-
-func TestIsToolTrailResultLine(t *testing.T) {
-	t.Run("detects completion markers", func(t *testing.T) {
-		if !isToolTrailResultLine("foo ✓") || !isToolTrailResultLine("foo ✗") || isToolTrailResultLine("drafting x…") {
-			t.Fatal("markers")
-		}
-	})
-}
-
-func TestBuildToolTrailLine(t *testing.T) {
-	t.Run("puts completion duration inline before the result marker", func(t *testing.T) {
-		line := buildToolTrailLine("read_file", "x", false, "", float(0.94))
-		if line != `Read File("x") (0.9s) ✓` {
-			t.Fatalf("line %q", line)
-		}
-		if got, _ := parseToolTrailResultLine(line); got != (toolTrailResult{Call: `Read File("x") (0.9s)`, Mark: "✓"}) {
-			t.Fatalf("parsed %#v", got)
-		}
-		if label, duration := splitToolDuration(`Read File("x") (0.9s)`); label != `Read File("x")` || duration != " (0.9s)" {
-			t.Fatalf("split %q %q", label, duration)
-		}
-	})
-}
-
-func TestBuildVerboseToolTrailLine(t *testing.T) {
-	t.Run("preserves multiline args and result details", func(t *testing.T) {
-		line := buildVerboseToolTrailLine("terminal", "npm test", false, float(1.25), "{\n  \"cmd\": \"npm test\"\n}", "first line\nsecond :: line")
-		if !strings.Contains(line, tr("libText.text.argsLabel")+":\n{") || !strings.Contains(line, tr("libText.text.resultLabel")+":\nfirst line\nsecond :: line") {
-			t.Fatalf("line %q", line)
-		}
-		want := toolTrailResult{Call: `Terminal("npm test") (1.3s)`, Detail: "Args:\n{\n  \"cmd\": \"npm test\"\n}\nResult:\nfirst line\nsecond :: line", Mark: "✓"}
-		if got, _ := parseToolTrailResultLine(line); got != want {
-			t.Fatalf("parsed %#v", got)
-		}
-	})
-	t.Run("labels verbose failures as errors", func(t *testing.T) {
-		line := buildVerboseToolTrailLine("terminal", "npm test", true, float(0.5), "", "command failed")
-		if !strings.Contains(line, "Error:\ncommand failed") || strings.Contains(line, "Result:\ncommand failed") {
-			t.Fatalf("line %q", line)
-		}
-		want := toolTrailResult{Call: `Terminal("npm test") (0.5s)`, Detail: "Error:\ncommand failed", Mark: "✗"}
-		if got, _ := parseToolTrailResultLine(line); got != want {
-			t.Fatalf("parsed %#v", got)
-		}
-	})
-	t.Run("caps a large result to a small persisted preview (#34095)", func(t *testing.T) {
-		line := buildVerboseToolTrailLine("browser_snapshot", "https://x.example", false, float(2), "", strings.Repeat("A", 40_000))
-		if !strings.Contains(line, "Result:\n") || unitLen(line) >= 2_000 || !strings.Contains(line, "omitted") || !strings.HasSuffix(line, " ✓") {
-			t.Fatalf("line %d %q", unitLen(line), line[:80])
-		}
-	})
-	t.Run("does not truncate a result that already fits the preview budget", func(t *testing.T) {
-		small := "ok: 3 files changed"
-		line := buildVerboseToolTrailLine("patch", "index.html", false, float(0.1), "", small)
-		if !strings.Contains(line, "Result:\n"+small) || strings.Contains(line, "omitted") {
-			t.Fatalf("line %q", line)
-		}
-	})
-}
-
-func TestLastCotTrailIndex(t *testing.T) {
-	t.Run("finds last non-result line", func(t *testing.T) {
-		if lastCotTrailIndex([]string{"a ✓", "thinking…"}) != 1 || lastCotTrailIndex([]string{"only result ✓"}) != -1 {
-			t.Fatal("index")
-		}
-	})
-}
-
 func TestSameToolTrailGroup(t *testing.T) {
 	t.Run("matches bare check lines", func(t *testing.T) {
 		if !sameToolTrailGroup("searching", "searching ✓") || !sameToolTrailGroup("searching", "searching ✗") {
@@ -88,16 +19,6 @@ func TestSameToolTrailGroup(t *testing.T) {
 	t.Run("rejects other tools", func(t *testing.T) {
 		if sameToolTrailGroup("searching", "reading ✓") || sameToolTrailGroup("searching", "searching extra ✓") {
 			t.Fatal("other")
-		}
-	})
-}
-
-func TestThinkingPreview(t *testing.T) {
-	t.Run("adds paragraph breaks before markdown thinking headings", func(t *testing.T) {
-		raw := "**Considering user instructions**\nI need to answer.**Planning tool execution**\nI can run tools.**Determining weather search parameters**\nUse SF."
-		want := "**Considering user instructions**\nI need to answer.\n\n**Planning tool execution**\nI can run tools.\n\n**Determining weather search parameters**\nUse SF."
-		if got := thinkingPreview(raw, "full", thinkingCotMax); got != want {
-			t.Fatalf("got %q", got)
 		}
 	})
 }
@@ -130,39 +51,11 @@ func TestEdgePreview(t *testing.T) {
 	})
 }
 
-func TestThinkingPreviewOverBoundTail(t *testing.T) {
-	t.Run("retains the live tail when reasoning exceeds the clean bound", func(t *testing.T) {
-		const tail = "<<<LIVE_TAIL_MARKER>>>"
-		result := thinkingPreview(strings.Repeat("A", 25_000)+"\n"+tail, "full", thinkingCotMax)
-		if !strings.Contains(result, tail) || unitLen(result) > 25_000 {
-			t.Fatalf("result %d", unitLen(result))
-		}
-	})
-}
-
 func TestPasteTokenLabel(t *testing.T) {
 	t.Run("builds readable long-paste labels with counts", func(t *testing.T) {
 		label := pasteTokenLabel("Vampire Bondage ropes slipped from her neck, still stained with blood", 250)
 		if !strings.HasPrefix(label, "[[ ") || !strings.Contains(label, tr("libText.text.pasteLinesChip", "250")) || !strings.HasSuffix(label, " ]]") {
 			t.Fatalf("label %q", label)
-		}
-	})
-}
-
-func TestEstimateRows(t *testing.T) {
-	t.Run("handles tilde code fences", func(t *testing.T) {
-		if estimateRows("~~~markdown\n# heading\n~~~", 40, false) < 2 {
-			t.Fatal("rows")
-		}
-	})
-	t.Run("handles checklist bullets as list rows", func(t *testing.T) {
-		if got := estimateRows("- [x] done\n- [ ] todo", 40, false); got != 2 {
-			t.Fatalf("rows %d", got)
-		}
-	})
-	t.Run("keeps intraword underscores when sizing snake_case identifiers", func(t *testing.T) {
-		if estimateRows("look at test_case_with_underscores now", 80, false) != estimateRows("look at test case with underscores now", 80, false) {
-			t.Fatal("rows differ")
 		}
 	})
 }

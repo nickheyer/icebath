@@ -10,13 +10,9 @@ import (
 	"strings"
 
 	"github.com/google/uuid"
-)
 
-// Session creation policy the gateway describes, the sources it accepts and the parameters it takes
-type creationContract struct {
-	Sources    []string
-	Parameters []string
-}
+	"github.com/nickheyer/icebath/pkg/tuigateway"
+)
 
 // Shared control identity a prompt carries back on its answer
 type sharedControl struct {
@@ -35,7 +31,7 @@ var (
 	toolProgressModes = map[string]bool{"off": true, "new": true, "all": true, "verbose": true}
 	skillSplitRe      = regexp.MustCompile(`[,\n]`)
 	submitMethods     = map[string]bool{"prompt.submit": true, "session.steer": true, "session.redirect": true}
-	resumeMethods     = map[string]bool{"session.create": true, "session.resume": true, "session.activate": true}
+	unlimitedTurns    = map[string]bool{"none": true, "null": true, "unlimited": true, "infinite": true, "infinity": true, "inf": true, "\u221e": true}
 )
 
 // Keys of params in creation option order, unknown keys after them sorted
@@ -64,7 +60,7 @@ func sharedControlParams(ctl *sharedControl) map[string]any {
 }
 
 // Request rewritten for the canonical gateway, a tui session.create checked against its contract
-func canonicalRequest(method string, original map[string]any, contract *creationContract) (string, map[string]any, error) {
+func canonicalRequest(method string, original map[string]any, contract *tuigateway.SessionCreateDescriptor) (string, map[string]any, error) {
 	params := make(map[string]any, len(original))
 	for k, v := range original {
 		params[k] = v
@@ -94,15 +90,6 @@ func canonicalRequest(method string, original map[string]any, contract *creation
 	if submitMethods[method] && truthyJS(params["submission_id"]) {
 		params["input_id"] = params["submission_id"]
 		delete(params, "submission_id")
-	}
-	if method == "session.resume" || method == "session.activate" {
-		method = "session.resume"
-		renders := !truthyJS(params["omit_messages"])
-		delete(params, "cols")
-		delete(params, "omit_messages")
-		if renders {
-			params["display_projection"] = true
-		}
 	}
 	return method, params, nil
 }
@@ -138,168 +125,49 @@ func withKeys(base map[string]any, kv ...any) map[string]any {
 	return out
 }
 
-// Result reshaped for the UI, receipts carrying their target and resumes their display rows
+// Result reshaped for the UI, a receipt carrying its input id and target
 func canonicalResult(method string, value any, request map[string]any) any {
 	obj, isDict := value.(map[string]any)
-	if !isDict {
+	if !isDict || !submitMethods[method] || !truthyJS(obj["ref"]) {
 		return value
 	}
-	if submitMethods[method] && truthyJS(obj["ref"]) {
-		ref, _ := obj["ref"].(map[string]any)
-		return withKeys(obj, "input_id", request["input_id"], "target_profile_home", ref["profile_id"], "target_session_id", ref["session_id"])
-	}
-	if !resumeMethods[method] {
-		return value
-	}
-	var stored any = obj["messages"]
-	if rows, isList := obj["messages"].([]any); isList {
-		out := make([]any, len(rows))
-		for i, row := range rows {
-			if r, isRow := row.(map[string]any); isRow {
-				out[i] = withKeys(r, "text", rowText(r["content"]), "name", r["tool_name"])
-			} else {
-				out[i] = row
-			}
-		}
-		stored = out
-	}
-	rest := make(map[string]any, len(obj))
-	for k, v := range obj {
-		if k != "display_messages" {
-			rest[k] = v
-		}
-	}
-	messages := stored
-	if display, isList := obj["display_messages"].([]any); isList {
-		messages = display
-	}
-	info, _ := obj["info"].(map[string]any)
-	epoch, present := obj["authority_epoch"]
-	epochText := "undefined"
-	if present {
-		epochText = "null"
-		if epoch != nil {
-			epochText = jsTemplateString(epoch)
-		}
-	}
-	return withKeys(rest, "messages", messages, "stored_messages", stored, "info", withKeys(info,
-		"stored_session_id", obj["stored_session_id"], "execution_epoch", epochText,
-		"execution_generation", obj["execution_generation"], "running", obj["running"],
-		"pending_submissions", pendingSubmissions(obj["pending"])))
+	ref, _ := obj["ref"].(map[string]any)
+	return withKeys(obj, "input_id", request["input_id"], "target_profile_home", ref["profile_id"], "target_session_id", ref["session_id"])
 }
 
-// Text of a value as a JavaScript template literal renders it
-func jsTemplateString(v any) string {
-	switch t := v.(type) {
-	case nil:
-		return "undefined"
-	case map[string]any:
-		return "[object Object]"
-	case []any:
-		parts := make([]string, len(t))
-		for i, p := range t {
-			if p != nil {
-				parts[i] = jsTemplateString(p)
-			}
-		}
-		return strings.Join(parts, ",")
-	}
-	return jsString(v)
-}
-
-// Display text of stored message content, text parts joined and media parts named
-func rowText(content any) any {
-	parts, isList := content.([]any)
-	if !isList {
-		return content
-	}
-	var out []string
-	for _, part := range parts {
-		var text string
-		switch p := part.(type) {
-		case string:
-			text = p
-		case map[string]any:
-			if s, isString := p["text"].(string); isString {
-				text = s
-			} else if truthyJS(p["type"]) {
-				kind := jsTemplateString(p["type"])
-				if strings.Contains(kind, "image") {
-					text = "[image]"
-				} else {
-					text = "[" + kind + "]"
-				}
-			}
-		}
-		if text != "" {
-			out = append(out, text)
-		}
-	}
-	return strings.Join(out, "\n")
-}
-
-// Pending submissions with their text and target, nil when the payload has no list
-func pendingSubmissions(pending any) any {
-	rows, isList := pending.([]any)
-	if !isList {
-		return nil
-	}
-	out := []any{}
-	for _, row := range rows {
-		r, isRow := row.(map[string]any)
-		if !isRow {
-			continue
-		}
-		ref, _ := r["ref"].(map[string]any)
-		out = append(out, withKeys(r, "user", r["text"], "target_profile_home", ref["profile_id"], "target_session_id", ref["session_id"]))
-	}
-	return out
-}
-
-// Event with its pending submissions reshaped like a resume result
-func canonicalEvent(ev gatewayEventMsg) gatewayEventMsg {
-	if pending := pendingSubmissions(ev.Payload["pending"]); pending != nil {
-		ev.Payload = withKeys(ev.Payload, "pending_submissions", pending)
-	}
-	return ev
-}
-
-// Session creation options of the launch environment, flags only when truthy
-func localCreationOptions(env func(string) string) map[string]any {
-	options := map[string]any{}
-	for _, f := range [][2]string{{"model", "ICEBATH_MODEL"}, {"provider", "ICEBATH_TUI_PROVIDER"}, {"cwd", "ICEBATH_CWD"},
-		{"base_url", "ICEBATH_TUI_BASE_URL"}, {"api_key", "ICEBATH_TUI_API_KEY"}, {"reasoning", "ICEBATH_TUI_REASONING"}} {
-		if v := env(f[1]); v != "" {
-			options[f[0]] = v
+// Session creation options of the launch environment, flags only when set and a cap refused when it is no whole number or unlimited spelling
+func localCreationOptions(env func(string) string) (tuigateway.CanonicalCreateParams, error) {
+	var options tuigateway.CanonicalCreateParams
+	for _, f := range []struct {
+		into **string
+		env  string
+	}{{&options.Model, "ICEBATH_MODEL"}, {&options.Provider, "ICEBATH_TUI_PROVIDER"}, {&options.Cwd, "ICEBATH_CWD"},
+		{&options.BaseURL, "ICEBATH_TUI_BASE_URL"}, {&options.APIKey, "ICEBATH_TUI_API_KEY"}, {&options.Reasoning, "ICEBATH_TUI_REASONING"}} {
+		if v := env(f.env); v != "" {
+			*f.into = &v
 		}
 	}
 	if v := env("ICEBATH_TUI_TOOLSETS"); v != "" {
-		var toolsets []any
-		for _, name := range strings.Split(v, ",") {
-			toolsets = append(toolsets, name)
-		}
-		options["toolsets"] = toolsets
+		options.Toolsets = strings.Split(v, ",")
 	}
-	var skills []any
 	seen := map[string]bool{}
 	for _, name := range skillSplitRe.Split(env("ICEBATH_TUI_SKILLS"), -1) {
 		if name = strings.TrimFunc(name, isJSSpace); name != "" && !seen[name] {
 			seen[name] = true
-			skills = append(skills, name)
+			options.Skills = append(options.Skills, name)
 		}
 	}
-	if len(skills) > 0 {
-		options["skills"] = skills
-	}
-	if clientEnv := parseClientEnv(env("ICEBATH_TUI_CLIENT_ENV")); clientEnv != nil {
-		options["client_env"] = clientEnv
-	}
-	if raw := env("ICEBATH_TUI_MAX_TURNS"); raw != "" {
-		if turns, ok := jsNumber(raw); ok && turns == float64(int64(turns)) {
-			options["max_turns"] = int64(turns)
-		} else {
-			options["max_turns"] = strings.TrimFunc(raw, isJSSpace)
+	options.ClientEnv = parseClientEnv(env("ICEBATH_TUI_CLIENT_ENV"))
+	if raw := strings.TrimFunc(env("ICEBATH_TUI_MAX_TURNS"), isJSSpace); raw != "" {
+		turns, err := strconv.ParseInt(raw, 10, 64)
+		switch {
+		case err == nil:
+		case unlimitedTurns[strings.ToLower(raw)]:
+			turns = 0
+		default:
+			return options, errors.New(tr("canonical.launch.invalidMaxTurns", raw))
 		}
+		options.MaxTurns = &turns
 	}
 	truthy := func(v string) bool {
 		switch strings.ToLower(strings.TrimFunc(v, isJSSpace)) {
@@ -308,16 +176,15 @@ func localCreationOptions(env func(string) string) map[string]any {
 		}
 		return false
 	}
-	for _, f := range [][2]string{
-		{"yolo", "ICEBATH_YOLO_MODE"}, {"ignore_rules", "ICEBATH_IGNORE_RULES"}, {"safe_mode", "ICEBATH_SAFE_MODE"},
-		{"ignore_user_config", "ICEBATH_IGNORE_USER_CONFIG"}, {"checkpoints", "ICEBATH_TUI_CHECKPOINTS"},
-		{"pass_session_id", "ICEBATH_TUI_PASS_SESSION_ID"}, {"accept_hooks", "ICEBATH_ACCEPT_HOOKS"},
-	} {
-		if truthy(env(f[1])) {
-			options[f[0]] = true
-		}
+	for _, f := range []struct {
+		into *bool
+		env  string
+	}{{&options.Yolo, "ICEBATH_YOLO_MODE"}, {&options.IgnoreRules, "ICEBATH_IGNORE_RULES"}, {&options.SafeMode, "ICEBATH_SAFE_MODE"},
+		{&options.IgnoreUserConfig, "ICEBATH_IGNORE_USER_CONFIG"}, {&options.Checkpoints, "ICEBATH_TUI_CHECKPOINTS"},
+		{&options.PassSessionID, "ICEBATH_TUI_PASS_SESSION_ID"}, {&options.AcceptHooks, "ICEBATH_ACCEPT_HOOKS"}} {
+		*f.into = truthy(env(f.env))
 	}
-	return options
+	return options, nil
 }
 
 // Number of a string as JavaScript Number parses it, false for NaN
@@ -344,24 +211,12 @@ func jsNumber(raw string) (float64, bool) {
 }
 
 // Client environment of the launcher, only a JSON object of strings
-func parseClientEnv(raw string) map[string]any {
-	if raw == "" {
+func parseClientEnv(raw string) map[string]string {
+	var env map[string]string
+	if raw == "" || json.Unmarshal([]byte(raw), &env) != nil {
 		return nil
 	}
-	var value any
-	if json.Unmarshal([]byte(raw), &value) != nil {
-		return nil
-	}
-	obj, isDict := value.(map[string]any)
-	if !isDict {
-		return nil
-	}
-	for _, v := range obj {
-		if _, isString := v.(string); !isString {
-			return nil
-		}
-	}
-	return obj
+	return env
 }
 
 // Tool progress mode pinned at launch, empty when unset and an error for an unknown mode

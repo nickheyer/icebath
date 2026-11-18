@@ -31,7 +31,7 @@ var (
 	titleWhitespaceRe = mustPyRe(`\s+`)
 )
 
-// SessionDB members the title rules call, implemented by the hermes_state SessionDB
+// SessionDB members the title rules call, implemented by the SessionDB
 type titlesHost interface {
 	executeWrite(ctx context.Context, fn func(conn SQLiteConn) error, patienceS *float64) error
 	readOne(ctx context.Context, query string, args ...any) (*pyjson.Object, error)

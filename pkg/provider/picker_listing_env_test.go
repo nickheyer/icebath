@@ -2,6 +2,7 @@ package provider
 
 import (
 	"context"
+	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"reflect"
 	"strings"
 	"testing"
@@ -57,7 +58,7 @@ func modelsDevOnlyListing(t *testing.T, envName, provider string, cached []strin
 	ctx, _ := pickerTestHome(t, nil)
 	t.Setenv(envName, "test-key")
 	pickerFetchModelsDevFn = func(context.Context, bool) map[string]any {
-		return map[string]any{provider: map[string]any{"env": []any{envName}, "name": pyTitle(provider)}}
+		return map[string]any{provider: map[string]any{"env": []any{envName}, "name": pystr.Title(provider)}}
 	}
 	cachedProviderModelIDsFn = func(context.Context, string, CachedModelsOptions) []string { return cached }
 	saved := providerToModelsDev

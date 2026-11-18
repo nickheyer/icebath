@@ -182,10 +182,3 @@ func TestSessionJoinsDelegationFollowsTheCarriedSchema(t *testing.T) {
 		t.Fatal("a one shot session joins through the gateway path")
 	}
 }
-
-func TestAgentConnectionSurfaceFollowsTheAgentKind(t *testing.T) {
-	if agentConnectionSurface(&AIAgent{connectionCallback: func() {}}) != "card" ||
-		agentConnectionSurface(&AIAgent{sideAgent: true}) != "side" || agentConnectionSurface(&AIAgent{}) != "link" {
-		t.Fatal("surface")
-	}
-}

@@ -35,7 +35,7 @@ func runsOf(fake *mockAgent) []any {
 	return out
 }
 
-func makeAgentAndState(t *testing.T) (*HermesACPAgent, *SessionState, *mockAgent, *captureConn) {
+func makeAgentAndState(t *testing.T) (*IcebathACPAgent, *SessionState, *mockAgent, *captureConn) {
 	t.Helper()
 	t.Setenv("ICEBATH_HOME", t.TempDir())
 	noStore(t)
@@ -49,7 +49,7 @@ func makeAgentAndState(t *testing.T) (*HermesACPAgent, *SessionState, *mockAgent
 		return map[string]any{"final_response": final, "messages": messages}, nil
 	}
 	m := NewSessionManager(func() any { return fake }, nil)
-	a := NewHermesACPAgent(m)
+	a := NewIcebathACPAgent(m)
 	st := mustCreate(t, m, ".")
 	conn := &captureConn{}
 	a.conn = conn
@@ -198,7 +198,7 @@ type saveOnly struct{ *SessionManager }
 func (saveOnly) SaveSession(context.Context, string) {}
 
 func TestFinishTurnMidTailFailureReleasesAndDrains(t *testing.T) {
-	a := NewHermesACPAgent(saveOnly{})
+	a := NewIcebathACPAgent(saveOnly{})
 	type drainedPrompt struct {
 		texts     []string
 		sessionID string
@@ -336,7 +336,7 @@ func ticksDuring(t *testing.T, call func()) int {
 
 func TestNewSessionKeepsTheEventLoopFree(t *testing.T) {
 	t.Setenv("ICEBATH_HOME", t.TempDir())
-	a := NewHermesACPAgent(NewSessionManager(slowFactory, nil))
+	a := NewIcebathACPAgent(NewSessionManager(slowFactory, nil))
 	var resp *pyacp.NewSessionResponse
 	ticks := ticksDuring(t, func() { resp = newSession(t, a, "/tmp") })
 	if resp.SessionID == "" || ticks < 5 {
@@ -346,16 +346,16 @@ func TestNewSessionKeepsTheEventLoopFree(t *testing.T) {
 
 func TestHandlersRestoreUnknownSessionsOffTheLoop(t *testing.T) {
 	ctx := context.Background()
-	calls := map[string]func(a *HermesACPAgent){
-		"prompt": func(a *HermesACPAgent) { a.Prompt(ctx, textPrompt("gone", "hi")) },
-		"cancel": func(a *HermesACPAgent) { a.Cancel(ctx, &pyacp.CancelNotification{SessionID: "gone"}) },
-		"set_session_model": func(a *HermesACPAgent) {
+	calls := map[string]func(a *IcebathACPAgent){
+		"prompt": func(a *IcebathACPAgent) { a.Prompt(ctx, textPrompt("gone", "hi")) },
+		"cancel": func(a *IcebathACPAgent) { a.Cancel(ctx, &pyacp.CancelNotification{SessionID: "gone"}) },
+		"set_session_model": func(a *IcebathACPAgent) {
 			a.SetSessionModel(ctx, &pyacp.SetSessionModelRequest{ModelID: "m", SessionID: "gone"})
 		},
-		"set_session_mode": func(a *HermesACPAgent) {
+		"set_session_mode": func(a *IcebathACPAgent) {
 			a.SetSessionMode(ctx, &pyacp.SetSessionModeRequest{ModeID: "ask", SessionID: "gone"})
 		},
-		"set_config_option": func(a *HermesACPAgent) {
+		"set_config_option": func(a *IcebathACPAgent) {
 			a.SetConfigOption(ctx, &pyacp.SetConfigOptionParams{ConfigID: "edit_approval_policy", SessionID: "gone", Value: "ask"})
 		},
 	}
@@ -367,7 +367,7 @@ func TestHandlersRestoreUnknownSessionsOffTheLoop(t *testing.T) {
 				time.Sleep(buildSeconds)
 				return nil
 			}
-			a := NewHermesACPAgent(m)
+			a := NewIcebathACPAgent(m)
 			if ticks := ticksDuring(t, func() { call(a) }); ticks < 5 {
 				t.Fatalf("ticks = %d", ticks)
 			}

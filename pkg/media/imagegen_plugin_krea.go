@@ -6,7 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"log/slog"
 	"maps"
 	"net/http"
 	"net/url"
@@ -26,19 +25,18 @@ import (
 )
 
 const (
-	kreaDefaultModel             = "krea-2-medium"
-	kreaDefaultResolution        = "1K"
-	kreaDefaultStyleStrength     = 0.6
-	kreaMaxStyleReferences       = 10
-	kreaMaxKrea3ReferenceImages  = 4
-	kreaPollInitialInterval      = 2.0
-	kreaPollMaxInterval          = 5.0
-	kreaPollBackoff              = 1.3
-	kreaPollTimeoutSeconds       = 180.0
-	kreaEnhancePath              = "/generate/enhance/krea/enhance"
-	kreaEnhanceScaleFactor       = 2
-	kreaUserAgent                = "Icebath-Agent/1.0 (krea-image-gen)"
-	kreaManagedUnsupportedPrefix = "Managed Krea (Nous Subscription) does not support "
+	kreaDefaultModel            = "krea-2-medium"
+	kreaDefaultResolution       = "1K"
+	kreaDefaultStyleStrength    = 0.6
+	kreaMaxStyleReferences      = 10
+	kreaMaxKrea3ReferenceImages = 4
+	kreaPollInitialInterval     = 2.0
+	kreaPollMaxInterval         = 5.0
+	kreaPollBackoff             = 1.3
+	kreaPollTimeoutSeconds      = 180.0
+	kreaEnhancePath             = "/generate/enhance/krea/enhance"
+	kreaEnhanceScaleFactor      = 2
+	kreaUserAgent               = "Icebath-Agent/1.0 (krea-image-gen)"
 )
 
 var kreaModels = imageModelCatalog{order: []string{"krea-3", "krea-2-medium", "krea-2-large", "krea-2-medium-turbo"}, meta: map[string]map[string]any{
@@ -72,22 +70,19 @@ var kreaModelIDs = func() map[string]bool {
 func KreaModelIDs() map[string]bool { return maps.Clone(kreaModelIDs) }
 
 var (
-	kreaAspectMap          = map[string]string{"landscape": "16:9", "square": "1:1", "portrait": "9:16"}
-	kreaRemotePrefixes     = []string{"http://", "https://", "data:"}
-	kreaValidCreativity    = map[string]bool{"raw": true, "low": true, "medium": true, "high": true}
-	kreaK2Sliders          = []string{"intensity", "complexity", "movement"}
-	kreaKrea3Resolutions   = map[string]bool{"1K": true, "2K": true}
-	kreaRetryablePoll      = map[int]bool{408: true, 409: true, 425: true, 429: true, 500: true, 502: true, 503: true, 504: true}
-	kreaTerminalStates     = map[string]bool{"completed": true, "failed": true, "cancelled": true}
-	kreaManagedUnsupported = [][2]string{{"trained styles (LoRAs)", "styles"}, {"moodboards", "moodboards"}}
-	kreaLog                = slog.Default().With("logger", "plugins.image_gen.krea")
+	kreaAspectMap        = map[string]string{"landscape": "16:9", "square": "1:1", "portrait": "9:16"}
+	kreaRemotePrefixes   = []string{"http://", "https://", "data:"}
+	kreaValidCreativity  = map[string]bool{"raw": true, "low": true, "medium": true, "high": true}
+	kreaK2Sliders        = []string{"intensity", "complexity", "movement"}
+	kreaKrea3Resolutions = map[string]bool{"1K": true, "2K": true}
+	kreaRetryablePoll    = map[int]bool{408: true, 409: true, 425: true, 429: true, 500: true, 502: true, 503: true, 504: true}
+	kreaTerminalStates   = map[string]bool{"completed": true, "failed": true, "cancelled": true}
 
 	kreaBaseURL                = "https://api.krea.ai"
 	kreaRequestTimeout         = 30 * time.Second
 	kreaMaxLocalReferenceBytes = 3 * 1024 * 1024
 	kreaSleep                  = time.Sleep
 	kreaNow                    = time.Now
-	kreaManagedGateway         = resolveManagedKreaGateway
 	// The image_gen section the krea subsection lives under, swapped by tests
 	kreaLoadConfig = func(env *tools.Env) map[string]any { return loadImageGenConfig(env, "") }
 	// Local cache path of a result URL with the save_url_image defaults
@@ -124,38 +119,10 @@ func kreaSection(env *tools.Env) map[string]any {
 	return map[string]any{}
 }
 
-// True unless image_gen.krea.fallback_to_fal is literally false
-func kreaFallbackToFalEnabled(env *tools.Env) bool {
-	b, isBool := kreaSection(env)["fallback_to_fal"].(bool)
-	return !isBool || b
-}
-
-// Only an unreachable server or a 429 proves Krea created no job
-func kreaFallbackEligible(f *httpFailure) bool {
-	return f.Kind == "unreachable" || (f.Kind == "http" && f.Status == 429)
-}
-
 // Explicit, KREA_IMAGE_MODEL, image_gen.krea.model, image_gen.model, then the default model
 func kreaResolveModel(env *tools.Env, explicit string) (string, map[string]any) {
 	return resolveStaticModel(env, kreaModels, kreaDefaultModel, staticModelOptions{EnvVar: "KREA_IMAGE_MODEL", ConfigKey: "krea",
 		Explicit: explicit, Config: kreaLoadConfig(env)})
-}
-
-// Managed Krea gateway for a nous or never configured selection without a direct key, nil otherwise
-func resolveManagedKreaGateway(env *tools.Env) *tools.ManagedToolGatewayConfig {
-	selected := tools.ReadSelection(env, "image_gen")
-	if selected != "" && selected != tools.NousManagedProvider {
-		return nil
-	}
-	if selected == "" && secret(env, "KREA_API_KEY") != "" {
-		return nil
-	}
-	gw, err := tools.ResolveManagedToolGateway(env, "krea", nil, nil)
-	if err != nil {
-		kreaLog.Debug(fmt.Sprintf("Managed Krea gateway resolution failed: %s", err))
-		return nil
-	}
-	return gw
 }
 
 // Valid creativity from the argument then config, medium otherwise
@@ -168,14 +135,11 @@ func kreaResolveCreativity(env *tools.Env, value any) string {
 	return "medium"
 }
 
-// Bearer and user agent headers with a JSON content type and a fresh idempotency key when managed
-func kreaHeaders(token string, managed, jsonBody bool) map[string]string {
+// Bearer and user agent headers with a JSON content type for a JSON body
+func kreaHeaders(token string, jsonBody bool) map[string]string {
 	h := map[string]string{"Authorization": "Bearer " + token, "User-Agent": kreaUserAgent}
 	if jsonBody {
 		h["Content-Type"] = "application/json"
-	}
-	if managed {
-		h["x-idempotency-key"] = uuid4()
 	}
 	return h
 }
@@ -261,7 +225,7 @@ func kreaDetailText(detail any) string {
 // Polls the job until terminal, onError answering fatal main path failures, nil when the enhance path gives up
 func kreaPollJob(ctx context.Context, baseURL, token, jobID string, timeout time.Duration, onError func(kind string, detail any) map[string]any) (any, error) {
 	jobURL := baseURL + "/jobs/" + jobID
-	headers := kreaHeaders(token, false, false)
+	headers := kreaHeaders(token, false)
 	interval := kreaPollInitialInterval
 	deadline := kreaNow().Add(timeout)
 	var lastStatus any
@@ -269,7 +233,7 @@ func kreaPollJob(ctx context.Context, baseURL, token, jobID string, timeout time
 	expired := func() bool { return !kreaNow().Before(deadline) }
 	giveUp := func(kind string, detail any, warning string) any {
 		if onError == nil {
-			kreaLog.Warn(warning)
+			pkgLog().Warn(warning)
 			return nil
 		}
 		return onError(kind, detail)
@@ -288,13 +252,13 @@ func kreaPollJob(ctx context.Context, baseURL, token, jobID string, timeout time
 					return nil, err
 				}
 				if expired() {
-					kreaLog.Warn(fmt.Sprintf("Krea enhance poll gave up for job %s: %s", jobID, err))
+					pkgLog().Warn(fmt.Sprintf("Krea enhance poll gave up for job %s: %s", jobID, err))
 					return nil, nil
 				}
 				continue
 			}
 			if !enhance {
-				kreaLog.Warn(fmt.Sprintf("Krea poll transient error for job %s: %s", jobID, err))
+				pkgLog().Warn(fmt.Sprintf("Krea poll transient error for job %s: %s", jobID, err))
 			}
 			if expired() {
 				return giveUp("timeout", err, fmt.Sprintf("Krea enhance poll gave up for job %s: %s", jobID, err)), nil
@@ -303,7 +267,7 @@ func kreaPollJob(ctx context.Context, baseURL, token, jobID string, timeout time
 		}
 		if status >= 400 && status < 600 {
 			if !enhance {
-				kreaLog.Error(fmt.Sprintf("Krea poll failed (%d) for job %s", status, jobID))
+				pkgLog().Error(fmt.Sprintf("Krea poll failed (%d) for job %s", status, jobID))
 			}
 			if !kreaRetryablePoll[status] || expired() {
 				return giveUp("http", status, fmt.Sprintf("Krea enhance poll failed (%d) for job %s", status, jobID)), nil
@@ -313,7 +277,7 @@ func kreaPollJob(ctx context.Context, baseURL, token, jobID string, timeout time
 		job, err := pyjson.LoadsBytes(raw)
 		if err != nil {
 			if !enhance {
-				kreaLog.Warn(fmt.Sprintf("Krea poll returned invalid JSON for job %s: %s", jobID, err))
+				pkgLog().Warn(fmt.Sprintf("Krea poll returned invalid JSON for job %s: %s", jobID, err))
 			}
 			if expired() {
 				return giveUp("invalid_json", err, fmt.Sprintf("Krea enhance poll gave up for job %s: %s", jobID, err)), nil
@@ -352,12 +316,12 @@ func kreaExtractResultURL(job any) string {
 }
 
 // Enhanced URL of a Krea Enhance pass, empty on any failure, an error only when the call is cancelled
-func kreaEnhanceImage(ctx context.Context, baseURL, token, imageURL, prompt string, managed bool) (string, error) {
+func kreaEnhanceImage(ctx context.Context, baseURL, token, imageURL, prompt string) (string, error) {
 	payload := pyjson.NewObject()
 	payload.Set("image_url", imageURL)
 	payload.Set("image_scaling_factor", kreaEnhanceScaleFactor)
 	payload.Set("prompt", prompt)
-	body, failure, err := postJSON(ctx, baseURL+kreaEnhancePath, kreaHeaders(token, managed, true), payload,
+	body, failure, err := postJSON(ctx, baseURL+kreaEnhancePath, kreaHeaders(token, true), payload,
 		requestsTimeout{Connect: kreaRequestTimeout, Read: kreaRequestTimeout}, "Krea", defaultErrorMessage, true)
 	if err == nil && failure != nil {
 		err = errors.New(failure.Error)
@@ -368,12 +332,12 @@ func kreaEnhanceImage(ctx context.Context, baseURL, token, imageURL, prompt stri
 		}
 	}
 	if err != nil {
-		kreaLog.Warn(fmt.Sprintf("Krea Enhance submit failed: %s", err))
+		pkgLog().Warn(fmt.Sprintf("Krea Enhance submit failed: %s", err))
 		return "", ctx.Err()
 	}
 	jobID, _ := kreaGet(body, "job_id").(string)
 	if jobID == "" {
-		kreaLog.Warn("Krea Enhance submit response missing job_id")
+		pkgLog().Warn("Krea Enhance submit response missing job_id")
 		return "", nil
 	}
 	job, err := kreaPollJob(ctx, baseURL, token, jobID, kreaPollTimeoutSeconds*time.Second, nil)
@@ -382,7 +346,7 @@ func kreaEnhanceImage(ctx context.Context, baseURL, token, imageURL, prompt stri
 	}
 	status, _ := kreaGet(job, "status").(string)
 	if _, _, isObj := jsonObjectGet(job, "status"); !isObj || status == "failed" || status == "cancelled" {
-		kreaLog.Warn(fmt.Sprintf("Krea Enhance job %s did not complete successfully", jobID))
+		pkgLog().Warn(fmt.Sprintf("Krea Enhance job %s did not complete successfully", jobID))
 		return "", nil
 	}
 	return kreaExtractResultURL(job), nil
@@ -546,18 +510,10 @@ func kreaBuildPayload(prompt, kreaAR, creativity string, styleRefs []any, kwargs
 	return payload
 }
 
-// Krea 2 body whose pictures are style references, refusing managed LoRAs and moodboards before reading local files
-func kreaKrea2Payload(env *tools.Env, prompt, kreaAR, imageURL string, referenceImageURLs []string, kwargs map[string]any, managed bool, fail errorFn) (*pyjson.Object, map[string]any) {
+// Krea 2 body whose pictures are style references, local files inlined
+func kreaKrea2Payload(env *tools.Env, prompt, kreaAR, imageURL string, referenceImageURLs []string, kwargs map[string]any, fail errorFn) (*pyjson.Object, map[string]any) {
 	styleRefs := kreaCollectStyleRefs(imageURL, referenceImageURLs, kwargs["image_style_references"])
 	payload := kreaBuildPayload(prompt, kreaAR, kreaResolveCreativity(env, kwargs["creativity"]), styleRefs, kwargs)
-	if managed {
-		for _, u := range kreaManagedUnsupported {
-			if _, ok := payload.Get(u[1]); ok {
-				return payload, fail(fmt.Sprintf("%s%s. Set KREA_API_KEY to use Krea directly, or omit `%s`.", kreaManagedUnsupportedPrefix, u[0], u[1]),
-					"unsupported_argument")
-			}
-		}
-	}
 	if refs, _ := payload.Get("image_style_references"); pyTruthy(refs) {
 		inlined, errEnv := kreaInlineLocalImages(env, refs.([]any), fail)
 		payload.Set("image_style_references", inlined)
@@ -611,37 +567,24 @@ func kreaKrea3Payload(env *tools.Env, prompt, kreaAR, imageURL string, reference
 	return payload, nil
 }
 
-// Submits the generation body and returns the job id or an error envelope marking whether a FAL fallback is safe
-func kreaSubmitJob(ctx context.Context, baseURL, token, modelPath string, payload *pyjson.Object, managed bool, modelID string, fail errorFn) (string, map[string]any, error) {
-	body, failure, err := postJSON(ctx, baseURL+modelPath, kreaHeaders(token, managed, true), payload,
+// Submits the generation body and returns the job id or an error envelope
+func kreaSubmitJob(ctx context.Context, baseURL, token, modelPath string, payload *pyjson.Object, fail errorFn) (string, map[string]any, error) {
+	body, failure, err := postJSON(ctx, baseURL+modelPath, kreaHeaders(token, true), payload,
 		requestsTimeout{Connect: kreaRequestTimeout, Read: kreaRequestTimeout}, "Krea", kreaSubmitErrorMessage, false)
 	if err != nil {
 		return "", nil, err
 	}
 	if failure != nil {
-		submitFail := func(errText, errorType string) map[string]any {
-			out := fail(errText, errorType)
-			out["fallback_eligible"] = kreaFallbackEligible(failure)
-			return out
-		}
 		switch failure.Kind {
 		case "http":
-			kreaLog.Error(fmt.Sprintf("Krea submit failed (%d): %s", failure.Status, failure.Message))
-			if managed && failure.Status >= 400 && failure.Status < 500 {
-				hint := fmt.Sprintf("Model '%s' may not be enabled/priced on the Nous Portal's Krea gateway. "+
-					"Set KREA_API_KEY to use Krea directly, or pick a different model via `icebath tools` → Image Generation.", modelID)
-				if failure.Status == 429 {
-					hint = "Krea's shared-key concurrency cap was hit — retry shortly."
-				}
-				return "", submitFail(fmt.Sprintf("Nous Subscription Krea gateway rejected '%s' (HTTP %d): %s. %s", modelID, failure.Status, failure.Message, hint), "api_error"), nil
-			}
-			return "", submitFail(failure.Error, "api_error"), nil
+			pkgLog().Error(fmt.Sprintf("Krea submit failed (%d): %s", failure.Status, failure.Message))
+			return "", fail(failure.Error, "api_error"), nil
 		case "timeout":
-			return "", submitFail("Krea submit timed out (30s)", "timeout"), nil
+			return "", fail("Krea submit timed out (30s)", "timeout"), nil
 		case "invalid_json":
-			return "", submitFail("Krea returned invalid JSON on submit: "+failure.Message, "invalid_response"), nil
+			return "", fail("Krea returned invalid JSON on submit: "+failure.Message, "invalid_response"), nil
 		}
-		return "", submitFail(failure.Error, failure.ErrorType), nil
+		return "", fail(failure.Error, failure.ErrorType), nil
 	}
 	if _, _, isObj := jsonObjectGet(body, "job_id"); !isObj {
 		return "", nil, fmt.Errorf("'%s' object has no attribute 'get'", pyrepr.TypeName(body))
@@ -702,17 +645,16 @@ func newKreaImageGenProvider() *kreaImageGenProvider {
 	return &kreaImageGenProvider{env: pluginEnv, staticImageGenProvider: staticImageGenProvider{providerID: "krea", label: "Krea",
 		models: kreaModels, defaultModelID: kreaDefaultModel, catalogFields: defaultCatalogFields,
 		setup: apiKeySetup{Name: "Krea", Badge: "paid",
-			Tag: "Krea 3 — generates and edits images ($0.03 at 1K, $0.06 at 2K) — and Krea 2 Medium ($0.03), Large ($0.06), Medium Turbo ($0.015) with style transfer and moodboards. Direct key or managed Nous Subscription gateway.",
+			Tag: "Krea 3 — generates and edits images ($0.03 at 1K, $0.06 at 2K) — and Krea 2 Medium ($0.03), Large ($0.06), Medium Turbo ($0.015) with style transfer and moodboards. Uses your Krea API key.",
 			Key: "KREA_API_KEY", Prompt: "Krea API key", URL: "https://www.krea.ai/settings/api-tokens"}}}
 }
 
-// Available with a direct key or a ready managed Nous gateway for the process profile
+// Available with a Krea key for the process profile
 func (p *kreaImageGenProvider) IsAvailable() bool { return p.AvailableIn(context.Background()) }
 
-// Available with a direct key or a ready managed Nous gateway in the profile home the context binds
+// Available with a Krea key in the profile home the context binds
 func (p *kreaImageGenProvider) AvailableIn(ctx context.Context) bool {
-	env := p.env(ctx)
-	return secret(env, "KREA_API_KEY") != "" || tools.IsManagedToolGatewayReady(env, "krea", nil, nil)
+	return secret(p.env(ctx), "KREA_API_KEY") != ""
 }
 
 // Krea 3 edit controls or Krea 2 style controls for the stored model the dispatcher names
@@ -728,7 +670,7 @@ func (p *kreaImageGenProvider) Capabilities() map[string]any {
 		"source_image_role": "style"}
 }
 
-// Submits, polls, optionally enhances and caches one Krea generation through the managed gateway or a direct key
+// Submits, polls, optionally enhances and caches one Krea generation with the Krea key
 func (p *kreaImageGenProvider) Generate(ctx context.Context, env *tools.Env, req ImageGenRequest) (map[string]any, error) {
 	prompt := pystr.Strip(req.Prompt)
 	aspect := resolveAspectRatio(req.AspectRatio)
@@ -740,19 +682,11 @@ func (p *kreaImageGenProvider) Generate(ctx context.Context, env *tools.Env, req
 		return promptRequiredError("krea", aspect), nil
 	}
 	kwargs := req.Kwargs
-	managed := kreaManagedGateway(env)
-	var baseURL, token string
-	if managed != nil {
-		baseURL, token = strings.TrimRight(managed.GatewayOrigin, "/"), managed.NousUserToken
-	} else {
-		baseURL, token = kreaBaseURL, secret(env, "KREA_API_KEY")
-		if token == "" {
-			return errorFactory("krea", aspect, "", "")("KREA_API_KEY not set. Run `icebath tools` → Image "+
-				"Generation → Krea to configure, get a key at "+
-				"https://www.krea.ai/settings/api-tokens, or sign in to "+
-				"a Nous account with the managed Krea gateway enabled "+
-				"(start `icebath` and type `/setup model`).", "auth_required"), nil
-		}
+	baseURL, token := kreaBaseURL, secret(env, "KREA_API_KEY")
+	if token == "" {
+		return errorFactory("krea", aspect, "", "")("KREA_API_KEY not set. Run `icebath tools` → Image "+
+			"Generation → Krea to configure, or get a key at "+
+			"https://www.krea.ai/settings/api-tokens.", "auth_required"), nil
 	}
 	explicit, _ := kwargs["model"].(string)
 	modelID, meta := kreaResolveModel(env, explicit)
@@ -762,13 +696,13 @@ func (p *kreaImageGenProvider) Generate(ctx context.Context, env *tools.Env, req
 	if pyTruthy(meta["edit"]) {
 		payload, errEnv = kreaKrea3Payload(env, prompt, kreaAR, req.ImageURL, req.ReferenceImageURLs, kwargs, fail)
 	} else {
-		payload, errEnv = kreaKrea2Payload(env, prompt, kreaAR, req.ImageURL, req.ReferenceImageURLs, kwargs, managed != nil, fail)
+		payload, errEnv = kreaKrea2Payload(env, prompt, kreaAR, req.ImageURL, req.ReferenceImageURLs, kwargs, fail)
 	}
 	if errEnv != nil {
 		return errEnv, nil
 	}
 	modelPath, _ := meta["path"].(string)
-	jobID, errEnv, err := kreaSubmitJob(ctx, baseURL, token, modelPath, payload, managed != nil, modelID, fail)
+	jobID, errEnv, err := kreaSubmitJob(ctx, baseURL, token, modelPath, payload, fail)
 	if err != nil {
 		return nil, err
 	}
@@ -804,19 +738,19 @@ func (p *kreaImageGenProvider) Generate(ctx context.Context, env *tools.Env, req
 	}
 	upscaled := false
 	if kreaUpscaleRequested(env, kwargs["upscale"], meta) {
-		enhanced, err := kreaEnhanceImage(ctx, baseURL, token, resultURL, prompt, managed != nil)
+		enhanced, err := kreaEnhanceImage(ctx, baseURL, token, resultURL, prompt)
 		if err != nil {
 			return nil, err
 		}
 		if enhanced != "" {
 			resultURL, upscaled = enhanced, true
 		} else {
-			kreaLog.Warn("Krea Enhance pass failed — returning native-resolution image")
+			pkgLog().Warn("Krea Enhance pass failed — returning native-resolution image")
 		}
 	}
 	imageRef, err := kreaSaveURLImage(ctx, env, resultURL, "krea_"+modelID)
 	if err != nil {
-		kreaLog.Warn(fmt.Sprintf("Krea image URL %s could not be cached (%s); falling back to bare URL.", resultURL, err))
+		pkgLog().Warn(fmt.Sprintf("Krea image URL %s could not be cached (%s); falling back to bare URL.", resultURL, err))
 		imageRef = resultURL
 	}
 	resolution, _ := payload.Get("resolution")
@@ -843,6 +777,6 @@ func (p *kreaImageGenProvider) Generate(ctx context.Context, env *tools.Env, req
 
 func init() {
 	plugins.RegisterBundled(imageGenBackendPlugin{name: "krea", version: "1.1.0", requiresEnv: []string{"KREA_API_KEY"},
-		description: "Krea image generation backend: Krea 3 (generates and edits) and Krea 2 Medium, Large and Medium Turbo. Direct KREA_API_KEY or managed Nous Subscription gateway.",
+		description: "Krea image generation backend: Krea 3 (generates and edits) and Krea 2 Medium, Large and Medium Turbo. Uses KREA_API_KEY.",
 		provider:    func() ImageGenProvider { return newKreaImageGenProvider() }})
 }

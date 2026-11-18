@@ -71,7 +71,7 @@ func (a *APIServerAdapter) durableRunStatus(ctx context.Context, request *gatewa
 		a.mu.Lock()
 		retained := a.runStatuses[runID]
 		a.mu.Unlock()
-		out := pyjson.ObjectOf("object", "hermes.run")
+		out := pyjson.ObjectOf("object", "icebath.run")
 		if retained != nil {
 			for _, k := range []string{"model", "runtime", "created_at"} {
 				if v, ok := retained.Get(k); ok {
@@ -147,7 +147,7 @@ func (a *APIServerAdapter) resolveConversationHistory(ctx context.Context, body 
 			history = append(history, pyjson.ObjectOf("role", pyrepr.Str(role), "content", pyrepr.Str(content)))
 		}
 		if pyrepr.Truthy(previousResponseID) {
-			apiLog().Debug("Both conversation_history and previous_response_id provided; using conversation_history")
+			pkgLog().Debug("Both conversation_history and previous_response_id provided; using conversation_history")
 		}
 	}
 	storedSessionID := ""
@@ -221,7 +221,7 @@ func acceptedResponse(runID, status, gatewaySessionKey string, replayed bool) *g
 		headers["Idempotency-Replayed"] = "true"
 	}
 	if gatewaySessionKey != "" {
-		headers["X-Hermes-Session-Key"] = gatewaySessionKey
+		headers["X-Icebath-Session-Key"] = gatewaySessionKey
 	}
 	return jsonResponse(pyjson.ObjectOf("run_id", runID, "status", status, "replayed", replayed), http.StatusAccepted, headers)
 }
@@ -279,7 +279,7 @@ func (a *APIServerAdapter) resolveLiveSessionID(ctx context.Context, sessionID s
 	}
 	resolved, err := db.ResolveResumeSessionID(sessionID)
 	if err != nil {
-		apiLog().Debug(fmt.Sprintf("/v1/runs live-session resolve failed for %s", sessionID), "error", err)
+		pkgLog().Debug(fmt.Sprintf("/v1/runs live-session resolve failed for %s", sessionID), "error", err)
 		return sessionID
 	}
 	if resolved == "" {
@@ -313,7 +313,7 @@ func (a *APIServerAdapter) runInternalSessionTurn(ctx context.Context, sessionID
 		}
 		if a.concurrencyLimitedResponse(ctx) != nil {
 			lastErr = errors.New("internal wake deferred: the API server is at its concurrent-run cap")
-			apiLog().Warn(fmt.Sprintf("%v; attempt %d/%d", lastErr, attempt+1, attempts))
+			pkgLog().Warn(fmt.Sprintf("%v; attempt %d/%d", lastErr, attempt+1, attempts))
 			continue
 		}
 		resolved := a.resolveLiveSessionID(ctx, sessionID)
@@ -399,7 +399,7 @@ func (a *APIServerAdapter) sweepOrphanedRunsOnce(now float64) {
 		if now-createdAt <= runStreamTTL || (stream != nil && stream.subscriberCount() > 0) {
 			continue
 		}
-		apiLog().Debug("[api_server] sweeping expired run transport " + runID)
+		pkgLog().Debug("[api_server] sweeping expired run transport " + runID)
 		task := a.activeRunTasks[runID]
 		a.dropRunTransportLocked(runID)
 		if task == nil || task.Done() {

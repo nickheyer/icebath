@@ -289,7 +289,7 @@ func TestOSErrorTextFollowsPython(t *testing.T) {
 	file := filepath.Join(dir, "f")
 	os.WriteFile(file, nil, 0o644)
 	got := pyOSErrorString(os.MkdirAll(filepath.Join(file, "x"), 0o777))
-	if got != "[Errno 20] Not a directory: '"+filepath.Join(file, "x")+"'" && got != "[Errno 20] Not a directory: '"+file+"'" {
+	if got != "not a directory: "+filepath.Join(file, "x") && got != "not a directory: "+file {
 		t.Fatalf("got %q", got)
 	}
 }

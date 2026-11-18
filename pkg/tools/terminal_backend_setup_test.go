@@ -196,10 +196,3 @@ func TestSetupDockerRuntimeNamesTheRuntimeOfTheFoundCLI(t *testing.T) {
 		t.Fatalf("%s %s", path, runtime)
 	}
 }
-
-func TestSetupModalManagedAvailableNeedsTheManagedGate(t *testing.T) {
-	swapSetupHook(t, &NousAccount, nil)
-	if managed, err := SetupModalManagedAvailable(&Env{Home: t.TempDir()}, map[string]any{}); managed || err != nil {
-		t.Fatalf("%v %v", managed, err)
-	}
-}

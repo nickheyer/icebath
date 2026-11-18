@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"log/slog"
 	"os"
 	"regexp"
 	"strings"
@@ -139,7 +138,7 @@ func (b *BasePlatformAdapter) historyMediaPathsForSession(ctx context.Context, s
 	if err != nil {
 		var readErr *TranscriptReadError
 		if errors.As(err, &readErr) {
-			slog.Warn(fmt.Sprintf("Transcript read failed for session %s; media dedup runs with no history this turn (#100788)", sessionKey))
+			pkgLog().Warn(fmt.Sprintf("Transcript read failed for session %s; media dedup runs with no history this turn (#100788)", sessionKey))
 		}
 		return nil, nil
 	}
@@ -178,7 +177,7 @@ func (b *BasePlatformAdapter) boundedHistoryMediaPathsForSession(ctx context.Con
 		if err != nil {
 			msg += fmt.Sprintf(": %v", err)
 		}
-		slog.Warn(msg)
+		pkgLog().Warn(msg)
 	}
 	select {
 	case historyMediaLookupAdmission <- struct{}{}:
@@ -263,7 +262,7 @@ func ExtractLocalFiles(ctx context.Context, content string) ([]string, string) {
 				order = append(order, expanded)
 			}
 		} else {
-			slog.Info(fmt.Sprintf("Skipping bare file path in reply (no file on disk): %s", logSafePath(raw)))
+			pkgLog().Info(fmt.Sprintf("Skipping bare file path in reply (no file on disk): %s", logSafePath(raw)))
 		}
 	}
 	if len(unique) == 0 {

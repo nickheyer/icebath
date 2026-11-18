@@ -74,7 +74,7 @@ func adoptRefused(t *testing.T, h string, dryRun bool) (int, string, string) {
 	return code, out.String(), errOut.String()
 }
 
-func TestAdoptNamesTheUpgradeForAStoreNoNewerHermesHasOpened(t *testing.T) {
+func TestAdoptNamesTheUpgradeForAStoreNoNewerIcebathHasOpened(t *testing.T) {
 	for _, dryRun := range []bool{false, true} {
 		h := sessionsTestHome(t)
 		path := adoptRollbackJournalStore(t, h)

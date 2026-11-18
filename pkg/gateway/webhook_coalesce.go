@@ -2,7 +2,6 @@ package gateway
 
 import (
 	"fmt"
-	"log/slog"
 	"math"
 	"regexp"
 	"sync"
@@ -21,11 +20,6 @@ const (
 )
 
 var webhookTemplateFieldRE = regexp.MustCompile(`\{[a-zA-Z0-9_.]+\}`)
-
-// Logger of the webhook coalescing module
-func webhookCoalesceLog() *slog.Logger {
-	return slog.Default().With("logger", "gateway.platforms.webhook_coalesce")
-}
 
 // Startup check of a route coalesce block, the ValueError a malformed block raises
 func ValidateCoalesceConfig(routeName string, route *pyjson.Object) error {
@@ -191,7 +185,7 @@ func (c *WebhookCoalescer) Enqueue(routeName string, coalesce *pyjson.Object, pa
 		return false, err
 	}
 	if !resolved {
-		webhookCoalesceLog().Info(fmt.Sprintf("[webhook] coalesce key %s unresolved for delivery %s on route %s — dispatching immediately",
+		pkgLog().Info(fmt.Sprintf("[webhook] coalesce key %s unresolved for delivery %s on route %s — dispatching immediately",
 			pyrepr.Repr(keyText), deliveryID, routeName))
 		return false, nil
 	}
@@ -217,7 +211,7 @@ func (c *WebhookCoalescer) Enqueue(routeName string, coalesce *pyjson.Object, pa
 		DispatchArgs: args, Superseded: superseded}
 	c.pending.Set(groupKey, entry)
 	if existing != nil {
-		webhookCoalesceLog().Info(fmt.Sprintf("[webhook] coalesced delivery %s superseded by %s (group=%s, %d events)",
+		pkgLog().Info(fmt.Sprintf("[webhook] coalesced delivery %s superseded by %s (group=%s, %d events)",
 			existing.DeliveryID, deliveryID, groupKey, count))
 	}
 	if old, found := c.timers.Get(groupKey); found {
@@ -276,7 +270,7 @@ func (c *WebhookCoalescer) runTimer(groupKey string, timer *webhookCoalesceTimer
 
 // Dispatches the newest event of a group with the coalescing note and its superseded ids
 func (c *WebhookCoalescer) settle(groupKey string, entry *WebhookPendingEvent) *adapterTask {
-	webhookCoalesceLog().Info(fmt.Sprintf("[webhook] coalesce settled group=%s events=%d delivery=%s", groupKey, entry.Count, entry.DeliveryID))
+	pkgLog().Info(fmt.Sprintf("[webhook] coalesce settled group=%s events=%d delivery=%s", groupKey, entry.Count, entry.DeliveryID))
 	now := float64(time.Now().UnixNano()) / 1e9
 	return c.dispatch(entry.Payload, entry.PromptWithNote(), entry.DeliveryID, now, entry.DispatchArgs, entry.Superseded)
 }
@@ -313,7 +307,7 @@ func (c *WebhookCoalescer) Flush() {
 func (c *WebhookCoalescer) settleRecovering(groupKey string, entry *WebhookPendingEvent) (task *adapterTask) {
 	defer func() {
 		if rec := recover(); rec != nil {
-			webhookCoalesceLog().Error(fmt.Sprintf("[webhook] failed to flush coalesced group %s", groupKey), "error", rec)
+			pkgLog().Error(fmt.Sprintf("[webhook] failed to flush coalesced group %s", groupKey), "error", rec)
 			task = nil
 		}
 	}()

@@ -269,7 +269,7 @@ func videoGenConfig(ctx context.Context) config.Tree {
 	h := home.Dir(ctx)
 	cfg, err := config.Load(h, config.NewSecrets(h).Lookup())
 	if err != nil {
-		videoGenLog.Debug(fmt.Sprintf("Could not load video_gen config: %v", err))
+		pkgLog().Debug(fmt.Sprintf("Could not load video_gen config: %v", err))
 		return config.Tree{}
 	}
 	return section(cfg, "video_gen")
@@ -383,12 +383,8 @@ func falVideoURLFromResult(result any) (any, string) {
 }
 
 var (
-	videoFalClient                  *falClientModule
-	videoFalClientMu                sync.Mutex
-	managedFalVideoClient           falSubmitter
-	managedFalVideoClientConfig     [2]string
-	managedFalVideoClientConfigured bool
-	managedFalVideoClientMu         sync.Mutex
+	videoFalClient   *falClientModule
+	videoFalClientMu sync.Mutex
 )
 
 // FAL client module loaded once for the video backend
@@ -401,88 +397,28 @@ func loadVideoFalClient() *falClientModule {
 	return videoFalClient
 }
 
-// Managed route for the stored video_gen selection, nil for direct FAL, an error naming a broken selection
-var resolveManagedFalVideoGateway = func(env *tools.Env) (*tools.ManagedToolGatewayConfig, error) {
-	selected := tools.ReadSelection(env, "video_gen")
-	if selected == tools.NousManagedProvider {
-		gw, err := tools.ResolveManagedToolGateway(env, "fal-queue", nil, nil)
-		if err != nil {
-			return nil, err
-		}
-		if gw == nil {
-			return nil, &imageValueError{tools.SelectionError("video_gen", tools.NousManagedProvider,
-				"the Nous Tool Gateway is not available (not entitled or unreachable)")}
-		}
-		return gw, nil
+// Error for a stored video_gen selection without FAL_KEY, nil otherwise
+func falVideoSelectionError(env *tools.Env) error {
+	if selected := tools.ReadSelection(env, "video_gen"); selected != "" && !tools.FalKeyIsConfigured(env) {
+		return &imageValueError{tools.SelectionError("video_gen", selected, "FAL_KEY is not set")}
 	}
-	if selected != "" {
-		if !tools.FalKeyIsConfigured(env) {
-			return nil, &imageValueError{tools.SelectionError("video_gen", selected, "FAL_KEY is not set")}
-		}
-		return nil, nil
-	}
-	if tools.FalKeyIsConfigured(env) {
-		return nil, nil
-	}
-	return tools.ResolveManagedToolGateway(env, "fal-queue", nil, nil)
+	return nil
 }
 
-// Whether the selected or autodetected FAL backend is reachable, an error for a stored but broken selection
+// Whether FAL_KEY is configured, an error for a stored selection without one
 var falVideoAvailable = func(env *tools.Env) (bool, error) {
-	gw, err := resolveManagedFalVideoGateway(env)
-	if err != nil {
+	if err := falVideoSelectionError(env); err != nil {
 		return false, err
 	}
-	return gw != nil || tools.FalKeyIsConfigured(env), nil
+	return tools.FalKeyIsConfigured(env), nil
 }
 
-// Managed FAL client reused while the gateway origin and token stay the same
-func getManagedFalVideoClient(gw *tools.ManagedToolGatewayConfig) (falSubmitter, error) {
-	cfg := [2]string{strings.TrimRight(gw.GatewayOrigin, "/"), gw.NousUserToken}
-	managedFalVideoClientMu.Lock()
-	defer managedFalVideoClientMu.Unlock()
-	if !managedFalVideoClientConfigured || managedFalVideoClientConfig != cfg {
-		c, err := newManagedFalSyncClient(loadVideoFalClient(), gw.NousUserToken, gw.GatewayOrigin)
-		if err != nil {
-			return nil, err
-		}
-		managedFalVideoClient, managedFalVideoClientConfig, managedFalVideoClientConfigured = c, cfg, true
-	}
-	return managedFalVideoClient, nil
-}
-
-// Submits through direct credentials or the managed queue gateway, translating gateway 4xx rejections
+// Submits to the FAL queue with the profile's FAL key and a fresh idempotency key
 var submitFalVideoRequest = func(ctx context.Context, env *tools.Env, endpoint string, arguments map[string]any) (*falRequestHandle, error) {
-	mod := loadVideoFalClient()
-	headers := map[string]string{"x-idempotency-key": uuid4()}
-	gw, err := resolveManagedFalVideoGateway(env)
-	if err != nil {
+	if err := falVideoSelectionError(env); err != nil {
 		return nil, err
 	}
-	if gw == nil {
-		return mod.Submit(ctx, env, endpoint, arguments, headers)
-	}
-	h, err := submitManagedFalWithRateLimitRetry(ctx, func(hdr map[string]string) (*falRequestHandle, error) {
-		c, cerr := getManagedFalVideoClient(gw)
-		if cerr != nil {
-			return nil, cerr
-		}
-		return c.Submit(ctx, endpoint, arguments, falSubmitOptions{Headers: hdr})
-	}, "video endpoint", endpoint)
-	if err == nil {
-		return h, nil
-	}
-	status, ok := extractHTTPStatus(err)
-	var rl *falRateLimitError
-	if errors.As(err, &rl) || !ok || status < 400 || status >= 500 {
-		return nil, err
-	}
-	if billing := managedFalBillingError(err, "endpoint"); billing != "" {
-		return nil, &imageValueError{fmt.Sprintf("Nous Subscription gateway rejected endpoint '%s' (HTTP %d): %s", endpoint, status, billing)}
-	}
-	return nil, &imageValueError{fmt.Sprintf("Nous Subscription gateway rejected endpoint '%s' (HTTP %d). This model may not yet be enabled "+
-		"on the Nous Portal's FAL proxy. Either:\n  • Set FAL_KEY in your environment to use FAL.ai directly, or\n"+
-		"  • Pick a different model via `icebath tools` → Video Generation.", endpoint, status)}
+	return loadVideoFalClient().Submit(ctx, env, endpoint, arguments, map[string]string{"x-idempotency-key": uuid4()})
 }
 
 const (
@@ -491,20 +427,10 @@ const (
 )
 
 // SeedVR2 upscale of a finished video, the new URL or empty when the pass fails
-var falUpscaleVideo = func(ctx context.Context, env *tools.Env, videoURL, sourceRequestID string) string {
+var falUpscaleVideo = func(ctx context.Context, env *tools.Env, videoURL string) string {
 	result, err := func() (any, error) {
-		videoGenLog.Info(fmt.Sprintf("Upscaling video with SeedVR2 (%dx)...", falUpscalerFactor))
+		pkgLog().Info(fmt.Sprintf("Upscaling video with SeedVR2 (%dx)...", falUpscalerFactor))
 		arguments := map[string]any{"video_url": videoURL, "upscale_mode": "factor", "upscale_factor": falUpscalerFactor}
-		gw, err := resolveManagedFalVideoGateway(env)
-		if err != nil {
-			return nil, err
-		}
-		if gw != nil {
-			if sourceRequestID == "" {
-				return nil, errors.New("Managed SeedVR upscale requires the source FAL request id")
-			}
-			arguments["source_request_id"] = sourceRequestID
-		}
 		h, err := submitFalVideoRequest(ctx, env, falUpscalerEndpoint, arguments)
 		if err != nil {
 			return nil, err
@@ -512,18 +438,17 @@ var falUpscaleVideo = func(ctx context.Context, env *tools.Env, videoURL, source
 		return waitFalQueueResult(ctx, h, falQueuePollSeconds)
 	}()
 	if err != nil {
-		videoGenLog.Warn(fmt.Sprintf("Video upscale failed: %v", err))
+		pkgLog().Warn(fmt.Sprintf("Video upscale failed: %v", err))
 		return ""
 	}
 	_, u := falVideoURLFromResult(result)
 	if u == "" {
-		videoGenLog.Warn("Video upscaler returned no URL")
+		pkgLog().Warn("Video upscaler returned no URL")
 	}
 	return u
 }
 
-const falNoBackendMsg = "No FAL backend available. Either set FAL_KEY (run `icebath tools` → Video Generation → FAL to configure) " +
-	"or sign in to Nous (start `icebath` and type `/setup model`) for managed gateway access."
+const falNoBackendMsg = "No FAL backend available. Set FAL_KEY (run `icebath tools` → Video Generation → FAL to configure)."
 
 var falModalityMissingMsg = map[string]string{
 	"image": "FAL family %s has no image-to-video endpoint. Pick a family with image-to-video support via `icebath tools` → Video Generation.",
@@ -649,20 +574,20 @@ func (p *falVideoGenProvider) Generate(ctx context.Context, env *tools.Env, req 
 	payload := falBuildVideoPayload(*family, falPayloadInput{Prompt: prompt, ImageURL: imageURL, Duration: req.Duration, AspectRatio: aspect,
 		Resolution: req.resolution(), NegativePrompt: req.NegativePrompt, Audio: req.Audio, Seed: req.Seed})
 	arguments, _ := pyjson.Plain(payload).(map[string]any)
-	video, videoURL, sourceRequestID, err := func() (any, string, string, error) {
+	video, videoURL, err := func() (any, string, error) {
 		h, err := submitFalVideoRequest(ctx, env, endpoint, arguments)
 		if err != nil {
-			return nil, "", "", err
+			return nil, "", err
 		}
 		result, err := waitFalQueueResult(ctx, h, falQueuePollSeconds)
 		if err != nil {
-			return nil, "", "", err
+			return nil, "", err
 		}
 		v, u := falVideoURLFromResult(result)
-		return v, u, h.RequestID, nil
+		return v, u, nil
 	}()
 	if err != nil {
-		videoGenLog.Warn(fmt.Sprintf("FAL video gen failed (family=%s, endpoint=%s): %v", familyID, endpoint, err))
+		pkgLog().Warn(fmt.Sprintf("FAL video gen failed (family=%s, endpoint=%s): %v", familyID, endpoint, err))
 		return videoFalError(fmt.Sprintf("FAL video generation failed: %v", err), "api_error", prompt, familyID, aspect), nil
 	}
 	if videoURL == "" {
@@ -671,11 +596,11 @@ func (p *falVideoGenProvider) Generate(ctx context.Context, env *tools.Env, req 
 	upscale := pyTruthy(req.Kwargs["upscale"])
 	upscaledURL := ""
 	if upscale {
-		upscaledURL = falUpscaleVideo(ctx, env, videoURL, sourceRequestID)
+		upscaledURL = falUpscaleVideo(ctx, env, videoURL)
 	}
 	upscaled := upscaledURL != ""
 	if upscale && !upscaled {
-		videoGenLog.Warn("Video upscale pass failed — returning native-resolution video")
+		pkgLog().Warn("Video upscale pass failed — returning native-resolution video")
 	}
 	if upscaled {
 		videoURL = upscaledURL
@@ -715,7 +640,7 @@ func (p *falVideoGenProvider) Generate(ctx context.Context, env *tools.Env, req 
 }
 
 func init() {
-	plugins.RegisterBundled(videoGenBackendPlugin{name: "fal", author: "NousResearch", requiresEnv: []string{"FAL_KEY"},
+	plugins.RegisterBundled(videoGenBackendPlugin{name: "fal", author: "Icebath", requiresEnv: []string{"FAL_KEY"},
 		description: "FAL.ai video generation backend. Multi-model — Veo 3.1, Kling, Pixverse — covering text-to-video and image-to-video via fal_client's queue API.",
 		provider:    func() VideoGenProvider { return newFalVideoGenProvider() }})
 }

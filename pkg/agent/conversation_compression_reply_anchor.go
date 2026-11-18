@@ -2,7 +2,6 @@ package agent
 
 import (
 	"context"
-	"log/slog"
 
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
@@ -72,7 +71,7 @@ func ensureCompressedKeepsLastAssistantReply(ctx context.Context, original, comp
 		session = "none"
 	}
 	if !ok {
-		slog.Warn("Compression: engine folded away the just-delivered assistant reply and the surviving tool " +
+		pkgLog().Warn("Compression: engine folded away the just-delivered assistant reply and the surviving tool " +
 			"rounds reuse tool-call ids, so its slot cannot be located; not reinserting it (session=" + session + ").")
 		return compressed, nil
 	}
@@ -89,14 +88,14 @@ func ensureCompressedKeepsLastAssistantReply(ctx context.Context, original, comp
 	}
 	for _, message := range neighbours {
 		if message != nil && message["role"] == "assistant" {
-			slog.Warn("Compression: engine folded away the just-delivered assistant reply and left a non-matching " +
+			pkgLog().Warn("Compression: engine folded away the just-delivered assistant reply and left a non-matching " +
 				"assistant row at its slot; not reinserting it to keep strict role alternation (session=" + session + ").")
 			return compressed, nil
 		}
 	}
 	roughIn, roughOut := estimateRowsRough(ctx, original), estimateRowsRough(ctx, compressed)
 	if roughOut < roughIn && roughIn < roughOut+estimateRowsRough(ctx, []map[string]any{anchor}) {
-		slog.Info("Compression: not reinserting the just-delivered assistant reply; it would stop this " +
+		pkgLog().Info("Compression: not reinserting the just-delivered assistant reply; it would stop this " +
 			"compaction from shrinking the transcript (session=" + session + ").")
 		return compressed, nil
 	}

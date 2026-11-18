@@ -84,9 +84,9 @@ func TestUnifiedSearchSourceErrorHandled(t *testing.T) {
 	}
 }
 
-func TestHermesIndexSearchMatchesIdentifierAndProvider(t *testing.T) {
+func TestIndexSearchMatchesIdentifierAndProvider(t *testing.T) {
 	h, _ := newTestHub(t)
-	x := NewHermesIndexSource(h, anonAuth(h))
+	x := NewIndexSource(h, anonAuth(h))
 	x.index, x.loaded = objectOf("skills", pyList(t, `[{"name": "accelerated-computing-cudf", "description": "GPU DataFrames.",
 		"source": "github", "identifier": "NVIDIA/skills/skills/accelerated-computing-cudf", "tags": [], "extra": {"provider": "NVIDIA"}},
 		{"name": "unrelated", "description": "nothing here", "source": "clawhub", "identifier": "clawhub/unrelated", "tags": []}]`)), true
@@ -116,7 +116,7 @@ func TestFilterResultsByProviderNarrowsExactly(t *testing.T) {
 
 func TestUnifiedSearchProviderFilterKeepsIndexSource(t *testing.T) {
 	h, _ := newTestHub(t)
-	src := &countingSource{SourceBase: SourceBase{ID: "hermes-index"}, available: true, results: []SkillMeta{
+	src := &countingSource{SourceBase: SourceBase{ID: "skills-index"}, available: true, results: []SkillMeta{
 		{Name: "cuda", Description: "gpu", Source: "github", Identifier: "NVIDIA/skills/cuda", TrustLevel: "trusted", Extra: objectOf("provider", "NVIDIA")},
 		{Name: "cuda-clone", Description: "gpu", Source: "clawhub", Identifier: "clawhub/cuda-clone", TrustLevel: "community"}}}
 	if ids := metaIDs(h.UnifiedSearch(context.Background(), "cuda", []SkillSource{src}, "nvidia", 25)); !slices.Equal(ids, []string{"NVIDIA/skills/cuda"}) {
@@ -129,7 +129,7 @@ func humanizar(sid string) SkillMeta {
 }
 
 func indexMissSources(indexResults []SkillMeta) (index, skillsSh, github *countingSource) {
-	index = &countingSource{SourceBase: SourceBase{ID: "hermes-index"}, results: indexResults, available: true}
+	index = &countingSource{SourceBase: SourceBase{ID: "skills-index"}, results: indexResults, available: true}
 	skillsSh = &countingSource{SourceBase: SourceBase{ID: "skills-sh"}, results: []SkillMeta{humanizar("skills-sh")}}
 	github = &countingSource{SourceBase: SourceBase{ID: "github"}, results: []SkillMeta{humanizar("github")}}
 	return
@@ -139,7 +139,7 @@ func TestIndexMissConsultsDisplacedRegistriesButNotGitHub(t *testing.T) {
 	h, _ := newTestHub(t)
 	index, skillsSh, github := indexMissSources(nil)
 	results, counts, timedOut := h.ParallelSearchSources(context.Background(), []SkillSource{index, skillsSh, github}, "humanizar", nil, "all", 5*time.Second, nil)
-	if !slices.Equal(metaIDs(results), []string{"skills-sh/humanizar"}) || !maps.Equal(countsMap(counts), map[string]any{"hermes-index": 0, "skills-sh": 1}) ||
+	if !slices.Equal(metaIDs(results), []string{"skills-sh/humanizar"}) || !maps.Equal(countsMap(counts), map[string]any{"skills-index": 0, "skills-sh": 1}) ||
 		len(timedOut) != 0 || github.calls.Load() != 0 {
 		t.Fatalf("%v %v %v github %d", metaIDs(results), countsMap(counts), timedOut, github.calls.Load())
 	}
@@ -152,9 +152,9 @@ func TestIndexMissConsultsDisplacedRegistriesButNotGitHub(t *testing.T) {
 
 func TestIndexHitLeavesRegistriesUntouched(t *testing.T) {
 	h, _ := newTestHub(t)
-	index, skillsSh, github := indexMissSources([]SkillMeta{humanizar("hermes-index")})
+	index, skillsSh, github := indexMissSources([]SkillMeta{humanizar("skills-index")})
 	results, counts, _ := h.ParallelSearchSources(context.Background(), []SkillSource{index, skillsSh, github}, "humanizar", nil, "all", 5*time.Second, nil)
-	if !slices.Equal(metaIDs(results), []string{"hermes-index/humanizar"}) || !maps.Equal(countsMap(counts), map[string]any{"hermes-index": 1}) ||
+	if !slices.Equal(metaIDs(results), []string{"skills-index/humanizar"}) || !maps.Equal(countsMap(counts), map[string]any{"skills-index": 1}) ||
 		skillsSh.calls.Load() != 0 || github.calls.Load() != 0 {
 		t.Fatalf("%v %v", metaIDs(results), countsMap(counts))
 	}
@@ -166,7 +166,7 @@ func TestProviderFilterMissSkipsRegistriesWithoutProviderData(t *testing.T) {
 	clawhub := &countingSource{SourceBase: SourceBase{ID: "clawhub"}, sleep: 5 * time.Second}
 	started := time.Now()
 	results, counts, timedOut := h.ParallelSearchSources(context.Background(), []SkillSource{index, skillsSh, clawhub, github}, "foo", nil, "nvidia", 5*time.Second, nil)
-	if time.Since(started) >= time.Second || len(results) != 0 || len(timedOut) != 0 || !maps.Equal(countsMap(counts), map[string]any{"hermes-index": 0}) ||
+	if time.Since(started) >= time.Second || len(results) != 0 || len(timedOut) != 0 || !maps.Equal(countsMap(counts), map[string]any{"skills-index": 0}) ||
 		skillsSh.calls.Load() != 0 || clawhub.calls.Load() != 0 {
 		t.Fatalf("%v %v %v", results, countsMap(counts), timedOut)
 	}
@@ -182,19 +182,19 @@ func TestIndexMissFallbackPassHasItsOwnShortBudget(t *testing.T) {
 	started := time.Now()
 	results, counts, timedOut := h.ParallelSearchSources(context.Background(), []SkillSource{index, skillsSh, clawhub, github}, "humanizar", nil, "all", 30*time.Second, nil)
 	if time.Since(started) >= 2*time.Second || !slices.Equal(metaIDs(results), []string{"skills-sh/humanizar"}) ||
-		!maps.Equal(countsMap(counts), map[string]any{"hermes-index": 0, "skills-sh": 1}) || !slices.Equal(timedOut, []string{"clawhub"}) {
+		!maps.Equal(countsMap(counts), map[string]any{"skills-index": 0, "skills-sh": 1}) || !slices.Equal(timedOut, []string{"clawhub"}) {
 		t.Fatalf("%v %v %v", metaIDs(results), countsMap(counts), timedOut)
 	}
 }
 
-func TestLoadHermesIndexFetchDoesNotRequestBrotli(t *testing.T) {
+func TestLoadIndexFetchDoesNotRequestBrotli(t *testing.T) {
 	h, _ := newTestHub(t)
 	var accept string
 	h.io.httpGet = plainGet(func(_ string, o hubGet) *pyhttpx.Response {
 		accept = o.Headers["Accept-Encoding"]
 		return jsonResp(t, `{"skills": [{"name": "x"}]}`)
 	})
-	data, err := pyjson.Dumps(h.loadHermesIndex(context.Background()))
+	data, err := pyjson.Dumps(h.loadIndex(context.Background()))
 	if err != nil || data != `{"skills": [{"name": "x"}]}` {
 		t.Fatalf("%s %v", data, err)
 	}
@@ -205,11 +205,11 @@ func TestLoadHermesIndexFetchDoesNotRequestBrotli(t *testing.T) {
 	}
 }
 
-func TestLoadHermesIndexPersistentDecodingErrorFallsBackToStaleCache(t *testing.T) {
+func TestLoadIndexPersistentDecodingErrorFallsBackToStaleCache(t *testing.T) {
 	h, _ := newTestHub(t)
-	writeTestFile(t, h.hermesIndexCacheFile(), `{"skills": [{"name": "stale"}]}`)
-	old := time.Now().Add(-(time.Duration(HermesIndexTTL*float64(time.Second)) + 100*time.Second))
-	if err := os.Chtimes(h.hermesIndexCacheFile(), old, old); err != nil {
+	writeTestFile(t, h.indexCacheFile(), `{"skills": [{"name": "stale"}]}`)
+	old := time.Now().Add(-(time.Duration(IndexTTL*float64(time.Second)) + 100*time.Second))
+	if err := os.Chtimes(h.indexCacheFile(), old, old); err != nil {
 		t.Fatal(err)
 	}
 	var encodings []string
@@ -219,7 +219,7 @@ func TestLoadHermesIndexPersistentDecodingErrorFallsBackToStaleCache(t *testing.
 		hd.Set("Content-Encoding", "br")
 		return &pyhttpx.Response{StatusCode: 200, Header: hd, Content: []byte("brotli boom")}
 	})
-	data, err := pyjson.Dumps(h.loadHermesIndex(context.Background()))
+	data, err := pyjson.Dumps(h.loadIndex(context.Background()))
 	if err != nil || data != `{"skills": [{"name": "stale"}]}` || !slices.Equal(encodings, []string{"gzip, deflate", "identity"}) {
 		t.Fatalf("%s %v %v", data, err, encodings)
 	}

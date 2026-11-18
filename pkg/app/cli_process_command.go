@@ -4,7 +4,6 @@ import (
 	"strings"
 
 	"github.com/nickheyer/icebath/pkg/commands"
-	"github.com/nickheyer/icebath/pkg/observability"
 	"github.com/nickheyer/icebath/pkg/plugins"
 )
 
@@ -34,8 +33,8 @@ var slashDispatch = map[string]slashHandler{
 	"platforms": noArg((*CLI).showGatewayStatus), "status": noArg((*CLI).showSessionStatus),
 	"context": withArg((*CLI).showContextBreakdown), "egress": withArg((*CLI).cmdEgress),
 	"statusbar": withArg((*CLI).cmdStatusbar), "verbose": noArg((*CLI).toggleVerbose), "yolo": noArg((*CLI).toggleYolo),
-	"compress": withArg((*CLI).manualCompress), "subscription": noArg((*CLI).showSubscription),
-	"topup": withArg((*CLI).showBilling), "insights": withArg((*CLI).showInsights), "update": (*CLI).cmdUpdate,
+	"compress": withArg((*CLI).manualCompress),
+	"insights": withArg((*CLI).showInsights), "update": (*CLI).cmdUpdate,
 	"version": withArg((*CLI).cmdVersion), "paste": noArg((*CLI).handlePasteCommand), "reload": withArg((*CLI).cmdReload),
 	"reload-mcp": withArg((*CLI).confirmAndReloadMCP), "reload-skills": withArg((*CLI).cmdReloadSkills),
 	"plugins": withArg((*CLI).cmdPlugins), "stop": noArg((*CLI).handleStopCommand),
@@ -56,8 +55,8 @@ var slashDispatch = map[string]slashHandler{
 	"image": withArg((*CLI).handleImageCommand), "import": withArg((*CLI).handleImportCommand),
 	"indicator": withArg((*CLI).handleIndicatorCommand), "init": withArg((*CLI).handleInitCommand),
 	"journey": withArg((*CLI).handleJourneyCommand), "kanban": withArg((*CLI).handleKanbanCommand),
-	"learn": withArg((*CLI).handleLearnCommand), "login": withArg((*CLI).handleLoginCommand),
-	"loop": withArg((*CLI).handleLoopCommand), "memory": withArg((*CLI).handleMemoryCommand),
+	"learn": withArg((*CLI).handleLearnCommand),
+	"loop":  withArg((*CLI).handleLoopCommand), "memory": withArg((*CLI).handleMemoryCommand),
 	"personality": withArg((*CLI).handlePersonalityCommand), "pet": withArg((*CLI).handlePetCommand),
 	"plan": withArg((*CLI).handlePlanCommand), "prompt-compose": withArg((*CLI).handlePromptComposeCommand), "prompt_compose": withArg((*CLI).handlePromptComposeCommand),
 	"reasoning": withArg((*CLI).handleReasoningCommand), "refine": withArg((*CLI).handleRefineCommand),
@@ -94,9 +93,6 @@ func (c *CLI) processCommand(command string) bool {
 	canonical := baseWord
 	if def != nil {
 		canonical = def.Name
-	}
-	if !redispatch && !c.slashMetricsOff {
-		observability.RecordSlashCommand(c.ctx, canonical, "cli")
 	}
 	handler, ok := slashDispatch[canonical]
 	if ok && runGatewaySetting(c, canonical, cmdOriginal) {

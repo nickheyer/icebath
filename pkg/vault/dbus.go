@@ -606,7 +606,7 @@ func dbusSocketAddress(addr string) (string, error) {
 func dbusDialSession() (*dbusConn, error) {
 	addr := os.Getenv("DBUS_SESSION_BUS_ADDRESS")
 	if addr == "" {
-		return nil, errors.New("KeyError: 'DBUS_SESSION_BUS_ADDRESS'")
+		return nil, errors.New("DBUS_SESSION_BUS_ADDRESS is not set, so the session D-Bus cannot be reached")
 	}
 	return dbusDial(addr)
 }

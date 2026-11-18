@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"log/slog"
 	"math"
 	"net/http"
 	"os"
@@ -1026,7 +1025,7 @@ func (p *TeamsMeetingPipeline) summaryFieldsFor(ctx context.Context, prompt, tra
 		if cancelled := ctx.Err(); cancelled != nil && errors.Is(err, cancelled) {
 			return summaryFields{}, err
 		}
-		slog.Info("Teams pipeline LLM summary unavailable, using heuristic summary: " + pyrepr.ExceptionMessage(err))
+		pkgLog().Info("Teams pipeline LLM summary unavailable, using heuristic summary: " + pyrepr.ExceptionMessage(err))
 		parsed = heuristicSummary(transcriptText)
 	}
 	return parsed, nil

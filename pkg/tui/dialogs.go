@@ -405,11 +405,14 @@ func (a *app) activeClarifyQuestion() string {
 	return ""
 }
 
-// Answers a server request and marks the turn running again
+// Answers a server request, the status back to running while a turn runs and to ready otherwise
 func (a *app) respondPrompt(key, requestID string, result map[string]any) tea.Cmd {
 	a.store.respondToServerRequest(requestID, result)
 	a.store.overlay.closePrompt(key)
-	a.store.ui.Status = "running…"
+	a.store.ui.Status = "ready"
+	if a.store.ui.Busy {
+		a.store.ui.Status = "running…"
+	}
 	return nil
 }
 

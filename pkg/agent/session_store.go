@@ -2,7 +2,6 @@ package agent
 
 import (
 	"context"
-	"log/slog"
 	"reflect"
 
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
@@ -110,7 +109,7 @@ func (r storeAuxUsageRecorder) RecordAuxiliaryUsage(ctx context.Context, session
 	})
 }
 
-// Releases a registry shared database or closes any other store, the release_or_close of hermes_state_registry
+// Releases a registry shared database or closes any other store, the release_or_close of
 func releaseOrCloseStore(store SessionStore) {
 	if db := canonicalSessionDB(store); db != nil {
 		state.ReleaseOrClose(db)
@@ -118,7 +117,7 @@ func releaseOrCloseStore(store SessionStore) {
 	}
 	if closer, ok := store.(interface{ Close() error }); ok {
 		if err := closer.Close(); err != nil {
-			slog.Debug("release_or_close fallback close failed", "error", err)
+			pkgLog().Debug("release_or_close fallback close failed", "error", err)
 		}
 	}
 }

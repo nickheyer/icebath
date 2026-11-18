@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"log/slog"
 	"os"
 	"regexp"
 	"sort"
@@ -652,23 +651,9 @@ func cmdMCPAdd(ctx context.Context, env *tools.Env, ui CLIConfigUI, a MCPArgs) i
 		return 1
 	}
 	_, present := existing[name]
-	fresh := !present
-	if !fresh && !cfgConfirm(ui, fmt.Sprintf("Server '%s' already exists. Overwrite?", name), false) {
+	if present && !cfgConfirm(ui, fmt.Sprintf("Server '%s' already exists. Overwrite?", name), false) {
 		cfgInfo(ui, "Cancelled.")
 		return 0
-	}
-	record := func(saved bool, failureClass string) {
-		if !fresh {
-			return
-		}
-		source, outcome := "local", "failed"
-		if url != "" {
-			source = "url"
-		}
-		if saved {
-			outcome, failureClass = "success", ""
-		}
-		RecordMCPInstall(ctx, source, "", outcome, failureClass, nil)
 	}
 	if url != "" {
 		serverConfig["url"] = url
@@ -685,7 +670,6 @@ func cmdMCPAdd(ctx context.Context, env *tools.Env, ui CLIConfigUI, a MCPArgs) i
 		serverConfig["connect_timeout"] = *a.ConnectTimeout
 	}
 	if !validateOrWarn(ui, name, serverConfig) {
-		record(false, "config_rejected")
 		return 0
 	}
 	if url != "" && !configureHTTPAuth(ctx, env, ui, name, url, a.Auth, serverConfig) {
@@ -704,23 +688,19 @@ func cmdMCPAdd(ctx context.Context, env *tools.Env, ui CLIConfigUI, a MCPArgs) i
 	if err != nil {
 		cfgError(ui, "Failed to connect: "+probeFailureReason(err))
 		cfgInfo(ui, probeFailureNextStep(ctx, name, err))
-		saved := false
 		if cfgConfirm(ui, "Save config anyway (you can test later)?", false) {
 			serverConfig["enabled"] = false
-			if saved = save(); saved {
+			if save() {
 				cfgSuccess(ui, fmt.Sprintf("Saved '%s' to config (disabled)", name))
 				cfgInfo(ui, "Fix the issue, then: icebath mcp test "+name)
 			}
 		}
-		record(saved, ProbeFailureClass(err))
 		return 0
 	}
 	if len(found) == 0 {
 		cfgWarning(ui, "Server connected but reported no tools.")
 		if cfgConfirm(ui, "Save config anyway?", true) {
-			saved := save()
-			record(saved, "config_rejected")
-			if saved {
+			if save() {
 				cfgSuccess(ui, fmt.Sprintf("Saved '%s' to config", name))
 			}
 		}
@@ -731,9 +711,7 @@ func cmdMCPAdd(ctx context.Context, env *tools.Env, ui CLIConfigUI, a MCPArgs) i
 		return 0
 	}
 	serverConfig["enabled"] = true
-	saved := save()
-	record(saved, "config_rejected")
-	if saved {
+	if save() {
 		fmt.Fprintln(ui.Out())
 		cfgSuccess(ui, fmt.Sprintf("Saved '%s' to %s/config.yaml (%d/%d tools enabled)", name, home.Display(home.Dir(ctx)), toolCount, len(found)))
 		cfgInfo(ui, "Start a new session to use these tools, or run /reload-mcp to load them into open sessions.")
@@ -833,7 +811,7 @@ func probeFailureReason(err error) string {
 func ProbeFailureClass(err error) (class string) {
 	defer func() {
 		if recovered := recover(); recovered != nil {
-			slog.Debug("MCP probe failure not classified", "panic", recovered)
+			pkgLog().Debug("MCP probe failure not classified", "panic", recovered)
 			class = "connect_failed"
 		}
 	}()
@@ -1288,7 +1266,7 @@ func sameIndexSet(a, b map[int]bool) bool {
 
 var mcpUsage = []string{
 	"icebath mcp                                    Open the catalog picker (default)",
-	"icebath mcp catalog                            List Nous-approved MCPs",
+	"icebath mcp catalog                            List the bundled catalog MCPs",
 	"icebath mcp install <name>                     Install a catalog MCP",
 	"icebath mcp add <name> --url <endpoint>        Add a custom MCP server",
 	"icebath mcp add <name> --command <cmd>         Add a stdio server",

@@ -756,7 +756,7 @@ var a2aTools = []a2aTool{
 			"(any A2A-compliant framework), not a sub-agent you control. Pass 'context_id' from a previous " +
 			"reply to continue a multi-turn exchange.",
 		pyjson.ObjectOf("agent", strProp("Configured peer name (from a2a_agents) or a full http(s):// URL."),
-			"message",    strProp("The task / message to send the peer, in natural language."),
+			"message", strProp("The task / message to send the peer, in natural language."),
 			"context_id", strProp("Optional: context id from a prior reply, to continue the conversation.")),
 		[]string{"agent", "message"}},
 	{"a2a_list", A2AList, "List configured A2A peer agents, persisted A2A conversations, and metrics.", pyjson.ObjectOf(), nil},

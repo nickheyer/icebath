@@ -2,7 +2,6 @@ package gateway
 
 import (
 	"context"
-	"log/slog"
 	"reflect"
 	"strings"
 	"sync"
@@ -212,7 +211,7 @@ func (c *EnvCred) Apply(ctx context.Context, cfg *GatewayConfig) error {
 		}
 	}
 	if c.WarnMissingEnv != "" && getenvStr(ctx, c.WarnMissingEnv, "") == "" {
-		slog.Warn(c.WarnMissingMsg)
+		pkgLog().Warn(c.WarnMissingMsg)
 	}
 	pc := EnableFromEnv(ctx, cfg, c.Platform)
 	if c.Token != "" {

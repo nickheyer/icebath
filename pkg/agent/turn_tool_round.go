@@ -3,12 +3,10 @@ package agent
 import (
 	"context"
 	"fmt"
-	"log/slog"
 	"regexp"
 
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
-	"github.com/nickheyer/icebath/pkg/observability"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tools"
@@ -69,10 +67,6 @@ func (h *toolRoundValidationHost) CleanupTaskResources() {
 	h.a.cleanupTaskResources(h.ctx, h.s.EffectiveTaskID)
 }
 
-func (h *toolRoundValidationHost) RecordToolCallQuality(toolCalls []state.ToolCall, repaired map[int]bool) {
-	observability.RecordValidatedToolCalls(h.ctx, h.a, toolCalls, repaired)
-}
-
 func (h *toolRoundValidationHost) Print(text string, force bool) { h.a.vprint(text, force, true) }
 
 func (h *toolRoundValidationHost) BufferPrint(text string) { h.a.bufferVprint(text) }
@@ -115,7 +109,7 @@ func flushToolTurn(a *AIAgent, s *LoopState) (persisted bool) {
 			if sessionID == "" {
 				sessionID = "none"
 			}
-			conversationLoopLog().Warn(fmt.Sprintf("Incremental tool-call persistence failed before execution (session=%s): %s", sessionID, exc))
+			pkgLog().Warn(fmt.Sprintf("Incremental tool-call persistence failed before execution (session=%s): %s", sessionID, exc))
 		}
 	}()
 	return a.flushLiveMessages(s.Messages, s.ConversationHistory) != state.FlushFailed
@@ -130,7 +124,7 @@ func runToolRound(ctx context.Context, a *AIAgent, s *LoopState) (PhaseVerdict, 
 	}
 	if a.verboseLogging {
 		for _, tc := range msg.ToolCalls {
-			slog.Debug(fmt.Sprintf("Tool call: %s with args: %s...", tc.Function.Name, pystr.Slice(tc.Function.Arguments, 0, 200)))
+			pkgLog().Debug(fmt.Sprintf("Tool call: %s with args: %s...", tc.Function.Name, pystr.Slice(tc.Function.Arguments, 0, 200)))
 		}
 	}
 
@@ -199,7 +193,6 @@ func runToolRound(ctx context.Context, a *AIAgent, s *LoopState) (PhaseVerdict, 
 	if err := a.executeToolCalls(ctx, msg, &s.Messages, s.EffectiveTaskID); err != nil {
 		return PhaseVerdict{}, err
 	}
-	observability.FinishToolRound(ctx, a)
 
 	if a.incrementalPersistenceFailed {
 		s.TurnExitReason, s.FinalResponse, s.Failed = "session_persistence_failed", "", true
@@ -301,7 +294,7 @@ var stageToolCallMessage = func(a *AIAgent, assistantMessage *provider.Response,
 	}
 
 	if len(msg.ToolCalls) > 0 && toolCallStaleMarkerRE.MatchString(pystr.Strip(turnContent)) {
-		conversationLoopLog().Warn(fmt.Sprintf("Discarding bare tool-call marker from assistant content: %s", turnContent))
+		pkgLog().Warn(fmt.Sprintf("Discarding bare tool-call marker from assistant content: %s", turnContent))
 		turnContent = ""
 		assistantMsg["content"] = ""
 	}

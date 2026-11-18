@@ -3,12 +3,10 @@ package agent
 import (
 	"context"
 	"fmt"
-	"log/slog"
 
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
-	"github.com/nickheyer/icebath/pkg/observability"
 	"github.com/nickheyer/icebath/pkg/plugins"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/tools"
@@ -17,8 +15,6 @@ import (
 type lifecycleEnvKey struct{}
 
 var (
-	lifecycleObserveLifecycle     = observability.ObserveLifecycle
-	lifecycleHandlesHook          = observability.HandlesHook
 	lifecyclePluginInvokeHook     = plugins.InvokeHook
 	lifecyclePluginAInvokeHook    = plugins.AInvokeHook
 	lifecyclePluginHasHook        = plugins.HasHook
@@ -28,10 +24,10 @@ var (
 	}
 )
 
-// Auxiliary call hooks reach the built in observers and plugins alike
+// Auxiliary call hooks reach the plugins
 func init() { provider.SetAuxLifecycleHooks(LifecycleHasHook, LifecycleInvokeHook) }
 
-// Carries the agent env for lifecycle observers, and as the session env when the surface bound none
+// Carries the agent env for lifecycle readers, and as the session env when the surface bound none
 func withLifecycleEnv(ctx context.Context, env *tools.Env) context.Context {
 	if env == nil {
 		return ctx
@@ -48,54 +44,25 @@ func lifecycleEnv(ctx context.Context) *tools.Env {
 	return env
 }
 
-// Dispatches a hook to the built in observers unless a safe worker is bound, logging a failure
-func lifecycleObserve(ctx context.Context, hookName string, kwargs map[string]any) {
-	if config.SafeWorkerEnabled() {
-		return
-	}
-	defer func() {
-		if r := recover(); r != nil {
-			slog.Warn("Built-in observability hook failed", "error", fmt.Sprint(r))
-		}
-	}()
-	lifecycleObserveLifecycle(ctx, lifecycleEnv(ctx), hookName, kwargs)
-}
-
-// Notifies the built in observers then returns the plugin hook results, none under a safe worker
+// Plugin hook results, none under a safe worker
 func lifecycleInvokeHook(ctx context.Context, hookName string, kwargs map[string]any) []any {
 	if config.SafeWorkerEnabled() {
 		return []any{}
 	}
-	lifecycleObserve(ctx, hookName, kwargs)
 	return lifecyclePluginInvokeHook(ctx, hookName, kwargs)
 }
 
-// Loop side form that notifies the observers then awaits the plugin callbacks on the loop
+// Loop side form that awaits the plugin callbacks on the loop
 func lifecycleAInvokeHook(ctx context.Context, hookName string, kwargs map[string]any) []any {
-	lifecycleObserve(ctx, hookName, kwargs)
 	return lifecyclePluginAInvokeHook(ctx, hookName, kwargs)
 }
 
-// Reports whether a built in observer or a plugin consumes a hook, false under a safe worker
+// Reports whether a plugin consumes a hook, false under a safe worker
 func lifecycleHasHook(ctx context.Context, hookName string) bool {
 	if config.SafeWorkerEnabled() {
 		return false
 	}
-	if lifecycleObserverHandles(ctx, hookName) {
-		return true
-	}
 	return lifecyclePluginHasHook(ctx, hookName)
-}
-
-// Asks the built in observers about a hook and logs a failed inspection as unhandled
-func lifecycleObserverHandles(ctx context.Context, hookName string) (handled bool) {
-	defer func() {
-		if r := recover(); r != nil {
-			slog.Warn("Unable to inspect built-in observability hooks", "error", fmt.Sprint(r))
-			handled = false
-		}
-	}()
-	return lifecycleHandlesHook(ctx, hookName)
 }
 
 // Stripped non empty user facing texts from finalize results given as a string or a message map
@@ -113,9 +80,8 @@ func lifecycleSessionEndMessages(results []any) []string {
 	return messages
 }
 
-// Notifies observers, hard closes the session Relay conversation, then returns the plugin finalize results
+// Hard closes the session Relay conversation, then returns the plugin finalize results
 func lifecycleFinalizeSession(ctx context.Context, kwargs map[string]any) []any {
-	lifecycleObserve(ctx, "on_session_finalize", kwargs)
 	sessionID := ""
 	if v := kwargs["session_id"]; pyrepr.Truthy(v) {
 		sessionID = pyrepr.Str(v)
@@ -124,7 +90,7 @@ func lifecycleFinalizeSession(ctx context.Context, kwargs map[string]any) []any 
 		func() {
 			defer func() {
 				if r := recover(); r != nil {
-					slog.Warn("Core Relay session finalization failed", "error", fmt.Sprint(r))
+					pkgLog().Warn("Core Relay session finalization failed", "error", fmt.Sprint(r))
 				}
 			}()
 			lifecycleFinalizeConversation(ctx, lifecycleRelayProfileKey(ctx), sessionID)
@@ -133,7 +99,7 @@ func lifecycleFinalizeSession(ctx context.Context, kwargs map[string]any) []any 
 	return lifecyclePluginInvokeHook(ctx, "on_session_finalize", kwargs)
 }
 
-// LifecycleInvokeHook is the hermes lifecycle invoke_hook the top level wiring installs as plugins Services.InvokeLifecycleHook
+// The lifecycle invoke_hook the top level wiring installs as plugins Services.InvokeLifecycleHook
 func LifecycleInvokeHook(ctx context.Context, hookName string, kwargs map[string]any) []any {
 	return lifecycleInvokeHook(ctx, hookName, kwargs)
 }
@@ -143,7 +109,7 @@ func LifecycleAInvokeHook(ctx context.Context, hookName string, kwargs map[strin
 	return lifecycleAInvokeHook(ctx, hookName, kwargs)
 }
 
-// LifecycleHasHook reports whether a built in observer or a plugin consumes a hook
+// LifecycleHasHook reports whether a plugin consumes a hook
 func LifecycleHasHook(ctx context.Context, hookName string) bool {
 	return lifecycleHasHook(ctx, hookName)
 }
@@ -151,7 +117,7 @@ func LifecycleHasHook(ctx context.Context, hookName string) bool {
 // SessionEndMessages returns the user facing texts of on_session_finalize results
 func SessionEndMessages(results []any) []string { return lifecycleSessionEndMessages(results) }
 
-// FinalizeSession runs on_session_finalize for observers, the core Relay conversation and the plugins
+// FinalizeSession runs on_session_finalize for the core Relay conversation and the plugins
 func FinalizeSession(ctx context.Context, kwargs map[string]any) []any {
 	return lifecycleFinalizeSession(ctx, kwargs)
 }

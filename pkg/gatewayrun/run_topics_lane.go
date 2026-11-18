@@ -34,6 +34,6 @@ func (r *GatewayRunner) syncTelegramTopicBinding(ctx context.Context, source *ga
 		return
 	}
 	if err := r.recordTelegramTopicBinding(ctx, source, entry); err != nil {
-		runLog().Debug(fmt.Sprintf("telegram topic binding refresh failed (%s)", reason), "error", err)
+		pkgLog().Debug(fmt.Sprintf("telegram topic binding refresh failed (%s)", reason), "error", err)
 	}
 }

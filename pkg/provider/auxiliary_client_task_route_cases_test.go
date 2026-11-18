@@ -2,7 +2,6 @@ package provider
 
 import (
 	"context"
-	"reflect"
 	"testing"
 )
 
@@ -12,14 +11,14 @@ func auxWriteMoaConfig(t *testing.T, defaultPreset, extraYAML string) context.Co
 	yaml := "moa:\n  default_preset: " + defaultPreset + "\n  presets:\n" +
 		"    opus-gpt:\n      enabled: true\n      reference_models:\n        - provider: openrouter\n          model: openai/gpt-5.5\n" +
 		"      aggregator:\n        provider: openrouter\n        model: anthropic/claude-opus-4.8\n" +
-		"    nous-mix:\n      enabled: true\n      reference_models:\n        - provider: nous\n          model: hermes-4-70b\n" +
-		"      aggregator:\n        provider: nous\n        model: hermes-4-405b\n"
+		"    deepseek-mix:\n      enabled: true\n      reference_models:\n        - provider: deepseek\n          model: deepseek-v4-flash\n" +
+		"      aggregator:\n        provider: deepseek\n        model: deepseek-v4-pro\n"
 	return auxResolveHome(t, yaml+extraYAML)
 }
 
 func TestResolveTaskProviderModelExplicitBaseUrlPreservesFirstClassProviderIdentity(t *testing.T) {
 	ctx := auxResolveHome(t, "")
-	for _, provider := range []string{"anthropic", "minimax-oauth", "nous", "openai-codex", "qwen-oauth", "xai-oauth"} {
+	for _, provider := range []string{"anthropic", "minimax-oauth", "openai-codex", "qwen-oauth", "xai-oauth"} {
 		route := auxResolveTaskProviderModel(ctx, "moa_reference", provider, "test-model", "https://provider.example/v1", "resolved-token")
 		if route.Provider != provider || route.Model != "test-model" || route.BaseURL != "https://provider.example/v1" || route.APIKey != "resolved-token" || route.APIMode != "" {
 			t.Fatalf("%s resolved %+v", provider, route)
@@ -122,7 +121,7 @@ func TestBuildCallKwargsMaxTokensMoaTaskSendsMaxTokensOnOpenaiCompatible(t *test
 		{"zai", "glm-5.2", "https://api.z.ai/api/coding/paas/v4", "max_tokens"},
 		{"openrouter", "deepseek/deepseek-v4-flash:nitro", "https://openrouter.ai/api/v1", "max_tokens"},
 		{"copilot", "gpt-5.5", "https://api.githubcopilot.com", "max_completion_tokens"},
-		{"nous", "hermes-4", "https://inference-api.nousresearch.com/v1", "max_tokens"},
+		{"deepseek", "deepseek-v4-flash", "https://api.deepseek.com/v1", "max_tokens"},
 	} {
 		kwargs, err := auxBuildCallKwargs(ctx, c[0], c[1], auxUserHi(), auxCallKwargsOptions{MaxTokens: 800, BaseURL: c[2], Task: "moa_reference", Timeout: 120})
 		if err != nil {
@@ -150,42 +149,6 @@ func TestBuildCallKwargsMaxTokensMoaTaskExactMatch(t *testing.T) {
 		if kw := build(task); kw["max_tokens"] != nil {
 			t.Fatalf("%s kwargs %v", task, kw)
 		}
-	}
-}
-
-func TestNousTagsScopingTagsInjectedWhenProviderIsNous(t *testing.T) {
-	ctx := auxMainTestHome(t, "")
-	kwargs, err := auxBuildCallKwargs(ctx, "nous", "hermes-4", auxUserHi(), auxCallKwargsOptions{Timeout: 120})
-	if err != nil {
-		t.Fatal(err)
-	}
-	body, _ := kwargs["extra_body"].(map[string]any)
-	var got []string
-	switch tags := body["tags"].(type) {
-	case []string:
-		got = tags
-	case []any:
-		for _, tag := range tags {
-			got = append(got, tag.(string))
-		}
-	}
-	if !reflect.DeepEqual(got, nousPortalTags(ctx, "")) {
-		t.Fatalf("tags %v", body["tags"])
-	}
-}
-
-func TestNousTagsScopingTagsNotInjectedForNonNousProviderWhenMainIsNous(t *testing.T) {
-	ctx := auxMainTestHome(t, "")
-	scoped, _ := ScopedRuntimeMain(ctx, map[string]any{
-		"provider": "nous", "model": "Hermes-4",
-		"base_url": "https://inference-api.nousresearch.com/v1", "api_key": "nous-key",
-	})
-	kwargs, err := auxBuildCallKwargs(scoped, "gemini", "gemini-2.5-flash", auxUserHi(), auxCallKwargsOptions{Timeout: 120})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, ok := kwargs["extra_body"]; ok {
-		t.Fatalf("extra_body present %v", kwargs["extra_body"])
 	}
 }
 

@@ -3,7 +3,6 @@ package gateway
 import (
 	"context"
 	"fmt"
-	"log/slog"
 	"time"
 	"unicode/utf8"
 )
@@ -160,7 +159,7 @@ func (b *BasePlatformAdapter) FlushTextBatch(ctx context.Context, key string) er
 	if event == nil {
 		return nil
 	}
-	slog.Info(fmt.Sprintf("[%s] Flushing text batch %s (%d chars)", self.Name(), key, utf8.RuneCountInString(event.Text)))
+	pkgLog().Info(fmt.Sprintf("[%s] Flushing text batch %s (%d chars)", self.Name(), key, utf8.RuneCountInString(event.Text)))
 	done := make(chan error, 1)
 	go func() { done <- self.DispatchTextBatch(context.WithoutCancel(ctx), event) }()
 	select {

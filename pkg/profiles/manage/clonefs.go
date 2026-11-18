@@ -3,7 +3,6 @@ package manage
 import (
 	"context"
 	"io/fs"
-	"log/slog"
 	"os"
 	"path/filepath"
 	"sort"
@@ -163,7 +162,7 @@ func copytreeKeepJunctions(src, dst string, ignore pyfs.IgnoreFunc, dirsExistOK 
 			return err
 		}
 		if err := createJunction(junctions[link], filepath.Join(dst, rel)); err != nil {
-			slog.Warn("clone: skipped junction " + link + " -> " + junctions[link] + " (" + pyfs.OSErrorText(err) + ")")
+			pkgLog().Warn("clone: skipped junction " + link + " -> " + junctions[link] + " (" + pyfs.OSErrorText(err) + ")")
 		}
 	}
 	return nil

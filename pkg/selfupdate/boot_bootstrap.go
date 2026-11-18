@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"log/slog"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -19,14 +18,12 @@ import (
 	"github.com/nickheyer/icebath/pkg/profiles"
 )
 
-var bootLog = slog.Default().With("logger", "icebath_cli.boot_bootstrap")
-
 const (
 	bootRecordSchemaVersion = 1
 	bootLockStaleSeconds    = 600
 )
 
-// PM package reader the git selection asks first, the pm attribute hermes tests patch
+// PM package reader the git selection asks first, the pm attribute tests patch
 var bootInstalledPackage = func(ctx context.Context, name string) (*pm.InstalledPackage, error) {
 	return pm.Installed(ctx, name, false)
 }
@@ -34,7 +31,7 @@ var bootInstalledPackage = func(ctx context.Context, name string) (*pm.Installed
 // The git to run, pm's pinned package first then PATH, empty when this machine has no usable one
 func bootGitBinary(ctx context.Context) string {
 	if installed, err := bootInstalledPackage(ctx, "git"); err != nil {
-		bootLog.Debug(fmt.Sprintf("pm git lookup failed: %s", err.Error()))
+		pkgLog().Debug(fmt.Sprintf("pm git lookup failed: %s", err.Error()))
 	} else if installed != nil && installed.Binary != "" {
 		return installed.Binary
 	}
@@ -226,7 +223,7 @@ func (l *RecordLock) Release() {
 	l.Acquired = false
 }
 
-// Lock taker of the boot bootstrap, the method hermes tests patch
+// Lock taker of the boot bootstrap, the method tests patch
 var recordLockAcquire = func(l *RecordLock) bool { return l.Acquire() }
 
 // Bounds home maintenance to one attempt per installed revision
@@ -244,7 +241,7 @@ func RunBootBootstrap(ctx context.Context, projectRoot string) (map[string]any, 
 	if known, _ := ReadLastKnown(record)["identity"].(string); known == identity {
 		return map[string]any{"home": "done-by-other"}, nil
 	}
-	bootLog.Info(fmt.Sprintf("home maintenance: code changed to %s, running steps", identity[:min(12, len(identity))]))
+	pkgLog().Info(fmt.Sprintf("home maintenance: code changed to %s, running steps", identity[:min(12, len(identity))]))
 	results := RunSteps(ctx, BootHomeSteps)
 	if err := writeBootRecord(record, identity, results); err != nil {
 		return nil, err
@@ -252,18 +249,18 @@ func RunBootBootstrap(ctx context.Context, projectRoot string) (map[string]any, 
 	return map[string]any{"home": results}, nil
 }
 
-// Boot bootstrap runner, the module attribute hermes tests patch
+// Boot bootstrap runner, the module attribute tests patch
 var runBootBootstrapFn = RunBootBootstrap
 
 // The one call boot paths use, a bootstrap problem logged and never stopping the launch
 func MaybeRunBootBootstrap(ctx context.Context, projectRoot string) {
 	defer func() {
 		if r := recover(); r != nil {
-			bootLog.Warn(fmt.Sprintf("boot bootstrap failed (continuing boot): %v", r))
+			pkgLog().Warn(fmt.Sprintf("boot bootstrap failed (continuing boot): %v", r))
 		}
 	}()
 	if _, err := runBootBootstrapFn(ctx, projectRoot); err != nil {
-		bootLog.Warn(fmt.Sprintf("boot bootstrap failed (continuing boot): %s", errorText(err)))
+		pkgLog().Warn(fmt.Sprintf("boot bootstrap failed (continuing boot): %s", errorText(err)))
 	}
 }
 

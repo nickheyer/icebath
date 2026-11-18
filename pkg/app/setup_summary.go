@@ -7,12 +7,12 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/cliui"
 	"github.com/nickheyer/icebath/pkg/config"
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/media"
 	"github.com/nickheyer/icebath/pkg/plugins"
 	"github.com/nickheyer/icebath/pkg/provider"
-	"github.com/nickheyer/icebath/pkg/tools"
 )
 
 // One voice provider summary row, available through any of its env names or an importable local engine module
@@ -88,16 +88,13 @@ var (
 		_, err := provider.ResolveAuthProvider(env, "")
 		return err
 	}
-	setupNousFeatures = func(ctx context.Context, cfg config.Tree) (provider.NousSubscriptionFeatures, error) {
+	setupToolFeatures = func(ctx context.Context, cfg config.Tree) (provider.ToolFeatures, error) {
 		env := provider.HomePoolEnv(home.Dir(ctx))
 		env.Ctx = ctx
-		return provider.GetNousSubscriptionFeatures(env, cfg, false), nil
+		return provider.GetToolFeatures(env, cfg), nil
 	}
-	setupVisionBackends   = provider.GetAvailableVisionBackends
-	setupModuleInstalled  = provider.SetupModuleInstalled
-	setupManagedNousTools = func(ctx context.Context) bool {
-		return tools.ManagedNousToolsEnabled(provider.SetupToolsEnv(ctx), false)
-	}
+	setupVisionBackends  = provider.GetAvailableVisionBackends
+	setupModuleInstalled = provider.SetupModuleInstalled
 )
 
 // Summary row of a TTS or STT provider, a keyed provider missing its key falling through to the default row
@@ -109,8 +106,7 @@ func voiceProviderStatus(ctx context.Context, kind string, providerName any, row
 			row = r
 		}
 	case []any, map[string]any:
-		typ := pyrepr.TypeName(providerName)
-		return toolStatusRow{}, &provider.SetupTypeError{Msg: fmt.Sprintf("cannot use '%s' as a dict key (unhashable type: '%s')", typ, typ)}
+		return toolStatusRow{}, &provider.SetupTypeError{Msg: fmt.Sprintf("the %s provider is %s, expected a provider name", kind, errchain.Kind(providerName))}
 	}
 	if !row.local() && len(row.envVars) > 0 {
 		set := false
@@ -183,11 +179,8 @@ var (
 	}
 )
 
-// Row of a Nous manageable feature, managed before available with its provider before the missing hint
-func managedOrProviderRow(feature provider.NousFeatureState, name, managedLabel, missingHint string) toolStatusRow {
-	if feature.ManagedByNous {
-		return toolStatusRow{name: name + " (" + managedLabel + ")", available: true}
-	}
+// Row of a tool feature, available with its provider before the missing hint
+func providerRow(feature provider.ToolFeatureState, name, missingHint string) toolStatusRow {
 	if feature.Available {
 		if feature.CurrentProvider != "" {
 			return toolStatusRow{name: name + " (" + feature.CurrentProvider + ")", available: true}
@@ -198,10 +191,10 @@ func managedOrProviderRow(feature provider.NousFeatureState, name, managedLabel,
 }
 
 // One summary row builder, its rows in order, none leaving the row out
-type toolRowBuilder func(ctx context.Context, cfg config.Tree, feats provider.NousSubscriptionFeatures) ([]toolStatusRow, error)
+type toolRowBuilder func(ctx context.Context, cfg config.Tree, feats provider.ToolFeatures) ([]toolStatusRow, error)
 
 // Vision through the same resolver the vision tools use
-func visionRow(ctx context.Context, _ config.Tree, _ provider.NousSubscriptionFeatures) ([]toolStatusRow, error) {
+func visionRow(ctx context.Context, _ config.Tree, _ provider.ToolFeatures) ([]toolStatusRow, error) {
 	backends, err := setupVisionBackends(ctx)
 	ok := err == nil && len(backends) > 0
 	hint := ""
@@ -212,27 +205,23 @@ func visionRow(ctx context.Context, _ config.Tree, _ provider.NousSubscriptionFe
 }
 
 // Web search and extract through Exa, Parallel, Firecrawl, Tavily or Keenable
-func webRow(_ context.Context, _ config.Tree, feats provider.NousSubscriptionFeatures) ([]toolStatusRow, error) {
-	return []toolStatusRow{managedOrProviderRow(feats.Feature("web"), "Web Search & Extract", "Nous subscription", webMissing)}, nil
+func webRow(_ context.Context, _ config.Tree, feats provider.ToolFeatures) ([]toolStatusRow, error) {
+	return []toolStatusRow{providerRow(feats.Feature("web"), "Web Search & Extract", webMissing)}, nil
 }
 
 // Browser automation, the missing hint keyed by the configured provider
-func browserRow(_ context.Context, _ config.Tree, feats provider.NousSubscriptionFeatures) ([]toolStatusRow, error) {
+func browserRow(_ context.Context, _ config.Tree, feats provider.ToolFeatures) ([]toolStatusRow, error) {
 	browser := feats.Feature("browser")
 	hint, ok := browserMissingHints[browser.CurrentProvider]
 	if !ok {
 		hint = browserMissingDefault
 	}
-	return []toolStatusRow{managedOrProviderRow(browser, "Browser Automation", "Nous Browser Use", hint)}, nil
+	return []toolStatusRow{providerRow(browser, "Browser Automation", hint)}, nil
 }
 
-// Image generation through FAL directly or via Nous, else the first available plugin provider
-func imageGenRow(ctx context.Context, _ config.Tree, feats provider.NousSubscriptionFeatures) ([]toolStatusRow, error) {
-	image := feats.Feature("image_gen")
-	switch {
-	case image.ManagedByNous:
-		return []toolStatusRow{{name: "Image Generation (Nous subscription)", available: true}}, nil
-	case image.Available:
+// Image generation through FAL directly, else the first available plugin provider
+func imageGenRow(ctx context.Context, _ config.Tree, feats provider.ToolFeatures) ([]toolStatusRow, error) {
+	if feats.Feature("image_gen").Available {
 		return []toolStatusRow{{name: "Image Generation", available: true}}, nil
 	}
 	if backend := firstAvailablePluginProvider(ctx, setupImageGenProviders(ctx), "fal"); backend != "" {
@@ -241,11 +230,8 @@ func imageGenRow(ctx context.Context, _ config.Tree, feats provider.NousSubscrip
 	return []toolStatusRow{{name: "Image Generation", missing: "FAL_KEY or OPENAI_API_KEY"}}, nil
 }
 
-// Video generation, shown only when managed or a plugin provider reports available
-func videoGenRow(ctx context.Context, _ config.Tree, feats provider.NousSubscriptionFeatures) ([]toolStatusRow, error) {
-	if feats.Feature("video_gen").ManagedByNous {
-		return []toolStatusRow{{name: "Video Generation (FAL via Nous subscription)", available: true}}, nil
-	}
+// Video generation, shown only when a plugin provider reports available
+func videoGenRow(ctx context.Context, _ config.Tree, _ provider.ToolFeatures) ([]toolStatusRow, error) {
 	if backend := firstAvailablePluginProvider(ctx, setupVideoGenProviders(ctx), ""); backend != "" {
 		return []toolStatusRow{{name: "Video Generation (" + backend + ")", available: true}}, nil
 	}
@@ -253,10 +239,7 @@ func videoGenRow(ctx context.Context, _ config.Tree, feats provider.NousSubscrip
 }
 
 // Text to speech of the configured provider, gated on its key or local install
-func ttsRow(ctx context.Context, cfg config.Tree, feats provider.NousSubscriptionFeatures) ([]toolStatusRow, error) {
-	if feats.Feature("tts").ManagedByNous {
-		return []toolStatusRow{{name: "Text-to-Speech (OpenAI via Nous subscription)", available: true}}, nil
-	}
+func ttsRow(ctx context.Context, cfg config.Tree, _ provider.ToolFeatures) ([]toolStatusRow, error) {
 	ttsProvider, ok := config.CfgGet(cfg, "tts", "provider")
 	if !ok {
 		ttsProvider = "edge"
@@ -266,10 +249,7 @@ func ttsRow(ctx context.Context, cfg config.Tree, feats provider.NousSubscriptio
 }
 
 // Speech to text of the configured provider, local Whisper when none is set
-func sttRow(ctx context.Context, cfg config.Tree, feats provider.NousSubscriptionFeatures) ([]toolStatusRow, error) {
-	if stt, ok := feats.Features["stt"]; ok && stt.ManagedByNous {
-		return []toolStatusRow{{name: "Speech-to-Text (OpenAI via Nous subscription)", available: true}}, nil
-	}
+func sttRow(ctx context.Context, cfg config.Tree, _ provider.ToolFeatures) ([]toolStatusRow, error) {
 	sttProvider, ok := config.CfgGet(cfg, "stt", "provider")
 	if !ok || !pyrepr.Truthy(sttProvider) {
 		sttProvider = "local"
@@ -278,26 +258,19 @@ func sttRow(ctx context.Context, cfg config.Tree, feats provider.NousSubscriptio
 	return []toolStatusRow{row}, err
 }
 
-// Modal execution, managed, direct, missing for a modal backend, or optional through Nous
-func modalRow(ctx context.Context, cfg config.Tree, feats provider.NousSubscriptionFeatures) ([]toolStatusRow, error) {
-	modal := feats.Feature("modal")
-	if modal.ManagedByNous {
-		return []toolStatusRow{{name: "Modal Execution (Nous subscription)", available: true}}, nil
-	}
+// Modal execution for a modal backend, direct when its credentials are set and missing otherwise
+func modalRow(_ context.Context, cfg config.Tree, feats provider.ToolFeatures) ([]toolStatusRow, error) {
 	if backend, _ := config.CfgGet(cfg, "terminal", "backend"); backend == "modal" {
-		if modal.DirectOverride {
+		if feats.Feature("modal").Available {
 			return []toolStatusRow{{name: "Modal Execution (direct Modal)", available: true}}, nil
 		}
 		return []toolStatusRow{{name: "Modal Execution", missing: "type '/setup terminal'"}}, nil
-	}
-	if setupManagedNousTools(ctx) && feats.NousAuthPresent {
-		return []toolStatusRow{{name: "Modal Execution (optional via Nous subscription)", available: true}}, nil
 	}
 	return nil, nil
 }
 
 // Skills hub access through a GitHub token
-func skillsHubRow(ctx context.Context, _ config.Tree, _ provider.NousSubscriptionFeatures) ([]toolStatusRow, error) {
+func skillsHubRow(ctx context.Context, _ config.Tree, _ provider.ToolFeatures) ([]toolStatusRow, error) {
 	token, err := setupEnvValue(ctx, "GITHUB_TOKEN")
 	if err != nil {
 		return nil, err
@@ -310,7 +283,7 @@ func skillsHubRow(ctx context.Context, _ config.Tree, _ provider.NousSubscriptio
 }
 
 // Terminal, task planning and skills, always available
-func alwaysOnRows(context.Context, config.Tree, provider.NousSubscriptionFeatures) ([]toolStatusRow, error) {
+func alwaysOnRows(context.Context, config.Tree, provider.ToolFeatures) ([]toolStatusRow, error) {
 	return []toolStatusRow{{name: "Terminal/Commands", available: true}, {name: "Task Planning (todo)", available: true},
 		{name: "Skills (view, create, edit)", available: true}}, nil
 }
@@ -319,7 +292,7 @@ func alwaysOnRows(context.Context, config.Tree, provider.NousSubscriptionFeature
 var toolRowBuilders = []toolRowBuilder{visionRow, webRow, browserRow, imageGenRow, videoGenRow, ttsRow, sttRow, modalRow, skillsHubRow, alwaysOnRows}
 
 // Tool availability rows in summary order, a builder that returns none leaving its row out
-func setupToolStatusRows(ctx context.Context, cfg config.Tree, feats provider.NousSubscriptionFeatures) ([]toolStatusRow, error) {
+func setupToolStatusRows(ctx context.Context, cfg config.Tree, feats provider.ToolFeatures) ([]toolStatusRow, error) {
 	var rows []toolStatusRow
 	for _, build := range toolRowBuilders {
 		built, err := build(ctx, cfg, feats)
@@ -350,13 +323,12 @@ func printSetupSummary(ctx context.Context, cfg config.Tree, icebathHome string)
 	if err := setupResolveProvider(ctx); err != nil {
 		setupPrintln("")
 		provider.SetupPrintWarning("No inference provider is configured — Icebath cannot chat yet.")
-		provider.SetupInfo("  Finish this one step with either of:",
-			"    icebath model            (pick any provider/model)",
-			"    icebath portal           (Nous Portal OAuth, no API key)")
+		provider.SetupInfo("  Finish this one step with:",
+			"    icebath model            (pick any provider/model)")
 	}
 	setupPrintln("")
 	provider.PrintSetupHeader("Tool Availability Summary", false)
-	feats, err := setupNousFeatures(ctx, cfg)
+	feats, err := setupToolFeatures(ctx, cfg)
 	if err != nil {
 		return err
 	}

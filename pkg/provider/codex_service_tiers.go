@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"log/slog"
 	"net/url"
 	"strings"
 	"sync"
@@ -312,7 +311,7 @@ func NegotiateRequestTier(route Route, overrides map[string]any) {
 		overrides["service_tier"] = effective
 	}
 	if effective != requested {
-		slog.Default().With("logger", "agent.codex_service_tiers").Debug(
+		pkgLog().Debug(
 			fmt.Sprintf("Codex service tier %s -> %s: not advertised for selected credential", requested, effective))
 	}
 }

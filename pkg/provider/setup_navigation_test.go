@@ -216,7 +216,7 @@ func TestRunSetupStepsPropagatesActionErrors(t *testing.T) {
 	}
 }
 
-func TestSetupPrintHelpersFormatLikeHermes(t *testing.T) {
+func TestSetupPrintHelpersFormat(t *testing.T) {
 	out := captureSetupOutput(t)
 	PrintSetupHeader("Models", true)
 	SetupInfo("first", nil, "second")

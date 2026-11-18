@@ -12,7 +12,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/memory"
 	"github.com/nickheyer/icebath/pkg/provider"
-	"github.com/nickheyer/icebath/pkg/tuigateway"
+	"github.com/nickheyer/icebath/pkg/tuihost"
 )
 
 // Home and secret a callback saw, the error text when the secret read failed closed
@@ -88,9 +88,9 @@ func TestWsOrphanReapTearsDownUnderTheSessionsProfile(t *testing.T) {
 	isolateProfileHosting(t)
 	provider.SetMultiplexActive(true)
 	sid := "ws-b"
-	session := tuigateway.NewSession(map[string]any{"agent": held, "history": []any{map[string]any{"role": "user", "content": "x"}},
-		"history_lock": &sync.Mutex{}, "session_key": "sess-b", "profile_home": b, "transport": tuigateway.DetachedWSTransport(), "last_active": 0.0})
-	swapSessions(t, map[string]*tuigateway.Session{sid: session})
+	session := tuihost.NewSession(map[string]any{"agent": held, "history": []any{map[string]any{"role": "user", "content": "x"}},
+		"history_lock": &sync.Mutex{}, "session_key": "sess-b", "profile_home": b, "transport": tuihost.DetachedWSTransport(), "last_active": 0.0})
+	swapSessions(t, map[string]*tuihost.Session{sid: session})
 	swapVar(t, &wsOrphanReapGraceS, func() float64 { return 0.01 })
 	scheduleWSOrphanReap(context.Background(), sid, nil, nil)
 	select {

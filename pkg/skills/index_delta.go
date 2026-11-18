@@ -2,7 +2,6 @@ package skills
 
 import (
 	"fmt"
-	"log/slog"
 	"regexp"
 	"sort"
 	"strings"
@@ -170,7 +169,7 @@ func (n *SkillsIndexNotes) Stage(provider, apiMode, sessionID string, current fu
 	}
 	currentPrompt, err := current()
 	if err != nil {
-		slog.Debug("skills index delta: current index unavailable", "error", err)
+		pkgLog().Debug("skills index delta: current index unavailable", "error", err)
 		return false
 	}
 	now := IndexEntries(currentPrompt)
@@ -212,7 +211,7 @@ func (n *SkillsIndexNotes) Stage(provider, apiMode, sessionID string, current fu
 	}
 	n.toldKey, n.toldDelta = key, &delta
 	n.note = renderIndexNote(added, delta.removed)
-	slog.Default().With("logger", "run_agent").Info(fmt.Sprintf(
+	pkgLog().Info(fmt.Sprintf(
 		"Session %s: skills changed (+%d/-%d) since the system prompt was built; delivering the "+
 			"change as a turn note (prefix cache preserved).", sessionID, len(added), len(delta.removed)))
 	return true

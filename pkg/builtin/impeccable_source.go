@@ -66,7 +66,6 @@ type impeccableSkill struct {
 	References    []impeccableFile
 	Scripts       []impeccableScript
 	Agents        []impeccableAgent
-	Payloads      map[string][]impeccableFile
 }
 
 // Token values of every provider substituted into skill text
@@ -88,7 +87,7 @@ var providerTokenTable = map[string]map[string]string{
 	"vibe":        {"model": "Mistral", "config_file": "AGENTS.md", "ask_instruction": "Ask the user directly to clarify what you cannot infer.", "command_prefix": "/"},
 	"grok":        {"model": "Grok", "config_file": "AGENTS.md", "ask_instruction": "Ask with the AskUserQuestion tool and wait for the answer before continuing.", "command_prefix": "/"},
 	"antigravity": {"model": "Gemini", "config_file": "AGENTS.md", "ask_instruction": "Ask the user directly to clarify what you cannot infer.", "command_prefix": "/"},
-	"hermes":      impeccableProviderTokens,
+	"icebath":     impeccableProviderTokens,
 	"devin":       {"model": "Devin", "config_file": "AGENTS.md", "ask_instruction": "Ask with the ask_user_question tool when available, or directly in chat if it is not, and wait for the answer before continuing.", "command_prefix": "/"},
 }
 
@@ -479,7 +478,6 @@ func readImpeccableSource(rootDir string) ([]impeccableSkill, error) {
 		Context:       fmOr(fm, "context", nil),
 		Body:          body,
 		FilePath:      skillMdPath,
-		Payloads:      map[string][]impeccableFile{},
 	}
 	inv := fmLookup(fm, "user-invocable")
 	skill.UserInvocable = inv == true || inv == "true"
@@ -509,34 +507,6 @@ func readImpeccableSource(rootDir string) ([]impeccableSkill, error) {
 		if skill.Scripts, err = readSkillScripts(scriptsDir); err != nil {
 			return nil, err
 		}
-	}
-
-	for _, config := range impeccableProviders {
-		if config.PluginPayload == nil {
-			continue
-		}
-		source := config.PluginPayload.Source
-		dir := filepath.Join(skillDir, source)
-		if _, done := skill.Payloads[source]; done || !pathExists(dir) {
-			continue
-		}
-		entries, err := os.ReadDir(dir)
-		if err != nil {
-			return nil, err
-		}
-		files := []impeccableFile{}
-		for _, entry := range entries {
-			if !entry.Type().IsRegular() {
-				continue
-			}
-			text, err := readTextFile(filepath.Join(dir, entry.Name()))
-			if err != nil {
-				return nil, err
-			}
-			files = append(files, impeccableFile{Name: entry.Name(), Content: text})
-		}
-		sort.SliceStable(files, func(i, j int) bool { return files[i].Name < files[j].Name })
-		skill.Payloads[source] = files
 	}
 
 	agentsDir := filepath.Join(skillDir, "agents")

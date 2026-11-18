@@ -4,9 +4,9 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"github.com/nickheyer/icebath/pkg/internal/pydict"
-	"log/slog"
 	"strings"
+
+	"github.com/nickheyer/icebath/pkg/internal/pydict"
 
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
@@ -18,8 +18,6 @@ const (
 	EgressDeclineMarker = "egress declined:"
 	ambiguousAckMarker  = "ack lost"
 )
-
-func egressLog() *slog.Logger { return slog.Default().With("logger", "gateway.relay.egress") }
 
 // True when a connector result dict is a definite refusal carrying the decline code or uniform text
 func IsEgressDecline(result any) bool {
@@ -87,7 +85,7 @@ func DeclineError(result any) string {
 
 // Warns about a decline on a lane whose contract cannot carry an error
 func LogDecline(op string, chatID, result any) {
-	egressLog().Warn(fmt.Sprintf("relay %s DECLINED for %s: %s", op, pyrepr.Str(chatID), DeclineError(result)))
+	pkgLog().Warn(fmt.Sprintf("relay %s DECLINED for %s: %s", op, pyrepr.Str(chatID), DeclineError(result)))
 }
 
 // Relay routing could not be determined, callers fail closed
@@ -112,7 +110,7 @@ func liveRelayFronted() (fronted map[string]bool, ok bool, err error) {
 	}
 	defer func() {
 		if r := recover(); r != nil {
-			egressLog().Error("could not determine the live relay adapter's fronted set", "error", fmt.Sprint(r))
+			pkgLog().Error("could not determine the live relay adapter's fronted set", "error", fmt.Sprint(r))
 			fronted, ok, err = nil, false, &RelayRouteUnknown{"the connected relay adapter could not report which platforms it fronts, so this destination's routing could not be determined"}
 		}
 	}()
@@ -332,18 +330,18 @@ func AttestedRelayTargets(ctx context.Context, platformName string) (map[string]
 func hasNativeCredential(ctx context.Context, platformName string) (has bool) {
 	defer func() {
 		if r := recover(); r != nil {
-			egressLog().Debug("native-credential probe failed; withdrawing the exemption", "error", fmt.Sprint(r))
+			pkgLog().Debug("native-credential probe failed; withdrawing the exemption", "error", fmt.Sprint(r))
 			has = true
 		}
 	}()
 	cfg, err := LoadGatewayConfig(ctx)
 	if err != nil {
-		egressLog().Debug("native-credential probe failed; withdrawing the exemption", "error", err.Error())
+		pkgLog().Debug("native-credential probe failed; withdrawing the exemption", "error", err.Error())
 		return true
 	}
 	platform, err := ParsePlatform(ctx, platformName)
 	if err != nil {
-		egressLog().Debug("native-credential probe failed; withdrawing the exemption", "error", err.Error())
+		pkgLog().Debug("native-credential probe failed; withdrawing the exemption", "error", err.Error())
 		return true
 	}
 	pc := cfg.Platforms[platform]
@@ -372,7 +370,7 @@ func AuthorizeRelayTarget(ctx context.Context, platformName string, chatID, thre
 	routed, err := RelayRoutedPlatform(ctx, platformName)
 	var unknown *RelayRouteUnknown
 	if errors.As(err, &unknown) {
-		egressLog().Warn(fmt.Sprintf("relay routing unknown for %s — refusing the send: %s", platformName, unknown.Msg))
+		pkgLog().Warn(fmt.Sprintf("relay routing unknown for %s — refusing the send: %s", platformName, unknown.Msg))
 		return fmt.Sprintf("Refusing to send to '%s': relay routing could not be determined, so this destination could not be verified.", platformName), nil
 	}
 	if err != nil {
@@ -401,7 +399,7 @@ func AuthorizeRelayTarget(ctx context.Context, platformName string, chatID, thre
 		return "", nil
 	}
 	if isUnresolvedHandle(ctx, name, target, native) {
-		egressLog().Debug(fmt.Sprintf("relay target '%s:%s' is an unresolved handle — deferring authorization to the connector's egress floor", name, target))
+		pkgLog().Debug(fmt.Sprintf("relay target '%s:%s' is an unresolved handle — deferring authorization to the connector's egress floor", name, target))
 		return "", nil
 	}
 	return fmt.Sprintf("Refusing to send to unattested relay target '%s:%s': this gateway has no record of that destination. Use send_message(action='list') to see the targets it can reach.", name, target), nil

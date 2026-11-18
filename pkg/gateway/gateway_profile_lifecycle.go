@@ -4,18 +4,17 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"log/slog"
 )
 
 // ReportProfileStopFailure prints absence when proven, else the unconfirmed stop error and host hint with exit code 1
 func ReportProfileStopFailure(ctx context.Context, w io.Writer) int {
 	absent := false
 	if _, running, err := statusGetRunningPid("", true); err != nil {
-		slog.Debug(fmt.Sprintf("Could not confirm gateway absence after stop: %v", err))
+		pkgLog().Debug(fmt.Sprintf("Could not confirm gateway absence after stop: %v", err))
 	} else if !running {
 		pids, err := FindGatewayPIDsFor(ctx, nil, false)
 		if err != nil {
-			slog.Debug(fmt.Sprintf("Could not confirm gateway absence after stop: %v", err))
+			pkgLog().Debug(fmt.Sprintf("Could not confirm gateway absence after stop: %v", err))
 		}
 		absent = err == nil && len(pids) == 0
 	}
@@ -33,7 +32,7 @@ func ReportProfileStopFailure(ctx context.Context, w io.Writer) int {
 func printHostHint(w io.Writer) {
 	pid, running, err := statusGetRunningPid("", true)
 	if err != nil {
-		slog.Debug(fmt.Sprintf("Could not read the host record for the stop hint: %v", err))
+		pkgLog().Debug(fmt.Sprintf("Could not read the host record for the stop hint: %v", err))
 		return
 	}
 	record := hostReadRecord(roleGateway, false)

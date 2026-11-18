@@ -2,7 +2,6 @@ package provider
 
 import (
 	"context"
-	"log/slog"
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/internal/pyhttpx"
@@ -33,12 +32,12 @@ func anthropicProfileFetchModels(ctx context.Context, apiKey, baseURL string, ti
 	for range anthropicModelsMaxPages {
 		data, err := modelsGetJSON(ctx, anthropicModelsURL(baseURL, cursor), timeout, headers, nil)
 		if err != nil {
-			slog.Debug("fetch_models(anthropic): " + err.Error())
+			pkgLog().Debug("fetch_models(anthropic): " + err.Error())
 			return nil, false
 		}
 		doc, isDict := data.(map[string]any)
 		if !isDict {
-			slog.Debug("fetch_models(anthropic): '" + pyTypeName(data) + "' object has no attribute 'get'")
+			pkgLog().Debug("fetch_models(anthropic): '" + pyTypeName(data) + "' object has no attribute 'get'")
 			return nil, false
 		}
 		items, present := doc["data"]
@@ -47,7 +46,7 @@ func anthropicProfileFetchModels(ctx context.Context, apiKey, baseURL string, ti
 		}
 		list, isList := items.([]any)
 		if !isList {
-			slog.Debug("fetch_models(anthropic): '" + pyTypeName(items) + "' object is not iterable")
+			pkgLog().Debug("fetch_models(anthropic): '" + pyTypeName(items) + "' object is not iterable")
 			return nil, false
 		}
 		for _, it := range list {

@@ -14,13 +14,10 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyacp"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/logging"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
 
-var permissionsLog = logging.GetLogger("acp_adapter.permissions")
-
-var optionIDToHermes = map[string]string{
+var optionIDToIcebath = map[string]string{
 	"allow_once": "once", "allow_session": "session", "allow_always": "always", "deny": "deny", "deny_always": "deny",
 }
 
@@ -46,7 +43,7 @@ func permissionProbe(kind string) *pyjson.Object {
 	return o
 }
 
-// Permission options matching Hermes approval semantics, once and deny only when the gate re-asks
+// Permission options matching icebath approval semantics, once and deny only when the gate re-asks
 func buildPermissionOptions(allowPermanent, allowSession, smartDenied bool) []pyacp.PermissionOption {
 	onceOnly := smartDenied || !allowSession
 	options := []pyacp.PermissionOption{{OptionID: "allow_once", Kind: "allow_once", Name: "Allow once"}}
@@ -80,17 +77,17 @@ func buildPermissionToolCall(command, description string) *pyacp.ToolCallProgres
 	})
 }
 
-// Hermes approval string for an outcome, deny for anything but an offered selected option
-func mapOutcomeToHermes(outcome pyacp.PermissionOutcome, allowed map[string]bool) string {
+// Approval string for an outcome, deny for anything but an offered selected option
+func mapOutcomeToIcebath(outcome pyacp.PermissionOutcome, allowed map[string]bool) string {
 	sel, ok := outcome.(*pyacp.AllowedOutcome)
 	if !ok {
 		return "deny"
 	}
 	if !allowed[sel.OptionID] {
-		permissionsLog.Warning("Permission request returned unknown option_id: " + sel.OptionID)
+		pkgLog().Warning("Permission request returned unknown option_id: " + sel.OptionID)
 		return "deny"
 	}
-	if v, ok := optionIDToHermes[sel.OptionID]; ok {
+	if v, ok := optionIDToIcebath[sel.OptionID]; ok {
 		return v
 	}
 	return "deny"
@@ -117,7 +114,7 @@ func permissionAllowed(resp *pyacp.RequestPermissionResponse, options []pyacp.Pe
 func AwaitPermission(requestPermission RequestPermissionFunc, loop Loop, sessionID string, toolCall *pyacp.ToolCallProgress, options []pyacp.PermissionOption, timeout float64, what string, sendUpdate SendUpdateFunc) (*pyacp.RequestPermissionResponse, bool) {
 	future := safeScheduleThreadsafe(func(ctx context.Context) (any, error) {
 		return requestPermission(ctx, sessionID, toolCall, options)
-	}, loop, permissionsLog, what+": failed to schedule on loop")
+	}, loop, pkgLog(), what+": failed to schedule on loop")
 	if future == nil {
 		return nil, false
 	}
@@ -127,11 +124,11 @@ func AwaitPermission(requestPermission RequestPermissionFunc, loop Loop, session
 	switch {
 	case errors.Is(err, ErrFutureTimeout):
 		future.Cancel()
-		permissionsLog.Warning(fmt.Sprintf("%s timed out after %ss", what, pyrepr.Float(timeout)))
+		pkgLog().Warning(fmt.Sprintf("%s timed out after %ss", what, pyrepr.Float(timeout)))
 		timedOut = true
 	case err != nil:
 		future.Cancel()
-		permissionsLog.Warning(fmt.Sprintf("%s failed: %s", what, err))
+		pkgLog().Warning(fmt.Sprintf("%s failed: %s", what, err))
 	default:
 		response, _ = res.(*pyacp.RequestPermissionResponse)
 	}
@@ -157,7 +154,7 @@ func ResolvePermissionTimeout(ctx context.Context, timeout *float64) float64 {
 	return float64(tools.GetApprovalTimeout(env))
 }
 
-// Hermes approval callback bridging to the client's request_permission, timeout when nobody answered
+// Approval callback bridging to the client's request_permission, timeout when nobody answered
 type ApprovalCallback func(ctx context.Context, command, description string, allowPermanent, allowSession, smartDenied bool) string
 
 // Approval callback asking the ACP client through loop, auto denying after the timeout
@@ -176,7 +173,7 @@ func MakeApprovalCallback(requestPermission RequestPermissionFunc, loop Loop, se
 		for _, o := range options {
 			allowed[o.OptionID] = true
 		}
-		return mapOutcomeToHermes(response.Outcome, allowed)
+		return mapOutcomeToIcebath(response.Outcome, allowed)
 	}
 }
 

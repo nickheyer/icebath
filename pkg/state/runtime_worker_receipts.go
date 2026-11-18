@@ -13,7 +13,7 @@ var messageFields = func() map[string]bool {
 		"finish_reason": true, "reasoning": true, "reasoning_content": true, "reasoning_details": true,
 		"codex_reasoning_items": true, "codex_message_items": true, "platform_message_id": true, "message_id": true,
 		"observed": true, "effect_disposition": true, "_compressed_summary": true, "timestamp": true, "api_content": true,
-		"display_kind": true, "display_metadata": true, "_row_id": true, "_canonical_content": true, DBRowSnapshot: true, CanonicalRow: true, DataUse: true,
+		"display_kind": true, "display_metadata": true, "_row_id": true, "_canonical_content": true, DBRowSnapshot: true, CanonicalRow: true,
 		AbsorbedRowIDs: true}
 	for k := range PersistenceOnlyMessageFields {
 		fields[k] = true

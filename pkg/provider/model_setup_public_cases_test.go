@@ -34,17 +34,6 @@ func TestPersistModelSelectionWritesTheModelSection(t *testing.T) {
 	}
 }
 
-func TestNoteSetupFailureReachesTheSetupMetric(t *testing.T) {
-	var seen []string
-	prev := noteProviderSetupFailureFn
-	noteProviderSetupFailureFn = func(failureClass string) { seen = append(seen, failureClass) }
-	t.Cleanup(func() { noteProviderSetupFailureFn = prev })
-	NoteSetupFailure("auth")
-	if len(seen) != 1 || seen[0] != "auth" {
-		t.Fatalf("seen %v", seen)
-	}
-}
-
 func TestSecretSourceLabelNamesAnExternalSource(t *testing.T) {
 	h := newTestHome(t)
 	secretSourceCacheMu.Lock()

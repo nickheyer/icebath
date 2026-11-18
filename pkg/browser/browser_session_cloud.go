@@ -114,9 +114,6 @@ func resolveProviderUncached(env *tools.Env) (BrowserProvider, bool, error) {
 	if present && (providerKey == "local" || providerKey == "camofox") {
 		return nil, true, nil
 	}
-	if providerKey == "nous" {
-		providerKey = "browser-use"
-	}
 	if providerKey != "" {
 		resolved, err := instantiateExplicitProvider(env, providerKey)
 		if err != nil {
@@ -178,31 +175,6 @@ func isLocalBackend(env *tools.Env) bool {
 	}
 	backend = strings.ToLower(strings.TrimSpace(backend))
 	return backend == "local" || backend == ""
-}
-
-// Shared metrics label of the backend in session precedence CDP override, local engine, cloud provider, engine
-func browserBackendName(env *tools.Env, localEngine string) (string, error) {
-	s := cfgOf(env)
-	if s.cdpOverrideRaw() != "" {
-		return "cdp", nil
-	}
-	if localEngine != "" {
-		return localEngine, nil
-	}
-	p, err := getCloudProvider(env)
-	if err != nil {
-		return "", err
-	}
-	if p != nil {
-		if name := p.Name(); name != "" {
-			return name, nil
-		}
-		return "other", nil
-	}
-	if s.engine() == "lightpanda" {
-		return "lightpanda", nil
-	}
-	return "local", nil
 }
 
 // Whether browser.headed asks for a visible window

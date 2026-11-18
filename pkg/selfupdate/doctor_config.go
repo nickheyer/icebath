@@ -144,12 +144,16 @@ func doctorReportDeprecatedConfigAndEnv(w io.Writer, rawConfig any, envMap map[s
 // Names the plugins.toml files Relay applies, warning when Relay would reject them
 func checkRelayPlugins(ctx context.Context, d *Doctor, shouldFix bool) (*Finding, error) {
 	return doctorCheckGuarded(d.W, "Relay plugin check failed: {e}", "", func(f *Finding) error {
+		if !tools.RelayDemanded(ctx) {
+			doctorCheckOK(d.W, "No Relay plugin files found", "")
+			return nil
+		}
 		sources, err := tools.ResolveRelayPluginSources(ctx, nil)
 		if err != nil {
 			if unprovisioned := (*pm.RuntimeUnprovisioned)(nil); errors.As(err, &unprovisioned) {
-				doctorCheckWarn(d.W, "NeMo Relay runtime is not provisioned", "(Icebath runs without Relay plugins)")
+				doctorCheckWarn(d.W, "Relay plugins are configured but the NeMo Relay runtime is not provisioned", "(Icebath runs without Relay plugins)")
 				doctorRelayInfoLines(d.W, []string{unprovisioned.Err.Error()})
-				f.ManualIssues = append(f.ManualIssues, "Run `icebath pm install` to provision the NeMo Relay runtime.")
+				f.ManualIssues = append(f.ManualIssues, "Run `icebath pm install --extra nemo-relay` to provision the NeMo Relay runtime.")
 				return nil
 			}
 			if name, missing := strings.CutPrefix(err.Error(), "No module named "); missing {
@@ -341,7 +345,7 @@ func doctorPoolEnv(ctx context.Context, h string) provider.PoolEnv {
 // Providers whose model ids are vendor slugs, the aggregators plus Fireworks and DeepInfra
 var doctorVendorSlugProviders = map[string]bool{
 	"openrouter": true, "auto": true, "ai-gateway": true, "kilocode": true, "opencode-zen": true, "huggingface": true,
-	"lmstudio": true, "nous": true, "nvidia": true, "fireworks": true, "deepinfra": true,
+	"lmstudio": true, "nvidia": true, "fireworks": true, "deepinfra": true,
 }
 
 // Whether an API key provider has a credential, true for every provider with its own check elsewhere

@@ -110,7 +110,7 @@ func (r *GatewayRunner) handleSaveCommand(ctx context.Context, event *gateway.Me
 		return i18n.T(ctx, "gateway.save.complete", "", nil), nil
 	}()
 	if err != nil {
-		runLog().Warn(fmt.Sprintf("Session /save failed: %s", pyrepr.ExceptionMessage(err)))
+		pkgLog().Warn(fmt.Sprintf("Session /save failed: %s", pyrepr.ExceptionMessage(err)))
 		return i18n.T(ctx, "gateway.save.failed", "", map[string]any{"error": pyrepr.ExceptionMessage(err)}), nil
 	}
 	return reply, nil
@@ -170,7 +170,7 @@ func (r *GatewayRunner) handleTitleCommand(ctx context.Context, event *gateway.M
 	func() {
 		defer func() {
 			if rec := recover(); rec != nil {
-				runLog().Debug("Failed to rename Telegram topic from /title", "exc_info", rec)
+				pkgLog().Debug("Failed to rename Telegram topic from /title", "exc_info", rec)
 			}
 		}()
 		r.scheduleTelegramTopicTitleRename(ctx, source, sessionID, sanitized)

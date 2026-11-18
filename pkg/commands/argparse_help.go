@@ -90,7 +90,7 @@ func apFlag(cmd *cobra.Command, opts []string) *pflag.Flag {
 	return nil
 }
 
-// Actions of a command from the hermes parser table, or derived from cobra for commands hermes never declared
+// Actions of a command from the parser table, or derived from cobra for commands the table never declared
 func apItems(cmd *cobra.Command) ([]apItem, *apParser) {
 	p, ok := argparseTree[apPath(cmd)]
 	if own, found := argparseOwn.Load(cmd); found {
@@ -126,6 +126,9 @@ func apOptionHelp(cmd *cobra.Command, a apAction) (string, bool) {
 
 // Attaches the help text a table action renders, flag help coming from the cobra flag usage
 func apResolve(cmd *cobra.Command, a apAction) apItem {
+	if a.Kind == 's' && !cmd.HasParent() {
+		a = apDropTierChoices(a)
+	}
 	it := apItem{apAction: a}
 	switch a.Kind {
 	case 'h':
@@ -149,7 +152,7 @@ func apResolve(cmd *cobra.Command, a apAction) apItem {
 	return it
 }
 
-// Builds argparse actions from a cobra command the hermes tree does not carry, such as a plugin command
+// Builds argparse actions from a cobra command the tree does not carry, such as a plugin command
 func apDerive(cmd *cobra.Command) ([]apItem, *apParser) {
 	p := &apParser{Desc: cmd.Long != "", Epilog: cmd.Annotations["epilog"] != ""}
 	var items []apItem

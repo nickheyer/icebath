@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/gorilla/websocket"
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
@@ -283,7 +284,8 @@ func DispatchKanbanWorkerClientEntry(ctx context.Context) {
 	}
 	fmt.Fprintf(os.Stderr, "\n%s%d\n", kanban.WorkerExitTrailer, rc)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "Traceback (most recent call last):\n%s: %s\n", pyrepr.ExceptionName(err), pyrepr.ExceptionMessage(err))
+		fmt.Fprintf(os.Stderr, "kanban worker could not submit its task: %s\n", err)
+		pkgLog().Error("kanban worker could not submit its task: "+err.Error(), "error_chain", errchain.Text(err))
 	}
 	os.Exit(rc)
 }

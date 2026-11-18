@@ -2,7 +2,6 @@ package gateway
 
 import (
 	"context"
-	"log/slog"
 	"os"
 	"path/filepath"
 	"strings"
@@ -66,17 +65,17 @@ func jsonSectionKeys(path, section, what string) map[string]bool {
 	raw, err := os.ReadFile(path)
 	if err != nil {
 		if !os.IsNotExist(err) {
-			slog.Debug("platform activation: " + what + " unreadable")
+			pkgLog().Debug("platform activation: " + what + " unreadable")
 		}
 		return out
 	}
 	if !utf8.Valid(raw) {
-		slog.Debug("platform activation: " + what + " unreadable")
+		pkgLog().Debug("platform activation: " + what + " unreadable")
 		return out
 	}
 	doc, err := pyjson.Loads(strings.TrimPrefix(string(raw), "\xef\xbb\xbf"))
 	if err != nil {
-		slog.Debug("platform activation: " + what + " unreadable")
+		pkgLog().Debug("platform activation: " + what + " unreadable")
 		return out
 	}
 	doc = plainJSON(doc)
@@ -85,7 +84,7 @@ func jsonSectionKeys(path, section, what string) map[string]bool {
 	}
 	m, ok := doc.(map[string]any)
 	if !ok {
-		slog.Debug("platform activation: " + what + " unreadable")
+		pkgLog().Debug("platform activation: " + what + " unreadable")
 		return out
 	}
 	rows := m[section]
@@ -121,7 +120,7 @@ func ActivationPredicate(ctx context.Context, yamlCfg any, platformNames []strin
 		if layers, err := ReadYAMLLayers(ctx, h); err == nil {
 			yamlCfg = layers
 		} else {
-			slog.Debug("platform activation: config.yaml unreadable")
+			pkgLog().Debug("platform activation: config.yaml unreadable")
 		}
 	}
 	blocks := yamlBlockNames(yamlCfg)

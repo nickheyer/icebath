@@ -26,18 +26,18 @@ import (
 
 // Every gauge the runtime snapshot can emit, a metric missing here is never exported
 var observableMetricNames = []string{
-	"hermes.gateway.up", "hermes.gateway.state", "hermes.gateway.active_agents", "hermes.gateway.busy",
-	"hermes.gateway.drainable", "hermes.gateway.restart_requested", "hermes.gateway.background_work",
-	"hermes.gateway.background_delegations", "hermes.platform.up", "hermes.platform.degraded",
-	"hermes.cron.scheduler.heartbeat_age_seconds", "hermes.cron.scheduler.last_success_age_seconds",
-	"hermes.cron.scheduler.catch_up_occurrences", "hermes.cron.jobs.enabled", "hermes.cron.jobs.running",
-	"hermes.cron.jobs.overdue", "hermes.cron.store.writable", "hermes.cron.store.skipped_runs",
+	"icebath.gateway.up", "icebath.gateway.state", "icebath.gateway.active_agents", "icebath.gateway.busy",
+	"icebath.gateway.drainable", "icebath.gateway.restart_requested", "icebath.gateway.background_work",
+	"icebath.gateway.background_delegations", "icebath.platform.up", "icebath.platform.degraded",
+	"icebath.cron.scheduler.heartbeat_age_seconds", "icebath.cron.scheduler.last_success_age_seconds",
+	"icebath.cron.scheduler.catch_up_occurrences", "icebath.cron.jobs.enabled", "icebath.cron.jobs.running",
+	"icebath.cron.jobs.overdue", "icebath.cron.store.writable", "icebath.cron.store.skipped_runs",
 }
 
 // Gauges whose observations are seconds as floats, every other gauge observing integers
 var floatGaugeNames = map[string]bool{
-	"hermes.cron.scheduler.heartbeat_age_seconds":    true,
-	"hermes.cron.scheduler.last_success_age_seconds": true,
+	"icebath.cron.scheduler.heartbeat_age_seconds":    true,
+	"icebath.cron.scheduler.last_success_age_seconds": true,
 }
 
 var (
@@ -65,10 +65,6 @@ var builtinGatewayHealthSDK = &gatewayHealthSDK{
 		return otlpmetrichttp.New(ctx, opts...)
 	},
 	newLogExporter: newOTLPLogExporter,
-}
-
-func healthExportLog() *slog.Logger {
-	return slog.Default().With("logger", "agent.monitoring.gateway_health_export")
 }
 
 // GatewayHealthExportRuntime owns the metric provider, streamers, log handler and snapshot loop of one export
@@ -198,12 +194,12 @@ func readGatewaySnapshot(cfg map[string]any) (GatewayHealthSnapshot, error) {
 // Non negative count from a live counter, zero with a debug line when the counter is absent or panics
 func liveCount(failureMsg string, read func() int) (n int) {
 	if read == nil {
-		healthExportLog().Debug(failureMsg)
+		pkgLog().Debug(failureMsg)
 		return 0
 	}
 	defer func() {
 		if r := recover(); r != nil {
-			healthExportLog().Debug(fmt.Sprintf("%s: %v", failureMsg, r))
+			pkgLog().Debug(fmt.Sprintf("%s: %v", failureMsg, r))
 			n = 0
 		}
 	}()
@@ -232,8 +228,8 @@ func readRuntimeSnapshot(cfg map[string]any) (GatewayHealthSnapshot, error) {
 		}
 	}
 	snap.Metrics = append(snap.Metrics,
-		GatewayMetric{Name: "hermes.gateway.background_work", Value: readBackgroundWorkCount(), Attributes: base},
-		GatewayMetric{Name: "hermes.gateway.background_delegations", Value: readBackgroundDelegationsCount(), Attributes: base})
+		GatewayMetric{Name: "icebath.gateway.background_work", Value: readBackgroundWorkCount(), Attributes: base},
+		GatewayMetric{Name: "icebath.gateway.background_delegations", Value: readBackgroundDelegationsCount(), Attributes: base})
 	snap.Metrics = append(snap.Metrics, BuildCronHealthSnapshot(context.Background()).Metrics...)
 	return snap, nil
 }
@@ -245,7 +241,7 @@ func emitSnapshotEvents(cfg map[string]any) {
 	}
 	snap, err := readRuntimeSnapshot(cfg)
 	if err != nil {
-		healthExportLog().Debug("gateway health snapshot emit failed: " + err.Error())
+		pkgLog().Debug("gateway health snapshot emit failed: " + err.Error())
 		return
 	}
 	for _, ev := range snap.Events {
@@ -329,11 +325,11 @@ func startMetricProvider(cfg map[string]any, sdk *gatewayHealthSDK) (*sdkmetric.
 		return nil, err
 	}
 	provider := sdkmetric.NewMeterProvider(sdkmetric.WithReader(reader), sdkmetric.WithResource(res))
-	meter := provider.Meter("hermes.gateway.health")
+	meter := provider.Meter("icebath.gateway.health")
 	matching := func(name string) []GatewayMetric {
 		snap, err := readRuntimeSnapshot(cfg)
 		if err != nil {
-			healthExportLog().Debug("gateway metric callback failed: " + err.Error())
+			pkgLog().Debug("gateway metric callback failed: " + err.Error())
 			return nil
 		}
 		var out []GatewayMetric
@@ -421,7 +417,7 @@ func (s *GatewayDiagnosticLogStreamer) Call(batch []*pyjson.Object) {
 		if kind, _ := ev.Get("event"); kind != any("gateway_diagnostic") {
 			continue
 		}
-		scope := "hermes.gateway.diagnostics"
+		scope := "icebath.gateway.diagnostics"
 		if src := SourceLoggerForExport(ev.GetOr("source_logger", nil)); src != nil {
 			scope = *src
 		}
@@ -447,7 +443,7 @@ func (s *GatewayDiagnosticLogStreamer) Call(batch []*pyjson.Object) {
 			}
 			value, err := anyValueProto(v)
 			if err != nil {
-				healthExportLog().Error("Failed to encode key icebath." + col + ": " + err.Error())
+				pkgLog().Error("Failed to encode key icebath." + col + ": " + err.Error())
 				continue
 			}
 			rec.Attributes = append(rec.Attributes, &commonpb.KeyValue{Key: "icebath." + col, Value: value})
@@ -480,7 +476,7 @@ func gatewayHealthEvent(ev *pyjson.Object) bool {
 
 // Logs the failure, shuts the partial runtime down and returns a disabled runtime with the reason
 func failGatewayHealthExport(runtime *GatewayHealthExportRuntime, level slog.Level, msg string, err error, reason string) *GatewayHealthExportRuntime {
-	healthExportLog().Log(context.Background(), level, msg+": "+err.Error())
+	pkgLog().Log(context.Background(), level, msg+": "+err.Error())
 	runtime.Shutdown()
 	return &GatewayHealthExportRuntime{Enabled: false, Reason: reason}
 }
@@ -525,7 +521,7 @@ func StartGatewayHealthExport(cfg map[string]any) *GatewayHealthExportRuntime {
 		emitSnapshotEvents(cfg)
 		seconds, err := configInt(gatewayHealthOption(cfg, "logs_export_interval_seconds", 5))
 		if err != nil {
-			healthExportLog().Debug("gateway health snapshot thread failed to start: " + err.Error())
+			pkgLog().Debug("gateway health snapshot thread failed to start: " + err.Error())
 			return runtime
 		}
 		interval := time.Duration(max(5, seconds)) * time.Second

@@ -3,43 +3,33 @@ package main
 import (
 	"context"
 	"fmt"
-	"log/slog"
 	"os"
 	"path/filepath"
 	"runtime"
 	"strings"
-	"testing"
-
-	"github.com/spf13/cobra"
 
 	"github.com/nickheyer/icebath/pkg/selfupdate/updaterecord"
 
-	"github.com/nickheyer/icebath/pkg/acp"
 	"github.com/nickheyer/icebath/pkg/app"
-	"github.com/nickheyer/icebath/pkg/containerinit/stage"
 
 	"github.com/mattn/go-isatty"
 	"github.com/nickheyer/icebath/pkg/agent"
-	"github.com/nickheyer/icebath/pkg/botdesktop"
 	"github.com/nickheyer/icebath/pkg/botmode/dmdelivery"
-	"github.com/nickheyer/icebath/pkg/builtin/googlemeet"
 	"github.com/nickheyer/icebath/pkg/commands"
 	"github.com/nickheyer/icebath/pkg/config"
-	"github.com/nickheyer/icebath/pkg/cron"
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/gatewayrun"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/logging"
 	"github.com/nickheyer/icebath/pkg/pm"
 	"github.com/nickheyer/icebath/pkg/provider"
-	"github.com/nickheyer/icebath/pkg/relayhost"
 	"github.com/nickheyer/icebath/pkg/selfupdate"
 	"github.com/nickheyer/icebath/pkg/startupfast"
 	"github.com/nickheyer/icebath/pkg/tools"
 	"github.com/nickheyer/icebath/pkg/tuiserver"
 )
 
-// Release date of this build, hermes_cli.__release_date__
+// Release date of this build
 
 // Version the build stamps through ldflags, empty for a source build
 var version string
@@ -47,6 +37,7 @@ var version string
 // Assigns every process hook and then runs the hidden child entry argv names, the first step of main
 func startProcess(ctx context.Context) {
 	updaterecord.SetBuildVersion(version)
+	pm.SetBuildTag(version)
 	logging.InstallSlogBridge()
 	installProcessWiring()
 	dispatchChildEntries(ctx)
@@ -56,28 +47,34 @@ func startProcess(ctx context.Context) {
 func dispatchChildEntries(ctx context.Context) {
 	selfupdate.DispatchCustodyLauncher()
 	home.DispatchScratchPruneEntry(ctx)
-	relayhost.DispatchRelayHostEntry(ctx)
-	googlemeet.DispatchMeetBotEntry(ctx)
-	botdesktop.DispatchIdleWatchEntry()
+	runChildEntries(ctx, childEntriesAfterPrunePlugins)
+	runChildEntries(ctx, childEntriesAfterPruneExtras)
 	dmdelivery.DispatchEntry(ctx, exit)
 	gateway.DispatchStderrTimestampEntry()
 	gateway.DispatchGatewayRestartWatcherEntry(ctx)
 	gateway.DispatchDetachedRestartWatcherEntry(ctx)
 	gateway.DispatchUpdateHelperEntry(ctx)
 	gateway.DispatchSystemdStopMarkEntry(ctx)
-	stage.DispatchStageEntry(ctx)
+	runChildEntries(ctx, childEntriesAfterStopMark)
 	gateway.DispatchCgroupCleanupEntry()
 	gateway.DispatchKanbanWorkerClientEntry(ctx)
 	tools.DispatchDDGSWorkerEntry()
 	tools.DispatchCommitGraphRefreshEntry(ctx)
 	provider.DispatchCodexToolsMCPServerEntry()
-	cron.DispatchExternalWorkerEntry(exit)
+	runChildEntries(ctx, childEntriesAfterCodex)
 	agent.DispatchManagedWorkerEntry(exit)
 	app.DispatchSlashWorkerEntry(ctx, exit)
 	app.DispatchCLIModuleEntry(ctx, exit)
 	tuiserver.DispatchTUIGatewayEntry(ctx, exit)
 	gatewayrun.DispatchGatewayRunModuleEntry(ctx, exit)
-	acp.DispatchModuleEntry(ctx, exit)
+	runChildEntries(ctx, childEntriesLast)
+}
+
+// Dispatches the tier child entries of one slot in link order
+func runChildEntries(ctx context.Context, entries []func(ctx context.Context)) {
+	for _, entry := range entries {
+		entry(ctx)
+	}
 }
 
 // Shows icebath instead of the binary path in ps and top, never fatal
@@ -163,7 +160,7 @@ func loadDotenv() {
 	ctx := context.Background()
 	projectEnv := filepath.Join(pm.RepoRoot(), ".env")
 	if _, err := provider.LoadIcebathDotenv(ctx, provider.DotenvLoadOptions{ProjectEnv: projectEnv}); err != nil {
-		slog.Debug(fmt.Sprintf("dotenv load failed: %v", err))
+		pkgLog().Debug(fmt.Sprintf("dotenv load failed: %v", err))
 	}
 }
 
@@ -205,7 +202,7 @@ func applyMallocArenaMax() {
 // Centralized file logging for every subcommand
 func setupLogging() {
 	if _, err := logging.SetupLogging(context.Background(), logging.Options{Mode: "cli"}); err != nil {
-		slog.Debug(fmt.Sprintf("logging setup failed: %v", err))
+		pkgLog().Debug(fmt.Sprintf("logging setup failed: %v", err))
 	}
 }
 
@@ -224,7 +221,7 @@ func containerExecInfo() *config.ContainerExecInfo {
 	return info
 }
 
-// Replaces this process with the same command inside the managed container, hermes_cli/main_container.py
+// Replaces this process with the same command inside the managed container
 func execInContainer(info *config.ContainerExecInfo, cliArgs []string) {
 	code, err := config.ExecInContainer(info, cliArgs)
 	if err != nil {
@@ -281,25 +278,6 @@ func maybeRunBootBootstrap(projectRoot string) {
 	selfupdate.MaybeRunBootBootstrap(context.Background(), projectRoot)
 }
 
-// First positionals whose commands never start the relay runtime provisioning
-var provisioningFreeCommands = map[string]bool{
-	"help": true, "version": true, "completion": true, cobra.ShellCompRequestCmd: true, cobra.ShellCompNoDescRequestCmd: true,
-	"uninstall": true, "install-self": true, "update": true,
-}
-
-// Starts the relay runtime provisioning off the launch path, never for help, version, completion, install verbs or tests
-func startRelayProvisioning(argv []string, first string) {
-	if testing.Testing() || selfupdate.UpdateInternalCommand(argv) || provisioningFreeCommands[first] {
-		return
-	}
-	for _, flag := range []string{"-h", "--help", "-V", "--version"} {
-		if containsArg(argv, flag) {
-			return
-		}
-	}
-	go relayhost.StartProvisioning()
-}
-
 // Prints the install's runtime command for a launch asked for it and exits with its status
 func printLauncherRuntimeCommand(pinned bool) {
 	if pinned || len(os.Args) < 2 || os.Args[1] != "--print-runtime-command" {
@@ -321,7 +299,7 @@ func bootLaunch() {
 func checkRuntime(installRoot string) string {
 	problem, err := selfupdate.CheckRuntime(context.Background(), installRoot)
 	if err != nil {
-		slog.Debug("pm startup check failed", "error", err)
+		pkgLog().Debug("pm startup check failed", "error", err)
 		return ""
 	}
 	return problem

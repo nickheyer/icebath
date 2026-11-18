@@ -3,9 +3,9 @@ package provider
 import (
 	"context"
 	"errors"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"log/slog"
 	"strings"
+
+	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/home"
@@ -87,25 +87,6 @@ func auxIsPaymentError(err error) bool {
 		return false
 	}
 	return auxContainsAny(strings.ToLower(err.Error()), auxPaymentKeywords)
-}
-
-// Fresh Nous account lookup seam the paid entitlement check reads
-var auxNousPortalAccountInfoFn = GetNousPortalAccountInfo
-
-// True only when a fresh Nous account read reports paid service access allowed
-func auxNousPortalAccountHasFreshPaidAccess(ctx context.Context) (paid bool) {
-	defer func() {
-		if r := recover(); r != nil {
-			slog.Debug("Auxiliary Nous paid-entitlement refresh check failed: " + auxPyStr(r))
-			paid = false
-		}
-	}()
-	info := auxNousPortalAccountInfoFn(ctx, true)
-	if info == nil {
-		slog.Debug("Auxiliary Nous paid-entitlement refresh check failed: 'NoneType' object has no attribute 'paid_service_access'")
-		return false
-	}
-	return info.PaidServiceAccess != nil && *info.PaidServiceAccess
 }
 
 var auxRateLimitKeywords = []string{"rate limit", "rate_limit", "too many requests", "try again", "retry after", "resets in"}

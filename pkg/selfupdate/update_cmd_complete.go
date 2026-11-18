@@ -269,7 +269,7 @@ func resumePausedGatewaysAtExit(ctx context.Context, w io.Writer, token, request
 	return updaterecord.OweFollowup(ctx, updateID, "windows_resume", "Windows gateway recovery failed: "+launchErrorText(err), updaterecord.FollowupRetryDefault)
 }
 
-// The completion process runner and the hand off every selection route ends in, both replaced by hermes tests
+// The completion process runner and the hand off every selection route ends in, both replaced by tests
 var (
 	updateRunCompletion  = runCompletion
 	updateCompleteSource = handOffSourceUpdate

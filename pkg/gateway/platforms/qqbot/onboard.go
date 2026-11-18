@@ -3,7 +3,6 @@ package qqbot
 import (
 	"context"
 	"fmt"
-	"log/slog"
 	"net/http"
 	"strings"
 
@@ -12,7 +11,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyqrcode"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pyurl"
-	"github.com/nickheyer/icebath/pkg/pm"
 	"github.com/nickheyer/icebath/pkg/provider"
 )
 
@@ -91,7 +89,7 @@ func createBindTask(ctx context.Context, timeout float64) (string, string, error
 	if !pyrepr.Truthy(taskID) {
 		return "", "", runtimeError("create_bind_task: missing task_id in response")
 	}
-	slog.Debug(fmt.Sprintf("create_bind_task ok: task_id=%s", pyrepr.Str(taskID)))
+	pkgLog().Debug(fmt.Sprintf("create_bind_task ok: task_id=%s", pyrepr.Str(taskID)))
 	return pyrepr.Str(taskID), key, nil
 }
 
@@ -138,7 +136,7 @@ func qrRegister(ctx context.Context, timeoutSeconds int) (*onboardCredentials, e
 			if ctx.Err() != nil {
 				return nil, ctx.Err()
 			}
-			slog.Warn(fmt.Sprintf("[QQBot onboard] Failed to create bind task: %s", errText(err)))
+			pkgLog().Warn(fmt.Sprintf("[QQBot onboard] Failed to create bind task: %s", errText(err)))
 			return nil, nil
 		}
 		if err := watch.Check(); err != nil {
@@ -150,7 +148,7 @@ func qrRegister(ctx context.Context, timeoutSeconds int) (*onboardCredentials, e
 			fmt.Fprintf(out, "  Scan the QR code above, or open this URL directly:\n  %s\n", url)
 		} else {
 			fmt.Fprintf(out, "  Open this URL in QQ on your phone:\n  %s\n", url)
-			fmt.Fprintf(out, "  For a scannable QR code, run: %s\n", pm.InstallHint("messaging"))
+			fmt.Fprintln(out, "  This link is too long to show as a QR code.")
 		}
 		fmt.Fprintln(out)
 		expired := false
@@ -179,7 +177,7 @@ func qrRegister(ctx context.Context, timeoutSeconds int) (*onboardCredentials, e
 				return &onboardCredentials{appID: appID, clientSecret: clientSecret, userOpenID: userOpenID}, nil
 			case BindStatusExpired:
 				if refreshCount >= maxOnboardRefreshes {
-					slog.Warn(fmt.Sprintf("[QQBot onboard] QR code expired %d times — giving up", maxOnboardRefreshes))
+					pkgLog().Warn(fmt.Sprintf("[QQBot onboard] QR code expired %d times — giving up", maxOnboardRefreshes))
 					return nil, nil
 				}
 				fmt.Fprintf(out, "\n  QR code expired, refreshing... (%d/%d)\n", refreshCount+1, maxOnboardRefreshes)
@@ -191,7 +189,7 @@ func qrRegister(ctx context.Context, timeoutSeconds int) (*onboardCredentials, e
 			}
 		}
 		if !expired {
-			slog.Warn(fmt.Sprintf("[QQBot onboard] Poll timed out after %ds", timeoutSeconds))
+			pkgLog().Warn(fmt.Sprintf("[QQBot onboard] Poll timed out after %ds", timeoutSeconds))
 			return nil, nil
 		}
 	}

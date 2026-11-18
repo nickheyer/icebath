@@ -10,7 +10,7 @@ import (
 	"testing"
 
 	"github.com/nickheyer/icebath/pkg/state"
-	"github.com/nickheyer/icebath/pkg/tuigateway"
+	"github.com/nickheyer/icebath/pkg/tuihost"
 )
 
 // Points the launch store at db for the test, restoring the shared handle afterwards
@@ -34,14 +34,14 @@ func sessionCaseScope(t *testing.T) string {
 	t.Setenv("ICEBATH_HOME", h)
 	t.Setenv("ICEBATH_ISO_CERTIFY_SYNTH_TURN", "1")
 	before := map[string]bool{}
-	for _, live := range tuigateway.LiveSessions() {
+	for _, live := range tuihost.LiveSessions() {
 		before[live.SID] = true
 	}
 	pollersBefore := notificationPollerStops()
 	t.Cleanup(func() {
-		for _, live := range tuigateway.LiveSessions() {
+		for _, live := range tuihost.LiveSessions() {
 			if !before[live.SID] {
-				tuigateway.SetSessionRecord(live.SID, nil)
+				tuihost.SetSessionRecord(live.SID, nil)
 			}
 		}
 		joinNotificationPollers(t, pollersBefore)
@@ -55,7 +55,7 @@ func sessionCaseScope(t *testing.T) string {
 // Runtime ids of the live sessions a case added
 func liveSessionIDs() []string {
 	var out []string
-	for _, live := range tuigateway.LiveSessions() {
+	for _, live := range tuihost.LiveSessions() {
 		out = append(out, live.SID)
 	}
 	return out
@@ -122,10 +122,10 @@ func TestSessionBranchIdempotencyKeyDedupesRetry(t *testing.T) {
 		before[sid] = true
 	}
 	cwd := t.TempDir()
-	parent := tuigateway.NewSession(map[string]any{"session_key": "parent-key", "history": []any{map[string]any{"role": "user", "content": "hi"}},
+	parent := tuihost.NewSession(map[string]any{"session_key": "parent-key", "history": []any{map[string]any{"role": "user", "content": "hi"}},
 		"history_lock": &sync.Mutex{}, "running": false, "cols": 80, "profile_home": nil, "source": "tui",
 		"agent": NewSyntheticHeavyAgent("parent-key", "test-model"), "created_at": 1.0, "last_active": 1.0, "cwd": cwd})
-	tuigateway.SetSessionRecord("parent", parent)
+	tuihost.SetSessionRecord("parent", parent)
 	params := map[string]any{"session_id": "parent", "name": "forked", "idempotency_key": "branch-live-retry-1"}
 	first := rpc(t, "session.branch", params)
 	result, isResult := first["result"].(map[string]any)
@@ -247,7 +247,7 @@ func guardScope(t *testing.T, defaultModel string) {
 	h := sessionCaseScope(t)
 	useSharedDB(t, nil)
 	swapVar(t, &scheduleAgentBuild, func(context.Context, string, float64) {})
-	swapVar(t, &registerSessionCwd, func(context.Context, *tuigateway.Session) {})
+	swapVar(t, &registerSessionCwd, func(context.Context, *tuihost.Session) {})
 	config := "model:\n  default: " + defaultModel + "\n  provider: anthropic\n"
 	if err := os.WriteFile(filepath.Join(h, "config.yaml"), []byte(config), 0o644); err != nil {
 		t.Fatal(err)
@@ -272,7 +272,7 @@ func TestSessionCreateRejectsIncoherentModelProviderPairBeforeAnyState(t *testin
 	} {
 		t.Run(strOr(params["model"])+"/"+strOr(params["provider"]), func(t *testing.T) {
 			guardScope(t, "claude-opus-5")
-			before := len(tuigateway.LiveSessions())
+			before := len(tuihost.LiveSessions())
 			response := guardCreate(params)
 			errObj, _ := response["error"].(map[string]any)
 			data, _ := errObj["data"].(map[string]any)
@@ -290,7 +290,7 @@ func TestSessionCreateRejectsIncoherentModelProviderPairBeforeAnyState(t *testin
 					t.Fatalf("suggestion %v not in %q", s, message)
 				}
 			}
-			if len(tuigateway.LiveSessions()) != before {
+			if len(tuihost.LiveSessions()) != before {
 				t.Fatalf("a session was minted")
 			}
 		})
@@ -312,7 +312,7 @@ func TestSessionCreateKeepsCoherentUnlistedAndCustomPairs(t *testing.T) {
 			if !isResult {
 				t.Fatalf("response %v", response)
 			}
-			override, _ := tuigateway.SessionRecord(strOr(result["session_id"])).Get("model_override").(map[string]any)
+			override, _ := tuihost.SessionRecord(strOr(result["session_id"])).Get("model_override").(map[string]any)
 			if len(override) != 2 || override["model"] != params["model"] || override["provider"] != params["provider"] {
 				t.Fatalf("override %v", override)
 			}

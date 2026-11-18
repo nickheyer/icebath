@@ -84,7 +84,7 @@ func openCronStore(home string, now func() time.Time) *Store {
 	if err != nil {
 		resolved = filepath.Clean(pypath.Expanduser(home))
 	}
-	s := &Store{home: resolved, log: slog.Default()}
+	s := &Store{home: resolved, log: pkgLog()}
 	s.cronDir = filepath.Join(resolved, "cron")
 	s.jobsFile = filepath.Join(s.cronDir, "jobs.json")
 	s.outputDir = filepath.Join(s.cronDir, "output")
@@ -123,7 +123,7 @@ func (s *Store) withJobsLock(ctx context.Context, fn func(tx *jobsTx) error) err
 	defer mu.Unlock()
 	lockFile, err := s.openJobsLock(home.WithOverride(ctx, s.home))
 	if err != nil {
-		s.logAs("cron.jobs").Warn(fmt.Sprintf("jobs.json cross-process lock unavailable (%s); proceeding with in-process lock only", pypath.OSErrorText(err)))
+		s.log.Warn(fmt.Sprintf("jobs.json cross-process lock unavailable (%s); proceeding with in-process lock only", pypath.OSErrorText(err)))
 	}
 	if lockFile != nil {
 		defer releaseFlock(lockFile)
@@ -147,7 +147,7 @@ func (s *Store) openJobsLock(ctx context.Context) (*os.File, error) {
 		return nil, err
 	}
 	if !ok {
-		s.logAs("cron.jobs").Error(fmt.Sprintf("Timed out after %.0fs waiting for the cron jobs lock (%s) — another process is holding it. Proceeding with in-process locking only so the scheduler stays alive (#60703).", jobsLockTimeout.Seconds(), path))
+		s.log.Error(fmt.Sprintf("Timed out after %.0fs waiting for the cron jobs lock (%s) — another process is holding it. Proceeding with in-process locking only so the scheduler stays alive (#60703).", jobsLockTimeout.Seconds(), path))
 		f.Close()
 		return nil, nil
 	}
@@ -176,27 +176,27 @@ func (s *Store) fireJobLock(ctx context.Context, jobID string, fn func(ctx conte
 	select {
 	case local <- struct{}{}:
 	case <-time.After(jobsLockTimeout):
-		s.logAs("cron.jobs").Error(fmt.Sprintf("Timed out waiting for local fire fence %s; failing closed", key))
+		s.log.Error(fmt.Sprintf("Timed out waiting for local fire fence %s; failing closed", key))
 		return fn(ctx, false)
 	}
 	defer func() { <-local }()
 	acquired := false
 	var lockFile *os.File
 	if err := s.ensureDirs(home.WithOverride(ctx, s.home)); err != nil {
-		s.logAs("cron.jobs").Error(fmt.Sprintf("Cron fire fence unavailable for %s: %s", jobID, pypath.OSErrorText(err)))
+		s.log.Error(fmt.Sprintf("Cron fire fence unavailable for %s: %s", jobID, pypath.OSErrorText(err)))
 	} else {
 		path := filepath.Join(s.cronDir, ".fire-"+uuid5URLHex(key)+".lock")
 		f, err := os.OpenFile(path, os.O_RDWR|os.O_CREATE|os.O_APPEND, 0o666)
 		if err != nil {
-			s.logAs("cron.jobs").Error(fmt.Sprintf("Cron fire fence unavailable for %s: %s", jobID, pypath.OSErrorText(err)))
+			s.log.Error(fmt.Sprintf("Cron fire fence unavailable for %s: %s", jobID, pypath.OSErrorText(err)))
 		} else {
 			lockFile = f
 			ok, err := acquireFlock(f, jobsLockTimeout)
 			switch {
 			case err != nil:
-				s.logAs("cron.jobs").Error(fmt.Sprintf("Cron fire fence unavailable for %s: %s", jobID, pypath.OSErrorText(err)))
+				s.log.Error(fmt.Sprintf("Cron fire fence unavailable for %s: %s", jobID, pypath.OSErrorText(err)))
 			case !ok:
-				s.logAs("cron.jobs").Error(fmt.Sprintf("Timed out waiting for fire fence %s; failing closed", path))
+				s.log.Error(fmt.Sprintf("Timed out waiting for fire fence %s; failing closed", path))
 			default:
 				acquired = true
 			}
@@ -395,7 +395,7 @@ func (s *Store) preserveFileOwnership(path string, before os.FileInfo) {
 		return
 	}
 	if err := ownership.chown(path, uid, gid); err != nil {
-		s.logAs("cron.jobs").Warn(fmt.Sprintf("Could not restore ownership of %s to uid=%d gid=%d after rewrite: %s — if the gateway runs as a different user, its cron ticker may now be locked out (see issue #68483).", path, uid, gid, pypath.OSErrorText(err)))
+		s.log.Warn(fmt.Sprintf("Could not restore ownership of %s to uid=%d gid=%d after rewrite: %s — if the gateway runs as a different user, its cron ticker may now be locked out (see issue #68483).", path, uid, gid, pypath.OSErrorText(err)))
 	}
 }
 
@@ -465,10 +465,10 @@ func (s *Store) loadJobs(ctx context.Context, tx *jobsTx) ([]*Job, error) {
 	data, lenient, err := jobsFileParser(s.jobsFile)
 	if err != nil {
 		if isOSError(err) {
-			s.logAs("cron.jobs").Error(fmt.Sprintf("IOError reading jobs.json: %s", pypath.OSErrorText(err)))
+			s.log.Error(fmt.Sprintf("IOError reading jobs.json: %s", pypath.OSErrorText(err)))
 			return nil, fmt.Errorf("Failed to read cron database: %s", pypath.OSErrorText(err))
 		}
-		s.logAs("cron.jobs").Error(fmt.Sprintf("Failed to auto-repair jobs.json: %s", err))
+		s.log.Error(fmt.Sprintf("Failed to auto-repair jobs.json: %s", err))
 		return nil, fmt.Errorf("Cron database corrupted and unrepairable: %s", err)
 	}
 	repair := ""
@@ -566,7 +566,7 @@ func (s *Store) loadJobs(ctx context.Context, tx *jobsTx) ([]*Job, error) {
 			return out, err
 		}
 		for _, n := range notes {
-			s.logAs("cron.jobs").Warn(n)
+			s.log.Warn(n)
 		}
 		replace := false
 		if unmergeable {
@@ -579,7 +579,7 @@ func (s *Store) loadJobs(ctx context.Context, tx *jobsTx) ([]*Job, error) {
 			}
 			storeHealthNoteUnwritable(s, err, fmt.Sprintf("jobs.json repair (%s) not persisted", repair), "load")
 		} else {
-			s.logAs("cron.jobs").Warn(fmt.Sprintf("Auto-repaired jobs.json (%s)", repair))
+			s.log.Warn(fmt.Sprintf("Auto-repaired jobs.json (%s)", repair))
 		}
 	}
 	tx.recordLoadStamp(pre)
@@ -715,7 +715,7 @@ func (s *Store) mergeUnexpectedDiskJobs(tx *jobsTx, jobs []*Job, removedIDs []st
 	for i, j := range recovered {
 		ids[i] = j.ID
 	}
-	s.logAs("cron.jobs").Warn(fmt.Sprintf("Preserved %d cron job(s) present on disk but missing from the in-memory save payload (concurrent create under degraded lock or stale writer) (#80624): %s", len(recovered), pyrepr.Repr(ids)))
+	s.log.Warn(fmt.Sprintf("Preserved %d cron job(s) present on disk but missing from the in-memory save payload (concurrent create under degraded lock or stale writer) (#80624): %s", len(recovered), pyrepr.Repr(ids)))
 	out := make([]*Job, 0, len(jobs)+len(recovered))
 	return append(append(out, jobs...), recovered...), nil
 }
@@ -988,7 +988,7 @@ func (s *Store) pruneJobOutput(dir string, keep int64) int {
 	deleted := 0
 	for _, name := range names[keep:] {
 		if err := os.Remove(filepath.Join(dir, name)); err != nil {
-			s.logAs("cron.jobs").Debug(fmt.Sprintf("Failed to prune cron output %s: %s", name, pypath.OSErrorText(err)))
+			s.log.Debug(fmt.Sprintf("Failed to prune cron output %s: %s", name, pypath.OSErrorText(err)))
 			continue
 		}
 		deleted++
@@ -1017,6 +1017,3 @@ func (s *Store) SaveJobOutput(ctx context.Context, jobID, output string) (string
 	s.pruneJobOutput(dir, s.cronOutputKeep())
 	return file, nil
 }
-
-// Store logger bound to the reference module name its log lines carry
-func (s *Store) logAs(module string) *slog.Logger { return s.log.With("logger", module) }

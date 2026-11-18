@@ -42,7 +42,7 @@ func (r *GatewayRunner) handleCodexRuntimeCommand(ctx context.Context, event *ga
 	}
 	if result.Success && newValue != nil && result.RequiresNewSession {
 		if sessionKey, err := r.sessionKeyForSource(ctx, event.Source); err != nil {
-			runLog().Debug("could not evict cached agent after codex-runtime change", "exc_info", err)
+			pkgLog().Debug("could not evict cached agent after codex-runtime change", "exc_info", err)
 		} else {
 			r.evictCachedAgent(ctx, sessionKey, false, false)
 		}

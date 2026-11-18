@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/config"
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
@@ -58,7 +59,7 @@ func PendingSandboxImageSwitch(ctx context.Context, env *Env) (*SandboxImageSwit
 	if raw := cfg["terminal"]; pyrepr.Truthy(raw) {
 		m, ok := raw.(map[string]any)
 		if !ok {
-			return nil, fmt.Errorf("AttributeError: '%s' object has no attribute 'get'", pyrepr.TypeName(raw))
+			return nil, fmt.Errorf("terminal in config is %s, expected a mapping", errchain.Kind(raw))
 		}
 		terminal = m
 	}
@@ -145,7 +146,7 @@ func DecideSandboxImageSwitch(ctx context.Context, env *Env, sw *SandboxImageSwi
 	}
 	terminal, ok := cfg["terminal"].(map[string]any)
 	if !ok {
-		return "", fmt.Errorf("TypeError: '%s' object does not support item assignment", pyrepr.TypeName(cfg["terminal"]))
+		return "", fmt.Errorf("terminal in config is %s, expected a mapping", errchain.Kind(cfg["terminal"]))
 	}
 	terminal["docker_image"] = image
 	if err := config.SaveConfig(ctx, env.Home, map[string]any(cfg), config.SaveOptions{PreserveKeys: [][]string{{"terminal", "docker_image"}}}); err != nil {

@@ -29,8 +29,6 @@ const (
 
 var httpRetryCodes = map[int]bool{408: true, 429: true, 500: true, 502: true, 503: true, 504: true}
 
-var r2Hosts = map[string]bool{"hermes-assets.nousresearch.com": true}
-
 var networkErrnos = []syscall.Errno{
 	syscall.ECONNABORTED, syscall.ECONNREFUSED, syscall.ECONNRESET,
 	syscall.ENETDOWN, syscall.ENETRESET, syscall.ENETUNREACH,
@@ -142,7 +140,7 @@ func EdgeBlock(err error) string {
 	switch {
 	case headers.Get("x-vercel-mitigated") != "":
 		cdn = "Vercel"
-	case headers.Get("cf-mitigated") != "" || (r2Hosts[host] && strings.ToLower(headers.Get("server")) == "cloudflare" && headers.Get("cf-cache-status") == ""):
+	case headers.Get("cf-mitigated") != "":
 		cdn = "Cloudflare"
 	default:
 		return ""

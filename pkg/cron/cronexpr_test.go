@@ -17,7 +17,7 @@ func TestParseCronRejectsBadInput(t *testing.T) {
 	}
 }
 
-func TestParseCronAcceptsHermesForms(t *testing.T) {
+func TestParseCronAcceptsTheDocumentedForms(t *testing.T) {
 	for _, expr := range []string{"0 9 * * *", "0 9 * * MON", "*/15 9-17 * * MON-FRI", "0 9 1 JAN *", "0 9 * * MON,WED,FRI", "0 9 * * 7", "0 9 L * *", "0 9 * * 1#2", "0 9 ? * ?", "0 0 * * 0 30", "0 0 1 1 * 0 2030", "@daily", "30 1 * * *", "0 9-17/2 * * *", "5/15 * * * *"} {
 		if _, err := ParseCron(expr); err != nil {
 			t.Errorf("ParseCron(%q): %v", expr, err)

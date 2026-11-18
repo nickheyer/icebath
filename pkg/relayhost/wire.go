@@ -209,7 +209,7 @@ func parseFloatText(s string) (float64, error) {
 // Lowers plain values to their tagged JSON tree, special handling the values only one side knows
 func lowerValue(v any, depth int, special func(v any, depth int) (any, bool, error)) (any, error) {
 	if depth > 200 {
-		return nil, errors.New("ValueError: value nests too deeply for the NeMo Relay host")
+		return nil, errors.New("the value nests too deeply for the Relay host")
 	}
 	if out, ok, err := special(v, depth); ok || err != nil {
 		return out, err
@@ -292,7 +292,7 @@ func liftValue(v any, special func(tag string, body any) (any, error)) (any, err
 		}
 		b, ok := new(big.Int).SetString(x.String(), 10)
 		if !ok {
-			return nil, fmt.Errorf("ValueError: number %s does not parse", x)
+			return nil, fmt.Errorf("the Relay host number %s does not parse", x)
 		}
 		return b, nil
 	case []any:
@@ -339,7 +339,7 @@ func liftTagged(tag string, body any, special func(tag string, body any) (any, e
 		s, _ := body.(string)
 		b, ok := new(big.Int).SetString(s, 10)
 		if !ok {
-			return nil, fmt.Errorf("ValueError: integer %q does not parse", s)
+			return nil, fmt.Errorf("the Relay host integer %s does not parse", s)
 		}
 		if b.IsInt64() {
 			return b.Int64(), nil

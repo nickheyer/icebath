@@ -16,7 +16,7 @@ CREATE TABLE IF NOT EXISTS tasks (
     workspace_kind       TEXT NOT NULL DEFAULT 'scratch',
     workspace_path       TEXT,
     branch_name          TEXT,
-    -- Optional link to a first-class Project (hermes_cli/projects_db). When set,
+    -- Optional link to a first-class Project (projects.db of the profile). When set,
     -- the task's worktree is anchored under the project's primary repo with a
     -- deterministic branch name instead of a random wt/<task-id> fallback.
     project_id           TEXT,
@@ -84,7 +84,7 @@ CREATE TABLE IF NOT EXISTS tasks (
     -- goals-engine default.
     goal_max_turns       INTEGER,
     -- Originating chat/agent session id when the task was created from
-    -- inside an agent loop that propagated ` + "`" + `` + "`" + `HERMES_SESSION_ID` + "`" + `` + "`" + `. NULL
+    -- inside an agent loop that propagated ` + "`" + `` + "`" + `ICEBATH_SESSION_ID` + "`" + `` + "`" + `. NULL
     -- for tasks created from the CLI or any path that doesn't
     -- set the env var, and for an id with no ` + "`" + `` + "`" + `sessions` + "`" + `` + "`" + ` row in this
     -- profile's state.db (kanban_create verifies before stamping). Indexed

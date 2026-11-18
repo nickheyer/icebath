@@ -21,7 +21,7 @@ const notBSMTokenWarning = "[yellow]Warning: token doesn't start with '0.' — u
 const notBSMTokenWarningContinuing = "  [yellow]Warning: token doesn't start with '0.' — usually that means " +
 	"you pasted something other than a BSM access token.  Continuing anyway.[/yellow]"
 
-// Version probe, installer, project lister and cache clearer of the Bitwarden CLI, the attributes hermes tests patch
+// Version probe, installer, project lister and cache clearer of the Bitwarden CLI, the attributes tests patch
 var (
 	bwsVersion           = cliVersion
 	installBws           = InstallBws

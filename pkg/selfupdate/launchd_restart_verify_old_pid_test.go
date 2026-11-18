@@ -26,8 +26,8 @@ func TestInvokingProfileIsVerifiedLikeItsSiblingsRestartThatLeavesTheOldPidSuper
 	})
 	var out bytes.Buffer
 	restarted, failed := runOwnFleetRestart(t, &out)
-	if job.restarts != 1 || len(restarted) != 0 || !reflect.DeepEqual(failed, []string{"ai.icebath.gateway"}) ||
-		!strings.Contains(out.String(), "ai.icebath.gateway") {
+	if job.restarts != 1 || len(restarted) != 0 || !reflect.DeepEqual(failed, []string{"app.icebath.gateway"}) ||
+		!strings.Contains(out.String(), "app.icebath.gateway") {
 		t.Fatalf("restarts=%d restarted=%v failed=%v out=%q", job.restarts, restarted, failed, out.String())
 	}
 	if len(listings) <= 1 || lsSum(clock.slept) > launchdSupervisionVerifyTimeout {

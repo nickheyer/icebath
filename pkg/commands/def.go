@@ -104,6 +104,9 @@ func (r *Registry) Lookup(name string) *Def {
 	if canon, ok := r.aliases[name]; ok {
 		name = canon
 	}
+	if !SlashLinked(name) {
+		return nil
+	}
 	return r.defs[name]
 }
 
@@ -113,7 +116,9 @@ func (r *Registry) Names() []string {
 	defer r.mu.RUnlock()
 	out := make([]string, 0, len(r.defs))
 	for n := range r.defs {
-		out = append(out, n)
+		if SlashLinked(n) {
+			out = append(out, n)
+		}
 	}
 	sort.Strings(out)
 	return out

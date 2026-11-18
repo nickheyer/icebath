@@ -8,7 +8,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"log/slog"
 	"net"
 	"net/http"
 	"net/url"
@@ -17,6 +16,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/internal/pyhttpx"
 	"github.com/nickheyer/icebath/pkg/internal/pyipaddress"
@@ -241,7 +241,7 @@ func NewTelegramFallbackTransport(ctx context.Context, fallbackIPs []string, opt
 	return t, nil
 }
 
-// Options every inner transport is built from, the transport kwargs of hermes
+// Options every inner transport is built from
 func (t *TelegramFallbackTransport) TransportOptions() TransportOptions { return t.opts }
 
 // Validated and deduplicated IPv4 fallback addresses in order
@@ -282,7 +282,7 @@ func (t *TelegramFallbackTransport) resetPrimary(transport InnerTransport) error
 	t.primary = next
 	t.primaryMu.Unlock()
 	if err := transport.Close(); err != nil {
-		slog.Debug(fmt.Sprintf("[Telegram] Error closing primary transport: %s", pyrepr.ExceptionMessage(err)))
+		pkgLog().Debug(fmt.Sprintf("[Telegram] Error closing primary transport: %s", pyrepr.ExceptionMessage(err)))
 	}
 	return nil
 }
@@ -297,7 +297,7 @@ func (t *TelegramFallbackTransport) resetFallback(ip string) {
 		return
 	}
 	if err := transport.Close(); err != nil {
-		slog.Debug(fmt.Sprintf("[Telegram] Error closing fallback transport %s: %s", ip, pyrepr.ExceptionMessage(err)))
+		pkgLog().Debug(fmt.Sprintf("[Telegram] Error closing fallback transport %s: %s", ip, pyrepr.ExceptionMessage(err)))
 	}
 }
 
@@ -372,10 +372,10 @@ func (t *TelegramFallbackTransport) RoundTrip(req *http.Request) (*http.Response
 			if rerr := t.resetPrimary(transport); rerr != nil {
 				return nil, rerr
 			}
-			slog.Warn(fmt.Sprintf("[Telegram] Dual-stack api.telegram.org path failed (%s)", failure))
+			pkgLog().Warn(fmt.Sprintf("[Telegram] Dual-stack api.telegram.org path failed (%s)", failure))
 			continue
 		}
-		slog.Warn(fmt.Sprintf("[Telegram] IPv4 Telegram API IP %s failed: %s", ip, failure))
+		pkgLog().Warn(fmt.Sprintf("[Telegram] IPv4 Telegram API IP %s failed: %s", ip, failure))
 		t.resetFallback(ip)
 	}
 	if lastErr == nil {
@@ -395,7 +395,7 @@ func (t *TelegramFallbackTransport) recordSuccess(ip string, afterError bool) {
 		if via == "" {
 			via = TelegramAPIHost
 		}
-		slog.Info(fmt.Sprintf("[Telegram] Telegram API transport recovered via %s after %s failed: %s", via, failed[0], failed[1]))
+		pkgLog().Info(fmt.Sprintf("[Telegram] Telegram API transport recovered via %s after %s failed: %s", via, failed[0], failed[1]))
 	}
 	if t.stickySet && t.stickyIP == ip {
 		return
@@ -406,9 +406,9 @@ func (t *TelegramFallbackTransport) recordSuccess(ip string, afterError bool) {
 	}
 	msg := fmt.Sprintf("[Telegram] Using sticky IPv4 Telegram API path %s (dual-stack hostname tried last — #87015)", ip)
 	if afterError {
-		slog.Warn(msg)
+		pkgLog().Warn(msg)
 	} else {
-		slog.Info(msg)
+		pkgLog().Info(msg)
 	}
 }
 
@@ -423,7 +423,7 @@ func (t *TelegramFallbackTransport) recordFailure(ip, path, failure string) {
 		if shown == "" {
 			shown = "api.telegram.org"
 		}
-		slog.Warn(fmt.Sprintf("[Telegram] Sticky Telegram path %s failed; re-walking IPv4 literals before the hostname", shown))
+		pkgLog().Warn(fmt.Sprintf("[Telegram] Sticky Telegram path %s failed; re-walking IPv4 literals before the hostname", shown))
 	}
 }
 
@@ -462,11 +462,11 @@ func normalizeFallbackIPs(values []string) []string {
 		addr, ok := pyipaddress.IPAddress(raw)
 		switch {
 		case !ok:
-			slog.Warn(fmt.Sprintf("Ignoring invalid Telegram fallback IP: %s", pyrepr.Repr(raw)))
+			pkgLog().Warn(fmt.Sprintf("Ignoring invalid Telegram fallback IP: %s", pyrepr.Repr(raw)))
 		case !addr.Is4():
-			slog.Warn(fmt.Sprintf("Ignoring non-IPv4 Telegram fallback IP: %s", raw))
+			pkgLog().Warn(fmt.Sprintf("Ignoring non-IPv4 Telegram fallback IP: %s", raw))
 		case pyipaddress.IsPrivate(addr) || pyipaddress.IsLoopback(addr) || pyipaddress.IsLinkLocal(addr) || addr.IsUnspecified():
-			slog.Warn(fmt.Sprintf("Ignoring private/internal Telegram fallback IP: %s", raw))
+			pkgLog().Warn(fmt.Sprintf("Ignoring private/internal Telegram fallback IP: %s", raw))
 		default:
 			normalized = append(normalized, addr.String())
 		}
@@ -515,7 +515,7 @@ func resolveSystemDNS() []string {
 func queryDoHProvider(client *http.Client, p dohProvider) []string {
 	ips, err := queryDoH(client, p)
 	if err != nil {
-		slog.Debug(fmt.Sprintf("DoH query to %s failed: %s", p.URL, pyrepr.ExceptionMessage(err)))
+		pkgLog().Debug(fmt.Sprintf("DoH query to %s failed: %s", p.URL, pyrepr.ExceptionMessage(err)))
 		return nil
 	}
 	return ips
@@ -542,7 +542,7 @@ func queryDoH(client *http.Client, p dohProvider) ([]string, error) {
 	}
 	obj, ok := data.(*pyjson.Object)
 	if !ok {
-		return nil, fmt.Errorf("AttributeError: '%s' object has no attribute 'get'", pyTypeName(data))
+		return nil, fmt.Errorf("the DNS over HTTPS reply is %s, expected a mapping", errchain.Kind(data))
 	}
 	answers, ok := obj.Get("Answer")
 	if !ok {
@@ -550,13 +550,13 @@ func queryDoH(client *http.Client, p dohProvider) ([]string, error) {
 	}
 	list, ok := answers.([]any)
 	if !ok {
-		return nil, fmt.Errorf("TypeError: '%s' object is not iterable", pyTypeName(answers))
+		return nil, fmt.Errorf("the DNS over HTTPS answers are %s, expected a list", errchain.Kind(answers))
 	}
 	ips := []string{}
 	for _, item := range list {
 		answer, ok := item.(*pyjson.Object)
 		if !ok {
-			return nil, fmt.Errorf("AttributeError: '%s' object has no attribute 'get'", pyTypeName(item))
+			return nil, fmt.Errorf("a DNS over HTTPS answer is %s, expected a mapping", errchain.Kind(item))
 		}
 		if typ, _ := answer.Get("type"); !pyEqualsOne(typ) {
 			continue
@@ -567,7 +567,7 @@ func queryDoH(client *http.Client, p dohProvider) ([]string, error) {
 		}
 		text, ok := rawValue.(string)
 		if !ok {
-			return nil, fmt.Errorf("AttributeError: '%s' object has no attribute 'strip'", pyTypeName(rawValue))
+			return nil, fmt.Errorf("a DNS over HTTPS answer value is %s, expected text", errchain.Kind(rawValue))
 		}
 		raw := pystr.Strip(text)
 		if _, ok := pyipaddress.IPAddress(raw); !ok {
@@ -636,23 +636,23 @@ func discoverFallbackIPs(ctx context.Context, client *http.Client, resolveSystem
 	select {
 	case systemIPs = <-systemDone:
 	case <-timer.C:
-		slog.Debug(fmt.Sprintf("System-DNS resolution for %s did not complete in time", TelegramAPIHost))
+		pkgLog().Debug(fmt.Sprintf("System-DNS resolution for %s did not complete in time", TelegramAPIHost))
 	case <-ctx.Done():
-		slog.Debug(fmt.Sprintf("System-DNS resolution for %s did not complete in time", TelegramAPIHost))
+		pkgLog().Debug(fmt.Sprintf("System-DNS resolution for %s did not complete in time", TelegramAPIHost))
 	}
 	var dohIPs []string
 	for _, r := range results {
 		dohIPs = append(dohIPs, r...)
 	}
 	if validated := normalizeFallbackIPs(dedupeStrings(dohIPs)); len(validated) > 0 {
-		slog.Debug("Discovered Telegram fallback IPs via DoH: " + strings.Join(validated, ", "))
+		pkgLog().Debug("Discovered Telegram fallback IPs via DoH: " + strings.Join(validated, ", "))
 		return validated
 	}
 	system := strings.Join(systemIPs, ", ")
 	if system == "" {
 		system = "unknown"
 	}
-	slog.Info(fmt.Sprintf("DoH discovery yielded no usable IPs (system DNS: %s); using seed fallback IPs %s", system, strings.Join(SeedFallbackIPs, ", ")))
+	pkgLog().Info(fmt.Sprintf("DoH discovery yielded no usable IPs (system DNS: %s); using seed fallback IPs %s", system, strings.Join(SeedFallbackIPs, ", ")))
 	return slices.Clone(SeedFallbackIPs)
 }
 

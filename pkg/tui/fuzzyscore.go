@@ -4,7 +4,7 @@ import (
 	"math"
 	"sort"
 
-	"github.com/nickheyer/icebath/pkg/tuiserver"
+	"github.com/nickheyer/icebath/pkg/tuigateway"
 )
 
 // Fields of one slash menu entry the ranking scores
@@ -20,16 +20,16 @@ func scoreSlashMenuItem(item slashScoreItem, query string) float64 {
 	var command []string
 	for _, f := range append([]string{item.ID, item.Label}, item.Aliases...) {
 		if f != "" {
-			command = append(command, tuiserver.TokenizeSearchText(f)...)
+			command = append(command, tuigateway.TokenizeSearchText(f)...)
 		}
 	}
-	description := tuiserver.TokenizeSearchText(item.Description)
-	return math.Min(tuiserver.ScoreFields(command, query, 0), tuiserver.ScoreFields(description, query, 3))
+	description := tuigateway.TokenizeSearchText(item.Description)
+	return math.Min(tuigateway.ScoreFields(command, query, 0), tuigateway.ScoreFields(description, query, 3))
 }
 
 // Entries matching the query ranked by tier, ties in their original order, all of them for an empty query
 func rankSlashItems[T any](items []T, query string, toScoreItem func(T) slashScoreItem) []T {
-	normalized := tuiserver.NormalizeSlashSearchQuery(query)
+	normalized := tuigateway.NormalizeSlashSearchQuery(query)
 	if normalized == "" {
 		return items
 	}

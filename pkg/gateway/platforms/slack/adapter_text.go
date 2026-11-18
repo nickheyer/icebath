@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"log/slog"
 	"regexp"
 	"sort"
 	"strings"
@@ -817,7 +816,7 @@ func slackDedupTTLSeconds(ctx context.Context) float64 {
 	if raw != "" {
 		value, err := pyint.ParseFloat(raw)
 		if err != nil {
-			slog.Warn(fmt.Sprintf("[Slack] Invalid SLACK_DEDUP_TTL_SECONDS=%s; using default", pyrepr.StrRepr(raw)))
+			pkgLog().Warn(fmt.Sprintf("[Slack] Invalid SLACK_DEDUP_TTL_SECONDS=%s; using default", pyrepr.StrRepr(raw)))
 		} else if value > 0 {
 			return value
 		}
@@ -932,7 +931,7 @@ func appendLinkUnfurls(text string, slackAttachments []any) string {
 	}
 	if len(attParts) > 0 {
 		text = pystr.Strip(pystr.Strip(text) + "\n\n" + strings.Join(attParts, "\n\n"))
-		slog.Debug(fmt.Sprintf("Slack: appended %d link unfurl(s) to message text", len(attParts)))
+		pkgLog().Debug(fmt.Sprintf("Slack: appended %d link unfurl(s) to message text", len(attParts)))
 	}
 	return text
 }

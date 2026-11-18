@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"log/slog"
 	"maps"
 	"strings"
 
@@ -15,9 +14,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/profiles"
 )
-
-// Logger records carry the gateway.run name of the runner module
-func runLog() *slog.Logger { return slog.Default().With("logger", "gateway.run") }
 
 // Text of an optional string, empty for None
 func optText(s *string) string {
@@ -144,13 +140,13 @@ func (r *GatewayRunner) profileNameForSource(ctx context.Context, source *gatewa
 		ThreadID: source.ThreadID, ParentChatID: source.ParentChatID, AdapterProfile: adapterProfile,
 		UserID: source.UserID})
 	if err != nil {
-		runLog().Warn(fmt.Sprintf("Rejecting %s/%s: profile route matching failed: %v", source.Platform, source.ChatID, err))
+		pkgLog().Warn(fmt.Sprintf("Rejecting %s/%s: profile route matching failed: %v", source.Platform, source.ChatID, err))
 		return nil, &gateway.ProfileRouteRejected{Args: []any{"matcher"}}
 	}
 	if matched != nil {
 		served, err := gateway.MultiplexProfileHomes(ctx, r.config)
 		if err != nil {
-			runLog().Warn(fmt.Sprintf("Rejecting profile route %s because the served-profile set could not be resolved: %v",
+			pkgLog().Warn(fmt.Sprintf("Rejecting profile route %s because the served-profile set could not be resolved: %v",
 				pyrepr.Repr(matched.Name), err))
 			return nil, &gateway.ProfileRouteRejected{Args: []any{matched.Name}}
 		}
@@ -159,11 +155,11 @@ func (r *GatewayRunner) profileNameForSource(ctx context.Context, source *gatewa
 				return &matched.Profile, nil
 			}
 		}
-		runLog().Warn(fmt.Sprintf("Rejecting profile route %s: target profile %s is not served",
+		pkgLog().Warn(fmt.Sprintf("Rejecting profile route %s: target profile %s is not served",
 			pyrepr.Repr(matched.Name), pyrepr.Repr(matched.Profile)))
 		return nil, &gateway.ProfileRouteRejected{Args: []any{matched.Name, matched.Profile}}
 	}
-	runLog().Debug(fmt.Sprintf("No profile route matched: platform=%s chat_id=%s thread_id=%s parent_chat_id=%s",
+	pkgLog().Debug(fmt.Sprintf("No profile route matched: platform=%s chat_id=%s thread_id=%s parent_chat_id=%s",
 		source.Platform, source.ChatID, pyrepr.Str(optAny(source.ThreadID)), pyrepr.Str(optAny(source.ParentChatID))))
 	return nil, nil
 }
@@ -191,7 +187,7 @@ func (r *GatewayRunner) resolveProfileHomeForSource(ctx context.Context, source 
 			return "", err
 		}
 		if err != nil {
-			runLog().Warn(fmt.Sprintf("Failed to resolve profile directory for source %s/%s (guild_id=%s), "+
+			pkgLog().Warn(fmt.Sprintf("Failed to resolve profile directory for source %s/%s (guild_id=%s), "+
 				"falling back to global ICEBATH_HOME: %s", source.Platform, source.ChatID, guild, "(no profile)"))
 			return home.Dir(ctx), nil
 		}
@@ -208,12 +204,12 @@ func (r *GatewayRunner) resolveProfileHomeForSource(ctx context.Context, source 
 		if explicit != nil {
 			label = *explicit
 		}
-		runLog().Warn(fmt.Sprintf("Failed to resolve profile directory for source %s/%s (guild_id=%s), "+
+		pkgLog().Warn(fmt.Sprintf("Failed to resolve profile directory for source %s/%s (guild_id=%s), "+
 			"falling back to global ICEBATH_HOME: %s", source.Platform, source.ChatID, guild, label))
 		return home.Dir(ctx), nil
 	}
 	if explicit != nil && !profiles.ProfileExists(name) {
-		runLog().Warn(fmt.Sprintf("Profile %s does not exist for source %s/%s (guild_id=%s), "+
+		pkgLog().Warn(fmt.Sprintf("Profile %s does not exist for source %s/%s (guild_id=%s), "+
 			"falling back to global ICEBATH_HOME", pyrepr.Repr(*explicit), source.Platform, source.ChatID, guild))
 		return home.Dir(ctx), nil
 	}

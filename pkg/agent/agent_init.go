@@ -5,12 +5,9 @@ import (
 	"errors"
 	"maps"
 	"math"
-	"os"
 	"strconv"
 	"strings"
 
-	"github.com/nickheyer/icebath/pkg/config"
-	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pyurl"
 	"github.com/nickheyer/icebath/pkg/provider"
@@ -314,25 +311,10 @@ func (a *AIAgent) resolveAPIMode(ctx context.Context, apiMode string, providerNa
 		a.apiMode = "anthropic_messages"
 	case a.provider == "bedrock" || (strings.HasPrefix(host, "bedrock-runtime.") && amazon):
 		a.apiMode = "bedrock_converse"
-	case a.provider == "nous" || a.provider == "nous-portal" || a.provider == "nousresearch":
-		a.apiMode = string(provider.NousMode(a.model, nousAnthropicWire(ctx)))
 	default:
 		a.apiMode = "chat_completions"
 		if mandated := provider.HostMandatedMode(baseURL); mandated != "" {
 			a.apiMode = string(mandated)
 		}
 	}
-}
-
-// Configured nous anthropic wire, chat when unreadable or unset
-func nousAnthropicWire(ctx context.Context) string {
-	cfg, err := config.LoadReadonly(ctx, home.Dir(ctx), os.LookupEnv)
-	if err != nil {
-		return "chat"
-	}
-	value := strings.ToLower(strings.TrimSpace(initStr(cfg.Get("nous.anthropic_wire"))))
-	if value == "native" || value == "auto" {
-		return value
-	}
-	return "chat"
 }

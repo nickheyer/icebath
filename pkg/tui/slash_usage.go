@@ -1,136 +1,47 @@
 package tui
 
 import (
-	"strings"
+	"strconv"
 
 	tea "charm.land/bubbletea/v2"
+
+	"github.com/nickheyer/icebath/pkg/tuigateway"
 )
 
 // Session totals panel, model, token counts, calls, the context line and compressions
-func usageTotalsSections(r map[string]any) []panelSection {
-	number := func(key string) float64 {
-		n, _ := r[key].(float64)
-		return n
-	}
-	model, _ := r["model"].(string)
+func usageTotalsSections(r *tuigateway.Usage) []panelSection {
 	sections := []panelSection{{Rows: [][2]string{
-		{tr("slashCmd.session.usage.rowModel"), model}, {tr("slashCmd.session.usage.rowInputTokens"), groupDigits(number("input"))},
-		{tr("slashCmd.session.usage.rowOutputTokens"), groupDigits(number("output"))}, {tr("slashCmd.session.usage.rowTotalTokens"), groupDigits(number("total"))},
-		{tr("slashCmd.session.usage.rowApiCalls"), groupDigits(number("calls"))},
+		{tr("slashCmd.session.usage.rowModel"), r.Model}, {tr("slashCmd.session.usage.rowInputTokens"), groupDigits(float64(r.Input))},
+		{tr("slashCmd.session.usage.rowOutputTokens"), groupDigits(float64(r.Output))}, {tr("slashCmd.session.usage.rowTotalTokens"), groupDigits(float64(r.Total))},
+		{tr("slashCmd.session.usage.rowApiCalls"), groupDigits(float64(r.Calls))},
 	}}}
-	if number("context_max") > 0 {
+	if val(r.ContextMax) > 0 {
 		mark := ""
-		if truthyJS(r["context_estimated"]) {
+		if val(r.ContextEstimated) {
 			mark = "~"
 		}
-		text := tr("slashCmd.session.usage.context", mark+groupDigits(number("context_used")), groupDigits(number("context_max")), mark+jsString(number("context_percent")))
+		text := tr("slashCmd.session.usage.context", mark+groupDigits(float64(val(r.ContextUsed))), groupDigits(float64(val(r.ContextMax))), mark+strconv.FormatInt(val(r.ContextPercent), 10))
 		sections = append(sections, panelSection{Text: &text})
 	}
-	if n := number("compressions"); n > 0 {
-		text := tr("slashCmd.session.usage.compressions", jsString(n))
+	if n := val(r.Compressions); n > 0 {
+		text := tr("slashCmd.session.usage.compressions", strconv.FormatInt(n, 10))
 		sections = append(sections, panelSection{Text: &text})
 	}
 	return sections
 }
 
-// Two bar dollar view of a usage model, the plan allowance and the top-up balance, nothing while unavailable
-func usageBarsText(model map[string]any) []string {
-	if model == nil || !truthyJS(model["available"]) {
-		return nil
-	}
-	plan := "plan"
-	if truthyJS(model["plan_name"]) {
-		plan = jsValueString(model["plan_name"])
-	}
-	plan = sliceUnits(plan+strings.Repeat(" ", max(0, 8-unitLen(plan))), 8)
-	var lines []string
-	if bar, isDict := model["plan_bar"].(map[string]any); isDict {
-		pct := ""
-		if bar["pct_used"] != nil {
-			pct = " · " + jsTemplate(bar, "pct_used") + "% used"
-		}
-		lines = append(lines, plan+"["+usageBar(jsNumberOf(bar["fill_fraction"]))+"]  "+jsTemplate(bar, "remaining_display")+" left of "+jsTemplate(bar, "total_display")+pct)
-	}
-	if bar, isDict := model["topup_bar"].(map[string]any); isDict {
-		lines = append(lines, "top-up  ["+usageBar(1)+"]  "+jsTemplate(bar, "remaining_display")+" · never expires")
-	}
-	if truthyJS(model["total_spendable_display"]) && truthyJS(model["has_topup"]) {
-		lines = append(lines, "Total spendable: "+jsValueString(model["total_spendable_display"]))
-	}
-	return lines
-}
-
-// Balance panel of the shared dollar usage model, the plan, its bars and the free or low balance note
-func (a *app) usageBalancePanel(model map[string]any, bars []string) {
-	var sections []panelSection
-	text := func(s string) { sections = append(sections, panelSection{Text: &s}) }
-	status, _ := model["status"].(string)
-	plan := ""
-	switch {
-	case model["plan_name"] != nil:
-		plan = jsValueString(model["plan_name"])
-	case status == "free":
-		plan = tr("slashCmd.session.usage.freePlan")
-	}
-	if plan != "" {
-		if truthyJS(model["renews_display"]) {
-			text(tr("slashCmd.session.usage.planRenews", plan, jsValueString(model["renews_display"])))
-		} else {
-			text(tr("slashCmd.session.usage.plan", plan))
-		}
-	}
-	if len(bars) > 0 {
-		text(strings.Join(bars, "\n"))
-	}
-	switch status {
-	case "free":
-		text(tr("slashCmd.session.usage.freeNote"))
-	case "low":
-		left := tr("slashCmd.session.usage.lowBalanceFallback")
-		if model["total_spendable_display"] != nil {
-			left = jsValueString(model["total_spendable_display"])
-		}
-		text(tr("slashCmd.session.usage.lowNote", left))
-	}
-	a.panel(tr("slashCmd.session.usage.balanceTitle"), sections)
-}
-
-// Session totals and balance from session.usage, the dollar usage model first and credit lines without it
+// Session totals from session.usage, the no calls line before the first call
 func (a *app) sessionUsage(r *slashRun) tea.Cmd {
-	return tea.Batch(r.ran(), r.rpc("session.usage", map[string]any{"session_id": nilIfEmpty(r.sid)}, func(res map[string]any) tea.Cmd {
-		number := func(key string) float64 {
-			n, _ := res[key].(float64)
-			return n
+	return tea.Batch(r.ran(), ask(r.rpc, r.a.sys, tuigateway.SessionUsage, tuigateway.SessionUsageParams{SessionID: r.sid}, func(res *tuigateway.Usage) tea.Cmd {
+		if res == nil {
+			return nil
 		}
-		a.store.ui.Usage = map[string]any{"calls": number("calls"), "input": number("input"), "output": number("output"), "total": number("total")}
-		shown := false
-		model, _ := res["usage"].(map[string]any)
-		bars := usageBarsText(model)
-		switch lines := rpcStrings(res["credits_lines"]); {
-		case model != nil && truthyJS(model["available"]) && (len(bars) > 0 || model["status"] == "free"):
-			a.usageBalancePanel(model, bars)
-			shown = true
-		case len(lines) > 0 && truthyJS(res["credits_usage_window"]):
-			for _, line := range lines {
-				if line = strings.TrimRightFunc(stripAnsi(line), isJSSpace); line != "" {
-					r.sys(line)
-					shown = true
-				}
-			}
-		case len(lines) > 0:
-			text := strings.Join(lines, "\n")
-			a.panel(tr("slashCmd.session.usage.nousBalanceTitle"), []panelSection{{Text: &text}})
-			shown = true
-		}
-		if number("calls") == 0 {
-			if !shown {
-				r.sys(tr("slashCmd.session.usage.noCalls"))
-			}
-			r.sys(tr("slashCmd.session.usage.cta"))
+		a.store.ui.Usage = &tuigateway.Usage{Calls: res.Calls, Input: res.Input, Output: res.Output, Total: res.Total}
+		if res.Calls == 0 {
+			r.sys(tr("slashCmd.session.usage.noCalls"))
 			return nil
 		}
 		a.panel(tr("slashCmd.session.usage.usageTitle"), usageTotalsSections(res))
-		r.sys(tr("slashCmd.session.usage.cta"))
 		return nil
 	}))
 }

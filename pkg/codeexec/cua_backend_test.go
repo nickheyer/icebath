@@ -61,15 +61,15 @@ func TestCuaTelemetryPolicy(t *testing.T) {
 	if cuaTelemetryDisabled(nil) {
 		t.Fatal("opt in must leave telemetry enabled")
 	}
-	if _, ok := cuaDriverChildEnv(nil, map[string]string{"PATH": "/usr/bin"})[cuaTelemetryEnvVar]; ok {
+	if _, ok := cuaDriverChildEnv(nil, map[string]string{"PATH": "/usr/bin"})["CUA_DRIVER_RS_TELEMETRY_ENABLED"]; ok {
 		t.Fatal("opt in must leave the telemetry var untouched")
 	}
 	cuSwap(t, &cuaTelemetryDisabled, func(*tools.Env) bool { return true })
 	env := cuaDriverChildEnv(nil, map[string]string{"PATH": "/usr/bin"})
-	if env[cuaTelemetryEnvVar] != "0" || env["PATH"] != "/usr/bin" {
+	if env["CUA_DRIVER_RS_TELEMETRY_ENABLED"] != "false" || env["DO_NOT_TRACK"] != "1" || env["CUA_TELEMETRY"] != "0" || env["PATH"] != "/usr/bin" {
 		t.Fatalf("disabled telemetry env %v", env)
 	}
-	if got := cuaDriverChildEnv(nil, map[string]string{cuaTelemetryEnvVar: "1"})[cuaTelemetryEnvVar]; got != "0" {
+	if got := cuaDriverChildEnv(nil, map[string]string{"CUA_DRIVER_RS_TELEMETRY_ENABLED": "1"})["CUA_DRIVER_RS_TELEMETRY_ENABLED"]; got != "false" {
 		t.Fatalf("disabled telemetry must override an inherited 1, got %q", got)
 	}
 }
@@ -212,7 +212,7 @@ func cuAssertSanitized(t *testing.T, calls []cuRunCall) {
 	if !strings.HasSuffix(env["PATH"], "/usr/bin:/bin") {
 		t.Fatalf("PATH %q", env["PATH"])
 	}
-	if env[cuaTelemetryEnvVar] != "0" {
+	if env["CUA_DRIVER_RS_TELEMETRY_ENABLED"] != "false" {
 		t.Fatal("telemetry not disabled")
 	}
 	if !calls[0].opts.HideWindow {

@@ -5,7 +5,6 @@ import (
 	"crypto/sha1"
 	"encoding/hex"
 	"fmt"
-	"log/slog"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -43,10 +42,10 @@ var bundledPluginDirs = []struct {
 	{"huggingface", []string{"huggingface"}}, {"kilocode", []string{"kilocode"}},
 	{"kimi-coding", []string{"kimi-coding", "kimi-coding-cn"}}, {"lmstudio", []string{"lmstudio"}},
 	{"meta-ai", []string{"meta-ai"}}, {"minimax", []string{"minimax", "minimax-cn", "minimax-oauth"}},
-	{"nebius-token-factory", []string{"nebius-token-factory"}}, {"nous", []string{"nous"}}, {"novita", []string{"novita"}},
+	{"nebius-token-factory", []string{"nebius-token-factory"}}, {"novita", []string{"novita"}},
 	{"nvidia", []string{"nvidia"}}, {"ollama-cloud", []string{"ollama-cloud"}}, {"openai-codex", []string{"openai-codex"}},
 	{"opencode-zen", []string{"opencode-zen", "opencode-go"}}, {"openrouter", []string{"openrouter"}},
-	{"qwen-oauth", []string{"qwen-oauth"}}, {"router", []string{"router"}}, {"solstice", []string{"solstice"}},
+	{"qwen-oauth", []string{"qwen-oauth"}}, {"router", []string{"router"}},
 	{"stepfun", []string{"stepfun"}}, {"tencent-tokenhub", []string{"tencent-tokenhub"}}, {"upstage", []string{"upstage"}},
 	{"vertex", []string{"vertex"}}, {"xai", []string{"xai"}}, {"xiaomi", []string{"xiaomi"}}, {"zai", []string{"zai"}},
 }
@@ -517,7 +516,7 @@ func UnlistedProviderNames(ctx context.Context) map[string]bool {
 	for _, p := range listProviders(ctx) {
 		listed, err := p.Listed(ctx)
 		if err != nil {
-			slog.Debug(fmt.Sprintf("provider %s listed() raised; hiding it: %v", p.Name, err))
+			pkgLog().Debug(fmt.Sprintf("provider %s listed() raised; hiding it: %v", p.Name, err))
 			hidden[p.Name] = true
 			continue
 		}
@@ -792,9 +791,9 @@ func importPluginDir(ctx context.Context, layer *homeLayer, pluginDir, source, h
 	}
 	if err != nil {
 		if hosted {
-			slog.Warn(fmt.Sprintf("Failed to load user provider plugin %s in the plugin host: %s", filepath.Base(pluginDir), err))
+			pkgLog().Warn(fmt.Sprintf("Failed to load user provider plugin %s in the plugin host: %s", filepath.Base(pluginDir), err))
 		} else {
-			slog.Warn(fmt.Sprintf("Failed to load %s provider plugin %s: %s", source, filepath.Base(pluginDir), err))
+			pkgLog().Warn(fmt.Sprintf("Failed to load %s provider plugin %s: %s", source, filepath.Base(pluginDir), err))
 		}
 		noteLoadResult(layer, pluginDir, err)
 		return
@@ -841,7 +840,7 @@ func isolationMode(cfg map[string]any) string {
 	}
 	mode := strings.ReplaceAll(strings.ToLower(strings.TrimSpace(pyScalarStr(raw))), "-", "_")
 	if mode != pluginIsolationHost && mode != pluginIsolationInPro {
-		slog.Warn(fmt.Sprintf("plugins.isolation=%s is not one of host, in_process; loading plugins in-process", pyRepr(raw)))
+		pkgLog().Warn(fmt.Sprintf("plugins.isolation=%s is not one of host, in_process; loading plugins in-process", pyRepr(raw)))
 		return pluginIsolationInPro
 	}
 	return mode

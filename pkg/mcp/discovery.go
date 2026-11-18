@@ -77,7 +77,7 @@ func requestLazyReconnect(ctx context.Context, serverName string, srv *serverTas
 		srv.ready.Clear()
 		srv.reconnect.Set()
 	}); err != nil {
-		mcpLogger().Warn(fmt.Sprintf("MCP server '%s': lazy reconnect after stdio recycle failed: %s", serverName, excStr(err)))
+		pkgLog().Warn(fmt.Sprintf("MCP server '%s': lazy reconnect after stdio recycle failed: %s", serverName, excStr(err)))
 		return false
 	}
 	ok, err := runOnLoop(ctx, recycledReconnectTimeout, func(c context.Context) (bool, error) {
@@ -95,7 +95,7 @@ func requestLazyReconnect(ctx context.Context, serverName string, srv *serverTas
 		return false, nil
 	})
 	if err != nil {
-		mcpLogger().Warn(fmt.Sprintf("MCP server '%s': lazy reconnect after stdio recycle failed: %s", serverName, excStr(err)))
+		pkgLog().Warn(fmt.Sprintf("MCP server '%s': lazy reconnect after stdio recycle failed: %s", serverName, excStr(err)))
 		return false
 	}
 	return ok
@@ -165,13 +165,13 @@ func ensureLazyServerConnected(ctx context.Context, env *tools.Env, serverName s
 	serverConnecting[key] = struct{}{}
 	delete(serverConnectErrors, key)
 	mcpMu.Unlock()
-	mcpLogger().Info(fmt.Sprintf("MCP server '%s': lazy start on first use", serverName))
+	pkgLog().Info(fmt.Sprintf("MCP server '%s': lazy start on first use", serverName))
 	ensureMCPLoop()
 	_, err := runOnLoop(ctx, connectTimeoutOf(cfg)+30*time.Second, func(c context.Context) ([]string, error) {
 		return discoverAndRegisterServer(c, env, serverName, &Rendered{Config: cfg})
 	})
 	if err != nil {
-		mcpLogger().Warn(fmt.Sprintf("Lazy MCP connect failed for '%s': %s%s", serverName, noteConnectFailure(ctx, serverName, err), stderrTailNote(ctx, serverName)))
+		pkgLog().Warn(fmt.Sprintf("Lazy MCP connect failed for '%s': %s%s", serverName, noteConnectFailure(ctx, serverName, err), stderrTailNote(ctx, serverName)))
 		return false
 	}
 	noteConnectSuccess(ctx, serverName)
@@ -199,7 +199,7 @@ func ensureLazyServerConnected(ctx context.Context, env *tools.Env, serverName s
 		for _, n := range phantom {
 			deregisterMCPToolForKey(ctx, key, n)
 		}
-		mcpLogger().Info(fmt.Sprintf("MCP server '%s': deregistered %d phantom cached tool(s) not served live (stale schema-cache fingerprint %s): %s",
+		pkgLog().Info(fmt.Sprintf("MCP server '%s': deregistered %d phantom cached tool(s) not served live (stale schema-cache fingerprint %s): %s",
 			serverName, len(phantom), pyNoneOr(staleFingerprint), strings.Join(phantom, ", ")))
 	}
 	return srv != nil && srv.currentSession() != nil
@@ -274,7 +274,7 @@ func discoverAndRegisterServer(ctx context.Context, env *tools.Env, name string,
 	if _, ok := r.Config["url"]; ok {
 		transport = "HTTP"
 	}
-	mcpLogger().Info(fmt.Sprintf("MCP server '%s' (%s): registered %d tool(s): %s", name, transport, len(names), strings.Join(names, ", ")))
+	pkgLog().Info(fmt.Sprintf("MCP server '%s' (%s): registered %d tool(s): %s", name, transport, len(names), strings.Join(names, ", ")))
 	return names, nil
 }
 
@@ -344,7 +344,7 @@ func registerLazyFromCache(ctx context.Context, env *tools.Env, fresh map[string
 		mcpMu.Unlock()
 		names, err := registerFromCacheSync(ctx, env, name, r.Config, entry)
 		if err != nil {
-			mcpLogger().Warn(fmt.Sprintf("Failed lazy MCP registration for '%s': %s", name, excStr(err)))
+			pkgLog().Warn(fmt.Sprintf("Failed lazy MCP registration for '%s': %s", name, excStr(err)))
 			mcpMu.Lock()
 			serverConnecting[serverKey(ctx, name, "", true)] = struct{}{}
 			mcpMu.Unlock()
@@ -397,7 +397,7 @@ func discoverAll(ctx context.Context, env *tools.Env, fresh map[string]*Rendered
 			command = fmt.Sprintf(" (command=%s)", pyStr(c))
 		}
 		message := noteConnectFailure(ctx, name, errs[i])
-		mcpLogger().Warn(fmt.Sprintf("Failed to connect to MCP server '%s'%s: %s%s", name, command, message, stderrTailNote(ctx, name)))
+		pkgLog().Warn(fmt.Sprintf("Failed to connect to MCP server '%s'%s: %s%s", name, command, message, stderrTailNote(ctx, name)))
 	}
 }
 
@@ -447,7 +447,7 @@ func runDiscoveryPass(ctx context.Context, env *tools.Env, fresh map[string]*Ren
 		}
 	}
 	if len(stale) > 0 {
-		mcpLogger().Warn(fmt.Sprintf("MCP discovery %s while %d server(s) were still connecting; clearing stale connecting set: %s", how, len(stale), strings.Join(stale, ", ")))
+		pkgLog().Warn(fmt.Sprintf("MCP discovery %s while %d server(s) were still connecting; clearing stale connecting set: %s", how, len(stale), strings.Join(stale, ", ")))
 		for _, name := range stale {
 			key := serverKey(ctx, name, "", true)
 			delete(serverConnecting, key)
@@ -506,14 +506,14 @@ func logSummary(ctx context.Context, prefix string, names []string, lazyTools, l
 	if lazyServers > 0 {
 		summary += fmt.Sprintf(" (%d lazy, not spawned yet)", lazyServers)
 	}
-	mcpLogger().Info(summary)
+	pkgLog().Info(summary)
 }
 
 // Connects the given servers and registers their tools, logging a failed pass for the adopter re-registration caller
 func registerMCPServers(ctx context.Context, env *tools.Env, servers map[string]*Rendered) []string {
 	names, err := Connect(ctx, env, servers)
 	if err != nil {
-		mcpLogger().Debug(fmt.Sprintf("MCP: re-registration for profile scope %s failed: %s", pyNoneOr(mcpRegistryScope(ctx)), excStr(err)))
+		pkgLog().Debug(fmt.Sprintf("MCP: re-registration for profile scope %s failed: %s", pyNoneOr(mcpRegistryScope(ctx)), excStr(err)))
 	}
 	return names
 }
@@ -542,7 +542,7 @@ func connectServers(ctx context.Context, env *tools.Env, servers map[string]*Ren
 		return nil, err
 	}
 	if len(servers) == 0 {
-		mcpLogger().Debug("No explicit MCP servers provided")
+		pkgLog().Debug("No explicit MCP servers provided")
 		if mcpRegistryScope(ctx) != "" {
 			return existingToolNames(ctx), nil
 		}
@@ -550,7 +550,7 @@ func connectServers(ctx context.Context, env *tools.Env, servers map[string]*Ren
 	}
 	fresh := selectNewServers(ctx, servers)
 	if healed > 0 {
-		mcpLogger().Info(fmt.Sprintf("MCP: registered %d already-connected server(s) into this profile scope", healed))
+		pkgLog().Info(fmt.Sprintf("MCP: registered %d already-connected server(s) into this profile scope", healed))
 	}
 	if len(fresh) == 0 {
 		return existingToolNames(ctx), nil
@@ -558,7 +558,7 @@ func connectServers(ctx context.Context, env *tools.Env, servers map[string]*Ren
 	fresh, lazyTools, lazyServers := registerLazyFromCache(ctx, env, fresh)
 	if len(fresh) == 0 {
 		if lazyTools > 0 {
-			mcpLogger().Info(fmt.Sprintf("MCP: registered %d lazy tool(s) from schema cache (no processes spawned)", lazyTools))
+			pkgLog().Info(fmt.Sprintf("MCP: registered %d lazy tool(s) from schema cache (no processes spawned)", lazyTools))
 		}
 		return existingToolNames(ctx), nil
 	}
@@ -582,7 +582,7 @@ func ConnectAll(ctx context.Context, env *tools.Env, allowed []string) ([]string
 	}
 	servers := ownerServerConfigs(ctx, env)
 	if len(servers) == 0 {
-		mcpLogger().Debug("No MCP servers configured")
+		pkgLog().Debug("No MCP servers configured")
 		return []string{}, nil
 	}
 	if allowed != nil {
@@ -601,12 +601,12 @@ func ConnectAll(ctx context.Context, env *tools.Env, allowed []string) ([]string
 		}
 		if len(skipped) > 0 {
 			sort.Strings(skipped)
-			mcpLogger().Debug(fmt.Sprintf("MCP discovery filter: spawning %d/%d configured server(s) per --toolsets filter (skipped: %s)",
+			pkgLog().Debug(fmt.Sprintf("MCP discovery filter: spawning %d/%d configured server(s) per --toolsets filter (skipped: %s)",
 				len(filtered), len(servers), strings.Join(skipped, ",")))
 		}
 		servers = filtered
 		if len(servers) == 0 {
-			mcpLogger().Debug("No MCP servers in --toolsets filter; skipping MCP load entirely")
+			pkgLog().Debug("No MCP servers in --toolsets filter; skipping MCP load entirely")
 			return []string{}, nil
 		}
 	}
@@ -703,7 +703,7 @@ func Reconcile(ctx context.Context, env *tools.Env) (ReconcileResult, error) {
 	}
 	sort.Strings(stale)
 	if len(stale) > 0 {
-		mcpLogger().Info(fmt.Sprintf("MCP server(s) %s no longer in config (or disabled); disconnecting", strings.Join(stale, ", ")))
+		pkgLog().Info(fmt.Sprintf("MCP server(s) %s no longer in config (or disabled); disconnecting", strings.Join(stale, ", ")))
 		ShutdownMCPServers(ctx, &scope, stale, shutdownTimeout)
 	}
 	for _, key := range lazy {
@@ -905,7 +905,7 @@ func Restart(ctx context.Context, env *tools.Env, names []string) ([]string, err
 		changed = append(changed, t.name)
 	}
 	sort.Strings(changed)
-	mcpLogger().Info(fmt.Sprintf("MCP server(s) %s: launch inputs changed; reconnecting", strings.Join(changed, ", ")))
+	pkgLog().Info(fmt.Sprintf("MCP server(s) %s: launch inputs changed; reconnecting", strings.Join(changed, ", ")))
 	if len(ownedNames) > 0 {
 		ShutdownMCPServers(ctx, &scope, ownedNames, shutdownTimeout)
 	}
@@ -1105,7 +1105,7 @@ func Probe(ctx context.Context, env *tools.Env) map[string][]ToolSummary {
 				defer cancel()
 				srv, err := connectServer(cctx, env, name, r, nil)
 				if err != nil {
-					mcpLogger().Debug(fmt.Sprintf("Probe: failed to connect to '%s': %s", name, excStr(err)))
+					pkgLog().Debug(fmt.Sprintf("Probe: failed to connect to '%s': %s", name, excStr(err)))
 					return
 				}
 				srv.mu.Lock()
@@ -1132,7 +1132,7 @@ func Probe(ctx context.Context, env *tools.Env) map[string][]ToolSummary {
 		return struct{}{}, nil
 	})
 	if err != nil {
-		mcpLogger().Debug(fmt.Sprintf("MCP probe failed: %s", excStr(err)))
+		pkgLog().Debug(fmt.Sprintf("MCP probe failed: %s", excStr(err)))
 	}
 	mu.Lock()
 	defer mu.Unlock()

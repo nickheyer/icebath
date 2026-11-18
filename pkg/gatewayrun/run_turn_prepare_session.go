@@ -48,7 +48,7 @@ func (r *GatewayRunner) hmwaResolveSession(ctx context.Context, event *gateway.M
 		recovered = r.recoverTelegramLobbyThreadID(ctx, source)
 	}
 	if recovered != nil {
-		runLog().Info(fmt.Sprintf("telegram topic recovery: chat=%s user=%s %s -> %s",
+		pkgLog().Info(fmt.Sprintf("telegram topic recovery: chat=%s user=%s %s -> %s",
 			source.ChatID, noneOrText(source.UserID), pyrepr.Repr(optAny(source.ThreadID)), *recovered))
 		copied := *source
 		copied.ThreadID = recovered
@@ -61,7 +61,7 @@ func (r *GatewayRunner) hmwaResolveSession(ctx context.Context, event *gateway.M
 			return nil, nil, "", err
 		}
 		if derived != expectedSessionKey {
-			runLog().Warn(fmt.Sprintf("Dropping internally routed event after route recovery: expected session=%s derived=%s",
+			pkgLog().Warn(fmt.Sprintf("Dropping internally routed event after route recovery: expected session=%s derived=%s",
 				expectedSessionKey, derived))
 			return nil, nil, "", nil
 		}
@@ -79,7 +79,7 @@ func (r *GatewayRunner) hmwaResolveSession(ctx context.Context, event *gateway.M
 			if key == "" {
 				key = "missing"
 			}
-			runLog().Warn(fmt.Sprintf("Dropping internally routed event: expected session id=%s is no longer current for key=%s", pinned, key))
+			pkgLog().Warn(fmt.Sprintf("Dropping internally routed event: expected session id=%s is no longer current for key=%s", pinned, key))
 			return nil, nil, "", nil
 		}
 	} else {
@@ -111,7 +111,7 @@ func (r *GatewayRunner) hmwaResolveSession(ctx context.Context, event *gateway.M
 				}
 			}
 			if moved {
-				runLog().Warn(fmt.Sprintf("Dropping a stopped claimed turn: its route moved from %s to %s before it ran", owner, entry.SessionID))
+				pkgLog().Warn(fmt.Sprintf("Dropping a stopped claimed turn: its route moved from %s to %s before it ran", owner, entry.SessionID))
 				gateway.RecordInterruptedExecution(ctx)
 				return nil, nil, "", nil
 			}
@@ -154,7 +154,7 @@ func (r *GatewayRunner) hmwaHealTelegramTopicBinding(ctx context.Context, source
 	if db != nil {
 		binding, err := db.DB().GetTelegramTopicBinding(ctx, source.ChatID, optText(source.ThreadID), telegramTopicProfileName(source))
 		if err != nil {
-			runLog().Debug("Failed to read Telegram topic binding", "error", err)
+			pkgLog().Debug("Failed to read Telegram topic binding", "error", err)
 		} else if binding != nil && binding.Len() > 0 {
 			bound = true
 			value, _ := binding.Get("session_id")
@@ -165,7 +165,7 @@ func (r *GatewayRunner) hmwaHealTelegramTopicBinding(ctx context.Context, source
 	}
 	if !bound {
 		if err := r.recordTelegramTopicBinding(ctx, source, entry); err != nil {
-			runLog().Debug("Failed to record Telegram topic binding", "error", err)
+			pkgLog().Debug("Failed to record Telegram topic binding", "error", err)
 		}
 		return entry, nil
 	}
@@ -173,7 +173,7 @@ func (r *GatewayRunner) hmwaHealTelegramTopicBinding(ctx context.Context, source
 	if boundSessionID != "" && db != nil {
 		canonical, err := db.DB().GetCompressionTip(ctx, boundSessionID)
 		if err != nil {
-			runLog().Debug(fmt.Sprintf("compression-tip lookup failed for %s", boundSessionID), "error", err)
+			pkgLog().Debug(fmt.Sprintf("compression-tip lookup failed for %s", boundSessionID), "error", err)
 			canonical = boundSessionID
 		}
 		if canonical != "" && canonical != boundSessionID {

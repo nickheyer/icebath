@@ -131,7 +131,7 @@ var reasoningEchoConfigLoader = func(ctx context.Context) (config.Tree, error) {
 // Configured model.reasoning_echo, false with a class only warning when the config cannot be read
 func readReasoningEchoFromConfig(ctx context.Context) bool {
 	warn := func(class string) bool {
-		runAgentLog().Warn(fmt.Sprintf("Agent configuration for model.reasoning_echo could not be loaded (%s); "+
+		pkgLog().Warn(fmt.Sprintf("Agent configuration for model.reasoning_echo could not be loaded (%s); "+
 			"using the default reasoning echo setting. Run 'icebath config check' "+
 			"and correct the reported configuration.", class))
 		return false

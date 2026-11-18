@@ -3,7 +3,6 @@ package gateway
 import (
 	"context"
 	"fmt"
-	"log/slog"
 	"sync"
 	"time"
 
@@ -127,7 +126,7 @@ func dropRejectedRoute(ctx context.Context, adapter PlatformAdapter, source *Ses
 		}
 	}
 	if adapter == nil || !profileParked(runner, profile) {
-		slog.Warn(fmt.Sprintf("[%s] Dropping inbound event for %s: explicit profile route targets an unserved profile", name, source.ChatID))
+		pkgLog().Warn(fmt.Sprintf("[%s] Dropping inbound event for %s: explicit profile route targets an unserved profile", name, source.ChatID))
 		return
 	}
 	refuseParkedRoute(ctx, adapter, source, profile, "")
@@ -149,17 +148,17 @@ func refuseParkedRoute(ctx context.Context, adapter PlatformAdapter, source *Ses
 		}
 		scope.mu.Unlock()
 		if open {
-			slog.Warn(fmt.Sprintf("[%s] Refusing inbound event for %s: routed profile %s on %s is parked (reason=profile_parked); "+
+			pkgLog().Warn(fmt.Sprintf("[%s] Refusing inbound event for %s: routed profile %s on %s is parked (reason=profile_parked); "+
 				"nothing was admitted, the delivery is answered retryably", name, source.ChatID, quoted, platform))
 			return
 		}
 	}
 	if !parkedNoticeDue(adapter, profile, platform, source.ChatID) {
-		slog.Info(fmt.Sprintf("[%s] Refusing inbound event for %s: routed profile %s on %s is parked (reason=profile_parked); "+
+		pkgLog().Info(fmt.Sprintf("[%s] Refusing inbound event for %s: routed profile %s on %s is parked (reason=profile_parked); "+
 			"nothing was admitted, the chat was already told within %.0fs", name, source.ChatID, quoted, platform, ParkedNoticeWindowS))
 		return
 	}
-	slog.Warn(fmt.Sprintf("[%s] Refusing inbound event for %s: routed profile %s on %s is parked (reason=profile_parked); "+
+	pkgLog().Warn(fmt.Sprintf("[%s] Refusing inbound event for %s: routed profile %s on %s is parked (reason=profile_parked); "+
 		"nothing was admitted, a resend notice to the sender is scheduled", name, source.ChatID, quoted, platform))
 	if replyTo == "" && source.MessageID != nil {
 		replyTo = *source.MessageID
@@ -182,11 +181,11 @@ type threadMetadataRunner interface {
 func sendParkedRefusal(ctx context.Context, adapter PlatformAdapter, source *SessionSource, replyTo string) {
 	name := adapter.Name()
 	fail := func(err error) {
-		slog.Warn(fmt.Sprintf("[%s] Could not send the parked-profile refusal to %s", name, source.ChatID), "exc_info", err)
+		pkgLog().Warn(fmt.Sprintf("[%s] Could not send the parked-profile refusal to %s", name, source.ChatID), "exc_info", err)
 	}
 	runner, ok := adapter.Base().GatewayRunner.(threadMetadataRunner)
 	if !ok {
-		fail(fmt.Errorf("AttributeError: '%s' object has no attribute '_thread_metadata_for_source'", pyrepr.TypeName(adapter.Base().GatewayRunner)))
+		fail(fmt.Errorf("the gateway runner (%T) cannot give the thread of a message source", adapter.Base().GatewayRunner))
 		return
 	}
 	threadMetadata := runner.ThreadMetadataForSource(source, nil)
@@ -205,7 +204,7 @@ func sendParkedRefusal(ctx context.Context, adapter PlatformAdapter, source *Ses
 		if result.ErrorKind != nil {
 			kind = *result.ErrorKind
 		}
-		slog.Warn(fmt.Sprintf("[%s] The parked-profile refusal to %s was not delivered (error_kind=%s, retryable=%s)",
+		pkgLog().Warn(fmt.Sprintf("[%s] The parked-profile refusal to %s was not delivered (error_kind=%s, retryable=%s)",
 			name, source.ChatID, kind, pyrepr.Repr(result.Retryable)))
 	}
 }

@@ -42,7 +42,7 @@ func MatchesReasoningEchoFamily(family, provider, model, baseURL string) (bool, 
 		}
 		return anyHostMatches(baseURL, rule.hosts), nil
 	}
-	return false, fmt.Errorf("KeyError: %s", pyrepr.Repr(family))
+	return false, fmt.Errorf("unknown reasoning echo family %s", family)
 }
 
 // ReasoningEchoFamily names the first must echo family the route matches in table order, empty for none

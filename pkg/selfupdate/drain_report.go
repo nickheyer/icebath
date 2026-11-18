@@ -11,6 +11,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
@@ -87,7 +88,7 @@ func drainUnitGetter(unit any) (func(string) any, error) {
 	case map[string]any:
 		return func(k string) any { return u[k] }, nil
 	}
-	return nil, fmt.Errorf("AttributeError: '%s' object has no attribute 'get'", pyrepr.TypeName(unit))
+	return nil, fmt.Errorf("a drain report unit is %s, expected a mapping", errchain.Kind(unit))
 }
 
 // Python value or its fallback when falsy, rendered with str

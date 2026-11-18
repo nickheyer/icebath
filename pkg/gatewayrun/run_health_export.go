@@ -9,7 +9,7 @@ func shutdownGatewayHealthExport(r *GatewayRunner) {
 	r.gatewayHealthExportRuntime = nil
 	defer func() {
 		if rec := recover(); rec != nil {
-			runLog().Debug("gateway health OTLP export shutdown failed", "exc_info", rec)
+			pkgLog().Debug("gateway health OTLP export shutdown failed", "exc_info", rec)
 		}
 	}()
 	runtime.Shutdown()

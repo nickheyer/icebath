@@ -143,7 +143,7 @@ func TestFullLogUploadLabelsUploadLabelListIncludesTheUpdateLog(t *testing.T) {
 func TestFullLogUploadLabelsLocalPrintLabelListIncludesTheUpdateLog(t *testing.T) {
 	dulHomeWithUpdateLogs(t)
 	dbgPinDump("")
-	out, _, _ := dbgRun(t, map[string]any{"lines": 50, "expire": 1, "local": true, "nous": false, "no_redact": true, "yes": false})
+	out, _, _ := dbgRun(t, map[string]any{"lines": 50, "expire": 1, "local": true, "no_redact": true, "yes": false})
 	if !strings.Contains(out, "FULL update.log") || !strings.Contains(out, "FULL agent.log") {
 		t.Fatal(out)
 	}

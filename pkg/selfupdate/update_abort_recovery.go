@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"log/slog"
 	"os"
 	"os/exec"
 	"runtime"
@@ -19,7 +18,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
 
-// Fresh recovery process an aborted restart phase consults, replaced by hermes tests
+// Fresh recovery process an aborted restart phase consults, replaced by tests
 var (
 	abortRunFreshRecovery = runFreshRecoveryProcess
 	abortRecoveryCapture  = recoveryCapture
@@ -29,7 +28,7 @@ var (
 func runFreshRecoveryProcess(ctx context.Context, profiles []string, candidates map[string]string, gatewayMode bool) *recoveryCompleted {
 	exe, err := runningExecutable()
 	if err != nil {
-		slog.Warn(fmt.Sprintf("Fresh gateway restart recovery failed: %s", launchErrorText(err)))
+		pkgLog().Warn(fmt.Sprintf("Fresh gateway restart recovery failed: %s", launchErrorText(err)))
 		return nil
 	}
 	command := []string{exe, UpdateRestartRecoveryEntry, "--stdin"}
@@ -45,7 +44,7 @@ func runFreshRecoveryProcess(ctx context.Context, profiles []string, candidates 
 	if gatewayMode && runtime.GOOS == "linux" {
 		systemdRun, err := exec.LookPath("systemd-run")
 		if err != nil || systemdRun == "" {
-			slog.Warn("Cannot isolate fresh gateway recovery from the gateway cgroup")
+			pkgLog().Warn("Cannot isolate fresh gateway recovery from the gateway cgroup")
 			return nil
 		}
 		command = append([]string{systemdRun, "--user", "--scope", "--quiet", "--collect", "--"}, command...)
@@ -65,7 +64,7 @@ func runFreshRecoveryProcess(ctx context.Context, profiles []string, candidates 
 	child.Stdin = strings.NewReader(payload)
 	result, err := abortRecoveryCapture(child, timeout)
 	if err != nil {
-		slog.Warn(fmt.Sprintf("Fresh gateway restart recovery failed: %s", launchErrorText(err)))
+		pkgLog().Warn(fmt.Sprintf("Fresh gateway restart recovery failed: %s", launchErrorText(err)))
 		return nil
 	}
 	return result
@@ -97,13 +96,13 @@ func recoverGatewayRestartAfterAbort(ctx context.Context, w io.Writer, plan *Upd
 		return allFailed(), nil
 	}
 	if result.ReturnCode != 0 {
-		slog.Warn(fmt.Sprintf("Fresh gateway restart recovery exited %d", result.ReturnCode))
+		pkgLog().Warn(fmt.Sprintf("Fresh gateway restart recovery exited %d", result.ReturnCode))
 		return allFailed(), nil
 	}
 	decoded, err := pyjson.Loads(result.Stdout)
 	recovery, isObj := decoded.(*pyjson.Object)
 	if err != nil || !isObj {
-		slog.Warn("Fresh gateway restart recovery returned invalid JSON")
+		pkgLog().Warn("Fresh gateway restart recovery returned invalid JSON")
 		return allFailed(), nil
 	}
 	buckets := [3][]string{}
@@ -139,7 +138,7 @@ func recoverGatewayRestartAfterAbort(ctx context.Context, w io.Writer, plan *Upd
 		}
 	}
 	if !valid {
-		slog.Warn("Fresh gateway restart recovery returned incomplete profiles")
+		pkgLog().Warn("Fresh gateway restart recovery returned incomplete profiles")
 		return allFailed(), nil
 	}
 	for i := range buckets {

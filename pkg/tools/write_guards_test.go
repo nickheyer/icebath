@@ -95,7 +95,7 @@ func wgWrite(t *testing.T, env *Env, path, content string) map[string]any {
 // patch_tool on the default task decoded
 func wgPatch(t *testing.T, env *Env, a patchArgs) map[string]any {
 	t.Helper()
-	return ftDecode(t, patchTool(context.Background(), env, a, "default", nil))
+	return ftDecode(t, patchTool(context.Background(), env, a, "default"))
 }
 
 func wgStr(s string) *string { return &s }
@@ -689,7 +689,7 @@ func TestWriteGuardsProfileOnlyRealRootExempt(t *testing.T) {
 	if asker.count() != 1 {
 		t.Fatalf("calls %d", asker.count())
 	}
-	fakeProfile := filepath.Join(base, "not-a-hermes-root", "profiles", "worker")
+	fakeProfile := filepath.Join(base, "not-an-icebath-root", "profiles", "worker")
 	if err := os.MkdirAll(fakeProfile, 0o755); err != nil {
 		t.Fatal(err)
 	}
@@ -1147,7 +1147,7 @@ func TestWriteGuardsBaselineExternalEditAfterOwnPatchRefused(t *testing.T) {
 }
 
 // Routes the task's backend through a scripted patch_replace until the returned undo runs
-func wgScriptPatchReplace(t *testing.T, env *Env, task string, fn func(real fileToolOps, path, oldString, newString string, replaceAll bool, probe *editProbe) *PatchResult) func() {
+func wgScriptPatchReplace(t *testing.T, env *Env, task string, fn func(real fileToolOps, path, oldString, newString string, replaceAll bool) *PatchResult) func() {
 	t.Helper()
 	real, err := getFileOpsShared(env, task)
 	if err != nil {
@@ -1155,8 +1155,8 @@ func wgScriptPatchReplace(t *testing.T, env *Env, task string, fn func(real file
 	}
 	prev := getFileOps
 	ops := &scriptedFileOps{fileToolOps: real.ops}
-	ops.patchReplaceFn = func(path, oldString, newString string, replaceAll bool, probe *editProbe) *PatchResult {
-		return fn(real.ops, path, oldString, newString, replaceAll, probe)
+	ops.patchReplaceFn = func(path, oldString, newString string, replaceAll bool) *PatchResult {
+		return fn(real.ops, path, oldString, newString, replaceAll)
 	}
 	installScriptedFileOps(t, env, ops, nil)
 	return func() { getFileOps = prev }
@@ -1168,8 +1168,8 @@ func TestWriteGuardsBaselineWriteLandingAfterPatchWriteGivesNoBaseline(t *testin
 	path := filepath.Join(ws, "raced-after.txt")
 	wgMustWrite(t, path, "one\ntwo\n")
 	wgBRead(t, env, path, task, nil)
-	undo := wgScriptPatchReplace(t, env, task, func(real fileToolOps, p, o, n string, all bool, probe *editProbe) *PatchResult {
-		result := real.patchReplace(p, o, n, all, probe)
+	undo := wgScriptPatchReplace(t, env, task, func(real fileToolOps, p, o, n string, all bool) *PatchResult {
+		result := real.patchReplace(p, o, n, all)
 		stamp := wgMtime(t, path)
 		wgMustWrite(t, path, "ONE\nRACED\n")
 		wgSetMtime(t, path, stamp)
@@ -1189,9 +1189,9 @@ func TestWriteGuardsBaselineWriteLandingBeforePatchReadGivesNoBaseline(t *testin
 	path := filepath.Join(ws, "raced-before.txt")
 	wgMustWrite(t, path, "one\ntwo\n")
 	wgBRead(t, env, path, task, nil)
-	undo := wgScriptPatchReplace(t, env, task, func(real fileToolOps, p, o, n string, all bool, probe *editProbe) *PatchResult {
+	undo := wgScriptPatchReplace(t, env, task, func(real fileToolOps, p, o, n string, all bool) *PatchResult {
 		wgMustWrite(t, path, "one\nUNSEEN\n")
-		return real.patchReplace(p, o, n, all, probe)
+		return real.patchReplace(p, o, n, all)
 	})
 	wgBReplace(t, env, path, task, "one", "ONE")
 	undo()

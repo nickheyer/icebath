@@ -8,7 +8,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"log/slog"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -637,7 +636,7 @@ func normalizeScope(scope string) string { return home.NormalizeScope(scope) }
 // RegisterSecretSource registers a source, true on success, rejections are logged never raised
 func RegisterSecretSource(source SecretSource, replace, builtin bool, scope string) bool {
 	if problem := validateSecretSource(source); problem != "" {
-		slog.Default().Warn(problem)
+		pkgLog().Warn(problem)
 		return false
 	}
 	scope = normalizeScope(scope)
@@ -654,12 +653,12 @@ func RegisterSecretSource(source SecretSource, replace, builtin bool, scope stri
 		}
 	}
 	if _, exists := effective[spec.Name]; exists && !replace {
-		slog.Default().Warn(fmt.Sprintf("Secret source '%s' already registered; ignoring duplicate", spec.Name))
+		pkgLog().Warn(fmt.Sprintf("Secret source '%s' already registered; ignoring duplicate", spec.Name))
 		return false
 	}
 	for n, other := range effective {
 		if n != spec.Name && spec.Scheme != "" && other.Spec().Scheme == spec.Scheme {
-			slog.Default().Warn(fmt.Sprintf("Ignoring secret source '%s': scheme '%s://' is already owned by source '%s'", spec.Name, spec.Scheme, n))
+			pkgLog().Warn(fmt.Sprintf("Ignoring secret source '%s': scheme '%s://' is already owned by source '%s'", spec.Name, spec.Scheme, n))
 			return false
 		}
 	}
@@ -823,7 +822,7 @@ func EnsureBuiltinSecretSources() {
 	}
 	for _, s := range []SecretSource{&BitwardenSource{}, &OnePasswordSource{}, &CommandSource{}} {
 		if !RegisterSecretSource(s, false, true, "") {
-			slog.Default().Warn(fmt.Sprintf("Failed to register bundled %s secret source", s.Spec().Label))
+			pkgLog().Warn(fmt.Sprintf("Failed to register bundled %s secret source", s.Spec().Label))
 		}
 	}
 }
@@ -940,7 +939,7 @@ func orderedEnabledSecretSources(secretsCfg map[string]any, scope string) []Secr
 		if knownText == "" {
 			knownText = "none"
 		}
-		slog.Default().Warn(fmt.Sprintf("secrets.sources names unknown source(s): %s (known: %s)", strings.Join(unknown, ", "), knownText))
+		pkgLog().Warn(fmt.Sprintf("secrets.sources names unknown source(s): %s (known: %s)", strings.Join(unknown, ", "), knownText))
 	}
 	var order []string
 	seen := map[string]bool{}
@@ -954,7 +953,7 @@ func orderedEnabledSecretSources(secretsCfg map[string]any, scope string) []Secr
 	for _, n := range order {
 		on, err := secretSourceIsEnabled(byName[n], secretsSection(secretsCfg, n))
 		if err != nil {
-			slog.Default().Warn(fmt.Sprintf("Secret source '%s' is_enabled() raised; skipping", n), "err", err)
+			pkgLog().Warn(fmt.Sprintf("Secret source '%s' is_enabled() raised; skipping", n), "err", err)
 			continue
 		}
 		if on {

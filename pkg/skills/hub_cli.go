@@ -25,9 +25,9 @@ var (
 	slugKeyRe            = regexp.MustCompile(`[^a-z0-9]+`)
 	trustStyle           = map[string]string{"builtin": "bright_cyan", "trusted": "green", "community": "yellow", "local": "dim"}
 	trustRank            = map[string]int{"builtin": 3, "trusted": 2, "community": 1}
-	browseLimits         = map[string]int{"hermes-index": 1000000, "official": 200, "skills-sh": 200, "well-known": 50,
+	browseLimits         = map[string]int{"skills-index": 1000000, "official": 200, "skills-sh": 200, "well-known": 50,
 		"github": 200, "clawhub": 500, "lobehub": 500, "browse-sh": 500}
-	browseAPILimits = map[string]int{"hermes-index": 5000, "official": 100, "skills-sh": 100, "well-known": 25,
+	browseAPILimits = map[string]int{"skills-index": 5000, "official": 100, "skills-sh": 100, "well-known": 25,
 		"github": 100, "clawhub": 50, "lobehub": 50, "browse-sh": 500}
 	extraMetaLabels = [][2]string{{"repo_url", "Repo"}, {"detail_url", "Detail Page"}, {"index_url", "Index"},
 		{"endpoint", "Endpoint"}, {"install_command", "Install Command"}, {"installs", "Installs"},
@@ -43,7 +43,7 @@ const (
 	HubFailed HubOutcome = -1
 )
 
-// Skills hub command runner over one scope, hermes_cli/skills_hub.py with its module globals as fields
+// Skills hub command runner over one scope with its module state as fields
 type HubCLI struct {
 	S   *Scope
 	Hub *Hub
@@ -71,7 +71,6 @@ type hubCLISeams struct {
 	install              func(ctx context.Context, identifier string, o HubInstallOptions) (HubOutcome, error)
 	resolveMetaAndBundle func(ctx context.Context, identifier string, sources []SkillSource) (*SkillMeta, *SkillBundle, SkillSource)
 	resolveURLBundleName func(c *pyrich.Console, b *SkillBundle, meta *SkillMeta, identifier, nameOverride string, skipConfirm bool) bool
-	recordInstall        func(ctx context.Context, kind, source string, name any, outcome string, failureClass, registry any, err error)
 	disabledSkills       func(platform string) map[string]bool
 	uninstall            func(ctx context.Context, name string, c *pyrich.Console, skipConfirm, deferCache bool) (HubOutcome, error)
 	uninstallSkill       func(name string) (bool, string, error)
@@ -308,11 +307,6 @@ func exactNameHits(results []SkillMeta, name string) []SkillMeta {
 	return hits
 }
 
-// Metric record of one install attempt, nil fields absent from the Python dict
-type installAttempt struct {
-	registry, failureClass, origin *string
-}
-
 func (x *HubCLI) sources() []SkillSource {
 	if x.Sources != nil {
 		return x.Sources()
@@ -340,16 +334,12 @@ func (x *HubCLI) parallelSearch(ctx context.Context, sources []SkillSource, limi
 }
 
 // Full identifier of a short name through search, empty when ambiguous or missing
-func (x *HubCLI) resolveShortName(ctx context.Context, name string, sources []SkillSource, c *pyrich.Console, attempt *installAttempt) string {
-	if attempt == nil {
-		attempt = &installAttempt{}
-	}
+func (x *HubCLI) resolveShortName(ctx context.Context, name string, sources []SkillSource, c *pyrich.Console) string {
 	c.Print(fmt.Sprintf("[dim]Resolving '%s'...[/]", name))
 	results := x.unifiedSearch(ctx, name, sources, "all", 20)
 	exact := exactNameHits(results, name)
 	if len(exact) == 1 {
 		c.Print(fmt.Sprintf("[dim]Resolved to: %s[/]", exact[0].Identifier))
-		attempt.registry = strPtr(exact[0].Source)
 		return exact[0].Identifier
 	}
 	if len(exact) > 1 {
@@ -361,7 +351,6 @@ func (x *HubCLI) resolveShortName(ctx context.Context, name string, sources []Sk
 		}
 		if len(official) == 1 {
 			c.Print(fmt.Sprintf("[dim]Resolved to: %s (official catalog)[/]", official[0].Identifier))
-			attempt.registry = strPtr("official")
 			return official[0].Identifier
 		}
 		c.Print(fmt.Sprintf("\n[yellow]Multiple skills named '%s' found:[/]", name))
@@ -371,7 +360,6 @@ func (x *HubCLI) resolveShortName(ctx context.Context, name string, sources []Sk
 		}
 		c.PrintTable(table)
 		c.Print("[bold]Use the full identifier to install a specific one.[/]\n")
-		attempt.failureClass = strPtr("ambiguous")
 		return ""
 	}
 	if len(results) > 0 {
@@ -380,11 +368,9 @@ func (x *HubCLI) resolveShortName(ctx context.Context, name string, sources []Sk
 			c.Print(fmt.Sprintf("  [cyan]%s[/] — %s", r.Name, r.Identifier))
 		}
 		c.Print()
-		attempt.failureClass = strPtr("not_found")
 		return ""
 	}
 	printHubError(c, fmt.Sprintf("No skill named '%s' found in any source.", name))
-	attempt.failureClass = strPtr("not_found")
 	return ""
 }
 
@@ -416,18 +402,18 @@ func (x *HubCLI) resolveSourceMetaAndBundle(ctx context.Context, identifier stri
 	return firstMeta, nil, firstSource
 }
 
-func (x *HubCLI) fullIdentifier(ctx context.Context, identifier string, sources []SkillSource, c *pyrich.Console, attempt *installAttempt) string {
+func (x *HubCLI) fullIdentifier(ctx context.Context, identifier string, sources []SkillSource, c *pyrich.Console) string {
 	if strings.Contains(identifier, "/") {
 		return identifier
 	}
-	return x.resolveShortName(ctx, identifier, sources, c, attempt)
+	return x.resolveShortName(ctx, identifier, sources, c)
 }
 
 // Short name resolution plus the meta, bundle and source inside one pooled hub session
 func (x *HubCLI) resolveIdentifier(ctx context.Context, identifier string, sources []SkillSource, c *pyrich.Console) (string, *SkillMeta, *SkillBundle, SkillSource) {
 	ctx, done := x.Hub.HTTPSession(ctx)
 	defer done()
-	identifier = x.fullIdentifier(ctx, identifier, sources, c, nil)
+	identifier = x.fullIdentifier(ctx, identifier, sources, c)
 	if identifier == "" {
 		return "", nil, nil, nil
 	}
@@ -611,7 +597,7 @@ func (x *HubCLI) renderBrowsePage(c *pyrich.Console, deduped, items []SkillMeta,
 	}
 	c.Print(fmt.Sprintf("\n[bold]Skills Hub — Browse — %s[/]  [dim](%s, page %d/%d)[/]", label, loaded, page, totalPages))
 	if official > 0 && page == 1 {
-		c.Print(fmt.Sprintf("[bright_cyan]★ %d official optional skill(s) from Nous Research[/]", official))
+		c.Print(fmt.Sprintf("[bright_cyan]★ %d official optional skill(s) from icebath[/]", official))
 	}
 	c.Print()
 	table := &pyrich.Table{Columns: []pyrich.Column{

@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"io/fs"
-	"log/slog"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -283,7 +282,7 @@ func CollectOrphanInstallStates(installs string) ([]string, error) {
 func collectOneState(state, dataRoot string, retention float64, retain bool) (bool, error) {
 	release := installLock(state)
 	if release == nil {
-		slog.Debug("orphan install state " + filepath.Base(state) + " is held or back in use; skipped")
+		pkgLog().Debug("orphan install state " + filepath.Base(state) + " is held or back in use; skipped")
 		return false, nil
 	}
 	defer release()
@@ -292,7 +291,7 @@ func collectOneState(state, dataRoot string, retention float64, retain bool) (bo
 		return false, err
 	}
 	if !orphan {
-		slog.Debug("orphan install state " + filepath.Base(state) + " is held or back in use; skipped")
+		pkgLog().Debug("orphan install state " + filepath.Base(state) + " is held or back in use; skipped")
 		return false, nil
 	}
 	held, err := leased(state)
@@ -300,7 +299,7 @@ func collectOneState(state, dataRoot string, retention float64, retain bool) (bo
 		return false, err
 	}
 	if held {
-		slog.Debug("orphan install state " + filepath.Base(state) + " is held or back in use; skipped")
+		pkgLog().Debug("orphan install state " + filepath.Base(state) + " is held or back in use; skipped")
 		return false, nil
 	}
 	emptied, err := removeContents(state)
@@ -308,7 +307,7 @@ func collectOneState(state, dataRoot string, retention float64, retain bool) (bo
 		return false, err
 	}
 	if !emptied {
-		slog.Debug("orphan install state " + filepath.Base(state) + " only partly removed; retried next pass")
+		pkgLog().Debug("orphan install state " + filepath.Base(state) + " only partly removed; retried next pass")
 		return false, nil
 	}
 	removeStateTree(filepath.Join(state, "inputs"))

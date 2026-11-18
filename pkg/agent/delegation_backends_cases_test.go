@@ -15,7 +15,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/tools"
 )
 
-// Hermes probe plugin picking a route per option, refusing the reserved one
+// Probe plugin picking a route per option, refusing the reserved one
 const dbProbePlugin = `
 from agent.delegation_provider import DelegationProvider, DelegationRouteError
 
@@ -114,7 +114,7 @@ func dbRecord(t *testing.T) *dbRecorded {
 	return rec
 }
 
-// The hermes _parent fixture
+// The parent fixture
 func dbParent(h, sessionID string) *AIAgent {
 	return &AIAgent{sessionID: sessionID, model: "parent-model", provider: "openrouter", requestOverrides: map[string]any{},
 		activeChildrenLock: &sync.Mutex{}, quietMode: true, env: &tools.Env{Home: h, Values: &sync.Map{}}}
@@ -173,7 +173,7 @@ func dbJSON(t *testing.T, v any) string {
 	return string(raw)
 }
 
-// Go provider standing in for the hermes test classes with one route rule
+// Go provider standing in for the test classes with one route rule
 type dbProvider struct {
 	name   string
 	params *pyjson.Object
@@ -199,7 +199,7 @@ func (p *dbProvider) Settings(config map[string]any) map[string]any {
 	return own
 }
 
-// Registers a provider in the global layer the way the hermes tests call _registry.register
+// Registers a provider in the global layer the way the tests call registry register
 func dbRegisterGlobal(t *testing.T, p tools.DelegationProvider) {
 	t.Helper()
 	if err := delegationRegistry.Register(p, ""); err != nil {

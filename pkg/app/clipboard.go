@@ -37,7 +37,7 @@ var (
 	clipboardPlatform = runtime.GOOS
 )
 
-// Subprocess runner of the clipboard tools, replaced by tests the way the hermes cases patch subprocess.run
+// Subprocess runner of the clipboard tools, replaced by tests
 var clipRun = pysubprocess.RunWith
 
 const wlMissing = "wl-paste not installed — Wayland clipboard unavailable"
@@ -73,7 +73,7 @@ func clipProbe(argv []string, timeoutSeconds int, ok func(clipResult) bool, miss
 	r, err := runClipText(argv, timeoutSeconds)
 	if err != nil {
 		if isMissingExe(err) && missing != "" {
-			cliLogger.Debug(missing)
+			pkgLog().Debug(missing)
 		}
 		return false
 	}
@@ -104,7 +104,7 @@ type clipBackend struct {
 	save    func(string) bool
 }
 
-// Host probes and backends the dispatch reads, swapped by tests as hermes patches the clipboard module functions
+// Host probes and backends the dispatch reads, swapped by tests
 var (
 	clipIsWSL           = hostinfo.IsWSL
 	clipWSLHasImage     = wslHasImage
@@ -218,7 +218,7 @@ func writeClipboardText(text string) bool {
 func osascript(expr string, timeoutSeconds int) string {
 	r, err := runClipText([]string{"osascript", "-e", expr}, timeoutSeconds)
 	if err != nil {
-		cliLogger.Debug(fmt.Sprintf("osascript probe failed: %v", err))
+		pkgLog().Debug(fmt.Sprintf("osascript probe failed: %v", err))
 		return ""
 	}
 	if r.code != 0 {
@@ -264,7 +264,7 @@ func macosSaveFileImage(dest string) bool {
 		return true
 	}
 	if err != nil {
-		cliLogger.Debug(fmt.Sprintf("clipboard file-url extract failed: %v", err))
+		pkgLog().Debug(fmt.Sprintf("clipboard file-url extract failed: %v", err))
 	}
 	_ = os.Remove(dest)
 	return false
@@ -275,7 +275,7 @@ func macosPngpaste(dest string) bool {
 	res, err := clipRun(nil, []string{"pngpaste", dest}, pysubprocess.Options{Timeout: 3 * time.Second})
 	if err != nil {
 		if !isMissingExe(err) {
-			cliLogger.Debug(fmt.Sprintf("pngpaste failed: %v", err))
+			pkgLog().Debug(fmt.Sprintf("pngpaste failed: %v", err))
 		}
 		return false
 	}
@@ -298,7 +298,7 @@ func macosOsascript(dest string) bool {
 		"end try\n"
 	r, err := runClipText([]string{"osascript", "-e", script}, 5)
 	if err != nil {
-		cliLogger.Debug(fmt.Sprintf("osascript clipboard extract failed: %v", err))
+		pkgLog().Debug(fmt.Sprintf("osascript clipboard extract failed: %v", err))
 		return false
 	}
 	return r.code == 0 && !strings.Contains(r.stdout, "fail") && nonEmptyFile(dest)
@@ -395,14 +395,14 @@ func psClipboard(exe string, timeoutSeconds int, label, dest string) bool {
 			return true
 		case err == nil:
 		case isMissingExe(err):
-			cliLogger.Debug(exe + " not found — clipboard unavailable")
+			pkgLog().Debug(exe + " not found — clipboard unavailable")
 			return false
 		default:
 			stage := "extraction"
 			if dest == "" {
 				stage = "check"
 			}
-			cliLogger.Debug(fmt.Sprintf("%s clipboard image %s failed: %v", label, stage, err))
+			pkgLog().Debug(fmt.Sprintf("%s clipboard image %s failed: %v", label, stage, err))
 			if dest != "" {
 				_ = os.Remove(dest)
 			}
@@ -448,7 +448,7 @@ func windowsHasImage() bool {
 func windowsSave(dest string) bool {
 	ps := getPSExe()
 	if ps == "" {
-		cliLogger.Debug("No PowerShell found — Windows clipboard image paste unavailable")
+		pkgLog().Debug("No PowerShell found — Windows clipboard image paste unavailable")
 		return false
 	}
 	return psClipboard(ps, 15, "Windows", dest)
@@ -487,9 +487,9 @@ func waylandSave(dest string) bool {
 	r, err := runClipText(wlListTypes, 3)
 	if err != nil {
 		if isMissingExe(err) {
-			cliLogger.Debug(wlMissing)
+			pkgLog().Debug(wlMissing)
 		} else {
-			cliLogger.Debug(fmt.Sprintf("wl-paste clipboard extraction failed: %v", err))
+			pkgLog().Debug(fmt.Sprintf("wl-paste clipboard extraction failed: %v", err))
 			_ = os.Remove(dest)
 		}
 		return false
@@ -516,9 +516,9 @@ func waylandSave(dest string) bool {
 	ok, err := pipeToFile([]string{"wl-paste", "--type", mime}, dest)
 	if err != nil {
 		if isMissingExe(err) {
-			cliLogger.Debug(wlMissing)
+			pkgLog().Debug(wlMissing)
 		} else {
-			cliLogger.Debug(fmt.Sprintf("wl-paste clipboard extraction failed: %v", err))
+			pkgLog().Debug(fmt.Sprintf("wl-paste clipboard extraction failed: %v", err))
 			_ = os.Remove(dest)
 		}
 		return false
@@ -535,7 +535,7 @@ func convertToPNG(path string) bool {
 	if err := decodeToPNG(path); err == nil {
 		return true
 	} else {
-		cliLogger.Debug(fmt.Sprintf("Pillow BMP→PNG conversion failed: %v", err))
+		pkgLog().Debug(fmt.Sprintf("Pillow BMP→PNG conversion failed: %v", err))
 	}
 	tmp := strings.TrimSuffix(path, filepath.Ext(path)) + ".bmp"
 	err := func() error {
@@ -557,9 +557,9 @@ func convertToPNG(path string) bool {
 	}
 	if err != nil {
 		if isMissingExe(err) {
-			cliLogger.Debug("ImageMagick not installed — cannot convert BMP to PNG")
+			pkgLog().Debug("ImageMagick not installed — cannot convert BMP to PNG")
 		} else {
-			cliLogger.Debug(fmt.Sprintf("ImageMagick BMP→PNG conversion failed: %v", err))
+			pkgLog().Debug(fmt.Sprintf("ImageMagick BMP→PNG conversion failed: %v", err))
 		}
 		if _, tmpErr := os.Stat(tmp); tmpErr == nil {
 			if _, pathErr := os.Stat(path); pathErr != nil {
@@ -612,7 +612,7 @@ func xclipSave(dest string) bool {
 	}
 	ok, err := pipeToFile([]string{"xclip", "-selection", "clipboard", "-t", "image/png", "-o"}, dest)
 	if err != nil {
-		cliLogger.Debug(fmt.Sprintf("xclip image extraction failed: %v", err))
+		pkgLog().Debug(fmt.Sprintf("xclip image extraction failed: %v", err))
 		_ = os.Remove(dest)
 		return false
 	}

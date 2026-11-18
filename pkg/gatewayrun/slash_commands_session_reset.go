@@ -71,7 +71,7 @@ func discardLostTurns(ctx context.Context, authority *gateway.SessionAuthority, 
 			if !errors.As(err, &refused) {
 				return "", err
 			}
-			runLog().Warn(fmt.Sprintf("/discard of %s refused: %s", pyrepr.Str(admissionID), refused.Reason))
+			pkgLog().Warn(fmt.Sprintf("/discard of %s refused: %s", pyrepr.Str(admissionID), refused.Reason))
 			continue
 		}
 		done++
@@ -101,11 +101,11 @@ func (r *GatewayRunner) cleanupOldAgentForReset(ctx context.Context, sessionKey 
 	select {
 	case err := <-done:
 		if err != nil {
-			runLog().Warn(fmt.Sprintf("Agent resource cleanup for session %s failed during /new reset: %s (#35994)",
+			pkgLog().Warn(fmt.Sprintf("Agent resource cleanup for session %s failed during /new reset: %s (#35994)",
 				sessionKey, pyrepr.ExceptionMessage(err)))
 		}
 	case <-timer.C:
-		runLog().Warn(fmt.Sprintf("Agent resource cleanup for session %s exceeded %ss during /new reset; proceeding with "+
+		pkgLog().Warn(fmt.Sprintf("Agent resource cleanup for session %s exceeded %ss during /new reset; proceeding with "+
 			"reset (the worker thread is left to finish on its own). (#35994)", sessionKey, pyrepr.Float(resetCleanupTimeoutS)))
 	}
 }
@@ -243,7 +243,7 @@ func (r *GatewayRunner) handleResetCommand(ctx context.Context, event *gateway.M
 	}
 	if r.isTelegramTopicLane(ctx, source) && newEntry != nil {
 		if err := r.recordTelegramTopicBinding(ctx, source, newEntry); err != nil {
-			runLog().Debug("Failed to rebind Telegram topic after /new", "exc_info", err)
+			pkgLog().Debug("Failed to rebind Telegram topic after /new", "exc_info", err)
 		}
 	}
 	var newSIDValue any

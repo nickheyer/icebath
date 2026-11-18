@@ -18,18 +18,18 @@ func driveTicker(t *testing.T, loop string, tickCost float64, cycles int) ([]flo
 	s, _ := newTestStore(t)
 	now := 100.0
 	var waits []float64
-	patchChronos(t, &tickerMonotonic, func() float64 { return now })
-	patchChronos(t, &tickerWait, func(_ <-chan struct{}, d float64) bool {
+	patchSeam(t, &tickerMonotonic, func() float64 { return now })
+	patchSeam(t, &tickerWait, func(_ <-chan struct{}, d float64) bool {
 		waits = append(waits, d)
 		now += d
 		return len(waits) >= cycles
 	})
-	patchChronos(t, &recoverInterruptedExecutions, func(context.Context, *Store) (int, error) { return 0, nil })
-	patchChronos(t, &tickHook, func(context.Context, *Store, tickOptions) (int, error) {
+	patchSeam(t, &recoverInterruptedExecutions, func(context.Context, *Store) (int, error) { return 0, nil })
+	patchSeam(t, &tickHook, func(context.Context, *Store, tickOptions) (int, error) {
 		now += tickCost
 		return 0, nil
 	})
-	patchChronos(t, &recordTickerHeartbeat, func(*Store, context.Context, bool) {})
+	patchSeam(t, &recordTickerHeartbeat, func(*Store, context.Context, bool) {})
 	interval := 60.0
 	o := StartOptions{Interval: &interval}
 	if loop == "multiplex" {
@@ -96,7 +96,7 @@ func TestTickerSurvivesACorruptLedgerAtStartup(t *testing.T) {
 		t.Fatal(err)
 	}
 	rec := &tickRecorder{}
-	patchChronos(t, &tickHook, func(ctx context.Context, ps *Store, o tickOptions) (int, error) {
+	patchSeam(t, &tickHook, func(ctx context.Context, ps *Store, o tickOptions) (int, error) {
 		rec.record(ctx, ps, o)
 		return 0, nil
 	})
@@ -120,7 +120,7 @@ func TestMultiplexTickerSurvivesARaisingGateWithoutTickingUngated(t *testing.T) 
 	s.log = slog.New(slog.NewTextHandler(logs, &slog.HandlerOptions{Level: slog.LevelDebug}))
 	homes := profileHomes(t, t.TempDir(), "default")
 	rec := &tickRecorder{}
-	patchChronos(t, &tickHook, func(ctx context.Context, ps *Store, o tickOptions) (int, error) {
+	patchSeam(t, &tickHook, func(ctx context.Context, ps *Store, o tickOptions) (int, error) {
 		rec.record(ctx, ps, o)
 		return 0, nil
 	})
@@ -155,7 +155,7 @@ func TestMultiplexTickerProfileGateSkipsRejectedProfile(t *testing.T) {
 	ownGateway, orphan := homes[0].Home, homes[1].Home
 	rec := &tickRecorder{}
 	run := newTickerRun()
-	patchChronos(t, &tickHook, func(ctx context.Context, ps *Store, o tickOptions) (int, error) {
+	patchSeam(t, &tickHook, func(ctx context.Context, ps *Store, o tickOptions) (int, error) {
 		rec.record(ctx, ps, o)
 		if rec.count() >= 3 {
 			run.stop()

@@ -92,7 +92,7 @@ func (s *Scope) readMetaLines(path, failLog string) ([]string, error) {
 	}
 	data, err := os.ReadFile(path)
 	if err != nil {
-		s.logger().Debug(fmt.Sprintf(failLog, pyOSErrorText(err)))
+		s.logger().Debug(fmt.Sprintf(failLog, osErrorText(err)))
 		return nil, nil
 	}
 	text, err := pyjson.DecodeBytes(data)
@@ -204,7 +204,7 @@ func (s *Scope) readHubInstalledNames() map[string]bool {
 	}
 	raw, err := os.ReadFile(lockPath)
 	if err != nil {
-		s.logger().Debug("Failed to read hub lock file: " + pyOSErrorText(err))
+		s.logger().Debug("Failed to read hub lock file: " + osErrorText(err))
 		return names
 	}
 	data, err := pyjson.Loads(decodeText(raw))
@@ -587,7 +587,7 @@ func (s *Scope) LoadUsage() (*pyjson.Object, error) {
 	}
 	raw, err := os.ReadFile(path)
 	if err != nil {
-		s.logger().Debug(fmt.Sprintf("Failed to read %s: %s", path, pyOSErrorText(err)))
+		s.logger().Debug(fmt.Sprintf("Failed to read %s: %s", path, osErrorText(err)))
 		return out, nil
 	}
 	text, err := pyjson.DecodeBytes(raw)
@@ -1019,7 +1019,7 @@ func (s *Scope) relocate(ctx context.Context, src, dest, name, action string, co
 	before := s.LedgerCaptureBefore(ctx, src, completePackage, skill)
 	if err := os.Rename(src, dest); err != nil {
 		if _, err := pyfs.Move(src, dest); err != nil {
-			return false, fmt.Sprintf("failed to %s: %s", action, pyOSErrorText(err)), nil
+			return false, fmt.Sprintf("failed to %s: %s", action, osErrorText(err)), nil
 		}
 	}
 	archiving := action == "archive"
@@ -1078,7 +1078,7 @@ func (s *Scope) ArchiveSkill(ctx context.Context, name string) (bool, string, er
 	}
 	dest := filepath.Join(s.archiveDir(), name)
 	if err := os.MkdirAll(filepath.Dir(dest), 0o755); err != nil {
-		return false, "failed to create archive dir: " + pyOSErrorText(err), nil
+		return false, "failed to create archive dir: " + osErrorText(err), nil
 	}
 	if lexistsFollow(dest) {
 		dest = filepath.Join(filepath.Dir(dest), filepath.Base(dir)+"-"+time.Now().UTC().Format("20060102150405"))

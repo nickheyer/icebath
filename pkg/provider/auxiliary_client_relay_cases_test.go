@@ -5,14 +5,9 @@ import (
 	"errors"
 	"fmt"
 	"os"
-	"path/filepath"
 	"reflect"
-	"sort"
 	"strings"
 	"testing"
-
-	"github.com/nickheyer/icebath/pkg/observability"
-	"github.com/nickheyer/icebath/pkg/tools"
 )
 
 // Chat client answering the queued responses or errors in order
@@ -57,7 +52,7 @@ func auxRecordLogicalCompletions() *[][]any {
 	return &completions
 }
 
-// Records the kwargs of one relayed attempt the way the hermes execute_current double does
+// Records the kwargs of one relayed attempt the way the execute_current double does
 func auxRelayAttemptRecord(name, modelName string, metadata map[string]any, deferLogical bool) map[string]any {
 	return map[string]any{"name": name, "model_name": modelName, "metadata": metadata, "defer_logical_completion": deferLogical}
 }
@@ -164,187 +159,6 @@ func TestAuxiliaryProviderFallbackClosesOneRealLogicalCall(t *testing.T) {
 	relayLLMEqual(t, relayLLMLogicalCalls(turn), map[string]any{})
 	relayLLMEqual(t, auxRelayPopOutputs(f, before), []any{map[string]any{
 		"error_class": "unknown", "model": "openrouter/test-model", "outcome": "success", "provider": "openrouter"}})
-}
-
-// Runs the body inside the turn with a real shared metrics subscriber and returns the stored counter rows
-func auxRouteRows(t *testing.T, f *relayLLMFake, ctx context.Context, turn *tools.RelayTurnContext, name string, run func()) []observability.CounterRow {
-	t.Helper()
-	dir := t.TempDir()
-	store, err := observability.NewSharedMetricsStore(ctx, filepath.Join(dir, "metrics.sqlite3"), filepath.Join(dir, "outbox"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	runtimeID := relayLLMRuntime(turn).RuntimeID
-	subscriber, err := observability.NewSharedMetricsSubscriber(ctx, store, "test-version", &runtimeID)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := f.relay.Subscribers.Register(name, func(e *tools.RelayEventView) {
-		subscriber.Call(ctx, &observability.RelayEvent{Kind: e.Kind, Name: e.Name, Category: e.Category, ScopeCategory: e.ScopeCategory,
-			CategoryProfile: e.CategoryProfile, Metadata: e.Metadata, Data: e.Data})
-	}); err != nil {
-		t.Fatal(err)
-	}
-	if err := turn.Lease.Host.RetainManagedExecution(name); err != nil {
-		t.Fatal(err)
-	}
-	func() {
-		defer func() {
-			turn.Lease.Host.ReleaseManagedExecution(name)
-			_ = f.relay.Subscribers.Deregister(name)
-		}()
-		run()
-		if err := f.relay.Subscribers.Flush(); err != nil {
-			t.Fatal(err)
-		}
-	}()
-	rows, err := store.CounterSnapshot(ctx)
-	if err != nil {
-		t.Fatal(err)
-	}
-	return rows
-}
-
-// Dimension map of one counter row
-func auxRowDims(row observability.CounterRow) map[string]any {
-	out := map[string]any{}
-	v := reflect.ValueOf(row.Dimensions)
-	if v.Kind() != reflect.Map {
-		return out
-	}
-	for _, k := range v.MapKeys() {
-		out[fmt.Sprint(k.Interface())] = v.MapIndex(k).Interface()
-	}
-	return out
-}
-
-// Sorted outcome, error class and value triples of the model route rows
-func auxRouteTuples(rows []observability.CounterRow) []string {
-	var out []string
-	for _, r := range rows {
-		if r.MetricName != observability.ModelRouteMetric {
-			continue
-		}
-		d := auxRowDims(r)
-		out = append(out, fmt.Sprintf("%v|%v|%d", d["outcome"], d["error_class"], r.Value))
-	}
-	sort.Strings(out)
-	return out
-}
-
-func TestAuxiliaryProviderFallbackRecordsOneTerminalModelRoute(t *testing.T) {
-	f, ctx, turn := relayLLMTurn(t)
-	client := auxRelayAttemptsClient(map[string]any{"model": "failed/model", "choices": []any{}}, auxRelayAnswer("Accepted/Model", "recovered"))
-	rows := auxRouteRows(t, f, ctx, turn, "test.auxiliary-model-route", func() {
-		result, err := auxRelayAuxiliaryCall(ctx, "compression", func(ctx context.Context) (any, error) {
-			auxSetRelayAuxiliaryRoute(ctx, "nvidia", "failed/configured-model", "chat_completions")
-			if err := auxExpectInvalidResponse(ctx, client, map[string]any{"model": "failed/configured-model", "messages": []any{}}, "compression"); err != nil {
-				return nil, err
-			}
-			auxSetRelayAuxiliaryRoute(ctx, "OpenRouter", "fallback/configured-model", "chat_completions")
-			return auxRelayValidatedCompletion(ctx, client, map[string]any{"model": "fallback/configured-model", "messages": []any{}}, "compression")
-		})
-		if err != nil || ExtractContentOrReasoning(result, -1) != "recovered" {
-			t.Fatalf("result %v %v", result, err)
-		}
-	})
-	if len(rows) != 1 || rows[0].MetricName != observability.ModelRouteMetric || rows[0].Resource["icebath_version"] != "test-version" {
-		t.Fatalf("rows %#v", rows)
-	}
-	relayLLMEqual(t, auxRowDims(rows[0]), map[string]any{"call_role": "auxiliary", "error_class": "unknown", "model": "accepted/model",
-		"outcome": "success", "provider": "openrouter", "ttft_bucket": "unknown"})
-	if rows[0].Value != 1 || rows[0].PackagedValue != 0 {
-		t.Fatalf("row values %d %d", rows[0].Value, rows[0].PackagedValue)
-	}
-}
-
-// The hermes _aux_call helper, retrying Exceptions before the attempts run out and letting aborts through
-func auxRelayCall(ctx context.Context, task string, client AuxClient, attempts int) (any, error) {
-	return auxRelayAuxiliaryCall(ctx, task, func(ctx context.Context) (any, error) {
-		auxSetRelayAuxiliaryRoute(ctx, "openrouter", "m", "chat_completions")
-		kwargs := func() map[string]any { return map[string]any{"model": "m", "messages": []any{}} }
-		for i := 0; i < attempts-1; i++ {
-			out, err := auxRelayValidatedCompletion(ctx, client, kwargs(), task)
-			if err == nil {
-				return out, nil
-			}
-			if auxIsBaseException(err) {
-				return nil, err
-			}
-		}
-		return auxRelayValidatedCompletion(ctx, client, kwargs(), task)
-	})
-}
-
-func TestAuxiliaryModelRoutesCarryClassifiedErrorClass(t *testing.T) {
-	f, ctx, turn := relayLLMTurn(t)
-	rows := auxRouteRows(t, f, ctx, turn, "test.auxiliary-route-rows", func() {
-		if _, err := auxRelayCall(ctx, "title_generation", auxRelayAttemptsClient(&AuxSDKError{StatusCode: 429, Message: "Rate limit exceeded"}, auxRelayAnswer("m", "ok")), 2); err != nil {
-			t.Fatal(err)
-		}
-		_, err := auxRelayCall(ctx, "title_generation", auxRelayAttemptsClient(&AuxSDKError{StatusCode: 404, Message: "The model `m` does not exist"}), 1)
-		var sdk *AuxSDKError
-		if !errors.As(err, &sdk) || sdk.StatusCode != 404 {
-			t.Fatalf("second call %v", err)
-		}
-	})
-	relayLLMEqual(t, auxRouteTuples(rows), []string{"failed|model_not_found|1", "success|rate_limit|1"})
-}
-
-func TestAbortedAuxiliaryCallIsCancelledNotFailed(t *testing.T) {
-	aborts := []struct {
-		name string
-		err  error
-	}{
-		{"explicit_cancellation", &AuxiliaryExplicitCancellation{}},
-		{"interrupted_error", &InterruptedError{Message: "aux stream interrupted"}},
-		{"keyboard_interrupt", tools.ErrKeyboardInterrupt},
-	}
-	for _, abort := range aborts {
-		t.Run(abort.name, func(t *testing.T) {
-			f, ctx, turn := relayLLMTurn(t)
-			rows := auxRouteRows(t, f, ctx, turn, "test.auxiliary-route-rows", func() {
-				_, err := auxRelayCall(ctx, "compression", auxRelayAttemptsClient(abort.err), 1)
-				if !errors.Is(err, abort.err) {
-					t.Fatalf("abort outcome %v", err)
-				}
-			})
-			relayLLMEqual(t, auxRouteTuples(rows), []string{"cancelled|none|1"})
-		})
-	}
-}
-
-func TestAuxiliaryCallFinishingUnderTheTurnsLiveScopeIsCounted(t *testing.T) {
-	f, ctx, turn := relayLLMTurn(t)
-	rt, session := relayLLMRuntime(turn), turn.Lease.Session
-	var turnWork any
-	rows := auxRouteRows(t, f, ctx, turn, "test.auxiliary-route-rows", func() {
-		_, err := auxRelayAuxiliaryCall(ctx, "title_generation", func(ctx context.Context) (any, error) {
-			auxSetRelayAuxiliaryRoute(ctx, "openrouter", "m", "chat_completions")
-			response, err := auxRelaySyncCompletion(ctx, auxRelayAttemptsClient(auxRelayAnswer("m", "A title")), map[string]any{"model": "m", "messages": []any{}}, "", "", nil)
-			if err != nil {
-				return nil, err
-			}
-			handle, err := rt.RunInSession(ctx, session, func(c context.Context) (any, error) {
-				return f.relay.Scope.Push(c, "test.turn_work", f.relay.ScopeType.Function, map[string]any{"handle": turn.Handle, "input": map[string]any{}})
-			}, false, nil)
-			if err != nil {
-				return nil, err
-			}
-			turnWork = handle
-			return auxValidateLLMResponse(ctx, response, "title_generation", "", "")
-		})
-		if err != nil {
-			t.Fatal(err)
-		}
-		if _, err := rt.RunInSession(ctx, session, func(c context.Context) (any, error) {
-			return tools.PopRelayScope(c, f.relay, turnWork, map[string]any{}, nil, nil)
-		}, false, nil); err != nil {
-			t.Fatal(err)
-		}
-		tools.RelayCoordinator.EndTurn(ctx, turn, "success")
-	})
-	relayLLMEqual(t, auxRouteTuples(rows), []string{"success|none|1"})
 }
 
 func TestAsyncAuxiliaryAttemptUsesInheritedRelayAdapter(t *testing.T) {
@@ -488,7 +302,7 @@ func TestCallLlmStreamUnwrapsCompletedResponse(t *testing.T) {
 	}
 }
 
-// The hermes _MESSAGES fixture
+// The messages fixture
 func auxRelayNativeMessages() []any {
 	return []any{map[string]any{"role": "system", "content": "advise"}, map[string]any{"role": "user", "content": "hi"}}
 }

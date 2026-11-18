@@ -14,7 +14,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/nickheyer/icebath/pkg/tuigateway"
+	"github.com/nickheyer/icebath/pkg/tuihost"
 )
 
 // A running stdio gateway child with the pipe its requests go into
@@ -41,7 +41,7 @@ func (c *stdioEntryChild) logs() string {
 // Boots the binary as the stdio gateway entry and routes the JSON lines of its stdout
 func startStdioEntryChild(t *testing.T, h, user string, peer *modelPeer) (*stdioEntryChild, *rpcStream) {
 	t.Helper()
-	child := &stdioEntryChild{process: exec.Command(os.Args[0], tuigateway.TUIGatewayEntry), exited: make(chan error, 1),
+	child := &stdioEntryChild{process: exec.Command(os.Args[0], tuihost.TUIGatewayEntry), exited: make(chan error, 1),
 		stderr: filepath.Join(t.TempDir(), "stderr.log"), home: h}
 	child.process.Env = serveTurnEnv(h, user, peer)
 	errOut, err := os.Create(child.stderr)

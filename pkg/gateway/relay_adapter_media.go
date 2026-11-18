@@ -21,7 +21,7 @@ func (a *RelayAdapter) getMediaClient(ctx context.Context) *RelayMediaClient {
 	}
 	url, err := RelayURLChecked(ctx)
 	if err != nil {
-		relayAdapterLog().Debug("relay media client init failed", "exc_info", err)
+		pkgLog().Debug("relay media client init failed", "exc_info", err)
 		return nil
 	}
 	gatewayID, secret := RelayConnectionAuth(ctx)
@@ -80,7 +80,7 @@ func (a *RelayAdapter) sendMedia(ctx context.Context, chatID, mediaKind, source 
 		return nil, nil, nil
 	}
 	if pyrepr.Truthy(result["ambiguous"]) {
-		relayAdapterLog().Warn(fmt.Sprintf("relay send_media to %s unconfirmed (ack lost): %s", chatID, pyrepr.Str(result["error"])))
+		pkgLog().Warn(fmt.Sprintf("relay send_media to %s unconfirmed (ack lost): %s", chatID, pyrepr.Str(result["error"])))
 		return &SendResult{Success: true, RawResponse: map[string]any{"ambiguous": true, "error": result["error"]}}, nil, nil
 	}
 	if !pyrepr.Truthy(result["success"]) {

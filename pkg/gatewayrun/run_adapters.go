@@ -11,7 +11,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
-	"github.com/nickheyer/icebath/pkg/observability"
 	"github.com/nickheyer/icebath/pkg/profiles"
 	"github.com/nickheyer/icebath/pkg/provider"
 )
@@ -25,7 +24,7 @@ type routedHome struct {
 // Marker of a named routed profile whose home does not resolve
 var unresolvedProfileHome = &routedHome{unresolved: true}
 
-// Diagnostic text of the home, the unresolved marker reading as hermes logs it
+// Diagnostic text of the home, an unresolved marker when it cannot be read
 func (h *routedHome) String() string {
 	if h.unresolved {
 		return "<unresolved profile home>"
@@ -80,7 +79,7 @@ func (r *GatewayRunner) safeAdapterDisconnect(ctx context.Context, adapter gatew
 		return
 	}
 	if !finished {
-		runLog().Warn(fmt.Sprintf("Timed out after %.1fs while disconnecting %s adapter; continuing shutdown", timeout, label))
+		pkgLog().Warn(fmt.Sprintf("Timed out after %.1fs while disconnecting %s adapter; continuing shutdown", timeout, label))
 	}
 }
 
@@ -97,9 +96,9 @@ func (r *GatewayRunner) boundedAdapterTeardown(ctx context.Context, adapter gate
 		return nil
 	}, timeout)
 	if err != nil {
-		runLog().Debug(fmt.Sprintf("✗ %s background-task cancel error%s: %v", platform, suffix, err))
+		pkgLog().Debug(fmt.Sprintf("✗ %s background-task cancel error%s: %v", platform, suffix, err))
 	} else if !finished {
-		runLog().Warn(fmt.Sprintf("✗ %s background-task cancel timed out after %.1fs - forcing continue%s", platform, timeout, suffix))
+		pkgLog().Warn(fmt.Sprintf("✗ %s background-task cancel timed out after %.1fs - forcing continue%s", platform, timeout, suffix))
 	}
 	elapsed := time.Since(startedAt).Seconds()
 	finished, err = r.awaitAdapterCleanupWithTimeout(ctx, adapter.Disconnect, timeout)
@@ -108,10 +107,10 @@ func (r *GatewayRunner) boundedAdapterTeardown(ctx context.Context, adapter gate
 		return
 	}
 	if finished {
-		runLog().Info(fmt.Sprintf("✓ %s disconnected (%.2fs)%s", platform, time.Since(startedAt).Seconds(), suffix))
+		pkgLog().Info(fmt.Sprintf("✓ %s disconnected (%.2fs)%s", platform, time.Since(startedAt).Seconds(), suffix))
 		return
 	}
-	runLog().Warn(fmt.Sprintf("✗ %s disconnect timed out after %.1fs - forcing continue%s", platform, timeout, suffix))
+	pkgLog().Warn(fmt.Sprintf("✗ %s disconnect timed out after %.1fs - forcing continue%s", platform, timeout, suffix))
 }
 
 // Non negative float of an environment variable, nil when unset or unparseable with a warning
@@ -122,7 +121,7 @@ func envTimeoutOverride(name string) *float64 {
 	}
 	value, err := pyint.ParseFloat(raw)
 	if err != nil {
-		runLog().Warn(fmt.Sprintf("Ignoring invalid %s=%s", name, pyrepr.Repr(raw)))
+		pkgLog().Warn(fmt.Sprintf("Ignoring invalid %s=%s", name, pyrepr.Repr(raw)))
 		return nil
 	}
 	if !(value > 0) {
@@ -153,15 +152,9 @@ func (r *GatewayRunner) platformConnectTimeoutSecs(platform gateway.Platform, in
 	return telegramConnectTimeoutSecsDefault
 }
 
-// Connects an adapter within its platform bound and records the outcome
+// Connects an adapter within its platform bound
 func (r *GatewayRunner) connectAdapterWithTimeout(ctx context.Context, adapter gateway.PlatformAdapter, platform gateway.Platform, isReconnect, initial bool) (bool, error) {
-	ok, err := r.connectAdapterBounded(ctx, adapter, platform, isReconnect, initial)
-	if err != nil {
-		observability.RecordPlatformConnect(ctx, adapter, string(platform), isReconnect, false, err)
-		return false, err
-	}
-	observability.RecordPlatformConnect(ctx, adapter, string(platform), isReconnect, ok, nil)
-	return ok, nil
+	return r.connectAdapterBounded(ctx, adapter, platform, isReconnect, initial)
 }
 
 // Connect bounded by the platform timeout, a TimeoutError once it passes
@@ -208,7 +201,7 @@ func (r *GatewayRunner) connectInitialAdapterWithTimeout(ctx context.Context, ad
 func routedProfileHome(profileName string) *routedHome {
 	dir, err := profiles.GetProfileDir(profileName)
 	if err != nil {
-		runLog().Warn(fmt.Sprintf("Profile home for '%s' does not resolve; its handlers run with no profile scope "+
+		pkgLog().Warn(fmt.Sprintf("Profile home for '%s' does not resolve; its handlers run with no profile scope "+
 			"(credential reads fail closed instead of borrowing the launch profile's)", profileName), "error", err)
 		return unresolvedProfileHome
 	}
@@ -233,7 +226,7 @@ func (r *GatewayRunner) canonicalize(ctx context.Context, source *gateway.Sessio
 	}
 	identity, err := gateway.CanonicalIdentity(ctx, source, r, nil, transportProfile, primaryHome)
 	if err != nil {
-		runLog().Debug("identity resolution failed; legacy readers stay in force", "error", err)
+		pkgLog().Debug("identity resolution failed; legacy readers stay in force", "error", err)
 		return nil
 	}
 	if transportProfile != "" && (source.Profile == nil || *source.Profile == "") {

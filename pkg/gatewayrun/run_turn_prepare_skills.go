@@ -14,7 +14,7 @@ import (
 func (r *GatewayRunner) hmwaAutoLoadSkills(ctx context.Context, event *gateway.MessageEvent, skillNames []string, quickKey, sessionKey string) {
 	defer func() {
 		if rec := recover(); rec != nil {
-			runLog().Warn(fmt.Sprintf("[Gateway] Failed to auto-load skill(s) %s: %v", pyStrList(skillNames), rec))
+			pkgLog().Warn(fmt.Sprintf("[Gateway] Failed to auto-load skill(s) %s: %v", pyStrList(skillNames), rec))
 		}
 	}()
 	scope := skills.NewScope(home.Dir(ctx), nil)
@@ -22,7 +22,7 @@ func (r *GatewayRunner) hmwaAutoLoadSkills(ctx context.Context, event *gateway.M
 	for _, name := range skillNames {
 		loaded, skillDir, displayName, ok := scope.LoadSkillPayload(ctx, name, quickKey)
 		if !ok {
-			runLog().Warn(fmt.Sprintf("[Gateway] Auto-skill '%s' not found", name))
+			pkgLog().Warn(fmt.Sprintf("[Gateway] Auto-skill '%s' not found", name))
 			continue
 		}
 		part := scope.BuildSkillMessage(ctx, loaded, skillDir,
@@ -35,7 +35,7 @@ func (r *GatewayRunner) hmwaAutoLoadSkills(ctx context.Context, event *gateway.M
 	if len(parts) > 0 {
 		parts = append(parts, event.Text)
 		event.Text = strings.Join(parts, "\n\n")
-		runLog().Info(fmt.Sprintf("[Gateway] Auto-loaded skill(s) %s for session %s", pyStrList(loadedNames), sessionKey))
+		pkgLog().Info(fmt.Sprintf("[Gateway] Auto-loaded skill(s) %s for session %s", pyStrList(loadedNames), sessionKey))
 	}
 }
 

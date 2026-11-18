@@ -41,7 +41,7 @@ func (a *apiServerLikeAdapter) HandleMessage(context.Context, *MessageEvent) err
 
 // Non push adapter bound to host and port with a key
 func newAPIServerLike(host string, port int, key string) *apiServerLikeAdapter {
-	a := &apiServerLikeAdapter{baseFakeAdapter: newBaseFake(PlatformAPIServer), host: host, port: port, key: key, model: "hermes"}
+	a := &apiServerLikeAdapter{baseFakeAdapter: newBaseFake(PlatformAPIServer), host: host, port: port, key: key, model: "icebath"}
 	a.Traits.SupportsAsyncDelivery = false
 	return a
 }

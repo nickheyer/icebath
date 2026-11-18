@@ -2,7 +2,6 @@ package gateway
 
 import (
 	"context"
-	"log/slog"
 
 	"github.com/nickheyer/icebath/pkg/config"
 
@@ -45,7 +44,7 @@ func (c *AuthorityConnection) resolveResponse(ctx context.Context, frame *pyjson
 		if len(asked) > 0 {
 			what = "a server request this connection may not settle"
 		}
-		slog.Debug("dropping response for "+what, "id", frame.GetOr("id", nil))
+		pkgLog().Debug("dropping response for "+what, "id", frame.GetOr("id", nil))
 	}
 	return nil
 }

@@ -67,7 +67,7 @@ func (r *GatewayRunner) conversationBoundary(ctx context.Context, sessionKey, re
 	delete(r.transcriptLagStreaks, sessionKey)
 	r.transcriptLagMu.Unlock()
 	r.clearSessionBoundarySecurityState(ctx, sessionKey)
-	runLog().Debug(fmt.Sprintf("Cleared conversation scope for %s (%s)", sessionKey, reason))
+	pkgLog().Debug(fmt.Sprintf("Cleared conversation scope for %s (%s)", sessionKey, reason))
 }
 
 // Clears per session control state that must not survive a boundary, approvals, confirms and the persisted yolo
@@ -87,7 +87,7 @@ func (r *GatewayRunner) clearSessionBoundarySecurityState(ctx context.Context, s
 		func() {
 			defer func() {
 				if rec := recover(); rec != nil {
-					runLog().Debug(fmt.Sprintf("Failed to clear %s state for session boundary %s: %v", clear.what, sessionKey, rec))
+					pkgLog().Debug(fmt.Sprintf("Failed to clear %s state for session boundary %s: %v", clear.what, sessionKey, rec))
 				}
 			}()
 			clear.fn(sessionKey)
@@ -95,7 +95,7 @@ func (r *GatewayRunner) clearSessionBoundarySecurityState(ctx context.Context, s
 	}
 	if r.sessionStore != nil {
 		if _, err := r.sessionStore.SetSessionYolo(ctx, sessionKey, nil); err != nil {
-			runLog().Warn(fmt.Sprintf("Failed to clear persisted yolo for session boundary %s", sessionKey), "error", err)
+			pkgLog().Warn(fmt.Sprintf("Failed to clear persisted yolo for session boundary %s", sessionKey), "error", err)
 		}
 	}
 }
@@ -108,7 +108,7 @@ func (r *GatewayRunner) interruptRunningTurn(ctx context.Context, sessionKey, in
 		func() {
 			defer func() {
 				if rec := recover(); rec != nil {
-					runLog().Warn(fmt.Sprintf("Failed to interrupt running agent for %s; continuing", sessionKey), "error", rec)
+					pkgLog().Warn(fmt.Sprintf("Failed to interrupt running agent for %s; continuing", sessionKey), "error", rec)
 				}
 			}()
 			agent.RequestHardInterrupt(running, interruptReason, toolReason)
@@ -132,7 +132,7 @@ func (r *GatewayRunner) rehydrateSessionModelOverride(ctx context.Context, sessi
 	persisted, failed := func() (obj map[string]any, failed bool) {
 		defer func() {
 			if rec := recover(); rec != nil {
-				runLog().Debug("Failed to read persisted session model override", "error", rec)
+				pkgLog().Debug("Failed to read persisted session model override", "error", rec)
 				failed = true
 			}
 		}()
@@ -159,13 +159,13 @@ func (r *GatewayRunner) rehydrateSessionModelOverride(ctx context.Context, sessi
 		func() {
 			defer func() {
 				if rec := recover(); rec != nil {
-					runLog().Debug(fmt.Sprintf("Credential re-resolution failed for persisted override (provider=%s); using credential-less override", providerName), "error", rec)
+					pkgLog().Debug(fmt.Sprintf("Credential re-resolution failed for persisted override (provider=%s); using credential-less override", providerName), "error", rec)
 				}
 			}()
 			targetModel, _ := persisted["model"].(string)
 			runtime, err := resolveRuntimeAgentKwargsForProvider(ctx, providerName, targetModel)
 			if err != nil {
-				runLog().Debug(fmt.Sprintf("Credential re-resolution failed for persisted override (provider=%s); using credential-less override", providerName), "error", err)
+				pkgLog().Debug(fmt.Sprintf("Credential re-resolution failed for persisted override (provider=%s); using credential-less override", providerName), "error", err)
 				return
 			}
 			for _, k := range []string{"api_key", "api_mode", "credential_pool", "requested_provider", "max_tokens"} {
@@ -198,7 +198,7 @@ func (r *GatewayRunner) rehydrateSessionModelOverride(ctx context.Context, sessi
 	if !adopted {
 		return
 	}
-	runLog().Info(fmt.Sprintf("Rehydrated persisted /model override for session=%s: model=%s provider=%s", sessionKey, pyrepr.Str(override["model"]), providerName))
+	pkgLog().Info(fmt.Sprintf("Rehydrated persisted /model override for session=%s: model=%s provider=%s", sessionKey, pyrepr.Str(override["model"]), providerName))
 }
 
 // Layers a session model override onto the model and runtime kwargs, skipping unset fields
@@ -257,14 +257,6 @@ func (r *GatewayRunner) fallbackBaselineModel(ctx context.Context, sessionKey st
 		if providerName != "" && !provider.IsAggregatorModelProvider(providerName) {
 			model = provider.NormalizeModelForProviderCtx(ctx, model, providerName)
 		}
-	}()
-	func() {
-		defer func() { _ = recover() }()
-		baseURL := a.BaseURL()
-		if v, ok := primary["base_url"]; ok {
-			baseURL, _ = v.(string)
-		}
-		model = provider.PinModelForRoute(providerName, baseURL, model)
 	}()
 	return model
 }

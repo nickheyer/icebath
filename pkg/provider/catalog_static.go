@@ -77,13 +77,6 @@ var OpenRouterModels = func() []CatalogModel {
 	return out
 }()
 
-// OpenRouter entries the Nous Portal does not carry
-var openRouterOnly = map[string]bool{
-	"anthropic/claude-opus-5-fast": true, "anthropic/claude-opus-4.8-fast": true,
-	"meta/muse-spark-1.2-contributor": true, "meta/muse-spark-1.3-contributor": true, "openrouter/pareto-code": true,
-	"stealth/union-alpha": true,
-}
-
 // VercelAIGatewayModels is the fallback Vercel AI Gateway snapshot, open weight first then closed by family
 var VercelAIGatewayModels = func() []CatalogModel {
 	out := []CatalogModel{{ID: "moonshotai/kimi-k2.6", Description: "recommended"}}
@@ -203,18 +196,6 @@ var alibabaTokenPlanModels = []string{
 
 func cloneStrings(in []string) []string { return append([]string(nil), in...) }
 
-// Nous rows are the OpenRouter snapshot minus OpenRouter only and free entries
-func nousCuratedModels() []string {
-	var out []string
-	for _, row := range OpenRouterModels {
-		if openRouterOnly[row.ID] || strings.HasSuffix(row.ID, ":free") {
-			continue
-		}
-		out = append(out, row.ID)
-	}
-	return out
-}
-
 var (
 	providerModelsMu   sync.Mutex
 	providerModelsOnce sync.Once
@@ -226,7 +207,6 @@ var (
 func buildProviderModels() {
 	providerModels = map[string][]string{
 		"moa":    {"default"},
-		"nous":   nousCuratedModels(),
 		"openai": cloneStrings(openAIChatModels),
 		"openai-api": {"gpt-6.1-sol", "gpt-6.1-sol-pro", "gpt-6-sol", "gpt-6-sol-pro", "gpt-6-luna", "gpt-6-luna-pro",
 			"gpt-5.6-sol", "gpt-5.6-sol-pro", "gpt-5.6-terra", "gpt-5.6-terra-pro", "gpt-5.6-luna",
@@ -380,7 +360,6 @@ func CuratedCatalogProviders() []string {
 
 // Hand written canonical rows, the single source of provider identity for every list surface
 var builtinCanonicalProviders = []CanonicalProviderEntry{
-	{"nous", "Nous Portal", "Nous Portal (Everything your agent needs, 300+ models with bundled tool use)"},
 	{"fireworks", "Fireworks AI", "Fireworks AI (OpenAI-compatible direct model API)"},
 	{"openrouter", "OpenRouter", "OpenRouter (Pay-per-use API aggregator)"},
 	{"moa", "Mixture of Agents", "Mixture of Agents (named presets; aggregator acts after reference models)"},
@@ -493,7 +472,7 @@ func buildCatalogTables() {
 			slugToGroup[m] = g.ID
 		}
 	}
-	aggregatorProviders = map[string]bool{"nous": true, "openrouter": true, "ai-gateway": true, "kilocode": true}
+	aggregatorProviders = map[string]bool{"openrouter": true, "ai-gateway": true, "kilocode": true}
 	syncPluginProviderCatalogLocked()
 	catalogBuilt = true
 }
@@ -811,7 +790,7 @@ func CatalogProviderAliases() map[string]string {
 const PreferredSilentDefaultModel = "z-ai/glm-5.3"
 
 // Providers whose silent auto default goes through the cost safe catalog labeled default
-var silentDefaultProviders = map[string]bool{"nous": true, "openrouter": true}
+var silentDefaultProviders = map[string]bool{"openrouter": true}
 
 // UsesSilentCatalogDefault reports whether a provider's silent default comes from the catalog label
 func UsesSilentCatalogDefault(provider string) bool { return silentDefaultProviders[provider] }

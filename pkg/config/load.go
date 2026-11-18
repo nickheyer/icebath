@@ -97,7 +97,7 @@ func normalizeMaps(v any) any {
 
 // Raw user config of a home, no defaults merged and no references expanded
 func ReadUser(h string) (map[string]any, error) {
-	NoteRuntimeImport("hermes_cli.config")
+	NoteRuntimeImport("config")
 	return ReadDocument(GetConfigPath(h))
 }
 

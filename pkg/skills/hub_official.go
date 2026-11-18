@@ -50,8 +50,8 @@ func entryProvider(entry any) string {
 }
 
 const (
-	officialRepo           = "NousResearch/hermes-agent"
-	optionalSkillsPrefix   = "optional-skills"
+	officialRepo           = "nickheyer/icebath"
+	optionalSkillsPrefix   = "pkg/skills/optional"
 	officialRemoteDirsDesc = "Official optional skill (from live repo; run install to fetch)"
 )
 
@@ -294,7 +294,7 @@ func (o *OptionalSkillSource) fetchFromLiveRepo(ctx context.Context, rel string)
 	return officialBundle(rel, files)
 }
 
-// Category and skill dirs under optional-skills on live main through the index cache, empty offline
+// Category and skill dirs of the optional tree on live main through the index cache, empty offline
 func (o *OptionalSkillSource) listRemoteSkillDirs(ctx context.Context) *pyjson.Object {
 	if o.remoteDirs != nil {
 		return o.remoteDirs
@@ -345,17 +345,17 @@ func upstreamPointerFromContent(content []byte) (repo, upath string, ok bool) {
 		return "", "", false
 	}
 	var hm any
-	for _, k := range []string{"icebath", "hermes"} {
+	for _, k := range MetadataKeys {
 		if v, has := meta[k]; has {
 			hm = v
 			break
 		}
 	}
-	hermes, isMap := hm.(map[string]any)
+	own, isMap := hm.(map[string]any)
 	if !isMap {
 		return "", "", false
 	}
-	up, isMap := hermes["upstream"].(map[string]any)
+	up, isMap := own["upstream"].(map[string]any)
 	if !isMap {
 		return "", "", false
 	}
@@ -450,7 +450,7 @@ func (o *OptionalSkillSource) scanAll() []SkillMeta {
 }
 
 // Skills of the centralized index, every method empty when the index is unavailable
-type HermesIndexSource struct {
+type IndexSource struct {
 	SourceBase
 	h      *Hub
 	Auth   *GitHubAuth
@@ -460,13 +460,13 @@ type HermesIndexSource struct {
 }
 
 // Index source sharing the credentials for its GitHub fetches
-func NewHermesIndexSource(h *Hub, auth *GitHubAuth) *HermesIndexSource {
-	return &HermesIndexSource{SourceBase: SourceBase{ID: "hermes-index"}, h: h, Auth: auth}
+func NewIndexSource(h *Hub, auth *GitHubAuth) *IndexSource {
+	return &IndexSource{SourceBase: SourceBase{ID: "skills-index"}, h: h, Auth: auth}
 }
 
-func (x *HermesIndexSource) ensureLoaded(ctx context.Context) any {
+func (x *IndexSource) ensureLoaded(ctx context.Context) any {
 	if !x.loaded {
-		x.index, x.loaded = x.h.loadHermesIndex(ctx), true
+		x.index, x.loaded = x.h.loadIndex(ctx), true
 	}
 	if !pyrepr.Truthy(x.index) {
 		return pyjson.NewObject()
@@ -474,11 +474,11 @@ func (x *HermesIndexSource) ensureLoaded(ctx context.Context) any {
 	return x.index
 }
 
-func (x *HermesIndexSource) skills(ctx context.Context) []any {
+func (x *IndexSource) skills(ctx context.Context) []any {
 	return pyIterate(pyGet(x.ensureLoaded(ctx), "skills", []any{}))
 }
 
-func (x *HermesIndexSource) getGitHub() *GitHubSource {
+func (x *IndexSource) getGitHub() *GitHubSource {
 	if x.github == nil {
 		x.github = NewGitHubSource(x.h, x.Auth, nil)
 	}
@@ -486,12 +486,12 @@ func (x *HermesIndexSource) getGitHub() *GitHubSource {
 }
 
 // Whether the index loaded with at least one skill
-func (x *HermesIndexSource) IsAvailable() bool {
+func (x *IndexSource) IsAvailable() bool {
 	return pyrepr.Truthy(pyGet(x.ensureLoaded(context.Background()), "skills", []any{}))
 }
 
 // Trust level recorded for the identifier in the index, community otherwise
-func (x *HermesIndexSource) TrustLevelFor(identifier string) string {
+func (x *IndexSource) TrustLevelFor(identifier string) string {
 	for _, s := range x.skills(context.Background()) {
 		if pyGet(s, "identifier", nil) == identifier {
 			if !pyrepr.Truthy(s) {
@@ -504,12 +504,12 @@ func (x *HermesIndexSource) TrustLevelFor(identifier string) string {
 }
 
 // Search without a provider filter
-func (x *HermesIndexSource) Search(ctx context.Context, query string, limit int) ([]SkillMeta, error) {
+func (x *IndexSource) Search(ctx context.Context, query string, limit int) ([]SkillMeta, error) {
 	return x.SearchProvider(ctx, query, limit, "")
 }
 
 // Ranked index matches, exact name first then prefix, provider, whole word, substring, other
-func (x *HermesIndexSource) SearchProvider(ctx context.Context, query string, limit int, providerFilter string) (out []SkillMeta, err error) {
+func (x *IndexSource) SearchProvider(ctx context.Context, query string, limit int, providerFilter string) (out []SkillMeta, err error) {
 	defer hubRecover(&err)
 	skills := x.skills(ctx)
 	if want := pystr.Lower(pystr.Strip(providerFilter)); want != "" {
@@ -527,7 +527,7 @@ func (x *HermesIndexSource) SearchProvider(ctx context.Context, query string, li
 	if pystr.Strip(query) == "" {
 		out = []SkillMeta{}
 		for _, s := range pyHeadAny(skills, limit) {
-			out = append(out, hermesIndexToMeta(s))
+			out = append(out, indexToMeta(s))
 		}
 		return out, nil
 	}
@@ -566,13 +566,13 @@ func (x *HermesIndexSource) SearchProvider(ctx context.Context, query string, li
 	}
 	out = []SkillMeta{}
 	for _, h := range hits {
-		out = append(out, hermesIndexToMeta(h.s))
+		out = append(out, indexToMeta(h.s))
 	}
 	return out, nil
 }
 
 // Bundle of the resolved GitHub id or repo path, a skills.sh slug located in the repo tree as a last resort
-func (x *HermesIndexSource) Fetch(ctx context.Context, identifier string) (b *SkillBundle, err error) {
+func (x *IndexSource) Fetch(ctx context.Context, identifier string) (b *SkillBundle, err error) {
 	defer hubRecover(&err)
 	entry := x.findEntry(ctx, identifier)
 	if entry == nil {
@@ -617,23 +617,23 @@ func (x *HermesIndexSource) Fetch(ctx context.Context, identifier string) (b *Sk
 	if skillsSh && bundle.Name == "skills" {
 		bundle.Name = slug
 	}
-	bundle.Source = pyrepr.Str(pyGet(entry, "source", "hermes-index"))
+	bundle.Source = pyrepr.Str(pyGet(entry, "source", "skills-index"))
 	bundle.Identifier = identifier
 	return bundle, nil
 }
 
 // Index metadata of the identifier
-func (x *HermesIndexSource) Inspect(ctx context.Context, identifier string) (m *SkillMeta, err error) {
+func (x *IndexSource) Inspect(ctx context.Context, identifier string) (m *SkillMeta, err error) {
 	defer hubRecover(&err)
 	if entry := x.findEntry(ctx, identifier); entry != nil {
-		meta := hermesIndexToMeta(entry)
+		meta := indexToMeta(entry)
 		return &meta, nil
 	}
 	return nil, nil
 }
 
 // Exact identifier match first, then a match with source prefixes stripped
-func (x *HermesIndexSource) findEntry(ctx context.Context, identifier string) any {
+func (x *IndexSource) findEntry(ctx context.Context, identifier string) any {
 	skills := x.skills(ctx)
 	for _, s := range skills {
 		if pyGet(s, "identifier", nil) == identifier && pyrepr.Truthy(s) {
@@ -650,7 +650,7 @@ func (x *HermesIndexSource) findEntry(ctx context.Context, identifier string) an
 }
 
 // Search result of an index entry
-func hermesIndexToMeta(entry any) SkillMeta {
+func indexToMeta(entry any) SkillMeta {
 	optStr := func(k string) *string {
 		v := pyGet(entry, k, nil)
 		if v == nil {
@@ -660,7 +660,7 @@ func hermesIndexToMeta(entry any) SkillMeta {
 	}
 	extra, _ := pyGet(entry, "extra", pyjson.NewObject()).(*pyjson.Object)
 	return SkillMeta{Name: pyrepr.Str(pyGet(entry, "name", "")), Description: pyrepr.Str(pyGet(entry, "description", "")),
-		Source: pyrepr.Str(pyGet(entry, "source", "hermes-index")), Identifier: pyrepr.Str(pyGet(entry, "identifier", "")),
+		Source: pyrepr.Str(pyGet(entry, "source", "skills-index")), Identifier: pyrepr.Str(pyGet(entry, "identifier", "")),
 		TrustLevel: pyrepr.Str(pyGet(entry, "trust_level", "community")), Repo: optStr("repo"), Path: optStr("path"),
 		Tags: tagStrings(pyGet(entry, "tags", []any{})), Extra: extra}
 }

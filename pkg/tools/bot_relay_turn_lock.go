@@ -3,7 +3,6 @@ package tools
 import (
 	"context"
 	"fmt"
-	"log/slog"
 	"math"
 	"path/filepath"
 	"regexp"
@@ -25,8 +24,6 @@ const (
 )
 
 var botRelayUnsafeProfileRE = regexp.MustCompile(`[^a-zA-Z0-9_-]`)
-
-func botRelayLog() *slog.Logger { return slog.Default().With("logger", "tools.bot_relay") }
 
 // A delivery turn already running for the target profile, waited roughly the given seconds
 type TurnBusyError struct {
@@ -53,7 +50,7 @@ func botModeCfg(ctx context.Context, key string) any {
 	h := home.Dir(ctx)
 	cfg, err := config.LoadContext(ctx, h, config.NewSecrets(h).Lookup())
 	if err != nil {
-		botRelayLog().Debug(fmt.Sprintf("bot_mode.%s config read failed", key), "exc_info", err)
+		pkgLog().Debug(fmt.Sprintf("bot_mode.%s config read failed", key), "exc_info", err)
 		return nil
 	}
 	botMode, _ := cfg["bot_mode"].(map[string]any)

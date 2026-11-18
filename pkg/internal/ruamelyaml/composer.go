@@ -93,11 +93,11 @@ func (d *Document) IsYAML12() bool { return d.Version.eq(v12) }
 
 // State of the YAML instance a pure load runs in, the version a directive or explicit document start assigns
 type loader struct {
-	rt        bool
-	version   version
-	scanner   *scanner
-	anchors   map[string]*Node
-	warnings  []Warning
+	rt       bool
+	version  version
+	scanner  *scanner
+	anchors  map[string]*Node
+	warnings []Warning
 }
 
 func (l *loader) processingVersion() version {

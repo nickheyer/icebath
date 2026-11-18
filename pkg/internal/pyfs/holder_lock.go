@@ -16,7 +16,7 @@ type LockTimeoutError struct{ Message string }
 
 func (e *LockTimeoutError) Error() string { return e.Message }
 
-// Per goroutine reentrancy depth of one advisory lock, the threading.local holder hermes locks share
+// Per goroutine reentrancy depth of one advisory lock, the holder its users share
 type LockHolder struct{ depth pythread.Local }
 
 // Depth the calling goroutine holds the lock at, zero when it does not hold it

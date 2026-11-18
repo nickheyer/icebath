@@ -94,11 +94,11 @@ func TestSelectedFromEnvAndFileToolingOff(t *testing.T) {
 
 func TestReadsComeFromPlaneNotLocalFile(t *testing.T) {
 	p := setupPlane(t)
-	p.Upper = map[string]any{"model": map[string]any{"default": "hermes-4", "provider": "nous"}, "terminal": map[string]any{"timeout": 180}}
+	p.Upper = map[string]any{"model": map[string]any{"default": "claude-sonnet-4", "provider": "openrouter"}, "terminal": map[string]any{"timeout": 180}}
 	local := filepath.Join(p.Home, "config.yaml")
 	os.WriteFile(local, []byte(`{"model": {"default": "LOCAL"}, "terminal": {"timeout": 1}}`), 0o644)
 	cfg := loadConfig(t, p)
-	if cfg.Get("model.default") != "hermes-4" || cfg.Get("terminal.timeout") != 180 || cfg.Get("display") == nil {
+	if cfg.Get("model.default") != "claude-sonnet-4" || cfg.Get("terminal.timeout") != 180 || cfg.Get("display") == nil {
 		t.Fatalf("cfg %v %v", cfg.Get("model.default"), cfg.Get("terminal.timeout"))
 	}
 	if raw, _ := os.ReadFile(local); !strings.Contains(string(raw), "LOCAL") {
@@ -168,7 +168,7 @@ func TestPartialIDPConfigIsNotRetried(t *testing.T) {
 
 func TestConfigSetSendsOnlyTheChangedKey(t *testing.T) {
 	p := setupPlane(t)
-	p.Upper = map[string]any{"model": map[string]any{"default": "hermes-4", "provider": "nous"}, "terminal": map[string]any{"timeout": 180}}
+	p.Upper = map[string]any{"model": map[string]any{"default": "claude-sonnet-4", "provider": "openrouter"}, "terminal": map[string]any{"timeout": 180}}
 	if err := setValue(p, "display.personality", "pirate"); err != nil {
 		t.Fatal(err)
 	}
@@ -255,7 +255,7 @@ func TestR7ScalarOverLockedSubtreeRefused(t *testing.T) {
 func TestBulkSaveStripsLockedKeysAndSendsTheRest(t *testing.T) {
 	p := setupPlane(t)
 	errOut := captureStderr(t)
-	p.Upper = map[string]any{"terminal": map[string]any{"timeout": 180}, "model": map[string]any{"default": "hermes-4"}}
+	p.Upper = map[string]any{"terminal": map[string]any{"timeout": 180}, "model": map[string]any{"default": "claude-sonnet-4"}}
 	p.UpperLocks = []map[string]any{{"path": "terminal", "level": "tenant"}}
 	ctx := context.Background()
 	doc, err := config.ReadRawConfig(ctx, p.Home)

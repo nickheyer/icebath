@@ -21,6 +21,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
+	"github.com/nickheyer/icebath/pkg/pm"
 )
 
 const (
@@ -60,7 +61,7 @@ func sttDecodeOutput(b []byte) string {
 	return strings.ReplaceAll(strings.ReplaceAll(s, "\r\n", "\n"), "\r", "\n")
 }
 
-// Python OSError text of a helper that failed to start
+// Helper that failed to start, named with the reason
 type sttSpawnError struct {
 	cmd string
 	err error
@@ -68,9 +69,13 @@ type sttSpawnError struct {
 
 func (e *sttSpawnError) Error() string {
 	if errors.Is(e.err, exec.ErrNotFound) || errors.Is(e.err, fs.ErrNotExist) {
-		return "[Errno 2] No such file or directory: " + pyrepr.StrRepr(e.cmd)
+		return e.cmd + " is not installed or not on PATH"
 	}
-	return pypath.OSErrorText(e.err)
+	var pe *fs.PathError
+	if errors.As(e.err, &pe) {
+		return e.cmd + " could not start: " + pe.Err.Error() + ": " + pe.Path
+	}
+	return e.cmd + " could not start: " + e.err.Error()
 }
 func (e *sttSpawnError) Unwrap() error { return e.err }
 
@@ -151,10 +156,10 @@ func transcodeAudioForSTT(filePath, workDir string) (string, string) {
 	var pe *sttProcessError
 	if errors.As(err, &pe) {
 		details := processErrorDetail(pe)
-		sttLog().Error(fmt.Sprintf("ffmpeg STT transcode failed for %s: %s", filePath, details))
+		pkgLog().Error(fmt.Sprintf("ffmpeg STT transcode failed for %s: %s", filePath, details))
 		return "", "failed to transcode audio for the STT API: " + details
 	}
-	sttLog().Error(fmt.Sprintf("unexpected STT transcode failure for %s: %v", filePath, err))
+	pkgLog().Error(fmt.Sprintf("unexpected STT transcode failure for %s: %v", filePath, err))
 	return "", fmt.Sprintf("failed to transcode audio for the STT API: %v", err)
 }
 
@@ -216,7 +221,7 @@ func (e *sttPythonError) Error() string { return e.msg }
 
 // pilk silk_to_wav in the managed interpreter, the seam tests replace
 var sttSilkToWAV = func(ctx context.Context, src, dst string) error {
-	python, err := managedPythonCommand(ctx)
+	python, err := managedPythonCommand(ctx, "silk")
 	if err != nil {
 		return err
 	}
@@ -241,11 +246,8 @@ func prepareAudioForTranscription(ctx context.Context, filePath string) (string,
 	if strings.ToLower(sttSuffix(filePath)) != ".silk" {
 		return filePath, "", nil
 	}
-	if !hasPilk() {
-		lazyEnsureQuietly(ctx, "silk")
-		if !safeFindSpec("pilk") {
-			return "", "", sttError("Unsupported format: .silk. Install the optional 'pilk' dependency to enable WeChat voice transcription.")
-		}
+	if !hasPilk() && !safeFindSpec("pilk") {
+		return "", "", sttError("Unsupported format: .silk. Run `" + pm.InstallHint("silk") + "` to enable WeChat voice transcription.")
 	}
 	tempDir, err := os.MkdirTemp("", "icebath-silk-")
 	if err != nil {
@@ -260,7 +262,7 @@ func prepareAudioForTranscription(ctx context.Context, filePath string) (string,
 	}
 	if err != nil {
 		os.RemoveAll(tempDir)
-		sttLog().Error(fmt.Sprintf("Failed to convert .silk audio %s: %v", filePath, err))
+		pkgLog().Error(fmt.Sprintf("Failed to convert .silk audio %s: %v", filePath, err))
 		return "", "", sttError(fmt.Sprintf("Failed to convert .silk audio for transcription: %v", err))
 	}
 	return converted, tempDir, nil
@@ -283,11 +285,11 @@ func prepareLocalAudio(filePath, workDir string) (string, string, error) {
 	case err == nil:
 		return converted, "", nil
 	case errors.As(err, &te):
-		sttLog().Error("ffmpeg conversion timed out for " + filePath)
+		pkgLog().Error("ffmpeg conversion timed out for " + filePath)
 		return "", "Audio conversion for local STT timed out", nil
 	case errors.As(err, &pe):
 		details := processErrorDetail(pe)
-		sttLog().Error(fmt.Sprintf("ffmpeg conversion failed for %s: %s", filePath, details))
+		pkgLog().Error(fmt.Sprintf("ffmpeg conversion failed for %s: %s", filePath, details))
 		return "", "Failed to convert audio for local STT: " + details, nil
 	}
 	return "", "", err
@@ -328,7 +330,7 @@ func convertCAFToWAV(filePath, workDir string) (string, error) {
 		if !errors.As(err, &te) && !errors.As(err, &pe) {
 			return "", err
 		}
-		sttLog().Warn(fmt.Sprintf("%s CAF to WAV failed for %s: %v", c.label, filePath, err))
+		pkgLog().Warn(fmt.Sprintf("%s CAF to WAV failed for %s: %v", c.label, filePath, err))
 	}
 	return "", nil
 }
@@ -371,17 +373,17 @@ func trimSilenceForCloudSTT(filePath string, sttConfig map[string]any) string {
 	}
 	ffmpeg := findFFmpegBinary()
 	if ffmpeg == "" {
-		sttLog().Debug("Cloud STT silence trim skipped: ffmpeg not found")
+		pkgLog().Debug("Cloud STT silence trim skipped: ffmpeg not found")
 		return ""
 	}
 	original, ok := probeAudioDuration(filePath)
 	if !ok || original <= 0 {
-		sttLog().Debug("Cloud STT silence trim skipped: could not probe " + filePath)
+		pkgLog().Debug("Cloud STT silence trim skipped: could not probe " + filePath)
 		return ""
 	}
 	name := filepath.Base(filePath)
 	if original < cloudTrimMinInputSeconds {
-		sttLog().Debug(fmt.Sprintf("Cloud STT silence trim skipped for %s: %.1fs is below the %.0fs gate", name, original, cloudTrimMinInputSeconds))
+		pkgLog().Debug(fmt.Sprintf("Cloud STT silence trim skipped for %s: %.1fs is below the %.0fs gate", name, original, cloudTrimMinInputSeconds))
 		return ""
 	}
 	keepSeconds := float64(keepMS) / 1000.0
@@ -390,7 +392,7 @@ func trimSilenceForCloudSTT(filePath string, sttConfig map[string]any) string {
 		thresholdDB, keep, thresholdDB, keep)
 	workDir, err := os.MkdirTemp("", "icebath-stt-trim-")
 	if err != nil {
-		sttLog().Debug(fmt.Sprintf("Cloud STT silence trim failed for %s: %s", filePath, pypath.OSErrorText(err)))
+		pkgLog().Debug(fmt.Sprintf("Cloud STT silence trim failed for %s: %s", filePath, pypath.OSErrorText(err)))
 		return ""
 	}
 	stem := sttStem(filePath)
@@ -406,19 +408,19 @@ func trimSilenceForCloudSTT(filePath string, sttConfig map[string]any) string {
 		}
 	}()
 	if err := runFFmpegSTTEncode(ffmpeg, filePath, trimmed, filter); err != nil {
-		sttLog().Debug(fmt.Sprintf("Cloud STT silence trim failed for %s: %v", filePath, err))
+		pkgLog().Debug(fmt.Sprintf("Cloud STT silence trim failed for %s: %v", filePath, err))
 		return ""
 	}
 	trimmedDuration, _ := probeAudioDuration(trimmed)
 	if trimmedDuration == 0 || trimmedDuration < minResult {
-		sttLog().Debug(fmt.Sprintf("Cloud STT silence trim discarded for %s: trimmed result ~empty (%.2fs)", name, trimmedDuration))
+		pkgLog().Debug(fmt.Sprintf("Cloud STT silence trim discarded for %s: trimmed result ~empty (%.2fs)", name, trimmedDuration))
 		return ""
 	}
 	if trimmedDuration > original*(1-cloudTrimMinSaving) {
-		sttLog().Debug(fmt.Sprintf("Cloud STT silence trim discarded for %s: saves <%.0f%% (%.1fs -> %.1fs)", name, cloudTrimMinSaving*100, original, trimmedDuration))
+		pkgLog().Debug(fmt.Sprintf("Cloud STT silence trim discarded for %s: saves <%.0f%% (%.1fs -> %.1fs)", name, cloudTrimMinSaving*100, original, trimmedDuration))
 		return ""
 	}
-	sttLog().Info(fmt.Sprintf("Trimmed silence from %s before cloud STT upload (%.1fs -> %.1fs, -%d%%)", name, original, trimmedDuration,
+	pkgLog().Info(fmt.Sprintf("Trimmed silence from %s before cloud STT upload (%.1fs -> %.1fs, -%d%%)", name, original, trimmedDuration,
 		int(math.RoundToEven((1-trimmedDuration/original)*100))))
 	keepResult = true
 	return trimmed

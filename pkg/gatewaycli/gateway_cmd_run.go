@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"log/slog"
 	"os"
 	"os/exec"
 	"os/signal"
@@ -16,6 +15,7 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/config"
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/gatewayrun"
 	"github.com/nickheyer/icebath/pkg/home"
@@ -26,7 +26,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/logging"
-	"github.com/nickheyer/icebath/pkg/observability"
 	"github.com/nickheyer/icebath/pkg/pm"
 )
 
@@ -43,6 +42,14 @@ func truthyEnv(name string) bool {
 }
 
 func gatewayDetachedEnv() bool { return truthyEnv("ICEBATH_GATEWAY_DETACHED") }
+
+// Home a stale pid record names, unknown when it carries none
+func staleRecordHome(record *pyjson.Object) any {
+	if recorded, ok := home.RecordValue(record.Get, home.RecordKey); ok {
+		return recorded
+	}
+	return "<unknown>"
+}
 
 // Whether this process is the supervisor launched gateway, so the conflict guards never wedge it
 func runningUnderGatewaySupervisor() bool { return gateway.IsGatewaySupervisorProcess(nil) }
@@ -115,7 +122,7 @@ func attachToHostGatewayOrGuard(ctx context.Context, w io.Writer, force, replace
 	decision, err := gateway.DecideHostAttach(ctx, home.Dir(ctx), replace)
 	decided := err == nil
 	if err != nil {
-		slog.Debug("Host gateway attach probe failed", "error", err)
+		pkgLog().Debug("Host gateway attach probe failed", "error", err)
 	}
 	if decided && decision.Outcome == gateway.HostAttachReplaceHost {
 		return nil
@@ -124,7 +131,7 @@ func attachToHostGatewayOrGuard(ctx context.Context, w io.Writer, force, replace
 		fmt.Fprintln(w, decision.Message)
 		if decision.Outcome == gateway.HostAttachRefuse {
 			code := hostDecisionExitCode(decision)
-			slog.Warn(fmt.Sprintf("gateway run refused (exit %d): %s", code, decision.Message))
+			pkgLog().Warn(fmt.Sprintf("gateway run refused (exit %d): %s", code, decision.Message))
 			return exitWith(code)
 		}
 		if runningUnderGatewaySupervisor() {
@@ -146,7 +153,7 @@ func guardSupervisedGatewayConflict(ctx context.Context, w io.Writer, force bool
 	}
 	snapshot, err := GetGatewayRuntimeSnapshot(ctx, false)
 	if err != nil {
-		slog.Debug("Supervised-gateway conflict probe failed", "error", err)
+		pkgLog().Debug("Supervised-gateway conflict probe failed", "error", err)
 		return nil
 	}
 	if !(snapshot.ServiceInstalled && snapshot.ServiceRunning) {
@@ -169,14 +176,14 @@ func guardExistingGatewayProcessConflict(w io.Writer, replace bool) error {
 	}
 	pid, ok, err := gateway.GetRunningPid("", true)
 	if err != nil {
-		slog.Debug("Existing-gateway process probe failed", "error", err)
+		pkgLog().Debug("Existing-gateway process probe failed", "error", err)
 		return nil
 	}
 	if !ok {
 		if stale := gateway.ReadPidRecord(""); stale != nil {
 			if belongs, err := gateway.PidRecordBelongsToCurrentProfile(stale); err == nil && !belongs {
-				slog.Warn(fmt.Sprintf("PID file belongs to another profile (icebath_home=%s). "+
-					"The old gateway may still be running under that profile.", stale.GetOr("hermes_home", "<unknown>")))
+				pkgLog().Warn(fmt.Sprintf("PID file belongs to another profile (icebath_home=%s). "+
+					"The old gateway may still be running under that profile.", staleRecordHome(stale)))
 			}
 		}
 		return nil
@@ -262,7 +269,7 @@ func respawnStormBackoff(ctx context.Context) {
 	if storm == nil {
 		return
 	}
-	slog.Warn(fmt.Sprintf("Gateway (re)started %d times in %.0fs — backing off %.0fs to break a respawn storm.", storm.Count, storm.WindowS, storm.BackoffS))
+	pkgLog().Warn(fmt.Sprintf("Gateway (re)started %d times in %.0fs — backing off %.0fs to break a respawn storm.", storm.Count, storm.WindowS, storm.BackoffS))
 	gateway.KickStartupWatchdog(storm.BackoffS)
 	time.Sleep(time.Duration(storm.BackoffS * float64(time.Second)))
 }
@@ -325,7 +332,6 @@ func runGateway(ctx context.Context, w io.Writer, verbose int, quiet, replace, f
 		return err
 	}
 	applyStartupWatchdogConfig(ctx)
-	observability.BeginProcess(ctx, "gateway")
 	stdinState := stdinIsTTY()
 	stdinTTY := stdinState != nil && *stdinState
 	consoleAttached := windowsConsoleWindowAttached()
@@ -372,17 +378,16 @@ func runGateway(ctx context.Context, w io.Writer, verbose int, quiet, replace, f
 	var exit *gateway.SystemExitError
 	switch {
 	case errors.Is(err, gatewayrun.ErrKeyboardInterrupt):
-		exitDiag("asyncio.run.KeyboardInterrupt", [2]any{"traceback", "Traceback (most recent call last):\nKeyboardInterrupt\n"})
+		exitDiag("asyncio.run.KeyboardInterrupt", [2]any{"error", err.Error()})
 		fmt.Fprintln(w, "\nGateway stopped.")
 		gatewayrun.ExitAfterGracefulShutdown(ctx, 0)
 		return nil
 	case errors.As(err, &exit):
-		exitDiag("asyncio.run.SystemExit", [2]any{"code", exit.Code}, [2]any{"traceback", fmt.Sprintf("Traceback (most recent call last):\nSystemExit: %d\n", exit.Code)})
+		exitDiag("asyncio.run.SystemExit", [2]any{"code", exit.Code}, [2]any{"error", err.Error()})
 		gatewayrun.ExitAfterGracefulShutdown(ctx, exit.Code)
 		return nil
 	case err != nil:
-		exitDiag("asyncio.run.exception", [2]any{"exc_type", pyrepr.ExceptionName(err)}, [2]any{"exc_repr", pyrepr.ExceptionRepr(err)},
-			[2]any{"traceback", fmt.Sprintf("Traceback (most recent call last):\n%s: %s\n", pyrepr.ExceptionName(err), pyrepr.ExceptionMessage(err))})
+		exitDiag("asyncio.run.exception", [2]any{"error", err.Error()}, [2]any{"error_chain", errchain.Text(err)})
 		return err
 	}
 	exitDiag("asyncio.run.returned", [2]any{"success", success})
@@ -470,6 +475,9 @@ func restartAll(ctx context.Context, w io.Writer, system, detach bool) error {
 }
 
 func restartAllAsHost(ctx context.Context, w io.Writer, owner *gateway.HostGateway, system, detach bool, oweOnlineNotice func()) error {
+	if _, err := gateway.MigrateRetiredGatewayServices(ctx, w); err != nil {
+		return err
+	}
 	serviceStopped, err := stopInstalledService(ctx, system)
 	if err != nil {
 		return err
@@ -558,7 +566,10 @@ func cmdRestart(ctx context.Context, w io.Writer, ns map[string]any) error {
 		return err
 	}
 	if _, err := gateway.ReapUnsupervisedGatewayOrphans(ctx, nil, 0); err != nil {
-		slog.Debug(fmt.Sprintf("orphan reap before gateway restart failed: %s", err))
+		pkgLog().Debug(fmt.Sprintf("orphan reap before gateway restart failed: %s", err))
+	}
+	if _, err := gateway.MigrateRetiredGatewayServices(ctx, w); err != nil {
+		return err
 	}
 	kind, err := gateway.InstalledServiceKindFor(ctx, func() (bool, error) { return gateway.IsWindows(), nil })
 	if err != nil {

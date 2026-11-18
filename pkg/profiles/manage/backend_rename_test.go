@@ -55,7 +55,7 @@ func TestBackendScanOnlyMatchesThisProfile(t *testing.T) {
 	}
 }
 
-func TestDeleteProfileBackendScanMatchesShebangExecOfHermesShim(t *testing.T) {
+func TestDeleteProfileBackendScanMatchesShebangExecOfIcebathShim(t *testing.T) {
 	dir := coderProfileDir(t)
 	fakeProcTable(t, []int{201, 202, 203}, map[int][]string{
 		201: {"/usr/bin/python3", "/Users/x/.local/bin/icebath", "--profile", "coder", "gateway", "--host", "127.0.0.1", "--port", "0"},
@@ -67,7 +67,7 @@ func TestDeleteProfileBackendScanMatchesShebangExecOfHermesShim(t *testing.T) {
 	}
 }
 
-func TestDeleteProfileBackendScanRejectsUnrelatedHermesPrefixedScript(t *testing.T) {
+func TestDeleteProfileBackendScanRejectsUnrelatedIcebathPrefixedScript(t *testing.T) {
 	dir := coderProfileDir(t)
 	fakeProcTable(t, []int{301, 302}, map[int][]string{
 		301: {"/usr/bin/python3", "/Users/x/scripts/icebath-notes.py", "--profile", "coder", "gateway"},

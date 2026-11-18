@@ -29,26 +29,9 @@ func init() {
 	installToolsConfigHooks()
 }
 
-// Installs the Nous, auth and setup prompt facts the tools picker reads
+// Installs the auth and setup prompt facts the tools picker reads
 func installToolsConfigHooks() {
 	hooks := &tools.ToolsConfigHooks
-	hooks.NousFeatures = func(ctx context.Context, h string, cfg map[string]any, forceFresh bool) tools.NousToolFeatures {
-		return nousToolFeatures(GetNousSubscriptionFeatures(credentialLifecycleEnv(ctx, h), cfg, forceFresh))
-	}
-	hooks.NousEntitlementMessage = func(account *tools.NousToolAccount, capability string) string {
-		var info *NousPortalAccountInfo
-		if account != nil {
-			info, _ = account.Info.(*NousPortalAccountInfo)
-		}
-		return FormatNousPortalEntitlementMessage(info, capability, false)
-	}
-	hooks.EnsureNousPortalAccess = func(ctx context.Context, h string, out io.Writer, capability, coverageCategory string) bool {
-		return EnsureNousPortalAccess(credentialLifecycleEnv(ctx, h), out, capability, coverageCategory)
-	}
-	hooks.ManagedCoverageCategory = func(feature string) (string, bool) {
-		category, ok := ManagedFeatureCoverageCategory[feature]
-		return category, ok
-	}
 	hooks.AuxPickerRows = func(ctx context.Context, currentProvider, currentModel, currentBaseURL string, maxModels int) ([]map[string]any, error) {
 		return BuildAuxPickerRows(ctx, currentProvider, currentModel, currentBaseURL, &maxModels)
 	}
@@ -79,21 +62,6 @@ func installToolsConfigHooks() {
 	}
 	hooks.SetupPrompt = SetupPrompt
 	hooks.SetupIsNoninteractive = IsNoninteractive
-}
-
-// Tools picker view of the subscription features, the account record kept for the entitlement message
-func nousToolFeatures(f NousSubscriptionFeatures) tools.NousToolFeatures {
-	out := tools.NousToolFeatures{NousAuthPresent: f.NousAuthPresent, Features: map[string]tools.NousToolFeature{}}
-	for key, state := range f.Features {
-		out.Features[key] = tools.NousToolFeature{Available: state.Available, ManagedByNous: state.ManagedByNous}
-	}
-	if info := f.AccountInfo; info != nil {
-		out.Account = &tools.NousToolAccount{
-			LoggedIn: info.LoggedIn, PaidServiceAccess: info.PaidServiceAccess, ToolGatewayEntitled: info.ToolGatewayEntitled(),
-			EntitledFor: info.ToolGatewayEntitledFor, Info: info,
-		}
-	}
-	return out
 }
 
 // Bool like config value through the tools_config parser

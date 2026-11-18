@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"io"
 	"math/big"
 	"regexp"
@@ -14,6 +13,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 
 	"github.com/nickheyer/icebath/pkg/plugins"
 )
@@ -904,7 +905,7 @@ func (c *hostedSDKClient) Stream(ctx context.Context, req *Request, fn StreamFun
 	}
 	iter, live := out.(*plugins.HostedObject)
 	if !live {
-		catalogLog.Info(fmt.Sprintf("Streaming request returned a final response object instead of an iterator; switching %s/%s to non-streaming for this session.", orUnknown2(c.cc.route.Provider), orUnknown2(req.Model)))
+		pkgLog().Info(fmt.Sprintf("Streaming request returned a final response object instead of an iterator; switching %s/%s to non-streaming for this session.", orUnknown2(c.cc.route.Provider), orUnknown2(req.Model)))
 		c.cc.mu.Lock()
 		c.cc.nonStreaming = true
 		c.cc.mu.Unlock()

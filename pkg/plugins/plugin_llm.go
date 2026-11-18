@@ -226,11 +226,11 @@ func checkTask(ctx context.Context, p trustPolicy, pluginID string, requested *s
 		return &task, nil
 	}
 	if builtin[task] {
-		logPluginLLM.warn(fmt.Sprintf("plugin_llm task routing denied: plugin %s requested built-in auxiliary task %s without plugins.entries.%s.llm.allow_task_override",
+		pkgLog().Warn(fmt.Sprintf("plugin_llm task routing denied: plugin %s requested built-in auxiliary task %s without plugins.entries.%s.llm.allow_task_override",
 			pyrepr.Repr(pluginID), pyrepr.Repr(task), pluginID))
 		return nil, trustDenied(pluginID, "route through the built-in auxiliary task "+pyrepr.Repr(task), "allow_task_override")
 	}
-	logPluginLLM.warn(fmt.Sprintf("plugin_llm task routing denied: plugin %s requested auxiliary task %s it did not register", pyrepr.Repr(pluginID), pyrepr.Repr(task)))
+	pkgLog().Warn(fmt.Sprintf("plugin_llm task routing denied: plugin %s requested auxiliary task %s it did not register", pyrepr.Repr(pluginID), pyrepr.Repr(task)))
 	return nil, &PluginLlmTrustError{Message: fmt.Sprintf("Plugin %s cannot route through auxiliary task %s — a plugin may only pass a task key it registered itself via "+
 		"ctx.register_auxiliary_task() (or a built-in key when plugins.entries.%s.llm.allow_task_override is true).", pyrepr.Repr(pluginID), pyrepr.Repr(task), pluginID)}
 }
@@ -712,7 +712,7 @@ func (l *PluginLlm) finish(name string, agent *string, kw pluginLlmCall, provide
 	args := []any{name, l.pluginID, provider, model, task, strOr(purpose, "")}
 	if spec == nil {
 		audit["task"] = task
-		logPluginLLM.info(fmt.Sprintf(format+"tokens=%d", append(args, usage.TotalTokens)...))
+		pkgLog().Info(fmt.Sprintf(format+"tokens=%d", append(args, usage.TotalTokens)...))
 		return &PluginLlmCompleteResult{Text: text, Provider: provider, Model: model, AgentID: strOr(agent, "default"), Usage: usage, Audit: audit}, nil
 	}
 	parsed, contentType, err := parseStructuredText(text, spec.JSONMode, spec.JSONSchema)
@@ -721,7 +721,7 @@ func (l *PluginLlm) finish(name string, agent *string, kw pluginLlmCall, provide
 	}
 	audit["schema_name"] = spec.SchemaName
 	audit["task"] = task
-	logPluginLLM.info(fmt.Sprintf(format+"content_type=%s tokens=%d", append(args, contentType, usage.TotalTokens)...))
+	pkgLog().Info(fmt.Sprintf(format+"content_type=%s tokens=%d", append(args, contentType, usage.TotalTokens)...))
 	return &PluginLlmStructuredResult{Text: text, Provider: provider, Model: model, AgentID: strOr(agent, "default"), Usage: usage,
 		Parsed: parsed, ContentType: contentType, Audit: audit}, nil
 }

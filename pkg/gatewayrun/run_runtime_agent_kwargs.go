@@ -59,7 +59,7 @@ func credentialPoolForProvider(ctx context.Context, providerName string) any {
 	}
 	kwargs, err := resolveRuntimeAgentKwargsForProvider(ctx, name, "")
 	if err != nil {
-		runLog().Debug(fmt.Sprintf("Failed to resolve credential pool for provider=%s", providerName), "error", err)
+		pkgLog().Debug(fmt.Sprintf("Failed to resolve credential pool for provider=%s", providerName), "error", err)
 		return nil
 	}
 	return kwargs["credential_pool"]

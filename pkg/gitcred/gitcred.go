@@ -7,7 +7,6 @@ import (
 	"errors"
 	"fmt"
 	"iter"
-	"log/slog"
 	"maps"
 	"math/big"
 	"os"
@@ -82,7 +81,7 @@ type runSpec struct {
 	hide    bool
 }
 
-// Seams over subprocess.run and the module functions the hermes tests patch
+// Seams over subprocess.run and the module functions the tests patch
 var (
 	runProcess     = runText
 	iterAuth       = IterGitBasicAuth
@@ -206,7 +205,7 @@ func GhCliToken() string {
 	delete(env, "GITHUB_TOKEN")
 	res, err := runProcess(context.Background(), runSpec{argv: []string{gh, "auth", "token"}, env: env, timeout: 10 * time.Second, hide: true})
 	if err != nil {
-		slog.Debug(fmt.Sprintf("gh auth token lookup failed: %v", err))
+		pkgLog().Debug(fmt.Sprintf("gh auth token lookup failed: %v", err))
 		return ""
 	}
 	if res.code != 0 {
@@ -233,14 +232,14 @@ func fillCredential(ctx context.Context, origin string) (BasicAuth, bool) {
 	delete(env, "SSH_ASKPASS")
 	parsed, err := pyurl.Split(origin)
 	if err != nil {
-		slog.Debug(fmt.Sprintf("git credential fill failed for %s: %v", origin, err))
+		pkgLog().Debug(fmt.Sprintf("git credential fill failed for %s: %v", origin, err))
 		return BasicAuth{}, false
 	}
 	request := "protocol=https\nhost=" + parsed.Netloc + "\n\n"
 	res, err := runProcess(ctx, runSpec{argv: []string{git, "-c", "core.askPass=", "credential", "fill"}, env: env,
 		input: &request, timeout: 15 * time.Second, hide: true})
 	if err != nil {
-		slog.Debug(fmt.Sprintf("git credential fill failed for %s: %v", origin, err))
+		pkgLog().Debug(fmt.Sprintf("git credential fill failed for %s: %v", origin, err))
 		return BasicAuth{}, false
 	}
 	if res.code != 0 {
@@ -392,7 +391,7 @@ func IsCredentialRequiredError(stderr, stdout string) bool {
 	return err == nil && ok
 }
 
-// One git subprocess run under the caller's run options, the run_kwargs of the hermes signature
+// One git subprocess run under the caller's run options, the run_kwargs of the signature
 type GitRunner func(ctx context.Context, argv []string, env map[string]string) (code int, stdout, stderr string, err error)
 
 // Completed git process of a credential fallback run
@@ -471,7 +470,7 @@ func RunGitWithCredentialFallback(ctx context.Context, argv []string, url string
 		if from == "" {
 			from = "the stored credential"
 		}
-		slog.Warn(fmt.Sprintf("%s rejected the credential from %s; retrying with %s", origin, from, cred.Source))
+		pkgLog().Warn(fmt.Sprintf("%s rejected the credential from %s; retrying with %s", origin, from, cred.Source))
 		if result, err = run(candidateEnv); err != nil {
 			return GitResult{}, err
 		}

@@ -13,7 +13,7 @@ import (
 	"time"
 )
 
-// E2E gate mirroring HERMES_RUN_E2E, the real binary is downloaded and curl and openssl must be present
+// E2E gate on ICEBATH_RUN_E2E, the real binary is downloaded and curl and openssl must be present
 func ironE2EHome(t *testing.T) IronProxy {
 	t.Helper()
 	if os.Getenv("ICEBATH_RUN_E2E") != "1" {

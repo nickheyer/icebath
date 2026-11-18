@@ -8,7 +8,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/state"
 )
 
-// Rotation agent of the hermes builder on a real store, its engine folding into the given rows
+// Rotation agent of the builder on a real store, its engine folding into the given rows
 func rotationDedupAgent(t *testing.T, db *state.SessionDB, sessionID string, fold []map[string]any) *AIAgent {
 	t.Helper()
 	a := newFixtureAgent(t, AIAgentOptions{BaseURL: "https://openrouter.ai/api/v1", Model: "test/model", Platform: "telegram", SessionDB: db, SessionID: sessionID})
@@ -35,7 +35,7 @@ func failSessionWrites(t *testing.T, db *state.SessionDB, sessionID string) func
 	return func() { exec("DROP TRIGGER fail_parent_flush") }
 }
 
-// Counts rows matching the content and role when given, the hermes _count_rows helper
+// Counts rows matching the content and role when given, the count rows helper
 func countRows(rows []map[string]any, content any, role string) int {
 	n := 0
 	for _, r := range rows {

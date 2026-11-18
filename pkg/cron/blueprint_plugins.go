@@ -3,7 +3,6 @@ package cron
 import (
 	"context"
 	"fmt"
-	"log/slog"
 	"sort"
 	"strings"
 
@@ -311,7 +310,7 @@ func pluginBlueprints(ctx context.Context) (out []AutomationBlueprint) {
 	defer func() {
 		if r := recover(); r != nil {
 			err := panicTraceback(r)
-			slog.Warn("plugin automation blueprints unavailable\n" + tracebackFrames(err) + cronExceptionName(err) + ": " + err.Error())
+			pkgLog().Warn("plugin automation blueprints unavailable\n" + tracebackFrames(err) + cronExceptionName(err) + ": " + err.Error())
 			out = nil
 		}
 	}()

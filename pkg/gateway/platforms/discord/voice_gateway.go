@@ -7,7 +7,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"log/slog"
 	"net"
 	"slices"
 	"strconv"
@@ -115,7 +114,7 @@ func dialVoiceWebSocket(ctx context.Context, state *voiceConnState, resume bool,
 
 // Sends one JSON frame
 func (ws *voiceWebSocket) sendAsJSON(data any) error {
-	slog.Debug(fmt.Sprintf("Sending voice websocket frame: %v.", data))
+	pkgLog().Debug(fmt.Sprintf("Sending voice websocket frame: %v.", data))
 	ws.writeMu.Lock()
 	defer ws.writeMu.Unlock()
 	return ws.conn.WriteJSON(data)
@@ -123,7 +122,7 @@ func (ws *voiceWebSocket) sendAsJSON(data any) error {
 
 // Sends one binary frame, the opcode byte followed by the payload
 func (ws *voiceWebSocket) sendBinary(opcode int, data []byte) error {
-	slog.Debug(fmt.Sprintf("Sending voice websocket binary frame: opcode=%d size=%d", opcode, len(data)))
+	pkgLog().Debug(fmt.Sprintf("Sending voice websocket binary frame: opcode=%d size=%d", opcode, len(data)))
 	ws.writeMu.Lock()
 	defer ws.writeMu.Unlock()
 	return ws.conn.WriteMessage(websocket.BinaryMessage, append([]byte{byte(opcode)}, data...))
@@ -191,7 +190,7 @@ func voiceInt(v any) (int64, bool) {
 
 // Handles one JSON frame then hands it to the hook
 func (ws *voiceWebSocket) receivedMessage(ctx context.Context, msg voiceGatewayMessage) error {
-	slog.Debug(fmt.Sprintf("Voice websocket frame received: %v", msg))
+	pkgLog().Debug(fmt.Sprintf("Voice websocket frame received: %v", msg))
 	state := ws.state
 	data := msg.D
 	if msg.Seq != nil {
@@ -202,7 +201,7 @@ func (ws *voiceWebSocket) receivedMessage(ctx context.Context, msg voiceGatewayM
 	intField := func(key string) (int, error) {
 		n, ok := voiceInt(data[key])
 		if !ok {
-			return 0, fmt.Errorf("KeyError: '%s'", key)
+			return 0, fmt.Errorf("the Discord voice gateway message has no %s", key)
 		}
 		return int(n), nil
 	}
@@ -219,7 +218,7 @@ func (ws *voiceWebSocket) receivedMessage(ctx context.Context, msg voiceGatewayM
 			ka.ack()
 		}
 	case msg.Op == voiceOpResumed:
-		slog.Debug("Voice RESUME succeeded.")
+		pkgLog().Debug("Voice RESUME succeeded.")
 	case msg.Op == voiceOpSessionDescription:
 		mode, _ := data["mode"].(string)
 		state.setMode(mode)
@@ -283,7 +282,7 @@ func (ws *voiceWebSocket) receivedDaveMessage(op int, data map[string]any, intFi
 		if err != nil {
 			return err
 		}
-		slog.Debug(fmt.Sprintf("Preparing for DAVE transition id %d for protocol version %d", tid, pv))
+		pkgLog().Debug(fmt.Sprintf("Preparing for DAVE transition id %d for protocol version %d", tid, pv))
 		state.addPendingTransition(tid, pv)
 		if dave := state.daveSessionValue(); dave != nil {
 			dave.prepareTransition(tid, pv)
@@ -301,14 +300,14 @@ func (ws *voiceWebSocket) receivedDaveMessage(op int, data map[string]any, intFi
 		if err != nil {
 			return err
 		}
-		slog.Debug(fmt.Sprintf("Executing DAVE transition id %d", tid))
+		pkgLog().Debug(fmt.Sprintf("Executing DAVE transition id %d", tid))
 		state.executeTransition(tid)
 	case voiceOpDavePrepareEpoch:
 		epoch, err := intField("epoch")
 		if err != nil {
 			return err
 		}
-		slog.Debug(fmt.Sprintf("Preparing for DAVE epoch %d", epoch))
+		pkgLog().Debug(fmt.Sprintf("Preparing for DAVE epoch %d", epoch))
 		if epoch == 1 {
 			pv, err := intField("protocol_version")
 			if err != nil {
@@ -331,7 +330,7 @@ func (ws *voiceWebSocket) receivedBinaryMessage(msg []byte) error {
 	ws.seqAck = seq
 	ws.mu.Unlock()
 	op := int(msg[2])
-	slog.Debug(fmt.Sprintf("Voice websocket binary frame received: %d bytes; seq=%d op=%d", len(msg), seq, op))
+	pkgLog().Debug(fmt.Sprintf("Voice websocket binary frame received: %d bytes; seq=%d op=%d", len(msg), seq, op))
 	state := ws.state
 	dave := state.daveSessionValue()
 	if dave == nil {
@@ -340,7 +339,7 @@ func (ws *voiceWebSocket) receivedBinaryMessage(msg []byte) error {
 	switch op {
 	case voiceOpMLSExternalSender:
 		dave.setExternalSender(msg[3:])
-		slog.Debug("Set MLS external sender")
+		pkgLog().Debug("Set MLS external sender")
 	case voiceOpMLSProposals:
 		if len(msg) < 4 {
 			return fmt.Errorf("IndexError: index out of range")
@@ -350,7 +349,7 @@ func (ws *voiceWebSocket) receivedBinaryMessage(msg []byte) error {
 				return err
 			}
 		}
-		slog.Debug("MLS proposals processed")
+		pkgLog().Debug("MLS proposals processed")
 	case voiceOpMLSAnnounceCommitTransition, voiceOpMLSWelcome:
 		if len(msg) < 5 {
 			return fmt.Errorf("struct.error: unpack_from requires a buffer of at least 5 bytes")
@@ -374,7 +373,7 @@ func (ws *voiceWebSocket) receivedBinaryMessage(msg []byte) error {
 				return err
 			}
 		}
-		slog.Debug(fmt.Sprintf("MLS %s processed for transition id %d", what, tid))
+		pkgLog().Debug(fmt.Sprintf("MLS %s processed for transition id %d", what, tid))
 	}
 	return nil
 }
@@ -384,15 +383,15 @@ func (ws *voiceWebSocket) initialConnection(ctx context.Context, data map[string
 	state := ws.state
 	ssrc, ok := voiceInt(data["ssrc"])
 	if !ok {
-		return fmt.Errorf("KeyError: 'ssrc'")
+		return errors.New("the Discord voice ready message has no ssrc")
 	}
 	port, ok := voiceInt(data["port"])
 	if !ok {
-		return fmt.Errorf("KeyError: 'port'")
+		return errors.New("the Discord voice ready message has no port")
 	}
 	ip, _ := data["ip"].(string)
 	state.setReady(uint32(ssrc), int(port), ip)
-	slog.Debug("Connecting to voice socket")
+	pkgLog().Debug("Connecting to voice socket")
 	if err := state.connectSocket(); err != nil {
 		return err
 	}
@@ -411,7 +410,7 @@ func (ws *voiceWebSocket) initialConnection(ctx context.Context, data map[string
 			}
 		}
 	}
-	slog.Debug(fmt.Sprintf("received supported encryption modes: %s", strings.Join(supported, ", ")))
+	pkgLog().Debug(fmt.Sprintf("received supported encryption modes: %s", strings.Join(supported, ", ")))
 	mode, err := selectVoiceMode(offered)
 	if err != nil {
 		return err
@@ -419,7 +418,7 @@ func (ws *voiceWebSocket) initialConnection(ctx context.Context, data map[string
 	if err := ws.selectProtocol(extIP, extPort, mode); err != nil {
 		return err
 	}
-	slog.Debug(fmt.Sprintf("selected the voice protocol for use (%s)", mode))
+	pkgLog().Debug(fmt.Sprintf("selected the voice protocol for use (%s)", mode))
 	return nil
 }
 
@@ -436,16 +435,16 @@ func (ws *voiceWebSocket) discoverIP(ctx context.Context) (string, int, error) {
 		}
 	})
 	defer state.removeSocketListener(id)
-	slog.Debug("Sending ip discovery packet")
+	pkgLog().Debug("Sending ip discovery packet")
 	if err := state.sendPacket(ipDiscoveryRequest(state.ssrcValue())); err != nil {
 		return "", 0, err
 	}
 	select {
 	case recv := <-got:
-		slog.Debug(fmt.Sprintf("Received ip discovery packet: %v", recv))
+		pkgLog().Debug(fmt.Sprintf("Received ip discovery packet: %v", recv))
 		ip, port, err := parseIPDiscovery(recv)
 		if err == nil {
-			slog.Debug(fmt.Sprintf("detected ip: %s port: %d", ip, port))
+			pkgLog().Debug(fmt.Sprintf("detected ip: %s port: %d", ip, port))
 		}
 		return ip, port, err
 	case <-ctx.Done():
@@ -455,10 +454,10 @@ func (ws *voiceWebSocket) discoverIP(ctx context.Context) (string, int, error) {
 
 // Stores the session secret and announces the bot as not speaking
 func (ws *voiceWebSocket) loadSecretKey(data map[string]any) error {
-	slog.Debug("received secret key for voice connection")
+	pkgLog().Debug("received secret key for voice connection")
 	raw, ok := data["secret_key"].([]any)
 	if !ok {
-		return fmt.Errorf("KeyError: 'secret_key'")
+		return errors.New("the Discord voice session description has no secret_key")
 	}
 	key := make([]byte, len(raw))
 	for i, v := range raw {
@@ -491,7 +490,7 @@ func (ws *voiceWebSocket) pollEvent(ctx context.Context) error {
 		default:
 			code = 1006
 		}
-		slog.Debug(fmt.Sprintf("Received voice %s", err))
+		pkgLog().Debug(fmt.Sprintf("Received voice %s", err))
 		return &voiceConnectionClosed{code: code}
 	}
 	switch kind {
@@ -553,16 +552,16 @@ func (k *voiceKeepAlive) run() {
 		silent := time.Since(k.lastRecv) > k.heartbeatTimeout
 		k.mu.Unlock()
 		if silent {
-			slog.Warn("Shard ID None has stopped responding to the gateway. Closing and restarting.")
+			pkgLog().Warn("Shard ID None has stopped responding to the gateway. Closing and restarting.")
 			if err := k.ws.close(4000); err != nil {
-				slog.Error("An error occurred while stopping the gateway. Ignoring.")
+				pkgLog().Error("An error occurred while stopping the gateway. Ignoring.")
 			}
 			k.stop()
 			return
 		}
 		ts := time.Now().UnixMilli()
 		seq := k.ws.sequenceAck()
-		slog.Debug(fmt.Sprintf("Keeping shard ID None voice websocket alive with timestamp %v.", map[string]any{"t": ts, "seq_ack": seq}))
+		pkgLog().Debug(fmt.Sprintf("Keeping shard ID None voice websocket alive with timestamp %v.", map[string]any{"t": ts, "seq_ack": seq}))
 		if err := k.ws.sendAsJSON(map[string]any{"op": voiceOpHeartbeat, "d": map[string]any{"t": ts, "seq_ack": seq}}); err != nil {
 			k.stop()
 			return

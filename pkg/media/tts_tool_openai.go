@@ -11,7 +11,6 @@ import (
 	"math/rand/v2"
 	"net"
 	"net/http"
-	"net/url"
 	"os"
 	"strconv"
 	"strings"
@@ -29,42 +28,16 @@ const (
 	defaultDeepInfraTTSVoice = "default"
 )
 
-var managedOpenAITTSModels = map[string]bool{"gpt-4o-mini-tts": true, "tts-1": true, "tts-1-hd": true}
-
-// Credential, base URL and managed flag of one OpenAI audio route
+// Credential and base URL of one OpenAI audio route
 type openAIAudioRoute struct {
-	APIKey    string
-	BaseURL   string
-	IsManaged bool
+	APIKey  string
+	BaseURL string
 }
 
-// Managed openai-audio gateway route, nil when the gateway is unavailable
-func managedOpenAIAudioRoute(env *tools.Env) (*openAIAudioRoute, error) {
-	gw, err := tools.ResolveManagedToolGateway(env, "openai-audio", nil, nil)
-	if err != nil || gw == nil {
-		return nil, err
-	}
-	base, err := url.Parse(strings.TrimRight(gw.GatewayOrigin, "/") + "/")
-	if err != nil {
-		return nil, err
-	}
-	return &openAIAudioRoute{APIKey: gw.NousUserToken, BaseURL: base.ResolveReference(&url.URL{Path: "v1"}).String(), IsManaged: true}, nil
-}
-
-// OpenAI audio route honoring the stored tts selection strictly, then config key, env key and managed gateway
+// OpenAI audio route from the config key then the env key, the stored tts selection named when neither is set
 func resolveOpenAIAudioClientConfig(ctx context.Context, env *tools.Env) (*openAIAudioRoute, error) {
 	openaiCfg := ttsSection(loadTTSConfig(ctx, env), "openai")
 	selected := tools.ReadSelection(env, "tts")
-	if selected == NousManagedProvider {
-		route, err := managedOpenAIAudioRoute(env)
-		if err != nil {
-			return nil, err
-		}
-		if route == nil {
-			return nil, &ttsValueError{msg: tools.SelectionError("tts", NousManagedProvider, "the Nous Tool Gateway is not available (not entitled or unreachable)")}
-		}
-		return route, nil
-	}
 	direct := openaiCfg["api_key"]
 	if !pyTruthy(direct) {
 		direct = tools.ResolveOpenAIAudioAPIKey(env)
@@ -79,18 +52,7 @@ func resolveOpenAIAudioClientConfig(ctx context.Context, env *tools.Env) (*openA
 	if selected != "" {
 		return nil, &ttsValueError{msg: tools.SelectionError("tts", selected, "neither tts.openai.api_key in config nor VOICE_TOOLS_OPENAI_KEY/OPENAI_API_KEY is set")}
 	}
-	route, err := managedOpenAIAudioRoute(env)
-	if err != nil {
-		return nil, err
-	}
-	if route == nil {
-		message := "Neither tts.openai.api_key in config nor VOICE_TOOLS_OPENAI_KEY/OPENAI_API_KEY is set"
-		if tools.ManagedNousToolsEnabled(env, false) {
-			message += ". " + tools.NousToolGatewayUnavailableMessage(env, "managed OpenAI audio for TTS", false)
-		}
-		return nil, &ttsValueError{msg: message}
-	}
-	return route, nil
+	return nil, &ttsValueError{msg: "Neither tts.openai.api_key in config nor VOICE_TOOLS_OPENAI_KEY/OPENAI_API_KEY is set"}
 }
 
 // Whether the selected OpenAI audio route resolves without a configuration error
@@ -125,18 +87,16 @@ type openAITTSOptions struct {
 	Instructions string
 }
 
-// Speech through the OpenAI audio.speech.create shape, managed routes coerced to served models
+// Speech through the OpenAI audio.speech.create shape
 func generateOpenAITTS(ctx context.Context, env *tools.Env, text, outputPath string, ttsConfig map[string]any, opts openAITTSOptions) (string, error) {
 	fallbackBase := ""
-	isManaged := false
-	explicitBaseURL := opts.BaseURL != nil
 	apiKey := ""
 	if opts.APIKey == nil {
 		route, err := resolveOpenAIAudioClientConfig(ctx, env)
 		if err != nil {
 			return "", err
 		}
-		apiKey, fallbackBase, isManaged = route.APIKey, route.BaseURL, route.IsManaged
+		apiKey, fallbackBase = route.APIKey, route.BaseURL
 	} else {
 		apiKey = *opts.APIKey
 	}
@@ -170,12 +130,6 @@ func generateOpenAITTS(ctx context.Context, env *tools.Env, text, outputPath str
 			return "", err
 		}
 		speed = f
-	}
-	modelName, _ := model.(string)
-	if isManaged && !explicitBaseURL && !pyTruthy(configBaseURL) && !managedOpenAITTSModels[modelName] {
-		ttsLog().Warn(fmt.Sprintf("TTS: managed OpenAI audio gateway does not support model %s; falling back to %s. Set VOICE_TOOLS_OPENAI_KEY or OPENAI_API_KEY to use %s directly.",
-			pyrepr.Repr(model), defaultOpenAITTSModel, pyrepr.Repr(model)))
-		model = defaultOpenAITTSModel
 	}
 	body := map[string]any{"model": model, "voice": voice, "input": text, "response_format": ttsResponseFormatFromPath(outputPath)}
 	if speed != 1.0 {

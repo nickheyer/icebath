@@ -156,7 +156,7 @@ func TestSkipsOwnAuthoredCommentsWithoutEnvProfile(t *testing.T) {
 	}
 }
 
-// Claimed scratch task of a parent worker with the run id env set from the claim result as hermes does
+// Claimed scratch task of a parent worker with the run id env set from the claim result
 func runningKanbanTask(t *testing.T) (tid, workspace, attachmentsRoot string) {
 	t.Helper()
 	clearKanbanEnv(t)
@@ -217,9 +217,9 @@ func (w *warningRecorder) WithGroup(string) slog.Handler      { return w }
 func captureKanbanToolsWarnings(t *testing.T) *warningRecorder {
 	t.Helper()
 	rec := &warningRecorder{}
-	prev := kanbanToolsLog
-	t.Cleanup(func() { kanbanToolsLog = prev })
-	kanbanToolsLog = slog.New(rec)
+	prev := slog.Default()
+	t.Cleanup(func() { slog.SetDefault(prev) })
+	slog.SetDefault(slog.New(rec))
 	return rec
 }
 
@@ -327,7 +327,7 @@ func TestDelegatedChildContextSuppressesEnvGatedKanbanTools(t *testing.T) {
 	}
 }
 
-// Goal mode task shaped like the SimpleNamespace the hermes gate tests pass
+// Goal mode task shaped like the SimpleNamespace the gate tests pass
 func goalTask(tid string) *Task {
 	return &Task{ID: tid, Title: "goal title", Body: strp("goal body"), GoalMode: true}
 }
@@ -353,7 +353,7 @@ func TestToolGateBindsPerTaskAffinityScope(t *testing.T) {
 	var seen []string
 	var goalsSeen []string
 	patchGoalJudge(t, true, func(ctx context.Context, goal, lastResponse string, _ goals.JudgeOptions) goals.JudgeResult {
-		seen = append(seen, provider.PortalAffinityScope(ctx))
+		seen = append(seen, provider.AffinityScope(ctx))
 		goalsSeen = append(goalsSeen, goal+"|"+lastResponse)
 		return goals.JudgeResult{Verdict: "done", Reason: "ok"}
 	})
@@ -363,10 +363,10 @@ func TestToolGateBindsPerTaskAffinityScope(t *testing.T) {
 	if len(seen) != 1 || seen[0] != "kanban:task-9" || goalsSeen[0] != "goal title\n\ngoal body|ev" {
 		t.Fatal(seen, goalsSeen)
 	}
-	if scope := provider.PortalAffinityScope(context.Background()); scope != "" {
+	if scope := provider.AffinityScope(context.Background()); scope != "" {
 		t.Fatal(scope)
 	}
-	bound := provider.WithPortalAffinityScope(context.Background(), "outer-conversation")
+	bound := provider.WithAffinityScope(context.Background(), "outer-conversation")
 	if err := goalGate(&kanbanCall{ctx: bound}, "kanban_complete", goalTask("task-9"), "task-9", "ev"); err != nil {
 		t.Fatal(err)
 	}

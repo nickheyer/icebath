@@ -371,7 +371,7 @@ func printVerifiedUpdateCompletion(ctx context.Context, w io.Writer, message str
 func verifyAndRestoreOneStateDB(ctx context.Context, w io.Writer, h, label string) {
 	defer func() {
 		if r := recover(); r != nil {
-			updateLog.DebugContext(ctx, fmt.Sprintf("Post-update state.db guard (%s) failed: %v", label, r))
+			pkgLog().DebugContext(ctx, fmt.Sprintf("Post-update state.db guard (%s) failed: %v", label, r))
 		}
 	}()
 	statePath := filepath.Join(h, "state.db")
@@ -380,7 +380,7 @@ func verifyAndRestoreOneStateDB(ctx context.Context, w io.Writer, h, label strin
 	}
 	ok := backup.VerifySQLiteIntegrity(statePath, backup.IntegrityOptions{})
 	if ok.Valid {
-		updateLog.DebugContext(ctx, fmt.Sprintf("Post-update state.db integrity OK (%s): %s", label, ok.Message))
+		pkgLog().DebugContext(ctx, fmt.Sprintf("Post-update state.db integrity OK (%s): %s", label, ok.Message))
 		return
 	}
 	fmt.Fprintln(w)
@@ -392,7 +392,7 @@ func verifyAndRestoreOneStateDB(ctx context.Context, w io.Writer, h, label strin
 	}
 	entries, err := os.ReadDir(snapRoot)
 	if err != nil {
-		updateLog.DebugContext(ctx, fmt.Sprintf("Post-update state.db guard (%s) failed: %s", label, launchErrorText(err)))
+		pkgLog().DebugContext(ctx, fmt.Sprintf("Post-update state.db guard (%s) failed: %s", label, launchErrorText(err)))
 		return
 	}
 	var dirs []string
@@ -412,7 +412,7 @@ func verifyAndRestoreOneStateDB(ctx context.Context, w io.Writer, h, label strin
 		case err != nil && pypath.IsOSError(err):
 			fmt.Fprintf(w, "  ✗ Auto-restore file copy failed: %s\n", launchErrorText(err))
 		case err != nil:
-			updateLog.DebugContext(ctx, fmt.Sprintf("Post-update state.db guard (%s) failed: %s", label, launchErrorText(err)))
+			pkgLog().DebugContext(ctx, fmt.Sprintf("Post-update state.db guard (%s) failed: %s", label, launchErrorText(err)))
 		case restored:
 			fmt.Fprintf(w, "  ✓ Auto-restored from snapshot %s (%s)\n", name, label)
 		default:
@@ -577,7 +577,7 @@ func resolvePreUpdateBackupMode(ctx context.Context, args map[string]any) string
 	var raw any = "quick"
 	cfg, err := loadUpdatesCfg(ctx)
 	if err != nil {
-		updateLog.DebugContext(ctx, fmt.Sprintf("Could not load config for pre-update backup: %s", launchErrorText(err)))
+		pkgLog().DebugContext(ctx, fmt.Sprintf("Could not load config for pre-update backup: %s", launchErrorText(err)))
 	} else if value, ok := cfg["pre_update_backup"]; ok {
 		raw = value
 	}
@@ -589,7 +589,7 @@ func resolvePreUpdateBackupMode(ctx context.Context, args map[string]any) string
 	}
 	mode, ok := backupModeAliases[strings.ToLower(pystr.Strip(pyrepr.Str(raw)))]
 	if !ok {
-		updateLog.WarnContext(ctx, fmt.Sprintf("Unknown updates.pre_update_backup value %s — using 'quick'", pyrepr.Repr(raw)))
+		pkgLog().WarnContext(ctx, fmt.Sprintf("Unknown updates.pre_update_backup value %s — using 'quick'", pyrepr.Repr(raw)))
 		return "quick"
 	}
 	return mode
@@ -730,7 +730,7 @@ func runPreUpdateBackup(ctx context.Context, w io.Writer, args map[string]any) *
 	snapshotID, err := runQuickSnapshots(ctx, w)
 	detail := ""
 	if err != nil {
-		updateLog.WarnContext(ctx, fmt.Sprintf("Pre-update snapshot failed: %s", launchErrorText(err)))
+		pkgLog().WarnContext(ctx, fmt.Sprintf("Pre-update snapshot failed: %s", launchErrorText(err)))
 		detail = " (" + launchErrorText(err) + ")"
 		snapshotID = ""
 	}
@@ -796,7 +796,7 @@ func profileSkillSyncStatus(r map[string]any) string {
 	return strings.Join(parts, ", ")
 }
 
-// Per profile syncs of bundled skills, the seeded env file and the Honcho profiles, each failure swallowed
+// Per profile syncs of bundled skills and the seeded env file, each failure swallowed
 func syncProfilesAfterUpdate(ctx context.Context, w io.Writer) error {
 	if all, err := manage.ListProfiles(ctx, false); isUpdateExit(err) {
 		return err
@@ -812,16 +812,6 @@ func syncProfilesAfterUpdate(ctx context.Context, w io.Writer) error {
 	} else if err == nil && len(backfilled) > 0 {
 		fmt.Fprintln(w)
 		fmt.Fprintf(w, "→ Seeded .env for %d profile(s) (empty placeholder): %s\n", len(backfilled), strings.Join(backfilled, ", "))
-	}
-	module, err := memory.ImportProviderModule(ctx, "honcho", "cli")
-	if err == nil {
-		var synced any
-		if synced, err = module.Call(ctx, "sync_honcho_profiles_quiet", nil, nil); err == nil && pyrepr.Truthy(synced) {
-			fmt.Fprintf(w, "\n-> Honcho: synced %s profile(s)\n", pyrepr.Str(synced))
-		}
-	}
-	if isUpdateExit(err) {
-		return err
 	}
 	return nil
 }
@@ -957,7 +947,7 @@ func RunPostUpdateMaintenance(ctx context.Context, o PostUpdateMaintenance) (boo
 	root := fleetProjectRoot()
 	owedStep("windows_home_acl", func() error { return maintRepairWindowsHomeACL(ctx, nil) })
 	if _, err := ensureMacosTCCAnchor(ctx, root); err != nil {
-		updateLog.DebugContext(ctx, "macOS TCC anchor refresh skipped", "error", launchErrorText(err))
+		pkgLog().DebugContext(ctx, "macOS TCC anchor refresh skipped", "error", launchErrorText(err))
 	}
 	if err := bestEffort(ctx, "Post-update state.db integrity check failed: %s", func() error {
 		return verifyAndRestoreStateDBsPostUpdate(ctx, w)
@@ -1000,7 +990,12 @@ func RunPostUpdateMaintenance(ctx context.Context, o PostUpdateMaintenance) (boo
 	owedStep("config_migration", func() error {
 		return maintConfigMigration(ctx, w, o.AssumeYes, o.GatewayMode, o.PreUpdateSnapshotID)
 	})
-	owedStep("relay_runtime", func() error { return provisionRelayRuntimeAfterUpdate(ctx, w) })
+	if err := refreshSwitchedOnRelayRuntime(ctx, w); err != nil {
+		return false, err
+	}
+	if err := refreshProvisionedExtras(ctx, w); err != nil {
+		return false, err
+	}
 	if ctx.Err() != nil {
 		return false, ctx.Err()
 	}

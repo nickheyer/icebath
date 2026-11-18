@@ -4,13 +4,14 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"log/slog"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 
 	"github.com/nickheyer/icebath/pkg/config"
 )
@@ -56,7 +57,7 @@ func (h *recordingHandler) snapshot() []slog.Record {
 	return append([]slog.Record(nil), h.records...)
 }
 
-// True when the record carries a panic attribute, the traceback of the hermes exc_info
+// True when the record carries a panic attribute, the traceback of the exc_info
 func recordHasPanic(r slog.Record) bool {
 	found := false
 	r.Attrs(func(a slog.Attr) bool {

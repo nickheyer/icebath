@@ -6,6 +6,8 @@ import (
 	"path/filepath"
 	"reflect"
 	"testing"
+
+	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 )
 
 func TestConfigFingerprint(t *testing.T) {
@@ -40,7 +42,7 @@ func TestSchemaCacheRoundTrip(t *testing.T) {
 		t.Fatal(err)
 	}
 	entry := GetCachedEntry(ctx, "srv", "fp1")
-	if entry == nil || !reflect.DeepEqual(ToolsFromCacheEntry(entry), tools) || len(UtilityToolsFromCacheEntry(entry)) != 0 {
+	if entry == nil || !reflect.DeepEqual(pyjson.Plain(ToolsFromCacheEntry(entry)), tools) || len(UtilityToolsFromCacheEntry(entry)) != 0 {
 		t.Fatalf("entry %v", entry)
 	}
 	if GetCachedEntry(ctx, "srv", "OTHER") != nil || GetCachedEntry(ctx, "nope", "fp") != nil {

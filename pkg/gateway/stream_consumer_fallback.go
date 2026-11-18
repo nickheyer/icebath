@@ -18,7 +18,7 @@ func (s *GatewayStreamConsumer) sendNewChunk(ctx context.Context, text, replyToI
 	}
 	result, err := s.adapter.Send(ctx, s.chatID, text, replyToID, s.metadataForSend(final, !final))
 	if err != nil {
-		streamLog().Error("Stream send chunk error: " + pyrepr.ExceptionMessage(err))
+		pkgLog().Error("Stream send chunk error: " + pyrepr.ExceptionMessage(err))
 		return replyToID
 	}
 	newID := sendResultID(result.MessageID)
@@ -79,7 +79,7 @@ func (s *GatewayStreamConsumer) truncateForStream(text string, limit int, lenFn 
 // Sends the final continuation after streaming edits stopped working, one flood retry per chunk
 func (s *GatewayStreamConsumer) sendFallbackFinal(ctx context.Context, text string) {
 	if s.egressDeclined {
-		streamLog().Warn("suppressing the fallback continuation: the connector already declined this destination for this run")
+		pkgLog().Warn("suppressing the fallback continuation: the connector already declined this destination for this run")
 		return
 	}
 	finalText := EnsureClosedCodeFences(cleanForDisplay(text))
@@ -109,7 +109,7 @@ func (s *GatewayStreamConsumer) sendFallbackFinal(ctx context.Context, text stri
 		}
 		result, err := s.sendWithFloodRetry(ctx, chunk, replyTo, "Flood control on fallback send, retrying in %.1fs")
 		if err != nil {
-			streamLog().Error("Stream consumer error: " + pyrepr.ExceptionMessage(err))
+			pkgLog().Error("Stream consumer error: " + pyrepr.ExceptionMessage(err))
 		}
 		if err != nil || result == nil || !result.Success {
 			s.alreadySent = sentAnyChunk
@@ -197,7 +197,7 @@ func (s *GatewayStreamConsumer) fallbackLenBudget() (func(string) int, int) {
 		}
 	}
 	if err != nil {
-		streamLog().Debug("per-chat limit resolution failed: " + pyrepr.ExceptionMessage(err))
+		pkgLog().Debug("per-chat limit resolution failed: " + pyrepr.ExceptionMessage(err))
 	}
 	return lenFn, rawLimit
 }
@@ -221,7 +221,7 @@ func (s *GatewayStreamConsumer) sendWithFloodRetry(ctx context.Context, content,
 		if raw, isMap := sent.RawResponse.(map[string]any); isMap && pyrepr.Truthy(raw["partial_overflow"]) {
 			break
 		}
-		streamLog().Debug(fmt.Sprintf(retryLog, delay))
+		pkgLog().Debug(fmt.Sprintf(retryLog, delay))
 		if !streamSleep(ctx, delay) {
 			return result, ctx.Err()
 		}
@@ -234,7 +234,7 @@ func (s *GatewayStreamConsumer) sendEmptyFallbackFinal(ctx context.Context, fina
 	staleIDs := s.stalePreviewIDs(true)
 	result, err := s.sendWithFloodRetry(ctx, finalText, s.initialReplyToID, "Flood control on empty fallback final send; retrying in %.1fs")
 	if err != nil {
-		streamLog().Debug("Empty fallback final send failed: " + pyrepr.ExceptionMessage(err))
+		pkgLog().Debug("Empty fallback final send failed: " + pyrepr.ExceptionMessage(err))
 		if sendErrorMayHaveDelivered(err) {
 			return "ambiguous"
 		}
@@ -293,7 +293,7 @@ func (s *GatewayStreamConsumer) fallbackFloodRetryDelay(result SendResult) (floa
 		delay = *result.RetryAfter
 	}
 	if delay > s.maxFallbackFloodRetrySeconds {
-		streamLog().Debug(fmt.Sprintf("Flood control requests %.1fs; leaving final delivery to the gateway", delay))
+		pkgLog().Debug(fmt.Sprintf("Flood control requests %.1fs; leaving final delivery to the gateway", delay))
 		return 0, false
 	}
 	return max(0.0, delay), true
@@ -331,7 +331,7 @@ func (s *GatewayStreamConsumer) flushSegmentTailOnEditFailure(ctx context.Contex
 	md["_interim_send"] = true
 	result, err := s.adapter.Send(ctx, s.chatID, tail, "", md)
 	if err != nil {
-		streamLog().Error("Segment-break tail flush error: " + pyrepr.ExceptionMessage(err))
+		pkgLog().Error("Segment-break tail flush error: " + pyrepr.ExceptionMessage(err))
 		return
 	}
 	if result.Success {
@@ -376,7 +376,7 @@ func (s *GatewayStreamConsumer) sendCommentary(ctx context.Context, text string)
 	}
 	result, err := s.adapter.Send(ctx, s.chatID, text, replyTo, md)
 	if err != nil {
-		streamLog().Error("Commentary send error: " + pyrepr.ExceptionMessage(err))
+		pkgLog().Error("Commentary send error: " + pyrepr.ExceptionMessage(err))
 		return false
 	}
 	if result.Success {
@@ -396,7 +396,7 @@ func (s *GatewayStreamConsumer) rawMessageLimit() int {
 		base = limit
 	}
 	if limit, err := s.adapter.MaxMessageLengthForChat(s.chatID); err != nil {
-		streamLog().Debug("max_message_length_for_chat failed: " + pyrepr.ExceptionMessage(err))
+		pkgLog().Debug("max_message_length_for_chat failed: " + pyrepr.ExceptionMessage(err))
 	} else {
 		base = limit
 	}
@@ -417,5 +417,5 @@ func (s *GatewayStreamConsumer) suppressSilenceMarker(ctx context.Context) {
 	s.accumulated, s.streamLedger, s.lastSentText = "", "", ""
 	s.alreadySent = false
 	s.clearTurnFinalFlags()
-	streamLog().Info(fmt.Sprintf("Suppressed streamed intentional-silence marker (chat=%s)", s.chatID))
+	pkgLog().Info(fmt.Sprintf("Suppressed streamed intentional-silence marker (chat=%s)", s.chatID))
 }

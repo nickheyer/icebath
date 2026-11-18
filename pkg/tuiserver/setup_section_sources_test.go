@@ -131,7 +131,7 @@ func TestSetupActionStartBindsTheParametersOfTheWalk(t *testing.T) {
 	if params := <-got; params["host"] != "box" {
 		t.Fatalf("params %v", params)
 	}
-	if lines, done, outcome := job.since(0); !done || !outcome || !reflect.DeepEqual(lines, []any{"echo box"}) {
+	if lines, _, done, outcome := job.since(0); !done || !outcome || !reflect.DeepEqual(lines, []any{"echo box"}) {
 		t.Fatalf("job %v %v %v", lines, done, outcome)
 	}
 	if _, known := setupActionFor("xai.oauth.login", nil); !known {
@@ -189,7 +189,7 @@ func TestTerminalSetupValuesProbeTheGatewayHost(t *testing.T) {
 	writeTestFile(t, filepath.Join(dir, ".vercel", "project.json"), `{"projectId": "prj_9", "orgId": "team_9"}`)
 	t.Setenv("USER", "deployer")
 	res := resultOf(t, contractCall(t, "setup.section.load", map[string]any{"values": []any{"terminal.vercel_linked:" + dir, "terminal.ssh_defaults",
-		"terminal.vercel_default_image", "terminal.docker", "terminal.modal_managed", "terminal.plugin_backends"}}))
+		"terminal.vercel_default_image", "terminal.docker", "terminal.plugin_backends"}}))
 	values := res["values"].(map[string]any)
 	if !reflect.DeepEqual(values["terminal.vercel_linked:"+dir], map[string]any{"projectId": "prj_9", "orgId": "team_9"}) {
 		t.Fatalf("linked %v", values)
@@ -198,7 +198,7 @@ func TestTerminalSetupValuesProbeTheGatewayHost(t *testing.T) {
 	if !reflect.DeepEqual(values["terminal.ssh_defaults"], map[string]any{"user": "deployer", "key": filepath.Join(homeDir, ".ssh", "id_rsa")}) {
 		t.Fatalf("ssh defaults %v", values["terminal.ssh_defaults"])
 	}
-	if values["terminal.vercel_default_image"] != config.DefaultVercelImage || values["terminal.modal_managed"] != false {
+	if values["terminal.vercel_default_image"] != config.DefaultVercelImage {
 		t.Fatalf("values %v", values)
 	}
 	if _, isMap := values["terminal.docker"].(map[string]any); !isMap {
@@ -225,25 +225,25 @@ func TestSpeechEngineInstallReportsTheSyncOutcome(t *testing.T) {
 	prevSync := syncSpeechEngine
 	t.Cleanup(func() { syncSpeechEngine = prevSync })
 	var synced []string
-	syncSpeechEngine = func(_ context.Context, extra string) error {
+	syncSpeechEngine = func(_ context.Context, extra string, _ io.Writer) error {
 		synced = append(synced, extra)
 		return nil
 	}
 	job := &setupJob{}
 	action, _ := setupActionFor("tts.install.kittentts", nil)
 	job.run(context.Background(), "", action)
-	lines, done, outcome := job.since(0)
+	lines, _, done, outcome := job.since(0)
 	if !done || !outcome || !reflect.DeepEqual(synced, []string{"kittentts"}) ||
-		!reflect.DeepEqual(lines, []any{"Installing kittentts Python package (~25-80MB model downloaded on first use)...", "kittentts installed. Restart Icebath to use it."}) {
+		!reflect.DeepEqual(lines, []any{"Installing kittentts Python package (~25-80MB model downloaded on first use)...", "kittentts installed and ready to speak."}) {
 		t.Fatalf("job %v %v %v synced %v", lines, done, outcome, synced)
 	}
-	syncSpeechEngine = func(context.Context, string) error {
+	syncSpeechEngine = func(context.Context, string, io.Writer) error {
 		return &os.PathError{Op: "open", Path: "/venv", Err: os.ErrPermission}
 	}
 	job = &setupJob{}
 	action, _ = setupActionFor("tts.install.neutts", nil)
 	job.run(context.Background(), "", action)
-	lines, _, outcome = job.since(0)
+	lines, _, _, outcome = job.since(0)
 	if outcome || len(lines) != 4 || !strings.HasPrefix(lines[2].(string), "Failed to install neutts: ") || lines[3] != "Retry with /setup tts" {
 		t.Fatalf("job %v %v", lines, outcome)
 	}

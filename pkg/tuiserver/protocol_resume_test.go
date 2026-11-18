@@ -2,7 +2,6 @@ package tuiserver
 
 import (
 	"context"
-	"maps"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -11,7 +10,7 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/internal/pythread"
 	"github.com/nickheyer/icebath/pkg/state"
-	"github.com/nickheyer/icebath/pkg/tuigateway"
+	"github.com/nickheyer/icebath/pkg/tuihost"
 )
 
 // Launch store whose resume cap is three messages, so a four row transcript is a runaway one
@@ -147,7 +146,7 @@ func TestDeferredHydrationFallsBackToTipWhenLineageExceedsLimit(t *testing.T) {
 	session.Set("resume_history_ready", ready)
 	session.Set("resume_hydrating", true)
 	session.Set("resume_message_count", 28_730)
-	swapSessions(t, map[string]*tuigateway.Session{"hyd": session})
+	swapSessions(t, map[string]*tuihost.Session{"hyd": session})
 	scheduleResumeHydration(context.Background(), "hyd", "deep-lineage", db, false)
 	if !ready.Wait(5) {
 		t.Fatal("hydration never finished")
@@ -166,28 +165,5 @@ func TestDeferredHydrationFallsBackToTipWhenLineageExceedsLimit(t *testing.T) {
 	}
 	if m, _ := history[0].(map[string]any); m["role"] != "user" || m["content"] != "tip" {
 		t.Fatalf("history %v", history)
-	}
-}
-
-func TestSessionBranchStoredAcceptsIdempotencyKey(t *testing.T) {
-	db := resumeDB(t)
-	swapSessions(t, map[string]*tuigateway.Session{})
-	storeTranscript(t, db, "parent", "",
-		map[string]any{"role": "user", "content": "first question", "timestamp": 1},
-		map[string]any{"role": "assistant", "content": "first answer", "timestamp": 2})
-	params := map[string]any{"cols": 96, "parent_session_id": "parent", "source": "tui", "idempotency_key": "branch-stored-retry-abc"}
-	call := func(rid string) string {
-		t.Helper()
-		return createdSID(t, handleRequest(context.Background(), map[string]any{"id": rid, "method": "session.branch_stored", "params": maps.Clone(params)}))
-	}
-	first := call("b1")
-	if n := len(tuigateway.LiveSessions()); n != 1 {
-		t.Fatalf("%d live sessions", n)
-	}
-	if second := call("b2"); second != first {
-		t.Fatalf("retry created %s, first %s", second, first)
-	}
-	if n := len(tuigateway.LiveSessions()); n != 1 {
-		t.Fatalf("%d live sessions after retry", n)
 	}
 }

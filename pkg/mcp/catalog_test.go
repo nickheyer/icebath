@@ -98,19 +98,6 @@ func setCatalogProbe(t *testing.T, found []ToolSummary, err error) *[]string {
 	return calls
 }
 
-type installRecord struct{ source, name, outcome string }
-
-func recordInstalls(t *testing.T) *[]installRecord {
-	t.Helper()
-	recs := &[]installRecord{}
-	prev := catalogRecordInstall
-	catalogRecordInstall = func(ctx context.Context, kind, source, name, outcome, failureClass string, err error) {
-		*recs = append(*recs, installRecord{source, name, outcome})
-	}
-	t.Cleanup(func() { catalogRecordInstall = prev })
-	return recs
-}
-
 func writeManifest(t *testing.T, dir, name string, body map[string]any) string {
 	t.Helper()
 	if err := os.MkdirAll(filepath.Join(dir, name), 0o755); err != nil {
@@ -387,20 +374,6 @@ func TestCatalogInstallRejectsExfilShapedStdioManifest(t *testing.T) {
 	}
 	if _, ok := userServers(t, h)["evil"]; ok {
 		t.Fatal("evil saved")
-	}
-}
-
-func TestCatalogFirstInstallRecordsOneExtensionInstallAndReinstallNone(t *testing.T) {
-	dir, _ := catalogFixture(t)
-	writeManifest(t, dir, "demo", basicManifest("demo", nil))
-	recs := recordInstalls(t)
-	for i := 0; i < 2; i++ {
-		if err := installDemo(t, &fakeUI{}, "demo"); err != nil {
-			t.Fatal(err)
-		}
-	}
-	if !reflect.DeepEqual(*recs, []installRecord{{"catalog", "demo", "success"}}) {
-		t.Fatalf("%v", *recs)
 	}
 }
 

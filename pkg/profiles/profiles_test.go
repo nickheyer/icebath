@@ -120,7 +120,7 @@ func TestValidateProfileNameReservedDefaultAndSuggestion(t *testing.T) {
 	}
 }
 
-func TestGetProfileDirDefaultReturnsHermesHome(t *testing.T) {
+func TestGetProfileDirDefaultReturnsIcebathHome(t *testing.T) {
 	tmp := profileEnv(t)
 	if got, err := GetProfileDir("default"); err != nil || got != filepath.Join(tmp, ".icebath") {
 		t.Fatalf("default %q %v", got, err)

@@ -21,10 +21,10 @@ func pickerTestHome(t *testing.T, live func(apiKey, baseURL string) ([]string, b
 	t.Helper()
 	newTestHome(t)
 	savedDev, savedOverlays, savedFetch, savedCached := pickerFetchModelsDevFn, icebathOverlays, fetchAPIModelsFn, cachedProviderModelIDsFn
-	savedIDs, savedNous, savedCloud, savedPrefetch, savedPool := providerModelIDsFn, curatedNousModelIDsFn, pickerOllamaCloudFn, pickerPrefetchFn, pickerLoadPoolFn
+	savedIDs, savedCloud, savedPrefetch, savedPool := providerModelIDsFn, pickerOllamaCloudFn, pickerPrefetchFn, pickerLoadPoolFn
 	t.Cleanup(func() {
 		pickerFetchModelsDevFn, icebathOverlays, fetchAPIModelsFn, cachedProviderModelIDsFn = savedDev, savedOverlays, savedFetch, savedCached
-		providerModelIDsFn, curatedNousModelIDsFn, pickerOllamaCloudFn, pickerPrefetchFn, pickerLoadPoolFn = savedIDs, savedNous, savedCloud, savedPrefetch, savedPool
+		providerModelIDsFn, pickerOllamaCloudFn, pickerPrefetchFn, pickerLoadPoolFn = savedIDs, savedCloud, savedPrefetch, savedPool
 		ResetProviderModelsCaches()
 	})
 	ResetProviderModelsCaches()
@@ -40,7 +40,6 @@ func pickerTestHome(t *testing.T, live func(apiKey, baseURL string) ([]string, b
 	}
 	cachedProviderModelIDsFn = func(context.Context, string, CachedModelsOptions) []string { return []string{} }
 	providerModelIDsFn = func(context.Context, string, bool) CatalogRows { return CatalogRows{} }
-	curatedNousModelIDsFn = func(context.Context) []string { return []string{} }
 	pickerOllamaCloudFn = func(context.Context, OllamaCloudFetch) []string { return nil }
 	pickerPrefetchFn = func(context.Context, []string) {}
 	savedOllama := fetchOllamaLocalModelsFn
@@ -252,7 +251,7 @@ func TestCurrentCustomModelIsSurfacedInBuiltinProviderRow(t *testing.T) {
 func TestCurrentCustomModelNotLeakedIntoOtherProviderRows(t *testing.T) {
 	ctx, _ := pickerTestHome(t, nil)
 	t.Setenv("OPENROUTER_API_KEY", "sk-test")
-	t.Setenv("NOUS_API_KEY", "sk-test")
+	t.Setenv("DEEPSEEK_API_KEY", "sk-test")
 	cachedProviderModelIDsFn = func(context.Context, string, CachedModelsOptions) []string { return []string{"curated/one"} }
 	custom := "some-vendor/totally-custom-model-v9"
 	rows := mustListProviders(t, ctx, AuthenticatedProvidersOptions{CurrentProvider: "openrouter", CurrentModel: custom, UserProviders: map[string]any{}, CustomProviders: []any{}})

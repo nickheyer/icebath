@@ -15,7 +15,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/internal/pydict"
 	"github.com/nickheyer/icebath/pkg/state"
-	"github.com/nickheyer/icebath/pkg/tuigateway"
+	"github.com/nickheyer/icebath/pkg/tuihost"
 )
 
 // Earlier queued release holding the single release worker until told to finish
@@ -348,7 +348,7 @@ func TestATUIClaimOfTheSessionAGatewayTurnJustEndedIsNotAlreadyOwned(t *testing.
 		t.Fatal("stuck release never started")
 	}
 	leaseGW := endGatewayTurn(t, r, key, src)
-	leaseView, refusal := tuigateway.ClaimActiveSessionSlotRefusal(context.Background(), key, "tui-view", "tui", tmp)
+	leaseView, refusal := tuihost.ClaimActiveSessionSlotRefusal(context.Background(), key, "tui-view", "tui", tmp)
 	if refusal != nil {
 		t.Fatalf("the TUI saw the ended gateway turn as the session's owner: %s", refusal.PyStr())
 	}

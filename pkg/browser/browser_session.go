@@ -37,7 +37,7 @@ var (
 	sessionInactivity   = sync.OnceValue(func() int { return getSessionInactivityTimeout(processBrowserEnv()) })
 )
 
-// Collaborators of session creation and teardown, the points hermes tests patch
+// Collaborators of session creation and teardown, the points tests patch
 var (
 	sessionLaunchChromium   = launchChromium
 	sessionCloudProvider    = getCloudProvider

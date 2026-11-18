@@ -120,9 +120,9 @@ func (t *TurnRunner) loadTurnHistory(ctx context.Context, a *agent.AIAgent, reus
 				pyrepr.Str(len(agentHistory)) + ", memory=" + pyrepr.Str(len(selected)) + ", consecutive_turns=" +
 				pyrepr.Str(streak) + "); preserving live conversation context (possible FTS write corruption)" + suffix
 			if streak >= transcriptLagEscalationTurns {
-				runLog().Error(msg)
+				pkgLog().Error(msg)
 			} else {
-				runLog().Warn(msg)
+				pkgLog().Warn(msg)
 			}
 			agentHistory = agent.CanonicalizeReplayHistory(selected, nil)
 		} else {
@@ -307,7 +307,7 @@ func (t *TurnRunner) syncSessionAfterRun(ctx context.Context, agentHistory []map
 	}
 	sessionWasSplit := a != nil && tc.sessionKey != "" && agentSessionID != tc.sessionID
 	if sessionWasSplit {
-		runLog().Info("Session split detected: " + tc.sessionID + " → " + agentSessionID + " (compression)")
+		pkgLog().Info("Session split detected: " + tc.sessionID + " → " + agentSessionID + " (compression)")
 		entry := r.sessionStore.LoadedEntry(ctx, tc.sessionKey)
 		persisted := false
 		if entry != nil {
@@ -321,11 +321,11 @@ func (t *TurnRunner) syncSessionAfterRun(ctx context.Context, agentHistory []map
 				if tc.runGeneration != nil {
 					generation = pyrepr.Str(*tc.runGeneration)
 				}
-				runLog().Info("Skipping session split sync for stale run " + keyLabel + " — generation " + generation + " is no longer current")
+				pkgLog().Info("Skipping session split sync for stale run " + keyLabel + " — generation " + generation + " is no longer current")
 			case entry.SessionID == agentSessionID:
 				persisted = true
 			case entry.SessionID != tc.sessionID:
-				runLog().Info("Skipping session split sync for " + keyLabel + " because the session binding moved from " + tc.sessionID + " to " + entry.SessionID + " before compression finished")
+				pkgLog().Info("Skipping session split sync for " + keyLabel + " because the session binding moved from " + tc.sessionID + " to " + entry.SessionID + " before compression finished")
 			default:
 				entry.SessionID = agentSessionID
 				if err := r.sessionStore.Save(ctx); err != nil {

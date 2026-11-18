@@ -5,6 +5,7 @@ import (
 	"math"
 	"strings"
 
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
 
@@ -51,7 +52,7 @@ func seqIter(v any) ([]any, error) {
 	case string, map[string]any, pyObject:
 		return pyIter(v), nil
 	}
-	return nil, fmt.Errorf("TypeError: '%s' object is not iterable", seqTypeName(v))
+	return nil, fmt.Errorf("expected a list, got %s", errchain.Kind(v))
 }
 
 // Python type name of a value for exception text
@@ -233,7 +234,7 @@ func rememberAbsorbedRow(survivor, dropped map[string]any, folded bool) error {
 		retired, _ := listItems(survivor[RetiredDurableRows])
 		for _, row := range rows {
 			if !isMapping(row) {
-				return fmt.Errorf("AttributeError: '%s' object has no attribute 'items'", seqTypeName(row))
+				return fmt.Errorf("an absorbed row is %s, expected a mapping", errchain.Kind(row))
 			}
 			copied := map[string]any{}
 			for _, kv := range seqItems(row) {
@@ -275,7 +276,7 @@ func seqHasOwnRow(recorded any, requireMapping bool) (bool, error) {
 			if requireMapping {
 				continue
 			}
-			return false, fmt.Errorf("AttributeError: '%s' object has no attribute 'get'", seqTypeName(row))
+			return false, fmt.Errorf("a recorded row is %s, expected a mapping", errchain.Kind(row))
 		}
 		if v, _ := mappingGet(row, OwnRow); seqTruthy(v) {
 			return true, nil
@@ -476,7 +477,7 @@ func pruneUnansweredToolCalls(messages []map[string]any) ([]map[string]any, int,
 			}
 			s, ok := raw.(string)
 			if !ok {
-				return nil, 0, fmt.Errorf("AttributeError: '%s' object has no attribute 'strip'", seqTypeName(raw))
+				return nil, 0, fmt.Errorf("a tool_call_id is %s, expected text", errchain.Kind(raw))
 			}
 			if tid := pystr.Strip(s); tid != "" {
 				for id := range ToolResultIDVariants(tid) {

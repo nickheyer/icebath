@@ -3,7 +3,6 @@ package provider
 import (
 	"errors"
 	"fmt"
-	"log/slog"
 	"math"
 	"net/http"
 	"reflect"
@@ -208,7 +207,7 @@ func orDash(s string) string {
 func LogStreamRetry(agent StreamDiagAgent, kind string, err error, attempt, maxAttempts int, midToolCall bool, diag *StreamDiag) {
 	defer func() {
 		if r := recover(); r != nil {
-			slog.Debug("stream-retry log emit failed", "panic", r)
+			pkgLog().Debug("stream-retry log emit failed", "panic", r)
 		}
 	}()
 	summary := summarizeForRetryLog(agent, err)
@@ -220,7 +219,7 @@ func LogStreamRetry(agent StreamDiagAgent, kind string, err error, attempt, maxA
 		subagentID, depth = orDash(ident.SubagentID()), ident.DelegateDepth()
 	}
 	f := diagFields(diag)
-	slog.Warn(fmt.Sprintf("Stream %s on attempt %d/%d — retrying. subagent_id=%s depth=%d provider=%s base_url=%s "+
+	pkgLog().Warn(fmt.Sprintf("Stream %s on attempt %d/%d — retrying. subagent_id=%s depth=%d provider=%s base_url=%s "+
 		"error_type=%s error=%s chain=%s http_status=%s bytes=%d chunks=%d elapsed=%.2fs ttfb=%s "+
 		"serving_provider=%s finish_reason_seen=%s upstream=[%s]",
 		kind, attempt, maxAttempts, subagentID, depth, orDash(agent.StreamProvider()), orDash(agent.StreamBaseURL()),

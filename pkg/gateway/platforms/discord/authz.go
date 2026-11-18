@@ -3,7 +3,6 @@ package discord
 import (
 	"context"
 	"fmt"
-	"log/slog"
 	"strconv"
 	"strings"
 	"time"
@@ -213,7 +212,7 @@ func (a *DiscordAdapter) warnIfFailClosedDefault(ctx context.Context) {
 	a.mu.Lock()
 	a.warnedFailClosedDefault = true
 	a.mu.Unlock()
-	slog.Warn(fmt.Sprintf("[%s] Discord messages are being denied because no allowlist is configured. "+
+	pkgLog().Warn(fmt.Sprintf("[%s] Discord messages are being denied because no allowlist is configured. "+
 		"Set DISCORD_ALLOWED_USERS, DISCORD_ALLOWED_ROLES, or DISCORD_ALLOWED_CHANNELS, or set DISCORD_ALLOW_ALL_USERS=true for open access.", a.Name()))
 }
 
@@ -297,7 +296,7 @@ func (a *DiscordAdapter) discordMessageAdmission(ctx context.Context, m *inbound
 				}
 				free := a.discordFreeResponseChannels(ctx)
 				if !free.has("*") && !a.discordChannelKeys(m, parentID).intersects(free) {
-					slog.Debug(fmt.Sprintf("[%s] admission: dropping message %s — mentions others, not self, not a bot thread, channel not free-response", a.Name(), m.ID))
+					pkgLog().Debug(fmt.Sprintf("[%s] admission: dropping message %s — mentions others, not self, not a bot thread, channel not free-response", a.Name(), m.ID))
 					return false, false
 				}
 			}

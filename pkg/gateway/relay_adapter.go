@@ -15,8 +15,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/state"
 )
 
-func relayAdapterLog() *slog.Logger { return slog.Default().With("logger", "gateway.relay.adapter") }
-
 // Store refusal reasons a connector delivery is acknowledged for instead of replayed
 var relayPermanentRefusals = map[string]bool{"permission_denied": true, "invalid_params": true, "admission_conflict": true,
 	"profile_mismatch": true, "not_found": true}
@@ -186,26 +184,6 @@ func (a *RelayAdapter) chatPlatform(chatID string) string {
 	return a.Descriptor().Platform
 }
 
-// Platform a chat's shared metrics carry, the primary only when one platform is fronted
-func (a *RelayAdapter) metricsPlatform(chatID string) string {
-	a.mu.Lock()
-	p := a.platformByChat[chatID]
-	a.mu.Unlock()
-	if p != "" {
-		return p
-	}
-	fronted := map[string]bool{}
-	if ws, ok := a.transport.(*WebSocketRelayTransport); ok {
-		for _, id := range ws.identities {
-			fronted[id[0]] = true
-		}
-	}
-	if len(fronted) <= 1 {
-		return a.Descriptor().Platform
-	}
-	return ""
-}
-
 // Warning policy of the logical platform, the metadata or chat platform standing in
 func (a *RelayAdapter) WarningNotificationsEnabled(ctx context.Context, logicalPlatform Platform, chatID string, metadata map[string]any) bool {
 	platform := string(logicalPlatform)
@@ -312,7 +290,7 @@ func (a *RelayAdapter) matchOpenDraft(chatID string, metadata map[string]any) (s
 		}
 	}
 	if len(candidates) == 1 {
-		relayAdapterLog().Info(fmt.Sprintf("relay: absorbing identity-less send into the single open stream %s (single-open-stream fallback)", candidates[0]))
+		pkgLog().Info(fmt.Sprintf("relay: absorbing identity-less send into the single open stream %s (single-open-stream fallback)", candidates[0]))
 		return candidates[0], true
 	}
 	return "", false
@@ -360,7 +338,7 @@ func (a *RelayAdapter) gatedOp(ctx context.Context, chatID string, action map[st
 	}
 	result, err := a.transport.SendOutbound(ctx, action, platform)
 	if err != nil {
-		relayAdapterLog().Debug(fmt.Sprintf("relay %s transport failure", op), "exc_info", err)
+		pkgLog().Debug(fmt.Sprintf("relay %s transport failure", op), "exc_info", err)
 		return nil
 	}
 	subject := o.subject
@@ -379,7 +357,7 @@ func (a *RelayAdapter) gatedOp(ctx context.Context, chatID string, action map[st
 			return nil
 		}
 		if o.declineLevel != nil {
-			relayAdapterLog().Log(ctx, *o.declineLevel, fmt.Sprintf("relay %s declined for %s: %s", op, pyrepr.Str(subject), pyrepr.Str(result["error"])))
+			pkgLog().Log(ctx, *o.declineLevel, fmt.Sprintf("relay %s declined for %s: %s", op, pyrepr.Str(subject), pyrepr.Str(result["error"])))
 		}
 		return nil
 	}

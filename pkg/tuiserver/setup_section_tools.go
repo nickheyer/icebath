@@ -91,16 +91,6 @@ func RunToolsSetupFlow(ctx context.Context, h string, ask setupflow.Asker) error
 		return err
 	}
 	return tools.RunToolsFlow(ctx, env, ask, tools.ToolsFlowHooks{
-		Consent: func(ctx context.Context, _ string, cfg config.Tree, ask setupflow.Asker) error {
-			return provider.SharedMetricsSectionConsent(ctx, map[string]any(cfg), ask)
-		},
-		PortalAccess: func(ctx context.Context, h string, out io.Writer, capability, coverage string, ask setupflow.Asker) bool {
-			confirm := func(question string) (bool, error) {
-				idx, err := ask.Choose(question, []setupflow.Option{{Title: "Yes"}, {Title: "No"}}, 0)
-				return idx == 0, err
-			}
-			return provider.NousPortalSectionAccess(setupPoolEnv(ctx, h), out, capability, coverage, confirm)
-		},
 		ConfigureMCP: func(ctx context.Context, cfg config.Tree, ask setupflow.Asker) error {
 			ui := &mcpFlowUI{ask: ask, out: setupflow.Lines(ask)}
 			if err := mcp.ConfigureMCPToolsInteractive(ctx, env, ui, cfg); err != nil {

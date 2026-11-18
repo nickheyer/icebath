@@ -10,7 +10,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/tools"
 )
 
-// Fresh turn tool environment with the scoped profile's secrets and every session variable of the context bound
+// Fresh turn tool environment with the scoped profile's config, secrets and every session variable of the context bound
 func (r *GatewayRunner) setSessionEnv(ctx context.Context, sc *gateway.SessionContext) (*tools.Env, error) {
 	source, err := gateway.SessionEnvSource(ctx, r, sc.Source)
 	if err != nil {
@@ -33,7 +33,12 @@ func (r *GatewayRunner) setSessionEnv(ctx context.Context, sc *gateway.SessionCo
 	}
 	cronSession := ""
 	h := home.Dir(ctx)
-	env := &tools.Env{Home: h, Secrets: config.NewSecrets(h), Values: &sync.Map{}}
+	secrets := config.NewSecrets(h)
+	tree, err := config.LoadReadonly(ctx, h, secrets.Lookup())
+	if err != nil {
+		return nil, err
+	}
+	env := &tools.Env{Home: h, Config: tree, Secrets: secrets, Values: &sync.Map{}}
 	tools.SetSessionVars(env, tools.SessionVars{
 		Platform: string(source.Platform), ChatID: source.ChatID, ChatType: source.ChatType,
 		ChatName: optText(source.ChatName), ThreadID: optText(source.ThreadID), UserID: optText(source.UserID),

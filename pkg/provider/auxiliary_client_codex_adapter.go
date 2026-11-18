@@ -4,9 +4,9 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"log/slog"
 	"strings"
+
+	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/providerregistry"
@@ -356,7 +356,7 @@ func (a *auxCodexCompletionsAdapter) create(ctx context.Context, kwargs map[stri
 		if guard.timedOut.Load() {
 			return &AuxTimeoutError{Message: guard.timeoutMessage(), Err: cause}
 		}
-		slog.Debug(fmt.Sprintf("Codex auxiliary Responses API call failed: %v", cause))
+		pkgLog().Debug(fmt.Sprintf("Codex auxiliary Responses API call failed: %v", cause))
 		return cause
 	}
 	if err := auxCodexGuardBeginFn(guard); err != nil {

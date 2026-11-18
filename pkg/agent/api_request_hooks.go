@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/state"
@@ -84,7 +85,7 @@ var apiRequestErrorHookRequired = []string{"task_id", "turn_id", "api_request_id
 func (a *AIAgent) invokeAPIRequestErrorHook(ctx context.Context, kwargs map[string]any) {
 	for _, k := range apiRequestErrorHookRequired {
 		if _, ok := kwargs[k]; !ok {
-			panic(fmt.Sprintf("TypeError: _invoke_api_request_error_hook() missing 1 required keyword-only argument: '%s'", k))
+			panic(fmt.Sprintf("the API request error hook needs %s", k))
 		}
 	}
 	defer func() {
@@ -98,7 +99,7 @@ func (a *AIAgent) invokeAPIRequestErrorHook(ctx context.Context, kwargs map[stri
 	endedAt := float64(time.Now().UnixNano()) / 1e9
 	startedAt, ok := numericOperand(kwargs["api_start_time"])
 	if !ok {
-		panic(fmt.Sprintf("TypeError: unsupported operand type(s) for -: 'float' and '%s'", pyrepr.TypeName(kwargs["api_start_time"])))
+		panic(fmt.Sprintf("api_start_time is %s, expected a number", errchain.Kind(kwargs["api_start_time"])))
 	}
 	apiKwargs, _ := kwargs["api_kwargs"].(map[string]any)
 	lifecycleInvokeHook(ctx, "api_request_error", map[string]any{

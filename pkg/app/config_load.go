@@ -17,12 +17,9 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
-	"github.com/nickheyer/icebath/pkg/logging"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/state"
 )
-
-var cliLog = logging.GetLogger("cli")
 
 var (
 	cliConfigMu     sync.Mutex
@@ -66,22 +63,22 @@ func loadPrefillMessages(ctx context.Context, filePath, baseDir string) []any {
 		path = filepath.Join(baseDir, path)
 	}
 	if _, err := os.Stat(path); err != nil {
-		cliLog.Warning(fmt.Sprintf("Prefill messages file not found: %s", path))
+		pkgLog().Warn(fmt.Sprintf("Prefill messages file not found: %s", path))
 		return []any{}
 	}
 	raw, err := os.ReadFile(path)
 	if err != nil {
-		cliLog.Warning(fmt.Sprintf("Failed to load prefill messages from %s: %s", path, err))
+		pkgLog().Warn(fmt.Sprintf("Failed to load prefill messages from %s: %s", path, err))
 		return []any{}
 	}
 	data, err := pyjson.Loads(strings.TrimPrefix(string(raw), "\ufeff"))
 	if err != nil {
-		cliLog.Warning(fmt.Sprintf("Failed to load prefill messages from %s: %s", path, err))
+		pkgLog().Warn(fmt.Sprintf("Failed to load prefill messages from %s: %s", path, err))
 		return []any{}
 	}
 	list, ok := pyjson.Plain(data).([]any)
 	if !ok {
-		cliLog.Warning(fmt.Sprintf("Prefill messages file must contain a JSON array: %s", path))
+		pkgLog().Warn(fmt.Sprintf("Prefill messages file must contain a JSON array: %s", path))
 		return []any{}
 	}
 	return list
@@ -113,7 +110,7 @@ func strOrEmpty(v any) string {
 func parseReasoningConfig(effort any) map[string]any {
 	result := config.ParseReasoningEffort(effort)
 	if pyrepr.Truthy(effort) && strings.TrimSpace(pyrepr.Str(effort)) != "" && result == nil {
-		cliLog.Warning(fmt.Sprintf("Unknown reasoning_effort '%s', using default (medium)", pyrepr.Str(effort)))
+		pkgLog().Warn(fmt.Sprintf("Unknown reasoning_effort '%s', using default (medium)", pyrepr.Str(effort)))
 	}
 	return result
 }
@@ -122,7 +119,7 @@ func parseReasoningConfig(effort any) map[string]any {
 func parseServiceTierConfig(raw string) string {
 	tier := provider.ParseServiceTier(raw)
 	if tier == "" && !provider.NormalTierWords[strings.ToLower(strings.TrimSpace(raw))] {
-		cliLog.Warning(fmt.Sprintf("Unknown service_tier '%s', ignoring", raw))
+		pkgLog().Warn(fmt.Sprintf("Unknown service_tier '%s', ignoring", raw))
 	}
 	return tier
 }
@@ -347,7 +344,7 @@ func LoadCLIConfig(ctx context.Context) map[string]any {
 	if exists, _ = config.ConfigExists(ctx, configPath); exists {
 		doc, err := config.ReadConfigDoc(ctx, configPath)
 		if err != nil {
-			cliLog.Warning(fmt.Sprintf("Failed to load cli-config.yaml: %s", err))
+			pkgLog().Warn(fmt.Sprintf("Failed to load cli-config.yaml: %s", err))
 		} else {
 			fileConfig, _ := doc.(map[string]any)
 			if fileConfig == nil {

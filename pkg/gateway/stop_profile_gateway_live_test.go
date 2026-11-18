@@ -19,11 +19,11 @@ func lookalikeRecord(t *testing.T, holder *lockHolder, binDir, ownerHome, pidFil
 		t.Fatal(err)
 	}
 	raw, err := json.Marshal(map[string]any{
-		"pid":         holder.pid,
-		"kind":        gatewayKind,
-		"argv":        []string{filepath.Join(binDir, "icebath"), "gateway", "run"},
-		"start_time":  GetProcessStartTime(holder.pid),
-		"hermes_home": ownerHome,
+		"pid":          holder.pid,
+		"kind":         gatewayKind,
+		"argv":         []string{filepath.Join(binDir, "icebath"), "gateway", "run"},
+		"start_time":   GetProcessStartTime(holder.pid),
+		"icebath_home": ownerHome,
 	})
 	if err != nil {
 		t.Fatal(err)

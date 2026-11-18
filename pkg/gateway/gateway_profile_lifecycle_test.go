@@ -104,7 +104,7 @@ func forbidStopEffects(t *testing.T, why string) {
 
 func ownGatewayPid(t *testing.T) (int, bool) {
 	t.Helper()
-	return ownedGatewayPID(context.Background(), "", processHermesHome())
+	return ownedGatewayPID(context.Background(), "", processIcebathHome())
 }
 
 func gatewayPids(t *testing.T) []int {
@@ -188,7 +188,7 @@ func TestStickyProfileForceGatewayStaysStoppable(t *testing.T) {
 	writeLifecycleFile(t, filepath.Join(root, "active_profile"), "default\n")
 	record, err := json.Marshal(map[string]any{
 		"pid": pid, "kind": gatewayKind, "argv": []string{"icebath", "gateway", "run", "--force"},
-		"start_time": statusProcessStartTime(pid), "hermes_home": secondary,
+		"start_time": statusProcessStartTime(pid), "icebath_home": secondary,
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -200,7 +200,7 @@ func TestStickyProfileForceGatewayStaysStoppable(t *testing.T) {
 		return map[string]string{"ICEBATH_HOME": root, "HOME": filepath.Dir(root)}, nil
 	})
 	runningPid(t, pid, nil)
-	if h, ok, err := HermesHomeForPID(context.Background(), pid, true); err != nil || ok {
+	if h, ok, err := IcebathHomeForPID(context.Background(), pid, true); err != nil || ok {
 		t.Fatalf("launch identity home = %q %v %v", h, ok, err)
 	}
 	if got, ok := ownGatewayPid(t); !ok || got != pid {
@@ -357,7 +357,7 @@ func TestStickyProfileCannotReassignRunningHost(t *testing.T) {
 				return []string{"icebath", "gateway", "run"}, true
 			})
 			writeLifecycleFile(t, filepath.Join(root, "active_profile"), "worker\n")
-			if h, ok, err := HermesHomeForPID(context.Background(), lifecycleHostPID, false); err != nil || !ok || h != secondary {
+			if h, ok, err := IcebathHomeForPID(context.Background(), lifecycleHostPID, false); err != nil || !ok || h != secondary {
 				t.Fatalf("sticky home = %q %v %v", h, ok, err)
 			}
 			probeAnswers(t, nil)

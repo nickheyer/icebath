@@ -152,7 +152,7 @@ func TestOtherAuthStoreWritesKeepThePluginGrant(t *testing.T) {
 	if err := pluginOAuthWriteGrant(env, "voice:acme", map[string]any{"access_token": "at"}); err != nil {
 		t.Fatal(err)
 	}
-	if err := env.Store.Update(func(data AuthData) (bool, error) { data["active_provider"] = "nous"; return true, nil }); err != nil {
+	if err := env.Store.Update(func(data AuthData) (bool, error) { data["active_provider"] = "openai-codex"; return true, nil }); err != nil {
 		t.Fatal(err)
 	}
 	if row, _ := pluginOAuthReadGrant(env, "voice:acme"); row["access_token"] != "at" {

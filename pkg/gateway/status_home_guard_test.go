@@ -27,7 +27,7 @@ func TestRuntimeRecordStampedForAnotherHomeIsNotThisHomesGateway(t *testing.T) {
 	}
 	original := filepath.Join(root, "profiles", "eagle")
 	foreign := rec("pid", int64(livePID), "kind", "icebath-gateway", "gateway_state", "running", "start_time", int64(1000),
-		"argv", strs("python", "-m", "icebath_cli.main", "-p", "eagle", "gateway", "run"), "hermes_home", original)
+		"argv", strs("python", "-m", "icebath_cli.main", "-p", "eagle", "gateway", "run"), "icebath_home", original)
 	writeRecord(t, filepath.Join(copied, "gateway_state.json"), foreign)
 	if pid, ok, err := GetRuntimeStatusRunningPid(foreign, copied); err != nil || ok {
 		t.Fatalf("copied home owns %d %v %v", pid, ok, err)

@@ -18,7 +18,7 @@ func keylessRescueEnabled(env *Env) bool {
 // Did the vendor's own provider route this call through the anonymous keyless ring
 func ringVendorKeyless(env *Env, name string) bool {
 	if name == "firecrawl" {
-		return firecrawlUseKeylessRing(env, "")
+		return firecrawlUseKeylessRing(env)
 	}
 	key := ""
 	if keyVar := ringKeyVars[name]; keyVar != "" {
@@ -34,41 +34,6 @@ func headRunes(s string, n int) string {
 		return string(r[:n])
 	}
 	return s
-}
-
-// Managed Firecrawl for a failed managed Perplexity call, nil leaves the original error for keyless rescue
-func managedSearchFallback(ctx webCallContext, provider WebProvider, originalError, query string, limit int) *WebSearchResponse {
-	env := ctx.env
-	if provider == nil || provider.Name() != "perplexity" || secretValue(env, "PERPLEXITY_API_KEY") != "" || !managedWebSearch(env) || !firecrawlGatewayReady(env) {
-		return nil
-	}
-	envLog(env).Warn("web_search managed Perplexity failed; serving this call from managed Firecrawl", "error", headRunes(originalError, 200))
-	var resp *WebSearchResponse
-	if firecrawl := webProvider(env, "firecrawl"); firecrawl != nil {
-		r, err := firecrawl.Search(ctx.ctx, env, query, limit)
-		if err != nil {
-			resp = searchFail(err.Error())
-		} else {
-			resp = r
-		}
-	} else {
-		resp = searchFail("firecrawl provider is not registered")
-	}
-	if resp == nil || !resp.Success {
-		msg := ""
-		if resp != nil {
-			msg = resp.Error
-		}
-		envLog(env).Warn("managed Firecrawl fallback failed too", "error", headRunes(msg, 200))
-		return nil
-	}
-	if originalError == "" {
-		originalError = "unknown error"
-	}
-	data := resp.data()
-	data.FallbackFrom = "managed_primary"
-	data.BackendError = "Primary managed search failed this call (" + headRunes(originalError, 300) + "); result served by the managed fallback. The next call will use the primary again."
-	return resp
 }
 
 // True when a failed call on the provider should get a one shot rescue

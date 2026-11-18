@@ -117,7 +117,7 @@ func TestAnthropicTruncatedResponseNormalization(t *testing.T) {
 }
 
 func TestAnthropicSanitizeKwargsStripsResponsesOnlyKeys(t *testing.T) {
-	payload := map[string]any{"model": "claude-sonnet-4-6", "instructions": "You are Hermes.", "input": []any{map[string]any{"role": "user", "content": "hi"}},
+	payload := map[string]any{"model": "claude-sonnet-4-6", "instructions": "You are Icebath.", "input": []any{map[string]any{"role": "user", "content": "hi"}},
 		"store": false, "parallel_tool_calls": true}
 	anthSanitizeKwargs(payload, "")
 	anthMustEqualJSON(t, payload, map[string]any{"model": "claude-sonnet-4-6"})

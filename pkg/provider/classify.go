@@ -8,7 +8,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"log/slog"
 	"net"
 	"net/http"
 	"net/url"
@@ -131,18 +130,16 @@ var RetryableClientReasons = map[FailoverReason]bool{
 }
 
 var (
-	freeTierRefusalPatterns = []string{"model_not_supported_on_free_tier", "not available on the free tier"}
-	billingPatterns         = append([]string{
+	billingPatterns = []string{
 		"insufficient credits", "insufficient_quota", "insufficient balance", "credit balance",
 		"credits exhausted", "credits have been exhausted", "requires available credits",
 		"account balance is too low", "no usable credits", "top up your credits", "payment required",
 		"billing hard limit", "exceeded your current quota", "account is deactivated", "plan does not include",
 		"out of extra usage", "out of funds", "run out of funds", "balance_depleted",
-		"budget limit exceeded",
-	}, append(freeTierRefusalPatterns, "hard billing limit")...)
+		"budget limit exceeded", "hard billing limit",
+	}
 	unverifiedBillingPatterns = []string{"out of extra usage"}
 	xaiSpendingLimitErrorCode = "personal-team-blocked:spending-limit"
-	nousUsageWindow402Code    = "usage_window_and_credits_exhausted"
 	billingErrorCodes         = setOf(
 		"insufficient_quota", "billing_not_active", "payment_required", "insufficient_credits",
 		"no_usable_credits", "balance_depleted", "model_not_supported_on_free_tier",
@@ -294,7 +291,6 @@ var (
 	}
 	streamRenderErrorPatterns = []string{"error rendering", "rendering prompt", "jinja template", "jinja render"}
 	reasoningMandatoryPattern = "reasoning is mandatory"
-	welcome403NamedPatterns   = append(append([]string{}, contentPolicyBlockedPatterns...), without(billingPatterns, freeTierRefusalPatterns)...)
 	validation400Codes        = setOf("unknown_parameter", "unsupported_parameter")
 	validation5xxCodes        = setOf("unknown_parameter", "unsupported_parameter", "invalid_request_error")
 	validation400Patterns     = without(requestValidationPatterns, []string{"invalid_request_error"})
@@ -613,7 +609,6 @@ type classifyCtx struct {
 	provider     string
 	model        string
 	baseURL      string
-	anonymous    bool
 	errorType    string
 	errorCode    string
 	code         string
@@ -660,7 +655,7 @@ func pluginVerdict(c *classifyCtx) *Verdict {
 		ErrorMessage: c.msg, ErrorBody: c.body, Err: c.err, ApproxTokens: c.in.ApproxTokens,
 		ContextLength: c.in.ContextLength, NumMessages: c.in.NumMessages})
 	if err != nil {
-		slog.Debug(fmt.Sprintf("Plugin error classification unavailable: %s", err))
+		pkgLog().Debug(fmt.Sprintf("Plugin error classification unavailable: %s", err))
 		return nil
 	}
 	reason, ok := result["reason"].(FailoverReason)
@@ -684,7 +679,7 @@ func pluginVerdict(c *classifyCtx) *Verdict {
 	if status != nil {
 		statusText = strconv.Itoa(*status)
 	}
-	slog.Info(fmt.Sprintf("API error classified by plugin hook: %s (provider=%s, status=%s)", reason, c.provider, statusText))
+	pkgLog().Info(fmt.Sprintf("API error classified by plugin hook: %s (provider=%s, status=%s)", reason, c.provider, statusText))
 	return vd
 }
 
@@ -695,7 +690,7 @@ func profileVerdict(c *classifyCtx) (out *Verdict) {
 	}
 	defer func() {
 		if r := recover(); r != nil {
-			slog.Debug(fmt.Sprintf("Provider profile error classification failed for %s: %v", c.providerSlug, r))
+			pkgLog().Debug(fmt.Sprintf("Provider profile error classification failed for %s: %v", c.providerSlug, r))
 			out = nil
 		}
 	}()
@@ -713,49 +708,6 @@ func profileVerdict(c *classifyCtx) (out *Verdict) {
 	return vd
 }
 
-func nousWelcomeTier(c *classifyCtx) *Verdict {
-	status := c.status
-	if !c.anonymous {
-		if c.provider == "nous" && status == 400 && WelcomeRouteRefusal(status, c.msg, "") == "named_on_welcome_host" {
-			return v(ReasonFormatError).retryable(false).fallback(true).ctx(map[string]any{"welcome_route": "named_on_welcome_host"})
-		}
-		return nil
-	}
-	if status == 402 && RouteIsWelcomeHost(c.baseURL) {
-		refusal := WelcomeRefusal{Reason: "refused", Alternates: []string{}}
-		return v(ReasonAuthPermanent).retryable(false).fallback(true).ctx(map[string]any{"welcome_refusal": refusal})
-	}
-	if status == 429 {
-		refusal, ok := ParseWelcomeRefusal(c.body)
-		if !ok {
-			bodyWait, _ := rateLimitResetSeconds(c.msg, c.body, c.headers)
-			refusal = WelcomeRefusalFromHeaders(c.headers, bodyWait)
-		}
-		ctx := map[string]any{"welcome_refusal": refusal}
-		if WelcomeTierGateReasons[refusal.Reason] {
-			return v(ReasonModelNotFound).retryable(false).fallback(true).ctx(ctx)
-		}
-		if refusal.RetryAfter > 0 {
-			ctx["reset_at"] = time.Now().Add(time.Duration(refusal.RetryAfter) * time.Second)
-		}
-		return v(ReasonRateLimit).fallback(true).ctx(ctx)
-	}
-	plain403 := !anyIn(c.msg, welcome403NamedPatterns)
-	routeURL := ""
-	if plain403 {
-		routeURL = c.baseURL
-	}
-	kind := WelcomeRouteRefusal(status, c.msg, routeURL)
-	if kind == "" {
-		return nil
-	}
-	ctx := map[string]any{"welcome_route": kind}
-	if status == 403 {
-		return v(ReasonAuthPermanent).retryable(false).fallback(true).ctx(ctx)
-	}
-	return v(ReasonFormatError).retryable(false).fallback(true).ctx(ctx)
-}
-
 func isAnthropicThinkingRejection(msg string) bool {
 	return strings.Contains(msg, "thinking") && (anyIn(msg, thinkingMutationWords) ||
 		(strings.Contains(msg, "redacted_thinking") && strings.Contains(msg, "invalid")))
@@ -765,9 +717,6 @@ func providerSpecialCases(c *classifyCtx) *Verdict {
 	msg, status := c.msg, c.status
 	if c.code == "data_policy_denied" {
 		return v(ReasonDataPolicyDenied).retryable(false).fallback(false)
-	}
-	if welcome := nousWelcomeTier(c); welcome != nil {
-		return welcome
 	}
 	if anyIn(msg, contentPolicyBlockedPatterns) {
 		return vContentBlocked()
@@ -829,7 +778,7 @@ func byMessage(c *classifyCtx) *Verdict {
 		return head
 	}
 	if anyIn(c.msg, usageLimitPatterns) {
-		return classify402(c.msg, "", nil)
+		return classify402(c.msg)
 	}
 	return firstMatch(c.msg, messageTailRules)
 }
@@ -871,11 +820,7 @@ func byStatus(c *classifyCtx) *Verdict {
 	case 401:
 		return vAuthRotate()
 	case 402:
-		code := ""
-		if isNousRoute(c) {
-			code = c.code
-		}
-		return classify402(c.msg, code, c.body)
+		return classify402(c.msg)
 	case 403:
 		return status403(c)
 	case 404:
@@ -968,42 +913,12 @@ func status5xx(c *classifyCtx) *Verdict {
 	return vServerError()
 }
 
-func isNousRoute(c *classifyCtx) bool {
-	if c.providerSlug == "nous" {
-		return true
-	}
-	return c.baseURL != "" && baseURLUnderDomain(c.baseURL, "nousresearch.com")
-}
-
-func classify402(msg, code string, body map[string]any) *Verdict {
-	if code == nousUsageWindow402Code {
-		ctx := map[string]any{"usage_window": true}
-		if display := usageWindowDisplayMessage(body); display != "" {
-			ctx["display_message"] = display
-		}
-		return vBilling().fallback(false).ctx(ctx)
-	}
+func classify402(msg string) *Verdict {
 	transient := anyIn(msg, usageLimitPatterns) && anyIn(msg, usageLimitTransientSignals)
 	if transient {
 		return vRateLimit()
 	}
 	return vBilling()
-}
-
-func usageWindowDisplayMessage(body map[string]any) string {
-	if body == nil {
-		return ""
-	}
-	holders := []map[string]any{body}
-	if nested, ok := body["error"].(map[string]any); ok {
-		holders = append(holders, nested)
-	}
-	for _, h := range holders {
-		if s, ok := h["display_message"].(string); ok && strings.TrimSpace(s) != "" {
-			return truncate(strings.TrimSpace(s), 500)
-		}
-	}
-	return ""
 }
 
 // Image parts over this size are rewritten by the shrink pass so a rejection carrying one is a size cap
@@ -1570,7 +1485,7 @@ func ClassifyError(in ClassifyInput) *Classified {
 	c := &classifyCtx{
 		in: in, err: in.Err, status: status, body: body, msg: buildErrorMsg(raw, body, bodyText),
 		provider: in.Provider, model: in.Model, baseURL: in.BaseURL,
-		anonymous: IsAnonymousRequest(in.Provider, in.APIKey), headers: headers,
+		headers:      headers,
 		providerSlug: strings.ToLower(strings.TrimSpace(in.Provider)), modelSlug: strings.ToLower(strings.TrimSpace(in.Model)),
 	}
 	if in.Err != nil {
@@ -2115,4 +2030,26 @@ func CleanErrorMessage(errorMsg string) string {
 		return string(r[:150]) + "..."
 	}
 	return cleaned
+}
+
+// Every FailoverReason the classifier returns, the model error class vocabulary
+var failoverReasons = []FailoverReason{ReasonAuth, ReasonAuthPermanent, ReasonBilling, ReasonRateLimit, ReasonUpstreamRateLimit, ReasonUpstreamBlocked, ReasonOverloaded, ReasonServerError, ReasonTimeout, ReasonSSLCertVerification, ReasonContextOverflow, ReasonPayloadTooLarge, ReasonImageTooLarge, ReasonImageCorrupt, ReasonModelNotFound, ReasonProviderPolicyBlocked, ReasonDataPolicyDenied, ReasonContentPolicyBlocked, ReasonModelEntitlement, ReasonIncompleteResponse, ReasonFormatError, ReasonRoleAlternation, ReasonInvalidEncryptedContent, ReasonMultimodalToolContent, ReasonReasoningMandatory, ReasonThinkingSignature, ReasonLongContextTier, ReasonOAuthLongContextBetaForbid, ReasonLlamaCppGrammarPattern, ReasonCancelled, ReasonUnknown}
+
+// FailoverReason enum construction by value, false for a value outside the enum
+func ParseFailoverReason(value any) (FailoverReason, bool) {
+	var raw string
+	switch v := value.(type) {
+	case FailoverReason:
+		raw = string(v)
+	case string:
+		raw = v
+	default:
+		return "", false
+	}
+	for _, r := range failoverReasons {
+		if string(r) == raw {
+			return r, true
+		}
+	}
+	return "", false
 }

@@ -1,3 +1,5 @@
+//go:build !icebath_core && !icebath_noextras
+
 package pm
 
 import (
@@ -159,7 +161,7 @@ func baselineGaps(ctx context.Context, root string) ([]string, error) {
 var engineVenvIsCurrent = venvIsCurrent
 
 // Re-resolves the durable selection after an external update replaced its inputs and reports what happened
-func RefreshDependencies(ctx context.Context, projectRoot string) (string, error) {
+func managedRefreshDependencies(ctx context.Context, projectRoot string) (string, error) {
 	root := resolvePath(projectRoot)
 	if root != resolvePath(RepoRoot()) {
 		return "", NewInstallError("venv", "refresh root does not match this PM installation", "")

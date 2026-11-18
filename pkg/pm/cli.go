@@ -1,3 +1,5 @@
+//go:build !icebath_core && !icebath_noextras
+
 package pm
 
 import (
@@ -16,49 +18,14 @@ import (
 	"time"
 	"unicode/utf8"
 
-	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/internal/pysys"
 )
 
-// LockArgs are pm lock's arguments, a nil Name or Version when not given
-type LockArgs struct {
-	Name    *string
-	Version *string
-}
-
-// InstallArgs are pm install's arguments, a nil Target or TestEnvironment when not given
-type InstallArgs struct {
-	Names           []string
-	Extra           []string
-	Without         []string
-	ToolsOnly       bool
-	TrustRecorded   bool
-	TestEnvironment *string
-	Target          *string
-}
-
-// EnvironmentArgs are pm environment's arguments
-type EnvironmentArgs struct {
-	Name        string
-	Extra       []string
-	Requirement []string
-}
-
-type cliStderrKey struct{}
-
 // Context whose pm command errors print to w instead of the process stderr
 func WithCLIStderr(ctx context.Context, w io.Writer) context.Context {
 	return context.WithValue(ctx, cliStderrKey{}, w)
-}
-
-// Writer pm commands print their errors to
-func cliStderr(ctx context.Context) io.Writer {
-	if w, ok := ctx.Value(cliStderrKey{}).(io.Writer); ok {
-		return w
-	}
-	return os.Stderr
 }
 
 // Argv after the executable reaching the hidden pm worker command
@@ -67,6 +34,9 @@ func pmWorkerArgs() []string { return []string{"pm", "worker"} }
 // Relocks uv.lock with no name, otherwise pins a tool's artifacts in lock.json
 func CmdLock(ctx context.Context, args LockArgs) (int, error) {
 	if args.Name == nil {
+		if runtimeOnlyProject(RepoRoot()) {
+			return relockExtras(ctx, extrasCheckout())
+		}
 		return relockProject(ctx, RepoRoot())
 	}
 	return ReuseIndexResponses(func() (int, error) { return pinTool(ctx, args) })
@@ -375,7 +345,7 @@ var (
 	cliInstallNames    = installNamesFor
 	cliInstallDefaults = installDefaults
 	installActivate    = Activate
-	installSyncVenv    func(ctx context.Context, opts SyncVenvOptions) error
+	installEnsureExtra = EnsureExtra
 )
 
 // Binds the venv sync step at init because ensure reaches it through the same seam
@@ -388,18 +358,48 @@ var (
 	pmEnsureEnvironment = EnsureEnvironment
 )
 
-// InstallCommandSteps are the tool install, PATH activation and venv sync steps the install command runs
+// InstallCommandSteps are the tool install, PATH activation, venv sync and extra provisioning steps the install command runs
 type InstallCommandSteps struct {
 	InstallNames func(ctx context.Context, names []string, target *string, verify bool) (int, error)
 	Activate     func(ctx context.Context, allowIncomplete bool) ([]string, error)
 	SyncVenv     func(ctx context.Context, opts SyncVenvOptions) error
+	EnsureExtra  func(ctx context.Context, name string, opts ExtraOptions) (string, error)
 }
 
 // Replaces the install command steps until the returned restore runs
 func SwapInstallCommandSteps(steps InstallCommandSteps) func() {
-	names, activate, sync := cliInstallNames, installActivate, installSyncVenv
-	cliInstallNames, installActivate, installSyncVenv = steps.InstallNames, steps.Activate, steps.SyncVenv
-	return func() { cliInstallNames, installActivate, installSyncVenv = names, activate, sync }
+	names, activate, sync, extra := cliInstallNames, installActivate, installSyncVenv, installEnsureExtra
+	cliInstallNames, installActivate, installSyncVenv, installEnsureExtra = steps.InstallNames, steps.Activate, steps.SyncVenv, steps.EnsureExtra
+	return func() {
+		cliInstallNames, installActivate, installSyncVenv, installEnsureExtra = names, activate, sync, extra
+	}
+}
+
+// Names with the dependencies each needs on target ahead of it, an unknown name kept for its own error
+func crossStageOrder(names []string, target string) ([]string, error) {
+	var out []string
+	seen := map[string]bool{}
+	add := func(name string) {
+		if !seen[name] {
+			seen[name] = true
+			out = append(out, name)
+		}
+	}
+	for _, name := range names {
+		chain, err := WalkTarget([]string{name}, target)
+		var unknown *UnknownPackageError
+		if errors.As(err, &unknown) {
+			add(name)
+			continue
+		}
+		if err != nil {
+			return nil, err
+		}
+		for _, p := range chain {
+			add(p.Base().Name)
+		}
+	}
+	return out, nil
 }
 
 // uncaughtError carries an exception the int returning installNames cannot return up to Main
@@ -422,6 +422,13 @@ func installNames(ctx context.Context, names []string, target string, verify boo
 func installNamesFor(ctx context.Context, names []string, target *string, verify bool) (int, error) {
 	out := SyncOutput(ctx)
 	failed := 0
+	if target != nil {
+		staged, err := crossStageOrder(names, *target)
+		if err != nil {
+			return 0, err
+		}
+		names = staged
+	}
 	operation := newInstallOperation(ctx)
 	defer operation.Close()
 	for _, name := range names {
@@ -478,6 +485,13 @@ func installFlagError(args InstallArgs, extras []string, crossTarget string, too
 	if len(extras) > 0 && crossTarget != "" {
 		return "--extra syncs this install's venv and cannot combine with --target", nil
 	}
+	if runtimeOnlyProject(RepoRoot()) {
+		for _, extra := range extras {
+			if _, _, known := ResolveExtra(extra); !known {
+				return UnknownExtraError(extra).Error(), nil
+			}
+		}
+	}
 	if len(args.Without) > 0 && (len(extras) > 0 || crossTarget != "" || names) {
 		return "--without shapes the default closure; it does not take names, --extra, or --target", nil
 	}
@@ -490,6 +504,10 @@ func installFlagError(args InstallArgs, extras []string, crossTarget string, too
 			droppable, err := DroppableExtras(RepoRoot())
 			if err != nil {
 				return "", err
+			}
+			if runtimeOnlyProject(RepoRoot()) {
+				return fmt.Sprintf("--without accepts only optional default packages (%s) or extras (%s); not %s",
+					strings.Join(DefaultPackageNames(), ", "), strings.Join(droppable, ", "), strings.Join(unknown, ", ")), nil
 			}
 			return fmt.Sprintf("--without accepts only optional default packages (%s) or extras outside [all] (%s); not %s",
 				strings.Join(DefaultPackageNames(), ", "), strings.Join(droppable, ", "), strings.Join(unknown, ", ")), nil
@@ -512,7 +530,11 @@ func splitWithout(names []string) (packages, extras, unknown []string, err error
 		case containsString(droppable, name):
 			extras = append(extras, name)
 		default:
-			unknown = append(unknown, name)
+			if canonical, _, known := ResolveExtra(name); known && runtimeOnlyProject(RepoRoot()) {
+				extras = append(extras, canonical)
+			} else {
+				unknown = append(unknown, name)
+			}
 		}
 	}
 	return packages, extras, unknown, nil
@@ -575,22 +597,37 @@ func installPythonEnvironments(ctx context.Context, extras []string, sync bool, 
 	out := SyncOutput(ctx)
 	failed := 0
 	var install *InstallError
+	if sync && runtimeOnlyProject(RepoRoot()) {
+		for _, extra := range extras {
+			canonical, entry, _ := ResolveExtra(extra)
+			if canonical == relayExtra {
+				fmt.Fprintln(out, "→ Provisioning the NeMo Relay runtime...")
+			} else {
+				fmt.Fprintf(out, "→ Provisioning %s for %s...\n", canonical, entry.Feature)
+			}
+			_, err := installEnsureExtra(ctx, canonical, ExtraOptions{Output: out})
+			switch {
+			case err == nil && canonical == relayExtra:
+				fmt.Fprintln(out, "✓ relay runtime")
+			case err == nil:
+				fmt.Fprintf(out, "✓ %s\n", canonical)
+			case errors.As(err, &install):
+				fmt.Fprintf(out, "✗ %s\n", err)
+				failed++
+			default:
+				return failed, err
+			}
+		}
+		sync = false
+	}
 	if sync {
-		var err error
-		if runtimeOnlyProject(RepoRoot()) && onlyRelayAlias(extras) {
-			_, err = EnsureRuntimeEnvironment(ctx, RuntimeEnvironmentOptions{Explicit: true, Output: out})
-			if err == nil && binaryCoreTree(RepoRoot()) {
-				err = installSyncVenv(ctx, SyncVenvOptions{Extras: []string{}, Explicit: true})
+		selection, carried, err := firstSelection(ctx, extras)
+		if err == nil {
+			opts := SyncVenvOptions{Extras: selection, Explicit: true}
+			if len(carried) > 0 {
+				opts.Automatic = carried
 			}
-		} else {
-			var selection, carried []string
-			if selection, carried, err = firstSelection(ctx, extras); err == nil {
-				opts := SyncVenvOptions{Extras: selection, Explicit: true}
-				if len(carried) > 0 {
-					opts.Automatic = carried
-				}
-				err = installSyncVenv(ctx, opts)
-			}
+			err = installSyncVenv(ctx, opts)
 		}
 		switch {
 		case err == nil:
@@ -622,16 +659,6 @@ func installPythonEnvironments(ctx context.Context, extras []string, sync bool, 
 		}
 	}
 	return failed, nil
-}
-
-// Whether the requested extras name at most the nemo-relay alias the core runtime set already covers
-func onlyRelayAlias(extras []string) bool {
-	for _, extra := range extras {
-		if ExtraKey(extra) != ExtraKey("nemo-relay") {
-			return false
-		}
-	}
-	return true
 }
 
 // Installs the tool closure then the venv, the optional defaults last, recording activation inputs for a full closure
@@ -673,6 +700,14 @@ func CmdInstall(ctx context.Context, args InstallArgs) (int, error) {
 		if err := DeclineExtras(ctx, droppedExtras); err != nil {
 			return 0, err
 		}
+		if runtimeOnlyProject(RepoRoot()) {
+			for _, extra := range droppedExtras {
+				if err := RemoveExtra(ctx, extra); err != nil {
+					return 0, err
+				}
+				fmt.Fprintf(out, "✓ %s removed and left out of later installs\n", extra)
+			}
+		}
 	}
 	var defaults []string
 	if len(args.Names) == 0 && len(extras) == 0 {
@@ -705,7 +740,7 @@ func CmdInstall(ctx context.Context, args InstallArgs) (int, error) {
 			return 0, err
 		}
 	}
-	if crossTarget == "" && (len(args.Names) == 0 || args.ToolsOnly) {
+	if crossTarget == "" && (len(args.Names) == 0 || args.ToolsOnly) && !(len(extras) > 0 && runtimeOnlyProject(RepoRoot())) {
 		problems, err := installActivate(ctx, true)
 		if err != nil {
 			return 0, err
@@ -843,14 +878,44 @@ func CmdDoctor(ctx context.Context, repair bool) (int, error) {
 		}
 		fmt.Fprintf(out, "✓ %s %s\n", name, pyrepr.Str(fact["version"]))
 	}
+	stale, err := doctorExtras(ctx)
+	if err != nil {
+		return 0, err
+	}
 	cache, err := doctorUVCache(ctx, repair)
 	if err != nil {
 		return 0, err
 	}
-	if bad+cache != 0 {
+	if bad+stale+cache != 0 {
 		return 1, nil
 	}
 	return 0, nil
+}
+
+// Prints each provisioned extra and those whose pins changed since, then the extras this install has not provisioned
+func doctorExtras(ctx context.Context) (int, error) {
+	out := SyncOutput(ctx)
+	states, err := ExtraStates(ctx)
+	if err != nil {
+		return 0, err
+	}
+	stale := 0
+	var absent []string
+	for _, state := range states {
+		switch {
+		case !state.Provisioned:
+			absent = append(absent, state.Name)
+		case state.Current:
+			fmt.Fprintf(out, "✓ extra %s: provisioned (%s)\n", state.Name, state.Feature)
+		default:
+			fmt.Fprintf(out, "✗ extra %s: provisioned with older pins, run `%s`\n", state.Name, InstallHint(state.Name))
+			stale++
+		}
+	}
+	if len(absent) > 0 {
+		fmt.Fprintf(out, "? extras not provisioned: %s\n", strings.Join(absent, ", "))
+	}
+	return stale, nil
 }
 
 // Reports corrupt uv cache entries an interrupted install left, removing them with repair
@@ -1119,6 +1184,9 @@ func CmdEnvironment(ctx context.Context, args EnvironmentArgs) (int, error) {
 		defer restore()
 		quiet := withSyncOutput(ctx, stderrStream())
 		requirements := args.Requirement
+		if len(args.Extra) > 0 && runtimeOnlyProject(RepoRoot()) {
+			return EnsureExtrasEnvironment(quiet, args.Name, args.Extra, SyncOutput(quiet))
+		}
 		if len(args.Extra) > 0 {
 			var err error
 			if requirements, err = extraRequirements(RepoRoot(), args.Extra); err != nil {
@@ -1216,13 +1284,4 @@ func sortPathNames(names []string) {
 		}
 		return tarNameLess(names[i], names[j])
 	})
-}
-
-// Reports whether two paths are equal as Python Path objects compare, lowercased on Windows
-func samePath(a, b string) bool {
-	a, b = pypath.PurePathStr(a), pypath.PurePathStr(b)
-	if runtime.GOOS == "windows" {
-		return pystr.Lower(a) == pystr.Lower(b)
-	}
-	return a == b
 }

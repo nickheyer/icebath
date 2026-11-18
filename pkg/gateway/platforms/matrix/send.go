@@ -6,7 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"log/slog"
 	"mime"
 	"net/http"
 	"net/url"
@@ -42,23 +41,23 @@ func (a *MatrixAdapter) Send(ctx context.Context, chatID, content, replyTo strin
 		eventID, err := a.sendRoomMessage(ctx, chatID, msgContent)
 		if err == nil {
 			lastEventID = eventID
-			slog.Info(fmt.Sprintf("Matrix: sent event %s to %s", eventID, chatID))
+			pkgLog().Info(fmt.Sprintf("Matrix: sent event %s to %s", eventID, chatID))
 			continue
 		}
 		crypto := a.cryptoMachine()
 		if !(a.encryptionOn() && crypto != nil) {
-			slog.Error(fmt.Sprintf("Matrix: failed to send to %s: %v", chatID, err))
+			pkgLog().Error(fmt.Sprintf("Matrix: failed to send to %s: %v", chatID, err))
 			return gateway.SendResult{Success: false, Error: err.Error()}, nil
 		}
 		if err = crypto.shareKeys(ctx); err == nil {
 			eventID, err = a.sendRoomMessage(ctx, chatID, msgContent)
 		}
 		if err != nil {
-			slog.Error(fmt.Sprintf("Matrix: failed to send to %s after retry: %v", chatID, err))
+			pkgLog().Error(fmt.Sprintf("Matrix: failed to send to %s after retry: %v", chatID, err))
 			return gateway.SendResult{Success: false, Error: err.Error()}, nil
 		}
 		lastEventID = eventID
-		slog.Info(fmt.Sprintf("Matrix: sent event %s to %s (after key share)", eventID, chatID))
+		pkgLog().Info(fmt.Sprintf("Matrix: sent event %s to %s (after key share)", eventID, chatID))
 	}
 	return gateway.SendResult{Success: true, MessageID: lastEventID}, nil
 }
@@ -135,12 +134,12 @@ func (a *MatrixAdapter) EditMessage(ctx context.Context, chatID, messageID, cont
 // Downloads an external image with redirect and size guards and uploads it natively
 func (a *MatrixAdapter) SendImage(ctx context.Context, chatID, imageURL, caption, replyTo string, metadata map[string]any) (gateway.SendResult, error) {
 	if !tools.IsSafeURL(gateway.URLSafetyEnv(ctx), imageURL) {
-		slog.Warn("Matrix: blocked unsafe image URL (SSRF protection)")
+		pkgLog().Warn("Matrix: blocked unsafe image URL (SSRF protection)")
 		return a.BasePlatformAdapter.SendImage(ctx, chatID, imageURL, caption, replyTo, metadata)
 	}
 	data, ct, fname, err := a.downloadExternalMediaWithCap(ctx, imageURL)
 	if err != nil {
-		slog.Warn(fmt.Sprintf("Matrix: failed to download image %s: %v", redactURLForLog(imageURL), err))
+		pkgLog().Warn(fmt.Sprintf("Matrix: failed to download image %s: %v", redactURLForLog(imageURL), err))
 		fallback := i18n.T(ctx, "platform.matrix.media.image_download_failed", "", nil)
 		return a.EmitMediaWarning(ctx, chatID, fallback, caption, replyTo, metadata, nil)
 	}
@@ -290,7 +289,7 @@ func (a *MatrixAdapter) SendMultipleImages(ctx context.Context, chatID string, i
 			return gateway.SendResult{}, err
 		}
 		if !result.Success {
-			slog.Warn(fmt.Sprintf("Matrix: failed to send image %d/%d: %v", n, total, result.Error))
+			pkgLog().Warn(fmt.Sprintf("Matrix: failed to send image %d/%d: %v", n, total, result.Error))
 		}
 		delivered = delivered || result.Success
 	}
@@ -352,7 +351,7 @@ func (a *MatrixAdapter) uploadAndSend(ctx context.Context, roomID string, data [
 	resp, err := client.UploadMedia(ctx, mautrix.ReqUploadMedia{ContentBytes: uploadData, ContentType: contentType,
 		FileName: filename, ContentLength: int64(len(uploadData))})
 	if err != nil {
-		slog.Error(fmt.Sprintf("Matrix: upload failed: %v", err))
+		pkgLog().Error(fmt.Sprintf("Matrix: upload failed: %v", err))
 		return gateway.SendResult{Success: false, Error: err.Error()}
 	}
 	mxcURL := resp.ContentURI.String()
@@ -365,7 +364,7 @@ func (a *MatrixAdapter) uploadAndSend(ctx context.Context, roomID string, data [
 	if encryptedFile != nil {
 		serialized, err := serializeEncryptedFile(encryptedFile)
 		if err != nil {
-			slog.Error(fmt.Sprintf("Matrix: attachment encryption failed: %v", err))
+			pkgLog().Error(fmt.Sprintf("Matrix: attachment encryption failed: %v", err))
 			return gateway.SendResult{Success: false, Error: err.Error()}
 		}
 		serialized["url"] = mxcURL
@@ -445,7 +444,7 @@ func (a *MatrixAdapter) sendLocalFile(ctx context.Context, roomID, filePath, msg
 	p := pypath.Expanduser(filePath)
 	st, err := os.Stat(p)
 	if err != nil {
-		slog.Warn(fmt.Sprintf("[%s] upload fallback: media file not found for %s", a.Name(), filePath))
+		pkgLog().Warn(fmt.Sprintf("[%s] upload fallback: media file not found for %s", a.Name(), filePath))
 		text := i18n.T(ctx, "platform.shared.media.attachment_failed", "", nil)
 		return a.EmitMediaWarning(ctx, roomID, text, caption, replyTo, metadata, nil)
 	}
@@ -556,10 +555,7 @@ func containsStr(list []string, s string) bool {
 	return false
 }
 
-var (
-	providerLabelFn         = provider.GetProviderLabel
-	providerPickerRowSuffix = provider.PickerRowSuffix
-)
+var providerLabelFn = provider.GetProviderLabel
 
 // Reaction based model picker over the first ten provider models
 func (a *MatrixAdapter) SendModelPicker(ctx context.Context, chatID string, providers []map[string]any, currentModel, currentProvider, sessionKey string,
@@ -569,8 +565,6 @@ func (a *MatrixAdapter) SendModelPicker(ctx context.Context, chatID string, prov
 	}
 	type flatChoice struct{ modelID, slug, name string }
 	var flat []flatChoice
-	rowsBySlug := map[string]map[string]any{}
-	var planLines []string
 	for _, p := range providers {
 		slug := ""
 		if pyTruthy(p["slug"]) {
@@ -583,10 +577,6 @@ func (a *MatrixAdapter) SendModelPicker(ctx context.Context, chatID string, prov
 		models, _ := p["models"].([]any)
 		for _, modelID := range models {
 			flat = append(flat, flatChoice{strOf(modelID), slug, name})
-		}
-		rowsBySlug[slug] = p
-		if pyTruthy(p["plan_line"]) {
-			planLines = append(planLines, "⚠️ "+strOf(p["plan_line"]))
 		}
 	}
 	flat = flat[:min(len(flat), len(matrixModelPickerReactions))]
@@ -604,7 +594,6 @@ func (a *MatrixAdapter) SendModelPicker(ctx context.Context, chatID string, prov
 	lines := []string{i18n.T(ctx, "platform.matrix.picker.title", "", nil),
 		i18n.T(ctx, "platform.matrix.picker.current_model", "", map[string]any{"model": or(currentModel)}),
 		i18n.T(ctx, "platform.matrix.picker.provider", "", map[string]any{"provider": or(providerLabel)})}
-	lines = append(lines, planLines...)
 	lines = append(lines, "", i18n.T(ctx, "platform.matrix.picker.react_model", "", nil))
 	choices := map[string][]string{}
 	var emojis []string
@@ -612,15 +601,7 @@ func (a *MatrixAdapter) SendModelPicker(ctx context.Context, chatID string, prov
 		emoji := matrixModelPickerReactions[i]
 		choices[emoji] = []string{c.modelID, c.slug}
 		emojis = append(emojis, emoji)
-		var row any
-		if r, ok := rowsBySlug[c.slug]; ok {
-			row = r
-		}
-		line := emoji + " `" + c.modelID + "` — " + c.name
-		if suffix := providerPickerRowSuffix(row, c.modelID); suffix != "" {
-			line += " · " + suffix
-		}
-		lines = append(lines, line)
+		lines = append(lines, emoji+" `"+c.modelID+"` — "+c.name)
 	}
 	onSelected := func(ctx context.Context, chatID string, args ...string) (string, error) {
 		return onModelSelected(ctx, chatID, args[0], args[1])

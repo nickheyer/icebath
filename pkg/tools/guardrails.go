@@ -6,7 +6,6 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
-	"log/slog"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -410,7 +409,6 @@ func ToolCallGuardrailConfigFromMap(data map[string]any, platform string) ToolCa
 type IdenticalCallObservation struct {
 	Notice string
 	Stub   string
-	Kind   string
 }
 
 // ToolCallSignature is the stable non reversible identity of a tool name plus canonical args
@@ -782,10 +780,9 @@ func (c *ToolCallGuardrailController) ObserveCall(toolName string, args map[stri
 		c.identicalStreakFirstCall = toolCallID
 	}
 	count := c.identicalStreakCount
-	var notice, kind string
+	var notice string
 	if !IsStallGuardRepeatable(toolName) && count >= StallGuardIdenticalCallThreshold {
 		notice = formatFields(identicalCallNotice, map[string]string{"ordinal": guardOrdinal(count), "tool_name": toolName})
-		kind = "identical_call_streak"
 		if c.Config.HardStopEnabled && count >= c.Config.NoProgressBlockAfter && c.haltDecision == nil {
 			c.decide("halt", "identical_call_streak_halt", toolName, count, sig, "", nil)
 		}
@@ -801,7 +798,6 @@ func (c *ToolCallGuardrailController) ObserveCall(toolName string, args map[stri
 	if notice == "" && isPlainStr {
 		if period, laps, ok := c.detectIdenticalCycle(); ok {
 			notice = formatFields(identicalCycleNotice, map[string]string{"count": strconv.Itoa(laps), "period": strconv.Itoa(period), "tool_name": toolName})
-			kind = "identical_cycle"
 			if c.Config.HardStopEnabled && laps >= c.Config.NoProgressBlockAfter && c.haltDecision == nil {
 				c.decide("halt", "identical_cycle_halt", toolName, laps, sig, "", map[string]string{"period": strconv.Itoa(period)})
 			}
@@ -811,7 +807,7 @@ func (c *ToolCallGuardrailController) ObserveCall(toolName string, args map[stri
 	if isPlainStr && count >= 2 && !failed && len(resultStr) >= IdenticalResultStubMinChars {
 		stub = c.buildResultReferenceStub(toolName, args)
 	}
-	return IdenticalCallObservation{Notice: notice, Stub: stub, Kind: kind}
+	return IdenticalCallObservation{Notice: notice, Stub: stub}
 }
 
 // Detects a repeating identical call cycle ending at the latest observed call
@@ -1113,13 +1109,13 @@ func UniquifyToolCallIDs(toolCalls []state.ToolCall, taken map[string]bool) []st
 		if fnName == "" {
 			fnName = "?"
 		}
-		slog.Default().With("logger", "agent.message_sanitization").Warn(fmt.Sprintf("Model reused tool call id %s; renamed the duplicate to %s (tool=%s) to keep call/result pairing lossless.", cid, newID, fnName))
+		pkgLog().Warn(fmt.Sprintf("Model reused tool call id %s; renamed the duplicate to %s (tool=%s) to keep call/result pairing lossless.", cid, newID, fnName))
 	}
 	return toolCalls
 }
 
-// ConnectorMaxCallsPerDispatch bounds one connector batch dispatch
-const ConnectorMaxCallsPerDispatch = 10
+// ToolCallMaxBatchEntries bounds the entries one tool_call batch expands into
+const ToolCallMaxBatchEntries = 10
 
 // ExpandLocalToolBatches splits a local tool_call batch into one call per entry before persistence
 func ExpandLocalToolBatches(toolCalls []state.ToolCall, providerData map[string]any) []state.ToolCall {
@@ -1139,14 +1135,7 @@ func ExpandLocalToolBatches(toolCalls []state.ToolCall, providerData map[string]
 		} else {
 			entries, errText = NormalizeToolCallEntries(args.Vals)
 		}
-		allConnector := true
-		for _, e := range entries {
-			if !IsConnectorName(e.Name) {
-				allConnector = false
-				break
-			}
-		}
-		if errText != "" || len(entries) <= 1 || len(entries) > ConnectorMaxCallsPerDispatch || allConnector {
+		if errText != "" || len(entries) <= 1 || len(entries) > ToolCallMaxBatchEntries {
 			expanded = append(expanded, call)
 			continue
 		}
@@ -1278,7 +1267,7 @@ var redirectOverwrite = regexp.MustCompile(`[^>]>[^>]|^>[^>]`)
 // CompressionMarkerPrefix opens the model visible context compression marker
 const CompressionMarkerPrefix = "⟪ICEBATH-CONTEXT-COMPRESSION:"
 
-// Legacy sessions may still carry the hermes spelled marker
+// Legacy sessions may still carry the old spelled marker
 const legacyCompressionMarkerPrefix = "⟪HERMES-CONTEXT-COMPRESSION:"
 
 var compressionMarkerArtifactRe = regexp.MustCompile(`(?:` + regexp.QuoteMeta(CompressionMarkerPrefix) + `|` + regexp.QuoteMeta(legacyCompressionMarkerPrefix) + `)\s+\d[\d,]*`)
@@ -1361,23 +1350,6 @@ func PeelBridgeCall(ctx context.Context, env *Env, toolName string, functionArgs
 	if errMsg != "" || underlying == "" {
 		return toolName, functionArgs
 	}
-	if underlying == ConnectorBatchSentinel {
-		entries, _ := underlyingArgs["calls"].([]any)
-		if len(entries) == 0 {
-			return toolName, functionArgs
-		}
-		for _, e := range entries {
-			m, ok := e.(map[string]any)
-			if !ok {
-				return toolName, functionArgs
-			}
-			name, _ := m["name"].(string)
-			if !IsConnectorName(name) {
-				return toolName, functionArgs
-			}
-		}
-		return underlying, underlyingArgs
-	}
 	return underlying, underlyingArgs
 }
 
@@ -1399,12 +1371,12 @@ func batchAdmission(ctx context.Context, env *Env, call state.ToolCall, executio
 		if len(raw) > 200 {
 			raw = raw[:200]
 		}
-		slog.Debug("Could not parse args, treating as sequential barrier", "tool", toolName, "raw", raw)
+		pkgLog().Debug("Could not parse args, treating as sequential barrier", "tool", toolName, "raw", raw)
 		return nil
 	}
 	functionArgs, ok := parsed.(map[string]any)
 	if !ok {
-		slog.Debug("Non-dict args, treating as sequential barrier", "tool", toolName)
+		pkgLog().Debug("Non-dict args, treating as sequential barrier", "tool", toolName)
 		return nil
 	}
 	name, args := PeelBridgeCall(ctx, env, toolName, functionArgs)
@@ -1568,14 +1540,6 @@ func guardNormcasePath(p string) string {
 		return strings.ToLower(filepath.FromSlash(p))
 	}
 	return p
-}
-
-// Session logger falling back to the default logger
-func toolsLogger(env *Env) *slog.Logger {
-	if env != nil && env.Log != nil {
-		return env.Log
-	}
-	return slog.Default()
 }
 
 func pathParts(p string) []string {
@@ -2012,7 +1976,6 @@ type TurnValidationHost interface {
 	AppendToolErrorResults(contentFor func(tc state.ToolCall) string)
 	PartialExit(finalResponse string) map[string]any
 	CleanupTaskResources()
-	RecordToolCallQuality(toolCalls []state.ToolCall, repaired map[int]bool)
 	Print(text string, force bool)
 	BufferPrint(text string)
 	FlushStatusBuffer()
@@ -2066,7 +2029,6 @@ func ValidateToolCalls(host TurnValidationHost, toolCalls []state.ToolCall, fini
 	}
 	UniquifyToolCallIDs(toolCalls, taken)
 	NormalizeProviderToolCallIDs(toolCalls)
-	repaired := map[int]bool{}
 	for i := range toolCalls {
 		name := toolCalls[i].Function.Name
 		if validNames[name] {
@@ -2075,10 +2037,8 @@ func ValidateToolCalls(host TurnValidationHost, toolCalls []state.ToolCall, fini
 		if fixed := host.RepairToolName(name); fixed != "" {
 			host.Print(fmt.Sprintf("%s🔧 Auto-repaired tool name: '%s' -> '%s'", host.LogPrefix(), name, fixed), true)
 			toolCalls[i].Function.Name = fixed
-			repaired[i] = true
 		}
 	}
-	host.RecordToolCallQuality(toolCalls, repaired)
 	var invalid []string
 	anyValid := false
 	for _, tc := range toolCalls {
@@ -2201,7 +2161,7 @@ func NormalizeProviderToolCallIDs(toolCalls []state.ToolCall) []state.ToolCall {
 			return toolCalls
 		}
 	}
-	slog.Warn("Normalized provider-minted parallel tool-call ids for replay compatibility")
+	pkgLog().Warn("Normalized provider-minted parallel tool-call ids for replay compatibility")
 	for i := range toolCalls {
 		tc := &toolCalls[i]
 		for _, key := range []string{"id", "call_id"} {

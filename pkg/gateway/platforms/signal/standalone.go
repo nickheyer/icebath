@@ -5,7 +5,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"log/slog"
 	"net/http"
 	"os"
 	"strings"
@@ -87,11 +86,11 @@ func signalSendBatch(ctx context.Context, post batchPoster, scheduler *SignalAtt
 			}
 			scheduler.Feedback(serverRetryAfter, n)
 			if attempt >= maxAttempts {
-				slog.Error(fmt.Sprintf("Signal: rate-limit retries exhausted on batch %d/%d (%d attachments lost, server retry_after=%s)",
+				pkgLog().Error(fmt.Sprintf("Signal: rate-limit retries exhausted on batch %d/%d (%d attachments lost, server retry_after=%s)",
 					idx+1, nBatches, n, label))
 				return true, nil, nil
 			}
-			slog.Warn(fmt.Sprintf("Signal: rate-limited on batch %d/%d (attempt %d/%d, server retry_after=%s); scheduler will pace the retry",
+			pkgLog().Warn(fmt.Sprintf("Signal: rate-limited on batch %d/%d (attempt %d/%d, server retry_after=%s); scheduler will pace the retry",
 				idx+1, nBatches, attempt, maxAttempts, label))
 			continue
 		}
@@ -99,10 +98,10 @@ func signalSendBatch(ctx context.Context, post batchPoster, scheduler *SignalAtt
 			return false, nil, ctx.Err()
 		}
 		if attempt >= maxAttempts {
-			slog.Error(fmt.Sprintf("Signal: send error on batch %d/%d after %d attempts: %s", idx+1, nBatches, attempt, errText(attemptErr)))
+			pkgLog().Error(fmt.Sprintf("Signal: send error on batch %d/%d after %d attempts: %s", idx+1, nBatches, attempt, errText(attemptErr)))
 			return true, nil, nil
 		}
-		slog.Warn(fmt.Sprintf("Signal: transient error on batch %d/%d (attempt %d/%d): %s; will retry", idx+1, nBatches, attempt, maxAttempts, errText(attemptErr)))
+		pkgLog().Warn(fmt.Sprintf("Signal: transient error on batch %d/%d (attempt %d/%d): %s; will retry", idx+1, nBatches, attempt, maxAttempts, errText(attemptErr)))
 	}
 	return false, nil, nil
 }
@@ -168,7 +167,7 @@ func sendSignalBatches(ctx context.Context, extra map[string]any, chatID, messag
 		if _, err := os.Stat(media.Path); err == nil {
 			attachmentPaths = append(attachmentPaths, media.Path)
 		} else {
-			slog.Warn(fmt.Sprintf("Signal media file not found, skipping: %s", media.Path))
+			pkgLog().Warn(fmt.Sprintf("Signal media file not found, skipping: %s", media.Path))
 		}
 	}
 	var attBatches [][]any
@@ -210,7 +209,7 @@ func sendSignalBatches(ctx context.Context, extra map[string]any, chatID, messag
 		return resp.JSON()
 	}
 	scheduler := GetScheduler()
-	slog.Info(fmt.Sprintf("send_message Signal: scheduler state=%s, %d attachment(s) in %d batch(es)", pyrepr.Str(scheduler.State()), len(attachmentPaths), nBatches))
+	pkgLog().Info(fmt.Sprintf("send_message Signal: scheduler state=%s, %d attachment(s) in %d batch(es)", pyrepr.Str(scheduler.State()), len(attachmentPaths), nBatches))
 	var failedBatches []string
 	for idx, attBatch := range attBatches {
 		if n := len(attBatch); n > 0 {
@@ -220,7 +219,7 @@ func sendSignalBatches(ctx context.Context, extra map[string]any, chatID, messag
 					if ctx.Err() != nil {
 						return nil, ctx.Err()
 					}
-					slog.Warn(fmt.Sprintf("Signal: inline notice failed: %s", errText(err)))
+					pkgLog().Warn(fmt.Sprintf("Signal: inline notice failed: %s", errText(err)))
 				}
 			}
 		}

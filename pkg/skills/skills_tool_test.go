@@ -36,9 +36,9 @@ func TestParseFrontmatterNestedAndBOM(t *testing.T) {
 	if fm["name"] != "test" || fm["description"] != "A test." || !strings.Contains(body, "# Body") {
 		t.Fatalf("plain %v %q", fm, body)
 	}
-	fm, _ = ParseFrontmatter("---\nname: test\nmetadata:\n  hermes:\n    tags: [a, b]\n---\n\nBody.\n")
+	fm, _ = ParseFrontmatter("---\nname: test\nmetadata:\n  icebath:\n    tags: [a, b]\n---\n\nBody.\n")
 	meta, _ := fm["metadata"].(map[string]any)
-	herm, _ := meta["hermes"].(map[string]any)
+	herm, _ := meta["icebath"].(map[string]any)
 	if tags, _ := herm["tags"].([]any); len(tags) != 2 || tags[0] != "a" || tags[1] != "b" {
 		t.Fatalf("nested %v", fm)
 	}

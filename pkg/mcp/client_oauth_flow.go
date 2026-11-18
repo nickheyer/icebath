@@ -175,7 +175,7 @@ func (f *ClientOAuthFlow) PublishAuthorizationURL(_ context.Context, rawURL stri
 
 // Drops the ended attempt's URL, state and spent code so the next URL mints a fresh attempt, caller holds the lock
 func (f *ClientOAuthFlow) reopenEndedAttempt() {
-	mcpLogger().Info(fmt.Sprintf("MCP OAuth: client flow %s for '%s' ended (%s); re-minting for the next attempt",
+	pkgLog().Info(fmt.Sprintf("MCP OAuth: client flow %s for '%s' ended (%s); re-minting for the next attempt",
 		f.FlowID, f.ServerName, f.statusLocked()))
 	f.authorizationURL = ""
 	f.expectedState = ""

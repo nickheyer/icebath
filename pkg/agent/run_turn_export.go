@@ -1,11 +1,5 @@
 package agent
 
-import (
-	"context"
-
-	"github.com/nickheyer/icebath/pkg/observability"
-)
-
 // Whether a compression attempt recorded its signals this turn
 func (a *AIAgent) LastCompressionAttemptRecorded() bool { return a.lastCompressionAttemptRecorded }
 
@@ -30,11 +24,6 @@ func (a *AIAgent) LastCompressionSummaryWarning() *string { return a.lastCompres
 
 // Whether a fallback model activated during the run
 func (a *AIAgent) FallbackActivated() bool { return a.fallbackActivated }
-
-// Records one watchdog exit row for this agent's turn in its own profile
-func (a *AIAgent) RecordWatchdogTurnAbort(ctx context.Context) {
-	observability.RecordWatchdogTurnAbort(ctx, &a.turnExit)
-}
 
 // Whether a provider fallback serves this agent's run
 func (a *AIAgent) ProviderFallbackActive() bool { return a.providerFallbackActive }

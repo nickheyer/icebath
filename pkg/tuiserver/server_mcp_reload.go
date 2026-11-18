@@ -3,7 +3,6 @@ package tuiserver
 import (
 	"context"
 	"fmt"
-	"strings"
 	"sync"
 )
 
@@ -24,7 +23,7 @@ const mcpReloadMaxPasses = 3
 func finishReload(ctx context.Context, rid any, params map[string]any, coalesced bool) map[string]any {
 	if truthy(params["always"]) {
 		if failure := catchPanic(func() { SaveConfigValue(ctx, "approvals.mcp_reload_confirm", false) }); failure != nil {
-			logger().Warn(fmt.Sprintf("Failed to persist mcp_reload_confirm=false: %s", panicMessage(failure)))
+			pkgLog().Warn(fmt.Sprintf("Failed to persist mcp_reload_confirm=false: %s", panicMessage(failure)))
 		}
 	}
 	out := map[string]any{"status": "reloaded", "loaded_rev": mcpReloadLoadedRev}
@@ -32,29 +31,4 @@ func finishReload(ctx context.Context, rid any, params map[string]any, coalesced
 		out["coalesced"] = true
 	}
 	return ok(rid, out)
-}
-
-// Hints of the argv heads that must not run headless in the gateway process
-var cliExecBlockedHeads = map[string]string{
-	"gateway": "`icebath gateway` is long-running — run it in another terminal",
-}
-
-// Hints of the two word argv heads that must not run headless in the gateway process
-var cliExecBlockedPairs = map[[2]string]string{
-	{"sessions", "browse"}: "`icebath sessions browse` is interactive — use /resume here, or run browse in another terminal",
-	{"config", "edit"}:     "`icebath config edit` needs $EDITOR in a real terminal",
-}
-
-// User hint of an argv that must not run headless, empty when it may run
-func cliExecBlocked(argv []string) string {
-	if len(argv) == 0 {
-		return "bare `icebath` is interactive — use `/icebath chat -q …` or run `icebath` in another terminal"
-	}
-	if hint := cliExecBlockedHeads[strings.ToLower(argv[0])]; hint != "" {
-		return hint
-	}
-	if len(argv) >= 2 {
-		return cliExecBlockedPairs[[2]string{strings.ToLower(argv[0]), strings.ToLower(argv[1])}]
-	}
-	return ""
 }

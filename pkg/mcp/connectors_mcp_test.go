@@ -246,7 +246,7 @@ func TestConnRegistryDispatchNeverBlocksAndNeverReachesACard(t *testing.T) {
 }
 
 func mcpTarget(name string, extra ...any) map[string]any {
-	t := map[string]any{"name": name, "mcp": true}
+	t := map[string]any{"name": name}
 	for i := 0; i+1 < len(extra); i += 2 {
 		t[extra[i].(string)] = extra[i+1]
 	}
@@ -364,19 +364,6 @@ func TestConnAuthorizeWithoutACardReturnsTheLinkAtOnceAndOpensNoOperation(t *tes
 	}
 	if tools.LiveCurrent("s1", "") != nil {
 		t.Fatal("an operation was opened")
-	}
-}
-
-func TestConnAManagedActionNeverAcceptsMCPTargetsAndViceVersa(t *testing.T) {
-	connFixture(t, newFakeConnBackend())
-	ctx := context.Background()
-	out := manageMCP(ctx, map[string]any{"action": "connect", "connectors": []any{"gmail", mcpTarget("linear")}}, nil, nil)
-	if !strings.Contains(out["error"].(string), "managed-connector action") {
-		t.Fatalf("out %v", out)
-	}
-	out = manageMCP(ctx, map[string]any{"action": "install", "connectors": []any{"gmail", mcpTarget("linear")}}, nil, nil)
-	if !strings.Contains(out["error"].(string), "must carry") {
-		t.Fatalf("out %v", out)
 	}
 }
 

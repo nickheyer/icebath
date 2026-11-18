@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/hex"
 	"fmt"
-	"iter"
 	"strings"
 	"sync"
 	"time"
@@ -13,11 +12,9 @@ import (
 	"github.com/nickheyer/icebath/pkg/agent"
 	"github.com/nickheyer/icebath/pkg/browser"
 	"github.com/nickheyer/icebath/pkg/config"
-	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pyctx"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pyrich"
-	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/skills"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
@@ -69,7 +66,7 @@ func (c *CLI) printSideResultPanel(headerLines []string, body, titleSuffix, empt
 		TitleAlign: "left", BorderStyle: respColor, Style: respText, Box: "horizontals", Padding: &[2]int{1, 4}, Width: scrollbackBoxWidth()})
 }
 
-// Shape of one side result worker for /bg, /btw and /login
+// Shape of one side result worker for /bg and /btw
 type sideWorkerSpec struct {
 	name, failLabel, titleSuffix, emptyNote string
 	headerLines                             []string
@@ -226,72 +223,6 @@ func (c *CLI) handleBackgroundCommand(cmd string) {
 		return response, nil
 	}
 	c.startBackgroundWorker(taskID, taskNum, preview, produce)
-}
-
-// Pulls the first state of a sign in and returns it, the rest of the sequence and the abandon func
-func firstSignInState(states iter.Seq[provider.SignInState]) (provider.SignInState, iter.Seq[provider.SignInState], func()) {
-	next, stop := iter.Pull(states)
-	first, ok := next()
-	if !ok {
-		stop()
-		return nil, nil, stop
-	}
-	rest := func(yield func(provider.SignInState) bool) {
-		defer stop()
-		for {
-			state, ok := next()
-			if !ok || !yield(state) {
-				return
-			}
-		}
-	}
-	return first, rest, stop
-}
-
-// Handles /login, printing the device code and finishing the sign in on a worker without blocking input
-func (c *CLI) handleLoginCommand(cmdOriginal string) {
-	var console sideConsole
-	console = &pyrich.Console{Out: c.console.Out, Color: c.console.ShouldUseColor(), Terminal: c.console.StdoutIsTTY(), Width: terminalColumns()}
-	cp("  " + provider.LoginStarting)
-	h := home.Dir(c.ctx)
-	env := provider.PoolEnv{Store: provider.NewStore(h), Secrets: config.NewSecrets(h), Scope: provider.SecretScopeFrom(c.ctx),
-		Config: provider.ConfigLoader(h), Log: cliLogger, Ctx: c.ctx}
-	first, rest, abandon := firstSignInState(provider.RunSignIn(env, provider.SignInOptions{Timeout: 8 * time.Second}))
-	if first == nil {
-		return
-	}
-	if first.Terminal() {
-		abandon()
-		cp("  " + first.Copy())
-		return
-	}
-	code, ok := first.(provider.SignInCode)
-	if !ok {
-		abandon()
-		panic(fmt.Errorf("AttributeError: '%s' object has no attribute 'link'", first.Kind()))
-	}
-	var buf strings.Builder
-	if err := provider.RenderSignInCLICode(&buf, code, false, true); err != nil {
-		abandon()
-		panic(err)
-	}
-	cp(strings.Split(strings.TrimSuffix(buf.String(), "\n"), "\n")...)
-	settle := func(state provider.SignInState) error {
-		completed, ok := state.(provider.SignInCompleted)
-		if state.Kind() != "completed" || !ok || !completed.ModelChanged {
-			return nil
-		}
-		if c.model == provider.GuestModel {
-			c.model = completed.Model
-		}
-		return nil
-	}
-	label := c.commandsT("login.label", nil)
-	run := c.sideWorker(func() (string, error) {
-		return provider.DrainSignInCopy(rest, true, settle), nil
-	}, sideWorkerSpec{name: "login", failLabel: label, headerLines: []string{"  " + label},
-		titleSuffix: c.commandsT("login.title_suffix", nil), emptyNote: "  " + c.commandsT("login.no_result", nil), console: console})
-	go run()
 }
 
 // Handles /btw, answering a side question about the conversation from a history snapshot on a worker

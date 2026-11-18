@@ -3,7 +3,6 @@ package generate
 import (
 	"context"
 	"fmt"
-	"log/slog"
 	"os"
 	"strings"
 
@@ -14,12 +13,10 @@ import (
 	"github.com/nickheyer/icebath/pkg/tools"
 )
 
-var genLog = slog.Default().With("logger", "agent.pet.generate")
-
 // Providers that can ground generation on a reference image, in preference order
-var refCapable = []string{"nous", "openai", "openai-codex", "openrouter", "krea"}
+var refCapable = []string{"openai", "openai-codex", "openrouter", "krea"}
 
-var providerLabels = map[string]string{"nous": "Nous Portal", "openrouter": "OpenRouter", "openai": "OpenAI", "openai-codex": "OpenAI (Codex)", "krea": "Krea"}
+var providerLabels = map[string]string{"openrouter": "OpenRouter", "openai": "OpenAI", "openai-codex": "OpenAI (Codex)", "krea": "Krea"}
 
 // GenerationError is any image generation failure, no provider, API error or IO
 type GenerationError struct{ Msg string }
@@ -37,7 +34,7 @@ type SpriteProvider struct {
 func discoverImagePlugins(ctx context.Context) {
 	defer func() {
 		if r := recover(); r != nil {
-			genLog.Debug(fmt.Sprintf("image-gen plugin discovery failed: %v", r))
+			pkgLog().Debug(fmt.Sprintf("image-gen plugin discovery failed: %v", r))
 		}
 	}()
 	plugins.GetPluginManager(ctx).DiscoverAndLoad(ctx, false)
@@ -98,8 +95,8 @@ func ResolveProvider(ctx context.Context, env *tools.Env, requireReferences bool
 		return &SpriteProvider{Name: name, Provider: active, SupportsReferences: false}, nil
 	}
 	return nil, &GenerationError{Msg: "Pet generation needs an image backend that supports reference images. " +
-		"Open `icebath tools` → Image Generation and configure Nous Portal, " +
-		"OpenRouter, or OpenAI (gpt-image-2) with an API key."}
+		"Open `icebath tools` → Image Generation and configure " +
+		"OpenRouter or OpenAI (gpt-image-2) with an API key."}
 }
 
 // Configured reference capable providers with their label and default flag, in preference order
@@ -172,7 +169,7 @@ func Generate(ctx context.Context, env *tools.Env, prompt string, n int, referen
 			return sprite.Provider.Generate(ctx, env, req)
 		}()
 		if err != nil {
-			genLog.Debug(fmt.Sprintf("provider.generate crashed: %s", pyrepr.ExceptionMessage(err)))
+			pkgLog().Debug(fmt.Sprintf("provider.generate crashed: %s", pyrepr.ExceptionMessage(err)))
 			return "", pyrepr.ExceptionMessage(err)
 		}
 		if result == nil {

@@ -52,7 +52,7 @@ type SafeDumpIndent struct {
 }
 
 // Indentation of the shared YAML writer, mapping 2, sequence 4 and dash offset 2
-var hermesDumpIndent = SafeDumpIndent{Mapping: 2, Sequence: 4, Offset: 2}
+var icebathDumpIndent = SafeDumpIndent{Mapping: 2, Sequence: 4, Offset: 2}
 
 // Indentation of a ruamel YAML instance left at its defaults, sequences indentless under a mapping key
 var RuamelDefaultIndent = SafeDumpIndent{Mapping: 2, Sequence: 2, Offset: 0}
@@ -421,7 +421,7 @@ type safeEmitter struct {
 
 func newSafeEmitter(opts SafeDumpOptions, root *dumpNode) *safeEmitter {
 	e := &safeEmitter{allowUnicode: opts.AllowUnicode, bestWidth: 80, whitespace: true, indention: true, indentNone: true,
-		ind: hermesDumpIndent, version: opts.Version,
+		ind: icebathDumpIndent, version: opts.Version,
 		anchors: map[*dumpNode]string{}, serialized: map[*dumpNode]bool{}, anchorsSeen: map[*dumpNode]bool{}}
 	if opts.Indent != nil {
 		e.ind = *opts.Indent

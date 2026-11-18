@@ -161,7 +161,6 @@ func TestResolveAPIModeLadder(t *testing.T) {
 		{"custom", "https://proxy.example/anthropic/", "", "anthropic_messages", "custom", true},
 		{"openrouter", "https://openrouter.ai/api/v1", "codex_app_server", "codex_app_server", "openrouter", true},
 		{"openrouter", "https://openrouter.ai/api/v1", "", "chat_completions", "openrouter", true},
-		{"nous", "https://inference-api.nousresearch.com/v1", "", "chat_completions", "nous", true},
 	} {
 		a := &AIAgent{provider: c.prov}
 		a.setBaseURL(c.base)

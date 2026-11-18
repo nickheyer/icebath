@@ -10,7 +10,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/plugins"
 	"github.com/nickheyer/icebath/pkg/providerregistry"
-	"github.com/nickheyer/icebath/pkg/tools"
 )
 
 // Python TypeError a provider registry raises for an object that is not an instance of its provider class
@@ -47,20 +46,17 @@ func IsAvailableSafe(provider AvailabilityProvider, logger *slog.Logger, format 
 	return providerregistry.IsAvailableSafe(provider, logger, format, level, excInfo)
 }
 
-// Configured section provider from the read only config, stripped, with the managed Nous selection read as fal
+// Configured section provider from the read only config, stripped
 func ConfiguredProviderName(ctx context.Context, section string, logger *slog.Logger) string {
 	configured := ""
 	cfg, err := config.LoadReadonly(ctx, home.Dir(ctx), nil)
 	if err != nil {
 		if logger == nil {
-			logger = slog.Default()
+			logger = pkgLog()
 		}
 		logger.Debug(fmt.Sprintf("Could not read %s.provider from config: %s", section, err))
 	} else if raw, ok := configBlock(configBlock(map[string]any(cfg))[section])["provider"].(string); ok && pystr.Strip(raw) != "" {
 		configured = pystr.Strip(raw)
-	}
-	if configured != "" && pystr.Lower(configured) == tools.NousManagedProvider {
-		configured = "fal"
 	}
 	return configured
 }

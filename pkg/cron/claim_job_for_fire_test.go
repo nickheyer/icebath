@@ -321,7 +321,7 @@ func TestClaimSecondsBeforeTheSlotOwnsItOnce(t *testing.T) {
 	}
 	ctx := context.Background()
 	ledger := openExecutionsLedger(s)
-	row, err := ledger.Create(ctx, job.ID, "chronos", claimed.ScheduledInstant)
+	row, err := ledger.Create(ctx, job.ID, "external", claimed.ScheduledInstant)
 	if err != nil {
 		t.Fatal(err)
 	}

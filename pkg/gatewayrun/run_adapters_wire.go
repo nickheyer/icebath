@@ -7,7 +7,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/agent"
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/observability"
 	"github.com/nickheyer/icebath/pkg/provider"
 )
 
@@ -150,16 +149,13 @@ func (r *GatewayRunner) makeProfileFatalErrorHandler(profileName string, platfor
 func (r *GatewayRunner) handleProfileAdapterFatalError(ctx context.Context, profileName string, platform gateway.Platform, adapter gateway.PlatformAdapter) error {
 	profileMap, _ := r.profileAdapters.Get(profileName)
 	if current, ok := profileMap.Get(platform); profileMap == nil || !ok || current != adapter {
-		runLog().Debug(fmt.Sprintf("Ignoring stale fatal error from secondary %s adapter (profile: %s)", platform, profileName))
+		pkgLog().Debug(fmt.Sprintf("Ignoring stale fatal error from secondary %s adapter (profile: %s)", platform, profileName))
 		return nil
 	}
 	profileMap.Delete(platform)
 	r.holdSecondaryClaims(profileName, platform, adapter, r.adapterClaims(platform, adapter))
 	settled := func() bool {
 		defer r.releaseSecondaryClaims(profileName, platform, adapter)
-		if profileHome := routedProfileHome(profileName); profileHome != unresolvedProfileHome {
-			observability.RecordPlatformDisconnect(ctx, adapter, profileHome.path)
-		}
 		r.safeAdapterDisconnect(ctx, adapter, platform)
 		if now, _ := r.profileAdapters.Get(profileName); !r.running.Load() || now != profileMap {
 			return false
@@ -174,7 +170,7 @@ func (r *GatewayRunner) handleProfileAdapterFatalError(ctx context.Context, prof
 	if c := adapter.Base().FatalErrorCode(); c != nil && *c != "" {
 		code = *c
 	}
-	runLog().Error(fmt.Sprintf("Fatal %s adapter error for multiplexed profile %s (%s)", platform, profileName, code))
+	pkgLog().Error(fmt.Sprintf("Fatal %s adapter error for multiplexed profile %s (%s)", platform, profileName, code))
 	return nil
 }
 
@@ -194,7 +190,7 @@ func (r *GatewayRunner) makeProfileMessageHandler(ctx context.Context, profileNa
 	}
 	profile := profileName
 	if err := gateway.RegisterTransportHome(r, &profile, transportHome); err != nil {
-		runLog().Debug(fmt.Sprintf("transport home registration for '%s' failed", profileName), "error", err)
+		pkgLog().Debug(fmt.Sprintf("transport home registration for '%s' failed", profileName), "error", err)
 	}
 	return &boundMessageHandler{owner: r, fn: func(c context.Context, event *gateway.MessageEvent) (any, error) {
 		identity := r.canonicalize(c, event.Source, profileName, "")
@@ -227,7 +223,7 @@ func (r *GatewayRunner) makeProfileBusySessionHandler(ctx context.Context, profi
 func (r *GatewayRunner) makeDefaultProfileMessageHandler(ctx context.Context) *boundMessageHandler {
 	defaultHome := home.Dir(ctx)
 	if err := gateway.RegisterTransportHome(r, nil, &defaultHome); err != nil {
-		runLog().Debug("transport home registration for the default profile failed", "error", err)
+		pkgLog().Debug("transport home registration for the default profile failed", "error", err)
 	}
 	return &boundMessageHandler{owner: r, fn: func(c context.Context, event *gateway.MessageEvent) (any, error) {
 		profileHome, admitted := r.admitPrimarySource(c, event.Source, defaultHome)
@@ -288,7 +284,7 @@ func standaloneScoped(ctx context.Context) context.Context {
 func (r *GatewayRunner) handleGatewayPlatformEvent(ctx context.Context, event map[string]any, source *gateway.SessionSource) error {
 	defer func() {
 		if rec := recover(); rec != nil {
-			runLog().Debug("gateway_platform_event hook dispatch failed", "error", rec)
+			pkgLog().Debug("gateway_platform_event hook dispatch failed", "error", rec)
 		}
 	}()
 	if !agent.LifecycleHasHook(ctx, "gateway_platform_event") {
@@ -296,7 +292,7 @@ func (r *GatewayRunner) handleGatewayPlatformEvent(ctx context.Context, event ma
 	}
 	authorized, err := r.isUserAuthorizedForSource(ctx, source, false)
 	if err != nil {
-		runLog().Debug("gateway_platform_event hook dispatch failed", "error", err)
+		pkgLog().Debug("gateway_platform_event hook dispatch failed", "error", err)
 		return nil
 	}
 	if authorized {

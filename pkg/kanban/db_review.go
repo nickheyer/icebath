@@ -14,7 +14,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/tools"
 )
 
-// Seams over run bookkeeping and worker termination that tests replace like the hermes monkeypatches
+// Seams over run bookkeeping and worker termination that tests replace like the swaps
 var (
 	endOrSynthesizeRunFn       = endOrSynthesizeRun
 	terminateReclaimedWorkerFn = terminateReclaimedWorker

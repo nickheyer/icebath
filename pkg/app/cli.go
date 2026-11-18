@@ -3,7 +3,6 @@ package app
 import (
 	"context"
 	"fmt"
-	"log/slog"
 	"os"
 	"path/filepath"
 	"strings"
@@ -22,8 +21,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/skills"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
-
-var cliLogger = slog.Default().With("logger", "cli")
 
 // inputQueue is the unbounded FIFO the composer, interrupt and pending input paths share
 type inputQueue struct {
@@ -202,7 +199,7 @@ type cliRuntime struct {
 	Resolved          *provider.Runtime
 }
 
-// CLI is the classic terminal chat, hermes HermesCLI with every mixin bound onto one struct
+// The classic terminal chat with every mixin bound onto one struct
 type CLI struct {
 	ctx     context.Context
 	env     *tools.Env
@@ -348,8 +345,6 @@ type CLI struct {
 	approvalLock                   sync.Mutex
 	composerPlaceholder            string
 	pendingAgentSeed               any
-	slashWorker                    bool
-	slashMetricsOff                bool
 	pendingToolInfo                map[string][]map[string]any
 	spinnerText                    string
 	lastScrollbackTool             string
@@ -363,7 +358,6 @@ type CLI struct {
 	goalManager                    goals.Manager
 	attachedImages                 []string
 	imageCounter                   int
-	promptStash                    *config.PromptStash
 	preloadedSkills                []string
 	autoLoadSkillsResult           *skillsPromptResult
 	preloadSkillsDone              chan struct{}
@@ -496,13 +490,13 @@ func runCleanup(ctx context.Context, env *tools.Env, notifySessionFinalize bool)
 	}
 	defer func() {
 		if r := recover(); r != nil {
-			cliLogger.Warn(fmt.Sprintf("CLI cleanup memory shutdown failed: %v", r))
+			pkgLog().Warn(fmt.Sprintf("CLI cleanup memory shutdown failed: %v", r))
 		}
 	}()
 	shutdownAgentMemoryProvider(currentActiveAgent())
 }
 
-// Runs one cleanup step, swallowing its panic the way hermes suppresses the step's exception
+// Runs one cleanup step, swallowing its panic
 func runCleanupStep(step func(context.Context, *tools.Env), ctx context.Context, env *tools.Env) {
 	defer func() { _ = recover() }()
 	step(ctx, env)
@@ -587,7 +581,7 @@ func ensureSkillCommands(ctx context.Context) skills.SkillCommands {
 	}
 	cmds, err := skillsScope(ctx).GetInteractiveSkillCommands(ctx)
 	if err != nil {
-		cliLogger.Debug(fmt.Sprintf("interactive skill commands scan failed: %v", err))
+		pkgLog().Debug(fmt.Sprintf("interactive skill commands scan failed: %v", err))
 	}
 	return cmds
 }
@@ -615,7 +609,7 @@ func getSkillBundles(ctx context.Context) skills.SkillCommands {
 	if skillBundlesCache == nil {
 		bundles, err := skillsScope(ctx).GetSkillBundles()
 		if err != nil {
-			cliLogger.Debug(fmt.Sprintf("skill bundles scan failed: %v", err))
+			pkgLog().Debug(fmt.Sprintf("skill bundles scan failed: %v", err))
 		}
 		skillBundlesCache = bundles
 	}
@@ -657,11 +651,11 @@ func parseSkillsArgument(skillsArg []string) []string {
 func SaveConfigValue(ctx context.Context, keyPath string, value any) bool {
 	configPath := filepath.Join(home.Dir(ctx), "config.yaml")
 	if _, err := home.Mkdir(ctx, filepath.Dir(configPath)); err != nil {
-		cliLogger.Error(fmt.Sprintf("Failed to save config: %v", err))
+		pkgLog().Error(fmt.Sprintf("Failed to save config: %v", err))
 		return false
 	}
 	if err := config.WriteConfigKey(ctx, configPath, keyPath, value); err != nil {
-		cliLogger.Error(fmt.Sprintf("Failed to save config: %v", err))
+		pkgLog().Error(fmt.Sprintf("Failed to save config: %v", err))
 		return false
 	}
 	_ = os.Chmod(configPath, 0o600)

@@ -8,14 +8,14 @@ import (
 	"testing"
 
 	"github.com/nickheyer/icebath/pkg/agent"
-	"github.com/nickheyer/icebath/pkg/tuigateway"
+	"github.com/nickheyer/icebath/pkg/tuihost"
 )
 
 func TestInitSessionAttachesBackgroundReviewCallback(t *testing.T) {
 	t.Setenv("ICEBATH_HOME", t.TempDir())
 	a := testAgent(t, agent.AIAgentOptions{Model: "fake/model"})
 	recorder := &frameRecorder{}
-	ctx := tuigateway.BindTransport(context.Background(), recorder)
+	ctx := tuihost.BindTransport(context.Background(), recorder)
 	initSession(ctx, "sid-abc", "session-key", a, []any{}, 80, t.TempDir(), nil, "", "", false)
 	t.Cleanup(func() { closeSessionByID(context.Background(), "sid-abc", "test_cleanup", nil) })
 	cb, isFunc := a.BackgroundReviewCallback().(func(string))
@@ -25,7 +25,7 @@ func TestInitSessionAttachesBackgroundReviewCallback(t *testing.T) {
 	recorder.mu.Lock()
 	recorder.frames = nil
 	recorder.mu.Unlock()
-	message := "💾 Self-improvement review: Skill 'hermes-release' patched"
+	message := "💾 Self-improvement review: Skill 'icebath-release' patched"
 	cb(message)
 	var matched [][2]any
 	recorder.mu.Lock()

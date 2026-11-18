@@ -25,7 +25,7 @@ import (
 	"time"
 
 	fakellm "github.com/nickheyer/icebath/pkg/testfakes"
-	"github.com/nickheyer/icebath/pkg/tuigateway"
+	"github.com/nickheyer/icebath/pkg/tuihost"
 )
 
 // Liveness budget of one chaos scenario, the fakes faulting for an hour against deadlines of seconds
@@ -130,7 +130,7 @@ func hermeticChaosEnv(userHome, stateHome, tag string) map[string]string {
 		key, value, _ := strings.Cut(entry, "=")
 		if strings.HasSuffix(key, "_API_KEY") || strings.HasSuffix(key, "_TOKEN") || strings.HasSuffix(key, "_SECRET") ||
 			strings.HasPrefix(key, "ICEBATH_") || strings.HasPrefix(key, "OPENROUTER") || strings.HasPrefix(key, "ANTHROPIC") ||
-			strings.HasPrefix(key, "OPENAI") || strings.HasPrefix(key, "NOUS_") {
+			strings.HasPrefix(key, "OPENAI") || strings.HasPrefix(key, "OPENROUTER_") {
 			continue
 		}
 		env[key] = value
@@ -632,7 +632,7 @@ func (g *chaosGateway) tail() string {
 // Boots the binary as the stdio gateway entry under the scenario environment
 func startChaosGateway(t *testing.T, env []string, cwd, stderrPath string) *chaosGateway {
 	t.Helper()
-	g := &chaosGateway{process: exec.Command(os.Args[0], tuigateway.TUIGatewayEntry), exited: make(chan struct{}), stderr: stderrPath}
+	g := &chaosGateway{process: exec.Command(os.Args[0], tuihost.TUIGatewayEntry), exited: make(chan struct{}), stderr: stderrPath}
 	g.process.Env = env
 	g.process.Dir = cwd
 	errOut, err := os.Create(stderrPath)

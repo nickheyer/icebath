@@ -40,7 +40,7 @@ func (a *RelayAdapter) SendDraft(ctx context.Context, chatID string, draftID int
 		}
 		a.mu.Unlock()
 		if first {
-			relayAdapterLog().Warn(fmt.Sprintf("relay: draft frame for %s swallowed by post-seal tombstone (draft_id=%d) — expected for a straggler; "+
+			pkgLog().Warn(fmt.Sprintf("relay: draft frame for %s swallowed by post-seal tombstone (draft_id=%d) — expected for a straggler; "+
 				"a live stream freezing NOW means something sealed it mid-flight", chatKey, draftID))
 		}
 		return SendResult{Success: true}, nil
@@ -99,11 +99,11 @@ func (a *RelayAdapter) sealOpenDraft(ctx context.Context, chatID, content string
 	attempt := func() map[string]any {
 		r, err := a.transport.SendOutbound(ctx, sealFrame, platform)
 		if err != nil {
-			relayAdapterLog().Warn(fmt.Sprintf("relay seal transport error (ambiguous): %s", relayExcStr(err)))
+			pkgLog().Warn(fmt.Sprintf("relay seal transport error (ambiguous): %s", relayExcStr(err)))
 			return nil
 		}
 		if pyrepr.Truthy(r["ambiguous"]) {
-			relayAdapterLog().Warn(fmt.Sprintf("relay seal ack lost (ambiguous): %s", pyrepr.Str(r["error"])))
+			pkgLog().Warn(fmt.Sprintf("relay seal ack lost (ambiguous): %s", pyrepr.Str(r["error"])))
 			return nil
 		}
 		return r
@@ -156,9 +156,9 @@ func (a *RelayAdapter) absorbIntoOpenDraft(ctx context.Context, chatID, content 
 		return &seal, nil
 	}
 	if IsEgressDecline(seal.RawResponse) {
-		relayAdapterLog().Warn(fmt.Sprintf("relay draft seal DECLINED for %s — not falling back to a plain send (the destination is not approved for this connection)", chatID))
+		pkgLog().Warn(fmt.Sprintf("relay draft seal DECLINED for %s — not falling back to a plain send (the destination is not approved for this connection)", chatID))
 		return &seal, nil
 	}
-	relayAdapterLog().Warn(fmt.Sprintf("relay seal failed (%s); delivering turn-final as plain send", pyrepr.Str(seal.Error)))
+	pkgLog().Warn(fmt.Sprintf("relay seal failed (%s); delivering turn-final as plain send", pyrepr.Str(seal.Error)))
 	return nil, nil
 }

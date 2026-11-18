@@ -3,17 +3,18 @@ package codeexec
 import (
 	"context"
 	"fmt"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"math"
 	"math/big"
 	"slices"
 	"strings"
 	"time"
 
+	"github.com/nickheyer/icebath/pkg/errchain"
+	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
-	"github.com/nickheyer/icebath/pkg/observability"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
@@ -33,7 +34,7 @@ func checkSandboxRequirements(env *tools.Env) bool {
 	}
 	cfg, err := tools.GetEnvConfig(env)
 	if err != nil {
-		logger(env).Debug("Could not resolve terminal config for execute_code availability", "error", err)
+		pkgLog(env).Debug("Could not resolve terminal config for execute_code availability", "error", err)
 		return false
 	}
 	return cfg["env_type"] != "vercel_sandbox" || tools.CheckVercelSandboxRequirements(env, cfg)
@@ -65,7 +66,7 @@ func configSeconds(v any) (float64, string, error) {
 		f, _ := new(big.Float).SetInt(i).Float64()
 		return f, pyrepr.Str(pyint.Value(i)), nil
 	}
-	return 0, "", fmt.Errorf("TypeError: '>' not supported between instances of 'int' and '%s'", pyrepr.TypeName(v))
+	return 0, "", fmt.Errorf("the code execution timeout is %s, expected a number of seconds", errchain.Kind(v))
 }
 
 func isPyIntLike(v any) bool {
@@ -93,7 +94,7 @@ func toolCallLimit(v any) int {
 		}
 		return int(i.Int64())
 	}
-	panic(fmt.Errorf("TypeError: '>=' not supported between instances of 'int' and '%s'", pyrepr.TypeName(v)))
+	panic(fmt.Errorf("the code execution tool call limit is %s, expected a whole number", errchain.Kind(v)))
 }
 
 func configValue(cfg map[string]any, key string, def any) any {
@@ -169,7 +170,7 @@ func executeCode(ctx context.Context, env *tools.Env, code, taskID string, enabl
 		tools.ClearCurrentInterrupt(ctx)
 	}
 	if envType != "local" {
-		return recordBackend(ctx, env, "remote", executeRemote(ctx, env, code, taskID, enabledTools, reset))
+		return executeRemote(ctx, env, code, taskID, enabledTools, reset)
 	}
 	cfg := loadConfig(env)
 	mode := getExecutionMode(env)
@@ -185,19 +186,12 @@ func executeCode(ctx context.Context, env *tools.Env, code, taskID string, enabl
 	if err != nil {
 		panic(err)
 	}
-	return recordBackend(ctx, env, "local", executeInSessionKernel(ctx, env, code, kernelCell{
+	return executeInSessionKernel(ctx, env, code, kernelCell{
 		taskID: taskID, mode: mode, childPython: childPython, childCwd: childCwd,
 		sandboxTools: sandboxToolsFor(enabledTools), timeout: seconds, timeoutText: secondsText,
 		maxToolCalls: toolCallLimit(configValue(cfg, "max_tool_calls", defaultMaxToolCalls)),
 		reset:        reset, isInterrupted: func() bool { return tools.IsInterrupted(ctx) },
-	}))
-}
-
-func recordBackend(ctx context.Context, env *tools.Env, backend, result string) string {
-	if out, ok := observability.RecordExecutionBackend(ctx, env, "code", backend, result, nil).(string); ok {
-		return out
-	}
-	return result
+	})
 }
 
 var toolDocLines = []struct{ name, doc string }{
@@ -293,7 +287,7 @@ func executeCodeHandler(ctx context.Context, call *tools.Call) string {
 	args := call.Args
 	_, hasCode := args["code"]
 	if _, hasCommand := args["command"]; !hasCode && hasCommand {
-		logger(call.Env).Warn("execute_code received 'command' instead of the required 'code' argument")
+		pkgLog(call.Env).Warn("execute_code received 'command' instead of the required 'code' argument")
 		return toolError("execute_code received a 'command' parameter, but it requires " +
 			"Python source in 'code'. Use terminal(command=...) for shell " +
 			"commands; for Python, retry as execute_code(code=...).")

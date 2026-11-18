@@ -42,7 +42,7 @@ func IsOpencodeTarget(provider, baseURL string) bool {
 
 // ResolveAffinityKey is the rotation stable conversation affinity key, empty when nothing names the conversation
 func ResolveAffinityKey(ctx context.Context, sessionID string) string {
-	return cacheScopeFromSessionID(auxFirstNonEmpty(portalAffinityScope(ctx), portalConversationContext(ctx), sessionID))
+	return cacheScopeFromSessionID(auxFirstNonEmpty(AffinityScope(ctx), ConversationContext(ctx), sessionID))
 }
 
 // OpencodeSessionHeaders is the session header for OpenCode targets, an ephemeral oneshot key when none resolves

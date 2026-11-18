@@ -11,7 +11,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/i18n"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
@@ -37,7 +36,7 @@ func homeChannelSecret(ctx context.Context, envKey string) string {
 		if errors.As(err, &unscoped) {
 			return strings.TrimSpace(os.Getenv(envKey))
 		}
-		runLog().Debug("Home-channel secret "+envKey+" unreadable; treating it as unset", "error", err)
+		pkgLog().Debug("Home-channel secret "+envKey+" unreadable; treating it as unset", "error", err)
 		return ""
 	}
 	return strings.TrimSpace(value)
@@ -82,5 +81,5 @@ func (r *GatewayRunner) hmwaFirstContactNotes(ctx context.Context, source *gatew
 		sethomeCmd = "/icebath sethome"
 	}
 	return r.deliverPlatformNotice(ctx, source, i18n.T(ctx, "gateway.notify.no_home_channel", "",
-		map[string]any{"platform": pystr.Title(platformName), "sethome_cmd": sethomeCmd}))
+		map[string]any{"platform": platformNoticeLabel(ctx, platformName), "sethome_cmd": sethomeCmd}))
 }

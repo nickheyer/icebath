@@ -7,7 +7,6 @@ import (
 	"flag"
 	"fmt"
 	"io"
-	"log/slog"
 	"os"
 	"runtime"
 	"strings"
@@ -22,10 +21,9 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/mcp"
 	"github.com/nickheyer/icebath/pkg/memory"
-	"github.com/nickheyer/icebath/pkg/observability"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/tools"
-	"github.com/nickheyer/icebath/pkg/tuigateway"
+	"github.com/nickheyer/icebath/pkg/tuihost"
 )
 
 // CLI constructor and runtime preparation of the worker child, the real ones in production
@@ -37,13 +35,9 @@ var (
 // Set while a slash command executes, the legacy watchdog's grace
 var slashWorkerInFlight atomic.Bool
 
-func slashWorkerLogger() *slog.Logger {
-	return slog.Default().With("logger", "tui_gateway.slash_worker")
-}
-
 // Runs the slash worker child when argv names its entry
 func DispatchSlashWorkerEntry(ctx context.Context, exit func(code int)) {
-	if len(os.Args) < 2 || os.Args[1] != tuigateway.SlashWorkerEntry {
+	if len(os.Args) < 2 || os.Args[1] != tuihost.SlashWorkerEntry {
 		return
 	}
 	exit(slashWorkerMain(ctx, os.Args[2:]))
@@ -62,14 +56,13 @@ func startLegacyParentWatchdog(ctx context.Context, parentPID int, poll, grace t
 		for slashWorkerInFlight.Load() && time.Now().Before(deadline) {
 			time.Sleep(50 * time.Millisecond)
 		}
-		observability.FlushBeforeHardExit(ctx, observability.ExitFlushTimeout)
 		os.Exit(0)
 	}()
 }
 
 // Starts and waits for bounded MCP discovery before the CLI snapshots its tools
 func prepareSlashWorkerRuntime(ctx context.Context, env *tools.Env) {
-	mcp.StartBackgroundDiscovery(ctx, env, slashWorkerLogger(), "slash-worker-mcp-discovery")
+	mcp.StartBackgroundDiscovery(ctx, env, pkgLog(), "slash-worker-mcp-discovery")
 	mcp.WaitForDiscovery(ctx, env, nil, false)
 }
 
@@ -189,7 +182,7 @@ func slashWorkerMain(ctx context.Context, args []string) int {
 	startLegacyParentWatchdog(ctx, *parentPID, 2*time.Second, 5*time.Second)
 	_ = os.Setenv("ICEBATH_QUIET", "1")
 	if _, err := provider.LoadIcebathDotenv(ctx, provider.DotenvLoadOptions{Home: home.Dir(ctx)}); err != nil {
-		slashWorkerLogger().Debug("slash worker dotenv load failed", "error", err)
+		pkgLog().Debug("slash worker dotenv load failed", "error", err)
 	}
 	cwd, _ := os.Getwd()
 	slashWorkerPrepare(ctx, &tools.Env{Home: home.Dir(ctx), Cwd: cwd})
@@ -217,8 +210,6 @@ func slashWorkerMain(ctx context.Context, args []string) int {
 		fmt.Fprintln(os.Stderr, buildErr)
 		return 1
 	}
-	c.slashMetricsOff = true
-	c.slashWorker = true
 	var recoveryTimes []float64
 	reader := bufio.NewReader(os.Stdin)
 	for {
@@ -227,7 +218,7 @@ func slashWorkerMain(ctx context.Context, args []string) int {
 			if !errors.Is(readErr, io.EOF) && !errors.Is(readErr, syscall.EAGAIN) {
 				break
 			}
-			if !tuigateway.HandleSpuriousEOF(&recoveryTimes, func(reason string) {
+			if !tuihost.HandleSpuriousEOF(&recoveryTimes, func(reason string) {
 				fmt.Fprintf(os.Stderr, "[slash-worker] %s\n", reason)
 			}) {
 				break
@@ -244,7 +235,7 @@ func slashWorkerMain(ctx context.Context, args []string) int {
 		func() {
 			defer func() {
 				if rec := recover(); rec != nil {
-					slashWorkerLogger().Debug(fmt.Sprintf("slash worker memory trim failed: %v", rec))
+					pkgLog().Debug(fmt.Sprintf("slash worker memory trim failed: %v", rec))
 				}
 			}()
 			memory.TrimMemory(ctx, &tools.Env{Home: home.Dir(ctx)}, memory.TrimOptions{Reason: "slash worker command completion"})

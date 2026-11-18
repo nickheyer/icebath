@@ -15,6 +15,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pydatetime"
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
@@ -96,8 +97,8 @@ func (f *Formatter) Format(ctx context.Context, rec *Record) (string, error) {
 			return float64(rec.Created.Sub(processStart).Nanoseconds()) / 1e6, true
 		case "session_tag":
 			return rec.SessionTag, true
-		case "hermes_home":
-			return rec.HermesHome, true
+		case home.RecordKey, home.RetiredRecordKey(home.RecordKey):
+			return rec.Home, true
 		case "process":
 			return os.Getpid(), true
 		case "processName":
@@ -126,7 +127,7 @@ func (f *Formatter) Format(ctx context.Context, rec *Record) (string, error) {
 	if err != nil {
 		var pe *pyrepr.PercentError
 		if errors.As(err, &pe) && pe.Class == "KeyError" {
-			return "", fmt.Errorf("ValueError: Formatting field not found in record: %s", pe.Msg)
+			return "", fmt.Errorf("the log format names field %s, which a log record does not have", pe.Msg)
 		}
 		return "", err
 	}

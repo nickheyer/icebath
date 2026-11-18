@@ -8,7 +8,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"log/slog"
 	"math"
 	mrand "math/rand/v2"
 	"os"
@@ -20,6 +19,7 @@ import (
 
 	"github.com/bwmarrin/discordgo"
 
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/i18n"
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
@@ -72,7 +72,7 @@ func (a *DiscordAdapter) PlayTTS(ctx context.Context, chatID, audioPath, caption
 	a.mu.Unlock()
 	for gid, textCh := range bound {
 		if strconv.FormatInt(textCh, 10) == chatID && a.IsInVoiceChannel(gid) {
-			slog.Info(fmt.Sprintf("[%s] Playing TTS in voice channel (guild=%d)", a.Name(), gid))
+			pkgLog().Info(fmt.Sprintf("[%s] Playing TTS in voice channel (guild=%d)", a.Name(), gid))
 			success, err := a.playInVoiceChannel(ctx, gid, audioPath)
 			if err != nil {
 				return gateway.SendResult{}, err
@@ -153,7 +153,7 @@ func (a *DiscordAdapter) getAmbientPCM(ctx context.Context) ([]byte, error) {
 	if raw := a.voiceFXCfg["ambient_path"]; pyrepr.Truthy(raw) {
 		s, ok := raw.(string)
 		if !ok {
-			return nil, fmt.Errorf("AttributeError: '%s' object has no attribute 'strip'", pyrepr.TypeName(raw))
+			return nil, fmt.Errorf("voice ambient_path is %s, expected a path", errchain.Kind(raw))
 		}
 		path = pystr.Strip(s)
 	}
@@ -162,7 +162,7 @@ func (a *DiscordAdapter) getAmbientPCM(ctx context.Context) ([]byte, error) {
 		if st, err := os.Stat(path); err == nil && st.Mode().IsRegular() {
 			pcm = decodeToPCM(ctx, path, 30*time.Second)
 			if len(pcm) == 0 {
-				slog.Warn(fmt.Sprintf("Ambient file %s failed to decode; using synth bed", path))
+				pkgLog().Warn(fmt.Sprintf("Ambient file %s failed to decode; using synth bed", path))
 			}
 		}
 	}
@@ -203,7 +203,7 @@ func (a *DiscordAdapter) installVoiceMixer(ctx context.Context, guildID int64, v
 	}
 	after := func(err error) {
 		if err != nil {
-			slog.Error(fmt.Sprintf("Voice mixer stream error (guild=%d): %s", guildID, err))
+			pkgLog().Error(fmt.Sprintf("Voice mixer stream error (guild=%d): %s", guildID, err))
 		}
 	}
 	if vc.IsPlaying() {
@@ -219,7 +219,7 @@ func (a *DiscordAdapter) installVoiceMixer(ctx context.Context, guildID int64, v
 	if len(ambient) > 0 {
 		hasAmbient = "True"
 	}
-	slog.Info(fmt.Sprintf("Voice mixer installed (guild=%d, ambient=%s)", guildID, hasAmbient))
+	pkgLog().Info(fmt.Sprintf("Voice mixer installed (guild=%d, ambient=%s)", guildID, hasAmbient))
 	return nil
 }
 
@@ -265,7 +265,7 @@ func (a *DiscordAdapter) pickAckPhrase(ctx context.Context) (string, error) {
 		r := []rune(p)
 		return string(r[mrand.IntN(len(r))]), nil
 	}
-	return "", fmt.Errorf("TypeError: object of type '%s' has no len()", pyrepr.TypeName(raw))
+	return "", fmt.Errorf("voice ack phrases are %s, expected a list of phrases", errchain.Kind(raw))
 }
 
 // Speaks a short ack over the ambient bed, false without acks enabled, a mixer or a synthesized clip
@@ -310,7 +310,7 @@ func (a *DiscordAdapter) PlayAckInVoice(ctx context.Context, guildID int, phrase
 		}
 	}()
 	fail := func(err error) (bool, error) {
-		slog.Debug(fmt.Sprintf("play_ack_in_voice failed: %s", err))
+		pkgLog().Debug(fmt.Sprintf("play_ack_in_voice failed: %s", err))
 		return false, nil
 	}
 	resultJSON, err := voiceTextToSpeech(ctx, text, audioPath)
@@ -331,7 +331,7 @@ func (a *DiscordAdapter) PlayAckInVoice(ctx context.Context, guildID int, phrase
 		return false, nil
 	}
 	if present && !isPath {
-		return fail(fmt.Errorf("TypeError: stat: path should be string, bytes, os.PathLike or integer, not %s", pyrepr.TypeName(fp)))
+		return fail(fmt.Errorf("the speech result file_path is %s, expected a path", errchain.Kind(fp)))
 	}
 	if st, err := os.Stat(actual); err != nil || !st.Mode().IsRegular() {
 		return false, nil
@@ -373,7 +373,7 @@ func (a *DiscordAdapter) connectVoiceChannel(ctx context.Context, guildID int64,
 	}
 	self := a.selfUser()
 	if self == nil {
-		return nil, errors.New("AttributeError: 'NoneType' object has no attribute 'id'")
+		return nil, errors.New("the Discord bot user is not known yet, so voice cannot connect")
 	}
 	userID, err := strconv.ParseInt(self.ID, 10, 64)
 	if err != nil {
@@ -410,7 +410,7 @@ func (a *DiscordAdapter) joinVoiceChannel(ctx context.Context, channel *discordg
 	}
 	guildID, err := strconv.ParseInt(channel.GuildID, 10, 64)
 	if err != nil {
-		return false, fmt.Errorf("AttributeError: 'NoneType' object has no attribute 'id'")
+		return false, errors.New("the Discord voice channel has no guild")
 	}
 	lock := a.voiceLock(guildID)
 	lock.Lock()
@@ -442,7 +442,7 @@ func (a *DiscordAdapter) joinVoiceChannel(ctx context.Context, channel *discordg
 	a.bindVoiceTextChannel(guildID, textChannelID, source)
 	receiver := newVoiceReceiver(vc, allowed)
 	if err := receiver.start(); err != nil {
-		slog.Warn(fmt.Sprintf("Voice receiver failed to start: %s", err))
+		pkgLog().Warn(fmt.Sprintf("Voice receiver failed to start: %s", err))
 	} else {
 		taskCtx := a.voiceTaskContext()
 		a.mu.Lock()
@@ -452,7 +452,7 @@ func (a *DiscordAdapter) joinVoiceChannel(ctx context.Context, channel *discordg
 	}
 	if pyrepr.Truthy(a.voiceFXCfg["enabled"]) {
 		if err := a.installVoiceMixer(ctx, guildID, vc); err != nil {
-			slog.Warn(fmt.Sprintf("Voice mixer failed to start: %s", err))
+			pkgLog().Warn(fmt.Sprintf("Voice mixer failed to start: %s", err))
 		}
 	}
 	return true, nil
@@ -462,7 +462,7 @@ func (a *DiscordAdapter) joinVoiceChannel(ctx context.Context, channel *discordg
 func (a *DiscordAdapter) JoinVoiceChannel(ctx context.Context, channel interface{ Name() string }) (bool, error) {
 	h, ok := channel.(*voiceChannelHandle)
 	if !ok || h == nil || h.ch == nil {
-		return false, fmt.Errorf("AttributeError: '%s' object has no attribute 'guild'", pyrepr.TypeName(channel))
+		return false, errors.New("the channel to join is not a Discord voice channel")
 	}
 	return a.joinVoiceChannel(ctx, h.ch, nil, nil)
 }
@@ -518,7 +518,7 @@ func (a *DiscordAdapter) playInVoiceChannel(ctx context.Context, guildID int64, 
 			start := time.Now()
 			for mixer.speechIsActive() {
 				if time.Since(start) > limit {
-					slog.Warn(fmt.Sprintf("Mixer speech playback timed out after %.1fs", playbackTimeout))
+					pkgLog().Warn(fmt.Sprintf("Mixer speech playback timed out after %.1fs", playbackTimeout))
 					mixer.stopSpeech()
 					break
 				}
@@ -528,7 +528,7 @@ func (a *DiscordAdapter) playInVoiceChannel(ctx context.Context, guildID int64, 
 			}
 			return true, nil
 		}
-		slog.Warn(fmt.Sprintf("Mixer decode failed for %s; falling back to legacy playback", audioPath))
+		pkgLog().Warn(fmt.Sprintf("Mixer decode failed for %s; falling back to legacy playback", audioPath))
 	}
 	a.mu.Lock()
 	receiver := a.voiceReceivers[guildID]
@@ -540,7 +540,7 @@ func (a *DiscordAdapter) playInVoiceChannel(ctx context.Context, guildID int64, 
 	start := time.Now()
 	for vc.IsPlaying() {
 		if time.Since(start) > limit {
-			slog.Warn("Timed out waiting for previous playback to finish")
+			pkgLog().Warn("Timed out waiting for previous playback to finish")
 			vc.Stop()
 			break
 		}
@@ -552,7 +552,7 @@ func (a *DiscordAdapter) playInVoiceChannel(ctx context.Context, guildID int64, 
 	var doneOnce sync.Once
 	after := func(err error) {
 		if err != nil {
-			slog.Error(fmt.Sprintf("Voice playback error: %s", err))
+			pkgLog().Error(fmt.Sprintf("Voice playback error: %s", err))
 		}
 		doneOnce.Do(func() { close(done) })
 	}
@@ -578,7 +578,7 @@ func (a *DiscordAdapter) playInVoiceChannel(ctx context.Context, guildID int64, 
 	select {
 	case <-done:
 	case <-t.C:
-		slog.Warn(fmt.Sprintf("Voice playback timed out after %.1fs", playbackTimeout))
+		pkgLog().Warn(fmt.Sprintf("Voice playback timed out after %.1fs", playbackTimeout))
 		vc.Stop()
 	case <-ctx.Done():
 		return false, ctx.Err()
@@ -603,7 +603,7 @@ func (a *DiscordAdapter) GetUserVoiceChannel(ctx context.Context, guildID int64,
 		return nil, nil
 	}
 	if userID == nil {
-		return nil, errors.New("TypeError: int() argument must be a string, a bytes-like object or a real number, not 'NoneType'")
+		return nil, errors.New("no Discord user id was given to look up a voice channel for")
 	}
 	uid, err := pyint.Int64(*userID)
 	if err != nil {
@@ -640,7 +640,7 @@ func (a *DiscordAdapter) resetVoiceTimeout(guildID int64) {
 	a.cancelVoiceTimeout(guildID)
 	timeout := a.voiceTimeoutLimit()
 	if timeout <= 0 {
-		slog.Debug(fmt.Sprintf("Voice inactivity timeout disabled (guild=%d)", guildID))
+		pkgLog().Debug(fmt.Sprintf("Voice inactivity timeout disabled (guild=%d)", guildID))
 		return
 	}
 	task := spawnTask(a.voiceTaskContext(), func(tctx context.Context) { a.voiceTimeoutHandler(tctx, guildID, &timeout) })
@@ -679,7 +679,7 @@ func (a *DiscordAdapter) voiceTimeoutHandler(ctx context.Context, guildID int64,
 		}
 	}
 	if err := a.leaveVoiceChannel(ctx, guildID); err != nil {
-		slog.Error(fmt.Sprintf("Task exception was never retrieved: %s", err))
+		pkgLog().Error(fmt.Sprintf("Task exception was never retrieved: %s", err))
 		return
 	}
 	a.mu.Lock()
@@ -726,7 +726,7 @@ func (a *DiscordAdapter) voiceListenLoop(ctx context.Context, guildID int64) {
 	}
 	defer func() {
 		if p := recover(); p != nil {
-			slog.Error(fmt.Sprintf("Voice listen loop error: %v", p))
+			pkgLog().Error(fmt.Sprintf("Voice listen loop error: %v", p))
 		}
 	}()
 	lastKeepalive := time.Now()

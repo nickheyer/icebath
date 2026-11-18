@@ -17,7 +17,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 )
 
-// Captured events of a replaced durable producer, the hermes _capture_admissions fixture
+// Captured events of a replaced durable producer, the capture admissions fixture
 type webhookAdmissions struct {
 	mu     sync.Mutex
 	events []*MessageEvent
@@ -198,7 +198,7 @@ const mcpTestRoute = "mcp-ambush-0123456789ab"
 
 var mcpTestSecret = "whsec_" + base64.StdEncoding.EncodeToString([]byte(strings.Repeat("k", 32)))
 
-// Home with one MCP event subscription route, the hermes home fixture
+// Home with one MCP event subscription route, the home fixture
 func mcpEventHome(t *testing.T) (*WebhookAdapter, string) {
 	adapter := makeWebhookAdapter(t, nil, map[string]any{"host": "127.0.0.1"})
 	h := os.Getenv("ICEBATH_HOME")

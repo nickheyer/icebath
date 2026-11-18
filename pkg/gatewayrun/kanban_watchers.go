@@ -83,11 +83,11 @@ func (r *GatewayRunner) kanbanNotifierWatcher(ctx context.Context, interval floa
 		kanbanCfg, err = kanbanSection(cfg)
 	}
 	if err != nil {
-		runLog().Warn(fmt.Sprintf("kanban notifier: cannot load config (%s); continuing enabled", pyrepr.Str(err)))
+		pkgLog().Warn(fmt.Sprintf("kanban notifier: cannot load config (%s); continuing enabled", pyrepr.Str(err)))
 		kanbanCfg = map[string]any{}
 	}
 	if enabled, ok := kanbanCfg["notify_in_gateway"]; ok && !pyrepr.Truthy(enabled) {
-		runLog().Info("kanban notifier: disabled via config kanban.notify_in_gateway=false")
+		pkgLog().Info("kanban notifier: disabled via config kanban.notify_in_gateway=false")
 		return nil
 	}
 
@@ -131,7 +131,7 @@ func (r *GatewayRunner) kanbanNotifierWatcher(ctx context.Context, interval floa
 			if ctx.Err() != nil {
 				return ctx.Err()
 			}
-			runLog().Warn(fmt.Sprintf("kanban notifier tick failed: %s", pyrepr.Str(err)))
+			pkgLog().Warn(fmt.Sprintf("kanban notifier tick failed: %s", pyrepr.Str(err)))
 		}
 		if err := r.sleepBetweenTicks(ctx, interval); err != nil {
 			return err
@@ -257,7 +257,7 @@ func (r *GatewayRunner) deliverKanbanArtifacts(ctx context.Context, adapter gate
 			_, err := adapter.SendMultipleImages(ctx, chatID, batch, metadata, 0.0)
 			return err
 		}); err != nil {
-			runLog().Warn(fmt.Sprintf("kanban notifier: image batch upload failed: %s", pyrepr.Str(err)))
+			pkgLog().Warn(fmt.Sprintf("kanban notifier: image batch upload failed: %s", pyrepr.Str(err)))
 		}
 	}
 	for _, path := range otherPaths {
@@ -270,7 +270,7 @@ func (r *GatewayRunner) deliverKanbanArtifacts(ctx context.Context, adapter gate
 			return err
 		})
 		if err != nil {
-			runLog().Warn(fmt.Sprintf("kanban notifier: artifact upload (%s) failed: %s", path, pyrepr.Str(err)))
+			pkgLog().Warn(fmt.Sprintf("kanban notifier: artifact upload (%s) failed: %s", path, pyrepr.Str(err)))
 		}
 	}
 	return nil
@@ -297,12 +297,12 @@ func (r *GatewayRunner) kanbanDispatcherBoot(ctx context.Context) (*kanbanDispat
 	envOverride := pystr.Lower(pystr.Strip(os.Getenv("ICEBATH_KANBAN_DISPATCH_IN_GATEWAY")))
 	switch envOverride {
 	case "0", "false", "no", "off":
-		runLog().Info("kanban dispatcher: disabled via ICEBATH_KANBAN_DISPATCH_IN_GATEWAY env")
+		pkgLog().Info("kanban dispatcher: disabled via ICEBATH_KANBAN_DISPATCH_IN_GATEWAY env")
 		return nil, nil
 	}
 	cfg, err := loadConfig()
 	if err != nil {
-		runLog().Warn(fmt.Sprintf("kanban dispatcher: cannot load config (%s); disabled", pyrepr.Str(err)))
+		pkgLog().Warn(fmt.Sprintf("kanban dispatcher: cannot load config (%s); disabled", pyrepr.Str(err)))
 		return nil, nil
 	}
 	kanbanCfg, err := kanbanSection(cfg)
@@ -310,7 +310,7 @@ func (r *GatewayRunner) kanbanDispatcherBoot(ctx context.Context) (*kanbanDispat
 		return nil, err
 	}
 	if enabled, ok := kanbanCfg["dispatch_in_gateway"]; ok && !pyrepr.Truthy(enabled) {
-		runLog().Info("kanban dispatcher: disabled via config kanban.dispatch_in_gateway=false")
+		pkgLog().Info("kanban dispatcher: disabled via config kanban.dispatch_in_gateway=false")
 		return nil, nil
 	}
 
@@ -321,16 +321,16 @@ func (r *GatewayRunner) kanbanDispatcherBoot(ctx context.Context) (*kanbanDispat
 	handle, lockState := acquireSingletonLock(lockPath)
 	switch lockState {
 	case singletonLockContended:
-		runLog().Info(fmt.Sprintf("kanban dispatcher: another gateway already holds the dispatcher "+
+		pkgLog().Info(fmt.Sprintf("kanban dispatcher: another gateway already holds the dispatcher "+
 			"lock (%s); this gateway will NOT dispatch.", lockPath))
 		return nil, nil
 	case singletonLockHeld:
 		r.kanbanDispatcherLockMu.Lock()
 		r.kanbanDispatcherLockHandle = handle
 		r.kanbanDispatcherLockMu.Unlock()
-		runLog().Info(fmt.Sprintf("kanban dispatcher: holding singleton dispatcher lock (%s)", lockPath))
+		pkgLog().Info(fmt.Sprintf("kanban dispatcher: holding singleton dispatcher lock (%s)", lockPath))
 	default:
-		runLog().Warn(fmt.Sprintf("kanban dispatcher: advisory lock unavailable at %s; proceeding "+
+		pkgLog().Warn(fmt.Sprintf("kanban dispatcher: advisory lock unavailable at %s; proceeding "+
 			"on config control alone.", lockPath))
 	}
 	return &kanbanDispatcherBootState{loadConfig: loadConfig, kanbanCfg: kanbanCfg}, nil
@@ -354,7 +354,7 @@ func (r *GatewayRunner) kanbanDispatcherWatcher(ctx context.Context) error {
 	var results []boardDispatch
 	dispatcher := newKanbanDispatcher(settings)
 
-	runLog().Info(fmt.Sprintf("kanban dispatcher: embedded in gateway (interval=%.1fs)", interval))
+	pkgLog().Info(fmt.Sprintf("kanban dispatcher: embedded in gateway (interval=%.1fs)", interval))
 	for r.running.Load() {
 		pids, err := toThreadProcessService(ctx, func(context.Context) ([]int, error) {
 			var pids []int
@@ -368,13 +368,13 @@ func (r *GatewayRunner) kanbanDispatcherWatcher(ctx context.Context) error {
 			if ctx.Err() != nil {
 				return ctx.Err()
 			}
-			runLog().Error("kanban dispatcher: zombie reaper failed", "exc_info", err)
+			pkgLog().Error("kanban dispatcher: zombie reaper failed", "exc_info", err)
 		} else if len(pids) > 0 {
 			items := make([]any, len(pids))
 			for i, p := range pids {
 				items[i] = int64(p)
 			}
-			runLog().Info(fmt.Sprintf("kanban dispatcher: reaped %d zombie worker(s), pids=%s", len(pids), pyrepr.Repr(items)))
+			pkgLog().Info(fmt.Sprintf("kanban dispatcher: reaped %d zombie worker(s), pids=%s", len(pids), pyrepr.Repr(items)))
 		}
 
 		err = catchPanic(func() error {
@@ -418,7 +418,7 @@ func (r *GatewayRunner) kanbanDispatcherWatcher(ctx context.Context) error {
 				if reason != "" {
 					tail = fmt.Sprintf(" Last tick held back: %s.", reason)
 				}
-				runLog().Warn(fmt.Sprintf("kanban dispatcher stuck: ready queue non-empty for "+
+				pkgLog().Warn(fmt.Sprintf("kanban dispatcher stuck: ready queue non-empty for "+
 					"%d consecutive ticks but 0 workers spawned.%s Check "+
 					"profile health (venv, PATH, credentials) and "+
 					"`icebath kanban list --status ready`.", badTicks, tail))
@@ -428,11 +428,11 @@ func (r *GatewayRunner) kanbanDispatcherWatcher(ctx context.Context) error {
 		})
 		if err != nil {
 			if ctx.Err() != nil {
-				runLog().Debug("kanban dispatcher: cancelled")
+				pkgLog().Debug("kanban dispatcher: cancelled")
 				r.releaseKanbanDispatcherLock()
 				return ctx.Err()
 			}
-			runLog().Error("kanban dispatcher: unexpected watcher error", "exc_info", err)
+			pkgLog().Error("kanban dispatcher: unexpected watcher error", "exc_info", err)
 		}
 
 		if err := r.sleepBetweenTicks(ctx, interval); err != nil {

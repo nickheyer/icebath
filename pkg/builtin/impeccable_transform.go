@@ -18,12 +18,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 )
 
-// Source directory beside the skill and destination under the config directory of a provider plugin
-type impeccablePluginPayload struct {
-	Source string
-	Dest   string
-}
-
 // One entry of PROVIDERS, the settings a provider build is rendered with
 type impeccableProvider struct {
 	Provider            string
@@ -39,7 +33,6 @@ type impeccableProvider struct {
 	WriteOpenAIMetadata bool
 	OmitVersion         bool
 	BodyTransform       func(body string, skill impeccableSkill) string
-	PluginPayload       *impeccablePluginPayload
 }
 
 var (
@@ -73,7 +66,7 @@ var impeccableProviders = []impeccableProvider{
 	{Provider: "veto", ProviderTags: []string{"veto"}, ConfigDir: ".veto", DisplayName: "Veto", FrontmatterFields: fmPlain},
 	{Provider: "grok", ProviderTags: []string{"grok"}, ConfigDir: ".grok", DisplayName: "Grok Build", FrontmatterFields: fmFullTools, AgentFormat: "claude-md", EmitHooks: "grok", HooksManifestRel: "hooks/impeccable.json"},
 	{Provider: "antigravity", ProviderTags: []string{"antigravity"}, ConfigDir: ".agent", DisplayName: "Antigravity", FrontmatterFields: fmPlainTools},
-	{Provider: "hermes", ProviderTags: []string{"hermes"}, ConfigDir: ".hermes", DisplayName: "Hermes Agent", FrontmatterFields: fmPlain, PluginPayload: &impeccablePluginPayload{Source: "hermes-plugin", Dest: "plugins/impeccable-design-hook"}},
+	{Provider: "icebath", ProviderTags: []string{"icebath"}, ConfigDir: ".icebath", DisplayName: "icebath", FrontmatterFields: fmPlain},
 	{Provider: "devin", ProviderTags: []string{"devin"}, ConfigDir: ".devin", DisplayName: "Devin", FrontmatterFields: fmHintedPlain},
 }
 
@@ -185,7 +178,7 @@ func summarizeDescription(description any, maxLength int) (any, error) {
 		if list, isList := description.([]any); isList && len(list) <= maxLength {
 			return description, nil
 		}
-		return nil, errors.New("TypeError: description.slice(...).trimEnd is not a function")
+		return nil, errors.New("a skill description is a list longer than the summary length, expected text")
 	}
 	units := utf16Units(text)
 	if len(units) <= maxLength {
@@ -271,7 +264,7 @@ func buildCodexAgent(agent impeccableAgent, body string) (string, error) {
 		}
 	case string:
 		if nick != "" {
-			return "", errors.New("TypeError: values.map is not a function")
+			return "", errors.New("nickname candidates are text, expected a list")
 		}
 	}
 	lines = append(lines, "developer_instructions = "+formatTomlMultiline(body))
@@ -448,7 +441,7 @@ func commandHintGroups(metadata string) (string, error) {
 			commands = append(commands, strconv.Itoa(i))
 		}
 	case nil:
-		return "", errors.New("TypeError: Cannot convert undefined or null to object")
+		return "", errors.New("the command metadata is empty, expected a mapping")
 	}
 	var groups []string
 	for _, cat := range categoryOrder {
@@ -529,12 +522,12 @@ func (config impeccableProvider) transform(skills []impeccableSkill, distDir str
 		case []any:
 			for _, item := range hint {
 				if item == "{{command_hint}}" {
-					return errors.New("TypeError: frontmatterObj['argument-hint'].replace is not a function")
+					return errors.New("argument-hint is a list holding {{command_hint}}, expected text")
 				}
 			}
 		case nil:
 		default:
-			return errors.New("TypeError: frontmatterObj['argument-hint']?.includes is not a function")
+			return errors.New("argument-hint is neither text nor a list")
 		}
 		frontmatter := generateYamlFrontmatter(fm)
 
@@ -693,23 +686,6 @@ func (config impeccableProvider) transform(skills []impeccableSkill, distDir str
 		}
 	}
 
-	pluginInfo := ""
-	if config.PluginPayload != nil {
-		wrote := false
-		for _, skill := range skills {
-			for _, file := range skill.Payloads[config.PluginPayload.Source] {
-				dest := filepath.Join(configRoot, filepath.FromSlash(config.PluginPayload.Dest), file.Name)
-				if err := writeBuildFile(dest, file.Content); err != nil {
-					return err
-				}
-				wrote = true
-			}
-		}
-		if wrote {
-			pluginInfo = " (" + config.PluginPayload.Dest + ")"
-		}
-	}
-
 	summary := fmt.Sprintf("✓ %s: %d skill", config.DisplayName, len(skills))
 	if len(skills) != 1 {
 		summary += "s"
@@ -726,6 +702,6 @@ func (config impeccableProvider) transform(skills []impeccableSkill, distDir str
 	if hooksEmitted {
 		summary += " (" + hooksRel + ")"
 	}
-	_, err := fmt.Fprintln(log, summary+pluginInfo)
+	_, err := fmt.Fprintln(log, summary)
 	return err
 }

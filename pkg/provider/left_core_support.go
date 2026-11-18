@@ -4,9 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"github.com/nickheyer/icebath/pkg/internal/pyast"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
-	"log/slog"
 	"math"
 	"os"
 	"path/filepath"
@@ -16,6 +13,9 @@ import (
 	"sync/atomic"
 	"time"
 	"unicode"
+
+	"github.com/nickheyer/icebath/pkg/internal/pyast"
+	"github.com/nickheyer/icebath/pkg/internal/pystr"
 
 	"github.com/mattn/go-isatty"
 	"github.com/nickheyer/icebath/pkg/home"
@@ -76,11 +76,11 @@ func NoteLeftCoreFailure(h, plugin string) {
 	stamp := leftCoreFailureStamp(h, plugin)
 	count := leftCoreFailureCount(stamp)
 	if err := os.MkdirAll(filepath.Dir(stamp), 0o700); err != nil {
-		slog.Default().Debug("left-core retry stamp not written", "home", h, "error", err)
+		pkgLog().Debug("left-core retry stamp not written", "home", h, "error", err)
 		return
 	}
 	if err := os.WriteFile(stamp, []byte(strconv.Itoa(count+1)), 0o600); err != nil {
-		slog.Default().Debug("left-core retry stamp not written", "home", h, "error", err)
+		pkgLog().Debug("left-core retry stamp not written", "home", h, "error", err)
 	}
 }
 
@@ -99,7 +99,7 @@ func LeftCoreFailedRecently(h, plugin string) bool {
 // NoteLeftCoreSuccess clears the failure stamp so a later miss backs off from an hour again
 func NoteLeftCoreSuccess(h, plugin string) {
 	if err := os.Remove(leftCoreFailureStamp(h, plugin)); err != nil && !os.IsNotExist(err) {
-		slog.Default().Debug("left-core retry stamp not removed", "home", h, "error", err)
+		pkgLog().Debug("left-core retry stamp not removed", "home", h, "error", err)
 	}
 }
 

@@ -159,7 +159,7 @@ func parseGeminiSSELine(line string) (map[string]any, bool) {
 	}
 	parsed, err := geminiJSONLoads(data)
 	if err != nil {
-		catalogLog.Debug("Non-JSON Gemini SSE line: " + geminiTruncateRunes(data, 200))
+		pkgLog().Debug("Non-JSON Gemini SSE line: " + geminiTruncateRunes(data, 200))
 		return nil, false
 	}
 	m, _ := parsed.(map[string]any)

@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"log/slog"
 	"net"
 	"net/http"
 	"sync"
@@ -15,8 +14,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 )
-
-func apiLog() *slog.Logger { return slog.Default().With("logger", "gateway.run_api") }
 
 // Path of the native session socket on the gateway listener
 const sessionSocketPath = "/api/ws"
@@ -96,7 +93,7 @@ func (l *sessionListener) serve(socket net.Listener) error {
 	select {
 	case <-ended:
 	case <-time.After(listenerGrace):
-		apiLog().Error(fmt.Sprintf("Cancel %d running session socket(s), timeout graceful shutdown exceeded", len(open)))
+		pkgLog().Error(fmt.Sprintf("Cancel %d running session socket(s), timeout graceful shutdown exceeded", len(open)))
 		l.cancel()
 		for _, s := range open {
 			s.drop()
@@ -156,7 +153,7 @@ func (l *sessionListener) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 		if sock.wasAnswered() {
 			how = "after its handler had refused it"
 		}
-		apiLog().Error(fmt.Sprintf("Gateway refused a session WebSocket upgrade from %s %s: %s: %s",
+		pkgLog().Error(fmt.Sprintf("Gateway refused a session WebSocket upgrade from %s %s: %s: %s",
 			sock.peerText(), how, pyrepr.ExceptionName(err), pyrepr.ExceptionMessage(err)), "exc_info", err)
 	}
 	sock.finish(err)

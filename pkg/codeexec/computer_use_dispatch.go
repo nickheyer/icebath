@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"log/slog"
 	"math"
 	"strconv"
 	"strings"
@@ -463,7 +462,7 @@ func maybeFollowCapture(ctx context.Context, env *tools.Env, backend ComputerUse
 		capture, err = backend.Capture(captureAfterMode(env), app, nil, nil)
 	}
 	if err != nil {
-		slog.Warn(fmt.Sprintf("follow-up capture failed: %v", err))
+		pkgLog(nil).Warn(fmt.Sprintf("follow-up capture failed: %v", err))
 		return textResponse(res), nil
 	}
 	if err := fence(); err != nil {
@@ -521,6 +520,11 @@ func captureAfterMode(env *tools.Env) string {
 	return "som"
 }
 
+// True when the driver acts on the agent's own screen, where foreground input steals no user focus
+func onBotDesktopScreen(env *tools.Env) bool {
+	return BotDesktopPlacementWhere(env) == botDesktopTerminal || BotDesktopPublishedEnv(env)["DISPLAY"] != ""
+}
+
 // JSON refusal while a human holds the bot desktop
 func cuRefused(action string, err error) string {
 	return cuDumps(map[string]any{"ok": false, "action": action, "code": "human_has_control", "error": err.Error()},
@@ -544,6 +548,9 @@ func handleComputerUse(ctx context.Context, env *tools.Env, args map[string]any,
 		return cuRefused(action, err), nil
 	}
 	BotDesktopEnsureStartedForTool(env)
+	if spec, ok := cuActions[action]; ok && spec.input && args["delivery_mode"] == nil && onBotDesktopScreen(env) {
+		args["delivery_mode"] = "foreground"
+	}
 	if blocked := rejectUnsafe(action, args); blocked != "" {
 		return blocked, nil
 	}
@@ -602,7 +609,7 @@ func handleComputerUse(ctx context.Context, env *tools.Env, args map[string]any,
 	case errors.As(err, &human):
 		return cuRefused(action, err), nil
 	case err != nil:
-		slog.Error(fmt.Sprintf("computer_use %s failed", action), "error", err)
+		pkgLog(nil).Error(fmt.Sprintf("computer_use %s failed", action), "error", err)
 		return cuDumps(map[string]any{"error": fmt.Sprintf("%s failed: %v", action, err)}, "error"), nil
 	}
 	return result, nil

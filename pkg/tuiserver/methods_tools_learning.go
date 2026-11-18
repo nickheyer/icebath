@@ -8,7 +8,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/memory"
-	"github.com/nickheyer/icebath/pkg/tuigateway"
+	"github.com/nickheyer/icebath/pkg/tuihost"
 )
 
 var toolsLearningRegistry = &handlerRegistry{}
@@ -30,7 +30,7 @@ func init() {
 // Registers a learning node mutation fed the str of each named param, failures answered 5000 with its label
 func learningMutation(name string, argKeys []string, fn func(ctx context.Context, args []string) (map[string]any, error)) {
 	guardedRPC(toolsLearningRegistry, "learning."+name, 5000, rpcShape{prefix: "learning." + name + " failed: "},
-		func(ctx context.Context, rid any, params map[string]any, _ *tuigateway.Session) (map[string]any, error) {
+		func(ctx context.Context, rid any, params map[string]any, _ *tuihost.Session) (map[string]any, error) {
 			args := make([]string, len(argKeys))
 			for i, k := range argKeys {
 				raw, present := params[k]
@@ -48,12 +48,12 @@ func learningMutation(name string, argKeys []string, fn func(ctx context.Context
 }
 
 // Rescans skills in the calling session's profile and workspace and reports what was added and removed
-func skillsReload(ctx context.Context, rid any, params map[string]any, _ *tuigateway.Session) (map[string]any, error) {
+func skillsReload(ctx context.Context, rid any, params map[string]any, _ *tuihost.Session) (map[string]any, error) {
 	cwd, err := completionCwd(ctx, params)
 	if err != nil {
 		return nil, err
 	}
-	scoped, err := sessionHomeScope(tuigateway.SessionRecord(strOr(params["session_id"])), cwd, strOr(params["profile"]))(ctx)
+	scoped, err := sessionHomeScope(tuihost.SessionRecord(strOr(params["session_id"])), cwd, strOr(params["profile"]))(ctx)
 	if err != nil {
 		return nil, err
 	}

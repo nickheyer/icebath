@@ -89,7 +89,7 @@ func (s *Store) botChatLegacyQueued(root string) []legacyRecord {
 		record, err := readLegacyRecord(path)
 		if err != nil {
 			if !botChatLegacyNoteWarned(path) {
-				s.logAs("cron.bot_chat_legacy").Error(fmt.Sprintf("Unreadable legacy Bot Chat pending record %s kept as evidence: %v", path, err))
+				s.log.Error(fmt.Sprintf("Unreadable legacy Bot Chat pending record %s kept as evidence: %v", path, err))
 			}
 			continue
 		}
@@ -250,9 +250,9 @@ func (s *Store) botChatLegacyDispose(ctx context.Context, path string, r *pyjson
 	if err != nil {
 		msg := fmt.Sprintf("Legacy Bot Chat pending record %s not handed off yet: %v", path, err)
 		if botChatLegacyNoteWarned(path) {
-			s.logAs("cron.bot_chat_legacy").Debug(msg)
+			s.log.Debug(msg)
 		} else {
-			s.logAs("cron.bot_chat_legacy").Warn(msg)
+			s.log.Warn(msg)
 		}
 		return false, nil
 	}
@@ -297,14 +297,14 @@ func (s *Store) drainLegacyPendingRecords(ctx context.Context) error {
 		if err != nil {
 			msg := fmt.Sprintf("Legacy Bot Chat pending record %s left queued: %v", item.path, err)
 			if botChatLegacyNoteWarned(item.path) {
-				s.logAs("cron.bot_chat_legacy").Debug(msg)
+				s.log.Debug(msg)
 			} else {
-				s.logAs("cron.bot_chat_legacy").Warn(msg)
+				s.log.Warn(msg)
 			}
 			continue
 		}
 		st, _ := item.record.Get("status")
-		s.logAs("cron.bot_chat_legacy").Info(fmt.Sprintf("Legacy Bot Chat pending record %s -> %s", filepath.Base(item.path), pyrepr.Str(st)))
+		s.log.Info(fmt.Sprintf("Legacy Bot Chat pending record %s -> %s", filepath.Base(item.path), pyrepr.Str(st)))
 	}
 	return nil
 }

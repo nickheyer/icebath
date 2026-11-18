@@ -15,7 +15,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 )
 
-// Worktree command the subcommand dispatch calls, the worktree_cmd attribute hermes tests patch
+// Worktree command the subcommand dispatch calls, the worktree_cmd attribute tests patch
 var worktreeCmdFn = cmdWorktree
 
 // Size column text, a question mark for an unknown size and gigabytes from 1024 MB up

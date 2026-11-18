@@ -3,7 +3,6 @@ package provider
 import (
 	"context"
 	"fmt"
-	"log/slog"
 	"slices"
 	"strings"
 
@@ -161,7 +160,7 @@ func ensureCodexSession(agent CodexRuntimeAgent, messages []map[string]any) erro
 	func() {
 		defer func() {
 			if r := recover(); r != nil {
-				slog.Debug("codex app-server: approval-bypass lookup failed; keeping fail-closed default", "panic", r)
+				pkgLog().Debug("codex app-server: approval-bypass lookup failed; keeping fail-closed default", "panic", r)
 			}
 		}()
 		autoApprove = tools.IsApprovalBypassActive(env)
@@ -212,13 +211,13 @@ func persistProjectedMessages(agent CodexRuntimeAgent, turn *CodexTurnResult, me
 	func() {
 		defer func() {
 			if r := recover(); r != nil {
-				slog.Warn("codex app-server projected-message flush failed", "exc_info", r)
+				pkgLog().Warn("codex app-server projected-message flush failed", "exc_info", r)
 			}
 		}()
 		flushOK = agent.FlushMessagesToSessionDB(*messages)
 	}()
 	if flushOK == state.FlushFailed {
-		slog.Warn(fmt.Sprintf("codex app-server turn was delivered but could NOT be persisted to the session DB (session=%s) — this turn will be missing after restart/resume", agent.SessionID()))
+		pkgLog().Warn(fmt.Sprintf("codex app-server turn was delivered but could NOT be persisted to the session DB (session=%s) — this turn will be missing after restart/resume", agent.SessionID()))
 	}
 	return flushOK == state.FlushPersisted
 }
@@ -296,7 +295,7 @@ func RunCodexAppServerTurn(agent CodexRuntimeAgent, userMessage string, original
 		return agent.CodexSession().RunTurn(userMessage, CodexTurnOptions{Model: wireModel, ReasoningEffort: effort, ServiceTier: tier})
 	}()
 	if err != nil {
-		slog.Error("codex app-server turn failed", "error", err)
+		pkgLog().Error("codex app-server turn failed", "error", err)
 		closeCodexSession(agent)
 		interrupted, interruptMessage := consumeUserInterrupt(agent, true)
 		return codexTurnResultOf(interrupted, interruptMessage, messages, 0, false, err.Error(),
@@ -304,7 +303,7 @@ func RunCodexAppServerTurn(agent CodexRuntimeAgent, userMessage string, original
 	}
 	interrupted, interruptMessage := consumeUserInterrupt(agent, turn.Interrupted)
 	if turn.ShouldRetire {
-		slog.Warn(fmt.Sprintf("codex app-server session retired (turn error: %s)", pyrepr.Str(codexNoneIfEmpty(turn.Error))))
+		pkgLog().Warn(fmt.Sprintf("codex app-server session retired (turn error: %s)", pyrepr.Str(codexNoneIfEmpty(turn.Error))))
 		closeCodexSession(agent)
 	}
 	reply, err := transformCodexReply(agent, turn, turnID)

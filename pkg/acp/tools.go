@@ -14,13 +14,10 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
-	"github.com/nickheyer/icebath/pkg/logging"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
 
-var toolsLog = logging.GetLogger("acp_adapter.tools")
-
-// Hermes tool name to ACP tool kind, unlisted tools are other
+// Tool name to ACP tool kind, unlisted tools are other
 var ToolKindMap = func() map[string]string {
 	m := map[string]string{}
 	for kind, names := range map[string][]string{
@@ -54,7 +51,7 @@ func init() {
 	}
 }
 
-// ACP tool kind of a hermes tool, other when unlisted
+// ACP tool kind of a tool, other when unlisted
 func GetToolKind(toolName string) string {
 	if k, ok := ToolKindMap[toolName]; ok {
 		return k
@@ -1259,13 +1256,13 @@ var startContentBuilders = map[string]func(*pyjson.Object) any{
 	},
 }
 
-// Tool call start for a hermes tool, a minimal start when rendering the arguments fails
+// Tool call start for a tool, a minimal start when rendering the arguments fails
 func BuildToolStart(toolCallID, toolName string, arguments *pyjson.Object, editDiff *tools.EditProposal) *pyacp.ToolCallStart {
 	start, err := buildToolStartGuarded(toolCallID, toolName, arguments, editDiff)
 	if err == nil {
 		return start
 	}
-	toolsLog.Debug(fmt.Sprintf("ACP tool-start render failed for %s: %s", pyrepr.Repr(toolName), err))
+	pkgLog().Debug(fmt.Sprintf("ACP tool-start render failed for %s: %s", pyrepr.Repr(toolName), err))
 	safe := toolName
 	if safe == "" {
 		safe = "tool"

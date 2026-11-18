@@ -123,18 +123,10 @@ func extractLoggerName(line string) (string, bool) {
 	return "", false
 }
 
-// Whether the logger of a line starts with one of the component prefixes
+// Whether the logger of a line belongs to one of the component packages
 func lineMatchesComponent(line string, prefixes []string) bool {
 	name, ok := extractLoggerName(line)
-	if !ok {
-		return false
-	}
-	for _, p := range prefixes {
-		if strings.HasPrefix(name, p) {
-			return true
-		}
-	}
-	return false
+	return ok && logging.InComponent(name, prefixes)
 }
 
 // Active filters of one icebath logs run, nil fields being inactive

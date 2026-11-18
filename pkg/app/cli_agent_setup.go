@@ -314,7 +314,7 @@ func (c *CLI) ensureRuntimeCredentials() bool {
 	if runtime.TokenSource == nil && apiKey == "" {
 		if keylessCustomBase(baseURL) {
 			apiKey = "no-key-required"
-			cliLogger.Debug(fmt.Sprintf("No API key for custom endpoint %s (source=%s), using placeholder — local servers typically ignore auth", baseURL, runtime.Source))
+			pkgLog().Debug(fmt.Sprintf("No API key for custom endpoint %s (source=%s), using placeholder — local servers typically ignore auth", baseURL, runtime.Source))
 		} else {
 			prov := strings.TrimSpace(firstNonEmpty(resolvedProvider, c.requestedProvider))
 			if prov != "" && prov != "auto" {
@@ -344,13 +344,13 @@ func (c *CLI) ensureRuntimeCredentials() bool {
 	if c.model == "" && resolvedProvider != "" {
 		if def := provider.GetDefaultModelForProvider(c.ctx, resolvedProvider); def != "" {
 			c.model = def
-			cliLogger.Info(fmt.Sprintf("No model configured — defaulting to %s for provider %s", def, resolvedProvider))
+			pkgLog().Info(fmt.Sprintf("No model configured — defaulting to %s for provider %s", def, resolvedProvider))
 		}
 	}
 	modelChanged := c.normalizeModelForProvider(resolvedProvider)
 	if c.model != modelAtEntry && c.explicitReasoningConfig == nil {
 		c.resolveCLIReasoning()
-		cliLogger.Info(fmt.Sprintf("Model moved to %s: reasoning_config resolved: %v", c.model, c.reasoningConfig))
+		pkgLog().Info(fmt.Sprintf("Model moved to %s: reasoning_config resolved: %v", c.model, c.reasoningConfig))
 	}
 	if (credentialsChanged || routingChanged || modelChanged) && c.agentRef() != nil {
 		retireAgent(c)
@@ -454,7 +454,7 @@ func (c *CLI) resolveFallbackRuntime(primaryErr error) *provider.Runtime {
 			continue
 		}
 		whyLog, why := provider.PrimaryFailureWording(authErr)
-		cliLogger.Warn(fmt.Sprintf("Primary provider %s (%v). Falling through to fallback: %s/%s", whyLog, primaryErr, fbProvider, fbModel))
+		pkgLog().Warn(fmt.Sprintf("Primary provider %s (%v). Falling through to fallback: %s/%s", whyLog, primaryErr, fbProvider, fbModel))
 		_, _ = config.RenderNotification(c.ctx, func() error {
 			cprint(i18n.T(c.ctx, "cli.startup.switching_to_fallback", "", map[string]any{"reason": why, "provider": fbProvider, "model": fbModel}))
 			return nil
@@ -652,7 +652,6 @@ func (c *CLI) initAgent(modelOverride string, runtimeOverride *cliRuntime, reque
 	a.SetPrintFn(c.agentStatusPrint)
 	a.SetFinite(c.singleQueryMode)
 	bindGatewayAgent(a)
-	provider.SeedCreditsAtSessionStart(a.CreditsCapture())
 	c.activeAgentRouteSignature = routeSignature(effectiveModel, rt)
 	if a.ReasoningPushed() {
 		c.reasoningUserSet = false
@@ -688,7 +687,7 @@ func (c *CLI) resumeHistoryLimitError(tipOnly bool) string {
 		if errors.As(err, &tooLarge) {
 			return tooLarge.Error()
 		}
-		cliLogger.Warn(fmt.Sprintf("Resume safety check failed for %s (proceeding without guard): %v", c.sessionID, err))
+		pkgLog().Warn(fmt.Sprintf("Resume safety check failed for %s (proceeding without guard): %v", c.sessionID, err))
 	}
 	return ""
 }

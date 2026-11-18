@@ -175,12 +175,16 @@ func rehydrateAPIImages(ctx context.Context, content any, media any) (any, error
 		if err != nil {
 			return nil, err
 		}
-		if !strings.HasPrefix(url, apiRetainedPrefix) {
+		retainedDigest, retained := strings.CutPrefix(url, apiRetainedPrefix)
+		if !retained {
+			retainedDigest, retained = strings.CutPrefix(url, apiLegacyRetainedPrefix)
+		}
+		if !retained {
 			out = append(out, part)
 			continue
 		}
 		path := ""
-		if reference, found := byDigest[url[len(apiRetainedPrefix):]]; found {
+		if reference, found := byDigest[retainedDigest]; found {
 			restored, err := restoreNativeMedia(ctx, []any{reference})
 			var refusal *state.RuntimeStoreError
 			switch {

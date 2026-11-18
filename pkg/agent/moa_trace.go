@@ -3,7 +3,6 @@ package agent
 import (
 	"context"
 	"fmt"
-	"log/slog"
 	"os"
 	"path/filepath"
 	"strings"
@@ -142,7 +141,7 @@ func SaveMoATurn(ctx context.Context, turn MoATurn) {
 		sessionID = turn.SessionID
 	}
 	if err := writeMoATurn(base, sessionID, turn); err != nil {
-		slog.Debug(fmt.Sprintf("MoA trace write failed (session=%s): %s", pyrepr.Str(sessionID), err))
+		pkgLog().Debug(fmt.Sprintf("MoA trace write failed (session=%s): %s", pyrepr.Str(sessionID), err))
 	}
 }
 

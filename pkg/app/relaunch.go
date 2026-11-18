@@ -16,7 +16,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/internal/pyshutil"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
-	"github.com/nickheyer/icebath/pkg/observability"
 	"github.com/spf13/pflag"
 )
 
@@ -172,7 +171,7 @@ func relaunchIsFile(p string) bool {
 }
 
 // Icebath entry point to exec again, the invoked program when executable, else the one on PATH, else none
-func resolveHermesBin() (string, bool) {
+func resolveIcebathBin() (string, bool) {
 	argv := relaunchArgv()
 	argv0 := ""
 	if len(argv) > 0 {
@@ -206,7 +205,7 @@ func resolveHermesBin() (string, bool) {
 // Argv that replaces the current process with icebath, the carried over flags before the extra arguments
 func buildRelaunchArgv(extraArgs []string, preserveInherited bool, originalArgv []string) ([]string, error) {
 	var argv []string
-	if binPath, ok := resolveHermesBin(); ok {
+	if binPath, ok := resolveIcebathBin(); ok {
 		argv = []string{binPath}
 	} else {
 		exe, err := os.Executable()
@@ -267,7 +266,6 @@ func relaunch(args []string, preserveInherited bool) {
 		relaunchExit(code)
 		return
 	}
-	observability.MarkInPlaceRelaunch()
 	if err := relaunchExecvp(newArgv[0], newArgv); err != nil {
 		panic(err)
 	}

@@ -6,7 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
-	"log/slog"
 	"os"
 	"path/filepath"
 	"sort"
@@ -33,7 +32,7 @@ type StormInfo struct {
 func RecordStartAndCheckStorm(ctx context.Context, h string, maxStarts int, windowS, backoffCapS float64) *StormInfo {
 	info, err := recordStartAndCheckStorm(ctx, h, maxStarts, windowS, backoffCapS)
 	if err != nil {
-		slog.Debug(fmt.Sprintf("respawn-storm breaker bookkeeping failed (non-fatal): %v", err))
+		pkgLog().Debug(fmt.Sprintf("respawn-storm breaker bookkeeping failed (non-fatal): %v", err))
 		return nil
 	}
 	return info
@@ -135,7 +134,7 @@ func MultiplexerLivenessForProfile(profileDir string) (int, *pyjson.Object, bool
 	}
 	defaultRoot := home.Root()
 	if name != "default" {
-		same, err := sameHermesHome(profileDir, pypath.PathJoin(defaultRoot, "profiles", name))
+		same, err := sameIcebathHome(profileDir, pypath.PathJoin(defaultRoot, "profiles", name))
 		if err != nil {
 			return 0, nil, false, err
 		}
@@ -189,7 +188,7 @@ var NamedProfileServedByRunningMultiplexer func(profileName string) bool
 // Hook result, an error while pkg/gatewaycli has not installed the hook
 func namedProfileServed(name string) (bool, error) {
 	if NamedProfileServedByRunningMultiplexer == nil {
-		return false, errors.New("gateway: pkg/gatewaycli must install NamedProfileServedByRunningMultiplexer (hermes_cli/gateway.py named_profile_served_by_running_multiplexer)")
+		return false, errors.New("gateway: pkg/gatewaycli must install NamedProfileServedByRunningMultiplexer")
 	}
 	return NamedProfileServedByRunningMultiplexer(name), nil
 }
@@ -332,7 +331,7 @@ func ResolveGatewayLiveness(o LivenessOptions) GatewayLiveness {
 	}
 	ownHome := o.ProfileDir
 	if !scoped {
-		ownHome = processHermesHome()
+		ownHome = processIcebathHome()
 	}
 	if pid, muxRuntime, ok, err := statusMultiplexerLivenessForProfile(ownHome); err != nil {
 		probeError = true

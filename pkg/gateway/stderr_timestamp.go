@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"io/fs"
 	"os"
 	"os/exec"
 	"os/signal"
@@ -16,9 +15,8 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/internal/pyfs"
-	"github.com/nickheyer/icebath/pkg/internal/pypath"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/internal/pysys"
 )
@@ -75,10 +73,10 @@ func writeTimestampedLine(w io.Writer, line string) error {
 		text = strings.ReplaceAll(text, "\n", "\r\n")
 	}
 	if _, err := io.WriteString(w, text); err != nil {
-		return streamIOError(err)
+		return err
 	}
 	if f, ok := pysys.Attr[interface{ Flush() error }](w); ok {
-		return streamIOError(f.Flush())
+		return f.Flush()
 	}
 	return nil
 }
@@ -97,7 +95,7 @@ func copyLinesWithTimestamps(src io.Reader, dst io.Writer) error {
 			return nil
 		}
 		if err != nil {
-			return streamIOError(err)
+			return err
 		}
 	}
 }
@@ -120,27 +118,9 @@ func copyStdoutWithTimestamps(stdout io.Reader, out io.Writer) error {
 	return copyLinesWithTimestamps(stdout, out)
 }
 
-// Errno error of a stream read or write, which Python raises without a filename
-func streamIOError(err error) error {
-	var pe *fs.PathError
-	if errors.As(err, &pe) {
-		return pe.Err
-	}
-	return err
-}
-
-// Last traceback line of the Python exception a Go error stands for
-func stderrTimestampExceptionLine(err error) string {
-	var fe *pyrepr.FormatError
-	if errors.As(err, &fe) {
-		return fe.Class + ": " + fe.Msg
-	}
-	return pypath.OSErrorClass(err) + ": " + pypath.OSErrorText(err)
-}
-
-// Prints the traceback an uncaught exception leaves on stderr and returns the interpreter exit status
+// Reports a failure of the wrapper itself on one line with the errors it wraps and returns exit status 1
 func stderrTimestampUncaught(err error) int {
-	fmt.Fprintf(stderrTimestampStderr, "Traceback (most recent call last):\n%s\n", stderrTimestampExceptionLine(err))
+	fmt.Fprintf(stderrTimestampStderr, "icebath stderr timestamp wrapper failed: %s (%s)\n", err, errchain.Types(err))
 	return 1
 }
 
@@ -152,7 +132,7 @@ func isGatewayRunArgv(command []string) bool {
 // Env carrying this wrapper's icebath launchd job label to the grandchild, empty for other labels
 func childLaunchdLabelEnv(environ map[string]string) map[string]string {
 	for _, variable := range []string{"XPC_SERVICE_NAME", launchdLabelEnv} {
-		if label := pystr.Strip(environ[variable]); strings.HasPrefix(label, "ai.icebath") {
+		if label := pystr.Strip(environ[variable]); IsIcebathLaunchdLabel(label) {
 			return map[string]string{launchdLabelEnv: label}
 		}
 	}
@@ -304,7 +284,7 @@ func StderrTimestampMain(argv []string) int {
 		defer close(pumped)
 		defer stdout.Close()
 		if err := copyStdoutWithTimestamps(stdout, wrapperStdout); err != nil {
-			fmt.Fprintf(wrapperStderr, "Exception in thread Thread-1 (_copy_stdout_with_timestamps):\nTraceback (most recent call last):\n%s\n", stderrTimestampExceptionLine(err))
+			fmt.Fprintf(wrapperStderr, "icebath stderr timestamp wrapper stopped copying the command's stdout: %s (%s)\n", err, errchain.Types(err))
 		}
 	}()
 	raised := make(chan error, 1)
@@ -359,15 +339,15 @@ func exitStatusOf(cmd *exec.Cmd, waitErr error) int {
 	return cmd.ProcessState.ExitCode()
 }
 
-// OSError text of a failed spawn the way subprocess reports a missing executable
+// Why a command could not start, in plain words naming the program
 func startErrorText(program string, err error) string {
 	if errors.Is(err, exec.ErrNotFound) || errors.Is(err, os.ErrNotExist) {
-		return fmt.Sprintf("[Errno 2] No such file or directory: '%s'", program)
+		return fmt.Sprintf("%s does not exist", program)
 	}
 	if errors.Is(err, os.ErrPermission) {
-		return fmt.Sprintf("[Errno 13] Permission denied: '%s'", program)
+		return fmt.Sprintf("%s is not allowed to run (permission denied)", program)
 	}
-	return pythonExceptionText(err)
+	return err.Error()
 }
 
 // Runs the wrapper and exits when the process was started with the hidden entry argument

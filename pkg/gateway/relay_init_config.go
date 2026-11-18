@@ -2,7 +2,6 @@ package gateway
 
 import (
 	"context"
-	"log/slog"
 	"os"
 	"strings"
 
@@ -10,8 +9,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
-
-func relayLog() *slog.Logger { return slog.Default().With("logger", "gateway.relay") }
 
 const relayStockAgentName = "Icebath Agent"
 

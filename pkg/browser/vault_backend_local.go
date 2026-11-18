@@ -20,7 +20,7 @@ func NewLocalLoginBackend(ctx context.Context) *LocalLoginBackend {
 	return b
 }
 
-// Vault store opener bound at call time, the facade hermes tests patch
+// Vault store opener bound at call time, the facade tests patch
 var localVaultStore = func(ctx context.Context) *vault.VaultStore { return vault.GetVaultStore(ctx) }
 
 func (*LocalLoginBackend) Name() string        { return "local" }

@@ -52,7 +52,7 @@ func refreshPersistedCompressionGuards(compressor any, includeCooldown bool) {
 		func() {
 			defer func() {
 				if r := recover(); r != nil {
-					compressionLog().Debug(fmt.Sprintf("compression guard refresh failed (%s): %v", call.name, r))
+					pkgLog().Debug(fmt.Sprintf("compression guard refresh failed (%s): %v", call.name, r))
 				}
 			}()
 			call.fn()
@@ -196,7 +196,7 @@ func markCompressionBlockedTransient(a *AIAgent, c *ContextCompressor, reason st
 	if c != nil && c.lastSummaryError != nil && *c.lastSummaryError != "" {
 		lastErr = *c.lastSummaryError
 	}
-	compressionLog().Info(fmt.Sprintf("Skipping automatic compression re-entry: transient guard active (%s, session=%s, last failure: %s) — will retry after the backoff lapses; /compress forces an immediate retry",
+	pkgLog().Info(fmt.Sprintf("Skipping automatic compression re-entry: transient guard active (%s, session=%s, last failure: %s) — will retry after the backoff lapses; /compress forces an immediate retry",
 		reason, pyStrOr(a.sessionID, "none"), lastErr))
 	a.compressionBlockedTransient = reason
 }

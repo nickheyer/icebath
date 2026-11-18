@@ -55,7 +55,7 @@ func (s *serverTask) refreshTools(ctx context.Context) error {
 	session := s.currentSession()
 	if session == nil {
 		s.rpc.Unlock()
-		mcpLogger().Debug(fmt.Sprintf("MCP server '%s': skipping dynamic tool refresh; session not connected", s.name))
+		pkgLog().Debug(fmt.Sprintf("MCP server '%s': skipping dynamic tool refresh; session not connected", s.name))
 		return nil
 	}
 	fresh, err := session.ListTools(ctx, nil)
@@ -89,9 +89,9 @@ func (s *serverTask) refreshTools(ctx context.Context) error {
 		changes = append(changes, "removed: "+strings.Join(removed, ", "))
 	}
 	if len(changes) > 0 {
-		mcpLogger().Warn(fmt.Sprintf("MCP server '%s': tools changed dynamically — %s. Verify these changes are expected.", s.name, strings.Join(changes, "; ")))
+		pkgLog().Warn(fmt.Sprintf("MCP server '%s': tools changed dynamically — %s. Verify these changes are expected.", s.name, strings.Join(changes, "; ")))
 	} else {
-		mcpLogger().Info(fmt.Sprintf("MCP server '%s': dynamically refreshed %d tool(s) (no changes)", s.name, len(registered)))
+		pkgLog().Info(fmt.Sprintf("MCP server '%s': dynamically refreshed %d tool(s) (no changes)", s.name, len(registered)))
 	}
 	return nil
 }

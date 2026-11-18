@@ -60,7 +60,7 @@ func (r *Registry) Definitions(ctx context.Context, env *Env, toolNames map[stri
 		}
 		if entry.Check != nil && !r.memoCheck(ctx, env, entry.Check, memo) {
 			if !quiet {
-				toolsLogger(env).Debug("Tool unavailable (check failed)", "tool", name)
+				envLog(env).Debug("Tool unavailable (check failed)", "tool", name)
 			}
 			continue
 		}
@@ -79,7 +79,7 @@ func definitionDynamicOverrides(env *Env, entry *Def) (overrides *pyjson.Object)
 	defer func() {
 		if rec := recover(); rec != nil {
 			overrides = nil
-			toolsLogger(env).Warn(fmt.Sprintf("dynamic_schema_overrides for tool %s raised %s; using static schema", entry.Name, fmt.Sprint(rec)))
+			envLog(env).Warn(fmt.Sprintf("dynamic_schema_overrides for tool %s raised %s; using static schema", entry.Name, fmt.Sprint(rec)))
 		}
 	}()
 	return entry.DynamicSchema(env)
@@ -468,7 +468,7 @@ func definitionNotice(env *Env, text string) {
 	env.Emit(Event{Kind: "tool_selection", Text: text})
 }
 
-// Uncached implementation of the definition build in hermes order
+// Uncached implementation of the definition build in order
 func (r *Registry) computeToolDefinitions(ctx context.Context, env *Env, opts DefinitionOptions) []map[string]any {
 	toolsToInclude, notices := r.SelectToolNames(ctx, env, opts.Enabled, opts.Disabled, definitionSelectionContext(ctx, env))
 	if !opts.Quiet {
@@ -557,7 +557,7 @@ func resolveActiveContextLength(ctx context.Context, env *Env) int {
 	if provider != "" {
 		rtBase, rtKey, err := RuntimeProviderCredentials(ctx, env, provider, modelID)
 		if err != nil {
-			toolsLogger(env).Debug(fmt.Sprintf("Runtime credential resolution failed for tool-search context gate (provider=%s): %s — using config values only", provider, err))
+			envLog(env).Debug(fmt.Sprintf("Runtime credential resolution failed for tool-search context gate (provider=%s): %s — using config values only", provider, err))
 		} else {
 			if rtBase != "" {
 				baseURL = rtBase

@@ -24,7 +24,9 @@ func TestValidateMessagesFollowPythonJsonschema(t *testing.T) {
 		schema, _ := pyjson.Loads(tc.schema)
 		err := Validate(instance, schema, 1)
 		got := ""
-		if err != nil {
+		if ve, isValidation := err.(*ValidationError); isValidation {
+			got = ve.Message
+		} else if err != nil {
 			got = err.Error()
 		}
 		if got != tc.want {

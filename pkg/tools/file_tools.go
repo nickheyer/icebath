@@ -218,12 +218,12 @@ func createTerminalEnvForFileOps(env *Env, rawTaskID, taskID string, cfg map[str
 			fallback = "/workspace"
 		}
 		if cwd != fallback {
-			envLog(env).With("logger", "tools.file_tools").Info(fmt.Sprintf("Ignoring host/relative cwd override %s for %s backend (won't exist in sandbox). Using %s instead.",
+			envLog(env).Info(fmt.Sprintf("Ignoring host/relative cwd override %s for %s backend (won't exist in sandbox). Using %s instead.",
 				pyReprStr(cwd), envType, pyReprStr(fallback)))
 		}
 		cwd = fallback
 	}
-	envLog(env).With("logger", "tools.file_tools").Info(fmt.Sprintf("Creating new %s environment for task %s...", envType, runePrefix(taskID, 8)))
+	envLog(env).Info(fmt.Sprintf("Creating new %s environment for task %s...", envType, runePrefix(taskID, 8)))
 	timeout, _ := config.AsInt(cfg["timeout"])
 	ctx, cancel := context.WithTimeout(context.Background(), fileOpsEnvStartTimeout)
 	defer cancel()
@@ -301,7 +301,7 @@ func buildFileOpsHandle(env *Env, raw, key string) (*fileOpsHandle, error) {
 	termPool.lastActivity[key] = time.Now()
 	termPool.Unlock()
 	startCleanupThreadFn(env)
-	envLog(env).With("logger", "tools.file_tools").Info(fmt.Sprintf("%s environment ready for task %s", createdType, runePrefix(key, 8)))
+	envLog(env).Info(fmt.Sprintf("%s environment ready for task %s", createdType, runePrefix(key, 8)))
 	return newFileOpsHandle(env, created, ""), nil
 }
 
@@ -1235,15 +1235,15 @@ type patchArgs struct {
 }
 
 // Patches files in replace mode or V4A form behind the shared write guards
-func patchTool(ctx context.Context, env *Env, a patchArgs, taskID string, probe *editProbe) string {
-	out, err := patchToolErr(ctx, env, a, taskID, probe)
+func patchTool(ctx context.Context, env *Env, a patchArgs, taskID string) string {
+	out, err := patchToolErr(ctx, env, a, taskID)
 	if err != nil {
 		return fileToolError(err.Error())
 	}
 	return out
 }
 
-func patchToolErr(ctx context.Context, env *Env, a patchArgs, taskID string, probe *editProbe) (string, error) {
+func patchToolErr(ctx context.Context, env *Env, a patchArgs, taskID string) (string, error) {
 	var paths []string
 	if a.path != "" {
 		paths = []string{a.path}
@@ -1327,12 +1327,12 @@ func patchToolErr(ctx context.Context, env *Env, a patchArgs, taskID string, pro
 			if target == "" {
 				target = a.path
 			}
-			result = ops.patchReplace(target, *a.oldString, *a.newString, a.replaceAll, probe)
+			result = ops.patchReplace(target, *a.oldString, *a.newString, a.replaceAll)
 		case "patch":
 			if a.patch == "" {
 				return patchErrorDict("patch content required"), true, nil
 			}
-			result = ops.patchV4A(rewriteV4APatchPathsForHost(a.patch, pathToResolved, pathToEntry, handle), probe)
+			result = ops.patchV4A(rewriteV4APatchPathsForHost(a.patch, pathToResolved, pathToEntry, handle))
 		default:
 			return patchErrorDict("Unknown mode: " + a.mode), true, nil
 		}
@@ -1795,10 +1795,8 @@ func handleWriteFile(ctx context.Context, call *Call) string {
 		return fileToolError("write_file: 'content' must be a string, got " + pyJSONTypeNameOf(raw) + ".")
 	}
 	crossProfile := truthy(call.Args["cross_profile"])
-	return recordFileEdit(call.Env, "write_file", "whole_file", func(probe *editProbe) string {
-		return owned(ctx, call, func(ctx context.Context) string {
-			return writeFileTool(ctx, call.Env, path, content, tid, crossProfile, call.SessionID)
-		})
+	return owned(ctx, call, func(ctx context.Context) string {
+		return writeFileTool(ctx, call.Env, path, content, tid, crossProfile, call.SessionID)
 	})
 }
 
@@ -1854,10 +1852,8 @@ func handlePatch(ctx context.Context, call *Call) string {
 	} else if pyrepr.Truthy(pyArgs["path"]) {
 		panic(&pyTypeError{msg: tildePathTypeError(pyArgs["path"])})
 	}
-	return recordFileEdit(call.Env, "patch", mode, func(probe *editProbe) string {
-		return owned(ctx, call, func(ctx context.Context) string {
-			return patchTool(ctx, call.Env, a, tid, probe)
-		})
+	return owned(ctx, call, func(ctx context.Context) string {
+		return patchTool(ctx, call.Env, a, tid)
 	})
 }
 

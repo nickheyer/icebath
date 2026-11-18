@@ -60,7 +60,7 @@ const defaultTTSProvider = "edge"
 
 // Audio cache directory of the active profile home, the seam tests replace
 var ttsDefaultOutputDir = func(ctx context.Context, env *tools.Env) string {
-	return home.HermesDir(ttsHome(ctx, env), "cache/audio", "audio_cache")
+	return home.IcebathDir(ttsHome(ctx, env), "cache/audio", "audio_cache")
 }
 
 // The tts config section of the effective home config, empty when unavailable
@@ -71,7 +71,7 @@ var loadTTSConfig = func(ctx context.Context, env *tools.Env) map[string]any {
 	}
 	tree, err := config.LoadContext(ctx, ttsHome(ctx, env), lookup)
 	if err != nil {
-		ttsLog().Warn(fmt.Sprintf("Failed to load TTS config: %v", err))
+		pkgLog().Warn(fmt.Sprintf("Failed to load TTS config: %v", err))
 		return map[string]any{}
 	}
 	sec, ok := asStrMap(tree["tts"])
@@ -81,17 +81,13 @@ var loadTTSConfig = func(ctx context.Context, env *tools.Env) map[string]any {
 	return sec
 }
 
-// Configured provider or the free default, nous served by the OpenAI path
+// Configured provider or the free default
 func getTTSProvider(ttsConfig map[string]any) string {
 	p := ttsConfig["provider"]
 	if !pyTruthy(p) {
 		p = defaultTTSProvider
 	}
-	provider := pystr.Strip(pystr.Lower(pyrepr.Str(p)))
-	if provider == NousManagedProvider {
-		return "openai"
-	}
-	return provider
+	return pystr.Strip(pystr.Lower(pyrepr.Str(p)))
 }
 
 var opusVoicePlatforms = map[string]bool{"telegram": true, "matrix": true, "feishu": true, "whatsapp": true, "signal": true}
@@ -177,7 +173,7 @@ func synthesizeBuiltin(ctx context.Context, env *tools.Env, engine, text, fileSt
 	if ok {
 		label = entry.label
 	}
-	ttsLog().Info(fmt.Sprintf("Generating speech with %s...", label))
+	pkgLog().Info(fmt.Sprintf("Generating speech with %s...", label))
 	var err error
 	switch {
 	case !ok:
@@ -235,7 +231,7 @@ func warnIgnoredTTSProviderOverride(requested, configured string) {
 	if _, seen := onceWarnings.LoadOrStore("tts_provider_override\x00"+requested, true); seen {
 		return
 	}
-	ttsLog().Warn(fmt.Sprintf("Ignoring per-call TTS provider override %s; tts.provider is %s", pyrepr.Repr(requested), pyrepr.Repr(configured)))
+	pkgLog().Warn(fmt.Sprintf("Ignoring per-call TTS provider override %s; tts.provider is %s", pyrepr.Repr(requested), pyrepr.Repr(configured)))
 }
 
 // Per call speed on a copy of the config and the configured provider, a disagreeing override ignored
@@ -276,7 +272,7 @@ func applyVoiceOverride(ttsConfig map[string]any, provider, voiceID string) (map
 		return ttsConfig, ""
 	}
 	if provider != "elevenlabs" || !elevenLabsVoiceSelectionActive(ttsConfig) {
-		ttsLog().Warn(fmt.Sprintf("Ignoring per-call TTS voice_id; tts.provider is %s", pyrepr.Repr(provider)))
+		pkgLog().Warn(fmt.Sprintf("Ignoring per-call TTS voice_id; tts.provider is %s", pyrepr.Repr(provider)))
 		return ttsConfig, ""
 	}
 	if !elevenLabsVoiceIDRe.MatchString(voiceID) {
@@ -399,15 +395,15 @@ func ttsErrorFamily(err error) string {
 	return "other"
 }
 
-// Python str of an error, OS errors in their errno form
+// Plain text of an error, a missing command and a file failure named with their reason
 func ttsErrorText(err error) string {
 	var pe *fs.PathError
 	var ee *exec.Error
 	switch {
 	case errors.As(err, &ee):
-		return fmt.Sprintf("[Errno 2] No such file or directory: %s", pyrepr.Repr(ee.Name))
+		return ee.Name + " is not installed or not on PATH"
 	case errors.As(err, &pe):
-		return pypath.OSErrorText(err)
+		return pe.Err.Error() + ": " + pe.Path
 	}
 	return err.Error()
 }
@@ -415,7 +411,7 @@ func ttsErrorText(err error) string {
 // Logs and wraps a synthesis failure as the standard error envelope
 func ttsToolFailure(prefix, provider string, err error) string {
 	msg := fmt.Sprintf("%s (%s): %s", prefix, provider, ttsErrorText(err))
-	ttsLog().Error(msg, "error", err)
+	pkgLog().Error(msg, "error", err)
 	return ttsToolError(msg)
 }
 
@@ -433,7 +429,7 @@ func textToSpeechSingle(ctx context.Context, env *tools.Env, text, fileStr strin
 	provider := o.Provider
 	result, err := func() (string, error) {
 		if o.CommandProviderConfig != nil {
-			ttsLog().Info(fmt.Sprintf("Generating speech with command TTS provider '%s'...", provider))
+			pkgLog().Info(fmt.Sprintf("Generating speech with command TTS provider '%s'...", provider))
 			p, err := ttsGenerateCommand(tools.WithEnvHome(ctx, env), env, text, fileStr, provider, o.CommandProviderConfig, o.TTSConfig)
 			if err != nil {
 				return "", err
@@ -468,7 +464,7 @@ func textToSpeechSingle(ctx context.Context, env *tools.Env, text, fileStr strin
 		if err != nil {
 			return "", err
 		}
-		ttsLog().Info(fmt.Sprintf("TTS audio saved: %s (%s bytes, provider: %s)", final, pystr.GroupThousands(info.Size()), provider))
+		pkgLog().Info(fmt.Sprintf("TTS audio saved: %s (%s bytes, provider: %s)", final, pystr.GroupThousands(info.Size()), provider))
 		return ttsDumps(pyjson.ObjectOf("success", true, "file_path", final, "media_tag", mediaTag([]string{final}, voiceCompatible),
 			"provider", provider, "voice_compatible", voiceCompatible)), nil
 	}()
@@ -577,7 +573,7 @@ func textToSpeechTool(ctx context.Context, env *tools.Env, a ttsCallArgs) (strin
 		return ttsToolError("Text is required"), nil
 	}
 	if len(chunks) > 1 {
-		ttsLog().Info(fmt.Sprintf("TTS text for provider %s split into %d chunks (input=%d chars, cap=%d)", provider, len(chunks), pystr.Len(text), maxLen))
+		pkgLog().Info(fmt.Sprintf("TTS text for provider %s split into %d chunks (input=%d chars, cap=%d)", provider, len(chunks), pystr.Len(text), maxLen))
 	}
 	platform, wantOpus := sessionPlatform(env)
 	profile := resolveAudioDeliveryProfile(platform, ttsConfig)
@@ -625,7 +621,7 @@ func textToSpeechTool(ctx context.Context, env *tools.Env, a ttsCallArgs) (strin
 			if err != nil {
 				return "", err
 			}
-			ttsLog().Info(fmt.Sprintf("TTS audio saved: %s (%s bytes, provider: %s)", p, pystr.GroupThousands(info.Size()), provider))
+			pkgLog().Info(fmt.Sprintf("TTS audio saved: %s (%s bytes, provider: %s)", p, pystr.GroupThousands(info.Size()), provider))
 		}
 		filePaths := make([]any, len(finalPaths))
 		for i, p := range finalPaths {
@@ -731,8 +727,8 @@ func outputPathDescription(h string) string {
 // Static text_to_speech schema
 func ttsSchema() *pyjson.Object {
 	return pyjson.ObjectOf(
-		"name",        "text_to_speech",
-		"description", "Convert text to speech audio. Returns a MEDIA: path that the platform delivers as native audio. Compatible providers render as a voice bubble on Telegram; otherwise audio is sent as a regular attachment. In CLI mode, saves to ~/voice-memos/. " + configuredVoiceSentence,
+		"name", "text_to_speech",
+		"description", "Convert text to speech audio. Returns a MEDIA: path that the platform delivers as native audio. Compatible providers render as a voice bubble on Telegram; otherwise audio is sent as a regular attachment. In CLI mode, saves to ~/voice-memos/. "+configuredVoiceSentence,
 		"parameters", pyjson.ObjectOf(
 			"type", "object",
 			"properties", pyjson.ObjectOf(

@@ -2,8 +2,6 @@ package gateway
 
 import (
 	"context"
-
-	"github.com/nickheyer/icebath/pkg/observability"
 )
 
 type busyAcceptedKey struct{}
@@ -95,9 +93,6 @@ func (s *SessionStore) LookupSessionIDUnderLock(ctx context.Context, sessionKey 
 	}
 	return ""
 }
-
-// Busy metrics view of a message event
-func BusyEventOf(e *MessageEvent) observability.BusyEvent { return busyEventOf(e) }
 
 // Admits a messaging input to the authority FIFO and waits for its turn's reply
 func AdmitMessage(ctx context.Context, a *SessionAuthority, event *MessageEvent) (any, error) {

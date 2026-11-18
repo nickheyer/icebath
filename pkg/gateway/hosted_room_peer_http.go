@@ -8,7 +8,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"log/slog"
 	"net"
 	"net/http"
 	"regexp"
@@ -27,6 +26,8 @@ import (
 )
 
 const (
+	// Header a room home sends when it pulls reply files, so an older home keeps the run output as it was
+	PeerRoomFilesHeader       = "Icebath-Room-Files"
 	MaxPeerResponseBytes      = 16 * 1024 * 1024
 	MaxPeerErrorResponseBytes = 16 * 1024
 	peerResponseChunkBytes    = 64 * 1024
@@ -37,7 +38,7 @@ var (
 	peerReceiptScopeFields    = []string{"room_id", "home_install_id", "authority_gateway_id", "authority_epoch", "member_id", "target_install_id", "target_profile"}
 	peerTerminalRunStates     = map[string]bool{"completed": true, "failed": true, "interrupted": true, "cancelled": true}
 	peerActiveRunStates       = map[string]bool{"queued": true, "running": true, "waiting_for_approval": true, "stopping": true}
-	peerRunStatusKeys         = []string{"run_id", "status", "output", "error", "approval", "last_event"}
+	peerRunStatusKeys         = []string{"run_id", "status", "output", "error", "approval", "last_event", "files"}
 	peerLegacyDispatchCodes   = [][2]string{{"room grant", "invalid_room_grant"}, {"capability catalog changed", "room_capability_catalog_changed"}, {"execution policy changed", "room_execution_policy_changed"}}
 	peerGrantRenewalCodes     = map[string]bool{"invalid_room_grant": true, "room_reauthorization_required": true}
 	peerExecutionPolicyChange = [2]string{"room_execution_policy_changed", "peer room execution policy needs reauthorization"}
@@ -49,10 +50,6 @@ var (
 	}
 )
 
-func peerHTTPLog() *slog.Logger {
-	return slog.Default().With("logger", "tui_gateway.hosted_room_peer_http")
-}
-
 // Controlled peer HTTP failure classified for retry, ambiguity and admission
 type PeerRunsHTTPError struct {
 	Msg                  string
@@ -63,6 +60,7 @@ type PeerRunsHTTPError struct {
 	ErrorCode            string
 	NeedsReauthorization bool
 	Cause                error
+	Detail               string
 }
 
 func (e *PeerRunsHTTPError) Error() string { return e.Msg }
@@ -241,6 +239,7 @@ type PeerRunsHTTPClient struct {
 	recoveryBackoff   map[peerRunKey]peerBackoff
 	terminalReceipts  map[peerRunKey]bool
 	roomScope         map[string]any
+	partials          map[string][]byte
 }
 
 // Peer client over a validated RoomLink URL, its polling bounds checked
@@ -261,7 +260,7 @@ func NewPeerRunsHTTPClient(ctx context.Context, baseURL, apiKey string, timeoutS
 	return &PeerRunsHTTPClient{ctx: ctx, BaseURL: normalized, APIKey: apiKey, TransportSecurity: security, TimeoutSeconds: timeoutSeconds,
 		ReceiptDBPath: receiptDBPath, PollMinSeconds: pollMinSeconds, PollMaxSeconds: pollMaxSeconds, clock: clock,
 		runs: map[peerRunKey]map[string]any{}, statusCache: map[string]peerStatusEntry{}, recoveryBackoff: map[peerRunKey]peerBackoff{},
-		terminalReceipts: map[peerRunKey]bool{}}, nil
+		terminalReceipts: map[peerRunKey]bool{}, partials: map[string][]byte{}}, nil
 }
 
 // Peer client with the keyword defaults of the Python constructor
@@ -359,7 +358,7 @@ func (c *PeerRunsHTTPClient) request(path, method string, body any, headers map[
 		return nil, err
 	}
 	if roomGrant != "" {
-		req.Header.Set("Authorization", "HermesRoom "+roomGrant)
+		req.Header.Set("Authorization", "IcebathRoom "+roomGrant)
 	} else {
 		req.Header.Set("Authorization", "Bearer "+c.APIKey)
 	}
@@ -423,7 +422,7 @@ func (c *PeerRunsHTTPClient) httpError(resp *http.Response, method, path string,
 	if label == "" {
 		label = "no-code"
 	}
-	peerHTTPLog().Debug(fmt.Sprintf("Peer RoomLink request returned HTTP %d (%s)", code, label))
+	pkgLog().Debug(fmt.Sprintf("Peer RoomLink request returned HTTP %d (%s)", code, label))
 	renewal := (code == 401 || code == 403) && peerGrantRenewalCodes[errorCode]
 	drift := code == 403 && (errorCode == peerExecutionPolicyChange[0] || errorCode == peerCapabilityChange[0])
 	message := fmt.Sprintf("peer rejected %s %s with HTTP %d", method, path, code)
@@ -432,7 +431,24 @@ func (c *PeerRunsHTTPClient) httpError(resp *http.Response, method, path string,
 	}
 	flags.retryable = code == 408 || code == 425 || code == 429 || code >= 500
 	flags.errorCode = errorCode
-	return newPeerRunsHTTPError(message, flags, fmt.Errorf("HTTP Error %d: %s", code, http.StatusText(code)))
+	failure := newPeerRunsHTTPError(message, flags, fmt.Errorf("HTTP Error %d: %s", code, http.StatusText(code)))
+	failure.Detail = peerResponseErrorMessage(detail)
+	return failure
+}
+
+// Human error message of an error body, empty when the body carries none
+func peerResponseErrorMessage(detail string) string {
+	parsed, err := roomLoads(detail)
+	if err != nil {
+		return ""
+	}
+	payload, _ := parsed.(map[string]any)
+	if errorObj, ok := payload["error"].(map[string]any); ok {
+		if text, ok := errorObj["message"].(string); ok {
+			return strings.TrimSpace(text)
+		}
+	}
+	return ""
 }
 
 // Deterministic logical room session of the profile, checked against the expected id
@@ -677,7 +693,7 @@ func (c *PeerRunsHTTPClient) fetchRunStatus(record map[string]any, runID, grant 
 	if err != nil {
 		return nil, err
 	}
-	full, err := c.request(peerRunPath(record), "GET", nil, nil, scoped)
+	full, err := c.request(peerRunPath(record), "GET", nil, map[string]string{PeerRoomFilesHeader: "1"}, scoped)
 	if err != nil {
 		return nil, err
 	}
@@ -733,8 +749,21 @@ func (c *PeerRunsHTTPClient) History(_ context.Context, roomID, profile, session
 	if !pyrepr.Truthy(content) {
 		content = ""
 	}
-	return []map[string]any{{"role": "assistant", "task_id": receipt["task_id"], "execution_generation": receipt["execution_generation"],
-		"status": rowStatus, "message_id": "peer-run:" + pyrepr.Str(status["run_id"]), "content": content}}, nil
+	row := map[string]any{"role": "assistant", "task_id": receipt["task_id"], "execution_generation": receipt["execution_generation"],
+		"status": rowStatus, "message_id": "peer-run:" + pyrepr.Str(status["run_id"]), "content": content}
+	if state == "completed" && status["files"] != nil {
+		files, notes, err := c.replyFiles(receipt, status["files"], grant)
+		if err != nil {
+			return nil, err
+		}
+		if len(notes) > 0 {
+			row["content"] = strings.TrimSpace(pyrepr.Str(content) + "\n\n" + strings.Join(notes, "\n"))
+		}
+		if len(files) > 0 {
+			row["attachments"] = files
+		}
+	}
+	return []map[string]any{row}, nil
 }
 
 // Live state of the observed run

@@ -7,6 +7,7 @@ import (
 	"math"
 	"math/big"
 
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
@@ -59,7 +60,7 @@ func pyIntOf(v any) int {
 	if n, ok := pyIntValue(v); ok {
 		return toInt(n)
 	}
-	panic(fmt.Sprintf("TypeError: int() argument must be a string, a bytes-like object or a real number, not '%s'", pyrepr.TypeName(v)))
+	panic(fmt.Sprintf("a usage count is %s, expected a whole number", errchain.Kind(v)))
 }
 
 // Python int() of a float, raising on NaN and infinity

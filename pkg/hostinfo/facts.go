@@ -147,26 +147,6 @@ func ParseCPUInfoVendor(text string) string {
 	return armImplementers[int(code)]
 }
 
-// ParseMeminfoTotal returns MemTotal of meminfo text in bytes, zero when absent
-func ParseMeminfoTotal(text string) int64 {
-	for _, line := range strings.Split(text, "\n") {
-		if strings.HasPrefix(line, "MemTotal:") {
-			fields := strings.Fields(line)
-			if len(fields) >= 2 {
-				if kb, err := strconv.ParseInt(fields[1], 10, 64); err == nil {
-					return kb * 1024
-				}
-			}
-		}
-	}
-	return 0
-}
-
-var ramTotalOnce = cached(func() int64 { return ramTotalImpl() })
-
-// RAMTotalBytes is the physical memory visible to this OS, zero when unavailable
-func RAMTotalBytes() int64 { return ramTotalOnce() }
-
 var gpuPCIVendors = map[string]string{"10de": "nvidia", "1002": "amd", "8086": "intel"}
 var gpuPriority = []string{"nvidia", "amd", "intel"}
 

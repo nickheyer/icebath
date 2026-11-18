@@ -9,7 +9,7 @@ import (
 	"testing"
 )
 
-// Store whose home holds scripts/w.sh, the hermes_env fixture with a script planted
+// Store whose home holds scripts/w.sh, the fixture with a script planted
 func wScriptStore(t *testing.T) *Store {
 	t.Helper()
 	s, _ := newTestStore(t)

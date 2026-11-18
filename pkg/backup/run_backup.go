@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"log/slog"
 	"os"
 	"sort"
 	"strings"
@@ -172,7 +171,7 @@ func atomicOutputPath(finalPath string, publishPath func() (string, bool), body 
 
 // Existing paths the active memory provider declares for backup, empty on any provider failure
 func collectMemoryProviderExternalPaths(ctx context.Context, h string) []string {
-	env := &tools.Env{Home: h, Log: slog.Default()}
+	env := &tools.Env{Home: h, Log: pkgLog()}
 	active := memory.ActiveMemoryProvider(ctx, env)
 	if active == "" {
 		return nil
@@ -183,7 +182,7 @@ func collectMemoryProviderExternalPaths(ctx context.Context, h string) []string 
 	}
 	declared, err := provider.BackupPaths()
 	if err != nil {
-		slog.Warn(fmt.Sprintf("backup_paths() failed for memory provider %s: %s", pyrepr.StrRepr(active), excText(err)))
+		pkgLog().Warn(fmt.Sprintf("backup_paths() failed for memory provider %s: %s", pyrepr.StrRepr(active), excText(err)))
 		return nil
 	}
 	var out []string
@@ -499,7 +498,7 @@ func runBackupLocked(ctx context.Context, h string, ns map[string]any, w io.Writ
 		return false, err
 	}
 	scanStarted := time.Now()
-	slog.Info("backup phase=scan status=started")
+	pkgLog().Info("backup phase=scan status=started")
 	fmt.Fprintf(w, "Scanning %s ...\n", home.Display(h))
 	skippedDirs := map[string]bool{}
 	files := iterBackupFiles(root, outPath, skippedDirs)
@@ -508,13 +507,13 @@ func runBackupLocked(ctx context.Context, h string, ns map[string]any, w io.Writ
 		return false, err
 	}
 	if len(files) == 0 && len(external) == 0 {
-		slog.Info(fmt.Sprintf("backup phase=scan status=empty duration_ms=%.1f", sinceMS(scanStarted)))
+		pkgLog().Info(fmt.Sprintf("backup phase=scan status=empty duration_ms=%.1f", sinceMS(scanStarted)))
 		fmt.Fprintln(w, "No files to back up.")
 		return true, nil
 	}
 	fileCount := len(files) + len(external)
-	slog.Info(fmt.Sprintf("backup phase=scan status=complete duration_ms=%.1f files=%d", sinceMS(scanStarted), fileCount))
-	slog.Info(fmt.Sprintf("backup phase=archive status=started files=%d", fileCount))
+	pkgLog().Info(fmt.Sprintf("backup phase=scan status=complete duration_ms=%.1f files=%d", sinceMS(scanStarted), fileCount))
+	pkgLog().Info(fmt.Sprintf("backup phase=archive status=started files=%d", fileCount))
 	fmt.Fprintf(w, "Backing up %d files ...\n", fileCount)
 	var errs []string
 	t0 := time.Now()
@@ -528,7 +527,7 @@ func runBackupLocked(ctx context.Context, h string, ns map[string]any, w io.Writ
 			total, err := writeZipEntries(ctx, zf, files, outPath, zipEntryHooks{
 				onProgress: func(i int) {
 					fmt.Fprintf(w, "  %d/%d files ...\n", i, fileCount)
-					slog.Info(fmt.Sprintf("backup phase=archive status=progress completed=%d total=%d", i, fileCount))
+					pkgLog().Info(fmt.Sprintf("backup phase=archive status=progress completed=%d total=%d", i, fileCount))
 				},
 				trackBytes:  true,
 				onDBFailure: func(rel string) error { errs = append(errs, rel+": SQLite safe copy failed"); return nil },
@@ -569,7 +568,7 @@ func runBackupLocked(ctx context.Context, h string, ns map[string]any, w io.Writ
 		return false, err
 	}
 	zipSize := st.Size()
-	slog.Info(fmt.Sprintf("backup phase=archive status=complete duration_ms=%.1f files=%d errors=%d bytes=%d",
+	pkgLog().Info(fmt.Sprintf("backup phase=archive status=complete duration_ms=%.1f files=%d errors=%d bytes=%d",
 		elapsed*1000, fileCount, len(errs), zipSize))
 	state := "complete"
 	if len(errs) > 0 {

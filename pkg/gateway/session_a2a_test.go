@@ -93,7 +93,7 @@ func TestAPIStorageSourceReadsTheBinding(t *testing.T) {
 	}
 }
 
-// A storage source refusal reaches the store caller the way hermes raises it
+// A storage source refusal reaches the store caller as an error
 func TestUpdateSessionReturnsTheStorageSourceRefusal(t *testing.T) {
 	ctx, db := newTestStateDB(t)
 	dir := filepath.Join(t.TempDir(), "sessions")
@@ -112,7 +112,7 @@ func TestUpdateSessionReturnsTheStorageSourceRefusal(t *testing.T) {
 	}
 }
 
-// Generation ids and room ids match the hermes digests
+// Generation ids and room ids match the digests
 func TestAPIGenerationAndRoomSessionIDs(t *testing.T) {
 	if apiGenerationID("conv", 0) != "conv" || apiGenerationID("conv", 1) != "api-1430743e343c4433" {
 		t.Fatalf("generation id %q", apiGenerationID("conv", 1))

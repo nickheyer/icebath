@@ -2,23 +2,14 @@ package main
 
 import (
 	"context"
-	"errors"
 	"strings"
 
-	"github.com/nickheyer/icebath/pkg/acp"
 	"github.com/nickheyer/icebath/pkg/agent"
 	"github.com/nickheyer/icebath/pkg/app"
-	"github.com/nickheyer/icebath/pkg/backup"
-	"github.com/nickheyer/icebath/pkg/browser"
 	"github.com/nickheyer/icebath/pkg/commands"
 	"github.com/nickheyer/icebath/pkg/gateway"
-	"github.com/nickheyer/icebath/pkg/gateway/platforms/slack"
-	"github.com/nickheyer/icebath/pkg/gateway/platforms/whatsapp"
-	"github.com/nickheyer/icebath/pkg/gateway/platforms/whatsappcloud"
 	"github.com/nickheyer/icebath/pkg/gatewaycli"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/kanban"
-	"github.com/nickheyer/icebath/pkg/mcp"
 	"github.com/nickheyer/icebath/pkg/memory"
 	"github.com/nickheyer/icebath/pkg/monitoring"
 	"github.com/nickheyer/icebath/pkg/plugins"
@@ -29,21 +20,17 @@ import (
 	"github.com/spf13/cobra"
 )
 
-// A host command group handler reading the parsed cobra command, the hermes_cli handler of that group
+// A host command group handler reading the parsed cobra command, the handler of that group
 type groupHandler func(ctx context.Context, cli *commands.CLI, cmd *cobra.Command, path string, args []string) (int, error)
 
 // Binds every host owned command path to the handler of its top level group
 func bindHostCommands(cli *commands.CLI) {
 	groups := map[string]groupHandler{
-		"acp":                     acpGroup,
 		"approvals":               approvalsGroup,
 		"auth":                    authGroup,
-		"backup":                  backupGroup,
-		"browser":                 browserGroup,
 		"checkpoints":             checkpointsGroup,
 		"codex-runtime":           codexRuntimeGroup,
 		"completion":              completionGroup,
-		"connectors":              connectorsGroup,
 		"console":                 consoleGroup,
 		"curator":                 curatorGroup,
 		"debug":                   debugGroup,
@@ -52,10 +39,8 @@ func bindHostCommands(cli *commands.CLI) {
 		"egress":                  egressGroup,
 		"fallback":                fallbackGroup,
 		"gateway":                 gatewayGroup,
-		"import":                  importGroup,
 		"install-self":            installSelfGroup,
 		"journey":                 journeyGroup,
-		"kanban":                  kanbanGroup,
 		"logs":                    logsGroup,
 		"migrate":                 migrateGroup,
 		"model":                   modelGroup,
@@ -64,15 +49,12 @@ func bindHostCommands(cli *commands.CLI) {
 		"pause":                   pauseGroup,
 		"peer":                    peerGroup,
 		"pets":                    petsGroup,
-		"portal":                  portalGroup,
 		"project":                 projectGroup,
 		"prompt-size":             promptSizeGroup,
 		"proxy":                   proxyGroup,
 		"secrets":                 secretsGroup,
 		"security":                securityGroup,
-		"send":                    sendGroup,
 		"sessions":                sessionsGroup,
-		"slack":                   slackGroup,
 		"status":                  statusGroup,
 		"tools":                   toolsGroup,
 		"uninstall":               uninstallGroup,
@@ -85,12 +67,14 @@ func bindHostCommands(cli *commands.CLI) {
 		"source-completion":       sourceCompletionGroup,
 		"import-health":           importHealthGroup,
 		"usage":                   usageGroup,
-		"vault":                   vaultGroup,
 		"verify":                  verifyGroup,
-		"whatsapp":                whatsappGroup,
-		"whatsapp-cloud":          whatsappCloudGroup,
 		"worktree":                worktreeGroup,
 	}
+	bindGroups(cli, groups)
+}
+
+// Binds every unbound command path under a group name to the handler of that group
+func bindGroups(cli *commands.CLI, groups map[string]groupHandler) {
 	for _, path := range cli.Unbound() {
 		group := firstWord(path)
 		handler, ok := groups[group]
@@ -116,10 +100,6 @@ func namespace(cli *commands.CLI, cmd *cobra.Command, path string, args []string
 	return cli.Namespace(cmd, args)
 }
 
-func acpGroup(ctx context.Context, cli *commands.CLI, cmd *cobra.Command, path string, args []string) (int, error) {
-	return acp.CmdACP(ctx, namespace(cli, cmd, path, args), cmd.OutOrStdout())
-}
-
 func approvalsGroup(ctx context.Context, cli *commands.CLI, cmd *cobra.Command, path string, args []string) (int, error) {
 	ns := namespace(cli, cmd, path, args)
 	ns["approvals_command"] = nilWhenEmpty(secondWord(path))
@@ -138,35 +118,6 @@ func authGroup(ctx context.Context, cli *commands.CLI, cmd *cobra.Command, path 
 		delete(ns, "type")
 	}
 	return provider.AuthCommand(ctx, provider.HomePoolEnv(home.Dir(ctx)), ns, cmd.OutOrStdout(), cmd.ErrOrStderr())
-}
-
-func backupGroup(ctx context.Context, cli *commands.CLI, cmd *cobra.Command, path string, args []string) (int, error) {
-	ns := namespace(cli, cmd, path, args)
-	if nsBool(ns, "quick") {
-		return backup.RunQuickBackup(ctx, home.Dir(ctx), ns, cmd.OutOrStdout())
-	}
-	ok, err := backup.RunBackup(ctx, home.Dir(ctx), ns, cmd.OutOrStdout())
-	var exit *backup.SystemExit
-	if errors.As(err, &exit) {
-		return exit.Code, nil
-	}
-	if err != nil {
-		return 1, err
-	}
-	if !ok {
-		return 1, nil
-	}
-	return 0, nil
-}
-
-func importGroup(ctx context.Context, cli *commands.CLI, cmd *cobra.Command, path string, args []string) (int, error) {
-	return backup.RunImport(ctx, home.Dir(ctx), namespace(cli, cmd, path, args), cmd.OutOrStdout())
-}
-
-func browserGroup(ctx context.Context, cli *commands.CLI, cmd *cobra.Command, path string, args []string) (int, error) {
-	ns := namespace(cli, cmd, path, args)
-	ns["browser_action"] = nilWhenEmpty(secondWord(path))
-	return browser.BrowserCommand(ctx, processToolsEnv(ctx), ns, cmd.OutOrStdout())
 }
 
 func checkpointsGroup(ctx context.Context, cli *commands.CLI, cmd *cobra.Command, path string, args []string) (int, error) {
@@ -188,12 +139,6 @@ func completionGroup(ctx context.Context, cli *commands.CLI, cmd *cobra.Command,
 		shell = "bash"
 	}
 	return 0, cli.Completion(shell, cmd.OutOrStdout())
-}
-
-func connectorsGroup(ctx context.Context, cli *commands.CLI, cmd *cobra.Command, path string, args []string) (int, error) {
-	ns := namespace(cli, cmd, path, args)
-	ns["connectors_action"] = nilWhenEmpty(secondWord(path))
-	return mcp.ConnectorsCommand(ctx, processToolsEnv(ctx), ns, cmd.OutOrStdout(), cmd.ErrOrStderr())
 }
 
 func consoleGroup(ctx context.Context, cli *commands.CLI, cmd *cobra.Command, path string, args []string) (int, error) {
@@ -258,10 +203,6 @@ func journeyGroup(ctx context.Context, cli *commands.CLI, cmd *cobra.Command, pa
 	return memory.JourneyCommand(ctx, processToolsEnv(ctx), ns, cmd.OutOrStdout())
 }
 
-func kanbanGroup(ctx context.Context, cli *commands.CLI, cmd *cobra.Command, path string, args []string) (int, error) {
-	return kanban.KanbanCommand(ctx, namespace(cli, cmd, path, args), cmd.OutOrStdout(), cmd.ErrOrStderr())
-}
-
 func logsGroup(ctx context.Context, cli *commands.CLI, cmd *cobra.Command, path string, args []string) (int, error) {
 	ns := namespace(cli, cmd, path, args)
 	name := cli.Positional(cmd, args, "log_name")
@@ -323,12 +264,6 @@ func petsGroup(ctx context.Context, cli *commands.CLI, cmd *cobra.Command, path 
 	return app.PetsCommand(ctx, home.Dir(ctx), ns, cmd.OutOrStdout())
 }
 
-func portalGroup(ctx context.Context, cli *commands.CLI, cmd *cobra.Command, path string, args []string) (int, error) {
-	ns := namespace(cli, cmd, path, args)
-	ns["portal_command"] = nilWhenEmpty(secondWord(path))
-	return provider.PortalCommand(ctx, provider.HomePoolEnv(home.Dir(ctx)), ns, cmd.OutOrStdout(), cmd.ErrOrStderr())
-}
-
 func projectGroup(ctx context.Context, cli *commands.CLI, cmd *cobra.Command, path string, args []string) (int, error) {
 	ns := namespace(cli, cmd, path, args)
 	ns["project_action"] = nilWhenEmpty(secondWord(path))
@@ -376,10 +311,6 @@ func securityGroup(ctx context.Context, cli *commands.CLI, cmd *cobra.Command, p
 	return 2, nil
 }
 
-func sendGroup(ctx context.Context, cli *commands.CLI, cmd *cobra.Command, path string, args []string) (int, error) {
-	return gatewaycli.SendCommand(ctx, home.Dir(ctx), namespace(cli, cmd, path, args), cmd.OutOrStdout(), cmd.ErrOrStderr())
-}
-
 func sessionsGroup(ctx context.Context, cli *commands.CLI, cmd *cobra.Command, path string, args []string) (int, error) {
 	ns := namespace(cli, cmd, path, args)
 	ns["sessions_action"] = nilWhenEmpty(secondWord(path))
@@ -390,15 +321,9 @@ func sessionsGroup(ctx context.Context, cli *commands.CLI, cmd *cobra.Command, p
 	return app.CmdSessions(ctx, home.Dir(ctx), ns, cmd.OutOrStdout(), parser.Help)
 }
 
-// Lifts the emergency stop, hermes_cli/subcommands/pause.py cmd_resume
+// Lifts the emergency stop
 func cmdResume(ctx context.Context, cmd *cobra.Command, args []string) (int, error) {
 	return tools.ResumeCommand(ctx, home.Dir(ctx), args, cmd.OutOrStdout())
-}
-
-func slackGroup(ctx context.Context, cli *commands.CLI, cmd *cobra.Command, path string, args []string) (int, error) {
-	ns := namespace(cli, cmd, path, args)
-	ns["slack_command"] = nilWhenEmpty(secondWord(path))
-	return slack.CmdSlack(ctx, ns, cmd.OutOrStdout(), cmd.ErrOrStderr())
 }
 
 func statusGroup(ctx context.Context, cli *commands.CLI, cmd *cobra.Command, path string, args []string) (int, error) {
@@ -459,31 +384,8 @@ func usageGroup(ctx context.Context, cli *commands.CLI, cmd *cobra.Command, path
 	return provider.UsageCommand(ctx, provider.HomePoolEnv(home.Dir(ctx)), namespace(cli, cmd, path, args), cmd.OutOrStdout())
 }
 
-// Runs icebath vault with the subcommand under vault_action and key migrate under vault_key_action
-func vaultGroup(ctx context.Context, cli *commands.CLI, cmd *cobra.Command, path string, args []string) (int, error) {
-	ns := namespace(cli, cmd, path, args)
-	words := strings.Fields(path)
-	ns["vault_action"] = nil
-	ns["vault_key_action"] = nil
-	if len(words) > 1 {
-		ns["vault_action"] = words[1]
-	}
-	if len(words) > 2 && words[1] == "key" {
-		ns["vault_key_action"] = words[2]
-	}
-	return browser.VaultCommand(ctx, home.Dir(ctx), ns, cmd.OutOrStdout())
-}
-
 func verifyGroup(ctx context.Context, cli *commands.CLI, cmd *cobra.Command, path string, args []string) (int, error) {
 	return plugins.RunVerifyCommand(ctx, namespace(cli, cmd, path, args), cmd.OutOrStdout(), cmd.ErrOrStderr()), nil
-}
-
-func whatsappGroup(ctx context.Context, cli *commands.CLI, cmd *cobra.Command, path string, args []string) (int, error) {
-	return whatsapp.CmdWhatsApp(ctx, home.Dir(ctx), namespace(cli, cmd, path, args), cmd.OutOrStdout(), requireTTY)
-}
-
-func whatsappCloudGroup(ctx context.Context, cli *commands.CLI, cmd *cobra.Command, path string, args []string) (int, error) {
-	return whatsappcloud.CmdWhatsAppCloud(ctx, home.Dir(ctx), namespace(cli, cmd, path, args), cmd.OutOrStdout(), requireTTY)
 }
 
 func worktreeGroup(ctx context.Context, cli *commands.CLI, cmd *cobra.Command, path string, args []string) (int, error) {

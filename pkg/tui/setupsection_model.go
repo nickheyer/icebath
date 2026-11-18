@@ -10,6 +10,7 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 
+	"github.com/nickheyer/icebath/pkg/tuigateway"
 	"github.com/nickheyer/icebath/pkg/ui/tty"
 	"github.com/nickheyer/icebath/pkg/ui/wm"
 )
@@ -21,7 +22,7 @@ const hostedWaitLines = 12
 type hostedFlow struct {
 	job      string
 	after    int
-	asked    int
+	asked    int64
 	recent   []string
 	progress string
 	wait     *dialogCard
@@ -33,13 +34,13 @@ func (a *app) openHostedModel(entry string) tea.Cmd { return a.openHostedFlow("m
 // Runs a setup section or first run mode on the gateway with its questions asked here
 func (a *app) openHostedFlow(flow, entry string) tea.Cmd {
 	a.store.ui.Status = tr("setupFlow.flow.starting")
-	return a.events.rpc("setup.hosted.start", map[string]any{"flow": flow, "entry": entry}, func(res map[string]any) tea.Cmd {
-		job, _ := res["job"].(string)
-		if job == "" {
+	params := tuigateway.SetupHostedStartParams{Flow: tuigateway.SetupHostedFlow(flow), Entry: entry}
+	return ask(a.events.rpc, a.sys, tuigateway.SetupHostedStart, params, func(res *tuigateway.SetupHostedStartResult) tea.Cmd {
+		if res == nil || res.Job == "" {
 			a.store.ui.Status = a.store.statusFromBusy()
 			return nil
 		}
-		return a.pollHostedFlow(&hostedFlow{job: job})
+		return a.pollHostedFlow(&hostedFlow{job: res.Job})
 	})
 }
 
@@ -76,30 +77,29 @@ func (f *hostedFlow) endWait(a *app) tea.Cmd {
 
 // Follows a hosted flow, printing lines, asking questions, waiting in a dialog and settling at its end
 func (a *app) pollHostedFlow(f *hostedFlow) tea.Cmd {
-	return a.events.rpc("setup.hosted.poll", map[string]any{"job": f.job, "after": f.after}, func(res map[string]any) tea.Cmd {
+	return ask(a.events.rpc, a.sys, tuigateway.SetupHostedPoll, tuigateway.SetupHostedPollParams{Job: f.job, After: int64(f.after)}, func(res *tuigateway.SetupHostedPollResult) tea.Cmd {
 		if res == nil {
 			a.store.ui.Status = a.store.statusFromBusy()
 			return f.endWait(a)
 		}
-		lines := stringList(res["lines"])
+		lines := res.Lines
 		f.after += len(lines)
 		if len(lines) > 0 {
 			a.sys(strings.Join(lines, "\n"))
 			f.remember(lines)
 		}
-		if res["done"] == true {
+		if res.Done {
 			return tea.Batch(f.endWait(a), a.hostedFlowDone(res))
 		}
-		if q, _ := res["question"].(map[string]any); q != nil {
-			id := int(jsNumberOf(q["id"]))
-			if id == f.asked {
+		if q := res.Question; q != nil {
+			if q.ID == f.asked {
 				return nil
 			}
-			f.asked = id
+			f.asked = q.ID
 			return tea.Batch(f.endWait(a), a.askHosted(f, q))
 		}
 		a.store.ui.Status = tr("setupFlow.flow.working")
-		f.progress, _ = res["progress"].(string)
+		f.progress = res.Progress
 		var shown tea.Cmd
 		switch {
 		case f.wait != nil:
@@ -119,7 +119,8 @@ func (a *app) showHostedWait(f *hostedFlow) tea.Cmd {
 	stop := func() tea.Cmd {
 		f.wait = nil
 		a.sys(tr("setupFlow.flow.stopping"))
-		return a.events.rpc("setup.hosted.cancel", map[string]any{"job": f.job}, nil)
+		return ask(a.events.rpc, a.sys, tuigateway.SetupHostedCancel, tuigateway.SetupHostedCancelParams{Job: f.job},
+			func(*tuigateway.SetupHostedCancelResult) tea.Cmd { return nil })
 	}
 	d.onAnswer = func(choice *dialogChoice, _ []string, _ []string) tea.Cmd {
 		if choice != nil && choice.value == "wait" && f.wait == d {
@@ -133,9 +134,9 @@ func (a *app) showHostedWait(f *hostedFlow) tea.Cmd {
 }
 
 // Sends the answer to the question on screen and goes back to following the flow
-func (a *app) answerHosted(f *hostedFlow, id int, answer map[string]any) tea.Cmd {
-	answer["job"], answer["question"] = f.job, id
-	return a.events.rpc("setup.hosted.answer", answer, func(res map[string]any) tea.Cmd {
+func (a *app) answerHosted(f *hostedFlow, id int64, answer tuigateway.SetupHostedAnswerParams) tea.Cmd {
+	answer.Job, answer.Question = f.job, id
+	return ask(a.events.rpc, a.sys, tuigateway.SetupHostedAnswer, answer, func(res *tuigateway.SetupHostedAnswerResult) tea.Cmd {
 		if res == nil {
 			a.store.ui.Status = a.store.statusFromBusy()
 			return nil
@@ -148,14 +149,11 @@ func (a *app) answerHosted(f *hostedFlow, id int, answer map[string]any) tea.Cmd
 var hostedColumnGap = regexp.MustCompile(` {2,}`)
 
 // Choice rows split into the first column and a detail with the heading, the default row first
-func hostedRows(q map[string]any) ([]string, []string, []int) {
-	rows := stringList(q["rows"])
+func hostedRows(q *tuigateway.SetupHostedQuestion) ([]string, []string, []int) {
+	rows := q.Rows
 	headings := map[int]string{}
-	list, _ := q["headings"].([]any)
-	for _, raw := range list {
-		h, _ := raw.(map[string]any)
-		text, _ := h["text"].(string)
-		headings[int(jsNumberOf(h["at"]))] = text
+	for _, h := range q.Headings {
+		headings[int(h.At)] = h.Text
 	}
 	titles, details := make([]string, len(rows)), make([]string, len(rows))
 	group := ""
@@ -171,7 +169,7 @@ func hostedRows(q map[string]any) ([]string, []string, []int) {
 		details[i] = strings.Join(columns[1:], " · ")
 	}
 	order := make([]int, 0, len(rows))
-	def := int(jsNumberOf(q["default"]))
+	def := int(q.Default)
 	if def >= 0 && def < len(rows) {
 		order = append(order, def)
 	}
@@ -184,13 +182,11 @@ func hostedRows(q map[string]any) ([]string, []string, []int) {
 }
 
 // Puts one question on screen in the form its kind takes, backing out answering as cancelled
-func (a *app) askHosted(f *hostedFlow, q map[string]any) tea.Cmd {
-	id := int(jsNumberOf(q["id"]))
-	kind, _ := q["kind"].(string)
-	title, _ := q["title"].(string)
-	title = strings.TrimSpace(strings.TrimSuffix(strings.TrimSpace(title), ":"))
-	if description, _ := q["description"].(string); trimJS(description) != "" {
-		a.sys(description)
+func (a *app) askHosted(f *hostedFlow, q *tuigateway.SetupHostedQuestion) tea.Cmd {
+	id := q.ID
+	title := strings.TrimSpace(strings.TrimSuffix(strings.TrimSpace(q.Title), ":"))
+	if trimJS(q.Description) != "" {
+		a.sys(q.Description)
 	}
 	a.store.ui.Status = a.store.statusFromBusy()
 	settled := false
@@ -199,40 +195,39 @@ func (a *app) askHosted(f *hostedFlow, q map[string]any) tea.Cmd {
 			return nil
 		}
 		settled = true
-		return a.answerHosted(f, id, map[string]any{"cancelled": true})
+		return a.answerHosted(f, id, tuigateway.SetupHostedAnswerParams{Cancelled: true})
 	}
-	switch kind {
+	switch q.Kind {
 	case "choice":
 		rows, details, order := hostedRows(q)
 		items := make([]wm.Item, len(order))
 		for n, i := range order {
-			items[n] = wm.Item{ID: "setup:flow:" + strconv.Itoa(id) + ":" + strconv.Itoa(i), Title: rows[i], Detail: details[i], Run: func() tea.Cmd {
+			items[n] = wm.Item{ID: "setup:flow:" + strconv.FormatInt(id, 10) + ":" + strconv.Itoa(i), Title: rows[i], Detail: details[i], Run: func() tea.Cmd {
 				settled = true
-				return a.answerHosted(f, id, map[string]any{"index": i})
+				return a.answerHosted(f, id, tuigateway.SetupHostedAnswerParams{Index: int64(i)})
 			}}
 		}
 		p := wm.NewPalette(a.toolkit, items)
 		p.Placeholder, p.OnClose = title, cancel
 		return a.wm.ShowOverlay(p)
 	case "checklist":
-		rows := stringList(q["rows"])
+		rows := q.Rows
 		d := &dialogCard{app: a, kind: "setupChecklist", requestID: f.job, focus: -1, marks: map[int]bool{}, title: title, multi: true,
 			body: []string{tr("setupFlow.flow.checklistHint")}}
 		for i, row := range rows {
 			d.choices = append(d.choices, dialogChoice{label: row, value: strconv.Itoa(i)})
 		}
-		picked, _ := q["picked"].([]any)
-		for _, raw := range picked {
-			d.marks[int(jsNumberOf(raw))] = true
+		for _, i := range q.Picked {
+			d.marks[int(i)] = true
 		}
 		d.onAnswer = func(_ *dialogChoice, marked []string, _ []string) tea.Cmd {
 			settled = true
-			chosen := []any{}
+			chosen := []int64{}
 			for _, value := range marked {
-				n, _ := strconv.Atoi(value)
+				n, _ := strconv.ParseInt(value, 10, 64)
 				chosen = append(chosen, n)
 			}
-			return a.answerHosted(f, id, map[string]any{"picked": chosen})
+			return a.answerHosted(f, id, tuigateway.SetupHostedAnswerParams{Picked: chosen})
 		}
 		d.onCancel = cancel
 		return a.wm.ShowOverlay(d)
@@ -241,12 +236,12 @@ func (a *app) askHosted(f *hostedFlow, q map[string]any) tea.Cmd {
 			fields: []dialogField{{label: title, masked: true}}}
 		d.onAnswer = func(_ *dialogChoice, _ []string, fields []string) tea.Cmd {
 			settled = true
-			return a.answerHosted(f, id, map[string]any{"text": fields[0]})
+			return a.answerHosted(f, id, tuigateway.SetupHostedAnswerParams{Text: fields[0]})
 		}
 		d.onCancel = cancel
 		return a.wm.ShowOverlay(d)
 	case "command":
-		argv := stringList(q["argv"])
+		argv := q.Argv
 		if len(argv) == 0 {
 			return cancel()
 		}
@@ -258,38 +253,37 @@ func (a *app) askHosted(f *hostedFlow, q map[string]any) tea.Cmd {
 	}
 	p := wm.NewPrompt(a.toolkit, title, "", func(text string) tea.Cmd {
 		settled = true
-		return a.answerHosted(f, id, map[string]any{"text": text})
+		return a.answerHosted(f, id, tuigateway.SetupHostedAnswerParams{Text: text})
 	})
 	p.OnClose = cancel
 	return a.wm.ShowOverlay(p)
 }
 
 // Answer of a terminal program run, ran when it exited on its own, else the start error
-func commandAnswer(err error) map[string]any {
+func commandAnswer(err error) tuigateway.SetupHostedAnswerParams {
 	var exit *exec.ExitError
 	switch {
 	case err == nil:
-		return map[string]any{"ran": true}
+		return tuigateway.SetupHostedAnswerParams{Ran: true}
 	case errors.As(err, &exit):
 		status, waited := exit.Sys().(syscall.WaitStatus)
-		return map[string]any{"ran": !waited || !status.Signaled()}
+		return tuigateway.SetupHostedAnswerParams{Ran: !waited || !status.Signaled()}
 	}
-	return map[string]any{"error": err.Error()}
+	return tuigateway.SetupHostedAnswerParams{Error: err.Error()}
 }
 
 // Settles a finished flow, naming a changed default model and starting the first session once one is set
-func (a *app) hostedFlowDone(res map[string]any) tea.Cmd {
+func (a *app) hostedFlowDone(res *tuigateway.SetupHostedPollResult) tea.Cmd {
 	a.store.ui.Status = a.store.statusFromBusy()
-	model, _ := res["model"].(string)
-	provider, _ := res["provider"].(string)
+	model, provider := res.Model, res.Provider
 	switch {
-	case res["ok"] != true:
+	case !res.Ok:
 		a.sys(tr("setupFlow.flow.stopped"))
 		return nil
 	case model == "":
 		return nil
 	case a.store.ui.Sid != "":
-		if res["changed"] == true {
+		if res.Changed {
 			a.sys(tr("setupFlow.model.savedLive", model, provider))
 		}
 		return nil

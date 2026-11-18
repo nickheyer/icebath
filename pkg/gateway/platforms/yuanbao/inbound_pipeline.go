@@ -3,7 +3,6 @@ package yuanbao
 import (
 	"context"
 	"fmt"
-	"log/slog"
 	"sync"
 
 	"github.com/nickheyer/icebath/pkg/gateway"
@@ -173,7 +172,7 @@ func (p *InboundPipeline) Execute(ctx context.Context, ic *InboundContext) error
 			}
 			if err != nil {
 				if ctx.Err() == nil {
-					slog.Error(fmt.Sprintf("[InboundPipeline] middleware [%s] error", entry.name), "error", err)
+					pkgLog().Error(fmt.Sprintf("[InboundPipeline] middleware [%s] error", entry.name), "error", err)
 				}
 				return err
 			}

@@ -14,6 +14,7 @@ func TestHintNamesACommandTheCLIAccepts(t *testing.T) {
 	t.Setenv("ICEBATH_HOME", t.TempDir())
 	t.Cleanup(pm.PatchRepoRoot(t.TempDir()))
 	var synced []pm.SyncVenvOptions
+	var ensured []string
 	t.Cleanup(pm.SwapInstallCommandSteps(pm.InstallCommandSteps{
 		InstallNames: func(_ context.Context, names []string, _ *string, _ bool) (int, error) {
 			if len(names) != 0 {
@@ -26,6 +27,10 @@ func TestHintNamesACommandTheCLIAccepts(t *testing.T) {
 			synced = append(synced, opts)
 			return nil
 		},
+		EnsureExtra: func(_ context.Context, name string, _ pm.ExtraOptions) (string, error) {
+			ensured = append(ensured, name)
+			return "", nil
+		},
 	}))
 	hint := strings.Fields(pm.InstallHint("silk"))
 	if len(hint) < 2 || hint[0] != "icebath" || hint[1] != "pm" {
@@ -34,8 +39,8 @@ func TestHintNamesACommandTheCLIAccepts(t *testing.T) {
 	if err := NewCLI().Execute(hint[1:]); err != nil {
 		t.Fatalf("%q refused: %v", hint, err)
 	}
-	if !reflect.DeepEqual(synced, []pm.SyncVenvOptions{{Extras: []string{"silk"}, Explicit: true}}) {
-		t.Fatalf("synced %+v", synced)
+	if len(synced) != 0 || !reflect.DeepEqual(ensured, []string{"silk"}) {
+		t.Fatalf("synced %+v ensured %v", synced, ensured)
 	}
 }
 

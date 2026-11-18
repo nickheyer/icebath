@@ -46,7 +46,7 @@ const (
 // Hosts allowed by default for AI inference traffic
 var DefaultIronAllowedHosts = []string{
 	"openrouter.ai", "*.openrouter.ai", "api.openai.com", "api.anthropic.com", "generativelanguage.googleapis.com",
-	"api.x.ai", "api.mistral.ai", "api.groq.com", "api.together.xyz", "api.deepseek.com", "inference.nousresearch.com",
+	"api.x.ai", "api.mistral.ai", "api.groq.com", "api.together.xyz", "api.deepseek.com",
 }
 
 type bearerProvider struct {
@@ -59,7 +59,7 @@ var ironBearerProviders = []bearerProvider{
 	{"OPENROUTER_API_KEY", []string{"openrouter.ai", "*.openrouter.ai"}}, {"OPENAI_API_KEY", []string{"api.openai.com"}},
 	{"GROQ_API_KEY", []string{"api.groq.com"}}, {"TOGETHER_API_KEY", []string{"api.together.xyz"}},
 	{"DEEPSEEK_API_KEY", []string{"api.deepseek.com"}}, {"MISTRAL_API_KEY", []string{"api.mistral.ai"}},
-	{"XAI_API_KEY", []string{"api.x.ai"}}, {"NOUS_API_KEY", []string{"inference.nousresearch.com"}},
+	{"XAI_API_KEY", []string{"api.x.ai"}},
 }
 
 type headerAuthProvider struct {
@@ -134,9 +134,9 @@ type IronProxy struct {
 
 func (p IronProxy) log() *slog.Logger {
 	if p.Log != nil {
-		return p.Log
+		return p.Log.With("logger", logName)
 	}
-	return slog.Default()
+	return pkgLog()
 }
 
 func (p IronProxy) home() string {

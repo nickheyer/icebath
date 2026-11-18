@@ -13,7 +13,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/profiles"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/tools"
-	"github.com/nickheyer/icebath/pkg/tuigateway"
+	"github.com/nickheyer/icebath/pkg/tuihost"
 )
 
 // Runner holding the per chat voice modes, GatewayRunner._voice_mode with _voice_key_for_source
@@ -246,7 +246,7 @@ func sessionVoiceMode(c *AuthorityConnection, ref SessionRef) (string, error) {
 	}
 	runner, ok := c.authority.Runner.(voiceModeRunner)
 	if !ok {
-		return "", attributeError("_voice_key_for_source")
+		return "", runnerLacks("derive the voice key of a source")
 	}
 	return runner.VoiceModeFor(live.Source), nil
 }
@@ -267,7 +267,7 @@ func LocalVoiceEnabled(sessionID any) (*bool, error) {
 		if live.Source != nil {
 			modes, ok := runner.(voiceModeRunner)
 			if !ok {
-				return nil, attributeError("_voice_key_for_source")
+				return nil, runnerLacks("derive the voice key of a source")
 			}
 			enabled = modes.VoiceModeFor(live.Source) != "off"
 		}
@@ -387,7 +387,7 @@ func projectSetting(ctx context.Context, params *pyjson.Object, policy *LocalSes
 		cwd = resolved
 	}
 	dir := pyrepr.Str(cwd)
-	return map[string]any{"cwd": cwd, "branch": tuigateway.Branch(dir)}, nil
+	return map[string]any{"cwd": cwd, "branch": tuihost.Branch(dir)}, nil
 }
 
 // Model picker inventory of the owning profile with the session's provider selected

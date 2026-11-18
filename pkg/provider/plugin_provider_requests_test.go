@@ -20,7 +20,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/pm"
 )
 
-// ---- tests/hermes_cli/test_plugin_provider_requests.py ----
+//
 
 // Loopback stand in for a provider or plugin API that records every request it receives
 type loopbackAPI struct {

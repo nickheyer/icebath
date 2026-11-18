@@ -3,7 +3,6 @@ package kanban
 import (
 	"context"
 	"fmt"
-	"log/slog"
 	"math"
 	"os"
 	"os/exec"
@@ -24,8 +23,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
-
-var log = slog.Default().With("logger", "hermes_cli.kanban_db")
 
 // Python ValueError raised by board and task validation
 type ValueError struct{ Msg string }
@@ -174,7 +171,7 @@ func jsonDict(value any) *pyjson.Object {
 
 // Integer env override where absent, empty, non integer or below minimum yields def
 func envInt(name string, def, minimum int64) int64 {
-	raw := pystr.Strip(os.Getenv(pyEnvName(name)))
+	raw := pystr.Strip(os.Getenv(name))
 	if raw == "" {
 		return def
 	}
@@ -192,14 +189,6 @@ func envInt(name string, def, minimum int64) int64 {
 		return n
 	}
 	return def
-}
-
-// Env name with the hermes prefix renamed to the icebath one
-func pyEnvName(name string) string {
-	if rest, ok := strings.CutPrefix(name, "HERMES_"); ok {
-		return "ICEBATH_" + rest
-	}
-	return name
 }
 
 // Stripped stdout of git -C cwd args, nil on any failure or empty output
@@ -263,7 +252,7 @@ func assertNotDelegatedChildMutation(ctx context.Context, path string) error {
 func fireKanbanLifecycleHook(ctx context.Context, event, taskID string, fields map[string]any) {
 	defer func() {
 		if r := recover(); r != nil {
-			log.Debug(fmt.Sprintf("kanban lifecycle hook %s failed: %v", event, r))
+			pkgLog().Debug(fmt.Sprintf("kanban lifecycle hook %s failed: %v", event, r))
 		}
 	}()
 	kwargs := map[string]any{"task_id": taskID, "profile_name": hookProfileName(ctx)}
@@ -315,7 +304,7 @@ func fireWorkerSpawnedHook(ctx context.Context, conn state.SQLiteConn, task *Tas
 	}
 	runID, err := currentRunID(ctx, conn, task.ID)
 	if err != nil {
-		log.Debug(fmt.Sprintf("kanban worker spawned hook failed: %v", err))
+		pkgLog().Debug(fmt.Sprintf("kanban worker spawned hook failed: %v", err))
 		return
 	}
 	var workerPID any
@@ -335,7 +324,7 @@ func NotifyTaskUpdated(ctx context.Context, conn state.SQLiteConn, taskID string
 	}
 	row, err := QueryOne(ctx, conn, "SELECT assignee, current_run_id FROM tasks WHERE id = ?", taskID)
 	if err != nil {
-		log.Debug(fmt.Sprintf("kanban task updated hook failed: %v", err))
+		pkgLog().Debug(fmt.Sprintf("kanban task updated hook failed: %v", err))
 		return
 	}
 	if board == "" {
@@ -365,7 +354,7 @@ func fireDispatchTickHook(ctx context.Context, result *DispatchResult, board *st
 	}
 	defer func() {
 		if r := recover(); r != nil {
-			log.Debug(fmt.Sprintf("kanban dispatch tick hook failed: %v", r))
+			pkgLog().Debug(fmt.Sprintf("kanban dispatch tick hook failed: %v", r))
 		}
 	}()
 	profileName := hookProfileName(ctx)
@@ -400,17 +389,17 @@ func resolveClaimTTLSeconds(ttlSeconds *int64) int64 {
 	if ttlSeconds != nil {
 		return max(1, *ttlSeconds)
 	}
-	return envInt("HERMES_KANBAN_CLAIM_TTL_SECONDS", DefaultClaimTTLSeconds, 1)
+	return envInt("ICEBATH_KANBAN_CLAIM_TTL_SECONDS", DefaultClaimTTLSeconds, 1)
 }
 
 // ICEBATH_KANBAN_CRASH_GRACE_SECONDS where 0 means immediate, else the default
 func resolveCrashGraceSeconds() int64 {
-	return envInt("HERMES_KANBAN_CRASH_GRACE_SECONDS", DefaultCrashGraceSeconds, 0)
+	return envInt("ICEBATH_KANBAN_CRASH_GRACE_SECONDS", DefaultCrashGraceSeconds, 0)
 }
 
 // ICEBATH_KANBAN_RATE_LIMIT_COOLDOWN_SECONDS where 0 means next tick, else the default
 func resolveRateLimitCooldownSeconds() int64 {
-	return envInt("HERMES_KANBAN_RATE_LIMIT_COOLDOWN_SECONDS", DefaultRateLimitCooldownSeconds, 0)
+	return envInt("ICEBATH_KANBAN_RATE_LIMIT_COOLDOWN_SECONDS", DefaultRateLimitCooldownSeconds, 0)
 }
 
 // Hook payload value of an optional string

@@ -12,7 +12,7 @@ import (
 	"strings"
 )
 
-// Error for an unsafe or unsupported archive member, the ValueError of hermes_cli.archive_safe
+// Error for an unsafe or unsupported archive member, the ValueError of
 type ArchiveError struct{ Msg string }
 
 func (e *ArchiveError) Error() string { return e.Msg }

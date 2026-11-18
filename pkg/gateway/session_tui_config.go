@@ -14,7 +14,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/tools"
-	"github.com/nickheyer/icebath/pkg/tuigateway"
+	"github.com/nickheyer/icebath/pkg/tuihost"
 )
 
 var sessionControlKeys = map[string]bool{"busy": true, "verbose": true, "yolo": true, "show_reasoning": true, "service_tier": true, "model": true}
@@ -35,13 +35,13 @@ var ReasoningDisplayToggles = map[string]bool{"show": true, "on": true, "hide": 
 // One read modify write of a profile config.yaml at a time
 var profileConfigWriteLock sync.Mutex
 
-// hermes_cli/personality.py resolve_personality and persist_personality, assigned in cmd/icebath/wiring.go
+// and persist_personality, assigned in cmd/icebath/wiring.go
 var (
 	ResolvePersonality func(value any, cfg config.Tree) (string, string, error)
 	PersistPersonality func(ctx context.Context, value any) bool
 )
 
-// hermes_cli/approval_mode.py run_approval_mode_command as ok and mode, assigned in cmd/icebath/wiring.go
+// as ok and mode, assigned in cmd/icebath/wiring.go
 var RunApprovalModeCommand func(ctx context.Context, h string, env *tools.Env, requestedMode string) (bool, string, error)
 
 // Runner resolving the routed profile's tier, GatewayRunner._resolve_session_service_tier
@@ -101,7 +101,7 @@ func displayToggles() map[string]displayToggle {
 		statusAliases[mode] = mode
 	}
 	mouseAliases := map[string]any{}
-	for word, mode := range tuigateway.MouseTrackingAliases {
+	for word, mode := range tuihost.MouseTrackingAliases {
 		mouseAliases[word] = mode
 	}
 	notFlag := func(field string) func(map[string]any) any {
@@ -122,7 +122,7 @@ func displayToggles() map[string]displayToggle {
 			return "off"
 		}, func(value any) string { return pyrepr.Str(value) }},
 		"mouse": {"mouse_tracking", mouseAliases, func(d map[string]any) any {
-			if tuigateway.DisplayMouseTracking(d) == "off" {
+			if tuihost.DisplayMouseTracking(d) == "off" {
 				return "all"
 			}
 			return "off"
@@ -228,8 +228,8 @@ func setFocus(display map[string]any, raw string) (map[string]any, error) {
 	if !ok {
 		progress = "all"
 	}
-	configured := tuigateway.NormalizeToolProgressMode(progress, "all")
-	action, target := tuigateway.ResolveFocusArg(raw, current)
+	configured := tuihost.NormalizeToolProgressMode(progress, "all")
+	action, target := tuihost.ResolveFocusArg(raw, current)
 	if action == "usage" {
 		return nil, runtimeRefusal("invalid_params")
 	}
@@ -248,14 +248,14 @@ func setFocus(display map[string]any, raw string) (map[string]any, error) {
 		if stashed := display["focus_saved_tool_progress"]; current && pyrepr.Truthy(stashed) {
 			saved = stashed
 		}
-		display["focus_saved_tool_progress"] = tuigateway.NormalizeToolProgressMode(saved, "all")
-		effective = tuigateway.FocusToolProgressMode
+		display["focus_saved_tool_progress"] = tuihost.NormalizeToolProgressMode(saved, "all")
+		effective = tuihost.FocusToolProgressMode
 	} else {
 		var saved any = "all"
 		if stashed := display["focus_saved_tool_progress"]; pyrepr.Truthy(stashed) {
 			saved = stashed
 		}
-		effective = tuigateway.NormalizeToolProgressMode(saved, "all")
+		effective = tuihost.NormalizeToolProgressMode(saved, "all")
 	}
 	display["tool_progress"], display["focus_view"] = effective, *target
 	return map[string]any{"value": onOff(*target), "tool_progress": effective}, nil
@@ -311,21 +311,21 @@ func currentTier(ctx context.Context, c *AuthorityConnection, ref SessionRef, po
 	}
 	runner, ok := c.authority.Runner.(sessionTierRunner)
 	if !ok {
-		return nil, attributeError("_resolve_session_service_tier")
+		return nil, runnerLacks("resolve the session service tier")
 	}
 	return runner.ResolveSessionServiceTier(ctx, live.Source, live.Route)
 }
 
-// AttributeError a getattr on the runner raises for a method it lacks
-func attributeError(name string) error {
-	return &pyAttributeError{name}
+// Refusal of a runner without a capability the session controls call
+func runnerLacks(capability string) error {
+	return &runnerCapabilityError{capability}
 }
 
-// Python AttributeError of a runner without a method the session controls call
-type pyAttributeError struct{ name string }
+// Runner without a capability the session controls call
+type runnerCapabilityError struct{ capability string }
 
-func (e *pyAttributeError) Error() string {
-	return "AttributeError: 'GatewayRunner' object has no attribute " + pyrepr.Repr(e.name)
+func (e *runnerCapabilityError) Error() string {
+	return "the gateway runner cannot " + e.capability
 }
 
 // Session scoped fast pick validated against the session's route, never a config write
@@ -412,7 +412,7 @@ func setFast(ctx context.Context, c *AuthorityConnection, ref SessionRef, policy
 	}
 	runner, ok := c.authority.Runner.(serviceTierRunner)
 	if !ok {
-		return nil, attributeError("_set_session_service_tier_override")
+		return nil, runnerLacks("set a session service tier override")
 	}
 	live, err := liveSession(c.authority, ref.SessionID)
 	if err != nil {
@@ -569,7 +569,7 @@ func setCommandSetting(ctx context.Context, c *AuthorityConnection, ref SessionR
 	}
 	runner, ok := c.authority.Runner.(reasoningSelectionRunner)
 	if !ok {
-		return nil, attributeError("_apply_reasoning_selection")
+		return nil, runnerLacks("apply a reasoning selection")
 	}
 	global := scope == "global"
 	if err := commitReasoningCommand(ctx, c.authority, c.actor, ref, value, global); err != nil {
@@ -675,8 +675,8 @@ func broadcastSkin(ctx context.Context, c *AuthorityConnection) error {
 		if err != nil {
 			return nil, err
 		}
-		payload := tuigateway.SkinPayload(sctx, cfg)
-		tuigateway.NoteSkinBroadcast(sctx)
+		payload := tuihost.SkinPayload(sctx, cfg)
+		tuihost.NoteSkinBroadcast(sctx)
 		return payload, nil
 	})
 	if err != nil {

@@ -8,7 +8,6 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
-	"log/slog"
 	"math"
 	"os"
 	"path/filepath"
@@ -124,7 +123,7 @@ func isAncestorPID(pid int) bool {
 	for range maxAncestryDepth {
 		parent, ok, err := parentOf(current)
 		if err != nil {
-			slog.Debug("Could not walk process ancestry", "pid", pid, "error", err)
+			pkgLog().Debug("Could not walk process ancestry", "pid", pid, "error", err)
 			return false
 		}
 		if !ok {
@@ -139,7 +138,7 @@ func isAncestorPID(pid int) bool {
 		seen[parent] = true
 		current = parent
 	}
-	slog.Debug("Gave up walking process ancestry", "pid", pid, "links", maxAncestryDepth)
+	pkgLog().Debug("Gave up walking process ancestry", "pid", pid, "links", maxAncestryDepth)
 	return false
 }
 
@@ -272,11 +271,11 @@ func compareAndSwap(ctx context.Context, path string, expected, replacement []by
 	tmp := tmpSibling(path)
 	defer os.Remove(tmp)
 	if err := writeSynced(tmp, replacement, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0o666); err != nil {
-		slog.Debug("Could not rewrite update marker", "path", path, "error", err)
+		pkgLog().Debug("Could not rewrite update marker", "path", path, "error", err)
 		return false, nil
 	}
 	if err := os.Rename(tmp, path); err != nil {
-		slog.Debug("Could not rewrite update marker", "path", path, "error", err)
+		pkgLog().Debug("Could not rewrite update marker", "path", path, "error", err)
 		return false, nil
 	}
 	return true, nil
@@ -332,7 +331,7 @@ func ReadLiveUpdate(ctx context.Context, path, installRoot string) (holder *Upda
 	}
 	defer func() {
 		if failure := recover(); failure != nil {
-			slog.Debug("Could not judge update marker", "path", path, "error", failure)
+			pkgLog().Debug("Could not judge update marker", "path", path, "error", failure)
 			holder = nil
 		}
 	}()
@@ -351,7 +350,7 @@ func ReadLiveUpdate(ctx context.Context, path, installRoot string) (holder *Upda
 		}
 		verdict, err := reclaimDead(ctx, path, installRoot)
 		if err != nil {
-			slog.Debug("Could not judge update marker", "path", path, "error", err)
+			pkgLog().Debug("Could not judge update marker", "path", path, "error", err)
 			return nil
 		}
 		if verdict == "held" {
@@ -373,7 +372,7 @@ func reclaimDead(ctx context.Context, path, installRoot string) (string, error) 
 	pauseAt("reclaim")
 	ctx, release, err := MarkerMutex(ctx, path, MutexWaitSeconds*time.Second)
 	if err != nil {
-		slog.Debug("Left update marker for its current mutator", "path", path, "error", err)
+		pkgLog().Debug("Left update marker for its current mutator", "path", path, "error", err)
 		return "busy", nil
 	}
 	defer release()
@@ -393,7 +392,7 @@ func reclaimDead(ctx context.Context, path, installRoot string) (string, error) 
 	}
 	pauseAt("unlink")
 	if err := os.Remove(path); err != nil && !errors.Is(err, fs.ErrNotExist) {
-		slog.Debug("Left update marker for its current mutator", "path", path, "error", err)
+		pkgLog().Debug("Left update marker for its current mutator", "path", path, "error", err)
 		return "busy", nil
 	}
 	return "reclaimed", nil
@@ -772,7 +771,7 @@ func publishExclusive(ctx context.Context, path string, body []byte) (bool, erro
 	if errors.Is(err, fs.ErrExist) {
 		return false, nil
 	}
-	slog.Debug("No hard link for the update marker, exclusive create instead", "error", err)
+	pkgLog().Debug("No hard link for the update marker, exclusive create instead", "error", err)
 	f, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o644)
 	if err != nil {
 		if errors.Is(err, fs.ErrExist) {
@@ -1102,7 +1101,7 @@ func (l *UpdateLock) Release(ctx context.Context) {
 	claims.Unlock()
 	if last {
 		if err := releaseMarker(ctx, l.Path); err != nil {
-			slog.Debug("Could not release update marker", "path", l.Path, "error", err)
+			pkgLog().Debug("Could not release update marker", "path", l.Path, "error", err)
 		}
 	}
 }

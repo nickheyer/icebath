@@ -14,7 +14,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/internal/pythread"
 	"github.com/nickheyer/icebath/pkg/state"
-	"github.com/nickheyer/icebath/pkg/tuigateway"
+	"github.com/nickheyer/icebath/pkg/tuihost"
 )
 
 var sessionRegistry = &handlerRegistry{}
@@ -22,9 +22,6 @@ var sessionRegistry = &handlerRegistry{}
 func init() {
 	sessionRegistry.method("session.create", func(ctx context.Context, rid any, params map[string]any) map[string]any {
 		return createSession(ctx, rid, params, false)
-	})
-	sessionRegistry.method("session.branch_stored", func(ctx context.Context, rid any, params map[string]any) map[string]any {
-		return createSession(ctx, rid, params, true)
 	})
 	registerSessionBranchHandlers()
 	registerSessionListHandlers()
@@ -37,7 +34,7 @@ func init() {
 }
 
 // Handler body of a session scoped method, given the resolved live session
-type sessionHandler func(ctx context.Context, rid any, params map[string]any, session *tuigateway.Session) map[string]any
+type sessionHandler func(ctx context.Context, rid any, params map[string]any, session *tuihost.Session) map[string]any
 
 // Handler resolving params session_id without waiting on the agent build
 func withSession(fn sessionHandler) Handler {
@@ -71,8 +68,8 @@ func sessionMethod(name string, live bool, fn sessionHandler) {
 }
 
 // Session scoped handler handed the session's own profile db, the code error when it is unavailable
-func withSessionDB(code int, fn func(ctx context.Context, rid any, params map[string]any, session *tuigateway.Session, db *state.DB) map[string]any) sessionHandler {
-	return func(ctx context.Context, rid any, params map[string]any, session *tuigateway.Session) map[string]any {
+func withSessionDB(code int, fn func(ctx context.Context, rid any, params map[string]any, session *tuihost.Session, db *state.DB) map[string]any) sessionHandler {
+	return func(ctx context.Context, rid any, params map[string]any, session *tuihost.Session) map[string]any {
 		db, release := sessionDB(ctx, session)
 		defer release()
 		if db == nil {
@@ -172,7 +169,7 @@ func persistBranch(ctx context.Context, db *state.DB, newKey, parentKey, title s
 			parentPrompt = strOr(row.GetOr("system_prompt", nil))
 		}
 	}); failure != nil {
-		logger().Debug(fmt.Sprintf("branch: parent system prompt read failed for %s", parentKey), "exc_info", failureText(failure))
+		pkgLog().Debug(fmt.Sprintf("branch: parent system prompt read failed for %s", parentKey), "exc_info", failureText(failure))
 	}
 	row := state.NewSession{ID: newKey, Source: source, Model: model, ModelConfig: map[string]any{"_branched_from": parentKey},
 		ParentSessionID: parentKey, ProfileName: profileName, SystemPrompt: parentPrompt}
@@ -217,7 +214,7 @@ func persistBranch(ctx context.Context, db *state.DB, newKey, parentKey, title s
 	}()
 	if err != nil && compensate && !state.IsDiskFullError(err) {
 		if _, discardErr := db.DiscardUnadmittedSession(ctx, newKey); discardErr != nil {
-			logger().Debug(fmt.Sprintf("branch seed compensation delete failed for %s", newKey), "exc_info", discardErr.Error())
+			pkgLog().Debug(fmt.Sprintf("branch seed compensation delete failed for %s", newKey), "exc_info", discardErr.Error())
 		}
 	}
 	return err
@@ -237,7 +234,7 @@ func historyRows(history []any) []map[string]any {
 }
 
 // Persists a seeded branch child at create, leaving the first prompt to retry a failed seed
-func seedBranchRow(ctx context.Context, record *tuigateway.Session, key, parentSessionID string, history []any, source, profileHome string) {
+func seedBranchRow(ctx context.Context, record *tuihost.Session, key, parentSessionID string, history []any, source, profileHome string) {
 	failure := catchPanic(func() {
 		db, release := sessionDB(ctx, record)
 		defer release()
@@ -257,17 +254,17 @@ func seedBranchRow(ctx context.Context, record *tuigateway.Session, key, parentS
 		}
 		model, _ := sessionDefaultRoute(ctx, record)
 		panicIf(persistBranch(ctx, db, key, parentSessionID, title, historyRows(history), source, cwd, profileName, model,
-			nil, true, "derived", tuigateway.SessionAuthUserID(record)))
+			nil, true, "derived", tuihost.SessionAuthUserID(record)))
 		record.Set("pending_title", nil)
 		record.Set("_branch_seed_persisted", true)
 	})
 	if failure != nil {
-		logger().Warn(fmt.Sprintf("seeded-branch persistence failed for %s; falling back to lazy row creation", key), "exc_info", failureText(failure))
+		pkgLog().Warn(fmt.Sprintf("seeded-branch persistence failed for %s; falling back to lazy row creation", key), "exc_info", failureText(failure))
 	}
 }
 
 // Persists a parentless seeded session at create with its client title, rolling back a partial copy
-func seedRow(ctx context.Context, record *tuigateway.Session) {
+func seedRow(ctx context.Context, record *tuihost.Session) {
 	key := strOr(record.Get("session_key"))
 	stopped := false
 	if failure := catchPanic(func() {
@@ -277,7 +274,7 @@ func seedRow(ctx context.Context, record *tuigateway.Session) {
 		}
 		persistBranchSeed(ctx, record)
 	}); failure != nil {
-		logger().Warn(fmt.Sprintf("seeded-session persistence failed for %s; falling back to lazy row creation", key), "exc_info", failureText(failure))
+		pkgLog().Warn(fmt.Sprintf("seeded-session persistence failed for %s; falling back to lazy row creation", key), "exc_info", failureText(failure))
 	}
 	if stopped {
 		return
@@ -309,17 +306,17 @@ func seedRow(ctx context.Context, record *tuigateway.Session) {
 			record.Set("pending_title", nil)
 		}
 	}); failure != nil {
-		logger().Debug(fmt.Sprintf("seeded-session title write failed for %s; pending_title stays queued", key), "exc_info", failureText(failure))
+		pkgLog().Debug(fmt.Sprintf("seeded-session title write failed for %s; pending_title stays queued", key), "exc_info", failureText(failure))
 	}
 }
 
 // Lazy session info of a created session, the client's route pick else the profile default
-func createdSessionInfo(ctx context.Context, record *tuigateway.Session, override map[string]any, cwd, profile string) map[string]any {
+func createdSessionInfo(ctx context.Context, record *tuihost.Session, override map[string]any, cwd, profile string) map[string]any {
 	info := lazyInfoRoute(ctx, record, override)
 	info["tools"] = map[string]any{}
 	info["skills"] = map[string]any{}
 	info["cwd"] = cwd
-	info["branch"] = tuigateway.Branch(cwd)
+	info["branch"] = tuihost.Branch(cwd)
 	info["project"] = projectInfoForCwd(ctx, cwd)
 	info["lazy"] = true
 	info["profile_name"] = responseProfileName(ctx, profile)
@@ -328,7 +325,7 @@ func createdSessionInfo(ctx context.Context, record *tuigateway.Session, overrid
 
 // Wire messages of a history in a profile home, raising a conversion failure
 func wireMessages(ctx context.Context, history []any, profileHome string) []any {
-	messages, err := tuigateway.HistoryToMessages(ctx, history, profileHome, true)
+	messages, err := tuihost.HistoryToMessages(ctx, history, profileHome, true)
 	panicIf(err)
 	return messages
 }
@@ -347,7 +344,7 @@ func idempotentCreateHit(ctx context.Context, rid any, idemKey, profile string, 
 	if !known {
 		return nil, false
 	}
-	session := tuigateway.SessionRecord(existing.sid)
+	session := tuihost.SessionRecord(existing.sid)
 	if session == nil {
 		delete(idempotencyKeys, idemKey)
 		return nil, false
@@ -443,7 +440,7 @@ func createSession(ctx context.Context, rid any, params map[string]any, copyPare
 	if profileHomeDir != "" {
 		profileValue = profileHomeDir
 	}
-	if owner := tuigateway.TransportAuthUserID(tuigateway.CurrentTransport(ctx)); owner != nil {
+	if owner := tuihost.TransportAuthUserID(tuihost.CurrentTransport(ctx)); owner != nil {
 		authUserID = *owner
 	}
 	if len(modelOverride) > 0 {
@@ -460,7 +457,7 @@ func createSession(ctx context.Context, rid any, params map[string]any, copyPare
 		parentValue = parentSessionID
 	}
 	now := nowSeconds()
-	record := tuigateway.NewSession(map[string]any{
+	record := tuihost.NewSession(map[string]any{
 		"agent": nil, "agent_error": nil, "agent_ready": &pythread.Event{}, "attached_images": []any{},
 		"close_on_disconnect": flagParam(params, "close_on_disconnect"), "active_session_lease": nil,
 		"cols": cols, "created_at": now, "edit_snapshots": map[string]any{}, "explicit_cwd": explicitCwd,
@@ -477,7 +474,7 @@ func createSession(ctx context.Context, rid any, params map[string]any, copyPare
 	func() {
 		sessionsLock.Lock()
 		defer sessionsLock.Unlock()
-		tuigateway.SetSessionRecord(sid, record)
+		tuihost.SetSessionRecord(sid, record)
 		registerSessionCwd(ctx, record)
 		if idemKey != "" {
 			idempotencyKeys[idemKey] = idempotencyEntry{sid: sid, at: now}
@@ -489,7 +486,7 @@ func createSession(ctx context.Context, rid any, params map[string]any, copyPare
 			providerName = "-"
 		}
 		defaultModel, _ := sessionDefaultRoute(ctx, record)
-		logger().Info(fmt.Sprintf("session.create %s: model=%s provider=%s source=client override (profile default: %s)",
+		pkgLog().Info(fmt.Sprintf("session.create %s: model=%s provider=%s source=client override (profile default: %s)",
 			key, strOr(modelOverride["model"]), providerName, defaultModel))
 	}
 	switch {

@@ -38,20 +38,7 @@ func apiErrorHeaders(err error) http.Header {
 	return nil
 }
 
-// Captures the refused Nous usage window credits headers, any failure logged and swallowed
-func captureRefusedCredits(a *AIAgent, status int, apiError error) {
-	defer func() {
-		if r := recover(); r != nil {
-			conversationLoopLog().Debug(fmt.Sprintf("credits ▸ header capture on %d failed (fail-open)", status), "error", fmt.Sprint(r))
-		}
-	}()
-	headers := apiErrorHeaders(apiError)
-	if provider.ResponseIsUsageWindow(headers) {
-		a.creditsCapture().CaptureCredits(headers, true)
-	}
-}
-
-// Recovers from an API error in hermes order, every fallback activation leaving the retry loop with the rebuild armed
+// Recovers from an API error in order, every fallback activation leaving the retry loop with the rebuild armed
 func handleAPIError(ctx context.Context, a *AIAgent, s *LoopState, apiError error) (PhaseVerdict, error) {
 	s.ThinkingSpinner = stopThinkingSpinner(a, s.ThinkingSpinner)
 
@@ -64,12 +51,9 @@ func handleAPIError(ctx context.Context, a *AIAgent, s *LoopState, apiError erro
 	if status, ok := surfaceExceptionStatus(apiError); ok {
 		e.statusCode = &status
 	}
-	if e.statusCode != nil && (*e.statusCode == 402 || *e.statusCode == 403) && a.provider == "nous" {
-		captureRefusedCredits(a, *e.statusCode, apiError)
-	}
 
 	if tools.InterpreterShuttingDown(apiError) {
-		conversationLoopLog().Warn(fmt.Sprintf("%sInterpreter is shutting down — abandoning turn during API call #%d (%s)", a.logPrefix, s.APICallCount, apiError))
+		pkgLog().Warn(fmt.Sprintf("%sInterpreter is shutting down — abandoning turn during API call #%d (%s)", a.logPrefix, s.APICallCount, apiError))
 		summary := "Turn abandoned: the process was shutting down before the model call could complete."
 		return PhaseVerdict{Action: "return", Result: map[string]any{
 			"final_response": summary, "messages": s.Messages, "api_calls": s.APICallCount,
@@ -93,7 +77,7 @@ func handleAPIError(ctx context.Context, a *AIAgent, s *LoopState, apiError erro
 	}
 	cl := provider.ClassifyError(in)
 	e.classified = cl
-	conversationLoopLog().Debug(fmt.Sprintf("Error classified: reason=%s status=%s retryable=%s compress=%s rotate=%s fallback=%s",
+	pkgLog().Debug(fmt.Sprintf("Error classified: reason=%s status=%s retryable=%s compress=%s rotate=%s fallback=%s",
 		cl.Reason, pyIntOrNone(cl.StatusCode), pyBool(cl.Retryable), pyBool(cl.ShouldCompress), pyBool(cl.ShouldRotateCredential), pyBool(cl.ShouldFallback)))
 	var statusArg any
 	if e.statusCode != nil {
@@ -226,10 +210,6 @@ func settleUnrecoveredError(ctx context.Context, a *AIAgent, s *LoopState, e *ap
 	}
 
 	attemptsMade := min(s.RetryCount, s.MaxRetries)
-	if e.isRateLimited && s.RetryCount < s.MaxRetries && freeTierCooldownEndsTurn(a, e.apiError, e.baseURL) {
-		conversationLoopLog().Info(fmt.Sprintf("%sFree-tier cooldown outlasts the attended wait — ending retries after attempt %d", a.logPrefix, s.RetryCount))
-		s.RetryCount = s.MaxRetries
-	}
 	if s.RetryCount >= s.MaxRetries {
 		if !retry.PrimaryRecoveryAttempted && a.tryRecoverPrimaryTransport(ctx, e.apiError, s.RetryCount) {
 			retry.PrimaryRecoveryAttempted = true

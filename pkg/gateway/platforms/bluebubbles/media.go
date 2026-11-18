@@ -3,7 +3,6 @@ package bluebubbles
 import (
 	"context"
 	"fmt"
-	"log/slog"
 	"net/http"
 	"os"
 	"strings"
@@ -194,7 +193,7 @@ func (a *BlueBubblesAdapter) downloadAttachmentToCache(ctx context.Context, attG
 		if ctx.Err() != nil {
 			return "", ctx.Err()
 		}
-		slog.Warn(fmt.Sprintf("[bluebubbles] failed to download attachment %s: %s", redact(attGUID), pyrepr.ExceptionMessage(err)))
+		pkgLog().Warn(fmt.Sprintf("[bluebubbles] failed to download attachment %s: %s", redact(attGUID), pyrepr.ExceptionMessage(err)))
 		return "", nil
 	}
 	return path, nil

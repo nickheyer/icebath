@@ -107,7 +107,7 @@ func (r *GatewayRunner) syncSessionModelFromAgent(ctx context.Context, sessionID
 	}
 	defer func() {
 		if rec := recover(); rec != nil {
-			runLog().Debug("Failed to sync gateway session model metadata", "error", rec)
+			pkgLog().Debug("Failed to sync gateway session model metadata", "error", rec)
 		}
 	}()
 	sync := func() error {
@@ -145,6 +145,6 @@ func (r *GatewayRunner) syncSessionModelFromAgent(ctx context.Context, sessionID
 		return db.DB().UpdateSessionMeta(ctx, sessionID, text, &model)
 	}
 	if err := sync(); err != nil {
-		runLog().Debug(fmt.Sprintf("Failed to sync gateway session model metadata: %v", err))
+		pkgLog().Debug(fmt.Sprintf("Failed to sync gateway session model metadata: %v", err))
 	}
 }

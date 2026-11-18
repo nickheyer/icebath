@@ -6,7 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"log/slog"
 	"math"
 	"os"
 	"path/filepath"
@@ -325,7 +324,7 @@ func safeCopyDB(ctx context.Context, src, dst string, timeoutSeconds float64) (b
 	if errors.As(err, &stop) {
 		return false, stop
 	}
-	slog.Warn(fmt.Sprintf("SQLite safe copy failed for %s: %s", pypath.PathStr(src), excText(err)))
+	pkgLog().Warn(fmt.Sprintf("SQLite safe copy failed for %s: %s", pypath.PathStr(src), excText(err)))
 	closeQuietly(backupConn)
 	backupConn = nil
 	removeFile(dst)

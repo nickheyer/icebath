@@ -9,7 +9,7 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/plugins"
-	"github.com/nickheyer/icebath/pkg/tuigateway"
+	"github.com/nickheyer/icebath/pkg/tuihost"
 )
 
 // Identity of the process owned TUI host, a later owner's replacement surviving this owner's clear
@@ -28,9 +28,9 @@ func injectTUISessionMessage(ctx context.Context, kwargs map[string]any) bool {
 		return false
 	}
 	var sid string
-	var session *tuigateway.Session
+	var session *tuihost.Session
 	sessionsLock.Lock()
-	for _, live := range tuigateway.LiveSessions() {
+	for _, live := range tuihost.LiveSessions() {
 		if key, _ := live.Session.Get("session_key").(string); key == sessionKey {
 			sid, session = live.SID, live.Session
 			break

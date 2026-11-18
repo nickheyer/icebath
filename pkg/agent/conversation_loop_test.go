@@ -298,7 +298,7 @@ func classifiedBilling(t *testing.T, message string) *provider.Classified {
 func TestBillingFailureResultUnverifiedCarrythrough(t *testing.T) {
 	ctx := context.Background()
 	unverified := classifiedBilling(t, "You're out of extra usage. Add more at claude.ai/settings/usage and keep going.")
-	res := billingFailureResult(ctx, unverified, "HTTP 400", nil, 1, "anthropic", "https://api.anthropic.com", "claude-opus-4", nil, UsageWindowRefusal{})
+	res := billingFailureResult(ctx, unverified, "HTTP 400", nil, 1, "anthropic", "https://api.anthropic.com", "claude-opus-4", nil)
 	final := res["final_response"].(string)
 	if strings.HasPrefix(final, "Billing or credits exhausted") || !strings.Contains(final, "unverified") ||
 		!(strings.Contains(final, "content-filter") || strings.Contains(final, "content filter")) {
@@ -308,7 +308,7 @@ func TestBillingFailureResultUnverifiedCarrythrough(t *testing.T) {
 		t.Fatalf("unverified fields %v", res)
 	}
 	confirmed := classifiedBilling(t, "Your credit balance is too low to access the Anthropic API.")
-	res = billingFailureResult(ctx, confirmed, "HTTP 400", nil, 1, "anthropic", "https://api.anthropic.com", "claude-opus-4", nil, UsageWindowRefusal{})
+	res = billingFailureResult(ctx, confirmed, "HTTP 400", nil, 1, "anthropic", "https://api.anthropic.com", "claude-opus-4", nil)
 	if !strings.HasPrefix(res["final_response"].(string), "Billing or credits exhausted") || res["billing_unverified"] != false {
 		t.Fatalf("confirmed %v", res)
 	}

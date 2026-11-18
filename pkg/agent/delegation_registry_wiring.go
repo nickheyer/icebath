@@ -4,23 +4,20 @@ import (
 	"context"
 	"errors"
 	"fmt"
+
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"log/slog"
 
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/mcp"
-	"github.com/nickheyer/icebath/pkg/observability"
 	"github.com/nickheyer/icebath/pkg/plugins"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
 
-var delegationRegistryLog = slog.Default().With("logger", "agent.delegation_registry")
-
 // Delegation providers plugins register, scoped by profile home like every provider registry
 var delegationRegistry = provider.NewProviderRegistry[tools.DelegationProvider](provider.ProviderRegistryOptions{
-	Label: "Delegation", Logger: delegationRegistryLog, Normalize: provider.LowerKey,
+	Label: "Delegation", Logger: pkgLog(), Normalize: provider.LowerKey,
 })
 
 // Plugin host object subclassing DelegationProvider wrapped as a Go provider
@@ -152,7 +149,7 @@ func DelegationScopedRegistry() plugins.ScopedRegistry {
 	return hostedDelegationScopedRegistry{delegationRegistry.Scoped()}
 }
 
-// Installs the hermes delegation_registry reads over the plugin manager and the compiled-in strategies
+// Installs the delegation_registry reads over the plugin manager and the compiled-in strategies
 func InstallDelegationRegistryHooks() {
 	tools.DelegationRegistryHooks.GetProvider = func(ctx context.Context, name string) tools.DelegationProvider {
 		return delegationRegistry.GetProvider(ctx, name, "")
@@ -163,9 +160,6 @@ func InstallDelegationRegistryHooks() {
 	tools.DelegationBackendHooks.ListProviders = tools.DelegationRegistryHooks.ListProviders
 	tools.DelegationBackendHooks.RefreshAgentMCPTools = func(ctx context.Context, a tools.DelegationRebuildAgent, quiet, contentAware bool) {
 		mcp.RefreshAgentMCPTools(ctx, a.(*delegationAgentView).a, mcp.RefreshOptions{Quiet: quiet, ContentAware: contentAware})
-	}
-	tools.DelegationBackendHooks.RecordCacheBreak = func(ctx context.Context, a tools.DelegationRebuildAgent, reason string) {
-		observability.RecordCacheBreak(ctx, a.(*delegationAgentView).a, reason)
 	}
 	tools.DelegationRegistryHooks.DisabledPlugins = plugins.DisabledPlugins
 	tools.DelegationRegistryHooks.DiscoverPlugins = plugins.DiscoverPlugins
@@ -187,7 +181,7 @@ func loadBundledDelegationStrategy(ctx context.Context, name string, register fu
 		}
 	})
 	if err := plugin.Register(registrar); err != nil {
-		delegationRegistryLog.Warn(fmt.Sprintf("bundled delegation strategy %s failed to register: %v", name, err))
+		pkgLog().Warn(fmt.Sprintf("bundled delegation strategy %s failed to register: %v", name, err))
 	}
 	return registered
 }

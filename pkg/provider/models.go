@@ -37,7 +37,7 @@ func fallbackRows(ids []string) CatalogRows {
 
 // Built in catalog rows in the order the detection ladder walks them
 var staticCatalogProviderOrder = []string{
-	"moa", "nous", "openai", "openai-api", "openai-codex", "xai-oauth", "gemini", "zai", "xai", "nvidia",
+	"moa", "openai", "openai-api", "openai-codex", "xai-oauth", "gemini", "zai", "xai", "nvidia",
 	"kimi-coding", "kimi-coding-cn", "stepfun", "moonshot", "minimax", "minimax-oauth", "minimax-cn", "anthropic",
 	"deepseek", "xiaomi", "tencent-tokenhub", "tencent-tokenplan", "arcee", "gmi", "opencode-zen", "opencode-go",
 	"kilocode", "alibaba", "alibaba-cn", "alibaba-coding-plan", "alibaba-coding-plan-cn", "alibaba-token-plan",
@@ -143,55 +143,6 @@ func PickSilentDefaultModel(ctx context.Context, modelIDs []string, provider str
 		}
 	}
 	return modelIDs[0]
-}
-
-// NousDefaultModel is the model a Nous account lands on without choosing one
-type NousDefaultModel struct {
-	Provider string
-	Model    string
-	FreeTier bool
-}
-
-// RecommendedNousDefaultModel narrows the curated plus Portal list to policy and tier then picks the silent default
-func RecommendedNousDefaultModel(ctx context.Context) NousDefaultModel {
-	modelIDs := curatedNousModelIDsFn(ctx)
-	pricing := nousPricingFn(ctx)
-	if pricing == nil {
-		pricing = PricingTable{}
-	}
-	freeTier := checkNousFreeTierFn(ctx, true, false)
-	portalURL := ""
-	store := NewStore(home.Dir(ctx))
-	if data, err := store.Load(); err == nil {
-		portalURL = stringOf(store.ProviderState(data, "nous")["portal_base_url"])
-	}
-	policyAllowed, _ := nousPolicyAllowedIDsFn(ctx, false)
-	if freeTier {
-		modelIDs, pricing = unionPortalFreeFn(ctx, modelIDs, pricing, portalURL, false)
-	} else {
-		modelIDs, pricing = unionPortalPaidFn(ctx, modelIDs, pricing, portalURL, false)
-	}
-	modelIDs = RestrictToNousPolicy(modelIDs, policyAllowed, true)
-	if freeTier {
-		modelIDs, _ = PartitionNousModelsByTier(modelIDs, pricing, true)
-		var unsubscribed []string
-		for _, mid := range modelIDs {
-			if !IsSubscriptionBilled(pricing[mid]) {
-				unsubscribed = append(unsubscribed, mid)
-			}
-		}
-		if len(unsubscribed) > 0 {
-			modelIDs = unsubscribed
-		}
-	}
-	model := ""
-	if !freeTier {
-		model = windowPlanDefaultFn(modelIDs, PricingTableAsAny(pricing))
-	}
-	if model == "" {
-		model = PickSilentDefaultModel(ctx, modelIDs, "nous")
-	}
-	return NousDefaultModel{Provider: "nous", Model: model, FreeTier: freeTier}
 }
 
 // ---- provider identity ----
@@ -676,7 +627,7 @@ func DetectProviderForModel(ctx context.Context, modelName, currentProvider stri
 			c := candidate
 			firstGuess = &c
 		}
-		modelsLog.Debug("Skipping auto-switch: no credentials configured", "model", name, "provider", candidate.provider)
+		pkgLog().Debug("Skipping auto-switch: no credentials configured", "model", name, "provider", candidate.provider)
 		return false
 	})
 	if stopped {
@@ -846,20 +797,6 @@ func codexPickerCatalog(ctx context.Context, normalized string, forceRefresh boo
 	return CatalogRows{IDs: ids, Fallback: fallback}, true
 }
 
-// Live Portal catalog for the stored credential, else the docs hosted manifest
-func nousCatalog(ctx context.Context, normalized string, forceRefresh bool) (CatalogRows, bool) {
-	env := modelsPoolEnv(withBackgroundCaller(ctx))
-	if creds, err := resolveNousRuntimeCredentials(env, false, ""); err == nil && len(creds) > 0 {
-		if live := fetchNousModels(ctx, stringOf(creds["api_key"]), stringOf(creds["base_url"])); len(live) > 0 {
-			return plainRows(live), true
-		}
-	}
-	if curated := GetCuratedNousModelIDs(ctx); len(curated) > 0 {
-		return plainRows(curated), true
-	}
-	return CatalogRows{}, false
-}
-
 // Key and base URL of a simple api key provider, empty on any miss
 func apiKeyCredentials(ctx context.Context, normalized string) (string, string) {
 	creds, err := modelsResolver(ctx).apiKeyProviderCredentials(normalized)
@@ -1010,7 +947,6 @@ var providerCatalogFetchers = map[string]catalogFetcher{
 		return plainRows(OpenRouterModelIDs(ctx, forceRefresh)), true
 	},
 	"openai-codex": codexPickerCatalog,
-	"nous":         nousCatalog,
 	"stepfun":      stepfunCatalog,
 	"gmi":          apiKeyProviderLive,
 	"anthropic":    anthropicCatalog,
@@ -1314,7 +1250,7 @@ func spawnSWRRefresh(ctx context.Context, cacheKey string, refresh func() (map[s
 		defer swrRefreshWait.Done()
 		defer func() {
 			if r := recover(); r != nil {
-				modelsLog.Debug("SWR refresh failed", "key", cacheKey, "panic", r)
+				pkgLog().Debug("SWR refresh failed", "key", cacheKey, "panic", r)
 			}
 			swrRefreshMu.Lock()
 			delete(swrRefreshInflight, key)
@@ -1457,7 +1393,7 @@ func loadProviderModelsCache(ctx context.Context) map[string]any {
 // Persists the cache document, silent on any error
 func saveProviderModelsCache(ctx context.Context, data map[string]any) {
 	if err := modelsWriteJSONCache(ctx, providerModelsCachePath(ctx), data); err != nil {
-		modelsLog.Debug("provider models cache save failed", "error", err)
+		pkgLog().Debug("provider models cache save failed", "error", err)
 	}
 }
 
@@ -1617,7 +1553,7 @@ func ClearAllProviderModelsCache(ctx context.Context) {
 	writeUnderCacheLock(path, func() {
 		if _, err := os.Stat(path); err == nil {
 			if err := os.Remove(path); err != nil {
-				modelsLog.Debug("provider models cache remove failed", "error", err)
+				pkgLog().Debug("provider models cache remove failed", "error", err)
 			}
 		}
 	})
@@ -1702,7 +1638,7 @@ func fetchAnthropicModels(ctx context.Context, timeout time.Duration, baseURL, a
 			}
 		}
 		if !retry || err != nil {
-			modelsLog.Debug("Failed to fetch Anthropic models", "error", err)
+			pkgLog().Debug("Failed to fetch Anthropic models", "error", err)
 			return nil, false
 		}
 	}
@@ -1715,7 +1651,7 @@ func fetchAnthropicModels(ctx context.Context, timeout time.Duration, baseURL, a
 		}
 		data, err = modelsGetJSON(ctx, anthropicModelsURL(resolvedBaseURL, cursor), timeout, headers, nil)
 		if err != nil {
-			modelsLog.Debug("Failed to fetch Anthropic models", "error", err)
+			pkgLog().Debug("Failed to fetch Anthropic models", "error", err)
 			return nil, false
 		}
 		models = append(models, idsOf(data)...)

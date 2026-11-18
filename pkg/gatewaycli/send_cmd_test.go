@@ -97,12 +97,12 @@ func clearEnv(t *testing.T, names ...string) {
 	unsetEnv(t, names...)
 }
 
-func TestLoadHermesEnvBridgesConfigYamlScalars(t *testing.T) {
+func TestLoadIcebathEnvBridgesConfigYamlScalars(t *testing.T) {
 	h := sendHome(t)
 	writeHomeFile(t, h, ".env", []byte("SOME_TOKEN=abc123\n"))
 	writeHomeFile(t, h, "config.yaml", []byte("TELEGRAM_HOME_CHANNEL: '5550001111'\nnested:\n  ignored: true\n"))
 	clearEnv(t, "TELEGRAM_HOME_CHANNEL", "SOME_TOKEN", "nested")
-	loadHermesEnv(context.Background(), h)
+	loadIcebathEnv(context.Background(), h)
 	if got := os.Getenv("SOME_TOKEN"); got != "abc123" {
 		t.Fatalf("SOME_TOKEN %q", got)
 	}
@@ -111,11 +111,11 @@ func TestLoadHermesEnvBridgesConfigYamlScalars(t *testing.T) {
 	}
 }
 
-func TestLoadHermesEnvUtf8BomPreservesFirstKey(t *testing.T) {
+func TestLoadIcebathEnvUtf8BomPreservesFirstKey(t *testing.T) {
 	h := sendHome(t)
 	writeHomeFile(t, h, ".env", []byte("\xef\xbb\xbfSEND_BOM_BOT_TOKEN=tok-first\nSEND_BOM_SECOND=two\n"))
 	clearEnv(t, "SEND_BOM_BOT_TOKEN", "SEND_BOM_SECOND", "\xef\xbb\xbfSEND_BOM_BOT_TOKEN")
-	loadHermesEnv(context.Background(), h)
+	loadIcebathEnv(context.Background(), h)
 	if os.Getenv("SEND_BOM_BOT_TOKEN") != "tok-first" || os.Getenv("SEND_BOM_SECOND") != "two" {
 		t.Fatalf("loaded %q %q", os.Getenv("SEND_BOM_BOT_TOKEN"), os.Getenv("SEND_BOM_SECOND"))
 	}
@@ -124,21 +124,21 @@ func TestLoadHermesEnvUtf8BomPreservesFirstKey(t *testing.T) {
 	}
 }
 
-func TestLoadHermesEnvBomlessUtf8StillLoads(t *testing.T) {
+func TestLoadIcebathEnvBomlessUtf8StillLoads(t *testing.T) {
 	h := sendHome(t)
 	writeHomeFile(t, h, ".env", []byte("SEND_PLAIN_TOKEN=plain-val\n"))
 	clearEnv(t, "SEND_PLAIN_TOKEN")
-	loadHermesEnv(context.Background(), h)
+	loadIcebathEnv(context.Background(), h)
 	if got := os.Getenv("SEND_PLAIN_TOKEN"); got != "plain-val" {
 		t.Fatalf("SEND_PLAIN_TOKEN %q", got)
 	}
 }
 
-func TestLoadHermesEnvLatin1FallbackStillLoads(t *testing.T) {
+func TestLoadIcebathEnvLatin1FallbackStillLoads(t *testing.T) {
 	h := sendHome(t)
 	writeHomeFile(t, h, ".env", []byte("\xef\xbb\xbfSEND_L1_TOKEN=tok-l1\nSEND_L1_NOTE=caf\xe9\n"))
 	clearEnv(t, "SEND_L1_TOKEN", "SEND_L1_NOTE", "\xef\xbb\xbfSEND_L1_TOKEN")
-	loadHermesEnv(context.Background(), h)
+	loadIcebathEnv(context.Background(), h)
 	if os.Getenv("SEND_L1_TOKEN") != "tok-l1" || os.Getenv("SEND_L1_NOTE") != "café" {
 		t.Fatalf("loaded %q %q", os.Getenv("SEND_L1_TOKEN"), os.Getenv("SEND_L1_NOTE"))
 	}
@@ -147,17 +147,17 @@ func TestLoadHermesEnvLatin1FallbackStillLoads(t *testing.T) {
 	}
 }
 
-func TestLoadHermesEnvLatin1FallbackOverridesShell(t *testing.T) {
+func TestLoadIcebathEnvLatin1FallbackOverridesShell(t *testing.T) {
 	h := sendHome(t)
 	writeHomeFile(t, h, ".env", []byte("SEND_OVR_LABEL=caf\xe9-file\n"))
 	t.Setenv("SEND_OVR_LABEL", "stale-shell-value")
-	loadHermesEnv(context.Background(), h)
+	loadIcebathEnv(context.Background(), h)
 	if got := os.Getenv("SEND_OVR_LABEL"); got != "café-file" {
 		t.Fatalf("SEND_OVR_LABEL %q", got)
 	}
 }
 
-func TestLoadHermesEnvFallbackReadErrorIsSwallowed(t *testing.T) {
+func TestLoadIcebathEnvFallbackReadErrorIsSwallowed(t *testing.T) {
 	h := sendHome(t)
 	writeHomeFile(t, h, ".env", []byte("SEND_ERR_TOKEN=caf\xe9\n"))
 	clearEnv(t, "SEND_ERR_TOKEN")
@@ -165,10 +165,10 @@ func TestLoadHermesEnvFallbackReadErrorIsSwallowed(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { os.Chmod(filepath.Join(h, ".env"), 0o644) })
-	loadHermesEnv(context.Background(), h)
+	loadIcebathEnv(context.Background(), h)
 }
 
-func TestLoadHermesEnvBomOnlyEnvIsNoop(t *testing.T) {
+func TestLoadIcebathEnvBomOnlyEnvIsNoop(t *testing.T) {
 	h := sendHome(t)
 	writeHomeFile(t, h, ".env", []byte("\xef\xbb\xbf"))
 	before := map[string]bool{}
@@ -176,7 +176,7 @@ func TestLoadHermesEnvBomOnlyEnvIsNoop(t *testing.T) {
 		name, _, _ := strings.Cut(kv, "=")
 		before[name] = true
 	}
-	loadHermesEnv(context.Background(), h)
+	loadIcebathEnv(context.Background(), h)
 	for _, kv := range os.Environ() {
 		if name, _, _ := strings.Cut(kv, "="); !before[name] && strings.Contains(kv, "\xef\xbb\xbf") {
 			t.Fatalf("added %q", kv)

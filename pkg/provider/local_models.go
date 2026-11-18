@@ -8,7 +8,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"log/slog"
 	"math"
 	"net"
 	"net/http"
@@ -107,7 +106,7 @@ var (
 	lmMonotonic    = func() float64 { return time.Since(lmClockStart).Seconds() }
 )
 
-// Effective config loads and saves of hermes_cli.config, the functions hermes tests patch
+// Effective config loads and saves of, the functions tests patch
 var (
 	configLoadFn = func(ctx context.Context) (map[string]any, error) {
 		tree, err := config.LoadContext(ctx, home.Dir(ctx), config.EnvRefLookupContext(ctx))
@@ -122,7 +121,7 @@ var (
 	}
 )
 
-// Module functions the routes reach, each the attribute a hermes test patches
+// Module functions the routes reach, each the attribute a test patches
 type localModelsDeps struct {
 	probeBudget          func(planning bool) (HardwareBudget, error)
 	refreshCatalogSoon   func()
@@ -261,10 +260,10 @@ func lmQuiet[T any](fn func() (T, error), def T, warn, debug string) T {
 		return v
 	}
 	if warn != "" {
-		slog.Warn(warn + pyrepr.ExceptionRepr(err))
+		pkgLog().Warn(warn + pyrepr.ExceptionRepr(err))
 	}
 	if debug != "" {
-		slog.Debug(debug, "error", err)
+		pkgLog().Debug(debug, "error", err)
 	}
 	return def
 }
@@ -441,7 +440,7 @@ func lmSpawnJob(ctx context.Context, job map[string]any, name string, body func(
 			status = "paused"
 		default:
 			if opts.failMsg != "" {
-				slog.Warn(fmt.Sprintf(opts.failMsg, err))
+				pkgLog().Warn(fmt.Sprintf(opts.failMsg, err))
 			}
 			status = "error"
 			lmJobsMu.Lock()
@@ -1146,7 +1145,7 @@ func lmDownloadOptional(ctx context.Context, job map[string]any, plan []lmPlanRo
 	case lmIsDownloadPaused(err):
 		return false, err
 	case lmIsRuntimeOrOSError(err):
-		slog.Warn(fmt.Sprintf("optional download failed; continuing without it: %s", err))
+		pkgLog().Warn(fmt.Sprintf("optional download failed; continuing without it: %s", err))
 		return false, nil
 	}
 	return false, err

@@ -9,7 +9,7 @@ import (
 	"testing"
 )
 
-// Session source of a chat id with the user id hermes derives from a webhook chat id
+// Session source of a chat id with the user id derived from a webhook chat id
 func webhookToolsetSource(chatID string) *SessionSource {
 	source := &SessionSource{ChatID: chatID}
 	if strings.HasPrefix(chatID, "webhook:") {

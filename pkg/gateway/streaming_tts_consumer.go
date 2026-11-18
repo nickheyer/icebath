@@ -3,7 +3,6 @@ package gateway
 import (
 	"context"
 	"errors"
-	"log/slog"
 	"strings"
 	"sync"
 	"time"
@@ -11,8 +10,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/media"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
-
-func sttsLog() *slog.Logger { return slog.Default().With("logger", "gateway.streaming_tts_consumer") }
 
 // Queue sentinels of the drain loop, the abort and end of text markers
 type sttsSentinel int
@@ -25,7 +22,7 @@ const (
 // Raised when the adapter declined to open its streaming audio handle at the first PCM chunk
 var errSTTSHandleDeclined = errors.New("streaming TTS handle declined")
 
-// Drain task of one consumer with its completion channel, the asyncio task of hermes
+// Drain task of one consumer with its completion channel
 type STTSDrainTask struct {
 	done chan struct{}
 }
@@ -164,7 +161,7 @@ func (c *StreamingTTSConsumer) enqueueClauses(clauses []string, fullMsg string) 
 			c.stateMu.Lock()
 			c.dropped = true
 			c.stateMu.Unlock()
-			sttsLog().Debug(fullMsg)
+			pkgLog().Debug(fullMsg)
 			return
 		}
 	}
@@ -260,7 +257,7 @@ func (c *StreamingTTSConsumer) openHandle() bool {
 	c.stateMu.Unlock()
 	handle, err := c.adapter.BeginStreamingTTS(c.ctx, c.chatID, format, c.metadata)
 	if err != nil {
-		sttsLog().Debug("begin_streaming_tts failed: " + err.Error())
+		pkgLog().Debug("begin_streaming_tts failed: " + err.Error())
 		handle = nil
 	}
 	c.stateMu.Lock()
@@ -284,7 +281,7 @@ func (c *StreamingTTSConsumer) handleAborted() bool {
 // Drains clauses until a sentinel or abort, synthesises each and finalises the adapter stream
 func (c *StreamingTTSConsumer) run() {
 	if !c.Active() || !c.adapter.SupportsStreamingTTS(c.chatID, c.AudioFormat()) {
-		sttsLog().Debug("adapter " + c.adapter.Name() + " does not support streaming TTS")
+		pkgLog().Debug("adapter " + c.adapter.Name() + " does not support streaming TTS")
 		return
 	}
 	defer func() {
@@ -317,7 +314,7 @@ func (c *StreamingTTSConsumer) run() {
 			if errors.Is(err, errSTTSHandleDeclined) {
 				return
 			}
-			sttsLog().Warn("streaming TTS clause failed: " + err.Error())
+			pkgLog().Warn("streaming TTS clause failed: " + err.Error())
 			c.settle(true)
 			c.safeAbort(err.Error())
 			return
@@ -328,7 +325,7 @@ func (c *StreamingTTSConsumer) run() {
 		return
 	}
 	if err := c.adapter.FinishStreamingTTS(c.ctx, handle, c.isAborted()); err != nil {
-		sttsLog().Debug("finish_streaming_tts error: " + err.Error())
+		pkgLog().Debug("finish_streaming_tts error: " + err.Error())
 		c.settle(true)
 		c.safeAbort("finish_streaming_tts failed")
 		return
@@ -408,7 +405,7 @@ func (c *StreamingTTSConsumer) Abort(reason string) {
 		}
 	}
 	if !enqueued {
-		sttsLog().Debug("streaming TTS _ABORT sentinel could not be enqueued")
+		pkgLog().Debug("streaming TTS _ABORT sentinel could not be enqueued")
 	}
 	if handle := c.currentHandle(); handle != nil && !c.handleAborted() {
 		go c.safeAbort(reason)

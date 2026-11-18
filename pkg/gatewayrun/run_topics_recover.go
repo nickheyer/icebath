@@ -50,7 +50,7 @@ func (r *GatewayRunner) telegramTopicModeEnabled(ctx context.Context, source *ga
 	}
 	enabled, err := db.IsTelegramTopicModeEnabled(ctx, source.ChatID, userID, telegramTopicProfileName(source))
 	if err != nil {
-		runLog().Debug("Failed to read Telegram topic mode state", "error", err)
+		pkgLog().Debug("Failed to read Telegram topic mode state", "error", err)
 		return false
 	}
 	return enabled
@@ -98,7 +98,7 @@ func (r *GatewayRunner) recoverTelegramLobbyThreadID(ctx context.Context, source
 	}
 	bindings, err := db.ListTelegramTopicBindingsForChat(ctx, source.ChatID, telegramTopicProfileName(source))
 	if err != nil {
-		runLog().Debug("topic-recover: read failed", "error", err)
+		pkgLog().Debug("topic-recover: read failed", "error", err)
 		return nil
 	}
 	for _, b := range bindings {

@@ -6,7 +6,7 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/mcp"
-	"github.com/nickheyer/icebath/pkg/tuigateway"
+	"github.com/nickheyer/icebath/pkg/tuihost"
 )
 
 // Tool snapshot rebuild of one live agent, the registry refresh the reload and plugin activation share
@@ -18,8 +18,8 @@ func refreshLiveSessions(ctx context.Context, h *string, preservePrefix bool, pl
 	if h != nil {
 		want = home.Key(*h)
 	}
-	var live []tuigateway.LiveSession
-	for _, entry := range tuigateway.LiveSessions() {
+	var live []tuihost.LiveSession
+	for _, entry := range tuihost.LiveSessions() {
 		if sessionAgent(entry.Session) == nil {
 			continue
 		}
@@ -39,7 +39,7 @@ func refreshLiveSessions(ctx context.Context, h *string, preservePrefix bool, pl
 		func() {
 			defer func() {
 				if r := recover(); r != nil {
-					logger().Warn(fmt.Sprintf("Failed to refresh cached agent tools (session %s): %v", entry.SID, r))
+					pkgLog().Warn(fmt.Sprintf("Failed to refresh cached agent tools (session %s): %v", entry.SID, r))
 				}
 			}()
 			scoped := sessionProfileRuntimeScope(ctx, entry.Session, true)
@@ -51,7 +51,7 @@ func refreshLiveSessions(ctx context.Context, h *string, preservePrefix bool, pl
 		if pluginNote != nil {
 			a.QueuePluginNotice(pluginNote[0], pluginNote[1])
 		}
-		tuigateway.Emit(ctx, "session.info", entry.SID, sessionInfo(ctx, a, entry.Session))
+		tuihost.Emit(ctx, "session.info", entry.SID, sessionInfo(ctx, a, entry.Session))
 	}
 	return nil
 }

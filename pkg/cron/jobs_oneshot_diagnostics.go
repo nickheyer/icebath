@@ -11,7 +11,7 @@ import (
 // Writes a diagnostic into the job output directory, false when the write failed
 func writeOneshotDiagnostic(ctx context.Context, s *Store, job *Job, text, what string) bool {
 	if _, err := s.SaveJobOutput(home.WithOverride(ctx, s.home), job.ID, text); err != nil {
-		s.logAs("cron.jobs").Debug(fmt.Sprintf("Failed to write %s diagnostic for job '%s'", what, job.ID), "error", err)
+		s.log.Debug(fmt.Sprintf("Failed to write %s diagnostic for job '%s'", what, job.ID), "error", err)
 		return false
 	}
 	return true
@@ -58,7 +58,7 @@ func writeWedged(ctx context.Context, s *Store, job *Job) {
 		"job has been removed to stop it re-firing; recreate it to run " +
 		"again.\n"
 	if writeOneshotDiagnostic(home.WithOverride(ctx, s.home), s, job, text, "wedged-oneshot") {
-		s.logAs("cron.jobs").Warn(fmt.Sprintf("Job '%s': removed without a completed run — diagnostic written to its output directory", oneshotLabel(job)))
+		s.log.Warn(fmt.Sprintf("Job '%s': removed without a completed run — diagnostic written to its output directory", oneshotLabel(job)))
 	}
 }
 

@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/internal/pyfs"
@@ -21,14 +22,14 @@ var runQuiet = func(timeout time.Duration, args ...string) (int, error) {
 	cmd := exec.CommandContext(ctx, args[0], args[1:]...)
 	err := cmd.Run()
 	if ctx.Err() != nil {
-		return -1, fmt.Errorf("Command '%s' timed out after %d seconds", pyrepr.Repr(args), int(timeout.Seconds()))
+		return -1, fmt.Errorf("command %s timed out after %d seconds", strings.Join(args, " "), int(timeout.Seconds()))
 	}
 	var exit *exec.ExitError
 	if errors.As(err, &exit) {
 		return exit.ExitCode(), nil
 	}
 	if err != nil {
-		return -1, fmt.Errorf("[Errno 2] No such file or directory: %s", pyrepr.Repr(args[0]))
+		return -1, fmt.Errorf("%s could not start: %v", args[0], err)
 	}
 	return 0, nil
 }

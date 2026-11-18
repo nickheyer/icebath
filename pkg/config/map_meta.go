@@ -216,4 +216,3 @@ func MappingPyKey(m map[string]any, key string) (any, bool) {
 
 // Map key under which a non str Python key is stored, never equal to a key a YAML str produces
 func PyKeyString(pyKey any) string { return "\x00" + pyrepr.Repr(pyKey) }
-

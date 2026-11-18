@@ -16,8 +16,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyshutil"
 	"github.com/nickheyer/icebath/pkg/pm"
 	"github.com/nickheyer/icebath/pkg/provider"
-	"github.com/nickheyer/icebath/pkg/tools"
-	"github.com/nickheyer/icebath/pkg/tuigateway"
+	"github.com/nickheyer/icebath/pkg/tuihost"
 )
 
 var setupActionRegistry = &handlerRegistry{}
@@ -49,9 +48,6 @@ func setupFact(ctx context.Context, h string, cfg config.Tree, name string) (boo
 	case "binary":
 		_, found := pyshutil.Which(subject, nil)
 		return found, nil
-	case "nous.managed_tools":
-		managed := tools.ManagedNousToolsEnabled(&tools.Env{Home: h, Config: cfg, Secrets: config.NewSecrets(h)}, false)
-		return managed && provider.GetNousSubscriptionFeatures(setupPoolEnv(ctx, h), map[string]any(cfg), false).NousAuthPresent, nil
 	case "xai.oauth":
 		return pyrepr.Truthy(provider.GetXAIOAuthAuthStatus(setupPoolEnv(ctx, h))["logged_in"]), nil
 	}
@@ -67,7 +63,7 @@ type setupJob struct {
 	lines   []any
 	done    bool
 	ok      bool
-	owner   tuigateway.Transport
+	owner   tuihost.Transport
 	cancel  context.CancelFunc
 }
 
@@ -78,7 +74,18 @@ var (
 	setupActionMu sync.Mutex
 )
 
-// Splits action output into lines without terminal styling, holding back an unfinished line
+// Reports a terminal so installers redraw their progress in place instead of printing a line per step
+func (j *setupJob) IsATTY() bool { return true }
+
+// Visible text of a line a carriage return redraws, without terminal styling
+func setupLineText(line string) string {
+	if at := strings.LastIndexByte(line, '\r'); at >= 0 {
+		line = line[at+1:]
+	}
+	return strings.TrimSpace(setupAnsiCodes.ReplaceAllString(line, ""))
+}
+
+// Splits action output into finished lines, holding back the line being redrawn
 func (j *setupJob) Write(p []byte) (int, error) {
 	j.mu.Lock()
 	defer j.mu.Unlock()
@@ -86,10 +93,13 @@ func (j *setupJob) Write(p []byte) (int, error) {
 	for {
 		line, rest, whole := strings.Cut(j.partial, "\n")
 		if !whole {
+			if at := strings.LastIndexByte(j.partial, '\r'); at >= 0 {
+				j.partial = j.partial[at:]
+			}
 			return len(p), nil
 		}
 		j.partial = rest
-		if text := strings.TrimSpace(setupAnsiCodes.ReplaceAllString(line, "")); text != "" {
+		if text := setupLineText(line); text != "" {
 			j.lines = append(j.lines, text)
 		}
 	}
@@ -99,20 +109,20 @@ func (j *setupJob) Write(p []byte) (int, error) {
 func (j *setupJob) finish(outcome bool) {
 	j.mu.Lock()
 	defer j.mu.Unlock()
-	if text := strings.TrimSpace(setupAnsiCodes.ReplaceAllString(j.partial, "")); text != "" {
+	if text := setupLineText(j.partial); text != "" {
 		j.lines = append(j.lines, text)
 	}
 	j.partial, j.done, j.ok = "", true, outcome
 }
 
-// Lines printed past the count the caller already has, with the end state
-func (j *setupJob) since(after int) ([]any, bool, bool) {
+// Lines printed past the count the caller already has, the line being redrawn and the end state
+func (j *setupJob) since(after int) ([]any, string, bool, bool) {
 	j.mu.Lock()
 	defer j.mu.Unlock()
 	if after < 0 || after > len(j.lines) {
 		after = len(j.lines)
 	}
-	return append([]any{}, j.lines[after:]...), j.done, j.ok
+	return append([]any{}, j.lines[after:]...), setupLineText(j.partial), j.done, j.ok
 }
 
 // Runs one action at a time printing to the job, a panic ending the job as failed
@@ -143,7 +153,7 @@ func setupActionStart(ctx context.Context, rid any, params map[string]any) (map[
 		return rpcErr(rid, 4006, "managed install — the configuration is read-only", nil), nil
 	}
 	jobCtx, cancel := context.WithCancel(context.WithoutCancel(ctx))
-	job := &setupJob{owner: tuigateway.CurrentTransport(ctx), cancel: cancel}
+	job := &setupJob{owner: tuihost.CurrentTransport(ctx), cancel: cancel}
 	setupJobsMu.Lock()
 	setupJobCount++
 	id := "setup-" + strconv.Itoa(setupJobCount)
@@ -154,7 +164,7 @@ func setupActionStart(ctx context.Context, rid any, params map[string]any) (map[
 }
 
 // Cancels and forgets the setup actions, setup flows and hosted flows a departing transport started
-func releaseSetupForTransport(transport tuigateway.Transport) {
+func releaseSetupForTransport(transport tuihost.Transport) {
 	if transport == nil {
 		return
 	}
@@ -197,16 +207,18 @@ func setupActionPoll(ctx context.Context, rid any, params map[string]any) (map[s
 	if !known || !fits {
 		return rpcErr(rid, 4001, "unknown setup job "+id, nil), nil
 	}
+	_, shown := params["live"].(string)
+	seen := strOr(params["live"])
 	deadline := time.Now().Add(2 * time.Second)
 	for {
-		lines, done, outcome := job.since(after.(int))
-		if len(lines) > 0 || done || time.Now().After(deadline) || ctx.Err() != nil {
+		lines, live, done, outcome := job.since(after.(int))
+		if len(lines) > 0 || done || shown && live != seen || time.Now().After(deadline) || ctx.Err() != nil {
 			if done {
 				setupJobsMu.Lock()
 				delete(setupJobs, id)
 				setupJobsMu.Unlock()
 			}
-			return ok(rid, map[string]any{"lines": lines, "done": done, "ok": outcome}), nil
+			return ok(rid, map[string]any{"lines": lines, "live": live, "done": done, "ok": outcome}), nil
 		}
 		time.Sleep(100 * time.Millisecond)
 	}

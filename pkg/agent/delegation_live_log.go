@@ -5,7 +5,6 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"fmt"
-	"log/slog"
 	"math"
 	"os"
 	"path/filepath"
@@ -33,25 +32,23 @@ const (
 	liveTimeFormat             = "2006-01-02 15:04:05"
 )
 
-func liveLogger() *slog.Logger { return slog.Default().With("logger", "tools.delegation_live_log") }
-
 // Live transcript root under the given profile home, the ambient home when empty
 func liveTranscriptRoot(ctx context.Context, h string) string {
 	if h == "" {
 		h = home.Dir(ctx)
 	}
-	return filepath.Join(home.HermesDir(h, "cache/delegation", "delegation_cache"), "live")
+	return filepath.Join(home.IcebathDir(h, "cache/delegation", "delegation_cache"), "live")
 }
 
 // Runs one transcript step and debug logs any failure so nothing reaches the agent loop
 func liveBestEffort(what string, fn func() error) {
 	defer func() {
 		if r := recover(); r != nil {
-			liveLogger().Debug(fmt.Sprintf("Live transcript %s failed: %v", what, r))
+			pkgLog().Debug(fmt.Sprintf("Live transcript %s failed: %v", what, r))
 		}
 	}()
 	if err := fn(); err != nil {
-		liveLogger().Debug(fmt.Sprintf("Live transcript %s failed: %s", what, err))
+		pkgLog().Debug(fmt.Sprintf("Live transcript %s failed: %s", what, err))
 	}
 }
 
@@ -186,7 +183,7 @@ func (w *liveTranscriptWriter) event(role, text string) {
 		w.stateMu.Lock()
 		w.ok = false
 		w.stateMu.Unlock()
-		liveLogger().Debug(fmt.Sprintf("Live transcript write failed (%s): %s", path, err))
+		pkgLog().Debug(fmt.Sprintf("Live transcript write failed (%s): %s", path, err))
 	}
 }
 

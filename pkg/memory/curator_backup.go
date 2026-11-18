@@ -7,7 +7,6 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
-	"log/slog"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -46,8 +45,6 @@ var curatorIDRE = sync.OnceValue(func() *regexp2.Regexp {
 	}
 	return re
 })
-
-func curatorBackupLog() *slog.Logger { return slog.Default().With("logger", "agent.curator_backup") }
 
 func curatorIDMatch(name string) bool {
 	ok, err := curatorIDRE().MatchString(name)
@@ -110,7 +107,7 @@ func curatorBackupCronJobsInto(ctx context.Context, dest string) (*pyjson.Object
 	}
 	raw, err := os.ReadFile(src)
 	if err != nil {
-		curatorBackupLog().Debug(fmt.Sprintf("Failed to read cron/jobs.json for backup: %v", err))
+		pkgLog().Debug(fmt.Sprintf("Failed to read cron/jobs.json for backup: %v", err))
 		info.Set("reason", fmt.Sprintf("read error: %v", err))
 		return info, nil
 	}
@@ -125,7 +122,7 @@ func curatorBackupCronJobsInto(ctx context.Context, dest string) (*pyjson.Object
 		info.Set("parse_warning", "jobs.json was not valid JSON at snapshot time")
 	}
 	if err := os.WriteFile(filepath.Join(dest, curatorCronJobsFilename), []byte(text), 0o666); err != nil {
-		curatorBackupLog().Debug(fmt.Sprintf("Failed to write cron backup file: %v", err))
+		pkgLog().Debug(fmt.Sprintf("Failed to write cron backup file: %v", err))
 		info.Set("reason", fmt.Sprintf("write error: %v", err))
 		return info, nil
 	}
@@ -143,7 +140,7 @@ func curatorUTCID(now time.Time) string {
 
 // curator.backup section of the config, replaced by tests
 var curatorBackupConfig = func(ctx context.Context) map[string]any {
-	return curatorConfigSection(ctx, "curator backup", curatorBackupLog(), "curator", "backup")
+	return curatorConfigSection(ctx, "curator backup", pkgLog(), "curator", "backup")
 }
 
 // Snapshot id clock, snapshot entry, move and rename the rollback and curator run reach, replaced by tests
@@ -224,7 +221,7 @@ func curatorMkdir(p, what string, existOK bool) bool {
 		err = os.Mkdir(p, 0o777)
 	}
 	if err != nil {
-		curatorBackupLog().Debug(fmt.Sprintf("Failed to create %s %s: %v", what, p, err))
+		pkgLog().Debug(fmt.Sprintf("Failed to create %s %s: %v", what, p, err))
 		return false
 	}
 	return true
@@ -279,12 +276,12 @@ func curatorWriteArchive(skillsDir, archive string) error {
 // Takes a tar.gz snapshot of the skills tree and prunes old ones, empty when skipped or failed
 func SnapshotSkills(ctx context.Context, reason string, protect map[string]bool) (string, bool, error) {
 	if !CuratorBackupEnabled(ctx) {
-		curatorBackupLog().Debug("Curator backup disabled by config; skipping snapshot")
+		pkgLog().Debug("Curator backup disabled by config; skipping snapshot")
 		return "", false, nil
 	}
 	skillsDir, backups := curatorSkillsDir(ctx), curatorBackupsDir(ctx)
 	if _, err := os.Stat(skillsDir); err != nil {
-		curatorBackupLog().Debug("No ~/.icebath/skills/ directory — nothing to back up")
+		pkgLog().Debug("No ~/.icebath/skills/ directory — nothing to back up")
 		return "", false, nil
 	}
 	if !curatorMkdir(backups, "backups dir", true) {
@@ -310,7 +307,7 @@ func SnapshotSkills(ctx context.Context, reason string, protect map[string]bool)
 		err = curatorWriteManifest(dest, reason, archive, curatorCountSkillFiles(skillsDir), cronInfo)
 	}
 	if err != nil {
-		curatorBackupLog().Debug(fmt.Sprintf("Curator snapshot failed: %v", err))
+		pkgLog().Debug(fmt.Sprintf("Curator snapshot failed: %v", err))
 		os.RemoveAll(dest)
 		return "", false, nil
 	}
@@ -319,7 +316,7 @@ func SnapshotSkills(ctx context.Context, reason string, protect map[string]bool)
 		keep[id] = true
 	}
 	curatorPruneOld(ctx, CuratorBackupKeep(ctx), keep)
-	curatorBackupLog().Info(fmt.Sprintf("Curator snapshot created: %s (%s)", snapID, reason))
+	pkgLog().Info(fmt.Sprintf("Curator snapshot created: %s (%s)", snapID, reason))
 	return dest, true, nil
 }
 
@@ -363,7 +360,7 @@ func curatorPruneOld(ctx context.Context, keep int, protect map[string]bool) []s
 	for _, d := range doomed {
 		p := filepath.Join(backups, d.name)
 		if err := pyfs.RmTree(p, nil); err != nil {
-			curatorBackupLog().Debug(fmt.Sprintf("Failed to %s %s: %v", d.what, p, err))
+			pkgLog().Debug(fmt.Sprintf("Failed to %s %s: %v", d.what, p, err))
 			continue
 		}
 		if d.what == "prune" {
@@ -549,7 +546,7 @@ func curatorRestoreCronSkillLinks(ctx context.Context, snapDir string) *pyjson.O
 	report.Set("restored", restored)
 	report.Set("unchanged", unchanged)
 	if err != nil {
-		curatorBackupLog().Debug(fmt.Sprintf("Cron skill-link restore failed: %v", err))
+		pkgLog().Debug(fmt.Sprintf("Cron skill-link restore failed: %v", err))
 		report.Set("error", fmt.Sprintf("restore failed mid-flight: %v", err))
 	}
 	return report
@@ -599,7 +596,7 @@ func curatorRestoreExcludedSubtrees(staged, skillsDir string) []string {
 			if st, err := os.Stat(filepath.Dir(dest)); err == nil && st.IsDir() && !curatorExists(dest) {
 				if _, err := curatorMove(src, dest); err != nil {
 					failed = append(failed, rel)
-					curatorBackupLog().Debug(fmt.Sprintf("Could not restore excluded entry %s: %v", src, err))
+					pkgLog().Debug(fmt.Sprintf("Could not restore excluded entry %s: %v", src, err))
 				}
 			}
 		}
@@ -621,7 +618,7 @@ func curatorRetainStaging(staged string, unrestored []string, reason string) (bo
 	}
 	note := ""
 	if err := curatorRename(staged, kept); err != nil {
-		curatorBackupLog().Warn(fmt.Sprintf("Could not retain rollback staging dir %s: %v", staged, err))
+		pkgLog().Warn(fmt.Sprintf("Could not retain rollback staging dir %s: %v", staged, err))
 		kept, note = staged, fmt.Sprintf(" (rename failed: %v; move it before the next curator run or it will be pruned)", err)
 	}
 	sorted := append([]string{}, unrestored...)
@@ -782,7 +779,7 @@ func RollbackCuratorSnapshot(ctx context.Context, backupID string) (bool, string
 	}
 	os.RemoveAll(staged)
 	cronReport := curatorRestoreCronSkillLinks(ctx, target)
-	curatorBackupLog().Info(fmt.Sprintf("Curator rollback: restored from %s (cron_report=%s)", filepath.Base(target), pyrepr.Repr(cronReport)))
+	pkgLog().Info(fmt.Sprintf("Curator rollback: restored from %s (cron_report=%s)", filepath.Base(target), pyrepr.Repr(cronReport)))
 	msg := "restored from snapshot " + filepath.Base(target)
 	if s := curatorCronSummary(cronReport); s != "" {
 		msg += "; " + s
@@ -804,7 +801,7 @@ var curatorExtractArchive = func(archive, dest string) error {
 	return pyfs.ExtractTarDataReader(gz, dest)
 }
 
-// hermes_cli sizefmt format_bytes, B below 1024 then one decimal KB MB GB TB
+// sizefmt format_bytes, B below 1024 then one decimal KB MB GB TB
 func formatBytes(n any) string {
 	size, err := pyint.Float(n)
 	if err != nil {

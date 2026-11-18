@@ -2,7 +2,6 @@ package provider
 
 import (
 	"context"
-	"log/slog"
 	"strings"
 )
 
@@ -157,7 +156,7 @@ func ScopedFallbackChain(inherited []map[string]any, declared any, declaredSet b
 		if pinned {
 			which = "pinned"
 		}
-		slog.Default().Warn(owner + " fallback_providers has no usable routes; using the " + which + " default")
+		pkgLog().Warn(owner + " fallback_providers has no usable routes; using the " + which + " default")
 		return def
 	}
 	return normalized

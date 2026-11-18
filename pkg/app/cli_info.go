@@ -46,7 +46,7 @@ var helpSectionKeys = map[string]string{
 	"Exit": "exit", "Context": "context", "Background & Automation": "background_automation",
 }
 
-// Seams the hermes tests replace by patching module attributes, each bound to the real call
+// Seams the tests replace by patching module attributes, each bound to the real call
 var (
 	toolDefinitionsFor = func(c *CLI, skipToolSearchAssembly bool) []map[string]any {
 		return tools.Default.ToolDefinitions(c.ctx, c.env, tools.DefinitionOptions{Enabled: c.enabledToolsets, Disabled: c.disabledToolsets,
@@ -327,12 +327,6 @@ func (c *CLI) showBanner() {
 	if ctxLen := plan.ContextLength; ctxLen != nil && *ctxLen != 0 && *ctxLen < provider.MinimumContextLength {
 		c.printLowContextWarning(*ctxLen)
 	}
-	if provider.IsNousHermesNonAgentic(c.model) {
-		c.consolePrint("")
-		c.consolePrint("[bold yellow]" + c.t("cli.banner.hermes_models_not_agentic", nil) + "[/]")
-		c.consolePrint("[dim]   " + c.t("cli.banner.hermes_models_lack_tools", nil) + "[/]")
-		c.consolePrint("[dim]   " + c.t("cli.banner.hermes_models_switch_hint", nil) + "[/]")
-	}
 	c.printProjectSkillsNotice()
 	c.consolePrint("")
 }
@@ -341,7 +335,7 @@ func (c *CLI) showBanner() {
 func (c *CLI) refreshBannerSnapshot() {
 	defer func() {
 		if r := recover(); r != nil {
-			cliLogger.Debug(fmt.Sprintf("banner snapshot refresh failed: %v", r))
+			pkgLog().Debug(fmt.Sprintf("banner snapshot refresh failed: %v", r))
 		}
 	}()
 	toolDefs := toolDefinitionsFor(c, false)
@@ -353,7 +347,7 @@ func (c *CLI) refreshBannerSnapshot() {
 func (c *CLI) saveBannerSnapshotQuietly(toolDefs []map[string]any, availability map[string]any, failure string) {
 	defer func() {
 		if r := recover(); r != nil {
-			cliLogger.Debug(fmt.Sprintf("%s: %v", failure, r))
+			pkgLog().Debug(fmt.Sprintf("%s: %v", failure, r))
 		}
 	}()
 	saveBannerSnapshot(c.ctx, toolDefs, c.enabledToolsets, availability, toolsetMap(toolDefs, availability, func(n string) string { return toolsetOfTool(c, n) }))
@@ -405,7 +399,7 @@ func mustBaseURLHostname(baseURL string) string {
 func (c *CLI) printProjectSkillsNotice() {
 	defer func() {
 		if r := recover(); r != nil {
-			cliLogger.Debug(fmt.Sprintf("project skills banner notice failed: %v", r))
+			pkgLog().Debug(fmt.Sprintf("project skills banner notice failed: %v", r))
 		}
 	}()
 	scope := skillsScope(c.ctx)
@@ -890,24 +884,21 @@ func (c *CLI) showGatewayContextBreakdown(connection *gatewaycli.GatewayConnecti
 	infoPrint("")
 }
 
-// Prints rate limits, session token usage, account limits and the Nous balance, then applies the verbose log levels
+// Prints rate limits, session token usage and account limits, then applies the verbose log levels
 func (c *CLI) showUsage() {
-	creditsOr := func(fallback string) {
-		shown := c.printAccountLimits()
-		if c.printNousCreditsBlock() {
-			c.printUsageCTA()
-		} else if !shown {
+	limitsOr := func(fallback string) {
+		if !c.printAccountLimits() {
 			infoPrint(fallback)
 		}
 	}
 	a := c.agentRef()
 	if a == nil {
-		creditsOr(c.t("cli.shared.no_active_agent", nil))
+		limitsOr(c.t("cli.shared.no_active_agent", nil))
 		return
 	}
 	r := readAgentUsage(c, agentGateway(a))
 	if r.Calls == 0 {
-		creditsOr(c.t("cli.usage.no_api_calls", nil))
+		limitsOr(c.t("cli.usage.no_api_calls", nil))
 		return
 	}
 	if r.RateLimit.HasData() {
@@ -954,14 +945,8 @@ func (c *CLI) showUsage() {
 	infoPrint("  " + short("cli.usage.label_messages") + " " + strconv.Itoa(len(c.conversationHistory)))
 	infoPrint("  " + short("cli.usage.label_compressions") + " " + strconv.Itoa(r.Compressions))
 	c.printAccountLimits()
-	if c.printNousCreditsBlock() {
-		c.printUsageCTA()
-	}
 	if c.verbose {
 		logging.GetLogger("").SetLevel(logging.LevelDebug)
-		for _, noisy := range []string{"openai", "openai._base_client", "httpx", "httpcore", "asyncio", "hpack", "grpc", "modal"} {
-			logging.GetLogger(noisy).SetLevel(logging.LevelWarning)
-		}
 	} else {
 		logging.GetLogger("").SetLevel(logging.LevelInfo)
 	}

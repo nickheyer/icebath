@@ -152,7 +152,7 @@ type qqbotPlatformPlugin struct{}
 
 func (qqbotPlatformPlugin) Manifest() plugins.Manifest {
 	return plugins.Manifest{Name: "qqbot-platform", Version: "1.0.0", Kind: "platform", Source: "bundled", Key: "platforms/qqbot",
-		Author:      "Nous Research",
+		Author:      "Icebath",
 		Description: "QQ Bot gateway adapter (Official QQ Bot API v2). WebSocket gateway for inbound events, REST for outbound text and media.\n",
 		RequiresEnv: []plugins.EnvSpec{
 			{Name: "QQ_APP_ID", Description: "QQ Bot App ID from QQ Open Platform (q.qq.com)", URL: "https://q.qq.com"},

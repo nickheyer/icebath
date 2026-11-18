@@ -4,11 +4,11 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/nickheyer/icebath/pkg/tuigateway"
+	"github.com/nickheyer/icebath/pkg/tuihost"
 )
 
 // Replaces a spawned slash worker with a fresh one on the session's current model, none when it never spawned one
-func restartSlashWorker(ctx context.Context, sid string, session *tuigateway.Session) {
+func restartSlashWorker(ctx context.Context, sid string, session *tuihost.Session) {
 	worker := session.Get("slash_worker")
 	if worker == nil {
 		return

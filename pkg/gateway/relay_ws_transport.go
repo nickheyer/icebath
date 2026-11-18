@@ -844,7 +844,7 @@ func (t *WebSocketRelayTransport) GoDormant(ctx context.Context, timeoutS float6
 // Acknowledges durable receipt of a replayed buffered inbound
 func (t *WebSocketRelayTransport) sendInboundAck(bufferID string) {
 	if err := t.send(pyjson.ObjectOf("type", "inbound_ack", "bufferId", bufferID)); err != nil {
-		wsLog().Debug(fmt.Sprintf("relay: inbound_ack send failed for %s", bufferID))
+		pkgLog().Debug(fmt.Sprintf("relay: inbound_ack send failed for %s", bufferID))
 	}
 }
 
@@ -880,7 +880,7 @@ func (t *WebSocketRelayTransport) requestResponse(ctx context.Context, action ma
 		}
 	}
 	if err := t.send(frame); err != nil {
-		wsLog().Debug("relay outbound send failed", "exc_info", err)
+		pkgLog().Debug("relay outbound send failed", "exc_info", err)
 		return map[string]any{"success": false, "error": "relay send failed: " + relayExcStr(err)}, nil
 	}
 	result, err := p.fut.wait(ctx, t.outboundTimeoutS)
@@ -896,7 +896,7 @@ func (t *WebSocketRelayTransport) requestResponse(ctx context.Context, action ma
 		if ctx.Err() != nil {
 			return nil, err
 		}
-		wsLog().Debug("relay outbound send failed", "exc_info", err)
+		pkgLog().Debug("relay outbound send failed", "exc_info", err)
 		return map[string]any{"success": false, "error": "relay send failed: " + relayExcStr(err), "ambiguous": true}, nil
 	}
 	return result, nil
@@ -936,7 +936,7 @@ func (t *WebSocketRelayTransport) send(frame *pyjson.Object) error {
 // Reads newline delimited frames until the socket ends, then arms the auth retry or the reconnect supervisor
 func (t *WebSocketRelayTransport) readLoop(ctx context.Context, conn *relayConn, generation int) {
 	if conn == nil {
-		wsLog().Error("relay ws read loop started with no socket")
+		pkgLog().Error("relay ws read loop started with no socket")
 		t.failPending(relaySettleConnectionLost)
 		return
 	}
@@ -971,24 +971,24 @@ func (t *WebSocketRelayTransport) readLoop(ctx context.Context, conn *relayConn,
 			case reason == relayExpiredCloseReason:
 				t.mu.Unlock()
 				if !closing {
-					wsLog().Warn("relay ws closed 4401 with reason 'expired' — upgrade token expired, not revoked; reconnecting normally")
+					pkgLog().Warn("relay ws closed 4401 with reason 'expired' — upgrade token expired, not revoked; reconnecting normally")
 				}
 			case retryGen != nil && *retryGen == generation:
 				t.authRevoked = true
 				t.mu.Unlock()
 				if !closing {
-					wsLog().Warn("relay ws closed 4401 (unauthorized) again on a re-dial with a freshly minted token — treating as a revoked relay credential (opt-out); not reconnecting")
+					pkgLog().Warn("relay ws closed 4401 (unauthorized) again on a re-dial with a freshly minted token — treating as a revoked relay credential (opt-out); not reconnecting")
 				}
 			case !closing:
 				authRetryScheduled = true
 				t.authRetryPending = true
 				t.mu.Unlock()
-				wsLog().Warn("relay ws closed 4401 (unauthorized) after a successful handshake — re-dialing once with a fresh upgrade token before treating it as a revoked credential (the token may simply have expired)")
+				pkgLog().Warn("relay ws closed 4401 (unauthorized) after a successful handshake — re-dialing once with a fresh upgrade token before treating it as a revoked credential (the token may simply have expired)")
 			default:
 				t.mu.Unlock()
 			}
 		} else if !closing {
-			wsLog().Warn(fmt.Sprintf("relay ws read loop ended: %s", relayExcStr(err)))
+			pkgLog().Warn(fmt.Sprintf("relay ws read loop ended: %s", relayExcStr(err)))
 		}
 	}
 	t.mu.Lock()
@@ -1094,7 +1094,7 @@ func (t *WebSocketRelayTransport) redialWithFreshToken(ctx context.Context) {
 	}
 	err := t.dialAndStart(ctx)
 	if err == nil {
-		wsLog().Info("relay ws re-dialed with a fresh upgrade token after 4401")
+		pkgLog().Info("relay ws re-dialed with a fresh upgrade token after 4401")
 		return
 	}
 	if ctx.Err() != nil {
@@ -1106,7 +1106,7 @@ func (t *WebSocketRelayTransport) redialWithFreshToken(ctx context.Context) {
 	if closing || t.latchIfFreshTokenRefused(err) || t.AuthRevoked() {
 		return
 	}
-	wsLog().Warn(fmt.Sprintf("relay ws fresh-token re-dial failed: %s", relayExcStr(err)))
+	pkgLog().Warn(fmt.Sprintf("relay ws fresh-token re-dial failed: %s", relayExcStr(err)))
 	t.mu.Lock()
 	defer t.mu.Unlock()
 	if t.reconnect && !(t.supervisor != nil && !t.supervisor.finished()) {
@@ -1129,7 +1129,7 @@ func (t *WebSocketRelayTransport) latchIfFreshTokenRefused(err error) bool {
 	}
 	t.authRevoked = true
 	t.mu.Unlock()
-	wsLog().Warn("relay ws fresh-token re-dial rejected with 4401 — treating as a revoked relay credential (opt-out); not reconnecting")
+	pkgLog().Warn("relay ws fresh-token re-dial rejected with 4401 — treating as a revoked relay credential (opt-out); not reconnecting")
 	return true
 }
 
@@ -1150,13 +1150,13 @@ func (t *WebSocketRelayTransport) reconnectLoop(ctx context.Context) {
 		}
 		err := t.dialAndStart(ctx)
 		if err == nil {
-			wsLog().Info("relay ws reconnected")
+			pkgLog().Info("relay ws reconnected")
 			return
 		}
 		if ctx.Err() != nil || t.latchIfFreshTokenRefused(err) || t.AuthRevoked() {
 			return
 		}
-		wsLog().Warn(fmt.Sprintf("relay ws reconnect failed: %s", relayExcStr(err)))
+		pkgLog().Warn(fmt.Sprintf("relay ws reconnect failed: %s", relayExcStr(err)))
 		backoff = min(backoff*2, t.reconnectMaxBackoffS)
 	}
 }
@@ -1202,7 +1202,7 @@ func (t *WebSocketRelayTransport) awaitRedialHold(ctx context.Context) error {
 	select {
 	case <-t.redialRelease.waitChan():
 	case <-timer.C:
-		wsLog().Info("relay: brokered suspend did not land, reconnecting")
+		pkgLog().Info("relay: brokered suspend did not land, reconnecting")
 	case <-ctx.Done():
 		return ctx.Err()
 	}
@@ -1213,7 +1213,7 @@ func (t *WebSocketRelayTransport) awaitRedialHold(ctx context.Context) error {
 func (t *WebSocketRelayTransport) handleFrame(ctx context.Context, line string) error {
 	parsed, err := pyjson.Loads(line)
 	if err != nil {
-		wsLog().Warn("relay: skipping malformed frame")
+		pkgLog().Warn("relay: skipping malformed frame")
 		return nil
 	}
 	frame, ok := pyjson.AsObject(parsed)
@@ -1323,7 +1323,7 @@ func (t *WebSocketRelayTransport) onInbound(ctx context.Context, frame *pyjson.O
 	}
 	admitting, herr := relayCallInbound(RelayCallback(ctx, t, event), handler, event)
 	if herr != nil {
-		wsLog().Error("relay: inbound handler failed; frame left unacknowledged", "exc_info", herr)
+		pkgLog().Error("relay: inbound handler failed; frame left unacknowledged", "exc_info", herr)
 		return nil
 	}
 	bufferID := frame.GetOr("bufferId", nil)
@@ -1354,7 +1354,7 @@ func (t *WebSocketRelayTransport) ackAdmitted(admission RelayAdmission, bufferID
 	err := <-admission
 	if err != nil {
 		if !errors.Is(err, context.Canceled) {
-			wsLog().Error("relay: inbound handler failed; frame left unacknowledged", "exc_info", err)
+			pkgLog().Error("relay: inbound handler failed; frame left unacknowledged", "exc_info", err)
 		}
 		return
 	}

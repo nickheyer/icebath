@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/nickheyer/icebath/pkg/tuigateway"
 	"github.com/nickheyer/icebath/pkg/ui/keys"
 	"github.com/nickheyer/icebath/pkg/ui/wm"
 )
@@ -69,7 +70,7 @@ func TestHostedChoiceOpensAPaletteAtTheDefaultRowAndSendsThePick(t *testing.T) {
 		"setup.hosted.start": {{"job": "flow-1"}},
 		"setup.hosted.poll": {
 			{"lines": []any{"Current model:    (not set)"}, "question": nil, "done": false, "ok": false, "model": "", "provider": "", "changed": false},
-			question(1, "choice", "Select provider:", map[string]any{"rows": []any{"Nous Portal", "OpenRouter", "Vision        (image analysis)       deepseek · v4"}, "default": float64(1),
+			question(1, "choice", "Select provider:", map[string]any{"rows": []any{"Anthropic", "OpenRouter", "Vision        (image analysis)       deepseek · v4"}, "default": float64(1),
 				"headings": []any{map[string]any{"at": float64(2), "text": "Other"}}}),
 			{"lines": []any{"Default model set to: m1"}, "question": nil, "done": true, "ok": true, "model": "m1", "provider": "openrouter", "changed": true},
 		},
@@ -86,7 +87,7 @@ func TestHostedChoiceOpensAPaletteAtTheDefaultRowAndSendsThePick(t *testing.T) {
 	}
 	drain(a, items[0].Run())
 	answers := gw.sent("setup.hosted.answer")
-	if len(answers) != 1 || answers[0]["index"] != 1 || answers[0]["question"] != 1 || answers[0]["job"] != "flow-1" {
+	if len(answers) != 1 || answers[0]["index"] != int64(1) || answers[0]["question"] != int64(1) || answers[0]["job"] != "flow-1" {
 		t.Fatalf("answers %v", answers)
 	}
 	got := screen(a)
@@ -114,7 +115,7 @@ func TestHostedSecretAndEscapeAnswerAsBackedOut(t *testing.T) {
 	_, cmd := a.Update(keys.Press("esc"))
 	drain(a, cmd)
 	answers := gw.sent("setup.hosted.answer")
-	if len(answers) != 1 || answers[0]["cancelled"] != true || answers[0]["question"] != 4 {
+	if len(answers) != 1 || answers[0]["cancelled"] != true || answers[0]["question"] != int64(4) {
 		t.Fatalf("answers %v", answers)
 	}
 	if !strings.Contains(screen(a), "Cancelled.") {
@@ -125,8 +126,9 @@ func TestHostedSecretAndEscapeAnswerAsBackedOut(t *testing.T) {
 func TestHostedChecklistAndTextAnswers(t *testing.T) {
 	a, gw := hostedApp(t, map[string][]map[string]any{"setup.hosted.start": {{"job": "flow-3"}}})
 	f := &hostedFlow{job: "flow-3"}
-	drain(a, a.askHosted(f, question(7, "checklist", "Tools to route through Nous", map[string]any{"rows": []any{"web", "image", "tts"},
-		"picked": []any{float64(0), float64(2)}})["question"].(map[string]any)))
+	checklist, _ := tuigateway.SetupHostedPoll.Result(question(7, "checklist", "Tools to set up", map[string]any{"rows": []any{"web", "image", "tts"},
+		"picked": []any{float64(0), float64(2)}}))
+	drain(a, a.askHosted(f, checklist.Question))
 	d, isDialog := a.wm.Overlay().(*dialogCard)
 	if !isDialog || !d.multi || !reflect.DeepEqual(d.marks, map[int]bool{0: true, 2: true}) {
 		t.Fatalf("checklist %T %+v", a.wm.Overlay(), d)
@@ -134,16 +136,17 @@ func TestHostedChecklistAndTextAnswers(t *testing.T) {
 	d.marks[1] = true
 	drain(a, d.answer())
 	answers := gw.sent("setup.hosted.answer")
-	if len(answers) != 1 || !reflect.DeepEqual(answers[0]["picked"], []any{0, 1, 2}) {
+	if len(answers) != 1 || !reflect.DeepEqual(answers[0]["picked"], []any{int64(0), int64(1), int64(2)}) {
 		t.Fatalf("checklist answer %v", answers)
 	}
-	drain(a, a.askHosted(f, question(8, "text", "Base URL [https://api.example.com/v1]:", nil)["question"].(map[string]any)))
+	prompt, _ := tuigateway.SetupHostedPoll.Result(question(8, "text", "Base URL [https://api.example.com/v1]:", nil))
+	drain(a, a.askHosted(f, prompt.Question))
 	p, isPalette := a.wm.Overlay().(*wm.Palette)
 	if !isPalette || p.Placeholder != "Base URL [https://api.example.com/v1]" || p.OnText == nil {
 		t.Fatalf("text prompt %T", a.wm.Overlay())
 	}
 	drain(a, p.OnText(""))
-	if answers = gw.sent("setup.hosted.answer"); len(answers) != 2 || answers[1]["text"] != "" || answers[1]["cancelled"] != nil {
+	if answers = gw.sent("setup.hosted.answer"); len(answers) != 2 || answers[1]["question"] != int64(8) || answers[1]["cancelled"] != nil {
 		t.Fatalf("text answer %v", answers)
 	}
 }
@@ -173,16 +176,16 @@ func TestHostedWaitDialogKeepsWaitingOrStopsTheFlow(t *testing.T) {
 }
 
 func TestCommandAnswerReportsHowTheProgramEnded(t *testing.T) {
-	if got := commandAnswer(nil); got["ran"] != true {
+	if got := commandAnswer(nil); !got.Ran {
 		t.Fatalf("clean exit %v", got)
 	}
-	if got := commandAnswer(exec.Command("false").Run()); got["ran"] != true {
+	if got := commandAnswer(exec.Command("false").Run()); !got.Ran {
 		t.Fatalf("non zero exit %v", got)
 	}
-	if got := commandAnswer(exec.Command("sh", "-c", "kill -INT $$").Run()); got["ran"] != false {
+	if got := commandAnswer(exec.Command("sh", "-c", "kill -INT $$").Run()); got.Ran {
 		t.Fatalf("interrupted %v", got)
 	}
-	if got := commandAnswer(errors.New("exec: \"claude\": executable file not found in $PATH")); !strings.Contains(got["error"].(string), "not found") {
+	if got := commandAnswer(errors.New("exec: \"claude\": executable file not found in $PATH")); !strings.Contains(got.Error, "not found") {
 		t.Fatalf("start failure %v", got)
 	}
 }

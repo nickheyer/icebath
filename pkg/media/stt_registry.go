@@ -3,7 +3,6 @@ package media
 import (
 	"context"
 	"fmt"
-	"log/slog"
 	"sort"
 	"strings"
 
@@ -65,11 +64,6 @@ func (TranscriptionStreamSessionDefaults) PartialTranscript() (string, error) { 
 
 var transcriptionRegistryBuiltinNames = sttSet("local", "local_command", "groq", "openai", "mistral", "xai", "elevenlabs", "deepinfra")
 
-// Logger of the transcription provider registry
-func transcriptionRegistryLog() *slog.Logger {
-	return slog.Default().With("logger", "agent.transcription_registry")
-}
-
 // Warns that a plugin tried to take a built in STT name and was ignored
 func warnTranscriptionBuiltinCollision(key string) error {
 	names := make([]string, 0, len(transcriptionRegistryBuiltinNames))
@@ -77,13 +71,13 @@ func warnTranscriptionBuiltinCollision(key string) error {
 		names = append(names, n)
 	}
 	sort.Strings(names)
-	transcriptionRegistryLog().Warn(fmt.Sprintf("Transcription provider '%s' shadows a built-in name; registration ignored. "+
+	pkgLog().Warn(fmt.Sprintf("Transcription provider '%s' shadows a built-in name; registration ignored. "+
 		"Built-in STT providers (%s) always win — pick a different name.", key, strings.Join(names, ", ")))
 	return nil
 }
 
 var transcriptionRegistry = provider.NewProviderRegistry[TranscriptionProvider](provider.ProviderRegistryOptions{
-	Label: "Transcription", Logger: transcriptionRegistryLog(), Normalize: provider.LowerKey,
+	Label: "Transcription", Logger: pkgLog(), Normalize: provider.LowerKey,
 	BuiltinNames: transcriptionRegistryBuiltinNames, OnBuiltinCollision: warnTranscriptionBuiltinCollision,
 })
 

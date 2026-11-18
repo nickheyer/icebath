@@ -11,7 +11,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 )
 
-func TestTruthyStringIsTheHermesSet(t *testing.T) {
+func TestTruthyStringIsTheTruthySet(t *testing.T) {
 	for s, want := range map[string]bool{
 		"1": true, "true": true, "yes": true, "on": true, " TRUE ": true, "On\n": true, " yes ": true, "\x1cyes\x1f": true,
 		"enabled": false, "approve": false, "y": false, "0": false, "": false, "false": false, "ye s": false,

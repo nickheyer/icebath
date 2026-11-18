@@ -24,7 +24,7 @@ func (r *GatewayRunner) buildProcessEventSource(ctx context.Context, evt map[str
 			if err == nil {
 				return source, nil
 			}
-			inboundLog().Debug(fmt.Sprintf("Synthetic process-event session-store lookup failed for %s: %s", sessionKey, err))
+			pkgLog().Debug(fmt.Sprintf("Synthetic process-event session-store lookup failed for %s: %s", sessionKey, err))
 		}
 		cached, err := gateway.DetachedLiveSource(r, r.sessionStore, sessionKey)
 		if err != nil {
@@ -57,7 +57,7 @@ func (r *GatewayRunner) buildProcessEventSource(ctx context.Context, evt map[str
 		if !ok {
 			evtType = "?"
 		}
-		inboundLog().Warn(fmt.Sprintf("Synthetic event source unresolvable: session_key=%s platform=%s chat_type=%s chat_id=%s evt_type=%s",
+		pkgLog().Warn(fmt.Sprintf("Synthetic event source unresolvable: session_key=%s platform=%s chat_type=%s chat_id=%s evt_type=%s",
 			pyrepr.Repr(sessionKey), pyrepr.Repr(platformName), pyrepr.Repr(chatType), pyrepr.Repr(chatID), pyrepr.Str(evtType)))
 		return nil, nil
 	}
@@ -66,7 +66,7 @@ func (r *GatewayRunner) buildProcessEventSource(ctx context.Context, evt map[str
 		err = errors.New(platformName)
 	}
 	if err != nil {
-		inboundLog().Warn(fmt.Sprintf("Synthetic process event has invalid platform metadata: %s", pyrepr.Repr(platformName)))
+		pkgLog().Warn(fmt.Sprintf("Synthetic process event has invalid platform metadata: %s", pyrepr.Repr(platformName)))
 		return nil, nil
 	}
 	opt := func(field string) *string {
@@ -77,7 +77,7 @@ func (r *GatewayRunner) buildProcessEventSource(ctx context.Context, evt map[str
 	}
 	scopeID := opt("scope_id")
 	if scopeID == nil && chatType != "dm" && chatType != "thread" {
-		inboundLog().Warn(fmt.Sprintf("Synthetic event source for %s chat=%s (%s) reconstructed without scope_id; scoped relay egress may be declined by the connector's tenant guard (user_id fallback only).",
+		pkgLog().Warn(fmt.Sprintf("Synthetic event source for %s chat=%s (%s) reconstructed without scope_id; scoped relay egress may be declined by the connector's tenant guard (user_id fallback only).",
 			platformName, chatID, chatType))
 	}
 	var profile *string
@@ -102,7 +102,7 @@ func requeueRefusedWatchEvent(queue *tools.EventQueue, evt map[string]any) {
 			if !ok {
 				sessionID = "unknown"
 			}
-			inboundLog().Warn(fmt.Sprintf("Watch notification for %s chat=%s (type=%s session_id=%s) was refused %d times; dropping the queued event (output remains available via process(action='log'))",
+			pkgLog().Warn(fmt.Sprintf("Watch notification for %s chat=%s (type=%s session_id=%s) was refused %d times; dropping the queued event (output remains available via process(action='log'))",
 				orUnknown(evt["platform"]), orUnknown(evt["chat_id"]), orUnknown(evt["type"]), pyrepr.Str(sessionID), refusals))
 			return
 		}
@@ -177,7 +177,7 @@ func (r *GatewayRunner) servedAPIServerWakeProfile(ctx context.Context, evt map[
 	return "", nil
 }
 
-// LookupError of hermes, an event naming a served profile that does not own its session
+// LookupError, an event naming a served profile that does not own its session
 type lookupError struct{ msg string }
 
 func (e *lookupError) Error() string { return e.msg }

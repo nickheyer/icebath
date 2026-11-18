@@ -122,7 +122,7 @@ func TestCLIReportsIncompletePairing(t *testing.T) {
 	}
 }
 
-func TestReadonlyInstallMirrorsToHermesHome(t *testing.T) {
+func TestReadonlyInstallMirrorsToIcebathHome(t *testing.T) {
 	root := t.TempDir()
 	installRoot := filepath.Join(root, "install")
 	installBridge := filepath.Join(installRoot, "scripts", "whatsapp-bridge")

@@ -82,7 +82,7 @@ func hardenTransparency(path string) string {
 		return out, nil
 	}()
 	if err != nil {
-		genLog.Debug(fmt.Sprintf("base draft transparency hardening failed for %s: %s", path, pyrepr.ExceptionMessage(err)))
+		pkgLog().Debug(fmt.Sprintf("base draft transparency hardening failed for %s: %s", path, pyrepr.ExceptionMessage(err)))
 		return path
 	}
 	return out
@@ -117,7 +117,7 @@ func runParallel[I, R any](items []I, fn func(I) R, cancelled func() bool, onCan
 	for received := 0; received < len(items); received++ {
 		r := <-results
 		if cancelled() {
-			genLog.Info(onCancelLog)
+			pkgLog().Info(onCancelLog)
 			close(stop)
 			go func() {
 				wg.Wait()
@@ -160,7 +160,7 @@ func GenerateBaseDrafts(ctx context.Context, env *tools.Env, concept string, o D
 	if cancelled == nil {
 		cancelled = func() bool { return false }
 	}
-	genLog.Info(fmt.Sprintf("pet generate: drafting %d base looks for %s (style=%s)", o.N, pyrepr.Repr(concept), o.Style))
+	pkgLog().Info(fmt.Sprintf("pet generate: drafting %d base looks for %s (style=%s)", o.N, pyrepr.Repr(concept), o.Style))
 	type draft struct {
 		index int
 		path  string
@@ -174,14 +174,14 @@ func GenerateBaseDrafts(ctx context.Context, env *tools.Env, concept string, o D
 		variation := BaseVariations[index%len(BaseVariations)]
 		out, err := Generate(ctx, env, BuildBasePrompt(concept, o.Style, variation), 1, refs, sprite, "pet_base", "square")
 		if err != nil {
-			genLog.Warn(fmt.Sprintf("pet generate: draft %d failed after %.1fs: %s", index, time.Since(t0).Seconds(), pyrepr.ExceptionMessage(err)))
+			pkgLog().Warn(fmt.Sprintf("pet generate: draft %d failed after %.1fs: %s", index, time.Since(t0).Seconds(), pyrepr.ExceptionMessage(err)))
 			return draft{index: index, err: pyrepr.ExceptionMessage(err)}
 		}
 		if len(out) == 0 {
-			genLog.Warn(fmt.Sprintf("pet generate: draft %d produced no image", index))
+			pkgLog().Warn(fmt.Sprintf("pet generate: draft %d produced no image", index))
 			return draft{index: index, err: "the image provider returned no image"}
 		}
-		genLog.Info(fmt.Sprintf("pet generate: draft %d ready in %.1fs", index, time.Since(t0).Seconds()))
+		pkgLog().Info(fmt.Sprintf("pet generate: draft %d ready in %.1fs", index, time.Since(t0).Seconds()))
 		return draft{index: index, path: hardenTransparency(out[0])}
 	}
 	indices := make([]int, o.N)
@@ -202,7 +202,7 @@ func GenerateBaseDrafts(ctx context.Context, env *tools.Env, concept string, o D
 			func() {
 				defer func() {
 					if r := recover(); r != nil {
-						genLog.Debug(fmt.Sprintf("on_draft callback failed: %v", r))
+						pkgLog().Debug(fmt.Sprintf("on_draft callback failed: %v", r))
 					}
 				}()
 				o.OnDraft(d.index, d.path)
@@ -285,13 +285,13 @@ func generateRow(ctx context.Context, env *tools.Env, spec RowSpec, base, style,
 			return ExtractStripFrames(strips[0], spec.Frames, method, false)
 		}()
 		if err == nil {
-			genLog.Info(fmt.Sprintf("pet hatch %s: row %s ready in %.1fs (attempt %d)", pyrepr.Repr(slug), pyrepr.Repr(spec.State), time.Since(t0).Seconds(), attempt+1))
+			pkgLog().Info(fmt.Sprintf("pet hatch %s: row %s ready in %.1fs (attempt %d)", pyrepr.Repr(slug), pyrepr.Repr(spec.State), time.Since(t0).Seconds(), attempt+1))
 			return StateFrames{State: spec.State, Frames: frames}
 		}
 		lastErr = err
-		genLog.Warn(fmt.Sprintf("pet hatch %s: row %s attempt %d/%d failed: %s", pyrepr.Repr(slug), pyrepr.Repr(spec.State), attempt+1, rowGenAttempts, pyrepr.ExceptionMessage(err)))
+		pkgLog().Warn(fmt.Sprintf("pet hatch %s: row %s attempt %d/%d failed: %s", pyrepr.Repr(slug), pyrepr.Repr(spec.State), attempt+1, rowGenAttempts, pyrepr.ExceptionMessage(err)))
 	}
-	genLog.Warn(fmt.Sprintf("pet hatch %s: row %s gave up after %.1fs: %s", pyrepr.Repr(slug), pyrepr.Repr(spec.State), time.Since(t0).Seconds(), pyrepr.ExceptionMessage(lastErr)))
+	pkgLog().Warn(fmt.Sprintf("pet hatch %s: row %s gave up after %.1fs: %s", pyrepr.Repr(slug), pyrepr.Repr(spec.State), time.Since(t0).Seconds(), pyrepr.ExceptionMessage(lastErr)))
 	return StateFrames{State: spec.State}
 }
 
@@ -328,7 +328,7 @@ func HatchPet(ctx context.Context, env *tools.Env, o HatchOptions) (*HatchResult
 	}
 	var framesByState []StateFrames
 	totalRows := len(RowSpecs)
-	genLog.Info(fmt.Sprintf("pet hatch %s: generating %d animation rows", pyrepr.Repr(o.Slug), totalRows))
+	pkgLog().Info(fmt.Sprintf("pet hatch %s: generating %d animation rows", pyrepr.Repr(o.Slug), totalRows))
 	var generated []RowSpec
 	for _, spec := range RowSpecs {
 		if spec.State != "running-left" {
@@ -360,9 +360,9 @@ func HatchPet(ctx context.Context, env *tools.Env, o HatchOptions) (*HatchResult
 		done++
 		progress("row", fmt.Sprintf("running-left:%d:%d", done, totalRows))
 		framesByState = append(framesByState, StateFrames{State: "running-left", Frames: MirrorFrames(right)})
-		genLog.Info(fmt.Sprintf("pet hatch %s: row 'running-left' mirrored from running-right", pyrepr.Repr(o.Slug)))
+		pkgLog().Info(fmt.Sprintf("pet hatch %s: row 'running-left' mirrored from running-right", pyrepr.Repr(o.Slug)))
 	} else {
-		genLog.Warn(fmt.Sprintf("pet hatch %s: no running-right to mirror; left walk left empty", pyrepr.Repr(o.Slug)))
+		pkgLog().Warn(fmt.Sprintf("pet hatch %s: no running-right to mirror; left walk left empty", pyrepr.Repr(o.Slug)))
 	}
 	if len(lookup("idle")) == 0 {
 		progress("row", "idle-fallback")
@@ -373,7 +373,7 @@ func HatchPet(ctx context.Context, env *tools.Env, o HatchOptions) (*HatchResult
 		framesByState = append(framesByState, StateFrames{State: "idle", Frames: []*image.NRGBA{frame}})
 	}
 	progress("compose", "")
-	genLog.Info(fmt.Sprintf("pet hatch %s: composing atlas from %d states", pyrepr.Repr(o.Slug), len(framesByState)))
+	pkgLog().Info(fmt.Sprintf("pet hatch %s: composing atlas from %d states", pyrepr.Repr(o.Slug), len(framesByState)))
 	sheet := ComposeAtlas(NormalizeCells(framesByState, normalizePad))
 	validation := ValidateAtlas(sheet)
 	if !validation.OK {
@@ -401,7 +401,7 @@ func HatchPet(ctx context.Context, env *tools.Env, o HatchOptions) (*HatchResult
 		return nil, &GenerationError{Msg: fmt.Sprintf("only %d/%d animation rows were usable; regenerate", len(filled), totalRows)}
 	}
 	progress("save", o.Slug)
-	genLog.Info(fmt.Sprintf("pet hatch %s: saving pet", pyrepr.Repr(o.Slug)))
+	pkgLog().Info(fmt.Sprintf("pet hatch %s: saving pet", pyrepr.Repr(o.Slug)))
 	displayName := o.DisplayName
 	if displayName == "" {
 		displayName = o.Slug

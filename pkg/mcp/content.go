@@ -98,7 +98,7 @@ func decodeBlockB64(data, what, label, capWhat, capSuffix, decodeFail string) ([
 	}
 	raw, err := base64.StdEncoding.DecodeString(nonBase64Re.ReplaceAllString(data, ""))
 	if err != nil {
-		mcpLogger().Warn(fmt.Sprintf("MCP %s decode failed (%s): %v", what, label, err))
+		pkgLog().Warn(fmt.Sprintf("MCP %s decode failed (%s): %v", what, label, err))
 		return nil, decodeFail
 	}
 	if capWhat != "" && len(raw) > resourceMaxBytes {
@@ -111,7 +111,7 @@ func decodeBlockB64(data, what, label, capWhat, capSuffix, decodeFail string) ([
 func writeBlockCache(write func() (string, error), what, failed string) (string, string) {
 	p, err := write()
 	if err != nil {
-		mcpLogger().Warn(fmt.Sprintf("MCP %s cache failed: %v", what, err))
+		pkgLog().Warn(fmt.Sprintf("MCP %s cache failed: %v", what, err))
 		return "", failed
 	}
 	return p, ""
@@ -237,7 +237,7 @@ func resultWithNativeImages(ctx context.Context, env *tools.Env, sessionID, text
 			go func(p string, out chan<- *nativeImage) {
 				defer func() {
 					if r := recover(); r != nil {
-						mcpLogger().Debug(fmt.Sprintf("MCP native image prep failed for %s", p), "panic", r)
+						pkgLog().Debug(fmt.Sprintf("MCP native image prep failed for %s", p), "panic", r)
 						out <- nil
 					}
 				}()
@@ -457,9 +457,9 @@ func renderContentBlocks(ctx context.Context, env *tools.Env, result *CallToolRe
 		}
 		switch blockType {
 		case "text", "resource", "audio", "image":
-			mcpLogger().Debug(fmt.Sprintf("MCP %s: content block type %s rendered empty", serverName, pyReprStr(blockType)))
+			pkgLog().Debug(fmt.Sprintf("MCP %s: content block type %s rendered empty", serverName, pyReprStr(blockType)))
 		default:
-			mcpLogger().Warn(fmt.Sprintf("MCP %s: dropping unsupported content block type %s", serverName, pyReprStr(blockType)))
+			pkgLog().Warn(fmt.Sprintf("MCP %s: dropping unsupported content block type %s", serverName, pyReprStr(blockType)))
 			parts = append(parts, renderDroppedBlockNotice(blk, blockType))
 		}
 	}
@@ -584,7 +584,7 @@ func RenderCallToolResult(ctx context.Context, env *tools.Env, result *CallToolR
 func nativeVisionGate(ctx context.Context, env *tools.Env) (native bool) {
 	defer func() {
 		if r := recover(); r != nil {
-			mcpLogger().Debug("MCP native image gate failed, keeping MEDIA: paths", "panic", r)
+			pkgLog().Debug("MCP native image gate failed, keeping MEDIA: paths", "panic", r)
 			native = false
 		}
 	}()

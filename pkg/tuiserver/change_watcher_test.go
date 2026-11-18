@@ -9,7 +9,6 @@ import (
 	"path/filepath"
 	"reflect"
 	"slices"
-	"sort"
 	"sync"
 	"testing"
 	"time"
@@ -74,15 +73,12 @@ func watcherHomeFixture(t *testing.T) (string, *watchEvents) {
 		t.Fatal(err)
 	}
 	t.Setenv("ICEBATH_HOME", h)
-	prevHome, prevBroadcast := hermesHome, broadcastGlobalEvent
+	prevHome, prevBroadcast := icebathHome, broadcastGlobalEvent
 	isolateProfileHosting(t)
-	hermesHome = h
+	icebathHome = h
 	changeState.Lock()
 	changeState.sigs, changeState.checkedAt, changeState.broadcastAt = map[string]any{}, map[string]float64{}, map[string]float64{}
 	changeState.Unlock()
-	pairingRootsCache.Lock()
-	pairingRootsCache.set = false
-	pairingRootsCache.Unlock()
 	sessionsDBSigCache.Lock()
 	sessionsDBSigCache.byPath = map[string]sessionsDBSigEntry{}
 	sessionsDBSigCache.Unlock()
@@ -93,7 +89,7 @@ func watcherHomeFixture(t *testing.T) (string, *watchEvents) {
 		events.Unlock()
 	}
 	t.Cleanup(func() {
-		hermesHome, broadcastGlobalEvent = prevHome, prevBroadcast
+		icebathHome, broadcastGlobalEvent = prevHome, prevBroadcast
 	})
 	return h, events
 }
@@ -162,16 +158,6 @@ func TestFirstSightingSeedsWithoutBroadcasting(t *testing.T) {
 	watchPass(0)
 	if got := events.all(); len(got) != 0 {
 		t.Fatalf("events = %v", got)
-	}
-}
-
-func TestCronJobsFileMoveBroadcastsCronChanged(t *testing.T) {
-	h, events := watcherHomeFixture(t)
-	watchPass(0)
-	watchWriteFile(t, filepath.Join(h, "cron", "jobs.json"), "[]")
-	watchPass(10)
-	if !events.has("cron.changed") {
-		t.Fatalf("events = %v", events.all())
 	}
 }
 
@@ -244,41 +230,6 @@ func TestUnreadableStoreKeepsLastDigest(t *testing.T) {
 	}
 }
 
-func TestProjectsDbMoveBroadcastsProjectsChanged(t *testing.T) {
-	h, events := watcherHomeFixture(t)
-	watchPass(0)
-	watchWriteFile(t, filepath.Join(h, "projects.db"), "x")
-	watchPass(10)
-	if !events.has("projects.changed") {
-		t.Fatalf("events = %v", events.all())
-	}
-}
-
-func TestServedProfileProjectsDbMoveBroadcastsProjectsChanged(t *testing.T) {
-	h, events := watcherHomeFixture(t)
-	coder := filepath.Join(h, "profiles", "coder")
-	watchWriteFile(t, filepath.Join(coder, "config.yaml"), "{}\n")
-	if got, err := profileHome("coder"); err != nil || got != coder {
-		t.Fatalf("profileHome = %q, %v", got, err)
-	}
-	watchPass(0)
-	watchWriteFile(t, filepath.Join(coder, "projects.db"), "x")
-	watchPass(10)
-	if !events.has("projects.changed") {
-		t.Fatalf("events = %v", events.all())
-	}
-}
-
-func TestProjectsSigDoesNotTrackStateDbWrites(t *testing.T) {
-	h, events := watcherHomeFixture(t)
-	watchPass(0)
-	watchWriteFile(t, filepath.Join(h, "state.db"), "x")
-	watchPass(10)
-	if events.has("projects.changed") {
-		t.Fatalf("events = %v", events.all())
-	}
-}
-
 func TestServedProfileStoreMoveBroadcastsSessionsChanged(t *testing.T) {
 	h, events := watcherHomeFixture(t)
 	bot := filepath.Join(h, "profiles", "bot")
@@ -290,144 +241,6 @@ func TestServedProfileStoreMoveBroadcastsSessionsChanged(t *testing.T) {
 	writeSessionChange(t, filepath.Join(bot, "state.db"), "created")
 	watchPass(10)
 	if !events.has("sessions.changed") {
-		t.Fatalf("events = %v", events.all())
-	}
-}
-
-func TestGatewayStateMoveBroadcastsPlatformsChanged(t *testing.T) {
-	h, events := watcherHomeFixture(t)
-	watchPass(0)
-	watchWriteFile(t, filepath.Join(h, "gateway_state.json"), `{"platforms": {}}`)
-	watchPass(10)
-	if !events.has("platforms.changed") {
-		t.Fatalf("events = %v", events.all())
-	}
-}
-
-func TestPendingPairingRequestBroadcastsPairingChanged(t *testing.T) {
-	h, events := watcherHomeFixture(t)
-	store := filepath.Join(h, "platforms", "pairing")
-	mkdirs(t, store)
-	watchPass(0)
-	watchWriteFile(t, filepath.Join(store, "telegram-pending.json"), `{"abc": {"user_id": "1"}}`)
-	watchPass(10)
-	if !events.has("pairing.changed") || events.has("platforms.changed") {
-		t.Fatalf("events = %v", events.all())
-	}
-}
-
-func TestPairingSignalFollowsAProfileStore(t *testing.T) {
-	h, events := watcherHomeFixture(t)
-	store := filepath.Join(h, "profiles", "work", "platforms", "pairing")
-	mkdirs(t, store)
-	watchWriteFile(t, filepath.Join(h, "profiles", "work", "config.yaml"), "{}\n")
-	watchPass(0)
-	watchWriteFile(t, filepath.Join(store, "telegram-approved.json"), `{"u1": {"user_id": "u1"}}`)
-	watchPass(10)
-	if !events.has("pairing.changed") {
-		t.Fatalf("events = %v", events.all())
-	}
-}
-
-func TestPairingProbeReusesLiveProfileRootsUntilTheProfileSetMoves(t *testing.T) {
-	h, events := watcherHomeFixture(t)
-	var liveCalls []string
-	prevLive := namedProfileIsLive
-	namedProfileIsLive = func(p string) bool {
-		liveCalls = append(liveCalls, filepath.Base(p))
-		return prevLive(p)
-	}
-	t.Cleanup(func() { namedProfileIsLive = prevLive })
-	profile := func(name string) {
-		mkdirs(t, filepath.Join(h, "profiles", name, "platforms", "pairing"))
-		watchWriteFile(t, filepath.Join(h, "profiles", name, "config.yaml"), "{}\n")
-	}
-	profile("work")
-	watchPass(0)
-	watchWriteFile(t, filepath.Join(h, "profiles", "work", "platforms", "pairing", "telegram-pending.json"), "{}")
-	watchPass(10)
-	pairingOnly := func(n int) bool {
-		got := events.all()
-		if len(got) != n {
-			return false
-		}
-		for _, e := range got {
-			if e.event != "pairing.changed" || len(e.payload) != 0 {
-				return false
-			}
-		}
-		return true
-	}
-	if !pairingOnly(1) || !slices.Equal(liveCalls, []string{"work"}) {
-		t.Fatalf("events = %v, live calls = %v", events.all(), liveCalls)
-	}
-	profile("play")
-	bump := time.Unix(0, 1e18)
-	if err := os.Chtimes(filepath.Join(h, "profiles"), time.Unix(0, 0), bump); err != nil {
-		t.Fatal(err)
-	}
-	watchPass(20)
-	watchWriteFile(t, filepath.Join(h, "profiles", "play", "platforms", "pairing", "discord-approved.json"), "{}")
-	watchPass(30)
-	sorted := slices.Clone(liveCalls)
-	sort.Strings(sorted)
-	if !pairingOnly(2) || !slices.Equal(sorted, []string{"play", "work", "work"}) {
-		t.Fatalf("events = %v, live calls = %v", events.all(), liveCalls)
-	}
-}
-
-func TestSecondLedgerWithTheSameMtimeStillBroadcastsPairingChanged(t *testing.T) {
-	h, events := watcherHomeFixture(t)
-	store := filepath.Join(h, "platforms", "pairing")
-	first := filepath.Join(store, "telegram-pending.json")
-	watchWriteFile(t, first, "{}")
-	watchPass(0)
-	second := filepath.Join(store, "discord-pending.json")
-	watchWriteFile(t, second, "{}")
-	info, err := os.Stat(first)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := os.Chtimes(second, info.ModTime(), info.ModTime()); err != nil {
-		t.Fatal(err)
-	}
-	watchPass(10)
-	if got := events.all(); len(got) != 1 || got[0].event != "pairing.changed" {
-		t.Fatalf("events = %v", got)
-	}
-}
-
-func TestSiblingProjectsDbWriteInTheSameMtimeTickBroadcasts(t *testing.T) {
-	h, events := watcherHomeFixture(t)
-	coder := filepath.Join(h, "profiles", "coder")
-	mkdirs(t, coder)
-	servedProfileMu.Lock()
-	servedProfileHomes = map[string]bool{coder: true}
-	servedProfileMu.Unlock()
-	watchWriteFile(t, filepath.Join(h, "projects.db"), "x")
-	watchPass(0)
-	watchWriteFile(t, filepath.Join(coder, "projects.db"), "x")
-	info, err := os.Stat(filepath.Join(h, "projects.db"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := os.Chtimes(filepath.Join(coder, "projects.db"), info.ModTime(), info.ModTime()); err != nil {
-		t.Fatal(err)
-	}
-	watchPass(10)
-	if !events.has("projects.changed") {
-		t.Fatalf("events = %v", events.all())
-	}
-}
-
-func TestRateLimitChurnDoesNotBroadcastPairingChanged(t *testing.T) {
-	h, events := watcherHomeFixture(t)
-	store := filepath.Join(h, "platforms", "pairing")
-	watchWriteFile(t, filepath.Join(store, "telegram-pending.json"), "{}")
-	watchPass(0)
-	watchWriteFile(t, filepath.Join(store, "_rate_limits.json"), `{"telegram:1": 123}`)
-	watchPass(10)
-	if events.has("pairing.changed") {
 		t.Fatalf("events = %v", events.all())
 	}
 }
@@ -487,8 +300,8 @@ func TestBrokenProbeNeverKillsThePass(t *testing.T) {
 	watchPass(0)
 	prev := slices.Clone(changeWatches)
 	for i := range changeWatches {
-		if changeWatches[i].event == "cron.changed" {
-			changeWatches[i] = changeWatch{"cron.changed", 1.0, func(context.Context) any { panic(errors.New("boom")) }, emptyChangePayload}
+		if changeWatches[i].event == "pet.changed" {
+			changeWatches[i] = changeWatch{"pet.changed", 2.0, func(context.Context) any { panic(errors.New("boom")) }, emptyChangePayload}
 		}
 	}
 	t.Cleanup(func() { changeWatches = prev })
@@ -569,7 +382,7 @@ func signatureFixture(t *testing.T) (string, context.Context) {
 	db := filepath.Join(tmp, "state.db")
 	seedSignatureStore(t, db)
 	_, _ = watcherHomeFixture(t)
-	hermesHome = tmp
+	icebathHome = tmp
 	return db, context.Background()
 }
 

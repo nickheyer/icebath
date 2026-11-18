@@ -112,7 +112,7 @@ func TestMinimaxM3OpenAIReasoningWireShapeTransportThreadsBaseUrlToProfile(t *te
 	if err != nil {
 		t.Fatal(err)
 	}
-	assertExtras(t, "transport", kwargs["extra_body"].(map[string]any), map[string]any{},
+	assertExtras(t, "transport", pyjson.Plain(kwargs["extra_body"]).(map[string]any), map[string]any{},
 		map[string]any{"reasoning_split": true, "thinking": map[string]any{"type": "adaptive"}}, map[string]any{})
 }
 

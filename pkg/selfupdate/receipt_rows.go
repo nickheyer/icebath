@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
@@ -55,7 +56,7 @@ func rowsOf(v any) ([]any, error) {
 	}
 	items, ok := v.([]any)
 	if !ok {
-		return nil, fmt.Errorf("TypeError: '%s' object is not a list of rows", pyrepr.TypeName(v))
+		return nil, fmt.Errorf("receipt rows are %s, expected a list", errchain.Kind(v))
 	}
 	return items, nil
 }

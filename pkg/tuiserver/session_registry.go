@@ -6,11 +6,11 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/internal/pythread"
-	"github.com/nickheyer/icebath/pkg/tuigateway"
+	"github.com/nickheyer/icebath/pkg/tuihost"
 )
 
 // Stored title of a live session, else its pending title
-func sessionLiveTitle(ctx context.Context, session *tuigateway.Session, key string) (title string) {
+func sessionLiveTitle(ctx context.Context, session *tuihost.Session, key string) (title string) {
 	title = strings.TrimSpace(strOr(session.Get("pending_title")))
 	pending := title
 	defer func() {
@@ -34,10 +34,10 @@ func sessionLiveTitle(ctx context.Context, session *tuigateway.Session, key stri
 }
 
 // Method of the server request a session is blocked on, empty when none
-func sessionPendingKind(sid string) string { return tuigateway.PendingKind(sid) }
+func sessionPendingKind(sid string) string { return tuihost.PendingKind(sid) }
 
 // Live status of a session, waiting on a request, starting its agent, working a turn or idle
-func sessionLiveStatus(sid string, session *tuigateway.Session) string {
+func sessionLiveStatus(sid string, session *tuihost.Session) string {
 	if sessionPendingKind(sid) != "" {
 		return "waiting"
 	}
@@ -51,7 +51,7 @@ func sessionLiveStatus(sid string, session *tuigateway.Session) string {
 }
 
 // Stored session id of a live record, its agent's id first, then its key, then the fallback
-func sessionLookupKey(session *tuigateway.Session, fallback string) string {
+func sessionLookupKey(session *tuihost.Session, fallback string) string {
 	if a := sessionAgent(session); a != nil && a.SessionID() != "" {
 		return a.SessionID()
 	}
@@ -83,7 +83,7 @@ func floatOr(v any, fallback float64) float64 {
 }
 
 // Live session row of the session pickers, its status, preview, model and stored title
-func sessionLiveItem(ctx context.Context, sid string, session *tuigateway.Session, currentSID string) map[string]any {
+func sessionLiveItem(ctx context.Context, sid string, session *tuihost.Session, currentSID string) map[string]any {
 	key := sessionLookupKey(session, sid)
 	a := sessionAgent(session)
 	history, _ := session.Get("history").([]any)
@@ -99,7 +99,7 @@ func sessionLiveItem(ctx context.Context, sid string, session *tuigateway.Sessio
 				content = ""
 			}
 		}
-		if text := pystr.Strip(tuigateway.ContentDisplayText(content)); text != "" {
+		if text := pystr.Strip(tuihost.ContentDisplayText(content)); text != "" {
 			preview = livePreview(text)
 			break
 		}

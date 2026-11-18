@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"log/slog"
 	"net"
 	"net/http"
 	"net/url"
@@ -63,11 +62,11 @@ func ResolveCDPOverride(ctx context.Context, cdpURL string) string {
 	}
 	ws, err := discoverWebSocketURL(ctx, versionURL)
 	if err != nil {
-		slog.Default().Warn("browser: CDP discovery failed, using raw endpoint", "endpoint", tools.RedactCDPURL(raw), "error", tools.RedactCDPURL(err.Error()))
+		pkgLog().Warn("browser: CDP discovery failed, using raw endpoint", "endpoint", tools.RedactCDPURL(raw), "error", tools.RedactCDPURL(err.Error()))
 		return raw
 	}
 	if ws == "" {
-		slog.Default().Warn("browser: CDP discovery returned no webSocketDebuggerUrl", "endpoint", tools.RedactCDPURL(versionURL))
+		pkgLog().Warn("browser: CDP discovery returned no webSocketDebuggerUrl", "endpoint", tools.RedactCDPURL(versionURL))
 		return raw
 	}
 	return ws

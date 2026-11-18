@@ -80,18 +80,15 @@ type progressWriter interface {
 // Terminal commands a setup line names, a profile selector dropped since the TUI already runs in that profile
 var (
 	hostedSetupCommand = regexp.MustCompile(`icebath (?:-p [A-Za-z0-9_.-]+ )?setup( (?:model|tts|terminal|gateway|tools|agent|telemetry))?\b`)
-	hostedModelCommand = regexp.MustCompile(`icebath (?:-p [A-Za-z0-9_.-]+ )?(?:auth add ([a-z0-9_-]+|<provider>)(?: --type oauth)?|(portal)|model)\b`)
+	hostedModelCommand = regexp.MustCompile(`icebath (?:-p [A-Za-z0-9_.-]+ )?(?:auth add ([a-z0-9_-]+|<provider>)(?: --type oauth)?|model)\b`)
 )
 
 // Line with every terminal command it names replaced by the TUI command that does the same
 func tuiWording(line string) string {
 	line = hostedModelCommand.ReplaceAllStringFunc(line, func(command string) string {
 		m := hostedModelCommand.FindStringSubmatch(command)
-		switch {
-		case m[1] != "":
+		if m[1] != "" {
 			return "/setup model " + m[1]
-		case m[2] != "":
-			return "/setup model nous"
 		}
 		return "/setup model"
 	})
@@ -426,7 +423,6 @@ func HostSetupFlow(asker SetupAsker, out io.Writer, fn func() error) (err error)
 		radio, pickerRadio            func(string, [][]PickerSegment, PickerRadiolistOptions) (int, error)
 		setupRadio                    func(string, []string, int, string) int
 		setupCheck                    func(string, []string, map[int]bool) (map[int]bool, error)
-		nousCheck                     func(string, []string, []int) ([]int, error)
 		field                         func(string, string) (string, error)
 		oauthPrompt                   func(string) (string, error)
 		stdinTTY                      func() bool
@@ -435,7 +431,7 @@ func HostSetupFlow(asker SetupAsker, out io.Writer, fn func() error) (err error)
 		pkce, pluginOAuth, assignment io.Writer
 	}{flowLineInputFn, pickerLineInputFn, authCmdLineInputFn, flowSecretInputFn, authCmdMaskedSecretPromptFn, secretGetpass,
 		flowRawInputFn, pickerInputFn, authCmdInputFn, flowCursesChoiceFn, flowRadiolistFn, pickerRadiolistFn, setupRadiolist,
-		setupChecklist, nousSubChecklistFn, secretFieldFn, oauthPromptFn, flowStdinIsTTYFn, pickerConsoleFn, anthRunOAuthSetupTokenFn,
+		setupChecklist, secretFieldFn, oauthPromptFn, flowStdinIsTTYFn, pickerConsoleFn, anthRunOAuthSetupTokenFn,
 		pkceOut, pluginOAuthOut, assignmentOut}
 	menus := hostedConsole(trail, ask, true)
 	plain := hostedConsole(trail, ask, false)
@@ -454,7 +450,6 @@ func HostSetupFlow(asker SetupAsker, out io.Writer, fn func() error) (err error)
 		}
 		return chosen, nil
 	}
-	nousSubChecklistFn = func(title string, items []string, pre []int) ([]int, error) { return checklist(title, items, pre), nil }
 	secretFieldFn = func(prompt, _ string) (string, error) { return secret(prompt) }
 	oauthPromptFn = func(prompt string) (string, error) {
 		text, err := line(prompt)
@@ -493,7 +488,7 @@ func HostSetupFlow(asker SetupAsker, out io.Writer, fn func() error) (err error)
 		flowSecretInputFn, authCmdMaskedSecretPromptFn, secretGetpass = saved.secretIn, saved.authSecret, saved.getpass
 		flowRawInputFn, pickerInputFn, authCmdInputFn = saved.rawIn, saved.pickerIn, saved.authIn
 		flowCursesChoiceFn, flowRadiolistFn, pickerRadiolistFn = saved.curses, saved.radio, saved.pickerRadio
-		setupRadiolist, setupChecklist, nousSubChecklistFn = saved.setupRadio, saved.setupCheck, saved.nousCheck
+		setupRadiolist, setupChecklist = saved.setupRadio, saved.setupCheck
 		secretFieldFn, oauthPromptFn, flowStdinIsTTYFn, pickerConsoleFn = saved.field, saved.oauthPrompt, saved.stdinTTY, saved.console
 		anthRunOAuthSetupTokenFn, openBrowserFn = saved.setupToken, openBrowser
 		pkceOut, pluginOAuthOut, assignmentOut = saved.pkce, saved.pluginOAuth, saved.assignment

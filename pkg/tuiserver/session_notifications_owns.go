@@ -2,20 +2,15 @@ package tuiserver
 
 import (
 	"context"
-	"log/slog"
 
 	"github.com/nickheyer/icebath/pkg/agent"
 	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tools"
-	"github.com/nickheyer/icebath/pkg/tuigateway"
+	"github.com/nickheyer/icebath/pkg/tuihost"
 )
 
-func notifLogger() *slog.Logger {
-	return slog.Default().With("logger", "tui_gateway.session_notifications")
-}
-
 // Whether the live gateway routing index of either store owns the due heartbeat tick of this session key
-func notifGatewayOwnsHeartbeat(ctx context.Context, session *tuigateway.Session, sessionKey string) (owns bool) {
+func notifGatewayOwnsHeartbeat(ctx context.Context, session *tuihost.Session, sessionKey string) (owns bool) {
 	defer func() {
 		if recover() != nil {
 			owns = false
@@ -53,14 +48,14 @@ func loopRouteIsGatewayChat(st *agent.SessionLoopState) bool {
 }
 
 // Whether this process's poller alone drives an active loop or heartbeat of the session, false on any failure
-func sessionOwnsLiveWakeupSchedule(ctx context.Context, session *tuigateway.Session) (owns bool) {
+func sessionOwnsLiveWakeupSchedule(ctx context.Context, session *tuihost.Session) (owns bool) {
 	sidKey := strOr(session.Get("session_key"))
 	if sidKey == "" {
 		return false
 	}
 	defer func() {
 		if r := recover(); r != nil {
-			notifLogger().Debug("wakeup-schedule check failed for "+sidKey, "error", r)
+			pkgLog().Debug("wakeup-schedule check failed for "+sidKey, "error", r)
 			owns = false
 		}
 	}()
@@ -74,7 +69,7 @@ func sessionOwnsLiveWakeupSchedule(ctx context.Context, session *tuigateway.Sess
 }
 
 // Whether a background process this session started still has a completion or watch notice on its way
-func sessionOwnsPendingProcessNotification(ctx context.Context, session *tuigateway.Session) bool {
+func sessionOwnsPendingProcessNotification(ctx context.Context, session *tuihost.Session) bool {
 	if truthy(session.Get("_turn_cancel_requested")) {
 		return false
 	}
@@ -82,7 +77,7 @@ func sessionOwnsPendingProcessNotification(ctx context.Context, session *tuigate
 }
 
 // Raw spawning ids close kills by plus the current session key
-func sessionProcessOwners(session *tuigateway.Session) []string {
+func sessionProcessOwners(session *tuihost.Session) []string {
 	owners := map[string]bool{}
 	if a := sessionAgent(session); a != nil {
 		for _, owner := range a.ProcessOwnerTaskIDs() {

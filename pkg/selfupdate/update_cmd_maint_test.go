@@ -44,7 +44,7 @@ func maintBackupHome(t *testing.T, mode string) string {
 	tmp := t.TempDir()
 	root := filepath.Join(tmp, ".icebath")
 	maintWrite(t, filepath.Join(root, ".env"), "OPENROUTER_API_KEY=sk-test-123\n")
-	for _, name := range []string{"memory_store.db", "hermes_state.db"} {
+	for _, name := range []string{"memory_store.db", "state.db"} {
 		maintSQLite(t, filepath.Join(root, name), "CREATE TABLE sample (value TEXT)", "INSERT INTO sample VALUES ('test')")
 	}
 	maintWrite(t, filepath.Join(root, "sessions", "abc123.json"), "{}")

@@ -11,7 +11,6 @@ import (
 	"image/draw"
 	"image/jpeg"
 	"image/png"
-	"log/slog"
 	"math/rand"
 	"os"
 	"sort"
@@ -121,7 +120,7 @@ func warnNameAllowlistEntries(ctx context.Context) {
 	if seen {
 		return
 	}
-	slog.Warn(fmt.Sprintf("SimpleX: SIMPLEX_ALLOWED_USERS entries %s are not numeric contactIds and are ignored "+
+	pkgLog().Warn(fmt.Sprintf("SimpleX: SIMPLEX_ALLOWED_USERS entries %s are not numeric contactIds and are ignored "+
 		"(display names are not trusted; see /contacts for IDs)", pyrepr.Repr(names)))
 }
 
@@ -328,14 +327,14 @@ func NewSimplexAdapter(ctx context.Context, config *gateway.PlatformConfig) (*Si
 	if len(a.groupAllowFrom) > 0 {
 		groups = "enabled"
 	}
-	slog.Info(fmt.Sprintf("SimpleX adapter initialized: url=%s auto_accept=%s groups=%s", a.wsURL, pyrepr.Str(a.autoAccept), groups))
+	pkgLog().Info(fmt.Sprintf("SimpleX adapter initialized: url=%s auto_accept=%s groups=%s", a.wsURL, pyrepr.Str(a.autoAccept), groups))
 	return a, nil
 }
 
 // Probes the daemon, then starts the listener and the idle monitor and marks the adapter connected
 func (a *SimplexAdapter) Connect(ctx context.Context, isReconnect bool) (bool, error) {
 	if a.wsURL == "" {
-		slog.Error("SimpleX: SIMPLEX_WS_URL is required")
+		pkgLog().Error("SimpleX: SIMPLEX_WS_URL is required")
 		return false, nil
 	}
 	warnNameAllowlistEntries(ctx)
@@ -344,7 +343,7 @@ func (a *SimplexAdapter) Connect(ctx context.Context, isReconnect bool) (bool, e
 		if ctx.Err() != nil {
 			return false, ctx.Err()
 		}
-		slog.Error(fmt.Sprintf("SimpleX: cannot reach daemon at %s: %s", a.wsURL, err.Error()))
+		pkgLog().Error(fmt.Sprintf("SimpleX: cannot reach daemon at %s: %s", a.wsURL, err.Error()))
 		return false, nil
 	}
 	probe.Close()
@@ -355,7 +354,7 @@ func (a *SimplexAdapter) Connect(ctx context.Context, isReconnect bool) (bool, e
 	a.healthTask = gateway.SpawnAdapterTask(ctx, a.healthMonitor)
 	a.mu.Unlock()
 	a.MarkConnected(ctx, "")
-	slog.Info(fmt.Sprintf("SimpleX: connected to %s", a.wsURL))
+	pkgLog().Info(fmt.Sprintf("SimpleX: connected to %s", a.wsURL))
 	a.WirePluginHandlers(ctx, nil)
 	return true, nil
 }
@@ -389,7 +388,7 @@ func (a *SimplexAdapter) Disconnect(ctx context.Context) error {
 	}
 	a.ClearTextBatches()
 	a.MarkDisconnected(ctx)
-	slog.Info("SimpleX: disconnected")
+	pkgLog().Info("SimpleX: disconnected")
 	return nil
 }
 
@@ -397,7 +396,7 @@ func (a *SimplexAdapter) Disconnect(ctx context.Context) error {
 func (a *SimplexAdapter) wsListener(ctx context.Context) error {
 	backoff := wsRetryDelayInitial
 	for a.IsConnected() {
-		slog.Debug(fmt.Sprintf("SimpleX WS: connecting to %s", a.wsURL))
+		pkgLog().Debug(fmt.Sprintf("SimpleX WS: connecting to %s", a.wsURL))
 		ws, err := pywebsockets.Connect(ctx, a.wsURL, pywebsockets.ConnectOptions{PingInterval: 20 * time.Second,
 			PingTimeout: 20 * time.Second, CloseTimeout: 10 * time.Second})
 		if err == nil {
@@ -406,7 +405,7 @@ func (a *SimplexAdapter) wsListener(ctx context.Context) error {
 			a.lastWSActivity = nowSeconds()
 			a.mu.Unlock()
 			backoff = wsRetryDelayInitial
-			slog.Info("SimpleX WS: connected")
+			pkgLog().Info("SimpleX WS: connected")
 			err = a.readEvents(ctx, ws)
 			ws.Close()
 		}
@@ -420,9 +419,9 @@ func (a *SimplexAdapter) wsListener(ctx context.Context) error {
 		switch {
 		case err == nil || !a.IsConnected():
 		case errors.As(err, &closed):
-			slog.Warn(fmt.Sprintf("SimpleX WS: connection closed: %s (reconnecting in %.0fs)", closed.Error(), backoff))
+			pkgLog().Warn(fmt.Sprintf("SimpleX WS: connection closed: %s (reconnecting in %.0fs)", closed.Error(), backoff))
 		default:
-			slog.Warn(fmt.Sprintf("SimpleX WS: unexpected error: %s (reconnecting in %.0fs)", err.Error(), backoff))
+			pkgLog().Warn(fmt.Sprintf("SimpleX WS: unexpected error: %s (reconnecting in %.0fs)", err.Error(), backoff))
 		}
 		if a.IsConnected() {
 			timer := time.NewTimer(time.Duration((backoff + backoff*0.2*rand.Float64()) * float64(time.Second)))
@@ -473,10 +472,10 @@ func (a *SimplexAdapter) readEvents(ctx context.Context, ws *pywebsockets.Conn) 
 		}
 		var decodeErr *pyjson.DecodeError
 		if errors.As(perr, &decodeErr) {
-			slog.Debug(fmt.Sprintf("SimpleX WS: invalid JSON: %s", pystr.Slice(pyrepr.Str(raw), 0, 100)))
+			pkgLog().Debug(fmt.Sprintf("SimpleX WS: invalid JSON: %s", pystr.Slice(pyrepr.Str(raw), 0, 100)))
 			continue
 		}
-		slog.Error("SimpleX WS: error handling event", "error", perr)
+		pkgLog().Error("SimpleX WS: error handling event", "error", perr)
 	}
 }
 
@@ -497,7 +496,7 @@ func (a *SimplexAdapter) healthMonitor(ctx context.Context) error {
 		elapsed := nowSeconds() - a.lastWSActivity
 		a.mu.Unlock()
 		if elapsed > healthCheckStaleThreshold {
-			slog.Debug(fmt.Sprintf("SimpleX: WS application-idle for %.0fs", elapsed))
+			pkgLog().Debug(fmt.Sprintf("SimpleX: WS application-idle for %.0fs", elapsed))
 		}
 	}
 	return nil
@@ -571,7 +570,7 @@ func (a *SimplexAdapter) handleEvent(ctx context.Context, event any) error {
 		return a.onRcvFileComplete(ctx, resp)
 	}
 	if pyrepr.Truthy(respType) {
-		slog.Debug(fmt.Sprintf("SimpleX: unhandled event type: %s", pyrepr.Str(respType)))
+		pkgLog().Debug(fmt.Sprintf("SimpleX: unhandled event type: %s", pyrepr.Str(respType)))
 	}
 	return nil
 }
@@ -579,7 +578,7 @@ func (a *SimplexAdapter) handleEvent(ctx context.Context, event any) error {
 // Accepts an incoming contact request when auto accept is on
 func (a *SimplexAdapter) onContactRequest(ctx context.Context, resp any) error {
 	if !a.autoAccept {
-		slog.Debug("SimpleX: unhandled event type: contactRequest")
+		pkgLog().Debug("SimpleX: unhandled event type: contactRequest")
 		return nil
 	}
 	request, err := dictOrEmpty(resp, "contactRequest")
@@ -591,7 +590,7 @@ func (a *SimplexAdapter) onContactRequest(ctx context.Context, resp any) error {
 		return err
 	}
 	if contactReqID != nil {
-		slog.Info(fmt.Sprintf("SimpleX: auto-accepting contact request %s", redactID(pyrepr.Str(contactReqID))))
+		pkgLog().Info(fmt.Sprintf("SimpleX: auto-accepting contact request %s", redactID(pyrepr.Str(contactReqID))))
 		if _, err := a.sendCommand(ctx, "/accept "+pyrepr.Str(contactReqID), 30.0); err != nil {
 			return err
 		}
@@ -606,7 +605,7 @@ func (a *SimplexAdapter) onRcvFileDescrReady(ctx context.Context, resp any) erro
 		return err
 	}
 	if fileID := getIfDict(rcvFile, "fileId", nil); fileID != nil {
-		slog.Debug(fmt.Sprintf("SimpleX: rcvFileDescrReady for fileId=%s — sending /freceive", pyrepr.Str(fileID)))
+		pkgLog().Debug(fmt.Sprintf("SimpleX: rcvFileDescrReady for fileId=%s — sending /freceive", pyrepr.Str(fileID)))
 		return a.sendFireAndForget(ctx, "/freceive "+pyrepr.Str(fileID))
 	}
 	return nil
@@ -710,7 +709,7 @@ func (a *SimplexAdapter) safeHandleChatItem(ctx context.Context, item any, errMs
 		if ctx.Err() != nil {
 			return ctx.Err()
 		}
-		slog.Error(errMsg, "error", err)
+		pkgLog().Error(errMsg, "error", err)
 	}
 	return nil
 }
@@ -809,19 +808,19 @@ func (a *SimplexAdapter) handleChatItem(ctx context.Context, chatItem any) error
 			return err
 		}
 		if len(a.groupAllowFrom) == 0 {
-			slog.Debug("SimpleX: ignoring group message (no SIMPLEX_GROUP_ALLOWED)")
+			pkgLog().Debug("SimpleX: ignoring group message (no SIMPLEX_GROUP_ALLOWED)")
 			return nil
 		}
 		if !a.groupAllowFrom["*"] && !a.groupAllowFrom[groupID] {
-			slog.Debug(fmt.Sprintf("SimpleX: group %s not in allowlist", redactID(groupID)))
+			pkgLog().Debug(fmt.Sprintf("SimpleX: group %s not in allowlist", redactID(groupID)))
 			return nil
 		}
 	default:
-		slog.Debug(fmt.Sprintf("SimpleX: unhandled chat type: %s", pyrepr.Str(chatType)))
+		pkgLog().Debug(fmt.Sprintf("SimpleX: unhandled chat type: %s", pyrepr.Str(chatType)))
 		return nil
 	}
 	if senderID == "" {
-		slog.Debug("SimpleX: ignoring message with no sender")
+		pkgLog().Debug("SimpleX: ignoring message with no sender")
 		return nil
 	}
 	mediaURLs, mediaTypes := []string{}, []string{}
@@ -857,7 +856,7 @@ func (a *SimplexAdapter) handleChatItem(ctx context.Context, chatItem any) error
 			if err := unhashable(fileID); err != nil {
 				return err
 			}
-			slog.Info(fmt.Sprintf("SimpleX: voice file %s not yet received, accepting transfer", pyrepr.Str(fileID)))
+			pkgLog().Info(fmt.Sprintf("SimpleX: voice file %s not yet received, accepting transfer", pyrepr.Str(fileID)))
 			a.mu.Lock()
 			a.pendingFileTransfers[fileKey(fileID)] = chatItem
 			a.mu.Unlock()
@@ -920,7 +919,7 @@ func (a *SimplexAdapter) handleChatItem(ctx context.Context, chatItem any) error
 	msgEvent.Source, msgEvent.MessageType = source, msgType
 	msgEvent.MediaURLs, msgEvent.MediaTypes = mediaURLs, mediaTypes
 	msgEvent.Timestamp, msgEvent.RawMessage = timestamp, chatItem
-	slog.Debug(fmt.Sprintf("SimpleX: message from %s in %s: %s", redactID(senderID), pystr.Slice(chatID, 0, 20), pystr.Slice(body, 0, 50)))
+	pkgLog().Debug(fmt.Sprintf("SimpleX: message from %s in %s: %s", redactID(senderID), pystr.Slice(chatID, 0, 20), pystr.Slice(body, 0, 50)))
 	if msgType == gateway.MessageTypeText && body != "" {
 		return a.EnqueueTextEvent(ctx, msgEvent)
 	}
@@ -979,7 +978,7 @@ func commandFrame(corrID, command string) (string, error) {
 func (a *SimplexAdapter) sendWS(corrID, command string) error {
 	ws := a.socket()
 	if ws == nil {
-		slog.Debug("SimpleX: WS send dropped (not connected)")
+		pkgLog().Debug("SimpleX: WS send dropped (not connected)")
 		return nil
 	}
 	frame, err := commandFrame(corrID, command)
@@ -987,7 +986,7 @@ func (a *SimplexAdapter) sendWS(corrID, command string) error {
 		return err
 	}
 	if err := ws.Send(frame); err != nil {
-		slog.Warn(fmt.Sprintf("SimpleX: WS send error: %s", err.Error()))
+		pkgLog().Warn(fmt.Sprintf("SimpleX: WS send error: %s", err.Error()))
 	}
 	return nil
 }
@@ -996,7 +995,7 @@ func (a *SimplexAdapter) sendWS(corrID, command string) error {
 func (a *SimplexAdapter) sendCommand(ctx context.Context, command string, timeout float64) (any, error) {
 	ws := a.socket()
 	if ws == nil {
-		slog.Warn("SimpleX: command sent but WebSocket not connected")
+		pkgLog().Warn("SimpleX: command sent but WebSocket not connected")
 		return nil, nil
 	}
 	corrID := a.makeCorrID()
@@ -1014,7 +1013,7 @@ func (a *SimplexAdapter) sendCommand(ctx context.Context, command string, timeou
 		err = ws.Send(frame)
 	}
 	if err != nil {
-		slog.Warn(fmt.Sprintf("SimpleX: command failed: %s — %s", pystr.Slice(command, 0, 50), err.Error()))
+		pkgLog().Warn(fmt.Sprintf("SimpleX: command failed: %s — %s", pystr.Slice(command, 0, 50), err.Error()))
 		forget()
 		return nil, nil
 	}
@@ -1024,7 +1023,7 @@ func (a *SimplexAdapter) sendCommand(ctx context.Context, command string, timeou
 	case result := <-pending.result:
 		return result, nil
 	case <-timer.C:
-		slog.Warn(fmt.Sprintf("SimpleX: command timed out: %s", pystr.Slice(command, 0, 50)))
+		pkgLog().Warn(fmt.Sprintf("SimpleX: command timed out: %s", pystr.Slice(command, 0, 50)))
 		forget()
 		return nil, nil
 	case <-pending.cancelled:
@@ -1298,7 +1297,7 @@ func (a *SimplexAdapter) SendImage(ctx context.Context, chatID, imageURL, captio
 			if ctx.Err() != nil {
 				return gateway.SendResult{}, ctx.Err()
 			}
-			slog.Warn(fmt.Sprintf("SimpleX: failed to download image: %s", pyrepr.ExceptionMessage(err)))
+			pkgLog().Warn(fmt.Sprintf("SimpleX: failed to download image: %s", pyrepr.ExceptionMessage(err)))
 			return gateway.SendResult{Success: false, Error: pyrepr.ExceptionMessage(err)}, nil
 		}
 		filePath = cached
@@ -1308,7 +1307,7 @@ func (a *SimplexAdapter) SendImage(ctx context.Context, chatID, imageURL, captio
 	}
 	pngPath, thumbURI, err := prepareImage(filePath)
 	if err != nil {
-		slog.Warn(fmt.Sprintf("SimpleX: failed to prepare image: %s", pyrepr.ExceptionMessage(err)))
+		pkgLog().Warn(fmt.Sprintf("SimpleX: failed to prepare image: %s", pyrepr.ExceptionMessage(err)))
 		return gateway.SendResult{Success: false, Error: "Failed to prepare image: " + pyrepr.ExceptionMessage(err)}, nil
 	}
 	item := pyjson.ObjectOf("filePath", pngPath, "msgContent", pyjson.ObjectOf("type", "image", "image", thumbURI, "text", caption))

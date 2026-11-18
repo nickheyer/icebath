@@ -2,9 +2,13 @@ package app
 
 import (
 	"context"
+	"os"
 	"strings"
+	"testing"
 
 	"github.com/nickheyer/icebath/pkg/agent"
+	"github.com/nickheyer/icebath/pkg/home"
+	"github.com/nickheyer/icebath/pkg/internal/hermetic"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tools"
@@ -12,6 +16,22 @@ import (
 
 var testSecretEnvSubstrings = []string{"KEY", "TOKEN", "SECRET", "PASSWORD", "CREDENTIAL", "PASSWD", "AUTH", "DSN",
 	"WEBHOOK", "CREDS", "BEARER", "APIKEY", "COOKIE"}
+
+// Dispatches the scratch prune child, blocks external network, installs the process hooks and runs the suite under a private home
+func TestMain(m *testing.M) {
+	home.DispatchScratchPruneEntry(context.Background())
+	hermetic.BlockExternalHTTP()
+	hermetic.BlockExternalDNS()
+	installAgentWiring()
+	dir, err := os.MkdirTemp("", "app-home-")
+	if err != nil {
+		panic(err)
+	}
+	os.Setenv(home.EnvHome, dir)
+	code := m.Run()
+	os.RemoveAll(dir)
+	os.Exit(code)
+}
 
 // Installs the lower package hooks cmd/icebath assigns at startup so an in process agent turn runs under test
 func installAgentWiring() {

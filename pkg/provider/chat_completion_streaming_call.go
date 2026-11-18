@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"log/slog"
 	"math"
 	"net"
 	"net/http"
@@ -19,11 +18,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
-
-var streamingCallLog = slog.Default().With("logger", "agent.chat_completion_helpers")
-
-// Logger of the reference stream monitor module
-var streamMonitorLog = slog.Default().With("logger", "agent.chat_completion_stream_monitor")
 
 // Streaming request on the agent wire firing the delta callbacks, the non streaming response shape on return
 func InterruptibleStreamingAPICall(ctx context.Context, agent ChatCompletionAgent, apiKwargs map[string]any, onFirstDelta func()) (any, error) {
@@ -112,7 +106,7 @@ func (c *streamingCall) routeSwitchedUnderRequest() bool {
 		}
 		return b
 	}
-	streamingCallLog.Warn(fmt.Sprintf("Stream retry skipped: model/provider switched mid-request (%s via %s -> %s via %s); handing back to the turn loop to rebuild the request for the current route.",
+	pkgLog().Warn(fmt.Sprintf("Stream retry skipped: model/provider switched mid-request (%s via %s -> %s via %s); handing back to the turn loop to rebuild the request for the current route.",
 		c.requestRoute[0], or(c.requestRoute[1], c.requestRoute[2]), live[0], or(live[1], live[2])))
 	return true
 }
@@ -144,7 +138,7 @@ func (c *streamingCall) closeManagedStream() {
 		return
 	}
 	if err := s.Close(); err != nil {
-		streamingCallLog.Debug("Managed provider stream cleanup failed", "exc_info", err)
+		pkgLog().Debug("Managed provider stream cleanup failed", "exc_info", err)
 	}
 }
 
@@ -168,7 +162,7 @@ func (c *streamingCall) cancelCurrentStreamAttempt(reason string) {
 	}
 	c.mu.Unlock()
 	if current != 0 {
-		streamingCallLog.Debug(fmt.Sprintf("Marked stream attempt %d cancelled: %s", current, reason))
+		pkgLog().Debug(fmt.Sprintf("Marked stream attempt %d cancelled: %s", current, reason))
 	}
 }
 
@@ -193,10 +187,10 @@ func (c *streamingCall) discardStaleStreamChunk(id int, chunk any) {
 	chunks, bytes := c.discardedChunks, c.discardedBytes
 	c.mu.Unlock()
 	if chunks == 1 {
-		streamingCallLog.Warn(fmt.Sprintf("Discarding chunk from superseded stream attempt %d (discarded_chunks=%d discarded_bytes=%d)", id, chunks, bytes))
+		pkgLog().Warn(fmt.Sprintf("Discarding chunk from superseded stream attempt %d (discarded_chunks=%d discarded_bytes=%d)", id, chunks, bytes))
 		return
 	}
-	streamingCallLog.Debug(fmt.Sprintf("Discarded stale stream chunk from attempt %d (discarded_chunks=%d discarded_bytes=%d)", id, chunks, bytes))
+	pkgLog().Debug(fmt.Sprintf("Discarded stale stream chunk from attempt %d (discarded_chunks=%d discarded_bytes=%d)", id, chunks, bytes))
 }
 
 func (c *streamingCall) fireFirstDelta() {
@@ -315,10 +309,10 @@ func (c *streamingCall) streamTimeouts() (float64, float64, float64) {
 	switch {
 	case read == 120 && baseURL != "" && IsLocalEndpoint(baseURL):
 		read = base
-		streamingCallLog.Debug(fmt.Sprintf("Local provider detected (%s) — stream read timeout raised to %.0fs", baseURL, read))
+		pkgLog().Debug(fmt.Sprintf("Local provider detected (%s) — stream read timeout raised to %.0fs", baseURL, read))
 	case read == 120 && stale != 0 && !math.IsInf(stale, 1) && stale > read:
 		read = stale
-		streamingCallLog.Debug(fmt.Sprintf("Cloud reasoning stream — read timeout raised to %.0fs to match stale-stream detector", read))
+		pkgLog().Debug(fmt.Sprintf("Cloud reasoning stream — read timeout raised to %.0fs to match stale-stream detector", read))
 	}
 	return base, read, 30
 }
@@ -385,7 +379,7 @@ func (c *streamingCall) openChatStream(streamKwargs map[string]any) (any, error)
 	streamKwargs = BypassChatSDKRequestTransform(streamKwargs, client)
 	creator, ok := client.(chatCompletionCreator)
 	if !ok {
-		return nil, fmt.Errorf("AttributeError: '%T' object has no attribute 'chat'", client)
+		return nil, fmt.Errorf("the API client (%T) has no chat completions API", client)
 	}
 	return creator.CreateChatCompletion(c.ctx, streamKwargs)
 }
@@ -411,11 +405,9 @@ func (c *streamingCall) chatStreamCreated(raw any) {
 	diag := c.diag
 	c.mu.Unlock()
 	if resp != nil {
-		if credits := c.agent.CreditsCapture(); credits != nil {
-			credits.CaptureRateLimits(resp.Header)
-			credits.CaptureCredits(resp.Header, false)
-			credits.CaptureNousModelSwitch(resp.Header)
-			credits.CheckOpenRouterCacheStatus(resp.Header)
+		if capture := c.agent.HeaderCapture(); capture != nil {
+			capture.CaptureRateLimits(resp.Header)
+			capture.CheckOpenRouterCacheStatus(resp.Header)
 		}
 		c.mu.Lock()
 		StreamDiagCaptureResponse(diag, resp)
@@ -486,7 +478,7 @@ func (c *streamingCall) writerStillCurrent(label string) bool {
 	if m, ok := c.apiKwargs["model"]; ok {
 		model = pyrepr.Str(m)
 	}
-	streamingCallLog.Warn(fmt.Sprintf("%s attempt superseded by a newer stream; stopping consumption to preserve the single-writer invariant (model=%s).", label, model))
+	pkgLog().Warn(fmt.Sprintf("%s attempt superseded by a newer stream; stopping consumption to preserve the single-writer invariant (model=%s).", label, model))
 	return false
 }
 
@@ -755,12 +747,12 @@ func (c *streamingCall) logRunawayCut(channel string) {
 	if prov == "" {
 		prov = "unknown"
 	}
-	streamingCallLog.Warn(fmt.Sprintf("%sStream cut: the %s turned into a runaway repetition loop (model=%s, provider=%s).", c.agent.LogPrefix(), channel, model, prov))
+	pkgLog().Warn(fmt.Sprintf("%sStream cut: the %s turned into a runaway repetition loop (model=%s, provider=%s).", c.agent.LogPrefix(), channel, model, prov))
 }
 
 // Latches the session to non streaming and replays a completed response the adapter returned
 func (c *streamingCall) adoptFinalResponse(final any) any {
-	streamingCallLog.Info(fmt.Sprintf("Streaming request returned a final response object instead of an iterator; switching %s/%s to non-streaming for this session.", orUnknown2(c.agent.Provider()), orUnknown2(c.agent.Model())))
+	pkgLog().Info(fmt.Sprintf("Streaming request returned a final response object instead of an iterator; switching %s/%s to non-streaming for this session.", orUnknown2(c.agent.Provider()), orUnknown2(c.agent.Model())))
 	c.agent.RetrySession().DisableStreaming = true
 	return c.replayFinalResponse(final)
 }
@@ -838,11 +830,11 @@ func (c *streamingCall) finishChatStream(resp *http.Response, contentParts, reas
 			}
 			dropped = append(dropped, name)
 		}
-		streamingCallLog.Warn(fmt.Sprintf("Clean EOF, no finish_reason: server ended the stream (no transport exception) while a tool call's arguments were still incomplete (tools=%s). The server or a proxy closed the stream cleanly; not an output-length truncation.", pyrepr.Repr(dropped)))
+		pkgLog().Warn(fmt.Sprintf("Clean EOF, no finish_reason: server ended the stream (no transport exception) while a tool call's arguments were still incomplete (tools=%s). The server or a proxy closed the stream cleanly; not an output-length truncation.", pyrepr.Repr(dropped)))
 		return partialStreamCutResponse(noneIfEmpty(fullContent), noneIfEmpty(fullReasoning), ident.model, usageValue, dropped, false, true, ""), nil
 	}
 	if finishReason == "" && (len(contentParts) > 0 || len(reasoningParts) > 0) && tools.Len() == 0 && usage == nil {
-		streamingCallLog.Warn("Clean EOF, no finish_reason: server ended the stream (no transport exception) after delivering text with no tool calls. The server or a proxy closed the stream cleanly.")
+		pkgLog().Warn("Clean EOF, no finish_reason: server ended the stream (no transport exception) after delivering text with no tool calls. The server or a proxy closed the stream cleanly.")
 		return partialStreamCutResponse(noneIfEmpty(fullContent), noneIfEmpty(fullReasoning), ident.model, nil, nil, false, true, ""), nil
 	}
 	effective := finishReason
@@ -901,7 +893,7 @@ func (c *streamingCall) forgetInvisibleDeltas(err error) bool {
 	c.mu.Unlock()
 	toolInFlight = toolInFlight || c.providerToolInFlight.Load()
 	if c.deltasWereSent.Load() && !toolInFlight && !c.visibleTextDelivered() {
-		slog.Warn(fmt.Sprintf("Stream died after deltas but before any visible text was delivered (0 chars, no tool call in flight); treating as an undelivered stream failure: %v", err))
+		pkgLog().Warn(fmt.Sprintf("Stream died after deltas but before any visible text was delivered (0 chars, no tool call in flight); treating as an undelivered stream failure: %v", err))
 		quietCall(c.agent.ResetStreamDeliveryTracking)
 		c.deltasWereSent.Store(false)
 		c.firstDeltaFired.Store(false)
@@ -924,7 +916,7 @@ func (c *streamingCall) resolveStaleTimeout() {
 	timeout := 0.0
 	if streamingConfiguredStaleBase(c.ctx, c.agent) == 180 && baseURL != "" && IsLocalEndpoint(baseURL) {
 		timeout = localStreamStaleTimeoutDefault(c.ctx)
-		streamingCallLog.Debug(fmt.Sprintf("Local provider detected (%s) — stale stream timeout set to %.0fs", baseURL, timeout))
+		pkgLog().Debug(fmt.Sprintf("Local provider detected (%s) — stale stream timeout set to %.0fs", baseURL, timeout))
 	} else {
 		timeout = cloudStaleTimeoutForAgent(c.ctx, c.agent, c.agent.Provider(), c.agent.Model(), c.apiKwargs)
 	}
@@ -1027,7 +1019,7 @@ func (c *streamingCall) partialDeliveryResponse(err error) any {
 		if c.agent.WarningPresentationEnabled() {
 			quietCall(func() { c.agent.FireStreamDelta(warn) })
 		}
-		streamingCallLog.Warn(fmt.Sprintf("Partial stream dropped tool call(s) %s after %d chars of text; surfaced warning to user: %v", pyrepr.Repr(names), len([]rune(partial)), err))
+		pkgLog().Warn(fmt.Sprintf("Partial stream dropped tool call(s) %s after %d chars of text; surfaced warning to user: %v", pyrepr.Repr(names), len([]rune(partial)), err))
 	}
 	var reason FailoverReason
 	func() {
@@ -1042,11 +1034,11 @@ func (c *streamingCall) partialDeliveryResponse(err error) any {
 		model = "unknown"
 	}
 	if reason == ReasonContextOverflow {
-		streamingCallLog.Warn(fmt.Sprintf("Partial stream ended on a context-overflow error after %d chars; NOT seeding a continuation cut (transcript is already over budget): %v", len([]rune(partial)), err))
+		pkgLog().Warn(fmt.Sprintf("Partial stream ended on a context-overflow error after %d chars; NOT seeding a continuation cut (transcript is already over budget): %v", len([]rune(partial)), err))
 		return partialStreamCutResponse(nil, nil, model, nil, names, true, false, c.agent.APIMode())
 	}
 	if len(names) == 0 {
-		streamingCallLog.Warn(fmt.Sprintf("Partial stream delivered before error; returning length-truncated cut with %d chars of recovered content so the loop can continue from where the stream died: %v", len([]rune(partial)), err))
+		pkgLog().Warn(fmt.Sprintf("Partial stream delivered before error; returning length-truncated cut with %d chars of recovered content so the loop can continue from where the stream died: %v", len([]rune(partial)), err))
 	}
 	cut := partialStreamCutResponse(noneIfEmpty(partial), nil, model, nil, names, false, false, c.agent.APIMode())
 	if reason == ReasonContentPolicyBlocked {
@@ -1105,4 +1097,12 @@ func (c *streamingCall) run() (any, error) {
 	}
 	c.mu.Unlock()
 	return response, nil
+}
+
+// Nil for an empty string so the JSON field reads null
+func noneIfEmpty(s string) any {
+	if s == "" {
+		return nil
+	}
+	return s
 }

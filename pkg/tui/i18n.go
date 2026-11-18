@@ -7,7 +7,6 @@ import (
 	"strconv"
 	"strings"
 	"sync"
-	"unicode/utf8"
 
 	"gopkg.in/yaml.v3"
 )
@@ -42,14 +41,6 @@ var enLogic = map[string]func(args []any) string{
 			word = "session"
 		}
 		return jsString(arg(args, 0)) + " " + word
-	},
-	"pickers.model.plan.limitReached": func(args []any) string {
-		name := jsString(arg(args, 0))
-		r, size := utf8.DecodeRuneInString(name)
-		if size == 0 {
-			return " limit reached"
-		}
-		return strings.ToUpper(string(r)) + name[size:] + " limit reached"
 	},
 }
 

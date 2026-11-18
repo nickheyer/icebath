@@ -3,7 +3,6 @@ package tools
 import (
 	"context"
 	"fmt"
-	"log/slog"
 	"strings"
 	"sync"
 
@@ -55,7 +54,7 @@ func LiveOpen(ctx context.Context, op *ConnectionOperation) error {
 	for i, t := range op.Targets {
 		parts[i] = t.Kind + ":" + t.Name + ":" + t.Action
 	}
-	slog.Default().Info(fmt.Sprintf("connection op %s opened: %s", op.OpID, strings.Join(parts, ", ")))
+	pkgLog().Info(fmt.Sprintf("connection op %s opened: %s", op.OpID, strings.Join(parts, ", ")))
 	return nil
 }
 
@@ -79,43 +78,6 @@ func LiveGet(sessionKey, opID, profileHome string) *ConnectionOperation {
 		return op
 	}
 	return nil
-}
-
-// The profile's unsettled open operation with this id in any session
-func LiveGetByOpID(opID, profileHome string) *ConnectionOperation {
-	pk := liveProfileKey(profileHome)
-	liveMu.Lock()
-	defer liveMu.Unlock()
-	for key, op := range liveOpen {
-		if key.profile == pk && op.OpID == opID && !op.Settled() {
-			return op
-		}
-	}
-	return nil
-}
-
-// The unsettled operation connecting this connector account, matched on name, alias and repaired account id
-func LiveFindTarget(name string, alias, repairID *string, profileHome string) *ConnectionOperation {
-	pk := liveProfileKey(profileHome)
-	liveMu.Lock()
-	defer liveMu.Unlock()
-	for key, op := range liveOpen {
-		if key.profile != pk || op.Settled() {
-			continue
-		}
-		t := op.Target(name)
-		if t != nil && t.Kind == "connector" && sameOptional(t.Alias, alias) && sameOptional(t.RepairID, repairID) {
-			return op
-		}
-	}
-	return nil
-}
-
-func sameOptional(a, b *string) bool {
-	if a == nil || b == nil {
-		return a == nil && b == nil
-	}
-	return *a == *b
 }
 
 // Drops the operation from the live table when it is still the registered one

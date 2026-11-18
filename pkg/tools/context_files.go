@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"context"
 	"fmt"
-	"log/slog"
 	"os"
 	"regexp"
 	"strings"
@@ -30,7 +29,7 @@ func ContextConfigReadonly(env *Env, what string) map[string]any {
 	h := envHome(env)
 	tree, err := config.LoadReadonly(context.Background(), h, config.NewSecrets(h).Lookup())
 	if err != nil {
-		slog.Debug(fmt.Sprintf("Could not read %s from config: %v", what, err))
+		pkgLog().Debug(fmt.Sprintf("Could not read %s from config: %v", what, err))
 		return map[string]any{}
 	}
 	return tree
@@ -118,7 +117,7 @@ func ReadTextWithTimeout(env *Env, path string, timeout *float64) (string, bool,
 		}
 		return r.text, true, nil
 	case <-timer.C:
-		slog.Warn(fmt.Sprintf("Context file %s read timed out after %.1fs; skipping", path, secs))
+		pkgLog().Warn(fmt.Sprintf("Context file %s read timed out after %.1fs; skipping", path, secs))
 		return "", false, nil
 	}
 }
@@ -132,11 +131,11 @@ func ScanContextContent(content, filename string, userAuthored bool) string {
 	}
 	joined := strings.Join(findings, ", ")
 	if userAuthored {
-		slog.Warn(fmt.Sprintf("Context file %s matched injection pattern(s) %s; loaded anyway because it is the "+
+		pkgLog().Warn(fmt.Sprintf("Context file %s matched injection pattern(s) %s; loaded anyway because it is the "+
 			"user's own file in ICEBATH_HOME — review it if you did not write that text", filename, joined))
 		return content
 	}
-	slog.Warn(fmt.Sprintf("Context file %s blocked: %s", filename, joined))
+	pkgLog().Warn(fmt.Sprintf("Context file %s blocked: %s", filename, joined))
 	return fmt.Sprintf("[BLOCKED: %s contained potential prompt injection (%s). Content not loaded.]", filename, joined)
 }
 
@@ -252,7 +251,7 @@ func TruncateContent(ctx context.Context, env *Env, content, filename string, o 
 		remedy = "the full file stays readable with read_file: " + readPath
 	}
 	msg := fmt.Sprintf("⚠️  Context file %s TRUNCATED: %d chars exceeds limit of %d — %s", filename, len(runes), maxChars, remedy)
-	slog.Warn(msg)
+	pkgLog().Warn(msg)
 	if !o.NoQueue {
 		queueTruncationWarning(ctx, msg)
 	}

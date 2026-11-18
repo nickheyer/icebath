@@ -45,7 +45,7 @@ func TestToolsetHasKeysForVisionAcceptsCodexAuth(t *testing.T) {
 		os.Unsetenv(name)
 	}
 	swapFor(t, &resolveVisionProviderClient, func(*ToolsSetup) (bool, error) { return true, nil })
-	if has, err := s.toolsetHasKeys("vision", nil, false, nil); err != nil || !has {
+	if has, err := s.toolsetHasKeys("vision", nil); err != nil || !has {
 		t.Fatalf("vision %v %v", has, err)
 	}
 }
@@ -60,30 +60,24 @@ func TestApiServerPlatformConfigDefaultApiServerIncludesTerminalToolset(t *testi
 func TestToolsetHasKeysBranches(t *testing.T) {
 	s, _, _ := flowSetup(t)
 	swapFor(t, &resolveVisionProviderClient, func(*ToolsSetup) (bool, error) { return true, os.ErrNotExist })
-	if has, err := s.toolsetHasKeys("vision", config.Tree{}, false, nil); err != nil || has {
+	if has, err := s.toolsetHasKeys("vision", config.Tree{}); err != nil || has {
 		t.Fatalf("vision resolver error %v %v", has, err)
 	}
-	managed := &NousToolFeatures{Features: map[string]NousToolFeature{"tts": {ManagedByNous: true}, "web": {Available: true}}}
-	for _, key := range []string{"tts", "web"} {
-		if has, err := s.toolsetHasKeys(key, config.Tree{}, false, managed); err != nil || !has {
-			t.Fatalf("%s managed %v %v", key, has, err)
-		}
-	}
 	t.Setenv("OPENROUTER_API_KEY", "")
-	if has, err := s.toolsetHasKeys("memory", config.Tree{}, false, nil); err != nil || !has {
+	if has, err := s.toolsetHasKeys("memory", config.Tree{}); err != nil || !has {
 		t.Fatalf("keyless toolset %v %v", has, err)
 	}
 	loads := 0
 	swapFor(t, &toolsConfigLoad, func(*ToolsSetup) (config.Tree, error) { loads++; return config.Tree{}, nil })
 	swapFor(t, &resolveVisionProviderClient, func(*ToolsSetup) (bool, error) { return false, nil })
-	if has, err := s.toolsetHasKeys("vision", nil, false, nil); err != nil || has || loads != 1 {
+	if has, err := s.toolsetHasKeys("vision", nil); err != nil || has || loads != 1 {
 		t.Fatalf("nil config loads %d %v %v", loads, has, err)
 	}
 }
 
 func TestPromptToolsetChecklistLabelsAndTokenStatus(t *testing.T) {
 	s, _, _ := flowSetup(t)
-	swapFor(t, &toolsetHasKeysFn, func(_ *ToolsSetup, tsKey string, cfg config.Tree, _ bool, _ *NousToolFeatures) (bool, error) {
+	swapFor(t, &toolsetHasKeysFn, func(_ *ToolsSetup, tsKey string, cfg config.Tree) (bool, error) {
 		if cfg != nil {
 			t.Fatalf("checklist passed a config for %s", tsKey)
 		}
@@ -102,7 +96,7 @@ func TestPromptToolsetChecklistLabelsAndTokenStatus(t *testing.T) {
 		title, items, pre, cancel, status = ti, it, sel, cr, fn
 		return map[int]bool{0: true, 3: true}, nil
 	})
-	got, err := s.promptToolsetChecklistImpl("CLI", map[string]bool{"terminal": true, "discord": true, "stt": true}, "cli", true)
+	got, err := s.promptToolsetChecklistImpl("CLI", map[string]bool{"terminal": true, "discord": true, "stt": true}, "cli")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -149,7 +143,7 @@ func TestPromptToolsetChecklistLabelsAndTokenStatus(t *testing.T) {
 
 func TestPromptToolsetChecklistWithoutTokensHasNoStatus(t *testing.T) {
 	s, _, _ := flowSetup(t)
-	swapFor(t, &toolsetHasKeysFn, func(*ToolsSetup, string, config.Tree, bool, *NousToolFeatures) (bool, error) { return true, nil })
+	swapFor(t, &toolsetHasKeysFn, func(*ToolsSetup, string, config.Tree) (bool, error) { return true, nil })
 	key := toolTokenKey{home.Key(s.home()), Default.Generation()}
 	toolTokenCacheMu.Lock()
 	toolTokenCache[key] = map[string]int{}
@@ -161,7 +155,7 @@ func TestPromptToolsetChecklistWithoutTokensHasNoStatus(t *testing.T) {
 		}
 		return map[int]bool{-1: true}, nil
 	})
-	got, err := s.promptToolsetChecklistImpl("Telegram", map[string]bool{}, "telegram", true)
+	got, err := s.promptToolsetChecklistImpl("Telegram", map[string]bool{}, "telegram")
 	if err != nil || len(got) != 1 {
 		t.Fatalf("%v %v", got, err)
 	}
@@ -186,9 +180,9 @@ func TestPrintToolsetDiffAndConfigureList(t *testing.T) {
 	s, out, _ := flowSetup(t)
 	s.printToolsetDiff(map[string]bool{"web": true, "memory": true}, map[string]bool{"file": true}, "    ")
 	var configured []string
-	swapFor(t, &configureToolset, func(_ *ToolsSetup, tsKey string, _ config.Tree, forceFresh, reconfigure bool) error {
-		if !forceFresh || reconfigure {
-			t.Fatalf("flags %v %v", forceFresh, reconfigure)
+	swapFor(t, &configureToolset, func(_ *ToolsSetup, tsKey string, _ config.Tree, reconfigure bool) error {
+		if reconfigure {
+			t.Fatalf("flags %v", reconfigure)
 		}
 		configured = append(configured, tsKey)
 		return nil
@@ -229,42 +223,25 @@ func TestPrintToolsSummaryListsEveryPlatform(t *testing.T) {
 	if out.String() != want {
 		t.Fatalf("output %q want %q", out.String(), want)
 	}
-	if err := s.printToolsSummary(cfg, []string{"bogus"}); err == nil || err.Error() != "KeyError: 'bogus'" {
+	if err := s.printToolsSummary(cfg, []string{"bogus"}); err == nil || err.Error() != "unknown platform bogus" {
 		t.Fatalf("unknown platform %v", err)
-	}
-}
-
-func TestConfigureSharedMetricsInteractiveSavesOnlyOnChange(t *testing.T) {
-	s, _, _ := flowSetup(t)
-	saves := 0
-	swapFor(t, &toolsConfigSave, func(*ToolsSetup, config.Tree) error { saves++; return nil })
-	swapFor(t, &setupTelemetry, func(_ *ToolsSetup, cfg config.Tree) error {
-		cfg["telemetry"] = map[string]any{"shared_metrics": map[string]any{"enabled": true, "send": true}}
-		return nil
-	})
-	cfg := config.Tree{}
-	if err := s.configureSharedMetricsInteractive(cfg); err != nil || saves != 1 {
-		t.Fatalf("saves %d %v", saves, err)
-	}
-	if err := s.configureSharedMetricsInteractive(cfg); err != nil || saves != 1 {
-		t.Fatalf("unchanged answer saved, saves %d %v", saves, err)
 	}
 }
 
 func TestReconfigureToolNothingConfiguredAndCancel(t *testing.T) {
 	s, out, _ := flowSetup(t)
-	swapFor(t, &toolsetHasKeysFn, func(*ToolsSetup, string, config.Tree, bool, *NousToolFeatures) (bool, error) { return false, nil })
+	swapFor(t, &toolsetHasKeysFn, func(*ToolsSetup, string, config.Tree) (bool, error) { return false, nil })
 	cfg := config.Tree{"platform_toolsets": map[string]any{}}
 	for _, p := range Platforms {
 		cfg["platform_toolsets"].(map[string]any)[p.Key] = []any{}
 	}
-	if err := s.reconfigureTool(cfg, true); err != nil {
+	if err := s.reconfigureTool(cfg); err != nil {
 		t.Fatal(err)
 	}
 	if out.String() != "  No configured tools to reconfigure.\n" {
 		t.Fatalf("output %q", out.String())
 	}
-	swapFor(t, &toolsetHasKeysFn, func(_ *ToolsSetup, tsKey string, _ config.Tree, _ bool, _ *NousToolFeatures) (bool, error) {
+	swapFor(t, &toolsetHasKeysFn, func(_ *ToolsSetup, tsKey string, _ config.Tree) (bool, error) {
 		return tsKey == "web" || tsKey == "tts", nil
 	})
 	var choices []string
@@ -278,7 +255,7 @@ func TestReconfigureToolNothingConfiguredAndCancel(t *testing.T) {
 	})
 	saves := 0
 	swapFor(t, &toolsConfigSave, func(*ToolsSetup, config.Tree) error { saves++; return nil })
-	if err := s.reconfigureTool(cfg, true); err != nil || saves != 0 {
+	if err := s.reconfigureTool(cfg); err != nil || saves != 0 {
 		t.Fatalf("cancel saved %d %v", saves, err)
 	}
 	if !reflect.DeepEqual(choices, []string{"🔍 Web Search & Scraping", "🔊 Text-to-Speech", "Cancel"}) || def != 2 {
@@ -286,14 +263,14 @@ func TestReconfigureToolNothingConfiguredAndCancel(t *testing.T) {
 	}
 	var picked []string
 	swapFor(t, &toolsPromptChoice, func(*ToolsSetup, string, []string, int) (int, error) { return 1, nil })
-	swapFor(t, &configureToolset, func(_ *ToolsSetup, tsKey string, _ config.Tree, forceFresh, reconfigure bool) error {
-		if !forceFresh || !reconfigure {
-			t.Fatalf("flags %v %v", forceFresh, reconfigure)
+	swapFor(t, &configureToolset, func(_ *ToolsSetup, tsKey string, _ config.Tree, reconfigure bool) error {
+		if !reconfigure {
+			t.Fatalf("flags %v", reconfigure)
 		}
 		picked = append(picked, tsKey)
 		return nil
 	})
-	if err := s.reconfigureTool(cfg, true); err != nil || saves != 1 || !reflect.DeepEqual(picked, []string{"tts"}) {
+	if err := s.reconfigureTool(cfg); err != nil || saves != 1 || !reflect.DeepEqual(picked, []string{"tts"}) {
 		t.Fatalf("picked %v saves %d %v", picked, saves, err)
 	}
 }

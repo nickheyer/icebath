@@ -37,7 +37,7 @@ func (r *GatewayRunner) handleMessageWithAgent(ctx context.Context, event *gatew
 	if event.ReplyToText != nil {
 		replyToText = *event.ReplyToText
 	}
-	runLog().Info(fmt.Sprintf("inbound message: platform=%s user=%s chat=%s msg=%s reply_to_id=%s reply_to_text=%s",
+	pkgLog().Info(fmt.Sprintf("inbound message: platform=%s user=%s chat=%s msg=%s reply_to_id=%s reply_to_text=%s",
 		platformName, who, chat, pyrepr.Repr(logPreview(event.Text, 80)), optText(event.ReplyToMessageID), pyrepr.Repr(logPreview(replyToText, 80))))
 	source, entry, sessionKey, err := r.hmwaResolveSession(ctx, event, source)
 	if err != nil || entry == nil {
@@ -139,7 +139,7 @@ func (r *GatewayRunner) handleMessageWithAgent(ctx context.Context, event *gatew
 		if err != nil {
 			return nil, err
 		}
-		response = usageWindowChatWording(agentResult, withReasoning)
+		response = withReasoning
 		footerLine := r.hmwaRuntimeFooterLine(ctx, agentResult, source, turnSeconds)
 		if footerLine != "" && response != "" && !pyrepr.Truthy(agentResult["already_sent"]) && !silent {
 			response = response + "\n\n" + footerLine
@@ -161,7 +161,7 @@ func (r *GatewayRunner) handleMessageWithAgent(ctx context.Context, event *gatew
 		}
 		_, _, replyExpected = event.ReplyFields()
 		r.recordRoomSilenceDecision(ctx, sessionKey, agentResult, silent, prepared.persistUserDisplayKind, replyExpected)
-		return r.deliverTurnResponseThenLimitOffer(ctx, event, source, entry, sessionKey, runGeneration, agentResult, agentMessages, response, footerLine, silent)
+		return r.hmwaDeliverTurnResponse(ctx, event, source, entry, sessionKey, runGeneration, agentResult, agentMessages, response, footerLine, silent)
 	}()
 	if err != nil && ctx.Err() == nil {
 		reply := r.hmwaAgentErrorReply(ctx, err, event, source, entry, sessionKey, prepared)

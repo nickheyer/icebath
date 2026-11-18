@@ -14,7 +14,7 @@ import (
 func (r *GatewayRunner) processHandoff(ctx context.Context, row *pyjson.Object, profileName *string) error {
 	rawID, ok := row.Get("id")
 	if !ok {
-		return errors.New("KeyError: 'id'")
+		return errors.New("a process handoff row has no id")
 	}
 	cliSessionID := pyrepr.Str(rawID)
 	rowMap := make(map[string]any, row.Len())
@@ -47,7 +47,7 @@ func (r *GatewayRunner) processHandoff(ctx context.Context, row *pyjson.Object, 
 		"Briefly confirm you're working here and summarize what we were "+
 		"working on, so the user can continue from this device.]", cliTitle))
 	syntheticEvent.Source, syntheticEvent.Internal = dest.source, true
-	runLog().Info(fmt.Sprintf("Handoff: dispatching synthetic turn for CLI session %s → %s (home=%s, thread=%s, session_key=%s)",
+	pkgLog().Info(fmt.Sprintf("Handoff: dispatching synthetic turn for CLI session %s → %s (home=%s, thread=%s, session_key=%s)",
 		cliSessionID, dest.platformName, dest.homeChatID, derefOrNoneText(dest.effectiveThreadID), sessionKey))
 	response, err := r.handleMessage(ctx, syntheticEvent)
 	if err != nil {

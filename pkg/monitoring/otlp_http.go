@@ -115,7 +115,7 @@ func (p *BatchSpanProcessor) exportBatches(drain bool) {
 		p.queue = p.queue[n:]
 		p.mu.Unlock()
 		if err := p.exporter.Export(batch); err != nil {
-			otlpLog().Debug("OTLP export failed: " + err.Error())
+			pkgLog().Debug("OTLP export failed: " + err.Error())
 		}
 		if !drain {
 			return

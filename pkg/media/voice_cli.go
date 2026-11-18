@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"log/slog"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -20,8 +19,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pythread"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
-
-func voiceCLILogger() *slog.Logger { return slog.Default().With("logger", "hermes_cli.voice") }
 
 // Callbacks of the active continuous loop
 type ContinuousCallbacks struct {
@@ -121,7 +118,7 @@ func voicePlayBeep(ctx context.Context, frequency, count int) {
 func voiceSafeCall(warn string, call func()) {
 	defer func() {
 		if r := recover(); r != nil && warn != "" {
-			voiceCLILogger().Warn(fmt.Sprintf(warn, r))
+			pkgLog().Warn(fmt.Sprintf(warn, r))
 		}
 	}()
 	call()
@@ -136,7 +133,7 @@ func transcribeWav(ctx context.Context, wavPath, failMsg, debugPrefix string) (t
 	}()
 	result, err := TranscribeRecording(ctx, wavPath, "")
 	if err != nil {
-		voiceCLILogger().Warn(fmt.Sprintf(failMsg, err))
+		pkgLog().Warn(fmt.Sprintf(failMsg, err))
 		if debugPrefix != "" {
 			voiceDebug(fmt.Sprintf("%s: transcribe raised %s", debugPrefix, err))
 		}
@@ -308,7 +305,7 @@ func StartContinuous(ctx context.Context, o ContinuousOptions) (bool, error) {
 	voiceDebug(fmt.Sprintf("start_continuous: begin (threshold=%s, duration=%ss)", pyrepr.Repr(o.SilenceThreshold), pyrepr.Repr(o.SilenceDuration)))
 	voicePlayBeep(ctx, 880, 1)
 	if err := rec.Start(ctx, func() { continuousOnSilence(ctx) }); err != nil {
-		voiceCLILogger().Error(fmt.Sprintf("failed to start continuous recording: %s", err))
+		pkgLog().Error(fmt.Sprintf("failed to start continuous recording: %s", err))
 		voiceDebug(fmt.Sprintf("start_continuous: rec.start raised %s", err))
 		voiceDeactivate(nil)
 		return false, err
@@ -343,7 +340,7 @@ func StopContinuous(ctx context.Context, forceTranscribe bool) {
 			}
 			wavPath, err := rec.Stop()
 			if err != nil {
-				voiceCLILogger().Warn(fmt.Sprintf("failed to stop recorder: %s", err))
+				pkgLog().Warn(fmt.Sprintf("failed to stop recorder: %s", err))
 				voiceSafeCall("failed to cancel recorder: %v", rec.Cancel)
 				wavPath = ""
 			}
@@ -414,7 +411,7 @@ func continuousOnSilence(ctx context.Context) {
 	}
 	wavPath, err := rec.Stop()
 	if err != nil {
-		voiceCLILogger().Warn(fmt.Sprintf("continuous silence callback failed: %s", err))
+		pkgLog().Warn(fmt.Sprintf("continuous silence callback failed: %s", err))
 		return
 	}
 	peak := -1
@@ -485,7 +482,7 @@ func rearmAfterTurn(ctx context.Context, rec VoiceRecorder, onStatus func(string
 	voiceDebug(fmt.Sprintf("_continuous_on_silence: restarting loop (no_speech=%d)", noSpeech))
 	voicePlayBeep(ctx, 880, 1)
 	if err := rec.Start(ctx, func() { continuousOnSilence(ctx) }); err != nil {
-		voiceCLILogger().Error(fmt.Sprintf("failed to restart continuous recording: %s", err))
+		pkgLog().Error(fmt.Sprintf("failed to restart continuous recording: %s", err))
 		voiceDebug(fmt.Sprintf("_continuous_on_silence: restart raised %s", err))
 		voiceDeactivate(onStatus)
 		return
@@ -645,7 +642,7 @@ func SpeakText(ctx context.Context, text string, stop *pythread.Event) {
 			defer continuousMu.Unlock()
 			if continuousActive && continuousRecorder != nil {
 				if err := continuousRecorder.Start(ctx, func() { continuousOnSilence(ctx) }); err != nil {
-					voiceCLILogger().Warn(fmt.Sprintf("failed to resume recorder after TTS: %s", err))
+					pkgLog().Warn(fmt.Sprintf("failed to resume recorder after TTS: %s", err))
 				} else {
 					voiceDebug("speak_text: recording resumed after TTS")
 				}
@@ -667,7 +664,7 @@ func SpeakText(ctx context.Context, text string, stop *pythread.Event) {
 		return speakWholeFile(ctx, text)
 	}()
 	if err != nil {
-		voiceCLILogger().Warn(fmt.Sprintf("Voice TTS playback failed: %s", err))
+		pkgLog().Warn(fmt.Sprintf("Voice TTS playback failed: %s", err))
 		voiceDebug(fmt.Sprintf("speak_text raised %s", err))
 	}
 }

@@ -1,7 +1,5 @@
 package plugins
 
-import ()
-
 const hookSourcePlugin = `
 def _hook(**kwargs):
     return None

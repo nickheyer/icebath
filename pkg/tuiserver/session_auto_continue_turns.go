@@ -11,22 +11,22 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/state"
-	"github.com/nickheyer/icebath/pkg/tuigateway"
+	"github.com/nickheyer/icebath/pkg/tuihost"
 )
 
 // Schedules a continuation turn for a crash interrupted session, its resume descriptor or nil
-func maybeScheduleAutoContinue(ctx context.Context, sid string, session *tuigateway.Session, sessionKey string) map[string]any {
+func maybeScheduleAutoContinue(ctx context.Context, sid string, session *tuihost.Session, sessionKey string) map[string]any {
 	if session.Get("source") == "bot_room" {
 		return nil
 	}
 	h := sessionHome(ctx, session)
-	marker := tuigateway.ReadTurnMarker(h, sessionKey)
+	marker := tuihost.ReadTurnMarker(h, sessionKey)
 	if marker == nil || !truthy(marker["auto_continue"]) {
 		return nil
 	}
-	writerState := tuigateway.MarkerWriterState(marker)
+	writerState := tuihost.MarkerWriterState(marker)
 	if writerState == "alive" && !pyjsonEqual(marker["writer_pid"], int64(os.Getpid())) {
-		logger().Info(fmt.Sprintf("auto-continue for %s held back: marker writer pid %s is still alive (reader pid %d); the marker is ownership evidence and the owner clears it",
+		pkgLog().Info(fmt.Sprintf("auto-continue for %s held back: marker writer pid %s is still alive (reader pid %d); the marker is ownership evidence and the owner clears it",
 			sessionKey, pyrepr.Str(marker["writer_pid"]), os.Getpid()))
 		return nil
 	}
@@ -35,7 +35,7 @@ func maybeScheduleAutoContinue(ctx context.Context, sid string, session *tuigate
 	attempts := marker["attempts"].(int64)
 	age := nowSeconds() - startedAt
 	if !enabled || age > freshnessSecs || attempts >= int64(maxAttempts) {
-		tuigateway.ClearTurnMarker(h, sessionKey)
+		tuihost.ClearTurnMarker(h, sessionKey)
 		return nil
 	}
 	if truthy(session.Get("_auto_continue_scheduled")) {
@@ -50,7 +50,7 @@ func maybeScheduleAutoContinue(ctx context.Context, sid string, session *tuigate
 			startAgentBuild(ctx, sid, session)
 			errResp = waitAgent(ctx, session, rid, 120.0)
 		}); failure != nil {
-			logger().Warn("auto-continue agent build failed for "+sid, "error", pyrepr.Str(failure))
+			pkgLog().Warn("auto-continue agent build failed for "+sid, "error", pyrepr.Str(failure))
 			errResp = map[string]any{"error": map[string]any{"message": "agent build failed"}}
 		}
 		if len(errResp) > 0 {
@@ -67,7 +67,7 @@ func maybeScheduleAutoContinue(ctx context.Context, sid string, session *tuigate
 		session.Set("last_active", nowSeconds())
 		unlock()
 		if ensureActiveSessionSlot(ctx, sid, session) != nil {
-			logger().Info("auto-continue for " + sessionKey + " refused: session has another live owner")
+			pkgLog().Info("auto-continue for " + sessionKey + " refused: session has another live owner")
 			unlock = lockHistory(session)
 			session.Set("running", false)
 			session.Set("_auto_continue_scheduled", false)
@@ -82,8 +82,8 @@ func maybeScheduleAutoContinue(ctx context.Context, sid string, session *tuigate
 			diagnostic := marker["notification_category"] == "diagnostic"
 			scoped := sessionProfileRuntimeScope(ctx, session, true)
 			if _, err := config.RenderNotification(scoped, func() error {
-				tuigateway.Emit(scoped, "status.update", sid, map[string]any{"kind": "process", "text": "Resuming interrupted turn…"})
-				tuigateway.Emit(scoped, "message.start", sid, nil)
+				tuihost.Emit(scoped, "status.update", sid, map[string]any{"kind": "process", "text": "Resuming interrupted turn…"})
+				tuihost.Emit(scoped, "message.start", sid, nil)
 				return nil
 			}, "tui", diagnostic, nil); err != nil {
 				panic(err)
@@ -99,13 +99,13 @@ func maybeScheduleAutoContinue(ctx context.Context, sid string, session *tuigate
 		}
 	}
 	startSessionWork(ctx, kickoff, "auto-continue-"+sid, nil)
-	logger().Info(fmt.Sprintf("auto-continue scheduled for session %s (attempt %d, interrupted %.0fs ago, writer pid %s: %s, reader pid %d)",
+	pkgLog().Info(fmt.Sprintf("auto-continue scheduled for session %s (attempt %d, interrupted %.0fs ago, writer pid %s: %s, reader pid %d)",
 		sessionKey, attempt, age, pyrepr.Str(marker["writer_pid"]), writerState, os.Getpid()))
 	return map[string]any{"attempt": attempt, "interrupted_at": startedAt}
 }
 
 // Interrupts a busy turn on its own goroutine, never under the history lock, at most one per session
-func interruptBusySession(ctx context.Context, sid string, session *tuigateway.Session, a any) {
+func interruptBusySession(ctx context.Context, sid string, session *tuihost.Session, a any) {
 	interrupter, useAgent := a.(interface{ Interrupt(string) })
 	if !useAgent {
 		return
@@ -129,7 +129,7 @@ func interruptBusySession(ctx context.Context, sid string, session *tuigateway.S
 }
 
 // Makes a queued prompt durable at accept, the row staged on its envelope and merged text synced in place
-func persistQueuedUserRow(ctx context.Context, session *tuigateway.Session, envelope map[string]any, displayKind string) {
+func persistQueuedUserRow(ctx context.Context, session *tuihost.Session, envelope map[string]any, displayKind string) {
 	ensureSessionDBRow(ctx, session)
 	staged, _ := envelope["_submit_user_row"].(map[string]any)
 	if rowID, ok := staged["_row_id"].(int64); ok {
@@ -154,7 +154,7 @@ func persistQueuedUserRow(ctx context.Context, session *tuigateway.Session, enve
 			}
 		}); failure != nil {
 			release()
-			logger().Debug("queued-prompt row merge update failed", "error", pyrepr.Str(failure))
+			pkgLog().Debug("queued-prompt row merge update failed", "error", pyrepr.Str(failure))
 			return
 		}
 		release()
@@ -175,7 +175,7 @@ func persistQueuedUserRow(ctx context.Context, session *tuigateway.Session, enve
 }
 
 // Re places a queued prompt's accept time row at the transcript end before its turn, deactivating the early row
-func replaceQueuedUserRowForTurn(ctx context.Context, session *tuigateway.Session, queued map[string]any, isDispatching bool) map[string]any {
+func replaceQueuedUserRowForTurn(ctx context.Context, session *tuihost.Session, queued map[string]any, isDispatching bool) map[string]any {
 	early, _ := queued["_submit_user_row"].(map[string]any)
 	earlyID, ok := early["_row_id"].(int64)
 	if !ok {
@@ -206,13 +206,13 @@ func replaceQueuedUserRowForTurn(ctx context.Context, session *tuigateway.Sessio
 			panicIf(err)
 		}
 	}); failure != nil {
-		logger().Debug("queued-prompt row re-placement deactivate failed", "error", pyrepr.Str(failure))
+		pkgLog().Debug("queued-prompt row re-placement deactivate failed", "error", pyrepr.Str(failure))
 	}
 	return fresh
 }
 
 // Agent object the session holds whatever its type, nil for none or a nil pointer
-func sessionAgentObject(session *tuigateway.Session) any {
+func sessionAgentObject(session *tuihost.Session) any {
 	a := session.Get("agent")
 	if v := reflect.ValueOf(a); v.Kind() == reflect.Pointer && v.IsNil() {
 		return nil
@@ -221,7 +221,7 @@ func sessionAgentObject(session *tuigateway.Session) any {
 }
 
 // Applies display.busy_input_mode to a mid turn prompt, nil when the turn ended and the caller retries idle
-func handleBusySubmit(ctx context.Context, rid any, sid string, session *tuigateway.Session, text any, transport any, queued bool, turnAuthor map[string]any, displayKind string) map[string]any {
+func handleBusySubmit(ctx context.Context, rid any, sid string, session *tuihost.Session, text any, transport any, queued bool, turnAuthor map[string]any, displayKind string) map[string]any {
 	mode := "queue"
 	if !queued {
 		mode = loadBusyInputMode(ctx)
@@ -243,8 +243,8 @@ func handleBusySubmit(ctx context.Context, rid any, sid string, session *tuigate
 	}
 	unlock()
 	plainText := ""
-	if len(imagePaths) == 0 && tuigateway.IsTextOnlyBusyPayload(text) {
-		plainText = pystr.Strip(tuigateway.CoerceMessageText(text, true))
+	if len(imagePaths) == 0 && tuihost.IsTextOnlyBusyPayload(text) {
+		plainText = pystr.Strip(tuihost.CoerceMessageText(text, true))
 	}
 	if plainText != "" && a != nil {
 		method, status := "", ""
@@ -286,7 +286,7 @@ func handleBusySubmit(ctx context.Context, rid any, sid string, session *tuigate
 }
 
 // Fires a queued next turn prompt when the session is idle, true when dispatched so lower priority follow ups wait
-func drainQueuedPrompt(ctx context.Context, rid any, sid string, session *tuigateway.Session) bool {
+func drainQueuedPrompt(ctx context.Context, rid any, sid string, session *tuihost.Session) bool {
 	var queued map[string]any
 	var generation int64
 	claimed := false
@@ -300,8 +300,8 @@ func drainQueuedPrompt(ctx context.Context, rid any, sid string, session *tuigat
 		rest, _ := session.Get("queued_prompts").([]any)
 		acSetQueue(session, rest)
 		session.Set("running", true)
-		if t := transportOf(queued["transport"]); t != nil && !tuigateway.TransportIsDead(t) {
-			tuigateway.AttachSessionTransport(session, t)
+		if t := transportOf(queued["transport"]); t != nil && !tuihost.TransportIsDead(t) {
+			tuihost.AttachSessionTransport(session, t)
 		}
 	})
 	if !claimed {

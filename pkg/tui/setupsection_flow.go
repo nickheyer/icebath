@@ -7,6 +7,7 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 
+	"github.com/nickheyer/icebath/pkg/tuigateway"
 	"github.com/nickheyer/icebath/pkg/ui/wm"
 )
 
@@ -17,105 +18,73 @@ type flowRun struct {
 }
 
 // Starts a gateway setup flow and walks its questions until it ends
-func (a *app) runSetupFlow(flow, title string, params map[string]any) tea.Cmd {
+func (a *app) runSetupFlow(flow, title string, params map[string]string) tea.Cmd {
 	a.store.ui.Status = tr("setupFlow.section.loading")
-	start := map[string]any{"flow": flow}
-	if params != nil {
-		start["params"] = params
-	}
-	return a.events.rpc("setup.flow.start", start, func(res map[string]any) tea.Cmd {
+	start := tuigateway.SetupFlowStartParams{Flow: flow, Params: params}
+	return ask(a.events.rpc, a.sys, tuigateway.SetupFlowStart, start, func(res *tuigateway.SetupFlowStartResult) tea.Cmd {
 		if res == nil {
 			a.store.ui.Status = a.store.statusFromBusy()
 			return nil
 		}
-		session, _ := res["session"].(string)
-		return a.stepSetupFlow(&flowRun{session: session, title: title}, nil)
+		return a.stepSetupFlow(&flowRun{session: res.Session, title: title}, nil)
 	})
 }
 
 // Sends an answer, prints the output that follows and opens the next question, ending on done
-func (a *app) stepSetupFlow(run *flowRun, answer map[string]any) tea.Cmd {
-	params := map[string]any{"session": run.session}
-	if answer != nil {
-		params["answer"] = answer
-	}
-	return a.events.rpc("setup.flow.step", params, func(res map[string]any) tea.Cmd {
+func (a *app) stepSetupFlow(run *flowRun, answer *tuigateway.SetupFlowAnswer) tea.Cmd {
+	params := tuigateway.SetupFlowStepParams{Session: run.session, Answer: answer}
+	return ask(a.events.rpc, a.sys, tuigateway.SetupFlowStep, params, func(res *tuigateway.SetupFlowStepResult) tea.Cmd {
 		if res == nil {
 			a.store.ui.Status = a.store.statusFromBusy()
 			return nil
 		}
-		if lines := stringList(res["lines"]); len(lines) > 0 {
-			a.sys(strings.Join(lines, "\n"))
+		if len(res.Lines) > 0 {
+			a.sys(strings.Join(res.Lines, "\n"))
 		}
-		if res["done"] == true {
+		if res.Done {
 			a.store.ui.Status = a.store.statusFromBusy()
-			switch failure, _ := res["error"].(string); {
-			case res["ok"] == true:
+			switch {
+			case res.Ok:
 				a.sys(tr("setupFlow.flow.done", run.title))
-			case failure != "":
-				a.sys(tr("setupFlow.flow.failed", run.title, failure))
+			case res.Error != "":
+				a.sys(tr("setupFlow.flow.failed", run.title, res.Error))
 			}
 			return nil
 		}
-		question, _ := res["question"].(map[string]any)
-		if question == nil {
+		if res.Question == nil {
 			return a.stepSetupFlow(run, nil)
 		}
 		a.store.ui.Status = a.store.statusFromBusy()
-		return a.askFlowQuestion(run, question)
+		return a.askFlowQuestion(run, res.Question)
 	})
 }
 
-// Whole number of a wire value, the fallback for anything else
-func wireInt(v any, fallback int) int {
-	if n, isNumber := sectionFloat(v); isNumber {
-		return int(n)
-	}
-	return fallback
-}
-
-// Rows of a wire list of objects
-func wireRows(v any) []map[string]any {
-	list, _ := v.([]any)
-	rows := make([]map[string]any, 0, len(list))
-	for _, raw := range list {
-		row, _ := raw.(map[string]any)
-		rows = append(rows, row)
-	}
-	return rows
-}
-
 // Answer to a question, sent once per question, a closed overlay without an answer cancelling it
-func (a *app) answerFlow(run *flowRun, question map[string]any, sent *bool, answer map[string]any) tea.Cmd {
+func (a *app) answerFlow(run *flowRun, question *tuigateway.SetupFlowQuestion, sent *bool, answer tuigateway.SetupFlowAnswer) tea.Cmd {
 	if *sent {
 		return nil
 	}
 	*sent = true
-	answer["question"] = question["id"]
-	return a.stepSetupFlow(run, answer)
+	answer.Question = question.ID
+	return a.stepSetupFlow(run, &answer)
 }
 
 // Opens the overlay of one question, a choice palette, a toggle list or a text prompt
-func (a *app) askFlowQuestion(run *flowRun, question map[string]any) tea.Cmd {
+func (a *app) askFlowQuestion(run *flowRun, question *tuigateway.SetupFlowQuestion) tea.Cmd {
 	sent := new(bool)
-	text, _ := question["question"].(string)
-	text = strings.TrimSpace(strings.TrimSuffix(strings.TrimSpace(text), ":"))
-	cancel := func() tea.Cmd { return a.answerFlow(run, question, sent, map[string]any{"cancel": true}) }
-	switch question["kind"] {
+	text := strings.TrimSpace(strings.TrimSuffix(strings.TrimSpace(question.Question), ":"))
+	cancel := func() tea.Cmd { return a.answerFlow(run, question, sent, tuigateway.SetupFlowAnswer{Cancel: true}) }
+	switch question.Kind {
 	case "choose":
-		def := wireInt(question["default"], 0)
-		options := wireRows(question["options"])
-		items := make([]wm.Item, len(options))
-		for i, option := range options {
-			title, _ := option["title"].(string)
-			detail, _ := option["detail"].(string)
+		items := make([]wm.Item, len(question.Options))
+		for i, option := range question.Options {
 			mark := "○ "
-			if i == def {
+			if int64(i) == question.Default {
 				mark = "● "
 			}
-			index := i
-			items[i] = wm.Item{ID: "flow:" + run.session + ":" + strconv.Itoa(i), Title: mark + strings.TrimSpace(title), Detail: detail,
-				Run: func() tea.Cmd { return a.answerFlow(run, question, sent, map[string]any{"index": index}) }}
+			index := int64(i)
+			items[i] = wm.Item{ID: "flow:" + run.session + ":" + strconv.Itoa(i), Title: mark + strings.TrimSpace(option.Title), Detail: option.Detail,
+				Run: func() tea.Cmd { return a.answerFlow(run, question, sent, tuigateway.SetupFlowAnswer{Index: &index}) }}
 		}
 		sort.SliceStable(items, func(i, j int) bool {
 			return strings.HasPrefix(items[i].Title, "● ") && !strings.HasPrefix(items[j].Title, "● ")
@@ -126,50 +95,47 @@ func (a *app) askFlowQuestion(run *flowRun, question map[string]any) tea.Cmd {
 		return a.wm.ShowOverlay(p)
 	case "check":
 		chosen := map[int]bool{}
-		for _, raw := range wireAny(question["selected"]) {
-			chosen[wireInt(raw, -1)] = true
+		for _, i := range question.Selected {
+			chosen[int(i)] = true
 		}
 		return a.askFlowChecklist(run, question, text, chosen, sent)
 	}
-	if question["secret"] == true {
+	if question.Secret {
 		d := &dialogCard{app: a, kind: "setupSecret", requestID: run.session, marks: map[int]bool{}, title: text,
 			fields: []dialogField{{label: text, masked: true}}}
 		d.onAnswer = func(_ *dialogChoice, _ []string, fields []string) tea.Cmd {
-			return a.answerFlow(run, question, sent, map[string]any{"text": trimJS(fields[0])})
+			return a.answerFlow(run, question, sent, tuigateway.SetupFlowAnswer{Text: trimJS(fields[0])})
 		}
 		d.onCancel = cancel
 		return a.wm.ShowOverlay(d)
 	}
-	def, _ := question["default"].(string)
 	placeholder := text
-	if def != "" {
-		placeholder = tr("setupFlow.section.keep", text, def)
+	if question.DefaultText != "" {
+		placeholder = tr("setupFlow.section.keep", text, question.DefaultText)
 	}
 	p := wm.NewPrompt(a.toolkit, placeholder, "", func(entered string) tea.Cmd {
-		return a.answerFlow(run, question, sent, map[string]any{"text": trimJS(entered)})
+		return a.answerFlow(run, question, sent, tuigateway.SetupFlowAnswer{Text: trimJS(entered)})
 	})
 	p.OnClose = cancel
 	return a.wm.ShowOverlay(p)
 }
 
 // Estimated context of the tools the chosen rows bring, empty when the flow sent no weights
-func flowTokenStatus(question map[string]any, chosen map[int]bool) string {
-	weights, _ := question["tokens"].(map[string]any)
-	if len(weights) == 0 {
+func flowTokenStatus(question *tuigateway.SetupFlowQuestion, chosen map[int]bool) string {
+	if len(question.Tokens) == 0 {
 		return ""
 	}
-	rows := wireRows(question["items"])
 	tools := map[string]bool{}
-	for i, row := range rows {
+	for i, row := range question.Items {
 		if chosen[i] {
-			for _, name := range stringList(row["tools"]) {
+			for _, name := range row.Tools {
 				tools[name] = true
 			}
 		}
 	}
-	total := 0
+	total := int64(0)
 	for name := range tools {
-		total += wireInt(weights[name], 0)
+		total += question.Tokens[name]
 	}
 	if total >= 1000 {
 		return tr("setupFlow.flow.tokensK", strconv.FormatFloat(float64(total)/1000, 'f', 1, 64))
@@ -178,27 +144,24 @@ func flowTokenStatus(question map[string]any, chosen map[int]bool) string {
 }
 
 // Toggle list of a multi choice, a row flipping its mark and the save row answering with the marked rows
-func (a *app) askFlowChecklist(run *flowRun, question map[string]any, text string, chosen map[int]bool, sent *bool) tea.Cmd {
-	rows := wireRows(question["items"])
+func (a *app) askFlowChecklist(run *flowRun, question *tuigateway.SetupFlowQuestion, text string, chosen map[int]bool, sent *bool) tea.Cmd {
 	toggled := false
 	items := []wm.Item{{ID: "flow:" + run.session + ":save", Title: tr("setupFlow.flow.save"), Detail: flowTokenStatus(question, chosen), Run: func() tea.Cmd {
-		indices := []any{}
-		for i := range rows {
+		indices := []int64{}
+		for i := range question.Items {
 			if chosen[i] {
-				indices = append(indices, i)
+				indices = append(indices, int64(i))
 			}
 		}
-		return a.answerFlow(run, question, sent, map[string]any{"indices": indices})
+		return a.answerFlow(run, question, sent, tuigateway.SetupFlowAnswer{Indices: indices})
 	}}}
-	for i, row := range rows {
-		title, _ := row["title"].(string)
-		detail, _ := row["detail"].(string)
+	for i, row := range question.Items {
 		mark := "[ ] "
 		if chosen[i] {
 			mark = "[x] "
 		}
 		index := i
-		items = append(items, wm.Item{ID: "flow:" + run.session + ":" + strconv.Itoa(i), Title: mark + title, Detail: detail, Run: func() tea.Cmd {
+		items = append(items, wm.Item{ID: "flow:" + run.session + ":" + strconv.Itoa(i), Title: mark + row.Title, Detail: row.Detail, Run: func() tea.Cmd {
 			chosen[index] = !chosen[index]
 			toggled = true
 			return a.askFlowChecklist(run, question, text, chosen, sent)
@@ -210,7 +173,7 @@ func (a *app) askFlowChecklist(run *flowRun, question map[string]any, text strin
 		if toggled {
 			return nil
 		}
-		return a.answerFlow(run, question, sent, map[string]any{"cancel": true})
+		return a.answerFlow(run, question, sent, tuigateway.SetupFlowAnswer{Cancel: true})
 	}
 	return a.wm.ShowOverlay(p)
 }

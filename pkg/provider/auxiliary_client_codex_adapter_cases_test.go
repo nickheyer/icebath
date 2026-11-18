@@ -28,7 +28,7 @@ func (c *auxScriptedResponsesClient) CreateChatCompletion(context.Context, map[s
 	return nil, errors.New("chat completions unused")
 }
 
-// Records the effective wire body with extra_body folded in, as the hermes fixtures read it
+// Records the effective wire body with extra_body folded in, as the test fixtures read it
 func (c *auxScriptedResponsesClient) CreateResponse(_ context.Context, kwargs map[string]any) (any, error) {
 	c.calls++
 	c.kwargs = map[string]any{}

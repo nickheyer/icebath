@@ -15,21 +15,17 @@ import (
 	"github.com/nickheyer/icebath/pkg/filedrop"
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
-	"github.com/nickheyer/icebath/pkg/tuigateway"
+	"github.com/nickheyer/icebath/pkg/tuihost"
 )
 
 const (
 	attachBytesMaxBytes = 25 * 1024 * 1024
-	pdfAttachMaxBytes   = 50 * 1024 * 1024
-	pdfAttachMaxPages   = 25
 )
 
 var imageMagic = []struct {
 	sig []byte
 	ext string
 }{{[]byte("\x89PNG\r\n\x1a\n"), ".png"}, {[]byte("\xff\xd8\xff"), ".jpg"}, {[]byte("GIF87a"), ".gif"}, {[]byte("GIF89a"), ".gif"}, {[]byte("BM"), ".bmp"}}
-
-var anyMediaDataURL = regexp.MustCompile(`(?is)^data:[^;,]*(?:;[^;,=]+=[^;,]+)*;base64,(.*)$`)
 
 // Refusal of a payload over its cap in whole megabytes
 type payloadTooLarge struct{ msg string }
@@ -126,7 +122,7 @@ func sniffImageExt(imgBytes []byte, filename string) string {
 func allowedImageExtensions() map[string]bool { return filedrop.ImageExtensions }
 
 // Directory under the session's own home, attachments following the workspace when the profile opts in
-func sessionHomeDir(ctx context.Context, session *tuigateway.Session, name string) string {
+func sessionHomeDir(ctx context.Context, session *tuihost.Session, name string) string {
 	profileHome := strOr(session.Get("profile_home"))
 	if name == "attachments" && profileAttachmentsStorage(ctx, profileHome) == "workspace" {
 		if workspace := sessionAttachmentsWorkspace(ctx, session); workspace != "" {
@@ -163,13 +159,13 @@ func profileAttachmentsStorage(ctx context.Context, profileHome string) string {
 	}
 	var unavailable *config.ConfigBackendUnavailable
 	if errors.As(err, &unavailable) {
-		logger().Warn(fmt.Sprintf("attachments.storage for %s unavailable (%s); staging in the profile home", h, unavailable.Message))
+		pkgLog().Warn(fmt.Sprintf("attachments.storage for %s unavailable (%s); staging in the profile home", h, unavailable.Message))
 	}
 	return ""
 }
 
 // Session workspace when workspace storage can write to it, empty for a remote or missing cwd
-func sessionAttachmentsWorkspace(ctx context.Context, session *tuigateway.Session) (workspace string) {
+func sessionAttachmentsWorkspace(ctx context.Context, session *tuihost.Session) (workspace string) {
 	if cwdIsRemote(ctx, strOr(session.Get("profile_home"))) {
 		return ""
 	}
@@ -183,7 +179,7 @@ func sessionAttachmentsWorkspace(ctx context.Context, session *tuigateway.Sessio
 }
 
 // Images directory of the session home
-func sessionImagesDir(ctx context.Context, session *tuigateway.Session) string {
+func sessionImagesDir(ctx context.Context, session *tuihost.Session) string {
 	return sessionHomeDir(ctx, session, "images")
 }
 
@@ -211,7 +207,7 @@ func stageImageBytes(directory string, imgBytes []byte, ext, prefix string) (str
 }
 
 // Stages image bytes in the session images dir and queues them for the next submit
-func queueAttachedImage(ctx context.Context, session *tuigateway.Session, imgBytes []byte, ext, prefix string) (string, error) {
+func queueAttachedImage(ctx context.Context, session *tuihost.Session, imgBytes []byte, ext, prefix string) (string, error) {
 	session.Set("image_counter", intOr(session.Get("image_counter"))+1)
 	path, err := stageImageBytes(sessionImagesDir(ctx, session), imgBytes, ext, prefix)
 	if err != nil {

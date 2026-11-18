@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"log/slog"
 	"strings"
 
 	"github.com/dlclark/regexp2/v2"
@@ -16,8 +15,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/profiles/manage"
 	"github.com/nickheyer/icebath/pkg/state"
 )
-
-var decomposeLog = slog.Default().With("logger", "hermes_cli.kanban_decompose")
 
 const decomposeSystemPrompt = `You are the Kanban decomposer for the Icebath Agent board.
 
@@ -140,7 +137,7 @@ type rosterEntry struct {
 func buildRoster(ctx context.Context) ([]rosterEntry, map[string]bool) {
 	all, err := manage.ListProfiles(ctx, false)
 	if err != nil {
-		decomposeLog.Warn(fmt.Sprintf("decompose: failed to list profiles: %s", pyrepr.ExceptionMessage(err)))
+		pkgLog().Warn(fmt.Sprintf("decompose: failed to list profiles: %s", pyrepr.ExceptionMessage(err)))
 		return nil, map[string]bool{}
 	}
 	roster := make([]rosterEntry, 0, len(all))
@@ -261,7 +258,7 @@ func cleanChildren(taskID string, rawTasks []any, routing *decomposeRouting) ([]
 		assignee := obj.GetOr("assignee", nil)
 		chosen := normalizeAssigneeChoice(assignee, routing.defaultAssignee, routing.validNames)
 		if s, isStr := assignee.(string); isStr && pystr.Strip(s) != "" && !routing.validNames[pystr.Strip(s)] {
-			decomposeLog.Info(fmt.Sprintf("decompose: task %s child %d picked unknown assignee %s — routing to default_assignee %s",
+			pkgLog().Info(fmt.Sprintf("decompose: task %s child %d picked unknown assignee %s — routing to default_assignee %s",
 				taskID, idx, pyrepr.Repr(s), pyrepr.Repr(routing.defaultAssignee)))
 		}
 		parentsValue := obj.GetOr("parents", nil)
@@ -314,7 +311,7 @@ func applyFanout(ctx context.Context, taskID string, parsed *pyjson.Object, rout
 		if errors.As(err, &ve) {
 			return &DecomposeOutcome{TaskID: taskID, Reason: "DB rejected graph: " + pyrepr.ExceptionMessage(err)}
 		}
-		decomposeLog.Error(fmt.Sprintf("decompose: DB error on task %s", taskID), "exc", err)
+		pkgLog().Error(fmt.Sprintf("decompose: DB error on task %s", taskID), "exc", err)
 		return &DecomposeOutcome{TaskID: taskID, Reason: "DB error: " + pyrepr.ExceptionName(err)}
 	}
 	if childIDs == nil {
@@ -341,7 +338,7 @@ func DecomposeTask(ctx context.Context, taskID string, author *string, timeout *
 		limit = *timeout
 	}
 	raw, reason := callAux(ctx, "decompose", taskID, "kanban_decomposer", decomposeSystemPrompt,
-		decomposeUserPrompt(promptFieldsOf(task), formatRoster(routing.roster), routing.defaultAssignee), 4000, limit, decomposeLog)
+		decomposeUserPrompt(promptFieldsOf(task), formatRoster(routing.roster), routing.defaultAssignee), 4000, limit, pkgLog())
 	if raw == nil {
 		return &DecomposeOutcome{TaskID: taskID, Reason: reason}, nil
 	}

@@ -3,7 +3,6 @@ package tools
 import (
 	"context"
 	"encoding/json"
-	"log/slog"
 	"os"
 
 	"github.com/nickheyer/icebath/pkg/config"
@@ -30,7 +29,7 @@ func pluginScopeEnv(ctx context.Context, scope string) *Env {
 	if env == nil {
 		cfg, _ := config.LoadReadonly(ctx, scope, nil)
 		cwd, _ := os.Getwd()
-		return &Env{Home: scope, Config: cfg, Secrets: config.NewSecrets(scope), Cwd: cwd, Log: slog.Default()}
+		return &Env{Home: scope, Config: cfg, Secrets: config.NewSecrets(scope), Cwd: cwd, Log: pkgLog()}
 	}
 	if scope == "" || ScopeKey(env.Home) == ScopeKey(scope) {
 		return env

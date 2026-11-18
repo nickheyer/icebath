@@ -2,11 +2,8 @@ package provider
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
-	"net/http"
-	"net/http/httptest"
 	"os"
 	"strings"
 	"sync"
@@ -14,6 +11,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/state"
 )
 
@@ -57,13 +55,13 @@ func auxSwapFallbackSeams(t *testing.T) {
 	})
 }
 
-// Main provider unusable, Nous winning discovery and no configured fallback policy
-func auxNousIsTheOnlyWorkingProvider(t *testing.T, persisted string) *auxCallFakeClient {
+// Main provider unusable, an API key provider winning discovery and no configured fallback policy
+func auxAPIKeyIsTheOnlyWorkingProvider(t *testing.T, persisted string) *auxCallFakeClient {
 	auxSwapFallbackSeams(t)
 	auxUnhealthyMu.Lock()
 	clear(auxUnhealthyUntil)
 	auxUnhealthyMu.Unlock()
-	nous := &auxCallFakeClient{base: "https://inference-api.nousresearch.com/v1"}
+	apiKey := &auxCallFakeClient{base: "https://api.deepseek.com/v1"}
 	none := func(context.Context, string, string, string, string, string, FailureScope) (AuxClient, string, string, error) {
 		return nil, "", "", nil
 	}
@@ -72,17 +70,17 @@ func auxNousIsTheOnlyWorkingProvider(t *testing.T, persisted string) *auxCallFak
 	auxProviderChainFn = func() []auxProviderChainEntry {
 		return []auxProviderChainEntry{
 			{"openrouter", func(context.Context) (AuxClient, string, error) { return nil, "", nil }},
-			{"nous", func(context.Context) (AuxClient, string, error) { return nous, "nous-model", nil }},
+			{"api-key", func(context.Context) (AuxClient, string, error) { return apiKey, "deepseek-v4", nil }},
 		}
 	}
 	auxReadMainProvider = func(context.Context) string { return persisted }
-	return nous
+	return apiKey
 }
 
 func TestSelectedMainProviderDownRefusesToGuessAnotherAccount(t *testing.T) {
 	for _, persisted := range []string{"xai-oauth", "auto"} {
 		t.Run(persisted, func(t *testing.T) {
-			auxNousIsTheOnlyWorkingProvider(t, persisted)
+			auxAPIKeyIsTheOnlyWorkingProvider(t, persisted)
 			ctx := context.Background()
 			runtime := map[string]any{"provider": "xai-oauth", "model": "grok-4.6", "base_url": "https://api.x.ai/v1", "api_key": "dead"}
 			if client, model, label, err := auxResolveAutoRoute(ctx, runtime, "compression"); client != nil || model != "" || label != "" || err != nil {
@@ -99,7 +97,7 @@ func TestQuarantinedFallbackHandsOverToTheNextConfiguredEntry(t *testing.T) {
 	auxSwapFallbackSeams(t)
 	healthy := &auxCallFakeClient{}
 	auxTryConfiguredFallbackChainFn = func(context.Context, string, string, string, string, string, FailureScope) (AuxClient, string, string, error) {
-		return healthy, "m2", "fallback_chain[1](nous)", nil
+		return healthy, "m2", "fallback_chain[1](deepseek)", nil
 	}
 	discovery := 0
 	auxTryPaymentFallbackFn = func(context.Context, string, string, string, string, FailureScope, map[string]any) (AuxClient, string, string, error) {
@@ -108,7 +106,7 @@ func TestQuarantinedFallbackHandsOverToTheNextConfiguredEntry(t *testing.T) {
 	}
 	route := auxLadderRoute{Task: "compression", ResolvedProvider: "xai-oauth", MainRuntime: map[string]any{"provider": "xai-oauth"}}
 	client, _, label, err := auxNextFallbackAfterQuarantine(context.Background(), "compression", "auto", true, route, "", "", false)
-	if err != nil || client != AuxClient(healthy) || label != "fallback_chain[1](nous)" {
+	if err != nil || client != AuxClient(healthy) || label != "fallback_chain[1](deepseek)" {
 		t.Fatalf("next fallback %v %q %v", client, label, err)
 	}
 	if discovery != 0 {
@@ -117,9 +115,9 @@ func TestQuarantinedFallbackHandsOverToTheNextConfiguredEntry(t *testing.T) {
 }
 
 func TestNoSelectedMainProviderStillDiscovers(t *testing.T) {
-	nous := auxNousIsTheOnlyWorkingProvider(t, "auto")
+	apiKey := auxAPIKeyIsTheOnlyWorkingProvider(t, "auto")
 	client, model, label, err := auxResolveAutoRoute(context.Background(), map[string]any{"provider": "auto"}, "compression")
-	if err != nil || client != AuxClient(nous) || model != "nous-model" || label != "nous" {
+	if err != nil || client != AuxClient(apiKey) || model != "deepseek-v4" || label != "api-key" {
 		t.Fatalf("discovery %v %q %q %v", client, model, label, err)
 	}
 }
@@ -420,7 +418,7 @@ func auxTaskExtraBodyCase(t *testing.T, async bool, taskExtra, explicit, want ma
 		"messages": []any{map[string]any{"role": "user", "content": "hello"}}, "extra_body": explicit}); err != nil {
 		t.Fatal(err)
 	}
-	body, _ := client.sent[len(client.sent)-1]["extra_body"].(map[string]any)
+	body, _ := pyjson.Plain(client.sent[len(client.sent)-1]["extra_body"]).(map[string]any)
 	for k, v := range want {
 		if fmt.Sprint(body[k]) != fmt.Sprint(v) {
 			t.Fatalf("extra_body %v, want %s=%v", body, k, v)
@@ -436,38 +434,4 @@ func TestAuxiliaryTaskExtraBodySyncCallMergesTaskExtraBodyFromConfig(t *testing.
 
 func TestAuxiliaryTaskExtraBodyAsyncCallExplicitExtraBodyOverridesTaskConfig(t *testing.T) {
 	auxTaskExtraBodyCase(t, true, map[string]any{"enable_thinking": false}, map[string]any{"enable_thinking": true}, map[string]any{"enable_thinking": true})
-}
-
-func TestAuxiliaryPoolAwarenessCallLLMRetriesNousAfter401(t *testing.T) {
-	ctx := context.Background()
-	h := t.TempDir()
-	t.Setenv("ICEBATH_HOME", h)
-	writeConfig(t, h, map[string]any{"auxiliary": map[string]any{"compression": map[string]any{"provider": "nous", "model": "nous-model"}}})
-	ShutdownCachedClients(ctx)
-	t.Cleanup(func() { ShutdownCachedClients(ctx) })
-	var freshCalls atomic.Int32
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		freshCalls.Add(1)
-		w.Header().Set("Content-Type", "application/json")
-		_ = json.NewEncoder(w).Encode(auxCallOK("fresh"))
-	}))
-	t.Cleanup(srv.Close)
-	stale := &auxCallFakeClient{base: "https://inference-api.nousresearch.com/v1", key: "stale-key",
-		create: func(context.Context, map[string]any) (any, error) {
-			return nil, &AuxSDKError{Class: "APIStatusError", Message: "stale nous key", StatusCode: 401}
-		}}
-	auxSwapCachedClient(t, stale, "nous-model")
-	prevPaid, prevNous := auxNousFreshPaidAccessFn, auxResolveNousRuntimeAPIFn
-	t.Cleanup(func() { auxNousFreshPaidAccessFn, auxResolveNousRuntimeAPIFn = prevPaid, prevNous })
-	auxNousFreshPaidAccessFn = func(context.Context) bool { return false }
-	auxResolveNousRuntimeAPIFn = func(context.Context, bool, string) (string, string, bool) {
-		return "fresh-agent-key", srv.URL + "/v1", true
-	}
-	result, err := CallLLM(ctx, map[string]any{"task": "compression", "messages": []any{map[string]any{"role": "user", "content": "hi"}}})
-	if err != nil || auxActualContent(t, result) != "fresh" {
-		t.Fatalf("result %v err %v", result, err)
-	}
-	if len(stale.sent) != 1 || freshCalls.Load() != 1 {
-		t.Fatalf("stale calls %d fresh calls %d", len(stale.sent), freshCalls.Load())
-	}
 }

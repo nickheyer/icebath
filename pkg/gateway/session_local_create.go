@@ -4,7 +4,6 @@ import (
 	"context"
 	"crypto/subtle"
 	"fmt"
-	"log/slog"
 	"os"
 	"path/filepath"
 	"sort"
@@ -243,9 +242,6 @@ func stageLocalSession(ctx context.Context, a *SessionAuthority, actor Principal
 				replaced.Model = &model
 			}
 			policy = &replaced
-			if policy.Model != nil && *policy.Model == provider.GuestModel {
-				marks.Set(FollowAdopted, true)
-			}
 		}
 		if marks.Len() > 0 {
 			frozen, err := loadsObject(policy.ConfigJSON)
@@ -352,7 +348,7 @@ func stageLocalSession(ctx context.Context, a *SessionAuthority, actor Principal
 	withSkills.SkillsPrompt = opts.SkillsPrompt
 	policy = &withSkills
 	if warning := projectPluginsWarning(policy); warning != nil {
-		slog.Warn(fmt.Sprintf("session %s: %s", sid, *warning))
+		pkgLog().Warn(fmt.Sprintf("session %s: %s", sid, *warning))
 	}
 	clientRequest := pyjson.NewObject()
 	if env, has := params["client_env"]; has {

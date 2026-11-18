@@ -74,9 +74,6 @@ func TestUnsetEffortDefaultKeepsTheFieldOffWhereItWouldBeWrong(t *testing.T) {
 	if got := ReasoningConfigForWire(ctx, ollama); got != nil {
 		t.Fatalf("ollama without thinking got %v", got)
 	}
-	if got := ReasoningConfigForWire(ctx, unsetEffortAgent(nil, "nous", "chat_completions")); got != nil {
-		t.Fatalf("nous got %v", got)
-	}
 	if got := UnsetReasoningDefault(ctx, unsetEffortAgent(nil, "custom:relay", "anthropic_messages")); got != nil {
 		t.Fatalf("anthropic_messages got %v", got)
 	}

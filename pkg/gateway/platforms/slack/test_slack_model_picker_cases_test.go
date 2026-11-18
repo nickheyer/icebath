@@ -10,7 +10,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/gateway"
 )
 
-// Provider rows the hermes picker cases seed
+// Provider rows the picker cases seed
 func pickerProviders() []map[string]any {
 	return []map[string]any{
 		{"slug": "openrouter", "name": "OpenRouter", "models": []any{"anthropic/claude-sonnet-4", "openai/gpt-5"}, "total_models": int64(2), "is_current": true},
@@ -60,10 +60,10 @@ func TestSlackModelPickerSendSendsProviderDropdown(t *testing.T) {
 	elements := blocks[1].(map[string]any)["elements"].([]any)
 	sel, cancel := elements[0].(map[string]any), elements[1].(map[string]any)
 	options := sel["options"].([]any)
-	if len(elements) != 2 || sel["type"] != "static_select" || sel["action_id"] != "hermes_model_provider" || len(options) != 2 ||
+	if len(elements) != 2 || sel["type"] != "static_select" || sel["action_id"] != "icebath_model_provider" || len(options) != 2 ||
 		options[0].(map[string]any)["value"] != "0" || options[1].(map[string]any)["value"] != "1" ||
 		!strings.Contains(options[0].(map[string]any)["text"].(map[string]any)["text"].(string), "OpenRouter") ||
-		cancel["type"] != "button" || cancel["action_id"] != "hermes_model_cancel" {
+		cancel["type"] != "button" || cancel["action_id"] != "icebath_model_cancel" {
 		t.Fatalf("elements %v", elements)
 	}
 	state, ok := a.modelPickerState.Get("1234.5678")
@@ -178,7 +178,7 @@ func TestSlackModelPickerActionProviderSelectShowsModels(t *testing.T) {
 	a, f := pickerAdapter(t)
 	key := seedPickerState(a, nil, "provider", "", false, nil)
 	ack := &ackRecorder{}
-	a.handleModelPickerAction(context.Background(), ack.ack, pickerInteractionBody("1234.5678", "alice", "U_ALICE"), pickerAction("hermes_model_provider", "0"))
+	a.handleModelPickerAction(context.Background(), ack.ack, pickerInteractionBody("1234.5678", "alice", "U_ALICE"), pickerAction("icebath_model_provider", "0"))
 	updates := f.callsTo("chat.update")
 	if ack.calls != 1 || len(updates) != 1 {
 		t.Fatalf("ack %d updates %d", ack.calls, len(updates))
@@ -189,8 +189,8 @@ func TestSlackModelPickerActionProviderSelectShowsModels(t *testing.T) {
 	for _, o := range sel["options"].([]any) {
 		values = append(values, o.(map[string]any)["value"].(string))
 	}
-	if sel["action_id"] != "hermes_model_model" || strings.Join(values, ",") != "0,1" ||
-		elements[1].(map[string]any)["action_id"] != "hermes_model_back" || elements[2].(map[string]any)["action_id"] != "hermes_model_cancel" {
+	if sel["action_id"] != "icebath_model_model" || strings.Join(values, ",") != "0,1" ||
+		elements[1].(map[string]any)["action_id"] != "icebath_model_back" || elements[2].(map[string]any)["action_id"] != "icebath_model_cancel" {
 		t.Fatalf("elements %v", elements)
 	}
 	state, _ := a.modelPickerState.Get(key)
@@ -203,7 +203,7 @@ func TestSlackModelPickerActionBareTsStateResolvesOnTeamScopedClick(t *testing.T
 	a, f := pickerAdapter(t)
 	seedPickerState(a, nil, "provider", "", true, nil)
 	ack := &ackRecorder{}
-	a.handleModelPickerAction(context.Background(), ack.ack, pickerInteractionBody("1234.5678", "alice", "U_ALICE"), pickerAction("hermes_model_provider", "0"))
+	a.handleModelPickerAction(context.Background(), ack.ack, pickerInteractionBody("1234.5678", "alice", "U_ALICE"), pickerAction("icebath_model_provider", "0"))
 	if ack.calls != 1 || len(f.callsTo("chat.update")) != 1 {
 		t.Fatalf("ack %d updates %d", ack.calls, len(f.callsTo("chat.update")))
 	}
@@ -217,7 +217,7 @@ func TestSlackModelPickerActionProviderSelectWithNoModelsDismissesPicker(t *test
 	a, f := pickerAdapter(t)
 	key := seedPickerState(a, nil, "provider", "", false, []map[string]any{{"slug": "empty", "name": "EmptyCo", "models": []any{}, "total_models": int64(0), "is_current": false}})
 	ack := &ackRecorder{}
-	a.handleModelPickerAction(context.Background(), ack.ack, pickerInteractionBody("1234.5678", "alice", "U_ALICE"), pickerAction("hermes_model_provider", "0"))
+	a.handleModelPickerAction(context.Background(), ack.ack, pickerInteractionBody("1234.5678", "alice", "U_ALICE"), pickerAction("icebath_model_provider", "0"))
 	if ack.calls != 1 || len(f.callsTo("chat.update")) != 1 || !strings.Contains(lastUpdateText(t, f), "No models available") || a.modelPickerState.Has(key) {
 		t.Fatalf("ack %d updates %v", ack.calls, f.callsTo("chat.update"))
 	}
@@ -228,7 +228,7 @@ func TestSlackModelPickerActionModelSelectCallsCallback(t *testing.T) {
 	cb := &pickerCallback{result: "✅ Switched to claude-sonnet-4"}
 	key := seedPickerState(a, cb, "model", "openrouter", false, nil)
 	ack := &ackRecorder{}
-	a.handleModelPickerAction(context.Background(), ack.ack, pickerInteractionBody("1234.5678", "alice", "U_ALICE"), pickerAction("hermes_model_model", "0"))
+	a.handleModelPickerAction(context.Background(), ack.ack, pickerInteractionBody("1234.5678", "alice", "U_ALICE"), pickerAction("icebath_model_model", "0"))
 	if ack.calls != 1 || len(cb.calls) != 1 || cb.calls[0] != [3]string{"C1", "anthropic/claude-sonnet-4", "openrouter"} || a.modelPickerState.Has(key) {
 		t.Fatalf("ack %d calls %v", ack.calls, cb.calls)
 	}
@@ -243,7 +243,7 @@ func TestSlackModelPickerActionModelSelectCallsCallback(t *testing.T) {
 func TestSlackModelPickerActionModelSelectCallbackErrorIsReported(t *testing.T) {
 	a, f := pickerAdapter(t)
 	seedPickerState(a, &pickerCallback{err: errors.New("boom")}, "model", "openrouter", false, nil)
-	a.handleModelPickerAction(context.Background(), (&ackRecorder{}).ack, pickerInteractionBody("1234.5678", "alice", "U_ALICE"), pickerAction("hermes_model_model", "1"))
+	a.handleModelPickerAction(context.Background(), (&ackRecorder{}).ack, pickerInteractionBody("1234.5678", "alice", "U_ALICE"), pickerAction("icebath_model_model", "1"))
 	if !strings.Contains(strings.ToLower(lastUpdateText(t, f)), "failed") {
 		t.Fatalf("last update %q", lastUpdateText(t, f))
 	}
@@ -252,7 +252,7 @@ func TestSlackModelPickerActionModelSelectCallbackErrorIsReported(t *testing.T) 
 func TestSlackModelPickerActionModelSelectGatewayErrorReturnUsesFailureHeader(t *testing.T) {
 	a, f := pickerAdapter(t)
 	seedPickerState(a, &pickerCallback{result: "Error: Model switch to anthropic/claude-sonnet-4 failed (boom); staying on old."}, "model", "openrouter", false, nil)
-	a.handleModelPickerAction(context.Background(), (&ackRecorder{}).ack, pickerInteractionBody("1234.5678", "alice", "U_ALICE"), pickerAction("hermes_model_model", "0"))
+	a.handleModelPickerAction(context.Background(), (&ackRecorder{}).ack, pickerInteractionBody("1234.5678", "alice", "U_ALICE"), pickerAction("icebath_model_model", "0"))
 	if last := lastUpdateText(t, f); !strings.HasPrefix(last, "⚙ Model Switch Failed") || !strings.Contains(last, "staying on old") {
 		t.Fatalf("last update %q", last)
 	}
@@ -263,7 +263,7 @@ func TestSlackModelPickerActionModelSelectInvalidIndexExpiresPicker(t *testing.T
 	cb := &pickerCallback{}
 	key := seedPickerState(a, cb, "model", "openrouter", false, nil)
 	ack := &ackRecorder{}
-	a.handleModelPickerAction(context.Background(), ack.ack, pickerInteractionBody("1234.5678", "alice", "U_ALICE"), pickerAction("hermes_model_model", "bogus"))
+	a.handleModelPickerAction(context.Background(), ack.ack, pickerInteractionBody("1234.5678", "alice", "U_ALICE"), pickerAction("icebath_model_model", "bogus"))
 	if ack.calls != 1 || len(cb.calls) != 0 || len(f.callsTo("chat.update")) != 1 || !strings.Contains(strings.ToLower(lastUpdateText(t, f)), "expired") || a.modelPickerState.Has(key) {
 		t.Fatalf("ack %d calls %v updates %v", ack.calls, cb.calls, f.callsTo("chat.update"))
 	}
@@ -277,7 +277,7 @@ func TestSlackModelPickerActionModelSelectOutOfRangeIndexExpiresPicker(t *testin
 		if !a.modelPickerState.Has(key) {
 			seedPickerState(a, cb, "model", "openrouter", false, nil)
 		}
-		a.handleModelPickerAction(context.Background(), (&ackRecorder{}).ack, pickerInteractionBody("1234.5678", "alice", "U_ALICE"), pickerAction("hermes_model_model", token))
+		a.handleModelPickerAction(context.Background(), (&ackRecorder{}).ack, pickerInteractionBody("1234.5678", "alice", "U_ALICE"), pickerAction("icebath_model_model", token))
 		if len(cb.calls) != 0 {
 			t.Fatalf("callback ran for %s", token)
 		}
@@ -291,7 +291,7 @@ func TestSlackModelPickerActionProviderSelectInvalidIndexExpiresPicker(t *testin
 	a, f := pickerAdapter(t)
 	key := seedPickerState(a, nil, "provider", "", false, nil)
 	ack := &ackRecorder{}
-	a.handleModelPickerAction(context.Background(), ack.ack, pickerInteractionBody("1234.5678", "alice", "U_ALICE"), pickerAction("hermes_model_provider", "7"))
+	a.handleModelPickerAction(context.Background(), ack.ack, pickerInteractionBody("1234.5678", "alice", "U_ALICE"), pickerAction("icebath_model_provider", "7"))
 	if ack.calls != 1 || len(f.callsTo("chat.update")) != 1 || !strings.Contains(strings.ToLower(lastUpdateText(t, f)), "expired") || a.modelPickerState.Has(key) {
 		t.Fatalf("ack %d updates %v", ack.calls, f.callsTo("chat.update"))
 	}
@@ -301,7 +301,7 @@ func TestSlackModelPickerActionCancelClearsState(t *testing.T) {
 	a, f := pickerAdapter(t)
 	key := seedPickerState(a, nil, "provider", "", false, nil)
 	ack := &ackRecorder{}
-	a.handleModelPickerAction(context.Background(), ack.ack, pickerInteractionBody("1234.5678", "alice", "U_ALICE"), map[string]any{"action_id": "hermes_model_cancel", "value": "cancel"})
+	a.handleModelPickerAction(context.Background(), ack.ack, pickerInteractionBody("1234.5678", "alice", "U_ALICE"), map[string]any{"action_id": "icebath_model_cancel", "value": "cancel"})
 	if ack.calls != 1 || a.modelPickerState.Has(key) || len(f.callsTo("chat.update")) != 1 || !strings.Contains(strings.ToLower(lastUpdateText(t, f)), "cancelled") {
 		t.Fatalf("ack %d updates %v", ack.calls, f.callsTo("chat.update"))
 	}
@@ -310,9 +310,9 @@ func TestSlackModelPickerActionCancelClearsState(t *testing.T) {
 func TestSlackModelPickerActionBackReturnsToProvider(t *testing.T) {
 	a, f := pickerAdapter(t)
 	key := seedPickerState(a, nil, "model", "openrouter", false, nil)
-	a.handleModelPickerAction(context.Background(), (&ackRecorder{}).ack, pickerInteractionBody("1234.5678", "alice", "U_ALICE"), map[string]any{"action_id": "hermes_model_back", "value": "openrouter"})
+	a.handleModelPickerAction(context.Background(), (&ackRecorder{}).ack, pickerInteractionBody("1234.5678", "alice", "U_ALICE"), map[string]any{"action_id": "icebath_model_back", "value": "openrouter"})
 	updates := f.callsTo("chat.update")
-	if len(updates) != 1 || blocksOf(t, updates[0].Args)[1].(map[string]any)["elements"].([]any)[0].(map[string]any)["action_id"] != "hermes_model_provider" {
+	if len(updates) != 1 || blocksOf(t, updates[0].Args)[1].(map[string]any)["elements"].([]any)[0].(map[string]any)["action_id"] != "icebath_model_provider" {
 		t.Fatalf("updates %v", updates)
 	}
 	state, _ := a.modelPickerState.Get(key)
@@ -324,7 +324,7 @@ func TestSlackModelPickerActionBackReturnsToProvider(t *testing.T) {
 func TestSlackModelPickerActionStateNotFoundShowsExpiry(t *testing.T) {
 	a, f := pickerAdapter(t)
 	ack := &ackRecorder{}
-	a.handleModelPickerAction(context.Background(), ack.ack, pickerInteractionBody("nonexistent", "alice", "U_ALICE"), pickerAction("hermes_model_provider", "0"))
+	a.handleModelPickerAction(context.Background(), ack.ack, pickerInteractionBody("nonexistent", "alice", "U_ALICE"), pickerAction("icebath_model_provider", "0"))
 	if ack.calls != 1 || len(f.callsTo("chat.update")) != 1 || !strings.Contains(strings.ToLower(lastUpdateText(t, f)), "expired") {
 		t.Fatalf("ack %d updates %v", ack.calls, f.callsTo("chat.update"))
 	}
@@ -335,7 +335,7 @@ func TestSlackModelPickerActionUnauthorizedUserBlocked(t *testing.T) {
 	attachAuthRunner(a, func(s *gateway.SessionSource) bool { return deref(s.UserID) == "U_OWNER" })
 	key := seedPickerState(a, nil, "provider", "", false, nil)
 	ack := &ackRecorder{}
-	a.handleModelPickerAction(context.Background(), ack.ack, pickerInteractionBody("1234.5678", "intruder", "U_BAD"), pickerAction("hermes_model_provider", "openrouter"))
+	a.handleModelPickerAction(context.Background(), ack.ack, pickerInteractionBody("1234.5678", "intruder", "U_BAD"), pickerAction("icebath_model_provider", "openrouter"))
 	state, _ := a.modelPickerState.Get(key)
 	if ack.calls != 1 || len(f.callsTo("chat.update")) != 0 || state.stage != "provider" {
 		t.Fatalf("ack %d updates %v state %+v", ack.calls, f.callsTo("chat.update"), state)

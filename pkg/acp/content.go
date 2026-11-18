@@ -15,10 +15,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pycodecs"
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/internal/pyurl"
-	"github.com/nickheyer/icebath/pkg/logging"
 )
-
-var serverLog = logging.GetLogger("acp_adapter.server")
 
 const maxACPResourceBytes = 512 * 1024
 
@@ -201,7 +198,7 @@ func resourceLinkToParts(block *pyacp.ResourceContentBlock) ([]map[string]any, e
 			data, err = os.ReadFile(path)
 		}
 		if err != nil {
-			serverLog.Warning("ACP image resource read failed: " + uri)
+			pkgLog().Warning("ACP image resource read failed: " + uri)
 			return textParts(uri, "[Could not read attached image: "+pypath.OSErrorText(err)+"]", name, title, "")
 		}
 		display, derr := resourceDisplayName(uri, name, title)
@@ -220,7 +217,7 @@ func resourceLinkToParts(block *pyacp.ResourceContentBlock) ([]map[string]any, e
 		}
 	}
 	if err != nil {
-		serverLog.Warning("ACP resource read failed: " + uri)
+		pkgLog().Warning("ACP resource read failed: " + uri)
 		return textParts(uri, "[Could not read attached file: "+pypath.OSErrorText(err)+"]", name, title, "")
 	}
 	size := st.Size()
@@ -321,7 +318,7 @@ func appendParts(parts []map[string]any, textParts []string, newParts []map[stri
 	return parts, textParts
 }
 
-// Hermes user content of ACP prompt blocks, a string for pure text and parts when media is present
+// User content of ACP prompt blocks, a string for pure text and parts when media is present
 func ContentBlocksToOpenAIUserContent(prompt []pyacp.ContentBlock) (any, error) {
 	var parts []map[string]any
 	var texts []string

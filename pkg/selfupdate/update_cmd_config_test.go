@@ -159,7 +159,7 @@ func ucWriteProfile(t *testing.T, root, name string, version int) string {
 	if err := os.MkdirAll(h, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	text := fmt.Sprintf("_config_version: %d\nmodel:\n  provider: nous\n", version)
+	text := fmt.Sprintf("_config_version: %d\nmodel:\n  provider: openrouter\n", version)
 	if err := os.WriteFile(filepath.Join(h, "config.yaml"), []byte(text), 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -225,7 +225,7 @@ func TestSiblingBehindIsMigratedOnDisk(t *testing.T) {
 	if got := ucDiskVersion(t, sibling); got != latest {
 		t.Fatalf("on disk version = %d", got)
 	}
-	if got := ucDiskProvider(t, sibling); got != "nous" {
+	if got := ucDiskProvider(t, sibling); got != "openrouter" {
 		t.Fatalf("provider = %v", got)
 	}
 }
@@ -323,7 +323,7 @@ func TestNamedActiveMigratesDefaultOutsideProfiles(t *testing.T) {
 	if got := ucDiskVersion(t, defaultHome); got != latest {
 		t.Fatalf("default version = %d", got)
 	}
-	if got := ucDiskProvider(t, defaultHome); got != "nous" {
+	if got := ucDiskProvider(t, defaultHome); got != "openrouter" {
 		t.Fatalf("provider = %v", got)
 	}
 	for _, name := range ucMigratedNames(migrated) {

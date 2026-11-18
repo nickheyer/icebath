@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"log/slog"
 
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/state"
@@ -65,7 +64,7 @@ func adoptBeforeRestore(ctx context.Context, a *SessionAuthority, sid string, tr
 	}
 	var refusal *state.RuntimeStoreError
 	if errors.As(err, &refusal) {
-		slog.Warn(fmt.Sprintf("Local session %s compression catch-up failed: %s", sid, refusal.Reason))
+		pkgLog().Warn(fmt.Sprintf("Local session %s compression catch-up failed: %s", sid, refusal.Reason))
 		return nil
 	}
 	return err
@@ -96,7 +95,7 @@ func scheduleAdoption(ctx context.Context, a *SessionAuthority, sid string, rece
 			return
 		}
 	}
-	slog.Info(fmt.Sprintf("Local session %s: committing its compression catch-up off the owner loop", sid))
+	pkgLog().Info(fmt.Sprintf("Local session %s: committing its compression catch-up off the owner loop", sid))
 	if a.localAdoptions == nil {
 		a.localAdoptions = map[string]*trackedTask{}
 	}
@@ -107,7 +106,7 @@ func scheduleAdoption(ctx context.Context, a *SessionAuthority, sid string, rece
 		}
 		var refusal *state.RuntimeStoreError
 		if errors.As(err, &refusal) {
-			slog.Warn(fmt.Sprintf("Local session %s paused after its compression catch-up: %s", sid, refusal.Reason))
+			pkgLog().Warn(fmt.Sprintf("Local session %s paused after its compression catch-up: %s", sid, refusal.Reason))
 			return nil, nil
 		}
 		return nil, err

@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/config"
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pycodecs"
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
@@ -18,7 +19,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/tools"
 )
 
-// Config, env file and terminal seams the secrets CLIs share, the module attributes hermes tests patch
+// Config, env file and terminal seams the secrets CLIs share, the module attributes tests patch
 var (
 	secretsLoadConfig = func(h string) (map[string]any, error) {
 		tree, err := config.Load(h, config.NewSecrets(h).Lookup())
@@ -79,7 +80,7 @@ func secretsMapping(v any) map[string]any {
 	if !pyTruthy(v) {
 		return map[string]any{}
 	}
-	panic(fmt.Sprintf("AttributeError: '%s' object has no attribute 'get'", pyTypeName(v)))
+	panic(fmt.Sprintf("the secrets config is %s, expected a mapping", errchain.Kind(v)))
 }
 
 // The secrets section of a config, empty when absent
@@ -274,7 +275,7 @@ func secretsSetdefaultMapping(cfg map[string]any, key string) map[string]any {
 		return m
 	}
 	if cfg[key] != nil {
-		panic(fmt.Sprintf("TypeError: '%s' object does not support item assignment", pyTypeName(cfg[key])))
+		panic(fmt.Sprintf("secrets config %s is %s, expected a mapping", key, errchain.Kind(cfg[key])))
 	}
 	m := map[string]any{}
 	cfg[key] = m

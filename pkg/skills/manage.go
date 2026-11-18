@@ -1177,7 +1177,7 @@ func SkillManageSchema() *pyjson.Object {
 		opSchema("delete", pyjson.ObjectOf("absorbed_into", str("Curator consolidation only: umbrella skill that absorbed this one (must exist)."))),
 	})
 	return pyjson.ObjectOf(
-		"name",        "skill_manage",
+		"name", "skill_manage",
 		"description", skillManageDescription(),
 		"parameters", pyjson.ObjectOf("type", "object", "properties", pyjson.ObjectOf("operations", pyjson.ObjectOf(
 			"type", "array", "description", "Ordered ops; each names its target skill (lowercase, hyphens/underscores, max 64 chars). Each action is its own shape; another action's text slot is invalid.", "items", items)),

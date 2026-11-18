@@ -241,7 +241,7 @@ func pyErrText(err error) string {
 	if _, ok := err.(*pyfs.CopyTreeError); ok {
 		return err.Error()
 	}
-	return pyOSErrorText(err)
+	return osErrorText(err)
 }
 
 // Ignores every rmtree failure the way ignore_errors does

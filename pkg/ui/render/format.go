@@ -141,35 +141,6 @@ func trimZero(s string) string {
 	return s
 }
 
-// Horizontal bar of width filled to the fraction in ice and dim past the fill
-func Bar(fraction float64, width int, t theme.Theme) string {
-	if width <= 0 {
-		return ""
-	}
-	fraction = min(max(fraction, 0), 1)
-	filled := int(math.Round(fraction * float64(width)))
-	g := t.Glyphs
-	rest := t.Steel
-	if t.Plain {
-		rest = t.TextDim
-	}
-	return lipgloss.NewStyle().Foreground(t.Ice).Render(strings.Repeat(g.Full, filled)) + lipgloss.NewStyle().Foreground(rest).Render(strings.Repeat(g.Empty, width-filled))
-}
-
-// Bar in ice that turns to the accent once the fraction passes three quarters
-func Gauge(fraction float64, width int, t theme.Theme) string {
-	if width <= 0 {
-		return ""
-	}
-	fraction = min(max(fraction, 0), 1)
-	filled := int(math.Round(fraction * float64(width)))
-	c := t.Ice
-	if fraction >= 0.75 {
-		c = t.Accent
-	}
-	return lipgloss.NewStyle().Foreground(c).Render(strings.Repeat(t.Glyphs.Full, filled)) + lipgloss.NewStyle().Foreground(t.Steel).Render(strings.Repeat(t.Glyphs.Empty, width-filled))
-}
-
 // Spinner frame for a tick from the theme frames
 func Spinner(tick int, t theme.Theme) string {
 	frames := t.Glyphs.Spinner
@@ -227,11 +198,6 @@ func ToolGlyph(name string, t theme.Theme) string {
 	return g.Tool
 }
 
-// Styled key and value pair on one line
-func KV(key, value string, t theme.Theme) string {
-	return lipgloss.NewStyle().Foreground(t.TextDim).Render(key+" ") + lipgloss.NewStyle().Foreground(t.Text).Render(value)
-}
-
 // Section heading in bold text
 func Heading(text string, t theme.Theme) string {
 	return lipgloss.NewStyle().Foreground(t.Text).Bold(true).Render(text)
@@ -260,35 +226,4 @@ func Warm(text string, t theme.Theme) string {
 // Text in the ice color
 func Cool(text string, t theme.Theme) string {
 	return lipgloss.NewStyle().Foreground(t.Ice).Render(text)
-}
-
-// Text in the pulse color
-func Hot(text string, t theme.Theme) string {
-	return lipgloss.NewStyle().Foreground(t.Pulse).Render(text)
-}
-
-// Lines of a string, an empty string giving none
-func Lines(s string) []string {
-	if s == "" {
-		return nil
-	}
-	return strings.Split(strings.TrimRight(s, "\n"), "\n")
-}
-
-// Last n lines of a string
-func Tail(s string, n int) string {
-	lines := Lines(s)
-	if len(lines) <= n {
-		return strings.Join(lines, "\n")
-	}
-	return strings.Join(lines[len(lines)-n:], "\n")
-}
-
-// First line of a string cut to width, the theme ellipsis marking lines left out
-func Summary(s string, width int, t theme.Theme) string {
-	s = strings.TrimSpace(s)
-	if i := strings.IndexByte(s, '\n'); i >= 0 {
-		s = s[:i] + " " + t.Glyphs.Ellipsis
-	}
-	return Truncate(s, width, t)
 }

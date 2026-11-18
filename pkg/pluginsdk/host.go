@@ -242,7 +242,14 @@ func (h *host) RegisterWidget(widget Widget) (*Handle, error) {
 	if widget.Render == nil {
 		return nil, fmt.Errorf("widget %q has no render function", widget.ID)
 	}
-	kwargs := map[string]any{"id": widget.ID, "help": widget.Help, "usage": widget.Usage, "mode": widget.Mode, "zone": widget.Zone, "width": widget.Width}
+	kwargs := map[string]any{"id": widget.ID, "help": widget.Help, "usage": widget.Usage, "mode": widget.Mode, "zone": widget.Zone, "width": widget.Width,
+		"refresh": widget.Refresh.Seconds()}
+	if widget.Tick != nil {
+		kwargs["tick"] = h.peer.funcRef(widget.ID+".tick", func(ctx context.Context, _ []any, kw map[string]any) (any, error) {
+			next, err := widget.Tick(ctx, kw["state"])
+			return map[string]any{"state": next}, err
+		})
+	}
 	kwargs["render"] = h.peer.funcRef(widget.ID+".render", func(ctx context.Context, _ []any, kw map[string]any) (any, error) {
 		cols, _ := integer(kw["cols"])
 		rows, _ := integer(kw["rows"])

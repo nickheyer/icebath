@@ -4,6 +4,8 @@ import (
 	"encoding/json"
 	"reflect"
 	"testing"
+
+	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 )
 
 func schemaTool(name string, parameters any) map[string]any {
@@ -22,7 +24,7 @@ func jsonRound(t *testing.T, src string) map[string]any {
 func sanitizedParams(t *testing.T, tool map[string]any) map[string]any {
 	t.Helper()
 	out := SanitizeToolSchemas([]map[string]any{tool})
-	return out[0]["function"].(map[string]any)["parameters"].(map[string]any)
+	return pyjson.Plain(out[0]["function"]).(map[string]any)["parameters"].(map[string]any)
 }
 
 func emptyObjectSchema() map[string]any {
@@ -97,7 +99,7 @@ func TestAnyOfNestedObjectsSanitized(t *testing.T) {
 
 func TestMissingParametersGetsDefaultObjectSchema(t *testing.T) {
 	out := SanitizeToolSchemas([]map[string]any{{"type": "function", "function": map[string]any{"name": "t"}}})
-	if !reflect.DeepEqual(out[0]["function"].(map[string]any)["parameters"], emptyObjectSchema()) {
+	if !reflect.DeepEqual(pyjson.Plain(out[0]["function"]).(map[string]any)["parameters"], emptyObjectSchema()) {
 		t.Fatalf("got %v", out)
 	}
 	params := sanitizedParams(t, schemaTool("t", "object"))
@@ -119,7 +121,7 @@ func TestEmptyRequiredKeySurvivesSanitization(t *testing.T) {
 		schemaTool("u", jsonRound(t, `{"type":"object","properties":{"name":{"type":"string"}},"required":["missing_field"]}`)),
 	})
 	for i := range out {
-		if !reflect.DeepEqual(out[i]["function"].(map[string]any)["parameters"].(map[string]any)["required"], []any{}) {
+		if !reflect.DeepEqual(pyjson.Plain(out[i]["function"]).(map[string]any)["parameters"].(map[string]any)["required"], []any{}) {
 			t.Fatalf("tool %d required not empty list", i)
 		}
 	}
@@ -209,59 +211,59 @@ func TestDependentRequiredPreservedAndSchemasSanitized(t *testing.T) {
 }
 
 func TestCollapseConstUnions(t *testing.T) {
-	out := CollapseConstUnions(jsonRound(t, `{"anyOf":[{"const":"red"},{"const":"green"},{"const":"blue"}]}`))
+	out := pyjson.Plain(CollapseConstUnions(jsonRound(t, `{"anyOf":[{"const":"red"},{"const":"green"},{"const":"blue"}]}`)))
 	if !reflect.DeepEqual(out, map[string]any{"type": "string", "enum": []any{"red", "green", "blue"}}) {
 		t.Fatalf("got %v", out)
 	}
-	out = CollapseConstUnions(jsonRound(t, `{"oneOf":[{"const":1},{"const":2},{"const":3}]}`))
+	out = pyjson.Plain(CollapseConstUnions(jsonRound(t, `{"oneOf":[{"const":1},{"const":2},{"const":3}]}`)))
 	if !reflect.DeepEqual(out, map[string]any{"type": "integer", "enum": []any{1.0, 2.0, 3.0}}) {
 		t.Fatalf("got %v", out)
 	}
 	mixed := jsonRound(t, `{"anyOf":[{"const":"a"},{"type":"string","minLength":3}]}`)
-	if !reflect.DeepEqual(CollapseConstUnions(schemaDeepCopy(mixed)), mixed) {
+	if !reflect.DeepEqual(pyjson.Plain(CollapseConstUnions(schemaDeepCopy(mixed))), mixed) {
 		t.Fatal("mixed union changed")
 	}
 	nonUniform := jsonRound(t, `{"anyOf":[{"const":"a"},{"const":1}]}`)
-	if !reflect.DeepEqual(CollapseConstUnions(schemaDeepCopy(nonUniform)), nonUniform) {
+	if !reflect.DeepEqual(pyjson.Plain(CollapseConstUnions(schemaDeepCopy(nonUniform))), nonUniform) {
 		t.Fatal("non uniform union changed")
 	}
 	boolInt := jsonRound(t, `{"anyOf":[{"const":true},{"const":1}]}`)
-	if !reflect.DeepEqual(CollapseConstUnions(schemaDeepCopy(boolInt)), boolInt) {
+	if !reflect.DeepEqual(pyjson.Plain(CollapseConstUnions(schemaDeepCopy(boolInt))), boolInt) {
 		t.Fatal("bool merged with integer")
 	}
-	collapsed := CollapseConstUnions(jsonRound(t, `{"anyOf":[{"const":true},{"const":false}]}`))
+	collapsed := pyjson.Plain(CollapseConstUnions(jsonRound(t, `{"anyOf":[{"const":true},{"const":false}]}`)))
 	if !reflect.DeepEqual(collapsed, map[string]any{"type": "boolean", "enum": []any{true, false}}) {
 		t.Fatalf("got %v", collapsed)
 	}
-	meta := CollapseConstUnions(jsonRound(t, `{"title":"Color","description":"Pick a color","default":"red","anyOf":[{"const":"red"},{"const":"blue"}]}`))
+	meta := pyjson.Plain(CollapseConstUnions(jsonRound(t, `{"title":"Color","description":"Pick a color","default":"red","anyOf":[{"const":"red"},{"const":"blue"}]}`)))
 	if !reflect.DeepEqual(meta, map[string]any{"type": "string", "enum": []any{"red", "blue"}, "title": "Color", "description": "Pick a color", "default": "red"}) {
 		t.Fatalf("got %v", meta)
 	}
-	branchMeta := CollapseConstUnions(jsonRound(t, `{"anyOf":[{"const":"a","title":"A","description":"first"},{"const":"b","type":"string"}]}`))
+	branchMeta := pyjson.Plain(CollapseConstUnions(jsonRound(t, `{"anyOf":[{"const":"a","title":"A","description":"first"},{"const":"b","type":"string"}]}`)))
 	if !reflect.DeepEqual(branchMeta, map[string]any{"type": "string", "enum": []any{"a", "b"}}) {
 		t.Fatalf("got %v", branchMeta)
 	}
 	mismatch := jsonRound(t, `{"anyOf":[{"const":"a","type":"integer"},{"const":"b"}]}`)
-	if !reflect.DeepEqual(CollapseConstUnions(schemaDeepCopy(mismatch)), mismatch) {
+	if !reflect.DeepEqual(pyjson.Plain(CollapseConstUnions(schemaDeepCopy(mismatch))), mismatch) {
 		t.Fatal("mismatched declared type collapsed")
 	}
-	nested := CollapseConstUnions(jsonRound(t, `{"type":"object","properties":{"mode":{"anyOf":[{"const":"fast"},{"const":"slow"}]},"inner":{"type":"object","properties":{"level":{"oneOf":[{"const":1},{"const":2}]}}}}}`)).(map[string]any)
+	nested := pyjson.Plain(CollapseConstUnions(jsonRound(t, `{"type":"object","properties":{"mode":{"anyOf":[{"const":"fast"},{"const":"slow"}]},"inner":{"type":"object","properties":{"level":{"oneOf":[{"const":1},{"const":2}]}}}}}`))).(map[string]any)
 	if !reflect.DeepEqual(nested["properties"].(map[string]any)["mode"], map[string]any{"type": "string", "enum": []any{"fast", "slow"}}) {
 		t.Fatalf("nested mode: %v", nested)
 	}
-	withNull := CollapseConstUnions(jsonRound(t, `{"anyOf":[{"const":"fast"},{"const":"slow"},{"type":"null"}],"default":null}`)).(map[string]any)
+	withNull := pyjson.Plain(CollapseConstUnions(jsonRound(t, `{"anyOf":[{"const":"fast"},{"const":"slow"},{"type":"null"}],"default":null}`))).(map[string]any)
 	if withNull["type"] != "string" || withNull["nullable"] != true {
 		t.Fatalf("null branch: %v", withNull)
 	}
 }
 
 func TestStripNullableUnions(t *testing.T) {
-	out := StripNullableUnions(jsonRound(t, `{"type":"object","properties":{"x":{"anyOf":[{"type":"string"},{"type":"null"}],"description":"d","default":"a"}}}`), true).(map[string]any)
+	out := pyjson.Plain(StripNullableUnions(jsonRound(t, `{"type":"object","properties":{"x":{"anyOf":[{"type":"string"},{"type":"null"}],"description":"d","default":"a"}}}`), true)).(map[string]any)
 	x := out["properties"].(map[string]any)["x"].(map[string]any)
 	if x["type"] != "string" || x["nullable"] != true || x["description"] != "d" || x["default"] != "a" {
 		t.Fatalf("got %v", x)
 	}
-	refOut := StripNullableUnions(jsonRound(t, `{"anyOf":[{"$ref":"#/$defs/A"},{"type":"null"}],"default":1}`), true).(map[string]any)
+	refOut := pyjson.Plain(StripNullableUnions(jsonRound(t, `{"anyOf":[{"$ref":"#/$defs/A"},{"type":"null"}],"default":1}`), true)).(map[string]any)
 	if _, has := refOut["default"]; has {
 		t.Fatalf("default kept beside $ref: %v", refOut)
 	}

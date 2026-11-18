@@ -11,7 +11,7 @@ import (
 // Set once any profile of this process has configured MCP servers, gating the per build wait
 var mcpDiscoveryEnabled atomic.Bool
 
-// Shared discovery start of the entry, the real function swapped only where a hermes case installs a fake
+// Shared discovery start of the entry, the real function swapped only where a test installs a fake
 var entryStartBackgroundDiscovery = mcp.StartBackgroundDiscovery
 
 // Starts the shared background discovery of the caller's profile home, logging a failure at the given level
@@ -19,13 +19,13 @@ func spawnMCPDiscovery(ctx context.Context, level, message string) {
 	defer func() {
 		if r := recover(); r != nil {
 			if level == "warning" {
-				entryLogger().Warn(message, "error", r)
+				pkgLog().Warn(message, "error", r)
 			} else {
-				entryLogger().Debug(message, "error", r)
+				pkgLog().Debug(message, "error", r)
 			}
 		}
 	}()
-	entryStartBackgroundDiscovery(ctx, configEnv(ctx), entryLogger(), "tui-mcp-discovery")
+	entryStartBackgroundDiscovery(ctx, configEnv(ctx), pkgLog(), "tui-mcp-discovery")
 }
 
 // Retries the idempotent spawn of the caller's profile then waits for its discovery up to the resolved bound

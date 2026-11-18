@@ -63,8 +63,8 @@ var ReservedNames = map[string]bool{"icebath": true, "default": true, "test": tr
 var CLISubcommands = map[string]bool{
 	"chat": true, "model": true, "gateway": true, "whatsapp": true, "login": true, "logout": true,
 	"status": true, "cron": true, "doctor": true, "dump": true, "config": true, "pairing": true, "skills": true, "tools": true,
-	"mcp": true, "connectors": true, "sessions": true, "insights": true, "version": true, "update": true, "uninstall": true,
-	"profile": true, "plugins": true, "honcho": true, "acp": true,
+	"mcp": true, "sessions": true, "insights": true, "version": true, "update": true, "uninstall": true,
+	"profile": true, "plugins": true, "acp": true,
 }
 
 const profileNameRule = "Use lowercase letters, numbers, '-' or '_', starting with a letter or number, up to 64 characters"

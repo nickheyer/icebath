@@ -17,7 +17,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tools"
-	"github.com/nickheyer/icebath/pkg/tuigateway"
+	"github.com/nickheyer/icebath/pkg/tuihost"
 )
 
 // Slice of a deferred prompt's build wait, the slow notice threshold and its replace in place key
@@ -42,7 +42,7 @@ func (t *agentBuildThread) isAlive() bool {
 }
 
 // Error response once the build failed or timed out, nil when the agent is ready
-func waitAgent(ctx context.Context, session *tuigateway.Session, rid any, timeout float64) map[string]any {
+func waitAgent(ctx context.Context, session *tuihost.Session, rid any, timeout float64) map[string]any {
 	if ready, isEvent := session.Get("agent_ready").(*pythread.Event); isEvent && ready != nil && !ready.Wait(timeout) {
 		return rpcErr(rid, 5032, agentStillStarting, nil)
 	}
@@ -73,7 +73,7 @@ func pyFloatOf(v any) (float64, bool) {
 }
 
 // Patient build wait of a deferred prompt, nil on success or cancel, an error once the build died
-func waitAgentForPrompt(ctx context.Context, session *tuigateway.Session, rid any, sid string) map[string]any {
+func waitAgentForPrompt(ctx context.Context, session *tuihost.Session, rid any, sid string) map[string]any {
 	ready, isEvent := session.Get("agent_ready").(*pythread.Event)
 	if !isEvent || ready == nil {
 		return nil
@@ -99,13 +99,13 @@ func waitAgentForPrompt(ctx context.Context, session *tuigateway.Session, rid an
 		}
 		if !notifiedSlow && waited >= agentBuildSlowNoticeAfter {
 			notifiedSlow = true
-			tuigateway.Emit(ctx, "notification.show", sid, map[string]any{
+			tuihost.Emit(ctx, "notification.show", sid, map[string]any{
 				"text":  "Still starting the agent (tool discovery / model setup) — your message will be sent as soon as it's ready.",
 				"level": "info", "kind": "agent", "ttl_ms": nil, "key": agentBuildSlowNoticeKey, "id": agentBuildSlowNoticeKey})
 		}
 	}
 	if notifiedSlow {
-		tuigateway.Emit(ctx, "notification.clear", sid, map[string]any{"key": agentBuildSlowNoticeKey})
+		tuihost.Emit(ctx, "notification.clear", sid, map[string]any{"key": agentBuildSlowNoticeKey})
 	}
 	if failure := session.Get("agent_error"); truthy(failure) {
 		return rpcErr(rid, 5032, strOr(failure), nil)
@@ -145,7 +145,7 @@ type makeAgentOptions struct {
 }
 
 // makeAgent arguments of a deferred build, a stored runtime identity restored whole when its provider routes
-func deferredBuildAgentKwargs(ctx context.Context, current *tuigateway.Session, sessionDB *state.DB) makeAgentOptions {
+func deferredBuildAgentKwargs(ctx context.Context, current *tuihost.Session, sessionDB *state.DB) makeAgentOptions {
 	kw := makeAgentOptions{sessionDB: sessionDB, platformOverride: sessionSource(current), cwdOverride: sessionCwd(ctx, current)}
 	if resumeSID := strOr(current.Get("resume_session_id")); resumeSID != "" {
 		kw.sessionID = resumeSID
@@ -202,7 +202,7 @@ func wireSessionAgent(ctx context.Context, sid, key string, built any) (notifyRe
 	if a, isAgent := built.(*agent.AIAgent); isAgent && a != nil {
 		suppress(func() {
 			a.SetBackgroundReviewCallback(func(message string) {
-				tuigateway.Emit(ctx, "review.summary", sid, map[string]any{"text": message})
+				tuihost.Emit(ctx, "review.summary", sid, map[string]any{"text": message})
 			})
 			a.SetMemoryNotifications(loadMemoryNotifications(ctx))
 		})
@@ -211,11 +211,11 @@ func wireSessionAgent(ctx context.Context, sid, key string, built any) (notifyRe
 }
 
 // Starts exactly one notification poller for the session and fires the session reset boundary hook
-func startSessionServices(ctx context.Context, sid, key string, current *tuigateway.Session) {
+func startSessionServices(ctx context.Context, sid, key string, current *tuihost.Session) {
 	func() {
 		sessionsLock.Lock()
 		defer sessionsLock.Unlock()
-		if rec := tuigateway.SessionRecord(sid); rec != nil {
+		if rec := tuihost.SessionRecord(sid); rec != nil {
 			if old, isEvent := rec.Get("_notif_stop").(*pythread.Event); isEvent && old != nil {
 				old.Set()
 			}
@@ -226,7 +226,7 @@ func startSessionServices(ctx context.Context, sid, key string, current *tuigate
 }
 
 // Blocks on a cold resume's transcript hydration, false when the record was replaced meanwhile
-func awaitResumeHistory(sid string, current *tuigateway.Session) (bool, error) {
+func awaitResumeHistory(sid string, current *tuihost.Session) (bool, error) {
 	historyReady, isEvent := current.Get("resume_history_ready").(*pythread.Event)
 	if !isEvent || historyReady == nil {
 		return true, nil
@@ -239,11 +239,11 @@ func awaitResumeHistory(sid string, current *tuigateway.Session) (bool, error) {
 	}
 	sessionsLock.Lock()
 	defer sessionsLock.Unlock()
-	return tuigateway.SessionRecord(sid) == current, nil
+	return tuihost.SessionRecord(sid) == current, nil
 }
 
 // Attaches a freshly built agent to its live record, false when the record was popped mid build
-func attachBuiltAgent(ctx context.Context, sid string, current *tuigateway.Session, built any) bool {
+func attachBuiltAgent(ctx context.Context, sid string, current *tuihost.Session, built any) bool {
 	a, isAgent := built.(*agent.AIAgent)
 	if hint := strings.TrimSpace(strOr(current.Get("pending_title"))); hint != "" && isAgent && a != nil {
 		a.SetSessionTitleHint(hint)
@@ -251,7 +251,7 @@ func attachBuiltAgent(ctx context.Context, sid string, current *tuigateway.Sessi
 	attached := func() bool {
 		sessionsLock.Lock()
 		defer sessionsLock.Unlock()
-		if tuigateway.SessionRecord(sid) != current {
+		if tuihost.SessionRecord(sid) != current {
 			return false
 		}
 		current.Set("agent", built)
@@ -267,28 +267,25 @@ func attachBuiltAgent(ctx context.Context, sid string, current *tuigateway.Sessi
 	return true
 }
 
-// Tail of a build, credits seed, session services, session info and the late MCP catch up
-func announceBuiltAgent(ctx context.Context, sid, key string, current *tuigateway.Session, built any) {
+// Tail of a build, session services, session info and the late MCP catch up
+func announceBuiltAgent(ctx context.Context, sid, key string, current *tuihost.Session, built any) {
 	a, _ := built.(*agent.AIAgent)
-	if a != nil {
-		suppress(func() { provider.SeedCreditsAtSessionStart(a.CreditsCapture()) })
-	}
 	startSessionServices(ctx, sid, key, current)
 	info := sessionInfo(ctx, a, current)
 	if warning := probeConfigHealth(loadCfg(ctx)); warning != "" {
 		info["config_warning"] = warning
-		logger().Warn(warning)
+		pkgLog().Warn(warning)
 	}
-	tuigateway.Emit(ctx, "session.info", sid, info)
+	tuihost.Emit(ctx, "session.info", sid, info)
 	if a != nil {
 		scheduleMCPLateRefresh(ctx, sid, a)
 	}
 }
 
 // Settles the late notify registration and the dedicated db handle once a build ends
-func finishAgentBuild(ctx context.Context, sid, key string, current *tuigateway.Session, notifyRegistered bool, sessionDB *state.DB) {
+func finishAgentBuild(ctx context.Context, sid, key string, current *tuihost.Session, notifyRegistered bool, sessionDB *state.DB) {
 	sessionsLock.Lock()
-	replaced := tuigateway.SessionRecord(sid) != current
+	replaced := tuihost.SessionRecord(sid) != current
 	sessionsLock.Unlock()
 	if replaced && notifyRegistered {
 		suppress(func() { tools.UnregisterGatewayNotify(key) })
@@ -306,7 +303,7 @@ func finishAgentBuild(ctx context.Context, sid, key string, current *tuigateway.
 }
 
 // Starts building the real agent of a session once, in the background, the ready and error contract unchanged
-func startAgentBuild(ctx context.Context, sid string, session *tuigateway.Session) {
+func startAgentBuild(ctx context.Context, sid string, session *tuihost.Session) {
 	ready, isEvent := session.Get("agent_ready").(*pythread.Event)
 	if !isEvent || ready == nil {
 		return
@@ -334,9 +331,9 @@ func startAgentBuild(ctx context.Context, sid string, session *tuigateway.Sessio
 }
 
 // Body of the build goroutine, ready always set on the way out
-func runAgentBuild(ctx context.Context, sid, key string, session *tuigateway.Session, ready *pythread.Event) {
+func runAgentBuild(ctx context.Context, sid, key string, session *tuihost.Session, ready *pythread.Event) {
 	sessionsLock.Lock()
-	current := tuigateway.SessionRecord(sid)
+	current := tuihost.SessionRecord(sid)
 	sessionsLock.Unlock()
 	if current == nil {
 		session.Set("agent_error", agentBuildAbandoned)
@@ -378,7 +375,7 @@ func runAgentBuild(ctx context.Context, sid, key string, session *tuigateway.Ses
 		func() {
 			defer func() {
 				if r := recover(); r != nil {
-					logger().Warn("MCP discovery startup failed", "error", r)
+					pkgLog().Warn("MCP discovery startup failed", "error", r)
 				}
 			}()
 			ensureMCPDiscoveryStarted(scoped)
@@ -410,26 +407,26 @@ func runAgentBuild(ctx context.Context, sid, key string, session *tuigateway.Ses
 	if err, isErr := failure.(error); isErr && errors.As(err, &notConfigured) {
 		payload["code"] = "provider_not_configured"
 	}
-	tuigateway.Emit(ctx, "error", sid, payload)
+	tuihost.Emit(ctx, "error", sid, payload)
 }
 
 // Live session of a session scoped RPC, the 4001 error when the runtime id is no longer held
-func sessNowait(ctx context.Context, params map[string]any, rid any) (*tuigateway.Session, map[string]any) {
+func sessNowait(ctx context.Context, params map[string]any, rid any) (*tuihost.Session, map[string]any) {
 	sid := strOr(params["session_id"])
-	if session := tuigateway.SessionRecord(sid); session != nil {
+	if session := tuihost.SessionRecord(sid); session != nil {
 		return session, nil
 	}
 	method := currentRPCMethod(ctx)
 	if method == "" {
 		method = "?"
 	}
-	logger().Warn(fmt.Sprintf("session-scoped RPC rejected: method=%s session_id=%s not in memory "+
+	pkgLog().Warn(fmt.Sprintf("session-scoped RPC rejected: method=%s session_id=%s not in memory "+
 		"(detached/reaped runtime; client should resume the stored session), rid=%s", method, pyrepr.Repr(sid), pyrepr.Repr(rid)))
 	return nil, rpcErr(rid, 4001, "session not found", nil)
 }
 
 // Live session of an RPC with its agent built, waiting on the build
-func sess(ctx context.Context, params map[string]any, rid any) (*tuigateway.Session, map[string]any) {
+func sess(ctx context.Context, params map[string]any, rid any) (*tuihost.Session, map[string]any) {
 	session, errResp := sessBuilding(ctx, params, rid)
 	if errResp != nil {
 		return nil, errResp
@@ -438,7 +435,7 @@ func sess(ctx context.Context, params map[string]any, rid any) (*tuigateway.Sess
 }
 
 // Live session of an attach RPC with its agent build warmed but not awaited
-func sessBuilding(ctx context.Context, params map[string]any, rid any) (*tuigateway.Session, map[string]any) {
+func sessBuilding(ctx context.Context, params map[string]any, rid any) (*tuihost.Session, map[string]any) {
 	session, errResp := sessNowait(ctx, params, rid)
 	if errResp != nil {
 		return nil, errResp
@@ -474,7 +471,7 @@ func makeAgent(ctx context.Context, sid, key string, o makeAgentOptions) (any, e
 	platform := resolveAgentPlatform(o.platformOverride)
 	ignoreRules := provider.IsTruthyValue(os.Getenv("ICEBATH_IGNORE_RULES"))
 	sessionsLock.Lock()
-	session := tuigateway.SessionRecord(sid)
+	session := tuihost.SessionRecord(sid)
 	sessionsLock.Unlock()
 	db := o.sessionDB
 	if db == nil {
@@ -494,7 +491,7 @@ func makeAgent(ctx context.Context, sid, key string, o makeAgentOptions) (any, e
 	if o.authUserID != nil {
 		userID = *o.authUserID
 	} else if session != nil {
-		if owner := tuigateway.SessionAuthUserID(session); owner != nil {
+		if owner := tuihost.SessionAuthUserID(session); owner != nil {
 			userID = *owner
 		}
 	}
@@ -539,12 +536,12 @@ func initSession(ctx context.Context, sid, key string, built any, history []any,
 		}
 		cwd = resolved
 	}
-	transport := tuigateway.CurrentTransport(ctx)
+	transport := tuihost.CurrentTransport(ctx)
 	if transport == nil {
-		transport = tuigateway.ModuleStdioTransport()
+		transport = tuihost.ModuleStdioTransport()
 	}
 	var authUserID any
-	if owner := tuigateway.TransportAuthUserID(tuigateway.CurrentTransport(ctx)); owner != nil {
+	if owner := tuihost.TransportAuthUserID(tuihost.CurrentTransport(ctx)); owner != nil {
 		authUserID = *owner
 	}
 	var profile any
@@ -554,7 +551,7 @@ func initSession(ctx context.Context, sid, key string, built any, history []any,
 	func() {
 		sessionsLock.Lock()
 		defer sessionsLock.Unlock()
-		record := tuigateway.NewSession(map[string]any{
+		record := tuihost.NewSession(map[string]any{
 			"agent": built, "session_key": key, "history": history, "history_lock": &sync.Mutex{},
 			"history_version": int64(0), "inflight_turn": nil, "created_at": now, "last_active": now,
 			"running": false, "attached_images": []any{}, "image_counter": 0, "cwd": cwd,
@@ -562,19 +559,19 @@ func initSession(ctx context.Context, sid, key string, built any, history []any,
 			"show_reasoning": loadShowReasoning(ctx), "source": resolveSessionSource(source),
 			"tool_progress_mode": loadToolProgressMode(ctx), "edit_snapshots": map[string]any{}, "tool_started_at": map[string]any{},
 			"profile_home": profile, "model_override": nil, "transport": transport, "auth_user_id": authUserID})
-		tuigateway.SetSessionRecord(sid, record)
+		tuihost.SetSessionRecord(sid, record)
 		sessionTodoState(record)
 	}()
 	hydrateSessionCwd(ctx, sid, key, sessionDB, profileHome)
-	registerSessionCwd(ctx, tuigateway.SessionRecord(sid))
+	registerSessionCwd(ctx, tuihost.SessionRecord(sid))
 	wireSessionAgent(ctx, sid, key, built)
-	current := tuigateway.SessionRecord(sid)
+	current := tuihost.SessionRecord(sid)
 	if current == nil {
-		current = tuigateway.NewSession(nil)
+		current = tuihost.NewSession(nil)
 	}
 	startSessionServices(ctx, sid, key, current)
 	a, _ := built.(*agent.AIAgent)
-	tuigateway.Emit(ctx, "session.info", sid, sessionInfo(ctx, a, current))
+	tuihost.Emit(ctx, "session.info", sid, sessionInfo(ctx, a, current))
 	if a != nil {
 		scheduleMCPLateRefresh(ctx, sid, a)
 	}

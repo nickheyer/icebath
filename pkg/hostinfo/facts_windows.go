@@ -59,19 +59,6 @@ func winregStr(subkey, name string) string {
 	return v
 }
 
-func ramTotalImpl() int64 {
-	var status struct {
-		Length, MemoryLoad                                                                                   uint32
-		TotalPhys, AvailPhys, TotalPageFile, AvailPageFile, TotalVirtual, AvailVirtual, AvailExtendedVirtual uint64
-	}
-	status.Length = uint32(unsafe.Sizeof(status))
-	r, _, _ := modKernel32.NewProc("GlobalMemoryStatusEx").Call(uintptr(unsafe.Pointer(&status)))
-	if r == 0 {
-		return 0
-	}
-	return int64(status.TotalPhys)
-}
-
 // displayAdapterScan is the cached display class scan with whether the key was readable
 type displayAdapterScan struct {
 	adapters []DisplayAdapter

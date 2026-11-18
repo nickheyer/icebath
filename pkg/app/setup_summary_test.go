@@ -34,9 +34,8 @@ type summaryProbes struct {
 	ready         bool
 	vision        []string
 	modules       []string
-	managedTools  bool
 	image, video  []provider.CatalogProviderBase
-	features      provider.NousSubscriptionFeatures
+	features      provider.ToolFeatures
 	featuresError error
 }
 
@@ -49,7 +48,7 @@ func installSummaryProbes(t *testing.T, p summaryProbes) {
 		}
 		return &provider.AuthError{Message: "No inference provider configured.", Code: "no_provider_configured"}
 	})
-	swapSeam(t, &setupNousFeatures, func(context.Context, config.Tree) (provider.NousSubscriptionFeatures, error) {
+	swapSeam(t, &setupToolFeatures, func(context.Context, config.Tree) (provider.ToolFeatures, error) {
 		return p.features, p.featuresError
 	})
 	swapSeam(t, &setupVisionBackends, func(context.Context) ([]string, error) { return p.vision, nil })
@@ -61,7 +60,6 @@ func installSummaryProbes(t *testing.T, p summaryProbes) {
 		}
 		return false
 	})
-	swapSeam(t, &setupManagedNousTools, func(context.Context) bool { return p.managedTools })
 	swapSeam(t, &setupImageGenProviders, func(context.Context) []provider.CatalogProviderBase { return p.image })
 	swapSeam(t, &setupVideoGenProviders, func(context.Context) []provider.CatalogProviderBase { return p.video })
 }
@@ -80,7 +78,7 @@ func summaryOutput(t *testing.T, providerReady bool) string {
 
 func TestSummaryWarnsWhenNoProvider(t *testing.T) {
 	out := summaryOutput(t, false)
-	if !strings.Contains(out, "No inference provider is configured") || !strings.Contains(out, "icebath model") || !strings.Contains(out, "icebath portal") {
+	if !strings.Contains(out, "No inference provider is configured") || !strings.Contains(out, "icebath model") || strings.Contains(out, "icebath portal") {
 		t.Fatalf("screen %q", out)
 	}
 }

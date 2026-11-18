@@ -3,7 +3,6 @@ package provider
 import (
 	"context"
 	"net/url"
-	"os"
 	"regexp"
 	"strconv"
 	"strings"
@@ -118,23 +117,10 @@ func isDeepSeekAnthropicEndpoint(baseURL string) bool {
 	return baseURLHostMatches(baseURL, "api.deepseek.com") && strings.Contains(normalizedLowerBaseURL(baseURL), "/anthropic")
 }
 
-// Nous Portal by production host or the NOUS_INFERENCE_BASE_URL override host
-func isNousPortalEndpoint(baseURL string) bool {
-	if baseURLHostMatches(baseURL, "inference-api.nousresearch.com") {
-		return true
-	}
-	override := strings.TrimSpace(os.Getenv("NOUS_INFERENCE_BASE_URL"))
-	if override == "" {
-		return false
-	}
-	oh := baseURLHostname(override)
-	return oh != "" && baseURLHostname(baseURL) == oh
-}
-
 // Providers wanting Authorization Bearer instead of x-api-key
 func requiresBearerAuth(baseURL string) bool {
 	n := normalizedLowerBaseURL(baseURL)
-	if isNousPortalEndpoint(baseURL) || strings.Contains(n, "azure.com") {
+	if strings.Contains(n, "azure.com") {
 		return true
 	}
 	for _, p := range minimaxAnthropicPrefixes {
@@ -258,7 +244,7 @@ func modelPreservesPriorThinking(model string) bool {
 }
 
 func isOffAnthropic(baseURL string) bool {
-	return isThirdPartyAnthropicEndpoint(baseURL) && !isNousPortalEndpoint(baseURL)
+	return isThirdPartyAnthropicEndpoint(baseURL)
 }
 
 // Thinking replay contract of a route, kimi deepseek native minimax or third_party

@@ -14,11 +14,7 @@ func TestMigrationNeverInstallsACoreSentinel(t *testing.T) {
 		return name, true
 	})
 	var said []string
-	install := func(name string) (map[string]any, error) {
-		t.Errorf("must not install %s", name)
-		return nil, nil
-	}
-	got, err := MigrateMemoryHome(context.Background(), h, install, func(s string) { said = append(said, s) })
+	got, err := pendingMemoryProvider(context.Background(), h, func(s string) { said = append(said, s) })
 	if err != nil || got != "" {
 		t.Fatalf("migrated %q %v", got, err)
 	}

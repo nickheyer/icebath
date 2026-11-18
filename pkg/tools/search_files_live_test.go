@@ -206,7 +206,7 @@ func TestSearchNativeRunnerSpawnFailuresUseOSErrorText(t *testing.T) {
 	}
 	ops, _ := hostSearchOps(t, t.TempDir(), false)
 	r := ops.runRgNative([]string{"definitely-not-a-binary-xyz"}, 5, 5, false)
-	if r.ExitCode != 2 || r.Stdout != "rg: [Errno 2] No such file or directory: 'definitely-not-a-binary-xyz'" {
+	if r.ExitCode != 2 || r.Stdout != "rg: no such file or directory: definitely-not-a-binary-xyz" {
 		t.Fatalf("%+v", r)
 	}
 }
@@ -1034,12 +1034,12 @@ func TestSearchNativeRunnerWalksPathLikePopen(t *testing.T) {
 	}
 	t.Setenv("PATH", first+":"+basePath)
 	ops, _ = hostSearchOps(t, t.TempDir(), false)
-	if r := ops.runRgNative([]string{"fakeprog"}, 5, 5, false); r.ExitCode != 2 || r.Stdout != "rg: [Errno 13] Permission denied: 'fakeprog'" {
+	if r := ops.runRgNative([]string{"fakeprog"}, 5, 5, false); r.ExitCode != 2 || r.Stdout != "rg: permission denied: fakeprog" {
 		t.Fatalf("non executable only %+v", r)
 	}
 	missing := filepath.Join(t.TempDir(), "gone")
 	ops, _ = hostSearchOps(t, missing, false)
-	if r := ops.runRgNative([]string{"sh", "-c", "true"}, 5, 5, false); r.ExitCode != 2 || r.Stdout != "rg: [Errno 2] No such file or directory: '"+missing+"'" {
+	if r := ops.runRgNative([]string{"sh", "-c", "true"}, 5, 5, false); r.ExitCode != 2 || r.Stdout != "rg: no such file or directory: "+missing {
 		t.Fatalf("missing cwd %+v", r)
 	}
 }

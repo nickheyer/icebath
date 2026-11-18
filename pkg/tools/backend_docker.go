@@ -1410,7 +1410,7 @@ type dockerEnv struct {
 
 func (d *dockerEnv) EnvType() string { return "docker" }
 
-// Python class name of the environment as hermes logs and records it
+// Python class name of the environment as logs and records name it
 func (d *dockerEnv) ClassName() string { return "DockerEnvironment" }
 
 var _ interface{ ClassName() string } = (*dockerEnv)(nil)
@@ -1536,6 +1536,9 @@ func NewDockerEnvironment(ctx context.Context, env *Env, o DockerOptions) (*dock
 	d.dockerExe = FindDocker(env)
 	if d.dockerExe == "" {
 		d.dockerExe = "docker"
+	}
+	if err := EnsureSandboxImage(ctx, d.dockerExe, o.Image, sandboxBuildLogger(env)); err != nil {
+		return nil, err
 	}
 	d.s6Init = imageUsesInitEntrypoint(ctx, env, d.dockerExe, o.Image)
 	if d.s6Init {
@@ -1787,6 +1790,13 @@ func (d *dockerEnv) attachExistingContainer(ctx context.Context, taskLabel, prof
 }
 
 func (d *dockerEnv) imageAvailableLocally(ctx context.Context) bool {
+	if IsDefaultSandboxImage(d.image) {
+		if err := EnsureSandboxImage(ctx, d.dockerExe, d.image, sandboxBuildLogger(d.env)); err != nil {
+			envLog(d.env).Warn("Docker: could not build the sandbox image", "image", d.image, "error", err)
+			return false
+		}
+		return true
+	}
 	probe, err := runCapture(ctx, []string{d.dockerExe, "image", "inspect", d.image, "--format", "{{.Id}}"}, 30*time.Second, false, nil)
 	if err == nil && probe.Code == 0 {
 		return true
@@ -1954,10 +1964,15 @@ func (d *dockerEnv) Execute(ctx context.Context, command string, opts ExecOption
 	if err != nil {
 		return result, err
 	}
-	if result.ReturnCode != 0 && d.isContainerGone(result.Output) && d.persistAcross && d.recreateContainer(ctx) {
+	if result.ReturnCode != 0 && d.RecoverGone(ctx, result.Output) {
 		return d.baseEnv.Execute(ctx, command, opts)
 	}
 	return result, nil
+}
+
+// Recreates a persistent container the output reports removed out of band, true when a container is back
+func (d *dockerEnv) RecoverGone(ctx context.Context, output string) bool {
+	return d.isContainerGone(output) && d.persistAcross && d.recreateContainer(ctx)
 }
 
 func (d *dockerEnv) storageOptSupported(ctx context.Context) bool {
@@ -2174,7 +2189,7 @@ func (dockerBackend) SupportsStreams() bool                  { return true }
 // IsAvailable reports whether a docker or podman CLI can be found
 func (dockerBackend) IsAvailable() bool { return FindDocker(nil) != "" }
 
-// CheckRequirements probes the CLI and daemon with the hermes wording
+// Probes the CLI and daemon with the wording
 func (dockerBackend) CheckRequirements(env *Env, cfg map[string]any) error {
 	docker := FindDocker(env)
 	if docker == "" {

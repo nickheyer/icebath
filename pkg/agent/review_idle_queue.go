@@ -176,7 +176,7 @@ func (q *reviewIdleQueue) enqueue(ctx context.Context, agent deferredReviewSpawn
 	q.mu.Unlock()
 	q.ensureThread()
 	q.wake.Set()
-	runAgentLog().Info(fmt.Sprintf("Background review deferred (session=%s, queued=%d)", lastRunes(sessionKey, 12), queued))
+	pkgLog().Info(fmt.Sprintf("Background review deferred (session=%s, queued=%d)", lastRunes(sessionKey, 12), queued))
 }
 
 // Number of sessions with a pending review
@@ -272,7 +272,7 @@ func (q *reviewIdleQueue) popDispatchable() *pendingReview {
 	return item
 }
 
-// Pending session keys in first insertion order like the hermes dict
+// Pending session keys in first insertion order like the dict
 func (q *reviewIdleQueue) pendingOrder() []string {
 	return append([]string(nil), q.order...)
 }
@@ -305,7 +305,7 @@ func (q *reviewIdleQueue) run() {
 		func() {
 			defer func() {
 				if r := recover(); r != nil {
-					runAgentLog().Warn(fmt.Sprintf("Deferred review dispatch failed: %v", r))
+					pkgLog().Warn(fmt.Sprintf("Deferred review dispatch failed: %v", r))
 				}
 			}()
 			item = q.popDispatchable()
@@ -322,11 +322,11 @@ func (q *reviewIdleQueue) run() {
 // Spawns the review under its enqueue context unless reviews were disabled while it waited
 func (q *reviewIdleQueue) dispatch(item *pendingReview) {
 	if !reviewStillEnabled(item) {
-		runAgentLog().Info(fmt.Sprintf("Deferred background review dropped: reviews were disabled while it was queued (session=%s)",
+		pkgLog().Info(fmt.Sprintf("Deferred background review dropped: reviews were disabled while it was queued (session=%s)",
 			lastRunes(item.sessionKey, 12)))
 		return
 	}
-	runAgentLog().Info(fmt.Sprintf("Dispatching deferred background review (session=%s, waited=%.0fs, queued=%d)",
+	pkgLog().Info(fmt.Sprintf("Dispatching deferred background review (session=%s, waited=%.0fs, queued=%d)",
 		lastRunes(item.sessionKey, 12), q.now()-item.enqueuedAt, q.pendingCount()))
 	item.agent.spawnBackgroundReviewNow(item.ctx, item.kwargs)
 }

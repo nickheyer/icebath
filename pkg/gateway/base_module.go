@@ -9,7 +9,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"log/slog"
 	"net"
 	"net/http"
 	"net/netip"
@@ -640,7 +639,7 @@ func readBodyWithLimit(ctx context.Context, body io.Reader, contentLength, media
 	maxBytes := mediacache.InboundMediaMaxBytes(ctx, h)
 	if contentLength != "" {
 		if n, ok := pyint.Parse(contentLength); !ok {
-			slog.Debug(fmt.Sprintf("Ignoring invalid Content-Length for inbound %s: %s", mediaType, pyrepr.Repr(contentLength)))
+			pkgLog().Debug(fmt.Sprintf("Ignoring invalid Content-Length for inbound %s: %s", mediaType, pyrepr.Repr(contentLength)))
 		} else if !n.IsInt64() && n.Sign() > 0 && maxBytes != 0 {
 			return nil, &mediacache.ValueError{Msg: fmt.Sprintf("Inbound %s payload is too large (%s bytes > %d bytes)", mediaType, n.String(), maxBytes)}
 		} else if n.IsInt64() {
@@ -743,7 +742,7 @@ func cacheMediaFromURL(ctx context.Context, rawURL, ext string, retries int, med
 			return "", err
 		}
 		wait := time.Duration(1.5 * float64(attempt+1) * float64(time.Second))
-		slog.Debug(fmt.Sprintf("%s cache retry %d/%d for %s (%.1fs): %s", logLabel, attempt+1, retries, SafeURLForLog(rawURL, 80), wait.Seconds(), err.Error()))
+		pkgLog().Debug(fmt.Sprintf("%s cache retry %d/%d for %s (%.1fs): %s", logLabel, attempt+1, retries, SafeURLForLog(rawURL, 80), wait.Seconds(), err.Error()))
 		if err := mediaRetrySleep(ctx, wait); err != nil {
 			return "", err
 		}

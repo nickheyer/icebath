@@ -420,11 +420,11 @@ func (p *ByteRoverProvider) curateInBackground(ctx context.Context, content, nam
 			return err
 		})
 		if err != nil {
-			moduleLog(p.env, "plugins.memory.byterover").Debug(fmt.Sprintf("ByteRover %s failed: %s", what, err))
+			envLog(p.env).Debug(fmt.Sprintf("ByteRover %s failed: %s", what, err))
 			return
 		}
 		if onDone != "" {
-			moduleLog(p.env, "plugins.memory.byterover").Info(onDone)
+			envLog(p.env).Info(onDone)
 		}
 	})
 	t.Start()
@@ -433,7 +433,7 @@ func (p *ByteRoverProvider) curateInBackground(ctx context.Context, content, nam
 
 func (p *ByteRoverProvider) autoExtractEnabled(what string) bool {
 	if !p.autoExtract {
-		moduleLog(p.env, "plugins.memory.byterover").Debug(fmt.Sprintf("ByteRover %s skipped (auto_extract disabled)", what))
+		envLog(p.env).Debug(fmt.Sprintf("ByteRover %s skipped (auto_extract disabled)", what))
 	}
 	return p.autoExtract
 }

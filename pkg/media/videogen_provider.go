@@ -406,10 +406,8 @@ func (p *openAICompatibleVideoGenProvider) Generate(ctx context.Context, env *to
 	return videoSuccessResponse(videoRef, modelID, prompt, modality, aspect, req.durationOrZero(), name, nil), nil
 }
 
-var videoGenLog = slog.Default().With("logger", "agent.video_gen_registry")
-
 var videoGenRegistry = provider.NewProviderRegistry[VideoGenProvider](provider.ProviderRegistryOptions{
-	Label: "Video gen", Logger: videoGenLog,
+	Label: "Video gen", Logger: pkgLog(),
 })
 
 // Registers a video generation provider, a same name registration replacing the earlier one
@@ -457,19 +455,19 @@ func (s hostedVideoScopedRegistry) Restore(name string, current, replacement any
 // Configured provider failing closed when unregistered, else the single available registered provider
 func GetActiveVideoGenProvider(ctx context.Context, env *tools.Env) VideoGenProvider {
 	ctx = envContext(ctx, env)
-	configured := provider.ConfiguredProviderName(ctx, "video_gen", videoGenLog)
+	configured := provider.ConfiguredProviderName(ctx, "video_gen", pkgLog())
 	snapshot := videoGenRegistry.Merged(ctx, "")
 	if configured != "" {
 		p, ok := snapshot.Get(configured)
 		if !ok || p == nil {
-			videoGenLog.Debug(fmt.Sprintf("video_gen.provider='%s' configured but not registered; failing closed", configured))
+			pkgLog().Debug(fmt.Sprintf("video_gen.provider='%s' configured but not registered; failing closed", configured))
 			return nil
 		}
 		return p
 	}
 	var avail []VideoGenProvider
 	for _, p := range snapshot.Values() {
-		if provider.IsAvailableSafe(p, videoGenLog, "video_gen provider %s.is_available() raised %s", slog.LevelDebug, false) {
+		if provider.IsAvailableSafe(p, pkgLog(), "video_gen provider %s.is_available() raised %s", slog.LevelDebug, false) {
 			avail = append(avail, p)
 		}
 	}

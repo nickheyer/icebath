@@ -126,9 +126,9 @@ func liveLockSeams(t *testing.T, cmd string) {
 
 func TestUnscopedLiveIdentityMismatchNeverUnlinksActiveFiles(t *testing.T) {
 	dir := statusHome(t)
-	resolved, _ := canonicalHermesHome(dir)
+	resolved, _ := canonicalIcebathHome(dir)
 	r := rec("pid", int64(4242), "kind", "icebath-gateway", "start_time", int64(123),
-		"argv", strs("python", "-m", "icebath_cli.main", "gateway", "run"), "hermes_home", resolved)
+		"argv", strs("python", "-m", "icebath_cli.main", "gateway", "run"), "icebath_home", resolved)
 	writeRecord(t, filepath.Join(dir, "gateway.pid"), r)
 	writeRecord(t, filepath.Join(dir, "gateway.lock"), r)
 	liveLockSeams(t, "python -m icebath_cli.main chat")
@@ -144,9 +144,9 @@ func TestUnscopedLiveIdentityMismatchNeverUnlinksActiveFiles(t *testing.T) {
 
 func TestUnscopedLiveCrossHomePidFileIsUnlinkedButHeldLockStays(t *testing.T) {
 	dir := statusHome(t)
-	other, _ := canonicalHermesHome(filepath.Join(dir, "other-home"))
+	other, _ := canonicalIcebathHome(filepath.Join(dir, "other-home"))
 	writeRecord(t, filepath.Join(dir, "gateway.pid"), rec("pid", int64(4242), "kind", "icebath-gateway", "start_time", int64(123),
-		"argv", strs("python", "-m", "icebath_cli.main", "gateway", "run"), "hermes_home", other))
+		"argv", strs("python", "-m", "icebath_cli.main", "gateway", "run"), "icebath_home", other))
 	os.WriteFile(filepath.Join(dir, "gateway.lock"), nil, 0o644)
 	liveLockSeams(t, "python -m icebath_cli.main gateway run")
 	if _, ok, _ := GetRunningPid("", true); ok {
@@ -162,9 +162,9 @@ func TestUnscopedLiveCrossHomePidFileIsUnlinkedButHeldLockStays(t *testing.T) {
 
 func writeScopedProfile(t *testing.T, root string) (string, string) {
 	profileDir := filepath.Join(root, "profiles", "wiki")
-	resolved, _ := canonicalHermesHome(profileDir)
+	resolved, _ := canonicalIcebathHome(profileDir)
 	r := rec("pid", int64(4242), "kind", "icebath-gateway", "argv", strs("python", "-m", "icebath_cli.main", "gateway", "--profile", "wiki"),
-		"start_time", int64(123), "hermes_home", resolved)
+		"start_time", int64(123), "icebath_home", resolved)
 	writeRecord(t, filepath.Join(profileDir, "gateway.pid"), r)
 	writeRecord(t, filepath.Join(profileDir, "gateway.lock"), r)
 	return profileDir, filepath.Join(profileDir, "gateway.pid")

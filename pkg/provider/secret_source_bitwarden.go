@@ -10,7 +10,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"log/slog"
 	"math"
 	"os"
 	"os/exec"
@@ -52,7 +51,7 @@ func FindBws(installIfMissing bool) string {
 	if installIfMissing {
 		binary, err := pmEnsure("bws", false)
 		if err != nil {
-			slog.Default().Warn(fmt.Sprintf("bws auto-install failed: %v", err))
+			pkgLog().Warn(fmt.Sprintf("bws auto-install failed: %v", err))
 			return ""
 		}
 		return binary
@@ -60,7 +59,7 @@ func FindBws(installIfMissing bool) string {
 	return ""
 }
 
-// Binary lookup and fetch seams of the Bitwarden source, the module attributes hermes tests patch
+// Binary lookup and fetch seams of the Bitwarden source, the module attributes tests patch
 var (
 	findBws               = FindBws
 	fetchBitwardenSecrets = FetchBitwardenSecrets

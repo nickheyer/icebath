@@ -182,7 +182,7 @@ func TestNewNamedCollisionRefused(t *testing.T) {
 	}
 }
 
-func TestNewUnnamedUsesRandomHermesPrefix(t *testing.T) {
+func TestNewUnnamedUsesRandomIcebathPrefix(t *testing.T) {
 	c, out := worktreeHandlerCLI(t)
 	worktreeRepo(t)
 	runWorktree(t, c, "/worktree new")

@@ -26,7 +26,7 @@ func TestSettledNativeDocumentNamedByTheTranscriptSurvivesSettlement(t *testing.
 			return "[The user sent a document: 'report.pdf'. It is saved at: " + path + ".]"
 		},
 		"agent-visible-path": func(path string) string {
-			return "It is saved at: /root/.hermes/cache/documents/" + strings.SplitN(path, "/documents/", 2)[1]
+			return "It is saved at: /root/.icebath/cache/documents/" + strings.SplitN(path, "/documents/", 2)[1]
 		},
 	}
 	for _, name := range []string{"host-path", "agent-visible-path"} {

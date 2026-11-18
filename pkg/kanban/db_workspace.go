@@ -220,7 +220,7 @@ func workspaceInUseByOther(ctx context.Context, conn state.SQLiteConn, taskID, p
 	}
 	resolved, err := pypath.Resolve(expanded)
 	if err != nil {
-		log.Warn(fmt.Sprintf("Cannot resolve workspace %s for task %s: %s", path, taskID, excText(err)))
+		pkgLog().Warn(fmt.Sprintf("Cannot resolve workspace %s for task %s: %s", path, taskID, excText(err)))
 		return &unknown, nil
 	}
 	key := pathKey(resolved)
@@ -232,7 +232,7 @@ func workspaceInUseByOther(ctx context.Context, conn state.SQLiteConn, taskID, p
 		if !isSQLiteError(err) {
 			return nil, err
 		}
-		log.Warn(fmt.Sprintf("Cannot read live workspaces for task %s: %s", taskID, excText(err)))
+		pkgLog().Warn(fmt.Sprintf("Cannot read live workspaces for task %s: %s", taskID, excText(err)))
 		return &unknown, nil
 	}
 	if used {
@@ -240,13 +240,13 @@ func workspaceInUseByOther(ctx context.Context, conn state.SQLiteConn, taskID, p
 	}
 	siblings, err := siblingBoardDBFiles(ctx, conn)
 	if err != nil {
-		log.Warn(fmt.Sprintf("Cannot list kanban boards for task %s: %s", taskID, excText(err)))
+		pkgLog().Warn(fmt.Sprintf("Cannot list kanban boards for task %s: %s", taskID, excText(err)))
 		return &unknown, nil
 	}
 	for _, dbFile := range siblings {
 		used, err := otherBoardUsesPath(ctx, dbFile, taskID, key)
 		if err != nil {
-			log.Warn(fmt.Sprintf("Cannot read board db %s for task %s: %s", dbFile, taskID, excText(err)))
+			pkgLog().Warn(fmt.Sprintf("Cannot read board db %s for task %s: %s", dbFile, taskID, excText(err)))
 			return &unknown, nil
 		}
 		if used {
@@ -266,9 +266,9 @@ func deferSharedWorkspaceCleanup(ctx context.Context, conn state.SQLiteConn, tas
 		return false, nil
 	}
 	if *reason == "shared" {
-		log.Warn(fmt.Sprintf("Deferring workspace cleanup for task %s: %s is still used by another non-terminal task", taskID, path))
+		pkgLog().Warn(fmt.Sprintf("Deferring workspace cleanup for task %s: %s is still used by another non-terminal task", taskID, path))
 	} else {
-		log.Warn(fmt.Sprintf("Deferring workspace cleanup for task %s: cannot tell whether another task still uses %s", taskID, path))
+		pkgLog().Warn(fmt.Sprintf("Deferring workspace cleanup for task %s: cannot tell whether another task still uses %s", taskID, path))
 	}
 	if err := appendEvent(ctx, conn, taskID, "workspace_cleanup_deferred_shared", payload("path", path, "reason", *reason), nil); err != nil && !isSQLiteError(err) {
 		return true, err
@@ -428,7 +428,7 @@ func cleanupWorkspaceChecked(ctx context.Context, conn state.SQLiteConn, taskID 
 		return err
 	}
 	if active {
-		log.Debug(fmt.Sprintf("Deferring %s workspace cleanup for task %s: active children still need workspace at %s", *kind, taskID, *path))
+		pkgLog().Debug(fmt.Sprintf("Deferring %s workspace cleanup for task %s: active children still need workspace at %s", *kind, taskID, *path))
 		return nil
 	}
 	if *kind == "worktree" {
@@ -457,10 +457,10 @@ func cleanupWorkspaceChecked(ctx context.Context, conn state.SQLiteConn, taskID 
 			if !deferred {
 				tools.ReleaseLspClients(wp)
 				rmtreeIgnoreErrors(wp)
-				log.Debug(fmt.Sprintf("Removed scratch workspace: %s", wp))
+				pkgLog().Debug(fmt.Sprintf("Removed scratch workspace: %s", wp))
 			}
 		} else {
-			log.Warn(fmt.Sprintf("Refusing to remove out-of-scratch workspace for task %s: %s "+
+			pkgLog().Warn(fmt.Sprintf("Refusing to remove out-of-scratch workspace for task %s: %s "+
 				"(workspace_kind='scratch' but path is outside any kanban-managed workspaces root)", taskID, wp))
 		}
 	}
@@ -503,7 +503,7 @@ func cleanupWorktreeWorkspaceChecked(taskID, path string, branchName *string) er
 		return nil
 	}
 	if tools.WorktreeIsDirty(wp, repoRoot, 10*time.Second) || tools.WorktreeHasUnpushedCommits(wp, 10*time.Second) {
-		log.Info(fmt.Sprintf("Preserving worktree for task %s: dirty or unpushed work at %s", taskID, wp))
+		pkgLog().Info(fmt.Sprintf("Preserving worktree for task %s: dirty or unpushed work at %s", taskID, wp))
 		return nil
 	}
 	cwd, cwdKnown := "", false
@@ -519,7 +519,7 @@ func cleanupWorktreeWorkspaceChecked(taskID, path string, branchName *string) er
 			if cwdKnown {
 				shown = cwd
 			}
-			log.Warn(fmt.Sprintf("Preserving worktree for task %s: cannot leave %s for %s: %s", taskID, shown, repoRoot, excText(err)))
+			pkgLog().Warn(fmt.Sprintf("Preserving worktree for task %s: cannot leave %s for %s: %s", taskID, shown, repoRoot, excText(err)))
 			return nil
 		}
 	}
@@ -535,10 +535,10 @@ func cleanupWorktreeWorkspaceChecked(taskID, path string, branchName *string) er
 		}
 	}
 	if result.Returncode != 0 {
-		log.Warn(fmt.Sprintf("git worktree remove failed for task %s at %s: %s", taskID, wp, result.failureText()))
+		pkgLog().Warn(fmt.Sprintf("git worktree remove failed for task %s at %s: %s", taskID, wp, result.failureText()))
 		return nil
 	}
-	log.Debug(fmt.Sprintf("Removed worktree workspace: %s", wp))
+	pkgLog().Debug(fmt.Sprintf("Removed worktree workspace: %s", wp))
 	branch := ""
 	if branchName != nil {
 		branch = pystr.Strip(*branchName)
@@ -618,7 +618,7 @@ func tryCleanupParentWorkspaces(ctx context.Context, conn state.SQLiteConn, task
 		}
 		tools.ReleaseLspClients(wp)
 		rmtreeIgnoreErrors(wp)
-		log.Debug(fmt.Sprintf("Deferred cleanup: removed parent %s scratch workspace: %s", parentID, wp))
+		pkgLog().Debug(fmt.Sprintf("Deferred cleanup: removed parent %s scratch workspace: %s", parentID, wp))
 	}
 }
 
@@ -637,7 +637,7 @@ func cleanupWorkerTmux(ctx context.Context, conn state.SQLiteConn, taskID string
 		if _, err := pysubprocess.RunWith(context.Background(), []string{"tmux", "kill-session", "-t", session}, pysubprocess.Options{Timeout: 5 * time.Second}); err != nil {
 			return
 		}
-		log.Debug(fmt.Sprintf("Killed stale tmux session: %s", session))
+		pkgLog().Debug(fmt.Sprintf("Killed stale tmux session: %s", session))
 	}
 }
 
@@ -682,7 +682,7 @@ func maybeEmitScratchTip(ctx context.Context, conn state.SQLiteConn, taskID stri
 		return
 	}
 	defer markScratchTipShown()
-	log.Warn(fmt.Sprintf("kanban: %s (task %s)", scratchTipMessage, taskID))
+	pkgLog().Warn(fmt.Sprintf("kanban: %s (task %s)", scratchTipMessage, taskID))
 	_ = WriteTxn(ctx, conn, false, func() error {
 		return appendEvent(ctx, conn, taskID, "tip_scratch_workspace", payload("message", scratchTipMessage), nil)
 	})

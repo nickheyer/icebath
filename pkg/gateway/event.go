@@ -8,7 +8,6 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/internal/pyunicode"
-	"github.com/nickheyer/icebath/pkg/observability"
 )
 
 var attachmentRefRE = regexp.MustCompile(`(?i)^(?:@(?:image|file|url):[^\n]+\n?)+`)
@@ -135,12 +134,10 @@ type MessageEvent struct {
 	heartbeatSessionID     *string
 	heartbeatResolvedID    *string
 	heartbeatStarted       bool
-	busyArrival            *observability.Arrival
 	claimedOwner           *claimedTurnOwner
 	botLoopAdmitted        bool
 	fifoOnly               bool
 	stopEpoch              int
-	slashCommandCounted    bool
 	replyGuard             sync.Locker
 
 	lastChunkLen int

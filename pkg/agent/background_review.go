@@ -140,7 +140,7 @@ func interruptBackgroundReview(reviewAgent any, message, toolReason string) {
 	go func() {
 		defer func() {
 			if r := recover(); r != nil {
-				backgroundReviewLog().Debug(fmt.Sprintf("Failed to cancel in-flight background review (%s): %v", message, r))
+				pkgLog().Debug(fmt.Sprintf("Failed to cancel in-flight background review (%s): %v", message, r))
 			}
 		}()
 		RequestHardInterruptOf(reviewAgent, &message, &toolReason)
@@ -178,7 +178,7 @@ func (a *AIAgent) CancelBackgroundReview(message, toolReason string) {
 		return
 	}
 	if !awaitReviewAck(run, backgroundReviewCancelTimeoutSeconds) {
-		backgroundReviewLog().Warn(fmt.Sprintf("Background review did not acknowledge cancellation within %.1fs; proceeding (%s)",
+		pkgLog().Warn(fmt.Sprintf("Background review did not acknowledge cancellation within %.1fs; proceeding (%s)",
 			backgroundReviewCancelTimeoutSeconds, message))
 	}
 }
@@ -252,7 +252,7 @@ var loadBackgroundReviewSettings = func(ctx context.Context) (bool, map[string]a
 	}
 	tree, err := config.LoadReadonly(ctx, home.Dir(ctx), os.LookupEnv)
 	if err != nil {
-		backgroundReviewLog().Warn(fmt.Sprintf("Failed to read background_review.enabled; leaving automatic review enabled (fail-open): %v", err))
+		pkgLog().Warn(fmt.Sprintf("Failed to read background_review.enabled; leaving automatic review enabled (fail-open): %v", err))
 		return true, map[string]any{}
 	}
 	task := reviewTaskBlock(tree)
@@ -336,7 +336,7 @@ func warnReviewRoutingFallback(ctx context.Context, a *AIAgent, taskProvider, ta
 	if text := err.Error(); text != "" {
 		errorLine = strings.SplitN(text, "\n", 2)[0]
 	}
-	backgroundReviewLog().Warn(fmt.Sprintf("auxiliary.background_review.provider=%s (model %s) could not be resolved: %s — background reviews "+
+	pkgLog().Warn(fmt.Sprintf("auxiliary.background_review.provider=%s (model %s) could not be resolved: %s — background reviews "+
 		"run on the main model %s/%s instead.", pyStrRepr(taskProvider), pyStrRepr(taskModel), errorLine, a.provider, a.model))
 	message := i18n.T(ctx, "display.review.routing_fallback_warning", "", map[string]any{
 		"task_provider": taskProvider, "task_model": taskModel, "error": errorLine, "provider": a.provider, "model": a.model,
@@ -351,13 +351,13 @@ func warnReviewRoutingFallback(ctx context.Context, a *AIAgent, taskProvider, ta
 	}()
 }
 
-// HermesToolCallSupport is a client that declares whether it can emit hermes tool calls
-type HermesToolCallSupport interface{ SupportsHermesToolCalls() bool }
+// A client that declares whether it can emit tool calls
+type ToolCallSupport interface{ SupportsToolCalls() bool }
 
 // Whether a fork inheriting the parent client could act, false only for a client declaring no tool call support
 func parentCanEmitToolCalls(a *AIAgent) bool {
-	if client, ok := a.client.(HermesToolCallSupport); ok {
-		return client.SupportsHermesToolCalls()
+	if client, ok := a.client.(ToolCallSupport); ok {
+		return client.SupportsToolCalls()
 	}
 	return true
 }

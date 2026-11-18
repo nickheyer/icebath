@@ -129,14 +129,8 @@ func (a *APIServerAdapter) handleResponses(ctx context.Context, request *gateway
 			return nil, err
 		}
 		if obj, _ := replay.(*pyjson.Object); settled(obj) {
-			headers := map[string]string{}
-			if h, ok := obj.GetOr("headers", nil).(*pyjson.Object); ok {
-				for _, k := range h.Keys {
-					v, _ := h.Get(k)
-					headers[k] = pyrepr.Str(v)
-				}
-			}
-			return jsonResponse(obj.GetOr("response", nil), http.StatusOK, headers), nil
+			stored, _ := obj.GetOr("headers", nil).(*pyjson.Object)
+			return jsonResponse(obj.GetOr("response", nil), http.StatusOK, storedHeaders(stored)), nil
 		}
 	}
 	result, usage := outcome[0], outcome[1]
@@ -179,14 +173,14 @@ func (a *APIServerAdapter) handleResponses(ctx context.Context, request *gateway
 		snapshot = &responseSnapshot{id: responseID, data: pyjson.ObjectOf("response", data, "conversation_history", fullHistory,
 			"instructions", rc.instructions, "session_id", effectiveSessionID)}
 	}
-	headers := map[string]string{"X-Hermes-Session-Id": effectiveSessionID}
+	headers := map[string]string{"X-Icebath-Session-Id": effectiveSessionID}
 	if gatewaySessionKey != "" {
-		headers["X-Hermes-Session-Key"] = gatewaySessionKey
+		headers["X-Icebath-Session-Key"] = gatewaySessionKey
 	}
 	var replayRecord *pyjson.Object
 	if durableKey != "" {
 		headerObj := pyjson.NewObject()
-		for _, k := range []string{"X-Hermes-Session-Id", "X-Hermes-Session-Key"} {
+		for _, k := range []string{"X-Icebath-Session-Id", "X-Icebath-Session-Key"} {
 			if v, ok := headers[k]; ok {
 				headerObj.Set(k, v)
 			}

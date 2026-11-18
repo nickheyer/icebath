@@ -27,7 +27,7 @@ func resolveOverrides(t *testing.T, cfg map[string]any, parent *AIAgent) map[str
 	return creds
 }
 
-// Scripts the runtime provider resolver the way the hermes resolve_runtime_provider patch does
+// Scripts the runtime provider resolver the way the resolve_runtime_provider patch does
 func scriptRuntimeProvider(t *testing.T, rt *provider.Runtime) {
 	t.Helper()
 	prev := resolveRuntimeProviderFn

@@ -5,7 +5,6 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
-	"log/slog"
 	"maps"
 	"strings"
 
@@ -104,7 +103,7 @@ func botExpiredOutcome(ctx context.Context, a *SessionAuthority, record map[stri
 			return "", nil, err
 		}
 		if row == nil {
-			slog.Warn(fmt.Sprintf("Bot delivery %s: session %s is gone with no deletion marker; settled as ambiguous",
+			pkgLog().Warn(fmt.Sprintf("Bot delivery %s: session %s is gone with no deletion marker; settled as ambiguous",
 				pyrepr.Str(record["delivery_id"]), sid))
 			return "ambiguous", receiptReply(record), nil
 		}
@@ -790,7 +789,7 @@ func createBotChat(ctx context.Context, a *SessionAuthority, actor Principal, di
 		if again != displace {
 			return nil, nil
 		}
-		slog.Warn(fmt.Sprintf("Bot Chat title held by %s, a conversation no FIFO can own: moving it aside", displace))
+		pkgLog().Warn(fmt.Sprintf("Bot Chat title held by %s, a conversation no FIFO can own: moving it aside", displace))
 		moved, err := trackedWrite(ctx, a, func(taskCtx context.Context) (any, error) {
 			return displaceBotChat(taskCtx, a.DB, displace)
 		}, nil, false, nil)

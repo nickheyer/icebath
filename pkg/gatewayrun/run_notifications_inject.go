@@ -43,10 +43,10 @@ func (r *GatewayRunner) injectWatchNotification(ctx context.Context, synthText s
 				}
 				return boolp(delivered), nil
 			}
-			runLog().Debug(fmt.Sprintf("Deferring watch notification for raw session %s: no api_server adapter to self-post through", rawSID))
+			pkgLog().Debug(fmt.Sprintf("Deferring watch notification for raw session %s: no api_server adapter to self-post through", rawSID))
 			return boolp(false), nil
 		}
-		runLog().Warn(fmt.Sprintf("Dropping watch notification with no routing metadata for process %s", pyrepr.Str(evtGet(evt, "session_id", "unknown"))))
+		pkgLog().Warn(fmt.Sprintf("Dropping watch notification with no routing metadata for process %s", pyrepr.Str(evtGet(evt, "session_id", "unknown"))))
 		return nil, nil
 	}
 	platformName := string(source.Platform)
@@ -77,7 +77,7 @@ func (r *GatewayRunner) injectWatchNotification(ctx context.Context, synthText s
 	}
 	var refused *gateway.WakeNotAccepted
 	if !errors.As(admitErr, &refused) {
-		runLog().Error(fmt.Sprintf("Watch notification injection error: %s", admitErr))
+		pkgLog().Error(fmt.Sprintf("Watch notification injection error: %s", admitErr))
 		return boolp(false), nil
 	}
 	pinGone, err := r.watchPinGone(ctx, evt, refused.Error(), !raiseNotAccepted)
@@ -91,7 +91,7 @@ func (r *GatewayRunner) injectWatchNotification(ctx context.Context, synthText s
 	if !raiseNotAccepted {
 		queued["_refusal_permanent"] = refused.Permanent
 	}
-	runLog().Warn(fmt.Sprintf("Watch notification not admitted for %s chat=%s: %s", platformName, source.ChatID, refused))
+	pkgLog().Warn(fmt.Sprintf("Watch notification not admitted for %s chat=%s: %s", platformName, source.ChatID, refused))
 	if raiseNotAccepted {
 		return nil, refused
 	}
@@ -121,7 +121,7 @@ func (r *GatewayRunner) admitWatchNotification(ctx context.Context, adapter gate
 	if source.ThreadID != nil {
 		threadID = *source.ThreadID
 	}
-	runLog().Info(fmt.Sprintf("Watch pattern notification — injecting for %s chat=%s thread=%s", platformName, source.ChatID, threadID))
+	pkgLog().Info(fmt.Sprintf("Watch pattern notification — injecting for %s chat=%s thread=%s", platformName, source.ChatID, threadID))
 	if primer, ok := adapter.(gateway.RoutingCachePrimer); ok {
 		primer.PrimeRoutingCache(synthEvent)
 	}

@@ -389,16 +389,6 @@ func TestMaxTokensParamReturnsMaxCompletionTokensForDirectOpenAI(t *testing.T) {
 	}
 }
 
-func TestNousGPT5StaysOnChatCompletions(t *testing.T) {
-	a := runAgentFixture(t)
-	a.provider = "nous"
-	a.setBaseURL("https://inference-api.nousresearch.com/v1")
-	a.apiMode, a.model = "chat_completions", "openai/gpt-5.5"
-	if a.isDirectOpenAIURL(nil) || providerModelRequiresResponsesAPI(context.Background(), a.model, a.provider) {
-		t.Fatal("nous gpt-5 upgraded to codex_responses")
-	}
-}
-
 func TestIsAzureOpenAIURLDetection(t *testing.T) {
 	a := runAgentFixture(t)
 	for url, want := range map[string]bool{"https://foo.openai.azure.com/openai/v1": true, "https://api.openai.com/v1": false, "https://openrouter.ai/api/v1": false} {

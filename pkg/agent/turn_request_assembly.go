@@ -11,7 +11,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/state"
 )
 
-// Anchored request pressure of the assembled turn, bound at module level like the hermes import
+// Anchored request pressure of the assembled turn, bound at module level like the import
 var assemblyAnchoredContextTokens = provider.AnchoredContextTokens
 
 // Runs the MoA reference models and appends their aggregated context to the last user row, failing open
@@ -29,7 +29,7 @@ func appendMoaContext(ctx context.Context, a *AIAgent, apiMessages []map[string]
 	if pyTruthy(moaConfig["reference_timeout"]) {
 		f, err := pyFloat(moaConfig["reference_timeout"])
 		if err != nil {
-			conversationLoopLog().Warn(fmt.Sprintf("MoA context aggregation failed: %v", err))
+			pkgLog().Warn(fmt.Sprintf("MoA context aggregation failed: %v", err))
 			return
 		}
 		referenceTimeout = &f
@@ -41,7 +41,7 @@ func appendMoaContext(ctx context.Context, a *AIAgent, apiMessages []map[string]
 	moaContext, err := aggregateMoaContext(ctx, a, prompt, apiMessages, referenceModels, aggregator,
 		presetTemperature(moaConfig, "reference_temperature"), presetTemperature(moaConfig, "aggregator_temperature"), referenceTimeout, nil, policy)
 	if err != nil {
-		conversationLoopLog().Warn(fmt.Sprintf("MoA context aggregation failed: %v", err))
+		pkgLog().Warn(fmt.Sprintf("MoA context aggregation failed: %v", err))
 		return
 	}
 	if moaContext == "" {

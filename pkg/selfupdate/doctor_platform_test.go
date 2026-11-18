@@ -449,7 +449,7 @@ func TestCheckPythonEnvironmentStatesTheGoRuntimeVersion(t *testing.T) {
 	}
 }
 
-func TestRequiredPackagesListsOptionalCapabilitiesWithHermesRows(t *testing.T) {
+func TestRequiredPackagesListsOptionalCapabilitiesWithTheirRows(t *testing.T) {
 	d, out := toolsDoctor(t)
 	toolsSeam(t, &doctorPackages, []doctorPackage{
 		{"Loaded library", func(context.Context) bool { return true }},

@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"log/slog"
 	"os"
 	"strings"
 
@@ -68,7 +67,7 @@ func RestoreQuickSnapshot(ctx context.Context, snapshotID, h string) (bool, erro
 	inner, release, err := gateway.ExclusiveMaintenance(ctx, []string{h}, "")
 	if err != nil {
 		if isOwnershipConflict(err) {
-			slog.Error(err.Error())
+			pkgLog().Error(err.Error())
 			return false, nil
 		}
 		return false, err
@@ -76,7 +75,7 @@ func RestoreQuickSnapshot(ctx context.Context, snapshotID, h string) (bool, erro
 	defer release()
 	ok, err := restoreQuickSnapshotExclusive(inner, snapshotID, h)
 	if err != nil && isOwnershipConflict(err) {
-		slog.Error(err.Error())
+		pkgLog().Error(err.Error())
 		return false, nil
 	}
 	return ok, err
@@ -111,7 +110,7 @@ func snapshotEpochsRestorable(ctx context.Context, files []string, entryPaths en
 		}
 		if _, err := restoreDestinationEpoch(ctx, dst); err != nil {
 			if isOSError(err) {
-				slog.Error(excText(err))
+				pkgLog().Error(excText(err))
 				return false, nil
 			}
 			return false, err
@@ -130,12 +129,12 @@ func restoreSnapshotEntry(ctx context.Context, rel, src, dst string) (bool, erro
 				return err
 			}
 			if !ok {
-				slog.Error(fmt.Sprintf("Failed to restore %s: refused or source integrity check failed (see previous log)", rel))
+				pkgLog().Error(fmt.Sprintf("Failed to restore %s: refused or source integrity check failed (see previous log)", rel))
 				return errEntryRefused
 			}
 		case rel == "auth.json":
 			if !restoreAuthJSON(src, dst) {
-				slog.Error(fmt.Sprintf("Failed to restore %s safely", rel))
+				pkgLog().Error(fmt.Sprintf("Failed to restore %s safely", rel))
 				return errEntryRefused
 			}
 		default:
@@ -148,7 +147,7 @@ func restoreSnapshotEntry(ctx context.Context, rel, src, dst string) (bool, erro
 	}
 	if err != nil {
 		if isOSError(err) {
-			slog.Error(fmt.Sprintf("Failed to restore %s: %s", rel, excText(err)))
+			pkgLog().Error(fmt.Sprintf("Failed to restore %s: %s", rel, excText(err)))
 			return false, nil
 		}
 		return false, err
@@ -278,7 +277,7 @@ func restoreQuickSnapshotExclusive(ctx context.Context, snapshotID, h string) (b
 				return 0, false, false, err
 			}
 			if !ok {
-				slog.Error("Manifest path traversal blocked: " + rel)
+				pkgLog().Error("Manifest path traversal blocked: " + rel)
 				if rel == "auth.json" {
 					authFailed = true
 				}
@@ -286,7 +285,7 @@ func restoreQuickSnapshotExclusive(ctx context.Context, snapshotID, h string) (b
 			}
 			if _, err := os.Stat(src); err != nil {
 				if rel == "auth.json" {
-					slog.Error("Snapshot auth.json listed in manifest is missing: " + pypath.PathStr(src))
+					pkgLog().Error("Snapshot auth.json listed in manifest is missing: " + pypath.PathStr(src))
 					authFailed = true
 				}
 				continue
@@ -309,7 +308,7 @@ func restoreQuickSnapshotExclusive(ctx context.Context, snapshotID, h string) (b
 	if err != nil || !epochsOK {
 		return false, err
 	}
-	slog.Info(fmt.Sprintf("Restored %d files from snapshot %s", restored, snapshotID))
+	pkgLog().Info(fmt.Sprintf("Restored %d files from snapshot %s", restored, snapshotID))
 	return restored > 0 && !authFailed, nil
 }
 
@@ -338,12 +337,12 @@ func RestoreCronJobsIfEmptied(snapshotID, h string) (*pyjson.Object, error) {
 	}
 	if err != nil {
 		if isOSError(err) {
-			slog.Error("Cron jobs were emptied during update but auto-restore failed: " + excText(err))
+			pkgLog().Error("Cron jobs were emptied during update but auto-restore failed: " + excText(err))
 			return nil, nil
 		}
 		return nil, err
 	}
-	slog.Warn(fmt.Sprintf("Restored %d cron job(s) from pre-update snapshot %s "+
+	pkgLog().Warn(fmt.Sprintf("Restored %d cron job(s) from pre-update snapshot %s "+
 		"(live file had %d job(s), snapshot had %d — jobs were lost during migration)",
 		*snapCount, snapshotID, *liveCount, *snapCount))
 	result := pyjson.NewObject()
@@ -428,12 +427,12 @@ func RestoreConfigModelSettingsIfRewritten(ctx context.Context, snapshotID, h st
 	}
 	if err := config.AtomicConfigWrite(ctx, h, livePath, live, ""); err != nil {
 		if isOSError(err) {
-			slog.Error("config.yaml model settings were rewritten during update but auto-restore failed: " + excText(err))
+			pkgLog().Error("config.yaml model settings were rewritten during update but auto-restore failed: " + excText(err))
 			return nil, nil
 		}
 		return nil, err
 	}
-	slog.Warn(fmt.Sprintf("Restored user config value(s) %s from pre-update snapshot %s — the update flow rewrote them (#64160)",
+	pkgLog().Warn(fmt.Sprintf("Restored user config value(s) %s from pre-update snapshot %s — the update flow rewrote them (#64160)",
 		strings.Join(restoredKeys, ", "), snapshotID))
 	keys := make([]any, len(restoredKeys))
 	for i, k := range restoredKeys {
@@ -466,7 +465,7 @@ func restoreAllProfiles(ctx context.Context, profileSnapshots *pyjson.Object, in
 		snapID, _ := raw.(string)
 		result, err := restore(snapID, profileHome)
 		if err != nil {
-			slog.Debug(fmt.Sprintf("%s for profile %s failed: %s", what, name, excText(err)))
+			pkgLog().Debug(fmt.Sprintf("%s for profile %s failed: %s", what, name, excText(err)))
 			continue
 		}
 		if result != nil && result.Len() > 0 {

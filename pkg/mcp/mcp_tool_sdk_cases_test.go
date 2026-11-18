@@ -49,8 +49,8 @@ func logSession(name string) *Session {
 	return &Session{opts: SessionOptions{Name: name}}
 }
 
-// test_mcp_server_log_notifications.py TestLoggingCallback test_routes_to_hermes_logger_with_server_tag
-func TestLoggingCallbackRoutesToHermesLoggerWithServerTag(t *testing.T) {
+// Logging callback routes to the icebath logger with the server tag
+func TestLoggingCallbackRoutesToIcebathLoggerWithServerTag(t *testing.T) {
 	isolateHome(t)
 	logs := captureLogs(t)
 	logSession("log_srv").onServerLog(json.RawMessage(`{"level":"info","data":"server started","logger":null}`))

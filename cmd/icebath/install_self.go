@@ -50,7 +50,7 @@ func installSelfGroup(ctx context.Context, cli *commands.CLI, cmd *cobra.Command
 	return install.Main(opts, os.Stdout, os.Stderr), nil
 }
 
-// Publishes a source checkout's built binary, provisions its relay runtime, then syncs bundled skills, copying them when the sync fails
+// Publishes a source checkout's built binary, then syncs bundled skills, copying them when the sync fails
 func installFromCheckout(ctx context.Context, checkout string, stdout, stderr io.Writer) int {
 	if checkout == "" {
 		fmt.Fprintln(stderr, "--from-checkout needs --dir CHECKOUT")
@@ -58,10 +58,6 @@ func installFromCheckout(ctx context.Context, checkout string, stdout, stderr io
 	}
 	report := func(line string) { fmt.Fprintln(stdout, line) }
 	if err := install.SetupFromCheckout(ctx, checkout, report); err != nil {
-		fmt.Fprintln(stderr, "✗ "+err.Error())
-		return 1
-	}
-	if err := install.ProvisionCheckoutRuntime(ctx, checkout, stdout, stderr); err != nil {
 		fmt.Fprintln(stderr, "✗ "+err.Error())
 		return 1
 	}

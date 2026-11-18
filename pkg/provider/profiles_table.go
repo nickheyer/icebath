@@ -12,8 +12,6 @@ const (
 	CodexBaseURL          = "https://chatgpt.com/backend-api/codex"
 	OpenAIBaseURL         = "https://api.openai.com/v1"
 	AnthropicBaseURL      = "https://api.anthropic.com"
-	NousInferenceBaseURL  = "https://inference-api.nousresearch.com/v1"
-	NousPortalBaseURL     = "https://portal.nousresearch.com"
 	QwenBaseURL           = "https://portal.qwen.ai/v1"
 	XAIBaseURL            = "https://api.x.ai/v1"
 	LMStudioBaseURL       = "http://127.0.0.1:1234/v1"
@@ -68,7 +66,6 @@ var staticAliasGroups = map[string][]string{
 	"nebius-token-factory":   {"nebius", "nebius-tokenfactory", "nebius-tf", "token-factory", "tokenfactory"},
 	"lmstudio":               {"lm-studio", "lm_studio"},
 	"custom":                 {"ollama", "local", "vllm", "llamacpp", "llama.cpp", "llama-cpp"},
-	"nous":                   {"nous-portal", "nousresearch"},
 	"qwen-oauth":             {"qwen", "qwen-portal", "qwen-cli"},
 	"gemini":                 {"google", "google-gemini", "google-ai-studio"},
 	"vertex":                 {"google-vertex", "vertex-ai", "gcp-vertex", "vertexai"},
@@ -78,7 +75,6 @@ var staticAliasGroups = map[string][]string{
 	"commandcode":            {"commandcode-chat"},
 	"commandcode-anthropic":  {"commandcode-claude"},
 	"deepinfra":              {"deep-infra", "deepinfra-ai"},
-	"solstice":               {"solstice-oauth"},
 	"ollama-cloud":           {"ollama_cloud"},
 }
 
@@ -258,13 +254,9 @@ func (r profileRow) profile() Profile {
 	return p
 }
 
-// Registry rows in the auto detection priority order hermes scans api key providers
+// Registry rows in the priority order auto detection scans api key providers
 func registryRows() []profileRow {
 	return []profileRow{
-		{name: "nous", display: "Nous Portal", desc: "Nous Research - Hermes model family", signup: "https://nousresearch.com/",
-			base: NousInferenceBaseURL, authType: AuthTypeOAuthDeviceCode, keys: []string{"NOUS_API_KEY"},
-			fallbacks: []string{"hermes-3-405b", "hermes-3-70b"}, perModel: func(m string) APIMode { return NousMode(m, "chat") },
-			portal: DefaultNousPortalURL, clientID: DefaultNousClientID, scope: DefaultNousScope},
 		{name: "openai-codex", display: "ChatGPT or Codex Subscription", base: CodexBaseURL, baseEnv: "ICEBATH_CODEX_BASE_URL",
 			mode: ModeCodexResponses, authType: AuthTypeOAuthExternal, noListing: true},
 		{name: "openai-api", display: "OpenAI API", base: OpenAIBaseURL, baseEnv: "OPENAI_BASE_URL", mode: ModeCodexResponses,

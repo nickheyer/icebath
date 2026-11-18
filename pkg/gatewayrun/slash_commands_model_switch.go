@@ -16,7 +16,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/internal/pyurl"
-	"github.com/nickheyer/icebath/pkg/observability"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/state"
 )
@@ -72,7 +71,7 @@ func (r *GatewayRunner) performModelSwitch(ctx context.Context, sw *gateway.Mode
 		return nil, i18n.T(ctx, "gateway.model.error_prefix", "", map[string]any{"error": result.ErrorMessage}), nil
 	}
 	if err := r.enrichModelSwitchWarningsForGateway(ctx, &result, sw.SessionKey, source, switchCustomProviders(sw.CustomProviders)); err != nil {
-		runLog().Debug("preflight-compression switch warning failed: " + pyrepr.ExceptionMessage(err))
+		pkgLog().Debug("preflight-compression switch warning failed: " + pyrepr.ExceptionMessage(err))
 	}
 	return &result, "", nil
 }
@@ -130,7 +129,7 @@ func (r *GatewayRunner) switchCachedAgentModel(ctx context.Context, result *prov
 		if picker {
 			label = "Picker"
 		}
-		runLog().Warn(fmt.Sprintf("%s model switch failed for cached agent: %s", label, pyrepr.ExceptionMessage(err)))
+		pkgLog().Warn(fmt.Sprintf("%s model switch failed for cached agent: %s", label, pyrepr.ExceptionMessage(err)))
 		return i18n.T(ctx, "gateway.model.error_prefix", "", map[string]any{"error": i18n.T(ctx, "gateway.model.err_switch_failed", "",
 			map[string]any{"model": result.NewModel, "error": pyrepr.ExceptionMessage(err), "current": sw.CurrentModel})})
 	}
@@ -151,7 +150,7 @@ func (r *GatewayRunner) recordModelSwitch(ctx context.Context, result *provider.
 			return db.DB().SetSessionModel(ctx, entry.SessionID, result.NewModel, result.TargetProvider, result.BaseURL, result.APIMode)
 		}()
 		if err != nil {
-			runLog().Debug("Failed to persist model switch to DB: " + pyrepr.ExceptionMessage(err))
+			pkgLog().Debug("Failed to persist model switch to DB: " + pyrepr.ExceptionMessage(err))
 		}
 	}
 	via := result.ProviderLabel
@@ -187,14 +186,14 @@ func (r *GatewayRunner) recordModelSwitch(ctx context.Context, result *provider.
 	globalError := ""
 	if sw.PersistGlobal {
 		if err := persistModelSwitchToConfig(ctx, *result, sw.ConfigPath); err != nil {
-			runLog().Warn("Failed to persist model switch: " + pyrepr.ExceptionMessage(err))
+			pkgLog().Warn("Failed to persist model switch: " + pyrepr.ExceptionMessage(err))
 			globalError = i18n.T(ctx, "gateway.model.err_config_not_updated", "", map[string]any{"error": errorTextOrType(err)})
 		}
 	}
 	switch {
 	case sw.PersistGlobal && globalError == "" && r.channelOverrideFor(source) == nil:
 		if err := r.sessionStore.SetModelOverride(ctx, sw.SessionKey, nil); err != nil {
-			runLog().Warn("Failed to clear persisted session model override: " + pyrepr.ExceptionMessage(err))
+			pkgLog().Warn("Failed to clear persisted session model override: " + pyrepr.ExceptionMessage(err))
 			globalError = i18n.T(ctx, "gateway.model.err_stale_override", "", map[string]any{"error": pyrepr.ExceptionMessage(err)})
 		} else {
 			r.sessionModelOverrides().Delete(sw.SessionKey)
@@ -202,7 +201,7 @@ func (r *GatewayRunner) recordModelSwitch(ctx context.Context, result *provider.
 	case !oneTurn:
 		override, _ := r.sessionModelOverrides().Get(sw.SessionKey)
 		if err := r.sessionStore.SetModelOverride(ctx, sw.SessionKey, override); err != nil {
-			runLog().Debug("Failed to persist session model override", "error", err)
+			pkgLog().Debug("Failed to persist session model override", "error", err)
 		}
 	}
 	r.evictCachedAgent(ctx, sw.SessionKey, false, false)
@@ -273,9 +272,6 @@ func (r *GatewayRunner) modelSwitchConfirmation(ctx context.Context, result *pro
 	if result.WarningMessage != "" {
 		lines = append(lines, i18n.T(ctx, "gateway.model.warning_prefix", "", map[string]any{"warning": result.WarningMessage}))
 	}
-	if result.UsageNotice != "" {
-		lines = append(lines, "⚠️ "+result.UsageNotice)
-	}
 	switch {
 	case sw.PersistGlobal && globalError != "":
 		lines = append(lines, i18n.T(ctx, "gateway.model.warning_prefix", "", map[string]any{"warning": globalError}),
@@ -317,21 +313,6 @@ func (r *GatewayRunner) modelSwitchLock() *sync.Mutex {
 	return &r.modelSwitchLockObj
 }
 
-// Records the switch metric row under the owning profile home of a multiplexed runner
-func (r *GatewayRunner) recordSwitchMetrics(ctx context.Context, result *provider.ModelSwitchResult, sw *gateway.ModelSwitchContext, source *gateway.SessionSource) {
-	scoped := ctx
-	if r.config != nil && r.config.MultiplexProfiles != nil && *r.config.MultiplexProfiles {
-		if profileHome, err := r.resolveProfileHomeForSource(ctx, source); err == nil && profileHome != "" {
-			scoped = home.WithOverride(ctx, profileHome)
-		}
-	}
-	var sessionID any
-	if cached := r.cachedAgentFor(sw.SessionKey, false); cached != nil {
-		sessionID = cached.SessionID()
-	}
-	observability.RecordModelSwitch(scoped, sw.RouteProvider, result.TargetProvider, "gateway", sw.CurrentModel, sessionID)
-}
-
 // Commit body under the switch lock, a local session deferring the pick to its next boundary
 func (r *GatewayRunner) commitModelSwitchLocked(ctx context.Context, result *provider.ModelSwitchResult, sw *gateway.ModelSwitchContext, source *gateway.SessionSource, picker bool) (string, error) {
 	oneTurn := !picker && sw.OneTurn
@@ -349,10 +330,9 @@ func (r *GatewayRunner) commitModelSwitchLocked(ctx context.Context, result *pro
 		if _, err := gateway.DeferLocalModelPick(ctx, authority, live, *result, level); err != nil {
 			return "", err
 		}
-		r.recordSwitchMetrics(ctx, result, sw, source)
 		if sw.PersistGlobal {
 			if err := persistModelSwitchToConfig(ctx, *result, sw.ConfigPath); err != nil {
-				runLog().Warn("Failed to persist model switch", "error", err)
+				pkgLog().Warn("Failed to persist model switch", "error", err)
 				globalError = i18n.T(ctx, "gateway.model.err_config_not_updated", "", map[string]any{"error": errorTextOrType(err)})
 			}
 		}
@@ -360,7 +340,6 @@ func (r *GatewayRunner) commitModelSwitchLocked(ctx context.Context, result *pro
 		if errorReply := r.switchCachedAgentModel(ctx, result, sw, picker); errorReply != "" {
 			return errorReply, nil
 		}
-		r.recordSwitchMetrics(ctx, result, sw, source)
 		globalError = r.recordModelSwitch(ctx, result, sw, source, oneTurn, picker)
 	}
 	reply := r.modelSwitchConfirmation(ctx, result, sw, oneTurn, picker, globalError)
@@ -411,7 +390,7 @@ func (r *GatewayRunner) saveGatewayConfigKey(ctx context.Context, keyPath string
 		return config.AtomicConfigWrite(ctx, configHome, configPath, userConfig, "")
 	}()
 	if err != nil {
-		runLog().Error(fmt.Sprintf("Failed to save config key %s: %s", keyPath, pyrepr.ExceptionMessage(err)))
+		pkgLog().Error(fmt.Sprintf("Failed to save config key %s: %s", keyPath, pyrepr.ExceptionMessage(err)))
 		return false
 	}
 	return true

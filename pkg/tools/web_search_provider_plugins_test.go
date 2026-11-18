@@ -14,7 +14,7 @@ func clearedWebEnv(t *testing.T, settings map[string]any) *Env {
 	t.Helper()
 	env := httpxProviderEnv(t, "", settings)
 	for _, k := range []string{"BRAVE_SEARCH_API_KEY", "SEARXNG_URL", "KEENABLE_API_KEY", "TAVILY_API_KEY", "TAVILY_BASE_URL", "EXA_API_KEY", "PARALLEL_API_KEY",
-		"PARALLEL_SEARCH_MODE", "FIRECRAWL_API_KEY", "FIRECRAWL_API_URL", "FIRECRAWL_GATEWAY_URL", "TOOL_GATEWAY_DOMAIN", "TOOL_GATEWAY_USER_TOKEN", "XAI_API_KEY"} {
+		"PARALLEL_SEARCH_MODE", "FIRECRAWL_API_KEY", "FIRECRAWL_API_URL", "XAI_API_KEY"} {
 		t.Setenv(k, "")
 	}
 	return env

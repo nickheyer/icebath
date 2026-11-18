@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/nickheyer/icebath/pkg/config"
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
@@ -44,7 +45,7 @@ type CompressionConfig struct {
 	MetricsOutputFile     string
 }
 
-// Configuration with the hermes dataclass defaults
+// Configuration with the dataclass defaults
 func DefaultConfig() *CompressionConfig {
 	return &CompressionConfig{
 		TokenizerName: "moonshotai/Kimi-K2-Thinking", TargetMaxTokens: 15250, SummaryTargetTokens: 750,
@@ -138,19 +139,19 @@ func assignYAML(dst any, attr string, v any) error {
 			*d = s
 			return nil
 		}
-		return fmt.Errorf("TypeError: %s must be a string, got '%s'", attr, pyrepr.TypeName(v))
+		return fmt.Errorf("%s must be text, got %s", attr, errchain.Kind(v))
 	case *int:
 		if f, ok := yamlNumber(v); ok && f == math.Trunc(f) {
 			*d = int(f)
 			return nil
 		}
-		return fmt.Errorf("TypeError: %s must be an integer, got '%s'", attr, pyrepr.TypeName(v))
+		return fmt.Errorf("%s must be a whole number, got %s", attr, errchain.Kind(v))
 	case *float64:
 		if f, ok := yamlNumber(v); ok {
 			*d = f
 			return nil
 		}
-		return fmt.Errorf("TypeError: %s must be a number, got '%s'", attr, pyrepr.TypeName(v))
+		return fmt.Errorf("%s must be a number, got %s", attr, errchain.Kind(v))
 	}
 	panic("unsupported compression config field type")
 }
@@ -194,7 +195,7 @@ func ConfigFromYAML(path string) (*CompressionConfig, error) {
 	}
 	top, ok := data.(map[string]any)
 	if !ok {
-		return nil, fmt.Errorf("TypeError: '%s' object is not subscriptable", pyrepr.TypeName(data))
+		return nil, fmt.Errorf("the compression config %s is %s, expected a mapping", path, errchain.Kind(data))
 	}
 	for _, sec := range yamlSections {
 		sectionData, present := top[sec.section]
@@ -203,7 +204,7 @@ func ConfigFromYAML(path string) (*CompressionConfig, error) {
 		}
 		section, ok := sectionData.(map[string]any)
 		if !ok {
-			return nil, fmt.Errorf("AttributeError: '%s' object has no attribute 'get'", pyrepr.TypeName(sectionData))
+			return nil, fmt.Errorf("a section of the compression config %s is %s, expected a mapping", path, errchain.Kind(sectionData))
 		}
 		for _, key := range sec.keys {
 			yamlKey, attr, _ := strings.Cut(key, ":")

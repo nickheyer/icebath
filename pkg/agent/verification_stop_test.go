@@ -195,7 +195,7 @@ func TestNudgeExplainsOnlyACheckRunTheShellCouldNotAttribute(t *testing.T) {
 	}
 }
 
-func TestNudgeDropsTheUnscoredRunWarningOnceHermesVerifyRecords(t *testing.T) {
+func TestNudgeDropsTheUnscoredRunWarningOnceIcebathVerifyRecords(t *testing.T) {
 	root := verifyLedgerWorkspace(t)
 	stopNodeProject(t, root)
 	changed := filepath.Join(root, "src", "app.ts")

@@ -3,7 +3,6 @@ package gateway
 import (
 	"context"
 	"fmt"
-	"log/slog"
 
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
@@ -16,7 +15,7 @@ import (
 // Appends a run scoped worker_lost event for a card attempt, dropped once the card moved past the run, never failing
 func recordWorkerLoss(ctx context.Context, policy *LocalSessionPolicy, reason string, pid any, bound bool) {
 	if err := writeWorkerLoss(ctx, policy, reason, pid, bound); err != nil {
-		slog.Error(fmt.Sprintf("kanban worker_lost record failed: %s", err))
+		pkgLog().Error(fmt.Sprintf("kanban worker_lost record failed: %s", err))
 	}
 }
 

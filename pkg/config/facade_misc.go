@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
-	"log/slog"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -206,7 +205,7 @@ func RequireParseableUserConfig(ctx context.Context, h string, ignoreUserConfig 
 		message += " A copy of the broken file is at " + backup + "."
 	}
 	message += " Details: " + YAMLErrorDetails(parseErr)
-	slog.Error(message)
+	pkgLog().Error(message)
 	return &InvalidUserConfigError{Path: configPath, Err: parseErr, Message: message}
 }
 

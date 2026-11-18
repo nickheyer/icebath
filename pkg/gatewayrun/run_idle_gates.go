@@ -15,7 +15,7 @@ import (
 func profileSessionDBProbe(ctx context.Context, profileHome string) (db *state.SessionDB) {
 	defer func() {
 		if rec := recover(); rec != nil {
-			runLog().Debug(fmt.Sprintf("session-db probe failed for %s", profileHome), "error", rec)
+			pkgLog().Debug(fmt.Sprintf("session-db probe failed for %s", profileHome), "error", rec)
 			db = nil
 		}
 	}()
@@ -30,13 +30,13 @@ func idleGate(ctx context.Context, profileHome string, storeHasWork func(ctx con
 	}
 	defer func() {
 		if rec := recover(); rec != nil {
-			runLog().Debug(fmt.Sprintf("idle probe failed for %s; keeping the full sweep", profileHome), "error", rec)
+			pkgLog().Debug(fmt.Sprintf("idle probe failed for %s; keeping the full sweep", profileHome), "error", rec)
 			hasWork = true
 		}
 	}()
 	found, err := storeHasWork(ctx, db)
 	if err != nil {
-		runLog().Debug(fmt.Sprintf("idle probe failed for %s; keeping the full sweep", profileHome), "error", pyrepr.ExceptionMessage(err))
+		pkgLog().Debug(fmt.Sprintf("idle probe failed for %s; keeping the full sweep", profileHome), "error", pyrepr.ExceptionMessage(err))
 		return true
 	}
 	return found

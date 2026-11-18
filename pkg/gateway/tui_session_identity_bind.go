@@ -1,5 +1,5 @@
 package gateway
 
-import "github.com/nickheyer/icebath/pkg/tuigateway"
+import "github.com/nickheyer/icebath/pkg/tuihost"
 
-func init() { tuigateway.BindIdentity(IsAuthenticatedIdentity, HostOwnerSubject) }
+func init() { tuihost.BindIdentity(IsAuthenticatedIdentity, HostOwnerSubject) }

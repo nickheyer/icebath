@@ -3,7 +3,6 @@ package gateway
 import (
 	"context"
 	"fmt"
-	"log/slog"
 
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
@@ -269,13 +268,13 @@ func finishCompressEngine(ctx context.Context, a *SessionAuthority, prepared *py
 	}
 	compressor, err := sessionCompressor()
 	if err != nil {
-		slog.Warn("context engine compression notification failed: " + pyExceptionRepr(err))
+		pkgLog().Warn("context engine compression notification failed: " + pyExceptionRepr(err))
 		return
 	}
 	scoped := profileRuntimeScope(ctx, a.ProfileID, false)
 	defer func() {
 		if r := recover(); r != nil {
-			slog.Warn(fmt.Sprintf("context engine compression notification failed: %v", r))
+			pkgLog().Warn(fmt.Sprintf("context engine compression notification failed: %v", r))
 		}
 	}()
 	if result != nil {
@@ -306,12 +305,12 @@ func finishCompressEngine(ctx context.Context, a *SessionAuthority, prepared *py
 func firePostCompactionHook(ctx context.Context, a *SessionAuthority, prepared *pyjson.Object, result *pyjson.Object) {
 	compressor, err := sessionCompressor()
 	if err != nil {
-		slog.Warn("post_compaction hook delivery failed: " + pyExceptionRepr(err))
+		pkgLog().Warn("post_compaction hook delivery failed: " + pyExceptionRepr(err))
 		return
 	}
 	defer func() {
 		if r := recover(); r != nil {
-			slog.Warn(fmt.Sprintf("post_compaction hook delivery failed: %v", r))
+			pkgLog().Warn(fmt.Sprintf("post_compaction hook delivery failed: %v", r))
 		}
 	}()
 	target, _ := result.Get("target_session_id")

@@ -3,7 +3,6 @@ package provider
 import (
 	"errors"
 	"fmt"
-	"log/slog"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -108,7 +107,7 @@ func presetDraftFits(path string, profile ModelProfile, budget HardwareBudget, w
 	}
 	if err != nil {
 		if GGUFReadSkippable(err) {
-			slog.Warn(fmt.Sprintf("draft omitted %s: %v", filepath.Base(path), err))
+			pkgLog().Warn(fmt.Sprintf("draft omitted %s: %v", filepath.Base(path), err))
 			return false, nil
 		}
 		return false, err
@@ -227,7 +226,7 @@ func PresetForModel(gguf string, budget HardwareBudget, mtpCapable map[string]bo
 	}
 	if err != nil {
 		if GGUFReadSkippable(err) {
-			slog.Warn(fmt.Sprintf("preset skip %s: %v", filepath.Base(gguf), err))
+			pkgLog().Warn(fmt.Sprintf("preset skip %s: %v", filepath.Base(gguf), err))
 			return nil, nil
 		}
 		return nil, err
@@ -354,7 +353,7 @@ func residentFootprint(gguf string, budget HardwareBudget, window int, drafting 
 		if !GGUFReadSkippable(err) {
 			return 0, false, err
 		}
-		slog.Debug(fmt.Sprintf("footprint skip %s: %v", filepath.Base(gguf), err))
+		pkgLog().Debug(fmt.Sprintf("footprint skip %s: %v", filepath.Base(gguf), err))
 		return 0, false, nil
 	}
 	profile = AsLoaded(profile, budget)
@@ -384,7 +383,7 @@ func presetLaunchFootprint(gguf string, budget HardwareBudget, engineTag string)
 		if !GGUFReadSkippable(err) {
 			return 0, false, err
 		}
-		slog.Debug(fmt.Sprintf("footprint skip %s: %v", filepath.Base(gguf), err))
+		pkgLog().Debug(fmt.Sprintf("footprint skip %s: %v", filepath.Base(gguf), err))
 		return 0, false, nil
 	}
 	profile = AsLoaded(profile, budget)
@@ -474,7 +473,7 @@ func WritePresets(entries []*PresetEntry, presetPath string) error {
 			sections++
 		}
 	}
-	slog.Info(fmt.Sprintf("wrote %d preset sections to %s", sections, presetPath))
+	pkgLog().Info(fmt.Sprintf("wrote %d preset sections to %s", sections, presetPath))
 	return nil
 }
 
@@ -515,6 +514,12 @@ func presetJSONString(s string) string {
 	return b.String()
 }
 
+// Comment marker of a preset decision, and the one preset files an older icebath wrote carry
+const (
+	presetDecisionMarker       = "icebath-decision:"
+	legacyPresetDecisionMarker = "hermes-decision:"
+)
+
 // INI text with a decision comment per model and a section for each admitted one
 func RenderPresets(entries []*PresetEntry) string {
 	var sections []string
@@ -523,7 +528,7 @@ func RenderPresets(entries []*PresetEntry) string {
 		if e.Refusal != "" {
 			refusal = presetJSONString(e.Refusal)
 		}
-		sections = append(sections, fmt.Sprintf("# hermes-decision: {\"model_id\": %s, \"window\": %d, \"spilled\": %t, \"refusal\": %s}\n",
+		sections = append(sections, fmt.Sprintf("# "+presetDecisionMarker+" {\"model_id\": %s, \"window\": %d, \"spilled\": %t, \"refusal\": %s}\n",
 			presetJSONString(e.ModelID), e.Window, e.Spilled, refusal))
 		if e.Keys != nil {
 			lines := make([]string, 0, len(e.Order))
@@ -561,7 +566,7 @@ func readPresetDecisions(presetPath string) map[string]*PresetEntry {
 	}
 	out := map[string]*PresetEntry{}
 	if err := presetReadBack(presetPath, out); err != nil {
-		slog.Debug(fmt.Sprintf("preset read-back failed: %v", err))
+		pkgLog().Debug(fmt.Sprintf("preset read-back failed: %v", err))
 	}
 	return out
 }
@@ -582,7 +587,10 @@ func presetReadBack(presetPath string, out map[string]*PresetEntry) error {
 	}
 	recorded := map[string]map[string]any{}
 	for _, line := range pySplitLines(text) {
-		rest, ok := strings.CutPrefix(line, "# hermes-decision: ")
+		rest, ok := strings.CutPrefix(line, "# "+presetDecisionMarker+" ")
+		if !ok {
+			rest, ok = strings.CutPrefix(line, "# "+legacyPresetDecisionMarker+" ")
+		}
 		if !ok {
 			continue
 		}
@@ -596,7 +604,7 @@ func presetReadBack(presetPath string, out map[string]*PresetEntry) error {
 		}
 		rawID, ok := fact["model_id"]
 		if !ok {
-			return errors.New("KeyError: 'model_id'")
+			return errors.New("a preset entry has no model_id")
 		}
 		id := pyStr(rawID)
 		recorded[id] = fact

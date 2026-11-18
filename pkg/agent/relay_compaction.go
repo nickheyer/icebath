@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"log/slog"
 	"sync/atomic"
 
 	"github.com/nickheyer/icebath/pkg/tools"
@@ -97,7 +96,7 @@ func EmitCompactionMark(ctx context.Context, sessionID, name string, data map[st
 		if shown == "" {
 			shown = "none"
 		}
-		slog.DebugContext(ctx, fmt.Sprintf("no live Relay session for %s; %s mark not recorded", shown, name))
+		pkgLog().DebugContext(ctx, fmt.Sprintf("no live Relay session for %s; %s mark not recorded", shown, name))
 		return false, nil
 	}
 	if relayCompactionStalled.Load() {

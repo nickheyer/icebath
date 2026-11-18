@@ -6,8 +6,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
@@ -78,7 +78,7 @@ func emitMoAReferenceGenerations(state *traceState, references any) {
 		var outputTokens any
 		if truthy(usage) {
 			if !isDict(usage) {
-				panic(fmt.Sprintf("AttributeError: '%s' object has no attribute 'get'", pyrepr.TypeName(usage)))
+				panic(fmt.Sprintf("a mixture of agents reference usage is %s, expected a mapping", errchain.Kind(usage)))
 			}
 			outputTokens = dget(usage, "output_tokens")
 		}

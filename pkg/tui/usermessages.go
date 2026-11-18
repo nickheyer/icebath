@@ -255,14 +255,6 @@ func describeRPCError(err error) string {
 	return describeWireText(s, text)
 }
 
-// Plain copy of a failure given as bare text, which carries no code and is never read as version skew
-func describeRPCErrorText(text string) string {
-	if strings.TrimFunc(text, isJSSpace) == "" {
-		text = tr("rpc.requestFailed")
-	}
-	return describeWireText(rpcShape{}, text)
-}
-
 // Copy of the first known wire pattern the text matches, the text itself otherwise
 func describeWireText(s rpcShape, text string) string {
 	for _, row := range rpcErrorRows {

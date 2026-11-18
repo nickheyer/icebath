@@ -3,7 +3,6 @@ package whatsapp
 import (
 	"context"
 	"fmt"
-	"log/slog"
 	"os"
 	"path/filepath"
 	"strings"
@@ -366,7 +365,7 @@ func (b *WhatsAppBehaviorMixin) CompileMentionPatterns(ctx context.Context) ([]*
 	}
 	list, ok := patterns.([]any)
 	if !ok {
-		slog.Warn(fmt.Sprintf("[%s] whatsapp mention_patterns must be a list or string; got %s", b.Name, pyrepr.TypeName(patterns)))
+		pkgLog().Warn(fmt.Sprintf("[%s] whatsapp mention_patterns must be a list or string; got %s", b.Name, pyrepr.TypeName(patterns)))
 		return []*regexp2.Regexp{}, nil
 	}
 	compiled := []*regexp2.Regexp{}
@@ -377,13 +376,13 @@ func (b *WhatsAppBehaviorMixin) CompileMentionPatterns(ctx context.Context) ([]*
 		}
 		re, err := pyre.CompileIgnoreCase(text)
 		if err != nil {
-			slog.Warn(fmt.Sprintf("[%s] Invalid WhatsApp mention pattern %s: %s", b.Name, pyrepr.Repr(text), err))
+			pkgLog().Warn(fmt.Sprintf("[%s] Invalid WhatsApp mention pattern %s: %s", b.Name, pyrepr.Repr(text), err))
 			continue
 		}
 		compiled = append(compiled, re)
 	}
 	if len(compiled) > 0 {
-		slog.Info(fmt.Sprintf("[%s] Loaded %d WhatsApp mention pattern(s)", b.Name, len(compiled)))
+		pkgLog().Info(fmt.Sprintf("[%s] Loaded %d WhatsApp mention pattern(s)", b.Name, len(compiled)))
 	}
 	return compiled, nil
 }

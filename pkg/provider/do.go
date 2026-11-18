@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"log/slog"
 	"net/http"
 	"net/url"
@@ -17,6 +16,8 @@ import (
 	"sync/atomic"
 	"time"
 	"unicode/utf8"
+
+	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
@@ -82,12 +83,8 @@ func LadderStopHint(platform string) string {
 
 const ladderDefaultStopHint = "send /stop to cancel"
 
-// Free tier rate limit copy for the chat and the card
-const (
-	FreeTierRateLimitCard  = "You've used up the allowance for chatting without signing in. It refreshes in {reset}. Sign in for a bigger allowance, it's free."
-	FreeTierRateLimitChat  = FreeTierRateLimitCard + " To sign in: /login."
-	ContentPolicyNextSteps = "Try rewording your message or removing sensitive attachments, or switch to another model with /model."
-)
+// Next step copy for a content policy block
+const ContentPolicyNextSteps = "Try rewording your message or removing sensitive attachments, or switch to another model with /model."
 
 // errorTypeName names the wrapped transport error type or the APIError itself
 func errorTypeName(apiErr *APIError) string {
@@ -269,10 +266,6 @@ func ExtractAPIErrorContext(err error) map[string]any {
 type RetryState struct {
 	CodexAuthRetryAttempted               bool
 	AnthropicAuthRetryAttempted           bool
-	NousAuthRetryAttempted                bool
-	NousPaidEntitlementRefreshAttempted   bool
-	WelcomeModelSwitchAttempted           bool
-	WelcomeRouteHealAttempted             bool
 	ProviderAuthRefreshAttempted          bool
 	ProviderStaleRefreshAttempted         bool
 	VertexAuthRetryAttempted              bool
@@ -331,7 +324,7 @@ type DoOptions struct {
 	Chain   *Chain
 	Rotator Rotator
 	Hooks   Hooks
-	Credits *CreditsCapture
+	Credits *HeaderCapture
 	Fast    *FastWindow
 	Session *RetrySession
 	Stream  StreamFunc
@@ -350,7 +343,7 @@ type DoOptions struct {
 	ClientFor func(ctx context.Context, route Route) (Client, error)
 	// Rebuilds the request for a new route before the block restarts, defaults to a model rename
 	Rebuild func(ctx context.Context, route Route, req *Request) (*Request, error)
-	// Agent level recoveries in hermes order, each returns true to retry now
+	// Agent level recoveries in order, each returns true to retry now
 	RecoverBeforeClassification func(ctx context.Context, st *RetryState, err error) bool
 	RecoverBeforeRotation       func(ctx context.Context, st *RetryState, cl *Classified, apiErr *APIError) bool
 	RecoverAfterRotation        func(ctx context.Context, st *RetryState, cl *Classified, apiErr *APIError) bool
@@ -362,8 +355,6 @@ type DoOptions struct {
 	OnOverflow             func(ctx context.Context, st *RetryState, cl *Classified, apiErr *APIError, wrappedOutputCap int) OverflowVerdict
 	// Called after a rotation or fallback changed the route and before the block restarts
 	OnRouteChange func(ctx context.Context, route Route)
-	// Applied once a nous model switch header moves the session model
-	OnModelSwitch func(ctx context.Context, requested, backing string)
 	// Called after every retry wait so a short lived credential can be re adopted
 	AfterWait func(ctx context.Context)
 	// Streamed assistant text so far, read by the recovery ladder
@@ -394,7 +385,6 @@ type DoOptions struct {
 	ContextLength      int
 	ApproxTokens       int
 	CompressionEnabled bool
-	Attended           bool
 	MaxRetries         int
 	AutoRecoveryCycles int
 	VerboseLogging     bool
@@ -411,7 +401,6 @@ const (
 	FailExhausted          DoFailure = "max_retries_exhausted"
 	FailNonRetryable       DoFailure = "non_retryable_client_error"
 	FailInterrupted        DoFailure = "interrupted"
-	FailNousRateLimited    DoFailure = "nous_rate_limited"
 	FailCompactionDisabled DoFailure = "compaction_disabled"
 	FailDeadline           DoFailure = "deadline"
 	FailOverflow           DoFailure = "overflow"
@@ -435,9 +424,6 @@ type DoError struct {
 	ResetHint         string
 	ResetAt           float64
 	HasResetAt        bool
-	FreeTierKind      string
-	WelcomeHint       string
-	UsageWindow       bool
 	Guidance          []string
 	Route             Route
 	Message           string
@@ -522,14 +508,6 @@ func (l *doLoop) logContext() string {
 	return fmt.Sprintf("provider=%s model=%s base_url=%s", l.route.Provider, l.route.Model, l.route.BaseURL)
 }
 
-func (l *doLoop) anonymous() bool {
-	return IsAnonymousRequest(l.route.Provider, l.route.APIKey)
-}
-
-func (l *doLoop) onFreeModel() bool {
-	return RouteIsWelcomeHost(l.route.BaseURL) && l.anonymous()
-}
-
 func (l *doLoop) isOpenRouterURL() bool {
 	return HostMatches(l.route.BaseURL, "openrouter.ai")
 }
@@ -559,7 +537,7 @@ func (l *doLoop) switchRoute(route Route) error {
 	l.route, l.client, l.req = route, client, req
 	l.st.Route, l.st.Client, l.st.Request = route, client, req
 	if l.opts.Credits != nil {
-		l.opts.Credits.SetRoute(route.Provider, route.Model, route.BaseURL)
+		l.opts.Credits.SetProvider(route.Provider)
 	}
 	if l.opts.OnRouteChange != nil {
 		l.opts.OnRouteChange(l.ctx, route)
@@ -608,14 +586,6 @@ func resetAtOf(ctx map[string]any) any {
 	return nil
 }
 
-func usageWindowOf(cl *Classified) bool {
-	if cl == nil || cl.Context == nil {
-		return false
-	}
-	v, _ := cl.Context["usage_window"].(bool)
-	return v
-}
-
 // asAPIError classifies a raw adapter error into the route's APIError when it is not one already
 func (l *doLoop) asAPIError(err error) *APIError {
 	var apiErr *APIError
@@ -644,65 +614,14 @@ func (l *doLoop) classify(apiErr *APIError) *Classified {
 		ApproxTokens: l.opts.ApproxTokens, ContextLength: ctxLen, NumMessages: msgs, BaseURL: l.route.BaseURL, APIKey: l.route.APIKey, Headers: errorHeaders(apiErr)})
 }
 
-// nousRateLimitGuard skips the call while another session recorded a Nous Portal rate limit
-func (l *doLoop) nousRateLimitGuard() (*DoError, bool, error) {
-	if l.route.Provider != "nous" {
-		return nil, false, nil
-	}
-	if l.opts.Credits != nil {
-		if requested, backing, ok := l.opts.Credits.TakePendingModelSwitch(); ok && l.route.Model == requested {
-			l.route.Model = backing
-			l.req.Model = backing
-			l.st.Route = l.route
-			l.log.Info(fmt.Sprintf("Nous gateway asked to switch %s -> %s; applied for this session", requested, backing))
-			if l.opts.OnModelSwitch != nil {
-				l.opts.OnModelSwitch(l.ctx, requested, backing)
-			}
-			l.bufferStatus(fmt.Sprintf("Model is now %s (your account's model; %s is the free tier's).", backing, requested))
-		}
-	}
-	anonymous := l.anonymous()
-	guard := &NousRateGuard{Home: l.opts.Home, Anonymous: anonymous, Now: l.now}
-	remaining, ok := guard.Remaining()
-	if !ok || remaining <= 0 {
-		return nil, false, nil
-	}
-	var msg string
-	if anonymous {
-		msg = strings.ReplaceAll(FreeTierRateLimitChat, "{reset}", FriendlyWait(remaining.Seconds()))
-	} else {
-		msg = fmt.Sprintf("Your Nous account has hit its rate limit; it resets in %s.", FormatSeconds(remaining.Seconds()))
-	}
-	l.verbose(fmt.Sprintf("⏳ %s Trying fallback...", msg))
-	l.bufferStatus("⏳ " + msg)
-	if switched, err := l.tryFallback("", nil); err != nil {
-		return nil, false, err
-	} else if switched {
-		return nil, true, nil
-	}
-	l.flushStatus()
-	de := &DoError{Failure: FailNousRateLimited, Reason: ReasonRateLimit, Retryable: true, Message: msg, Summary: msg, Route: l.route}
-	if anonymous {
-		de.FreeTierKind = "rate_limited"
-		de.WelcomeHint = strings.ReplaceAll(FreeTierRateLimitCard, "{reset}", FriendlyWait(remaining.Seconds()))
-	}
-	return de, false, nil
-}
-
+// Rate limit headers and OpenRouter cache status of every successful response except a blocking chat completion
 func (l *doLoop) captureSuccessHeaders(resp *Response) {
 	if l.blocking && (l.route.Mode == ModeChatCompletions || l.route.Mode == "") {
-		if resp != nil {
-			chatCompletionCapturingHeaders(l.route.Provider, l.opts.Credits, resp.Headers)
-		}
-	} else if l.opts.Credits != nil && resp != nil && len(resp.Headers) > 0 {
-		l.opts.Credits.CaptureRateLimits(resp.Headers)
-		l.opts.Credits.CaptureCredits(resp.Headers, false)
-		l.opts.Credits.CheckOpenRouterCacheStatus(resp.Headers)
-		l.opts.Credits.CaptureNousModelSwitch(resp.Headers)
+		return
 	}
-	if l.route.Provider == "nous" {
-		guard := &NousRateGuard{Home: l.opts.Home, Anonymous: l.anonymous(), Now: l.now}
-		_ = guard.Clear()
+	if l.opts.Credits != nil && resp != nil && len(resp.Headers) > 0 {
+		l.opts.Credits.CaptureRateLimits(resp.Headers)
+		l.opts.Credits.CheckOpenRouterCacheStatus(resp.Headers)
 	}
 }
 
@@ -757,7 +676,7 @@ func Do(ctx context.Context, client Client, req *Request, opts DoOptions) (*Resp
 		return nil, errors.New("provider: Do needs a request")
 	}
 	if opts.Log == nil {
-		opts.Log = slog.Default()
+		opts.Log = pkgLog()
 	}
 	if opts.Now == nil {
 		opts.Now = time.Now
@@ -788,7 +707,7 @@ func Do(ctx context.Context, client Client, req *Request, opts DoOptions) (*Resp
 		log: opts.Log, now: opts.Now, sleep: opts.Sleep, maxRetries: opts.MaxRetries}
 	l.st = &RetryState{Route: route, Request: req, Client: client, MaxRetries: opts.MaxRetries}
 	if opts.Credits != nil {
-		opts.Credits.SetRoute(route.Provider, route.Model, route.BaseURL)
+		opts.Credits.SetProvider(route.Provider)
 	}
 	if opts.Deadline > 0 {
 		var cancel context.CancelFunc
@@ -801,13 +720,6 @@ func Do(ctx context.Context, client Client, req *Request, opts DoOptions) (*Resp
 
 func (l *doLoop) run() (*Response, error) {
 	for {
-		if de, restarted, err := l.nousRateLimitGuard(); err != nil {
-			return nil, err
-		} else if de != nil {
-			return nil, de
-		} else if restarted {
-			continue
-		}
 		l.st.RetryCount, l.st.MaxRetries, l.st.CompressionAttempts = l.retryCount, l.maxRetries, l.compressionAttempts
 		start := l.now()
 		l.firePreRequest(start)
@@ -1318,7 +1230,7 @@ func (l *doLoop) forgetInvisibleDeltas(err error, deltasSent *bool, toolInFlight
 	if !*deltasSent || toolInFlight || l.visibleTextDelivered() {
 		return
 	}
-	slog.Warn(fmt.Sprintf("Stream died after deltas but before any visible text was delivered (0 chars, no tool call in flight); treating as an undelivered stream failure: %v", err))
+	pkgLog().Warn(fmt.Sprintf("Stream died after deltas but before any visible text was delivered (0 chars, no tool call in flight); treating as an undelivered stream failure: %v", err))
 	if l.opts.ResetStreamDelivery != nil {
 		func() {
 			defer func() { _ = recover() }()
@@ -1504,33 +1416,6 @@ func (l *doLoop) missingVendorPrefixSuggestion(apiErr *APIError) string {
 	return SuggestPrefixedModelID(l.route.Provider, l.route.Model)
 }
 
-// genuineNousRateLimit records an account level Nous 429 to the cross session breaker
-func (l *doLoop) genuineNousRateLimit(apiErr *APIError, errorContext map[string]any, cl *Classified) bool {
-	headers := errorHeaders(apiErr)
-	anonymous := l.anonymous()
-	var lastKnown *RateLimitState
-	if l.opts.Credits != nil {
-		lastKnown = l.opts.Credits.RateLimit()
-	}
-	genuine := (anonymous && IsLongWelcomeRateLimit(cl.Context)) || IsGenuineNousRateLimit(headers, lastKnown, l.now())
-	if !genuine {
-		l.log.Info("Nous 429 looks like upstream capacity (no exhausted bucket in headers or last-known state) -- not tripping cross-session breaker.")
-		return false
-	}
-	merged := map[string]any{}
-	for k, v := range errorContext {
-		merged[k] = v
-	}
-	for k, v := range cl.Context {
-		merged[k] = v
-	}
-	guard := &NousRateGuard{Home: l.opts.Home, Anonymous: anonymous, Now: l.now}
-	if err := guard.Record(headers, ContextResetAt(merged), 300*time.Second); err != nil {
-		LogNousRateLimitWriteFailure(err)
-	}
-	return true
-}
-
 func eagerFallbackStatus(cl *Classified, isUpstream, isTransport bool) string {
 	if isUpstream {
 		name, _ := cl.Context["upstream_provider"].(string)
@@ -1555,7 +1440,7 @@ func EagerFallbackStatus(cl *Classified, isUpstream, isTransport bool) string {
 	return eagerFallbackStatus(cl, isUpstream, isTransport)
 }
 
-// handleError recovers from one failed attempt in the hermes order and reports whether the loop continues
+// Recovers from one failed attempt in the order and reports whether the loop continues
 func (l *doLoop) handleError(err error, start time.Time) (*DoError, bool, error) {
 	if l.opts.RecoverBeforeClassification != nil && l.opts.RecoverBeforeClassification(l.ctx, l.st, err) {
 		return nil, true, nil
@@ -1571,16 +1456,12 @@ func (l *doLoop) handleError(err error, start time.Time) (*DoError, bool, error)
 		return nil, true, nil
 	}
 	errorContext := ExtractAPIErrorContext(apiErr)
-	if (apiErr.StatusCode == 402 || apiErr.StatusCode == 403) && l.route.Provider == "nous" && l.opts.Credits != nil && ResponseIsUsageWindow(headers) {
-		l.opts.Credits.CaptureCredits(headers, true)
-	}
 	cl := l.classify(apiErr)
 	l.log.Debug(fmt.Sprintf("Error classified: reason=%s status=%d retryable=%t compress=%t rotate=%t fallback=%t", cl.Reason, cl.StatusCode, cl.Retryable, cl.ShouldCompress, cl.ShouldRotateCredential, cl.ShouldFallback))
 	l.fireErrorHook(start, apiErr, cl)
 	if l.opts.RecoverBeforeRotation != nil && l.opts.RecoverBeforeRotation(l.ctx, l.st, cl, apiErr) {
 		return nil, true, nil
 	}
-	recoveredWithPool := false
 	if l.opts.Rotator != nil {
 		if next, ok := l.opts.Rotator.Rotate(l.ctx, l.route, apiErr); ok {
 			if switchErr := l.switchRoute(next); switchErr != nil {
@@ -1641,7 +1522,7 @@ func (l *doLoop) handleError(err error, start time.Time) (*DoError, bool, error)
 		l.maxRetries = ZAICodingOverloadRetryCeiling()
 		l.st.MaxRetries = l.maxRetries
 	}
-	shouldFallback := ((isRateLimited && !hasWrappedCap) || (isTransportFailure && l.retryCount >= 2)) && !usageWindowOf(cl)
+	shouldFallback := ((isRateLimited && !hasWrappedCap) || (isTransportFailure && l.retryCount >= 2))
 	if shouldFallback && l.hasPendingFallback() {
 		isUpstream := cl.Reason == ReasonUpstreamRateLimit
 		poolMayRecover := false
@@ -1665,13 +1546,6 @@ func (l *doLoop) handleError(err error, start time.Time) (*DoError, bool, error)
 		} else if switched {
 			return nil, true, nil
 		}
-	}
-	if isRateLimited && l.route.Provider == "nous" && cl.Reason == ReasonRateLimit && !recoveredWithPool && l.genuineNousRateLimit(apiErr, errorContext, cl) {
-		l.retryCount = l.maxRetries - 1
-		if l.retryCount < 0 {
-			l.retryCount = 0
-		}
-		return nil, true, nil
 	}
 	// recover_from_overflow
 	isContextLengthError := false
@@ -1741,10 +1615,6 @@ func (l *doLoop) settleUnrecovered(apiErr *APIError, cl *Classified, errorContex
 	if attemptsMade > l.maxRetries {
 		attemptsMade = l.maxRetries
 	}
-	if isRateLimited && l.retryCount < l.maxRetries && l.freeTierCooldownEndsTurn(apiErr) {
-		l.log.Info(fmt.Sprintf("Free-tier cooldown outlasts the attended wait — ending retries after attempt %d", l.retryCount))
-		l.retryCount = l.maxRetries
-	}
 	if l.retryCount >= l.maxRetries {
 		if !l.st.PrimaryRecoveryAttempted {
 			recovered, recErr := l.tryRecoverPrimaryTransport(apiErr)
@@ -1788,15 +1658,6 @@ func (l *doLoop) settleUnrecovered(apiErr *APIError, cl *Classified, errorContex
 	return nil, true, nil
 }
 
-// freeTierCooldownEndsTurn reports an attended free model session facing a cooldown longer than a person waits
-func (l *doLoop) freeTierCooldownEndsTurn(apiErr *APIError) bool {
-	if !(l.onFreeModel() && l.opts.Attended) {
-		return false
-	}
-	cooldown, ok := ProviderRetryAfter(apiErr)
-	return ok && cooldown > LiveRetryWaitCap
-}
-
 // tryRecoverPrimaryTransport rebuilds the primary client once for a transient transport error
 func (l *doLoop) tryRecoverPrimaryTransport(apiErr *APIError) (bool, error) {
 	if l.chain != nil && l.chain.Activated() {
@@ -1804,10 +1665,6 @@ func (l *doLoop) tryRecoverPrimaryTransport(apiErr *APIError) (bool, error) {
 	}
 	transient := apiErr.Kind == ErrNetwork || apiErr.Kind == ErrTimeout
 	if !transient || l.isOpenRouterURL() || isCertificateError(apiErr) {
-		return false, nil
-	}
-	provider := strings.ToLower(strings.TrimSpace(l.route.Provider))
-	if (provider == "nous" || provider == "nous-portal" || provider == "nousresearch") && l.route.Mode != ModeAnthropicMessages {
 		return false, nil
 	}
 	client, err := l.clientFor(l.route)
@@ -1880,11 +1737,8 @@ func (l *doLoop) computeErrorBackoff(apiErr *APIError, isRateLimited, isZai bool
 	if adaptive {
 		reset = ResetHint(apiErr, l.now())
 	}
-	freeBusy := isRateLimited && l.onFreeModel()
 	waitReason := "Rate limited"
-	if freeBusy {
-		waitReason = "The free model is busy"
-	} else if isZai && !isRateLimited {
+	if isZai && !isRateLimited {
 		waitReason = "Provider overloaded"
 	}
 	var status string
@@ -1908,8 +1762,6 @@ func (l *doLoop) computeErrorBackoff(apiErr *APIError, isRateLimited, isZai bool
 	liveReason := "waiting on provider —"
 	if reset != "" {
 		liveReason = fmt.Sprintf("%s — resets in %s,", strings.ToLower(waitReason), reset)
-	} else if freeBusy {
-		liveReason = "the free model is busy —"
 	}
 	l.wait(fmt.Sprintf("⏳ %s retrying in %.0fs (attempt %d/%d)", liveReason, waitTime.Seconds(), l.retryCount, l.maxRetries))
 	if policy == "" {
@@ -2011,68 +1863,6 @@ func (l *doLoop) autoRecoverAfterExhaustion(apiErr *APIError, cl *Classified) (*
 	return nil, true, nil
 }
 
-func welcomeTierGuidance(cl *Classified, model string, inChat, door bool) string {
-	if cl == nil || cl.Context == nil {
-		return ""
-	}
-	if refusal, ok := cl.Context["welcome_refusal"].(WelcomeRefusal); ok {
-		return WelcomeRefusalCopy(refusal, model, inChat, door)
-	}
-	if refusal, ok := cl.Context["welcome_refusal"].(map[string]any); ok {
-		parsed, _ := ParseWelcomeRefusal(map[string]any{"error": refusal})
-		return WelcomeRefusalCopy(parsed, model, inChat, door)
-	}
-	if route, ok := cl.Context["welcome_route"].(string); ok && route != "" {
-		return WelcomeRouteRefusalCopy(route, inChat, door)
-	}
-	return ""
-}
-
-// WelcomeTierGuidance is the copy for a parsed Nous free tier refusal, empty for every other error
-func WelcomeTierGuidance(cl *Classified, model string, inChat, door bool) string {
-	return welcomeTierGuidance(cl, model, inChat, door)
-}
-
-var welcomeSurfaceKinds = map[string]string{"rate_limited": "rate_limited", "at_capacity": "at_capacity", "admission_closed": "at_capacity", "model_not_free": "model_not_free", "feature_not_free": "model_not_free"}
-
-func welcomeSurfaceKind(cl *Classified) string {
-	if cl == nil || cl.Context == nil {
-		return ""
-	}
-	switch refusal := cl.Context["welcome_refusal"].(type) {
-	case WelcomeRefusal:
-		if kind, ok := welcomeSurfaceKinds[refusal.Reason]; ok {
-			return kind
-		}
-		return "refused"
-	case map[string]any:
-		if kind, ok := welcomeSurfaceKinds[stringField(refusal, "reason")]; ok {
-			return kind
-		}
-		return "refused"
-	}
-	route, _ := cl.Context["welcome_route"].(string)
-	switch route {
-	case "tier_disabled":
-		return "disabled"
-	case "session_expired":
-		return "outage"
-	case "named_on_welcome_host", "":
-		return ""
-	}
-	return "route"
-}
-
-// WelcomeSurfaceKind is the free tier card kind of a refusal, empty for every other error
-func WelcomeSurfaceKind(cl *Classified) string { return welcomeSurfaceKind(cl) }
-
-func (l *doLoop) welcomeOutageCopy(cl *Classified) string {
-	if l.onFreeModel() && (cl.Reason == ReasonTimeout || cl.Reason == ReasonOverloaded || cl.Reason == ReasonServerError) {
-		return FreeTierOutageCopy
-	}
-	return ""
-}
-
 func (l *doLoop) stampLimitReset(de *DoError, apiErr *APIError, cl *Classified) {
 	resetAt, ok := cl.Context["reset_at"]
 	if !ok {
@@ -2088,37 +1878,21 @@ func (l *doLoop) stampLimitReset(de *DoError, apiErr *APIError, cl *Classified) 
 
 // nonretryableAuthGuidance prints the actionable lines for a terminal auth or billing error
 func (l *doLoop) nonretryableAuthGuidance(cl *Classified, status int) []string {
-	if usageWindowOf(cl) {
-		return nil
-	}
 	var lines []string
 	emit := func(ls ...string) { lines = append(lines, ls...) }
 	provider := l.route.Provider
 	if cl.Reason == ReasonBilling && PrintBillingOrEntitlementGuidance(emit, "model access", provider, l.route.BaseURL, l.route.Model, cl.BillingUnverified()) {
 		return lines
 	}
-	if provider == "nous" && PrintNousEntitlementGuidance(emit, "Nous model access") {
-		return lines
-	}
-	if (provider == "openai-codex" || provider == "xai-oauth" || provider == "nous") && status == 401 {
+	if (provider == "openai-codex" || provider == "xai-oauth") && status == 401 {
 		switch provider {
 		case "openai-codex":
 			emit("   💡 Codex OAuth token was rejected (HTTP 401). Your token may have been",
 				"      refreshed by another client (Codex CLI, VS Code) or another icebath profile.",
 				fmt.Sprintf("      Sign this profile in again: `%s`", OAuthReloginCommand(provider)))
-		case "xai-oauth":
+		default:
 			emit("   💡 xAI OAuth token was rejected (HTTP 401). To fix:",
 				"      re-authenticate with xAI Grok OAuth (SuperGrok / Premium+) from `icebath model`.")
-		default:
-			emit("   💡 Nous Portal OAuth token was rejected (HTTP 401). Your token may be",
-				"      expired, revoked, or your account may be out of credits. To fix:",
-				"      1. Re-authenticate: icebath portal",
-				"      2. Check your portal account: https://portal.nousresearch.com")
-			if strings.HasSuffix(l.route.Model, ":free") {
-				emit(fmt.Sprintf("      ⚠️  Note: `%s` looks like an OpenRouter slug (`:free` suffix).", l.route.Model),
-					"         Nous Portal won't recognize that model name. Either switch to a",
-					fmt.Sprintf("         Nous catalog model, or run `/model openrouter:%s` to use OpenRouter.", l.route.Model))
-			}
 		}
 		return lines
 	}
@@ -2152,14 +1926,11 @@ func (l *doLoop) nonretryableResult(apiErr *APIError, cl *Classified, errorConte
 	if l.opts.VerboseLogging {
 		guidance = append(guidance, fmt.Sprintf("   🔌 Provider: %s  Model: %s  (HTTP %d)", l.route.Provider, l.route.Model, apiErr.StatusCode), fmt.Sprintf("   🌐 Endpoint: %s", l.route.BaseURL))
 	}
-	welcomeHint := welcomeTierGuidance(cl, l.route.Model, false, true)
 	prefixSuggestion := l.missingVendorPrefixSuggestion(apiErr)
 	if moved := HostInstallHint(l.route.BaseURL); moved != "" {
 		guidance = append(guidance, "   💡 "+moved)
 	}
 	switch {
-	case welcomeHint != "":
-		guidance = append(guidance, "   💡 "+welcomeHint)
 	case cl.IsAuth() || cl.Reason == ReasonBilling:
 		guidance = append(guidance, l.nonretryableAuthGuidance(cl, apiErr.StatusCode)...)
 	case cl.Reason == ReasonModelNotFound:
@@ -2198,12 +1969,8 @@ func (l *doLoop) nonretryableResult(apiErr *APIError, cl *Classified, errorConte
 	}
 	l.log.Error(fmt.Sprintf("Non-retryable client error: %v", apiErr))
 	de := &DoError{Failure: FailNonRetryable, Err: apiErr, APIError: apiErr, Classified: cl, Summary: summary, Attempts: l.retryCount, Reason: cl.Reason,
-		Retryable: cl.Retryable, BillingUnverified: cl.BillingUnverified(), PrefixSuggestion: prefixSuggestion, WelcomeHint: welcomeHint, UsageWindow: usageWindowOf(cl),
+		Retryable: cl.Retryable, BillingUnverified: cl.BillingUnverified(), PrefixSuggestion: prefixSuggestion,
 		Guidance: guidance, Route: l.route, Message: summary}
-	if welcomeHint != "" {
-		de.Message = welcomeTierGuidance(cl, l.route.Model, true, true)
-		de.FreeTierKind = welcomeSurfaceKind(cl)
-	}
 	l.stampLimitReset(de, apiErr, cl)
 	return de
 }
@@ -2222,10 +1989,8 @@ func (l *doLoop) exhaustedResult(apiErr *APIError, cl *Classified, errorContext 
 		} else {
 			l.status(fmt.Sprintf("❌ Billing or credits exhausted — %s", summary))
 		}
-		if !usageWindowOf(cl) {
-			emit := func(ls ...string) { guidance = append(guidance, ls...) }
-			PrintBillingOrEntitlementGuidance(emit, "model access", l.route.Provider, l.route.BaseURL, l.route.Model, cl.BillingUnverified())
-		}
+		emit := func(ls ...string) { guidance = append(guidance, ls...) }
+		PrintBillingOrEntitlementGuidance(emit, "model access", l.route.Provider, l.route.BaseURL, l.route.Model, cl.BillingUnverified())
 	case isRateLimited:
 		reset = ResetHint(apiErr, l.now())
 		noun := "retries"
@@ -2241,10 +2006,6 @@ func (l *doLoop) exhaustedResult(apiErr *APIError, cl *Classified, errorContext 
 		l.status(fmt.Sprintf("❌ API failed after %d retries — %s", attempts, summary))
 	}
 	guidance = append(guidance, fmt.Sprintf("   💀 Final error: %s", summary))
-	welcomeHint := welcomeTierGuidance(cl, l.route.Model, false, true)
-	if welcomeHint != "" {
-		guidance = append(guidance, "   💡 "+welcomeHint)
-	}
 	isStreamDrop := apiErr.StatusCode == 0 && anyIn(errorMsg, streamDropMarkers)
 	if isStreamDrop {
 		guidance = append(guidance,
@@ -2263,13 +2024,7 @@ func (l *doLoop) exhaustedResult(apiErr *APIError, cl *Classified, errorContext 
 	}
 	de := &DoError{Failure: FailExhausted, Err: apiErr, APIError: apiErr, Classified: cl, Summary: summary, Attempts: attempts, Reason: cl.Reason, Retryable: cl.Retryable,
 		BillingUnverified: cl.BillingUnverified(), IsRateLimited: isRateLimited, IsStreamDrop: isStreamDrop, IsThinkingTimeout: isThinkingTimeout, ResetHint: reset,
-		WelcomeHint: welcomeHint, UsageWindow: usageWindowOf(cl), Guidance: guidance, Route: l.route, Message: summary}
-	if welcomeHint != "" {
-		de.Message = welcomeTierGuidance(cl, l.route.Model, true, true)
-		de.FreeTierKind = welcomeSurfaceKind(cl)
-	} else if outage := l.welcomeOutageCopy(cl); outage != "" {
-		de.Message, de.FreeTierKind = outage, "outage"
-	}
+		Guidance: guidance, Route: l.route, Message: summary}
 	l.stampLimitReset(de, apiErr, cl)
 	return de
 }

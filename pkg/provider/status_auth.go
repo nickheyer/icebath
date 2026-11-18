@@ -8,7 +8,6 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/config"
-	"github.com/nickheyer/icebath/pkg/tools"
 )
 
 // StatusSink is the icebath status printing surface the credential sections render through
@@ -22,15 +21,12 @@ type StatusSink interface {
 	EffectiveProviderLabel() string
 }
 
-// StatusContext is the state icebath status sections share, Auth Providers filling the Nous facts the gateway section reads
+// StatusContext is the state icebath status sections share
 type StatusContext struct {
-	Ctx                  context.Context
-	Out                  StatusSink
-	Deep                 bool
-	Config               map[string]any
-	NousLoggedIn         bool
-	NousInferencePresent bool
-	NousAccountInfo      *NousPortalAccountInfo
+	Ctx    context.Context
+	Out    StatusSink
+	Deep   bool
+	Config map[string]any
 }
 
 func (c *StatusContext) ctx() context.Context {
@@ -132,25 +128,6 @@ var (
 	}
 )
 
-// Nous Tool Gateway state of one feature, the first matching rule naming it
-func statusFeatureState(f NousFeatureState, nousAuth bool) string {
-	switch {
-	case f.ManagedByNous:
-		return "active via Nous subscription"
-	case f.Active:
-		provider := f.CurrentProvider
-		if provider == "" {
-			provider = "configured provider"
-		}
-		return "active via " + provider
-	case f.IncludedByDefault && nousAuth:
-		return "included by subscription, not currently selected"
-	case f.Key == "modal" && nousAuth:
-		return "available via subscription (optional)"
-	}
-	return "not configured"
-}
-
 // OAuth provider row with its detail lines, each printing when its value is truthy and its gate matches the login
 func statusOAuthBlockRender(out StatusSink, block statusOAuthBlock, status map[string]any) error {
 	loggedIn := pyTruthy(status["logged_in"])
@@ -203,113 +180,17 @@ func StatusRenderAPIKeys(c *StatusContext) error {
 	return nil
 }
 
-// Prints the Auth Providers section from refresh free snapshots and records the Nous login facts on the context
+// Prints the Auth Providers section from refresh free snapshots
 func StatusRenderAuthProviders(c *StatusContext) error {
 	c.Out.Section("Auth Providers")
 	env := c.env()
-	nous := GetNousAuthStatusLocal(env)
-	if nous == nil {
-		nous = map[string]any{}
-	}
-	statuses := make([]map[string]any, len(statusOAuthBlocks))
-	for i, block := range statusOAuthBlocks {
-		if statuses[i] = block.status(env); statuses[i] == nil {
-			statuses[i] = map[string]any{}
+	for _, block := range statusOAuthBlocks {
+		status := block.status(env)
+		if status == nil {
+			status = map[string]any{}
 		}
-	}
-	var info *NousPortalAccountInfo
-	for _, k := range []string{"logged_in", "access_token", "portal_base_url", "inference_credential_present", "error_code"} {
-		if pyTruthy(nous[k]) {
-			info = GetNousPortalAccountInfo(c.ctx(), false)
-			break
-		}
-	}
-	c.NousAccountInfo = info
-	loggedIn := pyTruthy(nous["logged_in"]) || (info != nil && info.LoggedIn)
-	inference := pyTruthy(nous["inference_credential_present"]) || (info != nil && info.InferenceCredentialPresent)
-	c.NousLoggedIn, c.NousInferencePresent = loggedIn, inference
-	renderBlocks := func() error {
-		for i, block := range statusOAuthBlocks {
-			if err := statusOAuthBlockRender(c.Out, block, statuses[i]); err != nil {
-				return err
-			}
-		}
-		return nil
-	}
-	if pyTruthy(nous["free_tier"]) {
-		// The free tier never renders as an account login, no account ids and no refresh row
-		c.Out.Row("Nous Portal", true, FreeTierLabel+" · "+GuestModel, 12, "  ")
-		c.Out.Detail("", UpgradeHint)
-		if inferenceURL := nous["inference_base_url"]; pyTruthy(inferenceURL) {
-			c.Out.Detail("Inference:", inferenceURL)
-		}
-		return renderBlocks()
-	}
-	nousError := nous["error"]
-	text := "not logged in (run: icebath portal)"
-	if loggedIn {
-		text = "logged in"
-	} else if inference {
-		text = "not logged in (Nous inference key configured)"
-	}
-	c.Out.Row("Nous Portal", loggedIn, text, 12, "  ")
-	var portalURL any = "(unknown)"
-	if pyTruthy(nous["portal_base_url"]) {
-		portalURL = nous["portal_base_url"]
-	}
-	var inferenceURL any = nous["inference_base_url"]
-	if !pyTruthy(inferenceURL) {
-		inferenceURL = nil
-		if info != nil {
-			inferenceURL = info.InferenceBaseURL
-		}
-	}
-	details := []struct {
-		label string
-		value any
-		show  bool
-	}{
-		{"Portal URL:", portalURL, loggedIn || portalURL != "(unknown)" || pyTruthy(nousError)},
-		{"Inference:", inferenceURL, inference && pyTruthy(inferenceURL)},
-		{"Access exp:", statusFormatISOTimestamp(nous["access_expires_at"]), loggedIn || pyTruthy(nous["access_expires_at"])},
-		{"Key exp:", statusFormatISOTimestamp(nous["agent_key_expires_at"]), loggedIn || inference || pyTruthy(nous["agent_key_expires_at"])},
-		{"Refresh:", map[bool]string{true: "yes", false: "no"}[pyTruthy(nous["has_refresh_token"])], loggedIn || pyTruthy(nous["has_refresh_token"])},
-		{"Error:", nousError, pyTruthy(nousError)},
-	}
-	for _, d := range details {
-		if d.show {
-			c.Out.Detail(d.label, d.value)
-		}
-	}
-	return renderBlocks()
-}
-
-// Managed Nous tools gate of the installed account source, false when none is installed
-func statusManagedNousToolsEnabled() bool {
-	return tools.NousAccount != nil && tools.NousAccount.ManagedToolsEnabled(nil, false)
-}
-
-// Prints the Nous Tool Gateway section, per feature state when entitled and the entitlement message otherwise
-func StatusRenderNousGateway(c *StatusContext) error {
-	if statusManagedNousToolsEnabled() {
-		features := GetNousSubscriptionFeatures(c.env(), c.Config, false)
-		c.Out.Section("Nous Tool Gateway")
-		if features.NousAuthPresent {
-			c.Out.Print("  Nous Portal   ✓ managed tools available")
-		} else {
-			c.Out.Print("  Nous Portal   ✗ not logged in")
-		}
-		for _, f := range features.Items() {
-			c.Out.Row(f.Label, f.Available || f.Active || f.ManagedByNous, statusFeatureState(f, features.NousAuthPresent), 15, " ")
-		}
-		return nil
-	}
-	if c.NousLoggedIn || c.NousInferencePresent {
-		// Nous OAuth without entitlement or an opaque inference key cannot enable the Tool Gateway
-		c.Out.Section("Nous Tool Gateway")
-		message := FormatNousPortalEntitlementMessage(c.NousAccountInfo, "managed web, image, TTS, STT, browser, and Modal tools", false)
-		for _, line := range pySplitLines(message) {
-			c.Out.Print("  " + line)
+		if err := statusOAuthBlockRender(c.Out, block, status); err != nil {
+			return err
 		}
 	}
 	return nil

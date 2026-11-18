@@ -59,7 +59,7 @@ func serveWitness(t *testing.T, network, address string, answer bool) net.Listen
 	return ln
 }
 
-// Home directly under the temp root, short enough for a unix socket path like the hermes fixture
+// Home directly under the temp root, short enough for an unix socket path like the test fixture
 func shortHome(t *testing.T) string {
 	t.Helper()
 	dir, err := os.MkdirTemp("", "hwg-")

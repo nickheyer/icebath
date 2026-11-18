@@ -5,7 +5,6 @@ import (
 	"crypto/hmac"
 	"database/sql"
 	"errors"
-	"log/slog"
 	"os"
 	"path/filepath"
 	"sync"
@@ -36,11 +35,6 @@ const (
 // Columns added after the first schema shipped, applied when missing in this order
 var apiRunMigrations = [][2]string{{"owner_pid", "INTEGER NOT NULL DEFAULT 0"}, {"owner_started", "INTEGER NOT NULL DEFAULT 0"},
 	{"retention_until", "REAL NOT NULL DEFAULT 0"}, {"acknowledged_at", "REAL"}}
-
-// Logger the extracted store shares with the API server
-func apiServerLog() *slog.Logger {
-	return slog.Default().With("logger", "gateway.platforms.api_server")
-}
 
 // Canonical JSON of a public run status
 func apiEncodeRunStatus(status any) (string, error) {
@@ -115,7 +109,7 @@ func NewRunIdempotencyStore(ctx context.Context, dbPath string) (*RunIdempotency
 		}
 	}
 	if err != nil {
-		apiServerLog().Warn("Run idempotency storage is unavailable; falling back to process memory, so replay will not survive a restart: " +
+		pkgLog().Warn("Run idempotency storage is unavailable; falling back to process memory, so replay will not survive a restart: " +
 			pyrepr.ExceptionMessage(err))
 		if conn, err = state.ConnectSQLite(":memory:", state.SQLiteConfig{Timeout: 5}); err != nil {
 			return nil, err
@@ -191,7 +185,7 @@ func (s *RunIdempotencyStore) tightenPermissions() {
 			continue
 		}
 		if err := os.Chmod(candidate, 0o600); err != nil {
-			apiServerLog().Debug("Failed to restrict run idempotency store permissions", "error", err)
+			pkgLog().Debug("Failed to restrict run idempotency store permissions", "error", err)
 		}
 	}
 }

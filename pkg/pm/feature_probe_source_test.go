@@ -16,7 +16,7 @@ import (
 func TestFeatureProbeSourceSHA256(t *testing.T) {
 	sum := sha256.Sum256([]byte(featureProbeSource))
 	if got := hex.EncodeToString(sum[:]); got != "7fd550c3c986d0402369e2e7f95b969d9dcd829f38b2acfc02ef1d3fdb8effa7" {
-		t.Fatalf("sha256 %s differs from the hermes installed_extras probe", got)
+		t.Fatalf("sha256 %s differs from the recorded installed_extras probe", got)
 	}
 }
 

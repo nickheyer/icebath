@@ -37,8 +37,8 @@ func TestRootSessionNoCompression(t *testing.T) {
 	db := provenanceDB(t)
 	mkSession(t, db, "root1", "")
 	prov := BuildSessionProvenance(context.Background(), db, "acp-1", "root1", "")
-	if provGet(t, prov, "acpSessionId") != "acp-1" || provGet(t, prov, "currentHermesSessionId") != "root1" ||
-		provGet(t, prov, "rootHermesSessionId") != "root1" || provGet(t, prov, "parentHermesSessionId") != nil ||
+	if provGet(t, prov, "acpSessionId") != "acp-1" || provGet(t, prov, "currentIcebathSessionId") != "root1" ||
+		provGet(t, prov, "rootIcebathSessionId") != "root1" || provGet(t, prov, "parentIcebathSessionId") != nil ||
 		provGet(t, prov, "sessionKind") != "root" || provGet(t, prov, "compressionDepth") != int64(0) {
 		t.Fatalf("prov %v", prov)
 	}
@@ -56,9 +56,9 @@ func TestCompressionSplitContinuation(t *testing.T) {
 	time.Sleep(time.Millisecond)
 	mkSession(t, db, "new", "old")
 	prov := BuildSessionProvenance(context.Background(), db, "acp-1", "new", "old")
-	if provGet(t, prov, "sessionKind") != "continuation" || provGet(t, prov, "parentHermesSessionId") != "old" ||
-		provGet(t, prov, "rootHermesSessionId") != "old" || provGet(t, prov, "compressionDepth") != int64(1) ||
-		provGet(t, prov, "previousHermesSessionId") != "old" || provGet(t, prov, "reason") != "compression" ||
+	if provGet(t, prov, "sessionKind") != "continuation" || provGet(t, prov, "parentIcebathSessionId") != "old" ||
+		provGet(t, prov, "rootIcebathSessionId") != "old" || provGet(t, prov, "compressionDepth") != int64(1) ||
+		provGet(t, prov, "previousIcebathSessionId") != "old" || provGet(t, prov, "reason") != "compression" ||
 		provGet(t, prov, "creatorKind") != "compression" {
 		t.Fatalf("prov %v", prov)
 	}
@@ -70,7 +70,7 @@ func TestNonCompressionParentIsRootNotContinuation(t *testing.T) {
 	mkSession(t, db, "c", "p")
 	prov := BuildSessionProvenance(context.Background(), db, "acp-1", "c", "")
 	if provGet(t, prov, "sessionKind") != "root" || provGet(t, prov, "compressionDepth") != int64(0) ||
-		provGet(t, prov, "rootHermesSessionId") != "p" {
+		provGet(t, prov, "rootIcebathSessionId") != "p" {
 		t.Fatalf("prov %v", prov)
 	}
 }
@@ -79,12 +79,12 @@ func TestMetaWrapperShape(t *testing.T) {
 	db := provenanceDB(t)
 	mkSession(t, db, "root1", "")
 	meta := SessionProvenanceMeta(context.Background(), db, "acp-1", "root1", "")
-	if meta.Len() != 1 || meta.Keys[0] != "hermes" {
+	if meta.Len() != 1 || meta.Keys[0] != "icebath" {
 		t.Fatalf("meta %v", meta)
 	}
-	inner := provGet(t, meta, "hermes").(interface{ Get(string) (any, bool) })
+	inner := provGet(t, meta, "icebath").(interface{ Get(string) (any, bool) })
 	sp, ok := inner.Get("sessionProvenance")
-	if !ok || provGet(t, sp.(interface{ Get(string) (any, bool) }), "currentHermesSessionId") != "root1" {
+	if !ok || provGet(t, sp.(interface{ Get(string) (any, bool) }), "currentIcebathSessionId") != "root1" {
 		t.Fatalf("meta %v", meta)
 	}
 }

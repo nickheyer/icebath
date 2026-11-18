@@ -1,3 +1,5 @@
+//go:build !icebath_core && !icebath_noextras
+
 package pm
 
 import (
@@ -30,6 +32,7 @@ var uvLabels = map[string]string{
 var (
 	resolverMarkers   = []string{"no solution found", "conflicting requirements", "conflicting urls", "because only the following versions", "and your pyproject depends on"}
 	buildMarkers      = []string{"the build backend returned an error"}
+	networkMarkers    = []string{"failed to fetch", "error sending request"}
 	undatedFile       = []string{"is missing an upload date", "was filtered by `exclude-newer"}
 	streamTailMarkers = append(append(append([]string{}, resolverMarkers...), bytecodeCompileMarker), buildMarkers...)
 )
@@ -47,10 +50,8 @@ const UndatedIndexHint = "the package index did not report upload times, which l
 	"dependencies needs for its 3-day release-age check. Use https://pypi.org/simple " +
 	"or a mirror that serves upload times (pip.conf index-url / UV_INDEX_URL), then retry."
 
-// ResolutionConflict is a uv resolver verdict that the requested set has no solution
-type ResolutionConflict struct{ *InstallError }
-
-func (e *ResolutionConflict) Unwrap() error { return e.InstallError }
+// RetryDownloadRemedy is the remedy of a download the network or its proxy refused
+const RetryDownloadRemedy = "check that this machine reaches the address in the error, through its proxy when it uses one, then run the same command again"
 
 // BuildFailure is a package build backend that ran and failed
 type BuildFailure struct{ *InstallError }
@@ -100,9 +101,21 @@ func isBytecodeCompileFailure(r uvResult) bool {
 	return strings.Contains(pystr.Lower(r.Stderr+"\n"+r.Stdout), bytecodeCompileMarker)
 }
 
+// Last characters of output starting at a line, a line cut by the limit left out
+func lineTail(output string, n int) string {
+	tail := lastChars(output, n)
+	if tail == output {
+		return tail
+	}
+	if _, rest, ok := strings.Cut(tail, "\n"); ok {
+		return rest
+	}
+	return tail
+}
+
 // Classified error of a failed uv stage, a resolver conflict, a build failure or a plain install error
 func ClassifyUVFailure(stage string, code int, output string) error {
-	cause := fmt.Sprintf("uv %s exited %d: %s", stage, code, lastChars(pystr.Strip(output), 600))
+	cause := fmt.Sprintf("uv %s exited %d: %s", stage, code, lineTail(pystr.Strip(output), 600))
 	lowered := pystr.Lower(output)
 	undated := true
 	for _, marker := range undatedFile {
@@ -117,6 +130,8 @@ func ClassifyUVFailure(stage string, code int, output string) error {
 		return &ResolutionConflict{NewInstallError("venv", cause, "")}
 	case containsAny(lowered, buildMarkers):
 		return &BuildFailure{NewInstallError("venv", cause, MissingCompilerRemedy(output))}
+	case containsAny(lowered, networkMarkers):
+		return NewInstallError("venv", cause, RetryDownloadRemedy)
 	}
 	return NewInstallError("venv", cause, "")
 }
@@ -418,16 +433,6 @@ func writeFlush(w io.Writer, text string) {
 	}
 }
 
-// Reports whether a string list holds a value
-func containsString(list []string, value string) bool {
-	for _, s := range list {
-		if s == value {
-			return true
-		}
-	}
-	return false
-}
-
 // newlineDecoder decodes UTF-8 with replacement and translates CRLF and CR to LF across chunk boundaries in reused buffers
 type newlineDecoder struct {
 	pending   []byte
@@ -620,18 +625,6 @@ func waitUntil(done <-chan error, deadline time.Time) (error, bool) {
 		}
 		return nil, false
 	}
-}
-
-// Exit status of a waited child as Python reports it
-func exitStatus(err error) (int, error) {
-	if err == nil {
-		return 0, nil
-	}
-	var exitErr *exec.ExitError
-	if errors.As(err, &exitErr) {
-		return pyReturnCode(exitErr), nil
-	}
-	return 0, err
 }
 
 // Runs a child with combined output streamed live, a bounded diagnostic tail and a wall clock deadline

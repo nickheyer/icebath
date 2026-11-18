@@ -57,15 +57,14 @@ func installSpilloverWiring() {
 	state.ReleaseUnheldMedia = func(*state.SessionDB, []any) error { return nil }
 }
 
-// Local stack probes report no harness, no Chromium, no faster_whisper and no managed image route
+// Local stack probes report no harness, no Chromium and no faster_whisper, the provider credential readers installed
 func installLocalStackProbeDoubles() {
 	ChromiumExecutable = func(*tools.Env, bool) string { return "" }
 	FasterWhisperImportable = func() bool { return false }
-	ManagedImageRoute = func(any, any) string { return "" }
 	tools.VisionCapabilities = VisionCapabilities{}
 	tools.ProfileSecrets = ProfileSecretSource()
 	tools.CredentialPools = XAICredentialPoolSource()
-	tools.NousAccount = NousAccountSource()
+	tools.PoolKeys = PoolKeySource()
 	tools.ConfigEnvTableKeys = func() []string { return nil }
 	tools.RegisteredAdapterSecretEnv = func(*tools.Env) map[string]bool { return map[string]bool{} }
 }

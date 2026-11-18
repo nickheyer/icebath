@@ -573,7 +573,7 @@ func TestProfileScopedStorageProfileStoreMatchesProfileCliHome(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if want := home.HermesDir(profileHome, "platforms/pairing", "pairing"); store.dir != want {
+	if want := home.IcebathDir(profileHome, "platforms/pairing", "pairing"); store.dir != want {
 		t.Fatalf("dir = %s want %s", store.dir, want)
 	}
 }

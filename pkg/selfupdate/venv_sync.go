@@ -60,7 +60,7 @@ var legacyMarkers = []string{".update-incomplete", ".lazy-refresh-incomplete"}
 
 var relaunched atomic.Bool
 
-// Seams for the module attributes the hermes tests replace
+// Seams for the module attributes the tests replace
 var (
 	venvSyncProjectRoot = pm.RepoRoot
 	venvIsCurrent       = func(ctx context.Context, root string) (bool, error) {

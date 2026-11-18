@@ -31,7 +31,7 @@ var (
 	converseNovaReasoningOrder = []string{"type", "maxReasoningEffort"}
 )
 
-// Body bytes botocore's rest-json serializer writes for Converse kwargs, members in kwargs order, blobs base64, json.dumps defaults
+// Compact JSON body of Converse kwargs, members in kwargs order and blobs base64
 func converseRequestBody(kwargs map[string]any) ([]byte, error) {
 	known := map[string]bool{}
 	for _, k := range converseInputMembers {
@@ -57,7 +57,7 @@ func converseRequestBody(kwargs map[string]any) ([]byte, error) {
 			body.Set(k, converseWireParam(k, v))
 		}
 	}
-	text, err := pyjson.Dumps(body, pyjson.Default(converseBlobDefault))
+	text, err := pyjson.Dumps(body, pyjson.EnsureASCII(false), pyjson.Separators(",", ":"), pyjson.Default(converseBlobDefault))
 	if err != nil {
 		return nil, err
 	}

@@ -10,16 +10,15 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/cliui"
 	"github.com/nickheyer/icebath/pkg/config"
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
-	"github.com/nickheyer/icebath/pkg/observability"
 )
 
-// Flow of each provider id with a bespoke icebath model step, swappable per entry like the hermes table
+// Flow of each provider id with a bespoke icebath model step, swappable per entry like the table
 var providerModelFlows = map[string]func(r *ModelFlowRun) error{
 	"openrouter":    modelFlowOpenrouter,
 	"moa":           modelFlowMoA,
 	"ai-gateway":    modelFlowAIGateway,
-	"nous":          modelFlowNous,
 	"openai-codex":  modelFlowOpenAICodex,
 	"xai-oauth":     modelFlowXAIOAuth,
 	"qwen-oauth":    modelFlowQwenOAuth,
@@ -36,7 +35,7 @@ var providerModelFlows = map[string]func(r *ModelFlowRun) error{
 	"copilot-acp":   modelFlowCopilotACP,
 }
 
-// Model command seams, swappable so tests script the picker and the flows like the hermes monkeypatches
+// Model command seams, swappable so tests script the picker and the flows like the swaps
 var (
 	pickProviderFn                = pickProvider
 	pickerPromptProviderChoiceFn  = promptProviderChoice
@@ -191,11 +190,11 @@ func namedCustomProviderMap(r *ModelFlowRun, cfg map[string]any) (*customProvide
 		if entry == nil {
 			continue
 		}
-		rawName, err := pyOrEmptyStr(entry["name"], "strip")
+		rawName, err := pyOrEmptyStr(entry["name"], "custom_providers name")
 		if err != nil {
 			return nil, err
 		}
-		rawBase, err := pyOrEmptyStr(entry["base_url"], "strip")
+		rawBase, err := pyOrEmptyStr(entry["base_url"], "custom_providers base_url")
 		if err != nil {
 			return nil, err
 		}
@@ -203,7 +202,7 @@ func namedCustomProviderMap(r *ModelFlowRun, cfg map[string]any) (*customProvide
 		if name == "" || baseURL == "" {
 			continue
 		}
-		rawKey, err := pyOrEmptyStr(entry["provider_key"], "strip")
+		rawKey, err := pyOrEmptyStr(entry["provider_key"], "custom_providers provider_key")
 		if err != nil {
 			return nil, err
 		}
@@ -252,12 +251,12 @@ func buildProviderPickerRows(ctx context.Context, cfg map[string]any, active str
 	if raw := cfg["model_catalog"]; pyTruthy(raw) {
 		m, ok := raw.(map[string]any)
 		if !ok {
-			return nil, 0, fmt.Errorf("AttributeError: '%s' object has no attribute 'get'", config.PyTypeName(raw))
+			return nil, 0, fmt.Errorf("model_catalog in config is %s, expected a mapping", errchain.Kind(raw))
 		}
 		modelCatalog = m
 	}
 	if raw := modelCatalog["excluded_providers"]; pyTruthy(raw) {
-		items, err := pyIterValues(raw)
+		items, err := pyIterValues(raw, "model_catalog.excluded_providers")
 		if err != nil {
 			return nil, 0, err
 		}
@@ -328,13 +327,6 @@ func buildProviderPickerRows(ctx context.Context, cfg map[string]any, active str
 		label, ok := canonicalDescs[slug]
 		if !ok {
 			label = labelOr(providerLabels, slug)
-		}
-		if slug == "nous" {
-			tierRow := freeTierNousRow(ctx, map[string]any{"name": label, "models": []any{}})
-			if tierRow == nil {
-				continue
-			}
-			label = pyStr(tierRow["name"])
 		}
 		add(slug, label, nil, active != "" && slug == active)
 	}
@@ -417,7 +409,7 @@ func resolveActiveProvider(r *ModelFlowRun, cfg map[string]any, modelCfg any, ef
 		switch {
 		case errors.As(err, &authErr):
 			if authErr.Code == "no_provider_configured" {
-				fmt.Fprintln(r.Out, "No provider is set up yet — pick one below. (Nous Portal works without an API key.)")
+				fmt.Fprintln(r.Out, "No provider is set up yet — pick one below. (LM Studio and other local servers work without an API key.)")
 			} else if effectiveProvider == "auto" {
 				fmt.Fprintf(r.Out, "Warning: %s Falling back to auto provider detection.\n", FormatAuthError(authErr))
 			}
@@ -545,7 +537,7 @@ func SelectProviderAndModel(ctx context.Context, ns map[string]any) error {
 	}
 	savesBefore := modelChoiceSaveCount()
 	providerGone := false
-	err = observability.CLIProviderSetup(ctx, selected, func(ctx context.Context) error {
+	err = func() error {
 		if flow := providerModelFlows[selected]; flow != nil {
 			return flow(r)
 		}
@@ -585,7 +577,7 @@ func SelectProviderAndModel(ctx context.Context, ns map[string]any) error {
 			return modelFlowAPIKeyProviderFn(r, selected)
 		}
 		return nil
-	})
+	}()
 	if err != nil || providerGone {
 		return err
 	}
@@ -616,9 +608,7 @@ func CmdModel(ctx context.Context, ns map[string]any, w io.Writer) (code int, er
 			fmt.Fprintln(w, "  Cleared model picker cache.")
 		}()
 	}
-	return 0, observability.ProviderSetupSurface(ctx, "cli_model", func(ctx context.Context) error {
-		return RunSetupActionWithNavigation(ctx, "Model & Provider", func(ctx context.Context) error {
-			return selectProviderAndModelFn(ctx, ns)
-		}, flowNoChange)
-	})
+	return 0, RunSetupActionWithNavigation(ctx, "Model & Provider", func(ctx context.Context) error {
+		return selectProviderAndModelFn(ctx, ns)
+	}, flowNoChange)
 }

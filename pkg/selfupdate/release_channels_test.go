@@ -321,8 +321,8 @@ func TestChannelCDNFirewall403NamesTheNetworkNotTheInstall(t *testing.T) {
 		headers map[string]string
 		blocked bool
 	}{
-		{"https://hermes-assets.nousresearch.com", map[string]string{"Server": "cloudflare", "Content-Type": "text/html"}, true},
-		{"https://hermes-assets.nousresearch.com", map[string]string{"Server": "cloudflare", "cf-cache-status": "DYNAMIC"}, false},
+		{"https://releases.example", map[string]string{"Server": "cloudflare", "cf-mitigated": "challenge", "Content-Type": "text/html"}, true},
+		{"https://icebath.app", map[string]string{"Server": "cloudflare", "cf-cache-status": "DYNAMIC"}, false},
 		{"https://other-r2.example", map[string]string{"Server": "cloudflare", "Content-Type": "text/html"}, false},
 	}
 	for _, c := range cases {

@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"io"
-	"log/slog"
 	"os"
 	"os/exec"
 	"syscall"
@@ -41,7 +40,7 @@ func inheritableJobHandle() (uintptr, func(), error) {
 			return uintptr(dup), func() { _ = windows.CloseHandle(dup) }, nil
 		}
 	}
-	slog.Warn("Could not hand the update's job to a build child: " + err.Error())
+	pkgLog().Warn("Could not hand the update's job to a build child: " + err.Error())
 	return 0, nil, err
 }
 

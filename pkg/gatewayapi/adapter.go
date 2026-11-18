@@ -207,7 +207,7 @@ func (a *APIServerAdapter) InterruptActiveRuns(reason string) int {
 		func() {
 			defer func() {
 				if rec := recover(); rec != nil {
-					apiLog().Debug(fmt.Sprintf("[api_server] failed interrupting active agent: %v", rec))
+					pkgLog().Debug(fmt.Sprintf("[api_server] failed interrupting active agent: %v", rec))
 				}
 			}()
 			if agent.RequestHardInterrupt(ag, reason, "gateway shutdown") {
@@ -591,7 +591,7 @@ func (a *APIServerAdapter) expectedAPIKey(ctx context.Context) string {
 	}
 	key, _, err := provider.GetSecret(ctx, "API_SERVER_KEY")
 	if err != nil {
-		apiLog().Warn(fmt.Sprintf("Failed to resolve a usable profile-scoped API_SERVER_KEY for %s: %s", pyrepr.Repr(profile), pyTypeName(err)))
+		pkgLog().Warn(fmt.Sprintf("Failed to resolve a usable profile-scoped API_SERVER_KEY for %s: %s", pyrepr.Repr(profile), pyTypeName(err)))
 		return ""
 	}
 	if provider.HasUsableSecret(key, 16) {
@@ -614,7 +614,7 @@ func (a *APIServerAdapter) checkAuth(ctx context.Context, request *gateway.WebRe
 		if !(profile != "" && profile != "default") {
 			return nil
 		}
-		apiLog().Warn(fmt.Sprintf("API server rejected request for profile %s: no profile-scoped API_SERVER_KEY is configured; %s",
+		pkgLog().Warn(fmt.Sprintf("API server rejected request for profile %s: no profile-scoped API_SERVER_KEY is configured; %s",
 			pyrepr.Repr(profile), a.requestAuditLogSuffix(request)))
 		return authFailedResponse()
 	}
@@ -625,7 +625,7 @@ func (a *APIServerAdapter) checkAuth(ctx context.Context, request *gateway.WebRe
 			return nil
 		}
 	}
-	apiLog().Warn("API server rejected invalid API key: " + a.requestAuditLogSuffix(request))
+	pkgLog().Warn("API server rejected invalid API key: " + a.requestAuditLogSuffix(request))
 	return authFailedResponse()
 }
 

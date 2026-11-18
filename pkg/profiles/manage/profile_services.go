@@ -4,13 +4,9 @@ import (
 	"context"
 	"time"
 
-	"github.com/nickheyer/icebath/pkg/botdesktop"
-	"github.com/nickheyer/icebath/pkg/config"
-	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/logging"
 	"github.com/nickheyer/icebath/pkg/provider"
-	"github.com/nickheyer/icebath/pkg/tools"
 	"github.com/nickheyer/icebath/pkg/vault"
 )
 
@@ -25,31 +21,6 @@ func vaultOwnCopiedKey(vaultDir, publishedDir string) (map[string]any, error) {
 }
 
 func vaultDeleteKey(ref map[string]any) { vault.VaultDeleteKeyRef(ref) }
-
-func botDesktopSupportedHost() bool { return botdesktop.IsSupportedHost() }
-
-// Tool env of the profile home the context overrides, with that profile's read only config
-func botDesktopEnv(ctx context.Context) (*tools.Env, error) {
-	h := home.Dir(ctx)
-	cfg, err := config.LoadReadonly(ctx, h, nil)
-	if err != nil {
-		return nil, err
-	}
-	return &tools.Env{Home: h, Config: cfg}, nil
-}
-
-func botDesktopStop(ctx context.Context) (bool, error) {
-	env, err := botDesktopEnv(ctx)
-	if err != nil {
-		return false, err
-	}
-	return botdesktop.Stop(env, nil)
-}
-
-func botDesktopLeaseRelease(ctx context.Context) error {
-	_, err := botdesktop.LeaseRelease(botdesktop.LeaseReleaseOptions{ProfileKey: home.Dir(ctx)})
-	return err
-}
 
 func releaseProfileLogHandlers(dir string) (int, error) {
 	return logging.ReleaseProfileLogHandlers(dir)

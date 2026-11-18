@@ -9,7 +9,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/agent"
 	"github.com/nickheyer/icebath/pkg/internal/pythread"
 	"github.com/nickheyer/icebath/pkg/state"
-	"github.com/nickheyer/icebath/pkg/tuigateway"
+	"github.com/nickheyer/icebath/pkg/tuihost"
 )
 
 // Plain rows of a stored transcript as history entries
@@ -28,9 +28,9 @@ func loadResumeTranscript(ctx context.Context, db *state.DB, storedID string) ([
 		var tooLarge *state.SessionResumeTooLargeError
 		if errors.As(err, &tooLarge) {
 			prefixFits = false
-			logger().Info(fmt.Sprintf("resume %s: compression lineage exceeds the resume limit (%s); hydrating the tip segment only", storedID, err))
+			pkgLog().Info(fmt.Sprintf("resume %s: compression lineage exceeds the resume limit (%s); hydrating the tip segment only", storedID, err))
 		} else {
-			logger().Debug("resume lineage guard failed; loading full lineage", "exc_info", err.Error())
+			pkgLog().Debug("resume lineage guard failed; loading full lineage", "exc_info", err.Error())
 		}
 	}
 	if prefixFits {
@@ -50,7 +50,7 @@ func scheduleResumeHydration(ctx context.Context, sid, storedID string, db *stat
 	ctx = context.WithoutCancel(ctx)
 	go func() {
 		defer threadExceptHook("resume-hydrate-" + sid)
-		session := tuigateway.SessionRecord(sid)
+		session := tuihost.SessionRecord(sid)
 		if session == nil {
 			if closeDB {
 				suppress(func() { _ = db.Close() })
@@ -60,18 +60,18 @@ func scheduleResumeHydration(ctx context.Context, sid, storedID string, db *stat
 		defer func() {
 			if closeDB {
 				if err := db.Close(); err != nil {
-					logger().Debug(fmt.Sprintf("failed to close resume db for %s", sid), "exc_info", err.Error())
+					pkgLog().Debug(fmt.Sprintf("failed to close resume db for %s", sid), "exc_info", err.Error())
 				}
 			}
 		}()
 		failure := catchPanic(func() {
-			tuigateway.Emit(ctx, "session.resume_progress", sid, map[string]any{"phase": "history", "status": "loading"})
+			tuihost.Emit(ctx, "session.resume_progress", sid, map[string]any{"phase": "history", "status": "loading"})
 			_, err := db.RetireUndrainedQueueRows(ctx, storedID)
 			panicIf(err)
 			raw, display, prefix, err := loadResumeTranscript(ctx, db, storedID)
 			panicIf(err)
 			history := anyRows(agent.CanonicalizeReplayHistory(raw, nil))
-			if tuigateway.SessionRecord(sid) != session {
+			if tuihost.SessionRecord(sid) != session {
 				return
 			}
 			unlock := lockHistory(session)
@@ -80,18 +80,18 @@ func scheduleResumeHydration(ctx context.Context, sid, storedID string, db *stat
 			session.Set("resume_hydrating", false)
 			session.Set("resume_message_count", len(display))
 			unlock()
-			if todo := tuigateway.TodoStateFromHistory(historyDicts(history)); todo != nil && session.Get("todo_state") == nil {
+			if todo := tuihost.TodoStateFromHistory(historyDicts(history)); todo != nil && session.Get("todo_state") == nil {
 				session.Set("todo_state", todo)
 			}
 			if ready, isEvent := session.Get("resume_history_ready").(*pythread.Event); isEvent {
 				ready.Set()
 			}
-			tuigateway.Emit(ctx, "session.resume_progress", sid, map[string]any{"message_count": session.Get("resume_message_count"),
+			tuihost.Emit(ctx, "session.resume_progress", sid, map[string]any{"message_count": session.Get("resume_message_count"),
 				"phase": "history", "status": "complete"})
 			maybeScheduleAutoContinue(ctx, sid, session, storedID)
 			startAgentBuild(ctx, sid, session)
 		})
-		if failure == nil || tuigateway.SessionRecord(sid) != session {
+		if failure == nil || tuihost.SessionRecord(sid) != session {
 			return
 		}
 		message := resumeFailedMessage(failure)
@@ -103,15 +103,15 @@ func scheduleResumeHydration(ctx context.Context, sid, storedID string, db *stat
 				ready.Set()
 			}
 		}
-		tuigateway.Emit(ctx, "session.resume_progress", sid, map[string]any{"message": message, "phase": "history", "status": "failed"})
-		tuigateway.Emit(ctx, "error", sid, map[string]any{"message": message})
-		var discarded *tuigateway.Session
+		tuihost.Emit(ctx, "session.resume_progress", sid, map[string]any{"message": message, "phase": "history", "status": "failed"})
+		tuihost.Emit(ctx, "error", sid, map[string]any{"message": message})
+		var discarded *tuihost.Session
 		func() {
 			sessionsLock.Lock()
 			defer sessionsLock.Unlock()
-			if tuigateway.SessionRecord(sid) == session {
+			if tuihost.SessionRecord(sid) == session {
 				discarded = session
-				tuigateway.SetSessionRecord(sid, nil)
+				tuihost.SetSessionRecord(sid, nil)
 			}
 		}()
 		if discarded != nil {

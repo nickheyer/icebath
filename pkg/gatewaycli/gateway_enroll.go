@@ -17,7 +17,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
-	"github.com/nickheyer/icebath/pkg/provider"
 )
 
 // Failure of the connector enroll call carrying its user facing message
@@ -112,8 +111,9 @@ func postEnroll(ctx context.Context, connectorBaseURL, accessToken, enrollmentTo
 		var message string
 		switch {
 		case httpErr.Code == 401:
-			message = "Connector rejected the caller identity (401). Your Nous Portal " +
-				"token could not be verified — try `icebath auth add nous` and retry."
+			message = "Connector rejected the caller identity (401). The token from the " +
+				"gateway.idp token endpoint could not be verified — check gateway.idp " +
+				"(token_url, client_id, client_secret, scope) and retry."
 		case httpErr.Code == 403:
 			message = detail
 			if message == "" {
@@ -184,14 +184,6 @@ func CmdGatewayEnroll(ctx context.Context, ns map[string]any, w io.Writer) (int,
 	gatewayID = pystr.Strip(gatewayID)
 	accessToken, err := gateway.ResolveRelayIdentityToken(ctx)
 	if err != nil {
-		var authErr *provider.AuthError
-		if errors.As(err, &authErr) {
-			if authErr.ReloginRequired {
-				return enrollFail(w, "✗ You're not logged into Nous Portal.",
-					"  Run `icebath auth add nous` (or start `icebath` and type `/setup model`) first, then retry.")
-			}
-			return enrollFail(w, fmt.Sprintf("✗ Could not resolve a Nous Portal access token: %s", err))
-		}
 		return enrollFail(w, fmt.Sprintf("✗ Could not resolve a caller-identity token: %s", err))
 	}
 	result, err := postEnroll(ctx, connectorBaseURL, accessToken, enrollmentToken, gatewayID, 15*time.Second)

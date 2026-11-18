@@ -28,7 +28,7 @@ func TestLogsUnderNamedProfileResolveToProfileHome(t *testing.T) {
 	}
 }
 
-func TestNamedProfileHomeDotHermesLayoutResolvesWithoutMarkers(t *testing.T) {
+func TestNamedProfileHomeDotIcebathLayoutResolvesWithoutMarkers(t *testing.T) {
 	worker := filepath.Join(isolatedRoot(t), ".icebath", "profiles", "worker")
 	if got := NamedProfileHome(filepath.Join(worker, "logs")); got != worker {
 		t.Fatalf("logs resolve to %q", got)

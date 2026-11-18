@@ -15,10 +15,10 @@ import (
 // Says why a secondary platform built no adapter at startup, stamps its status and queues it when it can heal
 func (r *GatewayRunner) noteUnbuiltSecondaryPlatform(ctx context.Context, profileName string, platform gateway.Platform, heals bool) {
 	if heals {
-		runLog().Warn(fmt.Sprintf("[MULTIPLEX] Profile '%s': no plugin registered platform '%s' - is the plugin installed? (a load "+
+		pkgLog().Warn(fmt.Sprintf("[MULTIPLEX] Profile '%s': no plugin registered platform '%s' - is the plugin installed? (a load "+
 			"that failed or overran its deadline also leaves it unregistered); retrying in the background", profileName, platform))
 	} else {
-		runLog().Warn(fmt.Sprintf("[MULTIPLEX] Profile '%s': skipping platform '%s' - adapter creation returned None", profileName, platform))
+		pkgLog().Warn(fmt.Sprintf("[MULTIPLEX] Profile '%s': skipping platform '%s' - adapter creation returned None", profileName, platform))
 	}
 	r.markAdapterUnavailable(ctx, fmt.Sprintf("%s:%s", profileName, platform), platform, heals, optBool(true))
 	if heals {
@@ -51,7 +51,7 @@ func (r *GatewayRunner) secondaryReconnectAttempt(ctx context.Context, profileNa
 		return nil, nil, nil
 	}
 	if !platformHasBotCredential(scoped, platform, profileConfig) {
-		runLog().Info(fmt.Sprintf("Secondary %s reconnect skipped: no bot credential (profile: %s)", platform, profileName))
+		pkgLog().Info(fmt.Sprintf("Secondary %s reconnect skipped: no bot credential (profile: %s)", platform, profileName))
 		if predecessor == nil {
 			r.standDownUnbuiltSecondary(scoped, profileName, platform, "no bot credential configured")
 		}
@@ -68,10 +68,10 @@ func (r *GatewayRunner) secondaryReconnectAttempt(ctx context.Context, profileNa
 	}
 	if adapter == nil {
 		if r.adapterMayHeal(scoped, platform, profileConfig) {
-			runLog().Info(fmt.Sprintf("Secondary %s: no adapter yet (profile: %s)", platform, profileName))
+			pkgLog().Info(fmt.Sprintf("Secondary %s: no adapter yet (profile: %s)", platform, profileName))
 			return nil, optBool(false), nil
 		}
-		runLog().Warn(fmt.Sprintf("Secondary %s reconnect skipped: adapter unavailable (profile: %s)", platform, profileName))
+		pkgLog().Warn(fmt.Sprintf("Secondary %s reconnect skipped: adapter unavailable (profile: %s)", platform, profileName))
 		r.markAdapterUnavailable(scoped, fmt.Sprintf("%s:%s", profileName, platform), platform, false, optBool(true))
 		return nil, nil, nil
 	}
@@ -144,12 +144,12 @@ func (r *GatewayRunner) installSecondaryReconnect(ctx context.Context, profileNa
 	profileMap.Set(platform, adapter)
 	gateway.HandOverHeldInbound(ctx, predecessor, adapter)
 	r.syncVoiceModeStateToAdapter(ctx, adapter)
-	runLog().Info(fmt.Sprintf("✓ %s reconnected (profile: %s)", platform, profileName))
+	pkgLog().Info(fmt.Sprintf("✓ %s reconnected (profile: %s)", platform, profileName))
 	profile := profileName
 	r.redeliverFailedObligationsForPlatform(ctx, platform, &profile)
 	r.schedulePlannedRestartReplay(ctx)
 	if _, err := r.scheduleResumePendingSessions(ctx, &platform); err != nil {
-		runLog().Debug(fmt.Sprintf("resume-pending reschedule after %s reconnect failed (profile: %s)", platform, profileName), "error", err)
+		pkgLog().Debug(fmt.Sprintf("resume-pending reschedule after %s reconnect failed (profile: %s)", platform, profileName), "error", err)
 	}
 	return true
 }
@@ -216,7 +216,7 @@ func (r *GatewayRunner) runSecondaryProfileReconnect(ctx context.Context, profil
 			if isCancellation(err) || ctx.Err() != nil {
 				return err
 			}
-			runLog().Debug(fmt.Sprintf("Secondary %s reconnect attempt failed (profile: %s)", platform, profileName), "exc_info", err)
+			pkgLog().Debug(fmt.Sprintf("Secondary %s reconnect attempt failed (profile: %s)", platform, profileName), "exc_info", err)
 		}
 		if stop {
 			return nil
@@ -242,7 +242,7 @@ func (r *GatewayRunner) runSecondaryProfileReconnect(ctx context.Context, profil
 			r.markAdapterUnavailable(scoped, statusKey, platform, true, nil)
 		}
 		backoff := reconnectBackoff(attempts)
-		runLog().Info(fmt.Sprintf("Secondary %s reconnect retry in %ds (profile: %s)", platform, int(backoff), profileName))
+		pkgLog().Info(fmt.Sprintf("Secondary %s reconnect retry in %ds (profile: %s)", platform, int(backoff), profileName))
 		if err := sleepCtx(ctx, backoff); err != nil {
 			return err
 		}
@@ -258,7 +258,7 @@ func (r *GatewayRunner) scheduleSecondaryProfileStartupReconnect(ctx context.Con
 	if adapter != nil {
 		base := adapter.Base()
 		if code := base.FatalErrorCode(); code != nil && gateway.IsGlobalStartupConflict(*code) {
-			runLog().Error(fmt.Sprintf("[MULTIPLEX] Profile '%s': %s credential is held by another "+
+			pkgLog().Error(fmt.Sprintf("[MULTIPLEX] Profile '%s': %s credential is held by another "+
 				"gateway (%s) — parked, not retried. %s", profileName, platform, *code, orText(base.FatalErrorMessage(), "")))
 			r.markPlatformFatal(ctx, fmt.Sprintf("%s:%s", profileName, platform), adapter)
 			return
@@ -271,7 +271,7 @@ func (r *GatewayRunner) scheduleSecondaryProfileStartupReconnect(ctx context.Con
 		}
 		defer func() {
 			if rec := recover(); rec != nil {
-				runLog().Error(fmt.Sprintf("secondary-startup-reconnect handoff failed (profile=%s platform=%s)", profileName, platform), "exc_info", rec)
+				pkgLog().Error(fmt.Sprintf("secondary-startup-reconnect handoff failed (profile=%s platform=%s)", profileName, platform), "exc_info", rec)
 			}
 		}()
 		r.scheduleSecondaryProfileReconnect(c, profileName, platform, adapter)

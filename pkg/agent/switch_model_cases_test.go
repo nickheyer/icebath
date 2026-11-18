@@ -147,7 +147,7 @@ func TestSwitchModelReloadsCredentialPool(t *testing.T) {
 		fakeSwitchPoolLoader(t, func(string) *provider.Pool { return newPool })
 		a := poolSwitchAgent("opencode-go", "qwen-coder", newTestPool(ctx, "opencode-go"))
 		switchToGroq(t, a)
-		records := captureLogger(t, "run_agent", slog.LevelWarn)
+		records := captureLogger(t, "agent", slog.LevelWarn)
 		status := 429
 		recovered, retried, err := a.recoverWithCredentialPool(ctx, &status, false, provider.ReasonRateLimit, nil, false)
 		if err != nil || recovered || !retried {

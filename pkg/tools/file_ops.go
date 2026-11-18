@@ -28,8 +28,8 @@ type fileOperations interface {
 	ReadFileRaw(path string) *ReadResult
 	readFileBytes(path string, maxBytes int) *ReadResult
 	WriteFile(path, content string, preContent *string) *WriteResult
-	patchReplace(path, oldString, newString string, replaceAll bool, probe *editProbe) *PatchResult
-	patchV4A(patchContent string, probe *editProbe) *PatchResult
+	patchReplace(path, oldString, newString string, replaceAll bool) *PatchResult
+	patchV4A(patchContent string) *PatchResult
 	DeleteFile(path string) *WriteResult
 	MoveFile(src, dst string) *WriteResult
 	search(pattern, path, target string, fileGlob string, limit, offset int, outputMode string, context int, order string) *SearchResult

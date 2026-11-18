@@ -46,6 +46,7 @@ type hubIO struct {
 	readIndexCache  func(key string) (any, error)
 	writeIndexCache func(key string, data any) error
 	streamClient    func(timeout time.Duration) *http.Client
+	shippedIndex    func() any
 }
 
 // Options of one plain hub GET, the httpx keyword arguments
@@ -427,7 +428,7 @@ func lockInstalled(data *pyjson.Object, create bool) (*pyjson.Object, error) {
 	v, ok := data.Get("installed")
 	if !ok {
 		if !create {
-			return nil, errors.New("KeyError: 'installed'")
+			return nil, errors.New("the skills hub lock has no installed table")
 		}
 		o := pyjson.NewObject()
 		data.Set("installed", o)
@@ -600,7 +601,7 @@ func tapRepo(t any) (any, error) {
 	}
 	v, ok := o.Get("repo")
 	if !ok {
-		return nil, errors.New("KeyError: 'repo'")
+		return nil, errors.New("a tap entry has no repo")
 	}
 	return v, nil
 }

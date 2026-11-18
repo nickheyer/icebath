@@ -17,7 +17,7 @@ const (
 	localModelsPauseWait    = 15 * time.Second
 )
 
-// Local Models handlers and prompts the terminal flow drives, the module attributes hermes tests patch
+// Local Models handlers and prompts the terminal flow drives, the module attributes tests patch
 var localFlowDeps = struct {
 	hardware       func(ctx context.Context) (map[string]any, error)
 	status         func(ctx context.Context) (map[string]any, error)

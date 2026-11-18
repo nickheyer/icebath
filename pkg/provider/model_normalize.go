@@ -14,7 +14,7 @@ var vendorPrefixes = []struct{ prefix, vendor string }{
 	{"nemotron", "nvidia"}, {"llama", "meta-llama"}, {"step", "stepfun"},
 }
 
-var aggregatorModelProviders = map[string]bool{"openrouter": true, "nous": true, "ai-gateway": true, "kilocode": true}
+var aggregatorModelProviders = map[string]bool{"openrouter": true, "ai-gateway": true, "kilocode": true}
 
 var dotToHyphenProviders = map[string]bool{"anthropic": true}
 

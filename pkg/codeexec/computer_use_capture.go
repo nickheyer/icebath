@@ -11,7 +11,6 @@ import (
 	_ "image/gif"
 	"image/jpeg"
 	"image/png"
-	"log/slog"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -415,7 +414,7 @@ func secureDirPolicy(ctx context.Context, env *tools.Env, cacheDir string) error
 		return os.MkdirAll(cacheDir, 0o777)
 	}
 	if _, err := home.MakeUserDir(tools.WithEnvHome(ctx, env), cacheDir, 0o700, true, true); err != nil {
-		slog.Debug(fmt.Sprintf("computer_use: cache dir creation failed for %s: %v", cacheDir, err))
+		pkgLog(nil).Debug(fmt.Sprintf("computer_use: cache dir creation failed for %s: %v", cacheDir, err))
 		return os.MkdirAll(cacheDir, 0o777)
 	}
 	config.SecureDir(tools.WithEnvHome(ctx, env), h, cacheDir)
@@ -437,7 +436,7 @@ func writePrivateBytes(path string, data []byte) error {
 
 // Path of a new home cache file after pruning the oldest pattern matches down to cap minus one
 func cacheFile(ctx context.Context, env *tools.Env, subdir, legacy, name, pattern string, limit int) (string, error) {
-	dir := home.HermesDir(envHome(env), subdir, legacy)
+	dir := home.IcebathDir(envHome(env), subdir, legacy)
 	if err := secureDirPolicy(tools.WithEnvHome(ctx, env), env, dir); err != nil {
 		return "", err
 	}
@@ -484,7 +483,7 @@ func writeCacheFile(ctx context.Context, env *tools.Env, what, subdir, legacy, n
 		err = write(path)
 	}
 	if err != nil {
-		slog.Debug(fmt.Sprintf("computer_use: %s failed: %v", what, err))
+		pkgLog(nil).Debug(fmt.Sprintf("computer_use: %s failed: %v", what, err))
 		return nil
 	}
 	return &path
@@ -585,7 +584,7 @@ func nearestResize(img image.Image, w, h int) image.Image {
 func shrinkCaptureForVision(raw []byte, ext string, maxDim int) ([]byte, *string) {
 	out, note, err := shrinkCaptureBytes(raw, ext, maxDim)
 	if err != nil {
-		slog.Debug(fmt.Sprintf("computer_use: vision downscale skipped: %v", err))
+		pkgLog(nil).Debug(fmt.Sprintf("computer_use: vision downscale skipped: %v", err))
 		return raw, nil
 	}
 	return out, note
@@ -647,7 +646,7 @@ func isGray(img image.Image) bool {
 var shouldRouteThroughAuxVision = func(ctx context.Context, env *tools.Env) (route bool) {
 	defer func() {
 		if rec := recover(); rec != nil {
-			slog.Debug(fmt.Sprintf("computer_use: aux-vision routing decision failed: %v", rec))
+			pkgLog(nil).Debug(fmt.Sprintf("computer_use: aux-vision routing decision failed: %v", rec))
 			route = false
 		}
 	}()
@@ -669,19 +668,19 @@ var routeCaptureThroughAuxVision = func(ctx context.Context, env *tools.Env, c *
 	}
 	raw, err := pybase64.B64Decode(b64)
 	if err != nil {
-		slog.Debug(fmt.Sprintf("computer_use: failed to decode capture base64: %v", err))
+		pkgLog(nil).Debug(fmt.Sprintf("computer_use: failed to decode capture base64: %v", err))
 		return nil
 	}
 	_, ext := captureImageFormat(c)
 	tempPath, err := cacheFile(tools.WithEnvHome(ctx, env), env, "cache/vision", "temp_vision_images", "computer_use_"+uuid4Hex()+ext, "", 0)
 	if err != nil {
-		slog.Warn(fmt.Sprintf("computer_use: auxiliary.vision pre-analysis failed (%v); returning to caller without aux analysis", err))
+		pkgLog(nil).Warn(fmt.Sprintf("computer_use: auxiliary.vision pre-analysis failed (%v); returning to caller without aux analysis", err))
 		return nil
 	}
 	defer os.Remove(tempPath)
 	raw, scaleNote := shrinkCaptureForVision(raw, ext, cuMaxVisionDim)
 	if err := writePrivateBytes(tempPath, raw); err != nil {
-		slog.Warn(fmt.Sprintf("computer_use: auxiliary.vision pre-analysis failed (%v); returning to caller without aux analysis", err))
+		pkgLog(nil).Warn(fmt.Sprintf("computer_use: auxiliary.vision pre-analysis failed (%v); returning to caller without aux analysis", err))
 		return nil
 	}
 	prompt := cuVisionPrompt + summary

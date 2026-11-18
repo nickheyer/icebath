@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
-	"log/slog"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -190,21 +189,8 @@ var stopProfileBackends = func(canon, profileDir string) {
 	fmt.Fprintf(stdout, "✓ Stopped %d profile backend process(es)\n", len(pids))
 }
 
-// Stops the profile's Bot Desktop under its own home before the directory moves or goes, logging failures
-func stopBotDesktop(ctx context.Context, profileDir string) {
-	if !botDesktopSupportedHost() {
-		return
-	}
-	pctx := home.WithOverride(ctx, profileDir)
-	stopped, err := botDesktopStop(pctx)
-	if err == nil && stopped {
-		fmt.Fprintln(stdout, "✓ Bot Desktop stopped")
-		err = botDesktopLeaseRelease(pctx)
-	}
-	if err != nil {
-		slog.Default().Warn(fmt.Sprintf("Could not stop the Bot Desktop of %s: %v", profileDir, err))
-	}
-}
+// Stops the profile's Bot Desktop before its directory moves or goes, installed by the extras tier
+var stopBotDesktop func(ctx context.Context, profileDir string)
 
 // Shows what a delete is about to remove
 func printDeleteSummary(ctx context.Context, canon, profileDir string, gwRunning bool, wrapperPath string) error {
@@ -321,7 +307,9 @@ func DeleteProfile(ctx context.Context, name string, yes bool) (string, error) {
 		stopGatewayProcess(profileDir)
 	}
 	stopProfileBackends(canon, profileDir)
-	stopBotDesktop(ctx, profileDir)
+	if stopBotDesktop != nil {
+		stopBotDesktop(ctx, profileDir)
+	}
 	if err := home.MarkProfileDeleted(profileDir); err != nil {
 		return "", err
 	}
@@ -329,9 +317,6 @@ func DeleteProfile(ctx context.Context, name string, yes bool) (string, error) {
 	identitySettled := purgeIdentity(ctx, canon)
 	key := home.Key(profileDir)
 	mcp.ShutdownMCPServers(ctx, &key, nil, 15*time.Second)
-	if released, err := memoryStoreReleaseAllUnder(profileDir); err == nil && released > 0 {
-		fmt.Fprintf(stdout, "✓ Released %d memory-store connection(s) held by this process\n", released)
-	}
 	if closed := state.CloseAllUnder(profileDir); closed > 0 {
 		fmt.Fprintf(stdout, "✓ Released %d session database connection(s) held by this process\n", closed)
 	}
@@ -393,7 +378,7 @@ type s6Manager interface {
 	UnregisterProfileGateway(name string) error
 }
 
-// Service manager detection and lookup of hermes_cli/service_manager.py, swapped by tests
+// Service manager detection and lookup of, swapped by tests
 var (
 	detectServiceManager = serviceManagerDetect
 	getServiceManager    = serviceManagerGet

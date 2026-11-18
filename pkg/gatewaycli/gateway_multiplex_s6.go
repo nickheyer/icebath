@@ -3,7 +3,6 @@ package gatewaycli
 import (
 	"context"
 	"errors"
-	"log/slog"
 	"os"
 	"path/filepath"
 	"sort"
@@ -71,7 +70,7 @@ func RunningNamedSlots(profiles []string, manager s6SlotManager) []string {
 		}
 		running, err := manager.IsRunning(NamedSlotName(profile))
 		if err != nil {
-			slog.Default().With("logger", "hermes_cli.gateway_multiplex_s6").Debug("could not probe s6 slot for "+profile, "error", err)
+			pkgLog().Debug("could not probe s6 slot for "+profile, "error", err)
 			continue
 		}
 		if running {
@@ -112,7 +111,7 @@ func ParkNamedSlot(ctx context.Context, profile string, manager s6SlotManager) e
 var s6WaitDown = func(serviceDir string, timeoutMS int) {
 	timeout := time.Duration(timeoutMS)*time.Millisecond + 5*time.Second
 	if _, err := s6Run(timeout, false, "s6-svwait", "-d", "-t", strconv.Itoa(timeoutMS), serviceDir); err != nil {
-		slog.Default().With("logger", "hermes_cli.gateway_multiplex_s6").Debug("s6-svwait failed for "+serviceDir, "error", err)
+		pkgLog().Debug("s6-svwait failed for "+serviceDir, "error", err)
 	}
 }
 

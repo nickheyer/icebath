@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"log/slog"
 	"os"
 	"path/filepath"
 	"strings"
@@ -82,7 +81,7 @@ func LegacyAgentMain(ctx context.Context, argv []string, stdout, stderr io.Write
 
 // Loads the home and project dotenv the runner module loads on import, then runs the direct runner
 func runLegacyAgent(ctx context.Context, w io.Writer, o agent.MainOptions) {
-	log := slog.Default().With("logger", "run_agent")
+	log := pkgLog()
 	loaded, err := provider.LoadIcebathDotenv(ctx, provider.DotenvLoadOptions{ProjectEnv: filepath.Join(pm.RepoRoot(), ".env")})
 	if err != nil {
 		log.Debug(fmt.Sprintf("dotenv load failed: %v", err))

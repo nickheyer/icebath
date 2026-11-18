@@ -75,9 +75,9 @@ func TestFetchResolvesGenericSkillDirectoryFromIndexSlug(t *testing.T) {
 			Source: "github", Identifier: "tencent/wechatreading/skills", TrustLevel: "community"}
 	}
 	treeCalls := 0
-	index := func(entry string, fetched []*SkillBundle) *HermesIndexSource {
+	index := func(entry string, fetched []*SkillBundle) *IndexSource {
 		_, h := githubTestSource(t)
-		x := NewHermesIndexSource(h, anonAuth(h))
+		x := NewIndexSource(h, anonAuth(h))
 		x.index, x.loaded = pyjson.NewObject(), true
 		x.index.(*pyjson.Object).Set("skills", pyList(t, "["+entry+"]"))
 		x.github = NewGitHubSource(h, x.Auth, nil)
@@ -123,7 +123,7 @@ func TestCreateSourceRouterOrder(t *testing.T) {
 	for _, s := range h.createSourceRouter(nil) {
 		ids = append(ids, s.SourceID())
 	}
-	want := []string{"official", "hermes-index", "skills-sh", "well-known", "url", "github", "clawhub", "lobehub", "browse-sh"}
+	want := []string{"official", "skills-index", "skills-sh", "well-known", "url", "github", "clawhub", "lobehub", "browse-sh"}
 	if !slices.Equal(ids, want) {
 		t.Fatal(ids)
 	}
@@ -168,7 +168,7 @@ func TestParallelSearchSourcesTimeoutAndIndexMissFallback(t *testing.T) {
 	if n, _ := counts.Get("github"); n != 1 {
 		t.Fatal(n)
 	}
-	x := NewHermesIndexSource(h, nil)
+	x := NewIndexSource(h, nil)
 	x.index, x.loaded = pyjson.NewObject(), true
 	x.index.(*pyjson.Object).Set("skills", pyList(t, `[{"name": "zzz", "identifier": "zzz"}]`))
 	skillsSh := &fixedSource{SourceBase{ID: "skills-sh"}, []SkillMeta{{Name: "live", Identifier: "skills-sh/o/r/live"}}, 0}
@@ -183,7 +183,7 @@ func TestParallelSearchSourcesTimeoutAndIndexMissFallback(t *testing.T) {
 	}
 }
 
-func TestLoadHermesIndexGzipAndStaleFallback(t *testing.T) {
+func TestLoadIndexGzipAndStaleFallback(t *testing.T) {
 	h, _ := newTestHub(t)
 	var gz bytes.Buffer
 	w := gzip.NewWriter(&gz)
@@ -194,17 +194,17 @@ func TestLoadHermesIndexGzipAndStaleFallback(t *testing.T) {
 		hd.Set("Content-Encoding", "gzip")
 		return &pyhttpx.Response{StatusCode: 200, Header: hd, Content: gz.Bytes()}
 	})
-	v := h.loadHermesIndex(context.Background())
+	v := h.loadIndex(context.Background())
 	if o, ok := v.(*pyjson.Object); !ok || o.Len() != 1 {
 		t.Fatal(v)
 	}
-	if _, err := os.Stat(filepath.Join(h.IndexCacheDir(), "hermes-index.json")); err != nil {
+	if _, err := os.Stat(filepath.Join(h.IndexCacheDir(), "skills-index.json")); err != nil {
 		t.Fatal(err)
 	}
 	old := time.Now().Add(-7 * time.Hour)
-	os.Chtimes(h.hermesIndexCacheFile(), old, old)
+	os.Chtimes(h.indexCacheFile(), old, old)
 	h.io.httpGet = plainGet(func(string, hubGet) *pyhttpx.Response { return textResp(500, "") })
-	if o, ok := h.loadHermesIndex(context.Background()).(*pyjson.Object); !ok || o.Len() != 1 {
+	if o, ok := h.loadIndex(context.Background()).(*pyjson.Object); !ok || o.Len() != 1 {
 		t.Fatal("stale cache not served")
 	}
 }
@@ -212,7 +212,7 @@ func TestLoadHermesIndexGzipAndStaleFallback(t *testing.T) {
 func TestOptionalSkillSourceUpstreamStubAndBinaryAssets(t *testing.T) {
 	dir := t.TempDir()
 	t.Setenv("ICEBATH_OPTIONAL_SKILLS", dir)
-	writeTestFile(t, filepath.Join(dir, "cat", "stub", "SKILL.md"), "---\nname: stub\ndescription: d\nmetadata:\n  hermes:\n    upstream:\n      repo: acme/skills\n      path: ./skills/stub/\n---\n")
+	writeTestFile(t, filepath.Join(dir, "cat", "stub", "SKILL.md"), "---\nname: stub\ndescription: d\nmetadata:\n  icebath:\n    upstream:\n      repo: acme/skills\n      path: ./skills/stub/\n---\n")
 	writeTestFile(t, filepath.Join(dir, "cat", "real", "SKILL.md"), "---\nname: real\ndescription: d\n---\n")
 	writeTestFile(t, filepath.Join(dir, "cat", "real", "assets", "logo.png"), "\x89PNG\x00\xff")
 	writeTestFile(t, filepath.Join(dir, "cat", "real", "x.pyc"), "x")
@@ -238,11 +238,11 @@ func TestOptionalSkillSourceUpstreamStubAndBinaryAssets(t *testing.T) {
 	if b, _ := o.Fetch(context.Background(), "official/../../etc"); b != nil {
 		t.Fatal("traversal fetched")
 	}
-	if _, _, ok := upstreamPointerFromContent([]byte("---\nmetadata:\n  hermes:\n    upstream:\n      repo: a/b/c\n      path: x\n---\n")); ok {
+	if _, _, ok := upstreamPointerFromContent([]byte("---\nmetadata:\n  icebath:\n    upstream:\n      repo: a/b/c\n      path: x\n---\n")); ok {
 		t.Fatal("malformed upstream accepted")
 	}
 	m, _ := o.Inspect(context.Background(), "official/real")
-	if m == nil || m.Identifier != "official/cat/real" || *m.Path != "optional-skills/cat/real" {
+	if m == nil || m.Identifier != "official/cat/real" || *m.Path != "pkg/skills/optional/cat/real" {
 		t.Fatal(m)
 	}
 }

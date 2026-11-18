@@ -109,52 +109,6 @@ func (c *AuthorityConnection) detach(ctx context.Context, ref SessionRef, params
 	return result, nil
 }
 
-// Replay window of the session's event stream after a cursor, with the server requests still open
-func (c *AuthorityConnection) eventsSince(ctx context.Context, ref SessionRef, params *pyjson.Object) (any, error) {
-	if err := c.authority.Authorize(ctx, c.actor, ref, "session:read"); err != nil {
-		return nil, err
-	}
-	sequence := params.GetOr("last_sequence", params.GetOr("last_seen", int64(0)))
-	rawEpoch := params.GetOr("replay_epoch", nil)
-	epoch, epochText := rawEpoch.(string)
-	n, isInt := strictInt(sequence)
-	if !isInt || n.Sign() < 0 || (rawEpoch != nil && !epochText) {
-		return nil, runtimeRefusal("invalid_params")
-	}
-	live, err := liveSession(c.authority, ref.SessionID)
-	if err != nil {
-		return nil, err
-	}
-	stream := live.EventStream
-	after := int(n.Int64())
-	if !n.IsInt64() {
-		after = math.MaxInt
-	}
-	replay := stream.Since(epoch, after)
-	if required, _ := replay.Get("snapshot_required"); required != true {
-		highest := after
-		events, _ := replay.GetOr("events", nil).([]any)
-		for i, raw := range events {
-			frame, _ := raw.(*pyjson.Object)
-			seq, _ := pyrepr.Int(frame.GetOr("seq", nil))
-			if seq != nil && (i == 0 || int(seq.Int64()) > highest) {
-				highest = int(seq.Int64())
-			}
-		}
-		replayEpoch, _ := replay.GetOr("replay_epoch", "").(string)
-		c.mu.Lock()
-		c.replayCursors[ref.SessionID] = ReplayCursor{Epoch: replayEpoch, Sequence: int64(highest)}
-		c.mu.Unlock()
-	}
-	out := replay.Copy()
-	open := []any{}
-	for _, request := range OpenServerRequests(stream, ref.SessionID) {
-		open = append(open, request)
-	}
-	out.Set("open_requests", open)
-	return out, nil
-}
-
 // Params a prompt.submit shaped request may carry
 var submissionFields = []string{"session_id", "text", "submission_id", "input_id", "queued", "attachments", "finite",
 	"unattended", "surface", "voice_context", "interrupted", "voice_turn", "display_kind", "title_preview",

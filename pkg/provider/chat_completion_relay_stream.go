@@ -6,7 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"log/slog"
 	"net/http"
 	"sort"
 	"strings"
@@ -14,6 +13,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/nickheyer/icebath/pkg/internal/pyhttpx"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
@@ -45,7 +45,7 @@ func writerStillCurrent(fence any, token int, label, model string) bool {
 	if token == 0 || StreamWriterIsCurrent(fence, token) {
 		return true
 	}
-	catalogLog.Warn(fmt.Sprintf("%s attempt superseded by a newer stream; stopping consumption to preserve the single-writer invariant (model=%s).", label, model))
+	pkgLog().Warn(fmt.Sprintf("%s attempt superseded by a newer stream; stopping consumption to preserve the single-writer invariant (model=%s).", label, model))
 	return false
 }
 
@@ -276,7 +276,7 @@ func (m *managedRelaySource) release() {
 		return
 	}
 	if err := m.stream.Close(); err != nil {
-		slog.Debug("Managed provider stream cleanup failed", "error", err)
+		pkgLog().Debug("Managed provider stream cleanup failed", "error", err)
 	}
 }
 
@@ -367,7 +367,7 @@ func (s *ccStreamState) adoptRelayFinal(latency time.Duration) (*Response, bool,
 		return nil, false, nil
 	}
 	c := s.c
-	catalogLog.Info(fmt.Sprintf("Streaming request returned a final response object instead of an iterator; switching %s/%s to non-streaming for this session.", orUnknown2(c.route.Provider), orUnknown2(c.route.Model)))
+	pkgLog().Info(fmt.Sprintf("Streaming request returned a final response object instead of an iterator; switching %s/%s to non-streaming for this session.", orUnknown2(c.route.Provider), orUnknown2(c.route.Model)))
 	c.mu.Lock()
 	c.nonStreaming = true
 	c.mu.Unlock()
@@ -380,6 +380,27 @@ func (s *ccStreamState) adoptRelayFinal(latency time.Duration) (*Response, bool,
 		return nil, true, err
 	}
 	return resp, true, c.replay(resp, s.fn)
+}
+
+// Request headers with the extra_headers of a Relay request replacing the prepared header of the same name in any case
+func relayCallHeaderMap(base map[string]string, raw any) map[string]string {
+	lines := orderedExtraHeaders(raw)
+	if len(lines) == 0 {
+		return base
+	}
+	out := make(map[string]string, len(base)+len(lines))
+	for k, v := range base {
+		out[k] = v
+	}
+	for _, l := range lines {
+		for k := range out {
+			if strings.EqualFold(k, l.Name) {
+				delete(out, k)
+			}
+		}
+		out[l.Name] = l.Value
+	}
+	return out
 }
 
 // Chat completions attempt under an active Relay turn, the provider stream managed and recorded by Relay
@@ -395,12 +416,15 @@ func chatManagedRelayStream(ctx context.Context, c *chatCompletionsClient, req *
 	var writerToken atomic.Int64
 	acc := newRelayChatAccumulator()
 	factory := func(_ context.Context, request map[string]any) (any, error) {
-		body, err := json.Marshal(request)
+		wire := relayCopyMap(request)
+		headers := relayCallHeaderMap(p.headers, wire["extra_headers"])
+		delete(wire, "extra_headers")
+		body, err := json.Marshal(wire)
 		if err != nil {
 			return nil, err
 		}
 		q := *p
-		q.body, q.wire = body, request
+		q.body, q.wire, q.headers = body, wire, headers
 		httpReq, err := c.newRequest(attemptCtx, &q)
 		if err != nil {
 			return nil, err
@@ -592,7 +616,7 @@ func (s *anthStreamState) adoptRelayFinal(latency time.Duration) (*Response, boo
 		return nil, false, nil
 	}
 	c := s.c
-	catalogLog.Info(fmt.Sprintf("Streaming request returned a final message object instead of an event stream; switching %s/%s to non-streaming for this session.", orUnknown2(c.route.Provider), orUnknown2(c.route.Model)))
+	pkgLog().Info(fmt.Sprintf("Streaming request returned a final message object instead of an event stream; switching %s/%s to non-streaming for this session.", orUnknown2(c.route.Provider), orUnknown2(c.route.Model)))
 	c.mu.Lock()
 	c.nonStreaming = true
 	c.mu.Unlock()
@@ -619,9 +643,10 @@ func anthropicManagedRelayStream(ctx context.Context, c *anthropicClient, req *R
 	var writerToken atomic.Int64
 	relay := &anthManagedRelay{snap: newAnthAccumulator(), acc: NewAnthropicStreamAccumulator()}
 	factory := func(_ context.Context, request map[string]any) (any, error) {
-		body := relayCopyMap(request)
-		anthSanitizeKwargs(body, "")
-		httpReq, err := c.transport.Request(attemptCtx, anthOpMessages, body, p.headers, anthSDKCall{})
+		kwargs := relayCopyMap(request)
+		anthSanitizeKwargs(kwargs, "")
+		body, extraHeaders := anthSDKRequest(kwargs, true)
+		httpReq, err := c.transport.Request(attemptCtx, anthOpMessages, body, p.headers.withExtra(extraHeaders), anthCallOptions(kwargs))
 		if err != nil {
 			return nil, err
 		}
@@ -629,6 +654,11 @@ func anthropicManagedRelayStream(ctx context.Context, c *anthropicClient, req *R
 		hc, err := c.httpClient(t.connect)
 		if err != nil {
 			return nil, err
+		}
+		if limits, ok := anthRequestTimeout(kwargs["timeout"]); ok {
+			scoped := *hc
+			scoped.Transport = pyhttpx.PhaseTimeoutTransport(hc.Transport, limits)
+			hc = &scoped
 		}
 		resp, err := hc.Do(httpReq)
 		if err != nil {

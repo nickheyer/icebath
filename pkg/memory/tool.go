@@ -3,7 +3,6 @@ package memory
 import (
 	"context"
 	"fmt"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"log/slog"
 	"maps"
 	"math"
@@ -11,6 +10,8 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+
+	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/home"
@@ -91,7 +92,7 @@ func sessionStore(ctx context.Context, env *tools.Env) *Store {
 	if !ok {
 		store = NewStore(home.MemoriesDir(envHome(env)), DefaultMemoryCharLimit, DefaultUserCharLimit, memoryEnabled, userEnabled)
 	}
-	store.Log = moduleLog(env, memoryToolLogger)
+	store.Log = envLog(env)
 	if err := store.LoadFromDisk(tools.WithEnvHome(ctx, env)); err != nil {
 		store.log().Debug("Memory store load failed at session start", "error", err)
 	}
@@ -104,7 +105,7 @@ func storeFromSection(env *tools.Env, section map[string]any) (*Store, bool) {
 	memoryLimit, ok1 := pyInt(sectionValue(section, "memory_char_limit", DefaultMemoryCharLimit))
 	userLimit, ok2 := pyInt(sectionValue(section, "user_char_limit", DefaultUserCharLimit))
 	if !ok1 || !ok2 {
-		moduleLog(env, memoryToolLogger).Warn("Memory char limits in config are not integers, using defaults",
+		envLog(env).Warn("Memory char limits in config are not integers, using defaults",
 			"memory_char_limit", pyStr(section["memory_char_limit"]), "user_char_limit", pyStr(section["user_char_limit"]))
 		return nil, false
 	}
@@ -127,7 +128,7 @@ func LoadOnDiskStore(ctx context.Context, env *tools.Env) (*Store, error) {
 	if store == nil {
 		store = NewStore(home.MemoriesDir(envHome(env)), DefaultMemoryCharLimit, DefaultUserCharLimit, true, true)
 	}
-	store.Log = moduleLog(env, memoryToolLogger)
+	store.Log = envLog(env)
 	if err := store.LoadFromDisk(tools.WithEnvHome(ctx, env)); err != nil {
 		return nil, err
 	}
@@ -154,7 +155,7 @@ func builtinMemoryStoreFlags(section map[string]any) (bool, bool) {
 func liveStoreFlags(env *tools.Env) (bool, bool) {
 	tree, err := config.LoadReadonly(context.Background(), envHome(env), configLookup(env))
 	if err != nil {
-		moduleLog(env, memoryToolLogger).Debug("Could not read memory config for availability", "error", err)
+		envLog(env).Debug("Could not read memory config for availability", "error", err)
 		return builtinMemoryStoreFlags(map[string]any{})
 	}
 	return builtinMemoryStoreFlags(builtinMemoryConfig(tree))
@@ -396,25 +397,16 @@ func MemoryTool(ctx context.Context, env *tools.Env, store *Store, action, targe
 	if store == nil {
 		return toolError("Memory is not available. It may be disabled in config or this environment.", map[string]any{"success": false}), nil
 	}
-	outcome, result, class, err := runMemoryTool(ctx, env, store, action, target, content, oldText, newText, operations)
-	if err != nil {
-		return "", err
-	}
-	failureClass := "none"
-	if outcome != "success" {
-		failureClass = class
-	}
-	recordBuiltinMemoryCall(env, action, operations, outcome, failureClass)
-	return result, nil
+	return runMemoryTool(ctx, env, store, action, target, content, oldText, newText, operations)
 }
 
-// Outcome as success, failed or rejected, the result JSON and the failure class
-func runMemoryTool(ctx context.Context, env *tools.Env, store *Store, action, target, content, oldText, newText, operations any) (string, string, string, error) {
+// Result JSON of one memory call, a single op or a batch
+func runMemoryTool(ctx context.Context, env *tools.Env, store *Store, action, target, content, oldText, newText, operations any) (string, error) {
 	if !pyTruthy(content) && pyTruthy(newText) {
 		content = newText
 	}
 	if targetErr := memoryTargetError(store, target, operations); targetErr != nil {
-		return "rejected", tools.JSONASCII(targetErr.Data), targetErr.FailureClass, nil
+		return tools.JSONASCII(targetErr.Data), nil
 	}
 	name := target.(string)
 	if pyTruthy(operations) {
@@ -429,17 +421,17 @@ func runMemoryTool(ctx context.Context, env *tools.Env, store *Store, action, ta
 		}
 		ops, err := opMaps(list)
 		if err != nil {
-			return "", "", "", err
+			return "", err
 		}
-		if denied, class, err := backgroundDeleteGate(tools.WithEnvHome(ctx, env), env, store, nil, list, name, nil, nil); err != nil || denied != "" {
-			return "rejected", denied, class, err
+		if denied, err := backgroundDeleteGate(tools.WithEnvHome(ctx, env), env, store, nil, list, name, nil, nil); err != nil || denied != "" {
+			return denied, err
 		}
-		if gated, class, err := applyWriteGate(ctx, env, store, "batch", name, nil, nil, list); err != nil || gated != "" {
-			return "rejected", gated, class, err
+		if gated, err := applyWriteGate(ctx, env, store, "batch", name, nil, nil, list); err != nil || gated != "" {
+			return gated, err
 		}
 		res, err := store.ApplyBatch(tools.WithEnvHome(ctx, env), name, ops)
 		if err != nil {
-			return "", "", "", err
+			return "", err
 		}
 		return applied(res)
 	}
@@ -451,24 +443,24 @@ func runMemoryTool(ctx context.Context, env *tools.Env, store *Store, action, ta
 		return invalid(replaceRemoved)
 	}
 	if err := hashable(action); err != nil {
-		return "", "", "", err
+		return "", err
 	}
 	verb, ok := action.(string)
 	if !ok || (verb != "add" && verb != "patch" && verb != "remove") {
 		return invalid(fmt.Sprintf("Unknown action '%s'. Use: add, patch, remove", pyStr(action)))
 	}
-	if msg, class := validateSingleOp(store, verb, name, content, oldText); msg != "" {
-		return "rejected", msg, class, nil
+	if msg := validateSingleOp(store, verb, name, content, oldText); msg != "" {
+		return msg, nil
 	}
-	if denied, class, err := backgroundDeleteGate(tools.WithEnvHome(ctx, env), env, store, verb, nil, name, content, oldText); err != nil || denied != "" {
-		return "rejected", denied, class, err
+	if denied, err := backgroundDeleteGate(tools.WithEnvHome(ctx, env), env, store, verb, nil, name, content, oldText); err != nil || denied != "" {
+		return denied, err
 	}
-	if gated, class, err := applyWriteGate(ctx, env, store, verb, name, content, oldText, nil); err != nil || gated != "" {
-		return "rejected", gated, class, err
+	if gated, err := applyWriteGate(ctx, env, store, verb, name, content, oldText, nil); err != nil || gated != "" {
+		return gated, err
 	}
 	res, err := storeCall(tools.WithEnvHome(ctx, env), store, verb, name, content, oldText, nil)
 	if err != nil {
-		return "", "", "", err
+		return "", err
 	}
 	return applied(res)
 }
@@ -478,22 +470,20 @@ const replaceRemoved = "'replace' is not available; use 'patch'. old_text is the
 	"content is its new text; the rest of the entry is kept. To rewrite a whole entry, " +
 	"set old_text to the whole entry. Nothing was written."
 
-func applied(res Result) (string, string, string, error) {
-	outcome := "failed"
-	if res.Success() {
-		outcome = "success"
-	}
-	return outcome, tools.JSON(res.Data), res.FailureClass, nil
+// Result JSON of a store call
+func applied(res Result) (string, error) {
+	return tools.JSON(res.Data), nil
 }
 
-func invalid(message string) (string, string, string, error) {
-	return "rejected", toolError(message, map[string]any{"success": false}), "invalid_args", nil
+// Refusal JSON of an invalid call
+func invalid(message string) (string, error) {
+	return toolError(message, map[string]any{"success": false}), nil
 }
 
 // Rejects an invalid single op before the gate, a missing old_text returning the inventory to retry against
-func validateSingleOp(store *Store, action, target string, content, oldText any) (string, string) {
+func validateSingleOp(store *Store, action, target string, content, oldText any) string {
 	if action == "add" && !pyTruthy(content) {
-		return toolError("Content is required for 'add' action.", map[string]any{"success": false}), "missing_content"
+		return toolError("Content is required for 'add' action.", map[string]any{"success": false})
 	}
 	if (action == "remove" || action == "patch") && !pyTruthy(oldText) {
 		return tools.JSON(tools.Dict(
@@ -501,13 +491,13 @@ func validateSingleOp(store *Store, action, target string, content, oldText any)
 			"error", fmt.Sprintf("'%s' needs old_text -- a short unique substring of the entry "+
 				"to %s. None was provided. Reissue the %s with old_text "+
 				"set to part of one of the current_entries below.", action, action, action),
-			"current_entries", store.Entries(target), "usage", store.Usage(target))), "missing_old_text"
+			"current_entries", store.Entries(target), "usage", store.Usage(target)))
 	}
 	if action == "patch" && !pyTruthy(content) {
 		return toolError("content (the new text for the old_text span) is required for 'patch' action. "+
-			PatchDropHint, map[string]any{"success": false}), "missing_content"
+			PatchDropHint, map[string]any{"success": false})
 	}
-	return "", ""
+	return ""
 }
 
 // Runs one store action, the staged replay passing the pinned entry it was reviewed against
@@ -612,89 +602,6 @@ func opMaps(v any) ([]map[string]any, error) {
 	return nil, &pyError{class: "TypeError", msg: fmt.Sprintf("'%s' object is not iterable", pyTypeName(v))}
 }
 
-// Shared metric operation buckets for built in and provider memory verbs
-var memoryOpWords = func() map[string]string {
-	out := map[string]string{}
-	for bucket, words := range map[string][]string{
-		"add":     {"add", "conclude", "create", "ingest", "remember", "retain", "save", "store", "upload"},
-		"replace": {"edit", "replace", "update"},
-		"remove":  {"delete", "forget", "remove"},
-		"search":  {"probe", "query", "reason", "reasoning", "recall", "related", "search"},
-		"read":    {"context", "get", "list", "profile", "read"},
-	} {
-		for _, w := range words {
-			out[w] = bucket
-		}
-	}
-	return out
-}()
-
-// Closed failure classes the memory op metric accepts
-var memoryOpFailureClasses = map[string]bool{
-	"ambiguous": true, "disabled": true, "drift": true, "exception": true, "gate_refused": true, "invalid_args": true,
-	"missing_content": true, "missing_old_text": true, "no_match": true, "other": true, "over_budget": true,
-	"provider_error": true, "read_failed": true, "retry_cap": true, "scan_blocked": true, "staged": true,
-	"stale_entry": true, "unknown": true, "would_empty": true,
-}
-
-// Name of the shared metric mark one memory operation records
-const memoryOpMetricName = "icebath.memory.op"
-
-// One batch never exports more operation rows than this
-const maxBatchOpRows = 25
-
-func normMetricValue(v any) string {
-	return strings.ToLower(pyStrip(pyStrOr(v, "")))
-}
-
-// Metric operation bucket for a verb, other when it names none
-func memoryOp(v any) string {
-	if bucket, ok := memoryOpWords[normMetricValue(v)]; ok {
-		return bucket
-	}
-	return "other"
-}
-
-// One metric row per operation of a built in memory call, a batch counting each op
-func recordBuiltinMemoryCall(env *tools.Env, action, operations any, outcome, failureClass string) {
-	if env == nil || env.Config == nil || !env.Config.Bool("telemetry.shared_metrics.enabled", false) {
-		return
-	}
-	var ops []string
-	if list, ok := operations.([]any); ok && len(list) > 0 {
-		for _, op := range list {
-			m, _ := op.(map[string]any)
-			ops = append(ops, memoryOp(m["action"]))
-		}
-	} else {
-		ops = []string{memoryOp(action)}
-	}
-	origin := "foreground"
-	if tools.CurrentOrigin(env) == backgroundReviewOrigin {
-		origin = backgroundReviewOrigin
-	}
-	outcomeValue := normMetricValue(outcome)
-	if outcomeValue != "failed" && outcomeValue != "rejected" && outcomeValue != "success" {
-		outcomeValue = "failed"
-	}
-	classValue := "none"
-	if outcomeValue != "success" {
-		classValue = normMetricValue(failureClass)
-		if !memoryOpFailureClasses[classValue] {
-			classValue = "unknown"
-		}
-	}
-	for i, op := range ops {
-		if i == maxBatchOpRows {
-			break
-		}
-		env.Emit(tools.Event{Kind: "metric", Tool: "memory", Data: map[string]any{
-			"name": memoryOpMetricName, "failure_class": classValue, "op": op, "origin": origin,
-			"outcome": outcomeValue, "provider": "builtin",
-		}})
-	}
-}
-
 // Registry handler running the tool against the session store and mirroring committed writes
 func memoryHandler(ctx context.Context, call *tools.Call) string {
 	args := call.Args
@@ -731,18 +638,13 @@ func configLookup(env *tools.Env) config.Lookup {
 }
 
 // Session logger falling back to the process default
+// Logger of the tool env or the process default, named after this package
 func envLog(env *tools.Env) *slog.Logger {
 	if env != nil && env.Log != nil {
-		return env.Log
+		return env.Log.With("logger", logName)
 	}
-	return slog.Default()
+	return pkgLog()
 }
-
-// Python logger name of the memory tool and its store
-const memoryToolLogger = "tools.memory_tool"
-
-// Session logger under the Python module logger name the reference logs with
-func moduleLog(env *tools.Env, name string) *slog.Logger { return envLog(env).With("logger", name) }
 
 // Memory tool_store registers nothing at import
 func registerMemoryStore() {}

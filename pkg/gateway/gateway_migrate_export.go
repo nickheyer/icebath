@@ -50,7 +50,9 @@ func SystemServiceIdentity(runAsUser string) (string, string, string, int, error
 }
 
 // ICEBATH_HOME the unit file pins, empty when absent or unreadable
-func HermesHomePinnedByUnit(unitPath string) (string, error) { return hermesHomePinnedByUnit(unitPath) }
+func IcebathHomePinnedByUnit(unitPath string) (string, error) {
+	return icebathHomePinnedByUnit(unitPath)
+}
 
 // Sets gateway.multiplex_profiles in the default profile config through the guarded config writer
 func WriteMultiplexFlag(ctx context.Context, defaultHome string, value bool) error {

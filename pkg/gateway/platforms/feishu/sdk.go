@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"log/slog"
 	"net/http"
 	"reflect"
 
@@ -116,10 +115,18 @@ type slogLarkLogger struct{}
 
 func larkLine(args []any) string { return "[Lark] " + fmt.Sprint(args...) }
 
-func (slogLarkLogger) Debug(ctx context.Context, args ...any) { slog.DebugContext(ctx, larkLine(args)) }
-func (slogLarkLogger) Info(ctx context.Context, args ...any)  { slog.InfoContext(ctx, larkLine(args)) }
-func (slogLarkLogger) Warn(ctx context.Context, args ...any)  { slog.WarnContext(ctx, larkLine(args)) }
-func (slogLarkLogger) Error(ctx context.Context, args ...any) { slog.ErrorContext(ctx, larkLine(args)) }
+func (slogLarkLogger) Debug(ctx context.Context, args ...any) {
+	pkgLog().DebugContext(ctx, larkLine(args))
+}
+func (slogLarkLogger) Info(ctx context.Context, args ...any) {
+	pkgLog().InfoContext(ctx, larkLine(args))
+}
+func (slogLarkLogger) Warn(ctx context.Context, args ...any) {
+	pkgLog().WarnContext(ctx, larkLine(args))
+}
+func (slogLarkLogger) Error(ctx context.Context, args ...any) {
+	pkgLog().ErrorContext(ctx, larkLine(args))
+}
 
 // Button element with a plain text label, type and callback value
 func cardButton(label, btnType string, value *pyjson.Object) *pyjson.Object {

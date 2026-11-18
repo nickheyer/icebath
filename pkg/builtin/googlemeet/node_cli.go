@@ -104,7 +104,7 @@ func nodeCommand(ns map[string]any) int {
 		return 0
 	case "approve":
 		if err := reg.add(ctx, nsStr(ns, "name"), nsStr(ns, "url"), nsStr(ns, "token")); err != nil {
-			fmt.Fprintf(cliErr, "ValueError: %v\n", err)
+			fmt.Fprintf(cliErr, "could not approve the node: %v\n", err)
 			return 1
 		}
 		fmt.Fprintf(cliOut, "approved node %s at %s\n", pyrepr.StrRepr(nsStr(ns, "name")), nsStr(ns, "url"))

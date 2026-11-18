@@ -3,7 +3,6 @@ package memory
 import (
 	"context"
 	"fmt"
-	"log/slog"
 	"os"
 	"strings"
 	"sync"
@@ -16,12 +15,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/provider"
 )
 
-// Memory providers that shipped bundled in core, the only ones unattended consent covers
-var leftCoreMemoryProviders = map[string]bool{
-	"hindsight": true, "honcho": true, "mem0": true, "supermemory": true, "openviking": true, "retaindb": true,
-	"byterover": true, "holographic": true,
-}
-
 var (
 	migrationAttemptedMu sync.Mutex
 	migrationAttempted   = map[[2]string]bool{}
@@ -32,9 +25,8 @@ var migrationSteps struct {
 	providerPresent func(ctx context.Context, name, h string) bool
 	catalogSource   func(name string) (string, bool)
 	catalogEntry    func(name string) (*plugins.PluginCatalogEntry, error)
-	installInto     func(ctx context.Context, h string, consent *bool) MemoryInstallFunc
+	installInto     func(ctx context.Context, h string) MemoryInstallFunc
 	interactive     func() bool
-	lazyInstalls    func(ctx context.Context) bool
 }
 
 // Install function bound to one home, the error stands for a raised install exception
@@ -98,7 +90,7 @@ func pendingMemoryProvider(ctx context.Context, h string, say func(string)) (str
 	}
 	if _, ok := migrationSteps.catalogSource(name); !ok {
 		say(fmt.Sprintf("  \u26a0 Memory provider '%s' is configured but not installed and not in the plugin catalog. "+
-			"Install it with `icebath plugins install <source>` or change memory.provider.", name))
+			"Install it with `%s` or change memory.provider.", name, provider.PluginInstallCommand("<source>", h)))
 		return "", nil
 	}
 	return name, nil
@@ -114,7 +106,7 @@ func installPendingMemory(ctx context.Context, h, name string, install MemoryIns
 		result = map[string]any{"ok": false, "error": err.Error()}
 	}
 	if pyTruthy(result["ok"]) {
-		say(fmt.Sprintf("  \u2713 Memory provider '%s' moved out of core \u2014 installed its plugin from the catalog "+
+		say(fmt.Sprintf("  \u2713 Memory provider '%s' was configured but not installed \u2014 installed its plugin from the catalog "+
 			"(memory.provider and your stored memories are unchanged; check its settings with "+
 			"`icebath memory status`).", name))
 		return true, false
@@ -124,45 +116,23 @@ func installPendingMemory(ctx context.Context, h, name string, install MemoryIns
 		reason = pyStr(result["error"])
 	}
 	reason = pystr.RstripChars(reason, ". ")
-	say(fmt.Sprintf("  \u26a0 Memory provider '%s' moved out of core and could not be installed automatically: "+
+	say(fmt.Sprintf("  \u26a0 Memory provider '%s' is configured but not installed, and its plugin could not be installed from the catalog: "+
 		"%s. Run `%s`.", name, reason, provider.PluginInstallCommand(name, h)))
 	return false, false
-}
-
-// Installs the configured provider's catalog plugin into a home where it is gone, the installed name or empty
-func MigrateMemoryHome(ctx context.Context, h string, install MemoryInstallFunc, say func(string)) (string, error) {
-	name, err := pendingMemoryProvider(ctx, h, say)
-	if err != nil || name == "" {
-		return "", err
-	}
-	if ok, _ := installPendingMemory(ctx, h, name, install, say); ok {
-		return name, nil
-	}
-	return "", nil
 }
 
 func migrationInteractive() bool {
 	return isatty.IsTerminal(os.Stdin.Fd()) && isatty.IsTerminal(os.Stdout.Fd())
 }
 
-// Consent of a terminal less run, the lazy install policy of the home in ctx
-func migrationUnattendedConsent(ctx context.Context) bool {
-	return !migrationSteps.interactive() && migrationSteps.lazyInstalls(ctx)
-}
-
-// Install through the plugin manager into the home, consent nil meaning left core providers on unattended consent
-func memoryInstallInto(ctx context.Context, h string, consent *bool) MemoryInstallFunc {
+// Install through the plugin manager into the home, dependency questions left to the user
+func memoryInstallInto(ctx context.Context, h string) MemoryInstallFunc {
 	return func(name string) (map[string]any, error) {
-		bound := home.WithOverride(ctx, h)
-		yes := leftCoreMemoryProviders[name] && migrationUnattendedConsent(bound)
-		if consent != nil {
-			yes = *consent
-		}
-		return provider.PluginHooks().Install(bound, name, yes)
+		return provider.PluginHooks().Install(home.WithOverride(ctx, h), name, false)
 	}
 }
 
-// Migrates every profile home sharing the environment grouped by provider and consent, the enumeration error unhandled like Python
+// Installs the configured catalog provider into every profile home missing it, grouped by provider, the enumeration error unhandled
 func MigrateAllMemoryHomes(ctx context.Context, say func(string)) ([]string, error) {
 	labelled := func(h string) func(string) {
 		return func(message string) {
@@ -174,7 +144,7 @@ func MigrateAllMemoryHomes(ctx context.Context, say func(string)) ([]string, err
 		homes []string
 	}
 	var groups []*group
-	index := map[[2]string]*group{}
+	index := map[string]*group{}
 	homes, err := provider.PluginHooks().DependencyHomes()
 	if err != nil {
 		return nil, err
@@ -182,17 +152,16 @@ func MigrateAllMemoryHomes(ctx context.Context, say func(string)) ([]string, err
 	for _, h := range homes {
 		name, err := pendingMemoryProvider(ctx, h, labelled(h))
 		if err != nil {
-			slog.Default().Debug(fmt.Sprintf("memory provider migration skipped for %s: %s", h, err.Error()))
+			pkgLog().Debug(fmt.Sprintf("memory provider migration skipped for %s: %s", h, err.Error()))
 			continue
 		}
 		if name == "" {
 			continue
 		}
-		key := [2]string{name, fmt.Sprint(migrationUnattendedConsent(home.WithOverride(ctx, h)))}
-		g := index[key]
+		g := index[name]
 		if g == nil {
 			g = &group{name: name}
-			index[key] = g
+			index[name] = g
 			groups = append(groups, g)
 		}
 		g.homes = append(g.homes, h)
@@ -210,7 +179,7 @@ func MigrateAllMemoryHomes(ctx context.Context, say func(string)) ([]string, err
 		}
 		gctx := plugins.WithSharedDependencyAnswers(ctx)
 		for i, h := range g.homes {
-			ok, interrupted := installPendingMemory(gctx, h, g.name, migrationSteps.installInto(gctx, h, nil), labelled(h))
+			ok, interrupted := installPendingMemory(gctx, h, g.name, migrationSteps.installInto(gctx, h), labelled(h))
 			if interrupted {
 				cancelled = true
 				break
@@ -240,8 +209,8 @@ func MigrateAllMemoryHomes(ctx context.Context, say func(string)) ([]string, err
 	return installed, nil
 }
 
-// Agent init recovery of a configured provider that resolved nowhere, once per process per home and name
-func RecoverMemoryProviderAtStartup(ctx context.Context, name string, say func(string)) (bool, error) {
+// Tells the user how to install a configured provider that resolved nowhere, once per process per home and name
+func ReportMissingMemoryProvider(ctx context.Context, name string, say func(string)) error {
 	h := home.Dir(ctx)
 	key := [2]string{home.Key(h), name}
 	migrationAttemptedMu.Lock()
@@ -249,61 +218,36 @@ func RecoverMemoryProviderAtStartup(ctx context.Context, name string, say func(s
 	migrationAttempted[key] = true
 	migrationAttemptedMu.Unlock()
 	if seen {
-		return false, nil
+		return nil
 	}
 	report := func(message string) {
-		slog.Default().Warn(message)
+		pkgLog().Warn(message)
 		if say == nil {
 			return
 		}
 		defer func() {
 			if r := recover(); r != nil {
-				slog.Default().Debug("Memory migration notification failed", "panic", r)
+				pkgLog().Debug("Memory migration notification failed", "panic", r)
 			}
 		}()
 		say(message)
 	}
-	command := provider.PluginInstallCommand(name, h)
-	if !migrationSteps.lazyInstalls(ctx) {
-		report(fmt.Sprintf("\u26a0 Memory provider '%s' is not installed, so external memory is off for this session. "+
-			"security.allow_lazy_installs is off, so Icebath did not fetch it: run `%s`.", name, command))
-		return false, nil
-	}
-	if !leftCoreMemoryProviders[name] {
-		pending, err := pendingMemoryProvider(ctx, h, report)
-		if err != nil {
-			return false, err
-		}
-		if pending == name {
-			report(fmt.Sprintf("\u26a0 Memory provider '%s' is not installed, so external memory is off for this session. "+
-				"It never shipped with Icebath, so Icebath installs it only when you ask: run `%s`.", name, command))
-		}
-		return false, nil
-	}
-	if provider.LeftCoreFailedRecently(h, name) {
-		report(fmt.Sprintf("\u26a0 Memory provider '%s' is not installed, so external memory is off for this session. "+
-			"Its automatic install failed recently: run `%s`.", name, command))
-		return false, nil
-	}
-	yes := true
-	got, err := MigrateMemoryHome(ctx, h, migrationSteps.installInto(ctx, h, &yes), report)
+	pending, err := pendingMemoryProvider(ctx, h, report)
 	if err != nil {
-		return false, err
+		return err
 	}
-	if got == name {
-		provider.NoteLeftCoreSuccess(h, name)
-	} else {
-		provider.NoteLeftCoreFailure(h, name)
+	if pending == name {
+		report(fmt.Sprintf("\u26a0 Memory provider '%s' is not installed, so external memory is off for this session. "+
+			"It never shipped with Icebath, so Icebath installs it only when you ask: run `%s`.", name, provider.PluginInstallCommand(name, h)))
 	}
-	return got == name, nil
+	return nil
 }
 
-// Binds the migration seams to the plugin manager, the terminal and the lazy install policy
+// Binds the migration seams to the plugin manager and the terminal
 func registerMemoryProviderMigration() {
 	migrationSteps.providerPresent = MemoryProviderPresent
 	migrationSteps.catalogSource = CatalogSource
 	migrationSteps.catalogEntry = plugins.GetPluginCatalogEntry
 	migrationSteps.installInto = memoryInstallInto
 	migrationSteps.interactive = migrationInteractive
-	migrationSteps.lazyInstalls = pm.LazyInstallsAllowedFor
 }

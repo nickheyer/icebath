@@ -7,11 +7,11 @@ import (
 	"strings"
 
 	"github.com/nickheyer/icebath/pkg/state"
-	"github.com/nickheyer/icebath/pkg/tuigateway"
+	"github.com/nickheyer/icebath/pkg/tuihost"
 )
 
 // Records the newest model switch pivot in the live history and the session store, dropping older markers
-func appendModelSwitchMarker(ctx context.Context, session *tuigateway.Session, model, providerName string) {
+func appendModelSwitchMarker(ctx context.Context, session *tuihost.Session, model, providerName string) {
 	if session == nil {
 		return
 	}
@@ -61,6 +61,6 @@ func appendModelSwitchMarker(ctx context.Context, session *tuigateway.Session, m
 		entry[state.DBPersistedMarker] = true
 	})
 	if failure != nil {
-		logger().Warn("failed to persist model switch marker", "error", failure)
+		pkgLog().Warn("failed to persist model switch marker", "error", failure)
 	}
 }

@@ -13,34 +13,34 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/fakellm"
 	"github.com/nickheyer/icebath/pkg/internal/pythread"
 	"github.com/nickheyer/icebath/pkg/memory"
-	"github.com/nickheyer/icebath/pkg/tuigateway"
+	"github.com/nickheyer/icebath/pkg/tuihost"
 )
 
 const closingSID = "closing-sid"
 
 // Session record of the closing cases with the overrides
-func closingSession(extra map[string]any) *tuigateway.Session {
+func closingSession(extra map[string]any) *tuihost.Session {
 	fields := map[string]any{"agent": nil, "session_key": "closing-session-key", "history": []any{}, "history_lock": &sync.Mutex{},
 		"history_version": int64(0), "running": false, "attached_images": []any{}, "image_counter": 0, "cols": 80, "slash_worker": nil,
 		"show_reasoning": false, "tool_progress_mode": "all"}
 	for key, value := range extra {
 		fields[key] = value
 	}
-	return tuigateway.NewSession(fields)
+	return tuihost.NewSession(fields)
 }
 
 // Home with no settle grace before a close finalizes, every lease of the case released after
-func closingTurnEnv(t *testing.T) (string, *[]*tuigateway.Session) {
+func closingTurnEnv(t *testing.T) (string, *[]*tuihost.Session) {
 	t.Helper()
 	h := sessionCaseScope(t)
 	useSharedDB(t, reaperTestDB(t))
 	swapVar(t, &turnSettleBeforeCloseSeconds, 0.0)
-	sessions := &[]*tuigateway.Session{}
+	sessions := &[]*tuihost.Session{}
 	t.Cleanup(func() {
 		for _, session := range *sessions {
 			releaseActiveSessionSlot(session)
 		}
-		tuigateway.SetSessionRecord(closingSID, nil)
+		tuihost.SetSessionRecord(closingSID, nil)
 	})
 	return h, sessions
 }
@@ -84,7 +84,7 @@ func reopenRefusal(ctx context.Context) *activesessions.Refusal {
 }
 
 // Waits until the turn thread of the session ended and the session stopped running
-func joinTurn(t *testing.T, session *tuigateway.Session) {
+func joinTurn(t *testing.T, session *tuihost.Session) {
 	t.Helper()
 	for deadline := time.Now().Add(10 * time.Second); ; time.Sleep(5 * time.Millisecond) {
 		thread, _ := session.Get("_run_thread").(*memory.ContextThread)
@@ -102,7 +102,7 @@ func TestCloseWhileFirstPromptWaitsForBuildLeavesNoLease(t *testing.T) {
 	buildDone := &pythread.Event{}
 	session := closingSession(map[string]any{"agent_ready": buildDone, "agent_build_started": true})
 	*sessions = append(*sessions, session)
-	tuigateway.SetSessionRecord(closingSID, session)
+	tuihost.SetSessionRecord(closingSID, session)
 	submitted := closingRPC("prompt.submit", map[string]any{"text": "hello"})
 	if resultOf(t, submitted)["status"] != "streaming" {
 		t.Fatalf("submitted %v", submitted)
@@ -132,11 +132,11 @@ func TestCloseLandingWhileTurnClaimsLeaseLeavesNoLease(t *testing.T) {
 	built, srv := closingBuiltAgent(t)
 	session := closingSession(map[string]any{"agent": built, "agent_ready": ready})
 	*sessions = append(*sessions, session)
-	tuigateway.SetSessionRecord(closingSID, session)
+	tuihost.SetSessionRecord(closingSID, session)
 	claim := ensureActiveSessionSlot
 	atClaim := map[string]any{}
 	var once sync.Once
-	swapVar(t, &ensureActiveSessionSlot, func(ctx context.Context, sid string, claiming *tuigateway.Session) *activesessions.Refusal {
+	swapVar(t, &ensureActiveSessionSlot, func(ctx context.Context, sid string, claiming *tuihost.Session) *activesessions.Refusal {
 		stack := make([]byte, 1<<16)
 		if strings.Contains(string(stack[:runtime.Stack(stack, false)]), "admitPromptTurn") && !truthy(claiming.Get("_closing")) {
 			once.Do(func() {

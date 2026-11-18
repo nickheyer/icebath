@@ -1,3 +1,5 @@
+//go:build !icebath_core && !icebath_noextras
+
 package pm
 
 import (
@@ -1183,17 +1185,6 @@ func PbsVersions(minor, triple string) ([]string, error) {
 		return []string{}, nil
 	}
 	return found, nil
-}
-
-// UpdateArgs are pm update's arguments, Target empty for every target
-type UpdateArgs struct {
-	Names      []string
-	Check      bool
-	Target     string
-	SkipTarget []string
-	UV         bool
-	NPM        bool
-	Termux     bool
 }
 
 // Seams the update driver calls, replaceable by tests the way Python patches the cli module

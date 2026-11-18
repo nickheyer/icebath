@@ -131,7 +131,7 @@ func TestRunDoctorFlagsMissingCredentialsForActiveOpenrouterProvider(t *testing.
 	}
 }
 
-func TestRunDoctorAcceptsHermesProviderIdsThatCatalogAliases(t *testing.T) {
+func TestRunDoctorAcceptsIcebathProviderIdsThatCatalogAliases(t *testing.T) {
 	for _, c := range [][2]string{
 		{"ai-gateway", "anthropic/claude-sonnet-4.6"}, {"opencode-zen", "anthropic/claude-sonnet-4.6"},
 		{"kilocode", "anthropic/claude-sonnet-4.6"}, {"kimi-coding", "kimi-k2"},
@@ -481,6 +481,11 @@ func TestDoctorListsTheFilesTheRuntimeLoads(t *testing.T) {
 
 func TestCheckRelayPluginsWithoutABindingReportsThePlatform(t *testing.T) {
 	d, out := doctorRawHome(t, "", "")
+	selected := filepath.Join(t.TempDir(), "relay-plugins.toml")
+	if err := os.WriteFile(selected, []byte(doctorEnabledObservability), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv(tools.RelayPluginsConfigEnv, selected)
 	tools.RegisterNemoRelayBinding(nil)
 	f, err := checkRelayPlugins(context.Background(), d, false)
 	if err != nil {
@@ -493,7 +498,11 @@ func TestCheckRelayPluginsWithoutABindingReportsThePlatform(t *testing.T) {
 
 func TestCheckRelayPluginsReportsABindingWithoutAValidator(t *testing.T) {
 	d, out := doctorRawHome(t, "", "")
-	doctorUnsetEnv(t, tools.RelayPluginsConfigEnv)
+	selected := filepath.Join(t.TempDir(), "relay-plugins.toml")
+	if err := os.WriteFile(selected, []byte(doctorEnabledObservability), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv(tools.RelayPluginsConfigEnv, selected)
 	tools.RegisterNemoRelayBinding(func() (*tools.NemoRelay, error) { return &tools.NemoRelay{}, nil })
 	t.Cleanup(func() { tools.RegisterNemoRelayBinding(nil) })
 	f, err := checkRelayPlugins(context.Background(), d, false)

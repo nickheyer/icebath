@@ -11,6 +11,7 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
+	"github.com/nickheyer/icebath/pkg/tools"
 )
 
 // Schedule is the parsed schedule a job fires on
@@ -812,6 +813,9 @@ func (j *Job) setField(k string, raw json.RawMessage) error {
 			if list, ok := decodeStringList(raw); ok {
 				if list == nil {
 					list = []string{}
+				}
+				for i, name := range list {
+					list[i] = tools.CanonicalToolsetName(name)
 				}
 				j.EnabledToolsets = list
 			}

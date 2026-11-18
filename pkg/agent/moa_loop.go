@@ -7,7 +7,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"log/slog"
 	"math"
 	"math/big"
 	"os"
@@ -27,8 +26,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
-
-func moaLoopLog() *slog.Logger { return slog.Default().With("logger", "agent.moa_loop") }
 
 var (
 	moaEmailRE = mustPyRE(`\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b`)
@@ -344,7 +341,7 @@ func slotRuntime(ctx context.Context, slot map[string]any) map[string]any {
 	out := map[string]any{"provider": prov, "model": model}
 	rt, err := moaResolveSlot(ctx, prov, model)
 	if err != nil {
-		moaLoopLog().Warn(fmt.Sprintf("MoA slot %s: provider '%s' could not be resolved (%s); calling with bare provider/model",
+		pkgLog().Warn(fmt.Sprintf("MoA slot %s: provider '%s' could not be resolved (%s); calling with bare provider/model",
 			moaSlotLabel(slot), prov, err))
 		return out
 	}
@@ -429,7 +426,7 @@ func touchFanoutProgress(a *AIAgent, description string) {
 func maybeApplyMoaCacheControl(ctx context.Context, messages []map[string]any, runtime map[string]any, cacheDisabled *bool, cacheTTL string) (out []map[string]any) {
 	defer func() {
 		if r := recover(); r != nil {
-			moaLoopLog().Debug(fmt.Sprintf("MoA cache_control decoration skipped: %v", r))
+			pkgLog().Debug(fmt.Sprintf("MoA cache_control decoration skipped: %v", r))
 			out = messages
 		}
 	}()
@@ -577,7 +574,7 @@ func runReference(ctx context.Context, slot map[string]any, refMessages []map[st
 	if err == nil {
 		return out
 	}
-	moaLoopLog().Warn(fmt.Sprintf("MoA reference model %s failed: %s", label, err))
+	pkgLog().Warn(fmt.Sprintf("MoA reference model %s failed: %s", label, err))
 	note := "[failed: " + err.Error() + "]"
 	return moaRefOutput{Label: label, Text: note, Acct: &moaRefAccounting{Messages: messages, Output: note, Model: slot["model"],
 		Provider: traceProvider, Temperature: temperature}}
@@ -617,7 +614,7 @@ func referenceContextLength(ctx context.Context, slot, runtime map[string]any, c
 		n, err := moaGetModelContextLength(ctx, provider.ContextLengthRequest{Model: model, BaseURL: moaStr(runtime["base_url"]),
 			APIKey: moaStr(runtime["api_key"]), Provider: prov})
 		if err != nil {
-			moaLoopLog().Debug("MoA reference context-length resolution failed for " + moaSlotLabel(slot))
+			pkgLog().Debug("MoA reference context-length resolution failed for " + moaSlotLabel(slot))
 			return 0
 		}
 		return n
@@ -677,7 +674,7 @@ func trimMessagesForReference(ctx context.Context, messages []map[string]any, sl
 	}
 	trimmed := append(append([]map[string]any{}, messages[:headCount]...), messages[start:]...)
 	if dropped := len(messages) - len(trimmed); dropped > 0 {
-		moaLoopLog().Info(fmt.Sprintf("MoA reference %s: estimated %d tokens exceeds budget %d (window %d, output reserve %d); dropped %d oldest message(s).",
+		pkgLog().Info(fmt.Sprintf("MoA reference %s: estimated %d tokens exceeds budget %d (window %d, output reserve %d); dropped %d oldest message(s).",
 			moaSlotLabel(slot), estimated, budget, contextLength, reserve, dropped))
 	}
 	return trimmed
@@ -750,7 +747,7 @@ func settleInterrupted(futures map[int]*moaFuture, results []*moaRefOutput, refe
 func recordLate(sink func(string, *moaRefAccounting), label string, r moaRefOutput) {
 	defer func() {
 		if recover() != nil {
-			moaLoopLog().Debug("MoA: late accounting sink failed for " + label)
+			pkgLog().Debug("MoA: late accounting sink failed for " + label)
 		}
 	}()
 	sink(label, r.Acct)
@@ -781,7 +778,7 @@ func runReferencesParallel(ctx context.Context, referenceModels []map[string]any
 			func() {
 				defer func() {
 					if r := recover(); r != nil {
-						moaLoopLog().Debug(fmt.Sprintf("MoA progress_callback failed: %v", r))
+						pkgLog().Debug(fmt.Sprintf("MoA progress_callback failed: %v", r))
 					}
 				}()
 				opts.progress(completed, total, moaSlotLabel(referenceModels[idx]))
@@ -936,27 +933,6 @@ func toolActivitySinceLastUser(messages []map[string]any) bool {
 	return false
 }
 
-// Sorted union of two data use requirement lists
-func mergeDataUse(existing, add any) []any {
-	set := map[string]bool{}
-	for _, v := range moaListItems(existing) {
-		set[pyrepr.Str(v)] = true
-	}
-	for _, v := range moaListItems(add) {
-		set[pyrepr.Str(v)] = true
-	}
-	keys := make([]string, 0, len(set))
-	for k := range set {
-		keys = append(keys, k)
-	}
-	sort.Strings(keys)
-	out := make([]any, len(keys))
-	for i, k := range keys {
-		out[i] = k
-	}
-	return out
-}
-
 // Advisory view of the transcript as plain user and assistant text turns ending on a user turn
 func referenceMessages(messages []map[string]any) []map[string]any {
 	var rendered []map[string]any
@@ -993,10 +969,6 @@ func referenceMessages(messages []map[string]any) []map[string]any {
 				rendered[n-1]["content"] = pyrepr.Str(rendered[n-1]["content"]) + "\n" + block
 			} else {
 				rendered = append(rendered, map[string]any{"role": "assistant", "content": block})
-			}
-			if pyTruthy(msg[state.DataUse]) {
-				last := rendered[len(rendered)-1]
-				last[state.DataUse] = mergeDataUse(last[state.DataUse], msg[state.DataUse])
 			}
 		}
 	}
@@ -1067,7 +1039,7 @@ func presetTemperature(preset map[string]any, key string) *float64 {
 	}
 	f, err := pyint.Float(value)
 	if err != nil {
-		moaLoopLog().Warn(fmt.Sprintf("ignoring non-numeric %s=%s in MoA preset", key, pyrepr.Repr(value)))
+		pkgLog().Warn(fmt.Sprintf("ignoring non-numeric %s=%s in MoA preset", key, pyrepr.Repr(value)))
 		return nil
 	}
 	return &f
@@ -1183,12 +1155,12 @@ func aggregateMoaContext(ctx context.Context, a *AIAgent, userPrompt string, api
 	func() {
 		defer func() {
 			if r := recover(); r != nil {
-				moaLoopLog().Debug(fmt.Sprintf("MoA privacy filter check failed: %v", r))
+				pkgLog().Debug(fmt.Sprintf("MoA privacy filter check failed: %v", r))
 			}
 		}()
 		cfg, err := moaLoadConfig(ctx)
 		if err != nil {
-			moaLoopLog().Debug(fmt.Sprintf("MoA privacy filter check failed: %v", err))
+			pkgLog().Debug(fmt.Sprintf("MoA privacy filter check failed: %v", err))
 			return
 		}
 		privacyFull = moaPrivacyMode(cfg["moa"]) == "full"
@@ -1196,7 +1168,7 @@ func aggregateMoaContext(ctx context.Context, a *AIAgent, userPrompt string, api
 	aggRefs, degraded, allFailed := guidanceInputs(outputs, privacyFull, degradedReferencePolicy)
 	joined := joinReferenceOutputs(aggRefs, degraded)
 	if allFailed {
-		moaLoopLog().Warn(fmt.Sprintf("MoA: all %d reference(s) failed — skipping aggregator synthesis", len(outputs)))
+		pkgLog().Warn(fmt.Sprintf("MoA: all %d reference(s) failed — skipping aggregator synthesis", len(outputs)))
 		notice := degraded
 		if notice == "" {
 			notice = "[Reference models unavailable]"
@@ -1214,7 +1186,7 @@ func aggregateMoaContext(ctx context.Context, a *AIAgent, userPrompt string, api
 	}
 	synthesis := ""
 	if response, err := moaCallLLM(ctx, kwargs); err != nil {
-		moaLoopLog().Warn(fmt.Sprintf("MoA aggregator model %s failed: %s", aggLabel, err))
+		pkgLog().Warn(fmt.Sprintf("MoA aggregator model %s failed: %s", aggLabel, err))
 	} else {
 		synthesis = extractMoaText(response)
 	}
@@ -1415,7 +1387,7 @@ func (c *MoAChatCompletions) recordLateReferenceAccounting(label string, acct *m
 		return
 	}
 	c.foldPendingAccounting(sumReferenceAccounting([]moaRefOutput{{Label: label, Acct: acct}}))
-	moaLoopLog().Debug("MoA: recorded late accounting for interrupted reference " + label)
+	pkgLog().Debug("MoA: recorded late accounting for interrupted reference " + label)
 }
 
 // Adds fan out spend to the pending totals so late interrupted deposits survive
@@ -1440,7 +1412,7 @@ func (c *MoAChatCompletions) consumeAndSaveTrace(ctx context.Context, sessionID 
 	}
 	defer func() {
 		if r := recover(); r != nil {
-			moaLoopLog().Debug(fmt.Sprintf("MoA trace flush failed: %v", r))
+			pkgLog().Debug(fmt.Sprintf("MoA trace flush failed: %v", r))
 		}
 	}()
 	aggSlot := pending.aggregatorSlot
@@ -1468,7 +1440,7 @@ func (c *MoAChatCompletions) emit(event string, kwargs map[string]any) {
 	}
 	defer func() {
 		if r := recover(); r != nil {
-			moaLoopLog().Debug(fmt.Sprintf("MoA reference_callback failed for %s: %v", event, r))
+			pkgLog().Debug(fmt.Sprintf("MoA reference_callback failed for %s: %v", event, r))
 		}
 	}()
 	c.referenceCallback(event, kwargs)
@@ -1502,7 +1474,7 @@ func (c *MoAChatCompletions) RebasePreparedRequest(prepared map[string]any, mess
 func (c *MoAChatCompletions) planAggregatorCache(ctx context.Context, aggMessages, tools []map[string]any, guidance any, aggRuntime map[string]any) (outMessages, outTools []map[string]any) {
 	defer func() {
 		if r := recover(); r != nil {
-			moaLoopLog().Warn(fmt.Sprintf("MoA aggregator cache plan failed — sending undecorated request (cache misses expected): %v", r))
+			pkgLog().Warn(fmt.Sprintf("MoA aggregator cache plan failed — sending undecorated request (cache misses expected): %v", r))
 			outMessages, outTools = aggMessages, tools
 		}
 	}()
@@ -1528,7 +1500,7 @@ func (c *MoAChatCompletions) planAggregatorCache(ctx context.Context, aggMessage
 func (c *MoAChatCompletions) callPreparedAggregator(ctx context.Context, prepared, apiKwargs map[string]any) (any, error) {
 	aggRaw, ok := prepared["aggregator"]
 	if !ok {
-		return nil, errors.New("KeyError: 'aggregator'")
+		return nil, errors.New("the prepared mixture of agents request has no aggregator")
 	}
 	aggregator, _ := aggRaw.(map[string]any)
 	if aggregator["provider"] == "moa" {
@@ -1536,7 +1508,7 @@ func (c *MoAChatCompletions) callPreparedAggregator(ctx context.Context, prepare
 	}
 	rawMessages, ok := prepared["messages"]
 	if !ok {
-		return nil, errors.New("KeyError: 'messages'")
+		return nil, errors.New("the prepared mixture of agents request has no messages")
 	}
 	aggRuntime := slotRuntime(ctx, aggregator)
 	aggMessages, tools := c.planAggregatorCache(ctx, mapRows(rawMessages), mapRows(apiKwargs["tools"]), prepared["guidance"], aggRuntime)
@@ -1568,7 +1540,7 @@ func (c *MoAChatCompletions) callPreparedAggregator(ctx context.Context, prepare
 	}
 	temperature, ok := prepared["aggregator_temperature"]
 	if !ok {
-		return nil, errors.New("KeyError: 'aggregator_temperature'")
+		return nil, errors.New("the prepared mixture of agents request has no aggregator_temperature")
 	}
 	var toolsArg any
 	if tools != nil {
@@ -1596,7 +1568,7 @@ func (c *MoAChatCompletions) callPreparedAggregator(ctx context.Context, prepare
 			return nil, err
 		}
 		c.mergeSameRoleDestinations[destination] = true
-		moaLoopLog().Warn(fmt.Sprintf("MoA aggregator %s rejected adjacent same-role messages — merging them for this "+
+		pkgLog().Warn(fmt.Sprintf("MoA aggregator %s rejected adjacent same-role messages — merging them for this "+
 			"destination for the rest of the session and retrying once: %.200s", moaSlotLabel(aggregator), err.Error()))
 		aggMessages = retry
 		if response, err = send(aggMessages); err != nil {
@@ -1720,7 +1692,7 @@ func (c *MoAChatCompletions) runFanout(ctx context.Context, preset map[string]an
 	func() {
 		defer func() {
 			if r := recover(); r != nil {
-				moaLoopLog().Debug(fmt.Sprintf("MoA reference metrics render failed: %v", r))
+				pkgLog().Debug(fmt.Sprintf("MoA reference metrics render failed: %v", r))
 				c.lastReferenceMetrics = nil
 			}
 		}()
@@ -1755,7 +1727,7 @@ func (c *MoAChatCompletions) buildGuidance(outputs []moaRefOutput, aggregator ma
 	aggRefs, degraded, allFailed := guidanceInputs(outputs, c.privacyMode == "full", policy)
 	header := "[Mixture of Agents reference context]\n" + "Preset: " + c.PresetName + "\n" + "Aggregator/acting model: " + moaSlotLabel(aggregator) + "\n"
 	if allFailed {
-		moaLoopLog().Warn(fmt.Sprintf("MoA: all %d reference(s) failed — acting aggregator-alone without reference guidance", len(outputs)))
+		pkgLog().Warn(fmt.Sprintf("MoA: all %d reference(s) failed — acting aggregator-alone without reference guidance", len(outputs)))
 		if degraded != "" {
 			return header + "\n" + "All reference models failed this turn — no advisory guidance is available. Act on your own judgment.\n\n" + degraded, true
 		}
@@ -1785,7 +1757,7 @@ func (c *MoAChatCompletions) Create(ctx context.Context, apiKwargs map[string]an
 		if raw != nil {
 			prepared, ok := raw.(map[string]any)
 			if !ok {
-				return nil, errors.New("TypeError: _moa_prepared_request must be a dict")
+				return nil, errors.New("the prepared mixture of agents request is not a mapping")
 			}
 			return c.callPreparedAggregator(ctx, prepared, kwargs)
 		}

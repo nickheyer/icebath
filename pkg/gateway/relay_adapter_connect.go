@@ -27,7 +27,7 @@ func (a *RelayAdapter) Connect(ctx context.Context, isReconnect bool) (bool, err
 		if ctx.Err() != nil {
 			return false, err
 		}
-		relayAdapterLog().Warn(fmt.Sprintf("relay handshake failed: %s", relayExcStr(err)))
+		pkgLog().Warn(fmt.Sprintf("relay handshake failed: %s", relayExcStr(err)))
 		return false, nil
 	}
 	a.applyDescriptor(descriptor)
@@ -62,9 +62,9 @@ func (a *RelayAdapter) watchForRevocation(ctx context.Context, pollIntervalS flo
 		case <-timer.C:
 		}
 	}
-	relayAdapterLog().Warn("relay credential revoked (opt-out) — marking the relay adapter disabled")
+	pkgLog().Warn("relay credential revoked (opt-out) — marking the relay adapter disabled")
 	a.SetFatalError(ctx, "relay_disabled", "Relay disabled (opted out — recreate the instance to re-enable)", false)
 	if err := a.NotifyFatalError(ctx); err != nil {
-		relayAdapterLog().Debug("relay revocation fatal-error notify failed", "exc_info", err)
+		pkgLog().Debug("relay revocation fatal-error notify failed", "exc_info", err)
 	}
 }

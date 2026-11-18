@@ -26,7 +26,7 @@ func TestNonRoomRunBodyPassesThroughUnchanged(t *testing.T) {
 func TestRoomDispatchRejectsExtraFieldsBeforeGrantVerification(t *testing.T) {
 	adapter := &APIServerAdapter{}
 	wire := httptest.NewRequest("POST", "/v1/runs", nil)
-	wire.Header.Set("Authorization", "HermesRoom room-grant")
+	wire.Header.Set("Authorization", "IcebathRoom room-grant")
 	request := gateway.NewWebRequest(wire, 0)
 	body := pyjson.ObjectOf("input", "room prompt", "hosted_room_dispatch", pyjson.NewObject(), "unexpected", true)
 	normalized, errResp, err := adapter.normalizeRoomDispatch(context.Background(), request, body)

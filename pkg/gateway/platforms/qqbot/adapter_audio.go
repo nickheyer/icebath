@@ -7,7 +7,6 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
-	"log/slog"
 	"mime/multipart"
 	"net/http"
 	"net/textproto"
@@ -99,7 +98,7 @@ func (a *QQAdapter) downloadAndCache(ctx context.Context, url, contentType, orig
 		if ctx.Err() != nil {
 			return "", ctx.Err()
 		}
-		slog.Debug(fmt.Sprintf("[%s] Download failed for %s: %s", a.logTag(), pystr.Slice(url, 0, 80), errText(err)))
+		pkgLog().Debug(fmt.Sprintf("[%s] Download failed for %s: %s", a.logTag(), pystr.Slice(url, 0, 80), errText(err)))
 		return "", nil
 	}
 	data := resp.Content
@@ -157,7 +156,7 @@ func (a *QQAdapter) qqMediaHeaders() map[string]string {
 // Transcript of a voice attachment from QQ's own text, else STT on the WAV URL, else STT on the converted original
 func (a *QQAdapter) sttVoiceAttachment(ctx context.Context, url, contentType, filename, asrReferText, voiceWAVURL string) (string, error) {
 	if asrReferText != "" {
-		slog.Debug(fmt.Sprintf("[%s] STT: using QQ asr_refer_text: %s", a.logTag(), pyrepr.Repr(pystr.Slice(asrReferText, 0, 100))))
+		pkgLog().Debug(fmt.Sprintf("[%s] STT: using QQ asr_refer_text: %s", a.logTag(), pyrepr.Repr(pystr.Slice(asrReferText, 0, 100))))
 		return asrReferText, nil
 	}
 	isPreWAV := voiceWAVURL != ""
@@ -167,10 +166,10 @@ func (a *QQAdapter) sttVoiceAttachment(ctx context.Context, url, contentType, fi
 		if strings.HasPrefix(voiceWAVURL, "//") {
 			downloadURL = "https:" + voiceWAVURL
 		}
-		slog.Debug(fmt.Sprintf("[%s] STT: using voice_wav_url (pre-converted WAV)", a.logTag()))
+		pkgLog().Debug(fmt.Sprintf("[%s] STT: using voice_wav_url (pre-converted WAV)", a.logTag()))
 	}
 	if !tools.IsSafeURL(gateway.URLSafetyEnv(ctx), downloadURL) {
-		slog.Warn(fmt.Sprintf("[QQ] STT blocked unsafe URL: %s", pystr.Slice(downloadURL, 0, 80)))
+		pkgLog().Warn(fmt.Sprintf("[QQ] STT blocked unsafe URL: %s", pystr.Slice(downloadURL, 0, 80)))
 		return "", nil
 	}
 	transcript, err := a.transcribeVoiceURL(ctx, downloadURL, filename, isPreWAV)
@@ -179,7 +178,7 @@ func (a *QQAdapter) sttVoiceAttachment(ctx context.Context, url, contentType, fi
 			return "", ctx.Err()
 		}
 		if isOSError(err) || isHTTPStatusError(err) || isTransportError(err) {
-			slog.Warn(fmt.Sprintf("[%s] STT failed for voice attachment: %s: %s", a.logTag(), pyrepr.ExceptionName(err), errText(err)))
+			pkgLog().Warn(fmt.Sprintf("[%s] STT failed for voice attachment: %s: %s", a.logTag(), pyrepr.ExceptionName(err), errText(err)))
 			return "", nil
 		}
 		return "", err
@@ -193,11 +192,11 @@ func (a *QQAdapter) transcribeVoiceURL(ctx context.Context, downloadURL, filenam
 	client := a.httpClient
 	a.mu.Unlock()
 	if client == nil {
-		slog.Warn(fmt.Sprintf("[%s] STT: no HTTP client", a.logTag()))
+		pkgLog().Warn(fmt.Sprintf("[%s] STT: no HTTP client", a.logTag()))
 		return "", nil
 	}
 	downloadHeaders := a.qqMediaHeaders()
-	slog.Debug(fmt.Sprintf("[%s] STT: downloading voice from %s (pre_wav=%s, headers=%s)", a.logTag(), pystr.Slice(downloadURL, 0, 80),
+	pkgLog().Debug(fmt.Sprintf("[%s] STT: downloading voice from %s (pre_wav=%s, headers=%s)", a.logTag(), pystr.Slice(downloadURL, 0, 80),
 		pyrepr.Str(isPreWAV), pyrepr.Str(len(downloadHeaders) > 0)))
 	resp, err := httpRequest(ctx, client, http.MethodGet, downloadURL, downloadHeaders, nil, 30.0)
 	if err != nil {
@@ -211,9 +210,9 @@ func (a *QQAdapter) transcribeVoiceURL(ctx context.Context, downloadURL, filenam
 	if contentType == "" {
 		contentType = "unknown"
 	}
-	slog.Debug(fmt.Sprintf("[%s] STT: downloaded %d bytes, content_type=%s", a.logTag(), len(audioData), contentType))
+	pkgLog().Debug(fmt.Sprintf("[%s] STT: downloaded %d bytes, content_type=%s", a.logTag(), len(audioData), contentType))
 	if len(audioData) < 10 {
-		slog.Warn(fmt.Sprintf("[%s] STT: downloaded data too small (%d bytes), skipping", a.logTag(), len(audioData)))
+		pkgLog().Warn(fmt.Sprintf("[%s] STT: downloaded data too small (%d bytes), skipping", a.logTag(), len(audioData)))
 		return "", nil
 	}
 	var wavPath string
@@ -221,27 +220,27 @@ func (a *QQAdapter) transcribeVoiceURL(ctx context.Context, downloadURL, filenam
 		if wavPath, err = writeTemp(audioData, ".wav"); err != nil {
 			return "", err
 		}
-		slog.Debug(fmt.Sprintf("[%s] STT: using pre-converted WAV directly (%d bytes)", a.logTag(), len(audioData)))
+		pkgLog().Debug(fmt.Sprintf("[%s] STT: using pre-converted WAV directly (%d bytes)", a.logTag(), len(audioData)))
 	} else {
-		slog.Debug(fmt.Sprintf("[%s] STT: converting to wav, filename=%s", a.logTag(), pyrepr.Repr(filename)))
+		pkgLog().Debug(fmt.Sprintf("[%s] STT: converting to wav, filename=%s", a.logTag(), pyrepr.Repr(filename)))
 		if wavPath, err = a.convertAudioToWAVFile(ctx, audioData, filename); err != nil {
 			return "", err
 		}
 		if _, statErr := os.Stat(wavPath); wavPath == "" || statErr != nil {
-			slog.Warn(fmt.Sprintf("[%s] STT: ffmpeg conversion produced no output", a.logTag()))
+			pkgLog().Warn(fmt.Sprintf("[%s] STT: ffmpeg conversion produced no output", a.logTag()))
 			return "", nil
 		}
 	}
-	slog.Debug(fmt.Sprintf("[%s] STT: calling ASR on %s", a.logTag(), wavPath))
+	pkgLog().Debug(fmt.Sprintf("[%s] STT: calling ASR on %s", a.logTag(), wavPath))
 	transcript, err := a.callSTT(ctx, wavPath)
 	unlinkQuiet(wavPath)
 	if err != nil {
 		return "", err
 	}
 	if transcript != "" {
-		slog.Debug(fmt.Sprintf("[%s] STT success: %s", a.logTag(), pyrepr.Repr(pystr.Slice(transcript, 0, 100))))
+		pkgLog().Debug(fmt.Sprintf("[%s] STT success: %s", a.logTag(), pyrepr.Repr(pystr.Slice(transcript, 0, 100))))
 	} else {
-		slog.Warn(fmt.Sprintf("[%s] STT: ASR returned empty transcript", a.logTag()))
+		pkgLog().Warn(fmt.Sprintf("[%s] STT: ASR returned empty transcript", a.logTag()))
 	}
 	return transcript, nil
 }
@@ -287,7 +286,7 @@ func (a *QQAdapter) convertAudioToWAVFile(ctx context.Context, audioData []byte,
 	if ext == "" {
 		ext = guessExtFromData(audioData)
 	}
-	slog.Info(fmt.Sprintf("[%s] STT: audio_data size=%d, ext=%s, first_20_bytes=%s", a.logTag(), len(audioData), pyrepr.Repr(ext),
+	pkgLog().Info(fmt.Sprintf("[%s] STT: audio_data size=%d, ext=%s, first_20_bytes=%s", a.logTag(), len(audioData), pyrepr.Repr(ext),
 		pyrepr.BytesRepr(audioData[:min(20, len(audioData))])))
 	srcPath, wavPath, err := tempPair(audioData, ext)
 	if err != nil {
@@ -336,16 +335,16 @@ func (a *QQAdapter) convertSilkToWAV(ctx context.Context, srcPath, wavPath strin
 			err = silkToWAV(ctx, attempt.path, wavPath, 16000)
 		}
 		if errors.Is(err, media.ErrPilkMissing) {
-			slog.Warn(fmt.Sprintf("[%s] pilk not installed — cannot decode SILK audio. Run: %s", a.logTag(), pm.InstallHint("silk")))
+			pkgLog().Warn(fmt.Sprintf("[%s] pilk not installed — cannot decode SILK audio. Run: %s", a.logTag(), pm.InstallHint("silk")))
 			return ""
 		}
 		if err != nil {
-			slog.Debug(fmt.Sprintf("[%s] pilk %s conversion failed: %s", a.logTag(), attempt.how, errText(err)))
+			pkgLog().Debug(fmt.Sprintf("[%s] pilk %s conversion failed: %s", a.logTag(), attempt.how, errText(err)))
 			continue
 		}
 		if wavOK(wavPath) {
 			info, _ := os.Stat(wavPath)
-			slog.Debug(fmt.Sprintf("[%s] pilk converted %s%s to wav (%d bytes)", a.logTag(), pypath.Name(srcPath), attempt.label, info.Size()))
+			pkgLog().Debug(fmt.Sprintf("[%s] pilk converted %s%s to wav (%d bytes)", a.logTag(), pypath.Name(srcPath), attempt.label, info.Size()))
 			return wavPath
 		}
 	}
@@ -364,7 +363,7 @@ func (a *QQAdapter) convertRawToWAV(audioData []byte, wavPath string) string {
 	header.WriteString("data")
 	binary.Write(&header, binary.LittleEndian, uint32(len(audioData)))
 	if err := os.WriteFile(wavPath, append(header.Bytes(), audioData...), 0o666); err != nil {
-		slog.Debug(fmt.Sprintf("[%s] raw PCM fallback failed: %s", a.logTag(), errText(err)))
+		pkgLog().Debug(fmt.Sprintf("[%s] raw PCM fallback failed: %s", a.logTag(), errText(err)))
 		return ""
 	}
 	return wavPath
@@ -379,23 +378,23 @@ func (a *QQAdapter) convertFFmpegToWAV(ctx context.Context, srcPath, wavPath str
 	case ctx.Err() != nil:
 		return ""
 	case errors.As(err, &timeout):
-		slog.Warn(fmt.Sprintf("[%s] ffmpeg conversion error: ", a.logTag()))
+		pkgLog().Warn(fmt.Sprintf("[%s] ffmpeg conversion error: ", a.logTag()))
 		return ""
 	case err != nil:
-		slog.Warn(fmt.Sprintf("[%s] ffmpeg conversion error: %s", a.logTag(), pypath.OSErrorText(err)))
+		pkgLog().Warn(fmt.Sprintf("[%s] ffmpeg conversion error: %s", a.logTag(), pypath.OSErrorText(err)))
 		return ""
 	}
 	if proc.Returncode != 0 {
-		slog.Warn(fmt.Sprintf("[%s] ffmpeg failed for %s: %s", a.logTag(), pypath.Name(srcPath),
+		pkgLog().Warn(fmt.Sprintf("[%s] ffmpeg failed for %s: %s", a.logTag(), pypath.Name(srcPath),
 			pystr.DecodeUTF8Replace(proc.Stderr[:min(200, len(proc.Stderr))])))
 		return ""
 	}
 	if !wavOK(wavPath) {
-		slog.Warn(fmt.Sprintf("[%s] ffmpeg produced no/small output for %s", a.logTag(), pypath.Name(srcPath)))
+		pkgLog().Warn(fmt.Sprintf("[%s] ffmpeg produced no/small output for %s", a.logTag(), pypath.Name(srcPath)))
 		return ""
 	}
 	info, _ := os.Stat(wavPath)
-	slog.Debug(fmt.Sprintf("[%s] ffmpeg converted %s to wav (%d bytes)", a.logTag(), pypath.Name(srcPath), info.Size()))
+	pkgLog().Debug(fmt.Sprintf("[%s] ffmpeg converted %s to wav (%d bytes)", a.logTag(), pypath.Name(srcPath), info.Size()))
 	return wavPath
 }
 
@@ -459,12 +458,12 @@ func (a *QQAdapter) callSTT(ctx context.Context, wavPath string) (string, error)
 		return "", err
 	}
 	if cfg == nil {
-		slog.Warn(fmt.Sprintf("[%s] STT not configured (no stt config or QQ_STT_API_KEY)", a.logTag()))
+		pkgLog().Warn(fmt.Sprintf("[%s] STT not configured (no stt config or QQ_STT_API_KEY)", a.logTag()))
 		return "", nil
 	}
 	transcript, err := a.postTranscription(ctx, cfg, wavPath)
 	if err != nil && ctx.Err() == nil && (isOSError(err) || isHTTPStatusError(err)) {
-		slog.Warn(fmt.Sprintf("[%s] STT API call failed (model=%s, base=%s): %s", a.logTag(), cfg.model, pystr.Slice(cfg.baseURL, 0, 50), errText(err)))
+		pkgLog().Warn(fmt.Sprintf("[%s] STT API call failed (model=%s, base=%s): %s", a.logTag(), cfg.model, pystr.Slice(cfg.baseURL, 0, 50), errText(err)))
 		return "", nil
 	}
 	return transcript, err
@@ -572,7 +571,7 @@ func (a *QQAdapter) convertAudioToWAV(ctx context.Context, audioData []byte, sou
 		return "", ctx.Err()
 	}
 	if converted == "" {
-		slog.Warn(fmt.Sprintf("[%s] audio conversion failed for %s (format=%s)", a.logTag(), pystr.Slice(sourceURL, 0, 60), ext))
+		pkgLog().Warn(fmt.Sprintf("[%s] audio conversion failed for %s (format=%s)", a.logTag(), pystr.Slice(sourceURL, 0, 60), ext))
 		return cacheDocumentFromBytes(ctx, audioData, "qq_voice"+ext)
 	}
 	wavData, err := os.ReadFile(wavPath)
@@ -587,6 +586,6 @@ func (a *QQAdapter) convertAudioToWAV(ctx context.Context, audioData []byte, sou
 	if ctx.Err() != nil {
 		return "", ctx.Err()
 	}
-	slog.Debug(fmt.Sprintf("[%s] Failed to read converted wav: %s", a.logTag(), errText(err)))
+	pkgLog().Debug(fmt.Sprintf("[%s] Failed to read converted wav: %s", a.logTag(), errText(err)))
 	return "", nil
 }

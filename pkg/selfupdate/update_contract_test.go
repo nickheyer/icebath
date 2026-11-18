@@ -33,7 +33,7 @@ func ucValidMarker(t *testing.T, dir string) string {
 	t.Helper()
 	marker := filepath.Join(dir, "image-provenance.json")
 	data, _ := json.Marshal(map[string]any{"schema": 1, "deployment_kind": "image", "manager": "docker",
-		"image": "nousresearch/hermes-agent", "version": "1.0.0", "revision": strings.Repeat("a", 40)})
+		"image": "ghcr.io/nickheyer/icebath", "version": "1.0.0", "revision": strings.Repeat("a", 40)})
 	if err := os.WriteFile(marker, data, 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -103,6 +103,9 @@ func TestAdmissionGitCheckoutNoMarkerIsAdmitted(t *testing.T) {
 	tmp := t.TempDir()
 	ucMarkerPath(t, filepath.Join(tmp, "absent.json"))
 	ucInstallMethod(t, "git")
+	if err := os.WriteFile(filepath.Join(tmp, BootstrapReceipt), []byte("{}\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
 	if refused := ucAdmission(t, tmp); refused != nil {
 		t.Fatalf("refusal = %+v", refused)
 	}
@@ -121,7 +124,7 @@ func TestRefusalReceiptWrittenAsRefused(t *testing.T) {
 	tmp := t.TempDir()
 	t.Setenv("ICEBATH_HOME", tmp)
 	ctx := updaterecord.UpdateReceiptScope(context.Background())
-	recordRefusalReceipt(ctx, &UpdateRefusal{Code: "image-marker", Message: "msg", UpdateCommand: "docker pull nousresearch/hermes-agent:latest"})
+	recordRefusalReceipt(ctx, &UpdateRefusal{Code: "image-marker", Message: "msg", UpdateCommand: "docker pull ghcr.io/nickheyer/icebath:latest"})
 	matches, err := filepath.Glob(filepath.Join(updaterecord.ReceiptDir(ctx), "*.json"))
 	if err != nil {
 		t.Fatal(err)
@@ -172,6 +175,9 @@ func TestAdmissionSourceCheckoutOnTermuxHostRefusesWithAptHint(t *testing.T) {
 	tmp := t.TempDir()
 	ucMarkerPath(t, filepath.Join(tmp, "absent.json"))
 	if err := os.Mkdir(filepath.Join(tmp, ".git"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(tmp, BootstrapReceipt), []byte("{}\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	ucUnsetenv(t, "TERMUX_VERSION")
@@ -245,6 +251,9 @@ func TestAdmissionReleaseBinaryStampsAreAdmitted(t *testing.T) {
 		tmp := t.TempDir()
 		ucMarkerPath(t, filepath.Join(tmp, "absent.json"))
 		if err := os.WriteFile(filepath.Join(tmp, ".install_method"), []byte(method+"\n"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(tmp, BootstrapReceipt), []byte("{}\n"), 0o644); err != nil {
 			t.Fatal(err)
 		}
 		if refused := ucAdmission(t, tmp); refused != nil {

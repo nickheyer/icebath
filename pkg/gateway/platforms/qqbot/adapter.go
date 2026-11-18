@@ -8,7 +8,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"log/slog"
 	"net/http"
 	"os"
 	"strconv"
@@ -275,7 +274,7 @@ func (a *QQAdapter) Connect(ctx context.Context, isReconnect bool) (bool, error)
 	if a.appID == "" || a.clientSecret == "" {
 		message := "QQ startup failed: QQ_APP_ID and QQ_CLIENT_SECRET are required"
 		a.SetFatalError(ctx, "qq_missing_credentials", message, true)
-		slog.Warn(fmt.Sprintf("[%s] %s", a.logTag(), message))
+		pkgLog().Warn(fmt.Sprintf("[%s] %s", a.logTag(), message))
 		return false, nil
 	}
 	acquired, err := a.AcquirePlatformLock(ctx, "qqbot-appid", a.appID, "QQBot app ID")
@@ -292,7 +291,7 @@ func (a *QQAdapter) Connect(ctx context.Context, isReconnect bool) (bool, error)
 		}
 		message := "QQ startup failed: " + errText(err)
 		a.SetFatalError(ctx, "qq_connect_error", message, true)
-		slog.Error(fmt.Sprintf("[%s] %s", a.logTag(), message), "error", err)
+		pkgLog().Error(fmt.Sprintf("[%s] %s", a.logTag(), message), "error", err)
 		a.cleanup(ctx)
 		a.ReleasePlatformLock()
 		return false, nil
@@ -303,7 +302,7 @@ func (a *QQAdapter) Connect(ctx context.Context, isReconnect bool) (bool, error)
 	a.mu.Lock()
 	a.listenTask, a.heartbeatTask = listen, heartbeat
 	a.mu.Unlock()
-	slog.Info(fmt.Sprintf("[%s] Connected", a.logTag()))
+	pkgLog().Info(fmt.Sprintf("[%s] Connected", a.logTag()))
 	a.WirePluginHandlers(ctx, nil)
 	return true, nil
 }
@@ -320,7 +319,7 @@ func (a *QQAdapter) Disconnect(ctx context.Context) error {
 	gateway.CancelTask(ctx, heartbeat)
 	a.cleanup(ctx)
 	a.ReleasePlatformLock()
-	slog.Info(fmt.Sprintf("[%s] Disconnected", a.logTag()))
+	pkgLog().Info(fmt.Sprintf("[%s] Disconnected", a.logTag()))
 	return nil
 }
 
@@ -478,7 +477,7 @@ func (a *QQAdapter) ensureToken(ctx context.Context) (string, error) {
 	a.accessToken, a.tokenExpiresAt = pyrepr.Str(token), wallClock()+float64(expiresIn)
 	access := a.accessToken
 	a.mu.Unlock()
-	slog.Info(fmt.Sprintf("[%s] Access token refreshed, expires in %ds", a.logTag(), expiresIn))
+	pkgLog().Info(fmt.Sprintf("[%s] Access token refreshed, expires in %ds", a.logTag(), expiresIn))
 	return access, nil
 }
 
@@ -510,7 +509,7 @@ func (a *QQAdapter) openGatewayWS(ctx context.Context, logURL bool) error {
 		return err
 	}
 	if logURL {
-		slog.Info(fmt.Sprintf("[%s] Gateway URL: %s", a.logTag(), gatewayURL))
+		pkgLog().Info(fmt.Sprintf("[%s] Gateway URL: %s", a.logTag(), gatewayURL))
 	}
 	return a.openWS(ctx, gatewayURL)
 }
@@ -533,7 +532,7 @@ func (a *QQAdapter) openWS(ctx context.Context, gatewayURL string) error {
 	a.mu.Lock()
 	a.ws = ws
 	a.mu.Unlock()
-	slog.Info(fmt.Sprintf("[%s] WebSocket connected to %s", a.logTag(), gatewayURL))
+	pkgLog().Info(fmt.Sprintf("[%s] WebSocket connected to %s", a.logTag(), gatewayURL))
 	return nil
 }
 
@@ -568,11 +567,11 @@ func (a *QQAdapter) listenLoop(ctx context.Context) error {
 		}
 		var closeErr *QQCloseError
 		if !errors.As(err, &closeErr) {
-			slog.Warn(fmt.Sprintf("[%s] WebSocket error: %s", a.logTag(), errText(err)))
+			pkgLog().Warn(fmt.Sprintf("[%s] WebSocket error: %s", a.logTag(), errText(err)))
 			a.markTransportDisconnected(ctx)
 			a.failPending("Connection interrupted")
 			if backoffIdx >= MaxReconnectAttempts {
-				slog.Error(fmt.Sprintf("[%s] Max reconnect attempts reached", a.logTag()))
+				pkgLog().Error(fmt.Sprintf("[%s] Max reconnect attempts reached", a.logTag()))
 				a.MarkDisconnected(ctx)
 				return nil
 			}
@@ -585,12 +584,12 @@ func (a *QQAdapter) listenLoop(ctx context.Context) error {
 		if closeErr.Code != nil {
 			code, codeText = *closeErr.Code, strconv.Itoa(*closeErr.Code)
 		}
-		slog.Warn(fmt.Sprintf("[%s] WebSocket closed: code=%s reason=%s", a.logTag(), codeText, closeErr.Reason))
+		pkgLog().Warn(fmt.Sprintf("[%s] WebSocket closed: code=%s reason=%s", a.logTag(), codeText, closeErr.Reason))
 		if duration := monotonic() - connectTime; duration < QuickDisconnectThreshold && connectTime > 0 {
 			quickDisconnectCount++
-			slog.Info(fmt.Sprintf("[%s] Quick disconnect (%.1fs), count: %d", a.logTag(), duration, quickDisconnectCount))
+			pkgLog().Info(fmt.Sprintf("[%s] Quick disconnect (%.1fs), count: %d", a.logTag(), duration, quickDisconnectCount))
 			if quickDisconnectCount >= MaxQuickDisconnectCount {
-				slog.Error(fmt.Sprintf("[%s] Too many quick disconnects. Check: 1) AppID/Secret correct 2) Bot permissions on QQ Open Platform", a.logTag()))
+				pkgLog().Error(fmt.Sprintf("[%s] Too many quick disconnects. Check: 1) AppID/Secret correct 2) Bot permissions on QQ Open Platform", a.logTag()))
 				a.SetFatalError(ctx, "qq_quick_disconnect", "Too many quick disconnects — check bot permissions", true)
 				return nil
 			}
@@ -600,12 +599,12 @@ func (a *QQAdapter) listenLoop(ctx context.Context) error {
 		a.markTransportDisconnected(ctx)
 		a.failPending("Connection closed")
 		if desc, fatal := fatalCloseCodes[code]; fatal && closeErr.Code != nil {
-			slog.Error(fmt.Sprintf("[%s] Bot is %s. Check QQ Open Platform.", a.logTag(), desc))
+			pkgLog().Error(fmt.Sprintf("[%s] Bot is %s. Check QQ Open Platform.", a.logTag(), desc))
 			a.SetFatalError(ctx, "qq_"+desc, "Bot is "+desc, false)
 			return nil
 		}
 		if closeErr.Code != nil && code == 4008 {
-			slog.Info(fmt.Sprintf("[%s] Rate limited (4008), waiting %ds", a.logTag(), RateLimitDelay))
+			pkgLog().Info(fmt.Sprintf("[%s] Rate limited (4008), waiting %ds", a.logTag(), RateLimitDelay))
 			if backoffIdx >= MaxReconnectAttempts {
 				a.MarkDisconnected(ctx)
 				return nil
@@ -616,13 +615,13 @@ func (a *QQAdapter) listenLoop(ctx context.Context) error {
 			continue
 		}
 		if closeErr.Code != nil && code == 4004 {
-			slog.Info(fmt.Sprintf("[%s] Invalid token (4004), will refresh and reconnect", a.logTag()))
+			pkgLog().Info(fmt.Sprintf("[%s] Invalid token (4004), will refresh and reconnect", a.logTag()))
 			a.mu.Lock()
 			a.accessToken, a.tokenExpiresAt = "", 0.0
 			a.mu.Unlock()
 		}
 		if closeErr.Code != nil && sessionInvalidCloseCode(code) {
-			slog.Info(fmt.Sprintf("[%s] Session error (%d), clearing session for re-identify", a.logTag(), code))
+			pkgLog().Info(fmt.Sprintf("[%s] Session error (%d), clearing session for re-identify", a.logTag(), code))
 			a.mu.Lock()
 			a.sessionID, a.lastSeq = nil, nil
 			a.mu.Unlock()
@@ -631,7 +630,7 @@ func (a *QQAdapter) listenLoop(ctx context.Context) error {
 			return nil
 		}
 		if backoffIdx >= MaxReconnectAttempts {
-			slog.Error(fmt.Sprintf("[%s] Max reconnect attempts reached (QQCloseError)", a.logTag()))
+			pkgLog().Error(fmt.Sprintf("[%s] Max reconnect attempts reached (QQCloseError)", a.logTag()))
 			a.MarkDisconnected(ctx)
 			return nil
 		}
@@ -642,7 +641,7 @@ func (a *QQAdapter) listenLoop(ctx context.Context) error {
 // Waits the backoff delay and reopens the gateway websocket, false when the reopen fails
 func (a *QQAdapter) reconnect(ctx context.Context, backoffIdx int) (bool, error) {
 	delay := ReconnectBackoff[min(backoffIdx, len(ReconnectBackoff)-1)]
-	slog.Info(fmt.Sprintf("[%s] Reconnecting in %ds (attempt %d)...", a.logTag(), delay, backoffIdx+1))
+	pkgLog().Info(fmt.Sprintf("[%s] Reconnecting in %ds (attempt %d)...", a.logTag(), delay, backoffIdx+1))
 	if err := sleep(ctx, float64(delay)); err != nil {
 		return false, err
 	}
@@ -653,11 +652,11 @@ func (a *QQAdapter) reconnect(ctx context.Context, backoffIdx int) (bool, error)
 		if ctx.Err() != nil {
 			return false, ctx.Err()
 		}
-		slog.Warn(fmt.Sprintf("[%s] Reconnect failed: %s", a.logTag(), errText(err)))
+		pkgLog().Warn(fmt.Sprintf("[%s] Reconnect failed: %s", a.logTag(), errText(err)))
 		return false, nil
 	}
 	a.MarkConnected(ctx, "")
-	slog.Info(fmt.Sprintf("[%s] Reconnected", a.logTag()))
+	pkgLog().Info(fmt.Sprintf("[%s] Reconnected", a.logTag()))
 	return true, nil
 }
 
@@ -724,7 +723,7 @@ func (a *QQAdapter) heartbeatLoop(ctx context.Context) error {
 		}
 		a.mu.Unlock()
 		if err := sendJSON(ws, obj("op", int64(1), "d", seq)); err != nil {
-			slog.Debug(fmt.Sprintf("[%s] Heartbeat failed: %s", a.logTag(), errText(err)))
+			pkgLog().Debug(fmt.Sprintf("[%s] Heartbeat failed: %s", a.logTag(), errText(err)))
 		}
 	}
 	return nil
@@ -734,14 +733,14 @@ func (a *QQAdapter) heartbeatLoop(ctx context.Context) error {
 func (a *QQAdapter) sendWSAuth(name string, payload *pyjson.Object, sentMsg string) bool {
 	ws := a.socket()
 	if ws == nil || ws.Closed() {
-		slog.Warn(fmt.Sprintf("[%s] Cannot send %s: WebSocket not connected", a.logTag(), name))
+		pkgLog().Warn(fmt.Sprintf("[%s] Cannot send %s: WebSocket not connected", a.logTag(), name))
 		return true
 	}
 	if err := sendJSON(ws, payload); err != nil {
-		slog.Error(fmt.Sprintf("[%s] Failed to send %s: %s", a.logTag(), name, errText(err)))
+		pkgLog().Error(fmt.Sprintf("[%s] Failed to send %s: %s", a.logTag(), name, errText(err)))
 		return false
 	}
-	slog.Info(fmt.Sprintf("[%s] %s", a.logTag(), sentMsg))
+	pkgLog().Info(fmt.Sprintf("[%s] %s", a.logTag(), sentMsg))
 	return true
 }
 
@@ -818,7 +817,7 @@ func (a *QQAdapter) dispatchPayload(ctx context.Context, payload map[string]any)
 		interval := a.heartbeatInterval
 		resume := pyrepr.Truthy(a.sessionID) && a.lastSeq != nil
 		a.mu.Unlock()
-		slog.Debug(fmt.Sprintf("[%s] Hello received, heartbeat_interval=%dms (sending every %.1fs)", a.logTag(), int64(intervalMS), interval))
+		pkgLog().Debug(fmt.Sprintf("[%s] Hello received, heartbeat_interval=%dms (sending every %.1fs)", a.logTag(), int64(intervalMS), interval))
 		if resume {
 			spawn(a.sendResume)
 		} else {
@@ -832,10 +831,10 @@ func (a *QQAdapter) dispatchPayload(ctx context.Context, payload map[string]any)
 				a.mu.Lock()
 				a.sessionID = dict["session_id"]
 				a.mu.Unlock()
-				slog.Info(fmt.Sprintf("[%s] Ready, session_id=%s", a.logTag(), pyrepr.Str(dict["session_id"])))
+				pkgLog().Info(fmt.Sprintf("[%s] Ready, session_id=%s", a.logTag(), pyrepr.Str(dict["session_id"])))
 			}
 		case event == "RESUMED":
-			slog.Info(fmt.Sprintf("[%s] Session resumed", a.logTag()))
+			pkgLog().Info(fmt.Sprintf("[%s] Session resumed", a.logTag()))
 		case inboundHandlers[event] != nil:
 			spawn(func(tctx context.Context) error { return a.onMessage(tctx, event, d) })
 		case event == "INTERACTION_CREATE":
@@ -844,24 +843,24 @@ func (a *QQAdapter) dispatchPayload(ctx context.Context, payload map[string]any)
 				return nil
 			})
 		default:
-			slog.Debug(fmt.Sprintf("[%s] Unhandled dispatch: %s", a.logTag(), event))
+			pkgLog().Debug(fmt.Sprintf("[%s] Unhandled dispatch: %s", a.logTag(), event))
 		}
 	case equalsInt(op, 11):
 	case equalsInt(op, 7):
-		slog.Info(fmt.Sprintf("[%s] Server requested reconnect (op 7)", a.logTag()))
+		pkgLog().Info(fmt.Sprintf("[%s] Server requested reconnect (op 7)", a.logTag()))
 		a.closeWSSoon(ctx)
 	case equalsInt(op, 9):
 		if d != nil && pyrepr.Truthy(d) {
-			slog.Info(fmt.Sprintf("[%s] Invalid session (op 9, resumable)", a.logTag()))
+			pkgLog().Info(fmt.Sprintf("[%s] Invalid session (op 9, resumable)", a.logTag()))
 		} else {
-			slog.Info(fmt.Sprintf("[%s] Invalid session (op 9, not resumable), clearing session", a.logTag()))
+			pkgLog().Info(fmt.Sprintf("[%s] Invalid session (op 9, not resumable), clearing session", a.logTag()))
 			a.mu.Lock()
 			a.sessionID, a.lastSeq = nil, nil
 			a.mu.Unlock()
 		}
 		a.closeWSSoon(ctx)
 	default:
-		slog.Debug(fmt.Sprintf("[%s] Unknown op: %s", a.logTag(), pyrepr.Str(op)))
+		pkgLog().Debug(fmt.Sprintf("[%s] Unknown op: %s", a.logTag(), pyrepr.Str(op)))
 	}
 	return nil
 }
@@ -887,7 +886,7 @@ func parseJSON(raw any) map[string]any {
 	text, _ := raw.(string)
 	payload, err := pyjson.Loads(text)
 	if err != nil {
-		slog.Warn(fmt.Sprintf("[QQBot] Failed to parse JSON: %s", pyrepr.Repr(raw)))
+		pkgLog().Warn(fmt.Sprintf("[QQBot] Failed to parse JSON: %s", pyrepr.Repr(raw)))
 		return nil
 	}
 	dict, _ := asDict(payload)

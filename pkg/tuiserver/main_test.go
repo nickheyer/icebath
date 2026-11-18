@@ -19,7 +19,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tools"
-	"github.com/nickheyer/icebath/pkg/tuigateway"
+	"github.com/nickheyer/icebath/pkg/tuihost"
 )
 
 func TestMain(m *testing.M) {
@@ -45,7 +45,7 @@ func TestMain(m *testing.M) {
 	state.SpilloverNamesInText = tools.SpilloverNamesInText
 	state.ReferencedSpilloverNames = tools.ReferencedSpilloverNames
 	tools.ProfileSecrets = provider.ProfileSecretSource()
-	tools.NousAccount = provider.NousAccountSource()
+	tools.PoolKeys = provider.PoolKeySource()
 	NormalizePersonalityName = commands.NormalizePersonalityName
 	RenderPersonalityPrompt = commands.RenderPersonalityPrompt
 	PersistPersonality = commands.PersistPersonality
@@ -74,14 +74,14 @@ func TestMain(m *testing.M) {
 		panic(err)
 	}
 	os.Setenv("ICEBATH_HOME", dir)
-	hermesHome, hermesHomeAtImport = dir, dir
+	icebathHome, icebathHomeAtImport = dir, dir
 	hermetic.AroundEachTest(m, hermetic.Environ, hermetic.WorkingDir, mainContextState, serverState, isolatedPlatformDefault)
 	code := m.Run()
 	os.RemoveAll(dir)
 	os.Exit(code)
 }
 
-// Puts back the process wide server state a case leaves behind, the per test resets of the hermes conftest
+// Puts back the process wide server state a case leaves behind, the per test resets of the test setup
 func serverState(t *testing.T) func() {
 	methodsMu.RLock()
 	savedMethods := maps.Clone(methods)
@@ -90,18 +90,15 @@ func serverState(t *testing.T) func() {
 	savedDB, savedDBError := sharedDB, dbError
 	dbMu.Unlock()
 	return func() {
-		for _, live := range tuigateway.LiveSessions() {
+		for _, live := range tuihost.LiveSessions() {
 			closeSessionByID(context.Background(), live.SID, "test_cleanup", nil)
 		}
 		stopNotificationPollers(t)
 		if !gateway.FlushRuntimeStatus(30 * time.Second) {
 			t.Error("gateway runtime status was still being written 30s after the test")
 		}
-		if provider.StopNousAuthKeepalive(30 * time.Second); provider.NousAuthKeepaliveRunning() {
-			t.Error("the Nous auth keepalive was still running 30s after the test stopped it")
-		}
-		tuigateway.ResetForTests()
-		tuigateway.ClearParked()
+		tuihost.ResetForTests()
+		tuihost.ClearParked()
 		childMirrorsMu.Lock()
 		clear(childMirrors)
 		childMirrorsMu.Unlock()

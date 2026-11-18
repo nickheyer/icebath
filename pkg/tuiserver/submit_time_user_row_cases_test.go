@@ -8,7 +8,7 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/agent"
 	"github.com/nickheyer/icebath/pkg/state"
-	"github.com/nickheyer/icebath/pkg/tuigateway"
+	"github.com/nickheyer/icebath/pkg/tuihost"
 )
 
 // TUI session created through the RPC over the shared store, its live id and stored key
@@ -47,7 +47,7 @@ func TestSubmitTimeUserRow(t *testing.T) {
 		}
 		t.Cleanup(func() { _ = db.Close() })
 		sid, key := submitRowSession(t, db)
-		session := tuigateway.SessionRecord(sid)
+		session := tuihost.SessionRecord(sid)
 		if session == nil {
 			t.Fatalf("no live session %s", sid)
 		}

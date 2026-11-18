@@ -48,7 +48,7 @@ func TestStableUpdateFetchBringsTheReleaseTag(t *testing.T) {
 	})
 	checkRunChannel = func(context.Context, map[string]any) (string, error) { return "stable", nil }
 	checkResolveSourceTarget = func(context.Context, string, []string, string, string, bool) (SourceTarget, error) {
-		return SourceTarget{RequestedChannel: "stable", Channel: "stable", Repository: "NousResearch/hermes-agent", Commit: release, Version: "0.22.3"}, nil
+		return SourceTarget{RequestedChannel: "stable", Channel: "stable", Repository: "nickheyer/icebath", Commit: release, Version: "0.22.3"}, nil
 	}
 	checkReadableConfig = func(context.Context, string) (map[string]any, error) { return map[string]any{}, nil }
 	request := map[string]any{"home": tmp}

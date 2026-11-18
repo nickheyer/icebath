@@ -4,11 +4,12 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"log/slog"
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/tools"
@@ -133,7 +134,7 @@ func contentPart(m map[string]json.RawMessage) map[string]any {
 	if name == "" {
 		name = kind
 	}
-	mcpLogger().Warn(fmt.Sprintf("Unsupported sampling content block type: %s (skipped)", name))
+	pkgLog().Warn(fmt.Sprintf("Unsupported sampling content block type: %s (skipped)", name))
 	return nil
 }
 
@@ -225,7 +226,7 @@ func parseToolCallArguments(serverName string, args any) (any, bool) {
 	if s, ok := args.(string); ok {
 		var v any
 		if err := json.Unmarshal([]byte(s), &v); err != nil {
-			mcpLogger().Warn(fmt.Sprintf("MCP server '%s': malformed tool_calls arguments from LLM (wrapping as raw): %s", serverName, truncateRunes(s, 100)))
+			pkgLog().Warn(fmt.Sprintf("MCP server '%s': malformed tool_calls arguments from LLM (wrapping as raw): %s", serverName, truncateRunes(s, 100)))
 			return map[string]any{"_raw": s}, true
 		}
 		_, isMap := v.(map[string]any)
@@ -398,12 +399,12 @@ func (h *samplingHandler) fail(message string) *RPCError {
 // Rate limit and model allowlist gate returning the resolved model or the refusal
 func (h *samplingHandler) admit(params *CreateMessageParams) (string, *RPCError) {
 	if !h.checkRateLimit() {
-		mcpLogger().Warn(fmt.Sprintf("MCP server '%s' sampling rate limit exceeded (%d/min)", h.serverName, h.maxRPM))
+		pkgLog().Warn(fmt.Sprintf("MCP server '%s' sampling rate limit exceeded (%d/min)", h.serverName, h.maxRPM))
 		return "", h.fail(fmt.Sprintf("Sampling rate limit exceeded for server '%s' (%d requests/minute)", h.serverName, h.maxRPM))
 	}
 	model := h.resolveModel(params.ModelPreferences)
 	if allowed, joined, active := h.modelAllowed(model); active && model != "" && !allowed {
-		mcpLogger().Warn(fmt.Sprintf("MCP server '%s' requested model '%s' not in allowed_models", h.serverName, model))
+		pkgLog().Warn(fmt.Sprintf("MCP server '%s' requested model '%s' not in allowed_models", h.serverName, model))
 		return "", h.fail(fmt.Sprintf("Model '%s' not allowed for server '%s'. Allowed: %s", model, h.serverName, joined))
 	}
 	return model, nil
@@ -424,7 +425,7 @@ func (h *samplingHandler) buildLLMCall(params *CreateMessageParams, model string
 		toolDefs = append(toolDefs, map[string]any{"type": "function", "function": pyjson.ObjectOf(
 			"name", t.Name, "description", t.Description, "parameters", normalizeInputSchema(t.InputSchema))})
 	}
-	mcpLogger().Log(context.Background(), h.auditLevel, fmt.Sprintf("MCP server '%s' sampling request: model=%s, max_tokens=%d, messages=%d",
+	pkgLog().Log(context.Background(), h.auditLevel, fmt.Sprintf("MCP server '%s' sampling request: model=%s, max_tokens=%d, messages=%d",
 		h.serverName, model, maxTokens, len(messages)))
 	return messages, toolDefs, tools.AuxOptions{Task: "mcp", Model: model, MaxTokens: maxTokens, Temperature: params.Temperature,
 		Timeout: time.Duration(h.timeout * float64(time.Second))}
@@ -477,7 +478,7 @@ func (h *samplingHandler) logResponse(resp map[string]any, suffix string) {
 			tokens = pyStr(v)
 		}
 	}
-	mcpLogger().Log(context.Background(), h.auditLevel, fmt.Sprintf("MCP server '%s' sampling response: model=%s, tokens=%s", h.serverName, pyStr(resp["model"]), tokens)+suffix)
+	pkgLog().Log(context.Background(), h.auditLevel, fmt.Sprintf("MCP server '%s' sampling response: model=%s, tokens=%s", h.serverName, pyStr(resp["model"]), tokens)+suffix)
 }
 
 // Tool use result under max_tool_rounds, zero disabling tool loops
@@ -678,7 +679,7 @@ func (h *elicitationHandler) Elicit(ctx context.Context, params *ElicitParams) (
 	h.metrics["requests"]++
 	h.mu.Unlock()
 	if params.Mode == "url" {
-		mcpLogger().Info(fmt.Sprintf("MCP server '%s' requested URL-mode elicitation; declining (URL-mode elicitation not implemented)", h.serverName))
+		pkgLog().Info(fmt.Sprintf("MCP server '%s' requested URL-mode elicitation; declining (URL-mode elicitation not implemented)", h.serverName))
 		return h.result("decline", "declined"), nil
 	}
 	message := params.Message
@@ -689,7 +690,7 @@ func (h *elicitationHandler) Elicit(ctx context.Context, params *ElicitParams) (
 	if schema == nil {
 		schema = map[string]any{}
 	}
-	mcpLogger().Info(fmt.Sprintf("MCP server '%s' elicitation request: %s", h.serverName, truncateRunes(sanitizeError(message), 200)))
+	pkgLog().Info(fmt.Sprintf("MCP server '%s' elicitation request: %s", h.serverName, truncateRunes(sanitizeError(message), 200)))
 	description := formatElicitationSchemaSummary(schema, params.RawRequestedSchema, h.serverName)
 	base, env := ctx, h.env
 	if captured := h.callContext(); captured != nil {
@@ -720,7 +721,7 @@ func (h *elicitationHandler) Elicit(ctx context.Context, params *ElicitParams) (
 	select {
 	case o := <-done:
 		if o.err != nil {
-			mcpLogger().Error(fmt.Sprintf("MCP server '%s' elicitation failed: %v", h.serverName, o.err))
+			pkgLog().Error(fmt.Sprintf("MCP server '%s' elicitation failed: %v", h.serverName, o.err))
 			return h.result("decline", "errors"), nil
 		}
 		switch o.answer {
@@ -731,10 +732,10 @@ func (h *elicitationHandler) Elicit(ctx context.Context, params *ElicitParams) (
 		}
 		return h.result("decline", "declined"), nil
 	case <-timer.C:
-		mcpLogger().Warn(fmt.Sprintf("MCP server '%s' elicitation timed out after %ds", h.serverName, int(h.timeout)))
+		pkgLog().Warn(fmt.Sprintf("MCP server '%s' elicitation timed out after %ds", h.serverName, int(h.timeout)))
 		return h.result("cancel", "errors"), nil
 	case <-ctx.Done():
-		mcpLogger().Warn(fmt.Sprintf("MCP server '%s' elicitation timed out after %ds", h.serverName, int(h.timeout)))
+		pkgLog().Warn(fmt.Sprintf("MCP server '%s' elicitation timed out after %ds", h.serverName, int(h.timeout)))
 		return h.result("cancel", "errors"), nil
 	}
 }

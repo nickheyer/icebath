@@ -75,7 +75,7 @@ func TestDeliveryStatusIsLoggedToGatewayLogAndNeverDispatched(t *testing.T) {
 	if !slices.Equal(lines, want) {
 		t.Fatalf("lines = %q", lines)
 	}
-	if !slices.ContainsFunc(logging.ComponentPrefixes["gateway"], func(p string) bool { return strings.HasPrefix("plugins.platforms.whatsapp.adapter", p) }) {
+	if !logging.InComponent("gateway/platforms/whatsapp", logging.ComponentPrefixes["gateway"]) {
 		t.Fatal("the adapter logger is outside the gateway component")
 	}
 	if dispatched {

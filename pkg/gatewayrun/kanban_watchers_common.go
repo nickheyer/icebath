@@ -106,14 +106,14 @@ func positiveIntSetting(kanbanCfg map[string]any, key string) *int {
 	}
 	value, err := pyint.Int64(raw)
 	if err != nil {
-		runLog().Warn(fmt.Sprintf("kanban dispatcher: invalid kanban.%s=%s; ignoring", key, pyrepr.Repr(raw)))
+		pkgLog().Warn(fmt.Sprintf("kanban dispatcher: invalid kanban.%s=%s; ignoring", key, pyrepr.Repr(raw)))
 		return nil
 	}
 	if value < 1 {
-		runLog().Warn(fmt.Sprintf("kanban dispatcher: kanban.%s=%s is below 1; ignoring", key, pyrepr.Repr(raw)))
+		pkgLog().Warn(fmt.Sprintf("kanban dispatcher: kanban.%s=%s is below 1; ignoring", key, pyrepr.Repr(raw)))
 		return nil
 	}
-	runLog().Info(fmt.Sprintf("kanban dispatcher: %s=%d", key, value))
+	pkgLog().Info(fmt.Sprintf("kanban dispatcher: %s=%d", key, value))
 	v := int(value)
 	return &v
 }
@@ -183,7 +183,7 @@ func gcRetentionDays(ctx context.Context) int64 {
 
 // False while the global emergency stop holds kanban dispatch
 func kanbanDispatchAllowed(ctx context.Context) bool {
-	return !tools.CheckPaused(ctx, "kanban", runLog())
+	return !tools.CheckPaused(ctx, "kanban", pkgLog())
 }
 
 // Lock state names of the singleton dispatcher lock

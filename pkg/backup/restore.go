@@ -6,7 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"log/slog"
 	"math/big"
 	"os"
 	"path/filepath"
@@ -210,18 +209,18 @@ func authRestoreTarget(dst string) string {
 	if _, err := os.Stat(dst); err == nil {
 		links, err := linkCount(dst)
 		if err != nil {
-			slog.Error(fmt.Sprintf("Refusing auth.json restore to %s: cannot resolve store identity: %s", pypath.PathStr(dst), excText(err)))
+			pkgLog().Error(fmt.Sprintf("Refusing auth.json restore to %s: cannot resolve store identity: %s", pypath.PathStr(dst), excText(err)))
 			return ""
 		}
 		if links > 1 {
-			slog.Error(fmt.Sprintf("Refusing auth.json restore to %s: it has %d hard links; atomic replacement would split a shared auth store", pypath.PathStr(dst), links))
+			pkgLog().Error(fmt.Sprintf("Refusing auth.json restore to %s: it has %d hard links; atomic replacement would split a shared auth store", pypath.PathStr(dst), links))
 			return ""
 		}
 	}
 	if st, err := os.Lstat(dst); err == nil && st.Mode()&os.ModeSymlink != 0 {
 		resolved, err := pypath.Resolve(dst)
 		if err != nil {
-			slog.Error(fmt.Sprintf("Refusing auth.json restore to %s: cannot resolve store identity: %s", pypath.PathStr(dst), excText(err)))
+			pkgLog().Error(fmt.Sprintf("Refusing auth.json restore to %s: cannot resolve store identity: %s", pypath.PathStr(dst), excText(err)))
 			return ""
 		}
 		return resolved
@@ -262,12 +261,12 @@ func restoreAuthJSON(src, dst string) bool {
 		}
 	}
 	if err != nil {
-		slog.Error(fmt.Sprintf("Refusing auth.json restore from %s: %s", pypath.PathStr(src), excText(err)))
+		pkgLog().Error(fmt.Sprintf("Refusing auth.json restore from %s: %s", pypath.PathStr(src), excText(err)))
 		return false
 	}
 	obj, ok := doc.(*pyjson.Object)
 	if !ok {
-		slog.Error(fmt.Sprintf("Refusing auth.json restore from %s: top level is not an object", pypath.PathStr(src)))
+		pkgLog().Error(fmt.Sprintf("Refusing auth.json restore from %s: top level is not an object", pypath.PathStr(src)))
 		return false
 	}
 	isDict := func(key string) bool {
@@ -276,25 +275,18 @@ func restoreAuthJSON(src, dst string) bool {
 		return ok
 	}
 	if !isDict("providers") && !isDict("credential_pool") && !isDict("systems") {
-		slog.Error(fmt.Sprintf("Refusing auth.json restore from %s: unrecognized auth-store shape", pypath.PathStr(src)))
+		pkgLog().Error(fmt.Sprintf("Refusing auth.json restore from %s: unrecognized auth-store shape", pypath.PathStr(src)))
 		return false
 	}
 	snapshot, _ := authStoreValue(pyjson.Plain(obj)).(map[string]any)
 	if !isDict("providers") && !isDict("credential_pool") && isDict("systems") {
-		systems, _ := snapshot["systems"].(map[string]any)
-		providers := map[string]any{}
-		var active any
-		if nous, ok := systems["nous_portal"]; ok {
-			providers["nous"] = nous
-			active = "nous"
-		}
-		snapshot = map[string]any{"providers": providers, "active_provider": active}
+		snapshot = map[string]any{"providers": map[string]any{}, "active_provider": nil}
 	}
 	if err := saveRestoredAuth(snapshot, dst); err != nil {
 		if errors.Is(err, errAuthTargetRefused) {
 			return false
 		}
-		slog.Error(fmt.Sprintf("Failed to restore %s safely: %s", pypath.PathStr(dst), excText(err)))
+		pkgLog().Error(fmt.Sprintf("Failed to restore %s safely: %s", pypath.PathStr(dst), excText(err)))
 		return false
 	}
 	return true
@@ -327,7 +319,7 @@ func saveRestoredAuth(snapshot map[string]any, dst string) error {
 func safeRestoreDB(ctx context.Context, src, dst string) (bool, error) {
 	check := VerifySQLiteIntegrity(src, IntegrityOptions{})
 	if !check.Valid {
-		slog.Error(fmt.Sprintf("Refusing SQLite restore from %s: %s", pypath.PathStr(src), check.Message))
+		pkgLog().Error(fmt.Sprintf("Refusing SQLite restore from %s: %s", pypath.PathStr(src), check.Message))
 		return false, nil
 	}
 	ok, err := func() (bool, error) {
@@ -350,7 +342,7 @@ func safeRestoreDB(ctx context.Context, src, dst string) (bool, error) {
 	}()
 	if err != nil {
 		if isOwnershipConflict(err) || isOSError(err) || isSQLiteError(err) {
-			slog.Error(excText(err))
+			pkgLog().Error(excText(err))
 			return false, nil
 		}
 		return false, err
@@ -489,7 +481,7 @@ func restoreDBPages(ctx context.Context, src, dst string) (bool, error) {
 			if !isSQLiteError(err) {
 				return err
 			}
-			slog.Debug(fmt.Sprintf("Pre-restore WAL checkpoint of %s skipped: %s", pypath.PathStr(dst), excText(err)))
+			pkgLog().Debug(fmt.Sprintf("Pre-restore WAL checkpoint of %s skipped: %s", pypath.PathStr(dst), excText(err)))
 		}
 		srcConn, err := connectReadOnly(ctx, src)
 		if err != nil {
@@ -511,7 +503,7 @@ func restoreDBPages(ctx context.Context, src, dst string) (bool, error) {
 			err = chmodFull(dst, statMode(st))
 		}
 		if err != nil {
-			slog.Warn(fmt.Sprintf("Restored %s but could not apply the snapshot's file mode: %s", pypath.PathStr(dst), excText(err)))
+			pkgLog().Warn(fmt.Sprintf("Restored %s but could not apply the snapshot's file mode: %s", pypath.PathStr(dst), excText(err)))
 		}
 		return nil
 	}()
@@ -522,10 +514,10 @@ func restoreDBPages(ctx context.Context, src, dst string) (bool, error) {
 		closeQuietly(dstConn)
 		return false, err
 	}
-	slog.Warn(fmt.Sprintf("SQLite safe restore failed for %s -> %s: %s", pypath.PathStr(src), pypath.PathStr(dst), excText(err)))
+	pkgLog().Warn(fmt.Sprintf("SQLite safe restore failed for %s -> %s: %s", pypath.PathStr(src), pypath.PathStr(dst), excText(err)))
 	if dstConn != nil {
 		if err := dstConn.close(); err != nil {
-			slog.Debug(fmt.Sprintf("Closing %s before the fallback restore failed: %s", pypath.PathStr(dst), excText(err)))
+			pkgLog().Debug(fmt.Sprintf("Closing %s before the fallback restore failed: %s", pypath.PathStr(dst), excText(err)))
 		}
 	}
 	return replaceDBFile(src, dst)
@@ -535,7 +527,7 @@ func restoreDBPages(ctx context.Context, src, dst string) (bool, error) {
 func replaceDBFile(src, dst string) (bool, error) {
 	holders, _ := foreignDBHolderPIDs(dst)
 	if len(holders) > 0 {
-		slog.Error(fmt.Sprintf("Refusing unlink+move restore of %s: process(es) %s still hold the database or its WAL open. Stop them and retry.",
+		pkgLog().Error(fmt.Sprintf("Refusing unlink+move restore of %s: process(es) %s still hold the database or its WAL open. Stop them and retry.",
 			pypath.PathStr(dst), pyrepr.Repr(holders)))
 		return false, nil
 	}
@@ -557,7 +549,7 @@ func replaceDBFile(src, dst string) (bool, error) {
 	})
 	var live *state.LiveConnectionError
 	if errors.As(err, &live) {
-		slog.Error(fmt.Sprintf("Refusing unlink+move restore of %s: %s Close the in-process database handles (or restart Icebath) and retry.",
+		pkgLog().Error(fmt.Sprintf("Refusing unlink+move restore of %s: %s Close the in-process database handles (or restart Icebath) and retry.",
 			pypath.PathStr(dst), live.Error()))
 		return false, nil
 	}
@@ -566,7 +558,7 @@ func replaceDBFile(src, dst string) (bool, error) {
 	}
 	if err != nil {
 		if isOSError(err) || isValueError(err) {
-			slog.Error(fmt.Sprintf("Fallback restore also failed for %s -> %s: %s", pypath.PathStr(src), pypath.PathStr(dst), excText(err)))
+			pkgLog().Error(fmt.Sprintf("Fallback restore also failed for %s -> %s: %s", pypath.PathStr(src), pypath.PathStr(dst), excText(err)))
 			return false, nil
 		}
 		return false, err

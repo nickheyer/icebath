@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/config"
+	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 )
 
 func TestDiscordToolsDriveTheRestAPI(t *testing.T) {
@@ -99,7 +100,7 @@ func TestDiscordToolsDriveTheRestAPI(t *testing.T) {
 	if strings.Contains(desc, "search_members(") || !strings.Contains(desc, "NOTE: Bot does NOT have the MESSAGE_CONTENT privileged intent. fetch_messages will return") {
 		t.Fatalf("intent filtered schema %s", desc)
 	}
-	if td := discordRewriter(false, "discord_admin")(env, nil, nil); td == nil || td["function"].(map[string]any)["name"] != "discord_admin" {
+	if td := discordRewriter(false, "discord_admin")(env, nil, nil); td == nil || pyjson.Plain(td["function"]).(map[string]any)["name"] != "discord_admin" {
 		t.Fatalf("admin rewrite %#v", td)
 	}
 

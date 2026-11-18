@@ -4,7 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"log/slog"
+	"io"
 	"math"
 	"os"
 	"reflect"
@@ -41,7 +41,8 @@ const (
 // Seconds a native scope op gating turn or session completion may run before it is abandoned
 var RelayScopeOpTimeout = 10.0
 
-var relayLogger = func() *slog.Logger { return slog.Default().With("logger", "agent.relay_runtime") }
+// Logger of the relay runtime, a seam tests replace to capture its records
+var relayLogger = pkgLog
 
 // Native Relay binding surface the runtime drives, a nil function is an attribute the binding lacks
 type NemoRelay struct {
@@ -167,13 +168,39 @@ var loadNemoRelay = func() (*NemoRelay, error) {
 	load := relayBindingLoader
 	relayBindingMu.Unlock()
 	if load == nil {
-		return nil, errors.New("No module named 'nemo_relay'")
+		return nil, errors.New("the Relay runtime binding is not installed")
 	}
 	return load()
 }
 
-// Imports the registered native Relay binding, a No module named error when none is registered
+// Imports the registered native Relay binding, an error when none is registered
 func LoadNemoRelay() (*NemoRelay, error) { return loadNemoRelay() }
+
+var (
+	relayProvisionerMu sync.Mutex
+	relayProvisioner   func(ctx context.Context, w io.Writer) error
+)
+
+// Installs the step that provisions the Relay runtime with progress on a writer, the switch on of Relay plugins
+func RegisterNemoRelayProvisioner(provision func(ctx context.Context, w io.Writer) error) {
+	relayProvisionerMu.Lock()
+	relayProvisioner = provision
+	relayProvisionerMu.Unlock()
+}
+
+// Provisions the Relay runtime with progress on w through the registered step
+func ProvisionNemoRelay(ctx context.Context, w io.Writer) error {
+	relayProvisionerMu.Lock()
+	provision := relayProvisioner
+	relayProvisionerMu.Unlock()
+	if provision == nil {
+		return errors.New("this binary registers no NeMo Relay provisioning step")
+	}
+	return provision(ctx, w)
+}
+
+// Whether the registered binding finds its runtime provisioned
+func NemoRelayReady() bool { return relayBindingReady() }
 
 type relayLazy[T any] struct {
 	factory func(ctx context.Context) T
@@ -1533,10 +1560,4 @@ func relayResolvePluginAwaitable(ctx context.Context, value any) (any, error) {
 		return aw(ctx)
 	}
 	return value, nil
-}
-
-// Registers an exit handler beside the Relay runtimes and returns its unregister function
-func RegisterRelayAtExit(fn func()) (unregister func()) {
-	e := relayAtExitRegister(fn)
-	return func() { relayAtExitUnregister(e) }
 }

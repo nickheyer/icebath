@@ -606,7 +606,7 @@ func integrityRestore(t *testing.T, entry, h, snapID, source string) (bool, stri
 
 func assertNoDecoy(t *testing.T, tmp, name string) {
 	t.Helper()
-	allowed := map[string]bool{name: true, "native": true, "backup.zip": true, "hermes_test": true}
+	allowed := map[string]bool{name: true, "native": true, "backup.zip": true}
 	entries, _ := os.ReadDir(tmp)
 	for _, e := range entries {
 		if !allowed[e.Name()] {

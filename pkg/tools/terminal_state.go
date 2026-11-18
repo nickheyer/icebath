@@ -674,7 +674,6 @@ func resolveEnvConfig(env *Env) (map[string]any, error) {
 	}
 	return map[string]any{
 		"env_type":                        envType,
-		"modal_mode":                      CoerceModalMode(policy.Get("TERMINAL_MODAL_MODE", "auto")),
 		"docker_image":                    policy.Get("TERMINAL_DOCKER_IMAGE", defaultSandboxImage),
 		"docker_image_pinned":             policy.Get("TERMINAL_DOCKER_IMAGE_PINNED", "0") == "1",
 		"docker_forward_env":              dockerForwardEnv,

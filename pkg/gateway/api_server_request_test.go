@@ -35,7 +35,7 @@ func TestSSEFrameMatchesInlineEncoderWithEvent(t *testing.T) {
 	for _, c := range []struct {
 		event string
 		data  *pyjson.Object
-	}{{"hermes.tool.progress", pyjson.ObjectOf("name", "x", "status", "running")},
+	}{{"icebath.tool.progress", pyjson.ObjectOf("name", "x", "status", "running")},
 		{"response.created", pyjson.ObjectOf("id", "r1", "status", "in_progress")}} {
 		if got := mustSSEFrame(t, c.data, c.event, true); string(got) != string(inlineSSEFrame(t, c.data, c.event)) {
 			t.Fatalf("%s: %q", c.event, got)

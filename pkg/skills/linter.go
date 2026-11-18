@@ -139,10 +139,10 @@ func lintFrontmatter(fm map[string]any, skillDir string) []LintFinding {
 	}
 	var meta map[string]any
 	if m := fmMap(fm["metadata"]); m != nil {
-		if im := fmMap(m["icebath"]); im != nil {
-			meta = im
-		} else {
-			meta = fmMap(m["hermes"])
+		for _, key := range MetadataKeys {
+			if meta = fmMap(m[key]); meta != nil {
+				break
+			}
 		}
 	}
 	if meta == nil {

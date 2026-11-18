@@ -5,7 +5,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"log/slog"
 	"os"
 	"path/filepath"
 	"sort"
@@ -42,8 +41,6 @@ const codexCacheMax = 128
 
 // Cross process lock wait for the context length cache file
 var contextCacheLockTimeout = 5 * time.Second
-
-var metadataLog = slog.Default().With("logger", "agent.model_metadata")
 
 // Every writer of a paired memo holds this from sweep to publish
 var memoLock sync.Mutex
@@ -121,7 +118,7 @@ func noteEndpointBlackholed(baseURL string) {
 	endpointBlackholeMu.Lock()
 	endpointBlackholeCache[key] = monotonicNow()
 	endpointBlackholeMu.Unlock()
-	metadataLog.Debug("endpoint timed out connecting, skipping further probes", "endpoint", key, "seconds", endpointBlackholeTTL.Seconds())
+	pkgLog().Debug("endpoint timed out connecting, skipping further probes", "endpoint", key, "seconds", endpointBlackholeTTL.Seconds())
 }
 
 // Reports whether a recent probe to the host timed out during connect
@@ -214,7 +211,7 @@ func ttlMemoPut(ctx context.Context, path, key string, value any, ttl time.Durat
 				stamp := 0.0
 				if v, has := entry.Get(tsKey); has {
 					if stamp, ok = config.AsFloat(v); !ok {
-						metadataLog.Debug("failed to save "+what, "error", "could not convert "+tsKey+" to float")
+						pkgLog().Debug("failed to save "+what, "error", "could not convert "+tsKey+" to float")
 						return
 					}
 				}
@@ -234,7 +231,7 @@ func ttlMemoPut(ctx context.Context, path, key string, value any, ttl time.Durat
 	}
 	data.Set(key, entry)
 	if err := config.AtomicJSONWriteWith(ctx, path, data, pyjson.Indent(0), pyjson.Separators(",", ":")); err != nil {
-		metadataLog.Debug("failed to save "+what, "error", err)
+		pkgLog().Debug("failed to save "+what, "error", err)
 	}
 }
 
@@ -271,12 +268,12 @@ func loadModelMetadataDiskCache(ctx context.Context) map[string]map[string]any {
 	out := map[string]map[string]any{}
 	raw, err := os.ReadFile(modelMetadataCachePath(ctx))
 	if err != nil {
-		metadataLog.Debug("failed to load OpenRouter model metadata disk cache", "error", err)
+		pkgLog().Debug("failed to load OpenRouter model metadata disk cache", "error", err)
 		return out
 	}
 	var data any
 	if err := json.Unmarshal(bytes.TrimPrefix(raw, []byte("\xef\xbb\xbf")), &data); err != nil {
-		metadataLog.Debug("failed to load OpenRouter model metadata disk cache", "error", err)
+		pkgLog().Debug("failed to load OpenRouter model metadata disk cache", "error", err)
 		return out
 	}
 	m, ok := data.(map[string]any)
@@ -298,7 +295,7 @@ func LoadModelMetadataDiskCache(ctx context.Context) map[string]map[string]any {
 
 func saveModelMetadataDiskCache(ctx context.Context, data map[string]map[string]any) {
 	if err := atomicJSONWrite(modelMetadataCachePath(ctx), data); err != nil {
-		metadataLog.Debug("failed to save OpenRouter model metadata disk cache", "error", err)
+		pkgLog().Debug("failed to save OpenRouter model metadata disk cache", "error", err)
 	}
 }
 
@@ -376,7 +373,7 @@ func lockedContextCache(ctx context.Context, fn func()) {
 	release, err := FileLock(lockPath, contextCacheLockTimeout,
 		fmt.Sprintf("Timed out waiting for the context length cache lock (%s)", lockPath))
 	if err != nil {
-		metadataLog.Debug("Skipping context length cache update", "error", err)
+		pkgLog().Debug("Skipping context length cache update", "error", err)
 		return
 	}
 	defer release()
@@ -392,12 +389,12 @@ func loadContextCacheDocument(ctx context.Context) (map[string]int, map[string]a
 	}
 	text, err := pystr.DecodeUTF8Sig(raw)
 	if err != nil {
-		metadataLog.Debug(fmt.Sprintf("Failed to load context length cache: %s", err))
+		pkgLog().Debug(fmt.Sprintf("Failed to load context length cache: %s", err))
 		return cache, confirmed
 	}
 	loaded, err := config.SafeLoad(text)
 	if err != nil {
-		metadataLog.Debug(fmt.Sprintf("Failed to load context length cache: %s", err))
+		pkgLog().Debug(fmt.Sprintf("Failed to load context length cache: %s", err))
 		return cache, confirmed
 	}
 	doc, ok := loaded.(map[string]any)
@@ -438,7 +435,7 @@ func dropContextCacheRows(ctx context.Context, staleKeys []string, label string)
 			delete(confirmed, k)
 		}
 		if err := writeContextCache(ctx, cache, confirmed); err != nil {
-			metadataLog.Debug("failed to invalidate context length cache entry", "entry", label, "error", err)
+			pkgLog().Debug("failed to invalidate context length cache entry", "entry", label, "error", err)
 		}
 	})
 }

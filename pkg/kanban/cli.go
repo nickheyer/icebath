@@ -1434,12 +1434,12 @@ func (c *kanbanCLI) goalModeHandoffRejection(task *Task, evidence string) (strin
 	func() {
 		defer func() {
 			if r := recover(); r != nil {
-				kanbanToolsLog.Warn(fmt.Sprintf("goal judge check failed, allowing lifecycle handoff: %v", r), "exc_info", fmt.Sprint(r))
+				pkgLog().Warn(fmt.Sprintf("goal judge check failed, allowing lifecycle handoff: %v", r), "exc_info", fmt.Sprint(r))
 			}
 		}()
 		ctx := c.ctx
-		if provider.PortalAffinityScope(ctx) == "" {
-			ctx = provider.WithPortalAffinityScope(ctx, "kanban:"+task.ID)
+		if provider.AffinityScope(ctx) == "" {
+			ctx = provider.WithAffinityScope(ctx, "kanban:"+task.ID)
 		}
 		body := ""
 		if task.Body != nil {
@@ -1449,7 +1449,7 @@ func (c *kanbanCLI) goalModeHandoffRejection(task *Task, evidence string) (strin
 		verdict, reason, transportFailed = result.Verdict, result.Reason, result.TransportFailed
 	}()
 	if transportFailed {
-		kanbanToolsLog.Warn(fmt.Sprintf("goal judge unreachable (%s), allowing lifecycle handoff", reason))
+		pkgLog().Warn(fmt.Sprintf("goal judge unreachable (%s), allowing lifecycle handoff", reason))
 		return "done", nil
 	}
 	if verdict == "done" {

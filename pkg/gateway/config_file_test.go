@@ -272,15 +272,15 @@ func TestLoadGatewayConfigNestedGatewaySection(t *testing.T) {
 	if cfg := loadYAML(t, "gateway:\n  api_server:\n    enabled: true\n"); cfg.Platforms[PlatformAPIServer] == nil || !cfg.Platforms[PlatformAPIServer].Enabled {
 		t.Fatal("nested api_server")
 	}
-	cfg := loadYAML(t, "gateway:\n  api_server:\n    enabled: true\n    port: 8642\n    host: 0.0.0.0\n    key: sekrit\n    model_name: my-hermes\n")
-	if extra := cfg.Platforms[PlatformAPIServer].Extra; extra["port"] != 8642 || extra["host"] != "0.0.0.0" || extra["key"] != "sekrit" || extra["model_name"] != "my-hermes" {
+	cfg := loadYAML(t, "gateway:\n  api_server:\n    enabled: true\n    port: 8642\n    host: 0.0.0.0\n    key: sekrit\n    model_name: my-icebath\n")
+	if extra := cfg.Platforms[PlatformAPIServer].Extra; extra["port"] != 8642 || extra["host"] != "0.0.0.0" || extra["key"] != "sekrit" || extra["model_name"] != "my-icebath" {
 		t.Fatalf("api server extra %v", extra)
 	}
-	cfg = loadYAML(t, "gateway:\n  room_link_url: https://peer.example.test/hermes\n")
-	if cfg.RoomLinkURL == nil || *cfg.RoomLinkURL != "https://peer.example.test/hermes" {
+	cfg = loadYAML(t, "gateway:\n  room_link_url: https://peer.example.test/icebath\n")
+	if cfg.RoomLinkURL == nil || *cfg.RoomLinkURL != "https://peer.example.test/icebath" {
 		t.Fatalf("room link %v", cfg.RoomLinkURL)
 	}
-	if again := mustGatewayConfig(t, cfg.ToDict()); again.RoomLinkURL == nil || *again.RoomLinkURL != "https://peer.example.test/hermes" {
+	if again := mustGatewayConfig(t, cfg.ToDict()); again.RoomLinkURL == nil || *again.RoomLinkURL != "https://peer.example.test/icebath" {
 		t.Fatal("room link roundtrip")
 	}
 	cfg = loadYAML(t, "gateway:\n  streaming:\n    enabled: false\n  timeout: 120\n  api_server:\n    enabled: true\n")

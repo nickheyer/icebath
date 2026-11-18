@@ -6,7 +6,7 @@ import (
 	"testing"
 )
 
-const lsLabel = "ai.icebath.gateway"
+const lsLabel = "app.icebath.gateway"
 
 // Fake monotonic clock that advances only through the sleeps of the code under test
 type lsClock struct {

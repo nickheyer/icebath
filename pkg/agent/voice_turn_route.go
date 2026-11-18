@@ -3,7 +3,6 @@ package agent
 import (
 	"context"
 	"fmt"
-	"log/slog"
 	"maps"
 	"reflect"
 
@@ -16,10 +15,6 @@ import (
 )
 
 const voiceChatTask = "voice_chat"
-
-func voiceTurnRouteLog() *slog.Logger {
-	return slog.Default().With("logger", "agent.voice_turn_route")
-}
 
 // Agent fields a voice route swap saves beside the primary runtime snapshot
 type voiceRouteExtras struct {
@@ -166,7 +161,7 @@ func reinstallVoiceRoute(ctx context.Context, a *AIAgent, st *voiceRouteState) e
 
 // Logs every unused voice route and shows the user one notice per agent
 func warnVoiceRouteOnce(a *AIAgent, target map[string]any, reason string) {
-	voiceTurnRouteLog().Warn(fmt.Sprintf("auxiliary.%s route %s/%s not used: %s; the voice turn runs on %s/%s",
+	pkgLog().Warn(fmt.Sprintf("auxiliary.%s route %s/%s not used: %s; the voice turn runs on %s/%s",
 		voiceChatTask, pyrepr.Str(target["provider"]), pyrepr.Str(target["model"]), reason, a.provider, a.model))
 	if a.warnedVoiceRoute {
 		return
@@ -238,7 +233,7 @@ func beginVoiceTurnRoute(ctx context.Context, a *AIAgent, messages []*state.Mess
 		a.rewritePromptModelIdentity(a.model, a.provider)
 		a.reasoningDisableRejected, a.reasoningFloorRequired, a.reasoningEffortRejected = false, false, false
 		a.turnRouteTask = voiceChatTask
-		voiceTurnRouteLog().Info(fmt.Sprintf("Voice turn routed to %s (%s)", a.model, a.provider))
+		pkgLog().Info(fmt.Sprintf("Voice turn routed to %s (%s)", a.model, a.provider))
 	}
 	if effort != nil {
 		reasoning, err := voiceReasoning(ctx, a, effort)
@@ -338,7 +333,7 @@ func endVoiceTurnRoute(ctx context.Context, a *AIAgent) {
 	a.voiceRouteState = nil
 	a.turnRouteTask = ""
 	if err := restoreVoiceRoute(ctx, a, st); err != nil {
-		voiceTurnRouteLog().Warn("Voice turn route restore failed; the next turn re-resolves the main runtime", "exc_info", err.Error())
+		pkgLog().Warn("Voice turn route restore failed; the next turn re-resolves the main runtime", "exc_info", err.Error())
 		a.fallbackActivated = true
 	}
 	a.reasoningConfig = st.reasoningConfig

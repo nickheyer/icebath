@@ -22,10 +22,11 @@ type compactionMark struct {
 func compactionPublished(t *testing.T) *[]compactionMark {
 	t.Helper()
 	marks := &[]compactionMark{}
-	prevTarget, prevEmit, prevHas, prevInvoke := compactionTargetAvailable, compactionEmitMark, compactionHasHook, compactionInvokeHook
+	prevTarget, prevEmit, prevHas, prevInvoke, prevLive := compactionTargetAvailable, compactionEmitMark, compactionHasHook, compactionInvokeHook, compactionRelayLive
 	t.Cleanup(func() {
-		compactionTargetAvailable, compactionEmitMark, compactionHasHook, compactionInvokeHook = prevTarget, prevEmit, prevHas, prevInvoke
+		compactionTargetAvailable, compactionEmitMark, compactionHasHook, compactionInvokeHook, compactionRelayLive = prevTarget, prevEmit, prevHas, prevInvoke, prevLive
 	})
+	compactionRelayLive = func(context.Context) bool { return true }
 	compactionTargetAvailable = func(context.Context, string, string) (bool, error) { return true, nil }
 	compactionEmitMark = func(_ context.Context, sessionID, name string, data map[string]any, _ string) (bool, error) {
 		*marks = append(*marks, compactionMark{sessionID, name, data})

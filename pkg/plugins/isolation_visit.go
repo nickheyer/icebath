@@ -41,7 +41,7 @@ func isolationVisitSource(rel, source string, modelProvider bool) (*isolationVis
 }
 
 func (v *isolationSourceVisitor) icebath(module string) bool {
-	return IcebathPackages[strings.Split(module, ".")[0]]
+	return IcebathPackages[strings.Split(currentModuleName(module), ".")[0]]
 }
 
 // Dispatches on the node class like ast.NodeVisitor, visiting children in field order

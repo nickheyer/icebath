@@ -402,16 +402,16 @@ func delegationSpillHome(ctx context.Context, env *tools.Env) string {
 
 // Writes the full summary under cache delegation and returns its path, empty when the write fails
 func spillSummaryToFile(ctx context.Context, env *tools.Env, taskIndex any, summary string) string {
-	cacheDir := home.HermesDir(delegationSpillHome(ctx, env), "cache/delegation", "delegation_cache")
+	cacheDir := home.IcebathDir(delegationSpillHome(ctx, env), "cache/delegation", "delegation_cache")
 	if err := os.MkdirAll(cacheDir, 0o777); err != nil {
-		delegateLog().Debug(fmt.Sprintf("Failed to spill subagent summary to file: %s", err))
+		pkgLog().Debug(fmt.Sprintf("Failed to spill subagent summary to file: %s", err))
 		return ""
 	}
 	now := time.Now()
 	stamp := fmt.Sprintf("%s_%06d", now.Format("20060102_150405"), now.Nanosecond()/1000)
 	path := filepath.Join(cacheDir, fmt.Sprintf("subagent-summary-%s-%s.txt", pyrepr.Str(taskIndex), stamp))
 	if err := tools.WriteTextExclusive(path, summary, false, false); err != nil {
-		delegateLog().Debug(fmt.Sprintf("Failed to spill subagent summary to file: %s", err))
+		pkgLog().Debug(fmt.Sprintf("Failed to spill subagent summary to file: %s", err))
 		return ""
 	}
 	return path
@@ -560,7 +560,7 @@ func parentSummaryCharBudget(parent *AIAgent, nSummaries int) (budget int, known
 			if isUserInterruptPanic(r) {
 				panic(r)
 			}
-			delegateLog().Debug("Summary budget computation failed", "error", r)
+			pkgLog().Debug("Summary budget computation failed", "error", r)
 			budget, known = 0, false
 		}
 	}()
@@ -573,7 +573,7 @@ func parentSummaryCharBudget(parent *AIAgent, nSummaries int) (budget int, known
 	}
 	used, ok, err := parentPromptSizeTokens(parent)
 	if err != nil {
-		delegateLog().Debug("Summary budget computation failed", "error", err)
+		pkgLog().Debug("Summary budget computation failed", "error", err)
 		return 0, false
 	}
 	if !ok {
@@ -581,7 +581,7 @@ func parentSummaryCharBudget(parent *AIAgent, nSummaries int) (budget int, known
 	}
 	reserve, err := engineMaxTokens(parent.contextCompressor)
 	if err != nil {
-		delegateLog().Debug("Summary budget computation failed", "error", err)
+		pkgLog().Debug("Summary budget computation failed", "error", err)
 		return 0, false
 	}
 	headroom := contextLength - used - reserve
@@ -674,7 +674,7 @@ func applySummaryBudget(ctx context.Context, results []*pyjson.Object, parent *A
 		if spill == "" {
 			spill = "none"
 		}
-		delegateLog().Debug(fmt.Sprintf("[subagent-%s] summary trimmed %d → ~%d chars (spill=%s)", pyrepr.Str(logIndex), length, limit, spill))
+		pkgLog().Debug(fmt.Sprintf("[subagent-%s] summary trimmed %d → ~%d chars (spill=%s)", pyrepr.Str(logIndex), length, limit, spill))
 	}
 }
 

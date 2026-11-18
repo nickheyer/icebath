@@ -11,7 +11,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/tools"
 )
 
-// Unbounded thread safe FIFO whose put never blocks, the queue.Queue of hermes
+// Unbounded thread safe FIFO whose put never blocks
 type turnQueue struct {
 	mu    sync.Mutex
 	items []any

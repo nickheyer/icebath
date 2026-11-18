@@ -64,8 +64,54 @@ func (c *CanonicalHostedRoomService) controlTask(roomID string, memberID, taskID
 	return current, HostedRoomBinding{RoomID: roomID, GatewayID: gatewayID, AuthorityEpoch: epoch}, nil
 }
 
-// Settles an indeterminate local attempt as cancelled, the canonical receipt committing before the driver write
+// Exact attempt of a room task in the given status, nil when none matches the member, task and generation
+func (c *CanonicalHostedRoomService) attemptIn(roomID string, memberID, taskID, executionGeneration any, status string) (map[string]any, error) {
+	generation, isInt := hostedStrictInt(executionGeneration)
+	member, isMember := memberID.(string)
+	task, isTask := taskID.(string)
+	if !isInt || !isMember || !isTask {
+		return nil, nil
+	}
+	if _, _, err := c.ownedAuthority(roomID); err != nil {
+		return nil, err
+	}
+	candidates, err := c.listTasks(roomID, []string{status})
+	if err != nil {
+		return nil, err
+	}
+	for _, candidate := range candidates {
+		if hrTaskIdentity(candidate).TaskID == task && TaskMemberID(candidate) == member && hrTaskInt(candidate, "execution_generation") == generation {
+			return candidate, nil
+		}
+	}
+	return nil, nil
+}
+
+// Cancels a deferred turn or a peer member's uncertain one, else settles an indeterminate local attempt receipt first
 func (c *CanonicalHostedRoomService) DiscardRoomTask(roomID string, memberID, taskID, executionGeneration any) (map[string]any, error) {
+	waiting, err := c.attemptIn(roomID, memberID, taskID, executionGeneration, "deferred")
+	if err != nil {
+		return nil, err
+	}
+	if member, isMember := memberID.(string); waiting == nil && isMember {
+		peer, err := c.memberIsPeer(roomID, member)
+		if err != nil {
+			return nil, err
+		}
+		if peer {
+			if waiting, err = c.attemptIn(roomID, memberID, taskID, executionGeneration, "indeterminate"); err != nil {
+				return nil, err
+			}
+		}
+	}
+	if waiting != nil {
+		cancelled, err := c.runtime.Cancel(hrTaskIdentity(waiting), "discard:"+pyrepr.Str(executionGeneration))
+		if err != nil {
+			return nil, err
+		}
+		c.runtime.Wakeup()
+		return cancelled, nil
+	}
 	c.policyLock.Lock()
 	defer c.policyLock.Unlock()
 	task, binding, err := c.controlTask(roomID, memberID, taskID, executionGeneration)
@@ -101,7 +147,7 @@ func (c *CanonicalHostedRoomService) DiscardRoomTask(roomID string, memberID, ta
 	return result, nil
 }
 
-// Retries a deferred local attempt whose session is idle, a stalled preparation through the shared service
+// Retries a deferred local attempt whose session is idle, a peer member attempt or stalled preparation through the shared service
 func (c *CanonicalHostedRoomService) RetryRoomTask(roomID string, memberID, taskID, executionGeneration any) (map[string]any, error) {
 	if text, ok := taskID.(string); ok && strings.HasPrefix(text, PrepareRetryTaskPrefix) {
 		var member *string
@@ -113,6 +159,23 @@ func (c *CanonicalHostedRoomService) RetryRoomTask(roomID string, memberID, task
 			generation = &value
 		}
 		return c.HostedRoomService.RetryRoomTask(roomID, text, member, generation)
+	}
+	if member, isMember := memberID.(string); isMember {
+		peer, err := c.memberIsPeer(roomID, member)
+		if err != nil {
+			return nil, err
+		}
+		if peer {
+			text, _ := taskID.(string)
+			generation, isInt := hostedStrictInt(executionGeneration)
+			if text == "" || !isInt || generation < 1 {
+				return nil, runtimeRefusal("invalid_params")
+			}
+			if _, _, err := c.ownedAuthority(roomID); err != nil {
+				return nil, err
+			}
+			return c.HostedRoomService.RetryRoomTask(roomID, text, &member, &generation)
+		}
 	}
 	c.policyLock.Lock()
 	defer c.policyLock.Unlock()
@@ -152,7 +215,7 @@ func (c *CanonicalHostedRoomService) RetryRoomTask(roomID string, memberID, task
 	return c.runtime.requeue(c.runtime.opRequeueDeferred(), task, lease, roomID)
 }
 
-// Room status whose pending actions name the exact local attempts discard and retry fence on
+// Room status whose pending actions name exact local attempts for discard and retry, and peer member attempts for retry
 func (c *CanonicalHostedRoomService) Status(roomID *string) (map[string]any, error) {
 	result, err := c.HostedRoomService.Status(roomID)
 	if err != nil || roomID == nil {
@@ -183,10 +246,11 @@ func (c *CanonicalHostedRoomService) Status(roomID *string) (map[string]any, err
 		if err != nil {
 			return nil, err
 		}
+		kind := "retry"
 		if peer {
+			actions = append(actions, AttemptAction(kind, task))
 			continue
 		}
-		kind := "retry"
 		if status == "indeterminate" {
 			kind = "discard"
 		}

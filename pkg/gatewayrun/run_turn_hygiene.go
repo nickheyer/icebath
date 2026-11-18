@@ -58,7 +58,7 @@ type hygieneAttempt struct {
 	historyReplaced bool
 }
 
-// Idle or ceiling timeout of the hygiene wait, the bare TimeoutError of hermes
+// Idle or ceiling timeout of the hygiene wait
 type hygieneWaitTimeout struct{}
 
 func (hygieneWaitTimeout) Error() string { return "" }
@@ -205,18 +205,18 @@ func (r *GatewayRunner) hmwaHygienePlan(ctx context.Context, hs *hygieneSettings
 			if cooldown, err := db.GetCompressionFailureCooldown(entry.SessionID); err == nil && cooldown != nil {
 				remaining, _ := pyint.Float(cooldown.GetOr("remaining_seconds", 0))
 				if remaining > 0 {
-					runLog().Info(fmt.Sprintf("Session hygiene: skipping compression for %s; previous failure cooldown active for %.1fs", entry.SessionID, remaining))
+					pkgLog().Info(fmt.Sprintf("Session hygiene: skipping compression for %s; previous failure cooldown active for %.1fs", entry.SessionID, remaining))
 					needsCompress = false
 				}
 			}
 		}
 	}
 	if needsCompress && r.sessionHasCompressionInFlight(ctx, sessionKey) {
-		runLog().Info(fmt.Sprintf("Session hygiene: skipping compression for %s; another compression is already in flight", entry.SessionID))
+		pkgLog().Info(fmt.Sprintf("Session hygiene: skipping compression for %s; another compression is already in flight", entry.SessionID))
 		needsCompress = false
 	}
 	if needsCompress {
-		runLog().Info(fmt.Sprintf("Session hygiene: %d messages, ~%s tokens (%s) — auto-compressing (threshold: %d%% of %s = %s tokens)",
+		pkgLog().Info(fmt.Sprintf("Session hygiene: %d messages, ~%s tokens (%s) — auto-compressing (threshold: %d%% of %s = %s tokens)",
 			msgCount, thousands(approxTokens), tokenSource, int(hs.thresholdPct*100), thousands(contextLength), thousands(compressThreshold)))
 	}
 	return hygienePlan{needsCompress: needsCompress, approxTokens: approxTokens, msgCount: msgCount, warnTokenThreshold: warnThreshold}
@@ -269,13 +269,13 @@ func (r *GatewayRunner) hmwaHygieneWaitForSummary(ctx context.Context, attempt *
 		ceiling = agent.EffectiveCeiling(fence, hs.totalCeilingSeconds, attempt.waitStarted)
 		idle := fence.SecondsSinceProgress()
 		if waited >= hs.maxTurnHoldSeconds {
-			runLog().Info(fmt.Sprintf("Session hygiene compression for session %s exceeded the turn-hold budget (%.1fs >= %.1fs) — abandoning inline wait, proceeding without compression this turn",
+			pkgLog().Info(fmt.Sprintf("Session hygiene compression for session %s exceeded the turn-hold budget (%.1fs >= %.1fs) — abandoning inline wait, proceeding without compression this turn",
 				entry.SessionID, waited, hs.maxTurnHoldSeconds))
 			return nil, &hygieneTurnHoldExceeded{msg: fmt.Sprintf("turn-hold budget %.1fs elapsed after %.1fs", hs.maxTurnHoldSeconds, waited)}
 		}
 		if hygieneWaitShouldExtend(idle, hs.timeoutSeconds, waited, ceiling, fence.IsCancelled()) {
 			if slice >= idleLeft-1e-9 {
-				runLog().Info(fmt.Sprintf("Session hygiene compression for session %s still streaming after %.0fs (last progress %.1fs ago) — extending wait (ceiling %.0fs)",
+				pkgLog().Info(fmt.Sprintf("Session hygiene compression for session %s still streaming after %.0fs (last progress %.1fs ago) — extending wait (ceiling %.0fs)",
 					entry.SessionID, waited, idle, ceiling))
 			}
 			continue
@@ -336,7 +336,7 @@ func (r *GatewayRunner) hmwaHygieneNotify(ctx context.Context, source *gateway.S
 		return err
 	}()
 	if err != nil {
-		runLog().Warn(fmt.Sprintf("Failed to deliver %s to user: %s", what, pyrepr.ExceptionMessage(err)))
+		pkgLog().Warn(fmt.Sprintf("Failed to deliver %s to user: %s", what, pyrepr.ExceptionMessage(err)))
 	}
 }
 
@@ -360,7 +360,7 @@ func (r *GatewayRunner) hmwaHygieneOnTurnHold(ctx context.Context, attempt *hygi
 			_, err := done.wait(bg)
 			committed := err == nil && (hygAgent.LastCompactionInPlace() || hygAgent.SessionID() != sid)
 			if committed {
-				runLog().Info(fmt.Sprintf("Session hygiene compression for session %s finished after the turn-hold was released — summary adopted at the watermark-fenced commit boundary (#97963)", sid))
+				pkgLog().Info(fmt.Sprintf("Session hygiene compression for session %s finished after the turn-hold was released — summary adopted at the watermark-fenced commit boundary (#97963)", sid))
 				resetHygieneFailureStreak(bg, r, skey)
 				return
 			}
@@ -381,7 +381,7 @@ func (r *GatewayRunner) hmwaHygieneOnTurnHold(ctx context.Context, attempt *hygi
 	}
 	stampHygieneCompressionProvenance(attempt.agent, "session hygiene compression turn-hold",
 		string(state.ActivityProvenanceAgentCompressionTurnhold), "hygiene compression turn-hold activity stamp failed")
-	runLog().Info(fmt.Sprintf("Session hygiene compression for session %s exceeded turn-hold budget (%.1fs); proceeding without compression this turn%s",
+	pkgLog().Info(fmt.Sprintf("Session hygiene compression for session %s exceeded turn-hold budget (%.1fs); proceeding without compression this turn%s",
 		entry.SessionID, pythread.Monotonic()-attempt.waitStarted, logSuffix))
 	r.hmwaHygieneNotify(ctx, source, attempt.meta, i18n.T(ctx, "gateway.compress.turnhold_deferred", "", nil), "compression-turnhold notice")
 	return nil, holdErr
@@ -416,15 +416,15 @@ func (r *GatewayRunner) hmwaHygieneOnTimeout(ctx context.Context, attempt *hygie
 	}
 	stampHygieneCompressionProvenance(attempt.agent, desc, string(state.ActivityProvenanceAgentCompressionTimeout), "hygiene compression timeout activity stamp failed")
 	if fenceCancelled {
-		runLog().Warn(fmt.Sprintf("Session hygiene compression for session %s was cancelled at the commit fence; continuing without compression", entry.SessionID))
+		pkgLog().Warn(fmt.Sprintf("Session hygiene compression for session %s was cancelled at the commit fence; continuing without compression", entry.SessionID))
 		return nil, timeoutErr
 	}
 	elapsed := pythread.Monotonic() - attempt.waitStarted
 	if totalExhausted {
-		runLog().Warn(fmt.Sprintf("Session hygiene compression for session %s reached its total ceiling after %.1fs (progress observed=%s); continuing without compression",
+		pkgLog().Warn(fmt.Sprintf("Session hygiene compression for session %s reached its total ceiling after %.1fs (progress observed=%s); continuing without compression",
 			entry.SessionID, elapsed, pyrepr.Str(fence.ProgressObserved())))
 	} else {
-		runLog().Warn(fmt.Sprintf("Session hygiene compression for session %s made no progress for %.1fs (total wait %.1fs, ceiling %.1fs); continuing without compression",
+		pkgLog().Warn(fmt.Sprintf("Session hygiene compression for session %s made no progress for %.1fs (total wait %.1fs, ceiling %.1fs); continuing without compression",
 			entry.SessionID, fence.SecondsSinceProgress(), elapsed, hs.totalCeilingSeconds))
 	}
 	r.hmwaHygieneNotify(ctx, source, attempt.meta, hygieneCompressionTimeoutMessage(ctx, totalExhausted), "compression-timeout warning")
@@ -453,21 +453,21 @@ func (r *GatewayRunner) hmwaHygieneAdoptTranscript(ctx context.Context, attempt 
 	inToks := agent.EstimateMessagesTokensRough(ctx, history)
 	outToks := agent.EstimateMessagesTokensRough(ctx, compressed)
 	if rotated && outToks > inToks {
-		runLog().Warn(fmt.Sprintf("Gateway hygiene compression for session %s would grow transcript (~%s -> ~%s tokens); keeping the original transcript unchanged",
+		pkgLog().Warn(fmt.Sprintf("Gateway hygiene compression for session %s would grow transcript (~%s -> ~%s tokens); keeping the original transcript unchanged",
 			entry.SessionID, thousands(inToks), thousands(outToks)))
 		rotated = false
 		compressed = history
 	}
 	if rotated {
 		if !r.AsyncSessionStore().Store().PersistRotatedCompressionChild(ctx, entry.SessionID, newSID, compressed) {
-			runLog().Error(fmt.Sprintf("Session hygiene: failed to persist compressed transcript for rotated session %s → %s; keeping the live entry on the original session so the conversation is not dropped",
+			pkgLog().Error(fmt.Sprintf("Session hygiene: failed to persist compressed transcript for rotated session %s → %s; keeping the live entry on the original session so the conversation is not dropped",
 				entry.SessionID, newSID))
 			rotated, inPlace = false, false
 		} else {
 			entry.SessionID = newSID
 			r.rebindTurnLease(quickKey, runGeneration, newSID)
 			if err := r.AsyncSessionStore().Store().Save(ctx); err != nil {
-				runLog().Warn(fmt.Sprintf("Session hygiene: session index save failed: %s", pyrepr.ExceptionMessage(err)))
+				pkgLog().Warn(fmt.Sprintf("Session hygiene: session index save failed: %s", pyrepr.ExceptionMessage(err)))
 			}
 			r.syncTelegramTopicBinding(ctx, source, entry, "hygiene-compression")
 		}
@@ -480,12 +480,12 @@ func (r *GatewayRunner) hmwaHygieneAdoptTranscript(ctx context.Context, attempt 
 		newTokens = agent.EstimateMessagesTokensRough(ctx, compressed)
 	} else {
 		newCount, newTokens = plan.msgCount, plan.approxTokens
-		runLog().Warn(fmt.Sprintf("Gateway hygiene compression for session %s did not rotate or compact in place (%s) — preserving the original transcript instead of overwriting it with the summary (#21301).",
+		pkgLog().Warn(fmt.Sprintf("Gateway hygiene compression for session %s did not rotate or compact in place (%s) — preserving the original transcript instead of overwriting it with the summary (#21301).",
 			entry.SessionID, hygieneNoCommitReason(hygAgent)))
 	}
-	runLog().Info(fmt.Sprintf("Session hygiene: compressed %d → %d msgs, ~%s → ~%s tokens", plan.msgCount, newCount, thousands(plan.approxTokens), thousands(newTokens)))
+	pkgLog().Info(fmt.Sprintf("Session hygiene: compressed %d → %d msgs, ~%s → ~%s tokens", plan.msgCount, newCount, thousands(plan.approxTokens), thousands(newTokens)))
 	if newTokens >= plan.warnTokenThreshold {
-		runLog().Warn(fmt.Sprintf("Session hygiene: still ~%s tokens after compression", thousands(newTokens)))
+		pkgLog().Warn(fmt.Sprintf("Session hygiene: still ~%s tokens after compression", thousands(newTokens)))
 	}
 	return rotated, inPlace, newCount, newTokens
 }
@@ -522,7 +522,7 @@ func (r *GatewayRunner) hmwaHygieneApplyResult(ctx context.Context, attempt *hyg
 				summaryErr = i18n.T(ctx, "gateway.shared.unknown_error", "", nil)
 			}
 			redacted := tools.RedactSensitiveTextWith(&tools.Env{Home: home.Dir(ctx)}, summaryErr, tools.RedactOptions{Force: true})
-			runLog().Warn("Session hygiene compression aborted: " + redacted)
+			pkgLog().Warn("Session hygiene compression aborted: " + redacted)
 			r.hmwaHygieneNotify(ctx, source, attempt.meta, i18n.T(ctx, "gateway.compress.hygiene_failed", "", nil), "compression-failure warning")
 		}
 		return
@@ -547,14 +547,14 @@ func (r *GatewayRunner) hmwaHygieneCodexCompaction(ctx context.Context, hs *hygi
 		}
 		autoMode = "native"
 		if pyrepr.Truthy(raw) {
-			autoMode = pyrepr.Str(raw)
+			autoMode, _ = agent.CodexAppServerAutoMode(pyrepr.Str(raw))
 		}
 	}
 	outcome, err := runCodexHygieneCompaction(ctx, r, sessionKey, entry.SessionID, autoMode, history, plan.approxTokens, hs.totalCeilingSeconds, hs.failureCooldownSeconds)
 	if err != nil {
 		return err
 	}
-	runLog().Info(fmt.Sprintf("Session hygiene (codex app-server): %s (session=%s, mode=%s, ~%s tokens)", outcome, entry.SessionID, autoMode, thousands(plan.approxTokens)))
+	pkgLog().Info(fmt.Sprintf("Session hygiene (codex app-server): %s (session=%s, mode=%s, ~%s tokens)", outcome, entry.SessionID, autoMode, thousands(plan.approxTokens)))
 	return nil
 }
 
@@ -576,7 +576,7 @@ func (r *GatewayRunner) hmwaHygieneBuildAgent(ctx context.Context, model string,
 	}()
 	if err != nil {
 		sessionRow = nil
-		runLog().Warn(fmt.Sprintf("Session hygiene could not restore the system prompt for session %s: %s. Preserving an empty prompt so the live turn rebuilds it with its configured providers.",
+		pkgLog().Warn(fmt.Sprintf("Session hygiene could not restore the system prompt for session %s: %s. Preserving an empty prompt so the live turn rebuilds it with its configured providers.",
 			entry.SessionID, pyrepr.ExceptionMessage(err)))
 	}
 	checkpointRequired := false
@@ -695,7 +695,7 @@ func (r *GatewayRunner) hmwaRunSessionHygiene(ctx context.Context, event *gatewa
 	case ctx.Err() != nil && errors.Is(err, ctx.Err()):
 		return nil, err
 	default:
-		runLog().Warn("Session hygiene auto-compress failed: " + pyrepr.ExceptionMessage(err))
+		pkgLog().Warn("Session hygiene auto-compress failed: " + pyrepr.ExceptionMessage(err))
 	}
 	if !attempt.historyReplaced {
 		return boundHygienePayload(history, hs, entry), nil
@@ -707,13 +707,13 @@ func (r *GatewayRunner) hmwaRunSessionHygiene(ctx context.Context, event *gatewa
 func boundHygienePayload(history []map[string]any, hs *hygieneSettings, entry *gateway.SessionEntry) []map[string]any {
 	bounded := boundModelInputWithoutHygiene(history, hs.hardMsgLimit)
 	if len(bounded) != len(history) {
-		runLog().Info(fmt.Sprintf("Session hygiene did not land for %s: bounding the model payload to %d of %d messages (hard limit %d) — the stored transcript is unchanged",
+		pkgLog().Info(fmt.Sprintf("Session hygiene did not land for %s: bounding the model payload to %d of %d messages (hard limit %d) — the stored transcript is unchanged",
 			entry.SessionID, len(bounded), len(history), hs.hardMsgLimit))
 	}
 	return bounded
 }
 
-// Whether two row slices are the same list object, the identity check of hermes
+// Whether two row slices are the same list object
 func isSameRowList(a, b []map[string]any) bool {
 	return len(a) == len(b) && len(a) > 0 && &a[0] == &b[0]
 }

@@ -19,7 +19,7 @@ func validManifest() map[string]any {
 	     {"id": "anthropic/claude-opus-4.7", "description": "recommended"},
 	     {"id": "openai/gpt-5.4", "description": ""},
 	     {"id": "openrouter/elephant-alpha", "description": "free"}]},
-	   "nous": {"metadata": {"display_name": "Nous Portal"}, "models": [
+	   "ai-gateway": {"metadata": {"display_name": "Vercel AI Gateway"}, "models": [
 	     {"id": "anthropic/claude-opus-4.7"}, {"id": "moonshotai/kimi-k2.6"}]}}}`
 	data, err := decodeJSONBody([]byte(raw))
 	if err != nil {
@@ -33,7 +33,6 @@ type catalogFixture struct {
 	home            string
 	calls           []string
 	openRouterFetch int
-	nousRecommended int
 }
 
 // Isolated home, reset caches, a fixed config and a recording fetch seam
@@ -48,14 +47,12 @@ func newCatalogFixture(t *testing.T, cfg CatalogConfig) *catalogFixture {
 		cfg = ParseCatalogConfig(nil)
 	}
 	loadCatalogConfig = func(context.Context) CatalogConfig { return cfg }
-	prevOR, prevNous, prevPortal := fetchOpenRouterModelsFn, fetchNousRecommendedModelsFn, resolveNousPortalURLFn
+	prevOR := fetchOpenRouterModelsFn
 	fetchOpenRouterModelsFn = func(context.Context, bool) []CatalogModel { f.openRouterFetch++; return nil }
-	fetchNousRecommendedModelsFn = func(context.Context, string, bool) map[string]any { f.nousRecommended++; return nil }
-	resolveNousPortalURLFn = func(context.Context) string { return "https://portal.nousresearch.com" }
 	t.Cleanup(func() {
 		WaitCatalogRefreshes()
 		loadCatalogConfig, fetchCatalogManifest, catalogClock = prevLoad, prevFetch, prevClock
-		fetchOpenRouterModelsFn, fetchNousRecommendedModelsFn, resolveNousPortalURLFn = prevOR, prevNous, prevPortal
+		fetchOpenRouterModelsFn = prevOR
 		ResetCatalogCache()
 	})
 	return f
@@ -139,10 +136,10 @@ func TestFetchAndCacheWritesDisk(t *testing.T) {
 	}
 }
 
-func TestNetworkFailureReturnsEmptyWhenNoCache(t *testing.T) {
+func TestNetworkFailureReturnsShippedCatalogWhenNoCache(t *testing.T) {
 	f := newCatalogFixture(t, CatalogConfig{})
 	f.serve(func(string) map[string]any { return nil })
-	if got := GetCatalog(f.ctx, true); len(got) != 0 {
+	if got := GetCatalog(f.ctx, true); !reflect.DeepEqual(got, shippedCatalog()) {
 		t.Fatalf("got %v", got)
 	}
 }
@@ -172,8 +169,8 @@ func TestOfflineColdCacheDoesNotRefetchOnEveryCall(t *testing.T) {
 	now := time.Now()
 	catalogClock = func() time.Time { return now }
 	f.serve(func(string) map[string]any { return nil })
-	if len(GetCatalog(f.ctx, false)) != 0 {
-		t.Fatal("expected empty")
+	if !reflect.DeepEqual(GetCatalog(f.ctx, false), shippedCatalog()) {
+		t.Fatal("expected the shipped catalog")
 	}
 	perAttempt := len(f.calls)
 	if perAttempt < 1 {
@@ -201,8 +198,12 @@ func TestModelRefreshRetriesABackedOffCatalog(t *testing.T) {
 	override["providers"].(map[string]any)["openrouter"].(map[string]any)["models"] = []any{map[string]any{"id": "vendor/override-model", "description": ""}}
 	f := newCatalogFixture(t, CatalogConfig{Enabled: true, URL: "http://master", TTLHours: 24, Providers: map[string]any{"openrouter": map[string]any{"url": "http://override"}}})
 	f.serve(func(string) map[string]any { return nil })
-	if CuratedOpenRouterModels(f.ctx) != nil {
-		t.Fatal("expected no rows")
+	var shipped []CatalogModel
+	for _, row := range catalogBlockIDs(catalogBlockOf(shippedCatalog(), "openrouter")) {
+		shipped = append(shipped, CatalogModel{ID: row.id, Description: stringOf(row.entry["description"])})
+	}
+	if got := CuratedOpenRouterModels(f.ctx); len(shipped) == 0 || !reflect.DeepEqual(got, shipped) {
+		t.Fatalf("expected the shipped rows, got %v", got)
 	}
 	f.serve(func(url string) map[string]any {
 		if url == "http://override" {
@@ -265,8 +266,8 @@ func TestUnreachableProviderOverrideIsNotRefetchedOnEveryCall(t *testing.T) {
 }
 
 const (
-	catalogPrimary  = "https://hermes-agent.nousresearch.com/docs/api/model-catalog.json"
-	catalogFallback = "https://raw.githubusercontent.com/NousResearch/hermes-agent/main/website/static/api/model-catalog.json"
+	catalogPrimary  = "https://icebath.app/api/model-catalog.json"
+	catalogFallback = "https://raw.githubusercontent.com/nickheyer/icebath/main/pkg/provider/model-catalog.json"
 )
 
 func TestFallbackChainUsesPrimaryWhenItSucceeds(t *testing.T) {
@@ -316,22 +317,13 @@ func TestCuratedAccessors(t *testing.T) {
 	if got := CuratedOpenRouterModels(f.ctx); !reflect.DeepEqual(got, want) {
 		t.Fatalf("got %v", got)
 	}
-	if got := CuratedNousModels(f.ctx); !reflect.DeepEqual(got, []string{"anthropic/claude-opus-4.7", "moonshotai/kimi-k2.6"}) {
-		t.Fatalf("nous %v", got)
-	}
-	ResetCatalogCache()
-	os.Remove(CatalogCachePath(f.ctx))
-	f.serve(func(string) map[string]any { return nil })
-	if CuratedNousModels(f.ctx) != nil {
-		t.Fatal("expected nil for an empty catalog")
-	}
 }
 
 func manifestWithDefault() map[string]any {
 	m := validManifest()
 	providers := m["providers"].(map[string]any)
 	providers["openrouter"].(map[string]any)["models"].([]any)[1].(map[string]any)["default"] = true
-	providers["nous"].(map[string]any)["models"].([]any)[1].(map[string]any)["default"] = true
+	providers["ai-gateway"].(map[string]any)["models"].([]any)[1].(map[string]any)["default"] = true
 	return m
 }
 
@@ -342,8 +334,8 @@ func TestDefaultModelFromCatalogCache(t *testing.T) {
 	if got := DefaultModelFromCatalogCache(f.ctx, "openrouter"); got != "openai/gpt-5.4" {
 		t.Fatalf("openrouter default %q", got)
 	}
-	if got := DefaultModelFromCatalogCache(f.ctx, "nous"); got != "moonshotai/kimi-k2.6" {
-		t.Fatalf("nous default %q", got)
+	if got := DefaultModelFromCatalogCache(f.ctx, "ai-gateway"); got != "moonshotai/kimi-k2.6" {
+		t.Fatalf("ai-gateway default %q", got)
 	}
 	f.writeDisk(t, validManifest(), time.Time{})
 	if got := DefaultModelFromCatalogCache(f.ctx, "openrouter"); got != "" {
@@ -394,8 +386,8 @@ func TestRefreshCatalogsForcesEverySource(t *testing.T) {
 	if !RefreshCatalogs(f.ctx, nil) {
 		t.Fatal("expected true")
 	}
-	if count(f.calls, "http://master") != 1 || f.openRouterFetch != 1 || f.nousRecommended != 0 {
-		t.Fatalf("calls %v openrouter %d nous %d", f.calls, f.openRouterFetch, f.nousRecommended)
+	if count(f.calls, "http://master") != 1 || f.openRouterFetch != 1 {
+		t.Fatalf("calls %v openrouter %d", f.calls, f.openRouterFetch)
 	}
 	loadCatalogConfig = func(context.Context) CatalogConfig { return CatalogConfig{Enabled: false} }
 	if RefreshCatalogs(f.ctx, nil) {
@@ -405,7 +397,7 @@ func TestRefreshCatalogsForcesEverySource(t *testing.T) {
 
 func TestStaleDiskCatalogServedWithBackgroundRefresh(t *testing.T) {
 	f := newCatalogFixture(t, CatalogConfig{Enabled: true, URL: "https://example/cat.json", TTLHours: 1, Providers: map[string]any{}})
-	stale := map[string]any{"version": json.Number("1"), "providers": map[string]any{"nous": map[string]any{"models": []any{map[string]any{"id": "hermes-4"}}}}}
+	stale := map[string]any{"version": json.Number("1"), "providers": map[string]any{"ai-gateway": map[string]any{"models": []any{map[string]any{"id": "openai/gpt-5.4"}}}}}
 	f.writeDisk(t, stale, time.Now().Add(-2*time.Hour))
 	fresh := validManifest()
 	fetched := make(chan struct{}, 1)
@@ -446,7 +438,7 @@ func TestColdCacheStillBlocksOnFetch(t *testing.T) {
 func TestSeedCatalogCacheFromCheckout(t *testing.T) {
 	f := newCatalogFixture(t, CatalogConfig{})
 	root := t.TempDir()
-	dir := filepath.Join(root, "website", "static", "api")
+	dir := filepath.Join(root, "pkg", "provider")
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		t.Fatal(err)
 	}

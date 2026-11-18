@@ -3,7 +3,6 @@ package agent
 import (
 	"context"
 	"errors"
-	"fmt"
 	"reflect"
 
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
@@ -198,7 +197,7 @@ func compressionLineageOf(ctx context.Context, db any, sessionID string) (map[st
 			}
 			parentValue, ok := row.Get("parent_session_id")
 			if !ok {
-				return nil, fmt.Errorf("KeyError: 'parent_session_id'")
+				return nil, errors.New("a session row has no parent_session_id")
 			}
 			parentID := pyrepr.Str(parentValue)
 			if ids[parentID] || len(ids) >= 200 {

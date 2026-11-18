@@ -141,7 +141,7 @@ func TestBundledProfilesFollowPluginDirOrderAndResolveEveryName(t *testing.T) {
 	if _, ok := GetProviderProfile(context.Background(), "openai-api"); ok {
 		t.Fatal("a registry only id must have no profile")
 	}
-	if ProviderSource(context.Background(), "nous") != "bundled" {
+	if ProviderSource(context.Background(), "openrouter") != "bundled" {
 		t.Fatal("bundled source missing")
 	}
 }

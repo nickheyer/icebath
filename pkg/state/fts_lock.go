@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"log/slog"
 	"math"
 	"math/big"
 	"os"
@@ -233,7 +232,7 @@ func FTSRebuildAdmission(dbPath string, timeoutSeconds *float64, fn func(admitte
 	lockPath := dbPath + ".fts_rebuild.lock"
 	handle, err := os.OpenFile(lockPath, os.O_RDWR|os.O_CREATE|os.O_APPEND, 0o666)
 	if err != nil {
-		slog.Warn(fmt.Sprintf("Could not open FTS rebuild lock %s (%s) — deferring this rebuild "+
+		pkgLog().Warn(fmt.Sprintf("Could not open FTS rebuild lock %s (%s) — deferring this rebuild "+
 			"rather than running it without cross-process authority.", lockPath, err))
 		return fn(false)
 	}
@@ -259,10 +258,10 @@ func FTSRebuildAdmission(dbPath string, timeoutSeconds *float64, fn func(admitte
 			return err
 		}
 		if timeout <= 0 {
-			slog.Info(fmt.Sprintf("FTS rebuild lock %s is busy — deferring this retry "+
+			pkgLog().Info(fmt.Sprintf("FTS rebuild lock %s is busy — deferring this retry "+
 				"(the stale-FTS breadcrumb keeps it retryable). Recorded holder: %s.", lockPath, holder))
 		} else {
-			slog.Warn(fmt.Sprintf("FTS rebuild lock %s held by another process for more than %.0fs — deferring "+
+			pkgLog().Warn(fmt.Sprintf("FTS rebuild lock %s held by another process for more than %.0fs — deferring "+
 				"this rebuild to avoid racing the holder (the stale-FTS breadcrumb keeps it "+
 				"retryable). Recorded holder: %s.", lockPath, timeout, holder))
 		}

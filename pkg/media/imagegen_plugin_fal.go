@@ -22,10 +22,10 @@ func newFalImageGenProvider() *falImageGenProvider {
 			Key: "FAL_KEY", Prompt: "FAL API key", URL: "https://fal.ai/dashboard/keys"}}}
 }
 
-// Whether a FAL key or the managed gateway serves the process profile's selection
+// Whether a FAL key serves the process profile's selection
 func (p *falImageGenProvider) IsAvailable() bool { return p.AvailableIn(context.Background()) }
 
-// Whether a FAL key or the managed gateway serves the selection of the context's profile, false when the check panics
+// Whether a FAL key serves the selection of the context's profile, false when the check panics
 func (p *falImageGenProvider) AvailableIn(ctx context.Context) (ok bool) {
 	defer func() {
 		if recover() != nil {
@@ -125,7 +125,7 @@ func (b imageGenBackendPlugin) Manifest() plugins.Manifest {
 		key = b.name
 	}
 	if author == "" {
-		author = "NousResearch"
+		author = "Icebath"
 	}
 	version := b.version
 	if version == "" {

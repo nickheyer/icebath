@@ -27,15 +27,6 @@ func catalogGroup(group string) []string {
 // Kaomoji spinner frames in catalog order
 func faces() []string { return catalogGroup("content.faces") }
 
-// Progress verb of a tool name, false when the catalog has none
-func toolVerb(name string) (string, bool) {
-	key := "content.verbs." + name
-	if _, known := enCatalog.Strings[key]; !known {
-		return "", false
-	}
-	return tr(key), true
-}
-
 // Thinking verbs the spinner cycles through
 var spinnerVerbs = []string{"pondering", "contemplating", "musing", "cogitating", "ruminating", "deliberating", "mulling", "reflecting", "processing", "reasoning", "analyzing", "computing", "synthesizing", "formulating", "brainstorming"}
 

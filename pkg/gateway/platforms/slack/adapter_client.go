@@ -31,7 +31,7 @@ var getMethods = map[string]bool{
 	"users.info": true,
 }
 
-// Web API client of one workspace sending hermes's call arguments verbatim, slack-go owning uploads
+// Web API client of one workspace sending call arguments verbatim, slack-go owning uploads
 type webClient struct {
 	token     string
 	apiURL    string

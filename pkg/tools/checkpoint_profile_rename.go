@@ -101,7 +101,7 @@ func MigrateProfileCheckpointProjects(env *Env, oldProfileDir, newProfileDir str
 		return result
 	}
 	if _, err := exec.LookPath("git"); err != nil {
-		toolsLogger(env).Warn("Cannot migrate checkpoint projects after profile rename: git not found")
+		envLog(env).Warn("Cannot migrate checkpoint projects after profile rename: git not found")
 		result.Errors = 1
 		return result
 	}
@@ -122,7 +122,7 @@ func MigrateProfileCheckpointProjects(env *Env, oldProfileDir, newProfileDir str
 		}
 		if err := rekeyCheckpointProject(env, store, meta, oldWorkdir, newWorkdir); err != nil {
 			result.Errors++
-			toolsLogger(env).Warn(fmt.Sprintf("Cannot migrate checkpoint project %s -> %s after profile rename: %v", oldWorkdir, newWorkdir, err))
+			envLog(env).Warn(fmt.Sprintf("Cannot migrate checkpoint project %s -> %s after profile rename: %v", oldWorkdir, newWorkdir, err))
 			continue
 		}
 		result.Migrated++

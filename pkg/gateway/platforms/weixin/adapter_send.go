@@ -7,7 +7,6 @@ import (
 	"encoding/base64"
 	"encoding/hex"
 	"fmt"
-	"log/slog"
 	"os"
 	"path/filepath"
 	"strings"
@@ -102,7 +101,7 @@ func (a *WeixinAdapter) Send(ctx context.Context, chatID, content, replyTo strin
 				if ctx.Err() != nil {
 					return ctx.Err()
 				}
-				slog.Warn(fmt.Sprintf("[%s] %s delivery failed for %s: %s", a.Name(), d.label, d.path, errText(err)))
+				pkgLog().Warn(fmt.Sprintf("[%s] %s delivery failed for %s: %s", a.Name(), d.label, d.path, errText(err)))
 			}
 		}
 		var chunks []string
@@ -129,7 +128,7 @@ func (a *WeixinAdapter) Send(ctx context.Context, chatID, content, replyTo strin
 		if ctx.Err() != nil {
 			return gateway.SendResult{}, ctx.Err()
 		}
-		slog.Error(fmt.Sprintf("[%s] send failed to=%s: %s", a.Name(), safeID(chatID), errText(sendErr)))
+		pkgLog().Error(fmt.Sprintf("[%s] send failed to=%s: %s", a.Name(), safeID(chatID), errText(sendErr)))
 		return gateway.SendResult{Success: false, Error: errText(sendErr)}, nil
 	}
 	return gateway.SendResult{Success: true, MessageID: lastMessageID}, nil
@@ -168,7 +167,7 @@ func (a *WeixinAdapter) setTyping(ctx context.Context, chatID string, status int
 		if ctx.Err() != nil {
 			return ctx.Err()
 		}
-		slog.Debug(fmt.Sprintf("[%s] typing %s failed for %s: %s", a.Name(), label, safeID(chatID), errText(err)))
+		pkgLog().Debug(fmt.Sprintf("[%s] typing %s failed for %s: %s", a.Name(), label, safeID(chatID), errText(err)))
 	}
 	return nil
 }
@@ -228,7 +227,7 @@ func (a *WeixinAdapter) sendFileResult(ctx context.Context, chatID, path, captio
 		if ctx.Err() != nil {
 			return gateway.SendResult{}, ctx.Err()
 		}
-		slog.Error(fmt.Sprintf("[%s] %s failed to=%s: %s", a.Name(), label, safeID(chatID), errText(err)))
+		pkgLog().Error(fmt.Sprintf("[%s] %s failed to=%s: %s", a.Name(), label, safeID(chatID), errText(err)))
 		return gateway.SendResult{Success: false, Error: errText(err)}, nil
 	}
 	return gateway.SendResult{Success: true, MessageID: messageID}, nil
@@ -384,7 +383,7 @@ func (a *WeixinAdapter) sendFile(ctx context.Context, chatID, path, caption stri
 			if isSessionExpired(resp, ret, errcode) && contextToken != "" {
 				contextToken = ""
 				a.tokenStore.drop(a.accountID, chatID)
-				slog.Warn(fmt.Sprintf("[%s] session expired for %s; re-sending media without context_token", a.Name(), safeID(chatID)))
+				pkgLog().Warn(fmt.Sprintf("[%s] session expired for %s; re-sending media without context_token", a.Name(), safeID(chatID)))
 				continue
 			}
 			errmsg := pyrepr.Or(resp.Vals["errmsg"], resp.Vals["msg"])

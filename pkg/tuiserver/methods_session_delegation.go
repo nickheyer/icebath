@@ -145,7 +145,7 @@ func appendSpawnTreeIndexObject(sessionDir string, entry *pyjson.Object) {
 		f.Close()
 	}
 	if err != nil {
-		logger().Debug("spawn_tree index append failed: " + err.Error())
+		pkgLog().Debug("spawn_tree index append failed: " + err.Error())
 	}
 }
 

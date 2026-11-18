@@ -241,7 +241,7 @@ func uuidHex() string { return strings.ReplaceAll(uuid.New().String(), "-", "") 
 func requireKey(m map[string]any, key string) any {
 	v, ok := m[key]
 	if !ok {
-		panic(fmt.Sprintf("KeyError: %s", pyrepr.Repr(key)))
+		panic(fmt.Sprintf("the gateway mutation reply has no %s", key))
 	}
 	return v
 }

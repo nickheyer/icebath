@@ -239,7 +239,7 @@ func (h *PluginHost) runStart(ctx context.Context, s *hostStart) {
 	if !current {
 		return
 	}
-	logPlugins.info(fmt.Sprintf("Plugin host started for %s (pid %d)", h.home, spawned.pid()))
+	pkgLog().Info(fmt.Sprintf("Plugin host started for %s (pid %d)", h.home, spawned.pid()))
 	s.resolve(ch, nil, nil)
 }
 
@@ -346,7 +346,7 @@ func (h *PluginHost) onChannelClose(generation int, reason string) {
 	if culprit != "" {
 		suffix = fmt.Sprintf(" while loading plugin '%s'", culprit)
 	}
-	logPlugins.warn(fmt.Sprintf("Plugin host for %s exited (%s)%s", h.home, h.exitReason(), suffix))
+	pkgLog().Warn(fmt.Sprintf("Plugin host for %s exited (%s)%s", h.home, h.exitReason(), suffix))
 	if len(keys) > 0 {
 		go h.restart(keys)
 	}
@@ -360,7 +360,7 @@ func (h *PluginHost) restartRefused(what string) bool {
 	if deaths <= hostRestartBudget {
 		return false
 	}
-	logPlugins.error(fmt.Sprintf("Plugin host for %s died %d times in %.0fs; not restarting it again (%s)", h.home, deaths, hostRestartWindowS, what))
+	pkgLog().Error(fmt.Sprintf("Plugin host for %s died %d times in %.0fs; not restarting it again (%s)", h.home, deaths, hostRestartWindowS, what))
 	return true
 }
 
@@ -383,7 +383,7 @@ func (h *PluginHost) restart(keys []string) {
 		}
 		m.Unload(key)
 		if err := m.loadPlugin(h.baseCtx, loaded.Manifest); err != nil {
-			logPlugins.warn(fmt.Sprintf("Failed to load plugin '%s': %s", loaded.Manifest.Name, loadErrorText(err)))
+			pkgLog().Warn(fmt.Sprintf("Failed to load plugin '%s': %s", loaded.Manifest.Name, loadErrorText(err)))
 		}
 	}
 }
@@ -533,7 +533,7 @@ func (h *PluginHost) LoadTools(ctx context.Context, mf *Manifest, pctx *Context,
 		return "", h.unavailableAsExit(err)
 	}
 	if reply, _ := result.(map[string]any); reply != nil && reply["register_tools"] == false {
-		logPlugins.warn(fmt.Sprintf("Plugin '%s' declares provides_tools %s but its tools.py has no register_tools(ctx); those tools will not be available in CLI/TUI sessions.",
+		pkgLog().Warn(fmt.Sprintf("Plugin '%s' declares provides_tools %s but its tools.py has no register_tools(ctx); those tools will not be available in CLI/TUI sessions.",
 			key, pyListRepr(mf.ProvidesTools)))
 	}
 	_, err = pctx.OnUnload(func() error { return h.unload(key) })
@@ -667,7 +667,7 @@ func (h *PluginHost) unload(key string) error {
 	reply, _ := raw.(map[string]any)
 	errs, _ := reply["errors"].([]any)
 	for _, e := range errs {
-		logPlugins.warn(fmt.Sprintf("Plugin '%s' on_unload callback failed in the plugin host: %s", key, wireStr(e)))
+		pkgLog().Warn(fmt.Sprintf("Plugin '%s' on_unload callback failed in the plugin host: %s", key, wireStr(e)))
 	}
 	return nil
 }
@@ -1361,7 +1361,7 @@ func pumpHostStderr(stream io.Reader, label string) {
 	for {
 		raw, err := r.ReadBytes('\n')
 		if line := pystr.Rstrip(pystr.DecodeUTF8Replace(raw)); line != "" {
-			logPlugins.info(fmt.Sprintf("plugin host [%s]: %s", label, line))
+			pkgLog().Info(fmt.Sprintf("plugin host [%s]: %s", label, line))
 		}
 		if err != nil {
 			return

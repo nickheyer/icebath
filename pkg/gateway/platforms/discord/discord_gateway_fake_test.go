@@ -50,7 +50,7 @@ func (f *fakeGateway) serve(w http.ResponseWriter, r *http.Request) {
 	case path == "/gateway":
 		io.WriteString(w, `{"url":"ws://`+r.Host+`"}`)
 	case path == "/users/@me":
-		io.WriteString(w, `{"id":"999","username":"Hermes","bot":true}`)
+		io.WriteString(w, `{"id":"999","username":"Icebath","bot":true}`)
 	case strings.HasPrefix(path, "/applications/") && r.Method == http.MethodGet:
 		io.WriteString(w, `[]`)
 	case strings.HasPrefix(path, "/applications/"):
@@ -94,7 +94,7 @@ func (f *fakeGateway) socket(w http.ResponseWriter, r *http.Request) {
 			}
 			seq++
 			c.WriteJSON(map[string]any{"op": 0, "t": "READY", "s": seq, "d": map[string]any{"v": 10, "session_id": "s1",
-				"user": map[string]any{"id": "999", "username": "Hermes", "bot": true}, "guilds": []any{},
+				"user": map[string]any{"id": "999", "username": "Icebath", "bot": true}, "guilds": []any{},
 				"application": map[string]any{"id": "999"}, "resume_gateway_url": "ws://" + r.Host}})
 		}
 	}
@@ -139,7 +139,7 @@ func emptySlashRegistry(t *testing.T) {
 	})
 }
 
-// Real adapter for a token, the way hermes builds DiscordAdapter(PlatformConfig(...))
+// Real adapter for a token built from a platform config
 func newConnectAdapter(t *testing.T, extra map[string]any) *DiscordAdapter {
 	t.Helper()
 	t.Setenv("ICEBATH_HOME", t.TempDir())

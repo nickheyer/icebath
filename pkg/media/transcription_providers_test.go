@@ -22,10 +22,10 @@ import (
 func keepSTTSeams(t *testing.T) context.Context {
 	ctx := sttTestEnv(t)
 	post, refresh, mistral, caf, dispatch, transcode := postAudioMultipart, sttRefreshXAICredentials, sttMistralTranscribe, sttConvertCAF, sttDispatchProvider, sttTranscode
-	key, managed, enabled, message := sttResolveOpenAIAudioAPIKey, sttManagedOpenAIAudio, sttManagedNousToolsEnabled, sttNousGatewayUnavailableMessage
+	key := sttResolveOpenAIAudioAPIKey
 	t.Cleanup(func() {
 		postAudioMultipart, sttRefreshXAICredentials, sttMistralTranscribe, sttConvertCAF, sttDispatchProvider, sttTranscode = post, refresh, mistral, caf, dispatch, transcode
-		sttResolveOpenAIAudioAPIKey, sttManagedOpenAIAudio, sttManagedNousToolsEnabled, sttNousGatewayUnavailableMessage = key, managed, enabled, message
+		sttResolveOpenAIAudioAPIKey = key
 	})
 	return ctx
 }
@@ -618,22 +618,19 @@ func TestCommandSttIdleTimeoutPreservesTranscriptionContract(t *testing.T) {
 	}
 }
 
-// No direct, env or managed OpenAI credentials
+// No direct or env OpenAI credentials
 func noOpenAICredentials() {
 	sttResolveOpenAIAudioAPIKey = func(context.Context) string { return "" }
-	sttManagedOpenAIAudio = func(context.Context) (string, string, bool, error) { return "", "", false, nil }
 }
 
 func TestExplicitOpenaiSelectionErrorDispatchReturnsSelectionSpecificError(t *testing.T) {
 	ctx := keepSTTSeams(t)
 	noOpenAICredentials()
-	sttManagedNousToolsEnabled = func() bool { return true }
-	sttNousGatewayUnavailableMessage = func(what string) string { return "managed route down for " + what + "; run `icebath tools`" }
 	withSTTConfig(map[string]any{})
 	hasFasterWhisper = func() bool { return false }
 	r, _ := dispatchSTTProvider(ctx, "/tmp/nonexistent.wav", "none", map[string]any{"provider": "openai"}, "", "")
 	e := r["error"].(string)
-	if r["success"] != false || !strings.Contains(e, "managed route down") || !strings.Contains(e, "icebath tools") || strings.Contains(e, "No STT provider available") {
+	if r["success"] != false || !strings.Contains(e, "VOICE_TOOLS_OPENAI_KEY/OPENAI_API_KEY") || strings.Contains(e, "No STT provider available") {
 		t.Fatalf("result = %v", r)
 	}
 }

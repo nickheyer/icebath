@@ -240,7 +240,7 @@ func entryPointRegistration(ep pyimport.EntryPoint) *ProviderRegistration {
 			return loadProviderFromDir(ctx, dir, opts)
 		}
 		if refusal := plugins.InProcessImportRefusal(ctx, fmt.Sprintf("pip-installed memory provider %s", pyRepr(name)), SourceEntryPoint, nil); refusal != "" {
-			moduleLog(env, "plugins.memory").Warn(refusal)
+			envLog(env).Warn(refusal)
 			return nil, nil
 		}
 		return loadProviderFromEntryPoint(ctx, name, opts)
@@ -250,7 +250,7 @@ func entryPointRegistration(ep pyimport.EntryPoint) *ProviderRegistration {
 
 // Providers the directory and entry point scan finds that no explicit registration already stands for
 func scannedRegistrations(ctx context.Context, env *tools.Env, explicit []*ProviderRegistration) []*ProviderRegistration {
-	log := moduleLog(env, "plugins.memory")
+	log := envLog(env)
 	h := registryHome(ctx, env)
 	seen := map[string]bool{}
 	taken := map[string]bool{}

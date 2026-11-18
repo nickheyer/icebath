@@ -3,7 +3,6 @@ package tools
 import (
 	"context"
 	"fmt"
-	"log/slog"
 	"os"
 	"runtime"
 	"strings"
@@ -300,7 +299,7 @@ func normalizeApprovalMode(mode any) string {
 			}
 		}
 		if normalized != "" {
-			slog.Default().Warn(fmt.Sprintf("Unknown approvals.mode %q — defaulting to 'manual'. Valid values: %s", m, strings.Join(validApprovalModes, ", ")))
+			pkgLog().Warn(fmt.Sprintf("Unknown approvals.mode %q — defaulting to 'manual'. Valid values: %s", m, strings.Join(validApprovalModes, ", ")))
 		}
 	}
 	return "manual"
@@ -349,7 +348,7 @@ func getApprovalTimeout(env *Env) int {
 	}
 	safeCap := int(MaxSafeTimeoutSeconds)
 	if raw > safeCap {
-		slog.Default().Warn(fmt.Sprintf("approvals.timeout=%d exceeds the platform-safe maximum; clamping to %ds", raw, safeCap))
+		pkgLog().Warn(fmt.Sprintf("approvals.timeout=%d exceeds the platform-safe maximum; clamping to %ds", raw, safeCap))
 		return safeCap
 	}
 	return raw

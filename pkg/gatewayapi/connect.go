@@ -30,12 +30,12 @@ func (a *APIServerAdapter) hostPtr() *string {
 // Whether API_SERVER_KEY is present and strong enough to start the listener
 func (a *APIServerAdapter) apiKeyPassesStartupGuard() bool {
 	if a.apiKey == "" {
-		apiLog().Error(fmt.Sprintf("[%s] Refusing to start: API_SERVER_KEY is required for the API server, "+
+		pkgLog().Error(fmt.Sprintf("[%s] Refusing to start: API_SERVER_KEY is required for the API server, "+
 			"including loopback-only binds on %s.", a.Name(), a.hostText()))
 		return false
 	}
 	if !provider.HasUsableSecret(a.apiKey, 16) {
-		apiLog().Error(fmt.Sprintf("[%s] Refusing to start: API_SERVER_KEY is a "+
+		pkgLog().Error(fmt.Sprintf("[%s] Refusing to start: API_SERVER_KEY is a "+
 			"placeholder or too short (<16 chars). This endpoint "+
 			"dispatches terminal-capable agent work — a guessable "+
 			"key is remote code execution. Generate a strong secret "+
@@ -92,7 +92,7 @@ func (a *APIServerAdapter) Connect(ctx context.Context, isReconnect bool) (bool,
 		return a.connectListener(ctx)
 	}()
 	if err != nil {
-		apiLog().Error(fmt.Sprintf("[%s] Failed to start API server: %v", a.Name(), err))
+		pkgLog().Error(fmt.Sprintf("[%s] Failed to start API server: %v", a.Name(), err))
 		return false, nil
 	}
 	return ok, nil
@@ -122,7 +122,7 @@ func (a *APIServerAdapter) connectListener(ctx context.Context) (bool, error) {
 			}
 		}()
 		if strings.ToLower(backend) == "local" {
-			apiLog().Warn(fmt.Sprintf("[%s] API server is network-accessible (%s) AND the "+
+			pkgLog().Warn(fmt.Sprintf("[%s] API server is network-accessible (%s) AND the "+
 				"terminal backend is 'local' (unsandboxed). Agent work "+
 				"dispatched through this endpoint runs as the host user "+
 				"with full terminal/file access. Strongly consider a "+
@@ -152,14 +152,14 @@ func (a *APIServerAdapter) connectListener(ctx context.Context) (bool, error) {
 				"platforms.api_server.port in config.yaml to a "+
 				"different value, then `/platform resume api_server`.", a.port), false)
 		}
-		apiLog().Error(fmt.Sprintf("[%s] Could not bind %s:%d: %v. Set a different port in "+
+		pkgLog().Error(fmt.Sprintf("[%s] Could not bind %s:%d: %v. Set a different port in "+
 			"config.yaml: platforms.api_server.port", a.Name(), a.hostText(), a.port, bindErr))
 		return false, nil
 	}
 	a.MarkConnected(ctx, gateway.ListenerBaseURL(a.hostPtr(), a.port))
 	a.publishRuntimeStatus(ctx)
 	a.trackBackgroundTask(startAgentTask(runCtx, a.heartbeatLoop))
-	apiLog().Info(fmt.Sprintf("[%s] API server listening on http://%s:%d (model: %s)", a.Name(), a.hostText(), a.port, a.modelName))
+	pkgLog().Info(fmt.Sprintf("[%s] API server listening on http://%s:%d (model: %s)", a.Name(), a.hostText(), a.port, a.modelName))
 	return true, nil
 }
 
@@ -182,7 +182,7 @@ func (a *APIServerAdapter) Disconnect(ctx context.Context) error {
 		func() {
 			defer func() {
 				if rec := recover(); rec != nil {
-					apiLog().Debug(fmt.Sprintf("Failed to close response store for %s", a.Name()), "error", rec)
+					pkgLog().Debug(fmt.Sprintf("Failed to close response store for %s", a.Name()), "error", rec)
 				}
 			}()
 			store.Close(ctx)
@@ -203,7 +203,7 @@ func (a *APIServerAdapter) Disconnect(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	apiLog().Info(fmt.Sprintf("[%s] API server stopped", a.Name()))
+	pkgLog().Info(fmt.Sprintf("[%s] API server stopped", a.Name()))
 	return nil
 }
 

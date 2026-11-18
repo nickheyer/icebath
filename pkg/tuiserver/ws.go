@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"log/slog"
 	"net"
 	"runtime"
 	"sync"
@@ -14,8 +13,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
-	"github.com/nickheyer/icebath/pkg/provider"
-	"github.com/nickheyer/icebath/pkg/tuigateway"
+	"github.com/nickheyer/icebath/pkg/tuihost"
 )
 
 // Bounds of one connection, the dispatch queue, the side lane of expensive reads and the wait for a profile start
@@ -35,9 +33,7 @@ var (
 	wsAnswerMethods         = setOf("clarify.lock")
 )
 
-func wsLogger() *slog.Logger { return slog.Default().With("logger", "tui_gateway.ws") }
-
-// Seams of the socket entry, the real functions swapped only where a hermes case installs a fake
+// Seams of the socket entry, the real functions swapped only where a test installs a fake
 var (
 	wsServerDispatch            = Dispatch
 	wsDispatchRequestFn         = wsDispatchRequest
@@ -58,7 +54,7 @@ func answersOpenRequest(req any) bool {
 		if method, _ := m["method"].(string); wsAnswerMethods[method] {
 			return true
 		}
-		return tuigateway.IsResponseFrame(frameObject(m))
+		return tuihost.IsResponseFrame(frameObject(m))
 	}
 	return false
 }
@@ -81,7 +77,7 @@ func (e *SocketDisconnect) Error() string {
 
 // Accepted WebSocket one session connection runs over, as the gateway session route hands it in
 type ServedSocket interface {
-	tuigateway.WSConn
+	tuihost.WSConn
 	Accept(ctx context.Context, subprotocol *string) error
 	// Next text frame, a SocketDisconnect once the peer leaves
 	ReceiveText(ctx context.Context) (string, error)
@@ -136,7 +132,7 @@ func disableNagle(ws ServedSocket) {
 		return
 	}
 	if err := conn.SetNoDelay(true); err != nil {
-		wsLogger().Debug(fmt.Sprintf("ws TCP_NODELAY skip: %s", err))
+		pkgLog().Debug(fmt.Sprintf("ws TCP_NODELAY skip: %s", err))
 		return
 	}
 	keepalive := net.KeepAliveConfig{Enable: true, Idle: 30 * time.Second, Interval: 10 * time.Second, Count: 3}
@@ -144,7 +140,7 @@ func disableNagle(ws ServedSocket) {
 		keepalive = net.KeepAliveConfig{Enable: true, Idle: 30 * time.Second, Interval: -1, Count: -1}
 	}
 	if err := conn.SetKeepAliveConfig(keepalive); err != nil {
-		wsLogger().Debug(fmt.Sprintf("ws TCP_NODELAY skip: %s", err))
+		pkgLog().Debug(fmt.Sprintf("ws TCP_NODELAY skip: %s", err))
 	}
 }
 
@@ -157,7 +153,7 @@ type authorityConn interface {
 }
 
 // Authority connection of the socket, nil when the backend has no authority and requests take the legacy dispatcher
-func wsAuthorityConnection(ws ServedSocket, transport *tuigateway.WSTransport, authIdentity map[string]any, operator bool) (authorityConn, error) {
+func wsAuthorityConnection(ws ServedSocket, transport *tuihost.WSTransport, authIdentity map[string]any, operator bool) (authorityConn, error) {
 	authority := ws.SessionAuthority()
 	if authority == nil {
 		return nil, nil
@@ -168,8 +164,8 @@ func wsAuthorityConnection(ws ServedSocket, transport *tuigateway.WSTransport, a
 	return wsNewAuthorityConnection(authority, transport, authIdentity, operator)
 }
 
-// Builds the authority projection of one socket, the constructor a hermes case replaces with its own connection
-func newWSAuthorityConnection(authority *gateway.SessionAuthority, transport *tuigateway.WSTransport, identity map[string]any, operator bool) (authorityConn, error) {
+// Builds the authority projection of one socket, the constructor a test replaces with its own connection
+func newWSAuthorityConnection(authority *gateway.SessionAuthority, transport *tuihost.WSTransport, identity map[string]any, operator bool) (authorityConn, error) {
 	conn, err := gateway.NewAuthorityConnection(authority, transport, identity, operator)
 	if err != nil {
 		return nil, err
@@ -189,7 +185,7 @@ func principalCapabilities(actor gateway.Principal) []string {
 }
 
 // One request through the authority when attached, else the legacy dispatcher
-func wsDispatchRequest(ctx context.Context, authority authorityConn, req any, reqMethod string, transport *tuigateway.WSTransport) (any, error) {
+func wsDispatchRequest(ctx context.Context, authority authorityConn, req any, reqMethod string, transport *tuihost.WSTransport) (any, error) {
 	if authority == nil {
 		if resp := wsServerDispatch(ctx, req, transport); resp != nil {
 			return resp, nil
@@ -197,6 +193,9 @@ func wsDispatchRequest(ctx context.Context, authority authorityConn, req any, re
 		return nil, nil
 	}
 	request, isDict := req.(*pyjson.Object)
+	if isDict && request != nil && tuihost.IsResponseFrame(request) && tuihost.ResolveResponseOf(request, transport) {
+		return nil, nil
+	}
 	if !isDict || request == nil {
 		return nil, fmt.Errorf("'%s' object has no attribute 'get'", pyrepr.TypeName(req))
 	}
@@ -232,7 +231,7 @@ func startBackendLiveness(ctx context.Context) {
 		func() {
 			defer func() {
 				if failure := recover(); failure != nil {
-					wsLogger().Warn(fmt.Sprintf("%s failed: %v", step.what, failure))
+					pkgLog().Warn(fmt.Sprintf("%s failed: %v", step.what, failure))
 				}
 			}()
 			step.start(ctx)
@@ -260,7 +259,7 @@ type wsConnection struct {
 	ctx       context.Context
 	ws        ServedSocket
 	peer      string
-	transport *tuigateway.WSTransport
+	transport *tuihost.WSTransport
 	authority authorityConn
 
 	mu                                                   sync.Mutex
@@ -297,7 +296,7 @@ func (c *wsConnection) reply(frame any, reason, msg string) error {
 	c.disconnectReason = reason
 	c.sendFailures++
 	c.mu.Unlock()
-	wsLogger().Warn(msg)
+	pkgLog().Warn(msg)
 	return errWSSendFailed
 }
 
@@ -361,7 +360,7 @@ func (c *wsConnection) dispatchOne(req any) error {
 		c.mu.Lock()
 		c.dispatchCrashes++
 		c.mu.Unlock()
-		wsLogger().Error(fmt.Sprintf("ws dispatch crash peer=%s id=%s method=%s: %s", c.peer, pyrepr.Str(reqID), methodText, failureText(crash)))
+		pkgLog().Error(fmt.Sprintf("ws dispatch crash peer=%s id=%s method=%s: %s", c.peer, pyrepr.Str(reqID), methodText, failureText(crash)))
 		return c.reply(wsError(-32603, "internal error", reqID), "send_failed_after_dispatch_crash",
 			fmt.Sprintf("ws dispatch-crash reply send failed peer=%s id=%s method=%s", c.peer, pyrepr.Str(reqID), methodText))
 	}
@@ -717,24 +716,8 @@ func (c *wsConnection) receive() (string, error) {
 	}
 }
 
-// Free tier gateway probes, installed once the first WebSocket session loads the server like the Python handle_ws import
-var freeTierServerHooksOnce sync.Once
-
-// Hands the free tier challenge and setup flows the server broadcast and the stdio channel flag
-func installFreeTierServerHooks() {
-	provider.SetFreeTierGatewayHooks(provider.FreeTierGatewayHooks{
-		OwnsRuntimeLock: gateway.OwnsGatewayRuntimeLock,
-		BroadcastGlobal: func(event string, payload map[string]any) error {
-			tuigateway.BroadcastGlobalEvent(event, payload)
-			return nil
-		},
-		StdioIsRPCChannel: tuigateway.StdioIsRPCChannel,
-	})
-}
-
 // Runs one WebSocket session wire compatible with the stdio entry, the identity the upgrade verified owning its sessions
 func HandleWS(ctx context.Context, ws ServedSocket, authIdentity map[string]any, subprotocol *string, operator bool) error {
-	freeTierServerHooksOnce.Do(installFreeTierServerHooks)
 	if err := loadServerModule(); err != nil {
 		return err
 	}
@@ -774,28 +757,27 @@ func (c *wsConnection) serve(subprotocol *string, authIdentity map[string]any, o
 	}
 	c.disconnectReason = "connected"
 	disableNagle(c.ws)
-	wsLogger().Info(fmt.Sprintf("ws accepted peer=%s", c.peer))
-	c.transport = tuigateway.NewWSTransport(c.ws, c.peer, authIdentity)
+	pkgLog().Info(fmt.Sprintf("ws accepted peer=%s", c.peer))
+	c.transport = tuihost.NewWSTransport(c.ws, c.peer, authIdentity)
 	authority, err := wsAuthorityConnection(c.ws, c.transport, authIdentity, operator)
 	if err != nil {
 		return err
 	}
 	c.authority = authority
 	skinPayload := wsResolveSkin(c.ctx)
-	readyPayload := pyjson.ObjectOf("skin", pyjsonValue(skinPayload), "change_events", true, "heartbeat", true,
-		"replay_epoch", tuigateway.ReplayEpoch())
+	readyPayload := map[string]any{"skin": skinPayload, "change_events": true, "heartbeat": true, "replay_epoch": tuihost.ReplayEpoch()}
 	if authority != nil {
-		readyPayload.Set("session_authority", true)
+		readyPayload["session_authority"] = true
 	}
 	readyOK := c.transport.WriteAsync(pyjson.ObjectOf("jsonrpc", "2.0", "method", "event",
-		"params", pyjson.ObjectOf("type", "gateway.ready", "payload", readyPayload)))
+		"params", pyjson.ObjectOf("type", "gateway.ready", "payload", tuihost.SealPayload("gateway.ready", readyPayload))))
 	if readyOK {
 		wsEnsureSkinWatcher(c.ctx)
 		wsEnsureLeaseWatcher()
 		if authority != nil {
 			c.transport.SkinHome = skinHomeFor(c.ctx, authority.Actor().ProfileID)
 		}
-		tuigateway.RegisterLiveTransport(c.transport)
+		tuihost.RegisterLiveTransport(c.transport)
 	}
 	wsStartBackendLiveness(c.ctx)
 	if !readyOK {
@@ -803,7 +785,7 @@ func (c *wsConnection) serve(subprotocol *string, authIdentity map[string]any, o
 		c.disconnectReason = "ready_send_failed"
 		c.sendFailures++
 		c.mu.Unlock()
-		wsLogger().Error(fmt.Sprintf("ws ready frame send failed peer=%s", c.peer))
+		pkgLog().Error(fmt.Sprintf("ws ready frame send failed peer=%s", c.peer))
 		return nil
 	}
 	c.dispatcherDone = make(chan struct{})
@@ -837,7 +819,7 @@ func (c *wsConnection) serve(subprotocol *string, authIdentity map[string]any, o
 			c.mu.Lock()
 			c.disconnectReason = "receive_failed"
 			c.mu.Unlock()
-			wsLogger().Error(fmt.Sprintf("ws receive failed peer=%s: %s", c.peer, err))
+			pkgLog().Error(fmt.Sprintf("ws receive failed peer=%s: %s", c.peer, err))
 			return nil
 		}
 		line := pystr.Strip(raw)
@@ -857,7 +839,7 @@ func (c *wsConnection) serve(subprotocol *string, authIdentity map[string]any, o
 			if len(preview) > wsLogPayloadPreview {
 				preview = preview[:wsLogPayloadPreview]
 			}
-			wsLogger().Warn(fmt.Sprintf("ws parse error peer=%s index=%d error=%s payload=%s", c.peer, index, err, pyrepr.Repr(string(preview))))
+			pkgLog().Warn(fmt.Sprintf("ws parse error peer=%s index=%d error=%s payload=%s", c.peer, index, err, pyrepr.Repr(string(preview))))
 			if err := c.reply(wsError(-32700, "parse error", nil), "send_failed_after_parse_error",
 				fmt.Sprintf("ws parse-error reply send failed peer=%s", c.peer)); err != nil {
 				return err
@@ -886,7 +868,7 @@ func (c *wsConnection) teardown() error {
 			_ = c.put(wsStopSentinel{})
 			<-c.dispatcherDone
 			if failure := c.dispatcherFailure; failure != nil && failure != errWSSendFailed {
-				wsLogger().Error(fmt.Sprintf("ws dispatcher failed peer=%s: %s", c.peer, failureText(failure)))
+				pkgLog().Error(fmt.Sprintf("ws dispatcher failed peer=%s: %s", c.peer, failureText(failure)))
 			}
 		}
 	}
@@ -900,12 +882,12 @@ func (c *wsConnection) teardown() error {
 	}
 	reaped, detached := 0, 0
 	if c.transport != nil {
-		tuigateway.UnregisterLiveTransport(c.transport)
+		tuihost.UnregisterLiveTransport(c.transport)
 		c.transport.Close()
 		func() {
 			defer func() {
 				if failure := recover(); failure != nil {
-					wsLogger().Error(fmt.Sprintf("ws wake-word teardown failed peer=%s: %s", c.peer, failureText(failure)))
+					pkgLog().Error(fmt.Sprintf("ws wake-word teardown failed peer=%s: %s", c.peer, failureText(failure)))
 				}
 			}()
 			wsReleaseWakeForTransport(c.transport)
@@ -913,7 +895,7 @@ func (c *wsConnection) teardown() error {
 		func() {
 			defer func() {
 				if failure := recover(); failure != nil {
-					wsLogger().Error(fmt.Sprintf("ws setup teardown failed peer=%s: %s", c.peer, failureText(failure)))
+					pkgLog().Error(fmt.Sprintf("ws setup teardown failed peer=%s: %s", c.peer, failureText(failure)))
 				}
 			}()
 			wsReleaseSetupForTransport(c.transport)
@@ -921,18 +903,18 @@ func (c *wsConnection) teardown() error {
 		func() {
 			defer func() {
 				if failure := recover(); failure != nil {
-					wsLogger().Error(fmt.Sprintf("ws transport teardown failed peer=%s: %s", c.peer, failureText(failure)))
+					pkgLog().Error(fmt.Sprintf("ws transport teardown failed peer=%s: %s", c.peer, failureText(failure)))
 				}
 			}()
 			reaped, detached = wsCloseSessionsForTransport(ctx, c.transport, "ws_disconnect")
 		}()
 	}
 	if err := c.ws.Close(1000); err != nil {
-		wsLogger().Debug(fmt.Sprintf("ws close failed peer=%s error=%s", c.peer, err))
+		pkgLog().Debug(fmt.Sprintf("ws close failed peer=%s error=%s", c.peer, err))
 	}
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	wsLogger().Info(fmt.Sprintf("ws closed peer=%s reason=%s messages=%d parse_errors=%d "+
+	pkgLog().Info(fmt.Sprintf("ws closed peer=%s reason=%s messages=%d parse_errors=%d "+
 		"dispatch_crashes=%d send_failures=%d reaped_sessions=%d detached_sessions=%d",
 		c.peer, c.disconnectReason, c.messages, c.parseErrors, c.dispatchCrashes, c.sendFailures, reaped, detached))
 	return nil

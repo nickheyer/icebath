@@ -10,7 +10,7 @@ import (
 	"testing"
 )
 
-// Points the home at a temp dir and resets the per engagement log flags, the hermes fixture
+// Points the home at a temp dir and resets the per engagement log flags, the test fixture
 func estopHome(t *testing.T) string {
 	t.Helper()
 	dir := t.TempDir()
@@ -110,7 +110,7 @@ func TestIsEngagedFailsSafeOnStatError(t *testing.T) {
 
 func TestProfileGatewayHonorsCanonicalRootEstop(t *testing.T) {
 	ctx := context.Background()
-	root := filepath.Join(t.TempDir(), "hermes-root")
+	root := filepath.Join(t.TempDir(), "icebath-root")
 	profile := filepath.Join(root, "profiles", "fleet-analyst")
 	if err := os.MkdirAll(profile, 0o755); err != nil {
 		t.Fatal(err)

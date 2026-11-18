@@ -119,7 +119,7 @@ func profileLifecycleVerb(ctx context.Context, r *GatewayRunner, loop gateway.Ev
 			return pyjson.ObjectOf("pending", true, "served_profiles", namesList(r.servedProfileNames())), nil
 		}
 		if err != nil {
-			reconcileLog().Warn("Profile lifecycle request failed", "exc_info", err)
+			pkgLog().Warn("Profile lifecycle request failed", "exc_info", err)
 			return pyjson.ObjectOf("error", excText(err)), nil
 		}
 		return result, nil
@@ -195,7 +195,7 @@ func migrateProfileIdentityVerb(ctx context.Context, r *GatewayRunner) gateway.C
 			return pyjson.ObjectOf("ok", true, "rekeyed", int64(rekeyed), "db", dbCounts), nil
 		}()
 		if err != nil {
-			reconcileLog().Warn(fmt.Sprintf("Profile identity migration failed for %s->%s: %s", pyrepr.Repr(old), pyrepr.Repr(fresh), err))
+			pkgLog().Warn(fmt.Sprintf("Profile identity migration failed for %s->%s: %s", pyrepr.Repr(old), pyrepr.Repr(fresh), err))
 			return pyjson.ObjectOf("ok", false, "error", excText(err)), nil
 		}
 		return answer, nil
@@ -231,7 +231,7 @@ func purgeProfileIdentityVerb(ctx context.Context, r *GatewayRunner) gateway.Con
 			return pyjson.ObjectOf("ok", true, "dropped", int64(dropped), "db", dbCounts), nil
 		}()
 		if err != nil {
-			reconcileLog().Warn(fmt.Sprintf("Profile identity purge failed for %s: %s", pyrepr.Repr(name), err))
+			pkgLog().Warn(fmt.Sprintf("Profile identity purge failed for %s: %s", pyrepr.Repr(name), err))
 			return pyjson.ObjectOf("ok", false, "error", excText(err)), nil
 		}
 		return answer, nil

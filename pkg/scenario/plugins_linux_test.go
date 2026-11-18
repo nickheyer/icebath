@@ -18,7 +18,6 @@ func pluginListed(s *S, list, name string) bool {
 // Bundled plugins are listed, then one is enabled and disabled through the allow list of config.yaml
 func TestScenarioPluginsListEnableDisable(t *testing.T) {
 	s := Start(t, Setup{})
-	s.Finding("SF-2")
 	s.Run("plugins", "list").Exit(0).Has("Plugins", "Name", "Status", "Version", "Description", "Source", "disk-cleanup", "not enabled", "bundled")
 
 	s.Run("plugins", "enable", "disk-cleanup").Exit(0).Has("Plugin disk-cleanup enabled.")

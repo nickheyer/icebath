@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"log/slog"
 	"math"
 	"path/filepath"
 	"reflect"
@@ -28,8 +27,6 @@ var (
 	delegateRoles          = map[string]bool{"leaf": true, "orchestrator": true}
 	delegateControlActions = map[string]bool{"list": true, "steer": true, "stop": true}
 )
-
-func delegateLog() *slog.Logger { return slog.Default().With("logger", "tools.delegate_tool") }
 
 // Python ValueError of the delegation family, the refusal a caller turns into a tool error string
 type delegateValueError struct{ msg string }
@@ -110,12 +107,12 @@ func parentLiveHome(parent *AIAgent) string {
 		if p := sessionStorePath(parent.sessionDB); p != "" {
 			return filepath.Dir(p)
 		}
-		delegateLog().Debug("delegate_task: parent _session_db.db_path is '' (not a str/Path); " +
+		pkgLog().Debug("delegate_task: parent _session_db.db_path is '' (not a str/Path); " +
 			"live-transcript home pinning skipped, falling back to ambient " +
 			"ICEBATH_HOME resolve (transcripts may land in a different profile, #91996)")
 		return ""
 	}
-	delegateLog().Warn("delegate_task: parent agent exposes no _session_db; live-transcript " +
+	pkgLog().Warn("delegate_task: parent agent exposes no _session_db; live-transcript " +
 		"home pinning skipped, falling back to ambient ICEBATH_HOME resolve " +
 		"(transcripts may land in a different profile, #91996)")
 	return ""
@@ -132,7 +129,7 @@ func normalizeDelegateRole(r any) string {
 		norm = strings.ToLower(pystr.Strip(s))
 	}
 	if !delegateRoles[norm] {
-		delegateLog().Warn(fmt.Sprintf("Unknown delegate_task role=%s, coercing to 'leaf'", pyrepr.Repr(r)))
+		pkgLog().Warn(fmt.Sprintf("Unknown delegate_task role=%s, coercing to 'leaf'", pyrepr.Repr(r)))
 		return "leaf"
 	}
 	return norm
@@ -148,7 +145,7 @@ func applyChildCacheTTL(child *AIAgent) {
 // Validated delegation compression cap, nil when unset or not a token count of at least 16000
 func childCompressionCapTokens(raw any) (*int, error) {
 	invalid := func() (*int, error) {
-		delegateLog().Warn(fmt.Sprintf("delegation.compression_threshold_tokens=%s is not a token count >= %d; ignoring it "+
+		pkgLog().Warn(fmt.Sprintf("delegation.compression_threshold_tokens=%s is not a token count >= %d; ignoring it "+
 			"(children keep the ratio trigger).", pyrepr.Repr(raw), childCompressionCapMin))
 		return nil, nil
 	}
@@ -320,7 +317,7 @@ func settleRefusedTranscripts(refused []*pyjson.Object, liveDelegID string, live
 		idx, _ := raw.(int)
 		if idx < len(liveWriters) && liveWriters[idx] != nil {
 			if err := liveWriters[idx].Finalize(entry); err != nil {
-				delegateLog().Debug("Live transcript finalize failed", "error", err)
+				pkgLog().Debug("Live transcript finalize failed", "error", err)
 			}
 		}
 	}
@@ -397,7 +394,7 @@ func delegateTask(ctx context.Context, parent *AIAgent, kwargs map[string]any) (
 		defaultMaxIter = delegateDefaultMaxIterations
 	}
 	if mi := kwargs["max_iterations"]; mi != nil && fmt.Sprint(mi) != fmt.Sprint(defaultMaxIter) {
-		delegateLog().Debug(fmt.Sprintf("delegate_task: ignoring caller-supplied max_iterations=%v; using delegation.max_iterations=%v from config",
+		pkgLog().Debug(fmt.Sprintf("delegate_task: ignoring caller-supplied max_iterations=%v; using delegation.max_iterations=%v from config",
 			mi, defaultMaxIter))
 	}
 	maxChildren := tools.MaxConcurrentChildren(ctx)

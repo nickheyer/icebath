@@ -45,6 +45,9 @@ func NewEnvRequirement(name, description string) EnvRequirement {
 }
 
 // Text of a manifest key, default when the value is falsy
+// Version floor key distribution manifests written before the rename carry, read when icebath_requires is unset
+const RetiredRequiresKey = "hermes_requires"
+
 func manifestStr(data map[string]any, key, def string) string {
 	v := data[key]
 	if !pyTruthy(v) {
@@ -91,7 +94,7 @@ type DistributionManifest struct {
 	Name              string
 	Version           string
 	Description       string
-	HermesRequires    string
+	IcebathRequires   string
 	Author            string
 	License           string
 	EnvRequires       []EnvRequirement
@@ -130,7 +133,7 @@ func DistributionManifestFromDict(data any) (*DistributionManifest, error) {
 	}
 	out := &DistributionManifest{
 		Name: name, Version: manifestStr(m, "version", "0.1.0"), Description: manifestStr(m, "description", ""),
-		HermesRequires: manifestStr(m, "hermes_requires", ""), Author: manifestStr(m, "author", ""),
+		IcebathRequires: manifestStr(m, "icebath_requires", manifestStr(m, RetiredRequiresKey, "")), Author: manifestStr(m, "author", ""),
 		License: manifestStr(m, "license", ""),
 	}
 	for _, e := range envList {
@@ -160,7 +163,7 @@ func (d *DistributionManifest) ToDict() map[string]any {
 		}
 	}
 	add("description", d.Description, d.Description != "")
-	add("hermes_requires", d.HermesRequires, d.HermesRequires != "")
+	add("icebath_requires", d.IcebathRequires, d.IcebathRequires != "")
 	add("author", d.Author, d.Author != "")
 	add("license", d.License, d.License != "")
 	env := make([]any, len(d.EnvRequires))

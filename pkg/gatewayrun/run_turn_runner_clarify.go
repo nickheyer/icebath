@@ -124,7 +124,7 @@ func (t *TurnRunner) askClarifyQuestion(ctx context.Context, question string, ch
 		func() {
 			defer func() {
 				if rec := recover(); rec != nil {
-					runLog().Debug("Stream-consumer flush before clarify prompt failed", "error", rec)
+					pkgLog().Debug("Stream-consumer flush before clarify prompt failed", "error", rec)
 				}
 			}()
 			sc.FlushPendingSync(3.0)
@@ -149,7 +149,7 @@ func (t *TurnRunner) askClarifyQuestion(ctx context.Context, question string, ch
 			func() {
 				defer func() {
 					if rec := recover(); rec != nil {
-						runLog().Debug("request_reopen_seed after clarify answer failed", "error", rec)
+						pkgLog().Debug("request_reopen_seed after clarify answer failed", "error", rec)
 					}
 				}()
 				sc.RequestReopenSeed()

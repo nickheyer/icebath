@@ -18,7 +18,7 @@ func outputSchemaAddress() map[string]any {
 	}
 }
 
-// Runs the real single child path over a canned child the way the hermes _run helper does
+// Runs the real single child path over a canned child the way the run helper does
 func runSchemaChild(t *testing.T, schema any, responses ...string) (*pyjson.Object, *cannedConversation) {
 	t.Helper()
 	env := delegationTestEnv(t, 0, false)

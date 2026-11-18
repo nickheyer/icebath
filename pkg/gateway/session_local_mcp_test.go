@@ -42,7 +42,7 @@ func TestValidateEditor(t *testing.T) {
 		{"acp", []any{}, "editor", "must be a mapping, got list"},
 		{"acp", map[string]any{"zeta": 1, "alpha": 2}, "editor.alpha", "unknown editor key"},
 		{"acp", map[string]any{"edit_approval_policy": "auto"}, "editor.edit_approval_policy", "must be 'ask': every edit is approved one at a time"},
-		{"acp", map[string]any{"mcp_servers": "x"}, "editor.mcp_servers", "must be a list, got str"},
+		{"acp", map[string]any{"mcp_servers": "x"}, "editor.mcp_servers", "must be a list, got text"},
 		{"acp", map[string]any{"mcp_servers": []any{stdio, stdio}}, "editor.mcp_servers", "unusable server spec: duplicate server"},
 	} {
 		reason, field, detail := storeRefusal(t, validateEditor(tc.source, tc.editor))
@@ -58,13 +58,13 @@ func TestValidateServers(t *testing.T) {
 		servers any
 		detail  string
 	}{
-		{map[string]any{}, "must be a list, got dict"},
+		{map[string]any{}, "must be a list, got a mapping"},
 		{many, "at most 16 servers, got 17"},
 		{[]any{map[string]any{"name": strings.Repeat("x", 70000)}}, "the serialized server list exceeds 65536 bytes"},
-		{[]any{"spec"}, "unusable server spec: AttributeError"},
-		{[]any{map[string]any{"type": "ws"}}, "unusable server spec: KeyError"},
-		{[]any{map[string]any{"type": nil}}, "unusable server spec: KeyError"},
-		{[]any{map[string]any{"type": []any{}}}, "unusable server spec: TypeError"},
+		{[]any{"spec"}, "unusable server spec: a server spec must be a mapping"},
+		{[]any{map[string]any{"type": "ws"}}, "unusable server spec: type must be stdio, http or sse"},
+		{[]any{map[string]any{"type": nil}}, "unusable server spec: type must be stdio, http or sse"},
+		{[]any{map[string]any{"type": []any{}}}, "unusable server spec: type must be stdio, http or sse"},
 		{[]any{map[string]any{}}, "unusable server spec: args: missing; command: missing; env: missing; name: missing"},
 		{[]any{map[string]any{"name": "a", "command": 3, "args": []any{"ok", 4}, "env": []any{"E", map[string]any{"name": "N"}}, "_meta": 1}},
 			"unusable server spec: _meta: dict_type; args.1: string_type; command: string_type; env.0: model_type; env.1.value: missing"},

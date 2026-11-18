@@ -329,7 +329,7 @@ func restoreWindowsGatewayService(ctx context.Context, name string, timeout floa
 func windowsColdStartPlan(ctx context.Context) map[string]any {
 	installed, err := gateway.WindowsIsInstalled(ctx)
 	if err != nil {
-		updateLog.DebugContext(ctx, fmt.Sprintf("Could not check Windows gateway autostart state before update: %s", launchErrorText(err)))
+		pkgLog().DebugContext(ctx, fmt.Sprintf("Could not check Windows gateway autostart state before update: %s", launchErrorText(err)))
 		return nil
 	}
 	if !installed {
@@ -497,7 +497,7 @@ func requestSocketPauses(ctx context.Context, runningPids []int, processes map[i
 		acks = append(acks, plain)
 		if !requested && onRequest != nil {
 			if err := onRequest(pid); err != nil {
-				updateLog.DebugContext(ctx, fmt.Sprintf("Socket pause unavailable for gateway %d: %s", pid, launchErrorText(err)))
+				pkgLog().DebugContext(ctx, fmt.Sprintf("Socket pause unavailable for gateway %d: %s", pid, launchErrorText(err)))
 			}
 		}
 	}
@@ -813,7 +813,7 @@ func refreshWindowsGatewayLaunchers(ctx context.Context, w io.Writer) {
 		return err
 	}()
 	if err != nil {
-		updateLog.DebugContext(ctx, fmt.Sprintf("Could not refresh Windows gateway launchers after update: %s", launchErrorText(err)))
+		pkgLog().DebugContext(ctx, fmt.Sprintf("Could not refresh Windows gateway launchers after update: %s", launchErrorText(err)))
 	}
 }
 
@@ -987,7 +987,7 @@ func resumeWindowsServices(ctx context.Context, w io.Writer, token map[string]an
 			return nil
 		}()
 		if err != nil {
-			updateLog.WarnContext(ctx, fmt.Sprintf("Could not restart Windows gateway service %s after update: %s", name, launchErrorText(err)))
+			pkgLog().WarnContext(ctx, fmt.Sprintf("Could not restart Windows gateway service %s after update: %s", name, launchErrorText(err)))
 			fmt.Fprintf(w, "  ⚠ Could not restart Windows gateway service: %s\n", name)
 			failed = append(failed, name)
 		}
@@ -1013,7 +1013,7 @@ func relaunchPausedGateways(ctx context.Context, paused map[string]any, unmapped
 	for _, profile := range sortedKeysOf(paused) {
 		oldPid, ok := pyIntValue(paused[profile])
 		if !ok {
-			updateLog.DebugContext(ctx, fmt.Sprintf("Could not restart Windows gateway profile %s after update: %s", profile, "invalid pid"))
+			pkgLog().DebugContext(ctx, fmt.Sprintf("Could not restart Windows gateway profile %s after update: %s", profile, "invalid pid"))
 			continue
 		}
 		if tryCall(ctx, func() (bool, error) { return winLaunchDetachedRestart(ctx, profile, int(oldPid)) }, false,
@@ -1093,7 +1093,7 @@ func unmappedReadyFilter(ctx context.Context, entry map[string]any, taken map[in
 		if liveHome == "" {
 			return false, nil
 		}
-		same, err := gateway.SameHermesHome(liveHome, pyrepr.Str(servedHome))
+		same, err := gateway.SameIcebathHome(liveHome, pyrepr.Str(servedHome))
 		if err != nil || !same {
 			return false, err
 		}
@@ -1209,7 +1209,7 @@ func pollUntilReady(ctx context.Context, targets []readyTarget, deadline float64
 		for _, target := range pending {
 			pids, err := target.Probe(scan)
 			if err != nil {
-				updateLog.WarnContext(ctx, fmt.Sprintf("Could not verify Windows gateway %s after update: %s", target.Key, launchErrorText(err)))
+				pkgLog().WarnContext(ctx, fmt.Sprintf("Could not verify Windows gateway %s after update: %s", target.Key, launchErrorText(err)))
 				failed[target.Key] = true
 				continue
 			}

@@ -6,7 +6,6 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
-	"log/slog"
 	"maps"
 	"reflect"
 	"regexp"
@@ -39,8 +38,6 @@ var (
 	sessionDBAppendBatch      = SessionStore.AppendMessagesBatch
 	sessionDBFlushTokenCounts = SessionStore.FlushTokenCountsChecked
 )
-
-func sessionPersistenceLog() *slog.Logger { return slog.Default().With("logger", "run_agent") }
 
 // Identity of a row for the flush, the map header for dicts and the pointer for live messages
 func rowIdentity(v any) any {
@@ -313,7 +310,7 @@ func (a *AIAgent) PersistActiveSessionBeforeClose(ctx context.Context, readCLIHi
 	}
 	if a.cachedSystemPrompt == "" {
 		if err := restoreOrBuildSystemPrompt(ctx, a, nil, history); err != nil {
-			sessionPersistenceLog().Debug("Could not build system prompt during CLI close", "error", err)
+			pkgLog().Debug("Could not build system prompt during CLI close", "error", err)
 			return false
 		}
 	}
@@ -321,7 +318,7 @@ func (a *AIAgent) PersistActiveSessionBeforeClose(ctx context.Context, readCLIHi
 		return false
 	}
 	if err := a.ensureDBSession(); err != nil {
-		sessionPersistenceLog().Debug(fmt.Sprintf("Could not persist active CLI session before close: %s", err))
+		pkgLog().Debug(fmt.Sprintf("Could not persist active CLI session before close: %s", err))
 		return false
 	}
 	for len(rows) > 0 {
@@ -370,7 +367,7 @@ func (a *AIAgent) PersistActiveSessionBeforeClose(ctx context.Context, readCLIHi
 	a.setSessionMessages(persisted)
 	if a.sessionDB != nil {
 		if _, err := sessionDBFlushTokenCounts(a.sessionDB, 5.0); err != nil {
-			sessionPersistenceLog().Debug(fmt.Sprintf("Could not persist active CLI session before close: %s", err))
+			pkgLog().Debug(fmt.Sprintf("Could not persist active CLI session before close: %s", err))
 			return false
 		}
 	}
@@ -549,10 +546,10 @@ func syncRewrittenToolRowsDicts(a *AIAgent, batch []map[string]any, contentsBefo
 		var stale *state.PruneRowStaleError
 		var leaseLost *state.SessionTurnLeaseLostError
 		if errors.As(err, &unresolved) || errors.As(err, &stale) || errors.As(err, &leaseLost) {
-			sessionPersistenceLog().Info(fmt.Sprintf("Tool-result rewrite not persisted; the stored row keeps the full body: %s", err))
+			pkgLog().Info(fmt.Sprintf("Tool-result rewrite not persisted; the stored row keeps the full body: %s", err))
 			return 0
 		}
-		sessionPersistenceLog().Warn(fmt.Sprintf("Tool-result rewrite not persisted: %s", err))
+		pkgLog().Warn(fmt.Sprintf("Tool-result rewrite not persisted: %s", err))
 		return 0
 	}
 	for i, msg := range changedMsgs {
@@ -676,7 +673,7 @@ func dbFlushAdoptCompressionTip(a *AIAgent) bool {
 	ctx := a.homeContext()
 	tip, err := a.sessionDB.GetCompressionTip(ctx, oldID)
 	if err != nil {
-		sessionPersistenceLog().Warn(fmt.Sprintf("compression tip lookup failed for %s: %s", oldID, err))
+		pkgLog().Warn(fmt.Sprintf("compression tip lookup failed for %s: %s", oldID, err))
 		return false
 	}
 	if tip == "" || tip == oldID {
@@ -689,7 +686,7 @@ func dbFlushAdoptCompressionTip(a *AIAgent) bool {
 	if ended, _ := tipRow.Get("ended_at"); ended != nil {
 		return false
 	}
-	sessionPersistenceLog().Warn(fmt.Sprintf("Adopted live compression tip %s for closed session %s; retrying flush once", tip, oldID))
+	pkgLog().Warn(fmt.Sprintf("Adopted live compression tip %s for closed session %s; retrying flush once", tip, oldID))
 	a.sessionID, a.flushedDBMessageIDs, a.lastFlushedDBIdx = tip, map[any]bool{}, 0
 	a.compressionAdoptionFailed = false
 	return true
@@ -699,7 +696,7 @@ func dbFlushAdoptCompressionTip(a *AIAgent) bool {
 func dbFlushSessionRowGone(a *AIAgent, sessionID string) bool {
 	row, err := a.sessionDB.GetSession(a.homeContext(), sessionID)
 	if err != nil {
-		sessionPersistenceLog().Warn(fmt.Sprintf("session row lookup failed for %s: %s", sessionID, err))
+		pkgLog().Warn(fmt.Sprintf("session row lookup failed for %s: %s", sessionID, err))
 		return false
 	}
 	return row == nil
@@ -730,10 +727,10 @@ func dbFlushFailed(a *AIAgent, e error, batchRows []map[string]any, adoptionBudg
 			}()
 		}
 		if !a.sessionDBCreated {
-			sessionPersistenceLog().Warn(fmt.Sprintf("Session DB row for %s is missing and could not be recreated; will retry next flush", orNone(a.sessionID)))
+			pkgLog().Warn(fmt.Sprintf("Session DB row for %s is missing and could not be recreated; will retry next flush", orNone(a.sessionID)))
 			return ""
 		}
-		sessionPersistenceLog().Warn(fmt.Sprintf("Session DB row for %s was removed under the live agent; recreated it and replaying the transcript", orNone(a.sessionID)))
+		pkgLog().Warn(fmt.Sprintf("Session DB row for %s was removed under the live agent; recreated it and replaying the transcript", orNone(a.sessionID)))
 		return "healed"
 	}
 	var replaced *state.StateDBReplacedError
@@ -750,7 +747,7 @@ func dbFlushFailed(a *AIAgent, e error, batchRows []map[string]any, adoptionBudg
 			diverted = append(diverted, clean)
 		}
 		if _, err := state.DivertSessionTranscriptJSONL(a.homeContext(), a.sessionID, diverted); err != nil {
-			sessionPersistenceLog().Warn(fmt.Sprintf("JSONL divert failed after state.db %s for %s", cause, orNone(a.sessionID)), "error", err)
+			pkgLog().Warn(fmt.Sprintf("JSONL divert failed after state.db %s for %s", cause, orNone(a.sessionID)), "error", err)
 		}
 	}
 	var closed *state.CompressionSessionClosedError
@@ -760,7 +757,7 @@ func dbFlushFailed(a *AIAgent, e error, batchRows []map[string]any, adoptionBudg
 		}
 		a.compressionAdoptionFailed = true
 	}
-	sessionPersistenceLog().Warn(fmt.Sprintf("Session DB append_message failed: %s", e))
+	pkgLog().Warn(fmt.Sprintf("Session DB append_message failed: %s", e))
 	return ""
 }
 

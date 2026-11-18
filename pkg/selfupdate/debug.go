@@ -2,12 +2,10 @@ package selfupdate
 
 import (
 	"bytes"
-	"compress/gzip"
 	"context"
 	"errors"
 	"fmt"
 	"io"
-	"log/slog"
 	"net/http"
 	"net/url"
 	"os"
@@ -23,7 +21,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/cliui"
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pydatetime"
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
@@ -40,13 +37,11 @@ const (
 	debugUserAgent         = "icebath-agent/debug-share"
 	debugMaxLogBytes       = 512_000
 	debugAutoDeleteSeconds = 21600
-	debugNousBundleFormat  = "hermes-debug-share/1"
 )
 
 var (
 	debugPasteRSURL             = "https://paste.rs/"
 	debugDpasteComURL           = "https://dpaste.com/api/"
-	debugLog                    = slog.Default().With("logger", "hermes_cli.debug")
 	debugStderr       io.Writer = pysys.Stderr
 	debugConsole                = func(w io.Writer) *cliui.Console { return &cliui.Console{In: os.Stdin, Out: w} }
 	debugNow                    = func() float64 { return float64(time.Now().UnixNano()) / 1e9 }
@@ -79,21 +74,6 @@ const DebugGatewayPrivacyNotice = "⚠️ **Privacy notice:** This uploads syste
 	"Pastes auto-delete after 6 hours (dpaste.com fallback pastes: kept for " +
 	"1 day, cannot be deleted)."
 
-const debugNousPrivacyNotice = `⚠️  --nous: This uploads your debug bundle to Nous-INTERNAL storage (AWS S3),
-    NOT a public paste service. The following is included:
-  • System info (OS, Python/Icebath version, provider, which API keys are
-    configured — NOT the actual keys)
-  • Full agent.log and gateway.log (up to 512 KB each — likely
-    contains conversation content, tool outputs, and file paths), plus
-    update.log when present (update output — the root cause of update
-    failures)
-
-  • The bundle is viewable only by Nous staff (and allowlisted Discord mods)
-    via a Google-login-gated viewer.
-  • It is NOT a public paste — there is no public URL to the contents.
-  • It auto-deletes after 14 days.
-`
-
 const debugUsage = `Usage: icebath debug <command>
 
 Commands:
@@ -104,8 +84,6 @@ Options (share):
   --lines N    Number of log lines to include (default: 200)
   --expire N   dpaste.com fallback retention in days (default: 1)
   --local      Print report locally instead of uploading
-  --nous       Upload to Nous-internal storage (private, staff-only,
-               auto-deletes in 14 days) instead of a public paste
   --no-redact  Disable upload-time secret redaction (default: redact)
 
 Options (delete):
@@ -273,7 +251,7 @@ func debugURLOpen(ctx context.Context, method, target string, body []byte, heade
 		if errors.As(err, &ue) && ue.Timeout() {
 			return nil, 0, &pm.PyError{Class: "TimeoutError", Message: "timed out"}
 		}
-		return nil, 0, &pm.PyError{Class: "URLError", Message: "<urlopen error " + err.Error() + ">"}
+		return nil, 0, &pm.PyError{Class: "URLError", Message: err.Error()}
 	}
 	defer resp.Body.Close()
 	data, err := io.ReadAll(resp.Body)
@@ -317,7 +295,7 @@ var debugScheduleAutoDelete = func(ctx context.Context, urls []string, delaySeco
 	}
 	release, err := debugPendingLock(ctx)
 	if err != nil {
-		debugLog.Debug(fmt.Sprintf("could not schedule auto-delete for %s", pyrepr.Repr(pasteRS)), "err", err)
+		pkgLog().Debug(fmt.Sprintf("could not schedule auto-delete for %s", pyrepr.Repr(pasteRS)), "err", err)
 		return nil
 	}
 	defer release()
@@ -694,29 +672,6 @@ var debugCollectShareBundle = func(ctx context.Context, logLines int, redact boo
 	return bundle, nil
 }
 
-// Gzipped Nous envelope of a share bundle in the shape the support viewer parses
-func debugBuildNousBundle(bundle *debugBundle, redact bool, now time.Time) ([]byte, error) {
-	files := pyjson.NewObject()
-	for _, k := range bundle.keys {
-		files.Set(k, bundle.vals[k])
-	}
-	envelope := pyjson.ObjectOf("format", debugNousBundleFormat, "redacted", redact,
-		"created", pydatetime.ISOFormatUTC(now), "files", files)
-	text, err := pyjson.Dumps(envelope)
-	if err != nil {
-		return nil, err
-	}
-	var out bytes.Buffer
-	zw := gzip.NewWriter(&out)
-	if _, err := zw.Write([]byte(text)); err != nil {
-		return nil, err
-	}
-	if err := zw.Close(); err != nil {
-		return nil, err
-	}
-	return out.Bytes(), nil
-}
-
 // Outcome of a debug share upload, the label to url map, optional upload failures and the redaction flag
 type DebugShareResult struct {
 	URLKeys           []string
@@ -735,7 +690,7 @@ func BuildDebugShare(ctx context.Context, logLines, expiry int, redact bool) (*D
 		return nil, err
 	}
 	if redact {
-		debugLog.Info("icebath debug share: applied force-mode redaction to log snapshots before upload")
+		pkgLog().Info("icebath debug share: applied force-mode redaction to log snapshots before upload")
 	}
 	report := bundle.vals["report"]
 	res := &DebugShareResult{URLs: map[string]string{}, Redacted: redact, AutoDeleteSeconds: debugAutoDeleteSeconds, Report: report}
@@ -830,9 +785,6 @@ func runDebugShare(ctx context.Context, ns map[string]any, w io.Writer) (int, er
 		}
 		return 0, nil
 	}
-	if pyrepr.Truthy(ns["nous"]) {
-		return runDebugShareNous(ctx, ns, w, logLines, redact)
-	}
 	fmt.Fprint(w, debugPrivacyNotice+"\n")
 	if ok, code := debugConfirmUpload(ns, w); !ok {
 		return code, nil
@@ -873,72 +825,6 @@ func runDebugShare(ctx context.Context, ns map[string]any, w io.Writer) (int, er
 		fmt.Fprintf(w, "\n⏱  Pastes will auto-delete in %d hours.\nTo delete now:  icebath debug delete <url>\n"+
 			"\nShare these links with the Icebath team for support.\n", result.AutoDeleteSeconds/3600)
 	}
-	return 0, nil
-}
-
-// Uploads the gzipped bundle envelope to Nous internal storage and prints its private view link
-func runDebugShareNous(ctx context.Context, ns map[string]any, w io.Writer, logLines int, redact bool) (int, error) {
-	fmt.Fprint(w, debugNousPrivacyNotice+"\n")
-	if ok, code := debugConfirmUpload(ns, w); !ok {
-		return code, nil
-	}
-	if !redact {
-		fmt.Fprint(w, "⚠️  --no-redact is set: secrets in your logs will NOT be redacted before upload.\n\n")
-	}
-	fmt.Fprintln(w, "Collecting debug report...")
-	debugBestEffortSweep(ctx)
-	bundle, err := debugCollectShareBundle(ctx, logLines, redact)
-	if err != nil {
-		return 1, err
-	}
-	if redact {
-		debugLog.Info("icebath debug share --nous: applied force-mode redaction before upload")
-	}
-	fmt.Fprintln(w, "Uploading to Nous diagnostics storage...")
-	res, err := func() (out *pyjson.Object, err error) {
-		defer func() {
-			if r := recover(); r != nil {
-				err = fmt.Errorf("%v", r)
-			}
-		}()
-		data, err := debugBuildNousBundle(bundle, redact, time.Now())
-		if err != nil {
-			return nil, err
-		}
-		return debugShareToNous(ctx, data)
-	}()
-	if err != nil {
-		cause := pm.EdgeBlock(err)
-		if cause == "" {
-			cause = "The Nous diagnostics service may be unavailable or not yet provisioned"
-		}
-		fmt.Fprintf(debugStderr, "\nNous upload failed: %s\n\n%s.\nRun `icebath debug share --local` to print the report instead, "+
-			"or `icebath debug share` to upload to a public paste service.\n\n", RedactDebugSupportText(err.Error()), cause)
-		return 1, nil
-	}
-	viewURL := statusOr(res.Vals["viewUrl"], res.Vals["view_url"])
-	expiresAt := statusOr(res.Vals["expiresAt"], res.Vals["expires_at"])
-	fmt.Fprintln(w, "\nDebug bundle uploaded to Nous (private):")
-	if pyrepr.Truthy(viewURL) {
-		fmt.Fprintln(w, "  View URL  "+pyrepr.Str(viewURL))
-	} else {
-		id, has := res.Vals["id"]
-		if !has {
-			id = "?"
-		}
-		fmt.Fprintln(w, "  (no view URL returned; upload id: "+pyrepr.Str(id)+")")
-	}
-	if pyrepr.Truthy(expiresAt) {
-		fmt.Fprintln(w, "\n⏱  Auto-deletes at "+pyrepr.Str(expiresAt)+" (14-day retention).")
-	} else {
-		fmt.Fprintln(w, "\n⏱  Auto-deletes after 14 days.")
-	}
-	fmt.Fprintln(w, "\nShare this private link with the Nous team — only Nous staff "+
-		"(via Google login) can open it.\n"+
-		"\nPick up the discussion in:\n"+
-		"  GitHub Issues        https://github.com/nickheyer/icebath/issues\n"+
-		"  Nous Portal Support  https://portal.nousresearch.com/help\n"+
-		"  New issue            https://github.com/nickheyer/icebath/issues/new")
 	return 0, nil
 }
 

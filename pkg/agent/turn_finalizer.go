@@ -73,7 +73,7 @@ func runHeldTransforms(ctx context.Context, held func(context.Context, map[strin
 	rewrite, failed := func() (rewrite string, failed bool) {
 		defer func() {
 			if r := recover(); r != nil {
-				conversationLoopLog().Warn("held transform_llm_output dispatch failed", "error", fmt.Sprint(r))
+				pkgLog().Warn("held transform_llm_output dispatch failed", "error", fmt.Sprint(r))
 				rewrite, failed = "", true
 			}
 		}()

@@ -14,7 +14,7 @@ func TestPreflightKwargsRunsOnlyOnTheResponsesTransport(t *testing.T) {
 	}
 	for mode, class := range map[APIMode]string{ModeChatCompletions: "ChatCompletionsTransport", ModeAnthropicMessages: "AnthropicTransport", modeBedrockConverse: "BedrockTransport"} {
 		_, err := PreflightKwargs(GetTransport(string(mode)), map[string]any{}, false, false, false)
-		if err == nil || err.Error() != "AttributeError: '"+class+"' object has no attribute 'preflight_kwargs'" {
+		if err == nil || err.Error() != class+" cannot preflight request options" {
 			t.Fatalf("%s: %v", mode, err)
 		}
 	}

@@ -3,11 +3,11 @@ package provider
 import (
 	"context"
 	"fmt"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"log/slog"
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 )
 
 var (
@@ -48,7 +48,7 @@ func openrouterFetchModels(ctx context.Context, base Profile, baseURL string, ti
 
 // Declared routing scope, then ambient conversation, then the explicit session id, as a cache scope
 func openrouterStickyKey(ctx context.Context, sessionID string) string {
-	return cacheScopeFromSessionID(firstNonEmpty(portalAffinityScope(ctx), portalConversationContext(ctx), sessionID))
+	return cacheScopeFromSessionID(firstNonEmpty(AffinityScope(ctx), ConversationContext(ctx), sessionID))
 }
 
 // Sticky session key, provider preferences with the speed tier pin, and the pareto router plugin
@@ -133,7 +133,7 @@ func openrouterClampReasoningToCatalog(ctx context.Context, cfg *pyjson.Object, 
 	}
 	clamped := ClampReasoningEffortToSupported(effort, caps.SupportedEfforts)
 	if clamped != "" && clamped != effort {
-		slog.Debug(fmt.Sprintf("openrouter: clamped reasoning effort %s \u2192 %s for %s (catalog supported_efforts=%s)",
+		pkgLog().Debug(fmt.Sprintf("openrouter: clamped reasoning effort %s \u2192 %s for %s (catalog supported_efforts=%s)",
 			pyStringRepr(effort), pyStringRepr(clamped), model, openrouterEffortsRepr(caps.SupportedEfforts)))
 		cfg = cfg.Copy()
 		cfg.Set("effort", clamped)

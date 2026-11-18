@@ -98,7 +98,7 @@ func (t *TurnRunner) restoreTelegramThreadIDAfterSplit(ctx context.Context, agen
 	tc := t.ctx
 	defer func() {
 		if r := recover(); r != nil {
-			runLog().Debug(fmt.Sprintf("Failed to restore thread_id from binding after session split: %v", r))
+			pkgLog().Debug(fmt.Sprintf("Failed to restore thread_id from binding after session split: %v", r))
 		}
 	}()
 	db := t.runner.sessionDB(ctx)
@@ -107,7 +107,7 @@ func (t *TurnRunner) restoreTelegramThreadIDAfterSplit(ctx context.Context, agen
 	}
 	binding, err := db.DB().GetTelegramTopicBindingBySession(ctx, agentSessionID)
 	if err != nil {
-		runLog().Debug(fmt.Sprintf("Failed to restore thread_id from binding after session split: %s", err))
+		pkgLog().Debug(fmt.Sprintf("Failed to restore thread_id from binding after session split: %s", err))
 		return
 	}
 	if binding == nil {
@@ -119,7 +119,7 @@ func (t *TurnRunner) restoreTelegramThreadIDAfterSplit(ctx context.Context, agen
 	}
 	restored := pyrepr.Str(threadID)
 	tc.source.ThreadID = &restored
-	runLog().Debug(fmt.Sprintf("Restored source.thread_id=%s from binding after session split %s → %s", restored, tc.sessionID, agentSessionID))
+	pkgLog().Debug(fmt.Sprintf("Restored source.thread_id=%s from binding after session split %s → %s", restored, tc.sessionID, agentSessionID))
 }
 
 // Platform context, channel prompt and channel system prompt joined, or the API admission's ephemeral prompt
@@ -192,11 +192,11 @@ func (t *TurnRunner) nativeImageRunMessage(ctx context.Context) any {
 	}
 	parts, skipped, err := tools.BuildNativeContentParts(t.toolsEnv(), tc.message, images, nil)
 	if err != nil {
-		runLog().Warn(fmt.Sprintf("Native image attachment failed, falling back to text: %s", err))
+		pkgLog().Warn(fmt.Sprintf("Native image attachment failed, falling back to text: %s", err))
 		return tc.message
 	}
 	if len(skipped) > 0 {
-		runLog().Warn(fmt.Sprintf("Native image attachment: skipped %d unreadable path(s): %s", len(skipped), pyrepr.Repr(skipped)))
+		pkgLog().Warn(fmt.Sprintf("Native image attachment: skipped %d unreadable path(s): %s", len(skipped), pyrepr.Repr(skipped)))
 	}
 	for _, part := range parts {
 		if p, ok := part.(map[string]any); ok && p["type"] == "image_url" {

@@ -366,7 +366,7 @@ func TestCuratorListUnmanagedItemizesAndExplains(t *testing.T) {
 		if err := os.MkdirAll(filepath.Join(dir, n), 0o755); err != nil {
 			t.Fatal(err)
 		}
-		body := "---\nname: " + n + "\ndescription: test\nversion: 1.0.0\nmetadata:\n  hermes:\n    agent_created: true\n---\n# " + n + "\n"
+		body := "---\nname: " + n + "\ndescription: test\nversion: 1.0.0\nmetadata:\n  icebath:\n    agent_created: true\n---\n# " + n + "\n"
 		if err := os.WriteFile(filepath.Join(dir, n, "SKILL.md"), []byte(body), 0o644); err != nil {
 			t.Fatal(err)
 		}

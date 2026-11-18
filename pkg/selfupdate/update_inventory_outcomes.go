@@ -5,6 +5,7 @@ import (
 	"io"
 	"strings"
 
+	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 )
@@ -30,9 +31,9 @@ func bareServiceName(service any) string {
 func gatewayServiceMatchesProfile(profile string, service any) bool {
 	name := bareServiceName(service)
 	if profile == "default" {
-		return name == "icebath-gateway" || name == "ai.icebath.gateway" || name == "gateway" || name == "gateway-default"
+		return name == "icebath-gateway" || name == gateway.LaunchdLabelBase || name == "gateway" || name == "gateway-default"
 	}
-	return name == "icebath-gateway-"+profile || name == "ai.icebath.gateway-"+profile || name == "gateway-"+profile
+	return name == "icebath-gateway-"+profile || name == gateway.LaunchdLabelBase+"-"+profile || name == "gateway-"+profile
 }
 
 // True when any of the names is the gateway service of the runtime's profile
@@ -86,10 +87,10 @@ func matchRuntimeOutcomes(plan *UpdatePlan, e runtimeOutcomeEvidence) []*pyjson.
 				return "restarted"
 			}
 			if ambiguous {
-				inventoryLog.Debug(fmt.Sprintf("%d planned gateway runtimes for profile %s still need a verdict — successor evidence cannot attribute the restart, leaving pid %d on the name path",
+				pkgLog().Debug(fmt.Sprintf("%d planned gateway runtimes for profile %s still need a verdict — successor evidence cannot attribute the restart, leaving pid %d on the name path",
 					pendingGateways[r.Profile], pyrepr.Repr(r.Profile), *r.PID))
 			} else if len(live) == 0 {
-				inventoryLog.Debug(fmt.Sprintf("No post-restart gateway evidence for profile %s (planned pid %d via %s) — reconciling on restart bookkeeping alone",
+				pkgLog().Debug(fmt.Sprintf("No post-restart gateway evidence for profile %s (planned pid %d via %s) — reconciling on restart bookkeeping alone",
 					pyrepr.Repr(r.Profile), *r.PID, r.RestartVia))
 			}
 		}

@@ -93,7 +93,7 @@ func TestNamespaceForcedToEmitterKeyAndFallsBackToName(t *testing.T) {
 
 func TestEmitRejectsNamespacedAndEmptyNames(t *testing.T) {
 	_, c := busManager(t, "a")
-	for _, bad := range []string{"hermes:x", "b:x", "a:x", ":x", ""} {
+	for _, bad := range []string{"icebath:x", "b:x", "a:x", ":x", ""} {
 		if _, err := c["a"].Emit(context.Background(), bad, nil); err == nil {
 			t.Fatalf("%q accepted", bad)
 		}
@@ -424,11 +424,11 @@ func TestNamespaceFallsBackToNameWhenKeyEmpty(t *testing.T) {
 }
 
 func TestEmitRejectsNamespacedNames(t *testing.T) {
-	for _, bad := range []string{"hermes:x", "a:x", "b:x", "other:evt", ":x", "x:"} {
+	for _, bad := range []string{"icebath:x", "a:x", "b:x", "other:evt", ":x", "x:"} {
 		t.Run(bad, func(t *testing.T) {
 			m, _, b := busPair(t)
 			fired := &busRecorder{}
-			for _, name := range []string{bad, "b:" + bad, "hermes:x", "a:x", "b:x"} {
+			for _, name := range []string{bad, "b:" + bad, "icebath:x", "a:x", "b:x"} {
 				if err := b.Subscribe(name, fired.named(name)); err != nil {
 					t.Fatalf("subscribe %q: %v", name, err)
 				}

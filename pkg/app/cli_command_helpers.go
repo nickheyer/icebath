@@ -14,11 +14,11 @@ import (
 func saveConfigValue(ctx context.Context, keyPath string, value any) bool {
 	configPath := home.ConfigPath(home.Dir(ctx))
 	if _, err := home.Mkdir(ctx, home.Dir(ctx)); err != nil {
-		cliLogger.Error("Failed to save config: " + err.Error())
+		pkgLog().Error("Failed to save config: " + err.Error())
 		return false
 	}
 	if err := config.WriteConfigKey(ctx, configPath, keyPath, value); err != nil {
-		cliLogger.Error("Failed to save config: " + err.Error())
+		pkgLog().Error("Failed to save config: " + err.Error())
 		return false
 	}
 	_ = os.Chmod(configPath, 0o600)

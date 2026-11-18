@@ -33,7 +33,7 @@ func TestOldUpdaterShimsDoNoWork(t *testing.T) {
 	}
 }
 
-func TestRecommendedUpdateCommandDefaultsToHermesUpdate(t *testing.T) {
+func TestRecommendedUpdateCommandDefaultsToIcebathUpdate(t *testing.T) {
 	h := installHome(t)
 	tree := t.TempDir()
 	if err := os.WriteFile(filepath.Join(tree, ".install_method"), []byte("git\n"), 0o644); err != nil {

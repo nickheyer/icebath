@@ -21,7 +21,7 @@ func TestHolderSubcommandParsesSubcommand(t *testing.T) {
 		`python -c import time; time.sleep(3)`:                         "",
 		`python -m icebath_cli.main`:                                   "",
 	} {
-		got, ok := hermesHolderSubcommand(cmdline)
+		got, ok := icebathHolderSubcommand(cmdline)
 		if got != want || ok != (want != "") {
 			t.Errorf("%q = %q %v want %q", cmdline, got, ok, want)
 		}

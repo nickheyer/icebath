@@ -157,7 +157,7 @@ func EnqueuePluginStreamHook(ctx context.Context, hookName string, payload map[s
 		if putDropOldest(d.events, item) {
 			queued = true
 		} else {
-			logPluginStreamHooks.debug("plugin stream hook queue full after drop-oldest: " + hookName + " callback=" + streamCallbackName(d.entry))
+			pkgLog().Debug("plugin stream hook queue full after drop-oldest: " + hookName + " callback=" + streamCallbackName(d.entry))
 		}
 	}
 	return queued
@@ -182,7 +182,7 @@ func HasReasoningStreamObserverHooks(ctx context.Context) bool {
 func StreamReasoningDeltasEnabled(ctx context.Context) bool {
 	cfg, err := loadConfig(GetPluginManager(ctx).home)
 	if err != nil {
-		logPluginStreamHooks.debug("failed to read plugins.stream_reasoning_deltas: " + err.Error())
+		pkgLog().Debug("failed to read plugins.stream_reasoning_deltas: " + err.Error())
 		return false
 	}
 	section, _ := cfg["plugins"].(map[string]any)

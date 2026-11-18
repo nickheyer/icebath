@@ -1,8 +1,6 @@
 package plugins
 
-import ()
-
-// Hermes backend plugin fixture whose provider and backend live in the host child
+// Backend plugin fixture whose provider and backend live in the host child
 const cuProviderFixture = `
 from pathlib import Path
 from tools.computer_use.backend import ActionResult, CaptureResult, ComputerUseBackend, ComputerUseProvider, UIElement

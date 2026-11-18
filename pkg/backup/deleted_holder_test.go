@@ -50,7 +50,7 @@ func TestImportRefusesToPublishOverADeletedButHeldDatabase(t *testing.T) {
 	archive := filepath.Join(tmp, "backup.zip")
 	payload := filepath.Join(tmp, "archived.db")
 	makeHolderDB(t, payload, "from-archive")
-	writeZipFiles(t, archive, [2]string{payload, "hermes/state.db"})
+	writeZipFiles(t, archive, [2]string{payload, "icebath/state.db"})
 
 	holder := exec.Command(os.Args[0], "-test.run=^$")
 	holder.Env = append(os.Environ(), dbHolderChildEnv+"="+target)
@@ -79,7 +79,7 @@ func TestImportRefusesToPublishOverADeletedButHeldDatabase(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		err = importDBMember(ctx, zr, "hermes/state.db", target, 0, false)
+		err = importDBMember(ctx, zr, "icebath/state.db", target, 0, false)
 		zr.Close()
 		var oe *osError
 		if !errors.As(err, &oe) || !strings.Contains(err.Error(), strconv.Itoa(holder.Process.Pid)) {
@@ -94,7 +94,7 @@ func TestImportRefusesToPublishOverADeletedButHeldDatabase(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer zr.Close()
-	if err := importDBMember(ctx, zr, "hermes/state.db", target, 0, false); err != nil {
+	if err := importDBMember(ctx, zr, "icebath/state.db", target, 0, false); err != nil {
 		t.Fatal(err)
 	}
 	if got := tableRows(t, target, "SELECT v FROM t"); len(got) != 1 || got[0] != "from-archive" {

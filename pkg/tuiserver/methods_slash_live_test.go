@@ -10,17 +10,17 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/agent"
 	"github.com/nickheyer/icebath/pkg/state"
-	"github.com/nickheyer/icebath/pkg/tuigateway"
+	"github.com/nickheyer/icebath/pkg/tuihost"
 )
 
 // Local session record with a short user and assistant history and the given agent
-func liveSlashSession(a *agent.AIAgent) *tuigateway.Session {
+func liveSlashSession(a *agent.AIAgent) *tuihost.Session {
 	fields := map[string]any{"session_key": "sk-1", "session_id": "sid-1", "running": false, "history_lock": &sync.Mutex{},
 		"history": []any{map[string]any{"role": "user", "content": "hello"}, map[string]any{"role": "assistant", "content": "hi"}}}
 	if a != nil {
 		fields["agent"] = a
 	}
-	return tuigateway.NewSession(fields)
+	return tuihost.NewSession(fields)
 }
 
 // Live agent on a dead loopback endpoint for the context view
@@ -117,8 +117,8 @@ func (a *refineRecordingAgent) SpawnExplicitBackgroundReview(ctx context.Context
 }
 
 // Session record of the refine cases holding the recording agent
-func refineSession(a *refineRecordingAgent, key string, history []any) *tuigateway.Session {
-	return tuigateway.NewSession(map[string]any{"agent": a, "session_key": key, "history": history, "history_lock": &sync.Mutex{},
+func refineSession(a *refineRecordingAgent, key string, history []any) *tuihost.Session {
+	return tuihost.NewSession(map[string]any{"agent": a, "session_key": key, "history": history, "history_lock": &sync.Mutex{},
 		"running": false, "cwd": "", "source": "tui"})
 }
 
@@ -160,8 +160,8 @@ func TestRefineSpawnsReviewFromPersistedTranscript(t *testing.T) {
 	a := &refineRecordingAgent{}
 	session := refineSession(a, "refine-key", []any{})
 	session.Set("profile_home", h)
-	tuigateway.SetSessionRecord("refine-sid", session)
-	t.Cleanup(func() { tuigateway.PopSessionRecord("refine-sid") })
+	tuihost.SetSessionRecord("refine-sid", session)
+	t.Cleanup(func() { tuihost.PopSessionRecord("refine-sid") })
 	out, _ := liveSlashCommandOutput(ctx, "refine-sid", session, "refine", "save the workflow")
 	if !strings.Contains(out, "Reviewing this conversation") {
 		t.Fatalf("out = %q", out)
@@ -178,8 +178,8 @@ func TestRefineSpawnsReviewFromInMemoryHistoryMidConversation(t *testing.T) {
 	a := &refineRecordingAgent{}
 	history := []any{map[string]any{"role": "user", "content": "in-flight question"}, map[string]any{"role": "assistant", "content": "in-flight answer"}}
 	session := refineSession(a, "mid-key", history)
-	tuigateway.SetSessionRecord("refine-mid", session)
-	t.Cleanup(func() { tuigateway.PopSessionRecord("refine-mid") })
+	tuihost.SetSessionRecord("refine-mid", session)
+	t.Cleanup(func() { tuihost.PopSessionRecord("refine-mid") })
 	out, _ := liveSlashCommandOutput(context.Background(), "refine-mid", session, "refine", "")
 	if !strings.Contains(out, "Reviewing this conversation") {
 		t.Fatalf("out = %q", out)

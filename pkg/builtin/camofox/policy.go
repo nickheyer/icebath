@@ -4,7 +4,6 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
-	"log/slog"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -41,7 +40,7 @@ func policyErr(message string, extra ...any) *pyjson.Object {
 func (s *scope) browserCfg(key string, def any) any {
 	raw, err := s.rawConfig()
 	if err != nil {
-		policyLog().Debug(fmt.Sprintf("Could not read browser.%s: %v", key, err))
+		pkgLog().Debug(fmt.Sprintf("Could not read browser.%s: %v", key, err))
 		return def
 	}
 	return cfgGet(raw, def, "browser", key)
@@ -316,7 +315,7 @@ func (s *scope) storeFullSnapshot(snapshotText string) string {
 			content = pystr.Slice(content, 0, maxStoredSnapshotChars) + fmt.Sprintf("\n\n[... stored copy truncated at %s chars of %s ...]",
 				pystr.GroupThousands(maxStoredSnapshotChars), pystr.GroupThousands(int64(n)))
 		}
-		cacheDir := home.HermesDir(s.home, "cache/web", "web_cache")
+		cacheDir := home.IcebathDir(s.home, "cache/web", "web_cache")
 		if st, err := os.Lstat(cacheDir); err == nil && st.Mode()&os.ModeSymlink != 0 {
 			return "", fmt.Errorf("refusing to write through a symlinked %s", cacheDir)
 		}
@@ -334,7 +333,7 @@ func (s *scope) storeFullSnapshot(snapshotText string) string {
 		return tools.ToAgentVisibleCachePath(s.env, path), nil
 	}()
 	if err != nil {
-		policyLog().Debug(fmt.Sprintf("Failed to store full browser snapshot: %v", err))
+		pkgLog().Debug(fmt.Sprintf("Failed to store full browser snapshot: %v", err))
 		return ""
 	}
 	return path
@@ -376,9 +375,4 @@ func floorDiv(a, b int64) int64 {
 		q--
 	}
 	return q
-}
-
-// Logger of the reference camofox_policy module
-func policyLog() *slog.Logger {
-	return slog.Default().With("logger", "hermes_plugins.camofox.camofox_policy")
 }

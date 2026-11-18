@@ -3,17 +3,16 @@ package gateway
 import (
 	"context"
 	"errors"
-	"log/slog"
 	"strings"
 	"sync"
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
+	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/internal/pythread"
-	"github.com/nickheyer/icebath/pkg/observability"
 	"github.com/nickheyer/icebath/pkg/state"
-	"github.com/nickheyer/icebath/pkg/tuigateway"
+	"github.com/nickheyer/icebath/pkg/tuihost"
 )
 
 // Runner surface the session authority reads, the gateway runner's drain state, session store and adapters
@@ -131,7 +130,7 @@ type SessionAuthority struct {
 	classicEvictAt         map[string]float64
 	routeTurns             map[string]*keyedTurnEntry
 	routeEpochs            map[string]int
-	Events                 map[string]tuigateway.Transport
+	Events                 map[string]tuihost.Transport
 	HostedRoomService      HostedAdmissionChecker
 	editorMCP              editorMCPState
 	apiObservers           map[string][]*APIObserver
@@ -146,7 +145,7 @@ type SessionAuthority struct {
 // Authority over a profile store at its runtime epoch
 func NewSessionAuthority(runner AuthorityRunner, profileID, instanceID string, db *state.SessionDB, epoch int64) *SessionAuthority {
 	return &SessionAuthority{Runner: runner, ProfileID: profileID, InstanceID: instanceID, DB: db, Epoch: epoch,
-		Sessions: map[string]*LiveSession{}, waiters: map[string]*admissionWaiter{}, Events: map[string]tuigateway.Transport{}, nativeWaiters: map[string]bool{},
+		Sessions: map[string]*LiveSession{}, waiters: map[string]*admissionWaiter{}, Events: map[string]tuihost.Transport{}, nativeWaiters: map[string]bool{},
 		PendingResults: map[string]*pyjson.Object{}, cancelObligations: map[string]bool{}, retiredRoutes: map[string]string{},
 		rotatedOwners: map[string]string{}, mutationTasks: map[*trackedTask]bool{}}
 }
@@ -402,7 +401,7 @@ func logDrainFailure(err error) {
 	if errors.Is(err, context.Canceled) {
 		return
 	}
-	slog.Error("Session drain task died: " + pyExceptionRepr(err))
+	pkgLog().Error("Session drain task died: " + pyExceptionRepr(err))
 }
 
 // Publishes committed input and returns its receipt, marking a native event accepted
@@ -581,8 +580,36 @@ func (a *SessionAuthority) pendingReceipt(ctx context.Context, row *pyjson.Objec
 	}
 	textStr, _ := text.(string)
 	outcome, _ := row.Get("outcome")
+	kind, metadata := pendingDisplay(payload)
 	return PendingAdmission{AdmissionReceipt: a.receiptOf(row), InputID: rowString(row, "request_id"), Text: textStr,
-		Controls: controls, Steering: outcome == state.Steering}, nil
+		DisplayKind: kind, DisplayMetadata: metadata, Controls: controls, Steering: outcome == state.Steering}, nil
+}
+
+// Display kind and metadata the admitted turn's user row will be stored with, read from the committed payload
+func pendingDisplay(payload *pyjson.Object) (string, map[string]any) {
+	metadata := map[string]any{}
+	if payload == nil {
+		return "", metadata
+	}
+	display, _ := pyjson.Plain(payload.GetOr("display_v1", nil)).(map[string]any)
+	if preview, isStr := display["title_preview"].(string); isStr && preview != "" {
+		metadata["title_preview"] = preview
+	}
+	descriptor := automationDescriptor(payload)
+	name, _ := descriptor.GetOr("display_kind", nil).(string)
+	body, _ := descriptor.GetOr("display_text", nil).(string)
+	if ProducerNoticeDisplayKinds[name] && pystr.Strip(body) != "" {
+		metadata["display_text"] = body
+	}
+	switch {
+	case display["kind"] == any(DisplayHidden):
+		return DisplayHidden, metadata
+	case metadata["display_text"] != nil:
+		return name, metadata
+	case descriptor.Len() > 0:
+		return InternalNotificationDisplayKind, metadata
+	}
+	return "", metadata
 }
 
 // Dataclass dict of a pending admission as viewers receive it
@@ -598,10 +625,18 @@ func pendingAdmissionDict(p PendingAdmission) *pyjson.Object {
 	for i, c := range p.Controls {
 		controls[i] = c
 	}
+	var kind, metadata any
+	if p.DisplayKind != "" {
+		kind = p.DisplayKind
+	}
+	if len(p.DisplayMetadata) > 0 {
+		metadata = p.DisplayMetadata
+	}
 	return pyjson.ObjectOf("admission_id", p.AdmissionID,
 		"ref", pyjson.ObjectOf("profile_id", p.Ref.ProfileID, "session_id", p.Ref.SessionID),
 		"sequence", p.Sequence, "status", p.Status, "outcome", outcome, "authority_epoch", p.AuthorityEpoch,
-		"execution_generation", generation, "input_id", p.InputID, "text", p.Text, "controls", controls, "steering", p.Steering)
+		"execution_generation", generation, "input_id", p.InputID, "text", p.Text, "display_kind", kind,
+		"display_metadata", metadata, "controls", controls, "steering", p.Steering)
 }
 
 // Receipt of an admission the caller owns or controls, a terminal row awaiting publication reading as its claim
@@ -738,11 +773,7 @@ func (a *SessionAuthority) settleCancelled(ctx context.Context, ref SessionRef, 
 	if waiter != nil {
 		waiter.setResult(nil)
 	}
-	if err := scheduleSession(ctx, a, ref); err != nil {
-		return err
-	}
-	observability.BusyRowSettled(ctx, admissionID, outcome)
-	return nil
+	return scheduleSession(ctx, a, ref)
 }
 
 // True for a cold mount of a stored conversation, a live session with no source on a history route

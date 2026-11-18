@@ -235,7 +235,7 @@ func TestRunCodexStreamDeliversRedactedCommentaryOnce(t *testing.T) {
 			{"type": "response.completed", "response": map[string]any{"status": "completed"}},
 		}}, nil
 	}}
-	request := map[string]any{"model": "gpt-5-codex", "instructions": "You are Hermes.",
+	request := map[string]any{"model": "gpt-5-codex", "instructions": "You are Icebath.",
 		"input": []any{map[string]any{"role": "user", "content": "Ping"}}, "tools": nil, "store": false}
 	response, err := a.RunCodexStream(context.Background(), request, nil, nil)
 	if err != nil {

@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"log/slog"
 	"net/http"
 	"strings"
 	"time"
@@ -29,7 +28,7 @@ const (
 	lineDefaultWait = 15 * time.Second
 )
 
-// Messaging API client over the LINE SDK posting the reply and push bodies hermes sends
+// Messaging API client over the LINE SDK posting the reply and push bodies
 type lineClient struct {
 	token   string
 	timeout time.Duration
@@ -109,7 +108,7 @@ func (c *lineClient) loading(ctx context.Context, chatID string, seconds int) {
 		}
 	}
 	if err != nil {
-		slog.Debug(fmt.Sprintf("LINE loading indicator failed: %v", err))
+		pkgLog().Debug(fmt.Sprintf("LINE loading indicator failed: %v", err))
 	}
 }
 

@@ -283,7 +283,7 @@ func (d *SessionDB) insertMessageRows(ctx context.Context, conn SQLiteConn, sess
 		if err != nil {
 			return 0, 0, err
 		}
-		res, err := conn.ExecContext(ctx, hermesInsertMessageSQL, params...)
+		res, err := conn.ExecContext(ctx, icebathInsertMessageSQL, params...)
 		if err != nil {
 			return 0, 0, err
 		}

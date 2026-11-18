@@ -221,7 +221,7 @@ func TestPreUpdateBackupSkipsSymlinkedFiles(t *testing.T) {
 	}
 }
 
-func TestPreMigrationBackupRestorableWithHermesImport(t *testing.T) {
+func TestPreMigrationBackupRestorableWithIcebathImport(t *testing.T) {
 	_, h := autoHome(t)
 	out, err := CreatePreMigrationBackup(h, PreMigrationDefaultKeep)
 	if err != nil || out == "" {

@@ -1,4 +1,4 @@
-// Package plugintree carries the upstream bundled plugin files that the bundled plugin readers consult
+// Package plugintree carries the bundled plugin files and catalog plugin trees the plugin readers consult
 package plugintree
 
 import (
@@ -11,13 +11,15 @@ import (
 //go:embed all:plugins
 var compiled embed.FS
 
+//go:generate go run ../../cmd/packtree pack -dir catalog -out catalog.tar.zst -manifest catalog_manifest.txt
+
 //go:embed catalog.tar.zst
 var catalogArchive []byte
 
-// Renamed catalog plugin trees at their catalog pins, one directory per catalog name
+// Catalog plugin trees at their catalog pins, one directory per catalog name
 var catalogTrees = tarzst.NewFS(catalogArchive, "")
 
-// Upstream bundled plugins tree carried inside the binary, rooted where the shipped plugins directory is
+// Bundled plugins tree carried inside the binary, rooted where the shipped plugins directory is
 func Compiled() fs.FS {
 	sub, err := fs.Sub(compiled, "plugins")
 	if err != nil {

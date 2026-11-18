@@ -123,7 +123,7 @@ func TestCanonicalRunRefusesAJournalWithoutParams(t *testing.T) {
 	if err := os.WriteFile(journal, []byte(`{"receipt": null}`), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := s.runCanonicalJob(context.Background(), job, nil, nil, &requestID); err == nil || err.Error() != "KeyError: 'params'" {
+	if _, err := s.runCanonicalJob(context.Background(), job, nil, nil, &requestID); err == nil || err.Error() != "the canonical cron job has no params" {
 		t.Fatalf("err %v", err)
 	}
 }

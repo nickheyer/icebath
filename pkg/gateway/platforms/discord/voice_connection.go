@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"log/slog"
 	"net"
 	"strconv"
 	"strings"
@@ -86,7 +85,7 @@ func newVoiceConnState(vc *voiceClient) *voiceConnState {
 // Moves to a flow state, waking every waiter and the connected event
 func (s *voiceConnState) setStateLocked(st voiceFlowState) {
 	if st != s.state {
-		slog.Debug(fmt.Sprintf("Connection state changed to %s", voiceFlowNames[st]))
+		pkgLog().Debug(fmt.Sprintf("Connection state changed to %s", voiceFlowNames[st]))
 	}
 	s.state = st
 	close(s.stateCh)
@@ -307,12 +306,12 @@ func (s *voiceConnState) recoverFromInvalidCommit(transitionID int) error {
 
 // Applies a prepared transition's protocol version, tracking downgrades and the upgrade grace
 func (s *voiceConnState) executeTransition(transitionID int) {
-	slog.Debug(fmt.Sprintf("Executing transition id %d", transitionID))
+	pkgLog().Debug(fmt.Sprintf("Executing transition id %d", transitionID))
 	s.mu.Lock()
 	pv, ok := s.davePendingTransitions[transitionID]
 	if !ok {
 		s.mu.Unlock()
-		slog.Warn(fmt.Sprintf("Received execute transition, but we don't have a pending transition for id %d", transitionID))
+		pkgLog().Warn(fmt.Sprintf("Received execute transition, but we don't have a pending transition for id %d", transitionID))
 		return
 	}
 	delete(s.davePendingTransitions, transitionID)
@@ -322,7 +321,7 @@ func (s *voiceConnState) executeTransition(transitionID int) {
 	upgraded := false
 	if old != pv && pv == 0 {
 		s.daveDowngraded = true
-		slog.Debug("DAVE Session downgraded")
+		pkgLog().Debug("DAVE Session downgraded")
 	} else if transitionID > 0 && s.daveDowngraded {
 		s.daveDowngraded = false
 		upgraded = true
@@ -335,9 +334,9 @@ func (s *voiceConnState) executeTransition(transitionID int) {
 		}
 	}
 	if upgraded {
-		slog.Debug("DAVE Session upgraded")
+		pkgLog().Debug("DAVE Session upgraded")
 	}
-	slog.Debug(fmt.Sprintf("Transition id %d executed", transitionID))
+	pkgLog().Debug(fmt.Sprintf("Transition id %d executed", transitionID))
 }
 
 // Main gateway VOICE_STATE_UPDATE of the bot, advancing the handshake or following a channel move
@@ -352,7 +351,7 @@ func (s *voiceConnState) voiceStateUpdate(ctx context.Context, channelID, sessio
 		s.expectingDisconnect = false
 		s.mu.Unlock()
 		if !expecting {
-			slog.Debug("We were externally disconnected from voice.")
+			pkgLog().Debug("We were externally disconnected from voice.")
 			s.disconnect(ctx, true, true, false)
 		}
 		return
@@ -383,14 +382,14 @@ func (s *voiceConnState) voiceStateUpdate(ctx context.Context, channelID, sessio
 		return
 	}
 	if cid != s.vc.channelIDValue() {
-		slog.Info("Handling channel move while connecting...")
+		pkgLog().Info("Handling channel move while connecting...")
 		s.vc.updateVoiceChannel(cid)
 		s.softDisconnect(flowGotVoiceStateUpdate)
 		deaf, mute := s.selfFlags()
 		s.connect(ctx, s.reconnectValue(), s.timeoutValue(), deaf, mute, false, false)
 		return
 	}
-	slog.Debug("Ignoring unexpected voice_state_update event")
+	pkgLog().Debug("Ignoring unexpected voice_state_update event")
 }
 
 // Main gateway VOICE_SERVER_UPDATE, recording the endpoint and restarting the socket of a live connection
@@ -401,7 +400,7 @@ func (s *voiceConnState) voiceServerUpdate(ctx context.Context, token, guildID, 
 	s.serverID, _ = strconv.ParseInt(guildID, 10, 64)
 	if token == "" || endpoint == "" {
 		s.mu.Unlock()
-		slog.Warn("Awaiting endpoint... This requires waiting. If timeout occurred considering raising the timeout and reconnecting.")
+		pkgLog().Warn("Awaiting endpoint... This requires waiting. If timeout occurred considering raising the timeout and reconnecting.")
 		return
 	}
 	s.endpoint = strings.TrimPrefix(endpoint, "wss://")
@@ -420,7 +419,7 @@ func (s *voiceConnState) voiceServerUpdate(ctx context.Context, token, guildID, 
 	case flowConnected:
 		ws := s.ws
 		s.mu.Unlock()
-		slog.Debug("Voice server update, closing old voice websocket")
+		pkgLog().Debug("Voice server update, closing old voice websocket")
 		if ws != nil {
 			ws.close(4014)
 		}
@@ -435,7 +434,7 @@ func (s *voiceConnState) voiceServerUpdate(ctx context.Context, token, guildID, 
 	if same {
 		return
 	}
-	slog.Debug("Unexpected server update event, attempting to handle")
+	pkgLog().Debug("Unexpected server update event, attempting to handle")
 	s.softDisconnect(flowGotVoiceServerUpdate)
 	deaf, mute := s.selfFlags()
 	s.connect(ctx, s.reconnectValue(), s.timeoutValue(), deaf, mute, false, false)
@@ -505,14 +504,14 @@ func (s *voiceConnState) wrapConnect(ctx context.Context, reconnect bool, timeou
 	case err == nil:
 		return nil
 	case errors.Is(err, context.Canceled):
-		slog.Debug("Cancelling voice connection")
+		pkgLog().Debug("Cancelling voice connection")
 		s.softDisconnect(flowGotBothVoiceUpdates)
 	case errors.Is(err, context.DeadlineExceeded):
-		slog.Info("Timed out connecting to voice")
+		pkgLog().Info("Timed out connecting to voice")
 		s.disconnect(context.Background(), true, true, false)
 		err = errVoiceConnectTimeout
 	default:
-		slog.Error(fmt.Sprintf("Error connecting to voice... disconnecting: %s", err))
+		pkgLog().Error(fmt.Sprintf("Error connecting to voice... disconnecting: %s", err))
 		s.disconnect(context.Background(), true, true, false)
 	}
 	return err
@@ -523,7 +522,7 @@ var errVoiceConnectTimeout = errors.New("TimeoutError")
 
 // Handshake bounded by the timeout, then the websocket poller
 func (s *voiceConnState) connectOnce(ctx context.Context, reconnect bool, timeout time.Duration, selfDeaf, selfMute, resume bool) error {
-	slog.Info("Connecting to voice...")
+	pkgLog().Info("Connecting to voice...")
 	tctx, cancel := context.WithTimeout(ctx, timeout)
 	err := s.innerConnect(tctx, reconnect, selfDeaf, selfMute, resume)
 	cancel()
@@ -533,7 +532,7 @@ func (s *voiceConnState) connectOnce(ctx context.Context, reconnect bool, timeou
 		}
 		return err
 	}
-	slog.Info("Voice connection complete.")
+	pkgLog().Info("Voice connection complete.")
 	s.mu.Lock()
 	if s.runner == nil {
 		s.runner = spawnTask(s.vc.baseContext(), func(rctx context.Context) {
@@ -547,7 +546,7 @@ func (s *voiceConnState) connectOnce(ctx context.Context, reconnect bool, timeou
 // Up to five handshakes, retrying closed websockets with a growing wait when reconnecting
 func (s *voiceConnState) innerConnect(ctx context.Context, reconnect, selfDeaf, selfMute, resume bool) error {
 	for i := range 5 {
-		slog.Info(fmt.Sprintf("Starting voice handshake... (connection attempt %d)", i+1))
+		pkgLog().Info(fmt.Sprintf("Starting voice handshake... (connection attempt %d)", i+1))
 		if err := s.vc.changeVoiceState(s.vc.channelIDValue(), selfDeaf, selfMute); err != nil {
 			return err
 		}
@@ -559,7 +558,7 @@ func (s *voiceConnState) innerConnect(ctx context.Context, reconnect, selfDeaf, 
 		if err := s.waitForState(ctx, flowGotBothVoiceUpdates); err != nil {
 			return err
 		}
-		slog.Info(fmt.Sprintf("Voice handshake complete. Endpoint found: %s", s.endpointValue()))
+		pkgLog().Info(fmt.Sprintf("Voice handshake complete. Endpoint found: %s", s.endpointValue()))
 		err := s.connectWebsocket(ctx, resume)
 		if err == nil {
 			err = s.handshakeWebsocket(ctx)
@@ -576,7 +575,7 @@ func (s *voiceConnState) innerConnect(ctx context.Context, reconnect, selfDeaf, 
 			return err
 		}
 		wait := time.Duration(1+i*2) * time.Second
-		slog.Error(fmt.Sprintf("Failed to connect to voice... Retrying in %ss...", strconv.FormatFloat(wait.Seconds(), 'f', 1, 64)))
+		pkgLog().Error(fmt.Sprintf("Failed to connect to voice... Retrying in %ss...", strconv.FormatFloat(wait.Seconds(), 'f', 1, 64)))
 		s.disconnect(context.Background(), true, false, false)
 		select {
 		case <-time.After(wait):
@@ -693,12 +692,12 @@ func (s *voiceConnState) sendPacket(packet []byte) error {
 }
 
 func (s *voiceConnState) addSocketListener(fn func([]byte)) int {
-	slog.Debug("Registering socket listener callback")
+	pkgLog().Debug("Registering socket listener callback")
 	return s.reader.register(fn)
 }
 
 func (s *voiceConnState) removeSocketListener(id int) {
-	slog.Debug("Unregistering socket listener callback")
+	pkgLog().Debug("Unregistering socket listener callback")
 	s.reader.unregister(id)
 }
 
@@ -737,7 +736,7 @@ func (s *voiceConnState) disconnect(ctx context.Context, force, cleanup, wait bo
 		select {
 		case <-disconnected:
 		case <-time.After(timeout):
-			slog.Debug("Timed out waiting for voice disconnection confirmation")
+			pkgLog().Debug("Timed out waiting for voice disconnection confirmation")
 		case <-ctx.Done():
 		}
 	}
@@ -748,7 +747,7 @@ func (s *voiceConnState) disconnect(ctx context.Context, force, cleanup, wait bo
 
 // Ends the websocket and socket while keeping the voice state, ready for a fresh handshake
 func (s *voiceConnState) softDisconnect(with voiceFlowState) {
-	slog.Debug("Soft disconnecting from voice")
+	pkgLog().Debug("Soft disconnecting from voice")
 	s.mu.Lock()
 	runner := s.runner
 	s.runner = nil
@@ -773,10 +772,10 @@ func (s *voiceConnState) softDisconnect(with voiceFlowState) {
 
 // Tells the main gateway the bot leaves voice and expects the confirming state update
 func (s *voiceConnState) voiceDisconnect() {
-	slog.Info(fmt.Sprintf("The voice handshake is being terminated for Channel ID %d (Guild ID %d)", s.vc.channelIDValue(), s.vc.guildID))
+	pkgLog().Info(fmt.Sprintf("The voice handshake is being terminated for Channel ID %d (Guild ID %d)", s.vc.channelIDValue(), s.vc.guildID))
 	s.setState(flowDisconnected)
 	if err := s.vc.changeVoiceState(0, false, false); err != nil {
-		slog.Debug(fmt.Sprintf("Ignoring exception disconnecting from voice: %s", err))
+		pkgLog().Debug(fmt.Sprintf("Ignoring exception disconnecting from voice: %s", err))
 	}
 	s.mu.Lock()
 	s.expectingDisconnect = true
@@ -798,17 +797,17 @@ func (s *voiceConnState) moveTo(ctx context.Context, channelID int64, timeout ti
 	}
 	previous := s.flowState()
 	if err := s.vc.changeVoiceState(channelID, false, false); err != nil {
-		slog.Debug(fmt.Sprintf("Voice move request failed: %s", err))
+		pkgLog().Debug(fmt.Sprintf("Voice move request failed: %s", err))
 	}
 	s.setState(flowSetGuildVoiceState)
 	last := s.flowState()
 	wctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 	if err := s.waitForState(wctx, flowConnected); err != nil {
-		slog.Warn(fmt.Sprintf("Timed out trying to move to channel %d in guild %d", channelID, s.vc.guildID))
+		pkgLog().Warn(fmt.Sprintf("Timed out trying to move to channel %d in guild %d", channelID, s.vc.guildID))
 		s.mu.Lock()
 		if s.state == last {
-			slog.Debug(fmt.Sprintf("Reverting to previous state %s", voiceFlowNames[previous]))
+			pkgLog().Debug(fmt.Sprintf("Reverting to previous state %s", voiceFlowNames[previous]))
 			s.setStateLocked(previous)
 		}
 		s.mu.Unlock()
@@ -830,7 +829,7 @@ func (s *voiceConnState) pollVoiceWS(ctx context.Context, reconnect bool) {
 		var closed *voiceConnectionClosed
 		isClosed := errors.As(err, &closed)
 		if !isClosed && !errors.Is(err, errVoiceReadTimeout) {
-			slog.Error(fmt.Sprintf("Voice websocket poller failed: %s", err))
+			pkgLog().Error(fmt.Sprintf("Voice websocket poller failed: %s", err))
 			return
 		}
 		if isClosed {
@@ -840,7 +839,7 @@ func (s *voiceConnState) pollVoiceWS(ctx context.Context, reconnect bool) {
 				expecting := s.expectingDisconnect
 				s.mu.Unlock()
 				if !expecting {
-					slog.Info(fmt.Sprintf("Disconnecting from voice normally, close code %d.", closed.code))
+					pkgLog().Info(fmt.Sprintf("Disconnecting from voice normally, close code %d.", closed.code))
 					s.disconnect(ctx, true, true, false)
 				}
 				return
@@ -849,18 +848,18 @@ func (s *voiceConnState) pollVoiceWS(ctx context.Context, reconnect bool) {
 				gone := s.disconnectedSet
 				s.mu.Unlock()
 				if gone {
-					slog.Info(fmt.Sprintf("Disconnected from voice by discord, close code %d.", closed.code))
+					pkgLog().Info(fmt.Sprintf("Disconnected from voice by discord, close code %d.", closed.code))
 					s.disconnect(ctx, true, true, false)
 					return
 				}
-				slog.Info("Disconnected from voice by force... potentially reconnecting.")
+				pkgLog().Info("Disconnected from voice by force... potentially reconnecting.")
 				reconnected, err := s.potentialReconnect(ctx)
 				if err != nil {
-					slog.Error(fmt.Sprintf("Voice websocket poller failed: %s", err))
+					pkgLog().Error(fmt.Sprintf("Voice websocket poller failed: %s", err))
 					return
 				}
 				if !reconnected {
-					slog.Info("Reconnect was unsuccessful, disconnecting from voice normally...")
+					pkgLog().Info("Reconnect was unsuccessful, disconnecting from voice normally...")
 					if s.flowState() != flowDisconnected {
 						s.disconnect(ctx, true, true, false)
 					}
@@ -868,36 +867,36 @@ func (s *voiceConnState) pollVoiceWS(ctx context.Context, reconnect bool) {
 				}
 				continue
 			case 4021:
-				slog.Warn("We are being ratelimited while trying to connect to voice. Disconnecting...")
+				pkgLog().Warn("We are being ratelimited while trying to connect to voice. Disconnecting...")
 				if s.flowState() != flowDisconnected {
 					s.disconnect(ctx, true, true, false)
 				}
 				return
 			case 4015:
-				slog.Info("Disconnected from voice, attempting a resume...")
+				pkgLog().Info("Disconnected from voice, attempting a resume...")
 				deaf, mute := s.selfFlags()
 				if err := s.connectOnce(ctx, reconnect, s.timeoutValue(), deaf, mute, true); err != nil {
 					if ctx.Err() != nil || !errors.Is(err, context.DeadlineExceeded) {
-						slog.Error(fmt.Sprintf("Voice websocket poller failed: %s", err))
+						pkgLog().Error(fmt.Sprintf("Voice websocket poller failed: %s", err))
 						return
 					}
-					slog.Info("Could not resume the voice connection... Disconnecting...")
+					pkgLog().Info("Could not resume the voice connection... Disconnecting...")
 					if s.flowState() != flowDisconnected {
 						s.disconnect(ctx, true, true, false)
 					}
 					return
 				}
-				slog.Info("Successfully resumed voice connection")
+				pkgLog().Info("Successfully resumed voice connection")
 				continue
 			}
-			slog.Debug(fmt.Sprintf("Not handling close code %d (no reason)", closed.code))
+			pkgLog().Debug(fmt.Sprintf("Not handling close code %d (no reason)", closed.code))
 		}
 		if !reconnect {
 			s.disconnect(ctx, true, true, false)
 			return
 		}
 		retry := backoff.delay()
-		slog.Error(fmt.Sprintf("Disconnected from voice... Reconnecting in %.2fs.", retry.Seconds()))
+		pkgLog().Error(fmt.Sprintf("Disconnected from voice... Reconnecting in %.2fs.", retry.Seconds()))
 		select {
 		case <-time.After(retry):
 		case <-ctx.Done():
@@ -907,10 +906,10 @@ func (s *voiceConnState) pollVoiceWS(ctx context.Context, reconnect bool) {
 		deaf, mute := s.selfFlags()
 		if err := s.connectOnce(ctx, reconnect, s.timeoutValue(), deaf, mute, false); err != nil {
 			if ctx.Err() != nil || !errors.Is(err, context.DeadlineExceeded) {
-				slog.Error(fmt.Sprintf("Voice websocket poller failed: %s", err))
+				pkgLog().Error(fmt.Sprintf("Voice websocket poller failed: %s", err))
 				return
 			}
-			slog.Warn("Could not connect to voice... Retrying...")
+			pkgLog().Warn("Could not connect to voice... Retrying...")
 			continue
 		}
 	}

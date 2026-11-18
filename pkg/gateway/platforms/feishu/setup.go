@@ -5,13 +5,13 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"log/slog"
 	"math"
 	"math/big"
 	"net/http"
 	"strings"
 	"time"
 
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
@@ -134,7 +134,7 @@ func postRegistration(ctx context.Context, baseURL string, body [][2]string) (*p
 func asObject(v any) (*pyjson.Object, error) {
 	o, ok := v.(*pyjson.Object)
 	if !ok {
-		return nil, fmt.Errorf("AttributeError: '%s' object has no attribute 'get'", pyrepr.TypeName(v))
+		return nil, fmt.Errorf("expected a mapping, got %s", errchain.Kind(v))
 	}
 	return o, nil
 }
@@ -165,7 +165,7 @@ func initRegistration(ctx context.Context, domain string) error {
 	case *pyjson.Object:
 		_, supported = m.Vals["client_secret"]
 	default:
-		return fmt.Errorf("TypeError: argument of type '%s' is not iterable", pyrepr.TypeName(methods))
+		return fmt.Errorf("the Feishu registration methods are %s, expected a list", errchain.Kind(methods))
 	}
 	if !supported {
 		return &RuntimeError{"Feishu / Lark registration environment does not support client_secret auth. " +
@@ -208,14 +208,14 @@ func beginRegistration(ctx context.Context, domain string) (*beginResult, error)
 	}
 	qrURL, isStr := rawURL.(string)
 	if !isStr {
-		return nil, fmt.Errorf("TypeError: argument of type '%s' is not iterable", pyrepr.TypeName(rawURL))
+		return nil, fmt.Errorf("the Feishu registration URL is %s, expected text", errchain.Kind(rawURL))
 	}
 	if strings.Contains(qrURL, "?") {
 		qrURL += "&"
 	} else {
 		qrURL += "?"
 	}
-	qrURL += "from=hermes&tp=hermes"
+	qrURL += "from=icebath&tp=icebath"
 	userCode, ok := res.Vals["user_code"]
 	if !ok {
 		userCode = ""
@@ -250,7 +250,7 @@ func seconds(v any) (float64, error) {
 		f, _ := new(big.Float).SetInt(n).Float64()
 		return f, nil
 	}
-	return 0, fmt.Errorf("TypeError: '%s' object cannot be interpreted as an integer", pyrepr.TypeName(v))
+	return 0, fmt.Errorf("expected a whole number of seconds, got %s", errchain.Kind(v))
 }
 
 // Clock and sleep of the poll loop, seams tests replace like the patched time module
@@ -296,7 +296,7 @@ func pollRegistration(ctx context.Context, w *gateway.InterruptWatch, deviceCode
 		}
 		if e, _ := res.Vals["error"].(string); e == "access_denied" || e == "expired_token" {
 			fmt.Fprintln(out)
-			slog.Warn("[Feishu onboard] Registration " + e)
+			pkgLog().Warn("[Feishu onboard] Registration " + e)
 			return nil, nil
 		}
 		if err := pollSleep(w, interval); err != nil {
@@ -306,7 +306,7 @@ func pollRegistration(ctx context.Context, w *gateway.InterruptWatch, deviceCode
 	if polls > 0 {
 		fmt.Fprintln(out)
 	}
-	slog.Warn(fmt.Sprintf("[Feishu onboard] Poll timed out after %ds", int(expireIn)))
+	pkgLog().Warn(fmt.Sprintf("[Feishu onboard] Poll timed out after %ds", int(expireIn)))
 	return nil, nil
 }
 
@@ -370,7 +370,7 @@ func buildOnboardClient(appID, appSecret, domain string) larkAPI {
 // Bot info probe over the SDK tenant token request, nil when the request or its payload fails
 func probeBotSDK(ctx context.Context, appID, appSecret, domain string) map[string]any {
 	fail := func(err error) map[string]any {
-		slog.Debug("[Feishu onboard] SDK probe failed: " + err.Error())
+		pkgLog().Debug("[Feishu onboard] SDK probe failed: " + err.Error())
 		return nil
 	}
 	resp, err := buildOnboardClient(appID, appSecret, domain).Do(ctx, tenantGetRequest("/open-apis/bot/v3/info", nil))
@@ -409,7 +409,7 @@ func QRRegister(ctx context.Context, initialDomain string, timeoutSeconds int) (
 	result, err := qrRegisterInner(ctx, initialDomain, timeoutSeconds)
 	var runtime *RuntimeError
 	if err != nil && (errors.As(err, &runtime) || expectedOnboardError(err)) {
-		slog.Warn("[Feishu onboard] Registration failed: " + err.Error())
+		pkgLog().Warn("[Feishu onboard] Registration failed: " + err.Error())
 		return nil, nil
 	}
 	return result, err

@@ -3,14 +3,11 @@ package agent
 import (
 	"context"
 	"fmt"
-	"log/slog"
 	"strings"
 	"time"
 
-	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
-	"github.com/nickheyer/icebath/pkg/observability"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tools"
@@ -95,7 +92,7 @@ func checkAPIResponse(ctx context.Context, a *AIAgent, s *LoopState) (PhaseVerdi
 		if s.Response != nil && responseHasField(s.Response, "usage") {
 			usage = pyrepr.Str(state.ToolCallField(s.Response, "usage"))
 		}
-		slog.Debug(fmt.Sprintf("API Response received - Model: %s, Usage: %s", respModel, usage))
+		pkgLog().Debug(fmt.Sprintf("API Response received - Model: %s, Usage: %s", respModel, usage))
 	}
 
 	invalid, details, err := validateResponseShape(a, s.Response)
@@ -116,7 +113,6 @@ func checkAPIResponse(ctx context.Context, a *AIAgent, s *LoopState) (PhaseVerdi
 	if s.FinishReason, err = deriveFinishReason(a, s.Response, s.Messages); err != nil {
 		return PhaseVerdict{}, err
 	}
-	observability.RecordReplyFinish(ctx, a, s.Response, s.FinishReason)
 
 	if s.FinishReason == "content_filter" {
 		rv, err := a.handleContentPolicyRefusal(ctx, RefusalRequest{
@@ -166,10 +162,6 @@ func checkAPIResponse(ctx context.Context, a *AIAgent, s *LoopState) (PhaseVerdi
 	}
 
 	s.Retry.HasRetried429 = false
-	if a.provider == "nous" {
-		guard := &provider.NousRateGuard{Home: home.Dir(ctx), Anonymous: provider.IsAnonymousRequest(a.provider, a.apiKey)}
-		_ = guard.Clear()
-	}
 	if err := provider.RelayCompleteLogicalCall(ctx, s.APIRequestID, provider.RelayLogicalCompletion{Outcome: "success"}); err != nil {
 		return PhaseVerdict{}, err
 	}
@@ -233,7 +225,7 @@ func retryInvalidResponse(ctx context.Context, a *AIAgent, s *LoopState, errorDe
 		}
 		a.flushStatusBuffer()
 		a.emitDiagnosticStatus(fmt.Sprintf("❌ Max retries (%d) exceeded for invalid responses. Giving up.", s.MaxRetries))
-		conversationLoopLog().Error(fmt.Sprintf("%sInvalid API response after %d retries.", a.logPrefix, s.MaxRetries))
+		pkgLog().Error(fmt.Sprintf("%sInvalid API response after %d retries.", a.logPrefix, s.MaxRetries))
 		if err := a.persistSession(&s.Messages, s.ConversationHistory); err != nil {
 			return PhaseVerdict{}, err
 		}
@@ -260,7 +252,7 @@ func retryInvalidResponse(ctx context.Context, a *AIAgent, s *LoopState, errorDe
 	wait := provider.JitteredBackoff(s.RetryCount, provider.BackoffOptions{BaseDelay: 5 * time.Second, MaxDelay: 120 * time.Second, JitterRatio: 0.5})
 	waitTime := wait.Seconds()
 	a.bufferVprint(fmt.Sprintf("⏳ Retrying in %.1fs (%s)...", waitTime, failureHint))
-	conversationLoopLog().Warn(fmt.Sprintf("Invalid API response (retry %d/%d): %s | Provider: %s", s.RetryCount, s.MaxRetries, strings.Join(errorDetails, ", "), providerName))
+	pkgLog().Warn(fmt.Sprintf("Invalid API response (retry %d/%d): %s | Provider: %s", s.RetryCount, s.MaxRetries, strings.Join(errorDetails, ", "), providerName))
 
 	interrupted, err := interruptibleBackoffSleep(ctx, a, waitTime, s.Retry, &s.Messages, s.ConversationHistory, s.APICallCount,
 		"Interrupt detected during retry wait, aborting.",

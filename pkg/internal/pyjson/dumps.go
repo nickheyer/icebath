@@ -217,8 +217,14 @@ func (e *encoder) encode(v any) error {
 			return e.list(len(x), func(i int) any { return x[i] })
 		})
 	case pyrepr.Mapping:
+		if e.nilPointer(reflect.ValueOf(v)) {
+			return nil
+		}
 		return e.container(mappingID(reflect.ValueOf(v)), func() error { return e.mapping(x) })
 	case interface{ PyStr() string }:
+		if e.nilPointer(reflect.ValueOf(v)) {
+			return nil
+		}
 		if _, typed := v.(pyrepr.TypeNamer); typed {
 			return e.unencodable(v, reflect.ValueOf(v))
 		}
@@ -264,6 +270,9 @@ func (e *encoder) mapping(m pyrepr.Mapping) error {
 // Encodes slices maps and pointers through reflection, handing anything else to default
 func (e *encoder) reflected(v any) error {
 	rv := reflect.ValueOf(v)
+	if e.nilPointer(rv) {
+		return nil
+	}
 	switch rv.Kind() {
 	case reflect.Slice:
 		if rv.IsNil() {
@@ -282,10 +291,6 @@ func (e *encoder) reflected(v any) error {
 		}
 		return e.container(rv.Pointer(), func() error { return e.mapValue(rv) })
 	case reflect.Pointer, reflect.Interface:
-		if rv.IsNil() {
-			e.b.WriteString("null")
-			return nil
-		}
 		return e.encode(rv.Elem().Interface())
 	case reflect.String:
 		e.str(rv.String())
@@ -303,6 +308,15 @@ func (e *encoder) reflected(v any) error {
 		return e.float(rv.Float())
 	}
 	return e.unencodable(v, rv)
+}
+
+// Writes null for a nil pointer or interface, reporting whether it wrote
+func (e *encoder) nilPointer(rv reflect.Value) bool {
+	if (rv.Kind() != reflect.Pointer && rv.Kind() != reflect.Interface) || !rv.IsNil() {
+		return false
+	}
+	e.b.WriteString("null")
+	return true
 }
 
 // Hands a value json cannot encode to default, TypeError naming its Python type when none is set

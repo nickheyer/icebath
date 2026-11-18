@@ -1,6 +1,6 @@
 package codeexec
 
-// Seeds an unspawned project kernel of owner the way hermes cases set a registry item, with its probes and removal
+// Seeds an unspawned project kernel of owner the way tests set a registry item, with its probes and removal
 func RegisterKernelForTests(owner, cwd string) (registered, stopped func() bool, remove func()) {
 	k := newSessionKernel(kernelKey{owner: owner, mode: "project", python: "python", cwd: cwd})
 	registry.mu.Lock()

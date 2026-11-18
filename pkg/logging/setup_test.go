@@ -35,8 +35,7 @@ func TestRepeatedSetupRoutesRecordsOnce(t *testing.T) {
 					}
 				}
 				SetSessionContext("routing-session")
-				sources := []string{"tools.terminal_tool", "agent.context_compressor", "gateway.run",
-					"plugins.platforms.telegram.adapter", "tui_gateway.ws"}
+				sources := []string{"tools", "agent", "gatewayrun", "gateway/platforms/telegram", "tuigateway"}
 				slogLevels := map[int]slog.Level{LevelDebug: slog.LevelDebug, LevelInfo: slog.LevelInfo, LevelWarning: slog.LevelWarn}
 				for i, src := range sources {
 					for _, level := range []int{LevelDebug, LevelInfo, LevelWarning} {
@@ -229,7 +228,7 @@ func TestAComponentLogAddedAfterRoutingIsRoutedToo(t *testing.T) {
 	mustSetup(t, Options{Home: h})
 	mustSetup(t, Options{Home: profile})
 	mustSetup(t, Options{Home: h, Mode: "gateway"})
-	lg := GetLogger("gateway.run.routed-component-test")
+	lg := GetLogger("gatewayrun/routed-component-test")
 	lg.LogContext(homeCtx(profile), LevelInfo, "gw-b")
 	lg.Info("gw-a")
 	FlushLogQueue()
@@ -475,7 +474,7 @@ func TestGatewayLogAttachedAfterExternalRotationThenReSetup(t *testing.T) {
 	h := testHome(t)
 	mustSetup(t, Options{Home: h, Mode: "gateway"})
 	gw, rotated := filepath.Join(h, "logs", "gateway.log"), filepath.Join(h, "logs", "gateway.log.1")
-	GetLogger("gateway.run").Info("line BEFORE rotation")
+	GetLogger("gatewayrun").Info("line BEFORE rotation")
 	FlushLogQueue()
 	if !strings.Contains(readText(t, gw), "BEFORE rotation") {
 		t.Fatal("first line missing")
@@ -484,7 +483,7 @@ func TestGatewayLogAttachedAfterExternalRotationThenReSetup(t *testing.T) {
 		t.Fatal(err)
 	}
 	mustSetup(t, Options{Home: h, Mode: "gateway"})
-	GetLogger("gateway.run").Info("line AFTER rotation")
+	GetLogger("gatewayrun").Info("line AFTER rotation")
 	FlushLogQueue()
 	if !strings.Contains(readText(t, gw), "AFTER rotation") {
 		t.Fatal("gateway.log was never recreated")

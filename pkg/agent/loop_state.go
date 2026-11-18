@@ -3,7 +3,6 @@ package agent
 import (
 	"context"
 	"fmt"
-	"log/slog"
 	"os"
 
 	"github.com/nickheyer/icebath/pkg/goals"
@@ -25,8 +24,6 @@ const (
 	loopDefaultPauseReason                   = "user-paused"
 	loopResumeMaxDelaySeconds        float64 = 5.0
 )
-
-func loopsLogger() *slog.Logger { return slog.Default().With("logger", "hermes_cli.loops") }
 
 // Loops config section, empty when config fails to load or the section is not a mapping
 func loopsConfig(ctx context.Context) map[string]any {
@@ -182,7 +179,7 @@ func parseLoopState(raw any, sessionID string) *SessionLoopState {
 	st, err := sessionLoopStateFrom(raw)
 	if err != nil {
 		if sessionID != "" {
-			loopsLogger().Warn(fmt.Sprintf("LoopManager: could not parse stored loop for %s: %s", sessionID, err))
+			pkgLog().Warn(fmt.Sprintf("LoopManager: could not parse stored loop for %s: %s", sessionID, err))
 		}
 		return nil
 	}
@@ -203,7 +200,7 @@ func LoadLoop(ctx context.Context, sessionID string) *SessionLoopState {
 	}
 	raw, _, err := db.GetMeta(ctx, loopMetaKey(sessionID))
 	if err != nil {
-		loopsLogger().Debug(fmt.Sprintf("LoopManager: get_meta failed: %s", err))
+		pkgLog().Debug(fmt.Sprintf("LoopManager: get_meta failed: %s", err))
 		return nil
 	}
 	if raw == "" {
@@ -227,7 +224,7 @@ func SaveLoop(ctx context.Context, sessionID string, st *SessionLoopState) {
 		err = db.SetMeta(ctx, loopMetaKey(sessionID), raw)
 	}
 	if err != nil {
-		loopsLogger().Debug(fmt.Sprintf("LoopManager: set_meta failed: %s", err))
+		pkgLog().Debug(fmt.Sprintf("LoopManager: set_meta failed: %s", err))
 	}
 }
 
@@ -254,7 +251,7 @@ func ListActiveLoops(ctx context.Context) []ActiveLoop {
 	}
 	entries, err := db.ListMetaPrefix(ctx, loopMetaPrefix)
 	if err != nil {
-		loopsLogger().Debug(fmt.Sprintf("LoopManager: list_meta_prefix failed: %s", err))
+		pkgLog().Debug(fmt.Sprintf("LoopManager: list_meta_prefix failed: %s", err))
 		return out
 	}
 	for _, e := range entries {
@@ -283,7 +280,7 @@ func migrateLoopToSession(ctx context.Context, oldSessionID, newSessionID, reaso
 	if reason == "" {
 		reason = "rotation"
 	}
-	loopsLogger().Debug(fmt.Sprintf("LoopManager: migrated loop %s -> %s (%s)", oldSessionID, newSessionID, reason))
+	pkgLog().Debug(fmt.Sprintf("LoopManager: migrated loop %s -> %s (%s)", oldSessionID, newSessionID, reason))
 	return true
 }
 

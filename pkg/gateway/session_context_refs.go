@@ -3,7 +3,6 @@ package gateway
 import (
 	"context"
 	"fmt"
-	"log/slog"
 	"strings"
 
 	"github.com/nickheyer/icebath/pkg/i18n"
@@ -31,7 +30,7 @@ func expandReferences(ctx context.Context, text, cwd string, contextLength int, 
 	}
 	result, err := ExpandContextReferences(ctx, text, cwd, contextLength, cwd, plugins)
 	if err != nil {
-		slog.Warn(fmt.Sprintf("@ context reference expansion failed: %s", err))
+		pkgLog().Warn(fmt.Sprintf("@ context reference expansion failed: %s", err))
 		return text, nil
 	}
 	if result.Blocked {
@@ -63,7 +62,7 @@ func managedTurnText(ctx context.Context, a *SessionAuthority, row *pyjson.Objec
 	}
 	contextLength, err := managedContextLength(ctx, a, policy)
 	if err != nil {
-		slog.Warn(fmt.Sprintf("@ context reference expansion failed: %s", err))
+		pkgLog().Warn(fmt.Sprintf("@ context reference expansion failed: %s", err))
 		return &text, nil
 	}
 	expanded, refusal := expandReferences(ctx, text, policy.Cwd, contextLength, !policy.IgnoreUserConfig)

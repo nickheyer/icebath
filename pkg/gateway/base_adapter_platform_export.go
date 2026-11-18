@@ -57,7 +57,7 @@ func IsTableSeparatorLine(line string) bool {
 	return pyreMatch(TableSeparatorRE, line)
 }
 
-// Requests cancellation of the task, the asyncio Task cancel of hermes
+// Requests cancellation of the task
 func (t *adapterTask) Cancel() {
 	if t.cancel != nil {
 		t.cancel()

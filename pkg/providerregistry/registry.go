@@ -82,7 +82,7 @@ func New[P NamedProvider](opts Options) *Registry[P] {
 		r.ProviderCls = providerClassName[P]()
 	}
 	if r.Logger == nil {
-		r.Logger = slog.Default()
+		r.Logger = pkgLog()
 	}
 	if r.Normalize == nil {
 		r.Normalize = pystr.Strip
@@ -424,7 +424,7 @@ func IsAvailableSafe(provider AvailabilityProvider, logger *slog.Logger, format 
 			return
 		}
 		if logger == nil {
-			logger = slog.Default()
+			logger = pkgLog()
 		}
 		var attrs []any
 		if excInfo {

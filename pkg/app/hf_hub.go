@@ -29,11 +29,9 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
-	"github.com/nickheyer/icebath/pkg/logging"
 )
 
 var (
-	hfHubLog            = logging.GetLogger("huggingface_hub.utils._http")
 	hfRepoAPIRE         = regexp.MustCompile(`^https://[^/]+(/api/(models|datasets|spaces)/(.+)|/(.+)/resolve/(.+))`)
 	hfBucketAPIRE       = regexp.MustCompile(`^https?://[^/]+/api/buckets/`)
 	hfRatelimitRE       = regexp.MustCompile(`"(\w+)"\s*;\s*r\s*=\s*(\d+)\s*;\s*t\s*=\s*(\d+)`)
@@ -156,7 +154,7 @@ func hfBackoff(ctx context.Context, r hfRequest) (*pyhttpx.Response, error) {
 			if !hfRetryableError(err) {
 				return nil, err
 			}
-			hfHubLog.Warning(fmt.Sprintf("'%s' thrown while requesting %s %s", pyhttpx.ErrorText(err), r.method, r.url))
+			pkgLog().Warn(fmt.Sprintf("'%s' thrown while requesting %s %s", pyhttpx.ErrorText(err), r.method, r.url))
 			if tries > maxRetries {
 				return nil, err
 			}
@@ -164,7 +162,7 @@ func hfBackoff(ctx context.Context, r hfRequest) (*pyhttpx.Response, error) {
 			if !hfRetryStatus[resp.StatusCode] {
 				return resp, nil
 			}
-			hfHubLog.Warning(fmt.Sprintf("HTTP Error %d thrown while requesting %s %s", resp.StatusCode, r.method, r.url))
+			pkgLog().Warn(fmt.Sprintf("HTTP Error %d thrown while requesting %s %s", resp.StatusCode, r.method, r.url))
 			if tries > maxRetries {
 				if err := hfRaiseForStatus(resp, r, ""); err != nil {
 					return nil, err
@@ -180,10 +178,10 @@ func hfBackoff(ctx context.Context, r hfRequest) (*pyhttpx.Response, error) {
 		var actual float64
 		if reset != nil {
 			actual = float64(*reset) + 1
-			hfHubLog.Warning(fmt.Sprintf("Rate limited. Waiting %ss before retry [Retry %d/%d].", pyrepr.Repr(actual), tries, maxRetries))
+			pkgLog().Warn(fmt.Sprintf("Rate limited. Waiting %ss before retry [Retry %d/%d].", pyrepr.Repr(actual), tries, maxRetries))
 		} else {
 			actual = sleep
-			hfHubLog.Warning(fmt.Sprintf("Retrying in %ss [Retry %d/%d].", pyrepr.Repr(actual), tries, maxRetries))
+			pkgLog().Warn(fmt.Sprintf("Retrying in %ss [Retry %d/%d].", pyrepr.Repr(actual), tries, maxRetries))
 		}
 		select {
 		case <-ctx.Done():
@@ -246,7 +244,7 @@ func hfWarnOnWarningHeaders(h http.Header) {
 		if !hfWarnedTopics[topic] {
 			if message = pystr.Strip(message); message != "" {
 				hfWarnedTopics[topic] = true
-				hfHubLog.Warning(message)
+				pkgLog().Warn(message)
 			}
 		}
 	}
@@ -900,7 +898,7 @@ func hfUploadFile(ctx context.Context, token, repoID, pathInRepo string, content
 		localOID = hfGitHash(content)
 	}
 	if plan.remoteOID != nil && *plan.remoteOID == localOID {
-		hfHubLog.Warning("No files have been modified since last commit. Skipping to prevent empty commit.")
+		pkgLog().Warn("No files have been modified since last commit. Skipping to prevent empty commit.")
 		return hfRepoInfo(ctx, token, repoID)
 	}
 	lines := []any{pyjson.ObjectOf("key", "header", "value", pyjson.ObjectOf("summary", commitMessage, "description", ""))}

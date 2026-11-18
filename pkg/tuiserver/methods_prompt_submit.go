@@ -17,7 +17,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tools"
-	"github.com/nickheyer/icebath/pkg/tuigateway"
+	"github.com/nickheyer/icebath/pkg/tuihost"
 )
 
 // Refusal reasons when the owner FIFO could not take a typed prompt or did not confirm it in time
@@ -86,7 +86,7 @@ func hostedImagePaths(v any) ([]string, bool) {
 }
 
 // Fences direct prompts into a group session whose room a gateway hosts or a peer reserved
-func hostedGroupFenceError(ctx context.Context, rid any, session *tuigateway.Session, params map[string]any) map[string]any {
+func hostedGroupFenceError(ctx context.Context, rid any, session *tuihost.Session, params map[string]any) map[string]any {
 	title := strOr(session.Get("title"))
 	roomID := ""
 	if strings.HasPrefix(title, "Group: ") {
@@ -140,7 +140,7 @@ func hostedGroupFenceError(ctx context.Context, rid any, session *tuigateway.Ses
 }
 
 // Validates the hosted room turn proof an internal submit carries, nil when it holds
-func hostedSubmitError(rid any, session *tuigateway.Session, hostedTask, hostedCallback, hostedImages any) map[string]any {
+func hostedSubmitError(rid any, session *tuihost.Session, hostedTask, hostedCallback, hostedImages any) map[string]any {
 	if session.Get("source") != "bot_room" {
 		return rpcErr(rid, 4120, "hosted room turns require a bot_room session", nil)
 	}
@@ -179,7 +179,7 @@ func storageErrorData(failure state.StorageFailure, raw any) map[string]any {
 }
 
 // Persists the session row and the submitted message, releasing the turn with a storage error reply on failure
-func persistSessionRowForSubmit(ctx context.Context, rid any, session *tuigateway.Session, text any, displayKind string) map[string]any {
+func persistSessionRowForSubmit(ctx context.Context, rid any, session *tuihost.Session, text any, displayKind string) map[string]any {
 	var errResp map[string]any
 	persisted := false
 	failure := catchPanic(func() {
@@ -209,7 +209,7 @@ func persistSessionRowForSubmit(ctx context.Context, rid any, session *tuigatewa
 			errResp = rpcErr(rid, 5070, "Session storage could not be written, so this message was not saved: the disk is full. "+
 				"Free some disk space, then send your message again.", storageErrorData(storage, failure))
 		} else {
-			logger().Warn("prompt.submit: session persist failed: "+pyrepr.Str(failure), "error", failure)
+			pkgLog().Warn("prompt.submit: session persist failed: "+pyrepr.Str(failure), "error", failure)
 			errResp = rpcErr(rid, 5071, fmt.Sprintf("Session storage could not be written, so this message was not saved. Cause: %s. "+
 				"%s Then send your message again.", storage.Gloss, storage.Action), storageErrorData(storage, failure))
 		}
@@ -227,7 +227,7 @@ func persistSessionRowForSubmit(ctx context.Context, rid any, session *tuigatewa
 }
 
 // Turn thread body waiting patiently for a deferred build before running the accepted prompt
-func runAfterAgentReady(ctx context.Context, rid any, sid string, session *tuigateway.Session, text any, displayKind string, displayMetadata map[string]any, terminalCallback func(map[string]any), turnAuthor map[string]any, hostedImages []string) {
+func runAfterAgentReady(ctx context.Context, rid any, sid string, session *tuihost.Session, text any, displayKind string, displayMetadata map[string]any, terminalCallback func(map[string]any), turnAuthor map[string]any, hostedImages []string) {
 	if errResp := waitAgentForPrompt(ctx, session, rid, sid); errResp != nil {
 		message := "agent initialization failed"
 		if detail, isDict := errResp["error"].(map[string]any); isDict {
@@ -241,7 +241,7 @@ func runAfterAgentReady(ctx context.Context, rid any, sid string, session *tuiga
 		session.Set("running", false)
 		session.Set("last_active", nowSeconds())
 		unlock()
-		tuigateway.Emit(ctx, "session.info", sid, sessionInfo(ctx, sessionAgent(session), session))
+		tuihost.Emit(ctx, "session.info", sid, sessionInfo(ctx, sessionAgent(session), session))
 		return
 	}
 	unlock := lockHistory(session)
@@ -253,7 +253,7 @@ func runAfterAgentReady(ctx context.Context, rid any, sid string, session *tuiga
 			message = "Turn cancelled before the agent was ready"
 		}
 		unlock()
-		tuigateway.Emit(ctx, "error", sid, map[string]any{"message": message})
+		tuihost.Emit(ctx, "error", sid, map[string]any{"message": message})
 		return
 	}
 	unlock()
@@ -262,7 +262,7 @@ func runAfterAgentReady(ctx context.Context, rid any, sid string, session *tuiga
 }
 
 // Answer to a refused slot, a ledger refusal of a client submit going to the owner FIFO
-func slotRefusal(ctx context.Context, rid any, sid string, session *tuigateway.Session, text any, params map[string]any, refusal *activesessions.Refusal, internalHostedSubmit bool) map[string]any {
+func slotRefusal(ctx context.Context, rid any, sid string, session *tuihost.Session, text any, params map[string]any, refusal *activesessions.Refusal, internalHostedSubmit bool) map[string]any {
 	if refusal.LedgerStatus != "" && !internalHostedSubmit {
 		return submitToLedgerOwner(ctx, rid, sid, session, text, params, refusal)
 	}
@@ -274,7 +274,7 @@ func slotRefusal(ctx context.Context, rid any, sid string, session *tuigateway.S
 }
 
 // Queues the prompt behind the gateway ledger work in the owner FIFO, else refuses with the reason it cannot join
-func submitToLedgerOwner(ctx context.Context, rid any, sid string, session *tuigateway.Session, text any, params map[string]any, refusal *activesessions.Refusal) map[string]any {
+func submitToLedgerOwner(ctx context.Context, rid any, sid string, session *tuihost.Session, text any, params map[string]any, refusal *activesessions.Refusal) map[string]any {
 	reason := refusal.Reason
 	if reason == "" {
 		reason = "SESSION_NOT_OWNED"
@@ -312,7 +312,7 @@ func submitToLedgerOwner(ctx context.Context, rid any, sid string, session *tuig
 			if key == "" {
 				key = sid
 			}
-			logger().Info(fmt.Sprintf("forwarding prompt for %s to the owner failed: %s", key, err), "error", err)
+			pkgLog().Info(fmt.Sprintf("forwarding prompt for %s to the owner failed: %s", key, err), "error", err)
 			why = "the gateway refused it"
 			if errors.As(err, &owner) {
 				why = err.Error()
@@ -324,7 +324,7 @@ func submitToLedgerOwner(ctx context.Context, rid any, sid string, session *tuig
 }
 
 // Drops the images staged for a submit the owner FIFO cannot take, returning how many were dropped
-func unstageRefusedImages(session *tuigateway.Session) int {
+func unstageRefusedImages(session *tuihost.Session) int {
 	unlock := lockHistory(session)
 	defer unlock()
 	dropped := len(historyList(session.Get("attached_images")))
@@ -333,7 +333,7 @@ func unstageRefusedImages(session *tuigateway.Session) int {
 }
 
 // Under the history lock refuses watch child races and malformed truncation, applies the cut and marks the turn running
-func lockInSubmitTurn(ctx context.Context, rid any, sid string, session *tuigateway.Session, text any, params map[string]any, hasTruncation bool, requestedRebindIDs map[int64]bool, hostedTask any, displayKind string) (errResp map[string]any, fields map[string]any) {
+func lockInSubmitTurn(ctx context.Context, rid any, sid string, session *tuihost.Session, text any, params map[string]any, hasTruncation bool, requestedRebindIDs map[int64]bool, hostedTask any, displayKind string) (errResp map[string]any, fields map[string]any) {
 	fields = map[string]any{}
 	underHistoryLock(session, func() {
 		if truthy(session.Get("lazy")) {
@@ -446,14 +446,14 @@ func promptSubmit(ctx context.Context, rid any, params map[string]any) map[strin
 		}
 	}
 	if s, isStr := text.(string); hasTruncation && isStr {
-		text = tuigateway.ExpandSkillInvocationForReplay(ctx, s, strOr(session.Get("session_key")))
+		text = tuihost.ExpandSkillInvocationForReplay(ctx, s, strOr(session.Get("session_key")))
 	}
 	sessionResumeLock.Lock()
 	if refusal := reattachRefusal(rid, sid, session); refusal != nil {
 		sessionResumeLock.Unlock()
 		return refusal
 	}
-	t := tuigateway.CurrentTransport(ctx)
+	t := tuihost.CurrentTransport(ctx)
 	if t != nil {
 		rebindLiveTransport(ctx, sid, session, t)
 	}

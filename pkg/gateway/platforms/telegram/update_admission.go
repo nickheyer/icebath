@@ -6,7 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
-	"log/slog"
 	"math"
 	"math/big"
 	"os"
@@ -206,7 +205,7 @@ func (s *UpdateAdmission) loadReceipts(botID int64) error {
 		}
 	}
 	if err != nil {
-		slog.Warn(fmt.Sprintf("[Telegram] Ignoring unreadable update receipts at %s", path), "error", err)
+		pkgLog().Warn(fmt.Sprintf("[Telegram] Ignoring unreadable update receipts at %s", path), "error", err)
 		return nil
 	}
 	obj, ok := payload.(*pyjson.Object)
@@ -302,7 +301,7 @@ func (s *UpdateAdmission) flushReceipts(ctx context.Context) {
 			err = config.AtomicJSONWriteWith(ctx, path, payload)
 		}
 		if err != nil {
-			slog.Warn(fmt.Sprintf("[Telegram] Failed to persist update receipts to %s", path), "error", err)
+			pkgLog().Warn(fmt.Sprintf("[Telegram] Failed to persist update receipts to %s", path), "error", err)
 		}
 	}
 }
@@ -404,7 +403,7 @@ func BuildUpdateProcessor(extra map[string]any, name string) *PerChatUpdateProce
 	}
 	limit := gateway.CoercePort(raw, 0)
 	if limit < 1 {
-		slog.Warn(fmt.Sprintf("[%s] Invalid max_concurrent_updates=%s; using %d", name, pyrepr.Repr(raw), DefaultMaxConcurrentUpdates))
+		pkgLog().Warn(fmt.Sprintf("[%s] Invalid max_concurrent_updates=%s; using %d", name, pyrepr.Repr(raw), DefaultMaxConcurrentUpdates))
 		limit = DefaultMaxConcurrentUpdates
 	}
 	p, _ := NewPerChatUpdateProcessor(limit)

@@ -71,7 +71,7 @@ func rateLimitBucketDict(b provider.RateLimitBucket) *pyjson.Object {
 
 // Last captured rate limit state as its dataclass dict, nil before any headers were captured
 func usageRateLimit(a *AIAgent) any {
-	capture := a.CreditsCapture()
+	capture := a.HeaderCapture()
 	if capture == nil {
 		return nil
 	}

@@ -30,7 +30,7 @@ var (
 // Discovery entry point the background goroutine runs, swapped by tests
 var discoverMCPTools = ConnectAll
 
-// Background start a deferred discovery fires, replaced only where a hermes case patches it
+// Background start a deferred discovery fires, replaced only where a test patches it
 var startBackgroundDiscovery = StartBackgroundDiscovery
 
 // discoveryRun is one background discovery goroutine whose done channel closes when it returns
@@ -155,7 +155,7 @@ func serversAwaitingConnectFiltered(ctx context.Context, env *tools.Env, filter 
 // Starts one background discovery per profile home, retrying when the last run connected nothing or missed new servers
 func StartBackgroundDiscovery(ctx context.Context, env *tools.Env, logger *slog.Logger, threadName string) {
 	if logger == nil {
-		logger = mcpLogger()
+		logger = pkgLog()
 	}
 	if threadName == "" {
 		threadName = defaultDiscoveryThreadName
@@ -291,7 +291,7 @@ func JoinDiscovery(ctx context.Context, timeout *time.Duration) bool {
 // Starts discovery when needed and gives configured MCP tools a bounded chance to register before an agent builds
 func EnsureDiscoveryBeforeAgentBuild(ctx context.Context, env *tools.Env, logger *slog.Logger, timeout *time.Duration, singleQuery bool, threadName string) {
 	if logger == nil {
-		logger = mcpLogger()
+		logger = pkgLog()
 	}
 	defer func() {
 		if r := recover(); r != nil {

@@ -2,6 +2,7 @@ package tui
 
 import (
 	"context"
+	"github.com/nickheyer/icebath/pkg/tuigateway"
 	"os"
 	"os/exec"
 	"regexp"
@@ -48,13 +49,13 @@ func stringMap(v any) map[string]string {
 }
 
 // Skin of a gateway.ready or skin.changed payload
-func gatewaySkinOf(p map[string]any) *gatewaySkin {
+func gatewaySkinOf(p *tuigateway.SkinPayloadModel) *gatewaySkin {
 	if p == nil {
 		return nil
 	}
 	return &gatewaySkin{
-		Colors: stringMap(p["colors"]), LightColors: stringMap(p["light_colors"]), DarkColors: stringMap(p["dark_colors"]), Branding: stringMap(p["branding"]),
-		BannerLogo: paramStr(p["banner_logo"]), BannerHero: paramStr(p["banner_hero"]), ToolPrefix: paramStr(p["tool_prefix"]), HelpHeader: paramStr(p["help_header"]),
+		Colors: p.Colors, LightColors: p.LightColors, DarkColors: p.DarkColors, Branding: p.Branding,
+		BannerLogo: p.BannerLogo, BannerHero: p.BannerHero, ToolPrefix: p.ToolPrefix, HelpHeader: p.HelpHeader,
 	}
 }
 

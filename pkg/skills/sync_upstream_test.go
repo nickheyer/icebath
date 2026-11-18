@@ -537,7 +537,7 @@ func TestResetBundledSkillClearsStuckUserModifiedFlag(t *testing.T) {
 	if !lexists(dest) || !strings.Contains(mustRead(t, filepath.Join(dest, "SKILL.md")), "GW v2") {
 		t.Fatal("user copy lost")
 	}
-	if name, _ := s.BundledSkillForInstall("NousResearch/hermes-agent/skills/google-workspace"); name != "google-workspace" {
+	if name, _ := s.BundledSkillForInstall("nickheyer/icebath/pkg/skills/bundled/google-workspace"); name != "google-workspace" {
 		t.Fatal(name)
 	}
 	if name, _ := s.BundledSkillForInstall("someone/else/google-workspace"); name != "" {

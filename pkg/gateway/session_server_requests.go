@@ -12,7 +12,7 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/state"
-	"github.com/nickheyer/icebath/pkg/tuigateway"
+	"github.com/nickheyer/icebath/pkg/tuihost"
 )
 
 // Seconds an owner request waits for a viewer, main's sudo prompt timeout
@@ -122,7 +122,7 @@ func ResolveServerRequest(frame *pyjson.Object, sessionOK func(sessionID string,
 		result, _ = frame.Get("result")
 	}
 	if locked != nil {
-		result = tuigateway.SettleBatch(locked, result, "")
+		result = tuihost.SettleBatch(locked, result, "")
 	}
 	pending.value = ""
 	pending.result = nil
@@ -176,7 +176,9 @@ func OpenServerRequests(events *SessionEvents, sessionID string) []*pyjson.Objec
 // Error for a clarify.lock naming a question the batch never asked
 type unknownQuestionError struct{ questionID string }
 
-func (e *unknownQuestionError) Error() string { return "ValueError: " + e.questionID }
+func (e *unknownQuestionError) Error() string {
+	return "the open clarify batch never asked question " + e.questionID
+}
 
 // Locks one answer of an open batch, the question ids still unanswered, nil when no batch the caller may answer is open
 func LockAnswer(requestID, questionID string, answer any, sessionOK func(sessionID string, events *SessionEvents) bool) ([]string, error) {
@@ -199,7 +201,7 @@ func LockAnswer(requestID, questionID string, answer any, sessionOK func(session
 	}
 	if len(remaining) == 0 {
 		popServerRequest(requestID)
-		pending.result = tuigateway.SettleBatch(pending.locked, nil, "submitted")
+		pending.result = tuihost.SettleBatch(pending.locked, nil, "submitted")
 	}
 	serverRequests.Unlock()
 	if len(remaining) == 0 {
@@ -265,7 +267,7 @@ wait:
 		if reason == "interrupted" {
 			ended = "cancelled"
 		}
-		pending.result = tuigateway.SettleBatch(pending.locked, nil, ended)
+		pending.result = tuihost.SettleBatch(pending.locked, nil, ended)
 	}
 	serverRequests.Unlock()
 	if stillOpen {

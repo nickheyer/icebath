@@ -18,7 +18,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/observability"
 	"github.com/nickheyer/icebath/pkg/pm"
 	"github.com/nickheyer/icebath/pkg/skills"
 )
@@ -228,7 +227,7 @@ func refuseUnavailablePortablePlugin(ctx context.Context, pluginName, tree, appT
 	for name := range pkg.ServerDeclarations {
 		declared[name] = true
 	}
-	for _, name := range orderedMapKeys(declared, jsonObjectKeyOrder(filepath.Join(tree, "plugin.json"), "extensions", portableExtension, "servers")) {
+	for _, name := range orderedMapKeys(declared, jsonObjectKeyOrder(filepath.Join(tree, "plugin.json"), "extensions", PortableExtension, "servers")) {
 		svc := installedServices()
 		if svc == nil || svc.ServerAvailabilityReason == nil {
 			return &ServiceMissingError{Name: "ServerAvailabilityReason"}
@@ -377,7 +376,7 @@ func installPluginCore(ctx context.Context, identifier string, opts installCoreO
 	if looks, err := looksLikePluginDir(target); err != nil {
 		return "", nil, "", err
 	} else if !looks {
-		logPluginsCmdInstall.warn(fmt.Sprintf("%s has no plugin.yaml / __init__.py; may not be a valid plugin", filepath.Base(target)))
+		pkgLog().Warn(fmt.Sprintf("%s has no plugin.yaml / __init__.py; may not be a valid plugin", filepath.Base(target)))
 	}
 	copyExampleFiles(target, NewConsole(os.Stdout))
 	installed, err := readManifest(target)
@@ -567,35 +566,6 @@ func publishFailureClass(err error) (class string) {
 	return "deps_failed"
 }
 
-// Shared metrics recorder of plugin installs, the module attribute the hermes cases replace
-var recordExtensionInstall = observability.RecordExtensionInstall
-
-// Runs one install attempt and records it as a shared metrics extension install
-func recordedInstall(ctx context.Context, h string, install func() (string, map[string]any, string, error), catalogName, identifier string) (string, map[string]any, string, error) {
-	source := "url"
-	var name any
-	if catalogName != "" {
-		source, name = "catalog", catalogName
-	} else if port, ok := strings.CutPrefix(identifier, builtinPortSource); ok {
-		source, name = "bundled", port
-	} else if strings.HasPrefix(identifier, "file://") {
-		source = "local"
-	}
-	before, err := readInstallMetadata(h)
-	if err != nil {
-		return "", nil, "", err
-	}
-	target, manifest, installedName, err := install()
-	if err != nil {
-		recordExtensionInstall(ctx, "plugin", source, name, "failed", nil, nil, err)
-		return "", nil, "", err
-	}
-	if _, ok := before[installedName]; !ok {
-		recordExtensionInstall(ctx, "plugin", source, name, "success", nil, nil, nil)
-	}
-	return target, manifest, installedName, nil
-}
-
 // Catalog entry or nil and the identifier to clone, announcing the catalog pin or the custom source warning
 func announceSource(ctx context.Context, identifier string, console *Console, brief bool) (*PluginCatalogEntry, string, error) {
 	if !LooksLikeCatalogName(identifier) {
@@ -646,7 +616,7 @@ func CmdInstall(ctx context.Context, opts InstallCommandOptions, out io.Writer) 
 		if entry != nil {
 			candidates = append(candidates, entry.Name)
 		}
-		err = raiseIfRemoved(ctx, candidates...)
+		err = raiseIfInstallRemoved(ctx, entry, opts.Ref, candidates...)
 	}
 	if err != nil {
 		return fail(console, fmt.Sprintf("[red]Error:[/red] %v", err))
@@ -667,20 +637,15 @@ func CmdInstall(ctx context.Context, opts InstallCommandOptions, out io.Writer) 
 		}
 	}
 	decide := InteractiveScanDecision(console, "Install")
-	catalogName := ""
+	var target, installedName string
+	var installedManifest map[string]any
 	if entry != nil {
-		catalogName = entry.Name
+		target, installedManifest, installedName, err = installCatalogEntry(ctx, entry, CatalogInstallOptions{Force: opts.Force, Ref: opts.Ref,
+			AllowRemoved: opts.AllowRemoved, NoDeps: opts.NoDeps, AssumeDepsConsent: opts.YesDeps, ScanDecision: decide})
+	} else {
+		target, installedManifest, installedName, err = installPluginCore(ctx, identifier, installCoreOptions{Force: opts.Force, Ref: opts.Ref,
+			ScanDecision: decide, NoDeps: opts.NoDeps, AssumeDepsConsent: opts.YesDeps, AllowRemoved: opts.AllowRemoved})
 	}
-	target, installedManifest, installedName, err := recordedInstall(ctx, h, func() (string, map[string]any, string, error) {
-		if entry != nil {
-			return installCatalogEntry(ctx, entry, CatalogInstallOptions{Force: opts.Force, Ref: opts.Ref, AllowRemoved: opts.AllowRemoved,
-				NoDeps: opts.NoDeps, AssumeDepsConsent: opts.YesDeps,
-				ScanDecision: decide})
-		}
-		return installPluginCore(ctx, identifier, installCoreOptions{Force: opts.Force, Ref: opts.Ref, ScanDecision: decide,
-			NoDeps: opts.NoDeps, AssumeDepsConsent: opts.YesDeps,
-			AllowRemoved: opts.AllowRemoved})
-	}, catalogName, identifier)
 	var opErr *PluginOperationError
 	if errors.As(err, &opErr) {
 		label := "Error"
@@ -807,7 +772,7 @@ func selectMemoryProvider(ctx context.Context, h, name string, console *Console,
 		return nil
 	}
 	if err := svc.PrepareMemoryProviderDependencies(ctx, name); err != nil {
-		logPluginsCmdCatalog.debug(fmt.Sprintf("memory provider %s dependency preparation failed: %v", name, err))
+		pkgLog().Debug(fmt.Sprintf("memory provider %s dependency preparation failed: %v", name, err))
 		console.Print(fmt.Sprintf("[red]✗[/red] Could not prepare %s's dependencies: %v", name, err))
 		console.Print("[dim]memory.provider is unchanged; run `icebath memory setup` after resolving it.[/dim]")
 		return nil
@@ -891,11 +856,11 @@ func catalogInstallOnDisk(ctx context.Context, h, catalogName, ref, inspectedSha
 }
 
 // Catalog entry or nil, the identifier to clone, the warnings so far and a refusal result
-func resolveSource(ctx context.Context, identifier, catalogName string) (*PluginCatalogEntry, string, []string, map[string]any) {
+func resolveSource(ctx context.Context, identifier, catalogName, ref string) (*PluginCatalogEntry, string, []string, map[string]any) {
 	warnings := []string{}
 	var entry *PluginCatalogEntry
 	if catalogName != "" {
-		if entry = portPinnedEntry(GetLiveCatalogEntry(ctx, catalogName)); entry == nil {
+		if entry = catalogEntryFor(ctx, catalogName); entry == nil {
 			if err := raiseIfRemoved(ctx, catalogName); err != nil {
 				return nil, identifier, warnings, map[string]any{"ok": false, "error": err.Error()}
 			}
@@ -917,7 +882,7 @@ func resolveSource(ctx context.Context, identifier, catalogName string) (*Plugin
 	if entry != nil {
 		candidates = append(candidates, entry.Name)
 	}
-	if err := raiseIfRemoved(ctx, candidates...); err != nil {
+	if err := raiseIfInstallRemoved(ctx, entry, ref, candidates...); err != nil {
 		return entry, identifier, warnings, map[string]any{"ok": false, "error": err.Error()}
 	}
 	return entry, identifier, warnings, nil
@@ -943,18 +908,16 @@ func placeTreeConsented(ctx context.Context, h string, entry *PluginCatalogEntry
 		}
 	}
 	step(InstallPhaseDownloading)
-	catalogName := ""
+	var target, name string
+	var manifest map[string]any
+	var err error
 	if entry != nil {
-		catalogName = entry.Name
-	}
-	target, manifest, name, err := recordedInstall(ctx, h, func() (string, map[string]any, string, error) {
-		if entry != nil {
-			return installCatalogEntry(ctx, entry, CatalogInstallOptions{Force: force, Ref: ref, InspectedSha: inspectedSha,
-				AssumeDepsConsent: assumeDepsConsent})
-		}
-		return installPluginCore(ctx, identifier, installCoreOptions{Force: force, Ref: ref, InspectedSha: inspectedSha,
+		target, manifest, name, err = installCatalogEntry(ctx, entry, CatalogInstallOptions{Force: force, Ref: ref, InspectedSha: inspectedSha,
 			AssumeDepsConsent: assumeDepsConsent})
-	}, catalogName, identifier)
+	} else {
+		target, manifest, name, err = installPluginCore(ctx, identifier, installCoreOptions{Force: force, Ref: ref, InspectedSha: inspectedSha,
+			AssumeDepsConsent: assumeDepsConsent})
+	}
 	var blocked *PluginScanBlocked
 	var moved *PluginSourceMoved
 	var opErr *PluginOperationError
@@ -1014,9 +977,7 @@ func UnattendedInstallPlugin(ctx context.Context, opts UnattendedInstallOptions)
 	if port, ok := builtinOnlyPort(opts.CatalogName); ok && opts.Identifier == "" {
 		step(InstallPhaseDownloading)
 		name := port.Manifest().Name
-		target, manifest, installedName, err = recordedInstall(ctx, h, func() (string, map[string]any, string, error) {
-			return installBuiltinPort(ctx, name, opts.Force, assumeDepsConsent)
-		}, "", builtinPortSource+name)
+		target, manifest, installedName, err = installBuiltinPort(ctx, name, opts.Force, assumeDepsConsent)
 		var opErr *PluginOperationError
 		if errors.As(err, &opErr) {
 			return map[string]any{"ok": false, "error": err.Error()}, nil
@@ -1028,7 +989,7 @@ func UnattendedInstallPlugin(ctx context.Context, opts UnattendedInstallOptions)
 	} else {
 		var identifier string
 		var refusal map[string]any
-		entry, identifier, warnings, refusal = resolveSource(ctx, opts.Identifier, opts.CatalogName)
+		entry, identifier, warnings, refusal = resolveSource(ctx, opts.Identifier, opts.CatalogName, opts.Ref)
 		if refusal != nil {
 			return refusal, nil
 		}

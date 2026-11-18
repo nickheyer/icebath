@@ -61,37 +61,13 @@ func stampLimitReset(result map[string]any, apiError error, classified *provider
 	}
 }
 
-// Structured free tier failure block a client renders its card from
-func stampFreeTier(result map[string]any, kind, message string) map[string]any {
-	if kind == "" {
-		kind = "refused"
-	}
-	result["free_tier"] = map[string]any{"kind": kind, "message": message}
-	return result
-}
-
-// Free model outage sentence for a transport or server failure on the Nous free tier, empty elsewhere
-func welcomeOutageCopy(a *AIAgent, baseURL string, classified *provider.Classified) string {
-	if provider.OnFreeModel(a.provider, a.apiKey, baseURL) && (classified.Reason == provider.ReasonTimeout ||
-		classified.Reason == provider.ReasonOverloaded || classified.Reason == provider.ReasonServerError) {
-		return provider.FreeTierOutageCopy
-	}
-	return ""
-}
-
 // Prints the actionable guidance for a terminal auth or billing error
 func printNonretryableAuthGuidance(ctx context.Context, a *AIAgent, classified *provider.Classified, statusCode *int, prov, baseURL, model string) {
-	if pyTruthy(classified.Context["usage_window"]) {
-		return
-	}
 	if classified.Reason == provider.ReasonBilling && printBillingOrEntitlementGuidance(ctx, a, "model access", prov, baseURL, model, classified.BillingUnverified()) {
 		return
 	}
-	if prov == "nous" && printNousEntitlementGuidance(ctx, a, "Nous model access") {
-		return
-	}
 	is401 := statusCode != nil && *statusCode == 401
-	if (prov == "openai-codex" || prov == "xai-oauth" || prov == "nous") && is401 {
+	if (prov == "openai-codex" || prov == "xai-oauth") && is401 {
 		switch prov {
 		case "openai-codex":
 			vlines(a,
@@ -102,18 +78,6 @@ func printNonretryableAuthGuidance(ctx context.Context, a *AIAgent, classified *
 			vlines(a,
 				"   💡 xAI OAuth token was rejected (HTTP 401). To fix:",
 				"      re-authenticate with xAI Grok OAuth (SuperGrok / Premium+) from `icebath model`.")
-		default:
-			vlines(a,
-				"   💡 Nous Portal OAuth token was rejected (HTTP 401). Your token may be",
-				"      expired, revoked, or your account may be out of credits. To fix:",
-				"      1. Re-authenticate: icebath portal",
-				"      2. Check your portal account: https://portal.nousresearch.com")
-			if strings.HasSuffix(model, ":free") {
-				vlines(a,
-					fmt.Sprintf("      ⚠️  Note: `%s` looks like an OpenRouter slug (`:free` suffix).", model),
-					"         Nous Portal won't recognize that model name. Either switch to a",
-					fmt.Sprintf("         Nous catalog model, or run `/model openrouter:%s` to use OpenRouter.", model))
-			}
 		}
 		return
 	}
@@ -150,14 +114,11 @@ func nonretryableClientErrorResult(ctx context.Context, a *AIAgent, s *LoopState
 			fmt.Sprintf("   🔌 Provider: %s  Model: %s  (HTTP %s)", prov, model, pyStatus(e.statusCode)),
 			"   🌐 Endpoint: "+baseURL)
 	}
-	welcomeHint := provider.WelcomeTierGuidance(classified, model, false, true)
 	prefixSuggestion := missingVendorPrefixSuggestion(apiError, prov, model)
 	if moved := provider.HostInstallHint(baseURL); moved != "" {
 		vlines(a, "   💡 "+moved)
 	}
 	switch {
-	case welcomeHint != "":
-		vlines(a, "   💡 "+welcomeHint)
 	case classified.IsAuth() || classified.Reason == provider.ReasonBilling:
 		printNonretryableAuthGuidance(ctx, a, classified, e.statusCode, prov, baseURL, model)
 	case classified.Reason == provider.ReasonModelNotFound:
@@ -191,7 +152,7 @@ func nonretryableClientErrorResult(ctx context.Context, a *AIAgent, s *LoopState
 			"      • Self-signed local endpoint (llama.cpp, LM Studio, vLLM)? Use http://",
 			"        for localhost, or add the server's cert to your trust store.")
 	}
-	conversationLoopLog().Error(fmt.Sprintf("%sNon-retryable client error: %s", a.logPrefix, apiError))
+	pkgLog().Error(fmt.Sprintf("%sNon-retryable client error: %s", a.logPrefix, apiError))
 	if e.statusCode != nil && *e.statusCode == 400 && (s.ApproxTokens > 50000 || len(s.APIMessages) > 80) {
 		vlines(a, "⚠️  Skipping session persistence for large failed session to prevent growth loop.")
 	} else if err := a.persistSession(&s.Messages, s.ConversationHistory); err != nil {
@@ -201,18 +162,11 @@ func nonretryableClientErrorResult(ctx context.Context, a *AIAgent, s *LoopState
 		return contentPolicyBlockedResult(s.Messages, s.APICallCount, "⚠️ "+ContentPolicyCopy(plabel, summary), summary), nil
 	}
 	if classified.Reason == provider.ReasonBilling {
-		return billingFailureResult(ctx, classified, summary, s.Messages, s.APICallCount, prov, baseURL, model, nil,
-			usageWindowRefusal(ctx, a, classified, s.APIMessages)), nil
+		return billingFailureResult(ctx, classified, summary, s.Messages, s.APICallCount, prov, baseURL, model, nil), nil
 	}
-	var finalResponse string
-	if welcomeHint != "" {
-		finalResponse = provider.WelcomeTierGuidance(classified, model, true, true)
-	} else {
-		copyText, err := NonretryableCopy(ctx, classified, prov, model, summary, prefixSuggestion)
-		if err != nil {
-			return nil, err
-		}
-		finalResponse = copyText
+	finalResponse, err := NonretryableCopy(ctx, classified, prov, model, summary, prefixSuggestion)
+	if err != nil {
+		return nil, err
 	}
 	finalResponse, keepPartial := withDeliveredPartial(finalResponse, summary, delivered)
 	result := failedTurnResult(finalResponse, s.Messages, s.APICallCount, summary)
@@ -222,11 +176,6 @@ func nonretryableClientErrorResult(ctx context.Context, a *AIAgent, s *LoopState
 		result["partial"] = true
 	}
 	stampLimitReset(result, apiError, classified)
-	if welcomeHint != "" {
-		if kind := provider.WelcomeSurfaceKind(classified); kind != "" {
-			stampFreeTier(result, kind, provider.WelcomeTierGuidance(classified, model, true, false))
-		}
-	}
 	return result, nil
 }
 
@@ -270,10 +219,8 @@ func maxRetriesExhaustedResult(ctx context.Context, a *AIAgent, s *LoopState, e 
 		} else {
 			a.emitDiagnosticStatus("❌ Billing or credits exhausted — " + summary)
 		}
-		if !pyTruthy(classified.Context["usage_window"]) {
-			billingGuidance = billingOrEntitlementMessage(ctx, "model access", prov, baseURL, model, classified.BillingUnverified())
-			printBillingOrEntitlementGuidance(ctx, a, "model access", prov, baseURL, model, classified.BillingUnverified())
-		}
+		billingGuidance = billingOrEntitlementMessage(ctx, "model access", prov, baseURL, model, classified.BillingUnverified())
+		printBillingOrEntitlementGuidance(ctx, a, "model access", prov, baseURL, model, classified.BillingUnverified())
 	case e.isRateLimited:
 		word := "retries"
 		if attempts == 1 {
@@ -288,10 +235,6 @@ func maxRetriesExhaustedResult(ctx context.Context, a *AIAgent, s *LoopState, e 
 		a.emitDiagnosticStatus(fmt.Sprintf("❌ API failed after %d retries — %s", attempts, summary))
 	}
 	vlines(a, "   💀 Final error: "+summary)
-	welcomeHint := provider.WelcomeTierGuidance(classified, model, false, true)
-	if welcomeHint != "" {
-		vlines(a, "   💡 "+welcomeHint)
-	}
 
 	isStreamDrop := false
 	if apiErrorStatus(apiError) == nil {
@@ -315,7 +258,7 @@ func maxRetriesExhaustedResult(ctx context.Context, a *AIAgent, s *LoopState, e 
 		vlines(a, "   💡 "+pystr.Strip(BuildThinkingTimeoutGuidance(ctx, prov, model, "")))
 	}
 
-	conversationLoopLog().Error(fmt.Sprintf("%sAPI call failed after %d retries. %s | provider=%s model=%s msgs=%d tokens=~%s",
+	pkgLog().Error(fmt.Sprintf("%sAPI call failed after %d retries. %s | provider=%s model=%s msgs=%d tokens=~%s",
 		a.logPrefix, attempts, summary, prov, model, len(s.APIMessages), pystr.GroupThousands(int64(s.ApproxTokens))))
 	if s.APIKwargs != nil {
 		a.dumpAPIRequestDebug(tools.WithEnvHome(ctx, a.env), s.APIKwargs, "max_retries_exhausted", apiError)
@@ -325,7 +268,6 @@ func maxRetriesExhaustedResult(ctx context.Context, a *AIAgent, s *LoopState, e 
 	}
 	var billingBlock map[string]any
 	billingUnverified := false
-	freeTierKind := ""
 	var finalResponse string
 	if isBilling {
 		billingUnverified = classified.BillingUnverified()
@@ -336,12 +278,6 @@ func maxRetriesExhaustedResult(ctx context.Context, a *AIAgent, s *LoopState, e 
 		billingBlock = billingBlockDict(prov, baseURL, model, billingGuidance, billingUnverified)
 	} else {
 		finalResponse = ExhaustedCopy(string(classified.Reason), ProviderLabelFor(prov), attempts, summary, resetSecondsFrom(classified), apiError)
-		if welcomeHint != "" {
-			finalResponse = provider.WelcomeTierGuidance(classified, model, true, true)
-			freeTierKind = provider.WelcomeSurfaceKind(classified)
-		} else if outage := welcomeOutageCopy(a, baseURL, classified); outage != "" {
-			finalResponse, freeTierKind = outage, "outage"
-		}
 	}
 	if isThinkingTimeout {
 		finalResponse += "\n\n" + BuildThinkingTimeoutGuidance(ctx, prov, model, "")
@@ -365,12 +301,5 @@ func maxRetriesExhaustedResult(ctx context.Context, a *AIAgent, s *LoopState, e 
 		result["partial"] = true
 	}
 	stampLimitReset(result, apiError, classified)
-	if freeTierKind != "" {
-		message := finalResponse
-		if welcomeHint != "" {
-			message = provider.WelcomeTierGuidance(classified, model, true, false)
-		}
-		stampFreeTier(result, freeTierKind, message)
-	}
 	return result, nil
 }

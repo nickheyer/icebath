@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"log/slog"
 	"net/http"
 	"os"
 	"sort"
@@ -92,7 +91,7 @@ func appendCachedResource(adapter *YuanbaoAdapter, resourceID string, mediaPaths
 	if !ok {
 		return false
 	}
-	slog.Debug(fmt.Sprintf("[%s] resource cache hit: rid=%s path=%s", adapter.Name(), resourceID, path))
+	pkgLog().Debug(fmt.Sprintf("[%s] resource cache hit: rid=%s path=%s", adapter.Name(), resourceID, path))
 	*mediaPaths = append(*mediaPaths, path)
 	*mimes = append(*mimes, mime)
 	return true
@@ -128,7 +127,7 @@ func resourceAuthHeaders(adapter *YuanbaoAdapter, tokenData map[string]any, fall
 	return map[string]string{"Content-Type": "application/json", "X-ID": botID, "X-Token": token, "X-Source": source}
 }
 
-// HTTP client of a resource API request, a package var the way hermes tests patch httpx
+// HTTP client of a resource API request, a package var the way tests patch httpx
 var resourceHTTPClient = func() *http.Client { return pyhttpx.PlainClient(true) }
 
 // Exchanges a resource id for a direct download URL, retrying once with a fresh token after a 401
@@ -224,7 +223,7 @@ func resolveDownloadURL(ctx context.Context, adapter *YuanbaoAdapter, rawURL str
 func downloadAndCache(ctx context.Context, adapter *YuanbaoAdapter, fetchURL, kind, fileName, logTag, resourceID string) (localPath, mime string, ok bool, err error) {
 	if resourceID != "" {
 		if path, cachedMime, hit := getCachedResource(resourceID); hit {
-			slog.Debug(fmt.Sprintf("[%s] resource cache hit: rid=%s path=%s", adapter.Name(), resourceID, path))
+			pkgLog().Debug(fmt.Sprintf("[%s] resource cache hit: rid=%s path=%s", adapter.Name(), resourceID, path))
 			return path, cachedMime, true, nil
 		}
 	}
@@ -234,7 +233,7 @@ func downloadAndCache(ctx context.Context, adapter *YuanbaoAdapter, fetchURL, ki
 		if ctx.Err() != nil {
 			return "", "", false, ctx.Err()
 		}
-		slog.Warn(fmt.Sprintf("[%s] inbound media download failed: kind=%s %s err=%s", name, kind, logTag, errText(err)))
+		pkgLog().Warn(fmt.Sprintf("[%s] inbound media download failed: kind=%s %s err=%s", name, kind, logTag, errText(err)))
 		return "", "", false, nil
 	}
 	switch kind {
@@ -247,7 +246,7 @@ func downloadAndCache(ctx context.Context, adapter *YuanbaoAdapter, fetchURL, ki
 			if ctx.Err() != nil || !isValueError(err) {
 				return "", "", false, err
 			}
-			slog.Warn(fmt.Sprintf("[%s] inbound image cache rejected: %s err=%s", name, logTag, errText(err)))
+			pkgLog().Warn(fmt.Sprintf("[%s] inbound image cache rejected: %s err=%s", name, logTag, errText(err)))
 			return "", "", false, nil
 		}
 		if mime = GuessMIMEType("image" + ext); !strings.HasPrefix(mime, "image/") {
@@ -275,7 +274,7 @@ func downloadAndCache(ctx context.Context, adapter *YuanbaoAdapter, fetchURL, ki
 			if ctx.Err() != nil {
 				return "", "", false, ctx.Err()
 			}
-			slog.Warn(fmt.Sprintf("[%s] inbound file cache failed: %s err=%s", name, logTag, errText(err)))
+			pkgLog().Warn(fmt.Sprintf("[%s] inbound file cache failed: %s err=%s", name, logTag, errText(err)))
 			return "", "", false, nil
 		}
 		mime = GuessMIMEType(fileName)
@@ -284,7 +283,7 @@ func downloadAndCache(ctx context.Context, adapter *YuanbaoAdapter, fetchURL, ki
 	return localPath, mime, true, nil
 }
 
-// Media resolution steps, package vars the way hermes tests patch the middleware methods
+// Media resolution steps, package vars the way tests patch the middleware methods
 var (
 	fetchResourceURLFn     = fetchResourceURL
 	resolveDownloadURLFn   = resolveDownloadURL
@@ -322,7 +321,7 @@ func resolveOne(ctx context.Context, adapter *YuanbaoAdapter, item resolveItem, 
 				out.err = ctx.Err()
 				return
 			}
-			slog.Warn(batch.failed(item.kind, item.key, err))
+			pkgLog().Warn(batch.failed(item.kind, item.key, err))
 			return
 		}
 		out.path, out.mime, out.ok, out.err = downloadAndCacheFn(ctx, adapter, fetchURL, item.kind, item.filename,
@@ -363,7 +362,7 @@ func gatherResolve(ctx context.Context, adapter *YuanbaoAdapter, active []resolv
 	for i, item := range active {
 		result := results[i]
 		if result.err != nil {
-			slog.Warn(batch.crashed(item.kind, item.key, result.err))
+			pkgLog().Warn(batch.crashed(item.kind, item.key, result.err))
 		}
 		if result.err != nil || !result.ok {
 			failed++
@@ -372,7 +371,7 @@ func gatherResolve(ctx context.Context, adapter *YuanbaoAdapter, active []resolv
 		*outPaths = append(*outPaths, result.path)
 		*outMimes = append(*outMimes, result.mime)
 	}
-	slog.Info(fmt.Sprintf("[%s] media resolve batch: scope=%s concurrency=%d total=%d ok=%d failed=%d elapsed_ms=%d", adapter.Name(),
+	pkgLog().Info(fmt.Sprintf("[%s] media resolve batch: scope=%s concurrency=%d total=%d ok=%d failed=%d elapsed_ms=%d", adapter.Name(),
 		batch.scope, concurrency, len(active), len(*outPaths), failed, elapsedMS))
 	return nil
 }
@@ -457,9 +456,9 @@ func collectObservedMedia(ctx context.Context, adapter *YuanbaoAdapter, source *
 		}
 		var unreadable *gateway.TranscriptReadError
 		if errors.As(err, &unreadable) {
-			slog.Warn(fmt.Sprintf("[%s] Observed-media hydration: transcript unreadable: %s", adapter.Name(), errText(err)))
+			pkgLog().Warn(fmt.Sprintf("[%s] Observed-media hydration: transcript unreadable: %s", adapter.Name(), errText(err)))
 		} else {
-			slog.Warn(fmt.Sprintf("[%s] Observed-media hydration setup failed: %s", adapter.Name(), errText(err)))
+			pkgLog().Warn(fmt.Sprintf("[%s] Observed-media hydration setup failed: %s", adapter.Name(), errText(err)))
 		}
 		return nil, nil, nil
 	}
@@ -565,14 +564,14 @@ func (m *MediaResolveMiddleware) Handle(ctx context.Context, ic *InboundContext,
 		case err != nil && ctx.Err() != nil:
 			return ctx.Err()
 		case err != nil:
-			slog.Warn(fmt.Sprintf("[%s] observed-image hydration raised, continuing anyway: %s", adapter.Name(), errText(err)))
+			pkgLog().Warn(fmt.Sprintf("[%s] observed-image hydration raised, continuing anyway: %s", adapter.Name(), errText(err)))
 		default:
 			addUnique(paths, mimes)
 		}
 	}
 	ic.MediaURLs, ic.MediaTypes = urls, types
 	if isSkippablePlaceholder(ic.RawText, ownCount) {
-		slog.Debug(fmt.Sprintf("[%s] Skip placeholder after media download: %s", adapter.Name(), pyrepr.StrRepr(ic.RawText)))
+		pkgLog().Debug(fmt.Sprintf("[%s] Skip placeholder after media download: %s", adapter.Name(), pyrepr.StrRepr(ic.RawText)))
 		return nil
 	}
 	return next()

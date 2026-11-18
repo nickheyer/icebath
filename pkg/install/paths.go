@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"runtime/debug"
 	"strconv"
 	"strings"
 
@@ -32,6 +33,54 @@ func InstallRootOf(homeDir string) string { return filepath.Join(homeDir, Instal
 // Bootstrap complete marker of an install tree
 func BootstrapMarkerPath(installRoot string) string {
 	return filepath.Join(installRoot, BootstrapMarkerName)
+}
+
+// Whether the tree carries the bootstrap marker the installer writes when it completes an install there
+func InstallerCreated(root string) bool {
+	st, err := os.Stat(BootstrapMarkerPath(root))
+	return err == nil && st.Mode().IsRegular()
+}
+
+// Whether the tree holds the source of the module this binary was built from
+func IsSourceCheckout(root string) bool {
+	info, ok := debug.ReadBuildInfo()
+	if !ok || info.Main.Path == "" {
+		return false
+	}
+	data, err := os.ReadFile(filepath.Join(root, "go.mod"))
+	if err != nil {
+		return false
+	}
+	for _, line := range strings.Split(string(data), "\n") {
+		if fields := strings.Fields(line); len(fields) == 2 && fields[0] == "module" {
+			return strings.Trim(fields[1], `"`) == info.Main.Path
+		}
+	}
+	return false
+}
+
+// Names a tree the installer did not create, a source checkout as one
+func UnmanagedTreeDescription(root string) string {
+	if IsSourceCheckout(root) {
+		return root + " is a source checkout, not a tree the icebath installer created"
+	}
+	return root + " carries no install stamp of the icebath installer"
+}
+
+// Commands that update a source checkout from inside it on this platform
+func CheckoutUpdateCommands() []string {
+	if runtime.GOOS == "windows" {
+		return []string{"git pull", `.\setup-icebath.ps1`}
+	}
+	return []string{"git pull", "./setup-icebath.sh"}
+}
+
+// Command that installs icebath with the installer on this platform
+func InstallerCommand() string {
+	if runtime.GOOS == "windows" {
+		return "irm icebath.app | iex"
+	}
+	return "curl -fsSL icebath.app | sh"
 }
 
 // Reports two paths naming one file, resolved when both resolve, compared verbatim otherwise

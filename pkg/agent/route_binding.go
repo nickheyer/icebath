@@ -2,9 +2,11 @@ package agent
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"maps"
 
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
 )
 
@@ -50,7 +52,7 @@ func reinstallRuntimeSnapshot(ctx context.Context, a *AIAgent, rt map[string]any
 // Points the context compressor at the snapshot compressor model, window, endpoint and credential
 func reinstallCompressorModel(a *AIAgent, rt map[string]any) error {
 	if a.contextCompressor == nil {
-		return fmt.Errorf("AttributeError: 'NoneType' object has no attribute 'update_model'")
+		return errors.New("the agent has no context compressor to give the new model to")
 	}
 	var fields [5]any
 	for i, key := range []string{"compressor_model", "compressor_context_length", "compressor_base_url", "compressor_api_key", "compressor_provider"} {
@@ -67,7 +69,7 @@ func reinstallCompressorModel(a *AIAgent, rt map[string]any) error {
 	default:
 		big, ok := pyint.Instance(n)
 		if !ok {
-			return fmt.Errorf("TypeError: compressor_context_length %T is not an int", n)
+			return fmt.Errorf("compressor_context_length is %s, expected a whole number", errchain.Kind(n))
 		}
 		contextLength = int(big.Int64())
 	}
@@ -100,7 +102,7 @@ func restoreRuntimeCapabilities(a *AIAgent, rt map[string]any) {
 		}
 	default:
 		if present {
-			agentRuntimeHelpersLog().Warn("Ignoring malformed runtime capabilities snapshot")
+			pkgLog().Warn("Ignoring malformed runtime capabilities snapshot")
 		}
 	}
 }

@@ -3,7 +3,6 @@ package gateway
 import (
 	"context"
 	"fmt"
-	"log/slog"
 	"os"
 	"path/filepath"
 	"unicode/utf8"
@@ -328,7 +327,7 @@ func authoredWins(extra, block map[string]any, platName string, toplevel bool, w
 			}
 			if !pyrepr.Equal(sv, value) && !warned[[2]string{platName, k}] {
 				warned[[2]string{platName, k}] = true
-				slog.Warn(fmt.Sprintf("%s set in both %s and platforms.%s.extra; platforms.%s.extra took precedence", k, where, platName, platName))
+				pkgLog().Warn(fmt.Sprintf("%s set in both %s and platforms.%s.extra; platforms.%s.extra took precedence", k, where, platName, platName))
 			}
 			out[k] = value
 		}
@@ -419,7 +418,7 @@ func ApplyPluginYAMLHooks(ctx context.Context, yamlCfg map[string]any, gatewayPl
 		}
 		seeded, err := entry.ApplyYAMLConfigFn(ctx, yamlCfg, effective)
 		if err != nil {
-			slog.Debug(fmt.Sprintf("apply_yaml_config_fn for %s raised: %s", entry.Name, err))
+			pkgLog().Debug(fmt.Sprintf("apply_yaml_config_fn for %s raised: %s", entry.Name, err))
 			continue
 		}
 		if len(seeded) > 0 {

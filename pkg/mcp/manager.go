@@ -221,11 +221,11 @@ func discoveryConnectConcurrency(ctx context.Context, env *tools.Env) int {
 	case uint64:
 		n = int64(min(v, 1<<62))
 	default:
-		mcpLogger().Warn(fmt.Sprintf("mcp.discovery_concurrency=%s is not a non-negative integer; using %d", pyRepr(raw), def))
+		pkgLog().Warn(fmt.Sprintf("mcp.discovery_concurrency=%s is not a non-negative integer; using %d", pyRepr(raw), def))
 		return def
 	}
 	if n < 0 {
-		mcpLogger().Warn(fmt.Sprintf("mcp.discovery_concurrency=%d is not a non-negative integer; using %d", n, def))
+		pkgLog().Warn(fmt.Sprintf("mcp.discovery_concurrency=%d is not a non-negative integer; using %d", n, def))
 		return def
 	}
 	return int(min(n, 1<<31))
@@ -237,7 +237,7 @@ func acquireDiscoveryLockWithRetry(ctx context.Context) *LockCookie {
 	if outcome != lockHeld {
 		return cookie
 	}
-	mcpLogger().Debug("Another process holds MCP discovery lock -- retrying with backoff")
+	pkgLog().Debug("Another process holds MCP discovery lock -- retrying with backoff")
 	for i := 0; i < discoveryLockMaxRetries; i++ {
 		discoveryLockSleep()
 		cookie, outcome = tryAcquireDiscoveryLock(ctx)
@@ -247,9 +247,9 @@ func acquireDiscoveryLockWithRetry(ctx context.Context) *LockCookie {
 	}
 	switch outcome {
 	case lockHeld:
-		mcpLogger().Warn(fmt.Sprintf("MCP discovery lock still held after %d retries -- running discovery unguarded", discoveryLockMaxRetries))
+		pkgLog().Warn(fmt.Sprintf("MCP discovery lock still held after %d retries -- running discovery unguarded", discoveryLockMaxRetries))
 	case lockAcquired:
-		mcpLogger().Debug("Retry succeeded -- acquired MCP discovery lock")
+		pkgLog().Debug("Retry succeeded -- acquired MCP discovery lock")
 	}
 	return cookie
 }

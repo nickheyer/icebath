@@ -147,7 +147,7 @@ func TestScenarioGatewayAPIRuns(t *testing.T) {
 		return Dig(s.HTTP("GET", "${API}/v1/runs/"+run, nil, auth...).Code(200).JSON(), "status") == "completed"
 	})
 	s.HasJSON(s.HTTP("GET", "${API}/v1/runs/"+run, nil, auth...).Code(200).Body,
-		`{"object": "hermes.run", "run_id": "`+run+`", "status": "completed", "output": "The run finished."}`)
+		`{"object": "icebath.run", "run_id": "`+run+`", "status": "completed", "output": "The run finished."}`)
 	s.HTTP("GET", "${API}/v1/runs/run_does_not_exist", nil, auth...).Code(404)
 	gw.Stop()
 }

@@ -55,7 +55,7 @@ var (
 	fleetMonotonic = time.Now
 	fleetEUID      = os.Geteuid
 
-	// Runs one captured command under a timeout in seconds, the call the hermes tests replace
+	// Runs one captured command under a timeout in seconds, the call the tests replace
 	fleetRunCommand = func(ctx context.Context, cmd []string, timeout float64) (*pysubprocess.Completed, error) {
 		result, err := pysubprocess.RunWith(ctx, cmd, pysubprocess.Options{Timeout: time.Duration(timeout * float64(time.Second))})
 		var expired *pysubprocess.TimeoutExpired
@@ -291,7 +291,7 @@ func systemctlResetAndRestart(ctx context.Context, w io.Writer, manageCmd []stri
 
 // True when the unit's home is one this update owns, a foreign or unreadable home announced and left alone
 func systemdUnitOwnedByUpdate(ctx context.Context, w io.Writer, scopeCmd []string, svcName string) (bool, error) {
-	unitHome, known := systemdUnitHermesHome(ctx, scopeCmd, svcName)
+	unitHome, known := systemdUnitIcebathHome(ctx, scopeCmd, svcName)
 	if known && gateway.HomeInUpdateScope(ctx, unitHome, nil) {
 		return true, nil
 	}
@@ -327,7 +327,7 @@ func scopedManualGatewayPids(ctx context.Context, w io.Writer, pids []int, keep 
 }
 
 // True for the base gateway unit and its hyphenated profile family
-func isHermesGatewayUnit(unit string) bool {
+func isIcebathGatewayUnit(unit string) bool {
 	return unit == "icebath-gateway.service" || strings.HasPrefix(unit, "icebath-gateway-")
 }
 
@@ -339,7 +339,7 @@ func forEachSystemdGatewayUnit(listUnitsStdout string, processUnit func(name str
 			continue
 		}
 		unit := parts[0]
-		if !strings.HasSuffix(unit, ".service") || !isHermesGatewayUnit(unit) {
+		if !strings.HasSuffix(unit, ".service") || !isIcebathGatewayUnit(unit) {
 			continue
 		}
 		svcName := strings.TrimSuffix(unit, ".service")

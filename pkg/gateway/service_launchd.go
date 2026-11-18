@@ -5,7 +5,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"log/slog"
 	"math"
 	"net"
 	"os"
@@ -640,8 +639,8 @@ func spawnDeferredLaunchdReload(ctx context.Context, domain, label, target, plis
 		fmt.Sprintf("launchctl remove %s 2>/dev/null", pyshlex.Quote(submitLabel))
 	argv := []string{"launchctl", "submit", "-l", submitLabel, "-o", reloadLog, "-e", reloadLog, "--", "/bin/bash", "-c", script}
 	if err := launchdStartBackground(argv, nil, nil); err != nil {
-		slog.Warn(fmt.Sprintf("Deferred launchd reload could not be spawned: %s", pythonExceptionText(err)))
-		appendLaunchdReloadLog(ctx, fmt.Sprintf("FAILED to spawn launchd reload helper for %s: %s — falling back to in-process bootout/bootstrap", target, pythonExceptionText(err)))
+		pkgLog().Warn(fmt.Sprintf("Deferred launchd reload could not be spawned: %s", err.Error()))
+		appendLaunchdReloadLog(ctx, fmt.Sprintf("FAILED to spawn launchd reload helper for %s: %s — falling back to in-process bootout/bootstrap", target, err.Error()))
 		return false, nil
 	}
 	return true, nil
@@ -715,7 +714,7 @@ func RefreshLaunchdPlistIfNeeded(ctx context.Context) (bool, error) {
 	}
 	if !ok {
 		appendLaunchdReloadLog(ctx, fmt.Sprintf("FAILED launchd reload of %s — service NOT registered after retrying for %ds (in-process fallback path)", target, int(budget)))
-		slog.Error(fmt.Sprintf("launchd reload of %s failed — service not registered after %ds of retries; see %s", target, int(budget), launchdReloadLogPath(ctx)))
+		pkgLog().Error(fmt.Sprintf("launchd reload of %s failed — service not registered after %ds of retries; see %s", target, int(budget), launchdReloadLogPath(ctx)))
 		return false, nil
 	}
 	lifecyclePrintf("↻ Updated gateway launchd service definition to match the current Icebath install\n")
@@ -1122,7 +1121,7 @@ func launchdRestartBody(ctx context.Context, label, domain, target string, refre
 		lifecyclePrintf("→ Stopping gateway (PID %d) — draining in-flight runs (up to %.0fs)...\n", pid, budget)
 		hook := DrainProgressReporterHook
 		if hook == nil {
-			panic("gateway: the hermes_cli/update_cmd_drain_report.py port must install DrainProgressReporterHook")
+			panic("gateway: pkg/selfupdate must install DrainProgressReporterHook")
 		}
 		if lifecycleGracefulRestart(pid, budget, hook(ctx, "", budget)) {
 			revived, err := launchdWaitForServicePID(ctx, label, pid, true, launchdRestartVerifyWaitS, domain)

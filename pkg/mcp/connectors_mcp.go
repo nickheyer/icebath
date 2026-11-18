@@ -17,7 +17,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/observability"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
@@ -45,26 +44,6 @@ const authorizationKept = "the authorization had already completed when this was
 
 func init() {
 	tools.MCPOperationRunner = RunMCPOperation
-	tools.MCPCatalogNames = connCatalogNamesList
-	tools.NousPortalBaseURL = provider.ResolveNousPortalBaseURL
-	tools.NoteAppConnected = func(ctx context.Context, env *tools.Env) { provider.NoteAppConnected(connPoolEnv(ctx, env)) }
-	tools.NoteConnectedAppsSeen = func(ctx context.Context, env *tools.Env, rows []any) {
-		provider.NoteConnectedAppsSeen(connPoolEnv(ctx, env), rows)
-	}
-	tools.TelemetrySendConsented = connSendConsented
-	tools.ConnectorConversationContext = func(ctx context.Context) string { return observability.ConversationContextHook(ctx) }
-}
-
-// Whether the profile's raw config resolves to sending shared metrics
-func connSendConsented(ctx context.Context, env *tools.Env) (bool, error) {
-	raw, err := config.ReadRawConfigReadonly(ctx, connHome(ctx, env))
-	if err != nil {
-		return false, err
-	}
-	if raw == nil {
-		raw = map[string]any{}
-	}
-	return observability.ResolveSendConfig(raw).Send, nil
 }
 
 // Profile home of the tool env, the calling context's home when the env names none
@@ -126,29 +105,14 @@ func ValidateMCPNames(ctx context.Context, env *tools.Env, action string, names 
 	if action == "install" {
 		allowed = catalog
 	}
-	var unknown, foreign []string
+	var unknown []string
 	for _, n := range names {
 		if !slices.Contains(allowed, n) {
 			unknown = append(unknown, n)
-			if !slices.Contains(catalog, n) && !slices.Contains(configured, n) {
-				foreign = append(foreign, n)
-			}
 		}
 	}
 	if len(unknown) == 0 {
 		return ""
-	}
-	if len(foreign) > 0 {
-		hosted, _ := tools.HostedNames(ctx, env)
-		var parts []string
-		for _, n := range foreign {
-			if hosted[n] {
-				parts = append(parts, tools.MisroutedToMCPError(action, n))
-			}
-		}
-		if len(parts) > 0 {
-			return strings.Join(parts, " ")
-		}
 	}
 	if action == "install" {
 		out := fmt.Sprintf("unknown MCP server(s) for install: %s. Install works for catalog entries only: %s.",
@@ -254,49 +218,24 @@ func (b catalogBackend) InstallsWithOAuth(ctx context.Context, name string) (boo
 
 // Installs an OAuth entry through the card flow, the config and setup values landing when the token is accepted
 func (b catalogBackend) StartInstallOAuth(ctx context.Context, name string, env *pyjson.Object) (ConnectorAttempt, error) {
-	installed, err := IsInstalled(ctx, name)
+	commit := func(cctx context.Context) error { return connSaveEnv(cctx, env, nil) }
+	entry, err := connCatalogEntry(name)
 	if err != nil {
 		return nil, err
 	}
-	fresh := !installed
-	commit := func(cctx context.Context) error {
-		if err := connSaveEnv(cctx, env, nil); err != nil {
-			return err
-		}
-		if fresh {
-			RecordMCPInstall(cctx, "catalog", name, "success", "", nil)
-		}
-		return nil
+	if err := connCheckDeclared(name, entry, env); err != nil {
+		return nil, err
 	}
-	attempt, err := func() (ConnectorAttempt, error) {
-		entry, err := connCatalogEntry(name)
-		if err != nil {
-			return nil, err
-		}
-		if err := connCheckDeclared(name, entry, env); err != nil {
-			return nil, err
-		}
-		cfg, err := CardInstallConfig(ctx, headlessUI{}, entry)
-		if err != nil {
-			return nil, err
-		}
-		return StartCardOAuth(ctx, b.env, name, CardOAuthOptions{Cfg: cfg, Env: env, OnCommit: commit})
-	}()
-	if err != nil && fresh {
-		RecordMCPInstall(ctx, "catalog", name, "failed", "", err)
+	cfg, err := CardInstallConfig(ctx, headlessUI{}, entry)
+	if err != nil {
+		return nil, err
 	}
-	return attempt, err
+	return StartCardOAuth(ctx, b.env, name, CardOAuthOptions{Cfg: cfg, Env: env, OnCommit: commit})
 }
 
 // Probes the in memory config with ephemeral credentials and saves both only after the server answered
 func (b catalogBackend) Install(ctx context.Context, name string, env *pyjson.Object) ([]string, error) {
-	var out []string
-	err := recordedCatalogInstall(ctx, name, func() error {
-		var err error
-		out, err = b.install(ctx, name, env)
-		return err
-	})
-	return out, err
+	return b.install(ctx, name, env)
 }
 
 func (b catalogBackend) install(ctx context.Context, name string, env *pyjson.Object) ([]string, error) {
@@ -518,7 +457,7 @@ func (r *connRunner) run(ctx context.Context, step connStep, op *tools.Connectio
 // Runs one blocking backend call on a goroutine in the caller's context, observe reports its outcome
 func (r *connRunner) spawn(ctx context.Context, op *tools.ConnectionOperation, t *tools.ConnTarget, call func(context.Context) ([]string, error)) {
 	if op.Settled() {
-		mcpLogger().Debug(fmt.Sprintf("mcp %s %s: not started, the operation settled first", r.action, t.Name))
+		pkgLog().Debug(fmt.Sprintf("mcp %s %s: not started, the operation settled first", r.action, t.Name))
 		return
 	}
 	work := &connWork{done: tools.NewConnEvent()}
@@ -534,7 +473,7 @@ func (r *connRunner) spawn(ctx context.Context, op *tools.ConnectionOperation, t
 			names = append(names, got...)
 		}
 		if op.Settled() {
-			mcpLogger().Debug(fmt.Sprintf("mcp %s %s: outcome dropped, the operation settled first", r.action, t.Name))
+			pkgLog().Debug(fmt.Sprintf("mcp %s %s: outcome dropped, the operation settled first", r.action, t.Name))
 			return
 		}
 		r.mu.Lock()
@@ -700,7 +639,7 @@ func AdoptLateConnections(ctx context.Context, agent LateConnectionAgent) []stri
 		}
 		if cfg := LoadServerConfigs(ctx, env)[name]; cfg != nil {
 			if _, err := connRegisterServers(ctx, env, map[string]*Rendered{name: cfg}); err != nil {
-				mcpLogger().Debug(fmt.Sprintf("late MCP connection %s was not adopted: %s", name, excStr(err)))
+				pkgLog().Debug(fmt.Sprintf("late MCP connection %s was not adopted: %s", name, excStr(err)))
 				continue
 			}
 			adopted = append(adopted, name)
@@ -781,7 +720,7 @@ func connMove(op *tools.ConnectionOperation, t *tools.ConnTarget, to tools.Targe
 		if !errors.As(err, &it) || !op.Settled() {
 			panic(err)
 		}
-		mcpLogger().Debug(fmt.Sprintf("mcp target %s: %s dropped, the operation settled first", t.Name, to))
+		pkgLog().Debug(fmt.Sprintf("mcp target %s: %s dropped, the operation settled first", t.Name, to))
 		return false
 	}
 	return true
@@ -790,7 +729,7 @@ func connMove(op *tools.ConnectionOperation, t *tools.ConnTarget, to tools.Targe
 // Reports a failure whatever the row was doing, a repeated failure refreshing only the text
 func connFail(op *tools.ConnectionOperation, t *tools.ConnTarget, detail string) {
 	if op.Settled() {
-		mcpLogger().Debug(fmt.Sprintf("mcp target %s: failure dropped, the operation settled first", t.Name))
+		pkgLog().Debug(fmt.Sprintf("mcp target %s: failure dropped, the operation settled first", t.Name))
 		return
 	}
 	if op.StateOf(t) == tools.TargetFailed {
@@ -1196,7 +1135,7 @@ func ApplyAnswer(ctx context.Context, op *tools.ConnectionOperation, raw string)
 			switch op.StateOf(t) {
 			case tools.TargetPending:
 				runner.run(ctx, stepApprove, op, t, connAnswerEnv(entry))
-			case tools.TargetFailed, tools.TargetExpired:
+			case tools.TargetFailed:
 				runner.run(ctx, stepRetry, op, t, connAnswerEnv(entry))
 			}
 		}

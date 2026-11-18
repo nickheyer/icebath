@@ -6,7 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"log/slog"
 	"math/big"
 	"os"
 	"path/filepath"
@@ -360,7 +359,7 @@ func PageCountBytes(conn SQLiteConn) (int64, bool) {
 		return nil
 	}()
 	if err != nil {
-		slog.Debug("page_count/page_size unavailable: " + errText(err))
+		pkgLog().Debug("page_count/page_size unavailable: " + errText(err))
 		return 0, false
 	}
 	return product.Int64(), true
@@ -403,7 +402,7 @@ func ReadHeaderBytesPreopen(path string, length int, force bool) ([]byte, bool) 
 	liveMu.Lock()
 	defer liveMu.Unlock()
 	if !force && liveMainKey(liveKey(path)) != "" {
-		slog.Debug(fmt.Sprintf("refusing byte-level read of %s: a live connection exists in "+
+		pkgLog().Debug(fmt.Sprintf("refusing byte-level read of %s: a live connection exists in "+
 			"this process and close() would cancel its POSIX locks", path))
 		return nil, false
 	}

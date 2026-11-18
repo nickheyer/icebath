@@ -10,7 +10,6 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/app"
 	"github.com/nickheyer/icebath/pkg/config"
-	"github.com/nickheyer/icebath/pkg/gateway/platforms/matrix"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/hostinfo"
 	"github.com/nickheyer/icebath/pkg/internal/pycodecs"
@@ -19,7 +18,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/pm"
-	"github.com/nickheyer/icebath/pkg/selfupdate"
 	"github.com/nickheyer/icebath/pkg/selfupdate/updaterecord"
 )
 
@@ -95,26 +93,23 @@ func PrintFastVersionInfo(ctx context.Context, w io.Writer, checkUpdates bool) {
 		fmt.Fprintln(w, "Install method: "+method)
 	}
 	fmt.Fprintln(w, "Go: "+hostinfo.GoVersion())
-	fmt.Fprintln(w, matrixE2EEVersionLine())
-	if checkUpdates {
+	for _, line := range VersionLines {
+		fmt.Fprintln(w, line())
+	}
+	if checkUpdates && UpdateCheck != nil {
 		printUpdateStatus(ctx, w, root)
 	}
 }
 
-// Matrix encryption build line, the linked mautrix version with goolm or the build command that includes it
-func matrixE2EEVersionLine() string {
-	if !matrix.E2EEBuiltIn {
-		return "Matrix E2EE: Not built in (" + matrix.E2EEBuildCommand + ")"
-	}
-	if v := hostinfo.ModuleVersion("maunium.net/go/mautrix"); v != "" {
-		return "Matrix E2EE: goolm (mautrix " + v + ")"
-	}
-	return "Matrix E2EE: goolm"
-}
+// Passive source check of the install the extras tier installs with self update, unset in a build without an updater
+var UpdateCheck func(ctx context.Context, installRoot, home string) (*pyjson.Object, error)
+
+// Lines the linked tiers add to the version output, each printed after the Go line
+var VersionLines []func() string
 
 // Passive update check line printed when the status names one
 func printUpdateStatus(ctx context.Context, w io.Writer, root string) {
-	status, err := selfupdate.CheckForUpdates(ctx, selfupdate.SourceCheckOptions{InstallRoot: root, Home: home.Dir(ctx), Passive: true})
+	status, err := UpdateCheck(ctx, root, home.Dir(ctx))
 	if err != nil || status == nil {
 		return
 	}
@@ -136,7 +131,7 @@ func updateStatusLine(status *pyjson.Object, command func() (string, error)) (st
 			return "", false
 		}
 		return fmt.Sprintf("Newer than stable release v%s — '%s' moves back to it", pyrepr.Str(sourceVersion), cmd), true
-	case pyrepr.Equal(behind, selfupdate.UpdateAvailableNoCount):
+	case pyrepr.Equal(behind, updaterecord.UpdateAvailableNoCount):
 		cmd, err := command()
 		if err != nil {
 			return "", false

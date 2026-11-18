@@ -5,7 +5,6 @@ import (
 	"crypto/rand"
 	"encoding/binary"
 	"fmt"
-	"log/slog"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -41,8 +40,6 @@ func DefaultStreamConsumerConfig() *StreamConsumerConfig {
 	return &StreamConsumerConfig{EditInterval: DefaultStreamingEditInterval, BufferThreshold: DefaultStreamingBufferThreshold,
 		Cursor: DefaultStreamingCursor, Transport: "edit"}
 }
-
-func streamLog() *slog.Logger { return slog.Default().With("logger", "gateway.stream_consumer") }
 
 // Class wide draft id counter seeded with 49 random bits
 var streamDraftIDCounter atomic.Int64
@@ -399,12 +396,6 @@ func (s *GatewayStreamConsumer) TurnSplitDelivery() bool { return s.turnSplitDel
 // Text the consumer last put on the wire, read by the reply clock
 func (s *GatewayStreamConsumer) LastSentText() any { return s.lastSentText }
 
-// Adapter the reply clock attributes the delivery to
-func (s *GatewayStreamConsumer) MetricsAdapter() any { return s.adapter }
-
-// Chat the reply clock attributes the delivery to
-func (s *GatewayStreamConsumer) MetricsChatID() any { return s.chatID }
-
 // Runs the pre finalize hook exactly once
 func (s *GatewayStreamConsumer) notifyBeforeFinalize(ctx context.Context) {
 	if s.beforeFinalizeNotified {
@@ -589,7 +580,7 @@ func (s *GatewayStreamConsumer) notifyNewMessage() {
 	}
 	defer func() {
 		if r := recover(); r != nil {
-			streamLog().Debug("on_new_message callback error", "error", r)
+			pkgLog().Debug("on_new_message callback error", "error", r)
 		}
 	}()
 	s.onNewMessage()
@@ -647,7 +638,7 @@ func (s *GatewayStreamConsumer) handleApprovalBoundary(ctx context.Context, boun
 	}
 	s.resetSegmentState(false)
 	if reopen {
-		streamLog().Info(fmt.Sprintf("[latency] Clarify boundary finalized, awaiting first post-answer delta to re-seed (chat=%s, turn=%s)", s.chatID, s.turnID))
+		pkgLog().Info(fmt.Sprintf("[latency] Clarify boundary finalized, awaiting first post-answer delta to re-seed (chat=%s, turn=%s)", s.chatID, s.turnID))
 	}
 }
 
@@ -662,19 +653,19 @@ func (s *GatewayStreamConsumer) finalizeBoundaryStream(ctx context.Context, reas
 	}
 	ok, err := s.sendFrame(ctx, finalizeText, true)
 	if err != nil {
-		streamLog().Warn(fmt.Sprintf("%s boundary: finalize failed: %s", reason, pyrepr.ExceptionMessage(err)))
+		pkgLog().Warn(fmt.Sprintf("%s boundary: finalize failed: %s", reason, pyrepr.ExceptionMessage(err)))
 	} else if ok {
-		streamLog().Debug(fmt.Sprintf("%s boundary: finalized stream (chat=%s, turn=%s)", reason, s.chatID, s.turnID))
+		pkgLog().Debug(fmt.Sprintf("%s boundary: finalized stream (chat=%s, turn=%s)", reason, s.chatID, s.turnID))
 		return true
 	}
-	streamLog().Warn(fmt.Sprintf("%s boundary: finalize not confirmed, falling back to send() for pre-prompt text (chat=%s)", reason, s.chatID))
+	pkgLog().Warn(fmt.Sprintf("%s boundary: finalize not confirmed, falling back to send() for pre-prompt text (chat=%s)", reason, s.chatID))
 	result, err := s.adapter.Send(ctx, s.chatID, finalizeText, "", nil)
 	if err != nil {
-		streamLog().Warn(fmt.Sprintf("%s boundary: fallback send also failed: %s", reason, pyrepr.ExceptionMessage(err)))
+		pkgLog().Warn(fmt.Sprintf("%s boundary: fallback send also failed: %s", reason, pyrepr.ExceptionMessage(err)))
 	} else if result.Success {
 		return true
 	}
-	streamLog().Error(fmt.Sprintf("%s boundary: both finalize and fallback send failed (chat=%s) — pre-prompt text may not have been delivered", reason, s.chatID))
+	pkgLog().Error(fmt.Sprintf("%s boundary: both finalize and fallback send failed (chat=%s) — pre-prompt text may not have been delivered", reason, s.chatID))
 	return false
 }
 
@@ -721,7 +712,7 @@ func (s *GatewayStreamConsumer) Run(ctx context.Context) {
 	s.startTransports(ctx)
 	defer func() {
 		if r := recover(); r != nil {
-			streamLog().Error(fmt.Sprintf("Stream consumer error: %v", r))
+			pkgLog().Error(fmt.Sprintf("Stream consumer error: %v", r))
 		}
 	}()
 	for {
@@ -797,7 +788,7 @@ func (s *GatewayStreamConsumer) resolveLengthBudget() (func(string) int, int) {
 func (s *GatewayStreamConsumer) startTransports(ctx context.Context) {
 	s.useNativeStreaming.Store(s.resolveNativeStreaming())
 	if s.useNativeStreaming.Load() {
-		streamLog().Debug(fmt.Sprintf("Stream consumer using native-stream transport (chat=%s)", s.chatID))
+		pkgLog().Debug(fmt.Sprintf("Stream consumer using native-stream transport (chat=%s)", s.chatID))
 		if s.trySeedFrame(ctx, "Native streaming seed frame raised; disabling native", true) {
 			s.nativeStreamOpened.Store(true)
 			s.useDraftStreaming = false
@@ -808,7 +799,7 @@ func (s *GatewayStreamConsumer) startTransports(ctx context.Context) {
 	s.useDraftStreaming = s.resolveDraftStreaming()
 	if s.useDraftStreaming {
 		s.bumpDraftID()
-		streamLog().Debug(fmt.Sprintf("Stream consumer using native-draft transport (chat=%s draft_id=%d)", s.chatID, *s.draftID))
+		pkgLog().Debug(fmt.Sprintf("Stream consumer using native-draft transport (chat=%s draft_id=%d)", s.chatID, *s.draftID))
 	}
 }
 
@@ -918,7 +909,7 @@ func (s *GatewayStreamConsumer) eagerReopenSeed(ctx context.Context) {
 		s.nativeLastPushedLen = 0
 		s.awaitingReopenAfterBoundary.Store(false)
 		s.reopenSeededEagerly = true
-		streamLog().Info(fmt.Sprintf("[latency] Eager re-seed after clarify answer (typing bubble reopened immediately, turn=%s)", s.turnID))
+		pkgLog().Info(fmt.Sprintf("[latency] Eager re-seed after clarify answer (typing bubble reopened immediately, turn=%s)", s.turnID))
 		return
 	}
 	s.degradeNativeToBufferedSend()
@@ -1038,10 +1029,10 @@ func (s *GatewayStreamConsumer) finalizeTurn(ctx context.Context, tick *streamTi
 	}
 	switch {
 	case s.reopenSeedPending() && s.accumulated == "":
-		streamLog().Debug(fmt.Sprintf("Clarify reopen boundary with no post-prompt content — skipping lone-placeholder finalize (turn=%s)", s.turnID))
+		pkgLog().Debug(fmt.Sprintf("Clarify reopen boundary with no post-prompt content — skipping lone-placeholder finalize (turn=%s)", s.turnID))
 	case s.reopenSeededEagerly && s.nativeStreamOpened.Load() && s.accumulated == "" && !tick.updateVisible:
 		s.closeEmptyNativeBubble(ctx, "Eager-seed empty finalize failed: %s")
-		streamLog().Debug(fmt.Sprintf("Eager reopen seed but no post-answer content — closed empty typing bubble (turn=%s)", s.turnID))
+		pkgLog().Debug(fmt.Sprintf("Eager reopen seed but no post-answer content — closed empty typing bubble (turn=%s)", s.turnID))
 	case s.useNativeStreaming.Load():
 		if !tick.updateVisible {
 			text := s.accumulated

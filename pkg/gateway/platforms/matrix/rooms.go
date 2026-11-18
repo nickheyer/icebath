@@ -3,7 +3,6 @@ package matrix
 import (
 	"context"
 	"fmt"
-	"log/slog"
 	"slices"
 	"strings"
 
@@ -144,7 +143,7 @@ func (a *MatrixAdapter) fetchMDirect(ctx context.Context, logFailure bool) map[s
 	var content map[string]any
 	if err := client.GetAccountData(ctx, "m.direct", &content); err != nil {
 		if logFailure {
-			slog.Debug(fmt.Sprintf("Matrix: get_account_data('m.direct') failed: %v", err))
+			pkgLog().Debug(fmt.Sprintf("Matrix: get_account_data('m.direct') failed: %v", err))
 		}
 		return nil
 	}
@@ -194,9 +193,9 @@ func (a *MatrixAdapter) recordDMRoom(ctx context.Context, roomID, inviter string
 		roomsForUser = append(roomsForUser, roomID)
 		dmData[inviter] = roomsForUser
 		if err := client.SetAccountData(ctx, "m.direct", dmData); err != nil {
-			slog.Warn(fmt.Sprintf("Matrix: failed to update m.direct: %v", err))
+			pkgLog().Warn(fmt.Sprintf("Matrix: failed to update m.direct: %v", err))
 		} else {
-			slog.Info(fmt.Sprintf("Matrix: recorded %s as DM room (inviter=%s)", roomID, inviter))
+			pkgLog().Info(fmt.Sprintf("Matrix: recorded %s as DM room (inviter=%s)", roomID, inviter))
 		}
 	}
 	a.mu.Lock()
@@ -232,10 +231,10 @@ func (a *MatrixAdapter) SendReadReceipt(ctx context.Context, roomID, eventID str
 	}
 	if err := client.SetReadMarkers(ctx, id.RoomID(roomID), &mautrix.ReqSetReadMarkers{
 		FullyRead: id.EventID(eventID), Read: id.EventID(eventID)}); err != nil {
-		slog.Debug(fmt.Sprintf("Matrix: read receipt failed: %v", err))
+		pkgLog().Debug(fmt.Sprintf("Matrix: read receipt failed: %v", err))
 		return false
 	}
-	slog.Debug(fmt.Sprintf("Matrix: sent read receipt for %s in %s", eventID, roomID))
+	pkgLog().Debug(fmt.Sprintf("Matrix: sent read receipt for %s in %s", eventID, roomID))
 	return true
 }
 
@@ -249,18 +248,18 @@ func (a *MatrixAdapter) clientOp(op func(client *mautrix.Client) error, okMsg, e
 		msg := fmt.Sprintf(errMsg, err)
 		switch level {
 		case "debug":
-			slog.Debug(msg)
+			pkgLog().Debug(msg)
 		case "error":
-			slog.Error(msg)
+			pkgLog().Error(msg)
 		default:
-			slog.Warn(msg)
+			pkgLog().Warn(msg)
 		}
 		return false
 	}
 	if level == "debug" {
-		slog.Debug(okMsg)
+		pkgLog().Debug(okMsg)
 	} else {
-		slog.Info(okMsg)
+		pkgLog().Info(okMsg)
 	}
 	return true
 }
@@ -280,7 +279,7 @@ func (a *MatrixAdapter) CreateRoom(ctx context.Context, name, topic string, invi
 		return ""
 	}
 	if preset == "public_chat" && !envTruthy(ctx, "MATRIX_ALLOW_PUBLIC_ROOMS", "") {
-		slog.Warn("Matrix: refusing to create public room without MATRIX_ALLOW_PUBLIC_ROOMS=true")
+		pkgLog().Warn("Matrix: refusing to create public room without MATRIX_ALLOW_PUBLIC_ROOMS=true")
 		return ""
 	}
 	switch preset {
@@ -294,7 +293,7 @@ func (a *MatrixAdapter) CreateRoom(ctx context.Context, name, topic string, invi
 	}
 	resp, err := client.CreateRoom(ctx, &mautrix.ReqCreateRoom{Name: name, Topic: topic, Invite: invitees, IsDirect: isDirect, Preset: preset})
 	if err != nil {
-		slog.Warn(fmt.Sprintf("Matrix: create_room error: %v", err))
+		pkgLog().Warn(fmt.Sprintf("Matrix: create_room error: %v", err))
 		return ""
 	}
 	roomID := string(resp.RoomID)
@@ -305,7 +304,7 @@ func (a *MatrixAdapter) CreateRoom(ctx context.Context, name, topic string, invi
 	if label == "" {
 		label = "unnamed"
 	}
-	slog.Info(fmt.Sprintf("Matrix: created room %s (%s)", roomID, label))
+	pkgLog().Info(fmt.Sprintf("Matrix: created room %s (%s)", roomID, label))
 	return roomID
 }
 
@@ -325,7 +324,7 @@ func (a *MatrixAdapter) SetPresence(ctx context.Context, state, statusMsg string
 	presence := map[string]event.Presence{"online": event.PresenceOnline, "offline": event.PresenceOffline, "unavailable": event.PresenceUnavailable}
 	p, ok := presence[state]
 	if !ok {
-		slog.Warn(fmt.Sprintf("Matrix: invalid presence state '%s'", state))
+		pkgLog().Warn(fmt.Sprintf("Matrix: invalid presence state '%s'", state))
 		return false
 	}
 	return a.clientOp(func(client *mautrix.Client) error {

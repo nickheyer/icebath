@@ -59,10 +59,13 @@ func modalDeleteDirectSnapshot(ctx context.Context, env *Env, taskID, snapshotID
 	})
 }
 
-// Registry references become images with pip repaired before bootstrap, snapshot ids load by id
+// Registry references become images with pip repaired before bootstrap, snapshot ids load by id, the default sandbox builds on Modal
 func resolveModalImage(ctx context.Context, mc *modal.Client, spec string) (*modal.Image, error) {
 	if strings.HasPrefix(spec, "im-") {
 		return mc.Images.FromID(ctx, spec, nil)
+	}
+	if IsDefaultSandboxImage(spec) {
+		return modalSandboxImage(mc)
 	}
 	setup := []string{"RUN rm -rf /usr/local/lib/python*/site-packages/pip* 2>/dev/null; " +
 		"python -m ensurepip --upgrade --default-pip 2>/dev/null || true"}
@@ -222,7 +225,7 @@ func NewModalEnvironment(ctx context.Context, env *Env, o ModalOptions) (*modalE
 
 func (m *modalEnv) EnvType() string { return "modal" }
 
-// Python class name of the environment as hermes logs and records it
+// Python class name of the environment as logs and records name it
 func (m *modalEnv) ClassName() string { return "ModalEnvironment" }
 
 var _ interface{ ClassName() string } = (*modalEnv)(nil)
@@ -445,90 +448,51 @@ func (modalBackend) StripEnvKeys() []string                 { return nil }
 func (modalBackend) SessionIsolatedWhenNonpersistent() bool { return false }
 func (modalBackend) SupportsStreams() bool                  { return false }
 
-// Modal backend state for the configured mode from the direct credentials and the managed gateway
-func modalBackendState(env *Env, modalMode any) ModalBackendState {
-	mode, _ := modalMode.(string)
-	return ResolveModalBackendState(env, mode, HasDirectModalCredentials(env), IsManagedToolGatewayReady(env, "modal", BuildVendorGatewayURL, nil), nil)
+// Log message and error message when no Modal credentials are configured
+func modalUnavailableReason() (string, string) {
+	return "Modal backend selected but no direct Modal credentials/config was found. Configure Modal or choose a different TERMINAL_ENV.",
+		"Modal backend selected but no direct Modal credentials/config was found."
 }
 
-// Log message and error message for a modal state with no selected backend
-func modalUnavailableReason(env *Env, state ModalBackendState) (string, string) {
-	gateway := nousToolGatewayUnavailableMessage(env, "managed Modal execution", false)
-	if state.ManagedModeBlocked || state.Mode == "managed" {
-		tail := "the managed tool gateway is unavailable. " + gateway
-		if state.ManagedModeBlocked {
-			tail = "Nous Tool Gateway access is not currently available and no direct Modal credentials/config " +
-				"were found. " + gateway + " Choose TERMINAL_MODAL_MODE=direct/auto to use direct Modal credentials."
-		}
-		return "Modal backend selected with TERMINAL_MODAL_MODE=managed, but " + tail,
-			"Modal backend is configured for managed mode, but " + tail
-	}
-	managed := managedNousToolsEnabled(env, false)
-	if state.Mode == "direct" {
-		modes := "auto"
-		if managed {
-			modes = "managed/auto"
-		}
-		return "Modal backend selected with TERMINAL_MODAL_MODE=direct, but no direct Modal credentials/config " +
-				"were found. Configure Modal or choose TERMINAL_MODAL_MODE=" + modes + ".",
-			"Modal backend is configured for direct mode, but no direct Modal credentials/config were found."
-	}
-	found, fix := "was found", " or"
-	if managed {
-		found, fix = "or managed tool gateway was found", ", set up the managed gateway, or"
-	}
-	return "Modal backend selected but no direct Modal credentials/config " + found + ". Configure Modal" + fix + " choose a different TERMINAL_ENV.",
-		"Modal backend selected but no direct Modal credentials/config " + found + "."
-}
+// IsAvailable reports whether Modal credentials could serve commands
+func (modalBackend) IsAvailable() bool { return HasDirectModalCredentials(nil) }
 
-// IsAvailable reports whether direct credentials or the managed gateway could serve commands
-func (modalBackend) IsAvailable() bool { return modalBackendState(nil, "auto").SelectedBackend != "" }
-
-// CheckRequirements resolves the direct or managed backend, rejecting with the hermes wording
+// CheckRequirements rejects a profile without Modal credentials
 func (modalBackend) CheckRequirements(env *Env, cfg map[string]any) error {
-	state := modalBackendState(env, cfg["modal_mode"])
-	if state.SelectedBackend == "managed" || state.SelectedBackend == "direct" {
+	if HasDirectModalCredentials(env) {
 		return nil
 	}
-	logMsg, _ := modalUnavailableReason(env, state)
+	logMsg, _ := modalUnavailableReason()
 	return errors.New(logMsg)
 }
 
-// Probe reports which Modal backend would run
+// Probe reports whether Modal credentials are configured
 func (modalBackend) Probe() (string, string) {
-	state := modalBackendState(nil, "auto")
-	switch state.SelectedBackend {
-	case "managed":
-		return "ready", "managed Modal through the Nous tool gateway"
-	case "direct":
+	if HasDirectModalCredentials(nil) {
 		return "ready", "direct Modal credentials"
 	}
-	_, msg := modalUnavailableReason(nil, state)
+	_, msg := modalUnavailableReason()
 	return "needs_setup", msg
 }
 
-// SetupInstructions names the two Modal routes
+// SetupInstructions names the Modal account setup
 func (modalBackend) SetupInstructions(env *Env) []string {
 	return []string{
 		"Serverless cloud sandboxes. Each session gets its own container.",
-		"Use your Nous subscription through the managed gateway (terminal.modal_mode: managed), or your own Modal account.",
+		"Runs on your own Modal account.",
 		"For a Modal account set MODAL_TOKEN_ID and MODAL_TOKEN_SECRET from https://modal.com/settings.",
 	}
 }
 
-// DoctorChecks reports the selected Modal route
+// DoctorChecks reports whether Modal credentials are configured
 func (modalBackend) DoctorChecks() []DoctorCheck {
-	state := modalBackendState(nil, "auto")
-	switch state.SelectedBackend {
-	case "managed":
-		return []DoctorCheck{{OK: true, Label: "Modal backend", Detail: "(managed gateway)"}}
-	case "direct":
+	if HasDirectModalCredentials(nil) {
 		return []DoctorCheck{{OK: true, Label: "Modal credentials", Detail: "(configured)"}}
 	}
 	return []DoctorCheck{{OK: false, Label: "Modal credentials missing", Detail: "(needed for the 'modal' terminal backend)"}}
 }
 
-// CreateEnvironment builds the direct or managed Modal environment from the shaped resources
+// CreateEnvironment builds the Modal environment from the shaped resources
 func (modalBackend) CreateEnvironment(ctx context.Context, env *Env, opts CreateOptions) (Environment, error) {
 	res := sandboxResources(opts.ContainerConfig)
 	kwargs := map[string]any{}
@@ -537,14 +501,10 @@ func (modalBackend) CreateEnvironment(ctx context.Context, env *Env, opts Create
 			kwargs[key] = res[key]
 		}
 	}
-	state := modalBackendState(env, opts.ContainerConfig["modal_mode"])
-	if state.SelectedBackend != "managed" && state.SelectedBackend != "direct" {
-		_, msg := modalUnavailableReason(env, state)
+	if !HasDirectModalCredentials(env) {
+		_, msg := modalUnavailableReason()
 		return nil, errors.New(msg)
 	}
 	persistent := truthy(res["persistent_filesystem"])
-	if state.SelectedBackend == "managed" {
-		return NewManagedModalEnvironment(ctx, env, ModalOptions{Image: opts.Image, Cwd: opts.Cwd, Timeout: opts.Timeout, SandboxKwargs: kwargs, Persistent: persistent, TaskID: opts.TaskID})
-	}
 	return NewModalEnvironment(ctx, env, ModalOptions{Image: opts.Image, Cwd: opts.Cwd, Timeout: opts.Timeout, SandboxKwargs: kwargs, Persistent: persistent, TaskID: opts.TaskID})
 }

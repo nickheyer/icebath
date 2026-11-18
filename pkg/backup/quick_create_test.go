@@ -367,7 +367,7 @@ func TestQuickSnapshotPrunesBeyondKeep(t *testing.T) {
 func TestQuickSnapshotFlagsCorruptStateDb(t *testing.T) {
 	t.Setenv("ICEBATH_HOME", t.TempDir())
 	tmp := t.TempDir()
-	h := filepath.Join(tmp, "hermes_home")
+	h := filepath.Join(tmp, "icebath_home")
 	writeTree(t, h, map[string]string{"config.yaml": "test: true\n"})
 	good := filepath.Join(tmp, "state.db")
 	db, err := state.NewSessionDB(context.Background(), good, false)

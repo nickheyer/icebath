@@ -127,18 +127,18 @@ func wantLaunchd(t *testing.T, what string, got, want []string) {
 }
 
 func TestRestartMacosLaunchdGatewaysCurrentDelegatesAndSiblingsKickstartInOwnDomains(t *testing.T) {
-	current := "ai.icebath.gateway-merit-ops"
+	current := "app.icebath.gateway-merit-ops"
 	rec := launchdFleet(t, current, launchdFleetConfig{
-		labels: []string{"ai.icebath.gateway", current, "ai.icebath.gateway-user-scoped"},
-		located: map[string]launchdLocation{"ai.icebath.gateway": locatedAt(guiDomain, 100), current: locatedAt(guiDomain, 200),
-			"ai.icebath.gateway-user-scoped": locatedAt(userDomain, 300)},
+		labels: []string{"app.icebath.gateway", current, "app.icebath.gateway-user-scoped"},
+		located: map[string]launchdLocation{"app.icebath.gateway": locatedAt(guiDomain, 100), current: locatedAt(guiDomain, 200),
+			"app.icebath.gateway-user-scoped": locatedAt(userDomain, 300)},
 	})
 	restarted, failed := runLaunchdRestart(t, io.Discard)
 	wantLaunchd(t, "current restarts", rec.currentRestarts, []string{current})
-	siblings := []string{gui("ai.icebath.gateway"), userDomain + "/ai.icebath.gateway-user-scoped"}
+	siblings := []string{gui("app.icebath.gateway"), userDomain + "/app.icebath.gateway-user-scoped"}
 	wantLaunchd(t, "kickstarts", rec.kickstarts, siblings)
 	wantLaunchd(t, "waits", rec.waits, siblings)
-	wantLaunchd(t, "restarted", restarted, []string{current, "ai.icebath.gateway", "ai.icebath.gateway-user-scoped"})
+	wantLaunchd(t, "restarted", restarted, []string{current, "app.icebath.gateway", "app.icebath.gateway-user-scoped"})
 	wantLaunchd(t, "failed", failed, nil)
 	drains := append([]int{}, rec.drains...)
 	sort.Ints(drains)
@@ -148,22 +148,22 @@ func TestRestartMacosLaunchdGatewaysCurrentDelegatesAndSiblingsKickstartInOwnDom
 }
 
 func TestRestartMacosLaunchdGatewaysCurrentProfileWithoutPlistMakesNoLaunchctlCalls(t *testing.T) {
-	current := "ai.icebath.gateway"
+	current := "app.icebath.gateway"
 	rec := launchdFleet(t, current, launchdFleetConfig{
-		labels: []string{current, "ai.icebath.gateway-a"}, noPlist: true,
-		located: map[string]launchdLocation{"ai.icebath.gateway-a": locatedAt(guiDomain, 200)},
+		labels: []string{current, "app.icebath.gateway-a"}, noPlist: true,
+		located: map[string]launchdLocation{"app.icebath.gateway-a": locatedAt(guiDomain, 200)},
 	})
 	restarted, failed := runLaunchdRestart(t, io.Discard)
 	wantLaunchd(t, "current restarts", rec.currentRestarts, nil)
 	if slices.Contains(rec.locates, current) {
 		t.Fatalf("the current label was located: %v", rec.locates)
 	}
-	wantLaunchd(t, "restarted", restarted, []string{"ai.icebath.gateway-a"})
+	wantLaunchd(t, "restarted", restarted, []string{"app.icebath.gateway-a"})
 	wantLaunchd(t, "failed", failed, nil)
 }
 
 func TestRestartMacosLaunchdGatewaysCurrentProfileRegisteredButUnlocatableStillRestarts(t *testing.T) {
-	current := "ai.icebath.gateway"
+	current := "app.icebath.gateway"
 	rec := launchdFleet(t, current, launchdFleetConfig{labels: []string{current}, located: map[string]launchdLocation{current: {}}})
 	restarted, failed := runLaunchdRestart(t, io.Discard)
 	wantLaunchd(t, "current restarts", rec.currentRestarts, []string{current})
@@ -175,35 +175,35 @@ func TestRestartMacosLaunchdGatewaysCurrentProfileRegisteredButUnlocatableStillR
 }
 
 func TestRestartMacosLaunchdGatewaysUnbootstrappedSiblingIsSkippedNotFailed(t *testing.T) {
-	rec := launchdFleet(t, "ai.icebath.gateway", launchdFleetConfig{
-		labels:  []string{"ai.icebath.gateway", "ai.icebath.gateway-idle"},
-		located: map[string]launchdLocation{"ai.icebath.gateway": locatedAt(guiDomain, 100), "ai.icebath.gateway-idle": {}},
+	rec := launchdFleet(t, "app.icebath.gateway", launchdFleetConfig{
+		labels:  []string{"app.icebath.gateway", "app.icebath.gateway-idle"},
+		located: map[string]launchdLocation{"app.icebath.gateway": locatedAt(guiDomain, 100), "app.icebath.gateway-idle": {}},
 	})
 	restarted, failed := runLaunchdRestart(t, io.Discard)
 	wantLaunchd(t, "kickstarts", rec.kickstarts, nil)
-	wantLaunchd(t, "restarted", restarted, []string{"ai.icebath.gateway"})
+	wantLaunchd(t, "restarted", restarted, []string{"app.icebath.gateway"})
 	wantLaunchd(t, "failed", failed, nil)
 }
 
 func TestRestartMacosLaunchdGatewaysLoadedButNotRunningSiblingIsKickstarted(t *testing.T) {
-	rec := launchdFleet(t, "ai.icebath.gateway", launchdFleetConfig{
-		labels: []string{"ai.icebath.gateway", "ai.icebath.gateway-dormant"},
-		located: map[string]launchdLocation{"ai.icebath.gateway": locatedAt(guiDomain, 100),
-			"ai.icebath.gateway-dormant": {domain: guiDomain}},
+	rec := launchdFleet(t, "app.icebath.gateway", launchdFleetConfig{
+		labels: []string{"app.icebath.gateway", "app.icebath.gateway-dormant"},
+		located: map[string]launchdLocation{"app.icebath.gateway": locatedAt(guiDomain, 100),
+			"app.icebath.gateway-dormant": {domain: guiDomain}},
 	})
 	restarted, failed := runLaunchdRestart(t, io.Discard)
 	if len(rec.drains) != 0 {
 		t.Fatalf("drains = %v", rec.drains)
 	}
-	wantLaunchd(t, "kickstarts", rec.kickstarts, []string{gui("ai.icebath.gateway-dormant")})
-	wantLaunchd(t, "restarted", restarted, []string{"ai.icebath.gateway", "ai.icebath.gateway-dormant"})
+	wantLaunchd(t, "kickstarts", rec.kickstarts, []string{gui("app.icebath.gateway-dormant")})
+	wantLaunchd(t, "restarted", restarted, []string{"app.icebath.gateway", "app.icebath.gateway-dormant"})
 	wantLaunchd(t, "failed", failed, nil)
 }
 
 func TestRestartMacosLaunchdGatewaysGracefulDrainWithKeepaliveRespawnSkipsKickstart(t *testing.T) {
-	rec := launchdFleet(t, "ai.icebath.gateway", launchdFleetConfig{
-		labels:       []string{"ai.icebath.gateway", "ai.icebath.gateway-a"},
-		located:      map[string]launchdLocation{"ai.icebath.gateway": locatedAt(guiDomain, 100), "ai.icebath.gateway-a": locatedAt(guiDomain, 200)},
+	rec := launchdFleet(t, "app.icebath.gateway", launchdFleetConfig{
+		labels:       []string{"app.icebath.gateway", "app.icebath.gateway-a"},
+		located:      map[string]launchdLocation{"app.icebath.gateway": locatedAt(guiDomain, 100), "app.icebath.gateway-a": locatedAt(guiDomain, 200)},
 		drainResults: map[int]bool{200: true},
 	})
 	restarted, failed := runLaunchdRestart(t, io.Discard)
@@ -211,72 +211,72 @@ func TestRestartMacosLaunchdGatewaysGracefulDrainWithKeepaliveRespawnSkipsKickst
 		t.Fatalf("drains = %v", rec.drains)
 	}
 	wantLaunchd(t, "kickstarts", rec.kickstarts, nil)
-	wantLaunchd(t, "waits", rec.waits, []string{gui("ai.icebath.gateway-a")})
-	wantLaunchd(t, "restarted", restarted, []string{"ai.icebath.gateway", "ai.icebath.gateway-a"})
+	wantLaunchd(t, "waits", rec.waits, []string{gui("app.icebath.gateway-a")})
+	wantLaunchd(t, "restarted", restarted, []string{"app.icebath.gateway", "app.icebath.gateway-a"})
 	wantLaunchd(t, "failed", failed, nil)
 }
 
 func threeLabelFleet(middle string) ([]string, map[string]launchdLocation) {
-	last := "ai.icebath.gateway-after"
-	if middle == "ai.icebath.gateway-bad" {
-		last = "ai.icebath.gateway-good"
+	last := "app.icebath.gateway-after"
+	if middle == "app.icebath.gateway-bad" {
+		last = "app.icebath.gateway-good"
 	}
-	return []string{"ai.icebath.gateway", middle, last}, map[string]launchdLocation{
-		"ai.icebath.gateway": locatedAt(guiDomain, 100), middle: locatedAt(guiDomain, 200), last: locatedAt(guiDomain, 300)}
+	return []string{"app.icebath.gateway", middle, last}, map[string]launchdLocation{
+		"app.icebath.gateway": locatedAt(guiDomain, 100), middle: locatedAt(guiDomain, 200), last: locatedAt(guiDomain, 300)}
 }
 
 func TestRestartMacosLaunchdGatewaysKickstartFailureIsRecordedAndRestContinue(t *testing.T) {
-	labels, located := threeLabelFleet("ai.icebath.gateway-bad")
-	rec := launchdFleet(t, "ai.icebath.gateway", launchdFleetConfig{labels: labels, located: located,
-		kickErrors: map[string]error{"ai.icebath.gateway-bad": &gateway.CalledProcessError{Cmd: []string{"launchctl", "kickstart"}, ReturnCode: 5}}})
+	labels, located := threeLabelFleet("app.icebath.gateway-bad")
+	rec := launchdFleet(t, "app.icebath.gateway", launchdFleetConfig{labels: labels, located: located,
+		kickErrors: map[string]error{"app.icebath.gateway-bad": &gateway.CalledProcessError{Cmd: []string{"launchctl", "kickstart"}, ReturnCode: 5}}})
 	restarted, failed := runLaunchdRestart(t, io.Discard)
-	wantLaunchd(t, "failed", failed, []string{"ai.icebath.gateway-bad"})
-	wantLaunchd(t, "kickstarts", rec.kickstarts, []string{gui("ai.icebath.gateway-good")})
-	wantLaunchd(t, "restarted", restarted, []string{"ai.icebath.gateway", "ai.icebath.gateway-good"})
+	wantLaunchd(t, "failed", failed, []string{"app.icebath.gateway-bad"})
+	wantLaunchd(t, "kickstarts", rec.kickstarts, []string{gui("app.icebath.gateway-good")})
+	wantLaunchd(t, "restarted", restarted, []string{"app.icebath.gateway", "app.icebath.gateway-good"})
 }
 
 func TestRestartMacosLaunchdGatewaysTimeoutDuringDiscoveryIsFailedAndRestContinue(t *testing.T) {
-	labels, located := threeLabelFleet("ai.icebath.gateway-wedged")
-	located["ai.icebath.gateway-wedged"] = launchdLocation{err: &pysubprocess.TimeoutExpired{Cmd: []string{"launchctl", "print"}, Timeout: 5}}
-	rec := launchdFleet(t, "ai.icebath.gateway", launchdFleetConfig{labels: labels, located: located})
+	labels, located := threeLabelFleet("app.icebath.gateway-wedged")
+	located["app.icebath.gateway-wedged"] = launchdLocation{err: &pysubprocess.TimeoutExpired{Cmd: []string{"launchctl", "print"}, Timeout: 5}}
+	rec := launchdFleet(t, "app.icebath.gateway", launchdFleetConfig{labels: labels, located: located})
 	restarted, failed := runLaunchdRestart(t, io.Discard)
-	wantLaunchd(t, "failed", failed, []string{"ai.icebath.gateway-wedged"})
-	wantLaunchd(t, "kickstarts", rec.kickstarts, []string{gui("ai.icebath.gateway-after")})
-	wantLaunchd(t, "restarted", restarted, []string{"ai.icebath.gateway", "ai.icebath.gateway-after"})
+	wantLaunchd(t, "failed", failed, []string{"app.icebath.gateway-wedged"})
+	wantLaunchd(t, "kickstarts", rec.kickstarts, []string{gui("app.icebath.gateway-after")})
+	wantLaunchd(t, "restarted", restarted, []string{"app.icebath.gateway", "app.icebath.gateway-after"})
 }
 
 func TestRestartMacosLaunchdGatewaysTimeoutDuringKickstartIsFailedAndRestContinue(t *testing.T) {
-	labels, located := threeLabelFleet("ai.icebath.gateway-wedged")
-	rec := launchdFleet(t, "ai.icebath.gateway", launchdFleetConfig{labels: labels, located: located,
-		kickErrors: map[string]error{"ai.icebath.gateway-wedged": fmt.Errorf("%w: launchctl kickstart", gateway.ErrCommandTimeout)}})
+	labels, located := threeLabelFleet("app.icebath.gateway-wedged")
+	rec := launchdFleet(t, "app.icebath.gateway", launchdFleetConfig{labels: labels, located: located,
+		kickErrors: map[string]error{"app.icebath.gateway-wedged": fmt.Errorf("%w: launchctl kickstart", gateway.ErrCommandTimeout)}})
 	restarted, failed := runLaunchdRestart(t, io.Discard)
-	wantLaunchd(t, "failed", failed, []string{"ai.icebath.gateway-wedged"})
-	wantLaunchd(t, "kickstarts", rec.kickstarts, []string{gui("ai.icebath.gateway-after")})
-	wantLaunchd(t, "restarted", restarted, []string{"ai.icebath.gateway", "ai.icebath.gateway-after"})
+	wantLaunchd(t, "failed", failed, []string{"app.icebath.gateway-wedged"})
+	wantLaunchd(t, "kickstarts", rec.kickstarts, []string{gui("app.icebath.gateway-after")})
+	wantLaunchd(t, "restarted", restarted, []string{"app.icebath.gateway", "app.icebath.gateway-after"})
 }
 
 func TestRestartMacosLaunchdGatewaysSiblingThatNeverComesBackIsFailed(t *testing.T) {
-	launchdFleet(t, "ai.icebath.gateway", launchdFleetConfig{
-		labels:      []string{"ai.icebath.gateway", "ai.icebath.gateway-zombie"},
-		located:     map[string]launchdLocation{"ai.icebath.gateway": locatedAt(guiDomain, 100), "ai.icebath.gateway-zombie": locatedAt(guiDomain, 200)},
-		waitResults: map[string]bool{"ai.icebath.gateway-zombie": false},
+	launchdFleet(t, "app.icebath.gateway", launchdFleetConfig{
+		labels:      []string{"app.icebath.gateway", "app.icebath.gateway-zombie"},
+		located:     map[string]launchdLocation{"app.icebath.gateway": locatedAt(guiDomain, 100), "app.icebath.gateway-zombie": locatedAt(guiDomain, 200)},
+		waitResults: map[string]bool{"app.icebath.gateway-zombie": false},
 	})
 	restarted, failed := runLaunchdRestart(t, io.Discard)
-	wantLaunchd(t, "restarted", restarted, []string{"ai.icebath.gateway"})
-	wantLaunchd(t, "failed", failed, []string{"ai.icebath.gateway-zombie"})
+	wantLaunchd(t, "restarted", restarted, []string{"app.icebath.gateway"})
+	wantLaunchd(t, "failed", failed, []string{"app.icebath.gateway-zombie"})
 }
 
 func TestRestartMacosLaunchdGatewaysLegacyUnitsLegacyLabelledSiblingIsRestartedLikeAnyOther(t *testing.T) {
-	current, legacy := "ai.icebath.gateway", "ai.icebath.gateway-398559f7"
+	current, legacy := "app.icebath.gateway", "app.icebath.gateway-398559f7"
 	rec := launchdFleet(t, current, launchdFleetConfig{
-		labels: []string{current, "ai.icebath.gateway-gopod"}, legacy: []string{legacy},
-		located: map[string]launchdLocation{current: locatedAt(guiDomain, 100), "ai.icebath.gateway-gopod": locatedAt(guiDomain, 200),
+		labels: []string{current, "app.icebath.gateway-gopod"}, legacy: []string{legacy},
+		located: map[string]launchdLocation{current: locatedAt(guiDomain, 100), "app.icebath.gateway-gopod": locatedAt(guiDomain, 200),
 			legacy: locatedAt(userDomain, 300)},
 	})
 	var out bytes.Buffer
 	restarted, failed := runLaunchdRestart(t, &out)
-	wantLaunchd(t, "kickstarts", rec.kickstarts, []string{gui("ai.icebath.gateway-gopod"), userDomain + "/" + legacy})
-	wantLaunchd(t, "restarted", restarted, []string{current, "ai.icebath.gateway-gopod", legacy})
+	wantLaunchd(t, "kickstarts", rec.kickstarts, []string{gui("app.icebath.gateway-gopod"), userDomain + "/" + legacy})
+	wantLaunchd(t, "restarted", restarted, []string{current, "app.icebath.gateway-gopod", legacy})
 	wantLaunchd(t, "failed", failed, nil)
 	drains := append([]int{}, rec.drains...)
 	sort.Ints(drains)
@@ -290,7 +290,7 @@ func TestIncompleteWarningOnMacosLaunchdLabelsGetBootstrapHint(t *testing.T) {
 		t.Skip("launchd arm of the warning")
 	}
 	var out bytes.Buffer
-	warnIncompleteGatewayFleetRestart(&out, []string{"ai.icebath.gateway-merit-ops"})
+	warnIncompleteGatewayFleetRestart(&out, []string{"app.icebath.gateway-merit-ops"})
 	if !strings.Contains(out.String(), "launchctl bootstrap") || strings.Contains(out.String(), "systemctl") {
 		t.Fatalf("out = %q", out.String())
 	}
@@ -301,7 +301,7 @@ func TestPendingLaunchdRequiresCompleteSupervision(t *testing.T) {
 		t.Run("failure="+failure, func(t *testing.T) {
 			tmp := t.TempDir()
 			t.Setenv("ICEBATH_HOME", filepath.Join(tmp, "home"))
-			current, sibling := "ai.icebath.gateway", "ai.icebath.gateway-two"
+			current, sibling := "app.icebath.gateway", "app.icebath.gateway-two"
 			if err := os.WriteFile(filepath.Join(tmp, sibling+".plist"), nil, 0o644); err != nil {
 				t.Fatal(err)
 			}

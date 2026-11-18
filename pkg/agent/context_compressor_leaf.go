@@ -229,7 +229,7 @@ func resolveModelThreshold(model string, modelThresholds map[string]float64, def
 }
 
 // Route pinned for the next summary LLM call of one attempt, a context variable so a detached stalled worker never sees it
-var summaryRoutePin = pyctx.NewVar("hermes_summary_route_pin", nil)
+var summaryRoutePin = pyctx.NewVar("icebath_summary_route_pin", nil)
 
 var pinnedRouteFields = []string{"provider", "model", "base_url", "api_key", "api_mode", "timeout"}
 

@@ -154,7 +154,7 @@ func parseDotenvText(text string) []dotenvAssignment {
 	for r.pos < len(r.text) {
 		b := dotenvParseBinding(r)
 		if b.err {
-			envLoaderLog.Warn(fmt.Sprintf("python-dotenv could not parse statement starting at line %d", b.line))
+			pkgLog().Warn(fmt.Sprintf("python-dotenv could not parse statement starting at line %d", b.line))
 		}
 		if b.hasKey {
 			out = append(out, dotenvAssignment{name: b.key, value: b.value, set: b.hasValue})

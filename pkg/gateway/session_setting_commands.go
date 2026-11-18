@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"log/slog"
 	"strings"
 
 	"github.com/google/uuid"
@@ -55,7 +54,7 @@ func applyPendingReasoning(ctx context.Context, a *SessionAuthority, ref Session
 	var refusal *state.RuntimeStoreError
 	guard := state.IsMutationGuardRefusal(err)
 	if !guard && !errors.As(err, &refusal) {
-		slog.Error(fmt.Sprintf("Reasoning command on %s failed to commit: %s", ref.SessionID, pyExceptionRepr(err)))
+		pkgLog().Error(fmt.Sprintf("Reasoning command on %s failed to commit: %s", ref.SessionID, pyExceptionRepr(err)))
 		return
 	}
 	reason := "session_busy"
@@ -70,7 +69,7 @@ func applyPendingReasoning(ctx context.Context, a *SessionAuthority, ref Session
 		a.mu.Unlock()
 		return
 	}
-	slog.Warn(fmt.Sprintf("Reasoning command on %s not committed: %s", ref.SessionID, reason))
+	pkgLog().Warn(fmt.Sprintf("Reasoning command on %s not committed: %s", ref.SessionID, reason))
 }
 
 // Authority and live session owning the local session a source belongs to

@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"log/slog"
 	"math"
 	"sync"
 	"time"
@@ -58,7 +57,7 @@ type pollingHost interface {
 	NoteBotIdentity(user *models.User)
 }
 
-// Timing bounds of the polling lifecycle, the hermes module constants
+// Timing bounds of the polling lifecycle, the module constants
 type pollingTimings struct {
 	updaterStopTimeout       float64
 	updaterStartTimeout      float64
@@ -79,7 +78,7 @@ type pollingTimings struct {
 	conflictRetryDelayFactor float64
 }
 
-// Hermes polling timings
+// Polling timings of the Telegram adapter
 func defaultPollingTimings() pollingTimings {
 	return pollingTimings{updaterStopTimeout: 15, updaterStartTimeout: 30, initialProgressTimeout: 60, drainTimeout: 15,
 		errorTaskStuckTimeout: 300, progressTimeout: 60, stallTimeout: 150, ingressStallHeartbeats: 4, heartbeatInterval: 90,
@@ -87,7 +86,7 @@ func defaultPollingTimings() pollingTimings {
 		maxConflictRetries: 5, conflictRetryDelayBase: 10, conflictRetryDelayFactor: 10}
 }
 
-// One shot event that wakes every waiter once set, the asyncio Event of hermes
+// One shot event that wakes every waiter once set
 type pollEvent struct {
 	once sync.Once
 	ch   chan struct{}
@@ -137,7 +136,7 @@ func pollingGenerationFrom(ctx context.Context) *int {
 
 var processStart = time.Now()
 
-// Monotonic seconds since process start, the time.monotonic of hermes
+// Monotonic seconds since process start
 var monotonicNow = func() float64 { return time.Since(processStart).Seconds() }
 
 // Seconds as a duration
@@ -216,7 +215,7 @@ type pollingLifecycle struct {
 	recoveryCtx                context.Context
 }
 
-// Polling lifecycle reporting through the host with the hermes timings
+// Polling lifecycle reporting through the host with the timings
 func newPollingLifecycle(host pollingHost) *pollingLifecycle {
 	return &pollingLifecycle{host: host, timings: defaultPollingTimings(), progress: newPollEvent(),
 		recoveryCtx: context.Background()}
@@ -256,7 +255,7 @@ func shutdownAbandonedApp(ctx context.Context, app pollingApp) {
 		return
 	}
 	if err := app.Shutdown(ctx); err != nil {
-		slog.Debug("Abandoned Telegram app.shutdown() failed", "error", err)
+		pkgLog().Debug("Abandoned Telegram app.shutdown() failed", "error", err)
 	}
 	pollingReq, generalReq := app.Requests()
 	for _, request := range []requestPool{pollingReq, generalReq} {
@@ -264,7 +263,7 @@ func shutdownAbandonedApp(ctx context.Context, app pollingApp) {
 			continue
 		}
 		if err := request.Shutdown(ctx); err != nil {
-			slog.Debug("Abandoned Telegram request shutdown failed", "error", err)
+			pkgLog().Debug("Abandoned Telegram request shutdown failed", "error", err)
 		}
 	}
 }
@@ -283,7 +282,7 @@ func (p *pollingLifecycle) drainPollingConnections(ctx context.Context) {
 		p.orphanAndRebuildPollingClient(ctx, pollingReq)
 	}
 	if p.boundedRequestStep(ctx, pollingReq.Initialize, "Polling request re-initialize failed/timed out (non-fatal)") {
-		slog.Debug(fmt.Sprintf("[%s] Polling request pool drained before reconnect", p.host.Name()))
+		pkgLog().Debug(fmt.Sprintf("[%s] Polling request pool drained before reconnect", p.host.Name()))
 	} else {
 		p.orphanAndRebuildPollingClient(ctx, pollingReq)
 	}
@@ -294,7 +293,7 @@ func (p *pollingLifecycle) boundedRequestStep(ctx context.Context, step func(ctx
 	_, err := awaitWithThreadDeadline(ctx, func(ctx context.Context) (any, error) { return nil, step(ctx) },
 		p.timings.drainTimeout, nil, "telegram", true)
 	if err != nil {
-		slog.Debug(fmt.Sprintf("[%s] "+failureMsg, p.host.Name()), "error", err)
+		pkgLog().Debug(fmt.Sprintf("[%s] "+failureMsg, p.host.Name()), "error", err)
 		return false
 	}
 	return true
@@ -304,20 +303,20 @@ func (p *pollingLifecycle) boundedRequestStep(ctx context.Context, step func(ctx
 func (p *pollingLifecycle) orphanAndRebuildPollingClient(ctx context.Context, pollingReq requestPool) {
 	orphan, rebuilt, err := pollingReq.RebuildClient()
 	if err != nil {
-		slog.Debug(fmt.Sprintf("[%s] Failed to rebuild polling HTTP client after hung drain", p.host.Name()), "error", err)
+		pkgLog().Debug(fmt.Sprintf("[%s] Failed to rebuild polling HTTP client after hung drain", p.host.Name()), "error", err)
 		return
 	}
 	if !rebuilt {
 		return
 	}
-	slog.Warn(fmt.Sprintf("[%s] Replaced wedged getUpdates HTTP client after drain timeout (likely CLOSE-WAIT socket)", p.host.Name()))
+	pkgLog().Warn(fmt.Sprintf("[%s] Replaced wedged getUpdates HTTP client after drain timeout (likely CLOSE-WAIT socket)", p.host.Name()))
 	task := gateway.SpawnAdapterTask(ctx, func(ctx context.Context) error {
 		if orphan == nil {
 			return nil
 		}
 		if _, err := awaitWithThreadDeadline(ctx, func(ctx context.Context) (any, error) { return nil, orphan(ctx) },
 			p.timings.drainTimeout, nil, "telegram", true); err != nil {
-			slog.Debug(fmt.Sprintf("[%s] Orphan polling client aclose failed (non-fatal)", p.host.Name()), "error", err)
+			pkgLog().Debug(fmt.Sprintf("[%s] Orphan polling client aclose failed (non-fatal)", p.host.Name()), "error", err)
 		}
 		return nil
 	})
@@ -366,7 +365,7 @@ func (p *pollingLifecycle) recordPollingProgress(ctx context.Context, generation
 		if p.networkErrorCount != 0 {
 			state = "recovered"
 		}
-		slog.Info(fmt.Sprintf("[%s] Telegram polling %s: getUpdates progressing (generation %d)", p.host.Name(), state, generation))
+		pkgLog().Info(fmt.Sprintf("[%s] Telegram polling %s: getUpdates progressing (generation %d)", p.host.Name(), state, generation))
 	}
 	p.progress.set()
 	now := monotonicNow()
@@ -516,7 +515,7 @@ func (p *pollingLifecycle) drainGeneralConnectionsAfterPoolTimeout(ctx context.C
 	defer p.generalDrainLock.Unlock()
 	p.boundedRequestStep(ctx, generalReq.Shutdown, "General request shutdown failed/timed out after pool timeout (non-fatal)")
 	if p.boundedRequestStep(ctx, generalReq.Initialize, "General request re-initialize failed/timed out after pool timeout (non-fatal)") {
-		slog.Warn(fmt.Sprintf("[%s] General request pool drained after Telegram pool timeout", p.host.Name()))
+		pkgLog().Warn(fmt.Sprintf("[%s] General request pool drained after Telegram pool timeout", p.host.Name()))
 	}
 }
 
@@ -544,7 +543,7 @@ func (p *pollingLifecycle) schedulePollingRecovery(ctx context.Context, err erro
 		return
 	}
 	if p.recoveryInFlight() {
-		slog.Debug(fmt.Sprintf("[%s] Telegram polling recovery already scheduled; ignoring %s: %s", p.host.Name(), reason,
+		pkgLog().Debug(fmt.Sprintf("[%s] Telegram polling recovery already scheduled; ignoring %s: %s", p.host.Name(), reason,
 			redactTelegramErrorText(err)))
 		return
 	}
@@ -553,10 +552,10 @@ func (p *pollingLifecycle) schedulePollingRecovery(ctx context.Context, err erro
 		p.host.MarkDegraded(ctx)
 	}
 	if _, stall := err.(*PollingStallError); stall {
-		slog.Warn(fmt.Sprintf("[%s] Telegram polling stall confirmed (%s); handing off to the supervisor for an adapter rebuild. Error: %s",
+		pkgLog().Warn(fmt.Sprintf("[%s] Telegram polling stall confirmed (%s); handing off to the supervisor for an adapter rebuild. Error: %s",
 			p.host.Name(), reason, redactTelegramErrorText(err)))
 	} else {
-		slog.Warn(fmt.Sprintf("[%s] Telegram polling degraded (%s); gateway stays alive and will retry. Error: %s", p.host.Name(),
+		pkgLog().Warn(fmt.Sprintf("[%s] Telegram polling degraded (%s); gateway stays alive and will retry. Error: %s", p.host.Name(),
 			reason, redactTelegramErrorText(err)))
 	}
 	p.spawnPollingRecovery(func(ctx context.Context) error {
@@ -583,7 +582,7 @@ func (p *pollingLifecycle) deleteStaleWebhook(ctx context.Context, requireSucces
 	if requireSuccess {
 		return false, &osError{msg: "Telegram deleteWebhook did not complete during initial connect", cause: err}
 	}
-	slog.Warn(fmt.Sprintf("[%s] deleteWebhook failed with a recoverable network error; continuing to polling so getUpdates/retry can recover: %s",
+	pkgLog().Warn(fmt.Sprintf("[%s] deleteWebhook failed with a recoverable network error; continuing to polling so getUpdates/retry can recover: %s",
 		p.host.Name(), redactTelegramErrorText(err)))
 	p.setSendPathDegraded()
 	return false, nil
@@ -677,7 +676,7 @@ func (p *pollingLifecycle) startPollingResilient(ctx context.Context, dropPendin
 		return false, err
 	}
 	if looksLikePollingConflict(err) {
-		slog.Warn(fmt.Sprintf("[%s] Telegram polling bootstrap conflict; gateway stays alive while conflict retry runs: %s",
+		pkgLog().Warn(fmt.Sprintf("[%s] Telegram polling bootstrap conflict; gateway stays alive while conflict retry runs: %s",
 			p.host.Name(), redactTelegramErrorText(err)))
 		p.spawnPollingRecovery(func(ctx context.Context) error { return p.handlePollingConflict(ctx, err) })
 		return false, nil
@@ -691,7 +690,7 @@ func (p *pollingLifecycle) startPollingResilient(ctx context.Context, dropPendin
 
 // Retryable telegram_network_error fatal handed to the runner so the supervisor rebuilds the adapter
 func (p *pollingLifecycle) goFatalNetwork(ctx context.Context, message, logMessage string) {
-	slog.Error(logMessage)
+	pkgLog().Error(logMessage)
 	p.host.SetFatalError(ctx, "telegram_network_error", message, true)
 	p.handoffPollingFatalError(ctx)
 }
@@ -744,7 +743,7 @@ func (p *pollingLifecycle) handlePollingNetworkError(ctx context.Context, err er
 		return
 	}
 	delay := math.Min(p.timings.networkBaseDelay*math.Pow(2, float64(attempt-1)), p.timings.networkMaxDelay)
-	slog.Warn(fmt.Sprintf("[%s] Telegram network error (attempt %d/%d), reconnecting in %ds. Error: %s", p.host.Name(), attempt,
+	pkgLog().Warn(fmt.Sprintf("[%s] Telegram network error (attempt %d/%d), reconnecting in %ds. Error: %s", p.host.Name(), attempt,
 		maxRetries, int(delay), redactTelegramErrorText(err)))
 	if !sleepCtx(ctx, delay) || p.isTeardownStarted() {
 		return
@@ -773,14 +772,14 @@ func (p *pollingLifecycle) handlePollingNetworkError(ctx context.Context, err er
 		_, _, retryErr = p.startPollingOnce(ctx, app, false, callback, false, true)
 	}
 	if retryErr == nil {
-		slog.Info(fmt.Sprintf("[%s] Telegram polling restarted after network error (attempt %d); health pending getUpdates progress",
+		pkgLog().Info(fmt.Sprintf("[%s] Telegram polling restarted after network error (attempt %d); health pending getUpdates progress",
 			p.host.Name(), attempt))
 		return
 	}
 	if _, abort := retryErr.(*pollingLifecycleAbort); abort || p.isTeardownStarted() || ctx.Err() != nil {
 		return
 	}
-	slog.Warn(fmt.Sprintf("[%s] Telegram polling reconnect failed: %s", p.host.Name(), redactTelegramErrorText(retryErr)))
+	pkgLog().Warn(fmt.Sprintf("[%s] Telegram polling reconnect failed: %s", p.host.Name(), redactTelegramErrorText(retryErr)))
 	if !p.host.HasFatalError() && !p.isTeardownStarted() {
 		task := gateway.SpawnAdapterTask(ctx, func(ctx context.Context) error {
 			p.handlePollingNetworkError(ctx, retryErr)
@@ -813,7 +812,7 @@ func (p *pollingLifecycle) pollingHeartbeatLoop(ctx context.Context) {
 				stuckTaskRef, stuckTaskSince = recoveryTask, now
 			} else if now-stuckTaskSince > p.timings.errorTaskStuckTimeout {
 				stuckFor := now - stuckTaskSince
-				slog.Error(fmt.Sprintf("[%s] Telegram reconnect task wedged for %.0fs with no ladder progress; forcing retryable-fatal so the gateway reconnects instead of staying silently deaf.",
+				pkgLog().Error(fmt.Sprintf("[%s] Telegram reconnect task wedged for %.0fs with no ladder progress; forcing retryable-fatal so the gateway reconnects instead of staying silently deaf.",
 					p.host.Name(), stuckFor))
 				recoveryTask.Cancel()
 				p.host.SetFatalError(ctx, "telegram_network_error",
@@ -891,7 +890,7 @@ func (p *pollingLifecycle) probePendingUpdates(ctx context.Context, b pollingBot
 		p.notRunningCount++
 		count := p.notRunningCount
 		p.mu.Unlock()
-		slog.Warn(fmt.Sprintf("[%s] Telegram polling heartbeat: updater stopped while in polling mode (stuck probe %d/2)", p.host.Name(), count))
+		pkgLog().Warn(fmt.Sprintf("[%s] Telegram polling heartbeat: updater stopped while in polling mode (stuck probe %d/2)", p.host.Name(), count))
 		if count >= 2 {
 			p.mu.Lock()
 			p.notRunningCount = 0
@@ -924,7 +923,7 @@ func (p *pollingLifecycle) probePendingUpdates(ctx context.Context, b pollingBot
 	p.pendingStuckCount++
 	count := p.pendingStuckCount
 	p.mu.Unlock()
-	slog.Warn(fmt.Sprintf("[%s] Telegram polling heartbeat: %d update(s) queued but not consumed (stuck probe %d/2)", p.host.Name(),
+	pkgLog().Warn(fmt.Sprintf("[%s] Telegram polling heartbeat: %d update(s) queued but not consumed (stuck probe %d/2)", p.host.Name(),
 		pending, count))
 	if count >= 2 {
 		p.mu.Lock()
@@ -941,7 +940,7 @@ func (p *pollingLifecycle) escalateStuckConsumer(logMessage, reason string) {
 	if p.isTeardownStarted() {
 		return
 	}
-	slog.Warn(fmt.Sprintf(logMessage, p.host.Name()))
+	pkgLog().Warn(fmt.Sprintf(logMessage, p.host.Name()))
 	p.restartPollingInTask(func(ctx context.Context) error {
 		p.handlePollingNetworkError(ctx, &runtimeError{msg: reason})
 		return nil
@@ -1051,7 +1050,7 @@ func (p *pollingLifecycle) verifyPollingAfterReconnect(ctx context.Context, gene
 	}
 	app := p.currentApp()
 	if app == nil || app.Updater() == nil || !app.Updater().Running() {
-		slog.Warn(fmt.Sprintf("[%s] Updater made no getUpdates progress and is not running", p.host.Name()))
+		pkgLog().Warn(fmt.Sprintf("[%s] Updater made no getUpdates progress and is not running", p.host.Name()))
 		p.schedulePollingRecovery(ctx, &runtimeError{msg: "Updater not running after polling progress deadline"},
 			"polling progress verifier: updater not running")
 		return
@@ -1061,11 +1060,11 @@ func (p *pollingLifecycle) verifyPollingAfterReconnect(ctx context.Context, gene
 			return
 		}
 		if !looksLikeNetworkError(err) {
-			slog.Warn(fmt.Sprintf("[%s] Polling progress verifier hit a non-connectivity error (not retrying): %s", p.host.Name(),
+			pkgLog().Warn(fmt.Sprintf("[%s] Polling progress verifier hit a non-connectivity error (not retrying): %s", p.host.Name(),
 				redactTelegramErrorText(err)))
 			return
 		}
-		slog.Warn(fmt.Sprintf("[%s] Polling progress verifier connectivity probe failed: %s", p.host.Name(), redactTelegramErrorText(err)))
+		pkgLog().Warn(fmt.Sprintf("[%s] Polling progress verifier connectivity probe failed: %s", p.host.Name(), redactTelegramErrorText(err)))
 		p.schedulePollingRecovery(ctx, err, "polling progress verifier connectivity failure")
 		return
 	}
@@ -1084,12 +1083,12 @@ func (p *pollingLifecycle) disarmPTBRetryLoop() {
 	}
 	disarmed, found := app.Updater().DisarmRetryLoop()
 	if !found {
-		slog.Debug(fmt.Sprintf("[%s] Could not disarm PTB polling retry loop (stop_event not found on this PTB version); falling back to async stop()",
+		pkgLog().Debug(fmt.Sprintf("[%s] Could not disarm PTB polling retry loop (stop_event not found on this PTB version); falling back to async stop()",
 			p.host.Name()))
 		return
 	}
 	if disarmed {
-		slog.Debug(fmt.Sprintf("[%s] Disarmed PTB polling retry loop via %s", p.host.Name(), "_Updater__polling_task_stop_event"))
+		pkgLog().Debug(fmt.Sprintf("[%s] Disarmed PTB polling retry loop via %s", p.host.Name(), "_Updater__polling_task_stop_event"))
 	}
 }
 
@@ -1108,7 +1107,7 @@ func (p *pollingLifecycle) handlePollingConflict(ctx context.Context, err error)
 	p.mu.Unlock()
 	retryDelay := p.timings.conflictRetryDelayBase + float64(count)*p.timings.conflictRetryDelayFactor
 	if count <= maxRetries {
-		slog.Warn(fmt.Sprintf("[%s] Telegram polling conflict (%d/%d) — previous session still held open on Telegram's servers. Waiting %ds for it to expire. Error: %s",
+		pkgLog().Warn(fmt.Sprintf("[%s] Telegram polling conflict (%d/%d) — previous session still held open on Telegram's servers. Waiting %ds for it to expire. Error: %s",
 			p.host.Name(), count, maxRetries, int(retryDelay), redactTelegramErrorText(err)))
 		if !p.stopUpdaterOrGoFatal(ctx, p.currentApp(), "conflict-retry") {
 			return nil
@@ -1138,7 +1137,7 @@ func (p *pollingLifecycle) handlePollingConflict(ctx context.Context, err error)
 		}
 		p.mu.Unlock()
 		if retryErr == nil {
-			slog.Info(fmt.Sprintf("[%s] Telegram polling restarted after conflict retry %d/%d; health pending getUpdates progress",
+			pkgLog().Info(fmt.Sprintf("[%s] Telegram polling restarted after conflict retry %d/%d; health pending getUpdates progress",
 				p.host.Name(), count, maxRetries))
 			return nil
 		}
@@ -1148,7 +1147,7 @@ func (p *pollingLifecycle) handlePollingConflict(ctx context.Context, err error)
 		if ctx.Err() != nil {
 			return ctx.Err()
 		}
-		slog.Warn(fmt.Sprintf("[%s] Telegram polling retry %d/%d failed: %s. Scheduling next attempt.", p.host.Name(), count,
+		pkgLog().Warn(fmt.Sprintf("[%s] Telegram polling retry %d/%d failed: %s. Scheduling next attempt.", p.host.Name(), count,
 			maxRetries, redactTelegramErrorText(retryErr)))
 		if count < maxRetries && !p.isTeardownStarted() {
 			p.restartPollingInTask(func(ctx context.Context) error { return p.handlePollingConflict(ctx, retryErr) })
@@ -1164,7 +1163,7 @@ func (p *pollingLifecycle) handlePollingConflict(ctx context.Context, err error)
 	}
 	message := fmt.Sprintf("Telegram polling could not recover after %d retries (%ds total wait). The previous gateway session is still held open on Telegram's servers, or another process is using the same bot token. To recover: ensure no other Icebath or OpenClaw instance is running with this token, then restart the gateway with 'icebath gateway restart'.",
 		maxRetries, int(totalWait))
-	slog.Error(fmt.Sprintf("[%s] %s Original error: %s", p.host.Name(), message, redactTelegramErrorText(err)))
+	pkgLog().Error(fmt.Sprintf("[%s] %s Original error: %s", p.host.Name(), message, redactTelegramErrorText(err)))
 	alreadyFatal := p.host.HasFatalError() && fatalCodeIs(p.host, "telegram_polling_conflict")
 	p.host.SetFatalError(ctx, "telegram_polling_conflict", message, false)
 	if app := p.currentApp(); app != nil && app.Updater() != nil {
@@ -1172,9 +1171,9 @@ func (p *pollingLifecycle) handlePollingConflict(ctx context.Context, err error)
 		_, stopErr := awaitWithThreadDeadline(ctx, func(ctx context.Context) (any, error) { return nil, updater.Stop(ctx) },
 			p.timings.updaterStopTimeout, nil, "telegram", true)
 		if _, timeout := stopErr.(*deadlineTimeoutError); timeout {
-			slog.Warn(fmt.Sprintf("[%s] updater.stop() timed out after exhausting conflict retries (likely CLOSE-WAIT socket); proceeding to fatal notify", p.host.Name()))
+			pkgLog().Warn(fmt.Sprintf("[%s] updater.stop() timed out after exhausting conflict retries (likely CLOSE-WAIT socket); proceeding to fatal notify", p.host.Name()))
 		} else if stopErr != nil {
-			slog.Warn(fmt.Sprintf("[%s] Failed stopping Telegram updater after exhausting conflict retries: %s", p.host.Name(), stopErr.Error()), "error", stopErr)
+			pkgLog().Warn(fmt.Sprintf("[%s] Failed stopping Telegram updater after exhausting conflict retries: %s", p.host.Name(), stopErr.Error()), "error", stopErr)
 		}
 	}
 	if !alreadyFatal {
@@ -1201,6 +1200,6 @@ func (p *pollingLifecycle) handoffPollingFatalError(ctx context.Context) {
 	}
 	p.mu.Unlock()
 	if err := p.host.NotifyFatalError(ctx); err != nil {
-		slog.Debug(fmt.Sprintf("[%s] fatal error notification failed", p.host.Name()), "error", err)
+		pkgLog().Debug(fmt.Sprintf("[%s] fatal error notification failed", p.host.Name()), "error", err)
 	}
 }

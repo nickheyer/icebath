@@ -17,8 +17,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/state"
 )
 
-var specifyLog = slog.Default().With("logger", "hermes_cli.kanban_specify")
-
 // Integer environment value with the default for unset or unparseable text
 func utilsEnvInt(name string, def int64) int64 {
 	raw := strings.TrimSpace(os.Getenv(name))
@@ -186,8 +184,8 @@ func auxReplyContent(resp any) string {
 
 // One auxiliary LLM call under a per task affinity scope, the reply or nil with a reason
 func callAux(ctx context.Context, verb, taskID, auxTask, system, user string, maxTokens, timeout int64, logger *slog.Logger) (*string, string) {
-	if provider.PortalAffinityScope(ctx) == "" {
-		ctx = provider.WithPortalAffinityScope(ctx, "kanban:"+taskID)
+	if provider.AffinityScope(ctx) == "" {
+		ctx = provider.WithAffinityScope(ctx, "kanban:"+taskID)
 	}
 	resp, err := provider.CallLLM(ctx, map[string]any{
 		"task":        auxTask,
@@ -222,7 +220,7 @@ func SpecifyTask(ctx context.Context, taskID string, author *string, timeout *in
 		limit = *timeout
 	}
 	raw, reason := callAux(ctx, "specify", taskID, "triage_specifier", specifySystemPrompt, specifyUserPrompt(promptFieldsOf(task)),
-		KanbanSpecifyMaxTokens, limit, specifyLog)
+		KanbanSpecifyMaxTokens, limit, pkgLog())
 	if raw == nil {
 		return &SpecifyOutcome{TaskID: taskID, Reason: reason}, nil
 	}

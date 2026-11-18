@@ -2,7 +2,6 @@ package backup
 
 import (
 	"fmt"
-	"log/slog"
 	"os"
 	"sort"
 
@@ -33,7 +32,7 @@ func isDir(p string) bool {
 func SiblingProfileHomes(invokingHome string) [][2]string {
 	homes := [][2]string{}
 	fail := func(err error) [][2]string {
-		slog.Debug(fmt.Sprintf("Sibling profile enumeration failed: %s", pypath.OSErrorText(err)))
+		pkgLog().Debug(fmt.Sprintf("Sibling profile enumeration failed: %s", pypath.OSErrorText(err)))
 		return homes
 	}
 	invoking, err := pypath.Resolve(invokingHome)

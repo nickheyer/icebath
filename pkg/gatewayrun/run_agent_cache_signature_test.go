@@ -5,8 +5,8 @@ import "testing"
 // test_agent_cache.py TestAgentConfigSignature test_model_change_different_signature
 func TestModelChangeDifferentSignature(t *testing.T) {
 	runtime := map[string]any{"api_key": "sk-test12345678", "base_url": "https://openrouter.ai/api/v1", "provider": "openrouter"}
-	sig1 := agentConfigSignature("claude-sonnet-4", runtime, []string{"hermes-telegram"}, "", nil, "", "", false)
-	sig2 := agentConfigSignature("claude-opus-4.6", runtime, []string{"hermes-telegram"}, "", nil, "", "", false)
+	sig1 := agentConfigSignature("claude-sonnet-4", runtime, []string{"icebath-telegram"}, "", nil, "", "", false)
+	sig2 := agentConfigSignature("claude-opus-4.6", runtime, []string{"icebath-telegram"}, "", nil, "", "", false)
 	if sig1 == sig2 {
 		t.Fatal("model change kept the signature")
 	}
@@ -21,8 +21,8 @@ func TestSameTokenPrefixDifferentFullTokenChangesSignature(t *testing.T) {
 	if rt1["api_key"].(string)[:8] != rt2["api_key"].(string)[:8] {
 		t.Fatal("fixtures must share a prefix")
 	}
-	sig1 := agentConfigSignature("gpt-5.3-codex", rt1, []string{"hermes-telegram"}, "", nil, "", "", false)
-	sig2 := agentConfigSignature("gpt-5.3-codex", rt2, []string{"hermes-telegram"}, "", nil, "", "", false)
+	sig1 := agentConfigSignature("gpt-5.3-codex", rt1, []string{"icebath-telegram"}, "", nil, "", "", false)
+	sig2 := agentConfigSignature("gpt-5.3-codex", rt2, []string{"icebath-telegram"}, "", nil, "", "", false)
 	if sig1 == sig2 {
 		t.Fatal("tokens sharing a prefix collided")
 	}
@@ -32,8 +32,8 @@ func TestSameTokenPrefixDifferentFullTokenChangesSignature(t *testing.T) {
 func TestProviderChangeDifferentSignature(t *testing.T) {
 	rt1 := map[string]any{"api_key": "sk-test12345678", "base_url": "https://openrouter.ai/api/v1", "provider": "openrouter"}
 	rt2 := map[string]any{"api_key": "sk-test12345678", "base_url": "https://api.anthropic.com", "provider": "anthropic"}
-	sig1 := agentConfigSignature("claude-sonnet-4", rt1, []string{"hermes-telegram"}, "", nil, "", "", false)
-	sig2 := agentConfigSignature("claude-sonnet-4", rt2, []string{"hermes-telegram"}, "", nil, "", "", false)
+	sig1 := agentConfigSignature("claude-sonnet-4", rt1, []string{"icebath-telegram"}, "", nil, "", "", false)
+	sig2 := agentConfigSignature("claude-sonnet-4", rt2, []string{"icebath-telegram"}, "", nil, "", "", false)
 	if sig1 == sig2 {
 		t.Fatal("provider change kept the signature")
 	}

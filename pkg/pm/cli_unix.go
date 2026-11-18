@@ -1,4 +1,4 @@
-//go:build !windows
+//go:build !windows && !icebath_core && !icebath_noextras
 
 package pm
 

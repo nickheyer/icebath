@@ -23,6 +23,7 @@ func TestInstallSelectionIsCommittedOnlyAfterItsTreeIsFlushed(t *testing.T) {
 	tmp := svRooted(t)
 	ctx := context.Background()
 	repo := sttMkdir(t, filepath.Join(tmp, "repo"))
+	peWrite(t, filepath.Join(repo, "uv.lock"), "version = 1\n")
 	peSwap(t, &repoRoot, func() string { return repo })
 	candidate := filepath.Join(InstallStateDir(ctx, repo), "environments", "fresh", "venv")
 	pubSwapVenv(t, &pubVenv{

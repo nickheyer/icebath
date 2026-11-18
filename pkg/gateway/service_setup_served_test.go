@@ -37,8 +37,8 @@ func servedRoot(t *testing.T) string {
 	if err := os.WriteFile(filepath.Join(root, "config.yaml"), []byte("model: {default: x}\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	write("gateway.pid", map[string]any{"pid": os.Getpid(), "hermes_home": root})
-	write("gateway_state.json", map[string]any{"pid": os.Getpid(), "hermes_home": root, "gateway_state": "running",
+	write("gateway.pid", map[string]any{"pid": os.Getpid(), "icebath_home": root})
+	write("gateway_state.json", map[string]any{"pid": os.Getpid(), "icebath_home": root, "gateway_state": "running",
 		"served_profiles": []any{"default", "coder"}})
 	t.Setenv("ICEBATH_HOME", filepath.Join(root, "profiles", "coder"))
 	t.Setenv("GATEWAY_MULTIPLEX_PROFILES", "")

@@ -12,7 +12,6 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
-	"log/slog"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -166,7 +165,7 @@ func (a *WeComAdapter) cacheMedia(ctx context.Context, kind string, media *pyjso
 	if inline := media.Vals["base64"]; pyrepr.Truthy(inline) {
 		raw, err := decodeBase64(inline)
 		if err != nil {
-			slog.Debug(fmt.Sprintf("[%s] Failed to decode %s base64 media: %s", a.Name(), kind, errText(err)))
+			pkgLog().Debug(fmt.Sprintf("[%s] Failed to decode %s base64 media: %s", a.Name(), kind, errText(err)))
 			return "", "", nil
 		}
 		filename := pyrepr.Str(pyrepr.Or(pyrepr.Or(media.Vals["filename"], media.Vals["name"]), "wecom_file"))
@@ -194,7 +193,7 @@ func (a *WeComAdapter) cacheMedia(ctx context.Context, kind string, media *pyjso
 		if ctx.Err() != nil {
 			return "", "", ctx.Err()
 		}
-		slog.Debug(fmt.Sprintf("[%s] Failed to %s %s from %s: %s", a.Name(), step, kind, url, errText(err)))
+		pkgLog().Debug(fmt.Sprintf("[%s] Failed to %s %s from %s: %s", a.Name(), step, kind, url, errText(err)))
 		return "", "", nil
 	}
 	contentType := pystr.Strip(strings.SplitN(headers["content-type"], ";", 2)[0])
@@ -225,7 +224,7 @@ func (a *WeComAdapter) storeMedia(ctx context.Context, kind string, raw []byte, 
 	path, err := cacheImageFromBytes(ctx, raw, ext)
 	var refused *mediacache.ValueError
 	if errors.As(err, &refused) {
-		slog.Warn(fmt.Sprintf("[%s] Rejected non-image bytes%s: %s", a.Name(), origin, errText(err)))
+		pkgLog().Warn(fmt.Sprintf("[%s] Rejected non-image bytes%s: %s", a.Name(), origin, errText(err)))
 		return "", "", nil
 	}
 	if err != nil {
@@ -626,7 +625,7 @@ func (a *WeComAdapter) sendFollowupMarkdown(ctx context.Context, chatID, content
 		return nil, err
 	}
 	if !result.Success {
-		slog.Warn(fmt.Sprintf("[%s] Follow-up markdown send failed: %s", a.Name(), pyrepr.Str(result.Error)))
+		pkgLog().Warn(fmt.Sprintf("[%s] Follow-up markdown send failed: %s", a.Name(), pyrepr.Str(result.Error)))
 	}
 	return &result, nil
 }
@@ -643,7 +642,7 @@ func (a *WeComAdapter) sendMediaSource(ctx context.Context, chatID, mediaSource,
 		}
 		var pe *pyErr
 		if !errors.As(err, &pe) || pe.kind != "FileNotFoundError" {
-			slog.Error(fmt.Sprintf("[%s] Failed to prepare outbound media %s: %s", a.Name(), mediaSource, errText(err)))
+			pkgLog().Error(fmt.Sprintf("[%s] Failed to prepare outbound media %s: %s", a.Name(), mediaSource, errText(err)))
 		}
 		return gateway.SendResult{Success: false, Error: errText(err)}, nil
 	}
@@ -664,10 +663,10 @@ func (a *WeComAdapter) sendMediaSource(ctx context.Context, chatID, mediaSource,
 	case err != nil && ctx.Err() != nil:
 		return gateway.SendResult{}, ctx.Err()
 	case isTimeout(err):
-		slog.Error(fmt.Sprintf("[%s] TIMEOUT in _send_media_source for %s", a.Name(), mediaSource))
+		pkgLog().Error(fmt.Sprintf("[%s] TIMEOUT in _send_media_source for %s", a.Name(), mediaSource))
 		return gateway.SendResult{Success: false, Error: "Timeout sending media to WeCom"}, nil
 	case err != nil:
-		slog.Error(fmt.Sprintf("[%s] Failed to send media %s: %s", a.Name(), mediaSource, errText(err)))
+		pkgLog().Error(fmt.Sprintf("[%s] Failed to send media %s: %s", a.Name(), mediaSource, errText(err)))
 		return gateway.SendResult{Success: false, Error: errText(err)}, nil
 	}
 	raw := map[string]any{"upload": uploadResult, "media": mediaResponse}
@@ -707,7 +706,7 @@ func (a *WeComAdapter) uploadAndSendMedia(ctx context.Context, chatID string, pr
 		return nil, nil, err
 	}
 	mediaID := pyrepr.Str(uploadResult.Vals["media_id"])
-	slog.Info(fmt.Sprintf("[%s] upload_media_bytes OK: media_id=%s type=%s", a.Name(), mediaID, prepared.finalType))
+	pkgLog().Info(fmt.Sprintf("[%s] upload_media_bytes OK: media_id=%s type=%s", a.Name(), mediaID, prepared.finalType))
 	var mediaResponse *pyjson.Object
 	operation := "send_media_message"
 	if replyReqID != "" {
@@ -721,7 +720,7 @@ func (a *WeComAdapter) uploadAndSendMedia(ctx context.Context, chatID string, pr
 	if err != nil {
 		return nil, nil, err
 	}
-	slog.Info(fmt.Sprintf("[%s] %s OK: %s", a.Name(), operation, pyrepr.Str(mediaResponse)))
+	pkgLog().Info(fmt.Sprintf("[%s] %s OK: %s", a.Name(), operation, pyrepr.Str(mediaResponse)))
 	return uploadResult, mediaResponse, nil
 }
 
@@ -731,7 +730,7 @@ func (a *WeComAdapter) SendImage(ctx context.Context, chatID, imageURL, caption,
 	if err != nil || result.Success || !looksLikeURL(imageURL) {
 		return result, err
 	}
-	slog.Warn(fmt.Sprintf("[%s] Falling back to text send for image URL %s: %s", a.Name(), imageURL, pyrepr.Str(result.Error)))
+	pkgLog().Warn(fmt.Sprintf("[%s] Falling back to text send for image URL %s: %s", a.Name(), imageURL, pyrepr.Str(result.Error)))
 	content := imageURL
 	if caption != "" {
 		content = caption + "\n" + imageURL
@@ -746,7 +745,7 @@ func (a *WeComAdapter) SendImageFile(ctx context.Context, chatID, imagePath, cap
 
 // Sends a document natively under an optional file name
 func (a *WeComAdapter) SendDocument(ctx context.Context, chatID, filePath, caption, fileName, replyTo string, metadata, extra map[string]any) (gateway.SendResult, error) {
-	slog.Info(fmt.Sprintf("[%s] send_document called: chat=%s file=%s", a.Name(), chatID, filePath))
+	pkgLog().Info(fmt.Sprintf("[%s] send_document called: chat=%s file=%s", a.Name(), chatID, filePath))
 	return a.sendMediaSource(ctx, chatID, filePath, caption, fileName, replyTo)
 }
 

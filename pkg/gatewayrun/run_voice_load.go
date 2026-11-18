@@ -52,7 +52,7 @@ func (r *GatewayRunner) loadVoiceModes() (*pydict.Dict[string, string], error) {
 	out := pydict.New[string, string]()
 	for _, k := range keys {
 		if !strings.Contains(k, ":") {
-			runLog().Warn(fmt.Sprintf("Skipping legacy unprefixed voice mode key %s during migration. "+
+			pkgLog().Warn(fmt.Sprintf("Skipping legacy unprefixed voice mode key %s during migration. "+
 				"Re-enable voice mode on that chat to rebuild the prefixed key.", pyrepr.Repr(k)))
 			continue
 		}

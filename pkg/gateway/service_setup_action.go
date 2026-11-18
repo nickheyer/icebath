@@ -126,7 +126,7 @@ func serviceCall(ctx context.Context, backend, verb string, system bool) error {
 		case "uninstall":
 			return WindowsUninstall(ctx)
 		}
-		return fmt.Errorf("AttributeError: module 'icebath_cli.gateway_windows' has no attribute '%s'", verb)
+		return fmt.Errorf("the Windows gateway service has no %s action, it takes start, stop, restart or uninstall", verb)
 	case "launchd":
 		switch verb {
 		case "start":
@@ -138,7 +138,7 @@ func serviceCall(ctx context.Context, backend, verb string, system bool) error {
 		case "uninstall":
 			return LaunchdUninstall(ctx)
 		}
-		return fmt.Errorf("KeyError: 'launchd_%s'", verb)
+		return fmt.Errorf("the launchd gateway service has no %s action, it takes start, stop, restart or uninstall", verb)
 	}
 	switch verb {
 	case "start":
@@ -150,7 +150,7 @@ func serviceCall(ctx context.Context, backend, verb string, system bool) error {
 	case "uninstall":
 		return SystemdUninstall(ctx, system)
 	}
-	return fmt.Errorf("KeyError: 'systemd_%s'", verb)
+	return fmt.Errorf("the systemd gateway service has no %s action, it takes start, stop, restart or uninstall", verb)
 }
 
 // Runs a wizard service start or restart, printing remediation instead of failing on the scope errors

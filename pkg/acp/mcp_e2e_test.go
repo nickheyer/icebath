@@ -127,7 +127,7 @@ func TestPatchModeToolStartDefersDiffToEditApprovalPrompt(t *testing.T) {
 	}
 }
 
-func lifecycleSession(t *testing.T, a *HermesACPAgent, m *SessionManager) string {
+func lifecycleSession(t *testing.T, a *IcebathACPAgent, m *SessionManager) string {
 	t.Helper()
 	created := newSession(t, a, "/tmp")
 	mock := mockOf(t, m.GetSession(context.Background(), created.SessionID))

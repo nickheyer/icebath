@@ -201,7 +201,7 @@ func (e *hostedContextEngine) ShouldCompress(promptTokens *int) bool {
 func (e *hostedContextEngine) ShouldCompressInfo(promptTokens *int) (bool, *string) {
 	out, _ := e.call("should_compress_info", []any{optionalInt(promptTokens)}, nil).([]any)
 	if len(out) != 2 {
-		panic(fmt.Errorf("TypeError: should_compress_info must return a (bool, reason) pair"))
+		panic(errors.New("the context engine should_compress_info must return a flag and a reason"))
 	}
 	if out[1] == nil {
 		return pyrepr.Truthy(out[0]), nil
@@ -238,7 +238,7 @@ func (e *hostedContextEngine) Compress(messages []map[string]any, currentTokens 
 func (e *hostedContextEngine) PruneToolResultsOnly(messages []map[string]any, currentTokens *int) ([]map[string]any, int) {
 	out, _ := e.call("prune_tool_results_only", []any{anyMaps(messages)}, map[string]any{"current_tokens": optionalInt(currentTokens)}).([]any)
 	if len(out) != 2 {
-		panic(fmt.Errorf("TypeError: prune_tool_results_only must return a (messages, n_pruned) pair"))
+		panic(errors.New("the context engine prune_tool_results_only must return the messages and the pruned count"))
 	}
 	n, _ := hostedInt(out[1])
 	return hostedMapList(out[0]), n
@@ -377,7 +377,7 @@ func (e *hostedContextEngine) CloneForAgent() ContextEngine {
 	out := e.call("clone_for_agent", nil, nil)
 	obj, ok := out.(*plugins.HostedObject)
 	if !ok {
-		panic(fmt.Errorf("TypeError: clone_for_agent returned %T, not a context engine", out))
+		panic(fmt.Errorf("the context engine clone_for_agent returned %T, expected a context engine", out))
 	}
 	clone, err := newHostedContextEngine(e.ctx, obj)
 	if err != nil {

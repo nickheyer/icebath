@@ -5,7 +5,7 @@ import "github.com/nickheyer/icebath/pkg/state"
 // Whether closing the agent ends its stored session row
 func (a *AIAgent) EndSessionOnClose() bool { return a.endSessionOnClose }
 
-// Seeds the live transcript as never flushed, the state a hermes case builds by assigning _session_messages
+// Seeds the live transcript as never flushed, the state a test builds by assigning session messages
 func (a *AIAgent) SetUnflushedSessionMessagesForTests(history []map[string]any) {
 	messages := make([]*state.Message, len(history))
 	for i, m := range history {

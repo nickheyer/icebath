@@ -58,7 +58,7 @@ func (r *GatewayRunner) runAgentDrainPending(ctx context.Context, result map[str
 				if key == "" {
 					key = "?"
 				}
-				runLog().Info(fmt.Sprintf("Ignoring control interrupt message for session %s: %s", key, pyrepr.Str(interruptMessage)))
+				pkgLog().Info(fmt.Sprintf("Ignoring control interrupt message for session %s: %s", key, pyrepr.Str(interruptMessage)))
 			} else if !gateway.ExecutingAdmission(ctx) {
 				pending = pyrepr.Str(interruptMessage)
 			}
@@ -80,7 +80,7 @@ func (r *GatewayRunner) runAgentDrainPending(ctx context.Context, result map[str
 				}
 			}
 			if pending != "" {
-				runLog().Debug(fmt.Sprintf("Processing queued message after agent completion: '%s...'", headRunes(pending, 40)))
+				pkgLog().Debug(fmt.Sprintf("Processing queued message after agent completion: '%s...'", headRunes(pending, 40)))
 			}
 		}
 	}
@@ -89,7 +89,7 @@ func (r *GatewayRunner) runAgentDrainPending(ctx context.Context, result map[str
 		cmdWord := pystr.Lower(strings.TrimPrefix(pystr.SplitWhitespace(pystr.Strip(pending), 1)[0], "/"))
 		if cmdWord != "" {
 			if _, known := ResolveCommand(cmdWord); known {
-				runLog().Info(fmt.Sprintf("Discarding command '/%s' from pending queue — commands must not be passed as agent input", cmdWord))
+				pkgLog().Info(fmt.Sprintf("Discarding command '/%s' from pending queue — commands must not be passed as agent input", cmdWord))
 				pendingEvent = nil
 				pending = ""
 			}
@@ -101,7 +101,7 @@ func (r *GatewayRunner) runAgentDrainPending(ctx context.Context, result map[str
 			if key == "" {
 				key = "?"
 			}
-			runLog().Info(fmt.Sprintf("Discarding pending follow-up for session %s during gateway %s", key, r.statusActionLabel()))
+			pkgLog().Info(fmt.Sprintf("Discarding pending follow-up for session %s during gateway %s", key, r.statusActionLabel()))
 		}
 		pendingEvent = nil
 		if len(result) > 0 && adapter != nil && sessionKey != "" {

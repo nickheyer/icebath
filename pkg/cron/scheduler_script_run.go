@@ -291,7 +291,7 @@ func (s *Store) terminateCronScriptTree(p *cronScriptProcess) error {
 		return nil
 	}
 	fallback := func(reason string) error {
-		s.logAs("cron.scheduler").Warn(reason + "; falling back to process-group termination")
+		s.log.Warn(reason + "; falling back to process-group termination")
 		return cronTerminateScriptProcess(s, p)
 	}
 	pid := p.cmd.Process.Pid
@@ -354,7 +354,7 @@ func scriptErrorText(err error) string {
 func (s *Store) redactScriptOutput(stdout, stderr string) (outText, errText string) {
 	defer func() {
 		if r := recover(); r != nil {
-			s.logAs("cron.scheduler").Warn(fmt.Sprintf("Failed to redact sensitive text from output: %v", r))
+			s.log.Warn(fmt.Sprintf("Failed to redact sensitive text from output: %v", r))
 			outText, errText = "[REDACTED - redaction failed]", "[REDACTED - redaction failed]"
 		}
 	}()
@@ -489,7 +489,7 @@ func (s *Store) runJobScriptWithClaimHeartbeat(ctx context.Context, job *Job, sc
 				return
 			case <-time.After(time.Duration(runClaimHeartbeatSeconds * float64(time.Second))):
 				if _, err := cronHeartbeatRunClaim(s, home.WithOverride(ctx, s.home), jobID, owner); err != nil {
-					s.logAs("cron.scheduler").Debug(fmt.Sprintf("Job '%s': script run_claim heartbeat failed", jobID), "error", err)
+					s.log.Debug(fmt.Sprintf("Job '%s': script run_claim heartbeat failed", jobID), "error", err)
 				}
 			}
 		}

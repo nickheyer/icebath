@@ -28,7 +28,7 @@ var shutdownTranscriptFlush = func(a *agent.AIAgent) state.FlushOutcome {
 func flushAgentTranscriptAtShutdown(ctx context.Context, a *agent.AIAgent) {
 	defer func() {
 		if rec := recover(); rec != nil {
-			runLog().Debug(fmt.Sprintf("Shutdown transcript flush failed: %v", rec))
+			pkgLog().Debug(fmt.Sprintf("Shutdown transcript flush failed: %v", rec))
 		}
 	}()
 	if a == nil || len(a.SessionMessages()) == 0 {
@@ -40,7 +40,7 @@ func flushAgentTranscriptAtShutdown(ctx context.Context, a *agent.AIAgent) {
 	}()
 	if raised := shutdownFlushRaised(a); raised != nil {
 		messages := agent.SessionMessageDicts(a.SessionMessages())
-		runLog().Warn(fmt.Sprintf("Shutdown transcript flush failed (%s); preserving %d in-memory message(s) to recovery snapshot",
+		pkgLog().Warn(fmt.Sprintf("Shutdown transcript flush failed (%s); preserving %d in-memory message(s) to recovery snapshot",
 			pyrepr.ExceptionMessage(raised), len(messages)))
 		history := make([]any, len(messages))
 		for i, m := range messages {
@@ -73,7 +73,7 @@ func (r *GatewayRunner) finalizeShutdownAgents(ctx context.Context, activeAgents
 		}
 		messages := r.finalizeSessionOffLoop(ctx, sessionID, "gateway", "shutdown", sessionKey, nil)
 		if err := r.deliverSessionEndMessages(ctx, messages, nil, sessionKey); err != nil {
-			runLog().Debug(fmt.Sprintf("Session-end plugin message delivery failed for %s", sessionKey), "exc_info", err)
+			pkgLog().Debug(fmt.Sprintf("Session-end plugin message delivery failed for %s", sessionKey), "exc_info", err)
 		}
 		r.cleanupAgentResourcesOffLoop(ctx, a, "shutdown finalize", sessionKey)
 	}
@@ -153,7 +153,7 @@ func (r *GatewayRunner) suspendStuckLoopSessions(ctx context.Context) int {
 			if entry != nil && !entry.Suspended {
 				entry.Suspended = true
 				suspended++
-				runLog().Warn(fmt.Sprintf("Auto-suspended stuck session %s (active across %s consecutive restarts — likely a stuck loop)",
+				pkgLog().Warn(fmt.Sprintf("Auto-suspended stuck session %s (active across %s consecutive restarts — likely a stuck loop)",
 					sessionKey, pyrepr.Str(value)))
 			}
 		}()
@@ -165,7 +165,7 @@ func (r *GatewayRunner) suspendStuckLoopSessions(ctx context.Context) int {
 		}()
 	}
 	if err := os.Remove(path); err != nil && !errors.Is(err, os.ErrNotExist) {
-		runLog().Debug(fmt.Sprintf("Could not remove %s: %v", path, err))
+		pkgLog().Debug(fmt.Sprintf("Could not remove %s: %v", path, err))
 	}
 	return suspended
 }
@@ -223,7 +223,7 @@ func (r *GatewayRunner) deliverSessionEndMessages(ctx context.Context, messages 
 		}
 	}
 	if adapter == nil {
-		runLog().Info(fmt.Sprintf("Session-end plugin message(s) dropped: no chat for session %s", sessionKey))
+		pkgLog().Info(fmt.Sprintf("Session-end plugin message(s) dropped: no chat for session %s", sessionKey))
 		return nil
 	}
 	metadata := r.threadMetadataForSource(source, nil)
@@ -268,10 +268,10 @@ func (r *GatewayRunner) ResetSessionOffLoop(ctx context.Context, sessionKey stri
 	switch {
 	case err == nil:
 	case errors.Is(err, errBoundedTimeout):
-		runLog().Warn(fmt.Sprintf("Session reset hooks (%s) exceeded %ss; proceeding without blocking the event loop.",
+		pkgLog().Warn(fmt.Sprintf("Session reset hooks (%s) exceeded %ss; proceeding without blocking the event loop.",
 			pyrepr.Str(kwargs["old_session_id"]), pyrepr.Str(finalizeTimeoutS)))
 	default:
-		runLog().Debug(fmt.Sprintf("Session reset hooks (%s) failed", pyrepr.Str(kwargs["old_session_id"])), "exc_info", err)
+		pkgLog().Debug(fmt.Sprintf("Session reset hooks (%s) failed", pyrepr.Str(kwargs["old_session_id"])), "exc_info", err)
 	}
 	return nil
 }
@@ -293,10 +293,10 @@ func (r *GatewayRunner) finalizeSessionOffLoop(ctx context.Context, sessionID an
 	switch {
 	case err == nil:
 	case errors.Is(err, errBoundedTimeout):
-		runLog().Warn(fmt.Sprintf("Session finalize hooks (%s, reason=%s) exceeded %ss; proceeding without blocking the event loop "+
+		pkgLog().Warn(fmt.Sprintf("Session finalize hooks (%s, reason=%s) exceeded %ss; proceeding without blocking the event loop "+
 			"(the worker thread is left to finish on its own).", pyrepr.Str(sessionID), reason, pyrepr.Str(finalizeTimeoutS)))
 	default:
-		runLog().Debug(fmt.Sprintf("Session finalize hooks (%s, reason=%s) failed", pyrepr.Str(sessionID), reason), "exc_info", err)
+		pkgLog().Debug(fmt.Sprintf("Session finalize hooks (%s, reason=%s) failed", pyrepr.Str(sessionID), reason), "exc_info", err)
 	}
 	mu.Lock()
 	defer mu.Unlock()

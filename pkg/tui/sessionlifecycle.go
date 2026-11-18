@@ -8,6 +8,8 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 	"github.com/google/uuid"
+
+	"github.com/nickheyer/icebath/pkg/tuigateway"
 )
 
 var resumeScrollDelays = []time.Duration{0, 80 * time.Millisecond, 240 * time.Millisecond}
@@ -16,8 +18,8 @@ var resumeScrollDelays = []time.Duration{0, 80 * time.Millisecond, 240 * time.Mi
 type sessionGateway interface {
 	turnGateway
 	holdAttach(sessionID string) *attachHold
-	settleAttach(hold *attachHold, snapshot map[string]any)
-	hydrateSharedPrompts(result map[string]any)
+	settleAttach(hold *attachHold, snapshot *tuigateway.CanonicalSnapshot)
+	hydrateSharedPrompts(snapshot *tuigateway.CanonicalSnapshot)
 	creationEnv() func(string) string
 }
 
@@ -104,12 +106,15 @@ func resolved(then func() tea.Cmd) tea.Cmd {
 }
 
 // Usage of a session's info over the zero counters
-func usageFrom(info map[string]any) map[string]any {
-	usage, _ := info["usage"].(map[string]any)
-	if !truthyJS(info["usage"]) {
-		return zeroUsage()
+func usageFrom(info *tuigateway.SessionInfo) *tuigateway.Usage {
+	return mergeUsageStable(zeroUsage(), infoOf(info).Usage)
+}
+
+// Warning that the gateway serves the session with secret redaction off, and how to turn it back on
+func reportRedactionOff(info *tuigateway.SessionInfo, sys func(string)) {
+	if redact := infoOf(info).RedactSecrets; redact != nil && !*redact {
+		sys("warning: " + tr("session.notices.redactionOff"))
 	}
-	return spreadUsage(zeroUsage(), usage)
 }
 
 // Status line of a live session's state
@@ -125,14 +130,15 @@ func statusFromLiveSession(status string, running bool) string {
 	return "ready"
 }
 
-// Credential and config warnings of a new session, then its opening message
-func reportNewSessionNotices(info map[string]any, message string, sys func(string)) {
-	if truthyJS(info["credential_warning"]) {
-		sys("warning: " + describeCredentialWarning(jsValueString(info["credential_warning"])))
+// Credential, config and redaction warnings of a new session, then its opening message
+func reportNewSessionNotices(info *tuigateway.SessionInfo, message string, sys func(string)) {
+	if warning := val(infoOf(info).CredentialWarning); warning != "" {
+		sys("warning: " + describeCredentialWarning(warning))
 	}
-	if truthyJS(info["config_warning"]) {
-		sys("warning: " + jsValueString(info["config_warning"]))
+	if warning := val(infoOf(info).ConfigWarning); warning != "" {
+		sys("warning: " + warning)
 	}
+	reportRedactionOff(info, sys)
 	if message != "" {
 		sys(message)
 	}
@@ -151,28 +157,30 @@ func writeActiveSessionFile(sessionID string) {
 }
 
 // User bubble of a live session's turn in flight
-func liveSessionInflightMessages(inflight map[string]any) []msg {
-	user := strings.TrimFunc(stringOr(inflight["user"], ""), isJSSpace)
+func liveSessionInflightMessages(inflight *tuigateway.InflightTurn) []msg {
+	if inflight == nil {
+		return []msg{}
+	}
+	user := strings.TrimFunc(inflight.User, isJSSpace)
 	if user == "" {
 		return []msg{}
 	}
 	row := map[string]any{"role": "user", "text": user}
-	if truthyJS(inflight["display_kind"]) {
-		row["display_kind"] = inflight["display_kind"]
+	if kind := val(inflight.DisplayKind); kind != "" {
+		row["display_kind"] = kind
 	}
-	if truthyJS(inflight["display_metadata"]) {
-		row["display_metadata"] = inflight["display_metadata"]
+	if len(inflight.DisplayMetadata) > 0 {
+		row["display_metadata"] = inflight.DisplayMetadata
 	}
 	return toTranscriptMessages([]any{row})
 }
 
 // Streams the partial reply of a live session's turn in flight
-func (l *sessionLifecycle) hydrateLiveSessionInflight(inflight map[string]any) {
-	assistant := stringOr(inflight["assistant"], "")
-	if assistant == "" && !truthyJS(inflight["streaming"]) {
+func (l *sessionLifecycle) hydrateLiveSessionInflight(inflight *tuigateway.InflightTurn) {
+	if inflight == nil || inflight.Assistant == "" && !inflight.Streaming {
 		return
 	}
-	l.turn.hydrateStreamingText(assistant)
+	l.turn.hydrateStreamingText(inflight.Assistant)
 }
 
 // Tells the app a different session replaced the previous one, true when it did
@@ -184,21 +192,9 @@ func signalFreshSessionBoundary(previousSid, nextSid string, onFresh func(string
 	return true
 }
 
-// History without its last exchange, the reply rows and then the user row
-func trimLastExchange(items []msg) []msg {
-	q := append([]msg(nil), items...)
-	for len(q) > 0 && (q[len(q)-1].Role == "assistant" || q[len(q)-1].Role == "tool") {
-		q = q[:len(q)-1]
-	}
-	if len(q) > 0 && q[len(q)-1].Role == "user" {
-		q = q[:len(q)-1]
-	}
-	return q
-}
-
 // Closes a session on the legacy wire, printing its closing messages unless deferred
-func (l *sessionLifecycle) closeSession(targetSid string, deferMessages bool, then func(map[string]any) tea.Cmd) tea.Cmd {
-	finish := func(closed map[string]any) tea.Cmd {
+func (l *sessionLifecycle) closeSession(targetSid string, deferMessages bool, then func(*tuigateway.SessionCloseResult) tea.Cmd) tea.Cmd {
+	finish := func(closed *tuigateway.SessionCloseResult) tea.Cmd {
 		if !deferMessages {
 			l.printClosed(closed)
 		}
@@ -210,20 +206,22 @@ func (l *sessionLifecycle) closeSession(targetSid string, deferMessages bool, th
 	if targetSid == "" || l.gw.canonical() {
 		return resolved(func() tea.Cmd { return finish(nil) })
 	}
-	return l.rpc("session.close", map[string]any{"session_id": targetSid}, finish)
+	return ask(l.rpc, l.view.sys, tuigateway.SessionClose, tuigateway.SessionCloseParams{SessionID: targetSid}, finish)
 }
 
 // Prints the messages a session.close answered with
-func (l *sessionLifecycle) printClosed(closed map[string]any) {
-	messages, _ := closed["messages"].([]any)
-	for _, m := range messages {
-		l.view.sys(jsValueString(m))
+func (l *sessionLifecycle) printClosed(closed *tuigateway.SessionCloseResult) {
+	if closed == nil {
+		return
+	}
+	for _, line := range closed.Messages {
+		l.view.sys(line)
 	}
 }
 
 // Detaches a canonical subscription after any detach of the same session finished
-func (l *sessionLifecycle) detachCanonical(sid, subscriptionID, endReason string, onlyIfHeld bool, then func(map[string]any) tea.Cmd) tea.Cmd {
-	done := func(result map[string]any) tea.Cmd {
+func (l *sessionLifecycle) detachCanonical(sid, subscriptionID, endReason string, onlyIfHeld bool, then func(*tuigateway.SessionDetachResult) tea.Cmd) tea.Cmd {
+	done := func(result *tuigateway.SessionDetachResult) tea.Cmd {
 		if then == nil {
 			return nil
 		}
@@ -235,7 +233,7 @@ func (l *sessionLifecycle) detachCanonical(sid, subscriptionID, endReason string
 	flight := &detachFlight{}
 	previous := l.detachFlights[sid]
 	l.detachFlights[sid] = flight
-	finish := func(result map[string]any) tea.Cmd {
+	finish := func(result *tuigateway.SessionDetachResult) tea.Cmd {
 		cmds := []tea.Cmd{done(result)}
 		if l.detachFlights[sid] == flight {
 			delete(l.detachFlights, sid)
@@ -249,12 +247,12 @@ func (l *sessionLifecycle) detachCanonical(sid, subscriptionID, endReason string
 		if onlyIfHeld && l.subscriptions[sid] != subscriptionID {
 			return finish(nil)
 		}
-		params := map[string]any{"session_id": sid, "subscription_id": subscriptionID}
+		params := tuigateway.SessionDetachParams{SessionID: sid, SubscriptionID: subscriptionID}
 		if endReason != "" {
-			params["end_reason"] = endReason
+			params.EndReason = &endReason
 		}
-		return l.rpc("session.detach", params, func(result map[string]any) tea.Cmd {
-			if truthyJS(result["detached"]) && l.subscriptions[sid] == subscriptionID {
+		return ask(l.rpc, l.view.sys, tuigateway.CanonicalSessionDetach, params, func(result *tuigateway.SessionDetachResult) tea.Cmd {
+			if result != nil && result.Detached && l.subscriptions[sid] == subscriptionID {
 				delete(l.subscriptions, sid)
 			}
 			return finish(result)
@@ -285,25 +283,6 @@ func (l *sessionLifecycle) closeForExit() tea.Cmd {
 	return tea.Batch(cmds...)
 }
 
-// Closes the live view of a session, a legacy close or a canonical detach it holds
-func (l *sessionLifecycle) closeLiveView(targetSid string, then func(closed bool) tea.Cmd) tea.Cmd {
-	if !l.gw.canonical() {
-		return l.rpc("session.close", map[string]any{"session_id": targetSid}, func(closed map[string]any) tea.Cmd {
-			l.printClosed(closed)
-			return then(truthyJS(closed["closed"]))
-		})
-	}
-	return l.afterDetach(targetSid, func() tea.Cmd {
-		sub := l.subscriptions[targetSid]
-		if sub == "" {
-			return then(false)
-		}
-		return l.detachCanonical(targetSid, sub, "tui_close", true, func(result map[string]any) tea.Cmd {
-			return then(truthyJS(result["detached"]))
-		})
-	})
-}
-
 // Detaches attachments a superseded flight adopted once no attachment is in flight
 func (l *sessionLifecycle) disposeStaleAttachments() tea.Cmd {
 	if len(l.pendingAttachments) > 0 {
@@ -326,9 +305,8 @@ func (l *sessionLifecycle) finishAttachment(flight int) tea.Cmd {
 }
 
 // Remembers the subscription of an answer that arrived for a superseded flight
-func (l *sessionLifecycle) discardStaleAttachment(result map[string]any) tea.Cmd {
-	if sub := paramStr(result["subscription_id"]); truthyJS(result["subscription_id"]) {
-		sid := jsValueString(result["session_id"])
+func (l *sessionLifecycle) discardStaleAttachment(sid, sub string) tea.Cmd {
+	if sub != "" {
 		key, _ := json.Marshal([]string{sid, sub})
 		l.staleAttachments[string(key)] = [2]string{sid, sub}
 	}
@@ -336,12 +314,10 @@ func (l *sessionLifecycle) discardStaleAttachment(result map[string]any) tea.Cmd
 }
 
 // Holds the subscription of an attached session and detaches the one it replaced
-func (l *sessionLifecycle) adoptAttachment(result map[string]any, previousSid, previousSubscription string, closePrevious bool) tea.Cmd {
-	sub := paramStr(result["subscription_id"])
+func (l *sessionLifecycle) adoptAttachment(sid, sub, previousSid, previousSubscription string, closePrevious bool) tea.Cmd {
 	if !l.gw.canonical() || sub == "" {
 		return nil
 	}
-	sid := jsValueString(result["session_id"])
 	l.subscriptions[sid] = sub
 	if previousSid == "" || previousSubscription == "" || (previousSid == sid && previousSubscription == sub) {
 		return nil
@@ -367,7 +343,7 @@ func (l *sessionLifecycle) resetSession() {
 }
 
 // Clears the visible transcript and turn, showing the session intro when info is given
-func (l *sessionLifecycle) resetVisibleHistory(info map[string]any) {
+func (l *sessionLifecycle) resetVisibleHistory(info *tuigateway.SessionInfo) {
 	l.turn.idle(false)
 	l.turn.clearReasoning()
 	l.turn.turnTools = nil
@@ -413,30 +389,6 @@ func (l *sessionLifecycle) onResumeScroll(m resumeScrollMsg) tea.Cmd {
 	return nil
 }
 
-// Session info of an attach answer with its stored id
-func infoWithStoredSid(r map[string]any, storedSid string) map[string]any {
-	raw, isObj := r["info"].(map[string]any)
-	if !isObj || !truthyJS(r["info"]) {
-		return nil
-	}
-	info := make(map[string]any, len(raw)+1)
-	for k, v := range raw {
-		info[k] = v
-	}
-	info["stored_session_id"] = storedSid
-	return info
-}
-
-// First truthy value as text
-func firstTruthy(values ...any) string {
-	for _, v := range values {
-		if truthyJS(v) {
-			return jsValueString(v)
-		}
-	}
-	return ""
-}
-
 // Starts a session, closing the current one unless kept, then names it and adopts its subscription
 func (l *sessionLifecycle) startNewSession(message, title string, keepCurrent bool, then func(sid string) tea.Cmd) tea.Cmd {
 	l.attachmentFlight++
@@ -451,62 +403,81 @@ func (l *sessionLifecycle) startNewSession(message, title string, keepCurrent bo
 		}
 		return tea.Batch(cmds...)
 	}
-	create := func(closed map[string]any) tea.Cmd {
+	created := func(closed *tuigateway.SessionCloseResult, a *attachment) tea.Cmd {
 		if flight != l.attachmentFlight {
-			return settle("")
-		}
-		params := map[string]any{"cols": float64(l.view.cols())}
-		if l.gw.canonical() {
-			params = map[string]any{"request_id": uuid.NewString()}
-			for k, v := range localCreationOptions(l.gw.creationEnv()) {
-				params[k] = v
-			}
-		}
-		if cwd := strings.TrimFunc(os.Getenv("ICEBATH_TUI_CWD"), isJSSpace); cwd != "" {
-			params["cwd"] = cwd
-		}
-		return l.rpc("session.create", params, func(r map[string]any) tea.Cmd {
-			if flight != l.attachmentFlight {
-				return tea.Batch(l.discardStaleAttachment(r), settle(""))
-			}
-			if r == nil {
-				l.store.ui.Status = "ready"
+			if a == nil {
 				return settle("")
 			}
-			info, _ := r["info"].(map[string]any)
-			sid := jsValueString(r["session_id"])
-			storedSid := firstTruthy(r["stored_session_id"], info["stored_session_id"], r["session_id"])
-			info = infoWithStoredSid(r, storedSid)
-			requestedTitle := strings.TrimFunc(title, isJSSpace)
-			l.resetSession()
-			l.view.setSessionStartedAt(l.store.nowMillis())
-			writeActiveSessionFile(storedSid)
-			status := tr("session.status.startingAgent")
-			if l.gw.canonical() || truthyJS(info["version"]) {
-				status = "ready"
-			}
-			connected := true
-			l.store.ui.GatewayConnected = &connected
-			l.store.ui.Info, l.store.ui.Sid, l.store.ui.Status, l.store.ui.StoredSid, l.store.ui.Usage = info, sid, status, storedSid, usageFrom(info)
-			if info != nil {
-				l.view.setHistoryItems(func([]msg) []msg { return []msg{introMsg(info)} })
-			}
-			reportNewSessionNotices(info, message, l.view.sys)
-			l.printClosed(closed)
-			cmds := []tea.Cmd{}
-			if requestedTitle != "" {
-				cmds = append(cmds, l.nameNewSession(sid, requestedTitle))
-			}
-			signalFreshSessionBoundary(previousSid, sid, l.view.onFreshSessionStarted)
-			cmds = append(cmds, l.adoptAttachment(r, previousSid, previousSubscription, !keepCurrent), settle(sid))
-			return tea.Batch(cmds...)
-		})
+			return tea.Batch(l.discardStaleAttachment(a.SessionID, a.SubscriptionID), settle(""))
+		}
+		if a == nil {
+			l.store.ui.Status = "ready"
+			return settle("")
+		}
+		requestedTitle := strings.TrimFunc(title, isJSSpace)
+		l.resetSession()
+		l.view.setSessionStartedAt(l.store.nowMillis())
+		writeActiveSessionFile(a.StoredSID)
+		status := tr("session.status.startingAgent")
+		if l.gw.canonical() || val(a.Info.Version) != "" {
+			status = "ready"
+		}
+		connected := true
+		l.store.ui.GatewayConnected = &connected
+		l.store.ui.Info, l.store.ui.Sid, l.store.ui.Status, l.store.ui.StoredSid, l.store.ui.Usage = a.Info, a.SessionID, status, a.StoredSID, usageFrom(a.Info)
+		l.view.setHistoryItems(func([]msg) []msg { return []msg{introMsg(a.Info)} })
+		reportNewSessionNotices(a.Info, message, l.view.sys)
+		l.printClosed(closed)
+		cmds := []tea.Cmd{}
+		if requestedTitle != "" {
+			cmds = append(cmds, l.nameNewSession(a.SessionID, requestedTitle))
+		}
+		signalFreshSessionBoundary(previousSid, a.SessionID, l.view.onFreshSessionStarted)
+		cmds = append(cmds, l.adoptAttachment(a.SessionID, a.SubscriptionID, previousSid, previousSubscription, !keepCurrent), settle(a.SessionID))
+		return tea.Batch(cmds...)
 	}
-	afterSetup := func(setup map[string]any) tea.Cmd {
+	create := func(closed *tuigateway.SessionCloseResult) tea.Cmd {
 		if flight != l.attachmentFlight {
 			return settle("")
 		}
-		if setup["provider_configured"] == false {
+		cwd := strings.TrimFunc(os.Getenv("ICEBATH_TUI_CWD"), isJSSpace)
+		if l.gw.canonical() {
+			params, err := localCreationOptions(l.gw.creationEnv())
+			if err != nil {
+				l.view.sys("error: " + err.Error())
+				return created(closed, nil)
+			}
+			params.RequestID = ptr(uuid.NewString())
+			if cwd != "" {
+				params.Cwd = &cwd
+			}
+			return ask(l.rpc, l.view.sys, tuigateway.CanonicalSessionCreate, params, func(r *tuigateway.CanonicalSnapshot) tea.Cmd {
+				if r == nil {
+					return created(closed, nil)
+				}
+				a := snapshotAttachment(r)
+				return created(closed, &a)
+			})
+		}
+		params := tuigateway.SessionCreateParams{Cols: ptr(int64(l.view.cols()))}
+		if cwd != "" {
+			params.Cwd = &cwd
+		}
+		return ask(l.rpc, l.view.sys, tuigateway.SessionCreate, params, func(r *tuigateway.SessionCreateResult) tea.Cmd {
+			if r == nil {
+				return created(closed, nil)
+			}
+			info := r.Info
+			stored := firstText(r.StoredSessionID, val(info.StoredSessionID), r.SessionID)
+			info.StoredSessionID = &stored
+			return created(closed, &attachment{SessionID: r.SessionID, StoredSID: stored, Info: &info})
+		})
+	}
+	afterSetup := func(setup *tuigateway.SetupStatusResult) tea.Cmd {
+		if flight != l.attachmentFlight || setup == nil {
+			return settle("")
+		}
+		if setup.ProviderConfigured != nil && !*setup.ProviderConfigured {
 			l.view.panel(setupRequiredTitle(), buildSetupRequiredSections())
 			l.store.ui.Status = tr("session.status.setupRequired")
 			return settle("")
@@ -516,18 +487,18 @@ func (l *sessionLifecycle) startNewSession(message, title string, keepCurrent bo
 		}
 		return l.closeSession(previousSid, true, create)
 	}
-	return l.rpc("setup.status", map[string]any{}, afterSetup)
+	return l.setupStatus(afterSetup)
 }
 
 // Names a freshly created session, reporting the title or the failure while it stays current
 func (l *sessionLifecycle) nameNewSession(sid, requestedTitle string) tea.Cmd {
-	apply := func(result map[string]any) tea.Cmd {
-		if result == nil || l.store.ui.Sid != sid {
+	apply := func(title string, pending bool) tea.Cmd {
+		if l.store.ui.Sid != sid {
 			return nil
 		}
-		next := strings.TrimFunc(stringOr(result["title"], requestedTitle), isJSSpace)
+		next := strings.TrimFunc(firstText(title, requestedTitle), isJSSpace)
 		suffix := ""
-		if truthyJS(result["pending"]) {
+		if pending {
 			suffix = tr("session.lifecycle.titleQueuedSuffix")
 		}
 		l.store.ui.SessionTitle = next
@@ -535,7 +506,12 @@ func (l *sessionLifecycle) nameNewSession(sid, requestedTitle string) tea.Cmd {
 		return nil
 	}
 	if !l.gw.canonical() {
-		return l.rpc("session.title", map[string]any{"session_id": sid, "title": requestedTitle}, apply)
+		return ask(l.rpc, l.view.sys, tuigateway.SessionTitle, tuigateway.SessionTitleParams{SessionID: sid, Title: &requestedTitle}, func(r *tuigateway.SessionTitleResult) tea.Cmd {
+			if r == nil {
+				return nil
+			}
+			return apply(r.Title, val(r.Pending))
+		})
 	}
 	return l.store.mutateCanonical(l.gw, sid, "rename", map[string]any{"title": requestedTitle}, func() bool { return false }, func(m *mutationOutcome, err error) tea.Cmd {
 		if err != nil {
@@ -544,10 +520,10 @@ func (l *sessionLifecycle) nameNewSession(sid, requestedTitle string) tea.Cmd {
 			}
 			return nil
 		}
-		if m == nil || m.Result == nil {
+		if m == nil {
 			return nil
 		}
-		return apply(map[string]any{"title": strings.TrimFunc(stringOr(m.Result["title"], requestedTitle), isJSSpace)})
+		return apply(val(m.Result.Title), false)
 	})
 }
 
@@ -566,43 +542,67 @@ func (l *sessionLifecycle) newLiveSession(message, title string, then func(sid s
 }
 
 // Shows an attached session's transcript, state, prompts and connection card
-func (l *sessionLifecycle) applyAttachment(r map[string]any, storedSid string, hold *attachHold) tea.Cmd {
-	info := infoWithStoredSid(r, storedSid)
-	running := truthyJS(r["running"]) || r["status"] == "working" || r["status"] == "waiting"
+func (l *sessionLifecycle) applyAttachment(a attachment, hold *attachHold) tea.Cmd {
 	l.resetSession()
 	startedAt := l.store.nowMillis()
-	if n, isNum := r["started_at"].(float64); isNum && n != 0 {
-		startedAt = n * 1000
+	if a.StartedAt != 0 {
+		startedAt = a.StartedAt * 1000
 	}
 	l.view.setSessionStartedAt(startedAt)
-	inflight, _ := r["inflight"].(map[string]any)
-	transcript := append(toTranscriptMessages(r["messages"]), liveSessionInflightMessages(inflight)...)
-	l.view.setHistoryItems(func([]msg) []msg {
-		if info != nil {
-			return append([]msg{introMsg(info)}, transcript...)
-		}
-		return transcript
-	})
-	writeActiveSessionFile(storedSid)
+	transcript := append(toTranscriptMessages(historyRows(a.Messages)), liveSessionInflightMessages(a.Inflight)...)
+	l.view.setHistoryItems(func([]msg) []msg { return append([]msg{introMsg(a.Info)}, transcript...) })
+	reportRedactionOff(a.Info, l.view.sys)
+	writeActiveSessionFile(a.StoredSID)
 	connected := true
-	l.store.ui.Busy, l.store.ui.GatewayConnected = running, &connected
-	l.store.ui.Info, l.store.ui.Sid, l.store.ui.Status, l.store.ui.StoredSid, l.store.ui.Usage = info, jsValueString(r["session_id"]), statusFromLiveSession(paramStr(r["status"]), running), storedSid, usageFrom(info)
-	l.gw.hydrateSharedPrompts(r)
-	l.hydrateLiveSessionInflight(inflight)
-	l.gw.settleAttach(hold, r)
+	l.store.ui.Busy, l.store.ui.GatewayConnected = a.Running, &connected
+	l.store.ui.Info, l.store.ui.Sid, l.store.ui.Status, l.store.ui.StoredSid, l.store.ui.Usage = a.Info, a.SessionID, statusFromLiveSession(a.Status, a.Running), a.StoredSID, usageFrom(a.Info)
+	l.gw.hydrateSharedPrompts(a.Snapshot)
+	l.hydrateLiveSessionInflight(a.Inflight)
+	l.gw.settleAttach(hold, a.Snapshot)
 	return l.scheduleResumeScrollToBottom()
 }
 
 // Request that waits for the session's detach in flight, dropped when a newer flight started meanwhile
-func (l *sessionLifecycle) requestAfterDetach(id string, flight int, method string, params map[string]any, then func(any, error) tea.Cmd) tea.Cmd {
+func (l *sessionLifecycle) requestAfterDetach(id string, flight int, then func() tea.Cmd, dropped func() tea.Cmd) tea.Cmd {
 	if l.detachFlights[id] == nil {
-		return gatewayCall(l.gw, method, params, then)
+		return then()
 	}
 	return l.afterDetach(id, func() tea.Cmd {
 		if flight != l.attachmentFlight {
-			return resolved(func() tea.Cmd { return then(nil, nil) })
+			return dropped()
 		}
-		return gatewayCall(l.gw, method, params, then)
+		return then()
+	})
+}
+
+// Attachment of a session by id, the authority's resume when canonical and the method table's activation or resume otherwise
+func (l *sessionLifecycle) attachByID(id string, live bool, then func(*attachment, error) tea.Cmd) tea.Cmd {
+	if l.gw.canonical() {
+		params := tuigateway.CanonicalResumeParams{SessionID: id, DisplayProjection: true}
+		return call(l.gw, tuigateway.CanonicalSessionResume, params, func(r *tuigateway.CanonicalSnapshot, err error) tea.Cmd {
+			if err != nil {
+				return then(nil, err)
+			}
+			a := snapshotAttachment(r)
+			return then(&a, nil)
+		})
+	}
+	if live {
+		return call(l.gw, tuigateway.SessionActivate, tuigateway.SessionActivateParams{SessionID: id}, func(r *tuigateway.SessionActivateResult, err error) tea.Cmd {
+			if err != nil {
+				return then(nil, err)
+			}
+			a := resumedAttachment(r, firstText(val(r.SessionKey), val(r.StoredSessionID), val(r.Info.StoredSessionID), r.SessionID))
+			return then(&a, nil)
+		})
+	}
+	params := tuigateway.SessionResumeParams{SessionID: id, Cols: ptr(int64(l.view.cols()))}
+	return call(l.gw, tuigateway.SessionResume, params, func(r *tuigateway.SessionResumeResult, err error) tea.Cmd {
+		if err != nil {
+			return then(nil, err)
+		}
+		a := resumedAttachment(r, firstText(val(r.SessionKey), val(r.Info.StoredSessionID), val(r.StoredSessionID), val(r.Resumed), id))
+		return then(&a, nil)
 	})
 }
 
@@ -617,35 +617,29 @@ func (l *sessionLifecycle) activateLiveSession(id string) tea.Cmd {
 	l.store.ui.Status = tr("session.status.switchingSession")
 	l.store.clearConnectionOperation()
 	hold := l.gw.holdAttach(id)
-	return l.requestAfterDetach(id, flight, "session.activate", map[string]any{"session_id": id}, func(raw any, err error) tea.Cmd {
-		done := func(cmd tea.Cmd) tea.Cmd {
-			l.gw.settleAttach(hold, nil)
-			return tea.Batch(cmd, l.finishAttachment(flight))
-		}
-		if err != nil {
-			if flight == l.attachmentFlight {
-				l.view.sys("error: " + err.Error())
-				l.store.ui.Status = "ready"
+	done := func(cmd tea.Cmd) tea.Cmd {
+		l.gw.settleAttach(hold, nil)
+		return tea.Batch(cmd, l.finishAttachment(flight))
+	}
+	return l.requestAfterDetach(id, flight, func() tea.Cmd {
+		return l.attachByID(id, true, func(a *attachment, err error) tea.Cmd {
+			if err != nil {
+				if flight == l.attachmentFlight {
+					l.view.sys("error: " + err.Error())
+					l.store.ui.Status = "ready"
+				}
+				return done(nil)
 			}
-			return done(nil)
-		}
-		r := asRPCResult(raw)
-		if flight != l.attachmentFlight {
-			return done(l.discardStaleAttachment(r))
-		}
-		if r == nil {
-			l.view.sys("error: " + tr("session.common.invalidResponse", "session.activate"))
-			l.store.ui.Status = "ready"
-			return done(nil)
-		}
-		info, _ := r["info"].(map[string]any)
-		storedSid := firstTruthy(r["session_key"], r["stored_session_id"], info["stored_session_id"], r["session_id"])
-		cmd := l.applyAttachment(r, storedSid, hold)
-		if pending, isObj := r["pending_connection"].(map[string]any); isObj && truthyJS(r["pending_connection"]) {
-			l.store.applyConnectionRequest(pending)
-		}
-		return done(tea.Batch(cmd, l.adoptAttachment(r, previousSid, previousSubscription, false)))
-	})
+			if flight != l.attachmentFlight {
+				return done(l.discardStaleAttachment(a.SessionID, a.SubscriptionID))
+			}
+			cmd := l.applyAttachment(*a, hold)
+			if a.Connection != nil {
+				l.store.applyConnectionRequest(wireParams(a.Connection))
+			}
+			return done(tea.Batch(cmd, l.adoptAttachment(a.SessionID, a.SubscriptionID, previousSid, previousSubscription, false)))
+		})
+	}, func() tea.Cmd { return done(nil) })
 }
 
 // Resumes a stored or live session by id, moving its journaled inputs to the resumed session
@@ -679,61 +673,56 @@ func (l *sessionLifecycle) resumeByID(id string, then func(err error) tea.Cmd) t
 		}
 		return tea.Batch(cmds...)
 	}
-	afterSetup := func(setup map[string]any) tea.Cmd {
-		if flight != l.attachmentFlight {
+	afterSetup := func(setup *tuigateway.SetupStatusResult) tea.Cmd {
+		if flight != l.attachmentFlight || setup == nil {
 			return finish()
 		}
-		if setup["provider_configured"] == false {
+		if setup.ProviderConfigured != nil && !*setup.ProviderConfigured {
 			l.view.panel(setupRequiredTitle(), buildSetupRequiredSections())
 			l.store.ui.Status = tr("session.status.setupRequired")
 			return finish()
 		}
 		hold := l.gw.holdAttach(id)
-		return l.requestAfterDetach(id, flight, "session.resume", map[string]any{"cols": float64(l.view.cols()), "session_id": id}, func(raw any, err error) tea.Cmd {
-			defer l.gw.settleAttach(hold, nil)
-			if err != nil {
-				if flight == l.attachmentFlight {
-					l.view.sys("error: " + err.Error())
-					l.store.ui.Status = "ready"
+		return l.requestAfterDetach(id, flight, func() tea.Cmd {
+			return l.attachByID(id, false, func(a *attachment, err error) tea.Cmd {
+				defer l.gw.settleAttach(hold, nil)
+				if err != nil {
+					if flight == l.attachmentFlight {
+						l.view.sys("error: " + err.Error())
+						l.store.ui.Status = "ready"
+					}
+					return finish()
 				}
-				return finish()
-			}
-			r := asRPCResult(raw)
-			if flight != l.attachmentFlight {
-				return finish(l.discardStaleAttachment(r))
-			}
-			if r == nil {
-				l.view.sys("error: " + tr("session.common.invalidResponse", "session.resume"))
-				l.store.ui.Status = "ready"
-				return finish()
-			}
-			info, _ := r["info"].(map[string]any)
-			storedSid := firstTruthy(r["session_key"], info["stored_session_id"], r["stored_session_id"], r["resumed"], id)
-			resumedSid, successorStoredSid := jsValueString(r["session_id"]), ""
-			if infoWithStoredSid(r, storedSid) != nil {
-				successorStoredSid = storedSid
-			}
-			if err := pendingJournal.migrate(destination, resumedSid, successorStoredSid); err != nil {
-				if flight == l.attachmentFlight {
-					l.view.sys("error: " + err.Error())
-					l.store.ui.Status = "ready"
+				if flight != l.attachmentFlight {
+					return finish(l.discardStaleAttachment(a.SessionID, a.SubscriptionID))
 				}
-				return finish()
-			}
-			cmd := l.applyAttachment(r, storedSid, hold)
-			if pending, isObj := r["pending_connection"].(map[string]any); isObj && truthyJS(r["pending_connection"]) {
-				l.store.applyConnectionRequest(pending)
-			} else {
-				l.store.clearConnectionOperation()
-			}
-			cmds := []tea.Cmd{cmd}
-			if previousSid != "" && previousSid != resumedSid {
-				cmds = append(cmds, l.closeSession(previousSid, false, nil))
-			}
-			return finish(append(cmds, l.adoptAttachment(r, previousSid, previousSubscription, true))...)
-		})
+				if err := pendingJournal.migrate(destination, a.SessionID, a.StoredSID); err != nil {
+					if flight == l.attachmentFlight {
+						l.view.sys("error: " + err.Error())
+						l.store.ui.Status = "ready"
+					}
+					return finish()
+				}
+				cmd := l.applyAttachment(*a, hold)
+				if a.Connection != nil {
+					l.store.applyConnectionRequest(wireParams(a.Connection))
+				} else {
+					l.store.clearConnectionOperation()
+				}
+				cmds := []tea.Cmd{cmd}
+				if previousSid != "" && previousSid != a.SessionID {
+					cmds = append(cmds, l.closeSession(previousSid, false, nil))
+				}
+				return finish(append(cmds, l.adoptAttachment(a.SessionID, a.SubscriptionID, previousSid, previousSubscription, true))...)
+			})
+		}, func() tea.Cmd { return finish() })
 	}
-	return l.rpc("setup.status", map[string]any{}, afterSetup)
+	return l.setupStatus(afterSetup)
+}
+
+// Setup readiness of the profile, nil after a printed failure
+func (l *sessionLifecycle) setupStatus(then func(*tuigateway.SetupStatusResult) tea.Cmd) tea.Cmd {
+	return ask(l.rpc, l.view.sys, tuigateway.SetupStatus, tuigateway.ProfileParams{}, then)
 }
 
 // Refuses a session switch while a turn runs, true when it refused

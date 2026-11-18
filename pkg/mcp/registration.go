@@ -7,7 +7,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"hash/fnv"
 	"math"
 	"runtime"
@@ -17,6 +16,8 @@ import (
 	"sync"
 	"time"
 	"weak"
+
+	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/tools"
@@ -136,7 +137,7 @@ func warnUnknownCostKeys(serverName string, key ServerKey, toolNames []string) {
 	for i, u := range unknown {
 		items[i] = u
 	}
-	mcpLogger().Warn(fmt.Sprintf("MCP server '%s': tool_costs names %s, which the server does not offer, so those calls "+
+	pkgLog().Warn(fmt.Sprintf("MCP server '%s': tool_costs names %s, which the server does not offer, so those calls "+
 		"carry no cost and no spend limit. Use the server's own tool names (without Icebath's '%s%s__' prefix).",
 		serverName, pyRepr(items), ToolNamePrefix, serverName))
 }
@@ -304,7 +305,7 @@ func selectUtilitySchemas(serverName string, s *serverTask, cfg map[string]any) 
 	var selected []UtilitySchema
 	for _, entry := range buildUtilitySchemas(serverName) {
 		if reason := skipReason(entry.HandlerKey); reason != "" {
-			mcpLogger().Debug(fmt.Sprintf("MCP server '%s': skipping utility '%s' (%s)", serverName, entry.HandlerKey, reason))
+			pkgLog().Debug(fmt.Sprintf("MCP server '%s': skipping utility '%s' (%s)", serverName, entry.HandlerKey, reason))
 			continue
 		}
 		selected = append(selected, entry)
@@ -448,7 +449,7 @@ func toolCandidates(serverName string, list []*Tool, shouldRegister func(string)
 	var out []candidate
 	for _, t := range list {
 		if !shouldRegister(t.Name) {
-			mcpLogger().Debug(fmt.Sprintf("MCP server '%s': skipping tool '%s' (filtered by config)", serverName, t.Name))
+			pkgLog().Debug(fmt.Sprintf("MCP server '%s': skipping tool '%s' (filtered by config)", serverName, t.Name))
 			continue
 		}
 		scanDescription(serverName, t.Name, t.Description)
@@ -496,7 +497,7 @@ func resolveNameCollisions(serverName string, candidates []candidate) []candidat
 			order = append(order, c.registryName)
 		}
 		if origins[c.origin] {
-			mcpLogger().Debug(fmt.Sprintf("MCP server '%s': duplicate registration candidate %s for '%s'; keeping one", serverName, c.origin, c.registryName))
+			pkgLog().Debug(fmt.Sprintf("MCP server '%s': duplicate registration candidate %s for '%s'; keeping one", serverName, c.origin, c.registryName))
 			continue
 		}
 		origins[c.origin] = true
@@ -523,7 +524,7 @@ func resolveNameCollisions(serverName string, candidates []candidate) []candidat
 			for _, o := range utility {
 				shadowed[[2]string{name, o}] = true
 			}
-			mcpLogger().Info(fmt.Sprintf("MCP server '%s': generated utility %s normalizes onto server-native %s \u2014 keeping the native tool "+
+			pkgLog().Info(fmt.Sprintf("MCP server '%s': generated utility %s normalizes onto server-native %s \u2014 keeping the native tool "+
 				"and dropping the utility (the utility only applies when the server has no such tool of its own)",
 				serverName, strings.Join(utility, ", "), native[0]))
 			continue
@@ -538,7 +539,7 @@ func resolveNameCollisions(serverName string, candidates []candidate) []candidat
 	}
 	sort.Strings(names)
 	for _, name := range names {
-		mcpLogger().Error(fmt.Sprintf("MCP server '%s': name normalization collision for '%s' from %s; skipping every colliding "+
+		pkgLog().Error(fmt.Sprintf("MCP server '%s': name normalization collision for '%s' from %s; skipping every colliding "+
 			"entry instead of choosing an arbitrary handler", serverName, name, strings.Join(ambiguous[name], ", ")))
 	}
 	var out []candidate
@@ -579,13 +580,13 @@ func registerCandidates(ctx context.Context, serverName string, candidates []can
 			switch {
 			case lazy:
 				if !c.isUtility() {
-					mcpLogger().Warn(fmt.Sprintf("MCP server '%s' (lazy): cached tool '%s' collides with toolset '%s' \u2014 skipping", serverName, c.registryName, existing))
+					pkgLog().Warn(fmt.Sprintf("MCP server '%s' (lazy): cached tool '%s' collides with toolset '%s' \u2014 skipping", serverName, c.registryName, existing))
 				}
 			case strings.HasPrefix(existing, "mcp-"):
-				mcpLogger().Error(fmt.Sprintf("MCP server '%s': %s normalizes to '%s', already owned by MCP toolset '%s' \u2014 skipping to "+
+				pkgLog().Error(fmt.Sprintf("MCP server '%s': %s normalizes to '%s', already owned by MCP toolset '%s' \u2014 skipping to "+
 					"preserve the existing owner", serverName, c.origin, c.registryName, existing))
 			default:
-				mcpLogger().Warn(fmt.Sprintf("MCP server '%s': %s (\u2192 '%s') collides with built-in tool in toolset '%s' \u2014 skipping to "+
+				pkgLog().Warn(fmt.Sprintf("MCP server '%s': %s (\u2192 '%s') collides with built-in tool in toolset '%s' \u2014 skipping to "+
 					"preserve built-in", serverName, c.origin, c.registryName, existing))
 			}
 			continue
@@ -609,7 +610,7 @@ func registerCandidates(ctx context.Context, serverName string, candidates []can
 			}
 			registered = append(registered, c.registryName)
 		} else if !lazy {
-			mcpLogger().Error(fmt.Sprintf("MCP server '%s': registration of %s as '%s' was rejected by the registry; "+
+			pkgLog().Error(fmt.Sprintf("MCP server '%s': registration of %s as '%s' was rejected by the registry; "+
 				"skipping provenance/count updates", serverName, c.origin, c.registryName))
 		}
 	}
@@ -641,7 +642,7 @@ func writeSchemaCache(ctx context.Context, serverName string, s *serverTask, cfg
 	}
 	utility := utilityRows(selectUtilitySchemas(serverName, s, cfg))
 	if err := WriteCacheEntry(ctx, serverName, ConfigFingerprint(cfg), payload, utility, meta.TTLMs, meta.CacheScope); err != nil {
-		mcpLogger().Debug(fmt.Sprintf("MCP schema cache write failed for '%s': %s", serverName, excStr(err)))
+		pkgLog().Debug(fmt.Sprintf("MCP schema cache write failed for '%s': %s", serverName, excStr(err)))
 	}
 }
 
@@ -714,6 +715,12 @@ func writePyJSON(b *strings.Builder, v any) {
 			writePyJSON(b, x[k])
 		}
 		b.WriteByte('}')
+	case *pyjson.Object:
+		if x == nil {
+			b.WriteString("null")
+			return
+		}
+		writePyJSON(b, x.Vals)
 	case map[string]string:
 		m := make(map[string]any, len(x))
 		for k, s := range x {
@@ -823,7 +830,7 @@ func adopterIdentityDigest(ctx context.Context, env *tools.Env, serverName strin
 	if err != nil {
 		var unavailable *LiveEndpointUnavailableError
 		if !errors.As(err, &unavailable) {
-			mcpLogger().Warn(fmt.Sprintf("MCP server '%s': cannot resolve this profile's connection identity (%s); "+
+			pkgLog().Warn(fmt.Sprintf("MCP server '%s': cannot resolve this profile's connection identity (%s); "+
 				"not adopting another profile's connection", serverName, excStr(err)))
 		}
 		return "", false
@@ -1047,7 +1054,7 @@ func registerFromCacheSync(ctx context.Context, env *tools.Env, name string, cfg
 		lazyServerFingerprints[key] = ConfigFingerprint(cfg)
 		lazyServerToolNames[key] = append([]string(nil), registered...)
 		mcpMu.Unlock()
-		mcpLogger().Info(fmt.Sprintf("MCP server '%s' (lazy): registered %d tool(s) from schema cache", name, len(registered)))
+		pkgLog().Info(fmt.Sprintf("MCP server '%s' (lazy): registered %d tool(s) from schema cache", name, len(registered)))
 	}
 	return registered, nil
 }

@@ -6,7 +6,6 @@ import (
 	"encoding/binary"
 	"errors"
 	"fmt"
-	"log/slog"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -148,19 +147,19 @@ func (a *FeishuAdapter) Send(ctx context.Context, chatID, content, replyTo strin
 		response, err := a.feishuSendWithRetry(ctx, chatID, msgType, payload, replyTo, metadata)
 		if err != nil {
 			if msgType != "post" || !reSearch(postContentInvalidRe, err.Error()) {
-				slog.Error("[Feishu] Send error: " + err.Error())
+				pkgLog().Error("[Feishu] Send error: " + err.Error())
 				return gateway.SendResult{Success: false, Error: err.Error()}, nil
 			}
-			slog.Warn("[Feishu] Invalid post payload rejected by API; falling back to plain text")
+			pkgLog().Warn("[Feishu] Invalid post payload rejected by API; falling back to plain text")
 			if response, err = sendPlain(chunk); err != nil {
-				slog.Error("[Feishu] Send error: " + err.Error())
+				pkgLog().Error("[Feishu] Send error: " + err.Error())
 				return gateway.SendResult{Success: false, Error: err.Error()}, nil
 			}
 		}
 		if msgType == "post" && !responseSucceeded(response) && reSearch(postContentInvalidRe, respMsg(response, "")) {
-			slog.Warn("[Feishu] Post payload rejected by API response; falling back to plain text")
+			pkgLog().Warn("[Feishu] Post payload rejected by API response; falling back to plain text")
 			if response, err = sendPlain(chunk); err != nil {
-				slog.Error("[Feishu] Send error: " + err.Error())
+				pkgLog().Error("[Feishu] Send error: " + err.Error())
 				return gateway.SendResult{Success: false, Error: err.Error()}, nil
 			}
 		}
@@ -192,11 +191,11 @@ func (a *FeishuAdapter) EditMessage(ctx context.Context, chatID, messageID, cont
 	msgType, payload := a.buildOutboundPayload(content, false)
 	result, err := update(msgType, payload)
 	if err == nil && !result.Success && msgType == "post" && reSearch(postContentInvalidRe, pyrepr.Str(orEmpty(result.Error))) {
-		slog.Warn("[Feishu] Invalid post update payload rejected by API; falling back to plain text")
+		pkgLog().Warn("[Feishu] Invalid post update payload rejected by API; falling back to plain text")
 		result, err = update("text", textPayload(stripMarkdownToPlainText(content)))
 	}
 	if err != nil {
-		slog.Error(fmt.Sprintf("[Feishu] Failed to edit message %s: %s", messageID, err))
+		pkgLog().Error(fmt.Sprintf("[Feishu] Failed to edit message %s: %s", messageID, err))
 		return gateway.SendResult{Success: false, Error: err.Error()}, nil
 	}
 	if result.Success {
@@ -226,7 +225,7 @@ func (a *FeishuAdapter) DeleteMessage(ctx context.Context, chatID, messageID str
 		return e
 	})
 	if err != nil {
-		slog.Debug(fmt.Sprintf("[Feishu] Failed to delete message %s: %s", messageID, err))
+		pkgLog().Debug(fmt.Sprintf("[Feishu] Failed to delete message %s: %s", messageID, err))
 		return false, nil
 	}
 	r := wrapResp(resp)
@@ -237,7 +236,7 @@ func (a *FeishuAdapter) DeleteMessage(ctx context.Context, chatID, messageID str
 	if r != nil {
 		code, msg = r.code, r.msg
 	}
-	slog.Debug(fmt.Sprintf("[Feishu] Delete of message %s rejected: code=%s msg=%s", messageID, pyrepr.Str(code), pyrepr.Str(msg)))
+	pkgLog().Debug(fmt.Sprintf("[Feishu] Delete of message %s rejected: code=%s msg=%s", messageID, pyrepr.Str(code), pyrepr.Str(msg)))
 	return false, nil
 }
 
@@ -283,7 +282,7 @@ func (a *FeishuAdapter) SendExecApprovalPrompt(ctx context.Context, prompt *gate
 			style = "default"
 		}
 		value := pyjson.NewObject()
-		value.Set("hermes_action", eaCardActions[act.Choice])
+		value.Set(cardApprovalKey, eaCardActions[act.Choice])
 		value.Set("approval_id", int64(approvalID))
 		actions = append(actions, cardButton(act.Label, style, value))
 	}
@@ -292,7 +291,7 @@ func (a *FeishuAdapter) SendExecApprovalPrompt(ctx context.Context, prompt *gate
 	result, err := a.sendInteractiveCard(ctx, prompt.ChatID, card, prompt.Metadata, "send_exec_approval failed", a.approvalState, approvalID,
 		prompt.SessionKey, map[string]string{"body": body})
 	if err != nil {
-		slog.Warn("[Feishu] send_exec_approval failed: " + err.Error())
+		pkgLog().Warn("[Feishu] send_exec_approval failed: " + err.Error())
 		return gateway.SendResult{Success: false, Error: err.Error()}, nil
 	}
 	return result, nil
@@ -327,7 +326,7 @@ func buildUpdatePromptCard(ctx context.Context, prompt, def string, promptID int
 	}
 	btn := func(label, answer, btnType string) *pyjson.Object {
 		value := pyjson.NewObject()
-		value.Set("hermes_update_prompt_action", answer)
+		value.Set(cardUpdatePromptKey, answer)
 		value.Set("update_prompt_id", int64(promptID))
 		return cardButton(label, btnType, value)
 	}
@@ -348,7 +347,7 @@ func (a *FeishuAdapter) SendUpdatePrompt(ctx context.Context, chatID, prompt, de
 	card := buildUpdatePromptCard(ctx, prompt, def, promptID)
 	result, err := a.sendInteractiveCard(ctx, chatID, card, metadata, "send_update_prompt failed", a.updatePromptState, promptID, sessionKey, nil)
 	if err != nil {
-		slog.Warn("[Feishu] send_update_prompt failed: " + err.Error())
+		pkgLog().Warn("[Feishu] send_update_prompt failed: " + err.Error())
 		return gateway.SendResult{Success: false, Error: err.Error()}, nil
 	}
 	return result, nil
@@ -433,7 +432,7 @@ func (a *FeishuAdapter) SendImageFile(ctx context.Context, chatID, imagePath, ca
 		return gateway.SendResult{Success: false, Error: "Image file not found: " + imagePath}, nil
 	}
 	fail := func(err error) (gateway.SendResult, error) {
-		slog.Error(fmt.Sprintf("[Feishu] Failed to send image %s: %s", imagePath, err))
+		pkgLog().Error(fmt.Sprintf("[Feishu] Failed to send image %s: %s", imagePath, err))
 		return gateway.SendResult{Success: false, Error: err.Error()}, nil
 	}
 	data, err := os.ReadFile(imagePath)
@@ -476,7 +475,7 @@ func (a *FeishuAdapter) SendTyping(ctx context.Context, chatID string, metadata 
 func (a *FeishuAdapter) SendImage(ctx context.Context, chatID, imageURL, caption, replyTo string, metadata map[string]any) (gateway.SendResult, error) {
 	imagePath, err := a.downloadRemoteImage(ctx, imageURL)
 	if err != nil {
-		slog.Error(fmt.Sprintf("[Feishu] Failed to download image %s: %s", imageURL, err))
+		pkgLog().Error(fmt.Sprintf("[Feishu] Failed to download image %s: %s", imageURL, err))
 		return a.BasePlatformAdapter.SendImage(ctx, chatID, imageURL, caption, replyTo, metadata)
 	}
 	return a.SendImageFile(ctx, chatID, imagePath, caption, replyTo, metadata, nil)
@@ -486,7 +485,7 @@ func (a *FeishuAdapter) SendImage(ctx context.Context, chatID, imageURL, caption
 func (a *FeishuAdapter) SendAnimation(ctx context.Context, chatID, animationURL, caption, replyTo string, metadata map[string]any) (gateway.SendResult, error) {
 	filePath, fileName, err := a.downloadRemoteDocument(ctx, animationURL, ".gif", "animation.gif")
 	if err != nil {
-		slog.Error(fmt.Sprintf("[Feishu] Failed to download animation %s: %s", animationURL, err))
+		pkgLog().Error(fmt.Sprintf("[Feishu] Failed to download animation %s: %s", animationURL, err))
 		return a.BasePlatformAdapter.SendAnimation(ctx, chatID, animationURL, caption, replyTo, metadata)
 	}
 	visible := i18n.T(ctx, "platform.feishu.media.gif_downgraded", "", nil)
@@ -523,12 +522,12 @@ func (a *FeishuAdapter) GetChatInfo(ctx context.Context, chatID string) (map[str
 		resp, e = client.GetChat(ctx, req)
 		return e
 	}); err != nil {
-		slog.Warn(fmt.Sprintf("[Feishu] Failed to get chat info for %s", chatID))
+		pkgLog().Warn(fmt.Sprintf("[Feishu] Failed to get chat info for %s", chatID))
 		return fallback, nil
 	}
 	r := wrapResp(resp)
 	if !responseSucceeded(r) {
-		slog.Warn(fmt.Sprintf("[Feishu] Failed to get chat info for %s: [%s] %s", chatID, pyrepr.Str(respCode(r)), respMsg(r, "chat lookup failed")))
+		pkgLog().Warn(fmt.Sprintf("[Feishu] Failed to get chat info for %s: [%s] %s", chatID, pyrepr.Str(respCode(r)), respMsg(r, "chat lookup failed")))
 		return fallback, nil
 	}
 	var rawType, name string
@@ -618,7 +617,7 @@ func (a *FeishuAdapter) sendUploadedFileMessage(ctx context.Context, chatID, fil
 	}
 	uploadType, messageType := resolveOutboundFileRouting(displayName, outboundType)
 	fail := func(err error) (gateway.SendResult, error) {
-		slog.Error(fmt.Sprintf("[Feishu] Failed to send file %s: %s", filePath, err))
+		pkgLog().Error(fmt.Sprintf("[Feishu] Failed to send file %s: %s", filePath, err))
 		return gateway.SendResult{Success: false, Error: err.Error()}, nil
 	}
 	duration := 0
@@ -669,13 +668,13 @@ func (a *FeishuAdapter) sendUploadedFileMessage(ctx context.Context, chatID, fil
 			threadMsgID = *id
 		}
 		if threadMsgID != "" {
-			slog.Info("[Feishu] Audio: retrying via reply API in thread")
+			pkgLog().Info("[Feishu] Audio: retrying via reply API in thread")
 			if msg, err = a.feishuSendWithRetry(ctx, chatID, "audio", payload, threadMsgID, metadata); err != nil {
 				return fail(err)
 			}
 		}
 		if !responseSucceeded(msg) {
-			slog.Warn("[Feishu] Audio send failed in thread, retrying with chat_id")
+			pkgLog().Warn("[Feishu] Audio send failed in thread, retrying with chat_id")
 			if msg, err = a.feishuSendWithRetry(ctx, chatID, "audio", payload, "", nil); err != nil {
 				return fail(err)
 			}
@@ -707,7 +706,7 @@ func (a *FeishuAdapter) fetchLastMessageInThread(ctx context.Context, threadID s
 		resp, e = client.ListMessage(ctx, req)
 		return e
 	}); err != nil {
-		slog.Debug(fmt.Sprintf("[Feishu] Failed to fetch last message in thread %s: %s", threadID, err))
+		pkgLog().Debug(fmt.Sprintf("[Feishu] Failed to fetch last message in thread %s: %s", threadID, err))
 		return nil
 	}
 	if responseSucceeded(wrapResp(resp)) && resp.Data != nil && len(resp.Data.Items) > 0 && resp.Data.Items[0] != nil {
@@ -771,11 +770,11 @@ func (a *FeishuAdapter) feishuSendWithRetry(ctx context.Context, chatID, msgType
 		response, err := a.sendRawMessage(ctx, chatID, msgType, payload, active, metadata)
 		if err == nil && active != "" && !responseSucceeded(response) && response != nil && feishuReplyFallbackCodes[response.code] {
 			if threadID := metadata["thread_id"]; pyrepr.Truthy(threadID) {
-				slog.Warn(fmt.Sprintf("[Feishu] Reply to %s failed in thread %s (code %d — message withdrawn/missing); "+
+				pkgLog().Warn(fmt.Sprintf("[Feishu] Reply to %s failed in thread %s (code %d — message withdrawn/missing); "+
 					"skipping top-level fallback to avoid creating a new topic", active, pyrepr.Str(threadID), response.code))
 				return response, nil
 			}
-			slog.Warn(fmt.Sprintf("[Feishu] Reply to %s failed (code %d — message withdrawn/missing); falling back to new message in chat %s",
+			pkgLog().Warn(fmt.Sprintf("[Feishu] Reply to %s failed (code %d — message withdrawn/missing); falling back to new message in chat %s",
 				active, response.code, chatID))
 			active = ""
 			response, err = a.sendRawMessage(ctx, chatID, msgType, payload, "", metadata)
@@ -791,7 +790,7 @@ func (a *FeishuAdapter) feishuSendWithRetry(ctx context.Context, chatID, msgType
 			return nil, err
 		}
 		wait := 1 << attempt
-		slog.Warn(fmt.Sprintf("[Feishu] Send attempt %d/%d failed for chat %s; retrying in %ds: %s", attempt+1, feishuSendAttempts, chatID, wait, err))
+		pkgLog().Warn(fmt.Sprintf("[Feishu] Send attempt %d/%d failed for chat %s; retrying in %ds: %s", attempt+1, feishuSendAttempts, chatID, wait, err))
 		if !sleepCtx(ctx, time.Duration(wait)*time.Second) {
 			return nil, ctx.Err()
 		}

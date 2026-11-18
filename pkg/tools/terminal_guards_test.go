@@ -169,7 +169,7 @@ func TestValidateWorkdir(t *testing.T) {
 		}
 	}
 	for _, good := range []string{
-		"/Users/alice/Documents/Obs_Hermes_Data/\u9879\u76ee-projects/\u5ba2\u6237\u62dc\u8bbf", "/tmp/\u30c6\u30b9\u30c8", "/home/j\u00fcrgen/\u00fcber projekt",
+		"/Users/alice/Documents/Obs_Icebath_Data/\u9879\u76ee-projects/\u5ba2\u6237\u62dc\u8bbf", "/tmp/\u30c6\u30b9\u30c8", "/home/j\u00fcrgen/\u00fcber projekt",
 	} {
 		if msg := validateWorkdir(good); msg != "" {
 			t.Fatalf("blocked %q: %s", good, msg)

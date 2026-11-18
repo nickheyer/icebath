@@ -14,7 +14,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pyrich"
-	"github.com/nickheyer/icebath/pkg/observability"
 )
 
 // Options of one hub install, the zero value matching the Python defaults except DeferCache
@@ -36,7 +35,7 @@ type githubAuthed interface{ githubAuth() *GitHubAuth }
 func (s *SkillsShSource) githubSource() *GitHubSource { return s.GitHub }
 func (s *SkillsShSource) githubAuth() *GitHubAuth     { return s.Auth }
 func (g *GitHubSource) githubAuth() *GitHubAuth       { return g.Auth }
-func (x *HermesIndexSource) githubAuth() *GitHubAuth  { return x.Auth }
+func (x *IndexSource) githubAuth() *GitHubAuth        { return x.Auth }
 
 // Errors Python raises as OSError rather than ValueError
 func isOSError(err error) bool {
@@ -200,8 +199,8 @@ func hubRejectedCredentials(sources []SkillSource) []string {
 	return nil
 }
 
-// Explains a resolved identifier no adapter served and returns the failure class
-func (x *HubCLI) printFetchFailure(c *pyrich.Console, sources []SkillSource, identifier string, metaHit bool, source SkillSource) string {
+// Explains a resolved identifier no adapter served
+func (x *HubCLI) printFetchFailure(c *pyrich.Console, sources []SkillSource, identifier string, metaHit bool, source SkillSource) {
 	rateLimited := hubRateLimited(sources)
 	rejected := hubRejectedCredentials(sources)
 	if metaHit && !rateLimited && len(rejected) == 0 {
@@ -211,7 +210,7 @@ func (x *HubCLI) printFetchFailure(c *pyrich.Console, sources []SkillSource, ide
 		}
 		c.Print(fmt.Sprintf("[bold red]Error:[/] '%s' is listed in the %s index, but its files no longer exist upstream.", identifier, srcID))
 		c.Print("[dim]Stale index entry: the skill was likely renamed or removed by its author. Try `icebath skills search` for an alternative.[/]\n")
-		return "stale_index"
+		return
 	}
 	c.Print(fmt.Sprintf("[bold red]Error:[/] Could not download '%s'.", identifier))
 	if len(rejected) > 0 {
@@ -225,13 +224,6 @@ func (x *HubCLI) printFetchFailure(c *pyrich.Console, sources []SkillSource, ide
 		c.Print(fmt.Sprintf("Check the name with [bold]icebath skills search %s[/] and check your internet connection. If it keeps failing, run [bold]icebath doctor[/].\n",
 			identifierSlug(identifier)))
 	}
-	switch {
-	case rateLimited:
-		return "rate_limited"
-	case len(rejected) > 0:
-		return "auth_rejected"
-	}
-	return "fetch_failed"
 }
 
 // Runs the cached security scan of the quarantined bundle and prints its report and provenance
@@ -274,8 +266,8 @@ func (x *HubCLI) scanQuarantined(c *pyrich.Console, qPath string, b *SkillBundle
 }
 
 var installPanels = map[string][3]string{
-	"official": {"[bold bright_cyan]This is an official optional skill maintained by Nous Research.[/]\n\n" +
-		"It ships with icebath-agent but is not activated by default.\n" +
+	"official": {"[bold bright_cyan]This is an official optional skill maintained by icebath.[/]\n\n" +
+		"It ships with icebath but is not activated by default.\n" +
 		"Installing will copy it to your skills directory where the agent can use it.\n\n", "Official Skill", "bright_cyan"},
 	"external": {"[bold yellow]You are installing a third-party skill at your own risk.[/]\n\n" +
 		"External skills can contain instructions that influence agent behavior,\n" +
@@ -300,98 +292,31 @@ func (x *HubCLI) confirmInstall(c *pyrich.Console, b *SkillBundle, category stri
 	return x.confirmOrCancel(c, "[dim]Installation cancelled.[/]\n", fmt.Sprintf("[bold]Install '%s'?[/]", b.Name))
 }
 
-var skillMetricSources = map[string]string{"official": "catalog", "url": "url", "bundled": "bundled"}
-
 // Install of a name icebath ships, pointing at the active copy or restoring it from the bundled source
-func (x *HubCLI) installBundled(ctx context.Context, c *pyrich.Console, name string, invalidate bool) (*SkillBundle, string, HubOutcome, error) {
+func (x *HubCLI) installBundled(ctx context.Context, c *pyrich.Console, name string, invalidate bool) (HubOutcome, error) {
 	result, err := x.S.EnsureBundledSkill(ctx, name)
 	if err != nil {
-		return nil, "", HubNoop, err
+		return HubNoop, err
 	}
 	if !pyrepr.Truthy(result["ok"]) {
 		printHubError(c, pyrepr.Str(result["message"]))
-		return nil, "failed", HubFailed, nil
+		return HubFailed, nil
 	}
 	switch result["action"] {
 	case "hub_shadowed":
 		printHubError(c, pyrepr.Str(result["message"]))
-		return nil, "", HubFailed, nil
+		return HubFailed, nil
 	case "present":
 		where := ""
 		if pyrepr.Truthy(result["path"]) {
 			where = " at " + pyrepr.Str(result["path"])
 		}
 		c.Print(fmt.Sprintf("[green]'%s' is a built-in skill and is already available%s.[/]\n", name, where))
-		return nil, "", HubNoop, nil
+		return HubNoop, nil
 	}
 	c.Print(fmt.Sprintf("[bold green]Restored built-in skill:[/] %s [dim](%s)[/]\n", name, pyrepr.Str(result["path"])))
 	x.finishChange(c, invalidate, "Skill will be available", "activate", true)
-	return &SkillBundle{Name: name, Source: "bundled"}, "success", HubOK, nil
-}
-
-// Identifier prefixes each adapter accepts with the registry they name
-func registryPrefixes() [][2]string {
-	out := [][2]string{{"official/", "official"}, {"clawhub/", "clawhub"}, {"lobehub/", "lobehub"}, {"browse-sh/", "browse-sh"}}
-	for _, p := range skillsShIDPrefixes {
-		out = append(out, [2]string{p, "skills-sh"})
-	}
-	return append(out, [2]string{"well-known:", "well-known"}, [2]string{"http://", "url"}, [2]string{"https://", "url"})
-}
-
-// Registry an identifier was meant for, unresolved for a bare owner repo path
-func registryFromIdentifier(identifier string) string {
-	lowered := strings.ToLower(identifier)
-	if (strings.HasPrefix(lowered, "http://") || strings.HasPrefix(lowered, "https://")) && strings.Contains(lowered, "/.well-known/skills/") {
-		return "well-known"
-	}
-	for _, p := range registryPrefixes() {
-		if strings.HasPrefix(lowered, p[0]) {
-			return p[1]
-		}
-	}
-	return "unresolved"
-}
-
-// Records one shared metrics extension install, official as catalog, URL anonymous and the rest hub
-func (x *HubCLI) recordSkillInstall(ctx context.Context, identifier string, b *SkillBundle, outcome string, attempt *installAttempt, err error) {
-	if attempt == nil {
-		attempt = &installAttempt{}
-	}
-	origin := ""
-	switch {
-	case b != nil && b.Source != "":
-		origin = b.Source
-	case attempt.origin != nil && *attempt.origin != "":
-		origin = *attempt.origin
-	case strings.HasPrefix(identifier, "official/"):
-		origin = "official"
-	case strings.HasPrefix(identifier, "http://") || strings.HasPrefix(identifier, "https://"):
-		origin = "url"
-	default:
-		origin = "hub"
-	}
-	source, ok := skillMetricSources[origin]
-	if !ok {
-		source = "hub"
-	}
-	var name any
-	if source != "url" {
-		name = identifier
-		if b != nil && b.Name != "" {
-			name = b.Name
-		}
-	}
-	opt := func(p *string) any {
-		if p == nil {
-			return nil
-		}
-		return *p
-	}
-	record := observability.RecordExtensionInstall
-	if x.seams.recordInstall != nil {
-		record = x.seams.recordInstall
-	}
-	record(ctx, "skill", source, name, outcome, opt(attempt.failureClass), opt(attempt.registry), err)
+	return HubOK, nil
 }
 
 func (x *HubCLI) lockInstalled(name string) (*pyjson.Object, error) {
@@ -403,84 +328,53 @@ func (x *HubCLI) lockInstalled(name string) (*pyjson.Object, error) {
 	return obj, nil
 }
 
-// Fetches, quarantines, scans, confirms and installs a skill, recording a first install once
+// Fetches, quarantines, scans, confirms and installs a skill
 func (x *HubCLI) DoInstall(ctx context.Context, identifier string, o HubInstallOptions) (HubOutcome, error) {
 	if x.seams.install != nil {
 		return x.seams.install(ctx, identifier, o)
 	}
-	existing, err := x.lockInstalled(identifierSlug(strings.TrimRight(identifier, "/")))
+	installed, err := x.installSkill(ctx, identifier, o, x.console(o.Console))
 	if err != nil {
 		return HubNoop, err
-	}
-	fresh := existing == nil
-	attempt := &installAttempt{}
-	b, outcome, installed, err := x.installSkill(ctx, identifier, o, x.console(o.Console), attempt)
-	if err != nil {
-		if fresh {
-			x.recordSkillInstall(ctx, identifier, nil, "failed", attempt, err)
-		}
-		return HubNoop, err
-	}
-	if fresh && outcome != "" {
-		x.recordSkillInstall(ctx, identifier, b, outcome, attempt, nil)
 	}
 	return installed, nil
 }
 
-// Body of an install returning the bundle, the install event and the command outcome
-func (x *HubCLI) installSkill(ctx context.Context, identifier string, o HubInstallOptions, c *pyrich.Console, attempt *installAttempt) (*SkillBundle, string, HubOutcome, error) {
+// Body of an install returning the command outcome
+func (x *HubCLI) installSkill(ctx context.Context, identifier string, o HubInstallOptions, c *pyrich.Console) (HubOutcome, error) {
 	invalidate := !o.DeferCache
 	category := o.Category
-	attempt.registry = strPtr("none")
 	if err := x.Hub.EnsureHubDirs(); err != nil {
-		return nil, "", HubNoop, err
+		return HubNoop, err
 	}
 	if o.SourceID == "" && o.NameOverride == "" {
 		builtin, err := x.S.BundledSkillForInstall(identifier)
 		if err != nil {
-			return nil, "", HubNoop, err
+			return HubNoop, err
 		}
 		if builtin != "" {
-			attempt.failureClass, attempt.origin = strPtr("filesystem_error"), strPtr("bundled")
 			return x.installBundled(ctx, c, builtin, invalidate)
 		}
 	}
-	attempt.registry = strPtr("unresolved")
 	sources := pinnedSources(c, x.sources(), o.SourceID, identifier)
 	if sources == nil {
-		attempt.failureClass = strPtr("not_found")
-		return nil, "failed", HubFailed, nil
+		return HubFailed, nil
 	}
 	sctx, done := x.Hub.HTTPSession(ctx)
-	identifier = x.fullIdentifier(sctx, identifier, sources, c, attempt)
+	identifier = x.fullIdentifier(sctx, identifier, sources, c)
 	if identifier == "" {
 		done()
-		if hubRateLimited(sources) {
-			attempt.failureClass = strPtr("rate_limited")
-		} else if len(hubRejectedCredentials(sources)) > 0 {
-			attempt.failureClass = strPtr("auth_rejected")
-		}
-		return nil, "failed", HubFailed, nil
+		return HubFailed, nil
 	}
 	c.Print(fmt.Sprintf("\n[bold]Fetching:[/] %s", identifier))
 	meta, b, matched := x.resolveSourceMetaAndBundle(sctx, identifier, sources)
 	done()
-	if matched != nil {
-		id := matched.SourceID()
-		if id == "" {
-			id = "other"
-		}
-		attempt.registry = strPtr(id)
-	} else if attempt.registry != nil && *attempt.registry == "unresolved" {
-		attempt.registry = strPtr(registryFromIdentifier(identifier))
-	}
 	if b == nil {
-		attempt.failureClass = strPtr(x.printFetchFailure(c, sources, identifier, meta != nil, matched))
-		return nil, "failed", HubFailed, nil
+		x.printFetchFailure(c, sources, identifier, meta != nil, matched)
+		return HubFailed, nil
 	}
 	if !x.resolveURLBundleName(c, b, meta, identifier, o.NameOverride, o.SkipConfirm) {
-		attempt.failureClass = strPtr("invalid_name")
-		return b, "failed", HubFailed, nil
+		return HubFailed, nil
 	}
 	if b.Source == "url" && category == "" && !o.SkipConfirm {
 		category = x.promptForCategory(c, x.existingCategories())
@@ -493,17 +387,15 @@ func (x *HubCLI) installSkill(ctx context.Context, identifier string, o HubInsta
 	}
 	existing, err := x.lockInstalled(b.Name)
 	if err != nil {
-		return b, "", HubNoop, err
+		return HubNoop, err
 	}
-	failed := "failed"
 	if existing != nil {
 		path, _ := existing.Get("install_path")
 		c.Print(fmt.Sprintf("[yellow]Warning:[/] '%s' is already installed at %s", b.Name, pyrepr.Str(path)))
 		if !o.Force {
 			c.Print("Use --force to reinstall.\n")
-			return b, "", HubNoop, nil
+			return HubNoop, nil
 		}
-		failed = ""
 	}
 	extra := pyjson.NewObject()
 	for _, src := range []*pyjson.Object{metaExtra(meta), b.Metadata} {
@@ -518,28 +410,26 @@ func (x *HubCLI) installSkill(ctx context.Context, identifier string, o HubInsta
 	qPath, err := x.Hub.QuarantineBundle(b)
 	if err != nil {
 		if isOSError(err) {
-			return b, "", HubNoop, err
+			return HubNoop, err
 		}
 		if aerr := x.invalidPath(c, b, err, ""); aerr != nil {
-			return b, "", HubNoop, aerr
+			return HubNoop, aerr
 		}
-		attempt.failureClass = strPtr("invalid_bundle")
-		return b, failed, HubFailed, nil
+		return HubFailed, nil
 	}
 	rel, _ := filepath.Rel(filepath.Dir(filepath.Dir(filepath.Dir(qPath))), qPath)
 	c.Print(fmt.Sprintf("[dim]Quarantined to %s[/]", rel))
 	result, err := x.scanQuarantined(c, qPath, b, meta, identifier)
 	if err != nil {
-		return b, "", HubNoop, err
+		return HubNoop, err
 	}
 	allowed, _ := ShouldAllowInstall(result, o.Force)
 	if allowed == nil || !*allowed {
 		if err := x.installBlocked(c, b, scanBlockMessage(result, identifier), result.Verdict,
 			fmt.Sprintf("%d_findings", len(result.Findings)), qPath, "\n", "Not installed:"); err != nil {
-			return b, "", HubNoop, err
+			return HubNoop, err
 		}
-		attempt.failureClass = strPtr("scan_blocked")
-		return b, failed, HubFailed, nil
+		return HubFailed, nil
 	}
 	x.printTier1Advisory(ctx, qPath, c)
 	if lines := formatExtraMetadataLines(extra); len(lines) > 0 {
@@ -547,22 +437,21 @@ func (x *HubCLI) installSkill(ctx context.Context, identifier string, o HubInsta
 	}
 	if !o.Force && !o.SkipConfirm && !x.confirmInstall(c, b, category) {
 		os.RemoveAll(qPath)
-		return b, "", HubNoop, nil
+		return HubNoop, nil
 	}
 	installDir, err := x.Hub.InstallFromQuarantine(ctx, qPath, b.Name, category, b, result, nil)
 	if err != nil {
 		if isOSError(err) {
-			return b, "", HubNoop, err
+			return HubNoop, err
 		}
 		if aerr := x.invalidPath(c, b, err, qPath); aerr != nil {
-			return b, "", HubNoop, aerr
+			return HubNoop, aerr
 		}
-		attempt.failureClass = strPtr("invalid_bundle")
-		return b, failed, HubFailed, nil
+		return HubFailed, nil
 	}
 	relInstall, err := filepath.Rel(resolvePath(x.S.SkillsDir()), resolvePath(installDir))
 	if err != nil {
-		return b, "", HubNoop, err
+		return HubNoop, err
 	}
 	c.Print(fmt.Sprintf("[bold green]Installed:[/] %s", filepath.ToSlash(relInstall)))
 	files := make([]string, len(b.Files))
@@ -572,10 +461,7 @@ func (x *HubCLI) installSkill(ctx context.Context, identifier string, o HubInsta
 	c.Print(fmt.Sprintf("[dim]Files: %s[/]\n", strings.Join(files, ", ")))
 	x.announceBlueprint(ctx, c, b.Name)
 	x.finishChange(c, invalidate, "Skill will be available", "activate", true)
-	if existing != nil {
-		return b, "", HubOK, nil
-	}
-	return b, "success", HubOK, nil
+	return HubOK, nil
 }
 
 func metaExtra(m *SkillMeta) *pyjson.Object {

@@ -82,7 +82,7 @@ func TestLaunchdLabelsGetLaunchctlHint(t *testing.T) {
 		t.Skip("systemd arm of the warning")
 	}
 	var out bytes.Buffer
-	warnIncompleteGatewayFleetRestart(&out, []string{"ai.icebath.gateway-merit-ops"})
+	warnIncompleteGatewayFleetRestart(&out, []string{"app.icebath.gateway-merit-ops"})
 	if !strings.Contains(out.String(), "Update incomplete") || !strings.Contains(out.String(), "launchctl kickstart -k") {
 		t.Fatalf("out = %q", out.String())
 	}

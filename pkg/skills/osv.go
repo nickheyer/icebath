@@ -6,7 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"log/slog"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -62,7 +61,7 @@ var (
 )
 
 // Debug log line of the OSV check
-func slogDebug(msg string) { slog.Default().Debug(msg, "logger", "tools.osv_check") }
+func slogDebug(msg string) { pkgLog().Debug(msg) }
 
 // Persistent verdict cache path under the active home, created on demand
 func osvDiskCachePath() string {

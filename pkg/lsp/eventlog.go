@@ -9,9 +9,6 @@ import (
 	"sync"
 )
 
-// Logger name the documented grep recipe keys on
-const eventLogger = "icebath.lint.lsp"
-
 // Keys per announcement bucket before it resets
 var announceCap = 512
 
@@ -52,7 +49,7 @@ func shortPath(filePath string) string {
 }
 
 func emit(rt *Runtime, serverID string, level slog.Level, message string) {
-	rt.logf(level, eventLogger, "lsp[%s] %s", serverID, message)
+	rt.logf(level, "lsp[%s] %s", serverID, message)
 }
 
 // Logs first at level the first time a key is seen and repeat at debug after

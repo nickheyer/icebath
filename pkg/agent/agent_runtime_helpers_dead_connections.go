@@ -63,12 +63,12 @@ func cleanupDeadConnections(a deadConnectionAgent) bool {
 		func() {
 			defer func() {
 				if r := recover(); r != nil {
-					runAgentLog().Debug(fmt.Sprintf("Dead connection check error for %s client: %v", c.label, r))
+					pkgLog().Debug(fmt.Sprintf("Dead connection check error for %s client: %v", c.label, r))
 				}
 			}()
 			n, err := countDeadPoolSockets(c.client)
 			if err != nil {
-				runAgentLog().Debug(fmt.Sprintf("Dead connection check error for %s client: %v", c.label, err))
+				pkgLog().Debug(fmt.Sprintf("Dead connection check error for %s client: %v", c.label, err))
 				return
 			}
 			if n > 0 {
@@ -86,12 +86,12 @@ func cleanupDeadConnections(a deadConnectionAgent) bool {
 		total += d.dead
 		labels = append(labels, d.label)
 	}
-	runAgentLog().Warn(fmt.Sprintf("Found %d dead connection(s) in %s client pool(s) — cleaning up", total, strings.Join(labels, ", ")))
+	pkgLog().Warn(fmt.Sprintf("Found %d dead connection(s) in %s client pool(s) — cleaning up", total, strings.Join(labels, ", ")))
 	for _, d := range dead {
 		func() {
 			defer func() {
 				if r := recover(); r != nil {
-					runAgentLog().Debug(fmt.Sprintf("Dead connection cleanup error for %s client: %v", d.label, r))
+					pkgLog().Debug(fmt.Sprintf("Dead connection cleanup error for %s client: %v", d.label, r))
 				}
 			}()
 			if d.label == "primary" {

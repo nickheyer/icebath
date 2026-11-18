@@ -50,7 +50,7 @@ func historyRow(row *pyjson.Object) bool {
 	return rowGet(row, "source") == "import" || LegacyHistoryRow(row)
 }
 
-// Owner identity of the row, None for a legacy Nous account label
+// Owner identity of the row, None for a retired hosted account label
 func ownerUser(row *pyjson.Object) (any, error) {
 	label, err := LegacyAccountLabel(row)
 	if err != nil || label {

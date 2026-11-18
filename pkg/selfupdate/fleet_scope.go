@@ -20,14 +20,14 @@ import (
 
 var (
 	fleetHomeForPID = func(ctx context.Context, pid int) (string, bool, error) {
-		return gateway.HermesHomeForPID(ctx, pid, false)
+		return gateway.IcebathHomeForPID(ctx, pid, false)
 	}
 	fleetPartitionPidsByScope = gateway.PartitionGatewayPidsByScope
 	fleetLaunchdPlistPath     = gateway.GetLaunchdPlistPath
 )
 
 // Home a systemd unit runs on from its live main pid, its declared environment, then the user default
-func systemdUnitHermesHome(ctx context.Context, scopeCmd []string, svcName string) (string, bool) {
+func systemdUnitIcebathHome(ctx context.Context, scopeCmd []string, svcName string) (string, bool) {
 	pid, err := fleetUnitMainPid(ctx, scopeCmd, svcName)
 	if err == nil && pid > 0 {
 		if unitHome, known, err := fleetHomeForPID(ctx, pid); err == nil && known {
@@ -61,7 +61,7 @@ func systemdUnitHermesHome(ctx context.Context, scopeCmd []string, svcName strin
 
 // Whether a unit belongs to this update, known false when its ownership is unreadable
 func systemdUnitInUpdateScope(ctx context.Context, scopeCmd []string, svcName string, scope map[string]bool) (inScope, known bool) {
-	unitHome, known := systemdUnitHermesHome(ctx, scopeCmd, svcName)
+	unitHome, known := systemdUnitIcebathHome(ctx, scopeCmd, svcName)
 	if !known {
 		return false, false
 	}

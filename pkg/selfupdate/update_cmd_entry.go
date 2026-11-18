@@ -76,9 +76,6 @@ func updatePreflightHandled(ctx context.Context, w io.Writer, args map[string]an
 	h := home.Dir(ctx)
 	if config.ManagedSystem(ctx, h) != "" {
 		config.ManagedError(ctx, h, "update Icebath Agent")
-		if !pyrepr.Truthy(args["plan"]) && !pyrepr.Truthy(args["check"]) && !pyrepr.Truthy(args["list_venv_holders"]) {
-			recordStopWithoutReceipt(ctx, "managed_install", "refused")
-		}
 		return true, nil
 	}
 	if pyrepr.Truthy(args["plan"]) {
@@ -117,7 +114,7 @@ func updatePreflightHandled(ctx context.Context, w io.Writer, args map[string]an
 	return false, nil
 }
 
-// Calls of the command boundary the hermes tests replace, the retarget, preflight, output mirror and update lock
+// Calls of the command boundary the tests replace, the retarget, preflight, output mirror and update lock
 var (
 	updateRetarget       = retargetToOwningInstall
 	updatePreflight      = updatePreflightHandled
@@ -180,7 +177,6 @@ func cmdUpdate(ctx context.Context, u UpdateInvocation) error {
 	if !acquired {
 		fmt.Fprintln(w, updateDescribeHolder(holder))
 		updateFinalizeOutput(ioState)
-		recordStopWithoutReceipt(ctx, "lock_held", "refused")
 		return updateExit(updaterecord.UpdateExitConcurrent)
 	}
 	defer runUpdateExitHooks(u.Stderr)

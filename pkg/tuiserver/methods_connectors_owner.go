@@ -3,15 +3,15 @@ package tuiserver
 import (
 	"context"
 
-	"github.com/nickheyer/icebath/pkg/tuigateway"
+	"github.com/nickheyer/icebath/pkg/tuihost"
 )
 
 // Connector methods whose owner session is captured before they leave the reader for the pool
-var connectorRPCMethods = map[string]bool{"connectors.list": true, "connectors.connect": true, "connection.respond": true}
+var connectorRPCMethods = map[string]bool{"connectors.connect": true, "connection.respond": true}
 
 // Session a connector RPC was issued for and that session's profile home, captured on the reader
 type connectorRPCOrigin struct {
-	Session     *tuigateway.Session
+	Session     *tuihost.Session
 	ProfileHome any
 }
 

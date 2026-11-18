@@ -80,7 +80,7 @@ func (r *GatewayRunner) warnIfDockerMediaDeliveryIsRisky(ctx context.Context) {
 	if raw := strings.TrimSpace(os.Getenv("TERMINAL_DOCKER_VOLUMES")); raw != "" {
 		parsed, err := pyjson.Loads(raw)
 		if err != nil {
-			runLog().Debug("Could not parse TERMINAL_DOCKER_VOLUMES for gateway media warning", "error", err)
+			pkgLog().Debug("Could not parse TERMINAL_DOCKER_VOLUMES for gateway media warning", "error", err)
 		} else if list, ok := parsed.([]any); ok {
 			for _, v := range list {
 				if s, ok := v.(string); ok {
@@ -95,7 +95,7 @@ func (r *GatewayRunner) warnIfDockerMediaDeliveryIsRisky(ctx context.Context) {
 			return
 		}
 	}
-	runLog().Warn("Docker backend is enabled for the messaging gateway but no explicit host-visible " +
+	pkgLog().Warn("Docker backend is enabled for the messaging gateway but no explicit host-visible " +
 		"output mount (for example '/home/user/.icebath/cache/documents:/output') is configured. " +
 		"This is fine if the model already emits host-visible paths, but MEDIA file delivery can fail " +
 		"for container-local paths like '/workspace/...' or '/output/...'.")

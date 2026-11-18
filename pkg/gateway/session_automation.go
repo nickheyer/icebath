@@ -373,7 +373,7 @@ func envelopeWithoutMedia(text string, envelope *pyjson.Object) *pyjson.Object {
 	return pyjson.ObjectOf("text", text, "native_text_v1", borrowed)
 }
 
-// Automation snapshot of every producer admission, replaced by a case as the hermes cases patch snapshot_automation
+// Automation snapshot of every producer admission, replaced by a case as the tests patch snapshot_automation
 var snapshotAutomation = automationSnapshot
 
 // Payload and routing entry of a producer's automation input, bound to the route's committed provenance

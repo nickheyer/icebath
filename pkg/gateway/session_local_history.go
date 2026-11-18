@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"log/slog"
 	"maps"
 	"sort"
 
@@ -61,7 +60,7 @@ func historyRowSize(row map[string]any) (int, error) {
 	return pystr.Len(text), nil
 }
 
-// History reader of every resume and replay, replaced by a case as the hermes cases patch display_rows
+// History reader of every resume and replay, replaced by a case as the tests patch display_rows
 var DisplayRows = displayRows
 
 // Live row ids, display rows and truncation of a physical transcript, the live ids read first
@@ -346,7 +345,7 @@ func releaseHandedOffReceipts(ctx context.Context, db *state.SessionDB, epoch in
 		return err
 	}
 	for _, moved := range released {
-		slog.Info(fmt.Sprintf("Local session %s was handed off to %s (row %s); released its local receipt",
+		pkgLog().Info(fmt.Sprintf("Local session %s was handed off to %s (row %s); released its local receipt",
 			moved.Owner, pyrepr.Str(moved.Source), moved.Target))
 	}
 	return nil
@@ -405,7 +404,7 @@ func recoverLocalSessions(ctx context.Context, a *SessionAuthority, schedule boo
 			switch {
 			case errors.As(err, &refused), errors.As(err, &catchUp):
 			case errors.As(err, &refusal):
-				slog.Warn(fmt.Sprintf("Local session %s paused: %s", sid, refusal.Reason))
+				pkgLog().Warn(fmt.Sprintf("Local session %s paused: %s", sid, refusal.Reason))
 			default:
 				return err
 			}

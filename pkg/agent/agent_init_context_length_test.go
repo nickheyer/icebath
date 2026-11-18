@@ -33,7 +33,7 @@ func TestPinDisagreementWarnsOnceAndKeepsPin(t *testing.T) {
 		t.Fatal("a pin matching the advertised window warned")
 	}
 	out := logs.String()
-	if n := strings.Count(out, "logger=agent.context_pin"); n != 1 || !strings.Contains(out, "level=WARN") ||
+	if n := strings.Count(out, "logger=agent"); n != 1 || !strings.Contains(out, "level=WARN") ||
 		!strings.Contains(out, "pins claude-sonnet-4 at 999,000 tokens but the provider advertises 200,000; the pin wins") {
 		t.Fatalf("warnings %d log %q", n, out)
 	}

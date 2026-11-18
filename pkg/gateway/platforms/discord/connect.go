@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"log/slog"
 	"math"
 	"net/http"
 	"time"
@@ -64,7 +63,7 @@ func (a *DiscordAdapter) Connect(ctx context.Context, isReconnect bool) (bool, e
 		loadOpusCodec()
 	}
 	if !pyrepr.Truthy(a.Config.Token) {
-		slog.Error(fmt.Sprintf("[%s] No bot token configured", a.Name()))
+		pkgLog().Error(fmt.Sprintf("[%s] No bot token configured", a.Name()))
 		a.SetFatalError(ctx, "missing_credentials", "No bot token configured", false)
 		return false, nil
 	}
@@ -73,13 +72,13 @@ func (a *DiscordAdapter) Connect(ctx context.Context, isReconnect bool) (bool, e
 		return ok, nil
 	}
 	if errors.Is(err, errDiscordReadyTimeout) {
-		slog.Error(fmt.Sprintf("[%s] Timeout waiting for connection to Discord", a.Name()))
+		pkgLog().Error(fmt.Sprintf("[%s] Timeout waiting for connection to Discord", a.Name()))
 		a.cancelBotTask()
 		a.ReleasePlatformLock()
 		a.SetFatalError(ctx, "discord_connect_timeout", "Timed out waiting for the Discord gateway to become ready", true)
 		return false, nil
 	}
-	slog.Error(fmt.Sprintf("[%s] Failed to connect to Discord: %s", a.Name(), err))
+	pkgLog().Error(fmt.Sprintf("[%s] Failed to connect to Discord: %s", a.Name(), err))
 	a.cancelBotTask()
 	a.ReleasePlatformLock()
 	code, message, retryable := a.classifyConnectException(err)
@@ -119,7 +118,7 @@ func (a *DiscordAdapter) connect(ctx context.Context, token string) (bool, error
 		return false, err
 	}
 	if proxyURL != "" {
-		slog.Info(fmt.Sprintf("[%s] Using proxy for Discord: %s", a.Name(), proxyURL))
+		pkgLog().Info(fmt.Sprintf("[%s] Using proxy for Discord: %s", a.Name(), proxyURL))
 	}
 	a.mu.Lock()
 	previous := a.link
@@ -127,7 +126,7 @@ func (a *DiscordAdapter) connect(ctx context.Context, token string) (bool, error
 	if previous != nil {
 		if !previous.isClosed() {
 			if err := previous.close(); err != nil {
-				slog.Debug(fmt.Sprintf("[%s] Failed to close previous Discord client", a.Name()))
+				pkgLog().Debug(fmt.Sprintf("[%s] Failed to close previous Discord client", a.Name()))
 			}
 		}
 		a.mu.Lock()
@@ -275,7 +274,7 @@ func (a *DiscordAdapter) registerGatewayHandlers(ctx context.Context, link *gate
 // Resolves username allowlist entries, marks ready and starts post connect work and recovery while the link is live
 func (a *DiscordAdapter) onReady(ctx context.Context, link *gatewayLink) {
 	if user := link.State.User; user != nil {
-		slog.Info(fmt.Sprintf("[%s] Connected as %s", a.Name(), user.String()))
+		pkgLog().Info(fmt.Sprintf("[%s] Connected as %s", a.Name(), user.String()))
 	}
 	a.resolveAllowedUsernames(ctx)
 	a.mu.Lock()
@@ -361,20 +360,20 @@ func (a *DiscordAdapter) livenessLoop(ctx context.Context) {
 		link, disconnecting := a.link, a.disconnecting
 		a.mu.Unlock()
 		if !a.IsConnected() || link == nil || disconnecting {
-			slog.Info(fmt.Sprintf("[%s] Discord liveness probe exiting (running=%s, client=%s, disconnecting=%s)", a.Name(),
+			pkgLog().Info(fmt.Sprintf("[%s] Discord liveness probe exiting (running=%s, client=%s, disconnecting=%s)", a.Name(),
 				pyrepr.Repr(a.IsConnected()), pyrepr.Repr(link != nil), pyrepr.Repr(disconnecting)))
 			return
 		}
 		healthy, reason := a.readWebsocketHealth(link)
 		if healthy {
 			if failures > 0 {
-				slog.Info(fmt.Sprintf("[%s] Discord Gateway WebSocket healthy again after %d unhealthy sample(s)", a.Name(), failures))
+				pkgLog().Info(fmt.Sprintf("[%s] Discord Gateway WebSocket healthy again after %d unhealthy sample(s)", a.Name(), failures))
 			}
 			failures = 0
 			continue
 		}
 		failures++
-		slog.Warn(fmt.Sprintf("[%s] Discord Gateway WebSocket unhealthy (%s, %d/%d)", a.Name(), reason, failures, threshold))
+		pkgLog().Warn(fmt.Sprintf("[%s] Discord Gateway WebSocket unhealthy (%s, %d/%d)", a.Name(), reason, failures, threshold))
 		terminal := terminalHealthReasons[reason]
 		if failures < threshold && !terminal {
 			continue
@@ -386,7 +385,7 @@ func (a *DiscordAdapter) livenessLoop(ctx context.Context) {
 		if terminal {
 			state = "transport closed"
 		}
-		slog.Error(fmt.Sprintf("[%s] Discord Gateway WebSocket %s (%s, %d/%d); forcing reconnect", a.Name(), state, reason, failures, threshold))
+		pkgLog().Error(fmt.Sprintf("[%s] Discord Gateway WebSocket %s (%s, %d/%d); forcing reconnect", a.Name(), state, reason, failures, threshold))
 		a.SetFatalError(ctx, "discord_websocket_health_stale", "Discord Gateway WebSocket health check failed: "+reason, true)
 		a.mu.Lock()
 		a.livenessNotificationTask = spawnTask(context.WithoutCancel(ctx), func(c context.Context) { a.notifyLivenessFatalError(c, link) })
@@ -403,19 +402,19 @@ func (a *DiscordAdapter) notifyLivenessFatalError(ctx context.Context, link *gat
 	select {
 	case err := <-closed:
 		if err != nil {
-			slog.Debug(fmt.Sprintf("[%s] Error closing unhealthy Discord client: %s", a.Name(), err))
+			pkgLog().Debug(fmt.Sprintf("[%s] Error closing unhealthy Discord client: %s", a.Name(), err))
 		}
 	case <-time.After(time.Second):
-		slog.Warn(fmt.Sprintf("[%s] Timed out closing unhealthy Discord client", a.Name()))
+		pkgLog().Warn(fmt.Sprintf("[%s] Timed out closing unhealthy Discord client", a.Name()))
 		if failed != nil && abortDiscordWebsocketTransport(&wsTransport{conn: failed}) {
-			slog.Warn(fmt.Sprintf("[%s] Aborted unresponsive Discord WebSocket transport", a.Name()))
+			pkgLog().Warn(fmt.Sprintf("[%s] Aborted unresponsive Discord WebSocket transport", a.Name()))
 		}
 	}
 	a.mu.Lock()
 	a.livenessNotificationTask = nil
 	a.mu.Unlock()
 	if err := a.NotifyFatalError(ctx); err != nil {
-		slog.Debug(fmt.Sprintf("[%s] Fatal-error handler raised: %s", a.Name(), err))
+		pkgLog().Debug(fmt.Sprintf("[%s] Fatal-error handler raised: %s", a.Name(), err))
 	}
 }
 
@@ -440,10 +439,10 @@ func (a *DiscordAdapter) cancelLivenessTask(current *bgTask) {
 // Flushes pending text batches within the shutdown deadline before the base cancels background tasks
 func (a *DiscordAdapter) CancelBackgroundTasks(ctx context.Context) {
 	if n := a.PendingTextBatchTaskCount(); n > 0 {
-		slog.Info(fmt.Sprintf("[%s] Flushing %d pending text-batch task(s) before shutdown", a.Name(), n))
+		pkgLog().Info(fmt.Sprintf("[%s] Flushing %d pending text-batch task(s) before shutdown", a.Name(), n))
 	}
 	if a.AwaitPendingTextBatches(ctx, time.Duration(textBatchFlushDeadlineSeconds()*float64(time.Second))) {
-		slog.Warn(fmt.Sprintf("[%s] Text-batch flush timed out; cancelling remaining tasks", a.Name()))
+		pkgLog().Warn(fmt.Sprintf("[%s] Text-batch flush timed out; cancelling remaining tasks", a.Name()))
 	}
 	a.BasePlatformAdapter.CancelBackgroundTasks(ctx)
 }
@@ -456,7 +455,7 @@ func (a *DiscordAdapter) Disconnect(ctx context.Context) error {
 	a.cancelLivenessTask(nil)
 	for _, guildID := range a.voiceGuildIDs() {
 		if err := a.leaveVoiceChannel(ctx, guildID); err != nil {
-			slog.Debug(fmt.Sprintf("[%s] Error leaving voice channel %d: %s", a.Name(), guildID, err))
+			pkgLog().Debug(fmt.Sprintf("[%s] Error leaving voice channel %d: %s", a.Name(), guildID, err))
 		}
 	}
 	a.cancelBotTask()
@@ -465,7 +464,7 @@ func (a *DiscordAdapter) Disconnect(ctx context.Context) error {
 	a.mu.Unlock()
 	if link != nil {
 		if err := link.close(); err != nil {
-			slog.Warn(fmt.Sprintf("[%s] Error during disconnect: %s", a.Name(), err))
+			pkgLog().Warn(fmt.Sprintf("[%s] Error during disconnect: %s", a.Name(), err))
 		}
 	}
 	a.mu.Lock()
@@ -483,7 +482,7 @@ func (a *DiscordAdapter) Disconnect(ctx context.Context) error {
 	a.mu.Unlock()
 	a.readyEvent.Clear()
 	a.ReleasePlatformLock()
-	slog.Info(fmt.Sprintf("[%s] Disconnected", a.Name()))
+	pkgLog().Info(fmt.Sprintf("[%s] Disconnected", a.Name()))
 	return nil
 }
 
@@ -499,10 +498,10 @@ func (a *DiscordAdapter) runPostConnectInitialization(ctx context.Context) {
 	switch {
 	case err == nil:
 	case errors.Is(err, context.DeadlineExceeded):
-		slog.Warn(fmt.Sprintf("[%s] Slash command sync timed out — Discord rate-limit bucket may be saturated; will retry on next reconnect", a.Name()))
+		pkgLog().Warn(fmt.Sprintf("[%s] Slash command sync timed out — Discord rate-limit bucket may be saturated; will retry on next reconnect", a.Name()))
 	case errors.Is(err, context.Canceled):
 	default:
-		slog.Warn(fmt.Sprintf("[%s] Slash command sync failed: %s", a.Name(), err))
+		pkgLog().Warn(fmt.Sprintf("[%s] Slash command sync failed: %s", a.Name(), err))
 	}
 }
 
@@ -510,7 +509,7 @@ func (a *DiscordAdapter) runPostConnectInitialization(ctx context.Context) {
 func (a *DiscordAdapter) postConnectSync(ctx context.Context, link *gatewayLink) error {
 	policy := a.getDiscordCommandSyncPolicy(ctx)
 	if policy == "off" {
-		slog.Info(fmt.Sprintf("[%s] Skipping Discord slash command sync (policy=off)", a.Name()))
+		pkgLog().Info(fmt.Sprintf("[%s] Skipping Discord slash command sync (policy=off)", a.Name()))
 		return nil
 	}
 	if policy == "bulk" {
@@ -526,13 +525,13 @@ func (a *DiscordAdapter) postConnectSync(ctx context.Context, link *gatewayLink)
 		if err := json.Unmarshal(body, &synced); err != nil {
 			return err
 		}
-		slog.Info(fmt.Sprintf("[%s] Synced %d slash command(s) via bulk tree sync", a.Name(), len(synced)))
+		pkgLog().Info(fmt.Sprintf("[%s] Synced %d slash command(s) via bulk tree sync", a.Name(), len(synced)))
 		return nil
 	}
 	appID := applicationID(link.Session)
 	fingerprint := a.desiredCommandSyncFingerprint(ctx)
 	if reason := a.commandSyncSkipReason(ctx, appID, fingerprint); reason != "" {
-		slog.Info(fmt.Sprintf("[%s] Skipping Discord slash command sync: %s", a.Name(), reason))
+		pkgLog().Info(fmt.Sprintf("[%s] Skipping Discord slash command sync: %s", a.Name(), reason))
 		return nil
 	}
 	a.recordCommandSyncAttempt(ctx, appID, fingerprint)
@@ -550,11 +549,11 @@ func (a *DiscordAdapter) postConnectSync(ctx context.Context, link *gatewayLink)
 			retryAfter = *v
 		}
 		a.recordCommandSyncRateLimit(ctx, appID, fingerprint, retryAfter)
-		slog.Warn(fmt.Sprintf("[%s] Discord rate-limited slash command sync; retrying after %.0fs", a.Name(), retryAfter))
+		pkgLog().Warn(fmt.Sprintf("[%s] Discord rate-limited slash command sync; retrying after %.0fs", a.Name(), retryAfter))
 		return nil
 	}
 	a.recordCommandSyncSuccess(ctx, appID, fingerprint, summary)
-	slog.Info(fmt.Sprintf("[%s] Safely reconciled %d slash command(s): unchanged=%d updated=%d recreated=%d created=%d deleted=%d",
+	pkgLog().Info(fmt.Sprintf("[%s] Safely reconciled %d slash command(s): unchanged=%d updated=%d recreated=%d created=%d deleted=%d",
 		a.Name(), summary["total"], summary["unchanged"], summary["updated"], summary["recreated"], summary["created"], summary["deleted"]))
 	return nil
 }

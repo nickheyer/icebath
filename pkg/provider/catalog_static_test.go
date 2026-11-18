@@ -6,7 +6,6 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
-	"strings"
 	"sync"
 	"testing"
 
@@ -61,20 +60,8 @@ func TestOpenRouterSnapshotDescriptions(t *testing.T) {
 	}
 }
 
-func TestNousRowDropsOpenRouterOnlyAndFreeEntries(t *testing.T) {
+func TestStaticCatalogRowsOfGatewayEmptyAndUnknownProviders(t *testing.T) {
 	resetCuratedCatalog(t)
-	nous := staticCatalogModels("nous")
-	if len(nous) == 0 {
-		t.Fatal("empty nous row")
-	}
-	for _, mid := range nous {
-		if openRouterOnly[mid] || strings.HasSuffix(mid, ":free") {
-			t.Fatalf("nous row carries %s", mid)
-		}
-	}
-	if !containsString(nous, "meta/muse-spark-1.2") || containsString(nous, "meta/muse-spark-1.2-contributor") {
-		t.Fatalf("nous row muse rows wrong: %v", nous)
-	}
 	if got := staticCatalogModels("ai-gateway"); !reflect.DeepEqual(got, CatalogModelIDs(VercelAIGatewayModels)) {
 		t.Fatalf("ai-gateway row: %v", got)
 	}
@@ -183,7 +170,7 @@ func TestPluginProfilesAreAdmittedBySlugNotAuthType(t *testing.T) {
 	if count != 1 {
 		t.Fatalf("bedrock rows: %d", count)
 	}
-	for _, slug := range []string{"deepinfra", "upstage", "solstice", "meta-ai", "router", "custom"} {
+	for _, slug := range []string{"deepinfra", "upstage", "meta-ai", "router", "custom"} {
 		if !IsCanonicalProvider(slug) {
 			t.Fatalf("plugin profile %s missing from the row table", slug)
 		}
@@ -194,7 +181,7 @@ func TestPluginProfilesAreAdmittedBySlugNotAuthType(t *testing.T) {
 	if got := CatalogProviderLabel("deepinfra"); got != "DeepInfra" {
 		t.Fatalf("label: %q", got)
 	}
-	if got := CatalogProviderLabel("nous"); got != "Nous Portal" {
+	if got := CatalogProviderLabel("openrouter"); got != "OpenRouter" {
 		t.Fatalf("builtin label: %q", got)
 	}
 	if !IsAggregatorProvider("openrouter") || !IsAggregatorProvider("kilocode") || IsAggregatorProvider("zai") {
@@ -204,25 +191,27 @@ func TestPluginProfilesAreAdmittedBySlugNotAuthType(t *testing.T) {
 
 func TestHiddenProfilesStayOutOfTheListedRowsUntilOptedIn(t *testing.T) {
 	resetCuratedCatalog(t)
+	registerTestProfile(t, Profile{Name: "prerelease-test", AuthType: AuthTypeOAuthExternal, Hidden: true})
+	SyncPluginProviderCatalog()
 	listed := map[string]bool{}
 	for _, p := range listedCanonicalProviders() {
 		listed[p.Slug] = true
 	}
-	if listed["solstice"] {
+	if listed["prerelease-test"] {
 		t.Fatal("hidden profile listed without a credential pool row")
 	}
-	if !listed["nous"] || !listed["deepinfra"] {
+	if !listed["openrouter"] || !listed["deepinfra"] {
 		t.Fatal("visible rows missing")
 	}
 	hidden := unlistedProviderNames()
-	if !hidden["solstice"] || hidden["nous"] {
+	if !hidden["prerelease-test"] || hidden["openrouter"] {
 		t.Fatalf("unlisted set: %v", hidden)
 	}
 }
 
 func TestPluginProfilePickerPlacement(t *testing.T) {
 	resetCuratedCatalog(t)
-	registerTestProfile(t, Profile{Name: "upstage-test", AuthType: AuthTypeAPIKey, PickerAfter: "nous", Aliases: []string{"solar"},
+	registerTestProfile(t, Profile{Name: "upstage-test", AuthType: AuthTypeAPIKey, PickerAfter: "fireworks", Aliases: []string{"solar"},
 		PickerGroup: []string{"solar", "Solar", "Upstage Solar"}, CatalogAliases: true})
 	SyncPluginProviderCatalog()
 	rows := CanonicalProviders()
@@ -230,8 +219,8 @@ func TestPluginProfilePickerPlacement(t *testing.T) {
 	for i, p := range rows {
 		idx[p.Slug] = i
 	}
-	if idx["upstage-test"] != idx["nous"]+1 {
-		t.Fatalf("upstage-test not anchored after nous: %d vs %d", idx["upstage-test"], idx["nous"])
+	if idx["upstage-test"] != idx["fireworks"]+1 {
+		t.Fatalf("upstage-test not anchored after fireworks: %d vs %d", idx["upstage-test"], idx["fireworks"])
 	}
 	if ProviderGroupForSlug("upstage-test") != "solar" {
 		t.Fatal("group not registered")
@@ -273,7 +262,7 @@ func TestMultiMemberGroupFoldsToOneRow(t *testing.T) {
 	if rows[0].Description != minimax.Description || rows[0].Description == "" {
 		t.Fatalf("description: %q", rows[0].Description)
 	}
-	single := GroupProviders([]string{"openrouter", "xai", "nous", "XAI", ""})
+	single := GroupProviders([]string{"openrouter", "xai", "deepseek", "XAI", ""})
 	if len(single) != 3 || single[0].Kind != "single" || single[1].Kind != "single" || single[1].Slug != "xai" {
 		t.Fatalf("single member group should stay a single row: %+v", single)
 	}
@@ -293,13 +282,13 @@ func TestCatalogProviderAliasesAndFlags(t *testing.T) {
 	if _, ok := CatalogProviderAlias("llamacpp"); ok {
 		t.Fatal("llamacpp must stay unmapped")
 	}
-	if PreferredSilentDefaultModel != "z-ai/glm-5.3" || !UsesSilentCatalogDefault("nous") || UsesSilentCatalogDefault("zai") {
+	if PreferredSilentDefaultModel != "z-ai/glm-5.3" || !UsesSilentCatalogDefault("openrouter") || UsesSilentCatalogDefault("zai") {
 		t.Fatal("silent default tables wrong")
 	}
 	if !reflect.DeepEqual(ProviderRetiredAliases("deepseek"), []string{"deepseek-chat", "deepseek-reasoner"}) || ProviderRetiredAliases("zai") != nil {
 		t.Fatal("retired aliases wrong")
 	}
-	if !IsLiveFirstPickerProvider("opencode-zen") || IsLiveFirstPickerProvider("nous") || !IsModelsDevPreferred("xai-oauth") || IsModelsDevPreferred("openrouter") || IsBorrowedModelProvider("nous") {
+	if !IsLiveFirstPickerProvider("opencode-zen") || IsLiveFirstPickerProvider("openrouter") || !IsModelsDevPreferred("xai-oauth") || IsModelsDevPreferred("openrouter") || IsBorrowedModelProvider("openrouter") {
 		t.Fatal("picker policy sets wrong")
 	}
 }

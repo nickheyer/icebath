@@ -6,7 +6,6 @@ import (
 	"encoding/binary"
 	"errors"
 	"fmt"
-	"log/slog"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -20,9 +19,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/mediacache"
 )
-
-// Logger of the text to speech tool resolved per call so tests can swap the default handler
-func ttsLog() *slog.Logger { return slog.Default().With("logger", "tools.tts_tool") }
 
 // The tts key as a mapping, null or non mapping sections read as empty
 func ttsSection(ttsConfig any, key string) map[string]any {
@@ -444,7 +440,7 @@ func writeWAVBytesAs(wavBytes []byte, outputPath string) (string, error) {
 			return "", fmt.Errorf("ffmpeg conversion failed: %s", decodeIgnoreClip(result.Stderr, 300))
 		}
 	} else {
-		ttsLog().Warn(fmt.Sprintf("ffmpeg not found; writing raw WAV to %s (extension may be misleading)", outputPath))
+		pkgLog().Warn(fmt.Sprintf("ffmpeg not found; writing raw WAV to %s (extension may be misleading)", outputPath))
 		if err := copyFile(wavPath, outputPath); err != nil {
 			return "", err
 		}
@@ -510,7 +506,7 @@ func repairOggContainer(fileStr string) (string, error) {
 	if container == "ogg" || container == "unknown" {
 		return fileStr, nil
 	}
-	ttsLog().Info(fmt.Sprintf("TTS wrote %s bytes into a .ogg path (%s) — transcoding to real Ogg/Opus", container, fileStr))
+	pkgLog().Info(fmt.Sprintf("TTS wrote %s bytes into a .ogg path (%s) — transcoding to real Ogg/Opus", container, fileStr))
 	repaired, err := transcodeToOggOpus(context.Background(), fileStr, "48k", 30*time.Second, fileStr)
 	if err != nil {
 		return "", err
@@ -522,7 +518,7 @@ func repairOggContainer(fileStr string) (string, error) {
 	if err := os.Rename(fileStr, honest); err != nil {
 		return fileStr, nil
 	}
-	ttsLog().Warn(fmt.Sprintf("Could not transcode %s to Ogg/Opus — renamed to %s so the file is delivered with its real format", fileStr, honest))
+	pkgLog().Warn(fmt.Sprintf("Could not transcode %s to Ogg/Opus — renamed to %s so the file is delivered with its real format", fileStr, honest))
 	return honest, nil
 }
 
@@ -570,7 +566,7 @@ func concatAudioFiles(audioPaths []string, outputPath string, voiceCompatible bo
 		entries.WriteString("file " + pyshlex.Quote(absPath(p)) + "\n")
 	}
 	if err := os.WriteFile(concatPath, []byte(entries.String()), 0o666); err != nil {
-		ttsLog().Warn(fmt.Sprintf("ffmpeg audio combine failed: %s", pypath.OSErrorText(err)))
+		pkgLog().Warn(fmt.Sprintf("ffmpeg audio combine failed: %s", pypath.OSErrorText(err)))
 		return "", nil
 	}
 	args := []string{"-y", "-loglevel", "error", "-f", "concat", "-safe", "0", "-i", concatPath, "-vn"}
@@ -586,17 +582,17 @@ func concatAudioFiles(audioPaths []string, outputPath string, voiceCompatible bo
 	}
 	result, err := ffmpegRun(ffmpeg, append(args, tempOutput), 120, false, true)
 	if err != nil {
-		ttsLog().Warn(fmt.Sprintf("ffmpeg audio combine failed: %v", err))
+		pkgLog().Warn(fmt.Sprintf("ffmpeg audio combine failed: %v", err))
 		return "", nil
 	}
 	if info, serr := os.Stat(tempOutput); result.ReturnCode == 0 && serr == nil && info.Size() > 0 {
 		if err := os.Rename(tempOutput, destination); err != nil {
-			ttsLog().Warn(fmt.Sprintf("ffmpeg audio combine failed: %s", pypath.OSErrorText(err)))
+			pkgLog().Warn(fmt.Sprintf("ffmpeg audio combine failed: %s", pypath.OSErrorText(err)))
 			return "", nil
 		}
 		return destination, nil
 	}
-	ttsLog().Warn(fmt.Sprintf("ffmpeg audio combine failed: %s", decodeIgnoreClip(result.Stderr, 500)))
+	pkgLog().Warn(fmt.Sprintf("ffmpeg audio combine failed: %s", decodeIgnoreClip(result.Stderr, 500)))
 	return "", nil
 }
 

@@ -8,7 +8,7 @@ description: >
   relays messages between Feishu/Lark chats and the Icebath agent. Supports
   text, images, video, voice, documents, threads, DM pairing, group @mention
   gating, drive comment events, and meeting invites.
-author: NousResearch
+author: Icebath
 requires_env:
   - name: FEISHU_APP_ID
     description: "Feishu/Lark app ID"

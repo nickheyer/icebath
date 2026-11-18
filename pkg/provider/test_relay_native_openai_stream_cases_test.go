@@ -180,9 +180,9 @@ func TestOpenaiStreamFinalToolCallDeltaReachesRelayParentEvent(t *testing.T) {
 		choices, _ := openAIRelayField(chunk, "choices").([]any)
 		return len(choices) > 0 && openAIRelayField(choices[0], "finish_reason") == "tool_calls"
 	})
-	hermesCalls := openAIRelayToolCalls(t, result)
-	if len(hermesCalls) == 0 || hermesCalls[0] != [2]string{"read_file", `{"path": "/tmp/x"}`} {
-		t.Fatalf("result tool calls %v", hermesCalls)
+	openAICalls := openAIRelayToolCalls(t, result)
+	if len(openAICalls) == 0 || openAICalls[0] != [2]string{"read_file", `{"path": "/tmp/x"}`} {
+		t.Fatalf("result tool calls %v", openAICalls)
 	}
 	if choice, _ := openAIRelayChoice(result); choice["finish_reason"] != "tool_calls" {
 		t.Fatalf("result finish_reason %#v", choice["finish_reason"])

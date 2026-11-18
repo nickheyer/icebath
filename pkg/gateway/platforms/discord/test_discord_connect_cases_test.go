@@ -110,11 +110,11 @@ func TestSafeSyncSlashCommandsOnlyMutatesDiffs(t *testing.T) {
 	cmd := func(name, desc string) map[string]any {
 		return map[string]any{"name": name, "description": desc, "type": int64(1), "options": []any{}, "nsfw": false, "dm_permission": true, "default_member_permissions": nil}
 	}
-	desiredSame, desiredUpdated, desiredCreated := cmd("status", "Show Hermes session status"), cmd("help", "Show available commands"), cmd("metricas", "Show Colmeio metrics")
+	desiredSame, desiredUpdated, desiredCreated := cmd("status", "Show Icebath session status"), cmd("help", "Show available commands"), cmd("metricas", "Show Colmeio metrics")
 	a.desiredCommands = []map[string]any{desiredSame, desiredUpdated, desiredCreated}
 	api.mu.Lock()
 	api.get = map[string]string{"/applications/999/commands": `[
-		{"id":"11","application_id":"999","type":1,"name":"status","description":"Show Hermes session status","options":[],"nsfw":false,"dm_permission":true,"name_localizations":{},"description_localizations":{}},
+		{"id":"11","application_id":"999","type":1,"name":"status","description":"Show Icebath session status","options":[],"nsfw":false,"dm_permission":true,"name_localizations":{},"description_localizations":{}},
 		{"id":"12","application_id":"999","type":1,"name":"help","description":"Old help text","options":[],"nsfw":false,"dm_permission":true},
 		{"id":"13","application_id":"999","type":1,"name":"old-command","description":"To be deleted","options":[],"nsfw":false,"dm_permission":true}]`}
 	api.mu.Unlock()

@@ -88,7 +88,7 @@ func TestPlaneRefusalsKeepThePlaneCode(t *testing.T) {
 }
 
 func multiGroupPlane(p *configplane.Plane) {
-	p.Upper = map[string]any{"terminal": map[string]any{"backend": "docker"}, "model": map[string]any{"default": "hermes-4"}}
+	p.Upper = map[string]any{"terminal": map[string]any{"backend": "docker"}, "model": map[string]any{"default": "claude-sonnet-4"}}
 	p.UpperLocks = []map[string]any{{"path": "terminal.backend", "level": "group", "groupId": "g-sec"}}
 	p.Groups = []map[string]any{{"groupId": "g-sec", "priority": 10, "version": 3}, {"groupId": "g-eng", "priority": 5, "version": 1}}
 	p.GroupProvenance = map[string]any{"terminal": map[string]any{"backend": "g-sec"}}
@@ -99,7 +99,7 @@ func TestMultiGroupResponseFieldsAreIgnoredAndGroupLockRefusesClientSide(t *test
 	multiGroupPlane(p)
 	ctx := context.Background()
 	doc, err := config.ReadRawConfig(ctx, p.Home)
-	if err != nil || doc["terminal"].(map[string]any)["backend"] != "docker" || doc["model"].(map[string]any)["default"] != "hermes-4" {
+	if err != nil || doc["terminal"].(map[string]any)["backend"] != "docker" || doc["model"].(map[string]any)["default"] != "claude-sonnet-4" {
 		t.Fatalf("doc %v %v", doc, err)
 	}
 	if level, ok, _ := testBackend().Locked(ctx, p.Home, "terminal.backend"); !ok || level != "group" {
@@ -109,10 +109,10 @@ func TestMultiGroupResponseFieldsAreIgnoredAndGroupLockRefusesClientSide(t *test
 	if err := writeKey(p, "terminal.backend", "local"); !errors.As(err, &locked) || locked.Path != "terminal.backend" || locked.LockedBy != "group" || len(p.Patches()) != 0 {
 		t.Fatalf("err %v", err)
 	}
-	if err := writeKey(p, "model.default", "hermes-5"); err != nil {
+	if err := writeKey(p, "model.default", "claude-sonnet-5"); err != nil {
 		t.Fatal(err)
 	}
-	mustEqualJSON(t, "set", p.Patches()[0].Body["set"], map[string]any{"model.default": "hermes-5"})
+	mustEqualJSON(t, "set", p.Patches()[0].Body["set"], map[string]any{"model.default": "claude-sonnet-5"})
 }
 
 func TestPlaneGroupLockRefusalMapsToLockedError(t *testing.T) {
@@ -159,7 +159,7 @@ func TestCASRetryOfADocumentWriteReplaysOnlyItsOwnEdit(t *testing.T) {
 	prof.Values, prof.Version = map[string]any{"display": map[string]any{"personality": "concise", "compact": false}}, 1
 	original := request
 	raced := false
-	request = func(ctx context.Context, method, h, profile, etag string, body any, token string) (Response, error) {
+	request = func(ctx context.Context, method, profile, etag string, body any, token string) (Response, error) {
 		if method == "PATCH" && !raced {
 			raced = true
 			p.Mu.Lock()
@@ -168,7 +168,7 @@ func TestCASRetryOfADocumentWriteReplaysOnlyItsOwnEdit(t *testing.T) {
 			prof.Version++
 			p.Mu.Unlock()
 		}
-		return original(ctx, method, h, profile, etag, body, token)
+		return original(ctx, method, profile, etag, body, token)
 	}
 	t.Cleanup(func() { request = original })
 	if err := setValue(p, "display.personality", "pirate"); err != nil {

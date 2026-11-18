@@ -463,19 +463,12 @@ func touchSkinFile(h, key string, value any) {
 	}
 }
 
-// Writes the raw user config through the installed raw write recorder, which diffs the file it replaces
+// Writes the raw user config, replacing the whole document
 func writeUserConfig(ctx context.Context, h, configPath string, userConfig map[string]any) error {
 	if err := EnsureIcebathHome(ctx, h); err != nil {
 		return err
 	}
-	write := func(path string, doc map[string]any) error { return AtomicConfigReplace(ctx, h, path, doc, "") }
-	facadeMu.RLock()
-	record := rawRecorder
-	facadeMu.RUnlock()
-	if record == nil {
-		return write(configPath, userConfig)
-	}
-	return record(ctx, h, configPath, userConfig, write)
+	return AtomicConfigReplace(ctx, h, configPath, userConfig, "")
 }
 
 func printUnknownKeyNotice(key, suggestion string) {

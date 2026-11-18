@@ -7,7 +7,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/nickheyer/icebath/pkg/tuigateway"
+	"github.com/nickheyer/icebath/pkg/tuihost"
 )
 
 // Absolute path that exists only inside a sandbox, never on this host
@@ -68,7 +68,7 @@ func TestContainerCwdIsTheSessionWorkspace(t *testing.T) {
 			if got := terminalTaskCwd(t.Context(), nil); got != container {
 				t.Fatalf("task cwd = %q", got)
 			}
-			session := tuigateway.NewSession(map[string]any{"cwd": completionCwdOf(t, map[string]any{}), "profile_home": nil})
+			session := tuihost.NewSession(map[string]any{"cwd": completionCwdOf(t, map[string]any{}), "profile_home": nil})
 			if sessionIsLocalBackend(t.Context(), session) {
 				t.Fatal("container session reported local")
 			}
@@ -117,7 +117,7 @@ func TestNamedContainerProfileUsesItsContainerCwd(t *testing.T) {
 	if got := completionCwdOf(t, map[string]any{"profile": "box"}); got != container {
 		t.Fatalf("profile cwd = %q", got)
 	}
-	if sessionIsLocalBackend(t.Context(), tuigateway.NewSession(map[string]any{"cwd": container, "profile_home": profile})) {
+	if sessionIsLocalBackend(t.Context(), tuihost.NewSession(map[string]any{"cwd": container, "profile_home": profile})) {
 		t.Fatal("named container session reported local")
 	}
 }

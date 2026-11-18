@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"log/slog"
 	"math/big"
 	"os"
 	"sync"
@@ -74,7 +73,7 @@ func resumePlain(exc *gateway.GatewayRPCError, raised error, sessionID string, t
 	if typed || !keyNotTaken[exc.Error()] {
 		return raised
 	}
-	slog.Debug(fmt.Sprintf("session.resume %s: launch key not taken (%s); resuming without it", sessionID, exc.Error()))
+	pkgLog().Debug(fmt.Sprintf("session.resume %s: launch key not taken (%s); resuming without it", sessionID, exc.Error()))
 	return nil
 }
 
@@ -604,7 +603,7 @@ func (c *GatewayConnection) resubscribe(ctx context.Context, client ConnectionCl
 			if !isClientError(err) || !ResumeGone[err.Error()] {
 				return err
 			}
-			slog.Debug(fmt.Sprintf("session.resume %s after reconnect: %s", state.SessionID, err.Error()))
+			pkgLog().Debug(fmt.Sprintf("session.resume %s after reconnect: %s", state.SessionID, err.Error()))
 			state.Lock()
 			state.SubscriptionID = nil
 			state.Unlock()
@@ -666,7 +665,7 @@ func (c *GatewayConnection) pump(ctx context.Context, client ConnectionClient) {
 func (c *GatewayConnection) applyEvent(ctx context.Context, state *SessionState, params *pyjson.Object) {
 	defer func() {
 		if recovered := recover(); recovered != nil {
-			slog.Debug("session state update failed", "error", recovered)
+			pkgLog().Debug("session state update failed", "error", recovered)
 		}
 	}()
 	state.ApplyEvent(ctx, params.Vals["type"], params.Vals["payload"])
@@ -751,7 +750,7 @@ func (c *GatewayConnection) Reply(requestID any, result any) bool {
 		}
 	}
 	if err != nil {
-		slog.Debug(fmt.Sprintf("server request reply failed: %s", err.Error()))
+		pkgLog().Debug(fmt.Sprintf("server request reply failed: %s", err.Error()))
 		return false
 	}
 	return true

@@ -744,7 +744,7 @@ func (p *OAuthProvider) enforceRefreshTokenIssuer(ctx context.Context) {
 		return
 	}
 	if stored != current {
-		mcpLogger().Warn(fmt.Sprintf("MCP OAuth: authorization server issuer changed (%s -> %s); dropping the stored "+
+		pkgLog().Warn(fmt.Sprintf("MCP OAuth: authorization server issuer changed (%s -> %s); dropping the stored "+
 			"refresh token rather than sending it to a different issuer", stored, current))
 		p.storage.StripRefreshToken(ctx)
 		tokens.RefreshToken = nil
@@ -807,7 +807,7 @@ func (p *OAuthProvider) acceptOriginIssuedMetadata(r *flowResponse) *flowRespons
 	if err != nil || !metadataIssuedByOrigin(md, p.authServerURL, r) {
 		return r
 	}
-	mcpLogger().Info(fmt.Sprintf("MCP OAuth: accepting authorization-server metadata from %s whose issuer %s is the origin of the "+
+	pkgLog().Info(fmt.Sprintf("MCP OAuth: accepting authorization-server metadata from %s whose issuer %s is the origin of the "+
 		"advertised server %s", r.Request.URL.String(), md.Issuer, p.authServerURL))
 	p.oauthMetadata = md
 	return &flowResponse{StatusCode: http.StatusNoContent, Header: http.Header{}, Request: r.Request}
@@ -1086,13 +1086,13 @@ func (p *OAuthProvider) reloadTokensAfterRefreshFailure(ctx context.Context) (bo
 func (p *OAuthProvider) handleRefreshResponse(ctx context.Context, r *flowResponse) (bool, error) {
 	defer p.releaseRefreshFence()
 	if r.StatusCode < 200 || r.StatusCode >= 300 {
-		mcpLogger().Warn(fmt.Sprintf("Token refresh failed: %d", r.StatusCode))
+		pkgLog().Warn(fmt.Sprintf("Token refresh failed: %d", r.StatusCode))
 		recovered, err := p.reloadTokensAfterRefreshFailure(ctx)
 		if err != nil {
 			return false, err
 		}
 		if recovered {
-			mcpLogger().Info("Recovered a peer-rotated refresh token instead of clearing the session")
+			pkgLog().Info("Recovered a peer-rotated refresh token instead of clearing the session")
 			return true, nil
 		}
 		p.clearTokens()
@@ -1100,7 +1100,7 @@ func (p *OAuthProvider) handleRefreshResponse(ctx context.Context, r *flowRespon
 	}
 	t, err := parseOAuthToken(r.Body)
 	if r.ReadErr != nil || err != nil {
-		mcpLogger().Warn(fmt.Sprintf("Invalid refresh response: %d", r.StatusCode))
+		pkgLog().Warn(fmt.Sprintf("Invalid refresh response: %d", r.StatusCode))
 		p.clearTokens()
 		return false, nil
 	}
@@ -1150,7 +1150,7 @@ func (p *OAuthProvider) tolerateMissingIssForKnownServer() {
 			return nil, err
 		}
 		if result.Iss == "" && result.Code != "" {
-			mcpLogger().Warn(fmt.Sprintf("MCP OAuth: %s omitted the iss parameter it advertises; accepting the redirect for that issuer only", issuer))
+			pkgLog().Warn(fmt.Sprintf("MCP OAuth: %s omitted the iss parameter it advertises; accepting the redirect for that issuer only", issuer))
 			filled := *result
 			filled.Iss = p.oauthMetadata.Issuer
 			result = &filled
@@ -1389,7 +1389,7 @@ func (p *OAuthProvider) HandleUnauthorized(ctx context.Context, req *http.Reques
 	var failures []string
 	err := p.authorizeAfterChallenge(ctx, req, resp, stepUp, &failures)
 	if err != nil {
-		mcpLogger().Error(fmt.Sprintf("OAuth flow error: %v", err))
+		pkgLog().Error(fmt.Sprintf("OAuth flow error: %v", err))
 		var regErr *OAuthRegistrationError
 		if errors.As(err, &regErr) && len(failures) > 0 && p.oauthMetadata == nil {
 			return false, withDiscoveryContext(regErr, failures)
@@ -1459,7 +1459,7 @@ func (p *OAuthProvider) discover(ctx context.Context, resp *http.Response, failu
 		}
 		prm := handleProtectedResourceResponse(dresp)
 		if prm == nil {
-			mcpLogger().Debug(fmt.Sprintf("Protected resource metadata discovery failed: %s", u))
+			pkgLog().Debug(fmt.Sprintf("Protected resource metadata discovery failed: %s", u))
 			continue
 		}
 		if err := p.validateResourceMatch(prm); err != nil {
@@ -1475,7 +1475,7 @@ func (p *OAuthProvider) discover(ctx context.Context, resp *http.Response, failu
 	}
 	expected := p.expectedIssuer()
 	if p.clientInfo != nil && !credentialsMatchIssuer(p.clientInfo, expected, p.clientMetadataURL) {
-		mcpLogger().Debug("Authorization server changed; discarding bound credentials and re-registering")
+		pkgLog().Debug("Authorization server changed; discarding bound credentials and re-registering")
 		p.clientInfo = nil
 		p.clearTokens()
 		p.oauthMetadata = nil
@@ -1494,7 +1494,7 @@ func (p *OAuthProvider) discover(ctx context.Context, resp *http.Response, failu
 			break
 		}
 		if asm == nil {
-			mcpLogger().Debug(fmt.Sprintf("OAuth metadata discovery failed: %s", u))
+			pkgLog().Debug(fmt.Sprintf("OAuth metadata discovery failed: %s", u))
 			continue
 		}
 		if p.authServerURL == "" && issuersMatch(asm.Issuer, expected) {
@@ -1528,7 +1528,7 @@ func (p *OAuthProvider) identifyClient(ctx context.Context, failures *[]string) 
 		discovered = p.expectedIssuer()
 	}
 	if shouldUseClientMetadataURL(p.oauthMetadata, p.clientMetadataURL) {
-		mcpLogger().Debug(fmt.Sprintf("Using URL-based client ID (CIMD): %s", p.clientMetadataURL))
+		pkgLog().Debug(fmt.Sprintf("Using URL-based client ID (CIMD): %s", p.clientMetadataURL))
 		info := createClientInfoFromMetadataURL(p.clientMetadataURL, p.clientMetadata.RedirectURIs)
 		if discovered != "" {
 			info.Issuer = strPtr(discovered)

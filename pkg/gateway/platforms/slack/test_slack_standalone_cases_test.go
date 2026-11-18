@@ -70,13 +70,13 @@ func TestStandaloneSendUserDmResolutionChannelDeliveryHonorsUnfurlConfig(t *test
 	f.respond("chat.postMessage", map[string]any{"ok": true, "ts": "123.456"})
 	result, _ := standaloneSend(context.Background(), map[string]any{
 		"pconfig": &gateway.PlatformConfig{Enabled: true, Token: "xoxb-fake-token", Extra: map[string]any{"unfurl_links": false, "unfurl_media": false}},
-		"chat_id": "C123", "message": "[Hermes](https://example.com/hermes)",
+		"chat_id": "C123", "message": "[Icebath](https://example.com/icebath)",
 	})
 	if result["success"] != true {
 		t.Fatalf("result %v", result)
 	}
 	payload := f.callsTo("chat.postMessage")[0].Args
-	if payload["text"] != "<https://example.com/hermes|Hermes>" || payload["unfurl_links"] != false || payload["unfurl_media"] != false {
+	if payload["text"] != "<https://example.com/icebath|Icebath>" || payload["unfurl_links"] != false || payload["unfurl_media"] != false {
 		t.Fatalf("payload %v", payload)
 	}
 }

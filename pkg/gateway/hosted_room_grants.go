@@ -44,7 +44,8 @@ const (
 	hostedRoomGrantSecretFile       = ".room-link-grant-secret"
 	MaxDispatchGrantTTLSeconds      = 24 * 60 * 60
 	MaxStatusGrantTTLSeconds        = 30 * 24 * 60 * 60
-	hostedInstallationGrantDomain   = "hermes-hosted-room-installation-grant-v1"
+	hostedInstallationGrantDomain   = "icebath-hosted-room-installation-grant-v1"
+	hostedLegacyGrantDomain         = "hermes-hosted-room-installation-grant-v1"
 	hostedGrantSecretCacheMaxSize   = 32
 	hostedGrantDefaultTTLSeconds    = 3600.0
 	hostedGrantClockSkewToleranceS  = 30
@@ -75,6 +76,9 @@ var hostedGrantSecrets = struct {
 	order []string
 	byKey map[string][]byte
 }{byKey: map[string][]byte{}}
+
+// Old domain key of each derived grant secret, so grants an older gateway signed still verify
+var hostedLegacyGrantKeys sync.Map
 
 // Reads the installation's raw secret, refusing a wrong length and tightening loose permissions
 func hostedReadGrantSecret(path string) ([]byte, error) {
@@ -125,6 +129,9 @@ func hostedGrantSecretForHome(homeValue string) ([]byte, error) {
 	mac := hmac.New(sha256.New, material)
 	mac.Write([]byte(hostedInstallationGrantDomain))
 	derived := mac.Sum(nil)
+	legacy := hmac.New(sha256.New, material)
+	legacy.Write([]byte(hostedLegacyGrantDomain))
+	hostedLegacyGrantKeys.Store(string(derived), legacy.Sum(nil))
 	hostedGrantSecrets.Lock()
 	defer hostedGrantSecrets.Unlock()
 	if _, ok := hostedGrantSecrets.byKey[homeValue]; !ok {
@@ -349,7 +356,7 @@ func DecodeRoomGrant(secret []byte, token, permission string, now *float64) (*py
 	}
 	mac := hmac.New(sha256.New, secret)
 	mac.Write(encoded)
-	if !hmac.Equal(mac.Sum(nil), supplied) {
+	if !hmac.Equal(mac.Sum(nil), supplied) && !hostedLegacySignatureValid(secret, encoded, supplied) {
 		return nil, hostedGrantError("room grant signature is invalid")
 	}
 	invalidPayload := hostedGrantError("room grant payload is invalid")
@@ -454,12 +461,21 @@ func (d *HostedMemberDispatch) AsMapping() *pyjson.Object {
 		}
 		return pyint.Value(n)
 	}
-	return pyjson.ObjectOf("protocol_version", value(d.ProtocolVersion), "room_id", d.RoomID, "home_install_id", d.HomeInstallID,
+	mapping := pyjson.ObjectOf("protocol_version", value(d.ProtocolVersion), "room_id", d.RoomID, "home_install_id", d.HomeInstallID,
 		"authority_gateway_id", d.AuthorityGatewayID, "authority_epoch", value(d.AuthorityEpoch), "member_id", d.MemberID,
 		"target_install_id", d.TargetInstallID, "target_profile", d.TargetProfile, "task_id", d.TaskID,
 		"execution_generation", value(d.ExecutionGeneration), "source_event_seq", value(d.SourceEventSeq),
 		"cancellation_scope_id", d.CancellationScopeID, "prompt", d.Prompt, "prompt_digest", d.PromptDigest,
 		"capability_digest", d.CapabilityDigest, "execution_policy_digest", d.ExecutionPolicyDigest, "trace_id", d.TraceID)
+	if len(d.Attachments) > 0 {
+		items := make([]any, len(d.Attachments))
+		for i, item := range d.Attachments {
+			items[i] = pyjson.ObjectOf("attachment_id", item["attachment_id"], "kind", item["kind"], "mime", item["mime"], "name", item["name"],
+				"size", item["size"], "sha256", item["sha256"])
+		}
+		mapping.Set("attachments", items)
+	}
+	return mapping
 }
 
 // Room grant secret domain separated from the configured API key, refused for a weak key
@@ -468,6 +484,17 @@ func DeriveRoomGrantSecret(apiKey string) ([]byte, error) {
 		return nil, hostedGrantError("room grants require a strong gateway API key")
 	}
 	mac := hmac.New(sha256.New, []byte(apiKey))
-	mac.Write([]byte("hermes-hosted-room-grant-v1"))
+	mac.Write([]byte("icebath-hosted-room-grant-v1"))
 	return mac.Sum(nil), nil
+}
+
+// Whether a grant an older gateway signed with the old domain key of this secret verifies
+func hostedLegacySignatureValid(secret, encoded, supplied []byte) bool {
+	legacy, ok := hostedLegacyGrantKeys.Load(string(secret))
+	if !ok {
+		return false
+	}
+	mac := hmac.New(sha256.New, legacy.([]byte))
+	mac.Write(encoded)
+	return hmac.Equal(mac.Sum(nil), supplied)
 }

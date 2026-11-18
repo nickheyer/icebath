@@ -181,7 +181,7 @@ func reuseSavedAuthorization(ctx context.Context, env *tools.Env, serverName str
 		err = commitCardAttempt(ctx, serverName, cfg, onCommit, flow)
 	}
 	if err != nil {
-		mcpLogger().Debug(fmt.Sprintf("saved authorization for %s was not usable: %s", serverName, excStr(err)))
+		pkgLog().Debug(fmt.Sprintf("saved authorization for %s was not usable: %s", serverName, excStr(err)))
 		return false
 	}
 	if flow != nil {

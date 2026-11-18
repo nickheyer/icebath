@@ -75,8 +75,8 @@ func TestCodexNativeAutoCompactionGate(t *testing.T) {
 	if !codexNativeAutoCompaction(&AIAgent{apiMode: "codex_app_server", codexAppServerAutoCompaction: "OFF"}) {
 		t.Fatal("off mode")
 	}
-	if codexNativeAutoCompaction(&AIAgent{apiMode: "codex_app_server", codexAppServerAutoCompaction: "hermes"}) {
-		t.Fatal("hermes mode")
+	if codexNativeAutoCompaction(&AIAgent{apiMode: "codex_app_server", codexAppServerAutoCompaction: "icebath"}) {
+		t.Fatal("icebath mode")
 	}
 	if codexNativeAutoCompaction(&AIAgent{apiMode: "chat_completions"}) {
 		t.Fatal("chat completions")

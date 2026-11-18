@@ -12,7 +12,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"log/slog"
 	"math/big"
 	"net/http"
 	"net/url"
@@ -431,7 +430,7 @@ func UploadToCOS(ctx context.Context, fileBytes []byte, filename, contentType st
 	authorization := CosSign("put", "/"+encodedKey, nil,
 		[][2]string{{"host", cosHost}, {"content-type", contentType}, {"x-cos-security-token", sessionToken}},
 		secretID, secretKey, start, expire)
-	slog.Info(fmt.Sprintf("COS PUT: bucket=%s region=%s key=%s size=%d mime=%s", bucket, region, cosKey, len(fileBytes), contentType))
+	pkgLog().Info(fmt.Sprintf("COS PUT: bucket=%s region=%s key=%s size=%d mime=%s", bucket, region, cosKey, len(fileBytes), contentType))
 	req, err := http.NewRequestWithContext(ctx, http.MethodPut, cosURL, bytes.NewReader(fileBytes))
 	if err != nil {
 		return nil, err
@@ -460,7 +459,7 @@ func UploadToCOS(ctx context.Context, fileBytes []byte, filename, contentType st
 			result.Set("height", size.Height)
 		}
 	}
-	slog.Info(fmt.Sprintf("COS 上传成功: url=%s size=%d", pyrepr.Str(resultURL), len(fileBytes)))
+	pkgLog().Info(fmt.Sprintf("COS 上传成功: url=%s size=%d", pyrepr.Str(resultURL), len(fileBytes)))
 	return result, nil
 }
 

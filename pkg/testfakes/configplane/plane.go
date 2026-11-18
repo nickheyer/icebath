@@ -20,7 +20,6 @@ import (
 
 const (
 	Token         = "plane-token-1"
-	NousToken     = "nous-access-token-1"
 	ClientID      = "agent-client"
 	ClientSecret  = "agent-secret"
 	Instance      = "inst-0001"
@@ -72,7 +71,6 @@ type Plane struct {
 	EtagOverride    string
 	Requests        []Request
 	TokenRequests   int
-	NousRefreshes   int
 	Home            string
 	URL             string
 	OnGet           func()
@@ -277,16 +275,16 @@ func (p *Plane) serve(w http.ResponseWriter, r *http.Request) {
 	p.Mu.Lock()
 	defer p.Mu.Unlock()
 	p.Requests = append(p.Requests, Request{Method: r.Method, Profile: profile, Body: body,
-		Auth: r.Header.Get("Authorization"), Instance: r.Header.Get("X-Hermes-Instance-Id"), IfNoneMatch: r.Header.Get("If-None-Match")})
+		Auth: r.Header.Get("Authorization"), Instance: r.Header.Get("X-Icebath-Instance-Id"), IfNoneMatch: r.Header.Get("If-None-Match")})
 	if p.FailStatus != 0 {
 		send(w, p.FailStatus, map[string]any{"error": "unavailable", "message": "stub outage"}, "")
 		return
 	}
-	if auth := r.Header.Get("Authorization"); auth != "Bearer "+Token && auth != "Bearer "+NousToken {
+	if auth := r.Header.Get("Authorization"); auth != "Bearer "+Token {
 		send(w, 401, map[string]any{"error": "unauthorized", "message": "bad token"}, "")
 		return
 	}
-	if r.Header.Get("X-Hermes-Instance-Id") != Instance {
+	if r.Header.Get("X-Icebath-Instance-Id") != Instance {
 		send(w, 403, map[string]any{"error": "config_agent_unknown", "message": "unknown instance"}, "")
 		return
 	}
@@ -310,13 +308,6 @@ func (p *Plane) serve(w http.ResponseWriter, r *http.Request) {
 }
 
 func (p *Plane) serveToken(w http.ResponseWriter, r *http.Request, raw []byte) {
-	if r.URL.Path == "/api/oauth/token" {
-		p.Mu.Lock()
-		p.NousRefreshes++
-		p.Mu.Unlock()
-		send(w, 200, map[string]any{"access_token": NousToken, "refresh_token": "nous-refresh-2", "token_type": "Bearer", "expires_in": 3600}, "")
-		return
-	}
 	if r.URL.Path != "/token" {
 		send(w, 404, map[string]any{"error": "not_found"}, "")
 		return

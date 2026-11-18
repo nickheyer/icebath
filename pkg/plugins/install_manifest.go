@@ -40,7 +40,7 @@ func ReadManifestForInstall(pluginDir string) (map[string]any, error) {
 			FailureClass: "manifest_invalid"}
 	}
 	for _, d := range diagnostics {
-		logPluginsCmdInstall.warn("Agent Plugin install: " + d.Message)
+		pkgLog().Warn("Agent Plugin install: " + d.Message)
 	}
 	return manifest, nil
 }

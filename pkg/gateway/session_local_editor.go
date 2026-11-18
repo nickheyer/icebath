@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"slices"
 
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/state"
@@ -40,7 +41,7 @@ func validateEditor(source string, editor any) error {
 		servers = []any{}
 	}
 	if _, isList := servers.([]any); !isList {
-		return invalidParams("editor.mcp_servers", fmt.Sprintf("must be a list, got %s", pyrepr.TypeName(servers)))
+		return invalidParams("editor.mcp_servers", fmt.Sprintf("must be a list, got %s", errchain.Kind(servers)))
 	}
 	return validateServers(servers)
 }

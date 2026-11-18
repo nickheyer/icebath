@@ -1,6 +1,6 @@
 package tools
 
-// Fixture contents and expected outputs captured from the hermes read_extract module
+// Fixture contents and expected outputs captured from the read_extract module
 const readExtractGoldenB64 = "" +
 	"eyJuYjQiOiB7Im9rIjogIiMgXHUyNTAwXHUyNTAwIE1hcmtkb3duIGNlbGwgMSBcdTI1MDBcdTI1MDBcbiMgVGl0bGVcblNvbWUg" +
 	"dGV4dFxuXG4jIFx1MjUwMFx1MjUwMCBDb2RlIGNlbGwgMSBcdTI1MDBcdTI1MDBcbnByaW50KCdoaScpXG5cbiMgXHUyNTAwXHUy" +

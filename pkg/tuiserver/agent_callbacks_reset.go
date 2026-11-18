@@ -6,11 +6,11 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/agent"
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
-	"github.com/nickheyer/icebath/pkg/tuigateway"
+	"github.com/nickheyer/icebath/pkg/tuihost"
 )
 
 // Rebuilds a session agent at a conversation boundary, dropping runtime overrides and history, and pushes its info
-func resetSessionAgent(ctx context.Context, sid string, session *tuigateway.Session) (map[string]any, error) {
+func resetSessionAgent(ctx context.Context, sid string, session *tuihost.Session) (map[string]any, error) {
 	rawGeneration, present := session.Lookup("_queued_prompt_generation")
 	if !present {
 		rawGeneration = 0
@@ -47,7 +47,7 @@ func resetSessionAgent(ctx context.Context, sid string, session *tuigateway.Sess
 		session.Set("history_version", intOr(session.Get("history_version"))+1)
 	}()
 	info := sessionInfo(ctx, newAgent, session)
-	tuigateway.Emit(ctx, "session.info", sid, info)
+	tuihost.Emit(ctx, "session.info", sid, info)
 	restartSlashWorker(ctx, sid, session)
 	return info, nil
 }

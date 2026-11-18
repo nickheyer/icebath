@@ -79,7 +79,7 @@ type slackPlatformPlugin struct{}
 
 func (slackPlatformPlugin) Manifest() plugins.Manifest {
 	return plugins.Manifest{Name: "slack-platform", Version: "1.0.0", Kind: "platform", Source: "bundled", Key: "platforms/slack",
-		Author: "NousResearch",
+		Author: "Icebath",
 		Description: "Slack gateway adapter for Icebath Agent. Connects to Slack via slack-go in Socket Mode and relays messages " +
 			"between Slack channels/DMs and the Icebath agent. Supports slash commands, threads, mrkdwn rendering, approval blocks, " +
 			"free-response channels, mention gating, and channel skill bindings.\n",

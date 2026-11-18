@@ -14,7 +14,6 @@ import (
 	"github.com/charmbracelet/x/ansi"
 	"github.com/google/uuid"
 
-	"github.com/nickheyer/icebath/pkg/internal/pypil"
 	"github.com/nickheyer/icebath/pkg/pet"
 )
 
@@ -289,7 +288,7 @@ func draftPreview(uri string) ([]string, error) {
 	if err != nil {
 		return nil, err
 	}
-	return halfBlockRows(pet.DownscaleCells(pypil.ToNRGBA(img), hatchPreviewCols)), nil
+	return halfBlockRows(pet.DownscaleCells(toNRGBA(img), hatchPreviewCols)), nil
 }
 
 // Framed box of the hatch in flight, the draft preview over the step and the way to stop it

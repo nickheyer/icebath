@@ -127,7 +127,7 @@ func TestWatchdogForceAbortsSilentlyStalledTurn(t *testing.T) {
 	watchdogConfig(t)
 	db := &watchdogDB{}
 	a := watchdogAgent(t, db)
-	records := captureLogger(t, "agent.turn_liveness", slog.LevelError)
+	records := captureLogger(t, "agent", slog.LevelError)
 	seen := ""
 	result := runWatchdogTurn(t, a, func(a *AIAgent, history []map[string]any) map[string]any {
 		if !a.hardInterruptRequested.Wait(30.0) {
@@ -157,7 +157,7 @@ func TestWatchdogDoesNotFireWhileTurnStillMakingProgress(t *testing.T) {
 	a := watchdogAgent(t, db)
 	interval := 0.05
 	a.sessionTurnLeaseRefreshInterval = &interval
-	records := captureLogger(t, "agent.turn_liveness", slog.LevelError)
+	records := captureLogger(t, "agent", slog.LevelError)
 	start := time.Now()
 	result := runWatchdogTurn(t, a, func(a *AIAgent, history []map[string]any) map[string]any {
 		for time.Since(start) < 600*time.Millisecond {
@@ -235,7 +235,7 @@ func TestWatchdogDeclinesAbortWhenActivityResumesDuringWarning(t *testing.T) {
 			}
 		}
 	}
-	records := captureLogger(t, "agent.turn_liveness", slog.LevelError)
+	records := captureLogger(t, "agent", slog.LevelError)
 	start := time.Now()
 	var requested bool
 	runWatchdogTurn(t, a, func(a *AIAgent, history []map[string]any) map[string]any {
@@ -279,7 +279,7 @@ func TestWatchdogDeclinesAbortWhenActivityResumesAfterRevalidation(t *testing.T)
 		return a.InterruptWith(message, o), nil
 	}
 	t.Cleanup(func() { turnLeaseInterrupt = prev })
-	records := captureLogger(t, "agent.turn_liveness", slog.LevelError)
+	records := captureLogger(t, "agent", slog.LevelError)
 	start := time.Now()
 	requested := false
 	result := runWatchdogTurn(t, a, func(a *AIAgent, history []map[string]any) map[string]any {
@@ -325,7 +325,7 @@ func TestWatchdogDeclinesAbortWhenActivityResumesInsideInterruptPublication(t *t
 	a.sessionTurnLeaseRefreshInterval = &interval
 	fence := &blockingCommitFence{entered: &pythread.Event{}, release: &pythread.Event{}}
 	a.activeCompressionCommitFence = fence
-	records := captureLogger(t, "agent.turn_liveness", slog.LevelError)
+	records := captureLogger(t, "agent", slog.LevelError)
 	start := time.Now()
 	var requested, hardEvent, toolSignal bool
 	var message string
@@ -372,7 +372,7 @@ func TestWatchdogDeclinesAbortWhenInterruptPublishRaises(t *testing.T) {
 		return false, errors.New("synthetic interrupt publication failure")
 	}
 	t.Cleanup(func() { turnLeaseInterrupt = prev })
-	records := captureLogger(t, "agent.turn_liveness", slog.LevelError)
+	records := captureLogger(t, "agent", slog.LevelError)
 	start := time.Now()
 	result := runWatchdogTurn(t, a, func(a *AIAgent, history []map[string]any) map[string]any {
 		for time.Since(start) < time.Second {

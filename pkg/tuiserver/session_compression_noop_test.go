@@ -7,7 +7,7 @@ import (
 	"testing"
 
 	"github.com/nickheyer/icebath/pkg/agent"
-	"github.com/nickheyer/icebath/pkg/tuigateway"
+	"github.com/nickheyer/icebath/pkg/tuihost"
 )
 
 // test_compression_config_hot_reload.py test_unchanged_compression_config_is_noop
@@ -24,7 +24,7 @@ func TestUnchangedCompressionConfigIsNoop(t *testing.T) {
 		t.Fatalf("context engine %T", a.ContextCompressor())
 	}
 	ctx := context.Background()
-	session := tuigateway.NewSession(map[string]any{"agent": a, "session_key": "session-95151"})
+	session := tuihost.NewSession(map[string]any{"agent": a, "session_key": "session-95151"})
 	session.Set("config_compression_seen", tuiCompressionConfigSignature(ctx, loadCfg(ctx)))
 	compressor.SetThresholdTokens(99_999)
 	syncAgentCompressionWithConfig(ctx, "sid-95151", session)

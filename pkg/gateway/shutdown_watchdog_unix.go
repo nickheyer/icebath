@@ -5,7 +5,6 @@ package gateway
 import (
 	"context"
 	"fmt"
-	"log/slog"
 	"math"
 	"net"
 	"os"
@@ -32,10 +31,10 @@ func listenTickUnix(ctx context.Context, h string) (net.Listener, string, bool, 
 	if info, err := os.Stat(path); err == nil && info.Mode()&os.ModeSocket != 0 {
 		err = os.Remove(path)
 		if err != nil {
-			slog.Error(fmt.Sprintf("Unable to check or remove stale UNIX socket %s: %v", pyrepr.StrRepr(path), err))
+			pkgLog().Error(fmt.Sprintf("Unable to check or remove stale UNIX socket %s: %v", pyrepr.StrRepr(path), err))
 		}
 	} else if err != nil && !os.IsNotExist(err) {
-		slog.Error(fmt.Sprintf("Unable to check or remove stale UNIX socket %s: %v", pyrepr.StrRepr(path), err))
+		pkgLog().Error(fmt.Sprintf("Unable to check or remove stale UNIX socket %s: %v", pyrepr.StrRepr(path), err))
 	}
 	l, err := net.Listen("unix", path)
 	return l, path, true, err
@@ -59,14 +58,14 @@ func sweepStaleTickSockets(ownPath string) {
 		parts := strings.Split(name, ".")
 		n, ok := pyint.Parse(parts[len(parts)-2])
 		if ok && (!n.IsInt64() || n.Int64() > math.MaxInt32 || n.Int64() < math.MinInt32) {
-			slog.Debug(fmt.Sprintf("stale loop-tick socket sweep failed: signed integer is greater than maximum (%s)", name))
+			pkgLog().Debug(fmt.Sprintf("stale loop-tick socket sweep failed: signed integer is greater than maximum (%s)", name))
 			return
 		}
 		if ok && syscall.Kill(int(n.Int64()), 0) == nil {
 			continue
 		}
 		if err := os.Remove(filepath.Join(dir, name)); err != nil && !os.IsNotExist(err) {
-			slog.Debug(fmt.Sprintf("stale loop-tick socket sweep failed: %v", err))
+			pkgLog().Debug(fmt.Sprintf("stale loop-tick socket sweep failed: %v", err))
 			return
 		}
 	}

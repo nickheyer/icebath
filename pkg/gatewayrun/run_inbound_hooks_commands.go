@@ -23,7 +23,7 @@ func (r *GatewayRunner) hmCommandHooks(ctx context.Context, event *gateway.Messa
 	func() {
 		defer func() {
 			if rec := recover(); rec != nil {
-				runLog().Debug(fmt.Sprintf("pre_command hook dispatch failed (non-fatal): %s", pyrepr.Str(rec)))
+				pkgLog().Debug(fmt.Sprintf("pre_command hook dispatch failed (non-fatal): %s", pyrepr.Str(rec)))
 			}
 		}()
 		plugins.FirePreCommandHook(ctx, "gateway", canonical, command, rawArgs, &quickKey, &platform)
@@ -36,7 +36,7 @@ func (r *GatewayRunner) hmCommandHooks(ctx context.Context, event *gateway.Messa
 		"raw_command": command, "args": rawArgs, "raw_args": rawArgs}
 	results, err := r.hooks.emitCollect(ctx, "command:"+canonical, hookCtx)
 	if err != nil {
-		runLog().Debug(fmt.Sprintf("command:%s hook dispatch failed (non-fatal): %s", canonical, err))
+		pkgLog().Debug(fmt.Sprintf("command:%s hook dispatch failed (non-fatal): %s", canonical, err))
 		results = nil
 	}
 	for _, result := range results {
@@ -133,7 +133,7 @@ func (r *GatewayRunner) hmDispatchPluginCommand(ctx context.Context, event *gate
 	}
 	reply, err := r.hmRunPluginHandler(ctx, handler, event, source, nil, nil)
 	if err != nil {
-		runLog().Warn(fmt.Sprintf("Plugin command dispatch failed: %s", err))
+		pkgLog().Warn(fmt.Sprintf("Plugin command dispatch failed: %s", err))
 		return false, nil, command, nil
 	}
 	return true, reply, command, nil

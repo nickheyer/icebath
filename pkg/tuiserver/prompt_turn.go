@@ -17,7 +17,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/media"
 	"github.com/nickheyer/icebath/pkg/tools"
-	"github.com/nickheyer/icebath/pkg/tuigateway"
+	"github.com/nickheyer/icebath/pkg/tuihost"
 )
 
 // Session slot of the bounded goal retry after compression exhaustion
@@ -42,7 +42,7 @@ func botModeDeliveryText(response any, successful bool) any {
 }
 
 // Whether a completion belongs to the canonical Bot Chat surface by title hint then live title
-func isBotModeSession(ctx context.Context, session *tuigateway.Session) bool {
+func isBotModeSession(ctx context.Context, session *tuihost.Session) bool {
 	if a := sessionAgent(session); a != nil {
 		if hint := pystr.Strip(a.SessionTitleHint()); hint != "" {
 			return hint == botmode.BotChatTitle
@@ -72,7 +72,7 @@ func isSuccessfulGoalTurn(result map[string]any, status string, raw any) bool {
 }
 
 // Goal manager of the session when a goal is active, else nil
-func activeGoalManager(ctx context.Context, session *tuigateway.Session) *goals.GoalManager {
+func activeGoalManager(ctx context.Context, session *tuihost.Session) *goals.GoalManager {
 	maxTurns := int64(20)
 	if goalsCfg, ok := loadCfg(ctx)["goals"].(map[string]any); ok {
 		if raw, present := goalsCfg["max_turns"]; present && pyrepr.Truthy(raw) {
@@ -89,7 +89,7 @@ func activeGoalManager(ctx context.Context, session *tuigateway.Session) *goals.
 }
 
 // Bounded active goal retry after compression exhaustion as its continuation and notice
-func planGoalCompressionRecovery(ctx context.Context, session *tuigateway.Session, result map[string]any, status string, raw any) (string, string) {
+func planGoalCompressionRecovery(ctx context.Context, session *tuihost.Session, result map[string]any, status string, raw any) (string, string) {
 	if result == nil || !pyrepr.Truthy(result["compression_exhausted"]) {
 		if isSuccessfulGoalTurn(result, status, raw) {
 			session.Pop(goalCompressionRecoveryAttempts)
@@ -129,7 +129,7 @@ func planGoalCompressionRecovery(ctx context.Context, session *tuigateway.Sessio
 }
 
 // Ownership and liveness gate every turn source crosses, the turn images and agent when admitted
-func admitPromptTurn(ctx context.Context, sid string, session *tuigateway.Session, text any, imagePaths []string, queuedPromptGeneration *int64, displayKind string, displayMetadata map[string]any, reportOwnershipRefusal bool) ([]string, *agent.AIAgent, bool) {
+func admitPromptTurn(ctx context.Context, sid string, session *tuihost.Session, text any, imagePaths []string, queuedPromptGeneration *int64, displayKind string, displayMetadata map[string]any, reportOwnershipRefusal bool) ([]string, *agent.AIAgent, bool) {
 	heldLease := session.Get("active_session_lease")
 	if !truthy(session.Get("_closing")) {
 		if refusal := ensureActiveSessionSlot(ctx, sid, session); refusal != nil {
@@ -137,13 +137,13 @@ func admitPromptTurn(ctx context.Context, sid string, session *tuigateway.Sessio
 			if reason == "" {
 				reason = "refused"
 			}
-			logger().Info(fmt.Sprintf("Refusing turn for session %s at _run_prompt_submit: %s", sessionKeyOr(session, sid), reason))
+			pkgLog().Info(fmt.Sprintf("Refusing turn for session %s at _run_prompt_submit: %s", sessionKeyOr(session, sid), reason))
 			unlock := lockHistory(session)
 			session.Set("running", false)
 			session.Pop("_submit_user_row")
 			unlock()
 			if reportOwnershipRefusal {
-				tuigateway.Emit(ctx, "error", sid, map[string]any{"message": refusal.Message})
+				tuihost.Emit(ctx, "error", sid, map[string]any{"message": refusal.Message})
 			}
 			return nil, nil, false
 		}
@@ -187,7 +187,7 @@ func admitPromptTurn(ctx context.Context, sid string, session *tuigateway.Sessio
 		if !truthy(reason) {
 			reason = agentMissingForTurn
 		}
-		logger().Info(fmt.Sprintf("Refusing turn for session %s: no agent attached (%s)", sessionKeyOr(session, sid), pyrepr.Str(reason)))
+		pkgLog().Info(fmt.Sprintf("Refusing turn for session %s: no agent attached (%s)", sessionKeyOr(session, sid), pyrepr.Str(reason)))
 		emitTerminalTurnError(ctx, sid, session, reason, map[string]any{"layer": "runtime", "code": "agent_init_failed", "retryable": true}, true)
 		return nil, nil, false
 	}
@@ -195,7 +195,7 @@ func admitPromptTurn(ctx context.Context, sid string, session *tuigateway.Sessio
 }
 
 // Writes the durable crash marker and returns the session key it was written under
-func recordTurnMarker(ctx context.Context, session *tuigateway.Session, text any, autoContinue bool, notificationCategory string) string {
+func recordTurnMarker(ctx context.Context, session *tuihost.Session, text any, autoContinue bool, notificationCategory string) string {
 	markerHome := sessionHome(ctx, session)
 	markerKey := strOr(session.Get("session_key"))
 	attemptRaw, _ := session.Pop("_auto_continue_attempt")
@@ -212,12 +212,12 @@ func recordTurnMarker(ctx context.Context, session *tuigateway.Session, text any
 		if notificationCategory == "diagnostic" {
 			category = "diagnostic"
 		}
-		tuigateway.RecordTurnStart(markerHome, markerKey, s, markerAttempt, autoContinue, category)
+		tuihost.RecordTurnStart(markerHome, markerKey, s, markerAttempt, autoContinue, category)
 		unlock = lockHistory(session)
 		cancelled := truthy(session.Get("_turn_cancel_requested"))
 		unlock()
 		if cancelled {
-			tuigateway.ClearTurnMarker(markerHome, markerKey)
+			tuihost.ClearTurnMarker(markerHome, markerKey)
 		}
 	}
 	return markerKey
@@ -241,12 +241,12 @@ func routeTurnImages(ctx context.Context, a *agent.AIAgent, prompt any, images [
 		return mode
 	}()
 	if mode != "native" {
-		return tuigateway.BuildImageRefMessage(promptText, images)
+		return tuihost.BuildImageRefMessage(promptText, images)
 	}
 	parts, skipped, err := tools.BuildNativeContentParts(configEnv(ctx), promptText, images, nil)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "[tui_gateway] native attach failed, falling back to text: %s\n", err)
-		return tuigateway.BuildImageRefMessage(promptText, images)
+		return tuihost.BuildImageRefMessage(promptText, images)
 	}
 	if len(skipped) > 0 {
 		fmt.Fprintf(os.Stderr, "[tui_gateway] native image attachment skipped %d unreadable path(s)\n", len(skipped))
@@ -256,7 +256,7 @@ func routeTurnImages(ctx context.Context, a *agent.AIAgent, prompt any, images [
 			return parts
 		}
 	}
-	return tuigateway.BuildImageRefMessage(promptText, images)
+	return tuihost.BuildImageRefMessage(promptText, images)
 }
 
 // Arms voice mode turn audio, the streaming queue first so a cut previous reply latches the barge in
@@ -286,7 +286,7 @@ func startTurnVoice(ctx context.Context) (*ttsTurnQueue, bool) {
 }
 
 // Writes the agent messages back to session history, a client warning when history desynced mid turn
-func commitTurnHistory(session *tuigateway.Session, messages []map[string]any, history []any, historyVersion int64) string {
+func commitTurnHistory(session *tuihost.Session, messages []map[string]any, history []any, historyVersion int64) string {
 	unlock := lockHistory(session)
 	defer unlock()
 	currentVersion := intOr(session.Get("history_version"))
@@ -355,7 +355,7 @@ func turnOutcome(result map[string]any, errorSurface map[string]any) (any, strin
 }
 
 // Goal continuation prompt to chain once running is released, empty when none
-func goalFollowupAfterTurn(ctx context.Context, sid string, session *tuigateway.Session, result map[string]any, status string, raw any) string {
+func goalFollowupAfterTurn(ctx context.Context, sid string, session *tuihost.Session, result map[string]any, status string, raw any) string {
 	followup := ""
 	compressionExhausted := result != nil && truthy(result["compression_exhausted"])
 	if err := catchPanic(func() {
@@ -366,7 +366,7 @@ func goalFollowupAfterTurn(ctx context.Context, sid string, session *tuigateway.
 				userConfig = a.NotificationConfig()
 			}
 			if _, err := config.RenderNotification(ctx, func() error {
-				tuigateway.Emit(ctx, "status.update", sid, map[string]any{"kind": "goal", "text": recoveryNotice})
+				tuihost.Emit(ctx, "status.update", sid, map[string]any{"kind": "goal", "text": recoveryNotice})
 				return nil
 			}, "tui", false, userConfig); err != nil {
 				panic(err)
@@ -405,7 +405,7 @@ func goalFollowupAfterTurn(ctx context.Context, sid string, session *tuigateway.
 			panic(err)
 		}
 		if decision.Message != "" {
-			tuigateway.Emit(ctx, "status.update", sid, map[string]any{"kind": "goal", "text": decision.Message})
+			tuihost.Emit(ctx, "status.update", sid, map[string]any{"kind": "goal", "text": decision.Message})
 		}
 		if decision.ShouldContinue && decision.ContinuationPrompt != nil && *decision.ContinuationPrompt != "" {
 			followup = *decision.ContinuationPrompt
@@ -417,7 +417,7 @@ func goalFollowupAfterTurn(ctx context.Context, sid string, session *tuigateway.
 }
 
 // Hooks of a complete turn, the loop tick, the pending title and the voice fallback
-func afterCompleteTurn(ctx context.Context, sid string, session *tuigateway.Session, st *turnRun, raw any) {
+func afterCompleteTurn(ctx context.Context, sid string, session *tuihost.Session, st *turnRun, raw any) {
 	if err := catchPanic(func() {
 		key := strOr(session.Get("session_key"))
 		if key == "" {
@@ -427,7 +427,7 @@ func afterCompleteTurn(ctx context.Context, sid string, session *tuigateway.Sess
 		if state := mgr.State(); state != nil && state.AwaitingResponse {
 			text, _ := raw.(string)
 			if decision := mgr.CompleteTick(ctx, text); decision.Message != "" {
-				tuigateway.Emit(ctx, "status.update", sid, map[string]any{"kind": "loop", "text": decision.Message})
+				tuihost.Emit(ctx, "status.update", sid, map[string]any{"kind": "loop", "text": decision.Message})
 			}
 		}
 	}); err != nil {
@@ -446,7 +446,7 @@ func afterCompleteTurn(ctx context.Context, sid string, session *tuigateway.Sess
 			switch {
 			case err != nil && isValueError(err):
 				session.Set("pending_title", nil)
-				logger().Info(fmt.Sprintf("Dropping pending title for session %s: %s", key, err))
+				pkgLog().Info(fmt.Sprintf("Dropping pending title for session %s: %s", key, err))
 			case err == nil && ok:
 				session.Set("pending_title", nil)
 			}
@@ -458,9 +458,9 @@ func afterCompleteTurn(ctx context.Context, sid string, session *tuigateway.Sess
 }
 
 // Chains one follow up turn, releasing running and running onError when it fails
-func dispatchFollowupTurn(ctx context.Context, rid any, sid string, session *tuigateway.Session, prompt any, what string, onDone, onError func()) {
+func dispatchFollowupTurn(ctx context.Context, rid any, sid string, session *tuihost.Session, prompt any, what string, onDone, onError func()) {
 	if err := catchPanic(func() {
-		tuigateway.Emit(ctx, "message.start", sid, nil)
+		tuihost.Emit(ctx, "message.start", sid, nil)
 		runPromptSubmit(ctx, rid, sid, session, prompt, promptSubmitOptions{})
 		if onDone != nil {
 			onDone()
@@ -477,7 +477,7 @@ func dispatchFollowupTurn(ctx context.Context, rid any, sid string, session *tui
 }
 
 // Chains what runs after running was released, a queued prompt first, then the goal, then notifications
-func runPostTurnFollowups(ctx context.Context, rid any, sid string, session *tuigateway.Session, result map[string]any, goalFollowup string) {
+func runPostTurnFollowups(ctx context.Context, rid any, sid string, session *tuihost.Session, result map[string]any, goalFollowup string) {
 	if steer, ok := result["pending_steer"].(string); ok && pystr.Strip(steer) != "" {
 		unlock := lockHistory(session)
 		enqueuePrompt(ctx, session, steer, session.Get("transport"), nil)

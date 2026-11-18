@@ -1,3 +1,5 @@
+//go:build !icebath_core && !icebath_noextras
+
 package pm
 
 import (
@@ -12,28 +14,13 @@ type MemberDir struct {
 	Source   string
 }
 
-// PluginInput is the one source of plugin members a sync or currency probe takes
-type PluginInput interface{ pluginInput() }
-
 // Members builds exactly these members and skips config discovery, Mapped when identities differ from sources
 type Members struct {
 	Dirs   []MemberDir
 	Mapped bool
 }
 
-// Candidates discovers the enabled members and adds these candidate directories
-type Candidates struct{ Dirs []string }
-
-// Selection publishes a proposed plugin enablement with the members it implies
-type Selection struct{ Data map[string]any }
-
-// StagedUpdate publishes a staged plugin tree over its install
-type StagedUpdate struct{ Data map[string]any }
-
-func (*Members) pluginInput()      {}
-func (*Candidates) pluginInput()   {}
-func (*Selection) pluginInput()    {}
-func (*StagedUpdate) pluginInput() {}
+func (*Members) pluginInput() {}
 
 // Member dirs of plain paths, each its own identity
 func MemberPaths(paths []string) []MemberDir {

@@ -212,7 +212,7 @@ func (f delegationBackendsFacade) HostCall(ctx context.Context, method string, a
 	return nil, &plugins.HostBuiltinError{Type: "AttributeError", Message: fmt.Sprintf("'DelegationBackends' object has no attribute %s", pyrepr.Repr(method))}
 }
 
-// hermes_platform.declaration register and unregister over the tools declaration registry
+// register and unregister over the tools declaration registry
 type platformDeclarations struct{}
 
 // PlatformDeclarationsService is the declaration registry cmd/icebath installs as plugins.Services.PlatformDeclarations

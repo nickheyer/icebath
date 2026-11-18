@@ -10,7 +10,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
 
-// FIFO lock handing ownership to waiters in arrival order, the asyncio Lock of hermes
+// FIFO lock handing ownership to waiters in arrival order
 type fifoLock struct {
 	locked  bool
 	waiters []chan struct{}

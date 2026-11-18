@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"context"
 	"fmt"
-	"log/slog"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -23,10 +22,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pywebsockets"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
-
-func runtimeSessionStoreLog() *slog.Logger {
-	return slog.Default().With("logger", "agent.runtime_session_store")
-}
 
 var workerProcess atomic.Bool
 
@@ -277,7 +272,7 @@ type workerOwnerConn interface {
 	receive(timeout time.Duration) (*pyjson.Object, error)
 }
 
-// Live owner connection of an exchange, the WorkerRPC connection hermes tests swap for an in process reply
+// Live owner connection of an exchange, the WorkerRPC connection tests swap for an in process reply
 var workerRPCConnection = func(r *WorkerRPC, ctx context.Context) (workerOwnerConn, error) {
 	link, err := r.connection(ctx)
 	if err != nil {
@@ -305,7 +300,7 @@ func (r *WorkerRPC) Close() {
 // One JSON-RPC call to the owner, refused on an event loop and never resent once its outcome is unknown
 func (r *WorkerRPC) Call(ctx context.Context, method string, params *pyjson.Object) (any, error) {
 	if pyctx.RunningLoop(ctx) {
-		runtimeSessionStoreLog().Warn(fmt.Sprintf("synchronous_rpc_on_event_loop: %s on thread %s; caller: %s", method, currentThreadName(), callerSummary(8)))
+		pkgLog().Warn(fmt.Sprintf("synchronous_rpc_on_event_loop: %s on thread %s; caller: %s", method, currentThreadName(), callerSummary(8)))
 		return nil, tools.NewWorkerPersistenceError("synchronous_rpc_on_event_loop")
 	}
 	r.mu.Lock()

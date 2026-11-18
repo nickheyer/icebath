@@ -10,59 +10,18 @@ import (
 	"image"
 	"image/color"
 	"image/png"
-	"io"
 	"math/rand/v2"
-	"net/http"
-	"net/http/httptest"
 	"os"
 	"path/filepath"
-	"regexp"
 	"slices"
 	"sort"
 	"strings"
-	"sync"
 	"testing"
 
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/plugins"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
-
-// Nous account double whose managed tool entitlement the test sets and whose probes it counts
-type fakeNousAccount struct {
-	enabled bool
-	mu      sync.Mutex
-	calls   int
-}
-
-func (a *fakeNousAccount) ManagedToolsEnabled(*tools.Env, bool) bool {
-	a.mu.Lock()
-	defer a.mu.Unlock()
-	a.calls++
-	return a.enabled
-}
-func (a *fakeNousAccount) UnavailableMessage(*tools.Env, string, bool) string { return "" }
-func (a *fakeNousAccount) PeekAccessToken(*tools.Env) string                  { return "" }
-func (a *fakeNousAccount) ReadAccessToken(*tools.Env) string                  { return "" }
-func (a *fakeNousAccount) SourceSuppressed(*tools.Env, string, string) bool   { return false }
-func (a *fakeNousAccount) PoolAPIKey(*tools.Env, string) string               { return "" }
-func (a *fakeNousAccount) IdentityState(*tools.Env) (bool, bool)              { return a.enabled, false }
-func (a *fakeNousAccount) GuestAllowed(*tools.Env) bool                       { return false }
-func (a *fakeNousAccount) LastMintFailure(*tools.Env) (tools.MintFailure, bool) {
-	return tools.MintFailure{}, false
-}
-func (a *fakeNousAccount) AnonFailureCopy(*tools.Env, string, float64) string { return "" }
-func (a *fakeNousAccount) EnsurePortalIdentity(*tools.Env) error              { return nil }
-func (a *fakeNousAccount) ManagedToolsRolledOut(*tools.Env) bool              { return a.enabled }
-
-func useNousAccount(t *testing.T, enabled bool) *fakeNousAccount {
-	t.Helper()
-	a := &fakeNousAccount{enabled: enabled}
-	prev := tools.NousAccount
-	tools.NousAccount = a
-	t.Cleanup(func() { tools.NousAccount = prev })
-	return a
-}
 
 // Captured endpoint and arguments of the patched FAL submit, answering one generated image
 func captureFalSubmit(t *testing.T) *map[string]any {
@@ -396,96 +355,21 @@ func TestImageFalStrictSelection(t *testing.T) {
 		}
 		return imageEnv(t, config.Tree{"image_gen": map[string]any{"provider": provider}})
 	}
-	t.Setenv("FAL_QUEUE_GATEWAY_URL", "https://gateway.nousresearch.com")
-	t.Setenv("TOOL_GATEWAY_USER_TOKEN", "managed-token")
-
-	t.Setenv("FAL_KEY", "fal-key")
-	useNousAccount(t, true)
-	gw, err := resolveManagedFalGateway(sel("nous"))
-	if err != nil || gw == nil || gw.Vendor != "fal-queue" || gw.GatewayOrigin != "https://gateway.nousresearch.com" || gw.NousUserToken != "managed-token" {
-		t.Fatalf("nous selection %+v %v", gw, err)
-	}
-
-	useNousAccount(t, false)
-	_, err = resolveManagedFalGateway(sel("nous"))
-	var ve *imageValueError
-	if !errors.As(err, &ve) || !strings.Contains(err.Error(), "image_gen is configured to use nous") || !strings.Contains(err.Error(), "icebath tools") {
-		t.Fatalf("unentitled nous %v", err)
-	}
-
 	t.Setenv("FAL_KEY", "")
-	acct := useNousAccount(t, true)
-	_, err = resolveManagedFalGateway(sel("fal"))
+	err := falKeyMissingError(sel("fal"))
+	var ve *imageValueError
 	if !errors.As(err, &ve) || !strings.Contains(err.Error(), "FAL_KEY") || !strings.Contains(err.Error(), "image_gen is configured to use fal") ||
-		!strings.Contains(err.Error(), "icebath tools") || acct.calls != 0 {
-		t.Fatalf("fal without key %v managed probes %d", err, acct.calls)
+		!strings.Contains(err.Error(), "icebath tools") {
+		t.Fatalf("fal without key %v", err)
 	}
 	if checkFalAPIKey(sel("fal")) {
 		t.Fatal("broken fal selection reports available")
 	}
-
 	t.Setenv("FAL_KEY", "fal-key")
-	acct = useNousAccount(t, true)
-	if gw, err := resolveManagedFalGateway(sel("fal")); gw != nil || err != nil || acct.calls != 0 {
-		t.Fatalf("fal with key %+v %v probes %d", gw, err, acct.calls)
+	if err := falKeyMissingError(sel("fal")); err != nil {
+		t.Fatalf("fal with key %v", err)
 	}
-	if gw, err := resolveManagedFalGateway(sel("")); gw != nil || err != nil {
-		t.Fatalf("autodetect with key %+v %v", gw, err)
-	}
-	t.Setenv("FAL_KEY", "")
-	if gw, err := resolveManagedFalGateway(sel("")); err != nil || gw == nil || gw.NousUserToken != "managed-token" {
-		t.Fatalf("autodetect without key %+v %v", gw, err)
-	}
-}
-
-func TestManagedFalSubmitUsesGatewayOriginAndNousToken(t *testing.T) {
-	var mu sync.Mutex
-	var reqs []*http.Request
-	var bodies []string
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		b, _ := io.ReadAll(r.Body)
-		mu.Lock()
-		reqs, bodies = append(reqs, r), append(bodies, string(b))
-		mu.Unlock()
-		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write([]byte(`{"request_id": "req-123", "response_url": "http://127.0.0.1:3009/requests/req-123", ` +
-			`"status_url": "http://127.0.0.1:3009/requests/req-123/status", "cancel_url": "http://127.0.0.1:3009/requests/req-123/cancel"}`))
-	}))
-	t.Cleanup(srv.Close)
-	t.Setenv("FAL_KEY", "")
-	t.Setenv("FAL_QUEUE_GATEWAY_URL", srv.URL)
-	t.Setenv("TOOL_GATEWAY_USER_TOKEN", "nous-token")
-	useNousAccount(t, true)
-	resetClient := func() {
-		managedFalClientMu.Lock()
-		managedFalClient, managedFalClientConfig = nil, [2]string{}
-		managedFalClientMu.Unlock()
-	}
-	resetClient()
-	t.Cleanup(resetClient)
-	env := imageEnv(t, config.Tree{})
-	h, err := submitFalRequest(context.Background(), env, "fal-ai/flux-2-pro", map[string]any{"prompt": "test prompt", "num_images": 1})
-	if err != nil {
-		t.Fatal(err)
-	}
-	first := managedFalClient
-	if h.RequestID != "req-123" || h.ResponseURL != "http://127.0.0.1:3009/requests/req-123" ||
-		h.StatusURL != "http://127.0.0.1:3009/requests/req-123/status" || h.CancelURL != "http://127.0.0.1:3009/requests/req-123/cancel" {
-		t.Fatalf("handle %+v", h)
-	}
-	if len(reqs) != 1 || reqs[0].Method != http.MethodPost || reqs[0].URL.Path != "/fal-ai/flux-2-pro" {
-		t.Fatalf("requests %d", len(reqs))
-	}
-	if !jsonEqual(decodeResult(t, bodies[0]), map[string]any{"prompt": "test prompt", "num_images": 1}) {
-		t.Fatalf("body %s", bodies[0])
-	}
-	if !regexp.MustCompile(`^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$`).MatchString(reqs[0].Header.Get("x-idempotency-key")) {
-		t.Fatalf("idempotency key %q", reqs[0].Header.Get("x-idempotency-key"))
-	}
-	if reqs[0].Header.Get("Authorization") != "Key nous-token" {
-		t.Fatalf("authorization %q", reqs[0].Header.Get("Authorization"))
-	}
-	if _, err := submitFalRequest(context.Background(), env, "fal-ai/flux-2-pro", map[string]any{"prompt": "again"}); err != nil || managedFalClient != first || first == nil {
-		t.Fatalf("managed client rebuilt %v", err)
+	if err := falKeyMissingError(sel("")); err != nil {
+		t.Fatalf("autodetect with key %v", err)
 	}
 }

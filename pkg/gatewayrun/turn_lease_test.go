@@ -3,12 +3,13 @@ package gatewayrun
 import (
 	"context"
 	"errors"
-	"github.com/nickheyer/icebath/pkg/config"
-	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	"slices"
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/nickheyer/icebath/pkg/config"
+	"github.com/nickheyer/icebath/pkg/internal/pyint"
 )
 
 // Seconds as an optional timeout

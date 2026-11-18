@@ -105,7 +105,7 @@ func TestRosterModelFollowsTheRemoteLayerNotTheLocalFile(t *testing.T) {
 		t.Fatal(err)
 	}
 	p.Mu.Lock()
-	p.Profile("roster").Values, p.Profile("roster").Version = map[string]any{"model": map[string]any{"default": "model-A", "provider": "nous"}}, 1
+	p.Profile("roster").Values, p.Profile("roster").Version = map[string]any{"model": map[string]any{"default": "model-A", "provider": "openrouter"}}, 1
 	p.Mu.Unlock()
 	roster := func() []any {
 		infos, err := ListProfiles(context.Background(), false)
@@ -120,7 +120,7 @@ func TestRosterModelFollowsTheRemoteLayerNotTheLocalFile(t *testing.T) {
 		t.Fatal("no roster profile listed")
 		return nil
 	}
-	if got := roster(); !reflect.DeepEqual(got, []any{"model-A", "nous"}) {
+	if got := roster(); !reflect.DeepEqual(got, []any{"model-A", "openrouter"}) {
 		t.Fatalf("roster %v", got)
 	}
 	p.Mu.Lock()

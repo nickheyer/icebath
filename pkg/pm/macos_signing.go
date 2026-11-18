@@ -2,7 +2,6 @@ package pm
 
 import (
 	"fmt"
-	"log/slog"
 	"os"
 	"runtime"
 	"strings"
@@ -24,7 +23,7 @@ func SignManagedPython(python string) bool {
 	path := os.Getenv("PATH")
 	codesign := whichOn("codesign", &path)
 	if codesign == "" {
-		slog.Info("macOS codesign is unavailable; using the downloaded Python signature")
+		pkgLog().Info("macOS codesign is unavailable; using the downloaded Python signature")
 		return false
 	}
 	output := func(r processResult, fallback string) string {
@@ -41,20 +40,20 @@ func SignManagedPython(python string) bool {
 		"--identifier", managedPythonIdentifier, "--requirements", fmt.Sprintf(`=designated => identifier "%s"`, managedPythonIdentifier), python},
 		Capture: true})
 	if err != nil {
-		slog.Warn(fmt.Sprintf("could not sign managed Python %s: %s", python, pyExceptionText(err)))
+		pkgLog().Warn(fmt.Sprintf("could not sign managed Python %s: %s", python, pyExceptionText(err)))
 		return false
 	}
 	if signed.Code != 0 {
-		slog.Warn(fmt.Sprintf("could not stably sign managed Python %s: %s", python, output(signed, "codesign failed")))
+		pkgLog().Warn(fmt.Sprintf("could not stably sign managed Python %s: %s", python, output(signed, "codesign failed")))
 		return false
 	}
 	verified, err := runProcess(processSpec{Argv: []string{codesign, "--verify", "--deep", "--strict", python}, Capture: true})
 	if err != nil {
-		slog.Warn(fmt.Sprintf("could not sign managed Python %s: %s", python, pyExceptionText(err)))
+		pkgLog().Warn(fmt.Sprintf("could not sign managed Python %s: %s", python, pyExceptionText(err)))
 		return false
 	}
 	if verified.Code != 0 {
-		slog.Warn(fmt.Sprintf("macOS signature verification failed for managed Python %s: %s", python, output(verified, "verification failed")))
+		pkgLog().Warn(fmt.Sprintf("macOS signature verification failed for managed Python %s: %s", python, output(verified, "verification failed")))
 		return false
 	}
 	return true

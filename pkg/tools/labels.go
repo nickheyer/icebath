@@ -17,7 +17,6 @@ import (
 )
 
 const (
-	ConnectorEmoji   = "🔗"
 	MCPEmoji         = "🔌"
 	SearchEmoji      = "🔎"
 	DescribeEmoji    = "📖"
@@ -63,37 +62,6 @@ func (l ToolLabel) Text() string {
 func (l ToolLabel) AsPayload() map[string]string {
 	return map[string]string{"kind": l.Kind, "app": l.App, "action": l.Action, "emoji": l.Emoji,
 		"text": l.Text(), "name": l.Name, "preview": l.Preview}
-}
-
-// ConnectorName is a parsed connectors__<connector>__<tool> name
-type ConnectorName struct {
-	Raw       string
-	Connector string
-	Tool      string
-}
-
-// ParseConnectorName uses a bounded split so tool slugs retain internal underscores
-func ParseConnectorName(name string) (ConnectorName, bool) {
-	parts := strings.SplitN(name, "__", 3)
-	if len(parts) != 3 {
-		return ConnectorName{}, false
-	}
-	prefix, connector, tool := parts[0], parts[1], parts[2]
-	if prefix != "connectors" || connector == "" || tool == "" {
-		return ConnectorName{}, false
-	}
-	return ConnectorName{Raw: name, Connector: connector, Tool: tool}, true
-}
-
-// FormatConnectorName builds the connector tool name without the conventional vendor prefix
-func FormatConnectorName(connector, tool string) string {
-	tool = strings.TrimPrefix(tool, strings.ToUpper(connector)+"_")
-	return ConnectorNamePrefix + connector + "__" + tool
-}
-
-// VendorSlugCandidates tries the stripped conventional prefix before a literal vendor slug
-func VendorSlugCandidates(connector, tool string) []string {
-	return []string{strings.ToUpper(connector) + "_" + tool, tool}
 }
 
 func splitWords(text string) []string {
@@ -160,16 +128,6 @@ func unnamedLabel(env *Env, arguments any) ToolLabel {
 func LabelForToolName(env *Env, name string, arguments any) (ToolLabel, bool) {
 	if strings.TrimSpace(name) == "" {
 		return ToolLabel{}, false
-	}
-	if connector, ok := ParseConnectorName(name); ok {
-		action := actionPhrase(connector.Tool, connector.Connector)
-		if args, ok := arguments.(map[string]any); ok {
-			if alias, ok := args["connector_alias"].(string); ok && strings.TrimSpace(alias) != "" {
-				action = action + " (" + strings.TrimSpace(alias) + ")"
-			}
-		}
-		return ToolLabel{Kind: "connector", App: AppTitle(connector.Connector), Action: action,
-			Emoji: ConnectorEmoji, Name: name, Preview: argPreview(env, name, arguments)}, true
 	}
 	if strings.HasPrefix(name, MCPToolPrefix) {
 		server, _, tool := partition(name[len(MCPToolPrefix):], "__")

@@ -90,7 +90,7 @@ func EditorToolsDrifted(scope string, names []string, timeout time.Duration) boo
 			got = answer{err: ctx.Err()}
 		}
 		if got.err != nil {
-			mcpLogger().Warn(fmt.Sprintf("Editor MCP server %s: tools/list for the drift check failed: %s", pyRepr(s.name), excStr(got.err)))
+			pkgLog().Warn(fmt.Sprintf("Editor MCP server %s: tools/list for the drift check failed: %s", pyRepr(s.name), excStr(got.err)))
 			continue
 		}
 		if got.listed == nil {

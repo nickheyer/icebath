@@ -146,12 +146,12 @@ func secretValue(env *Env, name string) string {
 	return pystr.Strip(os.Getenv(name))
 }
 
-// Logger of the session or the process default
+// Logger of the session or the process default, named after this package
 func envLog(env *Env) *slog.Logger {
 	if env != nil && env.Log != nil {
-		return env.Log
+		return env.Log.With("logger", logName)
 	}
-	return slog.Default()
+	return pkgLog()
 }
 
 // Web section of the merged configuration
@@ -201,7 +201,7 @@ func webCacheDir(env *Env) (string, error) {
 	return dir, nil
 }
 
-// Reports whether the stripped lower cased string is in the hermes TRUTHY_STRINGS set
+// Reports whether the stripped lower cased string is in the TRUTHY_STRINGS set
 func truthyString(s string) bool {
 	switch pystr.Lower(pystr.Strip(s)) {
 	case "1", "true", "yes", "on":
@@ -210,7 +210,7 @@ func truthyString(s string) bool {
 	return false
 }
 
-// Reports whether a config value is truthy the way hermes is_truthy_value does
+// Reports whether a config value is truthy
 func truthyValue(v any, fallback bool) bool {
 	switch x := v.(type) {
 	case nil:
@@ -793,10 +793,8 @@ func (b *baseWebProvider) Extract(ctx context.Context, env *Env, urls []string, 
 	return nil, fmt.Errorf("%s does not support extract (override supports_extract)", b.name)
 }
 
-var webRegistryLog = slog.Default().With("logger", "agent.web_search_registry")
-
 // Web search providers by name, the global layer plus one layer per profile scope
-var webRegistry = providerregistry.New[WebProvider](providerregistry.Options{Label: "Web", ProviderCls: "WebSearchProvider", Logger: webRegistryLog})
+var webRegistry = providerregistry.New[WebProvider](providerregistry.Options{Label: "Web", ProviderCls: "WebSearchProvider", Logger: pkgLog()})
 
 // RegisterWebProvider adds or replaces a web provider by name in the global layer
 func RegisterWebProvider(p WebProvider) {
@@ -871,19 +869,12 @@ func disabledWebPluginFor(env *Env, configured, capability string) string {
 	return ""
 }
 
-// web.<capability>_backend, else web.backend, the managed nous selection naming perplexity or firecrawl
+// web.<capability>_backend, else web.backend
 func registryConfiguredBackend(env *Env, capability string) string {
-	configured := webBackendKey(env, capability+"_backend")
-	if configured == "" {
-		configured = webBackendKey(env, "backend")
+	if configured := webBackendKey(env, capability+"_backend"); configured != "" {
+		return configured
 	}
-	if configured == nousManagedProvider {
-		if capability == "search" {
-			return "perplexity"
-		}
-		return "firecrawl"
-	}
-	return configured
+	return webBackendKey(env, "backend")
 }
 
 // Paid providers first so existing paid setups never downgrade to a free tier on upgrade

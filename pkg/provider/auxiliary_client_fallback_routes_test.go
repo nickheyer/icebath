@@ -54,9 +54,9 @@ func TestExpiredCodexFallbackExpiredCodexOpenrouterWins(t *testing.T) {
 }
 
 func TestTryPaymentFallbackSkipsFailedProvider(t *testing.T) {
-	nous := auxNousIsTheOnlyWorkingProvider(t, "auto")
+	apiKey := auxAPIKeyIsTheOnlyWorkingProvider(t, "auto")
 	client, model, label, err := auxTryPaymentFallback(context.Background(), "openrouter", "compression", "payment error", "", FailureScope(""), nil)
-	if err != nil || client != nous || model != "nous-model" || label != "nous" {
+	if err != nil || client != apiKey || model != "deepseek-v4" || label != "api-key" {
 		t.Fatalf("client %v model %q label %q err %v", client, model, label, err)
 	}
 }
@@ -66,19 +66,18 @@ func TestAuxUnhealthyCachePaymentFallbackSkipsUnhealthy(t *testing.T) {
 	auxClearUnhealthy(t)
 	ctx := context.Background()
 	auxMarkProviderUnhealthy(ctx, "local/custom", 600, "", "", slog.LevelInfo)
-	nous := &auxCallFakeClient{base: "https://inference-api.nousresearch.com/v1"}
+	apiKey := &auxCallFakeClient{base: "https://api.deepseek.com/v1"}
 	var orCalls, customCalls atomic.Int32
 	auxProviderChainFn = func() []auxProviderChainEntry {
 		return []auxProviderChainEntry{
 			{"openrouter", func(context.Context) (AuxClient, string, error) { orCalls.Add(1); return nil, "", nil }},
-			{"nous", func(context.Context) (AuxClient, string, error) { return nous, "n-model", nil }},
 			{"local/custom", func(context.Context) (AuxClient, string, error) { customCalls.Add(1); return nil, "", nil }},
-			{"api-key", func(context.Context) (AuxClient, string, error) { return nil, "", nil }},
+			{"api-key", func(context.Context) (AuxClient, string, error) { return apiKey, "deepseek-v4", nil }},
 		}
 	}
 	auxReadMainProvider = func(context.Context) string { return "auto" }
 	client, _, label, err := auxTryPaymentFallback(ctx, "openrouter", "compression", "payment error", "", FailureScope(""), nil)
-	if err != nil || client != nous || label != "nous" {
+	if err != nil || client != apiKey || label != "api-key" {
 		t.Fatalf("client %v label %q err %v", client, label, err)
 	}
 	if orCalls.Load() != 0 || customCalls.Load() != 0 {
@@ -143,7 +142,7 @@ func TestTryPaymentFallbackCodexNotInFallbackChain(t *testing.T) {
 	if err != nil || client != nil || model != "" || label != "" {
 		t.Fatalf("payment fallback returned %v %q %q %v", client, model, label, err)
 	}
-	if fmt.Sprint(tried) != "[nous local/custom api-key]" {
+	if fmt.Sprint(tried) != "[local/custom api-key]" {
 		t.Fatalf("payment fallback walked %v, Codex must never be a rung", tried)
 	}
 }

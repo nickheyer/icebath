@@ -48,7 +48,7 @@ func (p *peerCapture) readouterr() (string, string) {
 	return out, err
 }
 
-// Installs a fixed registry and peer key the way the hermes tests monkeypatch them
+// Installs a fixed registry and peer key the way the tests swap them
 func peerRegistry(t *testing.T, peers func() map[string]any, secret string) {
 	swapSeam(t, &loadPeers, func(context.Context, string) (map[string]any, error) { return peers(), nil })
 	swapSeam(t, &peerSecret, func(context.Context, string) string { return secret })
@@ -73,7 +73,7 @@ func peerJSON(t *testing.T, text string) *pyjson.Object {
 	return obj
 }
 
-// Writes payload as a JSON response with its length like the hermes test handlers
+// Writes payload as a JSON response with its length like the test handlers
 func writePeerJSON(w http.ResponseWriter, status int, payload any) {
 	text, err := pyjson.Dumps(payload)
 	if err != nil {
@@ -181,7 +181,7 @@ func peerSet(names ...string) map[string]bool {
 	return out
 }
 
-func TestHermesHandleReachesTheProfileThePeerServes(t *testing.T) {
+func TestIcebathHandleReachesTheProfileThePeerServes(t *testing.T) {
 	notServed := pyjson.ObjectOf("error", pyjson.ObjectOf("message", "Profile 'icebath' exists on this host but this gateway does not serve it"))
 	cases := []struct {
 		name        string
@@ -248,7 +248,7 @@ func TestHermesHandleReachesTheProfileThePeerServes(t *testing.T) {
 	}
 }
 
-func TestMixedCaseHermesTargetReachesThePeersRealHermesProfile(t *testing.T) {
+func TestMixedCaseIcebathTargetReachesThePeersRealIcebathProfile(t *testing.T) {
 	for _, target := range []string{"box/Icebath", "box/ICEBATH"} {
 		t.Run(target, func(t *testing.T) {
 			peer := &profilePeer{served: peerSet("default", "icebath"), probeStatus: 200,
@@ -328,7 +328,7 @@ func TestDMUnknownPeerAndMissingKey(t *testing.T) {
 	}
 }
 
-// Requests a fake peer recorded, the class level lists of the hermes fake handlers
+// Requests a fake peer recorded, the class level lists of the fake handlers
 type fakePeerState struct {
 	sessions           []string
 	hiddenSessions     []string
@@ -340,7 +340,7 @@ type fakePeerState struct {
 	getQueries         []map[string][]string
 }
 
-// Loopback peer gateway recording what the dm and run flows send, the hermes fake handler classes in one server
+// Loopback peer gateway recording what the dm and run flows send, the fake handler classes in one server
 type fakePeer struct {
 	mu               sync.Mutex
 	variant          string
@@ -387,7 +387,7 @@ func (p *fakePeer) baseGET(w http.ResponseWriter, path string) {
 		writePeerJSON(w, 200, pyjson.ObjectOf("features", pyjson.ObjectOf("runs_idempotency",
 			pyjson.ObjectOf("supported", true, "durable", true, "retention_seconds", 86400))))
 	case path == "/v1/runs/run_1":
-		writePeerJSON(w, 200, pyjson.ObjectOf("object", "hermes.run", "run_id", "run_1", "status", "completed",
+		writePeerJSON(w, 200, pyjson.ObjectOf("object", "icebath.run", "run_id", "run_1", "status", "completed",
 			"session_id", "bc_existing", "output", "async reply from the other machine"))
 	case strings.HasPrefix(path, "/api/sessions"):
 		data := []any{}
@@ -413,11 +413,11 @@ func (p *fakePeer) basePOST(w http.ResponseWriter, r *http.Request, path string)
 	switch {
 	case path == "/api/sessions":
 		p.sessions = append(p.sessions, "bc_1")
-		writePeerJSON(w, 201, pyjson.ObjectOf("object", "hermes.session", "session", pyjson.ObjectOf("id", "bc_1", "title", body.GetOr("title", nil))))
+		writePeerJSON(w, 201, pyjson.ObjectOf("object", "icebath.session", "session", pyjson.ObjectOf("id", "bc_1", "title", body.GetOr("title", nil))))
 	case strings.HasPrefix(path, "/api/sessions/") && strings.HasSuffix(path, "/chat"):
 		p.chats = append(p.chats, body.GetOr("message", nil))
 		p.chatBodies = append(p.chatBodies, body)
-		writePeerJSON(w, 200, pyjson.ObjectOf("object", "hermes.session.chat.completion", "session_id", "bc_1",
+		writePeerJSON(w, 200, pyjson.ObjectOf("object", "icebath.session.chat.completion", "session_id", "bc_1",
 			"message", pyjson.ObjectOf("role", "assistant", "content", p.chatReplyContent)))
 	case path == "/v1/runs":
 		p.runs = append(p.runs, body)
@@ -565,7 +565,7 @@ func TestDMReusesExistingBotChat(t *testing.T) {
 	}
 }
 
-// Turn author the message_agent runner sets, as the hermes AUTHOR constant
+// Turn author the message_agent runner sets, as the AUTHOR constant
 func peerAuthor() *pyjson.Object {
 	return pyjson.ObjectOf("id", "bot:dixie", "name", "dixie", "is_bot", true)
 }

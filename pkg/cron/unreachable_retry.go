@@ -131,7 +131,7 @@ func unreachableRetryPlanRetry(s *Store, job *Job) bool {
 			if job.NextRunAt != nil {
 				next = *job.NextRunAt
 			}
-			s.logAs("cron.scheduler").Warn(fmt.Sprintf("Job '%s': model unreachable after %d automatic re-runs — waiting for the "+
+			s.log.Warn(fmt.Sprintf("Job '%s': model unreachable after %d automatic re-runs — waiting for the "+
 				"scheduled occurrence at %s", job.Label(), attempt, next))
 		}
 		unreachableRetryClearState(job)
@@ -144,7 +144,7 @@ func unreachableRetryPlanRetry(s *Store, job *Job) bool {
 	if job.State != "paused" {
 		job.State = "scheduled"
 	}
-	s.logAs("cron.scheduler").Info(fmt.Sprintf("Job '%s': model unreachable with zero API calls — automatic re-run %d/%d in %ds "+
+	s.log.Info(fmt.Sprintf("Job '%s': model unreachable with zero API calls — automatic re-run %d/%d in %ds "+
 		"(at %s)", job.Label(), attempt+1, len(UnreachableRetryDelaysSeconds), delay, at))
 	return true
 }

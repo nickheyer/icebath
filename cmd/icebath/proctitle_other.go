@@ -2,5 +2,5 @@
 
 package main
 
-// Leaves the title alone because hermes names the process only on Linux and macOS
+// Leaves the title alone, the process is named only on Linux and macOS
 func setProcessTitleOS(title string) {}

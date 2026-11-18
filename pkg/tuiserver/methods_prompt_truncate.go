@@ -11,7 +11,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/state"
-	"github.com/nickheyer/icebath/pkg/tuigateway"
+	"github.com/nickheyer/icebath/pkg/tuihost"
 )
 
 // Params whose presence makes a submit a truncation
@@ -48,7 +48,7 @@ func parseTruncationParams(rid any, sid string, params map[string]any, history [
 	if provider.IsTruthyValue(params["confirm_truncate"]) {
 		return targetRowID, clientOrdinal, nil
 	}
-	logger().Warn(fmt.Sprintf("prompt.submit: REFUSED unconfirmed truncation of session %s (%d messages held; "+
+	pkgLog().Warn(fmt.Sprintf("prompt.submit: REFUSED unconfirmed truncation of session %s (%d messages held; "+
 		"ordinal=%s, row_id=%s, message_id=%s). The client attached truncation parameters without "+
 		"confirm_truncate — likely stale truncation parameters on an ordinary submit.",
 		sid, len(history), optionalIntStr(clientOrdinal), optionalIntStr(targetRowID), pyrepr.Str(params["truncate_before_message_id"])))
@@ -66,7 +66,7 @@ func optionalIntStr(n *int64) string {
 }
 
 // Resolves the truncation target to its user ordinal and cut index, failing closed on a stale or ambiguous target
-func resolveTruncationOrdinal(ctx context.Context, rid any, sid string, session *tuigateway.Session, params map[string]any, history []map[string]any) (truncationCut, map[string]any) {
+func resolveTruncationOrdinal(ctx context.Context, rid any, sid string, session *tuihost.Session, params map[string]any, history []map[string]any) (truncationCut, map[string]any) {
 	targetRowID, clientOrdinal, errResp := parseTruncationParams(rid, sid, params, history)
 	if errResp != nil {
 		return truncationCut{}, errResp
@@ -112,11 +112,11 @@ func resolveTruncationOrdinal(ctx context.Context, rid any, sid string, session 
 			notFound = "target message_id %s not found in history for session %s"
 		}
 		if !found {
-			logger().Warn(fmt.Sprintf("prompt.submit: "+notFound+"; refusing truncation without fallback", targetRepr, sid))
+			pkgLog().Warn(fmt.Sprintf("prompt.submit: "+notFound+"; refusing truncation without fallback", targetRepr, sid))
 			return stale(nil)
 		}
 		if clientOrdinal != nil && *clientOrdinal != ordinal && !(prefixUserCount > 0 && *clientOrdinal == ordinal+int64(prefixUserCount)) {
-			logger().Warn(fmt.Sprintf("prompt.submit: REFUSED truncation due to ordinal mismatch for session %s "+
+			pkgLog().Warn(fmt.Sprintf("prompt.submit: REFUSED truncation due to ordinal mismatch for session %s "+
 				"(ordinal=%d, %s_ordinal=%d, %s=%s, prefix_user_count=%d). "+
 				"Stale truncate_before_user_ordinal detected.",
 				sid, *clientOrdinal, paramName, ordinal, paramName, targetRepr, prefixUserCount))
@@ -140,7 +140,7 @@ func resolveTruncationOrdinal(ctx context.Context, rid any, sid string, session 
 			durable, durableOK = loadDurableTruncationHistory(ctx, session, sid, true)
 		}
 		if hasStampedUser || !durableOK || len(durable) > 0 {
-			logger().Warn(fmt.Sprintf("prompt.submit: REFUSED ordinal-only truncation of durable "+
+			pkgLog().Warn(fmt.Sprintf("prompt.submit: REFUSED ordinal-only truncation of durable "+
 				"session %s (ordinal=%d); truncate_before_row_id required", sid, *clientOrdinal))
 			return truncationCut{}, rpcErr(rid, 4004, "ordinal-only truncation is unsafe for durable session history; "+
 				"include truncate_before_row_id", nil)
@@ -165,7 +165,7 @@ func rowIDsOf(messages []map[string]any) map[int64]bool {
 }
 
 // User turns a cut at the index drops, a repaired carrier counted from its physical rows and failing closed
-func archivedUserTurns(ctx context.Context, session *tuigateway.Session, sid string, history []map[string]any, cutIndex int, survivorIDs map[int64]bool) int {
+func archivedUserTurns(ctx context.Context, session *tuihost.Session, sid string, history []map[string]any, cutIndex int, survivorIDs map[int64]bool) int {
 	var physical map[int64]map[string]any
 	archived := 0
 	for _, index := range historyUserIndices(history) {
@@ -216,7 +216,7 @@ func archivedUserTurns(ctx context.Context, session *tuigateway.Session, sid str
 }
 
 // Rewind or regenerate cut under the history lock returning the client rowId rebind fields
-func truncateHistoryForSubmit(ctx context.Context, rid any, sid string, session *tuigateway.Session, params map[string]any, requestedRebindIDs map[int64]bool) (map[string]any, map[string]any) {
+func truncateHistoryForSubmit(ctx context.Context, rid any, sid string, session *tuihost.Session, params map[string]any, requestedRebindIDs map[int64]bool) (map[string]any, map[string]any) {
 	history := historyWithoutEphemeralScaffolding(historyList(session.Get("history")))
 	cut, errResp := resolveTruncationOrdinal(ctx, rid, sid, session, params, history)
 	if errResp != nil {
@@ -234,7 +234,7 @@ func truncateHistoryForSubmit(ctx context.Context, rid any, sid string, session 
 		truncated = before
 	}
 	if len(truncated) == 0 && len(history) > 0 && !provider.IsTruthyValue(params["confirm_empty_truncate"]) {
-		logger().Warn(fmt.Sprintf("prompt.submit: REFUSED empty truncation of session %s "+
+		pkgLog().Warn(fmt.Sprintf("prompt.submit: REFUSED empty truncation of session %s "+
 			"(%d messages would be wiped; ordinal=%d).", sid, len(history), cut.ordinal))
 		return rpcErr(rid, 4028, "truncation would erase the entire session transcript; "+
 			"resubmit with confirm_empty_truncate=true if this is intended", nil), map[string]any{}
@@ -249,7 +249,7 @@ func truncateHistoryForSubmit(ctx context.Context, rid any, sid string, session 
 		if deepTruncateEnforced {
 			verdict = "REFUSED"
 		}
-		logger().Warn(fmt.Sprintf("prompt.submit: %s unconfirmed deep truncation of session %s (%d messages / %d user "+
+		pkgLog().Warn(fmt.Sprintf("prompt.submit: %s unconfirmed deep truncation of session %s (%d messages / %d user "+
 			"turns; ordinal=%d).", verdict, sid, archivedMessages, archivedTurns, cut.ordinal))
 		if deepTruncateEnforced {
 			return rpcErr(rid, 4033, "truncation would archive later user turns; resubmit with "+
@@ -259,16 +259,16 @@ func truncateHistoryForSubmit(ctx context.Context, rid any, sid string, session 
 	}
 	message := fmt.Sprintf("prompt.submit: truncating session %s history %d -> %d messages (ordinal=%d)", sid, len(history), len(truncated), cut.ordinal)
 	if len(truncated) == 0 {
-		logger().Warn(message)
+		pkgLog().Warn(message)
 	} else {
-		logger().Info(message)
+		pkgLog().Info(message)
 	}
 	fields := map[string]any{}
 	db, release := sessionDB(ctx, session)
 	defer release()
 	if db != nil {
 		if failure := persistTruncation(ctx, db, sid, session, history, truncated, requestedRebindIDs, fields); failure != nil {
-			logger().Error(fmt.Sprintf("prompt.submit: replace_messages failed for session %s (ordinal=%d); refusing "+
+			pkgLog().Error(fmt.Sprintf("prompt.submit: replace_messages failed for session %s (ordinal=%d); refusing "+
 				"turn so memory and DB stay aligned: %s", sid, cut.ordinal, pyrepr.Str(failure)))
 			return rpcErr(rid, 5008, "failed to persist history truncation: "+pyrepr.Str(failure), nil), map[string]any{}
 		}
@@ -279,7 +279,7 @@ func truncateHistoryForSubmit(ctx context.Context, rid any, sid string, session 
 }
 
 // Writes the truncated transcript before memory changes and fills the survivor rebind fields, the failure when it raised
-func persistTruncation(ctx context.Context, db *state.DB, sid string, session *tuigateway.Session, history, truncated []map[string]any, requestedRebindIDs map[int64]bool, fields map[string]any) any {
+func persistTruncation(ctx context.Context, db *state.DB, sid string, session *tuihost.Session, history, truncated []map[string]any, requestedRebindIDs map[int64]bool, fields map[string]any) any {
 	var oldActiveRowIDs map[int64]bool
 	var oldSurvivorRowIDs []*int64
 	failure := catchPanic(func() {

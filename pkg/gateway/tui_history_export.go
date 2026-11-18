@@ -1,8 +1,8 @@
 package gateway
 
-import "github.com/nickheyer/icebath/pkg/tuigateway"
+import "github.com/nickheyer/icebath/pkg/tuihost"
 
 func init() {
-	tuigateway.GatewayDocker.EnvActive = dockerEnvActive
-	tuigateway.GatewayDocker.VolumeMounts = parseDockerVolumeMounts
+	tuihost.GatewayDocker.EnvActive = dockerEnvActive
+	tuihost.GatewayDocker.VolumeMounts = parseDockerVolumeMounts
 }

@@ -185,7 +185,7 @@ func (b FileBackend) ReadUserDoc(ctx context.Context, home string) (any, error) 
 	return fileReadUserDoc(b, ctx, home)
 }
 
-// File layer user document read, the FileBackend.read_user_doc attribute hermes tests replace
+// File layer user document read, the FileBackend.read_user_doc attribute tests replace
 var fileReadUserDoc = func(b FileBackend, _ context.Context, home string) (any, error) {
 	return b.ReadPath(b.ConfigPath(home))
 }
@@ -409,7 +409,7 @@ func ConfigVersion(ctx context.Context, configPath string) ([]any, error) {
 	return configVersionFn(ctx, configPath)
 }
 
-// Config version answer, the config_version module function hermes tests replace
+// Config version answer, the config_version module function tests replace
 var configVersionFn = func(ctx context.Context, configPath string) ([]any, error) {
 	backend, h, err := route(ctx, configPath)
 	if err != nil {

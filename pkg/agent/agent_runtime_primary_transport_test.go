@@ -58,34 +58,6 @@ func TestTryRecoverPrimaryTransportSkippedWhenAlreadyOnFallback(t *testing.T) {
 	}
 }
 
-func TestTryRecoverPrimaryTransportAllowedForNousAnthropicMessages(t *testing.T) {
-	a := newTransportAgent(t, nil)
-	a.provider, a.apiMode, a.model = "nous", "anthropic_messages", "anthropic/claude-opus-4.8"
-	a.setBaseURL("https://inference-api.nousresearch.com/v1")
-	for k, v := range map[string]any{"api_mode": "anthropic_messages", "model": "anthropic/claude-opus-4.8", "provider": "nous",
-		"base_url": "https://inference-api.nousresearch.com/v1", "anthropic_api_key": "portal-jwt",
-		"anthropic_base_url": "https://inference-api.nousresearch.com/v1", "is_anthropic_oauth": false} {
-		a.primaryRuntime[k] = v
-	}
-	rebuilt := &struct{ name string }{"anthropic-client"}
-	var gotKey any
-	anthropicClientBuilder = func(_ context.Context, key any, _ string, _ float64, _ bool) (any, error) {
-		gotKey = key
-		return rebuilt, nil
-	}
-	if !a.tryRecoverPrimaryTransport(context.Background(), &transportTestErr{"ReadTimeout"}, 3) {
-		t.Fatal("portal Claude recovery declined")
-	}
-	if a.anthropicClient != rebuilt || gotKey != "portal-jwt" || a.client != nil {
-		t.Fatalf("anthropic client %v key %v client %v", a.anthropicClient, gotKey, a.client)
-	}
-	a.apiMode = "chat_completions"
-	a.primaryRuntime["api_mode"] = "chat_completions"
-	if a.tryRecoverPrimaryTransport(context.Background(), &transportTestErr{"ReadTimeout"}, 3) {
-		t.Fatal("portal OpenAI wire rides aggregator retries")
-	}
-}
-
 func TestTryRecoverPrimaryTransportSurvivesRebuildFailure(t *testing.T) {
 	a := newTransportAgent(t, nil)
 	openAIClientConstructor = func(map[string]any) (any, error) { return nil, errors.New("socket error") }

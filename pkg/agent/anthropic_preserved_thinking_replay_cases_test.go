@@ -18,7 +18,6 @@ type thinkingRoute struct{ provider, baseURL string }
 
 var (
 	routeAnthropic  = thinkingRoute{"anthropic", "https://api.anthropic.com"}
-	routeNous       = thinkingRoute{"nous", "https://inference-api.nousresearch.com/v1/messages"}
 	routeOpenRouter = thinkingRoute{"openrouter", "https://openrouter.ai/api/v1"}
 	routeKimi       = thinkingRoute{"anthropic", "https://api.kimi.com/coding"}
 )
@@ -216,7 +215,7 @@ var preservedThinkingModels = []struct {
 	{"claude-fable-5-1", true}, {"claude-mythos-5", true}, {"claude-mythos-preview", true},
 	{"claude-fable-5-2", true}, {"claude-mythos-6", true}, {"claude-newfamily-7", true},
 	{"claude-haiku-5", false}, {"claude-3-7-sonnet-20250219", false}, {"claude-sonnet-4", false},
-	{"hermes-4-405b", false},
+	{"llama-4-maverick", false},
 }
 
 func thinkingAccountingCases() ([]string, map[string]thinkingAccountingCase) {
@@ -233,7 +232,6 @@ func thinkingAccountingCases() ([]string, map[string]thinkingAccountingCase) {
 		}
 		add("route:"+p.model, thinkingAccountingCase{p.model, routeAnthropic, replayed})
 	}
-	add("route:nous", thinkingAccountingCase{"claude-opus-4-6", routeNous, 1})
 	add("route:openrouter", thinkingAccountingCase{"claude-opus-4-6", routeOpenRouter, 0})
 	add("producer", thinkingAccountingCase{"claude-opus-4-6", routeAnthropic, 2})
 	for name, replayed := range map[string]int{"context_selection_clone": 1, "usage_anchor": 1, "carrier_dedupe": 1, "opaque_bytes": 0, "rejected": 0,

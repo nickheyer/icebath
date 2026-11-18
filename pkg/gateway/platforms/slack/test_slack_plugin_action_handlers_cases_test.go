@@ -84,7 +84,7 @@ func TestSlackAdapterPluginActionWiringNoPluginHandlersDoesNotBreakConnect(t *te
 	a := connectWithPluginHandlers(t, []*plugins.SlackActionHandler{}, nil)
 	ids := registeredActionIDs(a)
 	for _, id := range ids {
-		if id == "hermes_approve_once" {
+		if id == "icebath_approve_once" {
 			return
 		}
 	}
@@ -96,7 +96,7 @@ func TestSlackAdapterPluginActionWiringPluginLoaderFailureDoesNotBreakConnect(t 
 	a := connectWithPluginHandlers(t, nil, errors.New("plugins broken"))
 	ids := registeredActionIDs(a)
 	for _, id := range ids {
-		if id == "hermes_approve_once" {
+		if id == "icebath_approve_once" {
 			return
 		}
 	}

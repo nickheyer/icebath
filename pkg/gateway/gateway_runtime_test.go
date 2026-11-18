@@ -257,7 +257,7 @@ func TestDiscoveryDoesNotFollowAnOverlayLockFromAWritableHome(t *testing.T) {
 	}
 }
 
-// Short owner temp root holding the profile's private hermes-gw directory
+// Short owner temp root holding the profile's private icebath-gw directory
 func ownerControlDir(t *testing.T, h string, mode os.FileMode) string {
 	root, err := os.MkdirTemp("/tmp", "h-owner-")
 	if err != nil {
@@ -531,7 +531,7 @@ func refusalRecord(h string, pid int) *pyjson.Object {
 	r.Set("kind", gatewayKind)
 	r.Set("argv", []any{"icebath", "gateway", "run"})
 	r.Set("start_time", statusProcessStartTime(pid))
-	r.Set("hermes_home", h)
+	r.Set("icebath_home", h)
 	return r
 }
 
@@ -658,7 +658,7 @@ func TestAnUnverifiableOwnerIsNeverNamed(t *testing.T) {
 			case "no start time":
 				record.Delete("start_time")
 			case "another home":
-				record.Set("hermes_home", filepath.Join(filepath.Dir(h), "other-profile"))
+				record.Set("icebath_home", filepath.Join(filepath.Dir(h), "other-profile"))
 			}
 			writeRefusalRecord(t, filepath.Join(h, "gateway.pid"), record)
 			seen := probeRecorder(t)

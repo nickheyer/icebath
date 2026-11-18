@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"log/slog"
 	"os"
 	"regexp"
 	"strings"
@@ -17,8 +16,6 @@ import (
 
 // OTelSDKModule is the Go OpenTelemetry SDK module the exporter is linked against
 const OTelSDKModule = "go.opentelemetry.io/otel/sdk"
-
-func otlpLog() *slog.Logger { return slog.Default().With("logger", "agent.monitoring.otlp_exporter") }
 
 // Nested monitoring section of a config, empty when any step is missing or not a mapping
 func monitoringSection(cfg map[string]any, path ...string) map[string]any {
@@ -51,7 +48,7 @@ func ResolveHeaders(headersEnv any) map[string]string {
 		if val := os.Getenv(name); val != "" {
 			resolved[pyrepr.Str(headerName)] = val
 		} else {
-			otlpLog().Debug(fmt.Sprintf("OTLP header %s: env var %s not set; skipping", headerName, name))
+			pkgLog().Debug(fmt.Sprintf("OTLP header %s: env var %s not set; skipping", headerName, name))
 		}
 	}
 	return resolved
@@ -190,7 +187,7 @@ func ExportBatch(provider *TracerProvider, batch []*pyjson.Object) int {
 			name = pyrepr.Str(kind)
 		}
 		if err := tracer.RecordSpan("icebath."+name, SpanAttrs(ev)); err != nil {
-			otlpLog().Debug("OTLP span map failed: " + err.Error())
+			pkgLog().Debug("OTLP span map failed: " + err.Error())
 			continue
 		}
 		n++
@@ -273,7 +270,7 @@ func StartStreaming(cfg map[string]any, eventFilter func(*pyjson.Object) bool) *
 	}
 	streamer, err := NewOTLPStreamer(cfg, eventFilter)
 	if err != nil {
-		otlpLog().Warn("monitoring.export.otlp.enabled but the OTLP exporter could not start: " + err.Error())
+		pkgLog().Warn("monitoring.export.otlp.enabled but the OTLP exporter could not start: " + err.Error())
 		return nil
 	}
 	GetEmitter().Subscribe(streamer.sub)

@@ -5,7 +5,6 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
-	"reflect"
 	"strings"
 	"testing"
 
@@ -20,7 +19,6 @@ type rebuildAgentDouble struct {
 	depth          int
 	sessionID      string
 	refreshes      int
-	cacheBreaks    []string
 	refreshReplace bool
 }
 
@@ -58,10 +56,6 @@ func installBackendHooks(t *testing.T) {
 			d.tools = append([]map[string]any{}, d.tools...)
 		}
 	}
-	DelegationBackendHooks.RecordCacheBreak = func(_ context.Context, a DelegationRebuildAgent, reason string) {
-		d := a.(*rebuildAgentDouble)
-		d.cacheBreaks = append(d.cacheBreaks, reason)
-	}
 }
 
 // A switch persists the backend, and a now switch rebuilds only the asking session once at its next turn
@@ -94,7 +88,7 @@ func TestSetGlobalBackendPersistsAndQueuesTheNowRebuild(t *testing.T) {
 		t.Fatal("a fork or subagent took the session request")
 	}
 	agent := &rebuildAgentDouble{sessionID: "sess-1", tools: []map[string]any{{"function": map[string]any{"name": "delegate_task"}}}, refreshReplace: true}
-	if !ApplyRequestedToolRebuild(ctx, agent) || !reflect.DeepEqual(agent.cacheBreaks, []string{"toolset_change"}) {
+	if !ApplyRequestedToolRebuild(ctx, agent) || agent.refreshes != 1 {
 		t.Fatalf("rebuild %+v", agent)
 	}
 	if ApplyRequestedToolRebuild(ctx, agent) || agent.refreshes != 1 {
@@ -104,7 +98,7 @@ func TestSetGlobalBackendPersistsAndQueuesTheNowRebuild(t *testing.T) {
 		t.Fatal(err)
 	}
 	same := &rebuildAgentDouble{sessionID: "sess-1"}
-	if ApplyRequestedToolRebuild(ctx, same) || same.refreshes != 1 || len(same.cacheBreaks) != 0 {
+	if ApplyRequestedToolRebuild(ctx, same) || same.refreshes != 1 {
 		t.Fatal("an unchanged tool list reported a rebuild")
 	}
 }

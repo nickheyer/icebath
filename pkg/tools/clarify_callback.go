@@ -8,7 +8,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 )
 
-// ClarifyCallback is the surface callback of hermes clarify_tool, shown questions in and an answers outcome notice dict out
+// The surface callback of the clarify tool, shown questions in and an answers outcome notice dict out
 type ClarifyCallback func(ctx context.Context, shown []any) (map[string]any, error)
 
 // Clarify result JSON through the session asker, the registry handler of the tool

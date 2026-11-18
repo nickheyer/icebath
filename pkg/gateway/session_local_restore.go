@@ -5,7 +5,6 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
-	"log/slog"
 	"reflect"
 	"runtime"
 	"strings"
@@ -408,7 +407,7 @@ func strayRouteTarget(ctx context.Context, a *SessionAuthority, receipt *pyjson.
 		return false, err
 	}
 	owner, _ := receipt.Get("session_id")
-	slog.Warn(fmt.Sprintf("Local route for %s named an empty replacement %s outside its lineage; restoring the receipt target",
+	pkgLog().Warn(fmt.Sprintf("Local route for %s named an empty replacement %s outside its lineage; restoring the receipt target",
 		pyrepr.Str(owner), sessionID))
 	return true, nil
 }
@@ -458,7 +457,7 @@ func restoreLocalSession(ctx context.Context, a *SessionAuthority, sid string) (
 		if errors.As(err, &pending) || !receiptCheckFailure(err) {
 			return SessionRef{}, err
 		}
-		slog.Warn(fmt.Sprintf("Local session %s receipt refused: %s", sid, refusedCheck(err)))
+		pkgLog().Warn(fmt.Sprintf("Local session %s receipt refused: %s", sid, refusedCheck(err)))
 		var refusal *state.RuntimeStoreError
 		if errors.As(err, &refusal) {
 			return SessionRef{}, &receiptRefused{state.NewRuntimeStoreError(refusal.Reason, refusal.Field, refusal.Detail), err}

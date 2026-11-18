@@ -32,7 +32,6 @@ const fallbackComment = `
 # Supported providers:
 #   openrouter   (OPENROUTER_API_KEY)  — routes to any model
 #   openai-codex (OAuth — icebath auth) — OpenAI Codex
-#   nous         (OAuth — icebath auth) — Nous Portal
 #   zai          (ZAI_API_KEY)         — Z.AI / GLM
 #   kimi-coding  (KIMI_API_KEY)        — Kimi / Moonshot
 #   kimi-coding-cn (KIMI_CN_API_KEY)   — Kimi / Moonshot (China)
@@ -53,16 +52,6 @@ type SaveOptions struct {
 	PreserveKeys  [][]string
 	MergeExisting bool
 }
-
-type appliedWriteKey struct{}
-
-// Context whose saves are Icebath's own writes, never reported as a user turning a feature off
-func AppliedWrite(ctx context.Context) context.Context {
-	return context.WithValue(ctx, appliedWriteKey{}, true)
-}
-
-// Reports a context whose saves are Icebath's own writes
-func IsAppliedWrite(ctx context.Context) bool { return ctx.Value(appliedWriteKey{}) != nil }
 
 // Copy of a document without the dotted leaves listed, plus the leaves it removed
 func stripDottedKeys(cfg map[string]any, dotted []string) (map[string]any, []string) {
@@ -275,38 +264,26 @@ func AtomicConfigReplace(ctx context.Context, h, configPath string, data map[str
 // Saves a config to the home config.yaml, defaults the user never set stripped and managed leaves dropped
 func SaveConfig(ctx context.Context, h string, cfg map[string]any, opts SaveOptions) error {
 	ctx, unlock := LockConfig(ctx)
-	raw, current, saved, err := func() (map[string]any, map[string]any, bool, error) {
-		defer unlock()
-		return saveConfigLocked(ctx, h, cfg, opts)
-	}()
-	if err != nil || !saved {
-		return err
-	}
-	facadeMu.RLock()
-	observe := savedObserver
-	facadeMu.RUnlock()
-	if observe != nil && !IsAppliedWrite(ctx) {
-		observe(h, raw, current)
-	}
-	return nil
+	defer unlock()
+	return saveConfigLocked(ctx, h, cfg, opts)
 }
 
-func saveConfigLocked(ctx context.Context, h string, cfg map[string]any, opts SaveOptions) (map[string]any, map[string]any, bool, error) {
+func saveConfigLocked(ctx context.Context, h string, cfg map[string]any, opts SaveOptions) error {
 	if IsManaged(ctx, h) {
 		fmt.Fprintln(FacadeNoticeOut, FormatManagedMessage(ctx, h, "save configuration"))
-		return nil, nil, false, nil
+		return nil
 	}
 	path := GetConfigPath(h)
 	if err := RefuseFailedRead(h, path, cfg); err != nil {
-		return nil, nil, false, err
+		return err
 	}
 	cfg = stripManagedKeysForSave(cfg)
 	if err := EnsureIcebathHome(ctx, h); err != nil {
-		return nil, nil, false, err
+		return err
 	}
 	raw, err := KeepingReadBase(ctx, func() (map[string]any, error) { return RequireReadableConfigBeforeWrite(ctx, path) })
 	if err != nil {
-		return nil, nil, false, err
+		return err
 	}
 	var loadErr error
 	cfg = RebaseForSave(cfg, raw, opts.MergeExisting, func() map[string]any {
@@ -317,17 +294,17 @@ func saveConfigLocked(ctx context.Context, h string, cfg map[string]any, opts Sa
 		return t
 	})
 	if loadErr != nil {
-		return nil, nil, false, loadErr
+		return loadErr
 	}
 	current, err := Canonicalize(cfg)
 	if err != nil {
-		return nil, nil, false, err
+		return err
 	}
 	normalized := current
 	if len(raw) > 0 {
 		rawCanon, cerr := Canonicalize(raw)
 		if cerr != nil {
-			return nil, nil, false, cerr
+			return cerr
 		}
 		loadCacheMu.Lock()
 		loaded := lastExpanded[path]
@@ -350,15 +327,15 @@ func saveConfigLocked(ctx context.Context, h string, cfg map[string]any, opts Sa
 		stamp = fn()
 	}
 	if _, err := noteFirstStamp(h, raw, normalized, stamp); err != nil {
-		return nil, nil, false, err
+		return err
 	}
 	if err := AtomicConfigReplace(ctx, h, path, normalized, commentedSectionsForSave(normalized)); err != nil {
-		return nil, nil, false, err
+		return err
 	}
 	SecureFile(ctx, h, path)
 	loadCacheMu.Lock()
 	delete(rawCache, path)
 	lastExpanded[path] = Clone(current).(map[string]any)
 	loadCacheMu.Unlock()
-	return raw, current, true, nil
+	return nil
 }

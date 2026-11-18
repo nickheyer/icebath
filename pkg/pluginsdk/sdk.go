@@ -1,6 +1,9 @@
 package pluginsdk
 
-import "context"
+import (
+	"context"
+	"time"
+)
 
 // Version of the frame protocol this library speaks
 const ProtocolVersion = 1
@@ -115,14 +118,18 @@ type SlackActionFunc func(ctx context.Context, ack func(payload map[string]any) 
 
 // Named view the terminal UI renders, its state a JSON value the UI holds between calls
 type Widget struct {
-	ID     string
-	Help   string
-	Usage  string
-	Mode   string
-	Zone   string
-	Width  int
-	Open   func(ctx context.Context, arg string) (state any, ok bool, err error)
-	Input  func(ctx context.Context, state any, in WidgetInput) (next any, open bool, err error)
+	ID    string
+	Help  string
+	Usage string
+	Mode  string
+	Zone  string
+	Width int
+	// Interval the terminal UI refreshes the widget at, running Tick when set and rendering again, zero for input only
+	Refresh time.Duration
+	Open    func(ctx context.Context, arg string) (state any, ok bool, err error)
+	Input   func(ctx context.Context, state any, in WidgetInput) (next any, open bool, err error)
+	// Next state at each refresh, nil for a widget that only renders again
+	Tick   func(ctx context.Context, state any) (next any, err error)
 	Render func(ctx context.Context, frame WidgetFrame) (WidgetView, error)
 }
 

@@ -92,7 +92,7 @@ func normalizeCommandSTTInput(audio, tmpdir, providerName string, cfg map[string
 		}
 		return "", fmt.Sprintf("stt.providers.%s.normalize: true but the audio could not be normalized for the command provider: %s", providerName, transcodeError)
 	}
-	sttLog().Info(fmt.Sprintf("Normalized %s to 16 kHz mono for command STT provider '%s'", filepath.Base(audio), providerName))
+	pkgLog().Info(fmt.Sprintf("Normalized %s to 16 kHz mono for command STT provider '%s'", filepath.Base(audio), providerName))
 	return converted, ""
 }
 
@@ -154,7 +154,7 @@ func transcribeCommandSTT(ctx context.Context, filePath, providerName string, cf
 		outputPath := filepath.Join(tmpdir, "transcript."+outputFormat)
 		command := renderCommandTemplate(template, map[string]string{"input_path": inputPath, "output_path": outputPath,
 			"output_dir": filepath.Dir(outputPath), "format": outputFormat, "language": pyrepr.Str(language), "model": model})
-		sttLog().Info(fmt.Sprintf("Transcribing %s via command STT provider '%s'...", filepath.Base(audio), providerName))
+		pkgLog().Info(fmt.Sprintf("Transcribing %s via command STT provider '%s'...", filepath.Base(audio), providerName))
 		result, err := runCommandSTT(ctx, scopedToolEnv(ctx), command, timeout, commandEnvPassthrough(cfg))
 		if err != nil {
 			return "", err
@@ -179,7 +179,7 @@ func transcribeCommandSTT(ctx context.Context, filePath, providerName string, cf
 	default:
 		return fail(fmt.Sprintf("STT command provider '%s' failed: %s", providerName, sttOSErrorText(err)))
 	}
-	sttLog().Info(fmt.Sprintf("Transcribed %s via command STT provider '%s' (%d chars)", filepath.Base(audio), providerName, utf8.RuneCountInString(transcript)))
+	pkgLog().Info(fmt.Sprintf("Transcribed %s via command STT provider '%s' (%d chars)", filepath.Base(audio), providerName, utf8.RuneCountInString(transcript)))
 	return sttOK(transcript, providerName)
 }
 
@@ -223,7 +223,7 @@ func dispatchToSTTPluginProvider(ctx context.Context, filePath, providerName str
 		}
 		return nil
 	}); err != nil {
-		sttLog().Debug(fmt.Sprintf("STT plugin dispatch skipped (discovery failed): %v", err))
+		pkgLog().Debug(fmt.Sprintf("STT plugin dispatch skipped (discovery failed): %v", err))
 		return nil
 	}
 	if p == nil {
@@ -231,14 +231,14 @@ func dispatchToSTTPluginProvider(ctx context.Context, filePath, providerName str
 	}
 	available := false
 	if err := pluginCall(func() error { available = p.IsAvailable(); return nil }); err != nil {
-		sttLog().Warn(fmt.Sprintf("STT plugin provider '%s' is_available() raised: %v — treating as unavailable", key, err))
+		pkgLog().Warn(fmt.Sprintf("STT plugin provider '%s' is_available() raised: %v — treating as unavailable", key, err))
 		available = false
 	}
 	if !available {
-		sttLog().Info(fmt.Sprintf("STT plugin provider '%s' reports not available; returning unavailability envelope.", key))
+		pkgLog().Info(fmt.Sprintf("STT plugin provider '%s' reports not available; returning unavailability envelope.", key))
 		return sttError(fmt.Sprintf("STT plugin '%s' is not available — check that its required credentials / dependencies are configured.", key), "provider", key)
 	}
-	sttLog().Info(fmt.Sprintf("Transcribing with plugin STT provider '%s'...", key))
+	pkgLog().Info(fmt.Sprintf("Transcribing with plugin STT provider '%s'...", key))
 	opts := TranscribeOptions{Model: model, Language: language, Extra: map[string]any{}}
 	if prompt != "" {
 		opts.Extra["prompt"] = prompt
@@ -250,7 +250,7 @@ func dispatchToSTTPluginProvider(ctx context.Context, filePath, providerName str
 		return err
 	})
 	if err != nil {
-		sttLog().Warn(fmt.Sprintf("STT plugin provider '%s' raised: %v", key, err))
+		pkgLog().Warn(fmt.Sprintf("STT plugin provider '%s' raised: %v", key, err))
 		return sttError(fmt.Sprintf("STT plugin '%s' raised: %v", key, err), "provider", key)
 	}
 	out, ok := result.(map[string]any)
@@ -270,7 +270,7 @@ func enforcePromptLengthLimit(prompt, providerName string) string {
 	if prompt == "" || !whisperPromptCappedProviders[providerName] || n <= maxChars {
 		return prompt
 	}
-	sttLog().Warn(fmt.Sprintf("Transcription prompt is ~%d tokens; whisper-family provider '%s' only uses the final ~%d — truncating to the last %d characters.",
+	pkgLog().Warn(fmt.Sprintf("Transcription prompt is ~%d tokens; whisper-family provider '%s' only uses the final ~%d — truncating to the last %d characters.",
 		n/sttPromptCharsPerToken, providerName, whisperPromptTokenCap, maxChars))
 	r := []rune(prompt)
 	return string(r[len(r)-maxChars:])
@@ -303,13 +303,13 @@ func applyPreTranscriptionHook(ctx context.Context, filePath, providerName, mode
 				v := m[k]
 				switch {
 				case k == "file_path":
-					sttLog().Warn("pre_transcription hook attempted to change file_path (read-only) — ignoring the attempt.")
+					pkgLog().Warn("pre_transcription hook attempted to change file_path (read-only) — ignoring the attempt.")
 				case !preTranscriptionMutableFields[k]:
-					sttLog().Debug(fmt.Sprintf("pre_transcription hook returned unsupported field %s — ignoring.", pyrepr.Repr(k)))
+					pkgLog().Debug(fmt.Sprintf("pre_transcription hook returned unsupported field %s — ignoring.", pyrepr.Repr(k)))
 				default:
 					s, ok := v.(string)
 					if !ok {
-						sttLog().Debug(fmt.Sprintf("pre_transcription hook returned non-string value %s for field %s — ignoring.", pyrepr.Repr(v), pyrepr.Repr(k)))
+						pkgLog().Debug(fmt.Sprintf("pre_transcription hook returned non-string value %s for field %s — ignoring.", pyrepr.Repr(v), pyrepr.Repr(k)))
 						continue
 					}
 					overrides[k] = s
@@ -326,7 +326,7 @@ func applyPreTranscriptionHook(ctx context.Context, filePath, providerName, mode
 		return nil
 	})
 	if err != nil {
-		sttLog().Debug(fmt.Sprintf("pre_transcription hook error: %v", err))
+		pkgLog().Debug(fmt.Sprintf("pre_transcription hook error: %v", err))
 		return model, "", prompt
 	}
 	return outModel, outLanguage, outPrompt

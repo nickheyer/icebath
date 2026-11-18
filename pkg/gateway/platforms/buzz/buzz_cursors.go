@@ -3,7 +3,6 @@ package buzz
 import (
 	"context"
 	"errors"
-	"log/slog"
 	"os"
 	"path/filepath"
 	"sync"
@@ -63,6 +62,20 @@ func (s *CursorStore) Watch(channelID string, cursor *ChannelCursor) {
 	s.ChannelState[channelID] = cursor
 }
 
+// Stops persisting a channel, dropping it from the watch order
+func (s *CursorStore) Forget(channelID string) {
+	if _, ok := s.ChannelState[channelID]; !ok {
+		return
+	}
+	delete(s.ChannelState, channelID)
+	for i, id := range s.ChannelOrder {
+		if id == channelID {
+			s.ChannelOrder = append(s.ChannelOrder[:i], s.ChannelOrder[i+1:]...)
+			break
+		}
+	}
+}
+
 // Cursor file under the icebath home
 func CursorPath(ctx context.Context) string {
 	return filepath.Join(home.Dir(ctx), cursorStateSubdir, cursorStateFilename)
@@ -84,7 +97,7 @@ func (s *CursorStore) LoadCursors(ctx context.Context) error {
 		}
 	}
 	if err != nil {
-		slog.Debug("Buzz: could not read channel cursors", "error", err)
+		pkgLog().Debug("Buzz: could not read channel cursors", "error", err)
 		return nil
 	}
 	obj, ok := data.(*pyjson.Object)
@@ -163,7 +176,7 @@ func (s *CursorStore) SaveCursors(ctx context.Context) {
 // Atomic compact JSON write of the payload, a failure only logged
 func writeCursors(ctx context.Context, path string, payload *pyjson.Object) {
 	if err := config.AtomicJSONWriteWith(ctx, path, payload); err != nil {
-		slog.Debug("Buzz: could not persist channel cursors", "error", err)
+		pkgLog().Debug("Buzz: could not persist channel cursors", "error", err)
 	}
 }
 

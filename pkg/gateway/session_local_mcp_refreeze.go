@@ -3,7 +3,6 @@ package gateway
 import (
 	"context"
 	"fmt"
-	"log/slog"
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
@@ -27,7 +26,7 @@ func refreezeEditorMCP(ctx context.Context, a *SessionAuthority, ref SessionRef,
 		return
 	}
 	if err := refreezeEditor(ctx, a, ref); err != nil {
-		slog.Warn(fmt.Sprintf("Editor MCP re-check of session %s failed; the turn runs on its frozen manifest: %s", ref.SessionID, pyExceptionRepr(err)))
+		pkgLog().Warn(fmt.Sprintf("Editor MCP re-check of session %s failed; the turn runs on its frozen manifest: %s", ref.SessionID, pyExceptionRepr(err)))
 	}
 }
 

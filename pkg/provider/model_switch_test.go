@@ -67,7 +67,7 @@ func TestResetIsItsOwnRequestAndTakesNoFlags(t *testing.T) {
 	if !ParseModelSwitchArgs("  Reset ").IsReset() {
 		t.Fatal("reset not recognized")
 	}
-	for _, raw := range []string{"reset --global", "reset --once", "reset --provider nous", "reset --reasoning high"} {
+	for _, raw := range []string{"reset --global", "reset --once", "reset --provider deepseek", "reset --reasoning high"} {
 		req := ParseModelSwitchArgs(raw)
 		if !reflect.DeepEqual(req.Errors, []string{ModelSwitchErrResetWithFlags}) || req.IsReset() {
 			t.Fatalf("%s %+v", raw, req)
@@ -187,20 +187,6 @@ func sortedIndex(list []string, s string) int {
 		}
 	}
 	return -1
-}
-
-func TestMatchesRealNousHermesChatModels(t *testing.T) {
-	for _, m := range []string{"NousResearch/Hermes-3-Llama-3.1-70B", "NousResearch/Hermes-3-Llama-3.1-405B", "hermes-3", "Hermes-3",
-		"hermes-4", "hermes-4-405b", "hermes_4_70b", "openrouter/hermes3:70b", "openrouter/nousresearch/hermes-4-405b", "NousResearch/Hermes3", "hermes-3.1"} {
-		if !IsNousHermesNonAgentic(m) || checkHermesModelWarning(m) != hermesModelWarning {
-			t.Fatal(m)
-		}
-	}
-	for _, m := range []string{"hermes-brain:qwen3-14b-ctx16k", "qwen3:14b", "claude-opus-4-6", ""} {
-		if IsNousHermesNonAgentic(m) || checkHermesModelWarning(m) != "" {
-			t.Fatal(m)
-		}
-	}
 }
 
 func TestDirectAliasCredentialLoading(t *testing.T) {
@@ -429,9 +415,9 @@ func TestStartupModelRouting(t *testing.T) {
 			t.Fatalf("got %+v want %+v", got, want)
 		}
 	}
-	nous := map[string]any{"nous": map[string]any{"base_url": "https://inference.example/v1"}}
-	t.Run("test_startup_route_uses_configured_nous_provider", func(t *testing.T) {
-		same(t, route(t, "nous/deepseek-v4-pro", StartupRouteOptions{UserProviders: nous}), StartupModelRoute{Model: "deepseek-v4-pro", Provider: "nous"})
+	acme := map[string]any{"acme": map[string]any{"base_url": "https://inference.example/v1"}}
+	t.Run("test_startup_route_uses_configured_user_provider", func(t *testing.T) {
+		same(t, route(t, "acme/deepseek-v4-pro", StartupRouteOptions{UserProviders: acme}), StartupModelRoute{Model: "deepseek-v4-pro", Provider: "acme"})
 	})
 	t.Run("test_startup_route_keeps_configured_custom_provider_name", func(t *testing.T) {
 		same(t, route(t, "ollama/qwen3.5:4b", StartupRouteOptions{UserProviders: map[string]any{"ollama": map[string]any{"base_url": "http://localhost:11434/v1"}}}),
@@ -451,7 +437,7 @@ func TestStartupModelRouting(t *testing.T) {
 		}
 	})
 	t.Run("test_startup_route_non_aggregator_current_provider_still_routes", func(t *testing.T) {
-		same(t, route(t, "nous/deepseek-v4-pro", StartupRouteOptions{CurrentProvider: "anthropic", UserProviders: nous}), StartupModelRoute{Model: "deepseek-v4-pro", Provider: "nous"})
+		same(t, route(t, "acme/deepseek-v4-pro", StartupRouteOptions{CurrentProvider: "anthropic", UserProviders: acme}), StartupModelRoute{Model: "deepseek-v4-pro", Provider: "acme"})
 	})
 	seedDirectAliases(NamedDirectAlias{"localqwen", DirectAlias{Model: "qwen3.5:4b", Provider: "custom", BaseURL: "http://localhost:11434/v1"}},
 		NamedDirectAlias{"urlalias", DirectAlias{Model: "qwen3.5:4b", Provider: "anthropic", BaseURL: "http://localhost:11434/v1"}},

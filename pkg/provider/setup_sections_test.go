@@ -33,7 +33,7 @@ func scriptedSetupConsole(t *testing.T, answers ...string) (context.Context, *by
 	h := t.TempDir()
 	t.Setenv("ICEBATH_HOME", h)
 	t.Setenv("ICEBATH_NONINTERACTIVE", "")
-	for _, key := range []string{"ICEBATH_MAX_ITERATIONS", "OPENROUTER_API_KEY", "OPENAI_API_KEY", "OPENAI_BASE_URL", "ICEBATH_INFERENCE_PROVIDER", "NOUS_API_KEY", "LLM_MODEL"} {
+	for _, key := range []string{"ICEBATH_MAX_ITERATIONS", "OPENROUTER_API_KEY", "OPENAI_API_KEY", "OPENAI_BASE_URL", "ICEBATH_INFERENCE_PROVIDER", "LLM_MODEL"} {
 		t.Setenv(key, "")
 		os.Unsetenv(key)
 	}
@@ -311,8 +311,8 @@ func TestSetdefaultDictMirrorsDictSetdefault(t *testing.T) {
 	if m, err := SetdefaultDict(cfg, "new"); err != nil || m == nil || cfg["new"] == nil {
 		t.Fatalf("missing %v %v", m, err)
 	}
-	for key, typ := range map[string]string{"n": "NoneType", "s": "str"} {
-		if _, err := SetdefaultDict(cfg, key); err == nil || err.Error() != "TypeError: '"+typ+"' object does not support item assignment" {
+	for key, typ := range map[string]string{"n": "nothing", "s": "text"} {
+		if _, err := SetdefaultDict(cfg, key); err == nil || err.Error() != key+" in config is "+typ+", expected a mapping" {
 			t.Fatalf("%s %v", key, err)
 		}
 	}
@@ -327,7 +327,6 @@ func TestSetupSystemExitReadsEveryExitShape(t *testing.T) {
 	}{
 		{SetupExit{Code: 3}, 3, "", true},
 		{&AuthExitError{Code: 1, Message: "denied"}, 1, "denied", true},
-		{&NousLoginExitError{Code: 130}, 130, "", true},
 		{&OAuthLoginExitError{Code: 1}, 1, "", true},
 		{&MoAExitError{Message: "nope"}, 1, "nope", true},
 		{errors.New("other"), 0, "", false},

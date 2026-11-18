@@ -3,7 +3,6 @@ package provider
 import (
 	"context"
 	"fmt"
-	"log/slog"
 	"strings"
 
 	"github.com/google/uuid"
@@ -261,7 +260,7 @@ func auxFailRelayAuxiliaryCall(ctx context.Context, err error) {
 		ferr = auxCompleteRelayAuxiliaryCall(ctx, "failed", "")
 	}
 	if ferr != nil {
-		slog.Warn("Relay auxiliary failure finalization failed", "error", ferr)
+		pkgLog().Warn("Relay auxiliary failure finalization failed", "error", ferr)
 	}
 }
 

@@ -1,5 +1,5 @@
 {
-  "_comment": "Pinned runtime libraries for Python, Node, uv, and ffmpeg. The ffmpeg set follows the real binaries' recursive DT_NEEDED dependencies; libc and Android system libraries remain platform-provided. Artifacts and hashes were verified from the Termux package pool. The pool deletes a package's previous archive when it rebuilds, so a pin can 404 without warning: `hermes pm update --termux --check` reports the retired rows and `--termux` repins them.",
+  "_comment": "Pinned runtime libraries for Python, Node, uv, and ffmpeg. The ffmpeg set follows the real binaries' recursive DT_NEEDED dependencies; libc and Android system libraries remain platform-provided. Artifacts and hashes were verified from the Termux package pool. The pool deletes a package's previous archive when it rebuilds, so a pin can 404 without warning: `icebath pm update --termux --check` reports the retired rows and `--termux` repins them.",
   "licenses": {
     "sha256": "a3265cd1cf7d04754f2fb683eaf5b21918263792fd714457127900c1d6d9bcd9",
     "url": "https://packages.termux.dev/apt/termux-main/pool/main/t/termux-licenses/termux-licenses_2.2_all.deb",
@@ -7,14 +7,14 @@
   },
   "libs": {
     "brotli": {
-      "sha256": "db1502601d40fb44e6085ad8bfd9311a8b472e98db831ceec9d404c5708bb52c",
-      "url": "https://packages.termux.dev/apt/termux-main/pool/main/b/brotli/brotli_1.2.0_aarch64.deb",
-      "version": "1.2.0"
+      "sha256": "4fba29438b2b44f8470d52173b4548e938542dc2fc632f8699be5a284cbb9485",
+      "url": "https://packages.termux.dev/apt/termux-main/pool/main/b/brotli/brotli_1.2.1_aarch64.deb",
+      "version": "1.2.1"
     },
     "c-ares": {
-      "sha256": "7681fc23e822d7988ba8b2adf3468f93ae68f724dda365cff1385096a9fa87e6",
-      "url": "https://packages.termux.dev/apt/termux-main/pool/main/c/c-ares/c-ares_1.34.8_aarch64.deb",
-      "version": "1.34.8"
+      "sha256": "623d84855e176f3f2a415d24c0e1d2f529356f4b5439bb3313e6d7ff0da4585c",
+      "url": "https://packages.termux.dev/apt/termux-main/pool/main/c/c-ares/c-ares_1.34.9_aarch64.deb",
+      "version": "1.34.9"
     },
     "fftw": {
       "sha256": "0a5140986bbfc69dbfa8f939f78521fb3dc02a193b6c822b7218dae44d99ffd5",
@@ -27,14 +27,14 @@
       "version": "2.18.3"
     },
     "freetype": {
-      "sha256": "670d27d8f53ef2d887b67f8b82fa480f7132b65ac2264a39b3c5b4db637ee285",
-      "url": "https://packages.termux.dev/apt/termux-main/pool/main/f/freetype/freetype_2.14.3_aarch64.deb",
-      "version": "2.14.3"
+      "sha256": "fe217807b22aa40029874eb1d9e01b89a01b5f1e4f0556c4de9c8e83c4db4256",
+      "url": "https://packages.termux.dev/apt/termux-main/pool/main/f/freetype/freetype_2.15.0_aarch64.deb",
+      "version": "2.15.0"
     },
     "fribidi": {
-      "sha256": "879a180b10e105600fb6033f15eff0987eb48ae11f1b87beeca803aab84b8666",
-      "url": "https://packages.termux.dev/apt/termux-main/pool/main/f/fribidi/fribidi_1.0.17_aarch64.deb",
-      "version": "1.0.17"
+      "sha256": "6d9a4f6403a1450d22514dc7dc4de2b2358bec28afbce4576e37a3b224beae4b",
+      "url": "https://packages.termux.dev/apt/termux-main/pool/main/f/fribidi/fribidi_1.0.18_aarch64.deb",
+      "version": "1.0.18"
     },
     "game-music-emu": {
       "sha256": "ffe1c43919d485409b2459d462b2dc6389492afeea869aef701b391a4ed29c67",
@@ -57,14 +57,19 @@
       "version": "16.6.0"
     },
     "harfbuzz": {
-      "sha256": "eeeebc3cb1d10612ef5e53c1ecdf1b15f36889592e847d10774f350ba07ecf74",
-      "url": "https://packages.termux.dev/apt/termux-main/pool/main/h/harfbuzz/harfbuzz_14.6.0_aarch64.deb",
-      "version": "14.6.0"
+      "sha256": "0ad02ed6650599800fb60c06f1a358c9666795fc371940278b7b69ef4c925d88",
+      "url": "https://packages.termux.dev/apt/termux-main/pool/main/h/harfbuzz/harfbuzz_15.1.0-1_aarch64.deb",
+      "version": "15.1.0-1"
     },
     "highway": {
       "sha256": "71b8e0c231ab6b66827374543d55997a5cb02d8882f5d53e059ba78cd2511da1",
       "url": "https://packages.termux.dev/apt/termux-main/pool/main/h/highway/highway_1.4.0-1_aarch64.deb",
       "version": "1.4.0-1"
+    },
+    "libandroid-execinfo": {
+      "sha256": "725dd2c6da7fc96e860fcc928e18aa9fb0e85e0bdcaf4f8ce0f0654ca6860fc2",
+      "url": "https://packages.termux.dev/apt/termux-main/pool/main/liba/libandroid-execinfo/libandroid-execinfo_0.1-3_aarch64.deb",
+      "version": "0.1-3"
     },
     "libandroid-glob": {
       "sha256": "2276ae8adedf0db76c2f4ffc94cc4cceb2f4f5d78e021b54e2e046d1233e7826",
@@ -87,9 +92,9 @@
       "version": "29-1"
     },
     "libaom": {
-      "sha256": "87ece0ac014c683b519d9f40045f62e02f1b175a73002b93d44d4a3fb0f8a537",
-      "url": "https://packages.termux.dev/apt/termux-main/pool/main/liba/libaom/libaom_3.15.1_aarch64.deb",
-      "version": "3.15.1"
+      "sha256": "942fa9a844e77a5a0bd73da4928261538f08cf79109c0608d28f0243eaeba1a2",
+      "url": "https://packages.termux.dev/apt/termux-main/pool/main/liba/libaom/libaom_3.15.3_aarch64.deb",
+      "version": "3.15.3"
     },
     "libass": {
       "sha256": "4f94205285ea2062be4f60e695723a6f3350339ec89720943b0dce5ae30db01d",
@@ -122,9 +127,9 @@
       "version": "0.2-6"
     },
     "libdav1d": {
-      "sha256": "4c2ffdcbbb805727caaa2e91b56917830dbacf4245dd439cf2e1c0d61a541613",
-      "url": "https://packages.termux.dev/apt/termux-main/pool/main/libd/libdav1d/libdav1d_1.5.4_aarch64.deb",
-      "version": "1.5.4"
+      "sha256": "18716edc2e9caf2e71a6be7702e66517fbc069b8e24d6a7b6fa00bda6e6d241b",
+      "url": "https://packages.termux.dev/apt/termux-main/pool/main/libd/libdav1d/libdav1d_1.5.5_aarch64.deb",
+      "version": "1.5.5"
     },
     "libde265": {
       "sha256": "3c38af85b13a638b377fab1b7389aae2aca5067e21db29c058d5746f52ea7114",
@@ -142,14 +147,14 @@
       "version": "7.1.1"
     },
     "libexpat": {
-      "sha256": "f8a104e8227c9c181f6818658a3ee2fa4c107fac94219b068144fc6591086cdb",
-      "url": "https://packages.termux.dev/apt/termux-main/pool/main/libe/libexpat/libexpat_2.9.0_aarch64.deb",
-      "version": "2.9.0"
+      "sha256": "0e4411f01f6fb664f3f04f9420289472f9afc30db01ea1c5d1e57fd9fa2354be",
+      "url": "https://packages.termux.dev/apt/termux-main/pool/main/libe/libexpat/libexpat_2.10.0_aarch64.deb",
+      "version": "2.10.0"
     },
     "libffi": {
-      "sha256": "4f255badf74cd31f6a2801c17fa1444199c84c834b517b7c843e2fe9ebe91d77",
-      "url": "https://packages.termux.dev/apt/termux-main/pool/main/libf/libffi/libffi_3.8.0_aarch64.deb",
-      "version": "3.8.0"
+      "sha256": "9e13f3b5c40625c384101992bb669a278e07d9e2baa37d286d7ed164288fab1a",
+      "url": "https://packages.termux.dev/apt/termux-main/pool/main/libf/libffi/libffi_3.8.1_aarch64.deb",
+      "version": "3.8.1"
     },
     "libgraphite": {
       "sha256": "15ac85737a35150cecb9e46ecb32567ae2a4fc28071cdf58fb95e1b77d7889d9",
@@ -157,29 +162,29 @@
       "version": "1.3.15"
     },
     "libheif": {
-      "sha256": "14681f626daef5eac65bbfce8eadcc3add8fb881de3fafa2ea3014c6f8b46ffe",
-      "url": "https://packages.termux.dev/apt/termux-main/pool/main/libh/libheif/libheif_1.23.6_aarch64.deb",
-      "version": "1.23.6"
+      "sha256": "d2ad8d0b30dca193550da19fa98e0ac0c2dfa226b0165c106ebd85f027478d55",
+      "url": "https://packages.termux.dev/apt/termux-main/pool/main/libh/libheif/libheif_1.23.7_aarch64.deb",
+      "version": "1.23.7"
     },
     "libiconv": {
-      "sha256": "fe9481b1dc101c6c3552943f25435109fd522aecc615ae49594f9fbee863bb37",
-      "url": "https://packages.termux.dev/apt/termux-main/pool/main/libi/libiconv/libiconv_1.19_aarch64.deb",
-      "version": "1.19"
+      "sha256": "a1c6323eff4f660e16ae6f5832356444b3269c19a4f61146355a49e7c4be5ed1",
+      "url": "https://packages.termux.dev/apt/termux-main/pool/main/libi/libiconv/libiconv_1.19.1_aarch64.deb",
+      "version": "1.19.1"
     },
     "libicu": {
-      "sha256": "f536403f65a08fe0df6e7304184e902d54def77d5c3bd5edfd9109d57601d276",
-      "url": "https://packages.termux.dev/apt/termux-main/pool/main/libi/libicu/libicu_78.3_aarch64.deb",
-      "version": "78.3"
+      "sha256": "83c980a010e957738e3567127801d66a1b9bd7e404a4fda98788048ee57d606c",
+      "url": "https://packages.termux.dev/apt/termux-main/pool/main/libi/libicu/libicu_79.1_aarch64.deb",
+      "version": "79.1"
     },
     "libjpeg-turbo": {
-      "sha256": "e6339075bcde28b4902d5a51f4063164834abfd2fa115e881ae637a34585e54f",
-      "url": "https://packages.termux.dev/apt/termux-main/pool/main/libj/libjpeg-turbo/libjpeg-turbo_3.2.0_aarch64.deb",
-      "version": "3.2.0"
+      "sha256": "3e46721f2fbb10d5f53a45b99e2549d18a34ca3751aa4b704b3404fcdea5f8e7",
+      "url": "https://packages.termux.dev/apt/termux-main/pool/main/libj/libjpeg-turbo/libjpeg-turbo_3.2.1_aarch64.deb",
+      "version": "3.2.1"
     },
     "libjxl": {
-      "sha256": "5deef55b1940aef2bc2666fdb4bfcba66cfbf73c17a419f299ddabe312b2ce11",
-      "url": "https://packages.termux.dev/apt/termux-main/pool/main/libj/libjxl/libjxl_0.12.0-1_aarch64.deb",
-      "version": "0.12.0-1"
+      "sha256": "7ccbe06a6c0d22a8934729e580397bb405c30ea5f25ccf18365c1c79c7103f5c",
+      "url": "https://packages.termux.dev/apt/termux-main/pool/main/libj/libjxl/libjxl_0.13.0_aarch64.deb",
+      "version": "0.13.0"
     },
     "liblzma": {
       "sha256": "44e95e6e60dddb3705e60a344a4f009a1085a210797342b721eaff41b44033c0",
@@ -212,9 +217,9 @@
       "version": "0.1.6-1"
     },
     "libopenmpt": {
-      "sha256": "80c0b91a3804edc69bd45ec8a9ef4f1d1a1b5be2b8712dafce9469069cc1acc0",
-      "url": "https://packages.termux.dev/apt/termux-main/pool/main/libo/libopenmpt/libopenmpt_0.8.9_aarch64.deb",
-      "version": "0.8.9"
+      "sha256": "ffbd8d03f0f4ca21aefdd5777d133a0b2ddafb44697f1c386e977fb048362235",
+      "url": "https://packages.termux.dev/apt/termux-main/pool/main/libo/libopenmpt/libopenmpt_0.8.10_aarch64.deb",
+      "version": "0.8.10"
     },
     "libopus": {
       "sha256": "005a9335ce0ec0f510bbe6e0229c901d6f920cc375fcda56461e96cef70f8ff0",
@@ -222,9 +227,9 @@
       "version": "1.6.1"
     },
     "libplacebo": {
-      "sha256": "903ba38d4b1184a7fb37584e93967a73791f5df22fb3f81de5b33051b77b73ca",
-      "url": "https://packages.termux.dev/apt/termux-main/pool/main/libp/libplacebo/libplacebo_7.360.1_aarch64.deb",
-      "version": "7.360.1"
+      "sha256": "925a54773e29aefc790fd1a6d7759ea3b893d0482db878299c8b885233655f82",
+      "url": "https://packages.termux.dev/apt/termux-main/pool/main/libp/libplacebo/libplacebo_7.387.0_aarch64.deb",
+      "version": "7.387.0"
     },
     "libpng": {
       "sha256": "32d61f0b1a60cf7283aa3a80e288737493df2c6b84c8c749606b77c94a10f2b2",
@@ -252,9 +257,9 @@
       "version": "0.1.3-8"
     },
     "libsqlite": {
-      "sha256": "0e909ce0d50fe123305446cd22e0c5edf535d40344b9b065fbdcdee52f53198d",
-      "url": "https://packages.termux.dev/apt/termux-main/pool/main/libs/libsqlite/libsqlite_3.53.4_aarch64.deb",
-      "version": "3.53.4"
+      "sha256": "661fb995f7215845007b222a85266ae99d9443e87e0604f8677edfd738e6b81a",
+      "url": "https://packages.termux.dev/apt/termux-main/pool/main/libs/libsqlite/libsqlite_3.54.1-1_aarch64.deb",
+      "version": "3.54.1-1"
     },
     "libsrt": {
       "sha256": "6199d01dd9d1630a32c220f7fdb9bca958adbd7062f90e9bfc010cf75fdef07a",
@@ -307,9 +312,9 @@
       "version": "1:1.17.0"
     },
     "libwebp": {
-      "sha256": "80fa46bec4faad0ccfd969df5acfd501d813ca9d112b5c49f3f91390e987f3a9",
-      "url": "https://packages.termux.dev/apt/termux-main/pool/main/libw/libwebp/libwebp_1.6.0-rc1-0_aarch64.deb",
-      "version": "1.6.0-rc1-0"
+      "sha256": "8ba7fcfadd1a9957a7632c6407d6ef3e41d34dbd96a41769b245592ed4559045",
+      "url": "https://packages.termux.dev/apt/termux-main/pool/main/libw/libwebp/libwebp_1.6.0.0.0.1+really1.6.0_aarch64.deb",
+      "version": "1.6.0.0.0.1+really1.6.0"
     },
     "libx264": {
       "sha256": "fe98852cb06ce1c963a54284179d8cda42af2fa82afcac09f7d81e6de4d9bbc1",
@@ -357,9 +362,9 @@
       "version": "4.3.5-2"
     },
     "littlecms": {
-      "sha256": "274f732a186563beca204f5d016d30cac8e5c24f7c4395b60881f9613eddf1a1",
-      "url": "https://packages.termux.dev/apt/termux-main/pool/main/l/littlecms/littlecms_2.19.1_aarch64.deb",
-      "version": "2.19.1"
+      "sha256": "20be10d39b67e50366e172d11e7f3895fa2a71b5a86139713a101fa1d3b8d015",
+      "url": "https://packages.termux.dev/apt/termux-main/pool/main/l/littlecms/littlecms_2.20_aarch64.deb",
+      "version": "2.20"
     },
     "ncurses": {
       "sha256": "f44bbfdc3d42ec0217bffa978309390e59cea5a48a9a83226d4a496c42ad0b99",
@@ -402,14 +407,14 @@
       "version": "4.0.0-1"
     },
     "svt-av1": {
-      "sha256": "e1fd576d086e2d870429e3ae16610b24cb1d0c8f9fcf330fa0abba9e867aabdb",
-      "url": "https://packages.termux.dev/apt/termux-main/pool/main/s/svt-av1/svt-av1_4.2.0_aarch64.deb",
-      "version": "4.2.0"
+      "sha256": "3a9459c012dbe3bf9484ee200ff962a49499c05d3cf2829ac278d37973d03cc0",
+      "url": "https://packages.termux.dev/apt/termux-main/pool/main/s/svt-av1/svt-av1_4.3.0_aarch64.deb",
+      "version": "4.3.0"
     },
     "vulkan-loader-generic": {
-      "sha256": "99b22e01c966aa1e3dc4ab827508ccc256bebe3fafb20cf7c4883e965a7c3311",
-      "url": "https://packages.termux.dev/apt/termux-main/pool/main/v/vulkan-loader-generic/vulkan-loader-generic_1.4.365_aarch64.deb",
-      "version": "1.4.365"
+      "sha256": "8043459b6d4efd4834b756c6eeb539e8ae184d71046ffddff3ca75e85b1fcb27",
+      "url": "https://packages.termux.dev/apt/termux-main/pool/main/v/vulkan-loader-generic/vulkan-loader-generic_1.4.368_aarch64.deb",
+      "version": "1.4.368"
     },
     "xvidcore": {
       "sha256": "2f358b11fd750935b43ac19f09bb7c4228e007079426e0b73ee8bae1ddf26fc1",
@@ -417,9 +422,9 @@
       "version": "1.3.7-1"
     },
     "zlib": {
-      "sha256": "75e7d0af17fcc3b40004309fdc00a1ddb9ae08346dce5e269902c34ac3966ac9",
-      "url": "https://packages.termux.dev/apt/termux-main/pool/main/z/zlib/zlib_1.3.2_aarch64.deb",
-      "version": "1.3.2"
+      "sha256": "e3027565ae50bcd8ba5113c988b589754ae192c9cc3e6afbe3e4ed7c06b2598e",
+      "url": "https://packages.termux.dev/apt/termux-main/pool/main/z/zlib/zlib_1.4_aarch64.deb",
+      "version": "1.4"
     },
     "zstd": {
       "sha256": "e1b4a5113648da8de189620ba1fce74c48b2d0833d9043391b9a1c91fb606fd3",

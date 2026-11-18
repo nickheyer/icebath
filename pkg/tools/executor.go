@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"log/slog"
 	"maps"
 	"math"
 	"os"
@@ -83,19 +82,13 @@ func resolveTimeout(env *Env, key string, def float64, hasDefault bool, envVar s
 				return clampTimeoutSeconds(f, true)
 			}
 		}
-		toolsLogger(env).With("logger", "agent.deadline").Warn(fmt.Sprintf("timeouts.%s: invalid value %s in config.yaml; ignoring", key, pyrepr.Repr(raw)))
+		envLog(env).Warn(fmt.Sprintf("timeouts.%s: invalid value %s in config.yaml; ignoring", key, pyrepr.Repr(raw)))
 	}
-	if envVar != "" {
-		for _, name := range []string{envVar, strings.Replace(envVar, "ICEBATH_", "HERMES_", 1)} {
-			rawEnv := strings.TrimSpace(os.Getenv(name))
-			if rawEnv == "" {
-				continue
-			}
-			if f, err := strconv.ParseFloat(rawEnv, 64); err == nil {
-				return clampTimeoutSeconds(f, true)
-			}
-			toolsLogger(env).With("logger", "agent.deadline").Warn(fmt.Sprintf("invalid %s=%s; ignoring", name, pyrepr.Repr(rawEnv)))
+	if rawEnv := strings.TrimSpace(os.Getenv(envVar)); envVar != "" && rawEnv != "" {
+		if f, err := strconv.ParseFloat(rawEnv, 64); err == nil {
+			return clampTimeoutSeconds(f, true)
 		}
+		envLog(env).Warn(fmt.Sprintf("invalid %s=%s; ignoring", envVar, pyrepr.Repr(rawEnv)))
 	}
 	return clampTimeoutSeconds(def, hasDefault)
 }
@@ -260,9 +253,7 @@ type ExecutorHost interface {
 	GuardrailBlockResult(d ToolGuardrailDecision) string
 	AppendGuardrailObservation(name string, args map[string]any, result string, failed bool, toolCallID string) string
 	RecordFileMutationResult(name string, args map[string]any, result string, isError bool, taskID string)
-	ObserveToolOutcome(name string, isError bool)
-	NoteToolResult(name, toolCallID, result, persisted string)
-	RecordToolBatch(batch []*state.Message, contentsBefore []any)
+	ToolResultCommitted()
 	SubdirectoryHints(name string, args map[string]any) string
 	ToolResultContentForActiveModel(name string, result string) any
 	ToolProgressCallback() func(event, name, preview string, args map[string]any, extra map[string]any)
@@ -418,6 +409,20 @@ func (e *Executor) emitPost(ctx context.Context, ref *ToolCallRef, result string
 // Cause the SIGINT handler cancels the turn context with, returned up the dispatch chain like Python KeyboardInterrupt
 var ErrKeyboardInterrupt = errors.New("keyboard interrupt")
 
+// Cause the context of a tool call is cancelled with when its timeout fires
+var errToolTimedOut = errors.New("tool call timed out")
+
+// Cause the context of a tool call is cancelled with when an interrupt abandons it
+var errToolAbandoned = errors.New("tool call abandoned")
+
+// Interrupt reason an abandoned call reports, interrupt requested when the interrupt named none
+func abandonReason(reason string) string {
+	if reason == "" {
+		return "interrupt requested"
+	}
+	return reason
+}
+
 // Reports a failed dispatch raised by a keyboard interrupt, either returned by the tool or set as the turn cause
 func IsKeyboardInterrupt(ctx context.Context, err error) bool {
 	return err != nil && (errors.Is(err, ErrKeyboardInterrupt) || keyboardInterruptRequested(ctx))
@@ -477,7 +482,7 @@ func (e *Executor) unwrapToolSearchCall(ctx context.Context, name string, args m
 	}
 	env := e.Host.Env()
 	underlying, underlyingArgs, errMsg := ResolveUnderlyingCall(ctx, env, args, nil)
-	if errMsg != "" || underlying == "" || underlying == ConnectorBatchSentinel {
+	if errMsg != "" || underlying == "" {
 		return name, args, ""
 	}
 	if !e.toolSearchScopedNames(ctx)[underlying] {
@@ -577,7 +582,6 @@ type ManagedToolResult struct {
 	// TimedOut and Cancelled mark synthesized results whose terminal hook already fired
 	TimedOut  bool
 	Cancelled bool
-	DataUse   []string
 }
 
 // AuthorizationGate serializes policy prompts and excludes human approval waits from batch deadlines
@@ -650,7 +654,7 @@ func (g *AuthorizationGate) Run(callback func()) {
 		defer func() { <-g.sem }()
 		callback()
 	case <-expired:
-		executorLog(g.env).Warn(fmt.Sprintf("authorization gate lock not acquired after %.1fs (holder wedged in a pre_tool_call plugin or approval round-trip?); running prompt unserialized", g.lockTimeout.Seconds()))
+		envLog(g.env).Warn(fmt.Sprintf("authorization gate lock not acquired after %.1fs (holder wedged in a pre_tool_call plugin or approval round-trip?); running prompt unserialized", g.lockTimeout.Seconds()))
 		callback()
 	}
 }
@@ -808,8 +812,6 @@ func (e *Executor) dispatchAuthorizedOnce(ctx context.Context, st *ManagedToolRe
 		return "", err
 	}
 	ctx = BoundToolProgress(ctx, e.Host.ToolProgressCallback(), ref.Name, ref.CallID)
-	ctx, sink := CollectDataUse(ctx)
-	defer func() { st.DataUse = sink.Requirements() }()
 	return e.runWithActivityHeartbeat(ctx, ref.Name, func() (string, error) { return in.execute(ctx, ref.Args) })
 }
 
@@ -933,12 +935,7 @@ func safeCallback(fn func(), label string) {
 }
 
 func envLogDebug(msg string, rec any) {
-	toolsLogger(nil).With("logger", "root").Debug(fmt.Sprintf("%s: %v", msg, rec))
-}
-
-// Logger named like the reference tool executor module
-func executorLog(env *Env) *slog.Logger {
-	return toolsLogger(env).With("logger", "agent.tool_executor")
+	envLog(nil).Debug(fmt.Sprintf("%s: %v", msg, rec))
 }
 
 // First limit characters with an ellipsis when the text is longer
@@ -983,7 +980,7 @@ func (e *Executor) flushAfterToolProgress(messages *[]*state.Message, stage stri
 	defer func() {
 		if r := recover(); r != nil {
 			host.MarkIncrementalPersistenceFailed(state.ClassifyPersistenceError(r))
-			executorLog(host.Env()).Warn(fmt.Sprintf("Incremental tool-call persistence failed after %s: %v", stage, r))
+			envLog(host.Env()).Warn(fmt.Sprintf("Incremental tool-call persistence failed after %s: %v", stage, r))
 			persisted = false
 		}
 	}()
@@ -1096,7 +1093,6 @@ type commitInput struct {
 	blocked           bool
 	effectDisposition string
 	observed          bool
-	dataUse           []string
 	errorPreview      func(string) string
 	successLogChars   int
 	logSuccess        bool
@@ -1106,9 +1102,7 @@ type commitInput struct {
 // Observes, logs, persists, wraps, appends, flushes, and projects one tool result
 func (e *Executor) commitToolResult(ctx context.Context, messages *[]*state.Message, ref *ToolCallRef, result string, in commitInput) *committed {
 	host := e.Host
-	log := executorLog(host.Env())
-	rootLog := toolsLogger(host.Env()).With("logger", "root")
-	host.ObserveToolOutcome(ref.Name, in.isError)
+	log := envLog(host.Env())
 	if in.observed {
 		if !in.blocked {
 			result = host.AppendGuardrailObservation(ref.Name, orderedArgsObject(ref.RawArgs, ref.Args).Vals, result, in.isError, ref.CallID)
@@ -1126,7 +1120,7 @@ func (e *Executor) commitToolResult(ctx context.Context, messages *[]*state.Mess
 			func() {
 				defer func() {
 					if rec := recover(); rec != nil {
-						rootLog.Debug(fmt.Sprintf("file-mutation verifier record failed: %v", rec))
+						log.Debug(fmt.Sprintf("file-mutation verifier record failed: %v", rec))
 					}
 				}()
 				host.RecordFileMutationResult(ref.Name, ref.Args, result, in.isError, ref.TaskID)
@@ -1137,8 +1131,8 @@ func (e *Executor) commitToolResult(ctx context.Context, messages *[]*state.Mess
 			if in.verboseText != nil {
 				text = in.verboseText(result)
 			}
-			rootLog.Debug(fmt.Sprintf("Tool %s completed in %.2fs", ref.Name, in.duration))
-			rootLog.Debug(fmt.Sprintf("Tool result (%d chars): %s", utf8.RuneCountInString(text), text))
+			log.Debug(fmt.Sprintf("Tool %s completed in %.2fs", ref.Name, in.duration))
+			log.Debug(fmt.Sprintf("Tool result (%d chars): %s", utf8.RuneCountInString(text), text))
 		}
 	}
 	host.SetCurrentTool("")
@@ -1157,7 +1151,7 @@ func (e *Executor) commitToolResult(ctx context.Context, messages *[]*state.Mess
 		persisted = MaybePersistToolResult(ctx, host.Env(), sandbox, result, ref.Name, ref.CallID, in.budget, ThresholdResolve)
 	}
 	e.recordPersistedPathForStub(ref.CallID, persisted)
-	host.NoteToolResult(ref.Name, ref.CallID, result, persisted)
+	host.ToolResultCommitted()
 	if hints := host.SubdirectoryHints(ref.Name, ref.Args); hints != "" {
 		if persistedEnvelope != nil {
 			AppendSubdirHintToMultimodal(persistedEnvelope, hints)
@@ -1175,7 +1169,7 @@ func (e *Executor) commitToolResult(ctx context.Context, messages *[]*state.Mess
 			func() {
 				defer func() {
 					if rec := recover(); rec != nil {
-						rootLog.Debug(fmt.Sprintf("Tool result metadata callback error: %v", rec))
+						log.Debug(fmt.Sprintf("Tool result metadata callback error: %v", rec))
 					}
 				}()
 				displayArgs := host.RedactToolArgsForDisplay(ref.Name, ref.Args)
@@ -1193,7 +1187,6 @@ func (e *Executor) commitToolResult(ctx context.Context, messages *[]*state.Mess
 			}()
 		}
 	}
-	stampMessageDataUse(toolMessage, in.dataUse)
 	*messages = append(*messages, toolMessage)
 	if !e.flushAfterToolProgress(messages, "tool result "+ref.Name) {
 		return nil
@@ -1215,21 +1208,6 @@ func (e *Executor) commitToolResult(ctx context.Context, messages *[]*state.Mess
 	return &committed{persisted: persisted, display: result, risk: risk}
 }
 
-// Marks a tool message with its sorted data use requirements in the message and a copy of its display metadata
-func stampMessageDataUse(msg *state.Message, requires []string) {
-	row := map[string]any{"display_metadata": msg.DisplayMetadata}
-	state.StampDataUse(row, slices.Sorted(slices.Values(requires)))
-	stamped, ok := row[state.DataUse]
-	if !ok {
-		return
-	}
-	if msg.Extra == nil {
-		msg.Extra = map[string]any{}
-	}
-	msg.Extra[state.DataUse] = stamped
-	msg.DisplayMetadata, _ = row["display_metadata"].(map[string]any)
-}
-
 // Per turn aggregate budget enforcement then steer injection
 func (e *Executor) finalizeToolBatch(ctx context.Context, messages *[]*state.Message, taskID string, numTools int, budget BudgetConfig) {
 	if numTools <= 0 || numTools > len(*messages) {
@@ -1243,7 +1221,6 @@ func (e *Executor) finalizeToolBatch(ctx context.Context, messages *[]*state.Mes
 	EnforceTurnBudget(ctx, e.Host.Env(), e.Host.ActiveSandbox(taskID), batch, budget)
 	e.Host.KeepLiveNotesAfterTurnBudget(batch)
 	e.Host.SyncRewrittenToolRows(batch, before)
-	e.Host.RecordToolBatch(batch, before)
 	e.Host.ApplyPendingSteer(messages, numTools)
 }
 
@@ -1310,7 +1287,6 @@ type toolOutcome struct {
 	duration float64
 	isError  bool
 	blocked  bool
-	dataUse  []string
 }
 
 // Gate bound under the batch deadline so parked workers are never falsely reported timed out
@@ -1374,7 +1350,7 @@ func (g *StartOrderGate) beginInOrder(order int, callback func(), toolName strin
 		if toolName == "" {
 			toolName = "tool"
 		}
-		executorLog(g.env).Warn(fmt.Sprintf("start-order gate timed out for %s (order=%d next=%d); proceeding out of order", toolName, order, g.nextOrder))
+		envLog(g.env).Warn(fmt.Sprintf("start-order gate timed out for %s (order=%d next=%d); proceeding out of order", toolName, order, g.nextOrder))
 	}
 	defer func() {
 		if order+1 > g.nextOrder {
@@ -1444,7 +1420,6 @@ func (b *concurrentBatch) dispatchWorker(ctx context.Context, index int, ref *To
 	e := b.exec
 	start := time.Now()
 	blocked, dispatched := false, false
-	var dataUse []string
 	var result string
 	in := ref.middlewareKwargs()
 	in.execute = func(ctx context.Context, next map[string]any) (string, error) {
@@ -1454,22 +1429,22 @@ func (b *concurrentBatch) dispatchWorker(ctx context.Context, index int, ref *To
 	in.scopeBlock, in.displayIndex, in.beginExecution, in.gate = scopeBlock, index+1, startGate.advance, b.authGate
 	managed, err := e.runToolExecutionMiddleware(ctx, in)
 	if errors.Is(err, errBatchAbandoned) {
-		executorLog(e.Host.Env()).Info(fmt.Sprintf("tool %s abandoned at start-order gate; skipping dispatch", ref.Name))
+		envLog(e.Host.Env()).Info(fmt.Sprintf("tool %s abandoned at start-order gate; skipping dispatch", ref.Name))
 		return nil
 	}
 	if IsKeyboardInterrupt(ctx, err) {
 		e.interruptForKeyboard()
 		result = e.emitCancelled(ctx, ref, start)
 		duration := time.Since(start).Seconds()
-		executorLog(e.Host.Env()).Info(fmt.Sprintf("tool %s cancelled (%.2fs)", ref.Name, duration))
+		envLog(e.Host.Env()).Info(fmt.Sprintf("tool %s cancelled (%.2fs)", ref.Name, duration))
 		return &toolOutcome{ref: ref, result: result, duration: duration, isError: true}
 	}
 	if err != nil {
 		result = fmt.Sprintf("Error executing tool '%s': %s", ref.Name, err.Error())
-		executorLog(e.Host.Env()).Error(fmt.Sprintf("_invoke_tool raised for %s: %s", ref.Name, err.Error()))
+		envLog(e.Host.Env()).Error(fmt.Sprintf("_invoke_tool raised for %s: %s", ref.Name, err.Error()))
 	} else {
 		result, ref.Args, ref.Trace = managed.Result, managed.Args, managed.Trace
-		blocked, dispatched, dataUse = managed.Blocked, managed.Dispatched, managed.DataUse
+		blocked, dispatched = managed.Blocked, managed.Dispatched
 	}
 	duration := time.Since(start).Seconds()
 	if !blocked && !dispatched {
@@ -1477,11 +1452,11 @@ func (b *concurrentBatch) dispatchWorker(ctx context.Context, index int, ref *To
 	}
 	isError, _ := ClassifyToolFailure(ref.Name, &result)
 	if isError {
-		executorLog(e.Host.Env()).Info(fmt.Sprintf("tool %s failed (%.2fs): %s", ref.Name, duration, runePrefix(result, 200)))
+		envLog(e.Host.Env()).Info(fmt.Sprintf("tool %s failed (%.2fs): %s", ref.Name, duration, runePrefix(result, 200)))
 	} else {
-		executorLog(e.Host.Env()).Info(fmt.Sprintf("tool %s completed (%.2fs, %d chars)", ref.Name, duration, utf8.RuneCountInString(result)))
+		envLog(e.Host.Env()).Info(fmt.Sprintf("tool %s completed (%.2fs, %d chars)", ref.Name, duration, utf8.RuneCountInString(result)))
 	}
-	return &toolOutcome{ref: ref, result: result, duration: duration, isError: isError, blocked: blocked, dataUse: dataUse}
+	return &toolOutcome{ref: ref, result: result, duration: duration, isError: isError, blocked: blocked}
 }
 
 func (b *concurrentBatch) runWorker(ctx context.Context, index, startOrder int) {
@@ -1568,7 +1543,7 @@ func (b *concurrentBatch) awaitCompletion(ctx context.Context, done []chan struc
 			if len(names) > 5 {
 				names = names[:5]
 			}
-			executorLog(host.Env()).Warn(fmt.Sprintf("concurrent tool batch timed out after %.1fs; %d tool(s) still running: %s", b.timeout.Seconds(), len(b.timedOut), strings.Join(names, ", ")))
+			envLog(host.Env()).Warn(fmt.Sprintf("concurrent tool batch timed out after %.1fs; %d tool(s) still running: %s", b.timeout.Seconds(), len(b.timedOut), strings.Join(names, ", ")))
 		} else if host.Interrupted() {
 			host.VPrint(fmt.Sprintf("%s⚡ Interrupt: cancelling %d pending concurrent tool(s)", host.LogPrefix(), pending), true)
 		} else {
@@ -1663,10 +1638,17 @@ func (b *concurrentBatch) run(ctx context.Context) error {
 	for k, i := range runnable {
 		names[k] = b.parsed[i].Name
 	}
-	done := b.submitAll(ctx, runnable, maxWorkersForToolBatch(b.exec.Host.Env(), names))
+	workCtx, cancelWork := context.WithCancelCause(ctx)
+	defer cancelWork(nil)
+	done := b.submitAll(workCtx, runnable, maxWorkersForToolBatch(b.exec.Host.Env(), names))
 	abandoned, err := b.awaitCompletion(ctx, done, runnable, deadline, hasDeadline)
 	if abandoned {
 		b.gate.Abandon()
+		if len(b.timedOut) > 0 {
+			cancelWork(fmt.Errorf("%w after %.1fs", errToolTimedOut, b.timeout.Seconds()))
+		} else {
+			cancelWork(fmt.Errorf("%w: %s", errToolAbandoned, abandonReason(b.exec.Host.ToolInterruptReason())))
+		}
 	}
 	return err
 }
@@ -1705,12 +1687,11 @@ func (e *Executor) appendBatchResults(ctx context.Context, messages *[]*state.Me
 		var result, effect string
 		var duration float64
 		var isError, blocked bool
-		var dataUse []string
 		if r == nil {
 			ref, isError, blocked = pc.Ref(taskID), true, false
 			result, duration, effect = e.unfinishedToolResult(ctx, ref, b.timedOut[i], b.timeout)
 		} else {
-			ref, result, duration, isError, blocked, dataUse = r.ref, r.result, r.duration, r.isError, r.blocked, r.dataUse
+			ref, result, duration, isError, blocked = r.ref, r.result, r.duration, r.isError, r.blocked
 			if blocked {
 				effect = "none"
 			}
@@ -1719,7 +1700,7 @@ func (e *Executor) appendBatchResults(ctx context.Context, messages *[]*state.Me
 			}
 		}
 		c := e.commitToolResult(ctx, messages, ref, result, commitInput{budget: budget, duration: duration, isError: isError, blocked: blocked,
-			effectDisposition: effect, observed: r != nil, dataUse: dataUse,
+			effectDisposition: effect, observed: r != nil,
 			errorPreview: func(res string) string { return runePrefix(MultimodalTextSummary(multimodalOrString(res)), 200) }})
 		if c == nil {
 			return false
@@ -2066,9 +2047,11 @@ func (e *Executor) runSequentialToolExecutionMiddleware(ctx context.Context, in 
 	done := make(chan struct{})
 	outcome := &sequentialResult{}
 	in.gate = gate
+	callCtx, cancelCall := context.WithCancelCause(ctx)
+	defer cancelCall(nil)
 	go func() {
 		defer close(done)
-		wctx, id, release := e.registerWorker(ctx)
+		wctx, id, release := e.registerWorker(callCtx)
 		defer release()
 		workerMu.Lock()
 		workerIDs = append(workerIDs, id)
@@ -2097,20 +2080,19 @@ func (e *Executor) runSequentialToolExecutionMiddleware(ctx context.Context, in 
 			return outcome.managed, outcome.err
 		case <-time.After(abandonedWorkerGrace):
 		}
-		reason := host.ToolInterruptReason()
-		if reason == "" {
-			reason = "interrupt requested"
-		}
+		reason := abandonReason(host.ToolInterruptReason())
 		message = fmt.Sprintf("[Tool execution cancelled — %s was abandoned: %s]", in.name, reason)
-		executorLog(env).Info(fmt.Sprintf("sequential tool %s abandoned due to %s (%.1fs elapsed)", in.name, reason, time.Since(started).Seconds()))
+		envLog(env).Info(fmt.Sprintf("sequential tool %s abandoned due to %s (%.1fs elapsed)", in.name, reason, time.Since(started).Seconds()))
 		managed = e.abandonedSequentialResult(ctx, ref, message, int(time.Since(started).Milliseconds()), "cancelled", "tool_interrupted", "Tool execution cancelled: "+reason, true)
+		cancelCall(fmt.Errorf("%w: %s", errToolAbandoned, reason))
 	} else {
 		message = fmt.Sprintf("Error executing tool '%s': timed out after %.1fs", in.name, timeout.Seconds())
-		executorLog(env).Warn(fmt.Sprintf("sequential tool %s timed out after %.1fs", in.name, timeout.Seconds()))
+		envLog(env).Warn(fmt.Sprintf("sequential tool %s timed out after %.1fs", in.name, timeout.Seconds()))
 		managed = e.abandonedSequentialResult(ctx, ref, message, int(timeout.Milliseconds()), "timeout", "tool_timeout", message, false)
 	}
 	if st == "timeout" {
 		interruptWorkerIDs(ids, "")
+		cancelCall(fmt.Errorf("%w after %.1fs", errToolTimedOut, timeout.Seconds()))
 	}
 	return managed, nil
 }
@@ -2149,7 +2131,7 @@ func (e *Executor) runSequentialCall(ctx context.Context, dispatch *sequentialDi
 	case dispatch.errorResult == nil:
 		raised = err
 	default:
-		executorLog(host.Env()).Error(fmt.Sprintf(dispatch.errorLog, ref.Name, err.Error()))
+		envLog(host.Env()).Error(fmt.Sprintf(dispatch.errorLog, ref.Name, err.Error()))
 		managed = &ManagedToolResult{Result: dispatch.errorResult(err), Args: ref.Args, Trace: ref.Trace}
 	}
 	if dispatch.isDelegate {
@@ -2188,7 +2170,7 @@ func (e *Executor) publishSequentialResult(ctx context.Context, messages *[]*sta
 		effect = "unknown"
 	}
 	c := e.commitToolResult(ctx, messages, ref, result, commitInput{budget: budget, duration: duration, isError: isError, blocked: managed.Blocked,
-		effectDisposition: effect, observed: true, dataUse: managed.DataUse,
+		effectDisposition: effect, observed: true,
 		errorPreview: func(res string) string {
 			if host.VerboseLogging() {
 				return res

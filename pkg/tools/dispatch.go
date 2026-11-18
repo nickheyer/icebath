@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"reflect"
 	"regexp"
+	"runtime/debug"
 	"strings"
 	"sync"
 	"time"
@@ -262,7 +263,7 @@ func (d *Dispatcher) applyRequestMiddleware(ctx context.Context, env *Env, name 
 	if ids.SessionID != "" {
 		relayArgs, err := relayToolRequestIntercepts(ctx, ids.SessionID, name, schemaDeepCopy(args).(map[string]any))
 		if err != nil {
-			toolsLogger(env).Debug("tool_request middleware error", "error", err)
+			envLog(env).Debug("tool_request middleware error", "error", err)
 			fallback := make(map[string]any, len(args))
 			for k, v := range args {
 				fallback[k] = v
@@ -326,7 +327,7 @@ func (d *Dispatcher) EmitPostToolCall(ctx context.Context, env *Env, ev PostTool
 		func() {
 			defer func() {
 				if rec := recover(); rec != nil {
-					toolsLogger(env).Debug("post_tool_call hook error", "panic", rec)
+					envLog(env).Debug("post_tool_call hook error", "panic", rec)
 				}
 			}()
 			h(ctx, env, ev)
@@ -348,7 +349,7 @@ func (d *Dispatcher) ApplyTransformToolResult(ctx context.Context, env *Env, ev 
 		replaced, ok := func() (out string, ok bool) {
 			defer func() {
 				if rec := recover(); rec != nil {
-					toolsLogger(env).Debug("transform_tool_result hook error", "panic", rec)
+					envLog(env).Debug("transform_tool_result hook error", "panic", rec)
 					out, ok = "", false
 				}
 			}()
@@ -386,7 +387,7 @@ func (d *Dispatcher) dispatchPreToolCallHooks(ctx context.Context, env *Env, nam
 		directive := func() (out PreToolDirective) {
 			defer func() {
 				if rec := recover(); rec != nil {
-					toolsLogger(env).Warn("pre_tool_call hook panicked", "tool", name, "panic", rec)
+					envLog(env).Warn("pre_tool_call hook panicked", "tool", name, "panic", rec)
 					out = PreToolDirective{}
 				}
 			}()
@@ -466,7 +467,7 @@ func (d *Dispatcher) ApplyToolRequestMiddleware(ctx context.Context, env *Env, n
 		directive := func() (out RequestMiddlewareDirective) {
 			defer func() {
 				if rec := recover(); rec != nil {
-					toolsLogger(env).Warn("tool_request middleware panicked", "tool", name, "panic", rec)
+					envLog(env).Warn("tool_request middleware panicked", "tool", name, "panic", rec)
 					out = RequestMiddlewareDirective{}
 				}
 			}()
@@ -556,7 +557,7 @@ func (d *Dispatcher) RunToolExecutionMiddleware(ctx context.Context, env *Env, n
 		if errors.Is(err, errMiddlewareNextTwice) || IsKeyboardInterrupt(ctx, err) {
 			return "", err
 		}
-		toolsLogger(env).Warn("tool_execution middleware failed", "tool", name, "error", err)
+		envLog(env).Warn("tool_execution middleware failed", "tool", name, "error", err)
 		if nextSucceeded {
 			return nextResult, nil
 		}
@@ -581,7 +582,8 @@ func (d *Dispatcher) RegistryDispatch(ctx context.Context, call *Call) (result s
 	}
 	defer func() {
 		if rec := recover(); rec != nil {
-			toolsLogger(call.Env).With("logger", "tools.registry").Error(fmt.Sprintf("Tool %s dispatch error: %s", call.Name, boundModelErrorText(call.Env, fmt.Sprint(rec))))
+			envLog(call.Env).Error(fmt.Sprintf("Tool %s dispatch error: %s", call.Name, boundModelErrorText(call.Env, fmt.Sprint(rec))),
+				"stack", string(debug.Stack()))
 			kind := "panic"
 			if err, ok := rec.(error); ok {
 				kind = exceptionTypeName(err)
@@ -623,12 +625,6 @@ func (d *Dispatcher) dispatchBridgeTool(ctx context.Context, call *Call, pyArgs 
 			errMsg = "tool_call could not be resolved"
 		}
 		return toolErrorJSON(errMsg, nil), "", nil, true
-	}
-	if underlying == ConnectorBatchSentinel {
-		if !connectionsInScope(currentDefs) {
-			return toolErrorJSON("Connectors are not available in this session.", nil), "", nil, true
-		}
-		return "", underlying, underlyingArgs, true
 	}
 	if !ScopedDeferrableNames(ctx, env, currentDefs)[underlying] {
 		return toolErrorJSON(ScopeBlockReason(ctx, env, underlying), nil), "", nil, true
@@ -684,21 +680,14 @@ func (d *Dispatcher) DispatchWith(ctx context.Context, call *Call, opts Dispatch
 		if underlying == "" {
 			return emit(result, "", "", "", elapsedMS())
 		}
-		if underlying == ConnectorBatchSentinel {
-			calls, _ := underlyingArgs["calls"].([]any)
-			return emit(dispatchConnectorBatch(SuppressPostToolCallHook(ctx, false), d, resolved, calls, opts), "", "", "", elapsedMS())
-		}
 		inner := *resolved
 		inner.Name, inner.Args = underlying, underlyingArgs
 		return d.DispatchWith(ctx, &inner, opts)
 	}
-	if name == "manage_connections" || IsConnectorName(name) {
+	if name == "manage_connections" {
 		selected, _ := d.Registry.SelectToolNames(ctx, env, enabled, disabled, definitionSelectionContext(ctx, env))
 		if !selected["manage_connections"] {
-			return emit(toolErrorJSON("Connectors are not available in this session.", nil), "", "", "", 0)
-		}
-		if IsConnectorName(name) && !connectorNameValid(name) {
-			return emit(toolErrorJSON("Malformed connector tool name; expected connectors__<connector>__{tool}.", nil), "", "", "", 0)
+			return emit(toolErrorJSON("Connections are not available in this session.", nil), "", "", "", 0)
 		}
 	}
 	originalArgs := make(map[string]any, len(args))
@@ -733,7 +722,7 @@ func (d *Dispatcher) DispatchWith(ctx context.Context, call *Call, opts Dispatch
 	result, err := d.executeTool(execCtx, resolved, originalArgs, ids, opts)
 	if err != nil {
 		errorMsg := fmt.Sprintf("Error executing %s: %s", name, err.Error())
-		toolsLogger(env).Error(errorMsg)
+		envLog(env).Error(errorMsg)
 		return emit(toolErrorJSON(SanitizeToolError(errorMsg), nil), "error", exceptionTypeName(err), err.Error(), elapsedMS())
 	}
 	durationMS := elapsedMS()
@@ -767,7 +756,7 @@ func (d *Dispatcher) preDispatchGuards(ctx context.Context, env *Env, name strin
 			return d.EditApproval(ctx, env, name, args)
 		}()
 		if err != nil {
-			toolsLogger(env).Debug("ACP edit approval guard error", "error", err)
+			envLog(env).Debug("ACP edit approval guard error", "error", err)
 			if name == "write_file" || name == "patch" {
 				return args, &dispatchBlock{result: toolErrorJSON("Edit approval denied: approval guard failed", nil), errorType: "edit_approval_error"}
 			}
@@ -794,9 +783,6 @@ func (d *Dispatcher) executeTool(ctx context.Context, call *Call, originalArgs m
 	dispatch := func(nextArgs map[string]any) (string, error) {
 		inner := *call
 		inner.Args = nextArgs
-		if IsConnectorName(call.Name) {
-			return dispatchConnectorCall(ctx, env, &inner)
-		}
 		return d.RegistryDispatch(ctx, &inner), nil
 	}
 	if opts.SkipToolExecutionMiddleware {

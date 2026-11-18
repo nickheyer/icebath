@@ -3,6 +3,7 @@ package tui
 import (
 	"errors"
 	"fmt"
+	"github.com/nickheyer/icebath/pkg/tuigateway"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -18,18 +19,20 @@ import (
 )
 
 // Prints the report of a compress, its headline, token line and note
-func (r *slashRun) printCompressSummary(summary map[string]any) {
-	headline, _ := summary["headline"].(string)
-	switch {
-	case headline == "":
-		r.sys(tr("canonical.controls.compressed"))
-	case truthyJS(summary["noop"]):
-		r.sys(headline)
-	default:
-		r.sys("✓ " + headline)
+func (r *slashRun) printCompressSummary(summary *tuigateway.CompressionSummary) {
+	if summary == nil {
+		summary = &tuigateway.CompressionSummary{}
 	}
-	for _, key := range []string{"token_line", "note"} {
-		if line, _ := summary[key].(string); line != "" {
+	switch {
+	case summary.Headline == "":
+		r.sys(tr("canonical.controls.compressed"))
+	case summary.Noop:
+		r.sys(summary.Headline)
+	default:
+		r.sys("✓ " + summary.Headline)
+	}
+	for _, line := range []string{summary.TokenLine, val(summary.Note)} {
+		if line != "" {
 			r.sys("  " + line)
 		}
 	}
@@ -56,7 +59,7 @@ func (r *slashRun) canonicalControl(operation string) tea.Cmd {
 		}
 		result := m.Result
 		if operation == "branch" {
-			child, _ := result["branched_session_id"].(string)
+			child := val(result.BranchedSessionID)
 			if child == "" {
 				r.fail(errors.New(tr("session.common.invalidResponse", "branch")))
 				return nil
@@ -66,65 +69,52 @@ func (r *slashRun) canonicalControl(operation string) tea.Cmd {
 					a.uncaught(err)
 					return nil
 				}
-				return gatewayCall(a.gw, "session.info", map[string]any{"session_id": child}, func(v any, _ error) tea.Cmd {
+				return call(a.gw, tuigateway.CanonicalSessionInfo, tuigateway.CanonicalSessionInfoParams{SessionID: child}, func(info *tuigateway.SessionInfo, _ error) tea.Cmd {
 					if a.store.ui.Sid != child {
 						return nil
 					}
-					title, _ := asRPCResult(v)["title"].(string)
+					title := trimJS(val(infoOf(info).Title))
 					for _, fallback := range []string{trimJS(r.arg), child} {
-						if trimJS(title) == "" {
+						if title == "" {
 							title = fallback
 						}
 					}
-					a.sys(tr("slashCmd.session.branch.branched", trimJS(title)))
+					a.sys(tr("slashCmd.session.branch.branched", title))
 					return nil
 				})
 			})
 		}
-		summary, _ := result["summary"].(map[string]any)
-		switch result["status"] {
+		switch val(result.Status) {
 		case "preview":
-			r.sys(strings.Join(stringList(result["lines"]), "\n"))
+			r.sys(strings.Join(result.Lines, "\n"))
 			return nil
 		case "noop":
-			r.printCompressSummary(summary)
+			r.printCompressSummary(result.Summary)
 			return nil
 		}
-		return gatewayCall(a.gw, "session.resume", map[string]any{"session_id": r.sid}, func(v any, err error) tea.Cmd {
-			if r.stale() || a.store.ui.Busy != busy || !sameMap(a.store.ui.Info, baseline) {
+		return call(a.gw, tuigateway.CanonicalSessionResume, tuigateway.CanonicalResumeParams{SessionID: r.sid, DisplayProjection: true}, func(snapshot *tuigateway.CanonicalSnapshot, err error) tea.Cmd {
+			if r.stale() || a.store.ui.Busy != busy || a.store.ui.Info != baseline {
 				return nil
 			}
-			snapshot := asRPCResult(v)
-			messages, isList := snapshot["messages"].([]any)
-			if err != nil || !isList {
-				if err == nil {
-					err = errors.New(tr("session.common.invalidResponse", "compressed transcript"))
-				}
+			if err != nil {
 				r.fail(err)
 				return nil
 			}
-			info := map[string]any{}
-			for k, v := range baseline {
-				info[k] = v
-			}
-			fresh, _ := snapshot["info"].(map[string]any)
-			for k, v := range fresh {
-				info[k] = v
-			}
-			if info["execution_epoch"] != baseline["execution_epoch"] || jsNumberOf(info["execution_generation"]) < jsNumberOf(result["execution_generation"]) {
+			attached := snapshotAttachment(snapshot)
+			info := patchedInfo(baseline, *attached.Info)
+			if !sameStamp(info.AuthorityEpoch, infoOf(baseline).AuthorityEpoch) || val(info.ExecutionGeneration) < val(result.ExecutionGeneration) {
 				r.fail(errors.New(tr("canonical.controls.compressedStale")))
 				return nil
 			}
-			a.setHistoryItems(func([]msg) []msg { return append([]msg{introMsg(info)}, toTranscriptMessages(messages)...) })
-			usage := map[string]any{}
-			for k, v := range a.store.ui.Usage {
-				usage[k] = v
-			}
-			prior, _ := usage["compressions"].(float64)
-			usage["compressions"], usage["context_estimated"], usage["context_percent"], usage["context_used"] = prior+1, false, float64(0), float64(0)
-			a.store.ui.Info, a.store.ui.Usage = info, usage
+			a.setHistoryItems(func([]msg) []msg {
+				return append([]msg{introMsg(info)}, toTranscriptMessages(historyRows(attached.Messages))...)
+			})
+			usage := *usageOf(a.store.ui.Usage)
+			compressions, estimated, emptied, unused := val(usage.Compressions)+1, false, int64(0), int64(0)
+			usage.Compressions, usage.ContextEstimated, usage.ContextPercent, usage.ContextUsed = &compressions, &estimated, &emptied, &unused
+			a.store.ui.Info, a.store.ui.Usage = info, &usage
 			a.card.view.invalidate()
-			r.printCompressSummary(summary)
+			r.printCompressSummary(result.Summary)
 			return nil
 		})
 	})
@@ -143,77 +133,6 @@ func groupDigits(n float64) string {
 	return sign + digits
 }
 
-// Time left until a usage window resets, soon inside the last minute
-func resetsIn(resetsAtMs, nowMs float64) string {
-	left := time.Duration(resetsAtMs-nowMs) * time.Millisecond
-	switch {
-	case resetsAtMs <= 0 || left <= 0:
-		return ""
-	case left < time.Minute:
-		return "resets soon"
-	case left < time.Hour:
-		return fmt.Sprintf("resets in %dm", int(left.Minutes()))
-	case left < 24*time.Hour:
-		return fmt.Sprintf("resets in %dh %dm", int(left.Hours()), int(left.Minutes())%60)
-	}
-	return fmt.Sprintf("resets in %dd %dh", int(left.Hours())/24, int(left.Hours())%24)
-}
-
-// Gauge rows of a plan with usage windows, each window with its share used and when it resets
-func planUsageLines(plan map[string]any, nowMs float64) []string {
-	if plan["kind"] != "usage_window" {
-		return nil
-	}
-	gauges, _ := plan["gauges"].([]any)
-	type row struct{ label, rest string }
-	var rows []row
-	width := 0
-	for _, raw := range gauges {
-		g, _ := raw.(map[string]any)
-		left, isNum := g["left_fraction"].(float64)
-		if !isNum {
-			continue
-		}
-		used := min(max(1-left, 0), 1)
-		filled := int(used*10 + 0.5)
-		if used > 0 {
-			filled = max(filled, 1)
-		}
-		if used < 1 {
-			filled = min(filled, 9)
-		}
-		pct := "0%"
-		switch points := int(used*10000 + 0.000001); {
-		case points >= 100:
-			pct = strconv.Itoa(points/100) + "%"
-		case points > 0:
-			pct = "<1%"
-		}
-		rest := "[" + strings.Repeat("|", filled) + strings.Repeat(" ", 10-filled) + "]  " + pct + " used"
-		resets, _ := g["resets_at_ms"].(float64)
-		if when := resetsIn(resets, nowMs); when != "" {
-			rest += "  ·  " + when
-		}
-		label, _ := g["title"].(string)
-		if label == "" {
-			label, _ = g["label"].(string)
-		}
-		width = max(width, len([]rune(label)))
-		rows = append(rows, row{label, rest})
-	}
-	if len(rows) == 0 {
-		return nil
-	}
-	var lines []string
-	if name, _ := plan["plan"].(string); name != "" {
-		lines = append(lines, name)
-	}
-	for _, r := range rows {
-		lines = append(lines, r.label+strings.Repeat(" ", width-len([]rune(r.label)))+"  "+r.rest)
-	}
-	return lines
-}
-
 // Compress, branch and the commands that inspect the terminal UI itself
 func (a *app) controlCommands() []slashCommand {
 	return []slashCommand{
@@ -221,46 +140,34 @@ func (a *app) controlCommands() []slashCommand {
 			if a.gw.canonical() {
 				return r.canonicalControl("compress")
 			}
-			params := map[string]any{"session_id": nilIfEmpty(r.sid)}
+			params := tuigateway.SessionCompressParams{SessionID: r.sid}
 			if r.arg != "" {
-				params["focus_topic"] = r.arg
+				params.FocusTopic = &r.arg
 			}
-			return r.rpc("session.compress", params, func(res map[string]any) tea.Cmd {
+			return ask(r.rpc, a.sys, tuigateway.SessionCompress, params, func(res *tuigateway.SessionCompressResult) tea.Cmd {
+				if res == nil {
+					return nil
+				}
 				info := a.store.ui.Info
-				if fresh, _ := res["info"].(map[string]any); fresh != nil {
-					merged := map[string]any{}
-					for k, v := range info {
-						merged[k] = v
-					}
-					for k, v := range fresh {
-						merged[k] = v
-					}
-					info = merged
+				if res.Info != nil {
+					info = patchedInfo(info, *res.Info)
 					a.store.ui.Info = info
 				}
-				if messages, isList := res["messages"].([]any); isList {
-					rows := toTranscriptMessages(messages)
+				if res.Messages != nil {
+					rows := toTranscriptMessages(historyRows(res.Messages))
 					if info != nil {
 						rows = append([]msg{introMsg(info)}, rows...)
 					}
 					a.setHistoryItems(func([]msg) []msg { return rows })
 				}
-				usage, _ := res["usage"].(map[string]any)
-				if usage != nil {
-					merged := map[string]any{}
-					for k, v := range a.store.ui.Usage {
-						merged[k] = v
-					}
-					for k, v := range usage {
-						merged[k] = v
-					}
-					a.store.ui.Usage = merged
+				if res.Usage != nil {
+					a.store.ui.Usage = mergeUsageStable(a.store.ui.Usage, res.Usage)
 				}
-				if summary, _ := res["summary"].(map[string]any); truthyJS(summary["headline"]) {
-					r.printCompressSummary(summary)
+				if res.Summary != nil && res.Summary.Headline != "" {
+					r.printCompressSummary(res.Summary)
 					return nil
 				}
-				removed, _ := res["removed"].(float64)
+				removed := val(res.Removed)
 				if removed <= 0 {
 					r.sys(tr("slashCmd.session.compress.nothing"))
 					return nil
@@ -270,10 +177,10 @@ func (a *app) controlCommands() []slashCommand {
 					key = "slashCmd.session.compress.compressedOne"
 				}
 				suffix := ""
-				if total, _ := usage["total"].(float64); total > 0 {
-					suffix = tr("slashCmd.session.compress.tokSuffix", compactNumber(total))
+				if res.Usage != nil && res.Usage.Total > 0 {
+					suffix = tr("slashCmd.session.compress.tokSuffix", compactNumber(float64(res.Usage.Total)))
 				}
-				r.sys(tr(key, jsString(removed)) + suffix)
+				r.sys(tr(key, strconv.FormatInt(removed, 10)) + suffix)
 				return nil
 			})
 		}},
@@ -281,17 +188,15 @@ func (a *app) controlCommands() []slashCommand {
 			if a.gw.canonical() {
 				return r.canonicalControl("branch")
 			}
-			return r.rpc("session.branch", map[string]any{"name": r.arg, "session_id": nilIfEmpty(r.sid)}, func(res map[string]any) tea.Cmd {
-				child, _ := res["session_id"].(string)
-				if child == "" {
+			return ask(r.rpc, a.sys, tuigateway.SessionBranch, tuigateway.SessionBranchParams{SessionID: r.sid, Name: &r.arg}, func(res *tuigateway.SessionBranchResult) tea.Cmd {
+				if res == nil || res.SessionID == "" {
 					return nil
 				}
-				title, _ := res["title"].(string)
-				r.sys(tr("slashCmd.session.branch.branched", title))
-				return a.resumeByID(child, nil)
+				r.sys(tr("slashCmd.session.branch.branched", res.Title))
+				return a.resumeByID(res.SessionID, nil)
 			})
 		}},
-		{name: "setup", help: "configure a section, the provider and model, the agent or shared metrics", usage: "[section] [provider]", suggest: func(string) []string {
+		{name: "setup", help: "configure a section: model, aux, agent, tts, terminal, tools, gateway, or start over with quick, blank or import", usage: "[section] [provider]", suggest: func(string) []string {
 			keys := []string{}
 			for _, s := range setupSections() {
 				keys = append(keys, s.key)
@@ -386,36 +291,31 @@ func (a *app) controlCommands() []slashCommand {
 			r.sys(tr("slashCmd.wake.usage"))
 			return nil
 		}},
-		{name: "usage", help: "session usage and plan windows", run: func(r *slashRun) tea.Cmd {
-			if r.sid == "" || !a.gw.canonical() {
+		{name: "usage", help: "session usage", run: func(r *slashRun) tea.Cmd {
+			if r.sid == "" {
+				r.sys(tr("slashCmd.core.status.noActiveSession"))
+				return nil
+			}
+			if !a.gw.canonical() {
 				return a.sessionUsage(r)
 			}
-			return tea.Batch(r.ran(), r.rpc("session.stats", map[string]any{"session_id": r.sid}, func(res map[string]any) tea.Cmd {
-				usage := usageFromTick(res)
-				if n, _ := usage["calls"].(float64); n == 0 {
+			return tea.Batch(r.ran(), ask(r.rpc, a.sys, tuigateway.CanonicalSessionStats, tuigateway.SessionStatsParams{SessionID: r.sid}, func(res *tuigateway.SessionStats) tea.Cmd {
+				if res == nil {
+					return nil
+				}
+				var counters tuigateway.SessionUsagePayload
+				if err := tuigateway.Loose(wireParams(res), &counters); err != nil {
+					r.sys("error: " + tr("session.common.invalidResponse", "session.stats") + " " + err.Error())
+					return nil
+				}
+				usage := usageOf(usageOfCounters(counters))
+				if usage.Calls == 0 {
 					r.sys(tr("slashCmd.session.usage.noCalls"))
 				} else {
-					merged := map[string]any{}
-					for k, v := range a.store.ui.Usage {
-						merged[k] = v
-					}
-					for k, v := range usage {
-						merged[k] = v
-					}
-					a.store.ui.Usage = merged
+					a.store.ui.Usage = mergeUsageStable(a.store.ui.Usage, usage)
 					a.panel(tr("slashCmd.session.usage.usageTitle"), usageTotalsSections(usage))
 				}
-				r.sys(tr("slashCmd.session.usage.cta"))
-				return gatewayCall(a.gw, "billing.state", map[string]any{}, func(v any, err error) tea.Cmd {
-					plan, _ := asRPCResult(v)["plan_usage"].(map[string]any)
-					if err != nil || r.stale() {
-						return nil
-					}
-					for _, line := range planUsageLines(plan, a.store.nowMillis()) {
-						r.sys(line)
-					}
-					return nil
-				})
+				return nil
 			}))
 		}},
 		{name: "voice", help: "voice mode", usage: "[on|off|tts|status]", suggest: func(string) []string { return []string{"on", "off", "tts", "status"} }, run: func(r *slashRun) tea.Cmd {
@@ -504,12 +404,14 @@ func (a *app) controlCommands() []slashCommand {
 			}
 			switch {
 			case a.gw.canonical() && title == "":
-				return r.rpc("session.list", map[string]any{"limit": 200}, func(res map[string]any) tea.Cmd {
-					sessions, _ := res["sessions"].([]any)
-					for _, raw := range sessions {
-						if row, _ := raw.(map[string]any); row["id"] == r.sid || row["session_id"] == r.sid {
-							current, _ := row["title"].(string)
-							show(current)
+				return requestSessions(a.gw, true, "", func(sessions []listedSession, err error) tea.Cmd {
+					if err != nil {
+						r.fail(err)
+						return nil
+					}
+					for _, s := range sessions {
+						if s.ID == r.sid || s.SessionID == r.sid {
+							show(s.Title)
 							return nil
 						}
 					}
@@ -529,27 +431,31 @@ func (a *app) controlCommands() []slashCommand {
 						return nil
 					}
 					next := title
-					if set, _ := m.Result["title"].(string); trimJS(set) != "" {
-						next = trimJS(set)
+					if set := trimJS(val(m.Result.Title)); set != "" {
+						next = set
 					}
 					a.store.ui.SessionTitle = next
 					r.sys(tr("slashCmd.core.title.set", next, ""))
 					return nil
 				})
 			case title == "":
-				return r.rpc("session.title", map[string]any{"session_id": r.sid}, func(res map[string]any) tea.Cmd {
-					current, _ := res["title"].(string)
-					show(current)
+				return ask(r.rpc, a.sys, tuigateway.SessionTitle, tuigateway.SessionTitleParams{SessionID: r.sid}, func(res *tuigateway.SessionTitleResult) tea.Cmd {
+					if res != nil {
+						show(res.Title)
+					}
 					return nil
 				})
 			}
-			return r.rpc("session.title", map[string]any{"session_id": r.sid, "title": title}, func(res map[string]any) tea.Cmd {
+			return ask(r.rpc, a.sys, tuigateway.SessionTitle, tuigateway.SessionTitleParams{SessionID: r.sid, Title: &title}, func(res *tuigateway.SessionTitleResult) tea.Cmd {
+				if res == nil {
+					return nil
+				}
 				next := title
-				if set, _ := res["title"].(string); trimJS(set) != "" {
-					next = trimJS(set)
+				if set := trimJS(res.Title); set != "" {
+					next = set
 				}
 				suffix := ""
-				if truthyJS(res["pending"]) {
+				if val(res.Pending) {
 					suffix = tr("slashCmd.core.title.queuedSuffix")
 				}
 				a.store.ui.SessionTitle = next

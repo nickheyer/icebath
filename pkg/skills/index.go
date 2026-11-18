@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
-	"log/slog"
 	"os"
 	"path/filepath"
 	"slices"
@@ -83,11 +82,11 @@ func ClearSkillsSystemPromptCache(home string, disk bool) {
 	}
 	p := skillsPromptSnapshotPath(home)
 	if fi, err := os.Lstat(p); err == nil && fi.IsDir() {
-		slog.Debug(fmt.Sprintf("Could not remove skills prompt snapshot: [Errno 21] Is a directory: %s", pyrepr.StrRepr(p)))
+		pkgLog().Debug(fmt.Sprintf("Could not remove skills prompt snapshot %s: it is a directory", p))
 		return
 	}
 	if err := os.Remove(p); err != nil && !errors.Is(err, fs.ErrNotExist) {
-		slog.Debug(fmt.Sprintf("Could not remove skills prompt snapshot: %v", err))
+		pkgLog().Debug(fmt.Sprintf("Could not remove skills prompt snapshot: %v", err))
 	}
 }
 
@@ -562,7 +561,7 @@ func (s *Scope) buildSkillsSystemPromptInner(ctx context.Context, skillsDir stri
 		rel, ok := entryGet(r.entry, "rel").(string)
 		if !ok {
 			if _, present := r.entry.Get("rel"); !present {
-				return "", fmt.Errorf("KeyError: 'rel'")
+				return "", errors.New("a skill index entry has no rel")
 			}
 			return "", fmt.Errorf("unsupported operand type(s) for /: 'PosixPath' and '%s'", pyrepr.TypeName(entryGet(r.entry, "rel")))
 		}

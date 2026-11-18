@@ -63,23 +63,14 @@ func operatorOwnedLinks(links []string, h string) []string {
 	return out
 }
 
-// Python OSError text of an errno failure on a path
+// Reason of an errno failure followed by its path
 func pyOSErrorText(err error) string {
 	var pe *fs.PathError
 	var errno syscall.Errno
 	if errors.As(err, &pe) && errors.As(pe.Err, &errno) {
-		return fmt.Sprintf("[Errno %d] %s: '%s'", int(errno), pyStrerror(errno), pe.Path)
+		return errno.Error() + ": " + pe.Path
 	}
 	return err.Error()
-}
-
-// C library strerror text of an errno with the first letter capitalised as Python prints it
-func pyStrerror(errno syscall.Errno) string {
-	text := errno.Error()
-	if text == "" {
-		return text
-	}
-	return strings.ToUpper(text[:1]) + text[1:]
 }
 
 // Ensures a home directory exists and is private without materialising a missing link target

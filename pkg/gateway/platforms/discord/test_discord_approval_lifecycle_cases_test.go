@@ -14,7 +14,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/tools"
 )
 
-// Sent exec approval card for a seeded pending request, the hermes _pending_card fixture
+// Sent exec approval card for a seeded pending request, the pending card fixture
 func pendingCard(t *testing.T) (*DiscordAdapter, *fakeDiscordAPI, *execApprovalView, *tools.ApprovalEntry) {
 	t.Helper()
 	a, f := parityAdapter(t)

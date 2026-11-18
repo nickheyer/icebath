@@ -2,7 +2,6 @@ package selfupdate
 
 import (
 	"fmt"
-	"log/slog"
 	"os"
 	"path/filepath"
 
@@ -21,7 +20,7 @@ func SweepStaleBytecodeIfCheckoutChanged() {
 	if raw, err := os.ReadFile(filepath.Join(root, bytecodeFingerprintFile)); err == nil {
 		text, err := pystr.DecodeUTF8Sig(raw)
 		if err != nil {
-			slog.Debug(fmt.Sprintf("Stale-bytecode launch sweep failed: %s", err.Error()))
+			pkgLog().Debug(fmt.Sprintf("Stale-bytecode launch sweep failed: %s", err.Error()))
 			return
 		}
 		recorded = pystr.Strip(text)
@@ -38,7 +37,7 @@ func SweepStaleBytecodeIfCheckoutChanged() {
 		if removed == 1 {
 			suffix = "y"
 		}
-		slog.Info(fmt.Sprintf("Checkout changed since last launch (%s -> %s): cleared %d stale __pycache__ director%s",
+		pkgLog().Info(fmt.Sprintf("Checkout changed since last launch (%s -> %s): cleared %d stale __pycache__ director%s",
 			shown, fingerprint, removed, suffix))
 	}
 	recordBytecodeFingerprint()

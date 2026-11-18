@@ -98,7 +98,7 @@ func DiscordRequest(ctx context.Context, method, path, token string, params [][2
 	req.Header.Set("User-Agent", "icebath-agent (https://github.com/nickheyer/icebath)")
 	resp, err := discordHTTPDo(req, timeout)
 	if err != nil {
-		return nil, &DiscordOSError{Text: "<urlopen error " + discordTransportReason(err) + ">"}
+		return nil, &DiscordOSError{Text: discordTransportReason(err)}
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {

@@ -2,7 +2,6 @@ package diskcleanup
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"io"
 	"io/fs"
@@ -17,6 +16,7 @@ import (
 	"time"
 	"unicode/utf8"
 
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pydatetime"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
@@ -186,13 +186,13 @@ func readJSONSig(path string) (any, bool, error) {
 func asEntries(v any) ([]Entry, error) {
 	list, ok := v.([]any)
 	if !ok {
-		return nil, fmt.Errorf("TypeError: tracked.json holds %s, not a list of entries", pyrepr.TypeName(v))
+		return nil, fmt.Errorf("tracked.json holds %s, expected a list of entries", errchain.Kind(v))
 	}
 	out := make([]Entry, 0, len(list))
 	for _, item := range list {
 		o, ok := item.(*pyjson.Object)
 		if !ok {
-			return nil, fmt.Errorf("TypeError: tracked.json entry is %s, not an object", pyrepr.TypeName(item))
+			return nil, fmt.Errorf("a tracked.json entry is %s, expected a mapping", errchain.Kind(item))
 		}
 		out = append(out, o)
 	}
@@ -301,10 +301,10 @@ func FmtSize(n float64) string {
 	return fmt.Sprintf("%.1f PB", n)
 }
 
-// Key error raised by a missing entry field
+// Tracked entry missing a field
 type KeyError struct{ Key string }
 
-func (e *KeyError) Error() string { return "KeyError: " + pyrepr.Repr(e.Key) }
+func (e *KeyError) Error() string { return "a tracked.json entry has no " + e.Key }
 
 // String field of an entry
 func strField(e Entry, key string) (string, error) {
@@ -314,7 +314,7 @@ func strField(e Entry, key string) (string, error) {
 	}
 	s, ok := v.(string)
 	if !ok {
-		return "", fmt.Errorf("TypeError: entry %s is %s, not str", key, pyrepr.TypeName(v))
+		return "", fmt.Errorf("tracked.json entry field %s is %s, expected text", key, errchain.Kind(v))
 	}
 	return s, nil
 }
@@ -339,7 +339,7 @@ func sizeField(e Entry) (float64, error) {
 		f, _ := new(big.Float).SetInt(n).Float64()
 		return f, nil
 	}
-	return 0, fmt.Errorf("TypeError: entry size is %s, not a number", pyrepr.TypeName(v))
+	return 0, fmt.Errorf("tracked.json entry size is %s, expected a number", errchain.Kind(v))
 }
 
 // Sum of the size fields of entries
@@ -454,7 +454,7 @@ func ageDays(now time.Time, stamp string) (int, error) {
 		return 0, err
 	}
 	if !aware {
-		return 0, errors.New("TypeError: can't subtract offset-naive and offset-aware datetimes")
+		return 0, fmt.Errorf("timestamp %s has no time zone", stamp)
 	}
 	return int(math.Floor(now.Sub(ts).Hours() / 24)), nil
 }

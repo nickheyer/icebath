@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/internal/proc"
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
@@ -274,7 +275,7 @@ func applyAttemptNote(ctx context.Context, conn state.SQLiteConn, taskID string,
 	return nil
 }
 
-// Seam over the reclaim gate, replaced by tests the way hermes tests monkeypatch the module
+// Seam over the reclaim gate, replaced by tests
 var ownerReclaimBlocked = ownerReclaimBlockedLive
 
 // True when a reclaim path must leave the task alone, a dead bound interpreter freeing only the crash sweep
@@ -315,7 +316,7 @@ func managedRunExitCode(ctx context.Context, conn state.SQLiteConn, taskID strin
 		case []byte:
 			text = string(raw)
 		default:
-			return nil, fmt.Errorf("TypeError: the JSON object must be str, bytes or bytearray, not %s", pyrepr.TypeName(raw))
+			return nil, fmt.Errorf("the managed run exit record is %s, expected JSON text", errchain.Kind(raw))
 		}
 		v, err := pyjson.Loads(text)
 		if o, ok := v.(*pyjson.Object); ok && err == nil {

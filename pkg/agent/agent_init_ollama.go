@@ -20,7 +20,7 @@ func configureOllamaNumCtx(ctx context.Context, a *AIAgent, modelCfg map[string]
 			v := int(n.Int64())
 			numCtx = &v
 		} else {
-			runAgentLog().Debug("Invalid ollama_num_ctx config value: " + pyrepr.Repr(override))
+			pkgLog().Debug("Invalid ollama_num_ctx config value: " + pyrepr.Repr(override))
 		}
 	}
 	if numCtx == nil && a.baseURL != "" && provider.IsLocalEndpoint(a.baseURL) {
@@ -32,7 +32,7 @@ func configureOllamaNumCtx(ctx context.Context, a *AIAgent, modelCfg map[string]
 		a.ollamaNumCtx = *numCtx
 	}
 	if a.ollamaNumCtx != 0 && configContextLength != 0 && !hasOverride && a.ollamaNumCtx > configContextLength {
-		runAgentLog().Info(fmt.Sprintf("Ollama num_ctx capped: %d -> %d (model.context_length override)", a.ollamaNumCtx, configContextLength))
+		pkgLog().Info(fmt.Sprintf("Ollama num_ctx capped: %d -> %d (model.context_length override)", a.ollamaNumCtx, configContextLength))
 		a.ollamaNumCtx = configContextLength
 	}
 	if a.ollamaNumCtx != 0 && !a.quietMode {
@@ -40,7 +40,7 @@ func configureOllamaNumCtx(ctx context.Context, a *AIAgent, modelCfg map[string]
 		if hasOverride {
 			source = "model.ollama_num_ctx"
 		}
-		runAgentLog().Info(fmt.Sprintf("Local server num_ctx: will request %d tokens (%s)", a.ollamaNumCtx, source))
+		pkgLog().Info(fmt.Sprintf("Local server num_ctx: will request %d tokens (%s)", a.ollamaNumCtx, source))
 	}
 }
 
@@ -51,7 +51,7 @@ func clampCompressorToOllamaNumCtx(a *AIAgent) {
 	}
 	window := engineContextLength(a.contextCompressor)
 	if a.ollamaNumCtx > 0 && window != 0 && a.ollamaNumCtx < window {
-		runAgentLog().Info(fmt.Sprintf("Compressor window clamped to Ollama num_ctx: %d -> %d", window, a.ollamaNumCtx))
+		pkgLog().Info(fmt.Sprintf("Compressor window clamped to Ollama num_ctx: %d -> %d", window, a.ollamaNumCtx))
 		a.contextCompressor.UpdateModel(a.model, a.ollamaNumCtx, a.baseURL, a.apiKey, a.provider, a.apiMode)
 	}
 }

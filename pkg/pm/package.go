@@ -27,6 +27,7 @@ type InstallError struct {
 	Package string
 	Cause   string
 	Remedy  string
+	Err     error
 }
 
 // Builds an install error with the default remedy when none is given
@@ -40,6 +41,9 @@ func NewInstallError(pkg, cause, remedy string) *InstallError {
 func (e *InstallError) Error() string {
 	return fmt.Sprintf("%s: %s — %s", e.Package, e.Cause, e.Remedy)
 }
+
+// Failure the install error reports, nil when it was raised without one
+func (e *InstallError) Unwrap() error { return e.Err }
 
 // EnvDiff is one package's environment contribution, PATH holding a list of directories to prepend
 type EnvDiff map[string]any
@@ -133,10 +137,16 @@ type BasePackage struct {
 	Gaps                map[string]string
 	VersionStyle        string
 	EmulatedArchTargets []string
+	TargetDeps          map[string][]string
 	self                Package
 }
 
 func (b *BasePackage) Base() *BasePackage { return b }
+
+// Dependencies on target, the shared ones then those only that target needs
+func (b *BasePackage) DepsOn(target string) []string {
+	return append(append([]string{}, b.Deps...), b.TargetDeps[target]...)
+}
 
 // Binds the concrete package so default methods dispatch to its overrides
 func (b *BasePackage) bind(p Package) { b.self = p }
@@ -239,17 +249,17 @@ func formatTemplate(template string, fields map[string]string) (string, error) {
 		case c == '{':
 			end := strings.IndexByte(template[i:], '}')
 			if end < 0 {
-				return "", fmt.Errorf("single '{' encountered in format string")
+				return "", fmt.Errorf("the URL template %s has a { without a closing }", template)
 			}
 			name := template[i+1 : i+end]
 			value, ok := fields[name]
 			if !ok {
-				return "", fmt.Errorf("KeyError: %s", pyrepr.StrRepr(name))
+				return "", &PyError{Class: "KeyError", Message: fmt.Sprintf("the URL template %s names unknown field %s", template, name)}
 			}
 			out.WriteString(value)
 			i += end
 		case c == '}':
-			return "", fmt.Errorf("single '}' encountered in format string")
+			return "", fmt.Errorf("the URL template %s has a } without an opening {", template)
 		default:
 			out.WriteByte(c)
 		}

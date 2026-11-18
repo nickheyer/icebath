@@ -124,7 +124,7 @@ func updatePlanRow(ctx context.Context, row *CheckResult, console *Console, inte
 	case errors.As(err, &exit), errors.As(err, &interrupt), errors.Is(err, ErrUserInterrupt), errors.Is(err, context.Canceled):
 		return "", "", err
 	default:
-		logPluginsCmdUpdateAll.warn(fmt.Sprintf("update of plugin %s failed", row.Name), excInfo(err)...)
+		pkgLog().Warn(fmt.Sprintf("update of plugin %s failed", row.Name), excInfo(err)...)
 		class, text := exceptionClassAndText(err)
 		console.Print(fmt.Sprintf("[red]Error:[/red] %s: %s", pyrich.Escape(class), pyrich.Escape(text)))
 		return "failed", shortReason(class + ": " + text), nil

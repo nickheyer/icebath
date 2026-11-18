@@ -7,7 +7,7 @@ import (
 )
 
 // Credits and rate limit capture the provider header captures feed for this agent
-func (a *AIAgent) CreditsCapture() *provider.CreditsCapture { return a.creditsCapture() }
+func (a *AIAgent) HeaderCapture() *provider.HeaderCapture { return a.liveHeaderCapture() }
 
 // Implicit stale timeout capped at half the remaining run budget, never under sixty seconds
 func capToRunBudget(a *AIAgent, timeout float64) float64 {

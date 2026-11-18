@@ -8,7 +8,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"log/slog"
 	"mime"
 	"net/http"
 	"sort"
@@ -187,12 +186,12 @@ func (a *SmsAdapter) Connect(ctx context.Context, isReconnect bool) (bool, error
 			"SMS_INSECURE_NO_SIGNATURE=true (NOT recommended for production)."
 	}
 	if code != "" {
-		slog.Error(msg)
+		pkgLog().Error(msg)
 		a.SetFatalError(ctx, code, msg, false)
 		return false, nil
 	}
 	if insecureNoSig && a.webhookURL == "" {
-		slog.Warn(fmt.Sprintf("[sms] SMS_INSECURE_NO_SIGNATURE=true — Twilio signature validation "+
+		pkgLog().Warn(fmt.Sprintf("[sms] SMS_INSECURE_NO_SIGNATURE=true — Twilio signature validation "+
 			"is DISABLED. Any client that can reach port %d can inject messages. "+
 			"Do NOT use this in production.", a.webhookPort))
 	}
@@ -216,7 +215,7 @@ func (a *SmsAdapter) Connect(ctx context.Context, isReconnect bool) (bool, error
 	a.mu.Unlock()
 	a.SetRunning(true)
 	if runner != nil {
-		slog.Info(fmt.Sprintf("[sms] Twilio webhook server listening on %s:%d, from: %s", a.webhookHost, a.webhookPort,
+		pkgLog().Info(fmt.Sprintf("[sms] Twilio webhook server listening on %s:%d, from: %s", a.webhookHost, a.webhookPort,
 			gateway.RedactPhone(a.fromNumber)))
 	}
 	a.WirePluginHandlers(ctx, nil)
@@ -238,7 +237,7 @@ func (a *SmsAdapter) Disconnect(ctx context.Context) error {
 		}
 	}
 	a.SetRunning(false)
-	slog.Info("[sms] Disconnected")
+	pkgLog().Info("[sms] Disconnected")
 	return nil
 }
 
@@ -266,7 +265,7 @@ func (a *SmsAdapter) Send(ctx context.Context, chatID, content, replyTo string, 
 				if body, err = twilioJSON(resp, endpoint); err == nil {
 					if resp.StatusCode >= 400 {
 						errorMsg := twilioErrorMessage(body)
-						slog.Error(fmt.Sprintf("[sms] send failed to %s: %d %s", gateway.RedactPhone(chatID), resp.StatusCode, errorMsg))
+						pkgLog().Error(fmt.Sprintf("[sms] send failed to %s: %d %s", gateway.RedactPhone(chatID), resp.StatusCode, errorMsg))
 						return &gateway.SendResult{Success: false, Error: fmt.Sprintf("Twilio %d: %s", resp.StatusCode, errorMsg)}, nil
 					}
 					sid, ok := body["sid"]
@@ -277,7 +276,7 @@ func (a *SmsAdapter) Send(ctx context.Context, chatID, content, replyTo string, 
 				}
 			}
 		}
-		slog.Error(fmt.Sprintf("[sms] send error to %s: %v", gateway.RedactPhone(chatID), err))
+		pkgLog().Error(fmt.Sprintf("[sms] send error to %s: %v", gateway.RedactPhone(chatID), err))
 		return &gateway.SendResult{Success: false, Error: err.Error()}, nil
 	}
 	chunks := gateway.TruncateMessage(a.FormatMessage(content), maxSMSLength, a.MessageLenFn())
@@ -383,7 +382,7 @@ func (a *SmsAdapter) handleWebhook(ctx context.Context, request *gateway.WebRequ
 			}
 		}
 		if rejected != "" {
-			slog.Warn("[sms] Rejected: " + rejected)
+			pkgLog().Warn("[sms] Rejected: " + rejected)
 			return twimlResponse(403), nil
 		}
 	}
@@ -398,10 +397,10 @@ func (a *SmsAdapter) handleWebhook(ctx context.Context, request *gateway.WebRequ
 		return twimlResponse(200), nil
 	}
 	if fromNumber == a.fromNumber {
-		slog.Debug("[sms] ignoring echo from own number " + gateway.RedactPhone(fromNumber))
+		pkgLog().Debug("[sms] ignoring echo from own number " + gateway.RedactPhone(fromNumber))
 		return twimlResponse(200), nil
 	}
-	slog.Info(fmt.Sprintf("[sms] inbound from %s -> %s: %s", gateway.RedactPhone(fromNumber), gateway.RedactPhone(toNumber), pystr.Slice(text, 0, 80)))
+	pkgLog().Info(fmt.Sprintf("[sms] inbound from %s -> %s: %s", gateway.RedactPhone(fromNumber), gateway.RedactPhone(toNumber), pystr.Slice(text, 0, 80)))
 	source := a.BuildSource(ctx, fromNumber, gateway.SourceFields{ChatName: &fromNumber, ChatType: "dm", UserID: &fromNumber,
 		UserName: &fromNumber, MessageID: &messageSID})
 	event := gateway.NewMessageEvent(text)
@@ -431,7 +430,7 @@ func (a *SmsAdapter) readForm(request *gateway.WebRequest) (map[string][]string,
 		text, err = pystr.DecodeUTF8(raw)
 	}
 	if err != nil {
-		slog.Error(fmt.Sprintf("[sms] webhook parse error: %v", err))
+		pkgLog().Error(fmt.Sprintf("[sms] webhook parse error: %v", err))
 		return nil, 400
 	}
 	return pyurl.ParseQS(text, true), 0

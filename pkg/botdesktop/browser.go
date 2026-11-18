@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/nickheyer/icebath/pkg/browser/quiet"
 	"github.com/nickheyer/icebath/pkg/internal/pyshutil"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
@@ -23,13 +24,14 @@ var (
 	BrowserAppArmorRestricts  func() bool
 	BrowserNeedsSandboxBypass func() bool
 	BrowserSandboxBypassArgs  func() []string
+	BrowserSeedProfile        func(userDataDir string) error
 	geteuid                   = os.Geteuid
 	accessX                   = accessExec
 	whichBinary               = func(name string) string { p, _ := pyshutil.Which(name, nil); return p }
 )
 
-// SharedProfileArgs are the flags the agent launch and the dock icon share on the persistent profile
-var SharedProfileArgs = []string{"--test-type", fmt.Sprintf("--disk-cache-size=%d", DiskCacheBytes)}
+// Flags the agent launch and the dock icon share, on the bot X screen even under a Wayland session, maximized on it
+var SharedProfileArgs = []string{"--test-type", "--ozone-platform=x11", "--start-maximized", fmt.Sprintf("--disk-cache-size=%d", DiskCacheBytes)}
 
 // User data dir of the bot browser, the pinned browser.user_data_dir or the screen state dir
 func ProfileDir(env *tools.Env) string {
@@ -95,7 +97,8 @@ func DockLaunch(env *tools.Env) (string, string, bool) {
 
 // Command the dock Browser icon runs, attachable through a debugging port, with the launcher sandbox policy
 func DockArgv(exe, userDataDir string, sandboxBypass *bool) []string {
-	argv := []string{exe, "--user-data-dir=" + userDataDir, "--remote-debugging-port=0", "--no-first-run", "--no-default-browser-check"}
+	argv := []string{exe, "--user-data-dir=" + userDataDir, "--remote-debugging-port=0"}
+	argv = append(argv, quiet.Args()...)
 	argv = append(argv, SharedProfileArgs...)
 	bypass := false
 	if sandboxBypass == nil {

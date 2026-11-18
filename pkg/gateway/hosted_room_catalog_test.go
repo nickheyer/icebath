@@ -24,47 +24,47 @@ func writeRoomConfig(t *testing.T, dir, body string) {
 
 func TestRoomLinkEndpointReadsSupportedConfigWithEnvOverride(t *testing.T) {
 	dir := filepath.Join(t.TempDir(), ".icebath")
-	writeRoomConfig(t, dir, "gateway:\n  room_link_url: https://configured.example.test/hermes\n")
+	writeRoomConfig(t, dir, "gateway:\n  room_link_url: https://configured.example.test/icebath\n")
 	t.Setenv("ICEBATH_HOME", dir)
 	t.Setenv("ICEBATH_ROOM_LINK_URL", "")
 	os.Unsetenv("ICEBATH_ROOM_LINK_URL")
 	endpoint, err := localRoomLinkEndpoint(context.Background(), nil)
-	want := pyjson.ObjectOf("available", true, "url", "https://configured.example.test/hermes", "transport_security", "tls")
+	want := pyjson.ObjectOf("available", true, "url", "https://configured.example.test/icebath", "transport_security", "tls")
 	if err != nil || !pyjson.Equal(endpoint, want) {
 		t.Fatalf("endpoint %v %v", endpoint, err)
 	}
-	t.Setenv("ICEBATH_ROOM_LINK_URL", "https://override.example.test/hermes")
+	t.Setenv("ICEBATH_ROOM_LINK_URL", "https://override.example.test/icebath")
 	endpoint, err = localRoomLinkEndpoint(context.Background(), nil)
-	if url, _ := endpoint.Get("url"); err != nil || url != "https://override.example.test/hermes" {
+	if url, _ := endpoint.Get("url"); err != nil || url != "https://override.example.test/icebath" {
 		t.Fatalf("override %v %v", endpoint, err)
 	}
 }
 
 func TestNamedProfileInheritsGatewayRoomLinkEndpoint(t *testing.T) {
-	root := filepath.Join(t.TempDir(), "hermes")
+	root := filepath.Join(t.TempDir(), "icebath")
 	profile := filepath.Join(root, "profiles", "reviewer")
-	writeRoomConfig(t, root, "gateway:\n  room_link_url: https://gateway.example.test/hermes\n")
+	writeRoomConfig(t, root, "gateway:\n  room_link_url: https://gateway.example.test/icebath\n")
 	writeRoomConfig(t, profile, "gateway: {}\n")
 	t.Setenv("ICEBATH_HOME", root)
 	t.Setenv("ICEBATH_ROOM_LINK_URL", "")
 	os.Unsetenv("ICEBATH_ROOM_LINK_URL")
 	endpoint, err := localRoomLinkEndpoint(home.WithOverride(context.Background(), profile), nil)
-	want := pyjson.ObjectOf("available", true, "url", "https://gateway.example.test/hermes", "transport_security", "tls")
+	want := pyjson.ObjectOf("available", true, "url", "https://gateway.example.test/icebath", "transport_security", "tls")
 	if err != nil || !pyjson.Equal(endpoint, want) {
 		t.Fatalf("endpoint %v %v", endpoint, err)
 	}
 }
 
 func TestNamedProfileRoomLinkOverrideWinsOverGatewayRoot(t *testing.T) {
-	root := filepath.Join(t.TempDir(), "hermes")
+	root := filepath.Join(t.TempDir(), "icebath")
 	profile := filepath.Join(root, "profiles", "reviewer")
-	writeRoomConfig(t, root, "gateway:\n  room_link_url: https://gateway.example.test/hermes\n")
-	writeRoomConfig(t, profile, "gateway:\n  room_link_url: https://profile.example.test/hermes\n")
+	writeRoomConfig(t, root, "gateway:\n  room_link_url: https://gateway.example.test/icebath\n")
+	writeRoomConfig(t, profile, "gateway:\n  room_link_url: https://profile.example.test/icebath\n")
 	t.Setenv("ICEBATH_HOME", root)
 	t.Setenv("ICEBATH_ROOM_LINK_URL", "")
 	os.Unsetenv("ICEBATH_ROOM_LINK_URL")
 	endpoint, err := localRoomLinkEndpoint(home.WithOverride(context.Background(), profile), nil)
-	if url, _ := endpoint.Get("url"); err != nil || url != "https://profile.example.test/hermes" {
+	if url, _ := endpoint.Get("url"); err != nil || url != "https://profile.example.test/icebath" {
 		t.Fatalf("endpoint %v %v", endpoint, err)
 	}
 }

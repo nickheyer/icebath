@@ -3,7 +3,6 @@ package gateway
 import (
 	"context"
 	"fmt"
-	"log/slog"
 	"math/big"
 	"os"
 	"path/filepath"
@@ -71,7 +70,7 @@ func entriesFromOrigins(platformName, source string, origins func(yield func(ori
 		tid, _ := origin.Get("thread_id")
 		entries = append(entries, pyjson.ObjectOf("id", id, "name", sessionEntryName(origin), "type", chatType, "thread_id", tid))
 	}); err != nil {
-		slog.Debug(fmt.Sprintf("Channel directory: %s for %s: %v", source, platformName, err))
+		pkgLog().Debug(fmt.Sprintf("Channel directory: %s for %s: %v", source, platformName, err))
 	}
 	return entries
 }

@@ -27,14 +27,14 @@ func TerminalProviderFlag(ctx context.Context, name, attr string, def any, scope
 	}
 	defer func() {
 		if r := recover(); r != nil {
-			terminalEnvRegistryLog.Debug(fmt.Sprintf("Terminal environment provider '%s' attribute '%s' raised", name, attr), "panic", providerregistry.PanicText(r))
+			pkgLog().Debug(fmt.Sprintf("Terminal environment provider '%s' attribute '%s' raised", name, attr), "panic", providerregistry.PanicText(r))
 			value = def
 		}
 	}()
 	return backendAttribute(provider, attr, def)
 }
 
-// Python attribute read of a backend provider by its hermes attribute name, def for a name the contract lacks
+// Python attribute read of a backend provider by its attribute name, def for a name the contract lacks
 func backendAttribute(p BackendProvider, attr string, def any) any {
 	switch attr {
 	case "name":
@@ -90,7 +90,7 @@ func PluginStripEnvKeys() map[string]bool {
 func safeStripEnvKeys(p BackendProvider) (keys []string) {
 	defer func() {
 		if r := recover(); r != nil {
-			terminalEnvRegistryLog.Debug("Terminal environment provider strip_env_keys raised", "panic", providerregistry.PanicText(r))
+			pkgLog().Debug("Terminal environment provider strip_env_keys raised", "panic", providerregistry.PanicText(r))
 			keys = nil
 		}
 	}()

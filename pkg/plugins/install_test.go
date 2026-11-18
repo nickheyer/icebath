@@ -151,7 +151,7 @@ func TestPinnedPluginUpdateRefusesToDrift(t *testing.T) {
 }
 
 func TestFeedParsingAndHTTPSOnlyFetch(t *testing.T) {
-	feed, err := parseFeedYml("version: ' 1.2 '\nmin_hermes: '0.9'\nnotes_url: ''\nartifacts:\n  git: abc\n  bundle: 3\n")
+	feed, err := parseFeedYml("version: ' 1.2 '\nmin_icebath: '0.9'\nnotes_url: ''\nartifacts:\n  git: abc\n  bundle: 3\n")
 	want := map[string]any{"version": "1.2", "min_icebath": "0.9", "artifacts": map[string]any{"git": "abc"}}
 	if err != nil || !reflect.DeepEqual(feed, want) {
 		t.Fatalf("feed %v %v", feed, err)

@@ -1,6 +1,10 @@
 package tui
 
-import "strings"
+import (
+	"strings"
+
+	"github.com/nickheyer/icebath/pkg/tuigateway"
+)
 
 // Item of the task list the agent keeps, a nested subtask when parent names another item
 type todoItem struct {
@@ -12,9 +16,11 @@ type todoItem struct {
 
 // Transcript row, a role's text with the trail details a turn attached to it
 type msg struct {
-	CreatedAt              *float64
-	Info                   map[string]any
-	Kind                   string
+	CreatedAt *float64
+	Info      *tuigateway.SessionInfo
+	Kind      string
+	// Header of a folded result block, shown above its first lines
+	Label                  string
 	PanelData              *panelData
 	Role                   string
 	Text                   string

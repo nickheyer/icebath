@@ -1,6 +1,6 @@
 package commands
 
-// Argparse structure of every hermes parser by command path, flag help text read from the cobra tree
+// Argparse structure of every parser by command path, flag help text read from the cobra tree
 var argparseTree = map[string]*apParser{
 	"": {Raw: true, Desc: true, Epilog: true, Acts: []apAction{
 		{Kind: 'h', Opts: []string{"-h", "--help"}, Dest: "help", Nargs: "0"},
@@ -26,7 +26,7 @@ var argparseTree = map[string]*apParser{
 		{Kind: 'f', Opts: []string{"--safe-mode"}, Dest: "safe_mode", Nargs: "0"},
 		{Kind: 'f', Opts: []string{"--native"}, Dest: "tui_native", Nargs: "0"},
 		{Kind: 'f', Opts: []string{"--dev"}, Dest: "tui_dev", Nargs: "0"},
-		{Kind: 's', Dest: "command", Metavar: []string{"<command>"}, Nargs: "A...", Help: "Command to run", Choices: []string{"chat", "model", "moa", "fallback", "worktree", "browser", "secrets", "egress", "migrate", "codex-runtime", "gateway", "proxy", "lsp", "whatsapp", "whatsapp-cloud", "slack", "send", "login", "logout", "auth", "status", "pause", "resume", "cron", "webhook", "peer", "portal", "kanban", "project", "hooks", "doctor", "verify", "security", "approvals", "dump", "debug", "backup", "checkpoints", "import", "config", "skin", "console", "pairing", "skills", "bundles", "plugins", "curator", "pets", "journey", "learning", "memory-graph", "memory", "tools", "computer-use", "mcp", "connectors", "sessions", "insights", "usage", "monitoring", "vault", "update", "uninstall", "acp", "profile", "completion", "logs", "prompt-size"}, Sub: []apChoice{{Name: "chat", Aliases: []string{}, Help: "Interactive chat with the agent", Listed: true}, {Name: "model", Aliases: []string{}, Help: "Select default model and provider", Listed: true}, {Name: "moa", Aliases: []string{}, Help: "Configure Mixture of Agents provider/model slots", Listed: true}, {Name: "fallback", Aliases: []string{}, Help: "Manage fallback providers (tried when the primary model fails)", Listed: true}, {Name: "worktree", Aliases: []string{}, Help: "Audit and reclaim accumulated git worktrees and merged branches", Listed: true}, {Name: "browser", Aliases: []string{}, Help: "Real-profile browsing helpers (close a browser locking its profile)", Listed: true}, {Name: "secrets", Aliases: []string{}, Help: "Manage external secret sources (Bitwarden, 1Password)", Listed: true}, {Name: "egress", Aliases: []string{}, Help: "Manage the iron-proxy egress credential-injection firewall", Listed: true}, {Name: "migrate", Aliases: []string{}, Help: "Move over from another agent, or migrate retired models and deprecated settings", Listed: true}, {Name: "codex-runtime", Aliases: []string{}, Help: "Manage the optional codex app-server runtime (migrate MCP config)", Listed: true}, {Name: "gateway", Aliases: []string{}, Help: "Messaging gateway management", Listed: true}, {Name: "proxy", Aliases: []string{}, Help: "Local OpenAI-compatible proxy to OAuth providers", Listed: true}, {Name: "lsp", Aliases: []string{}, Help: "Language Server Protocol management", Listed: true}, {Name: "whatsapp", Aliases: []string{}, Help: "Set up WhatsApp integration", Listed: true}, {Name: "whatsapp-cloud", Aliases: []string{}, Help: "Set up WhatsApp Business Cloud API integration", Listed: true}, {Name: "slack", Aliases: []string{}, Help: "Slack integration helpers (manifest generation, etc.)", Listed: true}, {Name: "send", Aliases: []string{}, Help: "Send a message to a configured platform (scripts, cron jobs, CI).", Listed: true}, {Name: "login", Aliases: []string{}, Help: "", Listed: false}, {Name: "logout", Aliases: []string{}, Help: "Clear authentication for an inference provider", Listed: true}, {Name: "auth", Aliases: []string{}, Help: "Manage pooled provider credentials", Listed: true}, {Name: "status", Aliases: []string{}, Help: "Show status of all components", Listed: true}, {Name: "pause", Aliases: []string{}, Help: "Emergency stop: pause cron/kanban dispatch and new gateway turns", Listed: true}, {Name: "resume", Aliases: []string{}, Help: "Lift the emergency stop set by `icebath pause`", Listed: true}, {Name: "cron", Aliases: []string{}, Help: "Cron job management", Listed: true}, {Name: "webhook", Aliases: []string{}, Help: "Manage dynamic webhook subscriptions", Listed: true}, {Name: "peer", Aliases: []string{}, Help: "Bot-to-bot DMs across machines (peer Icebath gateways)", Listed: true}, {Name: "portal", Aliases: []string{}, Help: "Set up Nous Portal (login, model pick, Tool Gateway); see also `portal info`", Listed: true}, {Name: "kanban", Aliases: []string{}, Help: "Multi-profile collaboration board (tasks, links, comments)", Listed: true}, {Name: "project", Aliases: []string{}, Help: "Manage projects (named, multi-folder workspaces)", Listed: true}, {Name: "hooks", Aliases: []string{}, Help: "Inspect and manage shell-script hooks", Listed: true}, {Name: "doctor", Aliases: []string{}, Help: "Check configuration and dependencies", Listed: true}, {Name: "verify", Aliases: []string{}, Help: "Detect a project's run recipe and smoke-test it", Listed: true}, {Name: "security", Aliases: []string{}, Help: "Supply-chain audit (OSV.dev) for venv, plugins, and MCP servers", Listed: true}, {Name: "approvals", Aliases: []string{}, Help: "Approval-prompt tools (mine history into allowlist proposals)", Listed: true}, {Name: "dump", Aliases: []string{}, Help: "Dump setup summary for support/debugging", Listed: true}, {Name: "debug", Aliases: []string{}, Help: "Debug tools — upload logs and system info for support", Listed: true}, {Name: "backup", Aliases: []string{}, Help: "Back up Icebath home directory to a zip file", Listed: true}, {Name: "checkpoints", Aliases: []string{}, Help: "Inspect / prune / clear ~/.icebath/checkpoints/", Listed: true}, {Name: "import", Aliases: []string{}, Help: "Restore an Icebath backup from a zip file", Listed: true}, {Name: "config", Aliases: []string{}, Help: "View and edit configuration", Listed: true}, {Name: "skin", Aliases: []string{}, Help: "List, switch, and tweak skins", Listed: true}, {Name: "console", Aliases: []string{}, Help: "Open the safe Icebath command console", Listed: true}, {Name: "pairing", Aliases: []string{}, Help: "Manage DM pairing codes for user authorization", Listed: true}, {Name: "skills", Aliases: []string{}, Help: "Search, install, configure, and manage skills", Listed: true}, {Name: "bundles", Aliases: []string{}, Help: "Create, list, and manage skill bundles (aliases for multiple skills)", Listed: true}, {Name: "plugins", Aliases: []string{}, Help: "Manage and validate plugins", Listed: true}, {Name: "curator", Aliases: []string{}, Help: "Background skill maintenance (curator) — status, run, pause, pin", Listed: true}, {Name: "pets", Aliases: []string{}, Help: "Browse, install, and select petdex animated pets", Listed: true}, {Name: "journey", Aliases: []string{"learning", "memory-graph"}, Help: "Timeline of learned skills + memories over time", Listed: true}, {Name: "memory", Aliases: []string{}, Help: "Configure external memory provider", Listed: true}, {Name: "tools", Aliases: []string{}, Help: "Configure which tools are enabled per platform", Listed: true}, {Name: "computer-use", Aliases: []string{}, Help: "Manage the Computer Use (cua-driver) backend (macOS/Windows/Linux)", Listed: true}, {Name: "mcp", Aliases: []string{}, Help: "Manage MCP server connections", Listed: true}, {Name: "connectors", Aliases: []string{}, Help: "Manage hosted app connectors and their accounts", Listed: true}, {Name: "sessions", Aliases: []string{}, Help: "Manage session history (list, rename, export, prune, delete)", Listed: true}, {Name: "insights", Aliases: []string{}, Help: "Show usage insights and analytics", Listed: true}, {Name: "usage", Aliases: []string{}, Help: "Show account rate-limit windows (the /usage block) without starting a session", Listed: true}, {Name: "monitoring", Aliases: []string{}, Help: "Inspect gateway monitoring (health & diagnostics export)", Listed: true}, {Name: "vault", Aliases: []string{}, Help: "Manage the local encrypted autofill vault (add/list/rm credentials)", Listed: true}, {Name: "update", Aliases: []string{}, Help: "Update Icebath Agent to the latest version", Listed: true}, {Name: "uninstall", Aliases: []string{}, Help: "Uninstall Icebath Agent", Listed: true}, {Name: "acp", Aliases: []string{}, Help: "Run Icebath Agent as an ACP (Agent Client Protocol) server", Listed: true}, {Name: "profile", Aliases: []string{}, Help: "Manage profiles — multiple isolated Icebath instances", Listed: true}, {Name: "completion", Aliases: []string{}, Help: "Print shell completion script (bash, zsh, or fish)", Listed: true}, {Name: "logs", Aliases: []string{}, Help: "View and filter Icebath log files", Listed: true}, {Name: "prompt-size", Aliases: []string{}, Help: "Show a byte breakdown of the system prompt + tool schemas", Listed: true}}},
+		{Kind: 's', Dest: "command", Metavar: []string{"<command>"}, Nargs: "A...", Help: "Command to run", Choices: []string{"chat", "model", "moa", "fallback", "worktree", "browser", "secrets", "egress", "migrate", "codex-runtime", "gateway", "proxy", "lsp", "whatsapp", "whatsapp-cloud", "slack", "send", "login", "logout", "auth", "status", "pause", "resume", "cron", "webhook", "peer", "kanban", "project", "hooks", "doctor", "verify", "security", "approvals", "dump", "debug", "backup", "checkpoints", "import", "config", "skin", "console", "pairing", "skills", "bundles", "plugins", "curator", "pets", "journey", "learning", "memory-graph", "memory", "tools", "computer-use", "mcp", "sessions", "insights", "usage", "monitoring", "vault", "update", "uninstall", "acp", "profile", "completion", "logs", "prompt-size"}, Sub: []apChoice{{Name: "chat", Aliases: []string{}, Help: "Interactive chat with the agent", Listed: true}, {Name: "model", Aliases: []string{}, Help: "Select default model and provider", Listed: true}, {Name: "moa", Aliases: []string{}, Help: "Configure Mixture of Agents provider/model slots", Listed: true}, {Name: "fallback", Aliases: []string{}, Help: "Manage fallback providers (tried when the primary model fails)", Listed: true}, {Name: "worktree", Aliases: []string{}, Help: "Audit and reclaim accumulated git worktrees and merged branches", Listed: true}, {Name: "browser", Aliases: []string{}, Help: "Real-profile browsing helpers (close a browser locking its profile)", Listed: true}, {Name: "secrets", Aliases: []string{}, Help: "Manage external secret sources (Bitwarden, 1Password)", Listed: true}, {Name: "egress", Aliases: []string{}, Help: "Manage the iron-proxy egress credential-injection firewall", Listed: true}, {Name: "migrate", Aliases: []string{}, Help: "Move over from another agent, or migrate retired models and deprecated settings", Listed: true}, {Name: "codex-runtime", Aliases: []string{}, Help: "Manage the optional codex app-server runtime (migrate MCP config)", Listed: true}, {Name: "gateway", Aliases: []string{}, Help: "Messaging gateway management", Listed: true}, {Name: "proxy", Aliases: []string{}, Help: "Local OpenAI-compatible proxy to OAuth providers", Listed: true}, {Name: "lsp", Aliases: []string{}, Help: "Language Server Protocol management", Listed: true}, {Name: "whatsapp", Aliases: []string{}, Help: "Set up WhatsApp integration", Listed: true}, {Name: "whatsapp-cloud", Aliases: []string{}, Help: "Set up WhatsApp Business Cloud API integration", Listed: true}, {Name: "slack", Aliases: []string{}, Help: "Slack integration helpers (manifest generation, etc.)", Listed: true}, {Name: "send", Aliases: []string{}, Help: "Send a message to a configured platform (scripts, cron jobs, CI).", Listed: true}, {Name: "login", Aliases: []string{}, Help: "", Listed: false}, {Name: "logout", Aliases: []string{}, Help: "Clear authentication for an inference provider", Listed: true}, {Name: "auth", Aliases: []string{}, Help: "Manage pooled provider credentials", Listed: true}, {Name: "status", Aliases: []string{}, Help: "Show status of all components", Listed: true}, {Name: "pause", Aliases: []string{}, Help: "Emergency stop: pause cron/kanban dispatch and new gateway turns", Listed: true}, {Name: "resume", Aliases: []string{}, Help: "Lift the emergency stop set by `icebath pause`", Listed: true}, {Name: "cron", Aliases: []string{}, Help: "Cron job management", Listed: true}, {Name: "webhook", Aliases: []string{}, Help: "Manage dynamic webhook subscriptions", Listed: true}, {Name: "peer", Aliases: []string{}, Help: "Bot-to-bot DMs across machines (peer Icebath gateways)", Listed: true}, {Name: "kanban", Aliases: []string{}, Help: "Multi-profile collaboration board (tasks, links, comments)", Listed: true}, {Name: "project", Aliases: []string{}, Help: "Manage projects (named, multi-folder workspaces)", Listed: true}, {Name: "hooks", Aliases: []string{}, Help: "Inspect and manage shell-script hooks", Listed: true}, {Name: "doctor", Aliases: []string{}, Help: "Check configuration and dependencies", Listed: true}, {Name: "verify", Aliases: []string{}, Help: "Detect a project's run recipe and smoke-test it", Listed: true}, {Name: "security", Aliases: []string{}, Help: "Supply-chain audit (OSV.dev) for venv, plugins, and MCP servers", Listed: true}, {Name: "approvals", Aliases: []string{}, Help: "Approval-prompt tools (mine history into allowlist proposals)", Listed: true}, {Name: "dump", Aliases: []string{}, Help: "Dump setup summary for support/debugging", Listed: true}, {Name: "debug", Aliases: []string{}, Help: "Debug tools — upload logs and system info for support", Listed: true}, {Name: "backup", Aliases: []string{}, Help: "Back up Icebath home directory to a zip file", Listed: true}, {Name: "checkpoints", Aliases: []string{}, Help: "Inspect / prune / clear ~/.icebath/checkpoints/", Listed: true}, {Name: "import", Aliases: []string{}, Help: "Restore an Icebath backup from a zip file", Listed: true}, {Name: "config", Aliases: []string{}, Help: "View and edit configuration", Listed: true}, {Name: "skin", Aliases: []string{}, Help: "List, switch, and tweak skins", Listed: true}, {Name: "console", Aliases: []string{}, Help: "Open the safe Icebath command console", Listed: true}, {Name: "pairing", Aliases: []string{}, Help: "Manage DM pairing codes for user authorization", Listed: true}, {Name: "skills", Aliases: []string{}, Help: "Search, install, configure, and manage skills", Listed: true}, {Name: "bundles", Aliases: []string{}, Help: "Create, list, and manage skill bundles (aliases for multiple skills)", Listed: true}, {Name: "plugins", Aliases: []string{}, Help: "Manage and validate plugins", Listed: true}, {Name: "curator", Aliases: []string{}, Help: "Background skill maintenance (curator) — status, run, pause, pin", Listed: true}, {Name: "pets", Aliases: []string{}, Help: "Browse, install, and select petdex animated pets", Listed: true}, {Name: "journey", Aliases: []string{"learning", "memory-graph"}, Help: "Timeline of learned skills + memories over time", Listed: true}, {Name: "memory", Aliases: []string{}, Help: "Configure external memory provider", Listed: true}, {Name: "tools", Aliases: []string{}, Help: "Configure which tools are enabled per platform", Listed: true}, {Name: "computer-use", Aliases: []string{}, Help: "Manage the Computer Use (cua-driver) backend (macOS/Windows/Linux)", Listed: true}, {Name: "mcp", Aliases: []string{}, Help: "Manage MCP server connections", Listed: true}, {Name: "sessions", Aliases: []string{}, Help: "Manage session history (list, rename, export, prune, delete)", Listed: true}, {Name: "insights", Aliases: []string{}, Help: "Show usage insights and analytics", Listed: true}, {Name: "usage", Aliases: []string{}, Help: "Show account rate-limit windows (the /usage block) without starting a session", Listed: true}, {Name: "monitoring", Aliases: []string{}, Help: "Inspect gateway monitoring (health & diagnostics export)", Listed: true}, {Name: "vault", Aliases: []string{}, Help: "Manage the local encrypted autofill vault (add/list/rm credentials)", Listed: true}, {Name: "update", Aliases: []string{}, Help: "Update Icebath Agent to the latest version", Listed: true}, {Name: "uninstall", Aliases: []string{}, Help: "Uninstall Icebath Agent", Listed: true}, {Name: "acp", Aliases: []string{}, Help: "Run Icebath Agent as an ACP (Agent Client Protocol) server", Listed: true}, {Name: "profile", Aliases: []string{}, Help: "Manage profiles — multiple isolated Icebath instances", Listed: true}, {Name: "completion", Aliases: []string{}, Help: "Print shell completion script (bash, zsh, or fish)", Listed: true}, {Name: "logs", Aliases: []string{}, Help: "View and filter Icebath log files", Listed: true}, {Name: "prompt-size", Aliases: []string{}, Help: "Show a byte breakdown of the system prompt + tool schemas", Listed: true}}},
 	}},
 	"chat": {Desc: true, MutexRequired: []bool{false}, Acts: []apAction{
 		{Kind: 'h', Opts: []string{"-h", "--help"}, Dest: "help", Nargs: "0"},
@@ -66,14 +66,8 @@ var argparseTree = map[string]*apParser{
 	"model": {Desc: true, Acts: []apAction{
 		{Kind: 'h', Opts: []string{"-h", "--help"}, Dest: "help", Nargs: "0"},
 		{Kind: 'f', Opts: []string{"--refresh"}, Dest: "refresh", Nargs: "0"},
-		{Kind: 'f', Opts: []string{"--portal-url"}, Dest: "portal_url"},
-		{Kind: 'f', Opts: []string{"--inference-url"}, Dest: "inference_url"},
-		{Kind: 'f', Opts: []string{"--client-id"}, Dest: "client_id"},
-		{Kind: 'f', Opts: []string{"--scope"}, Dest: "scope"},
 		{Kind: 'f', Opts: []string{"--no-browser"}, Dest: "no_browser", Nargs: "0"},
 		{Kind: 'f', Opts: []string{"--timeout"}, Dest: "timeout"},
-		{Kind: 'f', Opts: []string{"--ca-bundle"}, Dest: "ca_bundle"},
-		{Kind: 'f', Opts: []string{"--insecure"}, Dest: "insecure", Nargs: "0"},
 	}},
 	"moa": {Desc: true, Acts: []apAction{
 		{Kind: 'h', Opts: []string{"-h", "--help"}, Dest: "help", Nargs: "0"},
@@ -530,22 +524,14 @@ var argparseTree = map[string]*apParser{
 	"login": {Desc: true, Acts: []apAction{
 		{Kind: 'h', Opts: []string{"-h", "--help"}, Dest: "help", Nargs: "0"},
 		{Kind: 'f', Opts: []string{"--provider"}, Dest: "provider"},
-		{Kind: 'f', Opts: []string{"--portal-url"}, Dest: "portal_url"},
-		{Kind: 'f', Opts: []string{"--inference-url"}, Dest: "inference_url"},
-		{Kind: 'f', Opts: []string{"--client-id"}, Dest: "client_id"},
-		{Kind: 'f', Opts: []string{"--scope"}, Dest: "scope"},
-		{Kind: 'f', Opts: []string{"--no-browser"}, Dest: "no_browser", Nargs: "0"},
-		{Kind: 'f', Opts: []string{"--timeout"}, Dest: "timeout"},
-		{Kind: 'f', Opts: []string{"--ca-bundle"}, Dest: "ca_bundle"},
-		{Kind: 'f', Opts: []string{"--insecure"}, Dest: "insecure", Nargs: "0"},
 	}},
 	"logout": {Desc: true, Acts: []apAction{
 		{Kind: 'h', Opts: []string{"-h", "--help"}, Dest: "help", Nargs: "0"},
-		{Kind: 'f', Opts: []string{"--provider"}, Dest: "provider", Choices: []string{"nous", "openai-codex", "xai-oauth"}},
+		{Kind: 'f', Opts: []string{"--provider"}, Dest: "provider", Choices: []string{"openai-codex", "xai-oauth"}},
 	}},
 	"auth": {Acts: []apAction{
 		{Kind: 'h', Opts: []string{"-h", "--help"}, Dest: "help", Nargs: "0"},
-		{Kind: 's', Dest: "auth_action", Nargs: "A...", Choices: []string{"add", "list", "remove", "reset", "priority", "refresh", "status", "logout", "upgrade"}, Sub: []apChoice{{Name: "add", Aliases: []string{}, Help: "Add a pooled credential", Listed: true}, {Name: "list", Aliases: []string{}, Help: "List pooled credentials", Listed: true}, {Name: "remove", Aliases: []string{}, Help: "Remove a pooled credential by index, id, or label", Listed: true}, {Name: "reset", Aliases: []string{}, Help: "Clear exhaustion status for a provider's credentials (all, or one target)", Listed: true}, {Name: "priority", Aliases: []string{}, Help: "Move a pooled credential to a priority (0 = tried first under fill_first)", Listed: true}, {Name: "refresh", Aliases: []string{}, Help: "Refresh a pooled OAuth credential's tokens and clear its cooldown", Listed: true}, {Name: "status", Aliases: []string{}, Help: "Show auth status for a provider", Listed: true}, {Name: "logout", Aliases: []string{}, Help: "Log out a provider and clear stored auth state", Listed: true}, {Name: "upgrade", Aliases: []string{}, Help: "Sign in with a Nous account, keeping your connectors", Listed: true}}},
+		{Kind: 's', Dest: "auth_action", Nargs: "A...", Choices: []string{"add", "list", "remove", "reset", "priority", "refresh", "status", "logout"}, Sub: []apChoice{{Name: "add", Aliases: []string{}, Help: "Add a pooled credential", Listed: true}, {Name: "list", Aliases: []string{}, Help: "List pooled credentials", Listed: true}, {Name: "remove", Aliases: []string{}, Help: "Remove a pooled credential by index, id, or label", Listed: true}, {Name: "reset", Aliases: []string{}, Help: "Clear exhaustion status for a provider's credentials (all, or one target)", Listed: true}, {Name: "priority", Aliases: []string{}, Help: "Move a pooled credential to a priority (0 = tried first under fill_first)", Listed: true}, {Name: "refresh", Aliases: []string{}, Help: "Refresh a pooled OAuth credential's tokens and clear its cooldown", Listed: true}, {Name: "status", Aliases: []string{}, Help: "Show auth status for a provider", Listed: true}, {Name: "logout", Aliases: []string{}, Help: "Log out a provider and clear stored auth state", Listed: true}}},
 	}},
 	"auth add": {Acts: []apAction{
 		{Kind: 'h', Opts: []string{"-h", "--help"}, Dest: "help", Nargs: "0"},
@@ -554,15 +540,9 @@ var argparseTree = map[string]*apParser{
 		{Kind: 'f', Opts: []string{"--label"}, Dest: "label"},
 		{Kind: 'f', Opts: []string{"--priority"}, Dest: "priority"},
 		{Kind: 'f', Opts: []string{"--api-key"}, Dest: "api_key"},
-		{Kind: 'f', Opts: []string{"--portal-url"}, Dest: "portal_url"},
-		{Kind: 'f', Opts: []string{"--inference-url"}, Dest: "inference_url"},
-		{Kind: 'f', Opts: []string{"--client-id"}, Dest: "client_id"},
-		{Kind: 'f', Opts: []string{"--scope"}, Dest: "scope"},
 		{Kind: 'f', Opts: []string{"--no-browser"}, Dest: "no_browser", Nargs: "0"},
 		{Kind: 'f', Opts: []string{"--browser"}, Dest: "browser", Nargs: "0"},
 		{Kind: 'f', Opts: []string{"--timeout"}, Dest: "timeout"},
-		{Kind: 'f', Opts: []string{"--insecure"}, Dest: "insecure", Nargs: "0"},
-		{Kind: 'f', Opts: []string{"--ca-bundle"}, Dest: "ca_bundle"},
 	}},
 	"auth list": {Acts: []apAction{
 		{Kind: 'h', Opts: []string{"-h", "--help"}, Dest: "help", Nargs: "0"},
@@ -596,11 +576,6 @@ var argparseTree = map[string]*apParser{
 	"auth logout": {Acts: []apAction{
 		{Kind: 'h', Opts: []string{"-h", "--help"}, Dest: "help", Nargs: "0"},
 		{Kind: 'p', Dest: "provider", Required: true, Help: "Provider id"},
-	}},
-	"auth upgrade": {Acts: []apAction{
-		{Kind: 'h', Opts: []string{"-h", "--help"}, Dest: "help", Nargs: "0"},
-		{Kind: 'f', Opts: []string{"--no-browser"}, Dest: "no_browser", Nargs: "0"},
-		{Kind: 'f', Opts: []string{"--timeout"}, Dest: "timeout"},
 	}},
 	"status": {Desc: true, Acts: []apAction{
 		{Kind: 'h', Opts: []string{"-h", "--help"}, Dest: "help", Nargs: "0"},
@@ -806,25 +781,6 @@ var argparseTree = map[string]*apParser{
 		{Kind: 'p', Dest: "target", Required: true, Help: "<peer> or <peer>/<agent> (named profile on a multiplexed peer)"},
 		{Kind: 'p', Dest: "run_id", Required: true, Help: "Run ID returned by 'icebath peer run'"},
 		{Kind: 'f', Opts: []string{"--json"}, Dest: "json", Nargs: "0"},
-	}},
-	"portal": {Desc: true, Acts: []apAction{
-		{Kind: 'h', Opts: []string{"-h", "--help"}, Dest: "help", Nargs: "0"},
-		{Kind: 's', Dest: "portal_command", Nargs: "A...", Choices: []string{"login", "info", "status", "open", "tools"}, Sub: []apChoice{{Name: "login", Aliases: []string{}, Help: "Log in to Nous Portal + set it up (default; one-shot onboarding)", Listed: true}, {Name: "info", Aliases: []string{}, Help: "Show Portal auth + Tool Gateway routing summary", Listed: true}, {Name: "status", Aliases: []string{}, Help: "", Listed: false}, {Name: "open", Aliases: []string{}, Help: "Open the Portal subscription page in your default browser", Listed: true}, {Name: "tools", Aliases: []string{}, Help: "List Tool Gateway tools and which are routed via Nous", Listed: true}}},
-	}},
-	"portal login": {Acts: []apAction{
-		{Kind: 'h', Opts: []string{"-h", "--help"}, Dest: "help", Nargs: "0"},
-	}},
-	"portal info": {Acts: []apAction{
-		{Kind: 'h', Opts: []string{"-h", "--help"}, Dest: "help", Nargs: "0"},
-	}},
-	"portal status": {Acts: []apAction{
-		{Kind: 'h', Opts: []string{"-h", "--help"}, Dest: "help", Nargs: "0"},
-	}},
-	"portal open": {Acts: []apAction{
-		{Kind: 'h', Opts: []string{"-h", "--help"}, Dest: "help", Nargs: "0"},
-	}},
-	"portal tools": {Acts: []apAction{
-		{Kind: 'h', Opts: []string{"-h", "--help"}, Dest: "help", Nargs: "0"},
 	}},
 	"kanban": {Desc: true, Acts: []apAction{
 		{Kind: 'h', Opts: []string{"-h", "--help"}, Dest: "help", Nargs: "0"},
@@ -1338,7 +1294,6 @@ var argparseTree = map[string]*apParser{
 		{Kind: 'f', Opts: []string{"--local"}, Dest: "local", Nargs: "0"},
 		{Kind: 'f', Opts: []string{"-y", "--yes"}, Dest: "yes", Nargs: "0"},
 		{Kind: 'f', Opts: []string{"--no-redact"}, Dest: "no_redact", Nargs: "0"},
-		{Kind: 'f', Opts: []string{"--nous"}, Dest: "nous", Nargs: "0"},
 	}},
 	"debug delete": {Acts: []apAction{
 		{Kind: 'h', Opts: []string{"-h", "--help"}, Dest: "help", Nargs: "0"},
@@ -1881,7 +1836,7 @@ var argparseTree = map[string]*apParser{
 	}},
 	"memory setup": {Acts: []apAction{
 		{Kind: 'h', Opts: []string{"-h", "--help"}, Dest: "help", Nargs: "0"},
-		{Kind: 'p', Dest: "provider", Nargs: "?", Help: "Provider to configure directly (e.g. honcho), skipping the picker"},
+		{Kind: 'p', Dest: "provider", Nargs: "?", Help: "Provider to configure directly (e.g. retaindb), skipping the picker"},
 	}},
 	"memory status": {Acts: []apAction{
 		{Kind: 'h', Opts: []string{"-h", "--help"}, Dest: "help", Nargs: "0"},
@@ -1966,7 +1921,7 @@ var argparseTree = map[string]*apParser{
 	}},
 	"mcp": {Desc: true, Acts: []apAction{
 		{Kind: 'h', Opts: []string{"-h", "--help"}, Dest: "help", Nargs: "0"},
-		{Kind: 's', Dest: "mcp_action", Nargs: "A...", Choices: []string{"add", "remove", "rm", "list", "ls", "test", "configure", "config", "login", "reauth", "picker", "catalog", "install"}, Sub: []apChoice{{Name: "add", Aliases: []string{}, Help: "Add an MCP server (discovery-first install)", Listed: true}, {Name: "remove", Aliases: []string{"rm"}, Help: "Remove an MCP server", Listed: true}, {Name: "list", Aliases: []string{"ls"}, Help: "List configured MCP servers", Listed: true}, {Name: "test", Aliases: []string{}, Help: "Test MCP server connection", Listed: true}, {Name: "configure", Aliases: []string{"config"}, Help: "Toggle tool selection", Listed: true}, {Name: "login", Aliases: []string{}, Help: "Force re-authentication for an OAuth-based MCP server", Listed: true}, {Name: "reauth", Aliases: []string{}, Help: "Re-authenticate one OAuth MCP server, or all of them (--all)", Listed: true}, {Name: "picker", Aliases: []string{}, Help: "Interactive catalog picker (also the default for `icebath mcp`)", Listed: true}, {Name: "catalog", Aliases: []string{}, Help: "List Nous-approved MCPs available for one-click install", Listed: true}, {Name: "install", Aliases: []string{}, Help: "Install a catalog MCP by name (e.g. `icebath mcp install deepwiki`)", Listed: true}}},
+		{Kind: 's', Dest: "mcp_action", Nargs: "A...", Choices: []string{"add", "remove", "rm", "list", "ls", "test", "configure", "config", "login", "reauth", "picker", "catalog", "install"}, Sub: []apChoice{{Name: "add", Aliases: []string{}, Help: "Add an MCP server (discovery-first install)", Listed: true}, {Name: "remove", Aliases: []string{"rm"}, Help: "Remove an MCP server", Listed: true}, {Name: "list", Aliases: []string{"ls"}, Help: "List configured MCP servers", Listed: true}, {Name: "test", Aliases: []string{}, Help: "Test MCP server connection", Listed: true}, {Name: "configure", Aliases: []string{"config"}, Help: "Toggle tool selection", Listed: true}, {Name: "login", Aliases: []string{}, Help: "Force re-authentication for an OAuth-based MCP server", Listed: true}, {Name: "reauth", Aliases: []string{}, Help: "Re-authenticate one OAuth MCP server, or all of them (--all)", Listed: true}, {Name: "picker", Aliases: []string{}, Help: "Interactive catalog picker (also the default for `icebath mcp`)", Listed: true}, {Name: "catalog", Aliases: []string{}, Help: "List the bundled catalog MCPs available for one-click install", Listed: true}, {Name: "install", Aliases: []string{}, Help: "Install a catalog MCP by name (e.g. `icebath mcp install deepwiki`)", Listed: true}}},
 	}},
 	"mcp add": {Acts: []apAction{
 		{Kind: 'h', Opts: []string{"-h", "--help"}, Dest: "help", Nargs: "0"},
@@ -2013,37 +1968,6 @@ var argparseTree = map[string]*apParser{
 	"mcp install": {Acts: []apAction{
 		{Kind: 'h', Opts: []string{"-h", "--help"}, Dest: "help", Nargs: "0"},
 		{Kind: 'p', Dest: "identifier", Required: true, Help: "Catalog entry name (or `official/<name>`)"},
-	}},
-	"connectors": {Desc: true, Acts: []apAction{
-		{Kind: 'h', Opts: []string{"-h", "--help"}, Dest: "help", Nargs: "0"},
-		{Kind: 's', Dest: "connectors_action", Nargs: "A...", Choices: []string{"list", "ls", "accounts", "connect", "rename", "disconnect"}, Sub: []apChoice{{Name: "list", Aliases: []string{"ls"}, Help: "Show every connector and whether it is connected", Listed: true}, {Name: "accounts", Aliases: []string{}, Help: "Show connected accounts", Listed: true}, {Name: "connect", Aliases: []string{}, Help: "Connect an app account in your browser", Listed: true}, {Name: "rename", Aliases: []string{}, Help: "Rename an account", Listed: true}, {Name: "disconnect", Aliases: []string{}, Help: "Remove an account", Listed: true}}},
-	}},
-	"connectors list": {Acts: []apAction{
-		{Kind: 'h', Opts: []string{"-h", "--help"}, Dest: "help", Nargs: "0"},
-	}},
-	"connectors accounts": {Acts: []apAction{
-		{Kind: 'h', Opts: []string{"-h", "--help"}, Dest: "help", Nargs: "0"},
-		{Kind: 'p', Dest: "app", Nargs: "?", Help: "Only show accounts of this app"},
-		{Kind: 'f', Opts: []string{"--all"}, Dest: "all", Nargs: "0"},
-	}},
-	"connectors connect": {Acts: []apAction{
-		{Kind: 'h', Opts: []string{"-h", "--help"}, Dest: "help", Nargs: "0"},
-		{Kind: 'p', Dest: "app", Required: true, Help: "App to connect, for example gmail"},
-		{Kind: 'f', Opts: []string{"--alias"}, Dest: "alias"},
-		{Kind: 'f', Opts: []string{"--reconnect"}, Dest: "reconnect", Nargs: "0"},
-		{Kind: 'f', Opts: []string{"--force"}, Dest: "force", Nargs: "0"},
-	}},
-	"connectors rename": {Acts: []apAction{
-		{Kind: 'h', Opts: []string{"-h", "--help"}, Dest: "help", Nargs: "0"},
-		{Kind: 'p', Dest: "app", Required: true, Help: "App the account belongs to"},
-		{Kind: 'p', Dest: "name", Required: true, Help: "Current name or label of the account"},
-		{Kind: 'f', Opts: []string{"--to"}, Dest: "to", Required: true},
-	}},
-	"connectors disconnect": {Acts: []apAction{
-		{Kind: 'h', Opts: []string{"-h", "--help"}, Dest: "help", Nargs: "0"},
-		{Kind: 'p', Dest: "app", Required: true, Help: "App the account belongs to"},
-		{Kind: 'f', Opts: []string{"--alias"}, Dest: "alias"},
-		{Kind: 'f', Opts: []string{"--yes", "-y"}, Dest: "yes", Nargs: "0"},
 	}},
 	"sessions": {Desc: true, Acts: []apAction{
 		{Kind: 'h', Opts: []string{"-h", "--help"}, Dest: "help", Nargs: "0"},

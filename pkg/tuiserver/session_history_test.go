@@ -8,7 +8,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/nickheyer/icebath/pkg/tuigateway"
+	"github.com/nickheyer/icebath/pkg/tuihost"
 )
 
 // Writes a fake image under dir and returns its path
@@ -23,7 +23,7 @@ func writeFakeImage(t *testing.T, dir, name string, data []byte) string {
 
 func TestNeverCallsVisionOnSubmitPath(t *testing.T) {
 	img := writeFakeImage(t, t.TempDir(), "photo.jpg", []byte("\xff\xd8\xff fake jpeg"))
-	out := tuigateway.BuildImageRefMessage("what is this?", []string{img})
+	out := tuihost.BuildImageRefMessage("what is this?", []string{img})
 	for _, want := range []string{"what is this?", img, "vision_analyze"} {
 		if !strings.Contains(out, want) {
 			t.Fatalf("missing %q in %q", want, out)
@@ -37,7 +37,7 @@ func TestEveryAttachedImageIsReferenced(t *testing.T) {
 	for i := range 20 {
 		paths = append(paths, writeFakeImage(t, dir, fmt.Sprintf("img%d.png", i), []byte("\x89PNG\r\n\x1a\n fake")))
 	}
-	out := tuigateway.BuildImageRefMessage("caption", paths)
+	out := tuihost.BuildImageRefMessage("caption", paths)
 	for _, p := range paths {
 		if !strings.Contains(out, p) {
 			t.Fatalf("missing %q", p)
@@ -49,7 +49,7 @@ func TestMissingPathsSkipped(t *testing.T) {
 	dir := t.TempDir()
 	img := writeFakeImage(t, dir, "photo.jpg", []byte("\xff\xd8\xff fake jpeg"))
 	gone := filepath.Join(dir, "nope.png")
-	out := tuigateway.BuildImageRefMessage("hi", []string{gone, img})
+	out := tuihost.BuildImageRefMessage("hi", []string{gone, img})
 	if strings.Contains(out, gone) || !strings.Contains(out, img) {
 		t.Fatalf("unexpected %q", out)
 	}

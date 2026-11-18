@@ -233,7 +233,7 @@ const pySpaceClassNet = `\t\n\v\f\r\x1c-\x1f \u0085   -     　`
 var homeAssignmentRe = regexp.MustCompile(`(?:^|[` + pySpaceClass + `])icebath_home=(?:"([^"]*)"|'([^']*)'|([^` + pySpaceClass + `]+))`)
 
 // Values of every token bounded ICEBATH_HOME assignment in a lower cased command line, trailing slash stripped
-func HermesHomeAssignments(command string) []string {
+func IcebathHomeAssignments(command string) []string {
 	var out []string
 	for _, m := range homeAssignmentRe.FindAllStringSubmatchIndex(command, -1) {
 		for g := 1; g <= 3; g++ {
@@ -247,8 +247,8 @@ func HermesHomeAssignments(command string) []string {
 }
 
 // Whether a lower cased command line assigns exactly home, a space holding unquoted home included
-func CommandLineNamesHermesHome(commandLC, homeLC string) bool {
-	for _, a := range HermesHomeAssignments(commandLC) {
+func CommandLineNamesIcebathHome(commandLC, homeLC string) bool {
+	for _, a := range IcebathHomeAssignments(commandLC) {
 		if a == homeLC {
 			return true
 		}
@@ -268,12 +268,12 @@ func commandLineBelongsToProfile(command, profileHome string) bool {
 		if hasFlag && flag == pystr.Lower(profileName) {
 			return true
 		}
-		return CommandLineNamesHermesHome(commandLC, homeLC)
+		return CommandLineNamesIcebathHome(commandLC, homeLC)
 	}
 	if hasFlag && flag != "default" {
 		return false
 	}
-	return len(HermesHomeAssignments(commandLC)) == 0 || CommandLineNamesHermesHome(commandLC, homeLC)
+	return len(IcebathHomeAssignments(commandLC)) == 0 || CommandLineNamesIcebathHome(commandLC, homeLC)
 }
 
 // Whether the one host gateway with this pid serves the profile of home, false when the host is unknown

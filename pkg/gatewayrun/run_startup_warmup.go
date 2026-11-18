@@ -35,7 +35,7 @@ func startupWarmupTimeoutSecs() float64 {
 func warmTurnMachinerySync(ctx context.Context) (int, error) {
 	var enabled []string
 	if cfg, err := config.LoadReadonly(ctx, home.Dir(ctx), nil); err != nil {
-		runLog().Debug("platform toolset resolution failed; warming the full tool surface", "error", err)
+		pkgLog().Debug("platform toolset resolution failed; warming the full tool surface", "error", err)
 	} else {
 		enabled = []string{}
 		for name := range tools.Default.PlatformTools(ctx, tools.ScopeKey(home.Dir(ctx)), cfg, "cli", tools.PlatformToolsOptions{IncludeDefaultMCPServers: true}) {
@@ -54,7 +54,7 @@ func warmTurnMachinerySync(ctx context.Context) (int, error) {
 		tools.EnvironmentProbeLine(nil, false)
 	}
 	modelCtx := resolveGatewayModelContext(ctx, "", nil)
-	runLog().Info(fmt.Sprintf("Model context warmed: %s -> %d tokens (%s)", modelCtx.model, modelCtx.contextLength, modelCtx.contextSource))
+	pkgLog().Info(fmt.Sprintf("Model context warmed: %s -> %d tokens (%s)", modelCtx.model, modelCtx.contextLength, modelCtx.contextSource))
 	return len(defs), nil
 }
 
@@ -100,7 +100,7 @@ func (r *GatewayRunner) warmTurnPrerequisites(ctx context.Context) {
 		logSuppressedExc(slog.LevelWarn, err, "Turn-machinery warm-up failed; first inbound turn will initialize lazily")
 		return
 	}
-	runLog().Info(fmt.Sprintf("Turn machinery warmed in %.1fs (%d tool schema(s) materialized)", time.Since(started).Seconds(), count))
+	pkgLog().Info(fmt.Sprintf("Turn machinery warmed in %.1fs (%d tool schema(s) materialized)", time.Since(started).Seconds(), count))
 }
 
 // Bounded wait for the boot warm up, the gate opening anyway once it times out
@@ -149,9 +149,9 @@ waiting:
 	}
 	if len(pending) > 0 {
 		if strings.Count(warnFmt, "%") > 1 {
-			runLog().Warn(fmt.Sprintf(warnFmt, timeout, len(pending)))
+			pkgLog().Warn(fmt.Sprintf(warnFmt, timeout, len(pending)))
 		} else {
-			runLog().Warn(fmt.Sprintf(warnFmt, timeout))
+			pkgLog().Warn(fmt.Sprintf(warnFmt, timeout))
 		}
 		late := lateFailureCallback(lateMsg, level)
 		for _, task := range pending {
@@ -174,7 +174,7 @@ func lateFailureCallback(message string, level slog.Level) func(*gatewayFuture) 
 		err := f.err
 		f.mu.Unlock()
 		if err != nil {
-			runLog().Log(context.Background(), level, message, "exc_info", err)
+			pkgLog().Log(context.Background(), level, message, "exc_info", err)
 		}
 	}
 }

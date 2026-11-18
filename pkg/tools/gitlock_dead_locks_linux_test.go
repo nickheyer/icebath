@@ -430,7 +430,7 @@ func TestAKilledShallowFetchsShallowLockGoesAndTheNextFetchLands(t *testing.T) {
 	}
 }
 
-func TestALiveHermesShallowLockHolderKeepsItsLock(t *testing.T) {
+func TestALiveIcebathShallowLockHolderKeepsItsLock(t *testing.T) {
 	repo := glRepo(t)
 	ctx := glKilledUpdateReceipt(t)
 	held, err := acquireShallowLock(filepath.Join(repo, ".git", "shallow"))

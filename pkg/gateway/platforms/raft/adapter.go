@@ -8,7 +8,6 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
-	"log/slog"
 	"net"
 	"net/http"
 	"os"
@@ -159,7 +158,7 @@ func (a *RaftAdapter) Connect(ctx context.Context, isReconnect bool) (bool, erro
 			return false, err
 		}
 		a.bridgeToken = hex.EncodeToString(raw)
-		slog.Info("[raft] Auto-generated bridge token")
+		pkgLog().Info("[raft] Auto-generated bridge token")
 	}
 	a.mu.Unlock()
 	app := gateway.NewHTTPApp(int64(a.maxBodyBytes))
@@ -181,7 +180,7 @@ func (a *RaftAdapter) Connect(ctx context.Context, isReconnect bool) (bool, erro
 		conn, err := net.DialTimeout("tcp4", net.JoinHostPort("127.0.0.1", strconv.Itoa(a.port)), time.Second)
 		if err == nil {
 			conn.Close()
-			slog.Error(fmt.Sprintf("[raft] Port %d already in use. Set platforms.raft.extra.port in config", a.port))
+			pkgLog().Error(fmt.Sprintf("[raft] Port %d already in use. Set platforms.raft.extra.port in config", a.port))
 			return false, nil
 		}
 	}
@@ -201,7 +200,7 @@ func (a *RaftAdapter) Connect(ctx context.Context, isReconnect bool) (bool, erro
 	activeAdaptersMu.Lock()
 	activeAdapters[weak.Make(a)] = struct{}{}
 	activeAdaptersMu.Unlock()
-	slog.Info(fmt.Sprintf("[raft] Raft channel listening on %s:%d%s", a.host, boundPort, a.path))
+	pkgLog().Info(fmt.Sprintf("[raft] Raft channel listening on %s:%d%s", a.host, boundPort, a.path))
 	if err := a.spawnBridge(ctx, boundPort); err != nil {
 		return false, err
 	}
@@ -225,7 +224,7 @@ func (a *RaftAdapter) Disconnect(ctx context.Context) error {
 	delete(activeAdapters, weak.Make(a))
 	activeAdaptersMu.Unlock()
 	a.MarkDisconnected(ctx)
-	slog.Info("[raft] Disconnected")
+	pkgLog().Info("[raft] Disconnected")
 	return nil
 }
 
@@ -233,12 +232,12 @@ func (a *RaftAdapter) Disconnect(ctx context.Context) error {
 func (a *RaftAdapter) spawnBridge(ctx context.Context, port int) error {
 	raftBin, found := pyshutil.Which("raft", nil)
 	if !found {
-		slog.Warn("[raft] raft CLI not found in PATH; bridge not spawned — wake-only polling mode")
+		pkgLog().Warn("[raft] raft CLI not found in PATH; bridge not spawned — wake-only polling mode")
 		return nil
 	}
 	profile := resolveRaftProfile(ctx)
 	if profile == "" {
-		slog.Warn("[raft] RAFT_PROFILE not set; bridge not spawned")
+		pkgLog().Warn("[raft] RAFT_PROFILE not set; bridge not spawned")
 		return nil
 	}
 	endpoint := fmt.Sprintf("http://%s:%d%s", a.host, port, a.path)
@@ -259,7 +258,7 @@ func (a *RaftAdapter) spawnBridge(ctx context.Context, port int) error {
 	}
 	cmd.Stdout, cmd.Stderr = os.Stdout, os.Stderr
 	if err := tools.SpawnOwned(ctx, cmd, "raft-bridge"); err != nil {
-		slog.Error("[raft] Failed to spawn bridge", "error", err)
+		pkgLog().Error("[raft] Failed to spawn bridge", "error", err)
 		return nil
 	}
 	proc := &bridgeProcess{cmd: cmd, exited: make(chan struct{})}
@@ -270,7 +269,7 @@ func (a *RaftAdapter) spawnBridge(ctx context.Context, port int) error {
 	a.mu.Lock()
 	a.bridge = proc
 	a.mu.Unlock()
-	slog.Info(fmt.Sprintf("[raft] Spawned bridge pid=%d profile=%s endpoint=%s", cmd.Process.Pid, profile, endpoint))
+	pkgLog().Info(fmt.Sprintf("[raft] Spawned bridge pid=%d profile=%s endpoint=%s", cmd.Process.Pid, profile, endpoint))
 	return nil
 }
 
@@ -291,16 +290,16 @@ func (a *RaftAdapter) stopBridge() {
 		err = proc.cmd.Process.Signal(syscall.SIGTERM)
 	}
 	if err != nil && !errors.Is(err, os.ErrProcessDone) {
-		slog.Error("[raft] Error stopping bridge", "error", err)
+		pkgLog().Error("[raft] Error stopping bridge", "error", err)
 	} else {
 		timer := time.NewTimer(5 * time.Second)
 		select {
 		case <-proc.exited:
 			timer.Stop()
-			slog.Info(fmt.Sprintf("[raft] Bridge process terminated (pid=%d)", pid))
+			pkgLog().Info(fmt.Sprintf("[raft] Bridge process terminated (pid=%d)", pid))
 		case <-timer.C:
 			_ = proc.cmd.Process.Kill()
-			slog.Warn(fmt.Sprintf("[raft] Bridge process killed after timeout (pid=%d)", pid))
+			pkgLog().Warn(fmt.Sprintf("[raft] Bridge process killed after timeout (pid=%d)", pid))
 		}
 	}
 	select {
@@ -312,7 +311,7 @@ func (a *RaftAdapter) stopBridge() {
 
 // The adapter never delivers, the agent sends through the raft CLI
 func (a *RaftAdapter) Send(ctx context.Context, chatID, content, replyTo string, metadata map[string]any) (gateway.SendResult, error) {
-	slog.Debug("[raft] adapter send is a no-op; agent delivers via raft CLI")
+	pkgLog().Debug("[raft] adapter send is a no-op; agent delivers via raft CLI")
 	return gateway.SendResult{Success: true}, nil
 }
 
@@ -401,7 +400,7 @@ func (a *RaftAdapter) handleWake(ctx context.Context, request *gateway.WebReques
 		return gateway.WebJSONResponse(pyjson.ObjectOf("ok", false, "error", "not_ready", "runtimeSession", a.runtimeSession), 503, nil)
 	}
 	if a.MessageHandler() == nil {
-		slog.Warn("[raft] Wake received before gateway message handler was attached")
+		pkgLog().Warn("[raft] Wake received before gateway message handler was attached")
 		return notReady()
 	}
 	deliveryID := ""
@@ -424,7 +423,7 @@ func (a *RaftAdapter) handleWake(ctx context.Context, request *gateway.WebReques
 		if ctx.Err() != nil {
 			return nil, ctx.Err()
 		}
-		slog.Error("[raft] Failed to inject wake event", "error", err)
+		pkgLog().Error("[raft] Failed to inject wake event", "error", err)
 		return notReady()
 	}
 	return gateway.WebJSONResponse(pyjson.ObjectOf("ok", true, "runtimeSession", a.runtimeSession), 202, nil)
@@ -475,7 +474,7 @@ func (a *RaftAdapter) HandleMessage(ctx context.Context, event *gateway.MessageE
 		return err
 	}
 	if a.HasActiveSession(sessionKey) {
-		slog.Debug(fmt.Sprintf("[raft] Wake queued for busy session %s", sessionKey))
+		pkgLog().Debug(fmt.Sprintf("[raft] Wake queued for busy session %s", sessionKey))
 		a.MergePendingMessage(sessionKey, event, false)
 		return nil
 	}
@@ -485,6 +484,6 @@ func (a *RaftAdapter) HandleMessage(ctx context.Context, event *gateway.MessageE
 // Queues an activity event from a hook, an invalid one dropped
 func (a *RaftAdapter) ReportActivity(event *pyjson.Object) {
 	if err := a.activityQueue.Push(event); err != nil {
-		slog.Debug("[raft] activity event dropped during validation", "error", err)
+		pkgLog().Debug("[raft] activity event dropped during validation", "error", err)
 	}
 }

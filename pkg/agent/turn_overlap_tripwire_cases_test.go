@@ -21,7 +21,7 @@ func clearInflightRegistry(t *testing.T) {
 func TestCleanSerialTurnsNoWarning(t *testing.T) {
 	t.Setenv("ICEBATH_HOME", t.TempDir())
 	clearInflightRegistry(t)
-	records := captureLogger(t, "agent.agent_runtime_helpers", slog.LevelWarn)
+	records := captureLogger(t, "agent", slog.LevelWarn)
 	a := &AIAgent{sessionID: "s1"}
 	if prev := noteTurnStart(a, "s1:t1:aaaa"); prev != "" {
 		t.Fatalf("prev %q", prev)
@@ -39,7 +39,7 @@ func TestCleanSerialTurnsNoWarning(t *testing.T) {
 func TestCrossAgentSameSessionOverlapWarns(t *testing.T) {
 	t.Setenv("ICEBATH_HOME", t.TempDir())
 	clearInflightRegistry(t)
-	records := captureLogger(t, "agent.agent_runtime_helpers", slog.LevelWarn)
+	records := captureLogger(t, "agent", slog.LevelWarn)
 	a, b := &AIAgent{sessionID: "s1"}, &AIAgent{sessionID: "s1"}
 	if prev := noteTurnStart(a, "s1:t1:aaaa"); prev != "" {
 		t.Fatalf("prev %q", prev)
@@ -56,7 +56,7 @@ func TestCrossAgentSameSessionOverlapWarns(t *testing.T) {
 func TestDistinctSessionsNeverCrossWarn(t *testing.T) {
 	t.Setenv("ICEBATH_HOME", t.TempDir())
 	clearInflightRegistry(t)
-	records := captureLogger(t, "agent.agent_runtime_helpers", slog.LevelWarn)
+	records := captureLogger(t, "agent", slog.LevelWarn)
 	a, b := &AIAgent{sessionID: "s1"}, &AIAgent{sessionID: "s2"}
 	noteTurnStart(a, "s1:t1:aaaa")
 	if prev := noteTurnStart(b, "s2:t2:bbbb"); prev != "" {
@@ -70,7 +70,7 @@ func TestDistinctSessionsNeverCrossWarn(t *testing.T) {
 func TestPersistDisabledForkNeitherRegistersNorWarns(t *testing.T) {
 	t.Setenv("ICEBATH_HOME", t.TempDir())
 	clearInflightRegistry(t)
-	records := captureLogger(t, "agent.agent_runtime_helpers", slog.LevelWarn)
+	records := captureLogger(t, "agent", slog.LevelWarn)
 	parent, fork := &AIAgent{sessionID: "s1"}, &AIAgent{sessionID: "s1", persistDisabled: true}
 	noteTurnStart(parent, "s1:t1:aaaa")
 	if prev := noteTurnStart(fork, "s1:tr:ffff"); prev != "" {

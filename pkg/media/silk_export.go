@@ -24,7 +24,7 @@ func SilkToWAVAtRate(ctx context.Context, src, dst string, rate int) error {
 	if !safeFindSpec("pilk") {
 		return ErrPilkMissing
 	}
-	python, err := managedPythonCommand(ctx)
+	python, err := managedPythonCommand(ctx, "silk")
 	if err != nil {
 		return err
 	}

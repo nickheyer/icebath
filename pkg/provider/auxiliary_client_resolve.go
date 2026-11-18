@@ -3,7 +3,6 @@ package provider
 import (
 	"context"
 	"fmt"
-	"log/slog"
 	"net/http"
 	"net/url"
 	"reflect"
@@ -228,7 +227,7 @@ func auxNamedCustomAPIKey(ctx context.Context, entry map[string]any, provider, c
 // Bedrock client by model family, Anthropic SDK, Mantle Responses or Converse, nil without AWS credentials
 func auxBuildBedrockClient(ctx context.Context, provider, model string, rawCodex bool) (AuxClient, string) {
 	if !auxHasAWSCredentialsFn(ctx, true) {
-		slog.Debug("resolve_provider_client: bedrock requested but no AWS credentials found")
+		pkgLog().Debug("resolve_provider_client: bedrock requested but no AWS credentials found")
 		return nil, ""
 	}
 	region := resolveBedrockRuntimeRegionCtx(ctx)
@@ -251,7 +250,7 @@ func auxBuildBedrockClient(ctx context.Context, provider, model string, rawCodex
 			opts.HTTPClient = &http.Client{Transport: route.Transport}
 		}
 		client := newAuxOpenAIClient(route.APIKey, route.BaseURL, opts)
-		slog.Debug(fmt.Sprintf("resolve_provider_client: bedrock-openai (%s, %s)", finalModel, region))
+		pkgLog().Debug(fmt.Sprintf("resolve_provider_client: bedrock-openai (%s, %s)", finalModel, region))
 		if rawCodex {
 			return client, finalModel
 		}
@@ -261,13 +260,13 @@ func auxBuildBedrockClient(ctx context.Context, provider, model string, rawCodex
 	if isAnthropicBedrockModel(finalModel) {
 		realClient, err := buildAnthropicBedrockClient(ctx, region, 0)
 		if err != nil {
-			slog.Warn(fmt.Sprintf("resolve_provider_client: cannot create Bedrock client: %v", err))
+			pkgLog().Warn(fmt.Sprintf("resolve_provider_client: cannot create Bedrock client: %v", err))
 			return nil, ""
 		}
-		slog.Debug(fmt.Sprintf("resolve_provider_client: bedrock anthropic (%s, %s)", finalModel, region))
+		pkgLog().Debug(fmt.Sprintf("resolve_provider_client: bedrock anthropic (%s, %s)", finalModel, region))
 		return newAnthropicAuxiliaryClientFrom(realClient, finalModel, "aws-sdk", baseURL, false), finalModel
 	}
-	slog.Debug(fmt.Sprintf("resolve_provider_client: bedrock converse (%s, %s)", finalModel, region))
+	pkgLog().Debug(fmt.Sprintf("resolve_provider_client: bedrock converse (%s, %s)", finalModel, region))
 	return NewBedrockAuxiliaryClient(region, finalModel), finalModel
 }
 
@@ -276,16 +275,16 @@ func auxBuildVertexClient(ctx context.Context, provider, model string) (AuxClien
 	h := home.Dir(ctx)
 	env := vertexEnv{cfg: LoadConfigSafe(ctx, h), secrets: config.NewSecrets(h)}
 	if !hasVertexCredentials(ctx, env) {
-		slog.Debug("resolve_provider_client: vertex requested but no GCP credentials found")
+		pkgLog().Debug("resolve_provider_client: vertex requested but no GCP credentials found")
 		return nil, ""
 	}
 	token, baseURL := vertexGetConfig(ctx, env, "", "")
 	if token == "" || baseURL == "" {
-		slog.Warn("resolve_provider_client: vertex requested but could not mint token / resolve project")
+		pkgLog().Warn("resolve_provider_client: vertex requested but could not mint token / resolve project")
 		return nil, ""
 	}
 	finalModel := auxNormalizeResolvedModel(ctx, auxFirstNonEmpty(model, "google/gemini-3-flash-preview"), provider)
-	slog.Debug(fmt.Sprintf("resolve_provider_client: vertex (%s)", finalModel))
+	pkgLog().Debug(fmt.Sprintf("resolve_provider_client: vertex (%s)", finalModel))
 	return newAuxOpenAIClient(token, baseURL, auxOpenAIOptions{}), finalModel
 }
 
@@ -370,7 +369,7 @@ func auxWrapTransport(ctx context.Context, req auxResolveRequest, client AuxClie
 		if len(shown) > 60 {
 			shown = shown[:60]
 		}
-		slog.Debug(fmt.Sprintf("resolve_provider_client: wrapping client in CodexAuxiliaryClient (api_mode=%s, model=%s, base_url=%s)",
+		pkgLog().Debug(fmt.Sprintf("resolve_provider_client: wrapping client in CodexAuxiliaryClient (api_mode=%s, model=%s, base_url=%s)",
 			auxFirstNonEmpty(req.APIMode, "auto-detected"), finalModel, shown))
 		return NewCodexAuxiliaryClient(auxAsResponsesClient(client), finalModel), nil
 	}
@@ -402,7 +401,7 @@ func auxRouteClient(ctx context.Context, req auxResolveRequest, client AuxClient
 // Routes the client on the request model or the default, warning and resolving nothing for a nil client
 func auxRouteOrWarn(ctx context.Context, req auxResolveRequest, client AuxClient, def, unavailable string) auxResolveResult {
 	if client == nil {
-		slog.Warn(unavailable)
+		pkgLog().Warn(unavailable)
 		return auxResolveResult{}
 	}
 	return auxRouteClient(ctx, req, client, auxNormalizeResolvedModel(ctx, auxFirstNonEmpty(req.Model, def), req.Provider))
@@ -416,12 +415,12 @@ func auxResolveAutoBranch(ctx context.Context, req auxResolveRequest) (auxResolv
 	}
 	model := req.Model
 	if model != "" && strings.Contains(model, "/") && resolved != "" && !strings.Contains(resolved, "/") {
-		slog.Debug(fmt.Sprintf("Dropping OpenRouter-format model %s for non-OpenRouter auxiliary provider (using %s instead)", pyrepr.Repr(model), pyrepr.Repr(resolved)))
+		pkgLog().Debug(fmt.Sprintf("Dropping OpenRouter-format model %s for non-OpenRouter auxiliary provider (using %s instead)", pyrepr.Repr(model), pyrepr.Repr(resolved)))
 		model = ""
 	}
 	routed := auxRouteClient(ctx, req, client, auxFirstNonEmpty(model, resolved))
 	if routed.Client != nil && effective != "" && !auxStampEffectiveProvider(routed.Client, effective) {
-		slog.Debug(fmt.Sprintf("Auxiliary client %s cannot retain effective provider %s", auxTypeName(routed.Client), effective))
+		pkgLog().Debug(fmt.Sprintf("Auxiliary client %s cannot retain effective provider %s", auxTypeName(routed.Client), effective))
 	}
 	return routed, nil
 }
@@ -437,42 +436,17 @@ func auxResolveOpenRouterBranch(ctx context.Context, req auxResolveRequest) (aux
 		if err != nil {
 			return auxResolveResult{}, err
 		}
-		slog.Warn("resolve_provider_client: openrouter requested but " + why)
+		pkgLog().Warn("resolve_provider_client: openrouter requested but " + why)
 		return auxResolveResult{}, nil
 	}
 	return auxRouteClient(ctx, req, client, auxNormalizeResolvedModel(ctx, auxFirstNonEmpty(req.Model, def), req.Provider)), nil
-}
-
-// Nous Portal on the wire its catalog model rides, Messages for anthropic models on the native route
-func auxResolveNousBranch(ctx context.Context, req auxResolveRequest) (auxResolveResult, error) {
-	model := req.Model
-	vision := req.IsVision || strings.ToLower(strings.TrimSpace(model)) == "mimo-v2-omni"
-	for _, v := range auxProviderVisionModels {
-		vision = vision || (model != "" && model == v)
-	}
-	client, def, err := auxTryNousFn(ctx, vision)
-	if err != nil {
-		return auxResolveResult{}, err
-	}
-	if client == nil {
-		slog.Warn("resolve_provider_client: nous requested but Nous Portal not configured (run: icebath auth)")
-		return auxResolveResult{}, nil
-	}
-	finalModel := auxNormalizeResolvedModel(ctx, auxFirstNonEmpty(model, def), req.Provider)
-	cfg, _ := auxLoadConfigReadonlyFn(ctx)
-	wire := NousMode(finalModel, newResolver(ctx, cfg, nil, "", nil).nousAnthropicWire())
-	wrapped, err := auxMaybeWrapAnthropic(ctx, client, finalModel, client.APIKey(), client.BaseURL(), string(wire))
-	if err != nil {
-		return auxResolveResult{}, err
-	}
-	return auxRouteClient(ctx, req, wrapped, finalModel), nil
 }
 
 // OpenAI Codex over the Responses API, the raw SDK client for responses stream callers
 func auxResolveOpenAICodexBranch(ctx context.Context, req auxResolveRequest) (auxResolveResult, error) {
 	model := req.Model
 	if model == "" {
-		slog.Warn("resolve_provider_client: openai-codex requested without a model; pass model explicitly (e.g. model.model in config.yaml or auxiliary.<task>.model for per-task aux routing).")
+		pkgLog().Warn("resolve_provider_client: openai-codex requested without a model; pass model explicitly (e.g. model.model in config.yaml or auxiliary.<task>.model for per-task aux routing).")
 		return auxResolveResult{}, nil
 	}
 	const noToken = "resolve_provider_client: openai-codex requested but no Codex OAuth token found (run: icebath model)"
@@ -482,7 +456,7 @@ func auxResolveOpenAICodexBranch(ctx context.Context, req auxResolveRequest) (au
 			return auxResolveResult{}, err
 		}
 		if token == "" {
-			slog.Warn(noToken)
+			pkgLog().Warn(noToken)
 			return auxResolveResult{}, nil
 		}
 		raw := auxCreateOpenAIClient(ctx, token, baseURL, auxOpenAIOptions{DefaultHeaders: codexCloudflareHeaders(token, baseURL)})
@@ -551,7 +525,7 @@ func auxResolveCustomBranch(ctx context.Context, req auxResolveRequest) (auxReso
 			}
 		}
 		if customBase == "" {
-			slog.Warn("resolve_provider_client: explicit custom endpoint requested but base_url is empty")
+			pkgLog().Warn("resolve_provider_client: explicit custom endpoint requested but base_url is empty")
 			return auxResolveResult{}, nil
 		}
 	} else if len(mainRuntime) > 0 {
@@ -611,7 +585,7 @@ func auxResolveCustomBranch(ctx context.Context, req auxResolveRequest) (auxReso
 		}
 		return auxRouteClient(ctx, req, wrapped, finalModel), nil
 	}
-	slog.Warn("resolve_provider_client: custom/main requested but no endpoint credentials found")
+	pkgLog().Warn("resolve_provider_client: custom/main requested but no endpoint credentials found")
 	return auxResolveResult{}, nil
 }
 
@@ -658,7 +632,7 @@ func auxResolveNamedCustomBranch(ctx context.Context, req auxResolveRequest) (au
 		customKey = k
 	}
 	if customKey == "no-key-required" {
-		slog.Warn(fmt.Sprintf("resolve_provider_client: named custom provider %s has no resolvable api_key — request will be sent with placeholder no-key-required and will 401 on auth-required endpoints",
+		pkgLog().Warn(fmt.Sprintf("resolve_provider_client: named custom provider %s has no resolvable api_key — request will be sent with placeholder no-key-required and will 401 on auth-required endpoints",
 			pyrepr.Repr(auxFirstNonEmpty(cfgString(entry["name"]), provider))))
 	}
 	entryAPIMode := strings.TrimSpace(auxFirstNonEmpty(req.APIMode, cfgString(entry["api_mode"])))
@@ -667,7 +641,7 @@ func auxResolveNamedCustomBranch(ctx context.Context, req auxResolveRequest) (au
 		entryAPIMode = "chat_completions"
 	}
 	if customBase == "" {
-		slog.Warn(fmt.Sprintf("resolve_provider_client: named custom provider %s has no base_url", pyrepr.Repr(provider)))
+		pkgLog().Warn(fmt.Sprintf("resolve_provider_client: named custom provider %s has no base_url", pyrepr.Repr(provider)))
 		return auxResolveResult{}, true, nil
 	}
 	entryHeaders := NormalizeExtraHeaders(entry["extra_headers"])
@@ -683,7 +657,7 @@ func auxResolveNamedCustomBranch(ctx context.Context, req auxResolveRequest) (au
 	if mode, base := OpencodeTransport(ctx, provider, finalModel, customBase); mode != "" {
 		entryAPIMode, customBase = string(mode), base
 	}
-	slog.Debug(fmt.Sprintf("resolve_provider_client: named custom provider %s (%s, api_mode=%s)", pyrepr.Repr(provider), finalModel, auxFirstNonEmpty(entryAPIMode, "chat_completions")))
+	pkgLog().Debug(fmt.Sprintf("resolve_provider_client: named custom provider %s (%s, api_mode=%s)", pyrepr.Repr(provider), finalModel, auxFirstNonEmpty(entryAPIMode, "chat_completions")))
 	if entryAPIMode == "anthropic_messages" {
 		realClient, err := buildAnthropicClient(ctx, customKey, customBase, 0, false)
 		if err != nil {
@@ -733,7 +707,7 @@ func auxAPIKeyProfileSuppliedClient(ctx context.Context, provider string, apiKey
 		}
 	})
 	if err != nil {
-		slog.Warn(fmt.Sprintf("resolve_provider_client: provider profile %s failed to create an auxiliary client; falling back to the standard client path", pyrepr.Repr(provider)), "err", err)
+		pkgLog().Warn(fmt.Sprintf("resolve_provider_client: provider profile %s failed to create an auxiliary client; falling back to the standard client path", pyrepr.Repr(provider)), "err", err)
 		return nil
 	}
 	if client == nil {
@@ -777,7 +751,7 @@ func auxResolveAPIKeyBranch(ctx context.Context, req auxResolveRequest, pconfig 
 		}
 	}
 	if !auxTruthyKey(apiKey) {
-		slog.Debug(fmt.Sprintf("resolve_provider_client: provider %s has no API key configured (tried: %s)", provider, strings.Join(pconfig.KeyEnv, ", ")))
+		pkgLog().Debug(fmt.Sprintf("resolve_provider_client: provider %s has no API key configured (tried: %s)", provider, strings.Join(pconfig.KeyEnv, ", ")))
 		return auxResolveResult{}, nil
 	}
 	baseURL := auxToOpenAIBaseURL(rawBaseURL)
@@ -786,7 +760,7 @@ func auxResolveAPIKeyBranch(ctx context.Context, req auxResolveRequest, pconfig 
 	}
 	finalModel := auxNormalizeResolvedModel(ctx, auxFirstNonEmpty(req.Model, auxGetAuxModelForProviderFn(ctx, provider)), provider)
 	if profileClient := auxAPIKeyProfileSuppliedClient(ctx, provider, apiKey, baseURL); profileClient != nil {
-		slog.Debug(fmt.Sprintf("resolve_provider_client: %s native client from provider profile (%s)", provider, finalModel))
+		pkgLog().Debug(fmt.Sprintf("resolve_provider_client: %s native client from provider profile (%s)", provider, finalModel))
 		return auxRouteClient(ctx, req, profileClient, finalModel), nil
 	}
 	keyStr, _ := apiKey.(string)
@@ -795,7 +769,7 @@ func auxResolveAPIKeyBranch(ctx context.Context, req auxResolveRequest, pconfig 
 		if err != nil {
 			return auxResolveResult{}, err
 		}
-		slog.Debug(fmt.Sprintf("resolve_provider_client: %s (%s)", provider, finalModel))
+		pkgLog().Debug(fmt.Sprintf("resolve_provider_client: %s (%s)", provider, finalModel))
 		return auxRouteClient(ctx, req, client, finalModel), nil
 	}
 	var opts auxOpenAIOptions
@@ -806,7 +780,7 @@ func auxResolveAPIKeyBranch(ctx context.Context, req auxResolveRequest, pconfig 
 	if finalModel != "" && !req.RawCodex {
 		if profile := getProviderProfile(ctx, provider); profile != nil {
 			if mode, ok := ProfileModelAPIMode(ctx, *profile, finalModel); ok && mode == "codex_responses" {
-				slog.Debug(fmt.Sprintf("resolve_provider_client: %s model %s needs Responses API — wrapping", provider, finalModel))
+				pkgLog().Debug(fmt.Sprintf("resolve_provider_client: %s model %s needs Responses API — wrapping", provider, finalModel))
 				client = NewCodexAuxiliaryClient(auxAsResponsesClient(client), finalModel)
 			}
 		}
@@ -815,7 +789,7 @@ func auxResolveAPIKeyBranch(ctx context.Context, req auxResolveRequest, pconfig 
 	if err != nil {
 		return auxResolveResult{}, err
 	}
-	slog.Debug(fmt.Sprintf("resolve_provider_client: %s (%s)", provider, finalModel))
+	pkgLog().Debug(fmt.Sprintf("resolve_provider_client: %s (%s)", provider, finalModel))
 	return auxRouteClient(ctx, req, wrapped, finalModel), nil
 }
 
@@ -836,11 +810,11 @@ func auxResolveExternalProcessBranch(ctx context.Context, req auxResolveRequest,
 	if profile != nil {
 		apiKey, baseURL := strings.TrimSpace(creds.APIKey), strings.TrimSpace(creds.BaseURL)
 		if finalModel == "" {
-			slog.Warn(fmt.Sprintf("resolve_provider_client: %s requested but no model was provided or configured", provider))
+			pkgLog().Warn(fmt.Sprintf("resolve_provider_client: %s requested but no model was provided or configured", provider))
 			return auxResolveResult{}, nil
 		}
 		if apiKey == "" || baseURL == "" {
-			slog.Warn(fmt.Sprintf("resolve_provider_client: %s requested but external process credentials are incomplete", provider))
+			pkgLog().Warn(fmt.Sprintf("resolve_provider_client: %s requested but external process credentials are incomplete", provider))
 			return auxResolveResult{}, nil
 		}
 		var command any
@@ -856,7 +830,7 @@ func auxResolveExternalProcessBranch(ctx context.Context, req auxResolveRequest,
 			}
 		})
 		if err != nil {
-			slog.Warn(fmt.Sprintf("resolve_provider_client: profile %s failed to create an external-process client", pyrepr.Repr(provider)), "err", err)
+			pkgLog().Warn(fmt.Sprintf("resolve_provider_client: profile %s failed to create an external-process client", pyrepr.Repr(provider)), "err", err)
 			client = nil
 		}
 		if client != nil {
@@ -864,7 +838,7 @@ func auxResolveExternalProcessBranch(ctx context.Context, req auxResolveRequest,
 			if !ok {
 				aux = auxProviderClientAux(ctx, client)
 			}
-			slog.Debug(fmt.Sprintf("resolve_provider_client: %s (%s)", provider, finalModel))
+			pkgLog().Debug(fmt.Sprintf("resolve_provider_client: %s (%s)", provider, finalModel))
 			return auxRouteClient(ctx, req, aux, finalModel), nil
 		}
 	}
@@ -905,7 +879,6 @@ func init() {
 	auxExplicitProviderBranches = map[string]func(context.Context, auxResolveRequest) (auxResolveResult, error){
 		"auto":         auxResolveAutoBranch,
 		"openrouter":   auxResolveOpenRouterBranch,
-		"nous":         auxResolveNousBranch,
 		"openai-codex": auxResolveOpenAICodexBranch,
 		"xai-oauth":    auxResolveXAIOAuthBranch,
 		"custom":       auxResolveCustomBranch,
@@ -964,12 +937,12 @@ func auxResolveProviderClient(ctx context.Context, provider, model string, opts 
 	}
 	if local {
 		if localBase == "" {
-			slog.Warn(fmt.Sprintf("resolve_provider_client: %s requested but no local llama.cpp server is running", originalProvider))
+			pkgLog().Warn(fmt.Sprintf("resolve_provider_client: %s requested but no local llama.cpp server is running", originalProvider))
 			return auxResolveResult{}, nil
 		}
 		explicitBase, explicitKey = localBase, localKey
 	}
-	if model == "" && provider != "auto" && !(provider == "nous" && opts.IsVision) {
+	if model == "" && provider != "auto" {
 		model = auxGetAuxModelForProviderFn(ctx, provider)
 		if model == "" {
 			model = auxReadMainModelForAux(ctx)

@@ -4,14 +4,6 @@ import (
 	"bufio"
 	"context"
 	"fmt"
-	"github.com/nickheyer/icebath/pkg/config"
-	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/hermetic"
-	"github.com/nickheyer/icebath/pkg/logging"
-	"github.com/nickheyer/icebath/pkg/plugins"
-	"github.com/nickheyer/icebath/pkg/provider"
-	"github.com/nickheyer/icebath/pkg/state"
-	"github.com/nickheyer/icebath/pkg/tools"
 	"io"
 	"os"
 	"os/exec"
@@ -20,6 +12,15 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/nickheyer/icebath/pkg/config"
+	"github.com/nickheyer/icebath/pkg/home"
+	"github.com/nickheyer/icebath/pkg/internal/hermetic"
+	"github.com/nickheyer/icebath/pkg/logging"
+	"github.com/nickheyer/icebath/pkg/plugins"
+	"github.com/nickheyer/icebath/pkg/provider"
+	"github.com/nickheyer/icebath/pkg/state"
+	"github.com/nickheyer/icebath/pkg/tools"
 )
 
 const lockHolderEnv = "ICEBATH_GATEWAY_TEST_LOCK_HOLDER"
@@ -62,7 +63,7 @@ func TestMain(m *testing.M) {
 	os.Exit(code)
 }
 
-// Clears the process wide state a gateway test leaves behind, the per test resets of the hermes conftest
+// Clears the process wide state a gateway test leaves behind, the per test resets of the test setup
 func processState(services *plugins.Services) hermetic.Fixture {
 	return func(t *testing.T) func() {
 		return func() {

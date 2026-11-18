@@ -185,8 +185,6 @@ type ChainOptions struct {
 	LoadPool func(ctx context.Context, provider string) PoolProbe
 	// Loads the primary's own pool, defaults to LoadPool on the primary provider
 	LoadPrimaryPool func(ctx context.Context) PoolProbe
-	// Auth store read for the nous local usability check
-	Store *Store
 	// Buffered status line sink, shown only when every retry and fallback fails
 	Diagnostic func(string)
 	// Immediate status line sink
@@ -217,7 +215,6 @@ type Chain struct {
 	activated              bool
 	providerFallbackActive bool
 	providerFallbackRoute  *[2]string
-	unavailable            map[[3]string]bool
 	cooldown               *Cooldown
 	pool                   PoolProbe
 	pendingNotices         []string
@@ -232,7 +229,7 @@ func NewChain(opts ChainOptions) *Chain {
 		opts.Cooldown = NewCooldown(nil)
 	}
 	if opts.Log == nil {
-		opts.Log = slog.Default()
+		opts.Log = pkgLog()
 	}
 	if opts.Now == nil {
 		opts.Now = time.Now
@@ -242,7 +239,7 @@ func NewChain(opts ChainOptions) *Chain {
 	}
 	entries := make([]Route, len(opts.Fallbacks))
 	copy(entries, opts.Fallbacks)
-	return &Chain{opts: opts, primary: opts.Primary, current: opts.Primary, entries: entries, unavailable: map[[3]string]bool{}, cooldown: opts.Cooldown, pool: opts.Pool}
+	return &Chain{opts: opts, primary: opts.Primary, current: opts.Primary, entries: entries, cooldown: opts.Cooldown, pool: opts.Pool}
 }
 
 // Current is the route the session is on right now
@@ -384,26 +381,6 @@ func (c *Chain) bufferFallbackNotice(notice string) {
 	c.pendingNotices = append(c.pendingNotices, notice)
 }
 
-// nousUnavailableLocally returns a skip reason for a nous entry without any token in the store
-func (c *Chain) nousUnavailableLocally(r Route) string {
-	if strings.ToLower(strings.TrimSpace(r.Provider)) != "nous" {
-		return ""
-	}
-	if c.opts.Store == nil {
-		return "nous_auth_unreadable:no_store"
-	}
-	state, err := c.opts.Store.GetProviderAuthState("nous")
-	if err != nil {
-		return "nous_auth_unreadable:" + fmt.Sprintf("%T", err)
-	}
-	for _, key := range []string{"access_token", "refresh_token"} {
-		if s, ok := state[key].(string); ok && strings.TrimSpace(s) != "" {
-			return ""
-		}
-	}
-	return "nous_token_missing"
-}
-
 func (c *Chain) candidatePoolExhausted(ctx context.Context, provider, model string) bool {
 	pool := c.pool
 	if pool == nil || strings.ToLower(strings.TrimSpace(pool.Provider())) != provider {
@@ -420,10 +397,6 @@ func (c *Chain) candidatePoolExhausted(ctx context.Context, provider, model stri
 }
 
 func (c *Chain) shouldSkipCandidate(ctx context.Context, fb Route, key [3]string, provider, model string) bool {
-	if c.unavailable[key] {
-		c.opts.Log.Debug(fmt.Sprintf("Fallback skip: %v previously marked unavailable", key))
-		return true
-	}
 	if provider == "" || model == "" {
 		return true
 	}
@@ -433,11 +406,6 @@ func (c *Chain) shouldSkipCandidate(ctx context.Context, fb Route, key [3]string
 	}
 	if c.candidatePoolExhausted(ctx, provider, model) {
 		c.opts.Log.Warn(fmt.Sprintf("Fallback skip: %s/%s credential pool is exhausted (every entry in cooldown)", provider, model))
-		return true
-	}
-	if reason := c.nousUnavailableLocally(fb); reason != "" {
-		c.unavailable[key] = true
-		c.opts.Log.Warn(fmt.Sprintf("Fallback skip: %s/%s is not locally usable (%s); suppressing for this session", provider, model, reason))
 		return true
 	}
 	currentIdent := RouteIdentity(c.current)
@@ -528,9 +496,6 @@ func (c *Chain) TryActivateFallback(ctx context.Context, reason FailoverReason, 
 		c.rebindFallbackPool(ctx, provider, next.Model)
 		if c.opts.OnActivate != nil {
 			if err := c.opts.OnActivate(ctx, old, next); err != nil {
-				if provider == "nous" {
-					c.unavailable[key] = true
-				}
 				c.opts.Log.Error(fmt.Sprintf("Failed to activate fallback %s: %v", next.Model, err))
 				continue
 			}

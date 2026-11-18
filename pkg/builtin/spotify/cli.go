@@ -24,7 +24,7 @@ var cliActions = []string{"login", "status", "logout"}
 func setupCLI(parser any) {
 	cmd, ok := parser.(*cobra.Command)
 	if !ok {
-		panic(fmt.Sprintf("AttributeError: '%s' object has no attribute 'add_argument'", pyrepr.TypeName(parser)))
+		panic(fmt.Sprintf("the CLI parser is %T, expected an argument parser", parser))
 	}
 	var clientID, redirectURI, scope string
 	var noBrowser bool

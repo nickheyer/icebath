@@ -13,7 +13,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
 
-// ConsoleCommandError is a user facing console command failure, a RuntimeError subclass in hermes
+// A user facing console command failure, reported like a RuntimeError subclass
 type ConsoleCommandError struct{ Msg string }
 
 func (e *ConsoleCommandError) Error() string { return e.Msg }
@@ -21,7 +21,7 @@ func (e *ConsoleCommandError) Error() string { return e.Msg }
 // Python class the console failure stands for
 func (e *ConsoleCommandError) PyTypeName() string { return "ConsoleCommandError" }
 
-// Python exception classes deriving from RuntimeError across hermes, the ones a console handler turns into an error
+// Exception classes deriving from RuntimeError, the ones a console handler turns into an error
 var consoleRuntimeErrorClasses = map[string]bool{
 	"ActiveSessionRegistryError": true, "AdmissionRefused": true, "AnonChallengeRequired": true, "AnonCredentialDead": true, "ArchiveError": true, "ArtifactPreservationError": true,
 	"AttachmentsUnsupportedError": true, "AttemptCanceled": true, "AuditError": true, "AuthError": true, "AuxiliaryClientUnavailable": true, "BackupInProgressError": true,

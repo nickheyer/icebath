@@ -11,7 +11,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/config"
 )
 
-// ---- tests/hermes_cli/test_credential_lifecycle.py (lifecycle half of the PUT and DELETE /api/env cases) ----
+// (lifecycle half of the PUT and DELETE /api/env cases)
 
 func credentialLifecycleHome(t *testing.T) string {
 	t.Helper()

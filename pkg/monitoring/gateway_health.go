@@ -6,7 +6,6 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
-	"log/slog"
 	"strings"
 
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
@@ -368,13 +367,13 @@ func platformEvents(previous, current *pyjson.Object, profile, version string) [
 func EmitRuntimeStatusTransition(previous, current *pyjson.Object) {
 	defer func() {
 		if r := recover(); r != nil {
-			slog.Debug(fmt.Sprintf("gateway runtime status transition emit failed: %v", r))
+			pkgLog().Debug(fmt.Sprintf("gateway runtime status transition emit failed: %v", r))
 		}
 	}()
 	profile, version := safeProfile(), safeVersion()
 	events, err := lifecycleEvents(previous, current, profile, version)
 	if err != nil {
-		slog.Debug(fmt.Sprintf("gateway runtime status transition emit failed: %v", err))
+		pkgLog().Debug(fmt.Sprintf("gateway runtime status transition emit failed: %v", err))
 		return
 	}
 	events = append(events, platformEvents(previous, current, profile, version)...)

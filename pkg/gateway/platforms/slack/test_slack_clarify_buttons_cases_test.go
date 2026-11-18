@@ -40,8 +40,8 @@ func TestSlackSendClarifyMultiChoiceRendersButtonsAndOther(t *testing.T) {
 		t.Fatalf("actions %v", actions)
 	}
 	el := func(i int) map[string]any { return elements[i].(map[string]any) }
-	if el(0)["action_id"] != "hermes_clarify_choice_0" || el(0)["value"] != "cid1|0" || el(1)["action_id"] != "hermes_clarify_choice_1" ||
-		el(1)["value"] != "cid1|1" || el(0)["text"].(map[string]any)["text"] != "staging" || el(2)["action_id"] != "hermes_clarify_other" || el(2)["value"] != "cid1|other" {
+	if el(0)["action_id"] != "icebath_clarify_choice_0" || el(0)["value"] != "cid1|0" || el(1)["action_id"] != "icebath_clarify_choice_1" ||
+		el(1)["value"] != "cid1|1" || el(0)["text"].(map[string]any)["text"] != "staging" || el(2)["action_id"] != "icebath_clarify_other" || el(2)["value"] != "cid1|other" {
 		t.Fatalf("elements %v", elements)
 	}
 	for _, b := range blocks {
@@ -100,7 +100,7 @@ func TestSlackSendClarifyRetireClarifyCardDropsButtonsAndMakesALateClickANoop(t 
 	}
 	a.handleClarifyAction(ctx, (&ackRecorder{}).ack, map[string]any{"message": map[string]any{"ts": "1.2", "blocks": args["blocks"]},
 		"channel": map[string]any{"id": "C1"}, "user": map[string]any{"name": "norbert", "id": "U_N"}},
-		map[string]any{"action_id": "hermes_clarify_choice_0", "value": "cid-retire|0"})
+		map[string]any{"action_id": "icebath_clarify_choice_0", "value": "cid-retire|0"})
 	if n := len(f.callsTo("chat.update")); n != 1 {
 		t.Fatalf("late click rewrote the card, chat.update calls %d", n)
 	}
@@ -121,7 +121,7 @@ func TestSlackSendClarifyOtherClickKeepsTheCardRetirableUntilTheClarifyEnds(t *t
 	}
 	a.handleClarifyAction(ctx, (&ackRecorder{}).ack, map[string]any{"message": map[string]any{"ts": "1.2", "blocks": []any{}},
 		"channel": map[string]any{"id": "C1"}, "user": map[string]any{"name": "norbert", "id": "U_N"}},
-		map[string]any{"action_id": "hermes_clarify_other", "value": "cid-other|other"})
+		map[string]any{"action_id": "icebath_clarify_other", "value": "cid-other|other"})
 	updates := f.callsTo("chat.update")
 	if len(updates) != 1 || !strings.Contains(updates[0].Args["text"].(string), "Awaiting typed answer") {
 		t.Fatalf("updates %v", updates)
@@ -144,7 +144,7 @@ func TestSlackClarifyChoiceActionUnauthorizedClickIgnored(t *testing.T) {
 	a.clarifyResolved.Set("2.2", false)
 	a.handleClarifyAction(context.Background(), (&ackRecorder{}).ack, map[string]any{"message": map[string]any{"ts": "2.2", "blocks": []any{}},
 		"channel": map[string]any{"id": "C1"}, "user": map[string]any{"name": "mallory", "id": "U_BAD"}},
-		map[string]any{"action_id": "hermes_clarify_choice", "value": "cidAuth|0"})
+		map[string]any{"action_id": "icebath_clarify_choice", "value": "cidAuth|0"})
 	if tools.GetPendingClarify("cidAuth") == nil {
 		t.Fatal("an unauthorized click must leave the clarify pending")
 	}
@@ -161,7 +161,7 @@ func TestSlackClarifyOtherFlowOtherFlipsToTextModeThenTypedReplyResolves(t *test
 		map[string]any{"type": "section", "text": map[string]any{"type": "mrkdwn", "text": "❓ Pick"}},
 		map[string]any{"type": "actions", "elements": []any{}}}},
 		"channel": map[string]any{"id": "C1"}, "user": map[string]any{"name": "norbert", "id": "U_N"}},
-		map[string]any{"action_id": "hermes_clarify_other", "value": "cidO|other"})
+		map[string]any{"action_id": "icebath_clarify_other", "value": "cidO|other"})
 	pending := tools.GetPendingClarifyForSession("sk-other", false)
 	if pending == nil || pending.ClarifyID != "cidO" || !pending.AwaitingText {
 		t.Fatalf("pending %+v", pending)

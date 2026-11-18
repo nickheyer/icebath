@@ -113,11 +113,6 @@ func fit(cols []Column, widths []int, avail int) bool {
 	return true
 }
 
-// Renders rows under headers at width, cutting cells to their column and marking the selected row
-func Table(cols []Column, rows [][]string, width int, selected int, t theme.Theme) string {
-	return TableEdit(cols, rows, width, selected, nil, t)
-}
-
 // Renders the table with one cell of the selected row shown as it is being typed into
 func TableEdit(cols []Column, rows [][]string, width int, selected int, edit *Edit, t theme.Theme) string {
 	return TableMarked(cols, rows, width, selected, nil, edit, t)

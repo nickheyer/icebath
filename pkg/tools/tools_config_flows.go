@@ -37,7 +37,7 @@ func pyListIndex(n, i int) (int, bool) {
 func platformLabel(pkey string) (string, error) {
 	info, ok := PlatformInfoFor(pkey)
 	if !ok {
-		return "", fmt.Errorf("KeyError: '%s'", pkey)
+		return "", fmt.Errorf("unknown platform %s", pkey)
 	}
 	return info.Label, nil
 }
@@ -54,9 +54,9 @@ func categoryOf(tsKey string) *pyjson.Object {
 
 // Seams over the key check, the checklist and the per toolset setup that tests patch
 var (
-	toolsetHasKeysFn       func(s *ToolsSetup, tsKey string, cfg config.Tree, forceFresh bool, features *NousToolFeatures) (bool, error)
-	promptToolsetChecklist func(s *ToolsSetup, platformLabel string, enabled map[string]bool, platform string, forceFresh bool) (map[string]bool, error)
-	configureToolset       func(s *ToolsSetup, tsKey string, cfg config.Tree, forceFresh, reconfigure bool) error
+	toolsetHasKeysFn       func(s *ToolsSetup, tsKey string, cfg config.Tree) (bool, error)
+	promptToolsetChecklist func(s *ToolsSetup, platformLabel string, enabled map[string]bool, platform string) (map[string]bool, error)
+	configureToolset       func(s *ToolsSetup, tsKey string, cfg config.Tree, reconfigure bool) error
 )
 
 func init() {
@@ -66,12 +66,12 @@ func init() {
 }
 
 // Whether a toolset's required keys are configured, through the seam provider rows and the web routers share
-func (s *ToolsSetup) toolsetHasKeys(tsKey string, cfg config.Tree, forceFresh bool, features *NousToolFeatures) (bool, error) {
-	return toolsetHasKeysFn(s, tsKey, cfg, forceFresh, features)
+func (s *ToolsSetup) toolsetHasKeys(tsKey string, cfg config.Tree) (bool, error) {
+	return toolsetHasKeysFn(s, tsKey, cfg)
 }
 
-// Whether a toolset's credentials are configured, a Nous managed feature or a keyless provider counting
-func (s *ToolsSetup) toolsetHasKeysImpl(tsKey string, cfg config.Tree, forceFresh bool, features *NousToolFeatures) (bool, error) {
+// Whether a toolset's credentials are configured, a keyless provider counting
+func (s *ToolsSetup) toolsetHasKeysImpl(tsKey string, cfg config.Tree) (bool, error) {
 	if cfg == nil {
 		var err error
 		if cfg, err = toolsConfigLoad(s); err != nil {
@@ -82,18 +82,8 @@ func (s *ToolsSetup) toolsetHasKeysImpl(tsKey string, cfg config.Tree, forceFres
 		ready, err := resolveVisionProviderClient(s)
 		return err == nil && ready, nil
 	}
-	switch tsKey {
-	case "web", "image_gen", "video_gen", "tts", "stt", "browser":
-		if features == nil {
-			f := s.nousFeatures(cfg, forceFresh)
-			features = &f
-		}
-		if f, ok := features.Features[tsKey]; ok && (f.Available || f.ManagedByNous) {
-			return true, nil
-		}
-	}
 	if cat := categoryOf(tsKey); cat != nil {
-		providers, err := s.VisibleProviders(cat, cfg, forceFresh, features)
+		providers, err := s.VisibleProviders(cat)
 		if err != nil {
 			return false, err
 		}
@@ -121,7 +111,7 @@ func (s *ToolsSetup) toolsetHasKeysImpl(tsKey string, cfg config.Tree, forceFres
 }
 
 // Multi select of the platform's configurable toolsets with a no key marker and an estimated token status line
-func (s *ToolsSetup) promptToolsetChecklistImpl(platformLabel string, enabled map[string]bool, platform string, forceFresh bool) (map[string]bool, error) {
+func (s *ToolsSetup) promptToolsetChecklistImpl(platformLabel string, enabled map[string]bool, platform string) (map[string]bool, error) {
 	ctx := s.ctx()
 	toolTokens, err := estimateToolTokens(ctx)
 	if err != nil {
@@ -136,7 +126,7 @@ func (s *ToolsSetup) promptToolsetChecklistImpl(platformLabel string, enabled ma
 	labels := make([]string, len(effective))
 	items := make([]setupflow.Item, len(effective))
 	for i, ts := range effective {
-		has, err := s.toolsetHasKeys(ts.Key, nil, forceFresh, nil)
+		has, err := s.toolsetHasKeys(ts.Key, nil)
 		if err != nil {
 			return nil, err
 		}
@@ -213,21 +203,21 @@ func (s *ToolsSetup) toolsetChecklist(title string, labels []string, items []set
 }
 
 // Provider selection and keys for a category toolset, plain env var prompts for the rest
-func (s *ToolsSetup) configureToolsetImpl(tsKey string, cfg config.Tree, forceFresh, reconfigure bool) error {
+func (s *ToolsSetup) configureToolsetImpl(tsKey string, cfg config.Tree, reconfigure bool) error {
 	if cat := categoryOf(tsKey); cat != nil {
-		return s.configureToolCategory(tsKey, cat, cfg, forceFresh, reconfigure)
+		return s.configureToolCategory(tsKey, cat, cfg, reconfigure)
 	}
 	return s.configureSimpleRequirements(tsKey, reconfigure)
 }
 
 // Lets the user pick a configured or enabled tool and redo its provider or key setup
-func (s *ToolsSetup) reconfigureTool(cfg config.Tree, forceFresh bool) error {
+func (s *ToolsSetup) reconfigureTool(cfg config.Tree) error {
 	var keys, labels []string
 	for _, ts := range EffectiveConfigurableToolsets(s.ctx()) {
 		if !isConfigurableToolset(ts.Key) {
 			continue
 		}
-		has, err := s.toolsetHasKeys(ts.Key, cfg, forceFresh, nil)
+		has, err := s.toolsetHasKeys(ts.Key, cfg)
 		if err != nil {
 			return err
 		}
@@ -251,7 +241,7 @@ func (s *ToolsSetup) reconfigureTool(cfg config.Tree, forceFresh bool) error {
 	if !ok {
 		return fmt.Errorf("IndexError: list index out of range")
 	}
-	if err := configureToolset(s, keys[j], cfg, forceFresh, true); err != nil {
+	if err := configureToolset(s, keys[j], cfg, true); err != nil {
 		return err
 	}
 	return toolsConfigSave(s, cfg)
@@ -280,18 +270,6 @@ func (s *ToolsSetup) platformToolsSafely(cfg config.Tree, pkey string) (enabled 
 	return s.currentPlatformTools(cfg, pkey), true
 }
 
-// Runs the shared metrics consent prompt, saving the config only when the answer changed it
-func (s *ToolsSetup) configureSharedMetricsInteractive(cfg config.Tree) error {
-	beforeEnabled, beforeSend := sharedMetricsState(cfg)
-	if err := setupTelemetry(s, cfg); err != nil {
-		return err
-	}
-	if afterEnabled, afterSend := sharedMetricsState(cfg); afterEnabled != beforeEnabled || afterSend != beforeSend {
-		return toolsConfigSave(s, cfg)
-	}
-	return nil
-}
-
 // Prints a green plus line per added toolset and a red minus line per removed one
 func (s *ToolsSetup) printToolsetDiff(added, removed map[string]bool, indent string) {
 	for _, ts := range sortedSet(added) {
@@ -309,7 +287,7 @@ func (s *ToolsSetup) toolsetsNeedingSetup(newEnabled map[string]bool, cfg config
 		if !isConfigurableToolset(ts) {
 			continue
 		}
-		needs, err := s.toolsetNeedsConfigurationPrompt(ts, cfg, true)
+		needs, err := s.toolsetNeedsConfigurationPrompt(ts, cfg)
 		if err != nil {
 			return nil, err
 		}
@@ -333,7 +311,7 @@ func (s *ToolsSetup) configureNewlyAdded(added, already map[string]bool, cfg con
 		return err
 	}
 	for _, ts := range keys {
-		if err := configureToolset(s, ts, cfg, true, false); err != nil {
+		if err := configureToolset(s, ts, cfg, false); err != nil {
 			return err
 		}
 	}
@@ -400,14 +378,14 @@ func (s *ToolsSetup) configureList(toConfigure []string, cfg config.Tree, select
 	s.printColor("  You can skip any tool you don't need right now.", cliui.Dim)
 	s.println("")
 	for _, ts := range toConfigure {
-		if err := configureToolset(s, ts, cfg, true, false); err != nil {
+		if err := configureToolset(s, ts, cfg, false); err != nil {
 			return err
 		}
 	}
 	return nil
 }
 
-// Writes a platform selection into the config and saves it, the hermes _save_platform_tools
+// Writes a platform selection into the config and saves it, the save platform tools
 func (s *ToolsSetup) savePlatformToolsConfig(cfg config.Tree, platform string, enabled map[string]bool) error {
 	ctx := s.ctx()
 	if err := Default.SavePlatformTools(ctx, "", cfg, platform, enabled, PluginToolsetKeys(ctx)); err != nil {
@@ -430,26 +408,15 @@ func (s *ToolsSetup) firstInstallFlow(cfg config.Tree, enabledPlatforms []string
 				offered[k] = true
 			}
 		}
-		newEnabled, err := promptToolsetChecklist(s, label, offered, pkey, true)
+		newEnabled, err := promptToolsetChecklist(s, label, offered, pkey)
 		if err != nil {
 			return err
 		}
 		added, removed := checklistDiff(s.ctx(), newEnabled, current, pkey)
 		s.printToolsetDiff(added, removed, "  ")
-		auto := applyNousManagedDefaults(s, cfg, newEnabled, true)
-		for _, ts := range sortedSet(auto) {
-			name := ts
-			for _, c := range ConfigurableToolsets {
-				if c.Key == ts {
-					name = c.Label
-					break
-				}
-			}
-			s.printColor("  ✓ "+name+": using your Nous subscription defaults", cliui.Green)
-		}
 		var toConfigure []string
 		for _, ts := range sortedSet(newEnabled) {
-			if isConfigurableToolset(ts) && !auto[ts] {
+			if isConfigurableToolset(ts) {
 				toConfigure = append(toConfigure, ts)
 			}
 		}
@@ -508,7 +475,7 @@ func (s *ToolsSetup) configurePlatforms(cfg config.Tree, platformKeys []string, 
 		current[pk] = s.currentPlatformTools(cfg, pk)
 		maps.Copy(allCurrent, current[pk])
 	}
-	newEnabled, err := promptToolsetChecklist(s, label, allCurrent, "cli", true)
+	newEnabled, err := promptToolsetChecklist(s, label, allCurrent, "cli")
 	if err != nil {
 		return false, err
 	}

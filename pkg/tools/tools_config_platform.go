@@ -9,6 +9,7 @@ import (
 	"sync"
 
 	"github.com/nickheyer/icebath/pkg/config"
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
@@ -310,7 +311,7 @@ func pyContainsKanban(v any) bool {
 	if !pyTruthy(v) {
 		return false
 	}
-	panic(errors.New("TypeError: argument of type '" + pyrepr.TypeName(v) + "' is not iterable"))
+	panic(errors.New("a platform toolsets entry is " + errchain.Kind(v) + ", expected a list or mapping"))
 }
 
 // Whether every env var a provider row declares is set, true for rows without keys
@@ -320,11 +321,11 @@ func providerEnvReady(ctx context.Context, h string, provider *pyjson.Object) (b
 	for _, e := range vars {
 		row, _ := e.(*pyjson.Object)
 		if row == nil {
-			return false, errors.New("TypeError: env_vars entry is not a dict")
+			return false, errors.New("a provider env_vars entry is not a mapping")
 		}
 		key, ok := row.Get("key")
 		if !ok {
-			return false, errors.New("KeyError: 'key'")
+			return false, errors.New("a provider env_vars entry has no key")
 		}
 		v, _, err := config.GetEnvValue(ctx, h, pyrepr.Str(key))
 		if err != nil {
@@ -335,34 +336,6 @@ func providerEnvReady(ctx context.Context, h string, provider *pyjson.Object) (b
 		}
 	}
 	return true, nil
-}
-
-// Collection and send flags of telemetry.shared_metrics, true only for a literal true
-func sharedMetricsState(cfg config.Tree) (enabled, send bool) {
-	telemetry, ok := pyDictOf(cfg["telemetry"])
-	if !ok {
-		return false, false
-	}
-	shared, ok := pyDictOf(telemetry["shared_metrics"])
-	if !ok {
-		return false, false
-	}
-	e, _ := shared["enabled"].(bool)
-	s, _ := shared["send"].(bool)
-	return e, s
-}
-
-// Menu row naming the shared metrics state, collect only included for profiles that chose it earlier
-func sharedMetricsMenuLabel(cfg config.Tree) string {
-	enabled, send := sharedMetricsState(cfg)
-	state := "off"
-	if enabled {
-		state = "collecting locally"
-		if send {
-			state = "sending to Nous"
-		}
-	}
-	return "Configure shared metrics  (" + state + ")"
 }
 
 // Added and removed toolsets limited to the checklist universe so read time names never print as removals

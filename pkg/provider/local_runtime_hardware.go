@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"log/slog"
 	"math"
 	"os"
 	"os/exec"
@@ -856,7 +855,7 @@ func ProbeBudget(planning bool) (HardwareBudget, error) {
 		if vram != nil {
 			carve = fmt.Sprintf("%.1f GiB", float64(vram.TotalBytes)/hwGiB)
 		}
-		slog.Info(fmt.Sprintf("unified-memory NVIDIA device: allocator pool %.1f GiB (nvidia-smi carve-out: %s); budgeting from the pool",
+		pkgLog().Info(fmt.Sprintf("unified-memory NVIDIA device: allocator pool %.1f GiB (nvidia-smi carve-out: %s); budgeting from the pool",
 			float64(*unified)/hwGiB, carve))
 		base := *unified
 		if !planning {

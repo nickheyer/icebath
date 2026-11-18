@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"log/slog"
 	"sync"
 
 	"github.com/nickheyer/icebath/pkg/agent"
@@ -15,8 +14,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
-
-var gatewayAutomationLogger = slog.Default().With("logger", "hermes_cli.gateway_automation")
 
 // Manager refusals the gateway answers with, raised here under the same class
 var automationErrorKinds = map[string]bool{"RuntimeError": true, "ValueError": true, "IndexError": true}
@@ -160,7 +157,7 @@ func (r *automationRemote[S]) rpc(call string, args []any, kwargs map[string]any
 		if !isGatewayClientError(err) {
 			return automationAnswer[S]{}, err
 		}
-		gatewayAutomationLogger.Debug(fmt.Sprintf("session.automation %s.%s failed: %s", r.kind, call, err.Error()))
+		pkgLog().Debug(fmt.Sprintf("session.automation %s.%s failed: %s", r.kind, call, err.Error()))
 		return automationAnswer[S]{}, nil
 	}
 	rawState, _ := automationDictGet(reply, "state")

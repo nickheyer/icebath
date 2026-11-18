@@ -90,7 +90,7 @@ func silenceMidpoints(ffmpeg, path string) ([]float64, error) {
 	_, stderr, err := sttRunQuiet([]string{ffmpeg, "-hide_banner", "-nostats", "-i", path,
 		"-af", "silencedetect=noise=-35dB:d=0.4", "-f", "null", "-"}, 300, nil)
 	if err != nil {
-		sttLog().Debug(fmt.Sprintf("silencedetect failed for %s: %v", path, err))
+		pkgLog().Debug(fmt.Sprintf("silencedetect failed for %s: %v", path, err))
 		return []float64{}, nil
 	}
 	parse := func(re *regexp.Regexp) ([]float64, error) {
@@ -187,7 +187,7 @@ func transcribeOversized(path string, limit sttUploadLimit, dispatch func(string
 	}
 	duration, known := probeAudioDuration(compact)
 	if sttFits(compact, limit, duration, known) {
-		sttLog().Info(fmt.Sprintf("Re-encoded oversized audio %s to %.1fMB for a single STT upload", filepath.Base(path), float64(sttFileSize(compact))/sttMB))
+		pkgLog().Info(fmt.Sprintf("Re-encoded oversized audio %s to %.1fMB for a single STT upload", filepath.Base(path), float64(sttFileSize(compact))/sttMB))
 		return dispatch(compact)
 	}
 	if !known || duration == 0 {
@@ -205,7 +205,7 @@ func transcribeOversized(path string, limit sttUploadLimit, dispatch func(string
 	if err != nil {
 		return nil, err
 	}
-	sttLog().Info(fmt.Sprintf("Transcribing %s (%.0fs) in %d segments of <= %.0fs", filepath.Base(path), duration, len(parts), math.Ceil(target)))
+	pkgLog().Info(fmt.Sprintf("Transcribing %s (%.0fs) in %d segments of <= %.0fs", filepath.Base(path), duration, len(parts), math.Ceil(target)))
 	transcripts := []string{}
 	provider := ""
 	for index, part := range parts {

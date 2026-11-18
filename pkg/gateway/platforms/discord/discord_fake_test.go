@@ -24,7 +24,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/gateway"
 )
 
-// Adapter built the way the hermes fixtures build one, the instance state of a fresh constructor
+// Adapter built the way the test fixtures build one, the instance state of a fresh constructor
 func newTestAdapter(t *testing.T, extra map[string]any) *DiscordAdapter {
 	t.Helper()
 	if extra == nil {
@@ -61,7 +61,7 @@ func attachClient(t *testing.T, a *DiscordAdapter, selfID string, guildIDs []str
 	if err != nil {
 		t.Fatal(err)
 	}
-	s.State.User = &discordgo.User{ID: selfID, Bot: true, Username: "hermes"}
+	s.State.User = &discordgo.User{ID: selfID, Bot: true, Username: "icebath"}
 	for _, g := range guildIDs {
 		if err := s.State.GuildAdd(&discordgo.Guild{ID: g}); err != nil {
 			t.Fatal(err)

@@ -3,7 +3,6 @@ package gateway
 import (
 	"context"
 	"fmt"
-	"log/slog"
 	"math"
 	"math/big"
 	"os"
@@ -91,7 +90,7 @@ func coerceOptionalPositiveInt(value any, key string) *big.Int {
 		}
 	}
 	if err != nil {
-		slog.Warn(fmt.Sprintf("Ignoring invalid %s=%s (expected a positive integer; 0/null disables)", key, pyrepr.Repr(value)))
+		pkgLog().Warn(fmt.Sprintf("Ignoring invalid %s=%s (expected a positive integer; 0/null disables)", key, pyrepr.Repr(value)))
 		return nil
 	}
 	if parsed.Sign() <= 0 {
@@ -121,11 +120,11 @@ func CoerceSystemdWatchdogSeconds(value any, key string) int {
 		}
 	}
 	if parsed == nil {
-		slog.Warn(fmt.Sprintf("Ignoring invalid %s (expected a positive integer)", key))
+		pkgLog().Warn(fmt.Sprintf("Ignoring invalid %s (expected a positive integer)", key))
 		return 0
 	}
 	if parsed.Sign() != 0 && (parsed.Sign() < 0 || parsed.Cmp(big.NewInt(systemdWatchdogMaxSeconds)) > 0) {
-		slog.Warn(fmt.Sprintf("Ignoring invalid %s (expected an integer from 1 to %d)", key, systemdWatchdogMaxSeconds))
+		pkgLog().Warn(fmt.Sprintf("Ignoring invalid %s (expected an integer from 1 to %d)", key, systemdWatchdogMaxSeconds))
 		return 0
 	}
 	return int(parsed.Int64())
@@ -1007,7 +1006,7 @@ func LoadGatewayConfig(ctx context.Context) (*GatewayConfig, error) {
 	h := home.Dir(ctx)
 	gwData := LoadLegacyGatewayJSON(h)
 	if err := LoadYAMLLayerAny(ctx, h, gwData); err != nil {
-		slog.Warn(fmt.Sprintf("Failed to process config.yaml — falling back to .env / gateway.json values. Check %s for syntax errors. Error: %s",
+		pkgLog().Warn(fmt.Sprintf("Failed to process config.yaml — falling back to .env / gateway.json values. Check %s for syntax errors. Error: %s",
 			filepath.Join(h, "config.yaml"), err))
 	}
 	cfg, err := GatewayConfigFromDict(ctx, gwData)
@@ -1045,7 +1044,7 @@ func validateGatewayConfig(cfg *GatewayConfig) error {
 	sort.Slice(rows, func(i, j int) bool { return rows[i].platform < rows[j].platform })
 	for _, r := range rows {
 		if pystr.Strip(r.token) == "" {
-			slog.Warn(fmt.Sprintf("%s is enabled but %s is empty. The adapter will likely fail to connect.", r.platform, r.env))
+			pkgLog().Warn(fmt.Sprintf("%s is enabled but %s is empty. The adapter will likely fail to connect.", r.platform, r.env))
 		}
 	}
 	for _, r := range rows {
@@ -1055,7 +1054,7 @@ func validateGatewayConfig(cfg *GatewayConfig) error {
 			if len(head) > 6 {
 				head = head[:6]
 			}
-			slog.Error(fmt.Sprintf("%s is enabled but %s is set to a placeholder value ('%s'). Set a real bot token before starting the gateway. The adapter will NOT be started.",
+			pkgLog().Error(fmt.Sprintf("%s is enabled but %s is set to a placeholder value ('%s'). Set a real bot token before starting the gateway. The adapter will NOT be started.",
 				r.platform, r.env, string(head)+"..."))
 			r.cfg.Enabled = false
 		}

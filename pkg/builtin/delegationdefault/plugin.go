@@ -18,7 +18,7 @@ func (Plugin) Manifest() plugins.Manifest {
 		Key:         "delegation/default",
 		Version:     "1.0.0",
 		Description: "Default delegation strategy: every delegate_task subagent follows the delegation section of config.yaml (delegation.provider / model / base_url ...), else inherits the parent's model and credentials.",
-		Author:      "NousResearch",
+		Author:      "Icebath",
 		Kind:        "backend",
 	}
 }

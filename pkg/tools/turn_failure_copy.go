@@ -90,8 +90,6 @@ var oneOffCopy = map[string]string{
 		failureNextStepsLoop + "\n\nDetails: {detail}",
 	"max_iterations_no_summary": "I ran out of steps for this turn ({limit} tool calls) before finishing, and couldn't " +
 		"produce a summary. Send `continue` to keep going, or raise `max_iterations` in your config.",
-	"nous_rate_limit": "Wait for the reset and send /retry, or switch models with /model. To avoid waits, add " +
-		"a backup provider with `icebath fallback add`.",
 }
 
 // SiteCopyTable is the chat copy for every failure code and one off loop outcome a loop site renders

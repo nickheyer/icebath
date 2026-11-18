@@ -15,39 +15,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/tools"
 )
 
-type preparedEvent struct {
-	Event, Origin, Reason, FailureClass string
-	Waited                              bool
-}
-
-type preparedRecorder struct {
-	mu     sync.Mutex
-	events []preparedEvent
-}
-
-func (r *preparedRecorder) names() []string {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-	out := []string{}
-	for _, e := range r.events {
-		out = append(out, e.Event+"/"+e.Reason)
-	}
-	return out
-}
-
-// Captures every prepared compaction metrics event for the test
-func capturePreparedEvents(t *testing.T) *preparedRecorder {
-	rec := &preparedRecorder{}
-	prev := recordPrepared
-	recordPrepared = func(ctx context.Context, event, origin, reason, failureClass string, waitSeconds *float64) {
-		rec.mu.Lock()
-		rec.events = append(rec.events, preparedEvent{event, origin, reason, failureClass, waitSeconds != nil})
-		rec.mu.Unlock()
-	}
-	t.Cleanup(func() { recordPrepared = prev })
-	return rec
-}
-
 type fakePreparedCompressor struct {
 	stubEngine
 	mu               sync.Mutex
@@ -165,7 +132,6 @@ func TestPreparedGatesStartNoPass(t *testing.T) {
 	}
 	for name, setup := range cases {
 		t.Run(name, func(t *testing.T) {
-			capturePreparedEvents(t)
 			cc := newFakePreparedCompressor("S1")
 			a := preparedAgent(cc)
 			setup(a, cc)
@@ -222,18 +188,17 @@ func publishPrepared(cc *fakePreparedCompressor, messages []map[string]any, star
 }
 
 func TestPreparedAppendOnlyGrowthSplicesAndAdoptCarriesFallbackAndTelemetry(t *testing.T) {
-	rec := capturePreparedEvents(t)
 	cc := newFakePreparedCompressor("S1")
 	live := preparedMessages(10, "m")
 	publishPrepared(cc, live, 1, 8)
 	grown := append(slices.Clone(live), preparedMessages(4, "new")...)
 	taken := cc.state.Take(context.Background(), grown, "S1", 1, true)
-	if taken == nil || taken.CompressEnd != 8 || taken.Waited != nil {
+	if taken == nil || taken.CompressEnd != 8 {
 		t.Fatalf("append only growth must splice at the candidate boundary, got %+v", taken)
 	}
 	cc.telemetry = pyjson.NewObject()
 	cc.telemetry.Set("attempt_id", "live-attempt")
-	AdoptPreparedSummary(context.Background(), cc, taken)
+	AdoptPreparedSummary(cc, taken)
 	if cc.previous != "body" || cc.attrs["summary_model"] != "main-model" || cc.attrs["_last_aux_resolved_model"] != "aux-resolved" {
 		t.Fatalf("adopt must leave the inline call state, got %v %v", cc.previous, cc.attrs)
 	}
@@ -246,11 +211,8 @@ func TestPreparedAppendOnlyGrowthSplicesAndAdoptCarriesFallbackAndTelemetry(t *t
 	if _, ok := cc.telemetry.Get("failure_class"); ok {
 		t.Fatal("None telemetry values are not copied")
 	}
-	if cc.state.SplicedAttemptID() != "live-attempt" || cc.state.taken != nil {
-		t.Fatal("adopt records the splicing attempt and clears the taken summary")
-	}
-	if got := rec.names(); !slices.Equal(got, []string{"used/aux_fallback_main"}) {
-		t.Fatalf("events = %v", got)
+	if cc.state.SplicedAttemptID() != "live-attempt" {
+		t.Fatal("adopt records the splicing attempt")
 	}
 }
 
@@ -259,37 +221,32 @@ func TestPreparedChangedPrefixNeverSplices(t *testing.T) {
 		mutate  func(msgs []map[string]any) []map[string]any
 		session string
 		start   int
-		code    string
 	}{
-		"other_session":      {func(m []map[string]any) []map[string]any { return m }, "S2", 1, "other_session"},
-		"head_moved":         {func(m []map[string]any) []map[string]any { return m }, "S1", 2, "head_moved"},
-		"transcript_shorter": {func(m []map[string]any) []map[string]any { return m[:6] }, "S1", 1, "transcript_shorter"},
+		"other_session":      {func(m []map[string]any) []map[string]any { return m }, "S2", 1},
+		"head_moved":         {func(m []map[string]any) []map[string]any { return m }, "S1", 2},
+		"transcript_shorter": {func(m []map[string]any) []map[string]any { return m[:6] }, "S1", 1},
 		"shape_changed": {func(m []map[string]any) []map[string]any {
 			m[3]["role"] = "user"
 			return m
-		}, "S1", 1, "shape_changed"},
+		}, "S1", 1},
 		"rewound": {func(m []map[string]any) []map[string]any {
 			m[4][state.MessageUID] = "branch-uid"
 			return m
-		}, "S1", 1, "rewound"},
+		}, "S1", 1},
 		"text_changed_without_uid": {func(m []map[string]any) []map[string]any {
 			delete(m[5], state.MessageUID)
 			m[5]["content"] = "rewritten"
 			return m
-		}, "S1", 1, "text_changed"},
+		}, "S1", 1},
 	}
 	for name, tc := range cases {
 		t.Run(name, func(t *testing.T) {
-			rec := capturePreparedEvents(t)
 			cc := newFakePreparedCompressor("S1")
 			live := preparedMessages(10, "m")
 			publishPrepared(cc, live, 1, 8)
 			msgs := tc.mutate(pycopyMessages(live))
 			if got := cc.state.Take(context.Background(), msgs, tc.session, tc.start, true); got != nil {
 				t.Fatal("changed prefix spliced")
-			}
-			if got := rec.names(); !slices.Equal(got, []string{"discarded/" + tc.code}) {
-				t.Fatalf("events = %v", got)
 			}
 			if cc.state.entry != nil {
 				t.Fatal("a miss clears the candidate")
@@ -310,7 +267,6 @@ func pycopyMessages(msgs []map[string]any) []map[string]any {
 }
 
 func TestPreparedInPlaceTextRewriteOfSummarisedMessagesKeepsTheCandidate(t *testing.T) {
-	capturePreparedEvents(t)
 	cc := newFakePreparedCompressor("S1")
 	live := preparedMessages(10, "m")
 	publishPrepared(cc, live, 1, 8)
@@ -353,7 +309,6 @@ func TestPreparedIdentityIgnoresToolBodiesAndKeepsCallIDs(t *testing.T) {
 }
 
 func TestPreparedFreshSummaryPathsIgnoreAndDropTheCandidate(t *testing.T) {
-	rec := capturePreparedEvents(t)
 	cc := newFakePreparedCompressor("S1")
 	live := preparedMessages(10, "m")
 	publishPrepared(cc, live, 1, 8)
@@ -366,31 +321,12 @@ func TestPreparedFreshSummaryPathsIgnoreAndDropTheCandidate(t *testing.T) {
 	if cc.state.Take(context.Background(), live, "S1", 1, false) != nil {
 		t.Fatal("provider context compaction spliced")
 	}
-	want := []string{"discarded/fresh_required", "auto_disabled/provider_context", "discarded/provider_context"}
-	if got := rec.names(); !slices.Equal(got, want) {
-		t.Fatalf("events = %v", got)
-	}
-	if cc.state.Take(context.Background(), live, "S1", 1, true) != nil || len(rec.names()) != 3 {
+	if cc.state.Take(context.Background(), live, "S1", 1, true) != nil {
 		t.Fatal("no candidate and no pass is a silent miss")
 	}
 }
 
-func TestPreparedUnsplicedTakeIsCountedAsAborted(t *testing.T) {
-	rec := capturePreparedEvents(t)
-	cc := newFakePreparedCompressor("S1")
-	live := preparedMessages(10, "m")
-	publishPrepared(cc, live, 1, 8)
-	if cc.state.Take(context.Background(), live, "S1", 1, true) == nil {
-		t.Fatal("expected a hit")
-	}
-	cc.state.Discard(context.Background(), "session reset", "")
-	if got := rec.names(); !slices.Equal(got, []string{"discarded/compaction_aborted"}) {
-		t.Fatalf("events = %v", got)
-	}
-}
-
 func TestPreparedSessionBoundaryDiscardsCandidateAndReleaseCancelsPass(t *testing.T) {
-	rec := capturePreparedEvents(t)
 	cc := newFakePreparedCompressor("S1")
 	live := preparedMessages(10, "m")
 	publishPrepared(cc, live, 1, 8)
@@ -409,14 +345,12 @@ func TestPreparedSessionBoundaryDiscardsCandidateAndReleaseCancelsPass(t *testin
 		t.Fatal("the first cancel reason wins")
 	}
 	cc.state.Discard(context.Background(), "nothing left", "")
-	want := []string{"discarded/session_boundary", "discarded/agent_released"}
-	if got := rec.names(); !slices.Equal(got, want) {
-		t.Fatalf("events = %v", got)
+	if cc.state.boundaries != 2 {
+		t.Fatalf("boundaries %d", cc.state.boundaries)
 	}
 }
 
-func TestPreparedHeldCandidateStartsNoFurtherPassAndBusySlotsCountOnce(t *testing.T) {
-	rec := capturePreparedEvents(t)
+func TestPreparedHeldCandidateOrBusySlotsStartNoPass(t *testing.T) {
 	cc := newFakePreparedCompressor("S1")
 	a := preparedAgent(cc)
 	live := preparedMessages(10, "m")
@@ -433,28 +367,6 @@ func TestPreparedHeldCandidateStartsNoFurtherPassAndBusySlotsCountOnce(t *testin
 		if MaybePrepareCompaction(context.Background(), a, live, "tool-batch") != nil {
 			t.Fatal("no slot, no pass")
 		}
-	}
-	if got := rec.names(); !slices.Equal(got, []string{"skipped_busy/"}) {
-		t.Fatalf("busy refusals of one window count once, events = %v", got)
-	}
-}
-
-func TestPreparedPassFailureClassPrefersTerminalFlagThenTelemetry(t *testing.T) {
-	cc := newFakePreparedCompressor("S1")
-	if got := passFailureClass(cc); got != "summary_generation_failed" {
-		t.Fatalf("default class = %q", got)
-	}
-	cc.telemetry = pyjson.NewObject()
-	cc.telemetry.Set("failure_class", "timeout")
-	if got := passFailureClass(cc); got != "timeout" {
-		t.Fatalf("telemetry class = %q", got)
-	}
-	for _, f := range terminalSummaryFailures {
-		cc.flags[f.Flag] = true
-		if got := passFailureClass(cc); got != f.Class {
-			t.Fatalf("terminal class = %q, want %q", got, f.Class)
-		}
-		break
 	}
 }
 

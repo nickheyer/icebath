@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"log/slog"
 	"net/http"
 	"net/url"
 	"strings"
@@ -134,7 +133,7 @@ func (r *resolver) resolveAzureFoundryRuntime(requestedProvider string, modelCfg
 	return rt, nil
 }
 
-// ---- Azure Foundry endpoint auto detection (hermes_cli/azure_detect.py) ----
+// Azure Foundry endpoint auto detection
 
 // Azure OpenAI api-version fallbacks for pre v1 resources, probed after the versionless GA path
 var azureOpenAIProbeAPIVersions = []string{"2025-04-01-preview", "2024-10-21"}
@@ -186,7 +185,7 @@ func resolveAzureCredential(ctx context.Context, apiKey string, tokenProvider fu
 	if tokenProvider != nil {
 		token, err := tokenProvider(ctx)
 		if err != nil {
-			slog.Default().Debug(fmt.Sprintf("azure_detect: token_provider failed: %v", err))
+			pkgLog().Debug(fmt.Sprintf("azure_detect: token_provider failed: %v", err))
 			return "", "entra_id"
 		}
 		return token, "entra_id"
@@ -238,7 +237,7 @@ func (d *AzureDetector) httpGetJSON(ctx context.Context, target, apiKey string, 
 	}
 	resp, err := d.open(req)
 	if err != nil {
-		slog.Default().Debug(fmt.Sprintf("azure_detect: GET %s failed: %v", target, err))
+		pkgLog().Debug(fmt.Sprintf("azure_detect: GET %s failed: %v", target, err))
 		return 0, nil
 	}
 	defer resp.Body.Close()
@@ -303,7 +302,7 @@ func (d *AzureDetector) probeOpenAIModels(ctx context.Context, baseURL, apiKey s
 			continue
 		}
 		if ids := extractModelIDs(body); len(ids) > 0 {
-			slog.Default().Info(fmt.Sprintf("azure_detect: /models probe OK at %s (%d models)", target, len(ids)))
+			pkgLog().Info(fmt.Sprintf("azure_detect: /models probe OK at %s (%d models)", target, len(ids)))
 			return true, ids
 		}
 		if _, has := body["data"]; has {

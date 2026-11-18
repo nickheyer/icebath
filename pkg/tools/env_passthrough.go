@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"log/slog"
 	"os"
 	"path/filepath"
 	"strings"
@@ -35,26 +34,21 @@ var staticProviderEnvBlocklist = []string{
 	"SIGNAL_ALLOWED_USERS", "SIGNAL_GROUP_ALLOWED_USERS", "SIGNAL_HOME_CHANNEL",
 	"SIGNAL_HOME_CHANNEL_NAME", "SIGNAL_IGNORE_STORIES",
 	"EMAIL_ADDRESS", "EMAIL_PASSWORD", "EMAIL_IMAP_HOST", "EMAIL_SMTP_HOST",
-	"EMAIL_HOME_ADDRESS", "EMAIL_HOME_ADDRESS_NAME", "ICEBATH_DASHBOARD_SESSION_TOKEN", "HERMES_DASHBOARD_SESSION_TOKEN",
+	"EMAIL_HOME_ADDRESS", "EMAIL_HOME_ADDRESS_NAME", "ICEBATH_DASHBOARD_SESSION_TOKEN",
 	"GATEWAY_ALLOWED_USERS", "GH_TOKEN", "GITHUB_APP_ID", "GITHUB_APP_PRIVATE_KEY_PATH",
 	"GITHUB_APP_INSTALLATION_ID", "MODAL_TOKEN_ID", "MODAL_TOKEN_SECRET",
 	"DAYTONA_API_KEY", "GATEWAY_RELAY_ID", "GATEWAY_RELAY_SECRET",
 	"GATEWAY_RELAY_DELIVERY_KEY", "VERCEL_OIDC_TOKEN", "VERCEL_TOKEN",
 	"VERCEL_PROJECT_ID", "VERCEL_TEAM_ID",
-	"NOUS_API_KEY", "QWEN_API_KEY",
-	"ICEBATH_ANON_API_SECRET", "ICEBATH_DASHBOARD_BASIC_AUTH_PASSWORD",
+	"QWEN_API_KEY", "ICEBATH_DASHBOARD_BASIC_AUTH_PASSWORD",
 	"ICEBATH_DASHBOARD_BASIC_AUTH_SECRET", "ICEBATH_DASHBOARD_DRAIN_SECRET",
 	"ICEBATH_DASHBOARD_OIDC_CLIENT_SECRET", "ICEBATH_MEET_REALTIME_KEY",
-	"HERMES_ANON_API_SECRET", "HERMES_DASHBOARD_BASIC_AUTH_PASSWORD",
-	"HERMES_DASHBOARD_BASIC_AUTH_SECRET", "HERMES_DASHBOARD_DRAIN_SECRET",
-	"HERMES_DASHBOARD_OIDC_CLIENT_SECRET", "HERMES_MEET_REALTIME_KEY",
 }
 
 // Env of features that left core for a catalog plugin, stripped exactly as when core shipped them
 var leftCoreEnv = []string{
 	"HASS_TOKEN", "HASS_URL",
 	"ICEBATH_LANGFUSE_SECRET_KEY", "ICEBATH_LANGFUSE_PUBLIC_KEY", "ICEBATH_LANGFUSE_BASE_URL",
-	"HERMES_LANGFUSE_SECRET_KEY", "HERMES_LANGFUSE_PUBLIC_KEY", "HERMES_LANGFUSE_BASE_URL",
 	"CAMOFOX_API_KEY", "CAMOFOX_URL",
 	"COPILOT_GITHUB_TOKEN", "COPILOT_API_BASE_URL", "COPILOT_ACP_BASE_URL",
 }
@@ -200,7 +194,7 @@ func passthroughAccepted(env *Env, names []string, refusal string) []string {
 			continue
 		}
 		if isIcebathProviderCredential(env, name) {
-			toolsLogger(env).Warn(refusal, "name", name)
+			envLog(env).Warn(refusal, "name", name)
 			continue
 		}
 		out = append(out, name)
@@ -220,7 +214,7 @@ func RegisterEnvPassthrough(env *Env, varNames []string) {
 		passthroughMu.Lock()
 		passthroughAllowed[name] = true
 		passthroughMu.Unlock()
-		slog.Debug("env passthrough: registered", "name", name)
+		pkgLog().Debug("env passthrough: registered", "name", name)
 	}
 }
 
@@ -288,17 +282,13 @@ func AllPassthrough(env *Env) map[string]bool {
 var globalEnvExact = map[string]bool{
 	"ICEBATH_HOME": true, "ICEBATH_PROFILE": true, "ICEBATH_GATEWAY_LOCK_DIR": true,
 	"ICEBATH_MAX_ITERATIONS": true, "ICEBATH_API_TIMEOUT": true,
-	"ICEBATH_REDACT_SECRETS": true, "ICEBATH_NOUS_TIMEOUT_SECONDS": true,
-	"_ICEBATH_GATEWAY": true,
-	"HERMES_HOME":      true, "HERMES_PROFILE": true, "HERMES_GATEWAY_LOCK_DIR": true,
-	"HERMES_MAX_ITERATIONS": true, "HERMES_API_TIMEOUT": true,
-	"HERMES_REDACT_SECRETS": true, "HERMES_NOUS_TIMEOUT_SECONDS": true,
-	"_HERMES_GATEWAY": true,
-	"PATH":            true, "HOME": true, "USER": true, "LANG": true, "LC_ALL": true, "TZ": true, "PWD": true, "SHELL": true, "TMPDIR": true,
+	"ICEBATH_REDACT_SECRETS": true,
+	"_ICEBATH_GATEWAY":       true,
+	"PATH":                   true, "HOME": true, "USER": true, "LANG": true, "LC_ALL": true, "TZ": true, "PWD": true, "SHELL": true, "TMPDIR": true,
 	"VIRTUAL_ENV": true, "PYTHONPATH": true, "SSL_CERT_FILE": true,
 }
 
-var globalEnvPrefixes = []string{"ICEBATH_KANBAN_", "ICEBATH_TELEGRAM_", "HERMES_KANBAN_", "HERMES_TELEGRAM_", "TERMINAL_"}
+var globalEnvPrefixes = []string{"ICEBATH_KANBAN_", "ICEBATH_TELEGRAM_", "TERMINAL_"}
 
 // IsGlobalEnv is true for process wide settings that are never profile secrets
 func IsGlobalEnv(name string) bool {
@@ -383,7 +373,7 @@ func passthroughServesRouted(ctx context.Context, env *Env, scopeHome string) bo
 	return override != "" && home.Key(override) != own
 }
 
-// Value of an allowlisted variable through the bound profile secret scope as hermes resolves it
+// Value of an allowlisted variable resolved through the bound profile secret scope
 func ResolvePassthroughValue(ctx context.Context, env *Env, name string, fallback *string) (*string, error) {
 	global := IsGlobalEnv(name)
 	if global && fallback != nil {

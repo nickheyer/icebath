@@ -477,7 +477,7 @@ func (v *wakeLogView) WithGroup(string) slog.Handler { return v }
 
 func captureWakeLogs(t *testing.T, level slog.Level) *wakeLogCapture {
 	t.Helper()
-	c := &wakeLogCapture{level: level, name: "tools.wake_word"}
+	c := &wakeLogCapture{level: level, name: "media"}
 	saved := slog.Default()
 	slog.SetDefault(slog.New(c))
 	t.Cleanup(func() { slog.SetDefault(saved) })

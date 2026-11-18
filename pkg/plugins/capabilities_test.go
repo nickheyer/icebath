@@ -11,7 +11,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/config"
 )
 
-// Home with an empty config.yaml, the hermes_home fixture of the capability tests
+// Home with an empty config.yaml, the fixture of the capability tests
 func capHome(t *testing.T) string {
 	t.Helper()
 	h := t.TempDir()

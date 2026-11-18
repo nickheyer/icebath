@@ -14,7 +14,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/plugins"
 	"github.com/nickheyer/icebath/pkg/skills"
 	"github.com/nickheyer/icebath/pkg/tools"
-	"github.com/nickheyer/icebath/pkg/tuigateway"
+	"github.com/nickheyer/icebath/pkg/tuihost"
 )
 
 // Registry command a typed name resolves to with its localized description and category
@@ -30,7 +30,7 @@ var ResolveCommand func(name string) (ResolvedCommand, bool)
 var sessionControlSlashes = map[string]bool{"goal": true, "heartbeat": true, "loop": true, "subgoal": true}
 
 // One command.dispatch stage, a nil response falling through to the next stage
-type dispatchStage func(ctx context.Context, rid any, params map[string]any, session *tuigateway.Session, name, arg string) map[string]any
+type dispatchStage func(ctx context.Context, rid any, params map[string]any, session *tuihost.Session, name, arg string) map[string]any
 
 // Canonical registry name of a typed command, the name itself when no command matches
 func resolveName(name string) string {
@@ -100,7 +100,7 @@ func boundSkillScope(ctx context.Context) (*skills.Scope, error) {
 }
 
 // Task id of the session key, empty without a session
-func sessionTaskID(session *tuigateway.Session) string {
+func sessionTaskID(session *tuihost.Session) string {
 	if session == nil {
 		return ""
 	}
@@ -120,7 +120,7 @@ func commandDispatch(ctx context.Context, rid any, params map[string]any) map[st
 	name := resolveName(strings.TrimLeft(textParam(params, "name", "lstrip"), "/"))
 	arg := strOr(params["arg"])
 	sid := strOr(params["session_id"])
-	session := tuigateway.SessionRecord(sid)
+	session := tuihost.SessionRecord(sid)
 	stages := []dispatchStage{dispatchQuick, dispatchPlugin, dispatchBound, dispatchBundle, dispatchSkill}
 	if builtin := slashBuiltins[name]; builtin != nil {
 		stages = append(stages, builtin)
@@ -141,7 +141,7 @@ func commandDispatch(ctx context.Context, rid any, params map[string]any) map[st
 }
 
 // Quick command of the config, an exec run in a sanitized shell or an alias directive
-func dispatchQuick(ctx context.Context, rid any, params map[string]any, session *tuigateway.Session, name, arg string) map[string]any {
+func dispatchQuick(ctx context.Context, rid any, params map[string]any, session *tuihost.Session, name, arg string) map[string]any {
 	quick, _ := loadCfg(ctx)["quick_commands"].(map[string]any)
 	qc, present := quick[name]
 	if !present || qc == nil {
@@ -191,7 +191,7 @@ func pluginCommandHandler(ctx context.Context, name string) (handler plugins.Plu
 }
 
 // Runs a plugin slash handler under the session binding with clarify backed choices
-func runPluginCommand(ctx context.Context, handler plugins.PluginCommandHandler, arg string, session *tuigateway.Session, sid string) (string, error) {
+func runPluginCommand(ctx context.Context, handler plugins.PluginCommandHandler, arg string, session *tuihost.Session, sid string) (string, error) {
 	key := ""
 	if session != nil {
 		key = strOr(session.Get("session_key"))
@@ -240,7 +240,7 @@ func questionMaps(questions []any) []map[string]any {
 }
 
 // Plugin command stage, a failing handler falling through to the next stage
-func dispatchPlugin(ctx context.Context, rid any, params map[string]any, session *tuigateway.Session, name, arg string) map[string]any {
+func dispatchPlugin(ctx context.Context, rid any, params map[string]any, session *tuihost.Session, name, arg string) map[string]any {
 	handler, found := pluginCommandHandler(ctx, name)
 	if !found {
 		return nil
@@ -257,7 +257,7 @@ func dispatchPlugin(ctx context.Context, rid any, params map[string]any, session
 }
 
 // Command a plugin bound to a turn building handler, its turn answered as a skill directive
-func dispatchBound(ctx context.Context, rid any, params map[string]any, session *tuigateway.Session, name, arg string) map[string]any {
+func dispatchBound(ctx context.Context, rid any, params map[string]any, session *tuihost.Session, name, arg string) map[string]any {
 	bound, found := gateway.ResolveBoundCommand(name)
 	if !found {
 		return nil
@@ -266,7 +266,7 @@ func dispatchBound(ctx context.Context, rid any, params map[string]any, session 
 	if err != nil {
 		return rpcErr(rid, 4018, "bound command failed: "+errorMessage(err), nil)
 	}
-	return ok(rid, map[string]any{"type": "skill", "message": message, "name": bound.Name, "display": tuigateway.SkillScaffoldProjection(message)})
+	return ok(rid, map[string]any{"type": "skill", "message": message, "name": bound.Name, "display": tuihost.SkillScaffoldProjection(message)})
 }
 
 // Skill bundle key of a name that is not a registry command, false otherwise or on failure
@@ -286,7 +286,7 @@ func bundleKeyFor(ctx context.Context, name string) (key string, found bool) {
 }
 
 // Skill bundle stage, the expanded bundle sent as the next turn with its loading notice
-func dispatchBundle(ctx context.Context, rid any, params map[string]any, session *tuigateway.Session, name, arg string) map[string]any {
+func dispatchBundle(ctx context.Context, rid any, params map[string]any, session *tuihost.Session, name, arg string) map[string]any {
 	bundleKey, found := bundleKeyFor(ctx, name)
 	if !found {
 		return nil
@@ -312,11 +312,11 @@ func dispatchBundle(ctx context.Context, rid any, params map[string]any, session
 	if len(missing) > 0 {
 		notice += "\nSkipped missing skills: " + strings.Join(missing, ", ")
 	}
-	return ok(rid, map[string]any{"type": "send", "message": msg, "notice": notice, "display": tuigateway.SkillScaffoldProjection(msg)})
+	return ok(rid, map[string]any{"type": "send", "message": msg, "notice": notice, "display": tuihost.SkillScaffoldProjection(msg)})
 }
 
 // Skill command stage, stacked leading skill tokens loaded together over the remaining instruction
-func dispatchSkill(ctx context.Context, rid any, params map[string]any, session *tuigateway.Session, name, arg string) map[string]any {
+func dispatchSkill(ctx context.Context, rid any, params map[string]any, session *tuihost.Session, name, arg string) map[string]any {
 	var res map[string]any
 	catchPanic(func() {
 		scope, err := boundSkillScope(ctx)
@@ -343,14 +343,14 @@ func dispatchSkill(ctx context.Context, rid any, params map[string]any, session 
 					notice += "\nSkipped missing skills: " + strings.Join(missing, ", ")
 				}
 				res = ok(rid, map[string]any{"type": "skill", "message": msg, "name": skillName, "notice": notice,
-					"display": tuigateway.SkillScaffoldProjection(msg)})
+					"display": tuihost.SkillScaffoldProjection(msg)})
 				return
 			}
 		}
 		msg, _, err := scope.BuildSkillInvocationMessage(ctx, key, userInstruction, sessionTaskID(session), "")
 		panicIf(err)
 		if msg != "" {
-			res = ok(rid, map[string]any{"type": "skill", "message": msg, "name": skillName, "display": tuigateway.SkillScaffoldProjection(msg)})
+			res = ok(rid, map[string]any{"type": "skill", "message": msg, "name": skillName, "display": tuihost.SkillScaffoldProjection(msg)})
 		}
 	})
 	return res

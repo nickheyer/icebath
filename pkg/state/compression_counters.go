@@ -3,7 +3,6 @@ package state
 import (
 	"context"
 	"fmt"
-	"log/slog"
 	"math"
 	"math/big"
 
@@ -28,7 +27,7 @@ type CompressionCooldownRow struct {
 	Error         any
 }
 
-// Dict form of the row in hermes key order for repr and comparison
+// Dict form of the row in its fixed key order for repr and comparison
 func (r CompressionCooldownRow) object() *pyjson.Object {
 	out := pyjson.NewObject()
 	out.Set("session_exists", r.SessionExists)
@@ -164,7 +163,7 @@ func (d *SessionDB) RestoreCompressionFailureCooldownRow(sessionID string, snaps
 		return err
 	}
 	if !updated {
-		slog.Warn("compression cooldown rollback session missing: " + sessionID)
+		pkgLog().Warn("compression cooldown rollback session missing: " + sessionID)
 		return nil
 	}
 	actual, err := d.GetCompressionFailureCooldownRow(sessionID)
@@ -177,7 +176,7 @@ func (d *SessionDB) RestoreCompressionFailureCooldownRow(sessionID string, snaps
 	}
 	if pyrepr.Repr(actual.object()) != pyrepr.Repr(expected.object()) {
 		if !actual.SessionExists {
-			slog.Warn("compression cooldown rollback session missing after restore: " + sessionID)
+			pkgLog().Warn("compression cooldown rollback session missing after restore: " + sessionID)
 			return nil
 		}
 		return &pyint.Error{Kind: "RuntimeError", Msg: fmt.Sprintf("compression cooldown rollback verification failed: expected=%s, actual=%s",
@@ -195,7 +194,7 @@ func (d *SessionDB) ClearCompressionFailureCooldown(sessionID string) {
 		"UPDATE sessions SET compression_failure_cooldown_until = NULL, compression_failure_error = NULL WHERE id = ?", []any{sessionID})
 }
 
-// Clears the cooldown, never failing as hermes logs the write error
+// Clears the cooldown, never failing, a write error only logged
 func (d *DB) ClearCompressionCooldown(sessionID string) error {
 	d.ClearCompressionFailureCooldown(sessionID)
 	return nil

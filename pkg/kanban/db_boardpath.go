@@ -216,7 +216,7 @@ func explicitBoardIntentPinned(ctx context.Context) bool {
 func boardPath(ctx context.Context, envVar string, board *string, defaultParts []string, leaf string) (string, error) {
 	pin := ""
 	if envVar != "" {
-		pin = pystr.Strip(os.Getenv(pyEnvName(envVar)))
+		pin = pystr.Strip(os.Getenv(envVar))
 	}
 	slug, err := explicitBoardSlug(ctx, board)
 	if err != nil {
@@ -238,7 +238,7 @@ var kanbanDBPathFn func(ctx context.Context, board *string) (string, error)
 
 func init() {
 	kanbanDBPathFn = func(ctx context.Context, board *string) (string, error) {
-		return boardPath(ctx, "HERMES_KANBAN_DB", board, []string{"kanban.db"}, "kanban.db")
+		return boardPath(ctx, "ICEBATH_KANBAN_DB", board, []string{"kanban.db"}, "kanban.db")
 	}
 }
 
@@ -249,12 +249,12 @@ func KanbanDBPath(ctx context.Context, board *string) (string, error) {
 
 // Per board scratch workspace root, ICEBATH_KANBAN_WORKSPACES_ROOT winning
 func WorkspacesRoot(ctx context.Context, board *string) (string, error) {
-	return boardPath(ctx, "HERMES_KANBAN_WORKSPACES_ROOT", board, []string{"kanban", "workspaces"}, "workspaces")
+	return boardPath(ctx, "ICEBATH_KANBAN_WORKSPACES_ROOT", board, []string{"kanban", "workspaces"}, "workspaces")
 }
 
 // Per board attachments root, ICEBATH_KANBAN_ATTACHMENTS_ROOT winning
 func AttachmentsRoot(ctx context.Context, board *string) (string, error) {
-	return boardPath(ctx, "HERMES_KANBAN_ATTACHMENTS_ROOT", board, []string{"kanban", "attachments"}, "attachments")
+	return boardPath(ctx, "ICEBATH_KANBAN_ATTACHMENTS_ROOT", board, []string{"kanban", "attachments"}, "attachments")
 }
 
 // Per task attachment directory under the attachments root

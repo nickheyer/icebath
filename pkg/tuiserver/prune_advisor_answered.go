@@ -25,7 +25,7 @@ func pruneAdvisorHome(ctx context.Context, profileHome string) string {
 func pruneAdvisorEffectiveSessions(ctx context.Context, profileHome string) (map[string]any, bool) {
 	cfg, err := config.LoadUserEffectiveFailClosed(filepath.Join(pruneAdvisorHome(ctx, profileHome), "config.yaml"), os.LookupEnv)
 	if err != nil {
-		logger().Debug("auto-prune advice: config unreadable: " + err.Error())
+		pkgLog().Debug("auto-prune advice: config unreadable: " + err.Error())
 		return nil, false
 	}
 	sessions, isDict := cfg["sessions"].(map[string]any)

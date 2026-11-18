@@ -86,7 +86,7 @@ func resolveHome(p string) (string, error) {
 
 // Home a record routes to, the default home unless it carries a live routed profile home
 func (r *profileRoutingFileHandler) homeForRecord(rec *Record) string {
-	candidate, err := resolveHome(rec.HermesHome)
+	candidate, err := resolveHome(rec.Home)
 	if err != nil {
 		candidate = r.defaultHome
 	}

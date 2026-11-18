@@ -12,7 +12,7 @@ import (
 func validImageMarker(t *testing.T, dir string) string {
 	t.Helper()
 	marker := filepath.Join(dir, "image-provenance.json")
-	raw, _ := json.Marshal(map[string]any{"schema": 1, "deployment_kind": "image", "manager": "docker", "image": "nousresearch/icebath-agent",
+	raw, _ := json.Marshal(map[string]any{"schema": 1, "deployment_kind": "image", "manager": "docker", "image": "ghcr.io/nickheyer/icebath",
 		"version": "1.0.0", "revision": strings.Repeat("a", 40)})
 	if err := os.WriteFile(marker, raw, 0o644); err != nil {
 		t.Fatal(err)

@@ -114,7 +114,7 @@ func fakePair(t *testing.T, lite *fakeLite) (*OpenWakeWordFeatures, *OpenWakeWor
 	if err != nil {
 		t.Fatal(err)
 	}
-	model, err := newOpenWakeWord("hey_hermes", "models/hey_hermes.tflite", base)
+	model, err := newOpenWakeWord(ModelHeyJarvis, "models/hey_jarvis.tflite", base)
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -127,7 +127,7 @@ func TestFullyRefusingLadderWarnsWithEachReason(t *testing.T) {
 				}
 				return nil, "", nil
 			}, initLadderPool{available: c.poolAvailable})
-			records := captureLogger(t, "run_agent", slog.LevelWarn)
+			records := captureLogger(t, "agent", slog.LevelWarn)
 			timeout := 60.0
 			a := &AIAgent{provider: c.primary, model: "z-ai/glm-5.3-flash"}
 			_, err := routedClientKwargs(context.Background(), a, c.ladder, &timeout)
@@ -163,7 +163,7 @@ func TestRecoveredLadderDoesNotWarn(t *testing.T) {
 		}
 		return nil, "", nil
 	}, nil)
-	records := captureLogger(t, "run_agent", slog.LevelWarn)
+	records := captureLogger(t, "agent", slog.LevelWarn)
 	timeout := 60.0
 	a := &AIAgent{provider: "openrouter", model: "z-ai/glm-5.3-flash"}
 	kwargs, err := routedClientKwargs(context.Background(), a, initLadder, &timeout)
@@ -553,7 +553,7 @@ func TestConfigFailureWarnsWithoutExposingValuesAndPreservesDefaults(t *testing.
 				var warnings []string
 				for _, line := range strings.Split(string(persisted), "\n") {
 					lower := strings.ToLower(line)
-					if strings.Contains(line, "run_agent") && strings.Contains(line, "WARNING") && strings.Contains(lower, "config") && strings.Contains(lower, "default") {
+					if strings.Contains(line, " "+logName+": ") && strings.Contains(line, "WARNING") && strings.Contains(lower, "config") && strings.Contains(lower, "default") {
 						warnings = append(warnings, line)
 					}
 				}
@@ -634,13 +634,13 @@ func TestEmptyConfigInitializesMemoryWithoutALoadWarning(t *testing.T) {
 	persisted, _ := os.ReadFile(filepath.Join(h, "logs", "errors.log"))
 	for _, line := range strings.Split(string(persisted), "\n") {
 		lower := strings.ToLower(line)
-		if strings.Contains(line, "run_agent") && strings.Contains(lower, "config") && strings.Contains(lower, "default") {
+		if strings.Contains(line, " "+logName+": ") && strings.Contains(lower, "config") && strings.Contains(lower, "default") {
 			t.Fatalf("load warning %q", line)
 		}
 	}
 }
 
-// Fresh logging state for the rest of the test, the hermes reset of _logging_initialized and the queued handlers
+// Fresh logging state for the rest of the test, the reset of logging initialized and the queued handlers
 func resetLoggingState(t *testing.T) {
 	t.Helper()
 	logging.ResetQueuedHandlers()
@@ -958,7 +958,7 @@ func TestAgentWhoseProviderInstanceIsRefusedIsToldAndRunsWithoutIt(t *testing.T)
 	memory.RegisterProvider(memory.ProviderRegistration{Name: "instancescoped", Source: memory.SourceUser, Home: beta,
 		New: func(context.Context, *tools.Env, memory.LoadOptions) (memory.Provider, error) { return shared, nil }})
 	t.Cleanup(func() { memory.UnregisterProviders(memory.SourceUser, beta) })
-	records := captureLogger(t, "run_agent", slog.LevelDebug)
+	records := captureLogger(t, "agent", slog.LevelDebug)
 	a, _ := startupAgent(t, "api_server")
 	a.sessionID = "s-beta"
 	initMemory(home.WithOverride(ctx, beta), a, map[string]any{"memory": map[string]any{"provider": "instancescoped"}}, false, "api_server", nil)

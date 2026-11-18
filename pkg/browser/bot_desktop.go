@@ -4,6 +4,7 @@ import (
 	"slices"
 
 	"github.com/nickheyer/icebath/pkg/botdesktop"
+	"github.com/nickheyer/icebath/pkg/browser/quiet"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
 
@@ -15,6 +16,15 @@ func init() {
 	botdesktop.BrowserAppArmorRestricts = apparmorRestrictsUnprivilegedUserns
 	botdesktop.BrowserNeedsSandboxBypass = needsChromiumSandboxBypass
 	botdesktop.BrowserSandboxBypassArgs = func() []string { return slices.Clone(chromiumSandboxBypassArgs) }
+	botdesktop.BrowserSeedProfile = seedIdleProfile
+}
+
+// Agent profile preferences written into a profile no Chromium holds, a running one already read them at its launch
+func seedIdleProfile(userDataDir string) error {
+	if browserRunningOn(userDataDir) {
+		return nil
+	}
+	return quiet.SeedProfile(userDataDir, true)
 }
 
 func botDesktopDesktopEnv(env *tools.Env, base map[string]string) map[string]string {

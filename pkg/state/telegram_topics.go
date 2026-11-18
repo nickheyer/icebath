@@ -3,7 +3,6 @@ package state
 import (
 	"context"
 	"errors"
-	"log/slog"
 	"strings"
 
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
@@ -98,7 +97,7 @@ func topicRead[T any](ctx context.Context, d *SessionDB, read func() (T, error),
 	if herr := d.ApplyTelegramTopicMigration(ctx); herr != nil {
 		var replaced *StateDBReplacedError
 		if _, isSQLite := sqliteClassOf(herr); isSQLite || errors.As(herr, &replaced) {
-			slog.Warn("telegram topic tables are pre-v3 and the heal failed; reading as empty", "error", herr)
+			pkgLog().Warn("telegram topic tables are pre-v3 and the heal failed; reading as empty", "error", herr)
 			return empty, nil
 		}
 		return empty, herr

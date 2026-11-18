@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"os"
 
 	"github.com/nickheyer/icebath/pkg/agent"
 	"github.com/nickheyer/icebath/pkg/config"
@@ -12,21 +11,16 @@ import (
 	"github.com/nickheyer/icebath/pkg/i18n"
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
-	"github.com/nickheyer/icebath/pkg/observability"
 	"github.com/nickheyer/icebath/pkg/provider"
-	"github.com/nickheyer/icebath/pkg/tuigateway"
+	"github.com/nickheyer/icebath/pkg/tuihost"
 )
 
-// Notice key of the large model usage warning
-const largeModelNoticeKey = "model.large_notice"
-
-// Flags of one model switch, every caller stating pinning and counting explicitly
+// Flags of one model switch, every caller stating pinning explicitly
 type modelSwitchOptions struct {
 	confirmExpensiveModel bool
 	pinSessionOverride    bool
 	parsedFlags           *provider.ModelSwitchRequest
 	persistOverride       *bool
-	countSwitch           bool
 }
 
 // Normalized model input, explicit provider, once flag, global persistence and reasoning effort of a model request
@@ -70,25 +64,8 @@ func currentModelRuntime(ctx context.Context, a *agent.AIAgent, explicitProvider
 	return rt.Provider, currentModel, rt.BaseURL, rt.APIKey, nil
 }
 
-// Provider of the model a switch leaves, nil when only a credential resolve could tell
-func switchAwayProvider(ctx context.Context, a *agent.AIAgent, explicitProvider, currentProvider string) any {
-	if a != nil || explicitProvider == "" {
-		return currentProvider
-	}
-	if envProvider := pystr.Strip(os.Getenv("ICEBATH_TUI_PROVIDER")); envProvider != "" {
-		return envProvider
-	}
-	if envModelSeed() != "" {
-		return nil
-	}
-	if _, configured := configModelTarget(ctx); configured != "" {
-		return configured
-	}
-	return nil
-}
-
 // Folds the context compression preflight warning into the switch result, logging any failure
-func mergePreflightWarning(ctx context.Context, result *provider.ModelSwitchResult, a *agent.AIAgent, session *tuigateway.Session, cfg map[string]any, customProvs []any) {
+func mergePreflightWarning(ctx context.Context, result *provider.ModelSwitchResult, a *agent.AIAgent, session *tuihost.Session, cfg map[string]any, customProvs []any) {
 	if failure := catchPanic(func() {
 		var cfgCtx *int
 		if mc, isDict := cfg["model"].(map[string]any); isDict && mc["context_length"] != nil {
@@ -101,7 +78,7 @@ func mergePreflightWarning(ctx context.Context, result *provider.ModelSwitchResu
 		}
 		a.MergePreflightCompressionWarning(ctx, result, historyAsMessages(historyList(session.Get("history"))), customProvs, cfgCtx, agent.PreflightConfigured{})
 	}); failure != nil {
-		logger().Debug(fmt.Sprintf("preflight-compression switch warning failed: %s", panicMessage(failure)))
+		pkgLog().Debug(fmt.Sprintf("preflight-compression switch warning failed: %s", panicMessage(failure)))
 	}
 }
 
@@ -137,7 +114,7 @@ func expensiveModelConfirm(ctx context.Context, result *provider.ModelSwitchResu
 }
 
 // Swaps the live agent in place then restarts, persists, marks and announces, a failed swap aborting the commit
-func commitAgentSwitch(ctx context.Context, sid string, session *tuigateway.Session, a *agent.AIAgent, result *provider.ModelSwitchResult, currentModel string, snapshot map[string]any) error {
+func commitAgentSwitch(ctx context.Context, sid string, session *tuihost.Session, a *agent.AIAgent, result *provider.ModelSwitchResult, currentModel string, snapshot map[string]any) error {
 	err := func() (err error) {
 		defer func() {
 			if r := recover(); r != nil {
@@ -148,7 +125,7 @@ func commitAgentSwitch(ctx context.Context, sid string, session *tuigateway.Sess
 			result.RuntimeCapabilities, false, false, "")
 	}()
 	if err != nil {
-		logger().Warn(fmt.Sprintf("In-place model switch failed for TUI agent: %s", err))
+		pkgLog().Warn(fmt.Sprintf("In-place model switch failed for TUI agent: %s", err))
 		staying := a.Model()
 		if staying == "" {
 			staying = currentModel
@@ -169,7 +146,7 @@ func commitAgentSwitch(ctx context.Context, sid string, session *tuigateway.Sess
 }
 
 // Applies a model request to a session, pinning, persisting, counting and confirming as its flags ask
-func applyModelSwitch(ctx context.Context, sid string, session *tuigateway.Session, rawInput string, o modelSwitchOptions) (map[string]any, error) {
+func applyModelSwitch(ctx context.Context, sid string, session *tuihost.Session, rawInput string, o modelSwitchOptions) (map[string]any, error) {
 	parsed := o.parsedFlags
 	if parsed == nil {
 		req := provider.ParseModelSwitchArgs(rawInput)
@@ -260,18 +237,6 @@ func applyModelSwitch(ctx context.Context, sid string, session *tuigateway.Sessi
 			return nil, err
 		}
 	}
-	if o.countSwitch {
-		var sessionID any
-		if a != nil && a.SessionID() != "" {
-			sessionID = a.SessionID()
-		}
-		observability.RecordModelSwitch(ctx, switchAwayProvider(ctx, a, explicitProvider, currentProvider), result.TargetProvider,
-			sessionSource(session), currentModel, sessionID)
-	}
-	if result.UsageNotice != "" && sid != "" {
-		tuigateway.Emit(ctx, "notification.show", sid, map[string]any{"text": "⚠ " + result.UsageNotice, "level": "warn",
-			"kind": "ttl", "ttl_ms": 8000, "key": largeModelNoticeKey, "id": largeModelNoticeKey})
-	}
 	scope := "session"
 	if oneTurn {
 		scope = "once"
@@ -282,7 +247,7 @@ func applyModelSwitch(ctx context.Context, sid string, session *tuigateway.Sessi
 }
 
 // Drops the session pin and armed restore, adopts the configured model unpinned and persists the row
-func resetSessionModelOverride(ctx context.Context, sid string, session *tuigateway.Session) (map[string]any, error) {
+func resetSessionModelOverride(ctx context.Context, sid string, session *tuihost.Session) (map[string]any, error) {
 	hadOverride := truthy(session.Get("model_override"))
 	session.Pop("model_override")
 	session.Pop("one_turn_model_restore")
@@ -320,7 +285,7 @@ func resetSessionModelOverride(ctx context.Context, sid string, session *tuigate
 }
 
 // Applies the reasoning effort riding a model pick in the pick's own scope
-func applySwitchReasoning(ctx context.Context, sid string, session *tuigateway.Session, a *agent.AIAgent, effort string, persistGlobal, oneTurn bool) error {
+func applySwitchReasoning(ctx context.Context, sid string, session *tuihost.Session, a *agent.AIAgent, effort string, persistGlobal, oneTurn bool) error {
 	parsed := config.ParseReasoningEffort(effort)
 	if parsed == nil {
 		return nil
@@ -347,7 +312,7 @@ func applySwitchReasoning(ctx context.Context, sid string, session *tuigateway.S
 }
 
 // Adopts a config.yaml model change at turn start, sessions pinned by a live pick keeping their choice
-func syncAgentModelWithConfig(ctx context.Context, sid string, session *tuigateway.Session) {
+func syncAgentModelWithConfig(ctx context.Context, sid string, session *tuihost.Session) {
 	a := sessionAgent(session)
 	if a == nil {
 		return
@@ -397,13 +362,13 @@ func syncAgentModelWithConfig(ctx context.Context, sid string, session *tuigatew
 	if err == nil {
 		return
 	}
-	logger().Warn(fmt.Sprintf("Configured model %s could not be adopted for session %s: %s", model, sid, err))
+	pkgLog().Warn(fmt.Sprintf("Configured model %s could not be adopted for session %s: %s", model, sid, err))
 	var userConfig map[string]any
 	if current := sessionAgent(session); current != nil {
 		userConfig = current.NotificationConfig()
 	}
 	_, _ = config.RenderNotification(ctx, func() error {
-		tuigateway.Emit(ctx, "error", sid, map[string]any{"message": fmt.Sprintf("Could not switch to configured model %s: %s", model, err)})
+		tuihost.Emit(ctx, "error", sid, map[string]any{"message": fmt.Sprintf("Could not switch to configured model %s: %s", model, err)})
 		return nil
 	}, "tui", true, userConfig)
 }

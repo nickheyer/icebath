@@ -145,7 +145,7 @@ func (t *RejectedThinkingTracker) persist(rejected map[string]bool) {
 		values[i] = k
 	}
 	if err := t.Store.PatchModelConfig(t.SessionID, map[string]any{anthRejectedThinkingConfigKey: values}); err != nil {
-		catalogLog.Debug("Anthropic thinking suppression persist failed", "error", err)
+		pkgLog().Debug("Anthropic thinking suppression persist failed", "error", err)
 	}
 }
 

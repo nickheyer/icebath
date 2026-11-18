@@ -65,7 +65,7 @@ func checkExclude(t *testing.T, excluded, kept []string) {
 }
 
 func TestShouldExclude(t *testing.T) {
-	t.Run("test_excludes_hermes_agent", func(t *testing.T) {
+	t.Run("test_excludes_icebath_agent", func(t *testing.T) {
 		checkExclude(t, []string{"icebath-agent/run_agent.py", "icebath-agent/.git/HEAD"}, nil)
 	})
 	t.Run("test_excludes_backups_dir", func(t *testing.T) {

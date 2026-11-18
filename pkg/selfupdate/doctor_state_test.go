@@ -56,6 +56,9 @@ func TestDoctorMemoryProviderSectionNoProviderShowsBuiltinOk(t *testing.T) {
 }
 
 func TestDoctorMemoryProviderSectionCatalogProviderNotInstalledNamesInstallCommand(t *testing.T) {
+	catalog := t.TempDir()
+	writeTestFile(t, filepath.Join(catalog, "mem0.yaml"), "name: mem0\nrepo: https://github.com/mem0ai/mem0\nsha: "+strings.Repeat("a", 40)+"\ncategory: memory\n", 0o644)
+	t.Cleanup(plugins.SwapCatalogDir(catalog))
 	d, buf := memoryDoctor(t, "memory:\n  provider: mem0\n", false)
 	out := memorySectionOutput(t, d, buf)
 	if strings.Contains(out, "Built-in memory active") || !strings.Contains(out, "mem0 plugin not found") || !strings.Contains(out, "plugins install mem0") {

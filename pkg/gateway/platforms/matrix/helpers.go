@@ -6,7 +6,6 @@ import (
 	"encoding/binary"
 	"errors"
 	"fmt"
-	"log/slog"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -88,7 +87,7 @@ func matrixVoiceMetadataForFile(path string) map[string]any {
 			}
 		}
 		if err != nil {
-			slog.Debug(fmt.Sprintf("Matrix: failed to probe voice duration for %s", path))
+			pkgLog().Debug(fmt.Sprintf("Matrix: failed to probe voice duration for %s", path))
 		}
 	}
 	if ffmpeg := whichFn("ffmpeg"); ffmpeg != "" {
@@ -116,7 +115,7 @@ func matrixVoiceMetadataForFile(path string) map[string]any {
 			}
 		}
 		if err != nil {
-			slog.Debug(fmt.Sprintf("Matrix: failed to build voice waveform for %s", path))
+			pkgLog().Debug(fmt.Sprintf("Matrix: failed to build voice waveform for %s", path))
 		}
 	}
 	return metadata
@@ -616,23 +615,23 @@ func getMatrixRecoveryKeyOutputTarget(ctx context.Context) (string, string) {
 func handleGeneratedMatrixRecoveryKey(ctx context.Context, mxid, recoveryKey string) {
 	outputPath, err := writeMatrixRecoveryKeyOutputFile(ctx, recoveryKey)
 	if errors.Is(err, os.ErrExist) {
-		slog.Warn(fmt.Sprintf("Matrix: bootstrapped cross-signing for %s. Recovery key output file "+
+		pkgLog().Warn(fmt.Sprintf("Matrix: bootstrapped cross-signing for %s. Recovery key output file "+
 			"already exists; refusing to overwrite. Store the generated key "+
 			"securely and set MATRIX_RECOVERY_KEY for future restarts.", mxid))
 		return
 	}
 	if err != nil {
-		slog.Warn(fmt.Sprintf("Matrix: bootstrapped cross-signing for %s, but failed to write "+
+		pkgLog().Warn(fmt.Sprintf("Matrix: bootstrapped cross-signing for %s, but failed to write "+
 			"MATRIX_RECOVERY_KEY_OUTPUT_FILE: %s. Store the generated key "+
 			"securely and set MATRIX_RECOVERY_KEY for future restarts.", mxid, pypath.OSErrorText(err)))
 		return
 	}
 	if outputPath != "" {
-		slog.Warn(fmt.Sprintf("Matrix: bootstrapped cross-signing for %s. A new recovery key was written to %s with mode 0600. Move it "+
+		pkgLog().Warn(fmt.Sprintf("Matrix: bootstrapped cross-signing for %s. A new recovery key was written to %s with mode 0600. Move it "+
 			"to your secret store and set MATRIX_RECOVERY_KEY for future restarts.", mxid, outputPath))
 		return
 	}
-	slog.Warn(fmt.Sprintf("Matrix: bootstrapped cross-signing for %s. A new recovery key was generated but will "+
+	pkgLog().Warn(fmt.Sprintf("Matrix: bootstrapped cross-signing for %s. A new recovery key was generated but will "+
 		"not be logged. Set MATRIX_RECOVERY_KEY_OUTPUT_FILE to write it once with mode 0600, "+
 		"or configure MATRIX_RECOVERY_KEY from your Matrix client before future restarts.", mxid))
 }
@@ -644,11 +643,11 @@ func scopedRecoveryKey(ctx context.Context) string {
 }
 
 var (
-	texTokenRE    = pyre.MustCompile(`HERMESTEX(?:DISPLAY|INLINE)(\d+)HERMESTEXEND`)
+	texTokenRE    = pyre.MustCompile(`ICEBATHTEX(?:DISPLAY|INLINE)(\d+)ICEBATHTEXEND`)
 	texDisplayRE  = pyre.MustCompile(`\$\$([^\n$]+?)\$\$`)
 	texInlineRE   = pyre.MustCompile(`(?<![\\$\w])\$([^\n$]+?)\$(?!\w)`)
-	texDisplayFmt = "HERMESTEXDISPLAY%dHERMESTEXEND"
-	texInlineFmt  = "HERMESTEXINLINE%dHERMESTEXEND"
+	texDisplayFmt = "ICEBATHTEXDISPLAY%dICEBATHTEXEND"
+	texInlineFmt  = "ICEBATHTEXINLINE%dICEBATHTEXEND"
 )
 
 // Tag and TeX source of one math span, div for display math and span for inline math
@@ -718,12 +717,12 @@ func matrixDepsPresent() bool { return true }
 func ensureMatrixDeps(ctx context.Context) (bool, error) {
 	e2eeMode := resolveE2EEMode(ctx, nil)
 	if e2eeMode == "required" && !checkE2EEDeps() {
-		slog.Error(fmt.Sprintf("Matrix: E2EE is required but dependencies are missing. %s. Without this, encrypted "+
+		pkgLog().Error(fmt.Sprintf("Matrix: E2EE is required but dependencies are missing. %s. Without this, encrypted "+
 			"rooms will not work. Set MATRIX_E2EE_MODE=off to disable E2EE.", e2eeInstallHint))
 		return false, nil
 	}
 	if e2eeMode == "optional" && !checkE2EEDeps() {
-		slog.Warn(fmt.Sprintf("Matrix: E2EE optional but dependencies are missing. %s", e2eeInstallHint))
+		pkgLog().Warn(fmt.Sprintf("Matrix: E2EE optional but dependencies are missing. %s", e2eeInstallHint))
 	}
 	return true, nil
 }
@@ -758,11 +757,11 @@ func checkMatrixRequirements(ctx context.Context) bool {
 		return pystr.Strip(v)
 	}
 	if scoped("MATRIX_ACCESS_TOKEN") == "" && scoped("MATRIX_PASSWORD") == "" {
-		slog.Debug("Matrix: neither MATRIX_ACCESS_TOKEN nor MATRIX_PASSWORD set")
+		pkgLog().Debug("Matrix: neither MATRIX_ACCESS_TOKEN nor MATRIX_PASSWORD set")
 		return false
 	}
 	if scoped("MATRIX_HOMESERVER") == "" {
-		slog.Warn("Matrix: MATRIX_HOMESERVER not set")
+		pkgLog().Warn("Matrix: MATRIX_HOMESERVER not set")
 		return false
 	}
 	ok, _ := ensureMatrixDeps(ctx)

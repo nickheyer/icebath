@@ -586,7 +586,7 @@ func (m *GoalManager) IsWaiting() bool {
 		} else if s.WaitingOnPID != nil {
 			target = *s.WaitingOnPID
 		}
-		goalsLogger().Info(fmt.Sprintf("goal %s: wait barrier on %s exceeded %ds; resuming judging", m.SessionID, pyrepr.Str(target), maxBarrierWaitS))
+		pkgLog().Info(fmt.Sprintf("goal %s: wait barrier on %s exceeded %ds; resuming judging", m.SessionID, pyrepr.Str(target), maxBarrierWaitS))
 		still = false
 	}
 	if !still {
@@ -633,7 +633,7 @@ func (m *GoalManager) applyWaitDirective(wait map[string]any, reason string, act
 		}
 		if err != nil {
 			if pyErr, isPy := err.(*pyint.Error); isPy && pyErr.Kind == "ValueError" {
-				goalsLogger().Info(fmt.Sprintf("goal judge: wait_on_pid %s is not alive on this host; continuing", pid))
+				pkgLog().Info(fmt.Sprintf("goal judge: wait_on_pid %s is not alive on this host; continuing", pid))
 				return nil, nil
 			}
 			return nil, err
@@ -787,7 +787,7 @@ func (m *GoalManager) RenderContract() string {
 }
 
 var (
-	// Judge the manager and the kanban loop ask, replaced by tests the way the hermes cases patch judge_goal
+	// Judge the manager and the kanban loop ask, replaced by tests
 	goalJudgeFn = JudgeGoal
 	// Pid barrier the judge driven wait sets, replaced by tests that race the liveness check
 	goalManagerWaitOn = (*GoalManager).WaitOn
@@ -876,8 +876,8 @@ func RunKanbanGoalLoop(ctx context.Context, o GoalLoopOptions) (GoalLoopResult, 
 			return result("stopped", "status="+plain)
 		}
 		judgeCtx := ctx
-		if provider.PortalAffinityScope(ctx) == "" {
-			judgeCtx = provider.WithPortalAffinityScope(ctx, "kanban:"+o.TaskID)
+		if provider.AffinityScope(ctx) == "" {
+			judgeCtx = provider.WithAffinityScope(ctx, "kanban:"+o.TaskID)
 		}
 		response, isText := lastResponse.(string)
 		if !isText && pystr.Strip(o.GoalText) != "" {

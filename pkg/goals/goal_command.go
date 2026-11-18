@@ -2,7 +2,6 @@ package goals
 
 import (
 	"fmt"
-	"log/slog"
 
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
@@ -20,10 +19,6 @@ type GoalCommandResult struct {
 
 // Renders a user facing goal message from its translation key, English default and values
 type GoalRender func(key, def string, values map[string]any) string
-
-func goalCommandLogger() *slog.Logger {
-	return slog.Default().With("logger", "hermes_cli.goal_command")
-}
 
 // English rendering that fills the default template and ignores the key
 func EnglishGoalRender(key, def string, values map[string]any) string {
@@ -219,7 +214,7 @@ func goalSet(m Manager, arg string, drafting bool, lastUserMessage any, render G
 		contract = func() (drafted *GoalContract) {
 			defer func() {
 				if r := recover(); r != nil {
-					goalCommandLogger().Debug(fmt.Sprintf("goal draft failed: %v", r))
+					pkgLog().Debug(fmt.Sprintf("goal draft failed: %v", r))
 					drafted = nil
 				}
 			}()

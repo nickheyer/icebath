@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"log/slog"
 	"math/big"
 	"net/http"
 	"net/url"
@@ -135,12 +134,12 @@ func (a *DiscordAdapter) handleDiscordMessage(ctx context.Context, m *inboundMes
 		channelKeys = a.discordChannelKeys(m, parentChannelID)
 		if allowed := a.getAllowedChannels(ctx); len(allowed) > 0 {
 			if !allowed.has("*") && !channelKeys.intersects(allowed) {
-				slog.Debug(fmt.Sprintf("[%s] Ignoring message in non-allowed channel: %v", a.Name(), keysOf(channelKeys)))
+				pkgLog().Debug(fmt.Sprintf("[%s] Ignoring message in non-allowed channel: %v", a.Name(), keysOf(channelKeys)))
 				return false
 			}
 		}
 		if ignored := a.getIgnoredChannels(ctx); ignored.has("*") || channelKeys.intersects(ignored) {
-			slog.Debug(fmt.Sprintf("[%s] Ignoring message in ignored channel: %v", a.Name(), keysOf(channelKeys)))
+			pkgLog().Debug(fmt.Sprintf("[%s] Ignoring message in ignored channel: %v", a.Name(), keysOf(channelKeys)))
 			return false
 		}
 		freeChannels := a.discordFreeResponseChannels(ctx)
@@ -172,7 +171,7 @@ func (a *DiscordAdapter) handleDiscordMessage(ctx context.Context, m *inboundMes
 				text := a.WarningText(ctx, i18n.T(ctx, "platform.discord.thread.auto_create_failed", "", nil), &hidden, "", "", nil)
 				if text != nil {
 					if _, err := a.channelSend(ctx, ch.ID, *text, nil); err != nil {
-						slog.Warn(fmt.Sprintf("[%s] Failed to notify user of auto-thread failure: %s", a.Name(), err))
+						pkgLog().Warn(fmt.Sprintf("[%s] Failed to notify user of auto-thread failure: %s", a.Name(), err))
 					}
 				}
 				return false
@@ -183,7 +182,7 @@ func (a *DiscordAdapter) handleDiscordMessage(ctx context.Context, m *inboundMes
 			a.dedup.IsDuplicate(thread.ID)
 			autoThreaded = thread
 			if err := a.threads.MarkAsync(ctx, threadID); err != nil {
-				slog.Debug(fmt.Sprintf("[%s] Thread participation save failed: %s", a.Name(), err))
+				pkgLog().Debug(fmt.Sprintf("[%s] Thread participation save failed: %s", a.Name(), err))
 			}
 		}
 	}
@@ -279,7 +278,7 @@ func (a *DiscordAdapter) handleDiscordMessage(ctx context.Context, m *inboundMes
 			if who == "" {
 				who = "unknown"
 			}
-			slog.Info(fmt.Sprintf("[%s] Ignoring mention-only message from %s in %s", a.Name(), who, m.ChannelID))
+			pkgLog().Info(fmt.Sprintf("[%s] Ignoring mention-only message from %s in %s", a.Name(), who, m.ChannelID))
 			return false
 		}
 		eventText = "(The user sent a message with no text content)"
@@ -307,15 +306,15 @@ func (a *DiscordAdapter) handleDiscordMessage(ctx context.Context, m *inboundMes
 	}
 	if threadID != "" {
 		if err := a.threads.MarkAsync(ctx, threadID); err != nil {
-			slog.Debug(fmt.Sprintf("[%s] Thread participation save failed: %s", a.Name(), err))
+			pkgLog().Debug(fmt.Sprintf("[%s] Thread participation save failed: %s", a.Name(), err))
 		}
 	}
 	if !recovered && msgType == gateway.MessageTypeText && a.textBatchDelaySeconds > 0 {
 		if err := a.EnqueueTextEvent(ctx, event); err != nil {
-			slog.Warn(fmt.Sprintf("[%s] Text batch enqueue failed: %s", a.Name(), err))
+			pkgLog().Warn(fmt.Sprintf("[%s] Text batch enqueue failed: %s", a.Name(), err))
 		}
 	} else if err := a.HandleMessage(ctx, event); err != nil {
-		slog.Warn(fmt.Sprintf("[%s] Message dispatch failed: %s", a.Name(), err))
+		pkgLog().Warn(fmt.Sprintf("[%s] Message dispatch failed: %s", a.Name(), err))
 	}
 	return true
 }
@@ -377,12 +376,12 @@ func (a *DiscordAdapter) collectAttachmentMedia(ctx context.Context, all []*disc
 			}
 			docMime, inAllowlist := mediacache.SupportedDocumentTypes[ext]
 			if limit := a.discordMaxAttachmentBytes(ctx); limit > 0 && att.Size > 0 && int64(att.Size) > limit {
-				slog.Warn(fmt.Sprintf("[Discord] Document too large (%d bytes > cap %d), skipping: %s", att.Size, limit, att.Filename))
+				pkgLog().Warn(fmt.Sprintf("[Discord] Document too large (%d bytes > cap %d), skipping: %s", att.Size, limit, att.Filename))
 				continue
 			}
 			raw, err := a.cacheDiscordDocument(ctx, att)
 			if err != nil {
-				slog.Warn(fmt.Sprintf("[Discord] Failed to cache document %s: %s", att.Filename, err))
+				pkgLog().Warn(fmt.Sprintf("[Discord] Failed to cache document %s: %s", att.Filename, err))
 				continue
 			}
 			name := att.Filename
@@ -391,7 +390,7 @@ func (a *DiscordAdapter) collectAttachmentMedia(ctx context.Context, all []*disc
 			}
 			cached, err := cacheDocumentFromBytesAsync(ctx, raw, name)
 			if err != nil {
-				slog.Warn(fmt.Sprintf("[Discord] Failed to cache document %s: %s", att.Filename, err))
+				pkgLog().Warn(fmt.Sprintf("[Discord] Failed to cache document %s: %s", att.Filename, err))
 				continue
 			}
 			if !inAllowlist {
@@ -407,7 +406,7 @@ func (a *DiscordAdapter) collectAttachmentMedia(ctx context.Context, all []*disc
 			if inAllowlist {
 				kind = "document"
 			}
-			slog.Info(fmt.Sprintf("[Discord] Cached user %s: %s", kind, cached))
+			pkgLog().Info(fmt.Sprintf("[Discord] Cached user %s: %s", kind, cached))
 			isText := gateway.TextInjectExtensions[ext] || strings.HasPrefix(contentType, "text/")
 			if isText && len(raw) <= maxTextInjectBytes && utf8.Valid(raw) {
 				display := att.Filename
@@ -688,10 +687,10 @@ func (a *DiscordAdapter) fetchChannelContext(ctx context.Context, ch *discordgo.
 	}
 	if err != nil {
 		if isDiscordForbidden(err) {
-			slog.Debug(fmt.Sprintf("[%s] Missing permissions to fetch channel history", a.Name()))
+			pkgLog().Debug(fmt.Sprintf("[%s] Missing permissions to fetch channel history", a.Name()))
 			return ""
 		}
-		slog.Warn(fmt.Sprintf("[%s] Failed to fetch channel history: %s", a.Name(), err))
+		pkgLog().Warn(fmt.Sprintf("[%s] Failed to fetch channel history: %s", a.Name(), err))
 		return ""
 	}
 	if len(collected) == 0 && len(replyCollected) == 0 {

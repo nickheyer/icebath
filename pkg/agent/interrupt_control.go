@@ -72,7 +72,7 @@ func fenceCancelBeforeCommit(fence any, whenInFlight bool, failureLog string) {
 	}
 	defer func() {
 		if r := recover(); r != nil {
-			runAgentLog().Debug(failureLog, "error", r)
+			pkgLog().Debug(failureLog, "error", r)
 		}
 	}()
 	f.CancelBeforeCommit(nil)
@@ -170,7 +170,7 @@ func (a *AIAgent) icAbortActiveRequest(reason, failureLog string) {
 	}
 	defer func() {
 		if r := recover(); r != nil {
-			runAgentLog().Debug(failureLog, "error", r)
+			pkgLog().Debug(failureLog, "error", r)
 		}
 	}()
 	a.abortActiveRequest(reason)
@@ -241,7 +241,7 @@ func (a *AIAgent) InterruptWith(message string, o InterruptOptions) bool {
 		if o.HardCancel {
 			mode = "hard"
 		}
-		runAgentLog().Info(fmt.Sprintf("Interrupt requested (%s): %s", mode, toolInterruptReason))
+		pkgLog().Info(fmt.Sprintf("Interrupt requested (%s): %s", mode, toolInterruptReason))
 		if o.HardCancel && a.hardInterruptRequested != nil {
 			a.hardInterruptRequested.Set()
 		}
@@ -259,7 +259,7 @@ func (a *AIAgent) InterruptWith(message string, o InterruptOptions) bool {
 		func() {
 			defer func() {
 				if r := recover(); r != nil {
-					runAgentLog().Debug("Failed to interrupt Codex app-server turn", "error", r)
+					pkgLog().Debug("Failed to interrupt Codex app-server turn", "error", r)
 				}
 			}()
 			s.RequestInterrupt()
@@ -329,7 +329,7 @@ func (a *AIAgent) activeChildrenSnapshot() []*AIAgent {
 func propagateInterruptToChild(child *AIAgent, message, toolReason string, hard bool) {
 	defer func() {
 		if r := recover(); r != nil {
-			runAgentLog().Debug(fmt.Sprintf("Failed to propagate interrupt to child agent: %v", r))
+			pkgLog().Debug(fmt.Sprintf("Failed to propagate interrupt to child agent: %v", r))
 		}
 	}()
 	if hard {
@@ -408,7 +408,7 @@ func (a *AIAgent) Redirect(text string) bool {
 		}
 		accepted, err := s.RequestSteer(cleaned)
 		if err != nil {
-			runAgentLog().Debug("Codex app-server turn/steer failed", "error", err)
+			pkgLog().Debug("Codex app-server turn/steer failed", "error", err)
 			return false
 		}
 		if accepted {

@@ -9,7 +9,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/config"
 )
 
-// Every declared wire vocabulary of the module, the dir(mod) *_EFFORTS walk of the hermes tests
+// Every declared wire vocabulary of the module, the dir(mod) *EFFORTS walk of the tests
 var declaredWireEffortSets = map[string][]string{
 	"OPENAI_COMPAT_WIRE_EFFORTS": openAICompatWireEfforts, "CODEX_GPT56_EFFORTS": codexGPT56Efforts, "CODEX_LEGACY_EFFORTS": codexLegacyEfforts,
 	"CODEX_ASTRA_EFFORTS": codexAstraEfforts, "XAI_GROK46_EFFORTS": xaiGrok46Efforts, "XAI_LEGACY_EFFORTS": xaiLegacyEfforts,

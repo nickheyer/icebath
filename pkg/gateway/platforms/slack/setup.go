@@ -35,7 +35,7 @@ func BuildFullManifest(ctx context.Context, botName, botDescription string, incl
 	}
 	experience = pystr.Lower(pystr.Strip(experience))
 	if experience != "assistant" && experience != "agent" && experience != "none" {
-		return nil, errors.New("ValueError: messaging_experience must be one of: assistant, agent, none")
+		return nil, errors.New("messaging_experience must be assistant, agent or none")
 	}
 	slashes, err := slashCommandEntries(ctx)
 	if err != nil {

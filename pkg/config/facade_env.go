@@ -13,7 +13,7 @@ import (
 var TerminalConfigEnvMap = func() [][2]string {
 	out := [][2]string{{"backend", "TERMINAL_ENV"}}
 	for _, key := range []string{
-		"modal_mode", "degraded_mode", "cwd", "temp_dir", "timeout", "lifetime_seconds",
+		"degraded_mode", "cwd", "temp_dir", "timeout", "lifetime_seconds",
 		"docker_image", "docker_forward_env", "modal_image",
 		"daytona_image", "vercel_runtime", "vercel_image", "ssh_host", "ssh_user", "ssh_port", "ssh_key",
 		"container_cpu", "container_memory", "container_disk", "container_persistent",

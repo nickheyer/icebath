@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
-	"log/slog"
 	"math/big"
 	"os"
 	"os/exec"
@@ -595,7 +594,7 @@ func containsString(list []string, s string) bool {
 }
 
 // Warns through the default logger with Python percent formatting already applied
-func logWarning(format string, args ...any) { slog.Warn(fmt.Sprintf(format, args...)) }
+func logWarning(format string, args ...any) { pkgLog().Warn(fmt.Sprintf(format, args...)) }
 
 // Start error of the agent CLI, true when Python raises FileNotFoundError for it
 func isNotFound(err error) bool {

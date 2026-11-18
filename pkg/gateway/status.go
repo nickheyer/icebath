@@ -20,6 +20,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/nickheyer/icebath/pkg/config"
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pydatetime"
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
@@ -45,7 +46,7 @@ const (
 // Exit reasons the out of loop watchdogs stamp with a degraded state before a hard exit
 var WatchdogExitReasons = map[string]bool{"loop_liveness_watchdog": true, "shutdown_watchdog": true}
 
-// Seams over the process facts status reads, replaced by tests the way hermes tests monkeypatch the module
+// Seams over the process facts status reads, replaced by tests
 var (
 	statusIsWindows               = runtime.GOOS == "windows"
 	statusGetpid                  = os.Getpid
@@ -66,6 +67,15 @@ func recGet(r *pyjson.Object, key string) any {
 		return nil
 	}
 	v, _ := r.Get(key)
+	return v
+}
+
+// Home value of a record key, accepting the spelling a record of an older icebath carries
+func recHome(r *pyjson.Object, key string) any {
+	if r == nil {
+		return nil
+	}
+	v, _ := home.RecordValue(r.Get, key)
 	return v
 }
 
@@ -116,23 +126,23 @@ func pyIsInt(v any) bool {
 }
 
 // Launch home that owns the identity files, never the per session override
-func processHermesHome() string { return home.Process() }
+func processIcebathHome() string { return home.Process() }
 
 // Stable absolute home path for persisted identity data
-func canonicalHermesHome(p string) (string, error) {
+func canonicalIcebathHome(p string) (string, error) {
 	return pypath.Realpath(pypath.Expanduser(p), pypath.Lax)
 }
 
 // Compares two home paths with the host platform case rules for callers outside this package
-func SameHermesHome(left, right string) (bool, error) { return sameHermesHome(left, right) }
+func SameIcebathHome(left, right string) (bool, error) { return sameIcebathHome(left, right) }
 
 // Compares two home paths with the host platform case rules
-func sameHermesHome(left, right string) (bool, error) {
-	l, err := canonicalHermesHome(left)
+func sameIcebathHome(left, right string) (bool, error) {
+	l, err := canonicalIcebathHome(left)
 	if err != nil {
 		return false, err
 	}
-	r, err := canonicalHermesHome(right)
+	r, err := canonicalIcebathHome(right)
 	if err != nil {
 		return false, err
 	}
@@ -141,15 +151,15 @@ func sameHermesHome(left, right string) (bool, error) {
 
 // Whether a persisted record names a different home than expected, failing closed when the comparison errors
 func RecordedGatewayHomeConflicts(record *pyjson.Object, expectedHome string) bool {
-	recorded, ok := recGet(record, "hermes_home").(string)
+	recorded, ok := recHome(record, home.RecordKey).(string)
 	if !ok || pystr.Strip(recorded) == "" {
 		return false
 	}
 	base := expectedHome
 	if base == "" {
-		base = processHermesHome()
+		base = processIcebathHome()
 	}
-	same, err := sameHermesHome(recorded, base)
+	same, err := sameIcebathHome(recorded, base)
 	return err != nil || !same
 }
 
@@ -160,7 +170,7 @@ func ProfileLabelForHome(h string) string { return profileLabelForHomeLive(h) }
 
 // Profile label of a home, the profiles child name, default for the root home, empty when unknown
 func profileLabelForHomeLive(h string) string {
-	canonical, err := canonicalHermesHome(h)
+	canonical, err := canonicalIcebathHome(h)
 	if err != nil {
 		return ""
 	}
@@ -168,7 +178,7 @@ func profileLabelForHomeLive(h string) string {
 		return pypath.PathName(canonical)
 	}
 	for _, defaultHome := range []func() string{home.Root, home.PlatformDefault} {
-		if same, err := sameHermesHome(canonical, defaultHome()); err == nil && same {
+		if same, err := sameIcebathHome(canonical, defaultHome()); err == nil && same {
 			return "default"
 		}
 	}
@@ -184,7 +194,7 @@ func ScopedLockOwnerLabel(record any) string {
 	if profile, ok := recGet(r, "profile").(string); ok && profileLabelRe.MatchString(pystr.Strip(profile)) {
 		return pystr.Strip(profile)
 	}
-	if h, ok := recGet(r, "hermes_home").(string); ok && pystr.Strip(h) != "" {
+	if h, ok := recHome(r, home.RecordKey).(string); ok && pystr.Strip(h) != "" {
 		return statusProfileLabelForHome(h)
 	}
 	return ""
@@ -193,7 +203,7 @@ func ScopedLockOwnerLabel(record any) string {
 // Sibling of path named name, Path.with_name
 func pathWithName(path, name string) string { return pypath.PathJoin(pypath.PathParent(path), name) }
 
-func pidPath() string { return filepath.Join(processHermesHome(), "gateway.pid") }
+func pidPath() string { return filepath.Join(processIcebathHome(), "gateway.pid") }
 
 // Lock path beside the pid file, the process pid file when pidPath is empty
 func gatewayLockPathLive(p string) string {
@@ -205,7 +215,7 @@ func gatewayLockPathLive(p string) string {
 
 var statusGatewayLockPath = gatewayLockPathLive
 
-func runtimeStatusPath() string { return filepath.Join(processHermesHome(), runtimeStatusFile) }
+func runtimeStatusPath() string { return filepath.Join(processIcebathHome(), runtimeStatusFile) }
 
 // Per user rendezvous directory for machine local locks, ICEBATH_GATEWAY_LOCK_DIR overriding
 func GatewayLockDir() string {
@@ -403,16 +413,16 @@ func recordArgvLive() []any {
 
 func buildPidRecordLive() *pyjson.Object {
 	pid := statusGetpid()
-	h, err := canonicalHermesHome(processHermesHome())
+	h, err := canonicalIcebathHome(processIcebathHome())
 	if err != nil {
-		panic(fmt.Sprintf("gateway: process home %q cannot be resolved: %v", processHermesHome(), err))
+		panic(fmt.Sprintf("gateway: process home %q cannot be resolved: %v", processIcebathHome(), err))
 	}
 	r := pyjson.NewObject()
 	r.Set("pid", int64(pid))
 	r.Set("kind", gatewayKind)
 	r.Set("argv", statusRecordArgv())
 	r.Set("start_time", statusProcessStartTime(pid))
-	r.Set("hermes_home", h)
+	r.Set(home.RecordKey, h)
 	return r
 }
 
@@ -430,15 +440,15 @@ func pidRecordBelongsToCurrentProfile(record *pyjson.Object) (bool, error) {
 	if record == nil {
 		return false, nil
 	}
-	recordHome := recGet(record, "hermes_home")
+	recordHome := recHome(record, home.RecordKey)
 	if !pyrepr.Truthy(recordHome) {
 		return true, nil
 	}
 	s, ok := recordHome.(string)
 	if !ok {
-		return false, fmt.Errorf("TypeError: expected str, bytes or os.PathLike object, not %s", pyrepr.TypeName(recordHome))
+		return false, fmt.Errorf("the gateway pid record names its home as %s, expected a path", errchain.Kind(recordHome))
 	}
-	return sameHermesHome(s, processHermesHome())
+	return sameIcebathHome(s, processIcebathHome())
 }
 
 func buildRuntimeStatusRecord() *pyjson.Object {

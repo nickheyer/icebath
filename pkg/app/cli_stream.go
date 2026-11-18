@@ -104,7 +104,7 @@ func (c *CLI) onThinking(text any) {
 		return nil
 	}
 	if _, err := config.RenderNotification(c.ctx, show, "cli", diagnostic, c.agentNotificationConfig()); err != nil {
-		cliLogger.Debug("thinking callback failed", "error", err)
+		pkgLog().Debug("thinking callback failed", "error", err)
 	}
 }
 
@@ -269,7 +269,7 @@ func (c *CLI) expandPasteReferences(text string) (string, error) {
 		path := pasteRefRe.FindStringSubmatch(match)[1]
 		raw, err := os.ReadFile(path)
 		if err != nil {
-			cliLogger.Warn(fmt.Sprintf("Paste file gone or unreadable, returning placeholder: %s", path))
+			pkgLog().Warn(fmt.Sprintf("Paste file gone or unreadable, returning placeholder: %s", path))
 			return match
 		}
 		content, err := pystr.DecodeUTF8Sig(raw)
@@ -1070,7 +1070,7 @@ func (c *CLI) onToolComplete(toolCallID, functionName string, functionArgs map[s
 	c.streamMu.Unlock()
 	defer func() {
 		if r := recover(); r != nil {
-			cliLogger.Debug(fmt.Sprintf("Edit diff preview failed for %s", functionName), "error", r)
+			pkgLog().Debug(fmt.Sprintf("Edit diff preview failed for %s", functionName), "error", r)
 		}
 	}()
 	tools.RenderEditDiffWithDelta(c.ctx, functionName, functionResult, functionArgs, snapshot, diffPrinter(cprint))

@@ -193,7 +193,7 @@ func TestWorktreeLockPredicateForeignLockReasonReturnsDead(t *testing.T) {
 	}
 }
 
-func TestWorktreeLockPredicateUnparseableHermesLockReasonFailsSafeToLive(t *testing.T) {
+func TestWorktreeLockPredicateUnparseableIcebathLockReasonFailsSafeToLive(t *testing.T) {
 	repo := twRepo(t)
 	p := twMkLockedReason(t, repo, "icebath-future", "icebath owner=v2 pid=12x")
 	if got := worktreeLockIsLive(repo, p, 10*time.Second); got != "live" {

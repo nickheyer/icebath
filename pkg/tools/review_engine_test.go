@@ -136,19 +136,19 @@ func skillCall(args string) map[string]any {
 
 func TestCollectSkillsFromPreloadedPromptAndHistory(t *testing.T) {
 	parent := &reviewParentDouble{prompt: "[IMPORTANT: The user launched this CLI session with the " +
-		"\"hermes-agent-dev\" skill preloaded. Treat its instructions as " +
+		"\"icebath-agent-dev\" skill preloaded. Treat its instructions as " +
 		"active guidance for the duration of this session unless the user " +
 		"overrides them.]"}
 	msgs := []map[string]any{
 		{"role": "assistant", "content": "", "tool_calls": []any{
 			skillCall(`{"name": "github-pr-workflow"}`),
-			skillCall(`{"name": "hermes-agent-dev", "file_path": "references/x.md"}`),
+			skillCall(`{"name": "icebath-agent-dev", "file_path": "references/x.md"}`),
 			map[string]any{"function": map[string]any{"name": "read_file", "arguments": `{"path": "/tmp/x"}`}},
 		}},
 		{"role": "assistant", "content": "", "tool_calls": []any{skillCall(`{"name": "github-pr-workflow"}`)}},
 	}
 	names := CollectParentLoadedSkills(parent, msgs, 8)
-	if !reflect.DeepEqual(names, []string{"hermes-agent-dev", "github-pr-workflow"}) {
+	if !reflect.DeepEqual(names, []string{"icebath-agent-dev", "github-pr-workflow"}) {
 		t.Fatalf("names %q", names)
 	}
 }
@@ -170,8 +170,8 @@ func TestCollectSkillsCapsAtLimit(t *testing.T) {
 }
 
 func TestBriefingIncludesLoadedSkillsInstruction(t *testing.T) {
-	_, context := BuildReviewTask([]map[string]string{{"role": "user", "text": "review my PR"}}, "", []string{"hermes-agent-dev", "xitter"})
-	if !strings.Contains(context, "hermes-agent-dev, xitter") || !strings.Contains(context, "skill_view") {
+	_, context := BuildReviewTask([]map[string]string{{"role": "user", "text": "review my PR"}}, "", []string{"icebath-agent-dev", "xitter"})
+	if !strings.Contains(context, "icebath-agent-dev, xitter") || !strings.Contains(context, "skill_view") {
 		t.Fatalf("context %q", context)
 	}
 }

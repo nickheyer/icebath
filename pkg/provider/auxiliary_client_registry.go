@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"log/slog"
 	"strings"
 
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
@@ -61,7 +60,7 @@ func auxLogOnceDebug(seen *auxOnceSet, key string, msg string, args ...any) {
 	if len(args) > 0 {
 		msg = fmt.Sprintf(msg, args...)
 	}
-	slog.Debug(msg)
+	pkgLog().Debug(msg)
 }
 
 // Anthropic wire client over a refreshing MiniMax OAuth bearer, empty when signed out or incomplete
@@ -100,7 +99,7 @@ func auxResolveMinimaxOAuthArm(ctx context.Context, req auxResolveRequest) (auxR
 			return auxResolveResult{}, nil
 		}
 		if auxLoggedMinimaxUnexpectedKeys.add("minimax-oauth") {
-			slog.Warn(fmt.Sprintf("resolve_provider_client: unexpected minimax-oauth resolution failure: %s", err), "err", err)
+			pkgLog().Warn(fmt.Sprintf("resolve_provider_client: unexpected minimax-oauth resolution failure: %s", err), "err", err)
 		}
 		return auxResolveResult{}, nil
 	}

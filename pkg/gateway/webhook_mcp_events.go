@@ -3,7 +3,6 @@ package gateway
 import (
 	"context"
 	"fmt"
-	"log/slog"
 	"net/http"
 	"strconv"
 	"strings"
@@ -22,11 +21,6 @@ const (
 	mcpEventMaxEventDataChars     = 32_000
 	mcpEventTruncatedNoteTemplate = "%s\n[truncated: the first %s of %s characters]"
 )
-
-// Logger of the MCP event route module
-func webhookMCPEventsLog() *slog.Logger {
-	return slog.Default().With("logger", "gateway.platforms.webhook_mcp_events")
-}
 
 // JSON response of an MCP event control envelope
 func mcpEventJSON(body *pyjson.Object, status int) (*WebResponse, error) {
@@ -124,7 +118,7 @@ func mcpEventVerification(ctx context.Context, adapter *WebhookAdapter, routeNam
 	if !ok || challenge == "" || utf8.RuneCountInString(challenge) > mcpEventMaxChallengeChars {
 		return mcpEventJSON(pyjson.ObjectOf("error", "Invalid verification challenge"), http.StatusBadRequest)
 	}
-	webhookMCPEventsLog().Info(fmt.Sprintf("[webhook] MCP event route %s answered the server's verification challenge", routeName))
+	pkgLog().Info(fmt.Sprintf("[webhook] MCP event route %s answered the server's verification challenge", routeName))
 	return mcpEventJSON(pyjson.ObjectOf("challenge", challenge), http.StatusOK)
 }
 
@@ -141,7 +135,7 @@ func mcpEventTerminated(ctx context.Context, adapter *WebhookAdapter, routeName 
 	if err := mcpEventRemoveRoute(ctx, routeName); err != nil {
 		return nil, err
 	}
-	webhookMCPEventsLog().Warn(fmt.Sprintf("[webhook] MCP server '%s' ended event subscription %s (%s): %s",
+	pkgLog().Warn(fmt.Sprintf("[webhook] MCP server '%s' ended event subscription %s (%s): %s",
 		pyrepr.Str(event.GetOr("server", nil)), routeName, pyrepr.Str(event.GetOr("name", nil)), pyrepr.Str(errorInfo)))
 	if deliver := routeConfig.GetOr("deliver", "log"); !pyrepr.Equal(deliver, "log") {
 		reason := errorInfo.GetOr("message", nil)
@@ -165,7 +159,7 @@ func mcpEventGap(ctx context.Context, adapter *WebhookAdapter, routeName string,
 			return nil, err
 		}
 	}
-	webhookMCPEventsLog().Warn(fmt.Sprintf("[webhook] MCP event route %s: the server skipped events (gap); resuming from a fresh cursor", routeName))
+	pkgLog().Warn(fmt.Sprintf("[webhook] MCP event route %s: the server skipped events (gap); resuming from a fresh cursor", routeName))
 	return mcpEventJSON(pyjson.ObjectOf("status", "gap"), http.StatusOK)
 }
 
@@ -190,7 +184,7 @@ func HandleMCPEventControl(ctx context.Context, adapter *WebhookAdapter, routeNa
 		}
 	}
 	if found {
-		webhookMCPEventsLog().Info(fmt.Sprintf("[webhook] MCP event route %s: ignoring a control envelope of unknown type %s", routeName, pyrepr.Repr(kind)))
+		pkgLog().Info(fmt.Sprintf("[webhook] MCP event route %s: ignoring a control envelope of unknown type %s", routeName, pyrepr.Repr(kind)))
 		var reported any
 		if isText {
 			reported = kindText

@@ -5,7 +5,6 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
-	"log/slog"
 	"math"
 	"path/filepath"
 	"strings"
@@ -162,7 +161,7 @@ func forgetPersistedClose(ctx context.Context, a *SessionAuthority, sessionID, r
 	})
 	var refusal *state.RuntimeStoreError
 	if errors.As(err, &refusal) {
-		slog.Info(fmt.Sprintf("Stored close for %s left in place: %s", sessionID, refusal.Error()))
+		pkgLog().Info(fmt.Sprintf("Stored close for %s left in place: %s", sessionID, refusal.Error()))
 		return false, nil
 	}
 	return removed != 0, err
@@ -586,12 +585,12 @@ func resolveAbandonedUnknown(ctx context.Context, a *SessionAuthority, sessionID
 		if _, err := a.ResolveUnknownAsOwner(ctx, ref, id, generation, nil); err != nil {
 			var refusal *state.RuntimeStoreError
 			if errors.As(err, &refusal) {
-				slog.Warn(fmt.Sprintf("Unknown turn %s on closed session %s left paused: %s", id, sessionID, refusal.Reason))
+				pkgLog().Warn(fmt.Sprintf("Unknown turn %s on closed session %s left paused: %s", id, sessionID, refusal.Reason))
 				return false, nil
 			}
 			return false, err
 		}
-		slog.Info(fmt.Sprintf("Unknown turn %s resolved interrupted: its session %s was closed by its last viewer", id, sessionID))
+		pkgLog().Info(fmt.Sprintf("Unknown turn %s resolved interrupted: its session %s was closed by its last viewer", id, sessionID))
 	}
 	return stillPending(a, sessionID, live, close), nil
 }
@@ -652,7 +651,7 @@ func runCloseLifecycle(ctx context.Context, a *SessionAuthority, live *LiveSessi
 		return err
 	}
 	if len(messages) > 0 {
-		slog.Info(fmt.Sprintf("Session-end plugin message(s) for %s dropped: no viewer", target))
+		pkgLog().Info(fmt.Sprintf("Session-end plugin message(s) for %s dropped: no viewer", target))
 	}
 	reset, ok := a.Runner.(sessionResettingRunner)
 	if viewerResetReasons[reason] && ok {

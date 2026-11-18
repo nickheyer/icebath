@@ -6,8 +6,8 @@ import (
 
 func TestRepairsExplicitComputerUseMediaPathFromJSONResult(t *testing.T) {
 	captureName := "computer_use_0123456789abcdef0123456789abcdef.png"
-	canonical := `C:\Users\Alice\AppData\Local\hermes\cache\images\` + captureName
-	response := "Here is the screenshot.\nMEDIA:/Users/Alice/AppData/Local/hermes/cache/images/" + captureName
+	canonical := `C:\Users\Alice\AppData\Local\icebath\cache\images\` + captureName
+	response := "Here is the screenshot.\nMEDIA:/Users/Alice/AppData/Local/icebath/cache/images/" + captureName
 	messages := []any{
 		map[string]any{"role": "assistant", "tool_calls": []any{
 			map[string]any{"id": "capture", "function": map[string]any{"name": "computer_use"}},
@@ -21,8 +21,8 @@ func TestRepairsExplicitComputerUseMediaPathFromJSONResult(t *testing.T) {
 
 func TestRepairsExplicitPathFromMultimodalTextSummary(t *testing.T) {
 	captureName := "computer_use_fedcba9876543210fedcba9876543210.jpg"
-	canonical := `D:\Hermes Data\cache\images\` + captureName
-	response := `MEDIA:"/Users/Alice/Hermes Data/cache/images/` + captureName + `"`
+	canonical := `D:\Icebath Data\cache\images\` + captureName
+	response := `MEDIA:"/Users/Alice/Icebath Data/cache/images/` + captureName + `"`
 	messages := []any{map[string]any{
 		"role": "tool", "name": "computer_use", "tool_call_id": "capture",
 		"content": []any{
@@ -36,7 +36,7 @@ func TestRepairsExplicitPathFromMultimodalTextSummary(t *testing.T) {
 }
 
 func TestDoesNotAutoAttachComputerUseCapture(t *testing.T) {
-	canonical := `C:\Users\Alice\AppData\Local\hermes\cache\images\computer_use_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.png`
+	canonical := `C:\Users\Alice\AppData\Local\icebath\cache\images\computer_use_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.png`
 	messages := []any{map[string]any{"role": "tool", "name": "computer_use", "content": pyDumps(t, map[string]any{"screenshot_path": canonical})}}
 	if got := RepairExplicitComputerUseMediaPaths("Done.", messages); got != "Done." {
 		t.Fatalf("got %q", got)
@@ -60,13 +60,13 @@ func TestDoesNotRewriteUnmatchedOrPreviousTurnCapture(t *testing.T) {
 
 func TestMalformedJSONResultFailsClosed(t *testing.T) {
 	captureName := "computer_use_dddddddddddddddddddddddddddddddd.png"
-	canonical := `C:\Users\Alice\AppData\Local\hermes\cache\images\` + captureName
+	canonical := `C:\Users\Alice\AppData\Local\icebath\cache\images\` + captureName
 	payload := pyDumps(t, map[string]any{
 		"summary":         "capture\n  (shareable screenshot saved to " + canonical + ")",
 		"screenshot_path": canonical,
 	})
 	truncated := payload[:len(payload)-5]
-	response := "MEDIA:/Users/Alice/AppData/Local/hermes/cache/images/" + captureName
+	response := "MEDIA:/Users/Alice/AppData/Local/icebath/cache/images/" + captureName
 	messages := []any{map[string]any{"role": "tool", "name": "computer_use", "content": truncated}}
 	if got := RepairExplicitComputerUseMediaPaths(response, messages); got != response {
 		t.Fatalf("got %q, want %q", got, response)

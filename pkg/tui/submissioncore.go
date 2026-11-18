@@ -2,7 +2,7 @@ package tui
 
 import (
 	"errors"
-	"reflect"
+	"github.com/nickheyer/icebath/pkg/tuigateway"
 	"regexp"
 	"slices"
 	"strings"
@@ -43,11 +43,6 @@ func errorCode(err error) (int64, bool) {
 // Error JavaScript raises reading a property of a null answer
 func nullPropertyError(property string) error {
 	return errors.New("Cannot read properties of null (reading '" + property + "')")
-}
-
-// Whether two maps are the same object
-func sameMap(a, b map[string]any) bool {
-	return reflect.ValueOf(a).UnsafePointer() == reflect.ValueOf(b).UnsafePointer()
 }
 
 // Gateway surface of a prompt submission, the gateway client in production
@@ -232,11 +227,7 @@ func (p *promptSubmitter) settleAdmissionReply(item *queueItem, r map[string]any
 // Reads the owner's running state after an admission that settled at once, applied while nothing newer arrived
 func (p *promptSubmitter) refreshExecutionStatus(focused func() bool, owner submissionDestination, sid string) tea.Cmd {
 	observed := p.store.ui.Info
-	return gatewayCall(p.gw, "session.activate", map[string]any{"session_id": sid, "omit_messages": true}, func(v any, err error) tea.Cmd {
-		snapshot := asRPCResult(v)
-		if err == nil && snapshot == nil {
-			err = nullPropertyError("info")
-		}
+	settle := func(a *attachment, err error) tea.Cmd {
 		if err != nil {
 			if focused() {
 				p.deps.sys(tr("canonical.submit.executionUnconfirmed", err.Error()))
@@ -244,46 +235,39 @@ func (p *promptSubmitter) refreshExecutionStatus(focused func() bool, owner subm
 			return nil
 		}
 		current := p.store.ui.Info
-		info, _ := snapshot["info"].(map[string]any)
-		stored := snapshot["session_key"]
-		if !truthyJS(stored) {
-			stored = info["stored_session_id"]
-		}
-		running, isBool := snapshot["running"].(bool)
-		ownerStored := any(nil)
-		if owner.StoredSid != "" {
-			ownerStored = owner.StoredSid
-		}
-		stale := !focused() || !sameMap(current, observed) || snapshot["session_id"] != sid || !jsStrictEqual(stored, ownerStored) || !isBool
-		if _, stamped := field(current, "execution_generation"); !stale && stamped {
-			generation := -1.0
-			if g, isNum := info["execution_generation"].(float64); isNum {
-				generation = g
-			}
-			stale = !sameField(info, current, "execution_epoch") || !isSafeInteger(info["execution_generation"]) || generation < jsNumberOf(current["execution_generation"])
+		stale := !focused() || current != observed || a.SessionID != sid || a.StoredSID != owner.StoredSid
+		if held := infoOf(current).ExecutionGeneration; !stale && held != nil {
+			answered := a.Info.ExecutionGeneration
+			stale = !sameStamp(a.Info.AuthorityEpoch, current.AuthorityEpoch) || answered == nil || *answered < *held
 		}
 		if stale {
 			return nil
 		}
-		p.store.ui.Busy, p.store.ui.Status = running, "ready"
-		if running {
+		p.store.ui.Busy, p.store.ui.Status = a.Running, "ready"
+		if a.Running {
 			p.store.ui.Status = "running…"
 		}
 		if current != nil {
-			next := make(map[string]any, len(current)+3)
-			for k, v := range current {
-				next[k] = v
-			}
-			if v, has := info["execution_epoch"]; has && v != nil {
-				next["execution_epoch"] = v
-			}
-			if v, has := info["execution_generation"]; has && v != nil {
-				next["execution_generation"] = v
-			}
-			next["running"] = running
-			p.store.ui.Info = next
+			running := a.Running
+			p.store.ui.Info = patchedInfo(current, tuigateway.SessionInfo{AuthorityEpoch: a.Info.AuthorityEpoch, ExecutionGeneration: a.Info.ExecutionGeneration, Running: &running})
 		}
 		return nil
+	}
+	if p.gw.canonical() {
+		return call(p.gw, tuigateway.CanonicalSessionResume, tuigateway.CanonicalResumeParams{SessionID: sid, OmitMessages: true}, func(r *tuigateway.CanonicalSnapshot, err error) tea.Cmd {
+			if err != nil {
+				return settle(nil, err)
+			}
+			a := snapshotAttachment(r)
+			return settle(&a, nil)
+		})
+	}
+	return call(p.gw, tuigateway.SessionActivate, tuigateway.SessionActivateParams{SessionID: sid, OmitMessages: true}, func(r *tuigateway.SessionActivateResult, err error) tea.Cmd {
+		if err != nil {
+			return settle(nil, err)
+		}
+		a := resumedAttachment(r, firstText(val(r.SessionKey), val(r.Info.StoredSessionID)))
+		return settle(&a, nil)
 	})
 }
 

@@ -10,10 +10,10 @@ import (
 )
 
 const (
-	healthyPrompt = "You are Hermes.\n" +
+	healthyPrompt = "You are Icebath.\n" +
 		"<available_skills>\n  dogfood: exploratory QA of web apps\n</available_skills>\n" +
 		agent.SkillsGuidance + "\n"
-	degradedPrompt = "You are Hermes.\n(reduced maintenance build without the skills index)\n"
+	degradedPrompt = "You are Icebath.\n(reduced maintenance build without the skills index)\n"
 )
 
 // Versioned tools pin carrying one function definition per name
@@ -122,7 +122,7 @@ func TestScanLeavesReducedMemoryOnlyZeroSkillsRowsAndSessionIDOverrides(t *testi
 	db := sessionsTestDB(t, h)
 	promptSession(t, db, "reduced-1", degradedPrompt, toolsPin("todo", "web_search"))
 	promptSession(t, db, "memory-only-1", degradedPrompt, toolsPin("memory"))
-	zeroSkills := "You are Hermes.\nNo skills are installed.\n"
+	zeroSkills := "You are Icebath.\nNo skills are installed.\n"
 	promptSession(t, db, "zero-skills-readonly", zeroSkills, toolsPin("terminal", "skills_list", "skill_view"))
 	payload := applyJSON(t, h, db)
 	if got := reportIDs(t, payload["cleared"]); len(got) != 0 {
@@ -158,7 +158,7 @@ func TestScanLeavesReducedMemoryOnlyZeroSkillsRowsAndSessionIDOverrides(t *testi
 func TestScanLeavesAHealthyPromptStoredBeforeTheSkillGuidanceRewordings(t *testing.T) {
 	h := sessionsTestHome(t)
 	db := sessionsTestDB(t, h)
-	legacy := "You are Hermes.\n" +
+	legacy := "You are Icebath.\n" +
 		"<available_skills>\n  dogfood: exploratory QA of web apps\n</available_skills>\n" +
 		"After completing a complex task (5+ tool calls), fixing a tricky error, or discovering a non-trivial " +
 		"workflow, save the approach as a skill with skill_manage so you can reuse it next time.\n\n" +

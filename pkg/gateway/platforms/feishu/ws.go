@@ -5,7 +5,6 @@ import (
 	"context"
 	"encoding/json"
 	"io"
-	"log/slog"
 	"net"
 	"net/http"
 	"reflect"
@@ -138,7 +137,7 @@ func (l *wsLink) overrideConfig(conf *larkws.ClientConfig) {
 	}
 }
 
-// Unexported SDK client field, the Go reach of the private attributes hermes sets on the Python client
+// Unexported SDK client field reached through reflection
 func sdkField(target reflect.Value, name string) reflect.Value {
 	f := target.FieldByName(name)
 	return reflect.NewAt(f.Type(), unsafe.Pointer(f.UnsafeAddr())).Elem()
@@ -148,7 +147,7 @@ func sdkField(target reflect.Value, name string) reflect.Value {
 func (l *wsLink) applyRuntimeOverrides() {
 	defer func() {
 		if r := recover(); r != nil {
-			slog.Debug("[Feishu] Failed to apply websocket runtime overrides")
+			pkgLog().Debug("[Feishu] Failed to apply websocket runtime overrides")
 		}
 	}()
 	c := reflect.ValueOf(l.client).Elem()
@@ -234,7 +233,7 @@ func (l *wsLink) keepalive() {
 			return
 		}
 		if l.lastInbound.Load() < sent && l.activeSocket() == socket {
-			slog.Warn("[Feishu] websocket keepalive ping timeout; closing the link so the SDK reconnects")
+			pkgLog().Warn("[Feishu] websocket keepalive ping timeout; closing the link so the SDK reconnects")
 			_ = socket.Close()
 		}
 	}
@@ -279,13 +278,13 @@ func (a *FeishuAdapter) runOfficialFeishuWSClient(link *wsLink) {
 	err := link.client.Start(link.ctx)
 	if err == nil || link.ctx.Err() != nil && !a.IsConnected() {
 		if err != nil {
-			slog.Debug("[Feishu] lark WS receive loop ended during disconnect: " + err.Error())
+			pkgLog().Debug("[Feishu] lark WS receive loop ended during disconnect: " + err.Error())
 		}
 		return
 	}
 	if a.IsConnected() {
-		slog.Error("[Feishu] lark WS receive loop died; stopping the worker loop so the supervisor can rebuild: " + err.Error())
+		pkgLog().Error("[Feishu] lark WS receive loop died; stopping the worker loop so the supervisor can rebuild: " + err.Error())
 	} else {
-		slog.Debug("[Feishu] lark WS receive loop ended during disconnect: " + err.Error())
+		pkgLog().Debug("[Feishu] lark WS receive loop ended during disconnect: " + err.Error())
 	}
 }

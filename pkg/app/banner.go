@@ -5,6 +5,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"math"
 	"os"
@@ -20,6 +21,7 @@ import (
 	"github.com/dlclark/regexp2/v2"
 
 	"github.com/nickheyer/icebath/pkg/config"
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
@@ -910,19 +912,19 @@ func bannerLeftLines(ctx context.Context, model, cwd, sessionID string, contextL
 	if contextLength != 0 {
 		ctxStr = dimSep(formatContextLength(contextLength) + " context" + pin)
 	}
-	nousStr := dimSep("Nous Research")
+	homeStr := dimSep("icebath.app")
 	switch stripped := pystr.Strip(model); {
 	case strings.ToLower(pystr.Strip(providerName)) == "moa":
 		aggStr := ""
 		if aggLabel := quiet(func() (string, error) { return bannerMoAAggregator(ctx, model) }, ""); aggLabel != "" {
 			aggStr = dimSep("agg " + aggLabel)
 		}
-		lines = append(lines, fmt.Sprintf("[%s]MoA: %s[/]%s%s%s", accent, shortLabel(model), aggStr, ctxStr, nousStr))
+		lines = append(lines, fmt.Sprintf("[%s]MoA: %s[/]%s%s%s", accent, shortLabel(model), aggStr, ctxStr, homeStr))
 	case stripped == "" || strings.ToLower(stripped) == "unknown":
 		lines = append(lines, fmt.Sprintf("[bold red]no model configured[/] [dim %s]— run /model or /setup model[/]", dim))
 	default:
 		modelShort := strings.TrimSuffix(model[strings.LastIndex(model, "/")+1:], ".gguf")
-		lines = append(lines, fmt.Sprintf("[%s]%s[/]%s%s", accent, shortLabel(modelShort), ctxStr, nousStr))
+		lines = append(lines, fmt.Sprintf("[%s]%s[/]%s%s", accent, shortLabel(modelShort), ctxStr, homeStr))
 	}
 	if os.Getenv("ICEBATH_YOLO_MODE") != "" {
 		lines = append(lines, fmt.Sprintf("[bold red]⚠ YOLO mode[/] [dim %s]— all approval prompts bypassed[/]", dim))
@@ -942,11 +944,11 @@ func bannerToolLines(toolDefs, unavailableToolsets any, toolsetForTool func(stri
 	for _, def := range defs {
 		fn, present, isDict := bannerDictGet(def, "function")
 		if !isDict || !present {
-			return nil, fmt.Errorf("KeyError: 'function'")
+			return nil, errors.New("a tool definition has no function")
 		}
 		rawName, present, isDict := bannerDictGet(fn, "name")
 		if !isDict || !present {
-			return nil, fmt.Errorf("KeyError: 'name'")
+			return nil, errors.New("a tool definition has no name")
 		}
 		toolName := pyrepr.Str(rawName)
 		toolset := toolsetForTool(toolName)
@@ -960,7 +962,7 @@ func bannerToolLines(toolDefs, unavailableToolsets any, toolsetForTool func(stri
 	for _, item := range unavailable {
 		id, present, isDict := bannerDictGet(item, "id")
 		if !isDict {
-			return nil, fmt.Errorf("AttributeError: unavailable toolset entry has no attribute 'get'")
+			return nil, errors.New("an unavailable toolset entry is not a mapping")
 		}
 		if !present {
 			if id, present, _ = bannerDictGet(item, "name"); !present {
@@ -1032,13 +1034,13 @@ func bannerSkillNames(skillsByCategory any) (map[string][]string, error) {
 		value, _, _ := bannerDictGet(skillsByCategory, category)
 		items, ok := bannerListItems(value)
 		if !ok {
-			return nil, fmt.Errorf("TypeError: skills of category %s are not a list", pyrepr.Repr(category))
+			return nil, fmt.Errorf("the skills of category %s are not a list", category)
 		}
 		names := make([]string, len(items))
 		for i, item := range items {
 			name, isStr := item.(string)
 			if !isStr {
-				return nil, fmt.Errorf("TypeError: skill name %s is not a string", pyrepr.Repr(item))
+				return nil, fmt.Errorf("a skill name of category %s is %s, expected text", category, errchain.Kind(item))
 			}
 			names[i] = name
 		}
@@ -1111,7 +1113,7 @@ func buildWelcomeBanner(ctx context.Context, console *pyrich.Console, o welcomeB
 		if pyrepr.Truthy(skin.BannerHero) {
 			custom, isStr := skin.BannerHero.(string)
 			if !isStr {
-				return fmt.Errorf("TypeError: sequence item 1: expected str instance, %s found", pyrepr.TypeName(skin.BannerHero))
+				return fmt.Errorf("the skin banner_hero is %s, expected text", errchain.Kind(skin.BannerHero))
 			}
 			hero = custom
 		}

@@ -17,7 +17,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
 )
 
-// Seams over the listener and the stat calls, replaced by tests the way hermes tests monkeypatch asyncio and os
+// Seams over the listener and the stat calls, replaced by tests
 var (
 	controlListenUnix = listenUnixControl
 	controlLstat      = os.Lstat
@@ -48,7 +48,7 @@ func (s *GatewayControlServer) startPosix() error {
 		if pointerFile != "" || !errors.Is(err, syscall.EOPNOTSUPP) && !errors.Is(err, syscall.ENOTSUP) {
 			return err
 		}
-		controlSocketLog().Warn(fmt.Sprintf("Control socket cannot be created in %s (%s); listening in a private temp directory", s.home, controlStrerror(err)))
+		pkgLog().Warn(fmt.Sprintf("Control socket cannot be created in %s (%s); listening in a private temp directory", s.home, controlStrerror(err)))
 		pointerFile = filepath.Join(s.home, controlPointerFilename)
 		fallback, ferr := fallbackSocketPath(s.home)
 		if ferr != nil {
@@ -78,7 +78,7 @@ func (s *GatewayControlServer) startPosix() error {
 			return err
 		}
 	}
-	controlSocketLog().Info(fmt.Sprintf("Gateway control socket listening at %s", bound))
+	pkgLog().Info(fmt.Sprintf("Gateway control socket listening at %s", bound))
 	return nil
 }
 
@@ -102,7 +102,7 @@ func (s *GatewayControlServer) bindPOSIX(bindPath, pointerFile string) (string, 
 			return "", err
 		}
 		if !private {
-			controlSocketLog().Warn(fmt.Sprintf("Fallback control directory %s is not private; using a fresh one", filepath.Dir(bindPath)))
+			pkgLog().Warn(fmt.Sprintf("Fallback control directory %s is not private; using a fresh one", filepath.Dir(bindPath)))
 			moved, err := squatProofFallback(bindPath)
 			if err != nil {
 				return "", err

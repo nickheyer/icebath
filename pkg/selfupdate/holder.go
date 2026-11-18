@@ -54,7 +54,7 @@ func holderValueFlags() map[string]bool {
 }
 
 // Lowercased icebath subcommand a holder command line runs, false when no entry token or subcommand is found
-func hermesHolderSubcommand(cmdline string) (string, bool) {
+func icebathHolderSubcommand(cmdline string) (string, bool) {
 	tokens, err := pyshlex.SplitNonPOSIX(cmdline)
 	if err != nil {
 		tokens = pystr.SplitWhitespace(cmdline, -1)

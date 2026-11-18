@@ -4,20 +4,28 @@ import (
 	"context"
 	"fmt"
 	"strings"
+	"time"
 )
 
 // Named view a plugin provides and the terminal UI renders, its state a JSON value the UI holds between calls
 type WidgetSpec struct {
-	ID     string
-	Help   string
-	Usage  string
-	Mode   string
-	Zone   string
-	Width  int
-	Open   func(ctx context.Context, arg string) (state any, ok bool, err error)
-	Input  func(ctx context.Context, state any, in WidgetInput) (next any, open bool, err error)
+	ID    string
+	Help  string
+	Usage string
+	Mode  string
+	Zone  string
+	Width int
+	// Interval the UI refreshes the widget at, running Tick when set and rendering again, zero for input only
+	Refresh time.Duration
+	Open    func(ctx context.Context, arg string) (state any, ok bool, err error)
+	Input   func(ctx context.Context, state any, in WidgetInput) (next any, open bool, err error)
+	// Next state at each refresh, nil for a widget that only renders again
+	Tick   func(ctx context.Context, state any) (next any, err error)
 	Render func(ctx context.Context, frame WidgetFrame) (WidgetView, error)
 }
+
+// Shortest refresh interval a widget may ask for
+const minWidgetRefresh = 100 * time.Millisecond
 
 // One key press or text input the UI delivers to a widget
 type WidgetInput struct {
@@ -80,6 +88,12 @@ func (c *Context) RegisterWidget(spec WidgetSpec) (*Registration, error) {
 	if spec.Render == nil {
 		return nil, c.refuse("widget " + spec.ID + " without a render function")
 	}
+	if spec.Refresh < 0 || (spec.Refresh > 0 && spec.Refresh < minWidgetRefresh) {
+		return nil, fmt.Errorf("widget %s refresh must be zero or at least %s, got %s", spec.ID, minWidgetRefresh, spec.Refresh)
+	}
+	if spec.Tick != nil && spec.Refresh == 0 {
+		return nil, fmt.Errorf("widget %s has a tick function and no refresh interval to run it at", spec.ID)
+	}
 	if spec.Mode == "" {
 		spec.Mode = "modal"
 	}
@@ -122,6 +136,18 @@ func hostedWidget(a map[string]any) (WidgetSpec, error) {
 	width, _ := wireInt(a["width"])
 	spec := WidgetSpec{ID: argStr(a["id"]), Help: argStr(a["help"]), Usage: argStr(a["usage"]), Mode: argStr(a["mode"]),
 		Zone: argStr(a["zone"]), Width: int(width)}
+	switch seconds := a["refresh"].(type) {
+	case float64:
+		spec.Refresh = time.Duration(seconds * float64(time.Second))
+	case int64:
+		spec.Refresh = time.Duration(seconds) * time.Second
+	}
+	if tick, ok := a["tick"].(*HostedCallable); ok && tick != nil {
+		spec.Tick = func(ctx context.Context, state any) (any, error) {
+			raw, err := tick.Call(ctx, nil, map[string]any{"state": state})
+			return argMap(raw)["state"], err
+		}
+	}
 	render, err := argCallable("register_widget", "render", a["render"])
 	if err != nil {
 		return spec, err
@@ -168,7 +194,7 @@ func widgetViewFrom(raw any) WidgetView {
 
 func init() {
 	hostCtxDispatch["register_widget"] = hostMethod("register_widget", []pyParam{kwReq("id"), kwReq("render"), kwo("help", ""), kwo("usage", ""),
-		kwo("mode", ""), kwo("zone", ""), kwo("width", int64(0)), kwo("open", nil), kwo("input", nil)},
+		kwo("mode", ""), kwo("zone", ""), kwo("width", int64(0)), kwo("open", nil), kwo("input", nil), kwo("refresh", 0.0), kwo("tick", nil)},
 		func(_ context.Context, _ *PluginHost, c *Context, a, _ map[string]any) (any, error) {
 			spec, err := hostedWidget(a)
 			if err != nil {

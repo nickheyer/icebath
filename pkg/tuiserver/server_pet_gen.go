@@ -99,7 +99,7 @@ func petGenRoot(ctx context.Context) (string, error) {
 func petGenSweep(root string, maxAge time.Duration) {
 	entries, err := os.ReadDir(root)
 	if err != nil {
-		logger().Debug("pet-gen sweep failed: " + err.Error())
+		pkgLog().Debug("pet-gen sweep failed: " + err.Error())
 		return
 	}
 	for _, entry := range entries {

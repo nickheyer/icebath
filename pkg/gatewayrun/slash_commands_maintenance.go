@@ -51,7 +51,7 @@ type skillGroupRefresher interface {
 func (r *GatewayRunner) handleReloadSkillsCommand(ctx context.Context, event *gateway.MessageEvent) (string, error) {
 	reply, err := r.reloadSkillsReply(ctx, event)
 	if err != nil {
-		runLog().Warn(fmt.Sprintf("Skills reload failed: %s", pyrepr.ExceptionMessage(err)))
+		pkgLog().Warn(fmt.Sprintf("Skills reload failed: %s", pyrepr.ExceptionMessage(err)))
 		return i18n.T(ctx, "gateway.reload_skills.failed", "", map[string]any{"error": pyrepr.ExceptionMessage(err)}), nil
 	}
 	return reply, nil
@@ -75,7 +75,7 @@ func (r *GatewayRunner) reloadSkillsReply(ctx context.Context, event *gateway.Me
 		for _, adapter := range r.adapters.Values() {
 			if refresher, ok := adapter.(skillGroupRefresher); ok {
 				if err := refresher.RefreshSkillGroup(ctx); err != nil {
-					runLog().Warn(fmt.Sprintf("Adapter %s refresh_skill_group raised: %s", adapter.Name(), pyrepr.ExceptionMessage(err)))
+					pkgLog().Warn(fmt.Sprintf("Adapter %s refresh_skill_group raised: %s", adapter.Name(), pyrepr.ExceptionMessage(err)))
 				}
 			}
 		}
@@ -189,9 +189,9 @@ func (r *GatewayRunner) handleUpdateCommand(ctx context.Context, event *gateway.
 	if _, err := os.Stat(filepath.Join(projectRoot, ".git")); err != nil {
 		return i18n.T(ctx, "gateway.update.not_git_repo", "", nil), nil
 	}
-	hermesCmd := resolveHermesBin()
-	if len(hermesCmd) == 0 {
-		return i18n.T(ctx, "gateway.update.hermes_cmd_not_found", "", nil), nil
+	icebathCmd := resolveIcebathBin()
+	if len(icebathCmd) == 0 {
+		return i18n.T(ctx, "gateway.update.icebath_cmd_not_found", "", nil), nil
 	}
 	pendingPath := filepath.Join(h, ".update_pending.json")
 	outputPath := filepath.Join(h, ".update_output.txt")
@@ -224,7 +224,7 @@ func (r *GatewayRunner) handleUpdateCommand(ctx context.Context, event *gateway.
 	if err := os.Remove(exitCodePath); err != nil && !errors.Is(err, os.ErrNotExist) {
 		return "", err
 	}
-	if err := spawnDetachedUpdate(hermesCmd, outputPath, exitCodePath); err != nil {
+	if err := spawnDetachedUpdate(icebathCmd, outputPath, exitCodePath); err != nil {
 		_ = os.Remove(pendingPath)
 		_ = os.Remove(exitCodePath)
 		return i18n.T(ctx, "gateway.update.start_failed", "", map[string]any{"error": pyrepr.ExceptionMessage(err)}), nil
@@ -256,7 +256,7 @@ func (r *GatewayRunner) handleReloadMCPCommand(ctx context.Context, event *gatew
 		}
 		if choice == "always" {
 			SaveConfigValue(ctx, "approvals.mcp_reload_confirm", false)
-			runLog().Info(fmt.Sprintf("User opted out of /reload-mcp confirmation (session=%s)", sessionKey))
+			pkgLog().Info(fmt.Sprintf("User opted out of /reload-mcp confirmation (session=%s)", sessionKey))
 		}
 		result, err := r.executeMCPReload(ctx, event)
 		if err != nil {

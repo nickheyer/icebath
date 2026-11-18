@@ -16,7 +16,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pythread"
 	"github.com/nickheyer/icebath/pkg/memory"
 	"github.com/nickheyer/icebath/pkg/state"
-	"github.com/nickheyer/icebath/pkg/tuigateway"
+	"github.com/nickheyer/icebath/pkg/tuihost"
 )
 
 // Launch store at a known path holding the session row the submit cases write through
@@ -73,7 +73,7 @@ func activeRows(t *testing.T, db *state.DB, key string) [][3]any {
 }
 
 // Live record whose accepted turn parks on an unfinished build until the case ends and cancels it
-func parkedSubmitSession(t *testing.T, sid string, fields map[string]any) *tuigateway.Session {
+func parkedSubmitSession(t *testing.T, sid string, fields map[string]any) *tuihost.Session {
 	t.Helper()
 	ready := &pythread.Event{}
 	base := map[string]any{"agent": nil, "session_key": "session-key", "history": []any{}, "history_lock": &sync.Mutex{},
@@ -82,8 +82,8 @@ func parkedSubmitSession(t *testing.T, sid string, fields map[string]any) *tuiga
 	for key, value := range fields {
 		base[key] = value
 	}
-	session := tuigateway.NewSession(base)
-	tuigateway.SetSessionRecord(sid, session)
+	session := tuihost.NewSession(base)
+	tuihost.SetSessionRecord(sid, session)
 	t.Cleanup(func() {
 		unlock := lockHistory(session)
 		session.Set("_turn_cancel_requested", true)
@@ -95,7 +95,7 @@ func parkedSubmitSession(t *testing.T, sid string, fields map[string]any) *tuiga
 				time.Sleep(10 * time.Millisecond)
 			}
 		}
-		tuigateway.SetSessionRecord(sid, nil)
+		tuihost.SetSessionRecord(sid, nil)
 	})
 	return session
 }
@@ -204,7 +204,7 @@ func TestArchivedUserTurnsCountsACarrierWithoutItsOwnRowID(t *testing.T) {
 	seedRowsWithIDs(t, db, "session-key", [3]any{int64(102), "user", "c"})
 	history := []map[string]any{{"role": "user", "content": "x"}, {"role": "assistant", "content": "r"},
 		{"_absorbed_row_ids": []any{int64(102)}, "role": "user", "content": "b\n\nc"}}
-	session := tuigateway.NewSession(map[string]any{"session_key": "session-key", "history": messagesAsHistory(history), "history_lock": &sync.Mutex{}})
+	session := tuihost.NewSession(map[string]any{"session_key": "session-key", "history": messagesAsHistory(history), "history_lock": &sync.Mutex{}})
 	if got := archivedUserTurns(context.Background(), session, "sid", history, 2, map[int64]bool{}); got != 2 {
 		t.Fatalf("archived %d", got)
 	}
@@ -242,7 +242,7 @@ func TestPromptSubmitRefusesAClientSuppliedAuthor(t *testing.T) {
 }
 
 // Parked bot room record titled for a group, the session every fence case submits to
-func fenceSession(t *testing.T, title string, profileHome any) *tuigateway.Session {
+func fenceSession(t *testing.T, title string, profileHome any) *tuihost.Session {
 	t.Helper()
 	return parkedSubmitSession(t, "session-1", map[string]any{"id": "session-1", "title": title, "source": "bot_room",
 		"profile_home": profileHome, "session_key": ""})

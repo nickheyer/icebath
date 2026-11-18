@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"log/slog"
 	"math"
 	"reflect"
 	"strconv"
@@ -405,7 +404,7 @@ func auxHasHook(ctx context.Context, name string) (has bool) {
 func auxFireHook(ctx context.Context, name string, payload map[string]any) {
 	defer func() {
 		if r := recover(); r != nil {
-			slog.Warn(fmt.Sprintf("%s plugin hook failed for aux_task=%s; continuing", name, pyrepr.Str(payload["aux_task"])), "err", fmt.Sprint(r))
+			pkgLog().Warn(fmt.Sprintf("%s plugin hook failed for aux_task=%s; continuing", name, pyrepr.Str(payload["aux_task"])), "err", fmt.Sprint(r))
 		}
 	}()
 	auxInvokeHookFn(ctx, name, payload)
@@ -418,13 +417,13 @@ func startAuxCallHooks(ctx context.Context, a auxCallHookArgs) (hooks *auxCallHo
 	}
 	defer func() {
 		if r := recover(); r != nil {
-			slog.Warn("pre_auxiliary_call payload build failed; continuing", "err", fmt.Sprint(r))
+			pkgLog().Warn("pre_auxiliary_call payload build failed; continuing", "err", fmt.Sprint(r))
 			hooks = nil
 		}
 	}()
 	h, err := newAuxCallHooks(ctx, a)
 	if err != nil {
-		slog.Warn("pre_auxiliary_call payload build failed; continuing", "err", err)
+		pkgLog().Warn("pre_auxiliary_call payload build failed; continuing", "err", err)
 		return nil
 	}
 	h.pre(ctx)
@@ -443,7 +442,7 @@ func finishAuxCallHooks(ctx context.Context, hooks *auxCallHooks, response any, 
 	}
 	defer func() {
 		if r := recover(); r != nil {
-			slog.Warn("post_auxiliary_call payload build failed; continuing", "err", fmt.Sprint(r))
+			pkgLog().Warn("post_auxiliary_call payload build failed; continuing", "err", fmt.Sprint(r))
 		}
 	}()
 	hooks.post(ctx, response, callErr, normalized)

@@ -177,25 +177,25 @@ func TestUnitEnvironmentValueUndoesSystemdQuoting(t *testing.T) {
 	dir := t.TempDir()
 	unit := filepath.Join(dir, "u.service")
 	writeUnit(t, unit, "\ufeff[Service]\n  Environment=\"OTHER=1\"\nEnvironment=\"ICEBATH_HOME=/a \\\"b\\\" \\\\c 100%%\"\nEnvironment=ICEBATH_HOME=/later\n")
-	if v, err := hermesHomePinnedByUnit(unit); err != nil || v != `/a "b" \c 100%` {
+	if v, err := icebathHomePinnedByUnit(unit); err != nil || v != `/a "b" \c 100%` {
 		t.Fatalf("value %q %v", v, err)
 	}
 	writeUnit(t, unit, "Environment=ICEBATH_HOME=   \nEnvironment=\"\n")
-	if v, err := hermesHomePinnedByUnit(unit); err != nil || v != "" {
+	if v, err := icebathHomePinnedByUnit(unit); err != nil || v != "" {
 		t.Fatalf("blank value %q %v", v, err)
 	}
-	if v, err := hermesHomePinnedByUnit(filepath.Join(dir, "missing.service")); err != nil || v != "" {
+	if v, err := icebathHomePinnedByUnit(filepath.Join(dir, "missing.service")); err != nil || v != "" {
 		t.Fatalf("missing unit %q %v", v, err)
 	}
 	writeUnit(t, unit, "Environment=ICEBATH_HOME=\xff\n")
-	if _, err := hermesHomePinnedByUnit(unit); err == nil {
+	if _, err := icebathHomePinnedByUnit(unit); err == nil {
 		t.Fatal("undecodable unit must raise")
 	}
 }
 
 func TestServicePinnedHomeReadsPlistAndUnit(t *testing.T) {
 	dir := t.TempDir()
-	plist := filepath.Join(dir, "ai.icebath.gateway.plist")
+	plist := filepath.Join(dir, "app.icebath.gateway.plist")
 	writeUnit(t, plist, `<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0"><dict><key>EnvironmentVariables</key><dict><key>ICEBATH_HOME</key><string>  /srv/home  </string></dict></dict></plist>`)
@@ -226,12 +226,12 @@ func TestLaunchdPlistPathUsesAccountHomeAndFallsBackToRealHome(t *testing.T) {
 	pinServiceSeams(t, "darwin", 501, "")
 	serviceLookupAccount = func() (*user.User, error) { return &user.User{HomeDir: account}, nil }
 	ctx := context.Background()
-	if p, err := GetLaunchdPlistPath(ctx); err != nil || p != filepath.Join(account, "Library", "LaunchAgents", "ai.icebath.gateway-coder.plist") {
+	if p, err := GetLaunchdPlistPath(ctx); err != nil || p != filepath.Join(account, "Library", "LaunchAgents", "app.icebath.gateway-coder.plist") {
 		t.Fatalf("plist %q %v", p, err)
 	}
 	serviceLookupAccount = func() (*user.User, error) { return nil, errors.New("uid not found") }
 	t.Setenv("ICEBATH_REAL_HOME", filepath.Join(tmp, "real"))
-	if p, _ := GetLaunchdPlistPath(ctx); p != filepath.Join(tmp, "real", "Library", "LaunchAgents", "ai.icebath.gateway-coder.plist") {
+	if p, _ := GetLaunchdPlistPath(ctx); p != filepath.Join(tmp, "real", "Library", "LaunchAgents", "app.icebath.gateway-coder.plist") {
 		t.Fatalf("fallback plist %q", p)
 	}
 }

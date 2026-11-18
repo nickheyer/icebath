@@ -2,10 +2,10 @@ package provider
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"io"
-	"math"
 	"net/http"
 	"net/http/httptest"
 	"reflect"
@@ -564,184 +564,11 @@ func TestAccountUsagePluginHookPanicStaysInTheCaller(t *testing.T) {
 	}
 }
 
-func TestAccountUsageFetchPortalAccountIsWallClockBounded(t *testing.T) {
-	for name, fetch := range map[string]func(context.Context, time.Duration) (*NousPortalAccountInfo, error){
-		"usage": FetchPortalAccount, "billing": FetchNousAccount} {
-		t.Run(name, func(t *testing.T) {
-			release := make(chan struct{})
-			prev := portalAccountFetchFn
-			portalAccountFetchFn = func(context.Context, bool) *NousPortalAccountInfo {
-				<-release
-				return &NousPortalAccountInfo{}
-			}
-			defer func() { close(release); portalAccountFetchFn = prev }()
-			t0 := time.Now()
-			if _, err := fetch(context.Background(), 500*time.Millisecond); !errors.Is(err, errPortalAccountTimeout) {
-				t.Fatalf("err %v", err)
-			}
-			if time.Since(t0) >= 10*time.Second {
-				t.Fatal("caller held past the timeout")
-			}
-		})
-	}
-}
-
-func TestAccountUsageFetchPortalAccountReturnsValueAndKeepsCallerContext(t *testing.T) {
-	profileHome := t.TempDir()
-	want := &NousPortalAccountInfo{LoggedIn: true}
-	var seenForce bool
-	var seenHome string
-	prev := portalAccountFetchFn
-	portalAccountFetchFn = func(ctx context.Context, force bool) *NousPortalAccountInfo {
-		seenForce, seenHome = force, home.Dir(ctx)
-		return want
-	}
-	t.Cleanup(func() { portalAccountFetchFn = prev })
-	got, err := FetchPortalAccount(home.WithOverride(context.Background(), profileHome), 5*time.Second)
-	if err != nil || got != want || !seenForce || seenHome != profileHome {
-		t.Fatalf("got %v %v force %v home %q", got, err, seenForce, seenHome)
-	}
-}
-
 func usageF64(v float64) *float64 { return &v }
-
-func nousAccount(info NousPortalAccountInfo) *NousPortalAccountInfo {
-	info.LoggedIn, info.Source, info.Fresh = true, "account_api", true
-	return &info
-}
-
-func TestAccountUsageNousCreditsSnapshotHealthyAndLoggedOut(t *testing.T) {
-	info := nousAccount(NousPortalAccountInfo{PaidServiceAccess: usageBoolRef(true),
-		PaidServiceAccessInfo: &NousPaidServiceAccessInfo{SubscriptionCreditsRemaining: usageF64(18), PurchasedCreditsRemaining: usageF64(12.34), TotalUsableCredits: usageF64(30.34)},
-		Subscription:          &NousPortalSubscriptionInfo{Plan: strPtr("Pro"), CurrentPeriodEnd: strPtr("2026-07-01")}})
-	snap := BuildNousCreditsSnapshot(info)
-	if snap == nil || !snap.Available() || snap.Plan != "Pro" || snap.Provider != "nous" {
-		t.Fatalf("snapshot %+v", snap)
-	}
-	blob := strings.Join(snap.Details, "\n")
-	for _, want := range []string{"$18.00", "$12.34", "$30.34", "2026-07-01"} {
-		if !strings.Contains(blob, want) {
-			t.Fatalf("missing %s in %q", want, blob)
-		}
-	}
-	if strings.Contains(blob, "%") {
-		t.Fatalf("no gauge expected %q", blob)
-	}
-	info.LoggedIn = false
-	if BuildNousCreditsSnapshot(info) != nil || BuildNousCreditsSnapshot(nil) != nil {
-		t.Fatal("logged out reads as none")
-	}
-}
 
 func usageBoolRef(b bool) *bool { return &b }
 
-func TestAccountUsageNousCreditsGauge(t *testing.T) {
-	snap := BuildNousCreditsSnapshot(nousAccount(NousPortalAccountInfo{PaidServiceAccess: usageBoolRef(true),
-		Subscription:          &NousPortalSubscriptionInfo{Plan: strPtr("Ultra"), MonthlyCredits: usageF64(220), CreditsRemaining: usageF64(219.27341839), CurrentPeriodEnd: strPtr("2026-06-28")},
-		PaidServiceAccessInfo: &NousPaidServiceAccessInfo{SubscriptionCreditsRemaining: usageF64(219.27), TotalUsableCredits: usageF64(219.27)}}))
-	w := snap.Windows[0]
-	if w.Label != "Subscription" || math.Abs(*w.UsedPercent-(220-219.27341839)/220*100) >= 1e-9 {
-		t.Fatalf("window %+v", w)
-	}
-	blob := strings.Join(RenderAccountUsageLines(snap, false), "\n")
-	if !strings.Contains(blob, "% used") || !strings.Contains(blob, "of $220.00 left") || !strings.Contains(blob, "Top up: ") {
-		t.Fatalf("render %q", blob)
-	}
-	snap = BuildNousCreditsSnapshot(nousAccount(NousPortalAccountInfo{PaidServiceAccess: usageBoolRef(true),
-		Subscription:          &NousPortalSubscriptionInfo{MonthlyCredits: usageF64(220), CreditsRemaining: usageF64(math.NaN())},
-		PaidServiceAccessInfo: &NousPaidServiceAccessInfo{PurchasedCreditsRemaining: usageF64(5)}}))
-	if len(snap.Windows) != 0 || strings.Contains(strings.ToLower(strings.Join(RenderAccountUsageLines(snap, false), "\n")), "$nan") {
-		t.Fatalf("nan snapshot %+v", snap)
-	}
-	if got := fmtUsageUSD(1234567.891); got != "$1,234,567.89" {
-		t.Fatalf("usd %q", got)
-	}
-}
-
-func TestAccountUsageNousUsageWindowSnapshotAndHeaderGauge(t *testing.T) {
-	reset := time.Now().Add(48 * time.Hour).UnixMilli()
-	info := nousAccount(NousPortalAccountInfo{PaidServiceAccess: usageBoolRef(true),
-		PaidServiceAccessInfo: &NousPaidServiceAccessInfo{PurchasedCreditsRemaining: usageF64(7.5)},
-		Subscription:          &NousPortalSubscriptionInfo{Plan: strPtr("Plus"), CurrentPeriodEnd: strPtr("2026-12-01")},
-		UsageWindow: &NousUsageWindowInfo{KeepGoingOnCredits: usageBoolRef(false), Gauges: []WindowGauge{
-			{ID: "five_hour", Scope: ScopeAll, Label: "5h", UsedBp: 2500, ResetsAtMs: &reset},
-			{ID: "top", Scope: ScopeTopTier, Label: "monthly", UsedBp: 10000, ResetsAtMs: &reset}}}})
-	snap := BuildNousCreditsSnapshot(info)
-	if snap == nil || !snap.UsageWindow || snap.Plan != "Plus" || len(snap.Windows) != 2 || *snap.Windows[0].UsedPercent != 25 {
-		t.Fatalf("snapshot %+v", snap)
-	}
-	if !strings.HasPrefix(snap.Details[0], accountUsageTopTierUsedUp) || !strings.HasSuffix(snap.Details[0], "Your other included usage is still available.") ||
-		snap.Details[1] != accountUsageKeepGoingOffLine || snap.Details[2] != "Top-up credits: $7.50" || snap.Details[len(snap.Details)-1] != "Top up via /topup" {
-		t.Fatalf("details %q", snap.Details)
-	}
-	lines := RenderAccountUsageLines(snap, true)
-	if lines[0] != "Plus" || !strings.Contains(lines[1], "25% used") || strings.Contains(strings.Join(lines, ""), "**") {
-		t.Fatalf("lines %q", lines)
-	}
-	state := NewCreditsState()
-	state.FromHeader, state.DenominatorKind = true, "usage_window"
-	state.Gauges = []WindowGauge{{ID: "five_hour", Scope: ScopeAll, Label: "5h", UsedBp: 6000, ResetsAtMs: &reset}}
-	raised := ApplyHeaderGauge(snap, state)
-	if *raised.Windows[0].UsedPercent != 60 || *snap.Windows[0].UsedPercent != 25 {
-		t.Fatalf("raised %v original %v", *raised.Windows[0].UsedPercent, *snap.Windows[0].UsedPercent)
-	}
-	past := time.Now().Add(-time.Minute).UnixMilli()
-	state.Gauges[0].ResetsAtMs = &past
-	if ApplyHeaderGauge(snap, state) != snap {
-		t.Fatal("a header from before its gauge reset must not override the portal")
-	}
-}
-
-func TestAccountUsageNousCreditsViewFixtureAndLoggedOut(t *testing.T) {
-	prevLogged, prevFixture := accountUsageLoggedInFn, accountUsageFixtureFn
-	t.Cleanup(func() { accountUsageLoggedInFn, accountUsageFixtureFn = prevLogged, prevFixture })
-	accountUsageFixtureFn = func() *CreditsState { return nil }
-	accountUsageLoggedInFn = func(context.Context) bool { return false }
-	if lines, win := NousCreditsView(context.Background(), false, time.Second, nil); len(lines) != 0 || win {
-		t.Fatal("logged out shows nothing")
-	}
-	if len(NousCreditsUsageFields(context.Background(), nil)) != 0 || BuildCreditsView(context.Background(), false, time.Second).LoggedIn {
-		t.Fatal("logged out fields and view")
-	}
-	accountUsageFixtureFn = func() *CreditsState {
-		s := NewCreditsState()
-		s.SubscriptionUSD, s.RemainingUSD, s.PurchasedUSD = "4.00", "6.00", "2.00"
-		s.SubscriptionMicros, s.SubscriptionLimitMicros, s.SubscriptionLimitUSD = 4_000_000, usageInt64Ref(10_000_000), strPtr("10.00")
-		s.DenominatorKind = "subscription"
-		return s
-	}
-	lines := NousCreditsLines(context.Background(), true, time.Second, nil)
-	blob := strings.Join(lines, "\n")
-	if lines[0] != "📈 **Nous credits**" || !strings.Contains(blob, "$4.00 of $10.00 left") || !strings.Contains(blob, accountUsageDevFixtureTail) {
-		t.Fatalf("fixture lines %q", lines)
-	}
-	if fields := NousCreditsUsageFields(context.Background(), nil); fields["credits_lines"] == nil || fields["credits_usage_window"] != nil {
-		t.Fatalf("fields %v", fields)
-	}
-}
-
 func usageInt64Ref(v int64) *int64 { return &v }
-
-func TestAccountUsageCreditsViewBuiltWithOrgPinnedURLAndIdentity(t *testing.T) {
-	prevLogged, prevFetch := accountUsageLoggedInFn, portalAccountFetchFn
-	t.Cleanup(func() { accountUsageLoggedInFn, portalAccountFetchFn = prevLogged, prevFetch })
-	accountUsageLoggedInFn = func(context.Context) bool { return true }
-	account := nousAccount(NousPortalAccountInfo{Email: "a@b.c", OrgName: "Acme", OrgID: "org_1", PortalBaseURL: "https://portal.nousresearch.com",
-		PaidServiceAccess: usageBoolRef(false), PaidServiceAccessInfo: &NousPaidServiceAccessInfo{TotalUsableCredits: usageF64(0)}})
-	portalAccountFetchFn = func(context.Context, bool) *NousPortalAccountInfo { return account }
-	view := BuildCreditsView(context.Background(), false, time.Second)
-	if !view.LoggedIn || view.IdentityLine != "Topping up as a@b.c / org Acme" || view.TopupURL != NousPortalTopupURL(account) || !view.Depleted {
-		t.Fatalf("view %+v", view)
-	}
-	for _, line := range view.BalanceLines {
-		if strings.HasPrefix(line, "Top up") || strings.HasPrefix(line, "(or run") {
-			t.Fatalf("balance kept the top up affordance %q", line)
-		}
-	}
-	if !strings.Contains(strings.Join(view.BalanceLines, "\n"), "Total usable: $0.00") {
-		t.Fatalf("balance %q", view.BalanceLines)
-	}
-}
 
 func codexUsageServer(t *testing.T, statuses map[string]int, payload map[string]any) (*httptest.Server, *[]string) {
 	var mu sync.Mutex
@@ -763,7 +590,12 @@ func codexUsageServer(t *testing.T, statuses map[string]int, payload map[string]
 }
 
 func codexAccessJWT(account, sub string) string {
-	return anonJWT(map[string]any{"sub": sub, "https://api.openai.com/auth": map[string]any{"chatgpt_account_id": account}})
+	seg := func(obj map[string]any) string {
+		raw, _ := json.Marshal(obj)
+		return base64.RawURLEncoding.EncodeToString(raw)
+	}
+	claims := map[string]any{"sub": sub, "exp": time.Now().Unix() + 900, "https://api.openai.com/auth": map[string]any{"chatgpt_account_id": account}}
+	return seg(map[string]any{"alg": "RS256"}) + "." + seg(claims) + ".sig"
 }
 
 func sessionPayload(used float64) map[string]any {

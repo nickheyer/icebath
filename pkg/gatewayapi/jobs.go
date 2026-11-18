@@ -6,17 +6,13 @@ import (
 	"fmt"
 	"net/http"
 	"regexp"
-	"strconv"
 	"strings"
-	"time"
 
-	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/cron"
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/tools"
 )
 
 var jobIDRE = regexp.MustCompile(`^[a-f0-9]{12}$`)
@@ -50,7 +46,7 @@ func (a *APIServerAdapter) cronRequestGuard(ctx context.Context, request *gatewa
 	}
 	jobID := request.MatchInfo["job_id"]
 	if !jobIDRE.MatchString(jobID) {
-		apiLog().Warn(fmt.Sprintf("Cron jobs API rejected invalid job_id %s: %s", pyrepr.Repr(jobID), a.requestAuditLogSuffix(request)))
+		pkgLog().Warn(fmt.Sprintf("Cron jobs API rejected invalid job_id %s: %s", pyrepr.Repr(jobID), a.requestAuditLogSuffix(request)))
 		return jobID, jobsError("Invalid job ID format", http.StatusBadRequest)
 	}
 	return jobID, nil
@@ -317,103 +313,6 @@ func (a *APIServerAdapter) handleRunJob(ctx context.Context, request *gateway.We
 	return jobResponse(ctx, func(id string) (*cron.Job, error) {
 		return cron.TriggerJobWithPrompt(ctx, home.Dir(ctx), id, extraPrompt)
 	}, jobID, false), nil
-}
-
-// Chronos fire webhook authenticated by a NAS minted token, the run detached behind a 202
-func (a *APIServerAdapter) handleCronFire(ctx context.Context, request *gateway.WebRequest) (*gateway.WebResponse, error) {
-	receivedAt := time.Now()
-	auth := request.Header.Get("Authorization")
-	token := ""
-	if strings.HasPrefix(auth, "Bearer ") {
-		token = strings.TrimSpace(auth[7:])
-	}
-	h := home.Dir(ctx)
-	cfg, err := config.LoadReadonly(ctx, h, nil)
-	if err != nil {
-		return nil, err
-	}
-	setting := func(keys ...string) string {
-		v, ok := config.CfgGet(cfg, keys...)
-		if !ok || v == nil {
-			return ""
-		}
-		return pyrepr.Str(v)
-	}
-	verifier := cron.GetFireVerifier()
-	claims := func() (claims *pyjson.Object) {
-		defer func() {
-			if rec := recover(); rec != nil {
-				apiLog().Error("cron fire: verifier crashed; rejecting token", "error", rec)
-				claims = nil
-			}
-		}()
-		return verifier(cron.NASFireTokenOptions{Token: token, ExpectedAudience: setting("cron", "chronos", "expected_audience"),
-			JWKSOrKey: setting("cron", "chronos", "nas_jwks_url"), Issuer: setting("cron", "chronos", "portal_url")})
-	}()
-	if claims == nil {
-		apiLog().Warn("cron fire: rejected invalid token: " + a.requestAuditLogSuffix(request))
-		return jobsError("invalid fire token", http.StatusUnauthorized), nil
-	}
-	if draining := a.drainingResponse(); draining != nil {
-		return draining, nil
-	}
-	reservation, release := a.reservePendingAPIWork()
-	defer release()
-	var jobID any
-	if raw, err := requestJSON(request); err == nil {
-		if body, ok := raw.(*pyjson.Object); ok {
-			jobID = body.GetOr("job_id", nil)
-		}
-	}
-	if !pyrepr.Truthy(jobID) {
-		return jobsError("missing job_id", http.StatusBadRequest), nil
-	}
-	if tools.CheckPaused(ctx, "cron-webhook", apiLog()) {
-		return jsonResponse(pyjson.ObjectOf("error", "icebath is paused (ESTOP)", "job_id", jobID), http.StatusServiceUnavailable,
-			map[string]string{"Retry-After": strconv.Itoa(60)}), nil
-	}
-	jobIDText := pyrepr.Str(jobID)
-	scheduler := cron.ResolveCronScheduler(h)
-	refusal, adapters, err := gateway.APILiveAdaptersOnceStarted(ctx, a, a.app, jobIDText, receivedAt)
-	if err != nil {
-		return nil, err
-	}
-	if refusal != nil {
-		return refusal, nil
-	}
-	detach := func(fire func(ctx context.Context) error) *gateway.WebResponse {
-		reservation.detached = true
-		task := startAgentTask(context.WithoutCancel(ctx), func(taskCtx context.Context) {
-			defer a.releasePendingAPIWork(reservation)
-			result := <-submitAPIWorker(func() (struct{}, error) { return struct{}{}, fire(taskCtx) })
-			if result.Panic != nil {
-				apiLog().Error(fmt.Sprintf("cron fire for %s raised", jobIDText), "error", result.Panic)
-			} else if result.Err != nil {
-				apiLog().Error(fmt.Sprintf("cron fire for %s failed", jobIDText), "error", result.Err)
-			}
-		})
-		a.trackBackgroundTask(task)
-		return jsonResponse(pyjson.ObjectOf("status", "accepted", "job_id", jobID), http.StatusAccepted, nil)
-	}
-	opts := cron.FireOptions{Adapters: adapters}
-	if !cron.ProviderSupportsSplitFire(scheduler) {
-		return detach(func(fireCtx context.Context) error {
-			_, err := cron.SchedulerFireDue(fireCtx, scheduler, jobIDText, opts)
-			return err
-		}), nil
-	}
-	claimed, err := cron.SchedulerClaimFire(ctx, scheduler, jobIDText)
-	if err != nil {
-		apiLog().Error(fmt.Sprintf("cron fire admission failed for %s: %v", jobIDText, err))
-		return jsonResponse(pyjson.ObjectOf("error", "cron fire admission failed", "job_id", jobID), http.StatusServiceUnavailable, nil), nil
-	}
-	if claimed == nil {
-		return jsonResponse(pyjson.ObjectOf("status", "duplicate", "job_id", jobID), http.StatusOK, nil), nil
-	}
-	return detach(func(fireCtx context.Context) error {
-		_, err := cron.SchedulerFireClaimed(fireCtx, scheduler, claimed, opts)
-		return err
-	}), nil
 }
 
 // Keeps a background task referenced until it finishes

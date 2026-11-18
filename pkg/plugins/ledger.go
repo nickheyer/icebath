@@ -63,7 +63,7 @@ func callGuarded(fn func() error) (err error) {
 				return
 			}
 			err = fmt.Errorf("%v", p)
-			logPlugins.debug("recovered plugin panic", "stack", string(debug.Stack()))
+			pkgLog().Debug("recovered plugin panic", "stack", string(debug.Stack()))
 		}
 	}()
 	if fn == nil {
@@ -272,7 +272,7 @@ func (m *Manager) disposeRegistrations(registrations []*Registration) {
 	for i := len(registrations) - 1; i >= 0; i-- {
 		r := registrations[i]
 		if err := r.Dispose(); err != nil {
-			logPlugins.warn(fmt.Sprintf("Failed to unload plugin registration %s/%s: %v", r.PluginKey, r.Key, err), excInfo(err)...)
+			pkgLog().Warn(fmt.Sprintf("Failed to unload plugin registration %s/%s: %v", r.PluginKey, r.Key, err), excInfo(err)...)
 		}
 	}
 }
@@ -374,7 +374,7 @@ func (m *Manager) resetAfterUnloadAll(registrations []*Registration) {
 	}
 	for _, name := range preledgerTools {
 		if err := tools.Default.Deregister(name, "", ""); err != nil {
-			logPlugins.debug(fmt.Sprintf("unload: tool deregister %s failed: %v", name, err))
+			pkgLog().Debug(fmt.Sprintf("unload: tool deregister %s failed: %v", name, err))
 		}
 	}
 	m.mu.Lock()

@@ -20,7 +20,6 @@ const runtimeProviderCustom = "custom"
 var (
 	delegationNativeSDKProviders = map[string]bool{"bedrock": true, "vertex": true, "google": true, "google-genai": true}
 	delegationExplicitAPIModes   = map[string]bool{"chat_completions": true, "codex_responses": true, "anthropic_messages": true}
-	delegationNousProviders      = map[string]bool{"nous": true, "nous-portal": true, "nousresearch": true}
 )
 
 func normalizedRuntimeURL(v any) string {
@@ -116,9 +115,9 @@ func resolveChildCredentialPool(ctx context.Context, effectiveProvider string, p
 				panic(r)
 			}
 			if effectiveProvider == "custom" {
-				delegateLog().Debug(fmt.Sprintf("Could not resolve custom credential pool for child endpoint '%s': %v", effectiveBaseURL, r))
+				pkgLog().Debug(fmt.Sprintf("Could not resolve custom credential pool for child endpoint '%s': %v", effectiveBaseURL, r))
 			} else {
-				delegateLog().Debug(fmt.Sprintf("Could not load credential pool for child provider '%s': %v", effectiveProvider, r))
+				pkgLog().Debug(fmt.Sprintf("Could not load credential pool for child provider '%s': %v", effectiveProvider, r))
 			}
 			pool = nil
 		}
@@ -146,7 +145,7 @@ func resolveChildCredentialPool(ctx context.Context, effectiveProvider string, p
 		if effectiveBaseURL == "" || poolServesEndpoint(ctx, parentPool, effectiveProvider, effectiveBaseURL) {
 			return parentPool
 		}
-		delegateLog().Debug(fmt.Sprintf("Parent %s pool has no entry for child endpoint %s; not sharing it", effectiveProvider, effectiveBaseURL))
+		pkgLog().Debug(fmt.Sprintf("Parent %s pool has no entry for child endpoint %s; not sharing it", effectiveProvider, effectiveBaseURL))
 	}
 	loaded := loadedPoolFn(ctx, effectiveProvider)
 	if loaded != nil && effectiveBaseURL != "" && !poolServesEndpoint(ctx, loaded, effectiveProvider, effectiveBaseURL) {
@@ -227,7 +226,7 @@ func directEndpointCredentials(ctx context.Context, v delegationValues, explicit
 	if v.providerName != "" {
 		runtime, err := resolveRuntimeProviderFn(ctx, home.Dir(ctx), v.providerName, v.model, "", "")
 		if err != nil {
-			delegateLog().Debug(fmt.Sprintf("delegation.base_url: runtime resolution for provider '%s' failed; proceeding without request_overrides: %v",
+			pkgLog().Debug(fmt.Sprintf("delegation.base_url: runtime resolution for provider '%s' failed; proceeding without request_overrides: %v",
 				v.providerName, err))
 		} else if len(runtime.RequestOverrides) > 0 {
 			requestOverrides = map[string]any{}
@@ -248,7 +247,7 @@ func runtimeProviderCredentials(ctx context.Context, v delegationValues, explici
 		return nil, &tools.DelegationValueError{Message: fmt.Sprintf("Cannot resolve delegation provider '%s': %v. "+
 			"Check that the provider is configured (API key set, valid provider name), "+
 			"or set delegation.base_url/delegation.api_key for a direct endpoint. "+
-			"Available providers: openrouter, nous, zai, kimi-coding, minimax.", configured, err)}
+			"Available providers: openrouter, zai, kimi-coding, minimax.", configured, err)}
 	}
 	if runtime.APIKey == "" {
 		return nil, &tools.DelegationValueError{Message: fmt.Sprintf("Delegation provider '%s' resolved but has no API key. "+
@@ -342,7 +341,7 @@ func childReasoning(parent *AIAgent, delegationCfg map[string]any, routeEffort a
 	if pyrepr.Truthy(effort) || effort == false {
 		parsed := config.ParseReasoningEffort(effort)
 		if parsed == nil {
-			delegateLog().Warn(fmt.Sprintf("Unknown delegation.reasoning_effort '%s', inheriting parent level", pyrepr.Str(effort)))
+			pkgLog().Warn(fmt.Sprintf("Unknown delegation.reasoning_effort '%s', inheriting parent level", pyrepr.Str(effort)))
 		} else {
 			reasoning = parsed
 		}
@@ -380,8 +379,6 @@ func resolveChildRuntime(ctx context.Context, parent *AIAgent, delegationCfg map
 	switch {
 	case s.overrideAPIMode != nil:
 		effectiveAPIMode = *s.overrideAPIMode
-	case delegationNousProviders[strings.ToLower(pystr.Strip(effectiveProvider))]:
-		effectiveAPIMode = provider.NousAPIMode(ctx, effectiveModel)
 	case effectiveProvider != parent.provider:
 		effectiveAPIMode = ""
 	default:

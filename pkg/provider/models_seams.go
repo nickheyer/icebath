@@ -34,16 +34,8 @@ var (
 	azureProbeOpenAIModelsFn                 func(ctx context.Context, baseURL, apiKey string, tokenProvider func(context.Context) (string, error)) (bool, []string)
 	providerAuthStatusFn                     func(ctx context.Context, provider string) (bool, bool)
 	resolveCodexRuntimeCredentialsReadOnlyFn func(env PoolEnv) (map[string]any, error)
-	windowPlanDefaultFn                      func(modelIDs []string, pricing map[string]any) string
 	modelAliasIdentityFn                     func(nameLower string) (string, string, bool)
 	fetchCodexModelsFromAPIFn                func(ctx context.Context, accessToken, baseURL string) []string
-	nousPortalAccountIsFreeTierFn            func(ctx context.Context, forceFresh bool) (bool, error)
-	checkNousFreeTierFn                      func(ctx context.Context, forceFresh, cachedOnly bool) bool
-	curatedNousModelIDsFn                    func(ctx context.Context) []string
-	nousPricingFn                            func(ctx context.Context) PricingTable
-	nousPolicyAllowedIDsFn                   func(ctx context.Context, forceRefresh bool) (map[string]bool, bool)
-	unionPortalFreeFn                        func(ctx context.Context, curated []string, pricing PricingTable, portalBaseURL string, forceRefresh bool) ([]string, PricingTable)
-	unionPortalPaidFn                        func(ctx context.Context, curated []string, pricing PricingTable, portalBaseURL string, forceRefresh bool) ([]string, PricingTable)
 	preferredSilentDefaultFn                 func(ctx context.Context, provider string) string
 	fetchLiveCatalogIndexFn                  func(ctx context.Context, rawURL string, timeout time.Duration) ([]any, map[string]map[string]any, bool)
 	curatedOpenRouterModelsFn                func(ctx context.Context) []CatalogModel
@@ -84,16 +76,8 @@ func bindModelsSeams() {
 	}
 	providerAuthStatusFn = providerAuthStatus
 	resolveCodexRuntimeCredentialsReadOnlyFn = resolveCodexRuntimeCredentialsReadOnly
-	windowPlanDefaultFn = windowPlanDefault
 	modelAliasIdentityFn = modelAliasIdentity
 	fetchCodexModelsFromAPIFn = fetchCodexModelsFromAPI
-	nousPortalAccountIsFreeTierFn = nousPortalAccountIsFreeTier
-	checkNousFreeTierFn = CheckNousFreeTier
-	curatedNousModelIDsFn = GetCuratedNousModelIDs
-	nousPricingFn = func(ctx context.Context) PricingTable { return GetPricingForProvider(ctx, "nous", "", false, false) }
-	nousPolicyAllowedIDsFn = NousPolicyAllowedIDs
-	unionPortalFreeFn = UnionWithPortalFreeRecommendations
-	unionPortalPaidFn = UnionWithPortalPaidRecommendations
 	preferredSilentDefaultFn = GetPreferredSilentDefaultModel
 	fetchLiveCatalogIndexFn = fetchLiveCatalogIndex
 	curatedOpenRouterModelsFn = CuratedOpenRouterModels

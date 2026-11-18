@@ -4,7 +4,6 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
-	"log/slog"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -270,7 +269,7 @@ func storeInstallLayout(thisHome string) (root, profile string, ok, named bool) 
 	if profileHome := home.NamedProfileHome(thisHome); profileHome != "" {
 		abs, err := pyAbspath(filepath.Dir(filepath.Dir(profileHome)))
 		if err != nil {
-			slog.Debug(fmt.Sprintf("Could not classify the install layout of %s", thisHome), "error", err)
+			pkgLog().Debug(fmt.Sprintf("Could not classify the install layout of %s", thisHome), "error", err)
 			return "", "", false, false
 		}
 		return abs, filepath.Base(profileHome), true, true
@@ -278,7 +277,7 @@ func storeInstallLayout(thisHome string) (root, profile string, ok, named bool) 
 	if pyBasename(thisHome) == ".icebath" {
 		abs, err := pyAbspath(thisHome)
 		if err != nil {
-			slog.Debug(fmt.Sprintf("Could not classify the install layout of %s", thisHome), "error", err)
+			pkgLog().Debug(fmt.Sprintf("Could not classify the install layout of %s", thisHome), "error", err)
 			return "", "", false, false
 		}
 		return abs, "", true, false
@@ -441,13 +440,13 @@ type rmAPI interface {
 	EndSession(session uint32) uint32
 }
 
-// OSError raised with a Restart Manager status code and the failing call
+// Restart Manager call that failed with its status code
 type rmCallError struct {
 	Code uint32
 	Msg  string
 }
 
-func (e *rmCallError) Error() string { return fmt.Sprintf("[Errno %d] %s", e.Code, e.Msg) }
+func (e *rmCallError) Error() string { return fmt.Sprintf("%s with status %d", e.Msg, e.Code) }
 
 // Main database plus the WAL and SHM sidecars SQLite may keep beside it
 func sqliteFamily(base string) []string {
@@ -521,7 +520,7 @@ func restartManagerScan(dbPath string, load func() (rmAPI, error)) []Holder {
 		return windowsRestartManagerHolders(dbPath, api)
 	}()
 	if err != nil {
-		slog.Warn("Could not prove state.db has no Windows holders; deferring structural maintenance: " + pyOSErrorStr(err))
+		pkgLog().Warn("Could not prove state.db has no Windows holders; deferring structural maintenance: " + pyOSErrorStr(err))
 		return []Holder{{-1, "Windows Restart Manager scan failed: " + pyOSErrorStr(err)}}
 	}
 	return holders

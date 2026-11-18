@@ -68,7 +68,7 @@ func singleLocalUnwrapKeepsLiveState(t *testing.T, flattenProbe bool) {
 	calls := []map[string]any{
 		{"name": "session_search", "arguments": map[string]any{"session_id": "past-session"}},
 		{"name": "todo_list", "arguments": map[string]any{"todos": []any{map[string]any{"id": "a", "content": "live-store-proof", "status": "pending"}}}},
-		{"name": "manage_connections", "arguments": map[string]any{"action": "install", "connectors": []any{map[string]any{"name": "linear", "mcp": true}}}},
+		{"name": "manage_connections", "arguments": map[string]any{"action": "install", "connectors": []any{map[string]any{"name": "linear"}}}},
 	}
 	ex := a.toolExecutor()
 	var results []map[string]any

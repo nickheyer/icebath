@@ -4,9 +4,10 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"github.com/nickheyer/icebath/pkg/tools"
 	"sync"
 	"sync/atomic"
+
+	"github.com/nickheyer/icebath/pkg/tools"
 
 	"github.com/nickheyer/icebath/pkg/agent"
 	"github.com/nickheyer/icebath/pkg/gateway"
@@ -16,7 +17,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/state"
-	"github.com/nickheyer/icebath/pkg/tuigateway"
+	"github.com/nickheyer/icebath/pkg/tuihost"
 )
 
 // Consecutive lagging turns after which the transcript lag line escalates from warning to error
@@ -24,8 +25,8 @@ const transcriptLagEscalationTurns = 3
 
 // Exact card destination refusals kept for older adapters without destination preflight
 var cardDestinationRefusals = map[string]bool{
-	"No Slack thread target":                   true,
-	"slack task_card requires a thread anchor": true,
+	"No Slack thread target":                                                      true,
+	"slack task_card requires a thread anchor":                                    true,
 	"slack task_card requires a thread anchor (Slack streams are thread replies)": true,
 }
 
@@ -33,8 +34,8 @@ var cardDestinationRefusals = map[string]bool{
 var ledgerPassthroughKeys = []string{"estimated_cost_usd", "cost_status", "cost_source", "cache_read_tokens",
 	"cache_write_tokens", "reasoning_tokens", "total_tokens", "provider", "turn_exit_reason", "service_tier"}
 
-// Failure descriptor keys the error card and window plan rewording read beside failure_reason
-var failureDescriptorKeys = []string{"free_tier", "failure_retryable", "failure_resets_at", "usage_window_message"}
+// Failure descriptor keys the error card reads beside failure_reason
+var failureDescriptorKeys = []string{"failure_retryable", "failure_resets_at"}
 
 // Notice a native clarify card shows once its wait ended without a click
 func clarifyExpiredNotice(ctx context.Context) string {
@@ -70,12 +71,12 @@ type turnApprovalOwner struct {
 type TurnRunner struct {
 	runner *GatewayRunner
 	ctx    *TurnContext
-	// Context every callback of the turn runs under, the turn's contextvars of hermes
+	// Context every callback of the turn runs under
 	turnCtx       context.Context
 	approvalOwner *turnApprovalOwner
 	segmentsMu    sync.Mutex
 	segmentsGen   int64
-	segments      *tuigateway.TurnSegments
+	segments      *tuihost.TurnSegments
 	// Result fields a classic CLI turn adds to the receipt, popped once run_sync settles
 	cliResultFields map[string]any
 	// Start times and before state snapshots of local viewer tool calls by call id
@@ -84,7 +85,7 @@ type TurnRunner struct {
 	localEditSnapshots map[string]*tools.LocalEditSnapshot
 	// Terminal scope of the session policy while the turn runs inside it
 	policyScope atomic.Pointer[tools.TerminalScope]
-	// Launch policy of the session while the turn runs inside its scope, the active_policy contextvar of hermes
+	// Launch policy of the session while the turn runs inside its scope
 	activePolicy atomic.Pointer[gateway.ActiveLaunchPolicy]
 }
 
@@ -113,7 +114,7 @@ func newTurnRunner(ctx context.Context, runner *GatewayRunner, tc *TurnContext) 
 	}
 	generation := gateway.RowInt(row, "runtime_generation")
 	if generation == nil {
-		return nil, &pyTypeError{"KeyError: 'runtime_generation'"}
+		return nil, &pyTypeError{"the turn context has no runtime_generation"}
 	}
 	tr.approvalOwner = &turnApprovalOwner{authority: authority, sessionID: ownerID, generation: *generation}
 	return tr, nil
@@ -127,7 +128,7 @@ func (t *TurnRunner) publishExecution(eventType string, payload map[string]any) 
 	}
 	published, err := owner.authority.PublishExecution(owner.sessionID, owner.generation, eventType, t.stampSegment(owner.generation, eventType, payload))
 	if err != nil {
-		runLog().Debug(fmt.Sprintf("execution publish %s failed: %s", eventType, err))
+		pkgLog().Debug(fmt.Sprintf("execution publish %s failed: %s", eventType, err))
 		return false
 	}
 	return published
@@ -138,9 +139,9 @@ func (t *TurnRunner) stampSegment(generation int64, eventType string, payload ma
 	t.segmentsMu.Lock()
 	defer t.segmentsMu.Unlock()
 	if t.segments == nil || t.segmentsGen != generation {
-		t.segmentsGen, t.segments = generation, tuigateway.NewTurnSegments()
+		t.segmentsGen, t.segments = generation, tuihost.NewTurnSegments()
 	}
-	return tuigateway.StampReplyFrame(t.segments, eventType, payload)
+	return tuihost.StampReplyFrame(t.segments, eventType, payload)
 }
 
 // Hands the real tool payload to this admission's API observers only
@@ -157,7 +158,7 @@ func (t *TurnRunner) publishAPITool(eventType string, callID any, toolName any, 
 		name = pyrepr.Str(toolName)
 	}
 	if err := gateway.PublishAPIToolEvent(t.turnCtx, owner.authority, owner.sessionID, owner.generation, eventType, call, name, args, result); err != nil {
-		runLog().Debug(fmt.Sprintf("API tool event %s failed: %s", eventType, err))
+		pkgLog().Debug(fmt.Sprintf("API tool event %s failed: %s", eventType, err))
 	}
 }
 
@@ -180,7 +181,7 @@ func settleAPIRuntimeLock(ctx context.Context, a *agent.AIAgent, result map[stri
 	}
 	usage, isMap := captured["usage"].(map[string]any)
 	if !isMap {
-		return &pyTypeError{"KeyError: 'usage'"}
+		return &pyTypeError{"the turn result usage is not a mapping"}
 	}
 	runtime, err := source.TurnRuntimeMetadata(a, settings, true)
 	if err != nil {

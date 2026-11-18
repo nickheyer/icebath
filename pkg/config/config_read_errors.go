@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
-	"log/slog"
 	"os"
 	"strings"
 	"sync"
@@ -170,7 +169,7 @@ func WarnConfigParseFailure(ctx context.Context, configPath string, err error, f
 		msg += " A copy of the broken file was saved to " + backup + "."
 	}
 	details := YAMLErrorDetails(err)
-	slog.Warn(msg+" Details: "+details, "path", configPath)
+	pkgLog().Warn(msg+" Details: "+details, "path", configPath)
 	fmt.Fprintf(ParseFailureOut, "⚠️  icebath config: %s\n    Details: %s\n", msg, details)
 	return nil
 }

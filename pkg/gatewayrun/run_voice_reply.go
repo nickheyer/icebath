@@ -4,10 +4,11 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"maps"
 	"os"
 	"strings"
+
+	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
@@ -47,7 +48,7 @@ func (r *GatewayRunner) shouldSendVoiceReply(ctx context.Context, event *gateway
 		if hasMode {
 			mode = voiceMode
 		}
-		runLog().Debug(fmt.Sprintf("Auto voice reply skipped: mode=%s adapter_auto_tts=%s chat=%s platform=%s", mode, pyrepr.Str(adapterAutoTTS), chatID, string(event.Source.Platform)))
+		pkgLog().Debug(fmt.Sprintf("Auto voice reply skipped: mode=%s adapter_auto_tts=%s chat=%s platform=%s", mode, pyrepr.Str(adapterAutoTTS), chatID, string(event.Source.Platform)))
 		return false
 	}
 	start := 0
@@ -107,7 +108,7 @@ func (r *GatewayRunner) sendVoiceReply(ctx context.Context, event *gateway.Messa
 		var result map[string]any
 		if json.Unmarshal([]byte(raw), &result) != nil || result == nil {
 			runes := []rune(raw)
-			runLog().Warn("Auto voice reply TTS returned invalid JSON: " + string(runes[:min(len(runes), 200)]))
+			pkgLog().Warn("Auto voice reply TTS returned invalid JSON: " + string(runes[:min(len(runes), 200)]))
 			return nil
 		}
 		var candidates []any
@@ -128,14 +129,14 @@ func (r *GatewayRunner) sendVoiceReply(ctx context.Context, event *gateway.Messa
 			}
 		}
 		if !pyrepr.Truthy(result["success"]) || len(paths) == 0 {
-			runLog().Warn("Auto voice reply TTS failed: " + pyrepr.Str(result["error"]))
+			pkgLog().Warn("Auto voice reply TTS failed: " + pyrepr.Str(result["error"]))
 			return nil
 		}
 		actualPaths = paths
 		return r.deliverVoiceReply(ctx, event, actualPaths)
 	}()
 	if err != nil {
-		runLog().Warn("Auto voice reply failed: " + pyrepr.ExceptionMessage(err))
+		pkgLog().Warn("Auto voice reply failed: " + pyrepr.ExceptionMessage(err))
 	}
 }
 

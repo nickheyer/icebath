@@ -117,17 +117,15 @@ func busyMessage(command string, compressing bool) string {
 	return "session busy — Icebath is still replying. Stop the current reply first (Stop button, or Ctrl+C in a terminal), then run /" + name + "."
 }
 
-var authLockTimeoutPrefixes = []string{"Timed out waiting for auth store lock", "Timed out waiting for shared Nous auth lock"}
+const authLockTimeoutPrefix = "Timed out waiting for auth store lock"
 
 // Agent start failure copy, the wait for the lock holder when auth lock contention caused it
 func agentInitFailedMessage(err any) string {
 	detail := strings.TrimRight(pyrepr.Str(err), ". ")
-	for _, prefix := range authLockTimeoutPrefixes {
-		if strings.Contains(detail, prefix) {
-			return "Icebath could not start the assistant for this session. Details: " + detail + ". " +
-				"Wait for the other process to release the lock (or exit it — check for a running " +
-				"gateway or background icebath process), then retry."
-		}
+	if strings.Contains(detail, authLockTimeoutPrefix) {
+		return "Icebath could not start the assistant for this session. Details: " + detail + ". " +
+			"Wait for the other process to release the lock (or exit it — check for a running " +
+			"gateway or background icebath process), then retry."
 	}
 	return "Icebath could not start the assistant for this session. Details: " + detail + ". " +
 		"Check the model and provider with /model, or type /setup model to reconfigure."

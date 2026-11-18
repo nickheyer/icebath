@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"log/slog"
 	"math/big"
 	"strings"
 
@@ -58,7 +57,7 @@ func ybTool(label string, fn func(ctx context.Context, call *tools.Call) (*pyjso
 		case errors.As(err, &failure):
 			return tools.ToolResult(failure.payload())
 		}
-		slog.Error(fmt.Sprintf("[yuanbao_tools] %s error", label), "error", err)
+		pkgLog().Error(fmt.Sprintf("[yuanbao_tools] %s error", label), "error", err)
 		return tools.ToolResult((&ybError{msg: errText(err)}).payload())
 	}
 }
@@ -503,13 +502,13 @@ var yuanbaoToolDefs = []tools.Def{
 			pyjson.ObjectOf(
 				"group_code", stringProp(groupCodeDescription),
 				"action", pyjson.ObjectOf("type", "string", "enum", []any{"find", "list_bots", "list_all"},
-					"description", "find — search a user by name (use when you need to @mention or look up someone); " +
-						"list_bots — list bots and Yuanbao AI assistants; " +
+					"description", "find — search a user by name (use when you need to @mention or look up someone); "+
+						"list_bots — list bots and Yuanbao AI assistants; "+
 						"list_all — list all members."),
-				"name", stringProp("User name to search (partial match, case-insensitive). " +
+				"name", stringProp("User name to search (partial match, case-insensitive). "+
 					"Required for 'find'. Use the name the user mentioned in the conversation."),
 				"mention", pyjson.ObjectOf("type", "boolean",
-					"description", "Set to true when you need to @mention/at someone in your reply. " +
+					"description", "Set to true when you need to @mention/at someone in your reply. "+
 						"The response will include the exact @mention format to use."),
 			), "group_code", "action")},
 	{Name: "yb_send_dm", Emoji: "✉️", Handler: ybTool("send_dm", sendDM),
@@ -519,21 +518,21 @@ var yuanbaoToolDefs = []tools.Def{
 				"Use it when someone asks to privately message a user. "+
 				"Supports text, images, and file attachments.",
 			pyjson.ObjectOf(
-				"group_code", stringProp("The group where the target user belongs. " +
-					"Extract from chat_id: 'group:328306697' → '328306697'. " +
+				"group_code", stringProp("The group where the target user belongs. "+
+					"Extract from chat_id: 'group:328306697' → '328306697'. "+
 					"Required when user_id is not provided."),
-				"name", stringProp("Target user's display name (partial match, case-insensitive). " +
+				"name", stringProp("Target user's display name (partial match, case-insensitive). "+
 					"Required when user_id is not provided."),
 				"message", stringProp("The message text to send as a DM. Can be empty if only sending media."),
-				"user_id", stringProp("Target user's account ID. If provided, skips the member lookup. " +
+				"user_id", stringProp("Target user's account ID. If provided, skips the member lookup. "+
 					"Usually obtained from a previous yb_query_group_members call."),
 				"media_files", pyjson.ObjectOf("type", "array",
-					"description", "Optional list of media files to send along with the DM. " +
-						"Images (.jpg/.png/.gif/.webp/.bmp) are sent as image messages; " +
+					"description", "Optional list of media files to send along with the DM. "+
+						"Images (.jpg/.png/.gif/.webp/.bmp) are sent as image messages; "+
 						"other files are sent as document attachments.",
 					"items", pyjson.ObjectOf("type", "object",
 						"properties", pyjson.ObjectOf(
-							"path",     stringProp("Absolute local file path of the media to send."),
+							"path", stringProp("Absolute local file path of the media to send."),
 							"is_voice", pyjson.ObjectOf("type", "boolean", "description", "Whether this file is a voice message (default false)."),
 						),
 						"required", []any{"path"})),
@@ -546,7 +545,7 @@ var yuanbaoToolDefs = []tools.Def{
 				"Sticker = 贴纸 = TIM face — NOT a message reaction. "+
 				"Prefer sending a sticker over bare Unicode emoji when reacting/expressing emotion.",
 			pyjson.ObjectOf(
-				"query", stringProp("Search keyword (Chinese or English, e.g. '666', '比心', 'cool', '吃瓜'). " +
+				"query", stringProp("Search keyword (Chinese or English, e.g. '666', '比心', 'cool', '吃瓜'). "+
 					"Empty string returns the first N stickers."),
 				"limit", pyjson.ObjectOf("type", "integer", "description", "Max number of candidates to return (default 10, max 50)."),
 			))},
@@ -563,9 +562,9 @@ var yuanbaoToolDefs = []tools.Def{
 				"prefer matching that tone by replying with a sticker instead of (or in "+
 				"addition to) text.",
 			pyjson.ObjectOf(
-				"sticker", stringProp("Sticker name (e.g. '六六六', '比心', 'ok') or numeric sticker_id " +
+				"sticker", stringProp("Sticker name (e.g. '六六六', '比心', 'ok') or numeric sticker_id "+
 					"(e.g. '278'). Empty string sends a random built-in sticker."),
-				"chat_id", stringProp("Target chat. Defaults to the current session. " +
+				"chat_id", stringProp("Target chat. Defaults to the current session. "+
 					"Format: 'direct:{account_id}', 'group:{group_code}', or bare account_id."),
 				"reply_to", stringProp("Optional ref_msg_id to quote-reply (group chat only)."),
 			))},

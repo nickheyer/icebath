@@ -149,7 +149,7 @@ func TestConfigSeedRejectsForbiddenKeys(t *testing.T) {
 		t.Fatalf("timestamp key paths %q", msg)
 	}
 	_, err = ParsePack("name: p\nplugins:\n  - {repo: o/r, ref: "+packSHAA+"}\nconfig:\n  tts:\n    2001-13-01: x\n", "")
-	if e, ok := err.(*pydatetime.Error); !ok || e.Kind != "ValueError" || e.Msg != "month must be in 1..12" {
+	if e, ok := err.(*pydatetime.Error); !ok || e.Kind != "ValueError" || e.Msg != "month must be in 1..12, not 13" {
 		t.Fatalf("invalid timestamp key = %#v", err)
 	}
 	if got := mustParsePack(t, "name: p\nplugins:\n  - {repo: o/r, ref: "+packSHAA+"}\nconfig:\n  tts:\n    '2001-12-14': x\n").seedFor("tts"); !reflect.DeepEqual(got, map[string]any{"2001-12-14": "x"}) {

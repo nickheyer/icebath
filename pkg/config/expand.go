@@ -3,7 +3,6 @@ package config
 import (
 	"context"
 	"fmt"
-	"log/slog"
 	"os"
 	"regexp"
 	"strings"
@@ -42,7 +41,7 @@ func ExpandString(s string, lookup Lookup) string {
 		name := envRefName(inner)
 		if name == "" {
 			if !strings.HasPrefix(inner, "env:") && isNonEnvSecretRef(inner) {
-				slog.Warn(fmt.Sprintf("Config ref %s uses source %s which is not resolvable in config.yaml — external secret sources "+
+				pkgLog().Warn(fmt.Sprintf("Config ref %s uses source %s which is not resolvable in config.yaml — external secret sources "+
 					"inject env vars at startup, so reference the variable as ${env:NAME} instead",
 					PyRepr(raw), PyRepr(strings.SplitN(inner, ":", 2)[0])))
 			}
@@ -52,7 +51,7 @@ func ExpandString(s string, lookup Lookup) string {
 			return v
 		}
 		if strings.HasPrefix(inner, "env:") {
-			slog.Warn(fmt.Sprintf("Config ref %s: %s is not set (check ~/.icebath/.env); keeping the literal placeholder", PyRepr(raw), name))
+			pkgLog().Warn(fmt.Sprintf("Config ref %s: %s is not set (check ~/.icebath/.env); keeping the literal placeholder", PyRepr(raw), name))
 		}
 		return raw
 	})

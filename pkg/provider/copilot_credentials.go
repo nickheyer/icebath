@@ -7,7 +7,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"log/slog"
 	"math"
 	"math/big"
 	"net"
@@ -368,7 +367,7 @@ func resolveCopilotToken(ctx context.Context) (string, string, error) {
 		if valid {
 			return val, envVar, nil
 		}
-		slog.Default().Warn(fmt.Sprintf("Token from %s is not supported: %s", envVar, msg))
+		pkgLog().Warn(fmt.Sprintf("Token from %s is not supported: %s", envVar, msg))
 	}
 	return "", "", nil
 }
@@ -408,7 +407,7 @@ func copilotDeviceCodeLogin(ctx context.Context, out io.Writer, host string, tim
 		return "", ctx.Err()
 	}
 	if err != nil {
-		slog.Default().Error(fmt.Sprintf("Failed to initiate device authorization: %v", err))
+		pkgLog().Error(fmt.Sprintf("Failed to initiate device authorization: %v", err))
 		fmt.Fprintf(out, "  ✗ Failed to start device authorization: %v\n", err)
 		return "", nil
 	}
@@ -486,18 +485,18 @@ func copilotReadJWTStore(path string) *pyjson.Object {
 		return nil
 	}
 	if info.Size() > copilotJWTDiskMaxBytes {
-		slog.Default().Debug(fmt.Sprintf("Persisted Copilot JWT store exceeds %d bytes; ignoring", copilotJWTDiskMaxBytes))
+		pkgLog().Debug(fmt.Sprintf("Persisted Copilot JWT store exceeds %d bytes; ignoring", copilotJWTDiskMaxBytes))
 		return nil
 	}
 	data, err := os.ReadFile(path)
 	if err != nil {
-		slog.Default().Debug(fmt.Sprintf("Failed to read persisted Copilot JWT store: %v", err))
+		pkgLog().Debug(fmt.Sprintf("Failed to read persisted Copilot JWT store: %v", err))
 		return nil
 	}
 	text := strings.TrimPrefix(string(data), "\uFEFF")
 	loaded, err := pyjson.Loads(text)
 	if err != nil {
-		slog.Default().Debug(fmt.Sprintf("Failed to read persisted Copilot JWT store: %v", err))
+		pkgLog().Debug(fmt.Sprintf("Failed to read persisted Copilot JWT store: %v", err))
 		return nil
 	}
 	obj, _ := loaded.(*pyjson.Object)
@@ -513,7 +512,7 @@ func copilotJWTDiskPath(ctx context.Context) string {
 func copilotWithJWTStore(ctx context.Context, verb string, op func(path string, store *pyjson.Object) error) {
 	path := copilotJWTDiskPath(ctx)
 	if err := op(path, copilotReadJWTStore(path)); err != nil {
-		slog.Default().Debug(fmt.Sprintf("Failed to %s Copilot JWT: %v", verb, err))
+		pkgLog().Debug(fmt.Sprintf("Failed to %s Copilot JWT: %v", verb, err))
 	}
 }
 
@@ -627,12 +626,12 @@ func copilotFetchExchangeWithRetry(ctx context.Context, raw string, timeout time
 		var httpErr *copilotHTTPError
 		permanent = errors.As(err, &httpErr) && copilotPermanentStatuses[httpErr.Code]
 		if permanent {
-			slog.Default().Debug(fmt.Sprintf("Copilot token exchange rejected (HTTP %d); not retrying", httpErr.Code))
+			pkgLog().Debug(fmt.Sprintf("Copilot token exchange rejected (HTTP %d); not retrying", httpErr.Code))
 			break
 		}
 		if attempt < copilotExchangeMaxAttempts {
 			sleep := copilotExchangeBackoffBase * float64(attempt)
-			slog.Default().Debug(fmt.Sprintf("Copilot token exchange attempt %d/%d failed (%v); retrying in %.1fs",
+			pkgLog().Debug(fmt.Sprintf("Copilot token exchange attempt %d/%d failed (%v); retrying in %.1fs",
 				attempt, copilotExchangeMaxAttempts, err, sleep))
 			select {
 			case <-ctx.Done():
@@ -757,7 +756,7 @@ func exchangeCopilotTokenLocked(ctx context.Context, raw, fp string, timeout tim
 	if baseURL != "" {
 		shownBase = baseURL
 	}
-	slog.Default().Debug(fmt.Sprintf("Copilot token exchanged, expires_at=%s, base_url=%s", pyFloatRepr(expiresAt), shownBase))
+	pkgLog().Debug(fmt.Sprintf("Copilot token exchanged, expires_at=%s, base_url=%s", pyFloatRepr(expiresAt), shownBase))
 	return jwt, nil
 }
 
@@ -787,7 +786,7 @@ func getCopilotAPIToken(ctx context.Context, raw string) (string, string) {
 	}
 	jwt, err := exchangeCopilotToken(ctx, raw, 10*time.Second)
 	if err != nil {
-		slog.Default().Debug(fmt.Sprintf("Copilot token exchange failed, using raw token: %v", err))
+		pkgLog().Debug(fmt.Sprintf("Copilot token exchange failed, using raw token: %v", err))
 		return raw, ""
 	}
 	return jwt.token, jwt.baseURL
@@ -820,7 +819,7 @@ func copilotWarnRawDegradationOnce(token string) {
 	if seen {
 		return
 	}
-	slog.Default().Warn("Copilot token exchange degraded to RAW token (exchange " +
+	pkgLog().Warn("Copilot token exchange degraded to RAW token (exchange " +
 		"unavailable); enterprise-only models may 400 with " +
 		"model_not_available_for_integrator until exchange recovers.")
 }
@@ -829,7 +828,7 @@ func copilotWarnRawDegradationOnce(token string) {
 func copilotRefreshExchangedToken(ctx context.Context) (string, string, bool, error) {
 	newToken, tokenSource, err := resolveCopilotToken(ctx)
 	if err != nil {
-		slog.Default().Debug(fmt.Sprintf("Copilot credential refresh failed: %v", err))
+		pkgLog().Debug(fmt.Sprintf("Copilot credential refresh failed: %v", err))
 		return "", "", false, nil
 	}
 	newToken = pystr.Strip(newToken)
@@ -842,7 +841,7 @@ func copilotRefreshExchangedToken(ctx context.Context) (string, string, bool, er
 	if pystr.Strip(apiToken) != "" {
 		newToken, enterpriseBase = pystr.Strip(apiToken), exchangedBase
 	}
-	slog.Default().Info("Copilot credentials refreshed from " + tokenSource)
+	pkgLog().Info("Copilot credentials refreshed from " + tokenSource)
 	return newToken, enterpriseBase, true, nil
 }
 
@@ -850,7 +849,7 @@ func copilotRefreshExchangedToken(ctx context.Context) (string, string, bool, er
 func copilotReexchangeStaleToken(ctx context.Context) (string, string, bool, error) {
 	rawToken, tokenSource, err := resolveCopilotToken(ctx)
 	if err != nil {
-		slog.Default().Debug(fmt.Sprintf("Copilot stale-credential recovery failed: %v", err))
+		pkgLog().Debug(fmt.Sprintf("Copilot stale-credential recovery failed: %v", err))
 		return "", "", false, nil
 	}
 	if pystr.Strip(rawToken) == "" {
@@ -863,11 +862,11 @@ func copilotReexchangeStaleToken(ctx context.Context) (string, string, bool, err
 		return "", "", false, nil
 	}
 	if apiToken == rawToken && enterpriseBase == "" {
-		slog.Default().Warn("Copilot stale-credential recovery: exchange still degraded to raw token; skipping retry " +
+		pkgLog().Warn("Copilot stale-credential recovery: exchange still degraded to raw token; skipping retry " +
 			"(network/exchange endpoint unavailable).")
 		return "", "", false, nil
 	}
-	slog.Default().Info(fmt.Sprintf("Copilot credentials re-exchanged after stale-credential 400 (source=%s)", tokenSource))
+	pkgLog().Info(fmt.Sprintf("Copilot credentials re-exchanged after stale-credential 400 (source=%s)", tokenSource))
 	return pystr.Strip(apiToken), enterpriseBase, true, nil
 }
 
@@ -918,7 +917,7 @@ func copilotRuntimeBaseURL(ctx context.Context, _ string, def, envURL string) st
 	}
 	rawToken, _, err := resolveCopilotToken(ctx)
 	if err != nil {
-		slog.Default().Debug(fmt.Sprintf("Copilot base URL resolution fell back to default: %v", err))
+		pkgLog().Debug(fmt.Sprintf("Copilot base URL resolution fell back to default: %v", err))
 		return baseURL
 	}
 	if rawToken != "" && githubCallsAllowed(ctx) {
@@ -964,7 +963,7 @@ func copilotSeedPoolCredentials(ctx context.Context, suppressed map[string]bool,
 	}
 	token, source, err := resolveCopilotToken(ctx)
 	if err != nil {
-		slog.Default().Debug(fmt.Sprintf("Copilot token seed failed: %v", err))
+		pkgLog().Debug(fmt.Sprintf("Copilot token seed failed: %v", err))
 		return []map[string]any{}
 	}
 	if token == "" {
@@ -1050,7 +1049,7 @@ func copilotCLIAuthEvidence(ctx context.Context) (bool, string, bool) {
 	for _, envVar := range copilotEnvVars {
 		raw, _, err := GetSecret(ctx, envVar)
 		if err != nil {
-			slog.Default().Debug(fmt.Sprintf("copilot-acp env token evidence check failed: %v", err))
+			pkgLog().Debug(fmt.Sprintf("copilot-acp env token evidence check failed: %v", err))
 			return false, "", true
 		}
 		val := pystr.Strip(raw)

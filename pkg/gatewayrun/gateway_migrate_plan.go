@@ -270,7 +270,7 @@ func ownGatewayPid(h string, owner *gateway.HostGateway) int {
 	if pid == 0 || owner == nil || pid != owner.PID {
 		return pid
 	}
-	same, err := gateway.SameHermesHome(owner.Home, h)
+	same, err := gateway.SameIcebathHome(owner.Home, h)
 	if err != nil || !same {
 		return 0
 	}

@@ -89,9 +89,5 @@ func tuiUsage(stats *pyjson.Object) *pyjson.Object {
 	if value := get("active_subagents"); usageIsInt(value) {
 		usage.Set("active_subagents", value)
 	}
-	switch gauge := get("plan_gauge").(type) {
-	case *pyjson.Object, map[string]any:
-		usage.Set("plan_gauge", gauge)
-	}
 	return usage
 }

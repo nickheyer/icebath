@@ -112,7 +112,7 @@ func TestExplicitRefineOriginForkKeepsBackgroundReviewOriginAndCarriesAttendedne
 	}
 }
 
-// Memory store of the hermes _store fixture inside an isolated home with the review write origin bound
+// Memory store of the store fixture inside an isolated home with the review write origin bound
 func brConsolidationStore(t *testing.T) (*memory.Store, *tools.Env) {
 	t.Helper()
 	root := t.TempDir()
@@ -139,7 +139,7 @@ func brMemoryCall(t *testing.T, env *tools.Env, store *memory.Store, action, con
 	return raw, out
 }
 
-// nil for an empty string, the absent keyword of the hermes call
+// nil for an empty string, the absent keyword of the call
 func nilIfEmpty(s string) any {
 	if s == "" {
 		return nil

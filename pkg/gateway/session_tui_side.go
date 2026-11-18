@@ -109,7 +109,7 @@ func sideBackground(ctx context.Context, c *AuthorityConnection, ref SessionRef,
 	a := c.authority
 	runner, ok := a.Runner.(tuiSideRunner)
 	if !ok {
-		return nil, attributeError("_resolve_policy_agent_runtime")
+		return nil, runnerLacks("resolve the agent runtime of a policy")
 	}
 	holder := &sideAgentHold{}
 	body := func(ctx context.Context) (string, error) {
@@ -179,7 +179,7 @@ func sideBtw(ctx context.Context, c *AuthorityConnection, ref SessionRef, params
 	a := c.authority
 	runner, ok := a.Runner.(tuiSideRunner)
 	if !ok {
-		return nil, attributeError("_resolve_policy_agent_runtime")
+		return nil, runnerLacks("resolve the agent runtime of a policy")
 	}
 	parent, err := a.agent(ref)
 	if err != nil {

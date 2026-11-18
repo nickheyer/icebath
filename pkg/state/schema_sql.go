@@ -1,6 +1,6 @@
 package state
 
-// SQL texts pinned whitespace for whitespace to the hermes literals, extracted mechanically
+// SQL texts pinned whitespace for whitespace to the literals, extracted mechanically
 const (
 	sessionModelUsageHealDDL = `CREATE TABLE session_model_usage (
     session_id TEXT NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,

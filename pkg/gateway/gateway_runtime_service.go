@@ -328,7 +328,7 @@ func launchdExistingService(ctx context.Context, h string, deadline float64) (*E
 	if err != nil {
 		return nil, err
 	}
-	label := "ai.icebath.gateway"
+	label := launchdLabelBase
 	if suffix != "" {
 		label += "-" + suffix
 	}

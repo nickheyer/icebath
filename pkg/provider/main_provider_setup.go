@@ -8,6 +8,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/nickheyer/icebath/pkg/config"
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
 
@@ -19,7 +20,7 @@ var genericAPIKeyProviders = map[string]bool{
 	"nvidia": true, "ollama-cloud": true, "tencent-tokenhub": true, "tencent-tokenplan": true, "lmstudio": true,
 }
 
-// Picker seams, the provider menu standing for the main_provider_setup module attribute the hermes tests patch
+// Picker seams, the provider menu standing for the main_provider_setup module attribute the tests patch
 var (
 	auxBuildPickerRowsFn        = BuildAuxPickerRows
 	setupPromptProviderChoiceFn = promptProviderChoice
@@ -38,15 +39,15 @@ func isProfileAPIKeyProvider(ctx context.Context, providerID string) (ok bool) {
 	return p != nil && p.AuthType == AuthTypeAPIKey
 }
 
-// Python v or empty as the receiver of a str method, an AttributeError for a truthy non str value
-func pyOrEmptyStr(v any, method string) (string, error) {
+// Text of a setting or empty, an error naming the setting for a set value that is no text
+func pyOrEmptyStr(v any, setting string) (string, error) {
 	if !pyTruthy(v) {
 		return "", nil
 	}
 	if s, ok := v.(string); ok {
 		return s, nil
 	}
-	return "", fmt.Errorf("AttributeError: '%s' object has no attribute '%s'", config.PyTypeName(v), method)
+	return "", fmt.Errorf("%s is %s, expected text", setting, errchain.Kind(v))
 }
 
 // Sets a key the way a Python dict assignment does, a new key going last in the mapping order
@@ -59,11 +60,11 @@ func pyDictSet(m map[string]any, key string, value any) {
 	config.AppendMappingKey(m, key)
 }
 
-// Values Python iteration yields, list items, string characters and mapping keys in their order
-func pyIterValues(v any) ([]any, error) {
+// Values iteration yields, list items, string characters and mapping keys in their order, an error naming the setting otherwise
+func pyIterValues(v any, setting string) ([]any, error) {
 	switch t := v.(type) {
 	case nil:
-		return nil, fmt.Errorf("TypeError: 'NoneType' object is not iterable")
+		return nil, fmt.Errorf("%s is nothing, expected a list", setting)
 	case []any:
 		return t, nil
 	case []string:
@@ -86,7 +87,7 @@ func pyIterValues(v any) ([]any, error) {
 		}
 		return out, nil
 	}
-	return nil, fmt.Errorf("TypeError: '%s' object is not iterable", config.PyTypeName(v))
+	return nil, fmt.Errorf("%s is %s, expected a list", setting, errchain.Kind(v))
 }
 
 // Clears OPENAI_BASE_URL from the home .env unless the configured provider is custom or unset
@@ -97,7 +98,7 @@ func clearStaleOpenAIBaseURL(r *ModelFlowRun) error {
 	}
 	provider := ""
 	if modelCfg, ok := cfg["model"].(map[string]any); ok {
-		raw, err := pyOrEmptyStr(modelCfg["provider"], "strip")
+		raw, err := pyOrEmptyStr(modelCfg["provider"], "model.provider")
 		if err != nil {
 			return err
 		}
@@ -304,7 +305,7 @@ func promptAuxReasoningEffort(r *ModelFlowRun, task, current string) (string, bo
 	return promptReasoningEffortSelection(r.Out, config.ValidReasoningEfforts, current, label)
 }
 
-// Python value in a set of None, empty and auto, a TypeError for an unhashable value
+// Whether an auxiliary provider value is unset, empty or auto, an error for a list or mapping
 func auxProviderIsReset(v any, auto string) (bool, error) {
 	switch t := v.(type) {
 	case nil:
@@ -312,7 +313,7 @@ func auxProviderIsReset(v any, auto string) (bool, error) {
 	case string:
 		return t == "" || t == auto, nil
 	case map[string]any, []any:
-		return false, fmt.Errorf("TypeError: unhashable type: '%s'", config.PyTypeName(v))
+		return false, fmt.Errorf("auxiliary provider is %s, expected text", errchain.Kind(v))
 	}
 	return false, nil
 }
@@ -388,8 +389,9 @@ func auxConfigMenu(r *ModelFlowRun) error {
 			"  Side tasks (vision, compression, web extraction, etc.) default",
 			`  to your main chat model.  "auto" means "use my main model" —`,
 			"  Icebath only falls back to a lightweight backend (OpenRouter,",
-			"  Nous Portal) if the main model is unavailable.  Override a",
-			"  task below if you want it pinned to a specific provider/model.", "")
+			"  a local endpoint or an API key provider) if the main model is",
+			"  unavailable.  Override a task below if you want it pinned to a",
+			"  specific provider/model.", "")
 		menuTasks := append(allAuxTasks(r.ctx()), auxTaskRow{Key: delegationTaskKey, Name: delegationTaskName, Desc: delegationTaskDesc})
 		nameCol, descCol := 0, 0
 		for _, t := range menuTasks {
@@ -432,7 +434,7 @@ func auxConfigMenu(r *ModelFlowRun) error {
 	}
 }
 
-// Aux picker rows of the configured providers, a failure reported as an error like the hermes except
+// Aux picker rows of the configured providers, a failure reported as an error like the except
 func auxPickerRows(r *ModelFlowRun, currentProvider, currentModel, currentBaseURL string) (rows []map[string]any, err error) {
 	defer func() {
 		if p := recover(); p != nil {
@@ -867,7 +869,7 @@ func mainModelReasoningEfforts(ctx context.Context, model, provider string) ([]s
 	}
 	if profile != nil && profile.SetupReasoningEfforts != nil {
 		if declared := profile.SetupReasoningEfforts(model); declared != nil {
-			items, err := pyIterValues(declared)
+			items, err := pyIterValues(declared, "the reasoning efforts of provider "+slug)
 			if err != nil {
 				return nil, false, err
 			}

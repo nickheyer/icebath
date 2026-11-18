@@ -9,7 +9,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
 )
 
-func TestDisplayHermesHomePosix(t *testing.T) {
+func TestDisplayIcebathHomePosix(t *testing.T) {
 	user := pypath.Expanduser("~")
 	t.Run("nested_home_renders_forward_slashes", func(t *testing.T) {
 		out := Display(filepath.Join(user, "AppData", "Local", "icebath"))

@@ -123,7 +123,7 @@ func publishOwn(t *testing.T, root string) map[string]string {
 	return wrappers
 }
 
-// test_hermes_home_shared_launchers.py test_missing_dead_and_same_store_launchers_still_publish
+// Missing, dead and same store launchers still publish
 func TestMissingDeadAndSameStoreLaunchersStillPublish(t *testing.T) {
 	userHome, root := lnFakeInstall(t)
 	binary := filepath.Join(root, "icebath")

@@ -2,7 +2,6 @@ package gateway
 
 import (
 	"context"
-	"log/slog"
 	"os"
 	"path/filepath"
 	"sync"
@@ -186,7 +185,7 @@ func collectUnheldAPIImages(ctx context.Context, db *state.SessionDB) (int, erro
 		return 0, err
 	}
 	if !samePath(pypath.PathParent(store), active) {
-		slog.Warn("Skipped retained API image collection: " + db.Path() + " is not the active profile store")
+		pkgLog().Warn("Skipped retained API image collection: " + db.Path() + " is not the active profile store")
 		return 0, nil
 	}
 	root, err := nativeInputsRoot(ctx)
@@ -206,7 +205,7 @@ func collectUnheldAPIImages(ctx context.Context, db *state.SessionDB) (int, erro
 	released, err := releaseUnheldMedia(ctx, db, references, true)
 	if err != nil {
 		if class, ok := state.SQLiteClassOf(err); ok && class != state.SQLiteInterfaceError {
-			slog.Error("API image collection failed; files stay for the next sweep", "error", err)
+			pkgLog().Error("API image collection failed; files stay for the next sweep", "error", err)
 			return 0, nil
 		}
 		return 0, err

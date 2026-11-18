@@ -66,9 +66,9 @@ func (r *GatewayRunner) cleanupAgentResourcesOffLoop(ctx context.Context, a *age
 	switch {
 	case err == nil:
 	case errors.Is(err, context.DeadlineExceeded) && ctx.Err() == nil:
-		runLog().Warn(fmt.Sprintf("Agent resource cleanup%s exceeded %ss; proceeding without blocking the event loop (the worker thread is left to finish on its own). (#53175)", ctxLabel, pyrepr.Str(cleanupTimeoutS)))
+		pkgLog().Warn(fmt.Sprintf("Agent resource cleanup%s exceeded %ss; proceeding without blocking the event loop (the worker thread is left to finish on its own). (#53175)", ctxLabel, pyrepr.Str(cleanupTimeoutS)))
 	default:
-		runLog().Warn(fmt.Sprintf("Agent resource cleanup%s failed: %s (#53175)", ctxLabel, pyrepr.ExceptionMessage(err)))
+		pkgLog().Warn(fmt.Sprintf("Agent resource cleanup%s failed: %s (#53175)", ctxLabel, pyrepr.ExceptionMessage(err)))
 	}
 }
 
@@ -91,7 +91,7 @@ func (r *GatewayRunner) deferAgentCleanupUntilFutureDone(ctx context.Context, fu
 			if cleanupContext != "" {
 				label = " (" + cleanupContext + ")"
 			}
-			runLog().Debug(fmt.Sprintf("Deferred agent worker%s finished with an error: %s", label, pyrepr.ExceptionMessage(err)))
+			pkgLog().Debug(fmt.Sprintf("Deferred agent worker%s finished with an error: %s", label, pyrepr.ExceptionMessage(err)))
 		}
 		r.cleanupAgentResourcesOffLoop(taskCtx, a, cleanupContext, "")
 		return nil, nil

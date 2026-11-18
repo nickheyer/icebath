@@ -6,7 +6,6 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/pm"
 )
 
@@ -69,12 +68,12 @@ func (m *Manager) warnPythonDependencies(ctx context.Context, mf *Manifest) {
 	}
 	key := mf.ID()
 	if InstalledInSelectedEnvironment(ctx, missing) {
-		logPlugins.warn(fmt.Sprintf("Plugin %s's Python dependencies were installed after this process started: %s. "+
+		pkgLog().Warn(fmt.Sprintf("Plugin %s's Python dependencies were installed after this process started: %s. "+
 			"A running process never switches dependency environments; restart Icebath "+
 			"(icebath gateway restart for the gateway) to load them.", key, strings.Join(missing, ", ")))
 		return
 	}
-	logPlugins.warn(fmt.Sprintf("Plugin %s declares Python dependencies that are not "+
+	pkgLog().Warn(fmt.Sprintf("Plugin %s declares Python dependencies that are not "+
 		"installed: %s. For an enabled plugin, run icebath pm repair, "+
 		"then restart Icebath. Discovery does not install dependencies.", key, strings.Join(missing, ", ")))
 }
@@ -113,7 +112,7 @@ func dependencyRestartHint(ctx context.Context, missing, processes []string) (st
 	for _, process := range processes {
 		line, ok := restartLines[process]
 		if !ok {
-			return "", fmt.Errorf("KeyError: %s", config.PyRepr(process))
+			return "", fmt.Errorf("no restart instructions for process %s", process)
 		}
 		lines = append(lines, line)
 	}

@@ -22,7 +22,7 @@ func setupSections() []setupSection {
 		{"model", tr("setupFlow.model.title"), tr("setupFlow.model.detail"), func(a *app) tea.Cmd { return a.openHostedModel("") }},
 		{"aux", tr("setupFlow.aux.title"), tr("setupFlow.aux.detail"), func(a *app) tea.Cmd { return a.openHostedModel("aux-config") }},
 	}
-	for _, spec := range []sectionSpec{agentSection(), ttsSection(), terminalSection(), telemetrySection()} {
+	for _, spec := range []sectionSpec{agentSection(), ttsSection(), terminalSection()} {
 		sections = append(sections, setupSection{spec.key, spec.title, spec.detail, func(a *app) tea.Cmd { return a.runSection(spec) }})
 	}
 	sections = append(sections, toolsSetupSection())

@@ -17,7 +17,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrich"
 	"github.com/nickheyer/icebath/pkg/kanban"
-	"github.com/nickheyer/icebath/pkg/observability"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tools"
@@ -28,7 +27,7 @@ func interruptAgentForSignal(a cliAgent, sig os.Signal) {
 	if a == nil {
 		return
 	}
-	cliLogger.Debug(fmt.Sprintf("interrupting the gateway turn: received signal %s", signalNumber(sig)))
+	pkgLog().Debug(fmt.Sprintf("interrupting the gateway turn: received signal %s", signalNumber(sig)))
 	a.Interrupt()
 	if grace := floatEnv("ICEBATH_SIGTERM_GRACE", 1.5); grace > 0 {
 		time.Sleep(time.Duration(grace * float64(time.Second)))
@@ -56,7 +55,7 @@ func runKanbanGoalLoopQ(c *CLI, firstResponse string, runTurn func(string) (any,
 			id := int64(n)
 			workerRunID = &id
 		} else {
-			cliLogger.Warn(fmt.Sprintf("invalid ICEBATH_KANBAN_RUN_ID=%s", pyrepr.Repr(rawRunID)))
+			pkgLog().Warn(fmt.Sprintf("invalid ICEBATH_KANBAN_RUN_ID=%s", pyrepr.Repr(rawRunID)))
 		}
 	}
 	var task *kanban.Task
@@ -112,7 +111,7 @@ func runKanbanGoalLoopQ(c *CLI, firstResponse string, runTurn func(string) (any,
 		runTurn = quietTurn
 	}
 	if log == nil {
-		log = func(m string) { cliLogger.Info(m) }
+		log = func(m string) { pkgLog().Info(m) }
 	}
 	maxTurns := goals.DefaultGoalMaxTurns
 	if goalMax := kanban.TaskGoalMaxTurns(task); goalMax != nil && *goalMax > 0 {
@@ -126,7 +125,7 @@ func runKanbanGoalLoopQ(c *CLI, firstResponse string, runTurn func(string) (any,
 // Runs the -q worker goal loop with follow up turns through chat so the worker log keeps its tool feed
 func runKanbanGoalLoopChat(c *CLI, firstResponse string) error {
 	log := func(msg string) {
-		cliLogger.Info(msg)
+		pkgLog().Info(msg)
 		fmt.Fprintln(c.console.Out, msg)
 	}
 	return runKanbanGoalLoopQ(c, firstResponse, func(p string) (any, error) {
@@ -272,7 +271,7 @@ func runQuietSingleQuery(c *CLI, effectiveQuery any, emitter *StreamJSONEmitter)
 	exitCode := singleQueryExitCode(result, false, false)
 	if os.Getenv("ICEBATH_KANBAN_GOAL_MODE") == "1" && exitCode == 0 {
 		if err := runKanbanGoalLoopQ(c, response, nil, nil); err != nil {
-			cliLogger.Debug(fmt.Sprintf("kanban goal loop failed: %v", err))
+			pkgLog().Debug(fmt.Sprintf("kanban goal loop failed: %v", err))
 		}
 	}
 	if emitter == nil {
@@ -352,7 +351,7 @@ func collectKanbanTaskImages(c *CLI, images *[]string) []string {
 		return gerr
 	})
 	if err != nil {
-		cliLogger.Debug(fmt.Sprintf("kanban image-ref extraction failed: %v", err))
+		pkgLog().Debug(fmt.Sprintf("kanban image-ref extraction failed: %v", err))
 		return imageURLs
 	}
 	if task == nil || task.Body == nil || *task.Body == "" {
@@ -384,7 +383,7 @@ func installSingleQuerySignalHandlers(c *CLI) {
 	signal.Notify(ch, syscall.SIGINT, syscall.SIGTERM, syscall.SIGHUP)
 	go func() {
 		for sig := range ch {
-			cliLogger.Debug(fmt.Sprintf("Received signal %s in single-query mode", signalNumber(sig)))
+			pkgLog().Debug(fmt.Sprintf("Received signal %s in single-query mode", signalNumber(sig)))
 			armExitWatchdogOnShutdownSignal(c.ctx)
 			interruptAgentForSignal(c.agentRef(), sig)
 			if os.Getenv("ICEBATH_KANBAN_TASK") != "" {
@@ -393,7 +392,6 @@ func installSingleQuerySignalHandlers(c *CLI) {
 					defer func() { _ = recover() }()
 					flushOneShotSessionStore(c)
 				}()
-				observability.FlushBeforeHardExit(c.ctx, 3*time.Second)
 				flushLoggingAndStdio()
 				killForegroundAndExit()
 			}
@@ -429,7 +427,6 @@ func runSingleQueryMode(c *CLI, query, image string, quiet, oneshot, streamJSON 
 		exitSingleQuery(1)
 	}
 	imageURLs := collectKanbanTaskImages(c, &images)
-	observability.RecordCliOneShotReady(c.ctx)
 	if quiet {
 		c.toolProgressMode = "off"
 		var emitter *StreamJSONEmitter
@@ -473,7 +470,7 @@ func runSingleQueryMode(c *CLI, query, image string, quiet, oneshot, streamJSON 
 	}
 	if os.Getenv("ICEBATH_KANBAN_GOAL_MODE") == "1" && singleQueryExitCode(c.lastTurnResult, false, false) == 0 {
 		if err := runKanbanGoalLoopChat(c, response); err != nil {
-			cliLogger.Debug(fmt.Sprintf("kanban goal loop failed: %v", err))
+			pkgLog().Debug(fmt.Sprintf("kanban goal loop failed: %v", err))
 		}
 	}
 	c.printExitSummary()

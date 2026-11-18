@@ -15,7 +15,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/tools"
 )
 
-// Anonymous credential chain, the MagicMock(spec=GitHubAuth) of the hermes tests
+// Anonymous credential chain, the MagicMock(spec=GitHubAuth) of the tests
 func anonAuth(h *Hub) *GitHubAuth {
 	a := NewGitHubAuth(h.S)
 	none := func() string { return "" }
@@ -50,8 +50,8 @@ func TestParseFrontmatterQuick(t *testing.T) {
 	if fm["name"] != "test-skill" || fm["description"] != "A test." {
 		t.Fatalf("%v", fm)
 	}
-	nested := githubParseFrontmatterQuick("---\nname: test\nmetadata:\n  hermes:\n    tags: [a, b]\n---\n\nBody.\n")
-	tags := nested["metadata"].(map[string]any)["hermes"].(map[string]any)["tags"]
+	nested := githubParseFrontmatterQuick("---\nname: test\nmetadata:\n  icebath:\n    tags: [a, b]\n---\n\nBody.\n")
+	tags := nested["metadata"].(map[string]any)["icebath"].(map[string]any)["tags"]
 	if !reflect.DeepEqual(tags, []any{"a", "b"}) {
 		t.Fatalf("%v", tags)
 	}

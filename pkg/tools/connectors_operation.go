@@ -5,7 +5,6 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"fmt"
-	"log/slog"
 	"strings"
 	"sync"
 	"time"
@@ -86,14 +85,11 @@ type ConnTarget struct {
 	Detail       string
 	Instructions string
 	ConnectURL   string
-	ConnectionID string
 	Attempt      string
 	NextReadAt   float64
 	RequiredEnv  []*pyjson.Object
 	Extra        *pyjson.Object
 	Phase        string
-	Alias        *string
-	RepairID     *string
 }
 
 // Pending target of kind running action
@@ -111,9 +107,6 @@ func (t *ConnTarget) snapshot(withURL bool) *pyjson.Object {
 	out.Set("action", t.Action)
 	out.Set("state", string(t.State))
 	out.Set("resolved", t.resolved())
-	if t.Alias != nil && *t.Alias != "" {
-		out.Set("alias", *t.Alias)
-	}
 	if t.Phase != "" && t.State == TargetInitiated {
 		out.Set("phase", t.Phase)
 	}
@@ -125,9 +118,6 @@ func (t *ConnTarget) snapshot(withURL bool) *pyjson.Object {
 	}
 	if withURL && t.ConnectURL != "" {
 		out.Set("connect_url", t.ConnectURL)
-	}
-	if t.ConnectionID != "" {
-		out.Set("connection_id", t.ConnectionID)
 	}
 	if t.Attempt != "" {
 		out.Set("attempt", t.Attempt)
@@ -149,11 +139,10 @@ func (t *ConnTarget) snapshot(withURL bool) *pyjson.Object {
 
 // TransitionFields carries the optional row fields a transition writes, nil leaves a field alone
 type TransitionFields struct {
-	Detail       *string
-	ConnectURL   *string
-	ConnectionID *string
-	Attempt      *string
-	Extra        *pyjson.Object
+	Detail     *string
+	ConnectURL *string
+	Attempt    *string
+	Extra      *pyjson.Object
 }
 
 // ConnectionOperation is one card's set of targets with a server owned deadline and a frozen result
@@ -234,9 +223,6 @@ func (o *ConnectionOperation) Transition(name string, to TargetState, actor Conn
 	if f.ConnectURL != nil {
 		t.ConnectURL = *f.ConnectURL
 	}
-	if f.ConnectionID != nil {
-		t.ConnectionID = *f.ConnectionID
-	}
 	if f.Attempt != nil {
 		t.Attempt = *f.Attempt
 	}
@@ -245,7 +231,7 @@ func (o *ConnectionOperation) Transition(name string, to TargetState, actor Conn
 	}
 	snapshot := o.bumpLocked()
 	o.mu.Unlock()
-	slog.Default().Info(fmt.Sprintf("connection op %s: %s %s -> %s by %s", o.OpID, name, from, to, actor))
+	pkgLog().Info(fmt.Sprintf("connection op %s: %s %s -> %s by %s", o.OpID, name, from, to, actor))
 	o.Wake.Set()
 	o.changed(change, snapshot)
 	return change, nil
@@ -373,7 +359,7 @@ func (o *ConnectionOperation) Settle(by SettleReason, now ...float64) bool {
 	o.settledSnapshot = o.bumpLocked()
 	snapshot := o.settledSnapshot
 	o.mu.Unlock()
-	slog.Default().Info(fmt.Sprintf("connection op %s settled by %s: %s", o.OpID, by, strings.Join(outcomes, ", ")))
+	pkgLog().Info(fmt.Sprintf("connection op %s settled by %s: %s", o.OpID, by, strings.Join(outcomes, ", ")))
 	o.Wake.Set()
 	o.changed(nil, snapshot)
 	return true
@@ -439,7 +425,6 @@ func (o *ConnectionOperation) Result(ctx context.Context, env *Env, withURLs boo
 	targets, _ := raw.([]any)
 	for _, t := range targets {
 		obj := t.(*pyjson.Object)
-		obj.Delete("connection_id")
 		obj.Delete("resolved")
 	}
 	if v, _ := result.Get("settled_at"); v == nil {

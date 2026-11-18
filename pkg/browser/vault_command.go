@@ -374,7 +374,7 @@ func vaultCmdKey(ctx context.Context, h string, c *pyrich.Console, ns map[string
 	return nil
 }
 
-// VaultCommand runs icebath vault, hermes_cli/vault.py vault_command dispatching add, list, rm, sources and key
+// Runs icebath vault, dispatching add, list, rm, sources and key
 func VaultCommand(ctx context.Context, h string, ns map[string]any, w io.Writer) (code int, err error) {
 	c := pyrich.NewConsole(w)
 	defer func() {

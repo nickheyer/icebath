@@ -19,10 +19,6 @@ func ratEq(a *big.Rat, text string) bool { return a != nil && a.Cmp(rat(text)) =
 type pricingFixture struct {
 	ctx            context.Context
 	home           string
-	nousEnv        string
-	nousAPIKey     string
-	nousBaseURL    string
-	nousPolicy     *bool
 	deepinfraItems []map[string]any
 }
 
@@ -43,19 +39,7 @@ func newPricingFixture(t *testing.T) *pricingFixture {
 		return nil
 	}
 	f := &pricingFixture{ctx: home.WithOverride(context.Background(), tmp), home: tmp}
-	prevEnv, prevCreds, prevPolicy, prevValidate := nousInferenceEnvOverrideFn, resolveNousRuntimeCredentialsBackgroundFn, nousPolicyPresentFn, validateNousInferenceURLFromNetworkFn
 	prevDIURL, prevDICached, prevDIFetch := deepinfraCatalogURLFn, deepinfraCatalogCachedFn, fetchDeepinfraModelsByTagFn
-	nousInferenceEnvOverrideFn = func() string { return f.nousEnv }
-	resolveNousRuntimeCredentialsBackgroundFn = func(context.Context) (string, string, bool) {
-		return f.nousAPIKey, f.nousBaseURL, f.nousAPIKey != ""
-	}
-	nousPolicyPresentFn = func(context.Context) (bool, bool) {
-		if f.nousPolicy == nil {
-			return false, false
-		}
-		return *f.nousPolicy, true
-	}
-	validateNousInferenceURLFromNetworkFn = func(url string) string { return url }
 	deepinfraCatalogURLFn = func() (string, string) {
 		return "https://api.deepinfra.com/models/list", "https://api.deepinfra.com/models/list"
 	}
@@ -63,7 +47,6 @@ func newPricingFixture(t *testing.T) *pricingFixture {
 	fetchDeepinfraModelsByTagFn = func(string, time.Duration, bool) []map[string]any { return f.deepinfraItems }
 	t.Cleanup(func() {
 		fetchEndpointModelMetadataFn, fetchModelMetadataFn, pricingGetJSON, pricingClock = prevEndpoint, prevMeta, prevGet, prevClock
-		nousInferenceEnvOverrideFn, resolveNousRuntimeCredentialsBackgroundFn, nousPolicyPresentFn, validateNousInferenceURLFromNetworkFn = prevEnv, prevCreds, prevPolicy, prevValidate
 		deepinfraCatalogURLFn, deepinfraCatalogCachedFn, fetchDeepinfraModelsByTagFn = prevDIURL, prevDICached, prevDIFetch
 		ResetPricingCache()
 		ResetModelsDevCache()
@@ -331,9 +314,6 @@ func TestGoogleAndVertexRoutesShareOfficialPricingSnapshot(t *testing.T) {
 	for _, row := range OpenRouterModels {
 		curated[row.ID] = true
 	}
-	for _, mid := range staticCatalogModels("nous") {
-		curated[mid] = true
-	}
 	var flash []string
 	for mid := range curated {
 		if strings.HasPrefix(mid, "google/gemini-") && strings.HasSuffix(mid, "-flash") {
@@ -594,42 +574,6 @@ func TestPeekCachedPricing(t *testing.T) {
 	}
 }
 
-func TestNousCatalogExpiry(t *testing.T) {
-	f := newPricingFixture(t)
-	requests := servePricing(f, func(auth string) []string {
-		if auth == "Bearer tok-b" {
-			return []string{"org-b/only"}
-		}
-		return []string{"org-a/only"}
-	})
-	now := time.Now()
-	pricingClock = func() time.Time { return now }
-	FetchModelsWithPricing(context.Background(), PricingFetchOptions{APIKey: "sk-test", BaseURL: pricingBase, CacheTTL: NousCatalogTTL})
-	pricingClock = func() time.Time { return now.Add(NousCatalogTTL + time.Second) }
-	if len(PeekCachedPricing(pricingBase)) != 0 {
-		t.Fatal("peek walked past the ttl")
-	}
-	FetchModelsWithPricing(context.Background(), PricingFetchOptions{APIKey: "sk-test", BaseURL: pricingBase, CacheTTL: NousCatalogTTL})
-	if len(*requests) != 2 {
-		t.Fatalf("expired entry not re read: %d", len(*requests))
-	}
-	ResetPricingCache()
-	*requests = nil
-	pricingClock = func() time.Time { return now }
-	FetchModelsWithPricing(context.Background(), PricingFetchOptions{APIKey: "sk-test", BaseURL: pricingBase})
-	pricingClock = func() time.Time { return now.Add(24 * time.Hour) }
-	FetchModelsWithPricing(context.Background(), PricingFetchOptions{APIKey: "sk-test", BaseURL: pricingBase})
-	if len(*requests) != 1 {
-		t.Fatal("no ttl entry re fetched")
-	}
-	ResetPricingCache()
-	FetchModelsWithPricing(context.Background(), PricingFetchOptions{APIKey: "tok-a", BaseURL: pricingBase, CacheTTL: 300 * time.Second})
-	FetchModelsWithPricing(context.Background(), PricingFetchOptions{APIKey: "tok-b", BaseURL: pricingBase, CacheTTL: 300 * time.Second})
-	if got := pricingIDs(PeekCachedPricing(pricingBase)); !reflect.DeepEqual(got, []string{"org-b/only"}) {
-		t.Fatalf("newest credential %v", got)
-	}
-}
-
 func TestPricingCacheWriteDropsCatalogsPastTheirDeadline(t *testing.T) {
 	newPricingFixture(t)
 	now := time.Unix(100, 0)
@@ -659,87 +603,13 @@ func TestPricingCacheWriteDropsCatalogsPastTheirDeadline(t *testing.T) {
 	}
 }
 
-func TestSaleDiscount(t *testing.T) {
-	if got, ok := ComputeSaleDiscount("0", "0", nil); !ok || got != (SaleDiscount{100, "", ""}) {
-		t.Fatalf("%+v %v", got, ok)
-	}
-	if got, _ := ComputeSaleDiscount("0", "0", map[string]any{"prompt": "0.000002", "completion": "0.00001"}); got != (SaleDiscount{100, "0.000002", "0.00001"}) {
-		t.Fatalf("%+v", got)
-	}
-	if got, ok := ComputeSaleDiscount("0.0000000000", "0.0000000000", nil); !ok || got.Percent != 100 {
-		t.Fatalf("%+v", got)
-	}
-	if _, ok := ComputeSaleDiscount("0.000002", "0.00001", nil); ok {
-		t.Fatal("paid model without original shows a sale")
-	}
-	if got, ok := ComputeSaleDiscount("0.000001", "0.000005", map[string]any{"prompt": "0.000002", "completion": "0.00001"}); !ok || got.Percent != 50 {
-		t.Fatalf("%+v %v", got, ok)
-	}
-	if _, ok := ComputeSaleDiscount("0.000002", "0.00001", map[string]any{"prompt": "0.000002", "completion": "0.00001"}); ok {
-		t.Fatal("original not cheaper shows a sale")
-	}
-}
-
-func TestFetchModelsWithPricingCopiesNousOnlyFields(t *testing.T) {
-	newPricingFixture(t)
-	pricingGetJSON = func(url string, headers map[string]string, timeout time.Duration, _ bool) map[string]any {
-		return jsonMap(`{"data": [
-		 {"id": "anthropic/claude-sonnet-5", "name": "  Sonnet 5 ", "billing_mode": "subscription", "top_tier": true, "usage_level": "top_tier",
-		  "supported_parameters": ["temperature"],
-		  "pricing": {"prompt": "0.0000016", "completion": "0.000008", "input_cache_read": "0.00000016",
-		    "original": {"prompt": "0.000002", "completion": "0.00001", "input_cache_read": "0.0000002"}}},
-		 {"id": "free/model", "name": "free/model", "pricing": {"prompt": "0", "completion": "0"}},
-		 {"id": "gen/image", "output_modalities": ["image"], "pricing": {"prompt": "1", "completion": "1"}}]}`)
-	}
-	fetch := func(sale bool) PricingTable {
-		return FetchModelsWithPricing(context.Background(), PricingFetchOptions{APIKey: "sk-test", BaseURL: "https://example.test", ForceRefresh: true, IncludeSaleOriginal: sale})
-	}
-	nous := fetch(true)
-	paid := nous["anthropic/claude-sonnet-5"]
-	if paid["prompt"] != "0.0000016" || paid["completion"] != "0.000008" || paid["input_cache_read"] != "0.00000016" {
-		t.Fatalf("%v", paid)
-	}
-	if !reflect.DeepEqual(paid["original"], map[string]any{"prompt": "0.000002", "completion": "0.00001", "input_cache_read": "0.0000002"}) {
-		t.Fatalf("original %v", paid["original"])
-	}
-	if paid["billing_mode"] != "subscription" || paid["top_tier"] != true || paid["usage_level"] != "top_tier" || paid["name"] != "Sonnet 5" || paid["tools"] != false {
-		t.Fatalf("nous fields %v", paid)
-	}
-	if _, has := nous["free/model"]["original"]; has {
-		t.Fatal("free model carries original")
-	}
-	if _, has := nous["free/model"]["name"]; has {
-		t.Fatal("a name equal to the id adds nothing")
-	}
-	if nous["gen/image"]["generation"] != true {
-		t.Fatalf("generation %v", nous["gen/image"])
-	}
-	plain := fetch(false)["anthropic/claude-sonnet-5"]
-	for _, key := range []string{"billing_mode", "name", "top_tier", "usage_level", "tools", "original"} {
-		if _, has := plain[key]; has {
-			t.Fatalf("%s copied for a non nous catalog", key)
-		}
-	}
-}
-
-func TestResolveNousPricingCredentialsNormalizesEitherSuffix(t *testing.T) {
-	f := newPricingFixture(t)
-	for _, override := range []string{"https://stg-inference-api.nousresearch.com", "https://stg-inference-api.nousresearch.com/", "https://stg-inference-api.nousresearch.com/v1", "https://stg-inference-api.nousresearch.com/v1/"} {
-		f.nousEnv = override
-		if _, base := resolveNousPricingCredentials(f.ctx); base != "https://stg-inference-api.nousresearch.com" {
-			t.Fatalf("%s -> %s", override, base)
-		}
-	}
-	f.nousEnv = ""
-	if _, base := resolveNousPricingCredentials(f.ctx); base != defaultNousInferenceURL {
-		t.Fatalf("default %s", base)
-	}
-}
-
 func TestFailedCatalogFetchIsNotCachedForever(t *testing.T) {
 	newPricingFixture(t)
 	calls := 0
-	pricingGetJSON = func(url string, headers map[string]string, timeout time.Duration, _ bool) map[string]any { calls++; return nil }
+	pricingGetJSON = func(url string, headers map[string]string, timeout time.Duration, _ bool) map[string]any {
+		calls++
+		return nil
+	}
 	now := time.Now()
 	pricingClock = func() time.Time { return now }
 	if got := FetchModelsWithPricing(context.Background(), PricingFetchOptions{BaseURL: "https://example.test"}); len(got) != 0 {
@@ -821,11 +691,8 @@ func TestProviderPricingFetchersAndScopes(t *testing.T) {
 	if fireworks["accounts/fireworks/models/kimi-k2p6"]["input_cache_read"] != "1.6e-07" || fireworks["nocost"] != nil {
 		t.Fatalf("fireworks %v", fireworks)
 	}
-	if PricingCacheScope(f.ctx, "kilocode", "", "", "") != "https://kilo.example/api/gateway" || PricingCacheScope(f.ctx, "zai", "", "", "") != "" {
+	if PricingCacheScope(f.ctx, "kilocode", "") != "https://kilo.example/api/gateway" || PricingCacheScope(f.ctx, "zai", "") != "" {
 		t.Fatal("cache scope")
-	}
-	if PricingCacheScope(f.ctx, "nous", "", "nous", "https://stg.nous/v1") != "https://stg.nous" || PricingCacheScope(f.ctx, "nous", "", "", "") != defaultNousInferenceURL {
-		t.Fatalf("nous scope %s", PricingCacheScope(f.ctx, "nous", "", "", ""))
 	}
 	f.deepinfraItems = []map[string]any{{"id": "d/1", "metadata": map[string]any{"pricing": map[string]any{"input_tokens": 0.5, "output_tokens": 1, "cache_read_tokens": 0.1}}}, {"id": "d/none", "metadata": map[string]any{}}}
 	deepinfra := GetPricingForProvider(f.ctx, "deepinfra", "", false, true)
@@ -848,93 +715,6 @@ func TestResolvePricingProviderTrustBoundary(t *testing.T) {
 		if got := ResolvePricingProvider("custom:openrouter", lookalike); got != "" {
 			t.Fatalf("%s accepted as %q", lookalike, got)
 		}
-	}
-}
-
-func TestNousPolicy(t *testing.T) {
-	f := newPricingFixture(t)
-	if _, ok := NousPolicyAllowedIDs(f.ctx, false); ok {
-		t.Fatal("no policy must not filter")
-	}
-	yes := true
-	f.nousPolicy = &yes
-	if _, ok := NousPolicyAllowedIDs(f.ctx, false); ok {
-		t.Fatal("anonymous read must not filter")
-	}
-	f.nousAPIKey, f.nousBaseURL = "sk-org", "https://inference-api.nousresearch.com/v1"
-	servePricing(f, func(string) []string { return []string{"vendor/allowed"} })
-	allowed, ok := NousPolicyAllowedIDs(f.ctx, false)
-	if !ok || !allowed["vendor/allowed"] {
-		t.Fatalf("%v %v", allowed, ok)
-	}
-	kept := RestrictToNousPolicy([]string{"vendor/allowed", "vendor/allowed:free", "vendor/blocked"}, allowed, false)
-	if !reflect.DeepEqual(kept, []string{"vendor/allowed", "vendor/allowed:free"}) {
-		t.Fatalf("%v", kept)
-	}
-	if got := RestrictToNousPolicy([]string{"x"}, allowed, true); !reflect.DeepEqual(got, []string{"vendor/allowed"}) {
-		t.Fatalf("rescue %v", got)
-	}
-	if got := RestrictToNousPolicy([]string{"x"}, allowed, false); len(got) != 0 {
-		t.Fatalf("no rescue %v", got)
-	}
-	if got := RestrictToNousPolicy([]string{"x"}, nil, true); !reflect.DeepEqual(got, []string{"x"}) {
-		t.Fatal("nil allowlist must not filter")
-	}
-	if len(GetPricingForProvider(f.ctx, "nous", "", false, true)) != 0 {
-		t.Fatal("a policy read must not register the picker cache key")
-	}
-	GetPricingForProvider(f.ctx, "nous", "", false, false)
-	if _, ok := GetPricingForProvider(f.ctx, "nous", "", false, true)["vendor/allowed"]; !ok {
-		t.Fatal("cached only nous read misses the fingerprinted entry")
-	}
-}
-
-func TestPlanLimitReads(t *testing.T) {
-	pricing := map[string]any{
-		"big":  map[string]any{"prompt": "1", "completion": "2", "usage_level": "top_tier", "name": " Model A "},
-		"old":  map[string]any{"prompt": "1", "completion": "2", "top_tier": true},
-		"sub":  map[string]any{"prompt": "1", "completion": "2", "billing_mode": "subscription", "usage_level": "top_tier"},
-		"zero": map[string]any{"prompt": "0", "completion": "0.0"},
-		"low":  map[string]any{"prompt": "1", "completion": "2", "usage_level": "low"},
-		"bad":  map[string]any{"prompt": "x", "completion": "2", "usage_level": "weird"},
-	}
-	if !IsTopTier("big", pricing) || !IsTopTier("old", pricing) || IsTopTier("sub", pricing) || IsTopTier("zero", pricing) || IsTopTier("", pricing) || IsTopTier("big", nil) {
-		t.Fatal("top tier")
-	}
-	levels := UsageLevels([]string{"big", "old", "sub", "zero", "low", "bad", "x:free", "missing"}, pricing)
-	want := map[string]string{"big": "top_tier", "old": "top_tier", "sub": "free", "zero": "free", "low": "low", "x:free": "free"}
-	if !reflect.DeepEqual(levels, want) {
-		t.Fatalf("%v", levels)
-	}
-	if PlanModelLabel("big", pricing) != "Model A" || PlanModelLabel("zero", pricing) != "zero" {
-		t.Fatal("labels")
-	}
-	if !IsModelFree("zero", pricing) || !IsModelFree("sub", pricing) || IsModelFree("bad", pricing) || IsModelFree("missing", pricing) {
-		t.Fatal("free rows")
-	}
-}
-
-func TestIsFreeTierModelAndCachedPricing(t *testing.T) {
-	f := newPricingFixture(t)
-	if !IsFreeTierModel("vendor/x:free", "") || !IsFreeTierModel("stealth/union-alpha", "") || IsFreeTierModel("", "https://x") || IsFreeTierModel("paid/model", "") {
-		t.Fatal("local rules")
-	}
-	servePricing(f, func(string) []string { return []string{"vendor/paid"} })
-	pricingGetJSON = func(url string, headers map[string]string, timeout time.Duration, _ bool) map[string]any {
-		return jsonMap(`{"data": [{"id": "vendor/paid", "pricing": {"prompt": "1", "completion": "2"}}, {"id": "vendor/zero", "pricing": {"prompt": "0", "completion": "0"}}]}`)
-	}
-	FetchModelsWithPricing(context.Background(), PricingFetchOptions{BaseURL: pricingBase})
-	if !IsFreeTierModel("vendor/zero", pricingBase+"/v1") || IsFreeTierModel("vendor/paid", pricingBase+"/v1") || IsFreeTierModel("vendor/zero", "https://other.example") {
-		t.Fatal("peeked pricing")
-	}
-	f.nousAPIKey, f.nousBaseURL = "sk", pricingBase
-	GetPricingForProvider(f.ctx, "nous", "", false, false)
-	cached := CachedPricing("")
-	if _, ok := cached["vendor/zero"]; !ok {
-		t.Fatalf("cached pricing %v", cached)
-	}
-	if IsTopTier("vendor/paid", cached) {
-		t.Fatal("unmarked row is not top tier")
 	}
 }
 

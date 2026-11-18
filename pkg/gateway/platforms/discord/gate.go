@@ -3,7 +3,6 @@ package discord
 import (
 	"context"
 	"fmt"
-	"log/slog"
 	"math"
 	"regexp"
 	"strings"
@@ -95,7 +94,7 @@ func (a *DiscordAdapter) discordMaxAttachmentBytes(ctx context.Context) int64 {
 	}
 	n, err := pyint.Of(configured)
 	if err != nil {
-		slog.Warn(fmt.Sprintf("[Discord] Invalid max_attachment_bytes value %s, falling back to 32 MiB", pyrepr.Repr(configured)))
+		pkgLog().Warn(fmt.Sprintf("[Discord] Invalid max_attachment_bytes value %s, falling back to 32 MiB", pyrepr.Repr(configured)))
 		return def
 	}
 	if n.Sign() <= 0 {

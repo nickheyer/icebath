@@ -8,7 +8,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"log/slog"
 	"math"
 	"net/http"
 	"net/url"
@@ -43,7 +42,7 @@ func (a *TelegramAdapter) buildApp(token string, general, polling *ptbRequest, p
 			u.Chat = &Chat{ID: chat.ID}
 		}
 		if err := tgApp.FetchUpdate(ctx, u); err != nil {
-			slog.Debug(fmt.Sprintf("[%s] Telegram update dispatch error", a.Name()), "error", err)
+			pkgLog().Debug(fmt.Sprintf("[%s] Telegram update dispatch error", a.Name()), "error", err)
 		}
 	}
 	app, err := newPTBApp(token, defaultBotAPIServer, general, polling, deliver)
@@ -104,7 +103,7 @@ func (a *TelegramAdapter) Connect(ctx context.Context, isReconnect bool) (bool, 
 	a.polling.mu.Unlock()
 	token := tokenText(a.Config.Token)
 	if token == "" {
-		slog.Error(fmt.Sprintf("[%s] No bot token configured", a.Name()))
+		pkgLog().Error(fmt.Sprintf("[%s] No bot token configured", a.Name()))
 		a.SetFatalError(ctx, "missing_credentials", "No bot token configured", false)
 		return false, nil
 	}
@@ -124,7 +123,7 @@ func (a *TelegramAdapter) Connect(ctx context.Context, isReconnect bool) (bool, 
 	} else {
 		a.SetFatalError(ctx, "telegram_connect_error", "Telegram startup failed: "+safeError, true)
 	}
-	slog.Error(fmt.Sprintf("[%s] Failed to connect to Telegram: %s", a.Name(), safeError))
+	pkgLog().Error(fmt.Sprintf("[%s] Failed to connect to Telegram: %s", a.Name(), safeError))
 	return false, nil
 }
 
@@ -139,10 +138,10 @@ func (a *TelegramAdapter) connectBody(ctx context.Context, token string, isRecon
 	}
 	extra := a.Config.Extra
 	if baseURL := extraString(extra, "base_url"); baseURL != "" {
-		slog.Info(fmt.Sprintf("[%s] Using custom Telegram base_url: %s", a.Name(), pyrepr.Str(extra["base_url"])))
+		pkgLog().Info(fmt.Sprintf("[%s] Using custom Telegram base_url: %s", a.Name(), pyrepr.Str(extra["base_url"])))
 	}
 	if pyTruthy(extra["local_mode"]) {
-		slog.Info(fmt.Sprintf("[%s] Using Telegram local_mode (read files from disk)", a.Name()))
+		pkgLog().Info(fmt.Sprintf("[%s] Using Telegram local_mode (read files from disk)", a.Name()))
 	}
 	general, polling, err := buildPTBRequests(ctx, a.Name(), extra, a.polling)
 	if err != nil {
@@ -181,7 +180,7 @@ func (a *TelegramAdapter) connectBody(ctx context.Context, token string, isRecon
 	if webhook {
 		mode = "webhook"
 	}
-	slog.Warn(fmt.Sprintf("[%s] Connected to Telegram (%s mode)", a.Name(), mode))
+	pkgLog().Warn(fmt.Sprintf("[%s] Connected to Telegram (%s mode)", a.Name(), mode))
 	if !webhook {
 		a.restartHeartbeat(ctx)
 	}
@@ -243,7 +242,7 @@ func (a *TelegramAdapter) initializeAppWithRetries(ctx context.Context, rebuild 
 				"Check network connectivity to api.telegram.org or set ICEBATH_TELEGRAM_HTTP_CONNECT_TIMEOUT / "+
 				"ICEBATH_TELEGRAM_INIT_TIMEOUT to a lower value.", timedOut, totalBudget)}
 		}
-		slog.Warn(fmt.Sprintf("[%s] Connecting to Telegram (attempt %d/%d)…", a.Name(), attempt+1, maxConnect))
+		pkgLog().Warn(fmt.Sprintf("[%s] Connecting to Telegram (attempt %d/%d)…", a.Name(), attempt+1, maxConnect))
 		a.mu.Lock()
 		app := a.app
 		a.mu.Unlock()
@@ -256,20 +255,20 @@ func (a *TelegramAdapter) initializeAppWithRetries(ctx context.Context, rebuild 
 		wait := math.Min(math.Pow(2, float64(attempt)), 15)
 		switch {
 		case errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) && ctx.Err() != nil:
-			slog.Warn(fmt.Sprintf("[%s] Connect attempt %d/%d interrupted by %s — propagating", a.Name(), attempt+1, maxConnect, "CancelledError"))
+			pkgLog().Warn(fmt.Sprintf("[%s] Connect attempt %d/%d interrupted by %s — propagating", a.Name(), attempt+1, maxConnect, "CancelledError"))
 			return err
 		case errors.As(err, &timeout):
 			if attempt >= maxConnect-1 {
 				return &osError{msg: timedOut + ". Check network connectivity to api.telegram.org " +
 					"or set ICEBATH_TELEGRAM_HTTP_CONNECT_TIMEOUT to a lower value."}
 			}
-			slog.Warn(fmt.Sprintf("[%s] Connect attempt %d/%d timed out after %.0fs — retrying in %ds", a.Name(), attempt+1, maxConnect,
+			pkgLog().Warn(fmt.Sprintf("[%s] Connect attempt %d/%d timed out after %.0fs — retrying in %ds", a.Name(), attempt+1, maxConnect,
 				initTimeout, int(wait)))
 		default:
 			if (!isOSError(err) && !looksLikeNetworkError(err)) || attempt >= maxConnect-1 {
 				return err
 			}
-			slog.Warn(fmt.Sprintf("[%s] Connect attempt %d/%d failed: %s — retrying in %ds", a.Name(), attempt+1, maxConnect,
+			pkgLog().Warn(fmt.Sprintf("[%s] Connect attempt %d/%d failed: %s — retrying in %ds", a.Name(), attempt+1, maxConnect,
 				pyrepr.ExceptionMessage(err), int(wait)))
 		}
 		if attempt < maxConnect-1 {
@@ -283,7 +282,7 @@ func (a *TelegramAdapter) initializeAppWithRetries(ctx context.Context, rebuild 
 			shutdownAbandonedApp(context.WithoutCancel(ctx), app)
 		}
 		if !sleepCtx(ctx, wait) {
-			slog.Warn(fmt.Sprintf("[%s] Connect attempt %d/%d interrupted by %s — propagating", a.Name(), attempt+1, maxConnect, "CancelledError"))
+			pkgLog().Warn(fmt.Sprintf("[%s] Connect attempt %d/%d interrupted by %s — propagating", a.Name(), attempt+1, maxConnect, "CancelledError"))
 			return ctx.Err()
 		}
 	}
@@ -332,7 +331,7 @@ func (a *TelegramAdapter) startWebhookMode(ctx context.Context, webhookURL strin
 	if listen == "" {
 		listen = "* (all interfaces, IPv4+IPv6)"
 	}
-	slog.Info(fmt.Sprintf("[%s] Webhook server listening on %s:%d%s", a.Name(), listen, port, path))
+	pkgLog().Info(fmt.Sprintf("[%s] Webhook server listening on %s:%d%s", a.Name(), listen, port, path))
 	return nil
 }
 
@@ -351,10 +350,10 @@ func (a *TelegramAdapter) startPollingMode(ctx context.Context, isReconnect bool
 			p.disarmPTBRetryLoop()
 			p.spawnPollingRecovery(func(c context.Context) error { return p.handlePollingConflict(c, err) })
 		} else if looksLikeNetworkError(err) {
-			slog.Warn(fmt.Sprintf("[%s] Telegram network error, scheduling reconnect: %s", a.Name(), redactTelegramErrorText(err)))
+			pkgLog().Warn(fmt.Sprintf("[%s] Telegram network error, scheduling reconnect: %s", a.Name(), redactTelegramErrorText(err)))
 			p.spawnPollingRecovery(func(c context.Context) error { p.handlePollingNetworkError(c, err); return nil })
 		} else {
-			slog.Error(fmt.Sprintf("[%s] Telegram polling error: %s", a.Name(), redactTelegramErrorText(err)))
+			pkgLog().Error(fmt.Sprintf("[%s] Telegram polling error: %s", a.Name(), redactTelegramErrorText(err)))
 		}
 	}
 	p.mu.Lock()
@@ -365,7 +364,7 @@ func (a *TelegramAdapter) startPollingMode(ctx context.Context, isReconnect bool
 		return err
 	}
 	if !started {
-		slog.Warn(fmt.Sprintf("[%s] Connected in degraded Telegram mode: gateway is alive, polling will be retried in the background", a.Name()))
+		pkgLog().Warn(fmt.Sprintf("[%s] Connected in degraded Telegram mode: gateway is alive, polling will be retried in the background", a.Name()))
 	}
 	return nil
 }
@@ -487,7 +486,7 @@ func (a *TelegramAdapter) runPostConnectHousekeeping(ctx context.Context) error 
 		if ctx.Err() != nil {
 			return ctx.Err()
 		}
-		slog.Warn(fmt.Sprintf("[%s] Could not register Telegram command menu: %s", a.Name(), redactTelegramErrorText(err)))
+		pkgLog().Warn(fmt.Sprintf("[%s] Could not register Telegram command menu: %s", a.Name(), redactTelegramErrorText(err)))
 	}
 	if ctx.Err() != nil {
 		return ctx.Err()
@@ -497,7 +496,7 @@ func (a *TelegramAdapter) runPostConnectHousekeeping(ctx context.Context) error 
 		if ctx.Err() != nil {
 			return ctx.Err()
 		}
-		slog.Warn(fmt.Sprintf("[%s] DM topics setup failed (non-fatal): %s", a.Name(), pyrepr.ExceptionMessage(err)))
+		pkgLog().Warn(fmt.Sprintf("[%s] DM topics setup failed (non-fatal): %s", a.Name(), pyrepr.ExceptionMessage(err)))
 	}
 	return ctx.Err()
 }
@@ -548,13 +547,13 @@ func (a *TelegramAdapter) registerCommandMenu(ctx context.Context) error {
 		{"BotCommandScopeAllGroupChats", &models.BotCommandScopeAllGroupChats{}}}
 	for _, s := range scopes {
 		if _, err := b.SetMyCommands(ctx, &bot.SetMyCommandsParams{Commands: commands, Scope: s.scope}); err != nil {
-			slog.Warn(fmt.Sprintf("[%s] set_my_commands FAILED for scope %s: %s", a.Name(), s.name, pyrepr.ExceptionMessage(ptbError(err))))
+			pkgLog().Warn(fmt.Sprintf("[%s] set_my_commands FAILED for scope %s: %s", a.Name(), s.name, pyrepr.ExceptionMessage(ptbError(err))))
 			continue
 		}
-		slog.Info(fmt.Sprintf("[%s] set_my_commands OK for scope %s (%d cmds)", a.Name(), s.name, len(commands)))
+		pkgLog().Info(fmt.Sprintf("[%s] set_my_commands OK for scope %s (%d cmds)", a.Name(), s.name, len(commands)))
 	}
 	if hidden > 0 {
-		slog.Info(fmt.Sprintf("[%s] Telegram menu: %d commands registered, %d hidden (over %d limit). Use /commands for full list.",
+		pkgLog().Info(fmt.Sprintf("[%s] Telegram menu: %d commands registered, %d hidden (over %d limit). Use /commands for full list.",
 			a.Name(), len(menu), hidden, maxCommands))
 	}
 	return nil
@@ -575,10 +574,10 @@ func (a *TelegramAdapter) setStatusIndicator(ctx context.Context, online bool) {
 	}
 	text = clipRunes(text, 120)
 	if _, err := b.SetMyShortDescription(ctx, &bot.SetMyShortDescriptionParams{ShortDescription: text}); err != nil {
-		slog.Debug(fmt.Sprintf("[%s] Failed to set bot status indicator to %s: %s", a.Name(), pyrepr.Repr(text), redactTelegramErrorText(ptbError(err))))
+		pkgLog().Debug(fmt.Sprintf("[%s] Failed to set bot status indicator to %s: %s", a.Name(), pyrepr.Repr(text), redactTelegramErrorText(ptbError(err))))
 		return
 	}
-	slog.Info(fmt.Sprintf("[%s] Set bot status indicator to %s", a.Name(), pyrepr.Repr(text)))
+	pkgLog().Info(fmt.Sprintf("[%s] Set bot status indicator to %s", a.Name(), pyrepr.Repr(text)))
 }
 
 // Unique unfinished tasks of the candidates other than the current one
@@ -613,7 +612,7 @@ func (a *TelegramAdapter) awaitDisconnectStep(ctx context.Context, fn func(ctx c
 		return false
 	}
 	_ = err
-	slog.Warn(fmt.Sprintf("[%s] %s timed out after %.1fs during disconnect; continuing teardown", a.Name(), step, timeout))
+	pkgLog().Warn(fmt.Sprintf("[%s] %s timed out after %.1fs during disconnect; continuing teardown", a.Name(), step, timeout))
 	return false
 }
 
@@ -661,7 +660,7 @@ func (a *TelegramAdapter) cancelPendingDeliveryTasks(ctx context.Context) error 
 	texts := a.TextBatchEvents()
 	if a.IsPermanentFatal() {
 		if n := len(texts) + len(photos) + len(groups); n > 0 {
-			slog.Warn(fmt.Sprintf("[Telegram] Non-retryable fatal teardown; discarding %d pending inbound batch(es)", n))
+			pkgLog().Warn(fmt.Sprintf("[Telegram] Non-retryable fatal teardown; discarding %d pending inbound batch(es)", n))
 		}
 	} else {
 		for _, batch := range []struct {
@@ -770,7 +769,7 @@ func (a *TelegramAdapter) Disconnect(ctx context.Context) error {
 			select {
 			case err := <-stopErr:
 				if err != nil {
-					slog.Warn(fmt.Sprintf("[%s] updater.stop() failed during disconnect: %s", a.Name(), redactTelegramErrorText(err)))
+					pkgLog().Warn(fmt.Sprintf("[%s] updater.stop() failed during disconnect: %s", a.Name(), redactTelegramErrorText(err)))
 				}
 			default:
 			}
@@ -790,7 +789,7 @@ func (a *TelegramAdapter) Disconnect(ctx context.Context) error {
 	if flush := a.admission.ReceiptFlush(); flush != nil && !flush.Done() {
 		a.awaitDisconnectStep(ctx, func(c context.Context) error { return flush.Wait(c) }, disconnectStepTimeout, "update-receipt flush")
 	}
-	slog.Info(fmt.Sprintf("[%s] Disconnected from Telegram", a.Name()))
+	pkgLog().Info(fmt.Sprintf("[%s] Disconnected from Telegram", a.Name()))
 	return nil
 }
 
@@ -855,7 +854,7 @@ func (a *TelegramAdapter) onPlatformUpdate(ctx context.Context, update *Update) 
 	fields, err := updateFields(update.Raw)
 	if err != nil {
 		a.failUpdatePreparation(ctx)
-		slog.Debug(fmt.Sprintf("[%s] gateway_platform_event normalize error", a.Name()), "error", err)
+		pkgLog().Debug(fmt.Sprintf("[%s] gateway_platform_event normalize error", a.Name()), "error", err)
 		return nil
 	}
 	event := normalizePlatformEvent(fields)
@@ -869,7 +868,7 @@ func (a *TelegramAdapter) onPlatformUpdate(ctx context.Context, update *Update) 
 	}
 	if err != nil {
 		a.failUpdatePreparation(ctx)
-		slog.Debug(fmt.Sprintf("[%s] gateway_platform_event dispatch error", a.Name()), "error", err)
+		pkgLog().Debug(fmt.Sprintf("[%s] gateway_platform_event dispatch error", a.Name()), "error", err)
 	}
 	return nil
 }

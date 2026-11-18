@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"log/slog"
 	"path/filepath"
 	"slices"
 	"sort"
@@ -526,7 +525,7 @@ func refreshSettled(ctx context.Context, a *SessionAuthority, sessionID string) 
 			return nil
 		default:
 		}
-		slog.Debug(fmt.Sprintf("Session %s waits for its policy refresh to publish", sessionID))
+		pkgLog().Debug(fmt.Sprintf("Session %s waits for its policy refresh to publish", sessionID))
 		select {
 		case <-running.done:
 		case <-ctx.Done():
@@ -638,10 +637,10 @@ func noteSkippedRefresh(sessionID string, err error) {
 	}
 	message := fmt.Sprintf("Session %s keeps its stored policy on resume: %s", sessionID, reason)
 	if reason == "session_busy" || reason == "unknown_execution" || reason == "revision_conflict" {
-		slog.Info(message)
+		pkgLog().Info(message)
 		return
 	}
-	slog.Warn(message)
+	pkgLog().Warn(message)
 }
 
 // Publishes a committed refresh to the adapter, the drain and every attached viewer

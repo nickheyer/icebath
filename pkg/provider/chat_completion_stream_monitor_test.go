@@ -97,7 +97,7 @@ func newAbandonHarness(t *testing.T, open func(resp *http.Response) anthEventSou
 	return &abandonHarness{t: t, session: &RetrySession{}, override: o, client: c}
 }
 
-// Runs the reconnect loop of one streaming call, the unit hermes drives through _interruptible_streaming_api_call
+// Runs the reconnect loop of one streaming call
 func (h *abandonHarness) start(ctx context.Context) <-chan streamCallOutcome {
 	out := make(chan streamCallOutcome, 1)
 	noSleep := func(context.Context, time.Duration) error { return nil }

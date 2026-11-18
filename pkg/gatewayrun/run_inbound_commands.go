@@ -58,7 +58,7 @@ func (r *GatewayRunner) hmResolveCommand(ctx context.Context, event *gateway.Mes
 
 // Ignores the platform start ping
 func (r *GatewayRunner) hmCmdStart(ctx context.Context, event *gateway.MessageEvent, source *gateway.SessionSource, quickKey string) (bool, any, error) {
-	runLog().Info(fmt.Sprintf("Ignoring /start platform ping for session %s", quickKey))
+	pkgLog().Info(fmt.Sprintf("Ignoring /start platform ping for session %s", quickKey))
 	return true, "", nil
 }
 

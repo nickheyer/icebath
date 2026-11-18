@@ -3,7 +3,6 @@ package provider
 import (
 	"context"
 	"fmt"
-	"regexp"
 	"strconv"
 	"strings"
 	"sync"
@@ -114,13 +113,6 @@ func msClean(value any) string {
 	return pyStripSpace(pyStr(value))
 }
 
-const hermesModelWarning = "Nous Research Hermes 3 & 4 models are NOT agentic and are not designed " +
-	"for use with Icebath Agent. They lack the tool-calling capabilities " +
-	"required for agent workflows. Consider using an agentic model instead " +
-	"(Claude, GPT, Gemini, DeepSeek, etc.)."
-
-var nousHermesNonAgenticRE = regexp.MustCompile(`(?i)(?:^|[/:])hermes[-_ ]?[34](?:[-_.:]|\n?\z)`)
-
 var opaqueModelPrefixes = []string{"ri.language-model-service..language-model."}
 
 // FormatModelForDisplay strips opaque proxy prefixes from a model id for status output only
@@ -135,22 +127,6 @@ func FormatModelForDisplay(modelName string) string {
 	}
 	return modelName
 }
-
-// IsNousHermesNonAgentic reports whether a model id is a real Nous Hermes 3 or 4 chat model
-func IsNousHermesNonAgentic(modelName string) bool {
-	return modelName != "" && nousHermesNonAgenticRE.MatchString(modelName)
-}
-
-// Non agentic warning text for a Nous Hermes 3 or 4 chat model, empty for every other model
-func checkHermesModelWarning(modelName string) string {
-	if IsNousHermesNonAgentic(modelName) {
-		return hermesModelWarning
-	}
-	return ""
-}
-
-// Warning text for a Nous Hermes 3 or 4 model that is not agentic, empty for any other model
-func CheckHermesModelWarning(modelName string) string { return checkHermesModelWarning(modelName) }
 
 // ModelIdentity is the vendor slug and family prefix a short alias resolves against
 type ModelIdentity struct {

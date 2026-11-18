@@ -8,7 +8,7 @@ import (
 	"testing"
 
 	"github.com/nickheyer/icebath/pkg/gateway"
-	"github.com/nickheyer/icebath/pkg/tuigateway"
+	"github.com/nickheyer/icebath/pkg/tuihost"
 )
 
 type hostedRoomFakeCall struct {
@@ -20,13 +20,13 @@ type hostedRoomFakeCall struct {
 type hostedRoomFakeServer struct {
 	mu       sync.Mutex
 	methods  map[string]Handler
-	sessions map[string]*tuigateway.Session
+	sessions map[string]*tuihost.Session
 	calls    []hostedRoomFakeCall
 	pending  func(ctx context.Context, sessionKey string) map[string]any
 }
 
 func newHostedRoomFakeServer() *hostedRoomFakeServer {
-	f := &hostedRoomFakeServer{sessions: map[string]*tuigateway.Session{}}
+	f := &hostedRoomFakeServer{sessions: map[string]*tuihost.Session{}}
 	method := func(name string, result map[string]any) Handler {
 		return func(_ context.Context, rid any, params map[string]any) map[string]any {
 			f.mu.Lock()
@@ -56,7 +56,7 @@ func newHostedRoomFakeServer() *hostedRoomFakeServer {
 func (f *hostedRoomFakeServer) server() HostedRoomServer {
 	return HostedRoomServer{
 		Method: func(name string) Handler { return f.methods[name] },
-		SessionRecord: func(sessionID string) *tuigateway.Session {
+		SessionRecord: func(sessionID string) *tuihost.Session {
 			if record := f.sessions[sessionID]; record != nil {
 				return record
 			}
@@ -133,7 +133,7 @@ func TestInfoAndInterruptAreExactTaskScoped(t *testing.T) {
 	t.Setenv("ICEBATH_HOME", t.TempDir())
 	ctx := context.Background()
 	fake := newHostedRoomFakeServer()
-	fake.sessions["runtime"] = tuigateway.NewSession(map[string]any{
+	fake.sessions["runtime"] = tuihost.NewSession(map[string]any{
 		"history_lock": &sync.Mutex{}, "running": true, "_hosted_room_task": map[string]any{"task_id": "task-a"}})
 	rpc := NewHostedRoomServerRPC(fake.server(), nil)
 
@@ -159,7 +159,7 @@ func TestLocalApprovalSnapshotAndResponseUseExactRequest(t *testing.T) {
 		}
 		return map[string]any{"request_id": "approval-1", "command": "pytest -q tests/focused", "choices": []any{"once", "deny"}}
 	}
-	fake.sessions["runtime"] = tuigateway.NewSession(map[string]any{
+	fake.sessions["runtime"] = tuihost.NewSession(map[string]any{
 		"history_lock": &sync.Mutex{}, "running": true, "session_key": "stored-session",
 		"_hosted_room_task": map[string]any{"task_id": "task-a"}})
 	rpc := NewHostedRoomServerRPC(fake.server(), nil)

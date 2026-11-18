@@ -6,7 +6,6 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
-	"log/slog"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -186,7 +185,7 @@ func (t *stderrTail) add(line string) {
 		if len(t.lines) > 20 {
 			t.lines = t.lines[len(t.lines)-20:]
 		}
-		slog.Debug("embedded cua-driver: " + text)
+		pkgLog(nil).Debug("embedded cua-driver: " + text)
 	}
 }
 
@@ -273,7 +272,7 @@ func newEmbeddedCuaDaemon(env *tools.Env, driverCmd, permissionMode, capabilityM
 		command: driverCmd, mcpArgs: append([]string(nil), cuaDriverArgs...), tail: &stderrTail{}, startTimeout: 15 * time.Second}
 	d.manifestApplies = manifest != "" && (permissionMode == "bounded" || manifestIsModeIndependent(manifest))
 	if manifest != "" && !d.manifestApplies {
-		slog.Warn(fmt.Sprintf("computer_use.capability_manifest is a legacy (v1/v2) manifest, which cua-driver only accepts in "+
+		pkgLog(nil).Warn(fmt.Sprintf("computer_use.capability_manifest is a legacy (v1/v2) manifest, which cua-driver only accepts in "+
 			"bounded mode — it will NOT bound this %s session. Migrate the manifest to version 3 to keep a "+
 			"ceiling on approval-bypassed runs.", permissionMode))
 	}

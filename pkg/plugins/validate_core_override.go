@@ -259,8 +259,12 @@ type coreAnalysis struct {
 func newCoreAnalysis(roots, local map[string]bool) *coreAnalysis {
 	a := &coreAnalysis{coreRoots: map[string]bool{}, coreReturners: map[string]bool{}, paramPatchers: map[string]map[int]bool{},
 		aliases: map[string]string{}, constants: map[string]string{}}
+	shadowed := map[string]bool{}
+	for l := range local {
+		shadowed[currentModuleName(l)] = true
+	}
 	for r := range roots {
-		if !local[r] {
+		if !shadowed[r] {
 			a.coreRoots[r] = true
 		}
 	}
@@ -278,7 +282,7 @@ func (a *coreAnalysis) funcKey(call *pyast.Node) string {
 
 func (a *coreAnalysis) coreModuleName(name any) bool {
 	s, ok := name.(string)
-	return ok && a.coreRoots[strings.Split(s, ".")[0]]
+	return ok && a.coreRoots[strings.Split(currentModuleName(s), ".")[0]]
 }
 
 // Whether an expression evaluates to an Icebath module or a value reached through one

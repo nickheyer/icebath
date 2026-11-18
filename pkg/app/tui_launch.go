@@ -10,20 +10,16 @@ import (
 	"os"
 	"strconv"
 	"strings"
-	"sync/atomic"
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/gatewaycli"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/i18n"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
-	"github.com/nickheyer/icebath/pkg/profiles"
 	"github.com/nickheyer/icebath/pkg/provider"
-	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tools"
 	"github.com/nickheyer/icebath/pkg/tui"
 )
@@ -83,159 +79,6 @@ func pyTruthyValue(v any) bool {
 		return x.Len() > 0
 	}
 	return true
-}
-
-// Prefix length of a canonical local session id the epilogue prints
-const tuiShortResumeLen = 22
-
-// Unique 22 character prefix of a canonical local id, the whole id otherwise or when the prefix is ambiguous
-func shortResumeID(db *state.SessionDB, sessionID string) string {
-	if !strings.HasPrefix(sessionID, "local-") || len(sessionID) <= tuiShortResumeLen {
-		return sessionID
-	}
-	short := sessionID[:tuiShortResumeLen]
-	resolved, err := db.ResolveSessionID(short)
-	if err != nil || resolved != sessionID {
-		return sessionID
-	}
-	return short
-}
-
-// Session row followed by each branch ancestor it was cut from
-func branchLineage(ctx context.Context, db *state.SessionDB, session *pyjson.Object) ([]*pyjson.Object, error) {
-	rows := []*pyjson.Object{session}
-	seen := map[string]bool{pyrepr.Str(session.GetOr("id", nil)): true}
-	for {
-		raw := rows[len(rows)-1].GetOr("model_config", nil)
-		if !pyTruthyValue(raw) {
-			raw = "{}"
-		}
-		text, ok := raw.(string)
-		if !ok {
-			break
-		}
-		cfg, err := pyjson.Loads(text)
-		if err != nil {
-			break
-		}
-		obj, ok := cfg.(*pyjson.Object)
-		if !ok {
-			break
-		}
-		parentValue := obj.GetOr("_branched_from", nil)
-		if !pyTruthyValue(parentValue) {
-			break
-		}
-		switch parentValue.(type) {
-		case []any, *pyjson.Object:
-			return nil, fmt.Errorf("Error binding parameter 1: type '%s' is not supported", pyrepr.TypeName(parentValue))
-		}
-		parentID := pyrepr.Str(parentValue)
-		if seen[parentID] {
-			break
-		}
-		parent, err := db.GetSession(ctx, parentID)
-		if err != nil {
-			return nil, err
-		}
-		if parent == nil {
-			break
-		}
-		seen[parentID] = true
-		rows = append(rows, parent)
-	}
-	return rows, nil
-}
-
-// Integer of a row count column, zero for falsy values
-func rowCount(v any) (int64, error) {
-	switch x := v.(type) {
-	case nil:
-		return 0, nil
-	case int64:
-		return x, nil
-	case float64:
-		return int64(x), nil
-	case bool:
-		if x {
-			return 1, nil
-		}
-		return 0, nil
-	case string:
-		if x == "" {
-			return 0, nil
-		}
-		return strconv.ParseInt(pystr.Strip(x), 10, 64)
-	}
-	return 0, fmt.Errorf("int() argument must be a string or a real number, not '%s'", pyrepr.TypeName(v))
-}
-
-// Prints the resume commands, title, message count and lineage token totals of the session the TUI left
-func printTUIExitSummary(ctx context.Context, w io.Writer, sessionID, activeSessionFile string) {
-	target := readTUIActiveSessionFile(activeSessionFile)
-	if target == "" {
-		target = sessionID
-	}
-	if target == "" {
-		target = resolveLastSession(ctx, "tui")
-	}
-	if target == "" {
-		return
-	}
-	db, err := state.NewSessionDB(ctx, home.StatePath(home.Dir(ctx)), true)
-	if err != nil {
-		return
-	}
-	title, resumeID, messageCount, tokens, ok := func() (string, string, int64, map[string]int64, bool) {
-		defer db.Close()
-		session, err := db.GetSession(ctx, target)
-		if err != nil || session == nil {
-			return "", "", 0, nil, false
-		}
-		title, _, err := db.GetSessionTitle(ctx, target)
-		if err != nil {
-			return "", "", 0, nil, false
-		}
-		resumeID := shortResumeID(db, target)
-		messageCount, err := rowCount(session.GetOr("message_count", nil))
-		if err != nil || messageCount == 0 {
-			return "", "", 0, nil, false
-		}
-		tokens := map[string]int64{}
-		lineage, err := branchLineage(ctx, db, session)
-		if err != nil {
-			return "", "", 0, nil, false
-		}
-		for _, row := range lineage {
-			for _, k := range []string{"input", "output", "cache_read", "cache_write", "reasoning"} {
-				n, err := rowCount(row.GetOr(k+"_tokens", nil))
-				if err != nil {
-					return "", "", 0, nil, false
-				}
-				tokens[k] += n
-			}
-		}
-		return title, resumeID, messageCount, tokens, true
-	}()
-	if !ok {
-		return
-	}
-	profileFlag := ""
-	if active := profiles.GetActiveProfileName(ctx); active != "default" && active != "custom" {
-		profileFlag = " -p " + active
-	}
-	fmt.Fprintf(w, "\n%s\n  icebath --resume %s%s\n", i18n.T(ctx, "cli.session.exit_resume_hint", "", nil), resumeID, profileFlag)
-	if title != "" {
-		fmt.Fprintf(w, "  icebath -c \"%s\"%s\n", title, profileFlag)
-	}
-	fmt.Fprintf(w, "\nSession:        %s\n", resumeID)
-	if title != "" {
-		fmt.Fprintf(w, "Title:          %s\n", title)
-	}
-	fmt.Fprintf(w, "Messages:       %d\n", messageCount)
-	total := tokens["input"] + tokens["output"] + tokens["cache_read"] + tokens["cache_write"] + tokens["reasoning"]
-	fmt.Fprintf(w, "Tokens:         %d (in %d, out %d, cache %d, reasoning %d)\n",
-		total, tokens["input"], tokens["output"], tokens["cache_read"]+tokens["cache_write"], tokens["reasoning"])
 }
 
 // Stripped non empty parts of comma separated items
@@ -358,11 +201,10 @@ func requireBypassModel(env map[string]string, model, resumeSessionID string, st
 	return nil
 }
 
-// Seams of a TUI launch, the worktree setup, the terminal UI run, epilogue and relaunch
+// Seams of a TUI launch, the worktree setup, the terminal UI run and relaunch
 type tuiLaunchDeps struct {
 	setupWorktree func(ctx context.Context) (map[string]any, error)
 	run           func(ctx context.Context, env map[string]string) (int, error)
-	printSummary  func(ctx context.Context, sessionID, activeSessionFile string)
 	relaunch      func(args []string, preserveInherited bool)
 	stdout        io.Writer
 	stderr        io.Writer
@@ -397,7 +239,7 @@ func launchTUIWith(ctx context.Context, l TUILaunch, deps tuiLaunchDeps) int {
 		return 1
 	}
 	if err := config.ApplyTerminalConfigToEnv(ctx, home.Dir(ctx), config.TerminalEnvOptions{Env: env}); err != nil {
-		cliLogger.Debug(fmt.Sprintf("Failed to apply terminal config bridge for TUI launch: %v", err))
+		pkgLog().Debug(fmt.Sprintf("Failed to apply terminal config bridge for TUI launch: %v", err))
 	}
 	tmpDir, err := pypath.Gettempdir()
 	if err != nil {
@@ -489,9 +331,6 @@ func launchTUIWith(ctx context.Context, l TUILaunch, deps tuiLaunchDeps) int {
 	}
 	code, callErr := deps.run(ctx, env)
 	exited := callErr == nil && (code == 0 || code == 130)
-	if exited {
-		deps.printSummary(ctx, l.Resume, activeSessionFile)
-	}
 	attachedSession := readTUIActiveSessionFile(activeSessionFile)
 	if attachedSession == "" {
 		attachedSession = l.Resume
@@ -524,9 +363,6 @@ func launchTUIWith(ctx context.Context, l TUILaunch, deps tuiLaunchDeps) int {
 	return code
 }
 
-// Set while the terminal UI runs in this process, so nothing else reads the terminal under it
-var terminalUIRunning atomic.Bool
-
 // Runs the Go terminal UI in this process with the launch environment as the process environment
 func runTerminalUI(ctx context.Context, env map[string]string) (int, error) {
 	for _, kv := range os.Environ() {
@@ -543,7 +379,5 @@ func runTerminalUI(ctx context.Context, env map[string]string) (int, error) {
 			return 0, err
 		}
 	}
-	terminalUIRunning.Store(true)
-	defer terminalUIRunning.Store(false)
-	return tui.Run(ctx), nil
+	return tui.Run(ctx, terminalUIHost()), nil
 }

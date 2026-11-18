@@ -8,7 +8,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"log/slog"
 	"math"
 	"net/http"
 	"os"
@@ -210,7 +209,7 @@ func (a *DiscordAdapter) updateCommandSyncEntry(ctx context.Context, appID, fing
 	}
 	st[key] = entry
 	if err := writeCommandSyncState(ctx, st); err != nil {
-		slog.Debug(fmt.Sprintf("[%s] Failed to write Discord command sync state: %s", a.Name(), err))
+		pkgLog().Debug(fmt.Sprintf("[%s] Failed to write Discord command sync state: %s", a.Name(), err))
 	}
 }
 
@@ -293,7 +292,7 @@ func (a *DiscordAdapter) getDiscordCommandSyncPolicy(ctx context.Context) string
 		return raw
 	}
 	if raw != "" {
-		slog.Warn(fmt.Sprintf("[%s] Invalid DISCORD_COMMAND_SYNC_POLICY=%s; falling back to 'safe'", a.Name(), pyrepr.Repr(raw)))
+		pkgLog().Warn(fmt.Sprintf("[%s] Invalid DISCORD_COMMAND_SYNC_POLICY=%s; falling back to 'safe'", a.Name(), pyrepr.Repr(raw)))
 	}
 	return "safe"
 }

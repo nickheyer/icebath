@@ -3,7 +3,6 @@ package provider
 import (
 	"context"
 	"fmt"
-	"log/slog"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -351,7 +350,7 @@ func llamaStoreLock(root string) (held bool, release func(), err error) {
 func AdoptLegacyEngine(ctx context.Context, backend string) bool {
 	moved, err := adoptLegacyEngine(ctx, backend)
 	if err != nil {
-		slog.Warn(fmt.Sprintf("could not move the pre-PM llama.cpp %s engine into the PM store: %v", backend, err))
+		pkgLog().Warn(fmt.Sprintf("could not move the pre-PM llama.cpp %s engine into the PM store: %v", backend, err))
 		return false
 	}
 	return moved
@@ -429,11 +428,11 @@ func adoptLegacyInstall(p pm.Package, c legacyInstall, target, root, factsPath s
 		return false, nil
 	}
 	if reason := llamaVerify(p, c.path, target); reason != "" {
-		slog.Warn(fmt.Sprintf("pre-PM llama.cpp at %s left in place: %s", c.path, reason))
+		pkgLog().Warn(fmt.Sprintf("pre-PM llama.cpp at %s left in place: %s", c.path, reason))
 		return false, nil
 	}
 	if err := os.Rename(c.path, entry); err != nil {
-		slog.Warn(fmt.Sprintf("pre-PM llama.cpp at %s left in place: %v", c.path, err))
+		pkgLog().Warn(fmt.Sprintf("pre-PM llama.cpp at %s left in place: %v", c.path, err))
 		return false, nil
 	}
 	if err := recordAdoptedEngine(p, c.version, entryName, entry, target, root, factsPath, artifacts); err != nil {
@@ -441,7 +440,7 @@ func adoptLegacyInstall(p pm.Package, c legacyInstall, target, root, factsPath s
 		return false, err
 	}
 	_ = os.Remove(filepath.Dir(c.path))
-	slog.Info(fmt.Sprintf("moved llama.cpp b%s (%s) from %s into the PM store", c.version, p.Base().Name, c.path))
+	pkgLog().Info(fmt.Sprintf("moved llama.cpp b%s (%s) from %s into the PM store", c.version, p.Base().Name, c.path))
 	return true, nil
 }
 

@@ -63,7 +63,7 @@ func TestBackupKeepRefusesNegativeAndNonDecimalValues(t *testing.T) {
 	}
 }
 
-func TestSmallSubcommandParsersMatchTheirHermesShapes(t *testing.T) {
+func TestSmallSubcommandParsersMatchTheirShapes(t *testing.T) {
 	c := NewCLI()
 	for path, flags := range map[string][]string{
 		"import":            {"force"},
@@ -96,7 +96,7 @@ func TestSmallSubcommandParsersMatchTheirHermesShapes(t *testing.T) {
 	}
 }
 
-// import takes the zipfile positional and the force flag of the hermes import parser
+// import takes the zipfile positional and the force flag of the import parser
 func TestImportParserTakesTheZipfileAndForce(t *testing.T) {
 	ns, err := bNamespace(t, "import", []string{"import", "backup.zip"})
 	if err != nil || ns["zipfile"] != "backup.zip" || ns["force"] != false {
@@ -113,8 +113,8 @@ func TestImportParserTakesTheZipfileAndForce(t *testing.T) {
 	}
 }
 
-// verify reads its defaults as the hermes parser does, port and phase None, both timeouts floats
-func TestVerifyParserBuildsTheHermesDefaults(t *testing.T) {
+// verify reads its defaults as the parser does, port and phase None, both timeouts floats
+func TestVerifyParserBuildsTheDefaults(t *testing.T) {
 	ns, err := bNamespace(t, "verify", []string{"verify"})
 	if err != nil {
 		t.Fatal(err)
@@ -142,7 +142,7 @@ func TestVerifyParserBuildsTheHermesDefaults(t *testing.T) {
 	}
 }
 
-// hooks attaches list, test, revoke and doctor with the hermes aliases and test options
+// hooks attaches list, test, revoke and doctor with the aliases and test options
 func TestHooksParserAttachesEveryAction(t *testing.T) {
 	c := NewCLI()
 	for path, aliases := range map[string][]string{"hooks list": {"ls"}, "hooks test": nil, "hooks revoke": {"remove", "rm"}, "hooks doctor": nil} {

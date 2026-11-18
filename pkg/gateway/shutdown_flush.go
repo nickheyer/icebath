@@ -3,7 +3,6 @@ package gateway
 import (
 	"context"
 	"fmt"
-	"log/slog"
 	"os"
 	"runtime"
 	"strings"
@@ -56,11 +55,11 @@ func writeFlushPayload(ctx context.Context, flushDir string, payload *pyjson.Obj
 	if runtime.GOOS != "windows" {
 		dir, err := os.Open(flushDir)
 		if err != nil {
-			slog.Debug(fmt.Sprintf("Failed to fsync pending-message directory: %v", err))
+			pkgLog().Debug(fmt.Sprintf("Failed to fsync pending-message directory: %v", err))
 			return finalPath, nil
 		}
 		if err := dir.Sync(); err != nil {
-			slog.Debug(fmt.Sprintf("Failed to fsync pending-message directory: %v", err))
+			pkgLog().Debug(fmt.Sprintf("Failed to fsync pending-message directory: %v", err))
 		}
 		dir.Close()
 	}
@@ -86,7 +85,7 @@ func flushValue(ctx context.Context, flushDir, kind, sessionKey string, value an
 	}
 	payload.Set("data", serialised)
 	if _, err := writeFlushPayload(ctx, flushDir, payload); err != nil {
-		slog.Debug(fmt.Sprintf("Failed to flush %s message for %s: %v", kind, sessionKey, err))
+		pkgLog().Debug(fmt.Sprintf("Failed to flush %s message for %s: %v", kind, sessionKey, err))
 		return false
 	}
 	return true
@@ -125,7 +124,7 @@ func FlushPendingValuesToFile(ctx context.Context, pending map[string]any, reaso
 		}
 	}
 	if flushed > 0 {
-		slog.Info(fmt.Sprintf("Flushed %d pending message(s) to %s (reason=%s)", flushed, flushDir, reason))
+		pkgLog().Info(fmt.Sprintf("Flushed %d pending message(s) to %s (reason=%s)", flushed, flushDir, reason))
 	}
 	return flushed, nil
 }
@@ -156,7 +155,7 @@ func FlushOverflowToFile(ctx context.Context, overflowBySession map[string][]any
 		}
 	}
 	if flushed > 0 {
-		slog.Info(fmt.Sprintf("Flushed %d queued overflow message(s) to %s (reason=%s)", flushed, flushDir, reason))
+		pkgLog().Info(fmt.Sprintf("Flushed %d queued overflow message(s) to %s (reason=%s)", flushed, flushDir, reason))
 	}
 	return flushed, nil
 }

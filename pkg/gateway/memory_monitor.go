@@ -7,18 +7,15 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
-
-	"github.com/nickheyer/icebath/pkg/logging"
 )
 
 const memoryBytesToMB = 1024 * 1024
 
 var (
-	memoryMonitorLogger = logging.GetLogger("gateway.memory_monitor")
-	memoryMonitorMu     sync.Mutex
-	memoryMonitorStop   chan struct{}
-	memoryMonitorDone   chan struct{}
-	memoryMonitorStart  atomic.Pointer[time.Time]
+	memoryMonitorMu    sync.Mutex
+	memoryMonitorStop  chan struct{}
+	memoryMonitorDone  chan struct{}
+	memoryMonitorStart atomic.Pointer[time.Time]
 )
 
 // Process RSS high water mark in MB, false when the process memory cannot be read
@@ -47,7 +44,7 @@ func LogMemoryUsage(prefix string) {
 	if start := memoryMonitorStart.Load(); start != nil {
 		uptime = int(time.Since(*start).Seconds())
 	}
-	memoryMonitorLogger.Info(fmt.Sprintf("[MEMORY] %srss=%s gc=%d goroutines=%d uptime=%ds", prefix, rss, gcCycles(), runtime.NumGoroutine(), uptime))
+	pkgLog().Info(fmt.Sprintf("[MEMORY] %srss=%s gc=%d goroutines=%d uptime=%ds", prefix, rss, gcCycles(), runtime.NumGoroutine(), uptime))
 }
 
 // Logs every interval until stop closes, a failed iteration logged at debug and never ending the loop
@@ -64,7 +61,7 @@ func memoryMonitorLoop(stop <-chan struct{}, done chan<- struct{}, interval time
 		func() {
 			defer func() {
 				if r := recover(); r != nil {
-					memoryMonitorLogger.Debug(fmt.Sprintf("Memory monitor iteration failed: %v", r))
+					pkgLog().Debug(fmt.Sprintf("Memory monitor iteration failed: %v", r))
 				}
 			}()
 			LogMemoryUsage("")
@@ -93,7 +90,7 @@ func StartMemoryMonitoring(intervalSeconds float64) bool {
 		return false
 	}
 	if _, ok := processRSSMB(); !ok {
-		memoryMonitorLogger.Warning("[MEMORY] Memory monitoring unavailable: neither getrusage nor GetProcessMemoryInfo could read process RSS " +
+		pkgLog().Warn("[MEMORY] Memory monitoring unavailable: neither getrusage nor GetProcessMemoryInfo could read process RSS " +
 			"— skipping periodic logging.")
 		return false
 	}
@@ -103,7 +100,7 @@ func StartMemoryMonitoring(intervalSeconds float64) bool {
 	LogMemoryUsage("baseline")
 	memoryMonitorDone = make(chan struct{})
 	go memoryMonitorLoop(memoryMonitorStop, memoryMonitorDone, time.Duration(intervalSeconds*float64(time.Second)))
-	memoryMonitorLogger.Info(fmt.Sprintf("[MEMORY] Periodic memory monitoring started (interval: %ds)", int(intervalSeconds)))
+	pkgLog().Info(fmt.Sprintf("[MEMORY] Periodic memory monitoring started (interval: %ds)", int(intervalSeconds)))
 	return true
 }
 
@@ -128,7 +125,7 @@ func StopMemoryMonitoring(timeoutSeconds float64) {
 	case <-timer.C:
 	}
 	timer.Stop()
-	memoryMonitorLogger.Info("[MEMORY] Periodic memory monitoring stopped")
+	pkgLog().Info("[MEMORY] Periodic memory monitoring stopped")
 }
 
 // Whether the background monitor is running

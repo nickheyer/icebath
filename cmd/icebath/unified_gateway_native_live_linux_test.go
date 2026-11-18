@@ -453,7 +453,7 @@ func TestNativeGatewayRuntimeLive(t *testing.T) {
 	}
 	created := sessionResult(t, ws, "session.create", map[string]any{"request_id": "native-create", "source": "cli", "cwd": h, "toolsets": []any{}})
 	sid, _ := created["session_id"].(string)
-	initial := sessionResult(t, ws, "session.resume", map[string]any{"session_id": sid})
+	sessionResult(t, ws, "session.resume", map[string]any{"session_id": sid})
 	if admitted := sessionResult(t, ws, "prompt.submit", map[string]any{"session_id": sid, "input_id": "native-turn", "text": "NATIVE_TURN"}); admitted["status"] != "queued" {
 		t.Fatalf("prompt.submit = %v", admitted)
 	}
@@ -462,18 +462,6 @@ func TestNativeGatewayRuntimeLive(t *testing.T) {
 	}
 	if status := hn.admissions(t)["native-turn"]; status != "terminal" {
 		t.Fatalf("native-turn = %s", status)
-	}
-	replay := sessionResult(t, ws, "session.events.since", map[string]any{"session_id": sid,
-		"replay_epoch": initial["replay_epoch"], "last_sequence": initial["last_sequence"]})
-	completes := 0
-	events, _ := replay["events"].([]any)
-	for _, raw := range events {
-		if event, isDict := raw.(map[string]any); isDict && event["type"] == "message.complete" {
-			completes++
-		}
-	}
-	if completes != 1 {
-		t.Fatalf("replay = %v", replay)
 	}
 	ws.Close()
 

@@ -84,7 +84,7 @@ func setupTerminalBackendSection(ctx context.Context, cfg config.Tree) error {
 	return tools.SetupTerminalBackend(ctx, provider.SetupToolsEnv(ctx), cfg)
 }
 
-// Seams over the sections the quick and Blank Slate flows call, the hermes_cli.setup names the setup tests patch
+// Seams over the sections the quick and Blank Slate flows call, swapped out by the setup tests
 var (
 	setupModelProviderFn      = provider.SetupModelProvider
 	setupTerminalBackendFn    = setupTerminalBackendSection
@@ -118,14 +118,14 @@ type firstTimeMode struct {
 	run   func(ctx context.Context, cfg config.Tree, icebathHome, importedFrom string) error
 }
 
-// Seams over the first time flows, the hermes_cli.setup_quick names the setup tests patch
+// Seams over the first time flows, swapped out by the setup tests
 var (
 	setupRunFirstTimeQuickSetupFn = runFirstTimeQuickSetup
 	setupRunBlankSlateSetupFn     = runBlankSlateSetup
 )
 
-// Quick Setup through Nous Portal or the imported model
-var quickSetupMode = firstTimeMode{"Quick Setup (Nous Portal) — free OAuth login, no API keys, model + tools (recommended)",
+// Quick Setup keeping an imported model, with default agent settings, terminal and messaging
+var quickSetupMode = firstTimeMode{"Quick Setup — keeps an imported model, default agent settings, terminal + messaging (recommended)",
 	func(ctx context.Context, cfg config.Tree, h, importedFrom string) error {
 		return setupRunFirstTimeQuickSetupFn(ctx, cfg, h, importedFrom)
 	}}
@@ -171,12 +171,9 @@ func printSetupWizardTitle() {
 		"│  Press Ctrl+C at any time to exit.                     │")
 }
 
-// Quick Setup of an existing install as one step, then the setup recorded as completed
+// Quick Setup of an existing install as one step
 func runExistingQuickSetup(ctx context.Context, cfg config.Tree, h string) error {
-	if err := provider.RunSetupSteps([]provider.SetupStep{{Label: "Quick Setup", Action: func() error { return setupRunQuickSetupFn(ctx, cfg, h) }}}); err != nil {
-		return err
-	}
-	return provider.RecordSetupCompleted(ctx, cfg)
+	return provider.RunSetupSteps([]provider.SetupStep{{Label: "Quick Setup", Action: func() error { return setupRunQuickSetupFn(ctx, cfg, h) }}})
 }
 
 // Offers the agent import of a first setup, returning the config it left and the agents it imported
@@ -189,12 +186,9 @@ func offerFirstSetupImport(ctx context.Context, h string) (config.Tree, string, 
 	return cfg, importedFrom, err
 }
 
-// Runs a first time mode as one step, then the setup recorded as completed
+// Runs a first time mode as one step
 func runFirstTimeMode(ctx context.Context, cfg config.Tree, h string, mode firstTimeMode, importedFrom string) error {
-	if err := provider.RunSetupSteps([]provider.SetupStep{{Label: mode.label, Action: func() error { return mode.run(ctx, cfg, h, importedFrom) }}}); err != nil {
-		return err
-	}
-	return provider.RecordSetupCompleted(ctx, cfg)
+	return provider.RunSetupSteps([]provider.SetupStep{{Label: mode.label, Action: func() error { return mode.run(ctx, cfg, h, importedFrom) }}})
 }
 
 // Runs body after the pre-setup backup and config load a setup run starts with, under the setup navigation

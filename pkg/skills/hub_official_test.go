@@ -45,7 +45,7 @@ func liveRepoGitHub(t *testing.T, o *OptionalSkillSource, remoteDirs []string, e
 		contents[p] = data
 	}
 	for _, d := range remoteDirs {
-		add("optional-skills/"+d+"/SKILL.md", []byte("---\nname: "+d[strings.LastIndex(d, "/")+1:]+"\n---\nBody"))
+		add("pkg/skills/optional/"+d+"/SKILL.md", []byte("---\nname: "+d[strings.LastIndex(d, "/")+1:]+"\n---\nBody"))
 	}
 	for i := 0; i+1 < len(extra); i += 2 {
 		add(extra[i], []byte(extra[i+1]))
@@ -63,8 +63,8 @@ func TestOptionalScanAllEmitsRepoRootRelativeMetadata(t *testing.T) {
 	writeTestFile(t, filepath.Join(root, "finance", "3-statement-model", "SKILL.md"), "---\nname: 3-statement-model\ndescription: test\n---\n\nBody\n")
 	o := optionalSource(t, root)
 	meta, err := o.Inspect(context.Background(), "official/finance/3-statement-model")
-	if err != nil || meta == nil || meta.Repo == nil || *meta.Repo != "NousResearch/hermes-agent" ||
-		meta.Path == nil || *meta.Path != "optional-skills/finance/3-statement-model" {
+	if err != nil || meta == nil || meta.Repo == nil || *meta.Repo != "nickheyer/icebath" ||
+		meta.Path == nil || *meta.Path != "pkg/skills/optional/finance/3-statement-model" {
 		t.Fatalf("%+v %v", meta, err)
 	}
 }
@@ -122,8 +122,8 @@ func TestOptionalFetchRejectsSiblingDirectoryTraversal(t *testing.T) {
 func TestOptionalFetchFallsBackToLiveRepoWhenMissingLocally(t *testing.T) {
 	o := optionalSource(t, filepath.Join(t.TempDir(), "optional-skills"), "software-development/ast-grep")
 	liveRepoGitHub(t, o, []string{"software-development/ast-grep"},
-		"optional-skills/software-development/ast-grep/install.sh", "#!/bin/sh\n",
-		"optional-skills/software-development/ast-grep/LICENSE", "MIT")
+		"pkg/skills/optional/software-development/ast-grep/install.sh", "#!/bin/sh\n",
+		"pkg/skills/optional/software-development/ast-grep/LICENSE", "MIT")
 	b, err := o.Fetch(context.Background(), "official/software-development/ast-grep")
 	if err != nil || b == nil {
 		t.Fatalf("%v %v", b, err)
@@ -185,7 +185,7 @@ func TestOptionalSearchSurfacesRemoteOnlySkills(t *testing.T) {
 func TestOptionalInspectSurfacesRemoteOnlySkill(t *testing.T) {
 	o := optionalSource(t, filepath.Join(t.TempDir(), "optional-skills"), "software-development/ast-grep")
 	meta, err := o.Inspect(context.Background(), "official/software-development/ast-grep")
-	if err != nil || meta == nil || *meta.Repo != "NousResearch/hermes-agent" || *meta.Path != "optional-skills/software-development/ast-grep" {
+	if err != nil || meta == nil || *meta.Repo != "nickheyer/icebath" || *meta.Path != "pkg/skills/optional/software-development/ast-grep" {
 		t.Fatalf("%+v %v", meta, err)
 	}
 }
@@ -226,8 +226,8 @@ func TestBundledOptionalSourceStillIncludesSupportFiles(t *testing.T) {
 func TestOptionalSourceUpstreamPointerFetchesFromExternalRepo(t *testing.T) {
 	root := filepath.Join(t.TempDir(), "optional-skills")
 	writeTestFile(t, filepath.Join(root, "creative", "upstream-demo", "SKILL.md"), "---\nname: upstream-demo\n"+
-		"description: Upstream-maintained catalog entry.\nmetadata:\n  hermes:\n    upstream:\n      repo: acme/design-skill\n"+
-		"      path: .hermes/skills/design\n---\n# Stub\n")
+		"description: Upstream-maintained catalog entry.\nmetadata:\n  icebath:\n    upstream:\n      repo: acme/design-skill\n"+
+		"      path: .icebath/skills/design\n---\n# Stub\n")
 	o := optionalSource(t, root)
 	var fetched []string
 	o.github = NewGitHubSource(o.h, o.auth, nil)
@@ -239,7 +239,7 @@ func TestOptionalSourceUpstreamPointerFetchesFromExternalRepo(t *testing.T) {
 			Source: "github", Identifier: id, TrustLevel: "community", Metadata: objectOf("source_url", "https://github.com/acme/design-skill")}
 	}
 	b, err := o.Fetch(context.Background(), "official/creative/upstream-demo")
-	if err != nil || b == nil || !slices.Equal(fetched, []string{"acme/design-skill/.hermes/skills/design"}) {
+	if err != nil || b == nil || !slices.Equal(fetched, []string{"acme/design-skill/.icebath/skills/design"}) {
 		t.Fatalf("%v %v %v", b, err, fetched)
 	}
 	md, _ := b.File("SKILL.md")
@@ -252,10 +252,10 @@ func TestOptionalSourceUpstreamPointerFetchesFromExternalRepo(t *testing.T) {
 
 func TestOptionalSourceUpstreamPointerRejectsMalformed(t *testing.T) {
 	for _, content := range []string{
-		"---\nname: x\nmetadata:\n  hermes:\n    upstream:\n      repo: acme\n      path: skills/x\n---\n",
-		"---\nname: x\nmetadata:\n  hermes:\n    upstream:\n      repo: a/b/c\n      path: skills/x\n---\n",
-		"---\nname: x\nmetadata:\n  hermes:\n    upstream:\n      repo: acme/skill\n      path: ../../etc\n---\n",
-		"---\nname: x\nmetadata:\n  hermes:\n    upstream:\n      repo: acme/skill\n---\n",
+		"---\nname: x\nmetadata:\n  icebath:\n    upstream:\n      repo: acme\n      path: skills/x\n---\n",
+		"---\nname: x\nmetadata:\n  icebath:\n    upstream:\n      repo: a/b/c\n      path: skills/x\n---\n",
+		"---\nname: x\nmetadata:\n  icebath:\n    upstream:\n      repo: acme/skill\n      path: ../../etc\n---\n",
+		"---\nname: x\nmetadata:\n  icebath:\n    upstream:\n      repo: acme/skill\n---\n",
 		"---\nname: x\n---\n",
 	} {
 		if repo, p, ok := upstreamPointerFromContent([]byte(content)); ok {

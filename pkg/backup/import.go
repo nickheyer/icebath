@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"log/slog"
 	"math/big"
 	"os"
 	"sort"
@@ -592,7 +591,7 @@ func reviveGatewayAfterImport(ctx context.Context, w io.Writer, root string) {
 		_, err = ensureGatewayService(ctx, w, gateway.ServiceSetupOptions{Context: "import"})
 	}
 	if err != nil {
-		slog.Debug("gateway revive after import failed", "err", err)
+		pkgLog().Debug("gateway revive after import failed", "err", err)
 		fmt.Fprintln(w, "\nStart the gateway to activate cron jobs and messaging:\n  icebath gateway run")
 	}
 }

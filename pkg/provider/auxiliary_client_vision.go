@@ -11,11 +11,11 @@ import (
 	"github.com/nickheyer/icebath/pkg/tools"
 )
 
-// Provider client resolution seam the vision and cache paths call, swapped by tests as hermes patches the module name
+// Provider client resolution seam the vision and cache paths call, swapped by tests
 var auxResolveProviderClientFn = ResolveProviderClient
 
 // Aggregators tried in order once the main provider cannot serve vision
-var auxVisionAutoProviderOrder = []string{"openrouter", "nous", "deepinfra"}
+var auxVisionAutoProviderOrder = []string{"openrouter", "deepinfra"}
 
 // Vision verdict of the main provider and model, unknown capability reading as true so the call is attempted
 var auxMainModelSupportsVision = func(ctx context.Context, provider, model string) bool {
@@ -47,7 +47,7 @@ func auxDeepinfraStrictVisionBackend(ctx context.Context, model string) (AuxClie
 		visionModel = auxResolveProviderVisionDefault(ctx, "deepinfra")
 	}
 	if visionModel == "" {
-		auxClientLog().Debug("Vision auto-detect: deepinfra catalog unreachable or returned no vision-tagged models — skipping")
+		pkgLog().Debug("Vision auto-detect: deepinfra catalog unreachable or returned no vision-tagged models — skipping")
 		return nil, "", nil
 	}
 	return auxResolveProviderClientFn(ctx, "deepinfra", visionModel, ProviderClientOptions{IsVision: true})
@@ -57,9 +57,6 @@ func auxDeepinfraStrictVisionBackend(ctx context.Context, model string) (AuxClie
 var auxStrictVisionBackends = map[string]func(ctx context.Context, model string) (AuxClient, string, error){
 	"openrouter": func(ctx context.Context, model string) (AuxClient, string, error) {
 		return auxTryOpenrouter(ctx, nil, model, "")
-	},
-	"nous": func(ctx context.Context, model string) (AuxClient, string, error) {
-		return auxResolveProviderClientFn(ctx, "nous", model, ProviderClientOptions{IsVision: true})
 	},
 	"openai-codex": func(ctx context.Context, model string) (AuxClient, string, error) {
 		return auxResolveProviderClientFn(ctx, "openai-codex", model, ProviderClientOptions{IsVision: true})
@@ -139,24 +136,12 @@ func auxVisionMainProviderClient(ctx context.Context, mainProvider, mainModel st
 	if visionModel == "" {
 		visionModel = mainModel
 	}
-	if mainProvider == "nous" {
-		pick := resolvedModel
-		if pick == "" {
-			pick = providerVisionDefault
-		}
-		syncClient, defaultModel, err := auxResolveStrictVisionBackendFn(ctx, mainProvider, pick)
-		if err != nil || syncClient == nil {
-			return nil, "", err
-		}
-		auxClientLog().Info(fmt.Sprintf("Vision auto-detect: using main provider %s (%s)", mainProvider, auxFirstNonEmpty(defaultModel, resolvedModel, mainModel)))
-		return syncClient, defaultModel, nil
-	}
 	if auxProvidersWithoutVision[mainProvider] {
-		auxClientLog().Debug(fmt.Sprintf("Vision auto-detect: skipping main provider %s (no vision support) — falling through to aggregator chain", mainProvider))
+		pkgLog().Debug(fmt.Sprintf("Vision auto-detect: skipping main provider %s (no vision support) — falling through to aggregator chain", mainProvider))
 		return nil, "", nil
 	}
 	if !auxMainModelSupportsVision(ctx, mainProvider, visionModel) {
-		auxClientLog().Debug(fmt.Sprintf("Vision auto-detect: skipping main provider %s (reports no vision capability) — falling through to aggregator chain", mainProvider))
+		pkgLog().Debug(fmt.Sprintf("Vision auto-detect: skipping main provider %s (reports no vision capability) — falling through to aggregator chain", mainProvider))
 		return nil, "", nil
 	}
 	var rpcBaseURL string
@@ -192,11 +177,11 @@ func auxVisionMainProviderClient(ctx context.Context, mainProvider, mainModel st
 	if err != nil || rpcClient == nil {
 		return nil, "", err
 	}
-	auxClientLog().Info(fmt.Sprintf("Vision auto-detect: using main provider %s (%s)", mainProvider, auxFirstNonEmpty(rpcModel, visionModel)))
+	pkgLog().Info(fmt.Sprintf("Vision auto-detect: using main provider %s (%s)", mainProvider, auxFirstNonEmpty(rpcModel, visionModel)))
 	return rpcClient, auxFirstNonEmpty(rpcModel, visionModel), nil
 }
 
-// Auto vision route, the main provider first and then OpenRouter, Nous and DeepInfra
+// Auto vision route, the main provider first and then OpenRouter and DeepInfra
 func auxVisionAutoRoute(ctx context.Context, runtime map[string]any, resolvedModel, resolvedAPIMode string, asyncMode bool) (string, AuxClient, string, error) {
 	mainProvider := auxPyStrOr(runtime["provider"], auxReadMainProvider(ctx))
 	mainModel := auxPyStrOr(runtime["model"], auxReadMainModel(ctx))
@@ -230,7 +215,7 @@ func auxVisionAutoRoute(ctx context.Context, runtime map[string]any, resolvedMod
 			return p, c, m, nil
 		}
 	}
-	auxClientLog().Debug("Auxiliary vision client: none available")
+	pkgLog().Debug("Auxiliary vision client: none available")
 	return "", nil, "", nil
 }
 
@@ -321,3 +306,11 @@ func auxPyStrOr(v any, fallback string) string {
 
 // Strict vision backend seam the vision auto route tests swap
 var auxResolveStrictVisionBackendFn = auxResolveStrictVisionBackend
+
+// Installs the vision readiness check the tools command reaches through tools.ToolsCommandHooks
+func init() {
+	tools.ToolsCommandHooks.VisionClientReady = func(ctx context.Context, h string) (bool, error) {
+		_, client, _, err := ResolveVisionProviderClient(home.WithOverride(ctx, h), "", "", "", nil, false, nil)
+		return err == nil && client != nil, err
+	}
+}

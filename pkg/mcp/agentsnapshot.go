@@ -359,7 +359,7 @@ func persistAgentToolNames(ctx context.Context, agent AgentToolSnapshot) {
 		pin.Set("delegation_backend", backend)
 	}
 	if err := db.UpdateSessionToolNames(sessionID, pin); err != nil {
-		mcpLogger().Debug("tool_names persist skipped", "error", err)
+		pkgLog().Debug("tool_names persist skipped", "error", err)
 		return
 	}
 	recordPinnedSnapshot(ctx, agent, sessionID)
@@ -742,7 +742,7 @@ func reinjectPostBuildTools(agent AgentToolSnapshot, toolsList *[]map[string]any
 	if getMem := agent.MemoryToolSchemas(); getMem != nil {
 		if agent.MemoryProviderToolsEnabled(enabled, agent.DisabledToolsets(), nameSet["memory"]) {
 			if schemas, err := getMem(); err != nil {
-				mcpLogger().Debug("Memory-provider tool re-injection skipped", "error", err)
+				pkgLog().Debug("Memory-provider tool re-injection skipped", "error", err)
 			} else {
 				for _, schema := range schemas {
 					add(schema)
@@ -755,7 +755,7 @@ func reinjectPostBuildTools(agent AgentToolSnapshot, toolsList *[]map[string]any
 	if (enabled == nil || containsString(enabled, "context_engine")) && getSchemas != nil {
 		schemas, err := getSchemas()
 		if err != nil {
-			mcpLogger().Debug("Context-engine tool re-injection skipped", "error", err)
+			pkgLog().Debug("Context-engine tool re-injection skipped", "error", err)
 			return staged
 		}
 		for _, schema := range schemas {

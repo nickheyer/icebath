@@ -77,11 +77,11 @@ func (a *SlackAdapter) SendTyping(ctx context.Context, chatID string, metadata m
 func (a *SlackAdapter) setThreadStatus(ctx context.Context, chatID, teamID, threadTS, status, failLabel string) {
 	client := a.getClient(chatID, teamID)
 	if client == nil {
-		slog.Debug(fmt.Sprintf("[Slack] assistant.threads.setStatus %s: not connected", failLabel))
+		pkgLog().Debug(fmt.Sprintf("[Slack] assistant.threads.setStatus %s: not connected", failLabel))
 		return
 	}
 	if err := sessionStatusMethod(client)(ctx, chatID, threadTS, status); err != nil {
-		slog.Debug(fmt.Sprintf("[Slack] assistant.threads.setStatus %s: %v", failLabel, err))
+		pkgLog().Debug(fmt.Sprintf("[Slack] assistant.threads.setStatus %s: %v", failLabel, err))
 	}
 }
 
@@ -181,7 +181,7 @@ func (a *SlackAdapter) CronContinuableSurface() string {
 // Warns when in_channel cron delivery is set without flat replies
 func (a *SlackAdapter) warnIfInchannelWithoutFlatReply(teamName string) {
 	if a.CronContinuableSurface() == "in_channel" && pyrepr.Truthy(getOr(a.extra(), "reply_in_thread", true)) {
-		slog.Warn(fmt.Sprintf("[Slack] %s: cron_continuable_surface=in_channel is set WITHOUT "+
+		pkgLog().Warn(fmt.Sprintf("[Slack] %s: cron_continuable_surface=in_channel is set WITHOUT "+
 			"reply_in_thread=false. A continuable in-channel cron job will deliver flat, "+
 			"but the bot will still reply to your continuation in a thread — so it falls "+
 			"back to a threaded continuation (≈ default behaviour), not the flat "+
@@ -195,7 +195,7 @@ func (a *SlackAdapter) slackAllowBots(ctx context.Context) string {
 	raw, _ := gateway.ExtraOrSecret(ctx, a.extra(), "allow_bots", "SLACK_ALLOW_BOTS", "none", true)
 	value := pystr.Strip(pystr.Lower(pyrepr.Str(raw)))
 	if value != "none" && value != "mentions" && value != "all" {
-		slog.Warn(fmt.Sprintf("[Slack] Unknown allow_bots=%s; treating as 'none'", pyrepr.Repr(raw)))
+		pkgLog().Warn(fmt.Sprintf("[Slack] Unknown allow_bots=%s; treating as 'none'", pyrepr.Repr(raw)))
 		return "none"
 	}
 	return value
@@ -283,7 +283,7 @@ func (a *SlackAdapter) uploadWithRetry(ctx context.Context, chatID, filePath, fi
 		if !a.isRetryableUploadError(err) || attempt >= attempts-1 {
 			return gateway.SendResult{}, err
 		}
-		slog.Debug(fmt.Sprintf("[Slack] %s retry %d/2 for %s: %v", label, attempt+1, filePath, err))
+		pkgLog().Debug(fmt.Sprintf("[Slack] %s retry %d/2 for %s: %v", label, attempt+1, filePath, err))
 		select {
 		case <-ctx.Done():
 			return gateway.SendResult{}, ctx.Err()
@@ -325,7 +325,7 @@ func (a *SlackAdapter) sendLocalFile(ctx context.Context, chatID, filePath, capt
 	if err == nil {
 		return result, nil
 	}
-	slog.Error(fmt.Sprintf("[%s] Failed to send %s %s: %v", a.Name(), kind, filePath, err))
+	pkgLog().Error(fmt.Sprintf("[%s] Failed to send %s %s: %v", a.Name(), kind, filePath, err))
 	return a.sendFailureNotice(ctx, chatID, caption, failureNotice, replyTo, metadata)
 }
 
@@ -358,9 +358,9 @@ func (a *SlackAdapter) SendMultipleImages(ctx context.Context, chatID string, im
 		if len(uploads) == 0 {
 			continue
 		}
-		slog.Info(fmt.Sprintf("[Slack] Sending %d image(s) in single files_upload_v2 (chunk %d/%d)", len(uploads), idx+1, len(chunks)))
+		pkgLog().Info(fmt.Sprintf("[Slack] Sending %d image(s) in single files_upload_v2 (chunk %d/%d)", len(uploads), idx+1, len(chunks)))
 		if _, err := a.clientFor(chatID, metadata).filesUploadV2(ctx, chatID, uploads, strings.Join(comments, "\n"), threadTS); err != nil {
-			slog.Warn(fmt.Sprintf("[Slack] Multi-image files_upload_v2 failed (chunk %d/%d), falling back to per-image: %v", idx+1, len(chunks), err))
+			pkgLog().Warn(fmt.Sprintf("[Slack] Multi-image files_upload_v2 failed (chunk %d/%d), falling back to per-image: %v", idx+1, len(chunks), err))
 			fallback, _ := a.BasePlatformAdapter.SendMultipleImages(ctx, chatID, chunk, metadata, humanDelay)
 			delivered = delivered || fallback.Success
 			continue
@@ -386,19 +386,19 @@ func collectImageUploads(ctx context.Context, chunk []gateway.ImageRef) ([]fileU
 		if strings.HasPrefix(img.URL, "file://") {
 			localPath := pyurl.Unquote(img.URL[7:])
 			if _, err := os.Stat(localPath); err != nil {
-				slog.Warn(fmt.Sprintf("[Slack] Skipping missing image: %s", localPath))
+				pkgLog().Warn(fmt.Sprintf("[Slack] Skipping missing image: %s", localPath))
 				continue
 			}
 			uploads = append(uploads, fileUpload{File: localPath, Filename: filepath.Base(localPath)})
 			continue
 		}
 		if !tools.IsSafeURL(gateway.URLSafetyEnv(ctx), img.URL) {
-			slog.Warn("[Slack] Blocked unsafe image URL in batch")
+			pkgLog().Warn("[Slack] Blocked unsafe image URL in batch")
 			continue
 		}
 		data, contentType, err := fetchURL(ctx, client, img.URL)
 		if err != nil {
-			slog.Warn(fmt.Sprintf("[Slack] Download failed for %s: %v", gateway.SafeURLForLog(img.URL, 80), err))
+			pkgLog().Warn(fmt.Sprintf("[Slack] Download failed for %s: %v", gateway.SafeURLForLog(img.URL, 80), err))
 			continue
 		}
 		ext := "png"
@@ -513,7 +513,7 @@ func (a *SlackAdapter) react(ctx context.Context, channel, timestamp, emoji, tea
 		method, verb = "reactions.remove", "remove"
 	}
 	if _, err := a.getClient(channel, teamID).call(ctx, method, map[string]any{"channel": channel, "timestamp": timestamp, "name": emoji}); err != nil {
-		slog.Debug(fmt.Sprintf("[Slack] reactions.%s failed (%s): %v", verb, emoji, err))
+		pkgLog().Debug(fmt.Sprintf("[Slack] reactions.%s failed (%s): %v", verb, emoji, err))
 		return false
 	}
 	return true
@@ -599,7 +599,7 @@ func (a *SlackAdapter) OnProcessingComplete(ctx context.Context, event *gateway.
 	return nil
 }
 
-// Display name lookup of the inbound pipeline, the name hermes tests replace as _resolve_user_name
+// Display name lookup of the inbound pipeline, the name tests replace as resolve user name
 var resolveUserNameFn = (*SlackAdapter).resolveUserName
 
 // Display name of a workspace local user id, cached per team and falling back to the id
@@ -623,7 +623,7 @@ func (a *SlackAdapter) resolveUserName(ctx context.Context, userID, chatID, team
 	name := userID
 	payload, err := a.usersInfoPayload(ctx, userID, chatID, teamID)
 	if err != nil {
-		slog.Debug(fmt.Sprintf("[Slack] users.info failed for %s: %v", userID, err))
+		pkgLog().Debug(fmt.Sprintf("[Slack] users.info failed for %s: %v", userID, err))
 	} else if len(payload) == 0 {
 		a.mu.Lock()
 		a.userIsBotCache.Set(key, false)
@@ -665,7 +665,7 @@ func (a *SlackAdapter) resolveChannelName(ctx context.Context, channelID, teamID
 	name := channelID
 	result, err := a.getClient(channelID, teamID).call(ctx, "conversations.info", map[string]any{"channel": channelID})
 	if err != nil {
-		slog.Debug(fmt.Sprintf("[Slack] conversations.info failed for %s: %v", channelID, err))
+		pkgLog().Debug(fmt.Sprintf("[Slack] conversations.info failed for %s: %v", channelID, err))
 	} else {
 		ch := asMap(result.get("channel"))
 		switch {
@@ -765,7 +765,7 @@ func (a *SlackAdapter) resolveUserIsBot(ctx context.Context, userID, chatID, tea
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	if err != nil {
-		slog.Debug(fmt.Sprintf("[Slack] users.info bot check failed for %s: %v", userID, err))
+		pkgLog().Debug(fmt.Sprintf("[Slack] users.info bot check failed for %s: %v", userID, err))
 		a.userIsBotCache.Set(key, false)
 		return false
 	}
@@ -815,7 +815,7 @@ func (a *SlackAdapter) SendImageFile(ctx context.Context, chatID, imagePath, cap
 	if errors.As(err, &nf) {
 		return gateway.SendResult{Success: false, Error: "Image file not found: " + imagePath}, nil
 	}
-	slog.Error(fmt.Sprintf("[%s] Failed to send local Slack image %s: %v", a.Name(), imagePath, err))
+	pkgLog().Error(fmt.Sprintf("[%s] Failed to send local Slack image %s: %v", a.Name(), imagePath, err))
 	return a.sendFailureNotice(ctx, chatID, caption, i18n.T(ctx, "platform.shared.media.image_failed", "", nil), replyTo, metadata)
 }
 
@@ -830,7 +830,7 @@ func (a *SlackAdapter) SendImage(ctx context.Context, chatID, imageURL, caption,
 		return gateway.SendResult{Success: false, Error: "Not connected"}, nil
 	}
 	if !tools.IsSafeURL(gateway.URLSafetyEnv(ctx), imageURL) {
-		slog.Warn("[Slack] Blocked unsafe image URL (SSRF protection)")
+		pkgLog().Warn("[Slack] Blocked unsafe image URL (SSRF protection)")
 		return a.BasePlatformAdapter.SendImage(ctx, chatID, imageURL, caption, replyTo, metadata)
 	}
 	data, _, err := fetchURL(ctx, tools.NewSSRFSafeClient(gateway.URLSafetyEnv(ctx), 30*time.Second, true), imageURL)
@@ -843,7 +843,7 @@ func (a *SlackAdapter) SendImage(ctx context.Context, chatID, imageURL, caption,
 	if err == nil {
 		return result, nil
 	}
-	slog.Warn(fmt.Sprintf("[Slack] Failed to upload image from URL %s, falling back to text: %v", gateway.SafeURLForLog(imageURL, 80), err))
+	pkgLog().Warn(fmt.Sprintf("[Slack] Failed to upload image from URL %s, falling back to text: %v", gateway.SafeURLForLog(imageURL, 80), err))
 	text := imageURL
 	if caption != "" {
 		text = caption + "\n" + imageURL
@@ -861,7 +861,7 @@ func (a *SlackAdapter) SendVoice(ctx context.Context, chatID, audioPath, caption
 	if errors.As(err, &nf) {
 		return gateway.SendResult{Success: false, Error: "Audio file not found: " + audioPath}, nil
 	}
-	slog.Error(fmt.Sprintf("[Slack] Failed to send audio file %s: %v", audioPath, err))
+	pkgLog().Error(fmt.Sprintf("[Slack] Failed to send audio file %s: %v", audioPath, err))
 	return gateway.SendResult{Success: false, Error: err.Error()}, nil
 }
 
@@ -888,7 +888,7 @@ func (a *SlackAdapter) GetChatInfo(ctx context.Context, chatID string) (map[stri
 	}
 	result, err := a.getClient(chatID, "").call(ctx, "conversations.info", map[string]any{"channel": chatID})
 	if err != nil {
-		slog.Error(fmt.Sprintf("[Slack] Failed to fetch chat info for %s: %v", chatID, err))
+		pkgLog().Error(fmt.Sprintf("[Slack] Failed to fetch chat info for %s: %v", chatID, err))
 		return map[string]any{"name": chatID, "type": "unknown"}, nil
 	}
 	channel := asMap(getOr(result.Data, "channel", map[string]any{}))

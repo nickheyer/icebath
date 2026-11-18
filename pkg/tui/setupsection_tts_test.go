@@ -138,24 +138,13 @@ func TestTTSSectionEspeakFailureStopsTheNeuTTSInstall(t *testing.T) {
 	}
 }
 
-func TestTTSSectionNousRouteUsesManagedOpenAI(t *testing.T) {
-	facts := ttsHost(map[string]bool{"nous.managed_tools": true, "env:OPENAI_API_KEY": true})
-	g, shown := walkSection(t, ttsSection(), ttsLoad(map[string]any{}, map[string]any{}, facts), "Nous Subscription")
-	if got := savedWrites(g); !reflect.DeepEqual(got, [][3]any{{"config", "tts.provider", "openai"}}) {
-		t.Fatalf("writes %+v", got)
-	}
-	if !strings.Contains(shown, "managed Nous gateway") || !strings.Contains(shown, "Direct OpenAI keys are still in .env") {
-		t.Fatalf("transcript\n%s", shown)
-	}
-}
-
 func TestAgentSectionSavesAtTheWizardSavePoint(t *testing.T) {
 	g, _ := walkSection(t, agentSection(), sectionLoad(map[string]any{}, map[string]any{}, []any{}, map[string]any{}), "120", "new", "0.7")
 	if len(g.saves) != 2 || g.saves[0]["full_save"] != true || g.saves[1]["full_save"] != true {
 		t.Fatalf("saves %+v", g.saves)
 	}
 	first := savedWritesOf(g.saves[0])
-	want := [][3]any{{"config", "compression.enabled", true}, {"config", "agent.max_turns", 120}, {"config", "display.tool_progress", "new"}}
+	want := [][3]any{{"config", "compression.enabled", true}, {"config", "agent.max_turns", int64(120)}, {"config", "display.tool_progress", "new"}}
 	if !reflect.DeepEqual(first, want) || !reflect.DeepEqual(savedWritesOf(g.saves[1]), [][3]any{{"config", "compression.threshold", 0.7}}) {
 		t.Fatalf("batches %+v then %+v", first, savedWritesOf(g.saves[1]))
 	}

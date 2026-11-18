@@ -11,13 +11,15 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 )
 
-// Hub whose skills dir is tmp/skills, the patched SKILLS_DIR of the hermes tests
+// Hub whose skills dir is tmp/skills, the patched SKILLS_DIR of the tests
 func newTestHub(t *testing.T) (*Hub, string) {
 	t.Helper()
 	tmp := t.TempDir()
 	s := NewScope(filepath.Join(tmp, "home"), nil)
 	s.SkillsDirOverride = filepath.Join(tmp, "skills")
-	return NewHub(s), tmp
+	h := NewHub(s)
+	h.io.shippedIndex = func() any { return nil }
+	return h, tmp
 }
 
 func writeTestFile(t *testing.T, p, text string) {

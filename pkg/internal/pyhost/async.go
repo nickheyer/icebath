@@ -11,7 +11,7 @@ type asyncResult struct {
 	err   error
 }
 
-// Starts the event loop on a Python thread, the way hermes runs plugin coroutines
+// Starts the event loop on a Python thread that runs plugin coroutines
 func (g *GIL) startLoop() error {
 	asyncio, err := g.Import("asyncio")
 	if err != nil {

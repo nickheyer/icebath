@@ -59,14 +59,14 @@ func (r *GatewayRunner) openSessionDBForActiveScope(ctx context.Context, raiseOn
 		}
 		db, err := state.Acquire(ctx, "")
 		if err != nil {
-			runLog().Warn(fmt.Sprintf("SQLite session store not available: %s", pyrepr.ExceptionMessage(err)))
+			pkgLog().Warn(fmt.Sprintf("SQLite session store not available: %s", pyrepr.ExceptionMessage(err)))
 			return nil, err
 		}
 		return state.NewAsyncSessionDB(db), nil
 	}
 	recovered := func() {
 		r.sessionDBInitError = nil
-		runLog().Info("SQLite session store recovered")
+		pkgLog().Info("SQLite session store recovered")
 	}
 	handle, err := cache.GetWith(ctx, path, open, gateway.HandleCacheGetOptions{RaiseOnError: raiseOnError, OnRecovered: recovered})
 	if err != nil || handle == nil {
@@ -112,7 +112,7 @@ func (r *GatewayRunner) closeAllSessionDBHandles() {
 		func() {
 			defer func() {
 				if rec := recover(); rec != nil {
-					runLog().Debug(fmt.Sprintf("SessionDB close error during handle sweep: %v", rec))
+					pkgLog().Debug(fmt.Sprintf("SessionDB close error during handle sweep: %v", rec))
 				}
 			}()
 			state.ReleaseOrClose(inner)
@@ -132,7 +132,7 @@ func (r *GatewayRunner) initSessionDB(ctx context.Context) {
 	r.sessionDBHandleCache = gateway.NewRecoverableHandleCacheWith(gateway.RecoverableHandleCacheOptions{
 		Handles: r.sessionDBHandles, Lock: r.sessionDBHandlesLock})
 	if _, err := r.openSessionDBForActiveScope(ctx, true); err != nil {
-		runLog().Warn(fmt.Sprintf("SQLite session store not available: %s", pyrepr.ExceptionMessage(err)), "error", err)
+		pkgLog().Warn(fmt.Sprintf("SQLite session store not available: %s", pyrepr.ExceptionMessage(err)), "error", err)
 		msg := pyrepr.ExceptionMessage(err)
 		r.sessionDBInitError = &msg
 	}
@@ -171,11 +171,11 @@ func profileSessionsDir(ctx context.Context, launch *launchSessions) string {
 func housekeepingChore(label string, fn func() error) {
 	defer func() {
 		if rec := recover(); rec != nil {
-			runLog().Debug(fmt.Sprintf("%s error: %v", label, rec))
+			pkgLog().Debug(fmt.Sprintf("%s error: %v", label, rec))
 		}
 	}()
 	if err := fn(); err != nil {
-		runLog().Debug(fmt.Sprintf("%s error: %s", label, pyrepr.ExceptionMessage(err)))
+		pkgLog().Debug(fmt.Sprintf("%s error: %s", label, pyrepr.ExceptionMessage(err)))
 	}
 }
 

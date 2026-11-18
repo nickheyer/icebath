@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"log/slog"
 	"math"
 	"slices"
 	"strconv"
@@ -319,12 +318,12 @@ func (d *SessionDB) MaybeAutoArchive(ctx context.Context, idleDays, minIntervalH
 			return err
 		}
 		if result.Archived > 0 {
-			slog.Info(fmt.Sprintf("state.db auto-archive: archived %d session(s) idle >= %s days", result.Archived, pyFloatRepr(idleDays)))
+			pkgLog().Info(fmt.Sprintf("state.db auto-archive: archived %d session(s) idle >= %s days", result.Archived, pyFloatRepr(idleDays)))
 		}
 		return nil
 	}()
 	if err != nil {
-		slog.Warn(fmt.Sprintf("state.db auto-archive failed: %s", err))
+		pkgLog().Warn(fmt.Sprintf("state.db auto-archive failed: %s", err))
 	}
 	return result
 }
@@ -445,7 +444,7 @@ func (d *SessionDB) pagePragmas(ctx context.Context, names []string, failMsg str
 		return nil
 	}
 	if err != nil {
-		slog.Debug(strings.Replace(failMsg, "%s", err.Error(), 1))
+		pkgLog().Debug(strings.Replace(failMsg, "%s", err.Error(), 1))
 		return nil
 	}
 	return out
@@ -477,7 +476,7 @@ func (d *SessionDB) FreelistRatio(ctx context.Context) (float64, bool) {
 // WAL checkpoint in the given mode on the writer, logging a failure at debug, caller holds mu
 func (d *SessionDB) tryCheckpointLocked(ctx context.Context, mode, failMsg string) {
 	if _, err := d.conn.ExecContext(ctx, "PRAGMA wal_checkpoint("+mode+")"); err != nil {
-		slog.Debug(strings.Replace(failMsg, "%s", err.Error(), 1))
+		pkgLog().Debug(strings.Replace(failMsg, "%s", err.Error(), 1))
 	}
 }
 
@@ -488,7 +487,7 @@ func (d *SessionDB) Vacuum(ctx context.Context) (int, error) {
 	}
 	optimized, err := d.OptimizeFTS(ctx)
 	if err != nil {
-		slog.Warn(fmt.Sprintf("FTS optimize before VACUUM failed: %s", err))
+		pkgLog().Warn(fmt.Sprintf("FTS optimize before VACUUM failed: %s", err))
 		optimized = 0
 	}
 	d.mu.Lock()
@@ -512,7 +511,7 @@ func (d *SessionDB) Vacuum(ctx context.Context) (int, error) {
 	return optimized, nil
 }
 
-// Startup auto maintenance knobs, built with the hermes defaults by NewAutoPruneOptions
+// Startup auto maintenance knobs, built with defaults by NewAutoPruneOptions
 type AutoPruneOptions struct {
 	RetentionDays          *float64
 	MinIntervalHours       float64
@@ -529,7 +528,7 @@ func NewAutoPruneOptions() AutoPruneOptions {
 		MinVacuumFreelistRatio: AutoVacuumMinFreelistRatio}
 }
 
-// Outcome of one auto maintenance pass, the optional fields set only when hermes reports them
+// Outcome of one auto maintenance pass, the optional fields set only when the pass reports them
 type AutoPruneResult struct {
 	Skipped              bool
 	Pruned               int
@@ -549,7 +548,7 @@ func (d *SessionDB) MaybeAutoPruneAndVacuum(ctx context.Context, o AutoPruneOpti
 		if o.RetentionDays != nil {
 			shown, _ = pyReprFloat(*o.RetentionDays)
 		}
-		slog.Warn(fmt.Sprintf("state.db auto-maintenance skipped: sessions.retention_days=%s is outside the allowed "+
+		pkgLog().Warn(fmt.Sprintf("state.db auto-maintenance skipped: sessions.retention_days=%s is outside the allowed "+
 			"range (a whole number of days >= 0); set sessions.auto_prune: false to disable pruning", shown))
 		result.Skipped = true
 		return result
@@ -609,20 +608,20 @@ func (d *SessionDB) MaybeAutoPruneAndVacuum(ctx context.Context, o AutoPruneOpti
 				for _, h := range holders[:min(3, n)] {
 					shown = append(shown, fmt.Sprintf("%d:%s", h.PID, h.Target))
 				}
-				slog.Debug(fmt.Sprintf("state.db auto-maintenance: skipping VACUUM, %d other process(es) hold the "+
+				pkgLog().Debug(fmt.Sprintf("state.db auto-maintenance: skipping VACUUM, %d other process(es) hold the "+
 					"store or a WAL sidecar (%s)", n, strings.Join(shown, ", ")))
 			case !hasRatio || ratio > o.MinVacuumFreelistRatio:
 				ReportStartupProgress(900.0, "state_db_auto_vacuum")
 				if _, verr := d.Vacuum(ctx); verr != nil {
-					slog.Warn(fmt.Sprintf("state.db VACUUM failed: %s", verr))
+					pkgLog().Warn(fmt.Sprintf("state.db VACUUM failed: %s", verr))
 				} else {
 					result.Vacuumed = true
 					if err := d.SetMeta(ctx, "last_vacuum", pyFloatRepr(at)); err != nil {
-						slog.Warn(fmt.Sprintf("state.db VACUUM failed: %s", err))
+						pkgLog().Warn(fmt.Sprintf("state.db VACUUM failed: %s", err))
 					}
 				}
 			default:
-				slog.Debug(fmt.Sprintf("state.db auto-maintenance: skipping VACUUM, only "+
+				pkgLog().Debug(fmt.Sprintf("state.db auto-maintenance: skipping VACUUM, only "+
 					"%.1f%% of pages reclaimable (threshold %.0f%%)", ratio*100.0, o.MinVacuumFreelistRatio*100.0))
 			}
 		}
@@ -634,13 +633,13 @@ func (d *SessionDB) MaybeAutoPruneAndVacuum(ctx context.Context, o AutoPruneOpti
 			if result.Vacuumed {
 				suffix = " + VACUUM"
 			}
-			slog.Info(fmt.Sprintf("state.db auto-maintenance: closed %d stale open session(s), "+
+			pkgLog().Info(fmt.Sprintf("state.db auto-maintenance: closed %d stale open session(s), "+
 				"pruned %d session(s) inactive for %d days%s", len(closed), result.Pruned, int64(retention), suffix))
 		}
 		return nil
 	}()
 	if err != nil {
-		slog.Warn(fmt.Sprintf("state.db auto-maintenance failed: %s", err))
+		pkgLog().Warn(fmt.Sprintf("state.db auto-maintenance failed: %s", err))
 		msg := err.Error()
 		result.Error = &msg
 	}

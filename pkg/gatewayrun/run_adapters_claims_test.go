@@ -30,7 +30,7 @@ func TestCredentialFingerprintNoneWithoutToken(t *testing.T) {
 }
 
 func TestCredentialFingerprintClaimsNeverRaise(t *testing.T) {
-	digest := sha256.Sum256([]byte("hermes-mux:tok"))
+	digest := sha256.Sum256([]byte("icebath-mux:tok"))
 	if fp := adapterCredentialFingerprint(attrFake{"token": "tok"}); fp != hex.EncodeToString(digest[:])[:16] {
 		t.Fatalf("fingerprint = %q", fp)
 	}

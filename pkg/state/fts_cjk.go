@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"log/slog"
 	"os"
 	"path/filepath"
 	"slices"
@@ -111,7 +110,7 @@ var LoadFTS5CJKExtension = func(ctx context.Context, conn SQLiteConn) bool {
 		}
 	}
 	if err := withRawSQLite(conn, registerCJKTokenizer); err != nil {
-		slog.Warn(fmt.Sprintf("fts5_cjk extension load failed (%s)", path), "error", err)
+		pkgLog().Warn(fmt.Sprintf("fts5_cjk extension load failed (%s)", path), "error", err)
 		return false
 	}
 	return true

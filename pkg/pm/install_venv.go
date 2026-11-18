@@ -1,10 +1,12 @@
+//go:build !icebath_core && !icebath_noextras
+
 package pm
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
-	"os"
 	"path/filepath"
 	"reflect"
 	"regexp"
@@ -31,22 +33,12 @@ type pluginChange interface {
 	Publish(ctx context.Context, project string) error
 }
 
-type syncOutputKey struct{}
-
 // Context whose sync output, the stdout a Python sync was redirected to, goes to w
 func withSyncOutput(ctx context.Context, w io.Writer) context.Context {
 	if w == nil {
 		return ctx
 	}
 	return context.WithValue(ctx, syncOutputKey{}, w)
-}
-
-// Writer a dependency sync prints operator messages to, the process stdout unless redirected
-func SyncOutput(ctx context.Context) io.Writer {
-	if w, ok := ctx.Value(syncOutputKey{}).(io.Writer); ok {
-		return w
-	}
-	return os.Stdout
 }
 
 // Registered venv state package as the sync engine drives it
@@ -85,7 +77,7 @@ func venvFact(f *Facts) map[string]any {
 	return fact
 }
 
-// Recorded venv selection of this binary's own state, then of the store, then of a provisioned binary base environment
+// Recorded venv selection of this binary's own state, then of the store, empty when neither records one
 func recordedVenvFact(ctx context.Context, runtimeFacts *Facts) (map[string]any, error) {
 	if fact := venvFact(runtimeFacts); len(fact) > 0 {
 		return fact, nil
@@ -97,7 +89,7 @@ func recordedVenvFact(ctx context.Context, runtimeFacts *Facts) (map[string]any,
 	if fact := venvFact(facts); len(fact) > 0 {
 		return fact, nil
 	}
-	return binaryBaseSelection(ctx, RepoRoot())
+	return map[string]any{}, nil
 }
 
 // Reports a recorded selection whose stamp and selected environment match what the sync must reach
@@ -123,6 +115,32 @@ func runtimeStateMatches(ctx context.Context, fact map[string]any, stamp, projec
 		}
 	}
 	return isRegularFile(filepath.Join(environment, "pyvenv.cfg")), nil
+}
+
+// Whether a binary install's target holds no package at all, so its selection needs no Python environment
+func bareTarget(ctx context.Context, p VenvState, fact map[string]any, enabled []string, inputs VenvApplyOptions) (bool, error) {
+	if !binaryCoreTree(p.ProjectRoot()) || len(enabled) > 0 {
+		return false, nil
+	}
+	if inputs.Repair {
+		return fact["environment"] == nil, nil
+	}
+	members := inputs.PluginDirs
+	if members == nil {
+		var err error
+		if members, err = BuildMemberDirs(ctx, enabled, ""); err != nil {
+			return false, err
+		}
+	}
+	return len(members) == 0, nil
+}
+
+// Reports the recorded selection current, a bare target once its stamp is recorded without an environment
+func selectionCurrent(ctx context.Context, fact map[string]any, stamp, projectRoot string, bare bool) (bool, error) {
+	if !bare {
+		return runtimeStateMatches(ctx, fact, stamp, projectRoot)
+	}
+	return len(fact) > 0 && jsonEquals(fact["stamp"], stamp) && fact["environment"] == nil, nil
 }
 
 // Plugin dirs argument of the venv package for a member input, nil meaning config discovery
@@ -273,11 +291,7 @@ func venvIsCurrent(ctx context.Context, extras []string, plugins PluginInput, pr
 		value = shipped.packages["venv"]
 	}
 	if value == nil {
-		base, err := binaryBaseSelection(ctx, root)
-		if err != nil || len(base) == 0 {
-			return false, err
-		}
-		value = base
+		return false, nil
 	}
 	fact, recorded, err := recordedSelection(value)
 	if err != nil {
@@ -291,11 +305,16 @@ func venvIsCurrent(ctx context.Context, extras []string, plugins PluginInput, pr
 	if err != nil {
 		return false, err
 	}
-	stamp, err := venv.Stamp(ctx, sortedUnion(carried, extras), pluginDirs)
+	enabled := sortedUnion(carried, extras)
+	stamp, err := venv.Stamp(ctx, enabled, pluginDirs)
 	if err != nil {
 		return false, err
 	}
-	return runtimeStateMatches(ctx, fact, stamp, root)
+	bare, err := bareTarget(ctx, venv, fact, enabled, VenvApplyOptions{PluginDirs: pluginDirs})
+	if err != nil {
+		return false, err
+	}
+	return selectionCurrent(ctx, fact, stamp, root, bare)
 }
 
 // Refuses extras the platform or a frozen bundle cannot carry and returns the shipped and frozen lists
@@ -503,21 +522,51 @@ type SelectionCommit struct {
 	Stamp                string
 	Inputs               VenvApplyOptions
 	Current              bool
+	Bare                 bool
 	Repair               bool
 	Explicit             bool
 	SkipInvalidSecondary bool
 }
 
-// Builds unless current, publishes the plugin change, then records the selection, recovering on any failure
+// Prints which plugins a binary install's sync is about to install Python packages for
+func announceMembers(ctx context.Context, members []MemberDir) {
+	names := make([]string, 0, len(members))
+	for _, member := range members {
+		names = append(names, filepath.Base(member.Identity))
+	}
+	what := "the enabled plugins"
+	if len(names) > 0 {
+		what = "plugin " + strings.Join(names, ", ")
+	}
+	fmt.Fprintf(SyncOutput(ctx), "→ Installing the Python packages of %s...\n", what)
+}
+
+// Install error of a refused download carrying the remedy that retries it, any other failure unchanged
+func retryableDownload(err error) error {
+	var install *InstallError
+	if !errors.As(err, &install) || !IsDownloadKind(err, DownloadTransportFailed) {
+		return err
+	}
+	return &InstallError{Package: install.Package, Cause: install.Cause, Err: install.Err, Remedy: RetryDownloadRemedy}
+}
+
+// Builds unless current or bare, publishes the plugin change, then records the selection, recovering on any failure
 func commitSelection(ctx context.Context, p VenvState, facts *Facts, change pluginChange, c SelectionCommit) error {
 	err := func() error {
 		defer recoverOnPanic(ctx)
 		generation := &VenvGeneration{}
-		if !c.Current {
+		if !c.Current && !c.Bare {
 			opts := c.Inputs
 			opts.Explicit, opts.SkipInvalidSecondary = c.Explicit, c.SkipInvalidSecondary
+			binary := binaryCoreTree(p.ProjectRoot())
+			if binary {
+				announceMembers(ctx, opts.PluginDirs)
+			}
 			built, err := p.Prepare(ctx, c.Enabled, opts)
 			if err != nil {
+				if binary {
+					return retryableDownload(err)
+				}
 				return err
 			}
 			if built != nil {
@@ -554,10 +603,13 @@ func commitSelection(ctx context.Context, p VenvState, facts *Facts, change plug
 			}
 		}
 		reason := ""
-		if c.Current {
+		switch {
+		case c.Current:
 			reason = "already in sync"
+		case c.Bare:
+			reason = "no Python packages selected"
 		}
-		RecordVenvRebuild(ctx, !c.Current, reason)
+		RecordVenvRebuild(ctx, !c.Current && !c.Bare, reason)
 		return nil
 	}()
 	if err != nil {
@@ -687,13 +739,17 @@ func (s *venvSync) locked(ctx context.Context, extras []string) error {
 	if err != nil {
 		return err
 	}
+	bare, err := bareTarget(ctx, s.pkg, fact, enabled, inputs)
+	if err != nil {
+		return err
+	}
 	current := false
 	if !s.repair {
-		if current, err = runtimeStateMatches(ctx, fact, stamp, ""); err != nil {
+		if current, err = selectionCurrent(ctx, fact, stamp, "", bare); err != nil {
 			return err
 		}
 	}
-	if !current && !s.repair && !s.explicit && !LazyInstallsAllowedFor(ctx) {
+	if !current && !bare && !s.repair && !s.explicit && !LazyInstallsAllowedFor(ctx) {
 		what := "venv out of sync"
 		if len(extras) > 0 {
 			what = pyrepr.Repr(extras)
@@ -702,21 +758,8 @@ func (s *venvSync) locked(ctx context.Context, extras []string) error {
 	}
 	RecordFeatureList(ctx, enabled)
 	return commitSelection(ctx, s.pkg, facts, change, SelectionCommit{
-		Enabled: enabled, Stamp: stamp, Inputs: inputs, Current: current, Repair: s.repair, Explicit: s.explicit,
+		Enabled: enabled, Stamp: stamp, Inputs: inputs, Current: current, Bare: bare, Repair: s.repair, Explicit: s.explicit,
 	})
-}
-
-// SyncVenvOptions select the extras, plugin source, repair and eviction policy and the output of a venv sync
-type SyncVenvOptions struct {
-	Extras                   []string
-	Explicit                 bool
-	Repair                   bool
-	Automatic                []string
-	Carried                  []string
-	ProjectRoot              string
-	EvictIncompatiblePlugins bool
-	Plugins                  PluginInput
-	Stdout                   io.Writer
 }
 
 // Reports every string of sub present in super

@@ -15,7 +15,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/home"
 )
 
-// Clears the provider keys the hermes gmi autouse fixture deletes
+// Clears the provider keys the gmi autouse fixture deletes
 func clearGmiProviderEnv(t *testing.T) {
 	t.Helper()
 	for _, k := range []string{"OPENROUTER_API_KEY", "OPENAI_API_KEY", "ANTHROPIC_API_KEY", "GOOGLE_API_KEY", "GLM_API_KEY",
@@ -131,7 +131,7 @@ func TestGmiMainFlowModelFlowApiKeyProviderPersistsGmiSelection(t *testing.T) {
 	}
 }
 
-func TestHermesModelDispatchAndEffortPickerConsultTheProfile(t *testing.T) {
+func TestIcebathModelDispatchAndEffortPickerConsultTheProfile(t *testing.T) {
 	snapshotProviderRegistry(t)
 	root := t.TempDir()
 	coder := filepath.Join(root, "icebath", "profiles", "coder")

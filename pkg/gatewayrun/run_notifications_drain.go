@@ -96,7 +96,7 @@ func (r *GatewayRunner) deliverWatchEvent(ctx context.Context, evt map[string]an
 	}
 	delivered, err := r.InjectWatchNotification(scoped, synthText, evt)
 	if err != nil {
-		runLog().Error(fmt.Sprintf("Watch notification injection error: %s", err))
+		pkgLog().Error(fmt.Sprintf("Watch notification injection error: %s", err))
 		return boolp(false), false, nil
 	}
 	return delivered, false, nil

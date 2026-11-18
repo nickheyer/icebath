@@ -410,6 +410,38 @@ func DriverRequeueNotAdmittedTask(ctx context.Context, dbPath string, attempt Ta
 		driverTransitionSpec{now: now, replay: replay, sql: driverRequeueRunningSQL, setParams: []any{now}, stale: "not-admitted task changed during requeue"})
 }
 
+// Running attempt moved to deferred under its run fence, its result the reason the room reads
+var driverDeferRunningSQL = driverTaskUpdate("status='deferred', result_json=?, terminal_at=?, updated_at=?",
+	"status='running' AND "+driverGenerationFence+" AND "+driverRunFence)
+
+// Defers a running task whose work never reached its member, the reason kept for the room and its retry
+func DriverDeferNotAdmittedTask(ctx context.Context, dbPath string, attempt TaskAttempt, reason string, clock DriverClock) (map[string]any, error) {
+	text := strings.TrimSpace(reason)
+	if text == "" || len([]rune(text)) > 1000 {
+		return nil, driverValidation("defer reason must be 1 to 1000 characters")
+	}
+	resultJSON, err := roomCanonicalJSON(map[string]any{"reason": text, "retryable": true}, "result", driverMaxResultJSONBytes, true, driverValidation)
+	if err != nil {
+		return nil, err
+	}
+	now, err := driverTimestamp(clock)
+	if err != nil {
+		return nil, err
+	}
+	if err := driverCheckSameRoom(attempt.Lease, attempt.Identity); err != nil {
+		return nil, err
+	}
+	replay := func(row *pyjson.Object) (map[string]any, error) {
+		if driverGenerationsMatch(row, "deferred", attempt.ExecutionGeneration, attempt.CancelGeneration) && row.Vals["result_json"] != nil &&
+			hrStr(row, "result_json") == resultJSON {
+			return driverTaskFromRow(row, true)
+		}
+		return nil, nil
+	}
+	return driverRunFenceTransition(ctx, dbPath, attempt, "deferred task attempt lost its fence", true,
+		driverTransitionSpec{now: now, replay: replay, sql: driverDeferRunningSQL, setParams: []any{resultJSON, now, now}, stale: "task changed during deferral"})
+}
+
 // Cancels a queued task before any external work was admitted
 func DriverCancelTask(ctx context.Context, dbPath string, identity TaskIdentity, cancelIDValue any, expectedCancelGeneration int64, clock DriverClock) (map[string]any, error) {
 	cancelID, err := driverIdentifier(cancelIDValue, "cancel_id")

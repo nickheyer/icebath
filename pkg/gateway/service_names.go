@@ -98,7 +98,7 @@ func bareUnitPinnedHome(ctx context.Context) (string, error) {
 	if serviceGeteuid() != 0 {
 		dir = UserSystemdUnitDir(ctx)
 	}
-	pinned, err := hermesHomePinnedByUnit(filepath.Join(dir, serviceBase+".service"))
+	pinned, err := icebathHomePinnedByUnit(filepath.Join(dir, serviceBase+".service"))
 	if err != nil || pinned == "" {
 		return "", err
 	}
@@ -222,7 +222,7 @@ func GetLaunchdPlistPath(ctx context.Context) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	name := "ai.icebath.gateway"
+	name := launchdLabelBase
 	if suffix != "" {
 		name += "-" + suffix
 	}
@@ -265,15 +265,15 @@ func unitEnvironmentValue(unitPath, name string) (string, error) {
 }
 
 // ICEBATH_HOME pinned by the unit file, empty when absent or unreadable
-func hermesHomePinnedByUnit(unitPath string) (string, error) {
+func icebathHomePinnedByUnit(unitPath string) (string, error) {
 	return unitEnvironmentValue(unitPath, "ICEBATH_HOME")
 }
 
 // ICEBATH_HOME of the on disk gateway unit in system or user scope
-func hermesHomeFromSystemdUnitFile(ctx context.Context, system bool) (string, error) {
+func icebathHomeFromSystemdUnitFile(ctx context.Context, system bool) (string, error) {
 	p, err := systemdUnitPathOf(ctx, system)
 	if err != nil {
 		return "", err
 	}
-	return hermesHomePinnedByUnit(p)
+	return icebathHomePinnedByUnit(p)
 }

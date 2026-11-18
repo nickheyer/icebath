@@ -2,7 +2,6 @@ package install
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -12,7 +11,6 @@ import (
 	"strings"
 	"sync"
 	"syscall"
-	"time"
 
 	"github.com/mattn/go-isatty"
 
@@ -39,15 +37,14 @@ type Options struct {
 	InstallMethod   string
 }
 
-// Failure of one stage with its reason and closed failure class
+// Failure of one stage with its reason
 type StageError struct {
 	Reason string
-	Class  string
 }
 
 func (e *StageError) Error() string { return e.Reason }
 
-func fail(reason, class string) error { return &StageError{Reason: reason, Class: class} }
+func fail(reason string) error { return &StageError{Reason: reason} }
 
 // Runs install stages in process, reporting every line through the sink
 type Runner struct {
@@ -165,7 +162,7 @@ func (r *Runner) RunStage(ctx context.Context, name string) (int, error) {
 	default:
 		reason := "unknown stage: " + name
 		r.line(Stderr, reason)
-		return 2, fail(reason, "other")
+		return 2, fail(reason)
 	}
 	if err == nil {
 		return 0, nil
@@ -174,32 +171,23 @@ func (r *Runner) RunStage(ctx context.Context, name string) (int, error) {
 	return 1, err
 }
 
-// Closed failure class of a stage error, other when it names none
-func failureClass(err error) string {
-	var se *StageError
-	if errors.As(err, &se) && se.Class != "" {
-		return se.Class
-	}
-	return "other"
-}
-
 // Refusal of a Termux host with the Debian userland install that runs the Linux release
 const termuxRefusal = "Termux has no icebath build; install icebath in a Debian userland instead: " + config.TermuxInstallCommand
 
 // Refuses hosts the release has no build for, Termux included
 func checkPlatform() error {
 	if os.Getenv("TERMUX_VERSION") != "" || strings.Contains(os.Getenv("PREFIX"), "com.termux/files/usr") {
-		return fail(termuxRefusal, "unsupported_platform")
+		return fail(termuxRefusal)
 	}
 	switch runtime.GOOS {
 	case "linux", "darwin", "windows":
 	default:
-		return fail("unsupported platform: "+runtime.GOOS+". On Windows use install.ps1.", "unsupported_platform")
+		return fail("unsupported platform: " + runtime.GOOS + ". On Windows use install.ps1.")
 	}
 	switch runtime.GOARCH {
 	case "amd64", "arm64":
 	default:
-		return fail(fmt.Sprintf("no release build for this platform (%s %s); Icebath does not support this host", runtime.GOOS, runtime.GOARCH), "unsupported_platform")
+		return fail(fmt.Sprintf("no release build for this platform (%s %s); Icebath does not support this host", runtime.GOOS, runtime.GOARCH))
 	}
 	return nil
 }
@@ -261,20 +249,17 @@ func signalCode(sig os.Signal) int {
 	return 130
 }
 
-// Runs every stage in manifest order with one receipt per run, an INT cancelling the running stage
+// Runs every stage in manifest order, an INT cancelling the running stage
 func (r *Runner) runLadder(ctx context.Context) int {
-	started := time.Now().Unix()
-	runID := newRunID()
 	sigs := make(chan os.Signal, 4)
 	signal.Notify(sigs, os.Interrupt, syscall.SIGTERM, syscall.SIGHUP)
 	defer signal.Stop(sigs)
 	var noted os.Signal
 	var notedMu sync.Mutex
-	interrupted := func(stage string) int {
+	interrupted := func() int {
 		notedMu.Lock()
 		sig := noted
 		notedMu.Unlock()
-		writeInstallReceipt(r.home, runID, started, "failed", stage, "interrupted")
 		signal.Reset(sig)
 		if p, err := os.FindProcess(os.Getpid()); err == nil && runtime.GOOS != "windows" {
 			_ = p.Signal(sig)
@@ -283,7 +268,6 @@ func (r *Runner) runLadder(ctx context.Context) int {
 	}
 	if err := checkPlatform(); err != nil {
 		r.logError(err.Error())
-		writeInstallReceipt(r.home, runID, started, "failed", "prerequisites", failureClass(err))
 		return 1
 	}
 	r.printBanner()
@@ -292,7 +276,7 @@ func (r *Runner) runLadder(ctx context.Context) int {
 		pending := noted
 		notedMu.Unlock()
 		if pending != nil {
-			return interrupted(name)
+			return interrupted()
 		}
 		stageCtx, cancel := context.WithCancel(ctx)
 		done := make(chan struct{})
@@ -311,7 +295,7 @@ func (r *Runner) runLadder(ctx context.Context) int {
 				}
 			}
 		}()
-		code, err := r.RunStage(stageCtx, name)
+		code, _ := r.RunStage(stageCtx, name)
 		close(done)
 		cancel()
 		notedMu.Lock()
@@ -326,17 +310,15 @@ func (r *Runner) runLadder(ctx context.Context) int {
 			continue
 		}
 		if pending != nil {
-			return interrupted(name)
+			return interrupted()
 		}
-		writeInstallReceipt(r.home, runID, started, "failed", name, failureClass(err))
 		return code
 	}
-	writeInstallReceipt(r.home, runID, started, "success", "none", "none")
 	notedMu.Lock()
 	pending := noted
 	notedMu.Unlock()
 	if pending != nil {
-		return interrupted("complete")
+		return interrupted()
 	}
 	r.printPathReloadHint()
 	return 0

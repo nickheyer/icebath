@@ -62,7 +62,7 @@ func toolsetTestContext(t *testing.T) context.Context {
 	return tools.WithToolEnv(context.Background(), env)
 }
 
-func TestExpandParentToolsetsCompositeHermesCliExpandsWeb(t *testing.T) {
+func TestExpandParentToolsetsCompositeIcebathCliExpandsWeb(t *testing.T) {
 	expanded := expandParentToolsets(toolsetTestContext(t), map[string]bool{"icebath-cli": true})
 	for _, want := range []string{"web", "terminal", "browser", "icebath-cli"} {
 		if !expanded[want] {

@@ -4,7 +4,6 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
-	"log/slog"
 	"strconv"
 	"strings"
 	"sync"
@@ -419,7 +418,7 @@ func moaAggregatorCachePolicy(ctx context.Context, agent *CachePolicyAgent, effM
 	}
 	preset, err := ResolveMoAPreset(moaCfg, effModel)
 	if err != nil {
-		slog.Debug("MoA aggregator cache-policy resolution failed", "err", err)
+		pkgLog().Debug("MoA aggregator cache-policy resolution failed", "err", err)
 		return false, false
 	}
 	agg, _ := preset["aggregator"].(map[string]any)
@@ -501,7 +500,6 @@ func anthropicPromptCachePolicy(ctx context.Context, agent *CachePolicyAgent, de
 	isClaude := strings.Contains(modelLower, "claude")
 	isKimi := modelNameIsKimiFamily(effModel) || strings.Contains(modelLower, "moonshot")
 	isOpenRouter := baseURLHostMatches(effBaseURL, "openrouter.ai")
-	isNousPortal := baseURLHostMatches(effBaseURL, "nousresearch.com")
 	isAnthropicWire := effAPIMode == "anthropic_messages"
 	isNativeAnthropic := isAnthropicWire && (effProvider == "anthropic" || baseURLHostname(effBaseURL) == "api.anthropic.com")
 	supportsCacheMarkers := effAPIMode == "anthropic_messages" || effAPIMode == "chat_completions"
@@ -525,10 +523,7 @@ func anthropicPromptCachePolicy(ctx context.Context, agent *CachePolicyAgent, de
 	if isNativeAnthropic {
 		return true, true
 	}
-	if (isOpenRouter || isNousPortal) && (isClaude || isKimi) && !isAnthropicWire {
-		return true, false
-	}
-	if isNousPortal && strings.Contains(modelLower, "qwen") {
+	if isOpenRouter && (isClaude || isKimi) && !isAnthropicWire {
 		return true, false
 	}
 	if isAnthropicWire && isClaude {

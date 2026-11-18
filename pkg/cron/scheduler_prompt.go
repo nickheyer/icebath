@@ -252,7 +252,7 @@ func (s *Store) resolveJobWorkdir(job *Job, jobID string) *string {
 		return nil
 	}
 	if st, err := os.Stat(workdir); err != nil || !st.IsDir() {
-		s.logAs("cron.scheduler").Warn(fmt.Sprintf("Job '%s': configured workdir %s no longer exists \u2014 running without it", jobID, pyrepr.StrRepr(workdir)))
+		s.log.Warn(fmt.Sprintf("Job '%s': configured workdir %s no longer exists \u2014 running without it", jobID, pyrepr.StrRepr(workdir)))
 		return nil
 	}
 	return &workdir
@@ -327,7 +327,7 @@ func (s *Store) injectContextFrom(job *Job, prompt string) (string, bool, error)
 		}
 		isSelf := sourceID == job.ID
 		if sourceID == "" || strings.Trim(sourceID, "0123456789abcdef") != "" {
-			s.logAs("cron.scheduler").Warn(fmt.Sprintf("context_from: skipping invalid job_id %s for job_id=%s name=%s%s", pyrepr.StrRepr(sourceID), pyrepr.StrRepr(job.ID), pyrepr.StrRepr(job.Name), cronJobOriginLogSuffix(job)))
+			s.log.Warn(fmt.Sprintf("context_from: skipping invalid job_id %s for job_id=%s name=%s%s", pyrepr.StrRepr(sourceID), pyrepr.StrRepr(job.ID), pyrepr.StrRepr(job.Name), cronJobOriginLogSuffix(job)))
 			continue
 		}
 		latest, err := latestContextOutput(filepath.Join(s.outputDir, sourceID))
@@ -336,7 +336,7 @@ func (s *Store) injectContextFrom(job *Job, prompt string) (string, bool, error)
 			if errors.As(err, &dec) {
 				return prompt, injected, dec.err
 			}
-			s.logAs("cron.scheduler").Warn(fmt.Sprintf("context_from: failed to read output for job %s: %v", pyrepr.StrRepr(sourceID), err))
+			s.log.Warn(fmt.Sprintf("context_from: failed to read output for job %s: %v", pyrepr.StrRepr(sourceID), err))
 			continue
 		}
 		if latest == "" {
@@ -362,7 +362,7 @@ func (s *Store) loadCronSkillParts(ctx context.Context, job *Job, skillNames []s
 	parts := []string{}
 	var skipped []string
 	skip := func(label, msg string) {
-		s.logAs("cron.scheduler").Warn(fmt.Sprintf("Cron job '%s': %s", jobLabel, msg))
+		s.log.Warn(fmt.Sprintf("Cron job '%s': %s", jobLabel, msg))
 		skipped = append(skipped, label)
 	}
 	for _, name := range skillNames {
@@ -544,7 +544,7 @@ func (s *Store) scanAssembledCronPrompt(assembled string, job *Job, hasSkills, h
 		if label == "" {
 			label = "<unknown>"
 		}
-		s.logAs("cron.scheduler").Warn(fmt.Sprintf("Cron job '%s': assembled prompt blocked by injection scanner \u2014 %s", label, scanErr))
+		s.log.Warn(fmt.Sprintf("Cron job '%s': assembled prompt blocked by injection scanner \u2014 %s", label, scanErr))
 		return "", &CronPromptInjectionBlocked{Msg: scanErr}
 	}
 	return assembled, nil
@@ -562,16 +562,16 @@ func (s *Store) guardJobCredentialExfil(job *Job) error {
 	if msg == "" {
 		return nil
 	}
-	s.logAs("cron.scheduler").Error(fmt.Sprintf("Job '%s': refusing to run \u2014 unsafe provider/base_url pair could exfiltrate a stored credential: %s", job.ID, msg))
+	s.log.Error(fmt.Sprintf("Job '%s': refusing to run \u2014 unsafe provider/base_url pair could exfiltrate a stored credential: %s", job.ID, msg))
 	return fmt.Errorf("Cron job '%s' blocked for safety: %s", job.ID, msg)
 }
 
 // Fails a run closed and pauses the job so an unrunnable job cannot refire every tick
 func (s *Store) blockAndPauseJob(ctx context.Context, jobID, jobName, reason string) jobRunOutcome {
-	s.logAs("cron.scheduler").Error(fmt.Sprintf("Job '%s': %s", jobID, reason))
+	s.log.Error(fmt.Sprintf("Job '%s': %s", jobID, reason))
 	pauseReason := "Auto-paused by scheduler: " + reason
 	if _, err := s.pauseJob(home.WithOverride(ctx, s.home), jobID, &pauseReason); err != nil {
-		s.logAs("cron.scheduler").Error(fmt.Sprintf("Job '%s': failed to auto-pause unrunnable job: %v", jobID, err))
+		s.log.Error(fmt.Sprintf("Job '%s': failed to auto-pause unrunnable job: %v", jobID, err))
 	}
 	nowISO := config.SafeStrftime(s.clk.now(), "%Y-%m-%d %H:%M:%S")
 	doc := fmt.Sprintf("# Cron Job: %s\n\n**Job ID:** %s\n**Run Time:** %s\n**Status:** blocked (unrunnable job) \u2014 auto-paused\n\n%s\n", jobName, jobID, nowISO, reason)

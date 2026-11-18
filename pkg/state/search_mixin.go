@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"log/slog"
 	"math"
 	"math/big"
 	"slices"
@@ -19,7 +18,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
 
-// SessionDB members the search mixin calls beyond the FTS lifecycle ones, provided by the hermes_state.py SessionDB
+// SessionDB members the search mixin calls beyond the FTS lifecycle ones, provided by the SessionDB
 type searchHost interface {
 	ftsSetupHost
 	readOnly() bool
@@ -118,11 +117,11 @@ func (s *sessionSearch) tryIncrementalMergeFTS(ctx context.Context) {
 	}
 	defer func() {
 		if r := recover(); r != nil {
-			slog.Warn(fmt.Sprintf("FTS incremental merge failed after commit: %s", errText(panicError(r))))
+			pkgLog().Warn(fmt.Sprintf("FTS incremental merge failed after commit: %s", errText(panicError(r))))
 		}
 	}()
 	if _, err := sessionMergeFTSIncrementally(s, ctx, s.host.ftsMergeMaxPagesPerIndex(), nil); err != nil {
-		slog.Warn(fmt.Sprintf("FTS incremental merge failed after commit: %s", errText(err)))
+		pkgLog().Warn(fmt.Sprintf("FTS incremental merge failed after commit: %s", errText(err)))
 	}
 }
 
@@ -340,7 +339,7 @@ func (s *sessionSearch) ftsRebuildFinish(ctx context.Context) error {
 	if err := s.rebuildFinish(ctx, "fts_rebuild", sweeps); err != nil {
 		return err
 	}
-	slog.Info("Deferred FTS rebuild complete — all messages indexed.")
+	pkgLog().Info("Deferred FTS rebuild complete — all messages indexed.")
 	return nil
 }
 
@@ -351,7 +350,7 @@ func (s *sessionSearch) ftsCJKRebuildFinish(ctx context.Context) error {
 		return err
 	}
 	s.fts.ftsCJKAvailable.Store(true)
-	slog.Info("CJK FTS index backfill complete — serving CJK search.")
+	pkgLog().Info("CJK FTS index backfill complete — serving CJK search.")
 	return nil
 }
 
@@ -538,7 +537,7 @@ func (s *sessionSearch) ftsTeardownTrashStep(ctx context.Context, progress *tear
 				return false, err
 			}
 		}
-		slog.Info(fmt.Sprintf("Old FTS shadow table %s torn down.", tbl))
+		pkgLog().Info(fmt.Sprintf("Old FTS shadow table %s torn down.", tbl))
 		return true, nil
 	}
 	var more bool
@@ -1020,7 +1019,7 @@ func (s *sessionSearch) optimizeDrive(step func() (bool, error), info func() *py
 			if failures >= s.optimizeChunkAttempts {
 				return err
 			}
-			slog.Warn(fmt.Sprintf("FTS optimize chunk failed (attempt %d, retrying): %s", failures, errText(err)))
+			pkgLog().Warn(fmt.Sprintf("FTS optimize chunk failed (attempt %d, retrying): %s", failures, errText(err)))
 			searchSleep(0.25 * float64(failures))
 			continue
 		}
@@ -1093,7 +1092,7 @@ func (s *sessionSearch) optimizeVacuum(ctx context.Context, tick func(*pyjson.Ob
 		}
 		if err != nil {
 			if isOperationalError(err) {
-				slog.Warn(fmt.Sprintf("VACUUM after FTS optimize failed: %s", errText(err)))
+				pkgLog().Warn(fmt.Sprintf("VACUUM after FTS optimize failed: %s", errText(err)))
 				return false, nil
 			}
 			return false, err
@@ -1112,7 +1111,7 @@ func (s *sessionSearch) optimizeVacuum(ctx context.Context, tick func(*pyjson.Ob
 			_, err = conn.ExecContext(ctx, "PRAGMA wal_checkpoint(PASSIVE)")
 		}
 		if err != nil {
-			slog.Debug(fmt.Sprintf("WAL checkpoint (PASSIVE) after optimize VACUUM failed: %s", errText(err)))
+			pkgLog().Debug(fmt.Sprintf("WAL checkpoint (PASSIVE) after optimize VACUUM failed: %s", errText(err)))
 		}
 	}()
 	return vacuumOK, nil
@@ -1246,7 +1245,7 @@ func (s *sessionSearch) OptimizeFTSStorage(ctx context.Context, progressCB func(
 		if stillPending || emptyIndex {
 			reason = "backfill_incomplete"
 		}
-		slog.Warn(fmt.Sprintf("FTS storage optimization did not settle (%s): pending=%s trash=%s empty_index=%s",
+		pkgLog().Warn(fmt.Sprintf("FTS storage optimization did not settle (%s): pending=%s trash=%s empty_index=%s",
 			reason, pyrepr.Str(stillPending), pyrepr.Str(stillTrash), pyrepr.Str(emptyIndex)))
 		return result("ok", false, "reason", reason, "vacuumed", nil), nil
 	}
@@ -1258,7 +1257,7 @@ func (s *sessionSearch) OptimizeFTSStorage(ctx context.Context, progressCB func(
 			return nil, err
 		}
 		if len(holders) > 0 {
-			slog.Info(fmt.Sprintf("Skipping VACUUM after FTS optimize: another process is using %s", s.host.dbPath()))
+			pkgLog().Info(fmt.Sprintf("Skipping VACUUM after FTS optimize: another process is using %s", s.host.dbPath()))
 			vacuumOK, vacuumSkipped = false, true
 		} else {
 			ok, err := s.optimizeVacuum(ctx, progressCB)
@@ -1278,11 +1277,11 @@ func (s *sessionSearch) OptimizeFTSStorage(ctx context.Context, progressCB func(
 		return nil, err
 	}
 	if refusal != "" {
-		slog.Warn(fmt.Sprintf("FTS storage optimization settle refused (%s)", refusal))
+		pkgLog().Warn(fmt.Sprintf("FTS storage optimization settle refused (%s)", refusal))
 		return result("ok", false, "reason", refusal, "vacuumed", vacuumOK), nil
 	}
 	emit(result("phase", "done", "percent", 100, "indexed", 0, "total", 0))
-	slog.Info(fmt.Sprintf("FTS storage optimization complete (layout v%d).", FTSStorageVersion))
+	pkgLog().Info(fmt.Sprintf("FTS storage optimization complete (layout v%d).", FTSStorageVersion))
 	out := result("ok", true, "vacuumed", vacuumOK)
 	if vacuumSkipped {
 		out.Set("vacuum_skipped", "in_use")

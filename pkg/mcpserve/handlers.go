@@ -391,7 +391,7 @@ func CreateServer(ctx context.Context, bridge *EventBridge, includeTools bool, i
 		if err != nil {
 			return nil, err
 		}
-		bridgeLog.Info(fmt.Sprintf("exposed %d Icebath tools over MCP", n))
+		pkgLog().Info(fmt.Sprintf("exposed %d Icebath tools over MCP", n))
 	}
 	return server, nil
 }

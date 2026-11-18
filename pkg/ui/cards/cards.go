@@ -39,8 +39,8 @@ type Env struct {
 	Send func(tea.Msg)
 }
 
-// First key of the action as a legend shows it
-func (e *Env) key(id string) string { return keys.Format(e.Keys.First(id)) }
+// First key of the action the terminal can send, as a legend shows it
+func (e *Env) key(id string) string { return e.Keys.Display(id) }
 
 // Text led by the first key of the action, the text alone while the action is unbound
 func (e *Env) keyed(id, text string) string {
@@ -134,6 +134,11 @@ func footed(lines []string, foot string, h int) string {
 	return strings.Join(append(body, foot), "\n")
 }
 
+// Error of ShellWords when a quote or a trailing backslash is left open
+type UnterminatedQuoteError struct {
+	Quote rune
+}
+
 // Words of a command line split the way a POSIX shell splits them, honoring quotes and backslashes
 func ShellWords(line string) ([]string, error) {
 	var words []string
@@ -189,11 +194,6 @@ func ShellWords(line string) ([]string, error) {
 		words = append(words, cur.String())
 	}
 	return words, nil
-}
-
-// Error of ShellWords when a quote or a trailing backslash is left open
-type UnterminatedQuoteError struct {
-	Quote rune
 }
 
 func (e *UnterminatedQuoteError) Error() string {

@@ -8,7 +8,6 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
-	"log/slog"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -92,7 +91,7 @@ func readLockDocument(path string, strict bool) (map[string]any, error) {
 func preserveCorruptState(path string, text []byte) {
 	if store, err := StoreRoot(contextBackground()); err == nil {
 		if st, serr := os.Stat(filepath.Join(filepath.Dir(store), "manifest.json")); LongRoot(filepath.Dir(path)) == LongRoot(store) && serr == nil && st.Mode().IsRegular() {
-			slog.Warn("invalid shipped state file", "path", path)
+			pkgLog().Warn("invalid shipped state file", "path", path)
 			return
 		}
 	}

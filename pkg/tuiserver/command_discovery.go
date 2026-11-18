@@ -3,7 +3,6 @@ package tuiserver
 import (
 	"context"
 	"fmt"
-	"log/slog"
 	"math/big"
 	"slices"
 	"strings"
@@ -14,6 +13,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/skills"
 	"github.com/nickheyer/icebath/pkg/tools"
+	"github.com/nickheyer/icebath/pkg/tuigateway"
 )
 
 const slashCompletionLimit = 30
@@ -41,11 +41,6 @@ var (
 	detailsModes    = []string{"hidden", "collapsed", "expanded"}
 )
 
-// Logger of the slash discovery builders
-func discoveryLogger() *slog.Logger {
-	return slog.Default().With("logger", "tui_gateway.command_discovery")
-}
-
 // Completion item with its display defaulting to the text
 func completionItem(text, meta string, display ...string) map[string]any {
 	shown := text
@@ -64,7 +59,7 @@ func skillUsageLookup(ctx context.Context) (func(string) *big.Int, func(string) 
 		bundled, err = scope.ReadBundledNames()
 	}
 	if err != nil {
-		discoveryLogger().Debug(fmt.Sprintf("skill usage lookup unavailable: %s", err))
+		pkgLog().Debug(fmt.Sprintf("skill usage lookup unavailable: %s", err))
 		return func(string) *big.Int { return big.NewInt(0) }, func(string) string { return "local" }
 	}
 	hub := scope.ReadHubInstalledNames()
@@ -292,7 +287,7 @@ func slashCompletions(ctx context.Context, text string, scope func(context.Conte
 	if strings.HasPrefix(lastToken, "/") {
 		var scoreOf func(map[string]any) float64
 		if !strings.Contains(text, " ") && utf8.RuneCountInString(text) > 1 {
-			items, scoreOf = fuzzyRankSlashItems(items, toItems("/"), normalizeSlashSearchQuery(text))
+			items, scoreOf = fuzzyRankSlashItems(items, toItems("/"), tuigateway.NormalizeSlashSearchQuery(text))
 		}
 		usage, originOf := skillUsageLookup(ctx)
 		items = rankSlashCompletions(items, usage, originOf, text == "/", scoreOf, nil)

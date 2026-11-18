@@ -10,10 +10,10 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/tuigateway"
+	"github.com/nickheyer/icebath/pkg/tuihost"
 )
 
-// Scripted socket of the hermes ws cases, frames pushed on inbound and a nil frame hanging up
+// Scripted socket of the ws cases, frames pushed on inbound and a nil frame hanging up
 type wsTestSocket struct {
 	mu        sync.Mutex
 	sent      []map[string]any
@@ -207,11 +207,11 @@ func wsTestAwait(t *testing.T, done <-chan error, timeout time.Duration) error {
 }
 
 // Transport the session of a connected socket registered for global broadcasts, the newest one
-func wsTestLiveTransport(t *testing.T) *tuigateway.WSTransport {
+func wsTestLiveTransport(t *testing.T) *tuihost.WSTransport {
 	t.Helper()
-	live := tuigateway.LiveTransports()
+	live := tuihost.LiveTransports()
 	for i := len(live) - 1; i >= 0; i-- {
-		if transport, isWS := live[i].(*tuigateway.WSTransport); isWS {
+		if transport, isWS := live[i].(*tuihost.WSTransport); isWS {
 			return transport
 		}
 	}

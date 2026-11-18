@@ -12,7 +12,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/tools"
-	"github.com/nickheyer/icebath/pkg/tuigateway"
+	"github.com/nickheyer/icebath/pkg/tuihost"
 )
 
 const recentSubagentsCap = 200
@@ -235,7 +235,7 @@ func subagentTransportMatches(record map[string]any, transport any) bool {
 	switch owner := record["owner_session_record"].(type) {
 	case map[string]any:
 		bound = owner["transport"]
-	case *tuigateway.Session:
+	case *tuihost.Session:
 		bound = owner.Get("transport")
 	default:
 		bound = record["owner_transport"]
@@ -243,11 +243,11 @@ func subagentTransportMatches(record map[string]any, transport any) bool {
 	if pyrepr.Is(bound, transport) {
 		return true
 	}
-	fanout, ok := bound.(*tuigateway.FanoutTransport)
+	fanout, ok := bound.(*tuihost.FanoutTransport)
 	if !ok {
 		return false
 	}
-	member, ok := transport.(tuigateway.Transport)
+	member, ok := transport.(tuihost.Transport)
 	return ok && fanout.Contains(member)
 }
 
@@ -273,20 +273,20 @@ func SteerSubagent(subagentID, text string, ownerSessionID *string, ownerTranspo
 	}
 	steerable, ok := agent.(interface{ Steer(text string) bool })
 	if !ok {
-		delegateLog().Debug(fmt.Sprintf("steer_subagent(%s) failed: '%s' object has no attribute 'steer'", subagentID, pyrepr.TypeName(agent)))
+		pkgLog().Debug(fmt.Sprintf("steer_subagent(%s) failed: '%s' object has no attribute 'steer'", subagentID, pyrepr.TypeName(agent)))
 		return false
 	}
 	return steerQuietly(subagentID, steerable, text)
 }
 
-// Steer call of a live child, a panic inside the child's steer degrading to false like the hermes except branch
+// Steer call of a live child, a panic inside the child's steer degrading to false like the except branch
 func steerQuietly(subagentID string, steerable interface{ Steer(text string) bool }, text string) (accepted bool) {
 	defer func() {
 		if r := recover(); r != nil {
 			if isUserInterruptPanic(r) {
 				panic(r)
 			}
-			delegateLog().Debug(fmt.Sprintf("steer_subagent(%s) failed: %v", subagentID, r))
+			pkgLog().Debug(fmt.Sprintf("steer_subagent(%s) failed: %v", subagentID, r))
 			accepted = false
 		}
 	}()

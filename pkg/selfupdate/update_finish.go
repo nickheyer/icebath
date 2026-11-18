@@ -23,7 +23,7 @@ const UpdateFinishEntry = "update-finish"
 // Runs the CLI main of this binary over an argv in process and returns its exit status, assigned at startup
 var RunCLIHook func(argv []string) int
 
-// Steps of a historical finish, each the host behaviour unless a hermes test replaces it
+// Steps of a historical finish, each the host behaviour unless a test replaces it
 var (
 	finishMaintenance      = RunPostUpdateMaintenance
 	finishRestartFleet     = restartGatewayFleetAfterUpdate

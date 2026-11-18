@@ -2,7 +2,6 @@ package gateway
 
 import (
 	"context"
-	"log/slog"
 	"path/filepath"
 
 	"github.com/nickheyer/icebath/pkg/home"
@@ -103,7 +102,7 @@ func watchRoutes(ctx context.Context, runner AuthorityRunner, store *SessionStor
 			err = nameAnnouncedLane(scope, authority, store, route, sessionID, origin)
 		}
 		if err != nil {
-			slog.Error("Exception in callback watch_routes.<locals>.route_named.<locals>.name(): " + pyExceptionRepr(err))
+			pkgLog().Error("Exception in callback watch_routes.<locals>.route_named.<locals>.name(): " + pyExceptionRepr(err))
 		}
 	}
 }

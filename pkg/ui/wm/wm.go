@@ -53,6 +53,8 @@ type resizer struct {
 
 // Window manager that tiles cards per workspace, floats dialogs, animates every move and routes input
 type Model struct {
+	// Tab groups made so far, numbering the next one
+	groups    int
 	theme     theme.Theme
 	clock     anim.Clock
 	spaces    []*Workspace
@@ -75,6 +77,8 @@ type Model struct {
 	hot       barSpot
 	commands  []Command
 	keys      *keys.Map
+	// Terminal answered the kitty keyboard query with flags, so it reports ctrl and shift on a letter apart
+	kittyKeys bool
 	recent    []string
 	empty     []string
 	hold      int
@@ -136,19 +140,9 @@ func WithMotion(scale float64) Option {
 	return func(m *Model) { m.SetMotion(scale); m.motionSet = true }
 }
 
-// Lights the focused card's border with a flowing energy comet
-func WithCascade(on bool) Option {
-	return func(m *Model) { m.SetCascade(on) }
-}
-
 // Sets the terminal window title
 func WithWindowTitle(title string) Option {
 	return func(m *Model) { m.title = title }
-}
-
-// Sets the share of the stage new workspaces give the master area and keeps a restored layout from changing it
-func WithRatio(r float64) Option {
-	return func(m *Model) { m.ratio, m.ratioSet = clampRatio(r), true }
 }
 
 // Replaces the keymap keys are dispatched and legends painted from
@@ -222,6 +216,10 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.BlurMsg:
 		m.blurred = true
 		return m, m.sendFocused(msg)
+	case tea.KeyboardEnhancementsMsg:
+		m.kittyKeys = msg.SupportsKeyDisambiguation()
+		m.keys.SetShiftApart(m.kittyKeys)
+		return m, m.after(m.broadcast(msg))
 	case Intent:
 		return m, m.after(m.handleIntent(msg))
 	case toastTickMsg:
@@ -253,10 +251,25 @@ func (m *Model) after(cmd tea.Cmd) tea.Cmd {
 
 // Reports whether the clock may stop between frames, which it may once the terminal is blurred or motion is off
 func (m *Model) canRest() bool {
-	if len(m.toasts) > 0 {
+	if len(m.toasts) > 0 || m.awake() {
 		return false
 	}
 	return m.blurred || m.motion == 0
+}
+
+// Whether a card on the stage or the overlay needs frames while nothing moves
+func (m *Model) awake() bool {
+	if m.overlay != nil && wakes(m.overlay.card) {
+		return true
+	}
+	if ws := m.Active(); ws != nil {
+		for _, e := range ws.entries() {
+			if wakes(e.card) {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 // Reports whether the clock has stopped scheduling frames
@@ -402,6 +415,12 @@ func (m *Model) OpenFrom(ws *Workspace, c Card, origin Box) tea.Cmd {
 		return nil
 	}
 	if have := ws.find(keyOf(c)); have != nil {
+		if g, grouped := have.card.(*Tabs); grouped && keyOf(g) != keyOf(c) {
+			if held := g.held(keyOf(c)); held != nil {
+				have.dirty = true
+				return tea.Batch(g.Select(slices.Index(g.cards, held)), m.focusEntry(have))
+			}
+		}
 		return m.focusEntry(have)
 	}
 	for _, other := range m.spaces {
@@ -467,8 +486,11 @@ func (m *Model) adopt(ws *Workspace, c Card, origin Box) *entry {
 // Opens the card in the workspace on the stage
 func (m *Model) OpenHere(c Card) tea.Cmd { return m.Open(m.Active(), c) }
 
-// Closes the card wherever it is open
+// Closes the card wherever it is open, a tab leaving its group
 func (m *Model) Close(c Card) tea.Cmd {
+	if e, g := m.groupOf(c); g != nil {
+		return m.closeTab(e, g, c)
+	}
 	if e := m.entryOf(c); e != nil {
 		return m.closeEntry(e)
 	}
@@ -477,10 +499,8 @@ func (m *Model) Close(c Card) tea.Cmd {
 
 // Closes the card with the key wherever it is open
 func (m *Model) CloseKey(key string) tea.Cmd {
-	for _, ws := range m.spaces {
-		if e := ws.find(key); e != nil {
-			return m.closeEntry(e)
-		}
+	if c, _ := m.Find(key); c != nil {
+		return m.Close(c)
 	}
 	return nil
 }
@@ -489,6 +509,12 @@ func (m *Model) CloseKey(key string) tea.Cmd {
 func (m *Model) CloseFocused() tea.Cmd {
 	e := m.focused()
 	if e == nil || !closable(e.card) {
+		return m.nudge()
+	}
+	if g, grouped := e.card.(*Tabs); grouped {
+		if shown, _ := g.Active(); shown != nil && closable(shown) {
+			return m.closeTab(e, g, shown)
+		}
 		return m.nudge()
 	}
 	return m.closeEntry(e)
@@ -512,10 +538,13 @@ func (m *Model) FrameOf(c Card) (Box, bool) {
 	return e.frame(), true
 }
 
-// Card with the key and the workspace holding it
+// Card with the key and the workspace holding it, a tab of a group included
 func (m *Model) Find(key string) (Card, *Workspace) {
 	for _, ws := range m.spaces {
 		if e := ws.find(key); e != nil {
+			if g, grouped := e.card.(*Tabs); grouped && keyOf(g) != key {
+				return g.held(key), ws
+			}
 			return e.card, ws
 		}
 	}

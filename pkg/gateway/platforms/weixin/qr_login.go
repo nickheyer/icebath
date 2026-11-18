@@ -3,7 +3,6 @@ package weixin
 import (
 	"context"
 	"fmt"
-	"log/slog"
 
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyqrcode"
@@ -55,11 +54,11 @@ func qrLogin(ctx context.Context, home, botType string, timeoutSeconds int) (*qr
 		if ctx.Err() != nil {
 			return nil, ctx.Err()
 		}
-		slog.Error(fmt.Sprintf("weixin: failed to fetch QR code: %s", errText(err)))
+		pkgLog().Error(fmt.Sprintf("weixin: failed to fetch QR code: %s", errText(err)))
 		return nil, nil
 	}
 	if qrcodeValue == "" {
-		slog.Error("weixin: QR response missing qrcode")
+		pkgLog().Error("weixin: QR response missing qrcode")
 		return nil, nil
 	}
 	fmt.Fprintln(out, "\n请使用微信扫描以下二维码：")
@@ -73,7 +72,7 @@ func qrLogin(ctx context.Context, home, botType string, timeoutSeconds int) (*qr
 				return nil, ctx.Err()
 			}
 			if !isTimeout(err) {
-				slog.Warn(fmt.Sprintf("weixin: QR poll error: %s", errText(err)))
+				pkgLog().Warn(fmt.Sprintf("weixin: QR poll error: %s", errText(err)))
 			}
 			if err := sleep(ctx, qrPollGap); err != nil {
 				return nil, err
@@ -102,7 +101,7 @@ func qrLogin(ctx context.Context, home, botType string, timeoutSeconds int) (*qr
 				if ctx.Err() != nil {
 					return nil, ctx.Err()
 				}
-				slog.Error(fmt.Sprintf("weixin: QR refresh failed: %s", errText(err)))
+				pkgLog().Error(fmt.Sprintf("weixin: QR refresh failed: %s", errText(err)))
 				return nil, nil
 			}
 			printQR(qrcodeValue, qrcodeURL, false)
@@ -125,7 +124,7 @@ func confirmedCredentials(ctx context.Context, home string, statusResp *pyjson.O
 		creds.baseURL = ilinkBaseURL
 	}
 	if creds.accountID == "" || creds.token == "" {
-		slog.Error("weixin: QR confirmed but credential payload was incomplete")
+		pkgLog().Error("weixin: QR confirmed but credential payload was incomplete")
 		return nil, nil
 	}
 	if err := saveWeixinAccount(ctx, home, creds.accountID, creds.token, creds.baseURL, creds.userID); err != nil {

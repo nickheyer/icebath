@@ -560,7 +560,7 @@ func TestWSL2PowerShellFallbackPowershellPipelinePreservesRealExitStatus(t *test
 		}
 		return "", false
 	})
-	responses := [][]byte{[]byte("C:/Temp\r\n"), []byte("/mnt/c/Temp\n"), []byte("C:/Temp/hermes.wav\n")}
+	responses := [][]byte{[]byte("C:/Temp\r\n"), []byte("/mnt/c/Temp\n"), []byte("C:/Temp/icebath.wav\n")}
 	swapVoice(t, &voiceCheckOutput, func([]string, float64) ([]byte, error) {
 		out := responses[0]
 		responses = responses[1:]

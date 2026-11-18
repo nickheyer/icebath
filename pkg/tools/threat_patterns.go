@@ -66,9 +66,9 @@ var threatPatterns = []threatPattern{
 	{`(?:\b(?:echo|cat|cp|mv|dd|tee|install|printf|rsync|scp|ln|append|add|write` +
 		`|sed|chmod|chown|truncate|rm|touch|curl|wget|git)\b|\bopen\s*\(|>>?)` +
 		`[^\n]{0,512}(?:\$HOME/\.ssh|~/\.ssh)`, "ssh_access", "strict"},
-	{`\$HOME/\.(?:icebath|hermes)/\.env|\~/\.(?:icebath|hermes)/\.env`, "hermes_env", "strict"},
+	{`\$HOME/\.icebath/\.env|\~/\.icebath/\.env`, "icebath_env", "strict"},
 	{threatModify + `(?:AGENTS\.md|CLAUDE\.md|\.cursorrules|\.clinerules)`, "agent_config_mod", "strict"},
-	{threatModify + `\.(?:icebath|hermes)/(config\.yaml|SOUL\.md)`, "hermes_config_mod", "strict"},
+	{threatModify + `\.icebath/(config\.yaml|SOUL\.md)`, "icebath_config_mod", "strict"},
 
 	{`(?:api[_-]?key|token|secret|password)\s*[=:]\s*["\']` +
 		`(?!(?-i:[A-Z][A-Z0-9]*(?:_[A-Z0-9]+)+)["\'])` +

@@ -136,7 +136,7 @@ func (r *GatewayRunner) crashLeftReply(ctx context.Context, history []any, start
 	if gateway.IsMachineryDisplayKind(prompt["display_kind"]) {
 		scoped, release, err := r.MediaDeliveryScopeForSource(ctx, origin)
 		if err != nil {
-			runLog().Debug(fmt.Sprintf("Crash-left reply: no routed scope for %s", origin.ChatID), "exc_info", err)
+			pkgLog().Debug(fmt.Sprintf("Crash-left reply: no routed scope for %s", origin.ChatID), "exc_info", err)
 			scoped, release = ctx, func() {}
 		}
 		muted := config.DiagnosticTurnMuted(scoped, displayMetadata, string(origin.Platform), nil)

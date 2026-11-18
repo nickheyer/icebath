@@ -3,7 +3,6 @@ package langfuse
 import (
 	"context"
 	"fmt"
-	"log/slog"
 	"math"
 	"math/big"
 	"os"
@@ -11,6 +10,7 @@ import (
 	"sync"
 	"sync/atomic"
 
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyre"
@@ -38,9 +38,6 @@ var (
 	responsesContentKeys = map[string]bool{"arguments": true, "output": true, "summary": true}
 )
 
-// Logger of the plugin module
-func lfLog() *slog.Logger { return slog.Default().With("logger", "hermes_plugins.langfuse") }
-
 // Stripped process env value, the default stripped when unset
 func envStr(name, def string) string {
 	if v, ok := os.LookupEnv(name); ok {
@@ -53,7 +50,7 @@ func envStr(name, def string) string {
 func debugLog(message string) {
 	switch pystr.Lower(envStr("ICEBATH_LANGFUSE_DEBUG", "")) {
 	case "1", "true", "yes", "on":
-		lfLog().Info("Langfuse tracing: " + message)
+		pkgLog().Info("Langfuse tracing: " + message)
 	}
 }
 
@@ -79,7 +76,7 @@ func captureMode() string {
 		}
 	}
 	if warnedInvalidCapture.CompareAndSwap(false, true) {
-		lfLog().Warn(fmt.Sprintf("Langfuse plugin: invalid ICEBATH_LANGFUSE_CAPTURE=%s, falling back to %s (valid: %s)",
+		pkgLog().Warn(fmt.Sprintf("Langfuse plugin: invalid ICEBATH_LANGFUSE_CAPTURE=%s, falling back to %s (valid: %s)",
 			pyrepr.Repr(value), pyrepr.Repr(defaultCapture), strings.Join(captureModes, ", ")))
 	}
 	return defaultCapture
@@ -100,7 +97,7 @@ func endUserAttribution(ctx context.Context) bool {
 	}
 	if warnedInvalidEndUser.CompareAndSwap(false, true) {
 		key := fmt.Sprintf("plugins.entries.%s.settings.%s", pc.PluginID(), endUserSetting)
-		lfLog().Warn(fmt.Sprintf("Langfuse plugin: %s=%s is not true or false, so traces get no userId. "+
+		pkgLog().Warn(fmt.Sprintf("Langfuse plugin: %s=%s is not true or false, so traces get no userId. "+
 			"Fix it with `icebath config set %s true` (or false).", key, pyrepr.Repr(value), key))
 	}
 	return false
@@ -328,7 +325,7 @@ func resolveMaxDepth(configured string) int {
 			depth = math.MaxInt32
 		}
 	} else {
-		lfLog().Warn(fmt.Sprintf("Invalid ICEBATH_LANGFUSE_MAX_DEPTH=%s; use a non-negative integer. Falling back to 4.", pyrepr.Repr(configured)))
+		pkgLog().Warn(fmt.Sprintf("Invalid ICEBATH_LANGFUSE_MAX_DEPTH=%s; use a non-negative integer. Falling back to 4.", pyrepr.Repr(configured)))
 	}
 	c.vals[configured] = depth
 	c.order = append(c.order, configured)
@@ -489,7 +486,7 @@ func messagesForLangfuseInput(raw []any, systemPrompt any) []any {
 	var systemMsg any
 	if len(raw) > 0 {
 		if !isDict(raw[0]) {
-			panic(fmt.Sprintf("AttributeError: '%s' object has no attribute 'get'", pyrepr.TypeName(raw[0])))
+			panic(fmt.Sprintf("the first input message is %s, expected a mapping", errchain.Kind(raw[0])))
 		}
 	}
 	if !(len(raw) > 0 && strEq(dget(raw[0], "role"), "system")) {
@@ -585,7 +582,7 @@ func pyIter(v any) []any {
 		}
 		return out
 	}
-	panic(fmt.Sprintf("TypeError: '%s' object is not iterable", pyrepr.TypeName(v)))
+	panic(fmt.Sprintf("expected a list, got %s", errchain.Kind(v)))
 }
 
 // Export shape of an assistant message, reasoning from the first present reasoning field

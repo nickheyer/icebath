@@ -5,12 +5,12 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/tools"
-	"github.com/nickheyer/icebath/pkg/tuigateway"
+	"github.com/nickheyer/icebath/pkg/tuihost"
 )
 
 // Emits tool.complete with the prepared preview, summary and todo snapshot, then repaints changed automation state
 func onToolComplete(ctx context.Context, sid, toolCallID, name string, args map[string]any, result string) {
-	session := tuigateway.SessionRecord(sid)
+	session := tuihost.SessionRecord(sid)
 	var metadata map[string]any
 	prepared := false
 	if session != nil {
@@ -60,13 +60,13 @@ func onToolComplete(ctx context.Context, sid, toolCallID, name string, args map[
 		payload["summary"] = summary
 	}
 	if sessionVerbose(sid) {
-		if text := tuigateway.ToolResultText(result); text != "" {
+		if text := tuihost.ToolResultText(result); text != "" {
 			payload["result_text"] = text
 		}
 	}
 	var todoState *pyjson.Object
 	if tools.IsTodoToolName(name) {
-		todoState = tuigateway.NormalizeTodoState(payload["result"])
+		todoState = tuihost.NormalizeTodoState(payload["result"])
 	}
 	if todoState != nil {
 		for _, key := range todoState.Keys {

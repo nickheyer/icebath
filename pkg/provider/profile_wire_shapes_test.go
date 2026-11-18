@@ -71,14 +71,14 @@ func deepseekKwargs(t *testing.T, model string, reasoning any) map[string]any {
 
 func TestDeepSeekFullKwargsIntegration(t *testing.T) {
 	kw := deepseekKwargs(t, "deepseek-v4-pro", map[string]any{"enabled": true, "effort": "high"})
-	if kw["model"] != "deepseek-v4-pro" || kw["reasoning_effort"] != "high" || !reflect.DeepEqual(kw["extra_body"], thinkingBody("enabled")) {
+	if kw["model"] != "deepseek-v4-pro" || kw["reasoning_effort"] != "high" || !reflect.DeepEqual(pyjson.Plain(kw["extra_body"]), thinkingBody("enabled")) {
 		t.Fatalf("v4 kwargs %v", kw)
 	}
 	kw = deepseekKwargs(t, "deepseek-v3-0324", map[string]any{"enabled": true, "effort": "high"})
 	if _, ok := kw["reasoning_effort"]; ok {
 		t.Fatalf("v3 kwargs %v", kw)
 	}
-	if eb, ok := kw["extra_body"].(map[string]any); ok {
+	if eb, ok := pyjson.Plain(kw["extra_body"]).(map[string]any); ok {
 		if _, has := eb["thinking"]; has {
 			t.Fatalf("v3 thinking %v", kw)
 		}
@@ -93,7 +93,7 @@ func TestDeepSeekFullKwargsIntegration(t *testing.T) {
 		{"deepseek-v4-pro", ParseReasoningEffort("none"), "disabled"},
 	} {
 		kw = deepseekKwargs(t, tc.model, tc.reasoning)
-		if _, ok := kw["reasoning_effort"]; ok || !reflect.DeepEqual(kw["extra_body"], thinkingBody(tc.want)) {
+		if _, ok := kw["reasoning_effort"]; ok || !reflect.DeepEqual(pyjson.Plain(kw["extra_body"]), thinkingBody(tc.want)) {
 			t.Fatalf("%s %v kwargs %v", tc.model, tc.reasoning, kw)
 		}
 	}
@@ -111,7 +111,7 @@ func TestDeepSeekAuxModel(t *testing.T) {
 	}
 }
 
-func TestFireworksHeadersAttributionMatchesCanonicalHermesValues(t *testing.T) {
+func TestFireworksHeadersAttributionMatchesCanonicalValues(t *testing.T) {
 	p := registeredProfile(t, "fireworks")
 	headers, base := p.DefaultHeaders(), auxORHeadersBase()
 	if headers["HTTP-Referer"] != base["HTTP-Referer"] || headers["X-Title"] != base["X-Title"] {
@@ -119,7 +119,7 @@ func TestFireworksHeadersAttributionMatchesCanonicalHermesValues(t *testing.T) {
 	}
 }
 
-func TestFireworksHeadersUserAgentIdentifiesHermes(t *testing.T) {
+func TestFireworksHeadersUserAgentIdentifiesIcebath(t *testing.T) {
 	p := registeredProfile(t, "fireworks")
 	if headers := p.DefaultHeaders(); headers["User-Agent"] != UserAgent("IcebathAgent") {
 		t.Fatalf("user agent %q", headers["User-Agent"])
@@ -168,7 +168,7 @@ func TestMinimaxM3OpenAIReasoningWireShape(t *testing.T) {
 	}
 	kw := ccTransportKwargs(t, "MiniMax-M3", nil, map[string]any{"provider_profile": p,
 		"reasoning_config": map[string]any{"enabled": true, "effort": "medium"}, "base_url": "https://api.minimax.io/v1"})
-	if want := map[string]any{"reasoning_split": true, "thinking": map[string]any{"type": "adaptive"}}; !reflect.DeepEqual(kw["extra_body"], want) {
+	if want := map[string]any{"reasoning_split": true, "thinking": map[string]any{"type": "adaptive"}}; !reflect.DeepEqual(pyjson.Plain(kw["extra_body"]), want) {
 		t.Fatalf("transport extra body %v", kw["extra_body"])
 	}
 }

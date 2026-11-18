@@ -63,7 +63,7 @@ func HomeInUpdateScope(ctx context.Context, h string, scope map[string]bool) boo
 func ledgerGatewayHome(pid int) string {
 	for _, entry := range tools.LedgerEntries(tools.LedgerOptions{VerifiedOnly: true}) {
 		if pyEq(entry["pid"], pid) && pyEq(entry["purpose"], "gateway") {
-			h, _ := entry["hermes_home"].(string)
+			h, _ := entry[home.RecordKey].(string)
 			return h
 		}
 	}

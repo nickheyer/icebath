@@ -2,7 +2,6 @@ package provider
 
 import (
 	"fmt"
-	"log/slog"
 )
 
 type streamWriterClaimer interface{ ClaimStreamWriter() int }
@@ -40,7 +39,7 @@ func StreamWriterIsCurrent(agent any, token int) bool {
 func fenceCall[T any](fn func() T, fallback T, failureNote string) (out T) {
 	defer func() {
 		if r := recover(); r != nil {
-			slog.Debug(fmt.Sprintf("stream single-writer: %s", failureNote), "panic", r)
+			pkgLog().Debug(fmt.Sprintf("stream single-writer: %s", failureNote), "panic", r)
 			out = fallback
 		}
 	}()

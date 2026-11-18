@@ -18,6 +18,7 @@ import (
 	"time"
 	"unicode/utf8"
 
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pydatetime"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
@@ -41,7 +42,7 @@ func entryStr(o *pyjson.Object, key, def string) string {
 	return def
 }
 
-func keyError(key string) error { return fmt.Errorf("KeyError: %s", pyrepr.Repr(key)) }
+func missingField(key string) error { return fmt.Errorf("the hub record has no %s", key) }
 
 // Lists installed skills as hub, builtin or local with their enabled state in the active profile
 func (x *HubCLI) DoList(ctx context.Context, sourceFilter string, enabledOnly bool, c *pyrich.Console) error {
@@ -57,7 +58,7 @@ func (x *HubCLI) DoList(ctx context.Context, sourceFilter string, enabledOnly bo
 	for _, e := range entries {
 		name, ok := objGet(e, "name")
 		if !ok {
-			return keyError("name")
+			return missingField("name")
 		}
 		hubInstalled[pyrepr.Str(name)] = e
 	}
@@ -260,7 +261,7 @@ func (x *HubCLI) DoAudit(ctx context.Context, name string, c *pyrich.Console, de
 		for _, e := range installed {
 			n, ok := objGet(e, "name")
 			if !ok {
-				return keyError("name")
+				return missingField("name")
 			}
 			if pyrepr.Str(n) == name {
 				targets = append(targets, e)
@@ -275,7 +276,7 @@ func (x *HubCLI) DoAudit(ctx context.Context, name string, c *pyrich.Console, de
 	for _, e := range targets {
 		ip, ok := objGet(e, "install_path")
 		if !ok {
-			return keyError("install_path")
+			return missingField("install_path")
 		}
 		skillPath := filepath.Join(x.S.SkillsDir(), pyrepr.Str(ip))
 		entryName := entryStr(e, "name", "")
@@ -286,7 +287,7 @@ func (x *HubCLI) DoAudit(ctx context.Context, name string, c *pyrich.Console, de
 		source, ok := objGet(e, "identifier")
 		if !ok {
 			if source, ok = objGet(e, "source"); !ok {
-				return keyError("source")
+				return missingField("source")
 			}
 		}
 		c.Print(FormatScanReport(ScanSkill(skillPath, pyrepr.Str(source))))
@@ -535,7 +536,7 @@ func (x *HubCLI) DoTap(ctx context.Context, action, repo string, c *pyrich.Conso
 		for _, t := range taps {
 			obj, ok := t.(*pyjson.Object)
 			if !ok {
-				return fmt.Errorf("AttributeError: %s object has no attribute 'get'", pyrepr.Repr(fmt.Sprintf("%T", t)))
+				return fmt.Errorf("a tap entry is %s, expected a mapping", errchain.Kind(t))
 			}
 			label := any(nil)
 			for _, k := range []string{"repo", "name"} {
@@ -598,7 +599,7 @@ func readPublishFrontmatter(skillMD string) (map[string]any, error) {
 	}
 	m, ok := data.(map[string]any)
 	if !ok {
-		return nil, fmt.Errorf("AttributeError: '%T' object has no attribute 'get'", data)
+		return nil, fmt.Errorf("the SKILL.md frontmatter is %s, expected a mapping", errchain.Kind(data))
 	}
 	return m, nil
 }
@@ -716,7 +717,7 @@ func (x *HubCLI) githubPublish(ctx context.Context, skillPath, skillName, target
 		obj, _ := data.(*pyjson.Object)
 		v, ok := objGet(obj, "full_name")
 		if !ok {
-			return false, "", keyError("full_name")
+			return false, "", missingField("full_name")
 		}
 		forkRepo = pyrepr.Str(v)
 	case 403:
@@ -784,11 +785,11 @@ func refSHA(r ghResp) (string, error) {
 	obj, _ := data.(*pyjson.Object)
 	o, ok := objGet(obj, "object")
 	if !ok {
-		return "", keyError("object")
+		return "", missingField("object")
 	}
 	sha, ok := objGet(func() *pyjson.Object { v, _ := o.(*pyjson.Object); return v }(), "sha")
 	if !ok {
-		return "", keyError("sha")
+		return "", missingField("sha")
 	}
 	return pyrepr.Str(sha), nil
 }
@@ -808,11 +809,11 @@ func (x *HubCLI) DoSnapshotExport(ctx context.Context, outputPath string, c *pyr
 	for i, e := range installed {
 		name, ok := objGet(e, "name")
 		if !ok {
-			return keyError("name")
+			return missingField("name")
 		}
 		ip, ok := objGet(e, "install_path")
 		if !ok {
-			return keyError("install_path")
+			return missingField("install_path")
 		}
 		category := ""
 		if strings.Contains(entryStr(e, "install_path", ""), "/") {
@@ -851,7 +852,7 @@ func fmGetObj(o *pyjson.Object, key string, def any) any {
 func asObject(v any) (*pyjson.Object, error) {
 	o, ok := v.(*pyjson.Object)
 	if !ok {
-		return nil, fmt.Errorf("AttributeError: '%T' object has no attribute 'get'", v)
+		return nil, fmt.Errorf("expected a mapping, got %s", errchain.Kind(v))
 	}
 	return o, nil
 }

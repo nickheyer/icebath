@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"log/slog"
 	"os"
 	"strings"
 
@@ -40,7 +39,7 @@ func auxAzureExplicitKey(key any) (string, func(context.Context) (string, error)
 	return "", nil
 }
 
-// Seams the hermes tests patch as module attributes
+// Seams the tests patch as module attributes
 var (
 	auxResolveCustomRuntimeFn  = auxResolveCustomRuntime
 	auxBuildAnthropicClientFn  = buildAnthropicClient
@@ -57,11 +56,11 @@ func auxResolveCustomRuntime(ctx context.Context) (string, any, string, error) {
 	}
 	var authErr *AuthError
 	if rerr != nil && errors.As(rerr, &authErr) {
-		slog.Debug(fmt.Sprintf("Auxiliary client: no custom endpoint configured: %v", rerr))
+		pkgLog().Debug(fmt.Sprintf("Auxiliary client: no custom endpoint configured: %v", rerr))
 		return "", "", "", nil
 	}
 	if rerr != nil {
-		slog.Debug(fmt.Sprintf("Auxiliary client: custom runtime resolution failed: %v", rerr))
+		pkgLog().Debug(fmt.Sprintf("Auxiliary client: custom runtime resolution failed: %v", rerr))
 		rt = nil
 	}
 	var base, key, mode string
@@ -172,7 +171,7 @@ func auxTryCustomEndpoint(ctx context.Context) (AuxClient, string, error) {
 	if shownMode == "" {
 		shownMode = "chat_completions"
 	}
-	slog.Debug(fmt.Sprintf("Auxiliary client: custom endpoint (%s, api_mode=%s)", model, shownMode))
+	pkgLog().Debug(fmt.Sprintf("Auxiliary client: custom endpoint (%s, api_mode=%s)", model, shownMode))
 	cleanBase, query, err := auxExtractURLQueryParams(base)
 	if err != nil {
 		return nil, "", err
@@ -190,7 +189,7 @@ func auxTryCustomEndpoint(ctx context.Context) (AuxClient, string, error) {
 	case "anthropic_messages":
 		real, err := auxBuildAnthropicClientFn(ctx, key, base, 0, false)
 		if err != nil {
-			slog.Warn("Custom endpoint declares api_mode=anthropic_messages but the " +
+			pkgLog().Warn("Custom endpoint declares api_mode=anthropic_messages but the " +
 				"anthropic SDK is not installed — falling back to OpenAI-wire.")
 			return auxCreateOpenAIClient(ctx, key, cleanBase, opts), model, nil
 		}
@@ -209,7 +208,7 @@ func auxTryCustomEndpoint(ctx context.Context) (AuxClient, string, error) {
 // Codex adapter for xAI Grok OAuth on the Responses API, nil without a model or an xAI login
 func auxBuildXaiOAuthAuxClient(ctx context.Context, model string) (AuxClient, string, error) {
 	if model == "" {
-		slog.Warn("Auxiliary client: xai-oauth requested without a model; " +
+		pkgLog().Warn("Auxiliary client: xai-oauth requested without a model; " +
 			"pass model explicitly (auxiliary.<task>.model in config.yaml).")
 		return nil, "", nil
 	}
@@ -217,12 +216,12 @@ func auxBuildXaiOAuthAuxClient(ctx context.Context, model string) (AuxClient, st
 	if !ok {
 		return nil, "", nil
 	}
-	slog.Debug(fmt.Sprintf("Auxiliary client: xAI OAuth (%s via Responses API)", model))
+	pkgLog().Debug(fmt.Sprintf("Auxiliary client: xAI OAuth (%s via Responses API)", model))
 	real := auxCreateOpenAIClient(ctx, apiKey, baseURL, auxOpenAIOptions{DefaultHeaders: tools.XAIDefaultHeaders()})
 	return auxWrapCodex(real, model), model, nil
 }
 
-// Codex and xAI OAuth builders, swapped by tests the way hermes tests patch the module functions
+// Codex and xAI OAuth builders, swapped by tests
 var (
 	auxBuildCodexClientFn       = auxBuildCodexClient
 	auxBuildXaiOAuthAuxClientFn = auxBuildXaiOAuthAuxClient
@@ -237,7 +236,7 @@ func auxCodexBaseURLOverride(ctx context.Context) (string, error) {
 // Codex adapter for an explicit model, nil without a model or a Codex OAuth token
 func auxBuildCodexClient(ctx context.Context, model string) (AuxClient, string, error) {
 	if model == "" {
-		slog.Warn("Auxiliary client: openai-codex requested without a model; " +
+		pkgLog().Warn("Auxiliary client: openai-codex requested without a model; " +
 			"pass model explicitly (auxiliary.<task>.model in config.yaml).")
 		return nil, "", nil
 	}
@@ -245,7 +244,7 @@ func auxBuildCodexClient(ctx context.Context, model string) (AuxClient, string, 
 	if err != nil || token == "" {
 		return nil, "", err
 	}
-	slog.Debug(fmt.Sprintf("Auxiliary client: Codex OAuth (%s via Responses API)", model))
+	pkgLog().Debug(fmt.Sprintf("Auxiliary client: Codex OAuth (%s via Responses API)", model))
 	real := auxCreateOpenAIClient(ctx, token, baseURL, auxOpenAIOptions{DefaultHeaders: codexCloudflareHeaders(token, baseURL)})
 	return auxWrapCodex(real, model), model, nil
 }
@@ -269,9 +268,9 @@ func auxTryAzureFoundry(ctx context.Context, model string, explicitAPIKey any, e
 	var authErr *AuthError
 	if rerr != nil {
 		if errors.As(rerr, &authErr) {
-			slog.Debug(fmt.Sprintf("Auxiliary azure-foundry: %v", rerr))
+			pkgLog().Debug(fmt.Sprintf("Auxiliary azure-foundry: %v", rerr))
 		} else {
-			slog.Debug(fmt.Sprintf("Auxiliary azure-foundry runtime error: %v", rerr))
+			pkgLog().Debug(fmt.Sprintf("Auxiliary azure-foundry runtime error: %v", rerr))
 		}
 		return nil, "", nil
 	}
@@ -299,7 +298,7 @@ func auxTryAzureFoundry(ctx context.Context, model string, explicitAPIKey any, e
 	}
 	finalModel := auxNormalizeResolvedModel(ctx, requested, "azure-foundry")
 	if finalModel == "" {
-		slog.Debug(fmt.Sprintf("Auxiliary azure-foundry: no model resolved (model=%s, default=%s)",
+		pkgLog().Debug(fmt.Sprintf("Auxiliary azure-foundry: no model resolved (model=%s, default=%s)",
 			pyrepr.Repr(auxNoneIfEmpty(model)), pyrepr.Repr(modelCfg["default"])))
 		return nil, "", nil
 	}
@@ -325,7 +324,7 @@ func auxTryAzureFoundry(ctx context.Context, model string, explicitAPIKey any, e
 	return client, finalModel, nil
 }
 
-// Nil for an empty string so repr prints None as hermes does for a missing value
+// Nil for an empty string so repr prints None for a missing value
 func auxNoneIfEmpty(s string) any {
 	if s == "" {
 		return nil
@@ -384,7 +383,7 @@ func auxTryAnthropic(ctx context.Context, explicitAPIKey any, explicitBaseURL st
 	}
 	if overrideURL := strings.TrimRight(pystr.Strip(explicitBaseURL), "/"); overrideURL != "" {
 		if !auxIsAnthropicCompatibleHost(overrideURL) {
-			slog.Warn(fmt.Sprintf("Auxiliary client: refusing anthropic explicit base_url %s — not an "+
+			pkgLog().Warn(fmt.Sprintf("Auxiliary client: refusing anthropic explicit base_url %s — not an "+
 				"Anthropic-compatible host; no client built and no request sent.", pyrepr.Repr(overrideURL)))
 			return nil, "", nil
 		}
@@ -402,7 +401,7 @@ func auxTryAnthropic(ctx context.Context, explicitAPIKey any, explicitBaseURL st
 	if auxProbeActive(ctx) {
 		return &auxProbeClient{apiKey: "", baseURL: baseURL}, model, nil
 	}
-	slog.Debug(fmt.Sprintf("Auxiliary client: Anthropic native (%s) at %s (oauth=%s)", model, baseURL, pyrepr.Str(isOAuth)))
+	pkgLog().Debug(fmt.Sprintf("Auxiliary client: Anthropic native (%s) at %s (oauth=%s)", model, baseURL, pyrepr.Str(isOAuth)))
 	real, err := auxBuildAnthropicClientFn(ctx, token, baseURL, 0, false)
 	if err != nil {
 		return nil, "", err
@@ -420,7 +419,6 @@ type auxProviderChainEntry struct {
 func auxGetProviderChain() []auxProviderChainEntry {
 	return []auxProviderChainEntry{
 		{"openrouter", func(ctx context.Context) (AuxClient, string, error) { return auxTryOpenrouter(ctx, nil, "", "") }},
-		{"nous", func(ctx context.Context) (AuxClient, string, error) { return auxTryNousFn(ctx, false) }},
 		{"local/custom", auxTryCustomEndpoint},
 		{"api-key", auxResolveAPIKeyProvider},
 	}

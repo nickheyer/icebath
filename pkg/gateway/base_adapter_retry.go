@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"log/slog"
 	"math"
 	"math/rand/v2"
 	"time"
@@ -12,13 +11,12 @@ import (
 	"github.com/nickheyer/icebath/pkg/i18n"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
-	"github.com/nickheyer/icebath/pkg/observability"
 )
 
 // Longest server requested retry wait the send path sleeps inline before handing redelivery to the ledger
 const sendRetryInlineWaitCapSecs = 60.0
 
-// Backoff sleep of the send retry loop, swapped by tests the way hermes tests patch asyncio.sleep
+// Backoff sleep of the send retry loop, swapped by tests
 var sendRetrySleep = func(ctx context.Context, seconds float64) error {
 	timer := time.NewTimer(time.Duration(seconds * float64(time.Second)))
 	defer timer.Stop()
@@ -69,7 +67,7 @@ func (b *BasePlatformAdapter) mediaDeliveryScope(ctx context.Context, source *Se
 	}
 	scoped, release, err := resolver.MediaDeliveryScopeForSource(ctx, source)
 	if err != nil {
-		slog.Debug(fmt.Sprintf("[%s] Failed to resolve media delivery scope: %v", b.Self().Name(), err))
+		pkgLog().Debug(fmt.Sprintf("[%s] Failed to resolve media delivery scope: %v", b.Self().Name(), err))
 		return ctx, func() {}
 	}
 	if release == nil {
@@ -87,7 +85,7 @@ func (b *BasePlatformAdapter) finalDeliveryAdapter(ctx context.Context, source *
 	}
 	live, err := resolver.DeliveryAdapterFor(ctx, source)
 	if err != nil {
-		slog.Debug(fmt.Sprintf("[%s] Failed to resolve live adapter for final delivery", self.Name()))
+		pkgLog().Debug(fmt.Sprintf("[%s] Failed to resolve live adapter for final delivery", self.Name()))
 		return self
 	}
 	if live != nil && live.Base().Platform == b.Platform {
@@ -126,7 +124,7 @@ func (b *BasePlatformAdapter) dispatchInlineReply(ctx context.Context, event *Me
 		return nil
 	}
 	if logCmd != nil {
-		slog.Info(fmt.Sprintf("[%s] Sending command '/%s' response (%d chars) to %s", b.Self().Name(), *logCmd,
+		pkgLog().Info(fmt.Sprintf("[%s] Sending command '/%s' response (%d chars) to %s", b.Self().Name(), *logCmd,
 			pystr.Len(text), event.Source.ChatID))
 	}
 	replyTo := ""
@@ -164,19 +162,8 @@ func sendFailureIsTransient(result SendResult, errorText string) bool {
 	return result.Retryable || isRateLimitedError(errorText) || result.RetryAfter != nil || isRetryableError(errorText)
 }
 
-// Sends with retry and counts the one logical delivery, retries and fallback included, in shared metrics
-func (b *BasePlatformAdapter) SendWithRetry(ctx context.Context, chatID, content, replyTo string, metadata map[string]any, maxRetries int, baseDelay float64) (SendResult, error) {
-	var result SendResult
-	_, err := observability.RecordsDelivery(ctx, b.Self(), chatID, func() (any, error) {
-		var sendErr error
-		result, sendErr = b.sendWithRetry(ctx, chatID, content, replyTo, metadata, maxRetries, baseDelay)
-		return result, sendErr
-	})
-	return result, err
-}
-
 // Sends with exponential backoff on transient errors, plain text fallback on permanent ones, a notice after exhaustion
-func (b *BasePlatformAdapter) sendWithRetry(ctx context.Context, chatID, content, replyTo string, metadata map[string]any, maxRetries int, baseDelay float64) (SendResult, error) {
+func (b *BasePlatformAdapter) SendWithRetry(ctx context.Context, chatID, content, replyTo string, metadata map[string]any, maxRetries int, baseDelay float64) (SendResult, error) {
 	self := b.Self()
 	send := func(text string) (SendResult, error) {
 		return self.Send(ctx, chatID, text, replyTo, metadata)
@@ -208,13 +195,13 @@ func (b *BasePlatformAdapter) sendWithRetry(ctx context.Context, chatID, content
 			if serverRetryAfter == nil {
 				backoff = baseDelay * math.Pow(2, float64(attempt-1))
 			} else if backoff = *serverRetryAfter; backoff > sendRetryInlineWaitCapSecs {
-				slog.Error(fmt.Sprintf("[%s] Server asked to retry after %.0fs (> %.0fs inline cap); returning "+
+				pkgLog().Error(fmt.Sprintf("[%s] Server asked to retry after %.0fs (> %.0fs inline cap); returning "+
 					"typed failure for redelivery instead of sleeping: %s", self.Name(), backoff, sendRetryInlineWaitCapSecs, errorStr))
 				return result, nil
 			}
 			delay := backoff + sendRetryJitter()
 			serverRetryAfter = nil
-			slog.Warn(fmt.Sprintf("[%s] Send failed (attempt %d/%d, retrying in %.1fs): %s", self.Name(), attempt, maxRetries, delay, errorStr))
+			pkgLog().Warn(fmt.Sprintf("[%s] Send failed (attempt %d/%d, retrying in %.1fs): %s", self.Name(), attempt, maxRetries, delay, errorStr))
 			if err := sendRetrySleep(ctx, delay); err != nil {
 				return result, err
 			}
@@ -223,13 +210,13 @@ func (b *BasePlatformAdapter) sendWithRetry(ctx context.Context, chatID, content
 				return result, err
 			}
 			if resumed == nil {
-				slog.Warn(fmt.Sprintf("[%s] Split send partly delivered and the remainder cannot be resumed safely; "+
+				pkgLog().Warn(fmt.Sprintf("[%s] Split send partly delivered and the remainder cannot be resumed safely; "+
 					"not re-sending the whole payload (would duplicate the visible head): %s", self.Name(), errorStr))
 				return result, nil
 			}
 			result = *resumed
 			if result.Success {
-				slog.Info(fmt.Sprintf("[%s] Send succeeded on retry %d", self.Name(), attempt))
+				pkgLog().Info(fmt.Sprintf("[%s] Send succeeded on retry %d", self.Name(), attempt))
 				return result, nil
 			}
 			errorStr = sendResultErrorText(result)
@@ -246,29 +233,29 @@ func (b *BasePlatformAdapter) sendWithRetry(ctx context.Context, chatID, content
 		}
 		if exhausted {
 			if isRateLimitedError(errorStr) || result.RetryAfter != nil {
-				slog.Error(fmt.Sprintf("[%s] Rate-limited send exhausted retries; returning typed failure "+
+				pkgLog().Error(fmt.Sprintf("[%s] Rate-limited send exhausted retries; returning typed failure "+
 					"for redelivery (no notice sent inside active flood penalty): %s", self.Name(), errorStr))
 				return result, nil
 			}
-			slog.Error(fmt.Sprintf("[%s] Failed to deliver response after %d retries: %s", self.Name(), maxRetries, errorStr))
+			pkgLog().Error(fmt.Sprintf("[%s] Failed to deliver response after %d retries: %s", self.Name(), maxRetries, errorStr))
 			notice := i18n.T(ctx, "gateway.notify.delivery_failed_retry", "", nil)
 			if _, nerr := send(notice); nerr != nil {
-				slog.Debug(fmt.Sprintf("[%s] Could not send delivery-failure notice: %v", self.Name(), nerr))
+				pkgLog().Debug(fmt.Sprintf("[%s] Could not send delivery-failure notice: %v", self.Name(), nerr))
 			}
 			return result, nil
 		}
 	}
 	if IsPartialDelivery(result) {
-		slog.Warn(fmt.Sprintf("[%s] Send failed after partial delivery: %s — not re-sending as plain text", self.Name(), errorStr))
+		pkgLog().Warn(fmt.Sprintf("[%s] Send failed after partial delivery: %s — not re-sending as plain text", self.Name(), errorStr))
 		return result, nil
 	}
-	slog.Warn(fmt.Sprintf("[%s] Send failed: %s — trying plain-text fallback", self.Name(), errorStr))
+	pkgLog().Warn(fmt.Sprintf("[%s] Send failed: %s — trying plain-text fallback", self.Name(), errorStr))
 	fallback, err := self.SendPlainFallback(ctx, chatID, content, replyTo, metadata)
 	if err != nil {
 		return fallback, err
 	}
 	if !fallback.Success {
-		slog.Error(fmt.Sprintf("[%s] Fallback send also failed: %v", self.Name(), fallback.Error))
+		pkgLog().Error(fmt.Sprintf("[%s] Fallback send also failed: %v", self.Name(), fallback.Error))
 	}
 	return fallback, nil
 }

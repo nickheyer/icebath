@@ -49,7 +49,7 @@ func TestFileToolsSmokeReadWritePatch(t *testing.T) {
 		t.Fatalf("write %v", w)
 	}
 	old, nw := "three", "four"
-	pr := ftDecode(t, patchTool(context.Background(), env, patchArgs{mode: "replace", path: p, oldString: &old, newString: &nw}, "t1", nil))
+	pr := ftDecode(t, patchTool(context.Background(), env, patchArgs{mode: "replace", path: p, oldString: &old, newString: &nw}, "t1"))
 	if pr["success"] != true {
 		t.Fatalf("patch %v", pr)
 	}
@@ -66,8 +66,8 @@ type scriptedFileOps struct {
 	readFileRawFn   func(path string) *ReadResult
 	readFileBytesFn func(path string, maxBytes int) *ReadResult
 	writeFileFn     func(path, content string, preContent *string) *WriteResult
-	patchReplaceFn  func(path, oldString, newString string, replaceAll bool, probe *editProbe) *PatchResult
-	patchV4AFn      func(patchContent string, probe *editProbe) *PatchResult
+	patchReplaceFn  func(path, oldString, newString string, replaceAll bool) *PatchResult
+	patchV4AFn      func(patchContent string) *PatchResult
 	searchFn        func(pattern, path, target, fileGlob string, limit, offset int, outputMode string, context int, order string) *SearchResult
 	probeFn         func(path string) (int64, string)
 	calls           []string
@@ -105,20 +105,20 @@ func (s *scriptedFileOps) WriteFile(path, content string, preContent *string) *W
 	return s.fileToolOps.WriteFile(path, content, preContent)
 }
 
-func (s *scriptedFileOps) patchReplace(path, oldString, newString string, replaceAll bool, probe *editProbe) *PatchResult {
+func (s *scriptedFileOps) patchReplace(path, oldString, newString string, replaceAll bool) *PatchResult {
 	s.calls = append(s.calls, "patchReplace:"+path)
 	if s.patchReplaceFn != nil {
-		return s.patchReplaceFn(path, oldString, newString, replaceAll, probe)
+		return s.patchReplaceFn(path, oldString, newString, replaceAll)
 	}
-	return s.fileToolOps.patchReplace(path, oldString, newString, replaceAll, probe)
+	return s.fileToolOps.patchReplace(path, oldString, newString, replaceAll)
 }
 
-func (s *scriptedFileOps) patchV4A(patchContent string, probe *editProbe) *PatchResult {
+func (s *scriptedFileOps) patchV4A(patchContent string) *PatchResult {
 	s.calls = append(s.calls, "patchV4A")
 	if s.patchV4AFn != nil {
-		return s.patchV4AFn(patchContent, probe)
+		return s.patchV4AFn(patchContent)
 	}
-	return s.fileToolOps.patchV4A(patchContent, probe)
+	return s.fileToolOps.patchV4A(patchContent)
 }
 
 func (s *scriptedFileOps) search(pattern, path, target, fileGlob string, limit, offset int, outputMode string, context int, order string) *SearchResult {

@@ -135,7 +135,7 @@ func TestTypingRestartableAfterError(t *testing.T) {
 	a.StopTyping(context.Background(), "12345", nil)
 }
 
-// Reports a fake size for one path the way the hermes case patches os.path.getsize
+// Reports a fake size for one path the way the test patches os.path.getsize
 func fakeGetsize(t *testing.T, oversized string, size int64) {
 	prev := getsize
 	t.Cleanup(func() { getsize = prev })

@@ -19,7 +19,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/pet/generate"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/tools"
-	"github.com/nickheyer/icebath/pkg/tuigateway"
+	"github.com/nickheyer/icebath/pkg/tuihost"
 )
 
 var petMethodsRegistry = &handlerRegistry{}
@@ -42,9 +42,6 @@ func init() {
 	petMethod("pet.enable", nil, false, true, petEnable)
 	petMethod("pet.scale", nil, false, true, petScale)
 	petMethodsRegistry.method("pet.cancel", petCancel)
-	petMethod("pet.generate.status", func(map[string]any) map[string]any {
-		return map[string]any{"available": false, "providers": []any{}}
-	}, false, false, petGenerateStatus)
 	petMethod("pet.generate", nil, false, false, petGenerate)
 	petMethod("pet.hatch", nil, false, false, petHatch)
 	petMethodsRegistry.install()
@@ -57,7 +54,7 @@ type petBody func(ctx context.Context, rid any, params map[string]any, slug stri
 func petMethod(name string, failOpen func(map[string]any) map[string]any, slug, scoped bool, body petBody) {
 	handler := func(ctx context.Context, rid any, params map[string]any) (out map[string]any) {
 		fail := func(failure any) map[string]any {
-			logger().Debug(fmt.Sprintf("%s failed: %s", name, errorMessage(failure)))
+			pkgLog().Debug(fmt.Sprintf("%s failed: %s", name, errorMessage(failure)))
 			if failOpen != nil {
 				return ok(rid, failOpen(params))
 			}
@@ -95,8 +92,8 @@ func petEnv(ctx context.Context) *tools.Env {
 
 // Progress emit whose failure is logged and never aborts a generation
 func petEmit(ctx context.Context, event string, payload map[string]any, what string) {
-	if failure := catchPanic(func() { tuigateway.Emit(ctx, event, "", payload) }); failure != nil {
-		logger().Debug(fmt.Sprintf("%s emit failed: %s", what, errorMessage(failure)))
+	if failure := catchPanic(func() { tuihost.Emit(ctx, event, "", payload) }); failure != nil {
+		pkgLog().Debug(fmt.Sprintf("%s emit failed: %s", what, errorMessage(failure)))
 	}
 }
 
@@ -278,7 +275,7 @@ func petGallery(ctx context.Context, rid any, params map[string]any, _ string) (
 			seen[entry.Slug] = true
 		}
 	}); failure != nil {
-		logger().Debug("pet.gallery manifest fetch failed: " + errorMessage(failure))
+		pkgLog().Debug("pet.gallery manifest fetch failed: " + errorMessage(failure))
 	}
 	for _, slug := range order {
 		if seen[slug] {
@@ -322,11 +319,11 @@ func petSelect(ctx context.Context, rid any, _ map[string]any, slug string) (map
 func petConfigFollowup(what string, update func() (bool, error)) {
 	var err error
 	if failure := catchPanic(func() { _, err = update() }); failure != nil {
-		logger().Debug(fmt.Sprintf("%s config update failed: %s", what, errorMessage(failure)))
+		pkgLog().Debug(fmt.Sprintf("%s config update failed: %s", what, errorMessage(failure)))
 		return
 	}
 	if err != nil {
-		logger().Debug(fmt.Sprintf("%s config update failed: %s", what, err.Error()))
+		pkgLog().Debug(fmt.Sprintf("%s config update failed: %s", what, err.Error()))
 	}
 }
 
@@ -402,28 +399,6 @@ func petCancel(_ context.Context, rid any, params map[string]any) map[string]any
 		petCancelRequest(token)
 	}
 	return ok(rid, map[string]any{"ok": true})
-}
-
-// Whether pet generation is possible, a reference capable image backend configured, and the providers listed
-func petGenerateStatus(ctx context.Context, rid any, _ map[string]any, _ string) (map[string]any, error) {
-	env := petEnv(ctx)
-	available := true
-	if _, err := generate.ResolveProvider(ctx, env, true, ""); err != nil {
-		if _, isGenErr := err.(*generate.GenerationError); !isGenErr {
-			return nil, err
-		}
-		available = false
-	}
-	providers := []map[string]any{}
-	if failure := catchPanic(func() { providers = generate.ListSpriteProviders(ctx, env) }); failure != nil {
-		logger().Debug("pet provider list failed: " + errorMessage(failure))
-		providers = []map[string]any{}
-	}
-	listed := make([]any, len(providers))
-	for i, entry := range providers {
-		listed[i] = entry
-	}
-	return ok(rid, map[string]any{"available": available, "providers": listed}), nil
 }
 
 // Picker chosen provider resolved up front, nil when none was named
@@ -512,7 +487,7 @@ func petGenerate(ctx context.Context, rid any, params map[string]any, _ string) 
 			panicIf(uriErr)
 			dataURI = uri
 		}); failure != nil {
-			logger().Debug(fmt.Sprintf("pet.generate draft %d failed: %s", index, errorMessage(failure)))
+			pkgLog().Debug(fmt.Sprintf("pet.generate draft %d failed: %s", index, errorMessage(failure)))
 			return
 		}
 		mu.Lock()

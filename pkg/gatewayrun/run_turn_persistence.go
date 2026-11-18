@@ -112,7 +112,7 @@ func (r *GatewayRunner) recordRoomSilenceDecision(ctx context.Context, sessionKe
 		return err
 	}()
 	if err != nil {
-		runLog().Warn(fmt.Sprintf("Could not record the room silence decision for %s", sessionKey), "error", pyrepr.ExceptionMessage(err))
+		pkgLog().Warn(fmt.Sprintf("Could not record the room silence decision for %s", sessionKey), "error", pyrepr.ExceptionMessage(err))
 	}
 }
 
@@ -141,11 +141,11 @@ func (r *GatewayRunner) hmwaShapeAgentResponse(ctx context.Context, agentResult 
 		chatOrUnknown = "unknown"
 	}
 	if silent && !r.silenceAllowedForSource(ctx, silenceSource, silenceKind, silenceReplyExpected, agentResult) {
-		runLog().Warn(fmt.Sprintf("silence marker rejected on a user turn: platform=%s chat=%s", platformName, chatOrUnknown))
+		pkgLog().Warn(fmt.Sprintf("silence marker rejected on a user turn: platform=%s chat=%s", platformName, chatOrUnknown))
 		silent = false
 		response = unexpectedSilenceReply(ctx)
 	} else if silent && !gateway.IsMachineryDisplayKind(silenceKind) {
-		runLog().Debug(fmt.Sprintf("silence marker suppressed on an unaddressed or opted-in turn: platform=%s chat=%s", platformName, chatOrUnknown))
+		pkgLog().Debug(fmt.Sprintf("silence marker suppressed on an unaddressed or opted-in turn: platform=%s chat=%s", platformName, chatOrUnknown))
 	}
 	if response == "(empty)" && !silent {
 		model := pystr.Strip(noneText(agentResult["model"]))
@@ -164,12 +164,12 @@ func (r *GatewayRunner) hmwaShapeAgentResponse(ctx context.Context, agentResult 
 	if n, err := pyint.Int64(resultGet(agentResult, "api_calls", 0)); err == nil {
 		apiCalls = int(n)
 	}
-	runLog().Info(fmt.Sprintf("response ready: platform=%s chat=%s session=%s time=%.1fs api_calls=%d response=%d chars",
+	pkgLog().Info(fmt.Sprintf("response ready: platform=%s chat=%s session=%s time=%.1fs api_calls=%d response=%d chars",
 		platformName, chatOrUnknown, sessionOrUnknown, time.Since(msgStartTime).Seconds(), apiCalls, len([]rune(response))))
 	if sessionKey != "" && shouldClearResumePendingAfterTurn(agentResult) {
 		r.clearRestartFailureCount(ctx, sessionKey)
 		if _, err := r.AsyncSessionStore().Store().ClearResumePending(ctx, sessionKey); err != nil {
-			runLog().Debug(fmt.Sprintf("clear_resume_pending failed for %s: %s", sessionKey, pyrepr.ExceptionMessage(err)))
+			pkgLog().Debug(fmt.Sprintf("clear_resume_pending failed for %s: %s", sessionKey, pyrepr.ExceptionMessage(err)))
 		}
 	}
 	if !silent {
@@ -194,7 +194,7 @@ func (r *GatewayRunner) hmwaShapeAgentResponse(ctx context.Context, agentResult 
 			if keyOrQ == "" {
 				keyOrQ = "?"
 			}
-			runLog().Info(fmt.Sprintf("Skipping agent-result session split sync for %s because the session binding moved from %s to %s before compression finished",
+			pkgLog().Info(fmt.Sprintf("Skipping agent-result session split sync for %s because the session binding moved from %s to %s before compression finished",
 				keyOrQ, runStartSessionID, entry.SessionID))
 		}
 	}
@@ -291,7 +291,7 @@ func (r *GatewayRunner) hmwaRuntimeFooterLine(ctx context.Context, agentResult m
 		})
 	}()
 	if err != nil {
-		runLog().Debug("runtime_footer build failed: " + pyrepr.ExceptionMessage(err))
+		pkgLog().Debug("runtime_footer build failed: " + pyrepr.ExceptionMessage(err))
 		return ""
 	}
 	return line
@@ -315,7 +315,7 @@ func (r *GatewayRunner) hmwaPostTurnHooks(ctx context.Context, hookCtx map[strin
 		})
 	}
 	if err := r.drainWatchNotifications(ctx, registry.CompletionQueue); err != nil {
-		runLog().Debug("Watch queue drain error: " + pyrepr.ExceptionMessage(err))
+		pkgLog().Debug("Watch queue drain error: " + pyrepr.ExceptionMessage(err))
 	}
 	return nil
 }
@@ -370,11 +370,11 @@ func hmwaClassifyTurnFailure(agentResult map[string]any, history []map[string]an
 	overflow := isContextOverflowFailureResult(agentResult, len(history))
 	switch {
 	case overflow:
-		runLog().Info(fmt.Sprintf("Skipping transcript persistence for context-overflow failure in session %s to prevent session growth loop.", entry.SessionID))
+		pkgLog().Info(fmt.Sprintf("Skipping transcript persistence for context-overflow failure in session %s to prevent session growth loop.", entry.SessionID))
 	case failedEarly:
-		runLog().Info(fmt.Sprintf("Transient agent failure in session %s — persisting user message so conversation context is preserved on retry.", entry.SessionID))
+		pkgLog().Info(fmt.Sprintf("Transient agent failure in session %s — persisting user message so conversation context is preserved on retry.", entry.SessionID))
 	case hiddenIncomplete:
-		runLog().Warn(fmt.Sprintf("Suppressing hidden-reasoning-only incomplete gateway turn for session %s: %s", entry.SessionID, pyrepr.Str(resultGet(agentResult, "error", "processing incomplete"))))
+		pkgLog().Warn(fmt.Sprintf("Suppressing hidden-reasoning-only incomplete gateway turn for session %s: %s", entry.SessionID, pyrepr.Str(resultGet(agentResult, "error", "processing incomplete"))))
 	}
 	return failedEarly, hiddenIncomplete, overflow
 }
@@ -387,9 +387,9 @@ func (r *GatewayRunner) hmwaCompressionExhaustionReset(ctx context.Context, agen
 	}
 	switch {
 	case pyrepr.Truthy(agentResult["compression_deferred"]):
-		runLog().Info(fmt.Sprintf("Compression deferred for session %s — the compression lock is held by a concurrent compressor. Keeping the session intact; the next message retries normally.", sidOrQ))
+		pkgLog().Info(fmt.Sprintf("Compression deferred for session %s — the compression lock is held by a concurrent compressor. Keeping the session intact; the next message retries normally.", sidOrQ))
 	case pyrepr.Truthy(agentResult["compression_exhausted"]) && (source != nil && (source.Platform == gateway.PlatformAPIServer || gateway.DetachedRouteOf(source) != nil)):
-		runLog().Info(fmt.Sprintf("Keeping session %s after compression exhaustion.", sidOrQ))
+		pkgLog().Info(fmt.Sprintf("Keeping session %s after compression exhaustion.", sidOrQ))
 		guidance := ""
 		if gateway.DetachedRouteOf(source) != nil {
 			guidance = contextOverflowReply(ctx)
@@ -434,7 +434,7 @@ func (r *GatewayRunner) hmwaDeferExhaustionReset(ctx context.Context, entry *gat
 
 // Compression exhaustion auto reset, returning the route's fresh entry
 func (r *GatewayRunner) hmwaRotateExhaustedSession(ctx context.Context, entry *gateway.SessionEntry, sessionKey string, source *gateway.SessionSource) (*gateway.SessionEntry, error) {
-	runLog().Info(fmt.Sprintf("Auto-resetting session %s after compression exhaustion.", entry.SessionID))
+	pkgLog().Info(fmt.Sprintf("Auto-resetting session %s after compression exhaustion.", entry.SessionID))
 	newEntry, releaseFresh, err := gateway.ResetAndRehomeMessages(ctx, r, sessionKey, entry.SessionID)
 	if err != nil {
 		return nil, err
@@ -505,7 +505,7 @@ func (r *GatewayRunner) hmwaPersistTurnTranscript(ctx context.Context, event *ga
 		}
 		if failedEarly || hiddenIncomplete {
 			if event.MessageID != nil && *event.MessageID != "" && store.HasPlatformMessageID(ctx, sid, *event.MessageID) {
-				runLog().Info(fmt.Sprintf("Skipping duplicate user turn (message_id=%s) in session %s", *event.MessageID, sid))
+				pkgLog().Info(fmt.Sprintf("Skipping duplicate user turn (message_id=%s) in session %s", *event.MessageID, sid))
 			} else if err := store.AppendToTranscript(ctx, sid, userRow, agentPersisted); err != nil {
 				return err
 			}
@@ -561,29 +561,6 @@ func (r *GatewayRunner) hmwaPersistTurnTranscript(ctx context.Context, event *ga
 	return nil
 }
 
-// Usage window refusal reworded for a chat, every other reply unchanged
-func usageWindowChatWording(agentResult map[string]any, response string) string {
-	if !pyrepr.Truthy(agentResult["usage_window_message"]) || response == "" {
-		return response
-	}
-	resetsAt, _ := pyint.Float(agentResult["failure_resets_at"])
-	return provider.ChatRefusalWording(response, resetsAt)
-}
-
-// Delivers the turn response, then for a usage window refusal schedules the limit offer under it
-func (r *GatewayRunner) deliverTurnResponseThenLimitOffer(ctx context.Context, event *gateway.MessageEvent, source *gateway.SessionSource, entry *gateway.SessionEntry, sessionKey string, runGeneration int,
-	agentResult map[string]any, agentMessages []map[string]any, response, footerLine string, silent bool) (*string, error) {
-	delivered, err := r.hmwaDeliverTurnResponse(ctx, event, source, entry, sessionKey, runGeneration, agentResult, agentMessages, response, footerLine, silent)
-	if err != nil {
-		return nil, err
-	}
-	if limit, ok := agentResult["usage_limit"].(map[string]any); ok {
-		generation := runGeneration
-		r.scheduleUsageLimitOffer(ctx, event, limit, sessionKey, &generation)
-	}
-	return delivered, nil
-}
-
 // Final delivery decisions for silence, voice reply and streamed media or footer, nil when already delivered
 func (r *GatewayRunner) hmwaDeliverTurnResponse(ctx context.Context, event *gateway.MessageEvent, source *gateway.SessionSource, entry *gateway.SessionEntry, sessionKey string, runGeneration int,
 	agentResult map[string]any, agentMessages []map[string]any, response, footerLine string, silent bool) (*string, error) {
@@ -591,7 +568,7 @@ func (r *GatewayRunner) hmwaDeliverTurnResponse(ctx context.Context, event *gate
 		return nil, nil
 	}
 	if silent {
-		runLog().Info(fmt.Sprintf("Suppressing intentional silence marker for session %s", entry.SessionID))
+		pkgLog().Info(fmt.Sprintf("Suppressing intentional silence marker for session %s", entry.SessionID))
 		response = ""
 	}
 	adapter, err := r.deliveryAdapterFor(ctx, source)
@@ -608,7 +585,7 @@ func (r *GatewayRunner) hmwaDeliverTurnResponse(ctx context.Context, event *gate
 		}
 		if footerLine != "" && adapter != nil && !silent {
 			if _, err := adapter.Send(ctx, source.ChatID, footerLine, "", r.eventThreadMetadata(event, source)); err != nil {
-				runLog().Debug("trailing footer send failed: " + pyrepr.ExceptionMessage(err))
+				pkgLog().Debug("trailing footer send failed: " + pyrepr.ExceptionMessage(err))
 			}
 		}
 		event.SetStreamedFinalResponse(response)
@@ -620,7 +597,7 @@ func (r *GatewayRunner) hmwaDeliverTurnResponse(ctx context.Context, event *gate
 // Error reply of a failed agent turn with the inbound user turn persisted once and a sanitized hint
 func (r *GatewayRunner) hmwaAgentErrorReply(ctx context.Context, turnErr error, event *gateway.MessageEvent, source *gateway.SessionSource, entry *gateway.SessionEntry, sessionKey string, prepared *preparedTurn) string {
 	r.hmwaStopTypingForTurn(ctx, event, source)
-	runLog().Error(fmt.Sprintf("Agent error in session %s", sessionKey), "error", pyrepr.ExceptionRepr(turnErr))
+	pkgLog().Error(fmt.Sprintf("Agent error in session %s", sessionKey), "error", pyrepr.ExceptionRepr(turnErr))
 	statusCode := 0
 	var statusErr interface{ StatusCode() int }
 	if errors.As(turnErr, &statusErr) {
@@ -632,7 +609,7 @@ func (r *GatewayRunner) hmwaAgentErrorReply(ctx context.Context, turnErr error, 
 	func() {
 		defer func() {
 			if rec := recover(); rec != nil {
-				runLog().Debug("Failed to persist inbound user message after agent exception", "error", pyrepr.Str(rec))
+				pkgLog().Debug("Failed to persist inbound user message after agent exception", "error", pyrepr.Str(rec))
 			}
 		}()
 		if prepared.messageText == nil || entry == nil {
@@ -641,17 +618,17 @@ func (r *GatewayRunner) hmwaAgentErrorReply(ctx context.Context, turnErr error, 
 		store := r.AsyncSessionStore().Store()
 		owned, err := store.HasInputOwner(ctx, optText(prepared.persistenceSessionID), optText(prepared.persistenceOwner))
 		if err != nil {
-			runLog().Debug("Failed to persist inbound user message after agent exception", "error", pyrepr.ExceptionMessage(err))
+			pkgLog().Debug("Failed to persist inbound user message after agent exception", "error", pyrepr.ExceptionMessage(err))
 			return
 		}
 		if !owned {
 			if err := store.AppendToTranscript(ctx, entry.SessionID, hmwaUserTranscriptEntry(ctx, event, prepared, float64(time.Now().UnixNano())/1e9), false); err != nil {
-				runLog().Debug("Failed to persist inbound user message after agent exception", "error", pyrepr.ExceptionMessage(err))
+				pkgLog().Debug("Failed to persist inbound user message after agent exception", "error", pyrepr.ExceptionMessage(err))
 				return
 			}
 		}
 		if err := r.hmwaCloseFailedTurn(ctx, entry.SessionID, agent.PartialFailedTurnNotice); err != nil {
-			runLog().Debug("Failed to persist inbound user message after agent exception", "error", pyrepr.ExceptionMessage(err))
+			pkgLog().Debug("Failed to persist inbound user message after agent exception", "error", pyrepr.ExceptionMessage(err))
 		}
 	}()
 	t := func(key string, kwargs map[string]any) string { return i18n.T(ctx, key, "", kwargs) }
@@ -709,7 +686,7 @@ func (r *GatewayRunner) hmwaDiscardStaleResult(ctx context.Context, source *gate
 	if keyOrQ == "" {
 		keyOrQ = "?"
 	}
-	runLog().Info(fmt.Sprintf("Discarding stale agent result for %s — generation %d is no longer current", keyOrQ, runGeneration))
+	pkgLog().Info(fmt.Sprintf("Discarding stale agent result for %s — generation %d is no longer current", keyOrQ, runGeneration))
 	adapter, _ := r.deliveryAdapterFor(ctx, source)
 	generation := runGeneration
 	popPostDeliveryCallback(adapter, quickKey, &generation)

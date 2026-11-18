@@ -461,7 +461,7 @@ func unrestoredAutostashNotice() (string, bool) {
 func warnOrphanedUpdateAutostashes(ctx context.Context, w io.Writer, gitCmd []string, cwd string) int {
 	listed, err := gitRunCaptured(ctx, gitCmd, []string{"stash", "list", "--format=%gd %s"}, cwd, false, nil)
 	if err != nil {
-		updateLog.Debug(fmt.Sprintf("Autostash age check failed: %s", launchErrorText(err)))
+		pkgLog().Debug(fmt.Sprintf("Autostash age check failed: %s", launchErrorText(err)))
 		return 0
 	}
 	if listed.ReturnCode != 0 {

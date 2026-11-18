@@ -183,7 +183,7 @@ func handleAttachURL(k *kanbanCall) (string, error) {
 		if isValueError(err) {
 			return kanbanToolError(fmt.Sprintf("kanban_attach_url: %s", excText(err))), nil
 		}
-		kanbanToolsLog.Error("kanban_attach_url download failed", "exc_info", excText(err))
+		pkgLog().Error("kanban_attach_url download failed", "exc_info", excText(err))
 		return kanbanToolError(fmt.Sprintf("kanban_attach_url: failed to fetch %s: %s", url, excText(err))), nil
 	}
 	contentType := k.get("content_type")

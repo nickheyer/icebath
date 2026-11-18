@@ -29,6 +29,9 @@ func startupAgent(t *testing.T, platform string) (*AIAgent, *[]string) {
 func startWithMissingMemoryProvider(t *testing.T, platform string) (*AIAgent, *[]string) {
 	t.Helper()
 	env := promptTestEnv(t)
+	if err := os.WriteFile(filepath.Join(env.Home, "config.yaml"), []byte("memory:\n  provider: scout_missing_provider\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
 	t.Setenv(pm.EnvDisableLazyInstalls, "1")
 	a, printed := startupAgent(t, platform)
 	a.env = env
@@ -46,7 +49,7 @@ func TestCLIStartPrintsTheRefusal(t *testing.T) {
 	t.Setenv("ICEBATH_HOME", t.TempDir())
 	_, printed := startWithMissingMemoryProvider(t, "cli")
 	for _, line := range *printed {
-		if strings.Contains(line, "icebath plugins install scout_missing_provider") {
+		if strings.Contains(line, "Memory provider 'scout_missing_provider' is configured but not installed and not in the plugin catalog") {
 			return
 		}
 	}
@@ -60,7 +63,7 @@ func TestGatewayStartReplaysTheRefusalOnceOnFirstTurn(t *testing.T) {
 	a.noticeCallback = func(n provider.AgentNotice) { notices = append(notices, n) }
 	a.replayStartupWarnings()
 	a.replayStartupWarnings()
-	if len(notices) != 1 || notices[0].Level != "warn" || !strings.Contains(notices[0].Text, "icebath plugins install scout_missing_provider") {
+	if len(notices) != 1 || notices[0].Level != "warn" || !strings.Contains(notices[0].Text, "Memory provider 'scout_missing_provider' is configured but not installed and not in the plugin catalog") {
 		t.Fatalf("notices %+v", notices)
 	}
 }

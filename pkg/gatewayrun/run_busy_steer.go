@@ -41,7 +41,7 @@ func steerActiveSubagents(runningAgent *agent.AIAgent, text string) int {
 		func() {
 			defer func() {
 				if rec := recover(); rec != nil {
-					runLog().Warn(fmt.Sprintf("Steer into subagent <run_agent.AIAgent object at %p> failed: %s", child, pyrepr.Str(rec)))
+					pkgLog().Warn(fmt.Sprintf("Steer into subagent <run_agent.AIAgent object at %p> failed: %s", child, pyrepr.Str(rec)))
 				}
 			}()
 			if child.Steer(text) {
@@ -60,7 +60,7 @@ func steerRunningAgent(runningAgent *agent.AIAgent, text string) bool {
 
 // Warns that a failed read leaves compression treated as active
 func assumeCompressionActive(what, ident string, err any) bool {
-	runLog().Warn(fmt.Sprintf("Compression in-flight check failed while reading %s %s; treating compression as active to avoid interrupting a possible parent-session rotation: %s", what, ident, pyrepr.Str(err)))
+	pkgLog().Warn(fmt.Sprintf("Compression in-flight check failed while reading %s %s; treating compression as active to avoid interrupting a possible parent-session rotation: %s", what, ident, pyrepr.Str(err)))
 	return true
 }
 
@@ -281,12 +281,12 @@ func plaintextApprovalWords(ctx context.Context) map[string]approvalVerbArgs {
 func (r *GatewayRunner) routePlaintextApprovalWhileBusy(ctx context.Context, event *gateway.MessageEvent, sessionKey string) (routed bool) {
 	defer func() {
 		if rec := recover(); rec != nil {
-			runLog().Warn(fmt.Sprintf("Plain-text approval routing failed for session %s; falling through to busy handling: %s", sessionKey, pyrepr.Str(rec)))
+			pkgLog().Warn(fmt.Sprintf("Plain-text approval routing failed for session %s; falling through to busy handling: %s", sessionKey, pyrepr.Str(rec)))
 			routed = false
 		}
 	}()
 	fail := func(err error) bool {
-		runLog().Warn(fmt.Sprintf("Plain-text approval routing failed for session %s; falling through to busy handling: %s", sessionKey, err))
+		pkgLog().Warn(fmt.Sprintf("Plain-text approval routing failed for session %s; falling through to busy handling: %s", sessionKey, err))
 		return false
 	}
 	if !event.AllowGatewayControl || !tools.HasBlockingApproval(sessionKey) {
@@ -305,7 +305,7 @@ func (r *GatewayRunner) routePlaintextApprovalWhileBusy(ctx context.Context, eve
 	if err != nil {
 		return fail(err)
 	}
-	runLog().Info(fmt.Sprintf("Approval response via plain text: session=%s verb=%s args=%s", sessionKey, match.verb, pyrepr.Repr(match.args)))
+	pkgLog().Info(fmt.Sprintf("Approval response via plain text: session=%s verb=%s args=%s", sessionKey, match.verb, pyrepr.Repr(match.args)))
 	adapter, err := r.deliveryAdapterFor(ctx, event.Source)
 	if err != nil {
 		return fail(err)
@@ -323,7 +323,7 @@ func (r *GatewayRunner) routePlaintextApprovalWhileBusy(ctx context.Context, eve
 
 // Logs and returns the queue mode an interrupt is demoted to
 func demoteInterrupt(sessionKey, why string) string {
-	runLog().Info(fmt.Sprintf("Demoting busy_input_mode 'interrupt' to 'queue' for session %s because %s", sessionKey, why))
+	pkgLog().Info(fmt.Sprintf("Demoting busy_input_mode 'interrupt' to 'queue' for session %s because %s", sessionKey, why))
 	return "queue"
 }
 
@@ -365,7 +365,7 @@ func (r *GatewayRunner) resolveBusySteerOrRedirect(ctx context.Context, event *g
 func (r *GatewayRunner) tryAgentVerb(ctx context.Context, runningAgent *agent.AIAgent, verb, text, sessionKey string, event *gateway.MessageEvent) (ok bool) {
 	defer func() {
 		if rec := recover(); rec != nil {
-			runLog().Warn(fmt.Sprintf("Gateway %s failed for session %s: %s", verb, sessionKey, pyrepr.Str(rec)))
+			pkgLog().Warn(fmt.Sprintf("Gateway %s failed for session %s: %s", verb, sessionKey, pyrepr.Str(rec)))
 			ok = false
 		}
 	}()
@@ -373,7 +373,7 @@ func (r *GatewayRunner) tryAgentVerb(ctx context.Context, runningAgent *agent.AI
 	if event != nil {
 		withOrigin, err := r.steerTextWithOrigin(ctx, text, event)
 		if err != nil {
-			runLog().Warn(fmt.Sprintf("Gateway %s failed for session %s: %s", verb, sessionKey, err))
+			pkgLog().Warn(fmt.Sprintf("Gateway %s failed for session %s: %s", verb, sessionKey, err))
 			return false
 		}
 		callText = withOrigin

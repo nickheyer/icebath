@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"log/slog"
 	"os"
 	"path/filepath"
 	"sort"
@@ -105,7 +104,7 @@ func readManifest(path string) (any, error) {
 func QuickSnapshotDir(snapshotID, h string) (string, error) {
 	root := QuickSnapshotRoot(h)
 	if snapshotID == "" || strings.ContainsAny(snapshotID, `/\`) || snapshotID == "." || snapshotID == ".." {
-		slog.Error("Invalid snapshot_id: " + snapshotID)
+		pkgLog().Error("Invalid snapshot_id: " + snapshotID)
 		return "", nil
 	}
 	snapDir := filepath.Join(root, snapshotID)
@@ -118,7 +117,7 @@ func QuickSnapshotDir(snapshotID, h string) (string, error) {
 		return "", err
 	}
 	if _, inside := pypath.PathRelativeTo(resolved, resolvedRoot); !inside {
-		slog.Error("Snapshot path traversal blocked for id: " + snapshotID)
+		pkgLog().Error("Snapshot path traversal blocked for id: " + snapshotID)
 		return "", nil
 	}
 	if !isDir(snapDir) {
@@ -148,7 +147,7 @@ func pruneQuickSnapshotsIn(root string, keep int) (int, error) {
 	deleted := 0
 	for _, name := range dirs[sliceFrom(len(dirs), keep):] {
 		if err := pyfs.RmTree(filepath.Join(root, name), nil); err != nil {
-			slog.Warn(fmt.Sprintf("Failed to prune snapshot %s: %s", name, excText(err)))
+			pkgLog().Warn(fmt.Sprintf("Failed to prune snapshot %s: %s", name, excText(err)))
 			continue
 		}
 		deleted++

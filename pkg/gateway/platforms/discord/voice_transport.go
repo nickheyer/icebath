@@ -6,7 +6,6 @@ import (
 	"encoding/binary"
 	"errors"
 	"fmt"
-	"log/slog"
 	"net"
 	"sync"
 	"time"
@@ -94,7 +93,7 @@ func parseIPDiscovery(recv []byte) (string, int, error) {
 		}
 	}
 	if end < 0 {
-		return "", 0, errors.New("ValueError: subsection not found")
+		return "", 0, errors.New("the Discord voice IP discovery reply has no address terminator")
 	}
 	return string(recv[8:end]), int(binary.BigEndian.Uint16(recv[len(recv)-2:])), nil
 }
@@ -218,7 +217,7 @@ func (r *socketReader) run() {
 			if errors.As(err, &ne) && ne.Timeout() {
 				continue
 			}
-			slog.Debug(fmt.Sprintf("Error reading from socket in socket reader, this should be safe to ignore: %s", err))
+			pkgLog().Debug(fmt.Sprintf("Error reading from socket in socket reader, this should be safe to ignore: %s", err))
 			r.mu.Lock()
 			if r.sock == sock {
 				r.sock = nil
@@ -234,7 +233,7 @@ func (r *socketReader) run() {
 			func() {
 				defer func() {
 					if p := recover(); p != nil {
-						slog.Error(fmt.Sprintf("Error calling socket listener in socket reader: %v", p))
+						pkgLog().Error(fmt.Sprintf("Error calling socket listener in socket reader: %v", p))
 					}
 				}()
 				cb.fn(data)

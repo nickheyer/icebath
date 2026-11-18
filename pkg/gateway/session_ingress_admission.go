@@ -4,9 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"log/slog"
 
-	"github.com/nickheyer/icebath/pkg/observability"
 	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
@@ -141,12 +139,9 @@ func admitMessage(ctx context.Context, a *SessionAuthority, event *MessageEvent)
 		return nil, err
 	}
 	status := AdmissionTerminal
-	var outcome any
 	if row != nil {
 		status = rowString(row, "status")
-		outcome, _ = row.Get("outcome")
 	}
-	observability.NoteBusyAdmitted(ctx, busyEventOf(event), admissionID, status, outcome)
 	if status == AdmissionTerminal || status == AdmissionUnknown {
 		a.mu.Lock()
 		delete(a.nativeWaiters, admissionID)
@@ -179,9 +174,6 @@ func admitMessage(ctx context.Context, a *SessionAuthority, event *MessageEvent)
 	if row != nil && rowString(row, "status") == AdmissionTerminal {
 		return "⚠️ Icebath did not answer this message (" + refusal.Reason + "): the conversation it was " +
 			"queued for moved, so it was dropped. Send it again to continue.", nil
-	}
-	if row != nil {
-		observability.NoteBusyParked(busyEventOf(event))
 	}
 	return pauseNotice(a, receipt.Ref, refusal.Reason)
 }
@@ -416,7 +408,7 @@ func deliverSettled(ctx context.Context, a *SessionAuthority, admissionID string
 	if sendErr != nil {
 		delivered = false
 		if !cancelled {
-			slog.Error(fmt.Sprintf("Delivery of settled admission %s failed", admissionID), "error", sendErr)
+			pkgLog().Error(fmt.Sprintf("Delivery of settled admission %s failed", admissionID), "error", sendErr)
 		}
 	}
 	closing := context.WithoutCancel(ctx)

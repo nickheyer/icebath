@@ -8,7 +8,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"log/slog"
 	"net/http"
 	"net/url"
 	"os"
@@ -162,7 +161,7 @@ func vertexLoadCredentials(ctx context.Context, path string, raw []byte) (*verte
 		return &vertexCacheEntry{creds: creds, projectID: creds.projectID}, nil
 	}
 	if IsMultiplexActive(ctx) && os.Getenv("GOOGLE_APPLICATION_CREDENTIALS") != "" {
-		slog.Default().Warn(vertexMultiplexADCSkips)
+		pkgLog().Warn(vertexMultiplexADCSkips)
 		return nil, nil
 	}
 	creds, project, err := vertexADCFn(ctx, vertexCloudPlatformScopes)
@@ -231,11 +230,11 @@ func vertexGetCredentials(ctx context.Context, e vertexEnv, explicitPath string)
 	if err == nil {
 		return token, project
 	}
-	slog.Default().Error(fmt.Sprintf("Failed to resolve Vertex AI credentials: %v", err))
+	pkgLog().Error(fmt.Sprintf("Failed to resolve Vertex AI credentials: %v", err))
 	vertexDropCached(key)
 	if path == "" {
 		if saPath := vertexResolveCredentialsPathFn(ctx, e, explicitPath); saPath != "" {
-			slog.Default().Info("ADC failed, retrying with service account: " + saPath)
+			pkgLog().Info("ADC failed, retrying with service account: " + saPath)
 			return vertexGetCredentials(ctx, e, saPath)
 		}
 	}
@@ -271,7 +270,7 @@ func vertexGetBaseURL(ctx context.Context, e vertexEnv, explicitPath, region str
 	raw, key := vertexSASnapshot(path)
 	cached, err := vertexCachedCredentials(ctx, path, raw, key)
 	if err != nil {
-		slog.Default().Debug(fmt.Sprintf("Vertex AI credentials could not be loaded: %v", err))
+		pkgLog().Debug(fmt.Sprintf("Vertex AI credentials could not be loaded: %v", err))
 		vertexDropCached(key)
 		return ""
 	}

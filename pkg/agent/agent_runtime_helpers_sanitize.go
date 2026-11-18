@@ -24,10 +24,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/tools"
 )
 
-func agentRuntimeHelpersLog() *slog.Logger {
-	return slog.Default().With("logger", "agent.agent_runtime_helpers")
-}
-
 const (
 	emptyHealEscalateAfter = 3
 	emptyHealWindowS       = 600.0
@@ -110,7 +106,7 @@ func prependCorruptionMarker(toolMsg *state.Message, marker string) {
 func sanitizeToolCallArguments(messages *[]*state.Message, logger *slog.Logger, sessionID string, cursor map[string]any) int {
 	log := logger
 	if log == nil {
-		log = agentRuntimeHelpersLog()
+		log = pkgLog()
 	}
 	repaired := 0
 	msgs := *messages
@@ -192,7 +188,7 @@ func noteTurnStart(a *AIAgent, turnID string) string {
 		if prevStarted != 0 {
 			ago = nowSeconds() - prevStarted
 		}
-		agentRuntimeHelpersLog().Warn(fmt.Sprintf("turn %s starting while turn %s (started %.0fs ago) has not completed its turn-end persist (session=%s) — concurrent turns on one session; transcript writes may interleave",
+		pkgLog().Warn(fmt.Sprintf("turn %s starting while turn %s (started %.0fs ago) has not completed its turn-end persist (session=%s) — concurrent turns on one session; transcript writes may interleave",
 			turnID, prev, ago, orDash(a.sessionID)))
 		overlap = prev
 	}
@@ -208,7 +204,7 @@ func noteTurnStart(a *AIAgent, turnID string) string {
 			if entry.started != 0 {
 				ago = now - entry.started
 			}
-			agentRuntimeHelpersLog().Warn(fmt.Sprintf("turn %s starting while turn %s (started %.0fs ago) is still in flight on session %s under a different agent object — two routing keys are mapped to one session_id; concurrent turns on one session; transcript writes may interleave",
+			pkgLog().Warn(fmt.Sprintf("turn %s starting while turn %s (started %.0fs ago) is still in flight on session %s under a different agent object — two routing keys are mapped to one session_id; concurrent turns on one session; transcript writes may interleave",
 				turnID, entry.turnID, ago, a.sessionID))
 			if overlap == "" {
 				overlap = entry.turnID
@@ -288,7 +284,7 @@ func dropThinkingOnlyAndMergeUsers(messages []map[string]any, dropCodexReasoning
 	if dropped == 0 && merges == 0 {
 		return messages
 	}
-	runAgentLog().Debug(fmt.Sprintf("Pre-call sanitizer: dropped %d thinking-only assistant turn(s), merged %d adjacent user message(s)", dropped, merges))
+	pkgLog().Debug(fmt.Sprintf("Pre-call sanitizer: dropped %d thinking-only assistant turn(s), merged %d adjacent user message(s)", dropped, merges))
 	return merged
 }
 
@@ -414,11 +410,11 @@ func logEmptyNonFinalHeal(ctx context.Context, logSessionID string, healed int) 
 	}
 	emptyHealLogLock.Unlock()
 	if escalate {
-		runAgentLog().Error(fmt.Sprintf("Pre-call sanitizer: repeated-heal escalation for session %s — healed %d empty non-final message(s) this send; heal pattern: %d heal events / %d messages healed this session (%d in the current session window, threshold %d). The transcript is being repaired on every send; /new drops the poisoned turns.",
+		pkgLog().Error(fmt.Sprintf("Pre-call sanitizer: repeated-heal escalation for session %s — healed %d empty non-final message(s) this send; heal pattern: %d heal events / %d messages healed this session (%d in the current session window, threshold %d). The transcript is being repaired on every send; /new drops the poisoned turns.",
 			key, healed, totalEvents, totalHealed, count, threshold))
 		return
 	}
-	runAgentLog().Warn(fmt.Sprintf("Pre-call sanitizer: healed %d empty non-final message(s) by substituting placeholder content — an empty-content turn was in the transcript and would 400 the request ('messages must have non-empty content' / INVALID_REQUEST_BODY). Self-recovering the poisoned transcript in memory; no restart needed.", healed))
+	pkgLog().Warn(fmt.Sprintf("Pre-call sanitizer: healed %d empty non-final message(s) by substituting placeholder content — an empty-content turn was in the transcript and would 400 the request ('messages must have non-empty content' / INVALID_REQUEST_BODY). Self-recovering the poisoned transcript in memory; no restart needed.", healed))
 }
 
 // Substitutes the placeholder for empty non final user and assistant rows on the wire copy
@@ -460,7 +456,7 @@ func dropInvalidRoles(messages []map[string]any) []map[string]any {
 	for _, m := range messages {
 		role, _ := m["role"].(string)
 		if !validAPIRoles[role] {
-			runAgentLog().Debug("Pre-call sanitizer: dropping message with invalid role " + pyrepr.Repr(m["role"]))
+			pkgLog().Debug("Pre-call sanitizer: dropping message with invalid role " + pyrepr.Repr(m["role"]))
 			continue
 		}
 		kept = append(kept, m)
@@ -486,7 +482,7 @@ func dropEmptyToolCallsArrays(messages []map[string]any) []map[string]any {
 	if dropped == 0 {
 		return messages
 	}
-	runAgentLog().Debug(fmt.Sprintf("Pre-call sanitizer: dropped empty/invalid tool_calls on %d assistant message(s)", dropped))
+	pkgLog().Debug(fmt.Sprintf("Pre-call sanitizer: dropped empty/invalid tool_calls on %d assistant message(s)", dropped))
 	return normalized
 }
 
@@ -515,7 +511,7 @@ func repairInvalidToolCallNames(messages []map[string]any) {
 				continue
 			}
 			nameText, _ := name.(string)
-			runAgentLog().Warn(fmt.Sprintf("Pre-call sanitizer: repairing tool_call with invalid function.name %s -> %s (id=%s)",
+			pkgLog().Warn(fmt.Sprintf("Pre-call sanitizer: repairing tool_call with invalid function.name %s -> %s (id=%s)",
 				pyrepr.Repr(truncateRunes(nameText, 80)), pyrepr.Repr(coerced), getToolCallID(tc)))
 			if !copied {
 				tcs = slices.Clone(original)
@@ -555,7 +551,7 @@ func dropResultsWithoutIDs(messages []map[string]any) []map[string]any {
 		kept = append(kept, m)
 	}
 	if len(kept) != len(messages) {
-		runAgentLog().Debug(fmt.Sprintf("Pre-call sanitizer: dropped %d tool result(s) with missing/empty tool_call_id", len(messages)-len(kept)))
+		pkgLog().Debug(fmt.Sprintf("Pre-call sanitizer: dropped %d tool result(s) with missing/empty tool_call_id", len(messages)-len(kept)))
 	}
 	return kept
 }
@@ -622,10 +618,10 @@ func pairToolCallsPositionally(messages []map[string]any) []map[string]any {
 	}
 	flush()
 	if dropped > 0 {
-		runAgentLog().Debug(fmt.Sprintf("Pre-call sanitizer: removed %d positionally orphaned tool result(s)", dropped))
+		pkgLog().Debug(fmt.Sprintf("Pre-call sanitizer: removed %d positionally orphaned tool result(s)", dropped))
 	}
 	if stubs > 0 {
-		runAgentLog().Debug(fmt.Sprintf("Pre-call sanitizer: added %d stub tool result(s) for positionally unanswered tool call(s)", stubs))
+		pkgLog().Debug(fmt.Sprintf("Pre-call sanitizer: added %d stub tool result(s) for positionally unanswered tool call(s)", stubs))
 	}
 	if dropped > 0 || stubs > 0 {
 		return paired
@@ -717,7 +713,7 @@ func dedupeToolCallIDs(messages []map[string]any) []map[string]any {
 	if removed == 0 {
 		return messages
 	}
-	runAgentLog().Debug(fmt.Sprintf("Pre-call sanitizer: removed %d duplicate tool_call_id reference(s)", removed))
+	pkgLog().Debug(fmt.Sprintf("Pre-call sanitizer: removed %d duplicate tool_call_id reference(s)", removed))
 	return deduped
 }
 
@@ -754,7 +750,7 @@ func realignToolResultNames(messages []map[string]any) []map[string]any {
 	if len(realigned) == 0 {
 		return messages
 	}
-	runAgentLog().Debug(fmt.Sprintf("Pre-call sanitizer: realigned %d tool result name(s) with their tool_call function name (%s)", len(realigned), strings.Join(realigned, ", ")))
+	pkgLog().Debug(fmt.Sprintf("Pre-call sanitizer: realigned %d tool result name(s) with their tool_call function name (%s)", len(realigned), strings.Join(realigned, ", ")))
 	return aligned
 }
 

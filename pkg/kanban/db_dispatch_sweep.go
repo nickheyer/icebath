@@ -234,7 +234,7 @@ func ReapTerminalWorkers(ctx context.Context, conn state.SQLiteConn, signalFn Si
 	var reaped []string
 	for _, row := range rows {
 		if err := reapTerminalWorkerRow(ctx, conn, row, prefix, signalFn, &reaped); err != nil {
-			log.Debug(fmt.Sprintf("kanban dispatch: terminal worker reap failed for run %s (task %s): %s", cellStr(row.Get("id")), cellStr(row.Get("task_id")), excText(err)))
+			pkgLog().Debug(fmt.Sprintf("kanban dispatch: terminal worker reap failed for run %s (task %s): %s", cellStr(row.Get("id")), cellStr(row.Get("task_id")), excText(err)))
 		}
 	}
 	return reaped, nil
@@ -353,7 +353,7 @@ func ReconcileOrphanedRunning(ctx context.Context, conn state.SQLiteConn) ([]str
 		}
 		pid := row.Get("worker_pid")
 		if truthy(pid) && workerAlive(pid, rowGet(row, "worker_started_at", nil)) {
-			log.Debug(fmt.Sprintf("kanban reconcile: task %s has broken claim bookkeeping but pid %v is alive on this host — deferring", tid, pid))
+			pkgLog().Debug(fmt.Sprintf("kanban reconcile: task %s has broken claim bookkeeping but pid %v is alive on this host — deferring", tid, pid))
 			continue
 		}
 		requeued := false
@@ -403,7 +403,7 @@ func ReconcileOrphanedRunning(ctx context.Context, conn state.SQLiteConn) ([]str
 		if requeued {
 			reconciled = append(reconciled, tid)
 		}
-		log.Info(fmt.Sprintf("kanban reconcile: requeued orphaned running task %s (claim_lock=%s, worker_pid=%s)", tid, pyrepr.Repr(row.Get("claim_lock")), pyrepr.Repr(pid)))
+		pkgLog().Info(fmt.Sprintf("kanban reconcile: requeued orphaned running task %s (claim_lock=%s, worker_pid=%s)", tid, pyrepr.Repr(row.Get("claim_lock")), pyrepr.Repr(pid)))
 	}
 	return reconciled, nil
 }
@@ -449,7 +449,8 @@ func protocolViolationStreak(ctx context.Context, conn state.SQLiteConn, taskID 
 	return streak, nil
 }
 
-var logChromeRE = regexp2.MustCompile(`[─━═╭╮╰╯│┃┌┐└┘]+|☤\s*Hermes`, regexp2.None)
+// Box drawing and the caduceus response label a worker log wraps its replies in
+var logChromeRE = regexp2.MustCompile(`[─━═╭╮╰╯│┃┌┐└┘]+|☤\s*(?i:icebath)`, regexp2.None)
 
 // The CLI exit summary header in the active language
 func exitSummaryMarker(ctx context.Context) string {

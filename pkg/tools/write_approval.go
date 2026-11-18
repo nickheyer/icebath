@@ -177,7 +177,7 @@ func StageWrite(ctx context.Context, env *Env, subsystem string, payload map[str
 	created := float64(time.Now().UnixNano()) / 1e9
 	rec := pendingRecordJSON{ID: pid, Subsystem: subsystem, Action: action, Summary: pyStrip(summary), Origin: origin, CreatedAt: created, Payload: payload}
 	if err := writeApprovalJSONAtomic(WithEnvHome(ctx, env), pendingWritePath(env, subsystem, pid), rec); err != nil {
-		envLog(env).With("logger", "tools.write_approval").Error(fmt.Sprintf("Failed to stage pending %s write: %v", subsystem, err))
+		envLog(env).Error(fmt.Sprintf("Failed to stage pending %s write: %v", subsystem, err))
 	}
 	return map[string]any{"id": pid, "subsystem": subsystem, "action": action, "summary": rec.Summary, "origin": origin, "created_at": created, "payload": payload}
 }
@@ -228,7 +228,7 @@ func ListPending(env *Env, subsystem string) []map[string]any {
 	for _, p := range pendingWriteFiles(env, subsystem) {
 		record, err := readPendingRecord(p)
 		if err != nil {
-			envLog(env).With("logger", "tools.write_approval").Warn("Skipping unreadable pending record: " + p)
+			envLog(env).Warn("Skipping unreadable pending record: " + p)
 			continue
 		}
 		records = append(records, record)
@@ -266,7 +266,7 @@ func DiscardPending(env *Env, subsystem, pendingID string) bool {
 		return false
 	}
 	if err := os.Remove(p); err != nil {
-		envLog(env).With("logger", "tools.write_approval").Error(fmt.Sprintf("Failed to discard pending %s/%s: %v", subsystem, pendingID, err))
+		envLog(env).Error(fmt.Sprintf("Failed to discard pending %s/%s: %v", subsystem, pendingID, err))
 		return false
 	}
 	return true
@@ -275,6 +275,21 @@ func DiscardPending(env *Env, subsystem, pendingID string) bool {
 // Count of pending record files for notification badges
 func PendingCount(env *Env, subsystem string) int {
 	return len(pendingWriteFiles(env, subsystem))
+}
+
+// Values key carrying the session's memory write origin
+const writeOriginValuesKey = "write_origin"
+
+// Write origin the review and curator forks tag themselves with
+const backgroundReviewOrigin = "background_review"
+
+// True when the session's write origin marks a background review or curator fork
+func isBackgroundReview(env *Env) bool {
+	if env == nil || env.Values == nil {
+		return false
+	}
+	origin, _ := env.Values.Load(writeOriginValuesKey)
+	return origin == backgroundReviewOrigin
 }
 
 // Foreground or background_review as tagged on the session by the review fork
@@ -360,7 +375,7 @@ func promptInlineMemoryApproval(ctx context.Context, env *Env, summary, detail s
 	defer cancel()
 	result, err := env.Ask.Ask(askCtx, []Question{{Header: "Save to memory?", Text: text, Choices: []string{"once", "session", "deny"}}})
 	if err != nil {
-		envLog(env).With("logger", "tools.write_approval").Error(fmt.Sprintf("Inline memory approval prompt failed: %v", err))
+		envLog(env).Error(fmt.Sprintf("Inline memory approval prompt failed: %v", err))
 		return false, false
 	}
 	if result.Outcome == "cancelled" || len(result.Answers) == 0 {
@@ -545,7 +560,7 @@ func SkillPendingDiff(env *Env, record map[string]any, staged map[string]map[str
 
 // Folds one patch op through the same matcher approval runs, base and the error when it would fail
 func foldPatch(base, oldString, newString string, replaceAll bool) (string, string) {
-	folded, matchCount, _, errText := fuzzyFindAndReplace(base, oldString, newString, replaceAll, nil, nil)
+	folded, matchCount, _, errText := FuzzyFindAndReplace(base, oldString, newString, replaceAll, nil)
 	if errText != "" || matchCount == 0 {
 		if errText == "" {
 			errText = "Could not find a match for old_string in the file"

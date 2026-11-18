@@ -63,7 +63,7 @@ func TestSetupFlowRendersEachQuestionAndSendsTheAnswers(t *testing.T) {
 		flowStep([]any{}, map[string]any{"id": 2, "kind": "check", "question": "Tools for CLI", "selected": []any{0},
 			"items":  []any{map[string]any{"title": "Web", "detail": "search", "tools": []any{"web_search"}}, map[string]any{"title": "Vision", "detail": "", "tools": []any{"vision"}}},
 			"tokens": map[string]any{"web_search": 600, "vision": 700}}),
-		flowStep([]any{"  + Vision"}, map[string]any{"id": 3, "kind": "text", "question": "OPENROUTER_API_KEY", "default": "", "secret": true}),
+		flowStep([]any{"  + Vision"}, map[string]any{"id": 3, "kind": "text", "question": "OPENROUTER_API_KEY", "default_text": "", "secret": true}),
 	}}
 	a.events.gw = g
 	drain(a, a.runSetupFlow("tools", "Tools", nil))
@@ -90,7 +90,7 @@ func TestSetupFlowRendersEachQuestionAndSendsTheAnswers(t *testing.T) {
 		t.Fatalf("secret prompt %+v", a.wm.Overlay())
 	}
 	drain(a, secret.onAnswer(nil, nil, []string{"sk-or-1"}))
-	want := []map[string]any{{"index": 0, "question": 1}, {"indices": []any{0, 1}, "question": 2}, {"text": "sk-or-1", "question": 3}}
+	want := []map[string]any{{"index": int64(0), "question": int64(1)}, {"indices": []any{int64(0), int64(1)}, "question": int64(2)}, {"text": "sk-or-1", "question": int64(3)}}
 	if !reflect.DeepEqual(g.answers, want) || g.started["flow"] != "tools" {
 		t.Fatalf("answers %+v started %+v", g.answers, g.started)
 	}
@@ -113,7 +113,7 @@ func TestSetupFlowEscapeCancelsTheOpenQuestion(t *testing.T) {
 	}
 	_, cmd := a.Update(keys.Press("esc"))
 	drain(a, cmd)
-	if !reflect.DeepEqual(g.answers, []map[string]any{{"cancel": true, "question": 4}}) || !strings.Contains(screen(a), "Tools stopped · setup cancelled") {
+	if !reflect.DeepEqual(g.answers, []map[string]any{{"cancel": true, "question": int64(4)}}) || !strings.Contains(screen(a), "Tools stopped · setup cancelled") {
 		t.Fatalf("answers %+v transcript\n%s", g.answers, screen(a))
 	}
 }

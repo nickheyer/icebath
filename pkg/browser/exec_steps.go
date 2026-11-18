@@ -12,7 +12,6 @@ import (
 	"image/jpeg"
 	"image/png"
 	"io"
-	"log/slog"
 	"math"
 	"net/url"
 	"os"
@@ -310,7 +309,7 @@ func (r *helperRun) switchTab(target string, activate bool) (string, error) {
 	r.s.eventMu.Unlock()
 	for _, domain := range []string{"Page.enable", "Network.enable"} {
 		if err := r.call(domain, nil, nil); err != nil {
-			slog.Default().Debug(fmt.Sprintf("browser_exec: %s failed on %s: %s", domain, target, err))
+			pkgLog().Debug(fmt.Sprintf("browser_exec: %s failed on %s: %s", domain, target, err))
 		}
 	}
 	if tabMarkerEnabled() {
@@ -743,7 +742,7 @@ func (r *helperRun) newTab(target string) (any, error) {
 	}
 	if tid != "" && r.activate {
 		if err := r.call("Target.activateTarget", map[string]any{"targetId": tid}, nil); err != nil {
-			slog.Default().Warn(fmt.Sprintf("new_tab: Target.activateTarget failed, tab left in background: %s", err))
+			pkgLog().Warn(fmt.Sprintf("new_tab: Target.activateTarget failed, tab left in background: %s", err))
 		}
 	}
 	return tid, nil

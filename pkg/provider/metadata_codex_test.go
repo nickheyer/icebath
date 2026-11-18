@@ -261,12 +261,12 @@ func TestRemoteProbeIsMemoizedOnDiskAcrossProcesses(t *testing.T) {
 
 func TestEmptyModelNeverFuzzyMatchesEndpointCatalog(t *testing.T) {
 	ctx, ft, _ := metaTest(t)
-	nous := "https://inference-api.nousresearch.com/v1"
-	ft.on("GET", nous+"/models", 200, map[string]any{"data": []any{map[string]any{"id": "voyageai/voyage-code-4", "context_length": 32_000}, map[string]any{"id": "x-ai/grok-4.6", "context_length": 500_000}}})
-	if _, ok := resolveEndpointContextLength(ctx, "", nous, ""); ok {
+	remote := "https://inference.example.com/v1"
+	ft.on("GET", remote+"/models", 200, map[string]any{"data": []any{map[string]any{"id": "voyageai/voyage-code-4", "context_length": 32_000}, map[string]any{"id": "x-ai/grok-4.6", "context_length": 500_000}}})
+	if _, ok := resolveEndpointContextLength(ctx, "", remote, ""); ok {
 		t.Fatal("empty model must not fuzzy match")
 	}
-	if got, ok := resolveEndpointContextLength(ctx, "grok-4.6", nous, ""); !ok || got != 500_000 {
+	if got, ok := resolveEndpointContextLength(ctx, "grok-4.6", remote, ""); !ok || got != 500_000 {
 		t.Fatal("non empty names fuzzy match")
 	}
 	seedServerType("http://localhost:8080/v1", "")
@@ -276,26 +276,3 @@ func TestEmptyModelNeverFuzzyMatchesEndpointCatalog(t *testing.T) {
 	}
 }
 
-func TestOpenRouterFallbackIsNotPersisted(t *testing.T) {
-	ctx, ft, dir := metaTest(t)
-	nous := "https://inference-api.nousresearch.com/v1"
-	ft.on("GET", nous+"/models", 200, map[string]any{"data": []any{}})
-	ft.on("GET", "https://inference-api.nousresearch.com/models", 200, map[string]any{"data": []any{}})
-	seedOpenRouterCatalog(map[string]map[string]any{"qwen/qwen3.6-plus": {"context_length": 1_000_000}})
-	mustEqual(t, GetModelContextLength(ctx, ContextLengthRequest{Model: "qwen3.6-plus", BaseURL: nous, APIKey: "fake", Provider: "nous"}), 1_000_000, "or fallback")
-	if len(readContextCacheFile(t, dir)) != 0 {
-		t.Fatal("OR fallback must not be persisted")
-	}
-}
-
-func TestStaleCacheIsBypassedAndOverwrittenByPortal(t *testing.T) {
-	ctx, ft, dir := metaTest(t)
-	nous := "https://inference-api.nousresearch.com/v1"
-	writeContextCacheFile(t, dir, map[string]any{"qwen3.6-plus@" + nous: 1_000_000, "other-model@https://api.openai.com/v1": 128_000})
-	ft.on("GET", nous+"/models", 200, map[string]any{"data": []any{map[string]any{"id": "qwen3.6-plus", "context_length": 262_144}}})
-	seedOpenRouterCatalog(map[string]map[string]any{})
-	mustEqual(t, GetModelContextLength(ctx, ContextLengthRequest{Model: "qwen3.6-plus", BaseURL: nous, APIKey: "fake", Provider: "nous"}), 262_144, "portal")
-	remaining := readContextCacheFile(t, dir)
-	mustEqual(t, intOrDefault(remaining["qwen3.6-plus@"+nous], 0), 262_144, "overwritten")
-	mustEqual(t, intOrDefault(remaining["other-model@https://api.openai.com/v1"], 0), 128_000, "untouched")
-}

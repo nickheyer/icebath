@@ -8,18 +8,9 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 )
 
-// Agent usage stats with the window plan gauge when the agent tracks one
+// Agent usage stats
 func usageStats(ctx context.Context, a *agent.AIAgent) *pyjson.Object {
-	stats := agent.UsageStats(ctx, a)
-	if a == nil {
-		return stats
-	}
-	if capture := a.CreditsCapture(); capture != nil {
-		if gauge := gateway.PlanGauge(capture.Credits()); gauge != nil {
-			stats.Set("plan_gauge", gauge)
-		}
-	}
-	return stats
+	return agent.UsageStats(ctx, a)
 }
 
 // Publishes one session usage frame on the viewer stream and records it on the execution result at turn end

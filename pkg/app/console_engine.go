@@ -260,8 +260,6 @@ var consoleBlockedPairs = map[[2]string]string{
 	{"profile", "alias"}:     "`profile alias` creates shell wrappers and is not available in Icebath Console.",
 	{"skills", "config"}:     "`skills config` is interactive and is not available in Icebath Console.",
 	{"skills", "publish"}:    "`skills publish` is not available in Icebath Console.",
-	{"portal", "login"}:      "`portal login` is interactive and is not available in Icebath Console.",
-	{"portal", "open"}:       "`portal open` opens a browser and is not available in Icebath Console.",
 	{"kanban", "tail"}:       "`kanban tail` streams output and is not available in Icebath Console.",
 	{"kanban", "watch"}:      "`kanban watch` streams output and is not available in Icebath Console.",
 	{"kanban", "daemon"}:     "`kanban daemon` starts a service and is not available in Icebath Console.",
@@ -412,7 +410,6 @@ var consoleCLIFamilies = []consoleFamily{
 	{"profile", "extracted", "list, show, info, *create, *use, *describe, *rename, *delete, *export, *import, " +
 		"*install, *update"},
 	{"cron", "extracted", "*create, *edit, *remove, *tick"},
-	{"portal", "adder", "info, tools"},
 	{"project", "builder", "list, show, *create, *add-folder, *remove-folder, *rename, *set-primary, *use, " +
 		"*archive, *restore, *bind-board"},
 	{"kanban", "builder", "*init, boards list, *boards create, *boards rm, *boards switch, boards current, " +

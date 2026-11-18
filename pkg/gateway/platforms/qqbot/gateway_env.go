@@ -2,7 +2,6 @@ package qqbot
 
 import (
 	"context"
-	"log/slog"
 
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
@@ -15,7 +14,7 @@ func qqHome(ctx context.Context, cfg *gateway.GatewayConfig, pc *gateway.Platfor
 	if home == "" {
 		if home = pystr.Strip(gateway.Getenv(ctx, "QQ_HOME_CHANNEL", "")); home != "" {
 			nameEnv = "QQ_HOME_CHANNEL_NAME"
-			slog.Warn("QQ_HOME_CHANNEL is deprecated; rename to QQBOT_HOME_CHANNEL in your .env for consistency with the platform key.")
+			pkgLog().Warn("QQ_HOME_CHANNEL is deprecated; rename to QQBOT_HOME_CHANNEL in your .env for consistency with the platform key.")
 		}
 	}
 	if home == "" {

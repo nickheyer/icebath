@@ -107,18 +107,6 @@ func TestModelGuardCostGPT55ProWarnsWithoutPricing(t *testing.T) {
 	}
 }
 
-func TestModelGuardCostGPT55ProWarnsForNousPortalPricing(t *testing.T) {
-	ctx := guardTestHome(t)
-	guardModelInfoFn = noModelInfo
-	fetchEndpointModelMetadataFn = func(ctx context.Context, baseURL, apiKey string, forceRefresh bool) map[string]map[string]any {
-		return map[string]map[string]any{"openai/gpt-5.5-pro": {"pricing": map[string]any{"prompt": "0.000025", "completion": "0.000125"}}}
-	}
-	w := ExpensiveModelWarningFor(ctx, "openai/gpt-5.5-pro", "nous", "", "", nil)
-	if w == nil || !ratIs(w.InputCostPerMillion, "25.000000") || !ratIs(w.OutputCostPerMillion, "125.000000") || !strings.Contains(w.Message, "did you mean to select openai/gpt-5.5?") {
-		t.Fatalf("warning %+v", w)
-	}
-}
-
 func TestModelGuardDataPolicy(t *testing.T) {
 	w := DataTrainingWarningFor("muse-spark-1.2-contributor", "meta-ai")
 	if w == nil || w.Model != "muse-spark-1.2-contributor" || w.Message == "" {

@@ -704,17 +704,3 @@ func TestLadderReasonAndStopHintExports(t *testing.T) {
 		}
 	}
 }
-
-func TestWelcomeTierGuidanceAndSurfaceKindReadTheParsedRefusal(t *testing.T) {
-	refused := &Classified{Context: map[string]any{"welcome_refusal": WelcomeRefusal{Reason: "admission_closed"}}}
-	if WelcomeSurfaceKind(refused) != "at_capacity" || WelcomeTierGuidance(refused, "m", true, true) != welcomeTierGuidance(refused, "m", true, true) {
-		t.Fatal("refusal kind or copy misread")
-	}
-	route := &Classified{Context: map[string]any{"welcome_route": "tier_disabled"}}
-	if WelcomeSurfaceKind(route) != "disabled" || WelcomeTierGuidance(route, "m", false, true) == "" {
-		t.Fatal("route refusal misread")
-	}
-	if plain := (&Classified{}); WelcomeSurfaceKind(plain) != "" || WelcomeTierGuidance(plain, "m", true, true) != "" {
-		t.Fatal("plain error read as a free tier refusal")
-	}
-}

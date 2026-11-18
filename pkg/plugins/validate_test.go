@@ -81,7 +81,7 @@ func vtFailed(r *ValidationReport) map[string]string {
 func vtPortable(t *testing.T, root string, servers, declarations map[string]any) string {
 	t.Helper()
 	manifest, _ := json.Marshal(map[string]any{"$schema": PluginSchemaV1, "name": "example-plugin",
-		"extensions": map[string]any{portableExtension: map[string]any{"servers": declarations}}})
+		"extensions": map[string]any{PortableExtension: map[string]any{"servers": declarations}}})
 	mcp, _ := json.Marshal(map[string]any{"$schema": MCPSchemaV1, "mcpServers": servers})
 	vtWrite(t, filepath.Join(root, "plugin.json"), string(manifest))
 	vtWrite(t, filepath.Join(root, "mcp.json"), string(mcp))

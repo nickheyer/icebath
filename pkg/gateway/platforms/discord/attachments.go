@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"log/slog"
 	"math"
 	"net/http"
 	"os"
@@ -100,7 +99,7 @@ func (a *DiscordAdapter) readAttachmentBytes(ctx context.Context, att *discordgo
 		if name == "" {
 			name = att.URL
 		}
-		slog.Warn(fmt.Sprintf("[Discord] Authenticated attachment read failed for %s: %s", name, err))
+		pkgLog().Warn(fmt.Sprintf("[Discord] Authenticated attachment read failed for %s: %s", name, err))
 		return nil, nil
 	}
 	if err := mediacache.ValidateInboundMediaSize(ctx, h, int64(len(raw)), mediaType, nil); err != nil {
@@ -120,7 +119,7 @@ func (a *DiscordAdapter) cacheDiscordImage(ctx context.Context, att *discordgo.M
 		if err == nil {
 			return path, nil
 		}
-		slog.Debug(fmt.Sprintf("[Discord] cache_image_from_bytes rejected att.read() data; falling back to URL: %s", err))
+		pkgLog().Debug(fmt.Sprintf("[Discord] cache_image_from_bytes rejected att.read() data; falling back to URL: %s", err))
 	}
 	return cacheImageFromURL(ctx, att.URL, ext, 2)
 }
@@ -136,7 +135,7 @@ func (a *DiscordAdapter) cacheDiscordAudio(ctx context.Context, att *discordgo.M
 		if err == nil {
 			return path, nil
 		}
-		slog.Debug(fmt.Sprintf("[Discord] cache_audio_from_bytes failed; falling back to URL: %s", err))
+		pkgLog().Debug(fmt.Sprintf("[Discord] cache_audio_from_bytes failed; falling back to URL: %s", err))
 	}
 	return cacheAudioFromURL(ctx, att.URL, ext, 2)
 }

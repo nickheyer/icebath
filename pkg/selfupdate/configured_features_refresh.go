@@ -28,7 +28,7 @@ var featureRefreshSteps = struct {
 	leftCoreMigrate: provider.MigrateAllLeftCoreHomes,
 }
 
-// Installs missing configured feature dependencies then migrates memory providers and plugins that left core, only the install failing
+// Installs missing configured feature dependencies and memory provider plugins then migrates plugins that left core, only the install failing
 func refreshConfiguredFeatures(ctx context.Context, projectRoot string, out io.Writer) error {
 	var failure error
 	if err := featureRefreshSteps.featureDeps(ctx, projectRoot); err != nil {

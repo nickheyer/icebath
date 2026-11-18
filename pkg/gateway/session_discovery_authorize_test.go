@@ -5,7 +5,7 @@ import (
 	"testing"
 
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/tuigateway"
+	"github.com/nickheyer/icebath/pkg/tuihost"
 )
 
 func TestDiscoveryAuthorizesBeforeScanning(t *testing.T) {
@@ -19,11 +19,11 @@ func TestDiscoveryAuthorizesBeforeScanning(t *testing.T) {
 		t.Fatal("unauthorized request reached discovery")
 		return nil, nil
 	}
-	authority := &SessionAuthority{InstanceID: "owned", ProfileID: t.TempDir(), Events: map[string]tuigateway.Transport{}}
+	authority := &SessionAuthority{InstanceID: "owned", ProfileID: t.TempDir(), Events: map[string]tuihost.Transport{}}
 	ctx := context.Background()
 	for _, identity := range []map[string]any{{}, {"user_id": "reader", "capabilities": []any{}},
 		{"user_id": "reader", "profile_id": "foreign"}, {"user_id": "reader", "instance_id": "stale"}} {
-		connection, err := NewAuthorityConnection(authority, struct{ tuigateway.Transport }{}, identity, false)
+		connection, err := NewAuthorityConnection(authority, struct{ tuihost.Transport }{}, identity, false)
 		if err != nil {
 			t.Fatal(err)
 		}

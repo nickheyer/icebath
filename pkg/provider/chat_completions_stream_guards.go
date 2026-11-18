@@ -3,7 +3,6 @@ package provider
 import (
 	"encoding/json"
 	"fmt"
-	"log/slog"
 	"math"
 	"regexp"
 	"sort"
@@ -911,17 +910,17 @@ func RepairToolCallArguments(rawArgs, toolName string) string {
 	}
 	stripped := pystr.Strip(rawArgs)
 	if stripped == "" {
-		catalogLog.Warn(fmt.Sprintf("Sanitized empty tool_call arguments for %s", toolName))
+		pkgLog().Warn(fmt.Sprintf("Sanitized empty tool_call arguments for %s", toolName))
 		return "{}"
 	}
 	if stripped == "None" {
-		catalogLog.Warn(fmt.Sprintf("Sanitized Python-None tool_call arguments for %s", toolName))
+		pkgLog().Warn(fmt.Sprintf("Sanitized Python-None tool_call arguments for %s", toolName))
 		return "{}"
 	}
 	if parsed, err := pyjson.LoadsLenient(stripped); err == nil {
 		if reserialised, err := pyjson.Dumps(parsed, pyjson.Separators(",", ":")); err == nil {
 			if reserialised != stripped {
-				catalogLog.Warn(fmt.Sprintf("Repaired unescaped control chars in tool_call arguments for %s", toolName))
+				pkgLog().Warn(fmt.Sprintf("Repaired unescaped control chars in tool_call arguments for %s", toolName))
 			}
 			return reserialised
 		}
@@ -939,15 +938,15 @@ func RepairToolCallArguments(rawArgs, toolName string) string {
 		fixed = fixed[:len(fixed)-1]
 	}
 	if jsonLoadsOK(fixed) {
-		slog.Default().With("logger", "agent.message_sanitization").Warn(fmt.Sprintf("Repaired malformed tool_call arguments for %s: %s → %s", toolName, truncate(stripped, 80), truncate(fixed, 80)))
+		pkgLog().Warn(fmt.Sprintf("Repaired malformed tool_call arguments for %s: %s → %s", toolName, truncate(stripped, 80), truncate(fixed, 80)))
 		return fixed
 	}
 	escaped := escapeInvalidCharsInJSONStrings(fixed)
 	if escaped != fixed && jsonLoadsOK(escaped) {
-		catalogLog.Warn(fmt.Sprintf("Repaired control-char-laced tool_call arguments for %s: %s → %s", toolName, truncate(stripped, 80), truncate(escaped, 80)))
+		pkgLog().Warn(fmt.Sprintf("Repaired control-char-laced tool_call arguments for %s: %s → %s", toolName, truncate(stripped, 80), truncate(escaped, 80)))
 		return escaped
 	}
-	slog.Default().With("logger", "agent.message_sanitization").Warn(fmt.Sprintf("Unrepairable tool_call arguments for %s — replaced with empty object (was: %s)", toolName, truncate(stripped, fullArgsLogBound)))
+	pkgLog().Warn(fmt.Sprintf("Unrepairable tool_call arguments for %s — replaced with empty object (was: %s)", toolName, truncate(stripped, fullArgsLogBound)))
 	return "{}"
 }
 

@@ -262,10 +262,11 @@ func TestInstallColdConsumersRecoverAfterUpstreamRemoval(t *testing.T) {
 			body := ieOneFileZip(t, "tool.txt", []byte("pinned and preserved"))
 			digest := hexSHA256(body)
 			server := newRangeServer(t)
-			previousPrefix := MirrorPublicPrefix
-			MirrorPublicPrefix = server.url("/archive/")
-			defer func() { MirrorPublicPrefix = previousPrefix }()
-			server.set("/archive/"+digest, body)
+			previousRoot, previousCopied := releaseRoot, releaseCopied
+			releaseRoot = server.url("/releases/")
+			releaseCopied = func(string) bool { return true }
+			defer func() { releaseRoot, releaseCopied = previousRoot, previousCopied }()
+			server.set("/releases/latest/download/termux-"+digest+".zip", body)
 			p := &BasePackage{Name: "mirror-tool"}
 			ieSwapRegistry(t, p)
 			store := NewStore(filepath.Join(tmp, "store"))
@@ -298,7 +299,7 @@ func TestInstallColdConsumersRecoverAfterUpstreamRemoval(t *testing.T) {
 			}
 			used := false
 			for _, seen := range server.seen() {
-				used = used || seen.Path == "/archive/"+digest
+				used = used || seen.Path == "/releases/latest/download/termux-"+digest+".zip"
 			}
 			if !used {
 				t.Fatal("the mirror was never asked")

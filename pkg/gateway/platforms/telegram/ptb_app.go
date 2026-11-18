@@ -3,7 +3,6 @@ package telegram
 import (
 	"context"
 	"io"
-	"log/slog"
 	"net/http"
 	"os"
 	"strings"
@@ -35,7 +34,7 @@ func newPTBApp(token, serverURL string, general, polling *ptbRequest, deliver fu
 	sdk, err := bot.New(token, bot.WithServerURL(serverURL), bot.WithHTTPClient(0, client),
 		bot.WithSkipGetMe(), bot.WithNotAsyncHandlers(),
 		bot.WithDefaultHandler(func(ctx context.Context, _ *bot.Bot, update *models.Update) { deliver(ctx, update) }),
-		bot.WithErrorsHandler(func(err error) { slog.Debug("Telegram SDK error", "error", ptbError(err)) }))
+		bot.WithErrorsHandler(func(err error) { pkgLog().Debug("Telegram SDK error", "error", ptbError(err)) }))
 	if err != nil {
 		return nil, err
 	}
@@ -75,7 +74,7 @@ func (a *ptbApp) Shutdown(ctx context.Context) error {
 	a.mu.Lock()
 	if !a.initialized {
 		a.mu.Unlock()
-		slog.Debug("This Application is already shut down. Returning.")
+		pkgLog().Debug("This Application is already shut down. Returning.")
 		return nil
 	}
 	a.initialized = false

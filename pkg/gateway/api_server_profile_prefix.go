@@ -3,7 +3,6 @@ package gateway
 import (
 	"context"
 	"fmt"
-	"log/slog"
 	"net/http"
 
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
@@ -17,11 +16,6 @@ const (
 	// Body of the 404 for a prefix naming no profile here
 	apiUnknownProfileError = "Unknown or unconfigured profile"
 )
-
-// Logger of the api_server profile prefix module
-func apiProfilePrefixLog() *slog.Logger {
-	return slog.Default().With("logger", "gateway.platforms.api_server_profile_prefix")
-}
 
 // Whether a profile prefix names the profile this gateway serves, any failure reading as no
 func apiPrefixNamesServedProfile(ctx context.Context, profile string) (served bool) {
@@ -37,7 +31,7 @@ func apiPrefixNamesServedProfile(ctx context.Context, profile string) (served bo
 func apiHandleIsFree() (free bool) {
 	defer func() {
 		if rec := recover(); rec != nil {
-			apiProfilePrefixLog().Warn(fmt.Sprintf("Cannot check for a '%s' profile", apiDefaultProfileHandle), "error", rec)
+			pkgLog().Warn(fmt.Sprintf("Cannot check for a '%s' profile", apiDefaultProfileHandle), "error", rec)
 			free = false
 		}
 	}()
@@ -90,7 +84,7 @@ func APIResolveRequestProfile(ctx context.Context, runner any, request *WebReque
 	}
 	entries, err := profiles.ProfilesToServe(ctx, true, false, false)
 	if err != nil {
-		apiProfilePrefixLog().Warn(fmt.Sprintf("Cannot list served profiles for /p/%s/", profile), "error", err)
+		pkgLog().Warn(fmt.Sprintf("Cannot list served profiles for /p/%s/", profile), "error", err)
 		return nil, true, nil
 	}
 	served := map[string]bool{}

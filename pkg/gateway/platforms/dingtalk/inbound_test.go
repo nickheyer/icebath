@@ -82,10 +82,10 @@ func TestExtractTextRaisesOnNonStringPayloads(t *testing.T) {
 		m    *ChatbotMessage
 		want string
 	}{
-		{&ChatbotMessage{Text: map[string]any{"content": int64(5)}}, "AttributeError: 'int' object has no attribute 'strip'"},
-		{&ChatbotMessage{RichText: []any{map[string]any{"text": int64(7)}}}, "TypeError: sequence item 0: expected str instance, int found"},
+		{&ChatbotMessage{Text: map[string]any{"content": int64(5)}}, "expected text, got a number"},
+		{&ChatbotMessage{RichText: []any{map[string]any{"text": int64(7)}}}, "item 0 is a number, expected text"},
 		{&ChatbotMessage{MessageType: "card", Extensions: map[string]any{"card": map[string]any{"content": map[string]any{"url": true}}}},
-			"TypeError: sequence item 0: expected str instance, bool found"},
+			"item 0 is true or false, expected text"},
 	}
 	for _, c := range cases {
 		if _, err := ExtractText(c.m); err == nil || err.Error() != c.want {
@@ -150,11 +150,11 @@ func TestExtractMediaClassifiesEveryPayloadKind(t *testing.T) {
 		}
 	}
 	unhashable := &ChatbotMessage{RichText: []any{map[string]any{"type": map[string]any{}, "downloadCode": "x"}}}
-	if _, _, _, err := ExtractMedia(unhashable); err == nil || err.Error() != "TypeError: unhashable type: 'dict'" {
+	if _, _, _, err := ExtractMedia(unhashable); err == nil || err.Error() != "expected a single value, got a mapping" {
 		t.Fatalf("unhashable = %v", err)
 	}
 	badName := &ChatbotMessage{MessageType: "file", Extensions: map[string]any{"content": map[string]any{"downloadCode": "x", "fileName": int64(9)}}}
-	if _, _, _, err := ExtractMedia(badName); err == nil || err.Error() != "TypeError: argument of type 'int' is not iterable" {
+	if _, _, _, err := ExtractMedia(badName); err == nil || err.Error() != "a DingTalk file name is a number, expected text" {
 		t.Fatalf("int file name = %v", err)
 	}
 }

@@ -7,7 +7,7 @@ import (
 	"testing"
 
 	"github.com/nickheyer/icebath/pkg/internal/fakellm"
-	"github.com/nickheyer/icebath/pkg/tuigateway"
+	"github.com/nickheyer/icebath/pkg/tuihost"
 )
 
 func TestDeltasAndSealsCarryTurnSegmentAndUTF16Offset(t *testing.T) {
@@ -54,7 +54,7 @@ func TestDeltasAndSealsCarryTurnSegmentAndUTF16Offset(t *testing.T) {
 	if len(first) != 1 || len(second) != 1 || first[nil] || second[nil] || reflect.DeepEqual(first, second) {
 		t.Fatalf("turn ids %v", turnIDs)
 	}
-	if _, present := hz.session.Lookup(tuigateway.SessionSegmentsKey); present {
+	if _, present := hz.session.Lookup(tuihost.SessionSegmentsKey); present {
 		t.Fatal("a finished turn left its cursor behind")
 	}
 }

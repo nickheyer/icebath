@@ -67,7 +67,7 @@ var proseKeepsFullSeverityIDs = map[string]bool{
 	"context_exfil": true, "send_to_url": true, "md_image_exfil": true, "md_link_exfil": true, "ssh_backdoor": true,
 	"curl_pipe_shell": true, "wget_pipe_shell": true, "curl_pipe_python": true,
 	"agent_config_mod": true, "agent_config_mod_shell": true, "agent_config_contract": true, "agent_config_ref": true,
-	"hermes_config_mod": true, "hermes_config_mod_shell": true, "hermes_config_ref": true,
+	"icebath_config_mod": true, "icebath_config_mod_shell": true, "icebath_config_ref": true,
 	"other_agent_config_mod": true, "other_agent_config_mod_shell": true, "other_agent_config_ref": true,
 }
 
@@ -133,7 +133,7 @@ var pipeToShellIDs = map[string]bool{"curl_pipe_shell": true, "wget_pipe_shell":
 var urlInLine = r2(`https?://([^\s/"'`+"`"+`)]+)([^\s"'`+"`"+`)]*)`, regexp2.None)
 
 var trustedInstallerHosts = map[string]bool{
-	"hermes-agent.nousresearch.com": true, "ollama.com": true, "bun.sh": true,
+	"icebath.app": true, "ollama.com": true, "bun.sh": true,
 	"get.docker.com": true, "sh.rustup.rs": true, "deno.land": true, "astral.sh": true, "app.factory.ai": true,
 }
 
@@ -164,7 +164,7 @@ func IsTrustedInstallerPipe(f skills.Finding, line string) bool {
 
 var catalogStepsDownIDs = map[string]bool{
 	"agent_config_mod": true, "agent_config_mod_shell": true, "agent_config_contract": true, "agent_config_ref": true,
-	"hermes_config_mod": true, "hermes_config_mod_shell": true, "hermes_config_ref": true,
+	"icebath_config_mod": true, "icebath_config_mod_shell": true, "icebath_config_ref": true,
 	"other_agent_config_mod": true, "other_agent_config_mod_shell": true, "other_agent_config_ref": true,
 }
 
@@ -189,7 +189,7 @@ func CatalogCap(f skills.Finding) (string, bool) {
 	return ProseCap(f)
 }
 
-const uninstallHome = `(?:\$HOME|\$\{HOME\}|~)/\.(?:icebath|hermes)`
+const uninstallHome = `(?:\$HOME|\$\{HOME\}|~)/\.icebath`
 
 func uninstallOperand(group string) string {
 	return `(?<` + group + `>["']?)` + uninstallHome + `(?:/[A-Za-z0-9][A-Za-z0-9._-]*)+/?\k<` + group + `>`
@@ -492,7 +492,7 @@ func IsQuotedInjectionPhrase(f skills.Finding, line string) bool {
 
 var traversalRun = r2(`(?:\.\./)+\.\.`, regexp2.None)
 
-var sensitiveAfterTraversal = r2(`^(?:/|\\)*(?:etc\b|passwd\b|shadow\b|\.ssh\b|\.aws\b|\.env\b|\.icebath\b|\.hermes\b|\.gnupg\b|\.kube\b`+
+var sensitiveAfterTraversal = r2(`^(?:/|\\)*(?:etc\b|passwd\b|shadow\b|\.ssh\b|\.aws\b|\.env\b|\.icebath\b|\.gnupg\b|\.kube\b`+
 	`|\.docker\b|\.netrc\b|\.npmrc\b|\.pypirc\b|\.config\b|proc\b|root\b|home\b|var\b|usr\b|sys\b)`, regexp2.IgnoreCase)
 
 var leadingDotSegments = r2(`^(?:/?\.\.)*/?`, regexp2.None)
@@ -545,7 +545,7 @@ func IsBenignLazyOSImport(f skills.Finding, line string) bool {
 	return true
 }
 
-var disclosedConfigProseIDs = map[string]bool{"hermes_config_mod": true}
+var disclosedConfigProseIDs = map[string]bool{"icebath_config_mod": true}
 
 var agentDocNames = map[string]bool{"after-install.md": true}
 

@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
-	"log/slog"
 	"os"
 	"sort"
 	"strings"
@@ -203,7 +202,7 @@ func (o *ProfileOwnership) reserveOne(ctx context.Context, h, purpose string) er
 	for _, k := range base.Keys {
 		record.Set(k, recGet(base, k))
 	}
-	record.Set("hermes_home", h)
+	record.Set(home.RecordKey, h)
 	if purpose != "" {
 		record.Set("purpose", purpose)
 	}
@@ -434,7 +433,7 @@ func ReserveWaitingOutTransientHolders(ctx context.Context, ownership *ProfileOw
 				continue
 			}
 			if !logged {
-				slog.Info(fmt.Sprintf(browseReconcileLabel, holders[0], wait.Seconds()))
+				pkgLog().Info(fmt.Sprintf(browseReconcileLabel, holders[0], wait.Seconds()))
 				logged = true
 			}
 			pause(transientHolderPoll)

@@ -118,11 +118,11 @@ func (t *TurnRunner) attachSessionTitleCallback(ctx context.Context, a *agent.AI
 	tc := t.ctx
 	defer func() {
 		if rec := recover(); rec != nil {
-			runLog().Debug("Failed to attach session title callback", "error", rec)
+			pkgLog().Debug("Failed to attach session title callback", "error", rec)
 		}
 	}()
 	a.SetTitleFailureCallback(func(task string, err error) {
-		runLog().Debug("Gateway auto-title failure suppressed (not user-visible): " + task + ": " + pyrepr.Str(err))
+		pkgLog().Debug("Gateway auto-title failure suppressed (not user-visible): " + task + ": " + pyrepr.Str(err))
 	})
 	sessionID := a.SessionID()
 	if localViewerTurn(t) {
@@ -136,7 +136,7 @@ func (t *TurnRunner) attachSessionTitleCallback(ctx context.Context, a *agent.AI
 			}
 			live, ok := authority.Live(canonicalID)
 			if !ok || live == nil {
-				panic(&pyRuntimeError{"KeyError: " + pyrepr.Repr(canonicalID)})
+				panic(&pyRuntimeError{"no live session " + canonicalID})
 			}
 			live.EventStream.Publish(canonicalID, info, "session.info", nil)
 		})

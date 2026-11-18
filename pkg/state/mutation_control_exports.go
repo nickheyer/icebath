@@ -6,7 +6,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 )
 
-// Owner identity of a session row, None for a legacy Nous account label
+// Owner identity of a session row, None for a retired hosted account label
 func OwnerUser(row *pyjson.Object) (any, error) { return ownerUser(row) }
 
 // Normalized import sessions and the problems that refuse them

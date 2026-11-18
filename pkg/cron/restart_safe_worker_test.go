@@ -129,11 +129,11 @@ func TestLaunchExternalWorkerPinExtendsTheSanitizedEnvNotOsEnviron(t *testing.T)
 	t.Cleanup(func() { installedPurelib = prevPurelib })
 	installedPurelib = func() (string, bool) { return repoRoot, true }
 	untouched := map[string]string{"PYTHONPATH": filepath.Join(tmp, "kept-by-sanitizer")}
-	got, err := pinHermesTreeOnPythonpath(s, ctx, map[string]string{"PYTHONPATH": untouched["PYTHONPATH"]}, repoRoot)
+	got, err := pinIcebathTreeOnPythonpath(s, ctx, map[string]string{"PYTHONPATH": untouched["PYTHONPATH"]}, repoRoot)
 	if err != nil || !reflect.DeepEqual(got, untouched) {
 		t.Fatalf("purelib tree pinned %v err %v", got, err)
 	}
-	empty, err := pinHermesTreeOnPythonpath(s, ctx, map[string]string{}, repoRoot)
+	empty, err := pinIcebathTreeOnPythonpath(s, ctx, map[string]string{}, repoRoot)
 	if _, present := empty["PYTHONPATH"]; err != nil || present {
 		t.Fatalf("purelib tree pinned %v err %v", empty, err)
 	}
@@ -153,7 +153,7 @@ func TestPinRestoresTheCommittedGenerationSitePackages(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	env, err := pinHermesTreeOnPythonpath(s, ctx, map[string]string{"PYTHONPATH": filepath.Join(tmp, "kept")}, repoRoot)
+	env, err := pinIcebathTreeOnPythonpath(s, ctx, map[string]string{"PYTHONPATH": filepath.Join(tmp, "kept")}, repoRoot)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -163,7 +163,7 @@ func TestPinRestoresTheCommittedGenerationSitePackages(t *testing.T) {
 	if err := os.Remove(pm.EnvironmentRuntimeFactsPath(ctx, repoRoot)); err != nil {
 		t.Fatal(err)
 	}
-	env, err = pinHermesTreeOnPythonpath(s, ctx, map[string]string{}, repoRoot)
+	env, err = pinIcebathTreeOnPythonpath(s, ctx, map[string]string{}, repoRoot)
 	if err != nil || !reflect.DeepEqual(env, map[string]string{"PYTHONPATH": repoRoot}) {
 		t.Fatalf("tree only pin %v err %v", env, err)
 	}

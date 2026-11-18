@@ -3,7 +3,6 @@ package provider
 import (
 	"context"
 	"fmt"
-	"log/slog"
 	"strings"
 
 	"github.com/nickheyer/icebath/pkg/config"
@@ -149,7 +148,7 @@ func copilotExplicitlyConfigured(ctx context.Context) bool {
 	for _, check := range checks {
 		ok, err := check.fn()
 		if err != nil {
-			slog.Default().Debug(fmt.Sprintf("copilot explicit-config check %s failed: %v", check.name, err))
+			pkgLog().Debug(fmt.Sprintf("copilot explicit-config check %s failed: %v", check.name, err))
 			continue
 		}
 		if ok {

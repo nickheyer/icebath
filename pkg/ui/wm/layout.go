@@ -375,7 +375,13 @@ func (w *Workspace) entries() []*entry {
 
 func (w *Workspace) find(key string) *entry {
 	for _, e := range w.entries() {
-		if !e.closing && e.key() == key {
+		if e.closing {
+			continue
+		}
+		if e.key() == key {
+			return e
+		}
+		if g, grouped := e.card.(*Tabs); grouped && g.held(key) != nil {
 			return e
 		}
 	}

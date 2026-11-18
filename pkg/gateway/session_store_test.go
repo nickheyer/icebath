@@ -172,8 +172,8 @@ func pinnedOverrideKey(ctx context.Context, t *testing.T, store *SessionStore) s
 		t.Fatal(err)
 	}
 	override := pyjson.NewObject()
-	override.Set("model", "nous/hermes-4")
-	override.Set("provider", "nous")
+	override.Set("model", "openrouter/anthropic/claude-sonnet-4")
+	override.Set("provider", "openrouter")
 	if err := store.SetModelOverride(ctx, entry.SessionKey, override); err != nil {
 		t.Fatal(err)
 	}

@@ -9,9 +9,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"github.com/nickheyer/icebath/pkg/home"
 	"io"
-	"log/slog"
 	"net/http"
 	"net/url"
 	"os"
@@ -23,6 +21,8 @@ import (
 	"sync"
 	"time"
 	"unicode/utf8"
+
+	"github.com/nickheyer/icebath/pkg/home"
 
 	"github.com/google/uuid"
 	"github.com/nickheyer/icebath/pkg/internal/msalruntime"
@@ -390,7 +390,7 @@ func (c *entraBrokerBrowserCredential) GetToken(ctx context.Context, scopes ...s
 	}
 	var required *entraAuthRequiredError
 	if !errors.As(err, &required) {
-		slog.Default().Warn(fmt.Sprintf("%s.get_token failed: %s", c.Name(), err))
+		pkgLog().Warn(fmt.Sprintf("%s.get_token failed: %s", c.Name(), err))
 		return EntraAccessToken{}, err
 	}
 	now := entraNow().Unix()
@@ -412,10 +412,10 @@ func (c *entraBrokerBrowserCredential) GetToken(ctx context.Context, scopes ...s
 		}
 	}
 	if err != nil {
-		slog.Default().Warn(fmt.Sprintf("%s.get_token failed: %s", c.Name(), err))
+		pkgLog().Warn(fmt.Sprintf("%s.get_token failed: %s", c.Name(), err))
 		return EntraAccessToken{}, err
 	}
-	slog.Default().Info(fmt.Sprintf("%s.get_token succeeded", c.Name()))
+	pkgLog().Info(fmt.Sprintf("%s.get_token succeeded", c.Name()))
 	expiresIn, _ := entraInt(result["expires_in"])
 	out := EntraAccessToken{Token: fmt.Sprint(result["access_token"]), ExpiresOn: now + expiresIn}
 	if on, ok := entraInt(result["refresh_on"]); ok {
@@ -455,7 +455,7 @@ func (c *entraBrokerBrowserCredential) acquireSilent(ctx context.Context, scopes
 				if on, ok := entraInt(result["refresh_on"]); ok {
 					out.RefreshOn = on
 				}
-				slog.Default().Info(fmt.Sprintf("%s.get_token succeeded", c.Name()))
+				pkgLog().Info(fmt.Sprintf("%s.get_token succeeded", c.Name()))
 				return out, nil
 			}
 		}
@@ -644,21 +644,21 @@ func newEntraPublicApp(ctx context.Context, authorityURL, clientID, library stri
 	enableBroker = enableBroker && !isADFS && !isB2C
 	if enableBroker && runtime.GOOS == "darwin" && runtime.GOARCH != "arm64" {
 		enableBroker = false
-		slog.Default().Warn("Broker on macOS is supported only on Apple Silicon (arm64). We will fallback to non-broker.")
+		pkgLog().Warn("Broker on macOS is supported only on Apple Silicon (arm64). We will fallback to non-broker.")
 	}
 	if enableBroker {
 		rt, err := entraLoadMSALRuntime(library)
 		var startup *msalruntime.StartupError
 		switch {
 		case errors.As(err, &startup):
-			slog.Default().Warn("Broker is unavailable on this platform. We will fallback to non-broker.")
+			pkgLog().Warn("Broker is unavailable on this platform. We will fallback to non-broker.")
 		case err != nil:
 			return nil, err
 		default:
 			app.broker = rt
 		}
 	}
-	slog.Default().Debug(fmt.Sprintf("Broker enabled? %s", pyrepr.Repr(app.broker != nil)))
+	pkgLog().Debug(fmt.Sprintf("Broker enabled? %s", pyrepr.Repr(app.broker != nil)))
 	return app, nil
 }
 
@@ -945,7 +945,7 @@ func (app *entraPublicApp) interactiveViaBroker(ctx context.Context, req entraIn
 	authority := "https://" + app.instance + "/" + app.tenant
 	if req.loginHint != "" && req.prompt != "select_account" {
 		if accounts := app.getAccounts(req.loginHint); len(accounts) == 1 {
-			slog.Default().Debug("Calling broker._acquire_token_silently()")
+			pkgLog().Debug("Calling broker._acquire_token_silently()")
 			response, err := app.brokerAcquireTokenSilently(ctx, accounts[0].localAccountID, req.scopes, uuid.NewString())
 			if err != nil {
 				return nil, err
@@ -956,7 +956,7 @@ func (app *entraPublicApp) interactiveViaBroker(ctx context.Context, req entraIn
 		}
 	}
 	if req.prompt == "none" || req.prompt == "" {
-		slog.Default().Debug("Calling broker._signin_silently()")
+		pkgLog().Debug("Calling broker._signin_silently()")
 		response, err := app.brokerSignInSilently(ctx, authority, req)
 		if err != nil {
 			return nil, err
@@ -966,7 +966,7 @@ func (app *entraPublicApp) interactiveViaBroker(ctx context.Context, req entraIn
 		wrong := hasToken && req.loginHint != "" && req.loginHint != anyString(claims["preferred_username"])
 		const wrongAccount = `prompt="none" will not work for login_hint="non-default-user"`
 		if wrong {
-			slog.Default().Debug(wrongAccount)
+			pkgLog().Debug(wrongAccount)
 		}
 		if req.prompt == "none" {
 			if wrong {
@@ -981,7 +981,7 @@ func (app *entraPublicApp) interactiveViaBroker(ctx context.Context, req entraIn
 			return response, nil
 		}
 	}
-	slog.Default().Debug("Falls back to broker._signin_interactively()")
+	pkgLog().Debug("Falls back to broker._signin_interactively()")
 	return app.brokerSignInInteractively(ctx, authority, req)
 }
 
@@ -1049,9 +1049,9 @@ func (app *entraPublicApp) brokerSignInInteractively(ctx context.Context, author
 	hint := req.loginHint
 	if req.prompt != "" && req.prompt == "select_account" && hint != "" {
 		hint = ""
-		slog.Default().Warn("Using both select_account and login_hint is ambiguous. Ignoring login_hint.")
+		pkgLog().Warn("Using both select_account and login_hint is ambiguous. Ignoring login_hint.")
 	} else if req.prompt != "" && req.prompt != "select_account" {
-		slog.Default().Warn(fmt.Sprintf("prompt=%s is not supported by this module", req.prompt))
+		pkgLog().Warn(fmt.Sprintf("prompt=%s is not supported by this module", req.prompt))
 	}
 	var parent msalruntime.WindowHandle
 	if req.parentWindow == nil {
@@ -1098,7 +1098,7 @@ func (app *entraPublicApp) brokerAcquireTokenSilently(ctx context.Context, accou
 		if rerr := entraRedirectURIError(failure, "None"); rerr != nil {
 			return nil, rerr
 		}
-		slog.Default().Debug(fmt.Sprintf("read_account_by_id() error: %s", pyrepr.Repr(entraConvertBrokerError(failure))))
+		pkgLog().Debug(fmt.Sprintf("read_account_by_id() error: %s", pyrepr.Repr(entraConvertBrokerError(failure))))
 		return nil, nil
 	}
 	account, err := read.Account()
@@ -1361,9 +1361,9 @@ func (app *entraPublicApp) interactiveViaBrowser(ctx context.Context, req entraI
 		q.Set("login_hint", req.loginHint)
 	}
 	authURI := app.authorizationEndpoint + "?" + q.Encode()
-	slog.Default().Info("Open a browser on this device to visit: " + authURI)
+	pkgLog().Info("Open a browser on this device to visit: " + authURI)
 	if err := openBrowserURL(authURI); err != nil {
-		slog.Default().Warn(fmt.Sprintf("Found no browser in current environment. If this program is being run inside a container "+
+		pkgLog().Warn(fmt.Sprintf("Found no browser in current environment. If this program is being run inside a container "+
 			"which either (1) has access to host network (i.e. started by `docker run --net=host -it ...`), or (2) published port %d "+
 			"to host network (i.e. started by `docker run -p 127.0.0.1:%d:%d -it ...`), you can use browser on host to visit the "+
 			"following link. Otherwise, this auth attempt would either timeout (current timeout setting is %d) or be aborted by "+

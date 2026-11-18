@@ -30,12 +30,6 @@ func (s *tuiStore) respondToServerRequest(id string, result map[string]any) bool
 	return true
 }
 
-// Whether a request is still open under that id
-func (s *tuiStore) hasOpenServerRequest(id string) bool {
-	_, open := s.serverRequests[id]
-	return open
-}
-
 // Status line and bell of a prompt that just opened
 type promptSink interface {
 	setStatus(status string)
@@ -128,7 +122,7 @@ func (s *tuiStore) handleServerRequest(r *serverRequest, sink promptSink) bool {
 		}
 		s.overlay.Approval = &approvalReq{AllowPermanent: p["allow_permanent"] != false, Choices: paramStrList(p["choices"]), Command: paramStr(p["command"]), Description: description, RequestID: id, SmartDenied: p["smart_denied"] == true}
 		open(tr("session.status.approvalNeeded"))
-	case "sudo":
+	case "sudo", "display.install.sudo":
 		s.overlay.Sudo = &sudoReq{RequestID: id}
 		open(tr("session.status.sudoPasswordNeeded"))
 	case "secret":

@@ -390,15 +390,6 @@ var fuzzyStrategies = []struct {
 	{"context_aware", strategyContextAware},
 }
 
-// Names of the fuzzy matcher strategies in chain order, the file edit metric's strategy vocabulary
-func FuzzyStrategyNames() []string {
-	out := make([]string, 0, len(fuzzyStrategies))
-	for _, st := range fuzzyStrategies {
-		out = append(out, st.name)
-	}
-	return out
-}
-
 // Strategies whose matches only approximately resemble old_string
 var similarityStrategies = setOf("block_anchor", "context_aware")
 
@@ -464,7 +455,7 @@ func formatMatchLocations(content string, matches []matchSpan, limit int) string
 }
 
 // Finds and replaces through the strategy chain, returning new content, count, strategy and error
-func fuzzyFindAndReplace(content, oldString, newString string, replaceAll bool, correctionNotes *[]string, probe *editProbe) (string, int, string, string) {
+func FuzzyFindAndReplace(content, oldString, newString string, replaceAll bool, correctionNotes *[]string) (string, int, string, string) {
 	if oldString == "" {
 		return content, 0, "", "old_string is empty — nothing to match. Set old_string to the exact " +
 			"existing text the replacement should replace (read the file first if " +
@@ -489,13 +480,11 @@ func fuzzyFindAndReplace(content, oldString, newString string, replaceAll bool, 
 			continue
 		}
 		if len(matches) > 1 && !replaceAll {
-			probe.noteEditMatch("", "ambiguous")
 			return content, 0, "", fmt.Sprintf("Found %d matches for old_string. "+
 				"Provide more context to make it unique, or use replace_all=True. "+
 				"Matches:\n%s", len(matches), formatMatchLocations(content, matches, 5))
 		}
 		if replaceAll && len(matches) > 1 && similarityStrategies[st.name] {
-			probe.noteEditMatch("", "ambiguous")
 			return content, 0, "", fmt.Sprintf("Found %d approximate matches via the "+
 				"'%s' strategy; replace_all only applies to exact "+
 				"matches. Provide the precise text (whitespace included) so an "+
@@ -512,19 +501,12 @@ func fuzzyFindAndReplace(content, oldString, newString string, replaceAll bool, 
 			plan = newUnicodeEditPlan(oldString, effectiveNew)
 		}
 		newContent := applyReplacements(content, matches, effectiveNew, oldString, st.name != "exact", plan)
-		probe.noteEditMatch(st.name, "")
 		if correctionNote != "" && correctionNotes != nil {
 			*correctionNotes = append(*correctionNotes, correctionNote)
 		}
 		return newContent, len(matches), st.name, ""
 	}
-	probe.noteEditMatch("", "no_match")
 	return content, 0, "", "Could not find a match for old_string in the file"
-}
-
-// Fuzzy find and replace shared with the patch tool
-func FuzzyFindAndReplace(content, oldString, newString string, replaceAll bool, correctionNotes *[]string) (string, int, string, string) {
-	return fuzzyFindAndReplace(content, oldString, newString, replaceAll, correctionNotes, nil)
 }
 
 // Error when a literal backslash n in the arguments stands in for a real line break in the file

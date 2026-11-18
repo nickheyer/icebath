@@ -28,7 +28,7 @@ func stHome(t *testing.T) string {
 	savedCfg, savedReq, savedRes, savedLabel, savedEnv := statusLoadConfig, statusResolveRequestedProvider, statusResolveProvider,
 		statusProviderLabel, statusGetEnvValue
 	savedSnap, savedGwCfg, savedEntries, savedList := statusGatewaySnapshot, statusLoadGatewayConfig, statusPluginEntries, statusListProviders
-	savedNous, savedInfo, savedProbe := statusNousAuthStatusLocal, statusNousAccountInfo, statusProbeLMStudio
+	savedProbe := statusProbeLMStudio
 	savedGetters := map[string]func(provider.PoolEnv) map[string]any{}
 	for k, v := range statusOAuthGetters {
 		savedGetters[k] = v
@@ -37,7 +37,7 @@ func stHome(t *testing.T) string {
 		statusLoadConfig, statusResolveRequestedProvider, statusResolveProvider, statusProviderLabel, statusGetEnvValue =
 			savedCfg, savedReq, savedRes, savedLabel, savedEnv
 		statusGatewaySnapshot, statusLoadGatewayConfig, statusPluginEntries, statusListProviders = savedSnap, savedGwCfg, savedEntries, savedList
-		statusNousAuthStatusLocal, statusNousAccountInfo, statusProbeLMStudio = savedNous, savedInfo, savedProbe
+		statusProbeLMStudio = savedProbe
 		statusOAuthGetters = savedGetters
 	})
 	statusOAuthGetters = map[string]func(provider.PoolEnv) map[string]any{}
@@ -66,7 +66,6 @@ func stBaseXAIMocks(t *testing.T) string {
 	t.Helper()
 	h := stHome(t)
 	stPinProvider(map[string]any{"model": "gpt-5.4"}, "openai-codex", "openai-codex", "OpenAI Codex")
-	statusNousAuthStatusLocal = stEmptyStatus
 	for _, k := range []string{"get_codex_auth_status", "get_qwen_auth_status", "get_minimax_oauth_auth_status"} {
 		statusOAuthGetters[k] = stEmptyStatus
 	}
@@ -109,7 +108,6 @@ func TestShowStatusTermuxGatewaySectionSkipsSystemctl(t *testing.T) {
 	t.Setenv("PREFIX", "/data/data/com.termux/files/usr")
 	h := stHome(t)
 	stPinProvider(map[string]any{"model": "gpt-5.4"}, "openai-codex", "openai-codex", "OpenAI Codex")
-	statusNousAuthStatusLocal = stEmptyStatus
 	statusOAuthGetters["get_codex_auth_status"] = stEmptyStatus
 	statusOAuthGetters["get_xai_oauth_auth_status"] = stEmptyStatus
 	out := stShow(t, h, stFull)
@@ -153,10 +151,9 @@ func TestShowStatusXaiOAuthLoggedInShowsAuthStore(t *testing.T) {
 
 func TestShowStatusXaiOAuthImportFailureDoesNotBreakOtherOauthProviders(t *testing.T) {
 	h := stBaseXAIMocks(t)
-	statusNousAuthStatusLocal = func(provider.PoolEnv) map[string]any { return map[string]any{"logged_in": true} }
 	delete(statusOAuthGetters, "get_xai_oauth_auth_status")
 	out := stShow(t, h, stFull)
-	if !strings.Contains(out, "Nous Portal") || !strings.Contains(out, "MiniMax OAuth") {
+	if !strings.Contains(out, "MiniMax OAuth") {
 		t.Fatal(out)
 	}
 }
@@ -288,7 +285,6 @@ func stPatchCommonStatusDeps(t *testing.T, openaiBaseURL string) string {
 		}
 		return "", nil
 	}
-	statusNousAuthStatusLocal = stEmptyStatus
 	statusOAuthGetters["get_codex_auth_status"] = stEmptyStatus
 	return h
 }

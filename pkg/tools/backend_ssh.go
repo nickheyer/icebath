@@ -108,7 +108,7 @@ func NewSSHEnvironment(ctx context.Context, env *Env, o SSHOptions) (*sshEnv, er
 
 func (s *sshEnv) EnvType() string { return "ssh" }
 
-// Python class name of the environment as hermes logs and records it
+// Python class name of the environment as logs and records name it
 func (s *sshEnv) ClassName() string { return "SSHEnvironment" }
 
 var _ interface{ ClassName() string } = (*sshEnv)(nil)

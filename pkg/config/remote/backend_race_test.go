@@ -16,8 +16,8 @@ func holdGets(t *testing.T) (fetched, release chan struct{}) {
 	fetched, release = make(chan struct{}), make(chan struct{})
 	original := request
 	var once sync.Once
-	request = func(ctx context.Context, method, h, profile, etag string, body any, token string) (Response, error) {
-		resp, err := original(ctx, method, h, profile, etag, body, token)
+	request = func(ctx context.Context, method, profile, etag string, body any, token string) (Response, error) {
+		resp, err := original(ctx, method, profile, etag, body, token)
 		if method == "GET" {
 			first := false
 			once.Do(func() { first = true })

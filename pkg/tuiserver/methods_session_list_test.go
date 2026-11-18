@@ -10,7 +10,6 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/state"
-	"github.com/nickheyer/icebath/pkg/tools"
 )
 
 // Launch store of a listing case seeded through the given statements
@@ -194,48 +193,5 @@ func TestSessionMostRecentHandlesDBUnavailable(t *testing.T) {
 	useSharedDB(t, nil)
 	if result := mostRecent(t); result["session_id"] != nil {
 		t.Fatalf("result %v", result)
-	}
-}
-
-// test_tui_gateway_server.py test_verification_status_returns_recorded_evidence
-func TestVerificationStatusReturnsRecordedEvidence(t *testing.T) {
-	t.Setenv("ICEBATH_VERIFY_ON_STOP", "1")
-	root := t.TempDir()
-	t.Setenv("ICEBATH_HOME", root)
-	profileHomeDir := filepath.Join(root, "profiles", "verify")
-	project := filepath.Join(t.TempDir(), "project")
-	for _, dir := range []string{profileHomeDir, filepath.Join(project, ".git")} {
-		if err := os.MkdirAll(dir, 0o755); err != nil {
-			t.Fatal(err)
-		}
-	}
-	if err := os.WriteFile(filepath.Join(project, "package.json"), []byte(`{"scripts": {"test": "vitest"}}`), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(filepath.Join(project, "pnpm-lock.yaml"), nil, 0o644); err != nil {
-		t.Fatal(err)
-	}
-	tools.VerificationEvidenceRecorder(&tools.Env{Home: profileHomeDir}, "pnpm run test", project, "sid", 0, "green", nil)
-	resp := handleRequest(context.Background(), map[string]any{"id": "1", "method": "verification.status",
-		"params": map[string]any{"cwd": project, "session_id": "sid", "profile": "verify"}})
-	verification := resp["result"].(map[string]any)["verification"].(map[string]any)
-	evidence, _ := verification["evidence"].(map[string]any)
-	if verification["status"] != "passed" || evidence["canonical_command"] != "pnpm run test" || evidence["scope"] != "full" {
-		t.Fatalf("verification %v", verification)
-	}
-}
-
-// test_tui_gateway_server.py test_verification_status_outside_workspace_is_not_applicable
-func TestVerificationStatusOutsideWorkspaceIsNotApplicable(t *testing.T) {
-	t.Setenv("ICEBATH_VERIFY_ON_STOP", "1")
-	t.Setenv("ICEBATH_HOME", t.TempDir())
-	cwd := t.TempDir()
-	if facts := tools.ProjectFactsFor(cwd); facts != nil {
-		t.Fatalf("precondition: %s has project facts %v", cwd, facts)
-	}
-	resp := handleRequest(context.Background(), map[string]any{"id": "1", "method": "verification.status",
-		"params": map[string]any{"cwd": cwd, "session_id": "sid"}})
-	if status := resp["result"].(map[string]any)["verification"].(map[string]any)["status"]; status != "not_applicable" {
-		t.Fatalf("status %v", status)
 	}
 }

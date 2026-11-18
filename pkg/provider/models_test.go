@@ -44,16 +44,16 @@ func TestDetectCustomProviderNotOverriddenByStaticCatalog(t *testing.T) {
 	}
 }
 
-func TestDetectStaticBareProviderNameSwitchesToCostSafeDefault(t *testing.T) {
+func TestDetectStaticBareProviderNameSwitchesToTheProviderDefault(t *testing.T) {
 	ctx := modelsTestHome(t)
-	provider, model, ok := DetectStaticProviderForModel(ctx, "nous", "openrouter")
-	if !ok || provider != "nous" || model != GetDefaultModelForProvider(ctx, "nous") || model == "" {
+	provider, model, ok := DetectStaticProviderForModel(ctx, "zai", "openrouter")
+	if !ok || provider != "zai" || model != GetDefaultModelForProvider(ctx, "zai") || model == "" {
 		t.Fatalf("got %q %q %v", provider, model, ok)
 	}
 	if _, _, ok := DetectStaticProviderForModel(ctx, "custom", "openrouter"); ok {
 		t.Fatal("custom has no catalog to switch to")
 	}
-	if _, _, ok := DetectStaticProviderForModel(ctx, "openrouter", "nous"); ok {
+	if _, _, ok := DetectStaticProviderForModel(ctx, "openrouter", "zai"); ok {
 		t.Fatal("openrouter needs an explicit model")
 	}
 	curated := staticCatalogModels("deepseek")
@@ -72,15 +72,15 @@ func TestParseModelInput(t *testing.T) {
 	cases := []struct {
 		raw, current, provider, model string
 	}{
-		{"nous:hermes-4", "openrouter", "nous", "hermes-4"},
+		{"zai:glm-5.2", "openrouter", "zai", "glm-5.2"},
 		{"anthropic/claude-3.5-sonnet:beta", "openrouter", "openrouter", "anthropic/claude-3.5-sonnet:beta"},
-		{"custom:local:qwen", "nous", "custom:local", "qwen"},
-		{"custom:qwen", "nous", "custom", "qwen"},
-		{"custom:other:model", "nous", "custom", "other:model"},
-		{"custom:my-proxy:gpt", "nous", "custom:my-proxy", "gpt"},
+		{"custom:local:qwen", "zai", "custom:local", "qwen"},
+		{"custom:qwen", "zai", "custom", "qwen"},
+		{"custom:other:model", "zai", "custom", "other:model"},
+		{"custom:my-proxy:gpt", "zai", "custom:my-proxy", "gpt"},
 		{"  gpt-5.4  ", "openai", "openai", "gpt-5.4"},
-		{"claude:claude-opus-4", "nous", "anthropic", "claude-opus-4"},
-		{"unknownthing:model", "nous", "nous", "unknownthing:model"},
+		{"claude:claude-opus-4", "zai", "anthropic", "claude-opus-4"},
+		{"unknownthing:model", "zai", "zai", "unknownthing:model"},
 	}
 	for _, c := range cases {
 		provider, model := ParseModelInput(ctx, c.raw, c.current, custom)
@@ -147,8 +147,8 @@ func TestStaticCatalogProvidersKeepLadderOrder(t *testing.T) {
 		}
 		return -1
 	}
-	if idx("nous") < 0 || idx("anthropic") < 0 || idx("nous") > idx("anthropic") || idx("openai") > idx("anthropic") {
-		t.Fatalf("hermes table order expected: %v", order)
+	if idx("openai-codex") < 0 || idx("anthropic") < 0 || idx("openai-codex") > idx("anthropic") || idx("openai") > idx("anthropic") {
+		t.Fatalf("ladder order expected: %v", order)
 	}
 }
 
@@ -256,7 +256,7 @@ func modelsWriteConfig(t *testing.T, ctx context.Context, doc map[string]any) {
 }
 
 func TestCanonicalURLPreservesNativeCatalogButOtherPathsStayRelays(t *testing.T) {
-	for _, provider := range []string{"openai-codex", "nous", "opencode-zen", "openrouter"} {
+	for _, provider := range []string{"openai-codex", "opencode-zen", "openrouter"} {
 		t.Run(provider, func(t *testing.T) {
 			ctx := modelsTestHome(t)
 			profile, ok := ProfileFor(provider)
@@ -987,7 +987,7 @@ func TestSWRRefreshDedupesInflight(t *testing.T) {
 	}
 	spawnSWRRefresh(ctx, "openrouter", refreshFor("openrouter"))
 	spawnSWRRefresh(ctx, "openrouter", refreshFor("openrouter"))
-	spawnSWRRefresh(ctx, "nous", refreshFor("nous"))
+	spawnSWRRefresh(ctx, "deepseek", refreshFor("deepseek"))
 	deadline := time.Now().Add(5 * time.Second)
 	for {
 		mu.Lock()
@@ -1001,7 +1001,7 @@ func TestSWRRefreshDedupesInflight(t *testing.T) {
 	close(block)
 	WaitProviderModelsRefreshes()
 	sort.Strings(started)
-	if !modelsEqual(started, []string{"nous", "openrouter"}) {
+	if !modelsEqual(started, []string{"deepseek", "openrouter"}) {
 		t.Fatalf("one refresh per key: %v", started)
 	}
 }
@@ -1104,12 +1104,12 @@ func TestLiveResultEntryNeverReplacesARealCatalogWithAPlaceholder(t *testing.T) 
 func TestClearProviderModelsCache(t *testing.T) {
 	ctx := modelsTestHome(t)
 	storeCacheEntry(ctx, "openrouter", cacheEntry("fp", []string{"a"}, time.Now()))
-	storeCacheEntry(ctx, "nous", cacheEntry("fp", []string{"b"}, time.Now()))
+	storeCacheEntry(ctx, "deepseek", cacheEntry("fp", []string{"b"}, time.Now()))
 	invalidated := 0
 	registerTestProfile(t, Profile{Name: "acme", InvalidateCatalogCacheHook: func() { invalidated++ }})
 	ClearProviderModelsCache(ctx, "openrouter")
 	cache := loadProviderModelsCache(ctx)
-	if _, ok := cache["openrouter"]; ok || cache["nous"] == nil || invalidated != 1 {
+	if _, ok := cache["openrouter"]; ok || cache["deepseek"] == nil || invalidated != 1 {
 		t.Fatalf("one row dropped: %v", cache)
 	}
 	ClearAllProviderModelsCache(ctx)
@@ -1120,13 +1120,13 @@ func TestClearProviderModelsCache(t *testing.T) {
 
 func TestListAvailableProviders(t *testing.T) {
 	ctx := modelsTestHome(t)
-	providerAuthStatusFn = func(_ context.Context, provider string) (bool, bool) { return provider == "nous", false }
+	providerAuthStatusFn = func(_ context.Context, provider string) (bool, bool) { return provider == "deepseek", false }
 	rows := ListAvailableProviders(ctx)
 	byID := map[string]AvailableProvider{}
 	for _, r := range rows {
 		byID[r.ID] = r
 	}
-	if rows[len(rows)-1].ID != "custom" || !byID["nous"].Authenticated || byID["anthropic"].Authenticated || !containsString(byID["anthropic"].Aliases, "claude") {
+	if rows[len(rows)-1].ID != "custom" || !byID["deepseek"].Authenticated || byID["anthropic"].Authenticated || !containsString(byID["anthropic"].Aliases, "claude") {
 		t.Fatalf("rows: %+v", rows)
 	}
 }

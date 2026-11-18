@@ -25,7 +25,7 @@ type LockHold struct {
 	Holder  string
 }
 
-// Reports a named live holder, the truthy hermes answer
+// Reports whether a named live holder holds the lock
 func (h LockHold) Held() bool { return h.Holder != "" }
 
 // Reports the proven free answer

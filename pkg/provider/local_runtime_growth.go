@@ -3,7 +3,6 @@ package provider
 import (
 	"bytes"
 	"encoding/json"
-	"log/slog"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -251,7 +250,7 @@ func MaybeGrowWindow(modelID, baseURL string, sessionTokens, currentWindow int, 
 		if !GGUFReadSkippable(err) {
 			return 0, false, err
 		}
-		slog.Debug("growth skip: unreadable gguf", "model", modelID, "err", err)
+		pkgLog().Debug("growth skip: unreadable gguf", "model", modelID, "err", err)
 		return 0, false, nil
 	}
 	serverIdle := deps.isIdle(sup, modelID)
@@ -262,7 +261,7 @@ func MaybeGrowWindow(modelID, baseURL string, sessionTokens, currentWindow int, 
 	decision := DecideGrowth(AsLoaded(profile, budget), budget, currentWindow, sessionTokens,
 		measuredDecodeTokS, serverIdle, true, true)
 	if decision.Action != GrowthActionGrow || decision.NextWindow == 0 {
-		slog.Debug("growth", "model", modelID, "action", decision.Action, "reason", decision.Reason)
+		pkgLog().Debug("growth", "model", modelID, "action", decision.Action, "reason", decision.Reason)
 		return 0, false, nil
 	}
 	running := deps.readPresets("")[modelID]
@@ -277,20 +276,20 @@ func MaybeGrowWindow(modelID, baseURL string, sessionTokens, currentWindow int, 
 		return 0, false, err
 	}
 	if plan == nil || plan.Refusal != "" || plan.Window < decision.NextWindow {
-		slog.Debug("growth: the next rung does not fit beside other programs' GPU memory", "model", modelID)
+		pkgLog().Debug("growth: the next rung does not fit beside other programs' GPU memory", "model", modelID)
 		return 0, false, nil
 	}
-	slog.Info("context growth", "model", modelID, "reason", decision.Reason)
+	pkgLog().Info("context growth", "model", modelID, "reason", decision.Reason)
 	if err := SaveWindowOverride(modelID, decision.NextWindow); err != nil {
 		return 0, false, err
 	}
 	if !deps.refreshLocalServer() {
-		slog.Warn("growth: server refresh failed; compression proceeds", "model", modelID)
+		pkgLog().Warn("growth: server refresh failed; compression proceeds", "model", modelID)
 		return 0, false, nil
 	}
 	materialized := deps.readPresets("")[modelID]
 	if materialized == nil || materialized.Window < decision.NextWindow {
-		slog.Warn("growth: refreshed preset did not grant the requested window", "model", modelID)
+		pkgLog().Warn("growth: refreshed preset did not grant the requested window", "model", modelID)
 		return 0, false, nil
 	}
 	return materialized.Window, true, nil

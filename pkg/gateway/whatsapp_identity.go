@@ -6,7 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
-	"log/slog"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -99,7 +98,7 @@ func expandWhatsAppAliases(ctx context.Context, identifier string) (map[string]b
 	if normalized == "" {
 		return resolved, nil
 	}
-	sessionDir := home.HermesDir(home.Dir(ctx), "platforms/whatsapp/session", "whatsapp/session")
+	sessionDir := home.IcebathDir(home.Dir(ctx), "platforms/whatsapp/session", "whatsapp/session")
 	queue := []string{normalized}
 	for len(queue) > 0 {
 		current := queue[0]
@@ -119,7 +118,7 @@ func expandWhatsAppAliases(ctx context.Context, identifier string) (map[string]b
 			if err != nil {
 				var decodeErr *pyjson.DecodeError
 				if errors.As(err, &decodeErr) || errors.As(err, new(*fs.PathError)) {
-					slog.Debug(fmt.Sprintf("whatsapp_identity: failed to read %s: %s", mappingPath, err))
+					pkgLog().Debug(fmt.Sprintf("whatsapp_identity: failed to read %s: %s", mappingPath, err))
 					continue
 				}
 				return nil, err

@@ -157,7 +157,7 @@ func TestHostedAnthropicFlowSignsInInTheBrowserWithoutClaudeCode(t *testing.T) {
 		t.Fatal(err)
 	}
 	entries := LoadPool(r.Env, "anthropic").Entries()
-	if len(entries) != 1 || entries[0].AccessToken != "sk-ant-oat01-test" || entries[0].Source != SourceManual+":hermes_pkce" {
+	if len(entries) != 1 || entries[0].AccessToken != "sk-ant-oat01-test" || entries[0].Source != SourceManual+":icebath_pkce" {
 		t.Fatalf("pool %+v\n%s", entries, out.String())
 	}
 	model := readConfig(t, h)["model"].(map[string]any)

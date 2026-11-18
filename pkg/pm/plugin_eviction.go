@@ -1,3 +1,5 @@
+//go:build !icebath_core && !icebath_noextras
+
 package pm
 
 import (
@@ -107,12 +109,12 @@ func staticVerdicts(ctx context.Context, entries []PluginEntry, pythonVersion st
 			reasons[key] = "its dependency declaration is invalid: " + pyExceptionText(err)
 			continue
 		}
-		hermes, err := hermesFitError(ctx, declaration, extras)
+		misfit, err := icebathFitError(ctx, declaration, extras)
 		if err != nil {
 			return nil, nil, err
 		}
-		if hermes != "" {
-			waiting[key] = hermes
+		if misfit != "" {
+			waiting[key] = misfit
 			continue
 		}
 		name := filepath.Base(entry.PluginDir)
@@ -851,12 +853,16 @@ func (u *evictingUpdate) commit(ctx context.Context, members []string) error {
 		}
 		edit = eviction
 	}
-	current, err := runtimeStateMatches(ctx, u.fact, stamp, "")
+	bare, err := bareTarget(ctx, u.pkg, u.fact, enabled, inputs)
+	if err != nil {
+		return err
+	}
+	current, err := selectionCurrent(ctx, u.fact, stamp, "", bare)
 	if err != nil {
 		return err
 	}
 	return commitSelection(ctx, u.pkg, u.facts, edit, SelectionCommit{
-		Enabled: enabled, Stamp: stamp, Inputs: inputs, Current: current,
+		Enabled: enabled, Stamp: stamp, Inputs: inputs, Current: current, Bare: bare,
 		Explicit: u.opts.Explicit, SkipInvalidSecondary: true,
 	})
 }

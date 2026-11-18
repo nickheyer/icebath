@@ -30,7 +30,7 @@ func presenceNeedsApp(location string, extra map[string]any) map[string]any {
 	for k, v := range extra {
 		srv[k] = v
 	}
-	return map[string]any{"extensions": map[string]any{"com.nousresearch.hermes": map[string]any{"servers": map[string]any{"srv": srv}}}}
+	return map[string]any{"extensions": map[string]any{"app.icebath": map[string]any{"servers": map[string]any{"srv": srv}}}}
 }
 
 func presenceEntry(t *testing.T, name string, onboarding bool, platforms []string, title, description string) *PluginCatalogEntry {

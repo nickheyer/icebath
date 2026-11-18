@@ -5,7 +5,6 @@ import (
 	"crypto/hmac"
 	"errors"
 	"fmt"
-	"log/slog"
 	"sort"
 	"strings"
 
@@ -375,7 +374,7 @@ func scheduleOrphan(ctx context.Context, result any) {
 		return
 	}
 	if err := scheduleSession(ctx, admitted.Authority, admitted.Ref); err != nil {
-		slog.Warn(fmt.Sprintf("orphaned API admission %s could not be scheduled", admitted.Ref.SessionID), "error", err)
+		pkgLog().Warn(fmt.Sprintf("orphaned API admission %s could not be scheduled", admitted.Ref.SessionID), "error", err)
 	}
 }
 

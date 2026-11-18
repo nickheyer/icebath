@@ -1076,7 +1076,7 @@ func TestTarReaderRepr(t *testing.T) {
 	}
 }
 
-// Tree and error CPython 3.14 tarfile produced for each case under the hermes filter, read from a file
+// Tree and error CPython 3.14 tarfile produced for each case under the store extraction filter, read from a file
 var trdWant = map[string]string{
 	"all_zero": `error none`,
 	"bad_devmajor_first": `error ReadError: file could not be opened successfully:

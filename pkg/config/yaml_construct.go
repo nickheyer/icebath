@@ -18,7 +18,7 @@ import (
 
 // Python objects the safe constructor builds before they become Go values, containers by reference
 type (
-	pyList  struct {
+	pyList struct {
 		items []any
 		rt    bool
 	}
@@ -981,20 +981,10 @@ func nodeRepr(n *ry.Node) string {
 	return class + "(tag=" + pyrepr.StrRepr(n.Tag()) + ", value=" + value + ")"
 }
 
-// Days in a month of the proleptic Gregorian calendar
-func monthDays(year, month int) int {
-	return time.Date(year, time.Month(month)+1, 0, 0, 0, 0, 0, time.UTC).Day()
-}
-
-// Python datetime.date argument check with the CPython 3.14 messages
+// Python datetime.date argument check raising the shared CPython 3.14 messages
 func checkDateArgs(year, month, day int) {
-	switch {
-	case year < 1 || year > 9999:
-		panic(pyErr("ValueError", fmt.Sprintf("year must be in 1..9999, not %d", year)))
-	case month < 1 || month > 12:
-		panic(pyErr("ValueError", fmt.Sprintf("month must be in 1..12, not %d", month)))
-	case day < 1 || day > monthDays(year, month):
-		panic(pyErr("ValueError", fmt.Sprintf("day %d must be in range 1..%d for month %d in year %d", day, monthDays(year, month), month, year)))
+	if msg := pydatetime.DateArgsError(year, month, day); msg != "" {
+		panic(pyErr("ValueError", msg))
 	}
 }
 
@@ -1040,20 +1030,15 @@ func createTimestamp(group func(string) (string, bool)) any {
 		}
 		off := time.Duration(minutes) * time.Minute
 		if off <= -24*time.Hour || off >= 24*time.Hour {
-			panic(pyErr("ValueError", "offset must be a timedelta strictly between -timedelta(hours=24) and timedelta(hours=24), not "+pydatetime.TimedeltaRepr(off)))
+			panic(pyErr("ValueError", "offset must be a timedelta strictly between -timedelta(hours=24) and timedelta(hours=24), not "+pydatetime.TimedeltaRepr(off)+"."))
 		}
 		zone = &pydatetime.FixedOffset{Offset: off, Name: tz}
 	} else if tz == "Z" {
 		zone = &pydatetime.FixedOffset{Name: tz}
 	}
 	checkDateArgs(year, month, day)
-	switch {
-	case hour > 23:
-		panic(pyErr("ValueError", fmt.Sprintf("hour must be in 0..23, not %d", hour)))
-	case minute > 59:
-		panic(pyErr("ValueError", fmt.Sprintf("minute must be in 0..59, not %d", minute)))
-	case second > 59:
-		panic(pyErr("ValueError", fmt.Sprintf("second must be in 0..59, not %d", second)))
+	if msg := pydatetime.TimeArgsError(hour, minute, second); msg != "" {
+		panic(pyErr("ValueError", msg))
 	}
 	dt := pydatetime.DateTime{Year: year, Month: month, Day: day, Hour: hour, Minute: minute, Second: second, Microsecond: fraction, Zone: zone}
 	if frac > 999999 {

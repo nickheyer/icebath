@@ -15,6 +15,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pyfs"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
@@ -91,7 +92,7 @@ func (l *BotDesktopLease) bumpEpoch() error {
 	case *big.Int:
 		l.Epoch = new(big.Int).Add(v, big.NewInt(1))
 	default:
-		return fmt.Errorf("TypeError: can only concatenate %T (not \"int\") to it", v)
+		return fmt.Errorf("the bot desktop lease epoch is %s, expected a number", errchain.Kind(v))
 	}
 	return nil
 }
@@ -200,7 +201,7 @@ func leaseWrite(path string, l BotDesktopLease) error {
 	return os.Rename(tmp, path)
 }
 
-// Cross process critical section over a sibling lock file, a no op where hermes has no fcntl
+// Cross process critical section over a sibling lock file, a no op where fcntl is unavailable
 func leaseLocked(path string, fn func() error) error {
 	if runtime.GOOS == "windows" {
 		return fn()

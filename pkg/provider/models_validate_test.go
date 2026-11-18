@@ -20,11 +20,11 @@ func validateTestHome(t *testing.T) context.Context {
 	t.Helper()
 	ctx := modelsTestHome(t)
 	prevProbe, prevLMS, prevOllama, prevAnth, prevStaged, prevMoa := validateProbeAPIModelsFn, validateProbeLMStudioFn, validateProbeOllamaFn, validateFetchAnthropicFn, validateStagedModelIDsFn, validateMoaPresetNamesFn
-	prevBedrock, prevRegion, prevNous := validateDiscoverBedrock, validateBedrockRegionFn, fetchNousRecommendedModelsFn
+	prevBedrock, prevRegion := validateDiscoverBedrock, validateBedrockRegionFn
 	clearOllamaLocalCaches()
 	t.Cleanup(func() {
 		validateProbeAPIModelsFn, validateProbeLMStudioFn, validateProbeOllamaFn, validateFetchAnthropicFn, validateStagedModelIDsFn, validateMoaPresetNamesFn = prevProbe, prevLMS, prevOllama, prevAnth, prevStaged, prevMoa
-		validateDiscoverBedrock, validateBedrockRegionFn, fetchNousRecommendedModelsFn = prevBedrock, prevRegion, prevNous
+		validateDiscoverBedrock, validateBedrockRegionFn = prevBedrock, prevRegion
 		clearOllamaLocalCaches()
 	})
 	return ctx

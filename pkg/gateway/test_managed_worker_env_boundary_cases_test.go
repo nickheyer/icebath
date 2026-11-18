@@ -69,7 +69,7 @@ func TestSecondaryProfileWorkerGetsNoLaunchCredentials(t *testing.T) {
 		hermetic.Run(t, strconv.FormatBool(multiplex), func(t *testing.T) {
 			launch, secondary := workerEnvHomes(t, "OPENROUTER_API_KEY=LAUNCH-or\nMY_SERVICE_TOKEN=LAUNCH-mysvc\n", "OPENROUTER_API_KEY=SEC-or\n")
 			for key, value := range map[string]string{"OPENROUTER_API_KEY": "LAUNCH-or", "MY_SERVICE_TOKEN": "LAUNCH-mysvc",
-				"NOUS_API_KEY": "LAUNCH-nous", "VAULT_ONLY_TOKEN": "LAUNCH-vault"} {
+				"ANTHROPIC_API_KEY": "LAUNCH-anthropic", "VAULT_ONLY_TOKEN": "LAUNCH-vault"} {
 				t.Setenv(key, value)
 			}
 			t.Cleanup(provider.AttributeSecretSourceForTests("VAULT_ONLY_TOKEN", "bitwarden"))

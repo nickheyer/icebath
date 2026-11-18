@@ -24,7 +24,7 @@ const (
 // Keys of the list windows, registered with the keymap of the app
 func registerListKeys(km *keys.Map) {
 	for name, doc := range map[string]string{sessionsContext: "session switcher", skillsContext: "skills hub", pluginsContext: "plugins hub",
-		connectorsContext: "connector accounts", connectorsLinkContext: "connector sign in link"} {
+		mcpContext: "MCP servers", mcpAuthContext: "MCP server browser sign in"} {
 		if keys.ContextDocs[name] == "" {
 			if err := keys.AddContext(name, doc); err != nil {
 				panic(err)
@@ -38,13 +38,13 @@ func registerListKeys(km *keys.Map) {
 		{ID: "tui.skills.inspect", Context: skillsContext, Label: "inspect", Doc: "show or hide what the skill does", Default: []string{"enter"}},
 		{ID: "tui.skills.install", Context: skillsContext, Label: "install", Doc: "install the skill", Default: []string{"i"}},
 		{ID: "tui.plugins.toggle", Context: pluginsContext, Label: "toggle", Doc: "enable or disable the plugin", Default: []string{"enter", "space"}},
-		{ID: "tui.connectors.rename", Context: connectorsContext, Label: "rename", Doc: "rename the connector account", Default: []string{"r"}},
-		{ID: "tui.connectors.add", Context: connectorsContext, Label: "add", Doc: "add another account of a connector", Default: []string{"a"}},
-		{ID: "tui.connectors.reconnect", Context: connectorsContext, Label: "reconnect", Doc: "sign in again to an account that stopped working", Default: []string{"c"}},
-		{ID: "tui.connectors.remove", Context: connectorsContext, Label: "remove", Doc: "remove the connector account after a confirmation", Default: []string{"x"}},
-		{ID: "tui.connectors.retired", Context: connectorsContext, Label: "retired", Doc: "show or hide the accounts a reconnect retired", Default: []string{"tab"}},
-		{ID: "tui.connectors.link.open", Context: connectorsLinkContext, Label: "open", Doc: "open the sign in link in the browser", Default: []string{"enter"}},
-		{ID: "tui.connectors.link.stop", Context: connectorsLinkContext, Label: "stop waiting", Doc: "stop waiting, the link stays valid until it expires", Default: []string{"esc"}},
+		{ID: "tui.mcp.add", Context: mcpContext, Label: "add", Doc: "add an MCP server from the catalog", Default: []string{"a"}},
+		{ID: "tui.mcp.toggle", Context: mcpContext, Label: "enable/disable", Doc: "enable or disable the MCP server", Default: []string{"space", "e"}},
+		{ID: "tui.mcp.authorize", Context: mcpContext, Label: "authorize", Doc: "sign in to the MCP server in the browser", Default: []string{"o"}},
+		{ID: "tui.mcp.test", Context: mcpContext, Label: "test", Doc: "connect to the MCP server and count its tools", Default: []string{"t"}},
+		{ID: "tui.mcp.remove", Context: mcpContext, Label: "remove", Doc: "remove the MCP server from config.yaml after a confirmation", Default: []string{"x"}},
+		{ID: "tui.mcp.auth.open", Context: mcpAuthContext, Label: "open", Doc: "open the sign in link in the browser", Default: []string{"enter"}},
+		{ID: "tui.mcp.auth.stop", Context: mcpAuthContext, Label: "stop", Doc: "stop waiting and cancel the sign in", Default: []string{"esc"}},
 	} {
 		km.Register(a)
 	}
@@ -86,7 +86,7 @@ func (a *app) loadModelPicker(refresh bool) tea.Cmd {
 			return nil
 		}
 		providers, _ := r["providers"].([]any)
-		current := infoText(a.store.ui.Info, "model")
+		current := infoText(infoOf(a.store.ui.Info).Model)
 		var items []wm.Item
 		for _, raw := range providers {
 			p, _ := raw.(map[string]any)
@@ -175,48 +175,33 @@ func (a *app) openSessionSwitcher() tea.Cmd {
 	load := func(done func() tea.Cmd) tea.Cmd {
 		current := a.store.ui.Sid
 		stored := a.store.ui.StoredSid
-		method, params := "session.active_list", map[string]any{"current_session_id": current}
-		if a.gw.canonical() {
-			method, params = "session.list", map[string]any{"limit": 200, "scope": "live"}
-		}
-		return gatewayCall(a.gw, method, params, func(liveRaw any, liveErr error) tea.Cmd {
-			return gatewayCall(a.gw, "session.list", map[string]any{"limit": 200, "scope": "stored"}, func(histRaw any, histErr error) tea.Cmd {
+		return requestSessions(a.gw, true, current, func(liveRows []listedSession, liveErr error) tea.Cmd {
+			return requestSessions(a.gw, false, current, func(storedRows []listedSession, histErr error) tea.Cmd {
 				if liveErr != nil && histErr != nil {
 					a.sys("error: " + rpcErrorMessage(liveErr))
 					return nil
 				}
 				seen := map[string]bool{}
 				rows = rows[:0]
-				add := func(raw any, live bool) {
-					list, _ := asRPCResult(raw)["sessions"].([]any)
-					for _, item := range list {
-						s, _ := item.(map[string]any)
-						id, _ := s["id"].(string)
-						running := truthyJS(s["running"])
-						if id == "" || seen[id] {
+				add := func(list []listedSession, live bool) {
+					for _, s := range list {
+						if s.ID == "" || seen[s.ID] {
 							continue
 						}
-						seen[id] = true
-						row := sessionRow{id: id, live: live, current: id == current || id == stored || truthyJS(s["current"])}
-						row.title, _ = s["title"].(string)
-						row.preview, _ = s["preview"].(string)
-						row.status, _ = s["status"].(string)
-						if row.status == "" && running {
+						seen[s.ID] = true
+						row := sessionRow{id: s.ID, live: live, current: s.ID == current || s.ID == stored || s.Current, title: s.Title, preview: s.Preview,
+							status: s.Status, when: s.When, count: s.Count}
+						if row.status == "" && s.Running {
 							row.status = "running"
 						}
-						row.when, _ = s["last_active"].(float64)
-						if row.when == 0 {
-							row.when, _ = s["started_at"].(float64)
-						}
-						row.count, _ = s["message_count"].(float64)
 						rows = append(rows, row)
 					}
 				}
 				if liveErr == nil {
-					add(liveRaw, true)
+					add(liveRows, true)
 				}
 				if histErr == nil {
-					add(histRaw, false)
+					add(storedRows, false)
 				}
 				sort.SliceStable(rows, func(i, j int) bool {
 					if rows[i].live != rows[j].live {
@@ -294,6 +279,13 @@ func (a *app) openSessionSwitcher() tea.Cmd {
 			},
 		},
 	})
+	a.switcherReload = func() tea.Cmd {
+		if a.wm.Overlay() != list {
+			a.switcherReload = nil
+			return nil
+		}
+		return load(func() tea.Cmd { list.Refresh(); return nil })
+	}
 	return load(func() tea.Cmd { return a.wm.ShowOverlay(list) })
 }
 

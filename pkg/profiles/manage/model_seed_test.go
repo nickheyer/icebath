@@ -17,9 +17,9 @@ func profileModelCfg(t *testing.T, dir string) map[string]any {
 
 func TestFreshProfileInheritsAUsableModel(t *testing.T) {
 	tmp := manageEnv(t)
-	writeFile(t, filepath.Join(tmp, ".icebath", "config.yaml"), "model:\n  provider: nous\n  default: some/model\n")
+	writeFile(t, filepath.Join(tmp, ".icebath", "config.yaml"), "model:\n  provider: openrouter\n  default: some/model\n")
 	cfg := profileModelCfg(t, mustCreate(t, "coder", CreateOptions{}))
-	if m := cfg["model"].(map[string]any); m["provider"] != "nous" || m["default"] != "some/model" {
+	if m := cfg["model"].(map[string]any); m["provider"] != "openrouter" || m["default"] != "some/model" {
 		t.Fatalf("model = %v", m)
 	}
 }
@@ -42,10 +42,10 @@ func TestFreshProfileInheritsItsCustomProviderGateway(t *testing.T) {
 func TestFreshProfileModelIsCopiedNotLinked(t *testing.T) {
 	tmp := manageEnv(t)
 	source := filepath.Join(tmp, ".icebath", "config.yaml")
-	writeFile(t, source, "model:\n  provider: nous\n  default: some/model\n")
+	writeFile(t, source, "model:\n  provider: openrouter\n  default: some/model\n")
 	dir := mustCreate(t, "coder", CreateOptions{})
 	writeFile(t, source, "model:\n  provider: other\n  default: changed/model\n")
-	if m := profileModelCfg(t, dir)["model"].(map[string]any); m["provider"] != "nous" || m["default"] != "some/model" {
+	if m := profileModelCfg(t, dir)["model"].(map[string]any); m["provider"] != "openrouter" || m["default"] != "some/model" {
 		t.Fatalf("model = %v", m)
 	}
 }

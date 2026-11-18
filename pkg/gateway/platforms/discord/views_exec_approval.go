@@ -3,7 +3,6 @@ package discord
 import (
 	"context"
 	"fmt"
-	"log/slog"
 	"sync"
 
 	"github.com/bwmarrin/discordgo"
@@ -25,7 +24,7 @@ var execApprovalRetireFooters = map[string]string{
 
 // Allow once, allow session, always allow and deny buttons of a dangerous command card
 type execApprovalView struct {
-	hermesView
+	icebathView
 	sessionKey     string
 	requestID      string
 	pendingRetire  string
@@ -91,7 +90,7 @@ func (a *DiscordAdapter) newExecApprovalView(ctx context.Context, sessionKey str
 
 // Base admission plus, with the admin gate on, membership in the admins, failing closed with a warning when none exist
 func (v *execApprovalView) checkAuth(ctx context.Context, i *discordgo.Interaction) bool {
-	if !v.hermesView.checkAuth(ctx, i) {
+	if !v.icebathView.checkAuth(ctx, i) {
 		return false
 	}
 	if !v.requireAdmin {
@@ -105,7 +104,7 @@ func (v *execApprovalView) checkAuth(ctx context.Context, i *discordgo.Interacti
 		return true
 	}
 	if len(v.adminUserIDs) == 0 {
-		slog.Warn("[Discord] require_admin_for_exec_approval is enabled but no admins are configured (allow_admin_from is empty) — " +
+		pkgLog().Warn("[Discord] require_admin_for_exec_approval is enabled but no admins are configured (allow_admin_from is empty) — " +
 			"exec approval buttons are disabled for everyone. Add admin user IDs under the discord platform's allow_admin_from, or disable the toggle.")
 	}
 	return false
@@ -160,13 +159,13 @@ func (v *execApprovalView) resolve(ctx context.Context, i *discordgo.Interaction
 	user := interactionDisplayName(i)
 	count, err := v.resolveApproval(choice)
 	if err != nil {
-		slog.Error(fmt.Sprintf("Failed to resolve gateway approval from button: %s", err))
+		pkgLog().Error(fmt.Sprintf("Failed to resolve gateway approval from button: %s", err))
 		v.mu.Lock()
 		v.resolved, v.backendSettled = false, false
 		v.mu.Unlock()
 		return v.adapter.respondEphemeral(ctx, i, i18n.T(ctx, "platform.discord.approval.click_failed", "", nil))
 	}
-	slog.Info(fmt.Sprintf("Discord button resolved %d approval(s) for session %s (choice=%s, user=%s)", count, v.sessionKey, choice, user))
+	pkgLog().Info(fmt.Sprintf("Discord button resolved %d approval(s) for session %s (choice=%s, user=%s)", count, v.sessionKey, choice, user))
 	footer := label
 	if count == 0 {
 		v.mu.Lock()

@@ -221,7 +221,7 @@ func saveCheckpointLedger(env *Env, store, dirHash string, ledger map[string]any
 		return err
 	}
 	if err := checkpointAtomicWrite(path, []byte(data)); err != nil {
-		toolsLogger(env).Debug(fmt.Sprintf("Failed to save agent-write ledger for %s: %v", dirHash, err))
+		envLog(env).Debug(fmt.Sprintf("Failed to save agent-write ledger for %s: %v", dirHash, err))
 	}
 	return nil
 }
@@ -292,7 +292,7 @@ func checkpointTextOutput(b []byte) string {
 
 // Runs git against the store with the project worktree, ok with stdout and stderr, NUL output left raw
 func runCheckpointGitProcess(env *Env, args []string, store, workingDir string, o checkpointGitOpts) (bool, string, string) {
-	log := toolsLogger(env)
+	log := envLog(env)
 	wd := checkpointNormalizePath(workingDir)
 	shown := "git " + strings.Join(args, " ")
 	st, err := os.Stat(wd)
@@ -348,7 +348,7 @@ func runCheckpointGitProcess(env *Env, args []string, store, workingDir string, 
 			return false, "", msg
 		}
 		log.Error(fmt.Sprintf("Unexpected git error running %s: %v", cmdText, err))
-		return false, "", pyOSErrorText(err)
+		return false, "", osErrorText(err)
 	}
 	werr := cmd.Wait()
 	if ctx.Err() == context.DeadlineExceeded {
@@ -428,7 +428,7 @@ func migrateLegacyCheckpointStore(env *Env, base string) (string, error) {
 	if !pathExistsFollow(base) {
 		return "", nil
 	}
-	log := toolsLogger(env)
+	log := envLog(env)
 	children, err := checkpointBaseChildren(base)
 	if err != nil {
 		return "", err
@@ -442,12 +442,12 @@ func migrateLegacyCheckpointStore(env *Env, base string) (string, error) {
 		if legacyRoot == "" {
 			legacyRoot = filepath.Join(base, checkpointLegacyPrefix+time.Now().Format("20060102-150405"))
 			if err := os.MkdirAll(legacyRoot, 0o777); err != nil {
-				log.Warn(fmt.Sprintf("Could not create legacy archive dir: %s", pyOSErrorText(err)))
+				log.Warn(fmt.Sprintf("Could not create legacy archive dir: %s", osErrorText(err)))
 				return "", nil
 			}
 		}
 		if err := os.Rename(child, filepath.Join(legacyRoot, name)); err != nil {
-			log.Warn(fmt.Sprintf("Could not archive legacy checkpoint %s: %s", child, pyOSErrorText(err)))
+			log.Warn(fmt.Sprintf("Could not archive legacy checkpoint %s: %s", child, osErrorText(err)))
 		}
 	}
 	if legacyRoot != "" {
@@ -461,7 +461,7 @@ func initCheckpointStore(env *Env, store, workingDir string) (string, error) {
 	base := filepath.Dir(store)
 	if !pathExistsFollow(store) {
 		if err := os.MkdirAll(base, 0o777); err != nil {
-			return "Could not create checkpoint base: " + pyOSErrorText(err), nil
+			return "Could not create checkpoint base: " + osErrorText(err), nil
 		}
 		if _, err := migrateLegacyCheckpointStore(env, base); err != nil {
 			return "", err
@@ -505,7 +505,7 @@ func initCheckpointStore(env *Env, store, workingDir string) (string, error) {
 	cmd.Cancel = func() error { return proc.Kill(cmd) }
 	if err := cmd.Start(); err != nil {
 		if errors.Is(err, exec.ErrNotFound) || errors.Is(err, fs.ErrNotExist) {
-			return "Shadow store init failed: " + pyOSErrorText(err), nil
+			return "Shadow store init failed: " + osErrorText(err), nil
 		}
 		return "", err
 	}
@@ -537,7 +537,7 @@ func initCheckpointStore(env *Env, store, workingDir string) (string, error) {
 	if err := os.WriteFile(filepath.Join(infoDir, "exclude"), []byte(strings.Join(checkpointDefaultExcludes, "\n")+"\n"), 0o666); err != nil {
 		return "", err
 	}
-	toolsLogger(env).Debug("Initialised checkpoint store at " + store)
+	envLog(env).Debug("Initialised checkpoint store at " + store)
 	return "", nil
 }
 
@@ -570,7 +570,7 @@ func writeCheckpointMeta(env *Env, path string, meta map[string]any, verb string
 		}
 	}
 	if err != nil {
-		toolsLogger(env).Debug(fmt.Sprintf("Could not %s project metadata %s: %v", verb, path, err))
+		envLog(env).Debug(fmt.Sprintf("Could not %s project metadata %s: %v", verb, path, err))
 	}
 }
 
@@ -632,7 +632,7 @@ func touchCheckpointProject(env *Env, store, workingDir string) {
 		err = os.WriteFile(metaPath, []byte(data), 0o666)
 	}
 	if err != nil {
-		toolsLogger(env).Debug(fmt.Sprintf("Could not update project metadata %s: %v", metaPath, err))
+		envLog(env).Debug(fmt.Sprintf("Could not update project metadata %s: %v", metaPath, err))
 	}
 }
 

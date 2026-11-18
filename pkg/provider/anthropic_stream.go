@@ -411,7 +411,7 @@ func (s *anthStreamState) finish(latency time.Duration) (*Response, error) {
 		return nil, &EmptyStreamError{Message: "Provider returned an empty stream with no events (possible upstream error or malformed event stream)."}
 	}
 	if s.runaway != "" {
-		catalogLog.Warn(fmt.Sprintf("Runaway repetition detected in streamed %s; cutting the stream. model=%s", s.runaway, orUnknown2(s.c.route.Model)))
+		pkgLog().Warn(fmt.Sprintf("Runaway repetition detected in streamed %s; cutting the stream. model=%s", s.runaway, orUnknown2(s.c.route.Model)))
 		message := s.runawayMessage()
 		message["stop_reason"] = "max_tokens"
 		resp, err := s.c.normalizeResponse(message, s.status, s.headers, latency)

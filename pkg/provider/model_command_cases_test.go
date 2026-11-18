@@ -9,7 +9,6 @@ import (
 	"reflect"
 	"strings"
 	"testing"
-	"time"
 
 	"github.com/charmbracelet/x/ansi"
 	"github.com/nickheyer/icebath/pkg/cliui"
@@ -28,31 +27,6 @@ func pickerKeysConsole(t *testing.T, keys string) *bytes.Buffer {
 		TermSize: func() (int, int, error) { return 24, 100, nil }}
 	swapFlowSeam(t, &pickerConsoleFn, func() *cliui.Console { return console })
 	return out
-}
-
-func TestCmdModelForwardsNousLoginTlsOptions(t *testing.T) {
-	h, ctx, _ := pickerCaseHome(t)
-	writePickerConfig(t, h, "model:\n  default: gpt-5\n  provider: nous\n")
-	swapFlowSeam(t, &pickerResolveAutoProviderFn, func(PoolEnv) (string, error) { return "nous", nil })
-	swapFlowSeam(t, &pickerPromptProviderChoiceFn, func(io.Writer, []string, int, string) (int, bool) { return 0, true })
-	swapFlowSeam(t, &setupPromptProviderChoiceFn, func(io.Writer, []string, int, string) (int, bool) { return 0, true })
-	var captured *NousLoginArgs
-	swapFlowSeam(t, &flowLoginNousFn, func(_ PoolEnv, _ io.Writer, args NousLoginArgs) error {
-		captured = &args
-		return nil
-	})
-	ns := map[string]any{"portal_url": "https://portal.nousresearch.com", "inference_url": "https://inference.nousresearch.com/v1",
-		"client_id": "icebath-local", "scope": "openid profile", "no_browser": true, "timeout": 7.5,
-		"ca_bundle": "/tmp/local-ca.pem", "insecure": true, "refresh": false}
-	if _, err := CmdModel(ctx, ns, io.Discard); err != nil {
-		t.Fatal(err)
-	}
-	want := NousLoginArgs{PortalURL: "https://portal.nousresearch.com", InferenceURL: "https://inference.nousresearch.com/v1",
-		ClientID: "icebath-local", Scope: "openid profile", NoBrowser: true, Timeout: 7500 * time.Millisecond,
-		CABundle: "/tmp/local-ca.pem", Insecure: true}
-	if captured == nil || *captured != want {
-		t.Fatalf("login args %+v", captured)
-	}
 }
 
 func TestStandaloneModelFlowOffersBackAndReopensProvider(t *testing.T) {
@@ -104,7 +78,7 @@ func TestCmdModelRefreshClearsThePickerCache(t *testing.T) {
 	}
 }
 
-// Executable that exits zero on PATH, the hermes _fake_binary helper
+// Executable that exits zero on PATH, the fake binary helper
 func fakePickerBinary(t *testing.T, name string) {
 	t.Helper()
 	dir := t.TempDir()
@@ -114,7 +88,7 @@ func fakePickerBinary(t *testing.T, name string) {
 	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
 }
 
-func TestHermesModelRoutesRegisteredPluginProfilesToTheGenericFlow(t *testing.T) {
+func TestIcebathModelRoutesRegisteredPluginProfilesToTheGenericFlow(t *testing.T) {
 	h, ctx, _ := pickerCaseHome(t)
 	registerPluginForTest(t, Profile{Name: "example-acp", AuthType: AuthTypeExternalProcess, BaseURL: "acp://example",
 		ProcessCommand: "example-acp-bin", FallbackModels: []string{"acp-a", "acp-b"}})

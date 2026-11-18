@@ -10,45 +10,36 @@ import (
 	"sync"
 
 	"github.com/nickheyer/icebath/pkg/config"
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
 
-// Logger name prefixes of each component, gating component logs and logs --component
+// Packages of each component, gating component logs and logs --component
 var ComponentPrefixes = map[string][]string{
-	"gateway": {"gateway", "hermes_plugins", "plugins.platforms", "agent.memory_caller_scope"},
-	"agent":   {"agent", "run_agent", "model_tools", "batch_runner"},
-	"tools":   {"tools"},
-	"cli":     {"hermes_cli", "cli"},
+	"gateway": {"gateway", "gatewayrun", "gatewayapi"},
+	"agent":   {"agent", "provider", "providerregistry", "memory", "monitoring", "lsp", "i18n", "pet", "trajectorycompressor"},
+	"tools":   {"tools", "media", "mcp", "browser", "codeexec", "skills", "gateway/messagetools"},
+	"cli":     {"cmd/icebath", "app", "commands", "activesessions", "gatewaycli", "goals", "kanban", "selfupdate", "plugins", "profiles", "setupflow"},
 	"cron":    {"cron"},
-	"gui":     {"hermes_cli.web_server", "hermes_cli.pty_bridge", "hermes_cli.desktop", "tui_gateway", "uvicorn"},
+	"gui":     {"tuiserver", "tuigateway", "tui"},
 }
 
-var noisyLoggers = []string{
-	"openai", "openai._base_client", "httpx", "httpcore", "asyncio", "hpack", "hpack.hpack",
-	"grpc", "modal", "urllib3", "urllib3.connectionpool", "websockets", "charset_normalizer",
-	"markdown_it",
-}
-
-// Pins the noisy third party loggers at WARNING
-func quietNoisyLoggers() {
-	for _, name := range noisyLoggers {
-		GetLogger(name).SetLevel(LevelWarning)
-	}
-}
-
-// Passes only records whose logger name starts with one of the prefixes
-type componentFilter struct{ prefixes []string }
-
-func (f componentFilter) Filter(rec *Record) bool {
-	for _, p := range f.prefixes {
-		if strings.HasPrefix(rec.Name, p) {
+// Whether a logger name is one of the packages or a package below one of them
+func InComponent(name string, packages []string) bool {
+	for _, p := range packages {
+		if name == p || strings.HasPrefix(name, p+"/") {
 			return true
 		}
 	}
 	return false
 }
+
+// Passes only records whose logger belongs to one of the component packages
+type componentFilter struct{ prefixes []string }
+
+func (f componentFilter) Filter(rec *Record) bool { return InComponent(rec.Name, f.prefixes) }
 
 // Options of SetupLogging, zero values deferring to config.yaml logging and the built in defaults
 type Options struct {
@@ -92,7 +83,7 @@ func SetupLogging(ctx context.Context, o Options) (string, error) {
 	}
 	levelName, ok := rawLevel.(string)
 	if !ok {
-		return "", fmt.Errorf("AttributeError: '%s' object has no attribute 'upper'", pyrepr.TypeName(rawLevel))
+		return "", fmt.Errorf("logging.level is %s, expected a level name", errchain.Kind(rawLevel))
 	}
 	level, known := levelByName[pystr.Upper(levelName)]
 	if !known {
@@ -106,7 +97,7 @@ func SetupLogging(ctx context.Context, o Options) (string, error) {
 	}
 	sizeMB, ok := configNumber(rawSize)
 	if !ok {
-		return "", fmt.Errorf("TypeError: logging.max_size_mb must be a number, not %s", pyrepr.TypeName(rawSize))
+		return "", fmt.Errorf("logging.max_size_mb must be a number, got %s", errchain.Kind(rawSize))
 	}
 	var rawBackups any = 3
 	if o.BackupCount != 0 {
@@ -116,7 +107,7 @@ func SetupLogging(ctx context.Context, o Options) (string, error) {
 	}
 	backups, ok := configNumber(rawBackups)
 	if !ok || backups != float64(int(backups)) {
-		return "", fmt.Errorf("TypeError: logging.backup_count must be an integer, not %s", pyrepr.TypeName(rawBackups))
+		return "", fmt.Errorf("logging.backup_count must be a whole number, got %s", errchain.Kind(rawBackups))
 	}
 	maxBytes := sizeMB * 1024 * 1024
 	formatter, err := LogFileFormatter()
@@ -157,7 +148,7 @@ func SetupLogging(ctx context.Context, o Options) (string, error) {
 		if reason == "" {
 			reason = "portalocker probe failed"
 		}
-		GetLogger("hermes_logging").Warning(fmt.Sprintf("concurrent-log-handler unavailable on this Windows install (%s); "+
+		pkgLog().Warning(fmt.Sprintf("concurrent-log-handler unavailable on this Windows install (%s); "+
 			"file logging fell back to stdlib rotation without rollover.", reason))
 	}
 	setupMu.Lock()
@@ -168,7 +159,6 @@ func SetupLogging(ctx context.Context, o Options) (string, error) {
 	if rl := root.Level(); rl == LevelNotSet || rl > level {
 		root.SetLevel(level)
 	}
-	quietNoisyLoggers()
 	loggingInitialized = true
 	return logDir, nil
 }
@@ -218,8 +208,6 @@ func SetupVerboseLogging() error {
 	if root.Level() > LevelDebug {
 		root.SetLevel(LevelDebug)
 	}
-	quietNoisyLoggers()
-	GetLogger("rex-deploy").SetLevel(LevelInfo)
 	installSlogDefault()
 	return nil
 }

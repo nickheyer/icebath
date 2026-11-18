@@ -3,7 +3,6 @@ package telegram
 import (
 	"context"
 	"fmt"
-	"log/slog"
 )
 
 const (
@@ -11,7 +10,7 @@ const (
 	mediaSendDeadline    = 300.0
 )
 
-// Routing, anchor and notification fields every native media send carries, the kwargs hermes splats into send_*
+// Routing, anchor and notification fields every native media send carries
 type mediaSendKwargs struct {
 	ChatID              any
 	ReplyToMessageID    *int
@@ -53,7 +52,7 @@ func sendWithDMTopicReplyAnchorRetry[T any](ctx context.Context, pacer *sendPace
 		if !shouldRetryWithoutDMTopicReplyAnchor(sendErr, metadata, replyToMessageID) {
 			return sendErr
 		}
-		slog.Warn(fmt.Sprintf("[%s] Reply target deleted for Telegram %s, retrying without reply/topic anchor: %s", name, mediaLabel,
+		pkgLog().Warn(fmt.Sprintf("[%s] Reply target deleted for Telegram %s, retrying without reply/topic anchor: %s", name, mediaLabel,
 			redactTelegramErrorText(sendErr)))
 		if resetMedia != nil {
 			resetMedia()

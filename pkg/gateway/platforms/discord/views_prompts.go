@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"log/slog"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -87,7 +86,7 @@ func clickerName(i *discordgo.Interaction, fallback string) string {
 
 // Approve once, always approve and cancel buttons of a slash command confirmation
 type slashConfirmView struct {
-	hermesView
+	icebathView
 	sessionKey, confirmID                 string
 	approveOnce, approveAlways, cancelBtn *viewItem
 }
@@ -140,7 +139,7 @@ func (v *slashConfirmView) resolve(ctx context.Context, i *discordgo.Interaction
 		return err
 	}
 	if err := v.runSlashConfirm(ctx, i, choice, user); err != nil {
-		slog.Error(fmt.Sprintf("Discord slash-confirm resolve failed: %s", err))
+		pkgLog().Error(fmt.Sprintf("Discord slash-confirm resolve failed: %s", err))
 	}
 	return nil
 }
@@ -155,13 +154,13 @@ func (v *slashConfirmView) runSlashConfirm(ctx context.Context, i *discordgo.Int
 			return err
 		}
 	}
-	slog.Info(fmt.Sprintf("Discord button resolved slash-confirm for session %s (choice=%s, user=%s)", v.sessionKey, choice, user))
+	pkgLog().Info(fmt.Sprintf("Discord button resolved slash-confirm for session %s (choice=%s, user=%s)", v.sessionKey, choice, user))
 	return nil
 }
 
 // Yes and no buttons of an update prompt whose answer the detached update process reads from a file
 type updatePromptView struct {
-	hermesView
+	icebathView
 	sessionKey    string
 	yesBtn, noBtn *viewItem
 }
@@ -204,20 +203,20 @@ func (v *updatePromptView) respond(ctx context.Context, i *discordgo.Interaction
 	responsePath := filepath.Join(home.Dir(ctx), ".update_response")
 	tmp := responsePath + ".tmp"
 	if err := os.WriteFile(tmp, []byte(answer), 0o644); err != nil {
-		slog.Error(fmt.Sprintf("Failed to write update response: %s", err))
+		pkgLog().Error(fmt.Sprintf("Failed to write update response: %s", err))
 		return nil
 	}
 	if err := os.Rename(tmp, responsePath); err != nil {
-		slog.Error(fmt.Sprintf("Failed to write update response: %s", err))
+		pkgLog().Error(fmt.Sprintf("Failed to write update response: %s", err))
 		return nil
 	}
-	slog.Info(fmt.Sprintf("Discord update prompt answered '%s' by %s", answer, user))
+	pkgLog().Info(fmt.Sprintf("Discord update prompt answered '%s' by %s", answer, user))
 	return nil
 }
 
 // Two step provider then model select picker editing its message in place, two minute timeout
 type modelPickerView struct {
-	hermesView
+	icebathView
 	providers        []map[string]any
 	currentModel     string
 	currentProvider  string
@@ -307,9 +306,6 @@ func (v *modelPickerView) buildModelSelectLocked(ctx context.Context, slug strin
 		for _, modelID := range chunk {
 			short := modelID[strings.LastIndex(modelID, "/")+1:]
 			opt := selectOption{label: truncateDiscordComponentText(short, discordSelectFieldLimit), value: truncateDiscordComponentText(modelID, discordSelectFieldLimit)}
-			if suffix := provider.PickerRowSuffix(p, modelID); suffix != "" {
-				opt.description = truncateDiscordComponentText(suffix, discordSelectFieldLimit)
-			}
 			options = append(options, opt)
 		}
 		suffix := ""
@@ -529,7 +525,7 @@ func providerSelectText(ctx context.Context, currentModel, currentProvider strin
 
 // Flat single select picker for finite choice commands, two minute timeout
 type choicePickerView struct {
-	hermesView
+	icebathView
 	choices          []map[string]any
 	onChoiceSelected func(ctx context.Context, chatID, value string) (string, error)
 }
@@ -577,7 +573,7 @@ func (v *choicePickerView) onSelect(ctx context.Context, i *discordgo.Interactio
 	}
 	resultText, err := v.onChoiceSelected(ctx, i.ChannelID, value)
 	if err != nil {
-		slog.Error(fmt.Sprintf("Choice picker selection failed: %s", err))
+		pkgLog().Error(fmt.Sprintf("Choice picker selection failed: %s", err))
 		resultText = i18n.T(ctx, "platform.discord.picker.choice_error", "", map[string]any{"error": err.Error()})
 	}
 	embed := newEmbed("", resultText, colorGreen)
@@ -606,7 +602,7 @@ func (v *choicePickerView) onTimeout(ctx context.Context) {
 
 // One button per clarify choice plus Other, single use, the first valid click disabling all
 type clarifyChoiceView struct {
-	hermesView
+	icebathView
 	choices   []string
 	clarifyID string
 }
@@ -685,10 +681,10 @@ func (v *clarifyChoiceView) finish(ctx context.Context, i *discordgo.Interaction
 	defer v.stop()
 	if err := v.adapter.respondEditMessage(ctx, i, embed, comps, &v.uiView); err != nil {
 		if logEditFailure {
-			slog.Debug(fmt.Sprintf("Discord clarify edit_message failed for %s", v.clarifyID), "error", err)
+			pkgLog().Debug(fmt.Sprintf("Discord clarify edit_message failed for %s", v.clarifyID), "error", err)
 		}
 		if derr := v.adapter.respondDeferUpdate(ctx, i); derr != nil {
-			slog.Debug(fmt.Sprintf("Discord clarify defer failed for %s", v.clarifyID), "error", derr)
+			pkgLog().Debug(fmt.Sprintf("Discord clarify defer failed for %s", v.clarifyID), "error", derr)
 		}
 	}
 }
@@ -705,7 +701,7 @@ func (v *clarifyChoiceView) resolveChoice(ctx context.Context, i *discordgo.Inte
 		resolvedText = entry.Choices[index]
 	}
 	resolved := tools.ResolveGatewayClarify(v.clarifyID, resolvedText)
-	slog.Info(fmt.Sprintf("Discord clarify button resolved (id=%s, choice=%s, user=%s, ok=%s)", v.clarifyID, pyrepr.Repr(resolvedText),
+	pkgLog().Info(fmt.Sprintf("Discord clarify button resolved (id=%s, choice=%s, user=%s, ok=%s)", v.clarifyID, pyrepr.Repr(resolvedText),
 		clickerName(i, "?"), pyrepr.Repr(resolved)))
 	return nil
 }

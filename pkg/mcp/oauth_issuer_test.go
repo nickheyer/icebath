@@ -11,7 +11,7 @@ func storedIssuerTokens(t *testing.T, dir, issuer string) (*TokenStorage, *OAuth
 	t.Helper()
 	payload := map[string]any{"access_token": "a", "token_type": "Bearer", "expires_in": 3600, "refresh_token": "r"}
 	if issuer != "" {
-		payload["hermes_issuer"] = issuer
+		payload["icebath_issuer"] = issuer
 	}
 	writeTokenFile(t, dir, "srv.json", payload)
 	s := NewTokenStorage(context.Background(), "srv", dir)
@@ -59,7 +59,7 @@ func TestOAuthIssuerLegacyFileWithoutIssuerAdoptsCurrentIssuerOnce(t *testing.T)
 	dir := t.TempDir()
 	s, tok := storedIssuerTokens(t, dir, "")
 	issuerProvider(s, "https://as.example.com", tok).enforceRefreshTokenIssuer(context.Background())
-	if derefStr(tok.RefreshToken) != "r" || readJSONFile(t, filepath.Join(dir, "mcp-tokens", "srv.json"))["hermes_issuer"] != "https://as.example.com" {
+	if derefStr(tok.RefreshToken) != "r" || readJSONFile(t, filepath.Join(dir, "mcp-tokens", "srv.json"))["icebath_issuer"] != "https://as.example.com" {
 		t.Fatal("legacy file did not adopt the current issuer")
 	}
 	s2 := NewTokenStorage(context.Background(), "srv", dir)
@@ -82,7 +82,7 @@ func TestOAuthIssuerSetTokensStampsBoundIssuerAndGetTokensKeepsItOutOfModel(t *t
 	if err := s.SetTokens(context.Background(), tok); err != nil {
 		t.Fatal(err)
 	}
-	if got := readJSONFile(t, filepath.Join(dir, "mcp-tokens", "srv.json"))["hermes_issuer"]; got != "https://as.example.com" {
+	if got := readJSONFile(t, filepath.Join(dir, "mcp-tokens", "srv.json"))["icebath_issuer"]; got != "https://as.example.com" {
 		t.Fatalf("stamped %v", got)
 	}
 	fresh := NewTokenStorage(context.Background(), "srv", dir)
@@ -90,7 +90,7 @@ func TestOAuthIssuerSetTokensStampsBoundIssuerAndGetTokensKeepsItOutOfModel(t *t
 	if err != nil || loaded == nil || fresh.LoadedIssuer() != "https://as.example.com" {
 		t.Fatalf("loaded %+v issuer %q %v", loaded, fresh.LoadedIssuer(), err)
 	}
-	if _, ok := loaded.dump().vals["hermes_issuer"]; ok {
+	if _, ok := loaded.dump().vals["icebath_issuer"]; ok {
 		t.Fatal("issuer leaked into the token model")
 	}
 }

@@ -23,7 +23,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/tools"
 )
 
-// Agent with the attribute surface the hermes _make_agent namespace carries, gates off unless the case sets them
+// Agent with the attribute surface the make agent namespace carries, gates off unless the case sets them
 func spAgent(t *testing.T, names ...string) *AIAgent {
 	t.Helper()
 	empty := ""
@@ -244,7 +244,7 @@ const (
 	contextSentinel = "CONTEXT_FILES_SENTINEL"
 )
 
-// Builds with a skills index and context files present, the hermes _build helper
+// Builds with a skills index and context files present, the build helper
 func skillsContextPrompt(t *testing.T, a *AIAgent) (SystemPromptParts, string) {
 	t.Helper()
 	emptyPromptProbes(t)
@@ -497,9 +497,9 @@ func TestCodingPromptOrdersSharedContextBeforeWorkspace(t *testing.T) {
 	buildContextFilesPromptFn = func(context.Context, *tools.Env, ContextFilesOptions) (string, error) { return "CONTEXT_FILES", nil }
 	fixedCodingParts(t, []string{"CODING_STABLE"}, []string{"WORKSPACE"}, []string{"Operator instructions (from config):\nOPERATOR"})
 	fixedPromptClock(t, time.Date(2026, 1, 2, 0, 0, 0, 0, time.UTC))
-	prevTZ := hermesTimezone
-	hermesTimezone = func(context.Context) (*time.Location, bool) { return nil, false }
-	t.Cleanup(func() { hermesTimezone = prevTZ })
+	prevTZ := icebathTimezone
+	icebathTimezone = func(context.Context) (*time.Location, bool) { return nil, false }
+	t.Cleanup(func() { icebathTimezone = prevTZ })
 	prevFmt := safeStrftime
 	safeStrftime = func(v time.Time, format string) string {
 		if format == "%Z" || format == "%z" {
@@ -565,12 +565,12 @@ func TestConversationStartedTwoLine(t *testing.T) {
 	})
 	t.Run("test_surrogate_zone_name_does_not_abort_prompt", func(t *testing.T) {
 		zone := time.FixedZone("Paris, Madrid (heure d'\xe9t\xe9)", 2*3600)
-		prev := hermesNow
-		hermesNow = func(context.Context) time.Time { return time.Date(2026, 7, 14, 13, 5, 0, 0, zone) }
-		t.Cleanup(func() { hermesNow = prev })
-		prevTZ := hermesTimezone
-		hermesTimezone = func(context.Context) (*time.Location, bool) { return nil, false }
-		t.Cleanup(func() { hermesTimezone = prevTZ })
+		prev := icebathNow
+		icebathNow = func(context.Context) time.Time { return time.Date(2026, 7, 14, 13, 5, 0, 0, zone) }
+		t.Cleanup(func() { icebathNow = prev })
+		prevTZ := icebathTimezone
+		icebathTimezone = func(context.Context) (*time.Location, bool) { return nil, false }
+		t.Cleanup(func() { icebathTimezone = prevTZ })
 		v := volatile(t, "20260714_090000_fresh", false)
 		if !utf8.ValidString(v) {
 			t.Fatalf("volatile carries invalid text %q", v)
@@ -643,7 +643,7 @@ func TestStoredPromptCwdIgnoresProjectHostDecoys(t *testing.T) {
 	}
 	t.Setenv("TERMINAL_ENV", "local")
 	t.Setenv("TERMINAL_CWD", cwd)
-	decoy := "# Hermes runtime environment\n\nHost: Example\nUser home directory: /example\nCurrent working directory: /example\n"
+	decoy := "# Icebath runtime environment\n\nHost: Example\nUser home directory: /example\nCurrent working directory: /example\n"
 	if err := os.WriteFile(filepath.Join(cwd, "AGENTS.md"), []byte(decoy), 0o600); err != nil {
 		t.Fatal(err)
 	}
@@ -720,7 +720,7 @@ func profilePrompt(t *testing.T) SystemPromptParts {
 }
 
 func TestNamedProfileHintIntegration(t *testing.T) {
-	t.Run("test_real_hermes_home_under_profiles_renders_correct_paths", func(t *testing.T) {
+	t.Run("test_real_icebath_home_under_profiles_renders_correct_paths", func(t *testing.T) {
 		userHome := t.TempDir()
 		root := filepath.Join(userHome, ".icebath")
 		profileHome := filepath.Join(root, "profiles", "coder")
@@ -820,7 +820,7 @@ func TestPluginRerenderFailOpen(t *testing.T) {
 	})
 }
 
-// A git repo with one committed source file, the hermes _init_repo fixture
+// A git repo with one committed source file, the init repo fixture
 func initCommittedRepo(t *testing.T, path, firstCommit string) string {
 	t.Helper()
 	if err := os.MkdirAll(path, 0o700); err != nil {
@@ -880,7 +880,7 @@ type promptRowStore struct {
 	prompt string
 }
 
-// The hermes double has no lineage walk, the AttributeError the start line reader swallows
+// The double has no lineage walk, the AttributeError the start line reader swallows
 func (s promptRowStore) GetConversationRoot(string) (string, error) {
 	return "", fmt.Errorf("AttributeError: 'SimpleNamespace' object has no attribute 'get_conversation_root'")
 }

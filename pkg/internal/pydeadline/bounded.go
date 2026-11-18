@@ -3,7 +3,6 @@ package pydeadline
 import (
 	"context"
 	"fmt"
-	"log/slog"
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
@@ -76,7 +75,7 @@ func RunBounded(ctx context.Context, fn func(ctx context.Context) (any, error), 
 		return result(o)
 	default:
 	}
-	slog.Warn(fmt.Sprintf("[deadline] %s timed out after %.1fs; worker abandoned", pyrepr.StrRepr(label), timeout.Seconds()))
+	pkgLog().Warn(fmt.Sprintf("[deadline] %s timed out after %.1fs; worker abandoned", pyrepr.StrRepr(label), timeout.Seconds()))
 	if hooks.MarkSuspect != nil {
 		hooks.MarkSuspect()
 	}
@@ -84,7 +83,7 @@ func RunBounded(ctx context.Context, fn func(ctx context.Context) (any, error), 
 		func() {
 			defer func() {
 				if r := recover(); r != nil {
-					slog.Debug(fmt.Sprintf("deadline on_timeout callback failed: %v", r))
+					pkgLog().Debug(fmt.Sprintf("deadline on_timeout callback failed: %v", r))
 				}
 			}()
 			hooks.OnTimeout()

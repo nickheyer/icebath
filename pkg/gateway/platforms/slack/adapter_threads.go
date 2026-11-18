@@ -3,7 +3,6 @@ package slack
 import (
 	"context"
 	"fmt"
-	"log/slog"
 	"sort"
 	"strings"
 	"time"
@@ -124,7 +123,7 @@ func (a *SlackAdapter) fetchThreadContext(ctx context.Context, channelID, thread
 	}
 	result, err := a.conversationsRepliesWithBackoff(ctx, channelID, threadTS, limit+1, teamID)
 	if err != nil {
-		slog.Warn(fmt.Sprintf("[Slack] Failed to fetch thread context: %v", err))
+		pkgLog().Warn(fmt.Sprintf("[Slack] Failed to fetch thread context: %v", err))
 		return ""
 	}
 	if result == nil {
@@ -186,7 +185,7 @@ func (a *SlackAdapter) conversationsRepliesWithBackoff(ctx context.Context, chan
 		isRateLimit := strings.Contains(errStr, "ratelimited") || strings.Contains(errStr, "429") || strings.Contains(errStr, "rate_limited")
 		if isRateLimit && attempt < 2 {
 			retryAfter := 1.0 * float64(int(1)<<attempt)
-			slog.Warn(fmt.Sprintf("[Slack] conversations.replies rate limited; retrying in %.1fs (attempt %d/3)", retryAfter, attempt+1))
+			pkgLog().Warn(fmt.Sprintf("[Slack] conversations.replies rate limited; retrying in %.1fs (attempt %d/3)", retryAfter, attempt+1))
 			if serr := sleepCtx(ctx, time.Duration(retryAfter*float64(time.Second))); serr != nil {
 				return nil, serr
 			}
@@ -313,7 +312,7 @@ func (a *SlackAdapter) fetchThreadParentText(ctx context.Context, channelID, thr
 	}
 	result, err := a.getClient(channelID, teamID).call(ctx, "conversations.replies", map[string]any{"channel": channelID, "ts": threadTS, "limit": 1, "inclusive": true})
 	if err != nil {
-		slog.Debug(fmt.Sprintf("[Slack] Failed to fetch thread parent text: %v", err))
+		pkgLog().Debug(fmt.Sprintf("[Slack] Failed to fetch thread parent text: %v", err))
 		return ""
 	}
 	messages := asList(getOr(result.Data, "messages", []any{}))
@@ -379,7 +378,7 @@ func (a *SlackAdapter) collectThreadRootImages(ctx context.Context, channelID, t
 			if label == "" {
 				label = "unknown"
 			}
-			slog.Warn(fmt.Sprintf("[Slack] Failed to cache thread-root image %s: %v", label, err))
+			pkgLog().Warn(fmt.Sprintf("[Slack] Failed to cache thread-root image %s: %v", label, err))
 			continue
 		}
 		mediaURLs = append(mediaURLs, file.path)
@@ -407,10 +406,10 @@ func (a *SlackAdapter) handleIcebathCommand(ctx context.Context, ack ackFunc, co
 		err = ack(map[string]any{"response_type": "ephemeral", "text": i18n.T(ctx, "platform.slack.slash.running", "", map[string]any{"command": slash})})
 	}
 	if err != nil {
-		slog.Warn(fmt.Sprintf("[Slack] slash command ack failed: %v", err))
+		pkgLog().Warn(fmt.Sprintf("[Slack] slash command ack failed: %v", err))
 	}
 	if err := a.handleSlashCommand(ctx, command); err != nil {
-		slog.Error(fmt.Sprintf("Failed to run listener function (error: %v)", err))
+		pkgLog().Error(fmt.Sprintf("Failed to run listener function (error: %v)", err))
 	}
 }
 
@@ -428,12 +427,12 @@ func (a *SlackAdapter) handleSlashCommand(ctx context.Context, command map[strin
 	}
 	threadID := SlashThreadID(command)
 	if a.slashChannelGated(ctx, channelID) {
-		slog.Debug(fmt.Sprintf("[Slack] Ignoring slash command in ignored/non-allowed channel: %s", channelID))
+		pkgLog().Debug(fmt.Sprintf("[Slack] Ignoring slash command in ignored/non-allowed channel: %s", channelID))
 		return nil
 	}
 	isDM := strings.HasPrefix(channelID, "D")
 	if isDM && a.slackDisableDMs(ctx) {
-		slog.Info(fmt.Sprintf("[Slack] Ignoring slash command from DM because Slack DMs are disabled: channel=%s user=%s", channelID, userID))
+		pkgLog().Info(fmt.Sprintf("[Slack] Ignoring slash command from DM because Slack DMs are disabled: channel=%s user=%s", channelID, userID))
 		return nil
 	}
 	rejected := a.earlyRejectUnauthorized(ctx, userID, channelID, isDM, threadID)
@@ -610,7 +609,7 @@ func (a *SlackAdapter) setThreadWatermark(ctx context.Context, channelID, thread
 		return
 	}
 	if _, err := store.SetSessionMetadata(ctx, sessionKey, metaKey, watermarkTS); err != nil {
-		slog.Debug(fmt.Sprintf("[Slack] Failed to persist thread watermark: %v", err))
+		pkgLog().Debug(fmt.Sprintf("[Slack] Failed to persist thread watermark: %v", err))
 	}
 }
 

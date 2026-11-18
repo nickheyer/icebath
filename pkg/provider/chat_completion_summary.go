@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"log/slog"
 	"maps"
 	"reflect"
 	"regexp"
@@ -17,8 +16,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
-
-var summaryLog = slog.Default().With("logger", "agent.chat_completion_helpers")
 
 const emptySummaryResponse = "I reached the iteration limit and couldn't generate a summary."
 
@@ -163,7 +160,7 @@ func routerTimeoutShimResponse(response any) bool {
 // Normalized summary text, empty for a router timeout shim so the retry slot takes it
 func summaryText(agent ChatCompletionAgent, response any, normalizeKwargs map[string]any) (string, error) {
 	if routerTimeoutShimResponse(response) {
-		summaryLog.Warn("Iteration summary returned a router timeout shim; retrying")
+		pkgLog().Warn("Iteration summary returned a router timeout shim; retrying")
 		return "", nil
 	}
 	normalized, err := agent.Transport().NormalizeResponse(response, normalizeKwargs)
@@ -174,7 +171,7 @@ func summaryText(agent ChatCompletionAgent, response any, normalizeKwargs map[st
 		return "", nil
 	}
 	if len(normalized.Message.ToolCalls) > 0 {
-		summaryLog.Warn("Iteration summary emitted tool calls; discarding them")
+		pkgLog().Warn("Iteration summary emitted tool calls; discarding them")
 	}
 	return pystr.Strip(normalized.Message.Text()), nil
 }
@@ -199,7 +196,7 @@ func codexSummaryAttempt(ctx context.Context, agent ChatCompletionAgent, apiMess
 	}, nil
 }
 
-// Messages API summary attempt built by the transport with the Nous Portal extra body merged
+// Messages API summary attempt built by the transport
 func anthropicSummaryAttempt(ctx context.Context, agent ChatCompletionAgent, apiMessages []map[string]any, apiRequestID string) (summaryAttempt, error) {
 	return func(ctx context.Context, retryCount int) (string, error) {
 		params := map[string]any{"max_tokens": nil, "reasoning_config": agent.ReasoningConfig(), "is_oauth": agent.IsAnthropicOAuth(),
@@ -211,7 +208,6 @@ func anthropicSummaryAttempt(ctx context.Context, agent ChatCompletionAgent, api
 		if err != nil {
 			return "", err
 		}
-		antKw = MergeNousPortalMessagesExtraBody(ctx, agent, antKw, apiMessages)
 		response, err := managedSummaryCall(ctx, agent, apiRequestID, antKw, retryCount)
 		if err != nil {
 			return "", err
@@ -255,7 +251,7 @@ var newSummaryRequestID = func() string { return "iteration-summary:" + uuid.New
 func HandleMaxIterations(ctx context.Context, agent ChatCompletionAgent, messages *[]map[string]any) (final string, err error) {
 	warning := fmt.Sprintf("⚠️  Reached maximum iterations (%d). Requesting summary...", agent.MaxIterations())
 	if agent.SuppressStatusOutput() {
-		summaryLog.Warn(warning)
+		pkgLog().Warn(warning)
 	} else {
 		agent.SafePrint(warning, true)
 	}
@@ -279,7 +275,7 @@ func HandleMaxIterations(ctx context.Context, agent ChatCompletionAgent, message
 		}
 		return "", err
 	}
-	summaryLog.Warn(fmt.Sprintf("Failed to get summary response: %v", err))
+	pkgLog().Warn(fmt.Sprintf("Failed to get summary response: %v", err))
 	return tools.SiteCopy(ctx, "max_iterations_no_summary", map[string]any{"limit": agent.MaxIterations()})
 }
 

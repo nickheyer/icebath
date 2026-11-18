@@ -3,7 +3,6 @@ package provider
 import (
 	"errors"
 	"fmt"
-	"log/slog"
 	"net/http"
 	"time"
 )
@@ -76,10 +75,10 @@ func auxRateLimitRetryRungs(yield auxLadderYield, firstErr error, client AuxClie
 		wait, ok := auxRateLimitWait(err, attempt)
 		if !ok {
 			declared, _ := auxRateLimitRetryAfter(err)
-			slog.Info(fmt.Sprintf("Auxiliary %s: provider asked for a %.0fs cooldown; not waiting it out", label, declared.Seconds()))
+			pkgLog().Info(fmt.Sprintf("Auxiliary %s: provider asked for a %.0fs cooldown; not waiting it out", label, declared.Seconds()))
 			break
 		}
-		slog.Info(fmt.Sprintf("Auxiliary %s: rate limited (attempt %d/%d); retrying after %.2fs", label, attempt, auxRateLimitRetries, wait.Seconds()))
+		pkgLog().Info(fmt.Sprintf("Auxiliary %s: rate limited (attempt %d/%d); retrying after %.2fs", label, attempt, auxRateLimitRetries, wait.Seconds()))
 		if _, werr := yield(auxLadderStep{Kind: "wait", Args: []any{wait.Seconds()}}); werr != nil {
 			return nil, nil, werr
 		}

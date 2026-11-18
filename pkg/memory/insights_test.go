@@ -92,7 +92,7 @@ func (f *insightsFixture) ended(t *testing.T, id string, startedAgo, length floa
 	f.exec(t, "UPDATE sessions SET ended_at = ? WHERE id = ?", now-startedAgo+length, id)
 }
 
-// The populated store of the hermes fixture, four sessions in the window and one 45 days old
+// The populated store of the test fixture, four sessions in the window and one 45 days old
 func populatedInsights(t *testing.T) *insightsFixture {
 	f := newInsightsFixture(t)
 	day := 86400.0
@@ -170,7 +170,7 @@ func (f *insightsFixture) report(t *testing.T, days int, source string) (*Insigh
 func TestInsightsPricingHelpers(t *testing.T) {
 	t.Setenv("ICEBATH_HOME", t.TempDir())
 	ctx := context.Background()
-	for _, m := range []string{"FP16_Hermes_4.5", "my-custom-model", "glm-5", "", "some-opus-model", "future-sonnet-v2"} {
+	for _, m := range []string{"FP16_Custom_4.5", "my-custom-model", "glm-5", "", "some-opus-model", "future-sonnet-v2"} {
 		if provider.HasKnownPricing(ctx, m, "", "", "") {
 			t.Fatalf("%q must not have known pricing", m)
 		}
@@ -574,7 +574,7 @@ func TestInsightsSurvivesCorruptTimestampRows(t *testing.T) {
 func TestInsightsOverviewTotalsIncludeAuxUsage(t *testing.T) {
 	f := newInsightsFixture(t)
 	f.session(t, "s1", "cli", "")
-	f.tokens(t, "s1", insightsUsage{InputTokens: 1000, OutputTokens: 100, Model: "main-model", BillingProvider: "nous", APICalls: 1})
+	f.tokens(t, "s1", insightsUsage{InputTokens: 1000, OutputTokens: 100, Model: "main-model", BillingProvider: "anthropic", APICalls: 1})
 	f.tokens(t, "s1", insightsUsage{Task: "compression", Model: "glm-5", BillingProvider: "openrouter", InputTokens: 5000, OutputTokens: 500})
 	_, r := f.report(t, 30, "")
 	if r.Overview.TotalInputTokens != 6000 || r.Overview.TotalOutputTokens != 600 {

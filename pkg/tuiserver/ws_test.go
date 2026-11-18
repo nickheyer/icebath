@@ -10,11 +10,11 @@ import (
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/tuigateway"
+	"github.com/nickheyer/icebath/pkg/tuihost"
 )
 
 // Drives one session to its disconnect teardown, seed running with the live transport at the first read
-func wsTestRunDisconnect(t *testing.T, seed func(transport *tuigateway.WSTransport)) {
+func wsTestRunDisconnect(t *testing.T, seed func(transport *tuihost.WSTransport)) {
 	t.Helper()
 	wsTestNoOrphanGrace(t)
 	sock := newWSTestSocket()
@@ -38,12 +38,12 @@ func (w *wsTestWorker) Close() {
 
 func TestWsDisconnectReapsFlaggedSessionAndClosesWorker(t *testing.T) {
 	worker := &wsTestWorker{}
-	t.Cleanup(func() { tuigateway.SetSessionRecord("flagged", nil) })
-	wsTestRunDisconnect(t, func(transport *tuigateway.WSTransport) {
-		tuigateway.SetSessionRecord("flagged", tuigateway.NewSession(map[string]any{
-			"transport": tuigateway.Transport(transport), "close_on_disconnect": true, "slash_worker": worker, "session_key": "k"}))
+	t.Cleanup(func() { tuihost.SetSessionRecord("flagged", nil) })
+	wsTestRunDisconnect(t, func(transport *tuihost.WSTransport) {
+		tuihost.SetSessionRecord("flagged", tuihost.NewSession(map[string]any{
+			"transport": tuihost.Transport(transport), "close_on_disconnect": true, "slash_worker": worker, "session_key": "k"}))
 	})
-	if tuigateway.SessionRecord("flagged") != nil {
+	if tuihost.SessionRecord("flagged") != nil {
 		t.Fatal("the flagged session outlived its transport")
 	}
 	if !reflect.DeepEqual(worker.closed, []bool{true}) {
@@ -53,28 +53,28 @@ func TestWsDisconnectReapsFlaggedSessionAndClosesWorker(t *testing.T) {
 
 func TestWsConnectionRegistersThenDisconnectUnregistersLiveTransport(t *testing.T) {
 	registered := false
-	var seeded *tuigateway.WSTransport
-	wsTestRunDisconnect(t, func(transport *tuigateway.WSTransport) {
+	var seeded *tuihost.WSTransport
+	wsTestRunDisconnect(t, func(transport *tuihost.WSTransport) {
 		seeded = transport
-		registered = wsTestIndex(tuigateway.LiveTransports(), tuigateway.Transport(transport)) >= 0
+		registered = wsTestIndex(tuihost.LiveTransports(), tuihost.Transport(transport)) >= 0
 	})
 	if !registered {
 		t.Fatal("the connected transport was not registered for global broadcasts")
 	}
-	if wsTestIndex(tuigateway.LiveTransports(), tuigateway.Transport(seeded)) >= 0 {
+	if wsTestIndex(tuihost.LiveTransports(), tuihost.Transport(seeded)) >= 0 {
 		t.Fatal("the disconnect left the transport registered")
 	}
 }
 
 func TestWsDisconnectReleasesWakeWordOwner(t *testing.T) {
-	var released, created []tuigateway.Transport
+	var released, created []tuihost.Transport
 	prev := wsReleaseWakeForTransport
-	wsReleaseWakeForTransport = func(transport tuigateway.Transport) bool {
+	wsReleaseWakeForTransport = func(transport tuihost.Transport) bool {
 		released = append(released, transport)
 		return true
 	}
 	t.Cleanup(func() { wsReleaseWakeForTransport = prev })
-	wsTestRunDisconnect(t, func(transport *tuigateway.WSTransport) { created = append(created, transport) })
+	wsTestRunDisconnect(t, func(transport *tuihost.WSTransport) { created = append(created, transport) })
 	if len(released) != 1 || !reflect.DeepEqual(released, created) {
 		t.Fatalf("released %v, created %v", released, created)
 	}
@@ -111,7 +111,7 @@ func wsTestSlowDispatchHarness(t *testing.T) (*wsTestSocket, *wsTestLog, chan st
 	wsTestNoOrphanGrace(t)
 	log, release := &wsTestLog{}, make(chan struct{})
 	prevDispatch, prevClose := wsServerDispatch, wsCloseSessionsForTransport
-	wsServerDispatch = func(_ context.Context, req any, _ tuigateway.Transport) map[string]any {
+	wsServerDispatch = func(_ context.Context, req any, _ tuihost.Transport) map[string]any {
 		frame, _ := plainRequest(req).(map[string]any)
 		method, _ := frame["method"].(string)
 		log.add("dispatch:" + method)
@@ -124,7 +124,7 @@ func wsTestSlowDispatchHarness(t *testing.T) (*wsTestSocket, *wsTestLog, chan st
 		log.add("done:" + method)
 		return map[string]any{"jsonrpc": "2.0", "id": frame["id"], "result": map[string]any{"method": method}}
 	}
-	wsCloseSessionsForTransport = func(context.Context, tuigateway.Transport, string) (int, int) {
+	wsCloseSessionsForTransport = func(context.Context, tuihost.Transport, string) (int, int) {
 		log.add("teardown")
 		return 0, 0
 	}
@@ -262,7 +262,7 @@ func wsTestFakeAuthority(t *testing.T, capabilities []string, profileID string) 
 		held[capability] = true
 	}
 	prev := wsNewAuthorityConnection
-	wsNewAuthorityConnection = func(*gateway.SessionAuthority, *tuigateway.WSTransport, map[string]any, bool) (authorityConn, error) {
+	wsNewAuthorityConnection = func(*gateway.SessionAuthority, *tuihost.WSTransport, map[string]any, bool) (authorityConn, error) {
 		return &wsTestConnection{actor: gateway.Principal{Capabilities: held, ProfileID: profileID}}, nil
 	}
 	t.Cleanup(func() { wsNewAuthorityConnection = prev })

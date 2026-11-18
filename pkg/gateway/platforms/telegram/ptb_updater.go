@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"log/slog"
 	"math"
 	"net/http"
 	"sync"
@@ -119,13 +118,13 @@ func (u *sdkUpdater) networkRetryLoop(ctx context.Context, stop *pollEvent, onEr
 		case err == nil:
 			curInterval = 0
 		case isPTBError(err, "RetryAfter"):
-			slog.Info(fmt.Sprintf("Network Retry Loop (Polling Updates): %s. Adding %v seconds to the specified time.", err.Error(), 0.5))
+			pkgLog().Info(fmt.Sprintf("Network Retry Loop (Polling Updates): %s. Adding %v seconds to the specified time.", err.Error(), 0.5))
 			curInterval = 0.5 + err.(*TelegramError).RetryAfter
 		case isPTBError(err, "TimedOut"):
-			slog.Debug(fmt.Sprintf("Network Retry Loop (Polling Updates): Timed out: %s. Retrying immediately.", err.Error()))
+			pkgLog().Debug(fmt.Sprintf("Network Retry Loop (Polling Updates): Timed out: %s. Retrying immediately.", err.Error()))
 			curInterval = 0
 		case isPTBError(err, "InvalidToken"):
-			slog.Error("Network Retry Loop (Polling Updates): Invalid token. Aborting retry loop.", "error", err)
+			pkgLog().Error("Network Retry Loop (Polling Updates): Invalid token. Aborting retry loop.", "error", err)
 			return err
 		case isPTBError(err, "TelegramError"):
 			if onErr != nil {
@@ -137,7 +136,7 @@ func (u *sdkUpdater) networkRetryLoop(ctx context.Context, stop *pollEvent, onEr
 				curInterval = math.Min(30, 1.5*curInterval)
 			}
 		default:
-			slog.Error("Something went wrong processing the data received from Telegram. Received data was *not* processed!", "error", err)
+			pkgLog().Error("Something went wrong processing the data received from Telegram. Received data was *not* processed!", "error", err)
 			return err
 		}
 		if curInterval > 0 {
@@ -165,7 +164,7 @@ func (u *sdkUpdater) pollOnce(ctx context.Context) error {
 		return nil
 	}
 	if !u.Running() {
-		slog.Error("Updater stopped unexpectedly. Pulled updates will be ignored and pulled again on restart.")
+		pkgLog().Error("Updater stopped unexpectedly. Pulled updates will be ignored and pulled again on restart.")
 		return nil
 	}
 	for _, update := range updates {
@@ -177,7 +176,7 @@ func (u *sdkUpdater) pollOnce(ctx context.Context) error {
 	return nil
 }
 
-// getUpdates through the instrumented polling request, a missing result standing for the KeyError of hermes
+// Through the instrumented polling request
 func (u *sdkUpdater) getUpdates(ctx context.Context, offset int64, timeout int) ([]*models.Update, error) {
 	body, err := json.Marshal(map[string]any{"offset": offset, "timeout": timeout, "allowed_updates": allUpdateTypes})
 	if err != nil {
@@ -253,7 +252,7 @@ func (u *sdkUpdater) Stop(ctx context.Context) error {
 	}
 	if _, err := u.getUpdates(ctx, offset, 0); err != nil {
 		if isPTBError(err, "TelegramError") {
-			slog.Error("Error while calling `get_updates` one more time to mark all fetched updates. Suppressing error to ensure graceful shutdown. When polling for updates is restarted, updates may be fetched again. Please adjust timeouts via `ApplicationBuilder` or the parameter `get_updates_request` of `Bot`.", "error", err)
+			pkgLog().Error("Error while calling `get_updates` one more time to mark all fetched updates. Suppressing error to ensure graceful shutdown. When polling for updates is restarted, updates may be fetched again. Please adjust timeouts via `ApplicationBuilder` or the parameter `get_updates_request` of `Bot`.", "error", err)
 			return nil
 		}
 		return err

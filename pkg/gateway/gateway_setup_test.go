@@ -97,7 +97,7 @@ type launchdWizardState struct {
 
 func launchdWizardHost(t *testing.T) *launchdWizardState {
 	t.Helper()
-	const label, domain = "ai.icebath.gateway", "gui/501"
+	const label, domain = "app.icebath.gateway", "gui/501"
 	tmp := t.TempDir()
 	t.Setenv("ICEBATH_HOME", filepath.Join(tmp, ".icebath"))
 	state := &launchdWizardState{plist: filepath.Join(tmp, "LaunchAgents", label+".plist")}

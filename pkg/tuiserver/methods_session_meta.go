@@ -7,18 +7,16 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/state"
-	"github.com/nickheyer/icebath/pkg/tuigateway"
+	"github.com/nickheyer/icebath/pkg/tuihost"
 )
 
 // Declares the title, archive, hidden and reaction methods on the session module registry
 func registerSessionMetaHandlers() {
 	sessionRegistry.method("session.title", withSession(withSessionDB(5007, sessionTitle)))
-	sessionRegistry.method("session.archive", sessionArchive)
-	sessionRegistry.method("session.set_hidden", sessionSetHidden)
 }
 
 // Stored title of a session, applying a queued pending title when the row now takes it
-func titleRead(ctx context.Context, session *tuigateway.Session, db *state.DB, key string) (resolved string) {
+func titleRead(ctx context.Context, session *tuihost.Session, db *state.DB, key string) (resolved string) {
 	fallback := ""
 	if truthy(session.Get("pending_title")) {
 		fallback = strOr(session.Get("pending_title"))
@@ -53,7 +51,7 @@ func titleRead(ctx context.Context, session *tuigateway.Session, db *state.DB, k
 }
 
 // Reads or sets a session title, queueing it as pending when no row can take it yet
-func sessionTitle(ctx context.Context, rid any, params map[string]any, session *tuigateway.Session, db *state.DB) map[string]any {
+func sessionTitle(ctx context.Context, rid any, params map[string]any, session *tuihost.Session, db *state.DB) map[string]any {
 	key := strOr(session.Get("session_key"))
 	var result map[string]any
 	if _, present := params["title"]; !present {
@@ -109,89 +107,4 @@ func sessionTitle(ctx context.Context, rid any, params map[string]any, session *
 	}
 	emitSessionInfoForSession(ctx, strOr(params["session_id"]), session)
 	return ok(rid, result)
-}
-
-// Db of a live session, else the writable params profile db, with its release
-func liveOrProfileDB(ctx context.Context, session *tuigateway.Session, params map[string]any) (*state.DB, func()) {
-	if session != nil {
-		return sessionDB(ctx, session)
-	}
-	db, release, err := profileDB(ctx, params, true)
-	panicIf(err)
-	return db, release
-}
-
-// Sets a lineage flag on a live session key, else on a stored id the profile db resolves
-func setLineageFlag(ctx context.Context, rid any, params map[string]any, session *tuigateway.Session, target, field string, value bool,
-	set func(db *state.DB, key string) (bool, error)) map[string]any {
-	db, release := liveOrProfileDB(ctx, session, params)
-	defer release()
-	if db == nil {
-		return dbUnavailableError(ctx, rid, 5007)
-	}
-	key, notFound := "", false
-	if failure := catchPanic(func() {
-		if session != nil {
-			key = strOr(session.Get("session_key"))
-			applied, err := set(db, key)
-			panicIf(err)
-			if !applied {
-				session.Set("pending_"+field, value)
-			}
-			return
-		}
-		resolved, err := db.ResolveSessionID(target)
-		panicIf(err)
-		key = resolved
-		if key == "" {
-			notFound = true
-			return
-		}
-		_, err = set(db, key)
-		panicIf(err)
-	}); failure != nil {
-		return rpcErr(rid, 5007, failureText(failure), nil)
-	}
-	if notFound {
-		return rpcErr(rid, 4001, "session not found", nil)
-	}
-	return ok(rid, map[string]any{field: value, "session_key": key})
-}
-
-// Archives or unarchives a session and its lineage, live runtime first then a stored id
-func sessionArchive(ctx context.Context, rid any, params map[string]any) map[string]any {
-	raw, present := params["archived"]
-	if !present {
-		raw = true
-	}
-	archived := isTruthyValue(raw)
-	target := ""
-	switch {
-	case truthy(params["session_id"]):
-		target = strOr(params["session_id"])
-	case truthy(params["session_key"]):
-		target = strOr(params["session_key"])
-	}
-	if target == "" {
-		return rpcErr(rid, 4006, "session_id required", nil)
-	}
-	return setLineageFlag(ctx, rid, params, tuigateway.SessionRecord(target), target, "archived", archived, func(db *state.DB, key string) (bool, error) {
-		return db.SetSessionArchived(ctx, key, archived, true)
-	})
-}
-
-// Hides or unhides a session and its lineage, the flag required, live runtime first then a stored id
-func sessionSetHidden(ctx context.Context, rid any, params map[string]any) map[string]any {
-	raw, present := params["hidden"]
-	if !present {
-		return rpcErr(rid, 4021, "hidden required", nil)
-	}
-	hidden := isTruthyValue(raw)
-	sid := ""
-	if truthy(params["session_id"]) {
-		sid = strOr(params["session_id"])
-	}
-	return setLineageFlag(ctx, rid, params, tuigateway.SessionRecord(sid), strParam(params, "session_id", ""), "hidden", hidden, func(db *state.DB, key string) (bool, error) {
-		return db.SetSessionHidden(ctx, key, hidden)
-	})
 }

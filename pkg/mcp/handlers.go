@@ -468,7 +468,7 @@ func askForCall(ctx context.Context, env *tools.Env, serverName, toolName string
 	}
 	answer, err := askConsent(ctx, env, message, description, tools.ElicitationOptions{Surface: "mcp-trust/" + serverName, Title: title, RememberKey: rememberKey})
 	if err != nil {
-		mcpLogger().Error(fmt.Sprintf("MCP trust gate: approval check failed for %s.%s: %s", serverName, toolName, err))
+		pkgLog().Error(fmt.Sprintf("MCP trust gate: approval check failed for %s.%s: %s", serverName, toolName, err))
 		if over && charge != nil {
 			return toolError(charge.Refusal(spent))
 		}
@@ -488,7 +488,7 @@ func askForCall(ctx context.Context, env *tools.Env, serverName, toolName string
 	if gated {
 		kind = "untrusted"
 	}
-	mcpLogger().Info(fmt.Sprintf("MCP trust gate: user %s '%s' on %s server '%s'", verb, toolName, kind, serverName))
+	pkgLog().Info(fmt.Sprintf("MCP trust gate: user %s '%s' on %s server '%s'", verb, toolName, kind, serverName))
 	if over && charge != nil {
 		return toolError(charge.Refusal(spent))
 	}
@@ -607,7 +607,7 @@ func lookupReconnectableServer(ctx context.Context, serverName string, requireLo
 func retryOnce(ctx context.Context, serverName string, retry func() (string, error), op, what string) (string, bool) {
 	result, err := retry()
 	if err != nil {
-		mcpLogger().Warn(fmt.Sprintf("MCP %s/%s retry after %s failed: %s", serverName, op, what, excStr(err)))
+		pkgLog().Warn(fmt.Sprintf("MCP %s/%s retry after %s failed: %s", serverName, op, what, excStr(err)))
 		return "", false
 	}
 	return recordCallOutcome(ctx, serverName, result), true
@@ -625,7 +625,7 @@ func handleAuthErrorAndRetry(ctx context.Context, serverName string, err error, 
 		return oauthHandle401(c, serverName)
 	})
 	if recErr != nil {
-		mcpLogger().Warn(fmt.Sprintf("MCP OAuth '%s': recovery attempt failed: %s", serverName, excStr(recErr)))
+		pkgLog().Warn(fmt.Sprintf("MCP OAuth '%s': recovery attempt failed: %s", serverName, excStr(recErr)))
 		recovered = false
 	}
 	if recovered {
@@ -662,17 +662,17 @@ func handleSessionExpiredAndRetry(ctx context.Context, serverName string, err er
 		} else {
 			bumpServerError(ctx, serverName, false)
 		}
-		mcpLogger().Warn(fmt.Sprintf("MCP server '%s': %s failed with a session-expired/transport error after the request may "+
+		pkgLog().Warn(fmt.Sprintf("MCP server '%s': %s failed with a session-expired/transport error after the request may "+
 			"have been dispatched; NOT auto-retrying a write-capable tool (reconnect %s).", serverName, op, outcome))
 		return toolErrorWith(fmt.Sprintf(sessionOutcomeUncertainMsg, serverName, state), "outcome_uncertain", true, "server", serverName), true
 	}
 	if srv == nil {
 		return "", false
 	}
-	mcpLogger().Info(fmt.Sprintf("MCP server '%s': %s failed with session-expired error (%s); signalling transport reconnect "+
+	pkgLog().Info(fmt.Sprintf("MCP server '%s': %s failed with session-expired error (%s); signalling transport reconnect "+
 		"and retrying once.", serverName, op, excStr(err)))
 	if !signalReconnectAndWait(serverName, srv, op, recoveryReconnectWait) {
-		mcpLogger().Warn(fmt.Sprintf("MCP server '%s': reconnect did not ready within 15s after session-expired error; "+
+		pkgLog().Warn(fmt.Sprintf("MCP server '%s': reconnect did not ready within 15s after session-expired error; "+
 			"falling through to error response.", serverName))
 		return "", false
 	}
@@ -691,7 +691,7 @@ func handleStdioChildExitedAndRetry(ctx context.Context, serverName string, err 
 		if exited.inFlight {
 			action = "reconnecting without replay"
 		}
-		mcpLogger().Info(fmt.Sprintf("MCP server '%s': %s found the stdio subprocess dead (%s); %s.", serverName, op, exited.msg, action))
+		pkgLog().Info(fmt.Sprintf("MCP server '%s': %s found the stdio subprocess dead (%s); %s.", serverName, op, exited.msg, action))
 		if runningLoop() != nil {
 			reconnected = signalReconnectAndWait(serverName, srv, op, stdioRespawnWait)
 		} else {
@@ -710,14 +710,14 @@ func handleStdioChildExitedAndRetry(ctx context.Context, serverName string, err 
 	}
 	var again *stdioChildExited
 	if errors.As(retryErr, &again) {
-		mcpLogger().Warn(fmt.Sprintf("MCP server '%s': %s stdio subprocess exited again right after respawn (%s); not retrying further.",
+		pkgLog().Warn(fmt.Sprintf("MCP server '%s': %s stdio subprocess exited again right after respawn (%s); not retrying further.",
 			serverName, op, again.msg))
 		if again.inFlight {
 			return strike(ctx, serverName, fmt.Sprintf(stdioOutcomeUncertainMsg, serverName), "outcome_uncertain", true), true
 		}
 		return strike(ctx, serverName, fmt.Sprintf(stdioDiedAgainMsg, serverName)), true
 	}
-	mcpLogger().Warn(fmt.Sprintf("MCP %s/%s retry after stdio respawn failed: %s", serverName, op, excStr(retryErr)))
+	pkgLog().Warn(fmt.Sprintf("MCP %s/%s retry after stdio respawn failed: %s", serverName, op, excStr(retryErr)))
 	return strike(ctx, serverName, sanitizeError(fmt.Sprintf("MCP call failed after respawning the stdio subprocess for '%s': %s: %s",
 		serverName, errTypeName(retryErr), excStr(retryErr)))), true
 }
@@ -756,7 +756,7 @@ func dispatchUtilityCall(ctx context.Context, serverName string, srv *serverTask
 	call func(ctx context.Context) (string, error)) string {
 	return dispatch(ctx, serverName, srv, call, toolTimeout, op, []recoverer{handleAuthErrorAndRetry, sessionExpiredRecoverer(false)},
 		func(err error) {
-			mcpLogger().Error(fmt.Sprintf("MCP %s/%s failed: %s", serverName, label, excStr(err)))
+			pkgLog().Error(fmt.Sprintf("MCP %s/%s failed: %s", serverName, label, excStr(err)))
 		}, false)
 }
 
@@ -882,7 +882,7 @@ func makeToolHandler(serverName, toolName string, toolTimeout float64, nativeIma
 		}
 		onFailure := func(err error) {
 			bumpServerError(ctx, serverName, false)
-			mcpLogger().Error(fmt.Sprintf("MCP tool %s/%s call failed: %s", serverName, toolName, excStr(err)))
+			pkgLog().Error(fmt.Sprintf("MCP tool %s/%s call failed: %s", serverName, toolName, excStr(err)))
 		}
 		text := dispatch(ctx, serverName, srv, callFn, toolTimeout, op,
 			[]recoverer{handleStdioChildExitedAndRetry, handleAuthErrorAndRetry, sessionExpiredRecoverer(!readOnly)}, onFailure, true)

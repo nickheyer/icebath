@@ -2,7 +2,6 @@ package state
 
 import (
 	"context"
-	"log/slog"
 	"strings"
 
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
@@ -98,7 +97,7 @@ func (d *SessionDB) ReopenIfExplicitlyClosed(ctx context.Context, sessionID, pro
 		return nil, err
 	}
 	if reason != nil {
-		slog.Warn("Session " + sessionID + " carried a stale " + pyRepr(*reason) + " end stamp while " + provenance +
+		pkgLog().Warn("Session " + sessionID + " carried a stale " + pyRepr(*reason) + " end stamp while " + provenance +
 			"; cleared so the conversation can compress and a later close is recorded (#106459)")
 	}
 	return reason, nil
@@ -182,7 +181,7 @@ func (d *SessionDB) ReopenOrphanedCompressionSession(ctx context.Context, sessio
 	return reopened, err
 }
 
-// One durable compression child publication and its options, built with the hermes defaults by NewCompressionChildPublish
+// One durable compression child publication and its options, built with defaults by NewCompressionChildPublish
 type CompressionChildPublish struct {
 	ParentSessionID         string
 	ChildSessionID          string

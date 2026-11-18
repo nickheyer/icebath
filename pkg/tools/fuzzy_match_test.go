@@ -9,7 +9,7 @@ import (
 	"testing"
 )
 
-// Golden cases captured from the hermes modules this port follows
+// Golden cases captured from the modules this port follows
 type fileEditGolden struct {
 	Fuzzy []struct {
 		Name       string   `json:"name"`
@@ -122,7 +122,7 @@ func TestFuzzyFindAndReplaceGolden(t *testing.T) {
 	}
 	for _, c := range g.Fuzzy {
 		var notes []string
-		got, count, strategy, errText := fuzzyFindAndReplace(c.Content, c.Old, c.New, c.ReplaceAll, &notes, nil)
+		got, count, strategy, errText := FuzzyFindAndReplace(c.Content, c.Old, c.New, c.ReplaceAll, &notes)
 		if got != c.Result || count != c.Count || strategy != c.Strategy || errText != c.Error {
 			t.Errorf("%s:\n got  (%q, %d, %q, %q)\n want (%q, %d, %q, %q)", c.Name, got, count, strategy, errText, c.Result, c.Count, c.Strategy, c.Error)
 		}
@@ -270,7 +270,7 @@ func TestFuzzyUnifiedDiffGolden(t *testing.T) {
 
 func TestFuzzyUnicodePreservesTypography(t *testing.T) {
 	content := "say \u201chi\u201d \u2014 done\n"
-	got, n, strategy, errText := fuzzyFindAndReplace(content, `say "hi" -- done`, `say "bye" -- done`, false, nil, nil)
+	got, n, strategy, errText := FuzzyFindAndReplace(content, `say "hi" -- done`, `say "bye" -- done`, false, nil)
 	if errText != "" || n != 1 || strategy != "unicode_normalized" {
 		t.Fatalf("unexpected result %q %d %q %q", got, n, strategy, errText)
 	}
@@ -281,7 +281,7 @@ func TestFuzzyUnicodePreservesTypography(t *testing.T) {
 
 func TestFuzzyInvalidUTF8OutsideSpanSurvives(t *testing.T) {
 	content := "head \xff\xfe\nvalue = 1\n"
-	got, n, _, errText := fuzzyFindAndReplace(content, "value = 1", "value = 2", false, nil, nil)
+	got, n, _, errText := FuzzyFindAndReplace(content, "value = 1", "value = 2", false, nil)
 	if errText != "" || n != 1 || got != "head \xff\xfe\nvalue = 2\n" {
 		t.Fatalf("bytes outside the span changed: %q %d %q", got, n, errText)
 	}

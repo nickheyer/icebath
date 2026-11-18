@@ -38,7 +38,7 @@ func auxCodexClientDefaultHeaders(t *testing.T, client AuxClient) map[string]str
 
 func auxAssertCodexIdentity(t *testing.T, headers map[string]string, accountID string) {
 	t.Helper()
-	if headers["originator"] != "icebath-agent" || headers["ChatGPT-Account-ID"] != accountID || headers["User-Agent"] != "IcebathAgent/"+Version {
+	if headers["originator"] != "icebath-agent" || headers["ChatGPT-Account-ID"] != accountID || headers["User-Agent"] != userAgent("IcebathAgent") {
 		t.Fatalf("codex headers %v", headers)
 	}
 }
@@ -54,9 +54,9 @@ func auxCodexSingletonHome(t *testing.T, token string) context.Context {
 	return ctx
 }
 
-func TestCodexCloudflareHeadersUserAgentAdvertisesHermesVersion(t *testing.T) {
+func TestCodexCloudflareHeadersUserAgentAdvertisesIcebathVersion(t *testing.T) {
 	headers := codexCloudflareHeaders(auxMakeCodexJWT("acct-test-123", "", ""), CodexBaseURL)
-	if headers["User-Agent"] != "IcebathAgent/"+Version || headers["originator"] != "icebath-agent" {
+	if headers["User-Agent"] != userAgent("IcebathAgent") || headers["originator"] != "icebath-agent" {
 		t.Fatalf("headers %v", headers)
 	}
 }

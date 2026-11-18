@@ -154,7 +154,7 @@ func (p *peer) extractProfiles() []byte {
 	}
 	out, err := json.Marshal(map[string]any{"profiles": entries})
 	if err != nil {
-		out, _ = json.Marshal(map[string]any{"error": "TypeError: " + err.Error()})
+		out, _ = json.Marshal(map[string]any{"error": "the profiles could not be encoded: " + err.Error()})
 	}
 	return out
 }

@@ -41,9 +41,9 @@ func servedRoot(t *testing.T) (string, int) {
 		mustWriteFile(t, filepath.Join(root, "profiles", name, "config.yaml"), "{}\n")
 	}
 	mustWriteFile(t, filepath.Join(root, "config.yaml"), "model: {default: x}\n")
-	record, _ := json.Marshal(map[string]any{"pid": pid, "hermes_home": root})
+	record, _ := json.Marshal(map[string]any{"pid": pid, "icebath_home": root})
 	mustWriteFile(t, filepath.Join(root, "gateway.pid"), string(record))
-	state, _ := json.Marshal(map[string]any{"pid": pid, "hermes_home": root, "gateway_state": "running", "served_profiles": []string{"default", "coder"}})
+	state, _ := json.Marshal(map[string]any{"pid": pid, "icebath_home": root, "gateway_state": "running", "served_profiles": []string{"default", "coder"}})
 	mustWriteFile(t, filepath.Join(root, "gateway_state.json"), string(state))
 	t.Setenv("ICEBATH_HOME", filepath.Join(root, "profiles", "coder"))
 	t.Setenv("GATEWAY_MULTIPLEX_PROFILES", "")

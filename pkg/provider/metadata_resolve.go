@@ -141,64 +141,6 @@ func modelNameSuggestsStale32kUnderreport(model string) bool {
 	return modelNameSuggestsKimi(model) || modelNameSuggestsMinimax(model)
 }
 
-// Nous Portal context, the portal models endpoint is authoritative with OpenRouter as fallback
-func resolveNousContextLength(ctx context.Context, model, baseURL, apiKey string) (int, string) {
-	if baseURL != "" {
-		if portal, ok := resolveEndpointContextLength(ctx, model, baseURL, apiKey); ok {
-			return portal, "portal"
-		}
-	}
-	metadata := FetchModelMetadata(ctx, false)
-	safeCtx := func(orID string, entry map[string]any) (int, bool) {
-		n, ok := intValue(entry["context_length"])
-		if !ok {
-			return 0, false
-		}
-		if n <= 32768 && modelNameSuggestsStale32kUnderreport(orID) {
-			metadataLog.Info(fmt.Sprintf("Rejecting OpenRouter metadata context=%d for %q (known 32K underreport, Nous path); falling through to hardcoded defaults", n, orID))
-			return 0, false
-		}
-		return n, true
-	}
-	modelLower, normalized := strings.ToLower(model), strings.ToLower(normalizeModelVersion(model))
-	pairs := func(orID string) [][2]string {
-		bare := orID
-		if i := strings.Index(orID, "/"); i >= 0 {
-			bare = orID[i+1:]
-		}
-		return [][2]string{{strings.ToLower(bare), modelLower}, {strings.ToLower(normalizeModelVersion(bare)), normalized}}
-	}
-	exact := func(orID string) bool {
-		for _, p := range pairs(orID) {
-			if p[0] == p[1] {
-				return true
-			}
-		}
-		return false
-	}
-	prefix := func(orID string) bool {
-		for _, p := range pairs(orID) {
-			candidate, query := p[0], p[1]
-			if strings.HasPrefix(candidate, query) && (len(candidate) == len(query) || strings.ContainsRune("-:.", rune(candidate[len(query)]))) {
-				return true
-			}
-		}
-		return false
-	}
-	matchers := []func(string) bool{func(orID string) bool { return orID == model }, exact, prefix}
-	for _, matcher := range matchers {
-		for _, orID := range sortedStringKeys(metadata) {
-			if !matcher(orID) {
-				continue
-			}
-			if n, ok := safeCtx(orID, metadata[orID]); ok {
-				return n, "openrouter"
-			}
-		}
-	}
-	return 0, ""
-}
-
 // Accepts, repairs or drops a persisted entry, zero falls through to live resolution
 func validateCachedContextLength(ctx context.Context, model, baseURL string, cached int, apiKey string) int {
 	type rule struct {
@@ -217,15 +159,11 @@ func validateCachedContextLength(ctx context.Context, model, baseURL string, cac
 			continue
 		}
 		if r.warn {
-			metadataLog.Warn(fmt.Sprintf(r.msg, model, baseURL, r.shown))
+			pkgLog().Warn(fmt.Sprintf(r.msg, model, baseURL, r.shown))
 		} else {
-			metadataLog.Info(fmt.Sprintf(r.msg, model, baseURL, r.shown))
+			pkgLog().Info(fmt.Sprintf(r.msg, model, baseURL, r.shown))
 		}
 		invalidateCachedContextLength(ctx, model, baseURL)
-		return 0
-	}
-	if inferProviderFromBaseURL(baseURL) == "nous" {
-		metadataLog.Debug("bypassing persistent cache, Nous portal authoritative", "model", model, "base_url", baseURL)
 		return 0
 	}
 	if IsLocalEndpoint(baseURL) {
@@ -306,9 +244,9 @@ func resolveCustomEndpointContextLength(ctx context.Context, model, baseURL, api
 		saveUnlessSkipped(ctx, model, baseURL, n, providerName)
 		return n
 	}
-	metadataLog.Info(fmt.Sprintf("Could not detect context length for model %q at %s — defaulting to %s tokens (probe-down). Set model.context_length in config.yaml to override.", model, baseURL, formatWithCommas(DefaultFallbackContext)))
+	pkgLog().Info(fmt.Sprintf("Could not detect context length for model %q at %s — defaulting to %s tokens (probe-down). Set model.context_length in config.yaml to override.", model, baseURL, formatWithCommas(DefaultFallbackContext)))
 	if hit, ok := longestKeyMatch(defaultContextLengths, strings.ToLower(model)); ok {
-		metadataLog.Info(fmt.Sprintf("Using hardcoded context length %s for model %q (custom endpoint, catalog match on %q)", formatWithCommas(hit.ctx), model, hit.key))
+		pkgLog().Info(fmt.Sprintf("Using hardcoded context length %s for model %q (custom endpoint, catalog match on %q)", formatWithCommas(hit.ctx), model, hit.key))
 		return hit.ctx
 	}
 	warnContextLengthFallback(model, baseURL)
@@ -321,12 +259,12 @@ func resolveCustomCodexRouteContextLength(ctx context.Context, model, baseURL, a
 	if n > 0 && apiKey != "" && IsCodexContextVariant(model) {
 		fetchCodexOAuthContextLengthsWithSource(ctx, apiKey, baseURL)
 		if cap := cachedCodexCatalogMax(apiKey, baseURL, bareCodexSlug(StripCodexContextVariantSuffix(model))); cap > 0 && cap < n {
-			metadataLog.Info(fmt.Sprintf("Route catalog at %s caps %q at max_context_window %s", baseURL, model, formatWithCommas(cap)))
+			pkgLog().Info(fmt.Sprintf("Route catalog at %s caps %q at max_context_window %s", baseURL, model, formatWithCommas(cap)))
 			n = cap
 		}
 	}
 	if n > 0 {
-		metadataLog.Info(fmt.Sprintf("Using Codex OAuth context length %s for model %q (codex_responses route at %s)", formatWithCommas(n), model, baseURL))
+		pkgLog().Info(fmt.Sprintf("Using Codex OAuth context length %s for model %q (codex_responses route at %s)", formatWithCommas(n), model, baseURL))
 		return n
 	}
 	return resolveCustomEndpointContextLength(ctx, model, baseURL, apiKey, providerName)
@@ -336,7 +274,7 @@ func resolveCustomCodexRouteContextLength(ctx context.Context, model, baseURL, a
 func resolveMoaContextLength(ctx context.Context, model string, customProviders []map[string]any) int {
 	cfg := metadataConfig(ctx)
 	if cfg == nil {
-		metadataLog.Debug("MoA aggregator context-length resolution failed", "reason", "config unreadable")
+		pkgLog().Debug("MoA aggregator context-length resolution failed", "reason", "config unreadable")
 		return 0
 	}
 	if customProviders == nil {
@@ -350,7 +288,7 @@ func resolveMoaContextLength(ctx context.Context, model string, customProviders 
 	h := metadataHome(ctx)
 	rt, err := newResolver(ctx, config.Tree(cfg), config.NewSecrets(h), h, homeCredentialSource(h)).ResolveRuntime(aggProvider, "", "", nil, aggModel)
 	if err != nil || rt == nil {
-		metadataLog.Debug("MoA aggregator context-length resolution failed", "error", err)
+		pkgLog().Debug("MoA aggregator context-length resolution failed", "error", err)
 		return 0
 	}
 	providerName := rt.Provider
@@ -382,16 +320,7 @@ func resolveProviderAwareContextLength(ctx context.Context, model, baseURL, apiK
 	if n := profileLiveContextLength(ctx, effectiveProvider, model, apiKey, baseURL); n > 0 {
 		return n
 	}
-	switch effectiveProvider {
-	case "nous":
-		n, source := resolveNousContextLength(ctx, model, baseURL, apiKey)
-		if n > 0 {
-			if baseURL != "" && source == "portal" {
-				SaveContextLength(ctx, model, baseURL, n, "")
-			}
-			return n
-		}
-	case "openai-codex":
+	if effectiveProvider == "openai-codex" {
 		n, source := resolveCodexOAuthContextLengthWithSource(ctx, model, apiKey, baseURL)
 		if n > 0 {
 			if baseURL != "" && source == "live" {
@@ -426,7 +355,7 @@ func resolveProviderAwareContextLength(ctx context.Context, model, baseURL, apiK
 			if minimaxM3Name(model) {
 				catalog := DefaultContextLengths()["minimax-m3"]
 				if catalog > 0 && n < catalog {
-					metadataLog.Info(fmt.Sprintf("Rejecting models.dev context=%d for %q (MiniMax-M3 underreport); using hardcoded default %s", n, model, formatWithCommas(catalog)))
+					pkgLog().Info(fmt.Sprintf("Rejecting models.dev context=%d for %q (MiniMax-M3 underreport); using hardcoded default %s", n, model, formatWithCommas(catalog)))
 					n = catalog
 				}
 			}
@@ -475,7 +404,7 @@ func getModelContextLength(ctx context.Context, req ContextLengthRequest) int {
 		}
 	}
 	if strings.TrimSpace(model) == "" {
-		metadataLog.Info(fmt.Sprintf("No model id provided for context length resolution — defaulting to %s tokens.", formatWithCommas(DefaultFallbackContext)))
+		pkgLog().Info(fmt.Sprintf("No model id provided for context length resolution — defaulting to %s tokens.", formatWithCommas(DefaultFallbackContext)))
 		return DefaultFallbackContext
 	}
 	model = stripProviderPrefix(model)
@@ -540,7 +469,7 @@ func getModelContextLength(ctx context.Context, req ContextLengthRequest) int {
 		if entry, ok := FetchModelMetadata(ctx, false)[model]; ok {
 			orCtx := intOrDefault(entry["context_length"], DefaultFallbackContext)
 			if orCtx == 32768 && modelNameSuggestsStale32kUnderreport(model) {
-				metadataLog.Info(fmt.Sprintf("Rejecting OpenRouter metadata context=%d for %q (known 32K underreport); falling through to hardcoded defaults", orCtx, model))
+				pkgLog().Info(fmt.Sprintf("Rejecting OpenRouter metadata context=%d for %q (known 32K underreport); falling through to hardcoded defaults", orCtx, model))
 			} else {
 				return orCtx
 			}

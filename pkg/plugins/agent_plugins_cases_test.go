@@ -110,7 +110,7 @@ func apServerNames(pkg *AgentPluginPackage) []string {
 }
 
 func apVendor(servers map[string]any) map[string]any {
-	return map[string]any{"extensions": map[string]any{portableExtension: map[string]any{"servers": servers}}}
+	return map[string]any{"extensions": map[string]any{PortableExtension: map[string]any{"servers": servers}}}
 }
 
 func apRemotePackage(t *testing.T, root string, trust any) {
@@ -263,7 +263,7 @@ func TestServerTimeoutRejectsInvalidDeadlines(t *testing.T) {
 	for _, timeout := range []string{"true", "null", `"1000"`, "0", "-1", "Infinity", "NaN"} {
 		tmp := t.TempDir()
 		apRemotePackage(t, tmp, nil)
-		doc := `{"$schema": "` + PluginSchemaV1 + `", "name": "portable.test", "extensions": {"` + portableExtension +
+		doc := `{"$schema": "` + PluginSchemaV1 + `", "name": "portable.test", "extensions": {"` + PortableExtension +
 			`": {"servers": {"trade": {"timeout": ` + timeout + `}}}}}`
 		if err := os.WriteFile(filepath.Join(tmp, "plugin.json"), []byte(doc), 0o644); err != nil {
 			t.Fatal(err)

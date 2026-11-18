@@ -14,7 +14,8 @@ func pluginWidgets(ctx context.Context) []tui.Widget {
 	out := make([]tui.Widget, 0, len(registered))
 	for _, w := range registered {
 		spec := w.Spec
-		widget := tui.Widget{ID: spec.ID, Help: spec.Help, Usage: spec.Usage, Mode: spec.Mode, Zone: spec.Zone, Width: spec.Width, Open: spec.Open}
+		widget := tui.Widget{ID: spec.ID, Help: spec.Help, Usage: spec.Usage, Mode: spec.Mode, Zone: spec.Zone, Width: spec.Width, Open: spec.Open,
+			Every: spec.Refresh, Tick: spec.Tick}
 		if spec.Input != nil {
 			widget.Input = func(ctx context.Context, state any, in tui.WidgetInput) (any, bool, error) {
 				return spec.Input(ctx, state, plugins.WidgetInput{Text: in.Text, Key: in.Key, Ctrl: in.Ctrl, Alt: in.Alt, Shift: in.Shift})

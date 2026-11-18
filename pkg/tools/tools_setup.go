@@ -21,28 +21,6 @@ type ToolsSetup struct {
 	Flow ToolsFlowHooks
 }
 
-// NousToolFeature is the availability and managed state of one Nous subscription feature
-type NousToolFeature struct {
-	Available     bool
-	ManagedByNous bool
-}
-
-// NousToolAccount is the Nous Portal account state managed picker rows are gated on, Info the provider side record
-type NousToolAccount struct {
-	LoggedIn            bool
-	PaidServiceAccess   *bool
-	ToolGatewayEntitled bool
-	EntitledFor         func(category string) bool
-	Info                any
-}
-
-// NousToolFeatures is the Nous subscription state the tools picker reads, a nil Account meaning no account info
-type NousToolFeatures struct {
-	NousAuthPresent bool
-	Features        map[string]NousToolFeature
-	Account         *NousToolAccount
-}
-
 // PickerProvider is one plugin registered provider as the tools picker lists it
 type PickerProvider interface {
 	Name() string
@@ -57,29 +35,24 @@ type PickerRegistry struct {
 	BuiltinNames map[string]bool
 }
 
-// ToolsConfigHooks are the Nous, auth, media, browser and computer use facts the tools picker reads, each installed by its package
+// ToolsConfigHooks are the auth, media, browser and computer use facts the tools picker reads, each installed by its package
 var ToolsConfigHooks struct {
-	NousFeatures            func(ctx context.Context, h string, cfg map[string]any, forceFresh bool) NousToolFeatures
-	NousEntitlementMessage  func(account *NousToolAccount, capability string) string
-	EnsureNousPortalAccess  func(ctx context.Context, h string, out io.Writer, capability, coverageCategory string) bool
-	ManagedCoverageCategory func(feature string) (string, bool)
-	AuxPickerRows           func(ctx context.Context, currentProvider, currentModel, currentBaseURL string, maxModels int) ([]map[string]any, error)
-	AuxPickerLabels         func(rows []map[string]any, currentProvider, currentBaseURL string) []string
-	XAIOAuthStatus          func(ctx context.Context, h string) map[string]any
-	CodexAuthStatus         func(ctx context.Context, h string) map[string]any
-	CodexDeviceCodeLogin    func(ctx context.Context, h string, out io.Writer) (map[string]any, error)
-	SaveCodexTokens         func(ctx context.Context, h string, tokens map[string]any, lastRefresh string, setActive bool) error
-	XAIOAuthLoginFromSetup  func(ctx context.Context, h string) bool
-	SetupPromptChoice       func(question string, choices []string, def int) int
-	SetupPrompt             func(question, def string, password bool) string
-	SetupIsNoninteractive   func() bool
+	AuxPickerRows          func(ctx context.Context, currentProvider, currentModel, currentBaseURL string, maxModels int) ([]map[string]any, error)
+	AuxPickerLabels        func(rows []map[string]any, currentProvider, currentBaseURL string) []string
+	XAIOAuthStatus         func(ctx context.Context, h string) map[string]any
+	CodexAuthStatus        func(ctx context.Context, h string) map[string]any
+	CodexDeviceCodeLogin   func(ctx context.Context, h string, out io.Writer) (map[string]any, error)
+	SaveCodexTokens        func(ctx context.Context, h string, tokens map[string]any, lastRefresh string, setActive bool) error
+	XAIOAuthLoginFromSetup func(ctx context.Context, h string) bool
+	SetupPromptChoice      func(question string, choices []string, def int) int
+	SetupPrompt            func(question, def string, password bool) string
+	SetupIsNoninteractive  func() bool
 
 	STTModelCatalog      func(provider string) ([]string, bool)
 	STTModelConfigKey    func(provider string) (string, bool)
 	STTDefaultLocalModel func() string
 	DeepInfraModelIDs    func(ctx context.Context, env *Env, tag string) []string
 	FALModels            func() (ids []string, catalog map[string]map[string]any, defaultModel string)
-	ManagedImageCatalog  func(ctx context.Context, env *Env, includeKrea, includePortal bool) ([]string, map[string]map[string]any, string)
 	ImageGenRegistry     *PickerRegistry
 	VideoGenRegistry     *PickerRegistry
 	TTSRegistry          *PickerRegistry
@@ -97,14 +70,14 @@ var ToolsConfigHooks struct {
 	InstallCuaDriver          func(ctx context.Context, env *Env, con *cliui.Console) (bool, error)
 }
 
-// Panics naming a hook its package never installed, the import failure of the hermes module behind it
+// Panics naming a hook its package never installed, the import failure of the module behind it
 func requireToolsConfigHook(name string, installed bool) {
 	if !installed {
 		panic("tools.ToolsConfigHooks." + name + " is not installed")
 	}
 }
 
-// Missing setup helpers, the import failure hermes reports when its setup module cannot load
+// Missing setup helpers, the import failure reported when the setup module cannot load
 var errSetupHelpersUnwired = errors.New("setup helpers are not installed")
 
 // Home whose env file and config the run reads and writes, the env home else the context home
@@ -153,11 +126,4 @@ func (s *ToolsSetup) loadConfig() (config.Tree, error) {
 
 func (s *ToolsSetup) saveConfig(cfg config.Tree) error {
 	return config.SaveConfig(s.ctx(), s.home(), map[string]any(cfg), config.SaveOptions{})
-}
-
-// Nous subscription state of a config through the provider hook
-func (s *ToolsSetup) nousFeatures(cfg config.Tree, forceFresh bool) NousToolFeatures {
-	fn := ToolsConfigHooks.NousFeatures
-	requireToolsConfigHook("NousFeatures", fn != nil)
-	return fn(s.ctx(), s.home(), map[string]any(cfg), forceFresh)
 }

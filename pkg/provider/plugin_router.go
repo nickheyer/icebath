@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"log/slog"
 	"os"
 	"path/filepath"
 	"slices"
@@ -140,7 +139,7 @@ func routerParseEfforts(items any) map[string][]string {
 			}
 		}
 		if len(unknown) > 0 {
-			slog.Info(fmt.Sprintf("router: model %s publishes unrecognized reasoning effort level(s) %s; ignoring them "+
+			pkgLog().Info(fmt.Sprintf("router: model %s publishes unrecognized reasoning effort level(s) %s; ignoring them "+
 				"(update agent/reasoning_effort EFFORT_LADDER to adopt new vendor tiers)", mid, pyStrListRepr(unknown)))
 		}
 		if len(known) > 0 {
@@ -185,7 +184,7 @@ func routerSaveDisk(ctx context.Context, efforts map[string][]string) {
 		err = os.Rename(tmp, path)
 	}
 	if err != nil {
-		slog.Debug("router: caps disk mirror write failed: " + err.Error())
+		pkgLog().Debug("router: caps disk mirror write failed: " + err.Error())
 	}
 }
 
@@ -261,7 +260,7 @@ func routerFetchCatalogItems(ctx context.Context, apiKey, baseURL string, timeou
 	headers := pyhttpx.OrderedHeaderMap(append(lines, pyhttpx.HeaderLine{Name: "Accept", Value: "application/json"}, pyhttpx.HeaderLine{Name: "User-Agent", Value: profileUserAgent()})...)
 	data, err := modelsGetJSON(ctx, strings.TrimRight(baseURL, "/")+"/models", timeout, headers, nil)
 	if err != nil {
-		slog.Debug("router: catalog fetch failed: " + err.Error())
+		pkgLog().Debug("router: catalog fetch failed: " + err.Error())
 		return nil, false
 	}
 	items := data

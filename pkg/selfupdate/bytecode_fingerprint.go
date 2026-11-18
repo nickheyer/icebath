@@ -2,7 +2,6 @@ package selfupdate
 
 import (
 	"fmt"
-	"log/slog"
 	"os"
 	"path/filepath"
 
@@ -26,6 +25,6 @@ func recordBytecodeFingerprint() {
 		err = os.Rename(tmp, stamp)
 	}
 	if err != nil {
-		slog.Debug(fmt.Sprintf("Could not record bytecode fingerprint: %s", launchErrorText(err)))
+		pkgLog().Debug(fmt.Sprintf("Could not record bytecode fingerprint: %s", launchErrorText(err)))
 	}
 }

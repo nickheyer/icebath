@@ -57,7 +57,7 @@ var editFormatGuidances = []struct {
 }{
 	{"patch", editFormatGuidance{[]string{"gpt", "codex"},
 		"- Edit format: author new files with `write_file`; for edits to existing code use `patch` with `mode='patch'` (V4A diff) — including single-file edits. It's the edit format you handle most reliably."}},
-	{"replace", editFormatGuidance{[]string{"claude", "sonnet", "opus", "haiku", "gemini", "gemma", "deepseek", "qwen", "kimi", "glm", "grok", "hermes", "llama", "mistral", "devstral", "minimax"},
+	{"replace", editFormatGuidance{[]string{"claude", "sonnet", "opus", "haiku", "gemini", "gemma", "deepseek", "qwen", "kimi", "glm", "grok", "llama", "mistral", "devstral", "minimax"},
 		"- Edit format: author new files with `write_file`; for edits to existing code prefer `patch` in `mode='replace'` — match a unique snippet and swap it. Reach for `mode='patch'` (V4A) only when an edit genuinely spans several files at once."}},
 }
 

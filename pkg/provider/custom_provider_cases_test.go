@@ -110,7 +110,7 @@ func TestFetchApiModelsSendsExtraHeadersToModelsProbe(t *testing.T) {
 	}))
 	defer srv.Close()
 	models, ok := FetchAPIModels(t.Context(), "proxy-key", srv.URL+"/v1", 5*time.Second, "", map[string]string{
-		"sleeve-harness": "hermes", "sleeve-base-url": "http://localhost:8081/v1",
+		"sleeve-harness": "icebath", "sleeve-base-url": "http://localhost:8081/v1",
 	})
 	if !ok || !reflect.DeepEqual(models, []string{"proxy-model"}) {
 		t.Fatalf("models %v %v", models, ok)
@@ -118,7 +118,7 @@ func TestFetchApiModelsSendsExtraHeadersToModelsProbe(t *testing.T) {
 	if path != "/v1/models" {
 		t.Fatalf("probe path %q", path)
 	}
-	if headers.Get("Authorization") != "Bearer proxy-key" || headers.Get("sleeve-harness") != "hermes" || headers.Get("sleeve-base-url") != "http://localhost:8081/v1" {
+	if headers.Get("Authorization") != "Bearer proxy-key" || headers.Get("sleeve-harness") != "icebath" || headers.Get("sleeve-base-url") != "http://localhost:8081/v1" {
 		t.Fatalf("headers %v", headers)
 	}
 }

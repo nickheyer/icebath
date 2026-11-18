@@ -6,7 +6,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pyhttpx"
 )
 
@@ -65,44 +64,27 @@ func fetchReasoningCapsCatalog(ctx context.Context, rawURL string, timeout time.
 	return seedReasoningCaps(ctx, rawURL, doc["data"])
 }
 
-// Once per process guards of one catalog source for one profile
+// Once per process guards of one catalog source
 type capsSlots struct {
 	catalog     *capsCatalog
 	diskChecked bool
 	warmStarted bool
 }
 
-// One catalog's per profile slots plus how to name its URL
+// One catalog's slots plus how to name its URL
 type capsSource struct {
 	mu         sync.Mutex
 	resolveURL func(ctx context.Context) string
-	perProfile bool
-	byKey      map[string]*capsSlots
+	slot       *capsSlots
 }
 
-func newCapsSource(resolveURL func(ctx context.Context) string, perProfile bool) *capsSource {
-	return &capsSource{resolveURL: resolveURL, perProfile: perProfile, byKey: map[string]*capsSlots{}}
+func newCapsSource(resolveURL func(ctx context.Context) string) *capsSource {
+	return &capsSource{resolveURL: resolveURL, slot: &capsSlots{}}
 }
 
-// Slot key, the module slot without a home override and the home key under one
-func (s *capsSource) key(ctx context.Context) string {
-	if !s.perProfile || home.Override(ctx) == "" {
-		return ""
-	}
-	return home.Key(home.Dir(ctx))
-}
+func (s *capsSource) slots(context.Context) *capsSlots { return s.slot }
 
-func (s *capsSource) slots(ctx context.Context) *capsSlots {
-	key := s.key(ctx)
-	slot := s.byKey[key]
-	if slot == nil {
-		slot = &capsSlots{}
-		s.byKey[key] = slot
-	}
-	return slot
-}
-
-// The shared catalog for the resolved URL, named at most once per profile
+// The shared catalog for the resolved URL, named at most once per process
 func (s *capsSource) catalog(ctx context.Context) *capsCatalog {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -211,29 +193,17 @@ func (s *capsSource) warmAsync(ctx context.Context) {
 func (s *capsSource) reset() {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	s.byKey = map[string]*capsSlots{}
+	s.slot = &capsSlots{}
 }
-
-// NousCatalogURL is the Portal models URL for the endpoint the profile actually talks to
-func NousCatalogURL(ctx context.Context) string {
-	_, base := resolveNousPricingCredentials(ctx)
-	return base + "/v1/models"
-}
-
-// Catalog URL seam for the Nous source, tests count how often the Portal is named
-var nousCatalogURLFn = NousCatalogURL
 
 var (
-	openrouterCapsSource = newCapsSource(func(context.Context) string { return openRouterCatalogURL }, false)
-	nousCapsSource       = newCapsSource(func(ctx context.Context) string { return nousCatalogURLFn(ctx) }, true)
+	openrouterCapsSource = newCapsSource(func(context.Context) string { return openRouterCatalogURL })
 )
 
 // RefreshReasoningCapsAsync forces a background refetch of a provider's capability catalog
 func RefreshReasoningCapsAsync(ctx context.Context, provider string) {
 	var src *capsSource
 	switch strings.ToLower(strings.TrimSpace(provider)) {
-	case "nous", "nous-portal", "nousresearch":
-		src = nousCapsSource
 	case "openrouter":
 		src = openrouterCapsSource
 	default:
@@ -250,24 +220,12 @@ func OpenRouterModelReasoningCapabilities(ctx context.Context, modelID string, t
 	return openrouterCapsSource.modelCaps(ctx, modelID, timeout, allowFetch)
 }
 
-// NousModelReasoningCapabilities is the Portal counterpart of the OpenRouter lookup
-func NousModelReasoningCapabilities(ctx context.Context, modelID string, timeout time.Duration, allowFetch bool) (ReasoningCapabilities, bool) {
-	if timeout <= 0 {
-		timeout = 6 * time.Second
-	}
-	return nousCapsSource.modelCaps(ctx, modelID, timeout, allowFetch)
-}
-
 // WarmOpenRouterReasoningCapsAsync warms the OpenRouter capability cache in the background
 func WarmOpenRouterReasoningCapsAsync(ctx context.Context) { openrouterCapsSource.warmAsync(ctx) }
-
-// WarmNousReasoningCapsAsync warms the Portal capability cache in the background
-func WarmNousReasoningCapsAsync(ctx context.Context) { nousCapsSource.warmAsync(ctx) }
 
 // ResetReasoningCapsCatalogs drops every in process capability catalog and source slot
 func ResetReasoningCapsCatalogs() {
 	openrouterCapsSource.reset()
-	nousCapsSource.reset()
 	capsCatalogsMu.Lock()
 	defer capsCatalogsMu.Unlock()
 	capsCatalogs = map[string]*capsCatalog{}

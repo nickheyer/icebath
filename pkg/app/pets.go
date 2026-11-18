@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"log/slog"
 	"os"
 	"os/signal"
 	"strings"
@@ -431,7 +430,7 @@ func (r *petsRun) cmdDoctor() (int, error) {
 func PetsCommand(ctx context.Context, h string, ns map[string]any, w io.Writer) (int, error) {
 	cfg, _ := config.LoadReadonly(ctx, h, nil)
 	cwd, _ := os.Getwd()
-	r := &petsRun{ctx: ctx, h: h, ns: ns, w: w, env: &tools.Env{Home: h, Config: cfg, Cwd: cwd, Log: slog.Default()}}
+	r := &petsRun{ctx: ctx, h: h, ns: ns, w: w, env: &tools.Env{Home: h, Config: cfg, Cwd: cwd, Log: pkgLog()}}
 	switch nsText(ns, "pets_command") {
 	case "list":
 		return r.cmdList()

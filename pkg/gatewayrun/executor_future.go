@@ -10,7 +10,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/tools"
 )
 
-// States of a pool future, the concurrent.futures.Future of hermes
+// States of a pool future
 const (
 	futurePending = iota
 	futureRunning
@@ -191,7 +191,7 @@ func currentExecutorThread(ctx context.Context) *executorThread {
 	return t
 }
 
-// Caller context copied onto the executor thread of workerCtx, the copy_context run of hermes
+// Caller context copied onto the executor thread of workerCtx
 func onExecutorThread(callerCtx, workerCtx context.Context) context.Context {
 	ctx := context.WithoutCancel(callerCtx)
 	if t := currentExecutorThread(workerCtx); t != nil {

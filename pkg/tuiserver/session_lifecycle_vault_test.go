@@ -6,7 +6,7 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/browser"
 	"github.com/nickheyer/icebath/pkg/tools"
-	"github.com/nickheyer/icebath/pkg/tuigateway"
+	"github.com/nickheyer/icebath/pkg/tuihost"
 )
 
 // test_vault_backends.py release half through _finalize_session, a sibling close keeps the token and the owner close drops it
@@ -24,11 +24,11 @@ func TestOnlyTheOwningSessionReleaseDropsAToken(t *testing.T) {
 	if !browser.IsVaultUnlocked(ctx, "bitwarden") {
 		t.Fatal("the manager must read unlocked after the unlock")
 	}
-	finalizeSession(ctx, tuigateway.NewSession(map[string]any{"_sid": "sess-B"}), "tui_close")
+	finalizeSession(ctx, tuihost.NewSession(map[string]any{"_sid": "sess-B"}), "tui_close")
 	if !browser.IsVaultUnlocked(ctx, "bitwarden") {
 		t.Fatal("closing an unrelated sibling session must keep the unlock")
 	}
-	finalizeSession(ctx, tuigateway.NewSession(map[string]any{"_sid": "sess-A"}), "tui_close")
+	finalizeSession(ctx, tuihost.NewSession(map[string]any{"_sid": "sess-A"}), "tui_close")
 	if browser.IsVaultUnlocked(ctx, "bitwarden") {
 		t.Fatal("closing the session that unlocked must lock its manager")
 	}

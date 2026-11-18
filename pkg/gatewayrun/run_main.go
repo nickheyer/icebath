@@ -32,24 +32,29 @@ func setenvDefault(name, value string) {
 	}
 }
 
-// Exit status of a run that ended in an error, the code of a SystemExit and a printed traceback line otherwise
+// Exit status of a run that ended in an error, the code of a SystemExit and one plain error line otherwise
 func runMainFailureCode(err error, stderr io.Writer) int {
 	var exit *gateway.SystemExitError
 	if errors.As(err, &exit) {
 		return exit.Code
 	}
 	if errors.Is(err, ErrKeyboardInterrupt) {
-		fmt.Fprint(stderr, "Traceback (most recent call last):\nKeyboardInterrupt\n")
+		fmt.Fprint(stderr, "icebath gateway: interrupted\n")
 		if runtime.GOOS == "windows" {
 			return controlCExitStatus
 		}
 		return 128 + int(syscall.SIGINT)
 	}
-	fmt.Fprintf(stderr, "Traceback (most recent call last):\n%s: %s\n", pyrepr.ExceptionName(err), pyrepr.ExceptionMessage(err))
+	message := pyrepr.ExceptionMessage(err)
+	if message == "" {
+		message = pyrepr.ExceptionName(err)
+	}
+	pkgLog().Error("gateway run failed", "error", err)
+	fmt.Fprintf(stderr, "icebath gateway: %s\n", message)
 	return 1
 }
 
-// Exit status of a gateway run failure, printing the traceback lines an uncaught Python exception prints
+// Exit status of a gateway run failure, printing one plain error line
 func MainFailureCode(err error, stderr io.Writer) int { return runMainFailureCode(err, stderr) }
 
 // Runs the gateway module entry and returns its exit status, hard exiting after a started gateway tore down
@@ -70,12 +75,12 @@ func Main(ctx context.Context, argv []string, stdout, stderr io.Writer) int {
 	bestEffort(func() (bool, error) { gateway.ArmStartupWatchdog(ctx); return true, nil }, "")
 	bestEffort(func() (bool, error) { return ConfigureWindowsStdio(), nil }, "")
 	if problem, ok := bestEffort(func() (string, error) { return CheckRuntime(ctx, pm.InstallRoot()) }, ""); !ok {
-		runLog().Debug("pm startup check failed")
+		pkgLog().Debug("pm startup check failed")
 	} else if problem != "" {
-		runLog().Warn(problem)
+		pkgLog().Warn(problem)
 	}
 	if _, ok := bestEffort(func() (bool, error) { MaybeRunBootBootstrap(ctx, pm.InstallRoot()); return true, nil }, ""); !ok {
-		runLog().Debug("boot bootstrap failed")
+		pkgLog().Debug("boot bootstrap failed")
 	}
 	configPath, code, done := parseRunMainArgs(argv, stdout, stderr)
 	if done {

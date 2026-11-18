@@ -2,11 +2,11 @@ package tui
 
 import (
 	"errors"
+	"github.com/nickheyer/icebath/pkg/tuigateway"
+	"strings"
 	"time"
 
 	tea "charm.land/bubbletea/v2"
-
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
 
 // Waits of a handoff, unclaimed before the request is failed, claimed before the view stops waiting, and between heartbeats
@@ -33,7 +33,7 @@ type handoffWatch struct {
 // Text of a refusal, the detail the gateway attached first, else its message
 func refusalDetail(err error) string {
 	var refused *rpcError
-	if errors.As(err, &refused) {
+	if errors.As(err, &refused) && !isVersionSkewError(err) {
 		if detail, _ := refused.Data["detail"].(string); trimJS(detail) != "" {
 			return detail
 		}
@@ -61,7 +61,7 @@ func (a *app) startHandoff(r *slashRun, platform string) tea.Cmd {
 		return a.storedTitle(r.sid, func(title string) tea.Cmd {
 			w.title = title
 			if w.title == "" {
-				w.title = pystr.Slice(r.sid, 0, 8)
+				w.title = string([]rune(r.sid)[:min(8, len([]rune(r.sid)))])
 			}
 			r.sys(commandText(a.ctx, "handoff.queued", map[string]any{"title": w.title, "platform": platform, "home": home}) + "\n" +
 				commandText(a.ctx, "handoff.waiting", nil))
@@ -76,21 +76,18 @@ func (a *app) startHandoff(r *slashRun, platform string) tea.Cmd {
 func (a *app) storedTitle(sid string, then func(title string) tea.Cmd) tea.Cmd {
 	held := trimJS(a.store.ui.SessionTitle)
 	if a.gw.canonical() {
-		return gatewayCall(a.gw, "session.list", map[string]any{"limit": 200}, func(v any, err error) tea.Cmd {
-			sessions, _ := asRPCResult(v)["sessions"].([]any)
-			for _, raw := range sessions {
-				if row, _ := raw.(map[string]any); row["id"] == sid || row["session_id"] == sid {
-					if title := trimJS(jsValueString(row["title"])); title != "" {
-						return then(title)
-					}
+		return requestSessions(a.gw, true, "", func(sessions []listedSession, _ error) tea.Cmd {
+			for _, s := range sessions {
+				if title := trimJS(s.Title); (s.ID == sid || s.SessionID == sid) && title != "" {
+					return then(title)
 				}
 			}
 			return then(held)
 		})
 	}
-	return gatewayCall(a.gw, "session.title", map[string]any{"session_id": sid}, func(v any, err error) tea.Cmd {
-		if title := trimJS(jsValueString(asRPCResult(v)["title"])); err == nil && title != "" {
-			return then(title)
+	return call(a.gw, tuigateway.SessionTitle, tuigateway.SessionTitleParams{SessionID: sid}, func(r *tuigateway.SessionTitleResult, err error) tea.Cmd {
+		if err == nil && trimJS(r.Title) != "" {
+			return then(trimJS(r.Title))
 		}
 		return then(held)
 	})
@@ -166,7 +163,7 @@ func (a *app) leaveHandedOffSession(w *handoffWatch, report string) tea.Cmd {
 	if !viewed {
 		w.r.sys(report)
 	}
-	open := func(map[string]any) tea.Cmd {
+	open := func(*tuigateway.SessionDetachResult) tea.Cmd {
 		if !viewed {
 			return nil
 		}
@@ -184,7 +181,7 @@ func (a *app) handoffCommands() []slashCommand {
 	return []slashCommand{
 		{name: "handoff", help: "hand off this session to a messaging platform (Telegram, Discord, etc.)", usage: "<platform>",
 			run: func(r *slashRun) tea.Cmd {
-				platform := pystr.Lower(trimJS(r.arg))
+				platform := strings.ToLower(trimJS(r.arg))
 				if platform == "" {
 					r.sys(commandText(a.ctx, "handoff.usage", nil) + "\n" + commandText(a.ctx, "handoff.usage_detail_1", nil) + "\n" + tr("slashCmd.handoff.usageDetail"))
 					return r.ran()

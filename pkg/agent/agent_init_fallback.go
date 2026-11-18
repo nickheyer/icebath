@@ -65,7 +65,7 @@ func (a *AIAgent) FallbackModel() map[string]any {
 func recomputeInitFallbackAPIMode(ctx context.Context, a *AIAgent, fbBaseURL string) {
 	mode, err := provider.FallbackAPIModeResolved(ctx, a, a.provider, a.model, fbBaseURL)
 	if err != nil {
-		runAgentLog().Debug("Init-time fallback api_mode detection failed for "+a.provider, "error", err)
+		pkgLog().Debug("Init-time fallback api_mode detection failed for "+a.provider, "error", err)
 		return
 	}
 	a.apiMode = mode

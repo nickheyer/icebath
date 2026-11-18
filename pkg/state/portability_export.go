@@ -3,7 +3,6 @@ package state
 import (
 	"context"
 	"fmt"
-	"log/slog"
 	"math"
 	"time"
 
@@ -423,7 +422,7 @@ func (d *SessionDB) AdoptSessionLineageFrom(ctx context.Context, donor *SessionD
 		}
 		if len(donorMessages) > len(localMessages) {
 			donorAhead = true
-			slog.Warn(fmt.Sprintf("adoption divergence: donor segment %s has %d messages, local copy has %d — donor will NOT be retired",
+			pkgLog().Warn(fmt.Sprintf("adoption divergence: donor segment %s has %d messages, local copy has %d — donor will NOT be retired",
 				segID, len(donorMessages), len(localMessages)))
 		}
 	}
@@ -439,7 +438,7 @@ func (d *SessionDB) AdoptSessionLineageFrom(ctx context.Context, donor *SessionD
 	skipped, _ := exactInt(pyOr(rowValue(result, "skipped"), int64(0)))
 	adopted := pyTruthy(rowValue(result, "ok")) && int(imported+skipped) == len(segments)
 	if !adopted {
-		slog.Warn(fmt.Sprintf("adoption of %s did not complete: imported=%d skipped=%d of %d segment(s); errors=%s",
+		pkgLog().Warn(fmt.Sprintf("adoption of %s did not complete: imported=%d skipped=%d of %d segment(s); errors=%s",
 			sessionID, imported, skipped, len(segments), pyReprValue(rowValue(result, "errors"))))
 	}
 	donorRetired := false
@@ -465,35 +464,35 @@ func (d *SessionDB) AdoptSessionLineageFrom(ctx context.Context, donor *SessionD
 func (d *SessionDB) retireDonorSegment(ctx context.Context, donor *SessionDB, segID string) (retired bool) {
 	defer func() {
 		if r := recover(); r != nil {
-			slog.Warn(fmt.Sprintf("failed to retire donor segment %s after adoption: %v", segID, r))
+			pkgLog().Warn(fmt.Sprintf("failed to retire donor segment %s after adoption: %v", segID, r))
 			retired = false
 		}
 	}()
 	donorMessages, err := donor.GetMessages(ctx, segID, GetMessagesOptions{IncludeInactive: true})
 	if err != nil {
-		slog.Warn(fmt.Sprintf("failed to retire donor segment %s after adoption: %v", segID, err))
+		pkgLog().Warn(fmt.Sprintf("failed to retire donor segment %s after adoption: %v", segID, err))
 		return false
 	}
 	localMessages, err := d.GetMessages(ctx, segID, GetMessagesOptions{IncludeInactive: true})
 	if err != nil {
-		slog.Warn(fmt.Sprintf("failed to retire donor segment %s after adoption: %v", segID, err))
+		pkgLog().Warn(fmt.Sprintf("failed to retire donor segment %s after adoption: %v", segID, err))
 		return false
 	}
 	if len(donorMessages) > len(localMessages) {
-		slog.Warn(fmt.Sprintf("adoption divergence at retire time: donor segment %s grew to %d messages (local %d) — leaving donor unretired",
+		pkgLog().Warn(fmt.Sprintf("adoption divergence at retire time: donor segment %s grew to %d messages (local %d) — leaving donor unretired",
 			segID, len(donorMessages), len(localMessages)))
 		return false
 	}
 	if err := donor.ReopenSession(ctx, segID); err != nil {
-		slog.Warn(fmt.Sprintf("failed to retire donor segment %s after adoption: %v", segID, err))
+		pkgLog().Warn(fmt.Sprintf("failed to retire donor segment %s after adoption: %v", segID, err))
 		return false
 	}
 	if err := donor.EndSession(segID, "adopted_by_profile"); err != nil {
-		slog.Warn(fmt.Sprintf("failed to retire donor segment %s after adoption: %v", segID, err))
+		pkgLog().Warn(fmt.Sprintf("failed to retire donor segment %s after adoption: %v", segID, err))
 		return false
 	}
 	if _, err := donor.SetSessionArchived(ctx, segID, true, false); err != nil {
-		slog.Warn(fmt.Sprintf("failed to retire donor segment %s after adoption: %v", segID, err))
+		pkgLog().Warn(fmt.Sprintf("failed to retire donor segment %s after adoption: %v", segID, err))
 		return false
 	}
 	return true

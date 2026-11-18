@@ -63,7 +63,7 @@ func patchSetupIO(t *testing.T, prompts []string, yesNo []bool, existing map[str
 	return io
 }
 
-// Replaces the manifest builder like the hermes cases stub _build_full_manifest
+// Replaces the manifest builder like the tests stub build full manifest
 func stubManifest(t *testing.T) {
 	t.Helper()
 	saved := buildFullManifestFn

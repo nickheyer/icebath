@@ -219,7 +219,7 @@ func idleCompaction(ctx context.Context, a *AIAgent, out *CompactionOutcome, sys
 	if lastCompaction > 0 {
 		lastText = groupThousands(lastCompaction)
 	}
-	turnContextLog().Info(fmt.Sprintf("Idle compaction: %ds idle >= %ds, ~%s tokens > %s floor (last compaction produced ~%s) (session %s)",
+	pkgLog().Info(fmt.Sprintf("Idle compaction: %ds idle >= %ds, ~%s tokens > %s floor (last compaction produced ~%s) (session %s)",
 		int(idleGap), idleAfter, groupThousands(idleTokens), groupThousands(idleFloor), lastText, sessionOrNone(a)))
 	status := AutomaticCompactionStatusMessage(compressor, "idle", idleCompactionStatus(int(idleGap), idleTokens),
 		map[string]any{"approx_tokens": idleTokens, "idle_seconds": int(idleGap), "model": a.model})
@@ -245,13 +245,9 @@ func sessionOrNone(a *AIAgent) string {
 	return a.sessionID
 }
 
-// True when a codex app server thread compacts itself, Icebath compacting only in hermes mode
+// True when a codex app server thread compacts itself, Icebath compacting only in icebath mode
 func codexNativeAutoCompaction(a *AIAgent) bool {
-	mode := a.codexAppServerAutoCompaction
-	if mode == "" {
-		mode = "native"
-	}
-	mode = strings.ToLower(mode)
+	mode, _ := CodexAppServerAutoMode(a.codexAppServerAutoCompaction)
 	return a.apiMode == "codex_app_server" && (mode == "native" || mode == "off")
 }
 
@@ -296,20 +292,20 @@ func preflightCompression(ctx context.Context, a *AIAgent, out *CompactionOutcom
 		if !ok {
 			return engineAttributeError(compressor, "last_real_prompt_tokens")
 		}
-		turnContextLog().Info(fmt.Sprintf("Skipping preflight compression: rough estimate ~%s >= %s is not anchored on real usage (last real provider prompt %s); deferring to the next response",
+		pkgLog().Info(fmt.Sprintf("Skipping preflight compression: rough estimate ~%s >= %s is not anchored on real usage (last real provider prompt %s); deferring to the next response",
 			groupThousands(tokens), groupThousands(base.ThresholdTokens), groupThousands(lastReal)))
 	case len(cooldown) > 0:
 		remaining := 0.0
 		if v, ok := cooldown["remaining_seconds"]; ok {
 			remaining, _ = pyFloat(v)
 		}
-		turnContextLog().Info(fmt.Sprintf("Skipping preflight compression: same-session cooldown active (~%d seconds remaining, session %s)", int(remaining), sessionOrNone(a)))
+		pkgLog().Info(fmt.Sprintf("Skipping preflight compression: same-session cooldown active (~%d seconds remaining, session %s)", int(remaining), sessionOrNone(a)))
 		if tokens >= base.ThresholdTokens {
 			reason := fmt.Sprintf("cooldown:%.0f", remaining)
 			blockReason = &reason
 		}
 	case codexNativeAuto:
-		turnContextLog().Info(fmt.Sprintf("Skipping Icebath preflight compression for codex app-server (mode=%s); Icebath will not start thread compaction here.", a.codexAppServerAutoCompaction))
+		pkgLog().Info(fmt.Sprintf("Skipping Icebath preflight compression for codex app-server (mode=%s); Icebath will not start thread compaction here.", a.codexAppServerAutoCompaction))
 	default:
 		shouldNow = compressor.ShouldCompress(&tokens)
 		if !shouldNow {
@@ -364,7 +360,7 @@ func runPreflightPasses(ctx context.Context, a *AIAgent, out *CompactionOutcome,
 	out.Compressed = true
 	clearOverflowWarn(a)
 	base := compressor.Base()
-	turnContextLog().Info(fmt.Sprintf("Preflight compression: ~%s tokens >= %s threshold (model %s, ctx %s)",
+	pkgLog().Info(fmt.Sprintf("Preflight compression: ~%s tokens >= %s threshold (model %s, ctx %s)",
 		groupThousands(tokens), groupThousands(base.ThresholdTokens), a.model, groupThousands(base.ContextLength)))
 	status := AutomaticCompactionStatusMessage(compressor, "preflight", preflightCompressionStatus(tokens, base.ThresholdTokens), map[string]any{
 		"approx_tokens": tokens, "threshold_tokens": base.ThresholdTokens, "context_length": base.ContextLength, "model": a.model,
@@ -385,7 +381,7 @@ func runPreflightPasses(ctx context.Context, a *AIAgent, out *CompactionOutcome,
 		}
 		out.Messages, out.ActiveSystemPrompt = lc.messages, lc.system
 		if lc.skipped && compressionSkippedDueToLock(a) {
-			turnContextLog().Info(fmt.Sprintf("Preflight compression deferred: compression lock held by another path (session %s)", sessionOrNone(a)))
+			pkgLog().Info(fmt.Sprintf("Preflight compression deferred: compression lock held by another path (session %s)", sessionOrNone(a)))
 			break
 		}
 		tokens = compactionRequestTokens(ctx, a, out.Messages, out.ActiveSystemPrompt)
@@ -406,7 +402,7 @@ func runPreflightPasses(ctx context.Context, a *AIAgent, out *CompactionOutcome,
 		}
 		if !compressionWarrantsAnotherPreflightPass(origTokens, tokens, base.ThresholdTokens) {
 			out.Blocked = true
-			turnContextLog().Warn(fmt.Sprintf("Preflight compression made insufficient progress: ~%s -> ~%s request tokens; skipping additional passes",
+			pkgLog().Warn(fmt.Sprintf("Preflight compression made insufficient progress: ~%s -> ~%s request tokens; skipping additional passes",
 				groupThousands(origTokens), groupThousands(tokens)))
 			if err := failClosedOnInsufficientProgress(a, tokens); err != nil {
 				return err
@@ -425,7 +421,7 @@ func enginePreflightMaintenance(ctx context.Context, a *AIAgent, out *Compaction
 				if isUserInterruptPanic(r) {
 					panic(r)
 				}
-				turnContextLog().Debug(fmt.Sprintf("should_compress_preflight raised %v; skipping engine-driven preflight maintenance", r))
+				pkgLog().Debug(fmt.Sprintf("should_compress_preflight raised %v; skipping engine-driven preflight maintenance", r))
 				wants, ok = false, false
 			}
 		}()
@@ -434,7 +430,7 @@ func enginePreflightMaintenance(ctx context.Context, a *AIAgent, out *Compaction
 	if !ok || !wants {
 		return nil
 	}
-	turnContextLog().Info(fmt.Sprintf("Engine-driven preflight maintenance: %s requested compress() at ~%s tokens (below %s threshold)",
+	pkgLog().Info(fmt.Sprintf("Engine-driven preflight maintenance: %s requested compress() at ~%s tokens (below %s threshold)",
 		compressor.Name(), groupThousands(tokens), groupThousands(engineThresholdTokens(compressor))))
 	lc, err := compactLive(ctx, a, out.Messages, systemMessage, tokens, taskID, "engine_preflight")
 	if err != nil {

@@ -3,7 +3,6 @@ package agent
 import (
 	"context"
 	"fmt"
-	"log/slog"
 	"math"
 	"math/rand/v2"
 	"os"
@@ -132,7 +131,7 @@ func neutraliseReplayEchoGhosts(seq []*state.Message) ([]*state.Message, int) {
 func fireStepCallback(a *AIAgent, apiCallCount int, round []map[string]any) {
 	defer func() {
 		if r := recover(); r != nil {
-			conversationLoopLog().Debug(fmt.Sprintf("step_callback error (iteration %d): %v", apiCallCount, r))
+			pkgLog().Debug(fmt.Sprintf("step_callback error (iteration %d): %v", apiCallCount, r))
 		}
 	}()
 	switch cb := a.stepCallback.(type) {
@@ -140,23 +139,19 @@ func fireStepCallback(a *AIAgent, apiCallCount int, round []map[string]any) {
 		cb(apiCallCount, round)
 	case func(int, []map[string]any) error:
 		if err := cb(apiCallCount, round); err != nil {
-			conversationLoopLog().Debug(fmt.Sprintf("step_callback error (iteration %d): %v", apiCallCount, err))
+			pkgLog().Debug(fmt.Sprintf("step_callback error (iteration %d): %v", apiCallCount, err))
 		}
 	}
 }
 
 // Prepares the transcript for this iteration, steer drain, budget notices, argument repair, ghost rows and alternation
 func prepareIteration(ctx context.Context, a *AIAgent, s *LoopState) error {
-	if pyTruthy(a.nousWirePending) {
-		applyPendingWireSwitch(ctx, a)
-	}
 	if a.stepCallback != nil {
 		fireStepCallback(a, s.APICallCount, previousToolRound(s.Messages))
 	}
 	if a.skillNudgeInterval > 0 && a.validToolNames["skill_manage"] {
 		a.itersSinceSkill++
 	}
-	a.adoptNousKeyBeforeExpiry(ctx)
 	if steer := a.drainPendingSteer(); steer != "" {
 		injectSteerAfterNewestToolResult(a, &s.Messages, steer)
 	}
@@ -165,7 +160,7 @@ func prepareIteration(ctx context.Context, a *AIAgent, s *LoopState) error {
 	}
 	injectIterationBudgetWarning(ctx, a, s.Messages)
 
-	log := conversationLoopLog()
+	log := pkgLog()
 	s.RequestLogger = log
 	session := a.sessionID
 	if session == "" {
@@ -236,7 +231,7 @@ func injectSteerAfterNewestToolResult(a *AIAgent, messages *[]*state.Message, st
 		if m := (*messages)[i]; m != nil && m.Role == "tool" {
 			row := state.MessageFromDict(SteerUserRow(steerText))
 			*messages = append((*messages)[:i+1], append([]*state.Message{row}, (*messages)[i+1:]...)...)
-			conversationLoopLog().Debug(fmt.Sprintf("Pre-API-call steer drain: appended user row after tool msg at index %d", i))
+			pkgLog().Debug(fmt.Sprintf("Pre-API-call steer drain: appended user row after tool msg at index %d", i))
 			return
 		}
 	}
@@ -277,9 +272,9 @@ func announceAPICall(ctx context.Context, a *AIAgent, s *LoopState) error {
 		if n := len(s.Messages); n > 0 && s.Messages[n-1] != nil {
 			last = s.Messages[n-1].Role
 		}
-		slog.Debug(fmt.Sprintf("API Request - Model: %s, Messages: %d, Tools: %d", a.model, len(s.Messages), toolCount))
-		slog.Debug("Last message role: " + last)
-		slog.Debug(fmt.Sprintf("Total message size: ~%s tokens", pystr.GroupThousands(int64(s.ApproxTokens))))
+		pkgLog().Debug(fmt.Sprintf("API Request - Model: %s, Messages: %d, Tools: %d", a.model, len(s.Messages), toolCount))
+		pkgLog().Debug("Last message role: " + last)
+		pkgLog().Debug(fmt.Sprintf("Total message size: ~%s tokens", pystr.GroupThousands(int64(s.ApproxTokens))))
 	}
 	return nil
 }
@@ -344,7 +339,7 @@ func applyRetryRestarts(ctx context.Context, a *AIAgent, s *LoopState) (PhaseVer
 		s.RestartCount++
 		if s.RestartCount > s.MaxRetries {
 			s.TurnExitReason = "redirect_restart_limit_exceeded"
-			conversationLoopLog().Warn(fmt.Sprintf("Redirected-message restart limit (%d) exceeded; ending turn instead of refunding the iteration budget indefinitely.", s.MaxRetries))
+			pkgLog().Warn(fmt.Sprintf("Redirected-message restart limit (%d) exceeded; ending turn instead of refunding the iteration budget indefinitely.", s.MaxRetries))
 			if unapplied := a.drainPendingRedirect(); unapplied != "" {
 				a.Steer(unapplied)
 			}
@@ -365,7 +360,7 @@ func applyRetryRestarts(ctx context.Context, a *AIAgent, s *LoopState) (PhaseVer
 		s.RetryCount++
 		r.RestartWithCompressedMessages = false
 		if shouldSkipModelCallForReferenceHandoff(&s.Messages, s.UserMessage) {
-			conversationLoopLog().Info("Skipping compressed-restart model call: reference-only handoff would be the sole active user turn (#80622)")
+			pkgLog().Info("Skipping compressed-restart model call: reference-only handoff would be the sole active user turn (#80622)")
 			if !pyTruthy(s.FinalResponse) {
 				s.FinalResponse = handoffSkipFinalResponse
 			}
@@ -379,7 +374,7 @@ func applyRetryRestarts(ctx context.Context, a *AIAgent, s *LoopState) (PhaseVer
 		s.RestartCount++
 		if s.RestartCount > s.MaxRetries {
 			s.TurnExitReason = "rebuilt_restart_limit_exceeded"
-			conversationLoopLog().Warn(fmt.Sprintf("Rebuilt-message restart limit (%d) exceeded; ending turn instead of refunding the iteration budget indefinitely.", s.MaxRetries))
+			pkgLog().Warn(fmt.Sprintf("Rebuilt-message restart limit (%d) exceeded; ending turn instead of refunding the iteration budget indefinitely.", s.MaxRetries))
 			return PhaseVerdict{Action: "break"}, nil
 		}
 		s.APICallCount--

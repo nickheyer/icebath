@@ -57,7 +57,7 @@ type burstRouteTurn struct {
 	waiters []chan struct{}
 }
 
-// Session authority and runner double settling the busy caller futures as the hermes messaging admission does
+// Session authority and runner double settling the busy caller futures as the messaging admission does
 type burstRuntime struct {
 	adapter  PlatformAdapter
 	mu       sync.Mutex
@@ -77,10 +77,10 @@ type burstRuntime struct {
 	authority *SessionAuthority
 }
 
-// Bound launch authority marker, the double itself admitting turns the way the hermes authority does
+// Bound launch authority marker, the double itself admitting turns the way the authority does
 func (r *burstRuntime) SessionAuthority() *SessionAuthority { return r.authority }
 
-// Busy command policy of the hermes command registry for the commands these cases send
+// Busy command policy of the command registry for the commands these cases send
 func installBurstCommandPolicy(t *testing.T) {
 	saved := CommandBusyPolicy
 	t.Cleanup(func() { CommandBusyPolicy = saved })

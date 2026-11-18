@@ -4,7 +4,6 @@ import (
 	"crypto/md5"
 	"encoding/hex"
 	"fmt"
-	"log/slog"
 	"maps"
 	"strings"
 	"unicode/utf8"
@@ -28,7 +27,7 @@ func (c *ContextCompressor) applyRealPromptVerdict() {
 	if c.LastPromptTokens >= c.thresholdTokensValue() {
 		c.recordIneffectiveCompressionVerdict(c.ineffectiveCompressionCount + 1)
 		if !c.quietMode {
-			slog.Warn(fmt.Sprintf("Compaction did not clear the threshold: %d real tokens still >= %d. The incompressible prompt (system prompt + tool schemas) may already exceed it, in which case shrinking messages cannot help. ineffective_compression_count=%d",
+			pkgLog().Warn(fmt.Sprintf("Compaction did not clear the threshold: %d real tokens still >= %d. The incompressible prompt (system prompt + tool schemas) may already exceed it, in which case shrinking messages cannot help. ineffective_compression_count=%d",
 				c.LastPromptTokens, c.thresholdTokensValue(), c.ineffectiveCompressionCount))
 		}
 		return
@@ -135,7 +134,7 @@ func (c *ContextCompressor) refreshDurableGuards() {
 		func() {
 			defer func() {
 				if r := recover(); r != nil {
-					slog.Debug(fmt.Sprintf("compression %s refresh failed: %v", step.label, r))
+					pkgLog().Debug(fmt.Sprintf("compression %s refresh failed: %v", step.label, r))
 				}
 			}()
 			step.fn()
@@ -161,7 +160,7 @@ func (c *ContextCompressor) automaticCompressionBlockedLocally(ignoreCooldown bo
 	}{{c.summaryFailureCooldownUntil, ignoreCooldown, "summary LLM in cooldown"}, {c.structuralNoOpBackoffUntil, false, "structural no-op backoff"}} {
 		if remaining := gate.until - compressorMonotonic(); remaining > 0 && !gate.skip {
 			if !c.quietMode {
-				slog.Debug(fmt.Sprintf("Compression deferred — %s for %.0fs more", gate.what, remaining))
+				pkgLog().Debug(fmt.Sprintf("Compression deferred — %s for %.0fs more", gate.what, remaining))
 			}
 			return true
 		}
@@ -176,13 +175,13 @@ func (c *ContextCompressor) automaticCompressionBlockedLocally(ignoreCooldown bo
 				c.recordIneffectiveCompressionVerdict(1)
 			}
 			if !c.quietMode {
-				slog.Info(fmt.Sprintf("Anti-thrashing recovery: %.0fs elapsed since the guard tripped — allowing one compaction probe (ineffective=%d fallback=%d).",
+				pkgLog().Info(fmt.Sprintf("Anti-thrashing recovery: %.0fs elapsed since the guard tripped — allowing one compaction probe (ineffective=%d fallback=%d).",
 					antiThrashRecoverySeconds, c.ineffectiveCompressionCount, c.fallbackCompressionStreak))
 			}
 			return false
 		}
 		if !c.quietMode {
-			slog.Warn(fmt.Sprintf("Compression skipped — repeated compaction attempts did not restore healthy context. ineffective=%d fallback=%d. Auto-compaction will retry once in %.0fs. Consider /new to start fresh, or /compress <topic> for focused compression.",
+			pkgLog().Warn(fmt.Sprintf("Compression skipped — repeated compaction attempts did not restore healthy context. ineffective=%d fallback=%d. Auto-compaction will retry once in %.0fs. Consider /new to start fresh, or /compress <topic> for focused compression.",
 				c.ineffectiveCompressionCount, c.fallbackCompressionStreak, max(0.0, c.antiThrashRecoveryDeadline-now)))
 		}
 		return true
@@ -339,7 +338,7 @@ func (c *ContextCompressor) pressureDemoteTail(result []map[string]any, pruneBou
 		}
 	}
 	if demoted > 0 && !c.quietMode {
-		slog.Info(fmt.Sprintf("Pre-compression pressure demotion: reclaimed protected-tail tool output (%d change(s); protected region now ~%s tokens, soft ceiling %s)",
+		pkgLog().Info(fmt.Sprintf("Pre-compression pressure demotion: reclaimed protected-tail tool output (%d change(s); protected region now ~%s tokens, soft ceiling %s)",
 			demoted, groupedInt(region()), groupedInt(softCeiling)))
 	}
 	return demoted

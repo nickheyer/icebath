@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"log/slog"
 	"strings"
 
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
@@ -99,7 +98,7 @@ func settleRecoveredUnattended(ctx context.Context, db *state.SessionDB, epoch i
 		if err != nil {
 			var refusal *state.RuntimeStoreError
 			if errors.As(err, &refusal) {
-				slog.Warn(fmt.Sprintf("Lost automation admission %s left unknown: %s", admissionID, refusal.Reason))
+				pkgLog().Warn(fmt.Sprintf("Lost automation admission %s left unknown: %s", admissionID, refusal.Reason))
 				continue
 			}
 			return settled, err
@@ -108,7 +107,7 @@ func settleRecoveredUnattended(ctx context.Context, db *state.SessionDB, epoch i
 			return settled, err
 		}
 		settled++
-		slog.Info(fmt.Sprintf("Lost automation admission %s on session %s settled interrupted (not replayed)",
+		pkgLog().Info(fmt.Sprintf("Lost automation admission %s on session %s settled interrupted (not replayed)",
 			admissionID, rowString(row, "target_session_id")))
 	}
 	return settled, nil
@@ -129,7 +128,7 @@ func settleUnattendedUnknown(ctx context.Context, a *SessionAuthority, ref Sessi
 		if _, err := a.ResolveUnknownAsOwner(ctx, ref, rowString(row, "admission_id"), generation, automationInterruptedNotice); err != nil {
 			var refusal *state.RuntimeStoreError
 			if errors.As(err, &refusal) {
-				slog.Warn(fmt.Sprintf("Lost automation admission %s left unknown: %s", rowString(row, "admission_id"), refusal.Reason))
+				pkgLog().Warn(fmt.Sprintf("Lost automation admission %s left unknown: %s", rowString(row, "admission_id"), refusal.Reason))
 				continue
 			}
 			return settled, err

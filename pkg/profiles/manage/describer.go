@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"io/fs"
-	"log/slog"
 	"path/filepath"
 	"regexp"
 	"sort"
@@ -48,7 +47,7 @@ Rules:
                          refactors functions, opens GitHub PRs."
   - 1-2 sentences, <= 280 characters total.
   - Never invent capabilities the skills don't suggest.
-  - Never write "Hermes Agent profile" or other meta-narration.
+  - Never write "Icebath profile" or other meta-narration.
   - No code fences, no preamble, no closing remarks. Output only JSON.
 `
 
@@ -181,14 +180,14 @@ func DescribeProfile(ctx context.Context, profileName string, overwrite bool, ti
 		{"role": "user", "content": userMsg},
 	}, 0.3, 400, timeout)
 	if err != nil {
-		slog.Default().Info(fmt.Sprintf("describe: API call failed for %s (%v)", canon, err))
+		pkgLog().Info(fmt.Sprintf("describe: API call failed for %s (%v)", canon, err))
 		return fail("LLM error: " + errClass)
 	}
 	var description string
 	if parsed := extractJSONBlob(raw, describerFenceRe); parsed == nil {
 		stripped := describerFenceRe.ReplaceAllString(pystr.Strip(raw), "")
 		if strings.HasPrefix(stripped, "{") {
-			slog.Default().Info(fmt.Sprintf("describe: %s aux response looked JSON-shaped but failed to parse "+
+			pkgLog().Info(fmt.Sprintf("describe: %s aux response looked JSON-shaped but failed to parse "+
 				"(likely truncated) -- refusing to persist the raw fragment", canon))
 			return fail("LLM returned malformed/truncated JSON response")
 		}

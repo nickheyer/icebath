@@ -22,11 +22,11 @@ type RelayHost interface {
 	Shutdown()
 }
 
-// Explicit reduced capability host for platforms without the Relay binding or a runtime still being provisioned
+// Explicit reduced capability host while no Relay plugin is configured or the binding cannot load, Retry rebuilding it on the next first use
 type NoopRelayRuntime struct {
-	ProfileKey   string
-	Reason       string
-	Provisioning bool
+	ProfileKey string
+	Reason     string
+	Retry      bool
 }
 
 func (NoopRelayRuntime) ApplyToolRequestIntercepts(_ context.Context, _, _ string, args map[string]any) (map[string]any, error) {
@@ -55,7 +55,7 @@ func NewRelayHostRegistry() *RelayHostRegistry {
 	return &RelayHostRegistry{hosts: pydict.New[string, RelayHost](), creating: map[string]chan struct{}{}}
 }
 
-// Host of the profile, created on first use unless create is false, the no op host while Relay cannot start
+// Host of the profile, created on first use unless create is false, the no op host while Relay has no consumer or cannot start
 func (g *RelayHostRegistry) ForProfile(ctx context.Context, profileKey string, create bool) RelayHost {
 	key := profileKey
 	if key == "" {
@@ -65,7 +65,7 @@ func (g *RelayHostRegistry) ForProfile(ctx context.Context, profileKey string, c
 	for {
 		host, _ := g.hosts.Get(key)
 		noop, pending := host.(NoopRelayRuntime)
-		if !create || (host != nil && !(pending && noop.Provisioning)) {
+		if !create || (host != nil && !(pending && noop.Retry)) {
 			g.mu.Unlock()
 			return host
 		}
@@ -101,19 +101,19 @@ func (g *RelayHostRegistry) ForProfile(ctx context.Context, profileKey string, c
 	return built
 }
 
-// Host a first use builds over the stored provisioning host, keep false when nothing new is stored
+// Host a first use builds, silent while the runtime is unprovisioned and no Relay plugin is configured, keep false when nothing new is stored
 func buildRelayHost(ctx context.Context, key string, current RelayHost) (RelayHost, bool) {
 	ready := relayBindingReady()
 	if current != nil && !ready {
 		return current, false
 	}
 	if !ready && !RelayDemanded(ctx) {
-		return NoopRelayRuntime{ProfileKey: key, Reason: relayProvisioningReason, Provisioning: true}, false
+		return NoopRelayRuntime{ProfileKey: key, Reason: relayUnconfiguredReason, Retry: true}, false
 	}
 	rt, err := NewRelayRuntime(ctx, nil, key)
 	if err != nil {
 		relayLogger().WarnContext(ctx, "Icebath Relay runtime initialization failed", "err", err)
-		return NoopRelayRuntime{ProfileKey: key, Reason: err.Error(), Provisioning: !relayBindingReady()}, true
+		return NoopRelayRuntime{ProfileKey: key, Reason: err.Error(), Retry: !ready}, true
 	}
 	return rt, true
 }
@@ -179,8 +179,8 @@ func (t *RelayTurnContext) RelayEnabled() bool { return t.relayEnabled.Load() }
 func (t *RelayTurnContext) Closed() bool { return t.closed.Load() }
 
 var (
-	relayCurrentTurnVar          = pyctx.NewVar("hermes_relay_turn", (*RelayTurnContext)(nil))
-	relayManagedCallbackDepthVar = pyctx.NewVar("hermes_relay_managed_callback_depth", 0)
+	relayCurrentTurnVar          = pyctx.NewVar("icebath_relay_turn", (*RelayTurnContext)(nil))
+	relayManagedCallbackDepthVar = pyctx.NewVar("icebath_relay_managed_callback_depth", 0)
 )
 
 // Context of a managed Relay callback whose transitive work, forwarded copies included, runs unmanaged

@@ -13,14 +13,14 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/internal/pythread"
 	"github.com/nickheyer/icebath/pkg/media"
-	"github.com/nickheyer/icebath/pkg/tuigateway"
+	"github.com/nickheyer/icebath/pkg/tuihost"
 )
 
 var (
 	voiceSidMu          sync.Mutex
 	voiceEventSID       string
-	voiceWakeOwner      tuigateway.Transport
-	voiceEventTransport tuigateway.Transport
+	voiceWakeOwner      tuihost.Transport
+	voiceEventTransport tuihost.Transport
 	voiceCaptureSID     string
 	voiceCaptureGen     int
 
@@ -75,9 +75,9 @@ func voiceEmit(ctx context.Context, event string, payload map[string]any) {
 	sid, transport := voiceEventSID, voiceEventTransport
 	voiceSidMu.Unlock()
 	if transport != nil {
-		ctx = tuigateway.BindTransport(ctx, transport)
+		ctx = tuihost.BindTransport(ctx, transport)
 	}
-	tuigateway.Emit(ctx, event, sid, payload)
+	tuihost.Emit(ctx, event, sid, payload)
 }
 
 // Resumes the wake detector for the transport that yielded it to a voice capture
@@ -92,12 +92,12 @@ func resumeVoiceWake() {
 }
 
 // Resumes the wake detector for its owner, retrying in the background while the microphone is still busy
-func wakeResumeIfOwner(owner tuigateway.Transport, retry, interval time.Duration) bool {
+func wakeResumeIfOwner(owner tuihost.Transport, retry, interval time.Duration) bool {
 	resumed, err := media.ResumeListening(owner)
 	if err == nil {
 		return resumed
 	}
-	voiceLogger().Debug(fmt.Sprintf("wake resume failed (will retry): %s", err))
+	pkgLog().Debug(fmt.Sprintf("wake resume failed (will retry): %s", err))
 	wakeResumeRetryMu.Lock()
 	if wakeResumeRetryActive {
 		wakeResumeRetryMu.Unlock()
@@ -119,11 +119,11 @@ func wakeResumeIfOwner(owner tuigateway.Transport, retry, interval time.Duration
 				continue
 			}
 			if ok {
-				voiceLogger().Info("wake: detector resumed after retry")
+				pkgLog().Info("wake: detector resumed after retry")
 			}
 			return
 		}
-		voiceLogger().Warn("wake: could not resume detector after voice turn (microphone still busy?) — toggle the wake word to re-arm")
+		pkgLog().Warn("wake: could not resume detector after voice turn (microphone still busy?) — toggle the wake word to re-arm")
 	}()
 	return false
 }
@@ -178,9 +178,9 @@ func endSessionVoiceChat(ctx context.Context, sessionID string, stopLoop, stopTT
 }
 
 // Live sessions with a turn running
-func runningSessions() []*tuigateway.Session {
-	var out []*tuigateway.Session
-	for _, live := range tuigateway.LiveSessions() {
+func runningSessions() []*tuihost.Session {
+	var out []*tuihost.Session
+	for _, live := range tuihost.LiveSessions() {
 		if truthy(live.Session.Get("running")) {
 			out = append(out, live.Session)
 		}
@@ -229,7 +229,7 @@ func ttsStreamStop(userBarge bool) {
 		return
 	}
 	if userBarge && !state.done.IsSet() {
-		voiceLogger().Debug("TTS CUT: _tts_stream_stop(user_barge=True) — new turn or interrupt cutting in-flight TTS")
+		pkgLog().Debug("TTS CUT: _tts_stream_stop(user_barge=True) — new turn or interrupt cutting in-flight TTS")
 		media.MarkSpeechInterrupted()
 	}
 	state.stop.Set()
@@ -278,7 +278,7 @@ func fdTTSPending() bool {
 func fullDuplexListener(ctx context.Context) {
 	defer func() {
 		if r := recover(); r != nil {
-			voiceLogger().Debug(fmt.Sprintf("full-duplex listener failed: %s", panicMessage(r)))
+			pkgLog().Debug(fmt.Sprintf("full-duplex listener failed: %s", panicMessage(r)))
 		}
 		fdListenerMu.Lock()
 		fdListenerActive = false
@@ -344,9 +344,9 @@ func fdBargeParams(cfg map[string]any) (float64, int) {
 func fdTrip(ctx context.Context, phase string) {
 	media.MarkSpeechInterrupted()
 	if phase == "playback" {
-		voiceLogger().Debug("TTS CUT: full-duplex listener tripped during playback")
+		pkgLog().Debug("TTS CUT: full-duplex listener tripped during playback")
 	} else {
-		voiceLogger().Debug("full-duplex listener tripped during generation — interrupting running turn(s)")
+		pkgLog().Debug("full-duplex listener tripped during generation — interrupting running turn(s)")
 	}
 	ttsStreamStop(true)
 	fdListenerMu.Lock()
@@ -363,7 +363,7 @@ func fdTrip(ctx context.Context, phase string) {
 				}
 			}
 		}); failure != nil {
-			voiceLogger().Debug(fmt.Sprintf("voice interjection interrupt failed: %s", panicMessage(failure)))
+			pkgLog().Debug(fmt.Sprintf("voice interjection interrupt failed: %s", panicMessage(failure)))
 		}
 	}
 	voiceEmit(ctx, "voice.interrupted", nil)

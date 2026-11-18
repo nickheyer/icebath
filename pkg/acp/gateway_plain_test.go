@@ -237,7 +237,7 @@ func TestVersionFlagDisplaysDerivedVersion(t *testing.T) {
 
 func TestVersionSlashCommandDisplaysDerivedVersion(t *testing.T) {
 	fixedVersion(t)
-	a := NewHermesACPAgent(saveOnly{})
+	a := NewIcebathACPAgent(saveOnly{})
 	reply, known := a.handleSlashCommand(context.Background(), "/version", &SessionState{Cwd: "."})
 	if !known || reply != "Icebath Agent v1.2.3+4.gabcdef0" {
 		t.Fatalf("reply = %q, %v", reply, known)
@@ -247,7 +247,7 @@ func TestVersionSlashCommandDisplaysDerivedVersion(t *testing.T) {
 func TestInitializeAdvertisesBaseVersion(t *testing.T) {
 	fixedVersion(t)
 	testingHome(t)
-	resp, err := NewHermesACPAgent(saveOnly{}).Initialize(context.Background(), nil)
+	resp, err := NewIcebathACPAgent(saveOnly{}).Initialize(context.Background(), nil)
 	if err != nil || resp.AgentInfo == nil || resp.AgentInfo.Version != "1.2.3" {
 		t.Fatalf("resp = %+v, %v", resp, err)
 	}
@@ -333,7 +333,7 @@ func TestGatewayAcpAdvertisesEverySessionCapabilityItImplements(t *testing.T) {
 	testingHome(t)
 	ctx := context.Background()
 	gatewayAgent := NewGatewayACPAgent()
-	inProcess := NewHermesACPAgent(NewSessionManager(func() any { return struct{}{} }, nil))
+	inProcess := NewIcebathACPAgent(NewSessionManager(func() any { return struct{}{} }, nil))
 	advertised, err := gatewayAgent.Initialize(ctx, &pyacp.InitializeRequest{ProtocolVersion: 1})
 	if err != nil {
 		t.Fatal(err)

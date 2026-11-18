@@ -24,7 +24,7 @@ func installProfileStoreDoubles() {
 	ProfileStoreHooks.Dir = func(name string) (string, error) { return "", fmt.Errorf("profile '%s' does not exist", name) }
 }
 
-// Points the profile doubles at one home like the hermes _patch_profiles monkeypatches
+// Points the profile doubles at one home like the patch profiles swaps
 func patchProfileStore(t *testing.T, dir string, exists bool) {
 	t.Helper()
 	prevN, prevV, prevE, prevD := ProfileStoreHooks.Normalize, ProfileStoreHooks.Validate, ProfileStoreHooks.Exists, ProfileStoreHooks.Dir
@@ -159,7 +159,7 @@ func seedModpackSessions(t *testing.T, db *state.DB) {
 	ssAppend(t, db, "s_newest", "assistant", "Shipped commit b850442. Modpack alternator nerfed too.")
 }
 
-// Store double whose unexpected reads fail the test, the hermes _DB classes with only one method
+// Store double whose unexpected reads fail the test, the DB classes with only one method
 type sessionSearchFakeStore struct {
 	t      *testing.T
 	closed int
@@ -1275,7 +1275,7 @@ func TestSessionSearchInlineExecutorWithoutRecallDatabase(t *testing.T) {
 	}
 }
 
-// A store without the bounded browse surfaces the hermes RuntimeError text
+// A store without the bounded browse surfaces the RuntimeError text
 func TestSessionSearchLegacyStoreErrorText(t *testing.T) {
 	result := ssSearch(t, SessionSearchArgs{DB: &sessionSearchFakeStore{t: t}})
 	if result["error"] != "Failed to list recent sessions: session database does not support bounded recent-session browse" {

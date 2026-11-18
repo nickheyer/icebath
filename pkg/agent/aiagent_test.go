@@ -8,12 +8,9 @@ import (
 	"testing"
 
 	"github.com/nickheyer/icebath/pkg/internal/pythread"
-	"github.com/nickheyer/icebath/pkg/observability"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/state"
 )
-
-var _ observability.MetricsAgent = (*AIAgent)(nil)
 
 func TestStreamWriterFenceSupersedesEarlierClaims(t *testing.T) {
 	a := &AIAgent{}
@@ -92,7 +89,7 @@ func TestAdoptBuiltBackendOnlyForTheCarriedDelegateDef(t *testing.T) {
 	b := &AIAgent{delegationBackend: "keep"}
 	b.AdoptBuiltBackend(nil, "none")
 	if b.delegationBackend != "none" {
-		t.Fatal("two absent definitions compare equal in hermes")
+		t.Fatal("two absent definitions compare equal")
 	}
 }
 

@@ -3,7 +3,6 @@ package app
 import (
 	"errors"
 	"fmt"
-	"log/slog"
 	"slices"
 	"sort"
 
@@ -53,7 +52,7 @@ func submitQueued(c *CLI, store *gatewaycli.GatewaySessionStore, text string) (s
 		if attempt == 2 {
 			return "", &QueueOutcomeUnknown{Msg: err.Error()}
 		}
-		slog.Debug(fmt.Sprintf("prompt.submit answer lost (%s); asking again under the same identity", err.Error()))
+		pkgLog().Debug(fmt.Sprintf("prompt.submit answer lost (%s); asking again under the same identity", err.Error()))
 	}
 	receipt, _ := pyjson.Plain(raw).(map[string]any)
 	admission := strOrEmpty(receipt["admission_id"])
@@ -107,7 +106,7 @@ func queuedRows(c *CLI, store *gatewaycli.GatewaySessionStore) []queuedRow {
 			if !isGatewayClientError(err) {
 				panic(err)
 			}
-			slog.Debug(fmt.Sprintf("prompt.receipt %s failed: %s", admission, err.Error()))
+			pkgLog().Debug(fmt.Sprintf("prompt.receipt %s failed: %s", admission, err.Error()))
 			if _, has := rows[admission]; !has {
 				put(admission, ordered{1 << 62, pyrepr.Str(text)})
 			}

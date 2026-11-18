@@ -69,7 +69,7 @@ func wireAPIObservers(ctx context.Context, a *agent.AIAgent, owner *turnApproval
 	publish := func(key string, args []any, kwargs map[string]any) bool {
 		accepted, err := gateway.PublishAPIObserverCallback(ctx, owner.authority, owner.sessionID, owner.generation, key, args, kwargs)
 		if err != nil {
-			runLog().Debug(fmt.Sprintf("API observer %s publish failed: %s", key, err))
+			pkgLog().Debug(fmt.Sprintf("API observer %s publish failed: %s", key, err))
 		}
 		return accepted
 	}
@@ -84,7 +84,7 @@ func wireAPIObservers(ctx context.Context, a *agent.AIAgent, owner *turnApproval
 		if eventType == "tool.started" || eventType == "tool.completed" {
 			if err := gateway.PublishAPIToolProgress(ctx, owner.authority, owner.sessionID, owner.generation,
 				[]any{eventType, name, preview, args}, extra); err != nil {
-				runLog().Debug(fmt.Sprintf("API tool progress publish failed: %s", err))
+				pkgLog().Debug(fmt.Sprintf("API tool progress publish failed: %s", err))
 			}
 		}
 		callAnyCallback(progress, eventType, name, preview, args, extra)

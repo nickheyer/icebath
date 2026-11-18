@@ -63,11 +63,11 @@ func (r *GatewayRunner) enrichMessageWithTranscription(ctx context.Context, user
 	for _, path := range audioPaths {
 		clip, memoized := clipMemo[path]
 		if !memoized {
-			inboundLog().Debug("Transcribing user voice: " + path)
+			pkgLog().Debug("Transcribing user voice: " + path)
 			var err error
 			clip, err = r.transcribeOneClip(ctx, path, media.TranscribeAudio, media.TranscribeAudioLocalFallback)
 			if err != nil {
-				inboundLog().Error(fmt.Sprintf("Transcription error: %s", err))
+				pkgLog().Error(fmt.Sprintf("Transcription error: %s", err))
 				enrichedParts = append(enrichedParts, untranscribedAudioNote(ctx, path))
 				continue
 			}
@@ -141,7 +141,7 @@ func (r *GatewayRunner) echoSTTTranscripts(ctx context.Context, adapter gateway.
 	for _, tx := range transcripts {
 		echo := i18n.T(ctx, "gateway.voice.transcript_echo_short", "", map[string]any{"text": tx})
 		if _, err := adapter.Send(ctx, source.ChatID, echo, "", metadata); err != nil {
-			inboundLog().Debug(fmt.Sprintf("%s echo failed (non-fatal): %s", logContext, err))
+			pkgLog().Debug(fmt.Sprintf("%s echo failed (non-fatal): %s", logContext, err))
 		}
 	}
 }
@@ -165,7 +165,7 @@ func (r *GatewayRunner) transcribeAndEchoPendingVoice(ctx context.Context, event
 	}
 	defer func() {
 		if rec := recover(); rec != nil {
-			inboundLog().Warn(fmt.Sprintf("%s transcription failed: %s", logContext, pyrepr.Str(rec)))
+			pkgLog().Warn(fmt.Sprintf("%s transcription failed: %s", logContext, pyrepr.Str(rec)))
 			result, transcripts = text, []string{}
 		}
 	}()
@@ -206,7 +206,7 @@ func (r *GatewayRunner) transcribeOneClip(ctx context.Context, path string, tran
 			return gateway.STTClip{}, err
 		}
 		if pyrepr.Truthy(recovered["success"]) {
-			inboundLog().Info(fmt.Sprintf("Configured STT failed for %s; recovered with local STT", path))
+			pkgLog().Info(fmt.Sprintf("Configured STT failed for %s; recovered with local STT", path))
 			result = recovered
 		}
 	}
@@ -215,7 +215,7 @@ func (r *GatewayRunner) transcribeOneClip(ctx context.Context, path string, tran
 		if !ok {
 			reason = "unknown error"
 		}
-		inboundLog().Info(fmt.Sprintf("Voice transcription failed for %s: %s", path, pyrepr.Str(reason)))
+		pkgLog().Info(fmt.Sprintf("Voice transcription failed for %s: %s", path, pyrepr.Str(reason)))
 		return gateway.STTClip{Note: untranscribedAudioNote(ctx, path)}, nil
 	}
 	transcript, _ := result["transcript"].(string)

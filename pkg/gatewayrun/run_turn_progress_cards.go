@@ -158,7 +158,7 @@ func (t *TurnRunner) taskCardSendOrEditFallback(ctx context.Context, st *taskCar
 			return nil
 		}
 		if gateway.DeclinedSend(&result) {
-			runLog().Warn("Task-card fallback edit DECLINED by the connector's egress guard; suppressing progress delivery for the rest of this turn (the destination is not approved)")
+			pkgLog().Warn("Task-card fallback edit DECLINED by the connector's egress guard; suppressing progress delivery for the rest of this turn (the destination is not approved)")
 			st.publicationSuppressed = true
 			return nil
 		}
@@ -210,7 +210,7 @@ func (t *TurnRunner) taskCardPublish(ctx context.Context, st *taskCardState) err
 		if gateway.DeclinedSend(&result) {
 			st.publicationSuppressed = true
 			st.nativeFailed = true
-			runLog().Warn("Slack native task-card progress DECLINED by the connector's egress guard — suppressing the text fallback for the rest of this turn (the destination is not approved)")
+			pkgLog().Warn("Slack native task-card progress DECLINED by the connector's egress guard — suppressing the text fallback for the rest of this turn (the destination is not approved)")
 			return nil
 		}
 		st.nativeFailed = true
@@ -221,7 +221,7 @@ func (t *TurnRunner) taskCardPublish(ctx context.Context, st *taskCardState) err
 				return nil
 			}
 		} else {
-			runLog().Warn("Slack native task-card progress failed; falling back to an editable text update: " + reason)
+			pkgLog().Warn("Slack native task-card progress failed; falling back to an editable text update: " + reason)
 		}
 	}
 	return t.taskCardSendOrEditFallback(ctx, st)
@@ -231,11 +231,11 @@ func (t *TurnRunner) taskCardPublish(ctx context.Context, st *taskCardState) err
 func (t *TurnRunner) taskCardUncardableDestination(st *taskCardState, reason string) {
 	if t.ctx.toolProgressEnabled {
 		st.nativeFailed = true
-		runLog().Info("Slack native task cards are unsupported for this destination (" + reason + "); tool progress continues as an editable text update")
+		pkgLog().Info("Slack native task cards are unsupported for this destination (" + reason + "); tool progress continues as an editable text update")
 		return
 	}
 	st.publicationSuppressed = true
-	runLog().Info("Slack native task cards are unsupported for this destination (" + reason + "); tool progress stays off for this turn")
+	pkgLog().Info("Slack native task cards are unsupported for this destination (" + reason + "); tool progress stays off for this turn")
 }
 
 // Applies every queued event to the cards, true when any changed them
@@ -257,7 +257,7 @@ func (t *TurnRunner) sendNativeTaskCardProgress(ctx context.Context, adapter gat
 	defer func() {
 		if stopper, ok := adapter.(nativeTaskCardStopper); ok {
 			if _, err := stopper.StopNativeTaskCardProgress(context.WithoutCancel(ctx), tc.source.ChatID, tc.progressReplyTo, tc.progressMetadata); err != nil {
-				runLog().Debug("task-card stop failed during turn cleanup", "error", err)
+				pkgLog().Debug("task-card stop failed during turn cleanup", "error", err)
 			}
 		}
 	}()
@@ -395,7 +395,7 @@ func (t *TurnRunner) rollProgressOverflowIfNeeded(ctx context.Context, st *progr
 		}
 		if !result.Success {
 			if result.Retryable {
-				runLog().Debug("[" + st.adapter.Name() + "] Transient overflow edit failure — keeping can_edit=True")
+				pkgLog().Debug("[" + st.adapter.Name() + "] Transient overflow edit failure — keeping can_edit=True")
 				return true, nil
 			}
 			st.canEdit = false
@@ -497,12 +497,12 @@ func (t *TurnRunner) progressSendOrEdit(ctx context.Context, st *progressEditSta
 			return true, nil
 		}
 		if result.Retryable {
-			runLog().Debug("[" + st.adapter.Name() + "] Transient edit failure — keeping can_edit=True")
+			pkgLog().Debug("[" + st.adapter.Name() + "] Transient edit failure — keeping can_edit=True")
 			return false, nil
 		}
 		errText := strings.ToLower(sendResultText(result.Error))
 		if strings.Contains(errText, "flood") || strings.Contains(errText, "retry after") {
-			runLog().Info("[" + st.adapter.Name() + "] Progress edit flood control, backing off")
+			pkgLog().Info("[" + st.adapter.Name() + "] Progress edit flood control, backing off")
 		} else {
 			st.canEdit = false
 		}
@@ -599,7 +599,7 @@ func (t *TurnRunner) sendProgressMessages(ctx context.Context) error {
 		case err != nil && ctx.Err() != nil:
 			return cancelled()
 		case err != nil:
-			runLog().Error("Progress message error: " + err.Error())
+			pkgLog().Error("Progress message error: " + err.Error())
 			if sleepCtx(ctx, 1) != nil {
 				return cancelled()
 			}

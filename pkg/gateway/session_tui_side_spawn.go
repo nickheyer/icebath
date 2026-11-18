@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"log/slog"
 	"sync"
 
 	"github.com/nickheyer/icebath/pkg/config"
@@ -20,8 +19,6 @@ type SideAgentHolder = sideAgentHolder
 
 // Ledger key of one side agent goroutine, the thread identity of the ledger
 type sideAgentThread struct{ name string }
-
-func sideLog() *slog.Logger { return slog.Default().With("logger", "gateway.session_tui_side") }
 
 // Runs body in the owning profile scope and frozen policy with its secrets, the task session identity and workspace bound
 func SideScope(ctx context.Context, a *SessionAuthority, policy *LocalSessionPolicy, taskID string, body func(ctx context.Context, env *tools.Env) error) error {
@@ -97,7 +94,7 @@ func SpawnSideAgent(ctx context.Context, a *SessionAuthority, ref SessionRef, ta
 		}()
 		text, err := runSideBody(threadCtx, body)
 		if err != nil {
-			sideLog().Warn(fmt.Sprintf("Side agent %s failed", taskID), "error", err)
+			pkgLog().Warn(fmt.Sprintf("Side agent %s failed", taskID), "error", err)
 			text = sideAgentErrorText(err)
 		}
 		live, ok := a.Live(ref.SessionID)

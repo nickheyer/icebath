@@ -30,7 +30,7 @@ type MetaUpdate struct {
 	PreviousNames   *[]string
 }
 
-// Mapping reader the profile file readers call, the module attribute hermes tests count calls through
+// Mapping reader the profile file readers call, the module attribute tests count calls through
 var loadYAMLDict = readYAMLDictFile
 
 // Mapping in a YAML file, nil when the file is missing, unreadable or not a mapping

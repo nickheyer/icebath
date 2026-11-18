@@ -36,11 +36,11 @@ var (
 func relayGuard(env *Env, message string, step func() error) {
 	defer func() {
 		if r := recover(); r != nil {
-			toolsLogger(env).Debug(message, "panic", r)
+			envLog(env).Debug(message, "panic", r)
 		}
 	}()
 	if err := step(); err != nil {
-		toolsLogger(env).Debug(message, "error", err)
+		envLog(env).Debug(message, "error", err)
 	}
 }
 

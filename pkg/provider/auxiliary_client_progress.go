@@ -3,7 +3,6 @@ package provider
 import (
 	"context"
 	"fmt"
-	"log/slog"
 	"math"
 	"regexp"
 	"slices"
@@ -316,7 +315,7 @@ func auxCreateWithProgress(ctx context.Context, client AuxClient, kwargs map[str
 	for k, v := range AuxiliaryMaxTokensParam(ctx, affordable, model) {
 		retry[k] = v
 	}
-	slog.Info(fmt.Sprintf("Auxiliary %s: credit-limited 402 (affordable=%d tokens); retrying once with a clamped output cap instead of failing: %s", auxTaskOrCall(task), affordable, err.Error()))
+	pkgLog().Info(fmt.Sprintf("Auxiliary %s: credit-limited 402 (affordable=%d tokens); retrying once with a clamped output cap instead of failing: %s", auxTaskOrCall(task), affordable, err.Error()))
 	return auxCreateWithProgressOnce(ctx, client, retry, task, forceStream)
 }
 
@@ -385,7 +384,7 @@ func auxCreateWithProgressOnce(ctx context.Context, client AuxClient, kwargs map
 		if auxStreamFailureIsGenuine(err, forceStream) {
 			return nil, err
 		}
-		slog.Debug(fmt.Sprintf("Auxiliary %s: streamed request failed (%s); retrying non-streaming", auxTaskOrCall(task), err.Error()))
+		pkgLog().Debug(fmt.Sprintf("Auxiliary %s: streamed request failed (%s); retrying non-streaming", auxTaskOrCall(task), err.Error()))
 		auxNotifyAuxDispatch(ctx)
 		resp, err := client.CreateChatCompletion(ctx, kwargs)
 		if err != nil {
@@ -668,7 +667,7 @@ func auxAcreateWithProgress(ctx context.Context, client AuxClient, kwargs map[st
 		if auxStreamFailureIsGenuine(err, forceStream) {
 			return nil, err
 		}
-		slog.Debug(fmt.Sprintf("Auxiliary %s: streamed async request failed (%s); retrying non-streaming", auxTaskOrCall(task), err.Error()))
+		pkgLog().Debug(fmt.Sprintf("Auxiliary %s: streamed async request failed (%s); retrying non-streaming", auxTaskOrCall(task), err.Error()))
 		auxNotifyAuxDispatch(ctx)
 		resp, err := client.CreateChatCompletion(ctx, kwargs)
 		if err != nil {

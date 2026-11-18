@@ -390,12 +390,12 @@ func TestWriteCredentialPoolTreatsUnownedOAuthSourceAsBorrowed(t *testing.T) {
 func TestWriteCredentialPoolPreservesKnownProviderOwnedOAuthState(t *testing.T) {
 	h := newTestHome(t)
 	sentinel := "PROVIDER_OWNED_DEVICE_CODE_STAYS_PERSISTABLE"
-	if _, err := NewStore(h).WriteCredentialPool("nous", []map[string]any{{"id": "nous-device", "label": "device-code", "auth_type": "oauth", "priority": 0,
-		"source": "device_code", "access_token": sentinel, "refresh_token": "refresh-" + sentinel, "agent_key": "agent-" + sentinel}}, nil, nil, nil); err != nil {
+	if _, err := NewStore(h).WriteCredentialPool("xai-oauth", []map[string]any{{"id": "xai-device", "label": "device-code", "auth_type": "oauth", "priority": 0,
+		"source": "device_code", "access_token": sentinel, "refresh_token": "refresh-" + sentinel}}, nil, nil, nil); err != nil {
 		t.Fatal(err)
 	}
-	persisted := poolRows(t, h, "nous")[0]
-	if persisted["access_token"] != sentinel || persisted["refresh_token"] != "refresh-"+sentinel || persisted["agent_key"] != "agent-"+sentinel {
+	persisted := poolRows(t, h, "xai-oauth")[0]
+	if persisted["access_token"] != sentinel || persisted["refresh_token"] != "refresh-"+sentinel {
 		t.Fatalf("provider owned state must persist: %v", persisted)
 	}
 }
@@ -421,39 +421,13 @@ func TestLoadPoolFallsBackToOSEnvironWhenDotenvEmpty(t *testing.T) {
 	}
 }
 
-func TestLoadPoolMirrorsNousInvokeJWTAgentKeyRuntimeAPIKey(t *testing.T) {
-	h := newTestHome(t)
-	expiresAt := isoIn(3600)
-	token := jwtWithClaims(map[string]any{"sub": "test-user", "scope": []any{"inference:invoke"}, "exp": int(nowEpoch() + 3600)})
-	writeAuthStore(t, h, map[string]any{"version": 1, "active_provider": "nous", "providers": map[string]any{"nous": map[string]any{
-		"portal_base_url": "https://portal.example.com", "inference_base_url": "https://inference.example.com/v1", "client_id": "icebath-cli",
-		"token_type": "Bearer", "scope": "inference:invoke", "access_token": token, "refresh_token": "refresh-token", "expires_at": expiresAt,
-		"agent_key": token, "agent_key_expires_at": expiresAt}}})
-	entry := mustSelect(t, LoadPool(testEnv(t, h), "nous"), "")
-	if entry.Source != "device_code" || entry.AgentKey != token || entry.RuntimeAPIKey() != token {
-		t.Fatalf("unexpected nous entry %+v", entry)
-	}
-	persisted := poolRows(t, h, "nous")[0]
-	if persisted["agent_key"] != token || persisted["agent_key_expires_at"] != expiresAt {
-		t.Fatalf("agent key must persist: %v", persisted)
-	}
-}
-
-func TestNousRuntimeAPIKeyRejectsOpaqueAgentKey(t *testing.T) {
-	entry := PooledCredential{Provider: "nous", ID: "nous-opaque", Label: "opaque", AuthType: "oauth", Source: "device_code", AccessToken: "opaque-access-token",
-		RefreshToken: "refresh-token", AgentKey: "opaque-agent-key", AgentKeyExpiresAt: isoIn(3600), Extra: map[string]any{"scope": "inference:invoke"}}
-	if entry.RuntimeAPIKey() != "" {
-		t.Fatal("an opaque agent key is not a NAS invoke JWT")
-	}
-}
-
 func TestLoadPoolAPIKeyPathSkipsOAuthAutodiscovery(t *testing.T) {
 	h := newTestHome(t)
 	t.Setenv("ANTHROPIC_API_KEY", "sk-ant-api03-explicit-user-key")
 	writeAuthStore(t, h, map[string]any{"version": 1, "providers": map[string]any{}})
 	writeClaudeCodeCredentials(t, "sk-ant-oat01-claude-code-token", "cc-refresh", time.Now().UnixMilli()+3_600_000)
 	env := testEnv(t, h)
-	if err := WriteHermesOAuthCredentials(env, "sk-ant-oat01-pkce-token", "pkce-refresh", time.Now().UnixMilli()+3_600_000, ""); err != nil {
+	if err := WriteIcebathOAuthCredentials(env, "sk-ant-oat01-pkce-token", "pkce-refresh", time.Now().UnixMilli()+3_600_000, ""); err != nil {
 		t.Fatal(err)
 	}
 	pool := LoadPool(env, "anthropic")
@@ -573,44 +547,6 @@ func TestLoadPoolDoesNotSeedQwenOAuthWhenNoToken(t *testing.T) {
 	pool := LoadPool(testEnv(t, h), "qwen-oauth")
 	if pool.HasCredentials() || len(pool.Entries()) != 0 {
 		t.Fatal("no qwen credentials expected")
-	}
-}
-
-func TestNousSeedFromSingletonsPreservesObtainedAtTimestamps(t *testing.T) {
-	h := newTestHome(t)
-	writeAuthStore(t, h, map[string]any{"version": 1, "providers": map[string]any{"nous": map[string]any{
-		"access_token": "at_XXXXXXXX", "refresh_token": "rt_YYYYYYYY", "client_id": "icebath-cli", "portal_base_url": "https://portal.nousresearch.com",
-		"inference_base_url": "https://inference.nousresearch.com/v1", "token_type": "Bearer", "scope": "openid profile",
-		"obtained_at": "2026-04-24T10:00:00+00:00", "expires_at": "2026-04-24T11:00:00+00:00", "expires_in": 3600,
-		"agent_key": "sk-nous-AAAA", "agent_key_id": "ak_123", "agent_key_expires_at": "2026-04-25T10:00:00+00:00", "agent_key_expires_in": 86400,
-		"agent_key_reused": false, "agent_key_obtained_at": "2026-04-24T10:00:05+00:00", "tls": map[string]any{"insecure": false, "ca_bundle": nil}}}})
-	var device []PooledCredential
-	for _, e := range LoadPool(testEnv(t, h), "nous").Entries() {
-		if e.Source == "device_code" {
-			device = append(device, e)
-		}
-	}
-	if len(device) != 1 {
-		t.Fatalf("expected one device_code entry, got %d", len(device))
-	}
-	e := device[0]
-	if e.AccessToken != "at_XXXXXXXX" || e.RefreshToken != "rt_YYYYYYYY" || e.ExpiresAt != "2026-04-24T11:00:00+00:00" || e.AgentKey != "sk-nous-AAAA" || e.AgentKeyExpiresAt != "2026-04-25T10:00:00+00:00" {
-		t.Fatalf("fields dropped: %+v", e)
-	}
-	if e.ExtraString("obtained_at") != "2026-04-24T10:00:00+00:00" || e.ExtraString("agent_key_obtained_at") != "2026-04-24T10:00:05+00:00" {
-		t.Fatalf("obtained_at timestamps dropped: %v", e.Extra)
-	}
-	if n, _ := anyInt(e.Extra["expires_in"]); n != 3600 {
-		t.Fatalf("expires_in dropped: %v", e.Extra["expires_in"])
-	}
-	if e.ExtraString("agent_key_id") != "ak_123" {
-		t.Fatal("agent_key_id dropped")
-	}
-	if n, _ := anyInt(e.Extra["agent_key_expires_in"]); n != 86400 {
-		t.Fatal("agent_key_expires_in dropped")
-	}
-	if reused, ok := e.Extra["agent_key_reused"].(bool); !ok || reused {
-		t.Fatalf("agent_key_reused must be the persisted false, got %v", e.Extra["agent_key_reused"])
 	}
 }
 

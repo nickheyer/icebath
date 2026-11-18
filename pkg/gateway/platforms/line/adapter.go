@@ -5,7 +5,6 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
-	"log/slog"
 	"math"
 	"os"
 	"runtime"
@@ -340,7 +339,7 @@ func (a *LineAdapter) Connect(ctx context.Context, isReconnect bool) (bool, erro
 		if a.publicBaseURL != "" {
 			public = fmt.Sprintf(" (public: %s)", a.publicBaseURL)
 		}
-		slog.Info(fmt.Sprintf("LINE: webhook listening on %s:%d%s%s", hostText, a.webhookPort, a.webhookPath, public))
+		pkgLog().Info(fmt.Sprintf("LINE: webhook listening on %s:%d%s%s", hostText, a.webhookPort, a.webhookPath, public))
 	}
 	return true, nil
 }
@@ -469,13 +468,13 @@ func (a *LineAdapter) firePostback(ctx context.Context, client *lineClient, chat
 		if ctx.Err() != nil {
 			return
 		}
-		slog.Warn(fmt.Sprintf("LINE: postback button send failed: %v", err))
+		pkgLog().Warn(fmt.Sprintf("LINE: postback button send failed: %v", err))
 		a.mu.Lock()
 		delete(a.pendingButtons, chatID)
 		a.mu.Unlock()
 		return
 	}
-	slog.Info(fmt.Sprintf("LINE: sent slow-LLM postback button for chat %s (rid=%s)", chatID, rid))
+	pkgLog().Info(fmt.Sprintf("LINE: sent slow-LLM postback button for chat %s (rid=%s)", chatID, rid))
 }
 
 // Base interrupt that also settles an orphan pending postback with the interrupted text

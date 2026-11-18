@@ -19,10 +19,10 @@ import (
 )
 
 // Providers that support OAuth login in addition to API keys
-var authOAuthCapableProviders = map[string]bool{"anthropic": true, "nous": true, "openai-codex": true, "xai-oauth": true, "qwen-oauth": true, "minimax-oauth": true, "openrouter": true}
+var authOAuthCapableProviders = map[string]bool{"anthropic": true, "openai-codex": true, "xai-oauth": true, "qwen-oauth": true, "minimax-oauth": true, "openrouter": true}
 
 // OAuth capable providers that default to OAuth when --type is omitted, OpenRouter stays API key first
-var authOAuthDefaultProviders = map[string]bool{"anthropic": true, "nous": true, "openai-codex": true, "xai-oauth": true, "qwen-oauth": true, "minimax-oauth": true}
+var authOAuthDefaultProviders = map[string]bool{"anthropic": true, "openai-codex": true, "xai-oauth": true, "qwen-oauth": true, "minimax-oauth": true}
 
 // ExternalLoginProviders are the providers whose sibling CLI login icebath may borrow
 var ExternalLoginProviders = map[string]bool{"anthropic": true, "openai-codex": true}
@@ -55,10 +55,6 @@ func authSystemExit(err error) (int, string, bool) {
 	var oauthExit *OAuthLoginExitError
 	if errors.As(err, &oauthExit) {
 		return oauthExit.Code, authErrText(oauthExit.Err), true
-	}
-	var nousExit *NousLoginExitError
-	if errors.As(err, &nousExit) {
-		return nousExit.Code, authErrText(nousExit.Err), true
 	}
 	var pluginErr *PluginAuthError
 	if errors.As(err, &pluginErr) {
@@ -202,7 +198,7 @@ func (c *authCLI) pluginArgs() []string {
 	if v := authTextOr(c.ns["auth_type"]); v != "" {
 		args = append(args, "--type", v)
 	}
-	for _, key := range []string{"label", "api_key", "portal_url", "inference_url", "client_id", "scope", "ca_bundle"} {
+	for _, key := range []string{"label", "api_key"} {
 		if v := authTextOr(c.ns[key]); v != "" {
 			args = append(args, "--"+strings.ReplaceAll(key, "_", "-"), v)
 		}
@@ -213,7 +209,7 @@ func (c *authCLI) pluginArgs() []string {
 	if timeout := authTimeout(c.ns, 0); timeout > 0 {
 		args = append(args, "--timeout", strconv.FormatFloat(timeout.Seconds(), 'f', -1, 64))
 	}
-	for _, key := range []string{"no_browser", "browser", "insecure"} {
+	for _, key := range []string{"no_browser", "browser"} {
 		if nsFlag(c.ns, key) {
 			args = append(args, "--"+strings.ReplaceAll(key, "_", "-"))
 		}
@@ -478,7 +474,7 @@ func formatExhaustedStatus(entry PooledCredential) string {
 }
 
 var authCmdAnthropicOAuthLoginFn = func(c *authCLI) map[string]any {
-	return RunHermesOAuthLoginPure(c.env, func(label string) (string, bool) {
+	return RunIcebathOAuthLoginPure(c.env, func(label string) (string, bool) {
 		answer, err := authCmdInputFn(c.out, label)
 		return answer, err == nil
 	})
@@ -547,7 +543,7 @@ var authOAuthAddSpecs = map[string]authOAuthAddSpec{
 	"anthropic": {
 		login:  (*authCLI).anthropicOAuthLogin,
 		token:  func(creds map[string]any) string { return authTextOr(creds["access_token"]) },
-		source: authConstSource(SourceManual + ":hermes_pkce"),
+		source: authConstSource(SourceManual + ":" + IcebathPKCESource),
 		fields: func(c *authCLI, creds map[string]any, provider string, entry *PooledCredential) {
 			entry.RefreshToken = authTextOr(creds["refresh_token"])
 			entry.ExpiresAtMS = authInt64(creds["expires_at_ms"])
@@ -605,63 +601,6 @@ var authOAuthAddSpecs = map[string]authOAuthAddSpec{
 			entry.BaseURL = c.providerBaseURL(provider)
 		},
 		authType: AuthTypeAPIKey},
-}
-
-// icebath auth add nous --type oauth, a shared credential import else a device code login
-func (c *authCLI) addNousOAuthCredential(provider string) (PooledCredential, error) {
-	customLabel := strings.TrimSpace(authTextOr(c.ns["label"]))
-	timeout := authTimeout(c.ns, 15*time.Second)
-	persist := func(creds map[string]any, what string) (PooledCredential, error) {
-		entry, present, err := persistNousCredentials(c.env, creds, customLabel)
-		if err != nil {
-			return PooledCredential{}, err
-		}
-		handoff, err := guestHandoffDrain(c.env)
-		if err != nil {
-			return PooledCredential{}, err
-		}
-		settleAfterUpgrade(c.env, creds)
-		shownLabel := entry.Label
-		if !present {
-			shownLabel = LabelFromToken(authTextOr(creds["access_token"]), provider+"-oauth-1")
-		}
-		deviceCode := ""
-		if what == "Saved" {
-			deviceCode = "device-code "
-		}
-		fmt.Fprintf(c.out, "%s %s OAuth %scredentials: \"%s\"\n", what, provider, deviceCode, shownLabel)
-		for _, view := range handoff {
-			for _, line := range guestHandoffResultLines(view) {
-				fmt.Fprintf(c.out, "  %s\n", line)
-			}
-		}
-		return entry, nil
-	}
-	if shared, ok := readSharedNousState(c.env); ok && !isGuestState(shared) {
-		found := "Found existing shared Nous OAuth credentials"
-		if path := nousSharedStorePath(c.env); path != "" {
-			found = "Found existing Nous OAuth credentials at " + path
-		}
-		fmt.Fprintln(c.out)
-		fmt.Fprintln(c.out, found)
-		doImport, ok := c.ask("Import these credentials? [Y/n]: ", nil)
-		if !ok || map[string]bool{"": true, "y": true, "yes": true}[strings.ToLower(doImport)] {
-			fmt.Fprintln(c.out, "Rehydrating Nous session from shared credentials...")
-			if rehydrated, ok := tryImportSharedNousState(c.env, timeout); ok {
-				return persist(rehydrated, "Imported")
-			}
-			fmt.Fprintln(c.out, "Could not refresh shared credentials — falling back to device-code login.")
-		}
-	}
-	creds, err := nousDeviceCodeLoginFn(c.env, c.out, NousDeviceLoginArgs{
-		PortalBaseURL: authTextOr(c.ns["portal_url"]), InferenceBaseURL: authTextOr(c.ns["inference_url"]),
-		ClientID: authTextOr(c.ns["client_id"]), Scope: authTextOr(c.ns["scope"]),
-		OpenBrowser: !nsFlag(c.ns, "no_browser"), Timeout: timeout,
-		Insecure: nsFlag(c.ns, "insecure"), CABundle: authTextOr(c.ns["ca_bundle"])})
-	if err != nil {
-		return PooledCredential{}, err
-	}
-	return persist(creds, "Saved")
 }
 
 // Clears every suppression of the provider, re-adding a credential means the user wants auth back on
@@ -765,9 +704,6 @@ func (c *authCLI) add() error {
 func (c *authCLI) addCredential(provider string, pool *Pool, requestedType string) (PooledCredential, error) {
 	if requestedType == AuthTypeAPIKey {
 		return c.addAPIKeyCredential(provider, pool)
-	}
-	if provider == "nous" {
-		return c.addNousOAuthCredential(provider)
 	}
 	spec, ok := authOAuthAddSpecs[provider]
 	if !ok {

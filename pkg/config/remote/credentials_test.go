@@ -111,7 +111,7 @@ func TestRefusedURLNeverEchoesUserInfo(t *testing.T) {
 	out := []string{err.Error(), b.Describe(context.Background(), h), ShownURL()}
 	for _, bad := range []string{userinfoURL + ":bad", "https://u:p@"} {
 		t.Setenv(URLEnv, bad)
-		_, derr := Request(context.Background(), "GET", h, "default", "", nil, "")
+		_, derr := Request(context.Background(), "GET", "default", "", nil, "")
 		var cde *CredentialDestinationError
 		if !errors.As(derr, &cde) {
 			t.Fatalf("%s: %v", bad, derr)
@@ -131,16 +131,16 @@ func TestRefusedURLNeverEchoesUserInfo(t *testing.T) {
 func TestRotatedIDPClientSecretFetchesANewToken(t *testing.T) {
 	p := setupPlane(t)
 	ctx := context.Background()
-	if _, err := PlaneToken(ctx, p.Home); err != nil {
+	if _, err := PlaneToken(ctx); err != nil {
 		t.Fatal(err)
 	}
 	first := p.TokenRequests
-	if _, err := PlaneToken(ctx, p.Home); err != nil || p.TokenRequests != first {
+	if _, err := PlaneToken(ctx); err != nil || p.TokenRequests != first {
 		t.Fatalf("cache missed %v", err)
 	}
 	t.Setenv(idpEnvPrefix+"CLIENT_SECRET", "rotated-secret")
 	var pce *PlaneCredentialError
-	if _, err := PlaneToken(ctx, p.Home); !errors.As(err, &pce) || p.TokenRequests != first+1 {
+	if _, err := PlaneToken(ctx); !errors.As(err, &pce) || p.TokenRequests != first+1 {
 		t.Fatalf("rotation %v %d", err, p.TokenRequests)
 	}
 }

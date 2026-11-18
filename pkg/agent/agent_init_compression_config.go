@@ -21,7 +21,7 @@ var (
 	invalidConfigStderr          io.Writer = pysys.Stderr
 )
 
-// Hermes is_truthy_value, nil the default, strings by the 1 true yes on set, the rest by Python truth
+// Is_truthy_value, nil the default, strings by the 1 true yes on set, the rest by Python truth
 func isTruthyValue(v any, def bool) bool {
 	switch x := v.(type) {
 	case nil:
@@ -101,19 +101,31 @@ func compressionCodexSettings(cfg map[string]any) (string, bool, *int) {
 	if !ok || !pyrepr.Truthy(raw) {
 		raw = "native"
 	}
-	appServerAuto := strings.ToLower(pyrepr.Str(raw))
-	if appServerAuto != "native" && appServerAuto != "hermes" && appServerAuto != "off" {
-		runAgentLog().Warn(fmt.Sprintf("Invalid compression.codex_app_server_auto=%s; using 'native'. Valid values are: native, hermes, off.", pyrepr.Repr(appServerAuto)))
-		appServerAuto = "native"
+	appServerAuto, valid := CodexAppServerAutoMode(pyrepr.Str(raw))
+	if !valid {
+		pkgLog().Warn(fmt.Sprintf("Invalid compression.codex_app_server_auto=%s; using 'native'. Valid values are: native, icebath, off.", pyrepr.Repr(strings.ToLower(pyrepr.Str(raw)))))
 	}
 	responsesNative := isTruthyValue(cfgValue(cfg, "codex_responses_native", false), false)
 	var compactThreshold *int
 	if rawThreshold := cfg["codex_responses_compact_threshold"]; rawThreshold != nil {
 		if compactThreshold = configPositiveInt(rawThreshold, true); compactThreshold == nil {
-			runAgentLog().Warn(fmt.Sprintf("Invalid compression.codex_responses_compact_threshold=%s; using the automatic threshold derived from local compression.", pyrepr.Repr(rawThreshold)))
+			pkgLog().Warn(fmt.Sprintf("Invalid compression.codex_responses_compact_threshold=%s; using the automatic threshold derived from local compression.", pyrepr.Repr(rawThreshold)))
 		}
 	}
 	return appServerAuto, responsesNative, compactThreshold
+}
+
+// Codex app server compaction mode in lower case, the older name of icebath mode read as icebath, native and false when unknown
+func CodexAppServerAutoMode(raw string) (string, bool) {
+	mode := strings.ToLower(raw)
+	if mode == "hermes" {
+		mode = "icebath"
+	}
+	switch mode {
+	case "native", "icebath", "off":
+		return mode, true
+	}
+	return "native", false
 }
 
 // Config value or its default when the key is absent
@@ -190,7 +202,7 @@ func parseCompressionConfig(a *AIAgent, agentCfg map[string]any) (CompressionSet
 
 // Logs an invalid integer config value and prints it to stderr when the warning policy shows diagnostics
 func warnInvalidConfigInt(ctx context.Context, what string, value any, requirement, fallback, printFallback string, a *AIAgent) {
-	runAgentLog().Warn(fmt.Sprintf("Invalid %s: %s — %s. Falling back to %s.", what, pyrepr.Repr(value), requirement, fallback))
+	pkgLog().Warn(fmt.Sprintf("Invalid %s: %s — %s. Falling back to %s.", what, pyrepr.Repr(value), requirement, fallback))
 	enabled := true
 	func() {
 		defer func() { _ = recover() }()

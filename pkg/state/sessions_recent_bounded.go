@@ -11,7 +11,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pysqlite"
 )
 
-// Bounded recent browse knobs, nil values taking the hermes defaults of 20 rows and a 3 second deadline
+// Bounded recent browse knobs, nil values taking the defaults of 20 rows and a 3 second deadline
 type RecentSessionsBoundedOptions struct {
 	Limit          *int
 	ExcludeSources []string

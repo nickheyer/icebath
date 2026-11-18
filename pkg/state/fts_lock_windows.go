@@ -4,7 +4,6 @@ package state
 
 import (
 	"fmt"
-	"log/slog"
 	"os"
 	"syscall"
 	"time"
@@ -63,7 +62,7 @@ func acquireMsvcrtLock(lockPath string, handle *os.File, timeout float64) lockOu
 			return lockAcquired
 		}
 		if !IsAdvisoryLockContention(err) {
-			slog.Warn(fmt.Sprintf("Could not acquire FTS rebuild lock %s (%s) — deferring on a non-contention error.", lockPath, err))
+			pkgLog().Warn(fmt.Sprintf("Could not acquire FTS rebuild lock %s (%s) — deferring on a non-contention error.", lockPath, err))
 			return lockFailed
 		}
 		if !time.Now().Before(deadline) {

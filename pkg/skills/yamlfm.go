@@ -243,17 +243,19 @@ func fmTruthy(v any) bool {
 	return true
 }
 
-// Icebath metadata mapping of a frontmatter, metadata.hermes accepted as the upstream alias
+// Frontmatter metadata keys read in order, icebath first then the spelling skills written before the rename carry
+var MetadataKeys = []string{"icebath", "hermes"}
+
+// Icebath metadata mapping of a frontmatter, the older spelling accepted
 func icebathMeta(fm map[string]any) map[string]any {
 	meta := fmMap(fm["metadata"])
 	if meta == nil {
 		return map[string]any{}
 	}
-	if m := fmMap(meta["icebath"]); m != nil {
-		return m
-	}
-	if m := fmMap(meta["hermes"]); m != nil {
-		return m
+	for _, key := range MetadataKeys {
+		if m := fmMap(meta[key]); m != nil {
+			return m
+		}
 	}
 	return map[string]any{}
 }

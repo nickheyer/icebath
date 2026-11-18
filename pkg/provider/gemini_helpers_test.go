@@ -1,8 +1,8 @@
 package provider
 
 import (
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"encoding/json"
+	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"strings"
 	"testing"
 )

@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"slices"
+	"strings"
 
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
@@ -149,7 +150,7 @@ func busyConfig(ctx context.Context, a *SessionAuthority, actor Principal, ref S
 		} else {
 			runner, ok := a.Runner.(busyModeRunner)
 			if !ok {
-				return nil, errors.New("AttributeError: runner has no attribute '_effective_busy_input_mode'")
+				return nil, errors.New("the gateway runner cannot report the busy input mode")
 			}
 			current = runner.EffectiveBusyInputMode(ctx, live.Source)
 		}
@@ -182,7 +183,7 @@ func verboseConfig(ctx context.Context, a *SessionAuthority, actor Principal, re
 		if word == "cycle" {
 			index := slices.Index(verboseCycle, current)
 			if index < 0 {
-				return nil, fmt.Errorf("ValueError: %s is not in tuple", pyrepr.Repr(current))
+				return nil, fmt.Errorf("tool progress mode %s is not one of %s", current, strings.Join(verboseCycle, ", "))
 			}
 			current = verboseCycle[(index+1)%4]
 		} else {
@@ -267,7 +268,7 @@ func serviceTierConfig(ctx context.Context, a *SessionAuthority, actor Principal
 	}
 	runner, ok := a.Runner.(serviceTierRunner)
 	if !ok {
-		return nil, errors.New("AttributeError: runner has no attribute '_set_session_service_tier_override'")
+		return nil, errors.New("the gateway runner cannot set a session service tier override")
 	}
 	var picked *string
 	if tier != "" {

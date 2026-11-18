@@ -20,11 +20,11 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/nickheyer/icebath/pkg/cron"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
+	"github.com/nickheyer/icebath/pkg/linktier"
 	"github.com/nickheyer/icebath/pkg/profiles"
 	"github.com/nickheyer/icebath/pkg/webhooksubs"
 )
@@ -37,6 +37,9 @@ type WebhookArgs struct {
 	DeliverOnly, MirrorToSession                                              bool
 }
 
+// Cron job id a webhook route names or the refusal of an ambiguous reference, installed with cron
+var webhookRouteCronJob func(ctx context.Context, h string, profile any, reference string) (jobID, refusal string, err error)
+
 type webhookAction func(ctx context.Context, w io.Writer, h string, args WebhookArgs) (int, error)
 
 var (
@@ -45,7 +48,6 @@ var (
 	webhookSubscriptions = webhooksubs.Load
 	webhookTokenURLSafe  = tokenURLSafe
 	webhookNow           = time.Now
-	webhookCronJobRef    = cron.ResolveJobRef
 	webhookActions       map[string]webhookAction
 	errNoSubscription    = errors.New("no such subscription")
 	webhookHTTPClient    = &http.Client{Timeout: 10 * time.Second, CheckRedirect: func(req *http.Request, via []*http.Request) error {
@@ -229,20 +231,24 @@ func webhookSubscribe(ctx context.Context, w io.Writer, h string, args WebhookAr
 		route.Set("mirror_to_session", true)
 	}
 	if cronJob := pystr.Strip(args.CronJob); cronJob != "" {
-		job, err := resolveRouteCronJob(ctx, h, profile, cronJob)
-		var ambiguous *cron.AmbiguousJobReferenceError
-		if errors.As(err, &ambiguous) {
-			fmt.Fprintf(w, "Error: %s\n", err.Error())
+		if webhookRouteCronJob == nil {
+			refusal, _ := linktier.Refusal("--cron-job", linktier.Extras)
+			fmt.Fprintf(w, "Error: %s\n", refusal)
+			return 1, nil
+		}
+		jobID, refusal, err := webhookRouteCronJob(ctx, h, profile, cronJob)
+		if refusal != "" {
+			fmt.Fprintf(w, "Error: %s\n", refusal)
 			return 1, nil
 		}
 		if err != nil {
 			return 1, err
 		}
-		if job == nil {
+		if jobID == "" {
 			fmt.Fprintf(w, "Error: no cron job matches '%s'. List jobs with: icebath cron list\n", cronJob)
 			return 1, nil
 		}
-		route.Set("cron_job", job.ID)
+		route.Set("cron_job", jobID)
 	}
 	if script := pystr.Strip(args.Script); script != "" {
 		route.Set("script", script)
@@ -308,18 +314,6 @@ func webhookSubscribe(ctx context.Context, w io.Writer, h string, args WebhookAr
 	fmt.Fprintln(w, "  The gateway must be running to receive events (icebath gateway run).")
 	fmt.Fprintln(w)
 	return 0, nil
-}
-
-// Resolves a cron reference in the route profile store, the caller home for the default profile
-func resolveRouteCronJob(ctx context.Context, h string, profile any, reference string) (*cron.Job, error) {
-	if pyrepr.Equal(profile, "default") {
-		return webhookCronJobRef(ctx, h, reference)
-	}
-	dir, err := profiles.GetProfileDir(pyrepr.Str(profile))
-	if err != nil {
-		return nil, err
-	}
-	return webhookCronJobRef(ctx, dir, reference)
 }
 
 // Route as a dict or the AttributeError a get on another type raises
@@ -499,18 +493,18 @@ func isTimeout(err error) bool {
 	return errors.Is(err, os.ErrDeadlineExceeded) || errors.Is(err, context.DeadlineExceeded) || (errors.As(err, &ne) && ne.Timeout())
 }
 
-// URLError text of a transport failure, errno and strerror for socket errors
+// Plain reason of a webhook transport failure
 func urlopenError(err error) error {
 	if isTimeout(err) {
-		return errors.New("<urlopen error timed out>")
+		return errors.New("timed out")
 	}
 	var dnsErr *net.DNSError
 	if errors.As(err, &dnsErr) && dnsErr.IsNotFound {
-		return errors.New("<urlopen error [Errno -2] Name or service not known>")
+		return errors.New("host name could not be resolved")
 	}
 	var errno syscall.Errno
 	if errors.As(err, &errno) {
-		return fmt.Errorf("<urlopen error [Errno %d] %s>", int(errno), pystr.Capitalize(errno.Error()))
+		return errors.New(errno.Error())
 	}
-	return fmt.Errorf("<urlopen error %s>", err.Error())
+	return err
 }

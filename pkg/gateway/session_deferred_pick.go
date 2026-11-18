@@ -5,7 +5,6 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
-	"log/slog"
 
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
@@ -191,7 +190,7 @@ func commitDeferredEntry(ctx context.Context, a *SessionAuthority, ref SessionRe
 		}
 		return pyjson.ObjectOf("session_id", ref.SessionID, "operation", operation, "status", "refused", "reason", refusal.Reason), nil
 	}
-	slog.Error(fmt.Sprintf("Deferred %s pick on %s failed to resolve: %s", operation, ref.SessionID, pyExceptionRepr(err)))
+	pkgLog().Error(fmt.Sprintf("Deferred %s pick on %s failed to resolve: %s", operation, ref.SessionID, pyExceptionRepr(err)))
 	return pyjson.ObjectOf("session_id", ref.SessionID, "operation", operation, "status", "refused", "reason", operation+"_resolution_failed"), nil
 }
 
@@ -208,7 +207,7 @@ func commitLevel(ctx context.Context, a *SessionAuthority, ref SessionRef, key, 
 		return "", false, err
 	}
 	if rowString(result, "status") == "refused" {
-		slog.Warn(fmt.Sprintf("Deferred reasoning pick on %s not applied: %s", ref.SessionID, rowString(result, "reason")))
+		pkgLog().Warn(fmt.Sprintf("Deferred reasoning pick on %s not applied: %s", ref.SessionID, rowString(result, "reason")))
 	}
 	rest := ""
 	if _, has := pick.Get("application_id"); has {
@@ -318,7 +317,7 @@ func applyDeferredPick(ctx context.Context, a *SessionAuthority, ref SessionRef,
 	}
 	if rowString(result, "status") == "refused" {
 		reason, _ := result.Get("reason")
-		slog.Warn(fmt.Sprintf("Deferred model pick on %s not applied: %s", ref.SessionID, pyrepr.Str(reason)))
+		pkgLog().Warn(fmt.Sprintf("Deferred model pick on %s not applied: %s", ref.SessionID, pyrepr.Str(reason)))
 		model, providerName, err := committedRoute(ctx, a, ref.SessionID)
 		if err != nil {
 			return err

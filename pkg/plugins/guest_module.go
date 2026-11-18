@@ -251,7 +251,7 @@ func (g *wasmGuest) accept(frame []byte) {
 		Params json.RawMessage `json:"params"`
 	}
 	if err := json.Unmarshal(frame, &head); err != nil {
-		logPlugins.warn(fmt.Sprintf("plugin '%s': dropped a frame that is not JSON: %v", g.spec.name, err))
+		pkgLog().Warn(fmt.Sprintf("plugin '%s': dropped a frame that is not JSON: %v", g.spec.name, err))
 		return
 	}
 	id, _ := head.ID.Int64()
@@ -303,7 +303,7 @@ func (g *wasmGuest) loop(child *hostProcess) {
 	cause := context.Cause(g.ctx)
 	if !errors.Is(cause, errGuestShutdown) {
 		child.code = 1
-		logPlugins.warn(fmt.Sprintf("plugin '%s' WebAssembly instance stopped: %v", g.spec.name, cause))
+		pkgLog().Warn(fmt.Sprintf("plugin '%s' WebAssembly instance stopped: %v", g.spec.name, cause))
 	}
 	_ = g.runtime.Close(context.Background())
 	_ = g.toHost.CloseWithError(cause)

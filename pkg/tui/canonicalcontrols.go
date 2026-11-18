@@ -4,12 +4,13 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"math"
 	"regexp"
 	"strings"
 
 	tea "charm.land/bubbletea/v2"
 	"github.com/google/uuid"
+
+	"github.com/nickheyer/icebath/pkg/tuigateway"
 )
 
 // Continuation of an asynchronous step, run on the update loop once its work finished
@@ -82,13 +83,13 @@ func modelPayload(arg string) (map[string]any, error) {
 // Mutation request in flight, kept for a retry under the same request id
 type pendingMutation struct {
 	sid    string
-	params map[string]any
+	params tuigateway.SessionMutateParams
 }
 
 // Answer of a session.mutate and the generation it was checked against
 type mutationOutcome struct {
-	Result             map[string]any
-	ExpectedGeneration float64
+	Result             *tuigateway.SessionMutateResult
+	ExpectedGeneration int64
 }
 
 // Forgets the session's pending mutations except the one keyed keep
@@ -112,56 +113,46 @@ func (s *tuiStore) mutateCanonical(gw turnGateway, sid, operation string, payloa
 }
 
 // Compare and swap mutation handing onRead the snapshot of the revision read before it is checked
-func (s *tuiStore) mutateCanonicalRead(gw turnGateway, sid, operation string, payload map[string]any, stale func() bool, onRead func(map[string]any), then func(*mutationOutcome, error) tea.Cmd) tea.Cmd {
+func (s *tuiStore) mutateCanonicalRead(gw turnGateway, sid, operation string, payload map[string]any, stale func() bool, onRead func(*tuigateway.CanonicalSnapshot), then func(*mutationOutcome, error) tea.Cmd) tea.Cmd {
 	if s.pendingMutations == nil {
 		s.pendingMutations = map[string]pendingMutation{}
 	}
 	rawKey, _ := json.Marshal([]any{sid, operation, payload})
 	key := string(rawKey)
 	s.retireCanonicalControls(sid, key)
-	send := func(params map[string]any) tea.Cmd {
-		return gatewayCall(gw, "session.mutate", params, func(v any, err error) tea.Cmd {
-			result := asRPCResult(v)
-			if err == nil && result == nil {
-				err = errors.New(tr("session.common.invalidResponse", "session.mutate"))
-			} else if err == nil {
-				delete(s.pendingMutations, key)
-			}
+	send := func(params tuigateway.SessionMutateParams) tea.Cmd {
+		return call(gw, tuigateway.CanonicalSessionMutate, params, func(result *tuigateway.SessionMutateResult, err error) tea.Cmd {
 			if err != nil {
 				if hasRefusalReason(err) {
 					delete(s.pendingMutations, key)
 				}
 				return then(nil, err)
 			}
-			expected, hasExpected := params["expected_generation"]
-			if !hasExpected || expected == nil {
-				expected = result["execution_generation"]
+			delete(s.pendingMutations, key)
+			expected := params.ExpectedGeneration
+			if expected == nil {
+				expected = result.ExecutionGeneration
 			}
-			return then(&mutationOutcome{Result: result, ExpectedGeneration: jsNumberOf(expected)}, nil)
+			return then(&mutationOutcome{Result: result, ExpectedGeneration: val(expected)}, nil)
 		})
 	}
 	if pending, has := s.pendingMutations[key]; has {
 		return send(pending.params)
 	}
-	return gatewayCall(gw, "session.resume", map[string]any{"session_id": sid}, func(v any, err error) tea.Cmd {
+	return call(gw, tuigateway.CanonicalSessionResume, tuigateway.CanonicalResumeParams{SessionID: sid, OmitMessages: true}, func(snapshot *tuigateway.CanonicalSnapshot, err error) tea.Cmd {
 		if err != nil {
 			return then(nil, err)
 		}
-		snapshot := asRPCResult(v)
-		if snapshot != nil && onRead != nil {
+		if onRead != nil {
 			onRead(snapshot)
 		}
 		if stale() {
 			return then(nil, nil)
 		}
-		if !isSafeInteger(snapshot["revision"]) || !isSafeInteger(snapshot["execution_generation"]) {
-			return then(nil, errors.New(tr("canonical.controls.identityUnavailable")))
-		}
-		params := map[string]any{"session_id": sid, "request_id": uuid.NewString(), "expected_revision": snapshot["revision"]}
+		params := tuigateway.SessionMutateParams{SessionID: sid, RequestID: uuid.NewString(), ExpectedRevision: snapshot.Revision, Operation: operation, Payload: payload}
 		if operation != "rename" {
-			params["expected_generation"] = snapshot["execution_generation"]
+			params.ExpectedGeneration = ptr(snapshot.ExecutionGeneration)
 		}
-		params["operation"], params["payload"] = operation, payload
 		s.pendingMutations[key] = pendingMutation{sid: sid, params: params}
 		return send(params)
 	})
@@ -197,62 +188,40 @@ func (s *tuiStore) openModelConfirmation(detail, target string, onConfirm func()
 }
 
 // Whether a newer epoch or generation superseded a control's answer
-func (s *tuiStore) isSupersededControl(operation string, result map[string]any, expectedGeneration float64, baseline map[string]any) bool {
+func (s *tuiStore) isSupersededControl(operation string, result *tuigateway.SessionMutateResult, expectedGeneration int64, baseline *tuigateway.SessionInfo) bool {
 	if operation == "branch" {
 		return false
 	}
-	current := s.ui.Info
-	if !sameField(current, baseline, "execution_epoch") {
+	current := infoOf(s.ui.Info)
+	if !sameStamp(current.AuthorityEpoch, infoOf(baseline).AuthorityEpoch) {
 		return true
 	}
 	answered := expectedGeneration
-	if g, has := result["execution_generation"]; has && g != nil {
-		answered = jsNumberOf(g)
+	if result.ExecutionGeneration != nil {
+		answered = *result.ExecutionGeneration
 	}
-	have := 0.0
-	if g, has := current["execution_generation"]; has && g != nil {
-		have = jsNumberOf(g)
-	}
-	return have > answered
+	return val(current.ExecutionGeneration) > answered
 }
 
 // Applies a model switch answer to the session info and reports it, a deferred switch only reported
-func (s *tuiStore) applyModelResult(result map[string]any, sys func(string)) error {
-	if !truthyJS(result["model"]) {
+func (s *tuiStore) applyModelResult(result *tuigateway.SessionMutateResult, sys func(string)) error {
+	model := val(result.Model)
+	if model == "" {
 		return errors.New(tr("session.main.invalidModelSwitchResponse"))
 	}
-	model := jsValueString(result["model"])
-	if result["status"] == "deferred" {
+	if val(result.Status) == "deferred" {
 		sys(tr("slashCmd.session.model.switchedDeferred", model))
 		return nil
 	}
-	info := make(map[string]any, len(s.ui.Info)+4)
-	for k, v := range s.ui.Info {
-		info[k] = v
-	}
-	generation := 0.0
-	if g, has := s.ui.Info["execution_generation"]; has && g != nil {
-		generation = jsNumberOf(g)
-	}
-	answered := 0.0
-	if g, has := result["execution_generation"]; has && g != nil {
-		answered = jsNumberOf(g)
-	}
-	info["model"], info["execution_generation"] = result["model"], math.Max(generation, answered)
-	if info["skills"] == nil {
-		info["skills"] = map[string]any{}
-	}
-	if info["tools"] == nil {
-		info["tools"] = map[string]any{}
-	}
-	s.ui.Info = info
-	if note, isStr := result["note"].(string); isStr {
-		sys(note)
+	generation := max(val(infoOf(s.ui.Info).ExecutionGeneration), val(result.ExecutionGeneration))
+	s.ui.Info = patchedInfo(s.ui.Info, tuigateway.SessionInfo{Model: &model, ExecutionGeneration: &generation})
+	if result.Note != nil {
+		sys(*result.Note)
 	} else {
 		sys(tr("session.main.modelSwitched", model))
 	}
-	if effort, isStr := result["effort"].(string); isStr {
-		sys(tr("slashCmd.session.reasoning.current", effort))
+	if result.Effort != nil {
+		sys(tr("slashCmd.session.reasoning.current", *result.Effort))
 	}
 	return nil
 }
@@ -269,18 +238,18 @@ func (s *tuiStore) switchCanonicalModel(gw turnGateway, sid, arg string, sys fun
 			return then(nil)
 		}
 		result := m.Result
-		if token, isStr := result["confirm"].(string); result["status"] == "confirmation_required" && isStr {
+		if token := result.Confirm; val(result.Status) == "confirmation_required" && token != nil {
 			if confirm != "" {
 				sys(tr("slashCmd.session.model.confirmStale"))
 				return then(nil)
 			}
-			target := stringOr(result["target_model"], "")
-			if _, has := result["target_model"]; !has || result["target_model"] == nil {
+			target := val(result.TargetModel)
+			if result.TargetModel == nil {
 				target = splitArgs(arg)[0]
 			}
-			detail, _ := result["confirm_message"].(string)
+			detail := val(result.ConfirmMessage)
 			s.openModelConfirmation(detail, target, func() tea.Cmd {
-				return s.switchCanonicalModel(gw, sid, arg, sys, onApplied, token, func(err error) tea.Cmd {
+				return s.switchCanonicalModel(gw, sid, arg, sys, onApplied, *token, func(err error) tea.Cmd {
 					if err != nil {
 						sys("error: " + rpcErrorMessage(err))
 					}
@@ -293,7 +262,7 @@ func (s *tuiStore) switchCanonicalModel(gw turnGateway, sid, arg string, sys fun
 			return then(err)
 		}
 		var cmd tea.Cmd
-		if result["status"] != "deferred" {
+		if val(result.Status) != "deferred" {
 			cmd = onApplied()
 		}
 		return tea.Batch(cmd, then(nil))

@@ -16,7 +16,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/plugins"
 )
 
-// Standalone send markdown rules, looser than the shared stripper and kept in hermes order
+// Standalone send markdown rules, looser than the shared stripper and kept in order
 var smsMarkdownSubs = []struct {
 	re   *regexp2.Regexp
 	repl string
@@ -139,7 +139,7 @@ type smsPlatformPlugin struct{}
 
 func (smsPlatformPlugin) Manifest() plugins.Manifest {
 	return plugins.Manifest{Name: "sms-platform", Version: "1.0.0", Kind: "platform", Source: "bundled", Key: "platforms/sms",
-		Author: "NousResearch",
+		Author: "Icebath",
 		Description: "SMS gateway adapter for Icebath Agent via Twilio. Sends and receives SMS through the Twilio REST API + " +
 			"inbound webhook, relaying texts between phone numbers and the Icebath agent. Markdown is stripped to plain text.\n",
 		RequiresEnv: []plugins.EnvSpec{

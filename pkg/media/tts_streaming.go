@@ -6,9 +6,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pythread"
 )
 
-// SpeechInterruptedNote is prepended to the model bound message after a barge in on a spoken reply
-const SpeechInterruptedNote = "[Note: the user interrupted your previous spoken reply before it finished.]"
-
 const speechInterruptTTLSeconds = 120.0
 
 var (

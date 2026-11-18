@@ -3,7 +3,6 @@ package goals
 import (
 	"context"
 	"fmt"
-	"log/slog"
 	"strings"
 	"sync"
 	"time"
@@ -29,8 +28,6 @@ var goalContractLabels = map[string]string{
 	"outcome": "Outcome", "verification": "Verification", "constraints": "Constraints",
 	"boundaries": "Boundaries", "stop_when": "Stop when blocked",
 }
-
-func goalsLogger() *slog.Logger { return slog.Default().With("logger", "hermes_cli.goals") }
 
 // Optional structured completion contract whose empty fields are omitted everywhere
 type GoalContract struct {
@@ -340,7 +337,7 @@ func ClearSessionDBCache() {
 func goalsBootstrapSessionDB(h string, done chan struct{}) {
 	db, err := goalsAcquireSessionDB(context.Background(), h)
 	if err != nil {
-		goalsLogger().Debug(fmt.Sprintf("GoalManager: background SessionDB() raised (%s)", err))
+		pkgLog().Debug(fmt.Sprintf("GoalManager: background SessionDB() raised (%s)", err))
 		db = nil
 	}
 	goalsDBMu.Lock()
@@ -402,7 +399,7 @@ func SessionDB(ctx context.Context) *state.DB {
 	}
 	db, err := goalsAcquireSessionDB(ctx, h)
 	if err != nil {
-		goalsLogger().Debug(fmt.Sprintf("GoalManager: SessionDB() raised (%s)", err))
+		pkgLog().Debug(fmt.Sprintf("GoalManager: SessionDB() raised (%s)", err))
 		return nil
 	}
 	goalsDBMu.Lock()
@@ -427,7 +424,7 @@ func goalsRegistryToreDown(db *state.DB) bool { return !db.SharedRegistryOwned()
 
 // Warns that a state write was dropped because the session database is unavailable
 func WarnDroppedWrite(manager, kind, sessionID string) {
-	goalsLogger().Warn(fmt.Sprintf("%s: %s for %s not persisted — session DB unavailable "+
+	pkgLog().Warn(fmt.Sprintf("%s: %s for %s not persisted — session DB unavailable "+
 		"(bootstrap window exceeded, in-memory state still active)", manager, kind, sessionID))
 }
 
@@ -442,7 +439,7 @@ func LoadGoal(ctx context.Context, sessionID string) *GoalState {
 	}
 	raw, _, err := db.GetMeta(ctx, GoalMetaKey(sessionID))
 	if err != nil {
-		goalsLogger().Debug(fmt.Sprintf("GoalManager: get_meta failed: %s", err))
+		pkgLog().Debug(fmt.Sprintf("GoalManager: get_meta failed: %s", err))
 		return nil
 	}
 	if raw == "" {
@@ -450,7 +447,7 @@ func LoadGoal(ctx context.Context, sessionID string) *GoalState {
 	}
 	st, err := GoalStateFromJSON(raw)
 	if err != nil {
-		goalsLogger().Warn(fmt.Sprintf("GoalManager: could not parse stored goal for %s: %s", sessionID, err))
+		pkgLog().Warn(fmt.Sprintf("GoalManager: could not parse stored goal for %s: %s", sessionID, err))
 		return nil
 	}
 	return st
@@ -471,7 +468,7 @@ func SaveGoal(ctx context.Context, sessionID string, st *GoalState) {
 		err = db.SetMeta(ctx, GoalMetaKey(sessionID), raw)
 	}
 	if err != nil {
-		goalsLogger().Debug(fmt.Sprintf("GoalManager: set_meta failed: %s", err))
+		pkgLog().Debug(fmt.Sprintf("GoalManager: set_meta failed: %s", err))
 	}
 }
 
@@ -502,6 +499,6 @@ func MigrateGoalToSession(ctx context.Context, oldSessionID, newSessionID, reaso
 	if reason == "" {
 		reason = "rotation"
 	}
-	goalsLogger().Debug(fmt.Sprintf("GoalManager: migrated goal %s -> %s (%s)", oldSessionID, newSessionID, reason))
+	pkgLog().Debug(fmt.Sprintf("GoalManager: migrated goal %s -> %s (%s)", oldSessionID, newSessionID, reason))
 	return true
 }

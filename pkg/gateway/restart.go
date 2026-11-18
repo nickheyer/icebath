@@ -37,7 +37,7 @@ const (
 	LaunchdGUIExitTimeoutClampS             = 60
 	LaunchdStopCleanupReserveS              = 10.0
 	LaunchdWatchdogDumpMarginS              = 2.0
-	launchdJobLabelPrefix                   = "ai.icebath"
+	launchdJobLabelPrefix                   = "app.icebath."
 )
 
 // Shipped defaults of agent.restart_drain_timeout, gateway.signal_interrupt_grace_timeout and the after turn and cron drains
@@ -117,11 +117,11 @@ func environGetter(environ map[string]string) func(string) string {
 	return func(k string) string { return environ[k] }
 }
 
-// The ai.icebath launchd job label from XPC_SERVICE_NAME or the wrapper re-export, empty when neither names one
+// The icebath launchd job label from XPC_SERVICE_NAME or the wrapper re-export, empty when neither names one
 func LaunchdJobLabel(environ map[string]string) string {
 	get := environGetter(environ)
 	for _, name := range []string{"XPC_SERVICE_NAME", LaunchdLabelEnv} {
-		if label := pystr.Strip(get(name)); strings.HasPrefix(label, launchdJobLabelPrefix) {
+		if label := pystr.Strip(get(name)); IsIcebathLaunchdLabel(label) {
 			return label
 		}
 	}

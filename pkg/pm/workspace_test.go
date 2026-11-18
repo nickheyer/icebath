@@ -469,8 +469,8 @@ func TestWorkspaceCoreOnlyGenerationCarriesNoReleaseAgeCutoff(t *testing.T) {
 
 func TestWorkspaceUndatedIndexFailureNamesTheIndexNotAConflict(t *testing.T) {
 	seeded := "  x No solution found when resolving dependencies:\n" +
-		"  Because resvg-py==0.4.0 has no publish time and hermes-agent depends on resvg-py==0.4.0, " +
-		"we can conclude that hermes-agent's requirements are unsatisfiable."
+		"  Because resvg-py==0.4.0 has no publish time and icebath-agent depends on resvg-py==0.4.0, " +
+		"we can conclude that icebath-agent's requirements are unsatisfiable."
 	cold := "warning: cffi-2.0.0.tar.gz is missing an upload date, but user provided: 2026-09-25T00:00:00Z\n" +
 		"  x No solution found when resolving dependencies:\n" +
 		"  Because there are no versions of cffi and you require cffi>=2.0.0, we can conclude that " +
@@ -554,7 +554,7 @@ func TestWorkspaceSelectedPluginExtraNamingCoreInstallsTheWorkspaceCore(t *testi
 	tmp, core, plugin, env := wsLayout(t)
 	peWrite(t, filepath.Join(plugin, "pyproject.toml"), "[project]\nname=\"core-pinning-plugin\"\nversion=\"1\"\nrequires-python=\">=3.11\"\n"+
 		"dependencies=[\"member-dep==1.0\"]\n[project.optional-dependencies]\n"+
-		"chosen=[\"Construction_Root[other] @ git+https://example.invalid/hermes-agent"+
+		"chosen=[\"Construction_Root[other] @ git+https://example.invalid/icebath-agent"+
 		"@0000000000000000000000000000000000000000\"]\n[tool.uv]\npackage=false\n")
 	e, err := wsSync(t, env, wsMembers(plugin), []string{"chosen"}, filepath.Join(tmp, "workspace"), core, filepath.Join(tmp, "env"))
 	if err != nil {

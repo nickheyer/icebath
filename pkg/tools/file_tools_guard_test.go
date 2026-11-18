@@ -78,7 +78,7 @@ func ftgWrite(t *testing.T, env *Env, path, content, taskID string) map[string]a
 // Decoded replace mode patch result
 func ftgPatchReplace(t *testing.T, env *Env, path, oldString, newString, taskID string) map[string]any {
 	t.Helper()
-	return ftDecode(t, patchTool(context.Background(), env, patchArgs{mode: "replace", path: path, oldString: &oldString, newString: &newString}, taskID, nil))
+	return ftDecode(t, patchTool(context.Background(), env, patchArgs{mode: "replace", path: path, oldString: &oldString, newString: &newString}, taskID))
 }
 
 // Counts file backend lookups while still serving the real backend
@@ -807,7 +807,7 @@ func TestFileToolsGuardRelativePathUsesRecordedSessionCwdForStalenessTracking(t 
 func ftgPatchOps(content string, size int64) *scriptedFileOps {
 	return &scriptedFileOps{
 		readFileFn: ftgFakeRead(content, 1, size),
-		patchReplaceFn: func(string, string, string, bool, *editProbe) *PatchResult {
+		patchReplaceFn: func(string, string, string, bool) *PatchResult {
 			return &PatchResult{Success: true, Diff: "--- a\n+++ b\n@@ ...\n"}
 		},
 	}
@@ -1015,7 +1015,7 @@ func TestFileToolsGuardV4APatchAppliesToResolvedWorkspaceNotBackendCwd(t *testin
 	}
 	ftgLocalBackendAt(t, env, decoy)
 	patch := "*** Begin Patch\n*** Update File: target.py\n@@\n-WORKSPACE_ORIGINAL\n+WORKSPACE_PATCHED\n*** End Patch\n"
-	out := ftDecode(t, patchTool(context.Background(), env, patchArgs{mode: "patch", patch: patch}, taskID, nil))
+	out := ftDecode(t, patchTool(context.Background(), env, patchArgs{mode: "patch", patch: patch}, taskID))
 	expected := resolveNonStrict(filepath.Join(workspace, "target.py"))
 	if truthy(out["error"]) {
 		t.Fatalf("patch %v", out)

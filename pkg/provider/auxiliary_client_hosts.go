@@ -12,14 +12,14 @@ type auxHostProvider struct{ Host, Provider string }
 // Hosts whose credential pool an auxiliary client recovers
 var auxPoolProviderByHost = []auxHostProvider{
 	{"chatgpt.com", "openai-codex"}, {"openrouter.ai", "openrouter"},
-	{"inference-api.nousresearch.com", "nous"}, {"api.anthropic.com", "anthropic"},
+	{"api.anthropic.com", "anthropic"},
 	{"api.kimi.com", "kimi-coding"}, {"api.x.ai", "xai-oauth"},
 }
 
 // Hosts whose provider credentials an auth failure on an auto route refreshes
 var auxAuthRefreshProviderByHost = []auxHostProvider{
 	{"chatgpt.com", "openai-codex"},
-	{"api.anthropic.com", "anthropic"}, {"inference-api.nousresearch.com", "nous"},
+	{"api.anthropic.com", "anthropic"},
 	{"api.x.ai", "xai-oauth"},
 }
 

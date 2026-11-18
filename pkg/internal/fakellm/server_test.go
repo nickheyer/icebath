@@ -200,12 +200,12 @@ func TestFaultsKeysAndModelsListing(t *testing.T) {
 
 func TestWriteHomeRoutesTheMainModelToTheServer(t *testing.T) {
 	home := filepath.Join(t.TempDir(), "home")
-	if err := WriteHome(home, "http://127.0.0.1:9/v1", "", "plugins:\n  enabled: [p]\n", 2); err != nil {
+	if err := WriteHome(home, "http://127.0.0.1:9/v1", "", "plugins:\n  enabled: [p]\n"); err != nil {
 		t.Fatal(err)
 	}
 	config, _ := os.ReadFile(filepath.Join(home, "config.yaml"))
 	want := "model:\n  provider: custom\n  base_url: http://127.0.0.1:9/v1\n  default: fake-model\n  context_length: 128000\nagent:\n  api_max_retries: 1\n" +
-		"telemetry:\n  shared_metrics:\n    enabled: false\n    send: false\n    offer_version: 2\nplugins:\n  enabled: [p]\n"
+		"plugins:\n  enabled: [p]\n"
 	env, _ := os.ReadFile(filepath.Join(home, ".env"))
 	if string(config) != want || string(env) != "OPENAI_API_KEY=sk-fake-e2e\n" {
 		t.Fatalf("config %q env %q", config, env)

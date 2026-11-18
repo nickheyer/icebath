@@ -2,7 +2,6 @@ package gateway
 
 import (
 	"fmt"
-	"log/slog"
 	"maps"
 	"net"
 	"os"
@@ -14,6 +13,7 @@ import (
 	"time"
 	"unicode/utf8"
 
+	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
@@ -46,7 +46,7 @@ type GatewayControlServer struct {
 // Server for home, the process home when empty, answering the default verbs plus the given ones
 func NewGatewayControlServer(home string, verbHandlers map[string]ControlVerbHandler) (*GatewayControlServer, error) {
 	if home == "" {
-		home = processHermesHome()
+		home = processIcebathHome()
 	}
 	resolved, err := pypath.Resolve(home)
 	if err != nil {
@@ -90,7 +90,7 @@ func (s *GatewayControlServer) privateHandler(verb string) (ControlPrivateHandle
 func (s *GatewayControlServer) Start() bool {
 	if err := s.startPlatform(); err != nil {
 		s.Stop()
-		controlSocketLog().Warn(fmt.Sprintf("Gateway control socket failed to start: %s", pyrepr.ExceptionMessage(err)))
+		pkgLog().Warn(fmt.Sprintf("Gateway control socket failed to start: %s", pyrepr.ExceptionMessage(err)))
 		return false
 	}
 	return true
@@ -383,10 +383,11 @@ func BuildIdentifyPayload() *pyjson.Object {
 	record := statusBuildPidRecord()
 	supervisor := detectSupervisor()
 	payload := pyjson.ObjectOf("protocol", int64(ControlProtocolVersion))
-	for _, key := range []string{"kind", "pid", "start_time", "hermes_home"} {
+	for _, key := range []string{"kind", "pid", "start_time"} {
 		payload.Set(key, recGet(record, key))
 	}
-	homeValue := recGet(record, "hermes_home")
+	homeValue := recHome(record, home.RecordKey)
+	payload.Set(home.RecordKey, homeValue)
 	label := ""
 	if pyrepr.Truthy(homeValue) {
 		label = pyrepr.Str(homeValue)
@@ -422,6 +423,3 @@ func BuildStatusPayload() *pyjson.Object {
 	payload.Set("answering_pid", int64(os.Getpid()))
 	return payload
 }
-
-// Logger of the reference module gateway.control_socket
-func controlSocketLog() *slog.Logger { return slog.Default().With("logger", "gateway.control_socket") }

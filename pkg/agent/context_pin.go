@@ -3,7 +3,6 @@ package agent
 import (
 	"context"
 	"fmt"
-	"log/slog"
 	"math"
 	"strings"
 	"sync"
@@ -21,8 +20,6 @@ type contextPinKey struct {
 	model string
 	pin   int
 }
-
-func contextPinLog() *slog.Logger { return slog.Default().With("logger", "agent.context_pin") }
 
 // True when the displayed context length is the positive integer model.context_length pin
 func isContextPinned(contextLength, configContextLength any) bool {
@@ -130,7 +127,7 @@ func warnOnceOnPinDisagreement(ctx context.Context, model, baseURL string, confi
 	if seen {
 		return false
 	}
-	contextPinLog().Warn(fmt.Sprintf("model.context_length pins %s at %s tokens but the provider advertises %s; the pin wins. Remove model.context_length from config.yaml to use the advertised window.",
+	pkgLog().Warn(fmt.Sprintf("model.context_length pins %s at %s tokens but the provider advertises %s; the pin wins. Remove model.context_length from config.yaml to use the advertised window.",
 		model, commaInt(pin), commaInt(advertised)))
 	return true
 }

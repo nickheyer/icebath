@@ -50,7 +50,7 @@ func (h *contextHostFake) MessageMentionsBot(m *ContextMessage) bool {
 }
 
 func (h *contextHostFake) MessageMatchesMentionPatterns(m *ContextMessage) bool {
-	return strings.HasPrefix(strings.ToLower(firstText(m.Text, m.Caption)), "hermes")
+	return strings.HasPrefix(strings.ToLower(firstText(m.Text, m.Caption)), "icebath")
 }
 
 func (h *contextHostFake) CleanBotTriggerText(text *string) *string {
@@ -68,7 +68,7 @@ func mentionOf(text, mention string) MessageEntity {
 }
 
 func TestGroupReplyExpectedFollowsWhoTheGroupMessageAddresses(t *testing.T) {
-	host := &contextHostFake{username: "hermes_bot", hasBot: true, entities: map[*ContextMessage][2][]MessageEntity{}}
+	host := &contextHostFake{username: "icebath_bot", hasBot: true, entities: map[*ContextMessage][2][]MessageEntity{}}
 	group := func(text *string, mentions ...string) *ContextMessage {
 		m := &ContextMessage{Text: text, MessageID: 42, FromUser: &TopicUser{ID: 111}}
 		var ents []MessageEntity
@@ -103,9 +103,9 @@ func TestGroupReplyExpectedFollowsWhoTheGroupMessageAddresses(t *testing.T) {
 		chatType string
 		want     *bool
 	}{
-		{"mention", group(sp("@hermes_bot when is rent due?"), "@hermes_bot"), "group", &T},
+		{"mention", group(sp("@icebath_bot when is rent due?"), "@icebath_bot"), "group", &T},
 		{"reply-to-bot", toBot, "group", &T},
-		{"wake-word", group(sp("hermes, add milk to the list")), "group", &T},
+		{"wake-word", group(sp("icebath, add milk to the list")), "group", &T},
 		{"caption-command", caption, "group", &T},
 		{"indented-command", group(sp(" /status")), "group", &T},
 		{"dm", group(sp("hello")), "dm", &T},
@@ -151,17 +151,17 @@ func TestGroupTriggerTextAndIdentityPrompt(t *testing.T) {
 	if got := GroupTriggerText(host, sole, sole.Text); *got != "hi" {
 		t.Fatalf("sole trigger = %q", *got)
 	}
-	host.username = "hermes_bot"
-	textMention := &ContextMessage{Text: sp("Hermes hello")}
-	host.entities[textMention] = [2][]MessageEntity{{{Type: "text_mention", Offset: 0, Length: 6, User: &TopicUser{ID: 999}}}, nil}
+	host.username = "icebath_bot"
+	textMention := &ContextMessage{Text: sp("Icebath hello")}
+	host.entities[textMention] = [2][]MessageEntity{{{Type: "text_mention", Offset: 0, Length: 7, User: &TopicUser{ID: 999}}}, nil}
 	if MentionsOtherParticipants(host, textMention) || StartsWithOtherParticipantMention(host, textMention) {
 		t.Fatal("text_mention of this bot counted as another participant")
 	}
-	host.entities[textMention] = [2][]MessageEntity{{{Type: "text_mention", Offset: 0, Length: 6, User: &TopicUser{ID: 5}}}, nil}
+	host.entities[textMention] = [2][]MessageEntity{{{Type: "text_mention", Offset: 0, Length: 7, User: &TopicUser{ID: 5}}}, nil}
 	if !StartsWithOtherParticipantMention(host, textMention) {
 		t.Fatal("text_mention of another user missed")
 	}
-	want := "Keep answers concise.\n\nYour Telegram bot username in this group: @hermes_bot. Mentions of other bots are not requests for you to relay the message."
+	want := "Keep answers concise.\n\nYour Telegram bot username in this group: @icebath_bot. Mentions of other bots are not requests for you to relay the message."
 	if got := GroupIdentityPrompt(host, multi, sp("Keep answers concise.")); got == nil || *got != want {
 		t.Fatalf("prompt = %v", got)
 	}

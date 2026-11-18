@@ -12,7 +12,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pythread"
 	"github.com/nickheyer/icebath/pkg/memory"
-	"github.com/nickheyer/icebath/pkg/tuigateway"
+	"github.com/nickheyer/icebath/pkg/tuihost"
 )
 
 // Seconds between two scans of the idle reaper
@@ -22,7 +22,7 @@ const reaperScanS = 300.0
 var incrementalFlushIntervalS = math.Max(0, envFloat("ICEBATH_TUI_SESSION_FLUSH_INTERVAL_S", reaperScanS))
 
 // Float of a session slot, zero when unset, a value float cannot take raising
-func sessionFloat(session *tuigateway.Session, key string) float64 {
+func sessionFloat(session *tuihost.Session, key string) float64 {
 	value := session.Get(key)
 	if !truthy(value) {
 		return 0
@@ -59,7 +59,7 @@ func flushDirtySessions(now *float64) int {
 }
 
 // Whether a session is idle and older past the TTL and passes the reap exemptions, the clock checked first
-func sessionIsEvictable(ctx context.Context, sid string, session *tuigateway.Session, now float64) bool {
+func sessionIsEvictable(ctx context.Context, sid string, session *tuihost.Session, now float64) bool {
 	lastActive := sessionFloat(session, "last_active")
 	createdAt := sessionFloat(session, "created_at")
 	if now-lastActive <= sessionTTLS || now-createdAt <= sessionTTLS {
@@ -74,7 +74,7 @@ func reapIdleSessions(ctx context.Context) {
 	func() {
 		defer func() {
 			if failure := recover(); failure != nil {
-				logger().Debug("periodic incremental session flush failed", "exc_info", failureText(failure))
+				pkgLog().Debug("periodic incremental session flush failed", "exc_info", failureText(failure))
 			}
 		}()
 		flushDirtySessions(nil)
@@ -83,14 +83,14 @@ func reapIdleSessions(ctx context.Context) {
 	func() {
 		sessionsLock.Lock()
 		defer sessionsLock.Unlock()
-		for _, live := range tuigateway.LiveSessions() {
+		for _, live := range tuihost.LiveSessions() {
 			if sessionIsEvictable(ctx, live.SID, live.Session, now) {
 				victims = append(victims, live.SID)
 			}
 		}
 	}()
 	for _, sid := range victims {
-		closeSessionByID(ctx, sid, "idle_timeout", func(session *tuigateway.Session) bool {
+		closeSessionByID(ctx, sid, "idle_timeout", func(session *tuihost.Session) bool {
 			return sessionIsEvictable(ctx, sid, session, nowSeconds())
 		})
 	}
@@ -98,12 +98,12 @@ func reapIdleSessions(ctx context.Context) {
 	enforceSessionCap(ctx)
 	reclaimOrphanedLeases()
 	if !sessionsQuiescent("") {
-		logger().Debug("idle reaper periodic trim deferred: a session is busy or attached")
+		pkgLog().Debug("idle reaper periodic trim deferred: a session is busy or attached")
 		return
 	}
 	defer func() {
 		if failure := recover(); failure != nil {
-			logger().Debug(fmt.Sprintf("idle reaper memory trim failed: %s: %s", pyrepr.TypeName(failure), failureText(failure)))
+			pkgLog().Debug(fmt.Sprintf("idle reaper memory trim failed: %s: %s", pyrepr.TypeName(failure), failureText(failure)))
 		}
 	}()
 	memory.TrimMemoryWhenIdle(ctx, configEnv(ctx), "idle reaper periodic trim", agent.ReviewQueueQuietClock{})
@@ -114,13 +114,13 @@ func repairMissingWSOrphanReaps(ctx context.Context) {
 	if wsOrphanReapGraceS() <= 0 {
 		return
 	}
-	var closed []tuigateway.Transport
+	var closed []tuihost.Transport
 	func() {
 		sessionsLock.Lock()
 		defer sessionsLock.Unlock()
-		for _, live := range tuigateway.LiveSessions() {
-			transport, _ := live.Session.Get("transport").(tuigateway.Transport)
-			if transport != tuigateway.DetachedWSTransport() && tuigateway.TransportIsDead(transport) {
+		for _, live := range tuihost.LiveSessions() {
+			transport, _ := live.Session.Get("transport").(tuihost.Transport)
+			if transport != tuihost.DetachedWSTransport() && tuihost.TransportIsDead(transport) {
 				closed = append(closed, transport)
 			}
 		}
@@ -131,7 +131,7 @@ func repairMissingWSOrphanReaps(ctx context.Context) {
 	sessionsLock.Lock()
 	defer sessionsLock.Unlock()
 	var missing []string
-	for _, live := range tuigateway.LiveSessions() {
+	for _, live := range tuihost.LiveSessions() {
 		pendingWSReaps.Lock()
 		_, pending := pendingWSReaps.timers[live.SID]
 		pendingWSReaps.Unlock()
@@ -148,16 +148,16 @@ func repairMissingWSOrphanReaps(ctx context.Context) {
 func reclaimOrphanedLeases() {
 	defer func() {
 		if failure := recover(); failure != nil {
-			logger().Debug("orphaned lease reclaim failed", "exc_info", failureText(failure))
+			pkgLog().Debug("orphaned lease reclaim failed", "exc_info", failureText(failure))
 		}
 	}()
 	dropped, err := activesessions.ReleaseOrphanedLeases(ownLiveLeaseIDs(nil))
 	if err != nil {
-		logger().Debug("orphaned lease reclaim failed", "exc_info", err.Error())
+		pkgLog().Debug("orphaned lease reclaim failed", "exc_info", err.Error())
 		return
 	}
 	if dropped > 0 {
-		logger().Info(fmt.Sprintf("Reclaimed %d orphaned active-session lease(s)", dropped))
+		pkgLog().Info(fmt.Sprintf("Reclaimed %d orphaned active-session lease(s)", dropped))
 	}
 }
 

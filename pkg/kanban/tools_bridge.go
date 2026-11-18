@@ -65,8 +65,8 @@ func goalGate(k *kanbanCall, toolName string, task *Task, tid, evidence string) 
 	judged := func() (failed any) {
 		defer func() { failed = recover() }()
 		ctx := k.ctx
-		if provider.PortalAffinityScope(ctx) == "" {
-			ctx = provider.WithPortalAffinityScope(ctx, "kanban:"+tid)
+		if provider.AffinityScope(ctx) == "" {
+			ctx = provider.WithAffinityScope(ctx, "kanban:"+tid)
 		}
 		body := ""
 		if task.Body != nil {
@@ -76,11 +76,11 @@ func goalGate(k *kanbanCall, toolName string, task *Task, tid, evidence string) 
 		return nil
 	}()
 	if judged != nil {
-		kanbanToolsLog.Warn(fmt.Sprintf("goal judge check failed, allowing lifecycle handoff: %v", judged), "exc_info", fmt.Sprint(judged))
+		pkgLog().Warn(fmt.Sprintf("goal judge check failed, allowing lifecycle handoff: %v", judged), "exc_info", fmt.Sprint(judged))
 		return nil
 	}
 	if result.TransportFailed {
-		kanbanToolsLog.Warn(fmt.Sprintf("goal judge unreachable (%s), allowing lifecycle handoff", result.Reason))
+		pkgLog().Warn(fmt.Sprintf("goal judge unreachable (%s), allowing lifecycle handoff", result.Reason))
 		return nil
 	}
 	if result.Verdict == "done" {
@@ -125,7 +125,7 @@ func HeartbeatCurrentWorkerFromEnv(ctx context.Context) (beat bool) {
 	autoHeartbeatLastAttempt = now
 	bridgeMu.Unlock()
 	bridgeFailed := func(cause any) bool {
-		kanbanToolsLog.Debug("auto-heartbeat: bridge failed", "exc_info", fmt.Sprint(cause))
+		pkgLog().Debug("auto-heartbeat: bridge failed", "exc_info", fmt.Sprint(cause))
 		return false
 	}
 	defer func() {
@@ -159,7 +159,7 @@ func HeartbeatCurrentWorkerFromEnv(ctx context.Context) (beat bool) {
 		succeeded = false
 		var fenced *PermissionError
 		if !errors.As(err, &fenced) {
-			kanbanToolsLog.Debug(fmt.Sprintf("auto-heartbeat: %s failed", op.name), "exc_info", excText(err))
+			pkgLog().Debug(fmt.Sprintf("auto-heartbeat: %s failed", op.name), "exc_info", excText(err))
 			continue
 		}
 		bridgeMu.Lock()
@@ -167,7 +167,7 @@ func HeartbeatCurrentWorkerFromEnv(ctx context.Context) (beat bool) {
 		autoHeartbeatFenceWarned = true
 		bridgeMu.Unlock()
 		if !warned {
-			kanbanToolsLog.Warn(fmt.Sprintf("kanban auto-heartbeat for task %s refused (%s): this process carries "+
+			pkgLog().Warn(fmt.Sprintf("kanban auto-heartbeat for task %s refused (%s): this process carries "+
 				"ICEBATH_DELEGATED_CHILD_CONTEXT together with ICEBATH_KANBAN_TASK, so the board "+
 				"treats it as a delegate_task descendant and its claim will not be extended by "+
 				"activity. Only the dispatcher's own spawn grants worker scope; do not copy a "+
@@ -214,7 +214,7 @@ func InjectNewCommentsFromEnv(ctx context.Context, agent any) (injected bool) {
 	bridgeMu.Unlock()
 	rows, err := commentsAfter(ctx, tid, seen)
 	if err != nil {
-		kanbanToolsLog.Debug("comment-inject: bridge failed", "exc_info", excText(err))
+		pkgLog().Debug("comment-inject: bridge failed", "exc_info", excText(err))
 		return false
 	}
 	var newest int64
@@ -254,7 +254,7 @@ func InjectNewCommentsFromEnv(ctx context.Context, agent any) (injected bool) {
 		"Take it into account for the work you're doing right now:\n" + strings.Join(lines, "\n")
 	defer func() {
 		if r := recover(); r != nil {
-			kanbanToolsLog.Debug("comment-inject: steer failed", "exc_info", fmt.Sprint(r))
+			pkgLog().Debug("comment-inject: steer failed", "exc_info", fmt.Sprint(r))
 			injected = false
 		}
 	}()

@@ -19,8 +19,8 @@ func parityAdapter(t *testing.T) (*DiscordAdapter, *fakeDiscordAPI) {
 	return a, f
 }
 
-// Every view kind with empty allowlists, the way the hermes parity fixture builds them
-func parityViews(t *testing.T, a *DiscordAdapter) map[string]*hermesView {
+// Every view kind with empty allowlists, the way the test fixture builds them
+func parityViews(t *testing.T, a *DiscordAdapter) map[string]*icebathView {
 	t.Helper()
 	ctx := context.Background()
 	noopModel := func(context.Context, string, string, string) (string, error) { return "", nil }
@@ -36,8 +36,8 @@ func parityViews(t *testing.T, a *DiscordAdapter) map[string]*hermesView {
 			t.Fatal(err)
 		}
 	}
-	return map[string]*hermesView{"exec": &ev.hermesView, "slash": &sc.hermesView, "update": &up.hermesView, "clarify": &cl.hermesView,
-		"model": &mp.hermesView, "choice": &cp.hermesView}
+	return map[string]*icebathView{"exec": &ev.icebathView, "slash": &sc.icebathView, "update": &up.icebathView, "clarify": &cl.icebathView,
+		"model": &mp.icebathView, "choice": &cp.icebathView}
 }
 
 // Click by user 1 on message m1 carrying the select value x
@@ -45,7 +45,7 @@ func parityClick() *discordgo.Interaction {
 	return clickOn(&discordgo.Message{ID: "m1", ChannelID: "5"}, "", discordgo.ButtonComponent, "1", "x")
 }
 
-// Parity calls of the hermes case table keyed by view name
+// Parity calls of the test table keyed by view name
 var parityCalls = []struct {
 	name string
 	call func(v viewHooks, ctx context.Context, i *discordgo.Interaction) error
@@ -142,7 +142,7 @@ func TestAnsweredViewIsReleased(t *testing.T) {
 }
 
 // Prompt message with one titled embed bound to the view
-func attachCard(view *hermesView) *discordgo.Message {
+func attachCard(view *icebathView) *discordgo.Message {
 	msg := &discordgo.Message{ID: "77", ChannelID: "555", Embeds: []*discordgo.MessageEmbed{{Title: "card"}}}
 	view.mu.Lock()
 	view.message = msg

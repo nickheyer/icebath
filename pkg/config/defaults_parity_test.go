@@ -6,7 +6,7 @@ import (
 	"testing"
 )
 
-// Dotted path of every leaf and empty mapping in the Python DEFAULT_CONFIG table
+// Dotted path of every leaf and empty mapping in the default config table
 const pinnedDefaultPaths = `_config_version
 agent.agent_cache.idle_ttl_secs
 agent.agent_cache.max_evictions_per_pass
@@ -311,10 +311,6 @@ context_file_read_timeout
 credential_pool_strategies
 cron.allow_agent_scheduling
 cron.catch_up_missed
-cron.chronos.callback_url
-cron.chronos.expected_audience
-cron.chronos.nas_jwks_url
-cron.chronos.portal_url
 cron.delivery.notify
 cron.failure_repeat_alert_hours
 cron.max_parallel_jobs
@@ -505,7 +501,6 @@ gateway.trust_recent_files_seconds
 gateway.unmanaged_idle_exit_seconds
 gateway.write_sessions_json
 goals.max_turns
-honcho
 hooks
 hooks_auto_accept
 hosted_rooms.discussion.max_messages
@@ -604,9 +599,6 @@ monitoring.gateway_health_export.resource_attributes.service.name
 monitoring.gateway_health_export.warning_error_events_enabled
 monitoring.install_id
 network.force_ipv4
-nous.anthropic_wire
-nous.guest
-nous.keepalive_interval_seconds
 onboarding.profile_build
 onboarding.seen
 openrouter.min_coding_score
@@ -753,9 +745,6 @@ telegram.extra.dm_topic_auto_transfer
 telegram.extra.rich_drafts
 telegram.extra.rich_messages
 telegram.reactions
-telemetry.shared_metrics.enabled
-telemetry.shared_metrics.endpoint
-telemetry.shared_metrics.send
 terminal.auto_source_bashrc
 terminal.backend
 terminal.client_env_passthrough
@@ -781,7 +770,6 @@ terminal.docker_volumes
 terminal.env_passthrough
 terminal.home_mode
 terminal.modal_image
-terminal.modal_mode
 terminal.oneshot_completion_wait_seconds
 terminal.persistent_shell
 terminal.process_wait_auto_notify
@@ -935,7 +923,7 @@ func defaultLeafPaths(v any, prefix string, out *[]string) {
 	}
 }
 
-func TestDefaultsCarryExactlyThePythonKeySet(t *testing.T) {
+func TestDefaultsCarryExactlyThePinnedKeySet(t *testing.T) {
 	var got []string
 	defaultLeafPaths(map[string]any(Defaults()), "", &got)
 	sort.Strings(got)
@@ -977,8 +965,8 @@ func TestDefaultsRootsAreKnownAndContainerSlotsFollowThem(t *testing.T) {
 			t.Errorf("container slot %s is missing", path)
 		}
 	}
-	if Defaults()["_config_version"] != 58 || Version != 58 {
-		t.Errorf("schema version %v, want 58", Defaults()["_config_version"])
+	if Defaults()["_config_version"] != 66 || Version != 66 {
+		t.Errorf("schema version %v, want 66", Defaults()["_config_version"])
 	}
 }
 

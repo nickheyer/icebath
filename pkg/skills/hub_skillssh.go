@@ -3,6 +3,7 @@ package skills
 import (
 	"context"
 	"crypto/md5"
+	"errors"
 	"fmt"
 	"math/big"
 	"regexp"
@@ -42,7 +43,7 @@ var (
 	skillsShBasePaths     = []string{"skills/", ".agents/skills/", ".claude/skills/"}
 )
 
-// Overrides of the skills.sh internals the hermes tests patch
+// Overrides of the skills.sh internals tests replace
 type skillsShSeams struct {
 	fetchDetailPage      func(identifier string) *pyjson.Object
 	candidateIdentifiers func(identifier string) []string
@@ -556,7 +557,7 @@ func (s *SkillsShSource) discoverIdentifier(ctx context.Context, identifier stri
 			}
 			nameV, has := entry.(*pyjson.Object).Get("name")
 			if !has {
-				hubRaise(fmt.Errorf("KeyError: 'name'"))
+				hubRaise(errors.New("a skills.sh entry has no name"))
 			}
 			dirName := pyStrOf(nameV)
 			if strings.HasPrefix(dirName, ".") || strings.HasPrefix(dirName, "_") || dirName == "skills" || dirName == ".agents" || dirName == ".claude" {

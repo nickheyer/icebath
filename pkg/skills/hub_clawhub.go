@@ -153,7 +153,7 @@ func clawhubFirstStr(values ...any) string {
 	return ""
 }
 
-// Overrides of the ClawHub internals the hermes tests patch
+// Overrides of the ClawHub internals tests replace
 type clawhubSeams struct {
 	stream    func(rawURL string, params pyhttpx.Params, timeout time.Duration) *pyhttpx.StreamResponse
 	sleep     func(d time.Duration)

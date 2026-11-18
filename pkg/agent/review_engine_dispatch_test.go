@@ -11,7 +11,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/tools"
 )
 
-// Review dispatch fixture, the fake parent of the hermes tests over a temp home with the child seams swapped
+// Review dispatch fixture, the fake parent of the tests over a temp home with the child seams swapped
 func reviewDispatchParent(t *testing.T, built *childBuildSpec, summary string) (*tools.Env, *AIAgent) {
 	t.Helper()
 	tools.ResetAsyncDelegationForTests()
@@ -116,7 +116,7 @@ func TestStartReviewDispatchesBackgroundAndCompletes(t *testing.T) {
 func TestStartReviewThreadsLoadedSkillsIntoContext(t *testing.T) {
 	var built childBuildSpec
 	env, parent := reviewDispatchParent(t, &built, "ok")
-	parent.ephemeralSystemPrompt = `session with the "hermes-agent-dev" skill preloaded.`
+	parent.ephemeralSystemPrompt = `session with the "icebath-agent-dev" skill preloaded.`
 	msgs := []map[string]any{
 		{"role": "user", "content": "open a PR"},
 		{"role": "assistant", "content": "PR #9 opened"},
@@ -129,7 +129,7 @@ func TestStartReviewThreadsLoadedSkillsIntoContext(t *testing.T) {
 		t.Fatalf("result %v", result)
 	}
 	contextText, _ := built.Context.(string)
-	if !strings.Contains(contextText, "hermes-agent-dev") || !strings.Contains(contextText, "skill_view") {
+	if !strings.Contains(contextText, "icebath-agent-dev") || !strings.Contains(contextText, "skill_view") {
 		t.Fatalf("context %q", contextText)
 	}
 	awaitReviewCompletion(t)

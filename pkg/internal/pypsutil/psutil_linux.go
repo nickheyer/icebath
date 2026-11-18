@@ -5,7 +5,6 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
-	"log/slog"
 	"os"
 	"runtime"
 	"strconv"
@@ -152,7 +151,7 @@ func VirtualMemory() (VirtualMemoryStats, error) {
 		if len(missing) == 1 {
 			verb = "was"
 		}
-		slog.Default().Warn(fmt.Sprintf("%s memory stats couldn't be determined and %s set to 0", strings.Join(missing, ", "), verb))
+		pkgLog().Warn(fmt.Sprintf("%s memory stats couldn't be determined and %s set to 0", strings.Join(missing, ", "), verb))
 	}
 	return VirtualMemoryStats{Total: uint64(total), Available: uint64(avail), Used: uint64(total - avail),
 		Percent: usagePercent(float64(total-avail), float64(total))}, nil

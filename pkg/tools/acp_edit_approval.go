@@ -295,7 +295,7 @@ func MaybeRequireEditApproval(ctx context.Context, env *Env, toolName string, ar
 	}
 	proposal, err := BuildEditProposal(env, toolName, arguments)
 	if err != nil {
-		toolsLogger(env).Warn(fmt.Sprintf("Could not build ACP edit approval proposal for %s: %s", toolName, err))
+		envLog(env).Warn(fmt.Sprintf("Could not build ACP edit approval proposal for %s: %s", toolName, err))
 		return editDenied(fmt.Sprintf("Edit approval denied: could not prepare diff (%s)", err)), nil
 	}
 	if proposal == nil {
@@ -303,7 +303,7 @@ func MaybeRequireEditApproval(ctx context.Context, env *Env, toolName string, ar
 	}
 	approved, err := requester(ctx, env, proposal)
 	if err != nil {
-		toolsLogger(env).Warn(fmt.Sprintf("ACP edit approval requester failed: %s", err))
+		envLog(env).Warn(fmt.Sprintf("ACP edit approval requester failed: %s", err))
 		approved = false
 	}
 	if approved {

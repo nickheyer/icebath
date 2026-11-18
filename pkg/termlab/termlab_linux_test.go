@@ -20,8 +20,20 @@ import (
 // Environment variable naming the directory failing tests save screenshots and streams into
 const artifactsEnv = "TERMLAB_ARTIFACTS"
 
-// Longest the TUI may take to answer a key on screen
+// Longest a key's answer may take on an unloaded machine, stretched by the load measured beside the presses
 const answerLimit = 300 * time.Millisecond
+
+// Wakes before the driver reads the answer, the input reader, event loop and renderer of icebath and the relay
+const outputWakes = 4
+
+// Processes woken before the mirror holds the answer, the output path and the poller feeding the mirror
+const mirrorWakes = outputWakes + 1
+
+// Processes woken before the screen shows the answer, the output path, konsole reading and painting, and the X server
+const screenWakes = outputWakes + 3
+
+// Pause between the screenshots of the second after a press
+const captureEvery = 20 * time.Millisecond
 
 // Screens of the konsole and the xterm labs, xterm needing 1604 pixels across for 160 cells at Monospace 10
 var (
@@ -34,7 +46,7 @@ func TestMain(m *testing.M) {
 	hermetic.BlockExternalHTTP()
 	hermetic.BlockExternalDNS()
 	RunHelper()
-	if Missing("Xvfb", "import") == nil {
+	if Missing("Xvfb") == nil {
 		Icebath()
 	}
 	code := m.Run()
@@ -59,8 +71,8 @@ func newRig(t *testing.T, emu Emulator, screen image.Point, settings map[string]
 // Rig whose settings map may also carry environment variables for the program, named in upper case
 func newRigWithEnv(t *testing.T, emu Emulator, screen image.Point, settings map[string]string) *rig {
 	t.Helper()
-	if err := Missing("Xvfb", "import", emu.Name); err != nil {
-		t.Skipf("termlab needs Xvfb, import and %s: %v", emu.Name, err)
+	if err := Missing("Xvfb", emu.Name); err != nil {
+		t.Skipf("termlab needs Xvfb and %s: %v", emu.Name, err)
 	}
 	bin, err := Icebath()
 	if err != nil {
@@ -192,6 +204,16 @@ func (r *rig) dump() {
 func (r *rig) shot() *image.RGBA {
 	r.t.Helper()
 	img, err := r.s.Shot()
+	if err != nil {
+		r.t.Fatal(err)
+	}
+	return img
+}
+
+// Screenshot of a pixel region that fails the test when it cannot be taken
+func (r *rig) shotOf(region image.Rectangle) *image.RGBA {
+	r.t.Helper()
+	img, err := r.s.ShotOf(region)
 	if err != nil {
 		r.t.Fatal(err)
 	}
@@ -395,20 +417,21 @@ type press struct {
 	shots   []timedShot
 }
 
-// Presses d and records the screen for a second after
-func (r *rig) press(name string) press {
+// Presses d and records the region of the screen every capture interval for a second after
+func (r *rig) press(name string, region image.Rectangle) press {
 	r.t.Helper()
-	p := press{name: name, before: r.shot()}
+	p := press{name: name, before: r.shotOf(region)}
 	at, err := r.s.Type("d")
 	if err != nil {
 		r.t.Fatal(err)
 	}
 	p.at = at
-	p.lat, p.latErr = r.s.Latency(answerLimit)
+	p.lat, p.latErr = r.s.Latency(time.Second)
 	for len(p.shots) == 0 || time.Since(at) < time.Second {
 		start := time.Now()
-		img := r.shot()
+		img := r.shotOf(region)
 		p.shots = append(p.shots, timedShot{img, start, time.Now()})
+		time.Sleep(captureEvery - time.Since(start))
 	}
 	p.settled = time.Now()
 	return p
@@ -419,13 +442,19 @@ func (r *rig) pressDock(frame image.Rectangle, pairs int, during func(at, until 
 	r.t.Helper()
 	w := r.s.Watch(frame)
 	defer w.Stop()
+	gauge := StartGauge()
+	defer func() {
+		load := gauge.Stop()
+		r.t.Logf("presses ran under a wake delay of %s and a %.2fx slowdown", load.Wake, load.Slowdown)
+	}()
+	region := r.s.Cells(frame.Min.X, frame.Min.Y, frame.Dx(), frame.Dy())
 	idleFrom := time.Now()
 	time.Sleep(2 * time.Second)
 	animated := w.Moved(idleFrom, time.Now())
 	r.t.Logf("%d of %d card cells changed in 2s without input", len(animated), frame.Dx()*frame.Dy())
 	for pair := range pairs {
-		on := r.press(fmt.Sprintf("press%d", 2*pair+1))
-		off := r.press(fmt.Sprintf("press%d", 2*pair+2))
+		on := r.press(fmt.Sprintf("press%d", 2*pair+1), region)
+		off := r.press(fmt.Sprintf("press%d", 2*pair+2), region)
 		start, shown, back := w.At(on.at), w.At(on.settled), w.At(off.settled)
 		var toggled []int
 		for i := range start {
@@ -442,7 +471,7 @@ func (r *rig) pressDock(frame image.Rectangle, pairs int, during func(at, until 
 			cells[k] = r.s.Cells(c.X, c.Y, 1, 1)
 		}
 		for _, p := range []press{on, off} {
-			r.judge(w, p, toggled, cells)
+			r.judge(w, p, toggled, cells, gauge.Load())
 			if during != nil {
 				during(p.at, p.settled)
 			}
@@ -450,14 +479,15 @@ func (r *rig) pressDock(frame image.Rectangle, pairs int, during func(at, until 
 	}
 }
 
-// Asserts output, half the toggled mirror cells and half of them on screen answered one keystroke within the limit
-func (r *rig) judge(w *Watch, p press, toggled []int, cells []image.Rectangle) {
+// Asserts output, half the toggled mirror cells and half of them on screen answered a keystroke within the load's limits
+func (r *rig) judge(w *Watch, p press, toggled []int, cells []image.Rectangle, load Load) {
 	r.t.Helper()
 	final := p.shots[len(p.shots)-1].img
-	r.check(p.latErr == nil && p.lat <= answerLimit, p.name+"-output", []image.Image{p.before, final}, "no pty output within %s of d, latency %s, %v", answerLimit, p.lat, p.latErr)
+	outLimit, mirrorLimit, screenLimit := load.Limit(answerLimit, outputWakes), load.Limit(answerLimit, mirrorWakes), load.Limit(answerLimit, screenWakes)
+	r.check(p.latErr == nil && p.lat <= outLimit, p.name+"-output", []image.Image{p.before, final}, "no pty output within %s of d, latency %s, %v", outLimit, p.lat, p.latErr)
 	ans, ok := w.Answer(p.at, toggled, 0.5)
 	if r.check(ok, p.name+"-mirror", []image.Image{p.before, final}, "half of the %d cells d toggles never changed on the mirror", len(toggled)) {
-		r.check(ans.Sub(p.at) <= answerLimit, p.name+"-mirror", []image.Image{p.before, final}, "half of the %d cells d toggles took %s to change on the mirror", len(toggled), ans.Sub(p.at))
+		r.check(ans.Sub(p.at) <= mirrorLimit, p.name+"-mirror", []image.Image{p.before, final}, "half of the %d cells d toggles took %s to change on the mirror, limit %s", len(toggled), ans.Sub(p.at), mirrorLimit)
 	}
 	share := func(img image.Image) float64 {
 		n := 0
@@ -482,10 +512,10 @@ func (r *rig) judge(w *Watch, p press, toggled []int, cells []image.Rectangle) {
 		shots = append(shots[:1], sh.img)
 	}
 	if r.check(!seen.IsZero(), p.name+"-screen", append(shots, final), "the screen never showed the answer to d in the second after the press") {
-		r.check(seen.Sub(p.at) <= answerLimit, p.name+"-screen", shots, "the screen showed the answer to d by %s after the press, %s still lacked it", seen.Sub(p.at), lacked)
+		r.check(seen.Sub(p.at) <= screenLimit, p.name+"-screen", shots, "the screen showed the answer to d by %s after the press, %s still lacked it, limit %s", seen.Sub(p.at), lacked, screenLimit)
 	}
 	if ok && !seen.IsZero() {
-		r.t.Logf("%s: output after %s, mirror answer after %s, on screen by %s, %d toggled cells", p.name, p.lat, ans.Sub(p.at), seen.Sub(p.at), len(toggled))
+		r.t.Logf("%s: output after %s, mirror answer after %s, on screen by %s of a %s limit, %d toggled cells", p.name, p.lat, ans.Sub(p.at), seen.Sub(p.at), screenLimit, len(toggled))
 	}
 }
 
@@ -549,7 +579,7 @@ func (g graphic) transmits() bool {
 // Sixel device control strings, DCS with numeric parameters and the q final
 var sixelStart = regexp.MustCompile(`\x1bP[0-9;]*q`)
 
-// Opens the arena in konsole and asserts every d keystroke is answered on screen within 300ms
+// Opens the arena in konsole and asserts every d keystroke shows on screen within 300ms stretched by the load
 func TestKonsoleResponsive(t *testing.T) {
 	r := newRig(t, Konsole, konsoleScreen, map[string]string{})
 	r.waitBar()
@@ -578,7 +608,7 @@ func TestKonsoleArenaGlyphs(t *testing.T) {
 	r.check(!bytes.Contains(out, []byte("\x1b]1337;File=")), "iterm", nil, "iTerm2 images went out")
 }
 
-// Asserts the image display streams direct kitty frames konsole draws while d stays answered within 300ms
+// Asserts the image display streams direct kitty frames konsole draws while d stays answered within the load's limits
 func TestKonsoleArenaImage(t *testing.T) {
 	r := newRig(t, Konsole, konsoleScreen, map[string]string{"arena.display": "image"})
 	r.waitBar()
@@ -657,8 +687,8 @@ func TestXtermSixel(t *testing.T) {
 
 // Drives the probe program in konsole to check input, latency, calibration, screenshots and resize forwarding
 func TestKonsoleRig(t *testing.T) {
-	if err := Missing("Xvfb", "import", "konsole"); err != nil {
-		t.Skipf("termlab needs Xvfb, import and konsole: %v", err)
+	if err := Missing("Xvfb", "konsole"); err != nil {
+		t.Skipf("termlab needs Xvfb and konsole: %v", err)
 	}
 	self, err := os.Executable()
 	if err != nil {

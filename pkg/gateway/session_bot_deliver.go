@@ -5,7 +5,6 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
-	"log/slog"
 	"maps"
 	"math/big"
 	"path/filepath"
@@ -75,7 +74,7 @@ func botWarnMalformed(path, problem string) {
 	if problem == "" {
 		problem = "None"
 	}
-	slog.Warn(fmt.Sprintf("Skipping malformed Bot mailbox receipt %s (%s)", path, problem))
+	pkgLog().Warn(fmt.Sprintf("Skipping malformed Bot mailbox receipt %s (%s)", path, problem))
 }
 
 // Owner bulk scan withdrawing or requeueing stale pins, with the FIFO barrier of unresolved legacy pins
@@ -129,7 +128,7 @@ func botScanOwnerReceipts(ctx context.Context, a *SessionAuthority, home string)
 		if legacy {
 			verb = "Requeued"
 		}
-		slog.Info(fmt.Sprintf("%s Bot delivery %s pre-admission pin (age %ds): nothing was admitted", verb, key, int64(age)))
+		pkgLog().Info(fmt.Sprintf("%s Bot delivery %s pre-admission pin (age %ds): nothing was admitted", verb, key, int64(age)))
 	}
 	return root, records, barrier, nil
 }
@@ -279,7 +278,7 @@ func recoverBotDeliveries(ctx context.Context, a *SessionAuthority) error {
 			err := botRecoverReceipt(ctx, a, homeDir, record)
 			var refusal *state.RuntimeStoreError
 			if errors.As(err, &refusal) {
-				slog.Error(fmt.Sprintf("Bot delivery %s not recovered: %s (%s)", pyrepr.Str(record["delivery_id"]), refusal.Reason, item.Path), "error", err)
+				pkgLog().Error(fmt.Sprintf("Bot delivery %s not recovered: %s (%s)", pyrepr.Str(record["delivery_id"]), refusal.Reason, item.Path), "error", err)
 				continue
 			}
 			if err != nil {
@@ -608,7 +607,7 @@ func botSettleLocked(ctx context.Context, a *SessionAuthority, actor Principal, 
 			if _, err := writeReceipt(ctx, req.home, record, nil); err != nil {
 				return err
 			}
-			slog.Info(fmt.Sprintf("Bot Chat delivery %s settled as not sent (%s)", req.key, pyrepr.Str(record["reason"])))
+			pkgLog().Info(fmt.Sprintf("Bot Chat delivery %s settled as not sent (%s)", req.key, pyrepr.Str(record["reason"])))
 		}
 		if err := requireSameDelivery(record, actor, req.message, req.author, req.category); err != nil {
 			return err
@@ -773,7 +772,7 @@ func botAdmit(ctx context.Context, a *SessionAuthority, actor Principal, home, k
 				}
 			}
 		} else {
-			slog.Info(fmt.Sprintf("Bot Chat delivery %s refused (%s)", key, refusal.Reason))
+			pkgLog().Info(fmt.Sprintf("Bot Chat delivery %s refused (%s)", key, refusal.Reason))
 			if rerr := refusePin(ctx, home, key); rerr != nil {
 				return nil, rerr
 			}

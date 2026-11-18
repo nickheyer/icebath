@@ -65,7 +65,7 @@ const tenorReq = "required_environment_variables:\n  - name: TENOR_API_KEY\n    
 
 func TestSkillViewResolvesByDirNameAndFrontmatterName(t *testing.T) {
 	s, skills, _ := viewScope(t)
-	makeCmdSkill(t, skills, "my-skill", "metadata:\n  hermes:\n    tags: [fine-tuning, llm]\n", "Step 1: Do the thing.", "")
+	makeCmdSkill(t, skills, "my-skill", "metadata:\n  icebath:\n    tags: [fine-tuning, llm]\n", "Step 1: Do the thing.", "")
 	alias := filepath.Join(skills, "alias-dir")
 	os.MkdirAll(alias, 0o755)
 	os.WriteFile(filepath.Join(alias, "SKILL.md"), []byte("---\nname: real-skill-name\ndescription: A skill whose directory name differs from its name.\n---\n\n# real-skill-name\n\nStep 1: Do the thing.\n"), 0o644)
@@ -308,7 +308,7 @@ func TestRemoteBackendAvailableAfterLocalSecretCapture(t *testing.T) {
 
 func TestLegacyFlatMarkdownSkillPreservesFrontmatterMetadata(t *testing.T) {
 	s, skills, _ := viewScope(t)
-	os.WriteFile(filepath.Join(skills, "legacy-skill.md"), []byte("---\nname: legacy-flat\ndescription: Legacy flat skill.\nmetadata:\n  hermes:\n    tags: [legacy, flat]\nrequired_environment_variables:\n  - name: LEGACY_KEY\n    prompt: Legacy key\n---\n\n# Legacy Flat\n\nDo the legacy thing.\n"), 0o644)
+	os.WriteFile(filepath.Join(skills, "legacy-skill.md"), []byte("---\nname: legacy-flat\ndescription: Legacy flat skill.\nmetadata:\n  icebath:\n    tags: [legacy, flat]\nrequired_environment_variables:\n  - name: LEGACY_KEY\n    prompt: Legacy key\n---\n\n# Legacy Flat\n\nDo the legacy thing.\n"), 0o644)
 	r := viewJSON(t, s, "legacy-skill", "")
 	if r["success"] != true || r["name"] != "legacy-flat" || r["description"] != "Legacy flat skill." || !reflect.DeepEqual(r["tags"], []any{"legacy", "flat"}) {
 		t.Fatalf("result %v", r)

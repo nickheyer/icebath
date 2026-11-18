@@ -45,7 +45,7 @@ func writePortableCostPackage(t *testing.T, root string, decl map[string]any) {
 		t.Fatal(err)
 	}
 	write("plugin.json", map[string]any{"$schema": plugins.PluginSchemaV1, "name": "pkg",
-		"extensions": map[string]any{"com.nousresearch.hermes": map[string]any{"servers": map[string]any{"srv": decl}}}})
+		"extensions": map[string]any{"app.icebath": map[string]any{"servers": map[string]any{"srv": decl}}}})
 	write("mcp.json", map[string]any{"$schema": plugins.MCPSchemaV1,
 		"mcpServers": map[string]any{"srv": map[string]any{"type": "stdio", "command": "python3", "args": []any{"s.py"}}}})
 }

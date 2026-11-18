@@ -79,13 +79,13 @@ func shrinkDataURL(value any, maxDimension int) (resized string, unshrinkable bo
 	}
 	defer func() {
 		if r := recover(); r != nil {
-			compressionLog().Warn(fmt.Sprintf("image-shrink recovery: re-encode failed — %v", r))
+			pkgLog().Warn(fmt.Sprintf("image-shrink recovery: re-encode failed — %v", r))
 			resized, unshrinkable = "", true
 		}
 	}()
 	out, err := reencodeDataURL(url, maxDimension)
 	if err != nil {
-		compressionLog().Warn(fmt.Sprintf("image-shrink recovery: re-encode failed — %v", err))
+		pkgLog().Warn(fmt.Sprintf("image-shrink recovery: re-encode failed — %v", err))
 		return "", true
 	}
 	if out == "" {
@@ -266,10 +266,10 @@ func tryShrinkImagePartsInMessages(apiMessages any, maxDimension int) bool {
 	}
 	targetMB := float64(imageShrinkTargetBytes) / (1024 * 1024)
 	if changedCount > 0 {
-		compressionLog().Info(fmt.Sprintf("image-shrink recovery: re-encoded %d image part(s) to fit under %.0f MB", changedCount, targetMB))
+		pkgLog().Info(fmt.Sprintf("image-shrink recovery: re-encoded %d image part(s) to fit under %.0f MB", changedCount, targetMB))
 	}
 	if unshrinkableOversized > 0 {
-		compressionLog().Warn(fmt.Sprintf("image-shrink recovery: %d oversized image part(s) could not be shrunk under %.0f MB — not retrying (would re-send rejected payload)", unshrinkableOversized, targetMB))
+		pkgLog().Warn(fmt.Sprintf("image-shrink recovery: %d oversized image part(s) could not be shrunk under %.0f MB — not retrying (would re-send rejected payload)", unshrinkableOversized, targetMB))
 		return false
 	}
 	return changedCount > 0

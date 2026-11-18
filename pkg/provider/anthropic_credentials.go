@@ -26,6 +26,7 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/home"
+	"github.com/nickheyer/icebath/pkg/internal/pyhttpx"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/internal/pyurl"
@@ -149,8 +150,8 @@ func SpentRotationSourcePath(env PoolEnv, source string) string {
 	switch source {
 	case "claude_code":
 		return ClaudeCodeCredentialsPath()
-	case "hermes_pkce":
-		return HermesOAuthFile(env)
+	case IcebathPKCESource:
+		return IcebathOAuthFile(env)
 	}
 	return ""
 }
@@ -581,7 +582,7 @@ func RefreshAnthropicOAuthPure(env PoolEnv, refreshToken string, useJSON bool) (
 	return oauthTokenState(result, refreshToken), nil
 }
 
-// Claude Code credential read, pure OAuth refresh and credential write, swapped by tests the way hermes tests patch them
+// Claude Code credential read, pure OAuth refresh and credential write, swapped by tests
 var (
 	readClaudeCodeCredentialsFn  = ReadClaudeCodeCredentials
 	refreshAnthropicOAuthPureFn  = RefreshAnthropicOAuthPure
@@ -873,13 +874,13 @@ func claudeSetupTokenResult(env PoolEnv) string {
 	return ""
 }
 
-// HermesOAuthFile is the icebath owned Anthropic PKCE credential file of the home
-func HermesOAuthFile(env PoolEnv) string {
+// The icebath owned Anthropic PKCE credential file of the home
+func IcebathOAuthFile(env PoolEnv) string {
 	return filepath.Join(env.Store.Home(), ".anthropic_oauth.json")
 }
 
-// RootHermesOAuthFile is the global root PKCE file inside a named profile, empty in classic mode
-func RootHermesOAuthFile(env PoolEnv) string {
+// The global root PKCE file inside a named profile, empty in classic mode
+func RootIcebathOAuthFile(env PoolEnv) string {
 	root := home.RootOf(env.Store.Home())
 	if samePath(root, env.Store.Home()) {
 		return ""
@@ -895,8 +896,8 @@ func generatePKCE() (string, string) {
 	return verifier, base64.RawURLEncoding.EncodeToString(sum[:])
 }
 
-// RunHermesOAuthLoginPure runs the icebath native PKCE flow and returns the credential state
-func RunHermesOAuthLoginPure(env PoolEnv, prompt func(label string) (string, bool)) map[string]any {
+// Runs the icebath native PKCE flow and returns the credential state
+func RunIcebathOAuthLoginPure(env PoolEnv, prompt func(label string) (string, bool)) map[string]any {
 	verifier, challenge := generatePKCE()
 	var stateRaw [32]byte
 	fillRandom(stateRaw[:])
@@ -938,13 +939,13 @@ func RunHermesOAuthLoginPure(env PoolEnv, prompt func(label string) (string, boo
 		env.log().Warn("OAuth state mismatch — possible CSRF, aborting")
 		return nil
 	}
-	exchangeText, err := pyjson.Dumps(pyjson.ObjectOf("grant_type", "authorization_code", "client_id", anthropicOAuthClientID,
+	exchangeBody, err := pyhttpx.JSONBody(pyjson.ObjectOf("grant_type", "authorization_code", "client_id", anthropicOAuthClientID,
 		"code", code, "state", receivedState, "redirect_uri", anthropicOAuthRedirectURI, "code_verifier", verifier))
 	if err != nil {
 		fmt.Printf("Token exchange failed: %v\n", err)
 		return nil
 	}
-	result, err := postAnthropicOAuthToken(env, []byte(exchangeText), "application/json", 15*time.Second, "exchange", anthropicOAuthTokenUserAgent)
+	result, err := postAnthropicOAuthToken(env, exchangeBody, "application/json", 15*time.Second, "exchange", anthropicOAuthTokenUserAgent)
 	if err != nil {
 		fmt.Printf("Token exchange failed: %v\n", err)
 		return nil
@@ -956,19 +957,19 @@ func RunHermesOAuthLoginPure(env PoolEnv, prompt func(label string) (string, boo
 	return oauthTokenState(result, "")
 }
 
-// ReadHermesOAuthCredentials reads the icebath managed PKCE credentials of the home
-func ReadHermesOAuthCredentials(env PoolEnv) map[string]any {
-	data := loadJSONIfExists(env, HermesOAuthFile(env), "Icebath OAuth credentials")
+// Reads the icebath managed PKCE credentials of the home
+func ReadIcebathOAuthCredentials(env PoolEnv) map[string]any {
+	data := loadJSONIfExists(env, IcebathOAuthFile(env), "Icebath OAuth credentials")
 	if data == nil || anyString(data["accessToken"]) == "" {
 		return nil
 	}
 	return data
 }
 
-// WriteHermesOAuthCredentials commits refreshed PKCE tokens to the home file or the borrowed root target
-func WriteHermesOAuthCredentials(env PoolEnv, accessToken, refreshToken string, expiresAtMS int64, target string) error {
+// Commits refreshed PKCE tokens to the home file or the borrowed root target
+func WriteIcebathOAuthCredentials(env PoolEnv, accessToken, refreshToken string, expiresAtMS int64, target string) error {
 	if target == "" {
-		target = HermesOAuthFile(env)
+		target = IcebathOAuthFile(env)
 	}
 	return commitPrivateJSON(env, target, map[string]any{"accessToken": accessToken, "refreshToken": refreshToken, "expiresAt": expiresAtMS}, "Icebath OAuth credentials")
 }

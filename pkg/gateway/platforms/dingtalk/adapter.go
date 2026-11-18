@@ -298,7 +298,7 @@ func (a *DingTalkAdapter) supportsMessageEditing() bool {
 // Connects through Stream Mode, starting the stream task and the card and robot clients
 func (a *DingTalkAdapter) Connect(ctx context.Context, isReconnect bool) (bool, error) {
 	if !pyrepr.Truthy(a.clientID) || !pyrepr.Truthy(a.clientSecret) {
-		slog.Warn(fmt.Sprintf("[%s] DINGTALK_CLIENT_ID and DINGTALK_CLIENT_SECRET required", a.Name()))
+		pkgLog().Warn(fmt.Sprintf("[%s] DINGTALK_CLIENT_ID and DINGTALK_CLIENT_SECRET required", a.Name()))
 		return false, nil
 	}
 	client := newStreamClient(a.clientID, a.clientSecret)
@@ -311,9 +311,9 @@ func (a *DingTalkAdapter) Connect(ctx context.Context, isReconnect bool) (bool, 
 	a.robotSDK = newOpenAPIClient()
 	a.mu.Unlock()
 	if pyrepr.Truthy(a.cardTemplateID) {
-		slog.Info(fmt.Sprintf("[%s] Card SDK initialized with template: %s", a.Name(), pyrepr.Str(a.cardTemplateID)))
+		pkgLog().Info(fmt.Sprintf("[%s] Card SDK initialized with template: %s", a.Name(), pyrepr.Str(a.cardTemplateID)))
 	} else {
-		slog.Info(fmt.Sprintf("[%s] Robot SDK initialized (media download)", a.Name()))
+		pkgLog().Info(fmt.Sprintf("[%s] Robot SDK initialized (media download)", a.Name()))
 	}
 	editing := a.supportsMessageEditing()
 	a.Traits.SupportsMessageEditing, a.Traits.RequiresEditFinalize = editing, editing
@@ -323,7 +323,7 @@ func (a *DingTalkAdapter) Connect(ctx context.Context, isReconnect bool) (bool, 
 	a.mu.Lock()
 	a.streamTask = task
 	a.mu.Unlock()
-	slog.Info(fmt.Sprintf("[%s] Connected via Stream Mode", a.Name()))
+	pkgLog().Info(fmt.Sprintf("[%s] Connected via Stream Mode", a.Name()))
 	a.WirePluginHandlers(ctx, client)
 	return true, nil
 }
@@ -349,7 +349,7 @@ func (a *DingTalkAdapter) runStreamLoop(ctx context.Context, client *streamClien
 	backoffIdx, consecutiveSameError := 0, 0
 	lastErrorType := ""
 	for a.IsConnected() {
-		slog.Debug(fmt.Sprintf("[%s] Starting stream client...", a.Name()))
+		pkgLog().Debug(fmt.Sprintf("[%s] Starting stream client...", a.Name()))
 		err := client.start(ctx)
 		if ctx.Err() != nil {
 			if code := a.FatalErrorCode(); code != nil && *code == "dingtalk_stream_error" {
@@ -372,9 +372,9 @@ func (a *DingTalkAdapter) runStreamLoop(ctx context.Context, client *streamClien
 				consecutiveSameError, lastErrorType = 1, errorType
 			}
 			if consecutiveSameError <= reconnectCircuitBreakerTrips {
-				slog.Warn(fmt.Sprintf("[%s] Stream client error: %s", a.Name(), pyrepr.ExceptionMessage(err)))
+				pkgLog().Warn(fmt.Sprintf("[%s] Stream client error: %s", a.Name(), pyrepr.ExceptionMessage(err)))
 			} else if consecutiveSameError == reconnectCircuitBreakerTrips+1 {
-				slog.Error(fmt.Sprintf("[%s] Stream client error repeated %d times: %s — circuit breaker tripped; "+
+				pkgLog().Error(fmt.Sprintf("[%s] Stream client error repeated %d times: %s — circuit breaker tripped; "+
 					"retrying every %ds silently until the error changes.", a.Name(), consecutiveSameError, pyrepr.ExceptionMessage(err),
 					reconnectCircuitBreakerDelay))
 			}
@@ -388,7 +388,7 @@ func (a *DingTalkAdapter) runStreamLoop(ctx context.Context, client *streamClien
 			}
 		} else {
 			delay := reconnectBackoff[min(backoffIdx, len(reconnectBackoff)-1)]
-			slog.Info(fmt.Sprintf("[%s] Reconnecting in %ds...", a.Name(), delay))
+			pkgLog().Info(fmt.Sprintf("[%s] Reconnecting in %ds...", a.Name(), delay))
 			if err := sleepSeconds(ctx, float64(delay)); err != nil {
 				return err
 			}
@@ -409,7 +409,7 @@ func (a *DingTalkAdapter) onSDKError(ctx context.Context, exc error, cancel bool
 	msg := fmt.Sprintf("dingtalk-stream cannot open its websocket with the installed websockets package (%s). "+
 		"Icebath pins dingtalk-stream==0.24.3 with websockets==15.0.1; reinstall the dingtalk extra "+
 		"so those versions are used (e.g. `pip install 'icebath-agent[dingtalk]'`).", pyrepr.ExceptionMessage(exc))
-	slog.Error(fmt.Sprintf("[%s] %s", a.Name(), msg))
+	pkgLog().Error(fmt.Sprintf("[%s] %s", a.Name(), msg))
 	a.SetFatalError(ctx, "dingtalk_stream_error", msg, false)
 	a.mu.Lock()
 	task := a.sdkLoopTask
@@ -422,7 +422,7 @@ func (a *DingTalkAdapter) onSDKError(ctx context.Context, exc error, cancel bool
 // Runs fn and swallows its failure, logging it at debug under the format when one is given
 func (a *DingTalkAdapter) quiet(fn func() error, debugFmt string, args ...any) {
 	if err := fn(); err != nil && debugFmt != "" {
-		slog.Debug(fmt.Sprintf(debugFmt, append(append([]any{a.Name()}, args...), pyrepr.ExceptionMessage(err))...))
+		pkgLog().Debug(fmt.Sprintf(debugFmt, append(append([]any{a.Name()}, args...), pyrepr.ExceptionMessage(err))...))
 	}
 }
 
@@ -442,7 +442,7 @@ func (a *DingTalkAdapter) Disconnect(ctx context.Context) error {
 		streamTask.Cancel()
 		wctx, cancel := context.WithTimeout(ctx, 5*time.Second)
 		if err := streamTask.Wait(wctx); err != nil {
-			slog.Debug(fmt.Sprintf("[%s] stream task did not exit cleanly during disconnect", a.Name()))
+			pkgLog().Debug(fmt.Sprintf("[%s] stream task did not exit cleanly during disconnect", a.Name()))
 		}
 		cancel()
 		a.mu.Lock()
@@ -484,7 +484,7 @@ func (a *DingTalkAdapter) Disconnect(ctx context.Context) error {
 		httpClient.CloseIdleConnections()
 	}
 	a.dedup.Clear()
-	slog.Info(fmt.Sprintf("[%s] Disconnected", a.Name()))
+	pkgLog().Info(fmt.Sprintf("[%s] Disconnected", a.Name()))
 	return nil
 }
 
@@ -663,10 +663,10 @@ func (a *DingTalkAdapter) closeStreamingSiblings(ctx context.Context, chatID str
 			if ctx.Err() != nil {
 				return ctx.Err()
 			}
-			slog.Debug(fmt.Sprintf("[%s] Sibling close failed for %s: %s", a.Name(), outTrackID, pyrepr.ExceptionMessage(err)))
+			pkgLog().Debug(fmt.Sprintf("[%s] Sibling close failed for %s: %s", a.Name(), outTrackID, pyrepr.ExceptionMessage(err)))
 			continue
 		}
-		slog.Debug(fmt.Sprintf("[%s] AI Card sibling closed: %s", a.Name(), outTrackID))
+		pkgLog().Debug(fmt.Sprintf("[%s] AI Card sibling closed: %s", a.Name(), outTrackID))
 	}
 	return nil
 }
@@ -705,7 +705,7 @@ func (a *DingTalkAdapter) onMessage(ctx context.Context, message *IncomingMessag
 		msgID = uuidHex()
 	}
 	if a.dedup.IsDuplicate(msgID) {
-		slog.Debug(fmt.Sprintf("[%s] Duplicate message %s, skipping", a.Name(), msgID))
+		pkgLog().Debug(fmt.Sprintf("[%s] Duplicate message %s, skipping", a.Name(), msgID))
 		return nil
 	}
 	conversationID, senderID := orEmpty(message.ConversationID), orEmpty(message.SenderID)
@@ -724,7 +724,7 @@ func (a *DingTalkAdapter) onMessage(ctx context.Context, message *IncomingMessag
 		return err
 	}
 	if !allowed {
-		slog.Debug(fmt.Sprintf("[%s] Dropping message from non-allowlisted user staff_id=%s sender_id=%s", a.Name(),
+		pkgLog().Debug(fmt.Sprintf("[%s] Dropping message from non-allowlisted user staff_id=%s sender_id=%s", a.Name(),
 			pyrepr.Str(senderStaffID), pyrepr.Str(senderID)))
 		return nil
 	}
@@ -737,7 +737,7 @@ func (a *DingTalkAdapter) onMessage(ctx context.Context, message *IncomingMessag
 		return err
 	}
 	if !process {
-		slog.Debug(fmt.Sprintf("[%s] Dropping group message that failed mention gate message_id=%s chat_id=%s", a.Name(), msgID, chatID))
+		pkgLog().Debug(fmt.Sprintf("[%s] Dropping group message that failed mention gate message_id=%s chat_id=%s", a.Name(), msgID, chatID))
 		return nil
 	}
 	if chatID != "" {
@@ -780,7 +780,7 @@ func (a *DingTalkAdapter) onMessage(ctx context.Context, message *IncomingMessag
 		return err
 	}
 	if text == "" && len(mediaURLs) == 0 {
-		slog.Debug(fmt.Sprintf("[%s] Empty message, skipping", a.Name()))
+		pkgLog().Debug(fmt.Sprintf("[%s] Empty message, skipping", a.Name()))
 		return nil
 	}
 	fields := gateway.SourceFields{ChatType: "dm"}
@@ -815,7 +815,7 @@ func (a *DingTalkAdapter) onMessage(ctx context.Context, message *IncomingMessag
 	if text != "" {
 		preview = pystr.Slice(text, 0, 80)
 	}
-	slog.Debug(fmt.Sprintf("[%s] Message from %s in %s: %s", a.Name(), userName, where, preview))
+	pkgLog().Debug(fmt.Sprintf("[%s] Message from %s in %s: %s", a.Name(), userName, where, preview))
 	event := gateway.NewMessageEvent(text)
 	event.MessageType, event.Source, event.RawMessage = msgType, source, message
 	event.MessageID = &msgID
@@ -840,7 +840,7 @@ func (a *DingTalkAdapter) Send(ctx context.Context, chatID, content, replyTo str
 	currentMessage := a.messageContexts[chatID]
 	a.mu.Unlock()
 	cardEnabled := pyrepr.Truthy(a.cardTemplateID) && cardSDK != nil
-	slog.Debug(fmt.Sprintf("[%s] send() chat_id=%s card_enabled=%s", a.Name(), chatID, pyrepr.Str(cardEnabled)))
+	pkgLog().Debug(fmt.Sprintf("[%s] send() chat_id=%s card_enabled=%s", a.Name(), chatID, pyrepr.Str(cardEnabled)))
 	webhookValue := metadata["session_webhook"]
 	if !pyrepr.Truthy(webhookValue) {
 		webhookValue = ""
@@ -849,7 +849,7 @@ func (a *DingTalkAdapter) Send(ctx context.Context, chatID, content, replyTo str
 		}
 	}
 	if !pyrepr.Truthy(webhookValue) {
-		slog.Warn(fmt.Sprintf("[%s] No valid session_webhook for chat_id=%s", a.Name(), chatID))
+		pkgLog().Warn(fmt.Sprintf("[%s] No valid session_webhook for chat_id=%s", a.Name(), chatID))
 		return gateway.SendResult{Success: false, Error: "No valid session_webhook available. Reply must follow an incoming message."}, nil
 	}
 	if httpClient == nil {
@@ -879,9 +879,9 @@ func (a *DingTalkAdapter) Send(ctx context.Context, chatID, content, replyTo str
 			}
 			return *result, nil
 		}
-		slog.Warn(fmt.Sprintf("[%s] AI Card send failed, falling back to webhook", a.Name()))
+		pkgLog().Warn(fmt.Sprintf("[%s] AI Card send failed, falling back to webhook", a.Name()))
 	}
-	slog.Debug(fmt.Sprintf("[%s] Sending via webhook", a.Name()))
+	pkgLog().Debug(fmt.Sprintf("[%s] Sending via webhook", a.Name()))
 	payload := pyjson.ObjectOf("msgtype", "markdown", "markdown", pyjson.ObjectOf("title", "Icebath",
 		"text", normalizeMarkdown(pystr.Slice(content, 0, maxMessageLength))))
 	resp, err := postJSON(ctx, httpClient, pyrepr.Str(webhookValue), payload, 15*time.Second)
@@ -894,7 +894,7 @@ func (a *DingTalkAdapter) Send(ctx context.Context, chatID, content, replyTo str
 			return gateway.SendResult{Success: false, Error: "Timeout sending message to DingTalk"}, nil
 		}
 		text := pyhttpx.ErrorText(err)
-		slog.Error(fmt.Sprintf("[%s] Send error: %s", a.Name(), text))
+		pkgLog().Error(fmt.Sprintf("[%s] Send error: %s", a.Name(), text))
 		return gateway.SendResult{Success: false, Error: text}, nil
 	}
 	if resp.StatusCode < 300 {
@@ -904,7 +904,7 @@ func (a *DingTalkAdapter) Send(ctx context.Context, chatID, content, replyTo str
 		return gateway.SendResult{Success: true, MessageID: uuidHex()[:12]}, nil
 	}
 	body := pystr.Slice(resp.Text(), 0, 200)
-	slog.Warn(fmt.Sprintf("[%s] Send failed HTTP %d: %s", a.Name(), resp.StatusCode, body))
+	pkgLog().Warn(fmt.Sprintf("[%s] Send failed HTTP %d: %s", a.Name(), resp.StatusCode, body))
 	return gateway.SendResult{Success: false, Error: fmt.Sprintf("HTTP %d: %s", resp.StatusCode, body)}, nil
 }
 
@@ -997,7 +997,7 @@ func (a *DingTalkAdapter) createAndStreamCard(ctx context.Context, chatID string
 			openSpaceID = "dtv1.card//IM_ROBOT." + pyrepr.Str(senderStaffID)
 			deliverKey, deliverModel = "imRobotOpenDeliverModel", pyjson.ObjectOf("spaceType", "IM_ROBOT")
 		default:
-			slog.Warn(fmt.Sprintf("[%s] AI Card skipped: missing sender_staff_id for DM", a.Name()))
+			pkgLog().Warn(fmt.Sprintf("[%s] AI Card skipped: missing sender_staff_id for DM", a.Name()))
 			return nil, nil
 		}
 		if err := cardSDK.deliverCard(ctx, token, outTrackID, openSpaceID, deliverKey, deliverModel); err != nil {
@@ -1010,14 +1010,14 @@ func (a *DingTalkAdapter) createAndStreamCard(ctx context.Context, chatID string
 		if finalize {
 			state = "created+finalized"
 		}
-		slog.Info(fmt.Sprintf("[%s] AI Card %s: %s", a.Name(), state, outTrackID))
+		pkgLog().Info(fmt.Sprintf("[%s] AI Card %s: %s", a.Name(), state, outTrackID))
 		return &gateway.SendResult{Success: true, MessageID: outTrackID}, nil
 	}()
 	if err != nil {
 		if ctx.Err() != nil {
 			return nil, ctx.Err()
 		}
-		slog.Warn(fmt.Sprintf("[%s] AI Card create failed: %s\n%s", a.Name(), pyrepr.ExceptionMessage(err), debug.Stack()))
+		pkgLog().Warn(fmt.Sprintf("[%s] AI Card create failed: %s\n%s", a.Name(), pyrepr.ExceptionMessage(err), debug.Stack()))
 		return nil, nil
 	}
 	return result, nil
@@ -1045,7 +1045,7 @@ func (a *DingTalkAdapter) EditMessage(ctx context.Context, chatID, messageID, co
 		if ctx.Err() != nil {
 			return gateway.SendResult{}, ctx.Err()
 		}
-		slog.Warn(fmt.Sprintf("[%s] Card edit failed: %s", a.Name(), pyrepr.ExceptionMessage(err)))
+		pkgLog().Warn(fmt.Sprintf("[%s] Card edit failed: %s", a.Name(), pyrepr.ExceptionMessage(err)))
 		return gateway.SendResult{Success: false, Error: pyrepr.ExceptionMessage(err)}, nil
 	}
 	if finalize {
@@ -1057,7 +1057,7 @@ func (a *DingTalkAdapter) EditMessage(ctx context.Context, chatID, messageID, co
 			}
 		}
 		a.mu.Unlock()
-		slog.Debug(fmt.Sprintf("[%s] AI Card finalized (edit): %s", a.Name(), messageID))
+		pkgLog().Debug(fmt.Sprintf("[%s] AI Card finalized (edit): %s", a.Name(), messageID))
 		a.fireDoneReaction(ctx, chatID)
 	} else {
 		a.mu.Lock()
@@ -1096,7 +1096,7 @@ func (a *DingTalkAdapter) getAccessToken(ctx context.Context) (any, error) {
 		if ctx.Err() != nil {
 			return nil, ctx.Err()
 		}
-		slog.Error(fmt.Sprintf("[%s] Failed to get access token: %s", a.Name(), pyrepr.ExceptionMessage(err)))
+		pkgLog().Error(fmt.Sprintf("[%s] Failed to get access token: %s", a.Name(), pyrepr.ExceptionMessage(err)))
 		return nil, nil
 	}
 	return token, nil
@@ -1118,14 +1118,14 @@ func (a *DingTalkAdapter) sendEmotion(ctx context.Context, openMsgID, openConver
 	if err == nil && pyrepr.Truthy(token) {
 		err = robotSDK.robotEmotion(ctx, token, recall, a.robotCode, openMsgID, openConversationID, emojiName)
 		if err == nil {
-			slog.Info(fmt.Sprintf("[%s] _send_emotion: %s %s on msg=%s", a.Name(), action, emojiName, pystr.Slice(openMsgID, 0, 24)))
+			pkgLog().Info(fmt.Sprintf("[%s] _send_emotion: %s %s on msg=%s", a.Name(), action, emojiName, pystr.Slice(openMsgID, 0, 24)))
 		}
 	}
 	if err != nil {
 		if ctx.Err() != nil {
 			return ctx.Err()
 		}
-		slog.Debug(fmt.Sprintf("[%s] _send_emotion %s failed", a.Name(), action), "error", err)
+		pkgLog().Debug(fmt.Sprintf("[%s] _send_emotion %s failed", a.Name(), action), "error", err)
 	}
 	return nil
 }
@@ -1171,16 +1171,16 @@ func (a *DingTalkAdapter) fetchDownloadURL(ctx context.Context, code, robotCode,
 	robotSDK := a.robotSDK
 	a.mu.Unlock()
 	if robotSDK == nil {
-		slog.Warn(fmt.Sprintf("[%s] Robot SDK not initialized, cannot resolve media code", a.Name()))
+		pkgLog().Warn(fmt.Sprintf("[%s] Robot SDK not initialized, cannot resolve media code", a.Name()))
 		return
 	}
 	body, err := robotSDK.robotMessageFileDownload(ctx, token, code, robotCode)
 	if err != nil {
-		slog.Error(fmt.Sprintf("[%s] Error resolving media code %s: %s", a.Name(), pyrepr.Str(code), pyrepr.ExceptionMessage(err)))
+		pkgLog().Error(fmt.Sprintf("[%s] Error resolving media code %s: %s", a.Name(), pyrepr.Str(code), pyrepr.ExceptionMessage(err)))
 		return
 	}
 	if body == nil || body.Len() == 0 {
-		slog.Warn(fmt.Sprintf("[%s] Failed to download media: empty response for code %s", a.Name(), pyrepr.Str(code)))
+		pkgLog().Warn(fmt.Sprintf("[%s] Failed to download media: empty response for code %s", a.Name(), pyrepr.Str(code)))
 		return
 	}
 	url, _ := body.Get("downloadUrl")
@@ -1234,7 +1234,7 @@ func (h *incomingHandler) preStart() {}
 func (h *incomingHandler) process(ctx context.Context, message *streamMessage) (int, string) {
 	chatbotMsg, err := h.prepare(ctx, message)
 	if err != nil {
-		slog.Error(fmt.Sprintf("[%s] Error preparing incoming message", h.adapter.Name()), "error", err)
+		pkgLog().Error(fmt.Sprintf("[%s] Error preparing incoming message", h.adapter.Name()), "error", err)
 		return ackStatusSystemError, "error"
 	}
 	gateway.SpawnAdapterTask(ctx, func(tctx context.Context) error {
@@ -1285,6 +1285,6 @@ func (h *incomingHandler) prepare(ctx context.Context, message *streamMessage) (
 // Processes one message, a failure logged with its error
 func (h *incomingHandler) safeOnMessage(ctx context.Context, chatbotMsg *IncomingMessage) {
 	if err := h.adapter.onMessage(ctx, chatbotMsg); err != nil {
-		slog.Error(fmt.Sprintf("[%s] Error processing incoming message", h.adapter.Name()), "error", err)
+		pkgLog().Error(fmt.Sprintf("[%s] Error processing incoming message", h.adapter.Name()), "error", err)
 	}
 }

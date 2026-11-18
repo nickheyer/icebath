@@ -7,7 +7,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"log/slog"
 	"net"
 	"net/http"
 	"os"
@@ -124,7 +123,7 @@ var _ gateway.PlatformAdapter = (*WhatsAppAdapter)(nil)
 
 // Absolute session directory, the one string bridge.pid and every health session comparison share
 func sessionDir(ctx context.Context, extra map[string]any) string {
-	raw := home.HermesDir(home.Dir(ctx), "platforms/whatsapp/session", "whatsapp/session")
+	raw := home.IcebathDir(home.Dir(ctx), "platforms/whatsapp/session", "whatsapp/session")
 	if v, ok := extra["session_path"]; ok {
 		raw = pyrepr.Str(v)
 	}
@@ -161,7 +160,7 @@ func NewWhatsAppAdapter(ctx context.Context, config *gateway.PlatformConfig) (*W
 	a.profileHome = home.Dir(ctx)
 	port, err := StandaloneBridgePort(a.profileHome, extra["bridge_port"])
 	if err != nil {
-		slog.Warn(fmt.Sprintf("[whatsapp] %s; using port 3000", err.Error()))
+		pkgLog().Warn(fmt.Sprintf("[whatsapp] %s; using port 3000", err.Error()))
 		port = 3000
 	}
 	a.bridgePort = port
@@ -513,12 +512,12 @@ func (a *WhatsAppAdapter) preflight(ctx context.Context) bool {
 	}
 	for _, c := range checks {
 		if _, err := os.Stat(c.path); err != nil {
-			slog.Warn(c.warn)
+			pkgLog().Warn(c.warn)
 			a.SetFatalError(ctx, c.code, c.message, false)
 			return false
 		}
 	}
-	slog.Info(fmt.Sprintf("[%s] Bridge found at %s", a.Name(), a.bridgeScript))
+	pkgLog().Info(fmt.Sprintf("[%s] Bridge found at %s", a.Name(), a.bridgeScript))
 	return true
 }
 
@@ -547,7 +546,7 @@ func (a *WhatsAppAdapter) Connect(ctx context.Context, isReconnect bool) (ok boo
 	bridgePath := a.bridgeScript
 	lockAcquired := false
 	if acquired, err := a.AcquirePlatformLock(ctx, "whatsapp-session", a.sessionPath, "WhatsApp session"); err != nil {
-		slog.Warn(fmt.Sprintf("[%s] Could not acquire session lock (non-fatal): %s", a.Name(), err.Error()))
+		pkgLog().Warn(fmt.Sprintf("[%s] Could not acquire session lock (non-fatal): %s", a.Name(), err.Error()))
 	} else if !acquired {
 		return false, nil
 	} else {
@@ -563,12 +562,12 @@ func (a *WhatsAppAdapter) Connect(ctx context.Context, isReconnect bool) (ok boo
 	}()
 	defer func() {
 		if r := recover(); r != nil {
-			slog.Error(fmt.Sprintf("[%s] Failed to start bridge: %v", a.Name(), r))
+			pkgLog().Error(fmt.Sprintf("[%s] Failed to start bridge: %v", a.Name(), r))
 			ok, retErr = false, nil
 		}
 	}()
 	if err := os.MkdirAll(a.sessionPath, 0o777); err != nil {
-		slog.Error(fmt.Sprintf("[%s] Failed to start bridge: %s", a.Name(), err.Error()))
+		pkgLog().Error(fmt.Sprintf("[%s] Failed to start bridge: %s", a.Name(), err.Error()))
 		return false, nil
 	}
 	if (!secondary || priorBridgeIsOurs) && a.reuseRunningBridge(ctx, bridgePath) {
@@ -608,18 +607,18 @@ func (a *WhatsAppAdapter) Connect(ctx context.Context, isReconnect bool) (ok boo
 	a.bridgeLog = filepath.Join(filepath.Dir(a.sessionPath), "bridge.log")
 	fh, err := os.OpenFile(a.bridgeLog, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o666)
 	if err != nil {
-		slog.Error(fmt.Sprintf("[%s] Failed to start bridge: %s", a.Name(), err.Error()))
+		pkgLog().Error(fmt.Sprintf("[%s] Failed to start bridge: %s", a.Name(), err.Error()))
 		return false, nil
 	}
 	a.bridgeLogFH = fh
 	mode, err := wenv(ctx, "WHATSAPP_MODE", "self-chat")
 	if err != nil {
-		slog.Error(fmt.Sprintf("[%s] Failed to start bridge: %s", a.Name(), err.Error()))
+		pkgLog().Error(fmt.Sprintf("[%s] Failed to start bridge: %s", a.Name(), err.Error()))
 		return false, nil
 	}
 	env, err := a.bridgeEnv(ctx)
 	if err != nil {
-		slog.Error(fmt.Sprintf("[%s] Failed to start bridge: %s", a.Name(), err.Error()))
+		pkgLog().Error(fmt.Sprintf("[%s] Failed to start bridge: %s", a.Name(), err.Error()))
 		return false, nil
 	}
 	a.bridgeProcess = spawnBridgeProcess(ctx, bridgeArgs{Port: a.bridgePort, Session: a.sessionPath, Mode: mode}, fh, env)
@@ -687,12 +686,12 @@ func (a *WhatsAppAdapter) checkManagedBridgeExit(ctx context.Context) string {
 		return ""
 	}
 	if (a.shuttingDown || runnerStopRequested(a.GatewayRunner)) && (returncode == 0 || returncode == -2 || returncode == -15) {
-		slog.Info(fmt.Sprintf("[%s] Bridge exited during shutdown (code %d).", a.Name(), returncode))
+		pkgLog().Info(fmt.Sprintf("[%s] Bridge exited during shutdown (code %d).", a.Name(), returncode))
 		return ""
 	}
 	message := fmt.Sprintf("WhatsApp bridge process exited unexpectedly (code %d).", returncode)
 	if !a.HasFatalError() {
-		slog.Error(fmt.Sprintf("[%s] %s", a.Name(), message))
+		pkgLog().Error(fmt.Sprintf("[%s] %s", a.Name(), message))
 		a.SetFatalError(ctx, "whatsapp_bridge_exited", message, true)
 		a.closeBridgeLog()
 		_ = a.NotifyFatalError(ctx)
@@ -893,7 +892,7 @@ func (a *WhatsAppAdapter) SendClarify(ctx context.Context, chatID, question stri
 		if result.Success {
 			return result, nil
 		}
-		slog.Warn(fmt.Sprintf("[%s] Native WhatsApp clarify poll failed; falling back to text: %s", a.Name(), pyrepr.Str(result.Error)))
+		pkgLog().Warn(fmt.Sprintf("[%s] Native WhatsApp clarify poll failed; falling back to text: %s", a.Name(), pyrepr.Str(result.Error)))
 	}
 	return a.BasePlatformAdapter.SendClarify(ctx, chatID, question, choices, clarifyID, sessionKey, metadata)
 }
@@ -965,7 +964,7 @@ func (a *WhatsAppAdapter) GetChatInfo(ctx context.Context, chatID string) (map[s
 	if a.checkManagedBridgeExit(ctx) == "" {
 		resp, err := a.bridgeReq(ctx, a.httpSession, http.MethodGet, "chat/"+gateway.ToWhatsAppJID(chatID), 10*time.Second, nil)
 		if err != nil {
-			slog.Debug(fmt.Sprintf("Could not get WhatsApp chat info for %s: %s", chatID, err.Error()))
+			pkgLog().Debug(fmt.Sprintf("Could not get WhatsApp chat info for %s: %s", chatID, err.Error()))
 		} else if resp.status == 200 {
 			data, err := resp.json()
 			if obj, ok := data.(*pyjson.Object); err == nil && ok {
@@ -976,7 +975,7 @@ func (a *WhatsAppAdapter) GetChatInfo(ctx context.Context, chatID string) (map[s
 				return map[string]any{"name": obj.GetOr("name", chatID), "type": kind, "participants": obj.GetOr("participants", []any{})}, nil
 			}
 			if err != nil {
-				slog.Debug(fmt.Sprintf("Could not get WhatsApp chat info for %s: %s", chatID, err.Error()))
+				pkgLog().Debug(fmt.Sprintf("Could not get WhatsApp chat info for %s: %s", chatID, err.Error()))
 			}
 		}
 	}
@@ -1052,7 +1051,7 @@ func (a *WhatsAppAdapter) logDeliveryStatus(data *pyjson.Object) {
 	if v := data.GetOr("error", nil); pyrepr.Truthy(v) {
 		errText = " error=" + pyrepr.Str(v)
 	}
-	slog.Info(fmt.Sprintf("[%s] WhatsApp delivery status: message=%s chat=%s status=%s%s at=%s%s", a.Name(),
+	pkgLog().Info(fmt.Sprintf("[%s] WhatsApp delivery status: message=%s chat=%s status=%s%s at=%s%s", a.Name(),
 		pyrepr.Str(data.GetOr("messageId", nil)), pyrepr.Str(data.GetOr("chatId", nil)), pyrepr.Str(data.GetOr("status", nil)),
 		recipient, pyrepr.Str(data.GetOr("timestamp", nil)), errText))
 }
@@ -1065,11 +1064,11 @@ func (a *WhatsAppAdapter) sendReadReceipt(ctx context.Context, data *pyjson.Obje
 	}
 	resp, err := a.bridgeReq(ctx, a.httpSession, http.MethodPost, "read", 5*time.Second, map[string]any{"key": key})
 	if err != nil {
-		slog.Warn(fmt.Sprintf("[%s] WhatsApp read receipt failed: %s", a.Name(), err.Error()))
+		pkgLog().Warn(fmt.Sprintf("[%s] WhatsApp read receipt failed: %s", a.Name(), err.Error()))
 		return
 	}
 	if resp.status != 200 {
-		slog.Warn(fmt.Sprintf("[%s] WhatsApp read receipt failed with HTTP %d", a.Name(), resp.status))
+		pkgLog().Warn(fmt.Sprintf("[%s] WhatsApp read receipt failed with HTTP %d", a.Name(), resp.status))
 	}
 }
 

@@ -557,7 +557,7 @@ func TestMaybeAutoTitleTitlePinNamingTheSameSelfHostedRouteStillWaitsForTheTurn(
 		{"custom:gptoss-local", map[string]any{"provider": "custom:other", "base_url": "http://10.0.0.2:8080/v1"}, false},
 		{"custom:gptoss-local", map[string]any{"provider": "gptoss-local", "base_url": "http://10.0.0.2:8080/v1"}, false},
 		{"custom:gptoss-local", map[string]any{"provider": "openrouter"}, false},
-		{"custom:gptoss-local", map[string]any{"provider": "nous"}, false},
+		{"custom:gptoss-local", map[string]any{"provider": "deepseek"}, false},
 		{"custom", map[string]any{"provider": "ollama"}, true},
 		{"custom", map[string]any{"provider": "vllm"}, true},
 		{"lmstudio", map[string]any{"provider": "lm-studio"}, true},

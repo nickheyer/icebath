@@ -52,7 +52,7 @@ func initTurnState(a *AIAgent, runBudgetSeconds any) {
 	if budget := normalizeRunBudgetSeconds(runBudgetSeconds); budget != nil {
 		a.runBudgetSeconds = *budget
 	}
-	a.credits = nil
+	a.headerCapture = nil
 }
 
 // Fresh stream scrubbers, interim text set and image fallback cache for the agent's streams
@@ -74,7 +74,7 @@ func setupAgentLogging(ctx context.Context, a *AIAgent) error {
 		if err := agentSetupVerboseLogging(); err != nil {
 			return err
 		}
-		runAgentLog().Info("Verbose logging enabled (third-party library logs suppressed)")
+		pkgLog().Info("Verbose logging enabled (third-party library logs suppressed)")
 	}
 	return nil
 }
@@ -135,7 +135,7 @@ func initPromptCacheConfig(ctx context.Context, a *AIAgent) {
 		}
 	}
 	if errClass != "" {
-		runAgentLog().Warn(fmt.Sprintf("Agent configuration for prompt_caching.cache_ttl could not be loaded (%s); "+
+		pkgLog().Warn(fmt.Sprintf("Agent configuration for prompt_caching.cache_ttl could not be loaded (%s); "+
 			"using default prompt caching settings. Run 'icebath config check' "+
 			"and correct the reported configuration.", errClass))
 		return

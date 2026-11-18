@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/plugins"
 )
 
@@ -64,14 +65,14 @@ func deviceLoginInt(v any) (int, error) {
 	if n, ok := anyInt(v); ok {
 		return n, nil
 	}
-	return 0, fmt.Errorf("TypeError: int() argument must be a string, a bytes-like object or a real number, not '%s'", pyTypeName(v))
+	return 0, fmt.Errorf("a device login value is %s, expected a whole number", errchain.Kind(v))
 }
 
 // Required field of a device login answer, a KeyError when the profile left it out
 func deviceLoginField(login map[string]any, key string) (any, error) {
 	v, ok := login[key]
 	if !ok {
-		return nil, fmt.Errorf("KeyError: %q", key)
+		return nil, fmt.Errorf("the device login reply has no %s", key)
 	}
 	return v, nil
 }

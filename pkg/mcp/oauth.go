@@ -5,13 +5,14 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"github.com/nickheyer/icebath/pkg/home"
 	"math"
 	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/nickheyer/icebath/pkg/home"
 )
 
 // Configured oauth.user_agent for token endpoint requests, empty when unset or blank
@@ -168,7 +169,7 @@ func ApplyOAuthProviderDefaults(cfg map[string]any, serverName, serverURL string
 			if label == "" {
 				label = serverURL
 			}
-			mcpLogger().Info(fmt.Sprintf("MCP OAuth '%s': Figma DCR allowlist — registering as client_name=%s (override via oauth.client_name)",
+			pkgLog().Info(fmt.Sprintf("MCP OAuth '%s': Figma DCR allowlist — registering as client_name=%s (override via oauth.client_name)",
 				label, pyReprStr(figmaDCRClientName)))
 		}
 		if !pyTruthy(cfg["scope"]) {
@@ -290,13 +291,13 @@ func invalidateTokensOnClientChange(storage *TokenStorage, newClientID, newClien
 			continue
 		}
 		if err := os.Remove(path); err != nil {
-			mcpLogger().Warn(fmt.Sprintf("MCP OAuth '%s': could not remove stale %s after client change: %v", storage.serverName, filepath.Base(path), err))
+			pkgLog().Warn(fmt.Sprintf("MCP OAuth '%s': could not remove stale %s after client change: %v", storage.serverName, filepath.Base(path), err))
 			continue
 		}
 		removed = true
 	}
 	if removed {
-		mcpLogger().Warn(fmt.Sprintf("MCP OAuth '%s': configured OAuth client changed (client_id %s -> %s); discarded tokens minted under "+
+		pkgLog().Warn(fmt.Sprintf("MCP OAuth '%s': configured OAuth client changed (client_id %s -> %s); discarded tokens minted under "+
 			"the previous client. Re-authorize with: icebath mcp login %s", storage.serverName, pyRepr(jsonToPlain(oldClientID)), pyRepr(newClientID), storage.serverName))
 	}
 }
@@ -322,7 +323,7 @@ func maybePreregisterClient(ctx context.Context, storage *TokenStorage, cfg map[
 	invalidateTokensOnClientChange(storage, clientID, cfg["client_secret"])
 	portValue, ok := cfg["_resolved_port"]
 	if !ok {
-		return errors.New("KeyError: '_resolved_port'")
+		return errors.New("no OAuth callback port was resolved before client registration")
 	}
 	port, err := pyIntStrict(portValue)
 	if err != nil {
@@ -349,7 +350,7 @@ func maybePreregisterClient(ctx context.Context, storage *TokenStorage, cfg map[
 	if err := writeOAuthJSON(home.WithOverride(ctx, storage.homeDir), storage.ClientInfoPath(), validated.dump()); err != nil {
 		return err
 	}
-	mcpLogger().Debug(fmt.Sprintf("Pre-registered client_id=%s for '%s'", pyStr(clientID), storage.serverName))
+	pkgLog().Debug(fmt.Sprintf("Pre-registered client_id=%s for '%s'", pyStr(clientID), storage.serverName))
 	return nil
 }
 

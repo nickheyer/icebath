@@ -5,13 +5,13 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"io"
-	"log/slog"
 	"net/http"
 	"os"
 	"strings"
 	"sync/atomic"
+
+	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/internal/pyhttpx"
@@ -179,7 +179,7 @@ type anthMessageCall struct {
 func CreateAnthropicMessage(ctx context.Context, client any, apiKwargs map[string]any, logPrefix string, preferStream bool, onResponse func(response any)) (any, error) {
 	c, ok := client.(*anthropicSDKClient)
 	if !ok {
-		return nil, fmt.Errorf("AttributeError: '%T' object has no attribute 'messages'", client)
+		return nil, fmt.Errorf("the Anthropic client (%T) has no messages API", client)
 	}
 	return createAnthropicMessageWith(ctx, c, apiKwargs, anthMessageCall{logPrefix: logPrefix, preferStream: preferStream, onResponse: onResponse})
 }
@@ -197,7 +197,7 @@ func createAnthropicMessageWith(ctx context.Context, client *anthropicSDKClient,
 		if errors.As(err, &timeout) || errors.As(err, &cancelled) || !client.inner.transport.StreamUnavailable(err) {
 			return nil, err
 		}
-		slog.Debug(fmt.Sprintf("%sAnthropic Messages stream unavailable; falling back to messages.create(): %v", call.logPrefix, err))
+		pkgLog().Debug(fmt.Sprintf("%sAnthropic Messages stream unavailable; falling back to messages.create(): %v", call.logPrefix, err))
 	}
 	return client.create(ctx, apiKwargs)
 }
@@ -209,7 +209,7 @@ func anthOfferResponse(call anthMessageCall, resp *http.Response) {
 	}
 	defer func() {
 		if r := recover(); r != nil {
-			slog.Debug(fmt.Sprintf("%son_response callback failed: %v", call.logPrefix, r))
+			pkgLog().Debug(fmt.Sprintf("%son_response callback failed: %v", call.logPrefix, r))
 		}
 	}()
 	call.onResponse(resp)
@@ -329,7 +329,7 @@ func (c *anthropicSDKClient) streamFinalMessage(ctx context.Context, apiKwargs m
 			if errors.As(cbErr, &timeout) || errors.As(cbErr, &cancelled) {
 				return nil, cbErr
 			}
-			slog.Debug(fmt.Sprintf("%son_stream_event callback failed: %v", call.logPrefix, cbErr))
+			pkgLog().Debug(fmt.Sprintf("%son_stream_event callback failed: %v", call.logPrefix, cbErr))
 		}
 	}
 	if !sawStop {

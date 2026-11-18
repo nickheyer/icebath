@@ -12,7 +12,7 @@ import (
 	sqlite3 "modernc.org/sqlite/lib"
 )
 
-// SessionDB stand in that records the FTS lifecycle calls into hermes_state.py members
+// SessionDB stand in that records the FTS lifecycle calls into members
 type fakeFTSHost struct {
 	path        string
 	mu          sync.Mutex

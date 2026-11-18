@@ -5,7 +5,6 @@ package treekill
 import (
 	"errors"
 	"fmt"
-	"log/slog"
 	"os/exec"
 	"strconv"
 	"syscall"
@@ -27,7 +26,7 @@ func KillProcessTree(pid int, sig syscall.Signal) bool {
 			return false
 		}
 		if err != nil {
-			slog.Debug(fmt.Sprintf("kill_process_tree: taskkill failed for pid %d: %v", pid, err))
+			pkgLog().Debug(fmt.Sprintf("kill_process_tree: taskkill failed for pid %d: %v", pid, err))
 			return false
 		}
 		return true
@@ -35,7 +34,7 @@ func KillProcessTree(pid int, sig syscall.Signal) bool {
 		if cmd.Process != nil {
 			_ = cmd.Process.Kill()
 		}
-		slog.Debug(fmt.Sprintf("kill_process_tree: taskkill failed for pid %d: timed out", pid))
+		pkgLog().Debug(fmt.Sprintf("kill_process_tree: taskkill failed for pid %d: timed out", pid))
 		return false
 	}
 }

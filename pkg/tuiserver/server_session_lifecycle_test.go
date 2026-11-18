@@ -16,7 +16,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pythread"
 	"github.com/nickheyer/icebath/pkg/state"
-	"github.com/nickheyer/icebath/pkg/tuigateway"
+	"github.com/nickheyer/icebath/pkg/tuihost"
 )
 
 // Level and text of every record logged while the case runs
@@ -89,7 +89,7 @@ func TestSessionSlotIsClaimedOnFirstTurnNotOnCreate(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(h, "config.yaml"), []byte("model:\n  default: test-model\nmax_concurrent_sessions: 1\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	swapSessions(t, map[string]*tuigateway.Session{})
+	swapSessions(t, map[string]*tuihost.Session{})
 	ctx := context.Background()
 	sid := createdSID(t, createCall(t, "r1", map[string]any{"cols": 80}))
 	other := createdSID(t, createCall(t, "r2", map[string]any{"cols": 80}))
@@ -97,14 +97,14 @@ func TestSessionSlotIsClaimedOnFirstTurnNotOnCreate(t *testing.T) {
 		t.Fatalf("create claimed %v", entries)
 	}
 	for range 2 {
-		if refusal := ensureActiveSessionSlot(ctx, sid, tuigateway.SessionRecord(sid)); refusal != nil {
+		if refusal := ensureActiveSessionSlot(ctx, sid, tuihost.SessionRecord(sid)); refusal != nil {
 			t.Fatalf("first turn refused %v", refusal)
 		}
 	}
 	if entries := registryEntries(t, h); len(entries) != 1 {
 		t.Fatalf("entries %v", entries)
 	}
-	if refusal := ensureActiveSessionSlot(ctx, other, tuigateway.SessionRecord(other)); refusal == nil {
+	if refusal := ensureActiveSessionSlot(ctx, other, tuihost.SessionRecord(other)); refusal == nil {
 		t.Fatal("second session claimed past the cap")
 	}
 	closed := handleRequest(ctx, map[string]any{"id": "r3", "method": "session.close", "params": map[string]any{"session_id": sid}})
@@ -114,14 +114,14 @@ func TestSessionSlotIsClaimedOnFirstTurnNotOnCreate(t *testing.T) {
 	if entries := registryEntries(t, h); len(entries) != 0 {
 		t.Fatalf("close kept %v", entries)
 	}
-	if refusal := ensureActiveSessionSlot(ctx, other, tuigateway.SessionRecord(other)); refusal != nil {
+	if refusal := ensureActiveSessionSlot(ctx, other, tuihost.SessionRecord(other)); refusal != nil {
 		t.Fatalf("freed slot refused %v", refusal)
 	}
 }
 
 func TestPromptSubmitUnknownSessionLogsWarning(t *testing.T) {
 	sessionCaseScope(t)
-	swapSessions(t, map[string]*tuigateway.Session{})
+	swapSessions(t, map[string]*tuihost.Session{})
 	logs := captureLevels(t)
 	resp := handleRequest(context.Background(), map[string]any{"id": "r1", "method": "prompt.submit", "params": map[string]any{"session_id": "gone-sid", "text": "hello"}})
 	if resp["id"] != "r1" || resumeErrCode(resp) != 4001 {
@@ -138,7 +138,7 @@ func TestSessionResumeDeferredHistoryCloseCancelsBuild(t *testing.T) {
 		t.Setenv(key, "")
 	}
 	storeTranscript(t, db, "cancel-session", "", map[string]any{"role": "user", "content": "late"})
-	swapSessions(t, map[string]*tuigateway.Session{})
+	swapSessions(t, map[string]*tuihost.Session{})
 	held := &heldLoadingTransport{started: make(chan struct{}), release: make(chan struct{})}
 	defer func() {
 		select {
@@ -147,10 +147,10 @@ func TestSessionResumeDeferredHistoryCloseCancelsBuild(t *testing.T) {
 			close(held.release)
 		}
 	}()
-	ctx := tuigateway.BindTransport(context.Background(), held)
+	ctx := tuihost.BindTransport(context.Background(), held)
 	resp := handleRequest(ctx, map[string]any{"id": "r1", "method": "session.resume", "params": map[string]any{"session_id": "cancel-session", "defer_history": true}})
 	sid, _ := resultOf(t, resp)["session_id"].(string)
-	session := tuigateway.SessionRecord(sid)
+	session := tuihost.SessionRecord(sid)
 	select {
 	case <-held.started:
 	case <-time.After(time.Second):
@@ -169,7 +169,7 @@ func TestSessionResumeDeferredHistoryCloseCancelsBuild(t *testing.T) {
 	if (built != nil && built.IsSet()) || session.Get("agent") != nil {
 		t.Fatal("agent build started after close")
 	}
-	if tuigateway.SessionRecord(sid) != nil {
+	if tuihost.SessionRecord(sid) != nil {
 		t.Fatal("closed session still registered")
 	}
 }
@@ -276,7 +276,7 @@ func TestPromptSubmitRowIDAcceptsFullLineageOrdinal(t *testing.T) {
 		t.Fatalf("history %v", history)
 	}
 	releaseActiveSessionSlot(session)
-	tuigateway.SetSessionRecord("lineage-row-sid", nil)
+	tuihost.SetSessionRecord("lineage-row-sid", nil)
 	stale := parkedSubmitSession(t, "lineage-row-sid-2", map[string]any{"history": tip(), "display_history_prefix": prefix()})
 	t.Cleanup(func() { releaseActiveSessionSlot(stale) })
 	refused := rpcErrorOf(t, submitRPC("lineage-row-sid-2", map[string]any{"text": "edited post B", "truncate_before_row_id": 503,
@@ -306,7 +306,7 @@ func mlperfProfile(t *testing.T) (string, string) {
 func TestSessionCreateReportsRequestedProfileName(t *testing.T) {
 	_, profile := mlperfProfile(t)
 	useSharedDB(t, reaperTestDB(t))
-	swapSessions(t, map[string]*tuigateway.Session{})
+	swapSessions(t, map[string]*tuihost.Session{})
 	resp := createCall(t, "r1", map[string]any{"profile": "mlperf", "cols": 80})
 	result := resultOf(t, resp)
 	info, _ := result["info"].(map[string]any)
@@ -314,7 +314,7 @@ func TestSessionCreateReportsRequestedProfileName(t *testing.T) {
 		t.Fatalf("info %v", info)
 	}
 	sid, _ := result["session_id"].(string)
-	if got := tuigateway.SessionRecord(sid).Get("profile_home"); got != profile {
+	if got := tuihost.SessionRecord(sid).Get("profile_home"); got != profile {
 		t.Fatalf("profile_home %v", got)
 	}
 }
@@ -330,7 +330,7 @@ func TestTeardownEndsSessionInProfileDB(t *testing.T) {
 		t.Fatal(err)
 	}
 	profileDB.Close()
-	session := tuigateway.NewSession(map[string]any{"session_key": "ml-sess", "profile_home": profile, "agent": nil, "history": []any{}, "source": "tui"})
+	session := tuihost.NewSession(map[string]any{"session_key": "ml-sess", "profile_home": profile, "agent": nil, "history": []any{}, "source": "tui"})
 	teardownSession(context.Background(), session, "closed")
 	if reason := storedEndReason(t, launchDB, "ml-sess"); reason != "" {
 		t.Fatalf("launch store ended %q", reason)
@@ -350,8 +350,8 @@ func TestCloseSessionsForTransportSkipsSessionReboundBeforeClaim(t *testing.T) {
 		t.Run(fmt.Sprint(closeOnDisconnect), func(t *testing.T) {
 			t.Setenv("ICEBATH_HOME", t.TempDir())
 			oldTransport, newTransport := &liveWritePeer{id: 1}, &liveWritePeer{id: 2}
-			session := tuigateway.NewSession(map[string]any{"transport": oldTransport, "close_on_disconnect": closeOnDisconnect})
-			swapSessions(t, map[string]*tuigateway.Session{"rebound": session})
+			session := tuihost.NewSession(map[string]any{"transport": oldTransport, "close_on_disconnect": closeOnDisconnect})
+			swapSessions(t, map[string]*tuihost.Session{"rebound": session})
 			sessionResumeLock.Lock()
 			type counts struct{ reaped, detached int }
 			done := make(chan counts, 1)
@@ -366,7 +366,7 @@ func TestCloseSessionsForTransportSkipsSessionReboundBeforeClaim(t *testing.T) {
 			if got.reaped != 0 || got.detached != 0 {
 				t.Fatalf("counts %v", got)
 			}
-			if tuigateway.SessionRecord("rebound") != session || session.Get("transport") != newTransport || truthy(session.Get("_finalized")) {
+			if tuihost.SessionRecord("rebound") != session || session.Get("transport") != newTransport || truthy(session.Get("_finalized")) {
 				t.Fatal("rebound session was torn down or detached")
 			}
 			if pendingReap("rebound") != nil {

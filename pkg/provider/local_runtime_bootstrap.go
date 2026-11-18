@@ -5,7 +5,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"log/slog"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -167,7 +166,7 @@ func adoptLegacyModels() ([]string, error) {
 			for _, src := range lrGlobGGUF(srcDir) {
 				dest := filepath.Join(destDir, filepath.Base(src))
 				if lrPathExists(dest) {
-					slog.Warn(fmt.Sprintf("legacy model %s not moved: %s already exists", src, dest))
+					pkgLog().Warn(fmt.Sprintf("legacy model %s not moved: %s already exists", src, dest))
 					continue
 				}
 				err := os.MkdirAll(destDir, 0o777)
@@ -178,7 +177,7 @@ func adoptLegacyModels() ([]string, error) {
 					continue
 				}
 				if err != nil {
-					slog.Warn(fmt.Sprintf("legacy model %s not moved to %s: %s", src, destDir, err))
+					pkgLog().Warn(fmt.Sprintf("legacy model %s not moved to %s: %s", src, destDir, err))
 					continue
 				}
 				moved = append(moved, dest)
@@ -189,7 +188,7 @@ func adoptLegacyModels() ([]string, error) {
 		}
 	}
 	if len(moved) > 0 {
-		slog.Info(fmt.Sprintf("moved %d legacy model file(s) into %s", len(moved), localModelsDir()))
+		pkgLog().Info(fmt.Sprintf("moved %d legacy model file(s) into %s", len(moved), localModelsDir()))
 	}
 	return moved, nil
 }
@@ -251,7 +250,7 @@ func stopStateServer() error {
 	var proc localRuntimeProc
 	if isModernLocalRuntimeState(state) {
 		if !lrOwnerIsDead(state) {
-			slog.Info(fmt.Sprintf("llama-server pid=%s belongs to a live icebath process; leaving it", pyStr(pyGetAny(state, "pid", nil))))
+			pkgLog().Info(fmt.Sprintf("llama-server pid=%s belongs to a live icebath process; leaving it", pyStr(pyGetAny(state, "pid", nil))))
 			return nil
 		}
 		proc = lrRecordedProcess(state)
@@ -266,7 +265,7 @@ func stopStateServer() error {
 		return nil
 	}
 	if err := lrTerminateTree(proc, true); err != nil {
-		slog.Warn(fmt.Sprintf("could not stop the incumbent llama-server (pid=%d): %s", proc.Pid(), err))
+		pkgLog().Warn(fmt.Sprintf("could not stop the incumbent llama-server (pid=%d): %s", proc.Pid(), err))
 	}
 	return nil
 }
@@ -299,7 +298,7 @@ func refreshLocalRuntimeCtx(ctx context.Context) bool {
 		return sup != nil, err
 	}()
 	if err != nil {
-		slog.Warn(fmt.Sprintf("local runtime refresh failed: %s", err))
+		pkgLog().Warn(fmt.Sprintf("local runtime refresh failed: %s", err))
 		return false
 	}
 	return ok
@@ -309,7 +308,7 @@ func refreshLocalRuntimeCtx(ctx context.Context) bool {
 func admittedModelsMax(mdir string, configured int, engineTag string) int {
 	capacity, err := bootProbeBudget(true)
 	if err != nil {
-		slog.Warn(fmt.Sprintf("residency cap probe failed (%s); using models_max=%d", err, configured))
+		pkgLog().Warn(fmt.Sprintf("residency cap probe failed (%s); using models_max=%d", err, configured))
 		return configured
 	}
 	var live *HardwareBudget
@@ -318,11 +317,11 @@ func admittedModelsMax(mdir string, configured int, engineTag string) int {
 	}
 	capped, err := AdmittedResidencyCount(mdir, capacity, configured, live, engineTag)
 	if err != nil {
-		slog.Warn(fmt.Sprintf("residency cap probe failed (%s); using models_max=%d", err, configured))
+		pkgLog().Warn(fmt.Sprintf("residency cap probe failed (%s); using models_max=%d", err, configured))
 		return configured
 	}
 	if capped != configured {
-		slog.Info(fmt.Sprintf("residency cap: %d resident model(s) on this card (models_max=%d)", capped, configured))
+		pkgLog().Info(fmt.Sprintf("residency cap: %d resident model(s) on this card (models_max=%d)", capped, configured))
 	}
 	return capped
 }
@@ -337,16 +336,16 @@ func generateBootPresets(mdir, presetPath string, residents int, engineTag strin
 	if err == nil {
 		for _, entry := range entries {
 			if entry.Refusal != "" {
-				slog.Warn(fmt.Sprintf("model refused by physics check: %s", entry.Refusal))
+				pkgLog().Warn(fmt.Sprintf("model refused by physics check: %s", entry.Refusal))
 			}
 		}
 		return presetPath
 	}
 	if lrPathExists(presetPath) {
-		slog.Error(fmt.Sprintf("preset generation failed (%s); serving with the PREVIOUS launch policies — models staged since the last successful generation run unpoliced until this is fixed", err))
+		pkgLog().Error(fmt.Sprintf("preset generation failed (%s); serving with the PREVIOUS launch policies — models staged since the last successful generation run unpoliced until this is fixed", err))
 		return presetPath
 	}
-	slog.Error(fmt.Sprintf("preset generation failed (%s) and no previous policy file exists; router runs stock fit", err))
+	pkgLog().Error(fmt.Sprintf("preset generation failed (%s) and no previous policy file exists; router runs stock fit", err))
 	return ""
 }
 
@@ -354,7 +353,7 @@ func generateBootPresets(mdir, presetPath string, residents int, engineTag strin
 func bootstrapLaunchBudget(capacity HardwareBudget, ownBytes int64) *HardwareBudget {
 	live, err := LaunchBudget(capacity, ownBytes)
 	if err != nil {
-		slog.Warn(fmt.Sprintf("free GPU memory probe failed (%s); launch windows use capacity", err))
+		pkgLog().Warn(fmt.Sprintf("free GPU memory probe failed (%s); launch windows use capacity", err))
 		return nil
 	}
 	return live
@@ -425,7 +424,7 @@ func refitIdlePresets(sup *LlamaServerSupervisor) (bool, error) {
 	if err := sup.ReloadPresets(); err != nil {
 		return false, err
 	}
-	slog.Info(fmt.Sprintf("launch windows re-planned for %.1f GiB of free GPU memory", float64(live.UsableVRAMBytes)/float64(int64(1)<<30)))
+	pkgLog().Info(fmt.Sprintf("launch windows re-planned for %.1f GiB of free GPU memory", float64(live.UsableVRAMBytes)/float64(int64(1)<<30)))
 	return true, nil
 }
 
@@ -459,13 +458,13 @@ func crossProcessBootLock(timeout time.Duration) func() {
 		f, err = os.OpenFile(path, os.O_CREATE|os.O_RDWR, 0o600)
 	}
 	if err != nil {
-		slog.Warn(fmt.Sprintf("boot lock unavailable (%s); proceeding without it", err))
+		pkgLog().Warn(fmt.Sprintf("boot lock unavailable (%s); proceeding without it", err))
 		return func() {}
 	}
 	deadline := time.Now().Add(timeout)
 	for !lrTryLockBootFile(f) {
 		if !time.Now().Before(deadline) {
-			slog.Warn(fmt.Sprintf("boot lock contended past %.0fs; proceeding without it", timeout.Seconds()))
+			pkgLog().Warn(fmt.Sprintf("boot lock contended past %.0fs; proceeding without it", timeout.Seconds()))
 			break
 		}
 		time.Sleep(200 * time.Millisecond)
@@ -489,7 +488,7 @@ func bootSection(cfg map[string]any) (map[string]any, error) {
 	return section, nil
 }
 
-// Idempotent boot of the managed runtime, nil when disabled or unavailable, err only where hermes raises
+// Idempotent boot of the managed runtime, nil when disabled or unavailable, an error only for a failed boot
 func EnsureLocalRuntime(ctx context.Context, cfg map[string]any, force bool) (*LlamaServerSupervisor, error) {
 	section, err := bootSection(cfg)
 	if err != nil {
@@ -502,10 +501,10 @@ func EnsureLocalRuntime(ctx context.Context, cfg map[string]any, force bool) (*L
 		return sup, nil
 	}
 	if _, err := adoptLegacyModels(); err != nil {
-		slog.Warn(fmt.Sprintf("legacy model adoption failed: %s", err))
+		pkgLog().Warn(fmt.Sprintf("legacy model adoption failed: %s", err))
 	}
 	if !force && len(stagedModels()) == 0 {
-		slog.Info("local runtime enabled but no models staged; not booting")
+		pkgLog().Info("local runtime enabled but no models staged; not booting")
 		return nil, nil
 	}
 	unlock := crossProcessBootLock(bootLockTimeout)
@@ -516,10 +515,10 @@ func EnsureLocalRuntime(ctx context.Context, cfg map[string]any, force bool) (*L
 	}
 	if live {
 		if !bootPresetsStaleFn() {
-			slog.Info("managed llama-server already running (another process)")
+			pkgLog().Info("managed llama-server already running (another process)")
 			return nil, nil
 		}
-		slog.Info("running server's presets predate the staged models; replacing it so every model launches with a policy")
+		pkgLog().Info("running server's presets predate the staged models; replacing it so every model launches with a policy")
 		if err := bootStopStateServer(); err != nil {
 			return nil, err
 		}
@@ -529,7 +528,7 @@ func EnsureLocalRuntime(ctx context.Context, cfg map[string]any, force bool) (*L
 		bootMu.Lock()
 		localServingEngine = nil
 		bootMu.Unlock()
-		slog.Warn(fmt.Sprintf("managed local runtime unavailable: %s", err))
+		pkgLog().Warn(fmt.Sprintf("managed local runtime unavailable: %s", err))
 		return nil, nil
 	}
 	return sup, nil
@@ -563,7 +562,7 @@ func bootServe(ctx context.Context, section map[string]any) (*LlamaServerSupervi
 		return nil, err
 	}
 	if engine == nil {
-		slog.Info("local runtime enabled but no PM engine installed; use /setup model → Local models")
+		pkgLog().Info("local runtime enabled but no PM engine installed; use /setup model → Local models")
 		return nil, nil
 	}
 	bootMu.Lock()
@@ -595,7 +594,7 @@ func bootServe(ctx context.Context, section map[string]any) (*LlamaServerSupervi
 	localSupervisor = sup
 	bootMu.Unlock()
 	stopAtExit()
-	slog.Info(fmt.Sprintf("managed llama-server up at %s (backend=%s tag=%s)", sup.BaseURL(), engine.Backend, engine.Tag))
+	pkgLog().Info(fmt.Sprintf("managed llama-server up at %s (backend=%s tag=%s)", sup.BaseURL(), engine.Backend, engine.Tag))
 	startIdleSweeper(sup)
 	return sup, nil
 }
@@ -669,7 +668,7 @@ func startIdleSweeper(sup *LlamaServerSupervisor) {
 				sup.SweepIdle(nil)
 			}
 			if _, err := refitIdlePresets(sup); err != nil {
-				slog.Debug(fmt.Sprintf("launch window re-plan skipped: %s", err))
+				pkgLog().Debug(fmt.Sprintf("launch window re-plan skipped: %s", err))
 			}
 		}
 	}()

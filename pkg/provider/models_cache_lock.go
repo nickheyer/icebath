@@ -1,7 +1,6 @@
 package provider
 
 import (
-	"log/slog"
 	"os"
 	"path/filepath"
 	"sync"
@@ -12,8 +11,6 @@ var (
 	providerModelsCacheThreadLock sync.Mutex
 	providerModelsCacheLockWait   = 10 * time.Second
 )
-
-var modelsLog = slog.Default()
 
 // Takes the thread lock plus the cross process lock beside the provider models cache file
 func providerModelsCacheLock(path string) (func(), error) {
@@ -57,7 +54,7 @@ func providerModelsCacheLock(path string) (func(), error) {
 func writeUnderCacheLock(path string, write func()) {
 	release, err := providerModelsCacheLock(path)
 	if err != nil {
-		modelsLog.Debug("provider models cache write skipped", "path", path, "error", err)
+		pkgLog().Debug("provider models cache write skipped", "path", path, "error", err)
 		return
 	}
 	defer release()

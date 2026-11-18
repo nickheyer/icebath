@@ -13,7 +13,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
-	"github.com/nickheyer/icebath/pkg/observability"
 )
 
 // Inbound message of any platform through auth, commands, the running agent fast path and a claimed agent turn
@@ -23,10 +22,6 @@ func (r *GatewayRunner) handleMessage(ctx context.Context, event *gateway.Messag
 		return nil, err
 	}
 	event, source, isInternal := admitted.event, admitted.source, admitted.internal
-	if !isInternal {
-		command, _ := event.GetCommand()
-		observability.RecordGatewaySlashCommand(ctx, command, event.SlashCommandCounted())
-	}
 	if notice, paused := r.hmEstopGate(ctx, event, source, isInternal); paused {
 		return notice, nil
 	}
@@ -72,13 +67,13 @@ func (r *GatewayRunner) handleMessage(ctx context.Context, event *gateway.Messag
 			return nil, nil
 		}
 		if r.externalDrainActive {
-			runLog().Info(fmt.Sprintf("Refusing new turn for session %s — external drain active.", quickKey))
+			pkgLog().Info(fmt.Sprintf("Refusing new turn for session %s — external drain active.", quickKey))
 			return i18n.T(ctx, "gateway.busy.draining_maintenance", "", nil), nil
 		}
 	}
 	lease, refusal := r.claimActiveSessionSlot(ctx, quickKey, source)
 	if refusal != nil {
-		runLog().Info(fmt.Sprintf("Rejecting new active session %s: max_concurrent_sessions reached", quickKey))
+		pkgLog().Info(fmt.Sprintf("Rejecting new active session %s: max_concurrent_sessions reached", quickKey))
 		return refusal.Message, nil
 	}
 	event, source, isInternal = r.hmRescueOrphanedFIFO(ctx, event, source, isInternal, quickKey)
@@ -95,7 +90,6 @@ func (r *GatewayRunner) handleMessage(ctx context.Context, event *gateway.Messag
 			runGeneration = s.bumpRunGeneration()
 		}
 	})
-	observability.StartReplyClock(ctx, source, isInternal)
 	r.persistActiveAgents(ctx)
 	defer func() {
 		r.restorePendingOneTurnModelOverride(ctx, quickKey, &runGeneration)
@@ -121,7 +115,7 @@ func (r *GatewayRunner) handleMessage(ctx context.Context, event *gateway.Messag
 	if err != nil {
 		var leaseErr *TurnLeaseTimeoutError
 		if errors.As(err, &leaseErr) {
-			runLog().Error(fmt.Sprintf("Rejecting turn for routing key %s on session %s after turn-lease timeout; transcript load was not started and the user must resend",
+			pkgLog().Error(fmt.Sprintf("Rejecting turn for routing key %s on session %s after turn-lease timeout; transcript load was not started and the user must resend",
 				quickKey, leaseErr.SessionID))
 			return i18n.T(ctx, "gateway.busy.another_turn_running", "", nil), nil
 		}
@@ -132,7 +126,7 @@ func (r *GatewayRunner) handleMessage(ctx context.Context, event *gateway.Messag
 		reply = *agentResult
 	}
 	if err := r.runPostTurnHooks(ctx, reply, source, isInternal, event); err != nil {
-		runLog().Debug(fmt.Sprintf("post-turn hook failed: %s", err))
+		pkgLog().Debug(fmt.Sprintf("post-turn hook failed: %s", err))
 	}
 	return reply, nil
 }
@@ -162,7 +156,7 @@ func (r *GatewayRunner) hmHandleRunningSessionMessage(ctx context.Context, event
 	runningAgent := r.runningSlotAgent(quickKey)
 	for runningAgent == agentPendingSentinel && command == "stop" {
 		if r.releaseRunningSlot(ctx, quickKey, nil, agentPendingSentinel) {
-			runLog().Info(fmt.Sprintf("HARD STOP (pending) for session %s — sentinel cleared", quickKey))
+			pkgLog().Info(fmt.Sprintf("HARD STOP (pending) for session %s — sentinel cleared", quickKey))
 			return gateway.NewEphemeralReply(i18n.T(ctx, "gateway.stop.force_stopped_pending", "", nil), nil), nil
 		}
 		runningAgent = r.runningSlotAgent(quickKey)
@@ -181,7 +175,7 @@ func (r *GatewayRunner) hmHandleRunningSessionMessage(ctx context.Context, event
 		return i18n.T(ctx, "gateway.busy.drain_rejected", "", map[string]any{"action": r.statusActionGerund(ctx)}), nil
 	}
 	if mode == "queue" {
-		runLog().Debug(fmt.Sprintf("PRIORITY queue follow-up for session %s", quickKey))
+		pkgLog().Debug(fmt.Sprintf("PRIORITY queue follow-up for session %s", quickKey))
 		return nil, r.queueOrReplacePendingEvent(ctx, quickKey, event)
 	}
 	if mode == "steer" {
@@ -196,7 +190,7 @@ func (r *GatewayRunner) hmHandleRunningSessionMessage(ctx context.Context, event
 	default:
 		return nil, r.hmBusyInterrupt(ctx, event, source, runningAgent, quickKey)
 	}
-	runLog().Info(fmt.Sprintf("PRIORITY interrupt demoted to queue for session %s %s", quickKey, demote))
+	pkgLog().Info(fmt.Sprintf("PRIORITY interrupt demoted to queue for session %s %s", quickKey, demote))
 	return nil, r.queueOrReplacePendingEvent(ctx, quickKey, event)
 }
 
@@ -229,7 +223,7 @@ func (r *GatewayRunner) hmBusySlashOrPhoto(ctx context.Context, event *gateway.M
 		return true, reply, err
 	}
 	if event.MessageType == gateway.MessageTypePhoto {
-		runLog().Debug(fmt.Sprintf("PRIORITY photo follow-up for session %s — queueing without interrupt", quickKey))
+		pkgLog().Debug(fmt.Sprintf("PRIORITY photo follow-up for session %s — queueing without interrupt", quickKey))
 		return true, nil, r.hmMergePendingForSource(ctx, source, quickKey, event, false)
 	}
 	return false, nil, nil
@@ -329,13 +323,13 @@ func (r *GatewayRunner) hmDispatchCanonicalCommand(ctx context.Context, event *g
 func (r *GatewayRunner) hmRescueOrphanedFIFO(ctx context.Context, event *gateway.MessageEvent, source *gateway.SessionSource, isInternal bool, quickKey string) (outEvent *gateway.MessageEvent, outSource *gateway.SessionSource, outInternal bool) {
 	defer func() {
 		if rec := recover(); rec != nil {
-			runLog().Debug(fmt.Sprintf("FIFO orphan rescue pre-claim failed for %s", quickKey), "error", pyrepr.Str(rec))
+			pkgLog().Debug(fmt.Sprintf("FIFO orphan rescue pre-claim failed for %s", quickKey), "error", pyrepr.Str(rec))
 			outEvent, outSource, outInternal = event, source, isInternal
 		}
 	}()
 	adapter, err := r.deliveryAdapterFor(ctx, source)
 	if err != nil {
-		runLog().Debug(fmt.Sprintf("FIFO orphan rescue pre-claim failed for %s", quickKey), "error", err)
+		pkgLog().Debug(fmt.Sprintf("FIFO orphan rescue pre-claim failed for %s", quickKey), "error", err)
 		return event, source, isInternal
 	}
 	command, _ := event.GetCommand()

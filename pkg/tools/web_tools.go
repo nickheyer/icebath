@@ -42,13 +42,7 @@ func webProbe(env *Env, p WebProvider, keyless bool) bool {
 // Shared web backend name, a stored selection returned as is and a never configured install autodetected
 func getWebBackend(env *Env) string {
 	if configured := configuredWebBackend(env, "backend"); configured != "" {
-		if configured == NousManagedProvider {
-			return "firecrawl"
-		}
 		return configured
-	}
-	if ReadSelection(env, "web") != "" {
-		return "firecrawl"
 	}
 	if backend := autodetectWebBackend(env); backend != "" {
 		return backend
@@ -59,7 +53,7 @@ func getWebBackend(env *Env) string {
 	return "firecrawl"
 }
 
-// Autodetect rungs above the keyless tier, explicit credentials beating the managed gateway probe
+// Autodetect rungs above the keyless tier, the first configured credential winning
 func autodetectWebBackend(env *Env) string {
 	candidates := []struct {
 		name      string
@@ -69,7 +63,7 @@ func autodetectWebBackend(env *Env) string {
 		{"exa", webHasEnv(env, "EXA_API_KEY")},
 		{"parallel", webHasEnv(env, "PARALLEL_API_KEY")}, {"keenable", webHasEnv(env, "KEENABLE_API_KEY")},
 		{"firecrawl", webHasEnv(env, "FIRECRAWL_API_KEY") || webHasEnv(env, "FIRECRAWL_API_URL")},
-		{"firecrawl", firecrawlGatewayReady(env)}, {"searxng", webHasEnv(env, "SEARXNG_URL")},
+		{"searxng", webHasEnv(env, "SEARXNG_URL")},
 		{"brave-free", webHasEnv(env, "BRAVE_SEARCH_API_KEY")}, {"ddgs", ddgsClientAvailable(env)},
 	}
 	for _, c := range candidates {
@@ -99,32 +93,10 @@ func keylessWebBackend(env *Env) string {
 	return ""
 }
 
-// True when web_search is on the managed Nous route
-func managedWebSearch(env *Env) bool {
-	if pin := configuredWebBackend(env, "search_backend"); pin != "" {
-		return pin == NousManagedProvider
-	}
-	if selected := ReadSelection(env, "web"); selected != "" {
-		return selected == NousManagedProvider
-	}
-	backend := autodetectWebBackend(env)
-	if backend == "firecrawl" {
-		return !(webHasEnv(env, "FIRECRAWL_API_KEY") || webHasEnv(env, "FIRECRAWL_API_URL")) && firecrawlGatewayReady(env)
-	}
-	if backend != "" {
-		return false
-	}
-	gw, err := ResolveFreeSearchGateway(env, peekNousAccessToken)
-	return err == nil && gw != nil
-}
-
-// Backend for web_search, the pin strictly, then the shared backend, managed search served by Perplexity
+// Backend for web_search, the pin strictly, then the shared backend
 func getSearchBackend(env *Env) string {
-	if pin := configuredWebBackend(env, "search_backend"); pin != "" && pin != NousManagedProvider {
+	if pin := configuredWebBackend(env, "search_backend"); pin != "" {
 		return pin
-	}
-	if managedWebSearch(env) {
-		return "perplexity"
 	}
 	return getWebBackend(env)
 }
@@ -132,13 +104,9 @@ func getSearchBackend(env *Env) string {
 // Legacy web_search backend probe for env
 func GetSearchBackend(env *Env) string { return getSearchBackend(env) }
 
-// Backend for web_extract, the pin strictly, a nous pin being managed Firecrawl
+// Backend for web_extract, the pin strictly, then the shared backend
 func getExtractBackend(env *Env) string {
-	pin := configuredWebBackend(env, "extract_backend")
-	if pin == NousManagedProvider {
-		return "firecrawl"
-	}
-	if pin != "" {
+	if pin := configuredWebBackend(env, "extract_backend"); pin != "" {
 		return pin
 	}
 	return getWebBackend(env)
@@ -193,7 +161,7 @@ var builtinWebAvailability = map[string]func(env *Env) bool{
 		}
 		return false
 	},
-	"perplexity": func(env *Env) bool { return webHasEnv(env, "PERPLEXITY_API_KEY") || managedWebSearch(env) },
+	"perplexity": func(env *Env) bool { return webHasEnv(env, "PERPLEXITY_API_KEY") },
 	"searxng":    func(env *Env) bool { return webHasEnv(env, "SEARXNG_URL") },
 	"brave-free": func(env *Env) bool { return webHasEnv(env, "BRAVE_SEARCH_API_KEY") },
 	"ddgs":       func(env *Env) bool { return ddgsClientAvailable(env) },
@@ -218,7 +186,7 @@ func isWebBackendAvailable(env *Env, backend string) bool {
 // Tool registry metadata env vars for the web backends
 func webRequiresEnv() []string {
 	return []string{"EXA_API_KEY", "PARALLEL_API_KEY", "TAVILY_API_KEY", "PERPLEXITY_API_KEY", "KEENABLE_API_KEY", "FIRECRAWL_API_KEY",
-		"FIRECRAWL_API_URL", "FIRECRAWL_GATEWAY_URL", "PERPLEXITY_GATEWAY_URL", "TOOL_GATEWAY_DOMAIN", "TOOL_GATEWAY_SCHEME", "TOOL_GATEWAY_USER_TOKEN"}
+		"FIRECRAWL_API_URL"}
 }
 
 var (
@@ -328,12 +296,9 @@ func strictSelectionError(env *Env, capability, backend string) string {
 	return noProviderError(env, capability, SelectionError("web", "'"+backend+"'", failure))
 }
 
-// Runs the paid search with the managed fallback and the keyless rescue around it, rescued true when served elsewhere
+// Runs the paid search with the keyless rescue around it, rescued true when served elsewhere
 func paidSearch(ctx webCallContext, provider WebProvider, query string, fetchLimit int) (*WebSearchResponse, bool, error) {
 	servedAfterFailure := func(errText string) (*WebSearchResponse, error) {
-		if fallback := managedSearchFallback(ctx, provider, errText, query, fetchLimit); fallback != nil {
-			return fallback, nil
-		}
 		if rescueEligible(ctx.env, provider) {
 			return rescueSearch(ctx, provider.Name(), errText, query, fetchLimit)
 		}
@@ -422,7 +387,7 @@ func WebSearchTool(ctx context.Context, env *Env, query string, limitArg any) st
 	if provider == nil {
 		response = Dict("success", false, "error", noProviderError(env, "search", "No web search provider configured. Run `icebath tools` to set one up."))
 	} else {
-		envLog(env).With("logger", "tools.web_tools").Info(fmt.Sprintf("Web search via %s: '%s' (limit: %d)", provider.Name(), query, limit))
+		envLog(env).Info(fmt.Sprintf("Web search via %s: '%s' (limit: %d)", provider.Name(), query, limit))
 		resp, err := memoizedSearch(call, provider, query, limit)
 		if err != nil {
 			return finishWebDebug(env, "web_search_tool", debug, "Error searching web: "+err.Error())

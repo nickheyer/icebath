@@ -128,7 +128,7 @@ func (f *arenaFeed) observe(ev gatewayEventMsg) {
 			f.outcome, f.failure = arena.OutcomeDone, ""
 		}
 	case "error":
-		_, stamped := field(f.a.store.ui.Info, "execution_generation")
+		stamped := infoOf(f.a.store.ui.Info).ExecutionGeneration != nil
 		if f.a.store.ui.Busy && !(isGenericErrorEvent(ev) && stamped) {
 			f.outcome, f.failure = arena.OutcomeFailed, stringOr(p["message"], "the turn failed")
 		}
@@ -143,7 +143,7 @@ func (f *arenaFeed) report() arena.Report {
 		f.turnTools, f.outcome, f.failure = map[string]int{}, arena.OutcomeRunning, ""
 	}
 	f.busy = ui.Busy
-	r := arena.Report{Session: ui.Sid, At: s.now(), Busy: ui.Busy, Prompt: f.a.lastUserMsg, Model: infoText(ui.Info, "model"), Streaming: s.turn.Streaming != "",
+	r := arena.Report{Session: ui.Sid, At: s.now(), Busy: ui.Busy, Prompt: f.a.lastUserMsg, Model: infoText(infoOf(ui.Info).Model), Streaming: s.turn.Streaming != "",
 		Paused: s.delegation.Paused, Thinking: lastLine(s.turn.Reasoning), Outcome: f.outcome, Failure: f.failure}
 	if !ui.Busy && f.a.turn.interrupted || !ui.Busy && f.outcome == arena.OutcomeRunning {
 		r.Outcome = arena.OutcomeStopped
@@ -169,9 +169,9 @@ func (f *arenaFeed) report() arena.Report {
 			}
 		}
 	}
-	num := func(k string) float64 { v, _ := ui.Usage[k].(float64); return v }
-	r.Usage = arena.Usage{Input: int(num("input")), Output: int(num("output")), Reasoning: int(num("reasoning")), Cost: num("cost_usd")}
-	r.Context, r.ContextMax = int(num("context_used")), int(num("context_max"))
+	usage := usageOf(ui.Usage)
+	r.Usage = arena.Usage{Input: int(usage.Input), Output: int(usage.Output), Reasoning: int(usage.Reasoning), Cost: val(usage.CostUsd)}
+	r.Context, r.ContextMax = int(val(usage.ContextUsed)), int(val(usage.ContextMax))
 	return r
 }
 

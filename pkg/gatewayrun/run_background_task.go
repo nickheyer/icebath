@@ -43,12 +43,12 @@ func (r *GatewayRunner) runBackgroundTaskInner(ctx context.Context, prompt strin
 		return err
 	}
 	if adapter == nil {
-		runLog().Warn(fmt.Sprintf("No adapter for platform %s in background task %s", source.Platform, taskID))
+		pkgLog().Warn(fmt.Sprintf("No adapter for platform %s in background task %s", source.Platform, taskID))
 		return nil
 	}
 	threadMetadata := r.threadMetadataForSource(source, eventMessageID)
 	if err := r.backgroundTaskBody(ctx, adapter, prompt, source, taskID, threadMetadata, mediaURLs, mediaTypes); err != nil {
-		runLog().Error(fmt.Sprintf("Background task %s failed", taskID), "error", err)
+		pkgLog().Error(fmt.Sprintf("Background task %s failed", taskID), "error", err)
 		_, _ = adapter.EmitWarning(ctx, source.ChatID,
 			i18n.T(ctx, "gateway.background.failed", "", map[string]any{"preview": bgPromptPreview(prompt, 60)}),
 			"", threadMetadata, source.Platform)

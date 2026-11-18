@@ -3,7 +3,6 @@ package home
 import (
 	"context"
 	"fmt"
-	"log/slog"
 )
 
 // Grants the user back the home tree an elevated update left Administrators only, an error when nothing took
@@ -35,7 +34,7 @@ func RepairWindowsHomeACL(ctx context.Context, elevated *bool) error {
 		if len(failed) == 1 {
 			entries = "y"
 		}
-		slog.Warn(fmt.Sprintf("Restoring user access under %s failed for %d entr%s, e.g. %s: %s",
+		pkgLog().Warn(fmt.Sprintf("Restoring user access under %s failed for %d entr%s, e.g. %s: %s",
 			h, len(failed), entries, failed[0].Path, failed[0].Reason))
 	}
 	return nil

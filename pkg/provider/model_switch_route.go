@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"log/slog"
 	"sort"
 	"strings"
 )
@@ -83,9 +82,9 @@ func (st *modelSwitch) resolveRuntime(ctx context.Context, requested, explicitAP
 	return nil
 }
 
-// Wire protocol for a provider endpoint with the configured Nous anthropic wire
+// Wire protocol for a provider endpoint
 func switchDetermineAPIMode(ctx context.Context, provider, baseURL, model string) string {
-	return string(determineModeCtx(ctx, provider, baseURL, model, modelsResolver(ctx).nousAnthropicWire()))
+	return string(determineModeCtx(ctx, provider, baseURL, model))
 }
 
 // Routes an explicit provider request, detecting a local model when none was typed, then resolves the alias there
@@ -151,7 +150,7 @@ func routeAliasFallback(ctx context.Context, st *modelSwitch, key string) (*Mode
 			"Try specifying the full model name.", key, identity.Vendor, identity.Family)), nil
 	}
 	st.TargetProvider, st.NewModel, st.ResolvedAlias = fallback.Provider, fallback.Model, fallback.Alias
-	slog.Debug(fmt.Sprintf("Alias '%s' resolved via fallback to %s on %s", st.ResolvedAlias, st.NewModel, st.TargetProvider))
+	pkgLog().Debug(fmt.Sprintf("Alias '%s' resolved via fallback to %s on %s", st.ResolvedAlias, st.NewModel, st.TargetProvider))
 	return nil, nil
 }
 
@@ -172,7 +171,7 @@ func convertVendorColonSlug(ctx context.Context, st *modelSwitch) {
 		return
 	}
 	st.NewModel = left + "/" + right
-	slog.Debug(fmt.Sprintf("Converted vendor:model '%s' to slug '%s'", raw, st.NewModel))
+	pkgLog().Debug(fmt.Sprintf("Converted vendor:model '%s' to slug '%s'", raw, st.NewModel))
 }
 
 // Whether the name is a built in provider id or alias or a provider the user configured
@@ -204,7 +203,7 @@ func routeConfiguredProvider(st *modelSwitch) (*ModelSwitchResult, bool) {
 	}
 	st.TargetProvider = slugs[0]
 	st.NewModel = matches[configuredMatchIndex(matches, st.TargetProvider)].Model
-	slog.Debug(fmt.Sprintf("Configured-provider detection routed '%s' to %s", st.NewModel, st.TargetProvider))
+	pkgLog().Debug(fmt.Sprintf("Configured-provider detection routed '%s' to %s", st.NewModel, st.TargetProvider))
 	if _, ok := st.UserProviders[st.TargetProvider]; ok {
 		st.ExplicitProvider = st.TargetProvider
 	}
@@ -231,7 +230,7 @@ func routeFromModelInput(ctx context.Context, st *modelSwitch) (*ModelSwitchResu
 		switch {
 		case match != nil:
 			st.TargetProvider, st.NewModel, st.ResolvedAlias = match.Provider, match.Model, match.Alias
-			slog.Debug(fmt.Sprintf("Alias '%s' resolved to %s on %s", st.ResolvedAlias, st.NewModel, st.TargetProvider))
+			pkgLog().Debug(fmt.Sprintf("Alias '%s' resolved to %s on %s", st.ResolvedAlias, st.NewModel, st.TargetProvider))
 		case isFamily:
 			if fail, err := routeAliasFallback(ctx, st, key); fail != nil || err != nil {
 				return fail, err
@@ -250,10 +249,6 @@ func routeFromModelInput(ctx context.Context, st *modelSwitch) (*ModelSwitchResu
 	}
 	if st.ResolvedAlias != "" || resolvedInCurrentCatalog || st.TargetProvider != current {
 		return nil, nil
-	}
-	if current == "nous" && RouteIsWelcomeHost(st.CurrentBaseURL) && st.NewModel != GuestModel {
-		return st.fail(fmt.Sprintf("%s needs a Nous account or an API key. "+
-			"Use /login to sign in, or /model to pick another provider.", st.NewModel)), nil
 	}
 	fail, configRouted := routeConfiguredProvider(st)
 	if fail != nil {

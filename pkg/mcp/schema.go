@@ -4,10 +4,11 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"regexp"
 	"strings"
 	"sync"
+
+	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 
 	"github.com/nickheyer/icebath/pkg/internal/fnmatch"
 	"github.com/nickheyer/icebath/pkg/tools"
@@ -46,7 +47,7 @@ func scanDescription(serverName, toolName, description string) []string {
 		if len(shown) > 200 {
 			shown = shown[:200]
 		}
-		mcpLogger().Warn(fmt.Sprintf("MCP server '%s' tool '%s': suspicious description content \u2014 %s. Description: %s",
+		pkgLog().Warn(fmt.Sprintf("MCP server '%s' tool '%s': suspicious description content \u2014 %s. Description: %s",
 			serverName, toolName, strings.Join(findings, "; "), string(shown)))
 	}
 	return findings
@@ -209,7 +210,7 @@ func PrefixedToolName(serverName, toolName string) string {
 	clampedWarnedMu.Lock()
 	if !clampedWarned[full] {
 		clampedWarned[full] = true
-		mcpLogger().Warn(fmt.Sprintf("MCP tool name %s (%d chars) exceeds the %d-char provider limit; shortened to a deterministic hash-suffixed name",
+		pkgLog().Warn(fmt.Sprintf("MCP tool name %s (%d chars) exceeds the %d-char provider limit; shortened to a deterministic hash-suffixed name",
 			pyReprStr(full), len(full), toolNameMaxLength))
 	}
 	clampedWarnedMu.Unlock()
@@ -325,7 +326,7 @@ func normalizeNameFilter(value any, label string) map[string]bool {
 			set[item] = true
 		}
 	default:
-		mcpLogger().Warn(fmt.Sprintf("MCP config %s must be a string or list of strings; ignoring %s", label, pyRepr(value)))
+		pkgLog().Warn(fmt.Sprintf("MCP config %s must be a string or list of strings; ignoring %s", label, pyRepr(value)))
 	}
 	return set
 }

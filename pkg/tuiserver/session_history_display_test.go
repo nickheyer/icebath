@@ -9,7 +9,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/nickheyer/icebath/pkg/tuigateway"
+	"github.com/nickheyer/icebath/pkg/tuihost"
 )
 
 // Image file holding data under a fresh temp dir and its base64 data URL
@@ -24,7 +24,7 @@ func historyImage(t *testing.T, name string, data []byte) (string, string) {
 
 // Display projection of rows under the launch profile with inline image URLs, failing loudly on a projection error
 func projectHistory(rows ...any) []any {
-	out, err := tuigateway.HistoryToMessages(context.Background(), rows, "", true)
+	out, err := tuihost.HistoryToMessages(context.Background(), rows, "", true)
 	if err != nil {
 		panic(err)
 	}
@@ -110,28 +110,28 @@ func imageTurn() []any {
 
 func TestCoerceMessageTextSwitchesImageRendering(t *testing.T) {
 	content := imageTurn()[0].(map[string]any)["content"]
-	if !strings.Contains(tuigateway.CoerceMessageText(content, true), inlineDataURI) {
+	if !strings.Contains(tuihost.CoerceMessageText(content, true), inlineDataURI) {
 		t.Fatal("default did not inline the URI")
 	}
-	off := tuigateway.CoerceMessageText(content, false)
+	off := tuihost.CoerceMessageText(content, false)
 	if strings.Contains(off, inlineDataURI) || !strings.Contains(off, "[image]") {
 		t.Fatalf("off %q", off)
 	}
-	if tuigateway.CoerceMessageText("plain", true) != "plain" || tuigateway.CoerceMessageText("plain", false) != "plain" {
+	if tuihost.CoerceMessageText("plain", true) != "plain" || tuihost.CoerceMessageText("plain", false) != "plain" {
 		t.Fatal("plain text changed")
 	}
 }
 
 func TestHistoryToMessagesHonorsTheSwitch(t *testing.T) {
 	ctx := context.Background()
-	def, err := tuigateway.HistoryToMessages(ctx, imageTurn(), "", true)
+	def, err := tuihost.HistoryToMessages(ctx, imageTurn(), "", true)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if !strings.Contains(def[0].(map[string]any)["text"].(string), inlineDataURI) {
 		t.Fatalf("default %v", def)
 	}
-	off, err := tuigateway.HistoryToMessages(ctx, imageTurn(), "", false)
+	off, err := tuihost.HistoryToMessages(ctx, imageTurn(), "", false)
 	if err != nil {
 		t.Fatal(err)
 	}

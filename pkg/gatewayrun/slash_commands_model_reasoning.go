@@ -205,3 +205,23 @@ func (r *GatewayRunner) handleFastCommand(ctx context.Context, event *gateway.Me
 	reply := i18n.T(ctx, "gateway.fast.status", "", map[string]any{"mode": status})
 	return &reply, nil
 }
+
+// Sends an interactive choice picker when the adapter supports one, false for the text fallback
+func (r *GatewayRunner) trySendChoicePicker(ctx context.Context, event *gateway.MessageEvent, sessionKey, title string, choices []map[string]any,
+	onChoiceSelected func(ctx context.Context, chatID, value string) (string, error)) bool {
+	adapter, err := r.deliveryAdapterFor(ctx, event.Source)
+	if err != nil {
+		pkgLog().Warn("send_choice_picker failed, falling back to text: " + pyrepr.ExceptionMessage(err))
+		return false
+	}
+	picker, ok := adapter.(gateway.ChoicePickerSender)
+	if adapter == nil || !ok {
+		return false
+	}
+	result, err := picker.SendChoicePicker(ctx, event.Source.ChatID, title, choices, sessionKey, onChoiceSelected, r.replyMetadata(event))
+	if err != nil {
+		pkgLog().Warn("send_choice_picker failed, falling back to text: " + pyrepr.ExceptionMessage(err))
+		return false
+	}
+	return result.Success
+}

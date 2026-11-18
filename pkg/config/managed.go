@@ -3,7 +3,6 @@ package config
 import (
 	"bytes"
 	"context"
-	"log/slog"
 	"os"
 	"path/filepath"
 	"sort"
@@ -82,7 +81,7 @@ func managedCachedRead(path string, cache map[string]managedEntry, parse func(st
 		return nil
 	}
 	if err != nil {
-		slog.Warn("managed scope: failed to parse managed file, IGNORING it. Admin policy from this file is NOT being applied. Fix and restart.", "path", path, "error", err)
+		pkgLog().Warn("managed scope: failed to parse managed file, IGNORING it. Admin policy from this file is NOT being applied. Fix and restart.", "path", path, "error", err)
 		return nil
 	}
 	managedMu.Lock()
@@ -93,7 +92,7 @@ func managedCachedRead(path string, cache map[string]managedEntry, parse func(st
 	}
 	parsed, err := parse(path)
 	if err != nil {
-		slog.Warn("managed scope: failed to parse managed file, IGNORING it. Admin policy from this file is NOT being applied. Fix and restart.", "path", path, "error", err)
+		pkgLog().Warn("managed scope: failed to parse managed file, IGNORING it. Admin policy from this file is NOT being applied. Fix and restart.", "path", path, "error", err)
 		return nil
 	}
 	managedMu.Lock()

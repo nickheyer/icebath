@@ -6,7 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"log/slog"
 	"math"
 	"math/big"
 	"os"
@@ -14,6 +13,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/nickheyer/icebath/pkg/botdesktop"
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/hostinfo"
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
@@ -24,7 +24,6 @@ import (
 )
 
 const (
-	cuaTelemetryEnvVar     = "CUA_DRIVER_RS_TELEMETRY_ENABLED"
 	cuaNativeWaylandEnvVar = "CUA_DRIVER_RS_ENABLE_WAYLAND"
 	defaultAXMaxElements   = 200
 )
@@ -202,17 +201,17 @@ func cuaConfiguredAXMaxElements(env *tools.Env) (int, error) {
 func manifestIsModeIndependent(path string) bool {
 	raw, err := os.ReadFile(path)
 	if err != nil {
-		slog.Debug(fmt.Sprintf("could not read capability manifest %s", path), "err", err)
+		pkgLog(nil).Debug(fmt.Sprintf("could not read capability manifest %s", path), "err", err)
 		return false
 	}
 	text, err := pystr.DecodeUTF8Sig(raw)
 	if err != nil {
-		slog.Debug(fmt.Sprintf("could not read capability manifest %s", path), "err", err)
+		pkgLog(nil).Debug(fmt.Sprintf("could not read capability manifest %s", path), "err", err)
 		return false
 	}
 	parsed, err := config.FastSafeLoad([]byte(text))
 	if err != nil {
-		slog.Debug(fmt.Sprintf("could not read capability manifest %s", path), "err", err)
+		pkgLog(nil).Debug(fmt.Sprintf("could not read capability manifest %s", path), "err", err)
 		return false
 	}
 	m, ok := parsed.(map[string]any)
@@ -264,10 +263,10 @@ func desktopIdentity(env *tools.Env, childEnv map[string]string) string {
 // True when a cached backend's recorded display no longer matches a fresh spawn's
 func backendDisplayStale(recorded, current string) bool { return recorded != current }
 
-// Driver spawn env over the process environment with the bot desktop display, telemetry policy and Wayland opt in
+// Driver spawn env over the process environment with the bot desktop display, telemetry policy, no release check and Wayland opt in
 func CuaDriverChildEnv(env *tools.Env) map[string]string { return cuaDriverChildEnv(env, nil) }
 
-// Driver spawn env with the bot desktop display, the telemetry policy and the native Wayland opt in
+// Driver spawn env with the bot desktop display, the telemetry policy, no release check and the native Wayland opt in
 func cuaDriverChildEnv(env *tools.Env, base map[string]string) map[string]string {
 	if base == nil {
 		base = environMap()
@@ -278,8 +277,11 @@ func cuaDriverChildEnv(env *tools.Env, base map[string]string) map[string]string
 	}
 	out = BotDesktopEnv(env, out)
 	if cuaTelemetryDisabled(env) {
-		out[cuaTelemetryEnvVar] = "0"
+		for k, v := range botdesktop.CuaTelemetryOff() {
+			out[k] = v
+		}
 	}
+	out[botdesktop.CuaUpdateCheckVar] = "false"
 	if cuPlatform == "linux" && out["WAYLAND_DISPLAY"] != "" && pyrepr.Truthy(computerUseCfg(env)["native_wayland"]) {
 		out[cuaNativeWaylandEnvVar] = "1"
 	}
@@ -312,12 +314,7 @@ func sandboxMCPInvocation(ctx context.Context, env *tools.Env) (*mcpInvocation, 
 	if sandbox == nil {
 		return nil, nil, errors.New("the terminal backend's sandbox is not running, so there is nowhere to run cua-driver")
 	}
-	childPublished := make(map[string]string, len(published)+1)
-	for k, v := range published {
-		childPublished[k] = v
-	}
-	childPublished[cuaTelemetryEnvVar] = "0"
-	command, args, err := BotDesktopCuaMCPInvocation(ctx, sandbox, BotDesktopProfileName(env), childPublished)
+	command, args, err := BotDesktopCuaMCPInvocation(ctx, sandbox, BotDesktopProfileName(env), published, !cuaTelemetryDisabled(env))
 	if err != nil {
 		return nil, nil, err
 	}

@@ -30,6 +30,6 @@ func NewFakeLLMResponder(responder Responder, opts Options) (*Server, error) {
 }
 
 // Writes a minimal config.yaml and .env routing the main model of a home to baseURL
-func WriteFakeLLMHome(home, baseURL, apiKey, extraConfig string, offerVersion int) error {
-	return fakellm.WriteHome(home, baseURL, apiKey, extraConfig, offerVersion)
+func WriteFakeLLMHome(home, baseURL, apiKey, extraConfig string) error {
+	return fakellm.WriteHome(home, baseURL, apiKey, extraConfig)
 }

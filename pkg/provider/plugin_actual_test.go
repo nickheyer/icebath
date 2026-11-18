@@ -45,7 +45,7 @@ func TestActualProfileTranslatesExplicitReasoningControls(t *testing.T) {
 		{&Reasoning{Enabled: bptr(false), Effort: "high"}, "disabled", ""}, {effortCfg("none"), "disabled", "none"},
 	} {
 		eb, tl := p.BuildAPIKwargsExtras(c.r, map[string]any{"model": "zai-org/GLM-5.3"})
-		if !reflect.DeepEqual(eb, map[string]any{"thinking": map[string]any{"type": c.toggle}}) {
+		if !reflect.DeepEqual(pyjson.Plain(eb), map[string]any{"thinking": map[string]any{"type": c.toggle}}) {
 			t.Fatalf("%s extra body %#v", c.r.Effort, eb)
 		}
 		if got, ok := tl["reasoning_effort"]; c.effort == "" && ok || c.effort != "" && got != c.effort {

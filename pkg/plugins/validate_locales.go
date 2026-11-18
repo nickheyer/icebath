@@ -20,7 +20,7 @@ var localeKeyExports = map[string]string{"tui": "_keys.tui.json"}
 func ReferenceKeys(surface string) map[string]bool {
 	keys, err := referenceKeys(surface)
 	if err != nil {
-		logPluginValidateLocales.debug(fmt.Sprintf("i18n reference keys for %s unavailable: %v", surface, err))
+		pkgLog().Debug(fmt.Sprintf("i18n reference keys for %s unavailable: %v", surface, err))
 		return nil
 	}
 	return keys
@@ -45,7 +45,7 @@ func referenceKeys(surface string) (map[string]bool, error) {
 	}
 	export, known := localeKeyExports[surface]
 	if !known {
-		return nil, fmt.Errorf("KeyError: %s", pyrepr.Repr(surface))
+		return nil, fmt.Errorf("unknown locale surface %s", surface)
 	}
 	info, err := fs.Stat(locales.FS, export)
 	if err != nil || !info.Mode().IsRegular() {
@@ -127,7 +127,7 @@ func checkLanguagePacks(report *ValidationReport, manifest map[string]any, plugi
 	}
 }
 
-// Parses one locale YAML document as hermes_yaml safe_load reads a utf-8-sig file
+// Parses one locale YAML document as reads an utf-8-sig file
 func loadLocaleDocument(path string) (any, error) {
 	raw, err := os.ReadFile(path)
 	if err != nil {

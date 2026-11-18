@@ -38,7 +38,7 @@ func TestBlankSlateListExcludesSearchButKeepsKanban(t *testing.T) {
 }
 
 func TestBlankSlateMinimalToolsetsOddSections(t *testing.T) {
-	if err := BlankSlateMinimalToolsets(context.Background(), config.Tree{"platform_toolsets": []any{}}); err == nil || err.Error() != "TypeError: 'list' object does not support item assignment" {
+	if err := BlankSlateMinimalToolsets(context.Background(), config.Tree{"platform_toolsets": []any{}}); err == nil || err.Error() != "platform_toolsets in config is a list, expected a mapping" {
 		t.Fatalf("%v", err)
 	}
 	cfg := config.Tree{"agent": nil}
@@ -124,7 +124,7 @@ func TestBlankSlateMinimizeConfigOptionalFeaturesTurnedOff(t *testing.T) {
 		t.Fatalf("max_turns %v", v)
 	}
 	bad := config.Tree{"agent": map[string]any{}, "memory": "on"}
-	if err := BlankSlateMinimizeConfig(bad); err == nil || err.Error() != "TypeError: 'str' object does not support item assignment" {
+	if err := BlankSlateMinimizeConfig(bad); err == nil || err.Error() != "memory in config is text, expected a mapping" {
 		t.Fatalf("non mapping memory section %v", err)
 	}
 	if v, _ := config.CfgGet(bad, "compression", "enabled"); v != false {

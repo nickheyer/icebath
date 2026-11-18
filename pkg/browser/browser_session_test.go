@@ -48,7 +48,7 @@ func (p *scriptedCloud) CloseSession(_ *tools.Env, id string) bool {
 }
 func (p *scriptedCloud) EmergencyCleanup(*tools.Env, string) {}
 
-// Fresh session tables and no janitor or supervisor, as the hermes fixtures isolate browser state
+// Fresh session tables and no janitor or supervisor, as the test fixtures isolate browser state
 func isolateSessions(t *testing.T) *tools.Env {
 	t.Helper()
 	pin(t, &activeSessions, pydict.New[string, map[string]any]())
@@ -139,7 +139,8 @@ func TestBrowserUsePreservesProviderTimeout(t *testing.T) {
 		w.Write([]byte(`{"id": "browser-session-1", "cdpUrl": "ws://browser-use.example/devtools/browser/1", "timeoutAt": "2030-01-01T00:05:00Z"}`))
 	}))
 	defer srv.Close()
-	env, _ := browserUseCase(t, "", "nous", &tools.ManagedToolGatewayConfig{GatewayOrigin: srv.URL, NousUserToken: "test-key", ManagedMode: true})
+	env := browserUseCase(t, "test-key", "")
+	pin(t, &browserUseBaseURL, srv.URL)
 	session, err := newBrowserUseProvider().CreateSession(env, "task-1")
 	if err != nil {
 		t.Fatal(err)

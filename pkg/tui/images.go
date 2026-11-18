@@ -166,8 +166,8 @@ func resolveImagePath(raw, base string) (string, string, error) {
 
 // Folder a typed path is relative to, the session's, else the one the TUI was launched from
 func (s *tuiStore) sessionCwd() string {
-	if truthyJS(s.ui.Info["cwd"]) {
-		return jsValueString(s.ui.Info["cwd"])
+	if cwd := val(infoOf(s.ui.Info).Cwd); cwd != "" {
+		return cwd
 	}
 	return os.Getenv("ICEBATH_CWD")
 }

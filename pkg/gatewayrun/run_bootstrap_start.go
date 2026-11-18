@@ -36,7 +36,7 @@ type StartGatewayOptions struct {
 	IdleExit  bool
 }
 
-// Background goroutine of the bootstrap with a done signal, the daemon thread of hermes
+// Background goroutine of the bootstrap with a done signal
 type bootThread struct{ done chan struct{} }
 
 // Runs fn on its own goroutine
@@ -102,17 +102,17 @@ func startGatewayMakeShutdownSignalHandler(ctx context.Context, r *GatewayRunner
 		}
 		switch {
 		case takeover:
-			runLog().Info(fmt.Sprintf("Received %s as a planned --replace takeover — exiting cleanly", orDefault("SIGTERM")))
+			pkgLog().Info(fmt.Sprintf("Received %s as a planned --replace takeover — exiting cleanly", orDefault("SIGTERM")))
 		case plannedStop:
-			runLog().Info(fmt.Sprintf("Received %s as a planned gateway stop — exiting cleanly", orDefault("SIGTERM/SIGINT")))
+			pkgLog().Info(fmt.Sprintf("Received %s as a planned gateway stop — exiting cleanly", orDefault("SIGTERM/SIGINT")))
 		default:
 			*signalInitiated = true
 			r.signalInitiatedShutdown = true
-			runLog().Info(fmt.Sprintf("Received %s — initiating shutdown", orDefault("SIGTERM/SIGINT")))
+			pkgLog().Info(fmt.Sprintf("Received %s — initiating shutdown", orDefault("SIGTERM/SIGINT")))
 		}
 		if shutdownCtx != nil {
 			bestEffort(func() (struct{}, error) {
-				runLog().Warn(fmt.Sprintf("Shutdown context: %s", gateway.FormatContextForLog(shutdownCtx)))
+				pkgLog().Warn(fmt.Sprintf("Shutdown context: %s", gateway.FormatContextForLog(shutdownCtx)))
 				return struct{}{}, nil
 			}, "format_context_for_log failed: %s")
 			bestEffort(func() (struct{}, error) {
@@ -132,7 +132,7 @@ func startGatewayMakeShutdownSignalHandler(ctx context.Context, r *GatewayRunner
 // Builds the restart signal handler that logs its meaning then requests the drain aware service restart
 func startGatewayMakeRestartSignalHandler(r *GatewayRunner) func() {
 	return func() {
-		runLog().Info("SIGUSR1 received (systemctl reload / icebath gateway restart): performing a graceful " +
+		pkgLog().Info("SIGUSR1 received (systemctl reload / icebath gateway restart): performing a graceful " +
 			"gateway restart — drain active turns, exit, supervisor relaunches. Not an in-process " +
 			"config reload.")
 		r.RequestRestart(false, true)
@@ -153,7 +153,7 @@ func discoverGatewayMCPTools(ctx context.Context, cfg *gateway.GatewayConfig) er
 	for _, p := range served {
 		scoped := gateway.ProfileRuntimeScope(ctx, p.Home, true)
 		if _, err := mcp.ConnectAll(scoped, &tools.Env{Home: home.Dir(scoped), TerminalScope: tools.GetTerminalScope(scoped)}, nil); err != nil {
-			runLog().Warn(fmt.Sprintf("MCP tool discovery failed for profile '%s'", p.Name), "exc_info", err)
+			pkgLog().Warn(fmt.Sprintf("MCP tool discovery failed for profile '%s'", p.Name), "exc_info", err)
 		}
 	}
 	return nil
@@ -178,7 +178,7 @@ func shutdownMCPServersNonblocking(ctx context.Context, timeout float64, cfg *ga
 			func() {
 				defer func() {
 					if rec := recover(); rec != nil {
-						runLog().Debug(fmt.Sprintf("MCP shutdown raised for profile '%s'", p.Name), "exc_info", rec)
+						pkgLog().Debug(fmt.Sprintf("MCP shutdown raised for profile '%s'", p.Name), "exc_info", rec)
 					}
 				}()
 				scoped := gateway.ProfileRuntimeScope(context.Background(), p.Home, false)
@@ -189,7 +189,7 @@ func shutdownMCPServersNonblocking(ctx context.Context, timeout float64, cfg *ga
 		func() {
 			defer func() {
 				if rec := recover(); rec != nil {
-					runLog().Debug("MCP shutdown raised", "exc_info", rec)
+					pkgLog().Debug("MCP shutdown raised", "exc_info", rec)
 				}
 			}()
 			mcp.ShutdownMCPServers(provider.WithLaunchProfileScopeIfMultiplexed(context.Background()), nil, nil, pass)
@@ -197,7 +197,7 @@ func shutdownMCPServersNonblocking(ctx context.Context, timeout float64, cfg *ga
 	})
 	done := awaitThreadExit(ctx, worker.alive, timeout)
 	if !done {
-		runLog().Warn(fmt.Sprintf("MCP shutdown did not finish within %.1fs; continuing gateway "+
+		pkgLog().Warn(fmt.Sprintf("MCP shutdown did not finish within %.1fs; continuing gateway "+
 			"teardown (background thread will be reaped at process exit)", timeout))
 	}
 	return done, nil
@@ -209,10 +209,10 @@ func stopCronProvider(p cron.CronScheduler) {
 		if rec := recover(); rec != nil {
 			var exit *gateway.SystemExitError
 			if err, ok := rec.(error); ok && errors.As(err, &exit) {
-				runLog().Warn(fmt.Sprintf("Cron provider stop() attempted to exit the gateway with code %d; ignoring", exit.Code))
+				pkgLog().Warn(fmt.Sprintf("Cron provider stop() attempted to exit the gateway with code %d; ignoring", exit.Code))
 				return
 			}
-			runLog().Debug(fmt.Sprintf("Cron provider stop() error: %v", rec))
+			pkgLog().Debug(fmt.Sprintf("Cron provider stop() error: %v", rec))
 		}
 	}()
 	cron.SchedulerStop(p)
@@ -221,7 +221,7 @@ func stopCronProvider(p cron.CronScheduler) {
 // MCP discovery then the runner start, the exit verdict when the process must end before running mode
 func startGatewayRunRunner(ctx context.Context, r *GatewayRunner, signalInitiated *bool) (*bool, error) {
 	if err := discoverGatewayMCPTools(ctx, r.config); err != nil {
-		runLog().Debug("MCP tool discovery failed (non-fatal)", "exc_info", err)
+		pkgLog().Debug("MCP tool discovery failed (non-fatal)", "exc_info", err)
 	}
 	success, err := r.Start(ctx)
 	if err != nil {
@@ -235,7 +235,7 @@ func startGatewayRunRunner(ctx context.Context, r *GatewayRunner, signalInitiate
 	if r.exitCleanly {
 		shutdownGatewayHealthExport(r)
 		if r.exitReason != nil && *r.exitReason != "" {
-			runLog().Error(fmt.Sprintf("Gateway exiting cleanly: %s", *r.exitReason))
+			pkgLog().Error(fmt.Sprintf("Gateway exiting cleanly: %s", *r.exitReason))
 		}
 		if r.exitCode != nil {
 			return nil, &gateway.SystemExitError{Code: *r.exitCode}
@@ -248,7 +248,7 @@ func startGatewayRunRunner(ctx context.Context, r *GatewayRunner, signalInitiate
 			return nil, err
 		}
 		if _, err := shutdownMCPServersNonblocking(ctx, 5.0, r.config); err != nil {
-			runLog().Warn("MCP shutdown failed; connections may be left open", "exc_info", err)
+			pkgLog().Warn("MCP shutdown failed; connections may be left open", "exc_info", err)
 		}
 		verdict, err := resolveGatewayExitVerdict(r, *signalInitiated)
 		if err != nil {
@@ -274,17 +274,16 @@ func startGatewayShutdownTail(ctx context.Context, r *GatewayRunner, control *ga
 		func() {
 			defer func() {
 				if rec := recover(); rec != nil {
-					runLog().Debug("Control socket stop failed (non-fatal)", "exc_info", rec)
+					pkgLog().Debug("Control socket stop failed (non-fatal)", "exc_info", rec)
 				}
 			}()
 			control.Stop()
 		}()
 	}
-	bestEffort(func() (struct{}, error) { provider.StopNousAuthKeepalive(0); return struct{}{}, nil }, "")
 	ch.stop.Set()
 	stopCronProvider(ch.provider)
 	if !awaitThreadExit(ctx, ch.cronThread.IsAlive, cronShutdownDrainTimeout) {
-		runLog().Warn(fmt.Sprintf("Cron ticker did not exit within %.0fs of shutdown — an in-flight "+
+		pkgLog().Warn(fmt.Sprintf("Cron ticker did not exit within %.0fs of shutdown — an in-flight "+
 			"delivery may have been dropped.", cronShutdownDrainTimeout))
 	}
 	awaitThreadExit(ctx, ch.housekeeping.alive, housekeepingShutdownDrainTimeout)
@@ -294,7 +293,7 @@ func startGatewayShutdownTail(ctx context.Context, r *GatewayRunner, control *ga
 	case <-time.After(2 * time.Second):
 	}
 	if _, err := shutdownMCPServersNonblocking(ctx, 5.0, r.config); err != nil {
-		runLog().Warn("MCP shutdown failed; connections may be left open", "exc_info", err)
+		pkgLog().Warn("MCP shutdown failed; connections may be left open", "exc_info", err)
 	}
 	return resolveGatewayExitVerdict(r, *signalInitiated)
 }
@@ -304,7 +303,7 @@ func startGatewayStartCronAndHousekeeping(ctx context.Context, r *GatewayRunner)
 	stop := &pythread.Event{}
 	homes, err := cronTickProfileHomes(ctx, r.config)
 	if err != nil {
-		runLog().Warn(fmt.Sprintf("Could not resolve profile homes for cron: %v", err))
+		pkgLog().Warn(fmt.Sprintf("Could not resolve profile homes for cron: %v", err))
 		homes = nil
 	}
 	h := home.Dir(ctx)
@@ -344,7 +343,7 @@ func startGatewayStartCronAndHousekeeping(ctx context.Context, r *GatewayRunner)
 		for _, s := range homes {
 			names = append(names, s.Name)
 		}
-		runLog().Info(fmt.Sprintf("Cron scheduler will tick %d profile(s): %s", len(homes), pyReprStrings(names)))
+		pkgLog().Info(fmt.Sprintf("Cron scheduler will tick %d profile(s): %s", len(homes), pyReprStrings(names)))
 	}
 	if inProcess {
 		opts.CanDispatch = func() bool { return !(r.draining.Load() || r.externalDrainActive) }
@@ -358,7 +357,7 @@ func startGatewayStartCronAndHousekeeping(ctx context.Context, r *GatewayRunner)
 	gateway.ProcessOwnership.StartWriterThread(cronThread.IsAlive, func() { cronThread.Start() })
 	if !inProcess {
 		if _, hasAPIServer := r.adapters.Get(gateway.PlatformAPIServer); !hasAPIServer {
-			runLog().Warn(fmt.Sprintf("Cron provider '%s' is active but the api_server adapter is "+
+			pkgLog().Warn(fmt.Sprintf("Cron provider '%s' is active but the api_server adapter is "+
 				"NOT running in this gateway — scheduled fires arrive over "+
 				"loopback HTTP and will all fail (jobs only run when "+
 				"triggered manually). Most common cause: API_SERVER_KEY is "+
@@ -379,7 +378,7 @@ func startGatewayStartCronAndHousekeeping(ctx context.Context, r *GatewayRunner)
 	return cronHousekeeping{stop: stop, provider: p, cronThread: cronThread, housekeeping: housekeeping}
 }
 
-// Seams of the gateway start, the real functions swapped only where a hermes case installs a fake
+// Seams of the gateway start, the real functions swapped only where a test installs a fake
 var (
 	startCronAndHousekeeping = startGatewayStartCronAndHousekeeping
 	publishRuntimeReady      = publishGatewayRuntimeReady
@@ -537,9 +536,6 @@ func runStartedGateway(ctx context.Context, o StartGatewayOptions, resolved *gat
 		return false, err
 	}
 	unclean, _ := bestEffort(func() (*pyjson.Object, error) { return gateway.RecordStartup(ctx, "", true), nil }, "Lifecycle ledger startup record failed: %s")
-	bestEffort(func() (bool, error) {
-		return provider.StartNousAuthKeepalive(provider.HomePoolEnv(home.Dir(ctx)), provider.NousKeepaliveStartOptions{}), nil
-	}, "Nous auth keepalive did not start: %s")
 	early, err := startGatewayRunRunner(ctx, r, &signalInitiated)
 	if err != nil {
 		return false, err

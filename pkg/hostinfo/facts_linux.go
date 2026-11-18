@@ -11,8 +11,6 @@ const wslNvidiaCUDA = "/usr/lib/wsl/lib/libcuda.so.1"
 
 func nativeArchImpl() string { return ProcessArch() }
 
-func ramTotalImpl() int64 { return ParseMeminfoTotal(readText("/proc/meminfo", 4096)) }
-
 // PCI vendor ids of DRM cards, nil when sysfs exposes no DRM tree
 func linuxGPUVendorIDs() []string {
 	root := "/sys/class/drm"

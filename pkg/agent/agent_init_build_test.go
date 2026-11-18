@@ -107,7 +107,7 @@ func TestDisplayConfigReadsStreamingLoadModeAndCommentary(t *testing.T) {
 			t.Fatalf("fast_auto_seconds %v -> %v err %v", raw, c.fastAutoSeconds, err)
 		}
 	}
-	if err := applyDisplayConfig(&AIAgent{}, map[string]any{"agent": []any{"x"}}, "cli"); err == nil || !strings.Contains(err.Error(), "AttributeError") {
+	if err := applyDisplayConfig(&AIAgent{}, map[string]any{"agent": []any{"x"}}, "cli"); err == nil || !strings.Contains(err.Error(), "expected a mapping") {
 		t.Fatalf("a list agent section raised %v", err)
 	}
 }

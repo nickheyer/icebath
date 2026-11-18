@@ -12,7 +12,7 @@ import (
 	"time"
 )
 
-// Environment double whose Execute is a closure, with the hermes test attribute shape
+// Environment double whose Execute is a closure, with the test attribute shape
 type fakeTermEnv struct {
 	mu           sync.Mutex
 	envType      string
@@ -167,7 +167,7 @@ func (f *fakeSpawner) AddPendingWatcher(w map[string]any) {
 	f.mu.Unlock()
 }
 
-// Hermes shaped minimal config dict for the local backend
+// Shaped minimal config dict for the local backend
 func localTestConfig(cwd string, overrides map[string]any) map[string]any {
 	cfg := map[string]any{
 		"env_type": "local", "timeout": 180, "cwd": cwd, "host_cwd": "", "modal_mode": "auto",

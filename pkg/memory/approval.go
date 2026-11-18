@@ -53,7 +53,7 @@ func DestructiveOps(payload map[string]any) ([]map[string]any, error) {
 }
 
 // Pins each staged edit to the full entry it selects now, returning the direct write's error when the search fails
-func pinMatchedEntries(ctx context.Context, store *Store, payload map[string]any) (string, string, error) {
+func pinMatchedEntries(ctx context.Context, store *Store, payload map[string]any) (string, error) {
 	target, _ := payload["target"].(string)
 	action := payload["action"]
 	var res Result
@@ -62,11 +62,11 @@ func pinMatchedEntries(ctx context.Context, store *Store, payload map[string]any
 		raw, _ := payload["operations"].([]any)
 		ops, err := opMaps(raw)
 		if err != nil {
-			return "", "", err
+			return "", err
 		}
 		res, err = store.ResolveBatchEntries(ctx, target, ops)
 		if err != nil {
-			return "", "", err
+			return "", err
 		}
 		if res.Success() {
 			matched, _ := res.Get("matched_entries").([]any)
@@ -87,48 +87,45 @@ func pinMatchedEntries(ctx context.Context, store *Store, payload map[string]any
 	default:
 		verb, ok := action.(string)
 		if !ok || !bgDeleteActions[verb] {
-			return "", "", nil
+			return "", nil
 		}
 		oldText, err := strMethodArg(payload["old_text"])
 		if err != nil {
-			return "", "", err
+			return "", err
 		}
 		res, err = store.ResolveEntry(ctx, target, oldText, verb)
 		if err != nil {
-			return "", "", err
+			return "", err
 		}
 		if res.Success() {
 			payload["matched_entry"] = res.Get("matched_entry")
 		}
 	}
 	if res.Success() {
-		return "", "", nil
+		return "", nil
 	}
-	return tools.JSON(res.Data), res.FailureClass, nil
+	return tools.JSON(res.Data), nil
 }
 
 // Result JSON when the write must not proceed because it was blocked or staged, empty to proceed
-func gateOrStage(ctx context.Context, env *tools.Env, store *Store, summary, detail string, payload map[string]any) (string, string, error) {
+func gateOrStage(ctx context.Context, env *tools.Env, store *Store, summary, detail string, payload map[string]any) (string, error) {
 	decision := tools.CheckWriteApproval(ctx, env, tools.WriteApprovalMemory, summary, detail)
 	if decision.Allow {
-		return "", "", nil
+		return "", nil
 	}
 	if decision.Blocked {
-		return toolError(decision.Message, map[string]any{"success": false}), "gate_refused", nil
+		return toolError(decision.Message, map[string]any{"success": false}), nil
 	}
-	unmatched, class, err := pinMatchedEntries(tools.WithEnvHome(ctx, env), store, payload)
-	if err != nil {
-		return "", "", err
-	}
-	if unmatched != "" {
-		return unmatched, class, nil
+	unmatched, err := pinMatchedEntries(tools.WithEnvHome(ctx, env), store, payload)
+	if err != nil || unmatched != "" {
+		return unmatched, err
 	}
 	record := tools.StageWrite(tools.WithEnvHome(ctx, env), env, tools.WriteApprovalMemory, payload, summary+": "+runePrefix(detail, 120), tools.CurrentOrigin(env))
-	return tools.JSON(tools.Dict("success", true, "staged", true, "pending_id", record["id"], "message", decision.Message)), "staged", nil
+	return tools.JSON(tools.Dict("success", true, "staged", true, "pending_id", record["id"], "message", decision.Message)), nil
 }
 
 // Gates one mutating op, or a whole batch as a single unit when operations is set
-func applyWriteGate(ctx context.Context, env *tools.Env, store *Store, action, target string, content, oldText any, operations []any) (string, string, error) {
+func applyWriteGate(ctx context.Context, env *tools.Env, store *Store, action, target string, content, oldText any, operations []any) (string, error) {
 	label := "memory"
 	if target == "user" {
 		label = "user profile"
@@ -146,9 +143,9 @@ func applyWriteGate(ctx context.Context, env *tools.Env, store *Store, action, t
 }
 
 // Stages patch and remove ops of an unattended background review instead of applying them, add stays open
-func backgroundDeleteGate(ctx context.Context, env *tools.Env, store *Store, action any, operations []any, target string, content, oldText any) (string, string, error) {
+func backgroundDeleteGate(ctx context.Context, env *tools.Env, store *Store, action any, operations []any, target string, content, oldText any) (string, error) {
 	if !IsUnattendedReview(env) {
-		return "", "", nil
+		return "", nil
 	}
 	var payload map[string]any
 	if operations != nil {
@@ -157,11 +154,8 @@ func backgroundDeleteGate(ctx context.Context, env *tools.Env, store *Store, act
 		payload = map[string]any{"action": action, "target": target, "content": content, "old_text": oldText}
 	}
 	destructive, err := DestructiveOps(payload)
-	if err != nil {
-		return "", "", err
-	}
-	if len(destructive) == 0 {
-		return "", "", nil
+	if err != nil || len(destructive) == 0 {
+		return "", err
 	}
 	kind := "batch"
 	var detail string
@@ -175,14 +169,14 @@ func backgroundDeleteGate(ctx context.Context, env *tools.Env, store *Store, act
 		kind = pyStr(action)
 		detail = batchOpLine(map[string]any{"action": action, "content": content, "old_text": oldText})
 	}
-	unmatched, class, err := pinMatchedEntries(tools.WithEnvHome(ctx, env), store, payload)
+	unmatched, err := pinMatchedEntries(tools.WithEnvHome(ctx, env), store, payload)
 	if err != nil {
-		moduleLog(env, memoryToolLogger).Warn("Failed to stage background-review consolidation; denying", "error", err)
+		envLog(env).Warn("Failed to stage background-review consolidation; denying", "error", err)
 		return toolError("Background review may not delete memory entries ('patch'/'remove', including in a "+
-			"batch); 'add' is still available.", map[string]any{"success": false}), "gate_refused", nil
+			"batch); 'add' is still available.", map[string]any{"success": false}), nil
 	}
 	if unmatched != "" {
-		return unmatched, class, nil
+		return unmatched, nil
 	}
 	summary := runePrefix(fmt.Sprintf("background review consolidation (%s on %s): %s", kind, target, detail), 200)
 	record := tools.StageWrite(tools.WithEnvHome(ctx, env), env, tools.WriteApprovalMemory, payload, summary, tools.CurrentOrigin(env))
@@ -191,7 +185,7 @@ func backgroundDeleteGate(ctx context.Context, env *tools.Env, store *Store, act
 		"message", "Background review may not delete memory entries unattended. The proposed "+
 			kind+" was staged for your approval — "+
 			"review it with /memory pending (approve to apply, discard to drop).",
-	)), "staged", nil
+	)), nil
 }
 
 // Replays a staged write bypassing the gate, destructive ops applying only to their pinned entry

@@ -43,7 +43,7 @@ func asyncDispatchFixture(t *testing.T) *tools.Env {
 	return env
 }
 
-// Credentials of model m with every other field None, the creds dict of the hermes tests
+// Credentials of model m with every other field None, the creds dict of the tests
 func asyncFakeCreds(t *testing.T) {
 	t.Helper()
 	prev := resolveDelegationCredentialsFn
@@ -53,7 +53,7 @@ func asyncFakeCreds(t *testing.T) {
 	t.Cleanup(func() { resolveDelegationCredentialsFn = prev })
 }
 
-// Leaf children named s<index>, the build fake of the hermes tests
+// Leaf children named s<index>, the build fake of the tests
 func asyncFakeChildren(t *testing.T) {
 	t.Helper()
 	prev := buildChildPreservingParentToolsFn

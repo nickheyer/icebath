@@ -3,7 +3,6 @@ package cron
 import (
 	"context"
 	"errors"
-	"log/slog"
 	"os"
 	"path/filepath"
 	"slices"
@@ -69,7 +68,7 @@ func RecordWorktreeRepo(ctx context.Context, h, repoRoot string) {
 		return
 	}
 	if err := recordWorktreeRepo(ctx, h, repoRoot); err != nil {
-		slog.Default().Debug("worktree registry update failed for "+repoRoot, "error", err)
+		pkgLog().Debug("worktree registry update failed for "+repoRoot, "error", err)
 	}
 }
 

@@ -26,7 +26,7 @@ import (
 
 // Liveness probe answering ok with the platform and version
 func (a *APIServerAdapter) handleHealth(ctx context.Context, request *gateway.WebRequest) (*gateway.WebResponse, error) {
-	return jsonResponse(pyjson.ObjectOf("status", "ok", "platform", "icebath-agent", "version", hermesVersion()), http.StatusOK, nil), nil
+	return jsonResponse(pyjson.ObjectOf("status", "ok", "platform", "icebath-agent", "version", icebathVersion()), http.StatusOK, nil), nil
 }
 
 // Gateway state, platforms, readiness and live API metrics for detailed health probing
@@ -77,7 +77,7 @@ func (a *APIServerAdapter) handleHealthDetailed(ctx context.Context, request *ga
 	lastHeartbeat, _ := apiStatus.Get("last_heartbeat")
 	return jsonResponse(pyjson.ObjectOf(
 		"status", status, "readiness", readiness, "platform", "icebath-agent",
-		"version", hermesVersion(), "gateway_state", gwState, "platforms", platforms,
+		"version", icebathVersion(), "gateway_state", gwState, "platforms", platforms,
 		"api_server", apiStatus, "metrics_today", metricsToday, "last_heartbeat", lastHeartbeat,
 		"active_agents", gwActive, "gateway_busy", busy,
 		"gateway_drainable", gateway.DeriveGatewayDrainable(true, gwState),
@@ -126,7 +126,7 @@ func (a *APIServerAdapter) handleModelOptions(ctx context.Context, request *gate
 		return provider.BuildModelOptionsPayload(ctx, pc, false, includeUnconfigured, refresh)
 	}()
 	if err != nil {
-		apiLog().Error(fmt.Sprintf("[%s] GET /api/model/options failed", a.Name()), "error", err)
+		pkgLog().Error(fmt.Sprintf("[%s] GET /api/model/options failed", a.Name()), "error", err)
 		return errorResponse("Failed to list model options.", http.StatusInternalServerError, errOpts{Code: "model_options_failed"}), nil
 	}
 	return jsonResponse(payload, http.StatusOK, nil), nil
@@ -161,7 +161,7 @@ func (a *APIServerAdapter) handleCapabilities(ctx context.Context, request *gate
 		endpoints.Set(e.name, pyjson.ObjectOf("method", e.method, "path", e.path))
 	}
 	return jsonResponse(pyjson.ObjectOf(
-		"object", "hermes.api_server.capabilities", "platform", "icebath-agent", "model", a.modelName,
+		"object", "icebath.api_server.capabilities", "platform", "icebath-agent", "model", a.modelName,
 		"auth", pyjson.ObjectOf("type", "bearer", "required", a.apiKey != ""),
 		"runtime", pyjson.ObjectOf("mode", "server_agent", "tool_execution", "server", "split_runtime", false,
 			"description", "The API server creates a server-side Icebath AIAgent; "+
@@ -187,7 +187,7 @@ func (a *APIServerAdapter) handleSkills(ctx context.Context, request *gateway.We
 		return skills.SortSkills(scope.FindAllSkills(false)), nil
 	}()
 	if err != nil {
-		apiLog().Error("GET /v1/skills failed", "error", err)
+		pkgLog().Error("GET /v1/skills failed", "error", err)
 		return errorResponse("Failed to enumerate skills", http.StatusInternalServerError, errOpts{Type: "server_error"}), nil
 	}
 	data := make([]any, 0, len(list))
@@ -244,7 +244,7 @@ func (a *APIServerAdapter) handleToolsets(ctx context.Context, request *gateway.
 		return out, nil
 	}()
 	if err != nil {
-		apiLog().Error("GET /v1/toolsets failed", "error", err)
+		pkgLog().Error("GET /v1/toolsets failed", "error", err)
 		return errorResponse("Failed to enumerate toolsets", http.StatusInternalServerError, errOpts{Type: "server_error"}), nil
 	}
 	return jsonResponse(pyjson.ObjectOf("object", "list", "platform", "api_server", "data", data), http.StatusOK, nil), nil
@@ -382,7 +382,7 @@ func (a *APIServerAdapter) conversationHistoryForSession(ctx context.Context, se
 	}
 	history, err := db.GetMessagesAsConversation(ctx, sessionID, state.ConversationOptions{})
 	if err != nil {
-		apiLog().Warn(fmt.Sprintf("Failed to load session history for %s: %v", sessionID, err))
+		pkgLog().Warn(fmt.Sprintf("Failed to load session history for %s: %v", sessionID, err))
 		return []map[string]any{}
 	}
 	return history
@@ -586,7 +586,7 @@ func (a *APIServerAdapter) handleCreateSession(ctx context.Context, request *gat
 	if titleErr != "" {
 		return errorResponse(titleErr, http.StatusBadRequest, errOpts{Code: "invalid_title"}), nil
 	}
-	return jsonResponse(pyjson.ObjectOf("object", "hermes.session", "session", sessionResponse(session)), http.StatusCreated, nil), nil
+	return jsonResponse(pyjson.ObjectOf("object", "icebath.session", "session", sessionResponse(session)), http.StatusCreated, nil), nil
 }
 
 // One session row
@@ -595,7 +595,7 @@ func (a *APIServerAdapter) handleGetSession(ctx context.Context, request *gatewa
 	if err != nil || errResp != nil {
 		return errResp, err
 	}
-	return jsonResponse(pyjson.ObjectOf("object", "hermes.session", "session", sessionResponse(session)), http.StatusOK, nil), nil
+	return jsonResponse(pyjson.ObjectOf("object", "icebath.session", "session", sessionResponse(session)), http.StatusOK, nil), nil
 }
 
 // Updates the client safe session metadata, a pin applied last so it wins over hidden
@@ -676,7 +676,7 @@ func (a *APIServerAdapter) handlePatchSession(ctx context.Context, request *gate
 	} else if fresh != nil {
 		session = fresh
 	}
-	return jsonResponse(pyjson.ObjectOf("object", "hermes.session", "session", sessionResponse(session)), http.StatusOK, nil), nil
+	return jsonResponse(pyjson.ObjectOf("object", "icebath.session", "session", sessionResponse(session)), http.StatusOK, nil), nil
 }
 
 // Hard deletes a session with its routing entries and the image bytes nothing else holds
@@ -715,7 +715,7 @@ func (a *APIServerAdapter) handleDeleteSession(ctx context.Context, request *gat
 			return nil, err
 		}
 	}
-	return jsonResponse(pyjson.ObjectOf("object", "hermes.session.deleted", "id", sessionID, "deleted", deleted), http.StatusOK, nil), nil
+	return jsonResponse(pyjson.ObjectOf("object", "icebath.session.deleted", "id", sessionID, "deleted", deleted), http.StatusOK, nil), nil
 }
 
 // One page of a session's messages across its compression lineage
@@ -852,7 +852,7 @@ func (a *APIServerAdapter) handleForkSession(ctx context.Context, request *gatew
 	if fork == nil {
 		fork = pyjson.ObjectOf("id", forkID, "parent_session_id", sourceID)
 	}
-	return jsonResponse(pyjson.ObjectOf("object", "hermes.session", "session", sessionResponse(fork)), http.StatusCreated, nil), nil
+	return jsonResponse(pyjson.ObjectOf("object", "icebath.session", "session", sessionResponse(fork)), http.StatusCreated, nil), nil
 }
 
 // Session authority of the runner, ok false when the runner has none

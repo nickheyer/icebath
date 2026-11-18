@@ -202,15 +202,15 @@ func (r *GatewayRunner) renameDiscordAutoThreadForSessionTitle(ctx context.Conte
 		opts = gateway.ThreadRenameOptions{PreferConnectorCreated: true, ParentChatID: parent}
 		lane = "relay"
 	}
-	runLog().Info(fmt.Sprintf("discord auto-thread rename: thread=%s lane=%s new_title=%s", targetThreadID, lane, pyrepr.Repr(threadName)))
+	pkgLog().Info(fmt.Sprintf("discord auto-thread rename: thread=%s lane=%s new_title=%s", targetThreadID, lane, pyrepr.Repr(threadName)))
 	renamed, err := renamer.RenameThread(ctx, targetThreadID, threadName, opts)
 	switch {
 	case err != nil && isPyTypeError(err):
-		runLog().Warn(fmt.Sprintf("Discord semantic thread rename raised TypeError (adapter=%s)", pyTypeNameOf(adapter)), "exc_info", err)
+		pkgLog().Warn(fmt.Sprintf("Discord semantic thread rename raised TypeError (adapter=%s)", pyTypeNameOf(adapter)), "exc_info", err)
 	case err != nil:
-		runLog().Debug("Failed to rename Discord auto-thread for generated session title", "exc_info", err)
+		pkgLog().Debug("Failed to rename Discord auto-thread for generated session title", "exc_info", err)
 	default:
-		runLog().Info(fmt.Sprintf("discord auto-thread rename result: thread=%s applied=%s", targetThreadID, pyrepr.Repr(renamed)))
+		pkgLog().Info(fmt.Sprintf("discord auto-thread rename result: thread=%s applied=%s", targetThreadID, pyrepr.Repr(renamed)))
 	}
 }
 
@@ -240,12 +240,12 @@ func (r *GatewayRunner) scheduleRenameFromTitleThread(source *gateway.SessionSou
 				return
 			}
 			if _, ferr := fut.wait(context.Background()); ferr != nil {
-				runLog().Debug(label+" failed", "exc_info", ferr)
+				pkgLog().Debug(label+" failed", "exc_info", ferr)
 			}
 		})
 	})
 	if err != nil && !errors.Is(err, gateway.ErrLoopClosed) {
-		runLog().Debug(fmt.Sprintf("%s failed to schedule: %s", label, err))
+		pkgLog().Debug(fmt.Sprintf("%s failed to schedule: %s", label, err))
 	}
 }
 
@@ -323,7 +323,7 @@ func (r *GatewayRunner) renameTelegramTopicForSessionTitle(ctx context.Context, 
 	if db := r.sessionDB(ctx); db != nil {
 		binding, err := db.DB().GetTelegramTopicBinding(ctx, source.ChatID, threadID, telegramTopicProfileName(source))
 		if err != nil {
-			runLog().Debug("Failed to verify Telegram topic binding before rename", "exc_info", err)
+			pkgLog().Debug("Failed to verify Telegram topic binding before rename", "exc_info", err)
 			return
 		}
 		if binding != nil && binding.Len() > 0 && pyrepr.Str(orEmpty(binding.GetOr("session_id", nil))) != sessionID {
@@ -335,7 +335,7 @@ func (r *GatewayRunner) renameTelegramTopicForSessionTitle(ctx context.Context, 
 	}
 	topicName := sanitizeTelegramTopicTitle(ctx, title)
 	if err := renameTelegramTopic(ctx, adapter, source.ChatID, threadID, topicName); err != nil {
-		runLog().Debug("Failed to rename Telegram topic for auto-generated title", "exc_info", err)
+		pkgLog().Debug("Failed to rename Telegram topic for auto-generated title", "exc_info", err)
 	}
 }
 

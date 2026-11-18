@@ -576,7 +576,7 @@ func NewVercelSandboxEnvironment(ctx context.Context, env *Env, o VercelOptions)
 
 func (v *vercelEnv) EnvType() string { return "vercel_sandbox" }
 
-// Python class name of the environment as hermes logs and records it
+// Python class name of the environment as logs and records name it
 func (v *vercelEnv) ClassName() string { return "VercelSandboxEnvironment" }
 
 var _ interface{ ClassName() string } = (*vercelEnv)(nil)

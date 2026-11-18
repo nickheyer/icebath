@@ -61,7 +61,7 @@ var (
 	}
 	containerConfigKeys = []configKeyRow{
 		{"container_cpu", "container_cpu", 1}, {"container_memory", "container_memory", 5120}, {"container_disk", "container_disk", 51200},
-		{"container_persistent", "container_persistent", true}, {"modal_mode", "modal_mode", "auto"}, {"vercel_runtime", "vercel_runtime", ""}, {"vercel_image", "vercel_image", ""},
+		{"container_persistent", "container_persistent", true}, {"vercel_runtime", "vercel_runtime", ""}, {"vercel_image", "vercel_image", ""},
 		{"docker_volumes", "docker_volumes", []any{}}, {"docker_mount_cwd_to_workspace", "docker_mount_cwd_to_workspace", false}, {"docker_forward_env", "docker_forward_env", []any{}},
 		{"docker_env", "docker_env", map[string]any{}}, {"docker_run_as_host_user", "docker_run_as_host_user", false}, {"docker_extra_args", "docker_extra_args", []any{}},
 		{"docker_shm_size", "docker_shm_size", "1g"}, {"docker_network", "docker_network", true}, {"docker_persist_across_processes", "docker_persist_across_processes", true},

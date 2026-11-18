@@ -12,7 +12,7 @@ import (
 	"sync"
 )
 
-// Core module facts the source audits read, derived from the hermes reference tree and the plugin SDK
+// Core module facts the source audits read, derived from the core tree and the plugin SDK
 //
 //go:embed core_tables.txt.gz
 var coreTablesGz []byte

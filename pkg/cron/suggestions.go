@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
-	"log/slog"
 	"os"
 	"path/filepath"
 	"strings"
@@ -15,6 +14,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/nickheyer/icebath/pkg/config"
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
@@ -94,7 +94,7 @@ func (s *Store) suggestionsFile() string {
 func suggestionField(rec any, key string) (any, error) {
 	obj, ok := rec.(*pyjson.Object)
 	if !ok {
-		return nil, fmt.Errorf("AttributeError: '%s' object has no attribute 'get'", pyrepr.TypeName(rec))
+		return nil, fmt.Errorf("a cron suggestion is %s, expected a mapping", errchain.Kind(rec))
 	}
 	return obj.Vals[key], nil
 }
@@ -110,7 +110,7 @@ func (s *Store) loadSuggestionsRaw() ([]any, error) {
 	}
 	raw, err := os.ReadFile(path)
 	if err != nil {
-		slog.Warn(fmt.Sprintf("suggestions.json unreadable (%s); starting empty", pypath.OSErrorText(err)))
+		pkgLog().Warn(fmt.Sprintf("suggestions.json unreadable (%s); starting empty", pypath.OSErrorText(err)))
 		return []any{}, nil
 	}
 	text := strings.TrimPrefix(string(raw), "\ufeff")
@@ -119,7 +119,7 @@ func (s *Store) loadSuggestionsRaw() ([]any, error) {
 	}
 	data, err := pyjson.Loads(text)
 	if err != nil {
-		slog.Warn(fmt.Sprintf("suggestions.json unreadable (%s); starting empty", err))
+		pkgLog().Warn(fmt.Sprintf("suggestions.json unreadable (%s); starting empty", err))
 		return []any{}, nil
 	}
 	if obj, ok := data.(*pyjson.Object); ok {
@@ -130,7 +130,7 @@ func (s *Store) loadSuggestionsRaw() ([]any, error) {
 	if list, ok := data.([]any); ok {
 		return list, nil
 	}
-	slog.Warn("suggestions.json malformed; starting empty")
+	pkgLog().Warn("suggestions.json malformed; starting empty")
 	return []any{}, nil
 }
 
@@ -214,7 +214,7 @@ func (s *Store) AddSuggestion(title, description, source string, jobSpec any, de
 		return nil, err
 	}
 	if len(pending) >= MaxPendingSuggestions {
-		slog.Info(fmt.Sprintf("Suggestion backlog full (%d); dropping %s", MaxPendingSuggestions, pyrepr.Repr(title)))
+		pkgLog().Info(fmt.Sprintf("Suggestion backlog full (%d); dropping %s", MaxPendingSuggestions, pyrepr.Repr(title)))
 		return nil, nil
 	}
 	record := pyjson.NewObject()
@@ -281,7 +281,7 @@ func (s *Store) GetSuggestion(ref string) (*pyjson.Object, error) {
 		}
 		title, ok := raw.(string)
 		if !ok {
-			return nil, fmt.Errorf("AttributeError: '%s' object has no attribute 'lower'", pyrepr.TypeName(raw))
+			return nil, fmt.Errorf("a cron suggestion id is %s, expected text", errchain.Kind(raw))
 		}
 		if pystr.Lower(title) == pystr.Lower(ref) {
 			return obj, nil
@@ -363,17 +363,17 @@ func (s *Store) AcceptSuggestion(ctx context.Context, ref string, origin map[str
 		for i, item := range js {
 			pair, ok := item.([]any)
 			if !ok || len(pair) != 2 {
-				return nil, fmt.Errorf("ValueError: dictionary update sequence element #%d has wrong length", i)
+				return nil, fmt.Errorf("job spec entry %d of the suggestion is not a key and value pair", i)
 			}
 			key, ok := pair[0].(string)
 			if !ok {
-				return nil, errors.New("TypeError: keywords must be strings")
+				return nil, errors.New("the suggestion job spec keys must be text")
 			}
 			spec.Set(key, pair[1])
 		}
 	default:
 		if pyrepr.Truthy(js) {
-			return nil, fmt.Errorf("TypeError: '%s' object is not iterable", pyrepr.TypeName(js))
+			return nil, fmt.Errorf("the suggestion job spec is %s, expected a mapping", errchain.Kind(js))
 		}
 	}
 	if origin != nil {

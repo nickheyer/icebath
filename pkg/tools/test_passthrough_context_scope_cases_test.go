@@ -7,7 +7,6 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
-	"sync"
 	"testing"
 	"time"
 
@@ -247,37 +246,5 @@ func TestDuckDuckGoWorkerOfAServedScopeStartsUnderMultiplex(t *testing.T) {
 	t.Cleanup(func() { SetMultiplexActive(false) })
 	if _, err := ddgsSearchBounded(scopedSkillContext(), &Env{Home: served.Home, Config: served.Config}, "probe", 5); err != nil {
 		t.Fatalf("search worker under the served scope failed: %v", err)
-	}
-}
-
-func TestGatewayTokenOverrideOfARoutedProfileEnvNeverBorrowsTheLaunchValue(t *testing.T) {
-	routed := t.TempDir()
-	if err := os.WriteFile(filepath.Join(routed, ".env"), []byte("OTHER_TOKEN=x\n"), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	t.Setenv("ICEBATH_HOME", t.TempDir())
-	t.Setenv("TOOL_GATEWAY_USER_TOKEN", "launch-override")
-	prev := NousAccount
-	NousAccount = nil
-	t.Cleanup(func() { NousAccount = prev })
-	if got := PeekNousAccessToken(&Env{Home: routed, Secrets: config.NewSecrets(routed), Values: &sync.Map{}}); got != "" {
-		t.Fatalf("routed profile env read the launch process override %q", got)
-	}
-}
-
-func TestGatewayTokenOverrideOfTheLaunchProfileEnvUnderMultiplexKeepsItsProcessValue(t *testing.T) {
-	launch := t.TempDir()
-	if err := os.WriteFile(filepath.Join(launch, ".env"), []byte("OTHER_TOKEN=x\n"), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	t.Setenv("ICEBATH_HOME", launch)
-	t.Setenv("TOOL_GATEWAY_USER_TOKEN", "launch-override")
-	SetMultiplexActive(true)
-	t.Cleanup(func() { SetMultiplexActive(false) })
-	prev := NousAccount
-	NousAccount = nil
-	t.Cleanup(func() { NousAccount = prev })
-	if got := PeekNousAccessToken(&Env{Home: launch, Secrets: config.NewSecrets(launch), Values: &sync.Map{}}); got != "launch-override" {
-		t.Fatalf("launch profile env under multiplexing read override %q, want its own process value launch-override", got)
 	}
 }

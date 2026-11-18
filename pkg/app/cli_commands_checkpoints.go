@@ -282,7 +282,7 @@ func (c *CLI) restoreSnapshotCommand(parts []string) {
 		restored, err = backup.RestoreQuickSnapshot(c.ctx, snapID, snap.Home)
 	}
 	if err != nil {
-		cliLogger.Warn(fmt.Sprintf("Snapshot restore failed: %v", err))
+		pkgLog().Warn(fmt.Sprintf("Snapshot restore failed: %v", err))
 	}
 	printSnapshotLines(snap.RestoreReport(snapID, restored, err, onGateway))
 }

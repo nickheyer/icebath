@@ -7,6 +7,7 @@ import (
 	"encoding/base64"
 	"encoding/hex"
 	"errors"
+	"fmt"
 	"maps"
 	"os"
 	"path/filepath"
@@ -25,7 +26,7 @@ import (
 var hostedPermanentFileRefusals = map[string]bool{"invalid_params": true, "permission_denied": true}
 
 // Commits the message's files to every member, appends the user event, and returns a failed commit to upload state
-func AppendUserEvent(ctx context.Context, service *HostedRoomService, roomID, eventID string, payload map[string]any, gatewayID string, epoch int64) (map[string]any, error) {
+func AppendUserEvent(ctx context.Context, service *HostedRoomService, roomID, eventID string, payload, actor map[string]any, gatewayID string, epoch int64) (map[string]any, error) {
 	store, err := NewHostedRoomAttachmentStore(ctx, service.DBPath, AttachmentStoreOptions{})
 	if err != nil {
 		return nil, err
@@ -52,7 +53,7 @@ func AppendUserEvent(ctx context.Context, service *HostedRoomService, roomID, ev
 		}
 	}
 	event, err := AppendEvent(ctx, service.DBPath, AppendEventInput{RoomID: roomID, EventID: eventID, Kind: "message.user",
-		Actor: map[string]any{"kind": "user", "id": "local-user"}, Payload: payload, AuthorityGatewayID: gatewayID, AuthorityEpoch: epoch})
+		Actor: actor, Payload: payload, AuthorityGatewayID: gatewayID, AuthorityEpoch: epoch})
 	if err != nil {
 		if len(transitioned) > 0 {
 			if _, abortErr := store.AbortMessageCommit(roomID, eventID, transitioned); abortErr != nil {
@@ -106,8 +107,12 @@ func Download(ctx context.Context, service *CanonicalHostedRoomService, actor Pr
 // Retains one composer file for a later groups.send manifest on either route
 func StoreUpload(ctx context.Context, service *HostedRoomService, roomID string, params map[string]any) (map[string]any, error) {
 	encoded, ok := params["data_base64"].(string)
-	if !ok || utf8.RuneCountInString(encoded) > ((maxAttachmentBytes+2)/3)*4 {
+	if !ok {
 		return nil, runtimeRefusal("invalid_params")
+	}
+	if length := utf8.RuneCountInString(encoded); length > ((maxAttachmentBytes+2)/3)*4 {
+		return nil, roomRefusal("invalid_params", fmt.Sprintf("%v is about %s, over the %s limit for one room file", params["name"],
+			roomBytes(int64(length)/4*3), roomBytes(maxAttachmentBytes)))
 	}
 	data, err := pybase64.B64DecodeValidate(encoded)
 	if err != nil {

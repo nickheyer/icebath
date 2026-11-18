@@ -5,7 +5,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"log/slog"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -733,15 +732,15 @@ func publishLaunchers(ctx context.Context, projectRoot string, create bool) erro
 		return err
 	}
 	if sealed {
-		slog.Info(fmt.Sprintf("launchers: sealed tree at %s keeps its own", root))
+		pkgLog().Info(fmt.Sprintf("launchers: sealed tree at %s keeps its own", root))
 		return nil
 	}
 	if mechanism, _ := stampString(ReadInstallStamp(root), "updateMechanism"); mechanism == "external" {
-		slog.Info(fmt.Sprintf("launchers: external runtime at %s keeps its own", root))
+		pkgLog().Info(fmt.Sprintf("launchers: external runtime at %s keeps its own", root))
 		return nil
 	}
 	if resolveInstallBinary(root) == "" {
-		slog.Warn(fmt.Sprintf("launchers: no install binary under %s; %s not published", root, checkoutLauncherDir(root)))
+		pkgLog().Warn(fmt.Sprintf("launchers: no install binary under %s; %s not published", root, checkoutLauncherDir(root)))
 		return nil
 	}
 	written, err := publishOwnLaunchers(ctx, root, checkoutLauncherDir(root))
@@ -756,12 +755,12 @@ func publishLaunchers(ctx context.Context, projectRoot string, create bool) erro
 		return err
 	}
 	if !result.OK {
-		slog.Warn(fmt.Sprintf("CLI exposure failed: %s", result.Error))
+		pkgLog().Warn(fmt.Sprintf("CLI exposure failed: %s", result.Error))
 	}
 	return nil
 }
 
-// Own command publication the source launcher refresh runs, the attribute hermes tests replace
+// Own command publication the source launcher refresh runs, replaced by tests
 var publishOwnLaunchers = EnsureInstallLaunchers
 
 // Replaces the own command publication of the launcher refresh and returns the previous one
@@ -771,7 +770,7 @@ func SwapPublishOwnLaunchers(fn func(ctx context.Context, repoRoot, outDir strin
 	return prev
 }
 
-// PATH exposure the source launcher refresh runs, the attribute hermes tests replace
+// PATH exposure the source launcher refresh runs, replaced by tests
 var exposeCLI = ExposeCLI
 
 // Replaces the PATH exposure of the launcher refresh and returns the previous one
@@ -891,6 +890,6 @@ func ownsUserPath(root string) bool {
 	if !known {
 		consoleRoot = "an unknown icebath home"
 	}
-	slog.Info(fmt.Sprintf("User PATH left unchanged: new consoles use %s, not %s", consoleRoot, root))
+	pkgLog().Info(fmt.Sprintf("User PATH left unchanged: new consoles use %s, not %s", consoleRoot, root))
 	return false
 }

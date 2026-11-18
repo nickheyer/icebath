@@ -142,7 +142,7 @@ func (e *StaleHeldHistory) Error() string   { return e.Msg }
 func (e *StaleHeldHistory) Unwrap() error   { return errStaleHeldHistoryMarker }
 func (e *StaleHeldHistory) PyRuntimeError() {}
 
-// PyRuntimeError marks an error that hermes raises as RuntimeError or a subclass of it
+// Marks an error raised as a RuntimeError or a subclass of it
 type PyRuntimeError interface{ PyRuntimeError() }
 
 type summaryRuntimeError struct{ msg string }

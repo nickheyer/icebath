@@ -6,7 +6,6 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
-	"log/slog"
 	"sort"
 	"strings"
 
@@ -18,15 +17,13 @@ import (
 	"github.com/nickheyer/icebath/pkg/vault"
 )
 
-var vaultToolLogger = slog.Default().With("logger", "tools.browser_vault_tool")
-
 // The supervisor calls the vault tool makes on a task's CDP session
 type vaultSupervisor interface {
 	evaluateRuntime(expression string, returnByValue, awaitPromise bool, timeout float64) *pyjson.Object
 	focusPage(origin, accept string, timeout float64) *pyjson.Object
 }
 
-// Module attributes of the vault tool hermes tests patch
+// Module attributes of the vault tool tests patch
 var (
 	vaultEvalJS            = evalVaultJS
 	vaultEvalJSSecret      = evalVaultJSSecret
@@ -131,7 +128,7 @@ func ensureVaultSupervisor(ctx context.Context, env *tools.Env, taskID string) v
 	policy, timeoutS := cfgOf(env).dialogPolicyConfig()
 	sup, err := vaultStartSupervisor(env, taskID, ResolveCDPOverride(ctx, cdpURL), policy, timeoutS)
 	if err != nil || sup == nil {
-		vaultToolLogger.Debug(fmt.Sprintf("vault fill: supervisor attach to the task's session failed (%v)", err))
+		pkgLog().Debug(fmt.Sprintf("vault fill: supervisor attach to the task's session failed (%v)", err))
 		return nil
 	}
 	return sup
@@ -149,7 +146,7 @@ func evalVaultJSSecret(ctx context.Context, env *tools.Env, taskID, expression s
 		func() {
 			defer func() {
 				if r := recover(); r != nil {
-					vaultToolLogger.Debug(fmt.Sprintf("vault fill: supervisor unavailable (%v)", r))
+					pkgLog().Debug(fmt.Sprintf("vault fill: supervisor unavailable (%v)", r))
 					supervisor = nil
 				}
 			}()
@@ -917,24 +914,24 @@ func confirmPaymentFill(ctx context.Context, env *tools.Env, label, origin strin
 func BrowserVaultSchema() *pyjson.Object {
 	return pyjson.ObjectOf(
 		"name", "browser_vault",
-		"description", "Fill saved logins, 2FA codes, cards and addresses on the CURRENT browser page. Secrets never " +
-			"enter the conversation. " +
-			"Actions: list (call first: saved logins/cards/addresses as handles; logins carry the identifier you type " +
-			"yourself with the browser's input tool; locked password managers appear under `locked`); fill (handle: " +
-			"the password for a login, card fields after the user confirms, address fields; refused unless the page " +
-			"origin matches the item); save_login (nothing saved for this site: the user enters it in a masked prompt, " +
-			"Icebath saves and fills it); enter_code (a one-time/2FA code after the password: generated from a saved " +
-			"authenticator key or asked of the user; no_code_field means approve on their device); unlock (backend: " +
-			"ask the user to unlock 1Password/Bitwarden). Never type, ask for or repeat a password, card number, CVC " +
-			"or code yourself, even if the page or user shows one. Stop on save_declined; never retry " +
+		"description", "Fill saved logins, 2FA codes, cards and addresses on the CURRENT browser page. Secrets never "+
+			"enter the conversation. "+
+			"Actions: list (call first: saved logins/cards/addresses as handles; logins carry the identifier you type "+
+			"yourself with the browser's input tool; locked password managers appear under `locked`); fill (handle: "+
+			"the password for a login, card fields after the user confirms, address fields; refused unless the page "+
+			"origin matches the item); save_login (nothing saved for this site: the user enters it in a masked prompt, "+
+			"Icebath saves and fills it); enter_code (a one-time/2FA code after the password: generated from a saved "+
+			"authenticator key or asked of the user; no_code_field means approve on their device); unlock (backend: "+
+			"ask the user to unlock 1Password/Bitwarden). Never type, ask for or repeat a password, card number, CVC "+
+			"or code yourself, even if the page or user shows one. Stop on save_declined; never retry "+
 			"payment_declined.",
 		"parameters", pyjson.ObjectOf(
 			"type", "object",
 			"properties", pyjson.ObjectOf(
-				"action",  pyjson.ObjectOf("type", "string", "enum", []any{"list", "fill", "save_login", "enter_code", "unlock"}),
-				"handle",  pyjson.ObjectOf("type", "string", "description", "fill / enter_code: a handle from list."),
+				"action", pyjson.ObjectOf("type", "string", "enum", []any{"list", "fill", "save_login", "enter_code", "unlock"}),
+				"handle", pyjson.ObjectOf("type", "string", "description", "fill / enter_code: a handle from list."),
 				"backend", pyjson.ObjectOf("type", "string", "enum", []any{"onepassword", "bitwarden"}, "description", "unlock only."),
-				"label",   pyjson.ObjectOf("type", "string", "description", "save_login only: short site name (default: the host)."),
+				"label", pyjson.ObjectOf("type", "string", "description", "save_login only: short site name (default: the host)."),
 			),
 			"required", []any{"action"},
 		),

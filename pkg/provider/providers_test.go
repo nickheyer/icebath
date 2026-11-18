@@ -36,7 +36,7 @@ func TestProviderOverlayDefinesTheModelsDevKeyedProvider(t *testing.T) {
 		pdef.BaseURL != "acp://zz" || pdef.BaseURLEnv != "ZZ_ACP_BASE_URL" || pdef.Source != "icebath" {
 		t.Fatalf("pdef = %+v", pdef)
 	}
-	if got := determineModeCtx(ctx, "zz-acp", "", "", ""); got != ModeCodexResponses {
+	if got := determineModeCtx(ctx, "zz-acp", "", ""); got != ModeCodexResponses {
 		t.Fatalf("mode = %q", got)
 	}
 	overlays := IcebathOverlays(ctx)
@@ -98,7 +98,7 @@ func TestProvidersDetermineAPIModeOverlays(t *testing.T) {
 		{"minimax", "", ModeAnthropicMessages},
 	}
 	for _, c := range cases {
-		if got := determineModeCtx(ctx, c.provider, c.baseURL, "", ""); got != c.want {
+		if got := determineModeCtx(ctx, c.provider, c.baseURL, ""); got != c.want {
 			t.Errorf("determine(%q, %q) = %q, want %q", c.provider, c.baseURL, got, c.want)
 		}
 	}
@@ -240,12 +240,12 @@ func TestActualRouteAndHostMandateUseExactHostnames(t *testing.T) {
 
 func TestDetermineModeCtxMatchesTheContextFreeResolution(t *testing.T) {
 	ctx := context.Background()
-	for _, c := range [][3]string{{"anthropic", "", "claude-fable-5.1"}, {"openrouter", "https://openrouter.ai/api/v1", "a/b"}, {"bedrock", "", "m"}, {"nous", "", "anthropic/claude-fable-5.1"}} {
-		if got, want := DetermineModeCtx(ctx, c[0], c[1], c[2], "native"), DetermineMode(c[0], c[1], c[2], "native"); got != want {
+	for _, c := range [][3]string{{"anthropic", "", "claude-fable-5.1"}, {"openrouter", "https://openrouter.ai/api/v1", "a/b"}, {"bedrock", "", "m"}, {"deepseek", "", "deepseek-v4"}} {
+		if got, want := DetermineModeCtx(ctx, c[0], c[1], c[2]), DetermineMode(c[0], c[1], c[2]); got != want {
 			t.Fatalf("%v: %s want %s", c, got, want)
 		}
 	}
-	if DetermineModeCtx(ctx, "anthropic", "", "claude-fable-5.1", "") != ModeAnthropicMessages {
+	if DetermineModeCtx(ctx, "anthropic", "", "claude-fable-5.1") != ModeAnthropicMessages {
 		t.Fatal("anthropic transport")
 	}
 }

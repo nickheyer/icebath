@@ -31,7 +31,7 @@ var slackUserIDRE = func() interface {
 	return re
 }()
 
-// Seams the hermes tests patch, the gateway config loader, the platform send and the session mirror
+// Seams the tests patch, the gateway config loader, the platform send and the session mirror
 var (
 	loadGatewayConfig = gateway.LoadGatewayConfig
 	sendToPlatformFn  = SendToPlatform
@@ -102,7 +102,7 @@ func authorizeRelayTarget(ctx context.Context, platformName string, chatID any, 
 }
 
 func relayGuardFailed(platformName, detail string) string {
-	sendLog().Error(fmt.Sprintf("relay target authorization FAILED for %s — refusing the send", platformName), "error", detail)
+	pkgLog().Error(fmt.Sprintf("relay target authorization FAILED for %s — refusing the send", platformName), "error", detail)
 	return fmt.Sprintf("Refusing to send to relay target '%s': the egress authorization check failed, so this destination "+
 		"could not be verified. This is a bug — the send was blocked rather than allowed through unchecked.", platformName)
 }

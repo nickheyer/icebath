@@ -410,7 +410,7 @@ func TestSlackAuthoredTextDeduplicationSectionOfASingleUntrustedElementIsStillDe
 }
 
 func TestSlackAuthoredTextDeduplicationLabelledBotMentionIsNotReadAsNewContent(t *testing.T) {
-	for _, flat := range []string{"hey <@U_BOT|hermes> please look", "hey <@U_BOT> please look", "hey &lt;@U_BOT&gt; please look"} {
+	for _, flat := range []string{"hey <@U_BOT|icebath> please look", "hey <@U_BOT> please look", "hey &lt;@U_BOT&gt; please look"} {
 		blocks := richTextBlocks(richTextSection(
 			map[string]any{"type": "text", "text": "hey "},
 			map[string]any{"type": "user", "user_id": "U_BOT"},

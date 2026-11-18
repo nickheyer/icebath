@@ -2,7 +2,6 @@ package state
 
 import (
 	"fmt"
-	"log/slog"
 	"sync"
 )
 
@@ -39,7 +38,7 @@ func MarkStorageCorrupt(dbPath string, reason any) {
 	text := errText(reason)
 	storageCorrupt[key] = text
 	storageHealthMu.Unlock()
-	slog.Error(fmt.Sprintf("state.db at %s is structurally corrupt (%s); session storage is reported as corrupt "+
+	pkgLog().Error(fmt.Sprintf("state.db at %s is structurally corrupt (%s); session storage is reported as corrupt "+
 		"until icebath restarts on a recovered or restored file. Stop icebath, then run "+
 		"`icebath sessions recover --source %s --inspect-only` or restore a snapshot.", dbPath, text, dbPath))
 }

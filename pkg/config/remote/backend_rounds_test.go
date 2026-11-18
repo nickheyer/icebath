@@ -204,7 +204,7 @@ func absentSectionRace(t *testing.T, p *configplane.Plane) {
 	}
 	original := request
 	var raced atomic.Bool
-	request = func(ctx context.Context, method, h, profile, etag string, body any, token string) (Response, error) {
+	request = func(ctx context.Context, method, profile, etag string, body any, token string) (Response, error) {
 		if method == "PATCH" && raced.CompareAndSwap(false, true) {
 			p.Mu.Lock()
 			prof := p.Profile("default")
@@ -212,7 +212,7 @@ func absentSectionRace(t *testing.T, p *configplane.Plane) {
 			prof.Version++
 			p.Mu.Unlock()
 		}
-		return original(ctx, method, h, profile, etag, body, token)
+		return original(ctx, method, profile, etag, body, token)
 	}
 	t.Cleanup(func() { request = original })
 }
@@ -311,24 +311,24 @@ func TestRefusedWriteValidationChangesNoLocalFile(t *testing.T) {
 // Plane document change the poll lands, run once from the credential lookup of the next write
 func pollBeforeWrite(t *testing.T, p *configplane.Plane, change func(prof *configplane.Profile)) {
 	t.Helper()
-	t.Setenv(idpEnvPrefix+"TOKEN_URL", "")
 	var armed atomic.Bool
 	b := testBackend()
-	RegisterNousAccessToken(func(ctx context.Context, h string) (string, error) {
+	originalToken := planeToken
+	planeToken = func(ctx context.Context) (string, error) {
 		if armed.CompareAndSwap(true, false) {
 			p.Mu.Lock()
 			prof := p.Profile("default")
 			change(prof)
 			prof.Version++
 			p.Mu.Unlock()
-			st, err := b.state(ctx, h)
+			st, err := b.state(ctx, p.Home)
 			if err != nil || !b.pollOne(st) {
 				t.Errorf("poll %v", err)
 			}
 		}
-		return configplane.NousToken, nil
-	})
-	t.Cleanup(func() { RegisterNousAccessToken(nil) })
+		return configplane.Token, nil
+	}
+	t.Cleanup(func() { planeToken = originalToken })
 	if _, err := config.ReadRawConfig(context.Background(), p.Home); err != nil {
 		t.Fatal(err)
 	}

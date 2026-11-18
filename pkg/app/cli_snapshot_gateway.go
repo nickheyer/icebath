@@ -22,12 +22,12 @@ func (c *CLI) restoreGatewaySnapshot(store *gatewaycli.GatewaySessionStore, snap
 	})
 	if res.Detached {
 		if line := res.ReserveLine(); line != "" {
-			cliLogger.Warn(fmt.Sprintf("Profile re-serve after snapshot restore: %s", pyrepr.Repr(res.Ack)))
+			pkgLog().Warn(fmt.Sprintf("Profile re-serve after snapshot restore: %s", pyrepr.Repr(res.Ack)))
 			printLines("  " + line)
 		}
 		store.ForgetSessions()
 		if rerr := c.rejoinAfterSnapshot(store); rerr != nil {
-			cliLogger.Warn(fmt.Sprintf("Rejoin after snapshot restore failed: %v", rerr))
+			pkgLog().Warn(fmt.Sprintf("Rejoin after snapshot restore failed: %v", rerr))
 			printLines(fmt.Sprintf("  Reconnecting to the gateway failed: %s. Run /new or restart the CLI.", rerr.Error()))
 		}
 	}

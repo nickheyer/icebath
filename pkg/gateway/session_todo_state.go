@@ -2,7 +2,6 @@ package gateway
 
 import (
 	"context"
-	"log/slog"
 	"math/big"
 	"unicode/utf8"
 
@@ -43,7 +42,7 @@ func normalizeTodoState(value any) *pyjson.Object {
 func todoStateFromDB(ctx context.Context, db *state.SessionDB, sessionID string) any {
 	content, found, err := db.GetLatestTodoResult(ctx, sessionID, nil)
 	if err != nil {
-		slog.Debug("failed to read persisted todo state", "error", err)
+		pkgLog().Debug("failed to read persisted todo state", "error", err)
 		return nil
 	}
 	if !found || utf8.RuneCountInString(content) > state.MaxTodoResultChars {

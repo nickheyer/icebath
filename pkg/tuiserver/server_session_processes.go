@@ -6,11 +6,11 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/tools"
-	"github.com/nickheyer/icebath/pkg/tuigateway"
+	"github.com/nickheyer/icebath/pkg/tuihost"
 )
 
 // Background processes the session key owns, each row carrying the last 4000 characters of its output
-func sessionProcesses(ctx context.Context, session *tuigateway.Session) []map[string]any {
+func sessionProcesses(ctx context.Context, session *tuihost.Session) []map[string]any {
 	registry := tools.DefaultProcessRegistry()
 	env := tools.ToolEnvFrom(ctx)
 	key := strOr(session.Get("session_key"))

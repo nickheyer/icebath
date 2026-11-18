@@ -168,7 +168,7 @@ func (h *compressionActivityHeartbeat) emitProgressStatus() {
 	}
 	defer func() {
 		if r := recover(); r != nil {
-			compressionLog().Debug("status emit error in compression heartbeat", "error", fmt.Sprint(r))
+			pkgLog().Debug("status emit error in compression heartbeat", "error", fmt.Sprint(r))
 		}
 	}()
 	h.a.emitStatus(CompactionHeartbeatStatus)
@@ -310,7 +310,7 @@ func (r *compressionLockLeaseRefresher) run() {
 		}
 		failures++
 		if failures >= r.maxConsecutiveFailures {
-			compressionLog().Debug(fmt.Sprintf("compression lock refresh failed %d times in a row; stopping lease refresher for session %s", failures, r.sessionID))
+			pkgLog().Debug(fmt.Sprintf("compression lock refresh failed %d times in a row; stopping lease refresher for session %s", failures, r.sessionID))
 			return
 		}
 	}
@@ -479,7 +479,7 @@ func tryAcquireDurableLock(ctx context.Context, lease *compressionLease, api com
 				return nil
 			})
 			lease.holder = nil
-			compressionLog().Warn(fmt.Sprintf("compression lock acquisition raised unexpectedly for session=%s (%T: %v) — skipping compression this cycle", lease.sid, r, r))
+			pkgLog().Warn(fmt.Sprintf("compression lock acquisition raised unexpectedly for session=%s (%T: %v) — skipping compression this cycle", lease.sid, r, r))
 			acquired = false
 		}
 	}()
@@ -487,7 +487,7 @@ func tryAcquireDurableLock(ctx context.Context, lease *compressionLease, api com
 	if acquired {
 		watermark, err := lease.db.GetActiveMessageWatermark(ctx, lease.sid)
 		if err != nil {
-			compressionLog().Warn(fmt.Sprintf("compression watermark capture failed for session=%s (%v) — concurrent appends this cycle will be archived with the snapshot", lease.sid, err))
+			pkgLog().Warn(fmt.Sprintf("compression watermark capture failed for session=%s (%v) — concurrent appends this cycle will be archived with the snapshot", lease.sid, err))
 			lease.watermark = nil
 		} else {
 			lease.watermark = &watermark
@@ -511,7 +511,7 @@ func sitOutLockContention(ctx context.Context, a *AIAgent, lease *compressionLea
 	if existing != nil {
 		holderText = *existing
 	}
-	compressionLog().Warn(fmt.Sprintf("compression skipped: another path is compressing session=%s (holder=%s) — returning messages unchanged to avoid session fork", lease.sid, holderText))
+	pkgLog().Warn(fmt.Sprintf("compression skipped: another path is compressing session=%s (holder=%s) — returning messages unchanged to avoid session fork", lease.sid, holderText))
 	lease.holder = nil
 	if existing != nil && *existing != "" {
 		a.compressionSkippedDueToLock = *existing
@@ -555,18 +555,18 @@ func acquireCompressionLease(ctx context.Context, a *AIAgent, fence *Compression
 		switch {
 		case lookupErr != nil:
 			lease.holder = nil
-			compressionLog().Warn(fmt.Sprintf("compression lock lookup raised unexpectedly for session=%s (%s: %v) — skipping compression this cycle", sid, pyErrorClass(lookupErr), lookupErr))
+			pkgLog().Warn(fmt.Sprintf("compression lock lookup raised unexpectedly for session=%s (%s: %v) — skipping compression this cycle", sid, pyErrorClass(lookupErr), lookupErr))
 		case api == nil:
 			lease.holder = nil
 			if a.lastCompressionLockErrorSID == nil || *a.lastCompressionLockErrorSID != sid {
 				s := sid
 				a.lastCompressionLockErrorSID = &s
-				compressionLog().Warn(fmt.Sprintf("compression lock subsystem unavailable for session=%s — proceeding without lock. This usually means a stale in-memory module after an update; restart the process (or `icebath update`) to resync.", sid))
+				pkgLog().Warn(fmt.Sprintf("compression lock subsystem unavailable for session=%s — proceeding without lock. This usually means a stale in-memory module after an update; restart the process (or `icebath update`) to resync.", sid))
 			}
 			acquired = true
 		default:
 			if !lease.beginLockSetup() {
-				compressionLog().Info(fmt.Sprintf("Compression commit cancelled before lock acquisition (session=%s).", sessionLabel(a)))
+				pkgLog().Info(fmt.Sprintf("Compression commit cancelled before lock acquisition (session=%s).", sessionLabel(a)))
 				a.lastCompactionInPlace = false
 				prompt, err := abortLease(ctx, a, lifecycle, systemMessage, attempt, "commit_fence_cancelled", nil)
 				return nil, prompt, err
@@ -583,7 +583,7 @@ func acquireCompressionLease(ctx context.Context, a *AIAgent, fence *Compression
 		holder := *lease.holder
 		a.activeCompressionLockHolder = &holder
 		if fence != nil && fence.RegisterCancelledLockRelease(lease.releaseHook) {
-			compressionLog().Info(fmt.Sprintf("Compression commit cancelled before summary dispatch (session=%s).", sessionLabel(a)))
+			pkgLog().Info(fmt.Sprintf("Compression commit cancelled before summary dispatch (session=%s).", sessionLabel(a)))
 			a.lastCompactionInPlace = false
 			prompt, err := existingSystemPrompt(ctx, a, systemMessage)
 			if err != nil {
@@ -627,7 +627,7 @@ func adoptIfParentRotated(ctx context.Context, a *AIAgent, lease *compressionLea
 	}
 	rotated, lookupErr := sessionWasRotatedByCompression(ctx, lease.db, lease.sid)
 	if lookupErr != nil {
-		compressionLog().Warn(fmt.Sprintf("compression session ownership lookup failed for session=%s (%s: %v) - skipping compression this cycle", lease.sid, pyErrorClass(lookupErr), lookupErr))
+		pkgLog().Warn(fmt.Sprintf("compression session ownership lookup failed for session=%s (%s: %v) - skipping compression this cycle", lease.sid, pyErrorClass(lookupErr), lookupErr))
 		lease.release()
 		emitBypassedAttemptTelemetry(ctx, a, attempt.startedAt, attemptBypass{CommitStatus: "aborted", FailureClass: "session_ownership_unreadable", ApproxTokens: approxTokens, AttemptSeed: attempt.seed})
 		prompt, err = existingSystemPrompt(ctx, a, systemMessage)
@@ -647,10 +647,10 @@ func adoptIfParentRotated(ctx context.Context, a *AIAgent, lease *compressionLea
 		return nil, "", true, err
 	}
 	if recovered != nil {
-		compressionLog().Warn(fmt.Sprintf("compression recovery: stale session=%s adopted live child=%s", lease.sid, a.sessionID))
+		pkgLog().Warn(fmt.Sprintf("compression recovery: stale session=%s adopted live child=%s", lease.sid, a.sessionID))
 		return recovered, prompt, true, nil
 	}
-	compressionLog().Warn(fmt.Sprintf("compression skipped: session=%s was already rotated by another compression path, but no unique live child could be adopted", lease.sid))
+	pkgLog().Warn(fmt.Sprintf("compression skipped: session=%s was already rotated by another compression path, but no unique live child could be adopted", lease.sid))
 	return messages, prompt, true, nil
 }
 
@@ -683,7 +683,7 @@ func adoptGrownDurableParent(ctx context.Context, a *AIAgent, lease *compression
 		}()
 	}
 	if !preflushOK {
-		compressionLog().Warn(fmt.Sprintf("compression: session=%s grew before lease (%d → %d msgs) but the pre-adoption flush of the live tail failed; skipping durable-snapshot adoption so un-persisted user input is kept", lease.sid, len(messages), len(durable)))
+		pkgLog().Warn(fmt.Sprintf("compression: session=%s grew before lease (%d → %d msgs) but the pre-adoption flush of the live tail failed; skipping durable-snapshot adoption so un-persisted user input is kept", lease.sid, len(messages), len(durable)))
 		return nil, nil
 	}
 	durable, err = loader.GetMessagesAsConversation(ctx, lease.sid, state.ConversationOptions{IncludeRowIDs: true})
@@ -714,7 +714,7 @@ func adoptGrownDurableParent(ctx context.Context, a *AIAgent, lease *compression
 		}
 		lease.watermark = &top
 	}
-	compressionLog().Info(fmt.Sprintf("compression: session=%s grew before lease (%d → %d msgs); adopting durable snapshot", lease.sid, len(messages), len(durable)))
+	pkgLog().Info(fmt.Sprintf("compression: session=%s grew before lease (%d → %d msgs); adopting durable snapshot", lease.sid, len(messages), len(durable)))
 	return durable, nil
 }
 
@@ -750,7 +750,7 @@ func preCompressMemoryContext(ctx context.Context, a *AIAgent, messages []map[st
 		}
 		got, err := callPreCompress(ctx, mm, messages, evidence, true, version)
 		if err != nil {
-			compressionLog().Warn(fmt.Sprintf("Required pre-compress checkpoint failed (%s)", pyErrorClass(err)))
+			pkgLog().Warn(fmt.Sprintf("Required pre-compress checkpoint failed (%s)", pyErrorClass(err)))
 			return "", &chainedCheckpointError{provider.CheckpointBlocked(fmt.Sprintf("provider checkpoint API v%d failed", version)), err}
 		}
 		return SanitizeMemoryContext(a.env, got), nil

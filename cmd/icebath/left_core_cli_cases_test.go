@@ -21,7 +21,7 @@ func installLeftCoreCLIHooks(install func(ctx context.Context, name string, cons
 	})
 }
 
-// Temp .icebath home bound as the process home with the process argv set like the hermes test
+// Temp .icebath home bound as the process home with the process argv set like the test
 func leftCoreCLIHome(t *testing.T, argv ...string) (string, context.Context) {
 	t.Helper()
 	h := filepath.Join(t.TempDir(), ".icebath")

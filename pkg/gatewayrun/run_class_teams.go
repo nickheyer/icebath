@@ -10,7 +10,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 )
 
-// Binds the Teams meeting pipeline to the Graph webhook ingress, the plugins teams_pipeline runtime of hermes
+// Binds the Teams meeting pipeline to the Graph webhook ingress
 var BindTeamsPipelineRuntime func(ctx context.Context, runner *GatewayRunner) (bool, error)
 
 // Whether the standalone Teams pipeline plugin is enabled in the gateway config
@@ -34,11 +34,11 @@ func (r *GatewayRunner) wireTeamsPipelineRuntime(ctx context.Context) {
 		return
 	}
 	if !teamsPipelinePluginEnabled(ctx) {
-		runLog().Debug("Teams pipeline plugin is disabled; skipping runtime wiring")
+		pkgLog().Debug("Teams pipeline plugin is disabled; skipping runtime wiring")
 		return
 	}
 	if BindTeamsPipelineRuntime == nil {
-		runLog().Warn("Teams pipeline runtime import failed: No module named 'plugins.teams_pipeline.runtime'")
+		pkgLog().Warn("Teams pipeline runtime import failed: No module named 'plugins.teams_pipeline.runtime'")
 		return
 	}
 	bound, err := func() (bound bool, err error) {
@@ -50,13 +50,13 @@ func (r *GatewayRunner) wireTeamsPipelineRuntime(ctx context.Context) {
 		return BindTeamsPipelineRuntime(ctx, r)
 	}()
 	if err != nil {
-		runLog().Warn(fmt.Sprintf("Teams pipeline runtime wiring failed: %s", pyrepr.ExceptionMessage(err)))
+		pkgLog().Warn(fmt.Sprintf("Teams pipeline runtime wiring failed: %s", pyrepr.ExceptionMessage(err)))
 		return
 	}
 	if bound {
-		runLog().Info("Teams pipeline runtime bound to msgraph webhook ingress")
+		pkgLog().Info("Teams pipeline runtime bound to msgraph webhook ingress")
 	} else if r.teamsPipelineRuntimeError != nil {
-		runLog().Warn(fmt.Sprintf("Teams pipeline runtime unavailable: %s", *r.teamsPipelineRuntimeError))
+		pkgLog().Warn(fmt.Sprintf("Teams pipeline runtime unavailable: %s", *r.teamsPipelineRuntimeError))
 	}
 }
 

@@ -217,7 +217,7 @@ func TestAnthropicDeepSeekPreservesThinking(t *testing.T) {
 
 func TestAnthropicDeepSeekModelNameDoesNotOverrideNativeSignatureContract(t *testing.T) {
 	block := map[string]any{"type": "thinking", "thinking": "signed native reasoning", "signature": "sig"}
-	for _, u := range []string{"", "https://api.anthropic.com", "https://inference-api.nousresearch.com/anthropic"} {
+	for _, u := range []string{"", "https://api.anthropic.com"} {
 		msgs := []map[string]any{{"role": "assistant", "content": []any{map[string]any{"type": "thinking", "thinking": "signed native reasoning", "signature": "sig"}, anthText("answer")}}}
 		manageThinkingSignatures(msgs, u, "deepseek-v4")
 		anthMustEqualJSON(t, anthBlocks(msgs[0]["content"])[0], block)

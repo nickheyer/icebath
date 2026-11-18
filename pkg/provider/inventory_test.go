@@ -18,20 +18,19 @@ import (
 func invTestHome(t *testing.T) string {
 	t.Helper()
 	h := newTestHome(t)
-	savedList, savedPool, savedPricing, savedTier, savedCached := inventoryListProvidersFn, inventoryLoadPoolFn, inventoryPricingFn, inventoryCheckNousTierFn, inventoryCachedNousTierFn
-	savedUsage, savedStaged, savedState, savedExplicit, savedOAuth := inventoryNousPickerUsageFn, inventoryStagedModelsFn, inventoryStateEndpointFn, inventoryExplicitFn, inventoryAnthropicOAuthFn
-	savedMeta, savedPartition, savedWarmOR, savedORCaps, savedWarmNous, savedNousCaps := inventoryMetadataConfigFn, inventoryPartitionFn, inventoryWarmOpenRouterFn, inventoryOpenRouterCapsFn, inventoryWarmNousCapsFn, inventoryNousCapsFn
+	savedList, savedPool, savedPricing := inventoryListProvidersFn, inventoryLoadPoolFn, inventoryPricingFn
+	savedStaged, savedState, savedExplicit, savedOAuth := inventoryStagedModelsFn, inventoryStateEndpointFn, inventoryExplicitFn, inventoryAnthropicOAuthFn
+	savedMeta, savedWarmOR, savedORCaps := inventoryMetadataConfigFn, inventoryWarmOpenRouterFn, inventoryOpenRouterCapsFn
 	savedCaps, savedFeatured, savedStrip := inventoryApplyCapsFn, inventoryApplyFeaturedFn, inventoryStripOverlapsFn
 	t.Cleanup(func() {
 		inventoryApplyCapsFn, inventoryApplyFeaturedFn, inventoryStripOverlapsFn = savedCaps, savedFeatured, savedStrip
-		inventoryListProvidersFn, inventoryLoadPoolFn, inventoryPricingFn, inventoryCheckNousTierFn, inventoryCachedNousTierFn = savedList, savedPool, savedPricing, savedTier, savedCached
-		inventoryNousPickerUsageFn, inventoryStagedModelsFn, inventoryStateEndpointFn, inventoryExplicitFn, inventoryAnthropicOAuthFn = savedUsage, savedStaged, savedState, savedExplicit, savedOAuth
-		inventoryMetadataConfigFn, inventoryPartitionFn, inventoryWarmOpenRouterFn, inventoryOpenRouterCapsFn, inventoryWarmNousCapsFn, inventoryNousCapsFn = savedMeta, savedPartition, savedWarmOR, savedORCaps, savedWarmNous, savedNousCaps
+		inventoryListProvidersFn, inventoryLoadPoolFn, inventoryPricingFn = savedList, savedPool, savedPricing
+		inventoryStagedModelsFn, inventoryStateEndpointFn, inventoryExplicitFn, inventoryAnthropicOAuthFn = savedStaged, savedState, savedExplicit, savedOAuth
+		inventoryMetadataConfigFn, inventoryWarmOpenRouterFn, inventoryOpenRouterCapsFn = savedMeta, savedWarmOR, savedORCaps
 		config.ResetCache()
 	})
 	inventoryStagedModelsFn = func() []string { return nil }
 	inventoryWarmOpenRouterFn = func(context.Context) {}
-	inventoryWarmNousCapsFn = func(context.Context) {}
 	config.ResetCache()
 	return h
 }
@@ -151,10 +150,10 @@ func TestIncludeUnconfiguredAppendsCanonicalSkeletons(t *testing.T) {
 func TestExplicitOnlyFiltersAmbientCredentialsButKeepsCurrentAndCustomRows(t *testing.T) {
 	invTestHome(t)
 	invListReturning([]map[string]any{
-		invRow("openai-codex", "OpenAI Codex", []any{"gpt-5.4"}, true, false, "hermes"),
+		invRow("openai-codex", "OpenAI Codex", []any{"gpt-5.4"}, true, false, "icebath"),
 		invRow("gemini", "Gemini", []any{"gemini-2.5-pro"}, false, false, "built-in"),
-		invRow("copilot", "Copilot", []any{"gpt-5.4"}, false, false, "hermes"),
-		invRow("nous", "Nous", []any{"anthropic/claude-sonnet-5"}, false, false, "hermes"),
+		invRow("copilot", "Copilot", []any{"gpt-5.4"}, false, false, "icebath"),
+		invRow("deepseek", "DeepSeek", []any{"deepseek-v4-pro"}, false, false, "icebath"),
 		invRow("custom:lab", "Lab", []any{"lab-1"}, false, true, "user-config"),
 		invRow("moa", "MoA", []any{"default"}, false, false, "virtual"),
 	})
@@ -168,8 +167,8 @@ func TestExplicitOnlyFiltersAmbientCredentialsButKeepsCurrentAndCustomRows(t *te
 func TestExplicitOnlyKeepsAnthropicRowWithOAuthCredentials(t *testing.T) {
 	invTestHome(t)
 	invListReturning([]map[string]any{
-		invRow("anthropic", "Anthropic", []any{"claude-sonnet-5"}, false, false, "hermes"),
-		invRow("copilot", "Copilot", []any{"gpt-5.4"}, false, false, "hermes"),
+		invRow("anthropic", "Anthropic", []any{"claude-sonnet-5"}, false, false, "icebath"),
+		invRow("copilot", "Copilot", []any{"gpt-5.4"}, false, false, "icebath"),
 	})
 	inventoryExplicitFn = func(PoolEnv, string) bool { return false }
 	inventoryAnthropicOAuthFn = func(context.Context) bool { return true }
@@ -185,7 +184,7 @@ func TestExplicitOnlyKeepsAnthropicRowWithOAuthCredentials(t *testing.T) {
 func TestExplicitOnlyDropsAnthropicRowWithoutOAuthCredentials(t *testing.T) {
 	invTestHome(t)
 	invListReturning([]map[string]any{
-		invRow("anthropic", "Anthropic", []any{"claude-sonnet-5"}, false, false, "hermes"),
+		invRow("anthropic", "Anthropic", []any{"claude-sonnet-5"}, false, false, "icebath"),
 	})
 	inventoryExplicitFn = func(PoolEnv, string) bool { return false }
 	inventoryAnthropicOAuthFn = func(context.Context) bool { return false }
@@ -291,7 +290,7 @@ func TestUserDefinedRowsCarryAliasSetForGUICurrentMatch(t *testing.T) {
 	invTestHome(t)
 	myep := invRow("myep", "My Endpoint", []any{"my-model"}, true, true, "user-config")
 	myep["api_url"] = "http://localhost:8000/v1"
-	invListReturning([]map[string]any{myep, invRow("nous", "Nous", []any{"openai/gpt-5.5"}, false, false, "built-in")})
+	invListReturning([]map[string]any{myep, invRow("deepseek", "DeepSeek", []any{"deepseek-v4-pro"}, false, false, "built-in")})
 	rows := invPayload(t, invCtx("custom:myep", "my-model", "orig-url"), ModelsPayloadOptions{})
 	aliases, _ := invFind(t, rows, "myep")["aliases"].([]any)
 	for _, want := range []string{"custom:myep", "myep", "custom:my-endpoint"} {
@@ -299,7 +298,7 @@ func TestUserDefinedRowsCarryAliasSetForGUICurrentMatch(t *testing.T) {
 			t.Fatalf("aliases %v lack %s", aliases, want)
 		}
 	}
-	if _, has := invFind(t, rows, "nous")["aliases"]; has {
+	if _, has := invFind(t, rows, "deepseek")["aliases"]; has {
 		t.Fatal("built-in row carries aliases")
 	}
 }
@@ -429,26 +428,6 @@ type invFakePool struct{ state *LimitState }
 
 func (p invFakePool) Entries() []PooledCredential            { return nil }
 func (p invFakePool) LimitState(models []string) *LimitState { return p.state }
-
-func TestApplyLimitsSkipsWindowPlanRows(t *testing.T) {
-	h := invTestHome(t)
-	writeAuthStore(t, h, map[string]any{"version": 1, "credential_pool": map[string]any{
-		"nous": []any{map[string]any{"id": "n1"}}, "example": []any{map[string]any{"id": "e1"}}}})
-	inventoryLoadPoolFn = func(context.Context, string) inventoryPool {
-		return invFakePool{state: &LimitState{Scope: "account", ResetsAt: 1_800_000_000}}
-	}
-	rows := []map[string]any{
-		{"slug": "nous", "models": []any{"a/b"}, "plan_usage": map[string]any{"kind": "usage_window"}},
-		{"slug": "example", "models": []any{"a/b"}},
-	}
-	if err := applyLimits(context.Background(), rows); err != nil {
-		t.Fatal(err)
-	}
-	limit, _ := rows[1]["limit"].(map[string]any)
-	if _, has := rows[0]["limit"]; has || limit["scope"] != "account" || limit["resets_at"] != "2027-01-15T08:00:00+00:00" {
-		t.Fatalf("rows %v", rows)
-	}
-}
 
 var invAuxConfig = `model:
   provider: openrouter

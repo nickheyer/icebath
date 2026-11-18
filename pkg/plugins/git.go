@@ -36,14 +36,14 @@ type gitResult struct {
 	Stdout, Stderr string
 }
 
-// Git subprocess killed at its deadline, the subprocess.TimeoutExpired of hermes
+// Git subprocess killed at its deadline
 type GitTimeoutError struct{ Timeout time.Duration }
 
 func (e *GitTimeoutError) Error() string {
 	return fmt.Sprintf("git timed out after %g seconds", e.Timeout.Seconds())
 }
 
-// Git executable missing at spawn, the FileNotFoundError of hermes
+// Git executable missing at spawn
 var errGitNotFound = errors.New("git is not installed or not in PATH.")
 
 func installMetadataPath(h string) string {

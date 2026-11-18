@@ -1,13 +1,13 @@
 package config
 
 // Schema version written to config.yaml, bumped only when existing files need a migration
-const Version = 58
+const Version = 66
 
 // Toolset selection every new config starts from
 const DefaultToolset = "icebath-cli"
 
-// Container image every container terminal backend uses unless pinned
-const DefaultSandboxImage = "nousresearch/hermes-sandbox:desktop"
+// Image icebath builds from docker/sandbox/Dockerfile for every container terminal backend unless pinned
+const DefaultSandboxImage = "localhost/icebath-sandbox:desktop"
 
 // Container image the default sandbox used before the display stack, dropped by the v48 step
 const LegacySandboxImage = "nikolaik/python-nodejs:python3.11-nodejs20"
@@ -47,7 +47,7 @@ func defaultsLiteral() Tree {
 			"terminal_continue": true,
 		},
 		"attachments": map[string]any{
-			"storage": "hermes-home",
+			"storage": "icebath-home",
 		},
 		"agent": map[string]any{
 			"max_turns":                  nil,
@@ -113,7 +113,6 @@ func defaultsLiteral() Tree {
 		},
 		"terminal": map[string]any{
 			"backend":                         "local",
-			"modal_mode":                      "auto",
 			"degraded_mode":                   "warn",
 			"cwd":                             ".",
 			"temp_dir":                        "",
@@ -695,7 +694,7 @@ func defaultsLiteral() Tree {
 			"start_new_session":   true,
 			"profile_routing":     true,
 			"openwakeword": map[string]any{
-				"model": "hey_hermes",
+				"model": "",
 			},
 			"sherpa": map[string]any{
 				"model_dir": "",
@@ -818,7 +817,6 @@ func defaultsLiteral() Tree {
 				"keep":    2,
 			},
 		},
-		"honcho":   map[string]any{},
 		"timezone": "",
 		"slack": map[string]any{
 			"require_mention":            true,
@@ -955,13 +953,7 @@ func defaultsLiteral() Tree {
 			"model":                  "",
 			"model_provider":         "",
 			"provider":               "",
-			"chronos": map[string]any{
-				"portal_url":        "https://portal.nousresearch.com",
-				"callback_url":      "",
-				"expected_audience": "",
-				"nas_jwks_url":      "",
-			},
-			"wrap_response": true,
+			"wrap_response":          true,
 			"delivery": map[string]any{
 				"notify": true,
 			},
@@ -1024,7 +1016,7 @@ func defaultsLiteral() Tree {
 		},
 		"model_catalog": map[string]any{
 			"enabled":     true,
-			"url":         "https://hermes-agent.nousresearch.com/docs/api/model-catalog.json",
+			"url":         "https://icebath.app/api/model-catalog.json",
 			"ttl_minutes": 20,
 			"providers":   map[string]any{},
 		},
@@ -1148,13 +1140,6 @@ func defaultsLiteral() Tree {
 			"seen":          map[string]any{},
 			"profile_build": "ask",
 		},
-		"telemetry": map[string]any{
-			"shared_metrics": map[string]any{
-				"enabled":  false,
-				"send":     false,
-				"endpoint": "https://telemetry.nousresearch.com/v1/telemetry",
-			},
-		},
 		"doctor": map[string]any{
 			"live_probe_timeout": 10,
 		},
@@ -1255,11 +1240,6 @@ func defaultsLiteral() Tree {
 			"upstream_deny_cidrs": nil,
 			"extra_allowed_hosts": []any{},
 		},
-		"nous": map[string]any{
-			"keepalive_interval_seconds": 900,
-			"anthropic_wire":             "chat",
-			"guest":                      true,
-		},
 		"vertex": map[string]any{
 			"project_id": "",
 			"region":     "global",
@@ -1279,7 +1259,7 @@ func defaultsLiteral() Tree {
 var ExtraRootKeys = map[string]bool{
 	"custom_providers": true, "fallback_model": true, "mcp_servers": true, "image_gen": true, "video_gen": true,
 	"plugins": true, "smart_model_routing": true, "platform_toolsets": true, "known_plugin_toolsets": true,
-	"known_builtin_toolsets": true, "tool_gateway_declined_tools": true, "group_sessions_per_user": true,
+	"known_builtin_toolsets": true, "group_sessions_per_user": true,
 	"thread_sessions_per_user": true, "stt_echo_transcripts": true, "reset_triggers": true, "always_log_local": true,
 	"filter_silence_narration": true, "multiplex_profiles": true, "profile_routes": true, "platforms": true,
 	"require_mention": true, "unauthorized_dm_behavior": true, "signal": true, "allow_all_users": true, "timeouts": true,

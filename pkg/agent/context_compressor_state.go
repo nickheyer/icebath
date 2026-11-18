@@ -5,7 +5,6 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
-	"log/slog"
 	"math/big"
 	"time"
 
@@ -31,7 +30,7 @@ var (
 	compressorModelContextLength = provider.GetModelContextLength
 )
 
-// Durable per session compaction state, the optional methods of the hermes session store the compressor reads
+// Durable per session compaction state, the optional methods of the session store the compressor reads
 type (
 	fallbackStreakStore interface {
 		CompressionFallbackStreak(sessionID string) (int, error)
@@ -79,7 +78,7 @@ func sessionStoreOf(db SessionStore) any {
 	return nil
 }
 
-// Calls the named hermes getter on the store, ok false when the store lacks it
+// Calls the named getter on the store, ok false when the store lacks it
 func callDurableGetter(store any, method, sessionID string, args []any) (any, bool, error) {
 	switch method {
 	case "get_compression_fallback_streak":
@@ -122,7 +121,7 @@ func callDurableGetter(store any, method, sessionID string, args []any) (any, bo
 	return nil, false, nil
 }
 
-// Calls the named hermes setter on the store, ok false when the store lacks it
+// Calls the named setter on the store, ok false when the store lacks it
 func callDurableSetter(store any, method, sessionID string, args []any) (bool, error) {
 	switch method {
 	case "set_compression_fallback_streak":
@@ -231,7 +230,7 @@ func (c *ContextCompressor) durableRead(method, label string, asFloat bool, def 
 		}
 		err = cerr
 	}
-	slog.Debug(fmt.Sprintf("%s lookup failed%s: %v", label, durableErrSuffix(err, true), err))
+	pkgLog().Debug(fmt.Sprintf("%s lookup failed%s: %v", label, durableErrSuffix(err, true), err))
 	return false, def
 }
 
@@ -245,7 +244,7 @@ func (c *ContextCompressor) durableWrite(method, label string, args ...any) bool
 		return false
 	}
 	if err != nil {
-		slog.Debug(fmt.Sprintf("%s persist failed%s: %v", label, durableErrSuffix(err, false), err))
+		pkgLog().Debug(fmt.Sprintf("%s persist failed%s: %v", label, durableErrSuffix(err, false), err))
 		return false
 	}
 	return true
@@ -353,7 +352,7 @@ func (c *ContextCompressor) recordStructuralNoOp(reason string, nMessages int) {
 	c.structuralNoOpBackoffUntil = compressorMonotonic() + structuralNoOpBackoffSeconds
 	c.structuralNoOpLen = nMessages
 	if !c.quietMode {
-		slog.Warn(fmt.Sprintf("Compression skipped (%s): retrying in %.0fs (structural no-op backoff)", reason, structuralNoOpBackoffSeconds))
+		pkgLog().Warn(fmt.Sprintf("Compression skipped (%s): retrying in %.0fs (structural no-op backoff)", reason, structuralNoOpBackoffSeconds))
 	}
 }
 
@@ -361,7 +360,7 @@ func (c *ContextCompressor) recordStructuralNoOp(reason string, nMessages int) {
 func (c *ContextCompressor) RecordRejectedCompaction() {
 	c.recordIneffectiveCompressionVerdict(c.ineffectiveCompressionCount + 1)
 	if !c.quietMode {
-		slog.Warn(fmt.Sprintf("Compaction rejected before commit (would grow the transcript); ineffective_compression_count=%d", c.ineffectiveCompressionCount))
+		pkgLog().Warn(fmt.Sprintf("Compaction rejected before commit (would grow the transcript); ineffective_compression_count=%d", c.ineffectiveCompressionCount))
 	}
 }
 
@@ -371,14 +370,14 @@ func (c *ContextCompressor) recordCompletedCompaction(usedFallback, feasibilityS
 	c.verifyCompactionClearedThreshold = true
 	if feasibilitySkip {
 		if !c.quietMode {
-			slog.Info(fmt.Sprintf("Compaction completed via pre-LLM summary skip; fallback_compression_streak unchanged (%d)", c.fallbackCompressionStreak))
+			pkgLog().Info(fmt.Sprintf("Compaction completed via pre-LLM summary skip; fallback_compression_streak unchanged (%d)", c.fallbackCompressionStreak))
 		}
 		return
 	}
 	if usedFallback {
 		c.fallbackCompressionStreak++
 		if !c.quietMode {
-			slog.Warn(fmt.Sprintf("Compaction completed with a deterministic fallback summary. fallback_compression_streak=%d", c.fallbackCompressionStreak))
+			pkgLog().Warn(fmt.Sprintf("Compaction completed with a deterministic fallback summary. fallback_compression_streak=%d", c.fallbackCompressionStreak))
 		}
 	} else if c.fallbackCompressionStreak != 0 {
 		c.fallbackCompressionStreak = 0
@@ -411,7 +410,7 @@ func (c *ContextCompressor) GetActiveCompressionFailureCooldown(refresh bool) ma
 			c.lastCooldownRefreshWasAuthoritative = boolPtr(false)
 		}
 		if durableErrSuffix(err, false) == "" {
-			slog.Debug(fmt.Sprintf("compression failure cooldown lookup failed: %v", err))
+			pkgLog().Debug(fmt.Sprintf("compression failure cooldown lookup failed: %v", err))
 		}
 		return localState
 	}
@@ -493,7 +492,7 @@ func (c *ContextCompressor) RecordTimeoutFailure(errText, failureKind string) {
 // Clears the cooldown unless the host already cancelled this compression attempt
 func (c *ContextCompressor) clearCompressionFailureCooldown() {
 	if c.compressionCancelled() {
-		slog.Info("Skipping compression cooldown clear: host already cancelled this compression attempt")
+		pkgLog().Info("Skipping compression cooldown clear: host already cancelled this compression attempt")
 		return
 	}
 	c.summaryFailureCooldownUntil, c.lastSummaryError = 0, nil
@@ -509,7 +508,7 @@ func (c *ContextCompressor) compressionCancelled() (cancelled bool) {
 	}
 	defer func() {
 		if r := recover(); r != nil {
-			slog.Debug(fmt.Sprintf("compression cancellation check failed: %v", r))
+			pkgLog().Debug(fmt.Sprintf("compression cancellation check failed: %v", r))
 			cancelled = false
 		}
 	}()
@@ -715,7 +714,7 @@ func (c *ContextCompressor) emitInitSummaryOnce() {
 		return
 	}
 	c.logInitSummary = false
-	slog.Info(fmt.Sprintf("Context compressor initialized: model=%s context_length=%d threshold=%d (%.0f%%) target_ratio=%.0f%% tail_budget=%d provider=%s base_url=%s",
+	pkgLog().Info(fmt.Sprintf("Context compressor initialized: model=%s context_length=%d threshold=%d (%.0f%%) target_ratio=%.0f%% tail_budget=%d provider=%s base_url=%s",
 		c.model, *c.resolvedContextLength, c.thresholdTokensValue(), c.ThresholdPercent*100, c.summaryTargetRatio*100, c.TailTokenBudget(), orNoneText(c.provider), orNoneText(c.baseURL)))
 }
 
@@ -827,7 +826,7 @@ func (c *ContextCompressor) fallbackStreakSkip(telemetry *pyjson.Object) bool {
 	if c.fallbackProbeAt != 0 && now >= c.fallbackProbeAt {
 		c.setFallbackProbeAt(0)
 		if !c.quietMode {
-			slog.Info(fmt.Sprintf("Compression: probing the summary model again after %d fallback summaries in a row", c.fallbackCompressionStreak))
+			pkgLog().Info(fmt.Sprintf("Compression: probing the summary model again after %d fallback summaries in a row", c.fallbackCompressionStreak))
 		}
 		return false
 	}
@@ -837,7 +836,7 @@ func (c *ContextCompressor) fallbackStreakSkip(telemetry *pyjson.Object) bool {
 	c.lastFeasibilitySkip = true
 	telemetry.Set("failure_class", "summary_model_benched")
 	if !c.quietMode {
-		slog.Warn(fmt.Sprintf("Compression: %d fallback summaries in a row — skipping LLM summarization, proceeding with deterministic message dropping. Next summary-model probe in %.0fs.",
+		pkgLog().Warn(fmt.Sprintf("Compression: %d fallback summaries in a row — skipping LLM summarization, proceeding with deterministic message dropping. Next summary-model probe in %.0fs.",
 			c.fallbackCompressionStreak, max(0.0, c.fallbackProbeAt-now)))
 	}
 	return true
@@ -861,7 +860,7 @@ func (c *ContextCompressor) feasibilitySkip(telemetry *pyjson.Object, turnsToSum
 	c.prellmSkipCount++
 	telemetry.Set("prellm_skip_count", c.prellmSkipCount)
 	if !c.quietMode {
-		slog.Warn(fmt.Sprintf("Compression: middle section (%d tokens at indices %d-%d) is below %.0f%% of threshold (%d tokens) — skipping LLM summarization, proceeding with deterministic message dropping. prellm_skip_count=%d",
+		pkgLog().Warn(fmt.Sprintf("Compression: middle section (%d tokens at indices %d-%d) is below %.0f%% of threshold (%d tokens) — skipping LLM summarization, proceeding with deterministic message dropping. prellm_skip_count=%d",
 			middle, compressStart, compressEnd, feasibilitySkipMiddleFraction*100, c.thresholdTokensValue(), c.prellmSkipCount))
 	}
 	return true

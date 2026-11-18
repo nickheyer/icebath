@@ -52,7 +52,7 @@ func syncBackMaxBytesFor(env *Env) int64 {
 			return int64(n)
 		}
 	}
-	toolsLogger(env).Warn("sync_back: ignoring non-integer terminal."+syncBackMaxBytesKey, "value", raw)
+	envLog(env).Warn("sync_back: ignoring non-integer terminal."+syncBackMaxBytesKey, "value", raw)
 	return syncBackMaxBytes
 }
 
@@ -77,7 +77,7 @@ func cleanupStaleSyncBackTemp(env *Env, tempDir string) int {
 	cutoff := time.Now().Add(-syncBackStaleSeconds * time.Second)
 	candidates, err := filepath.Glob(filepath.Join(tempDir, syncBackTempPrefix+"*"))
 	if err != nil {
-		toolsLogger(env).Debug("sync_back: could not scan temporary directory", "dir", tempDir)
+		envLog(env).Debug("sync_back: could not scan temporary directory", "dir", tempDir)
 		return 0
 	}
 	removed := 0
@@ -90,11 +90,11 @@ func cleanupStaleSyncBackTemp(env *Env, tempDir string) int {
 			continue
 		}
 		if err := os.RemoveAll(candidate); err != nil {
-			toolsLogger(env).Debug("sync_back: could not remove stale temporary entry", "path", candidate)
+			envLog(env).Debug("sync_back: could not remove stale temporary entry", "path", candidate)
 			continue
 		}
 		removed++
-		toolsLogger(env).Debug("sync_back: removed stale temporary entry", "path", candidate)
+		envLog(env).Debug("sync_back: removed stale temporary entry", "path", candidate)
 	}
 	return removed
 }
@@ -295,7 +295,7 @@ func (m *FileSyncManager) syncTransaction(force bool) {
 	}()
 	if err != nil {
 		m.syncedFiles, m.pushedHashes = prevFiles, prevHashes
-		toolsLogger(m.env).Warn("file_sync: sync failed, rolled back state", "error", err)
+		envLog(m.env).Warn("file_sync: sync failed, rolled back state", "error", err)
 	}
 }
 
@@ -377,7 +377,7 @@ func (m *FileSyncManager) planSync(current []syncFile) ([]syncFile, map[string]s
 
 // Runs the transport calls for one cycle, bulk upload when available
 func (m *FileSyncManager) push(toUpload []syncFile, toDelete []string) error {
-	log := toolsLogger(m.env)
+	log := envLog(m.env)
 	if len(toUpload) > 0 {
 		log.Debug("file_sync: uploading files", "count", len(toUpload))
 	}
@@ -418,7 +418,7 @@ func (m *FileSyncManager) syncBackTransaction(icebathHome string) {
 	if m.bulkDownload == nil {
 		return
 	}
-	log := toolsLogger(m.env)
+	log := envLog(m.env)
 	if len(m.pushedHashes) == 0 && len(m.syncedFiles) == 0 {
 		log.Debug("sync_back: no prior push state, skipping")
 		return
@@ -458,7 +458,7 @@ func (m *FileSyncManager) syncBackOnce(lockPath string) error {
 
 // Downloads, diffs, and applies remote changes to the host
 func (m *FileSyncManager) syncBackImpl() (err error) {
-	log := toolsLogger(m.env)
+	log := envLog(m.env)
 	mapping := m.getFiles()
 	cleanupStaleSyncBackTemp(m.env, "")
 	tarFile, err := os.CreateTemp("", syncBackTempPrefixFor()+"*.tar")
@@ -621,7 +621,7 @@ func tarLinkRooted(linkname string) bool {
 
 // Copies one extracted remote file onto the host when it changed since the push, 1 when applied
 func (m *FileSyncManager) applyStagedFile(stagedFile, remotePath string, mapping []syncFile, uploadOnly map[string]bool) (int, error) {
-	log := toolsLogger(m.env)
+	log := envLog(m.env)
 	pushed, hasPushed := m.pushedHashes[remotePath]
 	if hasPushed {
 		digest, err := sha256File(stagedFile)

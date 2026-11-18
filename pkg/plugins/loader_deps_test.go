@@ -145,7 +145,7 @@ func TestPluginDebugHandlerTeesToStderr(t *testing.T) {
 	}
 	t.Setenv(EnvPluginsDebug, "1")
 	installPluginDebugHandler(true)
-	logPlugins.warn("Failed to load plugin 'x': boom")
+	pkgLog().Warn("Failed to load plugin 'x': boom")
 	text := out.String()
 	if !strings.Contains(text, "[plugins] DEBUG ICEBATH_PLUGINS_DEBUG=1") || !strings.Contains(text, "[plugins] WARNING Failed to load plugin 'x': boom") {
 		t.Fatalf("stderr tee = %q", text)

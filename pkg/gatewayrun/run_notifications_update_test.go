@@ -69,16 +69,16 @@ func newUpdateTestAdapterFor(platform gateway.Platform) *updateTestAdapter {
 // Bare runner serving one telegram adapter, with the home set to a fresh directory
 func updateRunner(t *testing.T) (*GatewayRunner, *updateTestAdapter, string) {
 	t.Helper()
-	hermesHome := filepath.Join(t.TempDir(), "hermes")
-	if err := os.MkdirAll(hermesHome, 0o755); err != nil {
+	icebathHome := filepath.Join(t.TempDir(), "icebath")
+	if err := os.MkdirAll(icebathHome, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	t.Setenv("ICEBATH_HOME", hermesHome)
+	t.Setenv("ICEBATH_HOME", icebathHome)
 	r := allocGatewayRunner()
 	r.sessions = map[string]*SessionState{}
 	adapter := newUpdateTestAdapter()
 	r.adapters = adapterDict(gateway.PlatformTelegram, adapter)
-	return r, adapter, hermesHome
+	return r, adapter, icebathHome
 }
 
 // Writes a JSON marker file
@@ -96,16 +96,16 @@ func writeJSONFile(t *testing.T, path string, v any) {
 var updatePendingMarker = map[string]any{"platform": "telegram", "chat_id": "111", "user_id": "222", "session_key": "agent:main:telegram:dm:111"}
 
 func TestWatchUpdateProgressStreamsOutputToAdapter(t *testing.T) {
-	r, adapter, hermesHome := updateRunner(t)
-	writeJSONFile(t, filepath.Join(hermesHome, ".update_pending.json"), updatePendingMarker)
-	if err := os.WriteFile(filepath.Join(hermesHome, ".update_output.txt"), []byte("→ Fetching updates...\n"), 0o644); err != nil {
+	r, adapter, icebathHome := updateRunner(t)
+	writeJSONFile(t, filepath.Join(icebathHome, ".update_pending.json"), updatePendingMarker)
+	if err := os.WriteFile(filepath.Join(icebathHome, ".update_output.txt"), []byte("→ Fetching updates...\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	streamed := make(chan struct{})
 	var once sync.Once
 	adapter.onSend = func(text string) {
 		if strings.Contains(text, "Fetching updates") {
-			if _, err := os.Stat(filepath.Join(hermesHome, ".update_exit_code")); err == nil {
+			if _, err := os.Stat(filepath.Join(icebathHome, ".update_exit_code")); err == nil {
 				t.Errorf("exit code existed before the stream")
 			}
 			once.Do(func() { close(streamed) })
@@ -128,13 +128,13 @@ func TestWatchUpdateProgressStreamsOutputToAdapter(t *testing.T) {
 			t.Fatalf("finished notice sent early %q", text)
 		}
 	}
-	output, err := os.OpenFile(filepath.Join(hermesHome, ".update_output.txt"), os.O_APPEND|os.O_WRONLY, 0o644)
+	output, err := os.OpenFile(filepath.Join(icebathHome, ".update_output.txt"), os.O_APPEND|os.O_WRONLY, 0o644)
 	if err != nil {
 		t.Fatal(err)
 	}
 	_, _ = output.WriteString("✓ Code updated!\n")
 	_ = output.Close()
-	if err := os.WriteFile(filepath.Join(hermesHome, ".update_exit_code"), []byte("0"), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(icebathHome, ".update_exit_code"), []byte("0"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	waitCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
@@ -149,21 +149,21 @@ func TestWatchUpdateProgressStreamsOutputToAdapter(t *testing.T) {
 }
 
 func TestWatchUpdateProgressDetectsAndForwardsPrompt(t *testing.T) {
-	r, adapter, hermesHome := updateRunner(t)
-	writeJSONFile(t, filepath.Join(hermesHome, ".update_pending.json"), updatePendingMarker)
-	if err := os.WriteFile(filepath.Join(hermesHome, ".update_output.txt"), []byte("output\n"), 0o644); err != nil {
+	r, adapter, icebathHome := updateRunner(t)
+	writeJSONFile(t, filepath.Join(icebathHome, ".update_pending.json"), updatePendingMarker)
+	if err := os.WriteFile(filepath.Join(icebathHome, ".update_output.txt"), []byte("output\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	done := make(chan struct{})
 	go func() {
 		defer close(done)
 		time.Sleep(200 * time.Millisecond)
-		writeJSONFile(t, filepath.Join(hermesHome, ".update_prompt.json"), map[string]any{"prompt": "Restore local changes? [Y/n]", "default": "y", "id": "test1"})
+		writeJSONFile(t, filepath.Join(icebathHome, ".update_prompt.json"), map[string]any{"prompt": "Restore local changes? [Y/n]", "default": "y", "id": "test1"})
 		time.Sleep(200 * time.Millisecond)
-		_ = os.WriteFile(filepath.Join(hermesHome, ".update_response"), []byte("y"), 0o644)
-		_ = os.Remove(filepath.Join(hermesHome, ".update_prompt.json"))
+		_ = os.WriteFile(filepath.Join(icebathHome, ".update_response"), []byte("y"), 0o644)
+		_ = os.Remove(filepath.Join(icebathHome, ".update_prompt.json"))
 		time.Sleep(200 * time.Millisecond)
-		_ = os.WriteFile(filepath.Join(hermesHome, ".update_exit_code"), []byte("0"), 0o644)
+		_ = os.WriteFile(filepath.Join(icebathHome, ".update_exit_code"), []byte("0"), 0o644)
 	}()
 	if err := r.watchUpdateProgress(context.Background(), 100*time.Millisecond, 200*time.Millisecond, 10*time.Second); err != nil {
 		t.Fatal(err)
@@ -179,12 +179,12 @@ func TestWatchUpdateProgressDetectsAndForwardsPrompt(t *testing.T) {
 }
 
 func TestWatchUpdateProgressPromptIsRecoveredAfterWatcherRestart(t *testing.T) {
-	runner1, adapter1, hermesHome := updateRunner(t)
-	writeJSONFile(t, filepath.Join(hermesHome, ".update_pending.json"), updatePendingMarker)
-	if err := os.WriteFile(filepath.Join(hermesHome, ".update_output.txt"), nil, 0o644); err != nil {
+	runner1, adapter1, icebathHome := updateRunner(t)
+	writeJSONFile(t, filepath.Join(icebathHome, ".update_pending.json"), updatePendingMarker)
+	if err := os.WriteFile(filepath.Join(icebathHome, ".update_output.txt"), nil, 0o644); err != nil {
 		t.Fatal(err)
 	}
-	promptPath := filepath.Join(hermesHome, ".update_prompt.json")
+	promptPath := filepath.Join(icebathHome, ".update_prompt.json")
 	writeJSONFile(t, promptPath, map[string]any{"prompt": "Restore local changes? [Y/n]", "default": "y", "id": "restart-recover"})
 	watch1 := spawnGatewayTask(context.Background(), "watch1", func(ctx context.Context) (any, error) {
 		return nil, runner1.watchUpdateProgress(ctx, 50*time.Millisecond, 100*time.Millisecond, 10*time.Second)
@@ -213,9 +213,9 @@ func TestWatchUpdateProgressPromptIsRecoveredAfterWatcherRestart(t *testing.T) {
 	go func() {
 		defer close(done)
 		time.Sleep(200 * time.Millisecond)
-		_ = os.WriteFile(filepath.Join(hermesHome, ".update_response"), []byte("y"), 0o644)
+		_ = os.WriteFile(filepath.Join(icebathHome, ".update_response"), []byte("y"), 0o644)
 		time.Sleep(200 * time.Millisecond)
-		_ = os.WriteFile(filepath.Join(hermesHome, ".update_exit_code"), []byte("0"), 0o644)
+		_ = os.WriteFile(filepath.Join(icebathHome, ".update_exit_code"), []byte("0"), 0o644)
 	}()
 	if err := runner2.watchUpdateProgress(context.Background(), 50*time.Millisecond, 100*time.Millisecond, 10*time.Second); err != nil {
 		t.Fatal(err)
@@ -233,9 +233,9 @@ func TestWatchUpdateProgressPromptIsRecoveredAfterWatcherRestart(t *testing.T) {
 }
 
 // Writes a text file under the home
-func writeHomeFile(t *testing.T, hermesHome, name string, data []byte) string {
+func writeHomeFile(t *testing.T, icebathHome, name string, data []byte) string {
 	t.Helper()
-	path := filepath.Join(hermesHome, name)
+	path := filepath.Join(icebathHome, name)
 	if err := os.WriteFile(path, data, 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -251,12 +251,12 @@ func homeFileExists(path string) bool {
 // Runner with only the given adapters and the home set to a fresh directory
 func notifyRunner(t *testing.T, adapters map[gateway.Platform]gateway.PlatformAdapter) (*GatewayRunner, string) {
 	t.Helper()
-	r, _, hermesHome := updateRunner(t)
+	r, _, icebathHome := updateRunner(t)
 	r.adapters = adapterDict()
 	for platform, adapter := range adapters {
 		r.adapters.Set(platform, adapter)
 	}
-	return r, hermesHome
+	return r, icebathHome
 }
 
 // Sends the update notification and fails the test on a cleanup error
@@ -271,10 +271,10 @@ func sendUpdateNotificationOK(t *testing.T, r *GatewayRunner) bool {
 
 func TestSendUpdateNotificationDefersNotificationWhileUpdateStillRunning(t *testing.T) {
 	adapter := newUpdateTestAdapter()
-	r, hermesHome := notifyRunner(t, map[gateway.Platform]gateway.PlatformAdapter{gateway.PlatformTelegram: adapter})
-	pending := filepath.Join(hermesHome, ".update_pending.json")
+	r, icebathHome := notifyRunner(t, map[gateway.Platform]gateway.PlatformAdapter{gateway.PlatformTelegram: adapter})
+	pending := filepath.Join(icebathHome, ".update_pending.json")
 	writeJSONFile(t, pending, map[string]any{"platform": "telegram", "chat_id": "67890", "user_id": "12345"})
-	writeHomeFile(t, hermesHome, ".update_output.txt", []byte("still running"))
+	writeHomeFile(t, icebathHome, ".update_output.txt", []byte("still running"))
 	if sendUpdateNotificationOK(t, r) {
 		t.Fatal("expected deferral")
 	}
@@ -285,11 +285,11 @@ func TestSendUpdateNotificationDefersNotificationWhileUpdateStillRunning(t *test
 
 func TestSendUpdateNotificationRecoversFromClaimedPendingFile(t *testing.T) {
 	adapter := newUpdateTestAdapter()
-	r, hermesHome := notifyRunner(t, map[gateway.Platform]gateway.PlatformAdapter{gateway.PlatformTelegram: adapter})
-	claimed := filepath.Join(hermesHome, ".update_pending.claimed.json")
+	r, icebathHome := notifyRunner(t, map[gateway.Platform]gateway.PlatformAdapter{gateway.PlatformTelegram: adapter})
+	claimed := filepath.Join(icebathHome, ".update_pending.claimed.json")
 	writeJSONFile(t, claimed, map[string]any{"platform": "telegram", "chat_id": "67890", "user_id": "12345"})
-	writeHomeFile(t, hermesHome, ".update_output.txt", []byte("done"))
-	writeHomeFile(t, hermesHome, ".update_exit_code", []byte("0"))
+	writeHomeFile(t, icebathHome, ".update_output.txt", []byte("done"))
+	writeHomeFile(t, icebathHome, ".update_exit_code", []byte("0"))
 	if !sendUpdateNotificationOK(t, r) {
 		t.Fatal("expected delivery")
 	}
@@ -300,10 +300,10 @@ func TestSendUpdateNotificationRecoversFromClaimedPendingFile(t *testing.T) {
 
 func TestSendUpdateNotificationSendsNotificationWithOutput(t *testing.T) {
 	adapter := newUpdateTestAdapter()
-	r, hermesHome := notifyRunner(t, map[gateway.Platform]gateway.PlatformAdapter{gateway.PlatformTelegram: adapter})
-	writeJSONFile(t, filepath.Join(hermesHome, ".update_pending.json"), map[string]any{"platform": "telegram", "chat_id": "67890", "user_id": "12345", "timestamp": "2026-03-04T21:00:00"})
-	writeHomeFile(t, hermesHome, ".update_output.txt", []byte("→ Found 3 new commit(s)\n✓ Code updated!\n✓ Update complete!"))
-	writeHomeFile(t, hermesHome, ".update_exit_code", []byte("0"))
+	r, icebathHome := notifyRunner(t, map[gateway.Platform]gateway.PlatformAdapter{gateway.PlatformTelegram: adapter})
+	writeJSONFile(t, filepath.Join(icebathHome, ".update_pending.json"), map[string]any{"platform": "telegram", "chat_id": "67890", "user_id": "12345", "timestamp": "2026-03-04T21:00:00"})
+	writeHomeFile(t, icebathHome, ".update_output.txt", []byte("→ Found 3 new commit(s)\n✓ Code updated!\n✓ Update complete!"))
+	writeHomeFile(t, icebathHome, ".update_exit_code", []byte("0"))
 	sendUpdateNotificationOK(t, r)
 	sent := adapter.sends()
 	if len(sent) != 1 || adapter.chats[0] != "67890" {
@@ -315,21 +315,21 @@ func TestSendUpdateNotificationSendsNotificationWithOutput(t *testing.T) {
 }
 
 func TestSendUpdateNotificationDropsStaleMarkerWhenThePlatformNeverConnects(t *testing.T) {
-	r, hermesHome := notifyRunner(t, map[gateway.Platform]gateway.PlatformAdapter{})
+	r, icebathHome := notifyRunner(t, map[gateway.Platform]gateway.PlatformAdapter{})
 	var logs strings.Builder
 	var logsMu sync.Mutex
 	previous := slog.Default()
 	slog.SetDefault(slog.New(slog.NewTextHandler(lockedWriter{&logs, &logsMu}, &slog.HandlerOptions{Level: slog.LevelDebug})))
 	t.Cleanup(func() { slog.SetDefault(previous) })
-	pending := filepath.Join(hermesHome, ".update_pending.json")
+	pending := filepath.Join(icebathHome, ".update_pending.json")
 	stamp := time.Now().Add(-2 * time.Hour).Format("2006-01-02T15:04:05.000000")
 	writeJSONFile(t, pending, map[string]any{"platform": "telegram", "chat_id": "67890", "user_id": "12345", "timestamp": stamp})
-	writeHomeFile(t, hermesHome, ".update_exit_code", []byte("0"))
+	writeHomeFile(t, icebathHome, ".update_exit_code", []byte("0"))
 	if !sendUpdateNotificationOK(t, r) {
 		t.Fatal("expected a definitive drop")
 	}
 	for _, name := range []string{".update_pending.json", ".update_pending.claimed.json", ".update_output.txt", ".update_exit_code"} {
-		if homeFileExists(filepath.Join(hermesHome, name)) {
+		if homeFileExists(filepath.Join(icebathHome, name)) {
 			t.Fatalf("%s kept", name)
 		}
 	}
@@ -341,11 +341,11 @@ func TestSendUpdateNotificationDropsStaleMarkerWhenThePlatformNeverConnects(t *t
 }
 
 func TestSendUpdateNotificationKeepsWaitingForARecentMarker(t *testing.T) {
-	r, hermesHome := notifyRunner(t, map[gateway.Platform]gateway.PlatformAdapter{})
-	pending := filepath.Join(hermesHome, ".update_pending.json")
+	r, icebathHome := notifyRunner(t, map[gateway.Platform]gateway.PlatformAdapter{})
+	pending := filepath.Join(icebathHome, ".update_pending.json")
 	stamp := time.Now().Add(-5 * time.Minute).Format("2006-01-02T15:04:05.000000")
 	writeJSONFile(t, pending, map[string]any{"platform": "telegram", "chat_id": "67890", "user_id": "12345", "timestamp": stamp})
-	writeHomeFile(t, hermesHome, ".update_exit_code", []byte("0"))
+	writeHomeFile(t, icebathHome, ".update_exit_code", []byte("0"))
 	if sendUpdateNotificationOK(t, r) {
 		t.Fatal("expected deferral")
 	}
@@ -357,11 +357,11 @@ func TestSendUpdateNotificationKeepsWaitingForARecentMarker(t *testing.T) {
 func TestSendUpdateNotificationCleansUpOnError(t *testing.T) {
 	adapter := newUpdateTestAdapter()
 	adapter.sendErr = errors.New("network error")
-	r, hermesHome := notifyRunner(t, map[gateway.Platform]gateway.PlatformAdapter{gateway.PlatformTelegram: adapter})
-	pending := filepath.Join(hermesHome, ".update_pending.json")
+	r, icebathHome := notifyRunner(t, map[gateway.Platform]gateway.PlatformAdapter{gateway.PlatformTelegram: adapter})
+	pending := filepath.Join(icebathHome, ".update_pending.json")
 	writeJSONFile(t, pending, map[string]any{"platform": "telegram", "chat_id": "111", "user_id": "222"})
-	output := writeHomeFile(t, hermesHome, ".update_output.txt", []byte("✓ Done"))
-	exitCode := writeHomeFile(t, hermesHome, ".update_exit_code", []byte("0"))
+	output := writeHomeFile(t, icebathHome, ".update_output.txt", []byte("✓ Done"))
+	exitCode := writeHomeFile(t, icebathHome, ".update_exit_code", []byte("0"))
 	sendUpdateNotificationOK(t, r)
 	if homeFileExists(pending) || homeFileExists(output) || homeFileExists(exitCode) {
 		t.Fatal("markers kept after a failed send")
@@ -370,28 +370,28 @@ func TestSendUpdateNotificationCleansUpOnError(t *testing.T) {
 
 func TestSendUpdateNotificationNoAdapterForPlatformPreservesMarkers(t *testing.T) {
 	adapter := newUpdateTestAdapter()
-	r, hermesHome := notifyRunner(t, map[gateway.Platform]gateway.PlatformAdapter{gateway.PlatformTelegram: adapter})
-	pending := filepath.Join(hermesHome, ".update_pending.json")
+	r, icebathHome := notifyRunner(t, map[gateway.Platform]gateway.PlatformAdapter{gateway.PlatformTelegram: adapter})
+	pending := filepath.Join(icebathHome, ".update_pending.json")
 	writeJSONFile(t, pending, map[string]any{"platform": "discord", "chat_id": "111", "user_id": "222"})
-	output := writeHomeFile(t, hermesHome, ".update_output.txt", []byte("Done"))
-	exitCode := writeHomeFile(t, hermesHome, ".update_exit_code", []byte("0"))
+	output := writeHomeFile(t, icebathHome, ".update_output.txt", []byte("Done"))
+	exitCode := writeHomeFile(t, icebathHome, ".update_exit_code", []byte("0"))
 	if sendUpdateNotificationOK(t, r) {
 		t.Fatal("expected deferral")
 	}
 	if len(adapter.sends()) != 0 || !homeFileExists(pending) || !homeFileExists(output) || !homeFileExists(exitCode) {
 		t.Fatal("markers dropped or a send happened")
 	}
-	if homeFileExists(filepath.Join(hermesHome, ".update_pending.claimed.json")) {
+	if homeFileExists(filepath.Join(icebathHome, ".update_pending.claimed.json")) {
 		t.Fatal("claim not restored")
 	}
 }
 
 func TestSendUpdateNotificationDeferredNotificationDeliversAfterReconnect(t *testing.T) {
-	r, hermesHome := notifyRunner(t, map[gateway.Platform]gateway.PlatformAdapter{})
-	pending := filepath.Join(hermesHome, ".update_pending.json")
+	r, icebathHome := notifyRunner(t, map[gateway.Platform]gateway.PlatformAdapter{})
+	pending := filepath.Join(icebathHome, ".update_pending.json")
 	writeJSONFile(t, pending, map[string]any{"platform": "discord", "chat_id": "111", "user_id": "222"})
-	output := writeHomeFile(t, hermesHome, ".update_output.txt", []byte("✓ Update complete!"))
-	exitCode := writeHomeFile(t, hermesHome, ".update_exit_code", []byte("0"))
+	output := writeHomeFile(t, icebathHome, ".update_output.txt", []byte("✓ Update complete!"))
+	exitCode := writeHomeFile(t, icebathHome, ".update_exit_code", []byte("0"))
 	if sendUpdateNotificationOK(t, r) || !homeFileExists(pending) {
 		t.Fatal("first pass did not defer")
 	}
@@ -403,7 +403,7 @@ func TestSendUpdateNotificationDeferredNotificationDeliversAfterReconnect(t *tes
 	if sent := adapter.sends(); len(sent) != 1 || !strings.Contains(sent[0], "Update complete") {
 		t.Fatalf("sends %q", sent)
 	}
-	for _, path := range []string{pending, output, exitCode, filepath.Join(hermesHome, ".update_pending.claimed.json")} {
+	for _, path := range []string{pending, output, exitCode, filepath.Join(icebathHome, ".update_pending.claimed.json")} {
 		if homeFileExists(path) {
 			t.Fatalf("%s kept", path)
 		}
@@ -412,11 +412,11 @@ func TestSendUpdateNotificationDeferredNotificationDeliversAfterReconnect(t *tes
 
 func TestSendUpdateNotificationCompletionNotificationToleratesInvalidUtf8Output(t *testing.T) {
 	adapter := newUpdateTestAdapterFor(gateway.PlatformDiscord)
-	r, hermesHome := notifyRunner(t, map[gateway.Platform]gateway.PlatformAdapter{gateway.PlatformDiscord: adapter})
-	pending := filepath.Join(hermesHome, ".update_pending.json")
+	r, icebathHome := notifyRunner(t, map[gateway.Platform]gateway.PlatformAdapter{gateway.PlatformDiscord: adapter})
+	pending := filepath.Join(icebathHome, ".update_pending.json")
 	writeJSONFile(t, pending, map[string]any{"platform": "discord", "chat_id": "111", "user_id": "222"})
-	output := writeHomeFile(t, hermesHome, ".update_output.txt", []byte("ok before\ninvalid byte: \x96\ncontinued after\n"))
-	exitCode := writeHomeFile(t, hermesHome, ".update_exit_code", []byte("0"))
+	output := writeHomeFile(t, icebathHome, ".update_output.txt", []byte("ok before\ninvalid byte: \x96\ncontinued after\n"))
+	exitCode := writeHomeFile(t, icebathHome, ".update_exit_code", []byte("0"))
 	if !sendUpdateNotificationOK(t, r) {
 		t.Fatal("expected delivery")
 	}
@@ -436,10 +436,10 @@ func TestSendUpdateNotificationCompletionNotificationToleratesInvalidUtf8Output(
 
 func TestSendUpdateNotificationFailedUpdateNoticeSaysStillRunningAndTrimsLog(t *testing.T) {
 	adapter := newUpdateTestAdapterFor(gateway.PlatformDiscord)
-	r, hermesHome := notifyRunner(t, map[gateway.Platform]gateway.PlatformAdapter{gateway.PlatformDiscord: adapter})
-	writeJSONFile(t, filepath.Join(hermesHome, ".update_pending.json"), map[string]any{"platform": "discord", "chat_id": "111", "user_id": "222"})
-	writeHomeFile(t, hermesHome, ".update_output.txt", []byte(strings.Repeat("x", 3000)+"\nERROR: pip failed\n"))
-	writeHomeFile(t, hermesHome, ".update_exit_code", []byte("1"))
+	r, icebathHome := notifyRunner(t, map[gateway.Platform]gateway.PlatformAdapter{gateway.PlatformDiscord: adapter})
+	writeJSONFile(t, filepath.Join(icebathHome, ".update_pending.json"), map[string]any{"platform": "discord", "chat_id": "111", "user_id": "222"})
+	writeHomeFile(t, icebathHome, ".update_output.txt", []byte(strings.Repeat("x", 3000)+"\nERROR: pip failed\n"))
+	writeHomeFile(t, icebathHome, ".update_exit_code", []byte("1"))
 	sendUpdateNotificationOK(t, r)
 	sent := adapter.sends()
 	if len(sent) != 1 || !strings.Contains(sent[0], "ERROR: pip failed") || len([]rune(sent[0])) >= 1200 {
@@ -448,10 +448,10 @@ func TestSendUpdateNotificationFailedUpdateNoticeSaysStillRunningAndTrimsLog(t *
 }
 
 func TestWatchUpdateProgressInvalidUtf8UpdateOutputDoesNotCrashWatcher(t *testing.T) {
-	r, adapter, hermesHome := updateRunner(t)
-	writeJSONFile(t, filepath.Join(hermesHome, ".update_pending.json"), map[string]any{"platform": "telegram", "chat_id": "67890", "user_id": "12345"})
-	writeHomeFile(t, hermesHome, ".update_output.txt", []byte("ok before\n\xe2\x9c invalid-continuation: \x96\ncontinued after\n"))
-	writeHomeFile(t, hermesHome, ".update_exit_code", []byte("0"))
+	r, adapter, icebathHome := updateRunner(t)
+	writeJSONFile(t, filepath.Join(icebathHome, ".update_pending.json"), map[string]any{"platform": "telegram", "chat_id": "67890", "user_id": "12345"})
+	writeHomeFile(t, icebathHome, ".update_output.txt", []byte("ok before\n\xe2\x9c invalid-continuation: \x96\ncontinued after\n"))
+	writeHomeFile(t, icebathHome, ".update_exit_code", []byte("0"))
 	if err := r.watchUpdateProgress(context.Background(), 10*time.Millisecond, 10*time.Millisecond, time.Second); err != nil {
 		t.Fatal(err)
 	}

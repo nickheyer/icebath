@@ -102,7 +102,7 @@ func warnWindowsLockTimeoutOnce() {
 	}
 	lockTimeoutWarned = true
 	lockTimeoutWarnLock.Unlock()
-	GetLogger("hermes_logging").Warning("concurrent-log-handler timed out acquiring the cross-process log " +
+	pkgLog().Warning("concurrent-log-handler timed out acquiring the cross-process log " +
 		"lock; this and later records were dropped (file logging is degraded).")
 }
 
@@ -542,7 +542,7 @@ func (h *managedRotatingFileHandler) handleError(rec *Record, err error) {
 			if t, ok := pypath.ErrnoText(err); ok {
 				text = t
 			}
-			_, _ = fmt.Fprintf(safeStderr(), "hermes_logging: %s unavailable (%s); file logging paused until it recovers\n", h.baseFilename, text)
+			_, _ = fmt.Fprintf(safeStderr(), "logging: %s unavailable (%s); file logging paused until it recovers\n", h.baseFilename, text)
 		}
 		if h.stream != nil {
 			quietly(h.stream.Close)

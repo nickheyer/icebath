@@ -88,10 +88,10 @@ func (r *GatewayRunner) runAgentDeliverFirstResponse(ctx context.Context, tc *Tu
 	if isIntentionalSilence(deliveryResult, firstResponse) {
 		silent = r.silenceAllowedForSource(ctx, tc.source, displayKind, replyExpected, deliveryResult)
 		if silent {
-			runLog().Info(fmt.Sprintf("Queued follow-up for session %s: suppressing intentional silence marker before continuing.", logSessionKey(sessionKey)))
+			pkgLog().Info(fmt.Sprintf("Queued follow-up for session %s: suppressing intentional silence marker before continuing.", logSessionKey(sessionKey)))
 			firstResponse = ""
 		} else {
-			runLog().Warn(fmt.Sprintf("Queued follow-up for session %s: replacing a human-turn silence marker.", logSessionKey(sessionKey)))
+			pkgLog().Warn(fmt.Sprintf("Queued follow-up for session %s: replacing a human-turn silence marker.", logSessionKey(sessionKey)))
 			firstResponse = unexpectedSilenceReply(ctx)
 			alreadyStreamed = false
 		}
@@ -100,9 +100,9 @@ func (r *GatewayRunner) runAgentDeliverFirstResponse(ctx context.Context, tc *Tu
 	deliverMedia := !pyrepr.Truthy(deliveryResult["failed"])
 	if firstResponse != "" {
 		if alreadyStreamed {
-			runLog().Info(fmt.Sprintf("Queued follow-up for session %s: final text delivery confirmed; delivering explicit media before continuing.", logSessionKey(sessionKey)))
+			pkgLog().Info(fmt.Sprintf("Queued follow-up for session %s: final text delivery confirmed; delivering explicit media before continuing.", logSessionKey(sessionKey)))
 		} else {
-			runLog().Info(fmt.Sprintf("Queued follow-up for session %s: final stream delivery not confirmed; sending first response before continuing.", logSessionKey(sessionKey)))
+			pkgLog().Info(fmt.Sprintf("Queued follow-up for session %s: final stream delivery not confirmed; sending first response before continuing.", logSessionKey(sessionKey)))
 		}
 		var consumer queuedStreamConsumer
 		if sc != nil {
@@ -118,7 +118,7 @@ func (r *GatewayRunner) runAgentDeliverFirstResponse(ctx context.Context, tc *Tu
 				alreadyStreamed, deliverMedia, consumer, sessionKey, inboundID)
 		}()
 		if err != nil {
-			runLog().Warn(fmt.Sprintf("Failed to send first response before queued message: %s", err))
+			pkgLog().Warn(fmt.Sprintf("Failed to send first response before queued message: %s", err))
 		} else if textDelivered && result != nil {
 			result["already_sent"] = true
 			result["media_already_delivered"] = deliverMedia
@@ -134,14 +134,14 @@ func (r *GatewayRunner) runAgentQueuedFollowup(ctx context.Context, tc *TurnCont
 	pendingEvent *gateway.MessageEvent, response, result map[string]any, streamTask *gatewayTask) (map[string]any, error) {
 	source, sessionID, sessionKey, runGeneration := tc.source, tc.sessionID, tc.sessionKey, tc.runGeneration
 	interruptDepth, history, statusThreadMetadata := tc.interruptDepth, tc.history, tc.statusThreadMetadata
-	runLog().Debug(fmt.Sprintf("Processing pending message: '%s...'", headRunes(pending, 40)))
+	pkgLog().Debug(fmt.Sprintf("Processing pending message: '%s...'", headRunes(pending, 40)))
 	if adapter != nil && sessionKey != "" {
 		if active := adapter.Base().ActiveSessionEvent(sessionKey); active != nil {
 			active.Clear()
 		}
 	}
 	if interruptDepth >= maxInterruptDepth {
-		runLog().Warn(fmt.Sprintf("Interrupt recursion depth %d reached for session %s — queueing message instead of recursing.", interruptDepth, sessionKey))
+		pkgLog().Warn(fmt.Sprintf("Interrupt recursion depth %d reached for session %s — queueing message instead of recursing.", interruptDepth, sessionKey))
 		if err := r.requeueAtDepthCap(ctx, sessionKey, source, pendingEvent, pending); err != nil {
 			return nil, err
 		}
@@ -173,11 +173,11 @@ func (r *GatewayRunner) runAgentQueuedFollowup(ctx context.Context, tc *TurnCont
 			nextSource = pendingEvent.Source
 		}
 		if isGoalContinuationEvent(pendingEvent) && !r.goalStillActiveForSession(ctx, sessionID) {
-			runLog().Info(fmt.Sprintf("Discarding stale goal continuation for session %s — goal is no longer active", logSessionKey(sessionKey)))
+			pkgLog().Info(fmt.Sprintf("Discarding stale goal continuation for session %s — goal is no longer active", logSessionKey(sessionKey)))
 			return result, nil
 		}
 		if key, err := r.sessionKeyForSource(ctx, nextSource); err != nil {
-			runLog().Debug(fmt.Sprintf("Queued follow-up session-key resolution failed; reusing %s", logSessionKey(sessionKey)), "exc_info", err)
+			pkgLog().Debug(fmt.Sprintf("Queued follow-up session-key resolution failed; reusing %s", logSessionKey(sessionKey)), "exc_info", err)
 		} else {
 			nextSessionKey = key
 		}

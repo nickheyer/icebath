@@ -415,7 +415,7 @@ func (c *CLI) voiceSpeakResponse(text string) {
 		return nil
 	}()
 	if err != nil {
-		cliLogger.Warn(fmt.Sprintf("Voice TTS playback failed: %s", pyrepr.ExceptionMessage(err)))
+		pkgLog().Warn(fmt.Sprintf("Voice TTS playback failed: %s", pyrepr.ExceptionMessage(err)))
 		cprint(voiceDim(c.t("cli.voice.tts_failed", map[string]any{"error": pyrepr.ExceptionMessage(err)})))
 	}
 }
@@ -485,7 +485,7 @@ func (c *CLI) voiceFullDuplexListener() {
 			c.voiceBargePhase = phase
 			pipeStop := c.voiceTTSStop
 			if phase == "playback" {
-				cliLogger.Debug("TTS CUT: full-duplex listener tripped during playback")
+				pkgLog().Debug("TTS CUT: full-duplex listener tripped during playback")
 				media.MarkSpeechInterrupted()
 				if pipeStop != nil {
 					pipeStop.Set()
@@ -493,14 +493,14 @@ func (c *CLI) voiceFullDuplexListener() {
 				voiceStopPlayback()
 				return
 			}
-			cliLogger.Debug("full-duplex listener tripped during generation — interrupting agent turn")
+			pkgLog().Debug("full-duplex listener tripped during generation — interrupting agent turn")
 			if pipeStop != nil {
 				pipeStop.Set()
 			}
 			func() {
 				defer func() {
 					if r := recover(); r != nil {
-						cliLogger.Debug(fmt.Sprintf("voice interjection interrupt failed: %s", errorText(r)))
+						pkgLog().Debug(fmt.Sprintf("voice interjection interrupt failed: %s", errorText(r)))
 					}
 				}()
 				if a := c.agentRef(); a != nil && c.agentRunning {
@@ -521,7 +521,7 @@ func (c *CLI) voiceFullDuplexListener() {
 	}()
 	if err != nil {
 		c.voiceBargeCapture.Clear()
-		cliLogger.Debug(fmt.Sprintf("Voice full-duplex listener failed: %s", pyrepr.ExceptionMessage(err)))
+		pkgLog().Debug(fmt.Sprintf("Voice full-duplex listener failed: %s", pyrepr.ExceptionMessage(err)))
 	}
 }
 
@@ -552,7 +552,7 @@ func (c *CLI) voiceSubmitBargeUtterance(wavPath string) {
 			return
 		}
 		if c.voiceBargePhase == "playback" && media.IsTTSEcho(transcript, c.voiceLastTTSText) {
-			cliLogger.Debug(fmt.Sprintf("Dropping playback-phase barge transcript as TTS echo: %s", pyrepr.Repr(transcript)))
+			pkgLog().Debug(fmt.Sprintf("Dropping playback-phase barge transcript as TTS echo: %s", pyrepr.Repr(transcript)))
 			cprint("\n" + voiceDim(c.t("cli.voice.echo_ignored", nil)))
 			return
 		}
@@ -646,7 +646,7 @@ func (c *CLI) disableVoiceMode() {
 	}
 	probeCall(func() {
 		if c.voiceTTSStop != nil {
-			cliLogger.Info("TTS CUT: _disable_voice_mode setting stop event")
+			pkgLog().Info("TTS CUT: _disable_voice_mode setting stop event")
 			c.voiceTTSStop.Set()
 		}
 		voiceStopPlayback()
@@ -770,7 +770,7 @@ func (c *CLI) startWakeWatchdog() {
 				resumed, err := media.ResumeListening(c)
 				switch {
 				case err != nil:
-					cliLogger.Debug(fmt.Sprintf("wake word resume failed: %s", pyrepr.ExceptionMessage(err)))
+					pkgLog().Debug(fmt.Sprintf("wake word resume failed: %s", pyrepr.ExceptionMessage(err)))
 				case resumed:
 					c.voiceExtra.wakeSuspended = false
 				default:
@@ -826,7 +826,7 @@ func (c *CLI) ttsLeaseAsync(active bool) {
 	go func() {
 		defer func() {
 			if r := recover(); r != nil {
-				cliLogger.Debug(fmt.Sprintf("voice: tts lease active=%v failed: %v", pyrepr.Str(active), r))
+				pkgLog().Debug(fmt.Sprintf("voice: tts lease active=%v failed: %v", pyrepr.Str(active), r))
 			}
 		}()
 		if active {

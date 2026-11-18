@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
-	"log/slog"
 	"os"
 	"path/filepath"
 	"sync"
@@ -23,7 +22,7 @@ func RuntimeLock(ctx context.Context, project string, timeout time.Duration) (he
 		return false, nil, err
 	}
 	if f == nil {
-		slog.Warn(fmt.Sprintf("dependency lock still held after %gs; continuing without it (%s)", timeout.Seconds(), lock))
+		pkgLog().Warn(fmt.Sprintf("dependency lock still held after %gs; continuing without it (%s)", timeout.Seconds(), lock))
 		return false, func() {}, nil
 	}
 	return true, func() { f.Close() }, nil

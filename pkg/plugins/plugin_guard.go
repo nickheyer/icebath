@@ -45,7 +45,7 @@ var codeExemptPatternIDs = map[string]bool{
 	"agent_config_mod": true, "agent_config_contract": true, "encoded_exfil": true,
 }
 
-var severityRemap = map[string]string{"binary_file": "high", "hermes_env_access": "medium", "curl_pipe_shell": "high"}
+var severityRemap = map[string]string{"binary_file": "high", "icebath_env_access": "medium", "curl_pipe_shell": "high"}
 
 var jsCapabilityRemap = map[string]string{"dns_exfil": "high", "ssh_backdoor": "high"}
 

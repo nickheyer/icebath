@@ -173,7 +173,7 @@ func (f *migrateFleet) serviceOp(ctx context.Context, _ io.Writer, kind string, 
 			}
 		}
 		runtime.Set("pid", int64(f.gatewayPid))
-		runtime.Set("hermes_home", f.root)
+		runtime.Set("icebath_home", f.root)
 		runtime.Set("gateway_state", "running")
 		if flag := f.configFlag(); flag != nil && *flag {
 			runtime.Set("served_profiles", []any{"default", "coder", "ops"})
@@ -192,7 +192,7 @@ func (f *migrateFleet) writeJSON(path string, v any) {
 }
 
 func (f *migrateFleet) writePidRecord() {
-	f.writeJSON(filepath.Join(f.root, "gateway.pid"), pyjson.ObjectOf("pid", int64(f.gatewayPid), "hermes_home", f.root))
+	f.writeJSON(filepath.Join(f.root, "gateway.pid"), pyjson.ObjectOf("pid", int64(f.gatewayPid), "icebath_home", f.root))
 }
 
 func (f *migrateFleet) fakeSpawn(string) bool {

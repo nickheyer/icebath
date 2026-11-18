@@ -38,7 +38,7 @@ func renderNoticeLine(notice provider.AgentNotice) string {
 // Classifies an approval prompt send as sent, failed, ambiguous or declined
 func approvalSendOutcome(future *concurrentFuture, timeout float64) string {
 	if future == nil {
-		runLog().Warn("Prompt send failed: no scheduling future (loop unavailable)")
+		pkgLog().Warn("Prompt send failed: no scheduling future (loop unavailable)")
 		return "failed"
 	}
 	value, err := future.resultWithin(timeout)
@@ -46,7 +46,7 @@ func approvalSendOutcome(future *concurrentFuture, timeout float64) string {
 		return "ambiguous"
 	}
 	if err != nil {
-		runLog().Warn(fmt.Sprintf("Prompt send failed: %s", err))
+		pkgLog().Warn(fmt.Sprintf("Prompt send failed: %s", err))
 		return "failed"
 	}
 	result, _ := value.(gateway.SendResult)
@@ -54,18 +54,18 @@ func approvalSendOutcome(future *concurrentFuture, timeout float64) string {
 		return "sent"
 	}
 	if raw, ok := result.RawResponse.(map[string]any); ok && pyrepr.Truthy(raw["ambiguous"]) {
-		runLog().Warn(fmt.Sprintf("Prompt send AMBIGUOUS (lost ack): %s", pyrepr.Str(raw["error"])))
+		pkgLog().Warn(fmt.Sprintf("Prompt send AMBIGUOUS (lost ack): %s", pyrepr.Str(raw["error"])))
 		return "ambiguous"
 	}
 	if gateway.DeclinedSend(&result) {
-		runLog().Warn(fmt.Sprintf("Prompt send DECLINED by connector egress guard: %s", pyrepr.Str(result.Error)))
+		pkgLog().Warn(fmt.Sprintf("Prompt send DECLINED by connector egress guard: %s", pyrepr.Str(result.Error)))
 		return "declined"
 	}
 	reason := "unknown error"
 	if pyrepr.Truthy(result.Error) {
 		reason = pyrepr.Str(result.Error)
 	}
-	runLog().Warn(fmt.Sprintf("Prompt send failed: %s", reason))
+	pkgLog().Warn(fmt.Sprintf("Prompt send failed: %s", reason))
 	return "failed"
 }
 
@@ -390,7 +390,7 @@ const toolMediaPattern = `(?i)MEDIA:((?:[A-Za-z]:[/\\]|/|~\/)\S+\.(?:png|jpe?g|g
 
 var toolMediaRe = pyre.MustCompile(toolMediaPattern)
 
-// Same matcher anchored at both ends, the fullmatch of hermes
+// Same matcher anchored at both ends
 var toolMediaFullRe = mustFullmatch(toolMediaPattern)
 
 // Python fullmatch regexp of the pattern, panicking on a pattern Python rejects

@@ -36,11 +36,11 @@ func (s *switchSessions) SaveSession(context.Context, string) {}
 
 func (s *switchSessions) GetSession(context.Context, string) *SessionState { return s.state }
 
-func switchAgent(t *testing.T) (*HermesACPAgent, *switchSessions) {
+func switchAgent(t *testing.T) (*IcebathACPAgent, *switchSessions) {
 	t.Helper()
 	t.Setenv("ICEBATH_HOME", t.TempDir())
 	sessions := &switchSessions{}
-	return NewHermesACPAgent(sessions), sessions
+	return NewIcebathACPAgent(sessions), sessions
 }
 
 func switchState(enabled, disabled []string) *SessionState {

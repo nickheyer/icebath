@@ -104,7 +104,7 @@ func SweepSettings() SweepConfig {
 	}
 	tree, err := sweepLoadConfig()
 	if err != nil {
-		toolsLogger(nil).Debug("worktrees config unreadable; using defaults")
+		envLog(nil).Debug("worktrees config unreadable; using defaults")
 	} else if section, ok := tree["worktrees"].(map[string]any); ok {
 		for _, d := range sweepDefaults {
 			if v, ok := section[d.key]; ok && v != nil {
@@ -509,7 +509,7 @@ func indexMoved(path, captured string) string {
 func releaseLspClients(wtPath string) {
 	defer func() {
 		if r := recover(); r != nil {
-			toolsLogger(nil).Debug(fmt.Sprintf("LSP release for worktree %s failed: %v", wtPath, r))
+			envLog(nil).Debug(fmt.Sprintf("LSP release for worktree %s failed: %v", wtPath, r))
 		}
 	}()
 	lsp.ReleaseWorkspace(wtPath)
@@ -526,7 +526,7 @@ type ArchiveRemoval struct {
 	WhyKept    string
 }
 
-// Snapshot step of every archive, the worktree_archive attribute hermes tests patch
+// Snapshot step of every archive, the worktree_archive attribute tests patch
 var snapshotWorktreeFn = SnapshotWorktree
 
 // Snapshots the tree then removes it unless it changed, is in use or holds what the archive lacks
@@ -558,7 +558,7 @@ func ArchiveThenRemove(repoRoot, path, reason string, maxUntrackedMB float64, un
 		busy = blocked.Reason
 	}
 	if busy != "" {
-		toolsLogger(nil).Warn(fmt.Sprintf("Archived %s to %s but keeping it: %s", path, arc.Ref, busy))
+		envLog(nil).Warn(fmt.Sprintf("Archived %s to %s but keeping it: %s", path, arc.Ref, busy))
 		return &ArchiveRemoval{arc.Ref, nil, false, busy}, nil
 	}
 	releaseLspClients(path)
@@ -571,7 +571,7 @@ func ArchiveThenRemove(repoRoot, path, reason string, maxUntrackedMB float64, un
 	}
 	if removed.Returncode != 0 {
 		stderr := pystr.Strip(removed.Stderr)
-		toolsLogger(nil).Warn(fmt.Sprintf("Archived %s to %s but could not remove it: %s", path, arc.Ref, stderr))
+		envLog(nil).Warn(fmt.Sprintf("Archived %s to %s but could not remove it: %s", path, arc.Ref, stderr))
 		if stderr == "" {
 			stderr = "git worktree remove failed"
 		}
@@ -655,7 +655,7 @@ func ExecutePlan(repoRoot string, plan []*Decision, s SweepConfig) ([]string, ma
 		}
 		whyKeep, lockState := sweepRecheck(repoRoot, d)
 		if whyKeep != "" {
-			toolsLogger(nil).Info(fmt.Sprintf("Sweep: keeping %s (%s)", d.Name, whyKeep))
+			envLog(nil).Info(fmt.Sprintf("Sweep: keeping %s (%s)", d.Name, whyKeep))
 			continue
 		}
 		if d.Action != "archive-remove" {
@@ -667,7 +667,7 @@ func ExecutePlan(repoRoot string, plan []*Decision, s SweepConfig) ([]string, ma
 		}
 		res, err := ArchiveThenRemove(repoRoot, d.Path, "sweep: "+d.Reason, s.ArchiveMaxFileMB, lockState == "dead", remoteHeads, false, nil)
 		if err != nil {
-			toolsLogger(nil).Warn(fmt.Sprintf("Keeping worktree %s: archive failed (%s)", d.Name, err))
+			envLog(nil).Warn(fmt.Sprintf("Keeping worktree %s: archive failed (%s)", d.Name, err))
 			preserved = append(preserved, d.Name+" (archive failed)")
 			continue
 		}
@@ -693,13 +693,13 @@ func RunSweep(ctx context.Context, repoRoot string, maxAgeHours int, s SweepConf
 		}
 	}
 	if removed > 0 {
-		toolsLogger(nil).Warn(fmt.Sprintf("Archived and removed %d idle worktree(s) with unmerged work; restore any with "+
+		envLog(nil).Warn(fmt.Sprintf("Archived and removed %d idle worktree(s) with unmerged work; restore any with "+
 			"`icebath worktree restore <name>` (`icebath worktree list` shows archives).", removed))
 	}
 	if len(preserved) > 0 {
 		sorted := slices.Clone(preserved)
 		sort.Strings(sorted)
-		toolsLogger(nil).Warn(fmt.Sprintf("Preserving %d stale worktree(s) (run `icebath worktree prune --dry-run` for reasons): %s",
+		envLog(nil).Warn(fmt.Sprintf("Preserving %d stale worktree(s) (run `icebath worktree prune --dry-run` for reasons): %s",
 			len(preserved), strings.Join(sorted[:min(20, len(sorted))], ", ")))
 	}
 	expired, err := PruneExpiredArchives(repoRoot, s.ArchiveRetentionDays, 0, false)
@@ -707,7 +707,7 @@ func RunSweep(ctx context.Context, repoRoot string, maxAgeHours int, s SweepConf
 		return err
 	}
 	if len(expired) > 0 {
-		toolsLogger(nil).Info(fmt.Sprintf("Deleted %d worktree archive(s) older than %s days", len(expired), pyFormatG(s.ArchiveRetentionDays)))
+		envLog(nil).Info(fmt.Sprintf("Deleted %d worktree archive(s) older than %s days", len(expired), pyFormatG(s.ArchiveRetentionDays)))
 	}
 	pruneOrphanedBranches(repoRoot, kept)
 	return nil

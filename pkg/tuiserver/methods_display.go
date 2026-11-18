@@ -11,9 +11,8 @@ import (
 	"github.com/nickheyer/icebath/pkg/botdesktop"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/tools"
-	"github.com/nickheyer/icebath/pkg/tuigateway"
+	"github.com/nickheyer/icebath/pkg/tuihost"
 )
 
 const displayErr = 5300
@@ -22,12 +21,11 @@ var (
 	displayRegistry        = &handlerRegistry{}
 	leaseListenerInstalled atomic.Bool
 	leaseListenerMu        sync.Mutex
-	broadcastGlobalEvent   = func(event string, payload map[string]any) { tuigateway.BroadcastGlobalEvent(event, payload) }
+	broadcastGlobalEvent   = func(event string, payload map[string]any) { tuihost.BroadcastGlobalEvent(event, payload) }
 )
 
 func init() {
 	displayRegistry.scopedMethod("display.status", displayStatus)
-	displayRegistry.scopedMethod("display.thumbnail", displayThumbnail)
 	displayRegistry.scopedMethod("display.start", displayStart)
 	displayRegistry.scopedMethod("display.stop", displayStop)
 	displayRegistry.scopedMethod("display.switchSandboxImage", displaySwitchSandboxImage)
@@ -122,7 +120,7 @@ func displayInstall(ctx context.Context, rid any, params map[string]any) map[str
 	}
 	if inSandbox {
 		return rpcErr(rid, displayErr, "this profile's screen lives inside the terminal backend's sandbox; give that "+
-			"sandbox an image with the desktop stack (nousresearch/hermes-sandbox:desktop) "+
+			"sandbox an image with the desktop stack ("+botdesktop.SandboxImageHint+", which icebath builds) "+
 			"instead of installing on the gateway host", nil)
 	}
 	if botdesktop.InstallCommand() == "" {
@@ -169,23 +167,4 @@ func installPackagesClaimed(env *tools.Env, askPassword func() (string, error), 
 		}
 	}()
 	return botdesktop.InstallPackagesWith(env, askPassword, line, 900.0, true)
-}
-
-// One JPEG grab of the scoped screen, withheld while a human holds the lease or it moved during the grab
-func displayThumbnail(ctx context.Context, rid any, params map[string]any) map[string]any {
-	before := botdesktop.LeaseGet(home.Dir(ctx))
-	if before.Holder == botdesktop.LeaseHuman {
-		return ok(rid, map[string]any{"data_url": nil, "suppressed": "human_has_control"})
-	}
-	dataURL, err := botdesktop.ThumbnailDataURL(displayEnv(ctx), botdesktop.ThumbMaxW, botdesktop.ThumbMaxH, 72)
-	if err != nil {
-		return rpcErr(rid, displayErr, err.Error(), nil)
-	}
-	if !pyrepr.Equal(botdesktop.LeaseGet(home.Dir(ctx)).Epoch, before.Epoch) {
-		return ok(rid, map[string]any{"data_url": nil, "suppressed": "human_has_control"})
-	}
-	if dataURL == "" {
-		return ok(rid, map[string]any{"data_url": nil})
-	}
-	return ok(rid, map[string]any{"data_url": dataURL})
 }

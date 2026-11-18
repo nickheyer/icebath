@@ -49,7 +49,7 @@ func (r *GatewayRunner) saveVoiceModes() {
 		}
 	}
 	if err != nil {
-		runLog().Warn(fmt.Sprintf("Failed to save voice modes: %s", pyrepr.ExceptionMessage(err)))
+		pkgLog().Warn(fmt.Sprintf("Failed to save voice modes: %s", pyrepr.ExceptionMessage(err)))
 	}
 }
 

@@ -25,7 +25,6 @@ func newTestCLI(t *testing.T) (*HubCLI, *bytes.Buffer, *bytes.Buffer) {
 	x.C, x.Stdout = &pyrich.Console{Out: out, Width: 80}, stdout
 	x.Input = func(string) (string, error) { t.Fatal("unexpected prompt"); return "", nil }
 	x.LineInput = x.Input
-	x.seams.recordInstall = func(context.Context, string, string, any, string, any, any, error) {}
 	return x, out, stdout
 }
 
@@ -204,7 +203,7 @@ func TestInstallFetchFailureMessages(t *testing.T) {
 	auth := NewGitHubAuth(x.S)
 	auth.cachedToken, auth.cachedMethod = "tok", "pat"
 	auth.Reject("tok")
-	src := &metaSource{SourceBase: SourceBase{ID: "hermes-index"}, auth: auth}
+	src := &metaSource{SourceBase: SourceBase{ID: "skills-index"}, auth: auth}
 	wide := &pyrich.Console{Out: &bytes.Buffer{}, Width: 200}
 	x.printFetchFailure(wide, []SkillSource{src}, "o/r/s", true, src)
 	if s := wide.Out.(*bytes.Buffer).String(); !strings.Contains(s, "rejected GITHUB_TOKEN/GH_TOKEN") || strings.Contains(s, "Stale index entry") {
@@ -230,7 +229,7 @@ func TestResolveShortNameMatchesPrettifiedTitleSlug(t *testing.T) {
 	x.seams.unifiedSearch = func(context.Context, string, []SkillSource, string, int) []SkillMeta {
 		return []SkillMeta{{Name: "Blender Bpy Enhanced", Source: "clawhub", Identifier: "@emergencescience/blender-bpy-enhanced", TrustLevel: "community"}}
 	}
-	if got := x.resolveShortName(context.Background(), "blender-bpy-enhanced", nil, x.C, nil); got != "@emergencescience/blender-bpy-enhanced" || strings.Contains(out.String(), "No exact match") {
+	if got := x.resolveShortName(context.Background(), "blender-bpy-enhanced", nil, x.C); got != "@emergencescience/blender-bpy-enhanced" || strings.Contains(out.String(), "No exact match") {
 		t.Fatal(got, out.String())
 	}
 }
@@ -336,8 +335,8 @@ func providerCatalog(t *testing.T, x *HubCLI, param string) (SkillSource, []Skil
 			skills = append(skills, skillMetaToDict(m))
 		}
 		text, _ := pyjson.Dumps(objOf("skills", skills))
-		writeTestFile(t, x.Hub.hermesIndexCacheFile(), text)
-		src = NewHermesIndexSource(x.Hub, auth)
+		writeTestFile(t, x.Hub.indexCacheFile(), text)
+		src = NewIndexSource(x.Hub, auth)
 	} else {
 		gh := NewGitHubSource(x.Hub, auth, nil)
 		for _, tap := range gh.Taps {

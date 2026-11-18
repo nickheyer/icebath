@@ -392,56 +392,6 @@ func normalizeKreaModel(modelID any) string {
 	return ""
 }
 
-// Plugin and model when the stored selection routes to the Krea or Portal gateway, ok false for FAL
-func managedModelPlugin(env *tools.Env) (string, string, bool) {
-	modelID := readConfiguredImageModel(env)
-	switch managedRoute(readConfiguredImageProvider(env), modelID) {
-	case managedKrea:
-		return "krea", modelID, true
-	case managedPortal:
-		return tools.NousManagedProvider, modelID, true
-	}
-	return "", "", false
-}
-
-var resolveManagedKreaGatewayHook = func(env *tools.Env) *tools.ManagedToolGatewayConfig { return resolveManagedKreaGateway(env) }
-
-// Result from the Krea or Portal gateway the stored model belongs to, handled false to fall through to FAL
-func maybeRouteManagedModel(ctx context.Context, env *tools.Env, prompt, aspectRatio string, src imageSources, controls map[string]any) (string, bool) {
-	pluginName, modelID, ok := managedModelPlugin(env)
-	if !ok {
-		return "", false
-	}
-	var p ImageGenProvider
-	func() {
-		defer func() {
-			if rec := recover(); rec != nil {
-				logOf(env).Debug(fmt.Sprintf("Managed %s routing unavailable: %v", pluginName, rec))
-				p = nil
-			}
-		}()
-		if pluginName == "krea" && resolveManagedKreaGatewayHook(env) == nil {
-			return
-		}
-		p = getPluginProvider(ctx, env, pluginName, false)
-	}()
-	if p == nil {
-		if pluginName == "krea" {
-			return "", false
-		}
-		return providerError(fmt.Sprintf("image_gen.model='%s' is a Nous Portal model but the Portal image backend is not "+
-			"available. Pick another model via `icebath tools` → Image Generation.", modelID), "provider_not_registered"), true
-	}
-	req := ImageGenRequest{Prompt: prompt, AspectRatio: aspectRatio, Kwargs: map[string]any{"model": modelID}}
-	addProviderKwargs(&req, src.ImageURL, src.ReferenceImageURLs, src.Upscale, "", declaredControls(p, controls))
-	result, err := safeGenerate(ctx, env, p, req)
-	if err != nil {
-		logOf(env).Warn(fmt.Sprintf("Managed %s routing failed: %s", pluginName, excStr(err)))
-		return providerError(fmt.Sprintf("Managed %s generation error: %s", p.DisplayName(), excStr(err)), "provider_exception"), true
-	}
-	return providerResult(result, p.DisplayName()+" provider returned a non-dict result"), true
-}
-
 // Python class name of an image source refusal
 func imageResolutionTypeName(e *tools.ImageResolutionError) string {
 	switch e.Kind {
@@ -528,9 +478,7 @@ func confineSourceImages(ctx context.Context, env *tools.Env, imageURL, referenc
 var (
 	activeTerminalEnvHook        = activeTerminalEnv
 	dispatchToPluginProviderHook = dispatchToPluginProvider
-	maybeRouteManagedModelHook   = maybeRouteManagedModel
 	imageGenerateToolHook        = imageGenerateTool
-	kreaFallbackToFalEnabledHook = func(env *tools.Env) bool { return kreaFallbackToFalEnabled(env) }
 )
 
 // Tool error JSON of an exception the registry dispatch would have caught
@@ -539,7 +487,7 @@ func imageHandlerFailure(env *tools.Env, err error) string {
 	return tools.ErrorResult(errors.New(tools.SanitizeToolError(fmt.Sprintf("Tool execution failed: %s: %s", pyErrorTypeName(err), err))))
 }
 
-// image_generate handler confining sources, then plugin, managed gateway and FAL dispatch in that order
+// image_generate handler confining sources, then plugin and FAL dispatch in that order
 func handleImageGenerate(ctx context.Context, call *tools.Call) string {
 	env, args := call.Env, call.Args
 	prompt, _ := args["prompt"].(string)
@@ -575,70 +523,12 @@ func handleImageGenerate(ctx context.Context, call *tools.Call) string {
 	}
 	raw, handled := dispatchToPluginProviderHook(ctx, env, prompt, aspectRatio, src, controls)
 	if !handled {
-		raw, handled = maybeRouteManagedModelHook(ctx, env, prompt, aspectRatio, src, controls)
-		if handled {
-			raw = fallBackToFal(ctx, env, raw, prompt, aspectRatio, src)
-		}
-	}
-	if !handled {
 		raw = imageGenerateToolHook(ctx, env, imageToolArgs{Prompt: prompt, AspectRatio: aspectRatio,
 			ImageURL: src.ImageURL, ReferenceImageURLs: src.ReferenceImageURLs, Upscale: optionalBool(src.Upscale)})
 	}
 	out, err := postprocessImageGenerateResult(env, raw, call.TaskID)
 	if err != nil {
 		return imageHandlerFailure(env, err)
-	}
-	return out
-}
-
-// Reruns a managed Krea refusal that never created a job on the FAL default model
-func fallBackToFal(ctx context.Context, env *tools.Env, raw, prompt, aspectRatio string, src imageSources) string {
-	decoded, err := pyjson.DecodeWTF8Ordered([]byte(raw))
-	if err != nil {
-		return raw
-	}
-	result, ok := decoded.(*pyjson.Object)
-	if !ok {
-		return raw
-	}
-	success, _ := result.Get("success")
-	eligible, _ := result.Get("fallback_eligible")
-	if pyTruthy(success) || !pyTruthy(eligible) {
-		return raw
-	}
-	if pyTruthy(src.ImageURL) || pyTruthy(src.ReferenceImageURLs) {
-		return raw
-	}
-	if !kreaFallbackToFalEnabledHook(env) {
-		return raw
-	}
-	reason, _ := result.Get("error")
-	logOf(env).Warn(fmt.Sprintf("Managed Krea refused the request before starting a job; falling back to FAL: %s", pyStrOf(reason)))
-	falRaw := imageGenerateToolHook(ctx, env, imageToolArgs{Prompt: prompt, AspectRatio: aspectRatio, Upscale: optionalBool(src.Upscale), FalModel: falDefaultModel})
-	falDecoded, err := pyjson.DecodeWTF8Ordered([]byte(falRaw))
-	if err != nil {
-		return falRaw
-	}
-	falResult, ok := falDecoded.(*pyjson.Object)
-	if !ok {
-		return falRaw
-	}
-	falSuccess, _ := falResult.Get("success")
-	note := fmt.Sprintf("Krea was unavailable and the fallback to FAL (%s) also failed.", falDefaultModel)
-	if pyTruthy(falSuccess) {
-		note = fmt.Sprintf("Krea was unavailable, so this image was generated on FAL (%s) instead.", falDefaultModel)
-	}
-	if upscaled, _ := falResult.Get("upscaled"); pyTruthy(upscaled) {
-		note += fmt.Sprintf(" The upscale ran on FAL's %s, not Krea Enhance.", upscalerModel)
-	}
-	falResult.Set("provider", "fal")
-	falResult.Set("model", falDefaultModel)
-	falResult.Set("fallback_from", "krea")
-	falResult.Set("fallback_reason", reason)
-	falResult.Set("note", note)
-	out, err := pyjson.Dumps(falResult)
-	if err != nil {
-		return falRaw
 	}
 	return out
 }
@@ -663,13 +553,7 @@ func noImageCapabilities() map[string]any {
 func activeImageCapabilities(env *tools.Env) map[string]any {
 	info := noImageCapabilities()
 	configured := readConfiguredImageProvider(env)
-	pluginName := ""
-	if name, _, ok := managedModelPlugin(env); ok {
-		pluginName = name
-	} else if configured != "" && configured != "fal" {
-		pluginName = configured
-	}
-	if pluginName != "" && pluginCapabilities(env, pluginName, info) {
+	if configured != "" && configured != "fal" && pluginCapabilities(env, configured, info) {
 		return info
 	}
 	modelID, meta := resolveFalModel(env)

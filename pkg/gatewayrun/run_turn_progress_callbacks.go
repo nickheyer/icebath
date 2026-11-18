@@ -27,11 +27,11 @@ func (t *TurnRunner) progressCallback(eventType, toolName, preview string, args 
 		func() {
 			defer func() {
 				if rec := recover(); rec != nil {
-					runLog().Debug("Local viewer progress publish failed for "+eventType, "error", rec)
+					pkgLog().Debug("Local viewer progress publish failed for "+eventType, "error", rec)
 				}
 			}()
 			if err := publishLocalProgress(ctx, t, eventType, toolName, preview, kwargs); err != nil {
-				runLog().Debug("Local viewer progress publish failed for "+eventType, "error", err)
+				pkgLog().Debug("Local viewer progress publish failed for "+eventType, "error", err)
 			}
 		}()
 	}

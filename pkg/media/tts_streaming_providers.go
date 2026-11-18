@@ -8,7 +8,6 @@ import (
 	"fmt"
 	"io"
 	"iter"
-	"log/slog"
 	"maps"
 	"math"
 	"math/big"
@@ -34,8 +33,6 @@ import (
 
 // Per sentence PCM byte ceiling matching the 16 MiB bounded body of the sync providers
 var streamSentenceByteCap = 16 * 1024 * 1024
-
-func ttsStreamingLog() *slog.Logger { return slog.Default().With("logger", "tools.tts_streaming") }
 
 // Provider secret through config, env, dotenv then the credential pool, a plain env read when that resolver fails
 var streamResolveKey = func(ctx context.Context, env *tools.Env, envVar, providerID string) string {
@@ -131,7 +128,7 @@ var tryInstantiate = func(ctx context.Context, env *tools.Env, name string, ttsC
 	}
 	inst, err := class.New(env, ttsConfig, section)
 	if err != nil {
-		ttsStreamingLog().Debug(fmt.Sprintf("streaming provider %s init failed: %s", name, err))
+		pkgLog().Debug(fmt.Sprintf("streaming provider %s init failed: %s", name, err))
 		return nil
 	}
 	return inst
@@ -217,7 +214,7 @@ func cappedChunks(chunks iter.Seq2[[]byte, error], label string) iter.Seq2[[]byt
 			}
 			total += len(chunk)
 			if total > streamSentenceByteCap {
-				ttsStreamingLog().Warn(fmt.Sprintf("%s exceeded %d bytes for one sentence; truncating", label, streamSentenceByteCap))
+				pkgLog().Warn(fmt.Sprintf("%s exceeded %d bytes for one sentence; truncating", label, streamSentenceByteCap))
 				return
 			}
 			if !yield(chunk, nil) {
@@ -484,7 +481,7 @@ func newOpenAIStreamer(env *tools.Env, ttsConfig map[string]any, section any) (S
 			return s, nil
 		}
 	}
-	ttsStreamingLog().Warn(fmt.Sprintf("Invalid tts.openai.pcm_sample_rate %s; using %d Hz", pyrepr.Repr(configured), s.SampleRate()))
+	pkgLog().Warn(fmt.Sprintf("Invalid tts.openai.pcm_sample_rate %s; using %d Hz", pyrepr.Repr(configured), s.SampleRate()))
 	return s, nil
 }
 
@@ -527,7 +524,7 @@ func (s *openAIStreamer) Stream(ctx context.Context, text string) (iter.Seq2[[]b
 		}
 		defer response.Close()
 		if rate, ok := sampleRateFromHeaders(response.Headers()); ok && rate != s.SampleRate() {
-			ttsStreamingLog().Info(fmt.Sprintf("TTS endpoint reports %d Hz PCM (expected %d Hz); honoring it", rate, s.SampleRate()))
+			pkgLog().Info(fmt.Sprintf("TTS endpoint reports %d Hz PCM (expected %d Hz); honoring it", rate, s.SampleRate()))
 			s.sampleRate.Store(int64(rate))
 		}
 		cappedChunks(response.IterBytes(), "OpenAI streaming TTS")(yield)
@@ -814,7 +811,7 @@ func (s *geminiStreamer) sseChunks(ctx context.Context, endpoint, apiKey string,
 				}
 				pcm, err := pyB64DecodeValue(b64)
 				if err != nil {
-					ttsStreamingLog().Warn(fmt.Sprintf("Gemini SSE: bad base64 audio: %s", err))
+					pkgLog().Warn(fmt.Sprintf("Gemini SSE: bad base64 audio: %s", err))
 					continue
 				}
 				if !yield(pcm, nil) {

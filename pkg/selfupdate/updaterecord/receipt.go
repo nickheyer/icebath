@@ -7,7 +7,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"io/fs"
 	"log/slog"
 	"math"
 	"os"
@@ -20,7 +19,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/fnmatch"
 	"github.com/nickheyer/icebath/pkg/internal/proc"
@@ -49,25 +47,16 @@ var (
 	BuildFollowups = map[string]bool{"launchers": true, "feature_dependencies": true, "completion": true}
 
 	gitFilePermission = mustPyre(`Permission denied(?! *\()|\bEACCES\b`)
-	parkedReasonLabel = regexp.MustCompile(`^(?:[A-Z][A-Za-z0-9_]{0,63}:(?: \[(?:Errno|WinError) \d+\])?` +
-		`|historical takeover preparation failed|Windows gateway recovery failed)`)
-	stopClassToken = regexp.MustCompile(`^[a-z][a-z0-9_]{0,39}$`)
-	nonDigit       = regexp.MustCompile(`[^0-9]`)
+	nonDigit          = regexp.MustCompile(`[^0-9]`)
 
 	receiptStdout io.Writer = os.Stdout
 	receiptLog              = slog.Default
 
-	consentReaderImportable = func() bool { return true }
-	pmLastForUpdate         = pm.LastForUpdateObject
+	pmLastForUpdate = pm.LastForUpdateObject
 
 	finalized struct {
 		sync.Mutex
 		byID map[string]*pyjson.Object
-	}
-
-	receiptHooks struct {
-		sync.Mutex
-		recorder func(ctx context.Context, receipt map[string]any)
 	}
 )
 
@@ -80,20 +69,6 @@ func mustPyre(pattern string) func(string) bool {
 		m, err := re.MatchString(s)
 		return err == nil && m
 	}
-}
-
-// Installs the shared metrics recorder a final receipt is published through
-func SetUpdateReceiptRecorder(record func(ctx context.Context, receipt map[string]any)) {
-	receiptHooks.Lock()
-	defer receiptHooks.Unlock()
-	receiptHooks.recorder = record
-}
-
-// Shared metrics recorder a final receipt is published through, nil until one is installed
-func currentReceiptRecorder() func(context.Context, map[string]any) {
-	receiptHooks.Lock()
-	defer receiptHooks.Unlock()
-	return receiptHooks.recorder
 }
 
 func init() {
@@ -146,7 +121,7 @@ func CurrentReceipt(ctx context.Context) *UpdateReceipt {
 	return st.current
 }
 
-// Forgets the open receipt of the context's scope the way the hermes tests reset _current
+// Forgets the open receipt of the context's scope the way the tests reset current
 func ClearCurrentReceipt(ctx context.Context) {
 	st := stateOf(ctx)
 	st.mu.Lock()
@@ -917,39 +892,6 @@ func GitOutputStopClass(output string, argv []string, returncode *int) *string {
 	return nil
 }
 
-// True when the update marker names this process or its parent as the delegate of a handoff
-func startedAsHandoffDelegate() (bool, error) {
-	raw, err := os.ReadFile(UpdateMarkerPath())
-	if err != nil {
-		return false, err
-	}
-	m := parseMarker(raw, nil)
-	if m.startedAt == nil || m.delegatePID == nil {
-		return false, nil
-	}
-	return *m.delegatePID == os.Getpid() || *m.delegatePID == os.Getppid(), nil
-}
-
-// Counts an exit that fires before this run's receipt opens in shared metrics only
-func RecordStopWithoutReceipt(ctx context.Context, reason, outcome string) {
-	now := utcNowISO()
-	final := "failed"
-	if outcome == "refused" {
-		final = "refused"
-	}
-	data := pyjson.ObjectOf(
-		"schema", 1, "update_id", uuid4Hex(), "started_at", now, "finished_at", now,
-		"outcome", final, "stop_class", reason, "pre_update", pyjson.NewObject(),
-		"stages", []any{}, "steps", []any{}, "fleet", []any{},
-	)
-	if delegate, err := startedAsHandoffDelegate(); err == nil && delegate {
-		data.Set("outcome", "failed")
-	}
-	if recorder := currentReceiptRecorder(); recorder != nil {
-		recorder(ctx, plainReceipt(data))
-	}
-}
-
 // Finalizes and persists the open receipt exactly once, returning its archive path or empty
 func FinalizeUpdateReceipt(ctx context.Context, outcome string, fleet []any, stopReason string) string {
 	st := stateOf(ctx)
@@ -1006,7 +948,6 @@ func finalizeReceipt(ctx context.Context, receipt *UpdateReceipt, outcome string
 	}
 	_ = writeLatest(ctx, payload)
 	pruneOldReceipts(directory)
-	publishSharedMetrics(ctx, data)
 	return path, nil
 }
 
@@ -1033,151 +974,6 @@ func embedPMSync(ctx context.Context, data *pyjson.Object, updateID string) {
 		if sync.Vals["refusal"] != nil {
 			data.Set("pm_refusal", sync.Vals["refusal"])
 		}
-	}
-}
-
-// Shared metrics consent from the config reader, nil when it cannot tell
-func collectionEnabledNow(ctx context.Context) *bool {
-	cfg, err := config.ReadRawConfigReadonly(ctx, home.Dir(ctx))
-	if err != nil || cfg == nil || config.FailedReadError(cfg) != nil {
-		return nil
-	}
-	var node any = cfg
-	for _, key := range []string{"telemetry", "shared_metrics"} {
-		if m, ok := node.(map[string]any); ok {
-			node = m[key]
-		} else {
-			node = nil
-		}
-	}
-	m, ok := node.(map[string]any)
-	return boolPtr(ok && m["enabled"] == true)
-}
-
-// Only the bounded fields the update metric classifier reads, never argv or step text
-func metricReceipt(data *pyjson.Object) *pyjson.Object {
-	pre, _ := pyjson.AsObject(data.Vals["pre_update"])
-	restart, _ := pyjson.AsObject(data.Vals["gateway_restart"])
-	reason, _ := data.Vals["stop_reason"].(string)
-	stages := []any{}
-	for _, raw := range listItems(data.Vals["stages"]) {
-		mark, ok := pyjson.AsObject(raw)
-		if !ok {
-			continue
-		}
-		kept := pyjson.NewObject()
-		for _, key := range []string{"name", "outcome", "at", "mode"} {
-			if v, present := mark.Vals[key]; present {
-				kept.Set(key, v)
-			}
-		}
-		stages = append(stages, kept)
-	}
-	steps := []any{}
-	for _, raw := range listItems(data.Vals["steps"]) {
-		if step, ok := pyjson.AsObject(raw); ok && pyrepr.Equal(step.Vals["name"], "admission") {
-			steps = append(steps, pyjson.ObjectOf("name", "admission", "ok", truthy(step.Vals["ok"])))
-		}
-	}
-	fleet := []any{}
-	for _, raw := range listItems(data.Vals["fleet"]) {
-		if row, ok := pyjson.AsObject(raw); ok {
-			fleet = append(fleet, pyjson.ObjectOf("state", row.Vals["state"]))
-		}
-	}
-	outcomes := []any{}
-	for _, raw := range listItems(data.Vals["runtime_outcomes"]) {
-		if row, ok := pyjson.AsObject(raw); ok && pyrepr.Equal(row.Vals["outcome"], "failed") {
-			outcomes = append(outcomes, pyjson.ObjectOf("outcome", "failed"))
-		}
-	}
-	var stopClass any
-	if s, ok := data.Vals["stop_class"].(string); ok && stopClassToken.MatchString(s) {
-		stopClass = s
-	}
-	var exitCode any
-	if n, ok := pyIntValue(data.Vals["exit_code"]); ok {
-		if _, isBool := data.Vals["exit_code"].(bool); !isBool {
-			exitCode = n
-		}
-	}
-	stopReason := ""
-	if label := parkedReasonLabel.FindString(reason); label != "" {
-		stopReason = label
-	} else if reason != "" {
-		stopReason = "-"
-	}
-	gateway := pyjson.NewObject()
-	for _, key := range []string{"incomplete", "phase_error", "failed_units"} {
-		gateway.Set(key, truthy(mapGet(restart, key)))
-	}
-	return pyjson.ObjectOf(
-		"schema", data.Vals["schema"], "update_id", data.Vals["update_id"], "started_at", data.Vals["started_at"],
-		"finished_at", data.Vals["finished_at"], "outcome", data.Vals["outcome"],
-		"pre_update", pyjson.ObjectOf("commit_date", mapGet(pre, "commit_date")), "stages", stages, "steps", steps,
-		"fleet", fleet, "stop_class", stopClass, "exit_code", exitCode, "stop_reason", stopReason,
-		"user_action", truthy(data.Vals["user_action"]), "gateway_restart", gateway, "runtime_outcomes", outcomes,
-	)
-}
-
-// Consent as far as a finalizer without the config reader can tell
-func bareCollectionEnabled(ctx context.Context) *bool {
-	if enabled := collectionEnabledNow(ctx); enabled != nil {
-		return enabled
-	}
-	_, err := os.Stat(filepath.Join(home.Dir(ctx), "config.yaml"))
-	if errors.Is(err, fs.ErrNotExist) {
-		return boolPtr(false)
-	}
-	return nil
-}
-
-// Parks the bounded metric fields for the next start, or purges parked ones when collection is off
-func parkMetricReceipt(ctx context.Context, data *pyjson.Object, enabled *bool) error {
-	pending := filepath.Join(home.Dir(ctx), "telemetry", "shared_metrics", "pending_updates")
-	if enabled != nil && !*enabled {
-		_ = os.RemoveAll(pending)
-		return nil
-	}
-	if err := os.MkdirAll(pending, 0o777); err != nil {
-		return err
-	}
-	payload, err := receiptPayload(metricReceipt(data), false)
-	if err != nil {
-		return err
-	}
-	return pm.DurableWriteBytes(filepath.Join(pending, pyrepr.Str(data.Vals["update_id"])+".json"), payload)
-}
-
-// Records the final receipt's run and stage rows, parking them when this finalizer predates the swap
-func publishSharedMetrics(ctx context.Context, data *pyjson.Object) {
-	pre, post := pyjson.NewObject(), pyjson.NewObject()
-	for i, key := range []string{"pre_update", "post_update"} {
-		raw := data.Vals[key]
-		if !truthy(raw) {
-			continue
-		}
-		m, ok := pyjson.AsObject(raw)
-		if !ok {
-			return
-		}
-		if i == 0 {
-			pre = m
-		} else {
-			post = m
-		}
-	}
-	if pid, ok := pyIntValue(data.Vals["pid"]); ok && pid == int64(os.Getpid()) &&
-		!(truthy(pre.Vals["sha"]) && pyrepr.Equal(pre.Vals["sha"], post.Vals["sha"])) {
-		_ = parkMetricReceipt(ctx, data, collectionEnabledNow(ctx))
-		return
-	}
-	if !consentReaderImportable() {
-		_ = parkMetricReceipt(ctx, data, bareCollectionEnabled(ctx))
-		return
-	}
-	if recorder := currentReceiptRecorder(); recorder != nil {
-		recorder(ctx, plainReceipt(data))
 	}
 }
 

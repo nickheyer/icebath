@@ -6,7 +6,7 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/nickheyer/icebath/pkg/tuigateway"
+	"github.com/nickheyer/icebath/pkg/tuihost"
 
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
@@ -74,13 +74,13 @@ func (a *AIAgent) enqueueStreamHookLabeled(event, label string, fields map[strin
 			if isUserInterruptPanic(r) {
 				panic(r)
 			}
-			runAgentLog().Debug(fmt.Sprintf("%s plugin hook enqueue failed", name), "error", r)
+			pkgLog().Debug(fmt.Sprintf("%s plugin hook enqueue failed", name), "error", r)
 		}
 	}()
 	payload := a.streamHookBasePayload()
 	for k, v := range fields {
 		if _, dup := payload[k]; dup {
-			panic(fmt.Sprintf("TypeError: enqueue_plugin_stream_hook() got multiple values for keyword argument '%s'", k))
+			panic(fmt.Sprintf("stream hook field %s is given twice", k))
 		}
 		payload[k] = v
 	}
@@ -271,11 +271,11 @@ func (a *AIAgent) deliverInterim(visible string, alreadyStreamed bool, record []
 			if isUserInterruptPanic(r) {
 				panic(r)
 			}
-			runAgentLog().Debug("interim_assistant_callback error", "error", r)
+			pkgLog().Debug("interim_assistant_callback error", "error", r)
 		}
 	}()
 	if fn.Kind() != reflect.Func {
-		panic(fmt.Sprintf("TypeError: '%T' object is not callable", a.interimAssistantCallback))
+		panic(fmt.Sprintf("the interim assistant callback is %T, expected a function", a.interimAssistantCallback))
 	}
 	callDynamic(fn, []any{visible, alreadyStreamed})
 	for _, part := range record {
@@ -365,7 +365,7 @@ func (a *AIAgent) noteDroppedStreamWriter(where string) {
 	n := a.streamWriterDropped
 	a.streamWriterLock.Unlock()
 	if n == 1 || n&(n-1) == 0 {
-		runAgentLog().Warn(fmt.Sprintf("Dropped delta from a superseded stream writer at %s (discarded=%d this turn) — a stale stream tried to write into the turn after a retry superseded it.", where, n))
+		pkgLog().Warn(fmt.Sprintf("Dropped delta from a superseded stream writer at %s (discarded=%d this turn) — a stale stream tried to write into the turn after a retry superseded it.", where, n))
 	}
 }
 
@@ -443,7 +443,7 @@ func (a *AIAgent) streamReasoningDeltasEnabled() (enabled, ok bool) {
 			if isUserInterruptPanic(r) {
 				panic(r)
 			}
-			runAgentLog().Debug("reasoning on_stream_delta plugin hook enqueue failed", "error", r)
+			pkgLog().Debug("reasoning on_stream_delta plugin hook enqueue failed", "error", r)
 			enabled, ok = false, false
 		}
 	}()
@@ -451,11 +451,11 @@ func (a *AIAgent) streamReasoningDeltasEnabled() (enabled, ok bool) {
 }
 
 // Display metadata flag on a held turn's published reply whose commentary items stay for replay only
-const CommentaryWithheld = tuigateway.CommentaryWithheld
+const CommentaryWithheld = tuihost.CommentaryWithheld
 
 // Commentary phase message texts of a row
 func commentaryItems(msg map[string]any) []string {
-	return tuigateway.CommentaryItems(msg)
+	return tuihost.CommentaryItems(msg)
 }
 
 // Types a held turn's model row hidden when it has visible text, the wire copy unchanged

@@ -133,26 +133,42 @@ func YAMLTimestamp(text string) (value any, ok bool, err error) {
 	if err := checkDate(year, month, day); err != nil {
 		return nil, true, err
 	}
-	switch {
-	case hour > 23:
-		return nil, true, valueError("hour must be in 0..23")
-	case minute > 59:
-		return nil, true, valueError("minute must be in 0..59")
-	case second > 59:
-		return nil, true, valueError("second must be in 0..59")
+	if msg := TimeArgsError(hour, minute, second); msg != "" {
+		return nil, true, valueError("%s", msg)
 	}
 	return DateTime{Year: year, Month: month, Day: day, Hour: hour, Minute: minute, Second: second, Microsecond: fraction, Zone: zone}, true, nil
 }
 
 // ValueError the Python date constructor raises for an out of range field
 func checkDate(year, month, day int) error {
-	switch {
-	case year < 1:
-		return valueError("year %d is out of range", year)
-	case month < 1 || month > 12:
-		return valueError("month must be in 1..12")
-	case day < 1 || day > daysInMonth(year, month):
-		return valueError("day is out of range for month")
+	if msg := DateArgsError(year, month, day); msg != "" {
+		return valueError("%s", msg)
 	}
 	return nil
+}
+
+// Text of the ValueError the Python date constructor raises for an out of range field, empty for a valid date
+func DateArgsError(year, month, day int) string {
+	switch {
+	case year < 1 || year > 9999:
+		return fmt.Sprintf("year must be in 1..9999, not %d", year)
+	case month < 1 || month > 12:
+		return fmt.Sprintf("month must be in 1..12, not %d", month)
+	case day < 1 || day > daysInMonth(year, month):
+		return fmt.Sprintf("day %d must be in range 1..%d for month %d in year %d", day, daysInMonth(year, month), month, year)
+	}
+	return ""
+}
+
+// Text of the ValueError the Python time fields check raises for an out of range field, empty for a valid time
+func TimeArgsError(hour, minute, second int) string {
+	switch {
+	case hour < 0 || hour > 23:
+		return fmt.Sprintf("hour must be in 0..23, not %d", hour)
+	case minute < 0 || minute > 59:
+		return fmt.Sprintf("minute must be in 0..59, not %d", minute)
+	case second < 0 || second > 59:
+		return fmt.Sprintf("second must be in 0..59, not %d", second)
+	}
+	return ""
 }

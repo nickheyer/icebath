@@ -7,8 +7,8 @@ import (
 func TestTUIGatewayRecordsBelongToTheGUIComponentNotTheGatewayLog(t *testing.T) {
 	gui, gateway := componentFilter{prefixes: ComponentPrefixes["gui"]}, componentFilter{prefixes: ComponentPrefixes["gateway"]}
 	for name, want := range map[string][2]bool{
-		"tui_gateway.ws": {true, false}, "tui_gateway.server": {true, false},
-		"gateway.run": {false, true}, "plugins.platforms.telegram.adapter": {false, true},
+		"tuigateway": {true, false}, "tuiserver": {true, false},
+		"gatewayrun": {false, true}, "gateway/platforms/telegram": {false, true},
 	} {
 		rec := &Record{Name: name}
 		if gui.Filter(rec) != want[0] || gateway.Filter(rec) != want[1] {

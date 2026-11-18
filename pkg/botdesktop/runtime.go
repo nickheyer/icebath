@@ -718,7 +718,7 @@ func PublishedEnv(env *tools.Env) (map[string]string, error) {
 	return parseEnvLines(raw), nil
 }
 
-// Published env for hook signatures without an error, panicking where hermes raises
+// Published env for hook signatures without an error, panicking where the lookup fails
 func MustPublishedEnv(env *tools.Env) map[string]string {
 	out, err := PublishedEnv(env)
 	if err != nil {
@@ -890,7 +890,7 @@ func sandboxStatus(env *tools.Env, profile string, where Placement) (DesktopStat
 	if len(missing) > 0 {
 		advice := PluginImageAdvice(where.Backend)
 		if advice == "" {
-			advice = fmt.Sprintf("use %s as terminal.%s_image (the default sandbox base plus the desktop stack)", SandboxImageHint, where.Backend)
+			advice = fmt.Sprintf("use %s as terminal.%s_image (the sandbox icebath builds, desktop stack included)", SandboxImageHint, where.Backend)
 		}
 		r := []rune(advice)
 		b := fmt.Sprintf("The terminal backend's sandbox image lacks %s. %s%s, or set bot_desktop.placement: gateway.",
@@ -1091,6 +1091,9 @@ func spawnAndWait(env *tools.Env, sd string, waitSeconds float64) (DesktopStatus
 		childEnv[k] = v
 	}
 	if exe, dir, ok := DockLaunch(env); ok {
+		if err := BrowserSeedProfile(dir); err != nil {
+			return DesktopStatus{}, fmt.Errorf("could not write the preferences that keep the dock browser from calling home into %s: %w", dir, err)
+		}
 		childEnv["ICEBATH_BD_BROWSER_EXEC"] = exe
 		childEnv["ICEBATH_BD_BROWSER_EXEC_LINE"] = DockExecLine(exe, dir, nil)
 	}
@@ -1186,6 +1189,9 @@ func startInSandbox(env *tools.Env, waitSeconds float64) (DesktopStatus, error) 
 			dir, err := BrowserProfileDir(e)
 			if err != nil {
 				return nil, err
+			}
+			if err := SeedSandboxBrowserProfile(e, dir); err != nil {
+				return nil, fmt.Errorf("could not write the preferences that keep the sandbox browser from calling home into %s: %w", dir, err)
 			}
 			bypass := true
 			line = DockExecLine(exe, dir, &bypass)

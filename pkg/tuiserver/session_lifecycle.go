@@ -10,11 +10,11 @@ import (
 	"github.com/nickheyer/icebath/pkg/agent"
 	"github.com/nickheyer/icebath/pkg/internal/pythread"
 	"github.com/nickheyer/icebath/pkg/memory"
-	"github.com/nickheyer/icebath/pkg/tuigateway"
+	"github.com/nickheyer/icebath/pkg/tuihost"
 )
 
 // Runs body under the session history lock so its running claim is visible before the lock drops
-func underHistoryLock(session *tuigateway.Session, body func()) {
+func underHistoryLock(session *tuihost.Session, body func()) {
 	unlock := lockHistory(session)
 	defer unlock()
 	body()
@@ -30,7 +30,7 @@ func currentRunThread(ctx context.Context) *memory.ContextThread {
 }
 
 // Starts target on a context thread, recorded as the session's run thread when a session is given
-func startSessionWork(ctx context.Context, target func(ctx context.Context), name string, session *tuigateway.Session) {
+func startSessionWork(ctx context.Context, target func(ctx context.Context), name string, session *tuihost.Session) {
 	var thread *memory.ContextThread
 	thread = memory.SpawnContextThread(ctx, name, func(ctx context.Context) {
 		defer threadExceptHook(name)
@@ -66,7 +66,7 @@ func notifySessionBoundary(ctx context.Context, eventType string, sessionID *str
 const roomSessionSource = "bot_room"
 
 // Stores the lease on the session, which owns its row again
-func attachLease(session *tuigateway.Session, lease *activesessions.Lease) {
+func attachLease(session *tuihost.Session, lease *activesessions.Lease) {
 	session.Set("active_session_lease", lease)
 	session.Pop("_lease_taken_over")
 }
@@ -95,7 +95,7 @@ func leaseRetry(attempts int, fn func() error) error {
 }
 
 // Releases the session lease, three tries for a liveness tracked one, true when it is released
-func releaseActiveSessionSlot(session *tuigateway.Session) bool {
+func releaseActiveSessionSlot(session *tuihost.Session) bool {
 	if session == nil {
 		return true
 	}
@@ -108,7 +108,7 @@ func releaseActiveSessionSlot(session *tuigateway.Session) bool {
 		attempts = 3
 	}
 	if err := leaseRetry(attempts, lease.Release); err != nil {
-		logger().Warn(fmt.Sprintf("Failed to release active session slot: %s", err))
+		pkgLog().Warn(fmt.Sprintf("Failed to release active session slot: %s", err))
 		return false
 	}
 	if !(lease.Released() || !lease.IsEnabled()) {
@@ -131,7 +131,7 @@ type slotLease interface {
 var _ slotLease = (*activesessions.Lease)(nil)
 
 // Releases the slot of a hosted room member session at the end of its turn
-func releaseHostedRoomTurnSlot(session *tuigateway.Session) {
+func releaseHostedRoomTurnSlot(session *tuihost.Session) {
 	if sessionSource(session) == roomSessionSource {
 		releaseActiveSessionSlot(session)
 	}
@@ -140,7 +140,7 @@ func releaseHostedRoomTurnSlot(session *tuigateway.Session) {
 // Lease ids still backed by live records of this process, sparing exclude
 func ownLiveLeaseIDs(exclude *activesessions.Lease) map[string]bool {
 	ids := map[string]bool{}
-	for _, live := range tuigateway.LiveSessions() {
+	for _, live := range tuihost.LiveSessions() {
 		if lease, _ := live.Session.Get("active_session_lease").(*activesessions.Lease); lease != nil && lease != exclude {
 			ids[lease.LeaseID] = true
 		}
@@ -149,13 +149,13 @@ func ownLiveLeaseIDs(exclude *activesessions.Lease) map[string]bool {
 }
 
 // Live UI sid of a session, the hint, else its stamped sid, else a registry scan
-func lifecycleOwnSID(session *tuigateway.Session, sidHint string) string {
+func lifecycleOwnSID(session *tuihost.Session, sidHint string) string {
 	ownSID := sidHint
 	if ownSID == "" {
 		ownSID = strOr(session.Get("_sid"))
 	}
 	if ownSID == "" {
-		for _, live := range tuigateway.LiveSessions() {
+		for _, live := range tuihost.LiveSessions() {
 			if live.Session == session {
 				return live.SID
 			}
@@ -165,10 +165,10 @@ func lifecycleOwnSID(session *tuigateway.Session, sidHint string) string {
 }
 
 // Detaches one live session from the registry as the teardown claim, stamping its closing state and sid
-func popSessionByID(sid string) *tuigateway.Session {
+func popSessionByID(sid string) *tuihost.Session {
 	sessionsLock.Lock()
 	defer sessionsLock.Unlock()
-	session := tuigateway.PopSessionRecord(sid)
+	session := tuihost.PopSessionRecord(sid)
 	if session == nil {
 		return nil
 	}
@@ -178,16 +178,16 @@ func popSessionByID(sid string) *tuigateway.Session {
 }
 
 // Whether a live session is still bound to the parked sink a disconnected WebSocket client left
-func wsSessionIsDetached(session *tuigateway.Session) bool {
+func wsSessionIsDetached(session *tuihost.Session) bool {
 	if session == nil || truthy(session.Get("_finalized")) {
 		return false
 	}
-	transport, _ := session.Get("transport").(tuigateway.Transport)
-	return transport != nil && transport == tuigateway.DetachedWSTransport()
+	transport, _ := session.Get("transport").(tuihost.Transport)
+	return transport != nil && transport == tuihost.DetachedWSTransport()
 }
 
 // Whether a parked WebSocket session is idle
-func wsSessionIsOrphaned(session *tuigateway.Session) bool {
+func wsSessionIsOrphaned(session *tuihost.Session) bool {
 	return wsSessionIsDetached(session) && !truthy(session.Get("running"))
 }
 
@@ -234,8 +234,8 @@ func cancelWSOrphanReap(sid string) {
 }
 
 // Error frame refusing a reattach to a stale session or one whose disconnect interrupt still settles, nil to proceed
-func reattachRefusal(rid any, sid string, session *tuigateway.Session) map[string]any {
-	if tuigateway.SessionRecord(sid) != session {
+func reattachRefusal(rid any, sid string, session *tuihost.Session) map[string]any {
+	if tuihost.SessionRecord(sid) != session {
 		return rpcErr(rid, 4007, "session no longer live; retry resume", nil)
 	}
 	if truthy(session.Get("_client_gone_interrupt_requested")) {

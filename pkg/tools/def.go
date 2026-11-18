@@ -146,7 +146,7 @@ type Env struct {
 	kanbanSelection *bool
 	// Synthesized from a nil env so availability checks keep bypassing the verdict cache
 	unscopedChecks bool
-	// Profile home a routed scope bound this env to, the context home override of hermes
+	// Profile home a routed scope bound this env to
 	profileHome string
 	// Set on the copy availability checks read while the context runs a delegate_task child
 	delegatedChild bool

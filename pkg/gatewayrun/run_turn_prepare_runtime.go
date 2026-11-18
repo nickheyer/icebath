@@ -151,13 +151,13 @@ func (r *GatewayRunner) resolveSessionAgentRuntime(ctx context.Context, source *
 			if overrideRuntime["credential_pool"] == nil {
 				overrideRuntime["credential_pool"] = credentialPoolForProvider(ctx, noneText(override["provider"]))
 			}
-			runLog().Debug(fmt.Sprintf("Session model override (fast): session=%s config_model=%s -> override_model=%s provider=%s",
+			pkgLog().Debug(fmt.Sprintf("Session model override (fast): session=%s config_model=%s -> override_model=%s provider=%s",
 				skey, model, overrideModel, pyrepr.Str(overrideRuntime["provider"])))
 			return overrideModel, overrideRuntime, nil
 		}
-		runLog().Debug(fmt.Sprintf("Session model override (no api_key, fallback): session=%s config_model=%s override_model=%s",
+		pkgLog().Debug(fmt.Sprintf("Session model override (no api_key, fallback): session=%s config_model=%s override_model=%s",
 			skey, model, overrideModel))
-	} else if runLog().Enabled(ctx, slog.LevelDebug) {
+	} else if pkgLog().Enabled(ctx, slog.LevelDebug) {
 		var keys []any
 		for _, key := range r.sessionModelOverrides().Keys() {
 			keys = append(keys, key)
@@ -169,13 +169,13 @@ func (r *GatewayRunner) resolveSessionAgentRuntime(ctx context.Context, source *
 		if len(keys) > 0 {
 			listing = pyrepr.Repr(keys)
 		}
-		runLog().Debug(fmt.Sprintf("No session model override: session=%s config_model=%s override_keys=%s", skey, model, listing))
+		pkgLog().Debug(fmt.Sprintf("No session model override: session=%s config_model=%s override_keys=%s", skey, model, listing))
 	}
 	var runtimeKwargs, unavailableOverride map[string]any
 	if len(override) > 0 && pyrepr.Truthy(override["provider"]) {
 		kwargs, err := resolveRuntimeAgentKwargsForProvider(ctx, noneText(override["provider"]), noneText(override["model"]))
 		if err != nil {
-			runLog().Warn(fmt.Sprintf("Session /model override provider %s unavailable: %s", noneText(override["provider"]), err), "error", err)
+			pkgLog().Warn(fmt.Sprintf("Session /model override provider %s unavailable: %s", noneText(override["provider"]), err), "error", err)
 			unavailableOverride, override = override, nil
 		} else {
 			runtimeKwargs = kwargs
@@ -194,7 +194,7 @@ func (r *GatewayRunner) resolveSessionAgentRuntime(ctx context.Context, source *
 	runtimeModel := runtimeKwargs["model"]
 	delete(runtimeKwargs, "model")
 	if pyrepr.Truthy(runtimeModel) {
-		runLog().Info(fmt.Sprintf("Runtime provider supplied explicit model override: %s -> %s", model, noneText(runtimeModel)))
+		pkgLog().Info(fmt.Sprintf("Runtime provider supplied explicit model override: %s -> %s", model, noneText(runtimeModel)))
 		model = noneText(runtimeModel)
 	}
 	if unavailableOverride != nil && r.pendingPreAgentFallbackNotice() == "" {
@@ -234,7 +234,7 @@ func (r *GatewayRunner) resolveSessionAgentRuntime(ctx context.Context, source *
 		providerName := noneText(runtimeKwargs["provider"])
 		model = provider.GetDefaultModelForProvider(ctx, providerName)
 		if model != "" {
-			runLog().Info(fmt.Sprintf("No model configured — defaulting to %s for provider %s", model, providerName))
+			pkgLog().Info(fmt.Sprintf("No model configured — defaulting to %s for provider %s", model, providerName))
 		}
 	}
 	return recoverOrRememberModel(r, skey, model), runtimeKwargs, nil

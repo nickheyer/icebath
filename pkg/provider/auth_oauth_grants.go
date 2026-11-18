@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
-	"log/slog"
 	"os"
 	"path/filepath"
 	"sort"
@@ -18,7 +17,7 @@ import (
 // SingleUseOAuthSingletonFiles hold single use grants outside auth.json and must never be copied into a profile
 var SingleUseOAuthSingletonFiles = []string{".anthropic_oauth.json"}
 
-var deviceCodeBlockProviders = []string{"openai-codex", "xai-oauth", "nous"}
+var deviceCodeBlockProviders = []string{"openai-codex", "xai-oauth"}
 
 var oauthTokenFields = []string{"access_token", "refresh_token", "expires_at", "expires_at_ms", "last_refresh"}
 
@@ -38,20 +37,12 @@ func orEmptyStr(v any) string {
 	return anyString(v)
 }
 
-// Codex and xAI nest the pair under tokens while Nous keeps it flat on the block
+// Token pair of a device code block, nested under tokens or flat on the block
 func blockTokens(block map[string]any) map[string]any {
 	if tokens, ok := block["tokens"].(map[string]any); ok {
 		return tokens
 	}
 	return block
-}
-
-// An OAuth row carrying a single use refresh grant, agent key only nous rows excluded
-func isForkablePoolRow(providerID string, entry any) bool {
-	if !isOAuthPoolPayload(entry) {
-		return false
-	}
-	return providerID != "nous" || strings.TrimSpace(orEmptyStr(entry.(map[string]any)["refresh_token"])) != ""
 }
 
 // OAuth by auth_type, a refresh token or a legacy Anthropic OAuth access token
@@ -103,13 +94,13 @@ func MergeSnapshotAuthPreservingLiveSingleUseGrants(snapshot, live map[string]an
 		snapshotRows := listOrEmpty(snapshotPool[providerID])
 		var liveGrants []any
 		for _, row := range liveRows {
-			if isForkablePoolRow(providerID, row) {
+			if isOAuthPoolPayload(row) {
 				liveGrants = append(liveGrants, row)
 			}
 		}
 		snapshotHasGrants := false
 		for _, row := range snapshotRows {
-			if isForkablePoolRow(providerID, row) {
+			if isOAuthPoolPayload(row) {
 				snapshotHasGrants = true
 				break
 			}
@@ -145,8 +136,8 @@ func MergeSnapshotAuthPreservingLiveSingleUseGrants(snapshot, live map[string]an
 			if hasID {
 				liveRow = liveByID[rowID]
 			}
-			liveIsGrant := liveRow != nil && isForkablePoolRow(providerID, liveRow)
-			if isForkablePoolRow(providerID, snapshotRow) {
+			liveIsGrant := liveRow != nil && isOAuthPoolPayload(liveRow)
+			if isOAuthPoolPayload(snapshotRow) {
 				if liveRow == nil || consumed[rowID] {
 					continue
 				}
@@ -172,7 +163,7 @@ func MergeSnapshotAuthPreservingLiveSingleUseGrants(snapshot, live map[string]an
 			}
 		}
 		for _, id := range liveOrder {
-			if row := liveByID[id]; isForkablePoolRow(providerID, row) && !consumed[id] {
+			if row := liveByID[id]; isOAuthPoolPayload(row) && !consumed[id] {
 				merged = append(merged, deepCopyAny(row))
 			}
 		}
@@ -202,7 +193,7 @@ func MergeSnapshotAuthPreservingLiveSingleUseGrants(snapshot, live map[string]an
 }
 
 func isPKCERow(row map[string]any) bool {
-	return strings.HasSuffix(orEmptyStr(row["source"]), "hermes_pkce")
+	return strings.HasSuffix(orEmptyStr(row["source"]), IcebathPKCESource)
 }
 
 // ClonedGrantStrip names the pool providers, provider blocks and singleton files removed from a clone
@@ -247,7 +238,7 @@ func StripClonedSingleUseOAuthGrants(profileDir string) ClonedGrantStrip {
 		target := filepath.Join(profileDir, name)
 		if st, err := os.Lstat(target); err == nil && (st.Mode().IsRegular() || st.Mode()&os.ModeSymlink != 0) {
 			if err := os.Remove(target); err != nil {
-				slog.Default().Debug(fmt.Sprintf("Could not remove cloned %s from %s: %v", name, profileDir, err))
+				pkgLog().Debug(fmt.Sprintf("Could not remove cloned %s from %s: %v", name, profileDir, err))
 			} else {
 				stripped.Files = append(stripped.Files, name)
 			}
@@ -289,7 +280,7 @@ func StripClonedSingleUseOAuthGrants(profileDir string) ClonedGrantStrip {
 			}
 			kept := []any{}
 			for _, e := range entries {
-				if !isForkablePoolRow(providerID, e) {
+				if !isOAuthPoolPayload(e) {
 					kept = append(kept, e)
 				}
 			}
@@ -317,7 +308,7 @@ func StripClonedSingleUseOAuthGrants(profileDir string) ClonedGrantStrip {
 		return stripped
 	}
 	if err := NewStore(profileDir).SaveTo(AuthData(store), authPath); err != nil {
-		slog.Default().Debug(fmt.Sprintf("Failed to strip cloned single-use OAuth grants from %s: %v", authPath, err))
+		pkgLog().Debug(fmt.Sprintf("Failed to strip cloned single-use OAuth grants from %s: %v", authPath, err))
 	}
 	return stripped
 }
@@ -655,7 +646,7 @@ func (run *oauthHealPass) adoptRootSingleton(row map[string]any) {
 func (run *oauthHealPass) healPoolRows() {
 	kept := []any{}
 	for _, raw := range run.pRows {
-		if !isForkablePoolRow(run.provider, raw) {
+		if !isOAuthPoolPayload(raw) {
 			kept = append(kept, raw)
 			continue
 		}
@@ -663,7 +654,7 @@ func (run *oauthHealPass) healPoolRows() {
 		if idx := findRootCounterpart(row, run.rRows); idx >= 0 {
 			run.lineageProven = true
 			run.adoptRootRow(idx, row)
-		} else if row["source"] == "hermes_pkce" && run.rootSingletonRow != nil && !run.rOAuth {
+		} else if row["source"] == IcebathPKCESource && run.rootSingletonRow != nil && !run.rOAuth {
 			run.adoptRootSingleton(row)
 		} else {
 			kept = append(kept, raw)
@@ -731,14 +722,14 @@ func (run *oauthHealPass) healProfileSingleton(profileSingleton string) {
 	run.summary.Files = append(run.summary.Files, filepath.Base(profileSingleton))
 }
 
-// Keeps root's PKCE singleton and its hermes_pkce seeded pool row on the same freshest pair
+// Keeps root's PKCE singleton and its seeded pool row on the same freshest pair
 func (run *oauthHealPass) syncRootSingletonWithPKCERow() {
 	if !run.summary.Adopted || run.rootSingleton == "" || run.rootSingletonRow == nil {
 		return
 	}
 	pkceIdx := -1
 	for i, r := range run.rRows {
-		if isOAuthPoolPayload(r) && r.(map[string]any)["source"] == "hermes_pkce" {
+		if isOAuthPoolPayload(r) && r.(map[string]any)["source"] == IcebathPKCESource {
 			pkceIdx = i
 			break
 		}
@@ -901,4 +892,76 @@ func runOAuthGrantHeal(env PoolEnv, provider string) (*OAuthHealSummary, error) 
 	oauthHealMu.Unlock()
 	summary := run.summary
 	return &summary, nil
+}
+
+// JWT iat, local issue stamp and expiry epoch seconds of an OAuth pair
+func oauthStamps(entry map[string]any) (iat, local, expires float64, hasIat, hasLocal, hasExpires bool) {
+	claims := DecodeJWTClaims(anyString(entry["access_token"]))
+	first := func(values ...any) (float64, bool) {
+		for _, v := range values {
+			if ts, ok := ParseAbsoluteTimestamp(v); ok && ts != 0 {
+				return ts, true
+			}
+		}
+		return 0, false
+	}
+	iat, hasIat = first(claims["iat"])
+	local, hasLocal = first(entry["last_refresh"], entry["obtained_at"])
+	expires, hasExpires = first(claims["exp"], entry["expires_at_ms"], entry["expires_at"])
+	return
+}
+
+// Order of two stamps when both are known
+func oauthStampSign(x float64, hasX bool, y float64, hasY bool) (int, bool) {
+	if !hasX || !hasY {
+		return 0, false
+	}
+	switch {
+	case x > y:
+		return 1, true
+	case x < y:
+		return -1, true
+	}
+	return 0, true
+}
+
+// 1 when a holds the later issued OAuth pair than b, -1 the earlier, 0 tied, false when neither is stamped
+func oauthPairOrder(a, b map[string]any) (int, bool) {
+	ia, la, ea, hasIa, hasLa, hasEa := oauthStamps(a)
+	ib, lb, eb, hasIb, hasLb, hasEb := oauthStamps(b)
+	if hasIa && hasIb {
+		if s, _ := oauthStampSign(ia, true, ib, true); s != 0 {
+			return s, true
+		}
+		if s, ok := oauthStampSign(la, hasLa, lb, hasLb); ok && s != 0 {
+			return s, true
+		}
+		return 0, true
+	}
+	issuedA, hasIssuedA := ia, hasIa
+	if !hasIssuedA {
+		issuedA, hasIssuedA = la, hasLa
+	}
+	issuedB, hasIssuedB := ib, hasIb
+	if !hasIssuedB {
+		issuedB, hasIssuedB = lb, hasLb
+	}
+	if s, ok := oauthStampSign(issuedA, hasIssuedA, issuedB, hasIssuedB); ok {
+		return s, true
+	}
+	if s, ok := oauthStampSign(ea, hasEa, eb, hasEb); ok && s != 0 {
+		return s, true
+	}
+	aAny := hasIa || hasLa || hasEa
+	bAny := hasIb || hasLb || hasEb
+	if !aAny && !bAny {
+		return 0, false
+	}
+	if aAny == bAny {
+		return 0, true
+	}
+	if aAny {
+		return 1, true
+	}
+	return -1, true
 }

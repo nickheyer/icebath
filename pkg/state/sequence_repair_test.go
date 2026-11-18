@@ -288,13 +288,13 @@ func TestRepairRecordsDroppedToolRowOnSurvivor(t *testing.T) {
 	}
 }
 
-func TestRepairRaisesWhereHermesRaises(t *testing.T) {
+func TestRepairRaisesOnUnrepairableRows(t *testing.T) {
 	msgs := []map[string]any{seqUser("Q"), seqAssistant("", seqCall("t1")), {"role": "tool", "tool_call_id": 7, "content": "x"}}
-	if _, err := RepairMessageSequence(&msgs); err == nil || !strings.Contains(err.Error(), "AttributeError") {
+	if _, err := RepairMessageSequence(&msgs); err == nil || !strings.Contains(err.Error(), "expected text") {
 		t.Fatalf("non string tool_call_id %v", err)
 	}
 	msgs = []map[string]any{seqUser("Q"), {"role": "assistant", "content": "", "tool_calls": 5}}
-	if _, err := RepairMessageSequence(&msgs); err == nil || !strings.Contains(err.Error(), "not iterable") {
+	if _, err := RepairMessageSequence(&msgs); err == nil || !strings.Contains(err.Error(), "expected a list") {
 		t.Fatalf("non iterable calls %v", err)
 	}
 	if n, err := RepairMessageSequence(&[]map[string]any{}); n != 0 || err != nil {

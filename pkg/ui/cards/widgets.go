@@ -2,53 +2,13 @@ package cards
 
 import (
 	"strings"
-	"time"
 
-	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
 	"github.com/charmbracelet/x/ansi"
 	"github.com/nickheyer/icebath/pkg/ui/keys"
 	"github.com/nickheyer/icebath/pkg/ui/render"
 	"github.com/nickheyer/icebath/pkg/ui/theme"
 )
-
-// Offset of the first line in view over a column of lines, kept inside the content
-type scroll struct {
-	offset int
-	height int
-	total  int
-}
-
-func (s *scroll) YOffset() int { return s.offset }
-func (s *scroll) Height() int  { return s.height }
-
-// Largest offset that still fills the view
-func (s *scroll) maxOffset() int { return max(s.total-s.height, 0) }
-
-func (s *scroll) SetYOffset(n int) { s.offset = min(max(n, 0), s.maxOffset()) }
-
-// Sets the rows in view, keeping the offset inside the content
-func (s *scroll) SetHeight(h int) {
-	s.height = max(h, 0)
-	s.SetYOffset(s.offset)
-}
-
-// Sets the lines of content, keeping the offset inside them
-func (s *scroll) SetTotal(n int) {
-	s.total = max(n, 0)
-	s.SetYOffset(s.offset)
-}
-
-func (s *scroll) AtBottom() bool   { return s.offset >= s.maxOffset() }
-func (s *scroll) GotoBottom()      { s.offset = s.maxOffset() }
-func (s *scroll) GotoTop()         { s.offset = 0 }
-func (s *scroll) ScrollDown(n int) { s.SetYOffset(s.offset + n) }
-func (s *scroll) ScrollUp(n int)   { s.SetYOffset(s.offset - n) }
-func (s *scroll) PageDown()        { s.ScrollDown(s.height) }
-func (s *scroll) PageUp()          { s.ScrollUp(s.height) }
-
-// Reports whether the offset sits within slack lines of the bottom
-func (s *scroll) NearBottom(slack int) bool { return s.offset+slack >= s.maxOffset() }
 
 // Scrollbar beside scrolling content, its caps showing the paging keys and its track a timeline of turns and matches
 type gutter struct {
@@ -473,40 +433,4 @@ func (b *searchBar) View(w int, count string, placeholder string, t theme.Theme)
 		return render.Fit(left, w, t)
 	}
 	return left + base.Render(strings.Repeat(" ", w-lw-rw)) + right
-}
-
-// Self rescheduling timer of one card whose ticks no other card and no abandoned loop acts on
-type ticker struct {
-	every time.Duration
-	gen   int
-	armed bool
-}
-
-// Tick a ticker scheduled, naming the ticker and the loop it belongs to
-type tickMsg struct {
-	owner *ticker
-	gen   int
-}
-
-// Schedules the next tick unless one is already pending
-func (k *ticker) start() tea.Cmd {
-	if k.armed {
-		return nil
-	}
-	k.gen++
-	k.armed = true
-	owner, gen := k, k.gen
-	return tea.Tick(k.every, func(time.Time) tea.Msg { return tickMsg{owner: owner, gen: gen} })
-}
-
-// Abandons the pending tick so the next start begins a fresh loop
-func (k *ticker) reset() { k.armed = false }
-
-// Reports whether the message is the pending tick, disarming it so the owner may schedule the next
-func (k *ticker) owns(msg tickMsg) bool {
-	if msg.owner != k || msg.gen != k.gen || !k.armed {
-		return false
-	}
-	k.armed = false
-	return true
 }

@@ -2,7 +2,6 @@ package gateway
 
 import (
 	"fmt"
-	"log/slog"
 	"os"
 	"regexp"
 
@@ -45,7 +44,7 @@ func envMultiplexProfilesOverride() *bool {
 	}
 	parsed, known := boolToken(raw)
 	if !known {
-		slog.Warn(fmt.Sprintf("Ignoring unrecognized GATEWAY_MULTIPLEX_PROFILES=%s (expected one of %s or %s); falling back to config.yaml.",
+		pkgLog().Warn(fmt.Sprintf("Ignoring unrecognized GATEWAY_MULTIPLEX_PROFILES=%s (expected one of %s or %s); falling back to config.yaml.",
 			pyrepr.Repr(raw), pyrepr.Repr(anyStrings(truthyTokens)), pyrepr.Repr(anyStrings(falsyTokens))))
 		return nil
 	}
@@ -75,7 +74,7 @@ func envOnAllAdaptersDownOverride() string {
 			return token
 		}
 	}
-	slog.Warn(fmt.Sprintf("Ignoring unrecognized GATEWAY_ON_ALL_ADAPTERS_DOWN=%s (expected one of %s); falling back to config.yaml.",
+	pkgLog().Warn(fmt.Sprintf("Ignoring unrecognized GATEWAY_ON_ALL_ADAPTERS_DOWN=%s (expected one of %s); falling back to config.yaml.",
 		pyrepr.Repr(raw), pyrepr.Repr(anyStrings(OnAllAdaptersDownPolicies))))
 	return ""
 }

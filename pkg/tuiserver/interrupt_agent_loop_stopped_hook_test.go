@@ -13,12 +13,12 @@ import (
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/plugins"
 	"github.com/nickheyer/icebath/pkg/provider"
-	"github.com/nickheyer/icebath/pkg/tuigateway"
+	"github.com/nickheyer/icebath/pkg/tuihost"
 )
 
 // Session of the stop hook cases, running or idle
-func stopHookSession(running bool) *tuigateway.Session {
-	return tuigateway.NewSession(map[string]any{"running": running, "queued_prompt": nil, "session_key": "agent:main:tui:dm:s1",
+func stopHookSession(running bool) *tuihost.Session {
+	return tuihost.NewSession(map[string]any{"running": running, "queued_prompt": nil, "session_key": "agent:main:tui:dm:s1",
 		"agent": nil, "_run_thread": nil})
 }
 

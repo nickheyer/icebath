@@ -153,7 +153,7 @@ func recordShellHookConsent(c *CLI) {
 		_, err = plugins.RecordShellHookConsentFromConfig(c.ctx, map[string]any(cfg), false)
 	}
 	if err != nil {
-		cliLogger.Warn(fmt.Sprintf("shell-hook consent check failed: %v", err))
+		pkgLog().Warn(fmt.Sprintf("shell-hook consent check failed: %v", err))
 	}
 }
 

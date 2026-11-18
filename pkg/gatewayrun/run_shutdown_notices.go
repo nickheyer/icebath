@@ -31,7 +31,7 @@ func (r *GatewayRunner) noticeAllowed(platform gateway.Platform, what string, pl
 	if allowed {
 		return true
 	}
-	runLog().Info(fmt.Sprintf("Shutdown notification suppressed for %s: %s has gateway_restart_notification=false", what, platform))
+	pkgLog().Info(fmt.Sprintf("Shutdown notification suppressed for %s: %s has gateway_restart_notification=false", what, platform))
 	return false
 }
 
@@ -59,7 +59,7 @@ func (r *GatewayRunner) notifyInterruptedCronJobs(ctx context.Context, jobIDs []
 	for _, jobID := range jobIDs {
 		job, err := cron.GetJob(ctx, home.Dir(ctx), jobID)
 		if err != nil {
-			runLog().Debug(fmt.Sprintf("Cron interrupt targets unresolved for %s: %s", jobID, pyrepr.ExceptionMessage(err)))
+			pkgLog().Debug(fmt.Sprintf("Cron interrupt targets unresolved for %s: %s", jobID, pyrepr.ExceptionMessage(err)))
 			continue
 		}
 		if job == nil {
@@ -93,7 +93,7 @@ func (r *GatewayRunner) notifyInterruptedCronJobs(ctx context.Context, jobIDs []
 			func() {
 				defer func() {
 					if rec := recover(); rec != nil {
-						runLog().Debug(fmt.Sprintf("Cron interrupt notice to %s:%s raised: %v", platform, chatID, rec))
+						pkgLog().Debug(fmt.Sprintf("Cron interrupt notice to %s:%s raised: %v", platform, chatID, rec))
 					}
 				}()
 				metadata := r.threadMetadataForTarget(platform, chatID, threadID, "", nil, adapter)
@@ -105,13 +105,13 @@ func (r *GatewayRunner) notifyInterruptedCronJobs(ctx context.Context, jobIDs []
 					return nil
 				}, string(platform), false, nil)
 				if err != nil {
-					runLog().Debug(fmt.Sprintf("Cron interrupt notice to %s:%s raised: %s", platform, chatID, pyrepr.ExceptionMessage(err)))
+					pkgLog().Debug(fmt.Sprintf("Cron interrupt notice to %s:%s raised: %s", platform, chatID, pyrepr.ExceptionMessage(err)))
 				}
 			}()
 		}
 	}
 	if len(notified) > 0 {
-		runLog().Info(fmt.Sprintf("Shutdown: delivered %d interrupted-cron-job notice(s)", len(notified)))
+		pkgLog().Info(fmt.Sprintf("Shutdown: delivered %d interrupted-cron-job notice(s)", len(notified)))
 	}
 	return len(notified)
 }
@@ -132,7 +132,7 @@ func (r *GatewayRunner) shutdownNotificationTarget(ctx context.Context, sessionK
 		func() {
 			defer func() {
 				if rec := recover(); rec != nil {
-					runLog().Debug(fmt.Sprintf("Failed to load session origin for shutdown notification %s: %v", sessionKey, rec))
+					pkgLog().Debug(fmt.Sprintf("Failed to load session origin for shutdown notification %s: %v", sessionKey, rec))
 				}
 			}()
 			if entry := r.sessionStore.LoadedEntry(ctx, sessionKey); entry != nil {
@@ -171,7 +171,7 @@ func sendShutdownNotice(ctx context.Context, adapter gateway.PlatformAdapter, ch
 	if !sendNoticeLogged(ctx, adapter, chatID, msg, platformStr, failFmt, "", metadata) {
 		return false
 	}
-	runLog().Info(fmt.Sprintf("Sent shutdown notification to %s %s:%s", kind, platformStr, chatID))
+	pkgLog().Info(fmt.Sprintf("Sent shutdown notification to %s %s:%s", kind, platformStr, chatID))
 	return true
 }
 
@@ -187,17 +187,17 @@ func sendNoticeLogged(ctx context.Context, adapter gateway.PlatformAdapter, chat
 	merged["_interim_send"] = true
 	defer func() {
 		if rec := recover(); rec != nil {
-			runLog().Debug(fmt.Sprintf(raiseFmt, platformStr, chatID, pyrepr.Str(rec)))
+			pkgLog().Debug(fmt.Sprintf(raiseFmt, platformStr, chatID, pyrepr.Str(rec)))
 			delivered = false
 		}
 	}()
 	result, err := adapter.Send(ctx, chatID, msg, "", merged)
 	if err != nil {
-		runLog().Debug(fmt.Sprintf(raiseFmt, platformStr, chatID, pyrepr.ExceptionMessage(err)))
+		pkgLog().Debug(fmt.Sprintf(raiseFmt, platformStr, chatID, pyrepr.ExceptionMessage(err)))
 		return false
 	}
 	if sendFailed(result) {
-		runLog().Debug(fmt.Sprintf(failFmt, platformStr, chatID, sendError(result)))
+		pkgLog().Debug(fmt.Sprintf(failFmt, platformStr, chatID, sendError(result)))
 		return false
 	}
 	return true
@@ -252,11 +252,11 @@ func (r *GatewayRunner) notifyActiveSessionsOfShutdown(ctx context.Context) {
 		}
 	}
 	if r.restartRequested && restartSource != nil {
-		runLog().Debug("Skipping home-channel shutdown notifications for in-chat restart")
+		pkgLog().Debug("Skipping home-channel shutdown notifications for in-chat restart")
 		return
 	}
 	if r.drainNotificationSuppressed(ctx) {
-		runLog().Info("Home-channel shutdown broadcast suppressed by drain marker (suppress_notification=true)")
+		pkgLog().Info("Home-channel shutdown broadcast suppressed by drain marker (suppress_notification=true)")
 		return
 	}
 	for _, served := range r.servedHomeChannelConfigs() {
@@ -269,18 +269,18 @@ func (r *GatewayRunner) activeShutdownTarget(ctx context.Context, target *shutdo
 	restartKey *noticeTargetKey, dedupKey noticeTargetKey) (platform gateway.Platform, adapter gateway.PlatformAdapter, metadata map[string]any, ok bool) {
 	defer func() {
 		if rec := recover(); rec != nil {
-			runLog().Debug(fmt.Sprintf("Failed to send shutdown notification to %s:%s: %v", target.platformStr, target.chatID, rec))
+			pkgLog().Debug(fmt.Sprintf("Failed to send shutdown notification to %s:%s: %v", target.platformStr, target.chatID, rec))
 			ok = false
 		}
 	}()
 	platform, err := gateway.ParsePlatform(ctx, target.platformStr)
 	if err != nil {
-		runLog().Debug(fmt.Sprintf("Failed to send shutdown notification to %s:%s: %s", target.platformStr, target.chatID, pyrepr.ExceptionMessage(err)))
+		pkgLog().Debug(fmt.Sprintf("Failed to send shutdown notification to %s:%s: %s", target.platformStr, target.chatID, pyrepr.ExceptionMessage(err)))
 		return "", nil, nil, false
 	}
 	if target.source != nil {
 		if adapter, err = r.deliveryAdapterFor(ctx, target.source); err != nil {
-			runLog().Debug(fmt.Sprintf("Failed to send shutdown notification to %s:%s: %s", target.platformStr, target.chatID, pyrepr.ExceptionMessage(err)))
+			pkgLog().Debug(fmt.Sprintf("Failed to send shutdown notification to %s:%s: %s", target.platformStr, target.chatID, pyrepr.ExceptionMessage(err)))
 			return "", nil, nil, false
 		}
 	}
@@ -307,7 +307,7 @@ func (r *GatewayRunner) activeShutdownTarget(ctx context.Context, target *shutdo
 func (r *GatewayRunner) drainNotificationSuppressed(ctx context.Context) (suppressed bool) {
 	defer func() {
 		if rec := recover(); rec != nil {
-			runLog().Debug(fmt.Sprintf("drain_notification_suppressed check failed: %v", rec))
+			pkgLog().Debug(fmt.Sprintf("drain_notification_suppressed check failed: %v", rec))
 			suppressed = false
 		}
 	}()
@@ -339,7 +339,7 @@ func (r *GatewayRunner) sendHomeShutdownNotice(ctx context.Context, served serve
 	metadata, ok := func() (metadata map[string]any, ok bool) {
 		defer func() {
 			if rec := recover(); rec != nil {
-				runLog().Debug(fmt.Sprintf("Failed to send shutdown notification to home channel %s:%s: %v", served.platform, homeChannel.ChatID, rec))
+				pkgLog().Debug(fmt.Sprintf("Failed to send shutdown notification to home channel %s:%s: %v", served.platform, homeChannel.ChatID, rec))
 				ok = false
 			}
 		}()

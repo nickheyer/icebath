@@ -22,6 +22,7 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/gateway"
+	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/proc"
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
@@ -37,6 +38,8 @@ const (
 	lightpandaInstallHint     = "Install Lightpanda from " + lightpandaInstallURL + " and make sure `lightpanda` is on PATH"
 	lightpandaHTTPCacheFlag   = "--http-cache-dir"
 	lightpandaStderrTailLimit = 2000
+	// Environment switch that stops Lightpanda sending its usage telemetry
+	lightpandaTelemetryOff = "LIGHTPANDA_DISABLE_TELEMETRY"
 )
 
 var lightpandaSanePathDirs = []string{"/opt/homebrew/bin", "/opt/homebrew/sbin", "/usr/local/sbin", "/usr/local/bin",
@@ -173,9 +176,12 @@ func pickFreeLoopbackPort() (int, error) {
 	return ln.Addr().(*net.TCPAddr).Port, nil
 }
 
-// Home cache directory holding the session records and logs, created on demand
+// Home cache directory holding the session records and logs, created on demand unless its home is gone or erased
 func defaultLightpandaStateDir(env *tools.Env) (string, error) {
 	path := filepath.Join(cfgOf(env).homeDir(), "cache", "browser-use", "lightpanda")
+	if err := home.AssertProfileLive(path); err != nil {
+		return path, err
+	}
 	return path, os.MkdirAll(path, 0o777)
 }
 
@@ -363,7 +369,9 @@ func launchLightpanda(ctx context.Context, env *tools.Env, sessionName string, b
 			return nil, err
 		}
 		defer logFile.Close()
-		return lightpandaPopen(argv, logFile, lightpandaBrowserEnv(env))
+		procEnv := lightpandaBrowserEnv(env)
+		procEnv[lightpandaTelemetryOff] = "true"
+		return lightpandaPopen(argv, logFile, procEnv)
 	}()
 	if err != nil {
 		return nil, fmt.Sprintf("Failed to launch lightpanda serve (%s): %s", binary, pypath.OSErrorText(err))

@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"log/slog"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -33,7 +32,7 @@ type wsConn interface {
 	Close()
 }
 
-// Opens the gateway socket, a package var the way hermes tests patch websockets connect
+// Opens the gateway socket, a package var the way tests patch websockets connect
 var wsDial = func(ctx context.Context, rawURL string, opts pywebsockets.ConnectOptions) (wsConn, error) {
 	conn, err := pywebsockets.Connect(ctx, rawURL, opts)
 	if err != nil {
@@ -98,17 +97,17 @@ func (c *connectionManager) open(ctx context.Context) (bool, error) {
 	if !websocketsAvailable {
 		msg := "Yuanbao startup failed: 'websockets' package not installed"
 		adapter.SetFatalError(ctx, "yuanbao_missing_dependency", msg, true)
-		slog.Warn(fmt.Sprintf("[%s] %s. Run: icebath pm repair", name, msg))
+		pkgLog().Warn(fmt.Sprintf("[%s] %s. Run: icebath pm repair", name, msg))
 		return false, nil
 	}
 	if adapter.appKey == "" || adapter.appSecret == "" {
 		msg := "Yuanbao startup failed: YUANBAO_APP_ID and YUANBAO_APP_SECRET are required"
 		adapter.SetFatalError(ctx, "yuanbao_missing_credentials", msg, false)
-		slog.Error(fmt.Sprintf("[%s] %s", name, msg))
+		pkgLog().Error(fmt.Sprintf("[%s] %s", name, msg))
 		return false, nil
 	}
 	if c.isConnected() {
-		slog.Debug(fmt.Sprintf("[%s] Already connected, skipping connect()", name))
+		pkgLog().Debug(fmt.Sprintf("[%s] Already connected, skipping connect()", name))
 		return true, nil
 	}
 	acquired, err := adapter.AcquirePlatformLock(ctx, "yuanbao-app-key", adapter.appKey, "Yuanbao app key")
@@ -116,18 +115,18 @@ func (c *connectionManager) open(ctx context.Context) (bool, error) {
 		return false, err
 	}
 	connected, err := func() (bool, error) {
-		slog.Info(fmt.Sprintf("[%s] Fetching sign token from %s", name, adapter.apiDomain))
+		pkgLog().Info(fmt.Sprintf("[%s] Fetching sign token from %s", name, adapter.apiDomain))
 		tokenData, err := adapter.getCachedToken(ctx)
 		if err != nil {
 			return false, err
 		}
-		slog.Info(fmt.Sprintf("[%s] Connecting to %s", name, adapter.wsURL))
+		pkgLog().Info(fmt.Sprintf("[%s] Connecting to %s", name, adapter.wsURL))
 		dialed, err := c.dial(ctx, tokenData)
 		if err != nil || !dialed {
 			return false, err
 		}
 		c.connected(ctx, false)
-		slog.Info(fmt.Sprintf("[%s] Connected. connectId=%s botId=%s", name, c.boundConnectID(), pyrepr.Str(adapter.botIDValue())))
+		pkgLog().Info(fmt.Sprintf("[%s] Connected. connectId=%s botId=%s", name, c.boundConnectID(), pyrepr.Str(adapter.botIDValue())))
 		return true, nil
 	}()
 	switch {
@@ -138,9 +137,9 @@ func (c *connectionManager) open(ctx context.Context) (bool, error) {
 	case ctx.Err() != nil:
 		return false, ctx.Err()
 	case isTimeout(err):
-		slog.Error(fmt.Sprintf("[%s] Connection timed out", name))
+		pkgLog().Error(fmt.Sprintf("[%s] Connection timed out", name))
 	default:
-		slog.Error(fmt.Sprintf("[%s] connect() failed: %s", name, errText(err)), "error", err)
+		pkgLog().Error(fmt.Sprintf("[%s] connect() failed: %s", name, errText(err)), "error", err)
 	}
 	c.cleanupWS(ctx)
 	adapter.ReleasePlatformLock()
@@ -260,12 +259,12 @@ func (c *connectionManager) authenticate(ctx context.Context, tokenData map[stri
 	if err := ws.SendBytes(frame); err != nil {
 		return false, err
 	}
-	slog.Debug(fmt.Sprintf("[%s] AUTH_BIND sent (msg_id=%s uid=%s)", name, msgID, uid))
+	pkgLog().Debug(fmt.Sprintf("[%s] AUTH_BIND sent (msg_id=%s uid=%s)", name, msgID, uid))
 	deadline := monotonic() + authTimeoutSeconds
 	for {
 		remaining := deadline - monotonic()
 		if remaining <= 0 {
-			slog.Error(fmt.Sprintf("[%s] AUTH_BIND timeout waiting for BIND_ACK", name))
+			pkgLog().Error(fmt.Sprintf("[%s] AUTH_BIND timeout waiting for BIND_ACK", name))
 			return false, nil
 		}
 		rctx, cancel := context.WithTimeout(ctx, durationOf(remaining))
@@ -276,10 +275,10 @@ func (c *connectionManager) authenticate(ctx context.Context, tokenData map[stri
 		case err != nil && ctx.Err() != nil:
 			return false, ctx.Err()
 		case err != nil && timedOut:
-			slog.Error(fmt.Sprintf("[%s] AUTH_BIND timeout", name))
+			pkgLog().Error(fmt.Sprintf("[%s] AUTH_BIND timeout", name))
 			return false, nil
 		case err != nil:
-			slog.Error(fmt.Sprintf("[%s] AUTH_BIND error: %s", name, errText(err)), "error", err)
+			pkgLog().Error(fmt.Sprintf("[%s] AUTH_BIND error: %s", name, errText(err)), "error", err)
 			return false, nil
 		}
 		data, isBytes := raw.([]byte)
@@ -299,10 +298,10 @@ func (c *connectionManager) authenticate(ctx context.Context, tokenData map[stri
 		c.connectID = connectID
 		c.mu.Unlock()
 		if connectID == "" {
-			slog.Error(fmt.Sprintf("[%s] BIND_ACK missing connectId", name))
+			pkgLog().Error(fmt.Sprintf("[%s] BIND_ACK missing connectId", name))
 			return false, nil
 		}
-		slog.Info(fmt.Sprintf("[%s] BIND_ACK received: connectId=%s", name, connectID))
+		pkgLog().Info(fmt.Sprintf("[%s] BIND_ACK received: connectId=%s", name, connectID))
 		return true, nil
 	}
 }
@@ -339,11 +338,11 @@ func (c *connectionManager) extractConnectID(decoded *pyjson.Object) string {
 	name := c.adapter.Name()
 	fields, err := parseDict(data)
 	if err != nil {
-		slog.Warn(fmt.Sprintf("[%s] Failed to extract connectId: %s", name, errText(err)))
+		pkgLog().Warn(fmt.Sprintf("[%s] Failed to extract connectId: %s", name, errText(err)))
 		return ""
 	}
 	if code := fields.GetVarint(1); !equalsInt(code, 0) {
-		slog.Error(fmt.Sprintf("[%s] AuthBindRsp error: code=%s message=%s", name, pyrepr.Str(code), pyrepr.StrRepr(fields.GetString(2))))
+		pkgLog().Error(fmt.Sprintf("[%s] AuthBindRsp error: code=%s message=%s", name, pyrepr.Str(code), pyrepr.StrRepr(fields.GetString(2))))
 		return ""
 	}
 	return fields.GetString(3)
@@ -376,10 +375,10 @@ func (c *connectionManager) heartbeatLoop(ctx context.Context) error {
 			delete(c.pendingAcks, msgID)
 			c.pendingPong = nil
 			c.mu.Unlock()
-			slog.Debug(fmt.Sprintf("[%s] Heartbeat send failed: %s", name, errText(err)))
+			pkgLog().Debug(fmt.Sprintf("[%s] Heartbeat send failed: %s", name, errText(err)))
 			continue
 		}
-		slog.Debug(fmt.Sprintf("[%s] PING sent (msg_id=%s)", name, msgID))
+		pkgLog().Debug(fmt.Sprintf("[%s] PING sent (msg_id=%s)", name, msgID))
 		_, err = pong.wait(ctx, pongTimeoutS)
 		c.mu.Lock()
 		delete(c.pendingAcks, msgID)
@@ -398,14 +397,14 @@ func (c *connectionManager) heartbeatLoop(ctx context.Context) error {
 			return nil
 		case isTimeout(err):
 			pong.cancel()
-			slog.Warn(fmt.Sprintf("[%s] PONG timeout (%d/%d)", name, missed, heartbeatTimeoutThreshold))
+			pkgLog().Warn(fmt.Sprintf("[%s] PONG timeout (%d/%d)", name, missed, heartbeatTimeoutThreshold))
 			if missed >= heartbeatTimeoutThreshold {
-				slog.Warn(fmt.Sprintf("[%s] Heartbeat threshold exceeded, triggering reconnect", name))
+				pkgLog().Warn(fmt.Sprintf("[%s] Heartbeat threshold exceeded, triggering reconnect", name))
 				c.scheduleReconnect(ctx)
 				return nil
 			}
 		default:
-			slog.Debug(fmt.Sprintf("[%s] Heartbeat send failed: %s", name, errText(err)))
+			pkgLog().Debug(fmt.Sprintf("[%s] Heartbeat send failed: %s", name, errText(err)))
 		}
 	}
 	return nil
@@ -416,7 +415,7 @@ func (c *connectionManager) receiveLoop(ctx context.Context, ws wsConn) error {
 	adapter := c.adapter
 	name := adapter.Name()
 	if ws == nil {
-		slog.Warn(fmt.Sprintf("[%s] receive_loop exited: 'async for' requires an object with __aiter__ method, got NoneType", name))
+		pkgLog().Warn(fmt.Sprintf("[%s] receive_loop exited: 'async for' requires an object with __aiter__ method, got NoneType", name))
 		c.scheduleReconnect(ctx)
 		return nil
 	}
@@ -436,15 +435,15 @@ func (c *connectionManager) receiveLoop(ctx context.Context, ws wsConn) error {
 			if closed.Rcvd != nil {
 				code, reason = closed.Rcvd.Code, closed.Rcvd.Reason
 			}
-			slog.Warn(fmt.Sprintf("[%s] WebSocket connection closed: code=%d reason=%s", name, code, reason))
+			pkgLog().Warn(fmt.Sprintf("[%s] WebSocket connection closed: code=%d reason=%s", name, code, reason))
 			if noReconnectCloseCodes[code] {
-				slog.Error(fmt.Sprintf("[%s] Close code %d is non-recoverable, NOT reconnecting", name, code))
+				pkgLog().Error(fmt.Sprintf("[%s] Close code %d is non-recoverable, NOT reconnecting", name, code))
 				adapter.MarkDisconnected(ctx)
 			} else {
 				c.scheduleReconnect(ctx)
 			}
 		default:
-			slog.Warn(fmt.Sprintf("[%s] receive_loop exited: %s", name, errText(err)))
+			pkgLog().Warn(fmt.Sprintf("[%s] receive_loop exited: %s", name, errText(err)))
 			c.scheduleReconnect(ctx)
 		}
 		return nil
@@ -456,7 +455,7 @@ func (c *connectionManager) handleFrame(ctx context.Context, raw []byte) {
 	name := c.adapter.Name()
 	msg, err := DecodeConnMsg(raw)
 	if err != nil {
-		slog.Debug(fmt.Sprintf("[%s] Failed to decode frame: %s", name, errText(err)))
+		pkgLog().Debug(fmt.Sprintf("[%s] Failed to decode frame: %s", name, errText(err)))
 		return
 	}
 	head, _ := msg.GetOr("head", nil).(*pyjson.Object)
@@ -473,7 +472,7 @@ func (c *connectionManager) handleFrame(ctx context.Context, raw []byte) {
 	case pyjson.Equal(cmdType, CmdType["Push"]):
 		c.handlePush(ctx, name, cmd, msgID, head, data)
 	default:
-		slog.Debug(fmt.Sprintf("[%s] Ignoring frame: cmd_type=%s cmd=%s msg_id=%s", name, pyrepr.Str(cmdType), cmd, msgID))
+		pkgLog().Debug(fmt.Sprintf("[%s] Ignoring frame: cmd_type=%s cmd=%s msg_id=%s", name, pyrepr.Str(cmdType), cmd, msgID))
 	}
 }
 
@@ -481,7 +480,7 @@ func (c *connectionManager) handleFrame(ctx context.Context, raw []byte) {
 func (c *connectionManager) handleResponse(name, cmd, msgID string, head *pyjson.Object, data []byte) {
 	switch {
 	case cmd == Cmd["Ping"]:
-		slog.Debug(fmt.Sprintf("[%s] HEARTBEAT_ACK received (msg_id=%s)", name, msgID))
+		pkgLog().Debug(fmt.Sprintf("[%s] HEARTBEAT_ACK received (msg_id=%s)", name, msgID))
 		c.mu.Lock()
 		pong := c.pendingPong
 		c.mu.Unlock()
@@ -492,7 +491,7 @@ func (c *connectionManager) handleResponse(name, cmd, msgID string, head *pyjson
 			pong.setResult(true)
 		}
 	case cmd == "send_group_heartbeat" || cmd == "send_private_heartbeat":
-		slog.Debug(fmt.Sprintf("[%s] Heartbeat ACK received: cmd=%s msg_id=%s", name, cmd, msgID))
+		pkgLog().Debug(fmt.Sprintf("[%s] Heartbeat ACK received: cmd=%s msg_id=%s", name, cmd, msgID))
 	case msgID != "" && c.hasPending(msgID):
 		if fut := c.popPending(msgID); fut != nil {
 			result := pyjson.ObjectOf("head", head)
@@ -502,20 +501,20 @@ func (c *connectionManager) handleResponse(name, cmd, msgID string, head *pyjson
 			fut.setResult(result)
 		}
 	default:
-		slog.Debug(fmt.Sprintf("[%s] Unmatched Response: cmd=%s msg_id=%s", name, cmd, msgID))
+		pkgLog().Debug(fmt.Sprintf("[%s] Unmatched Response: cmd=%s msg_id=%s", name, cmd, msgID))
 	}
 }
 
 // Acks a push that asks for it, then settles its waiting request or buffers it as an inbound message
 func (c *connectionManager) handlePush(ctx context.Context, name, cmd, msgID string, head *pyjson.Object, data []byte) {
-	slog.Info(fmt.Sprintf("[%s] Push received: cmd=%s msg_id=%s data_len=%d", name, cmd, msgID, len(data)))
+	pkgLog().Info(fmt.Sprintf("[%s] Push received: cmd=%s msg_id=%s data_len=%d", name, cmd, msgID, len(data)))
 	if ws := c.socket(); pyrepr.Truthy(head.GetOr("need_ack", false)) && ws != nil {
 		frame, err := EncodePushAck(head)
 		if err == nil {
 			err = ws.SendBytes(frame)
 		}
 		if err != nil {
-			slog.Debug(fmt.Sprintf("[%s] Failed to send PushAck: %s", name, errText(err)))
+			pkgLog().Debug(fmt.Sprintf("[%s] Failed to send PushAck: %s", name, errText(err)))
 		}
 	}
 	if msgID != "" && c.hasPending(msgID) {
@@ -531,7 +530,7 @@ func (c *connectionManager) handlePush(ctx context.Context, name, cmd, msgID str
 		return
 	}
 	if len(data) > 0 {
-		slog.Info(fmt.Sprintf("[%s] WS received inbound push, decoding and dispatching: cmd=%s, data_len=%d", name, cmd, len(data)))
+		pkgLog().Info(fmt.Sprintf("[%s] WS received inbound push, decoding and dispatching: cmd=%s, data_len=%d", name, cmd, len(data)))
 		c.pushToInbound(ctx, data)
 	}
 }
@@ -566,7 +565,7 @@ func (c *connectionManager) pushToInbound(ctx context.Context, raw []byte) {
 	entry.timer = time.AfterFunc(durationOf(c.debounceWindow), func() { c.flushInboundBuffer(ctx, key, entry) })
 	c.inboundTimers[key] = entry
 	c.mu.Unlock()
-	slog.Debug(fmt.Sprintf("[%s] Debounce: buffered frame for key=%s, count=%d", c.adapter.Name(), key, count))
+	pkgLog().Debug(fmt.Sprintf("[%s] Debounce: buffered frame for key=%s, count=%d", c.adapter.Name(), key, count))
 }
 
 // Runs the inbound pipeline over the frames buffered for a key once its latest debounce timer fires
@@ -584,7 +583,7 @@ func (c *connectionManager) flushInboundBuffer(ctx context.Context, key string, 
 		return
 	}
 	adapter := c.adapter
-	slog.Info(fmt.Sprintf("[%s] Debounce flush: key=%s, aggregated %d frames", adapter.Name(), key, len(frames)))
+	pkgLog().Info(fmt.Sprintf("[%s] Debounce flush: key=%s, aggregated %d frames", adapter.Name(), key, len(frames)))
 	adapter.trackTask(gateway.SpawnAdapterTask(ctx, func(tctx context.Context) error {
 		return adapter.inboundPipeline.Execute(tctx, NewInboundContext(adapter, frames))
 	}))
@@ -629,7 +628,7 @@ func (c *connectionManager) reconnectWithBackoff(ctx context.Context) (bool, err
 	c.mu.Lock()
 	if c.reconnecting {
 		c.mu.Unlock()
-		slog.Debug(fmt.Sprintf("[%s] Reconnect already in progress, skipping", c.adapter.Name()))
+		pkgLog().Debug(fmt.Sprintf("[%s] Reconnect already in progress, skipping", c.adapter.Name()))
 		return false, nil
 	}
 	c.reconnecting = true
@@ -651,7 +650,7 @@ func (c *connectionManager) doReconnect(ctx context.Context) (bool, error) {
 		if attempt < 6 {
 			wait = 1 << attempt
 		}
-		slog.Info(fmt.Sprintf("[%s] Reconnect attempt %d/%d in %ds", name, attempt+1, maxReconnectAttempts, wait))
+		pkgLog().Info(fmt.Sprintf("[%s] Reconnect attempt %d/%d in %ds", name, attempt+1, maxReconnectAttempts, wait))
 		if err := sleep(ctx, float64(wait)); err != nil {
 			return false, err
 		}
@@ -667,21 +666,21 @@ func (c *connectionManager) doReconnect(ctx context.Context) (bool, error) {
 		case err != nil && ctx.Err() != nil:
 			return false, ctx.Err()
 		case err != nil && isTimeout(err):
-			slog.Warn(fmt.Sprintf("[%s] Reconnect attempt %d timed out", name, attempt+1))
+			pkgLog().Warn(fmt.Sprintf("[%s] Reconnect attempt %d timed out", name, attempt+1))
 		case err != nil:
-			slog.Warn(fmt.Sprintf("[%s] Reconnect attempt %d failed: %s", name, attempt+1, errText(err)))
+			pkgLog().Warn(fmt.Sprintf("[%s] Reconnect attempt %d failed: %s", name, attempt+1, errText(err)))
 		case !dialed:
-			slog.Warn(fmt.Sprintf("[%s] Re-auth failed on attempt %d", name, attempt+1))
+			pkgLog().Warn(fmt.Sprintf("[%s] Re-auth failed on attempt %d", name, attempt+1))
 		default:
 			c.mu.Lock()
 			c.consecutiveHBTimeouts = 0
 			c.mu.Unlock()
 			c.connected(ctx, true)
-			slog.Info(fmt.Sprintf("[%s] Reconnected on attempt %d. connectId=%s", name, attempt+1, c.boundConnectID()))
+			pkgLog().Info(fmt.Sprintf("[%s] Reconnected on attempt %d. connectId=%s", name, attempt+1, c.boundConnectID()))
 			return true, nil
 		}
 	}
-	slog.Error(fmt.Sprintf("[%s] Giving up after %d reconnect attempts", name, maxReconnectAttempts))
+	pkgLog().Error(fmt.Sprintf("[%s] Giving up after %d reconnect attempts", name, maxReconnectAttempts))
 	adapter.MarkDisconnected(ctx)
 	return false, nil
 }
@@ -705,7 +704,7 @@ func (c *connectionManager) cleanupWS(ctx context.Context) {
 	select {
 	case <-closed:
 	case <-bound.C:
-		slog.Debug(fmt.Sprintf("[%s] WS close handshake exceeded %.1fs — dropping connection", c.adapter.Name(), wsCloseTimeoutS))
+		pkgLog().Debug(fmt.Sprintf("[%s] WS close handshake exceeded %.1fs — dropping connection", c.adapter.Name(), wsCloseTimeoutS))
 	case <-ctx.Done():
 	}
 }

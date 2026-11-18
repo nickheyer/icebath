@@ -157,7 +157,7 @@ func TestStoreProjectCredentialsRoundTrip(t *testing.T) {
 	ctx := context.Background()
 	tmpIcebathHome(t)
 	patchPersist(t)
-	if err := StoreProjectCredentials(ctx, "sp-123", "secret-key", "dash-456", "Hermes Agent"); err != nil {
+	if err := StoreProjectCredentials(ctx, "sp-123", "secret-key", "dash-456", "Icebath Agent"); err != nil {
 		t.Fatal(err)
 	}
 	clearPhotonEnv(t)
@@ -254,7 +254,7 @@ func TestPollForTokenBodyAccessToken(t *testing.T) {
 
 func TestListProjectsUnwrapsList(t *testing.T) {
 	patchGet(t, func(getCall) (photonResponse, error) {
-		return &fakeResponse{body: js(t, `[{"id": "p1", "name": "Hermes Agent"}]`)}, nil
+		return &fakeResponse{body: js(t, `[{"id": "p1", "name": "Icebath Agent"}]`)}, nil
 	})
 	projects, err := ListProjects(context.Background(), "tok")
 	if err != nil || objGet(projects[0].(*pyjson.Object), "id") != "p1" {
@@ -264,9 +264,9 @@ func TestListProjectsUnwrapsList(t *testing.T) {
 
 func TestFindProjectByNameCaseInsensitive(t *testing.T) {
 	patchGet(t, func(getCall) (photonResponse, error) {
-		return &fakeResponse{body: js(t, `{"data": [{"id": "p1", "name": "Other"}, {"id": "p2", "name": "hermes agent"}]}`)}, nil
+		return &fakeResponse{body: js(t, `{"data": [{"id": "p1", "name": "Other"}, {"id": "p2", "name": "icebath agent"}]}`)}, nil
 	})
-	proj, err := FindProjectByName(context.Background(), "tok", "Hermes Agent")
+	proj, err := FindProjectByName(context.Background(), "tok", "Icebath Agent")
 	if err != nil || proj == nil || objGet(proj, "id") != "p2" {
 		t.Fatalf("project = %v, %v", proj, err)
 	}
@@ -278,12 +278,12 @@ func TestCreateProjectOmitsSpectrumFlag(t *testing.T) {
 		captured = c
 		return &fakeResponse{body: js(t, `{"success": true, "id": "new-proj"}`)}, nil
 	})
-	data, err := CreateProject(context.Background(), "tok", "Hermes Agent", DefaultLocation)
+	data, err := CreateProject(context.Background(), "tok", "Icebath Agent", DefaultLocation)
 	if err != nil || objGet(data, "id") != "new-proj" {
 		t.Fatalf("project = %v, %v", data, err)
 	}
 	body := captured.body.(*pyjson.Object)
-	if _, has := body.Get("spectrum"); has || objGet(body, "name") != "Hermes Agent" || objGet(body, "location") != "United States" {
+	if _, has := body.Get("spectrum"); has || objGet(body, "name") != "Icebath Agent" || objGet(body, "location") != "United States" {
 		t.Fatalf("body = %v", body)
 	}
 	if captured.headers["Authorization"] != "Bearer tok" || !strings.HasSuffix(captured.url, "/api/projects") {

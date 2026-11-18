@@ -7,7 +7,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/pm"
 )
 
-// Process boot hermes_bootstrap runs at import, assigned by the binary and free to relaunch the worker
+// Process boot runs at import, assigned by the binary and free to relaunch the worker
 var WorkerProcessBoot func()
 
 // Runs the PM dependency boot in a worker the gateway marked, again after a relaunch

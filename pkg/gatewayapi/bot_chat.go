@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"log/slog"
 	"net/http"
 	"path/filepath"
 	"sort"
@@ -120,7 +119,7 @@ func createPeerBotChat(ctx context.Context, a *APIServerAdapter, body *pyjson.Ob
 	if err != nil {
 		return nil, err
 	}
-	return jsonResponse(pyjson.ObjectOf("object", "hermes.session", "session", sessionResponse(row)), http.StatusCreated, nil), nil
+	return jsonResponse(pyjson.ObjectOf("object", "icebath.session", "session", sessionResponse(row)), http.StatusCreated, nil), nil
 }
 
 // Python text of an optional refusal detail, None for an absent one
@@ -160,7 +159,7 @@ func peerRefusal(ctx context.Context, authority *gateway.SessionAuthority, tip *
 			hint = "it is local history owned by another login or profile; open or rename it from the client that owns it"
 		}
 	}
-	slog.Warn(fmt.Sprintf("Peer DM into Bot Chat %s refused: %s (not_found: field=%s detail=%s)", pyrepr.Str(tip.GetOr("id", nil)),
+	pkgLog().Warn(fmt.Sprintf("Peer DM into Bot Chat %s refused: %s (not_found: field=%s detail=%s)", pyrepr.Str(tip.GetOr("id", nil)),
 		reason, optionalDetail(refusal.Field), optionalDetail(refusal.Detail)))
 	return reason, "Bot Chat admission refused: " + reason + " (this profile's 'Bot Chat' is not a local chat; " + hint + ")", nil
 }

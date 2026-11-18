@@ -3,10 +3,11 @@ package provider
 import (
 	"encoding/base64"
 	"fmt"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"regexp"
 	"strings"
 	"sync"
+
+	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 )
 
 // ---- tool use and prompt cache support ----
@@ -192,7 +193,7 @@ func recoverFromBedrockCachePointRejection(err error, kwargs map[string]any) (ma
 	}
 	model := bedrockKwargsModel(kwargs)
 	noteBedrockCachePointRejection(model, placement)
-	bedrockLog.Warn(fmt.Sprintf("bedrock: %s rejected a cachePoint block in %s — dropping that cache marker for this model and "+
+	pkgLog().Warn(fmt.Sprintf("bedrock: %s rejected a cachePoint block in %s — dropping that cache marker for this model and "+
 		"retrying. Prompt caching stays active for the remaining sections.", bedrockOr(model, "model"), placement))
 	return retry, true
 }
@@ -280,7 +281,7 @@ func recoverFromBedrockRedactedReasoningRejection(err error, kwargs map[string]a
 	if !changed {
 		return nil, false
 	}
-	bedrockLog.Warn(fmt.Sprintf("bedrock: %s rejected replayed redacted reasoning (encrypted content is sealed to the issuing "+
+	pkgLog().Warn(fmt.Sprintf("bedrock: %s rejected replayed redacted reasoning (encrypted content is sealed to the issuing "+
 		"model/flow) - stripping redacted blocks and resending once.", bedrockOr(bedrockKwargsModel(kwargs), "model")))
 	return retry, true
 }
@@ -954,7 +955,7 @@ func buildBedrockConverseKwargs(in bedrockConverseInput) map[string]any {
 		tools = convertToolsToConverse(in.Tools)
 	}
 	if len(tools) > 0 && !bedrockModelSupportsToolUse(model) {
-		bedrockLog.Warn(fmt.Sprintf("Model %s does not support tool calling — tools stripped. The agent will operate in text-only mode.", model))
+		pkgLog().Warn(fmt.Sprintf("Model %s does not support tool calling — tools stripped. The agent will operate in text-only mode.", model))
 	} else if len(tools) > 0 {
 		if cacheAt["tools"] {
 			tools = append(tools, bedrockCachePoint())

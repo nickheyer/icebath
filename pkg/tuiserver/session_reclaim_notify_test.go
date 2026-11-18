@@ -7,7 +7,7 @@ import (
 	"testing"
 
 	"github.com/nickheyer/icebath/pkg/state"
-	"github.com/nickheyer/icebath/pkg/tuigateway"
+	"github.com/nickheyer/icebath/pkg/tuihost"
 )
 
 // Records every global broadcast for the length of a case
@@ -21,7 +21,7 @@ func captureBroadcasts(t *testing.T) *[][2]any {
 }
 
 // Session record of the reclaim cases with its profile home holding the stored row
-func reclaimSession(t *testing.T) *tuigateway.Session {
+func reclaimSession(t *testing.T) *tuihost.Session {
 	t.Helper()
 	t.Setenv("ICEBATH_HOME", t.TempDir())
 	profile := t.TempDir()
@@ -33,11 +33,11 @@ func reclaimSession(t *testing.T) *tuigateway.Session {
 		t.Fatal(err)
 	}
 	db.Close()
-	return tuigateway.NewSession(map[string]any{"_sid": "live-abc", "session_key": "20260731_120000_aaaaaa", "profile_home": profile})
+	return tuihost.NewSession(map[string]any{"_sid": "live-abc", "session_key": "20260731_120000_aaaaaa", "profile_home": profile})
 }
 
 // End reason the stored row of a reclaim session carries after teardown
-func reclaimEndReason(t *testing.T, session *tuigateway.Session) any {
+func reclaimEndReason(t *testing.T, session *tuihost.Session) any {
 	t.Helper()
 	db, err := state.NewSessionDB(context.Background(), filepath.Join(strOr(session.Get("profile_home")), "state.db"), false)
 	if err != nil {
@@ -89,9 +89,9 @@ func TestBroadcastFailureDoesNotBreakTeardown(t *testing.T) {
 
 func TestReapPathsStampTheRuntimeIdTheClientHolds(t *testing.T) {
 	t.Setenv("ICEBATH_HOME", t.TempDir())
-	tuigateway.SetSessionRecord("live-xyz", tuigateway.NewSession(map[string]any{"session_key": "k"}))
+	tuihost.SetSessionRecord("live-xyz", tuihost.NewSession(map[string]any{"session_key": "k"}))
 	popped := popSessionByID("live-xyz")
-	tuigateway.SetSessionRecord("live-xyz", nil)
+	tuihost.SetSessionRecord("live-xyz", nil)
 	if popped == nil || popped.Get("_sid") != "live-xyz" {
 		t.Fatalf("popped %v", popped)
 	}

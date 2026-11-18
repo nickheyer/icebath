@@ -238,9 +238,9 @@ func removeEnvSource(env PoolEnv, provider string, removed PooledCredential) Rem
 }
 
 // Deletes the icebath owned PKCE file outright
-func removeHermesPKCE(env PoolEnv, provider string, removed PooledCredential) RemovalResult {
+func removeIcebathPKCE(env PoolEnv, provider string, removed PooledCredential) RemovalResult {
 	result := RemovalResult{Suppress: true}
-	oauthFile := HermesOAuthFile(env)
+	oauthFile := IcebathOAuthFile(env)
 	if _, err := os.Stat(oauthFile); err == nil {
 		if err := os.Remove(oauthFile); err != nil {
 			result.Hints = append(result.Hints, fmt.Sprintf("Could not delete %s: %v", oauthFile, err))
@@ -308,8 +308,7 @@ var removalRegistry = []RemovalStep{
 		"Suppressed claude_code credential — it will not be re-seeded.",
 		"Note: Claude Code credentials still live in ~/.claude/.credentials.json",
 		"Run `icebath auth add anthropic` to re-enable if needed."), Description: "~/.claude/.credentials.json"},
-	{Provider: "anthropic", SourceID: "hermes_pkce", Remove: removeHermesPKCE, Description: "~/.icebath/.anthropic_oauth.json"},
-	{Provider: "nous", SourceID: "device_code", Remove: removeAuthStoreOAuth, Description: "auth.json providers.nous"},
+	{Provider: "anthropic", SourceID: IcebathPKCESource, Remove: removeIcebathPKCE, Description: "~/.icebath/.anthropic_oauth.json"},
 	{Provider: "openai-codex", SourceID: "device_code", Match: func(src string) bool { return src == "device_code" || strings.HasSuffix(src, ":device_code") },
 		Remove: removeCodexDeviceCode, Description: "auth.json providers.openai-codex + ~/.codex/auth.json"},
 	{Provider: "xai-oauth", SourceID: "device_code", Remove: removeXAIOAuthDeviceCode, Description: "auth.json providers.xai-oauth"},

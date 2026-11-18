@@ -75,8 +75,13 @@ type CaptureExitError struct {
 	Stderr string
 }
 
+// Program, exit status and stderr first so a cut message keeps the cause, the full command last
 func (e *CaptureExitError) Error() string {
-	return "command " + shJoin(e.Argv) + " returned non-zero exit status " + itoa(e.Code) + ": " + strings.TrimSpace(e.Stderr)
+	msg := shJoin(e.Argv[:min(2, len(e.Argv))]) + " exited with status " + itoa(e.Code)
+	if detail := strings.TrimSpace(e.Stderr); detail != "" {
+		msg += ": " + detail
+	}
+	return msg + " (command " + shJoin(e.Argv) + ")"
 }
 
 // Values of the profile .env file, empty when it cannot be read

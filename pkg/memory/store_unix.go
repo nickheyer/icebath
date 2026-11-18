@@ -12,9 +12,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/home"
 )
 
-// Python labels OS errors on POSIX hosts with the errno number
-const errnoLabel = "Errno"
-
 // Exclusive flock on the owner only lock sibling, refusing a symlinked lock path
 func fileLock(ctx context.Context, path string) (func(), error) {
 	lockPath := path + ".lock"

@@ -96,7 +96,7 @@ var realExecPython = execPython
 
 func (f *execFix) raw(t *testing.T, code string, session string, timeout any, task string, local bool) string {
 	t.Helper()
-	out, err := browserExec(context.Background(), f.env, code, session, timeout, task, local, nil)
+	out, err := browserExec(context.Background(), f.env, code, session, timeout, task, local)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -191,14 +191,6 @@ func TestLegacyCloudMigrationDirectAPIConfigMigrates(t *testing.T) {
 	t.Setenv("BROWSER_USE_API_KEY", "bu-key")
 	if !isLegacyBrowserUseCloudConfig(env) {
 		t.Fatal("direct API config did not migrate")
-	}
-}
-
-func TestLegacyCloudMigrationGatewayConfigStaysOnLegacyPath(t *testing.T) {
-	env := legacyEnv(t, map[string]any{"cloud_provider": "browser-use", "use_gateway": true})
-	t.Setenv("BROWSER_USE_API_KEY", "bu-key")
-	if isLegacyBrowserUseCloudConfig(env) {
-		t.Fatal("gateway config migrated")
 	}
 }
 
@@ -391,16 +383,8 @@ func gatewayResolves(t *testing.T, section map[string]any, cdp string) {
 	}
 }
 
-func TestBackendCdpResolutionPickerManagedSelectionResolvesGatewayProvider(t *testing.T) {
-	gatewayResolves(t, map[string]any{"cloud_provider": "nous"}, "wss://gateway.example/cdp/managed")
-}
-
 func TestBackendCdpResolutionNeverConfiguredAutodetectManagedProviderResolvesThroughProvider(t *testing.T) {
 	gatewayResolves(t, nil, "wss://gateway.example/cdp/autodetect")
-}
-
-func TestBackendCdpResolutionLegacyUseGatewayFlagStillResolvesGatewayProvider(t *testing.T) {
-	gatewayResolves(t, map[string]any{"use_gateway": true}, "wss://gateway.example/cdp/legacy")
 }
 
 // Whether a call on the given browser pins its named session to a tab of its own

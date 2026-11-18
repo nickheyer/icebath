@@ -6,20 +6,11 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/kanban"
 	"github.com/nickheyer/icebath/pkg/state"
-	"github.com/nickheyer/icebath/pkg/tools"
 )
 
-// Mirrors agent activity onto the board of a dispatched kanban worker, then folds new operator notes into the turn
-var kanbanActivityBridge = func(a *AIAgent) {
-	ctx := tools.WithToolEnv(a.homeContext(), a.env)
-	if a.delegateDepth > 0 {
-		ctx = tools.WithDelegatedChildContext(ctx, true)
-	}
-	kanban.HeartbeatCurrentWorkerFromEnv(ctx)
-	kanban.InjectNewCommentsFromEnv(ctx, a)
-}
+// Mirrors agent activity onto the board of a dispatched kanban worker, installed by the extras tier that carries kanban
+var kanbanActivityBridge func(a *AIAgent)
 
 var (
 	activityProcessStart = time.Now()
@@ -55,7 +46,9 @@ func (a *AIAgent) touchActivity(desc string, provenance string, forcePersist boo
 	if os.Getenv("ICEBATH_KANBAN_TASK") != "" {
 		func() {
 			defer func() { _ = recover() }()
-			kanbanActivityBridge(a)
+			if kanbanActivityBridge != nil {
+				kanbanActivityBridge(a)
+			}
 		}()
 	}
 	if forcePersist || IsTerminalCompressionProvenance(string(resolved)) {
@@ -82,7 +75,7 @@ func (a *AIAgent) persistSessionActivityIfDue() {
 	}
 	if err := a.sessionDB.TouchSessionActivity(a.sessionID, at, a.lastActivityDesc,
 		state.NormalizeActivityProvenance(string(a.lastActivityProvenance))); err != nil {
-		runAgentLog().Debug("session activity heartbeat write failed (ignored)", "error", err)
+		pkgLog().Debug("session activity heartbeat write failed (ignored)", "error", err)
 	}
 }
 

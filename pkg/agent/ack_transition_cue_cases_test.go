@@ -17,7 +17,7 @@ func TestAckDetectorTransitionCueNamesOnlyAcpAgents(t *testing.T) {
 		"Relaunching the session on acme.":      true,
 		"Launching it on acmecli via acpx.":     true,
 		"Starting the job on monday.":           false,
-		"Launching it on Nous.":                 false,
+		"Launching it on OpenRouter.":           false,
 		"Relaunching the session on plain-key.": false,
 	} {
 		if got := ack(text); got != want {

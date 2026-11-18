@@ -8,7 +8,6 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
-	"log/slog"
 	"os"
 	"runtime"
 	"strings"
@@ -30,7 +29,7 @@ const (
 	LiveWaitMaxSeconds = 30 * 60
 )
 
-// Hermes key order of a canonical live owner pin as the intent file stores it
+// Key order of a canonical live owner pin as the intent file stores it
 var liveOwnerKeyOrder = []string{"profile_home", "session_id", "canonical", "lease_id", "live_session_id"}
 
 // Definite no send refusal of a live target with its typed reason and when the sender may resend
@@ -209,7 +208,7 @@ func pathArg(v any) (string, error) {
 	return "", &pyError{"TypeError", fmt.Sprintf("argument should be a str or an os.PathLike object where __fspath__ returns a str, not '%s'", pyrepr.TypeName(v))}
 }
 
-// Owner pin as an ordered object in hermes key order, any further key after them sorted
+// Owner pin as an ordered object in its fixed key order, any further key after them sorted
 func ownerObject(owner map[string]any) *pyjson.Object {
 	out := pyjson.NewObject()
 	for _, k := range liveOwnerKeyOrder {
@@ -492,7 +491,7 @@ func WaitLiveDM(ctx context.Context, stdout io.Writer, home, deliveryID, dmFile 
 		held, err := gateway.OwnerHoldsDelivery(ctx, home, record)
 		known := err == nil
 		if !known {
-			slog.Debug("Could not check live DM owner", "error", err)
+			pkgLog().Debug("Could not check live DM owner", "error", err)
 		}
 		if known && held {
 			missed = 0

@@ -71,7 +71,7 @@ func (t *TurnRunner) runSync(ctx context.Context) (map[string]any, error) {
 	return result, nil
 }
 
-// Records the policy terminal scope the turn callbacks resolve through until restore, the turn contextvar of hermes
+// Records the policy terminal scope the turn callbacks resolve through until restore
 func (t *TurnRunner) bindPolicyScope(scope *tools.TerminalScope, policy gateway.ActiveLaunchPolicy) (restore func()) {
 	prev := t.policyScope.Swap(scope)
 	prevPolicy := t.activePolicy.Swap(&policy)
@@ -130,7 +130,7 @@ func (t *TurnRunner) resolveTurnRuntime(ctx context.Context, policy *gateway.Loc
 	if err != nil {
 		return "", nil, "", err
 	}
-	runLog().Debug(fmt.Sprintf("run_agent resolved: model=%s provider=%s session=%s", model, pyrepr.Str(runtimeKwargs["provider"]), tc.sessionKey))
+	pkgLog().Debug(fmt.Sprintf("run_agent resolved: model=%s provider=%s session=%s", model, pyrepr.Str(runtimeKwargs["provider"]), tc.sessionKey))
 	return model, runtimeKwargs, pendingFallbackNotice, nil
 }
 
@@ -212,7 +212,7 @@ func (t *TurnRunner) runSyncScoped(ctx context.Context) (map[string]any, error) 
 	}
 	model, runtimeKwargs, pendingFallbackNotice, err := t.resolveTurnRuntime(ctx, policy)
 	if err != nil {
-		runLog().Warn(fmt.Sprintf("Model resolution failed for session %s: %s", tc.sessionKey, err), "exc_info", err)
+		pkgLog().Warn(fmt.Sprintf("Model resolution failed for session %s: %s", tc.sessionKey, err), "exc_info", err)
 		text, reason, retryable := resolutionFailureReply(ctx, err, tc.source.Platform)
 		return agent.StampFailure(map[string]any{"final_response": text, "messages": []any{}, "api_calls": 0, "tools": []any{},
 			"failed": true, "completed": false, "error": err.Error()}, reason, retryable), nil
@@ -316,8 +316,7 @@ func (t *TurnRunner) projectTurnResult(ctx context.Context, a *agent.AIAgent, ru
 	common := map[string]any{
 		"messages": resultGet(result, "messages", []any{}), "api_calls": resultGet(result, "api_calls", 0),
 		"failed": resultGet(result, "failed", false), "failure_reason": result["failure_reason"],
-		"usage_limit": result["usage_limit"],
-		"partial":     resultGet(result, "partial", false), "completed": result["completed"],
+		"partial": resultGet(result, "partial", false), "completed": result["completed"],
 		"interrupted": resultGet(result, "interrupted", false), "interrupt_message": result["interrupt_message"],
 		"error": result["error"],
 	}

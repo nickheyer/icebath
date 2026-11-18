@@ -51,7 +51,7 @@ func TestEnsureForumCommandsRaceSafety(t *testing.T) {
 	}
 }
 
-// Menu reader that blocks until the dispatcher ticked, the slow skill scan of hermes
+// Menu reader that blocks until the dispatcher ticked
 type blockingMenu struct {
 	fakeInlineCommands
 	scanStarted, ticked chan struct{}

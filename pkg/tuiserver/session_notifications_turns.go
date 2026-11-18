@@ -9,11 +9,11 @@ import (
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/tools"
-	"github.com/nickheyer/icebath/pkg/tuigateway"
+	"github.com/nickheyer/icebath/pkg/tuihost"
 )
 
 // Runs a claimed notification turn through the execution gate, releasing the claim when it refused or raised
-func notifSubmit(ctx context.Context, rid, sid string, session *tuigateway.Session, text, what string, o promptSubmitOptions) bool {
+func notifSubmit(ctx context.Context, rid, sid string, session *tuihost.Session, text, what string, o promptSubmitOptions) bool {
 	accepted := false
 	if failure := catchPanic(func() { accepted = runPromptSubmit(ctx, rid, sid, session, text, o) }); failure != nil {
 		notifLogFailure(what, failure)
@@ -32,7 +32,7 @@ func notifSubmit(ctx context.Context, rid, sid string, session *tuigateway.Sessi
 func notifRID() string { return fmt.Sprintf("__notif__%d", time.Now().UnixMilli()) }
 
 // Runs the claimed agent turn for one notification event
-var notifDispatchEvent = func(ctx context.Context, sid string, session *tuigateway.Session, evt map[string]any, text string) {
+var notifDispatchEvent = func(ctx context.Context, sid string, session *tuihost.Session, evt map[string]any, text string) {
 	env := configEnv(ctx)
 	claim, claimed, err := tools.ClaimEventDelivery(env, evt, "tui-poller")
 	if err != nil {
@@ -72,7 +72,7 @@ var notifDispatchEvent = func(ctx context.Context, sid string, session *tuigatew
 }
 
 // Routes one dequeued event to another owner, the park, a status row and an agent turn, false when the drain must stop
-func notifHandleEvent(ctx context.Context, sid string, session *tuigateway.Session, evt map[string]any, emitted map[string]bool, registry *tools.ProcessRegistry, format func(map[string]any) string, deferred *[]map[string]any, completions *[]tools.DrainedNotification, owned bool) bool {
+func notifHandleEvent(ctx context.Context, sid string, session *tuihost.Session, evt map[string]any, emitted map[string]bool, registry *tools.ProcessRegistry, format func(map[string]any) string, deferred *[]map[string]any, completions *[]tools.DrainedNotification, owned bool) bool {
 	queue := registry.CompletionQueue
 	evtType := pyrepr.Str(evtGet(evt, "type", "completion"))
 	isDelegation := evt["type"] == "async_delegation"
@@ -104,7 +104,7 @@ func notifHandleEvent(ctx context.Context, sid string, session *tuigateway.Sessi
 			displayText = tools.ProcessCompletionDisplayText([]map[string]any{evt})
 		}
 		if _, err := config.RenderNotification(ctx, func() error {
-			tuigateway.Emit(ctx, "status.update", sid, map[string]any{"kind": "process", "text": displayText})
+			tuihost.Emit(ctx, "status.update", sid, map[string]any{"kind": "process", "text": displayText})
 			return nil
 		}, "tui", agent.DiagnosticProcessEvent(evt), nil); err != nil {
 			panic(err)
@@ -137,7 +137,7 @@ type claimedNotification struct {
 }
 
 // Runs one turn for a run of process completions, requeueing them when the session is busy or refuses
-func notifDispatchCompletions(ctx context.Context, sid string, session *tuigateway.Session, notifications []tools.DrainedNotification, registry *tools.ProcessRegistry, deferred *[]map[string]any) {
+func notifDispatchCompletions(ctx context.Context, sid string, session *tuihost.Session, notifications []tools.DrainedNotification, registry *tools.ProcessRegistry, deferred *[]map[string]any) {
 	if len(notifications) == 0 {
 		return
 	}
@@ -211,12 +211,12 @@ func notifDispatchCompletions(ctx context.Context, sid string, session *tuigatew
 }
 
 // Ready snapshot router of the notification paths, the routing below
-var notifHandleReady func(ctx context.Context, sid string, session *tuigateway.Session, events []map[string]any, emitted map[string]bool, registry *tools.ProcessRegistry, format func(map[string]any) string, deferred *[]map[string]any, owned bool)
+var notifHandleReady func(ctx context.Context, sid string, session *tuihost.Session, events []map[string]any, emitted map[string]bool, registry *tools.ProcessRegistry, format func(map[string]any) string, deferred *[]map[string]any, owned bool)
 
 func init() { notifHandleReady = notifRouteReady }
 
 // Routes one ready snapshot, one turn per completion run, handing back what this pass did not route
-func notifRouteReady(ctx context.Context, sid string, session *tuigateway.Session, events []map[string]any, emitted map[string]bool, registry *tools.ProcessRegistry, format func(map[string]any) string, deferred *[]map[string]any, owned bool) {
+func notifRouteReady(ctx context.Context, sid string, session *tuihost.Session, events []map[string]any, emitted map[string]bool, registry *tools.ProcessRegistry, format func(map[string]any) string, deferred *[]map[string]any, owned bool) {
 	var completions []tools.DrainedNotification
 	handBack := registry.CompletionQueue.Put
 	if deferred != nil {

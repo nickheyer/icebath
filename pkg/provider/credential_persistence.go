@@ -14,11 +14,10 @@ import (
 type providerSource struct{ provider, source string }
 
 var persistableProviderSources = map[providerSource]bool{
-	{"anthropic", "hermes_pkce"}:    true,
-	{"minimax-oauth", "oauth"}:      true,
-	{"nous", "device_code"}:         true,
-	{"openai-codex", "device_code"}: true,
-	{"xai-oauth", "device_code"}:    true,
+	{"anthropic", IcebathPKCESource}: true,
+	{"minimax-oauth", "oauth"}:       true,
+	{"openai-codex", "device_code"}:  true,
+	{"xai-oauth", "device_code"}:     true,
 }
 
 var safeSecretishMetadataKeys = map[string]bool{

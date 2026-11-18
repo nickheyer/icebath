@@ -1,4 +1,4 @@
-//go:build unix
+//go:build unix && !icebath_core && !icebath_noextras
 
 package pm
 

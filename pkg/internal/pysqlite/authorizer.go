@@ -10,7 +10,7 @@ import (
 // Authorizer deciding one schema access from its action code and argument strings, NULL arguments arriving empty
 type Authorizer func(action int, arg1, arg2, dbName, trigger string) int
 
-// Authorizer verdicts and the action codes hermes tests inspect, named as sqlite3 exposes them
+// Authorizer verdicts and the action codes tests inspect, named as sqlite3 exposes them
 const (
 	AuthOK       = sqlite3.SQLITE_OK
 	AuthDeny     = sqlite3.SQLITE_DENY

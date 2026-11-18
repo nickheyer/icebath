@@ -228,7 +228,7 @@ func doctorLoadModelProvider(ctx context.Context, pluginDir string) ([]string, e
 	}
 	names := map[string]bool{}
 	if reason := payload["error"]; config.PyTruthy(reason) {
-		logProviders.warn(fmt.Sprintf("Failed to load user provider plugin %s in the plugin host: %s", filepath.Base(pluginDir), config.PyStr(reason)))
+		pkgLog().Warn(fmt.Sprintf("Failed to load user provider plugin %s in the plugin host: %s", filepath.Base(pluginDir), config.PyStr(reason)))
 	} else {
 		for _, raw := range listOrEmpty(payload["profiles"]) {
 			if entry, ok := raw.(map[string]any); ok {

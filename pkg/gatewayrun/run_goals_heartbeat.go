@@ -46,7 +46,7 @@ func (r *GatewayRunner) heartbeatPollOnce(ctx context.Context) {
 			err = r.heartbeatPollWatch(scoped, quickKey, entry.source, entry.sessionID)
 		}
 		if err != nil {
-			runLog().Debug(fmt.Sprintf("heartbeat poll for %s failed: %s", quickKey, err))
+			pkgLog().Debug(fmt.Sprintf("heartbeat poll for %s failed: %s", quickKey, err))
 		}
 	}
 }
@@ -84,7 +84,7 @@ func (r *GatewayRunner) heartbeatPollWatch(ctx context.Context, quickKey string,
 	if r.isSessionRunning(quickKey) || adapter.Base().HasActiveSession(quickKey) || r.queueDepth(quickKey, adapter) > 0 {
 		return nil
 	}
-	if tools.CheckPaused(ctx, "heartbeat", runLog()) {
+	if tools.CheckPaused(ctx, "heartbeat", pkgLog()) {
 		return nil
 	}
 	mgr := agent.NewHeartbeatManager(ctx, sessionID)

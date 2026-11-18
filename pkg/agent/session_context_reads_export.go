@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"fmt"
 
-	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/provider"
 )
@@ -20,19 +19,10 @@ type contextMarks struct {
 	hasTurnBase, hasUsage                             bool
 }
 
-// Session usage stats of an agent value with its window plan gauge, the zero shape for no agent
+// Session usage stats of an agent value, the zero shape for no agent
 func SessionUsageStats(ctx context.Context, value any) *pyjson.Object {
 	a, _ := value.(*AIAgent)
-	stats := UsageStats(ctx, a)
-	if a == nil {
-		return stats
-	}
-	if capture := a.CreditsCapture(); capture != nil {
-		if gauge := gateway.PlanGauge(capture.Credits()); gauge != nil {
-			stats.Set("plan_gauge", gauge)
-		}
-	}
-	return stats
+	return UsageStats(ctx, a)
 }
 
 // Ordered dict of a JSON tagged value, the Python dict the breakdown helpers return
@@ -48,7 +38,7 @@ func objectOfTagged(value any) (any, error) {
 func SessionContextBreakdown(ctx context.Context, value any, conversation []map[string]any) (*pyjson.Object, error) {
 	a, ok := value.(*AIAgent)
 	if !ok || a == nil {
-		return nil, fmt.Errorf("AttributeError: %T has no context breakdown", value)
+		return nil, fmt.Errorf("%T has no context breakdown", value)
 	}
 	payload, err := ComputeSessionContextBreakdown(ctx, a, conversation)
 	if err != nil {

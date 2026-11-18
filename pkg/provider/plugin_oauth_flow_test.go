@@ -17,7 +17,7 @@ import (
 	"time"
 )
 
-// ---- tests/hermes_cli/test_plugin_oauth.py (sign in, bearer and security cases) ----
+// (sign in, bearer and security cases)
 
 const (
 	pluginFlowClientID = "voice-client.apps.example"
@@ -65,7 +65,7 @@ func newPluginFlow(t *testing.T, withAPI bool) *pluginFlow {
 	return f
 }
 
-// Adds an origin to every declared client's allowlist the way the hermes api fixture patches _origins
+// Adds an origin to every declared client's allowlist the way the api fixture patches origins
 func (f *pluginFlow) addOrigin(origin PluginOrigin) {
 	prev := pluginOAuthOriginsFn
 	pluginOAuthOriginsFn = func(c OAuthClient) []PluginOrigin { return append(prev(c), origin) }

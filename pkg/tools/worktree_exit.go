@@ -17,7 +17,7 @@ const (
 	WorktreeExitDiscard = "discard"
 )
 
-// Radiolist the exit question draws, the curses_ui attribute hermes tests patch
+// Radiolist the exit question draws, the curses_ui attribute tests patch
 var worktreeExitRadiolist = func(ctx context.Context, title string, items []cliui.RadioItem, selected int, opts cliui.RadiolistOptions) (int, error) {
 	return (&cliui.Console{In: os.Stdin, Out: os.Stdout}).CursesRadiolist(ctx, title, items, selected, opts)
 }
@@ -86,7 +86,7 @@ func AskExitChoice(ctx context.Context, info map[string]any) string {
 	choice := WorktreeExitKeep
 	idx, err := worktreeExitRadiolist(ctx, title, items, 0, cliui.RadiolistOptions{CancelReturns: &zero})
 	if err != nil {
-		toolsLogger(nil).Debug("worktree exit question failed; keeping the tree", "error", err.Error())
+		envLog(nil).Debug("worktree exit question failed; keeping the tree", "error", err.Error())
 	} else if idx == 1 {
 		choice = WorktreeExitArchive
 	} else if idx == 2 {

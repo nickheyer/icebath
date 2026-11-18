@@ -257,7 +257,7 @@ func routedClientKwargs(ctx context.Context, a *AIAgent, fallbackModel []map[str
 			RawCodex: true, ExplicitBaseURL: baseURL, ExplicitAPIKey: initResolveEntryAPIKey(ctx, fb),
 		})
 		if ferr != nil {
-			runAgentLog().Debug(fmt.Sprintf("Init-time fallback entry %s failed: %v", fbProvider, ferr))
+			pkgLog().Debug(fmt.Sprintf("Init-time fallback entry %s failed: %v", fbProvider, ferr))
 			reason := ferr.Error()
 			if reason == "" {
 				reason = fmt.Sprintf("%T", ferr)
@@ -266,7 +266,7 @@ func routedClientKwargs(ctx context.Context, a *AIAgent, fallbackModel []map[str
 			continue
 		}
 		if fbClient == nil {
-			runAgentLog().Debug(fmt.Sprintf("Init-time fallback entry %s resolved no usable credentials", fbProvider))
+			pkgLog().Debug(fmt.Sprintf("Init-time fallback entry %s resolved no usable credentials", fbProvider))
 			refused = append(refused, fbProvider+" (no usable credentials)")
 			continue
 		}
@@ -300,7 +300,7 @@ func routedClientKwargs(ctx context.Context, a *AIAgent, fallbackModel []map[str
 		if entries == "" {
 			entries = "none configured"
 		}
-		runAgentLog().Warn(fmt.Sprintf("Init-time provider resolution failed: primary %s unresolvable (%s); fallback entries refused: %s", pyrepr.Repr(a.provider), why, entries))
+		pkgLog().Warn(fmt.Sprintf("Init-time provider resolution failed: primary %s unresolvable (%s); fallback entries refused: %s", pyrepr.Repr(a.provider), why, entries))
 	}
 	if poolExhausted {
 		message, ok := provider.PoolBillingMessage(ctx, explicit, a.model, pool)

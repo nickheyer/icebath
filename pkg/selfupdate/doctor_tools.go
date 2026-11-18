@@ -302,7 +302,7 @@ func checkGitAndRg(ctx context.Context, d *Doctor, shouldFix bool) (*Finding, er
 	})
 }
 
-var doctorBuiltinTerminalBackends = map[string]bool{"local": true, "docker": true, "modal": true, "managed_modal": true, "daytona": true, "vercel_sandbox": true, "ssh": true}
+var doctorBuiltinTerminalBackends = map[string]bool{"local": true, "docker": true, "modal": true, "daytona": true, "vercel_sandbox": true, "ssh": true}
 
 // Prints the ok row when cond holds, else the fail row and records the issue
 var doctorRequire = func(w io.Writer, cond bool, ok, bad doctorRow, issue string, issues *[]string) {

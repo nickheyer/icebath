@@ -307,7 +307,7 @@ func TestReleaseOrphanedLeasesReclaimsOnlyUnownedOwnPidEntries(t *testing.T) {
 // Root home with one named profile carrying its identity marker
 func profileTree(t *testing.T) (string, string) {
 	t.Helper()
-	root := filepath.Join(t.TempDir(), "hermes")
+	root := filepath.Join(t.TempDir(), "icebath")
 	profile := filepath.Join(root, "profiles", "worker")
 	if err := os.MkdirAll(profile, 0o755); err != nil {
 		t.Fatal(err)

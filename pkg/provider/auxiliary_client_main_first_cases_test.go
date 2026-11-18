@@ -31,7 +31,7 @@ func auxRecordResolve(t *testing.T, client AuxClient, choose func(model string) 
 	return calls
 }
 
-// Swaps the main provider and model readers the way hermes tests patch _read_main_provider and _read_main_model
+// Swaps the main provider and model readers the way tests patch read main provider and read main model
 func auxSwapMainReaders(t *testing.T, provider, model string) {
 	t.Helper()
 	prevProvider, prevModel := auxReadMainProvider, auxReadMainModel
@@ -56,29 +56,12 @@ func auxFakeFastModel(t *testing.T, model string) {
 	auxFastModelFromCatalogFn = func(context.Context, string) string { return model }
 }
 
-// Swaps the task route resolver for a fixed route the way hermes tests patch _resolve_task_provider_model
+// Swaps the task route resolver for a fixed route the way tests patch resolve task provider model
 func auxFakeTaskRoute(t *testing.T, route auxTaskRoute) {
 	t.Helper()
 	prev := auxResolveTaskProviderModelFn
 	t.Cleanup(func() { auxResolveTaskProviderModelFn = prev })
 	auxResolveTaskProviderModelFn = func(context.Context, any, string, string, string, any) auxTaskRoute { return route }
-}
-
-// Stubs the Nous network boundary with the Portal's tier aware slots and records the vision flag
-func auxFakeNousPortal(t *testing.T, seen *map[string]bool) AuxClient {
-	t.Helper()
-	nousClient := &auxCallFakeClient{base: "https://inference-api.nousresearch.com/v1", key: "jwt-test",
-		create: func(context.Context, map[string]any) (any, error) { return auxCallOK("ok"), nil }}
-	prev := auxTryNousFn
-	t.Cleanup(func() { auxTryNousFn = prev })
-	auxTryNousFn = func(_ context.Context, vision bool) (AuxClient, string, error) {
-		(*seen)["vision"] = vision
-		if vision {
-			return nousClient, "stepfun/step-3.7-flash:free", nil
-		}
-		return nousClient, "tencent/hy3:free", nil
-	}
-	return nousClient
 }
 
 func TestResolveAutoMainFirstTitleGenerationAutoHonorsMainModel(t *testing.T) {
@@ -226,65 +209,6 @@ func TestResolveVisionMainFirstOpenrouterMainVisionUsesMainModel(t *testing.T) {
 	}
 	if len(*calls) != 1 || (*calls)[0].Provider != "openrouter" || (*calls)[0].Model != "anthropic/claude-sonnet-4.6" || !(*calls)[0].Opts.IsVision {
 		t.Fatalf("calls %+v", *calls)
-	}
-}
-
-func TestResolveVisionMainFirstNousMainVisionUsesPortalPickNotTextChatModel(t *testing.T) {
-	ctx := auxMainTestHome(t, "")
-	seen := map[string]bool{}
-	nousClient := auxFakeNousPortal(t, &seen)
-	auxSwapMainReaders(t, "nous", "tencent/hy3:free")
-	auxFakeTaskRoute(t, auxTaskRoute{Provider: "auto"})
-	provider, client, model, err := ResolveVisionProviderClient(ctx, "", "", "", nil, false, nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if provider != "nous" || client != nousClient || !seen["vision"] || model != "stepfun/step-3.7-flash:free" {
-		t.Fatalf("provider %q client %v seen %v model %q", provider, client, seen, model)
-	}
-}
-
-func TestResolveVisionMainFirstNousMainVisionHonoursExplicitVisionModel(t *testing.T) {
-	ctx := auxMainTestHome(t, "")
-	seen := map[string]bool{}
-	auxFakeNousPortal(t, &seen)
-	auxSwapMainReaders(t, "nous", "tencent/hy3:free")
-	auxFakeTaskRoute(t, auxTaskRoute{Provider: "auto", Model: "qwen/qwen3-vl-8b-instruct"})
-	provider, _, model, err := ResolveVisionProviderClient(ctx, "", "", "", nil, false, nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if provider != "nous" || model != "qwen/qwen3-vl-8b-instruct" {
-		t.Fatalf("provider %q model %q", provider, model)
-	}
-}
-
-func TestResolveVisionMainFirstNousExplicitVisionProviderAlsoSkipsChatModel(t *testing.T) {
-	ctx := auxMainTestHome(t, "")
-	seen := map[string]bool{}
-	nousClient := auxFakeNousPortal(t, &seen)
-	auxSwapMainReaders(t, "nous", "tencent/hy3:free")
-	auxFakeTaskRoute(t, auxTaskRoute{Provider: "nous"})
-	provider, client, model, err := ResolveVisionProviderClient(ctx, "", "", "", nil, false, nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if provider != "nous" || client != nousClient || model != "stepfun/step-3.7-flash:free" {
-		t.Fatalf("provider %q client %v model %q", provider, client, model)
-	}
-}
-
-func TestResolveVisionMainFirstNousTextAuxStillUsesMainChatModel(t *testing.T) {
-	ctx := auxMainTestHome(t, "")
-	seen := map[string]bool{}
-	auxFakeNousPortal(t, &seen)
-	auxSwapMainReaders(t, "nous", "tencent/hy3:free")
-	_, model, err := ResolveProviderClient(ctx, "nous", "", ProviderClientOptions{})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if model != "tencent/hy3:free" {
-		t.Fatalf("model %q", model)
 	}
 }
 

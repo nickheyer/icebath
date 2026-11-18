@@ -2,7 +2,6 @@ package agent
 
 import (
 	"context"
-	"log/slog"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -98,10 +97,6 @@ func (a *AIAgent) AnthropicMessagesCreate(ctx context.Context, apiKwargs map[str
 		client = a.anthropicClient
 	}
 	return provider.CreateAnthropicMessage(ctx, client, apiKwargs, a.logPrefix, !a.RetrySession().DisableStreaming, a.captureAnthropicResponseHeaders)
-}
-
-func (a *AIAgent) ChatCompletionCapturingHeaders(ctx context.Context, client any, apiKwargs map[string]any) (any, error) {
-	return provider.ChatCompletionCapturingHeaders(ctx, a, client, apiKwargs)
 }
 
 func (a *AIAgent) CodexSilentHangHint(model any) (string, error) {
@@ -352,7 +347,7 @@ func (a *AIAgent) FireToolGenStarted(name string) {
 	}
 	defer func() {
 		if r := recover(); r != nil {
-			slog.Debug("tool_gen_callback failed", "error", r)
+			pkgLog().Debug("tool_gen_callback failed", "error", r)
 		}
 	}()
 	fn(name)

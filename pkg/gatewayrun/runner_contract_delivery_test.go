@@ -504,7 +504,7 @@ func TestCronGatewayRunnerGrantsASharedBotSatelliteOnlyItsRoutedTargets(t *testi
 	}
 }
 
-// Ledger row ob-1 for slack chat C1 as the hermes case records it, then failed with a reconnect only error
+// Ledger row ob-1 for slack chat C1 as the test records it, then failed with a reconnect only error
 func recordFailedSlackObligation(t *testing.T, sessionKey string, adapterProfile *string) {
 	t.Helper()
 	ctx := context.Background()
@@ -518,7 +518,7 @@ func recordFailedSlackObligation(t *testing.T, sessionKey string, adapterProfile
 	}
 }
 
-// State, attempts and last error of a ledger row read straight from the process state.db like the hermes helper
+// State, attempts and last error of a ledger row read straight from the process state.db like the helper
 func ledgerRowOf(t *testing.T, obligationID string) (string, int, *string) {
 	t.Helper()
 	ctx := context.Background()

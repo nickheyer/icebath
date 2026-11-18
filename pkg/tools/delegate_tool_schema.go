@@ -3,9 +3,10 @@ package tools
 import (
 	"context"
 	"fmt"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"slices"
 	"strings"
+
+	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 )
 
 const (

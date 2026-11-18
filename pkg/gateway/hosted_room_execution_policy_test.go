@@ -192,7 +192,7 @@ func TestCatalogPolicyComesFromTheServedProfileNotTheLaunchEnv(t *testing.T) {
 	}
 }
 
-func TestCatalogRequiresTheServedProfileAndNeverReadsHermesProfile(t *testing.T) {
+func TestCatalogRequiresTheServedProfileAndNeverReadsIcebathProfile(t *testing.T) {
 	t.Setenv("ICEBATH_HOME", t.TempDir())
 	t.Setenv("ICEBATH_PROFILE", "reviewer")
 	if _, err := CatalogMapping(context.Background(), CatalogOptions{InstallationID: "install-peer", PersistentProcess: true}); err == nil || !strings.Contains(err.Error(), "target_profile") {

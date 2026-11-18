@@ -45,7 +45,7 @@ func runForkConversation(ctx context.Context, fork *AIAgent, userMessage string,
 
 // Denies every dangerous command the review fork trips instead of prompting against the parent's console
 func bgReviewAutoDeny(command, description string, _ map[string]any) string {
-	backgroundReviewLog().Warn(fmt.Sprintf("Background review auto-denied dangerous command: %s (%s)", command, description))
+	pkgLog().Warn(fmt.Sprintf("Background review auto-denied dangerous command: %s (%s)", command, description))
 	return "deny"
 }
 
@@ -231,7 +231,7 @@ var runReviewInThread = func(ctx context.Context, a *AIAgent, messagesSnapshot [
 		return
 	}
 	if !parentCanEmitToolCalls(a) && !resolveReviewRuntime(ctx, a, taskCfg).Routed {
-		backgroundReviewLog().Warn(fmt.Sprintf("Background review skipped: provider %s cannot emit Icebath tool calls, "+
+		pkgLog().Warn(fmt.Sprintf("Background review skipped: provider %s cannot emit Icebath tool calls, "+
 			"so the review fork could not write memories or skills. Set "+
 			"auxiliary.background_review.{provider,model} to route the review to a normal model.", pyStrRepr(a.provider)))
 		return
@@ -256,7 +256,7 @@ var runReviewInThread = func(ctx context.Context, a *AIAgent, messagesSnapshot [
 		}
 		actions, serr := summarizeBackgroundReviewActions(ctx, st.reviewMessages, messagesSnapshot, a.memoryNotifications)
 		if serr != nil {
-			backgroundReviewLog().Warn(fmt.Sprintf("summarize_background_review_actions returned partial results "+
+			pkgLog().Warn(fmt.Sprintf("summarize_background_review_actions returned partial results "+
 				"after exception (treating as empty); suppressing AttributeError "+
 				"that previously aborted the entire review (#59437): %v", serr))
 			actions = []string{}
@@ -270,7 +270,7 @@ var runReviewInThread = func(ctx context.Context, a *AIAgent, messagesSnapshot [
 	if err == nil {
 		return
 	}
-	backgroundReviewLog().Warn(fmt.Sprintf("Background memory/skill review failed: %v", err))
+	pkgLog().Warn(fmt.Sprintf("Background memory/skill review failed: %v", err))
 	if len(st.reviewUsage) > 0 {
 		logReviewCompletion(st.reviewUsage, "error")
 	}

@@ -6,19 +6,13 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/agent"
 	"github.com/nickheyer/icebath/pkg/gateway"
-	"github.com/nickheyer/icebath/pkg/observability"
 	"github.com/nickheyer/icebath/pkg/plugins"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
 
-// Writes the live in flight agent count to the runtime status and feeds the running chats peak
+// Writes the live in flight agent count to the runtime status
 func (r *GatewayRunner) persistActiveAgents(ctx context.Context) {
 	writeRuntimeStatusQuiet(ctx, gateway.RuntimeStatusUpdate{Fields: map[string]any{"active_agents": r.activeWorkCount()}})
-	var keys []string
-	for _, item := range r.runningAgentItems() {
-		keys = append(keys, item.sessionKey)
-	}
-	observability.ObserveRunningChats(ctx, keys)
 }
 
 // Republishes the in flight count once owner work the session authority counts ends
@@ -86,7 +80,7 @@ func (r *GatewayRunner) dropTurnSlot(ctx context.Context, sessionKey string, run
 		func() {
 			defer func() {
 				if rec := recover(); rec != nil {
-					runLog().Debug(fmt.Sprintf("Failed to release displaced turn lease gen %d for %s", gen, sessionKey), "error", rec)
+					pkgLog().Debug(fmt.Sprintf("Failed to release displaced turn lease gen %d for %s", gen, sessionKey), "error", rec)
 				}
 			}()
 			registry.Release(token)
@@ -110,7 +104,7 @@ func (r *GatewayRunner) interruptAndClearSession(ctx context.Context, sessionKey
 		func() {
 			defer func() {
 				if rec := recover(); rec != nil {
-					runLog().Debug("agent_loop_stopped hook dispatch failed", "error", rec)
+					pkgLog().Debug("agent_loop_stopped hook dispatch failed", "error", rec)
 				}
 			}()
 			plugins.InvokeHook(ctx, "agent_loop_stopped", map[string]any{
@@ -214,7 +208,7 @@ func (r *GatewayRunner) voiceChannelSidecarNote(ctx context.Context, event *gate
 	}
 	vcNow, err := voice.GetVoiceChannelContext(guildID)
 	if err != nil {
-		runLog().Debug("voice-channel context read failed", "error", err)
+		pkgLog().Debug("voice-channel context read failed", "error", err)
 		return "", false, nil
 	}
 	var vcPrev *string

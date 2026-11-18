@@ -3,7 +3,6 @@ package gateway
 import (
 	"context"
 	"fmt"
-	"log/slog"
 	"strings"
 	"sync"
 
@@ -19,10 +18,6 @@ const (
 	prepareStallMaxErrorChars  = 300
 	prepareStallEllipsisSuffix = "…"
 )
-
-func prepareStallLog() *slog.Logger {
-	return slog.Default().With("logger", "tui_gateway.hosted_room_prepare_stall")
-}
 
 // Contention or an ownership move, never counted toward the stall
 func prepareStallTransient(err error) bool {
@@ -139,7 +134,7 @@ func PrepareRetryAction(roomID string, room map[string]any) map[string]any {
 // Appends the room's one stall notice, a stall already last in the log not repeated
 func ReportPrepareStall(ctx context.Context, dbPath, roomID string, cause error) {
 	if err := reportPrepareStall(ctx, dbPath, roomID, cause); err != nil {
-		prepareStallLog().Warn(fmt.Sprintf("hosted room %s: recording the stalled preparation failed", roomID), "exc_info", err)
+		pkgLog().Warn(fmt.Sprintf("hosted room %s: recording the stalled preparation failed", roomID), "exc_info", err)
 	}
 }
 

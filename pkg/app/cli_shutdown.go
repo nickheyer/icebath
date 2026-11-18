@@ -59,7 +59,7 @@ func armExitWatchdog(ctx context.Context, timeoutS float64, fromSignal bool) {
 		if fromSignal && cleanupRunning() {
 			return
 		}
-		cliLogger.Warn(fmt.Sprintf("Exit watchdog fired after %.0fs — forcing process exit (a cleanup step or non-daemon thread is wedged).", timeoutS))
+		pkgLog().Warn(fmt.Sprintf("Exit watchdog fired after %.0fs — forcing process exit (a cleanup step or non-daemon thread is wedged).", timeoutS))
 		flushLoggingAndStdio()
 		tools.KillLiveForegroundProcesses(true)
 		osExit(0)
@@ -75,7 +75,7 @@ func shutdownAgentMemoryProvider(a cliAgent) {
 	if sid == "" {
 		sid = "<unknown>"
 	}
-	cliLogger.Info(fmt.Sprintf("CLI cleanup calling memory shutdown for session %s with %d message(s)", sid, len(a.SessionMessages())))
+	pkgLog().Info(fmt.Sprintf("CLI cleanup calling memory shutdown for session %s with %d message(s)", sid, len(a.SessionMessages())))
 	a.gateway().shutdownMemoryProvider()
 }
 
@@ -156,7 +156,7 @@ func emitInterruptedSessionEnd(c *CLI, reason string) {
 	if a == nil {
 		return
 	}
-	cliLogger.Debug(fmt.Sprintf("interrupting the gateway turn: %s", strings.ReplaceAll(reason, "_", " ")))
+	pkgLog().Debug(fmt.Sprintf("interrupting the gateway turn: %s", strings.ReplaceAll(reason, "_", " ")))
 	a.Interrupt()
 }
 
@@ -196,7 +196,7 @@ func flushOneShotSessionStore(c *CLI) {
 		return
 	}
 	if err := db.EndSession(c.ctx, sessionID, "cli_close"); err != nil {
-		cliLogger.Debug(fmt.Sprintf("one-shot end_session failed: %v", err))
+		pkgLog().Debug(fmt.Sprintf("one-shot end_session failed: %v", err))
 	}
 }
 
@@ -211,7 +211,7 @@ func waitForOneshotBackgroundCompletions(c *CLI) {
 		if taskID == "" {
 			taskID = "<unknown>"
 		}
-		cliLogger.Info(fmt.Sprintf("One-shot exit linger for session %s: completed=%v timed_out=%v", taskID, result.Completed, result.TimedOut))
+		pkgLog().Info(fmt.Sprintf("One-shot exit linger for session %s: completed=%v timed_out=%v", taskID, result.Completed, result.TimedOut))
 	}
 }
 

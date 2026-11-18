@@ -7,7 +7,7 @@ import (
 	"testing"
 )
 
-func TestParseFrontmatterReadsIcebathAndHermesMetadata(t *testing.T) {
+func TestParseFrontmatterReadsTheRetiredMetadataKey(t *testing.T) {
 	fm, body := ParseFrontmatter("---\nname: demo\ndescription: Use when testing.\nplatforms: [linux, macos]\nmetadata:\n  hermes:\n    tags: [a, b]\n    requires_tools: [terminal]\n    config:\n      - key: demo.path\n        description: Where demo files live.\n        default: ~/demo\n---\n# Body\n")
 	if fmString(fm["name"]) != "demo" || body != "# Body\n" {
 		t.Fatalf("frontmatter split wrong: %v %q", fm, body)

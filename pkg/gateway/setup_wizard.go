@@ -3,7 +3,6 @@ package gateway
 import (
 	"context"
 	"fmt"
-	"log/slog"
 	"strings"
 
 	"github.com/nickheyer/icebath/pkg/cliui"
@@ -28,7 +27,7 @@ type SetupPlatform struct {
 	Entry                                    *PlatformEntry
 }
 
-// The hermes_cli.gateway names the setup wizard reads at call time, a table tests replace like the patched facade
+// The names the setup wizard reads at call time, a table tests replace like the patched facade
 type gatewayFacadeFns struct {
 	printInfo, printSuccess, printWarning, printError func(text string)
 	prompt                                            func(question, def string, password bool) string
@@ -106,7 +105,7 @@ func AllPlatforms(ctx context.Context) []SetupPlatform {
 	func() {
 		defer func() {
 			if r := recover(); r != nil {
-				slog.Debug(fmt.Sprintf("plugin discovery failed during platform enumeration: %v", r))
+				pkgLog().Debug(fmt.Sprintf("plugin discovery failed during platform enumeration: %v", r))
 			}
 		}()
 		plugins.DiscoverPlugins(ctx, false)
@@ -227,7 +226,7 @@ func promptCSV(promptText, def string) string {
 	return strings.ReplaceAll(gatewayFacade.prompt(promptText, def, false), " ", "")
 }
 
-// The hermes_cli.gateway_setup_wizard helpers platform plugin wizards import
+// The helpers platform plugin wizards import
 type GatewaySetupWizardFns struct {
 	PrintSetupHeader   func(title string)
 	ConfirmReconfigure func(ctx context.Context, label string, envVars ...string) (bool, error)
@@ -298,38 +297,6 @@ func promptUnauthorizedAccess(ctx context.Context, platformKey string) error {
 	return nil
 }
 
-// Offers the managed bot QR flow, reporting whether the token was saved and the detected owner id
-func telegramAutoSetup(ctx context.Context, tokenVar string) (bool, string, error) {
-	setupPrintln("")
-	choice, ran, _ := provider.SetupMenuAnswer("Telegram bot setup", []string{
-		"Automatic — scan a QR code, confirm in Telegram, done (managed bot)", "Manual — paste a BotFather token"}, []string{"1", "2"}, 0)
-	if !ran {
-		printInfoLines("  Telegram can be configured automatically with a managed bot:",
-			"  [1] Automatic (scan QR → confirm in Telegram → done)", "  [2] Manual BotFather token")
-		choice = pystr.Strip(gatewayFacade.prompt("  Choice [1/2]", "1", false))
-	}
-	if choice != "1" {
-		return false, "", nil
-	}
-	result, err := telegramAutoSetupFn(ctx, nil)
-	if err != nil {
-		return false, "", err
-	}
-	if result != nil && isValidTelegramBotToken(result.Token) {
-		if err := gatewayFacade.saveEnvValue(ctx, tokenVar, result.Token); err != nil {
-			return false, "", err
-		}
-		gatewayFacade.printSuccess("  Saved TELEGRAM_BOT_TOKEN")
-		return true, result.OwnerUserID, nil
-	}
-	if result != nil {
-		gatewayFacade.printWarning("  Automatic setup returned an invalid Telegram token.")
-	}
-	setupPrintln("")
-	gatewayFacade.printInfo("  Falling back to manual setup...")
-	return false, "", nil
-}
-
 // Strips the user prefix and the mention brackets Discord copies carry from a comma separated id list
 func cleanDiscordIDs(cleaned string) string {
 	var parts []string
@@ -349,25 +316,7 @@ func cleanDiscordIDs(cleaned string) string {
 }
 
 // Allowlist prompt of one form variable, the saved value or false when the open access prompt ran instead
-func promptAllowlistVar(ctx context.Context, v SetupVar, platformKey, autoOwnerUserID string) (string, bool, error) {
-	if strings.Contains(v.Name, "TELEGRAM") && autoOwnerUserID != "" {
-		gatewayFacade.printSuccess("  Detected your Telegram user ID: " + autoOwnerUserID)
-		if gatewayFacade.promptYesNo("  Allow this Telegram account to use the bot?", true) {
-			extra := gatewayFacade.prompt("  Additional allowed user IDs (comma-separated, optional)", "", false)
-			ids := []string{autoOwnerUserID}
-			for _, uid := range strings.Split(strings.ReplaceAll(extra, " ", ""), ",") {
-				if uid != "" && !containsString(ids, uid) {
-					ids = append(ids, uid)
-				}
-			}
-			cleaned := strings.Join(ids, ",")
-			if err := gatewayFacade.saveEnvValue(ctx, v.Name, cleaned); err != nil {
-				return "", false, err
-			}
-			gatewayFacade.printSuccess("  Saved — only these users can interact with the bot.")
-			return cleaned, true, nil
-		}
-	}
+func promptAllowlistVar(ctx context.Context, v SetupVar, platformKey string) (string, bool, error) {
 	printInfoLines("  The gateway DENIES all users by default for security.",
 		"  Enter user IDs to create an allowlist, or leave empty", "  and you'll be asked about open access next.")
 	value := gatewayFacade.prompt("  "+v.Prompt, "", false)
@@ -400,12 +349,6 @@ func setupStandardPlatform(ctx context.Context, p SetupPlatform) error {
 	if err != nil || !proceed {
 		return err
 	}
-	autoTokenSaved, autoOwnerUserID := false, ""
-	if p.Key == "telegram" {
-		if autoTokenSaved, autoOwnerUserID, err = telegramAutoSetup(ctx, p.TokenVar); err != nil {
-			return err
-		}
-	}
 	allowedValSet := ""
 	for _, v := range p.Vars {
 		if !(v.Name == p.TokenVar || v.IsAllowlist || !provider.IsSetupHiddenEnv(v.Name)) {
@@ -420,12 +363,8 @@ func setupStandardPlatform(ctx context.Context, p SetupPlatform) error {
 		if existing != "" && v.Name != p.TokenVar {
 			gatewayFacade.printInfo("  Current: " + existing)
 		}
-		if autoTokenSaved && v.Name == p.TokenVar {
-			gatewayFacade.printInfo("  Token saved by automatic setup.")
-			continue
-		}
 		if v.IsAllowlist {
-			saved, ok, err := promptAllowlistVar(ctx, v, p.Key, autoOwnerUserID)
+			saved, ok, err := promptAllowlistVar(ctx, v, p.Key)
 			if err != nil {
 				return err
 			}

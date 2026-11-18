@@ -3,16 +3,15 @@ package agent
 import (
 	"context"
 	"fmt"
-	"log/slog"
 	"sync"
 
 	"github.com/google/uuid"
 
 	"github.com/nickheyer/icebath/pkg/config"
-	"github.com/nickheyer/icebath/pkg/observability"
 	"github.com/nickheyer/icebath/pkg/plugins"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/state"
+	"github.com/nickheyer/icebath/pkg/tools"
 )
 
 const (
@@ -23,26 +22,62 @@ const (
 )
 
 var (
-	compactionKinds              = observability.Set("summarize", "micro_summarize", "prune_tool_results", "provider_native")
-	compactionScopes             = observability.Set("history", "provider")
-	compactionMethods            = observability.Set("llm_summary", "aux_fallback_main", "deterministic_fallback", "deterministic_prune", "provider", "none")
-	compactionTriggers           = observability.Set("manual", "turn_start_threshold", "pre_api", "post_tool", "idle", "engine_preflight", "overflow", "gateway_hygiene", "between_turns", "proactive_prune", "provider", "unknown")
+	compactionKinds              = compactionSet("summarize", "micro_summarize", "prune_tool_results", "provider_native")
+	compactionScopes             = compactionSet("history", "provider")
+	compactionMethods            = compactionSet("llm_summary", "aux_fallback_main", "deterministic_fallback", "deterministic_prune", "provider", "none")
+	compactionTriggers           = compactionSet("manual", "turn_start_threshold", "pre_api", "post_tool", "idle", "engine_preflight", "overflow", "gateway_hygiene", "between_turns", "proactive_prune", "provider", "unknown")
 	compactionTriggerClasses     = map[string]string{"manual": "manual", "overflow": "overflow", "provider": "provider", "unknown": "unknown", "other": "unknown"}
-	compactionTriggerClassValues = observability.Set("auto", "manual", "overflow", "provider", "unknown")
-	compactionOverflowReasons    = observability.Set("context_overflow", "payload_too_large", "long_context_tier")
-	compactionOutcomes           = observability.Set("committed", "aborted", "failed", "skipped", "blocked")
-	compactionSplitStatuses      = observability.Set("not_applicable", "in_place_committed", "rotated_committed", "failed_not_indexed", "aborted")
-	compactionTokenCountMethods  = observability.Set("estimate_rough")
-	compactionExtraFailures      = observability.Set("blocked:cooldown", "blocked:structural_backoff", "blocked:ineffective", "blocked:unknown",
+	compactionTriggerClassValues = compactionSet("auto", "manual", "overflow", "provider", "unknown")
+	compactionOverflowReasons    = compactionSet("context_overflow", "payload_too_large", "long_context_tier")
+	compactionOutcomes           = compactionSet("committed", "aborted", "failed", "skipped", "blocked")
+	compactionSplitStatuses      = compactionSet("not_applicable", "in_place_committed", "rotated_committed", "failed_not_indexed", "aborted")
+	compactionTokenCountMethods  = compactionSet("estimate_rough")
+	compactionExtraFailures      = compactionSet("blocked:cooldown", "blocked:structural_backoff", "blocked:ineffective", "blocked:unknown",
 		"codex_auto_native", "codex_auto_off", "codex_no_thread", "codex_compaction_failed",
 		"session_ownership_lost", "session_ownership_unreadable", "cooldown_state_unreadable", "empty_transcript",
 		"summary_model_benched",
 		"summarize_failed", "exchange_skipped", "defrag_failed", "stale_generation", "watermark_unavailable")
-	compactionAbortedClasses = observability.Set("would_grow", "no_progress", "commit_fence_cancelled")
-	compactionCommitModes    = observability.Set("in_place_committed", "rotated_committed")
+	compactionAbortedClasses = compactionSet("would_grow", "no_progress", "commit_fence_cancelled")
+	compactionCommitModes    = compactionSet("in_place_committed", "rotated_committed")
 	compactionMicroOutcomes  = map[string]string{"absorbed": "committed", "defrag": "committed", "stale_generation": "skipped", "watermark_unavailable": "skipped"}
-	compactionFailureClasses = observability.CompressionFailureClasses.Union(compactionExtraFailures)
+	compactionSkipClasses    = compactionSet("attempt_superseded", "empty_post_handoff_window", "explicit_interrupt",
+		"insufficient_messages", "lock_contended", "no_compressible_window", "snapshot_stale")
+	compactionFailureClasses = compactionSkipClasses.union(compactionExtraFailures, compactionSet("aux_model_fallback",
+		"commit_fence_cancelled", "empty_transcript", "exception", "feasibility_skip", "no_progress", "none", "other",
+		"pool_saturated", "rollback", "session_split_failed", "stall_deterministic_fallback", "stall_interrupted",
+		"summary_auth_failure", "summary_empty_content_failure", "summary_generation_aborted", "summary_generation_failed",
+		"summary_network_failure", "summary_overload_degraded", "summary_overload_failure", "summary_truncated_failure",
+		"unknown", "would_grow"))
 )
+
+// Closed value set of one categorical compaction field
+type compactionValues map[string]bool
+
+// Value set holding the given values
+func compactionSet(values ...string) compactionValues {
+	out := make(compactionValues, len(values))
+	for _, v := range values {
+		out[v] = true
+	}
+	return out
+}
+
+// Whether the set holds value
+func (s compactionValues) Has(value string) bool { return s[value] }
+
+// New set holding the values of this set and every other
+func (s compactionValues) union(others ...compactionValues) compactionValues {
+	out := make(compactionValues, len(s))
+	for v := range s {
+		out[v] = true
+	}
+	for _, o := range others {
+		for v := range o {
+			out[v] = true
+		}
+	}
+	return out
+}
 
 // CompactionFields is every v1 key in schema order, so consumers see a stable shape
 var CompactionFields = []string{
@@ -67,19 +102,20 @@ var compactionAttemptInts = [][2]string{
 	{"reasoning_items_pruned", "reasoning_items_pruned"}, {"summary_input_omitted_chars", "summary_input_omitted_chars"},
 }
 
-// Seams over the lifecycle dispatch, the relay emitter and the first failure latch the publish path uses
+// Seams over the lifecycle dispatch, the live Relay check, the relay emitter and the first failure latch
 var (
 	compactionHasHook         = lifecycleHasHook
 	compactionInvokeHook      = lifecycleInvokeHook
 	compactionTargetAvailable = CompactionTargetAvailable
 	compactionEmitMark        = EmitCompactionMark
 	compactionNewAttemptID    = func() string { return fmt.Sprintf("%x", [16]byte(uuid.New())) }
+	compactionRelayLive       = func(ctx context.Context) bool { return tools.GetRelayRuntime(ctx, false, "") != nil }
 	compactionWarnedMu        sync.Mutex
 	compactionWarned          bool
 )
 
 // The value when it is a non empty string in allowed, def for other strings, nil for anything else
-func compactionClosed(value any, allowed observability.ValueSet, def any) any {
+func compactionClosed(value any, allowed compactionValues, def any) any {
 	s, ok := value.(string)
 	if !ok || s == "" {
 		return nil
@@ -117,12 +153,6 @@ func compactionInt(value any) any {
 	return nil
 }
 
-// Closed failure classes of a compaction event, the shared metrics contract set joined with the compaction extras
-func compactionFailureClassSet() observability.ValueSet { return compactionFailureClasses }
-
-// Closed skip classes of a compaction event, the shared metrics contract set
-func compactionSkipClassSet() observability.ValueSet { return observability.CompressionSkipClasses }
-
 // CompactionFailureClass closes a failure class, exception and rollback keep only their prefix, a missing class is none
 func CompactionFailureClass(value any) string {
 	s, ok := value.(string)
@@ -135,7 +165,7 @@ func CompactionFailureClass(value any) string {
 			break
 		}
 	}
-	if compactionFailureClassSet().Has(s) {
+	if compactionFailureClasses.Has(s) {
 		return s
 	}
 	return "other"
@@ -212,7 +242,7 @@ func compactionAttemptOutcome(commitStatus any, failure string, historyRewritten
 		}
 		return "other"
 	}
-	if compactionSkipClassSet().Has(failure) {
+	if compactionSkipClasses.Has(failure) {
 		return "skipped"
 	}
 	if compactionAbortedClasses.Has(failure) {
@@ -361,13 +391,13 @@ func compactionPublish(ctx context.Context, build func() map[string]any, turnSes
 		compactionWarned = true
 		compactionWarnedMu.Unlock()
 		if first {
-			slog.Warn("compaction event publish failed", "err", failure)
+			pkgLog().Warn("compaction event publish failed", "err", failure)
 		} else {
-			slog.Debug("compaction event publish failed", "err", failure)
+			pkgLog().Debug("compaction event publish failed", "err", failure)
 		}
 	}()
-	relay := true
-	if requireTargetSessionID != nil {
+	relay := compactionRelayLive(ctx)
+	if relay && requireTargetSessionID != nil {
 		ok, err := compactionTargetAvailable(ctx, *requireTargetSessionID, turnSessionID)
 		if err != nil {
 			failure = err

@@ -43,7 +43,7 @@ func toolsetHome(t *testing.T, body string) {
 	setLaunchHome(t, h)
 }
 
-// Plugin discovery that does nothing, the hermes_cli.plugins stub the cases install
+// Plugin discovery that does nothing, the stub the cases install
 func noDiscovery(t *testing.T, fn func(ctx context.Context, force bool)) {
 	t.Helper()
 	saved := discoverPlugins

@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"log/slog"
 	"os"
 	"sync/atomic"
 
@@ -175,11 +174,11 @@ func (b *CuaDriverBackend) Stop() error {
 func (b *CuaDriverBackend) bestEffort(what string, fn func() error) {
 	defer func() {
 		if r := recover(); r != nil {
-			slog.Debug(fmt.Sprintf("cua-driver %s: %v", what, r))
+			pkgLog(nil).Debug(fmt.Sprintf("cua-driver %s: %v", what, r))
 		}
 	}()
 	if err := fn(); err != nil {
-		slog.Debug(fmt.Sprintf("cua-driver %s: %v", what, err))
+		pkgLog(nil).Debug(fmt.Sprintf("cua-driver %s: %v", what, err))
 	}
 }
 
@@ -315,7 +314,7 @@ func (b *CuaDriverBackend) action(name string, args *pyjson.Object, injectSessio
 	}
 	out, err := b.session.callTool(name, args, 30)
 	if err != nil {
-		slog.Error(fmt.Sprintf("cua-driver %s call failed", name), "error", err)
+		pkgLog(nil).Error(fmt.Sprintf("cua-driver %s call failed", name), "error", err)
 		return refuseAction(name, "cua-driver error: "+err.Error())
 	}
 	data := cuGet(out, "data")

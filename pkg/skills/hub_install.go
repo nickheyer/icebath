@@ -18,7 +18,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
-	"github.com/nickheyer/icebath/pkg/observability"
 )
 
 // Resolved lock install path strictly under the skills dir, refusing redirects and the root itself
@@ -319,12 +318,11 @@ func (h *Hub) UninstallSkill(ctx context.Context, skillName string) (bool, strin
 	source, ok1 := entry.Get("source")
 	trust, ok2 := entry.Get("trust_level")
 	if !ok1 || !ok2 {
-		return false, "", errors.New("KeyError: lock entry lacks source or trust_level")
+		return false, "", errors.New("the lock entry lacks source or trust_level")
 	}
 	if err := h.AppendAuditLog("UNINSTALL", skillName, pyrepr.Str(source), pyrepr.Str(trust), "n/a", "user_request"); err != nil {
 		return false, "", err
 	}
-	observability.RecordSkillRemoved(skillName)
 	return true, fmt.Sprintf("Uninstalled '%s' from %s", skillName, ipStr), nil
 }
 

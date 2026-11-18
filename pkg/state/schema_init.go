@@ -3,7 +3,6 @@ package state
 import (
 	"context"
 	"fmt"
-	"log/slog"
 	"math"
 	"math/big"
 	"os"
@@ -86,13 +85,13 @@ func (s *sessionSchema) reconcileColumns(ctx context.Context, conn SQLiteConn) e
 				return err
 			}
 			if strings.Contains(pystr.Lower(errText(err)), "duplicate column") {
-				slog.Debug(fmt.Sprintf("reconcile %s.%s: %s", table, column, errText(err)))
+				pkgLog().Debug(fmt.Sprintf("reconcile %s.%s: %s", table, column, errText(err)))
 				continue
 			}
 			if IsSQLiteLockError(err) {
 				return err
 			}
-			slog.Warn(fmt.Sprintf("reconcile %s.%s failed; store remains behind SCHEMA_SQL: %s", table, column, errText(err)))
+			pkgLog().Warn(fmt.Sprintf("reconcile %s.%s failed; store remains behind SCHEMA_SQL: %s", table, column, errText(err)))
 		}
 	}
 	return nil
@@ -210,7 +209,7 @@ func (s *sessionSchema) healGatewayRoutingPK(ctx context.Context, conn SQLiteCon
 	if err != nil || pk == nil || slices.Equal(pk, []string{"scope", "session_key"}) {
 		return err
 	}
-	slog.Info(fmt.Sprintf("gateway_routing has legacy primary key %s; rebuilding with composite (scope, session_key) key", stringsRepr(pk)))
+	pkgLog().Info(fmt.Sprintf("gateway_routing has legacy primary key %s; rebuilding with composite (scope, session_key) key", stringsRepr(pk)))
 	return rebuildTable(ctx, conn, "gateway_routing", "gateway_routing_legacy_pk", gatewayRoutingScopedDDL,
 		"INSERT OR REPLACE INTO gateway_routing (scope, session_key, entry_json, updated_at) "+
 			"SELECT COALESCE(scope, ''), session_key, entry_json, updated_at "+
@@ -225,14 +224,14 @@ func (s *sessionSchema) healSessionModelUsagePK(ctx context.Context, conn SQLite
 	}
 	sorted := slices.Clone(pk)
 	slices.Sort(sorted)
-	slog.Info(fmt.Sprintf("session_model_usage has legacy primary key %s (missing task); rebuilding with composite 6-column key", stringsRepr(sorted)))
+	pkgLog().Info(fmt.Sprintf("session_model_usage has legacy primary key %s (missing task); rebuilding with composite 6-column key", stringsRepr(sorted)))
 	if _, err := conn.ExecContext(ctx, "PRAGMA foreign_keys=OFF"); err != nil {
 		return err
 	}
 	err = rebuildTable(ctx, conn, "session_model_usage", "session_model_usage_legacy_pk", sessionModelUsageHealDDL,
 		sessionModelUsageHealCopySQL, sessionModelUsageIndexSQL)
 	if err != nil && isOperationalError(err) {
-		slog.Debug(fmt.Sprintf("session_model_usage PK heal skipped: %s", errText(err)))
+		pkgLog().Debug(fmt.Sprintf("session_model_usage PK heal skipped: %s", errText(err)))
 		err = nil
 	}
 	if _, ferr := conn.ExecContext(ctx, "PRAGMA foreign_keys=ON"); ferr != nil {
@@ -258,7 +257,7 @@ func (s *sessionSchema) initSchema(ctx context.Context) error {
 		if !isOperationalError(err) {
 			return err
 		}
-		slog.Debug(fmt.Sprintf("idx_messages_platform_msg_id create skipped: %s", errText(err)))
+		pkgLog().Debug(fmt.Sprintf("idx_messages_platform_msg_id create skipped: %s", errText(err)))
 	}
 	if err := executeDDLSkippingSettledTriggers(ctx, conn, DeferredIndexSQL); err != nil {
 		return err
@@ -409,7 +408,7 @@ func (s *sessionSchema) runDataMigrations(ctx context.Context, conn SQLiteConn, 
 	}
 	if below(18) {
 		if err := s.backfillGatewayMetadataFromSessionsJSON(ctx, conn); err != nil {
-			slog.Debug(fmt.Sprintf("v18 gateway metadata backfill skipped: %s", errText(err)))
+			pkgLog().Debug(fmt.Sprintf("v18 gateway metadata backfill skipped: %s", errText(err)))
 		}
 	}
 	if below(20) {
@@ -440,6 +439,16 @@ func (s *sessionSchema) runDataMigrations(ctx context.Context, conn SQLiteConn, 
 	}
 	if err := s.advanceMessageUIDBackfill(ctx, conn); err != nil {
 		return err
+	}
+	if below(33) {
+		if err := suppressOperational(clearRetiredAccountLabels(ctx, conn)); err != nil {
+			return err
+		}
+	}
+	if below(34) {
+		if err := suppressOperational(renameStoredCarrierTypes(ctx, conn)); err != nil {
+			return err
+		}
 	}
 	complete := true
 	if below(30) && fts5 {
@@ -512,7 +521,7 @@ func (s *sessionSchema) migrateV22SessionModelUsage(ctx context.Context, conn SQ
 			sessionModelUsageV22CopySQL, sessionModelUsageIndexSQL)
 	}
 	if err != nil && isOperationalError(err) {
-		slog.Debug(fmt.Sprintf("v22 session_model_usage rebuild skipped: %s", errText(err)))
+		pkgLog().Debug(fmt.Sprintf("v22 session_model_usage rebuild skipped: %s", errText(err)))
 		return nil
 	}
 	return err
@@ -592,7 +601,7 @@ func (s *sessionSchema) ensureUniqueTitleIndex(ctx context.Context, conn SQLiteC
 		if _, err := conn.ExecContext(ctx, "RELEASE title_repair"); err != nil {
 			return err
 		}
-		slog.Error("Could not repair duplicate session titles; unique title index not created", "error", err)
+		pkgLog().Error("Could not repair duplicate session titles; unique title index not created", "error", err)
 		return nil
 	}
 	return nil
@@ -657,14 +666,14 @@ func (s *sessionSchema) repairDuplicateTitles(ctx context.Context, conn SQLiteCo
 			if _, err := conn.ExecContext(ctx, "UPDATE sessions SET title = ? WHERE rowid = ?", renamed, row.rowid); err != nil {
 				return err
 			}
-			slog.Warn(fmt.Sprintf("Renamed duplicate user session title %s to %s", pyrepr.StrRepr(title), pyrepr.StrRepr(renamed)))
+			pkgLog().Warn(fmt.Sprintf("Renamed duplicate user session title %s to %s", pyrepr.StrRepr(title), pyrepr.StrRepr(renamed)))
 		}
 		for _, row := range group {
 			if row.rowid != keep.rowid && titleRankOf(row.source) != userRank {
 				if _, err := conn.ExecContext(ctx, "UPDATE sessions SET title = NULL WHERE rowid = ?", row.rowid); err != nil {
 					return err
 				}
-				slog.Warn(fmt.Sprintf("Cleared duplicate %s session title %s", pyrepr.Str(row.source), pyrepr.StrRepr(title)))
+				pkgLog().Warn(fmt.Sprintf("Cleared duplicate %s session title %s", pyrepr.Str(row.source), pyrepr.StrRepr(title)))
 			}
 		}
 	}

@@ -27,7 +27,7 @@ func selectEngine(fn func(req, convo []map[string]any, incoming map[string]any) 
 
 func TestBaseNoopSelectContextIsShortCircuitedNotCalled(t *testing.T) {
 	caseHome(t)
-	warnings := captureLogger(t, "agent.conversation_loop", slog.LevelWarn)
+	warnings := captureLogger(t, "agent", slog.LevelWarn)
 	request, history := selectRequest(), []map[string]any{{"role": "user", "content": "hello"}}
 	out := applyContextEngineSelection(selectAgent(newStubEngine(1000, 0.75)), request, history, history[0])
 	if &out[0] != &request[0] || len(warnings()) != 0 {
@@ -37,7 +37,7 @@ func TestBaseNoopSelectContextIsShortCircuitedNotCalled(t *testing.T) {
 
 func TestEmptyListKeepsOriginalRequest(t *testing.T) {
 	caseHome(t)
-	warnings := captureLogger(t, "agent.conversation_loop", slog.LevelWarn)
+	warnings := captureLogger(t, "agent", slog.LevelWarn)
 	request, history := selectRequest(), []map[string]any{{"role": "user", "content": "hello"}}
 	engine := selectEngine(func(_, _ []map[string]any, _ map[string]any) []map[string]any { return []map[string]any{} })
 	out := applyContextEngineSelection(selectAgent(engine), request, history, history[0])

@@ -32,7 +32,7 @@ func TestMain(m *testing.M) {
 	os.Exit(runSandboxed(m))
 }
 
-// Runs the cases under a session home, each inside the per test resets of the hermes conftest
+// Runs the cases under a session home, each inside the per test resets of the test setup
 func runSandboxed(m *testing.M) int {
 	dir, err := os.MkdirTemp("", "cron-home-")
 	if err != nil {

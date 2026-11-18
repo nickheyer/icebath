@@ -54,7 +54,7 @@ func awaitWorkerExit(t *testing.T, exited <-chan struct{}) {
 	}
 }
 
-// Disables worktree isolation and pins the child timeout cap the way the hermes _get_child_timeout patch does
+// Disables worktree isolation and pins the child timeout cap the way the get child timeout patch does
 func livenessKnobs(t *testing.T, cap *float64) {
 	t.Helper()
 	prevWorktree, prevTimeout := createIsolatedWorktreeFn, childTimeoutFn

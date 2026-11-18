@@ -12,7 +12,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pythread"
 )
 
-// Supervision class attributes of the runner with their hermes values
+// Supervision class attributes of the runner with their values
 const (
 	defaultMaxSupervisedRestarts        = 5
 	defaultSupervisedHealthySecs        = 300
@@ -102,7 +102,7 @@ func (r *GatewayRunner) spawnSupervised(factory func(ctx context.Context) error,
 		func() {
 			defer func() {
 				if rec := recover(); rec != nil {
-					runLog().Debug(fmt.Sprintf("on_spawn callback for %s raised", name), "error", rec)
+					pkgLog().Debug(fmt.Sprintf("on_spawn callback for %s raised", name), "error", rec)
 				}
 			}()
 			hooks.onSpawn(task)
@@ -119,7 +119,7 @@ func (r *GatewayRunner) spawnSupervised(factory func(ctx context.Context) error,
 		if err == nil {
 			return
 		}
-		runLog().Error(fmt.Sprintf("Supervised task %s died: %s", name, pyrepr.ExceptionRepr(err)), "exc_info", err)
+		pkgLog().Error(fmt.Sprintf("Supervised task %s died: %s", name, pyrepr.ExceptionRepr(err)), "exc_info", err)
 		if !(restart && r.running.Load()) {
 			return
 		}
@@ -128,13 +128,13 @@ func (r *GatewayRunner) spawnSupervised(factory func(ctx context.Context) error,
 			effective = 0
 		}
 		if effective >= r.maxSupervisedRestarts {
-			runLog().Error(fmt.Sprintf("Supervised task %s died %d times in rapid succession "+
+			pkgLog().Error(fmt.Sprintf("Supervised task %s died %d times in rapid succession "+
 				"(each within %ds of restart) — giving up restarts", name, effective, r.supervisedHealthySecs))
 			if hooks.onGiveUp != nil {
 				func() {
 					defer func() {
 						if rec := recover(); rec != nil {
-							runLog().Debug(fmt.Sprintf("on_give_up callback for %s raised", name), "error", rec)
+							pkgLog().Debug(fmt.Sprintf("on_give_up callback for %s raised", name), "error", rec)
 						}
 					}()
 					hooks.onGiveUp(name)

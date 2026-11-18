@@ -18,8 +18,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/gatewaycli"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/kanban"
-	"github.com/nickheyer/icebath/pkg/observability"
 	"github.com/nickheyer/icebath/pkg/pm"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/selfupdate/updaterecord"
@@ -31,16 +29,6 @@ import (
 // Headless --safe-mode or --ignore-user-config chat runs out of process under the gateway owner
 func bypassChatLaunch(a *chatArgs) bool {
 	return (a.SafeMode || a.IgnoreUserConfig) && !isTUIChatLaunch(a)
-}
-
-// Pins the active kanban board into the env so in process tools and shelled out calls agree
-func pinKanbanBoardEnv() {
-	if os.Getenv("ICEBATH_KANBAN_BOARD") != "" {
-		return
-	}
-	if board := kanban.GetCurrentBoard(context.Background()); board != "" {
-		os.Setenv("ICEBATH_KANBAN_BOARD", board)
-	}
 }
 
 // Git repo root when the cwd sits in a repo, else the cwd, empty when neither resolves
@@ -712,12 +700,10 @@ func cmdChat(a *chatArgs) int {
 		os.Setenv("ICEBATH_SESSION_SOURCE", a.Source)
 		os.Setenv("ICEBATH_SESSION_SOURCE_EXPLICIT", "1")
 	}
-	pinKanbanBoardEnv()
-	ctx := context.Background()
-	if providerConfigured {
-		observability.OfferConsentBeforeChat(ctx, observability.ConsentChatArgs{Query: a.Query, QueryFile: a.QueryFile, Oneshot: a.Oneshot,
-			OneshotExit: a.OneshotExit, SafeMode: a.SafeMode, IgnoreUserConfig: a.IgnoreUserConfig})
+	for _, step := range tierChatLaunch {
+		step()
 	}
+	ctx := context.Background()
 	confirmStartupExpensiveModelOverride(a)
 	if useTUI && a.TUIDev {
 		return runTUIFromSource(os.Args[1:])
@@ -729,7 +715,6 @@ func cmdChat(a *chatArgs) int {
 			MaxTurns: a.MaxTurns})
 	}
 	readQueryFile(a)
-	observability.BeginProcess(ctx, "cli")
 	return app.ChatMain(ctx, app.MainOptions{Model: a.Model, Reasoning: a.Reasoning, Toolsets: a.Toolsets, Query: a.Query, Oneshot: a.OneshotExit,
 		RunBudget: a.RunBudget, OutputFormat: a.OutputFormat, IgnoreRules: a.IgnoreRules || a.SafeMode, IgnoreUserConfig: a.IgnoreUserConfig || a.SafeMode,
 		Provider: a.Provider, Skills: a.Skills, Verbose: a.Verbose, Quiet: a.Quiet, Image: a.Image, Resume: a.Resume,
@@ -772,7 +757,6 @@ func ensureLaunchProvider(a *chatArgs) (bool, error) {
 	if a.Resume != "" || strings.TrimSpace(os.Getenv("ICEBATH_TUI_GATEWAY_URL")) != "" || a.BaseURL != "" || a.APIKey != "" {
 		return true, nil
 	}
-	provider.RunFreeTierBootstrap(provider.HomePoolEnv(home.Dir(context.Background())), false)
 	if hasAnyProviderConfigured(context.Background(), false) {
 		return true, nil
 	}
@@ -841,7 +825,7 @@ func gatewayChatNamespace(a *chatArgs) map[string]any {
 	return ns
 }
 
-// The transport launcher of a gateway run chat, hermes_cli/gateway_chat_startup.py launch_gateway_chat
+// The transport launcher of a gateway run chat
 func launchGatewayChat(a *chatArgs) int {
 	ns := gatewayChatNamespace(a)
 	if !app.BypassLaunch(ns) {

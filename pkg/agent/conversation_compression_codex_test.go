@@ -61,7 +61,7 @@ func (r *touchRecorder) seen(desc string) bool {
 // Codex route agent with a fake session and every touch recorded through the kanban bridge
 func newCodexCompactionAgent(t *testing.T, result *provider.CodexTurnResult, autoMode string) (*AIAgent, *fakeCodexCompactor, *touchRecorder) {
 	t.Helper()
-	a := &AIAgent{sessionID: "hermes-session-1", platform: "cli", codexAppServerAutoCompaction: autoMode}
+	a := &AIAgent{sessionID: "icebath-session-1", platform: "cli", codexAppServerAutoCompaction: autoMode}
 	a.apiMode = "codex_app_server"
 	a.cachedSystemPrompt = "cached prompt"
 	a.compressionActivityHeartbeatInterval = 0.1
@@ -131,7 +131,7 @@ func TestCodexAppServerCompactionHeartbeatRefreshesActivityWhileWaiting(t *testi
 }
 
 func TestInterruptedCodexCompactionArmsTheFailureCooldown(t *testing.T) {
-	a, _, _ := newCodexCompactionAgent(t, &provider.CodexTurnResult{ThreadID: "thread-1", TurnID: "compact-turn-1", Interrupted: true, Error: "compact turn interrupted"}, "hermes")
+	a, _, _ := newCodexCompactionAgent(t, &provider.CodexTurnResult{ThreadID: "thread-1", TurnID: "compact-turn-1", Interrupted: true, Error: "compact turn interrupted"}, "icebath")
 	engine := &recordingCooldownEngine{stubEngine: newStubEngine(200000, 0.5)}
 	a.contextCompressor = engine
 	messages := []map[string]any{{"role": "user", "content": "hi"}}
@@ -145,7 +145,7 @@ func TestInterruptedCodexCompactionArmsTheFailureCooldown(t *testing.T) {
 }
 
 func TestCodexCompactionErrorWithoutInterruptAlsoArmsCooldown(t *testing.T) {
-	a, _, _ := newCodexCompactionAgent(t, &provider.CodexTurnResult{ThreadID: "thread-1", TurnID: "compact-turn-1", Error: "boom"}, "hermes")
+	a, _, _ := newCodexCompactionAgent(t, &provider.CodexTurnResult{ThreadID: "thread-1", TurnID: "compact-turn-1", Error: "boom"}, "icebath")
 	engine := &recordingCooldownEngine{stubEngine: newStubEngine(200000, 0.5)}
 	a.contextCompressor = engine
 	runCodexCompaction(t, a, []map[string]any{{"role": "user", "content": "hi"}}, false)
@@ -155,7 +155,7 @@ func TestCodexCompactionErrorWithoutInterruptAlsoArmsCooldown(t *testing.T) {
 }
 
 func TestActiveCooldownBlocksAutomaticCodexCompaction(t *testing.T) {
-	a, session, _ := newCodexCompactionAgent(t, &provider.CodexTurnResult{ThreadID: "thread-1", TurnID: "compact-turn-1"}, "hermes")
+	a, session, _ := newCodexCompactionAgent(t, &provider.CodexTurnResult{ThreadID: "thread-1", TurnID: "compact-turn-1"}, "icebath")
 	a.contextCompressor = &recordingCooldownEngine{stubEngine: newStubEngine(200000, 0.5), remaining: 120}
 	messages := []map[string]any{{"role": "user", "content": "hi"}}
 	out, prompt := runCodexCompaction(t, a, messages, false)
@@ -174,7 +174,7 @@ func TestForceBypassesTheCodexCompactionCooldown(t *testing.T) {
 }
 
 func TestSuccessfulCodexCompactionArmsNoCooldown(t *testing.T) {
-	a, _, _ := newCodexCompactionAgent(t, &provider.CodexTurnResult{ThreadID: "thread-1", TurnID: "compact-turn-1"}, "hermes")
+	a, _, _ := newCodexCompactionAgent(t, &provider.CodexTurnResult{ThreadID: "thread-1", TurnID: "compact-turn-1"}, "icebath")
 	engine := &recordingCooldownEngine{stubEngine: newStubEngine(200000, 0.5)}
 	a.contextCompressor = engine
 	runCodexCompaction(t, a, []map[string]any{{"role": "user", "content": "hi"}}, false)
@@ -273,7 +273,7 @@ func TestSummaryAndAuxFallbackWarningsEmitOncePerDistinctFailure(t *testing.T) {
 	}
 }
 
-func TestCodexNativeBoundaryClearsStaleHermesFallbackStreak(t *testing.T) {
+func TestCodexNativeBoundaryClearsStaleIcebathFallbackStreak(t *testing.T) {
 	c := NewContextCompressor(context.Background(), feasibilityCompressorOptions("test-model", 100000, 0.5, "lean"))
 	c.fallbackCompressionStreak = 1
 	c.LastSummaryFallbackUsed = true

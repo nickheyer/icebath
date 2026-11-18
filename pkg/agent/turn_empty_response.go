@@ -30,7 +30,7 @@ func retryEmpty(ctx context.Context, a *AIAgent, s *LoopState, response any, fin
 	a.emptyContentRetries++
 	n := a.emptyContentRetries
 	wait := provider.JitteredBackoff(n, provider.BackoffOptions{BaseDelay: 5 * time.Second, MaxDelay: 60 * time.Second, JitterRatio: 0.5}).Seconds()
-	conversationLoopLog().Warn(fmt.Sprintf("Empty response (no content or reasoning) — retry %d/%d in %.1fs (model=%s)", n, budget, wait, a.model))
+	pkgLog().Warn(fmt.Sprintf("Empty response (no content or reasoning) — retry %d/%d in %.1fs (model=%s)", n, budget, wait, a.model))
 	note := ""
 	if budget < defaultEmptyRetryBudget {
 		note = " — high-cost request, reduced retry budget"
@@ -63,7 +63,7 @@ func terminalEmpty(a *AIAgent, s *LoopState, assistantMessage *provider.Response
 	row["_empty_terminal_sentinel"] = true
 	appendLiveMessage(&s.Messages, row)
 	if reasoning == "" {
-		conversationLoopLog().Warn(fmt.Sprintf("Empty response (no content or reasoning) after %d retries. No fallback available. model=%s provider=%s", a.emptyContentRetries, a.model, a.provider))
+		pkgLog().Warn(fmt.Sprintf("Empty response (no content or reasoning) after %d retries. No fallback available. model=%s provider=%s", a.emptyContentRetries, a.model, a.provider))
 		tail := ". No fallback providers configured."
 		if len(a.fallbackChain) > 0 {
 			tail = " and fallback attempts."
@@ -71,7 +71,7 @@ func terminalEmpty(a *AIAgent, s *LoopState, assistantMessage *provider.Response
 		a.emitDiagnosticStatus("❌ Model returned no content after all retries" + tail)
 		return "(empty)"
 	}
-	conversationLoopLog().Warn(fmt.Sprintf("Reasoning-only response after %d retries; keeping it out of the terminal result (model=%s provider=%s)", a.emptyContentRetries, a.model, a.provider))
+	pkgLog().Warn(fmt.Sprintf("Reasoning-only response after %d retries; keeping it out of the terminal result (model=%s provider=%s)", a.emptyContentRetries, a.model, a.provider))
 	a.emitDiagnosticStatus("⚠️ Model produced reasoning but no visible response after all retries. Returning empty.")
 	return "(empty)"
 }
@@ -118,7 +118,7 @@ func recoverEmptyResponse(ctx context.Context, a *AIAgent, s *LoopState, assista
 	if partial := a.currentStreamedAssistantText(); a.hasContentAfterThinkBlock(partial) {
 		s.TurnExitReason = "partial_stream_recovery"
 		recovered := pystr.Strip(a.stripThinkBlocks(partial))
-		conversationLoopLog().Info(fmt.Sprintf("Partial stream content delivered (%d chars) — using as final response", pyLen(recovered)))
+		pkgLog().Info(fmt.Sprintf("Partial stream content delivered (%d chars) — using as final response", pyLen(recovered)))
 		a.emitDiagnosticStatus("↻ Stream interrupted — using delivered content as final response")
 		s.FinalResponse = recovered
 		a.responseWasPreviewed = false
@@ -126,7 +126,7 @@ func recoverEmptyResponse(ctx context.Context, a *AIAgent, s *LoopState, assista
 	}
 	if final := takeHousekeepingReplyLine(a); final != nil {
 		s.TurnExitReason = "fallback_prior_turn_content"
-		conversationLoopLog().Info("Empty follow-up after tool calls — using prior turn content as final response")
+		pkgLog().Info("Empty follow-up after tool calls — using prior turn content as final response")
 		a.emitDiagnosticStatus("↻ Empty response after tool calls — using earlier content as final answer")
 		a.emptyContentRetries = 0
 		s.FinalResponse = *final
@@ -142,7 +142,7 @@ func recoverEmptyResponse(ctx context.Context, a *AIAgent, s *LoopState, assista
 	if priorWasTool && !a.postToolEmptyRetried && !inlineThinking {
 		a.postToolEmptyRetried = true
 		a.lastContentWithTools, a.lastContentToolsAllHousekeeping = nil, false
-		conversationLoopLog().Info("Empty response after tool calls — nudging model to continue processing")
+		pkgLog().Info("Empty response after tool calls — nudging model to continue processing")
 		a.BufferDiagnosticStatus("⚠️ Model returned empty after tool calls — nudging to continue")
 		nudge := a.buildAssistantMessage(assistantMessage, finishReason)
 		nudge["content"] = "(empty)"
@@ -155,7 +155,7 @@ func recoverEmptyResponse(ctx context.Context, a *AIAgent, s *LoopState, assista
 	structured := (msg != nil && (msg.Reasoning != "" || msg.ReasoningContent != "" || len(reasoningDetailsOf(assistantMessage)) > 0)) || inlineThinking
 	if structured && a.thinkingPrefillRetries < 2 {
 		a.thinkingPrefillRetries++
-		conversationLoopLog().Info(fmt.Sprintf("Thinking-only response (no visible content) — prefilling to continue (%d/2)", a.thinkingPrefillRetries))
+		pkgLog().Info(fmt.Sprintf("Thinking-only response (no visible content) — prefilling to continue (%d/2)", a.thinkingPrefillRetries))
 		a.BufferDiagnosticStatus(fmt.Sprintf("↻ Thinking-only response — prefilling to continue (%d/2)", a.thinkingPrefillRetries))
 		interim := a.buildAssistantMessage(assistantMessage, "incomplete")
 		interim["_thinking_prefill"] = true
@@ -173,17 +173,17 @@ func recoverEmptyResponse(ctx context.Context, a *AIAgent, s *LoopState, assista
 		return PhaseVerdict{Action: action, Result: interruptResult}, nil
 	}
 	if trulyEmpty && deterministic {
-		conversationLoopLog().Warn(fmt.Sprintf("Repeated empty response detected (model=%s provider=%s finish_reason=%s) — skipping remaining retries", a.model, a.provider, finishReason))
+		pkgLog().Warn(fmt.Sprintf("Repeated empty response detected (model=%s provider=%s finish_reason=%s) — skipping remaining retries", a.model, a.provider, finishReason))
 		a.BufferDiagnosticStatus("⚠️ Model is repeatedly returning empty content — skipping further retries to avoid repeat charges")
 	}
 	if trulyEmpty && len(a.fallbackChain) > 0 {
-		conversationLoopLog().Warn(fmt.Sprintf("Empty response after %d retries — attempting fallback (model=%s, provider=%s)", a.emptyContentRetries, a.model, a.provider))
+		pkgLog().Warn(fmt.Sprintf("Empty response after %d retries — attempting fallback (model=%s, provider=%s)", a.emptyContentRetries, a.model, a.provider))
 		a.BufferDiagnosticStatus("⚠️ Model returning empty responses — switching to fallback provider...")
 		if a.tryActivateFallback(ctx, "") {
 			s.ActiveSystemPrompt = syncFailoverSystemMessage(a, s.APIMessages, s.ActiveSystemPrompt)
 			a.emptyContentRetries = 0
 			a.BufferDiagnosticStatus(fmt.Sprintf("↻ Switched to fallback: %s (%s)", a.model, a.provider))
-			conversationLoopLog().Info(fmt.Sprintf("Fallback activated after empty responses: now using %s on %s", a.model, a.provider))
+			pkgLog().Info(fmt.Sprintf("Fallback activated after empty responses: now using %s on %s", a.model, a.provider))
 			s.PreflightCompressionBlocked = false
 			s.APICallCount = refundAPICall(a, s.APICallCount)
 			return PhaseVerdict{Action: "continue"}, nil

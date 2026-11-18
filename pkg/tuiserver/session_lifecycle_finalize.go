@@ -15,7 +15,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pythread"
 	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tools"
-	"github.com/nickheyer/icebath/pkg/tuigateway"
+	"github.com/nickheyer/icebath/pkg/tuihost"
 )
 
 // Pending work of a stored session in the gateway's durable ledger, admissions then worker executions
@@ -69,7 +69,7 @@ func endUnlessLedgerBusy(ctx context.Context, db *state.DB, sessionID string, se
 	if mayEnd {
 		return true
 	}
-	logger().Info(fmt.Sprintf("Preserving session %s during %s: the gateway's ledger still holds its turn", sessionID, endReason))
+	pkgLog().Info(fmt.Sprintf("Preserving session %s during %s: the gateway's ledger still holds its turn", sessionID, endReason))
 	return false
 }
 
@@ -94,10 +94,10 @@ func isGatewayOwnedSource(ctx context.Context, source string) bool {
 }
 
 // Drops the vault tokens this session unlocked, sibling sessions of the profile keeping theirs
-func lockVaultManagers(session *tuigateway.Session) {
+func lockVaultManagers(session *tuihost.Session) {
 	defer func() {
 		if failure := recover(); failure != nil {
-			logger().Debug("vault manager lock on session end failed", "exc_info", failureText(failure))
+			pkgLog().Debug("vault manager lock on session end failed", "exc_info", failureText(failure))
 		}
 	}()
 	if sid := session.Get("_sid"); truthy(sid) {
@@ -127,7 +127,7 @@ func closeSlashWorker(worker any) {
 }
 
 // Runs the end of session hooks, the memory commit and the row end once, mirroring the CLI exit path
-func finalizeSession(ctx context.Context, session *tuigateway.Session, endReason string) {
+func finalizeSession(ctx context.Context, session *tuihost.Session, endReason string) {
 	if session == nil || len(session.Fields()) == 0 || truthy(session.Get("_finalized")) {
 		return
 	}
@@ -186,7 +186,7 @@ func finalizeSession(ctx context.Context, session *tuigateway.Session, endReason
 	lifecycle := func(otherOwns bool) {
 		tuiOwnsLifecycle = !otherOwns
 		if otherOwns {
-			logger().Info(fmt.Sprintf("Preserving session %s during %s: another backend owns an active lease", sessionID, endReason))
+			pkgLog().Info(fmt.Sprintf("Preserving session %s during %s: another backend owns an active lease", sessionID, endReason))
 		}
 		if sessionID == "" {
 			return
@@ -242,13 +242,13 @@ func finalizeSession(ctx context.Context, session *tuigateway.Session, endReason
 var reclaimEndReasons = map[string]bool{"idle_timeout": true, "lru_evict": true, "ws_orphan_reap": true}
 
 // Broadcasts session.reclaimed when the backend reclaimed the session out from under its clients
-func announceSessionReclaimed(session *tuigateway.Session, endReason string) {
+func announceSessionReclaimed(session *tuihost.Session, endReason string) {
 	if !reclaimEndReasons[endReason] {
 		return
 	}
 	defer func() {
 		if failure := recover(); failure != nil {
-			logger().Debug("session.reclaimed broadcast failed", "exc_info", failureText(failure))
+			pkgLog().Debug("session.reclaimed broadcast failed", "exc_info", failureText(failure))
 		}
 	}()
 	broadcastGlobalEvent("session.reclaimed", map[string]any{
@@ -256,7 +256,7 @@ func announceSessionReclaimed(session *tuigateway.Session, endReason string) {
 }
 
 // Broadcasts approval.cancelled naming the pending gateway approvals an interrupt or teardown drops
-func announceCancelledGatewayApprovals(session *tuigateway.Session, reason, sessionID string) {
+func announceCancelledGatewayApprovals(session *tuihost.Session, reason, sessionID string) {
 	sessionKey := strOr(session.Get("session_key"))
 	if sessionKey == "" {
 		return
@@ -266,7 +266,7 @@ func announceCancelledGatewayApprovals(session *tuigateway.Session, reason, sess
 	func() {
 		defer func() {
 			if failure := recover(); failure != nil {
-				logger().Debug("list_gateway_approvals failed", "exc_info", failureText(failure))
+				pkgLog().Debug("list_gateway_approvals failed", "exc_info", failureText(failure))
 				failed = true
 			}
 		}()
@@ -286,7 +286,7 @@ func announceCancelledGatewayApprovals(session *tuigateway.Session, reason, sess
 	}
 	defer func() {
 		if failure := recover(); failure != nil {
-			logger().Debug("approval.cancelled broadcast failed", "exc_info", failureText(failure))
+			pkgLog().Debug("approval.cancelled broadcast failed", "exc_info", failureText(failure))
 		}
 	}()
 	broadcastGlobalEvent("approval.cancelled", map[string]any{"session_id": sessionID, "stored_session_id": sessionKey,
@@ -294,7 +294,7 @@ func announceCancelledGatewayApprovals(session *tuigateway.Session, reason, sess
 }
 
 // Finalizes a session, announces a reclaim and dropped approvals, unregisters its notifier and closes its agent
-func teardownSession(ctx context.Context, session *tuigateway.Session, endReason string) {
+func teardownSession(ctx context.Context, session *tuihost.Session, endReason string) {
 	if session == nil || len(session.Fields()) == 0 {
 		return
 	}
@@ -322,9 +322,9 @@ type agentCloser interface {
 var _ agentCloser = (*agent.AIAgent)(nil)
 
 // Stores a worker on a session that is still live under sid, else closes it
-func attachWorker(sid string, session *tuigateway.Session, worker any) {
+func attachWorker(sid string, session *tuihost.Session, worker any) {
 	sessionsLock.Lock()
-	if tuigateway.SessionRecord(sid) == session {
+	if tuihost.SessionRecord(sid) == session {
 		session.Set("slash_worker", worker)
 		sessionsLock.Unlock()
 		return
@@ -334,9 +334,9 @@ func attachWorker(sid string, session *tuigateway.Session, worker any) {
 }
 
 // Whether a live UI session still owns background delegations by its sid or, when it owns the row, its key
-func sessionHasActiveDelegations(ctx context.Context, sid string, session *tuigateway.Session) (active bool) {
+func sessionHasActiveDelegations(ctx context.Context, sid string, session *tuihost.Session) (active bool) {
 	if session == nil {
-		session = tuigateway.SessionRecord(sid)
+		session = tuihost.SessionRecord(sid)
 	}
 	if session == nil || len(session.Fields()) == 0 {
 		return false
@@ -373,7 +373,7 @@ func sessionHasActiveDelegations(ctx context.Context, sid string, session *tuiga
 	}
 	defer func() {
 		if failure := recover(); failure != nil {
-			logger().Debug(fmt.Sprintf("Failed to query active delegations for UI session %s", sid), "exc_info", failureText(failure))
+			pkgLog().Debug(fmt.Sprintf("Failed to query active delegations for UI session %s", sid), "exc_info", failureText(failure))
 			active = true
 		}
 	}()

@@ -10,7 +10,6 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
-	"strconv"
 	"strings"
 	"syscall"
 	"testing"
@@ -20,7 +19,7 @@ import (
 // Copies the build inputs of the module into dst, test files left out
 func liveCopyTree(t *testing.T, root, dst string) {
 	t.Helper()
-	for _, name := range []string{"go.mod", "go.sum", "cmd", "pkg", "third_party", "setup-icebath.sh", ".env.example", "cli-config.yaml.example", ".gitignore"} {
+	for _, name := range []string{"go.mod", "go.sum", "cmd", "pkg", "docker", "third_party", "setup-icebath.sh", ".env.example", "cli-config.yaml.example", ".gitignore"} {
 		src := filepath.Join(root, name)
 		err := filepath.WalkDir(src, func(path string, d fs.DirEntry, err error) error {
 			if err != nil {
@@ -138,7 +137,7 @@ func liveBuiltRevision(t *testing.T, env []string, binary string) string {
 }
 
 // A source install's own update lands on origin's next commit, rebuilds, and restarts its gateway on the new binary
-func TestLiveUpdateOfACheckoutInstallRebuildsAndRestartsItsGateway(t *testing.T) {
+func TestLiveUpdateLeavesASourceCheckoutAndItsGatewayAlone(t *testing.T) {
 	root, err := filepath.Abs(filepath.Join("..", ".."))
 	if err != nil {
 		t.Fatal(err)
@@ -178,10 +177,6 @@ func TestLiveUpdateOfACheckoutInstallRebuildsAndRestartsItsGateway(t *testing.T)
 	if version := liveRun(t, install, env, binary, "--version"); !strings.Contains(version, "Install method: git") {
 		t.Fatalf("version %s", version)
 	}
-	if check := liveRun(t, install, env, binary, "update", "--check"); !strings.Contains(check, "1 commit behind") {
-		t.Fatalf("update --check before the update: %s", check)
-	}
-
 	gatewayLog, err := os.Create(filepath.Join(tmp, "gateway.log"))
 	if err != nil {
 		t.Fatal(err)
@@ -207,54 +202,21 @@ func TestLiveUpdateOfACheckoutInstallRebuildsAndRestartsItsGateway(t *testing.T)
 		gateway.Process.Kill()
 	})
 	before := liveWaitGateway(t, home, first, 0)
-
-	update := liveRun(t, install, env, binary, "update", "--yes")
-	t.Log(update)
-	if strings.Contains(update, "did not restart running gateways") || strings.Contains(update, "did not finish") {
-		t.Fatalf("the update's own children reported debts\n%s", update)
-	}
-	if head := srGit(t, install, "rev-parse", "HEAD"); head != second {
-		t.Fatalf("install at %s, want %s", head, second)
-	}
-	if got := liveBuiltRevision(t, env, binary); got != second {
-		t.Fatalf("update left a binary built from %q, want %s", got, second)
-	}
-	if check := liveRun(t, install, env, binary, "update", "--check"); !strings.Contains(check, "Already up to date") {
-		t.Fatalf("update --check after the update: %s", check)
-	}
-
-	after := liveWaitGateway(t, home, second, before)
-	if syscall.Kill(before, 0) == nil {
-		t.Fatalf("the pre-update gateway %d still runs", before)
-	}
-	exe, err := os.Readlink(filepath.Join("/proc", strconv.Itoa(after), "exe"))
-	if err != nil || exe != binary {
-		t.Fatalf("restarted gateway %d runs %q (%v), want %s", after, exe, err, binary)
-	}
-
-	var receipt map[string]any
-	raw, err := os.ReadFile(filepath.Join(home, "logs", "update_receipts", "latest.json"))
-	if err != nil || json.Unmarshal(raw, &receipt) != nil {
-		t.Fatalf("receipt %q %v", raw, err)
-	}
-	if receipt["outcome"] != "success" {
-		t.Fatalf("receipt outcome %v\n%s", receipt["outcome"], raw)
-	}
-	if post, _ := receipt["post_update"].(map[string]any); post == nil || post["sha"] != second {
-		t.Fatalf("receipt post_update %v", receipt["post_update"])
-	}
-	if followups, _ := receipt["followups"].([]any); len(followups) != 0 {
-		logs, _ := os.ReadFile(filepath.Join(home, "logs", "update.log"))
-		errs, _ := os.ReadFile(filepath.Join(home, "logs", "errors.log"))
-		t.Fatalf("receipt owes %v\nupdate.log\n%s\nerrors.log\n%s", followups, logs, errs)
-	}
-	current := false
-	for _, row := range receipt["fleet"].([]any) {
-		if fleet, _ := row.(map[string]any); fleet["profile"] == "default" && fleet["state"] == "current" && fleet["code_sha"] == second {
-			current = true
+	for _, args := range [][]string{{"update", "--check"}, {"update", "--yes"}} {
+		cmd := exec.Command(binary, args...)
+		cmd.Dir, cmd.Env = install, env
+		out, err := cmd.CombinedOutput()
+		if err == nil || !strings.Contains(string(out), "is a source checkout") || !strings.Contains(string(out), "./setup-icebath.sh") {
+			t.Fatalf("%v on a source checkout: %v\n%s", args, err, out)
 		}
 	}
-	if !current {
-		t.Fatalf("receipt fleet %v", receipt["fleet"])
+	if head := srGit(t, install, "rev-parse", "HEAD"); head != first || head == second {
+		t.Fatalf("checkout moved to %s, want it left at %s", head, first)
+	}
+	if got := liveBuiltRevision(t, env, binary); got != first {
+		t.Fatalf("checkout binary rebuilt from %q, want it left at %s", got, first)
+	}
+	if syscall.Kill(before, 0) != nil {
+		t.Fatalf("the gateway %d of the checkout stopped", before)
 	}
 }

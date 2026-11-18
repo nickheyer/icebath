@@ -3,10 +3,10 @@ package provider
 import (
 	"context"
 	"fmt"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"log/slog"
 	"strings"
 	"sync"
+
+	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
@@ -168,7 +168,7 @@ func WithoutUnsupportedResponseFormat(ctx context.Context, extraBody *pyjson.Obj
 	if modelLabel == "" {
 		modelLabel = "model"
 	}
-	slog.Info(fmt.Sprintf("Auxiliary %s: %s (%s) does not accept response_format %s; sending without it "+
+	pkgLog().Info(fmt.Sprintf("Auxiliary %s: %s (%s) does not accept response_format %s; sending without it "+
 		"(schema enforcement degrades to prompt compliance)", label, routeLabel, modelLabel, pyrepr.Str(formatType)))
 	out := extraBody.Copy()
 	out.Delete("response_format")

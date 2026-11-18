@@ -20,6 +20,7 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/config"
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
@@ -172,14 +173,14 @@ func resolveWorkerCLIToolsets(ctx context.Context, icebathHome string) (toolsets
 	}
 	defer func() {
 		if r := recover(); r != nil {
-			log.Debug(fmt.Sprintf("kanban worker: could not resolve CLI toolsets for ICEBATH_HOME=%s (%v)", pyrepr.Repr(icebathHome), r))
+			pkgLog().Debug(fmt.Sprintf("kanban worker: could not resolve CLI toolsets for ICEBATH_HOME=%s (%v)", pyrepr.Repr(icebathHome), r))
 			toolsets = nil
 		}
 	}()
 	scoped := workerProfileScope(ctx, icebathHome, true)
 	cfg, err := config.LoadContext(scoped, icebathHome, os.LookupEnv)
 	if err != nil {
-		log.Debug(fmt.Sprintf("kanban worker: could not resolve CLI toolsets for ICEBATH_HOME=%s (%s)", pyrepr.Repr(icebathHome), pyrepr.ExceptionMessage(err)))
+		pkgLog().Debug(fmt.Sprintf("kanban worker: could not resolve CLI toolsets for ICEBATH_HOME=%s (%s)", pyrepr.Repr(icebathHome), pyrepr.ExceptionMessage(err)))
 		return nil
 	}
 	for name := range tools.Default.PlatformTools(scoped, "", cfg, "cli", tools.PlatformToolsOptions{}) {
@@ -207,13 +208,13 @@ func retagLegacyWorkerSessions(ctx context.Context, workspacesRootPath string) {
 	}
 	db, err := state.Acquire(ctx, "")
 	if err != nil {
-		log.Debug(fmt.Sprintf("kanban worker: legacy session retag skipped (%s)", pyrepr.ExceptionMessage(err)))
+		pkgLog().Debug(fmt.Sprintf("kanban worker: legacy session retag skipped (%s)", pyrepr.ExceptionMessage(err)))
 		return
 	}
 	_, err = db.RetagKanbanWorkerSessions(ctx, workspacesRootPath)
 	state.ReleaseOrClose(db)
 	if err != nil {
-		log.Debug(fmt.Sprintf("kanban worker: legacy session retag skipped (%s)", pyrepr.ExceptionMessage(err)))
+		pkgLog().Debug(fmt.Sprintf("kanban worker: legacy session retag skipped (%s)", pyrepr.ExceptionMessage(err)))
 		return
 	}
 	retaggedWorkspaceRootsMu.Lock()
@@ -441,11 +442,12 @@ func RunDaemon(ctx context.Context, o DaemonOptions) {
 	}
 }
 
-// One daemon tick that prints any failure as a traceback instead of ending the loop
+// One daemon tick that reports any failure on one line and logs its detail instead of ending the loop
 func daemonTick(ctx context.Context, o DaemonOptions) {
 	defer func() {
 		if r := recover(); r != nil {
-			fmt.Fprintf(o.Stderr, "Traceback (most recent call last):\n%s%v\n", debug.Stack(), r)
+			fmt.Fprintf(o.Stderr, "kanban dispatcher tick failed: %v\n", r)
+			pkgLog().Error(fmt.Sprintf("kanban dispatcher tick failed: %v", r), "stack", string(debug.Stack()))
 		}
 	}()
 	maxInProgress := ResolveMaxInProgress(ConfiguredMaxInProgress(ctx))
@@ -458,7 +460,8 @@ func daemonTick(ctx context.Context, o DaemonOptions) {
 		return err
 	})
 	if err != nil {
-		fmt.Fprintf(o.Stderr, "Traceback (most recent call last):\n%s: %s\n", pyrepr.ExceptionName(err), pyrepr.ExceptionMessage(err))
+		fmt.Fprintf(o.Stderr, "kanban dispatcher tick failed: %s\n", err)
+		pkgLog().Error("kanban dispatcher tick failed: "+err.Error(), "error_chain", errchain.Text(err))
 		return
 	}
 	if o.OnTick != nil {

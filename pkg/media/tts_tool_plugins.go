@@ -42,10 +42,10 @@ func lookupPluginTTSProvider(ctx context.Context, key string, discover, retry bo
 	return p, err
 }
 
-// Normalized provider a plugin may service, empty for built ins, nous and same named command providers
+// Normalized provider a plugin may service, empty for built ins and same named command providers
 func pluginRouteKey(provider string, ttsConfig map[string]any) string {
 	key := pystr.Strip(pystr.Lower(provider))
-	if key == "" || builtinTTSProviders[key] || key == NousManagedProvider {
+	if key == "" || builtinTTSProviders[key] {
 		return ""
 	}
 	if isCommandProviderConfig(getNamedTTSProviderConfig(ttsConfig, key)) {
@@ -96,7 +96,7 @@ func pluginPCMStreamingProvider(ctx context.Context, provider string, ttsConfig 
 		return nil
 	})
 	if err != nil {
-		ttsLog().Debug(fmt.Sprintf("plugin TTS streaming lookup failed for '%s'", key), "error", err)
+		pkgLog().Debug(fmt.Sprintf("plugin TTS streaming lookup failed for '%s'", key), "error", err)
 		return nil, 0, false
 	}
 	if !usable {
@@ -104,7 +104,7 @@ func pluginPCMStreamingProvider(ctx context.Context, provider string, ttsConfig 
 	}
 	f, ok := pyRealNumber(rate)
 	if _, isBool := rate.(bool); isBool || !ok || math.IsInf(f, 0) || math.IsNaN(f) || f < 1 {
-		ttsLog().Warn(fmt.Sprintf("TTS provider '%s' sets streams_pcm without a valid stream_sample_rate (%s); using per-sentence synthesis instead", key, pyrepr.Repr(rate)))
+		pkgLog().Warn(fmt.Sprintf("TTS provider '%s' sets streams_pcm without a valid stream_sample_rate (%s); using per-sentence synthesis instead", key, pyrepr.Repr(rate)))
 		return nil, 0, false
 	}
 	return plugin, int(f), true
@@ -118,7 +118,7 @@ func dispatchToPluginTTSProvider(ctx context.Context, text, outputPath, provider
 	}
 	plugin, err := lookupPluginTTSProvider(ctx, key, true, true)
 	if err != nil {
-		ttsLog().Debug(fmt.Sprintf("tts plugin dispatch skipped (discovery failed): %v", err))
+		pkgLog().Debug(fmt.Sprintf("tts plugin dispatch skipped (discovery failed): %v", err))
 		return "", nil
 	}
 	if plugin == nil {
@@ -128,7 +128,7 @@ func dispatchToPluginTTSProvider(ctx context.Context, text, outputPath, provider
 	if fmtValue := dictGetDefault(ttsConfig, "output_format", defaultCommandTTSOutputFormat); pyTruthy(fmtValue) {
 		format = pystr.Lower(pyrepr.Str(fmtValue))
 	}
-	ttsLog().Info(fmt.Sprintf("Generating speech with plugin TTS provider '%s'...", key))
+	pkgLog().Info(fmt.Sprintf("Generating speech with plugin TTS provider '%s'...", key))
 	opts := pluginVoiceKwargs(ttsConfig)
 	opts.Format = format
 	var written string
@@ -161,7 +161,7 @@ func pluginProviderIsVoiceCompatible(ctx context.Context, provider string) bool 
 		return nil
 	})
 	if err != nil {
-		ttsLog().Debug(fmt.Sprintf("tts plugin voice_compatible check failed for '%s': %v", key, err))
+		pkgLog().Debug(fmt.Sprintf("tts plugin voice_compatible check failed for '%s': %v", key, err))
 		return false
 	}
 	return compatible

@@ -57,7 +57,7 @@ func reconnectNeedsAttention(ctx context.Context, info map[string]any, now float
 // Whether a token authenticated platform holds a usable bot credential, true for platforms without one
 func platformHasBotCredential(ctx context.Context, platform gateway.Platform, platformConfig *gateway.PlatformConfig) bool {
 	if platform == gateway.PlatformWhatsApp {
-		session := home.HermesDir(home.Dir(ctx), "platforms/whatsapp/session", "whatsapp/session")
+		session := home.IcebathDir(home.Dir(ctx), "platforms/whatsapp/session", "whatsapp/session")
 		if raw, ok := platformConfig.Extra["session_path"]; ok {
 			session = pyrepr.Str(raw)
 		}
@@ -93,7 +93,7 @@ func disposeUnusedAdapter(ctx context.Context, adapter gateway.PlatformAdapter) 
 		if ctx.Err() != nil {
 			return ctx.Err()
 		}
-		runLog().Debug("Adapter dispose raised on unowned adapter "+pyrepr.Repr(adapter.Base().Name()), "error", err)
+		pkgLog().Debug("Adapter dispose raised on unowned adapter "+pyrepr.Repr(adapter.Base().Name()), "error", err)
 	}
 	return nil
 }

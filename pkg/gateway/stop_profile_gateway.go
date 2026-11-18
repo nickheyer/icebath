@@ -5,7 +5,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"log/slog"
 	"math"
 	"os"
 	"os/exec"
@@ -46,7 +45,7 @@ var (
 
 // Stops only this profile's own gateway through its pid file then reaps orphans, true when a process was stopped
 func StopProfileGateway(ctx context.Context) (bool, error) {
-	pid, owned := ownedGatewayPID(ctx, "", processHermesHome())
+	pid, owned := ownedGatewayPID(ctx, "", processIcebathHome())
 	if !owned {
 		_, running, err := statusGetRunningPid("", true)
 		if err != nil {
@@ -87,7 +86,7 @@ func StopProfileGateway(ctx context.Context) (bool, error) {
 		stopRemovePidFile()
 	}
 	if _, err := stopReapOrphans(ctx, map[int]bool{pid: true}, 0); err != nil {
-		slog.Debug(fmt.Sprintf("orphan reap after stop_profile_gateway failed: %v", err))
+		pkgLog().Debug(fmt.Sprintf("orphan reap after stop_profile_gateway failed: %v", err))
 	}
 	return true, nil
 }
@@ -230,7 +229,7 @@ func forceKillSurvivors(survivors []int, kill func(pid int) error) {
 		kill = func(pid int) error { return stopKill(pid, true) }
 	}
 	for _, pid := range survivors {
-		slog.Warn(fmt.Sprintf("Gateway PID %d did not exit within %.0fs of the stop request (SIGTERM, or the planned-stop "+
+		pkgLog().Warn(fmt.Sprintf("Gateway PID %d did not exit within %.0fs of the stop request (SIGTERM, or the planned-stop "+
 			"marker on Windows) — sending SIGKILL. A kill during a WAL checkpoint can corrupt state.db; "+
 			"the next start will run an integrity check.", pid, orphanExitGraceSeconds))
 		_ = kill(pid)

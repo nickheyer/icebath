@@ -148,7 +148,7 @@ func checkpointExcText(err error) string {
 	if errors.As(err, &pe) {
 		return pe.Msg
 	}
-	return pyOSErrorText(err)
+	return osErrorText(err)
 }
 
 // Resets the per turn dedup so the next mutation snapshots again
@@ -168,7 +168,7 @@ func (m *CheckpointManager) RecordAgentWrite(filePath string) {
 	if !m.Enabled {
 		return
 	}
-	log := toolsLogger(m.env)
+	log := envLog(m.env)
 	fail := func(err error) {
 		log.Debug(fmt.Sprintf("record_agent_write failed for %s: %s", filePath, checkpointExcText(err)))
 	}
@@ -291,7 +291,7 @@ func (m *CheckpointManager) EnsureCheckpoint(workingDir, reason string) (taken b
 	if !m.Enabled {
 		return false
 	}
-	log := toolsLogger(m.env)
+	log := envLog(m.env)
 	absDir := checkpointNormalizePath(workingDir)
 	if absDir == "/" || absDir == checkpointUserHome() {
 		log.Debug(fmt.Sprintf("Checkpoint skipped: directory too broad (%s)", absDir))
@@ -659,7 +659,7 @@ func (m *CheckpointManager) restore(workingDir, commitHash, filePath string, saf
 				continue
 			}
 			if err := checkpointRemove(target); err != nil {
-				toolsLogger(m.env).Warn(fmt.Sprintf("Safe restore: could not remove %s: %s", rel, pyOSErrorText(err)))
+				envLog(m.env).Warn(fmt.Sprintf("Safe restore: could not remove %s: %s", rel, osErrorText(err)))
 				failedDeletes = append(failedDeletes, rel)
 			}
 		}
@@ -792,7 +792,7 @@ func (m *CheckpointManager) WorkingDirForPath(filePath string) (string, error) {
 
 // Takes one snapshot into the project ref, false when skipped or failed and an error for escaped I/O failures
 func (m *CheckpointManager) take(workingDir, reason string, prune bool) (bool, error) {
-	log := toolsLogger(m.env)
+	log := envLog(m.env)
 	store := m.store()
 	initErr, err := initCheckpointStore(m.env, store, workingDir)
 	if err != nil {
@@ -919,7 +919,7 @@ func (m *CheckpointManager) dropOversizeFromIndex(store, workingDir, indexFile s
 	if len(oversize) == 0 {
 		return
 	}
-	toolsLogger(m.env).Debug(fmt.Sprintf("Checkpoint: dropping %d oversize file(s) (>%d MB) from index", len(oversize), m.MaxFileSizeMB))
+	envLog(m.env).Debug(fmt.Sprintf("Checkpoint: dropping %d oversize file(s) (>%d MB) from index", len(oversize), m.MaxFileSizeMB))
 	const batch = 200
 	for i := 0; i < len(oversize); i += batch {
 		chunk := oversize[i:min(i+batch, len(oversize))]
@@ -930,7 +930,7 @@ func (m *CheckpointManager) dropOversizeFromIndex(store, workingDir, indexFile s
 
 // Applies the snapshot count budget and one size round on the take path, deferring the gc to the periodic prune
 func (m *CheckpointManager) prune(store, workingDir, ref string) {
-	log := toolsLogger(m.env)
+	log := envLog(m.env)
 	pruner := &CheckpointPruner{
 		RunGit:     checkpointGitRunner(m.env),
 		Store:      store,

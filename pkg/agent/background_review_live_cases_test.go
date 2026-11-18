@@ -15,7 +15,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/tools"
 )
 
-// Live agent carrying what the review spawn and the turn wrapper read, the hermes _bare_agent
+// Live agent carrying what the review spawn and the turn wrapper read, the bare agent
 func brLiveAgent(t *testing.T) *AIAgent {
 	t.Helper()
 	t.Setenv("ICEBATH_HOME", t.TempDir())
@@ -51,7 +51,7 @@ func brForkConversation(t *testing.T, fn func(ctx context.Context, fork *AIAgent
 	t.Cleanup(func() { runReviewForkConversation = prev })
 }
 
-// Captures review workers instead of starting them, the hermes CapturingThread
+// Captures review workers instead of starting them, the CapturingThread
 func brCaptureWorkers(t *testing.T) *[]func() {
 	t.Helper()
 	targets := &[]func(){}
@@ -61,7 +61,7 @@ func brCaptureWorkers(t *testing.T) *[]func() {
 	return targets
 }
 
-// Runs review workers inline at spawn, the hermes ImmediateThread
+// Runs review workers inline at spawn, the ImmediateThread
 func brImmediateWorkers(t *testing.T) {
 	t.Helper()
 	prev := startReviewWorker
@@ -169,14 +169,13 @@ func (c *brRelayRecorder) ReleaseConversation(lease *tools.ConversationLease) {
 	c.real.ReleaseConversation(lease)
 }
 
-// Installs the relay recorder and the task run recorder, the hermes _install_relay_recorder
+// Installs the relay recorder in place of the live coordinator
 func brInstallRelayRecorder(t *testing.T, run *backgroundReviewRun) *brRelayRecorder {
 	t.Helper()
 	rec := &brRelayRecorder{real: tools.RelayCoordinator, run: run}
-	prevCoord, prevStart := relayCoordinatorFn, startTaskRunFn
+	prevCoord := relayCoordinatorFn
 	relayCoordinatorFn = func() relayTurnCoordinator { return rec }
-	startTaskRunFn = func(context.Context, *tools.Env, string, string, string, string) { rec.record("start_task_run") }
-	t.Cleanup(func() { relayCoordinatorFn, startTaskRunFn = prevCoord, prevStart })
+	t.Cleanup(func() { relayCoordinatorFn = prevCoord })
 	return rec
 }
 
@@ -366,7 +365,7 @@ func TestLiveTurnWaitsForReviewExitBeforeRelayAndTurnContext(t *testing.T) {
 	if !started || len(before) != 0 {
 		t.Fatalf("wait started %v relay calls before ack %v", started, before)
 	}
-	if calls := relay.snapshot(); !brSameCalls(calls, brRelayCall{"acquire", true}, brRelayCall{"begin", true}, brRelayCall{"start_task_run", true}) {
+	if calls := relay.snapshot(); !brSameCalls(calls, brRelayCall{"acquire", true}, brRelayCall{"begin", true}) {
 		t.Fatalf("relay calls %v", calls)
 	}
 	seenMu.Lock()
@@ -414,7 +413,7 @@ func TestLiveTurnCancelsReviewDuringStartupBeforeProvider(t *testing.T) {
 	if !boundaryReached.IsSet() || len(providerCalls) != 0 || !run.requestDone.IsSet() || !live.boundary {
 		t.Fatalf("boundary %v provider %v done %v live %+v", boundaryReached.IsSet(), providerCalls, run.requestDone.IsSet(), live)
 	}
-	if calls := relay.snapshot(); !brSameCalls(calls, brRelayCall{"acquire", true}, brRelayCall{"begin", true}, brRelayCall{"start_task_run", true}) {
+	if calls := relay.snapshot(); !brSameCalls(calls, brRelayCall{"acquire", true}, brRelayCall{"begin", true}) {
 		t.Fatalf("relay calls %v", calls)
 	}
 }
@@ -467,7 +466,7 @@ func TestLiveTurnProceedsWhenReviewAcknowledgementTimesOut(t *testing.T) {
 	if len(boundaryCalls) != 1 || !live.boundary {
 		t.Fatalf("boundary %v live %+v", boundaryCalls, live)
 	}
-	if calls := relay.snapshot(); !brSameCalls(calls, brRelayCall{"acquire", false}, brRelayCall{"begin", false}, brRelayCall{"start_task_run", false}) {
+	if calls := relay.snapshot(); !brSameCalls(calls, brRelayCall{"acquire", false}, brRelayCall{"begin", false}) {
 		t.Fatalf("relay calls %v", calls)
 	}
 	if agent.sessionID != "test-session" {
@@ -494,7 +493,7 @@ func TestLiveTurnInterruptsLegacyReviewButKeepsForegroundPriority(t *testing.T) 
 	if len(boundaryCalls) != 1 || !live.boundary {
 		t.Fatalf("boundary %v live %+v", boundaryCalls, live)
 	}
-	if calls := relay.snapshot(); !brSameCalls(calls, brRelayCall{"acquire", false}, brRelayCall{"begin", false}, brRelayCall{"start_task_run", false}) {
+	if calls := relay.snapshot(); !brSameCalls(calls, brRelayCall{"acquire", false}, brRelayCall{"begin", false}) {
 		t.Fatalf("relay calls %v", calls)
 	}
 	if agent.sessionID != "test-session" {

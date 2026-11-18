@@ -38,7 +38,7 @@ func installOwnerIdentityDoubles(t *testing.T) {
 		}
 		return parts, true
 	}
-	logins := map[string]bool{"basic": true, "nous": true, "self-hosted": true, "session-token": true, "server-internal": true}
+	logins := map[string]bool{"basic": true, "self-hosted": true, "session-token": true, "server-internal": true}
 	ownerLogin := func(provider, user string) bool {
 		if provider == "local" {
 			return strings.TrimSpace(user) == testHostOwner
@@ -63,7 +63,7 @@ func installOwnerIdentityDoubles(t *testing.T) {
 			return true
 		}
 		provider, user, sep := strings.Cut(text, ":")
-		return sep && strings.TrimSpace(user) != "" && provider != "nous" && ownerLogin(provider, user)
+		return sep && strings.TrimSpace(user) != "" && ownerLogin(provider, user)
 	}
 	OwnersAgree = func(first, second any) bool { return SameOwner(first, second) || SameOwner(second, first) }
 	if MessagingPlatformLabels == nil {
@@ -231,8 +231,8 @@ func TestClientHistoryRowsAndLegacyValidation(t *testing.T) {
 	if ClientHistoryRow(pyjson.ObjectOf("source", "mobile", "session_key", "k")) {
 		t.Fatal("routed client row")
 	}
-	nous := pyjson.ObjectOf("source", "desktop", "user_id", "nous:acct")
-	if label, _ := LegacyAccountLabel(nous); !label || db.ValidateLegacyRow(nous, nil) != nil {
+	retired := pyjson.ObjectOf("source", "desktop", "user_id", "nous:acct")
+	if label, _ := LegacyAccountLabel(retired); !label || db.ValidateLegacyRow(retired, nil) != nil {
 		t.Fatal("nous account label blocks adoption")
 	}
 	for name, row := range map[string]*pyjson.Object{

@@ -17,9 +17,6 @@ import (
 // Distro libatomic repair Node's staged verification asks for, replaced by tests
 var tryInstallLibatomic = TryInstallLibatomic
 
-// Managed interpreter signing on macOS, replaced by tests
-var signManagedPython = SignManagedPython
-
 // Uv is astral's prebuilt uv everywhere upstream builds it and the termux main repo deb on bionic
 type Uv struct {
 	bionicDebArm
@@ -44,17 +41,13 @@ func (p *Uv) FetchURL(version, target string) (string, error) {
 	}
 	triple, ok := rustTriple[target]
 	if !ok {
-		return "", keyError(target)
+		return "", missingKey("no download for target " + target)
 	}
 	ext := "tar.gz"
 	if strings.HasPrefix(target, "win32") {
 		ext = "zip"
 	}
 	return fmt.Sprintf("https://github.com/astral-sh/uv/releases/download/%s/uv-%s.%s", version, triple, ext), nil
-}
-
-func (p *Uv) LatestVersions(target, locked string) ([]string, error) {
-	return GithubReleaseTags("astral-sh/uv", "")
 }
 
 // POSIX interpreter name the pinned Windows Python also answers to
@@ -77,29 +70,10 @@ func newPython() *Python {
 			DebName:    "python",
 			MainBinRel: "bin/python3.14",
 		},
-		BionicURL: "https://packages.termux.dev/apt/termux-main/pool/main/p/python/python_3.14.6-1_aarch64.deb",
+		BionicURL: "https://packages.termux.dev/apt/termux-main/pool/main/p/python/python_3.14.10_aarch64.deb",
 	}
 	p.bind(p)
 	return p
-}
-
-// Signs on macOS, drops the unloadable x64 VC runtime on ARM64 Windows and stages the python3 copy on Windows
-func (p *Python) Stage(store *Store, staged, version, target string) error {
-	if err := p.bionicDebArm.Stage(store, staged, version, target); err != nil {
-		return err
-	}
-	if bin := p.dispatch().Binary(staged, target); bin != "" && runtime.GOOS == "darwin" {
-		signManagedPython(bin)
-	}
-	if target == "win32-arm64" {
-		if err := os.Remove(filepath.Join(staged, "vcruntime140_1.dll")); err != nil && !errors.Is(err, os.ErrNotExist) {
-			return err
-		}
-	}
-	if strings.HasPrefix(target, "win32") {
-		return copy2(filepath.Join(staged, "python.exe"), filepath.Join(staged, WindowsPython3))
-	}
-	return nil
 }
 
 func (p *Python) Verify(entry, target string) string {
@@ -131,25 +105,10 @@ func (p *Python) FetchURL(version, target string) (string, error) {
 	}
 	triple, ok := rustTriple[target]
 	if !ok {
-		return "", keyError(target)
+		return "", missingKey("no download for target " + target)
 	}
 	return "https://github.com/astral-sh/python-build-standalone/releases/download/" +
 		fmt.Sprintf("%s/cpython-%s+%s-%s-install_only.tar.gz", tag, pyver, tag, triple), nil
-}
-
-// Keeps the locked minor line and takes the advertised asset's patch and build, bionic staying a manual pin
-func (p *Python) LatestVersions(target, locked string) ([]string, error) {
-	if target == bionicTarget || locked == "" || !strings.Contains(locked, "+") {
-		return nil, nil
-	}
-	pyver, _ := partition(locked, "+")
-	parts := strings.Split(pyver, ".")
-	minor := strings.Join(parts[:min(2, len(parts))], ".")
-	triple, ok := rustTriple[target]
-	if !ok {
-		return nil, keyError(target)
-	}
-	return PbsVersions(minor, triple)
 }
 
 // Nodejs is nodejs.org for glibc, mac and Windows, unofficial builds for musl and the termux deb on bionic
@@ -172,11 +131,11 @@ func newNodejs() *Nodejs {
 
 func (p *Nodejs) FetchURL(version, target string) (string, error) {
 	if target == bionicTarget {
-		return fmt.Sprintf("https://packages.termux.dev/apt/termux-main/pool/main/n/nodejs/nodejs_%s-1_aarch64.deb", version), nil
+		return fmt.Sprintf("https://packages.termux.dev/apt/termux-main/pool/main/n/nodejs/nodejs_%s_aarch64.deb", version), nil
 	}
 	plat, ok := nodePlat[target]
 	if !ok {
-		return "", keyError(target)
+		return "", missingKey("no download for target " + target)
 	}
 	ext := "tar.xz"
 	if strings.HasPrefix(target, "win32") {
@@ -187,10 +146,6 @@ func (p *Nodejs) FetchURL(version, target string) (string, error) {
 		base = "https://unofficial-builds.nodejs.org/download/release"
 	}
 	return fmt.Sprintf("%s/v%s/node-v%s-%s.%s", base, version, version, plat, ext), nil
-}
-
-func (p *Nodejs) LatestVersions(target, locked string) ([]string, error) {
-	return NodeLatestVersions()
 }
 
 // Installs the host libatomic official Linux Node needs, then re-probes, never from inspection paths
@@ -306,7 +261,7 @@ func (p *Npm) Unpack(archive, staged, target string) error {
 	}
 	entryName, present := fact["entry"]
 	if !present {
-		return keyError("entry")
+		return missingKey("the node install record has no entry")
 	}
 	nodeBin := node.Binary(location.Store.Entry(pyrepr.Str(entryName)), target)
 	if nodeBin == "" || !isRegularFile(nodeBin) {
@@ -381,13 +336,24 @@ func (p *Npm) unpackBionic(archive, staged string) error {
 	return nil
 }
 
-func (p *Npm) LatestVersions(target, locked string) ([]string, error) {
-	tags, err := NpmDistTags("npm")
-	if err != nil {
-		return nil, err
+// Managed interpreter signing on macOS, replaced by tests
+var signManagedPython = SignManagedPython
+
+// Signs on macOS, drops the unloadable x64 VC runtime on ARM64 Windows and stages the python3 copy on Windows
+func (p *Python) Stage(store *Store, staged, version, target string) error {
+	if err := p.bionicDebArm.Stage(store, staged, version, target); err != nil {
+		return err
 	}
-	if latest := tags["latest"]; pyrepr.Truthy(latest) {
-		return []string{pyrepr.Str(latest)}, nil
+	if bin := p.dispatch().Binary(staged, target); bin != "" && runtime.GOOS == "darwin" {
+		signManagedPython(bin)
 	}
-	return nil, nil
+	if target == "win32-arm64" {
+		if err := os.Remove(filepath.Join(staged, "vcruntime140_1.dll")); err != nil && !errors.Is(err, os.ErrNotExist) {
+			return err
+		}
+	}
+	if strings.HasPrefix(target, "win32") {
+		return copy2(filepath.Join(staged, "python.exe"), filepath.Join(staged, WindowsPython3))
+	}
+	return nil
 }

@@ -13,7 +13,7 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/agent"
 	"github.com/nickheyer/icebath/pkg/state"
-	"github.com/nickheyer/icebath/pkg/tuigateway"
+	"github.com/nickheyer/icebath/pkg/tuihost"
 )
 
 type bareBusyAgent struct{}
@@ -44,8 +44,8 @@ func (a *redirectingBusyAgent) Redirect(text string) bool {
 
 func (a *redirectingBusyAgent) SupportsActiveTurnRedirect() bool { return true }
 
-// Running session record of the hermes fixture, holding the given agent and extra fields
-func busySession(agentObj any, extra map[string]any) *tuigateway.Session {
+// Running session record of the test fixture, holding the given agent and extra fields
+func busySession(agentObj any, extra map[string]any) *tuihost.Session {
 	if agentObj == nil {
 		agentObj = &bareBusyAgent{}
 	}
@@ -54,7 +54,7 @@ func busySession(agentObj any, extra map[string]any) *tuigateway.Session {
 	for k, v := range extra {
 		fields[k] = v
 	}
-	return tuigateway.NewSession(fields)
+	return tuihost.NewSession(fields)
 }
 
 // Isolated home whose display config picks the busy mode and whose store holds a compression lock when asked
@@ -122,7 +122,7 @@ func busyResult(t *testing.T, resp map[string]any) map[string]any {
 }
 
 // Text of the queued prompt envelope of a session
-func queuedPromptText(session *tuigateway.Session) any {
+func queuedPromptText(session *tuihost.Session) any {
 	q, _ := session.Get("queued_prompt").(map[string]any)
 	return q["text"]
 }
@@ -183,12 +183,12 @@ func TestBusyQueuedDrainForcesQueueRegardless(t *testing.T) {
 }
 
 // Sends one correction RPC for a registered compressing session through the request handler
-func busyCorrectionRPC(t *testing.T, method string, agentObj any) (map[string]any, *tuigateway.Session) {
+func busyCorrectionRPC(t *testing.T, method string, agentObj any) (map[string]any, *tuihost.Session) {
 	t.Helper()
 	h := busyHome(t, "", true)
 	session := busySession(agentObj, map[string]any{"profile_home": h})
-	tuigateway.SetSessionRecord("sid", session)
-	defer tuigateway.SetSessionRecord("sid", nil)
+	tuihost.SetSessionRecord("sid", session)
+	defer tuihost.SetSessionRecord("sid", nil)
 	return handleRequest(context.Background(), map[string]any{"id": "r1", "method": method,
 		"params": map[string]any{"session_id": "sid", "text": "follow-up"}}), session
 }
@@ -249,7 +249,7 @@ func TestSubmitDuringManualCompressIsQueuedAndReplyPersists(t *testing.T) {
 	}
 	t.Cleanup(func() { compressNow = prevCompress })
 	prevRun := runPromptSubmit
-	runPromptSubmit = func(_ context.Context, _ any, _ string, session *tuigateway.Session, text any, _ promptSubmitOptions) bool {
+	runPromptSubmit = func(_ context.Context, _ any, _ string, session *tuihost.Session, text any, _ promptSubmitOptions) bool {
 		unlock := lockHistory(session)
 		hist := append([]any{}, historyList(session.Get("history"))...)
 		ver := intOr(session.Get("history_version"))
@@ -268,8 +268,8 @@ func TestSubmitDuringManualCompressIsQueuedAndReplyPersists(t *testing.T) {
 	}
 	rec := &recordingTransport{}
 	session := busySession(a, map[string]any{"running": false, "history": history, "transport": rec})
-	tuigateway.SetSessionRecord("sid", session)
-	t.Cleanup(func() { tuigateway.SetSessionRecord("sid", nil) })
+	tuihost.SetSessionRecord("sid", session)
+	t.Cleanup(func() { tuihost.SetSessionRecord("sid", nil) })
 
 	done := make(chan map[string]any, 1)
 	go func() { done <- lookupMethod("session.compress")(ctx, "r1", map[string]any{"session_id": "sid"}) }()

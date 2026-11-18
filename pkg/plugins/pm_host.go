@@ -6,7 +6,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/pm"
 )
 
-// Version floor of a raw manifest, requires_icebath first and the upstream requires_hermes spelling after it
+// Version floor of a raw manifest, requires_icebath first and the retired key spelling after it
 func manifestRequires(manifest map[string]any) string {
 	if spec := strings.TrimSpace(scalarString(manifest["requires_icebath"])); spec != "" {
 		return spec

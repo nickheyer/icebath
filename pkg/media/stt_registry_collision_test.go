@@ -38,7 +38,7 @@ func TestTranscriptionPluginTakingABuiltinNameIsIgnoredWithAWarning(t *testing.T
 	}
 	want := "Transcription provider 'openai' shadows a built-in name; registration ignored. " +
 		"Built-in STT providers (deepinfra, elevenlabs, groq, local, local_command, mistral, openai, xai) always win — pick a different name."
-	if !strings.Contains(logs.String(), want) || !strings.Contains(logs.String(), "logger=agent.transcription_registry") {
+	if !strings.Contains(logs.String(), want) || !strings.Contains(logs.String(), "logger=media") {
 		t.Fatalf("collision log %q", logs.String())
 	}
 	if got := GetTranscriptionProvider(context.Background(), "openai", ""); got != nil {

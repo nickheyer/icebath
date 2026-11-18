@@ -2,5 +2,5 @@
 
 package browser
 
-// Opens no root pipe, the child mode cases being posix only like their hermes platforms marks
+// Opens no root pipe, the child mode cases being posix only like their platforms marks
 func startChildGuard() func() { return func() {} }

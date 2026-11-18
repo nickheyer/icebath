@@ -51,7 +51,7 @@ type recoveryRunOptions struct {
 	DevNull  bool
 }
 
-// Recovery command runner, replaced by hermes tests
+// Recovery command runner, replaced by tests
 var recoveryRun = runRecoveryCommand
 
 // Runs argv capturing text output, nil when it cannot start or outlives its timeout

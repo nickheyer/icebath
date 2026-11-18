@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"log/slog"
 	"net/http"
 	"runtime/debug"
 	"strings"
@@ -163,7 +162,7 @@ func (a *DiscordAdapter) replyReferenceForSend(replyTo string, ch *discordgo.Cha
 	}
 	ref, err := messageReferenceFromIDs(replyTo, ch)
 	if err != nil {
-		slog.Debug(fmt.Sprintf("Could not build reply-to reference: %s", err))
+		pkgLog().Debug(fmt.Sprintf("Could not build reply-to reference: %s", err))
 		return nil
 	}
 	return ref
@@ -207,12 +206,12 @@ func (a *DiscordAdapter) Send(ctx context.Context, chatID, content, replyTo stri
 	}
 	notify := metadata != nil && pyrepr.Truthy(metadata["notify"])
 	if pystr.Strip(content) == "" {
-		slog.Warn(fmt.Sprintf("[%s] Dropped empty message to chat=%s (caller bug). Call site:\n%s", a.Name(), chatID, debug.Stack()))
+		pkgLog().Warn(fmt.Sprintf("[%s] Dropped empty message to chat=%s (caller bug). Call site:\n%s", a.Name(), chatID, debug.Stack()))
 		return a.recordResponseAsync(ctx, replyTo, gateway.SendResult{Success: false, Error: "Refusing to send empty message"}, content, notify, metadata), nil
 	}
 	result, err := a.sendInner(ctx, chatID, content, replyTo, metadata, notify)
 	if err != nil {
-		slog.Error(fmt.Sprintf("[%s] Failed to send Discord message: %s", a.Name(), err))
+		pkgLog().Error(fmt.Sprintf("[%s] Failed to send Discord message: %s", a.Name(), err))
 		if isDiscordTransportError(err) {
 			result = gateway.SendResult{Success: false, Error: "send_path_degraded", Retryable: true}
 		} else {
@@ -260,7 +259,7 @@ func (a *DiscordAdapter) sendInner(ctx context.Context, chatID, content, replyTo
 			if chunkRef == nil || !isReplyReferenceRejected(err) {
 				return gateway.SendResult{}, err
 			}
-			slog.Warn(fmt.Sprintf("[%s] Reply target %s rejected the reply reference; retrying send without reply reference", a.Name(), replyTo))
+			pkgLog().Warn(fmt.Sprintf("[%s] Reply target %s rejected the reply reference; retrying send without reply reference", a.Name(), replyTo))
 			reference = nil
 			if msg, err = a.channelSend(ctx, ch.ID, chunk, nil); err != nil {
 				return gateway.SendResult{}, err
@@ -353,7 +352,7 @@ func (a *DiscordAdapter) sendToForum(ctx context.Context, forum *discordgo.Chann
 	}
 	ft, err := a.forumCreateThread(ctx, forum.ID, threadName, starter, nil)
 	if err != nil {
-		slog.Error(fmt.Sprintf("[%s] Failed to create forum thread in %s: %s", a.Name(), forum.ID, err))
+		pkgLog().Error(fmt.Sprintf("[%s] Failed to create forum thread in %s: %s", a.Name(), forum.ID, err))
 		return gateway.SendResult{Success: false, Error: fmt.Sprintf("Forum thread creation failed: %s", err)}
 	}
 	threadChannel, threadID, _, messageID := forumThreadParts(ft)
@@ -363,7 +362,7 @@ func (a *DiscordAdapter) sendToForum(ctx context.Context, forum *discordgo.Chann
 		msg, err := a.channelSend(ctx, threadChannel.ID, chunk, nil)
 		if err != nil {
 			warning := fmt.Sprintf("Failed to send follow-up chunk to forum thread %s: %s", threadID, err)
-			slog.Warn(fmt.Sprintf("[%s] %s", a.Name(), warning))
+			pkgLog().Warn(fmt.Sprintf("[%s] %s", a.Name(), warning))
 			warnings = append(warnings, warning)
 			continue
 		}
@@ -391,7 +390,7 @@ func (a *DiscordAdapter) forumPostFile(ctx context.Context, forum *discordgo.Cha
 	}
 	ft, err := a.forumCreateThread(ctx, forum.ID, threadName, content, files)
 	if err != nil {
-		slog.Error(fmt.Sprintf("[%s] Failed to create forum thread with file in %s: %s", a.Name(), forum.ID, err))
+		pkgLog().Error(fmt.Sprintf("[%s] Failed to create forum thread with file in %s: %s", a.Name(), forum.ID, err))
 		return gateway.SendResult{Success: false, Error: fmt.Sprintf("Forum thread creation failed: %s", err)}
 	}
 	_, threadID, starter, messageID := forumThreadParts(ft)
@@ -401,7 +400,7 @@ func (a *DiscordAdapter) forumPostFile(ctx context.Context, forum *discordgo.Cha
 		if shown == "" {
 			shown = "file"
 		}
-		slog.Warn(fmt.Sprintf("[%s] Forum thread %s starter has no attachments for %s", a.Name(), threadID, shown))
+		pkgLog().Warn(fmt.Sprintf("[%s] Forum thread %s starter has no attachments for %s", a.Name(), threadID, shown))
 		errText := "Discord created the forum thread but attached no files"
 		if filename != "" {
 			errText += " (" + filename + ")"
@@ -515,7 +514,7 @@ func (a *DiscordAdapter) EditMessageWithMetadata(ctx context.Context, chatID, me
 		return result, nil
 	}()
 	if err != nil {
-		slog.Error(fmt.Sprintf("[%s] Failed to edit Discord message %s: %s", a.Name(), messageID, err))
+		pkgLog().Error(fmt.Sprintf("[%s] Failed to edit Discord message %s: %s", a.Name(), messageID, err))
 		return gateway.SendResult{Success: false, Error: err.Error()}, nil
 	}
 	return result, nil
@@ -544,13 +543,13 @@ func (a *DiscordAdapter) editOverflowSplit(ctx context.Context, ch *discordgo.Ch
 			text = chunks[0]
 		}
 		if err := a.editContent(ctx, ch.ID, mid, text); err != nil {
-			slog.Error(fmt.Sprintf("[%s] Failed to edit Discord message %s: %s", a.Name(), messageID, err))
+			pkgLog().Error(fmt.Sprintf("[%s] Failed to edit Discord message %s: %s", a.Name(), messageID, err))
 			return gateway.SendResult{Success: false, Error: err.Error()}
 		}
 		return gateway.SendResult{Success: true, MessageID: messageID}
 	}
 	if err := a.editContent(ctx, ch.ID, mid, chunks[0]); err != nil {
-		slog.Error(fmt.Sprintf("[%s] Overflow split: first-chunk edit failed: %s", a.Name(), err))
+		pkgLog().Error(fmt.Sprintf("[%s] Overflow split: first-chunk edit failed: %s", a.Name(), err))
 		return gateway.SendResult{Success: false, Error: err.Error()}
 	}
 	var continuation []any
@@ -560,9 +559,9 @@ func (a *DiscordAdapter) editOverflowSplit(ctx context.Context, ch *discordgo.Ch
 		ref, _ := messageReferenceFromIDs(prevID, ch)
 		sent, err := a.channelSend(ctx, ch.ID, chunk, ref)
 		if err != nil {
-			slog.Warn(fmt.Sprintf("[%s] Overflow continuation send failed (%s); retrying without reply reference", a.Name(), err))
+			pkgLog().Warn(fmt.Sprintf("[%s] Overflow continuation send failed (%s); retrying without reply reference", a.Name(), err))
 			if sent, err = a.channelSend(ctx, ch.ID, chunk, nil); err != nil {
-				slog.Warn(fmt.Sprintf("[%s] Overflow split: stopped at %d/%d chunks delivered: %s", a.Name(), delivered, len(chunks), err))
+				pkgLog().Warn(fmt.Sprintf("[%s] Overflow split: stopped at %d/%d chunks delivered: %s", a.Name(), delivered, len(chunks), err))
 				lastID := any(messageID)
 				if len(continuation) > 0 {
 					lastID = continuation[len(continuation)-1]
@@ -585,7 +584,7 @@ func (a *DiscordAdapter) editOverflowSplit(ctx context.Context, ch *discordgo.Ch
 		a.lastSelfMessageID[ch.ID] = lastID.(string)
 		a.mu.Unlock()
 	}
-	slog.Debug(fmt.Sprintf("[%s] Overflow split delivered %d chunks; last_id=%s", a.Name(), delivered, lastID))
+	pkgLog().Debug(fmt.Sprintf("[%s] Overflow split delivered %d chunks; last_id=%s", a.Name(), delivered, lastID))
 	return gateway.SendResult{Success: true, MessageID: lastID, ContinuationMessageIDs: continuation}
 }
 
@@ -596,7 +595,7 @@ func (a *DiscordAdapter) addReaction(ctx context.Context, m *inboundMessage, emo
 		return false
 	}
 	if err := client.MessageReactionAdd(m.ChannelID, m.ID, emoji, discordgo.WithContext(ctx)); err != nil {
-		slog.Debug(fmt.Sprintf("[%s] add_reaction failed (%s): %s", a.Name(), emoji, dpyError(err)))
+		pkgLog().Debug(fmt.Sprintf("[%s] add_reaction failed (%s): %s", a.Name(), emoji, dpyError(err)))
 		return false
 	}
 	return true
@@ -609,7 +608,7 @@ func (a *DiscordAdapter) removeReaction(ctx context.Context, m *inboundMessage, 
 		return false
 	}
 	if err := client.MessageReactionRemove(m.ChannelID, m.ID, emoji, "@me", discordgo.WithContext(ctx)); err != nil {
-		slog.Debug(fmt.Sprintf("[%s] remove_reaction failed (%s): %s", a.Name(), emoji, dpyError(err)))
+		pkgLog().Debug(fmt.Sprintf("[%s] remove_reaction failed (%s): %s", a.Name(), emoji, dpyError(err)))
 		return false
 	}
 	return true

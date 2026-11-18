@@ -7,7 +7,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"log/slog"
 	"net"
 	"net/http"
 	"strconv"
@@ -19,6 +18,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pyhttpx"
+	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/state"
 )
@@ -228,7 +228,7 @@ func (c *codexResponsesClient) EstimateNativePreflightTokens(ctx context.Context
 		currentIssuerModel: wireModelIdentity(model), nativeCompactionEligible: true,
 	})
 	if err != nil {
-		slog.Default().Debug("native Responses replay conversion failed; using the generic fallback", "error", err)
+		pkgLog().Debug("native Responses replay conversion failed; using the generic fallback", "error", err)
 		return 0, false
 	}
 	total := 0
@@ -290,7 +290,7 @@ func (c *codexResponsesClient) prepare(ctx context.Context, req *Request) (*code
 		}
 		wire[k] = v
 	}
-	if extraBody, ok := kwargs["extra_body"].(map[string]any); ok {
+	if extraBody, ok := pyjson.Dict(kwargs["extra_body"]); ok {
 		for k, v := range extraBody {
 			wire[k] = v
 		}
@@ -330,15 +330,24 @@ func (c *codexResponsesClient) sanitizeConsumerRequest(kwargs map[string]any) ma
 		droppedFrom = append(droppedFrom, "top-level")
 		delete(sanitized, "prompt_cache_retention")
 	}
-	if extraBody, ok := sanitized["extra_body"].(map[string]any); ok {
+	if extraBody, ok := pyjson.Dict(sanitized["extra_body"]); ok {
 		if _, has := extraBody["prompt_cache_retention"]; has {
-			cp := map[string]any{}
-			for k, v := range extraBody {
-				if k != "prompt_cache_retention" {
-					cp[k] = v
+			var cp any
+			remaining := len(extraBody) - 1
+			if ordered, isObject := sanitized["extra_body"].(*pyjson.Object); isObject {
+				kept := ordered.Copy()
+				kept.Delete("prompt_cache_retention")
+				cp = kept
+			} else {
+				kept := map[string]any{}
+				for k, v := range extraBody {
+					if k != "prompt_cache_retention" {
+						kept[k] = v
+					}
 				}
+				cp = kept
 			}
-			if len(cp) == 0 {
+			if remaining == 0 {
 				delete(sanitized, "extra_body")
 			} else {
 				sanitized["extra_body"] = cp
@@ -347,7 +356,7 @@ func (c *codexResponsesClient) sanitizeConsumerRequest(kwargs map[string]any) ma
 		}
 	}
 	if len(droppedFrom) > 0 {
-		codexLog.Warn(fmt.Sprintf("Dropped unsupported prompt_cache_retention at consumer Codex wire boundary (model=%s, via %s).", orUnknown2(strOrEmpty(sanitized["model"])), strings.Join(droppedFrom, ", ")))
+		pkgLog().Warn(fmt.Sprintf("Dropped unsupported prompt_cache_retention at consumer Codex wire boundary (model=%s, via %s).", orUnknown2(strOrEmpty(sanitized["model"])), strings.Join(droppedFrom, ", ")))
 	}
 	return sanitized
 }
@@ -507,7 +516,7 @@ func (c *codexResponsesClient) Stream(ctx context.Context, req *Request, fn Stre
 			return nil, ctx.Err()
 		}
 		if attempt < maxStreamRetries && codexTransportFailure(err) {
-			codexLog.Debug(fmt.Sprintf("Codex Responses stream transport failed (attempt %d/%d); retrying. model=%s error=%v", attempt+1, maxStreamRetries+1, orUnknown2(c.route.Model), err))
+			pkgLog().Debug(fmt.Sprintf("Codex Responses stream transport failed (attempt %d/%d); retrying. model=%s error=%v", attempt+1, maxStreamRetries+1, orUnknown2(c.route.Model), err))
 			if events == 0 {
 				kwargs = pruneZeroEventRetryPayload(ctx, kwargs, attempt+1, maxStreamRetries+1)
 				if body, encErr := json.Marshal(c.wireOf(kwargs)); encErr == nil {
@@ -530,7 +539,7 @@ func (c *codexResponsesClient) wireOf(kwargs map[string]any) map[string]any {
 		}
 		wire[k] = v
 	}
-	if extraBody, ok := kwargs["extra_body"].(map[string]any); ok {
+	if extraBody, ok := pyjson.Dict(kwargs["extra_body"]); ok {
 		for k, v := range extraBody {
 			wire[k] = v
 		}
@@ -633,7 +642,7 @@ func (c *codexResponsesClient) streamOnce(ctx context.Context, req *Request, p *
 	}
 	if attempt > 0 && p.watch.idleRequiresProgress {
 		watch.retryStarted = start
-		codexLog.Info(fmt.Sprintf("Codex physical stream retry at %.3f (attempt=%d/%d, model=%s)", float64(start.UnixNano())/1e9, attempt+1, 2, orUnknown2(req.Model)))
+		pkgLog().Info(fmt.Sprintf("Codex physical stream retry at %.3f (attempt=%d/%d, model=%s)", float64(start.UnixNano())/1e9, attempt+1, 2, orUnknown2(req.Model)))
 	}
 	model := orUnknown2(req.Model)
 	httpReq, err := c.newRequest(attemptCtx, p, p.body)
@@ -729,7 +738,7 @@ func (c *codexResponsesClient) streamOnce(ctx context.Context, req *Request, p *
 		select {
 		case <-ctx.Done():
 			recordInterruptedProviderWait(ctx, time.Since(watch.callStart).Seconds(), !watch.lastEvent.IsZero())
-			codexLog.Debug("Force-closing httpx client due to interrupt (not a network error).")
+			pkgLog().Debug("Force-closing httpx client due to interrupt (not a network error).")
 			return nil, events, ctx.Err()
 		case <-attemptCtx.Done():
 			if ctx.Err() == nil && errors.Is(attemptCtx.Err(), context.DeadlineExceeded) {
@@ -742,13 +751,13 @@ func (c *codexResponsesClient) streamOnce(ctx context.Context, req *Request, p *
 			attemptElapsed := now.Sub(watch.attemptStart).Seconds()
 			lastEvent, lastProgress := watch.lastEvent, watch.lastProgress
 			if w.ttfbEnabled && lastEvent.IsZero() && attemptElapsed > w.ttfb {
-				codexLog.Warn(fmt.Sprintf("Codex stream produced no parsed stream event within TTFB cutoff (%.0fs > %.0fs, model=%s). Backend accepted the connection but sent no stream events. Killing connection so the retry loop can reconnect.", attemptElapsed, w.ttfb, model))
+				pkgLog().Warn(fmt.Sprintf("Codex stream produced no parsed stream event within TTFB cutoff (%.0fs > %.0fs, model=%s). Backend accepted the connection but sent no stream events. Killing connection so the retry loop can reconnect.", attemptElapsed, w.ttfb, model))
 				return nil, events, kill("codex_ttfb_kill",
 					withHint(fmt.Sprintf("⚠️ No first stream event from provider in %ds (codex stream, model: %s). Reconnecting.", int(attemptElapsed), model), " "),
 					withHint(fmt.Sprintf("Codex stream produced no parsed stream event within %ds (TTFB threshold: %ds)", int(attemptElapsed), int(w.ttfb)), ". "))
 			}
 			if w.progress > 0 && !lastEvent.IsZero() && lastProgress.IsZero() && attemptElapsed > w.progress {
-				codexLog.Warn(fmt.Sprintf("Codex stream produced lifecycle events but no substantive model progress for %.0fs (threshold %.0fs, model=%s, context=~%s tokens). Reconnecting.", attemptElapsed, w.progress, model, commaInt(w.estTokens)))
+				pkgLog().Warn(fmt.Sprintf("Codex stream produced lifecycle events but no substantive model progress for %.0fs (threshold %.0fs, model=%s, context=~%s tokens). Reconnecting.", attemptElapsed, w.progress, model, commaInt(w.estTokens)))
 				return nil, events, kill("codex_progress_kill",
 					fmt.Sprintf("⚠️ Codex stream opened but made no model progress for %ds (model: %s). Reconnecting.", int(attemptElapsed), model),
 					fmt.Sprintf("Codex stream produced no substantive model progress for %ds (progress threshold: %ds)", int(attemptElapsed), int(w.progress)))
@@ -760,14 +769,14 @@ func (c *codexResponsesClient) streamOnce(ctx context.Context, req *Request, p *
 					if w.idleRequiresProgress {
 						armPoint = "model progress began"
 					}
-					codexLog.Warn(fmt.Sprintf("Codex stream produced no SSE events for %.0fs after %s (threshold %.0fs, model=%s, context=~%s tokens). Killing connection so the retry loop can reconnect.", idle, armPoint, w.idle, model, commaInt(w.estTokens)))
+					pkgLog().Warn(fmt.Sprintf("Codex stream produced no SSE events for %.0fs after %s (threshold %.0fs, model=%s, context=~%s tokens). Killing connection so the retry loop can reconnect.", idle, armPoint, w.idle, model, commaInt(w.estTokens)))
 					return nil, events, kill("codex_stream_idle_kill",
 						fmt.Sprintf("⚠️ Codex stream sent no events for %ds after %s (model: %s). Reconnecting.", int(idle), armPoint, model),
 						fmt.Sprintf("Codex stream produced no SSE events for %ds after %s (threshold: %ds)", int(idle), armPoint, int(w.idle)))
 				}
 			}
 			if elapsed > w.stale {
-				codexLog.Warn(fmt.Sprintf("Non-streaming API call stale for %.0fs (threshold %.0fs). model=%s context=~%s tokens. Killing connection.", elapsed, w.stale, model, commaInt(w.estTokens)))
+				pkgLog().Warn(fmt.Sprintf("Non-streaming API call stale for %.0fs (threshold %.0fs). model=%s context=~%s tokens. Killing connection.", elapsed, w.stale, model, commaInt(w.estTokens)))
 				status := "Aborting call."
 				if hint != "" {
 					status = hint
@@ -811,13 +820,13 @@ func (c *codexResponsesClient) streamOnce(ctx context.Context, req *Request, p *
 			}
 			now := time.Now()
 			if watch.lastEvent.IsZero() {
-				codexLog.Info(fmt.Sprintf("Codex stream first parsed event at %.3f (attempt=%d/%d, model=%s)", float64(now.UnixNano())/1e9, attempt+1, 2, model))
+				pkgLog().Info(fmt.Sprintf("Codex stream first parsed event at %.3f (attempt=%d/%d, model=%s)", float64(now.UnixNano())/1e9, attempt+1, 2, model))
 			}
 			watch.lastEvent = now
 			events++
 			if codexEventHasContent(event) {
 				if watch.lastProgress.IsZero() {
-					codexLog.Info(fmt.Sprintf("Codex stream first substantive progress at %.3f (attempt=%d/%d, model=%s)", float64(now.UnixNano())/1e9, attempt+1, 2, model))
+					pkgLog().Info(fmt.Sprintf("Codex stream first substantive progress at %.3f (attempt=%d/%d, model=%s)", float64(now.UnixNano())/1e9, attempt+1, 2, model))
 				}
 				watch.lastProgress = now
 				if p.watch.idleRequiresProgress {
@@ -837,7 +846,7 @@ func (c *codexResponsesClient) streamOnce(ctx context.Context, req *Request, p *
 		return nil, events, err
 	}
 	if status := stringOf(result["status"]); status == "incomplete" || status == "failed" {
-		codexLog.Warn(fmt.Sprintf("Codex Responses stream terminal status=%s (incomplete_details=%v, error=%v, streamed_chars=%d).", status, result["incomplete_details"], result["error"], len(strOrEmpty(result["output_text"]))))
+		pkgLog().Warn(fmt.Sprintf("Codex Responses stream terminal status=%s (incomplete_details=%v, error=%v, streamed_chars=%d).", status, result["incomplete_details"], result["error"], len(strOrEmpty(result["output_text"]))))
 	}
 	final, err := c.finish(result, resp.StatusCode, headers, time.Since(start), fn, assembler)
 	return final, events, err
@@ -857,7 +866,7 @@ func (c *codexResponsesClient) drain(frames <-chan codexFrameMsg, budget float64
 				return
 			}
 		case <-timer.C:
-			codexLog.Warn(fmt.Sprintf("Codex Responses stream remained open %.1fs after a terminal response (agent.stream_drain_timeout); shut down its socket and completed cleanup on the owner thread. model=%s", budget, model))
+			pkgLog().Warn(fmt.Sprintf("Codex Responses stream remained open %.1fs after a terminal response (agent.stream_drain_timeout); shut down its socket and completed cleanup on the owner thread. model=%s", budget, model))
 			return
 		}
 	}

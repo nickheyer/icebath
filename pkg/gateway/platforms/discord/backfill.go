@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"iter"
-	"log/slog"
 	"net/http"
 	"net/url"
 	"slices"
@@ -114,13 +113,13 @@ func (a *DiscordAdapter) runMissedMessageBackfill(ctx context.Context) {
 		return true, nil
 	}, false)
 	if ok, _ := ledgerOK.(bool); !ok {
-		slog.Error(fmt.Sprintf("[%s] Missed-message recovery aborted: durable ledger unavailable", a.Name()))
+		pkgLog().Error(fmt.Sprintf("[%s] Missed-message recovery aborted: durable ledger unavailable", a.Name()))
 		return
 	}
 	scanID := a.recordRecoveryScanStart(ctx, channels)
 	counts := map[string]int{"scanned": 0, "missed": 0, "dispatched": 0}
 	if len(channels) == 0 {
-		slog.Info(fmt.Sprintf("[%s] Missed-message backfill enabled but no channels configured", a.Name()))
+		pkgLog().Info(fmt.Sprintf("[%s] Missed-message backfill enabled but no channels configured", a.Name()))
 		a.finishRecoveryScan(ctx, scanID, "skipped", counts, nil)
 		return
 	}
@@ -139,7 +138,7 @@ func (a *DiscordAdapter) runMissedMessageBackfill(ctx context.Context) {
 			continue
 		}
 		counts["missed"]++
-		slog.Info(fmt.Sprintf("[%s] Backfilling missed Discord message %s in channel %s", a.Name(), m.ID, m.ChannelID))
+		pkgLog().Info(fmt.Sprintf("[%s] Backfilling missed Discord message %s in channel %s", a.Name(), m.ID, m.ChannelID))
 		a.recordRecoveryAttempt(ctx, m, "queued", nil)
 		admitted, err := a.dispatchRecoveredMessage(ctx, m)
 		if err == nil && ctx.Err() != nil {
@@ -169,13 +168,13 @@ func (a *DiscordAdapter) runMissedMessageBackfill(ctx context.Context) {
 	switch {
 	case failure == nil:
 		a.finishRecoveryScan(ctx, scanID, "success", counts, nil)
-		slog.Info(fmt.Sprintf("[%s] Missed-message backfill complete: scanned=%d missed=%d dispatched=%d", a.Name(), counts["scanned"], counts["missed"], counts["dispatched"]))
+		pkgLog().Info(fmt.Sprintf("[%s] Missed-message backfill complete: scanned=%d missed=%d dispatched=%d", a.Name(), counts["scanned"], counts["missed"], counts["dispatched"]))
 	case errors.Is(failure, context.Canceled):
 		a.finishRecoveryScan(ctx, scanID, "cancelled", counts, nil)
 	default:
 		text := failure.Error()
 		a.finishRecoveryScan(ctx, scanID, "failed", counts, &text)
-		slog.Warn(fmt.Sprintf("[%s] Missed-message backfill failed: %s", a.Name(), failure))
+		pkgLog().Warn(fmt.Sprintf("[%s] Missed-message backfill failed: %s", a.Name(), failure))
 	}
 }
 
@@ -244,7 +243,7 @@ func (a *DiscordAdapter) iterMissedMessageBackfillCandidates(ctx context.Context
 				if ch == nil {
 					fetched, err := client.Channel(id, discordgo.WithContext(ctx))
 					if err != nil {
-						slog.Debug(fmt.Sprintf("[%s] Cannot fetch backfill channel %s: %s", a.Name(), id, dpyError(err)))
+						pkgLog().Debug(fmt.Sprintf("[%s] Cannot fetch backfill channel %s: %s", a.Name(), id, dpyError(err)))
 						continue
 					}
 					ch = fetched
@@ -358,7 +357,7 @@ func (a *DiscordAdapter) walkChannelAndThreads(ctx context.Context, ch *discordg
 		return true
 	})
 	if err != nil {
-		slog.Debug(fmt.Sprintf("[%s] Cannot read history for %s: %s", a.Name(), key, err))
+		pkgLog().Debug(fmt.Sprintf("[%s] Cannot read history for %s: %s", a.Name(), key, err))
 	} else {
 		for i := len(messages) - 1; i >= 0; i-- {
 			m := messages[i]
@@ -381,7 +380,7 @@ func (a *DiscordAdapter) walkChannelAndThreads(ctx context.Context, ch *discordg
 	if ch.Type == discordgo.ChannelTypeGuildText || ch.Type == discordgo.ChannelTypeGuildNews || ch.Type == discordgo.ChannelTypeGuildForum || ch.Type == discordgo.ChannelTypeGuildMedia {
 		archived, err := a.archivedThreads(ctx, key, limit)
 		if err != nil {
-			slog.Debug(fmt.Sprintf("[%s] Cannot list archived threads for %s: %s", a.Name(), key, err))
+			pkgLog().Debug(fmt.Sprintf("[%s] Cannot list archived threads for %s: %s", a.Name(), key, err))
 		}
 		children = append(children, archived...)
 	}

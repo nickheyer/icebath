@@ -20,7 +20,7 @@ type codexThreadCompactor interface {
 	Close()
 }
 
-// Live codex session of the agent, a seam the tests replace like the hermes fake session
+// Live codex session of the agent, a seam the tests replace with a fake session
 var codexCompactionSession = func(a *AIAgent) codexThreadCompactor {
 	if a.codexSession == nil {
 		return nil
@@ -48,7 +48,7 @@ func codexCompactionCooldownRemaining(a *AIAgent) (remaining float64) {
 	func() {
 		defer func() {
 			if r := recover(); r != nil {
-				compressionLog().Debug("codex compaction cooldown lookup failed", "error", fmt.Sprint(r))
+				pkgLog().Debug("codex compaction cooldown lookup failed", "error", fmt.Sprint(r))
 				st = nil
 			}
 		}()
@@ -124,15 +124,9 @@ func compressContextViaCodexAppServer(ctx context.Context, a *AIAgent, messages 
 	if approxTokens != nil && *approxTokens != 0 {
 		tokens = groupThousands(*approxTokens)
 	}
-	autoMode := strings.ToLower(a.codexAppServerAutoCompaction)
-	if autoMode == "" {
-		autoMode = "native"
-	}
-	if autoMode != "native" && autoMode != "hermes" && autoMode != "off" {
-		autoMode = "native"
-	}
+	autoMode, _ := CodexAppServerAutoMode(a.codexAppServerAutoCompaction)
 	var skipReason, skipStatus, skipClass string
-	if !force && autoMode != "hermes" {
+	if !force && autoMode != "icebath" {
 		skipReason, skipStatus, skipClass = fmt.Sprintf("mode=%s force=false", autoMode), "skipped", "codex_auto_"+autoMode
 	} else if !force {
 		if remaining := codexCompactionCooldownRemaining(a); remaining > 0 {
@@ -145,12 +139,12 @@ func compressContextViaCodexAppServer(ctx context.Context, a *AIAgent, messages 
 		skipReason, skipStatus, skipClass = "no active codex thread", "skipped", "codex_no_thread"
 	}
 	if skipReason != "" {
-		compressionLog().Info(fmt.Sprintf("codex app-server compaction skipped: %s (session=%s messages=%d tokens=~%s)", skipReason, sid, len(messages), tokens))
+		pkgLog().Info(fmt.Sprintf("codex app-server compaction skipped: %s (session=%s messages=%d tokens=~%s)", skipReason, sid, len(messages), tokens))
 		record(skipStatus, skipClass, "none")
 		prompt, err = existingSystemPrompt(ctx, a, systemMessage)
 		return messages, prompt, err
 	}
-	compressionLog().Info(fmt.Sprintf("codex app-server compaction started: session=%s messages=%d tokens=~%s", sid, len(messages), tokens))
+	pkgLog().Info(fmt.Sprintf("codex app-server compaction started: session=%s messages=%d tokens=~%s", sid, len(messages), tokens))
 	func() {
 		defer func() { _ = recover() }()
 		a.emitStatus(CompactionStatus)
@@ -214,7 +208,7 @@ func compressContextViaCodexAppServer(ctx context.Context, a *AIAgent, messages 
 		return nil
 	})
 	resetReadDedupCaches(ctx, taskID, a.sessionID)
-	compressionLog().Info(fmt.Sprintf("codex app-server compaction done: session=%s thread=%s turn=%s", sid, result.ThreadID, result.TurnID))
+	pkgLog().Info(fmt.Sprintf("codex app-server compaction done: session=%s thread=%s turn=%s", sid, result.ThreadID, result.TurnID))
 	prompt, err = existingSystemPrompt(ctx, a, systemMessage)
 	if err != nil {
 		return nil, "", err

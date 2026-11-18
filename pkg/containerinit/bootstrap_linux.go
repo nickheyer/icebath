@@ -10,7 +10,6 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
-	"sort"
 	"strconv"
 	"strings"
 	"syscall"
@@ -25,11 +24,8 @@ var (
 		"gateway_state.json", "processes.json", "active_profile"}
 	seededDirs = []string{"backups", "cron", "sessions", "logs", "logs/gateways", "hooks", "memories", "skills", "skins",
 		"plans", "workspace", "home", "pairing", "platforms/pairing"}
-	routingOverrides = []string{"ICEBATH_PORTAL_BASE_URL", "NOUS_PORTAL_BASE_URL", "NOUS_INFERENCE_BASE_URL"}
-	apiKeyLine       = regexp.MustCompile(`(?m)^API_SERVER_KEY=.+`)
+	apiKeyLine = regexp.MustCompile(`(?m)^API_SERVER_KEY=.+`)
 )
-
-const routingMark = "# stage2-managed"
 
 // Boot time preparation of the data volume the init runs before any service starts
 type bootstrap struct {
@@ -316,80 +312,6 @@ func linesWithout(path string, re *regexp.Regexp) (string, error) {
 	return strings.TrimRight(strings.Join(kept, "\n"), "\n"), nil
 }
 
-// Drops the lines matching re from path and appends line when given, warning on read or write failure
-func rewriteEnvVar(path, name string, re *regexp.Regexp, line string) bool {
-	rest, err := linesWithout(path, re)
-	if err != nil {
-		say("[stage2] Warning: could not read %s — leaving %s untouched", path, name)
-		return false
-	}
-	if line != "" {
-		if rest != "" {
-			rest += "\n"
-		}
-		rest += line
-	}
-	if rest != "" {
-		rest += "\n"
-	}
-	if err := os.WriteFile(path, []byte(rest), 0o600); err != nil {
-		say("[stage2] Warning: could not write %s to %s (read-only volume?) — routed turns will fall back to the production Portal", name, path)
-		return false
-	}
-	return true
-}
-
-// True when any line of path matches re
-func fileMatches(path string, re *regexp.Regexp) bool {
-	raw, err := os.ReadFile(path)
-	if err != nil {
-		return false
-	}
-	for _, l := range strings.Split(string(raw), "\n") {
-		if re.MatchString(l) {
-			return true
-		}
-	}
-	return false
-}
-
-// Mirrors the Nous routing overrides of the container environment into one env file as managed lines
-func (b *bootstrap) syncRoutingOverrides(path string) {
-	if b.refuse("sync", path) {
-		return
-	}
-	for _, name := range routingOverrides {
-		value := os.Getenv(name)
-		managed := regexp.MustCompile("^" + name + "=.* " + regexp.QuoteMeta(routingMark) + "$")
-		if value == "" {
-			if fileMatches(path, managed) && rewriteEnvVar(path, name, managed, "") {
-				say("[stage2] Removed %s from %s (no longer set in the container environment)", name, path)
-			}
-			continue
-		}
-		line := name + "=" + value + " " + routingMark
-		if raw, err := os.ReadFile(path); err == nil && containsLine(string(raw), line) {
-			continue
-		}
-		if !isFile(path) && b.touchPrivate(path) != nil {
-			say("[stage2] Warning: could not create %s — the Nous routing overrides will not reach this profile's secret scope", path)
-			return
-		}
-		if rewriteEnvVar(path, name, regexp.MustCompile("^"+name+"="), line) {
-			say("[stage2] Synced %s from the container environment into %s", name, path)
-		}
-	}
-}
-
-func containsLine(text, line string) bool {
-	for _, l := range strings.Split(text, "\n") {
-		if l == line {
-			return true
-		}
-	}
-	return false
-}
-
 // Keeps a loopback api_server key in the volume env unless the container environment supplies one
 func (b *bootstrap) apiServerKey() {
 	envFile := filepath.Join(b.home, ".env")
@@ -501,14 +423,6 @@ func runBootstrap(exe string) error {
 		}
 	}
 	b.apiServerKey()
-	b.syncRoutingOverrides(filepath.Join(b.home, ".env"))
-	profiles, _ := filepath.Glob(filepath.Join(b.home, "profiles", "*"))
-	sort.Strings(profiles)
-	for _, p := range profiles {
-		if isDir(p) {
-			b.syncRoutingOverrides(filepath.Join(p, ".env"))
-		}
-	}
 	if envFile := filepath.Join(b.home, ".env"); isFile(envFile) && !b.refuse("chown/chmod", envFile) {
 		b.chown(envFile)
 		os.Chmod(envFile, 0o600)
@@ -542,7 +456,7 @@ func runBootstrap(exe string) error {
 	return nil
 }
 
-// Seeds auth.json and the gateway state from the bootstrap variables and re-seeds a terminal Nous session
+// Seeds auth.json and the gateway state from the bootstrap variables
 func (b *bootstrap) authBootstrap() error {
 	auth := filepath.Join(b.home, "auth.json")
 	if seed := os.Getenv("ICEBATH_AUTH_JSON_BOOTSTRAP"); !exists(auth) && seed != "" && !b.refuse("seed", auth) {
@@ -553,9 +467,6 @@ func (b *bootstrap) authBootstrap() error {
 		if err := os.Chmod(auth, 0o600); err != nil {
 			return err
 		}
-	}
-	if isFile(auth) && os.Getenv(RebootstrapEnv) != "" && !b.refuse("reseed", auth) {
-		b.step("[stage2] Warning: Nous session re-bootstrap failed; continuing", "rebootstrap", auth)
 	}
 	state := filepath.Join(b.home, "gateway_state.json")
 	if !exists(state) && os.Getenv("ICEBATH_GATEWAY_BOOTSTRAP_STATE") == "running" && !b.refuse("seed", state) {

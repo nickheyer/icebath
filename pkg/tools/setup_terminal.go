@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/config"
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
@@ -39,24 +40,16 @@ type TerminalBackendPostSetup interface {
 // SetupTerminalConsole is the terminal setup console, installed by pkg/provider
 var SetupTerminalConsole SetupConsole
 
-// NousSubscriptionAuthPresent reports Nous auth in the subscription features of a config, installed by pkg/provider
-var NousSubscriptionAuthPresent func(env *Env, cfg map[string]any) bool
-
 // Example config file and key documenting every terminal backend
 const terminalBackendGuide = "cli-config.yaml.example, key terminal.backend"
 
-var (
-	errSetupConsoleUnwired = errors.New("setup wizard console is not installed")
-	errNousFeaturesUnwired = errors.New("nous subscription features are not installed")
-)
+var errSetupConsoleUnwired = errors.New("setup wizard console is not installed")
 
-// Seams over the docker probe, managed gateway checks, SDK import and install, home and ssh run
+// Seams over the docker probe, home and ssh run
 var (
-	setupFindDocker              = FindDocker
-	setupManagedNousToolsEnabled = func(env *Env) bool { return managedNousToolsEnabled(env, false) }
-	setupManagedGatewayReady     = func(env *Env, vendor string) bool { return IsManagedToolGatewayReady(env, vendor, nil, nil) }
-	setupHomeDir                 = os.UserHomeDir
-	setupRunSSH                  = runSetupSSH
+	setupFindDocker = FindDocker
+	setupHomeDir    = os.UserHomeDir
+	setupRunSSH     = runSetupSSH
 )
 
 // Wizard state for one run, the console and the home every env and config write targets
@@ -87,15 +80,15 @@ func (s *terminalSetup) saveEnv(key, value string) error {
 	return config.SaveEnvValueContext(s.ctx, s.h, key, value)
 }
 
-// Terminal section of a config, the KeyError or type failure of indexing it directly
+// Terminal section of a config, an error when it is missing or not a mapping
 func terminalSection(cfg map[string]any) (map[string]any, error) {
 	raw, ok := cfg["terminal"]
 	if !ok {
-		return nil, errors.New("KeyError: 'terminal'")
+		return nil, errors.New("the config has no terminal section")
 	}
 	section, ok := raw.(map[string]any)
 	if !ok {
-		return nil, fmt.Errorf("AttributeError: '%s' object has no attribute 'setdefault'", pyrepr.TypeName(raw))
+		return nil, fmt.Errorf("terminal in config is %s, expected a mapping", errchain.Kind(raw))
 	}
 	return section, nil
 }
@@ -290,6 +283,18 @@ func (s *terminalSetup) backendDocker(cfg map[string]any) error {
 		return err
 	}
 	setDefault(terminal, "docker_image", config.DefaultSandboxImage)
+	if image, _ := terminal["docker_image"].(string); dockerExe != "" && IsDefaultSandboxImage(image) {
+		err := EnsureSandboxImage(s.ctx, dockerExe, image, func(line string, headline bool) {
+			if headline {
+				s.ui.PrintInfo("  " + line)
+			}
+		})
+		if err != nil {
+			s.ui.PrintWarning(fmt.Sprintf("%s; the first Docker sandbox start builds it again", err))
+		} else {
+			s.ui.PrintSuccess("Sandbox image " + image + " ready")
+		}
+	}
 	s.info(nil, "Docker sandboxes can be protected with the egress credential firewall.",
 		"It routes sandbox traffic through iron-proxy so containers receive proxy tokens instead of real API keys.",
 		"   Docker only for now; Modal, SSH, Daytona and plugin backends are not wired yet.")
@@ -300,7 +305,7 @@ func (s *terminalSetup) backendDocker(cfg map[string]any) error {
 	setDefault(cfg, "proxy", map[string]any{})
 	proxy, ok := cfg["proxy"].(map[string]any)
 	if !ok {
-		return fmt.Errorf("TypeError: '%s' object does not support item assignment", pyrepr.TypeName(cfg["proxy"]))
+		return fmt.Errorf("proxy in config is %s, expected a mapping", errchain.Kind(cfg["proxy"]))
 	}
 	proxy["enabled"] = true
 	setDefault(proxy, "enforce_on_docker", true)
@@ -309,50 +314,10 @@ func (s *terminalSetup) backendDocker(cfg map[string]any) error {
 	return nil
 }
 
-// Chooses managed or direct Modal billing and collects direct Modal credentials
+// Collects the Modal account credentials
 func (s *terminalSetup) backendModal(cfg map[string]any) error {
 	s.ui.PrintSuccess("Terminal backend: Modal")
 	s.ui.PrintInfo("Serverless cloud sandboxes. Each session gets its own container.")
-	managedAvailable, err := SetupModalManagedAvailable(s.env, cfg)
-	if err != nil {
-		return err
-	}
-	modeValue, _ := config.CfgGet(cfg, "terminal", "modal_mode")
-	modalMode := NormalizeModalMode(pyOrStr(modeValue))
-	terminal, err := terminalSection(cfg)
-	useManaged := false
-	if managedAvailable {
-		tokenID, err := s.getEnv("MODAL_TOKEN_ID")
-		if err != nil {
-			return err
-		}
-		defaultIdx := 0
-		switch {
-		case modalMode == "direct" || (modalMode != "managed" && tokenID != ""):
-			defaultIdx = 1
-		}
-		useManaged = s.ui.PromptChoice("Select how Modal execution should be billed:",
-			[]string{"Use my Nous subscription", "Use my own Modal account"}, defaultIdx) == 0
-	}
-	if err != nil {
-		return err
-	}
-	if useManaged {
-		terminal["modal_mode"] = "managed"
-		s.ui.PrintInfo("Modal execution will use the managed Nous gateway and bill to your subscription.")
-		for _, key := range []string{"MODAL_TOKEN_ID", "MODAL_TOKEN_SECRET"} {
-			v, err := s.getEnv(key)
-			if err != nil {
-				return err
-			}
-			if v != "" {
-				s.ui.PrintInfo("Direct Modal credentials are still configured, but this backend is pinned to managed mode.")
-				break
-			}
-		}
-		return nil
-	}
-	terminal["modal_mode"] = "direct"
 	s.ui.PrintInfo("Requires a Modal account: https://modal.com")
 	s.info(nil, "Modal authentication:", "  Get your token at: https://modal.com/settings")
 	if keeps, err := s.existingSecretKeeps("MODAL_TOKEN_ID", "Modal token", "  Update Modal credentials?"); err != nil || keeps {
@@ -502,7 +467,6 @@ var terminalBackendSetup = map[string]func(s *terminalSetup, cfg map[string]any)
 
 // Env var, config key and default mirrored into the home .env after a backend is configured
 var backendEnvMirror = map[string][3]any{
-	"modal":          {"TERMINAL_MODAL_MODE", "modal_mode", "auto"},
 	"vercel_sandbox": {"TERMINAL_VERCEL_IMAGE", "vercel_image", config.DefaultVercelImage},
 }
 
@@ -550,7 +514,7 @@ func SetupTerminalBackend(ctx context.Context, env *Env, cfg map[string]any) err
 	}
 	if idx < 0 || idx > len(backends) {
 		terminal["backend"] = nil
-		return errors.New("AttributeError: 'NoneType' object has no attribute 'replace'")
+		return errors.New("no terminal backend was selected")
 	}
 	selected := backends[idx][0]
 	terminal["backend"] = selected
@@ -577,7 +541,7 @@ func SetupTerminalBackend(ctx context.Context, env *Env, cfg map[string]any) err
 		}
 		text, isStr := value.(string)
 		if !isStr {
-			return fmt.Errorf("AttributeError: '%s' object has no attribute 'replace'", pyrepr.TypeName(value))
+			return fmt.Errorf("terminal.%v is %s, expected text", mirror[1], errchain.Kind(value))
 		}
 		if err := s.saveEnv(mirror[0].(string), text); err != nil {
 			return err

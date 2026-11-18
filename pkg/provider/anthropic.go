@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"io"
 	"maps"
 	"math"
@@ -20,6 +19,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 
 	"github.com/dlclark/regexp2/v2"
 	"github.com/nickheyer/icebath/pkg/config"
@@ -430,13 +431,13 @@ func anthOAuthWireNamer(tools []map[string]any) func(string) string {
 	}
 }
 
+// Product name and author swapped for the Claude Code identity in the system prompt of a subscription sign in
 var anthOAuthSystemReplacements = [][2]string{
-	{"Hermes Agent", "Claude Code"}, {"Hermes agent", "Claude Code"}, {"Icebath Agent", "Claude Code"},
-	{"Icebath agent", "Claude Code"}, {"Nous Research", "Anthropic"},
+	{"Icebath Agent", "Claude Code"}, {"Icebath agent", "Claude Code"}, {config.IdentityAuthor, "Anthropic"},
 }
 
 // Standalone prose slug of the product, addresses and quoted identifiers excluded
-var anthOAuthSlugPattern = regexp2.MustCompile(`(?<![\w./:@'"` + "`" + `-])(?:hermes-agent|icebath-agent)(?![\w/@-]|\.\w)`)
+var anthOAuthSlugPattern = regexp2.MustCompile(`(?<![\w./:@'"` + "`" + `-])icebath-agent(?![\w/@-]|\.\w)`)
 
 func anthRewriteSlug(text string) string {
 	out, err := anthOAuthSlugPattern.Replace(text, "claude-code", -1, -1)
@@ -500,7 +501,7 @@ func anthApplyClaudeCodeIdentity(system any, tools []map[string]any, messages []
 	return out
 }
 
-// Reasoning request as hermes shapes it, nil meaning no reasoning config at all
+// Reasoning request in its config shape, nil meaning no reasoning config at all
 type anthReasoningConfig struct {
 	enabled *bool
 	effort  string
@@ -602,10 +603,7 @@ func anthBuildKwargs(in anthBuildInput) (map[string]any, error) {
 	if len(in.tools) > 0 {
 		tools = convertToolsToAnthropic(in.tools)
 	}
-	model := in.model
-	if !isNousPortalEndpoint(in.baseURL) {
-		model = normalizeModelName(model, in.preserveDots)
-	}
+	model := normalizeModelName(in.model, in.preserveDots)
 	effectiveMaxTokens, err := anthResolveMessagesMaxTokens(in.maxTokens, model)
 	if err != nil {
 		return nil, &LocalValidationError{Message: err.Error()}
@@ -718,7 +716,7 @@ func anthSanitizeKwargs(kwargs map[string]any, logPrefix string) []string {
 		for i, key := range leaked {
 			names[i] = key
 		}
-		catalogLog.Warn(fmt.Sprintf("%sStripped Responses-only kwarg(s) %s from an Anthropic Messages call (api_mode flip race — see #31673). The call will proceed; this breadcrumb means a kwargs build ran under a Responses api_mode while dispatch ran under anthropic_messages.", logPrefix, pyrepr.Repr(names)))
+		pkgLog().Warn(fmt.Sprintf("%sStripped Responses-only kwarg(s) %s from an Anthropic Messages call (api_mode flip race — see #31673). The call will proceed; this breadcrumb means a kwargs build ran under a Responses api_mode while dispatch ran under anthropic_messages.", logPrefix, pyrepr.Repr(names)))
 	}
 	return leaked
 }
@@ -1087,7 +1085,7 @@ func (c *anthropicClient) noteContext1MRejection(err error) bool {
 		return false
 	}
 	c.dropContext1M = true
-	catalogLog.Info(fmt.Sprintf("Anthropic rejected the 1M context beta for %s; retrying without it for this client.", orUnknown2(c.route.Model)))
+	pkgLog().Info(fmt.Sprintf("Anthropic rejected the 1M context beta for %s; retrying without it for this client.", orUnknown2(c.route.Model)))
 	return true
 }
 
@@ -1113,11 +1111,6 @@ func (c *anthropicClient) inboundToolName(name string) string {
 
 func (c *anthropicClient) providerLower() string {
 	return strings.ToLower(strings.TrimSpace(c.route.Provider))
-}
-
-func (c *anthropicClient) isNous() bool {
-	p := c.providerLower()
-	return p == "nous" || p == "nous-portal" || p == "nousresearch" || baseURLHostMatches(c.route.BaseURL, "nousresearch.com")
 }
 
 // Reports whether model name dots are preserved for this route
@@ -1156,6 +1149,20 @@ func (h anthHead) lines(stream bool, call anthSDKCall) (*pyhttpx.Headers, error)
 		call.headers = anthStreamCallHeaders(h.extra)
 	}
 	return h.spec.requestLines(call, 0)
+}
+
+// Head with the call extra headers merged over the prepared per call headers, unchanged without any
+func (h anthHead) withExtra(raw any) anthHead {
+	lines := orderedExtraHeaders(raw)
+	if len(lines) == 0 {
+		return h
+	}
+	extra := &pyHeaderDict{}
+	if h.extra != nil {
+		extra.entries = append(extra.entries, h.extra.entries...)
+	}
+	extra.update(pyHeaderDictOf(lines...))
+	return anthHead{spec: h.spec, extra: extra}
 }
 
 // anthropic-beta dict of the betas, empty without any
@@ -1279,7 +1286,7 @@ func anthCustomProviderExtraHeaders(ctx context.Context, baseURL string) []pyhtt
 	h := home.Dir(ctx)
 	tree, err := config.Load(h, config.NewSecrets(h).Lookup())
 	if err != nil {
-		catalogLog.Debug("custom-provider extra_headers skipped for Anthropic client", "error", err)
+		pkgLog().Debug("custom-provider extra_headers skipped for Anthropic client", "error", err)
 		return nil
 	}
 	return customProviderExtraHeaderLines(baseURL, nil, map[string]any(tree))
@@ -1346,25 +1353,6 @@ func (c *anthropicClient) prepare(ctx context.Context, req *Request, stream bool
 	}
 	if user := strings.TrimSpace(req.User); user != "" {
 		kwargs["metadata"] = map[string]any{"user_id": user}
-	}
-	if c.isNous() {
-		extra := anthExtraBodyObject(kwargs)
-		tags := []any{"product=icebath-agent", "client=icebath-client-v" + baseVersion()}
-		if conv := firstNonEmpty(req.CacheScope, req.SessionID); conv != "" {
-			tags = append(tags, "conversation="+conv)
-		}
-		extra.Set("tags", tags)
-		if sticky := cacheScopeFromSessionID(firstNonEmpty(req.CacheScope, req.SessionID)); sticky != "" {
-			extra.Set("session_id", sticky)
-		}
-		if du := dataUseRequirement(req.Messages); len(du) > 0 {
-			prov := pyjson.ObjectOf("data_collection", "deny")
-			if du["zero_retention"] {
-				prov.Set("zdr", true)
-			}
-			extra.Set("provider", prov)
-		}
-		kwargs["extra_body"] = extra
 	}
 	anthMergeExtraBody(kwargs, c.route.ExtraBody)
 	anthMergeExtraBody(kwargs, req.ExtraBody)
@@ -1634,7 +1622,7 @@ func (c *anthropicClient) Stream(ctx context.Context, req *Request, fn StreamFun
 			continue
 		}
 		if !deltasSent && ctx.Err() == nil && c.transport.StreamUnavailable(err) {
-			catalogLog.Info(fmt.Sprintf("Anthropic Messages stream unavailable for %s/%s; switching to non-streaming for this session: %s", orUnknown2(c.route.Provider), orUnknown2(c.route.Model), truncate(err.Error(), 200)))
+			pkgLog().Info(fmt.Sprintf("Anthropic Messages stream unavailable for %s/%s; switching to non-streaming for this session: %s", orUnknown2(c.route.Provider), orUnknown2(c.route.Model), truncate(err.Error(), 200)))
 			c.mu.Lock()
 			c.nonStreaming = true
 			c.mu.Unlock()
@@ -1711,7 +1699,7 @@ func (c *anthropicClient) streamOnce(ctx context.Context, req *Request, p *anthP
 		if eo, ok := payload["error"]; ok && eo != nil {
 			return nil, false, c.httpError(resp, data)
 		}
-		catalogLog.Info(fmt.Sprintf("Streaming request returned a final message object instead of an event stream; switching %s/%s to non-streaming for this session.", orUnknown2(c.route.Provider), orUnknown2(c.route.Model)))
+		pkgLog().Info(fmt.Sprintf("Streaming request returned a final message object instead of an event stream; switching %s/%s to non-streaming for this session.", orUnknown2(c.route.Provider), orUnknown2(c.route.Model)))
 		c.mu.Lock()
 		c.nonStreaming = true
 		c.mu.Unlock()

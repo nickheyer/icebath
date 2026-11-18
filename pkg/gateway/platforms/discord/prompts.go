@@ -3,7 +3,6 @@ package discord
 import (
 	"context"
 	"fmt"
-	"log/slog"
 	"sort"
 	"strings"
 	"unicode/utf8"
@@ -102,7 +101,7 @@ func (a *DiscordAdapter) allowlists() (strSet, strSet) {
 type promptMessage struct {
 	content         string
 	embed           *discordgo.MessageEmbed
-	view            *hermesView
+	view            *icebathView
 	allowedMentions *discordgo.MessageAllowedMentions
 }
 
@@ -115,7 +114,7 @@ func (a *DiscordAdapter) sendPrompt(ctx context.Context, chatID string, metadata
 	msgID, err := a.sendPromptMessage(ctx, client, chatID, metadata, build)
 	if err != nil {
 		if failLog != "" {
-			slog.Warn(fmt.Sprintf("[%s] %s failed: %s", a.Name(), failLog, err))
+			pkgLog().Warn(fmt.Sprintf("[%s] %s failed: %s", a.Name(), failLog, err))
 		}
 		return gateway.SendResult{Success: false, Error: err.Error()}
 	}
@@ -182,7 +181,7 @@ func (a *DiscordAdapter) SendExecApprovalPrompt(ctx context.Context, prompt *gat
 	}
 	result := a.sendPrompt(ctx, prompt.ChatID, prompt.Metadata, func(*discordgo.Channel) (promptMessage, error) {
 		content := prompt.Text
-		pm := promptMessage{view: &view.hermesView,
+		pm := promptMessage{view: &view.icebathView,
 			embed: newEmbed(truncateDiscordComponentText("⚠️ "+gateway.EAHeaderLocalized(ctx), discordEmbedTitleLimit), "", colorOrange)}
 		if mentions := a.approvalMentionContent(ctx); mentions != "" {
 			content = mentions + "\n" + content
@@ -230,7 +229,7 @@ func (a *DiscordAdapter) SendSlashConfirm(ctx context.Context, chatID, title, me
 		if err != nil {
 			return promptMessage{}, err
 		}
-		return promptMessage{content: selfContainedPromptContent(ctx, "**"+header+"**", message, false, ""), view: &view.hermesView,
+		return promptMessage{content: selfContainedPromptContent(ctx, "**"+header+"**", message, false, ""), view: &view.icebathView,
 			embed: newEmbed(truncateDiscordComponentText(header, discordEmbedTitleLimit), "", colorOrange)}, nil
 	}, ""), nil
 }
@@ -255,7 +254,7 @@ func (a *DiscordAdapter) SendClarify(ctx context.Context, chatID, question strin
 			if err != nil {
 				return promptMessage{}, err
 			}
-			pm.view = &view.hermesView
+			pm.view = &view.icebathView
 		}
 		pm.content = selfContainedPromptContent(ctx, "❓ **"+clarifyTitle+"**", pystr.Strip(question), false, "\n\n"+hint)
 		return pm, nil
@@ -275,7 +274,7 @@ func (a *DiscordAdapter) SendUpdatePrompt(ctx context.Context, chatID, prompt, d
 		if err != nil {
 			return promptMessage{}, err
 		}
-		return promptMessage{content: selfContainedPromptContent(ctx, "☤ **"+updateTitle+"**", prompt+defaultHint, false, ""), view: &view.hermesView,
+		return promptMessage{content: selfContainedPromptContent(ctx, "☤ **"+updateTitle+"**", prompt+defaultHint, false, ""), view: &view.icebathView,
 			embed: newEmbed(truncateDiscordComponentText("☤ "+updateTitle, discordEmbedTitleLimit), prompt+defaultHint, colorGold)}, nil
 	}, "")
 	if result.Success && metadataMarksNonconversational(metadata) {
@@ -293,7 +292,7 @@ func (a *DiscordAdapter) SendModelPicker(ctx context.Context, chatID string, pro
 		if err != nil {
 			return promptMessage{}, err
 		}
-		return promptMessage{view: &view.hermesView, embed: newEmbed(tDiscord(ctx, "platform.discord.picker.title", discordEmbedTitleLimit, nil),
+		return promptMessage{view: &view.icebathView, embed: newEmbed(tDiscord(ctx, "platform.discord.picker.title", discordEmbedTitleLimit, nil),
 			providerSelectText(ctx, currentModel, currentProvider), colorBlue)}, nil
 	}, "send_model_picker"), nil
 }
@@ -314,6 +313,6 @@ func (a *DiscordAdapter) SendChoicePicker(ctx context.Context, chatID, title str
 		if err != nil {
 			return promptMessage{}, err
 		}
-		return promptMessage{view: &view.hermesView, embed: newEmbed(truncateDiscordComponentText("⚙ "+heading, discordEmbedTitleLimit), description, colorBlue)}, nil
+		return promptMessage{view: &view.icebathView, embed: newEmbed(truncateDiscordComponentText("⚙ "+heading, discordEmbedTitleLimit), description, colorBlue)}, nil
 	}, "send_choice_picker"), nil
 }

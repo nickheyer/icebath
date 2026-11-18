@@ -482,7 +482,7 @@ func (s *Scope) ledgerReadBackupPackage(prefixes []string) ([]string, map[string
 	}
 	keys, files, err := ledgerReadTarball(filepath.Join(backups, best, "skills.tar.gz"), exact, prefixed)
 	if err != nil {
-		s.logger().Debug(fmt.Sprintf("skill_ledger: could not read curator backup package: %s", pyOSErrorText(err)))
+		s.logger().Debug(fmt.Sprintf("skill_ledger: could not read curator backup package: %s", osErrorText(err)))
 		return nil, nil
 	}
 	return keys, files
@@ -598,7 +598,7 @@ func (s *Scope) ledgerFill(root string, existing []any, skill string) ([]any, er
 		}
 		sha, err := s.ledgerStoreBlob(extra[rel])
 		if err != nil {
-			s.logger().Debug(fmt.Sprintf("skill_ledger: backup blob store failed for %s: %s", rel, pyOSErrorText(err)))
+			s.logger().Debug(fmt.Sprintf("skill_ledger: backup blob store failed for %s: %s", rel, osErrorText(err)))
 			continue
 		}
 		out = append(out, newLedgerItem(dest, sha))
@@ -664,7 +664,7 @@ func ledgerDelta(before, after []any) ([]any, []any, error) {
 func ledgerErrText(err error) string {
 	var pe *fs.PathError
 	if errors.As(err, &pe) {
-		return pyOSErrorText(err)
+		return osErrorText(err)
 	}
 	return err.Error()
 }
@@ -762,7 +762,7 @@ func (s *Scope) ledgerRead(what string, quietMissing bool) []byte {
 	raw, err := os.ReadFile(s.LedgerPath())
 	if err != nil {
 		if !quietMissing || !errors.Is(err, fs.ErrNotExist) {
-			s.logger().Warn(fmt.Sprintf("skill_ledger: ledger unreadable (%s); %s", pyOSErrorText(err), what))
+			s.logger().Warn(fmt.Sprintf("skill_ledger: ledger unreadable (%s); %s", osErrorText(err), what))
 		}
 		return nil
 	}
@@ -1320,7 +1320,7 @@ func (s *Scope) LedgerRollbackEntry(ctx context.Context, entryID string) (bool, 
 			continue
 		}
 		if err := os.Remove(p); err != nil {
-			s.logger().Warn(fmt.Sprintf("skill_ledger: could not remove %s during rollback: %s", p, pyOSErrorText(err)))
+			s.logger().Warn(fmt.Sprintf("skill_ledger: could not remove %s during rollback: %s", p, osErrorText(err)))
 			continue
 		}
 		removed++

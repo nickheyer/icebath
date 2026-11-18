@@ -13,18 +13,16 @@ import (
 
 const workerStderrTailChars = 1500
 
-// Run document error section with chained causes and URL credentials redacted
+// Run document error section with the error and its causes, URL credentials redacted, the stack logged only
 func formatRunError(s *Store, err error) string {
-	chain := []error{}
-	for e := err; e != nil; e = errors.Unwrap(e) {
-		chain = append(chain, e)
-	}
 	var b strings.Builder
-	for i := len(chain) - 1; i >= 0; i-- {
-		b.WriteString(tracebackFrames(chain[i]))
-		b.WriteString(exceptionOnlyLine(chain[i]))
-		if i > 0 {
-			b.WriteString("\nThe above exception was the direct cause of the following exception:\n\n")
+	for e := err; e != nil; e = errors.Unwrap(e) {
+		if e != err {
+			b.WriteString("caused by ")
+		}
+		b.WriteString(exceptionOnlyLine(e))
+		if frames := tracebackFrames(e); frames != "" {
+			pkgLog().Error("cron run failed", "error", exceptionOnlyLine(e), "stack", frames)
 		}
 	}
 	text := tools.RedactSensitiveTextWith(&tools.Env{Home: s.home}, b.String(), tools.RedactOptions{Force: true, URLCredentials: true})
@@ -100,20 +98,20 @@ func callerFrames(skip int) []runtime.Frame {
 	}
 }
 
-// Traceback header and frame lines of an error that recorded its frames, empty otherwise
+// Stack lines of an error that recorded its frames, outermost first, empty otherwise
 func tracebackFrames(err error) string {
 	traced, ok := err.(interface{ StackFrames() []runtime.Frame })
 	if !ok || len(traced.StackFrames()) == 0 {
 		return ""
 	}
 	var b strings.Builder
-	b.WriteString("Traceback (most recent call last):\n")
+	b.WriteString("stack, outermost call first:\n")
 	for _, f := range traced.StackFrames() {
 		name := f.Function[strings.LastIndex(f.Function, "/")+1:]
 		if i := strings.Index(name, "."); i >= 0 {
 			name = name[i+1:]
 		}
-		fmt.Fprintf(&b, "  File \"%s\", line %d, in %s\n", f.File, f.Line, name)
+		fmt.Fprintf(&b, "  %s at %s:%d\n", name, f.File, f.Line)
 		if src := sourceLine(f.File, f.Line); src != "" {
 			b.WriteString("    " + src + "\n")
 		}

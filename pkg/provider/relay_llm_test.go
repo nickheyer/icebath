@@ -303,7 +303,7 @@ func TestRelayProviderRequestOverlaysInterceptorAddedExtraBody(t *testing.T) {
 	if _, ok := original["extra_body"]; ok {
 		t.Fatal("original mutated")
 	}
-	relayLLMEqual(t, request["extra_body"], map[string]any{"prompt_cache_retention": "24h"})
+	relayLLMEqual(t, pyjson.Plain(request["extra_body"]), map[string]any{"prompt_cache_retention": "24h"})
 }
 
 const relayLLMTraceparent = "00-11111111111111111111111111111111-2222222222222222-01"

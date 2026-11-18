@@ -143,13 +143,13 @@ func (r *GatewayRunner) refuseDuplicateClaim(ctx context.Context, claim *claimKe
 	var message string
 	if kind == "credential" {
 		message = head + fmt.Sprintf("with the same credential. Give each profile its own %s credential.", pv)
-		runLog().Error(fmt.Sprintf("Profile '%s' and '%s' both configure %s with the same credential — refusing to start the "+
+		pkgLog().Error(fmt.Sprintf("Profile '%s' and '%s' both configure %s with the same credential — refusing to start the "+
 			"duplicate (one credential cannot be consumed twice). Give each profile its own %s credential.",
 			who(owner, ownerOrigin), who(profileName, incomingOrigin), pv, pv))
 	} else {
 		bind, port := claim[2], claim[3]
 		message = head + fmt.Sprintf("sidecars on the same listener. Configure a distinct listener for profile '%s'.", profileName)
-		runLog().Error(fmt.Sprintf("Profile '%s' and '%s' both configure %s sidecars on %v:%v — refusing to start the duplicate "+
+		pkgLog().Error(fmt.Sprintf("Profile '%s' and '%s' both configure %s sidecars on %v:%v — refusing to start the duplicate "+
 			"listener. Set platforms.%s.extra.sidecar_port to a distinct port for profile '%s'.",
 			owner, profileName, pv, bind, port, pv, profileName))
 	}

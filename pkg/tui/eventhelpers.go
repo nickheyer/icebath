@@ -2,9 +2,11 @@ package tui
 
 import (
 	"encoding/json"
+	"github.com/nickheyer/icebath/pkg/tuigateway"
 	"math"
 	"net/url"
 	"os/exec"
+	"reflect"
 	"runtime"
 	"strings"
 
@@ -68,14 +70,10 @@ type billingDialog struct {
 	ConfirmLabel string
 	Detail       string
 	Title        string
-	SwitchValue  string
 }
 
 // Dialog of an out of credits or payment required block
 func billingDialogCopy(block map[string]any) billingDialog {
-	if truthyJS(block["is_nous"]) {
-		return billingDialog{CancelLabel: tr("libText.billingDialog.dismiss"), ConfirmLabel: tr("libText.billingDialog.topUp"), Detail: tr("libText.billingDialog.nousDetail"), Title: tr("libText.billingDialog.nousTitle")}
-	}
 	label := tr("libText.billingDialog.yourProvider")
 	if truthyJS(block["provider_label"]) {
 		label = jsString(block["provider_label"])
@@ -85,55 +83,6 @@ func billingDialogCopy(block map[string]any) billingDialog {
 		confirm = tr("libText.billingDialog.openBillingPage")
 	}
 	return billingDialog{CancelLabel: tr("libText.billingDialog.dismiss"), ConfirmLabel: confirm, Detail: tr("libText.billingDialog.providerDetail", label), Title: tr("libText.billingDialog.providerTitle", label)}
-}
-
-var creditsStep = map[string]string{
-	"add_credits":                "libText.billingDialog.limitCreditsAdd",
-	"add_credits_and_keep_going": "libText.billingDialog.limitCreditsBoth",
-	"use_credits":                "libText.billingDialog.limitCreditsUse",
-}
-
-// Dialog of a window plan's limit, switching to its first suggestion when it names one
-func usageLimitDialog(limit map[string]any) billingDialog {
-	var suggestion map[string]any
-	if list, _ := limit["suggestions"].([]any); len(list) > 0 {
-		suggestion, _ = list[0].(map[string]any)
-	}
-	sentence := ""
-	if truthyJS(limit["message"]) {
-		sentence = strings.TrimFunc(jsString(limit["message"]), isJSSpace)
-	}
-	credits := ""
-	creditsInfo, _ := limit["credits"].(map[string]any)
-	if action, isStr := creditsInfo["action"].(string); isStr {
-		if key, known := creditsStep[action]; known {
-			credits = tr(key)
-		}
-	}
-	detail := []string{}
-	for _, part := range []string{sentence, credits} {
-		if part != "" {
-			detail = append(detail, part)
-		}
-	}
-	if suggestion == nil {
-		return billingDialog{CancelLabel: tr("libText.billingDialog.dismiss"), ConfirmLabel: tr("libText.billingDialog.limitOpenTopup"), Detail: strings.Join(detail, "\n"), Title: tr("libText.billingDialog.limitTitle")}
-	}
-	note := ""
-	if truthyJS(suggestion["note"]) {
-		note = " (" + jsString(suggestion["note"]) + ")"
-	}
-	provider := "nous"
-	if truthyJS(suggestion["provider"]) {
-		provider = jsString(suggestion["provider"])
-	}
-	return billingDialog{
-		CancelLabel:  tr("libText.billingDialog.dismiss"),
-		ConfirmLabel: tr("libText.billingDialog.limitSwitchTo", jsTemplate(suggestion, "label")+note),
-		Detail:       strings.Join(detail, "\n"),
-		SwitchValue:  jsTemplate(suggestion, "model") + " --provider " + provider + " --session",
-		Title:        tr("libText.billingDialog.limitTitle"),
-	}
 }
 
 // Title of the setup required panel
@@ -148,137 +97,96 @@ func buildSetupRequiredSections() []panelSection {
 	}
 }
 
-// Finite number of a payload field, false when absent or not a finite number
-func finiteNum(p map[string]any, k string) (float64, bool) {
-	n, isNum := p[k].(float64)
-	return n, isNum && !math.IsInf(n, 0) && !math.IsNaN(n)
-}
-
 // Whole percent of part in whole clamped to 0 through 100
 func usagePct(part, whole float64) float64 {
 	return math.Max(0, math.Min(100, jsRound(part/whole*100)))
 }
 
-var usageCounters = []struct {
-	key     string
-	sources []string
-}{
-	{"calls", []string{"api_calls"}},
-	{"input", []string{"input_tokens", "prompt_tokens"}},
-	{"output", []string{"output_tokens", "completion_tokens"}},
-	{"reasoning", []string{"reasoning_tokens"}},
-	{"prompt", []string{"prompt_tokens"}},
-	{"completion", []string{"completion_tokens"}},
-	{"total", []string{"total_tokens"}},
+// First counter that is set and non zero, else the first one set
+func firstCounter(sources ...*int64) (int64, bool) {
+	var first *int64
+	for _, source := range sources {
+		if source != nil && *source != 0 {
+			return *source, true
+		}
+		if source != nil && first == nil {
+			first = source
+		}
+	}
+	return val(first), first != nil
 }
 
-// Status bar usage of a live tick or stats payload, nil when it carries nothing
-func usageFromTick(p map[string]any) map[string]any {
-	if p == nil {
-		return nil
+// Status bar usage of a usage tick or stats answer, its usage view or one built from the flat counters, nil when it carries nothing
+func usageOfCounters(p tuigateway.SessionUsagePayload) *tuigateway.Usage {
+	if p.Usage != nil {
+		return p.Usage
 	}
-	if nested, has := p["usage"]; has && truthyJS(nested) {
-		out, _ := nested.(map[string]any)
-		return out
-	}
-	usage := map[string]any{}
-	for _, counter := range usageCounters {
-		var first *float64
-		for _, source := range counter.sources {
-			if n, ok := finiteNum(p, source); ok {
-				if n != 0 {
-					first = &n
-					break
-				}
-				if first == nil {
-					first = &n
-				}
-			}
-		}
-		if first != nil {
-			usage[counter.key] = *first
+	u, set := tuigateway.Usage{}, false
+	for _, counter := range []struct {
+		into    *int64
+		sources []*int64
+	}{{&u.Calls, []*int64{p.APICalls}}, {&u.Input, []*int64{p.InputTokens, p.PromptTokens}}, {&u.Output, []*int64{p.OutputTokens, p.CompletionTokens}},
+		{&u.Reasoning, []*int64{p.ReasoningTokens}}, {&u.Prompt, []*int64{p.PromptTokens}}, {&u.Completion, []*int64{p.CompletionTokens}}, {&u.Total, []*int64{p.TotalTokens}}} {
+		if n, ok := firstCounter(counter.sources...); ok {
+			*counter.into, set = n, true
 		}
 	}
-	used, _ := finiteNum(p, "last_prompt_tokens")
-	limit, _ := finiteNum(p, "context_length")
-	compressions, hasCompressions := finiteNum(p, "compression_count")
-	if p["context_source"] != nil && hasCompressions {
-		usage["compressions"] = compressions
+	if p.ContextSource != nil && p.CompressionCount != nil {
+		u.Compressions, set = p.CompressionCount, true
 	}
-	if used != 0 && limit != 0 {
+	if used, limit := val(p.LastPromptTokens), val(p.ContextLength); used != 0 && limit != 0 {
 		source := "provider_usage"
-		if truthyJS(p["context_source"]) {
-			source = jsString(p["context_source"])
+		if named := val(p.ContextSource); named != "" {
+			source = named
 		}
-		clamped := math.Min(used, limit)
-		usage["context_estimated"] = source != "provider_usage"
-		usage["context_max"] = limit
-		usage["context_percent"] = usagePct(clamped, limit)
-		usage["context_source"] = source
-		usage["context_used"] = clamped
+		clamped := min(used, limit)
+		estimated, pct := source != "provider_usage", int64(usagePct(float64(clamped), float64(limit)))
+		u.ContextEstimated, u.ContextMax, u.ContextPercent, u.ContextSource, u.ContextUsed, set = &estimated, &limit, &pct, &source, &clamped, true
 	}
-	promptTotal, _ := finiteNum(p, "prompt_tokens")
-	cacheRead, _ := finiteNum(p, "cache_read_tokens")
-	if promptTotal > 0 && cacheRead > 0 {
-		usage["cache_hit_pct"] = usagePct(cacheRead, promptTotal)
+	if prompt, cached := val(p.PromptTokens), val(p.CacheReadTokens); prompt > 0 && cached > 0 {
+		pct := int64(usagePct(float64(cached), float64(prompt)))
+		u.CacheHitPct, set = &pct, true
 	}
-	if latency, ok := finiteNum(p, "avg_latency_s"); ok {
-		usage["avg_latency_s"] = jsRound(latency*10) / 10
+	if p.AvgLatencyS != nil {
+		latency := jsRound(*p.AvgLatencyS*10) / 10
+		u.AvgLatencyS, set = &latency, true
 	}
-	if tps, ok := finiteNum(p, "tokens_per_s"); ok {
-		usage["avg_tps"] = jsRound(tps*10) / 10
+	if p.TokensPerS != nil {
+		tps := jsRound(*p.TokensPerS*10) / 10
+		u.AvgTPS, set = &tps, true
 	}
-	if subagents, ok := finiteNum(p, "active_subagents"); ok {
-		usage["active_subagents"] = subagents
+	if p.ActiveSubagents != nil {
+		u.ActiveSubagents, set = p.ActiveSubagents, true
 	}
-	if truthyJS(p["plan_gauge"]) {
-		usage["plan_gauge"] = p["plan_gauge"]
-	}
-	if len(usage) == 0 {
+	if !set {
 		return nil
 	}
-	if truthyJS(p["model"]) {
-		usage["model"] = p["model"]
-	}
-	return usage
+	u.Model = val(p.Model)
+	return &u
 }
 
 // Usage of a fresh session
-func zeroUsage() map[string]any {
-	return map[string]any{"calls": float64(0), "input": float64(0), "output": float64(0), "total": float64(0)}
-}
+func zeroUsage() *tuigateway.Usage { return &tuigateway.Usage{} }
 
-// Whether any key of either usage differs by strict equality
-func usageChanged(prev, next map[string]any) bool {
-	for k, v := range prev {
-		if w, has := next[k]; !has || !jsStrictEqual(v, w) {
-			return true
-		}
-	}
-	for k := range next {
-		if _, has := prev[k]; !has {
-			return true
-		}
-	}
-	return false
-}
-
-// Usage merged with a patch, the previous map kept when nothing changed
-func mergeUsageStable(prev, patch map[string]any) map[string]any {
+// Usage with a newer snapshot laid over it, the held one kept when nothing changed
+func mergeUsageStable(prev, patch *tuigateway.Usage) *tuigateway.Usage {
 	if patch == nil {
 		return prev
 	}
-	merged := make(map[string]any, len(prev)+len(patch))
-	for k, v := range prev {
-		merged[k] = v
+	merged := *usageOf(prev)
+	tuigateway.Merge(&merged, *patch)
+	if prev != nil && reflect.DeepEqual(*prev, merged) {
+		return prev
 	}
-	for k, v := range patch {
-		merged[k] = v
+	return &merged
+}
+
+// Usage or an empty one, so every counter reads as zero without a session
+func usageOf(u *tuigateway.Usage) *tuigateway.Usage {
+	if u == nil {
+		return zeroUsage()
 	}
-	if usageChanged(prev, merged) {
-		return merged
-	}
-	return prev
+	return u
 }
 
 // String of a JSON value as JavaScript renders it, arrays joined by commas
@@ -353,4 +261,33 @@ func topLevelSubagents(items []subagentProgress) []subagentProgress {
 		}
 	}
 	return out
+}
+
+// Number of a JSON value as JavaScript Number converts it, NaN when it has none
+func jsNumberOf(v any) float64 {
+	switch t := v.(type) {
+	case float64:
+		return t
+	case bool:
+		if t {
+			return 1
+		}
+		return 0
+	case string:
+		if f, ok := jsNumber(t); ok {
+			return f
+		}
+	case nil:
+		return 0
+	}
+	return math.NaN()
+}
+
+// Whether two decoded JSON values are equal under JavaScript ===, compound values never
+func jsStrictEqual(a, b any) bool {
+	switch a.(type) {
+	case nil, bool, float64, string:
+		return a == b
+	}
+	return false
 }

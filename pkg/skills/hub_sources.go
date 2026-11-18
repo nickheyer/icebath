@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/md5"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"regexp"
 	"slices"
@@ -611,7 +612,7 @@ func lobeHubConvertToSkillMD(agentData any) string {
 	if pyrepr.Truthy(systemRole) {
 		role = pyStrOf(systemRole)
 	}
-	fm := []string{"---", "name: " + identifier, "description: " + pyHead(description, 500), "metadata:", "  hermes:",
+	fm := []string{"---", "name: " + identifier, "description: " + pyHead(description, 500), "metadata:", "  icebath:",
 		"    tags: [" + strings.Join(tags, ", ") + "]", "  lobehub:", "    source: lobehub", "---"}
 	body := []string{"# " + title, "", description, "", "## Instructions", "", role}
 	return strings.Join(fm, "\n") + "\n\n" + strings.Join(body, "\n") + "\n"
@@ -718,7 +719,7 @@ func (b *BrowseShSource) Fetch(ctx context.Context, identifier string) (bundle *
 	}
 	slug, ok := item.(*pyjson.Object).Get("slug")
 	if !ok {
-		return nil, fmt.Errorf("KeyError: 'slug'")
+		return nil, errors.New("the browse.sh entry has no slug")
 	}
 	mdURL, err := b.resolveSkillMDURL(ctx, pyrepr.Str(slug), item)
 	if err != nil || mdURL == "" {

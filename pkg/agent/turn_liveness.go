@@ -3,7 +3,6 @@ package agent
 import (
 	"context"
 	"fmt"
-	"log/slog"
 	"math"
 	"regexp"
 	"runtime"
@@ -13,11 +12,10 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/config"
-	"github.com/nickheyer/icebath/pkg/cron"
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pythread"
-	"github.com/nickheyer/icebath/pkg/observability"
+	"github.com/nickheyer/icebath/pkg/periodic"
 	"github.com/nickheyer/icebath/pkg/state"
 )
 
@@ -30,8 +28,6 @@ const (
 	turnStallDumpMaxThreads     = 40
 )
 
-func turnLivenessLog() *slog.Logger { return slog.Default().With("logger", "agent.turn_liveness") }
-
 // Builds the awake idle meter of each new watchdog, swapped by tests that drive both clocks
 var newTurnLivenessIdleMeter = state.NewAwakeIdleMeter
 
@@ -43,7 +39,7 @@ type activitySnapshot struct {
 }
 
 func warnInvalidTurnLivenessValue(key string, raw any, def float64) {
-	turnLivenessLog().Warn(fmt.Sprintf("Invalid %s in config.yaml: %s — falling back to default %.1f.", key, pyrepr.Repr(raw), def))
+	pkgLog().Warn(fmt.Sprintf("Invalid %s in config.yaml: %s — falling back to default %.1f.", key, pyrepr.Repr(raw), def))
 }
 
 // Coerces one duration knob, warning and defaulting on typos, NaN and Inf, erroring only on overflow
@@ -139,8 +135,8 @@ func newTurnLivenessWatchdog(a *AIAgent, cfg turnLivenessWatchdogConfig) *turnLi
 }
 
 // Starts polling on the shared periodic scheduler and returns its cancel handle
-func (w *turnLivenessWatchdog) schedule(ctx context.Context) *cron.ScheduledHandle {
-	return cron.SchedulePeriodic(ctx, w.tick, time.Duration(w.cfg.pollS*float64(time.Second)))
+func (w *turnLivenessWatchdog) schedule(ctx context.Context) *periodic.ScheduledHandle {
+	return periodic.SchedulePeriodic(ctx, w.tick, time.Duration(w.cfg.pollS*float64(time.Second)))
 }
 
 // One poll that aborts a turn idle past the bound, false once the watchdog is finished
@@ -162,7 +158,6 @@ func (w *turnLivenessWatchdog) tick(ctx context.Context) bool {
 	}
 	w.cfg.deactivateTurn()
 	w.surfaceCommittedAbort(*snapshot)
-	observability.RecordWatchdogTurnAbort(ctx, &w.agent.turnExit)
 	return false
 }
 
@@ -240,7 +235,7 @@ func keepTurnBlockInDump(blocks []string, turnID uint64) []string {
 func (w *turnLivenessWatchdog) dumpTurnThreadStack() {
 	defer func() {
 		if r := recover(); r != nil {
-			turnLivenessLog().Debug("watchdog stack dump failed", "error", r)
+			pkgLog().Debug("watchdog stack dump failed", "error", r)
 		}
 	}()
 	turnID := w.agent.executionGoroutineID.Load()
@@ -264,14 +259,14 @@ func (w *turnLivenessWatchdog) dumpTurnThreadStack() {
 			lines = append(lines, "  "+sub)
 		}
 	}
-	turnLivenessLog().Error(strings.Join(lines, "\n"))
+	pkgLog().Error(strings.Join(lines, "\n"))
 }
 
 // Shows a warning through the agent, a failing emitter logged at debug
 func (w *turnLivenessWatchdog) emitWarning(text, debugMsg string) {
 	defer func() {
 		if r := recover(); r != nil {
-			turnLivenessLog().Debug(debugMsg, "error", r)
+			pkgLog().Debug(debugMsg, "error", r)
 		}
 	}()
 	w.agent.emitWarning(text)
@@ -296,7 +291,7 @@ func (w *turnLivenessWatchdog) surfaceStall(snapshot activitySnapshot) {
 	w.cfg.activityLock.Lock()
 	desc := w.agent.lastActivityDesc
 	w.cfg.activityLock.Unlock()
-	turnLivenessLog().Error(fmt.Sprintf("Turn liveness watchdog fired for session %s: "+
+	pkgLog().Error(fmt.Sprintf("Turn liveness watchdog fired for session %s: "+
 		"no progress for %.1fs (last activity: %s). "+
 		"Attempting recovery: force-interrupting the turn and "+
 		"stopping lease renewal if it cannot resume (#95548).",
@@ -309,7 +304,7 @@ func (w *turnLivenessWatchdog) surfaceStall(snapshot activitySnapshot) {
 
 // Logs and warns the definitive abort once the interrupt committed and renewal stopped
 func (w *turnLivenessWatchdog) surfaceCommittedAbort(snapshot activitySnapshot) {
-	turnLivenessLog().Error(fmt.Sprintf("Turn liveness watchdog aborted turn for session %s: "+
+	pkgLog().Error(fmt.Sprintf("Turn liveness watchdog aborted turn for session %s: "+
 		"no progress for %.1fs; turn interrupted and lease renewal "+
 		"stopped (#95548).", w.currentSessionID(), snapshot.idleSeconds))
 	w.emitWarning("⚠️ Turn aborted by the liveness watchdog "+

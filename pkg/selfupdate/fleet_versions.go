@@ -3,7 +3,6 @@ package selfupdate
 import (
 	"fmt"
 	"io"
-	"log/slog"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -266,7 +265,7 @@ func CollectFleetVersions(preRestartPIDs []int, selfRestartPending []int) []*pyj
 		pid := int(n.Int64())
 		live, found, err := fleetLiveGatewayPID(ph.home)
 		if err != nil {
-			slog.Debug(fmt.Sprintf("Fleet version probe failed: %s", pypath.OSErrorText(err)))
+			pkgLog().Debug(fmt.Sprintf("Fleet version probe failed: %s", pypath.OSErrorText(err)))
 			return results
 		}
 		if found && live == pid {

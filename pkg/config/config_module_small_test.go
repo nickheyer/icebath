@@ -28,7 +28,7 @@ func TestConfigFilePermissions(t *testing.T) {
 			t.Fatalf(".env mode %o", got)
 		}
 	})
-	t.Run("test_ensure_hermes_home_sets_0700", func(t *testing.T) {
+	t.Run("test_ensure_icebath_home_sets_0700", func(t *testing.T) {
 		h := filepath.Join(t.TempDir(), ".icebath")
 		t.Setenv("ICEBATH_HOME", h)
 		t.Setenv(EnvManagedDir, filepath.Join(t.TempDir(), "no-managed"))

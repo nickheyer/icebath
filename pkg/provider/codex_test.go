@@ -452,7 +452,7 @@ func TestNormalizeCodexResponseTreatsSummaryOnlyReasoningAsIncomplete(t *testing
 	}
 }
 
-var oversizedCallID = "codex_mcp__hermes-tools__web_search_exec-" + strings.Repeat("0", 43)
+var oversizedCallID = "codex_mcp__icebath-tools__web_search_exec-" + strings.Repeat("0", 43)
 
 func pairedCallHistory(id, toolCallID string) []*state.Message {
 	return []*state.Message{
@@ -696,7 +696,7 @@ func TestLegacyRawEndpointStampReplaysOnCanonicalIssuer(t *testing.T) {
 }
 
 func TestPreflightCodexAPIKwargsDropsOversizedMessageIDEndToEnd(t *testing.T) {
-	kwargs, err := preflightCodexAPIKwargs(map[string]any{"model": "gpt-5.5", "instructions": "You are Hermes.",
+	kwargs, err := preflightCodexAPIKwargs(map[string]any{"model": "gpt-5.5", "instructions": "You are Icebath.",
 		"input": jsonList([]map[string]any{{"role": "user", "content": "ping"}, {"type": "message", "role": "assistant", "status": "completed",
 			"content": []map[string]any{{"type": "output_text", "text": "pong"}}, "id": strings.Repeat("x", 408), "phase": "final_answer"}}),
 		"tools": []any{}, "store": false}, false, false, false)
@@ -1030,7 +1030,7 @@ func TestCacheKeyIsContentAddressedNotSessionID(t *testing.T) {
 }
 
 func TestIDBindingResponsesEndpointDropsMessageItemIDEndToEnd(t *testing.T) {
-	msgs := []*state.Message{cm("system", "You are Hermes."), {Role: "assistant", Content: "pong", CodexMessageItems: rawItems(map[string]any{
+	msgs := []*state.Message{cm("system", "You are Icebath."), {Role: "assistant", Content: "pong", CodexMessageItems: rawItems(map[string]any{
 		"type": "message", "role": "assistant", "status": "in_progress", "content": []map[string]any{{"type": "output_text", "text": "pong"}},
 		"id": "msg_short_but_connection_scoped", "phase": "final_answer"})}}
 	binding := responsesEndpointQuirks{replayItemIDs: false, promptCacheKey: true, nativeCompaction: true}
@@ -1046,7 +1046,7 @@ func TestIDBindingResponsesEndpointDropsMessageItemIDEndToEnd(t *testing.T) {
 }
 
 func TestNonIDBindingResponsesKeepsMessageItemIDEndToEnd(t *testing.T) {
-	msgs := []*state.Message{cm("system", "You are Hermes."), {Role: "assistant", Content: "pong", CodexMessageItems: rawItems(map[string]any{
+	msgs := []*state.Message{cm("system", "You are Icebath."), {Role: "assistant", Content: "pong", CodexMessageItems: rawItems(map[string]any{
 		"type": "message", "role": "assistant", "status": "completed", "content": []map[string]any{{"type": "output_text", "text": "pong"}}, "id": "msg_short_id"})}}
 	kw := build(t, newCodexTransport(), "gpt-5.5", msgs, nil, codexParams{isCodexBackend: true, replayEncryptedReasoning: true})
 	if firstOfType(t, kw["input"].([]map[string]any), "message")["id"] != "msg_short_id" {
@@ -2263,7 +2263,7 @@ func TestCodexHeaders(t *testing.T) {
 		t.Fatal("malformed token produced headers")
 	}
 	official := codexCloudflareHeaders(token, "https://chatgpt.com/backend-api/codex")
-	if official["User-Agent"] != "IcebathAgent/"+Version || official["originator"] != "icebath-agent" || official["ChatGPT-Account-ID"] != "acct_1" {
+	if official["User-Agent"] != userAgent("IcebathAgent") || official["originator"] != "icebath-agent" || official["ChatGPT-Account-ID"] != "acct_1" {
 		t.Fatalf("official %v", official)
 	}
 	custom := codexCloudflareHeaders(token, "https://proxy.example/codex")
@@ -2271,7 +2271,7 @@ func TestCodexHeaders(t *testing.T) {
 		t.Fatalf("custom %v", custom)
 	}
 	applied := applyRequiredCodexHeaders(map[string]string{"user-agent": "mine", "X-Extra": "1"}, token, "https://chatgpt.com/backend-api/codex")
-	if applied["User-Agent"] != "IcebathAgent/"+Version || applied["X-Extra"] != "1" {
+	if applied["User-Agent"] != userAgent("IcebathAgent") || applied["X-Extra"] != "1" {
 		t.Fatalf("applied %v", applied)
 	}
 	if _, has := applied["user-agent"]; has {

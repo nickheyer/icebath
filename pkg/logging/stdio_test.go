@@ -89,7 +89,7 @@ func TestSetupHomeLoggingAddsTheModeLog(t *testing.T) {
 	if err := SetupHomeLogging(worker, "gateway"); err != nil {
 		t.Fatal(err)
 	}
-	GetLogger("gateway.run").Info("worker gateway line")
+	GetLogger("gatewayrun").Info("worker gateway line")
 	FlushLogQueue()
 	if !strings.Contains(readText(t, filepath.Join(worker, "logs", "gateway.log")), "worker gateway line") {
 		t.Fatal("mode log missing")

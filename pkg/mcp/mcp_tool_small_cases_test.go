@@ -10,8 +10,8 @@ import (
 	"time"
 )
 
-// test_mcp_tool_client_info.py test_session_kwargs_carry_hermes_client_identity
-func TestSessionKwargsCarryHermesClientIdentity(t *testing.T) {
+// Session kwargs carry the icebath client identity
+func TestSessionKwargsCarryIcebathClientIdentity(t *testing.T) {
 	params := (&Session{}).initializeParams()
 	if params.ClientInfo.Name != "icebath-agent" || params.ClientInfo.Version != ClientVersion {
 		t.Fatalf("clientInfo %+v", params.ClientInfo)
@@ -125,7 +125,7 @@ func TestIsSessionExpiredDetectsSessionNotFound(t *testing.T) {
 	}
 }
 
-// Exception node carrying only its own message with a cause beneath it, the hermes __cause__ chain shape
+// Exception node carrying only its own message with a cause beneath it, the cause chain shape
 type causeLayer struct {
 	msg   string
 	cause error

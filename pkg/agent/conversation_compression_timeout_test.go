@@ -406,9 +406,9 @@ func committingWorker(seen func(ctx context.Context)) compressionWorker {
 
 func TestPropagatesConversationContextIntoWorker(t *testing.T) {
 	var seen atomic.Value
-	ctx := provider.WithPortalConversationContext(context.Background(), "conv-timeout-ctx")
+	ctx := provider.WithConversationContext(context.Background(), "conv-timeout-ctx")
 	msgs, prompt, err := runCompressContextWithProgressTimeout(ctx, compressionTimeoutRun{
-		Worker:   committingWorker(func(ctx context.Context) { seen.Store(provider.PortalConversationContext(ctx)) }),
+		Worker:   committingWorker(func(ctx context.Context) { seen.Store(provider.ConversationContext(ctx)) }),
 		Messages: runnerRows("x"), SystemPromptFallback: func() string { return "fallback" }, IdleTimeoutSeconds: 1, TotalCeilingSeconds: 2,
 	})
 	if seen.Load() != "conv-timeout-ctx" || err != nil || prompt != "p" || msgs[0]["content"] != "ok" {

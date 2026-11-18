@@ -216,7 +216,7 @@ func dispatchProfileExistsFn(ctx context.Context) func(string) bool {
 func dispatchProfileAllowlist(ctx context.Context) map[string]bool {
 	cfg, err := config.LoadUserEffectiveFailClosed(home.ConfigPath(home.Dir(ctx)), os.LookupEnv)
 	if err != nil {
-		log.Warn(fmt.Sprintf("kanban: could not read kanban.dispatch_profiles (%s: %s) — this home claims no cards until the config is readable",
+		pkgLog().Warn(fmt.Sprintf("kanban: could not read kanban.dispatch_profiles (%s: %s) — this home claims no cards until the config is readable",
 			pyrepr.ExceptionName(err), pyrepr.ExceptionMessage(err)))
 		return map[string]bool{}
 	}
@@ -235,7 +235,7 @@ func dispatchProfileAllowlist(ctx context.Context) map[string]bool {
 		return nil
 	}
 	if s, isStr := raw.(string); raw == nil || (isStr && strings.TrimSpace(s) == "") {
-		log.Warn("kanban: kanban.dispatch_profiles is present but empty — this home claims no cards; omit the key to allow any existing profile")
+		pkgLog().Warn("kanban: kanban.dispatch_profiles is present but empty — this home claims no cards; omit the key to allow any existing profile")
 		return map[string]bool{}
 	}
 	var names []string
@@ -668,7 +668,7 @@ func dispatchLaneTask(ctx context.Context, conn state.SQLiteConn, row *Row, assi
 	var scope *tools.RestartSafeScopeUnavailable
 	infrastructure := errors.As(spawnErr, &scope)
 	if infrastructure {
-		log.Warn(fmt.Sprintf("kanban dispatcher: spawn of %s deferred, host cannot place the worker: %s", claimed.ID, pyrepr.ExceptionMessage(spawnErr)))
+		pkgLog().Warn(fmt.Sprintf("kanban dispatcher: spawn of %s deferred, host cannot place the worker: %s", claimed.ID, pyrepr.ExceptionMessage(spawnErr)))
 	}
 	blocked, err := recordTaskFailure(ctx, conn, claimed.ID, pyrepr.ExceptionMessage(spawnErr), RecordFailureOptions{
 		Outcome: "spawn_failed", FailureLimit: &p.failureLimit, ReleaseClaim: true, EndRun: true, Infrastructure: infrastructure,
@@ -694,7 +694,7 @@ func applyDefaultAssignee(ctx context.Context, conn state.SQLiteConn, taskID, as
 		return appendEvent(ctx, conn, taskID, "assigned", payload("assignee", assignee, "source", "kanban.default_assignee"), nil)
 	})
 	if err != nil {
-		log.Debug(fmt.Sprintf("kanban dispatch: failed to apply default_assignee=%s to task %s", pyrepr.Repr(assignee), taskID), "exc", err)
+		pkgLog().Debug(fmt.Sprintf("kanban dispatch: failed to apply default_assignee=%s to task %s", pyrepr.Repr(assignee), taskID), "exc", err)
 		return false
 	}
 	return true
@@ -759,13 +759,13 @@ func tickSpawnBudget(ctx context.Context, conn state.SQLiteConn, result *Dispatc
 	pressure := memoryPressureLevel(nil)
 	if pressure == "critical" {
 		result.MemoryPressure = &pressure
-		log.Warn("kanban dispatch: system memory pressure is critical; spawning no new workers this tick (deferred, not dropped)")
+		pkgLog().Warn("kanban dispatch: system memory pressure is critical; spawning no new workers this tick (deferred, not dropped)")
 		return false, nil
 	}
 	if pressure == "elevated" {
 		result.MemoryPressure = &pressure
 		if budget == nil || *budget > 1 {
-			log.Warn("kanban dispatch: system memory pressure is elevated; limiting to at most 1 new worker this tick")
+			pkgLog().Warn("kanban dispatch: system memory pressure is elevated; limiting to at most 1 new worker this tick")
 			one := 1
 			budget = &one
 		}

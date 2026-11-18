@@ -3,7 +3,6 @@ package diskcleanup
 import (
 	"context"
 	"fmt"
-	"log/slog"
 	"regexp"
 	"runtime"
 	"sort"
@@ -33,7 +32,7 @@ func (Plugin) Manifest() plugins.Manifest {
 		Name:          "disk-cleanup",
 		Version:       "2.0.0",
 		Description:   "Auto-track and clean up ephemeral files (test scripts, temp outputs, cron logs) created during Icebath sessions. Runs via plugin hooks \u2014 no agent action required.",
-		Author:        "@LVT382009 (original), NousResearch (plugin port)",
+		Author:        "@LVT382009 (original), Icebath (plugin port)",
 		ProvidesHooks: []string{"pre_tool_call", "post_tool_call", "on_session_end"},
 	}
 }
@@ -225,7 +224,7 @@ func (h *hooks) onSessionEnd(ctx context.Context, kwargs map[string]any) (any, e
 	}
 	summary, err := Quick(ctx)
 	if err != nil {
-		slog.Debug(fmt.Sprintf("disk-cleanup quick cleanup failed: %v", err))
+		pkgLog().Debug(fmt.Sprintf("disk-cleanup quick cleanup failed: %v", err))
 		return nil, nil
 	}
 	if summary.Deleted > 0 || summary.EmptyDirs > 0 {

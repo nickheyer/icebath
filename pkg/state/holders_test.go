@@ -80,11 +80,11 @@ func TestWindowsRestartManagerScanSizesThenExcludesSelf(t *testing.T) {
 	api = &fakeRM{startRC: 5}
 	_, err = windowsRestartManagerHolders(dbPath, api)
 	var rmErr *rmCallError
-	if !errors.As(err, &rmErr) || err.Error() != "[Errno 5] RmStartSession failed" {
+	if !errors.As(err, &rmErr) || err.Error() != "RmStartSession failed with status 5" {
 		t.Fatalf("err = %v", err)
 	}
 	got := restartManagerScan(dbPath, func() (rmAPI, error) { return api, nil })
-	if !slices.Equal(got, []Holder{{-1, "Windows Restart Manager scan failed: [Errno 5] RmStartSession failed"}}) {
+	if !slices.Equal(got, []Holder{{-1, "Windows Restart Manager scan failed: RmStartSession failed with status 5"}}) {
 		t.Fatalf("scan = %v", got)
 	}
 	empty := filepath.Join(tmp, "missing", "state.db")
@@ -285,10 +285,10 @@ func TestPythonPathHelpers(t *testing.T) {
 		t.Fatal("pathlib name or str")
 	}
 	err := &os.PathError{Op: "stat", Path: "/x'y", Err: syscall.ENOENT}
-	if got := pyOSErrorStr(err); got != `[Errno 2] No such file or directory: "/x'y"` {
+	if got := pyOSErrorStr(err); got != `no such file or directory: /x'y` {
 		t.Fatalf("oserror = %q", got)
 	}
-	if got := pyOSErrorStr(os.NewSyscallError("kinfo_getfile()", syscall.EINVAL)); got != "[Errno 22] (originated from kinfo_getfile())" {
+	if got := pyOSErrorStr(os.NewSyscallError("kinfo_getfile()", syscall.EINVAL)); got != "kinfo_getfile(): invalid argument" {
 		t.Fatalf("syscall error = %q", got)
 	}
 }

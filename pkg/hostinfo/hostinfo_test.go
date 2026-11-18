@@ -27,9 +27,6 @@ func TestParseCPUInfo(t *testing.T) {
 	if ParseCPUInfo("", "NVIDIA_DGX\x00") != "NVIDIA DGX" || ParseCPUInfoVendor("CPU implementer: zz") != "" {
 		t.Fatal("device tree")
 	}
-	if ParseMeminfoTotal("MemTotal:       16384 kB\n") != 16384*1024 || ParseMeminfoTotal("x") != 0 {
-		t.Fatal("meminfo")
-	}
 }
 
 func TestGPUClassification(t *testing.T) {

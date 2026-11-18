@@ -37,7 +37,7 @@ var (
 	warnedCredentialKeys = map[string]bool{}
 	// Writes secret source status lines, replaced in tests
 	secretStatusPrint = func(line string) { fmt.Fprintln(os.Stderr, line) }
-	// Orchestrated apply pass seam, the registry apply_all hermes tests patch
+	// Orchestrated apply pass seam, the registry apply_all tests patch
 	applyAllSecretSourcesFn = ApplyAllSecretSources
 )
 

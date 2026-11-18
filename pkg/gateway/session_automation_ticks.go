@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"log/slog"
 	"reflect"
 	"regexp"
 	"sort"
@@ -120,7 +119,7 @@ func deliverHeartbeat(ctx context.Context, runner AuthorityRunner, event map[str
 			return prepareHeartbeat(ctx, runner, followed)
 		}()
 		if err != nil {
-			slog.Error(fmt.Sprintf("Heartbeat preparation error; the tick is requeued: %s", err))
+			pkgLog().Error(fmt.Sprintf("Heartbeat preparation error; the tick is requeued: %s", err))
 			return &requeue, nil
 		}
 		text := ""
@@ -136,7 +135,7 @@ func deliverHeartbeat(ctx context.Context, runner AuthorityRunner, event map[str
 		}
 		delivered, err := injector.InjectWatchNotification(ctx, text, prepared)
 		if err != nil {
-			slog.Error(fmt.Sprintf("Watch notification injection error: %s", err))
+			pkgLog().Error(fmt.Sprintf("Watch notification injection error: %s", err))
 			return &requeue, nil
 		}
 		refused := delivered != nil && !*delivered
@@ -387,7 +386,7 @@ func prepareHeartbeat(ctx context.Context, runner AuthorityRunner, event map[str
 		return nil, err
 	}
 	if completed {
-		slog.Debug(fmt.Sprintf("Dropped heartbeat %s of process %s: its completion is already admitted", pyrepr.Str(event["event_id"]), process))
+		pkgLog().Debug(fmt.Sprintf("Dropped heartbeat %s of process %s: its completion is already admitted", pyrepr.Str(event["event_id"]), process))
 		return nil, nil
 	}
 	identity, err := producerIdentity(ctx, runner, event)
@@ -434,7 +433,7 @@ func prepareHeartbeat(ctx context.Context, runner AuthorityRunner, event map[str
 // Cancels a finished process's ticks still queued in its session, never failing since the completion is already in
 func withdrawProcessTicks(ctx context.Context, runner AuthorityRunner, event map[string]any) {
 	if err := withdrawTicks(ctx, runner, event); err != nil {
-		slog.Warn(fmt.Sprintf("Could not withdraw the waiting heartbeats of finished process %s: %s", pyrepr.Str(event["session_id"]), err))
+		pkgLog().Warn(fmt.Sprintf("Could not withdraw the waiting heartbeats of finished process %s: %s", pyrepr.Str(event["session_id"]), err))
 	}
 }
 

@@ -8,7 +8,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"log/slog"
 	"math"
 	"math/rand/v2"
 	"net"
@@ -52,10 +51,6 @@ var (
 	envHeaderDelimiter  = regexp.MustCompile(`[ \t]*,[ \t]*`)
 )
 
-func otlpHTTPLog() *slog.Logger {
-	return slog.Default().With("logger", "opentelemetry.exporter.otlp.common.http")
-}
-
 // Headers of a W3C baggage formatted environment value, unencoded values accepted in liberal mode
 func parseEnvHeaders(s string, liberal bool) map[string]string {
 	headers := map[string]string{}
@@ -70,11 +65,11 @@ func parseEnvHeaders(s string, liberal bool) map[string]string {
 			continue
 		}
 		if !liberal {
-			otlpHTTPLog().Warn(fmt.Sprintf("Header format invalid! Header values in environment variables must be URL encoded per the OpenTelemetry Protocol Exporter specification: %s", header))
+			pkgLog().Warn(fmt.Sprintf("Header format invalid! Header values in environment variables must be URL encoded per the OpenTelemetry Protocol Exporter specification: %s", header))
 			continue
 		}
 		if !envHeaderLiberal.MatchString(trimmed) {
-			otlpHTTPLog().Warn(fmt.Sprintf("Header format invalid! Header values in environment variables must be URL encoded per the OpenTelemetry Protocol Exporter specification or a comma separated list of name=value occurrences: %s", header))
+			pkgLog().Warn(fmt.Sprintf("Header format invalid! Header values in environment variables must be URL encoded per the OpenTelemetry Protocol Exporter specification or a comma separated list of name=value occurrences: %s", header))
 			continue
 		}
 		name, value, _ := strings.Cut(trimmed, "=")
@@ -118,7 +113,7 @@ func resolveOTLPTimeout(signalEnv string) float64 {
 	}
 	v, err := strconv.ParseFloat(strings.TrimSpace(raw), 64)
 	if err != nil {
-		otlpHTTPLog().Warn(fmt.Sprintf("Invalid timeout value '%s', using default of 10 seconds", raw))
+		pkgLog().Warn(fmt.Sprintf("Invalid timeout value '%s', using default of 10 seconds", raw))
 		return otlpDefaultTimeout
 	}
 	return v
@@ -138,7 +133,7 @@ func resolveOTLPCompression(signalEnv string) string {
 	case "none", "gzip", "deflate":
 		return value
 	}
-	otlpHTTPLog().Warn("Unsupported compression type: " + value)
+	pkgLog().Warn("Unsupported compression type: " + value)
 	return "none"
 }
 
@@ -302,17 +297,17 @@ func (c *otlpHTTPClient) export(data []byte) bool {
 			if res.status != 0 {
 				status = strconv.Itoa(res.status)
 			}
-			otlpHTTPLog().Error(fmt.Sprintf("Failed to export %s batch code: %s, reason: %s", c.kind, status, reason))
+			pkgLog().Error(fmt.Sprintf("Failed to export %s batch code: %s, reason: %s", c.kind, status, reason))
 			return false
 		}
 		if retry+1 == otlpMaxRetries || backoff > time.Until(deadline).Seconds() || c.shutdownSet() {
-			otlpHTTPLog().Error(fmt.Sprintf("Failed to export %s batch due to timeout, max retries or shutdown.", c.kind))
+			pkgLog().Error(fmt.Sprintf("Failed to export %s batch due to timeout, max retries or shutdown.", c.kind))
 			return false
 		}
-		otlpHTTPLog().Warn(fmt.Sprintf("Transient error %s encountered while exporting %s batch, retrying in %.2fs.", reason, c.kind, backoff))
+		pkgLog().Warn(fmt.Sprintf("Transient error %s encountered while exporting %s batch, retrying in %.2fs.", reason, c.kind, backoff))
 		select {
 		case <-c.shutdownSig:
-			otlpHTTPLog().Warn("Shutdown in progress, aborting retry.")
+			pkgLog().Warn("Shutdown in progress, aborting retry.")
 			return false
 		case <-time.After(time.Duration(backoff * float64(time.Second))):
 		}
@@ -334,7 +329,7 @@ func (c *otlpHTTPClient) shutdown() {
 	c.shutdownMu.Lock()
 	defer c.shutdownMu.Unlock()
 	if c.isShutdown {
-		otlpHTTPLog().Warn("OTLP client already shutdown, ignoring call")
+		pkgLog().Warn("OTLP client already shutdown, ignoring call")
 		return
 	}
 	c.isShutdown = true
@@ -407,7 +402,7 @@ func (e *otlpLogExporter) export(batch []otlpLogRecord) bool {
 	shut := e.shut
 	e.mu.Unlock()
 	if shut {
-		otlpHTTPLog().Warn("Exporter already shutdown, ignoring batch")
+		pkgLog().Warn("Exporter already shutdown, ignoring batch")
 		return false
 	}
 	var scopes []*logspb.ScopeLogs
@@ -424,11 +419,11 @@ func (e *otlpLogExporter) export(batch []otlpLogRecord) bool {
 	req := &collogs.ExportLogsServiceRequest{ResourceLogs: []*logspb.ResourceLogs{{Resource: e.resource, ScopeLogs: scopes}}}
 	data, err := proto.Marshal(req)
 	if err != nil {
-		otlpHTTPLog().Error(fmt.Sprintf("Failed to encode logs batch: %s", err))
+		pkgLog().Error(fmt.Sprintf("Failed to encode logs batch: %s", err))
 		return false
 	}
 	if len(data) > otlpMaxRequestSize {
-		otlpHTTPLog().Warn(fmt.Sprintf("Dropping logs batch: serialized size %d bytes exceeds max_request_size %d bytes.", len(data), otlpMaxRequestSize))
+		pkgLog().Warn(fmt.Sprintf("Dropping logs batch: serialized size %d bytes exceeds max_request_size %d bytes.", len(data), otlpMaxRequestSize))
 		return false
 	}
 	return e.client.export(data)
@@ -438,7 +433,7 @@ func (e *otlpLogExporter) shutdown() {
 	e.mu.Lock()
 	if e.shut {
 		e.mu.Unlock()
-		otlpHTTPLog().Warn("Exporter already shutdown, ignoring call")
+		pkgLog().Warn("Exporter already shutdown, ignoring call")
 		return
 	}
 	e.shut = true
@@ -521,11 +516,11 @@ func (p *batchLogProcessor) emit(rec otlpLogRecord) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	if p.shutdown {
-		otlpHTTPLog().Info("Shutdown called, ignoring Log.")
+		pkgLog().Info("Shutdown called, ignoring Log.")
 		return
 	}
 	if len(p.queue) == blrpMaxQueueSize {
-		otlpHTTPLog().Warn("Queue full, dropping Log.")
+		pkgLog().Warn("Queue full, dropping Log.")
 		p.queue = p.queue[1:]
 	}
 	p.queue = append(p.queue, rec)

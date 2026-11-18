@@ -249,11 +249,6 @@ var Builtin = []Def{
 		Meta{GatewayOnly: true}, Def{BusyPolicy: BusyDispatch}),
 	def("usage", "Show token usage and rate limits; `reset` redeems a banked Codex limit reset", CategoryInfo,
 		Meta{}, Def{ArgsHint: "[reset [--force]]"}),
-	def("subscription", "View your Nous plan and change it in the browser", CategoryInfo,
-		Meta{}, Def{CLIOnly: true, Aliases: []string{"upgrade"}}),
-	def("login", "Sign in with a Nous account (keeps your connectors)", CategoryInfo,
-		Meta{}, Def{BusyPolicy: BusyDispatch}),
-	def("topup", "Show your Nous balance and manage billing on the portal", CategoryInfo, Meta{}, Def{}),
 	def("insights", "Show usage insights and analytics", CategoryInfo, Meta{}, Def{ArgsHint: "[days]"}),
 	def("platforms", "Show gateway/messaging platform status", CategoryInfo,
 		Meta{}, Def{CLIOnly: true, Aliases: []string{"gateway"}}),
@@ -267,7 +262,7 @@ var Builtin = []Def{
 	def("update", "Update icebath to the latest version", CategoryInfo, Meta{}, Def{BusyPolicy: BusyDispatch}),
 	def("version", "Show icebath version", CategoryInfo, Meta{Execute: "version"}, Def{Aliases: []string{"v"}, BusyPolicy: BusyDispatch}),
 	def("debug", "Upload debug report (system info + logs) and get shareable links", CategoryInfo,
-		Meta{}, Def{ArgsHint: "[nous|local]"}),
+		Meta{}, Def{ArgsHint: "[local]"}),
 
 	def("quit", "Exit the CLI (use --delete to also remove session history)", CategoryExit,
 		Meta{}, Def{CLIOnly: true, Aliases: []string{"exit"}, ArgsHint: "[--delete]"}),
@@ -405,7 +400,7 @@ func GatewayKnownCommands() map[string]bool {
 	out := map[string]bool{}
 	for _, d := range Builtin {
 		m := builtinMeta[d.Name]
-		if d.CLIOnly && m.GatewayConfigGate == "" {
+		if (d.CLIOnly && m.GatewayConfigGate == "") || !SlashLinked(d.Name) {
 			continue
 		}
 		out[d.Name] = true

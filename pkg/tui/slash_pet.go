@@ -8,11 +8,11 @@ import (
 	"path/filepath"
 	"regexp"
 	"sort"
+	"strconv"
 	"strings"
 
 	tea "charm.land/bubbletea/v2"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/pet"
 	"github.com/nickheyer/icebath/pkg/ui/wm"
 )
@@ -198,11 +198,7 @@ func (a *app) petScale(r *slashRun, value string) tea.Cmd {
 	}
 	return r.petCall("pet.scale", map[string]any{"scale": value}, func(res map[string]any) tea.Cmd {
 		scale, _ := res["scale"].(float64)
-		shown, err := pyrepr.Format(scale, "g")
-		if err != nil {
-			r.sys(tr("slashCmd.session.pet.error", err.Error()))
-			return nil
-		}
+		shown := strconv.FormatFloat(scale, 'g', 6, 64)
 		r.sys(tr("slashCmd.session.pet.scaleSet", shown))
 		return nil
 	})
@@ -361,11 +357,7 @@ func (a *app) petInfo(r *slashRun) tea.Cmd {
 				return int(n)
 			}
 			scale, _ := info["scale"].(float64)
-			shown, err := pyrepr.Format(scale, "g")
-			if err != nil {
-				r.sys(tr("slashCmd.session.pet.error", err.Error()))
-				return nil
-			}
+			shown := strconv.FormatFloat(scale, 'g', 6, 64)
 			counts, _ := info["framesByState"].(map[string]any)
 			var frames []string
 			for _, state := range pet.States {

@@ -11,7 +11,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/memory"
 	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tools"
-	"github.com/nickheyer/icebath/pkg/tuigateway"
+	"github.com/nickheyer/icebath/pkg/tuihost"
 )
 
 // Seconds the exit flush may take and the seconds interrupted turns get to settle on the way out
@@ -27,7 +27,7 @@ type flushableAgent interface {
 }
 
 // Agent of a session when it can persist a transcript, nil for a session with none
-func sessionFlushAgent(session *tuigateway.Session) flushableAgent {
+func sessionFlushAgent(session *tuihost.Session) flushableAgent {
 	if session == nil {
 		return nil
 	}
@@ -40,13 +40,13 @@ func sessionFlushAgent(session *tuigateway.Session) flushableAgent {
 }
 
 // Whether a flush of the session would write anything
-func sessionHasPendingFlush(session *tuigateway.Session) bool {
+func sessionHasPendingFlush(session *tuihost.Session) bool {
 	a := sessionFlushAgent(session)
 	return a != nil && len(a.SessionMessages()) > 0
 }
 
 // Persists one session transcript through its agent, false when there is nothing to write or the write fails
-func flushSessionMessages(session *tuigateway.Session) (flushed bool) {
+func flushSessionMessages(session *tuihost.Session) (flushed bool) {
 	a := sessionFlushAgent(session)
 	if a == nil {
 		return false
@@ -57,21 +57,21 @@ func flushSessionMessages(session *tuigateway.Session) (flushed bool) {
 	}
 	defer func() {
 		if failure := recover(); failure != nil {
-			logger().Debug("incremental session flush failed", "exc_info", failureText(failure))
+			pkgLog().Debug("incremental session flush failed", "exc_info", failureText(failure))
 			flushed = false
 		}
 	}()
 	if err := a.PersistSession(&snapshot, nil); err != nil {
-		logger().Debug("incremental session flush failed", "exc_info", err)
+		pkgLog().Debug("incremental session flush failed", "exc_info", err)
 		return false
 	}
 	return true
 }
 
 // Live session records in registry order
-func reaperSessionSnapshot() []*tuigateway.Session {
+func reaperSessionSnapshot() []*tuihost.Session {
 	live := snapshotSessions()
-	out := make([]*tuigateway.Session, len(live))
+	out := make([]*tuihost.Session, len(live))
 	for i, entry := range live {
 		out[i] = entry.Session
 	}
@@ -98,7 +98,7 @@ func flushSessionsBeforeExit(budgetS *float64) int {
 	done := make(chan struct{})
 	window := time.Duration(budget * float64(time.Second))
 	go func() {
-		defer threadExceptHook("hermes-exit-flush")
+		defer threadExceptHook("icebath-exit-flush")
 		defer close(done)
 		deadline := time.Now().Add(window)
 		for _, session := range sessions {
@@ -116,7 +116,7 @@ func flushSessionsBeforeExit(budgetS *float64) int {
 	}
 	count := int(flushed.Load())
 	if count < flushable {
-		logger().Warn(fmt.Sprintf("Exit flush persisted %d of %d in-memory session transcript(s) within %.1fs; the rest "+
+		pkgLog().Warn(fmt.Sprintf("Exit flush persisted %d of %d in-memory session transcript(s) within %.1fs; the rest "+
 			"may have been lost (ICEBATH_TUI_EXIT_FLUSH_BUDGET_S)", count, flushable, budget))
 	}
 	return count
@@ -124,7 +124,7 @@ func flushSessionsBeforeExit(budgetS *float64) int {
 
 // Interrupts every running turn, waits the settle budget and kills foreground commands still alive halfway through
 func stopTurnsBeforeExit(ctx context.Context, budgetS *float64) {
-	var running []tuigateway.LiveSession
+	var running []tuihost.LiveSession
 	for _, live := range snapshotSessions() {
 		if live.Session != nil && truthy(live.Session.Get("running")) {
 			running = append(running, live)

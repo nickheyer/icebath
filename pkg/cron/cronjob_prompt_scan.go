@@ -2,7 +2,6 @@ package cron
 
 import (
 	"fmt"
-	"log/slog"
 	"sort"
 	"strings"
 
@@ -157,7 +156,7 @@ func scanCronPrompt(prompt string) string {
 func scanCronSkillAssembled(assembled string) (string, string) {
 	cleaned, removed := stripInvisibleUnicode(assembled)
 	if len(removed) > 0 {
-		slog.Default().With("logger", "tools.cronjob_tools").Warn(fmt.Sprintf("Cron skill-assembled prompt: stripped %d invisible-unicode char(s) (%s) from vetted skill content", len(removed), strings.Join(removed, ", ")))
+		pkgLog().Warn(fmt.Sprintf("Cron skill-assembled prompt: stripped %d invisible-unicode char(s) (%s) from vetted skill content", len(removed), strings.Join(removed, ", ")))
 	}
 	return cleaned, firstPatternError(stripCronSafeConstructs(cleaned), cronSkillAssembledPatterns)
 }

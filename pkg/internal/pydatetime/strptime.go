@@ -132,28 +132,31 @@ func Strptime(s, format string) (time.Time, bool, error) {
 	if f, ok := group("f"); ok {
 		micro = num("f", 0) * int(math.Pow10(6-len(f)))
 	}
-	if day > daysInMonth(year, month) {
-		return time.Time{}, false, valueError("day %d must be in range 1..%d for month %d in year %d", day, daysInMonth(year, month), month, year)
+	// Offset parse, date fields, offset range, then time fields, the order CPython raises them in
+	z, aware := group("z")
+	var offset time.Duration
+	if aware {
+		if offset, err = strptimeOffset(z); err != nil {
+			return time.Time{}, false, err
+		}
 	}
-	if year < 1 || year > 9999 {
-		return time.Time{}, false, valueError("year %d is out of range", year)
+	if msg := DateArgsError(year, month, day); msg != "" {
+		return time.Time{}, false, valueError("%s", msg)
 	}
-	if second > 59 {
-		return time.Time{}, false, valueError("second must be in 0..59")
+	if offset <= -24*time.Hour || offset >= 24*time.Hour {
+		return time.Time{}, false, valueError("offset must be a timedelta strictly between -timedelta(hours=24) and timedelta(hours=24), not %s.", TimedeltaRepr(offset))
+	}
+	if msg := TimeArgsError(hour, minute, second); msg != "" {
+		return time.Time{}, false, valueError("%s", msg)
 	}
 	wall := time.Date(year, time.Month(month), day, hour, minute, second, micro*1000, time.UTC)
-	z, aware := group("z")
 	if !aware {
 		return wall, false, nil
-	}
-	offset, err := strptimeOffset(z)
-	if err != nil {
-		return time.Time{}, false, err
 	}
 	return wall.Add(-offset).In(time.FixedZone("", int(offset/time.Second))), true, nil
 }
 
-// UTC offset of a matched z directive, refusing inconsistent colons and offsets of a day or more
+// UTC offset of a matched z directive, refusing a colon used between some of its fields but not the others
 func strptimeOffset(raw string) (time.Duration, error) {
 	if raw == "Z" {
 		return 0, nil
@@ -161,21 +164,32 @@ func strptimeOffset(raw string) (time.Duration, error) {
 	z := []rune(raw)
 	if z[3] == ':' {
 		z = append(z[:3:3], z[4:]...)
-	}
-	if len(z) > 5 {
-		if z[5] != ':' {
-			return 0, valueError("Inconsistent use of : in %s", raw)
+		if len(z) > 5 {
+			if z[5] != ':' {
+				return 0, valueError("Inconsistent use of : in %s", raw)
+			}
+			z = append(z[:5:5], z[6:]...)
 		}
-		z = append(z[:5:5], z[6:]...)
 	}
-	part := func(lo, hi int) int64 {
+	part := func(lo, hi int) (int64, error) {
 		if lo >= len(z) {
-			return 0
+			return 0, nil
 		}
-		n, _ := pyint.Parse(string(z[lo:min(hi, len(z))]))
-		return n.Int64()
+		text := string(z[lo:min(hi, len(z))])
+		n, ok := pyint.Parse(text)
+		if !ok {
+			return 0, valueError("invalid literal for int() with base 10: %s", pyrepr.Repr(text))
+		}
+		return n.Int64(), nil
 	}
-	gmtoff := part(1, 3)*3600 + part(3, 5)*60 + part(5, 7)
+	var gmtoff int64
+	for _, field := range [][3]int64{{1, 3, 3600}, {3, 5, 60}, {5, 7, 1}} {
+		n, err := part(int(field[0]), int(field[1]))
+		if err != nil {
+			return 0, err
+		}
+		gmtoff += n * field[2]
+	}
 	var fraction int64
 	if len(z) > 8 {
 		rem := string(z[8:])
@@ -185,9 +199,6 @@ func strptimeOffset(raw string) (time.Duration, error) {
 	offset := time.Duration(gmtoff)*time.Second + time.Duration(fraction)*time.Microsecond
 	if z[0] == '-' {
 		offset = -offset
-	}
-	if offset <= -24*time.Hour || offset >= 24*time.Hour {
-		return 0, valueError("offset must be a timedelta strictly between -timedelta(hours=24) and timedelta(hours=24), not %s", TimedeltaRepr(offset))
 	}
 	return offset, nil
 }

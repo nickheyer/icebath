@@ -71,7 +71,7 @@ func expectValues(t *testing.T, got map[string]string, want map[string]string) {
 
 func TestGetSecretSourceReturnsNoneForUntrackedVar(t *testing.T) {
 	root := secretSourceFixture(t)
-	h := envLoaderProfile(t, root, "hermes")
+	h := envLoaderProfile(t, root, "icebath")
 	if got := SecretSourceOf(h, "ANTHROPIC_API_KEY"); got != "" {
 		t.Fatalf("source %q", got)
 	}
@@ -93,7 +93,7 @@ func TestGetSecretSourceValuesReturnsHomeSnapshotCopy(t *testing.T) {
 
 func TestFormatSecretSourceSuffixEmptyForUntracked(t *testing.T) {
 	root := secretSourceFixture(t)
-	h := envLoaderProfile(t, root, "hermes")
+	h := envLoaderProfile(t, root, "icebath")
 	if got := FormatSecretSourceSuffix(h, "ANTHROPIC_API_KEY"); got != "" {
 		t.Fatalf("suffix %q", got)
 	}
@@ -101,7 +101,7 @@ func TestFormatSecretSourceSuffixEmptyForUntracked(t *testing.T) {
 
 func TestApplyExternalSecretSourcesRecordsBitwardenOrigin(t *testing.T) {
 	root := secretSourceFixture(t)
-	h := envLoaderProfile(t, root, "hermes")
+	h := envLoaderProfile(t, root, "icebath")
 	t.Setenv("ICEBATH_HOME", h)
 	t.Setenv("BWS_ACCESS_TOKEN", "0.test-token")
 	envLoaderUnset(t, "ANTHROPIC_API_KEY")
@@ -121,7 +121,7 @@ func TestApplyExternalSecretSourcesRecordsBitwardenOrigin(t *testing.T) {
 
 func TestColdProfileBitwardenUsesProfileBootstrapWithoutGlobalEnv(t *testing.T) {
 	root := secretSourceFixture(t)
-	h := envLoaderProfile(t, root, "hermes")
+	h := envLoaderProfile(t, root, "icebath")
 	envLoaderUnset(t, "BWS_ACCESS_TOKEN", "ANTHROPIC_API_KEY")
 	writeEnvBytes(t, filepath.Join(h, ".env"), []byte("BWS_ACCESS_TOKEN=profile-bootstrap\n"))
 	writeProfileConfig(t, h, bitwardenTestConfig)
@@ -159,7 +159,7 @@ func TestSingleProfileScopedLoadKeepsOverrideBehavior(t *testing.T) {
 
 func TestMultiplexDotenvLoadHydratesSourcesWithoutGlobalEnv(t *testing.T) {
 	root := secretSourceFixture(t)
-	h := envLoaderProfile(t, root, "hermes")
+	h := envLoaderProfile(t, root, "routed")
 	envLoaderUnset(t, "BWS_ACCESS_TOKEN", "ANTHROPIC_API_KEY")
 	writeEnvBytes(t, filepath.Join(h, ".env"), []byte("BWS_ACCESS_TOKEN=profile-bootstrap\n"))
 	writeProfileConfig(t, h, bitwardenTestConfig)
@@ -196,7 +196,7 @@ func hydrationSeenEnv(t *testing.T, h string) map[string]string {
 
 func TestColdProfileHydrationSeedsOpEnvBootstrap(t *testing.T) {
 	root := secretSourceFixture(t)
-	h := envLoaderProfile(t, root, "hermes")
+	h := envLoaderProfile(t, root, "icebath")
 	envLoaderUnset(t, "OP_SERVICE_ACCOUNT_TOKEN")
 	writeEnvBytes(t, filepath.Join(h, ".env"), []byte("UNRELATED=x\n"))
 	writeEnvBytes(t, filepath.Join(h, ".op.env"), []byte("OP_SERVICE_ACCOUNT_TOKEN=ops_from-op-env\n"))
@@ -210,7 +210,7 @@ func TestColdProfileHydrationSeedsOpEnvBootstrap(t *testing.T) {
 
 func TestColdProfileHydrationDotenvWinsOverOpEnv(t *testing.T) {
 	root := secretSourceFixture(t)
-	h := envLoaderProfile(t, root, "hermes")
+	h := envLoaderProfile(t, root, "icebath")
 	envLoaderUnset(t, "OP_SERVICE_ACCOUNT_TOKEN")
 	writeEnvBytes(t, filepath.Join(h, ".env"), []byte("OP_SERVICE_ACCOUNT_TOKEN=ops_from-dotenv\n"))
 	writeEnvBytes(t, filepath.Join(h, ".op.env"), []byte("OP_SERVICE_ACCOUNT_TOKEN=ops_from-op-env\n"))
@@ -231,7 +231,7 @@ func appliedReport(source, label, name, shape string, overrode bool) *ApplyRepor
 
 func TestColdProfileHydrationRetriesFailedSource(t *testing.T) {
 	root := secretSourceFixture(t)
-	h := envLoaderProfile(t, root, "hermes")
+	h := envLoaderProfile(t, root, "icebath")
 	writeProfileConfig(t, h, "secrets:\n  command:\n    enabled: true\n")
 	attempts := 0
 	fakeApplyAll(t, func(_ map[string]any, _ string, environ *SourceEnvironment) (*ApplyReport, error) {
@@ -255,7 +255,7 @@ func TestColdProfileHydrationRetriesFailedSource(t *testing.T) {
 
 func TestColdProfileHydrationClearsPartialSnapshotWhenSourcesAreRemoved(t *testing.T) {
 	root := secretSourceFixture(t)
-	h := envLoaderProfile(t, root, "hermes")
+	h := envLoaderProfile(t, root, "icebath")
 	writeProfileConfig(t, h, "secrets:\n  command:\n    enabled: true\n")
 	fakeApplyAll(t, func(_ map[string]any, _ string, environ *SourceEnvironment) (*ApplyReport, error) {
 		environ.Set("OPENAI_API_KEY", "partial-key")
@@ -279,7 +279,7 @@ func TestColdProfileHydrationClearsPartialSnapshotWhenSourcesAreRemoved(t *testi
 
 func TestApplyExternalSecretSourcesNoopWhenDisabled(t *testing.T) {
 	root := secretSourceFixture(t)
-	h := envLoaderProfile(t, root, "hermes")
+	h := envLoaderProfile(t, root, "icebath")
 	t.Setenv("ICEBATH_HOME", h)
 	writeProfileConfig(t, h, "secrets:\n  bitwarden:\n    enabled: false\n")
 	ApplyExternalSecretSources(h)
@@ -290,7 +290,7 @@ func TestApplyExternalSecretSourcesNoopWhenDisabled(t *testing.T) {
 
 func TestApplyExternalSecretSourcesDedupesWithinProcess(t *testing.T) {
 	root := secretSourceFixture(t)
-	h := envLoaderProfile(t, root, "hermes")
+	h := envLoaderProfile(t, root, "icebath")
 	t.Setenv("ICEBATH_HOME", h)
 	t.Setenv("BWS_ACCESS_TOKEN", "0.test-token")
 	envLoaderUnset(t, "ANTHROPIC_API_KEY")
@@ -321,7 +321,7 @@ func TestApplyExternalSecretSourcesDedupesWithinProcess(t *testing.T) {
 func TestApplyExternalSecretSourcesStatusLineSuppressesSecretNames(t *testing.T) {
 	root := secretSourceFixture(t)
 	lines := captureSecretStatus(t)
-	h := envLoaderProfile(t, root, "hermes")
+	h := envLoaderProfile(t, root, "icebath")
 	t.Setenv("ICEBATH_HOME", h)
 	t.Setenv("BWS_ACCESS_TOKEN", "0.test-token")
 	envLoaderUnset(t, "LEAK_THIS_API_KEY", "LEAK_THIS_TOKEN")
@@ -361,7 +361,7 @@ func TestExternalSecretValuesAreIsolatedBetweenHomes(t *testing.T) {
 
 func TestApplyExternalSecretSourcesRecordsOnepasswordOrigin(t *testing.T) {
 	root := secretSourceFixture(t)
-	h := envLoaderProfile(t, root, "hermes")
+	h := envLoaderProfile(t, root, "icebath")
 	t.Setenv("ICEBATH_HOME", h)
 	envLoaderUnset(t, "ANTHROPIC_API_KEY")
 	writeProfileConfig(t, h, "secrets:\n  onepassword:\n    enabled: true\n    env:\n      ANTHROPIC_API_KEY: 'op://Private/Anthropic/credential'\n")
@@ -380,7 +380,7 @@ func TestApplyExternalSecretSourcesRecordsOnepasswordOrigin(t *testing.T) {
 
 func TestApplyExternalSecretSourcesSurvivesNonDictSection(t *testing.T) {
 	root := secretSourceFixture(t)
-	h := envLoaderProfile(t, root, "hermes")
+	h := envLoaderProfile(t, root, "icebath")
 	t.Setenv("ICEBATH_HOME", h)
 	writeProfileConfig(t, h, "secrets:\n  bitwarden: true\n  onepassword: true\n")
 	freshSecretRegistry(t)
@@ -392,7 +392,7 @@ func TestApplyExternalSecretSourcesSurvivesNonDictSection(t *testing.T) {
 
 func TestApplyExternalSecretSourcesBadTtlDoesNotCrash(t *testing.T) {
 	root := secretSourceFixture(t)
-	h := envLoaderProfile(t, root, "hermes")
+	h := envLoaderProfile(t, root, "icebath")
 	t.Setenv("ICEBATH_HOME", h)
 	writeProfileConfig(t, h, "secrets:\n  onepassword:\n    enabled: true\n    cache_ttl_seconds: not-a-number\n    env:\n      K: 'op://V/I/F'\n")
 	var captured OnePasswordFetchOptions
@@ -650,7 +650,7 @@ func TestLaunchHomeLoadInsideForeignTurnKeepsRoutedCwdOutOfProcessEnv(t *testing
 func TestDotenvLoadingIsPreservedWhenExternalSecretsAreSkipped(t *testing.T) {
 	for _, external := range []bool{true, false} {
 		root := secretSourceFixture(t)
-		h := envLoaderProfile(t, root, "hermes-home")
+		h := envLoaderProfile(t, root, "icebath-home")
 		envFile := filepath.Join(h, ".env")
 		writeEnvBytes(t, envFile, []byte("UPDATE_TEST_VALUE=from-dotenv\n"))
 		envLoaderUnset(t, "UPDATE_TEST_VALUE")

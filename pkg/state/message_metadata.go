@@ -7,8 +7,6 @@ import (
 	"strings"
 	"time"
 	"unicode/utf8"
-
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 )
 
 // Transcript repair bookkeeping and durable record keys that never reach a provider
@@ -17,7 +15,6 @@ const (
 	CanonicalRow            = "_canonical_row"
 	RestoredFromStore       = "_restored_from_store"
 	MergedTurnPrefix        = "_merged_turn_prefix"
-	DataUse                 = "data_use"
 	WithheldPrompt          = "withheld_prompt"
 	PreLLMBlockWithheldText = "[Message withheld: a pre_llm_call policy hook blocked it.]"
 	InflightTaskRestatement = "compaction_inflight_task_restatement"
@@ -35,7 +32,7 @@ var PersistenceOnlyMessageFields = map[string]bool{
 }
 
 // Replay carriers the preflight estimate prices at zero before profile declared carrier keys join
-var UnpricedCoreFields = []string{"_anthropic_content_blocks", "reasoning_details", "extra_content", "bedrock_content_blocks", DataUse}
+var UnpricedCoreFields = []string{"_anthropic_content_blocks", "reasoning_details", "extra_content", "bedrock_content_blocks"}
 
 // Dict view of a mapping value, false for anything that is not a Python dict
 func mappingGet(value any, key string) (any, bool) {
@@ -85,24 +82,6 @@ func pyIter(value any) []any {
 	return items
 }
 
-// Union of data_use over the dict messages, what the receiving model must guarantee
-func DataUseRequirement(messages any) map[string]bool {
-	out := map[string]bool{}
-	if !pyTruthy(messages) {
-		return out
-	}
-	for _, m := range pyIter(messages) {
-		v, _ := mappingGet(m, DataUse)
-		if !isMapping(m) || !pyTruthy(v) {
-			continue
-		}
-		for _, r := range pyIter(v) {
-			out[pyrepr.Str(r)] = true
-		}
-	}
-	return out
-}
-
 // Copy of a display_metadata value when it is a dict, else a fresh empty dict
 func metadataCopy(metadata any) map[string]any {
 	out := map[string]any{}
@@ -117,17 +96,6 @@ func metadataCopy(metadata any) map[string]any {
 		}
 	}
 	return out
-}
-
-// Marks a tool message with its requirement in the message and its durable display metadata
-func StampDataUse(message map[string]any, requires []string) {
-	if len(requires) == 0 {
-		return
-	}
-	message[DataUse] = stringsToAny(requires)
-	metadata := metadataCopy(message["display_metadata"])
-	metadata[DataUse] = stringsToAny(requires)
-	message["display_metadata"] = metadata
 }
 
 // Typed text a transcript view shows for a vetoed user row, false when the row has none
@@ -232,17 +200,6 @@ func withoutWithheld(m map[string]any) map[string]any {
 	delete(metadata, WithheldPrompt)
 	clone["display_metadata"] = metadata
 	return clone
-}
-
-// Restores a replayed row data_use from its durable display metadata copy
-func LiftDataUse(message map[string]any) {
-	metadata := message["display_metadata"]
-	if !isMapping(metadata) {
-		return
-	}
-	if v, _ := mappingGet(metadata, DataUse); pyTruthy(v) {
-		message[DataUse] = append([]any{}, pyIter(v)...)
-	}
 }
 
 // The message itself without persistence only fields, a shallow copy only when one is present

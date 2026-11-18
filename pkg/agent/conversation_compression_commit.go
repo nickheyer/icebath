@@ -16,7 +16,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pythread"
 	"github.com/nickheyer/icebath/pkg/memory"
-	"github.com/nickheyer/icebath/pkg/observability"
 	"github.com/nickheyer/icebath/pkg/profiles"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/state"
@@ -25,8 +24,6 @@ import (
 
 // Compressor attributes saved around the memory flush so the live attempt record survives it
 var attemptTelemetryFields = []string{"_last_compression_telemetry", "_active_compression_telemetry", "_compression_telemetry_seed"}
-
-type compressionMetricWorker struct{ _ byte }
 
 // Keyword arguments of one compress_context call
 type compressContextOptions struct {
@@ -413,7 +410,7 @@ func candidateRejected(ctx context.Context, a *AIAgent, compressed, messages, me
 		return true
 	}
 	if reflect.DeepEqual(compressed, messagesBefore) || reflect.DeepEqual(stripMarkerForComparison(compressed), stripMarkerForComparison(messagesBefore)) {
-		compressionLog().Info(fmt.Sprintf("Compression made no progress (session=%s) — skipping boundary rewrite.", sid))
+		pkgLog().Info(fmt.Sprintf("Compression made no progress (session=%s) — skipping boundary rewrite.", sid))
 		swallowCompression("no-progress backoff arm failed", true, func() error {
 			if c, ok := compressor.(*ContextCompressor); ok {
 				c.recordStructuralNoOp("compaction returned the transcript unchanged (no_progress)", 0)
@@ -424,7 +421,7 @@ func candidateRejected(ctx context.Context, a *AIAgent, compressed, messages, me
 		return true
 	}
 	if len(compressed) == 0 {
-		compressionLog().Error(fmt.Sprintf("context compression returned an empty transcript; refusing to rotate session=%s so the parent remains resumable", sid))
+		pkgLog().Error(fmt.Sprintf("context compression returned an empty transcript; refusing to rotate session=%s so the parent remains resumable", sid))
 		swallowCompression("empty transcript warning failed", false, func() error {
 			a.emitWarning("⚠ Compression returned an empty transcript. No session split was performed; conversation continues unchanged.")
 			return nil
@@ -441,7 +438,7 @@ func candidateRejected(ctx context.Context, a *AIAgent, compressed, messages, me
 			}
 			compressorAttemptLock.Unlock()
 		}
-		compressionLog().Warn(fmt.Sprintf("Discarding late compression candidate: attempt generation %d was superseded by a newer working attempt (current working: %s) (session=%s).", attempt.generation, pyStr(working), sid))
+		pkgLog().Warn(fmt.Sprintf("Discarding late compression candidate: attempt generation %d was superseded by a newer working attempt (current working: %s) (session=%s).", attempt.generation, pyStr(working), sid))
 		a.lastCompactionInPlace = false
 		emitAbortedAttemptTelemetry(ctx, a, attempt.startedAt, "attempt_superseded", attempt.seed)
 		return true
@@ -470,7 +467,7 @@ func heldWatermark(ctx context.Context, a *AIAgent, watermark *int64, messages, 
 		if _, exact := exactHeldRowID(last, copied); !exact {
 			return nil, nil
 		}
-		return nil, errors.New("TypeError: '>=' not supported between instances of 'int' and 'NoneType'")
+		return nil, errors.New("the held compression watermark has no row id to compare with")
 	}
 	return heldArchiveWatermark(ctx, a.sessionDB, a.sessionID, *watermark, messages, verbatimTail, false)
 }
@@ -628,10 +625,10 @@ func commitCompaction(ctx context.Context, a *AIAgent, messages *[]map[string]an
 			if sid == "" {
 				sid = "?"
 			}
-			compressionLog().Warn(fmt.Sprintf("Compression rotation aborted and rolled back to the parent session (%s): %s", sid, err))
+			pkgLog().Warn(fmt.Sprintf("Compression rotation aborted and rolled back to the parent session (%s): %s", sid, err))
 		} else {
 			out.splitStatus = "failed_not_indexed"
-			compressionLog().Warn(fmt.Sprintf("Session DB compression split failed — new session will NOT be indexed: %s", err))
+			pkgLog().Warn(fmt.Sprintf("Session DB compression split failed — new session will NOT be indexed: %s", err))
 		}
 		swallowCompression("could not record split-failure cooldown", true, func() error {
 			if c, ok := a.contextCompressor.(*ContextCompressor); ok {
@@ -753,12 +750,12 @@ func runSummaryPhase(ctx context.Context, a *AIAgent, messages []map[string]any,
 	return summaryPhase{messages: messages, compressed: compressed, messagesBeforeCompression: before, approxTokens: approxTokens, preMsgCount: preMsgCount}, nil
 }
 
-// Snapshots and claims the compressor, clears the per attempt signals and opens the shared metric lifecycle
-func beginCompressionAttempt(ctx context.Context, a *AIAgent, force, deferNotification bool, trigger *string, approxTokens *int, overflowReason *string) (context.Context, *compressionAttempt, error) {
+// Snapshots and claims the compressor and clears the per attempt signals
+func beginCompressionAttempt(a *AIAgent, force, deferNotification bool, trigger *string, overflowReason *string) (*compressionAttempt, error) {
 	snapshot := snapshotCompressorAttemptState(a.contextCompressor)
 	generation := claimCompressorAttempt(a.contextCompressor)
 	if deferNotification && a.pendingContextEngineCompressionNotification != nil {
-		return ctx, nil, errors.New("a compression notification is already pending")
+		return nil, errors.New("a compression notification is already pending")
 	}
 	a.lastCompressionAttemptRecorded = true
 	a.lastCompressionAttemptInPlace = nil
@@ -775,19 +772,7 @@ func beginCompressionAttempt(ctx context.Context, a *AIAgent, force, deferNotifi
 	}
 	seed := pyjson.ObjectOf("attempt_id", attemptID, "session_id", a.sessionID, "trigger_source", triggerSource, "overflow_reason", optionalStringAny(overflowReason))
 	a.compressionAttemptID = attemptID
-	owner, ok := compressionMetricOwner(ctx)
-	if !ok {
-		owner = &compressionMetricWorker{}
-		ctx = withCompressionMetricOwner(ctx, owner)
-	}
-	var tokensBefore any
-	if approxTokens != nil && *approxTokens != 0 {
-		tokensBefore = *approxTokens
-	} else if a.contextCompressor != nil {
-		tokensBefore = a.contextCompressor.Base().LastPromptTokens
-	}
-	observability.BeginCompressionAttempt(owner, triggerSource, tokensBefore)
-	return ctx, &compressionAttempt{snapshot: snapshot, generation: generation, startedAt: startedAt, seed: seed}, nil
+	return &compressionAttempt{snapshot: snapshot, generation: generation, startedAt: startedAt, seed: seed}, nil
 }
 
 func optionalStringAny(p *string) any {
@@ -835,7 +820,7 @@ func announceCompressionStart(a *AIAgent, messageCount int, approxTokens *int, f
 	if approxTokens != nil && *approxTokens != 0 {
 		tokens = groupThousands(*approxTokens)
 	}
-	compressionLog().Info(fmt.Sprintf("context compression started: session=%s messages=%d tokens=~%s model=%s focus=%s", sid, messageCount, tokens, a.model, pyrepr.Repr(optionalStringAny(focusTopic))))
+	pkgLog().Info(fmt.Sprintf("context compression started: session=%s messages=%d tokens=~%s model=%s focus=%s", sid, messageCount, tokens, a.model, pyrepr.Repr(optionalStringAny(focusTopic))))
 	status := CompactionStatus
 	if !force {
 		msg := AutomaticCompactionStatusMessage(a.contextCompressor, "compress", status, map[string]any{
@@ -857,7 +842,7 @@ func compressContext(ctx context.Context, a *AIAgent, messages []map[string]any,
 	if o.TaskID == "" {
 		o.TaskID = "default"
 	}
-	ctx, attempt, err := beginCompressionAttempt(ctx, a, o.Force, o.DeferContextEngineNotification, o.Trigger, o.ApproxTokens, o.OverflowReason)
+	attempt, err := beginCompressionAttempt(a, o.Force, o.DeferContextEngineNotification, o.Trigger, o.OverflowReason)
 	if err != nil {
 		return nil, "", err
 	}
@@ -981,7 +966,7 @@ func compressContext(ctx context.Context, a *AIAgent, messages []map[string]any,
 			if sid == "" {
 				sid = "none"
 			}
-			compressionLog().Info(fmt.Sprintf("Compression commit cancelled before session mutation (session=%s).", sid))
+			pkgLog().Info(fmt.Sprintf("Compression commit cancelled before session mutation (session=%s).", sid))
 			a.lastCompactionInPlace = false
 			stallBackoff := recordStallInterruptedBackoff(ctx, a, o.CommitFence, monotonicOf(attempt.startedAt), messages, approxTokens)
 			_, prompt, err := existing()
@@ -1003,7 +988,7 @@ func compressContext(ctx context.Context, a *AIAgent, messages []map[string]any,
 		if sid == "" {
 			sid = "none"
 		}
-		compressionLog().Info(fmt.Sprintf("Compression: engine folded away the just-delivered assistant reply; reinserted it into the active set (session=%s).", sid))
+		pkgLog().Info(fmt.Sprintf("Compression: engine folded away the just-delivered assistant reply; reinserted it into the active set (session=%s).", sid))
 	}
 	if err := foldTodoSnapshot(a, &compressed); err != nil {
 		return nil, "", err
@@ -1036,7 +1021,7 @@ func compressContext(ctx context.Context, a *AIAgent, messages []map[string]any,
 	if sid == "" {
 		sid = "none"
 	}
-	compressionLog().Info(fmt.Sprintf("context compression done: session=%s messages=%d->%d rough_tokens=~%s awaiting_real_usage=true", sid, preMsgCount, len(compressed), groupThousands(estimate)))
+	pkgLog().Info(fmt.Sprintf("context compression done: session=%s messages=%d->%d rough_tokens=~%s awaiting_real_usage=true", sid, preMsgCount, len(compressed), groupThousands(estimate)))
 	lifecycle.commitStatus = "aborted"
 	if splitStatus == "not_applicable" || splitStatus == "in_place_committed" || splitStatus == "rotated_committed" {
 		lifecycle.commitStatus = "committed"

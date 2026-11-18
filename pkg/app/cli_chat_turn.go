@@ -53,7 +53,7 @@ var (
 // queuedInput is the composer message bundled with its image attachments, the payload the prompt submits
 type queuedInput = submittedInput
 
-// Python str of the bundled message, the tuple repr hermes writes into its interrupt debug log
+// Python str of the bundled message, the tuple repr the interrupt debug log records
 func (q submittedInput) String() string {
 	paths := make([]string, len(q.Images))
 	for i, p := range q.Images {
@@ -105,7 +105,7 @@ func (c *CLI) turnModel() string {
 func (c *CLI) syncFallbackChainWithConfig() {
 	cfg, err := loadFallbackChainConfig(home.ConfigPath(home.Dir(c.ctx)), nil)
 	if err != nil {
-		cliLogger.Debug(fmt.Sprintf("fallback chain sync skipped (keeping current chain): %s", err))
+		pkgLog().Debug(fmt.Sprintf("fallback chain sync skipped (keeping current chain): %s", err))
 		return
 	}
 	c.fallbackModel = provider.GetFallbackChain(cfg)
@@ -220,7 +220,7 @@ func (c *CLI) chatReleaseTurnAudio(turn *chatTurn) {
 		turn.textQueue.Put(nil)
 	}
 	if turn.stopEvent != nil && !turn.ttsNormalExit {
-		cliLogger.Info("TTS CUT: exception finally block setting stop_event")
+		pkgLog().Info("TTS CUT: exception finally block setting stop_event")
 		turn.stopEvent.Set()
 	}
 	if turn.ttsDone != nil && !turnDone(turn.ttsDone) {
@@ -240,7 +240,7 @@ func (c *CLI) chatRouteImages(message any, images []string) any {
 	mode := func() (mode string) {
 		defer func() {
 			if r := recover(); r != nil {
-				cliLogger.Debug(fmt.Sprintf("image_routing decision failed, defaulting to text: %v", r))
+				pkgLog().Debug(fmt.Sprintf("image_routing decision failed, defaulting to text: %v", r))
 				mode = "text"
 			}
 		}()
@@ -249,7 +249,7 @@ func (c *CLI) chatRouteImages(message any, images []string) any {
 	if mode == "native" {
 		parts, skipped, err := buildNativeContentParts(c.env, text, images, nil)
 		if err != nil {
-			cliLogger.Warn(fmt.Sprintf("native image attach failed, falling back to text: %s", err))
+			pkgLog().Warn(fmt.Sprintf("native image attach failed, falling back to text: %s", err))
 		} else {
 			if len(skipped) > 0 {
 				cprint("  " + dimANSI + c.t("cli.chat.skipped_unreadable_images", map[string]any{"count": len(skipped)}) + resetANSI)
@@ -303,7 +303,7 @@ func (c *CLI) chatSetupTurnAudio(turn *chatTurn) {
 		func() {
 			defer func() {
 				if r := recover(); r != nil {
-					cliLogger.Debug("streaming TTS arm check failed", "error", r)
+					pkgLog().Debug("streaming TTS arm check failed", "error", r)
 				}
 			}()
 			turn.useStreamingTTS = checkTTSRequirements(c.ctx)
@@ -374,7 +374,7 @@ func (c *CLI) chatRunAgent(turn *chatTurn, message any) {
 		}
 	}
 	if media.TakeSpeechInterrupted() {
-		agentMessage, changed = prependNoteToMessage(agentMessage, media.SpeechInterruptedNote), true
+		agentMessage, changed = prependNoteToMessage(agentMessage, agent.SpeechInterruptedNote), true
 	}
 	c.uiMu.Lock()
 	moaConfig := c.pendingMoaConfig
@@ -466,7 +466,7 @@ func (c *CLI) restoreMoaModelFields(saved map[string]string) {
 
 // Failed turn result carrying the chat error copy for an error run_conversation raised
 func (c *CLI) runConversationFailure(a cliAgent, err error) map[string]any {
-	cliLogger.Error(fmt.Sprintf("run_conversation raised: %s", err))
+	pkgLog().Error(fmt.Sprintf("run_conversation raised: %s", err))
 	providerName, model := c.provider, c.model
 	if a.Provider() != "" {
 		providerName = a.Provider()
@@ -541,7 +541,7 @@ func (c *CLI) chatMonitorAgentThread(turn *chatTurn, done <-chan struct{}) any {
 			}
 		}
 		if !turnDone(done) {
-			cliLogger.Warn(fmt.Sprintf("Agent thread still alive after interrupt (thread %d). Daemon thread will be cleaned up on exit.", turn.workerID.Load()))
+			pkgLog().Warn(fmt.Sprintf("Agent thread still alive after interrupt (thread %d). Daemon thread will be cleaned up on exit.", turn.workerID.Load()))
 		}
 	} else {
 		select {
@@ -935,38 +935,20 @@ func (c *CLI) chatPrintResponsePanel(turn *chatTurn, response string) {
 			Content: renderFinalAssistantContent(response, mode), Title: "[" + respColor + " bold]" + label + "[/]", TitleAlign: "left",
 			BorderStyle: respColor, Style: respText, Box: "horizontals", Padding: &[2]int{1, 0}, Width: scrollbackBoxWidth()})
 	}
-	if limit, isLimit := result["usage_limit"].(map[string]any); isLimit {
-		func() {
-			defer func() {
-				if r := recover(); r != nil {
-					cliLogger.Debug("Usage-limit panel rendering failed", "error", r)
-				}
-			}()
-			defaultChatConsole.PrintPanel(pyrich.Panel{
-				Body: provider.LimitNextStepsFromPayload(limit, "/model", "/topup", false, true), Title: "[#CD7F32 bold]⚡ Limit reached[/]",
-				TitleAlign: "left", BorderStyle: "#CD7F32", Box: "horizontals", Padding: &[2]int{1, 4}, Width: scrollbackBoxWidth()})
-		}()
-		return
-	}
-	if result["failure_reason"] != "billing" || cliTruthy(result["usage_window_message"]) {
+	if result["failure_reason"] != "billing" {
 		return
 	}
 	billingBlock, _ := result["billing_block"].(map[string]any)
-	var ctaLines []string
-	if cliTruthy(billingBlock["is_nous"]) {
-		ctaLines = []string{c.t("cli.chat.billing_cta_nous", nil)}
-	} else {
-		providerLabel := cliStr(billingBlock["provider_label"], "")
-		if providerLabel == "" {
-			providerLabel = c.t("cli.chat.your_provider", nil)
-		}
-		tail := "."
-		if url := cliStr(billingBlock["billing_url"], ""); url != "" {
-			tail = ": [bold]" + url + "[/]"
-		}
-		ctaLines = []string{c.t("cli.chat.billing_cta_provider", map[string]any{"provider": providerLabel}) + tail}
+	providerLabel := cliStr(billingBlock["provider_label"], "")
+	if providerLabel == "" {
+		providerLabel = c.t("cli.chat.your_provider", nil)
 	}
-	ctaLines = append(ctaLines, c.t("cli.chat.billing_cta_switch", nil))
+	tail := "."
+	if url := cliStr(billingBlock["billing_url"], ""); url != "" {
+		tail = ": [bold]" + url + "[/]"
+	}
+	ctaLines := []string{c.t("cli.chat.billing_cta_provider", map[string]any{"provider": providerLabel}) + tail,
+		c.t("cli.chat.billing_cta_switch", nil)}
 	func() {
 		defer func() { _ = recover() }()
 		defaultChatConsole.PrintPanel(pyrich.Panel{

@@ -4,7 +4,6 @@ package state
 
 import (
 	"errors"
-	"log/slog"
 
 	"github.com/nickheyer/icebath/pkg/internal/proc"
 )
@@ -15,7 +14,7 @@ func scanOpenFiles(dbPath string, watched map[string]bool, watchedIDs map[FileId
 		return []Holder{{-1, "open-file scan unavailable"}}
 	}
 	if err := openFilesHolderScan(watched, &holders); err != nil {
-		slog.Warn("Could not prove state.db has no foreign holders; deferring structural maintenance: " + pyOSErrorStr(err))
+		pkgLog().Warn("Could not prove state.db has no foreign holders; deferring structural maintenance: " + pyOSErrorStr(err))
 		holders = append(holders, Holder{-1, "open-file scan failed: " + pyOSErrorStr(err)})
 	}
 	return holders

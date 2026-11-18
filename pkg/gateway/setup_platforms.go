@@ -5,19 +5,17 @@ import (
 	"errors"
 	"fmt"
 	"regexp"
-	"runtime"
 	"strings"
 
 	"github.com/nickheyer/icebath/pkg/cliui"
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
-	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/provider"
 )
 
-// The hermes_cli.setup functions platform wizards resolve at call time, a table tests replace like the patched module
+// The functions platform wizards resolve at call time, a table tests replace like the patched module
 type SetupFns struct {
 	Prompt          func(question, def string, password bool) string
 	PromptYesNo     func(question string, def bool) bool
@@ -31,10 +29,10 @@ type SetupFns struct {
 	PrintError      func(text string)
 	GetEnvValue     func(ctx context.Context, key string) (string, error)
 	SaveEnvValue    func(ctx context.Context, key, value string) error
-	HermesHome      func(ctx context.Context) string
+	IcebathHome     func(ctx context.Context) string
 }
 
-// The hermes_cli.setup module as the platform wizards see it
+// The module as the platform wizards see it
 var WizardSetup = SetupFns{
 	Prompt:      provider.SetupPrompt,
 	PromptYesNo: func(question string, def bool) bool { return provider.PromptYesNo(question, def, "") },
@@ -55,7 +53,7 @@ var WizardSetup = SetupFns{
 	SaveEnvValue: func(ctx context.Context, key, value string) error {
 		return config.SaveEnvValueContext(ctx, home.Dir(ctx), key, value)
 	},
-	HermesHome: home.Dir,
+	IcebathHome: home.Dir,
 }
 
 // Keyword options of save_prompted, the success message may name {value}
@@ -69,11 +67,11 @@ type SavePromptedOptions struct {
 type PlatformSetupFns struct {
 	DeclinesReconfigure func(ctx context.Context, label, question string, envVars ...string) (bool, error)
 	SavePrompted        func(ctx context.Context, envVar, question string, o SavePromptedOptions) (string, error)
-	PromptAllowlist     func(ctx context.Context, envVar, question, successMsg, openMsg string, preset *string) (string, error)
+	PromptAllowlist     func(ctx context.Context, envVar, question, successMsg, openMsg string) (string, error)
 	SavePort            func(ctx context.Context, envVar, value, def string) error
 }
 
-// The hermes_cli.setup_platforms module as the platform wizards see it
+// The module as the platform wizards see it
 var PlatformSetup = PlatformSetupFns{
 	DeclinesReconfigure: declinesReconfigure,
 	SavePrompted:        savePrompted,
@@ -97,32 +95,6 @@ var (
 // Whether a token has the Telegram bot token shape
 func isValidTelegramBotToken(token string) bool { return telegramBotTokenRE.MatchString(token) }
 
-// Profile name when the home is a profiles child, the path read with Windows or POSIX separators
-func profileNameFromHermesHomeFlavor(p string, nt bool) (string, bool) {
-	pure, base, dir := pypath.PosixPurePathStr(p), pypath.PosixBasename, pypath.PosixDirname
-	if nt {
-		pure, base, dir = pypath.NtPurePathStr(p), pypath.NtBasename, pypath.NtDirname
-	}
-	if base(dir(pure)) != "profiles" {
-		return "", false
-	}
-	return base(pure), true
-}
-
-// Profile name when the active home is a profiles child, read with the host path flavor
-func profileNameFromHermesHome(p string) (string, bool) {
-	return profileNameFromHermesHomeFlavor(p, runtime.GOOS == "windows")
-}
-
-// Runs the managed QR bot creation for the active profile
-func setupTelegramAutoResult(ctx context.Context) (*TelegramBotSetupResult, error) {
-	var profileName *string
-	if name, ok := profileNameFromHermesHome(WizardSetup.HermesHome(ctx)); ok {
-		profileName = &name
-	}
-	return telegramAutoSetupFn(ctx, profileName)
-}
-
 // True when an env var is already set and the user declines to reconfigure, the gate every wizard shares
 func declinesReconfigure(ctx context.Context, label, question string, envVars ...string) (bool, error) {
 	set := false
@@ -143,7 +115,7 @@ func declinesReconfigure(ctx context.Context, label, question string, envVars ..
 	return !WizardSetup.PromptYesNo(question, false), nil
 }
 
-// Text of str.format(value=value) on a message, the KeyError or ValueError of any other field
+// Message with each value field filled in, an error for any other field or an unpaired brace
 func formatValue(msg, value string) (string, error) {
 	var b strings.Builder
 	for i := 0; i < len(msg); i++ {
@@ -158,16 +130,16 @@ func formatValue(msg, value string) (string, error) {
 		case c == '{':
 			end := strings.IndexByte(msg[i:], '}')
 			if end < 0 {
-				return "", errors.New("ValueError: expected '}' before end of string")
+				return "", fmt.Errorf("message template %s has a { without a closing }", msg)
 			}
 			field := msg[i+1 : i+end]
 			if field != "value" {
-				return "", fmt.Errorf("KeyError: '%s'", field)
+				return "", fmt.Errorf("message template %s names field %s, only {value} is filled in", msg, field)
 			}
 			b.WriteString(value)
 			i += end
 		case c == '}':
-			return "", errors.New("ValueError: Single '}' encountered in format string")
+			return "", fmt.Errorf("message template %s has a } without an opening {", msg)
 		default:
 			b.WriteByte(c)
 		}
@@ -209,14 +181,9 @@ func saveAllowlist(ctx context.Context, envVar, users, successMsg string) error 
 	return nil
 }
 
-// Persists the preset or the prompted answer as an allowlist, warning when it stays open
-func promptAllowlist(ctx context.Context, envVar, question, successMsg, openMsg string, preset *string) (string, error) {
-	var users string
-	if preset == nil {
-		users = WizardSetup.Prompt(question, "", false)
-	} else {
-		users = *preset
-	}
+// Persists the prompted answer as an allowlist, warning when it stays open
+func promptAllowlist(ctx context.Context, envVar, question, successMsg, openMsg string) (string, error) {
+	users := WizardSetup.Prompt(question, "", false)
 	if users != "" {
 		if err := saveAllowlist(ctx, envVar, users, successMsg); err != nil {
 			return "", err
@@ -274,44 +241,6 @@ func telegramAllowlistNudge(ctx context.Context) error {
 	return nil
 }
 
-// Token and setup result, the automatic flow first when chosen and the manual paste otherwise
-func obtainTelegramToken(ctx context.Context) (string, *TelegramBotSetupResult, error) {
-	choice, ran, _ := provider.SetupMenuAnswer("How would you like to create your Telegram bot?", []string{
-		"Automatic (recommended) — scan a QR code, confirm in Telegram, no token to paste",
-		"Manual — create a bot via @BotFather yourself and paste the token"}, []string{"1", "2"}, 0)
-	if !ran {
-		WizardSetup.Info("How would you like to create your Telegram bot?", nil,
-			"  [1] Automatic (recommended)",
-			"      Scan a QR code → confirm in Telegram → done.",
-			"      No token copy-paste needed.", nil,
-			"  [2] Manual",
-			"      Create a bot via @BotFather yourself and paste the token.", nil)
-		choice = pystr.Strip(WizardSetup.Prompt("Choice [1/2]", "1", false))
-	}
-	token := ""
-	var result *TelegramBotSetupResult
-	if choice == "1" {
-		var err error
-		if result, err = setupTelegramAutoResult(ctx); err != nil {
-			return "", nil, err
-		}
-		if result != nil {
-			token = result.Token
-			if !isValidTelegramBotToken(token) {
-				WizardSetup.PrintError("Automatic setup returned an invalid Telegram bot token.")
-				token, result = "", nil
-			}
-		}
-		if token == "" {
-			WizardSetup.Info(nil, "Falling back to manual setup...", nil)
-		}
-	}
-	if token == "" {
-		token = promptTelegramBotToken()
-	}
-	return token, result, nil
-}
-
 // Configures the Telegram bot token, allowlist and home channel
 func setupTelegram(ctx context.Context) error {
 	WizardSetup.PrintHeader("Telegram")
@@ -322,9 +251,9 @@ func setupTelegram(ctx context.Context) error {
 	if declined {
 		return telegramAllowlistNudge(ctx)
 	}
-	token, result, err := obtainTelegramToken(ctx)
-	if err != nil || token == "" {
-		return err
+	token := promptTelegramBotToken()
+	if token == "" {
+		return nil
 	}
 	if err := WizardSetup.SaveEnvValue(ctx, "TELEGRAM_BOT_TOKEN", token); err != nil {
 		return err
@@ -334,29 +263,10 @@ func setupTelegram(ctx context.Context) error {
 		"   To find your Telegram user ID:",
 		"   1. Message @userinfobot on Telegram",
 		"   2. It will reply with your numeric ID (e.g., 123456789)", nil)
-	var preset *string
-	detected := ""
-	if result != nil {
-		detected = result.OwnerUserID
-	}
-	if detected != "" {
-		WizardSetup.PrintSuccess("Detected your Telegram user ID: " + detected)
-		if WizardSetup.PromptYesNo("Allow this Telegram account to use the bot?", true) {
-			extra := WizardSetup.Prompt("Additional allowed user IDs (comma-separated, optional)", "", false)
-			ids := []string{detected}
-			for _, uid := range strings.Split(strings.ReplaceAll(extra, " ", ""), ",") {
-				if uid != "" && !containsString(ids, uid) {
-					ids = append(ids, uid)
-				}
-			}
-			joined := strings.Join(ids, ",")
-			preset = &joined
-		}
-	}
 	allowed, err := PlatformSetup.PromptAllowlist(ctx, "TELEGRAM_ALLOWED_USERS",
 		"Allowed user IDs (comma-separated, leave empty for open access)",
 		"Telegram allowlist configured - only listed users can use the bot",
-		"⚠️  No allowlist set - anyone who finds your bot can use it!", preset)
+		"⚠️  No allowlist set - anyone who finds your bot can use it!")
 	if err != nil {
 		return err
 	}

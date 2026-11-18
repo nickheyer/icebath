@@ -78,19 +78,23 @@ func (c *sessionCard) Contexts() []string {
 	return append(ctxs, tuiContext, keys.Session)
 }
 
-// Spinner frames advance while a turn runs, the window repainting on each
+// Spinner frames advance while a turn runs and ambient widgets refresh on their interval, the window repainting on either
 func (c *sessionCard) Animate(dt float64) bool {
+	refreshed := c.app.widgets.refresh(time.Now(), c.app.widgets.ambient)
 	if !c.app.store.ui.Busy && len(c.app.store.turn.Tools) == 0 {
-		return false
+		return refreshed
 	}
 	c.phase += dt
 	if c.phase < spinnerStep {
-		return false
+		return refreshed
 	}
 	c.phase = 0
 	c.tick++
 	return true
 }
+
+// Keeps the frame clock running while an ambient widget refreshes on an interval
+func (c *sessionCard) Awake() bool { return c.app.widgets.refreshing(c.app.widgets.ambient) }
 
 func (c *sessionCard) Update(m tea.Msg) (wm.Card, tea.Cmd) {
 	switch m := m.(type) {
@@ -169,8 +173,9 @@ func (c *sessionCard) action(id string) tea.Cmd {
 func (c *sessionCard) renderCtx(width int) renderCtx {
 	ui := c.app.store.ui
 	details := detailsCtx{CommandOverride: ui.DetailsModeCommandOverride, DetailsMode: ui.DetailsMode, Sections: ui.Sections}
-	look := c.app.themeLook + "|" + ui.DetailsMode + fmt.Sprint(ui.Sections, ui.DetailsModeCommandOverride, ui.Timestamps)
-	return renderCtx{t: ui.Theme, ut: c.app.uiTheme(), width: width, details: details, timestamps: ui.Timestamps, look: look, focus: ui.FocusView, compact: ui.Compact}
+	expand := c.app.keys.Display("session.expand")
+	look := c.app.themeLook + "|" + ui.DetailsMode + fmt.Sprint(ui.Sections, ui.DetailsModeCommandOverride, ui.Timestamps) + "|" + expand
+	return renderCtx{t: ui.Theme, ut: c.app.uiTheme(), width: width, details: details, timestamps: ui.Timestamps, look: look, focus: ui.FocusView, compact: ui.Compact, expandKey: expand}
 }
 
 // Queued inputs waiting behind the turn, the one being edited marked
@@ -254,7 +259,7 @@ func (c *sessionCard) statusRow(width int, rc renderCtx) string {
 	}
 	if ui.StatusBar == "bottom" {
 		var dials []string
-		if model := infoText(ui.Info, "model"); model != "" {
+		if model := infoText(infoOf(ui.Info).Model); model != "" {
 			dials = append(dials, model)
 		}
 		if text, _, has := contextDial(ui.Usage); has {
@@ -345,15 +350,9 @@ func (c *sessionCard) Status() string {
 
 // Legend of the keys that matter right now
 func (c *sessionCard) Hints() []wm.Hint {
+	edits := []wm.Hint{{Action: "composer.undo"}, {Action: "composer.redo", All: true}, {Action: "tui.suspend"}}
 	if c.app.store.ui.Busy {
-		return []wm.Hint{{Action: "composer.send", Label: c.app.store.ui.BusyInputMode}, {Action: "interrupt"}, {Action: "mode.cycle", Label: "busy mode"}}
+		return append([]wm.Hint{{Action: "composer.send", Label: c.app.store.ui.BusyInputMode}, {Action: "interrupt"}, {Action: "mode.cycle", Label: "busy mode"}}, edits...)
 	}
-	hints := []wm.Hint{{Action: "composer.send"}, {Action: "tui.editor"}, {Action: "palette"}}
-	if c.composer.CanUndo() {
-		hints = append(hints, wm.Hint{Action: "composer.undo"})
-	}
-	if c.composer.CanRedo() {
-		hints = append(hints, wm.Hint{Action: "composer.redo"})
-	}
-	return hints
+	return append([]wm.Hint{{Action: "composer.send"}, {Action: "tui.editor"}, {Action: "palette"}}, edits...)
 }

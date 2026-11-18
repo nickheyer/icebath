@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"log/slog"
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/gateway"
@@ -97,10 +96,10 @@ func redactEntry(ctx context.Context, adapter *YuanbaoAdapter, store sessionStor
 	entry map[string]any, okMsg, failMsg string) {
 	entry["content"] = recallRedacted
 	if err := recovered(func() { store.RewriteTranscript(ctx, sid, transcript, true, false) }); err != nil {
-		slog.Warn(fmt.Sprintf(failMsg, adapter.Name(), errText(err)))
+		pkgLog().Warn(fmt.Sprintf(failMsg, adapter.Name(), errText(err)))
 		return
 	}
-	slog.Info(okMsg)
+	pkgLog().Info(okMsg)
 }
 
 // Walks the recalled ids of a callback, interrupting one in progress and patching the transcript of the others
@@ -121,7 +120,7 @@ func (m *RecallGuardMiddleware) handleRecall(ctx context.Context, ic *InboundCon
 		}
 	}
 	if !pyrepr.Truthy(seqList) {
-		slog.Debug(fmt.Sprintf("[%s] Recall callback with empty seq_list, skipping", adapter.Name()))
+		pkgLog().Debug(fmt.Sprintf("[%s] Recall callback with empty seq_list, skipping", adapter.Name()))
 		return nil
 	}
 	groupCode, err := strMethod(pyrepr.Or(push.GetOr("group_code", nil), ""), "strip")
@@ -189,7 +188,7 @@ func interruptForRecall(ctx context.Context, adapter *YuanbaoAdapter, sessionKey
 	if active := adapter.ActiveSessionEvent(sessionKey); active != nil {
 		active.Set()
 	}
-	slog.Info(fmt.Sprintf("[%s] Recall interrupt: msg_id=%s session=%s", adapter.Name(), recalledID, pystr.Slice(sessionKey, 0, 30)))
+	pkgLog().Info(fmt.Sprintf("[%s] Recall interrupt: msg_id=%s session=%s", adapter.Name(), recalledID, pystr.Slice(sessionKey, 0, 30)))
 	if recalledText := adapter.processingText(sessionKey); recalledText != "" {
 		scheduleContentRedact(ctx, adapter, sessionKey, recalledText, groupCode, fromAccount)
 	}
@@ -213,7 +212,7 @@ func scheduleContentRedact(ctx context.Context, adapter *YuanbaoAdapter, session
 			transcript, err := store.LoadTranscript(tctx, sid)
 			var unreadable *gateway.TranscriptReadError
 			if errors.As(err, &unreadable) {
-				slog.Warn(fmt.Sprintf("[%s] Recall redact: transcript unreadable for session %s: %s", adapter.Name(), sid, errText(err)))
+				pkgLog().Warn(fmt.Sprintf("[%s] Recall redact: transcript unreadable for session %s: %s", adapter.Name(), sid, errText(err)))
 				return nil
 			}
 			if err != nil {
@@ -235,7 +234,7 @@ func scheduleContentRedact(ctx context.Context, adapter *YuanbaoAdapter, session
 				}
 			}
 		}
-		slog.Debug(fmt.Sprintf("[%s] Recall redact: content not found after polling, session %s", adapter.Name(), pystr.Slice(sessionKey, 0, 30)))
+		pkgLog().Debug(fmt.Sprintf("[%s] Recall redact: content not found after polling, session %s", adapter.Name(), pystr.Slice(sessionKey, 0, 30)))
 		return nil
 	}))
 }
@@ -251,19 +250,19 @@ func patchTranscript(ctx context.Context, adapter *YuanbaoAdapter, recalledID, g
 		if ctx.Err() != nil {
 			return ctx.Err()
 		}
-		slog.Warn(fmt.Sprintf("[%s] Recall: failed to resolve session: %s", adapter.Name(), errText(err)))
+		pkgLog().Warn(fmt.Sprintf("[%s] Recall: failed to resolve session: %s", adapter.Name(), errText(err)))
 		return nil
 	}
 	transcript, err := store.LoadTranscript(ctx, sid)
 	var unreadable *gateway.TranscriptReadError
 	switch {
 	case errors.As(err, &unreadable):
-		slog.Warn(fmt.Sprintf("[%s] Recall: transcript unreadable: %s", adapter.Name(), errText(err)))
+		pkgLog().Warn(fmt.Sprintf("[%s] Recall: transcript unreadable: %s", adapter.Name(), errText(err)))
 		return nil
 	case err != nil && ctx.Err() != nil:
 		return ctx.Err()
 	case err != nil:
-		slog.Warn(fmt.Sprintf("[%s] Recall: failed to load transcript: %s", adapter.Name(), errText(err)))
+		pkgLog().Warn(fmt.Sprintf("[%s] Recall: failed to load transcript: %s", adapter.Name(), errText(err)))
 		return nil
 	}
 	rows, err := transcriptRows(transcript)
@@ -298,6 +297,6 @@ func patchTranscript(ctx context.Context, adapter *YuanbaoAdapter, recalledID, g
 	if err := store.AppendToTranscript(ctx, sid, note, false); err != nil {
 		return err
 	}
-	slog.Info(fmt.Sprintf("[%s] Recall: system note for msg_id=%s (branch B)", adapter.Name(), recalledID))
+	pkgLog().Info(fmt.Sprintf("[%s] Recall: system note for msg_id=%s (branch B)", adapter.Name(), recalledID))
 	return nil
 }

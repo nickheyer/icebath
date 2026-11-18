@@ -9,7 +9,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/provider"
 )
 
-const TerminalSetupAuthMethodID = "hermes-setup"
+const TerminalSetupAuthMethodID = "icebath-setup"
 
 var resolveRuntimeProvider = func(ctx context.Context) (*provider.Runtime, error) {
 	return provider.ResolveRuntimeProvider(ctx, home.Dir(ctx), "", "", "", "")

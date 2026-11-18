@@ -40,7 +40,7 @@ func recoverMarkerReply(a *AIAgent, s *LoopState, final string, promoted string)
 		s.FinalResponse = *reply
 	}
 	s.TurnExitReason = "fallback_prior_turn_content"
-	conversationLoopLog().Info("Silence marker after a written reply: using that reply as the final response")
+	pkgLog().Info("Silence marker after a written reply: using that reply as the final response")
 	return &PhaseVerdict{Action: "break"}
 }
 
@@ -100,7 +100,7 @@ func finishTextResponse(ctx context.Context, a *AIAgent, s *LoopState) (PhaseVer
 	if finishReason == "stop" && toolCalls == 0 && (content == nil || (isText && pystr.Strip(text) == "")) &&
 		!hasSignedThinkingDetail(msg) && answerInReasoningCapability(ctx, a) {
 		if promoted = a.extractReasoning(msg); promoted != "" {
-			conversationLoopLog().Warn(fmt.Sprintf("Reasoning-only clean stop (%d chars) — returning the reasoning as the final response (model=%s provider=%s api_calls=%d tool_turns=%d)",
+			pkgLog().Warn(fmt.Sprintf("Reasoning-only clean stop (%d chars) — returning the reasoning as the final response (model=%s provider=%s api_calls=%d tool_turns=%d)",
 				pyLen(promoted), a.model, a.provider, s.APICallCount, toolTurnCount(s.Messages)))
 		}
 	}
@@ -143,10 +143,10 @@ func finishTextResponse(ctx context.Context, a *AIAgent, s *LoopState) (PhaseVer
 	if kind != "" {
 		switch kind {
 		case "stall":
-			conversationLoopLog().Info(fmt.Sprintf("Stall guard: turn ending on trailing continue-intent with no tool calls — re-prompting to act (%d/2)", s.CodexAckContinuations+1))
+			pkgLog().Info(fmt.Sprintf("Stall guard: turn ending on trailing continue-intent with no tool calls — re-prompting to act (%d/2)", s.CodexAckContinuations+1))
 		case "degenerate":
 			head := []rune(stallText)
-			conversationLoopLog().Warn(fmt.Sprintf("Degenerate final: %d-char fragment %s ended the turn after %d tool result(s) — re-prompting (%d/2)",
+			pkgLog().Warn(fmt.Sprintf("Degenerate final: %d-char fragment %s ended the turn after %d tool result(s) — re-prompting (%d/2)",
 				len(head), pyrepr.Repr(string(head[:min(len(head), 40)])), toolRows, s.CodexAckContinuations+1))
 		}
 		s.CodexAckContinuations++
@@ -189,7 +189,7 @@ func finishTextResponse(ctx context.Context, a *AIAgent, s *LoopState) (PhaseVer
 	}
 	if finishReason == "tool_calls" && toolCalls == 0 && a.droppedToolcallRetries < 3 {
 		a.droppedToolcallRetries++
-		conversationLoopLog().Warn(fmt.Sprintf("finish_reason=tool_calls with empty tool_calls array (narration only) — re-prompting to emit the call (retry %d/3, model=%s provider=%s)",
+		pkgLog().Warn(fmt.Sprintf("finish_reason=tool_calls with empty tool_calls array (narration only) — re-prompting to emit the call (retry %d/3, model=%s provider=%s)",
 			a.droppedToolcallRetries, a.model, a.provider))
 		a.emitDiagnosticStatus(fmt.Sprintf("↻ Model signaled a tool call but sent none — re-prompting (%d/3)", a.droppedToolcallRetries))
 		finalMsg["_dropped_toolcall_nudge"] = true
@@ -230,7 +230,7 @@ func finishTextResponse(ctx context.Context, a *AIAgent, s *LoopState) (PhaseVer
 		if session == "" {
 			session = "none"
 		}
-		conversationLoopLog().Warn(fmt.Sprintf("final text-turn flush failed (session=%s) — reply is not yet durable; relying on finalize_turn retry", session), "exc_info", exc.Stack, "error", exc)
+		pkgLog().Warn(fmt.Sprintf("final text-turn flush failed (session=%s) — reply is not yet durable; relying on finalize_turn retry", session), "exc_info", exc.Stack, "error", exc)
 	})
 	s.TurnExitReason = fmt.Sprintf("text_response(finish_reason=%s)", finishReason)
 	if !a.quietMode {

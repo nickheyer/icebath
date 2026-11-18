@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/internal/pyhttpx"
+	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 )
 
@@ -201,7 +202,7 @@ func (c *geminiNativeClient) CreateChatCompletion(ctx context.Context, kwargs ma
 
 // Native generateContent call for OpenAI kwargs over this client, long decode hops joined, or a chunk stream when stream is set
 func (native *geminiNativeClient) createChatCompletion(ctx context.Context, kwargs map[string]any, connect time.Duration) (any, error) {
-	extra, _ := kwargs["extra_body"].(map[string]any)
+	extra, _ := pyjson.Dict(kwargs["extra_body"])
 	if extra == nil {
 		extra = map[string]any{}
 	}

@@ -11,6 +11,7 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/home"
+	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 )
 
 // Exception with an optional status code attribute, zero meaning the attribute is absent
@@ -47,10 +48,6 @@ func TestAuxIsPaymentErrorCases(t *testing.T) {
 func TestAuxIsModelNotFoundAndIncompatibleError(t *testing.T) {
 	if !auxIsModelNotFoundError(auxExc("Model 'gpt-5.4-mini' not found. The requested model does not exist in our configuration or OpenRouter catalog.", 404)) {
 		t.Fatal("catalog 404 is not found")
-	}
-	billing := auxExc("Model 'gpt-5' is not available on the free tier. Upgrade.", 404)
-	if auxIsModelNotFoundError(billing) || !auxIsPaymentError(billing) {
-		t.Fatal("billing 404 belongs to payment")
 	}
 	if auxIsModelNotFoundError(auxExc("Your API key is blocked or out of funds. model_not_found", 404)) {
 		t.Fatal("billing keyword wins")
@@ -127,7 +124,7 @@ func TestAbsentCredentialsQuarantineIsDebugAndNamesTheRealReason(t *testing.T) {
 	logs := auxCaptureLogs(t)
 	auxMarkProviderUnhealthy(ctx, "openrouter", 60, "", "OPENROUTER_API_KEY not set", slog.LevelDebug)
 	auxLogSkipUnhealthy(ctx, "openrouter", "title_generation", "")
-	auxMarkProviderUnhealthy(ctx, "nous", auxUnhealthyTTLSeconds, "", auxUnhealthyPaymentReason, slog.LevelWarn)
+	auxMarkProviderUnhealthy(ctx, "deepseek", auxUnhealthyTTLSeconds, "", auxUnhealthyPaymentReason, slog.LevelWarn)
 	marks := logs.matching("marking")
 	if len(marks) != 2 || marks[0].level != slog.LevelDebug || strings.Contains(marks[0].msg, "payment") || marks[1].level != slog.LevelWarn || !strings.Contains(marks[1].msg, "payment") {
 		t.Fatalf("marks %+v", marks)
@@ -256,7 +253,7 @@ func TestAuxWithoutReasoningFields(t *testing.T) {
 	}
 	in := map[string]any{"model": "m", "reasoning_effort": "none", "_reasoning_config": map[string]any{}, "extra_body": map[string]any{" Thinking ": 1, "top_k": 2}}
 	got := auxWithoutReasoningFields(in)
-	if fmt.Sprint(got) != "map[extra_body:map[top_k:2] model:m]" || len(in) != 4 {
+	if fmt.Sprint(pyjson.Plain(got)) != "map[extra_body:map[top_k:2] model:m]" || len(in) != 4 {
 		t.Fatalf("got %v in %v", got, in)
 	}
 	got = auxWithoutReasoningFields(map[string]any{"extra_body": map[string]any{"verbosity": "low"}})
@@ -285,22 +282,6 @@ func TestAuxTransientRetryCountClampsConfig(t *testing.T) {
 	}
 }
 
-func TestAuxNousPortalAccountHasFreshPaidAccess(t *testing.T) {
-	prev := auxNousPortalAccountInfoFn
-	t.Cleanup(func() { auxNousPortalAccountInfoFn = prev })
-	yes, no := true, false
-	for _, tc := range []struct {
-		info *NousPortalAccountInfo
-		want bool
-	}{{&NousPortalAccountInfo{PaidServiceAccess: &yes}, true}, {&NousPortalAccountInfo{PaidServiceAccess: &no}, false}, {&NousPortalAccountInfo{}, false}, {nil, false}} {
-		var forced bool
-		auxNousPortalAccountInfoFn = func(_ context.Context, force bool) *NousPortalAccountInfo { forced = force; return tc.info }
-		if got := auxNousPortalAccountHasFreshPaidAccess(context.Background()); got != tc.want || !forced {
-			t.Fatalf("%+v gave %v forced %v", tc.info, got, forced)
-		}
-	}
-}
-
 // Fresh client cache restored after the test
 func auxIsolateClientCache(t *testing.T) {
 	t.Helper()
@@ -323,12 +304,12 @@ func TestAuxEvictCachedClientsIsProfileAndProviderScoped(t *testing.T) {
 	c := &auxOpenAIClient{}
 	auxClientCacheMu.Lock()
 	auxClientCacheSetLocked(auxClientCacheKey{Home: keyA, Provider: "openrouter"}, auxCachedClient{Client: c})
-	auxClientCacheSetLocked(auxClientCacheKey{Home: keyA, Provider: "nous", Async: true}, auxCachedClient{Client: c})
+	auxClientCacheSetLocked(auxClientCacheKey{Home: keyA, Provider: "deepseek", Async: true}, auxCachedClient{Client: c})
 	auxClientCacheSetLocked(auxClientCacheKey{Home: keyB, Provider: "openrouter"}, auxCachedClient{Client: c})
 	auxClientCacheMu.Unlock()
 	auxEvictCachedClients(ctxA, "OpenRouter")
 	keys := auxClientCacheKeysLocked()
-	if len(keys) != 2 || keys[0].Provider != "nous" || keys[1].Home != keyB {
+	if len(keys) != 2 || keys[0].Provider != "deepseek" || keys[1].Home != keyB {
 		t.Fatalf("keys %+v", keys)
 	}
 }
@@ -401,15 +382,6 @@ func TestAuxUnhealthyCacheTtlExpiryEvicts(t *testing.T) {
 	auxMarkProviderUnhealthy(ctx, "custom", auxUnhealthyTTLSeconds, "https://example.test/API/v1?token=AbC", auxUnhealthyPaymentReason, slog.LevelWarn)
 	if auxIsProviderUnhealthy(ctx, "custom", "https://example.test/API/v1?token=abc") {
 		t.Fatal("query case stays")
-	}
-}
-
-func TestAuxRefreshNousRecommendedModelNoDistinctAlternative(t *testing.T) {
-	prev := auxGetNousRecommendedAuxModelFn
-	auxGetNousRecommendedAuxModelFn = func(context.Context, bool, bool) string { return auxNousModel }
-	t.Cleanup(func() { auxGetNousRecommendedAuxModelFn = prev })
-	if got := auxRefreshNousRecommendedModel(context.Background(), false, auxNousModel); got != "" {
-		t.Fatalf("got %q", got)
 	}
 }
 

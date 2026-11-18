@@ -21,7 +21,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/profiles"
 )
 
-const launchdLabelBase = "ai.icebath.gateway"
+const launchdLabelBase = "app.icebath.gateway"
 
 var (
 	scanPPID            = proc.PPID
@@ -30,7 +30,7 @@ var (
 	scanGeteuid         = os.Geteuid
 	listInstallProfiles = installProfileNames
 	servicePIDsHook     = getServicePIDs
-	homeForPIDHook      = HermesHomeForPID
+	homeForPIDHook      = IcebathHomeForPID
 	scanGatewayPIDsHook = scanGatewayPIDs
 	pidEnvironHook      = proc.Environ
 	pidCmdlineHook      = cmdlineForPID
@@ -263,7 +263,7 @@ func collectSystemdScopePIDs(ctx context.Context, scope []string, pattern string
 	return nil
 }
 
-// Launchd service pids of this profile, the whole fleet and every ai.icebath.gateway agent with allProfiles
+// Launchd service pids of this profile, the whole fleet and every gateway agent with allProfiles
 func collectLaunchdPIDs(ctx context.Context, allProfiles bool, pids map[int]bool) error {
 	label, err := GetLaunchdLabel(ctx)
 	if err != nil {
@@ -311,7 +311,7 @@ func collectLaunchdPIDs(ctx context.Context, allProfiles bool, pids map[int]bool
 	}
 	for _, line := range pystr.Splitlines(pystr.Strip(res.Stdout), false) {
 		parts := pystr.SplitWhitespace(line, -1)
-		if len(parts) >= 3 && strings.HasPrefix(parts[len(parts)-1], launchdLabelBase) {
+		if len(parts) >= 3 && isGatewayLaunchdLabel(parts[len(parts)-1]) {
 			if pid, ok := pyIntText(parts[0]); ok && pid > 0 {
 				pids[pid] = true
 			}
@@ -569,7 +569,7 @@ func argvProfileFlagValue(argv []string) (string, bool) {
 }
 
 // Home a process runs under from its exec time environment and argv, requiring pinned launch identity when asked
-func HermesHomeForPID(ctx context.Context, pid int, requireLaunchIdentity bool) (string, bool, error) {
+func IcebathHomeForPID(ctx context.Context, pid int, requireLaunchIdentity bool) (string, bool, error) {
 	env, err := pidEnvironHook(pid)
 	if err != nil {
 		return "", false, nil
@@ -677,7 +677,7 @@ func pidOwnedByHome(ctx context.Context, pidFile string, pid int, ownHome string
 	record := hostReadRecord(roleGateway, false)
 	isHost := record != nil && record.PID == pid && hostRecordLive(record)
 	if isHost {
-		same, err := sameHermesHome(hostRecordHome(record), ownHome)
+		same, err := sameIcebathHome(hostRecordHome(record), ownHome)
 		if err != nil {
 			return false, err
 		}
@@ -693,14 +693,14 @@ func pidOwnedByHome(ctx context.Context, pidFile string, pid int, ownHome string
 		invalidateHostGatewayCache()
 		owner := hostGateway()
 		if owner != nil && owner.PID == pid && owner.ServedKnown {
-			return sameHermesHome(owner.Home, ownHome)
+			return sameIcebathHome(owner.Home, ownHome)
 		}
 	}
 	processHome, ok, err := homeForPIDHook(ctx, pid, true)
 	if err != nil || !ok {
 		return false, err
 	}
-	return sameHermesHome(processHome, ownHome)
+	return sameIcebathHome(processHome, ownHome)
 }
 
 // True when the pid file names this exact incarnation as launched from the home
@@ -709,7 +709,7 @@ func launchRecordOwns(pidFile string, pid int, ownHome string) (bool, error) {
 	if record == nil {
 		return false, nil
 	}
-	started, recordedHome := recGet(record, "start_time"), recGet(record, "hermes_home")
+	started, recordedHome := recGet(record, "start_time"), recHome(record, home.RecordKey)
 	recorded, isStr := recordedHome.(string)
 	if !pyEq(recGet(record, "kind"), gatewayKind) || started == nil || !isStr {
 		return false, nil
@@ -717,7 +717,7 @@ func launchRecordOwns(pidFile string, pid int, ownHome string) (bool, error) {
 	if got, ok := pidFromRecord(record, "pid"); !ok || got != pid || !pyEq(started, statusProcessStartTime(pid)) {
 		return false, nil
 	}
-	return sameHermesHome(recorded, ownHome)
+	return sameIcebathHome(recorded, ownHome)
 }
 
 // Process table scan for gateway pids of the home in effect, every profile with allProfiles
@@ -756,13 +756,13 @@ func scanGatewayPIDs(ctx context.Context, exclude map[int]bool, allProfiles, inc
 			if hasFlag && flag == currentProfileLC {
 				return true, nil
 			}
-			return CommandLineNamesHermesHome(commandLC, currentHomeLC), nil
+			return CommandLineNamesIcebathHome(commandLC, currentHomeLC), nil
 		}
 		if hasFlag && flag != "default" {
 			return false, nil
 		}
-		if len(HermesHomeAssignments(commandLC)) > 0 {
-			return CommandLineNamesHermesHome(commandLC, currentHomeLC), nil
+		if len(IcebathHomeAssignments(commandLC)) > 0 {
+			return CommandLineNamesIcebathHome(commandLC, currentHomeLC), nil
 		}
 		owner, ok, err := homeForPIDHook(ctx, pid, false)
 		if err != nil {
@@ -839,7 +839,7 @@ func scanGatewayPIDs(ctx context.Context, exclude map[int]bool, allProfiles, inc
 
 // Running gateway pids of the profile in effect, or of every profile with allProfiles
 func FindGatewayPIDsFor(ctx context.Context, exclude map[int]bool, allProfiles bool) ([]int, error) {
-	return findGatewayPIDs(ctx, "", processHermesHome(), exclude, allProfiles)
+	return findGatewayPIDs(ctx, "", processIcebathHome(), exclude, allProfiles)
 }
 
 // Running gateway pids of the profile whose home is h

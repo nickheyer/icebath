@@ -11,7 +11,7 @@ var errUnsupported = errors.New("Bot Desktop runs on Linux gateway hosts only")
 // True when the path exists, Windows grants execute to every readable file
 func accessExec(path string) bool { _, err := os.Stat(path); return err == nil }
 
-// Opens the lock file, Windows has no flock and hermes runs the screen on Linux only
+// Opens the lock file, Windows has no flock and the screen runs on Linux only
 func flockPath(path string) (func(), error) {
 	f, err := os.OpenFile(path, os.O_RDWR|os.O_CREATE|os.O_APPEND, 0o666)
 	if err != nil {

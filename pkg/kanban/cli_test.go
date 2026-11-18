@@ -46,7 +46,7 @@ func TestCliGateTransportFailureFailsOpenButGenuineVerdictRejects(t *testing.T) 
 func TestCliGateBindsPerTaskAffinityScope(t *testing.T) {
 	var seen []string
 	patchGoalJudge(t, true, func(ctx context.Context, _, _ string, _ goals.JudgeOptions) goals.JudgeResult {
-		seen = append(seen, provider.PortalAffinityScope(ctx))
+		seen = append(seen, provider.AffinityScope(ctx))
 		return goals.JudgeResult{Verdict: "done"}
 	})
 	c, _, _ := cliFor(context.Background(), map[string]any{})
@@ -56,10 +56,10 @@ func TestCliGateBindsPerTaskAffinityScope(t *testing.T) {
 	if len(seen) != 1 || seen[0] != "kanban:task-9" {
 		t.Fatal(seen)
 	}
-	if scope := provider.PortalAffinityScope(context.Background()); scope != "" {
+	if scope := provider.AffinityScope(context.Background()); scope != "" {
 		t.Fatal(scope)
 	}
-	bound, _, _ := cliFor(provider.WithPortalAffinityScope(context.Background(), "outer-conversation"), map[string]any{})
+	bound, _, _ := cliFor(provider.WithAffinityScope(context.Background(), "outer-conversation"), map[string]any{})
 	bound.goalModeHandoffRejection(goalTask("task-9"), "ev")
 	if seen[len(seen)-1] != "outer-conversation" {
 		t.Fatal(seen)

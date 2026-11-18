@@ -457,6 +457,14 @@ func (c Command) Ready() bool { return c.When == nil || c.When() }
 func (m *Model) builtin() []Command {
 	hasTiles := func() bool { return m.Active() != nil && len(m.Active().tiles) > 1 }
 	hasFocus := func() bool { return m.focused() != nil }
+	hasGroup := func() bool {
+		e := m.focused()
+		if e == nil {
+			return false
+		}
+		g, grouped := e.card.(*Tabs)
+		return grouped && g.Len() > 1
+	}
 	out := []Command{
 		{ID: "palette", Run: m.OpenPalette},
 		{ID: "workspace.next", Title: "Workspace: next", When: func() bool { return len(m.spaces) > 1 }, Run: func() tea.Cmd { return m.Switch((m.active + 1) % len(m.spaces)) }},
@@ -475,6 +483,13 @@ func (m *Model) builtin() []Command {
 		{ID: "window.zoom", Title: "Window: fullscreen", When: hasFocus, Run: m.ToggleZoom},
 		{ID: "window.float", Title: "Window: float", When: hasFocus, Run: m.ToggleFloat},
 		{ID: "window.close", Title: "Window: close", When: func() bool { e := m.focused(); return e != nil && closable(e.card) }, Run: m.CloseFocused},
+		{ID: "tabs.join", Title: "Tab: join the window beside", When: func() bool {
+			e := m.focused()
+			return e != nil && !e.floating && besideTile(m.Active(), e) != nil
+		}, Run: m.JoinTab},
+		{ID: "tabs.split", Title: "Tab: take out into its own window", When: hasGroup, Run: m.SplitTab},
+		{ID: "tabs.cycle", Title: "Tab: next", When: hasGroup, Run: func() tea.Cmd { return m.CycleTab(1) }},
+		{ID: "tabs.cycle.back", Title: "Tab: previous", When: hasGroup, Run: func() tea.Cmd { return m.CycleTab(-1) }},
 		{ID: "panel.close", When: func() bool {
 			e := m.focused()
 			return e != nil && closable(e.card) && slices.Contains(contextsOf(e.card), keys.Panel)
@@ -533,6 +548,7 @@ func (m *Model) Keys() *keys.Map { return m.keys }
 func (m *Model) SetKeys(km *keys.Map) {
 	if km != nil {
 		m.keys = km
+		km.SetShiftApart(m.kittyKeys)
 	}
 }
 

@@ -8,7 +8,6 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
-	"log/slog"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -149,7 +148,7 @@ func (s *A2ASecurityContext) ResolveBindHost() string {
 		return s.RequestedHost
 	}
 	if s.LocalhostOnly() {
-		slog.Warn(fmt.Sprintf("A2A: A2A_HOST=%s ignored — no A2A_BEARER_TOKEN or A2A_PEER_TOKENS set; "+
+		pkgLog().Warn(fmt.Sprintf("A2A: A2A_HOST=%s ignored — no A2A_BEARER_TOKEN or A2A_PEER_TOKENS set; "+
 			"binding to 127.0.0.1. Configure a token to expose A2A remotely.", s.RequestedHost))
 		return "127.0.0.1"
 	}
@@ -433,6 +432,6 @@ func Audit(ctx context.Context, direction, peer, taskID, summary string) {
 		}
 	}
 	if err != nil {
-		slog.Debug("A2A: audit write failed", "error", err)
+		pkgLog().Debug("A2A: audit write failed", "error", err)
 	}
 }

@@ -3,7 +3,6 @@ package state
 import (
 	"context"
 	"fmt"
-	"log/slog"
 	"strings"
 
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
@@ -55,7 +54,7 @@ func decodeDisplayMetadata(raw any) any {
 	case pyObject, *pyjson.Object:
 		return meta
 	}
-	slog.Warn("Ignoring non-object display metadata on message row")
+	pkgLog().Warn("Ignoring non-object display metadata on message row")
 	return nil
 }
 

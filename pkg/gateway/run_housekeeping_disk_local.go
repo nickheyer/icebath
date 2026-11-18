@@ -2,7 +2,6 @@ package gateway
 
 import (
 	"context"
-	"log/slog"
 	"path/filepath"
 	"sync"
 	"time"
@@ -25,7 +24,7 @@ func publishLocalAutoPruneNotice(ctx context.Context, a *SessionAuthority, ref S
 	policy, err := policyForSource(ctx, a.Runner, live.Source)
 	if err != nil {
 		if runtimeStoreErrorOf(err) == nil {
-			slog.Error("local auto-prune notice failed", "error", err)
+			pkgLog().Error("local auto-prune notice failed", "error", err)
 		}
 		return
 	}
@@ -42,7 +41,7 @@ func publishLocalAutoPruneNotice(ctx context.Context, a *SessionAuthority, ref S
 	localAutoPruneNotified.Unlock()
 	advice, err := state.AutoPruneAdvise(ctx, home)
 	if err != nil {
-		slog.Error("local auto-prune notice failed", "error", err)
+		pkgLog().Error("local auto-prune notice failed", "error", err)
 	}
 	delivered := err == nil && advice != nil && state.AutoPruneShouldAsk(ctx, home) != nil &&
 		live.EventStream.Publish(ref.SessionID, state.AutoPruneNoticePayload(*advice), "notification.show", nil)

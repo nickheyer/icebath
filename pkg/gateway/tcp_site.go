@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"log/slog"
 	"net"
 	"runtime"
 	"strconv"
@@ -40,7 +39,7 @@ func StartTCPSite(ctx context.Context, app *HTTPApp, host *string, port int, log
 	if HasLiveListener(*host, port) {
 		return nil, err
 	}
-	slog.Default().With("logger", "gateway.platforms.tcp_site").Info(fmt.Sprintf(
+	pkgLog().Info(fmt.Sprintf(
 		"[%s] %s:%d busy without a live listener (TIME_WAIT from the previous gateway); rebinding with SO_REUSEADDR",
 		logTag, *host, port))
 	reuse := true

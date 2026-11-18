@@ -2,6 +2,7 @@ package gateway
 
 import (
 	"context"
+	"errors"
 	"fmt"
 
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
@@ -22,14 +23,14 @@ func (s *SessionStore) bindLocalAuthorityEpoch(dbKey string, epoch int64, regist
 // Epoch fencing a local reset on db, the owning store's own epoch before the registered default
 func (s *SessionStore) localResetEpoch(db SessionStoreDB) (int64, error) {
 	if s.localAuthorityEpoch == nil {
-		return 0, fmt.Errorf("AttributeError: 'SessionStore' object has no attribute '_local_authority_epoch'")
+		return 0, errors.New("the session store has no local authority epoch")
 	}
 	if db == nil {
 		return *s.localAuthorityEpoch, nil
 	}
 	pathed, ok := db.(interface{ Path() string })
 	if !ok {
-		return 0, fmt.Errorf("AttributeError: '%T' object has no attribute 'db_path'", db)
+		return 0, fmt.Errorf("the session database (%T) has no path", db)
 	}
 	key, err := pypath.Resolve(pathed.Path())
 	if err != nil {
@@ -59,7 +60,7 @@ func resetLocalSession(ctx context.Context, store *SessionStore, old *SessionEnt
 		ResetLocalTarget(context.Context, int64, string, *pyjson.Object) error
 	})
 	if !ok {
-		return nil, fmt.Errorf("AttributeError: '%T' object has no attribute 'execute_write'", db)
+		return nil, fmt.Errorf("the session database (%T) cannot reset a local session", db)
 	}
 	if err := resetter.ResetLocalTarget(ctx, epoch, old.SessionID, entry.ToDict()); err != nil {
 		return nil, err

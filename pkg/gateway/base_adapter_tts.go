@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"log/slog"
 	"math/rand/v2"
 	"os"
 	"path/filepath"
@@ -17,10 +16,10 @@ import (
 	"github.com/nickheyer/icebath/pkg/tools"
 )
 
-// Uniform draw in [lo, hi] for the human delay, swapped by tests the way hermes tests patch random.uniform
+// Uniform draw in [lo, hi] for the human delay, swapped by tests
 var humanDelayUniform = func(lo, hi float64) float64 { return lo + (hi-lo)*rand.Float64() }
 
-// TTS tool requirement check and synthesis, swapped by tests the way hermes tests patch tools.tts_tool
+// TTS tool requirement check and synthesis, swapped by tests
 var (
 	autoTTSRequirementsMet = func(ctx context.Context) bool { return checkTTSRequirements(ctx) }
 	autoTTSSynthesize      = func(ctx context.Context, text, outputPath string) (string, error) {
@@ -69,7 +68,7 @@ func (b *BasePlatformAdapter) synthesizeAutoTTS(ctx context.Context, textContent
 	paths := []string{}
 	var requested *string
 	fail := func(err error) ([]string, *string) {
-		slog.Warn(fmt.Sprintf("[%s] Auto-TTS failed: %v", b.Self().Name(), err))
+		pkgLog().Warn(fmt.Sprintf("[%s] Auto-TTS failed: %v", b.Self().Name(), err))
 		return paths, requested
 	}
 	if !autoTTSRequirementsMet(ctx) {

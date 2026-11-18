@@ -5,6 +5,7 @@ import (
 	"encoding/base64"
 	"fmt"
 	"image"
+	"image/draw"
 	"os"
 	"slices"
 	"strings"
@@ -14,7 +15,6 @@ import (
 	"github.com/charmbracelet/x/ansi"
 	"github.com/mattn/go-isatty"
 
-	"github.com/nickheyer/icebath/pkg/internal/pypil"
 	"github.com/nickheyer/icebath/pkg/pet"
 	"github.com/nickheyer/icebath/pkg/ui/gfx"
 	"github.com/nickheyer/icebath/pkg/ui/wm"
@@ -150,9 +150,11 @@ func (p *petView) update(m tea.Msg) (bool, tea.Cmd) {
 	return false, nil
 }
 
-// Takes the progress events of a hatch, the pet itself following the poll alone
+// Takes the progress events of a hatch and probes the pet again the moment the gateway reports it changed
 func (p *petView) observe(ev gatewayEventMsg) tea.Cmd {
 	switch ev.Type {
+	case "pet.changed":
+		return p.refresh()
 	case "pet.generate.progress":
 		return p.draftProgress(ev.Payload)
 	case "pet.hatch.progress":
@@ -452,7 +454,7 @@ func petSheetEscapes(info map[string]any, proto gfx.Protocol, scale float64) (*p
 	if proto == gfx.Sixel {
 		mode = "sixel"
 	}
-	sheet := pypil.ToNRGBA(decoded)
+	sheet := toNRGBA(decoded)
 	out := &petSheet{proto: proto, frames: map[string][]string{}, size: map[string][2]int{}}
 	for _, state := range pet.States {
 		frames, w, h := pet.SheetFrameEscapes(sheet, string(state), mode, whole("frameW", pet.FrameW), whole("frameH", pet.FrameH),
@@ -720,5 +722,13 @@ func petCellFrames(list []any) *petFrames {
 		out.high = max(out.high, len(cells))
 		out.rows = append(out.rows, halfBlockRows(cells))
 	}
+	return out
+}
+
+// Copy of an image as non premultiplied RGBA with its origin at zero
+func toNRGBA(src image.Image) *image.NRGBA {
+	b := src.Bounds()
+	out := image.NewNRGBA(image.Rect(0, 0, b.Dx(), b.Dy()))
+	draw.Draw(out, out.Rect, src, b.Min, draw.Src)
 	return out
 }

@@ -30,7 +30,7 @@ func logAgentBudget() {
 	if limit == config.TurnLimitUnlimited {
 		shown = "unlimited"
 	}
-	runLog().Info(fmt.Sprintf("Agent budget: max_iterations=%v (agent.max_turns from config.yaml, else the ICEBATH_MAX_ITERATIONS bridge)", shown))
+	pkgLog().Info(fmt.Sprintf("Agent budget: max_iterations=%v (agent.max_turns from config.yaml, else the ICEBATH_MAX_ITERATIONS bridge)", shown))
 }
 
 // Parks the last platform after a non retryable failure so the gateway stays up degraded, false when it must stop
@@ -55,7 +55,7 @@ func (r *GatewayRunner) parkLastFatalPlatform(ctx context.Context, adapter gatew
 	if m := base.FatalErrorMessage(); m != nil && *m != "" {
 		shownMessage = *m
 	}
-	runLog().Error(fmt.Sprintf("%s is parked after a non-retryable error (fix it, then `icebath gateway restart`). The gateway "+
+	pkgLog().Error(fmt.Sprintf("%s is parked after a non-retryable error (fix it, then `icebath gateway restart`). The gateway "+
 		"is DEGRADED — it serves local clients and cron with no messaging platform. %s: %s",
 		base.Platform, shownCode, shownMessage))
 	return true
@@ -70,12 +70,12 @@ func (r *GatewayRunner) startLoopLivenessGuards(ctx context.Context, loop gatewa
 		func() {
 			defer func() {
 				if rec := recover(); rec != nil {
-					runLog().Debug("Failed to arm gateway loop floor timer", "exc_info", rec)
+					pkgLog().Debug("Failed to arm gateway loop floor timer", "exc_info", rec)
 				}
 			}()
 			handle, err := gateway.ArmLoopFloorTimer(loop, nil)
 			if err != nil {
-				runLog().Debug("Failed to arm gateway loop floor timer", "exc_info", err)
+				pkgLog().Debug("Failed to arm gateway loop floor timer", "exc_info", err)
 				return
 			}
 			r.loopFloorTimerHandle = handle
@@ -91,7 +91,7 @@ func (r *GatewayRunner) startLoopLivenessGuards(ctx context.Context, loop gatewa
 		func() {
 			defer func() {
 				if rec := recover(); rec != nil {
-					runLog().Debug("Failed to start gateway loop liveness watchdog", "exc_info", rec)
+					pkgLog().Debug("Failed to start gateway loop liveness watchdog", "exc_info", rec)
 				}
 			}()
 			r.loopLivenessWatchdog = gateway.StartLoopLivenessWatchdog(ctx, loop, interval, timeout, strikes, gateway.GatewayServiceRestartExitCode)
@@ -103,7 +103,7 @@ func (r *GatewayRunner) startLoopLivenessGuards(ctx context.Context, loop gatewa
 func (r *GatewayRunner) startLoopHeartbeatTask(ctx context.Context) {
 	defer func() {
 		if rec := recover(); rec != nil {
-			runLog().Debug("Failed to start gateway loop heartbeat", "exc_info", rec)
+			pkgLog().Debug("Failed to start gateway loop heartbeat", "exc_info", rec)
 		}
 	}()
 	if existing := r.loopHeartbeatTask; existing != nil && !existing.isDone() {
@@ -112,7 +112,7 @@ func (r *GatewayRunner) startLoopHeartbeatTask(ctx context.Context) {
 	startTime := r.gatewayStartedAt
 	loop := r.gatewayLoop
 	if loop == nil {
-		runLog().Debug("Failed to start gateway loop heartbeat", "exc_info", fmt.Errorf("RuntimeError: no running event loop"))
+		pkgLog().Debug("Failed to start gateway loop heartbeat", "exc_info", fmt.Errorf("RuntimeError: no running event loop"))
 		return
 	}
 	task := spawnGatewayTask(context.WithoutCancel(ctx), "gateway-loop-heartbeat", func(taskCtx context.Context) (any, error) {
@@ -149,7 +149,7 @@ func (r *GatewayRunner) startInstallFaulthandler(ctx context.Context) {
 		func() {
 			defer func() {
 				if rec := recover(); rec != nil {
-					runLog().Debug("faulthandler.enable() unavailable", "exc_info", rec)
+					pkgLog().Debug("faulthandler.enable() unavailable", "exc_info", rec)
 				}
 			}()
 			f, err := openFaulthandlerLog(ctx)
@@ -158,7 +158,7 @@ func (r *GatewayRunner) startInstallFaulthandler(ctx context.Context) {
 				f.Close()
 			}
 			if err != nil {
-				runLog().Debug("faulthandler.enable() unavailable", "exc_info", err)
+				pkgLog().Debug("faulthandler.enable() unavailable", "exc_info", err)
 			}
 		}()
 	}
@@ -167,7 +167,7 @@ func (r *GatewayRunner) startInstallFaulthandler(ctx context.Context) {
 	}
 	f, err := openFaulthandlerLog(ctx)
 	if err != nil {
-		runLog().Debug("Could not set up faulthandler file logging", "exc_info", err)
+		pkgLog().Debug("Could not set up faulthandler file logging", "exc_info", err)
 		return
 	}
 	registerStackDump(f)
@@ -210,13 +210,13 @@ func (r *GatewayRunner) startLogRetiredSessionReset(ctx context.Context) {
 		}
 		if len(hits) > 0 && !plugins.ResetPluginEnabled(ctx) {
 			for _, h := range hits {
-				runLog().Warn(fmt.Sprintf("Profile %s: %s", h.name, plugins.FormatSessionResetNotice(h.path, h.mode)))
+				pkgLog().Warn(fmt.Sprintf("Profile %s: %s", h.name, plugins.FormatSessionResetNotice(h.path, h.mode)))
 			}
 		}
 		return nil
 	}()
 	if err != nil {
-		runLog().Debug("retired session_reset check failed", "exc_info", err)
+		pkgLog().Debug("retired session_reset check failed", "exc_info", err)
 	}
 }
 
@@ -248,11 +248,11 @@ func (r *GatewayRunner) startLogSystemdTimingAlignment(ctx context.Context) {
 	must := func(o *pyjson.Object, key string) any {
 		v, ok := o.Get(key)
 		if !ok {
-			panic(fmt.Sprintf("KeyError: %s", pyrepr.Repr(key)))
+			panic(fmt.Sprintf("the startup timing record has no %s", key))
 		}
 		return v
 	}
-	runLog().Warn(fmt.Sprintf("Stale systemd unit detected: %s has TimeoutStopSec=%ss but drain_timeout=%ss "+
+	pkgLog().Warn(fmt.Sprintf("Stale systemd unit detected: %s has TimeoutStopSec=%ss but drain_timeout=%ss "+
 		"cron_drain_timeout=%ss (expected >=%ss). systemd may SIGKILL the gateway "+
 		"mid-drain. Run `icebath gateway install --force` to regenerate the unit, or shorten "+
 		"agent.restart_drain_timeout / agent.cron_drain_timeout.",

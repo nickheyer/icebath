@@ -88,7 +88,7 @@ func TestSlackExecApprovalSendsBlocksWithButtons(t *testing.T) {
 			t.Fatalf("button value %v", el["value"])
 		}
 	}
-	for _, id := range []string{"hermes_approve_once", "hermes_approve_session", "hermes_approve_always", "hermes_deny"} {
+	for _, id := range []string{"icebath_approve_once", "icebath_approve_session", "icebath_approve_always", "icebath_deny"} {
 		if !ids[id] {
 			t.Fatalf("missing %s in %v", id, ids)
 		}
@@ -106,7 +106,7 @@ func TestSlackExecApprovalSmartDenyOwnerOverrideHidesPersistentButtons(t *testin
 	for _, e := range blocks[1].(map[string]any)["elements"].([]any) {
 		ids = append(ids, e.(map[string]any)["action_id"].(string))
 	}
-	if strings.Join(ids, ",") != "hermes_approve_once,hermes_deny" {
+	if strings.Join(ids, ",") != "icebath_approve_once,icebath_deny" {
 		t.Fatalf("buttons %v", ids)
 	}
 	if text := blocks[0].(map[string]any)["text"].(map[string]any)["text"].(string); !strings.Contains(strings.ToLower(text), "one operation") {
@@ -136,7 +136,7 @@ func TestSlackApprovalActionTruncatesInflatedOriginalText(t *testing.T) {
 		map[string]any{"type": "section", "text": map[string]any{"type": "mrkdwn", "text": inflated}}}},
 		"channel": map[string]any{"id": "C1"}, "user": map[string]any{"name": "alice", "id": "U_ALICE"}}
 	ack := &ackRecorder{}
-	a.handleApprovalAction(context.Background(), ack.ack, body, map[string]any{"action_id": "hermes_approve_once", "value": "session-key"})
+	a.handleApprovalAction(context.Background(), ack.ack, body, map[string]any{"action_id": "icebath_approve_once", "value": "session-key"})
 	if n := pystr.Len(updatedSectionText(t, f)); n > 3000 {
 		t.Fatalf("section text %d chars", n)
 	}
@@ -156,7 +156,7 @@ func TestSlackApprovalActionGlobalAllowlistBlocksUnauthorizedClick(t *testing.T)
 	body := map[string]any{"message": map[string]any{"ts": "1234.5678", "blocks": []any{}},
 		"channel": map[string]any{"id": "C1"}, "user": map[string]any{"name": "mallory", "id": "U_ATTACKER"}}
 	ack := &ackRecorder{}
-	a.handleApprovalAction(context.Background(), ack.ack, body, map[string]any{"action_id": "hermes_approve_once", "value": "agent:main:slack:group:C1:1111"})
+	a.handleApprovalAction(context.Background(), ack.ack, body, map[string]any{"action_id": "icebath_approve_once", "value": "agent:main:slack:group:C1:1111"})
 	if ack.calls != 1 || resolved != 0 {
 		t.Fatalf("ack calls %d, resolve calls %d", ack.calls, resolved)
 	}
@@ -193,7 +193,7 @@ func TestSlackSlashConfirmActionTruncatesInflatedOriginalText(t *testing.T) {
 		map[string]any{"type": "section", "text": map[string]any{"type": "mrkdwn", "text": inflated}}}},
 		"channel": map[string]any{"id": "C1"}, "user": map[string]any{"name": "owner", "id": "U_OWNER"}}
 	ack := &ackRecorder{}
-	a.handleSlashConfirmAction(context.Background(), ack.ack, body, map[string]any{"action_id": "hermes_confirm_once", "value": "agent:main:slack:group:C1:1111|confirm-1"})
+	a.handleSlashConfirmAction(context.Background(), ack.ack, body, map[string]any{"action_id": "icebath_confirm_once", "value": "agent:main:slack:group:C1:1111|confirm-1"})
 	if n := pystr.Len(updatedSectionText(t, f)); n > 3000 {
 		t.Fatalf("section text %d chars", n)
 	}
@@ -365,10 +365,10 @@ func TestSlackReactionForwardingReactionSynthesizesMessageInThread(t *testing.T)
 		t.Fatalf("forwarded %v", *forwarded)
 	}
 	synth := (*forwarded)[0]
-	reaction := synth["_hermes_reaction"].(map[string]any)
+	reaction := synth["_icebath_reaction"].(map[string]any)
 	if synth["type"] != "message" || synth["user"] != "U1" || synth["text"] != "reaction:added:👍" || synth["channel"] != "C1" ||
 		synth["thread_ts"] != "1000.0" || synth["ts"] != "3000.0" || reaction["name"] != "thumbsup" || reaction["action"] != "added" ||
-		reaction["reacted_to_ts"] != "2000.0" || synth["_hermes_force_process"] != true {
+		reaction["reacted_to_ts"] != "2000.0" || synth["_icebath_force_process"] != true {
 		t.Fatalf("synthetic event %v", synth)
 	}
 }
@@ -386,7 +386,7 @@ func TestSlackReactionForwardingTargetChannelHandoffRoutesTopLevel(t *testing.T)
 		t.Fatalf("forwarded %v", *forwarded)
 	}
 	synth := (*forwarded)[0]
-	if _, has := synth["thread_ts"]; has || synth["channel"] != "C_TRAIN" || synth["_hermes_no_thread_response"] != true || synth["_hermes_reaction_source_channel"] != "C1" {
+	if _, has := synth["thread_ts"]; has || synth["channel"] != "C_TRAIN" || synth["_icebath_no_thread_response"] != true || synth["_icebath_reaction_source_channel"] != "C1" {
 		t.Fatalf("synthetic event %v", synth)
 	}
 }
@@ -404,7 +404,7 @@ func TestSlackReactionForwardingTargetChannelWithThreadRoutesToThread(t *testing
 		t.Fatalf("forwarded %v", *forwarded)
 	}
 	synth := (*forwarded)[0]
-	if _, has := synth["_hermes_no_thread_response"]; has || synth["channel"] != "C_TRAIN" || synth["thread_ts"] != "1719.0001" {
+	if _, has := synth["_icebath_no_thread_response"]; has || synth["channel"] != "C_TRAIN" || synth["thread_ts"] != "1719.0001" {
 		t.Fatalf("synthetic event %v", synth)
 	}
 }

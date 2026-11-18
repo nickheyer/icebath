@@ -5,7 +5,6 @@ import (
 	"database/sql"
 	"fmt"
 	"io/fs"
-	"log/slog"
 	"os"
 	"path/filepath"
 	"strings"
@@ -24,8 +23,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
-
-var connectLogger = slog.Default().With("logger", "hermes_cli.browser_connect")
 
 var snapshotIgnores = []string{
 	"*Cache*",
@@ -62,7 +59,7 @@ var authBackupDeadlineS = 5.0
 
 const optionalAuthBackupDeadlineS = 0.5
 
-// Module attributes of the real profile snapshot hermes tests patch
+// Module attributes of the real profile snapshot tests patch
 var (
 	connectRealProfileCopyDir   = realProfileCopyDir
 	connectSnapshotRealProfile  = snapshotRealProfile
@@ -218,7 +215,7 @@ func copyAuthFile(srcFile, dstFile string, deadlineS *float64) (string, error) {
 	if err == nil {
 		return "", nil
 	}
-	connectLogger.Debug(fmt.Sprintf("real-profile: could not copy %s: %s", srcFile, connectErrText(err)))
+	pkgLog().Debug(fmt.Sprintf("real-profile: could not copy %s: %s", srcFile, connectErrText(err)))
 	if reason := connectErrText(err); reason != "" {
 		return reason, nil
 	}
@@ -257,7 +254,7 @@ func mirrorProfileAuth(src, dst, sourceProfile string) ([]authFailure, error) {
 		if reason == authDBLocked {
 			why = "the running browser holds a write lock on it"
 		}
-		connectLogger.Info(fmt.Sprintf("real-profile snapshot: skipped %s (%s); session cookies still copied", rel, why))
+		pkgLog().Info(fmt.Sprintf("real-profile snapshot: skipped %s (%s); session cookies still copied", rel, why))
 	}
 	return failed, nil
 }
@@ -301,7 +298,7 @@ func profileIsLocked(src, sourceProfile string) bool {
 func browserSetting(env *tools.Env, key string) any {
 	cfg, err := connectUserConfigEffective(env)
 	if err != nil {
-		connectLogger.Debug(fmt.Sprintf("could not read %s: %v", key, err))
+		pkgLog().Debug(fmt.Sprintf("could not read %s: %v", key, err))
 		return nil
 	}
 	section, ok := cfg["browser"]
@@ -458,7 +455,7 @@ func syncLocalState(src, dst, sourceProfile string) {
 	lsSrc, lsDst := pypath.Join(src, "Local State"), pypath.Join(dst, "Local State")
 	if isFilePath(lsSrc) {
 		if err := pyshutil.Copy2(lsSrc, lsDst); err != nil {
-			connectLogger.Debug(fmt.Sprintf("real-profile snapshot: skipped Local State: %s", connectErrText(err)))
+			pkgLog().Debug(fmt.Sprintf("real-profile snapshot: skipped Local State: %s", connectErrText(err)))
 		}
 	}
 	err := func() error {
@@ -498,7 +495,7 @@ func syncLocalState(src, dst, sourceProfile string) {
 		return os.WriteFile(lsDst, []byte(out), 0o666)
 	}()
 	if err != nil {
-		connectLogger.Debug(fmt.Sprintf("real-profile snapshot: could not normalize Local State: %s", connectErrText(err)))
+		pkgLog().Debug(fmt.Sprintf("real-profile snapshot: could not normalize Local State: %s", connectErrText(err)))
 	}
 }
 
@@ -552,7 +549,7 @@ func copyProfileTree(src, dst, sourceProfile string) error {
 	if _, perFile := err.(interface{ Unwrap() []error }); !perFile {
 		return err
 	}
-	connectLogger.Info(fmt.Sprintf("real-profile snapshot: %d file(s) skipped copying %s/%s", countJoined(err), src, sourceProfile))
+	pkgLog().Info(fmt.Sprintf("real-profile snapshot: %d file(s) skipped copying %s/%s", countJoined(err), src, sourceProfile))
 	return nil
 }
 
@@ -579,7 +576,7 @@ func snapshotSource(marker string) string {
 // Serves the last completed snapshot as it is while the live profile is locked
 func reuseSnapshot(browser, dst string) (string, string) {
 	dropSingletonLeftovers(dst)
-	connectLogger.Info(fmt.Sprintf("real-profile: %s holds its profile lock; reusing the last snapshot in %s "+
+	pkgLog().Info(fmt.Sprintf("real-profile: %s holds its profile lock; reusing the last snapshot in %s "+
 		"(logins as of that copy)", browser, dst))
 	return dst, ""
 }
@@ -637,7 +634,7 @@ func snapshotRealProfile(env *tools.Env, browser, src string) (string, string) {
 		}
 		dropSingletonLeftovers(dst)
 		if err := os.WriteFile(marker, []byte(sourceProfile), 0o666); err != nil {
-			connectLogger.Debug(fmt.Sprintf("real-profile snapshot: could not write done marker: %s", connectErrText(err)))
+			pkgLog().Debug(fmt.Sprintf("real-profile snapshot: could not write done marker: %s", connectErrText(err)))
 		}
 		secureSnapshot(env, dst, true)
 		return nil, nil
@@ -656,6 +653,6 @@ func cleanupRealProfileSnapshots(env *tools.Env) {
 	root := pypath.PathJoin(cfgOf(env).homeDir(), "browser-profile")
 	if isDirPath(root) {
 		os.RemoveAll(root)
-		connectLogger.Info(fmt.Sprintf("real-profile: removed snapshot store %s (consent off)", root))
+		pkgLog().Info(fmt.Sprintf("real-profile: removed snapshot store %s (consent off)", root))
 	}
 }

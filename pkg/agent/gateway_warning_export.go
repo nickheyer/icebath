@@ -1,7 +1,6 @@
 package agent
 
 import (
-	"context"
 	"math/big"
 
 	"github.com/nickheyer/icebath/pkg/provider"
@@ -19,10 +18,4 @@ func (a *AIAgent) TerminalEmptyTurn(messages []map[string]any, finishReason stri
 	s := &LoopState{Messages: rowsToMessages(messages)}
 	final := terminalEmpty(a, s, &provider.Response{Message: &state.Message{Role: "assistant"}}, finishReason)
 	return final, messagesToRows(s.Messages)
-}
-
-// Nous rate limit guard verdict action and result at the top of a fresh attempt
-func (a *AIAgent) NousRateLimitGuardTurn(ctx context.Context) (string, map[string]any) {
-	v := nousRateLimitGuard(ctx, a, &LoopState{Messages: []*state.Message{}, ConversationHistory: []*state.Message{}, Retry: &TurnRetryState{}})
-	return v.Action, v.Result
 }

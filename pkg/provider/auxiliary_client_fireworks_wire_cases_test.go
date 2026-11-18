@@ -3,6 +3,8 @@ package provider
 import (
 	"reflect"
 	"testing"
+
+	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 )
 
 func TestFireworksReasoningAuxiliaryReasoningWireShape(t *testing.T) {
@@ -32,7 +34,7 @@ func TestFireworksReasoningAuxiliaryReasoningWireShape(t *testing.T) {
 		if !reflect.DeepEqual(top, tc.expectTop) {
 			t.Fatalf("%s top level %v, want %v", tc.provider, top, tc.expectTop)
 		}
-		extra, _ := kwargs["extra_body"].(map[string]any)
+		extra, _ := pyjson.Plain(kwargs["extra_body"]).(map[string]any)
 		if _, generic := extra["reasoning"]; generic != tc.expectGeneric {
 			t.Fatalf("%s extra_body %v generic %v", tc.provider, extra, generic)
 		}

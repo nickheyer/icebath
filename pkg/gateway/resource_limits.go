@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"context"
 	"fmt"
-	"log/slog"
 	"math/big"
 	"os"
 	"strings"
@@ -38,7 +37,7 @@ func runtimeInt(cfg map[string]any, key string, def int64) *big.Int {
 	if cfg == nil {
 		loaded, err := resourceLimitsLoadConfig()
 		if err != nil {
-			slog.Debug(fmt.Sprintf("Could not load config for runtime.%s: %v", key, err))
+			pkgLog().Debug(fmt.Sprintf("Could not load config for runtime.%s: %v", key, err))
 			return nil
 		}
 		cfg = loaded
@@ -87,7 +86,7 @@ func ApplyNofileSoftLimit(cfg map[string]any) bool {
 	}
 	soft, hard, err := getNofile()
 	if err != nil {
-		slog.Debug(fmt.Sprintf("Could not raise RLIMIT_NOFILE soft limit: %v", err))
+		pkgLog().Debug(fmt.Sprintf("Could not raise RLIMIT_NOFILE soft limit: %v", err))
 		return false
 	}
 	if soft == rlimInfinity || new(big.Int).SetUint64(soft).Cmp(target) >= 0 {
@@ -101,11 +100,11 @@ func ApplyNofileSoftLimit(cfg map[string]any) bool {
 		return false
 	}
 	if !newSoft.IsUint64() {
-		slog.Debug("Could not raise RLIMIT_NOFILE soft limit: Python int too large to convert to C long")
+		pkgLog().Debug("Could not raise RLIMIT_NOFILE soft limit: Python int too large to convert to C long")
 		return false
 	}
 	if err := setNofile(newSoft.Uint64(), hard); err != nil {
-		slog.Debug(fmt.Sprintf("Could not raise RLIMIT_NOFILE soft limit: %v", err))
+		pkgLog().Debug(fmt.Sprintf("Could not raise RLIMIT_NOFILE soft limit: %v", err))
 		return false
 	}
 	return true

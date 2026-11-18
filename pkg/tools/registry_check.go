@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"log/slog"
 	"math"
 	"reflect"
 	"runtime"
@@ -185,13 +184,6 @@ func CheckFnCacheScope(env *Env) (scope string, bypass bool) {
 	return ScopeKey(env.Home), false
 }
 
-func checkLogger(env *Env) *slog.Logger {
-	if env != nil && env.Log != nil {
-		return env.Log.With("logger", "tools.registry")
-	}
-	return slog.Default().With("logger", "tools.registry")
-}
-
 // runCheckUncached runs a probe and converts a panic into an unavailable verdict
 func runCheckUncached(env *Env, fn func(*Env) bool) (value bool, panicked any) {
 	defer func() {
@@ -253,18 +245,18 @@ func (r *Registry) checkCached(ctx context.Context, env *Env, fn func(*Env) bool
 			reuse = end
 		}
 		window.note(reuse)
-		checkLogger(env).Warn(fmt.Sprintf("check_fn %s failed (%s) within %.0fs of last success; treating as transient and keeping tool(s) available",
+		envLog(env).Warn(fmt.Sprintf("check_fn %s failed (%s) within %.0fs of last success; treating as transient and keeping tool(s) available",
 			label, outcome, checkGrace.Seconds()))
 		return true
 	}
 	if len(coreDropped) > 0 && checkEverGood[key] && !checkDropWarned[key] {
 		checkDropWarned[key] = true
-		checkLogger(env).Warn(fmt.Sprintf("check_fn %s %s; previously available core tool(s) %s dropped (non-deferrable, so not searchable either); dependent tools will be unavailable this turn",
+		envLog(env).Warn(fmt.Sprintf("check_fn %s %s; previously available core tool(s) %s dropped (non-deferrable, so not searchable either); dependent tools will be unavailable this turn",
 			label, outcome, strings.Join(coreDropped, ", ")), panicAttrs(panicked)...)
 	} else if panicked != nil {
-		checkLogger(env).Warn(fmt.Sprintf("check_fn %s %s; dependent tools will be unavailable this turn", label, outcome), panicAttrs(panicked)...)
+		envLog(env).Warn(fmt.Sprintf("check_fn %s %s; dependent tools will be unavailable this turn", label, outcome), panicAttrs(panicked)...)
 	} else {
-		checkLogger(env).Info(fmt.Sprintf("check_fn %s %s; dependent tools will be unavailable this turn", label, outcome))
+		envLog(env).Info(fmt.Sprintf("check_fn %s %s; dependent tools will be unavailable this turn", label, outcome))
 	}
 	storeCheckVerdict(key, checkVerdict{now, false})
 	window.note(now.Add(checkTTL))
@@ -288,13 +280,13 @@ func runCheckLogged(env *Env, fn func(*Env) bool) bool {
 	label := fnLabel(fn)
 	if err, ok := p.(error); ok && errors.Is(err, ErrUnscopedSecret) {
 		if env == nil || env.Secrets == nil {
-			checkLogger(env).Debug(fmt.Sprintf("check_fn %s hit the multiplex fail-closed path with no profile secret scope active; dependent tools re-probe on the first scoped turn", label))
+			envLog(env).Debug(fmt.Sprintf("check_fn %s hit the multiplex fail-closed path with no profile secret scope active; dependent tools re-probe on the first scoped turn", label))
 		} else {
-			checkLogger(env).Warn(fmt.Sprintf("check_fn %s raised UnscopedSecretError while the profile cache scope was resolved; dependent tools will be unavailable this turn", label), "panic", p)
+			envLog(env).Warn(fmt.Sprintf("check_fn %s raised UnscopedSecretError while the profile cache scope was resolved; dependent tools will be unavailable this turn", label), "panic", p)
 		}
 		return false
 	}
-	checkLogger(env).Warn(fmt.Sprintf("check_fn %s raised; dependent tools will be unavailable this turn", label), "panic", p)
+	envLog(env).Warn(fmt.Sprintf("check_fn %s raised; dependent tools will be unavailable this turn", label), "panic", p)
 	return false
 }
 

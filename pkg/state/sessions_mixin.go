@@ -73,7 +73,7 @@ func (d *SessionDB) FindSessionByOrigin(ctx context.Context, platform, chatID st
 	return pyStr(rowValue(rows[0], "id")), nil
 }
 
-// Hermes find_session_by_origin as a package function over a store
+// Find_session_by_origin as a package function over a store
 func FindSessionByOrigin(ctx context.Context, db *SessionDB, platform, chatID string, threadID, userID *string) (string, error) {
 	return db.FindSessionByOrigin(ctx, platform, chatID, threadID, userID)
 }

@@ -3,7 +3,6 @@ package discord
 import (
 	"context"
 	"fmt"
-	"log/slog"
 	"os"
 	"path/filepath"
 	"sync"
@@ -92,7 +91,7 @@ func (s *DiscordRecoveryStore) Call(ctx context.Context, fn func(conn state.SQLi
 		return result, err
 	}()
 	if err != nil {
-		slog.Warn(fmt.Sprintf("Discord recovery ledger unavailable: %s", err))
+		pkgLog().Warn(fmt.Sprintf("Discord recovery ledger unavailable: %s", err))
 		return def
 	}
 	return result

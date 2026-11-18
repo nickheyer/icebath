@@ -22,7 +22,7 @@ func uniqueToolPair(i, chars int) []map[string]any {
 // Session already compacted once whose tail is nPairs huge tool rounds and a huge user report
 func alreadyCompactedSession(nPairs, toolChars, userChars int) []map[string]any {
 	msgs := []map[string]any{
-		{"role": "system", "content": "You are Hermes."},
+		{"role": "system", "content": "You are Icebath."},
 		{"role": "user", "content": "Investigate thoroughly"},
 		{"role": "assistant", "content": "OK"},
 		{"role": "user", "content": "[CONTEXT COMPACTION — REFERENCE ONLY]\n" + strings.Repeat("Prior findings. ", 200)},

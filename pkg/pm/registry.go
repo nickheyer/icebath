@@ -55,7 +55,7 @@ func AllPackages() []string {
 	return sortedKeys(packages)
 }
 
-// Supported runtime roots for a source install, internal tools entering only through dependencies
+// Supported required roots for a source install, optional and internal tools entering only on request or through dependencies
 func SourceInstallPackages(names []string) ([]string, error) {
 	target, err := CurrentTarget()
 	if err != nil {
@@ -68,7 +68,7 @@ func SourceInstallPackages(names []string) ([]string, error) {
 			return nil, err
 		}
 		base := p.Base()
-		if !base.Internal && (name == "python" || !base.Optional) && p.MissingReason(target) == "" {
+		if !base.Internal && !base.Optional && p.MissingReason(target) == "" {
 			out = append(out, name)
 		}
 	}
@@ -160,8 +160,17 @@ func LoadPackageDefinitions(definitions []PackageDefinition) error {
 	return nil
 }
 
-// Dependencies first topological order over the requested packages, refusing cycles
+// Dependencies first topological order over the requested packages on this host's target, refusing cycles
 func Walk(names []string) ([]Package, error) {
+	target, err := CurrentTarget()
+	if err != nil {
+		return nil, err
+	}
+	return WalkTarget(names, target)
+}
+
+// Dependencies first topological order over the requested packages on target, refusing cycles
+func WalkTarget(names []string, target string) ([]Package, error) {
 	seen := map[string]bool{}
 	var order []Package
 	var visit func(name string, chain []string) error
@@ -179,7 +188,7 @@ func Walk(names []string) ([]Package, error) {
 			return err
 		}
 		next := append(append([]string{}, chain...), name)
-		for _, dep := range p.Base().Deps {
+		for _, dep := range p.Base().DepsOn(target) {
 			if err := visit(dep, next); err != nil {
 				return err
 			}

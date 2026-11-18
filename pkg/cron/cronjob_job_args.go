@@ -93,15 +93,15 @@ func (s *Store) originFromEnv(env *tools.Env, schedule any) map[string]any {
 		messageID := tools.SessionEnvValue(env, "ICEBATH_SESSION_MESSAGE_ID")
 		if messageID != "" && threadID == messageID {
 			if s.firstFireWithinThreadHorizon(schedule) {
-				s.logAs("tools.cronjob_tools").Debug(fmt.Sprintf("Cron origin: keeping synthetic Slack thread_id=%s — first fire is within the conversation horizon", threadID))
+				s.log.Debug(fmt.Sprintf("Cron origin: keeping synthetic Slack thread_id=%s — first fire is within the conversation horizon", threadID))
 			} else {
-				s.logAs("tools.cronjob_tools").Debug(fmt.Sprintf("Cron origin: dropping synthetic per-message Slack thread_id=%s (== creation message id)", threadID))
+				s.log.Debug(fmt.Sprintf("Cron origin: dropping synthetic per-message Slack thread_id=%s (== creation message id)", threadID))
 				threadID = ""
 			}
 		}
 	}
 	if threadID != "" {
-		s.logAs("tools.cronjob_tools").Debug(fmt.Sprintf("Cron origin captured thread_id=%s for %s:%s", threadID, platform, chatID))
+		s.log.Debug(fmt.Sprintf("Cron origin captured thread_id=%s for %s:%s", threadID, platform, chatID))
 	}
 	return map[string]any{
 		"platform": platform, "chat_id": chatID,

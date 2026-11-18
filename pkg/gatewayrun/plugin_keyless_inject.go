@@ -40,10 +40,10 @@ func keylessRefuseAt(now float64, pluginID, kind, detail string) {
 	}
 	keylessWarnedMu.Unlock()
 	if repeated {
-		runLog().Debug(fmt.Sprintf("inject_message from plugin %s refused again: %s", pluginID, detail))
+		pkgLog().Debug(fmt.Sprintf("inject_message from plugin %s refused again: %s", pluginID, detail))
 		return
 	}
-	runLog().Warn(fmt.Sprintf("inject_message from plugin %s has no session key and %s; nothing was injected. Pass session_key= (or origin=) to choose the chat.", pluginID, detail))
+	pkgLog().Warn(fmt.Sprintf("inject_message from plugin %s has no session key and %s; nothing was injected. Pass session_key= (or origin=) to choose the chat.", pluginID, detail))
 }
 
 // Whether a live session is a local session its profile's local adapter authorizes
@@ -106,13 +106,13 @@ func keylessResolve(ctx context.Context, r *GatewayRunner, pluginHome, callingSe
 			}
 			for _, s := range other.LiveSessionViews() {
 				if s.Live.Route == callingSessionKey && s.Live.Source != nil && s.Live.Source.Platform == gateway.PlatformLocal {
-					runLog().Warn(fmt.Sprintf("Plugin message injection refused: plugin=%s session=%s is not a live local session of the plugin's profile home %s",
+					pkgLog().Warn(fmt.Sprintf("Plugin message injection refused: plugin=%s session=%s is not a live local session of the plugin's profile home %s",
 						pluginID, callingSessionKey, homeOrNone(pluginHome)))
 					return nil, nil, nil
 				}
 			}
 		}
-		runLog().Warn("inject_message: gateway mode requires an existing session_key or an origin")
+		pkgLog().Warn("inject_message: gateway mode requires an existing session_key or an origin")
 		return nil, nil, nil
 	}
 	var attached []*gateway.LiveSession

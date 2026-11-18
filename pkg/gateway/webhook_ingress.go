@@ -34,7 +34,7 @@ type ProducerHooksRunner interface {
 // Plugin hook that may consume a delivery after its admission is prepared
 const PostAdmissionHook = "post_gateway_admission"
 
-// Runner bound to the adapter's message handler, the bound method owner of hermes
+// Runner bound to the adapter's message handler
 func handlerOwner(adapter PlatformAdapter) any {
 	b := adapter.Base()
 	b.mu.Lock()

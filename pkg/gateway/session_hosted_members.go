@@ -3,7 +3,6 @@ package gateway
 import (
 	"context"
 	"fmt"
-	"log/slog"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -15,10 +14,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/state"
 )
-
-func hostedMembersLog() *slog.Logger {
-	return slog.Default().With("logger", "gateway.session_hosted_members")
-}
 
 // Ignored roster entries already logged, keyed by profile, field, bounded value repr and detail
 var hostedMembersReported = struct {
@@ -272,5 +267,5 @@ func hostedMembersReport(own, field string, value any, detail string) {
 		return
 	}
 	hostedMembersReported.seen[key] = true
-	hostedMembersLog().Warn(fmt.Sprintf("Ignoring %s for profile=%s: %s", field, own, detail))
+	pkgLog().Warn(fmt.Sprintf("Ignoring %s for profile=%s: %s", field, own, detail))
 }

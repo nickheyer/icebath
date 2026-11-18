@@ -3,15 +3,14 @@ package selfupdate
 import (
 	"context"
 	"fmt"
-	"log/slog"
+	"strings"
 
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/hostinfo"
+	"github.com/nickheyer/icebath/pkg/install"
 	"github.com/nickheyer/icebath/pkg/selfupdate/updaterecord"
 )
-
-var updateContractLog = slog.Default().With("logger", "hermes_cli.update_contract")
 
 // Probes of the admission layers, the marker read, the sealed tree steward, Termux and the install method
 var (
@@ -58,13 +57,13 @@ func stewardRefusal(steward string) *UpdateRefusal {
 func admissionLayer(message string, layer func() (*UpdateRefusal, error)) (verdict *UpdateRefusal) {
 	defer func() {
 		if r := recover(); r != nil {
-			updateContractLog.Debug(fmt.Sprintf(message, r))
+			pkgLog().Debug(fmt.Sprintf(message, r))
 			verdict = nil
 		}
 	}()
 	verdict, err := layer()
 	if err != nil {
-		updateContractLog.Debug(fmt.Sprintf(message, launchErrorText(err)))
+		pkgLog().Debug(fmt.Sprintf(message, launchErrorText(err)))
 		return nil
 	}
 	return verdict
@@ -111,7 +110,7 @@ func evaluateUpdateAdmission(ctx context.Context, projectRoot string) (*UpdateRe
 	}); verdict != nil {
 		return verdict, nil
 	}
-	return admissionLayer("Install-method admission check failed: %s", func() (*UpdateRefusal, error) {
+	if verdict := admissionLayer("Install-method admission check failed: %s", func() (*UpdateRefusal, error) {
 		method, err := admissionInstallMethod(ctx, home.Dir(ctx), projectRoot)
 		if err != nil {
 			return nil, err
@@ -130,14 +129,32 @@ func evaluateUpdateAdmission(ctx context.Context, projectRoot string) (*UpdateRe
 			return refusal(method, method, func(string) string { return StewardUpdateMessage(method) }), nil
 		}
 		return nil, nil
-	}), nil
+	}); verdict != nil {
+		return verdict, nil
+	}
+	return unmanagedTreeRefusal(projectRoot), nil
+}
+
+// Refusal for a tree the installer did not create, telling a source checkout how a checkout is updated
+func unmanagedTreeRefusal(projectRoot string) *UpdateRefusal {
+	if install.InstallerCreated(projectRoot) {
+		return nil
+	}
+	lead := "✗ " + install.UnmanagedTreeDescription(projectRoot) + ", so icebath update leaves it alone.\n"
+	if install.IsSourceCheckout(projectRoot) {
+		steps := install.CheckoutUpdateCommands()
+		return &UpdateRefusal{Code: "source-checkout", UpdateCommand: strings.Join(steps, " && "),
+			Message: lead + "  Update a checkout from inside it:\n    cd " + projectRoot + "\n    " + strings.Join(steps, "\n    ")}
+	}
+	return &UpdateRefusal{Code: "not-installer-tree", UpdateCommand: install.InstallerCommand(),
+		Message: lead + "  Install icebath with the installer to get updates:\n    " + install.InstallerCommand()}
 }
 
 // Writes the minimal refused receipt of a blocked update attempt, never failing the command
 func recordRefusalReceipt(ctx context.Context, refusal *UpdateRefusal) {
 	defer func() {
 		if r := recover(); r != nil {
-			updateContractLog.Debug(fmt.Sprintf("Could not record refusal receipt: %v", r))
+			pkgLog().Debug(fmt.Sprintf("Could not record refusal receipt: %v", r))
 		}
 	}()
 	updaterecord.BeginUpdateReceipt(ctx, nil, "")

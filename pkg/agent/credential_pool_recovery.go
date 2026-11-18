@@ -99,7 +99,7 @@ func recoverRateLimit(pool *provider.Pool, hasRetried429 bool, errorContext map[
 		}
 	}
 	if current != nil && current.LastStatus == provider.StatusExhausted {
-		runAgentLog().Info(fmt.Sprintf("Credential already exhausted (last_status=%s) — rotating immediately instead of retrying", current.LastStatus))
+		pkgLog().Info(fmt.Sprintf("Credential already exhausted (last_status=%s) — rotating immediately instead of retrying", current.LastStatus))
 		if rotateAndSwap(429, "rate limit, pre-exhausted") {
 			return true, false
 		}
@@ -142,7 +142,7 @@ func (a *AIAgent) recoverWithCredentialPool(ctx context.Context, statusCode *int
 	currentProvider := pystr.Lower(pystr.Strip(a.provider))
 	poolProvider := pystr.Lower(pystr.Strip(pool.Provider()))
 	if poolProvider != "" && !provider.CredentialPoolMatchesProvider(ctx, pool.Provider(), currentProvider, a.baseURL) {
-		runAgentLog().Warn(fmt.Sprintf("Credential pool provider mismatch: pool=%s, agent=%s — skipping pool mutation to avoid cross-provider contamination", poolProvider, currentProvider))
+		pkgLog().Warn(fmt.Sprintf("Credential pool provider mismatch: pool=%s, agent=%s — skipping pool mutation to avoid cross-provider contamination", poolProvider, currentProvider))
 		return false, hasRetried429, nil
 	}
 	defer func() {
@@ -181,10 +181,10 @@ func (a *AIAgent) recoverWithCredentialPool(ctx context.Context, statusCode *int
 			nextID = "?"
 		}
 		if !provider.CredentialPoolEntryServesEndpoint(next, a.baseURL) {
-			runAgentLog().Info(fmt.Sprintf("Credential %d (%s) — pool entry %s serves another endpoint; not swapping", rotateStatus, label, nextID))
+			pkgLog().Info(fmt.Sprintf("Credential %d (%s) — pool entry %s serves another endpoint; not swapping", rotateStatus, label, nextID))
 			return false
 		}
-		runAgentLog().Info(fmt.Sprintf("Credential %d (%s) — rotated to pool entry %s", rotateStatus, label, nextID))
+		pkgLog().Info(fmt.Sprintf("Credential %d (%s) — rotated to pool entry %s", rotateStatus, label, nextID))
 		swapped := a.swapCredentialOrRaise(ctx, next)
 		if swapped && credentialID != "" && a.credentialPoolRevertID == "" &&
 			(effectiveReason == provider.ReasonRateLimit || effectiveReason == provider.ReasonBilling) {
@@ -203,9 +203,9 @@ func (a *AIAgent) recoverWithCredentialPool(ctx context.Context, statusCode *int
 	switch effectiveReason {
 	case provider.ReasonUpstreamRateLimit:
 		if upstream := contextString(errorContext["upstream_provider"]); upstream != "" {
-			runAgentLog().Info(fmt.Sprintf("Upstream provider %s rate-limited via aggregator — skipping credential rotation, deferring to fallback chain", upstream))
+			pkgLog().Info(fmt.Sprintf("Upstream provider %s rate-limited via aggregator — skipping credential rotation, deferring to fallback chain", upstream))
 		} else {
-			runAgentLog().Info("Upstream aggregator 429 (provider unknown) — skipping credential rotation, deferring to fallback chain")
+			pkgLog().Info("Upstream aggregator 429 (provider unknown) — skipping credential rotation, deferring to fallback chain")
 		}
 		return false, hasRetried429, nil
 	case provider.ReasonBilling:

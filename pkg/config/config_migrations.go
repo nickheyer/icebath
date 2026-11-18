@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"log/slog"
 	"math"
 	"net/netip"
 	"os"
@@ -387,16 +386,12 @@ func pyURLHostname(raw string) (string, error) {
 	return strings.ToLower(hostname), nil
 }
 
-// Python str of an OSError, errno and strerror and the failing path
+// Reason of a file failure followed by the failing path
 func pyOSErrorString(err error) string {
 	var pathErr *os.PathError
 	var errno syscall.Errno
 	if errors.As(err, &pathErr) && errors.As(pathErr.Err, &errno) {
-		msg := errno.Error()
-		if msg != "" {
-			msg = strings.ToUpper(msg[:1]) + msg[1:]
-		}
-		return fmt.Sprintf("[Errno %d] %s: %s", int(errno), msg, pyStringRepr(pathErr.Path))
+		return errno.Error() + ": " + pathErr.Path
 	}
 	return err.Error()
 }
@@ -1014,7 +1009,7 @@ func migrateTo39(r *migrationRun) error {
 		return nil
 	}
 	return r.commit(cfg, "removed retired 'bfl' toolset from saved toolset lists",
-		"  \u2713 Removed the retired BFL FLUX 3 toolset from saved toolset lists \u2014 video generation now lives under `icebath tools` \u2192 Video Generation (Nous Subscription or FAL).")
+		"  \u2713 Removed the retired BFL FLUX 3 toolset from saved toolset lists \u2014 video generation now lives under `icebath tools` \u2192 Video Generation (FAL, xAI, OpenRouter or DeepInfra).")
 }
 
 // Removes the plugin era messaging section from every roster profile SOUL.md
@@ -1161,7 +1156,20 @@ func migrateTo46(r *migrationRun) error {
 
 // Drops saved sandbox images that still equal an old default so they follow the new one
 func migrateTo48(r *migrationRun) error {
-	for _, legacy := range LegacySandboxImages {
+	return dropStaleSandboxImages(r, LegacySandboxImages)
+}
+
+// Image the default sandbox named before icebath built its own, dropped by the v62 step
+const retiredSandboxImage = "nousresearch/hermes-sandbox:desktop"
+
+// Drops terminal images still equal to the retired default so they follow the image icebath builds
+func migrateTo62(r *migrationRun) error {
+	return dropStaleSandboxImages(r, []string{retiredSandboxImage})
+}
+
+// Unsets every terminal image key equal to one of the stale defaults so it follows the current one
+func dropStaleSandboxImages(r *migrationRun, stale []string) error {
+	for _, legacy := range stale {
 		for _, pair := range [][2]string{{"docker_image", legacy}, {"modal_image", legacy}, {"daytona_image", legacy}, {"singularity_image", "docker://" + legacy}} {
 			key := pair[0]
 			err := rewriteStaleDefault(pair[1], rewriteSpec{
@@ -1308,18 +1316,25 @@ func migrationSteps() []migrationStep {
 			extraGuard: func(raw map[string]any) bool { _, has := raw["capture"]; return has }})},
 		{56, migrateTo56},
 		{57, rewriteStaleDefault(retiredWakePhrase, rewriteSpec{section: "wake_word", key: "phrase", newValue: "hey icebath",
-			added: "wake_word.phrase=hey icebath (was: hey hermes)",
-			message: "  ✓ Changed wake_word.phrase from \"hey hermes\" to \"hey icebath\" — the open vocabulary sherpa engine detects it. " +
-				"Set wake_word.phrase back to \"hey hermes\" to keep the bundled openWakeWord model.",
+			added:      "wake_word.phrase=hey icebath (was: the earlier default phrase)",
+			message:    "  ✓ Changed wake_word.phrase to \"hey icebath\", the phrase the open vocabulary sherpa engine detects.",
 			extraGuard: wakeEngineLeftToAuto})},
 		{58, migrateTo58},
+		{59, migrateTo59},
+		{60, migrateTo60},
+		{61, migrateTo61},
+		{62, migrateTo62},
+		{63, migrateTo63},
+		{64, migrateTo64},
+		{65, migrateTo65},
+		{66, migrateTo66},
 	}
 }
 
-// Wake phrase of the bundled openWakeWord model, the default before the icebath phrase
+// Default wake phrase before the icebath phrase, the value the v57 and v65 steps move
 const retiredWakePhrase = "hey hermes"
 
-// Whether the wake engine is still auto on the bundled openWakeWord model the old default phrase came with
+// Whether the wake engine is still auto on the openWakeWord model the earlier default phrase came with
 func wakeEngineLeftToAuto(raw map[string]any) bool {
 	if provider, has := raw["provider"]; has && provider != nil && !lowerIs("auto")(provider, true) {
 		return false
@@ -1509,7 +1524,7 @@ func RunMigrations(h string, currentVer int, results *MigrationResults, quiet bo
 		if err := runStep(step, r); err != nil {
 			warning := fmt.Sprintf("config migration to v%d failed and was skipped: %v", step.target, err)
 			results.Warnings = append(results.Warnings, warning)
-			slog.Warn(warning)
+			pkgLog().Warn(warning)
 			r.say("  \u26a0 " + warning)
 		}
 	}

@@ -17,7 +17,7 @@ const (
 	guardHuman      = "100200300"
 )
 
-// Mutable guard clock of the hermes clock fixture
+// Mutable guard clock of the clock fixture
 type guardClock struct{ t float64 }
 
 func (c *guardClock) now() float64         { return c.t }

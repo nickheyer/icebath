@@ -64,7 +64,7 @@ func activeDelegationProvider(ctx context.Context, config map[string]any) (Deleg
 func declaredDelegationParameters(p DelegationProvider, config map[string]any) (accepted *pyjson.Object) {
 	defer func() {
 		if rec := recover(); rec != nil {
-			delegateToolLog.Warn(fmt.Sprintf("delegation provider %s.task_parameters() raised; no extra parameters", p.Name()),
+			pkgLog().Warn(fmt.Sprintf("delegation provider %s.task_parameters() raised; no extra parameters", p.Name()),
 				"exc_info", fmt.Sprint(rec))
 			accepted = pyjson.NewObject()
 		}
@@ -76,7 +76,7 @@ func declaredDelegationParameters(p DelegationProvider, config map[string]any) (
 	}
 	for _, name := range raw.Keys {
 		if !delegationParamNameRE.MatchString(name) || ReservedTaskParameters[name] {
-			delegateToolLog.Warn(fmt.Sprintf("delegation provider %s: task parameter %s refused (reserved or invalid name)",
+			pkgLog().Warn(fmt.Sprintf("delegation provider %s: task parameter %s refused (reserved or invalid name)",
 				p.Name(), pyrepr.Repr(name)))
 			continue
 		}
@@ -106,7 +106,7 @@ func SchemaExtension(ctx context.Context, config map[string]any) (*pyjson.Object
 	addendum := func() (text string) {
 		defer func() {
 			if rec := recover(); rec != nil {
-				delegateToolLog.Warn(fmt.Sprintf("delegation provider %s.description() raised", p.Name()), "exc_info", fmt.Sprint(rec))
+				pkgLog().Warn(fmt.Sprintf("delegation provider %s.description() raised", p.Name()), "exc_info", fmt.Sprint(rec))
 				text = ""
 			}
 		}()

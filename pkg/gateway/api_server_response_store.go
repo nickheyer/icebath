@@ -148,7 +148,7 @@ func (s *ResponseStore) tightenFilePermissions() {
 			continue
 		}
 		if err := os.Chmod(candidate, 0o600); err != nil {
-			apiServerLog().Debug(fmt.Sprintf("Failed to restrict response store permissions for %s", candidate), "error", err)
+			pkgLog().Debug(fmt.Sprintf("Failed to restrict response store permissions for %s", candidate), "error", err)
 		}
 	}
 }
@@ -173,7 +173,7 @@ func (s *ResponseStore) Get(ctx context.Context, responseID string) (any, error)
 		if !errors.As(err, &decodeErr) {
 			return nil, err
 		}
-		apiServerLog().Warn(fmt.Sprintf("Corrupted JSON in response store for id=%s, evicting entry", responseID))
+		pkgLog().Warn(fmt.Sprintf("Corrupted JSON in response store for id=%s, evicting entry", responseID))
 		_, err := s.conn.ExecContext(ctx, "DELETE FROM responses WHERE response_id = ?", responseID)
 		return nil, err
 	}
@@ -251,7 +251,7 @@ func (s *ResponseStore) settleTerminalAdmissions(ctx context.Context, at *float6
 	}
 	terminal, err := apiTerminalAdmissions(ctx, uri, ids)
 	if err != nil {
-		apiServerLog().Debug(fmt.Sprintf("Responses identity settlement skipped: %s unreadable", stateDB), "error", err)
+		pkgLog().Debug(fmt.Sprintf("Responses identity settlement skipped: %s unreadable", stateDB), "error", err)
 		return nil
 	}
 	for admissionID := range terminal {

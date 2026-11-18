@@ -67,8 +67,8 @@ func TestGatewayClientWebsocketAttachMode(t *testing.T) {
 	t.Run("/logs carries the attach lifecycle like main's sidecar spawn line (row 24)", func(t *testing.T) {
 		t.Setenv("ICEBATH_TUI_GATEWAY_URL", "")
 		c, d, _ := newTestClient(t, nil)
-		c.bootstrap = func(context.Context, bool, bool) (localGrant, error) {
-			return localGrant{URL: "ws://127.0.0.1:9/api/ws?token=secret", ProfileID: "/home/u/.icebath/profiles/work", InstanceID: "owner-1"}, nil
+		c.bootstrap = func(context.Context, bool, bool) (Grant, error) {
+			return Grant{URL: "ws://127.0.0.1:9/api/ws?token=secret", ProfileID: "/home/u/.icebath/profiles/work", InstanceID: "owner-1"}, nil
 		}
 		c.start()
 		eventually(t, "the dial", func() bool { return d.count() == 1 })

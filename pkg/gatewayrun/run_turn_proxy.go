@@ -78,7 +78,7 @@ func (r *GatewayRunner) runAgentViaProxy(ctx context.Context, p proxyRunParams) 
 		if key == "" {
 			key = "?"
 		}
-		runLog().Info(fmt.Sprintf("Discarding stale proxy %s for %s — generation %d is no longer current", what, key, generation))
+		pkgLog().Info(fmt.Sprintf("Discarding stale proxy %s for %s — generation %d is no longer current", what, key, generation))
 		return map[string]any{"final_response": "", "messages": []any{}, "api_calls": 0, "tools": []any{},
 			"history_offset": len(p.history), "session_id": p.sessionID, "response_previewed": false}
 	}
@@ -137,7 +137,7 @@ func (r *GatewayRunner) runAgentViaProxy(ctx context.Context, p proxyRunParams) 
 	if !runStillCurrent() {
 		return staleResult("result"), nil
 	}
-	runLog().Info(fmt.Sprintf("proxy response: url=%s session=%s time=%.1fs response=%d chars", proxyURL, firstRunes(p.sessionID, 20), elapsed, utf8.RuneCountInString(fullResponse)))
+	pkgLog().Info(fmt.Sprintf("proxy response: url=%s session=%s time=%.1fs response=%d chars", proxyURL, firstRunes(p.sessionID, 20), elapsed, utf8.RuneCountInString(fullResponse)))
 	final := fullResponse
 	if final == "" {
 		final = i18n.T(ctx, "gateway.proxy.no_response", "", nil)
@@ -218,7 +218,7 @@ func (r *GatewayRunner) streamProxyReply(ctx context.Context, proxyURL, proxyKey
 	if resp.StatusCode != http.StatusOK {
 		raw, _ := io.ReadAll(reader)
 		errorText := pystr.DecodeUTF8Replace(raw)
-		runLog().Warn(fmt.Sprintf("Proxy error (%d) from %s: %s", resp.StatusCode, proxyURL, firstRunes(errorText, 500)))
+		pkgLog().Warn(fmt.Sprintf("Proxy error (%d) from %s: %s", resp.StatusCode, proxyURL, firstRunes(errorText, 500)))
 		return "", proxyErrorResult(i18n.T(ctx, "gateway.proxy.http_error", "", map[string]any{"status": resp.StatusCode, "error": firstRunes(errorText, 300)})), nil
 	}
 	buffer := ""
@@ -260,7 +260,7 @@ func (r *GatewayRunner) streamProxyReply(ctx context.Context, proxyURL, proxyKey
 		sawDone = consumeLine(buffer)
 	}
 	if !sawDone {
-		runLog().Warn(fmt.Sprintf("Proxy SSE stream from %s ended without [DONE] — response may be truncated (%d chars received)", proxyURL, utf8.RuneCountInString(fullResponse)))
+		pkgLog().Warn(fmt.Sprintf("Proxy SSE stream from %s ended without [DONE] — response may be truncated (%d chars received)", proxyURL, utf8.RuneCountInString(fullResponse)))
 		if fullResponse == "" {
 			return "", proxyErrorResult(i18n.T(ctx, "gateway.proxy.closed_early", "", nil)), nil
 		}
@@ -270,7 +270,7 @@ func (r *GatewayRunner) streamProxyReply(ctx context.Context, proxyURL, proxyKey
 
 // Logs a proxy failure, the connection error reply when nothing streamed, else the partial response
 func (r *GatewayRunner) proxyConnectionError(ctx context.Context, proxyURL, fullResponse string, err error) (string, map[string]any, error) {
-	runLog().Error(fmt.Sprintf("Proxy connection error to %s: %s", proxyURL, pyrepr.ExceptionMessage(err)))
+	pkgLog().Error(fmt.Sprintf("Proxy connection error to %s: %s", proxyURL, pyrepr.ExceptionMessage(err)))
 	if fullResponse == "" {
 		return "", proxyErrorResult(i18n.T(ctx, "gateway.proxy.connection_error", "", map[string]any{"error": pyrepr.ExceptionMessage(err)})), nil
 	}

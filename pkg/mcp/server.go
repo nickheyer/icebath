@@ -394,7 +394,7 @@ func (s *serverTask) keepaliveProbe(ctx context.Context) error {
 			s.mu.Lock()
 			s.pingUnsupported = true
 			s.mu.Unlock()
-			mcpLogger().Info(fmt.Sprintf("MCP server '%s': does not implement the optional 'ping' utility (-32601); using 'list_tools' for keepalive on this connection.", s.name))
+			pkgLog().Info(fmt.Sprintf("MCP server '%s': does not implement the optional 'ping' utility (-32601); using 'list_tools' for keepalive on this connection.", s.name))
 		case isTimeout(err) && s.advertisesTools():
 			if listTools() != nil {
 				return err
@@ -402,7 +402,7 @@ func (s *serverTask) keepaliveProbe(ctx context.Context) error {
 			s.mu.Lock()
 			s.pingUnsupported = true
 			s.mu.Unlock()
-			mcpLogger().Info(fmt.Sprintf("MCP server '%s': ping timed out but list_tools succeeded — server silently drops ping; using 'list_tools' for keepalive on this connection.", s.name))
+			pkgLog().Info(fmt.Sprintf("MCP server '%s': ping timed out but list_tools succeeded — server silently drops ping; using 'list_tools' for keepalive on this connection.", s.name))
 			return nil
 		default:
 			return err
@@ -423,7 +423,7 @@ func (s *serverTask) markSessionProven() {
 	s.parkReason = ""
 	if s.wasParked {
 		s.wasParked = false
-		mcpLogger().Warn(fmt.Sprintf("MCP server '%s': revived — session healthy again after parking (state: parked → connected)", s.name))
+		pkgLog().Warn(fmt.Sprintf("MCP server '%s': revived — session healthy again after parking (state: parked → connected)", s.name))
 	}
 	s.permanentGraceUsed, s.teardownRace = false, false
 }
@@ -437,7 +437,7 @@ func (s *serverTask) markSuspect(reason string) {
 
 func (s *serverTask) markSuspectLocked(reason string) {
 	if s.suspectReason == "" && reason != "" {
-		mcpLogger().Warn(fmt.Sprintf("MCP server '%s': connection marked suspect (%s); next call will health-check it", s.name, reason))
+		pkgLog().Warn(fmt.Sprintf("MCP server '%s': connection marked suspect (%s); next call will health-check it", s.name, reason))
 	}
 	s.suspectReason = reason
 }
@@ -464,7 +464,7 @@ func (s *serverTask) ensureHealthy(ctx context.Context, timeout time.Duration) b
 	}
 	cancel()
 	if err != nil {
-		mcpLogger().Warn(fmt.Sprintf("MCP server '%s': suspect connection (%s) failed health check (%s: %s) — requesting reconnect (state: suspect → degraded)", s.name, reason, errTypeName(err), excStr(err)))
+		pkgLog().Warn(fmt.Sprintf("MCP server '%s': suspect connection (%s) failed health check (%s: %s) — requesting reconnect (state: suspect → degraded)", s.name, reason, errTypeName(err), excStr(err)))
 		s.mu.Lock()
 		s.suspectReason = ""
 		s.markSuspectLocked("health check failed after " + reason)
@@ -474,7 +474,7 @@ func (s *serverTask) ensureHealthy(ctx context.Context, timeout time.Duration) b
 		s.reconnect.Set()
 		return false
 	}
-	mcpLogger().Info(fmt.Sprintf("MCP server '%s': suspect connection passed health check (%s) — clearing suspicion", s.name, reason))
+	pkgLog().Info(fmt.Sprintf("MCP server '%s': suspect connection passed health check (%s) — clearing suspicion", s.name, reason))
 	s.mu.Lock()
 	s.suspectReason = ""
 	s.mu.Unlock()
@@ -575,7 +575,7 @@ func (s *serverTask) spawnRefresh(fn func(ctx context.Context)) {
 func (s *serverTask) scheduleToolsRefresh() {
 	s.spawnRefresh(func(ctx context.Context) {
 		if err := s.refreshTools(ctx); err != nil {
-			mcpLogger().Error(fmt.Sprintf("MCP server '%s': dynamic tool refresh failed: %s", s.name, excStr(err)))
+			pkgLog().Error(fmt.Sprintf("MCP server '%s': dynamic tool refresh failed: %s", s.name, excStr(err)))
 		}
 	})
 }
@@ -666,7 +666,7 @@ func (s *serverTask) waitForLifecycleEvent(ctx context.Context, sessionDone <-ch
 			s.mu.Unlock()
 			if !proven && !proofAt.IsZero() && !serverNow().Before(proofAt) {
 				if s.stdioChildrenDead() {
-					mcpLogger().Warn(fmt.Sprintf("MCP server '%s' stdio child exited before the session proved healthy; triggering reconnect (state: connected → degraded)", s.name))
+					pkgLog().Warn(fmt.Sprintf("MCP server '%s' stdio child exited before the session proved healthy; triggering reconnect (state: connected → degraded)", s.name))
 					return s.finishLifecycleWait(), nil
 				}
 				s.markSessionProven()
@@ -689,7 +689,7 @@ func (s *serverTask) waitForLifecycleEvent(ctx context.Context, sessionDone <-ch
 				return "", ctx.Err()
 			}
 			root := unwrapExceptionGroup(err)
-			mcpLogger().Warn(fmt.Sprintf("MCP server '%s' keepalive failed, triggering reconnect (state: connected → degraded): %s: %s", s.name, errTypeName(root), root.Error()))
+			pkgLog().Warn(fmt.Sprintf("MCP server '%s' keepalive failed, triggering reconnect (state: connected → degraded): %s: %s", s.name, errTypeName(root), root.Error()))
 			s.markSuspect(fmt.Sprintf("keepalive failed: %s: %s", errTypeName(root), root.Error()))
 			s.reconnect.Set()
 			return s.finishLifecycleWait(), nil
@@ -759,9 +759,9 @@ func (s *serverTask) logPark(line string) {
 	}
 	s.mu.Unlock()
 	if repeat {
-		mcpLogger().Debug(line)
+		pkgLog().Debug(line)
 	} else {
-		mcpLogger().Warn(line)
+		pkgLog().Warn(line)
 	}
 }
 
@@ -782,9 +782,9 @@ func (s *serverTask) park(ctx context.Context, revivalReason string) bool {
 		if outcome == "self-probe" && !s.stillConfiguredEnabled(ctx) {
 			line := fmt.Sprintf("MCP server '%s': parked entry is disabled or gone from mcp_servers; pausing the self-probe until it is re-enabled", s.name)
 			if paused {
-				mcpLogger().Debug(line)
+				pkgLog().Debug(line)
 			} else {
-				mcpLogger().Info(line)
+				pkgLog().Info(line)
 			}
 			paused = true
 			continue
@@ -794,7 +794,7 @@ func (s *serverTask) park(ctx context.Context, revivalReason string) bool {
 			s.unattended = true
 			s.mu.Unlock()
 		}
-		mcpLogger().Debug(fmt.Sprintf("MCP server '%s': attempting revival %s (%s); rebuilding transport.", s.name, revivalReason, outcome))
+		pkgLog().Debug(fmt.Sprintf("MCP server '%s': attempting revival %s (%s); rebuilding transport.", s.name, revivalReason, outcome))
 		return false
 	}
 }
@@ -855,7 +855,7 @@ func (s *serverTask) prepareRun(ctx context.Context, r *Rendered) bool {
 	_, hasURL := cfg["url"]
 	_, hasCommand := cfg["command"]
 	if hasURL && hasCommand {
-		mcpLogger().Warn(fmt.Sprintf("MCP server '%s' has both 'url' and 'command' in config. Using HTTP transport ('url'). Remove 'command' to silence this warning.", s.name))
+		pkgLog().Warn(fmt.Sprintf("MCP server '%s' has both 'url' and 'command' in config. Using HTTP transport ('url'). Remove 'command' to silence this warning.", s.name))
 	}
 	if !hasURL {
 		return true
@@ -877,7 +877,7 @@ func (s *serverTask) prepareRun(ctx context.Context, r *Rendered) bool {
 			5*time.Second, pyTruthy(cfg["strict_redirect_headers"]))
 	}
 	if err != nil {
-		mcpLogger().Warn(excStr(err))
+		pkgLog().Warn(excStr(err))
 		s.publishError(err)
 		return false
 	}
@@ -914,7 +914,7 @@ func (s *serverTask) refreshRemoteConfig(ctx context.Context, r *Rendered) *Rend
 	if same {
 		return r
 	}
-	mcpLogger().Info(fmt.Sprintf("MCP server '%s': definition changed in config.yaml (%s -> %s); rebuilding with the new one",
+	pkgLog().Info(fmt.Sprintf("MCP server '%s': definition changed in config.yaml (%s -> %s); rebuilding with the new one",
 		s.name, pyRepr(r.Config["url"]), pyRepr(fresh.Config["url"])))
 	s.mu.Lock()
 	s.rendered, s.config = fresh, fresh.Config
@@ -990,14 +990,14 @@ func (s *serverTask) onCleanReturn(ctx context.Context, reason string, budget *r
 		recycled := s.recycledReason
 		s.session = nil
 		s.mu.Unlock()
-		mcpLogger().Info(fmt.Sprintf("MCP server '%s': stdio session recycled after %s; waiting for lazy reconnect", s.name, recycled))
+		pkgLog().Info(fmt.Sprintf("MCP server '%s': stdio session recycled after %s; waiting for lazy reconnect", s.name, recycled))
 		return s.waitForReconnectOrShutdown(ctx, -1) != "shutdown"
 	}
-	mcpLogger().Debug(fmt.Sprintf("MCP server '%s': reconnecting (OAuth recovery or manual refresh)", s.name))
+	pkgLog().Debug(fmt.Sprintf("MCP server '%s': reconnecting (OAuth recovery or manual refresh)", s.name))
 	s.mu.Lock()
 	switch {
 	case s.teardownRace && !s.sessionProven:
-		mcpLogger().Info(fmt.Sprintf("MCP server '%s': reconnect after teardown race (in-flight calls were failed); not charging the rapid-drop budget", s.name))
+		pkgLog().Info(fmt.Sprintf("MCP server '%s': reconnect after teardown race (in-flight calls were failed); not charging the rapid-drop budget", s.name))
 		s.teardownRace, budget.backoff = false, 1.0
 	case s.sessionProven:
 		s.reconnectRetries, budget.backoff = 0, 1.0
@@ -1055,7 +1055,7 @@ func (s *serverTask) backoffSleep(ctx context.Context, budget *retryBudget) {
 func (s *serverTask) onTransportError(ctx context.Context, err error, budget *retryBudget) bool {
 	failureClass := classifyMCPFailure(err)
 	if s.isRecycledStdio() {
-		mcpLogger().Warn(fmt.Sprintf("MCP server '%s': lazy reconnect after stdio recycle failed, marking unavailable while retrying: %s: %s", s.name, errTypeName(err), excStr(err)))
+		pkgLog().Warn(fmt.Sprintf("MCP server '%s': lazy reconnect after stdio recycle failed, marking unavailable while retrying: %s: %s", s.name, errTypeName(err), excStr(err)))
 		s.mu.Lock()
 		s.recycledReason = ""
 		s.mu.Unlock()
@@ -1067,7 +1067,7 @@ func (s *serverTask) onTransportError(ctx context.Context, err error, budget *re
 		return s.onInitialConnectError(ctx, err, failureClass, budget)
 	}
 	if s.shutdownEv.IsSet() {
-		mcpLogger().Debug(fmt.Sprintf("MCP server '%s' disconnected during shutdown: %s: %s", s.name, errTypeName(err), excStr(err)))
+		pkgLog().Debug(fmt.Sprintf("MCP server '%s' disconnected during shutdown: %s: %s", s.name, errTypeName(err), excStr(err)))
 		return false
 	}
 	if failureClass == "permanent" {
@@ -1082,7 +1082,7 @@ func (s *serverTask) onTransportError(ctx context.Context, err error, budget *re
 			s.name, maxReconnectRetries, int(parkedRetryInterval.Seconds()), errTypeName(err), excStr(err)))
 		return s.parkAndRearm(ctx, "from parked state", budget)
 	}
-	mcpLogger().Debug(fmt.Sprintf("MCP server '%s' connection lost (attempt %d/%d), reconnecting in %.0fs: %s: %s",
+	pkgLog().Debug(fmt.Sprintf("MCP server '%s' connection lost (attempt %d/%d), reconnecting in %.0fs: %s: %s",
 		s.name, retries, maxReconnectRetries, budget.backoff, errTypeName(err), excStr(err)))
 	s.backoffSleep(ctx, budget)
 	return !s.shutdownEv.IsSet() && ctx.Err() == nil
@@ -1105,7 +1105,7 @@ func (s *serverTask) onInitialConnectError(ctx context.Context, err error, failu
 			s.name, maxInitialConnectRetries, errTypeName(err), excStr(err)))
 		return s.parkInitialFailure(ctx, err, "after initial connection failures", budget)
 	}
-	mcpLogger().Debug(fmt.Sprintf("MCP server '%s' initial connection failed (attempt %d/%d), retrying in %.0fs: %s: %s",
+	pkgLog().Debug(fmt.Sprintf("MCP server '%s' initial connection failed (attempt %d/%d), retrying in %.0fs: %s: %s",
 		s.name, budget.initialRetries, maxInitialConnectRetries, budget.backoff, errTypeName(err), excStr(err)))
 	s.backoffSleep(ctx, budget)
 	if s.shutdownEv.IsSet() {
@@ -1124,7 +1124,7 @@ func (s *serverTask) onPermanentError(ctx context.Context, err error, budget *re
 	s.mu.Unlock()
 	if grace {
 		s.markSuspect("auth error on proven session: " + excStr(err))
-		mcpLogger().Warn(fmt.Sprintf("MCP server '%s': auth error on a previously healthy session — marking suspect and forcing one reconnect instead of parking (state: connected → suspect): %s: %s",
+		pkgLog().Warn(fmt.Sprintf("MCP server '%s': auth error on a previously healthy session — marking suspect and forcing one reconnect instead of parking (state: connected → suspect): %s: %s",
 			s.name, errTypeName(err), excStr(err)))
 		s.mu.Lock()
 		s.reconnectRetries, budget.backoff = 0, 1.0
@@ -1216,7 +1216,7 @@ func (s *serverTask) shutdown(ctx context.Context) {
 		select {
 		case <-s.done:
 		case <-t.C:
-			mcpLogger().Warn(fmt.Sprintf("MCP server '%s' shutdown timed out, cancelling task", s.name))
+			pkgLog().Warn(fmt.Sprintf("MCP server '%s' shutdown timed out, cancelling task", s.name))
 			s.cancelTask()
 			<-s.done
 		}

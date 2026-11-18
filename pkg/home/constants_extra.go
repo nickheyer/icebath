@@ -291,7 +291,7 @@ var FirstPartyModuleRoots = map[string]bool{
 // Reports whether the first dotted segment of name ships with the agent
 func IsFirstPartyModule(name string) bool {
 	root, _, _ := strings.Cut(name, ".")
-	return root != "" && (FirstPartyModuleRoots[root] || strings.HasPrefix(root, "hermes_"))
+	return root != "" && (FirstPartyModuleRoots[root] || strings.HasPrefix(root, "icebath_"))
 }
 
 // Python import failure a child runtime reported, ModuleNotFound marking the missing module subclass

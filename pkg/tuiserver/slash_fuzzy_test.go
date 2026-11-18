@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/commands"
+	"github.com/nickheyer/icebath/pkg/tuigateway"
 )
 
 // Completion item with the kind the ranker reads
@@ -38,7 +39,7 @@ func userOrigin(string) string { return "user" }
 
 func TestNormalizeSlashSearchQuery(t *testing.T) {
 	for in, want := range map[string]string{" /Model ": "model", "//help": "help", "plain": "plain"} {
-		if got := normalizeSlashSearchQuery(in); got != want {
+		if got := tuigateway.NormalizeSlashSearchQuery(in); got != want {
 			t.Fatalf("%q -> %q", in, got)
 		}
 	}

@@ -7,7 +7,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"log/slog"
 	"mime"
 	"mime/multipart"
 	"net"
@@ -120,7 +119,7 @@ func standaloneReadJSONLimited(resp *http.Response, limit int) (map[string]any, 
 // Logs and returns the warning for a missing media file
 func standaloneWarnMissingMedia(mediaPath string) string {
 	warning := fmt.Sprintf("Media file not found, skipping: %s", mediaPath)
-	slog.Warn(warning)
+	pkgLog().Warn(warning)
 	return warning
 }
 
@@ -167,14 +166,14 @@ func standaloneIsForum(ctx context.Context, chatID string, jsonHeaders http.Head
 	isForum := false
 	resp, err := standaloneDo(ctx, standaloneClient(session, 15*time.Second), http.MethodGet, discordStandaloneAPIBase+"/channels/"+chatID, jsonHeaders, nil)
 	if err != nil {
-		slog.Debug(fmt.Sprintf("Failed to probe channel type for %s", chatID), "err", err)
+		pkgLog().Debug(fmt.Sprintf("Failed to probe channel type for %s", chatID), "err", err)
 		return false
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode == 200 {
 		info, err := standaloneReadJSONLimited(resp, discordStandaloneJSONBodyLimitBytes)
 		if err != nil {
-			slog.Debug(fmt.Sprintf("Failed to probe channel type for %s", chatID), "err", err)
+			pkgLog().Debug(fmt.Sprintf("Failed to probe channel type for %s", chatID), "err", err)
 			return false
 		}
 		isForum = reflect.DeepEqual(info["type"], int64(15))
@@ -278,7 +277,7 @@ func standaloneSend(ctx context.Context, kwargs map[string]any) (map[string]any,
 	}
 	result, err := standaloneSendWithToken(ctx, token, chatID, message, threadID, caption, mediaFiles)
 	if err != nil {
-		slog.Error("Discord standalone send failed", "err", err)
+		pkgLog().Error("Discord standalone send failed", "err", err)
 		return gateway.SendError(fmt.Sprintf("Discord send failed: %s: %s", pyErrorTypeName(err), err)), nil
 	}
 	return result, nil
@@ -415,7 +414,7 @@ func standaloneSendWithToken(ctx context.Context, token, chatID, message, thread
 			if captionPending {
 				resp, err := standalonePostJSON(ctx, client, url, jsonHeaders, map[string]any{"content": caption})
 				if err != nil {
-					slog.Warn("Discord caption-fallback send failed for missing media")
+					pkgLog().Warn("Discord caption-fallback send failed for missing media")
 					continue
 				}
 				if resp.StatusCode == 200 || resp.StatusCode == 201 {
@@ -423,7 +422,7 @@ func standaloneSendWithToken(ctx context.Context, token, chatID, message, thread
 						lastData = data
 						captionPending = false
 					} else {
-						slog.Warn("Discord caption-fallback send failed for missing media")
+						pkgLog().Warn("Discord caption-fallback send failed for missing media")
 					}
 				}
 				resp.Body.Close()
@@ -453,7 +452,7 @@ func standaloneSendWithToken(ctx context.Context, token, chatID, message, thread
 			}
 			if errPayload != nil {
 				warning := gateway.SendError(fmt.Sprintf("Failed to send media %s: %s", path, pyrepr.Str(errPayload["error"])))["error"]
-				slog.Error(pyrepr.Str(warning))
+				pkgLog().Error(pyrepr.Str(warning))
 				warnings = append(warnings, warning)
 				return nil
 			}
@@ -462,7 +461,7 @@ func standaloneSendWithToken(ctx context.Context, token, chatID, message, thread
 		}()
 		if mediaErr != nil {
 			warning := gateway.SendError(fmt.Sprintf("Failed to send media %s: %s", path, mediaErr))["error"]
-			slog.Error(pyrepr.Str(warning))
+			pkgLog().Error(pyrepr.Str(warning))
 			warnings = append(warnings, warning)
 		}
 	}

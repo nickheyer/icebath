@@ -137,7 +137,7 @@ func TestASecondRequestKeepsTheReasonTheRunAlreadyReported(t *testing.T) {
 func TestASecondRequestStillPrunesStaleMarkers(t *testing.T) {
 	s, _ := newTestStore(t)
 	var pruned []*float64
-	patchChronos(t, &pruneCancelMarkers, func(_ *Store, now *float64) { pruned = append(pruned, now) })
+	patchSeam(t, &pruneCancelMarkers, func(_ *Store, now *float64) { pruned = append(pruned, now) })
 	mustRequestCancel(t, s, "exec-pruned", strPtr("first"))
 	mustRequestCancel(t, s, "exec-pruned", strPtr("second"))
 	if len(pruned) != 2 {
@@ -147,7 +147,7 @@ func TestASecondRequestStillPrunesStaleMarkers(t *testing.T) {
 
 func TestACancelLandsOnAFilesystemWithoutHardLinks(t *testing.T) {
 	s, _ := newTestStore(t)
-	patchChronos(t, &cancelLink, func(string, string) error {
+	patchSeam(t, &cancelLink, func(string, string) error {
 		return &os.LinkError{Op: "link", Err: syscall.EPERM}
 	})
 	mustRequestCancel(t, s, "exec-exfat", strPtr("first ask"))
@@ -202,7 +202,7 @@ func TestStoppingALadderRerunDoesNotSpendAnotherRepeat(t *testing.T) {
 func TestOverlappingCancelRequestsKeepTheFirstReason(t *testing.T) {
 	s, _ := newTestStore(t)
 	real := cancelMarkerExists
-	patchChronos(t, &cancelMarkerExists, func(path string) (bool, error) {
+	patchSeam(t, &cancelMarkerExists, func(path string) (bool, error) {
 		if filepath.Base(path) == "exec-race.cancel" {
 			return false, nil
 		}

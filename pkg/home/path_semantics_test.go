@@ -166,7 +166,7 @@ func TestManagedSystemReadsTheMarkerLikeReadText(t *testing.T) {
 	}
 }
 
-func TestManagedSystemOfTheActiveHomeWarnsLikeGetHermesHome(t *testing.T) {
+func TestManagedSystemOfTheActiveHomeWarnsLikeGetIcebathHome(t *testing.T) {
 	for _, env := range []string{"", "nixos"} {
 		tmp, buf := hcFresh(t)
 		writeText(t, filepath.Join(tmp, ".icebath", "active_profile"), "coder\n")
@@ -201,7 +201,7 @@ func TestApplyScratchTmpEnvKeepsAScratchDirItCouldNotCreate(t *testing.T) {
 	}
 }
 
-func TestEnsureScratchDirOfTheActiveHomeWarnsLikeGetHermesHome(t *testing.T) {
+func TestEnsureScratchDirOfTheActiveHomeWarnsLikeGetIcebathHome(t *testing.T) {
 	scratchPruneSpawns(t)
 	tmp, buf := hcFresh(t)
 	writeText(t, filepath.Join(tmp, ".icebath", "active_profile"), "coder\n")

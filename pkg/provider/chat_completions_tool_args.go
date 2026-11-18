@@ -2,10 +2,9 @@ package provider
 
 import (
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 )
 
-// Non string tool call arguments become the text json.dumps or str gives them, keys in wire order
+// Non string tool call arguments become their compact JSON text, keys in wire order
 func spliceNonStringToolArguments(data []byte, payload map[string]any) {
 	var ordered any
 	choices, _ := payload["choices"].([]any)
@@ -25,12 +24,9 @@ func spliceNonStringToolArguments(data []byte, payload map[string]any) {
 					return
 				}
 			}
-			raw := orderedAt(ordered, "choices", ci, "message", "tool_calls", ti, "function", "arguments")
-			switch raw.(type) {
-			case *pyjson.Object, []any:
-				fn["arguments"], _ = pyjson.Dumps(raw)
-			default:
-				fn["arguments"] = pyrepr.Str(raw)
+			text, err := pyjson.EncodeWTF8(orderedAt(ordered, "choices", ci, "message", "tool_calls", ti, "function", "arguments"))
+			if err == nil {
+				fn["arguments"] = string(text)
 			}
 		}
 	}

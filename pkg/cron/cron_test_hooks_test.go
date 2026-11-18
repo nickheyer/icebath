@@ -6,8 +6,6 @@ import (
 	"testing"
 )
 
-var testHooks = struct{ missed []string }{}
-
 var testRun = struct {
 	ran       []string
 	runOne    func(ctx context.Context, s *Store, job *Job, o runOneJobOptions) (bool, error)

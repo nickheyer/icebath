@@ -5,12 +5,12 @@ import (
 	"reflect"
 	"testing"
 
-	"github.com/nickheyer/icebath/pkg/tuigateway"
+	"github.com/nickheyer/icebath/pkg/tuihost"
 )
 
 // Session record of the failed turn retention cases with no turn in flight
-func retentionSession() *tuigateway.Session {
-	return tuigateway.NewSession(map[string]any{"image_counter": 0, "cols": 80, "slash_worker": nil, "show_reasoning": false,
+func retentionSession() *tuihost.Session {
+	return tuihost.NewSession(map[string]any{"image_counter": 0, "cols": 80, "slash_worker": nil, "show_reasoning": false,
 		"tool_progress_mode": "all", "inflight_turn": nil})
 }
 
@@ -51,7 +51,7 @@ func TestHealthySnapshotCarriesNoErrorKeys(t *testing.T) {
 }
 
 func TestSessionRedirectRecordsCorrectionWithoutErasingPrompt(t *testing.T) {
-	session := tuigateway.NewSession(nil)
+	session := tuihost.NewSession(nil)
 	startInflightTurn(session, "remove the session counts", "", nil)
 	appendInflightDelta(session, "Moving.")
 	recordInflightCorrection(session, "hurry up")
@@ -66,7 +66,7 @@ func TestSessionRedirectRecordsCorrectionWithoutErasingPrompt(t *testing.T) {
 }
 
 func TestInflightSnapshotCarriesArrivalOrderOffsets(t *testing.T) {
-	session := tuigateway.NewSession(nil)
+	session := tuihost.NewSession(nil)
 	startInflightTurn(session, "remove the session counts", "", nil)
 	appendInflightDelta(session, "Moving.")
 	recordInflightCorrection(session, "hurry up")
@@ -83,7 +83,7 @@ func TestInflightSnapshotCarriesArrivalOrderOffsets(t *testing.T) {
 }
 
 func TestNewTurnDoesNotInheritPriorTurnCorrections(t *testing.T) {
-	session := tuigateway.NewSession(nil)
+	session := tuihost.NewSession(nil)
 	startInflightTurn(session, "first prompt", "", nil)
 	recordInflightCorrection(session, "first correction")
 	startInflightTurn(session, "second prompt", "", nil)

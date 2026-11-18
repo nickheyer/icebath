@@ -7,7 +7,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"log/slog"
 	"net"
 	"net/http"
 	"path/filepath"
@@ -30,9 +29,6 @@ var wakeRetryDelays = []time.Duration{2 * time.Second, 5 * time.Second, 10 * tim
 
 // Store refusal codes that refuse a notice for good by themselves
 var PermanentRefusalReasons = map[string]bool{"not_found": true, "invalid_params": true}
-
-// Logger of the wake module
-func wakeLog() *slog.Logger { return slog.Default().With("logger", "gateway.wake") }
 
 // No adapter admission, the store refusal code in Reason and Permanent once the refusal is proven final
 type WakeNotAccepted struct {
@@ -69,7 +65,7 @@ func SessionOwnedByProfile(ctx context.Context, cfg *GatewayConfig, profile stri
 	}
 	homes, err := MultiplexProfileHomes(ctx, cfg)
 	if err != nil {
-		wakeLog().Debug(fmt.Sprintf("wake: session ownership check unavailable for %s/%s: %s", profile, sessionID, err))
+		pkgLog().Debug(fmt.Sprintf("wake: session ownership check unavailable for %s/%s: %s", profile, sessionID, err))
 		return false
 	}
 	home := ""
@@ -83,13 +79,13 @@ func SessionOwnedByProfile(ctx context.Context, cfg *GatewayConfig, profile stri
 	}
 	db, err := state.NewSessionDB(ctx, filepath.Join(home, "state.db"), true)
 	if err != nil {
-		wakeLog().Debug(fmt.Sprintf("wake: session ownership check unavailable for %s/%s: %s", profile, sessionID, err))
+		pkgLog().Debug(fmt.Sprintf("wake: session ownership check unavailable for %s/%s: %s", profile, sessionID, err))
 		return false
 	}
 	defer db.Close()
 	row, err := db.GetSession(ctx, sessionID)
 	if err != nil {
-		wakeLog().Debug(fmt.Sprintf("wake: session ownership lookup failed for %s/%s: %s", profile, sessionID, err))
+		pkgLog().Debug(fmt.Sprintf("wake: session ownership lookup failed for %s/%s: %s", profile, sessionID, err))
 		return false
 	}
 	if row == nil || row.Len() == 0 {
@@ -268,7 +264,7 @@ func PersistDelegationDelivery(ctx context.Context, adapter PlatformAdapter, tex
 		return fmt.Errorf("persist_delegation_delivery: api_server SessionDB unavailable — cannot persist completion for session %s", sessionID)
 	}
 	if resolved, err := db.ResolveResumeSessionID(sessionID); err != nil {
-		wakeLog().Debug(fmt.Sprintf("delegation delivery continuation resolve failed for %s", sessionID), "error", err)
+		pkgLog().Debug(fmt.Sprintf("delegation delivery continuation resolve failed for %s", sessionID), "error", err)
 	} else if resolved != "" {
 		sessionID = resolved
 	}
@@ -278,7 +274,7 @@ func PersistDelegationDelivery(ctx context.Context, adapter PlatformAdapter, tex
 	if _, err := db.AppendDelegationDelivery(ctx, sessionID, text, delegationDisplayMetadata(ctx, evt)); err != nil {
 		return err
 	}
-	wakeLog().Info(fmt.Sprintf("async delegation completion persisted as delivery row for api_server session %s (no wake turn)", sessionID))
+	pkgLog().Info(fmt.Sprintf("async delegation completion persisted as delivery row for api_server session %s (no wake turn)", sessionID))
 	return nil
 }
 
@@ -316,7 +312,7 @@ func selfPostChatCompletion(ctx context.Context, adapter PlatformAdapter, text, 
 		port = 8642
 	}
 	if apiKey == "" {
-		return errors.New("wake self-post requires API_SERVER_KEY: session continuation via X-Hermes-Session-Id is rejected (403) on an unauthenticated API server, so the wake cannot reach the target session")
+		return errors.New("wake self-post requires API_SERVER_KEY: session continuation via X-Icebath-Session-Id is rejected (403) on an unauthenticated API server, so the wake cannot reach the target session")
 	}
 	if strings.Contains(host, ":") && !strings.HasPrefix(host, "[") {
 		host = "[" + host + "]"
@@ -327,7 +323,7 @@ func selfPostChatCompletion(ctx context.Context, adapter PlatformAdapter, text, 
 	url := "http://" + host + ":" + strconv.Itoa(port) + "/v1/chat/completions"
 	payload := map[string]any{"model": modelName, "messages": []any{map[string]any{"role": "user", "content": text}}, "stream": false}
 	if category == "diagnostic" {
-		payload["hermes_notification_category"] = "diagnostic"
+		payload["icebath_notification_category"] = "diagnostic"
 	}
 	body, err := json.Marshal(payload)
 	if err != nil {
@@ -356,7 +352,7 @@ func selfPostChatCompletion(ctx context.Context, adapter PlatformAdapter, text, 
 			var netErr net.Error
 			if errors.As(err, &netErr) || errors.Is(err, context.DeadlineExceeded) || isWakeTransportError(err) {
 				lastErr = err
-				wakeLog().Warn(fmt.Sprintf("wake self-post transient failure for session %s (attempt %d/%d): %s", sessionID, attempt+1, attempts, err))
+				pkgLog().Warn(fmt.Sprintf("wake self-post transient failure for session %s (attempt %d/%d): %s", sessionID, attempt+1, attempts, err))
 				continue
 			}
 			return err
@@ -364,7 +360,7 @@ func selfPostChatCompletion(ctx context.Context, adapter PlatformAdapter, text, 
 		if resp.StatusCode == http.StatusTooManyRequests {
 			_ = resp.Body.Close()
 			lastErr = fmt.Errorf("wake self-post got HTTP 429 (concurrency cap) for session %s", sessionID)
-			wakeLog().Warn(fmt.Sprintf("%s; attempt %d/%d", lastErr, attempt+1, attempts))
+			pkgLog().Warn(fmt.Sprintf("%s; attempt %d/%d", lastErr, attempt+1, attempts))
 			continue
 		}
 		if resp.StatusCode >= 400 {
@@ -376,10 +372,10 @@ func selfPostChatCompletion(ctx context.Context, adapter PlatformAdapter, text, 
 		_ = resp.Body.Close()
 		if err != nil {
 			lastErr = err
-			wakeLog().Warn(fmt.Sprintf("wake self-post transient failure for session %s (attempt %d/%d): %s", sessionID, attempt+1, attempts, err))
+			pkgLog().Warn(fmt.Sprintf("wake self-post transient failure for session %s (attempt %d/%d): %s", sessionID, attempt+1, attempts, err))
 			continue
 		}
-		wakeLog().Info(fmt.Sprintf("wake self-post delivered for session %s (attempt %d)", sessionID, attempt+1))
+		pkgLog().Info(fmt.Sprintf("wake self-post delivered for session %s (attempt %d)", sessionID, attempt+1))
 		return nil
 	}
 	return fmt.Errorf("wake self-post gave up for session %s after %d attempts: %w", sessionID, attempts, lastErr)

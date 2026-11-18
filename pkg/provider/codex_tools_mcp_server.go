@@ -488,7 +488,7 @@ func codexToolsAssemble(defs []map[string]any, call func(name string, args map[s
 	for _, name := range codexToolsExposedTools {
 		spec, ok := all[name]
 		if !ok || spec == nil {
-			slog.Debug(fmt.Sprintf("skipping %s — not registered in this Icebath process", name))
+			pkgLog().Debug(fmt.Sprintf("skipping %s — not registered in this Icebath process", name))
 			continue
 		}
 		description, _ := cxGet(spec, "description").(string)
@@ -505,7 +505,7 @@ func codexToolsAssemble(defs []map[string]any, call func(name string, args map[s
 			handler: func(kwargs *pyjson.Object) (result string) {
 				defer func() {
 					if r := recover(); r != nil {
-						slog.Error(fmt.Sprintf("tool %s raised", toolName), "panic", r)
+						pkgLog().Error(fmt.Sprintf("tool %s raised", toolName), "panic", r)
 						result = cxMustDumps(map[string]any{"error": pyrepr.Str(r), "tool": toolName})
 					}
 				}()
@@ -518,7 +518,7 @@ func codexToolsAssemble(defs []map[string]any, call func(name string, args map[s
 				return call(toolName, args)
 			}})
 	}
-	slog.Info(fmt.Sprintf("icebath-tools MCP server registered %d/%d tools", len(server.tools), len(codexToolsExposedTools)))
+	pkgLog().Info(fmt.Sprintf("icebath-tools MCP server registered %d/%d tools", len(server.tools), len(codexToolsExposedTools)))
 	return server
 }
 
@@ -557,7 +557,7 @@ func (s *CodexToolsServer) handle(method string, params any) (any, int, string) 
 			"resources", codexToolsObject("subscribe", false, "listChanged", false),
 			"tools", codexToolsObject("listChanged", false))
 		return codexToolsObject("protocolVersion", version, "capabilities", caps,
-			"serverInfo", codexToolsObject("name", s.name, "version", Version), "instructions", s.instructions), 0, ""
+			"serverInfo", codexToolsObject("name", s.name, "version", baseVersion()), "instructions", s.instructions), 0, ""
 	case "ping":
 		return pyjson.NewObject(), 0, ""
 	case "tools/list":
@@ -664,7 +664,7 @@ func (s *CodexToolsServer) Run() error {
 func (s *CodexToolsServer) dispatchLine(line string) {
 	msg, err := pyjson.Loads(line)
 	if err != nil || !cxIsObject(msg) {
-		slog.Error(fmt.Sprintf("Received exception from stream: invalid JSON-RPC message %s", pyrepr.Repr(strings.TrimSpace(line))))
+		pkgLog().Error(fmt.Sprintf("Received exception from stream: invalid JSON-RPC message %s", pyrepr.Repr(strings.TrimSpace(line))))
 		return
 	}
 	method, hasMethod := cxGet(msg, "method").(string)
@@ -695,7 +695,7 @@ func (s *CodexToolsServer) reply(msg any, method string) {
 		reply.Set("result", result)
 	}
 	if err := s.send(reply); err != nil {
-		slog.Error(s.name+" MCP server write failed", "error", err)
+		pkgLog().Error(s.name+" MCP server write failed", "error", err)
 	}
 }
 
@@ -726,12 +726,12 @@ func RunCodexToolsMCPServer(argv []string) int {
 			fmt.Fprintf(os.Stderr, "icebath-tools MCP server cannot start: %s\n", err.Error())
 			return 2
 		}
-		slog.Error("icebath-tools MCP server crashed", "error", err)
+		pkgLog().Error("icebath-tools MCP server crashed", "error", err)
 		fmt.Fprintf(os.Stderr, "icebath-tools MCP server error: %s\n", err.Error())
 		return 1
 	}
 	if err := codexToolsRunInterruptible(server); err != nil && !errors.Is(err, errCodexToolsInterrupted) {
-		slog.Error("icebath-tools MCP server crashed", "error", err)
+		pkgLog().Error("icebath-tools MCP server crashed", "error", err)
 		fmt.Fprintf(os.Stderr, "icebath-tools MCP server error: %s\n", err.Error())
 		return 1
 	}

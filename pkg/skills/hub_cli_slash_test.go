@@ -4,11 +4,8 @@ import (
 	"bytes"
 	"context"
 	"path/filepath"
-	"reflect"
 	"strings"
 	"testing"
-
-	"github.com/nickheyer/icebath/pkg/observability"
 
 	"github.com/nickheyer/icebath/pkg/internal/pyrich"
 )
@@ -70,31 +67,6 @@ func TestOptionalSkillSourceHonorsEnvOverride(t *testing.T) {
 	h, _ := newTestHub(t)
 	if src := NewOptionalSkillSource(h, anonAuth(h)); src.tree.root != dir {
 		t.Fatalf("optional dir %q want %q", src.tree.root, dir)
-	}
-}
-
-func TestRegistryIDsAreExactlyTheHubRouterAdapters(t *testing.T) {
-	h, _ := newTestHub(t)
-	ids := observability.Set()
-	for _, s := range h.createSourceRouter(nil) {
-		ids = ids.Union(observability.Set(s.SourceID()))
-	}
-	if !reflect.DeepEqual(ids, observability.ExtensionRegistryIDs) {
-		t.Fatalf("router ids %v, contract %v", ids, observability.ExtensionRegistryIDs)
-	}
-	if !reflect.DeepEqual(observability.ExtensionRegistries, observability.ExtensionRegistryIDs.Union(observability.Set("none", "other", "unresolved"))) {
-		t.Fatal(observability.ExtensionRegistries)
-	}
-}
-
-func TestAnUnservedIdentifierNamesTheRegistryItsAdapterAccepts(t *testing.T) {
-	cases := [][2]string{{"skills.sh/acme/x", "skills-sh"}, {"skils-sh/acme/x", "skills-sh"}, {"OFFICIAL/x/y", "official"},
-		{"lobehub/x", "lobehub"}, {"well-known:https://h/x", "well-known"}, {"https://h/.well-known/skills/x", "well-known"},
-		{"https://h/a/SKILL.md", "url"}, {"acme-corp/skills/x", "unresolved"}}
-	for _, c := range cases {
-		if got := registryFromIdentifier(c[0]); got != c[1] {
-			t.Errorf("registryFromIdentifier(%q) = %q want %q", c[0], got, c[1])
-		}
 	}
 }
 

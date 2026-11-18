@@ -38,7 +38,7 @@ func idleExitSeconds(ctx context.Context) float64 {
 	}
 	seconds, ok := pyFloat(value)
 	if !ok {
-		runLog().Warn(fmt.Sprintf("gateway.unmanaged_idle_exit_seconds=%s is not a number; using %.0f", pyrepr.Repr(value), DefaultIdleExitSeconds))
+		pkgLog().Warn(fmt.Sprintf("gateway.unmanaged_idle_exit_seconds=%s is not a number; using %.0f", pyrepr.Repr(value), DefaultIdleExitSeconds))
 		return DefaultIdleExitSeconds
 	}
 	return math.Max(0, seconds)
@@ -304,12 +304,12 @@ func clientBusy(r *GatewayRunner, window float64) string {
 func busyReason(ctx context.Context, r *GatewayRunner, window float64, countClients bool) (reason string) {
 	defer func() {
 		if rec := recover(); rec != nil {
-			runLog().Debug("idle-exit probe failed; staying up", "exc_info", rec)
+			pkgLog().Debug("idle-exit probe failed; staying up", "exc_info", rec)
 			reason = fmt.Sprintf("idle probe failed (%s)", pyrepr.ExceptionName(fmt.Errorf("%v", rec)))
 		}
 	}()
 	failed := func(err error) string {
-		runLog().Debug("idle-exit probe failed; staying up", "exc_info", err)
+		pkgLog().Debug("idle-exit probe failed; staying up", "exc_info", err)
 		return fmt.Sprintf("idle probe failed (%s)", pyrepr.ExceptionName(err))
 	}
 	if countClients {
@@ -385,7 +385,7 @@ func beginIdleExit(r *GatewayRunner, window float64, restart string) {
 		reason = fmt.Sprintf("%s; restarting to load %s", IdleExitStopPrefix, restart)
 	}
 	r.exitReason = &reason
-	runLog().Info(fmt.Sprintf("Exiting: %s; the next client starts a fresh gateway", reason))
+	pkgLog().Info(fmt.Sprintf("Exiting: %s; the next client starts a fresh gateway", reason))
 	r.idleExitStopTask = spawnGatewayTask(context.Background(), "idle_exit_stop", func(ctx context.Context) (any, error) {
 		return nil, r.Stop(ctx, false, false, false)
 	})
@@ -428,10 +428,10 @@ func retiredForRestart(ctx context.Context, r *GatewayRunner, window float64) (b
 func unmanagedIdleExitWatcher(ctx context.Context, r *GatewayRunner) error {
 	window := idleExitSeconds(ctx)
 	if window <= 0 {
-		runLog().Info("Auto-started gateway idle exit disabled (gateway.unmanaged_idle_exit_seconds=0)")
+		pkgLog().Info("Auto-started gateway idle exit disabled (gateway.unmanaged_idle_exit_seconds=0)")
 		return nil
 	}
-	runLog().Info(fmt.Sprintf("Auto-started gateway: exits after %.0fs with no clients, adapters, cron/kanban work or admissions (gateway.unmanaged_idle_exit_seconds)", window))
+	pkgLog().Info(fmt.Sprintf("Auto-started gateway: exits after %.0fs with no clients, adapters, cron/kanban work or admissions (gateway.unmanaged_idle_exit_seconds)", window))
 	interval := math.Min(30.0, math.Max(0.5, window/4))
 	idleSince := 0.0
 	for r.running.Load() && !r.draining.Load() {
@@ -471,7 +471,7 @@ func unmanagedIdleExitWatcher(ctx context.Context, r *GatewayRunner) error {
 // Starts the idle watcher for an idle exit launch no supervisor owns, reporting whether it armed
 func armUnmanagedIdleExit(r *GatewayRunner) bool {
 	if supervisor := gateway.DetectSupervisor(); supervisor != "manual" {
-		runLog().Info("Auto-started gateway idle exit not armed: supervised by " + supervisor)
+		pkgLog().Info("Auto-started gateway idle exit not armed: supervised by " + supervisor)
 		return false
 	}
 	noteClientActivity(r)

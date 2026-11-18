@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"log/slog"
 	"math/big"
 	"os"
 	"os/exec"
@@ -21,7 +20,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/tools"
 )
 
-// ---- user configured provider definitions (hermes_cli/providers.py) ----
+// User configured provider definitions
 
 // ProviderDef is a resolved provider merged from models.dev, the overlays, plugin profiles and user config
 type ProviderDef struct {
@@ -457,7 +456,7 @@ func runShellCommand(ctx context.Context, command string, env []string) ([]byte,
 // CacheIdentity is the stable catalog identity so token rotation never mints on cache reads
 func (s *CommandTokenSource) CacheIdentity() string { return "cmd:" + s.Command }
 
-// Mint of one key_cmd run, the command_token_source module attribute the hermes tests patch
+// Mint of one key_cmd run, the command_token_source module attribute the tests patch
 var commandTokenMintFn = func(ctx context.Context, s *CommandTokenSource) (string, time.Duration, error) { return s.mint(ctx) }
 
 // Token returns the cached bearer or mints a fresh one when the cache is stale
@@ -631,7 +630,7 @@ func (r *resolver) keyEnvSecret(entry map[string]any, label string) string {
 	}
 	value := strings.TrimSpace(r.secret(keyEnv))
 	if value == "" {
-		slog.Default().Warn(fmt.Sprintf("%s: key_env %s is set but the variable is empty/unset — unless another credential "+
+		pkgLog().Warn(fmt.Sprintf("%s: key_env %s is set but the variable is empty/unset — unless another credential "+
 			"is configured for it, the request carries the placeholder no-key-required and the endpoint will reject it", label, keyEnv))
 	}
 	return value
@@ -698,7 +697,7 @@ func (r *resolver) shadowedByBuiltin(requestedNorm string) bool {
 	if requestedNorm == "custom" || strings.HasPrefix(requestedNorm, "custom:") {
 		return false
 	}
-	canonical, err := r.resolveProvider(requestedNorm, "", "", false)
+	canonical, err := r.resolveProvider(requestedNorm, "", "")
 	if err != nil {
 		return false
 	}
@@ -785,7 +784,7 @@ func (r *resolver) selectNamedCustomProvider(requestedProvider string, cfg map[s
 		}
 	}
 	if _, isDict := cfg["custom_providers"].(map[string]any); isDict {
-		slog.Default().Warn("custom_providers in config.yaml is a dict, not a list. Each entry must be prefixed with '-' in YAML. Run 'icebath doctor' for details.")
+		pkgLog().Warn("custom_providers in config.yaml is a dict, not a list. Each entry must be prefixed with '-' in YAML. Run 'icebath doctor' for details.")
 		return nil, nil
 	}
 	customProviders := CompatibleCustomProviders(cfg)

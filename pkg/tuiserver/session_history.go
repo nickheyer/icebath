@@ -11,7 +11,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/tools"
-	"github.com/nickheyer/icebath/pkg/tuigateway"
+	"github.com/nickheyer/icebath/pkg/tuihost"
 )
 
 const (
@@ -22,7 +22,7 @@ const (
 	submitUserRowSessionSlot = "_submit_user_row"
 )
 
-// Seams over the configured main route and the forced redactor, swapped only where a hermes case patches them
+// Seams over the configured main route and the forced redactor, swapped only where a test patches them
 var (
 	readMainProvider      = provider.AuxReadMainProvider
 	readMainModel         = provider.AuxReadMainModel
@@ -90,14 +90,14 @@ func coerceSeedHistory(value any) []any {
 
 // Stripped display text of a prompt or correction
 func inflightText(value any) string {
-	return pystr.Strip(tuigateway.ContentDisplayText(value))
+	return pystr.Strip(tuihost.ContentDisplayText(value))
 }
 
 // Unix seconds as a float like time.time
 func nowSeconds() float64 { return float64(time.Now().UnixNano()) / 1e9 }
 
 // Opens the replayable in flight turn snapshot for the prompt
-func startInflightTurn(session *tuigateway.Session, text any, displayKind string, displayMetadata map[string]any) {
+func startInflightTurn(session *tuihost.Session, text any, displayKind string, displayMetadata map[string]any) {
 	now := nowSeconds()
 	turn := map[string]any{"assistant": "", "started_at": now, "streaming": true, "updated_at": now, "user": inflightText(text)}
 	if displayKind != "" {
@@ -114,7 +114,7 @@ func startInflightTurn(session *tuigateway.Session, text any, displayKind string
 }
 
 // Appends streamed assistant text to the in flight turn
-func appendInflightDelta(session *tuigateway.Session, delta any) {
+func appendInflightDelta(session *tuihost.Session, delta any) {
 	text := ""
 	if delta != nil {
 		text = pyrepr.Str(delta)
@@ -156,7 +156,7 @@ func unpackSlot(v any) []any {
 }
 
 // Appends an accepted mid turn correction and its arrival offset to the live turn
-func recordInflightCorrection(session *tuigateway.Session, text any) {
+func recordInflightCorrection(session *tuihost.Session, text any) {
 	correction := inflightText(text)
 	current, ok := session.Get(inflightTurnKey).(map[string]any)
 	if correction == "" || !ok {
@@ -173,7 +173,7 @@ func recordInflightCorrection(session *tuigateway.Session, text any) {
 }
 
 // Drops the in flight turn and the submit time row a later turn must not adopt
-func clearInflightTurn(session *tuigateway.Session) {
+func clearInflightTurn(session *tuihost.Session) {
 	session.Set(inflightTurnKey, nil)
 	session.Pop(submitUserRowSessionSlot)
 }
@@ -190,7 +190,7 @@ func errorMessage(err any) string {
 }
 
 // Marks the in flight turn terminal error while keeping it replayable for a resuming client
-func failInflightTurn(session *tuigateway.Session, err any, errorSurface map[string]any) {
+func failInflightTurn(session *tuihost.Session, err any, errorSurface map[string]any) {
 	message := errorMessage(err)
 	now := nowSeconds()
 	turn, ok := session.Get(inflightTurnKey).(map[string]any)

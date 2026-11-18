@@ -49,7 +49,7 @@ type whatsAppCloudPlatformPlugin struct{}
 
 func (whatsAppCloudPlatformPlugin) Manifest() plugins.Manifest {
 	return plugins.Manifest{Name: "whatsapp_cloud-platform", Version: "1.0.0", Kind: "platform", Source: "bundled", Key: "platforms/whatsapp_cloud",
-		Author: "NousResearch",
+		Author: "Icebath",
 		Description: "WhatsApp Business Cloud API adapter for Icebath Agent. Connects to WhatsApp via Meta's official Cloud API " +
 			"(Business account and a public webhook URL required, token-based auth): Graph API for outbound, a net/http webhook " +
 			"receiver with X-Hub-Signature-256 verification for inbound. Supports text, media (image/video/audio/document), voice " +

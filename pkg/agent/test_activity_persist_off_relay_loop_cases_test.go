@@ -153,7 +153,7 @@ func activityToolOnPool(t *testing.T, ctx context.Context, name string, args map
 func TestProviderCallbackHeartbeatPersistsOffRelayLoop(t *testing.T) {
 	ctx := activityRelayTurn(t)
 	agent, store, owner := activityWorkerAgent(t)
-	records := captureLogger(t, "agent.runtime_session_store", slog.LevelWarn)
+	records := captureLogger(t, "agent", slog.LevelWarn)
 	var onLoop bool
 	callback := func(c context.Context, _ map[string]any) (any, error) {
 		onLoop = tools.RelayHasRunningEventLoop(c)
@@ -175,7 +175,7 @@ func TestProviderCallbackHeartbeatPersistsOffRelayLoop(t *testing.T) {
 func TestConcurrentToolCallbackHeartbeatPersistsOffRelayLoop(t *testing.T) {
 	ctx := activityRelayTurn(t)
 	agent, store, owner := activityWorkerAgent(t)
-	records := captureLogger(t, "agent.runtime_session_store", slog.LevelWarn)
+	records := captureLogger(t, "agent", slog.LevelWarn)
 	var onLoop bool
 	activityToolOnPool(t, ctx, "image_generate", map[string]any{"prompt": "x"}, func(c context.Context, _ map[string]any) (any, error) {
 		onLoop = tools.RelayHasRunningEventLoop(c)
@@ -191,7 +191,7 @@ func TestConcurrentToolCallbackHeartbeatPersistsOffRelayLoop(t *testing.T) {
 func TestLaterTurnWritesStillLandAfterAnOnLoopHeartbeat(t *testing.T) {
 	ctx := activityRelayTurn(t)
 	agent, store, owner := activityWorkerAgent(t)
-	records := captureLogger(t, "agent.runtime_session_store", slog.LevelWarn)
+	records := captureLogger(t, "agent", slog.LevelWarn)
 	if _, _, err := tools.RelayExecuteTool(ctx, "terminal", map[string]any{"command": "true"}, func(context.Context, map[string]any) (any, error) {
 		agent.TouchActivity("executing tool: terminal")
 		return map[string]any{"ok": true}, nil
@@ -206,7 +206,7 @@ func TestLaterTurnWritesStillLandAfterAnOnLoopHeartbeat(t *testing.T) {
 
 func TestLabelResetOnARunningLoopPersistsOffLoop(t *testing.T) {
 	agent, store, owner := activityWorkerAgent(t)
-	records := captureLogger(t, "agent.runtime_session_store", slog.LevelWarn)
+	records := captureLogger(t, "agent", slog.LevelWarn)
 	done := make(chan struct{})
 	go func() {
 		defer close(done)
@@ -227,7 +227,7 @@ func requireRelayLoop(c context.Context) error {
 func TestSyncAuxUsageInsideManagedToolPersistsOffRelayLoop(t *testing.T) {
 	ctx := activityRelayTurn(t)
 	_, store, owner := activityWorkerAgent(t)
-	records := captureLogger(t, "agent.runtime_session_store", slog.LevelWarn)
+	records := captureLogger(t, "agent", slog.LevelWarn)
 	response := map[string]any{"model": "m", "usage": map[string]any{"prompt_tokens": 7, "completion_tokens": 3},
 		"choices": []any{map[string]any{"message": map[string]any{"content": "ok"}}}}
 	tool := func(c context.Context, _ map[string]any) (any, error) {
@@ -247,7 +247,7 @@ func TestSyncAuxUsageInsideManagedToolPersistsOffRelayLoop(t *testing.T) {
 func TestBeginToolExecutionInsideRelayToolPersistsOffRelayLoop(t *testing.T) {
 	ctx := activityRelayTurn(t)
 	agent, store, owner := activityWorkerAgent(t)
-	records := captureLogger(t, "agent.runtime_session_store", slog.LevelWarn)
+	records := captureLogger(t, "agent", slog.LevelWarn)
 	agent.quietMode, agent.toolProgressCallback, agent.toolStartCallback, agent.checkpointMgr = true, nil, nil, nil
 	ref := &tools.ToolCallRef{Name: "image_generate", Args: map[string]any{"prompt": "x"}, TaskID: "task-1", CallID: "call-1", Trace: []map[string]any{}}
 	activityToolOnPool(t, ctx, "image_generate", map[string]any{"prompt": "x"}, func(c context.Context, _ map[string]any) (any, error) {
@@ -263,7 +263,7 @@ func TestBeginToolExecutionInsideRelayToolPersistsOffRelayLoop(t *testing.T) {
 func TestAsyncDelegationLedgerWritesInsideRelayToolPersistOffRelayLoop(t *testing.T) {
 	ctx := activityRelayTurn(t)
 	_, store, owner := activityWorkerAgent(t)
-	records := captureLogger(t, "agent.runtime_session_store", slog.LevelWarn)
+	records := captureLogger(t, "agent", slog.LevelWarn)
 	ledger := &tools.WorkerDelegationLedger{Store: store}
 	prev := tools.WorkerLedger
 	tools.WorkerLedger = func() (*tools.WorkerDelegationLedger, error) { return ledger, nil }

@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"github.com/nickheyer/icebath/pkg/testfakes/configplane/remoteplane"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -86,7 +87,7 @@ func runRemoteBootChild(t *testing.T, dir string, env map[string]string) []any {
 // Moves the deployment out of the process env into dotenv files and returns the managed dir
 func dropProcessDeployment(t *testing.T, p *configplane.Plane) string {
 	t.Helper()
-	for name := range bootPlaneEnv(p, true) {
+	for name := range remoteplane.Env(p) {
 		t.Setenv(name, "")
 		os.Unsetenv(name)
 	}
@@ -110,9 +111,9 @@ func dotenvLines(env map[string]string, keep func(string) bool) string {
 
 // The deployment in the home dotenv and the instance id only in the managed dotenv boots the fetch
 func TestInstanceIdFromTheManagedDotenvBoots(t *testing.T) {
-	p := setupBootPlane(t, true)
+	p := setupBootPlane(t)
 	managed := dropProcessDeployment(t, p)
-	env := bootPlaneEnv(p, true)
+	env := remoteplane.Env(p)
 	if err := os.WriteFile(filepath.Join(managed, ".env"), []byte(remote.InstanceEnv+"="+env[remote.InstanceEnv]+"\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
@@ -135,8 +136,8 @@ func TestInstanceIdFromTheManagedDotenvBoots(t *testing.T) {
 
 // The user dotenv selects remote, the project dotenv holds the IdP credential, a fresh process boots and fetches
 func TestPlaneCredentialFromTheProjectDotenvBoots(t *testing.T) {
-	p := setupBootPlane(t, true)
-	env := bootPlaneEnv(p, true)
+	p := setupBootPlane(t)
+	env := remoteplane.Env(p)
 	dir := t.TempDir()
 	if err := os.WriteFile(filepath.Join(p.Home, ".env"), []byte(dotenvLines(env, func(k string) bool { return strings.HasPrefix(k, "ICEBATH_CONFIG_") })), 0o600); err != nil {
 		t.Fatal(err)
@@ -199,9 +200,9 @@ func TestBootstrapKeepsTheDotenvPrecedence(t *testing.T) {
 
 // A child built for another profile still reads that profile remotely and never carries another IdP credential
 func TestChildForAnotherProfileKeepsTheRemoteDeployment(t *testing.T) {
-	p := setupBootPlane(t, true)
+	p := setupBootPlane(t)
 	dropProcessDeployment(t, p)
-	env := bootPlaneEnv(p, true)
+	env := remoteplane.Env(p)
 	if err := os.WriteFile(filepath.Join(p.Home, ".env"), []byte(dotenvLines(env, func(string) bool { return true })), 0o600); err != nil {
 		t.Fatal(err)
 	}

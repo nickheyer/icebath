@@ -30,7 +30,7 @@ func verifyOnStopNudge(ctx context.Context, a *AIAgent) string {
 	}
 	nudge, err := buildVerifyOnStopNudge(ctx, a.env, a.sessionID, sortedMutationPaths(a), a.verificationStopNudges, defaultVerifyOnStopMaxAttempts)
 	if err != nil {
-		conversationLoopLog().Debug("verification stop-loop check failed", "error", err)
+		pkgLog().Debug("verification stop-loop check failed", "error", err)
 		return ""
 	}
 	return nudge
@@ -54,7 +54,7 @@ func preVerifyNudge(ctx context.Context, a *AIAgent, finalResponse string, attem
 	}
 	limit, err := verify.MaxVerifyNudges(nil)
 	if err != nil {
-		conversationLoopLog().Debug("pre_verify hook check failed", "error", err)
+		pkgLog().Debug("pre_verify hook check failed", "error", err)
 		return ""
 	}
 	if attempt >= limit {
@@ -107,7 +107,7 @@ func appendInterimAnswer(a *AIAgent, finalMsg map[string]any, s *LoopState, flus
 		return
 	}
 	guardedFlush(func() { a.flushLiveMessages(s.Messages, s.ConversationHistory) }, func(exc *OuterLoopError) {
-		conversationLoopLog().Debug(flushFailMsg, "exc_info", exc.Stack, "error", exc)
+		pkgLog().Debug(flushFailMsg, "exc_info", exc.Stack, "error", exc)
 	})
 }
 
@@ -128,7 +128,7 @@ func applyStopGates(ctx context.Context, a *AIAgent, finalMsg map[string]any, fi
 		appendInterimAnswer(a, finalMsg, s, "late-LSP interim flush failed")
 		appendLiveMessage(&s.Messages, map[string]any{"role": "user", "content": lspNote})
 		a.setSessionMessages(s.Messages)
-		conversationLoopLog().Debug(fmt.Sprintf("late LSP verdicts delivered before the final answer (%d)", a.lspTurnEndNotes))
+		pkgLog().Debug(fmt.Sprintf("late LSP verdicts delivered before the final answer (%d)", a.lspTurnEndNotes))
 		return stopGateVerdict{
 			continueTurn: true, finalResponse: nil, pendingVerificationResponse: finalResponse,
 			pendingVerificationResponsePreviewed: a.interimContentWasStreamed(finalResponse),
@@ -140,7 +140,7 @@ func applyStopGates(ctx context.Context, a *AIAgent, finalMsg map[string]any, fi
 		finalMsg["finish_reason"] = "verification_required"
 		appendInterimAnswer(a, finalMsg, s, "verify-on-stop interim flush failed")
 		verdict := cont(nudge, "_verification_stop_synthetic")
-		conversationLoopLog().Debug(fmt.Sprintf("verification stop-loop nudge issued (attempt %d)", a.verificationStopNudges))
+		pkgLog().Debug(fmt.Sprintf("verification stop-loop nudge issued (attempt %d)", a.verificationStopNudges))
 		return verdict
 	}
 
@@ -150,7 +150,7 @@ func applyStopGates(ctx context.Context, a *AIAgent, finalMsg map[string]any, fi
 		finalMsg["finish_reason"] = "verify_hook_continue"
 		appendInterimAnswer(a, finalMsg, s, "pre_verify interim flush failed")
 		verdict := cont(nudge, "_pre_verify_synthetic")
-		conversationLoopLog().Debug(fmt.Sprintf("pre_verify nudge issued (attempt %d)", a.preVerifyNudges))
+		pkgLog().Debug(fmt.Sprintf("pre_verify nudge issued (attempt %d)", a.preVerifyNudges))
 		return verdict
 	}
 
@@ -160,7 +160,7 @@ func applyStopGates(ctx context.Context, a *AIAgent, finalMsg map[string]any, fi
 		finalMsg["_kanban_stop_synthetic"] = true
 		appendLiveMessage(&s.Messages, finalMsg)
 		verdict := cont(nudge, "_kanban_stop_synthetic")
-		conversationLoopLog().Info(fmt.Sprintf("kanban stop-loop nudge issued (attempt %d) task=%s", a.kanbanStopNudges, os.Getenv("ICEBATH_KANBAN_TASK")))
+		pkgLog().Info(fmt.Sprintf("kanban stop-loop nudge issued (attempt %d) task=%s", a.kanbanStopNudges, os.Getenv("ICEBATH_KANBAN_TASK")))
 		a.emitDiagnosticStatus("⚠️ Kanban worker tried to exit without a terminal board call " +
 			"(kanban_complete/kanban_request_review/kanban_block) — nudging to finish")
 		return verdict

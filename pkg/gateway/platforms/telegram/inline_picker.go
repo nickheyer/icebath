@@ -2,7 +2,6 @@ package telegram
 
 import (
 	"context"
-	"log/slog"
 	"math/big"
 	"strings"
 
@@ -64,7 +63,7 @@ func CollectInlineCatalog(ctx context.Context) []CatalogItem {
 		}
 	}
 	if core, err := InlineCommands.TelegramBotCommands(ctx); err != nil {
-		slog.Debug("inline picker: core command collection failed", "error", err)
+		pkgLog().Debug("inline picker: core command collection failed", "error", err)
 	} else {
 		for _, item := range core {
 			add(item.Name, item.Description)
@@ -76,7 +75,7 @@ func CollectInlineCatalog(ctx context.Context) []CatalogItem {
 	}
 	entries, err := InlineCommands.GatewaySkillEntries(ctx, "telegram", -1, reserved, 100, InlineCommands.SanitizeTelegramName)
 	if err != nil {
-		slog.Debug("inline picker: skill/plugin collection failed", "error", err)
+		pkgLog().Debug("inline picker: skill/plugin collection failed", "error", err)
 		return catalog
 	}
 	for _, entry := range entries {

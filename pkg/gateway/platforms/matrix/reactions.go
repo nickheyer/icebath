@@ -3,7 +3,6 @@ package matrix
 import (
 	"context"
 	"fmt"
-	"log/slog"
 	"time"
 
 	"maunium.net/go/mautrix/event"
@@ -27,10 +26,10 @@ func (a *MatrixAdapter) sendReaction(ctx context.Context, roomID, eventID, emoji
 	content := map[string]any{"m.relates_to": map[string]any{"rel_type": "m.annotation", "event_id": eventID, "key": emoji}}
 	resp, err := client.SendMessageEvent(ctx, id.RoomID(roomID), event.EventReaction, content)
 	if err != nil {
-		slog.Debug(fmt.Sprintf("Matrix: reaction send error: %v", err))
+		pkgLog().Debug(fmt.Sprintf("Matrix: reaction send error: %v", err))
 		return ""
 	}
-	slog.Debug(fmt.Sprintf("Matrix: sent reaction %s to %s", emoji, eventID))
+	pkgLog().Debug(fmt.Sprintf("Matrix: sent reaction %s to %s", emoji, eventID))
 	return string(resp.EventID)
 }
 
@@ -61,7 +60,7 @@ func (a *MatrixAdapter) scheduleReactionRedaction(ctx context.Context, roomID, r
 			}
 		}
 		if !a.redactReaction(tctx, roomID, reactionEventID, reason) {
-			slog.Debug(fmt.Sprintf("Matrix: failed to redact reaction %s", reactionEventID))
+			pkgLog().Debug(fmt.Sprintf("Matrix: failed to redact reaction %s", reactionEventID))
 		}
 	})
 	a.reactionRedactionTasks[task] = struct{}{}
@@ -132,7 +131,7 @@ func (a *MatrixAdapter) onReaction(ctx context.Context, evt *event.Event) error 
 	relatesTo := objectOf(content["m.relates_to"])
 	reactsTo := strOf(relatesTo["event_id"])
 	key := strOf(relatesTo["key"])
-	slog.Info(fmt.Sprintf("Matrix: reaction %s from %s on %s in %s", key, sender, reactsTo, roomID))
+	pkgLog().Info(fmt.Sprintf("Matrix: reaction %s from %s on %s in %s", key, sender, reactsTo, roomID))
 	for _, handler := range []func(ctx context.Context, roomID, reactsTo, key, sender string) bool{
 		a.handleApprovalReaction, a.handleModelPickerReaction, a.handleChoicePickerReaction} {
 		if handler(ctx, roomID, reactsTo, key, sender) {
@@ -188,7 +187,7 @@ func (a *MatrixAdapter) handleApprovalReaction(ctx context.Context, roomID, reac
 	func() {
 		defer func() {
 			if r := recover(); r != nil {
-				slog.Error(fmt.Sprintf("Failed to resolve gateway approval from Matrix reaction: %v", r))
+				pkgLog().Error(fmt.Sprintf("Failed to resolve gateway approval from Matrix reaction: %v", r))
 			}
 		}()
 		count := resolveGatewayApprovalFn(prompt.sessionKey, choice, false, "", "")
@@ -200,7 +199,7 @@ func (a *MatrixAdapter) handleApprovalReaction(ctx context.Context, roomID, reac
 		delete(a.approvalPromptsByEvent, reactsTo)
 		delete(a.approvalPromptBySession, prompt.sessionKey)
 		a.mu.Unlock()
-		slog.Info(fmt.Sprintf("Matrix reaction resolved %d approval(s) for session %s (choice=%s, user=%s)", count, prompt.sessionKey, choice, sender))
+		pkgLog().Info(fmt.Sprintf("Matrix reaction resolved %d approval(s) for session %s (choice=%s, user=%s)", count, prompt.sessionKey, choice, sender))
 		a.redactBotApprovalReactions(ctx, roomID, &prompt.promptState)
 	}()
 	return true
@@ -255,7 +254,7 @@ func (a *MatrixAdapter) handlePickerReaction(ctx context.Context, registry map[s
 		_, err = a.Send(ctx, roomID, confirmation, reactsTo, nil)
 	}
 	if err != nil {
-		slog.Error(fmt.Sprintf("Failed to %s from Matrix reaction: %v", logVerb, err))
+		pkgLog().Error(fmt.Sprintf("Failed to %s from Matrix reaction: %v", logVerb, err))
 		_, _ = a.Send(ctx, roomID, i18n.T(ctx, "platform.matrix.picker.failed", "",
 			map[string]any{"action": i18n.T(ctx, verbKey, "", nil), "error": err.Error()}), reactsTo, nil)
 	}
@@ -284,12 +283,12 @@ func (a *MatrixAdapter) isAuthorizedUser(userID, roomID string) bool {
 // Whether the reactor may answer the prompt, posting feedback when not
 func (a *MatrixAdapter) validateMatrixPromptReactor(ctx context.Context, roomID, targetEventID, sender string, p *promptState, label string) bool {
 	if !a.isAuthorizedUser(sender, roomID) {
-		slog.Info(fmt.Sprintf("Matrix: ignoring %s reaction from unauthorized user %s on %s", label, sender, targetEventID))
+		pkgLog().Info(fmt.Sprintf("Matrix: ignoring %s reaction from unauthorized user %s on %s", label, sender, targetEventID))
 		a.sendInvalidReactionFeedback(ctx, roomID, targetEventID, i18n.T(ctx, "platform.matrix.reaction.unauthorized", "", nil))
 		return false
 	}
 	if requester := p.requesterUserID; a.approvalRequireSender && requester != nil && *requester != "" && sender != *requester {
-		slog.Info(fmt.Sprintf("Matrix: ignoring %s reaction from %s; requester is %s", label, sender, *requester))
+		pkgLog().Info(fmt.Sprintf("Matrix: ignoring %s reaction from %s; requester is %s", label, sender, *requester))
 		a.sendInvalidReactionFeedback(ctx, roomID, targetEventID, i18n.T(ctx, "platform.matrix.reaction.not_requester", "", nil))
 		return false
 	}
@@ -299,7 +298,7 @@ func (a *MatrixAdapter) validateMatrixPromptReactor(ctx context.Context, roomID,
 // Replies to the prompt with feedback text, errors logged at debug
 func (a *MatrixAdapter) sendInvalidReactionFeedback(ctx context.Context, roomID, targetEventID, text string) {
 	if _, err := a.Send(ctx, roomID, text, targetEventID, nil); err != nil {
-		slog.Debug(fmt.Sprintf("Matrix: failed to send invalid reaction feedback: %v", err))
+		pkgLog().Debug(fmt.Sprintf("Matrix: failed to send invalid reaction feedback: %v", err))
 	}
 }
 
@@ -329,7 +328,7 @@ func (a *MatrixAdapter) redactBotApprovalReactions(ctx context.Context, roomID s
 	for _, emoji := range a.botReactionKeys(p) {
 		evtID := a.botReactionEvent(p, emoji)
 		a.scheduleReactionRedaction(ctx, roomID, evtID, "approval resolved")
-		slog.Debug(fmt.Sprintf("Matrix: scheduled bot reaction redaction %s (%s)", emoji, evtID))
+		pkgLog().Debug(fmt.Sprintf("Matrix: scheduled bot reaction redaction %s (%s)", emoji, evtID))
 	}
 }
 
@@ -338,7 +337,7 @@ func (a *MatrixAdapter) redactBotModelPickerReactions(ctx context.Context, roomI
 	for _, emoji := range a.botReactionKeys(p) {
 		evtID := a.botReactionEvent(p, emoji)
 		a.RedactMessage(ctx, roomID, evtID, "model picker resolved")
-		slog.Debug(fmt.Sprintf("Matrix: redacted model picker reaction %s (%s)", emoji, evtID))
+		pkgLog().Debug(fmt.Sprintf("Matrix: redacted model picker reaction %s (%s)", emoji, evtID))
 	}
 }
 

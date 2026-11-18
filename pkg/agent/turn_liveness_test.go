@@ -124,7 +124,7 @@ func TestTimeoutZeroIsDocumentedOptOut(t *testing.T) {
 }
 
 func TestTypoDoesNotCrashAndFallsBackToDefault(t *testing.T) {
-	records := captureLogger(t, "agent.turn_liveness", slog.LevelWarn)
+	records := captureLogger(t, "agent", slog.LevelWarn)
 	assertLivenessDefaults(t, livenessSection(map[string]any{"timeout_s": "oops", "poll_s": "typo"}))
 	recs := records()
 	if len(recs) != 2 {
@@ -138,7 +138,7 @@ func TestTypoDoesNotCrashAndFallsBackToDefault(t *testing.T) {
 }
 
 func TestNanTimeoutFallsBackToDefaultNotDisabled(t *testing.T) {
-	records := captureLogger(t, "agent.turn_liveness", slog.LevelWarn)
+	records := captureLogger(t, "agent", slog.LevelWarn)
 	assertLivenessDefaults(t, livenessSection(map[string]any{"timeout_s": math.NaN()}))
 	if n := len(records()); n != 1 {
 		t.Fatalf("records %d", n)
@@ -146,7 +146,7 @@ func TestNanTimeoutFallsBackToDefaultNotDisabled(t *testing.T) {
 }
 
 func TestInfPollFallsBackToDefaultNotFrozenWatcher(t *testing.T) {
-	records := captureLogger(t, "agent.turn_liveness", slog.LevelWarn)
+	records := captureLogger(t, "agent", slog.LevelWarn)
 	assertLivenessDefaults(t, livenessSection(map[string]any{"poll_s": math.Inf(1)}))
 	if n := len(records()); n != 1 {
 		t.Fatalf("records %d", n)
@@ -154,7 +154,7 @@ func TestInfPollFallsBackToDefaultNotFrozenWatcher(t *testing.T) {
 }
 
 func TestInfTimeoutFallsBackToDefault(t *testing.T) {
-	records := captureLogger(t, "agent.turn_liveness", slog.LevelWarn)
+	records := captureLogger(t, "agent", slog.LevelWarn)
 	timeout, _ := mustResolveLiveness(t, livenessSection(map[string]any{"timeout_s": math.Inf(1)}))
 	if *timeout != defaultTurnLivenessTimeoutS || len(records()) != 1 {
 		t.Fatalf("timeout %v records %v", *timeout, records())
@@ -162,7 +162,7 @@ func TestInfTimeoutFallsBackToDefault(t *testing.T) {
 }
 
 func TestNonPositivePollFallsBackToDefault(t *testing.T) {
-	captureLogger(t, "agent.turn_liveness", slog.LevelWarn)
+	captureLogger(t, "agent", slog.LevelWarn)
 	for _, raw := range []any{0, -3} {
 		if _, poll := mustResolveLiveness(t, livenessSection(map[string]any{"poll_s": raw})); poll != defaultTurnLivenessPollS {
 			t.Fatalf("poll %v for %v", poll, raw)
@@ -171,7 +171,7 @@ func TestNonPositivePollFallsBackToDefault(t *testing.T) {
 }
 
 func TestMalformedSectionsFallBackToDefaults(t *testing.T) {
-	records := captureLogger(t, "agent.turn_liveness", slog.LevelWarn)
+	records := captureLogger(t, "agent", slog.LevelWarn)
 	assertLivenessDefaults(t, map[string]any{"agent": "nonsense"})
 	assertLivenessDefaults(t, livenessSection("nonsense"))
 	if len(records()) < 1 {
@@ -204,7 +204,7 @@ func TestWatchdogDumpTheTurnThreadStackWhenItFires(t *testing.T) {
 		activityLock: a.livenessActivityLock(), isTurnActive: func() bool { return true },
 		commitAbort: func(activitySnapshot, string) bool { return true }, deactivateTurn: func() {},
 	})
-	records := captureLogger(t, "agent.turn_liveness", slog.LevelError)
+	records := captureLogger(t, "agent", slog.LevelError)
 	func() {
 		defer func() { close(release); <-done }()
 		w.surfaceStall(activitySnapshot{generation: 1, idleSeconds: 610.0})

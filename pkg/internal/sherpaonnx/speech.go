@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"log/slog"
 	"path/filepath"
 	"runtime"
 	"strings"
@@ -107,7 +106,7 @@ func LibraryDir(ctx context.Context, gpu bool) (string, error) {
 type logWriter struct{}
 
 func (logWriter) Write(p []byte) (int, error) {
-	slog.Warn(strings.TrimSpace(string(p)), "logger", "speech.engine")
+	pkgLog().Warn(strings.TrimSpace(string(p)))
 	return len(p), nil
 }
 

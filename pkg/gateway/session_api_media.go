@@ -18,7 +18,10 @@ import (
 var apiMimeExt = map[string]string{"image/png": ".png", "image/jpeg": ".jpg", "image/gif": ".gif", "image/webp": ".webp"}
 
 // Reference prefix a settled admission's inline image is reduced to
-const apiRetainedPrefix = "hermes-retained:"
+const apiRetainedPrefix = "icebath-retained:"
+
+// Reference prefix admissions an older icebath settled still carry
+const apiLegacyRetainedPrefix = "hermes-retained:"
 
 // Terminal API admissions still holding inline image bytes or a non responses caller history
 const apiCompactCandidates = "SELECT admission_id FROM session_admissions WHERE status='terminal' AND principal_id='api' " +

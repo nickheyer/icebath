@@ -12,11 +12,11 @@ import (
 
 // Shell level command shapes that target the gateway lifecycle, each anchored on a concrete identifier
 var gatewayLifecyclePattern = regexp2.MustCompile(
-	`(?i)(?:(?<![/\w.\-])(?:icebath|hermes)(?:\.(?:exe|cmd|bat|com|ps1))?\s+gateway\s+(?:restart|stop|uninstall)\b)` +
-		`|(?:launchctl\s+(?:kickstart|unload|load|stop|restart|submit|bootstrap|bootout|remove|disable)\b[^\n]*\b(?:icebath|hermes)[.\-]?gateway)` +
-		`|(?:systemctl\s+(?:-\S+\s+)*(?:restart|stop|start)\b[^\n]*\b(?:icebath|hermes)[.\-]?gateway)` +
-		`|(?:\b(?:p?kill|taskkill|stop-process)\b[^\n]*\b(?:icebath|hermes)\b[^\n]*\bgateway)` +
-		`|(?:\b(?:p?kill|taskkill|stop-process)\b[^\n]*\bgateway\b[^\n]*\b(?:icebath|hermes))`)
+	`(?i)(?:(?<![/\w.\-])icebath(?:\.(?:exe|cmd|bat|com|ps1))?\s+gateway\s+(?:restart|stop|uninstall)\b)` +
+		`|(?:launchctl\s+(?:kickstart|unload|load|stop|restart|submit|bootstrap|bootout|remove|disable)\b[^\n]*\bicebath[.\-]?gateway)` +
+		`|(?:systemctl\s+(?:-\S+\s+)*(?:restart|stop|start)\b[^\n]*\bicebath[.\-]?gateway)` +
+		`|(?:\b(?:p?kill|taskkill|stop-process)\b[^\n]*\bicebath\b[^\n]*\bgateway)` +
+		`|(?:\b(?:p?kill|taskkill|stop-process)\b[^\n]*\bgateway\b[^\n]*\bicebath)`)
 
 var interpreterImageRe = regexp.MustCompile(`^pythonw?(?:\d+(?:\.\d+)*)?(?:\.exe)?\n?$`)
 
@@ -52,12 +52,12 @@ var (
 	nameKillers            = setOf("pkill", "killall", "taskkill", "stop-process")
 	nameEnumerators        = setOf("pgrep", "pidof", "get-process")
 	killVerbRe             = regexp.MustCompile(`(?i)\b(?:kill|taskkill|stop-process)\b`)
-	gatewayCmdlineTokenRe  = regexp.MustCompile(`(?i)icebath_cli|hermes_cli|\b(?:icebath|hermes)\b[^\n]*\bgateway\b|\bgateway\b[^\n]*\b(?:icebath|hermes)\b`)
+	gatewayCmdlineTokenRe  = regexp.MustCompile(`(?i)icebath_cli|\bicebath\b[^\n]*\bgateway\b|\bgateway\b[^\n]*\bicebath\b`)
 	taskkillFilterRe       = regexp.MustCompile(`(?i)^\s*['"]?imagename\s+eq\s+(\S+)`)
 	shellLineContinuation  = regexp.MustCompile(`\\\r?\n[ \t]*`)
 	argvListPunctuationRe  = regexp.MustCompile(`[\[\],]+`)
 	launchctlLifecycleRe   = regexp.MustCompile(`(?i)\blaunchctl\s+(?:kickstart|unload|load|stop|restart|bootout|kill|disable|remove)\b`)
-	gatewayLabelRe         = regexp.MustCompile(`(?i)\b(?:icebath|hermes)[.\-]?gateway\b`)
+	gatewayLabelRe         = regexp.MustCompile(`(?i)\bicebath[.\-]?gateway\b`)
 	lifecycleEnvAssignRe   = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*=`)
 	dotCommandArgumentRe   = regexp.MustCompile(`^\.[A-Za-z]`)
 	pipeToInterpreterRe    = regexp.MustCompile(`\|\s*&?\s*(?:sudo\s+)?(?:sh|bash|dash|ksh|zsh|xargs|eval|source)\b`)
@@ -91,7 +91,7 @@ var (
 
 // Profile flag form of the gateway restart, blocked only when the named profile runs the guard
 var profileFlagLifecyclePattern = regexp2.MustCompile(pyPatternToRegexp2(
-	`(?i)(?:icebath|hermes)\s+(?:-\S++(?:\s++(?!-\S)\S++)?\s++)*(?:--profile=([^\s]+)|(?:-p|--profile)\s+([^\s]+))(?:\s++-\S++(?:\s++(?!-\S)\S++)?)*\s+gateway\s+(?:restart|stop)`))
+	`(?i)icebath\s+(?:-\S++(?:\s++(?!-\S)\S++)?\s++)*(?:--profile=([^\s]+)|(?:-p|--profile)\s+([^\s]+))(?:\s++-\S++(?:\s++(?!-\S)\S++)?)*\s+gateway\s+(?:restart|stop)`))
 
 // HostInterpreterKillRejection is the text every surface shows for a kill aimed at the gateway image
 const HostInterpreterKillRejection = "Blocked: this command kills every process whose image/name matches the " +
@@ -133,7 +133,7 @@ func patternReachesHostInterpreter(pattern string, fullCmdline, exact bool) bool
 	if !isInterpreterImage(head, !exact) {
 		return fullCmdline && gatewayCmdlineTokenRe.MatchString(core)
 	}
-	return strings.TrimSpace(rest) == "" || ereWildcardOnlyRe.MatchString(rest) || strings.Contains(strings.ToLower(rest), "hermes") || strings.Contains(strings.ToLower(rest), "icebath")
+	return strings.TrimSpace(rest) == "" || ereWildcardOnlyRe.MatchString(rest) || strings.Contains(strings.ToLower(rest), "icebath")
 }
 
 // Whether a killer or enumerator with the argv would select the host interpreter

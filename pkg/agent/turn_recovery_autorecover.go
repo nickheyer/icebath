@@ -61,7 +61,7 @@ func autoRecoverAfterExhaustion(ctx context.Context, a *AIAgent, s *LoopState, e
 	notice := ladderNotice(a, waitS, cycle, total)
 	a.emitDiagnosticStatus(notice)
 	a.emitDiagnosticWait(notice)
-	conversationLoopLog().Warn(fmt.Sprintf("%sProvider unavailable (%s) — auto-recovery cycle %d/%d, retrying in %.0fs %s",
+	pkgLog().Warn(fmt.Sprintf("%sProvider unavailable (%s) — auto-recovery cycle %d/%d, retrying in %.0fs %s",
 		a.logPrefix, e.classified.Reason, cycle, total, waitS, a.ClientLogContext()))
 	interrupted, err := ladderBackoffSleep(ctx, a, waitS, retry, &s.Messages, s.ConversationHistory, s.APICallCount,
 		"Interrupt detected during automatic recovery wait, aborting.",

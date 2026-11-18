@@ -1,11 +1,9 @@
 package plugins_test
 
-import ()
-
 const pageBackendPlugin = `
 import abc, sys, types
 
-# Stands in for the upstream agent.browser_page_backend module the way a hermes test installs a module double
+# Module double standing in for the browser page backend module
 _module = types.ModuleType("agent.browser_page_backend")
 class BrowserPageBackend(abc.ABC):
     @property

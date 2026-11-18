@@ -671,10 +671,10 @@ func pruneZeroEventRetryPayload(ctx context.Context, kwargs map[string]any, atte
 		prunedItems = append(prunedItems, raw)
 	}
 	if pruned == 0 {
-		codexLog.Warn(fmt.Sprintf("Codex zero-event retry (attempt %d/%d): no prunable tool output; resending payload unchanged (serialized_input_bytes=%d, model=%s)", attempt, attempts, before, pyrepr.Str(kwargs["model"])))
+		pkgLog().Warn(fmt.Sprintf("Codex zero-event retry (attempt %d/%d): no prunable tool output; resending payload unchanged (serialized_input_bytes=%d, model=%s)", attempt, attempts, before, pyrepr.Str(kwargs["model"])))
 		return kwargs
 	}
-	codexLog.Warn(fmt.Sprintf("Codex zero-event retry (attempt %d/%d): spilled %d oversized tool output(s) before reconnect, serialized_input_bytes=%d -> %d (model=%s)", attempt, attempts, pruned, before, codexSerializedInputBytes(prunedItems), pyrepr.Str(kwargs["model"])))
+	pkgLog().Warn(fmt.Sprintf("Codex zero-event retry (attempt %d/%d): spilled %d oversized tool output(s) before reconnect, serialized_input_bytes=%d -> %d (model=%s)", attempt, attempts, pruned, before, codexSerializedInputBytes(prunedItems), pyrepr.Str(kwargs["model"])))
 	out := make(map[string]any, len(kwargs))
 	for k, v := range kwargs {
 		out[k] = v
@@ -862,11 +862,11 @@ func (c *codexResponsesClient) resolveWatchdogs(ctx context.Context, req *Reques
 	} else if !local {
 		disableAbove := envFloat(CodexTTFBDisableAboveEnv, 10000)
 		if !envTruthy(CodexTTFBStrictEnv) && disableAbove > 0 && float64(estTokens) >= disableAbove && ttfb < idleDefault {
-			codexLog.Info(fmt.Sprintf("Scaling codex-responses no-event TTFB watchdog from %.0fs to %.0fs for large request (context=~%s tokens >= %.0f). Set %s=1 to keep the smaller cutoff.", ttfb, idleDefault, commaInt(estTokens), disableAbove, CodexTTFBStrictEnv))
+			pkgLog().Info(fmt.Sprintf("Scaling codex-responses no-event TTFB watchdog from %.0fs to %.0fs for large request (context=~%s tokens >= %.0f). Set %s=1 to keep the smaller cutoff.", ttfb, idleDefault, commaInt(estTokens), disableAbove, CodexTTFBStrictEnv))
 			ttfb = idleDefault
 		}
 		if cap := envFloat(CodexTTFBMaxEnv, 0); cap > 0 && ttfb > cap {
-			codexLog.Info(fmt.Sprintf("Capping codex-responses no-event TTFB timeout from %.0fs to %.0fs (context=~%s tokens) per %s.", ttfb, cap, commaInt(estTokens), CodexTTFBMaxEnv))
+			pkgLog().Info(fmt.Sprintf("Capping codex-responses no-event TTFB timeout from %.0fs to %.0fs (context=~%s tokens) per %s.", ttfb, cap, commaInt(estTokens), CodexTTFBMaxEnv))
 			ttfb = cap
 		}
 	} else if !ttfbExplicit {
@@ -876,7 +876,7 @@ func (c *codexResponsesClient) resolveWatchdogs(ctx context.Context, req *Reques
 		}
 		localCeiling = envFloat(LocalStreamStaleTimeoutEnv, localCeiling)
 		if localCeiling > ttfb {
-			codexLog.Info(fmt.Sprintf("Local provider detected (%s) — no-event TTFB watchdog raised from %.0fs to %.0fs (agent.local_stream_stale_timeout); set %s for an explicit cutoff.", c.route.BaseURL, ttfb, localCeiling, CodexTTFBTimeoutEnv))
+			pkgLog().Info(fmt.Sprintf("Local provider detected (%s) — no-event TTFB watchdog raised from %.0fs to %.0fs (agent.local_stream_stale_timeout); set %s for an explicit cutoff.", c.route.BaseURL, ttfb, localCeiling, CodexTTFBTimeoutEnv))
 			ttfb = localCeiling
 		}
 	}

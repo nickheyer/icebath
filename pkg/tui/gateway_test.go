@@ -13,7 +13,6 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 	"github.com/gorilla/websocket"
-	"github.com/nickheyer/icebath/pkg/gateway"
 )
 
 // Clock double whose timers fire only when a case advances it
@@ -247,7 +246,7 @@ type fakeDialer struct {
 	instances []*fakeSocket
 }
 
-func (d *fakeDialer) dial(ctx context.Context, target string, protocols []string) (gateway.GatewaySocket, error) {
+func (d *fakeDialer) dial(ctx context.Context, target string, protocols []string) (wireSocket, error) {
 	s := &fakeSocket{url: target, protocols: protocols, inbox: make(chan string, 64), opened: make(chan struct{}), done: make(chan struct{})}
 	d.mu.Lock()
 	d.instances = append(d.instances, s)
@@ -328,9 +327,9 @@ type fakeBootstrap struct {
 	calls    [][2]bool
 }
 
-var testGrant = localGrant{URL: "ws://gateway.test/api/ws", ProfileID: "fixture", InstanceID: "owner"}
+var testGrant = Grant{URL: "ws://gateway.test/api/ws", ProfileID: "fixture", InstanceID: "owner"}
 
-func (b *fakeBootstrap) run(_ context.Context, start, recover bool) (localGrant, error) {
+func (b *fakeBootstrap) run(_ context.Context, start, recover bool) (Grant, error) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	b.calls = append(b.calls, [2]bool{start, recover})
@@ -342,7 +341,7 @@ func (b *fakeBootstrap) run(_ context.Context, start, recover bool) (localGrant,
 		}
 	}
 	if err != nil {
-		return localGrant{}, err
+		return Grant{}, err
 	}
 	return testGrant, nil
 }

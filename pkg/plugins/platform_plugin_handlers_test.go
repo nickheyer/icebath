@@ -6,7 +6,7 @@ import (
 	"testing"
 )
 
-// Fresh manager with the context of one plugin, the hermes _make_ctx twin
+// Fresh manager with the context of one plugin, the make ctx twin
 func handlerFactoryContext(name string) (*Manager, *Context) {
 	m := NewManager("")
 	return m, newContext(&Manifest{Name: name, Version: "0.1.0", Description: "test"}, m)

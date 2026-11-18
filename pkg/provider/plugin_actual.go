@@ -2,13 +2,13 @@ package provider
 
 import (
 	"context"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"log/slog"
 	"net/url"
 	"os"
 	"runtime"
 	"strings"
 	"time"
+
+	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 )
 
 var actualGOOS = runtime.GOOS
@@ -29,7 +29,7 @@ func actualPluginProfiles() []Profile {
 		if baseURL == "" {
 			creds, err := modelsResolver(ctx).apiKeyProviderCredentials("actual")
 			if err != nil {
-				slog.Debug("fetch_models(actual): " + err.Error())
+				pkgLog().Debug("fetch_models(actual): " + err.Error())
 				return nil, false
 			}
 			baseURL = creds.BaseURL

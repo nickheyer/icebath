@@ -3,7 +3,6 @@ package gateway
 import (
 	"context"
 	"fmt"
-	"log/slog"
 	"strings"
 
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
@@ -37,7 +36,7 @@ func InboundReferences(ctx context.Context, runner ContextRefsRunner, source *Se
 		contextLength, err = runner.InboundModelContextLength(ctx, source, sessionKey)
 	}
 	if err != nil {
-		slog.Warn(fmt.Sprintf("@ context reference expansion failed: %s", err))
+		pkgLog().Warn(fmt.Sprintf("@ context reference expansion failed: %s", err))
 		return text, nil
 	}
 	return expandReferences(ctx, text, cwd, contextLength, true)

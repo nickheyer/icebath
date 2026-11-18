@@ -245,7 +245,7 @@ func (q *composerQueue) getQueue(destination *submissionDestination) (*pendingQu
 // Owner's pending rows still waiting on its queue
 func (q *composerQueue) serverRows() []map[string]any {
 	rows := []map[string]any{}
-	for _, row := range pendingRows(q.store.ui.Info["pending_submissions"]) {
+	for _, row := range pendingRowsOf(q.store.ui.Info) {
 		if isServerQueued(row) {
 			rows = append(rows, row)
 		}
@@ -476,7 +476,7 @@ func (q *composerQueue) reconcileReceipts() error {
 	if err != nil {
 		return err
 	}
-	for _, receipt := range pendingRows(q.store.ui.Info["pending_submissions"]) {
+	for _, receipt := range pendingRowsOf(q.store.ui.Info) {
 		id := receipt["input_id"]
 		if id == nil {
 			id = receipt["admission_id"]

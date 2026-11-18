@@ -139,8 +139,8 @@ func TestWireUnknownAndAbsentMethodsAreMethodNotFound(t *testing.T) {
 	if got := p.recv(t); got != want {
 		t.Fatalf("got %q want %q", got, want)
 	}
-	p.send(t, `{"jsonrpc":"2.0","id":8,"method":"_hermes/x","params":{}}`)
-	want = `{"jsonrpc":"2.0","id":8,"error":{"code":-32601,"message":"Method not found","data":{"method":"_hermes/x"}}}` + "\n"
+	p.send(t, `{"jsonrpc":"2.0","id":8,"method":"_icebath/x","params":{}}`)
+	want = `{"jsonrpc":"2.0","id":8,"error":{"code":-32601,"message":"Method not found","data":{"method":"_icebath/x"}}}` + "\n"
 	if got := p.recv(t); got != want {
 		t.Fatalf("got %q want %q", got, want)
 	}
@@ -223,10 +223,10 @@ func TestWireErrorResponseRejectsOutgoingRequest(t *testing.T) {
 	p := startWire(t, &wireAgent{}, true)
 	out := make(chan error, 1)
 	go func() {
-		_, err := p.conn.ExtMethod(context.Background(), "hermes/elicit", pyjson.NewObject())
+		_, err := p.conn.ExtMethod(context.Background(), "icebath/elicit", pyjson.NewObject())
 		out <- err
 	}()
-	if got := p.recv(t); got != `{"jsonrpc":"2.0","id":0,"method":"_hermes/elicit","params":{}}`+"\n" {
+	if got := p.recv(t); got != `{"jsonrpc":"2.0","id":0,"method":"_icebath/elicit","params":{}}`+"\n" {
 		t.Fatalf("frame %q", got)
 	}
 	p.send(t, `{"jsonrpc":"2.0","id":0,"error":{"code":-32001,"message":"nope"}}`)

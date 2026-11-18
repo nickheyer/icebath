@@ -4,43 +4,25 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"log/slog"
 	"os"
 	"time"
 
-	"github.com/nickheyer/icebath/pkg/acp"
 	"github.com/nickheyer/icebath/pkg/agent"
 	"github.com/nickheyer/icebath/pkg/app"
-	"github.com/nickheyer/icebath/pkg/browser"
-	"github.com/nickheyer/icebath/pkg/builtin/langfuse"
-	"github.com/nickheyer/icebath/pkg/builtin/teamspipeline"
-	"github.com/nickheyer/icebath/pkg/codeexec"
 	"github.com/nickheyer/icebath/pkg/commands"
 	"github.com/nickheyer/icebath/pkg/config"
-	"github.com/nickheyer/icebath/pkg/cron"
 	"github.com/nickheyer/icebath/pkg/gateway"
-	"github.com/nickheyer/icebath/pkg/gateway/messagetools"
-	"github.com/nickheyer/icebath/pkg/gateway/platforms/feishu"
-	"github.com/nickheyer/icebath/pkg/gateway/platforms/hosted"
-	"github.com/nickheyer/icebath/pkg/gateway/platforms/matrix"
-	"github.com/nickheyer/icebath/pkg/gateway/platforms/slack"
-	"github.com/nickheyer/icebath/pkg/gateway/platforms/telegram"
-	"github.com/nickheyer/icebath/pkg/gateway/platforms/wecom"
-	_ "github.com/nickheyer/icebath/pkg/gatewayapi"
 	"github.com/nickheyer/icebath/pkg/gatewaycli"
 	"github.com/nickheyer/icebath/pkg/gatewayrun"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/kanban"
 	"github.com/nickheyer/icebath/pkg/logging"
 	"github.com/nickheyer/icebath/pkg/mcp"
 	"github.com/nickheyer/icebath/pkg/memory"
-	"github.com/nickheyer/icebath/pkg/observability"
 	"github.com/nickheyer/icebath/pkg/plugins"
 	"github.com/nickheyer/icebath/pkg/pluginservices"
 	"github.com/nickheyer/icebath/pkg/pm"
 	"github.com/nickheyer/icebath/pkg/profiles/manage"
 	"github.com/nickheyer/icebath/pkg/provider"
-	"github.com/nickheyer/icebath/pkg/relayhost"
 	"github.com/nickheyer/icebath/pkg/selfupdate"
 	"github.com/nickheyer/icebath/pkg/skills"
 	"github.com/nickheyer/icebath/pkg/state"
@@ -49,12 +31,9 @@ import (
 	"github.com/nickheyer/icebath/pkg/tuiserver"
 )
 
-var _ gateway.NativeStreamAdapter = (*wecom.Streamer)(nil)
-
 var (
-	_ gateway.SteerReceiver       = (*agent.AIAgent)(nil)
-	_ gateway.RedirectReceiver    = (*agent.AIAgent)(nil)
-	_ acp.ReasoningCallbackSetter = (*agent.AIAgent)(nil)
+	_ gateway.SteerReceiver    = (*agent.AIAgent)(nil)
+	_ gateway.RedirectReceiver = (*agent.AIAgent)(nil)
 )
 
 // Assigns every package level hook the lower packages leave to the binary, before any entry dispatches
@@ -62,14 +41,9 @@ func installProcessWiring() {
 	installSlashRegistryWiring()
 	installAgentImportWiring()
 	registerCommandArgv()
-	tools.RegisterNemoRelayBinding(relayhost.Load)
-	tools.RegisterNemoRelayReadiness(relayhost.Ready)
 	commands.BannerVersionLabel = app.FormatBannerVersionLabel
 	gatewayrun.ResolveEphemeralSystemPromptFromConfig = commands.ResolveEphemeralSystemPrompt
 	gatewayrun.ParseServiceTierConfig = app.ParseServiceTierConfig
-	gatewayrun.BindTeamsPipelineRuntime = func(ctx context.Context, r *gatewayrun.GatewayRunner) (bool, error) {
-		return teamspipeline.BindGatewayRuntime(ctx, r)
-	}
 	gatewayrun.ResolveCommand = func(name string) (string, bool) {
 		if d := commands.Resolve(name); d != nil {
 			return d.Name, true
@@ -99,7 +73,6 @@ func installProcessWiring() {
 	}
 	gatewayrun.SaveConfigValue = app.SaveConfigValue
 	gatewayrun.SanitizeTelegramName = commands.SanitizeTelegramName
-	kanban.ParseSlash = app.ParseKanbanSlash
 	gatewayrun.RunCuratorSlash = app.RunCuratorSlash
 	gatewayrun.RandomTip = app.RandomTip
 	gatewayrun.ActivePersonalityName = commands.ActivePersonalityName
@@ -133,19 +106,6 @@ func installProcessWiring() {
 		reply, err := commands.ExecuteCommand(ctx, name, commands.CommandContext{Surface: surface, Args: args, Options: options})
 		return gatewayrun.SlashCommandReply{Text: reply.Text, Data: reply.Data, Format: reply.Format}, err
 	}
-	acp.NewSurfaceLabelReader = func(db *state.SessionDB) acp.RichSessionLister { return gatewaycli.NewSurfaceLabelReader(db) }
-	acp.NewPreparedMutations = func() acp.PreparedMutations { return app.NewACPMutations() }
-	acp.SlashMutation, acp.ModelRefusalText, acp.ConfirmationTitle = app.ACPSlashMutation, app.ACPModelRefusalText, app.ACPConfirmationTitle
-	acp.CommandRefusal, acp.RewindTo = app.ACPCommandRefusal, app.ACPRewindTo
-	acp.ReplayGapOwedReply, acp.ReplayGapPendingStatus, acp.ReplayGapSettled = app.ACPReplayGapOwedReply, app.ACPReplayGapPendingStatus, app.ACPReplayGapSettled
-	acp.EnvLaunchFlags = gatewaycli.EnvLaunchFlags
-	acp.ResolveCommand = func(name string) (string, bool) {
-		if d := commands.Resolve(name); d != nil {
-			return d.Name, true
-		}
-		return "", false
-	}
-	acp.RunModelSetup = func(context.Context) int { return run([]string{"model"}) }
 	gatewaycli.InstallMigrateS6Hooks()
 	gateway.S6Running, gateway.S6Scandir = gatewaycli.S6Running, func() string { return gatewaycli.S6DynamicScandir }
 	gateway.S6IsRunning = func(name string) (bool, error) {
@@ -154,18 +114,12 @@ func installProcessWiring() {
 	gateway.S6Start = func(name string) error {
 		return gatewaycli.NewS6ServiceManager(gatewaycli.S6DynamicScandir).Start(name)
 	}
-	cron.SetupWorkerLogging = logging.SetupHomeLogging
-	cron.WorkerProcessBoot = cronWorkerProcessBoot
-	cron.RegisterWorkerConfigHooks = gateway.RegisterWorkerConfigHooks
-	cron.RegisterEstopCheck(tools.CheckPaused)
-	selfupdate.LoadCronJobsHook = loadCronJobsForDrainReport
 	gatewaycli.DescribeActiveWorkUnit = selfupdate.DescribeActiveWorkUnit
 	gatewaycli.SealedSteward = selfupdate.SealedSteward
 	tui.ClipboardImage = app.SaveClipboardImage
 	tui.PluginWidgets = pluginWidgets
 	gateway.RefreshLiveSessions = tuiserver.RefreshLiveSessions
 	gatewayrun.ServeSessionSocket = serveSessionSocket
-	tuiserver.ShareNousDiagnostics, tuiserver.RedactDebugSupportText = selfupdate.ShareNousDiagnostics, selfupdate.RedactDebugSupportTextCapped
 	tuiserver.StatusReport.Fields, tuiserver.StatusReport.Lines = app.TUIStatusFields, app.TUIStatusLines
 	tuiserver.NormalizePersonalityName = commands.NormalizePersonalityName
 	tuiserver.RenderPersonalityPrompt = commands.RenderPersonalityPrompt
@@ -182,6 +136,9 @@ func installProcessWiring() {
 		return out
 	}
 	tuiserver.ActivePersonalityName = commands.ActivePersonalityName
+	tuiserver.QuickSnapshots = func(h string, t func(string, map[string]any) string) tuiserver.SnapshotLines {
+		return gatewaycli.SnapshotCommand{Home: h, T: t}
+	}
 	tuiserver.AvailablePersonalities = func(cfg map[string]any) map[string]any {
 		return commands.AvailablePersonalities(config.Tree(cfg))
 	}
@@ -197,9 +154,6 @@ func installProcessWiring() {
 	gateway.HasAnyProviderConfigured = hasAnyProviderConfigured
 	tuiserver.Prefill.ResolveFile = app.ResolvePrefillMessagesFile
 	tuiserver.Prefill.Load = app.LoadPrefillMessages
-	tuiserver.ForeignSessions.List = app.ListForeignSessions
-	tuiserver.ForeignSessions.Preview = app.PreviewForeignSession
-	tuiserver.ForeignSessions.Import = app.ImportBrowserSession
 	tuiserver.Personality.EphemeralSystemPrompt = commands.ResolveEphemeralSystemPrompt
 	tuiserver.GatewayKnownCommands = commands.GatewayKnownCommands
 	tuiserver.CatalogRegistry, tuiserver.RegistryPluginCommands = catalogRegistry, registryPluginCommands
@@ -209,8 +163,6 @@ func installProcessWiring() {
 	gateway.ResolveRegistryCommand = resolveRegistryCommand
 	gateway.ResolveBoundCommand, gateway.RunBoundCommand = commands.BoundGatewayCommand, commands.RunBoundGatewayCommand
 	gateway.SessionReadLines.Toolsets, gateway.SessionReadLines.Platforms = app.ToolsetsLines, app.PlatformsLines
-	gateway.HostedEntryKeywords = hosted.EntryKeywords
-	gateway.SessionReadLines.Cron = cron.CronCommandLines
 	gateway.TUIReadRender.Status, gateway.TUIReadRender.Context = app.TUIStatusRead, app.TUIContextRead
 	gateway.ViewerAutomationInvoke = agent.InvokeViewerAutomation
 	gateway.NormalizeRunBudgetSeconds = agent.NormalizeRunBudgetSeconds
@@ -238,21 +190,15 @@ func installProcessWiring() {
 		}
 	}
 	selfupdate.RunCLIHook = run
-	agent.KanbanBudgetExhaustedHook = kanban.RecordBudgetExhausted
 	agent.TUIGatewayToolsets = tuiserver.GatewayToolsets
 	agent.SessionSteerAuthority = tuiserver.SessionSteerAuthority
 	mcp.TUIProfileRuntimeScope = tuiserver.ProfileRuntimeScope
-	pm.InteractiveAppRunning = app.PromptAppIsRunning
-	provider.SetFreeTierGatewayHooks(provider.FreeTierGatewayHooks{OwnsRuntimeLock: gateway.OwnsGatewayRuntimeLock})
-	pm.CuaDriverChildEnv = cuaDriverChildEnv
 	pm.LooksLikeGatewayCommandLine = gateway.LooksLikeGatewayCommandLine
 	tools.ApprovalHookInvoker = approvalHookInvoker
 	tools.LoadCLIConfig = app.CLIConfig
 	commands.LoadCLIConfig = app.LoadCLIConfig
 	tools.TerminalOutputTransformHook = terminalOutputTransform
 	tuiserver.SaveClipboardImage, tuiserver.HasClipboardImage = app.SaveClipboardImage, app.HasClipboardImage
-	state.SecretEnvName = codeexec.IsSecretEnvName
-	state.SecretEnvSubstrings = codeexec.SecretSubstrings
 	state.MessagingPlatformLabels = gateway.MessagingPlatformLabels
 	state.MessagingPlatformSource = gateway.IsMessagingPlatformSource
 	state.SameOwner = gateway.SameOwner
@@ -291,10 +237,7 @@ func installProcessWiring() {
 	gateway.ImageAttachments.DecodeBase64 = tuiserver.DecodeAttachBase64
 	gateway.ImageAttachments.SniffImageExt = tuiserver.SniffImageExt
 	gateway.ImageAttachments.StageImageBytes = tuiserver.StageImageBytes
-	gateway.MainRuntimeFromAgent = tuiserver.MainRuntimeFromAgent
 	tuiserver.BindHostedRoomServer()
-	gateway.RunOneshot = agent.RunOneshotCall
-	gateway.ReleaseVaultUnlocks = browser.ReleaseVaultSession
 	gateway.ResolvePersonality = commands.ResolvePersonality
 	gateway.PersistPersonality = commands.PersistPersonality
 	gateway.RunApprovalModeCommand = func(ctx context.Context, h string, env *tools.Env, mode string) (bool, string, error) {
@@ -305,46 +248,16 @@ func installProcessWiring() {
 	gateway.SessionCompress = agent.SessionCompressAgent{}
 	gateway.ExpandContextReferences = agent.ExpandGatewayContextReferences
 	gateway.LoadPrefillMessages = app.LoadPrefillMessages
-	gateway.WebhookExecuteJobForEvent = cron.ExecuteJobForEvent
 	gateway.CommandBusyPolicy = func(name string) (bool, bool) {
 		return commands.ShouldBypassActiveSession(name), commands.IsInterruptThenDispatch(name)
 	}
-	slack.SubcommandMap = func(ctx context.Context) map[string]string {
-		return commands.SlackSubcommandMap(ctx, commands.Default, rawConfigTree(ctx))
-	}
-	gateway.RelaySlackSubcommandMap = slack.SubcommandMap
-	slack.IsGatewayKnownCommand = func(ctx context.Context, name string) bool {
-		return commands.IsGatewayKnownCommand(ctx, commands.Default, name)
-	}
-	matrix.IsGatewayKnownCommand = slack.IsGatewayKnownCommand
-	slack.AppManifest = func(ctx context.Context, cfg config.Tree) map[string]any {
-		return commands.SlackAppManifest(ctx, commands.Default, cfg, "")
-	}
-	feishu.CommentAgentRunner = gatewayrun.RunFeishuCommentAgent
-	slack.NativeSlashNames = func(ctx context.Context) []string {
-		var names []string
-		for _, s := range commands.SlackNativeSlashes(ctx, commands.Default, rawConfigTree(ctx)) {
-			names = append(names, s.Name)
-		}
-		return names
-	}
-	slack.ResolveCommandBusy = func(name string) (string, string, bool) {
-		if d := commands.Resolve(name); d != nil {
-			return d.Name, string(d.BusyPolicy), true
-		}
-		return "", "", false
-	}
-	telegram.InlineCommands = telegramInlineCommands{}
-	telegram.SendTelegramREST = messagetools.SendTelegram
-	agent.ResetScreenshotDedup = codeexec.ResetScreenshotDedup
 	tools.DiagnosticProcessEvent = agent.DiagnosticProcessEvent
-	tools.MediaDeliveryPathValidator = mediaDeliveryPathValidator
 	tools.GitlockRunGit = selfupdate.GitlockRunGit
-	tools.AsyncDelegationOwnerProbes.PidExists = kanban.GatewayStatusProbes.PidExists
+	tools.AsyncDelegationOwnerProbes.PidExists = gateway.PidExists
 	tools.AsyncDelegationOwnerProbes.ProcessStartTime = gatewayProcessStartTime
 	tools.ProfileSecrets = provider.ProfileSecretSource()
-	tools.NousAccount = provider.NousAccountSource()
 	tools.CredentialPools = provider.XAICredentialPoolSource()
+	tools.PoolKeys = provider.PoolKeySource()
 	tools.RuntimeProviderCredentials = provider.ToolRuntimeCredentials
 	tools.VisionCapabilities = provider.VisionCapabilities{}
 	agent.InstallDelegationRegistryHooks()
@@ -352,12 +265,13 @@ func installProcessWiring() {
 		return provider.GetCachedContextLength(ctx, modelID, baseURL, false)
 	}
 	tools.ModelContextLength = provider.ToolModelContextLength
-	tools.ProjectBoardWorkdirBinder = bindProjectBoardWorkdir
-	observability.SkillSourceIDAliasesHook = skills.SourceIDAliases
 	provider.InstallPluginManagerHooks(pluginManagerHooks())
 	plugins.InstallServices(pluginServices())
 	app.SetPrintVersionInfo(printVersionInfo)
 	app.ConsoleCommandTree = newCLI
+	for _, wire := range tierWiring {
+		wire()
+	}
 }
 
 // Raw config of the bound home as a tree, empty on a read failure
@@ -369,59 +283,6 @@ func rawConfigTree(ctx context.Context) config.Tree {
 	return config.Tree(raw)
 }
 
-// Cron job id and name pairs of a home in load order for the update drain report
-func loadCronJobsForDrainReport(ctx context.Context, h string) ([][2]string, error) {
-	jobs, err := cron.LoadJobsForHome(ctx, h)
-	if err != nil {
-		return nil, err
-	}
-	out := make([][2]string, 0, len(jobs))
-	for _, job := range jobs {
-		out = append(out, [2]string{pyStr(job.ID), job.Name})
-	}
-	return out, nil
-}
-
-// The pkg/commands readers behind the Telegram inline picker
-type telegramInlineCommands struct{}
-
-func (telegramInlineCommands) TelegramBotCommands(ctx context.Context) ([]telegram.CatalogItem, error) {
-	var out []telegram.CatalogItem
-	for _, e := range commands.TelegramBotCommands(ctx, commands.Default, rawConfigTree(ctx), true) {
-		out = append(out, telegram.CatalogItem{Name: e.Name, Description: e.Description})
-	}
-	return out, nil
-}
-
-func (telegramInlineCommands) GatewaySkillEntries(ctx context.Context, platform string, maxSlots int, reserved map[string]bool,
-	descLimit int, sanitize func(string) string) ([]telegram.CatalogItem, error) {
-	cfg := rawConfigTree(ctx)
-	entries, _ := commands.GatewaySkillEntries(ctx, commands.Default, platform, commands.HomeSkillSource(home.Dir(ctx), cfg), maxSlots, reserved, descLimit, sanitize)
-	var out []telegram.CatalogItem
-	for _, e := range entries {
-		out = append(out, telegram.CatalogItem{Name: e.Name, Description: e.Description})
-	}
-	return out, nil
-}
-
-func (telegramInlineCommands) TelegramMenuMaxCommands(ctx context.Context) int {
-	return commands.TelegramMenuMaxCommands(rawConfigTree(ctx))
-}
-
-func (telegramInlineCommands) TelegramMenuCommands(ctx context.Context, maxCommands int) ([]telegram.CatalogItem, int, error) {
-	cfg := rawConfigTree(ctx)
-	menu, hidden := commands.TelegramMenuCommands(ctx, commands.Default, cfg, commands.HomeSkillSource(home.Dir(ctx), cfg), maxCommands)
-	out := make([]telegram.CatalogItem, 0, len(menu))
-	for _, e := range menu {
-		out = append(out, telegram.CatalogItem{Name: e.Name, Description: e.Description})
-	}
-	return out, hidden, nil
-}
-
-func (telegramInlineCommands) SanitizeTelegramName(raw string) string {
-	return commands.SanitizeTelegramName(raw)
-}
-
 // The higher package collaborators pkg/plugins reaches through its Services
 func pluginServices() *plugins.Services {
 	s := &plugins.Services{
@@ -429,20 +290,14 @@ func pluginServices() *plugins.Services {
 		RequestToolApproval: func(ctx context.Context, toolName, message, ruleKey, turnID, toolCallID, sessionID string) (map[string]any, error) {
 			return tools.RequestPluginToolApproval(ctx, callerToolsEnv(ctx), toolName, message, ruleKey, turnID, toolCallID, sessionID)
 		},
-		FailoverReason:         failoverReason,
-		MemoryProviderDir:      memory.ProviderDirForHome,
-		HostObject:             hostedObjectName,
-		BindProfileSecretScope: provider.BindProfileSecretScope,
-		GetSecret:              provider.GetSecret,
-		PluginLLM:              agent.PluginLLMClient(),
-		SubagentLifecycle:      agent.SubagentDelegationService(),
-		DelegationBackends:     func(c *plugins.Context) any { return agent.DelegationBackendsFor(c) },
-		CurrentCronExecution: func(ctx context.Context) any {
-			if exec := cron.CurrentCronExecution(ctx); exec != nil {
-				return exec
-			}
-			return nil
-		},
+		FailoverReason:             failoverReason,
+		MemoryProviderDir:          memory.ProviderDirForHome,
+		HostObject:                 hostedObjectName,
+		BindProfileSecretScope:     provider.BindProfileSecretScope,
+		GetSecret:                  provider.GetSecret,
+		PluginLLM:                  agent.PluginLLMClient(),
+		SubagentLifecycle:          agent.SubagentDelegationService(),
+		DelegationBackends:         func(c *plugins.Context) any { return agent.DelegationBackendsFor(c) },
 		CallMCPTool:                mcp.CallToolForPlugin,
 		RedeemSideQuestion:         agent.RedeemSideQuestion,
 		BoundSessionKey:            func(ctx context.Context) string { return tools.BoundSessionKey(tools.ToolEnvFrom(ctx)) },
@@ -454,7 +309,6 @@ func pluginServices() *plugins.Services {
 		BuiltinAuxTaskKeys:         provider.BuiltinAuxTaskKeys,
 		RegisterRedactionPatterns:  tools.RegisterRedactionPatterns,
 		PluginSDK:                  pluginSDK,
-		BuildPluginBlueprint:       cron.BuildPluginBlueprint,
 		SecretSources:              provider.PluginSecretSources(),
 		PlatformDeclarations:       agent.PlatformDeclarationsService(),
 		OAuthSurface:               provider.OAuthSurface,
@@ -502,6 +356,9 @@ func pluginServices() *plugins.Services {
 			return out
 		},
 	}
+	for _, extend := range tierServices {
+		extend(s)
+	}
 	gateway.InstallPluginServices(s)
 	return s
 }
@@ -518,7 +375,7 @@ func callerToolsEnv(ctx context.Context) *tools.Env {
 func homeToolsEnv(ctx context.Context, h string) *tools.Env {
 	cfg, _ := config.LoadReadonly(ctx, h, nil)
 	cwd, _ := os.Getwd()
-	return &tools.Env{Home: h, Config: cfg, Cwd: cwd, Log: slog.Default()}
+	return &tools.Env{Home: h, Config: cfg, Cwd: cwd, Log: pkgLog()}
 }
 
 // Serves the plugin SDK ops, the cron ops first and the media, provider and gateway ops after
@@ -529,8 +386,10 @@ func pluginSDK(ctx context.Context, h, op string, args []any, kwargs map[string]
 		}
 		return provider.MovedCommandHint(ctx, config.PyStr(args[0]), config.PyStr(args[1]), ""), nil
 	}
-	if result, handled, err := cron.ServePluginSDK(ctx, h, op, args, kwargs); handled || err != nil {
-		return result, err
+	for _, serve := range tierPluginSDK {
+		if result, handled, err := serve(ctx, h, op, args, kwargs); handled || err != nil {
+			return result, err
+		}
 	}
 	return gateway.ServePluginSDK(ctx, h, op, args, kwargs)
 }
@@ -558,41 +417,28 @@ func runAtExit() {
 		defer func() { recover() }()
 		fn()
 	}
-	run(observability.JoinRecorders)
 	run(state.RunTokenExitHooks)
 	run(func() { tools.CleanupAllEnvironments(processToolsEnv(context.Background())) })
 	run(tools.SweepSingularityScratchAtExit)
 	run(func() { tools.CleanupSafeSkillsCopy() })
-	run(func() { browser.AtexitCleanup(context.Background()) })
-	run(codeexec.ShutdownAllKernels)
-	run(codeexec.ShutdownAllRemoteKernels)
-	run(codeexec.ShutdownComputerUseBackends)
-	run(cron.ShutdownParallelPools)
+	for _, fn := range tierAtExit {
+		run(fn)
+	}
 	run(tuiserver.AtExit)
 	run(tools.RelayAtExit)
-	run(lspAtExit)
 	run(func() { mcp.ShutdownMCPServers(context.Background(), nil, nil, 15*time.Second) })
 	run(func() { provider.ShutdownCachedClients(context.Background()) })
 	run(func() { provider.ShutdownLocalRuntime() })
 	run(func() { plugins.FlushOutboundWebhooks(5 * time.Second) })
-	run(func() { observability.ShutdownRuntimes(context.Background()) })
-	run(observability.EndProcess)
-	run(langfuse.AtExit)
+	for _, fn := range tierFlushAtExit {
+		run(fn)
+	}
 	run(gatewayrun.BootstrapAtExit)
 	run(gateway.HostRendezvousAtExit)
 	run(logging.Shutdown)
 	for _, s := range []*os.File{os.Stdout, os.Stderr} {
 		s.Sync()
 	}
-}
-
-// Validated media delivery path of a candidate, empty when the gateway refuses it and raising on a resolve failure
-func mediaDeliveryPathValidator(env *tools.Env, candidate, sessionKey string) string {
-	path, err := gateway.ValidateMediaDeliveryPath(tools.WithEnvHome(context.Background(), env), candidate, sessionKey)
-	if err != nil {
-		panic(err)
-	}
-	return path
 }
 
 // Lifecycle invoke_hook dispatch of an approval hook, a raise of the dispatch layer returned as the error
@@ -616,19 +462,9 @@ func terminalOutputTransform(ctx context.Context, payload map[string]any) (resul
 	return agent.LifecycleInvokeHook(ctx, "transform_terminal_output", payload)
 }
 
-// Computer use driver child env of the process home, a raise of the bot desktop read returned as the error
-func cuaDriverChildEnv() (env map[string]string, err error) {
-	defer func() {
-		if r := recover(); r != nil {
-			env, err = nil, fmt.Errorf("%v", r)
-		}
-	}()
-	return codeexec.CuaDriverChildEnv(processToolsEnv(context.Background())), nil
-}
-
 // Gateway status start time of a pid as the int the async delegation owner check compares
 func gatewayProcessStartTime(pid int) (int64, bool) {
-	switch v := kanban.GatewayStatusProbes.ProcessStartTime(pid).(type) {
+	switch v := gateway.GetProcessStartTime(pid).(type) {
 	case int64:
 		return v, true
 	case int:
@@ -646,19 +482,6 @@ func failoverReason(value any) (any, bool) {
 	return r, true
 }
 
-// Points a bound kanban board's default workdir at the project's primary repo, hermes_cli/projects_cmd.py _cmd_bind_board
-func bindProjectBoardWorkdir(ctx context.Context, board, primaryPath string) error {
-	slug, err := kanban.NormalizeBoardSlug(&board)
-	if err != nil || slug == "" {
-		return err
-	}
-	if slug != kanban.DefaultBoard && !kanban.BoardExists(&slug) {
-		return nil
-	}
-	_, err = kanban.WriteBoardMetadata(ctx, &slug, kanban.BoardMetadataUpdate{DefaultWorkdir: &primaryPath})
-	return err
-}
-
 // Hands the platform adapters the command registry, plugin commands, skill catalog and profile adapter maps
 func installSlashRegistryWiring() {
 	gateway.GatewayRegistryCommands = func(ctx context.Context) ([]gateway.SlashCommandEntry, error) {
@@ -669,7 +492,7 @@ func installSlashRegistryWiring() {
 		gates := commands.ResolveConfigGates(cfg)
 		var out []gateway.SlashCommandEntry
 		for n := range commands.Builtin {
-			if d := &commands.Builtin[n]; commands.GatewayAvailable(d, gates) {
+			if d := &commands.Builtin[n]; commands.SlashLinked(d.Name) && commands.GatewayAvailable(d, gates) {
 				out = append(out, gateway.SlashCommandEntry{Name: d.Name, Description: d.Description, ArgsHint: d.ArgsHint})
 			}
 		}

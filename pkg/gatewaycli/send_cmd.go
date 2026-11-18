@@ -13,7 +13,6 @@ import (
 	xterm "github.com/charmbracelet/x/term"
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/gateway"
-	"github.com/nickheyer/icebath/pkg/gateway/messagetools"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pyfs"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
@@ -28,6 +27,9 @@ const (
 	sendFailureExit = 1
 	sendSuccessExit = 0
 )
+
+// Send message tool of the messaging platforms, installed by the plugins tier that carries the send command
+var SendMessageTool func(ctx context.Context, args map[string]any) (string, error)
 
 // Usage error of the send command, printed and turned into its exit code by the entry point
 type sendExit struct {
@@ -264,7 +266,7 @@ func listTargets(ctx context.Context, h string, platformFilter any, jsonMode boo
 }
 
 // Loads the home dotenv and bridges top level config scalars into the credential environment without overriding
-func loadHermesEnv(ctx context.Context, h string) {
+func loadIcebathEnv(ctx context.Context, h string) {
 	var scope map[string]string
 	if provider.IsMultiplexActive(ctx) {
 		scope = provider.CurrentSecretScope(ctx)
@@ -328,7 +330,7 @@ func SendCommand(ctx context.Context, h string, ns map[string]any, w, errw io.Wr
 
 // The send command reading its piped body from the given input
 func cmdSend(ctx context.Context, h string, ns map[string]any, stdin io.Reader, w, errw io.Writer) (int, error) {
-	loadHermesEnv(ctx, h)
+	loadIcebathEnv(ctx, h)
 	jsonMode, quiet := pyrepr.Truthy(ns["json"]), pyrepr.Truthy(ns["quiet"])
 	if pyrepr.Truthy(ns["list_targets"]) {
 		return listTargets(ctx, h, ns["message"], jsonMode, w, errw)
@@ -380,7 +382,7 @@ func cmdSend(ctx context.Context, h string, ns map[string]any, stdin io.Reader, 
 		}
 		toolArgs["mentions"] = list
 	}
-	result, err := messagetools.SendMessageTool(ctx, toolArgs)
+	result, err := SendMessageTool(ctx, toolArgs)
 	if err != nil {
 		return sendFailureExit, err
 	}

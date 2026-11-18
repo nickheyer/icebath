@@ -7,7 +7,6 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
-	"log/slog"
 	"slices"
 	"sort"
 	"strconv"
@@ -330,7 +329,7 @@ func rebindEditorMCP(ctx context.Context, a *SessionAuthority, sid string, polic
 			}
 			sort.Ints(order)
 			for _, i := range order {
-				slog.Warn(fmt.Sprintf("Editor MCP server %s failed discovery; session %s continues without it", pyrepr.Repr(specs[i]["name"]), sid))
+				pkgLog().Warn(fmt.Sprintf("Editor MCP server %s failed discovery; session %s continues without it", pyrepr.Repr(specs[i]["name"]), sid))
 			}
 			return nil
 		})

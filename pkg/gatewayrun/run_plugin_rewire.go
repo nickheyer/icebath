@@ -61,7 +61,7 @@ func (r *GatewayRunner) rewirePluginHandlers(ctx context.Context, profileName, p
 		func() {
 			defer func() {
 				if rec := recover(); rec != nil {
-					runLog().Warn(fmt.Sprintf("[%s] plugin handler re-wire failed", platform), "exc_info", pyrepr.Str(rec))
+					pkgLog().Warn(fmt.Sprintf("[%s] plugin handler re-wire failed", platform), "exc_info", pyrepr.Str(rec))
 				}
 			}()
 			rewirer, ok := adapter.(pluginRewirer)
@@ -76,7 +76,7 @@ func (r *GatewayRunner) rewirePluginHandlers(ctx context.Context, profileName, p
 	if profileName != "" {
 		suffix = fmt.Sprintf(" for profile '%s'", profileName)
 	}
-	runLog().Info(fmt.Sprintf("Re-wired plugin handlers on %d adapter(s)%s", count, suffix))
+	pkgLog().Info(fmt.Sprintf("Re-wired plugin handlers on %d adapter(s)%s", count, suffix))
 	return count
 }
 

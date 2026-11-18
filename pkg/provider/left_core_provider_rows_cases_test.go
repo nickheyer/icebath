@@ -124,7 +124,7 @@ func TestRuntimeResolutionInstallsThePluginFirstForAHomeUsingIt(t *testing.T) {
 	}
 	clearLeftCoreAttempted()
 	recoverLeftCoreProvider(ctx, h, "openrouter")
-	writeLeftCoreFile(t, filepath.Join(h, "config.yaml"), "model:\n  provider: nous\n")
+	writeLeftCoreFile(t, filepath.Join(h, "config.yaml"), "model:\n  provider: deepseek\n")
 	clearLeftCoreAttempted()
 	recoverLeftCoreProvider(ctx, h, "acme")
 	if calls != 1 {

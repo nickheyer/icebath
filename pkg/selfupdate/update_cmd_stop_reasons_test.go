@@ -4,96 +4,20 @@ import (
 	"bytes"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"os"
 	"path/filepath"
-	"reflect"
 	"runtime"
-	"strings"
 	"testing"
 
-	"github.com/nickheyer/icebath/pkg/observability"
 	"github.com/nickheyer/icebath/pkg/pm"
 	"github.com/nickheyer/icebath/pkg/selfupdate/updaterecord"
 )
-
-// Writes the update marker of the fixture home, one value per line
-func ucMarker(t *testing.T, lines ...any) {
-	t.Helper()
-	marker := updaterecord.UpdateMarkerPath()
-	if err := os.MkdirAll(filepath.Dir(marker), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	var text strings.Builder
-	for _, line := range lines {
-		fmt.Fprintf(&text, "%v\n", line)
-	}
-	if err := os.WriteFile(marker, []byte(text.String()), 0o644); err != nil {
-		t.Fatal(err)
-	}
-}
-
-func TestAnExitBeforeTheReceiptCountsAsACliRun(t *testing.T) {
-	ctx, _, runs := ucMetricRows(t)
-	ucUnsetenv(t, "ICEBATH_UPDATE_HANDOFF_PID")
-	pid, other := os.Getpid(), 999_999
-	ucMarker(t, other, 1, "ct:1.000", fmt.Sprintf("delegate:%d ct:2.000", pid))
-	recordStopWithoutReceipt(ctx, "lock_held", "refused")
-	t.Setenv("ICEBATH_UPDATE_HANDOFF_PID", fmt.Sprint(other))
-	ucMarker(t, other, 1, "ct:1.000")
-	recordStopWithoutReceipt(ctx, "git_in_progress", "failed")
-	os.Unsetenv("ICEBATH_UPDATE_HANDOFF_PID")
-	recordStopWithoutReceipt(ctx, "lock_held", "refused")
-	if err := os.Remove(updaterecord.UpdateMarkerPath()); err != nil {
-		t.Fatal(err)
-	}
-	recordStopWithoutReceipt(ctx, "managed_install", "refused")
-	var got [][2]string
-	for _, row := range runs() {
-		got = append(got, [2]string{row["failure_class"], row["kind"]})
-	}
-	want := [][2]string{{"lock_held", "cli"}, {"git_in_progress", "cli"}, {"lock_held", "cli"}, {"managed_install", "cli"}}
-	if !reflect.DeepEqual(got, want) {
-		t.Fatalf("rows = %v, want %v", got, want)
-	}
-}
-
-func TestALockRefusalOfTheHandOffsOwnUpdateChildIsAFailedRun(t *testing.T) {
-	ctx, _, runs := ucMetricRows(t)
-	ucUnsetenv(t, "ICEBATH_UPDATE_HANDOFF_PID")
-	pid, other := os.Getpid(), 999_999
-	ucMarker(t, other, 1, "ct:1.000", fmt.Sprintf("delegate:%d ct:2.000", pid))
-	recordStopWithoutReceipt(ctx, "lock_held", "refused")
-	ucMarker(t, other, 1, "ct:1.000", fmt.Sprintf("delegate:%d ct:2.000", os.Getppid()))
-	recordStopWithoutReceipt(ctx, "lock_held", "refused")
-	t.Setenv("ICEBATH_UPDATE_HANDOFF_PID", fmt.Sprint(other))
-	ucMarker(t, other, 1, "ct:1.000")
-	recordStopWithoutReceipt(ctx, "lock_held", "refused")
-	os.Unsetenv("ICEBATH_UPDATE_HANDOFF_PID")
-	recordStopWithoutReceipt(ctx, "lock_held", "refused")
-	var got [][3]string
-	for _, row := range runs() {
-		got = append(got, [3]string{row["outcome"], row["kind"], row["failure_class"]})
-		dimensions := map[string]any{}
-		for key, value := range row {
-			dimensions[key] = value
-		}
-		if !observability.CounterDimensionsAreValid(observability.UpdateRunMetric, dimensions) {
-			t.Fatalf("row %v carries dimensions outside the contract", row)
-		}
-	}
-	want := [][3]string{{"failed", "cli", "lock_held"}, {"failed", "cli", "lock_held"}, {"refused", "cli", "lock_held"},
-		{"refused", "cli", "lock_held"}}
-	if !reflect.DeepEqual(got, want) {
-		t.Fatalf("rows = %v, want %v", got, want)
-	}
-}
 
 func TestACheckoutMoveNamesAHeldIndexLockApartFromAPermissionError(t *testing.T) {
 	if runtime.GOOS == "windows" || os.Geteuid() == 0 {
 		t.Skip("POSIX permissions; root ignores them")
 	}
-	ctx, _, _ := ucMetricRows(t)
+	ctx, _ := ucReceiptHome(t)
 	tmp := t.TempDir()
 	repo := filepath.Join(tmp, "repo")
 	if err := os.Mkdir(repo, 0o755); err != nil {

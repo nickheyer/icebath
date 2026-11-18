@@ -3,7 +3,6 @@ package provider
 import (
 	"context"
 	"errors"
-	"log/slog"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -41,7 +40,7 @@ type fakeChatAgent struct {
 	verbose, interrupted, headed             bool
 	retry                                    RetrySession
 	client                                   any
-	credits                                  *CreditsCapture
+	credits                                  *HeaderCapture
 	resolve                                  func(map[string]any) (any, error)
 	create                                   func(reason string, kwargs map[string]any) (any, error)
 	onAbort                                  func(client any, reason string)
@@ -85,14 +84,14 @@ func (a *fakeChatAgent) touchCount() int {
 	defer a.mu.Unlock()
 	return len(a.touches)
 }
-func (a *fakeChatAgent) Provider() string                { return a.provider }
-func (a *fakeChatAgent) CreditsCapture() *CreditsCapture { return a.credits }
-func (a *fakeChatAgent) APIMode() string                 { return a.apiMode }
-func (a *fakeChatAgent) BaseURL() string                 { return a.baseURL }
-func (a *fakeChatAgent) Model() string                   { return a.model }
-func (a *fakeChatAgent) Platform() string                { return a.plat }
-func (a *fakeChatAgent) VerboseLogging() bool            { return a.verbose }
-func (a *fakeChatAgent) RetrySession() *RetrySession     { return &a.retry }
+func (a *fakeChatAgent) Provider() string              { return a.provider }
+func (a *fakeChatAgent) HeaderCapture() *HeaderCapture { return a.credits }
+func (a *fakeChatAgent) APIMode() string               { return a.apiMode }
+func (a *fakeChatAgent) BaseURL() string               { return a.baseURL }
+func (a *fakeChatAgent) Model() string                 { return a.model }
+func (a *fakeChatAgent) Platform() string              { return a.plat }
+func (a *fakeChatAgent) VerboseLogging() bool          { return a.verbose }
+func (a *fakeChatAgent) RetrySession() *RetrySession   { return &a.retry }
 func (a *fakeChatAgent) InterruptRequested() bool {
 	a.mu.Lock()
 	defer a.mu.Unlock()
@@ -159,10 +158,6 @@ func (a *fakeChatAgent) RunCodexStream(ctx context.Context, kw map[string]any, c
 	return client.(chatCompletionCreator).CreateChatCompletion(ctx, kw)
 }
 func (a *fakeChatAgent) AnthropicMessagesCreate(ctx context.Context, kw map[string]any, client any) (any, error) {
-	return client.(chatCompletionCreator).CreateChatCompletion(ctx, kw)
-}
-func (a *fakeChatAgent) ChatCompletionCapturingHeaders(ctx context.Context, client any, kw map[string]any) (any, error) {
-	a.s().sdkSeen = append(a.s().sdkSeen, kw)
 	return client.(chatCompletionCreator).CreateChatCompletion(ctx, kw)
 }
 func (a *fakeChatAgent) CodexSilentHangHint(model any) (string, error) {
@@ -396,9 +391,6 @@ func (p probePool) Provider() string { return p.provider }
 func TestRebindFallbackCredentialPoolClearsOnlyAnotherProvidersPool(t *testing.T) {
 	t.Setenv("ICEBATH_HOME", t.TempDir())
 	logs := captureLogs(t)
-	prev := nonStreamLog
-	nonStreamLog = slog.Default()
-	t.Cleanup(func() { nonStreamLog = prev })
 	same := probePool{provider: " OpenRouter "}
 	a := &fakeChatAgent{pool: same}
 	RebindFallbackCredentialPool(a, "openrouter", "m")
@@ -414,9 +406,6 @@ func TestRebindFallbackCredentialPoolClearsOnlyAnotherProvidersPool(t *testing.T
 
 func TestCleanupTaskResourcesSkipsHeadedBrowsersAndLogsFailures(t *testing.T) {
 	logs := captureLogs(t)
-	prev := nonStreamLog
-	nonStreamLog = slog.Default()
-	t.Cleanup(func() { nonStreamLog = prev })
 	a := &fakeChatAgent{headed: true, verbose: true}
 	CleanupTaskResources(context.Background(), a, "t1")
 	if len(a.browserCleaned) != 0 {

@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"log/slog"
 	"math/big"
-	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
@@ -16,7 +15,6 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/agent"
 	"github.com/nickheyer/icebath/pkg/gateway"
-	"github.com/nickheyer/icebath/pkg/provider"
 )
 
 // Status sends the adapter took within the wait, a short settle when none are expected
@@ -56,7 +54,7 @@ func TestRealRetryProducersKeepFinalFailureAndPersistence(t *testing.T) {
 		tc.statusAdapter, tc.statusChatID, tc.statusThreadMetadata, tc.loopForStep = adapter, "D1", map[string]any{}, loop
 		runner := &GatewayRunner{}
 		turnRunner := &TurnRunner{runner: runner, ctx: tc, turnCtx: ctx}
-		a, err := agent.NewAIAgent(ctx, agent.AIAgentOptions{Provider: "nous", Model: "model", APIKey: "k", BaseURL: "https://example.invalid/v1",
+		a, err := agent.NewAIAgent(ctx, agent.AIAgentOptions{Provider: "openrouter", Model: "model", APIKey: "k", BaseURL: "https://example.invalid/v1",
 			QuietMode: true, SkipContextFiles: true, SkipMemory: true, EnabledToolsets: []string{}, Cwd: h})
 		if err != nil {
 			t.Fatal(err)
@@ -82,21 +80,6 @@ func TestRealRetryProducersKeepFinalFailureAndPersistence(t *testing.T) {
 			"", "", 0, "session", "slack", time.Now(), nil, nil)
 		if err != nil || response == "" || response == "(empty)" || silent {
 			t.Fatalf("enabled %v: shaped %q silent %v err %v", enabled, response, silent, err)
-		}
-		adapter.mu.Lock()
-		adapter.sends = nil
-		adapter.mu.Unlock()
-		guard := &provider.NousRateGuard{Home: h}
-		if err := guard.Record(http.Header{}, time.Now().Add(60*time.Second), 60*time.Second); err != nil {
-			t.Fatal(err)
-		}
-		action, guardResult := a.NousRateLimitGuardTurn(ctx)
-		if sent := warningSends(adapter, enabled); (len(sent) > 0) != enabled {
-			t.Fatalf("enabled %v: guard sent %q", enabled, sent)
-		}
-		text, _ := guardResult["final_response"].(string)
-		if action != "return" || guardResult["failed"] != true || a.SessionMessages() == nil || !strings.Contains(text, "/retry") {
-			t.Fatalf("enabled %v: guard %s %v persisted %v", enabled, action, guardResult, a.SessionMessages() != nil)
 		}
 		if a.RetryStatusBufferLen() != 0 {
 			t.Fatalf("enabled %v: %d status lines left buffered", enabled, a.RetryStatusBufferLen())

@@ -18,7 +18,7 @@ func (s *shellAdapter) GetChatInfo(context.Context, string) (map[string]any, err
 	return map[string]any{}, nil
 }
 
-// Adapter core over a fresh Telegram base with the token config of the hermes tests
+// Adapter core over a fresh Telegram base with the token config of the tests
 func newTestCore() *adapterCore {
 	cfg := gateway.NewPlatformConfig()
 	cfg.Enabled, cfg.Token = true, "fake-token"

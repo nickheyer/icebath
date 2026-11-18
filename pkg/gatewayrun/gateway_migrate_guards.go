@@ -62,7 +62,7 @@ func gatewayIdentity(ctx context.Context, h string, pid int, services []ServiceU
 		if err != nil {
 			return nil, "", err
 		}
-		pinned, err := gateway.HermesHomePinnedByUnit(unit)
+		pinned, err := gateway.IcebathHomePinnedByUnit(unit)
 		if err != nil {
 			return nil, "", err
 		}

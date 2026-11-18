@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"log/slog"
 	"os"
 	"path/filepath"
 	"sort"
@@ -34,10 +33,6 @@ var (
 	hostedServiceRetryableStatuses = []string{"indeterminate", "deferred"}
 )
 
-func hostedServiceLog() *slog.Logger {
-	return slog.Default().With("logger", "tui_gateway.hosted_room_service")
-}
-
 // Member id of a task, its target profile when no member id is set
 func TaskMemberID(task map[string]any) string {
 	payload, _ := hostedMapping(task["payload"])
@@ -47,10 +42,14 @@ func TaskMemberID(task map[string]any) string {
 	return pyrepr.Str(payload["target_profile"])
 }
 
-// Pending action naming the exact attempt retry and discard fence on
+// Pending action naming the exact attempt retry and discard fence on, a deferred one with why it waits
 func AttemptAction(kind string, task map[string]any) map[string]any {
-	return map[string]any{"kind": kind, "member_id": TaskMemberID(task), "task_id": hrTaskIdentity(task).TaskID,
+	action := map[string]any{"kind": kind, "member_id": TaskMemberID(task), "task_id": hrTaskIdentity(task).TaskID,
 		"execution_generation": task["execution_generation"]}
+	if result, ok := hostedMapping(task["result"]); ok && task["status"] == "deferred" && result["reason"] != nil {
+		action["reason"] = result["reason"]
+	}
+	return action
 }
 
 // Room owner's discussion ceilings, defaults kept and logged for a malformed value
@@ -62,7 +61,7 @@ func hostedDiscussionLimits(root string) (DiscussionLimits, error) {
 	limits, err := hostedDiscussionLimitsFrom(cfg)
 	var invalid *DiscussionValidationError
 	if errors.As(err, &invalid) {
-		hostedServiceLog().Warn(fmt.Sprintf("ignoring hosted_rooms.discussion in %s/config.yaml: %s", root, err.Error()))
+		pkgLog().Warn(fmt.Sprintf("ignoring hosted_rooms.discussion in %s/config.yaml: %s", root, err.Error()))
 		return DefaultDiscussionLimits(), nil
 	}
 	return limits, err
@@ -258,7 +257,7 @@ func (s *HostedRoomService) loadStoredLinks() error {
 		}
 		s.peerRoutes[key] = PeerMemberRoute{HomeInstallID: homeInstall, MemberID: link.MemberID, TargetInstallID: link.Catalog.InstallationID,
 			TargetProfile: link.TargetProfile, CapabilityDigest: link.Catalog.CatalogDigest, ExecutionPolicyDigest: link.Catalog.ExecutionPolicy.PolicyDigest,
-			CancellationScopeID: link.CancellationScopeID, TraceID: link.TraceID, Grant: link.Grant}
+			CancellationScopeID: link.CancellationScopeID, TraceID: link.TraceID, Grant: link.Grant, Attachments: link.Catalog.Attachments}
 		s.peerClients[key] = client
 		s.peerRouteStatus[key] = link.Status
 	}
@@ -389,6 +388,7 @@ func (s *HostedRoomService) RegisterPeerRoute(roomID, memberID string, route Pee
 		}
 	}
 	if catalog != nil {
+		route.Attachments = catalog.Attachments
 		if route.ExecutionPolicyDigest == "" {
 			route.ExecutionPolicyDigest = catalog.ExecutionPolicy.PolicyDigest
 		}
@@ -516,7 +516,15 @@ func (s *HostedRoomService) ResolveMemberTransport(binding HostedRoomBinding, ta
 	if isIdentity {
 		taskID = &identity.TaskID
 	}
-	return NewPeerHostedRoomTransport(binding, route, tracked, sourceEventSeq, taskID, &executionGeneration)
+	transport, err := NewPeerHostedRoomTransport(binding, route, tracked, sourceEventSeq, taskID, &executionGeneration)
+	if err != nil {
+		return nil, err
+	}
+	transport.StorePath = s.DBPath
+	transport.AdoptCatalog = func(grant string, catalog *GatewayRoomCatalog) error {
+		return s.rotateRouteGrant(key[0], key[1], grant, catalog)
+	}
+	return transport, nil
 }
 
 // Rediscovers an admitted peer run without advancing its generation
@@ -540,7 +548,13 @@ func (s *HostedRoomService) recoverPeerAdmission(binding HostedRoomBinding, task
 	if !isStr || sourceEventSeq < 1 || route.TraceID == "" {
 		return errors.New("peer room admission identity is unavailable for recovery")
 	}
-	dispatch, err := BuildMemberDispatch(binding, route, identity.RoomID, identity.TaskID, route.TargetProfile, executionGeneration, sourceEventSeq, prompt, route.TraceID)
+	var files []map[string]any
+	if attachments, _ := payload["attachments"].([]any); len(attachments) > 0 {
+		if files, _, err = peerTurnFiles(s.ctx, s.DBPath, identity.RoomID, route.MemberID, attachments, false); err != nil {
+			return err
+		}
+	}
+	dispatch, err := BuildMemberDispatch(binding, route, identity.RoomID, identity.TaskID, route.TargetProfile, executionGeneration, sourceEventSeq, prompt, route.TraceID, files)
 	if err != nil {
 		return err
 	}
@@ -653,6 +667,7 @@ func (s *HostedRoomService) rotateRouteGrant(roomID, memberID, grant string, cat
 			return errors.New("peer room execution policy changed; reauthorization is required")
 		}
 		route.CapabilityDigest, route.ExecutionPolicyDigest = catalog.CatalogDigest, catalog.ExecutionPolicy.PolicyDigest
+		route.Attachments = catalog.Attachments
 	}
 	saved := catalog
 	if saved == nil {
@@ -807,7 +822,7 @@ func (s *HostedRoomService) publishTerminalTasks(room map[string]any) (bool, err
 		for _, event := range publication.Events {
 			in := event.AppendInput(roomID)
 			in.ExpectedLatestSeq = cursor
-			appended, err := AppendEvent(s.ctx, s.DBPath, in)
+			appended, err := s.appendMemberMessage(room, in)
 			if err != nil {
 				return false, err
 			}
@@ -1015,8 +1030,13 @@ func (s *HostedRoomService) CreateRoom(roomID, name string, members any, admit f
 	return room, nil
 }
 
-// Stores one user message, then prepares the room, a later preparation failure left to the driver
+// Stores one message of the local user, then prepares the room
 func (s *HostedRoomService) Send(roomID, eventID string, payload any) (map[string]any, error) {
+	return s.SendAs(roomID, eventID, payload, map[string]any{"kind": "user", "id": "local-user"})
+}
+
+// Stores one user message under the actor, then prepares the room, a later preparation failure left to the driver
+func (s *HostedRoomService) SendAs(roomID, eventID string, payload any, actor map[string]any) (map[string]any, error) {
 	normalized, err := ValidateUserPayload(payload)
 	if err != nil {
 		return nil, err
@@ -1025,13 +1045,13 @@ func (s *HostedRoomService) Send(roomID, eventID string, payload any) (map[strin
 	if err != nil {
 		return nil, err
 	}
-	event, err := AppendUserEvent(s.ctx, s, roomID, eventID, normalized, gatewayID, epoch)
+	event, err := AppendUserEvent(s.ctx, s, roomID, eventID, normalized, actor, gatewayID, epoch)
 	if err != nil {
 		return nil, err
 	}
 	s.prepareStalls.Clear(roomID)
 	if err := s.prepareAfterSend(roomID); err != nil {
-		hostedServiceLog().Warn(fmt.Sprintf("hosted room %s: preparing the room after a stored Send failed; the room driver retries it", roomID), "exc_info", err)
+		pkgLog().Warn(fmt.Sprintf("hosted room %s: preparing the room after a stored Send failed; the room driver retries it", roomID), "exc_info", err)
 	}
 	s.runtime.Wakeup()
 	return event, nil

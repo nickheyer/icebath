@@ -3,7 +3,6 @@ package provider
 import (
 	"context"
 	"fmt"
-	"log/slog"
 	"strings"
 	"time"
 
@@ -67,7 +66,7 @@ func commandcodeFetchModels(ctx context.Context, baseURL string, timeout time.Du
 		}
 	}
 	if err != nil {
-		slog.Debug("fetch_models(commandcode): " + err.Error())
+		pkgLog().Debug("fetch_models(commandcode): " + err.Error())
 		return nil, false
 	}
 	items, _ := data.(map[string]any)["data"].([]any)

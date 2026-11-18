@@ -553,7 +553,7 @@ func sameOllamaNativeRoot(left, right string) bool {
 }
 
 var (
-	neverOllamaProviders = setOf("openrouter", "nous", "anthropic", "openai", "openai-codex", "gemini", "ollama-cloud")
+	neverOllamaProviders = setOf("openrouter", "anthropic", "openai", "openai-codex", "gemini", "ollama-cloud")
 	localLikeProviders   = setOf("", "custom", "local", "llamacpp", "llama.cpp", "llama-cpp", "vllm")
 )
 
@@ -934,8 +934,10 @@ func EnsureLMStudioModelLoaded(ctx context.Context, model, baseURL string, apiKe
 	if hasExplicit {
 		payload.Set("context_length", explicit)
 	}
-	dumped, _ := pyjson.Dumps(payload)
-	body := []byte(dumped)
+	body, err := pyhttpx.JSONBody(payload)
+	if err != nil {
+		return LMStudioLoadResult{}
+	}
 	headers := pyhttpx.MergeHeaderMaps(lmstudioRequestHeaders(ctx, apiKey), pyhttpx.OrderedHeaderMap(pyhttpx.HeaderLine{Name: "Content-Type", Value: "application/json"}))
 	responseBody, err := localCatalogDo(ctx, http.MethodPost, serverRoot+"/api/v1/models/load", body, timeout, headers, nil, true)
 	if err != nil {

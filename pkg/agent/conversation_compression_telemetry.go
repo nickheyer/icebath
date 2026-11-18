@@ -3,12 +3,10 @@ package agent
 import (
 	"context"
 	"fmt"
-	"log/slog"
 	"strings"
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/observability"
 	"github.com/nickheyer/icebath/pkg/provider"
 )
 
@@ -22,24 +20,11 @@ type compressionAttemptState struct {
 	compressionAttemptID string
 }
 
-type compressionMetricOwnerKey struct{}
-
-// Context naming the worker whose shared metric lifecycle a compression attempt opened
-func withCompressionMetricOwner(ctx context.Context, owner any) context.Context {
-	return context.WithValue(ctx, compressionMetricOwnerKey{}, owner)
-}
-
-// Owner the attempt lifecycle was opened under, false when none was opened on this worker
-func compressionMetricOwner(ctx context.Context) (any, bool) {
-	owner := ctx.Value(compressionMetricOwnerKey{})
-	return owner, owner != nil
-}
-
 // Content only rejoin of the compressed messages and verbatim tail, nil when the snapshot fails
 func snapshotCompressionEffectInput(messages, verbatimTail []map[string]any) (out []map[string]any) {
 	defer func() {
 		if r := recover(); r != nil {
-			slog.Debug("failed to snapshot compression effect input", "error", r)
+			pkgLog().Debug("failed to snapshot compression effect input", "error", r)
 			out = nil
 		}
 	}()
@@ -60,7 +45,7 @@ func recordCommittedAttemptEffect(ctx context.Context, a *AIAgent, messagesBefor
 	}
 	defer func() {
 		if r := recover(); r != nil {
-			slog.Debug("failed to record committed compression effect", "error", r)
+			pkgLog().Debug("failed to record committed compression effect", "error", r)
 		}
 	}()
 	if len(verbatimTail) > 0 && splitStatus == "not_applicable" {
@@ -101,7 +86,7 @@ func logAttemptRecord(payload *pyjson.Object) {
 	if err != nil {
 		panic(err)
 	}
-	slog.Info("context compression attempt telemetry: " + text)
+	pkgLog().Info("context compression attempt telemetry: " + text)
 }
 
 // attemptTelemetryEmit carries the keyword arguments of one attempt emit, nil pointers reading None
@@ -123,7 +108,7 @@ func elapsedMillis(since time.Time) int { return int(time.Since(since) / time.Mi
 func emitCompressionAttemptTelemetry(ctx context.Context, a *AIAgent, e attemptTelemetryEmit) {
 	defer func() {
 		if r := recover(); r != nil {
-			slog.Debug(fmt.Sprintf("failed to emit compression attempt telemetry: %v", r))
+			pkgLog().Debug(fmt.Sprintf("failed to emit compression attempt telemetry: %v", r))
 		}
 	}()
 	compressor, _ := a.contextCompressor.(*ContextCompressor)
@@ -147,7 +132,7 @@ func emitCompressionAttemptTelemetry(ctx context.Context, a *AIAgent, e attemptT
 	for _, kv := range []struct {
 		key string
 		v   any
-	}{{"event", "compression_attempt"}, {"route", "hermes"}, {"attempt_id", seedID}, {"session_id", sessionID}} {
+	}{{"event", "compression_attempt"}, {"route", "icebath"}, {"attempt_id", seedID}, {"session_id", sessionID}} {
 		if _, ok := payload.Get(kv.key); !ok {
 			payload.Set(kv.key, kv.v)
 		}
@@ -183,28 +168,6 @@ func emitCompressionAttemptTelemetry(ctx context.Context, a *AIAgent, e attemptT
 	logAttemptRecord(payload)
 	record, _ := pyjson.Plain(payload).(map[string]any)
 	PublishCompactionAttempt(ctx, a, record)
-	failureClass, _ := payload.Get("failure_class")
-	var contextLength any
-	if compressor != nil {
-		contextLength = compressor.ContextLength()
-	} else if a.contextCompressor != nil {
-		contextLength = engineContextLength(a.contextCompressor)
-	}
-	if owner, ok := compressionMetricOwner(ctx); ok {
-		observability.FinishCompressionAttempt(ctx, owner, e.CommitStatus, failureClass, contextLength, a)
-	}
-	preparedSummary, _ := payload.Get("prepared_summary")
-	spliced := pyTruthy(preparedSummary)
-	if !spliced && compressor != nil {
-		if prepared := compressor.PreparedCompactionState(); prepared != nil {
-			splicedID := prepared.SplicedAttemptID()
-			spliced = splicedID != nil && sameAttemptID(splicedID, seedID)
-		}
-	}
-	if spliced && e.CommitStatus != "committed" {
-		class, _ := failureClass.(string)
-		observability.RecordPreparedCompaction(ctx, "compaction_failed", "", "", class, nil)
-	}
 }
 
 // Emits the record of an attempt the caller aborted before it committed
@@ -222,20 +185,15 @@ type attemptBypass struct {
 	AttemptSeed  *pyjson.Object
 }
 
-// Logs and publishes an attempt the gate, Codex or a lease holder took, then retires its metric lifecycle
+// Logs and publishes an attempt the gate, Codex or a lease holder took
 func emitBypassedAttemptTelemetry(ctx context.Context, a *AIAgent, startedAt time.Time, b attemptBypass) {
 	defer func() {
-		if owner, ok := compressionMetricOwner(ctx); ok {
-			observability.DiscardCompressionAttempt(owner)
-		}
-	}()
-	defer func() {
 		if r := recover(); r != nil {
-			slog.Debug(fmt.Sprintf("failed to emit compression attempt telemetry: %v", r))
+			pkgLog().Debug(fmt.Sprintf("failed to emit compression attempt telemetry: %v", r))
 		}
 	}()
 	if b.Route == "" {
-		b.Route = "hermes"
+		b.Route = "icebath"
 	}
 	if b.Method == "" {
 		b.Method = "none"

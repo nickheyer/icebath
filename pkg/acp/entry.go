@@ -26,8 +26,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/tools"
 )
 
-var entryLog = logging.GetLogger("acp_adapter.entry")
-
 // Entry word the binary runs the ACP adapter module under
 const ACPAdapterModuleEntry = "__icebath_acp_adapter__"
 
@@ -67,9 +65,6 @@ var setupLogging = func() error {
 	}
 	root.AddHandler(handler)
 	root.SetLevel(logging.LevelInfo)
-	for _, noisy := range []string{"httpx", "httpcore", "openai"} {
-		logging.GetLogger(noisy).SetLevel(logging.LevelWarning)
-	}
 	return nil
 }
 
@@ -81,10 +76,10 @@ var loadEnv = func(ctx context.Context) error {
 		return err
 	}
 	for _, envFile := range loaded {
-		entryLog.Info("Loaded env from " + envFile)
+		pkgLog().Info("Loaded env from " + envFile)
 	}
 	if len(loaded) == 0 {
-		entryLog.Info(fmt.Sprintf("No .env found at %s, using system env", filepath.Join(profileHome, ".env")))
+		pkgLog().Info(fmt.Sprintf("No .env found at %s, using system env", filepath.Join(profileHome, ".env")))
 	}
 	return nil
 }
@@ -161,7 +156,7 @@ var runSetupBrowser = func(ctx context.Context, assumeYes bool, stderr io.Writer
 func warmMemoryProviderImport(ctx context.Context) {
 	env := &tools.Env{Home: home.Dir(ctx), TerminalScope: tools.GetTerminalScope(ctx)}
 	if !memory.ImportMemoryProviderModule(ctx, env, "") {
-		entryLog.Debug("memory provider not warmed (none configured or import failed; agent init reports that)")
+		pkgLog().Debug("memory provider not warmed (none configured or import failed; agent init reports that)")
 	}
 }
 
@@ -202,7 +197,7 @@ func Main(ctx context.Context, argv []string, stdout, stderr io.Writer) int {
 	if err := loadEnv(ctx); err != nil {
 		panic(err)
 	}
-	entryLog.Info("Starting icebath-agent ACP adapter")
+	pkgLog().Info("Starting icebath-agent ACP adapter")
 	installTruststore()
 	if runtime.GOOS == "windows" {
 		warmMemoryProviderImport(ctx)
@@ -224,12 +219,12 @@ func Main(ctx context.Context, argv []string, stdout, stderr io.Writer) int {
 	case err := <-served:
 		agent.Close()
 		if err != nil {
-			entryLog.Exception("ACP agent crashed", err)
+			pkgLog().Exception("ACP agent crashed", err)
 			return 1
 		}
 	case <-interrupted:
 		agent.Close()
-		entryLog.Info("Shutting down (KeyboardInterrupt)")
+		pkgLog().Info("Shutting down (KeyboardInterrupt)")
 	}
 	return 0
 }

@@ -29,34 +29,30 @@ func Equal(a, b any) bool {
 		}
 		return true
 	case *Object:
-		bv, ok := b.(*Object)
-		if !ok || av == nil || bv == nil {
-			return ok && av == bv
+		if av == nil {
+			bv, ok := b.(*Object)
+			return ok && bv == nil
 		}
-		if len(av.Vals) != len(bv.Vals) {
-			return false
-		}
-		for k, v := range av.Vals {
-			w, has := bv.Vals[k]
-			if !has || !Equal(v, w) {
-				return false
-			}
-		}
-		return true
+		return dictEqual(av.Vals, b)
 	case map[string]any:
-		bv, ok := b.(map[string]any)
-		if !ok || len(av) != len(bv) {
-			return false
-		}
-		for k, v := range av {
-			w, has := bv[k]
-			if !has || !Equal(v, w) {
-				return false
-			}
-		}
-		return true
+		return dictEqual(av, b)
 	}
 	return a == b
+}
+
+// Python dict equality of a value map against an ordered or plain dict, key order ignored
+func dictEqual(av map[string]any, b any) bool {
+	bv, ok := Dict(b)
+	if !ok || len(av) != len(bv) {
+		return false
+	}
+	for k, v := range av {
+		w, has := bv[k]
+		if !has || !Equal(v, w) {
+			return false
+		}
+	}
+	return true
 }
 
 // Numeric value of a bool, integer or float as a big.Float or a float64 marker for NaN and infinities

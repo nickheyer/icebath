@@ -23,7 +23,7 @@ func (s *shellFileOps) DeleteFile(path string) *WriteResult {
 	if s.nativeReadEnabled() {
 		output, exitCode = nativeDeleteEntry(path, s.nativePath(purePosixPathStr(path)))
 	} else {
-		snippet := "import shutil, pathlib, sys\n" +
+		snippet := "import os, shutil, pathlib, sys\n" +
 			"p = pathlib.Path(" + pyJSONDumpsASCII(path) + ")\n" +
 			"recursive = False\n" +
 			"try:\n" +
@@ -36,6 +36,11 @@ func (s *shellFileOps) DeleteFile(path string) *WriteResult {
 			"        p.unlink()\n" +
 			"except FileNotFoundError:\n" +
 			"    pass\n" +
+			"except OSError as exc:\n" +
+			"    if exc.errno is None:\n" +
+			"        print(str(exc), file=sys.stderr); sys.exit(1)\n" +
+			"    reason = os.strerror(exc.errno)\n" +
+			"    print(reason[:1].lower() + reason[1:] + ': ' + str(p), file=sys.stderr); sys.exit(1)\n" +
 			"except Exception as exc:\n" +
 			"    print(str(exc), file=sys.stderr); sys.exit(1)\n"
 		result := s.execPythonSnippet(snippet, "")
@@ -66,16 +71,16 @@ func nativeDeleteEntry(path, full string) (string, int) {
 		if errors.Is(err, os.ErrNotExist) {
 			return "", 0
 		}
-		return pyErrnoStr(err, shown) + "\n", 1
+		return osFailureText(err, shown) + "\n", 1
 	}
 	return "", 0
 }
 
-// Python OSError str of an errno with the strerror text and the quoted filename
-func pyErrnoStr(err error, filename string) string {
+// Reason of an operating system failure followed by the file it concerns
+func osFailureText(err error, filename string) string {
 	var errno syscall.Errno
 	if errors.As(err, &errno) {
-		return fmt.Sprintf("[Errno %d] %s: %s", int(errno), nativeStrerror(errno), pyReprStr(filename))
+		return fmt.Sprintf("%s: %s", errno.Error(), filename)
 	}
 	return err.Error()
 }
@@ -367,7 +372,7 @@ func (s *shellFileOps) verifyPatchPersisted(path, newContent string) *PatchResul
 }
 
 // Fuzzy matched replacement written through write_file with the diff, lint, notes and sha record
-func (s *shellFileOps) patchReplace(path, oldString, newString string, replaceAll bool, probe *editProbe) *PatchResult {
+func (s *shellFileOps) patchReplace(path, oldString, newString string, replaceAll bool) *PatchResult {
 	path = s.expandPath(path)
 	if denied := writeDeniedError(s.env, path, "Write", false); denied != "" {
 		return &PatchResult{Error: denied}
@@ -383,7 +388,7 @@ func (s *shellFileOps) patchReplace(path, oldString, newString string, replaceAl
 	rawContent := pystr.SurrogateEscapeDecode(data)
 	content, _ := stripBOM(rawContent)
 	var correctionNotes []string
-	newContent, matchCount, strategy, errText := fuzzyFindAndReplace(content, oldString, newString, replaceAll, &correctionNotes, probe)
+	newContent, matchCount, strategy, errText := FuzzyFindAndReplace(content, oldString, newString, replaceAll, &correctionNotes)
 	if errText != "" || matchCount == 0 {
 		return s.noMatchResult(path, content, oldString, newString, matchCount, errText)
 	}
@@ -417,19 +422,11 @@ func (s *shellFileOps) patchReplace(path, oldString, newString string, replaceAl
 	return res
 }
 
-// File backend handed to the V4A applier carrying the metered edit call's probe
-type probedShellFileOps struct {
-	*shellFileOps
-	probe *editProbe
-}
-
-func (p probedShellFileOps) editProbe() *editProbe { return p.probe }
-
-// Parses then applies a V4A patch with the call's probe visible to the applier
-func (s *shellFileOps) patchV4A(patchContent string, probe *editProbe) *PatchResult {
+// Parses then applies a V4A patch
+func (s *shellFileOps) patchV4A(patchContent string) *PatchResult {
 	operations, parseErr := parseV4APatch(patchContent)
 	if parseErr != "" {
 		return &PatchResult{Error: "Failed to parse patch: " + parseErr}
 	}
-	return applyV4AOperations(operations, probedShellFileOps{shellFileOps: s, probe: probe})
+	return applyV4AOperations(operations, s)
 }

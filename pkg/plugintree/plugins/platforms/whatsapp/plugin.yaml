@@ -7,7 +7,7 @@ description: >
   built-in WhatsApp Web client and relays messages between WhatsApp chats and
   the Icebath agent. Supports DM/group policies, mention gating, free-response
   chats, and per-user allowlists.
-author: NousResearch
+author: Icebath
 requires_env:
   - name: WHATSAPP_ENABLED
     description: "Enable the WhatsApp adapter (requires the Node.js bridge running)"

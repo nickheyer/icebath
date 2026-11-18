@@ -60,7 +60,7 @@ type auditHTTPError struct{ err error }
 
 func (e *auditHTTPError) Error() string { return e.err.Error() }
 
-// Audit seams over the OSV transport, the venv scan and the error stream, replaced by hermes tests
+// Audit seams over the OSV transport, the venv scan and the error stream, replaced by tests
 var (
 	auditHTTPJSON              = osvHTTPJSON
 	auditVenvPins              = venvDistributionPins
@@ -302,7 +302,7 @@ func osvHTTPJSON(ctx context.Context, url string, payload any) (any, error) {
 	}
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
-		return nil, &auditHTTPError{err: fmt.Errorf("<urlopen error %s>", err)}
+		return nil, &auditHTTPError{err: err}
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode >= 400 {

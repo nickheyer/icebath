@@ -313,7 +313,6 @@ func TestMCPCmdRemove(t *testing.T) {
 func TestMCPCmdAddHTTPServerAllTools(t *testing.T) {
 	isolateHome(t)
 	calls := setCLIProbe(t, []ToolSummary{{"create_service", "Deploy from repo"}, {"list_services", "List all services"}}, nil)
-	recs := recordInstalls(t)
 	ui := &cliUI{inputs: []string{"n", ""}}
 	cmdMCPAdd(context.Background(), &tools.Env{}, ui, MCPArgs{Name: "ink", URL: "https://mcp.ml.ink/mcp"})
 	out := ui.out.String()
@@ -323,9 +322,6 @@ func TestMCPCmdAddHTTPServerAllTools(t *testing.T) {
 	srv, _ := readServers(t)["ink"].(map[string]any)
 	if srv["url"] != "https://mcp.ml.ink/mcp" || srv["enabled"] != true || len(*calls) != 1 {
 		t.Fatalf("%v %d", srv, len(*calls))
-	}
-	if len(*recs) != 1 || (*recs)[0] != (installRecord{"url", "", "success"}) {
-		t.Fatalf("install records %v", *recs)
 	}
 }
 
@@ -362,10 +358,9 @@ func TestMCPCmdAddStdioServerWithEnvAndPreset(t *testing.T) {
 	}
 }
 
-func TestMCPCmdAddProbeFailureSavesDisabledAndRecordsClass(t *testing.T) {
+func TestMCPCmdAddProbeFailureSavesDisabled(t *testing.T) {
 	isolateHome(t)
 	setCLIProbe(t, nil, &ProbeError{Err: errors.New("401 Authorization: Bearer " + synthetic), Class: "auth_required"})
-	recs := recordInstalls(t)
 	ui := &cliUI{inputs: []string{"y"}}
 	cmdMCPAdd(context.Background(), &tools.Env{}, ui, MCPArgs{Name: "s", Command: "npx", Args: []string{"x"}})
 	out := ui.out.String()
@@ -375,9 +370,6 @@ func TestMCPCmdAddProbeFailureSavesDisabledAndRecordsClass(t *testing.T) {
 	}
 	if readServers(t)["s"].(map[string]any)["enabled"] != false {
 		t.Fatal("not disabled")
-	}
-	if len(*recs) != 1 || (*recs)[0].outcome != "success" {
-		t.Fatalf("records %v", *recs)
 	}
 }
 

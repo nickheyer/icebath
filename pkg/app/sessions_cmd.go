@@ -41,10 +41,10 @@ func (r *sessionsRun) print(text string) { fmt.Fprintln(r.w, text) }
 func (r *sessionsRun) printf(format string, a ...any) { fmt.Fprintf(r.w, format+"\n", a...) }
 
 // Profile home the command runs against
-func (r *sessionsRun) getHermesHome() string { return r.h }
+func (r *sessionsRun) getIcebathHome() string { return r.h }
 
 // Directory holding the per session transcript files of the home
-func (r *sessionsRun) sessionsDir() string { return filepath.Join(r.getHermesHome(), "sessions") }
+func (r *sessionsRun) sessionsDir() string { return filepath.Join(r.getIcebathHome(), "sessions") }
 
 // Namespace string of a dest, empty for None or another type
 func nsText(ns map[string]any, key string) string {
@@ -238,7 +238,7 @@ func exportDir(r *sessionsRun, output string) (string, error) {
 	if output != "" && output != "-" {
 		return pypath.PathExpanduser(pypath.PathStr(output))
 	}
-	return filepath.Join(r.getHermesHome(), "session-exports"), nil
+	return filepath.Join(r.getIcebathHome(), "session-exports"), nil
 }
 
 // Output file of a single file export, the default name inside a directory spelled or existing as one
@@ -291,7 +291,7 @@ func cmdRecover(r *sessionsRun) (int, error) {
 	if !inspectOnly && hasOutput && !hasReport {
 		name := pypath.PathName(output)
 		if name == "" {
-			return 1, fmt.Errorf("ValueError: %s has an empty name", pyrepr.Repr(output))
+			return 1, fmt.Errorf("the recovery output path %s has no file name", output)
 		}
 		reportPath, hasReport = pypath.PathJoin(pypath.PathParent(output), name+".recovery.json"), true
 	}

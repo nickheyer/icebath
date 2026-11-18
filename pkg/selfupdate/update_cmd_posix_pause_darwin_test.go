@@ -16,7 +16,7 @@ import (
 
 func TestALaunchdJobIsPausedThroughLaunchdAndRestartedThroughIt(t *testing.T) {
 	ctx := context.Background()
-	label := fmt.Sprintf("ai.icebath.p2probe-%d", os.Getpid())
+	label := fmt.Sprintf("app.icebath.p2probe-%d", os.Getpid())
 	plist := filepath.Join(t.TempDir(), label+".plist")
 	body := "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n" +
 		"<!DOCTYPE plist PUBLIC \"-//Apple//DTD PLIST 1.0//EN\" \"http://www.apple.com/DTDs/PropertyList-1.0.dtd\">\n" +

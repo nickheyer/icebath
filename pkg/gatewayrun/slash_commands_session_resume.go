@@ -47,7 +47,7 @@ func (r *GatewayRunner) listTitledSessions(ctx context.Context, source *gateway.
 	widen := allowAll && r.resumeCallerIsAdmin(source)
 	asyncDB := r.sessionDB(ctx)
 	if asyncDB == nil {
-		return nil, errors.New("AttributeError: 'NoneType' object has no attribute 'list_sessions_rich'")
+		return nil, errors.New("the session database is not open, so titled sessions cannot be listed")
 	}
 	opts := state.ListSessionsRichOptions{Source: string(source.Platform), Limit: new(10), OrderByLastActive: true}
 	if !widen {
@@ -79,12 +79,12 @@ func (r *GatewayRunner) resolveResumeTarget(ctx context.Context, source *gateway
 	if pystr.StrIsDigit(name) {
 		titled, err := r.listTitledSessions(ctx, source, sessionKey, allowAll)
 		if err != nil {
-			runLog().Debug(fmt.Sprintf("Failed to list titled sessions for numeric resume: %s", pyrepr.ExceptionMessage(err)))
+			pkgLog().Debug(fmt.Sprintf("Failed to list titled sessions for numeric resume: %s", pyrepr.ExceptionMessage(err)))
 			return "", "", i18n.T(ctx, "gateway.resume.list_failed", "", map[string]any{"error": pyrepr.ExceptionMessage(err)}), nil
 		}
 		index, ok := pystr.IntText(name)
 		if !ok {
-			return "", "", "", fmt.Errorf("ValueError: invalid literal for int() with base 10: %s", pyrepr.StrRepr(name))
+			return "", "", "", fmt.Errorf("%s is not a session number", name)
 		}
 		if index.Sign() < 1 || !index.IsInt64() || index.Int64() > int64(len(titled)) {
 			return "", "", i18n.T(ctx, "gateway.resume.out_of_range", "", map[string]any{"index": index}), nil
@@ -110,7 +110,7 @@ func (r *GatewayRunner) resolveResumeTarget(ctx context.Context, source *gateway
 		return "", "", i18n.T(ctx, "gateway.resume.not_found", "", map[string]any{"name": name}), nil
 	}
 	if resolved, err := db.ResolveResumeSessionID(targetID); err != nil {
-		runLog().Debug(fmt.Sprintf("Failed to resolve resume continuation for %s: %s", targetID, pyrepr.ExceptionMessage(err)))
+		pkgLog().Debug(fmt.Sprintf("Failed to resolve resume continuation for %s: %s", targetID, pyrepr.ExceptionMessage(err)))
 	} else {
 		targetID = resolved
 	}
@@ -159,7 +159,7 @@ func (r *GatewayRunner) handleResumeCommand(ctx context.Context, event *gateway.
 	if name == "" {
 		titled, err := r.listTitledSessions(ctx, source, sessionKey, allowAll)
 		if err != nil {
-			runLog().Debug(fmt.Sprintf("Failed to list titled sessions: %s", pyrepr.ExceptionMessage(err)))
+			pkgLog().Debug(fmt.Sprintf("Failed to list titled sessions: %s", pyrepr.ExceptionMessage(err)))
 			return i18n.T(ctx, "gateway.resume.list_failed", "", map[string]any{"error": pyrepr.ExceptionMessage(err)}), nil
 		}
 		return r.resumeListingReply(ctx, source, titled, allowAll), nil

@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"log/slog"
 	"os"
 	"path/filepath"
 	"syscall"
@@ -84,7 +83,7 @@ func cloneAllInto(sourceDir, profileDir, canon string) (map[string]any, error) {
 		return nil, err
 	}
 	if len(materialized) > 0 {
-		slog.Default().Info(fmt.Sprintf("profile %s: materialized symlinked %s so the clone never writes through to %s",
+		pkgLog().Info(fmt.Sprintf("profile %s: materialized symlinked %s so the clone never writes through to %s",
 			canon, pyrepr.Repr(materialized), sourceDir))
 	}
 	for _, sub := range profiles.ProfileDirs {
@@ -99,7 +98,7 @@ func cloneAllInto(sourceDir, profileDir, canon string) (map[string]any, error) {
 	}
 	stripped := provider.StripClonedSingleUseOAuthGrants(profileDir)
 	if len(stripped.Pool)+len(stripped.Providers)+len(stripped.Files) > 0 {
-		slog.Default().Info(fmt.Sprintf("profile %s: dropped cloned single-use OAuth grants {'pool': %s, 'providers': %s, 'files': %s} (inherits the root grant instead)",
+		pkgLog().Info(fmt.Sprintf("profile %s: dropped cloned single-use OAuth grants {'pool': %s, 'providers': %s, 'files': %s} (inherits the root grant instead)",
 			canon, pyrepr.Repr(stripped.Pool), pyrepr.Repr(stripped.Providers), pyrepr.Repr(stripped.Files)))
 	}
 	ownerDir, err := profiles.GetProfileDir(canon)
@@ -277,7 +276,7 @@ func CreateProfile(ctx context.Context, name string, o CreateOptions) (string, e
 			return "", err
 		}
 		if stripped.Len() > 0 {
-			slog.Default().Info(fmt.Sprintf("profile %s: cloned without messaging channels %s", canon, pyrepr.Repr(stripped)))
+			pkgLog().Info(fmt.Sprintf("profile %s: cloned without messaging channels %s", canon, pyrepr.Repr(stripped)))
 		}
 	}
 	if err := finishProfileLayout(ctx, staging, o.NoSkills, o.CloneAll, o.Description, o.Soul); err != nil {

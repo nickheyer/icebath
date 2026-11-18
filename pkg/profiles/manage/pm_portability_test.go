@@ -200,7 +200,7 @@ func TestTransfersPreserveUserFilesWithoutPortingPMState(t *testing.T) {
 	}
 }
 
-// Runs a backup route step whose hermes code is still owed, failing the subtest with the owed name
+// Runs a backup route step whose code is still owed, failing the subtest with the owed name
 func owedBackupStep(t *testing.T, step func() error) {
 	t.Helper()
 	defer func() {

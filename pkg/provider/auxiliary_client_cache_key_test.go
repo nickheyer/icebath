@@ -87,12 +87,12 @@ func TestCallableRuntimeAPIKeysAreSecretFreeDiscriminators(t *testing.T) {
 func TestClientCacheKeyIsScopedPerProfileHome(t *testing.T) {
 	ctx := auxMainTestHome(t, "")
 	a, b := t.TempDir(), t.TempDir()
-	ka, _, _ := auxClientCacheKeyFor(home.WithOverride(ctx, a), "nous", false, "https://inf.example", nil, "", nil, false, "", "m")
-	kb, _, _ := auxClientCacheKeyFor(home.WithOverride(ctx, b), "nous", false, "https://inf.example", nil, "", nil, false, "", "m")
+	ka, _, _ := auxClientCacheKeyFor(home.WithOverride(ctx, a), "deepseek", false, "https://inf.example", nil, "", nil, false, "", "m")
+	kb, _, _ := auxClientCacheKeyFor(home.WithOverride(ctx, b), "deepseek", false, "https://inf.example", nil, "", nil, false, "", "m")
 	if ka == kb {
 		t.Fatal("profiles share a cache key")
 	}
-	km, _, _ := auxClientCacheKeyFor(home.WithOverride(ctx, a), "nous", false, "https://inf.example", nil, "", nil, false, "", "other")
+	km, _, _ := auxClientCacheKeyFor(home.WithOverride(ctx, a), "deepseek", false, "https://inf.example", nil, "", nil, false, "", "other")
 	if km == ka {
 		t.Fatal("model does not participate in the cache key")
 	}
@@ -213,7 +213,7 @@ func TestPreserveProviderWithBaseURLRegistriesFailIndependently(t *testing.T) {
 	if !auxPreserveProviderWithBaseURL(ctx, "my-gateway") {
 		t.Fatal("user defined provider dropped when the builtin registry raised")
 	}
-	if !auxPreserveProviderWithBaseURL(ctx, "nous") {
+	if !auxPreserveProviderWithBaseURL(ctx, "xai-oauth") {
 		t.Fatal("hardcoded allowlist ignored when the catalog raised")
 	}
 	if auxPreserveProviderWithBaseURL(ctx, "custom") || auxPreserveProviderWithBaseURL(ctx, "custom:x") || !auxPreserveProviderWithBaseURL(ctx, "ollama") {

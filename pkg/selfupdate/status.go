@@ -18,6 +18,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/activesessions"
 	"github.com/nickheyer/icebath/pkg/cliui"
 	"github.com/nickheyer/icebath/pkg/config"
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/gatewaycli"
 	"github.com/nickheyer/icebath/pkg/home"
@@ -34,17 +35,14 @@ import (
 	"github.com/nickheyer/icebath/pkg/tools"
 )
 
-// Shared state of one status run, the config, the deep flag and the Nous login facts later sections read
+// Shared state of one status run, the config and the deep flag
 type statusRun struct {
-	ctx                  context.Context
-	h                    string
-	w                    io.Writer
-	c                    *cliui.Console
-	deep                 bool
-	config               map[string]any
-	nousLoggedIn         bool
-	nousInferencePresent bool
-	nousAccountInfo      *provider.NousPortalAccountInfo
+	ctx    context.Context
+	h      string
+	w      io.Writer
+	c      *cliui.Console
+	deep   bool
+	config map[string]any
 }
 
 // Connected platforms and home channels of the gateway config the platform rows and summary read
@@ -228,7 +226,7 @@ func (s *statusRun) effectiveProviderLabel() (string, error) {
 			raw := statusOr(m["base_url"], "")
 			text, isStr := raw.(string)
 			if !isStr {
-				return "", fmt.Errorf("AttributeError: '%s' object has no attribute 'strip'", pyrepr.TypeName(raw))
+				return "", fmt.Errorf("model.base_url is %s, expected text", errchain.Kind(raw))
 			}
 			configBaseURL = pystr.Strip(text)
 		}
@@ -315,7 +313,7 @@ func (s *statusRun) renderTerminal() error {
 	s.kv("Backend:", terminalEnv)
 	switch terminalEnv.(type) {
 	case map[string]any, config.Tree, *pyjson.Object, []any:
-		return fmt.Errorf("TypeError: unhashable type: '%s'", pyrepr.TypeName(terminalEnv))
+		return fmt.Errorf("terminal.backend is %s, expected a backend name", errchain.Kind(terminalEnv))
 	}
 	name, isStr := terminalEnv.(string)
 	rows, tabled := statusTerminalEnvRows[name]
@@ -476,7 +474,7 @@ func (s *statusRun) renderGatewayRows() error {
 			for _, name := range names {
 				perPlatform, ok := pyjson.AsObject(urls.Vals[name])
 				if !ok {
-					return fmt.Errorf("AttributeError: '%s' object has no attribute 'items'", pyrepr.TypeName(urls.Vals[name]))
+					return fmt.Errorf("the gateway URLs of %s are %s, expected a mapping", name, errchain.Kind(urls.Vals[name]))
 				}
 				platforms := append([]string{}, perPlatform.Keys...)
 				sort.Strings(platforms)
@@ -745,7 +743,7 @@ func (s *statusRun) authenticatedProviderNames() ([]string, error) {
 	for _, row := range rows {
 		name, has := row["name"]
 		if !has {
-			return nil, fmt.Errorf("KeyError: 'name'")
+			return nil, errors.New("an authenticated provider row has no name")
 		}
 		out = append(out, pyrepr.Str(name))
 	}
@@ -831,7 +829,7 @@ func (s *statusRun) renderSummary() error {
 
 // Print order of the full status
 func (s *statusRun) sections() []func() error {
-	return []func() error{s.renderHeader, s.renderEnvironment, s.renderAPIKeys, s.renderAuthProviders, s.renderNousGateway,
+	return []func() error{s.renderHeader, s.renderEnvironment, s.renderAPIKeys, s.renderAuthProviders,
 		s.renderAPIKeyProviders, s.renderTerminal, s.renderPlatforms, s.renderGateway, s.renderCron, s.renderSessions,
 		s.renderDeep, s.renderFooter}
 }

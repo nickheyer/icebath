@@ -25,10 +25,10 @@ const exportLeakedKey = "sk-or-v1-reallyLongSecretKeyValue12345678"
 
 // Credential stores named beside PROFILE_CREDENTIAL_PATHS so dropping one from the list fails the case
 var exportExtraStores = []string{
-	".op.env", "npmrc", "honcho.json", "google_chat_user_token.json", "google_chat_user_oauth_pending",
+	".op.env", "npmrc", "google_chat_user_token.json", "google_chat_user_oauth_pending",
 	"workspace/meetings/node_token.json", "weixin/accounts", ".copilot_jwt.json", "proxy", "chrome-debug",
 	"home/.git-credentials", "home/.config/gh/hosts.yml", "backups", "state-snapshots",
-	"teams_pipeline_store.json", "mem0.json",
+	"teams_pipeline_store.json",
 	"browser-profiles/live/Default/Cookies", "browser_profiles/default/Default/Login Data",
 	"mcp-tokens/srv.json", "vault/vault.key", "platforms/pairing/approved.json", "slack_tokens.json",
 	"webhook_subscriptions.json", ".ssh/id_rsa", ".aws/credentials", ".gnupg/x", ".kube/config", ".envrc",
@@ -62,7 +62,7 @@ func seedExportStores(t *testing.T, root string) map[string]bool {
 	return stores
 }
 
-// Runs a step whose hermes code is still owed, failing the case with the owed name
+// Runs a step whose code is still owed, failing the case with the owed name
 func owedStep(t *testing.T, step func() (string, error)) (out string) {
 	t.Helper()
 	defer func() {

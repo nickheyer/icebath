@@ -31,7 +31,7 @@ const (
 )
 
 // Vendor extension namespace carrying icebath specific portable fields
-const portableExtension = "com.nousresearch.hermes"
+const PortableExtension = "app.icebath"
 
 var portablePluginFields = map[string]bool{"$schema": true, "name": true, "version": true, "description": true, "author": true, "homepage": true, "repository": true, "license": true, "keywords": true, "extensions": true}
 var portableAuthorFields = map[string]bool{"name": true, "email": true, "url": true}
@@ -117,7 +117,7 @@ func stringMap(v any) bool {
 
 // The icebath vendor extension mapping of a portable manifest
 func manifestVendorExtension(manifest map[string]any) map[string]any {
-	if m := asMap(asMap(manifest["extensions"])[portableExtension]); m != nil {
+	if m := asMap(asMap(manifest["extensions"])[PortableExtension]); m != nil {
 		return m
 	}
 	return map[string]any{}
@@ -653,7 +653,7 @@ func vendorServers(manifest map[string]any) (any, error) {
 	if !ok {
 		return nil, &HostBuiltinError{Type: "AttributeError", Message: fmt.Sprintf("'%s' object has no attribute 'get'", pyTypeName(extensions))}
 	}
-	namespace, present := ext[portableExtension]
+	namespace, present := ext[PortableExtension]
 	if !present {
 		return map[string]any{}, nil
 	}
@@ -676,7 +676,7 @@ func portableServerDeclarations(manifest map[string]any, servers map[string]map[
 	}
 	rawServers, ok := raw.(map[string]any)
 	if !ok {
-		return nil, agentErr("extension '%s'.servers must be an object", portableExtension)
+		return nil, agentErr("extension '%s'.servers must be an object", PortableExtension)
 	}
 	out := map[string]AgentPluginServerDeclaration{}
 	for _, name := range orderedMapKeys(rawServers, order) {
@@ -881,7 +881,7 @@ func LoadAgentPlugin(pluginRoot, dataRoot string) (*AgentPluginPackage, error) {
 	if err != nil {
 		return nil, err
 	}
-	order := jsonObjectKeyOrder(filepath.Join(root, "plugin.json"), "extensions", portableExtension, "servers")
+	order := jsonObjectKeyOrder(filepath.Join(root, "plugin.json"), "extensions", PortableExtension, "servers")
 	trust, err := portableServerTrust(manifest, servers, order)
 	if err != nil {
 		return nil, err
@@ -937,7 +937,7 @@ func portablePluginManifest(child, source, prefix string) (*Manifest, error) {
 		return nil, err
 	}
 	for _, d := range diags {
-		logPlugins.warn("portable plugin diagnostic", "plugin", child, "message", d.Message)
+		pkgLog().Warn("portable plugin diagnostic", "plugin", child, "message", d.Message)
 	}
 	name := data["name"].(string)
 	key := name

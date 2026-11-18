@@ -37,7 +37,7 @@ func effectiveApprovalMode(ctx context.Context, h string, env *tools.Env) (strin
 
 var facadeCaptureMu sync.Mutex
 
-// Runs fn with the config facade stdout and notices captured, the hermes redirect of both streams
+// Runs fn with the config facade stdout and notices captured, the redirect of both streams
 func captureFacadeOutput(fn func() error) (string, error) {
 	facadeCaptureMu.Lock()
 	defer facadeCaptureMu.Unlock()

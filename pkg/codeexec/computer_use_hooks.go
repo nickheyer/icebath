@@ -25,9 +25,10 @@ var (
 	BotDesktopSandboxEnv       = botdesktop.TerminalEnvironment
 	BotDesktopProfileName      = botdesktop.ProfileName
 	BotDesktopTouchActivity    = botdesktop.TouchActivity
-	BotDesktopCuaMCPInvocation = func(ctx context.Context, sandbox tools.Environment, profile string, published map[string]string) (string, []string, error) {
-		return botdesktop.CuaMCPInvocation(sandbox, profile, published)
+	BotDesktopCuaMCPInvocation = func(ctx context.Context, sandbox tools.Environment, profile string, published map[string]string, telemetryOptIn bool) (string, []string, error) {
+		return botdesktop.CuaMCPInvocation(sandbox, profile, published, telemetryOptIn)
 	}
+	BotDesktopSandboxCommand = botdesktop.SandboxDisplayCommand
 	// Admitted lease epoch, an error carrying the HumanHasControl text while a human holds the screen
 	BotDesktopAssertAgentMayAct = botDesktopAssertAgentMayAct
 	BotDesktopLeaseEpoch        = func(env *tools.Env) int {

@@ -74,15 +74,15 @@ func textFallbackCoro(adapter gateway.PlatformAdapter, args clarifySendArgs) fun
 func abortForOutcome(outcome, sessionKey string) string {
 	switch outcome {
 	case "declined":
-		runLog().Warn("Clarify prompt DECLINED by the connector's egress guard; clearing registration")
+		pkgLog().Warn("Clarify prompt DECLINED by the connector's egress guard; clearing registration")
 		tools.ClearClarifySession(sessionKey)
 		return clarifyUndeliveredDeclined
 	case "failed":
-		runLog().Warn("Clarify send failed definitively; clearing registration")
+		pkgLog().Warn("Clarify send failed definitively; clearing registration")
 		tools.ClearClarifySession(sessionKey)
 		return clarifyUndelivered
 	case "ambiguous":
-		runLog().Warn("Clarify prompt send timed out — treating as possibly-delivered (no teardown; the registration stays armed for a late reply)")
+		pkgLog().Warn("Clarify prompt send timed out — treating as possibly-delivered (no teardown; the registration stays armed for a late reply)")
 	}
 	return ""
 }
@@ -101,7 +101,7 @@ func clarifySendThenWait(ctx context.Context, env *tools.Env, fut *concurrentFut
 			outcome = approvalSendOutcome(fut, clarifySendAckWindow)
 		}
 		if outcome == "sent" {
-			runLog().Info(fmt.Sprintf("Clarify card undeliverable; plain-text prompt sent instead (id=%s)", clarifyID))
+			pkgLog().Info(fmt.Sprintf("Clarify card undeliverable; plain-text prompt sent instead (id=%s)", clarifyID))
 		}
 	}
 	if abort := abortForOutcome(outcome, sessionKey); abort != "" {
@@ -181,7 +181,7 @@ func (w *lateFailureWatch) onCardDone(fut *concurrentFuture) {
 	if outcome == "sent" {
 		return
 	}
-	runLog().Warn(fmt.Sprintf("Clarify card send resolved %s after the ack window (id=%s)", outcome, w.clarifyID))
+	pkgLog().Warn(fmt.Sprintf("Clarify card send resolved %s after the ack window (id=%s)", outcome, w.clarifyID))
 	if outcome == "ambiguous" {
 		return
 	}
@@ -206,7 +206,7 @@ func (w *lateFailureWatch) onFallbackDone(fut *concurrentFuture) {
 		return
 	}
 	if approvalSendOutcome(fut, 0) == "sent" {
-		runLog().Info(fmt.Sprintf("Clarify card undeliverable; plain-text prompt sent instead (id=%s)", w.clarifyID))
+		pkgLog().Info(fmt.Sprintf("Clarify card undeliverable; plain-text prompt sent instead (id=%s)", w.clarifyID))
 		return
 	}
 	w.release(clarifyUndelivered)

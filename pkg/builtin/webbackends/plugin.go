@@ -13,7 +13,7 @@ type webBackendPlugin struct {
 }
 
 func (b webBackendPlugin) Manifest() plugins.Manifest {
-	return plugins.Manifest{Name: b.name, Version: "1.0.0", Description: b.description, Author: "NousResearch", Kind: "backend",
+	return plugins.Manifest{Name: b.name, Version: "1.0.0", Description: b.description, Author: "Icebath", Kind: "backend",
 		Source: "bundled", Key: "web/" + b.dir}
 }
 
@@ -30,7 +30,7 @@ var backends = []webBackendPlugin{
 	{"ddgs", "web-ddgs", "DuckDuckGo web search via the ddgs Python package — no API key required. Install with `pip install ddgs`.",
 		tools.NewDDGSWebProvider},
 	{"exa", "web-exa", "Exa web search and content extraction. Requires EXA_API_KEY — sign up at https://exa.ai.", tools.NewExaWebProvider},
-	{"firecrawl", "web-firecrawl", "Firecrawl web search + content extraction. Supports keyless cloud, direct API, and Nous-hosted tool-gateway routing for subscribers.",
+	{"firecrawl", "web-firecrawl", "Firecrawl web search + content extraction. Supports keyless cloud and the direct API.",
 		tools.NewFirecrawlWebProvider},
 	{"keenable", "web-keenable", "Keenable web search + page fetch (independent web index for AI apps). Works keyless on Keenable's free tier as part of the default rotation; set KEENABLE_API_KEY for higher limits — https://keenable.ai.",
 		tools.NewKeenableWebProvider},

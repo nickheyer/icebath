@@ -2,15 +2,18 @@ package selfupdate
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
 	"os"
+	"path/filepath"
 	"reflect"
 	"sort"
 	"strings"
 	"syscall"
 	"time"
+	"unicode"
 
 	"github.com/nickheyer/icebath/pkg/browser"
 	"github.com/nickheyer/icebath/pkg/config"
@@ -19,6 +22,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/mcp"
+	"github.com/nickheyer/icebath/pkg/media"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
 
@@ -61,6 +65,10 @@ type doctorLiveEnv struct {
 	launchChromium     func(key string, opts browser.LaunchOptions) (*browser.LaunchedBrowser, string)
 	stopBrowser        func(key string)
 	probeMCPServer     func(name string, cfg map[string]any, timeout float64) (int, error)
+	speak              func(text, outputPath string) (string, error)
+	transcribe         func(path string) (map[string]any, error)
+	sample             func() (string, string, error)
+	spoken             string
 }
 
 // Live probe seams of a doctor run bound to the real config, network, browser launcher and MCP client
@@ -78,7 +86,85 @@ func newDoctorLiveEnv(ctx context.Context, d *Doctor) *doctorLiveEnv {
 	}
 	e.stopBrowser = func(key string) { browser.StopBrowser(ctx, key) }
 	e.probeMCPServer = e.doctorProbeMCPServer
+	e.speak = func(text, outputPath string) (string, error) { return media.TextToSpeechTool(ctx, text, outputPath) }
+	e.transcribe = func(path string) (map[string]any, error) { return media.TranscribeAudio(ctx, path, "", "") }
+	e.sample = func() (string, string, error) { return media.SpeechSample(ctx) }
 	return e
+}
+
+// Sentence the local speech probe speaks and the transcription probe expects to hear back
+const doctorLiveSentence = "The quick brown fox jumps over the lazy dog."
+
+// Speaks the check sentence through the configured local voice, keeping the audio for the transcription probe
+func (e *doctorLiveEnv) doctorLiveSpeak(name, provider string) (doctorLiveProbeResult, error) {
+	dir, err := os.MkdirTemp("", "icebath-doctor-speech-")
+	if err != nil {
+		return doctorLiveProbeResult{}, err
+	}
+	reply, err := e.speak(doctorLiveSentence, filepath.Join(dir, "check.ogg"))
+	if err != nil {
+		os.RemoveAll(dir)
+		return doctorLiveProbeResult{name, "fail", "(" + provider + ") " + err.Error()}, nil
+	}
+	var result struct {
+		Success  bool   `json:"success"`
+		FilePath string `json:"file_path"`
+		Error    string `json:"error"`
+	}
+	if err := json.Unmarshal([]byte(reply), &result); err != nil || !result.Success {
+		os.RemoveAll(dir)
+		return doctorLiveProbeResult{name, "fail", "(" + provider + ") " + result.Error}, nil
+	}
+	info, err := os.Stat(result.FilePath)
+	if err != nil {
+		os.RemoveAll(dir)
+		return doctorLiveProbeResult{name, "fail", "(" + provider + ") " + err.Error()}, nil
+	}
+	e.spoken = result.FilePath
+	return doctorLiveProbeResult{name, "pass", fmt.Sprintf("(%s spoke %q into %s, %d KB)", provider, doctorLiveSentence, filepath.Base(result.FilePath), info.Size()/1024)}, nil
+}
+
+// Words of a sentence lower cased without punctuation
+func doctorLiveWords(text string) []string {
+	return strings.FieldsFunc(strings.ToLower(text), func(r rune) bool { return !unicode.IsLetter(r) && !unicode.IsDigit(r) })
+}
+
+// Transcribes the spoken check sentence, or the bundled voice sample without one, passing when most expected words come back
+func (e *doctorLiveEnv) doctorLiveHear(name, provider string) (doctorLiveProbeResult, error) {
+	audio, expected := e.spoken, doctorLiveSentence
+	if audio != "" {
+		defer os.RemoveAll(filepath.Dir(audio))
+		e.spoken = ""
+	} else {
+		var err error
+		if audio, expected, err = e.sample(); err != nil {
+			return doctorLiveProbeResult{}, err
+		}
+	}
+	reply, err := e.transcribe(audio)
+	if err != nil {
+		return doctorLiveProbeResult{name, "fail", "(" + provider + ") " + err.Error()}, nil
+	}
+	transcript := pyrepr.Str(reply["transcript"])
+	if !pyrepr.Truthy(reply["success"]) {
+		return doctorLiveProbeResult{name, "fail", "(" + provider + ") " + pyrepr.Str(reply["error"])}, nil
+	}
+	heard := map[string]bool{}
+	for _, word := range doctorLiveWords(transcript) {
+		heard[word] = true
+	}
+	want := doctorLiveWords(expected)
+	found := 0
+	for _, word := range want {
+		if heard[word] {
+			found++
+		}
+	}
+	detail := fmt.Sprintf("(%s heard %q)", provider, strings.TrimSpace(transcript))
+	if 2*found < len(want) {
+		return doctorLiveProbeResult{name, "fail", detail[:len(detail)-1] + fmt.Sprintf(", expected %q)", expected)}, nil
+	}
+	return doctorLiveProbeResult{name, "pass", detail}, nil
 }
 
 // Tool environment of the doctor home carrying the read only config
@@ -100,7 +186,7 @@ func (e *doctorLiveEnv) doctorLiveHTTPGet(target string, headers [][2]string, ti
 	for _, h := range headers {
 		req.Header.Set(h[0], h[1])
 	}
-	resp, err := pyhttpx.Do(pyhttpx.PlainClient(false), req, time.Duration(timeout*float64(time.Second)))
+	resp, err := pyhttpx.Do(pyhttpx.EnvProxyClient(false), req, time.Duration(timeout*float64(time.Second)))
 	if err != nil {
 		return 0, errors.New(pyhttpx.ErrorText(err))
 	}
@@ -194,7 +280,10 @@ func (e *doctorLiveEnv) doctorLiveProbeAudio(kind string, cfg map[string]any, ti
 		if shown == "" {
 			shown = "local"
 		}
-		return doctorLiveProbeResult{name, "skip", "(provider '" + shown + "' — no remote backend to probe)"}, nil
+		if kind == "tts" {
+			return e.doctorLiveSpeak(name, shown)
+		}
+		return e.doctorLiveHear(name, shown)
 	}
 	spec, known := doctorLiveAudioProbes[providerName]
 	if !known {

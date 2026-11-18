@@ -179,7 +179,7 @@ func (r *GatewayRunner) flushProcessCompletionBatch(ctx context.Context, key str
 		if ctx.Err() != nil {
 			return ctx.Err()
 		}
-		runLog().Error("Coalesced process completion delivery failed", "error", flushErr)
+		pkgLog().Error("Coalesced process completion delivery failed", "error", flushErr)
 		return nil
 	}
 	delivered = result
@@ -424,7 +424,7 @@ func (r *GatewayRunner) completionDeliveryReady(ctx context.Context, evt map[str
 		r.completionBatchMu.Unlock()
 		if warn {
 			multiplexed := r.config != nil && r.config.MultiplexProfiles != nil && *r.config.MultiplexProfiles
-			runLog().Warn("Async completion held: " + heldReason(source, platform, multiplexed))
+			pkgLog().Warn("Async completion held: " + heldReason(source, platform, multiplexed))
 		}
 		return false, nil
 	}
@@ -439,7 +439,7 @@ func (r *GatewayRunner) completionDeliveryReady(ctx context.Context, evt map[str
 		}
 		db, err := ensurer.EnsureSessionDB(ctx)
 		if err != nil {
-			runLog().Debug("Async-completion delivery DB unavailable", "error", err)
+			pkgLog().Debug("Async-completion delivery DB unavailable", "error", err)
 			return false, nil
 		}
 		if db == nil {
@@ -469,7 +469,7 @@ func (r *GatewayRunner) preflightCompletionDelivery(ctx context.Context, evt map
 			claim.claimID = fmt.Sprintf("gateway:%d:%s", reflect.ValueOf(r).Pointer(), strings.ReplaceAll(uuid.NewString(), "-", ""))
 			claimed, err := tools.ClaimCompletionDelivery(&tools.Env{Home: home.Dir(ctx)}, claim.delegationID, claim.claimID)
 			if err != nil {
-				runLog().Warn(fmt.Sprintf("Could not claim durable async completion %s: %s", claim.delegationID, pyrepr.ExceptionMessage(err)))
+				pkgLog().Warn(fmt.Sprintf("Could not claim durable async completion %s: %s", claim.delegationID, pyrepr.ExceptionMessage(err)))
 				claim.proceed, claim.earlyResult = false, boolp(false)
 				return claim, nil
 			}
@@ -497,12 +497,12 @@ func (r *GatewayRunner) preflightCompletionDelivery(ctx context.Context, evt map
 			if delegation == "" {
 				delegation = "<legacy>"
 			}
-			runLog().Warn(fmt.Sprintf("Async delegation %s targets permanently-gone session %s; terminally dropping delivery (result remains in the delegation records).", delegation, parent))
+			pkgLog().Warn(fmt.Sprintf("Async delegation %s targets permanently-gone session %s; terminally dropping delivery (result remains in the delegation records).", delegation, parent))
 			if claim.claimID != "" {
 				settleDurableClaim(ctx, "drop", claim.delegationID, claim.claimID)
 			}
 		} else {
-			runLog().Warn(fmt.Sprintf("Background process %s completion targets permanently-gone session %s (user boundary such as /new); dropping notification (output remains available via process(action='log')).",
+			pkgLog().Warn(fmt.Sprintf("Background process %s completion targets permanently-gone session %s (user boundary such as /new); dropping notification (output remains available via process(action='log')).",
 				pyrepr.Str(pyrepr.Or(evt["session_id"], "<unknown>")), parent))
 		}
 		claim.proceed = false

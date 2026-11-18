@@ -17,7 +17,7 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/tools"
-	"github.com/nickheyer/icebath/pkg/tuigateway"
+	"github.com/nickheyer/icebath/pkg/tuihost"
 )
 
 func TestUnknownMethod(t *testing.T) {
@@ -39,7 +39,7 @@ func TestDispatchRunsShortHandlersInline(t *testing.T) {
 }
 
 func TestSlowHandlersRunOffTheReaderThread(t *testing.T) {
-	for _, slowMethod := range []string{"complete.path", "complete.slash", "voice.toggle", "voice.record", "voice.tts", "wake.start", "wake.status"} {
+	for _, slowMethod := range []string{"complete.path", "complete.slash", "voice.toggle", "voice.record", "wake.start", "wake.status"} {
 		t.Run(slowMethod, func(t *testing.T) {
 			release := make(chan struct{})
 			ran := make(chan struct{}, 1)
@@ -124,11 +124,11 @@ func (c *stdoutCapture) frames(t *testing.T) []map[string]any {
 func captureProtocol(t *testing.T) *stdoutCapture {
 	t.Helper()
 	capture := &stdoutCapture{}
-	t.Cleanup(tuigateway.ResetForTests)
-	t.Cleanup(tuigateway.SwapRealStdoutForTests(capture))
-	savedChannel := tuigateway.StdioIsRPCChannel()
-	tuigateway.SetStdioIsRPCChannel(true)
-	t.Cleanup(func() { tuigateway.SetStdioIsRPCChannel(savedChannel) })
+	t.Cleanup(tuihost.ResetForTests)
+	t.Cleanup(tuihost.SwapRealStdoutForTests(capture))
+	savedChannel := tuihost.StdioIsRPCChannel()
+	tuihost.SetStdioIsRPCChannel(true)
+	t.Cleanup(func() { tuihost.SetStdioIsRPCChannel(savedChannel) })
 	return capture
 }
 
@@ -137,7 +137,7 @@ func waitOpen(t *testing.T, sid string, capture *stdoutCapture, windows ...*wsTe
 	t.Helper()
 	deadline := time.Now().Add(10 * time.Second)
 	for time.Now().Before(deadline) {
-		if open := tuigateway.OpenRequests(sid); len(open) > 0 {
+		if open := tuihost.OpenRequests(sid); len(open) > 0 {
 			req, _ := pyjson.Plain(open[0]).(map[string]any)
 			id, _ := req["id"].(string)
 			delivered := capture == nil || strings.Contains(capture.text(), id)
@@ -158,11 +158,11 @@ func waitOpen(t *testing.T, sid string, capture *stdoutCapture, windows ...*wsTe
 }
 
 // WebSocket client that receives frames and never answers, attached as the only client of a session
-func silentWSSession(t *testing.T, sid string, transport tuigateway.Transport) {
+func silentWSSession(t *testing.T, sid string, transport tuihost.Transport) {
 	t.Helper()
-	session := tuigateway.NewSession(map[string]any{"session_key": sid, "transport": transport, "history": []any{}, "agent_ready": nil})
-	tuigateway.SetSessionRecord(sid, session)
-	t.Cleanup(func() { tuigateway.SetSessionRecord(sid, nil) })
+	session := tuihost.NewSession(map[string]any{"session_key": sid, "transport": transport, "history": []any{}, "agent_ready": nil})
+	tuihost.SetSessionRecord(sid, session)
+	t.Cleanup(func() { tuihost.SetSessionRecord(sid, nil) })
 }
 
 // Frames a silent WebSocket client received
@@ -189,18 +189,18 @@ func TestServerRequestRoundTripUsesResponseFrame(t *testing.T) {
 	if got := <-box; got != "hunter2" {
 		t.Fatalf("answer %q", got)
 	}
-	if tuigateway.OpenRequestCount() != 0 {
+	if tuihost.OpenRequestCount() != 0 {
 		t.Fatal("request left open")
 	}
 }
 
 func TestServerRequestWaitsForAWsClientThatAdvertised(t *testing.T) {
 	ctx := context.Background()
-	t.Cleanup(tuigateway.ResetForTests)
+	t.Cleanup(tuihost.ResetForTests)
 	sock := newWSTestSocket()
-	peer := tuigateway.NewWSTransport(sock, "test", nil)
+	peer := tuihost.NewWSTransport(sock, "test", nil)
 	silentWSSession(t, "ws-new", peer)
-	response := handleRequest(tuigateway.BindTransport(ctx, peer), map[string]any{"id": 1, "method": "client.capabilities",
+	response := handleRequest(tuihost.BindTransport(ctx, peer), map[string]any{"id": 1, "method": "client.capabilities",
 		"params": map[string]any{"server_requests": true}})
 	if methods, _ := resultOf(t, response)["server_requests"].([]string); !slices.Contains(methods, "clarify") {
 		t.Fatalf("capabilities %v", response)
@@ -208,7 +208,7 @@ func TestServerRequestWaitsForAWsClientThatAdvertised(t *testing.T) {
 	box := make(chan *pyjson.Object, 1)
 	go func() {
 		timeout := 5.0
-		result, _ := tuigateway.Send(ctx, "sudo", "ws-new", pyjson.NewObject(), &timeout, nil)
+		result, _ := tuihost.Send(ctx, "sudo", "ws-new", pyjson.NewObject(), &timeout, nil)
 		box <- result
 	}()
 	req := waitOpen(t, "ws-new", nil, sock)
@@ -221,25 +221,25 @@ func TestServerRequestWaitsForAWsClientThatAdvertised(t *testing.T) {
 	if result := <-box; result == nil || !reflect.DeepEqual(pyjson.Plain(result), map[string]any{"value": "yes"}) {
 		t.Fatalf("result %v", result)
 	}
-	tuigateway.UnregisterLiveTransport(peer)
-	if tuigateway.AnswersRequests(peer) {
+	tuihost.UnregisterLiveTransport(peer)
+	if tuihost.AnswersRequests(peer) {
 		t.Fatal("disconnect kept the advertisement")
 	}
 }
 
 func TestServerRequestErrorResponseFailsFast(t *testing.T) {
 	ctx := context.Background()
-	t.Cleanup(tuigateway.ResetForTests)
+	t.Cleanup(tuihost.ResetForTests)
 	box := make(chan *pyjson.Object, 1)
 	go func() {
 		timeout := 5.0
-		result, _ := tuigateway.Send(ctx, "sudo", "s1", pyjson.NewObject(), &timeout, nil)
+		result, _ := tuihost.Send(ctx, "sudo", "s1", pyjson.NewObject(), &timeout, nil)
 		box <- result
 	}()
 	req := waitOpen(t, "s1", nil)
 	started := time.Now()
 	frame, _ := pyjson.LoadsDict(fmt.Sprintf(`{"id": %q, "error": {"code": -32601}}`, req["id"]))
-	if !tuigateway.ResolveResponse(frame, nil) {
+	if !tuihost.ResolveResponse(frame, nil) {
 		t.Fatal("error frame did not resolve")
 	}
 	select {
@@ -253,25 +253,25 @@ func TestServerRequestErrorResponseFailsFast(t *testing.T) {
 }
 
 // Session two advertised WebSocket windows show through one fanout transport
-func twoWindowSession(t *testing.T, sid string) (*wsTestSocket, *wsTestSocket, []*tuigateway.WSTransport) {
+func twoWindowSession(t *testing.T, sid string) (*wsTestSocket, *wsTestSocket, []*tuihost.WSTransport) {
 	t.Helper()
 	first, second := newWSTestSocket(), newWSTestSocket()
-	windows := []*tuigateway.WSTransport{tuigateway.NewWSTransport(first, "test", nil), tuigateway.NewWSTransport(second, "test", nil)}
+	windows := []*tuihost.WSTransport{tuihost.NewWSTransport(first, "test", nil), tuihost.NewWSTransport(second, "test", nil)}
 	for _, window := range windows {
-		tuigateway.Advertise(window, true)
+		tuihost.Advertise(window, true)
 	}
-	silentWSSession(t, sid, tuigateway.NewFanoutTransport(windows[0], windows[1]))
+	silentWSSession(t, sid, tuihost.NewFanoutTransport(windows[0], windows[1]))
 	return first, second, windows
 }
 
 // Not shown refusal frame for a request
 func notShown(req map[string]any) map[string]any {
-	return map[string]any{"jsonrpc": "2.0", "id": req["id"], "error": map[string]any{"code": tuigateway.NotShownCode, "message": "not here"}}
+	return map[string]any{"jsonrpc": "2.0", "id": req["id"], "error": map[string]any{"code": tuihost.NotShownCode, "message": "not here"}}
 }
 
 func TestWindowOwnedRequestRefusesAtOnceWhenNoWindowShowsTheSession(t *testing.T) {
 	ctx := context.Background()
-	t.Cleanup(tuigateway.ResetForTests)
+	t.Cleanup(tuihost.ResetForTests)
 	first, second, windows := twoWindowSession(t, "s-none")
 	box := make(chan string, 1)
 	go func() { timeout := 30.0; box <- ask(ctx, "sudo", "s-none", map[string]any{}, &timeout) }()
@@ -290,7 +290,7 @@ func TestWindowOwnedRequestRefusesAtOnceWhenNoWindowShowsTheSession(t *testing.T
 	select {
 	case got := <-box:
 		var decoded any
-		if err := json.Unmarshal([]byte(got), &decoded); err != nil || !reflect.DeepEqual(decoded, map[string]any{"success": false, "error": tuigateway.NotShownMessage}) {
+		if err := json.Unmarshal([]byte(got), &decoded); err != nil || !reflect.DeepEqual(decoded, map[string]any{"success": false, "error": tuihost.NotShownMessage}) {
 			t.Fatalf("answer %q", got)
 		}
 		if time.Since(started) >= 2*time.Second {
@@ -299,24 +299,24 @@ func TestWindowOwnedRequestRefusesAtOnceWhenNoWindowShowsTheSession(t *testing.T
 	case <-time.After(2 * time.Second):
 		t.Fatal("request still waiting")
 	}
-	if open := tuigateway.OpenRequests("s-none"); len(open) != 0 {
+	if open := tuihost.OpenRequests("s-none"); len(open) != 0 {
 		t.Fatalf("open %v", open)
 	}
 }
 
 func TestWindowOwnedRequestDeclineDoesNotBeatTheOwnerWindow(t *testing.T) {
 	ctx := context.Background()
-	t.Cleanup(tuigateway.ResetForTests)
+	t.Cleanup(tuihost.ResetForTests)
 	bystanderSock, ownerSock, windows := twoWindowSession(t, "s-own")
 	box := make(chan string, 1)
 	go func() { timeout := 5.0; box <- ask(ctx, "sudo", "s-own", map[string]any{}, &timeout) }()
 	req := waitOpen(t, "s-own", nil, bystanderSock, ownerSock)
 	Dispatch(ctx, notShown(req), windows[0])
-	frame, _ := pyjson.LoadsDict(fmt.Sprintf(`{"jsonrpc": "2.0", "id": %q, "error": {"code": %d, "message": "not here"}}`, req["id"], tuigateway.NotShownCode))
-	if !tuigateway.ResolveResponse(frame, nil) {
+	frame, _ := pyjson.LoadsDict(fmt.Sprintf(`{"jsonrpc": "2.0", "id": %q, "error": {"code": %d, "message": "not here"}}`, req["id"], tuihost.NotShownCode))
+	if !tuihost.ResolveResponse(frame, nil) {
 		t.Fatal("unattributed decline was not consumed")
 	}
-	open := tuigateway.OpenRequests("s-own")
+	open := tuihost.OpenRequests("s-own")
 	if len(open) != 1 || pyjson.Plain(open[0]).(map[string]any)["id"] != req["id"] {
 		t.Fatalf("open %v", open)
 	}
@@ -337,9 +337,9 @@ func TestWindowOwnedRequestDeclineDoesNotBeatTheOwnerWindow(t *testing.T) {
 }
 
 func TestClientCapabilitiesAdvertisesCountingNotShownDeclines(t *testing.T) {
-	t.Cleanup(tuigateway.ResetForTests)
-	peer := tuigateway.NewWSTransport(newWSTestSocket(), "test", nil)
-	response := handleRequest(tuigateway.BindTransport(context.Background(), peer), map[string]any{"id": 1,
+	t.Cleanup(tuihost.ResetForTests)
+	peer := tuihost.NewWSTransport(newWSTestSocket(), "test", nil)
+	response := handleRequest(tuihost.BindTransport(context.Background(), peer), map[string]any{"id": 1,
 		"method": "client.capabilities", "params": map[string]any{"server_requests": true}})
 	if resultOf(t, response)["declines_not_shown"] != true {
 		t.Fatalf("capabilities %v", response)
@@ -351,7 +351,7 @@ func TestServerRequestTimeoutEmitsOneRequestCancel(t *testing.T) {
 		t.Run(method, func(t *testing.T) {
 			capture := captureProtocol(t)
 			timeout := 0.0
-			if result, err := tuigateway.Send(context.Background(), method, "s1", pyjson.NewObject(), &timeout, nil); result != nil || err != nil {
+			if result, err := tuihost.Send(context.Background(), method, "s1", pyjson.NewObject(), &timeout, nil); result != nil || err != nil {
 				t.Fatalf("result %v %v", result, err)
 			}
 			frames := capture.frames(t)
@@ -416,7 +416,7 @@ func TestClarifyBatchLocksResolveInOrderAndKeepPartialOnTimeout(t *testing.T) {
 	if bad := lockClarify("bad", req["id"], "nope", ""); rpcCode(bad) != 4002 {
 		t.Fatalf("unknown question %v", bad)
 	}
-	open := pyjson.Plain(tuigateway.OpenRequests("s1")[0]).(map[string]any)
+	open := pyjson.Plain(tuihost.OpenRequests("s1")[0]).(map[string]any)
 	if answers := open["params"].(map[string]any)["answers"]; !reflect.DeepEqual(answers, map[string]any{"q0": "y"}) {
 		t.Fatalf("snapshot answers %v", answers)
 	}
@@ -469,10 +469,10 @@ func TestClearPendingCancelsOnlyThatSession(t *testing.T) {
 	capture := captureProtocol(t)
 	ctx := context.Background()
 	doneA, doneB := make(chan struct{}), make(chan struct{})
-	go func() { _, _ = tuigateway.Send(ctx, "sudo", "sid-a", pyjson.NewObject(), nil, nil); close(doneA) }()
-	go func() { _, _ = tuigateway.Send(ctx, "sudo", "sid-b", pyjson.NewObject(), nil, nil); close(doneB) }()
+	go func() { _, _ = tuihost.Send(ctx, "sudo", "sid-a", pyjson.NewObject(), nil, nil); close(doneA) }()
+	go func() { _, _ = tuihost.Send(ctx, "sudo", "sid-b", pyjson.NewObject(), nil, nil); close(doneB) }()
 	deadline := time.Now().Add(2 * time.Second)
-	for time.Now().Before(deadline) && tuigateway.OpenRequestCount() < 2 {
+	for time.Now().Before(deadline) && tuihost.OpenRequestCount() < 2 {
 		time.Sleep(10 * time.Millisecond)
 	}
 	if sessionPendingKind("sid-a") != "sudo" {
@@ -528,9 +528,9 @@ func TestSessionInterruptUsesExplicitStopCompatibility(t *testing.T) {
 			if kind == "hard-only" {
 				stopper = hardOnlyStopAgent{&calls}
 			}
-			session := tuigateway.NewSession(map[string]any{"agent": stopper, "running": true, "queued_prompt": "later",
+			session := tuihost.NewSession(map[string]any{"agent": stopper, "running": true, "queued_prompt": "later",
 				"session_key": "session-key", "_run_thread": nil})
-			swapSessions(t, map[string]*tuigateway.Session{"ui-session": session})
+			swapSessions(t, map[string]*tuihost.Session{"ui-session": session})
 			response := sessionInterrupt(context.Background(), "stop", map[string]any{"session_id": "ui-session"})
 			if resultOf(t, response)["status"] != "interrupted" {
 				t.Fatalf("response %v", response)
@@ -547,8 +547,8 @@ func TestSessionInterruptUsesExplicitStopCompatibility(t *testing.T) {
 }
 
 // Live record whose payload a reattaching client receives
-func payloadSession() *tuigateway.Session {
-	return tuigateway.NewSession(map[string]any{"agent": nil, "cols": 80, "created_at": 1.0, "history": []any{},
+func payloadSession() *tuihost.Session {
+	return tuihost.NewSession(map[string]any{"agent": nil, "cols": 80, "created_at": 1.0, "history": []any{},
 		"running": true, "session_key": "stored-session"})
 }
 
@@ -574,9 +574,9 @@ func TestLiveSessionPayloadReplaysPendingApproval(t *testing.T) {
 
 func TestLiveSessionPayloadReplaysOpenRequests(t *testing.T) {
 	t.Setenv("ICEBATH_HOME", t.TempDir())
-	t.Cleanup(tuigateway.ResetForTests)
+	t.Cleanup(tuihost.ResetForTests)
 	params, _ := pyjson.LoadsDict(`{"question": "Which?", "choices": ["a", "b"]}`)
-	req := map[string]any{"id": tuigateway.OpenRequestForTests("runtime-session", "clarify", params)}
+	req := map[string]any{"id": tuihost.OpenRequestForTests("runtime-session", "clarify", params)}
 	payload := liveSessionPayload(context.Background(), "runtime-session", payloadSession(), livePayloadOptions{})
 	other := liveSessionPayload(context.Background(), "other-session", payloadSession(), livePayloadOptions{})
 	want := []any{map[string]any{"id": req["id"], "method": "clarify",
@@ -588,7 +588,7 @@ func TestLiveSessionPayloadReplaysOpenRequests(t *testing.T) {
 	if replayedParams, isObj := snapshot.(*pyjson.Object).GetOr("params", nil).(*pyjson.Object); isObj {
 		replayedParams.Set("question", "mutated")
 	}
-	if live := pyjson.Plain(tuigateway.OpenRequests("runtime-session")[0]).(map[string]any); live["params"].(map[string]any)["question"] != "Which?" {
+	if live := pyjson.Plain(tuihost.OpenRequests("runtime-session")[0]).(map[string]any); live["params"].(map[string]any)["question"] != "Which?" {
 		t.Fatal("payload holds a live reference to the request params")
 	}
 	if _, present := other["open_requests"]; present {
@@ -600,7 +600,7 @@ func TestLiveSessionPayloadReplaysOpenRequests(t *testing.T) {
 func approvalSession(t *testing.T, sid, key string) {
 	t.Helper()
 	t.Setenv("ICEBATH_HOME", t.TempDir())
-	swapSessions(t, map[string]*tuigateway.Session{sid: tuigateway.NewSession(map[string]any{"session_key": key, "history": []any{}})})
+	swapSessions(t, map[string]*tuihost.Session{sid: tuihost.NewSession(map[string]any{"session_key": key, "history": []any{}})})
 	t.Cleanup(func() { tools.UnregisterGatewayNotify(key) })
 }
 
@@ -666,9 +666,9 @@ func TestApprovalForAWsClientThatNeverAdvertisedSettlesTheQueueEntry(t *testing.
 	h := t.TempDir()
 	t.Setenv("ICEBATH_HOME", h)
 	writeFile(t, filepath.Join(h, "config.yaml"), "approvals:\n  timeout: 3\n")
-	t.Cleanup(tuigateway.ResetForTests)
+	t.Cleanup(tuihost.ResetForTests)
 	sock := newWSTestSocket()
-	silentWSSession(t, "ws-old-approval", tuigateway.NewWSTransport(sock, "test", nil))
+	silentWSSession(t, "ws-old-approval", tuihost.NewWSTransport(sock, "test", nil))
 	tools.RegisterGatewayNotify("ws-old-approval", func(data map[string]any) error {
 		emitApprovalRequest(ctx, "ws-old-approval", data)
 		return nil
@@ -696,12 +696,12 @@ func TestApprovalForAWsClientThatNeverAdvertisedSettlesTheQueueEntry(t *testing.
 func TestApprovalThatEndsBeforeItsSettleHookAttachesIsStillWithdrawn(t *testing.T) {
 	ctx := context.Background()
 	t.Setenv("ICEBATH_HOME", t.TempDir())
-	t.Cleanup(tuigateway.ResetForTests)
+	t.Cleanup(tuihost.ResetForTests)
 	sock := newWSTestSocket()
-	peer := tuigateway.NewWSTransport(sock, "test", nil)
+	peer := tuihost.NewWSTransport(sock, "test", nil)
 	silentWSSession(t, "ws-raced", peer)
-	t.Cleanup(func() { tuigateway.UnregisterLiveTransport(peer) })
-	handleRequest(tuigateway.BindTransport(ctx, peer), map[string]any{"id": 1, "method": "client.capabilities", "params": map[string]any{"server_requests": true}})
+	t.Cleanup(func() { tuihost.UnregisterLiveTransport(peer) })
+	handleRequest(tuihost.BindTransport(ctx, peer), map[string]any{"id": 1, "method": "client.capabilities", "params": map[string]any{"server_requests": true}})
 	emitApprovalRequest(ctx, "ws-raced", map[string]any{"command": "rm -rf build", "description": "", "request_id": "appr-already-resolved"})
 	frames := socketFrames(sock)
 	if len(frames) != 2 {
@@ -712,7 +712,7 @@ func TestApprovalThatEndsBeforeItsSettleHookAttachesIsStillWithdrawn(t *testing.
 	if sent["method"] != "approval" || params["type"] != "request.cancel" || params["payload"].(map[string]any)["id"] != sent["id"] {
 		t.Fatalf("frames %v", frames)
 	}
-	if open := tuigateway.OpenRequests("ws-raced"); len(open) != 0 {
+	if open := tuihost.OpenRequests("ws-raced"); len(open) != 0 {
 		t.Fatalf("open %v", open)
 	}
 }

@@ -4,15 +4,11 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"log/slog"
-	"net/http"
 	"sync/atomic"
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/tools"
 )
-
-var nonStreamLog = slog.Default().With("logger", "agent.chat_completion_helpers")
 
 const (
 	interruptedWaitStaleSeconds = 30.0
@@ -96,14 +92,14 @@ func (w *nonStreamWaiter) poll(now float64, s nonStreamSnapshot) {
 	w.emitWaitNotice(now-w.callStart, w.polls%100 == 0, s)
 }
 
-// Watchdog deadline seam the wait notice tests swap the way hermes tests patch codex_watchdog_deadline
+// Watchdog deadline seam the wait notice tests swap
 var codexWatchdogDeadlineFn = CodexWatchdogDeadline
 
 // Clears a notice once this request shows activity and posts one neutral notice per silence of sixty seconds
 func (w *nonStreamWaiter) emitWaitNotice(elapsed float64, heartbeat bool, s nonStreamSnapshot) {
 	defer func() {
 		if r := recover(); r != nil {
-			nonStreamLog.Debug(fmt.Sprintf("wait-notice construction failed: %v", r))
+			pkgLog().Debug(fmt.Sprintf("wait-notice construction failed: %v", r))
 		}
 	}()
 	pre := w.preProgress(s)
@@ -174,7 +170,7 @@ func recordInterruptedProviderWait(ctx context.Context, elapsed float64, respons
 	if s, _ := ctx.Value(staleStreakKey{}).(*RetrySession); s != nil {
 		streak = s.StaleStreak()
 	}
-	nonStreamLog.Warn(fmt.Sprintf("Interrupted provider wait counted as stale after %.0fs with no output; consecutive stale attempts=%d.", elapsed, streak))
+	pkgLog().Warn(fmt.Sprintf("Interrupted provider wait counted as stale after %.0fs with no output; consecutive stale attempts=%d.", elapsed, streak))
 	return true
 }
 
@@ -185,7 +181,7 @@ func reportStaleNonstreamKill(surface func(StreamEvent), model string, estTokens
 		prefix = "Inline n"
 	}
 	model = orUnknown2(model)
-	nonStreamLog.Warn(fmt.Sprintf("%son-streaming API call stale for %.0fs (threshold %.0fs). model=%s context=~%s tokens. Killing connection.", prefix, elapsed, stale, model, commaInt(estTokens)))
+	pkgLog().Warn(fmt.Sprintf("%son-streaming API call stale for %.0fs (threshold %.0fs). model=%s context=~%s tokens. Killing connection.", prefix, elapsed, stale, model, commaInt(estTokens)))
 	if hint == "" {
 		hint = "Aborting call."
 	}
@@ -206,7 +202,7 @@ func joinWorkerForRelayTeardown[T any](ctx context.Context, done <-chan T, label
 	select {
 	case <-done:
 	case <-time.After(2 * time.Second):
-		slog.Warn(fmt.Sprintf("%s worker still alive after interrupt abort (2.0s join timeout); Relay teardown will best-effort drain orphaned scopes (#81521).", label))
+		pkgLog().Warn(fmt.Sprintf("%s worker still alive after interrupt abort (2.0s join timeout); Relay teardown will best-effort drain orphaned scopes (#81521).", label))
 	}
 }
 
@@ -230,7 +226,7 @@ func runNonStreamRequest(ctx context.Context, model string, estTokens int, stale
 	go func() {
 		resp, err := call(reqCtx)
 		if err != nil && cancelled.Load() {
-			nonStreamLog.Debug(fmt.Sprintf("Non-streaming worker caught %T after request cancellation — exiting without surfacing a network error.", err))
+			pkgLog().Debug(fmt.Sprintf("Non-streaming worker caught %T after request cancellation — exiting without surfacing a network error.", err))
 		}
 		done <- nonStreamResult{resp, err}
 	}()
@@ -243,7 +239,7 @@ func runNonStreamRequest(ctx context.Context, model string, estTokens int, stale
 		case <-ctx.Done():
 			recordInterruptedProviderWait(ctx, epochSeconds(time.Now())-w.callStart, false)
 			cancelled.Store(true)
-			nonStreamLog.Debug("Force-closing httpx client due to interrupt (not a network error).")
+			pkgLog().Debug("Force-closing httpx client due to interrupt (not a network error).")
 			abort()
 			joinWorkerForRelayTeardown(ctx, done, "Non-streaming")
 			return nil, ctx.Err()
@@ -275,32 +271,4 @@ func awaitWorkerAfterKill(done <-chan nonStreamResult, message string) (*Respons
 	case <-time.After(2 * time.Second):
 	}
 	return nil, &TimeoutPhaseError{Phase: TimeoutPhaseRead, Err: errors.New(message)}
-}
-
-// Feeds a blocking chat completion's headers to the credits capture only for a nous usage window session and response
-func chatCompletionCapturingHeaders(provider string, credits *CreditsCapture, h http.Header) {
-	if credits == nil || !chatCompletionCapturesHeaders(provider, credits.Credits(), h) {
-		return
-	}
-	runHeaderCaptures(h, credits.CaptureRateLimits, func(h http.Header) { credits.CaptureCredits(h, false) },
-		credits.CaptureNousModelSwitch, credits.CheckOpenRouterCacheStatus)
-}
-
-// Runs every capture so a failing one never fails the turn or skips the rest
-func runHeaderCaptures(h http.Header, captures ...func(http.Header)) {
-	for _, capture := range captures {
-		func() {
-			defer func() {
-				if r := recover(); r != nil {
-					nonStreamLog.Debug(fmt.Sprintf("non-streaming header capture failed: %v", r))
-				}
-			}()
-			capture(h)
-		}()
-	}
-}
-
-// Whether a blocking chat completion feeds its headers, a nous usage window session answered by a usage window response
-func chatCompletionCapturesHeaders(provider string, state *CreditsState, h http.Header) bool {
-	return provider == "nous" && state != nil && state.IsUsageWindow() && ResponseIsUsageWindow(h)
 }

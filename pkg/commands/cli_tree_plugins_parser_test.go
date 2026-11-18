@@ -12,7 +12,7 @@ import (
 	"github.com/spf13/cobra"
 )
 
-// Port of build_plugins_parser in hermes_cli/subcommands/plugins.py, every verb with its help, positionals and flags
+// Port of build_plugins_parser in, every verb with its help, positionals and flags
 func TestCLIPluginsTreeMatchesBuildPluginsParser(t *testing.T) {
 	c := NewCLI()
 	flag := func(name, short, help string) parserFlag { return parserFlag{name, short, "bool", "false", help} }
@@ -20,7 +20,7 @@ func TestCLIPluginsTreeMatchesBuildPluginsParser(t *testing.T) {
 	assertParser(t, c, "plugins", "Manage and validate plugins",
 		"Install, update, remove, list, or validate native Icebath plugins and portable Agent Plugins v1 packages. Portable packages install disabled.", "")
 	assertParser(t, c, "plugins install", "Install a plugin from the curated catalog, a Git URL, or owner/repo", "",
-		"  identifier   Bare plugin catalog entry name (see `icebath plugins search`), Git URL, or owner/repo shorthand (e.g. anpicasso/hermes-plugin-chrome-profiles)",
+		"  identifier   Bare plugin catalog entry name (see `icebath plugins search`), Git URL, or owner/repo shorthand (e.g. anpicasso/icebath-plugin-chrome-profiles)",
 		flag("force", "f", "Reinstall over an existing plugin (from the same source, your untracked files are kept)"),
 		parserFlag{"ref", "", "string", "", "Install exactly one immutable 40-character Git commit SHA"},
 		flag("allow-removed", "", "DANGEROUS: bypass the catalog removed-plugin blocklist check"),

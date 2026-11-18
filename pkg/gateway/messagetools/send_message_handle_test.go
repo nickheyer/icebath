@@ -25,7 +25,7 @@ type sendCall struct {
 	opts     SendOptions
 }
 
-// Installs the config loader, platform send and mirror doubles the hermes tests patch in
+// Installs the config loader, platform send and mirror doubles the tests patch in
 func installSendSeams(t *testing.T, cfg *gateway.GatewayConfig, send func(sendCall) (map[string]any, error)) *[]sendCall {
 	t.Helper()
 	t.Setenv("ICEBATH_HOME", t.TempDir())
@@ -99,7 +99,7 @@ func TestSendMessageToolNtfyTopicTargetBypassesChannelDirectory(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	ntfyCfg := &gateway.PlatformConfig{Enabled: true, Extra: map[string]any{"topic": "hermes-in"}}
+	ntfyCfg := &gateway.PlatformConfig{Enabled: true, Extra: map[string]any{"topic": "icebath-in"}}
 	calls := installSendSeams(t, &gateway.GatewayConfig{Platforms: map[gateway.Platform]*gateway.PlatformConfig{ntfy: ntfyCfg}}, nil)
 	prev := gateway.SetResolveChannelNameFn(func(context.Context, string, string) (string, error) {
 		panic("should not resolve ntfy topics")
@@ -129,7 +129,7 @@ func TestSendMessageToolMediaTagOutsideAllowedRootsIsNotSent(t *testing.T) {
 	assertOneSend(t, *calls, sendCall{platform: gateway.PlatformTelegram, pconfig: tg, chatID: "12345", message: "hello", opts: SendOptions{MediaFiles: []gateway.MediaRef{}}})
 }
 
-func TestSendMessageToolMissingMediaIsReportedToTheCallerAndHermesSendExitsNonzero(t *testing.T) {
+func TestSendMessageToolMissingMediaIsReportedToTheCallerAndIcebathSendExitsNonzero(t *testing.T) {
 	cfg, tg := telegramConfig()
 	calls := installSendSeams(t, cfg, nil)
 	t.Setenv("ICEBATH_MEDIA_DELIVERY_STRICT", "0")

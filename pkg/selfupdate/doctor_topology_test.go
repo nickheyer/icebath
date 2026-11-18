@@ -208,12 +208,6 @@ func TestDoctorWriteProbeNeverTouchesAStoreALiveWriterHolds(t *testing.T) {
 func TestRecoveryCopyWithoutACatalogMemoryEntryKeepsTheGenericHint(t *testing.T) {
 	d, out := toolsDoctor(t)
 	ctx := context.Background()
-	if hint := memory.CatalogInstallHint(ctx, "honcho", "memory"); hint != "icebath plugins install honcho" {
-		t.Fatalf("memory hint = %q", hint)
-	}
-	if hint := memory.CatalogInstallHint(ctx, "honcho", "tools"); hint != "" {
-		t.Fatalf("tools hint = %q", hint)
-	}
 	if hint := memory.CatalogInstallHint(ctx, "no-such-provider", ""); hint != "" {
 		t.Fatalf("unknown provider hint = %q", hint)
 	}

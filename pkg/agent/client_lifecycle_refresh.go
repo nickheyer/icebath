@@ -4,10 +4,8 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"log/slog"
 	"maps"
 	"strings"
-	"time"
 
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
@@ -16,22 +14,12 @@ import (
 	"github.com/nickheyer/icebath/pkg/tools"
 )
 
-// Seconds before the in hand Nous key expires at which a fresh store key is adopted
-const nousKeyAdoptSkewS = 180
-
-// Turn boundary credential watch state of the env refresh and the Nous wire decision
+// Turn boundary credential watch state of the env refresh
 type credentialRefreshState struct {
-	envCredsSeen    *[2]string
-	nousWireDecided bool
+	envCredsSeen *[2]string
 }
 
 var decodeJWTClaims = provider.DecodeJWTClaims
-
-var resolveNousCredentials = provider.ResolveNousRuntimeCredentialsWith
-
-func clientLifecycleLog() *slog.Logger {
-	return slog.Default().With("logger", "agent.client_lifecycle")
-}
 
 // Python str of an arbitrary value, empty for nil
 func pyStrValue(v any) string {
@@ -65,71 +53,6 @@ func jwtNumber(v any) (float64, bool) {
 		return 0, true
 	}
 	return 0, false
-}
-
-// Adopts a refreshed Nous key on either client kind, refusing a key minted for a different account
-func (a *AIAgent) tryRefreshNousClientCredentials(ctx context.Context, force bool, requireAccount *string) (bool, error) {
-	if a.provider != "nous" || (a.apiMode != "chat_completions" && a.apiMode != "anthropic_messages") {
-		return false, nil
-	}
-	timeout := envFloatOr("ICEBATH_NOUS_TIMEOUT_SECONDS", 15)
-	creds, err := resolveNousCredentials(agentPoolEnv(ctx), provider.NousResolveOptions{
-		Timeout: time.Duration(timeout * float64(time.Second)), ForceRefresh: force, StaleAccessToken: a.apiKey,
-	})
-	if err != nil {
-		clientLifecycleLog().Debug(fmt.Sprintf("Nous credential refresh failed: %v", err))
-		return false, nil
-	}
-	if !validCredentialPair(creds["api_key"], creds["base_url"]) {
-		return false, nil
-	}
-	apiKey, baseURL := pyStrValue(creds["api_key"]), pyStrValue(creds["base_url"])
-	if strings.TrimSpace(apiKey) == strings.TrimSpace(a.apiKey) &&
-		strings.TrimRight(strings.TrimSpace(baseURL), "/") == strings.TrimRight(strings.TrimSpace(a.baseURL), "/") {
-		return false, nil
-	}
-	if requireAccount != nil {
-		newAccount := ""
-		if sub := decodeJWTClaims(apiKey)["sub"]; pyrepr.Truthy(sub) {
-			newAccount = pyStrValue(sub)
-		}
-		if newAccount != *requireAccount {
-			clientLifecycleLog().Info("Nous pre-expiry adoption skipped: the store's key belongs to a different account " +
-				"than the one in hand; keeping the current credential.")
-			return false, nil
-		}
-	}
-	if a.apiMode == "anthropic_messages" {
-		a.apiKey = strings.TrimSpace(apiKey)
-		a.setBaseURL(strings.TrimRight(strings.TrimSpace(baseURL), "/"))
-		a.anthropicAPIKey, a.anthropicBaseURL = a.apiKey, a.baseURL
-		if err := a.rebuildAnthropicClient(ctx); err != nil {
-			return false, err
-		}
-		return true, nil
-	}
-	delete(a.clientKwargs, "default_headers")
-	return a.adoptOpenAICredentials(apiKey, baseURL, "nous_credential_refresh"), nil
-}
-
-// Swaps in the store's fresh Nous key inside the expiry skew when it belongs to the same account
-func (a *AIAgent) adoptNousKeyBeforeExpiry(ctx context.Context) bool {
-	if a.provider != "nous" || a.apiKey == "" {
-		return false
-	}
-	claims := decodeJWTClaims(a.apiKey)
-	exp, account := claims["exp"], claims["sub"]
-	expAt, numeric := jwtNumber(exp)
-	if !pyrepr.Truthy(account) || !numeric || expAt-nowSeconds() > nousKeyAdoptSkewS {
-		return false
-	}
-	want := pyStrValue(account)
-	adopted, err := a.tryRefreshNousClientCredentials(ctx, false, &want)
-	if err != nil {
-		clientLifecycleLog().Debug("Nous key pre-expiry adoption failed", "error", err)
-		return false
-	}
-	return adopted
 }
 
 // Adopts only env edits since the last look, never drift from pool rotation or a configured base url
@@ -175,7 +98,7 @@ func (a *AIAgent) tryRefreshEnvClientCredentials(ctx context.Context) (bool, err
 	}
 	syncCredentialPoolEntryID(a)
 	a.envCredsSeen = &[2]string{baseURL, apiKey}
-	clientLifecycleLog().Info(fmt.Sprintf("Applied updated .env credentials for %s: endpoint %s", a.provider, a.baseURL))
+	pkgLog().Info(fmt.Sprintf("Applied updated .env credentials for %s: endpoint %s", a.provider, a.baseURL))
 	return true, nil
 }
 

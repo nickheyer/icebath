@@ -2,7 +2,6 @@ package gateway
 
 import (
 	"context"
-	"log/slog"
 	"path/filepath"
 	"time"
 
@@ -29,6 +28,6 @@ func WritePlannedRestartMarker(ctx context.Context, viaService, detached bool) {
 	payload.Set("via_service", viaService)
 	payload.Set("detached", detached)
 	if err := config.AtomicJSONWriteWith(ctx, PlannedRestartMarkerPath(""), payload); err != nil {
-		slog.Debug("Could not record the planned restart; home channels get no online notice", "error", err)
+		pkgLog().Debug("Could not record the planned restart; home channels get no online notice", "error", err)
 	}
 }

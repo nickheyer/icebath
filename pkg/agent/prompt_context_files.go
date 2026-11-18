@@ -3,7 +3,6 @@ package agent
 import (
 	"context"
 	"fmt"
-	"log/slog"
 	"os"
 	"path/filepath"
 	"strings"
@@ -136,7 +135,7 @@ func readContextFile(env *tools.Env, path string) string {
 	}
 	text, _, err := tools.ReadTextWithTimeout(env, path, nil)
 	if err != nil {
-		slog.Debug(fmt.Sprintf("Could not read %s: %v", path, err))
+		pkgLog().Debug(fmt.Sprintf("Could not read %s: %v", path, err))
 		return ""
 	}
 	return pystr.Strip(text)
@@ -326,7 +325,7 @@ func LoadSoulMD(ctx context.Context, env *tools.Env, contextLength *int, homeOve
 		return "", false
 	}
 	if err := config.EnsureIcebathHome(tools.WithEnvHome(ctx, env), agentHome(env)); err != nil {
-		slog.Debug(fmt.Sprintf("Could not ensure ICEBATH_HOME before loading SOUL.md: %v", err))
+		pkgLog().Debug(fmt.Sprintf("Could not ensure ICEBATH_HOME before loading SOUL.md: %v", err))
 	}
 	soulHome := homeOverride
 	if soulHome == "" {
@@ -338,7 +337,7 @@ func LoadSoulMD(ctx context.Context, env *tools.Env, contextLength *int, homeOve
 	}
 	text, _, err := tools.ReadTextWithTimeout(env, soulPath, nil)
 	if err != nil {
-		slog.Debug(fmt.Sprintf("Could not read SOUL.md from %s: %v", soulPath, err))
+		pkgLog().Debug(fmt.Sprintf("Could not read SOUL.md from %s: %v", soulPath, err))
 		return "", false
 	}
 	content := pystr.Strip(text)
@@ -351,7 +350,7 @@ func LoadSoulMD(ctx context.Context, env *tools.Env, contextLength *int, homeOve
 	userAuthored := false
 	manifest, err := provider.ReadManifest(filepath.Dir(soulPath))
 	if err != nil {
-		slog.Debug(fmt.Sprintf("Could not read distribution manifest next to %s: %v", soulPath, err))
+		pkgLog().Debug(fmt.Sprintf("Could not read distribution manifest next to %s: %v", soulPath, err))
 	} else if manifest == nil {
 		userAuthored = true
 	} else if len(manifest.DistributionOwned) > 0 {
@@ -393,7 +392,7 @@ func BuildContextFilesPrompt(ctx context.Context, env *tools.Env, o ContextFiles
 	cwdPath := resolvePath(raw)
 	sections := []string{}
 	if projectContextSuppressed(o.Cwd, cwdPath, o.AllowInstallTreeFallback) {
-		slog.Warn(fmt.Sprintf("skipping project-context discovery: working-directory resolution fell back to the Icebath "+
+		pkgLog().Warn(fmt.Sprintf("skipping project-context discovery: working-directory resolution fell back to the Icebath "+
 			"install tree (%s) — set terminal.cwd to your project directory", cwdPath))
 	} else {
 		section := loadIcebathMD(ctx, env, cwdPath, o.ContextLength)

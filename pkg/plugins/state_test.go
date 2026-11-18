@@ -61,7 +61,7 @@ func TestConfigRoundTripUsesCanonicalSettingsNamespace(t *testing.T) {
 	if v := mustGet(t, c, ctx, "api_url", "unset"); v != "unset" {
 		t.Fatal(v)
 	}
-	path := `C:\Users\Owner\Hermes 🚀`
+	path := `C:\Users\Owner\Icebath 🚀`
 	if err := c.SetConfig(ctx, "api_url", path); err != nil {
 		t.Fatal(err)
 	}

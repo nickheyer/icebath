@@ -26,9 +26,9 @@ func delegateQuiet(logMessage string, fn func()) {
 			}
 			if logMessage != "" {
 				if strings.Contains(logMessage, "%") {
-					delegateLog().Debug(fmt.Sprintf(logMessage, r))
+					pkgLog().Debug(fmt.Sprintf(logMessage, r))
 				} else {
-					delegateLog().Debug(logMessage, "error", r)
+					pkgLog().Debug(logMessage, "error", r)
 				}
 			}
 		}
@@ -224,7 +224,7 @@ func buildChildSystemPrompt(ctx context.Context, env *tools.Env, contextText, wo
 			cwd := workspacePath
 			out, err := BuildContextFilesPrompt(ctx, env, ContextFilesOptions{Cwd: &cwd, SkipSoul: true})
 			if err != nil {
-				delegateLog().Debug("subagent: workspace context-files load failed", "error", err)
+				pkgLog().Debug("subagent: workspace context-files load failed", "error", err)
 				return
 			}
 			ctxFiles = out

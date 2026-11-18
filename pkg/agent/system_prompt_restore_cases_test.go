@@ -218,7 +218,7 @@ func TestSurfaceSwitch(t *testing.T) {
 
 func TestStoredPromptReuse(t *testing.T) {
 	t.Run("test_present_row_is_reused_verbatim", func(t *testing.T) {
-		warnings := captureLogger(t, "agent.conversation_loop", slog.LevelWarn)
+		warnings := captureLogger(t, "agent", slog.LevelWarn)
 		stored := "Stored prompt from turn 1 — byte-identical reuse"
 		store := restoreRowStore(t, pyjson.ObjectOf("system_prompt", stored))
 		a, builds := restoreAgent(t, store, "BUILT_PROMPT")
@@ -228,7 +228,7 @@ func TestStoredPromptReuse(t *testing.T) {
 		}
 	})
 	t.Run("test_present_row_with_stale_runtime_identity_rebuilds", func(t *testing.T) {
-		infos := captureLogger(t, "agent.conversation_loop", slog.LevelInfo)
+		infos := captureLogger(t, "agent", slog.LevelInfo)
 		head := "You are Icebath Agent.\n\nConversation started: Tuesday, June 16, 2026\nSession ID: test-session-id\n"
 		store := restoreRowStore(t, pyjson.ObjectOf("system_prompt", head+"Model: anthropic/claude-opus-4.8-fast\nProvider: openrouter"))
 		a, builds := restoreAgent(t, store, head+"Model: openai/gpt-5.5\nProvider: openrouter")
@@ -265,7 +265,7 @@ func TestStoredPromptReuse(t *testing.T) {
 		a.botModeProtocol = false
 		a.tools = []any{toolDef("read_file"), toolDef("terminal")}
 		restoreNow(t, a, hiHistory())
-		if len(builds.calls) != 1 || !reflect.DeepEqual(a.tools, pinned) || !a.validToolNames["skill_manage"] {
+		if len(builds.calls) != 1 || !reflect.DeepEqual(pyjson.Plain(a.tools), pinned) || !a.validToolNames["skill_manage"] {
 			t.Fatalf("builds %d tools %v valid %v", len(builds.calls), mcp.AgentToolNames(a), a.validToolNames)
 		}
 		if got := restoreStoredPin(t, db); !reflect.DeepEqual(got, pinned) {
@@ -320,7 +320,7 @@ func restoreStoredPin(t *testing.T, db *state.SessionDB) []any {
 
 func TestLegitimateFreshBuild(t *testing.T) {
 	t.Run("test_no_history_skips_db_and_builds_fresh", func(t *testing.T) {
-		warnings := captureLogger(t, "agent.conversation_loop", slog.LevelWarn)
+		warnings := captureLogger(t, "agent", slog.LevelWarn)
 		store := restoreRowStore(t, nil)
 		a, builds := restoreAgent(t, store, "BUILT_PROMPT")
 		restoreNow(t, a, nil)
@@ -342,7 +342,7 @@ func TestLegitimateFreshBuild(t *testing.T) {
 
 func TestSilentFailureWarnings(t *testing.T) {
 	t.Run("test_db_write_failure_warns_loudly", func(t *testing.T) {
-		warnings := captureLogger(t, "agent.conversation_loop", slog.LevelWarn)
+		warnings := captureLogger(t, "agent", slog.LevelWarn)
 		store := restoreRowStore(t, nil)
 		store.updateErr = errors.New("database is locked")
 		a, builds := restoreAgent(t, store, "BUILT_PROMPT")
@@ -459,7 +459,7 @@ func TestPerResponseSessionWritePath(t *testing.T) {
 			}
 			return false
 		}
-		warnings := captureLogger(t, "agent.conversation_loop", slog.LevelWarn)
+		warnings := captureLogger(t, "agent", slog.LevelWarn)
 		first, _ := restoreAgent(t, db, "GROUP_PROMPT")
 		first.sessionID = sessionID
 		restoreNow(t, first, hiHistory())

@@ -12,8 +12,6 @@ import (
 	"strings"
 	"syscall"
 	"time"
-	"unicode"
-	"unicode/utf8"
 
 	"github.com/nickheyer/icebath/pkg/internal/proc"
 )
@@ -93,30 +91,17 @@ func whichInPath(cmd, pathValue string) string {
 	return ""
 }
 
-// Python OSError text with errno, capitalised strerror, and the quoted filename
-func pyOSErrorText(err error) string {
+// Reason of an operating system failure followed by the path it concerns
+func osErrorText(err error) string {
 	var pe *fs.PathError
 	if errors.As(err, &pe) {
-		var errno syscall.Errno
-		if errors.As(pe.Err, &errno) {
-			return fmt.Sprintf("[Errno %d] %s: %s", int(errno), strerrorCapitalized(errno.Error()), pyReprStr(pe.Path))
-		}
-		return pe.Err.Error() + ": " + pyReprStr(pe.Path)
+		return pe.Err.Error() + ": " + pe.Path
 	}
 	var errno syscall.Errno
 	if errors.As(err, &errno) {
-		return fmt.Sprintf("[Errno %d] %s", int(errno), strerrorCapitalized(errno.Error()))
+		return errno.Error()
 	}
 	return err.Error()
-}
-
-// Upper cases the first rune of a strerror message the way libc spells it
-func strerrorCapitalized(s string) string {
-	r, size := utf8.DecodeRuneInString(s)
-	if size == 0 {
-		return s
-	}
-	return string(unicode.ToUpper(r)) + s[size:]
 }
 
 // Python list repr of an argv for subprocess error text
@@ -235,7 +220,7 @@ func CollectWorkingDiff(cwd, mode string, paths []string) WorkingDiff {
 	}
 	code, _, err := workingDiffRun([]string{"rev-parse", "--is-inside-work-tree"}, cwd, 5*time.Second)
 	if err != nil {
-		return WorkingDiff{Error: "git failed: " + pyOSErrorText(err)}
+		return WorkingDiff{Error: "git failed: " + osErrorText(err)}
 	}
 	if code == 127 {
 		return WorkingDiff{Error: "git is not installed or not on PATH."}
@@ -258,7 +243,7 @@ func CollectWorkingDiff(cwd, mode string, paths []string) WorkingDiff {
 		if errors.As(err, &te) {
 			return WorkingDiff{Error: "git diff timed out."}
 		}
-		return WorkingDiff{Error: "git failed: " + pyOSErrorText(err)}
+		return WorkingDiff{Error: "git failed: " + osErrorText(err)}
 	}
 	statArgs := append(append(append([]string{}, baseArgs...), "--stat"), pathspec...)
 	_, statOut, err := workingDiffRun(statArgs, cwd, workingDiffGitTimeout)

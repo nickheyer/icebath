@@ -9,18 +9,17 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/nickheyer/icebath/pkg/activesessions"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/media"
 	"github.com/nickheyer/icebath/pkg/tools"
 	"github.com/nickheyer/icebath/pkg/tuigateway"
+	"github.com/nickheyer/icebath/pkg/tuihost"
 )
 
 var voiceRPCRegistry = &handlerRegistry{}
 
 func init() {
-	voiceRPCRegistry.method("gateway.capabilities", gatewayCapabilities)
 	voiceRPCRegistry.method("client.capabilities", clientCapabilities)
 	voiceRPCRegistry.method("wake.start", wakeStart)
 	voiceRPCRegistry.method("wake.stop", wakeStop)
@@ -28,7 +27,6 @@ func init() {
 	voiceRPCRegistry.method("wake.status", wakeStatus)
 	voiceRPCRegistry.method("voice.toggle", voiceToggle)
 	voiceRPCRegistry.method("voice.record", voiceRecord)
-	voiceRPCRegistry.method("voice.tts", voiceTTS)
 	voiceRPCRegistry.install()
 }
 
@@ -37,20 +35,18 @@ func voiceEnv(ctx context.Context) *tools.Env {
 	return tools.EnvForProfileHome(ctx, nil, home.Dir(ctx))
 }
 
-// What this build enforces, sourced from the enforcing module
-func gatewayCapabilities(_ context.Context, rid any, _ map[string]any) map[string]any {
-	return ok(rid, map[string]any{"per_session_exclusive_submit": activesessions.PerSessionExclusiveSubmit})
-}
-
 // Records what the calling client handles
 func clientCapabilities(ctx context.Context, rid any, params map[string]any) map[string]any {
 	transport := callerTransport(ctx)
 	if raw, present := params["server_requests"]; present {
-		tuigateway.Advertise(transport, truthy(raw))
+		tuihost.Advertise(transport, truthy(raw))
 	}
-	names := make([]string, 0, len(tuigateway.ServerRequests))
-	for name := range tuigateway.ServerRequests {
+	names := make([]string, 0, len(tuihost.ServerRequests))
+	for name := range tuihost.ServerRequests {
 		names = append(names, name)
+	}
+	for _, entry := range tuigateway.Entries(tuigateway.KindRequest) {
+		names = append(names, entry.Name)
 	}
 	sort.Strings(names)
 	return ok(rid, map[string]any{"server_requests": names, "declines_not_shown": true, "canonical_clarify_batch": true})
@@ -81,7 +77,7 @@ func wakeProbe(ctx context.Context, cfg map[string]any) media.WakeRequirements {
 func persistWakeEnabled(ctx context.Context, enabled bool) (saved bool) {
 	defer func() {
 		if failure := recover(); failure != nil {
-			voiceLogger().Warn(fmt.Sprintf("wake: failed to persist wake_word.enabled=%v: %s", pyrepr.Repr(enabled), failureText(failure)))
+			pkgLog().Warn(fmt.Sprintf("wake: failed to persist wake_word.enabled=%v: %s", pyrepr.Repr(enabled), failureText(failure)))
 			saved = false
 		}
 	}()
@@ -89,12 +85,12 @@ func persistWakeEnabled(ctx context.Context, enabled bool) (saved bool) {
 }
 
 // Detection callback pausing the detector, checking ownership and emitting wake.detected on the owner's transport
-func wakeDetectHandler(ctx context.Context, transport tuigateway.Transport, sid, phrase string, newSession bool) func() error {
+func wakeDetectHandler(ctx context.Context, transport tuihost.Transport, sid, phrase string, newSession bool) func() error {
 	return func() error {
 		if !media.PauseListening(transport) || !media.OwnsListener(transport) {
 			return nil
 		}
-		if tuigateway.TransportIsDead(transport) {
+		if tuihost.TransportIsDead(transport) {
 			releaseWakeForTransport(transport)
 			return nil
 		}
@@ -102,7 +98,7 @@ func wakeDetectHandler(ctx context.Context, transport tuigateway.Transport, sid,
 		if !matched {
 			matchedPhrase, matchedProfile = phrase, ""
 		}
-		voiceLogger().Info(fmt.Sprintf("wake.detected: emitting to sid=%s (transport=%T, profile=%s)", pyrepr.Repr(sid), transport, pyrepr.Repr(matchedProfile)))
+		pkgLog().Info(fmt.Sprintf("wake.detected: emitting to sid=%s (transport=%T, profile=%s)", pyrepr.Repr(sid), transport, pyrepr.Repr(matchedProfile)))
 		if matchedPhrase == "" {
 			matchedPhrase = phrase
 		}
@@ -110,7 +106,7 @@ func wakeDetectHandler(ctx context.Context, transport tuigateway.Transport, sid,
 		if matchedProfile != "" {
 			profile = matchedProfile
 		}
-		emitEvent(tuigateway.BindTransport(ctx, transport), "wake.detected", sid,
+		emitEvent(tuihost.BindTransport(ctx, transport), "wake.detected", sid,
 			map[string]any{"phrase": matchedPhrase, "profile": profile, "start_new_session": newSession})
 		return nil
 	}
@@ -133,7 +129,7 @@ func wakeStart(ctx context.Context, rid any, params map[string]any) map[string]a
 	cfg := media.LoadWakeWordConfig(ctx)
 	reqs := wakeProbe(ctx, cfg)
 	if !reqs.Available {
-		voiceLogger().Warn(fmt.Sprintf("wake.start(%s): not available — %s", surface, reqs.Hint))
+		pkgLog().Warn(fmt.Sprintf("wake.start(%s): not available — %s", surface, reqs.Hint))
 		return refused("unavailable", map[string]any{"hint": reqs.Hint})
 	}
 	enabledPersisted := truthy(params["persist"]) && !truthy(cfg["enabled"]) && persistWakeEnabled(ctx, true)
@@ -150,11 +146,11 @@ func wakeStart(ctx context.Context, rid any, params map[string]any) map[string]a
 		if !truthy(cfg["enabled"]) {
 			reason = "disabled"
 		}
-		voiceLogger().Info(fmt.Sprintf("wake.start(%s): %s (enabled=%s, surface=%s)", surface, reason, pyrepr.Repr(cfg["enabled"]), pyrepr.Repr(cfg["surface"])))
+		pkgLog().Info(fmt.Sprintf("wake.start(%s): %s (enabled=%s, surface=%s)", surface, reason, pyrepr.Repr(cfg["enabled"]), pyrepr.Repr(cfg["surface"])))
 		return refused(reason, nil)
 	}
 	existingOwner, existingSurface := wakeOwnerSnapshot()
-	if existingOwner != nil && (tuigateway.TransportIsDead(existingOwner) || !media.OwnsListener(existingOwner)) {
+	if existingOwner != nil && (tuihost.TransportIsDead(existingOwner) || !media.OwnsListener(existingOwner)) {
 		releaseWakeForTransport(existingOwner)
 		existingOwner, existingSurface = nil, ""
 	}
@@ -175,7 +171,7 @@ func wakeStart(ctx context.Context, rid any, params map[string]any) map[string]a
 			}
 			return refused("owned", map[string]any{"owner_surface": owner})
 		}
-		voiceLogger().Warn(fmt.Sprintf("wake.start(%s): failed to start listener: %s", surface, err))
+		pkgLog().Warn(fmt.Sprintf("wake.start(%s): failed to start listener: %s", surface, err))
 		return rpcErr(rid, 5026, err.Error(), nil)
 	}
 	wakeMu.Lock()
@@ -185,7 +181,7 @@ func wakeStart(ctx context.Context, rid any, params map[string]any) map[string]a
 	if !armed {
 		phrase, provider = reqs.Phrase, reqs.Provider
 	}
-	voiceLogger().Info(fmt.Sprintf("wake.start(%s): listening for %s (%s)", surface, pyrepr.Repr(phrase), provider))
+	pkgLog().Info(fmt.Sprintf("wake.start(%s): listening for %s (%s)", surface, pyrepr.Repr(phrase), provider))
 	return ok(rid, map[string]any{"started": true, "phrase": phrase, "provider": provider, "owner_surface": surface,
 		"enabled_persisted": enabledPersisted})
 }
@@ -211,7 +207,7 @@ func wakeStop(ctx context.Context, rid any, params map[string]any) map[string]an
 // Reclaims the microphone after a pause, nothing when the listener is not armed
 func wakeResume(ctx context.Context, rid any, _ map[string]any) map[string]any {
 	resumed := wakeResumeIfOwner(callerTransport(ctx), 15e9, 1e9)
-	voiceLogger().Info(fmt.Sprintf("wake.resume: detector resumed=%s", pyrepr.Repr(resumed)))
+	pkgLog().Info(fmt.Sprintf("wake.resume: detector resumed=%s", pyrepr.Repr(resumed)))
 	return ownerResult(rid, "resumed", resumed, nil)
 }
 
@@ -299,7 +295,7 @@ func ttsLeaseAsync(ctx context.Context, lease string, active bool) {
 	go func() {
 		defer func() {
 			if failure := recover(); failure != nil {
-				voiceLogger().Debug(fmt.Sprintf("voice: tts lease %s active=%s failed: %s", lease, pyrepr.Repr(active), failureText(failure)))
+				pkgLog().Debug(fmt.Sprintf("voice: tts lease %s active=%s failed: %s", lease, pyrepr.Repr(active), failureText(failure)))
 			}
 		}()
 		if active {
@@ -336,7 +332,7 @@ func voiceToggle(ctx context.Context, rid any, params map[string]any) map[string
 		func() {
 			defer func() {
 				if failure := recover(); failure != nil {
-					voiceLogger().Warn(fmt.Sprintf("voice.toggle status: requirements probe failed: %s", failureText(failure)))
+					pkgLog().Warn(fmt.Sprintf("voice.toggle status: requirements probe failed: %s", failureText(failure)))
 				}
 			}()
 			reqs, err := media.CheckVoiceRequirements(ctx)
@@ -364,7 +360,7 @@ func voiceToggle(ctx context.Context, rid any, params map[string]any) map[string
 			func() {
 				defer func() {
 					if failure := recover(); failure != nil {
-						voiceLogger().Warn(fmt.Sprintf("voice: stop_continuous failed during toggle off: %s", failureText(failure)))
+						pkgLog().Warn(fmt.Sprintf("voice: stop_continuous failed during toggle off: %s", failureText(failure)))
 					}
 				}()
 				media.StopContinuous(ctx, false)
@@ -510,17 +506,4 @@ func voiceRecord(ctx context.Context, rid any, params map[string]any) (response 
 	voiceCaptureSID = sid
 	voiceSidMu.Unlock()
 	return ok(rid, map[string]any{"status": "recording"})
-}
-
-// Speaks text on a pipeline the full duplex listener can cut
-func voiceTTS(ctx context.Context, rid any, params map[string]any) map[string]any {
-	text, present := params["text"]
-	if !present {
-		text = ""
-	}
-	if !truthy(text) {
-		return rpcErr(rid, 4020, "text required", nil)
-	}
-	speakTextWithBarge(context.WithoutCancel(ctx), pyrepr.Str(text))
-	return ok(rid, map[string]any{"status": "speaking"})
 }

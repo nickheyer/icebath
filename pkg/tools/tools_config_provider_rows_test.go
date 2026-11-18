@@ -148,7 +148,7 @@ func TestPluginProviderRowsFailuresReturnNoRows(t *testing.T) {
 		t.Fatalf("tts rows without builtin names %v", rows)
 	}
 	defer func() {
-		if r := recover(); r == nil || !strings.Contains(r.(string), "not iterable") {
+		if r := recover(); r == nil || !strings.Contains(r.(string), "expected a list of mappings") {
 			t.Fatalf("variants of an int recovered %v", r)
 		}
 	}()
@@ -199,121 +199,38 @@ func TestComputerUseRowsSkipTheBuiltinBackend(t *testing.T) {
 		t.Fatalf("row %v", rowPairs(rows[0]))
 	}
 	swapHook(t, &ToolsConfigHooks.ComputerUseProviders, func(*Env) ([][2]string, error) { return nil, errors.New("plugins dir unreadable") })
-	if _, err := s.VisibleProviders(catalogCategory("computer_use"), config.Tree{}, false, &NousToolFeatures{}); err == nil {
+	if _, err := s.VisibleProviders(catalogCategory("computer_use")); err == nil {
 		t.Fatal("discovery failure swallowed")
 	}
 }
 
-// Nous features double with auth, the per feature states and an account
-func nousFeaturesDouble(auth bool, features map[string]NousToolFeature, account *NousToolAccount) func(context.Context, string, map[string]any, bool) NousToolFeatures {
-	return func(context.Context, string, map[string]any, bool) NousToolFeatures {
-		return NousToolFeatures{NousAuthPresent: auth, Features: features, Account: account}
-	}
-}
-
-// Account double entitled for the listed coverage categories
-func accountDouble(loggedIn bool, paid *bool, entitled bool, categories ...string) *NousToolAccount {
-	return &NousToolAccount{LoggedIn: loggedIn, PaidServiceAccess: paid, ToolGatewayEntitled: entitled,
-		EntitledFor: func(c string) bool { return (paid != nil && *paid) || slices.Contains(categories, c) }}
-}
-
 func boolRef(b bool) *bool { return &b }
-
-func TestVisibleProvidersGateNousRows(t *testing.T) {
-	s, _ := newTestToolsSetup(t, "")
-	cat := toolCategory("name", "Custom", "providers", []any{
-		toolRow("Nous only", "", "", nil, "requires_nous_auth", true),
-		toolRow("Managed video", "", "", nil, "requires_nous_auth", true, "managed_nous_feature", "video_gen"),
-		toolRow("Plain", "", "", nil),
-	})
-	names := func(f *NousToolFeatures) []string {
-		rows, err := s.VisibleProviders(cat, config.Tree{}, false, f)
-		if err != nil {
-			t.Fatal(err)
-		}
-		var out []string
-		for _, r := range rows {
-			out = append(out, rowText(r, "name"))
-		}
-		return out
-	}
-	if got := names(&NousToolFeatures{}); !slices.Equal(got, []string{"Managed video", "Plain"}) {
-		t.Fatalf("logged out %v", got)
-	}
-	if got := names(&NousToolFeatures{NousAuthPresent: true}); !slices.Equal(got, []string{"Nous only", "Managed video", "Plain"}) {
-		t.Fatalf("logged in %v", got)
-	}
-	pool := &NousToolFeatures{NousAuthPresent: true, Account: accountDouble(true, boolRef(false), true)}
-	if got := names(pool); !slices.Equal(got, []string{"Nous only", "Plain"}) {
-		t.Fatalf("pool only %v", got)
-	}
-	pool.Account = accountDouble(true, nil, true, "fal-video")
-	if got := names(pool); !slices.Equal(got, []string{"Nous only", "Managed video", "Plain"}) {
-		t.Fatalf("pool funded for video %v", got)
-	}
-	swapHook(t, &ToolsConfigHooks.NousFeatures, nousFeaturesDouble(true, nil, nil))
-	if got := names(nil); !slices.Equal(got, []string{"Nous only", "Managed video", "Plain"}) {
-		t.Fatalf("fetched features %v", got)
-	}
-}
 
 func TestProviderReadinessStatusVerdicts(t *testing.T) {
 	s, _ := newTestToolsSetup(t, "")
 	unsetEnv(t, "READY_KEY", "XAI_API_KEY")
 	keyed := toolRow("Keyed", "", "", []any{toolKey("READY_KEY", "Ready key", "")})
-	status := func(row *pyjson.Object, f *NousToolFeatures, active *bool) string {
-		got, err := s.ProviderReadinessStatus(row, config.Tree{}, f, active)
+	status := func(row *pyjson.Object, active *bool) string {
+		got, err := s.ProviderReadinessStatus(row, config.Tree{}, active)
 		if err != nil {
 			t.Fatal(err)
 		}
 		return got
 	}
-	if got := status(keyed, nil, nil); got != "needs_keys" {
+	if got := status(keyed, nil); got != "needs_keys" {
 		t.Fatalf("keyed %s", got)
 	}
 	writeHomeEnv(t, s.home(), map[string]string{"READY_KEY": "v"})
-	if got := status(keyed, nil, nil); got != "ready" {
+	if got := status(keyed, nil); got != "ready" {
 		t.Fatalf("keyed with key %s", got)
-	}
-	swapHook(t, &ToolsConfigHooks.ManagedCoverageCategory, func(f string) (string, bool) {
-		if f == "image_gen" {
-			return "fal-image", true
-		}
-		return "", false
-	})
-	nousOnly := toolRow("Nous", "", "", nil, "requires_nous_auth", true)
-	if got := status(nousOnly, &NousToolFeatures{}, nil); got != "needs_auth" {
-		t.Fatalf("logged out %s", got)
-	}
-	if got := status(nousOnly, &NousToolFeatures{NousAuthPresent: true}, nil); got != "ready" {
-		t.Fatalf("logged in %s", got)
-	}
-	managedImage := toolRow("Managed image", "", "", nil, "managed_nous_feature", "image_gen")
-	pool := &NousToolFeatures{NousAuthPresent: true, Account: accountDouble(true, nil, true)}
-	if got := status(managedImage, pool, nil); got != "needs_auth" {
-		t.Fatalf("pool without image coverage %s", got)
-	}
-	pool.Account = accountDouble(true, nil, true, "fal-image")
-	if got := status(managedImage, pool, nil); got != "ready" {
-		t.Fatalf("pool with image coverage %s", got)
-	}
-	managedWeb := toolRow("Managed web", "", "", nil, "managed_nous_feature", "web")
-	if got := status(managedWeb, &NousToolFeatures{NousAuthPresent: true, Account: accountDouble(true, nil, false)}, nil); got != "needs_auth" {
-		t.Fatalf("unentitled web %s", got)
-	}
-	if got := status(managedWeb, &NousToolFeatures{NousAuthPresent: true, Account: accountDouble(false, nil, true)}, nil); got != "needs_auth" {
-		t.Fatalf("logged out account %s", got)
-	}
-	if got := status(managedWeb, &NousToolFeatures{NousAuthPresent: true, Account: accountDouble(true, nil, true)}, nil); got != "ready" {
-		t.Fatalf("entitled web %s", got)
 	}
 	xai := toolRow("xAI", "", "", nil, "post_setup", "xai_grok")
 	swapHook(t, &XAIOAuthTokensReader, func(context.Context, string) error { return errors.New("no tokens") })
-	if got := status(xai, nil, nil); got != "needs_auth" {
+	if got := status(xai, nil); got != "needs_auth" {
 		t.Fatalf("xai without credentials %s", got)
 	}
 	swapHook(t, &XAIOAuthTokensReader, func(context.Context, string) error { return nil })
-	if got := status(xai, nil, nil); got != "ready" {
+	if got := status(xai, nil); got != "ready" {
 		t.Fatalf("xai with oauth %s", got)
 	}
 	cua := toolRow("cua", "", "", nil, "computer_use_backend", "cua", "post_setup", "cua_driver")
@@ -323,26 +240,26 @@ func TestProviderReadinessStatusVerdicts(t *testing.T) {
 		want  string
 	}{{true, nil, "ready"}, {false, nil, "needs_setup"}, {false, errors.New("probe failed"), "ready"}} {
 		swapHook(t, &ToolsConfigHooks.CuaDriverInstallReady, func(*Env) (bool, error) { return c.ready, c.err })
-		if got := status(cua, nil, nil); got != c.want {
+		if got := status(cua, nil); got != c.want {
 			t.Fatalf("cua %+v got %s", c, got)
 		}
 	}
 	swapHook(t, &ToolsConfigHooks.CuaDriverInstallReady, func(*Env) (bool, error) { panic("probe crashed") })
-	if got := status(cua, nil, nil); got != "ready" {
+	if got := status(cua, nil); got != "ready" {
 		t.Fatalf("crashing probe %s", got)
 	}
 	unregistered := toolRow("Hooked", "", "", nil, "tts_provider", "kittentts-plus", "post_setup", "custom_hook")
-	if got := status(unregistered, nil, boolRef(true)); got != "ready" {
+	if got := status(unregistered, boolRef(true)); got != "ready" {
 		t.Fatalf("active unregistered hook %s", got)
 	}
-	if got := status(unregistered, nil, boolRef(false)); got != "needs_setup" {
+	if got := status(unregistered, boolRef(false)); got != "needs_setup" {
 		t.Fatalf("inactive unregistered hook %s", got)
 	}
 	cfgActive := config.Tree{"tts": map[string]any{"provider": "kittentts-plus"}}
-	if got, err := s.ProviderReadinessStatus(unregistered, cfgActive, nil, nil); err != nil || got != "ready" {
+	if got, err := s.ProviderReadinessStatus(unregistered, cfgActive, nil); err != nil || got != "ready" {
 		t.Fatalf("computed active %s %v", got, err)
 	}
-	if got := status(toolRow("Plain", "", "", nil), nil, nil); got != "ready" {
+	if got := status(toolRow("Plain", "", "", nil), nil); got != "ready" {
 		t.Fatalf("plain %s", got)
 	}
 }
@@ -350,12 +267,11 @@ func TestProviderReadinessStatusVerdicts(t *testing.T) {
 func TestToolsetNeedsConfigurationPromptSignals(t *testing.T) {
 	s, _ := newTestToolsSetup(t, "")
 	unsetEnv(t, "FAL_KEY")
-	swapHook(t, &ToolsConfigHooks.NousFeatures, nousFeaturesDouble(false, nil, nil))
 	swapHook(t, &ToolsConfigHooks.CuaDriverInstallReady, func(*Env) (bool, error) { return false, nil })
 	swapHook(t, &ToolsConfigHooks.ComputerUseDefaultBackend, func() string { return "cua" })
 	swapHook(t, &ToolsConfigHooks.ComputerUseProviders, func(*Env) ([][2]string, error) { return nil, nil })
 	needs := func(key string, cfg config.Tree) bool {
-		got, err := s.toolsetNeedsConfigurationPrompt(key, cfg, false)
+		got, err := s.toolsetNeedsConfigurationPrompt(key, cfg)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -434,9 +350,9 @@ func TestWebTierMatchesConfiguredAndAutoTiers(t *testing.T) {
 	}
 }
 
-func TestWebServingBackendsReadsTheLegacyGateway(t *testing.T) {
-	got := webServingBackends(config.Tree{"web": map[string]any{"use_gateway": "yes", "backend": "exa", "extract_backend": " Tavily "}})
-	if len(got) != 2 || !got["nous"] || !got["tavily"] {
+func TestWebServingBackendsReadsTheSharedAndPinnedBackends(t *testing.T) {
+	got := webServingBackends(config.Tree{"web": map[string]any{"backend": "exa", "extract_backend": " Tavily "}})
+	if len(got) != 2 || !got["exa"] || !got["tavily"] {
 		t.Fatalf("serving %v", got)
 	}
 	if got := webServingBackends(config.Tree{}); len(got) != 0 {
@@ -444,78 +360,23 @@ func TestWebServingBackendsReadsTheLegacyGateway(t *testing.T) {
 	}
 }
 
-func TestManagedProviderActiveSelections(t *testing.T) {
-	s, _ := newTestToolsSetup(t, "")
-	managed := map[string]NousToolFeature{"image_gen": {ManagedByNous: true}, "video_gen": {ManagedByNous: true},
-		"tts": {ManagedByNous: true}, "browser": {ManagedByNous: true}}
-	swapHook(t, &ToolsConfigHooks.NousFeatures, nousFeaturesDouble(true, managed, nil))
-	active := func(row *pyjson.Object, cfg config.Tree) bool {
-		t.Helper()
-		got, err := s.IsProviderActive(row, cfg, false)
-		if err != nil {
-			t.Fatal(err)
-		}
-		return got
-	}
-	image := toolRow("Nous", "", "", nil, "managed_nous_feature", "image_gen", "imagegen_backend", "nous")
-	for cfg, want := range map[string]bool{"": true, "fal": true, "nous": true, "openai": false} {
-		if got := active(image, config.Tree{"image_gen": map[string]any{"provider": cfg}}); got != want {
-			t.Fatalf("image provider %q active %v", cfg, got)
-		}
-	}
-	if active(image, config.Tree{"image_gen": map[string]any{"provider": "fal", "use_gateway": false}}) {
-		t.Fatal("direct FAL with use_gateway false read as managed")
-	}
-	if !active(image, config.Tree{"image_gen": map[string]any{"provider": "nous", "use_gateway": false}}) {
-		t.Fatal("explicit nous pick ignored")
-	}
-	if !active(image, config.Tree{"image_gen": "corrupt"}) {
-		t.Fatal("non dict image section blocked the managed state")
-	}
-	if _, err := s.IsProviderActive(image, config.Tree{"image_gen": map[string]any{"provider": []any{"x"}}}, false); err == nil {
-		t.Fatal("unhashable provider accepted")
-	}
-	tts := toolRow("Nous TTS", "", "", nil, "tts_provider", "openai", "managed_nous_feature", "tts")
-	if !active(tts, config.Tree{"tts": map[string]any{"provider": "nous"}}) || !active(tts, config.Tree{"tts": map[string]any{"provider": "openai"}}) ||
-		active(tts, config.Tree{"tts": map[string]any{"provider": "edge"}}) {
-		t.Fatal("managed tts selection wrong")
-	}
-	browser := toolRow("Nous browser", "", "", nil, "browser_provider", "browser-use", "managed_nous_feature", "browser")
-	if !active(browser, config.Tree{"browser": map[string]any{"cloud_provider": "browser-use"}}) || active(browser, config.Tree{}) {
-		t.Fatal("managed browser selection wrong")
-	}
-	stt := toolRow("Nous STT", "", "", nil, "stt_provider", "openai", "managed_nous_feature", "stt")
-	if active(stt, config.Tree{"stt": map[string]any{"provider": "nous"}}) {
-		t.Fatal("missing managed feature read active")
-	}
-	swapHook(t, &ToolsConfigHooks.NousFeatures, nousFeaturesDouble(true, map[string]NousToolFeature{"tts": {}}, nil))
-	if active(tts, config.Tree{"tts": map[string]any{"provider": []any{"unhashable"}}}) {
-		t.Fatal("unmanaged feature read active")
-	}
-	swapHook(t, &ToolsConfigHooks.NousFeatures, nousFeaturesDouble(true, map[string]NousToolFeature{"modal": {ManagedByNous: true}}, nil))
-	if !active(toolRow("Modal", "", "", nil, "managed_nous_feature", "modal"), config.Tree{}) {
-		t.Fatal("marker free managed row inactive")
-	}
-}
-
 func TestUnmanagedActiveChecks(t *testing.T) {
 	s, _ := newTestToolsSetup(t, "")
 	active := func(row *pyjson.Object, cfg config.Tree) bool {
 		t.Helper()
-		got, err := s.IsProviderActive(row, cfg, false)
+		got, err := s.IsProviderActive(row, cfg)
 		if err != nil {
 			t.Fatal(err)
 		}
 		return got
 	}
 	plugin := toolRow("Fluxy", "", "", nil, "image_gen_plugin_name", "fluxy")
-	if !active(plugin, config.Tree{"image_gen": map[string]any{"provider": "fluxy"}}) ||
-		active(plugin, config.Tree{"image_gen": map[string]any{"provider": "fluxy", "use_gateway": true}}) || active(plugin, config.Tree{}) {
+	if !active(plugin, config.Tree{"image_gen": map[string]any{"provider": "fluxy"}}) || active(plugin, config.Tree{}) {
 		t.Fatal("plugin image row wrong")
 	}
 	video := toolRow("Veo", "", "", nil, "video_gen_plugin_name", "veo")
-	if !active(video, config.Tree{"video_gen": map[string]any{"provider": "veo", "use_gateway": true}}) {
-		t.Fatal("plugin video row ignores use_gateway")
+	if !active(video, config.Tree{"video_gen": map[string]any{"provider": "veo"}}) {
+		t.Fatal("plugin video row inactive")
 	}
 	local := toolRow("Local Whisper", "", "", nil, "stt_provider", "local")
 	if !active(local, config.Tree{}) || active(local, config.Tree{"stt": map[string]any{"provider": "groq"}}) {
@@ -539,8 +400,7 @@ func TestUnmanagedActiveChecks(t *testing.T) {
 		t.Fatal("computer use row wrong")
 	}
 	fal := toolRow("FAL", "", "", nil, "imagegen_backend", "fal")
-	if !active(fal, config.Tree{}) || active(fal, config.Tree{"image_gen": map[string]any{"use_gateway": "on"}}) ||
-		active(fal, config.Tree{"image_gen": map[string]any{"provider": "openai"}}) || active(toolRow("N", "", "", nil, "imagegen_backend", "nous"), config.Tree{}) {
+	if !active(fal, config.Tree{}) || active(fal, config.Tree{"image_gen": map[string]any{"provider": "openai"}}) {
 		t.Fatal("FAL backend row wrong")
 	}
 	if active(toolRow("Markerless", "", "", nil), config.Tree{}) {
@@ -555,15 +415,15 @@ func TestDetectActiveProviderIndexFallsBackToConfiguredKeys(t *testing.T) {
 		toolRow("Edge", "", "", nil, "tts_provider", "edge"),
 		toolRow("Keyed", "", "", []any{toolKey("SECOND_KEY", "Second", "")}, "tts_provider", "keyed"),
 	}
-	idx, err := s.detectActiveProviderIndex(rows, config.Tree{}, false)
+	idx, err := s.detectActiveProviderIndex(rows, config.Tree{})
 	if err != nil || idx != 0 {
 		t.Fatalf("nothing active %d %v", idx, err)
 	}
 	writeHomeEnv(t, s.home(), map[string]string{"SECOND_KEY": "x"})
-	if idx, err = s.detectActiveProviderIndex(rows, config.Tree{}, false); err != nil || idx != 1 {
+	if idx, err = s.detectActiveProviderIndex(rows, config.Tree{}); err != nil || idx != 1 {
 		t.Fatalf("keyed fallback %d %v", idx, err)
 	}
-	if idx, err = s.detectActiveProviderIndex(rows, config.Tree{"tts": map[string]any{"provider": "edge"}}, false); err != nil || idx != 0 {
+	if idx, err = s.detectActiveProviderIndex(rows, config.Tree{"tts": map[string]any{"provider": "edge"}}); err != nil || idx != 0 {
 		t.Fatalf("active first %d %v", idx, err)
 	}
 }
@@ -576,18 +436,6 @@ func TestModelCatalogSources(t *testing.T) {
 	cat, def := s.falModelCatalog(config.Tree{})
 	if !slices.Equal(cat.ids, []string{"fal-a", "fal-b"}) || def != "fal-b" {
 		t.Fatalf("fal catalog %v %s", cat.ids, def)
-	}
-	var gates [][2]bool
-	swapHook(t, &ToolsConfigHooks.ManagedImageCatalog, func(_ context.Context, _ *Env, krea, portal bool) ([]string, map[string]map[string]any, string) {
-		gates = append(gates, [2]bool{krea, portal})
-		return []string{"m"}, map[string]map[string]any{"m": {}}, "m"
-	})
-	for _, acct := range []*NousToolAccount{nil, accountDouble(true, boolRef(true), true), accountDouble(true, boolRef(false), true), accountDouble(true, nil, true, "krea")} {
-		swapHook(t, &ToolsConfigHooks.NousFeatures, nousFeaturesDouble(true, nil, acct))
-		s.managedImageCatalog(config.Tree{})
-	}
-	if !slices.Equal(gates, [][2]bool{{true, true}, {true, true}, {false, false}, {true, false}}) {
-		t.Fatalf("managed gates %v", gates)
 	}
 	swapHook(t, &ToolsConfigHooks.ImageGenRegistry, fakePickerRegistry(nil, &fakePickerProvider{name: "fluxy", def: "fluxy-2",
 		models: []map[string]any{{"id": "fluxy-1", "speed": "fast"}, {"name": "no id"}, nil, {"id": "fluxy-2"}, {"id": "fluxy-1", "speed": "slow"}}}))
@@ -606,73 +454,42 @@ func TestModelCatalogSources(t *testing.T) {
 
 func TestWriteProviderConfigPersistsOneSelection(t *testing.T) {
 	s, _ := newTestToolsSetup(t, "")
-	write := func(row *pyjson.Object, cfg config.Tree, managed string) config.Tree {
+	write := func(row *pyjson.Object, cfg config.Tree) config.Tree {
 		t.Helper()
-		if err := s.writeProviderConfig(row, cfg, managed); err != nil {
+		if err := s.writeProviderConfig(row, cfg); err != nil {
 			t.Fatal(err)
 		}
 		return cfg
 	}
-	cfg := write(toolRow("Edge", "", "", nil, "tts_provider", "edge"), config.Tree{"tts": map[string]any{"use_gateway": true}}, "")
+	cfg := write(toolRow("Edge", "", "", nil, "tts_provider", "edge"), config.Tree{"tts": map[string]any{}})
 	if !pyjson.Equal(cfg["tts"], map[string]any{"provider": "edge"}) {
 		t.Fatalf("tts %v", cfg["tts"])
 	}
-	cfg = write(toolRow("Nous STT", "", "", nil, "stt_provider", "openai", "managed_nous_feature", "stt"), config.Tree{}, "stt")
-	if !pyjson.Equal(cfg["stt"], map[string]any{"provider": "nous"}) {
-		t.Fatalf("stt %v", cfg["stt"])
-	}
-	cfg = write(toolRow("Local", "", "", nil, "browser_provider", "", "browser_engine", "lightpanda"), config.Tree{"browser": map[string]any{"use_gateway": true}}, "")
+	cfg = write(toolRow("Local", "", "", nil, "browser_provider", "", "browser_engine", "lightpanda"), config.Tree{"browser": map[string]any{}})
 	if !pyjson.Equal(cfg["browser"], map[string]any{"engine": "lightpanda"}) {
 		t.Fatalf("browser %v", cfg["browser"])
 	}
-	if err := s.writeProviderConfig(toolRow("Local", "", "", nil, "browser_provider", ""), config.Tree{"browser": nil}, ""); err == nil ||
-		err.Error() != "AttributeError: 'NoneType' object has no attribute 'pop'" {
-		t.Fatalf("pop on None %v", err)
-	}
-	if err := s.writeProviderConfig(toolRow("L", "", "", nil, "browser_engine", "auto"), config.Tree{"browser": "x"}, ""); err == nil ||
-		err.Error() != "TypeError: 'str' object does not support item assignment" {
+	if err := s.writeProviderConfig(toolRow("L", "", "", nil, "browser_engine", "auto"), config.Tree{"browser": "x"}); err == nil ||
+		err.Error() != "browser in config is text, expected a mapping" {
 		t.Fatalf("item assignment on str %v", err)
 	}
 	cfg = write(toolRow("Exa paid", "", "", nil, "web_backend", "exa", "web_tier", "paid"),
-		config.Tree{"web": map[string]any{"search_backend": "tavily"}}, "")
+		config.Tree{"web": map[string]any{"search_backend": "tavily"}})
 	if !pyjson.Equal(cfg["web"], map[string]any{"backend": "exa", "search_backend": "tavily", "provider_tier": map[string]any{"exa": "paid"}}) {
 		t.Fatalf("tiered web %v", cfg["web"])
 	}
-	cfg = write(toolRow("Exa", "", "", nil, "web_backend", "exa"), cfg, "")
+	cfg = write(toolRow("Exa", "", "", nil, "web_backend", "exa"), cfg)
 	if !pyjson.Equal(cfg["web"], map[string]any{"backend": "exa", "search_backend": "tavily", "provider_tier": map[string]any{}}) {
 		t.Fatalf("untiered web %v", cfg["web"])
 	}
-	cfg = write(toolRow("Nous web", "", "", nil, "web_backend", "firecrawl", "managed_nous_feature", "web"),
-		config.Tree{"web": map[string]any{"search_backend": "tavily", "extract_backend": "exa", "use_gateway": true}}, "web")
-	if !pyjson.Equal(cfg["web"], map[string]any{"backend": "nous"}) {
-		t.Fatalf("managed web %v", cfg["web"])
-	}
-	cfg = write(toolRow("cua", "", "", nil, "computer_use_backend", "cua"), config.Tree{}, "")
+	cfg = write(toolRow("cua", "", "", nil, "computer_use_backend", "cua"), config.Tree{})
 	if !pyjson.Equal(cfg["computer_use"], map[string]any{"backend": "cua"}) {
 		t.Fatalf("computer use %v", cfg["computer_use"])
-	}
-	cfg = write(toolRow("Nous video", "", "", nil, "managed_nous_feature", "video_gen"), config.Tree{"video_gen": map[string]any{"use_gateway": true, "provider": "veo"}}, "video_gen")
-	if !pyjson.Equal(cfg["video_gen"], map[string]any{"provider": "nous"}) {
-		t.Fatalf("managed video %v", cfg["video_gen"])
-	}
-	cfg = write(toolRow("Nous image", "", "", nil, "managed_nous_feature", "image_gen"), config.Tree{"image_gen": "kept"}, "image_gen")
-	if cfg["image_gen"] != "kept" {
-		t.Fatalf("non dict managed section %v", cfg["image_gen"])
-	}
-	xai := catalogCategory("x_search").GetOr("providers", nil).([]any)[1].(*pyjson.Object)
-	cfg = write(xai, config.Tree{"x_search": map[string]any{"use_gateway": true}}, "")
-	if !pyjson.Equal(cfg["x_search"], map[string]any{}) {
-		t.Fatalf("catalog membership fallback %v", cfg["x_search"])
-	}
-	cfg = write(toolRow("Fluxy", "", "", nil, "image_gen_plugin_name", "fluxy"), config.Tree{"image_gen": map[string]any{"use_gateway": true}}, "")
-	if !pyjson.Equal(cfg["image_gen"], map[string]any{}) {
-		t.Fatalf("plugin row marker section %v", cfg["image_gen"])
 	}
 }
 
 func TestApplyProviderSelectionResolvesVisibleRows(t *testing.T) {
 	s, _ := newTestToolsSetup(t, "")
-	swapHook(t, &ToolsConfigHooks.NousFeatures, nousFeaturesDouble(true, nil, nil))
 	swapHook(t, &ToolsConfigHooks.ImageGenRegistry, fakePickerRegistry(nil, &fakePickerProvider{name: "fluxy", display: "Fluxy", schema: map[string]any{"name": "Fluxy"}}))
 	err := s.ApplyProviderSelection("nope", "x", config.Tree{})
 	var sel *ProviderSelectionError
@@ -683,18 +500,12 @@ func TestApplyProviderSelectionResolvesVisibleRows(t *testing.T) {
 	if !errors.As(err, &sel) || sel.Message != "Unknown provider 'Missing' for toolset 'image_gen'" || err.Error() != `"Unknown provider 'Missing' for toolset 'image_gen'"` {
 		t.Fatalf("unknown provider %v", err)
 	}
-	cfg := config.Tree{"image_gen": map[string]any{"use_gateway": true}}
+	cfg := config.Tree{"image_gen": map[string]any{}}
 	if err := s.ApplyProviderSelection("image_gen", "Fluxy", cfg); err != nil {
 		t.Fatal(err)
 	}
 	if !pyjson.Equal(cfg["image_gen"], map[string]any{"provider": "fluxy"}) {
 		t.Fatalf("plugin image pick %v", cfg["image_gen"])
-	}
-	if err := s.ApplyProviderSelection("image_gen", "Nous Subscription", cfg); err != nil {
-		t.Fatal(err)
-	}
-	if !pyjson.Equal(cfg["image_gen"], map[string]any{"provider": "nous"}) {
-		t.Fatalf("managed image pick %v", cfg["image_gen"])
 	}
 	saved := ToolCategories
 	t.Cleanup(func() { ToolCategories = saved })

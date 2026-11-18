@@ -3,7 +3,6 @@ package gateway
 import (
 	"context"
 	"fmt"
-	"log/slog"
 
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
 )
@@ -42,7 +41,7 @@ func (b *BasePlatformAdapter) ephemeralSystemTTLDefault(ctx context.Context) int
 	}, 0)
 }
 
-// Waits out an ephemeral reply's ttl, swapped by tests the way hermes tests patch asyncio.sleep
+// Waits out an ephemeral reply's ttl, swapped by tests
 var ephemeralDeleteWait = sleepSeconds
 
 // Deletes a sent message after its ttl in the background, failures logged at debug
@@ -53,7 +52,7 @@ func (b *BasePlatformAdapter) ScheduleEphemeralDelete(ctx context.Context, chatI
 			return nil
 		}
 		if _, err := self.DeleteMessage(tctx, chatID, messageID); err != nil {
-			slog.Debug(fmt.Sprintf("[%s] Ephemeral delete failed for %s/%s: %v", self.Name(), chatID, messageID, err))
+			pkgLog().Debug(fmt.Sprintf("[%s] Ephemeral delete failed for %s/%s: %v", self.Name(), chatID, messageID, err))
 		}
 		return nil
 	})

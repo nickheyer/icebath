@@ -173,8 +173,3 @@ func releaseRunChannel(ctx context.Context, transientChannel *string) (string, e
 func recordStop(ctx context.Context, reason string) {
 	updaterecord.RecordStopReason(ctx, reason)
 }
-
-// Names an exit that fires before the receipt opens as a metrics row only
-func recordStopWithoutReceipt(ctx context.Context, reason, withoutReceipt string) {
-	updaterecord.RecordStopWithoutReceipt(ctx, reason, withoutReceipt)
-}

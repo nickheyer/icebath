@@ -3,7 +3,6 @@ package agent
 import (
 	"context"
 	"errors"
-	"log/slog"
 	"strings"
 
 	"github.com/nickheyer/icebath/pkg/config"
@@ -20,7 +19,7 @@ var resolveAnthropicToken = provider.ResolveAnthropicToken
 // Profile scoped credential surface the anthropic token resolver reads
 func agentPoolEnv(ctx context.Context) provider.PoolEnv {
 	h := home.Dir(ctx)
-	return provider.PoolEnv{Store: provider.NewStore(h), Secrets: config.NewSecrets(h), Scope: provider.SecretScopeFrom(ctx), Config: provider.ConfigLoader(h), Log: slog.Default(), Ctx: ctx}
+	return provider.PoolEnv{Store: provider.NewStore(h), Secrets: config.NewSecrets(h), Scope: provider.SecretScopeFrom(ctx), Config: provider.ConfigLoader(h), Log: pkgLog(), Ctx: ctx}
 }
 
 // Request timeout seconds for the agent route, zero when unset so the builder keeps its default
@@ -117,7 +116,7 @@ func (a *AIAgent) tryRefreshAnthropicClientCredentials(ctx context.Context) (boo
 	closeClientQuietly(a.anthropicClient)
 	client, err := a.buildDirectAnthropicClient(ctx, newToken, baseURL)
 	if err != nil {
-		slog.Warn("Failed to rebuild Anthropic client after credential refresh: " + err.Error())
+		pkgLog().Warn("Failed to rebuild Anthropic client after credential refresh: " + err.Error())
 		return false, nil
 	}
 	a.anthropicClient = client

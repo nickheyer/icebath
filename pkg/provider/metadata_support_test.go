@@ -151,11 +151,11 @@ func metaTest(t *testing.T) (context.Context, *fakeTransport, string) {
 	ft := newFakeTransport()
 	metadataTransport = ft
 	resetMetadataCaches()
-	prevLog := metadataLog
-	metadataLog = slog.New(slog.NewTextHandler(io.Discard, nil))
+	prevLog := slog.Default()
+	slog.SetDefault(slog.New(slog.NewTextHandler(io.Discard, nil)))
 	t.Cleanup(func() {
 		metadataTransport = nil
-		metadataLog = prevLog
+		slog.SetDefault(prevLog)
 		wallNow = time.Now
 		monotonicNow = time.Now
 		probeTotalDeadline = 15 * time.Second
@@ -169,9 +169,9 @@ func metaTest(t *testing.T) (context.Context, *fakeTransport, string) {
 func captureMetadataLog(t *testing.T) *bytes.Buffer {
 	t.Helper()
 	buf := &bytes.Buffer{}
-	prev := metadataLog
-	metadataLog = slog.New(slog.NewTextHandler(buf, nil))
-	t.Cleanup(func() { metadataLog = prev })
+	prev := slog.Default()
+	slog.SetDefault(slog.New(slog.NewTextHandler(buf, nil)))
+	t.Cleanup(func() { slog.SetDefault(prev) })
 	return buf
 }
 

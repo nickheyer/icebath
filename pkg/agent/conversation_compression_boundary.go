@@ -56,6 +56,6 @@ func warnSummaryOrAuxFallback(a *AIAgent) {
 	if reason == "" {
 		reason = "unknown error"
 	}
-	compressionLog().Warn(fmt.Sprintf("Configured compression model %s failed (%s); recovered using the main model.", pyrepr.Repr(key[0]), reason))
+	pkgLog().Warn(fmt.Sprintf("Configured compression model %s failed (%s); recovered using the main model.", pyrepr.Repr(key[0]), reason))
 	a.emitWarning(fmt.Sprintf("ℹ Configured compression model '%s' failed, so Icebath summarised with your main model instead. Check auxiliary.compression.model in your config.", key[0]))
 }

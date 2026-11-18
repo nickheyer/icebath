@@ -47,7 +47,7 @@ func ParseISOFormat(s string) (t time.Time, aware bool, err error) {
 		if aware {
 			offset = time.Duration(offSeconds)*time.Second + time.Duration(offMicro)*time.Microsecond
 			if offset <= -24*time.Hour || offset >= 24*time.Hour {
-				return time.Time{}, false, fmt.Errorf("offset must be a timedelta strictly between -timedelta(hours=24) and timedelta(hours=24), not %s", TimedeltaRepr(offset))
+				return time.Time{}, false, fmt.Errorf("offset must be a timedelta strictly between -timedelta(hours=24) and timedelta(hours=24), not %s.", TimedeltaRepr(offset))
 			}
 		}
 	}
@@ -66,23 +66,11 @@ func ParseISOFormat(s string) (t time.Time, aware bool, err error) {
 			}
 		}
 	}
-	if year < 1 || year > 9999 {
-		return time.Time{}, false, fmt.Errorf("year %d is out of range", year)
+	if msg := DateArgsError(year, month, day); msg != "" {
+		return time.Time{}, false, fmt.Errorf("%s", msg)
 	}
-	if month < 1 || month > 12 {
-		return time.Time{}, false, fmt.Errorf("month must be in 1..12")
-	}
-	if day < 1 || day > daysInMonth(year, month) {
-		return time.Time{}, false, fmt.Errorf("day %d must be in range 1..%d for month %d in year %d", day, daysInMonth(year, month), month, year)
-	}
-	if hour > 23 {
-		return time.Time{}, false, fmt.Errorf("hour must be in 0..23")
-	}
-	if minute > 59 {
-		return time.Time{}, false, fmt.Errorf("minute must be in 0..59")
-	}
-	if second > 59 {
-		return time.Time{}, false, fmt.Errorf("second must be in 0..59")
+	if msg := TimeArgsError(hour, minute, second); msg != "" {
+		return time.Time{}, false, fmt.Errorf("%s", msg)
 	}
 	instant := time.Date(year, time.Month(month), day, hour, minute, second, micro*1000, time.UTC).Add(-offset)
 	if !aware {

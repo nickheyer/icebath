@@ -27,7 +27,7 @@ func gitRun(t *testing.T, repo string, args ...string) string {
 	return string(out)
 }
 
-// Initializes a committed git repo at the path like the hermes test helper
+// Initializes a committed git repo at the path like the test helper
 func initGitRepo(t *testing.T, repo string) {
 	t.Helper()
 	if err := os.MkdirAll(repo, 0o755); err != nil {

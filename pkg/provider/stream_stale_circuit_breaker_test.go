@@ -43,7 +43,7 @@ func droppingAnthSource(resp *http.Response, wait time.Duration, ignoreAbort boo
 	}}
 }
 
-// Runs call, the breaker check then the reconnect loop, the unit hermes drives through _interruptible_streaming_api_call
+// Runs call, the breaker check then the reconnect loop
 func (h *abandonHarness) call(ctx context.Context) <-chan streamCallOutcome {
 	out := make(chan streamCallOutcome, 1)
 	noSleep := func(context.Context, time.Duration) error { return nil }

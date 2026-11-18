@@ -66,7 +66,7 @@ func serveFakeDNS(conn net.Conn, resolve func(host string) [4]byte) {
 	}
 }
 
-// Routes every lookup through resolve, the getaddrinfo patch of the hermes fixture
+// Routes every lookup through resolve, the getaddrinfo patch of the test fixture
 func patchResolver(t *testing.T, resolve func(host string) [4]byte) {
 	orig := net.DefaultResolver
 	net.DefaultResolver = &net.Resolver{PreferGo: true, Dial: func(context.Context, string, string) (net.Conn, error) {

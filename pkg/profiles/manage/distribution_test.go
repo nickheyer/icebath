@@ -99,7 +99,7 @@ func wantDistError(t *testing.T, err error, sub string) {
 func TestManifestParsingFullManifest(t *testing.T) {
 	dir := t.TempDir()
 	writeFile(t, filepath.Join(dir, profiles.ManifestFilename), "name: telem\nversion: 1.2.3\ndescription: Telem monitor\n"+
-		"hermes_requires: '>=0.12.0'\nauthor: Kyle\nlicense: MIT\nenv_requires:\n  - name: OPENAI_API_KEY\n    description: OpenAI key\n"+
+		"icebath_requires: '>=0.12.0'\nauthor: Kyle\nlicense: MIT\nenv_requires:\n  - name: OPENAI_API_KEY\n    description: OpenAI key\n"+
 		"  - name: GRAPH_URL\n    required: false\n    default: http://127.0.0.1:8000\ndistribution_owned:\n  - SOUL.md\n  - skills/\n")
 	m, err := profiles.ReadManifest(dir)
 	if err != nil {
@@ -171,7 +171,7 @@ func TestVersionRequiresCheckMatrix(t *testing.T) {
 		{"0.12.0", "0.11.0", false},
 	}
 	for _, c := range cases {
-		err := CheckHermesRequires(c.spec, c.cur)
+		err := CheckIcebathRequires(c.spec, c.cur)
 		if c.ok && err != nil {
 			t.Fatalf("%v: %v", c, err)
 		}
@@ -179,7 +179,7 @@ func TestVersionRequiresCheckMatrix(t *testing.T) {
 			wantDistError(t, err, "requires Icebath")
 		}
 	}
-	wantDistError(t, CheckHermesRequires(">=1.0", "unknown"), "Unparseable version: 'unknown'")
+	wantDistError(t, CheckIcebathRequires(">=1.0", "unknown"), "Unparseable version: 'unknown'")
 }
 
 func TestParseSemverHandlesPrerelease(t *testing.T) {
@@ -311,12 +311,12 @@ func TestInstallRejectsNonDistributionDirectory(t *testing.T) {
 	wantDistError(t, err, "Cannot resolve distribution source: '"+filepath.Join(tmp, "nowhere")+"'. Expected a git URL")
 }
 
-func TestInstallEnforcesHermesRequires(t *testing.T) {
+func TestInstallEnforcesIcebathRequires(t *testing.T) {
 	tmp, _ := distEnv(t)
 	old := distBaseVersion
 	distBaseVersion = func() string { return "0.1.0" }
 	t.Cleanup(func() { distBaseVersion = old })
-	staged := makeStagingDir(t, tmp, "future", &profiles.DistributionManifest{Name: "future", Version: "1.0.0", HermesRequires: ">=99.0.0"})
+	staged := makeStagingDir(t, tmp, "future", &profiles.DistributionManifest{Name: "future", Version: "1.0.0", IcebathRequires: ">=99.0.0"})
 	_, err := InstallDistribution(context.Background(), staged, "future", false, false)
 	wantDistError(t, err, "requires Icebath")
 }

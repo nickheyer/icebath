@@ -111,7 +111,7 @@ func PatchUserHome(dir string) (restore func()) {
 // Directory standing in for the parent of the native platform default home, nil while the real one serves
 var platformDefaultParent atomic.Pointer[string]
 
-// Serves the platform default home under dir keeping its name, as hermes test isolation does, returning the restore
+// Serves the platform default home under dir keeping its name, as test isolation does, returning the restore
 func PatchPlatformDefault(dir string) (restore func()) {
 	prev := platformDefaultParent.Swap(&dir)
 	return func() { platformDefaultParent.Store(prev) }
@@ -420,8 +420,49 @@ func (e *ErrProfileMissing) Error() string {
 // Matches fs.ErrNotExist like the FileNotFoundError Python raises
 func (e *ErrProfileMissing) Is(target error) bool { return target == fs.ErrNotExist }
 
-// Fails when path lies under a deleted or missing named profile
+// Homes whose data this process erased, so no later step of the same process sets them up again
+var (
+	erasedHomesMu sync.Mutex
+	erasedHomes   []string
+)
+
+// Records that this process erased the home h, refusing every later directory it would create under h
+func MarkHomeErased(h string) {
+	erasedHomesMu.Lock()
+	defer erasedHomesMu.Unlock()
+	erasedHomes = append(erasedHomes, filepath.Clean(h))
+}
+
+// Home this process erased that path is or lies under, empty when none
+func erasedHomeOf(path string) string {
+	clean := filepath.Clean(path)
+	erasedHomesMu.Lock()
+	defer erasedHomesMu.Unlock()
+	for _, h := range erasedHomes {
+		if clean == h || strings.HasPrefix(clean, h+string(filepath.Separator)) {
+			return h
+		}
+	}
+	return ""
+}
+
+// Error of a path under a home this process erased
+type ErrHomeErased struct {
+	Home string
+}
+
+func (e *ErrHomeErased) Error() string {
+	return fmt.Sprintf("Icebath home %s was erased by this process and is not set up again.", e.Home)
+}
+
+// Matches fs.ErrNotExist, the home data no longer exists
+func (e *ErrHomeErased) Is(target error) bool { return target == fs.ErrNotExist }
+
+// Fails when path lies under a home this process erased or under a deleted or missing named profile
 func AssertProfileLive(path string) error {
+	if erased := erasedHomeOf(path); erased != "" {
+		return &ErrHomeErased{Home: erased}
+	}
 	h := NamedProfileHome(path)
 	if h != "" && (ProfileDeleted(h) || !pathExists(h)) {
 		return &ErrProfileMissing{Home: h}

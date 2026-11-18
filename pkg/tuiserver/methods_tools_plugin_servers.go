@@ -38,7 +38,7 @@ func pluginServerRows(ctx context.Context, pluginDir, key string, portable bool,
 	if err != nil {
 		return nil, err
 	}
-	namespace, err := manifestMapping(extensions, "com.nousresearch.hermes")
+	namespace, err := manifestMapping(extensions, plugins.PortableExtension)
 	if err != nil {
 		return nil, err
 	}

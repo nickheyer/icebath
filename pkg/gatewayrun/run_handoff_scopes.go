@@ -39,7 +39,7 @@ func handoffWatchScopes(ctx context.Context, r *GatewayRunner) []handoffScope {
 		return served, nil
 	}()
 	if err != nil {
-		runLog().Debug("Could not resolve multiplex homes for handoff watcher", "exc_info", err)
+		pkgLog().Debug("Could not resolve multiplex homes for handoff watcher", "exc_info", err)
 		return scopes
 	}
 	return append(scopes, served...)

@@ -409,12 +409,12 @@ func TestTermuxPinsRaiseOnMalformedRows(t *testing.T) {
 		table *OrderedObject
 		want  string
 	}{
-		{rptObj("libs", rptObj("glib", rptObj("version", "1"))), "KeyError: 'url'"},
-		{rptObj("libs", rptObj("glib", "text")), "TypeError: string indices must be integers, not 'str'"},
-		{rptObj("libs", rptObj("glib", []any{"x"})), "TypeError: list indices must be integers or slices, not str"},
-		{rptObj("libs", rptObj("glib", nil)), "TypeError: 'NoneType' object is not subscriptable"},
-		{rptObj("libs", []any{"x"}), "AttributeError: 'list' object has no attribute 'items'"},
-		{rptObj("licenses", rptObj("version", "2.2")), "KeyError: 'url'"},
+		{rptObj("libs", rptObj("glib", rptObj("version", "1"))), "the table entry has no url"},
+		{rptObj("libs", rptObj("glib", "text")), "cannot read url from text, expected a mapping"},
+		{rptObj("libs", rptObj("glib", []any{"x"})), "cannot read url from a list, expected a mapping"},
+		{rptObj("libs", rptObj("glib", nil)), "cannot read url from nothing, expected a mapping"},
+		{rptObj("libs", []any{"x"}), "the libs table is a list, expected a mapping"},
+		{rptObj("licenses", rptObj("version", "2.2")), "the table entry has no url"},
 	} {
 		if _, err := TermuxPins(tc.table, lockfile); err == nil || err.Error() != tc.want {
 			t.Fatalf("TermuxPins error %v, want %s", err, tc.want)
@@ -427,7 +427,7 @@ func TestTermuxPinsRaiseOnMalformedRows(t *testing.T) {
 		"linux-arm64-bionic": []any{map[string]any{"url": rptUVOld, "sha256": strings.Repeat("o", 64)}, "stray"}}}})
 	stale := rptRetired(t, NewOrderedObject(), mixed, rptPool(PoolPackage{"uv", "0.12.15", rptUVNew, strings.Repeat("u", 64)}))
 	_, err := RepairTermuxPins(NewOrderedObject(), mixed, stale, rptServed(map[string]string{rptUVNew: strings.Repeat("u", 64)}))
-	if err == nil || err.Error() != "AttributeError: 'str' object has no attribute 'get'" {
+	if err == nil || err.Error() != "a pinned artifact row is text, expected a mapping" {
 		t.Fatalf("repoint error %v", err)
 	}
 }

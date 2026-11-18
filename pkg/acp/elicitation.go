@@ -1,6 +1,7 @@
 package acp
 
 import (
+	"errors"
 	"fmt"
 	"strconv"
 
@@ -47,7 +48,7 @@ func promptChoices(prompt *pyjson.Object) []any {
 func BuildClarifyElicitation(sessionID string, prompt *pyjson.Object) (*pyjson.Object, error) {
 	question, ok := prompt.Get("question")
 	if !ok {
-		return nil, fmt.Errorf("KeyError: 'question'")
+		return nil, errors.New("the clarify prompt has no question")
 	}
 	choices := promptChoices(prompt)
 	schema := pyjson.NewObject()
@@ -111,7 +112,7 @@ func ElicitedAnswer(response any) (string, bool) {
 func BuildClarifyPermission(prompt *pyjson.Object) (*pyacp.ToolCallProgress, []pyacp.PermissionOption, map[string]string, error) {
 	question, ok := prompt.Get("question")
 	if !ok {
-		return nil, nil, nil, fmt.Errorf("KeyError: 'question'")
+		return nil, nil, nil, errors.New("the clarify prompt has no question")
 	}
 	q, ok := question.(string)
 	if !ok {
@@ -133,7 +134,7 @@ func BuildClarifyPermission(prompt *pyjson.Object) (*pyacp.ToolCallProgress, []p
 	answers[SkipOption] = ""
 	promptID, ok := prompt.Get("prompt_id")
 	if !ok {
-		return nil, nil, nil, fmt.Errorf("KeyError: 'prompt_id'")
+		return nil, nil, nil, errors.New("the clarify prompt has no prompt_id")
 	}
 	raw := pyjson.NewObject()
 	raw.Set("question", q)

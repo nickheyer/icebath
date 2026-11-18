@@ -12,7 +12,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/memory"
 	"github.com/nickheyer/icebath/pkg/plugins"
 	"github.com/nickheyer/icebath/pkg/tools"
-	"github.com/nickheyer/icebath/pkg/tuigateway"
+	"github.com/nickheyer/icebath/pkg/tuihost"
 )
 
 // Close grace a session turn gets to settle before teardown, and the ws orphan reap clocks
@@ -27,7 +27,7 @@ var (
 )
 
 // Applies the session.interrupt contract to one claimed session
-func interruptSessionTurn(ctx context.Context, sid string, session *tuigateway.Session, orphan bool) {
+func interruptSessionTurn(ctx context.Context, sid string, session *tuihost.Session, orphan bool) {
 	compressing := truthy(session.Get("_manual_compress_active"))
 	shouldInterrupt := truthy(session.Get("running")) && !compressing
 	runThreadAlive := false
@@ -45,7 +45,7 @@ func interruptSessionTurn(ctx context.Context, sid string, session *tuigateway.S
 		func() {
 			defer func() {
 				if failure := recover(); failure != nil {
-					logger().Debug("agent_loop_stopped hook dispatch failed", "exc_info", failureText(failure))
+					pkgLog().Debug("agent_loop_stopped hook dispatch failed", "exc_info", failureText(failure))
 				}
 			}()
 			scoped := sessionProfileRuntimeScope(ctx, session, false)
@@ -79,7 +79,7 @@ func interruptSessionTurn(ctx context.Context, sid string, session *tuigateway.S
 }
 
 // Finishes a close the caller claimed by popping the session, waiting out its turn first
-func teardownPoppedSession(ctx context.Context, session *tuigateway.Session, endReason string) bool {
+func teardownPoppedSession(ctx context.Context, session *tuihost.Session, endReason string) bool {
 	if session == nil {
 		return false
 	}
@@ -88,31 +88,31 @@ func teardownPoppedSession(ctx context.Context, session *tuigateway.Session, end
 		func() {
 			defer func() {
 				if failure := recover(); failure != nil {
-					logger().Debug("failed waiting for session turn thread", "exc_info", failureText(failure))
+					pkgLog().Debug("failed waiting for session turn thread", "exc_info", failureText(failure))
 				}
 			}()
 			if runThread.Alive() {
 				runThread.Join(time.Duration(turnSettleBeforeCloseSeconds * float64(time.Second)))
 			}
 			if runThread.Alive() {
-				logger().Warn(fmt.Sprintf("session turn thread still alive after %.1fs teardown grace", turnSettleBeforeCloseSeconds))
+				pkgLog().Warn(fmt.Sprintf("session turn thread still alive after %.1fs teardown grace", turnSettleBeforeCloseSeconds))
 			}
 		}()
 	}
-	defer tuigateway.ForgetSession(strOr(session.Get("_sid")))
+	defer tuihost.ForgetSession(strOr(session.Get("_sid")))
 	teardownSessionFn(ctx, session, endReason)
 	return true
 }
 
-// Finalizer every popped session goes through, the real one swapped only where a hermes case replaces the finalize
-var teardownSessionFn func(ctx context.Context, session *tuigateway.Session, endReason string)
+// Finalizer every popped session goes through, the real one swapped only where a test replaces the finalize
+var teardownSessionFn func(ctx context.Context, session *tuihost.Session, endReason string)
 
 func init() { teardownSessionFn = teardownSession }
 
 // Idempotent teardown funnel, the predicate revalidating the live record right before the claim
-func closeSessionByID(ctx context.Context, sid, endReason string, predicate func(*tuigateway.Session) bool) bool {
+func closeSessionByID(ctx context.Context, sid, endReason string, predicate func(*tuihost.Session) bool) bool {
 	sessionsLock.Lock()
-	current := tuigateway.SessionRecord(sid)
+	current := tuihost.SessionRecord(sid)
 	if predicate != nil && (current == nil || !predicate(current)) {
 		sessionsLock.Unlock()
 		return false
@@ -128,7 +128,7 @@ type activitySummarizer interface{ GetActivitySummary() map[string]any }
 var _ activitySummarizer = (*agent.AIAgent)(nil)
 
 // Whether a detached running turn's activity clock is still fresh, so the reaper keeps healthy work alive
-func wsOrphanTurnActivityIsFresh(session *tuigateway.Session) (fresh bool) {
+func wsOrphanTurnActivityIsFresh(session *tuihost.Session) (fresh bool) {
 	stale := wsOrphanActivityStaleS()
 	if stale <= 0 {
 		return false
@@ -170,7 +170,7 @@ func scheduleWSOrphanReap(ctx context.Context, sid string, delayS *float64, expe
 			}
 		}
 		var rescheduleDelay *float64
-		var interruptSession, session *tuigateway.Session
+		var interruptSession, session *tuihost.Session
 		claim := func() bool {
 			sessionResumeLock.Lock()
 			defer sessionResumeLock.Unlock()
@@ -182,7 +182,7 @@ func scheduleWSOrphanReap(ctx context.Context, sid string, delayS *float64, expe
 			if current != timer {
 				return false
 			}
-			record := tuigateway.SessionRecord(sid)
+			record := tuihost.SessionRecord(sid)
 			dropPending := func() {
 				pendingWSReaps.Lock()
 				if pendingWSReaps.timers[sid] == timer {
@@ -209,14 +209,14 @@ func scheduleWSOrphanReap(ctx context.Context, sid string, delayS *float64, expe
 			case !running:
 				session = popSessionByID(sid)
 			case !interruptRequested && wsOrphanTurnActivityIsFresh(record):
-				logger().Debug(fmt.Sprintf("client_gone sid=%s action=defer (turn activity fresh; stale threshold %.0fs)", sid, wsOrphanActivityStaleS()))
+				pkgLog().Debug(fmt.Sprintf("client_gone sid=%s action=defer (turn activity fresh; stale threshold %.0fs)", sid, wsOrphanActivityStaleS()))
 				rescheduleDelay = &grace
 			default:
 				prior, _ := pyIntOf(record.Get("_client_gone_interrupt_polls"))
 				polls := prior + 1
 				record.Set("_client_gone_interrupt_polls", polls)
 				if polls > wsOrphanInterruptReapMaxPolls {
-					logger().Error(fmt.Sprintf("client_gone sid=%s: turn did not settle after %d interrupt polls (%.0fs) — force-reaping detached session",
+					pkgLog().Error(fmt.Sprintf("client_gone sid=%s: turn did not settle after %d interrupt polls (%.0fs) — force-reaping detached session",
 						sid, polls-1, float64(polls-1)*wsOrphanInterruptReapPollS))
 					session = popSessionByID(sid)
 				} else {
@@ -239,19 +239,19 @@ func scheduleWSOrphanReap(ctx context.Context, sid string, delayS *float64, expe
 			func() {
 				defer func() {
 					if failure := recover(); failure != nil {
-						logger().Error(fmt.Sprintf("client_gone interrupt failed sid=%s", sid), "exc_info", failureText(failure))
+						pkgLog().Error(fmt.Sprintf("client_gone interrupt failed sid=%s", sid), "exc_info", failureText(failure))
 						sessionsLock.Lock()
 						pendingWSReaps.Lock()
 						stillPending := pendingWSReaps.timers[sid] == timer
 						pendingWSReaps.Unlock()
-						if tuigateway.SessionRecord(sid) == interruptSession && stillPending {
+						if tuihost.SessionRecord(sid) == interruptSession && stillPending {
 							interruptSession.Pop("_client_gone_interrupt_requested")
 						}
 						sessionsLock.Unlock()
 					}
 				}()
 				interruptSessionTurn(ctx, sid, interruptSession, true)
-				logger().Info(fmt.Sprintf("client_gone sid=%s action=interrupt", sid))
+				pkgLog().Info(fmt.Sprintf("client_gone sid=%s action=interrupt", sid))
 			}()
 		}
 		if rescheduleDelay != nil {
@@ -259,7 +259,7 @@ func scheduleWSOrphanReap(ctx context.Context, sid string, delayS *float64, expe
 			return
 		}
 		if session != nil && truthy(session.Get("_client_gone_interrupt_requested")) {
-			logger().Info(fmt.Sprintf("client_gone sid=%s action=reap", sid))
+			pkgLog().Info(fmt.Sprintf("client_gone sid=%s action=reap", sid))
 		}
 		teardownPoppedSession(ctx, session, "ws_orphan_reap")
 	}
@@ -282,9 +282,9 @@ func scheduleWSOrphanReap(ctx context.Context, sid string, delayS *float64, expe
 }
 
 // Attaches a live peer beside the existing subscribers, re-arming the reap when that peer already closed
-func rebindLiveTransport(ctx context.Context, sid string, session *tuigateway.Session, transport tuigateway.Transport) {
-	detached := tuigateway.DetachedWSTransport()
-	if transport != detached && tuigateway.TransportIsDead(transport) {
+func rebindLiveTransport(ctx context.Context, sid string, session *tuihost.Session, transport tuihost.Transport) {
+	detached := tuihost.DetachedWSTransport()
+	if transport != detached && tuihost.TransportIsDead(transport) {
 		sessionsLock.Lock()
 		pendingWSReaps.Lock()
 		_, pending := pendingWSReaps.timers[sid]
@@ -295,46 +295,46 @@ func rebindLiveTransport(ctx context.Context, sid string, session *tuigateway.Se
 		sessionsLock.Unlock()
 		return
 	}
-	tuigateway.AttachSessionTransport(session, transport)
-	tuigateway.SetSessionViewer(session, transport, nowSeconds())
+	tuihost.AttachSessionTransport(session, transport)
+	tuihost.SetSessionViewer(session, transport, nowSeconds())
 	if transport != detached {
 		cancelWSOrphanReap(sid)
 	}
 }
 
 // Reaps the close on disconnect sessions a departing transport leaves clientless and parks the rest for the orphan reaper
-func closeSessionsForTransport(ctx context.Context, transport tuigateway.Transport, endReason string) (int, int) {
-	clientless := tuigateway.DetachTransportFromSessions(transport)
+func closeSessionsForTransport(ctx context.Context, transport tuihost.Transport, endReason string) (int, int) {
+	clientless := tuihost.DetachTransportFromSessions(transport)
 	reaped, detached := 0, 0
 	for _, entry := range clientless {
 		sid, session := entry.SID, entry.Session
-		var claimedForTeardown *tuigateway.Session
+		var claimedForTeardown *tuihost.Session
 		shouldScheduleReap := false
 		skip := func() bool {
 			sessionResumeLock.Lock()
 			defer sessionResumeLock.Unlock()
 			sessionsLock.Lock()
 			defer sessionsLock.Unlock()
-			current := tuigateway.SessionRecord(sid)
+			current := tuihost.SessionRecord(sid)
 			if current != session {
 				return true
 			}
-			tuigateway.DropSessionViewer(current, transport)
-			if tuigateway.SessionHasLiveTransportExcluding(current, transport) {
+			tuihost.DropSessionViewer(current, transport)
+			if tuihost.SessionHasLiveTransportExcluding(current, transport) {
 				return true
 			}
 			if truthy(current.Get("close_on_disconnect")) {
 				claimedForTeardown = popSessionByID(sid)
 				return false
 			}
-			tuigateway.DropSessionViewer(current, transport)
-			viewers := tuigateway.SessionViewersByAge(current)
-			live := slices.DeleteFunc(viewers, func(vt tuigateway.Transport) bool { return tuigateway.TransportIsDead(vt) })
+			tuihost.DropSessionViewer(current, transport)
+			viewers := tuihost.SessionViewersByAge(current)
+			live := slices.DeleteFunc(viewers, func(vt tuihost.Transport) bool { return tuihost.TransportIsDead(vt) })
 			if len(live) > 0 {
 				rebindLiveTransport(ctx, sid, current, live[len(live)-1])
 				return false
 			}
-			current.Set("transport", tuigateway.DetachedWSTransport())
+			current.Set("transport", tuihost.DetachedWSTransport())
 			current.Pop("_client_gone_interrupt_requested")
 			current.Pop("_client_gone_interrupt_polls")
 			shouldScheduleReap = true
@@ -356,7 +356,7 @@ func closeSessionsForTransport(ctx context.Context, transport tuigateway.Transpo
 }
 
 // Locks the history lock a session holds and returns the unlock, a no-op when it holds none
-func historyLockOf(session *tuigateway.Session) func() {
+func historyLockOf(session *tuihost.Session) func() {
 	lock, _ := session.Get("history_lock").(sync.Locker)
 	if lock == nil {
 		return func() {}

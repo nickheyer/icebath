@@ -69,7 +69,7 @@ func housekeepingChannelDirectory(ctx context.Context, adapters *pydict.Dict[gat
 	}
 	fut := scheduleOnLoop(ctx, loop, "channel-directory-refresh", func(c context.Context) (any, error) {
 		return gateway.BuildChannelDirectory(c, adapters)
-	}, runLog(), "Channel directory refresh scheduling error")
+	}, pkgLog(), "Channel directory refresh scheduling error")
 	if fut == nil {
 		return nil
 	}
@@ -84,7 +84,7 @@ func housekeepingPasteSweep(ctx context.Context) error {
 		return err
 	}
 	if deleted > 0 {
-		runLog().Info(fmt.Sprintf("Paste sweep: deleted %d expired paste(s), %d pending", deleted, remaining))
+		pkgLog().Info(fmt.Sprintf("Paste sweep: deleted %d expired paste(s), %d pending", deleted, remaining))
 	}
 	return nil
 }
@@ -96,7 +96,7 @@ func housekeepingMisfireCatchUp(ctx context.Context, p cron.CronScheduler, adapt
 		return err
 	}
 	if caughtUp > 0 {
-		runLog().Info(fmt.Sprintf("Misfire catch-up: fired %d overdue job(s)", caughtUp))
+		pkgLog().Info(fmt.Sprintf("Misfire catch-up: fired %d overdue job(s)", caughtUp))
 	}
 	return nil
 }
@@ -104,13 +104,13 @@ func housekeepingMisfireCatchUp(ctx context.Context, p cron.CronScheduler, adapt
 // Curator poll, gated inside by its configured interval
 func housekeepingCurator(ctx context.Context) error {
 	idle := math.Inf(1)
-	memory.MaybeRunCurator(ctx, &idle, func(msg string) { runLog().Info("curator: " + msg) })
+	memory.MaybeRunCurator(ctx, &idle, func(msg string) { pkgLog().Info("curator: " + msg) })
 	return nil
 }
 
 // Plugin update check, due gated by plugins.auto_update_check_hours
 func housekeepingPluginUpdateCheck(ctx context.Context) error {
-	_, _, err := plugins.MaybeRunGatewayCheck(ctx, plugins.ScheduledCheckOptions{Log: runLog()})
+	_, _, err := plugins.MaybeRunGatewayCheck(ctx, plugins.ScheduledCheckOptions{Log: pkgLog()})
 	return err
 }
 
@@ -123,7 +123,7 @@ func housekeepingDeferredFTSRetry(ctx context.Context) error {
 				return err
 			}
 			if done {
-				runLog().Info(fmt.Sprintf("Deferred state.db FTS rebuild completed in-process for %s; full-text search restored.", db.Path()))
+				pkgLog().Info(fmt.Sprintf("Deferred state.db FTS rebuild completed in-process for %s; full-text search restored.", db.Path()))
 			}
 		}
 		return nil
@@ -207,7 +207,7 @@ func mcpConfigReconciler(ctx context.Context, r *GatewayRunner) func() error {
 			return err
 		}
 		if len(result.Removed) > 0 || len(result.Added) > 0 {
-			runLog().Info(fmt.Sprintf("MCP servers reconciled with config (%s): removed=%s added=%s",
+			pkgLog().Info(fmt.Sprintf("MCP servers reconciled with config (%s): removed=%s added=%s",
 				label, pyrepr.Repr(result.Removed), pyrepr.Repr(result.Added)))
 		}
 		return nil
@@ -294,7 +294,7 @@ func startGatewayHousekeeping(ctx context.Context, stop *pythread.Event, a house
 		}
 		watch = NewDeliveryQueueWatch(ctx, servedHomes, func() { housekeepingChore(deliveryQueueDrainLabel, drain) })
 	}
-	runLog().Info(fmt.Sprintf("Gateway housekeeping started (interval=%ds)", interval))
+	pkgLog().Info(fmt.Sprintf("Gateway housekeeping started (interval=%ds)", interval))
 	tick := 0
 	chore := func(label string, fn func()) { housekeepingChore(label, func() error { fn(); return nil }) }
 	for !stop.IsSet() {
@@ -306,5 +306,5 @@ func startGatewayHousekeeping(ctx context.Context, stop *pythread.Event, a house
 		}
 		waitForNextTick(ctx, stop, float64(interval), watch, chore)
 	}
-	runLog().Info("Gateway housekeeping stopped")
+	pkgLog().Info("Gateway housekeeping stopped")
 }

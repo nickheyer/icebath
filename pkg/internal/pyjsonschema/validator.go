@@ -27,7 +27,7 @@ type draft struct {
 	spec              *specification
 }
 
-func isAnyType(any) bool  { return true }
+func isAnyType(any) bool     { return true }
 func isArrayType(v any) bool { return isList(v) }
 func isBoolType(v any) bool  { return isBool(v) }
 func isIntType(v any) bool   { return isIntValue(v) }
@@ -140,7 +140,9 @@ func buildDrafts() map[string]*draft {
 	return out
 }
 
-func latestDraft() *draft { return drafts()[normalizeURI("https://json-schema.org/draft/2020-12/schema")] }
+func latestDraft() *draft {
+	return drafts()[normalizeURI("https://json-schema.org/draft/2020-12/schema")]
+}
 
 // validator_for, the class a schema's $schema names or the default
 func validatorFor(schema any, def *draft, st *state) *draft {

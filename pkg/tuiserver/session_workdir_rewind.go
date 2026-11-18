@@ -6,7 +6,7 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/state"
-	"github.com/nickheyer/icebath/pkg/tuigateway"
+	"github.com/nickheyer/icebath/pkg/tuihost"
 )
 
 // Raised when a rewind target or its retry text is invalid, the Python ValueError of the rewind
@@ -30,7 +30,7 @@ func historyWithoutEphemeralScaffolding(history []any) []map[string]any {
 }
 
 // Rewinds one canonical user turn keeping carrier scaffolding, through the store when the session persists
-func rewindActiveSessionHistory(ctx context.Context, session *tuigateway.Session, userOrdinal int, requireRetryable bool) ([]map[string]any, map[string]any, int, error) {
+func rewindActiveSessionHistory(ctx context.Context, session *tuihost.Session, userOrdinal int, requireRetryable bool) ([]map[string]any, map[string]any, int, error) {
 	history := historyWithoutEphemeralScaffolding(historyList(session.Get("history")))
 	var userIndices []int
 	for i, m := range history {

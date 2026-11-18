@@ -2,8 +2,9 @@ package mcp
 
 import (
 	"encoding/json"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"strings"
+
+	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 )
 
 // Protocol revisions this client negotiates, newest handshake revision last

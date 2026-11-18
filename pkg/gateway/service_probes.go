@@ -138,11 +138,11 @@ func SystemdMainPID(ctx context.Context, system bool) (int, bool, error) {
 }
 
 // Adopts the system unit's pinned home into ICEBATH_HOME so runtime status and pid reads follow the unit
-func SyncHermesHomeFromSystemdUnit(ctx context.Context, system bool) error {
+func SyncIcebathHomeFromSystemdUnit(ctx context.Context, system bool) error {
 	if !system {
 		return nil
 	}
-	unitHome, err := hermesHomeFromSystemdUnitFile(ctx, true)
+	unitHome, err := icebathHomeFromSystemdUnitFile(ctx, true)
 	if err != nil {
 		return err
 	}

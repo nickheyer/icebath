@@ -1,12 +1,15 @@
 package pyhttpx
 
 import (
+	"net/http"
 	"net/netip"
 	"net/url"
 	"regexp"
 	"sort"
 	"strconv"
 	"strings"
+
+	"github.com/nickheyer/icebath/pkg/internal/pyurl"
 )
 
 // URLPattern of one httpx mount with the proxy it routes to, nil for a direct mount
@@ -89,6 +92,15 @@ func (p *EnvProxies) For(u *url.URL) *url.URL {
 		}
 	}
 	return nil
+}
+
+// Proxy of a request from the httpx environment mounts, the proxy and bypass variables read when it is sent
+func EnvProxy(req *http.Request) (*url.URL, error) {
+	proxies, err := NewEnvProxies(pyurl.Getproxies())
+	if err != nil {
+		return nil, err
+	}
+	return proxies.For(req.URL), nil
 }
 
 // IPv4 or IPv6 address before any slash, the ipaddress test httpx applies to a NO_PROXY entry

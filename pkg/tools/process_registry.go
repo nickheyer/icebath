@@ -294,7 +294,7 @@ type ProcessSession struct {
 	finSeq                  int64
 }
 
-// NewProcessSession builds a session with the hermes field defaults
+// Builds a session with the field defaults
 func NewProcessSession(id, command string) *ProcessSession {
 	return &ProcessSession{
 		ID: id, Command: command, CompletionReason: "exited", MaxOutputChars: MaxOutputChars, PidScope: "host",
@@ -414,7 +414,7 @@ var checkpointFields = []string{
 	"heartbeat_seconds", "persist_on_release", "output_log",
 }
 
-// Value of a persisted session field by its hermes name
+// Value of a persisted session field by its name
 func (s *ProcessSession) field(name string) any {
 	switch name {
 	case "id":
@@ -1123,7 +1123,7 @@ func (r *ProcessRegistry) scopeArgv(s *ProcessSession, safeCommand, unitSuffix, 
 		return buildSystemdScopeArgv(argv, unitSuffix), nil
 	}
 	if inSupervisedGateway {
-		toolsLogger(s.env).Debug(fmt.Sprintf("%s background executor not isolated in a systemd scope (systemd-run --user unavailable); worker shares the gateway cgroup.", label))
+		envLog(s.env).Debug(fmt.Sprintf("%s background executor not isolated in a systemd scope (systemd-run --user unavailable); worker shares the gateway cgroup.", label))
 	}
 	return argv, nil
 }
@@ -1232,10 +1232,10 @@ func (r *ProcessRegistry) SpawnLocal(ctx context.Context, env *Env, command stri
 		}
 		if errors.Is(err, errPtyUnavailable) {
 			s.PtyFallback = "the PTY library is not available on this host"
-			toolsLogger(env).Warn("PTY support unavailable, falling back to pipe mode")
+			envLog(env).Warn("PTY support unavailable, falling back to pipe mode")
 		} else {
 			s.PtyFallback = fmt.Sprintf("the PTY spawn failed (%v)", err)
-			toolsLogger(env).Warn(fmt.Sprintf("PTY spawn failed (%v), falling back to pipe mode", err))
+			envLog(env).Warn(fmt.Sprintf("PTY spawn failed (%v), falling back to pipe mode", err))
 			if s.SystemdUnit != "" {
 				ptyScopeAttempted = true
 				if !stopSystemdUnit(s.SystemdUnit) {
@@ -1382,7 +1382,7 @@ func (r *ProcessRegistry) readerLoop(ctx context.Context, s *ProcessSession) {
 		}
 		if err != nil {
 			if !errors.Is(err, io.EOF) {
-				toolsLogger(s.env).Debug(fmt.Sprintf("Process stdout reader ended: %v", err))
+				envLog(s.env).Debug(fmt.Sprintf("Process stdout reader ended: %v", err))
 			}
 			break
 		}
@@ -1416,10 +1416,10 @@ func (r *ProcessRegistry) finishReader(ctx context.Context, s *ProcessSession, d
 	}
 	if err := wait(); err != nil {
 		if exitCode() == nil {
-			toolsLogger(s.env).Warn(fmt.Sprintf("%s wait failed; leaving process tracked: %v", label, err))
+			envLog(s.env).Warn(fmt.Sprintf("%s wait failed; leaving process tracked: %v", label, err))
 			return
 		}
-		toolsLogger(s.env).Warn(fmt.Sprintf("%s wait failed; recording known exit status: %v", label, err))
+		envLog(s.env).Warn(fmt.Sprintf("%s wait failed; recording known exit status: %v", label, err))
 	}
 	r.finishExited(WithEnvHome(ctx, s.env), s, exitCode(), "exited", "", true)
 }
@@ -1529,7 +1529,7 @@ func (r *ProcessRegistry) ptyReaderLoop(ctx context.Context, s *ProcessSession) 
 			chunk, replies = responder.Process(chunk)
 			if len(replies) > 0 {
 				if err := pty.Write(replies); err != nil {
-					toolsLogger(s.env).Debug("PTY query response write failed", "error", err)
+					envLog(s.env).Debug("PTY query response write failed", "error", err)
 				}
 			}
 		}
@@ -1710,7 +1710,7 @@ func (r *ProcessRegistry) WaitForPendingCompletions(ctx context.Context, env *En
 		ids = append(ids, s.ID)
 	}
 	result.Waited = ids
-	toolsLogger(env).Info(fmt.Sprintf("One-shot exit lingering (bounded %gs) for %d notify_on_complete background process(es): %s", limit, len(pending), strings.Join(ids, ", ")))
+	envLog(env).Info(fmt.Sprintf("One-shot exit lingering (bounded %gs) for %d notify_on_complete background process(es): %s", limit, len(pending), strings.Join(ids, ", ")))
 	deadline := time.Now().Add(time.Duration(max(limit, 0) * float64(time.Second)))
 	interval := time.Duration(max(pollInterval, 0.05) * float64(time.Second))
 	interrupted := false
@@ -1740,7 +1740,7 @@ func (r *ProcessRegistry) WaitForPendingCompletions(ctx context.Context, env *En
 		}
 	}
 	if len(result.TimedOut) > 0 {
-		toolsLogger(env).Warn(fmt.Sprintf("One-shot exit linger timed out after %gs with %d background process(es) still running: %s — they may be killed when this process exits.", limit, len(result.TimedOut), strings.Join(result.TimedOut, ", ")))
+		envLog(env).Warn(fmt.Sprintf("One-shot exit linger timed out after %gs with %d background process(es) still running: %s — they may be killed when this process exits.", limit, len(result.TimedOut), strings.Join(result.TimedOut, ", ")))
 	}
 	return result
 }
@@ -1803,7 +1803,7 @@ func (r *ProcessRegistry) RestoreCompletions() int {
 	}
 	n, err := AsyncDelegationLedger.RestoreUndelivered(r.CompletionQueue)
 	if err != nil {
-		toolsLogger(nil).Warn(fmt.Sprintf("Could not restore async delegation completions: %v", err))
+		envLog(nil).Warn(fmt.Sprintf("Could not restore async delegation completions: %v", err))
 		return 0
 	}
 	return n
@@ -1849,7 +1849,7 @@ func (r *ProcessRegistry) DrainNotifications(env *Env, sessionKey string, owns f
 				if t := asStr(evt["type"]); t != "" {
 					evtType = t
 				}
-				toolsLogger(env).Debug(fmt.Sprintf("Suppressed subagent-owned process notification (delegation.surface_child_process_notifications=false): type=%s session_id=%s task_id=%s", evtType, evtSID, evtTaskID))
+				envLog(env).Debug(fmt.Sprintf("Suppressed subagent-owned process notification (delegation.surface_child_process_notifications=false): type=%s session_id=%s task_id=%s", evtType, evtSID, evtTaskID))
 				continue
 			}
 		}
@@ -1938,7 +1938,7 @@ func (r *ProcessRegistry) reconcileLocalExit(ctx context.Context, s *ProcessSess
 		s.mu.Lock()
 		s.markExited(&rc, "exited", "")
 		s.mu.Unlock()
-		toolsLogger(s.env).Info(fmt.Sprintf("Reconciled session %s: direct child exited with code %d; reader will publish the owned completion after its final drain.", s.ID, rc))
+		envLog(s.env).Info(fmt.Sprintf("Reconciled session %s: direct child exited with code %d; reader will publish the owned completion after its final drain.", s.ID, rc))
 		return
 	}
 	if stdout := proc.Stdout(); stdout != nil && !isWindowsHost {
@@ -1960,7 +1960,7 @@ func (r *ProcessRegistry) reconcileLocalExit(ctx context.Context, s *ProcessSess
 	s.mu.Lock()
 	s.markExited(&rc, "exited", "")
 	s.mu.Unlock()
-	toolsLogger(s.env).Info(fmt.Sprintf("Reconciled session %s: direct child exited with code %d but reader was still blocked (orphaned pipe). Flipped to exited.", s.ID, rc))
+	envLog(s.env).Info(fmt.Sprintf("Reconciled session %s: direct child exited with code %d but reader was still blocked (orphaned pipe). Flipped to exited.", s.ID, rc))
 	r.moveToFinished(WithEnvHome(ctx, s.env), s, false)
 }
 
@@ -1973,7 +1973,7 @@ func statusHead(s *ProcessSession) *pyjson.Object {
 	return Dict("session_id", s.ID, "command", s.Command, "status", status)
 }
 
-// Ordered dict form of the exported method result, keys in the order hermes inserts them
+// Ordered dict form of the exported method result, keys in insertion order
 func (r *ProcessRegistry) pollDict(ctx context.Context, env *Env, sessionID string) *pyjson.Object {
 	s := r.Get(env, sessionID)
 	if s == nil || r.uncollectedGone(s) {
@@ -2005,7 +2005,7 @@ func (r *ProcessRegistry) pollDict(ctx context.Context, env *Env, sessionID stri
 	return result
 }
 
-// Ordered dict form of the exported method result, keys in the order hermes inserts them
+// Ordered dict form of the exported method result, keys in insertion order
 func (r *ProcessRegistry) readLogDict(env *Env, sessionID string, offset *int, limit int) *pyjson.Object {
 	s := r.Get(env, sessionID)
 	if s == nil {
@@ -2074,7 +2074,7 @@ func sliceIndices(start, stop, n int) (int, int) {
 	return a, b
 }
 
-// Ordered dict form of the exported method result, keys in the order hermes inserts them
+// Ordered dict form of the exported method result, keys in insertion order
 func (r *ProcessRegistry) waitDict(ctx context.Context, env *Env, sessionID string, timeout *int) *pyjson.Object {
 	maxTimeout := 180
 	if raw := os.Getenv("TERMINAL_TIMEOUT"); raw != "" {
@@ -2180,7 +2180,7 @@ func exitSnapshot(s *ProcessSession, status string) *pyjson.Object {
 	return result
 }
 
-// Ordered dict form of the exported method result, keys in the order hermes inserts them
+// Ordered dict form of the exported method result, keys in insertion order
 func (r *ProcessRegistry) killDict(ctx context.Context, env *Env, sessionID, source string, consumeOutput bool) *pyjson.Object {
 	if source == "" {
 		source = "process.kill"
@@ -2220,7 +2220,7 @@ func (r *ProcessRegistry) killDict(ctx context.Context, env *Env, sessionID, sou
 			parts[i] = strconv.Itoa(pid)
 		}
 		alive := strings.Join(parts, ", ")
-		toolsLogger(env).Warn(fmt.Sprintf("Kill incomplete for %s: %d process(es) still alive (%s) — session kept running", s.ID, len(survivors), alive))
+		envLog(env).Warn(fmt.Sprintf("Kill incomplete for %s: %d process(es) still alive (%s) — session kept running", s.ID, len(survivors), alive))
 		return Dict(
 			"status", "error",
 			"error", fmt.Sprintf("Kill incomplete: %d process(es) still alive (%s); session running", len(survivors), alive),
@@ -2231,7 +2231,7 @@ func (r *ProcessRegistry) killDict(ctx context.Context, env *Env, sessionID, sou
 		s.mu.Lock()
 		rootExited := s.Exited
 		s.mu.Unlock()
-		toolsLogger(env).Warn(fmt.Sprintf("Kill incomplete for %s: systemd scope %s did not stop", s.ID, s.SystemdUnit))
+		envLog(env).Warn(fmt.Sprintf("Kill incomplete for %s: systemd scope %s did not stop", s.ID, s.SystemdUnit))
 		return Dict(
 			"status", "error", "error", fmt.Sprintf("Kill incomplete: systemd scope %s did not stop", s.SystemdUnit),
 			"session_id", s.ID, "scope_stop_failed", s.SystemdUnit, "process_running", !rootExited,
@@ -2333,7 +2333,7 @@ func (r *ProcessRegistry) stdinOp(env *Env, sessionID string, ptyOp func(*ptyPro
 // Pipe stdin of a tracked process is handed to the child at spawn and closed after its data, so a write cannot reach it
 var errPipeStdinClosed = errors.New("stdin pipe is closed")
 
-// Ordered dict form of the exported method result, keys in the order hermes inserts them
+// Ordered dict form of the exported method result, keys in insertion order
 func (r *ProcessRegistry) writeStdinDict(env *Env, sessionID, data string) *pyjson.Object {
 	return r.stdinOp(env, sessionID,
 		func(p *ptyProcess) error {
@@ -2350,7 +2350,7 @@ func (r *ProcessRegistry) writeStdinDict(env *Env, sessionID, data string) *pyjs
 		Dict("status", "ok", "bytes_written", pystr.Len(data)))
 }
 
-// Ordered dict form of the exported method result, keys in the order hermes inserts them
+// Ordered dict form of the exported method result, keys in insertion order
 func (r *ProcessRegistry) submitStdinDict(env *Env, sessionID, data string) *pyjson.Object {
 	s := r.Get(env, sessionID)
 	enter := "\n"
@@ -2363,7 +2363,7 @@ func (r *ProcessRegistry) submitStdinDict(env *Env, sessionID, data string) *pyj
 	return r.writeStdinDict(env, sessionID, data+enter)
 }
 
-// Ordered dict form of the exported method result, keys in the order hermes inserts them
+// Ordered dict form of the exported method result, keys in insertion order
 func (r *ProcessRegistry) closeStdinDict(env *Env, sessionID string) *pyjson.Object {
 	s := r.Get(env, sessionID)
 	msg := "stdin closed"
@@ -2435,7 +2435,7 @@ func (r *ProcessRegistry) CountRunning() int {
 	return len(r.running)
 }
 
-// Ordered dict form of the exported method result, keys in the order hermes inserts them
+// Ordered dict form of the exported method result, keys in insertion order
 func (r *ProcessRegistry) listSessionDicts(ctx context.Context, env *Env, taskID, sessionKey string, includeRetained bool) []*pyjson.Object {
 	order := []string{}
 	sessions := map[string]*ProcessSession{}

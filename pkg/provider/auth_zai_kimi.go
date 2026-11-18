@@ -7,7 +7,6 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
-	"log/slog"
 	"net/http"
 	"sync"
 	"time"
@@ -59,15 +58,15 @@ func probeSingleZaiEndpoint(ctx context.Context, client *http.Client, apiKey str
 		req.Header.Set("Content-Type", "application/json")
 		resp, err := client.Do(req)
 		if err != nil {
-			slog.Debug(fmt.Sprintf("Z.AI endpoint probe: %s model=%s failed: %s", ep.ID, model, err))
+			pkgLog().Debug(fmt.Sprintf("Z.AI endpoint probe: %s model=%s failed: %s", ep.ID, model, err))
 			continue
 		}
 		resp.Body.Close()
 		if resp.StatusCode == 200 {
-			slog.Debug(fmt.Sprintf("Z.AI endpoint probe: %s (%s) model=%s OK", ep.ID, ep.BaseURL, model))
+			pkgLog().Debug(fmt.Sprintf("Z.AI endpoint probe: %s (%s) model=%s OK", ep.ID, ep.BaseURL, model))
 			return map[string]string{"id": ep.ID, "base_url": ep.BaseURL, "model": model, "label": ep.Label}
 		}
-		slog.Debug(fmt.Sprintf("Z.AI endpoint probe: %s model=%s returned %d", ep.ID, model, resp.StatusCode))
+		pkgLog().Debug(fmt.Sprintf("Z.AI endpoint probe: %s model=%s returned %d", ep.ID, model, resp.StatusCode))
 	}
 	return nil
 }
@@ -124,7 +123,7 @@ func resolveZaiBaseURLDetected(ctx context.Context, h, apiKey, defaultURL string
 	if data, err := store.Load(); err == nil {
 		cached := anyMap(store.ProviderState(data, "zai")["detected_endpoint"])
 		if base := pyOrStr(cached["base_url"]); base != "" && pyStr(tokensOr(cached, "key_hash", "")) == keyHash {
-			slog.Debug(fmt.Sprintf("Z.AI: using cached endpoint %s", base))
+			pkgLog().Debug(fmt.Sprintf("Z.AI: using cached endpoint %s", base))
 			return base
 		}
 	}
@@ -136,7 +135,7 @@ func resolveZaiBaseURLDetected(ctx context.Context, h, apiKey, defaultURL string
 	}
 	detected := detectZaiEndpointFn(ctx, apiKey, 8*time.Second)
 	if detected == nil || detected["base_url"] == "" {
-		slog.Debug(fmt.Sprintf("Z.AI: probe failed, falling back to default %s", defaultURL))
+		pkgLog().Debug(fmt.Sprintf("Z.AI: probe failed, falling back to default %s", defaultURL))
 		zaiProbeMu.Lock()
 		zaiProbeFailedUntil[keyHash] = nowEpoch() + zaiProbeFailureTTL.Seconds()
 		zaiProbeMu.Unlock()

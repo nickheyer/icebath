@@ -13,11 +13,8 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pydatetime"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
-	"github.com/nickheyer/icebath/pkg/logging"
 	"github.com/nickheyer/icebath/pkg/state"
 )
-
-var gatewayMetaLog = logging.GetLogger("acp_adapter.gateway_session_meta")
 
 // Advertised description and input hint of one command the gateway path serves
 type gatewayCommandSpec struct {
@@ -161,7 +158,7 @@ var gatewayModelState = func(ctx context.Context, info *pyjson.Object) *pyacp.Se
 		return BuildModelState(ctx, model, providerName, "")
 	}()
 	if err != nil {
-		gatewayMetaLog.Debug("Could not build ACP model state\n" + err.Error())
+		pkgLog().Debug("Could not build ACP model state\n" + err.Error())
 	} else if picker != nil {
 		return picker
 	}
@@ -181,7 +178,7 @@ var gatewayProvenanceMeta = func(ctx context.Context, dbPath, acpSessionID, sess
 	if err != nil {
 		var sqliteErr *state.SQLiteError
 		if errors.As(err, &sqliteErr) {
-			gatewayMetaLog.Debug(fmt.Sprintf("Could not build ACP session provenance for %s\n%s", sessionID, err))
+			pkgLog().Debug(fmt.Sprintf("Could not build ACP session provenance for %s\n%s", sessionID, err))
 			return nil, nil
 		}
 		return nil, err
@@ -191,7 +188,7 @@ var gatewayProvenanceMeta = func(ctx context.Context, dbPath, acpSessionID, sess
 	if err != nil {
 		var sqliteErr *state.SQLiteError
 		if errors.As(err, &sqliteErr) {
-			gatewayMetaLog.Debug(fmt.Sprintf("Could not build ACP session provenance for %s\n%s", sessionID, err))
+			pkgLog().Debug(fmt.Sprintf("Could not build ACP session provenance for %s\n%s", sessionID, err))
 			return nil, nil
 		}
 		return nil, err

@@ -2,6 +2,7 @@ package provider
 
 import (
 	"context"
+	"github.com/nickheyer/icebath/pkg/testfakes/configplane/remoteplane"
 	"os"
 	"path/filepath"
 	"strings"
@@ -22,7 +23,7 @@ func withProcessArgs(t *testing.T, args ...string) {
 
 func TestNormalStartupStillLoadsEnabledExternalSecretSource(t *testing.T) {
 	root := secretSourceFixture(t)
-	h := envLoaderProfile(t, root, "hermes-home")
+	h := envLoaderProfile(t, root, "icebath-home")
 	writeProfileConfig(t, h, "secrets:\n  bitwarden:\n    enabled: true\n    project_id: test-project\n")
 	t.Setenv("ICEBATH_HOME", h)
 	t.Setenv("BWS_ACCESS_TOKEN", "")
@@ -36,8 +37,8 @@ func TestNormalStartupStillLoadsEnabledExternalSecretSource(t *testing.T) {
 }
 
 func TestFirstConfigReadBeforeDotenvUsesTheDotenvDeployment(t *testing.T) {
-	p := setupBootPlane(t, true)
-	deployment := bootPlaneEnv(p, true)
+	p := setupBootPlane(t)
+	deployment := remoteplane.Env(p)
 	managed := filepath.Join(filepath.Dir(p.Home), "managed")
 	if err := os.MkdirAll(managed, 0o755); err != nil {
 		t.Fatal(err)
@@ -51,7 +52,7 @@ func TestFirstConfigReadBeforeDotenvUsesTheDotenvDeployment(t *testing.T) {
 		}
 	}
 	writeEnvBytes(t, filepath.Join(p.Home, ".env"), []byte(homeEnv.String()))
-	for name := range bootPlaneEnv(p, true) {
+	for name := range remoteplane.Env(p) {
 		_ = os.Unsetenv(name)
 	}
 	t.Setenv(config.BackendEnv, "remote")

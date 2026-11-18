@@ -2,7 +2,6 @@ package gateway
 
 import (
 	"fmt"
-	"log/slog"
 	"sync"
 )
 
@@ -41,10 +40,10 @@ func (l *CallbackLoop) ExceptionHandler() LoopExceptionHandler {
 // Logs the failure at error level the way asyncio's default handler reports it
 func (l *CallbackLoop) DefaultExceptionHandler(c LoopExceptionContext) {
 	if c.Exception == nil {
-		slog.Error(c.Message)
+		pkgLog().Error(c.Message)
 		return
 	}
-	slog.Error(fmt.Sprintf("%s: %v", c.Message, c.Exception))
+	pkgLog().Error(fmt.Sprintf("%s: %v", c.Message, c.Exception))
 }
 
 // Routes a failure to the installed handler, the default one when none is installed

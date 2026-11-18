@@ -200,11 +200,11 @@ func (r *GatewayRunner) eachSecondaryLedger(ctx context.Context, profileHomes []
 			return fn(p.Home)
 		}()
 		if err != nil {
-			runLog().Warn(fmt.Sprintf("Could not replay async completions for profile %s", pyrepr.Repr(p.Name)), "exc_info", err)
+			pkgLog().Warn(fmt.Sprintf("Could not replay async completions for profile %s", pyrepr.Repr(p.Name)), "exc_info", err)
 			continue
 		}
 		if count > 0 {
-			runLog().Info(fmt.Sprintf("%s %d undelivered async completion(s) for profile %s", verb, count, pyrepr.Repr(p.Name)))
+			pkgLog().Info(fmt.Sprintf("%s %d undelivered async completion(s) for profile %s", verb, count, pyrepr.Repr(p.Name)))
 		}
 	}
 }
@@ -214,9 +214,9 @@ func (r *GatewayRunner) sweepOrphanedCompletionLedgers(ctx context.Context) {
 	queue := tools.DefaultProcessRegistry().CompletionQueue
 	count, err := tools.SweepOrphanedCompletions(watcherToolsEnv(ctx), queue, nil)
 	if err != nil {
-		runLog().Debug(fmt.Sprintf("Orphaned async completion sweep failed: %s", err))
+		pkgLog().Debug(fmt.Sprintf("Orphaned async completion sweep failed: %s", err))
 	} else if count > 0 {
-		runLog().Info(fmt.Sprintf("Re-offered %d orphaned async completion(s)", count))
+		pkgLog().Info(fmt.Sprintf("Re-offered %d orphaned async completion(s)", count))
 	}
 	var served []profiles.ServedProfile
 	if r.servedProfileHomes != nil {
@@ -314,7 +314,7 @@ func (r *GatewayRunner) asyncDelegationWatcher(ctx context.Context, interval flo
 				for _, evt := range group {
 					queue.Put(evt)
 				}
-				runLog().Error(fmt.Sprintf("Async delegation injection error: %s", err))
+				pkgLog().Error(fmt.Sprintf("Async delegation injection error: %s", err))
 				continue
 			}
 			if delivered != nil && !*delivered {
@@ -331,7 +331,7 @@ func (r *GatewayRunner) asyncDelegationWatcher(ctx context.Context, interval flo
 			if ctx.Err() != nil {
 				return ctx.Err()
 			}
-			runLog().Debug(fmt.Sprintf("Async delegation watcher error: %s", err))
+			pkgLog().Debug(fmt.Sprintf("Async delegation watcher error: %s", err))
 		}
 		if err := sleepCtx(ctx, interval); err != nil {
 			return err

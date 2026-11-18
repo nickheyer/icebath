@@ -356,7 +356,7 @@ func rewriteWithAuxiliaryModel(ctx context.Context, systemPrompt, userPrompt, fa
 	resp, err := ttsCallLLM(ctx, map[string]any{"task": geminiAudioTagRewriteTask, "temperature": 0.7, "messages": []any{
 		map[string]any{"role": "system", "content": systemPrompt}, map[string]any{"role": "user", "content": userPrompt}}})
 	if err != nil {
-		ttsLog().Log(ctx, level, fmt.Sprintf("%s audio tag rewrite failed; using %s: %v", label, fallbackLabel, err))
+		pkgLog().Log(ctx, level, fmt.Sprintf("%s audio tag rewrite failed; using %s: %v", label, fallbackLabel, err))
 		return fallback
 	}
 	if text := auxiliaryReplyText(resp); text != "" {
@@ -365,14 +365,9 @@ func rewriteWithAuxiliaryModel(ctx context.Context, systemPrompt, userPrompt, fa
 	return fallback
 }
 
-// Command running the managed environment interpreter isolated, the seam tests replace
-var managedPythonCommand = func(ctx context.Context) ([]string, error) {
-	root := pm.RepoRoot()
-	venv, err := pm.SelectedVenv(ctx, root)
-	if err != nil {
-		return nil, err
-	}
-	return pm.VenvCommand(ctx, root, venv, []string{"-I"})
+// Command running the isolated interpreter of a provisioned extra, the seam tests replace
+var managedPythonCommand = func(ctx context.Context, extra string) ([]string, error) {
+	return pm.ExtraPythonCommand(ctx, extra)
 }
 
 // Edge rate from a speed multiplier as a signed whole percentage
@@ -862,7 +857,7 @@ func generateMistralTTS(ctx context.Context, env *tools.Env, text, outputPath st
 		"response_format": ttsResponseFormatFromPath(outputPath)}
 	audioData, className, err := ttsMistralSpeech(ctx, server, apiKey, payload)
 	if err != nil {
-		ttsLog().Error(fmt.Sprintf("Mistral TTS failed: %v", err))
+		pkgLog().Error(fmt.Sprintf("Mistral TTS failed: %v", err))
 		return "", &ttsRuntimeError{msg: "Mistral TTS failed: " + className, cause: err}
 	}
 	audio, err := pybase64Decode(audioData)
@@ -947,7 +942,7 @@ func readGeminiPersonaPrompt(ctx context.Context, env *tools.Env, geminiConfig m
 		}
 		err = derr
 	}
-	ttsLog().Warn(fmt.Sprintf("Gemini TTS persona prompt file unavailable at %s: %s", path, pypath.OSErrorText(err)))
+	pkgLog().Warn(fmt.Sprintf("Gemini TTS persona prompt file unavailable at %s: %s", path, pypath.OSErrorText(err)))
 	return ""
 }
 
@@ -967,7 +962,7 @@ func geminiAudioTagsEnabled(geminiConfig map[string]any, model string) bool {
 	if strings.Contains(normalized, "gemini-3.1") && strings.Contains(normalized, "tts") {
 		return true
 	}
-	ttsLog().Warn(fmt.Sprintf("Gemini TTS audio_tags enabled, but model %s is not known to support Gemini audio tags; skipping hidden tag rewrite", model))
+	pkgLog().Warn(fmt.Sprintf("Gemini TTS audio_tags enabled, but model %s is not known to support Gemini audio tags; skipping hidden tag rewrite", model))
 	return false
 }
 

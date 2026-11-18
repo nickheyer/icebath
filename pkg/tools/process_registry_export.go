@@ -2,7 +2,7 @@ package tools
 
 import "context"
 
-// Empties the running and finished tables and the completion queue the way hermes registry fixtures do, returning the restore
+// Empties the running and finished tables and the completion queue, returning the restore
 func IsolateProcessRegistryForTests(r *ProcessRegistry) (restore func()) {
 	drain := func() {
 		for {
@@ -24,7 +24,7 @@ func IsolateProcessRegistryForTests(r *ProcessRegistry) (restore func()) {
 	}
 }
 
-// Records an exit and publishes the completion the way hermes cases call mark_exited then _move_to_finished
+// Records an exit and publishes the completion the way tests call mark_exited then move to finished
 func FinishProcessForTests(ctx context.Context, r *ProcessRegistry, s *ProcessSession, exitCode int) {
 	s.markExited(&exitCode, "exited", "")
 	r.moveToFinished(ctx, s, false)

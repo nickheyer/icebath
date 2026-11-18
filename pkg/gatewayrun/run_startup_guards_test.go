@@ -184,10 +184,10 @@ func TestLaunchProfileWebhooksRegisterSignedUnderMultiplex(t *testing.T) {
 	}
 	mac := hmac.New(sha256.New, []byte("s3cret-of-launch"))
 	mac.Write(recv.body["/signed"])
-	if signed.Get("X-Hermes-Signature-256") != "sha256="+hex.EncodeToString(mac.Sum(nil)) {
+	if signed.Get("X-Icebath-Signature-256") != "sha256="+hex.EncodeToString(mac.Sum(nil)) {
 		t.Fatal(signed)
 	}
-	if plain.Get("X-Hermes-Signature-256") != "" {
+	if plain.Get("X-Icebath-Signature-256") != "" {
 		t.Fatal(plain)
 	}
 }

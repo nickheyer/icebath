@@ -6,12 +6,13 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"github.com/nickheyer/icebath/pkg/home"
 	"math"
 	"net"
 	"net/http"
 	"strings"
 	"time"
+
+	"github.com/nickheyer/icebath/pkg/home"
 )
 
 // deviceRuntimeError is a device login failure whose text is safe to show

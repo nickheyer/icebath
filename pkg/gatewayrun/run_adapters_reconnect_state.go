@@ -65,7 +65,7 @@ func (r *GatewayRunner) flagReconnectNeedsAttention(ctx context.Context, platfor
 		key = string(platform)
 	}
 	attempts, _ := info["attempts"].(int)
-	runLog().Warn(fmt.Sprintf("%s has been failing/reconnecting continuously for %.1f hours (%d attempts) — flagging "+
+	pkgLog().Warn(fmt.Sprintf("%s has been failing/reconnecting continuously for %.1f hours (%d attempts) — flagging "+
 		"NEEDS_ATTENTION. Retries continue, but this usually means a permanent problem (revoked "+
 		"credentials, missing intents, broken sidecar). Check `icebath status` / `/platform list`.",
 		key, queuedFor/3600.0, attempts))
@@ -105,7 +105,7 @@ func (r *GatewayRunner) adapterMayHeal(ctx context.Context, platform gateway.Pla
 
 // Drops a platform from the reconnect queue with the reason logged
 func (r *GatewayRunner) dropFromReconnectQueue(platform gateway.Platform, reason string) {
-	runLog().Warn(fmt.Sprintf("Reconnect %s: %s, removing from retry queue", platform, reason))
+	pkgLog().Warn(fmt.Sprintf("Reconnect %s: %s, removing from retry queue", platform, reason))
 	r.failedPlatforms.Delete(platform)
 }
 
@@ -151,7 +151,7 @@ func (r *GatewayRunner) cancelSecondaryProfileReconnectTasks(ctx context.Context
 			}
 		}
 		if unfinished > 0 {
-			runLog().Warn(fmt.Sprintf("Timed out waiting for %d secondary profile reconnect task(s) during shutdown", unfinished))
+			pkgLog().Warn(fmt.Sprintf("Timed out waiting for %d secondary profile reconnect task(s) during shutdown", unfinished))
 		}
 	}
 	r.profileFailedMu.Lock()
@@ -177,12 +177,12 @@ func (r *GatewayRunner) noteUnservedSecondaryPlatform(ctx context.Context, profi
 	statusKey := fmt.Sprintf("%s:%s", profileName, pv)
 	if platform == gateway.PlatformWhatsApp {
 		message := fmt.Sprintf("WhatsApp is not paired; pair it: icebath -p %s whatsapp", profileName)
-		runLog().Info(fmt.Sprintf("[MULTIPLEX] Profile '%s': %s", profileName, message))
+		pkgLog().Info(fmt.Sprintf("[MULTIPLEX] Profile '%s': %s", profileName, message))
 		r.updatePlatformRuntimeStatus(ctx, statusKey, platformStatus{state: optStr("disabled"),
 			errorCode: optStr("whatsapp_unpaired"), errorMessage: optStr(message)})
 		return
 	}
-	runLog().Info(fmt.Sprintf("[MULTIPLEX] Profile '%s': %s is enabled but not served — %s is process-level shared ingress "+
+	pkgLog().Info(fmt.Sprintf("[MULTIPLEX] Profile '%s': %s is enabled but not served — %s is process-level shared ingress "+
 		"owned by the default profile under multiplex. Enable and configure %s on the default profile "+
 		"(it serves every profile), or disable it in profile '%s'.", profileName, pv, pv, pv, profileName))
 	r.updatePlatformRuntimeStatus(ctx, statusKey, platformStatus{state: optStr("disabled"),

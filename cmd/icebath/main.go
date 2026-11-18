@@ -8,17 +8,15 @@ import (
 	"github.com/nickheyer/icebath/pkg/app"
 	"github.com/nickheyer/icebath/pkg/cliui"
 	"github.com/nickheyer/icebath/pkg/commands"
-	"github.com/nickheyer/icebath/pkg/containerinit"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/observability"
 	"github.com/nickheyer/icebath/pkg/pm"
 	"github.com/nickheyer/icebath/pkg/selfupdate"
 	"github.com/spf13/cobra"
 )
 
-// Mirrors the import time sequence of hermes_cli/main.py and then its main()
+// Mirrors the import time sequence of and then its main
 func main() {
-	if code, ok := containerinit.Dispatch(os.Args); ok {
+	if code, ok := runTierArgvEntries(os.Args); ok {
 		os.Exit(code)
 	}
 	if code, ok := runNixModuleVerb(os.Args[1:], os.Stdout, os.Stderr); ok {
@@ -27,7 +25,9 @@ func main() {
 	if code, ok := runSQLiteRuntimeVerb(os.Args[1:], os.Stdout, os.Stderr); ok {
 		os.Exit(code)
 	}
-	containerinit.DropRootInImage(os.Args)
+	for _, step := range tierBeforeStart {
+		step(os.Args)
+	}
 	startProcess(context.Background())
 	args, pinned := pm.LauncherStart(pm.RepoRoot(), os.Args)
 	if restoreInterruptedPull() {
@@ -55,7 +55,9 @@ func main() {
 		exit(0)
 	}
 	argv = applyProfileOverride(argv)
-	home.ExportScratchTmpEnv(context.Background())
+	if first, _ := firstPositional(argv); first != "uninstall" {
+		home.ExportScratchTmpEnv(context.Background())
+	}
 	if len(argv) > 0 && argv[0] == "pm" {
 		exit(runCLI(argv))
 	}
@@ -88,7 +90,6 @@ func run(argv []string) int {
 	if problem := checkRuntime(pm.InstallRoot()); problem != "" {
 		fmt.Fprintln(os.Stderr, "⚠ "+problem)
 	}
-	startRelayProvisioning(argv, first)
 	for _, fast := range []func([]string) (bool, int){tryTermuxFastTUILaunch, tryTermuxFastCLILaunch, tryFastChatLaunch} {
 		if handled, code := fast(argv); handled {
 			return code
@@ -130,11 +131,6 @@ func beforeDispatch(cli *commands.CLI, cmd *cobra.Command, args []string) error 
 	prepareAgentStartup(a)
 	if a.Oneshot != "" {
 		return &commands.ExitError{Code: runOneshotFromArgs(a)}
-	}
-	if a.Command == "" {
-		observability.SetProcessSurface(nil)
-	} else {
-		observability.SetProcessSurface(a.Command)
 	}
 	return nil
 }

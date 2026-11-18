@@ -52,7 +52,7 @@ func (p *keenableProvider) Search(ctx context.Context, env *Env, query string, l
 			return nil, err
 		}
 		if useKeyless(env, "keenable", apiKey) {
-			envLog(env).With("logger", "plugins.web.keenable.provider").Info(fmt.Sprintf("Keenable keyless search: '%s' (limit=%d)", query, limit))
+			envLog(env).Info(fmt.Sprintf("Keenable keyless search: '%s' (limit=%d)", query, limit))
 			return keylessSearchWithFailover(ctx, env, "keenable", query, limit)
 		}
 		envLog(env).Info("Keenable search", "query", query, "limit", limit)

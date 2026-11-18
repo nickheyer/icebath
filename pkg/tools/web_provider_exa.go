@@ -388,7 +388,7 @@ func (p *exaProvider) Search(ctx context.Context, env *Env, query string, limit 
 			return nil, err
 		}
 		if useKeyless(env, "exa", key) {
-			envLog(env).With("logger", "plugins.web.exa.provider").Info(fmt.Sprintf("Exa keyless search: '%s' (limit=%d)", query, limit))
+			envLog(env).Info(fmt.Sprintf("Exa keyless search: '%s' (limit=%d)", query, limit))
 			return keylessSearchWithFailover(ctx, env, "exa", query, limit)
 		}
 		envLog(env).Info("Exa search", "query", query, "limit", limit)

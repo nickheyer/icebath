@@ -18,7 +18,7 @@ func TestInjectSkillConfigLeavesPartsAloneWithoutDeclaredConfig(t *testing.T) {
 
 func TestInjectSkillConfigAppendsTheResolvedBlock(t *testing.T) {
 	s := NewScope(t.TempDir(), config.Defaults())
-	content := "---\nname: cfg\ndescription: d\nmetadata:\n  hermes:\n    config:\n      - key: region\n        description: the region\n        default: us-east-1\n---\nbody\n"
+	content := "---\nname: cfg\ndescription: d\nmetadata:\n  icebath:\n    config:\n      - key: region\n        description: the region\n        default: us-east-1\n---\nbody\n"
 	parts := []string{"prompt"}
 	s.InjectSkillConfig(map[string]any{"content": content}, &parts)
 	joined := strings.Join(parts, "\n")

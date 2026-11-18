@@ -3,7 +3,6 @@ package tools
 import (
 	"context"
 	"fmt"
-	"log/slog"
 	"strings"
 	"sync"
 
@@ -76,13 +75,13 @@ func runBackendProbe(ctx context.Context, env *Env, envType string) (string, err
 	}
 	result, execErr := e.Execute(ctx, backendProbeCmd, ExecOptions{Timeout: 4})
 	if cerr := cleanupEnv(e, true); cerr != nil {
-		slog.Debug("Backend probe cleanup failed", "error", cerr)
+		pkgLog().Debug("Backend probe cleanup failed", "error", cerr)
 	}
 	if execErr != nil {
 		return "", execErr
 	}
 	if result.ReturnCode != 0 {
-		slog.Debug(fmt.Sprintf("Backend probe returned non-zero: %+v", *result))
+		pkgLog().Debug(fmt.Sprintf("Backend probe returned non-zero: %+v", *result))
 		return "", nil
 	}
 	return pystr.Strip(result.Output), nil
@@ -122,7 +121,7 @@ func ProbeRemoteBackend(ctx context.Context, env *Env, envType string) (string, 
 	if !ok {
 		output, err := runBackendProbe(ctx, env, envType)
 		if err != nil {
-			slog.Debug(fmt.Sprintf("Backend probe failed: %v", err))
+			pkgLog().Debug(fmt.Sprintf("Backend probe failed: %v", err))
 		}
 		formatted = formatBackendProbe(output)
 		backendProbeCache.Lock()

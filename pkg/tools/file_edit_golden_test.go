@@ -1,6 +1,6 @@
 package tools
 
-// Expected outputs captured from the hermes fuzzy_match, escape_drift_autocorrect and patch_parser modules
+// Expected outputs captured from the fuzzy_match, escape_drift_autocorrect and patch_parser modules
 const fileEditGoldenB64 = "" +
 	"eyJmdXp6eSI6IFt7Im5hbWUiOiAiZXhhY3QiLCAiY29udGVudCI6ICJoZWxsbyB3b3JsZFxuIiwgIm9sZCI6ICJ3b3JsZCIsICJu" +
 	"ZXciOiAidGhlcmUiLCAicmVwbGFjZV9hbGwiOiBmYWxzZSwgInJlc3VsdCI6ICJoZWxsbyB0aGVyZVxuIiwgImNvdW50IjogMSwg" +

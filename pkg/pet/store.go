@@ -2,7 +2,6 @@ package pet
 
 import (
 	"fmt"
-	"log/slog"
 	"os"
 	"path/filepath"
 	"sort"
@@ -12,8 +11,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
-
-var storeLog = slog.Default().With("logger", "agent.pet.store")
 
 // StoreError is raised on install and IO failures of the pet store
 type StoreError struct{ Msg string }
@@ -51,17 +48,17 @@ func readPetJSON(directory string) (*pyjson.Object, error) {
 	}
 	raw, err := os.ReadFile(path)
 	if err != nil {
-		storeLog.Debug(fmt.Sprintf("unreadable pet.json in %s: %s", directory, err))
+		pkgLog().Debug(fmt.Sprintf("unreadable pet.json in %s: %s", directory, err))
 		return &pyjson.Object{}, nil
 	}
 	text, err := pystr.DecodeUTF8Sig(raw)
 	if err != nil {
-		storeLog.Debug(fmt.Sprintf("unreadable pet.json in %s: %s", directory, err))
+		pkgLog().Debug(fmt.Sprintf("unreadable pet.json in %s: %s", directory, err))
 		return &pyjson.Object{}, nil
 	}
 	decoded, err := pyjson.Loads(text)
 	if err != nil {
-		storeLog.Debug(fmt.Sprintf("unreadable pet.json in %s: %s", directory, err))
+		pkgLog().Debug(fmt.Sprintf("unreadable pet.json in %s: %s", directory, err))
 		return &pyjson.Object{}, nil
 	}
 	obj, ok := decoded.(*pyjson.Object)

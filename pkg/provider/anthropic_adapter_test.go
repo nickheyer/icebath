@@ -632,9 +632,9 @@ func TestAnthropicFinalPayloadHasNoBlankTextBlocks(t *testing.T) {
 }
 
 func TestAnthropicOAuthSystemPromptSanitizerPreservesDocsURL(t *testing.T) {
-	sys := "Hermes Agent by Nous Research uses hermes-agent skills. Docs: https://hermes-agent.nousresearch.com/docs ; " +
-		"interpreter ~/.hermes/hermes-agent/venv/bin/python ; source github.com/NousResearch/hermes-agent ; mail hermes-agent@example.com ; " +
-		"skill_view(name='hermes-agent') ; hermes-agent's docs ; built by hermes-agent."
+	sys := "Icebath Agent uses icebath-agent skills. Docs: https://icebath-agent.example.com/docs ; " +
+		"interpreter ~/.icebath/icebath-agent/venv/bin/python ; source github.com/example/icebath-agent ; mail icebath-agent@example.com ; " +
+		"skill_view(name='icebath-agent') ; icebath-agent's docs ; built by icebath-agent."
 	kw, err := anthBuildKwargs(anthBuildInput{model: "claude-sonnet-4-20250514", messages: []map[string]any{{"role": "system", "content": sys}, {"role": "user", "content": "Hi"}},
 		maxTokens: 4096, isOAuth: true})
 	if err != nil {
@@ -646,8 +646,8 @@ func TestAnthropicOAuthSystemPromptSanitizerPreservesDocsURL(t *testing.T) {
 		texts = append(texts, asStr(b["text"]))
 	}
 	all := strings.Join(texts, "\n")
-	for _, want := range []string{"Claude Code by Anthropic uses claude-code skills.", "https://hermes-agent.nousresearch.com/docs", "~/.hermes/hermes-agent/venv/bin/python",
-		"github.com/NousResearch/hermes-agent", "hermes-agent@example.com", "skill_view(name='hermes-agent')", "built by claude-code.", "claude-code's docs"} {
+	for _, want := range []string{"Claude Code uses claude-code skills.", "https://icebath-agent.example.com/docs", "~/.icebath/icebath-agent/venv/bin/python",
+		"github.com/example/icebath-agent", "icebath-agent@example.com", "skill_view(name='icebath-agent')", "built by claude-code.", "claude-code's docs"} {
 		if !strings.Contains(all, want) {
 			t.Fatalf("system missing %q: %s", want, all)
 		}

@@ -21,7 +21,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/skills"
 )
 
-// Bundle table and the three dispatch steps of an unregistered slash, replaced by the cases that patch them in hermes
+// Bundle table and the three dispatch steps of an unregistered slash, replaced by tests
 var (
 	slashSkillBundles   func(ctx context.Context) skills.SkillCommands
 	slashRunSkillBundle func(c *CLI, baseCmd string, info map[string]any, userInstruction string)

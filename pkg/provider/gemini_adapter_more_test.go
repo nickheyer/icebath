@@ -7,6 +7,8 @@ import (
 	"net/http"
 	"strings"
 	"testing"
+
+	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 )
 
 func TestGeminiBuildRequestPreservesExplicitMaxTokensWithoutThinking(t *testing.T) {
@@ -237,7 +239,10 @@ func TestGeminiBuildRequestTranslatesResponseFormatOnBothSchemaSurfaces(t *testi
 		if gen["responseMimeType"] != "application/json" {
 			t.Fatalf("mime %v", gen)
 		}
-		out := gen[tc.key].(map[string]any)
+		out, isDict := pyjson.Dict(gen[tc.key])
+		if !isDict {
+			t.Fatalf("%s %v", tc.key, gen[tc.key])
+		}
 		gemEq(t, out["properties"], `{"ok": {"type": "boolean"}}`)
 		gemEq(t, out["required"], `["ok"]`)
 		if _, has := out["additionalProperties"]; has != tc.surface {

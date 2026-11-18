@@ -44,7 +44,7 @@ func TestMemoryStatusAndSetupAreBound(t *testing.T) {
 		if err := runMemorySetup(cmd, run.sub, run.args); err != nil {
 			t.Fatalf("%q: %v", run.sub, err)
 		}
-		if !strings.Contains(out.String(), "icebath -p work plugins install honcho") {
+		if !strings.Contains(out.String(), "icebath -p work plugins install <source>") {
 			t.Fatalf("%q output lacks the profile install command\n%s", run.sub, out.String())
 		}
 	}
@@ -146,7 +146,7 @@ func TestMemorySubparsersParseThroughTheTree(t *testing.T) {
 		return out.String()
 	}
 	for _, argv := range [][]string{{"memory", "setup", "honcho"}, {"memory", "status"}, {"memory"}} {
-		if out := run(argv...); !strings.Contains(out, "icebath -p work plugins install honcho") || strings.Contains(out, "\nerror: ") {
+		if out := run(argv...); !strings.Contains(out, "icebath -p work plugins install <source>") || strings.Contains(out, "\nerror: ") {
 			t.Fatalf("%v\n%s", argv, out)
 		}
 	}
@@ -162,7 +162,7 @@ func TestMemorySubparsersParseThroughTheTree(t *testing.T) {
 	t.Setenv("COLUMNS", "200")
 	for argv, want := range map[string][]string{
 		"memory --help":       {"Only one external provider can be active at a time.", "Interactive provider selection and configuration", "Show current memory provider config", "Disable external provider (built-in only)", "Erase all built-in memory (MEMORY.md and USER.md)"},
-		"memory setup --help": {"Provider to configure directly (e.g. honcho), skipping the picker"},
+		"memory setup --help": {"Provider to configure directly (e.g. retaindb), skipping the picker"},
 		"memory reset --help": {"Which store to reset: 'all' (default), 'memory', or 'user'", "Skip confirmation prompt"},
 	} {
 		out := run(strings.Fields(argv)...)

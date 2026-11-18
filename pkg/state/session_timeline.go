@@ -142,7 +142,7 @@ func rawConnOf(conn SQLiteConn) (pysqlite.RawConn, bool) {
 	}
 }
 
-// Installs the timeline SQL functions on the connection as hermes registers them before each read
+// Installs the timeline SQL functions on the connection before each read
 func registerTimelineFunctions(conn SQLiteConn) error {
 	raw, ok := rawConnOf(conn)
 	if !ok {

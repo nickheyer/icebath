@@ -5,13 +5,14 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
-	"log/slog"
 	"math"
 	"os"
 	"path/filepath"
 	"strings"
 	"time"
 
+	"github.com/nickheyer/icebath/pkg/errchain"
+	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/proc"
 	"github.com/nickheyer/icebath/pkg/internal/pydatetime"
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
@@ -29,7 +30,7 @@ const (
 	plannedStopMutexWait      = 2 * time.Second
 )
 
-// Seams over the takeover steps hermes tests patch
+// Seams over the takeover steps tests patch
 var (
 	statusSnapshotGatewayChildren = snapshotGatewayChildrenLive
 	statusTerminatePid            = TerminatePid
@@ -42,11 +43,11 @@ func pyFloat(v any) (float64, error) { return pyint.Float(v) }
 func pyRound(f float64) float64 { return math.RoundToEven(f) }
 
 // Takeover marker path in the canonical target home, the process home when empty
-func takeoverMarkerPath(hermesHome string) (string, error) {
-	if hermesHome == "" {
-		hermesHome = processHermesHome()
+func takeoverMarkerPath(icebathHome string) (string, error) {
+	if icebathHome == "" {
+		icebathHome = processIcebathHome()
 	}
-	h, err := canonicalHermesHome(hermesHome)
+	h, err := canonicalIcebathHome(icebathHome)
 	if err != nil {
 		return "", err
 	}
@@ -54,7 +55,7 @@ func takeoverMarkerPath(hermesHome string) (string, error) {
 }
 
 func plannedStopMarkerPath() string {
-	return filepath.Join(processHermesHome(), plannedStopMarkerFilename)
+	return filepath.Join(processIcebathHome(), plannedStopMarkerFilename)
 }
 
 // Whether a written_at stamp is older than ttl seconds, unparseable or naive stamps counting as stale
@@ -109,25 +110,25 @@ func consumePidMarkerForSelf(path string, ttl int, onConsume func(string, *pyjso
 	if err != nil || !ok {
 		return false, err
 	}
-	ourHome := processHermesHome()
-	if targetHome, present := record.Get("target_hermes_home"); present && targetHome != nil {
+	ourHome := processIcebathHome()
+	if targetHome, present := home.RecordValue(record.Get, "target_"+home.RecordKey); present && targetHome != nil {
 		s, isStr := targetHome.(string)
 		if !isStr {
 			return false, nil
 		}
-		same, err := sameHermesHome(s, ourHome)
+		same, err := sameIcebathHome(s, ourHome)
 		if err != nil {
 			return false, err
 		}
 		if !same {
 			return false, nil
 		}
-	} else if replacer, present := record.Get("replacer_hermes_home"); present && replacer != nil {
+	} else if replacer, present := home.RecordValue(record.Get, "replacer_"+home.RecordKey); present && replacer != nil {
 		s, isStr := replacer.(string)
 		if !isStr {
-			return false, fmt.Errorf("TypeError: expected str, bytes or os.PathLike object")
+			return false, fmt.Errorf("the pid marker names its replacer home as %s, expected a path", errchain.Kind(replacer))
 		}
-		same, err := sameHermesHome(s, ourHome)
+		same, err := sameIcebathHome(s, ourHome)
 		if err != nil {
 			return false, err
 		}
@@ -151,16 +152,16 @@ func consumePidMarkerForSelf(path string, ttl int, onConsume func(string, *pyjso
 func WriteTakeoverMarker(ctx context.Context, targetPid int, targetHome string, targetStartTime any, startTimeGiven bool) bool {
 	markerHome := targetHome
 	if markerHome == "" {
-		markerHome = processHermesHome()
+		markerHome = processIcebathHome()
 	}
-	markerHome, err := canonicalHermesHome(markerHome)
+	markerHome, err := canonicalIcebathHome(markerHome)
 	if err != nil {
 		return false
 	}
 	if !startTimeGiven {
 		targetStartTime = statusProcessStartTime(targetPid)
 	}
-	replacerHome, err := canonicalHermesHome(processHermesHome())
+	replacerHome, err := canonicalIcebathHome(processIcebathHome())
 	if err != nil {
 		return false
 	}
@@ -171,9 +172,9 @@ func WriteTakeoverMarker(ctx context.Context, targetPid int, targetHome string, 
 	record := pyjson.NewObject()
 	record.Set("target_pid", int64(targetPid))
 	record.Set("target_start_time", targetStartTime)
-	record.Set("target_hermes_home", markerHome)
+	record.Set("target_"+home.RecordKey, markerHome)
 	record.Set("replacer_pid", int64(statusGetpid()))
-	record.Set("replacer_hermes_home", replacerHome)
+	record.Set("replacer_"+home.RecordKey, replacerHome)
 	record.Set("written_at", utcNowISO())
 	return writeMarker(ctx, path, record)
 }
@@ -206,12 +207,12 @@ func validatedScopedLockGatewayOwner(record *pyjson.Object) (int, any, string, b
 	}
 	ownerPid, ok := pidFromRecord(record, "pid")
 	ownerStart := recGet(record, "start_time")
-	rawHome, isStr := recGet(record, "hermes_home").(string)
+	rawHome, isStr := recHome(record, home.RecordKey).(string)
 	if !ok || ownerPid <= 0 || ownerPid == statusGetpid() || !pyIsInt(ownerStart) || !isStr ||
 		pystr.Strip(rawHome) == "" || !pypath.IsAbs(pypath.Expanduser(rawHome)) {
 		return 0, nil, "", false
 	}
-	targetHome, err := canonicalHermesHome(rawHome)
+	targetHome, err := canonicalIcebathHome(rawHome)
 	if err != nil {
 		return 0, nil, "", false
 	}
@@ -225,13 +226,13 @@ func validatedScopedLockGatewayOwner(record *pyjson.Object) (int, any, string, b
 	if pidRecord == nil {
 		pidRecord = pyjson.NewObject()
 	}
-	pidHome, homeIsStr := recGet(pidRecord, "hermes_home").(string)
+	pidHome, homeIsStr := recHome(pidRecord, home.RecordKey).(string)
 	recordPid, recordOK := pidFromRecord(pidRecord, "pid")
 	if !recordLooksLikeGateway(pidRecord) || !recordOK || recordPid != ownerPid ||
 		!pyEq(recGet(pidRecord, "start_time"), ownerStart) || !homeIsStr {
 		return 0, nil, "", false
 	}
-	if same, err := sameHermesHome(pidHome, targetHome); err != nil || !same {
+	if same, err := sameIcebathHome(pidHome, targetHome); err != nil || !same {
 		return 0, nil, "", false
 	}
 	return ownerPid, ownerStart, targetHome, true
@@ -279,7 +280,7 @@ func snapshotGatewayChildrenLive(pid int) []gatewayChild {
 	}
 	table, err := proc.Snapshot()
 	if err != nil {
-		slog.Debug(fmt.Sprintf("Could not snapshot children of gateway PID %d", pid))
+		pkgLog().Debug(fmt.Sprintf("Could not snapshot children of gateway PID %d", pid))
 		return nil
 	}
 	var out []gatewayChild
@@ -306,12 +307,12 @@ func ReapGatewayChildren(children []gatewayChild, parentPid int, timeout time.Du
 			continue
 		}
 		if ppid, ok := proc.PPID(child.PID); ok && ppid == parentPid {
-			slog.Debug(fmt.Sprintf("Skipping child PID %d of old gateway %d: parent still appears alive", child.PID, parentPid))
+			pkgLog().Debug(fmt.Sprintf("Skipping child PID %d of old gateway %d: parent still appears alive", child.PID, parentPid))
 			continue
 		}
 		if err := killPid(child.PID, false); err != nil {
 			if !errors.Is(err, os.ErrProcessDone) {
-				slog.Debug(fmt.Sprintf("Could not terminate child PID %d of old gateway %d", child.PID, parentPid))
+				pkgLog().Debug(fmt.Sprintf("Could not terminate child PID %d of old gateway %d", child.PID, parentPid))
 			}
 			continue
 		}
@@ -339,13 +340,13 @@ func ReapGatewayChildren(children []gatewayChild, parentPid int, timeout time.Du
 	}
 	for _, child := range live {
 		if err := killPid(child.PID, true); err != nil {
-			slog.Debug(fmt.Sprintf("Could not force-kill child PID %d of old gateway %d", child.PID, parentPid))
+			pkgLog().Debug(fmt.Sprintf("Could not force-kill child PID %d of old gateway %d", child.PID, parentPid))
 			continue
 		}
 		reaped++
 	}
 	if reaped > 0 {
-		slog.Info(fmt.Sprintf("Reaped %d orphaned child process(es) of replaced gateway PID %d.", reaped, parentPid))
+		pkgLog().Info(fmt.Sprintf("Reaped %d orphaned child process(es) of replaced gateway PID %d.", reaped, parentPid))
 	}
 	return reaped
 }
@@ -444,7 +445,7 @@ func checkpointPlannedStop(ctx context.Context, path string, record *pyjson.Obje
 		return err
 	}
 	defer release()
-	return updaterecord.MarkStopConsumed(path, record, sameHermesHome)
+	return updaterecord.MarkStopConsumed(path, record, sameIcebathHome)
 }
 
 // Whether this process is being intentionally stopped, the request kept as an accepted receipt when the checkpoint fails
@@ -475,7 +476,7 @@ func ConsumePlannedStopMarkerForSelf() (bool, error) {
 	if !isOSError(err) {
 		return false, err
 	}
-	slog.Warn(fmt.Sprintf("Planned-stop checkpoint skipped (%v); the stop request stays on disk", err))
+	pkgLog().Warn(fmt.Sprintf("Planned-stop checkpoint skipped (%v); the stop request stays on disk", err))
 	return consumePidMarkerForSelf(plannedStopMarkerPath(), plannedStopMarkerTTL, updaterecord.MarkStopAccepted, true)
 }
 

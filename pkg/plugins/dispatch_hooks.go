@@ -3,12 +3,13 @@ package plugins
 import (
 	"context"
 	"fmt"
-	"github.com/nickheyer/icebath/pkg/internal/pyctx"
 	"math"
 	"regexp"
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/nickheyer/icebath/pkg/internal/pyctx"
 
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
@@ -169,15 +170,15 @@ func (m *Manager) resolveHookCallbackTimeout() float64 {
 	}
 	timeout, ok := pyFloat(section["hook_callback_timeout"])
 	if !ok || math.IsNaN(timeout) {
-		logPlugins.warn(fmt.Sprintf("plugins.hook_callback_timeout is not a number; using default %ss", pyG(def)))
+		pkgLog().Warn(fmt.Sprintf("plugins.hook_callback_timeout is not a number; using default %ss", pyG(def)))
 		return def
 	}
 	if timeout < 0 {
-		logPlugins.warn(fmt.Sprintf("plugins.hook_callback_timeout=%s is negative; using default %ss", pyG(timeout), pyG(def)))
+		pkgLog().Warn(fmt.Sprintf("plugins.hook_callback_timeout=%s is negative; using default %ss", pyG(timeout), pyG(def)))
 		return def
 	}
 	if timeout > maxHookCallbackTimeoutSecs {
-		logPlugins.warn(fmt.Sprintf("plugins.hook_callback_timeout=%s exceeds max %ss; clamping", pyG(timeout), pyG(maxHookCallbackTimeoutSecs)))
+		pkgLog().Warn(fmt.Sprintf("plugins.hook_callback_timeout=%s exceeds max %ss; clamping", pyG(timeout), pyG(maxHookCallbackTimeoutSecs)))
 		return maxHookCallbackTimeoutSecs
 	}
 	return timeout
@@ -302,13 +303,13 @@ func (m *Manager) runHookCallbackBounded(ctx context.Context, hookName string, c
 	until, suppressed := m.hookTimeoutSuppressedUntil[supKey]
 	if m.hookRunningCallbacks[gateKey] != nil || (suppressed && until.After(time.Now())) {
 		m.hookTimeoutMu.Unlock()
-		logPlugins.warn(fmt.Sprintf("Hook '%s' callback %s skipped after previous timeout or while still running", hookName, cb.name))
+		pkgLog().Warn(fmt.Sprintf("Hook '%s' callback %s skipped after previous timeout or while still running", hookName, cb.name))
 		return nil, true, nil
 	}
 	if abandoned := m.hookAbandoned[supKey]; len(abandoned) >= hookMaxAbandonedWorkers {
 		m.hookTimeoutMu.Unlock()
 		module := cb.module
-		logPlugins.warn(fmt.Sprintf("Hook '%s' callback %s (%s) skipped: %d abandoned worker(s) still running — the plugin is hung; fix or disable it (retried when a worker finishes)",
+		pkgLog().Warn(fmt.Sprintf("Hook '%s' callback %s (%s) skipped: %d abandoned worker(s) still running — the plugin is hung; fix or disable it (retried when a worker finishes)",
 			hookName, cb.name, module, len(abandoned)))
 		return nil, true, nil
 	}
@@ -340,7 +341,7 @@ func (m *Manager) runHookCallbackBounded(ctx context.Context, hookName string, c
 		releaseToken()
 	}); err != nil {
 		releaseToken()
-		logPlugins.warn(fmt.Sprintf("Hook '%s' callback %s worker failed to start: %s — skipping", hookName, cb.name, err))
+		pkgLog().Warn(fmt.Sprintf("Hook '%s' callback %s worker failed to start: %s — skipping", hookName, cb.name, err))
 		return nil, true, nil
 	}
 	if waitHookWorker(ctx, finished, time.Duration(timeout*float64(time.Second))) {
@@ -358,7 +359,7 @@ func (m *Manager) runHookCallbackBounded(ctx context.Context, hookName string, c
 		m.hookAbandoned[supKey][gateKey] = true
 	}
 	m.hookTimeoutMu.Unlock()
-	logPlugins.warn(fmt.Sprintf("Hook '%s' callback %s timed out after %ss — skipping", hookName, cb.name, pyG(timeout)))
+	pkgLog().Warn(fmt.Sprintf("Hook '%s' callback %s timed out after %ss — skipping", hookName, cb.name, pyG(timeout)))
 	return nil, true, nil
 }
 
@@ -405,7 +406,7 @@ func (m *Manager) AInvokeHook(ctx context.Context, hookName string, kwargs map[s
 			timedOut := useTimeout && awaitCtx.Err() == context.DeadlineExceeded
 			cancel()
 			if timedOut {
-				logPlugins.warn(fmt.Sprintf("Hook '%s' callback %s timed out after %.0fs", hookName, cb.name, timeout))
+				pkgLog().Warn(fmt.Sprintf("Hook '%s' callback %s timed out after %.0fs", hookName, cb.name, timeout))
 				if failClosed {
 					results = append(results, map[string]any{"action": "block", "message": preToolCallTimeoutBlockMessage})
 				}

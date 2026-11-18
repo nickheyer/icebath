@@ -226,7 +226,7 @@ func TestUnusableMailboxIsAPermissionError(t *testing.T) {
 	t.Cleanup(func() { _ = os.Chmod(runtimeDir, 0o700) })
 	_, err := CompleteDelivery(context.Background(), h, testDeliveryID, "settled", "", "", "")
 	var unusable *MailboxUnusable
-	if !errors.As(err, &unusable) || !errors.Is(err, fs.ErrPermission) || !strings.Contains(err.Error(), "bot mailbox directory is not usable: [Errno 13] Permission denied") {
+	if !errors.As(err, &unusable) || !errors.Is(err, fs.ErrPermission) || !strings.Contains(err.Error(), "bot mailbox directory is not usable: permission denied") {
 		t.Fatal(err)
 	}
 	if HasMailbox(h) {

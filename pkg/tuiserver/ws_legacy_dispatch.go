@@ -4,11 +4,11 @@ import (
 	"context"
 
 	"github.com/nickheyer/icebath/pkg/gateway"
-	"github.com/nickheyer/icebath/pkg/tuigateway"
+	"github.com/nickheyer/icebath/pkg/tuihost"
 )
 
 // Runs the legacy dispatcher with the ticket profile home bound, refusing a ticket whose home stopped resolving
-func dispatchLegacy(ctx context.Context, req map[string]any, transport tuigateway.Transport, actor gateway.Principal) map[string]any {
+func dispatchLegacy(ctx context.Context, req map[string]any, transport tuihost.Transport, actor gateway.Principal) map[string]any {
 	ticketHome, err := foreignProfileHome(actor.ProfileID)
 	if err != nil {
 		return profileUnavailable(req)

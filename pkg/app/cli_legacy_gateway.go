@@ -15,7 +15,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/i18n"
 )
 
-// Hidden argv word the binary runs the classic CLI entry under, the python cli.py script of hermes
+// Hidden argv word the binary runs the classic CLI entry under
 const CLIModuleEntry = "__icebath_cli__"
 
 // Runs the classic CLI entry and exits with its status when argv carries its entry word

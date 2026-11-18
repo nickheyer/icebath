@@ -285,7 +285,7 @@ func (r *Runtime) SetIsPIIEnabled(enabled bool) {
 // Log entries routed into slog the way msal routes them, fatal as critical and everything else as debug
 func logEntry(message uintptr, level int32, _ uintptr) {
 	text := decodeOSString(message)
-	logger := slog.Default().With("logger", "msal.broker")
+	logger := pkgLog()
 	if LogLevel(level) == LogFatal {
 		logger.Log(context.Background(), slog.LevelError+4, text)
 		return

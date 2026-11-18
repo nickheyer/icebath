@@ -5,6 +5,8 @@ package tty
 import (
 	"errors"
 	"os"
+	"os/signal"
+	"syscall"
 
 	"github.com/charmbracelet/x/term"
 	"golang.org/x/sys/windows"
@@ -76,8 +78,25 @@ func adoptInput(in *os.File) (func() error, error) {
 // Windows has no job control, so no shell can stop and continue the program
 func JobControl() bool { return false }
 
-// Windows has no job control, so a stop request leaves the program running
-func (p *Program) suspend(string) {}
+// Refuses every stop request, Windows having no job control to take the program
+func (p *Program) suspend(string) bool { return false }
 
-// Resize arrives through the console input reader on Windows, so there is nothing to watch
-func (p *Program) signals() func() { return func() {} }
+// Console close, logoff and shutdown, which Go reports as a terminate, handled until the returned stop is called
+func (p *Program) signals() func() {
+	ch := make(chan os.Signal, 1)
+	signal.Notify(ch, syscall.SIGTERM)
+	quit, done := make(chan struct{}), make(chan struct{})
+	go func() {
+		defer close(done)
+		select {
+		case <-quit:
+		case <-ch:
+			p.terminate(syscall.SIGTERM)
+		}
+	}()
+	return func() {
+		signal.Stop(ch)
+		close(quit)
+		<-done
+	}
+}

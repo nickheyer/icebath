@@ -140,14 +140,14 @@ func (r *GatewayRunner) schedulePluginMessageInjection(ctx context.Context, kwar
 		result, err := done.wait(context.Background())
 		if err != nil {
 			if !errors.Is(err, errTaskCancelled) {
-				runLog().Warn(fmt.Sprintf("Plugin message injection failed: plugin=%s %s", args.pluginID, target), "exc_info", err)
+				pkgLog().Warn(fmt.Sprintf("Plugin message injection failed: plugin=%s %s", args.pluginID, target), "exc_info", err)
 			}
 			return
 		}
 		if accepted, _ := result.(bool); accepted {
 			return
 		}
-		runLog().Warn(fmt.Sprintf("Plugin message injection was not routed: plugin=%s %s", args.pluginID, target))
+		pkgLog().Warn(fmt.Sprintf("Plugin message injection was not routed: plugin=%s %s", args.pluginID, target))
 	}
 	taskCtx := context.WithoutCancel(ctx)
 	if onGatewayLoop(ctx) {
@@ -157,7 +157,7 @@ func (r *GatewayRunner) schedulePluginMessageInjection(ctx context.Context, kwar
 	if err := loop.CallSoonThreadsafe(func() {
 		spawnGatewayTask(taskCtx, "plugin-message-injection", run).addDoneCallback(logResult)
 	}); err != nil {
-		runLog().Warn(fmt.Sprintf("Plugin message injection scheduling failed: %s", err))
+		pkgLog().Warn(fmt.Sprintf("Plugin message injection scheduling failed: %s", err))
 		return false, nil
 	}
 	return true, nil
@@ -202,11 +202,11 @@ func (r *GatewayRunner) pluginInjectionAuthorized(ctx context.Context, source *g
 		return r.isUserAuthorizedForSource(ctx, source, false)
 	}()
 	if err != nil {
-		runLog().Warn(fmt.Sprintf("Plugin message injection authorization check failed: plugin=%s %s", pluginID, target), "exc_info", err)
+		pkgLog().Warn(fmt.Sprintf("Plugin message injection authorization check failed: plugin=%s %s", pluginID, target), "exc_info", err)
 		return false
 	}
 	if !authorized {
-		runLog().Warn(fmt.Sprintf("Plugin message injection denied by current gateway authorization: plugin=%s %s", pluginID, target))
+		pkgLog().Warn(fmt.Sprintf("Plugin message injection denied by current gateway authorization: plugin=%s %s", pluginID, target))
 	}
 	return authorized
 }
@@ -254,7 +254,7 @@ func (r *GatewayRunner) pluginMessagingSessionOwned(ctx context.Context, session
 	if profile != nil && owner != nil && *owner == *profile {
 		return true
 	}
-	runLog().Warn(fmt.Sprintf("Plugin message injection refused: plugin=%s session=%s belongs to profile %s, not the plugin's profile %s",
+	pkgLog().Warn(fmt.Sprintf("Plugin message injection refused: plugin=%s session=%s belongs to profile %s, not the plugin's profile %s",
 		pluginID, sessionKey, strOrNone(owner), strOrNone(profile)))
 	return false
 }
@@ -276,7 +276,7 @@ func (r *GatewayRunner) pluginLocalSession(ctx context.Context, source *gateway.
 	if live != nil && live.Route == sessionKey {
 		return live, nil
 	}
-	runLog().Warn(fmt.Sprintf("Plugin message injection refused: plugin=%s session=%s is not a live local session of the plugin's profile home %s",
+	pkgLog().Warn(fmt.Sprintf("Plugin message injection refused: plugin=%s session=%s is not a live local session of the plugin's profile home %s",
 		pluginID, sessionKey, homeOrNone(pluginHome)))
 	return nil, nil
 }
@@ -297,7 +297,7 @@ func (r *GatewayRunner) servedProfileForHome(ctx context.Context, profileHome st
 			return gateway.MultiplexProfileHomes(ctx, r.config)
 		}()
 		if err != nil {
-			runLog().Warn("Plugin message injection: served-profile set unavailable", "exc_info", err)
+			pkgLog().Warn("Plugin message injection: served-profile set unavailable", "exc_info", err)
 			return nil
 		}
 		for _, p := range served {
@@ -321,7 +321,7 @@ func (r *GatewayRunner) servedProfileForHome(ctx context.Context, profileHome st
 // Canonical source of a plugin supplied origin, nil logged when the plugin may not start a turn there
 func (r *GatewayRunner) pluginOriginSource(ctx context.Context, origin map[string]any, pluginHome, pluginID string) (*gateway.SessionSource, error) {
 	refuse := func(reason string) {
-		runLog().Warn(fmt.Sprintf("Plugin message injection refused: plugin=%s %s", pluginID, reason))
+		pkgLog().Warn(fmt.Sprintf("Plugin message injection refused: plugin=%s %s", pluginID, reason))
 	}
 	profile := r.servedProfileForHome(ctx, pluginHome)
 	if profile == nil {
@@ -392,7 +392,7 @@ func (r *GatewayRunner) pluginOriginAdmissible(ctx context.Context, source *gate
 			return true, nil
 		}
 	}
-	runLog().Warn(fmt.Sprintf("Plugin message injection refused: plugin=%s origin=%s/%s has no human message admitted yet; a plugin can continue a chat, not open one",
+	pkgLog().Warn(fmt.Sprintf("Plugin message injection refused: plugin=%s origin=%s/%s has no human message admitted yet; a plugin can continue a chat, not open one",
 		pluginID, source.Platform, source.ChatID))
 	return false, nil
 }

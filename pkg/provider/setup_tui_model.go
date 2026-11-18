@@ -7,11 +7,7 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/observability"
 )
-
-// Setup surface the terminal UI reports provider setups under
-const tuiSetupSurface = "tui"
 
 // Picker rows a hosted model section may open straight at instead of the provider list
 var hostedModelEntries = map[string]bool{"aux-config": true, "reasoning": true}
@@ -75,17 +71,15 @@ func RunHostedModelSection(ctx context.Context, ask SetupAsker, out io.Writer, e
 			}
 			defer func() { pickProviderFn = prev }()
 		}
-		err = observability.ProviderSetupSurface(bindHostedPluginAsker(ctx, hostedAsker()), tuiSetupSurface, func(ctx context.Context) error {
-			return RunSetupActionWithNavigation(ctx, "Model & Provider", func(ctx context.Context) error {
-				return SelectProviderAndModel(ctx, nil)
-			}, flowNoChange)
-		})
+		err = RunSetupActionWithNavigation(bindHostedPluginAsker(ctx, hostedAsker()), "Model & Provider", func(ctx context.Context) error {
+			return SelectProviderAndModel(ctx, nil)
+		}, flowNoChange)
 		if _, _, exit := SetupSystemExit(err); err != nil && (exit || isSetupKeyboardInterrupt(err)) {
 			SetupInfo("Provider setup skipped.")
 			return nil
 		}
 		if err != nil {
-			setupLog.Debug(fmt.Sprintf("select_provider_and_model error during tui setup: %v", err))
+			pkgLog().Debug(fmt.Sprintf("select_provider_and_model error during tui setup: %v", err))
 			lines := ProviderSetupFailureLines(err, "/setup model")
 			SetupPrintWarning(lines[0])
 			for _, line := range lines[1:] {

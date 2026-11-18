@@ -83,7 +83,7 @@ func lifecycleAgent(t *testing.T) *AIAgent {
 
 func TestServedModelHookCapturesLitellmHeaderAndClearsWhenAbsent(t *testing.T) {
 	hooks := installFakeResponseHooks(t)
-	a := &AIAgent{model: "hermes-router"}
+	a := &AIAgent{model: "auto-router"}
 	client := &fakeOpenAI{}
 	installServedModelCapture(a, client)
 	installServedModelCapture(a, client)
@@ -91,7 +91,7 @@ func TestServedModelHookCapturesLitellmHeaderAndClearsWhenAbsent(t *testing.T) {
 		t.Fatalf("hooks %d", n)
 	}
 	hooks.fire(client, 200, http.Header{"X-Litellm-Model-Id": {"gpt-4o-2024-11-20"}})
-	if got := resultModelFields(a); !reflect.DeepEqual(got, map[string]any{"requested_model": "hermes-router", "served_model": "gpt-4o-2024-11-20"}) {
+	if got := resultModelFields(a); !reflect.DeepEqual(got, map[string]any{"requested_model": "auto-router", "served_model": "gpt-4o-2024-11-20"}) {
 		t.Fatalf("fields %v", got)
 	}
 	hooks.fire(client, 500, http.Header{"X-Litellm-Model-Id": {"ignored"}})
@@ -99,7 +99,7 @@ func TestServedModelHookCapturesLitellmHeaderAndClearsWhenAbsent(t *testing.T) {
 		t.Fatalf("error response overwrote %v", got)
 	}
 	hooks.fire(client, 200, http.Header{})
-	if got := resultModelFields(a); !reflect.DeepEqual(got, map[string]any{"requested_model": "hermes-router", "served_model": nil}) {
+	if got := resultModelFields(a); !reflect.DeepEqual(got, map[string]any{"requested_model": "auto-router", "served_model": nil}) {
 		t.Fatalf("fields %v", got)
 	}
 	a.fallbackActivated = true
@@ -125,7 +125,7 @@ func TestServedModelCaptureOverRealSDKClientRoundTrips(t *testing.T) {
 			w.Header().Set("x-litellm-model-id", value)
 		}
 		w.Header().Set("Content-Type", "application/json")
-		fmt.Fprint(w, `{"id":"c","object":"chat.completion","created":0,"model":"hermes-router","choices":[{"index":0,"message":{"role":"assistant","content":"ok"},"finish_reason":"stop"}]}`)
+		fmt.Fprint(w, `{"id":"c","object":"chat.completion","created":0,"model":"auto-router","choices":[{"index":0,"message":{"role":"assistant","content":"ok"},"finish_reason":"stop"}]}`)
 	}))
 	defer srv.Close()
 	var calls sync.Map
@@ -141,24 +141,24 @@ func TestServedModelCaptureOverRealSDKClientRoundTrips(t *testing.T) {
 	zero := 0
 	client := provider.NewOpenAIClient("x", srv.URL+"/v1", provider.OpenAIClientOptions{MaxRetries: &zero, HTTPClient: srv.Client()})
 	defer client.Close()
-	a := &AIAgent{model: "hermes-router"}
+	a := &AIAgent{model: "auto-router"}
 	installServedModelCapture(a, client)
 	installServedModelCapture(a, client)
 	chat := func() {
 		t.Helper()
-		if _, err := client.CreateChatCompletion(context.Background(), map[string]any{"model": "hermes-router", "messages": []map[string]any{{"role": "user", "content": "hi"}}}); err != nil {
+		if _, err := client.CreateChatCompletion(context.Background(), map[string]any{"model": "auto-router", "messages": []map[string]any{{"role": "user", "content": "hi"}}}); err != nil {
 			t.Fatal(err)
 		}
 	}
 	chat()
-	if got := resultModelFields(a); !reflect.DeepEqual(got, map[string]any{"requested_model": "hermes-router", "served_model": "gpt-4o-2024-11-20"}) {
+	if got := resultModelFields(a); !reflect.DeepEqual(got, map[string]any{"requested_model": "auto-router", "served_model": "gpt-4o-2024-11-20"}) {
 		t.Fatalf("fields %v", got)
 	}
 	servedMu.Lock()
 	served = ""
 	servedMu.Unlock()
 	chat()
-	if got := resultModelFields(a); !reflect.DeepEqual(got, map[string]any{"requested_model": "hermes-router", "served_model": nil}) {
+	if got := resultModelFields(a); !reflect.DeepEqual(got, map[string]any{"requested_model": "auto-router", "served_model": nil}) {
 		t.Fatalf("fields %v", got)
 	}
 	responses := 0

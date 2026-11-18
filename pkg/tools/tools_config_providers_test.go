@@ -31,28 +31,20 @@ func noWebEnv(t *testing.T) {
 
 func TestWebSelectionReportsTheBackendItWrites(t *testing.T) {
 	for _, c := range []struct {
-		managed bool
 		backend string
-	}{{true, "firecrawl"}, {false, "perplexity"}, {false, "exa"}} {
+	}{{"firecrawl"}, {"perplexity"}, {"exa"}} {
 		t.Run(c.backend, func(t *testing.T) {
 			s, out := newTestToolsSetup(t, "")
-			swapHook(t, &nousProviderGateFn, func(*ToolsSetup, *pyjson.Object, config.Tree, string, bool) bool { return true })
 			row := pyjson.NewObject()
 			row.Set("name", "Test provider")
 			row.Set("web_backend", c.backend)
 			row.Set("env_vars", []any{})
-			if c.managed {
-				row.Set("managed_nous_feature", "web")
-			}
 			cfg := config.Tree{}
-			if err := s.configureProvider(row, cfg, true, false); err != nil {
+			if err := s.configureProvider(row, cfg, false); err != nil {
 				t.Fatal(err)
 			}
 			selected, _ := config.CfgGet(cfg, "web", "backend")
 			want := c.backend
-			if c.managed {
-				want = "nous"
-			}
 			if selected != want {
 				t.Fatalf("web.backend %v, want %s", selected, want)
 			}
@@ -79,12 +71,12 @@ func TestRowActiveIffItServesACapability(t *testing.T) {
 		cfg := config.Tree{"web": c.web}
 		var missing, lit []string
 		for _, b := range c.active {
-			if ok, err := s.IsProviderActive(webTestRow(b), cfg, false); err != nil || !ok {
+			if ok, err := s.IsProviderActive(webTestRow(b), cfg); err != nil || !ok {
 				missing = append(missing, b)
 			}
 		}
 		for _, b := range c.inactive {
-			if ok, err := s.IsProviderActive(webTestRow(b), cfg, false); err != nil || ok {
+			if ok, err := s.IsProviderActive(webTestRow(b), cfg); err != nil || ok {
 				lit = append(lit, b)
 			}
 		}
@@ -92,39 +84,19 @@ func TestRowActiveIffItServesACapability(t *testing.T) {
 			t.Fatalf("web %v: inactive serving rows %v, active idle rows %v", c.web, missing, lit)
 		}
 		tiered := config.Tree{"web": map[string]any{"search_backend": "parallel", "provider_tier": map[string]any{"parallel": "paid"}}}
-		if ok, err := s.IsProviderActive(webTestRow("parallel", "web_tier", "paid"), tiered, false); err != nil || !ok {
+		if ok, err := s.IsProviderActive(webTestRow("parallel", "web_tier", "paid"), tiered); err != nil || !ok {
 			t.Fatalf("paid parallel row inactive %v", err)
 		}
-		if ok, err := s.IsProviderActive(webTestRow("parallel", "web_tier", "free"), tiered, false); err != nil || ok {
+		if ok, err := s.IsProviderActive(webTestRow("parallel", "web_tier", "free"), tiered); err != nil || ok {
 			t.Fatalf("free parallel row active %v", err)
 		}
-	}
-}
-
-func TestManagedRowActiveForANousCapabilityPin(t *testing.T) {
-	noWebEnv(t)
-	s, _ := newTestToolsSetup(t, "")
-	swapHook(t, &ToolsConfigHooks.NousFeatures, func(context.Context, string, map[string]any, bool) NousToolFeatures {
-		return NousToolFeatures{Features: map[string]NousToolFeature{"web": {ManagedByNous: true}}}
-	})
-	nous := webTestRow("firecrawl", "managed_nous_feature", "web")
-	split := config.Tree{"web": map[string]any{"search_backend": "firecrawl", "extract_backend": "nous"}}
-	if ok, err := s.IsProviderActive(nous, split, false); err != nil || !ok {
-		t.Fatalf("managed row inactive on an extract pin %v", err)
-	}
-	if ok, err := s.IsProviderActive(webTestRow("firecrawl"), split, false); err != nil || !ok {
-		t.Fatalf("byok row inactive while serving search %v", err)
-	}
-	vendors := config.Tree{"web": map[string]any{"search_backend": "firecrawl", "extract_backend": "tavily"}}
-	if ok, err := s.IsProviderActive(nous, vendors, false); err != nil || ok {
-		t.Fatalf("managed row active on a vendor only config %v", err)
 	}
 }
 
 // Web picker rows by name over an empty web config, the catalog rows then the registry rows
 func webRowsByName(t *testing.T, s *ToolsSetup) map[string]*pyjson.Object {
 	t.Helper()
-	rows, err := s.VisibleProviders(catalogCategory("web"), config.Tree{"web": map[string]any{}}, false, nil)
+	rows, err := s.VisibleProviders(catalogCategory("web"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -156,7 +128,7 @@ func TestFirecrawlRowsSplitByTheCredentialSet(t *testing.T) {
 				if !ok {
 					t.Fatalf("no %s row in %v", name, sortedRowNames(rows))
 				}
-				active, err := s.IsProviderActive(row, cfg, false)
+				active, err := s.IsProviderActive(row, cfg)
 				if err != nil {
 					t.Fatal(err)
 				}
@@ -200,12 +172,12 @@ func TestKeylessRowReadinessFollowsRegistryAvailability(t *testing.T) {
 	}
 	cfg := config.Tree{"web": map[string]any{}}
 	swapHook(t, &hasCodexCredentials, func(*Env) bool { return false })
-	if got, err := s.ProviderReadinessStatus(native, cfg, nil, nil); err != nil || got != "needs_auth" {
+	if got, err := s.ProviderReadinessStatus(native, cfg, nil); err != nil || got != "needs_auth" {
 		t.Fatalf("native readiness %q %v", got, err)
 	}
 	statuses := map[string]bool{}
 	for _, row := range free {
-		got, err := s.ProviderReadinessStatus(row, cfg, nil, nil)
+		got, err := s.ProviderReadinessStatus(row, cfg, nil)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -215,7 +187,7 @@ func TestKeylessRowReadinessFollowsRegistryAvailability(t *testing.T) {
 		t.Fatalf("free row statuses %v", statuses)
 	}
 	swapHook(t, &hasCodexCredentials, func(*Env) bool { return true })
-	if got, err := s.ProviderReadinessStatus(native, cfg, nil, nil); err != nil || got != "ready" {
+	if got, err := s.ProviderReadinessStatus(native, cfg, nil); err != nil || got != "ready" {
 		t.Fatalf("native readiness after login %q %v", got, err)
 	}
 }

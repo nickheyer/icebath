@@ -171,7 +171,7 @@ func TestProviderSupportsSplitFireFollowsTheOverrides(t *testing.T) {
 func TestInprocessProviderTicksAndStops(t *testing.T) {
 	s, _ := newTestStore(t)
 	rec := &tickRecorder{}
-	patchChronos(t, &tickHook, func(ctx context.Context, ps *Store, o tickOptions) (int, error) {
+	patchSeam(t, &tickHook, func(ctx context.Context, ps *Store, o tickOptions) (int, error) {
 		rec.record(ctx, ps, o)
 		return 0, nil
 	})
@@ -212,7 +212,7 @@ func TestResolveNoCronSectionFallsBackToBuiltin(t *testing.T) {
 
 func TestResolveUnknownProviderFallsBackToBuiltin(t *testing.T) {
 	s, _ := newTestStore(t)
-	patchChronos(t, &loadCronScheduler, realLoadCronScheduler)
+	patchSeam(t, &loadCronScheduler, realLoadCronScheduler)
 	providerConfig(t, s, "cron:\n  provider: nope-not-real\n")
 	if got := resolveCronScheduler(s).Name(); got != "builtin" {
 		t.Fatal(got)
@@ -221,7 +221,7 @@ func TestResolveUnknownProviderFallsBackToBuiltin(t *testing.T) {
 
 func TestResolveUnavailableProviderFallsBack(t *testing.T) {
 	s, _ := newTestStore(t)
-	patchChronos(t, &loadCronScheduler, func(*Store, string) (CronScheduler, error) {
+	patchSeam(t, &loadCronScheduler, func(*Store, string) (CronScheduler, error) {
 		return &unavailableProvider{minimalProvider{"unavailable"}}, nil
 	})
 	providerConfig(t, s, "cron:\n  provider: unavailable\n")
@@ -232,7 +232,7 @@ func TestResolveUnavailableProviderFallsBack(t *testing.T) {
 
 func TestResolveAvailableProviderIsUsed(t *testing.T) {
 	s, _ := newTestStore(t)
-	patchChronos(t, &loadCronScheduler, func(*Store, string) (CronScheduler, error) {
+	patchSeam(t, &loadCronScheduler, func(*Store, string) (CronScheduler, error) {
 		return &availableProvider{minimalProvider{"fake"}}, nil
 	})
 	providerConfig(t, s, "cron:\n  provider: fake\n")
@@ -247,12 +247,12 @@ func TestResolveFallsBackOnANonStringOrFailingProvider(t *testing.T) {
 	if _, ok := resolveCronScheduler(s).(*InProcessCronScheduler); !ok {
 		t.Fatal("a non string provider must resolve the builtin")
 	}
-	patchChronos(t, &loadCronScheduler, func(*Store, string) (CronScheduler, error) { return nil, errors.New("boom") })
+	patchSeam(t, &loadCronScheduler, func(*Store, string) (CronScheduler, error) { return nil, errors.New("boom") })
 	providerConfig(t, s, "cron:\n  provider: ' live '\n")
 	if _, ok := resolveCronScheduler(s).(*InProcessCronScheduler); !ok || !strings.Contains(logs.String(), "Failed to load cron.provider 'live' (boom); using built-in ticker") {
 		t.Fatal(logs.String())
 	}
-	patchChronos(t, &loadCronScheduler, func(*Store, string) (CronScheduler, error) { return nil, nil })
+	patchSeam(t, &loadCronScheduler, func(*Store, string) (CronScheduler, error) { return nil, nil })
 	if _, ok := resolveCronScheduler(s).(*InProcessCronScheduler); !ok || !strings.Contains(logs.String(), "cron.provider 'live' not found; using built-in ticker") {
 		t.Fatal(logs.String())
 	}
@@ -280,11 +280,11 @@ func TestFireDueDefaultClaimsThenRuns(t *testing.T) {
 	ctx := withCronStore(context.Background(), s)
 	var claims []claimCall
 	var ran [][2]string
-	patchChronos(t, &providerClaimJobForFire, func(_ *Store, _ context.Context, jobID string, o FireClaimOptions) (*Job, bool, error) {
+	patchSeam(t, &providerClaimJobForFire, func(_ *Store, _ context.Context, jobID string, o FireClaimOptions) (*Job, bool, error) {
 		claims = append(claims, claimCall{jobID, o})
 		return &Job{ID: jobID, Name: "t", FireClaim: &Claim{By: "exact-owner"}}, true, nil
 	})
-	patchChronos(t, &runOneJobSeam, func(_ context.Context, _ *Store, job *Job, _ runOneJobOptions) (bool, error) {
+	patchSeam(t, &runOneJobSeam, func(_ context.Context, _ *Store, job *Job, _ runOneJobOptions) (bool, error) {
 		ran = append(ran, [2]string{job.ID, job.FireClaim.By})
 		return true, nil
 	})
@@ -304,16 +304,16 @@ func TestClaimFirePersistsAttemptBeforeFireClaimed(t *testing.T) {
 	s, _ := newTestStore(t)
 	ctx := withCronStore(context.Background(), s)
 	var events []string
-	patchChronos(t, &providerClaimJobForFire, func(_ *Store, _ context.Context, jobID string, _ FireClaimOptions) (*Job, bool, error) {
+	patchSeam(t, &providerClaimJobForFire, func(_ *Store, _ context.Context, jobID string, _ FireClaimOptions) (*Job, bool, error) {
 		events = append(events, "claim")
 		return &Job{ID: jobID, FireClaim: &Claim{By: "owner"}}, true, nil
 	})
 	create := providerCreateExecution
-	patchChronos(t, &providerCreateExecution, func(ctx context.Context, s *Store, jobID, source string) (map[string]any, error) {
+	patchSeam(t, &providerCreateExecution, func(ctx context.Context, s *Store, jobID, source string) (map[string]any, error) {
 		events = append(events, "ledger")
 		return create(ctx, s, jobID, source)
 	})
-	patchChronos(t, &runOneJobSeam, func(_ context.Context, _ *Store, job *Job, _ runOneJobOptions) (bool, error) {
+	patchSeam(t, &runOneJobSeam, func(_ context.Context, _ *Store, job *Job, _ runOneJobOptions) (bool, error) {
 		events = append(events, "run:"+deref(job.ExecutionID))
 		return true, nil
 	})
@@ -343,11 +343,11 @@ func TestFireDueForwardsManualForceToStoreClaim(t *testing.T) {
 	s, _ := newTestStore(t)
 	ctx := withCronStore(context.Background(), s)
 	var claims []claimCall
-	patchChronos(t, &providerClaimJobForFire, func(_ *Store, _ context.Context, jobID string, o FireClaimOptions) (*Job, bool, error) {
+	patchSeam(t, &providerClaimJobForFire, func(_ *Store, _ context.Context, jobID string, o FireClaimOptions) (*Job, bool, error) {
 		claims = append(claims, claimCall{jobID, o})
 		return &Job{ID: jobID, Name: "t", FireClaim: &Claim{By: "manual-owner"}}, true, nil
 	})
-	patchChronos(t, &runOneJobSeam, func(context.Context, *Store, *Job, runOneJobOptions) (bool, error) { return true, nil })
+	patchSeam(t, &runOneJobSeam, func(context.Context, *Store, *Job, runOneJobOptions) (bool, error) { return true, nil })
 	if ok, err := schedulerFireDue(ctx, &InProcessCronScheduler{}, "j1", FireOptions{Force: true}); err != nil || !ok {
 		t.Fatal(ok, err)
 	}
@@ -366,10 +366,10 @@ func TestFireDueLostClaimDoesNotRun(t *testing.T) {
 	s, _ := newTestStore(t)
 	ctx := withCronStore(context.Background(), s)
 	var ran []string
-	patchChronos(t, &providerClaimJobForFire, func(*Store, context.Context, string, FireClaimOptions) (*Job, bool, error) {
+	patchSeam(t, &providerClaimJobForFire, func(*Store, context.Context, string, FireClaimOptions) (*Job, bool, error) {
 		return nil, false, nil
 	})
-	patchChronos(t, &runOneJobSeam, func(_ context.Context, _ *Store, job *Job, _ runOneJobOptions) (bool, error) {
+	patchSeam(t, &runOneJobSeam, func(_ context.Context, _ *Store, job *Job, _ runOneJobOptions) (bool, error) {
 		ran = append(ran, job.ID)
 		return true, nil
 	})
@@ -385,10 +385,10 @@ func TestFailingTickRecordsLivenessButNotSuccess(t *testing.T) {
 	s, _ := newTestStore(t)
 	var mu sync.Mutex
 	var beats []bool
-	patchChronos(t, &tickHook, func(context.Context, *Store, tickOptions) (int, error) {
+	patchSeam(t, &tickHook, func(context.Context, *Store, tickOptions) (int, error) {
 		return 0, errors.New("every tick fails")
 	})
-	patchChronos(t, &recordTickerHeartbeat, func(_ *Store, _ context.Context, success bool) {
+	patchSeam(t, &recordTickerHeartbeat, func(_ *Store, _ context.Context, success bool) {
 		mu.Lock()
 		defer mu.Unlock()
 		beats = append(beats, success)
@@ -460,7 +460,7 @@ func TestGuardJobCredentialExfil(t *testing.T) {
 	})
 	t.Run("test_validator_exception_with_base_url_fails_closed", func(t *testing.T) {
 		s, _ := newTestStore(t)
-		patchChronos(t, &cronBaseURLValidator, func(*Store, *string, *string) (string, error) {
+		patchSeam(t, &cronBaseURLValidator, func(*Store, *string, *string) (string, error) {
 			return "", errors.New("validator blew up")
 		})
 		err := s.guardJobCredentialExfil(&Job{ID: "j7", Provider: strPtr("custom:legit"), BaseURL: strPtr("https://evil.example/v1")})
@@ -488,11 +488,11 @@ func TestMultiplexTickerTicksEachProfileOnce(t *testing.T) {
 	s, _ := newTestStore(t)
 	homes := profileHomes(t, t.TempDir(), "default", "home-ops")
 	rec := &tickRecorder{}
-	patchChronos(t, &tickHook, func(ctx context.Context, ps *Store, o tickOptions) (int, error) {
+	patchSeam(t, &tickHook, func(ctx context.Context, ps *Store, o tickOptions) (int, error) {
 		rec.record(ctx, ps, o)
 		return 0, nil
 	})
-	patchChronos(t, &recordTickerHeartbeat, func(*Store, context.Context, bool) {})
+	patchSeam(t, &recordTickerHeartbeat, func(*Store, context.Context, bool) {})
 	zero := 0.0
 	run := newTickerRun().start(t, withCronStore(context.Background(), s), StartOptions{Interval: &zero, ProfileHomes: homes})
 	waitUntil(func() bool { return rec.count() >= len(homes) })
@@ -519,7 +519,7 @@ func TestMultiplexTickerSkipsDeletedProfileFromStartupSnapshot(t *testing.T) {
 	var mu sync.Mutex
 	var ticked []string
 	run := newTickerRun()
-	patchChronos(t, &tickHook, func(_ context.Context, ps *Store, _ tickOptions) (int, error) {
+	patchSeam(t, &tickHook, func(_ context.Context, ps *Store, _ tickOptions) (int, error) {
 		mu.Lock()
 		ticked = append(ticked, filepath.Dir(ps.cronDir))
 		mu.Unlock()
@@ -574,13 +574,13 @@ func runMultiplexCapture(t *testing.T, profileAdapters map[string]any, shared an
 	homes := profileHomes(t, t.TempDir(), "default", "home-ops")
 	var mu sync.Mutex
 	var captured []any
-	patchChronos(t, &tickHook, func(_ context.Context, _ *Store, o tickOptions) (int, error) {
+	patchSeam(t, &tickHook, func(_ context.Context, _ *Store, o tickOptions) (int, error) {
 		mu.Lock()
 		defer mu.Unlock()
 		captured = append(captured, o.Adapters)
 		return 0, nil
 	})
-	patchChronos(t, &recordTickerHeartbeat, func(*Store, context.Context, bool) {})
+	patchSeam(t, &recordTickerHeartbeat, func(*Store, context.Context, bool) {})
 	zero := 0.0
 	run := newTickerRun().start(t, withCronStore(context.Background(), s), StartOptions{
 		Interval: &zero, ProfileHomes: homes, Adapters: shared, ProfileAdapters: profileAdapters, DefaultProfile: strPtr("default"),
@@ -646,7 +646,7 @@ func TestMultiplexTickerIsolatesProfileFailures(t *testing.T) {
 	}
 	rec := &tickRecorder{}
 	run := newTickerRun()
-	patchChronos(t, &tickHook, func(ctx context.Context, ps *Store, o tickOptions) (int, error) {
+	patchSeam(t, &tickHook, func(ctx context.Context, ps *Store, o tickOptions) (int, error) {
 		rec.record(ctx, ps, o)
 		if home.Dir(ctx) == failing {
 			return 0, errors.New("profile-local failure")
@@ -690,7 +690,7 @@ func TestMultiplexRecoveryIsolatesProfileFailures(t *testing.T) {
 	failing, healthy := homes[0].Home, homes[1].Home
 	var mu sync.Mutex
 	var recovered []string
-	patchChronos(t, &recoverInterruptedExecutions, func(ctx context.Context, _ *Store) (int, error) {
+	patchSeam(t, &recoverInterruptedExecutions, func(ctx context.Context, _ *Store) (int, error) {
 		mu.Lock()
 		defer mu.Unlock()
 		recovered = append(recovered, home.Dir(ctx))
@@ -701,7 +701,7 @@ func TestMultiplexRecoveryIsolatesProfileFailures(t *testing.T) {
 	})
 	rec := &tickRecorder{}
 	run := newTickerRun()
-	patchChronos(t, &tickHook, func(ctx context.Context, ps *Store, o tickOptions) (int, error) {
+	patchSeam(t, &tickHook, func(ctx context.Context, ps *Store, o tickOptions) (int, error) {
 		rec.record(ctx, ps, o)
 		if rec.count() >= 2 {
 			run.stop()
@@ -738,7 +738,7 @@ func TestMultiplexTickerReenumeratesProfilesEachCycle(t *testing.T) {
 	gamma := filepath.Join(root, "gamma")
 	rec := &tickRecorder{}
 	run := newTickerRun()
-	patchChronos(t, &tickHook, func(ctx context.Context, ps *Store, o tickOptions) (int, error) {
+	patchSeam(t, &tickHook, func(ctx context.Context, ps *Store, o tickOptions) (int, error) {
 		rec.record(ctx, ps, o)
 		if rec.count() == 1 {
 			if err := os.MkdirAll(filepath.Join(gamma, "cron"), 0o700); err != nil {
@@ -780,4 +780,11 @@ func TestRoutedProfileFireComparesTheLaunchHome(t *testing.T) {
 	if !routedProfileFire(t.Context(), &other) {
 		t.Fatal("a sibling home is a routed fire")
 	}
+}
+
+func patchSeam[T any](t *testing.T, target *T, v T) {
+	t.Helper()
+	old := *target
+	*target = v
+	t.Cleanup(func() { *target = old })
 }

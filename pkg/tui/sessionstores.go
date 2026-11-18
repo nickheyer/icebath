@@ -1,11 +1,10 @@
 package tui
 
 import (
+	"github.com/nickheyer/icebath/pkg/tuigateway"
 	"reflect"
 	"slices"
 	"time"
-
-	"github.com/google/uuid"
 )
 
 const (
@@ -63,9 +62,6 @@ func (s *tuiStore) markBubbleShown(inputID string) {
 	}
 	s.bubblesShown[inputID] = true
 }
-
-// Forgets every painted bubble
-func (s *tuiStore) resetBubbleLedger() { s.bubblesShown = nil }
 
 // Rows of a pending submissions list, nil for anything that is no list
 func pendingRows(v any) []map[string]any {
@@ -134,27 +130,6 @@ func (s *tuiStore) handleVoiceCapture(ev gatewayEventMsg, voice voiceSetters) bo
 		return true
 	}
 	return false
-}
-
-var (
-	processStart = time.Now()
-	launchID     = uuid.NewString()
-)
-
-// Launch latency report, sent once per process
-type startupLatency struct {
-	reported bool
-}
-
-var startupReport startupLatency
-
-// Params of the launch latency report on the first gateway.ready, false when it was sent or is not wanted
-func (r *startupLatency) take() (map[string]any, bool) {
-	if r.reported {
-		return nil, false
-	}
-	r.reported = true
-	return map[string]any{"elapsed_ms": float64(time.Since(processStart).Milliseconds()), "launch_id": launchID, "surface": "tui"}, true
 }
 
 // Live connection operation the card shows
@@ -266,29 +241,17 @@ func (s *tuiStore) clearConnectionOperation() {
 	s.overlay.Connection = nil
 }
 
-// Closes the card for good while its outcome still lands in the transcript
-func (s *tuiStore) dismissConnectionOperation(opID string) {
-	s.dismissedOperations = rememberOperation(s.dismissedOperations, opID)
-	s.clearConnectionOperation()
+// Goal and loop state of the session it belongs to
+type controlState struct {
+	Goal *tuigateway.GoalSnapshot
+	Loop *tuigateway.LoopSnapshot
+	Sid  string
 }
 
-// Goal or loop snapshot of the session it belongs to
-type controlSnapshot struct {
-	Value map[string]any
-	Sid   string
-}
-
-// Replaces a bar snapshot only when its session or content changed
-func applyBarSnapshot(prev *controlSnapshot, sid string, value map[string]any) {
-	if prev.Sid != sid || !reflect.DeepEqual(prev.Value, value) {
-		*prev = controlSnapshot{Value: value, Sid: sid}
+// Goal and loop bar state from one session control snapshot, replaced only when its session or content changed
+func (s *tuiStore) applyControlSnapshot(sid string, control tuigateway.SessionControlSnapshot) {
+	next := controlState{Goal: control.Goal, Loop: control.Loop, Sid: sid}
+	if !reflect.DeepEqual(s.controls, next) {
+		s.controls = next
 	}
-}
-
-// Goal and loop bar state from one session.control payload
-func (s *tuiStore) applyControlSnapshot(sid string, control map[string]any) {
-	goal, _ := control["goal"].(map[string]any)
-	loop, _ := control["loop"].(map[string]any)
-	applyBarSnapshot(&s.goalSnapshot, sid, goal)
-	applyBarSnapshot(&s.loopSnapshot, sid, loop)
 }

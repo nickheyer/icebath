@@ -28,9 +28,6 @@ func (t *TurnRunner) noticeCallbackSync(notice provider.AgentNotice) {
 	diagnostic := config.IsDiagnosticNotice(notice.Level, notice.Key)
 	present := func() error {
 		line := renderNoticeLine(notice)
-		if strings.HasPrefix(key, "credits.") {
-			line = provider.PortalWording(line)
-		}
 		if line != "" {
 			source := tc.source
 			t.schedule(func(ctx context.Context) (any, error) {
@@ -40,7 +37,7 @@ func (t *TurnRunner) noticeCallbackSync(notice provider.AgentNotice) {
 		return nil
 	}
 	if _, err := config.RenderNotification(t.turnCtx, present, string(tc.source.Platform), diagnostic, tc.userConfig); err != nil {
-		runLog().Debug(fmt.Sprintf("render_notice_line failed: %s", err))
+		pkgLog().Debug(fmt.Sprintf("render_notice_line failed: %s", err))
 	}
 }
 
@@ -147,11 +144,11 @@ func (t *TurnRunner) closeNativeStreamBoundary(reason string, boundaryText strin
 	defer cancel()
 	ok, err := boundary.Wait(waitCtx)
 	if err != nil {
-		runLog().Warn(fmt.Sprintf("%s boundary timed out or failed: %s", reason, err))
+		pkgLog().Warn(fmt.Sprintf("%s boundary timed out or failed: %s", reason, err))
 		return false
 	}
 	if !ok {
-		runLog().Warn(fmt.Sprintf("%s boundary failed to close stream properly — prompt may still appear in typing bubble", reason))
+		pkgLog().Warn(fmt.Sprintf("%s boundary failed to close stream properly — prompt may still appear in typing bubble", reason))
 	}
 	return ok
 }

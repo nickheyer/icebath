@@ -456,9 +456,6 @@ func prependNoteToMessage(message any, note string) any {
 	return message
 }
 
-// Reports whether the terminal UI runs in this process and owns the terminal
-func PromptAppIsRunning() bool { return terminalUIRunning.Load() }
-
 // Prints one line straight to the console without recording it
 func cliVisiblePrint(text string) { fmt.Fprintln(console().Out, text) }
 
@@ -539,7 +536,7 @@ func buildCompactBanner() string {
 	borderColor := color("banner_border", "#FFD700")
 	titleColor := color("banner_title", "#FFBF00")
 	dimColor := color("banner_dim", "#B8860B")
-	tinyLine := "☤ NOUS ICEBATH"
+	tinyLine := "☤ ICEBATH"
 	if skin != nil && skin.Name != "default" {
 		tinyLine = skin.GetBranding("agent_name", "Icebath Agent")
 	}
@@ -556,7 +553,7 @@ func buildCompactBanner() string {
 	}
 	w := min(terminalColumns()-2, 88)
 	if w < 30 {
-		return "\n[" + titleColor + "]" + tinyLine + "[/] [dim " + dimColor + "]- Nous Research[/]\n"
+		return "\n[" + titleColor + "]" + tinyLine + "[/] [dim " + dimColor + "]- icebath.app[/]\n"
 	}
 	inner := w - 2
 	bar := strings.Repeat("═", w)

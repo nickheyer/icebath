@@ -6,11 +6,11 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/tools"
-	"github.com/nickheyer/icebath/pkg/tuigateway"
+	"github.com/nickheyer/icebath/pkg/tuihost"
 )
 
 // Scope binding the session profile home and logical cwd, a named profile scoping a session-less call
-func sessionHomeScope(session *tuigateway.Session, cwd, profile string) func(context.Context) (context.Context, error) {
+func sessionHomeScope(session *tuihost.Session, cwd, profile string) func(context.Context) (context.Context, error) {
 	return func(ctx context.Context) (context.Context, error) {
 		scopeHome := ""
 		if session != nil {

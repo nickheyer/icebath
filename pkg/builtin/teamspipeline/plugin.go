@@ -13,9 +13,9 @@ func (Plugin) Manifest() plugins.Manifest {
 		Name:        "teams_pipeline",
 		Version:     "0.1.0",
 		Description: "Microsoft Teams meeting pipeline plugin with durable runtime state and operator CLI flows for Graph-backed transcript-first meeting summaries.",
-		Author:      "NousResearch",
+		Author:      "Icebath",
 		Kind:        "standalone",
-		Raw: map[string]any{"name": "teams_pipeline", "version": "0.1.0", "author": "NousResearch", "kind": "standalone",
+		Raw: map[string]any{"name": "teams_pipeline", "version": "0.1.0", "author": "Icebath", "kind": "standalone",
 			"description": "Microsoft Teams meeting pipeline plugin with durable runtime state and operator CLI flows for Graph-backed transcript-first meeting summaries.",
 			"platforms":   []any{"linux", "macos", "windows"}},
 	}

@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"log/slog"
 
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
@@ -21,7 +20,7 @@ type prunedRowRewriter interface {
 	RewritePrunedRows(ctx context.Context, sessionID string, changes []state.PruneChange, o state.PruneRewriteOptions) (int, error)
 }
 
-// Tool result scan the prune and the window pass run, swapped by tests as hermes patches _prune_old_tool_results
+// Tool result scan the prune and the window pass run, swapped by tests
 var compressorPruneScan = (*ContextCompressor).pruneOldToolResults
 
 // Whether a provider billed reading puts the session at or over the threshold
@@ -45,7 +44,7 @@ func (c *ContextCompressor) warnReclamationNoOp(reason string, currentTokens, be
 	if before != nil {
 		beforeText = groupedInt(*before)
 	}
-	slog.Warn(fmt.Sprintf("Context is over the compression threshold (~%s of %s tokens) but reclamation did not run: %s (message-token estimate %s, prune rearm mark %s). The session may keep growing until the provider rejects the request — /compact to compress history now.",
+	pkgLog().Warn(fmt.Sprintf("Context is over the compression threshold (~%s of %s tokens) but reclamation did not run: %s (message-token estimate %s, prune rearm mark %s). The session may keep growing until the provider rejects the request — /compact to compress history now.",
 		groupedInt(*currentTokens), groupedInt(c.thresholdTokensValue()), reason, beforeText, groupedInt(c.proactivePruneRearmTokens)))
 }
 
@@ -57,7 +56,7 @@ func (c *ContextCompressor) messageBudgetTokens(messages []map[string]any) int {
 	return total
 }
 
-// Names the bound session row without reloading its durable state, the hermes _session_id assignment
+// Names the bound session row without reloading its durable state, the session id assignment
 func (c *ContextCompressor) SetSessionID(sessionID string) { c.sessionID = sessionID }
 
 // Deterministic tool result prune gated on the proactive budget, the input returned unchanged on any no op
@@ -100,15 +99,15 @@ func (c *ContextCompressor) pruneToolResultsOnly(messages []map[string]any, curr
 		var heldRewritten *state.HeldRowRewrittenError
 		switch {
 		case errors.As(err, &stale):
-			slog.Info("Proactive tool-result prune skipped: another compaction already committed this session")
+			pkgLog().Info("Proactive tool-result prune skipped: another compaction already committed this session")
 			c.warnReclamationNoOp("prune:stale_generation", currentTokens, &before)
 			return messages, 0
 		case errors.As(err, &heldRewritten):
-			slog.Info("Proactive tool-result prune skipped: a held row was rewritten in place before the commit")
+			pkgLog().Info("Proactive tool-result prune skipped: a held row was rewritten in place before the commit")
 			c.warnReclamationNoOp("prune:stale_generation", currentTokens, &before)
 			return messages, 0
 		case err != nil:
-			slog.Warn("Proactive tool-result prune DB commit failed; keeping the original transcript: " + err.Error())
+			pkgLog().Warn("Proactive tool-result prune DB commit failed; keeping the original transcript: " + err.Error())
 			return messages, 0
 		}
 		if rewritten == nil {
@@ -182,7 +181,7 @@ func (c *ContextCompressor) rewritePrunedRowsInPlace(sessionDB any, sessionID st
 	case errors.As(err, &staleRow):
 		return nil, &StaleHeldHistory{Msg: staleRow.Error()}
 	case errors.As(err, &unresolved):
-		slog.Info(fmt.Sprintf("Proactive prune: in-place rewrite refused (%s); using the full rewrite", unresolved.Error()))
+		pkgLog().Info(fmt.Sprintf("Proactive prune: in-place rewrite refused (%s); using the full rewrite", unresolved.Error()))
 		return nil, nil
 	case err != nil:
 		return nil, err

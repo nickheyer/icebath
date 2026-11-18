@@ -84,10 +84,6 @@ func TestHttpDateHeaderParsedIdenticallyAtFormerlyDivergentSites(t *testing.T) {
 	}
 	h := http.Header{}
 	h.Set("Retry-After", header)
-	guard, ok := parseResetSeconds(h)
-	if !ok || math.Abs(guard.Seconds()-canonical.Seconds()) >= 2 {
-		t.Fatalf("guard %v %v", guard, ok)
-	}
 	ctx := ExtractAPIErrorContext(&headeredError{msg: "rate limited", headers: h})
 	if d := ctx["reset_at"].(float64) - nowSecs(); d < 85 || d > 91 {
 		t.Fatalf("context reset in %v", d)

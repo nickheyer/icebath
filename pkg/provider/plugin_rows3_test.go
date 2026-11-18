@@ -50,8 +50,6 @@ func TestSliceThreeProfilesMatchUpstreamRegistration(t *testing.T) {
 		"xai":              {"api_mode": "codex_responses", "default_headers": map[string]string{}},
 		"openai-codex":     {"api_mode": "codex_responses", "auth_type": "oauth_external", "aliases": []string{"codex", "openai_codex"}},
 		"stepfun":          {"default_aux_model": "step-3.5-flash", "aliases": []string{"step", "stepfun-coding-plan"}},
-		"solstice": {"hidden": true, "auth_type": "oauth_external", "supports_vision": true, "supports_health_check": false,
-			"supports_model_listing": false, "default_aux_model": "gemini-flash-lite-latest", "aliases": []string{"solstice-oauth"}},
 	}
 	for name, want := range cases {
 		assertProfileFields(t, bundledPluginProfile(t, name), want)
@@ -61,9 +59,6 @@ func TestSliceThreeProfilesMatchUpstreamRegistration(t *testing.T) {
 	}
 	if ua := bundledPluginProfile(t, "gmi").DefaultHeaders()["User-Agent"]; ua != UserAgent("IcebathAgent") {
 		t.Fatalf("gmi user agent %q", ua)
-	}
-	if bundledPluginProfile(t, "solstice").GetMaxTokens("gemini-3.1-pro") != 0 {
-		t.Fatal("solstice must leave output caps to the backend")
 	}
 }
 
@@ -161,7 +156,7 @@ func TestAlibabaRegionalAndTokenPlanProfilesResolveInAuthRegistry(t *testing.T) 
 	}
 	for _, name := range []string{"alibaba", "alibaba-coding-plan-cn"} {
 		extra, _ := extrasOf(t, name, nil, map[string]any{"model": "qwen3.6-plus"})
-		if !reflect.DeepEqual(extra, dashscopePreserveThinkingExtras("qwen3.6-plus")) {
+		if !reflect.DeepEqual(extra, pyjson.Plain(dashscopePreserveThinkingExtras("qwen3.6-plus"))) {
 			t.Fatalf("%s extras %v", name, extra)
 		}
 	}
@@ -300,11 +295,11 @@ func TestGeminiAndVertexThinkingConfig(t *testing.T) {
 	compat := p.BuildExtraBody("", map[string]any{"model": "gemini-3.1-pro", "reasoning_config": r,
 		"base_url": "https://generativelanguage.googleapis.com/v1beta/openai/"})
 	want := map[string]any{"extra_body": map[string]any{"google": map[string]any{"thinking_config": snakeCaseGeminiThinkingConfig(raw)}}}
-	if !reflect.DeepEqual(compat, want) {
-		t.Fatalf("compat %v", compat)
+	if !reflect.DeepEqual(pyjson.Plain(compat), want) {
+		t.Fatalf("compat %v", pyjson.Plain(compat))
 	}
-	if got := bundledPluginProfile(t, "vertex").BuildExtraBody("", map[string]any{"model": "gemini-3.1-pro", "reasoning_config": r}); !reflect.DeepEqual(got, want) {
-		t.Fatalf("vertex %v", got)
+	if got := bundledPluginProfile(t, "vertex").BuildExtraBody("", map[string]any{"model": "gemini-3.1-pro", "reasoning_config": r}); !reflect.DeepEqual(pyjson.Plain(got), want) {
+		t.Fatalf("vertex %v", pyjson.Plain(got))
 	}
 	if got := p.BuildExtraBody("", map[string]any{"model": "gpt-5"}); got.Len() != 0 {
 		t.Fatalf("no thinking config %v", got)

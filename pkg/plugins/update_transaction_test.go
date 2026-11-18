@@ -46,7 +46,7 @@ func txVersion(t *testing.T, repo, version string, broken bool, minimum string, 
 	if len(libraries) == 0 {
 		libraries = []string{"shared-library"}
 	}
-	c6Write(t, filepath.Join(repo, "plugin.yaml"), fmt.Sprintf("name: transactional\nversion: %s\nmanifest_version: %d\nrequires_hermes: '%s'\n",
+	c6Write(t, filepath.Join(repo, "plugin.yaml"), fmt.Sprintf("name: transactional\nversion: %s\nmanifest_version: %d\nrequires_icebath: '%s'\n",
 		version, SupportedManifestVersion, minimum))
 	c6Write(t, filepath.Join(repo, "helper.py"), fmt.Sprintf("VERSION = %s\ndef register(ctx):\n    pass\n", pyrepr.Repr(version)))
 	c6Write(t, filepath.Join(repo, ".gitignore"), "node_modules/\n")

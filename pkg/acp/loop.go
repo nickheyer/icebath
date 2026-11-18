@@ -115,7 +115,7 @@ func safeScheduleThreadsafe(fn func(ctx context.Context) (any, error), loop Loop
 		}
 	}
 	if log == nil {
-		log = logging.GetLogger("agent.async_utils")
+		log = pkgLog()
 	}
 	if logMessage == "" {
 		logMessage = "Failed to schedule coroutine on loop"

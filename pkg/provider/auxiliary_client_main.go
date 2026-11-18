@@ -3,7 +3,6 @@ package provider
 import (
 	"context"
 	"fmt"
-	"log/slog"
 
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/home"
@@ -57,7 +56,7 @@ func auxReadMainField(ctx context.Context, field string, readonly, lower bool) s
 	return ""
 }
 
-// Main field readers, package vars so tests can swap them as hermes tests patch the partials
+// Main field readers, package vars so tests can swap them as tests patch the partials
 var (
 	auxReadMainModel    = func(ctx context.Context) string { return auxReadMainField(ctx, "model", true, false) }
 	auxReadMainProvider = func(ctx context.Context) string { return auxReadMainField(ctx, "provider", true, true) }
@@ -84,7 +83,7 @@ func auxResolveMoaAggregator(ctx context.Context, presetName string) (string, st
 		provider, model, ok = resolveMoaAggregator(map[string]any(cfg), presetName)
 	})
 	if err != nil || !ok {
-		slog.Debug(fmt.Sprintf("MoA aggregator resolution failed for preset %s", pyrepr.Repr(presetName)), "error", err)
+		pkgLog().Debug(fmt.Sprintf("MoA aggregator resolution failed for preset %s", pyrepr.Repr(presetName)), "error", err)
 		return "", ""
 	}
 	if provider != "" && model != "" && pystr.Lower(provider) != "moa" {

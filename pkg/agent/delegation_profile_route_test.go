@@ -18,7 +18,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/tools"
 )
 
-// Home, PROBE_SECRET and model.default as a task bound to ctx sees them, the hermes _snapshot
+// Home, PROBE_SECRET and model.default as a task bound to ctx sees them, the snapshot
 func profileSnapshot(ctx context.Context) map[string]any {
 	var secret any
 	if v, ok, _ := provider.GetSecret(ctx, "PROBE_SECRET"); ok {
@@ -44,7 +44,7 @@ func wantSnapshot(h string, secret any, model string) map[string]any {
 	return map[string]any{"home": realDir(h), "secret": secret, "model": model}
 }
 
-// Merges sections into a profile's config.yaml the way the hermes _set_config does
+// Merges sections into a profile's config.yaml the way the set config does
 func setProfileConfig(t *testing.T, h string, sections map[string]any) {
 	t.Helper()
 	ctx := context.Background()

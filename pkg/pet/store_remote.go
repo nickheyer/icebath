@@ -116,7 +116,7 @@ func InstallPet(ctx context.Context, env *tools.Env, h, slug string, force bool)
 			data, err = resp.JSON()
 		}
 		if err != nil {
-			storeLog.Debug("pet.json fetch failed for " + slug + ": " + fetchErrText(err))
+			pkgLog().Debug("pet.json fetch failed for " + slug + ": " + fetchErrText(err))
 		} else if d, ok := data.(*pyjson.Object); ok {
 			meta = d
 		}
@@ -234,7 +234,7 @@ func ThumbnailPNG(ctx context.Context, env *tools.Env, h, slug, sourceURL string
 	}
 	if sheet == nil && sourceURL != "" && isPetdexHost(sourceURL) {
 		if resp, fetchErr := httpGet(ctx, env, sourceURL, 30*time.Second); fetchErr != nil {
-			storeLog.Debug("thumb fetch failed for " + slug + ": " + fetchErrText(fetchErr))
+			pkgLog().Debug("thumb fetch failed for " + slug + ": " + fetchErrText(fetchErr))
 		} else {
 			sheet = resp.Content
 		}
@@ -244,7 +244,7 @@ func ThumbnailPNG(ctx context.Context, env *tools.Env, h, slug, sourceURL string
 	}
 	decoded, _, err := image.Decode(bytes.NewReader(sheet))
 	if err != nil {
-		storeLog.Debug("thumb crop failed for " + slug + ": " + err.Error())
+		pkgLog().Debug("thumb crop failed for " + slug + ": " + err.Error())
 		return nil
 	}
 	rgba := pypil.ToNRGBA(decoded)
@@ -253,7 +253,7 @@ func ThumbnailPNG(ctx context.Context, env *tools.Env, h, slug, sourceURL string
 	scaled := resizeNearest(frame, thumbW, int(math.RoundToEven(float64(thumbW)*thumbFrameH/thumbFrameW)))
 	var buf bytes.Buffer
 	if err := png.Encode(&buf, scaled); err != nil {
-		storeLog.Debug("thumb crop failed for " + slug + ": " + err.Error())
+		pkgLog().Debug("thumb crop failed for " + slug + ": " + err.Error())
 		return nil
 	}
 	_ = os.WriteFile(cache, buf.Bytes(), 0o666)

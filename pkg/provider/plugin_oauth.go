@@ -805,7 +805,7 @@ func pluginOAuthSpec(pluginDir, provider string) ([]PluginOrigin, PluginOAuthRes
 	return nil, nil, false, nil
 }
 
-// Origin set a plugin bearer may travel to, replaceable the way hermes tests patch _origins
+// Origin set a plugin bearer may travel to, replaceable the way tests patch origins
 var pluginOAuthOriginsFn = pluginOAuthOrigins
 
 // HTTPS default port origin of each declared host

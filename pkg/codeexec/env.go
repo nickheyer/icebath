@@ -17,6 +17,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
+	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
 
@@ -26,19 +27,10 @@ var safeEnvPrefixes = []string{"PATH", "HOME", "USER", "LANG", "LC_", "TERM", "T
 	"LOGNAME", "XDG_", "PYTHONPATH", "VIRTUAL_ENV", "CONDA"}
 
 // SecretSubstrings are the name fragments that mark an environment variable as a credential
-var SecretSubstrings = []string{"KEY", "TOKEN", "SECRET", "PASSWORD", "CREDENTIAL", "PASSWD", "AUTH", "DSN",
-	"WEBHOOK", "CREDS", "BEARER", "APIKEY", "COOKIE"}
+var SecretSubstrings = state.SecretSubstrings
 
 // Reports whether a variable name contains a credential fragment in any letter case
-func IsSecretEnvName(name string) bool {
-	upper := pystr.Upper(name)
-	for _, s := range SecretSubstrings {
-		if strings.Contains(upper, s) {
-			return true
-		}
-	}
-	return false
-}
+func IsSecretEnvName(name string) bool { return state.IsSecretEnvName(name) }
 
 const delegatedChildEnvMarker = "ICEBATH_DELEGATED_CHILD_CONTEXT"
 
@@ -61,11 +53,13 @@ type scrubOptions struct {
 	toolchain     map[string]bool
 }
 
-func logger(env *tools.Env) *slog.Logger {
+// Logger of the tool env or the process default, named after this package
+func pkgLog(env *tools.Env) *slog.Logger {
+	base := slog.Default()
 	if env != nil && env.Log != nil {
-		return env.Log
+		base = env.Log
 	}
-	return slog.Default()
+	return base.With("logger", "codeexec")
 }
 
 func sortedKeys(m map[string]string) []string {
@@ -168,7 +162,7 @@ func scrubChildEnv(ctx context.Context, env *tools.Env, source map[string]string
 		}
 	}
 	if len(dropped) > 0 {
-		logger(env).Debug("execute_code: dropped non-allowlisted ICEBATH_* var(s) from the sandbox child env. "+
+		pkgLog(env).Debug("execute_code: dropped non-allowlisted ICEBATH_* var(s) from the sandbox child env. "+
 			"This is intentional hardening (#27303); if a sandbox script legitimately needs one, declare it via "+
 			"env_passthrough in the skill/config so it passes by explicit opt-in.",
 			"count", len(dropped), "names", strings.Join(dropped, ", "))
@@ -367,7 +361,7 @@ func resolveChildPython(ctx context.Context, env *tools.Env, mode string) (strin
 			if isUsablePython(env, candidate) {
 				return candidate, nil
 			}
-			logger(env).Info("execute_code: skipping interpreter (Python version < 3.8 or broken). Using the interpreter on PATH instead.",
+			pkgLog(env).Info("execute_code: skipping interpreter (Python version < 3.8 or broken). Using the interpreter on PATH instead.",
 				"var", name, "python", candidate)
 			return userPython(ctx, env)
 		}

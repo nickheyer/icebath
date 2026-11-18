@@ -303,7 +303,7 @@ const pyHTTPErrorPage = `<!DOCTYPE HTML>
 func makeCallbackHandler() (http.Handler, *callbackResult) {
 	result := newCallbackResult()
 	h := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		mcpLogger().Debug(fmt.Sprintf("OAuth callback: %s %s", r.Method, r.URL.Path))
+		pkgLog().Debug(fmt.Sprintf("OAuth callback: %s %s", r.Method, r.URL.Path))
 		if r.Method != http.MethodGet {
 			w.Header().Set("Content-Type", "text/html;charset=utf-8")
 			w.Header().Set("Connection", "close")

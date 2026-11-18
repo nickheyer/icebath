@@ -257,7 +257,7 @@ func writeThroughProviderStateToGlobalRoot(env PoolEnv, providerID string, state
 		return
 	}
 	if _, err := env.Store.PersistProviderStateToStore(providerID, state, globalPath, false); err != nil {
-		env.logAs("agent.credential_pool").Debug(fmt.Sprintf("%s pool refresh: write-through to global root failed: %v", providerID, err))
+		env.log().Debug(fmt.Sprintf("%s pool refresh: write-through to global root failed: %v", providerID, err))
 	}
 }
 
@@ -345,7 +345,7 @@ func PersistPoolEntries(env PoolEnv, provider string, payloads []map[string]any,
 		if globalPath := borrowedSingleUsePoolRoot(env); globalPath != "" {
 			written, err := updateRootPoolRows(env, provider, payloads, globalPath, statusClearedIDs, tokenBases)
 			if err != nil {
-				env.logAs("agent.credential_pool").Warn(fmt.Sprintf("%s pool: write-through of borrowed root grant failed (%v); not materializing a profile-local copy", provider, err))
+				env.log().Warn(fmt.Sprintf("%s pool: write-through of borrowed root grant failed (%v); not materializing a profile-local copy", provider, err))
 				return nil, false
 			}
 			return written, true
@@ -353,7 +353,7 @@ func PersistPoolEntries(env PoolEnv, provider string, payloads []map[string]any,
 	}
 	written, err := env.Store.WriteCredentialPool(provider, payloads, removedIDs, statusClearedIDs, tokenBases)
 	if err != nil {
-		env.logAs("agent.credential_pool").Warn(fmt.Sprintf("%s pool: persist failed (%v)", provider, err))
+		env.log().Warn(fmt.Sprintf("%s pool: persist failed (%v)", provider, err))
 		return nil, false
 	}
 	return written, true
@@ -515,7 +515,7 @@ func applyPoolField(e *PooledCredential, key string, value any) bool {
 	return !sameAnyValue(before[key], poolFieldValues(*e)[key])
 }
 
-var anthropicSourceRank = map[string]int{"env:ANTHROPIC_TOKEN": 0, "env:CLAUDE_CODE_OAUTH_TOKEN": 1, "hermes_pkce": 2, "claude_code": 3, "env:ANTHROPIC_API_KEY": 4}
+var anthropicSourceRank = map[string]int{"env:ANTHROPIC_TOKEN": 0, "env:CLAUDE_CODE_OAUTH_TOKEN": 1, IcebathPKCESource: 2, "claude_code": 3, "env:ANTHROPIC_API_KEY": 4}
 
 // Orders anthropic rows manual first then by seeded source rank, reporting whether priorities changed
 func normalizePoolPriorities(provider string, entries []PooledCredential) bool {
@@ -622,14 +622,14 @@ func seedAnthropicSingletons(seed *seeder) {
 		oauthEnv = seed.env.envVal("CLAUDE_CODE_OAUTH_TOKEN")
 	}
 	if seed.env.envVal("ANTHROPIC_API_KEY") != "" && oauthEnv == "" {
-		seed.changed = retainSourcesNotIn(seed.entries, map[string]bool{"hermes_pkce": true, "claude_code": true}) || seed.changed
+		seed.changed = retainSourcesNotIn(seed.entries, map[string]bool{IcebathPKCESource: true, "claude_code": true}) || seed.changed
 		return
 	}
 	type src struct {
 		name  string
 		creds map[string]any
 	}
-	sources := []src{{"hermes_pkce", ReadHermesOAuthCredentials(seed.env)}}
+	sources := []src{{IcebathPKCESource, ReadIcebathOAuthCredentials(seed.env)}}
 	if AdoptExternalLoginsEnabled(seed.env) {
 		sources = append(sources, src{"claude_code", ReadClaudeCodeCredentials(seed.env)})
 	} else {
@@ -649,42 +649,6 @@ func seedAnthropicSingletons(seed *seeder) {
 		}
 		seed.upsert(s.name, payload)
 	}
-}
-
-func seedNousSingleton(seed *seeder, data AuthData) {
-	state, sourcePath := seed.env.Store.ProviderStateWithSource(data, "nous")
-	if ownedProfileReadsRootState(seed.env, data, "nous", sourcePath) {
-		return
-	}
-	hasRuntimeMaterial := state != nil && !guestWithoutFreeTier(state) &&
-		(strings.TrimSpace(anyString(state["access_token"])) != "" || strings.TrimSpace(anyString(state["agent_key"])) != "")
-	if len(state) > 0 && !hasRuntimeMaterial {
-		seed.changed = retainSourcesNotIn(seed.entries, map[string]bool{"device_code": true, "manual:device_code": true}) || seed.changed
-	}
-	if len(state) == 0 || !hasRuntimeMaterial {
-		return
-	}
-	access := anyString(state["access_token"])
-	payload := map[string]any{"auth_type": AuthTypeOAuth, "access_token": access}
-	for _, key := range []string{"refresh_token", "expires_at", "token_type", "scope", "client_id", "portal_base_url", "inference_base_url", "agent_key", "agent_key_expires_at"} {
-		if v, ok := state[key]; ok && v != nil {
-			payload[key] = v
-		}
-	}
-	for _, key := range nousExtraStateKeys {
-		if v, ok := state[key]; ok && v != nil {
-			payload[key] = v
-		}
-	}
-	if tls, ok := state["tls"].(map[string]any); ok {
-		payload["tls"] = tls
-	}
-	if label := strings.TrimSpace(anyString(state["label"])); label != "" {
-		payload["label"] = label
-	} else {
-		payload["label"] = LabelFromToken(access, "device_code")
-	}
-	seed.upsert("device_code", payload)
 }
 
 // Rows a plugin provider profile seeds itself from ambient tokens it validates or exchanges
@@ -723,7 +687,7 @@ var qwenCredentialsForSeed = func(env PoolEnv, refreshIfExpiring bool) (map[stri
 func seedQwenSingleton(seed *seeder) {
 	creds, err := qwenCredentialsForSeed(seed.env, false)
 	if err != nil {
-		seed.env.logAs("agent.credential_pool").Debug(fmt.Sprintf("Qwen OAuth token seed failed: %v", err))
+		seed.env.log().Debug(fmt.Sprintf("Qwen OAuth token seed failed: %v", err))
 		return
 	}
 	token := anyString(creds["api_key"])
@@ -748,7 +712,7 @@ func seedQwenSingleton(seed *seeder) {
 func seedMinimaxSingleton(seed *seeder) {
 	state, err := seed.env.Store.GetProviderAuthState("minimax-oauth")
 	if err != nil {
-		seed.env.logAs("agent.credential_pool").Debug(fmt.Sprintf("MiniMax OAuth token seed failed: %v", err))
+		seed.env.log().Debug(fmt.Sprintf("MiniMax OAuth token seed failed: %v", err))
 		return
 	}
 	access := anyString(state["access_token"])
@@ -813,8 +777,6 @@ func seedFromSingletons(env PoolEnv, provider string, entries *[]PooledCredentia
 	switch {
 	case provider == "anthropic":
 		seedAnthropicSingletons(seed)
-	case provider == "nous":
-		seedNousSingleton(seed, data)
 	case provider == "qwen-oauth":
 		seedQwenSingleton(seed)
 	case provider == "minimax-oauth":
@@ -860,7 +822,7 @@ func warnEnvIngestionOnce(env PoolEnv, provider, envVar string) {
 	if provider == "openrouter" {
 		spend = "OpenRouter"
 	}
-	env.logAs("agent.credential_pool").Warn(fmt.Sprintf("Ingested %s from environment into the %s credential pool — this enables %s spend. Remove the key or run icebath auth remove %s <n> to suppress.", envVar, provider, spend, provider))
+	env.log().Warn(fmt.Sprintf("Ingested %s from environment into the %s credential pool — this enables %s spend. Remove the key or run icebath auth remove %s <n> to suppress.", envVar, provider, spend, provider))
 }
 
 func envPayload(env PoolEnv, envVar, token, baseURL string) map[string]any {
@@ -955,7 +917,7 @@ func pruneStaleSeededEntries(entries *[]PooledCredential, activeSources map[stri
 		if strings.HasPrefix(e.Source, "env:") {
 			return pruneEnvSources
 		}
-		return IsBorrowedCredentialSource(e.Source, e.Provider) || e.Source == "hermes_pkce"
+		return IsBorrowedCredentialSource(e.Source, e.Provider) || e.Source == IcebathPKCESource
 	}
 	kept := (*entries)[:0:0]
 	for _, e := range *entries {
@@ -1015,7 +977,7 @@ func LoadPool(env PoolEnv, provider string) *Pool {
 	}
 	raw, err := env.Store.ReadCredentialPool(provider)
 	if err != nil {
-		env.logAs("agent.credential_pool").Warn(fmt.Sprintf("%s pool: auth store unreadable (%v); loading an empty pool", provider, err))
+		env.log().Warn(fmt.Sprintf("%s pool: auth store unreadable (%v); loading an empty pool", provider, err))
 		raw = nil
 	}
 	diskIDs := map[string]bool{}
@@ -1125,7 +1087,7 @@ func LoadPool(env PoolEnv, provider string) *Pool {
 // ---- explicit configuration ----
 
 var implicitEnvVars = map[string]bool{"CLAUDE_CODE_OAUTH_TOKEN": true}
-var explicitPoolSources = map[string]bool{"device_code": true, "loopback_pkce": true, "hermes_pkce": true, "manual": true}
+var explicitPoolSources = map[string]bool{"device_code": true, "loopback_pkce": true, IcebathPKCESource: true, "manual": true}
 var vertexProviderIDs = map[string]bool{"vertex": true, "google-vertex": true, "vertex-ai": true, "gcp-vertex": true, "vertexai": true}
 
 // True when the env var resolves to a usable secret in the active profile scope

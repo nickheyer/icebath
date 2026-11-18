@@ -281,7 +281,7 @@ func resolveUpdateBranch(args map[string]any) string {
 	return branch
 }
 
-// The probe of a user owned git operation in the checkout, replaced by hermes tests
+// The probe of an user owned git operation in the checkout, replaced by tests
 var updateGitOperation = GitOperationInProgress
 
 // Applies the update, the command boundary owning errors, receipts and output streams
@@ -295,7 +295,6 @@ func cmdUpdateImpl(ctx context.Context, w io.Writer, args map[string]any, gatewa
 	if gitOperation != "" {
 		fmt.Fprintf(w, "✗ Cannot update while a Git %s is in progress in %s.\n", gitOperation, root)
 		fmt.Fprintf(w, "  Finish it or run `git %s --abort`, then re-run `icebath update`.\n", gitOperation)
-		recordStopWithoutReceipt(ctx, "git_in_progress", "failed")
 		return updateExit(1)
 	}
 	released, err := tools.ReleaseDeadIndexLock(ctx, root)

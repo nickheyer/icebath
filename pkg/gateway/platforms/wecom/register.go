@@ -107,7 +107,7 @@ type wecomPlatformPlugin struct{}
 
 func (wecomPlatformPlugin) Manifest() plugins.Manifest {
 	return plugins.Manifest{Name: "wecom-platform", Version: "1.0.0", Kind: "platform", Source: "bundled", Key: "platforms/wecom",
-		Author: "NousResearch",
+		Author: "Icebath",
 		Description: "WeCom / Enterprise WeChat gateway adapter for Icebath Agent. Registers two platforms: ``wecom`` (Smart Robot over WebSocket) " +
 			"and ``wecom_callback`` (self-built apps over an HTTP callback endpoint with AES message crypto). " +
 			"Relays messages between WeCom chats and the Icebath agent.\n",

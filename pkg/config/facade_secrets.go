@@ -238,12 +238,10 @@ var (
 var envConfigKeys = map[string]bool{
 	"OPENROUTER_API_KEY": true, "OPENAI_API_KEY": true, "ANTHROPIC_API_KEY": true, "VOICE_TOOLS_OPENAI_KEY": true,
 	"EXA_API_KEY": true, "PARALLEL_API_KEY": true, "FIRECRAWL_API_KEY": true, "FIRECRAWL_API_URL": true,
-	"FIRECRAWL_GATEWAY_URL": true, "TOOL_GATEWAY_URL": true, "CONNECTOR_GATEWAY_URL": true,
-	"TOOL_GATEWAY_DOMAIN": true, "TOOL_GATEWAY_SCHEME": true, "TOOL_GATEWAY_USER_TOKEN": true,
 	"TAVILY_API_KEY": true, "PERPLEXITY_API_KEY": true, "API_SERVER_KEY": true, "BROWSERBASE_API_KEY": true,
 	"BROWSERBASE_PROJECT_ID": true, "BROWSER_USE_API_KEY": true, "FAL_KEY": true, "TELEGRAM_BOT_TOKEN": true,
 	"DISCORD_BOT_TOKEN": true, "TERMINAL_SSH_HOST": true, "TERMINAL_SSH_USER": true, "TERMINAL_SSH_KEY": true,
-	"SUDO_PASSWORD": true, "SLACK_BOT_TOKEN": true, "SLACK_APP_TOKEN": true, "GITHUB_TOKEN": true, "HONCHO_API_KEY": true,
+	"SUDO_PASSWORD": true, "SLACK_BOT_TOKEN": true, "SLACK_APP_TOKEN": true, "GITHUB_TOKEN": true,
 }
 
 func hasAnySuffix(s string, suffixes []string) bool {

@@ -3,7 +3,6 @@ package state
 import (
 	"context"
 	"database/sql"
-	"log/slog"
 	"sort"
 	"strconv"
 
@@ -918,7 +917,7 @@ func (d *SessionDB) ReclaimStaleRunningHandoffs(ctx context.Context, reason stri
 		return err
 	}, nil)
 	if err != nil {
-		slog.Warn("reclaim_stale_running_handoffs failed; stranded 'running' " +
+		pkgLog().Warn("reclaim_stale_running_handoffs failed; stranded 'running' " +
 			"handoff rows (if any) were left in place\n" + errText(err))
 		return []string{}
 	}

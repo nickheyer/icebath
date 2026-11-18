@@ -29,7 +29,7 @@ const CatalogSidecar = ".icebath-catalog.json"
 const (
 	LoginBackendRule = "password-manager login backends are accepted only from plugins bundled with Icebath or " +
 		"installed from the Icebath plugin catalog at tier verified or official (published by the " +
-		"password-manager vendor itself or by Nous)"
+		"password-manager vendor itself or by icebath)"
 	BrowserPageBackendRule = "browser page backends (which carry browser_vault fill scripts) are accepted only from " +
 		"plugins bundled with Icebath or installed from the Icebath plugin catalog at tier " +
 		"verified or official"
@@ -39,7 +39,7 @@ var LoginBackendTiers = map[string]bool{"official": true, "verified": true}
 
 var nonCatalogSources = map[string]string{"project": "a project .icebath/plugins directory", "entrypoint": "a pip entry point"}
 
-var handoffRepos = map[string]string{"github.com/nousresearch/hermes-plugin-holographic": "holographic"}
+var handoffRepos = map[string]string{}
 
 var platformAliases = map[string]string{"windows": "win32", "macos": "darwin"}
 
@@ -65,8 +65,18 @@ func LooksLikeCatalogName(identifier string) bool {
 
 // Operation error when any candidate name or repo is on the kill list
 func raiseIfRemoved(ctx context.Context, candidates ...string) error {
+	return removalRefusal(ctx, false, candidates)
+}
+
+// Kill list refusal of an install, the bundled list alone when the entry at ref is a catalog port the binary carries
+func raiseIfInstallRemoved(ctx context.Context, entry *PluginCatalogEntry, ref string, candidates ...string) error {
+	return removalRefusal(ctx, catalogEntryCompiled(entry, ref), candidates)
+}
+
+// Operation error naming the first candidate the kill list holds
+func removalRefusal(ctx context.Context, port bool, candidates []string) error {
 	for _, candidate := range candidates {
-		removed := FindRemoved(ctx, candidate, "")
+		removed := findRemovedFor(ctx, port, candidate)
 		if removed == nil {
 			continue
 		}
@@ -83,9 +93,9 @@ func raiseIfRemoved(ctx context.Context, candidates ...string) error {
 	return nil
 }
 
-// Live catalog entry of a bare name, or exit 1 with the kill list reason or pointing at search
+// Catalog entry of a bare name, or exit 1 with the kill list reason or pointing at search
 func resolveCatalogName(ctx context.Context, identifier string, console *Console) (*PluginCatalogEntry, error) {
-	entry := portPinnedEntry(GetLiveCatalogEntry(ctx, identifier))
+	entry := catalogEntryFor(ctx, identifier)
 	if entry == nil {
 		if err := raiseIfRemoved(ctx, identifier); err != nil {
 			return nil, fail(console, "[red]Error:[/red] "+err.Error())
@@ -113,7 +123,7 @@ func writeCatalogSidecarRecord(target string, catalog map[string]any, sha string
 		err = os.WriteFile(filepath.Join(target, CatalogSidecar), []byte(text+"\n"), 0o666)
 	}
 	if err != nil {
-		logPluginsCmdCatalog.warn(fmt.Sprintf("Failed to write catalog sidecar in %s: %s", target, pyfs.OSErrorText(err)))
+		pkgLog().Warn(fmt.Sprintf("Failed to write catalog sidecar in %s: %s", target, pyfs.OSErrorText(err)))
 	}
 }
 
@@ -180,7 +190,11 @@ func adoptLegacySidecar(ctx context.Context, h, pluginDir string, record map[str
 // Adopts a url install of an archived handoff repo as the catalog entry that superseded it
 func adoptHandoffInstall(ctx context.Context, h, pluginDir string, record map[string]any) (map[string]any, error) {
 	source, _, _ := strings.Cut(pyStrOr(record["source"]), "#")
-	entry := GetLiveCatalogEntry(ctx, handoffRepos[normalizeRepo(source)])
+	name, handedOff := handoffRepos[normalizeRepo(source)]
+	if !handedOff {
+		return nil, nil
+	}
+	entry := GetLiveCatalogEntry(ctx, name)
 	if entry == nil {
 		return nil, nil
 	}
@@ -402,7 +416,7 @@ type CatalogInstallOptions struct {
 // Installs the entry at its catalog pin, or the explicit ref, recording catalog provenance on the install record
 func installCatalogEntry(ctx context.Context, entry *PluginCatalogEntry, opts CatalogInstallOptions) (string, map[string]any, string, error) {
 	if !opts.AllowRemoved {
-		if err := raiseIfRemoved(ctx, entry.Name, entry.Repo); err != nil {
+		if err := raiseIfInstallRemoved(ctx, entry, opts.Ref, entry.Name, entry.Repo); err != nil {
 			return "", nil, "", err
 		}
 	}
@@ -778,7 +792,7 @@ func (e *RepinConsentRequired) Error() string {
 func repinCatalogPlugin(ctx context.Context, target string, sidecar map[string]any, interactive bool, consent func(map[string][]string) bool) (*RepinResult, error) {
 	h := home.Dir(ctx)
 	catalogName := pyrepr.Str(sidecar["catalog_name"])
-	entry := portPinnedEntry(GetLiveCatalogEntry(ctx, catalogName))
+	entry := catalogEntryFor(ctx, catalogName)
 	if entry == nil {
 		return nil, &PluginOperationError{Msg: fmt.Sprintf("Plugin '%s' is no longer in the catalog — it may have been removed. "+
 			"See `icebath plugins info` and the removed blocklist.", catalogName)}
@@ -1053,7 +1067,7 @@ func renderEntries(entries []*PluginCatalogEntry, console *Console) {
 	console.Print("[dim]Details:[/dim] icebath plugins info <name>    [dim]Install:[/dim] icebath plugins install <name>")
 }
 
-// Ordered catalog entry mapping in the hermes to_dict key order
+// Ordered catalog entry mapping in the to_dict key order
 func entryObject(e *PluginCatalogEntry) *pyjson.Object {
 	d := e.ToDict()
 	o := pyjson.NewObject()
@@ -1174,7 +1188,7 @@ func CmdInfo(ctx context.Context, name string, out io.Writer) error {
 	return nil
 }
 
-// Dependency environment reads of validate with install deps, swapped by tests the way hermes patches pm.environments
+// Dependency environment reads of validate with install deps, swapped by tests
 var (
 	projectPython         = pm.ProjectPython
 	selectedVenv          = pm.SelectedVenv

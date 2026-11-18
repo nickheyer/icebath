@@ -14,7 +14,7 @@ import (
 	"testing"
 )
 
-// Go files of the owner modules allowed to parse config.yaml raw, mirroring the hermes allowlist
+// Go files of the owner modules allowed to parse config.yaml raw, mirroring the allowlist
 var rawConfigReadAllowlist = map[string]bool{
 	"pkg/config/facade_load.go":    true,
 	"pkg/config/load.go":           true,
@@ -88,9 +88,9 @@ func TestNoRawConfigYamlReadsOutsideOwnerModules(t *testing.T) {
 		}
 	}
 	if len(offenders) > 0 {
-		t.Fatalf("Raw yaml.safe_load of config.yaml outside allowlisted owner modules.\nBehavioral reads must use hermes_cli.config.load_config()/"+
-			"load_config_readonly() (or gateway _load_gateway_config); write-back round-trips and raw-file diagnostics must use "+
-			"hermes_cli.config.read_user_config_raw().\nOffenders:\n  %s", strings.Join(offenders, "\n  "))
+		t.Fatalf("Raw yaml.safe_load of config.yaml outside allowlisted owner modules.\nBehavioral reads must use config.Load/"+
+			"config.LoadReadonly (or the gateway config loader); write-back round-trips and raw-file diagnostics must use "+
+			"config.ReadUserConfigRaw.\nOffenders:\n  %s", strings.Join(offenders, "\n  "))
 	}
 }
 

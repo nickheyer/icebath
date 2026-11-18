@@ -3,7 +3,6 @@ package gateway
 import (
 	"context"
 	"fmt"
-	"log/slog"
 	"strings"
 	"time"
 
@@ -180,7 +179,7 @@ func refuseNative(event *MessageEvent, reason, clause string) error {
 	if event.MessageID != nil {
 		message = *event.MessageID
 	}
-	slog.Warn(fmt.Sprintf("Native admission refused: %s (%s) platform=%s chat=%s message=%s", reason, clause, platform, chat, message))
+	pkgLog().Warn(fmt.Sprintf("Native admission refused: %s (%s) platform=%s chat=%s message=%s", reason, clause, platform, chat, message))
 	return state.NewRuntimeStoreError(reason, &clause, nil)
 }
 

@@ -9,16 +9,7 @@ import (
 	"time"
 )
 
-func resetMissedHooks(t *testing.T) {
-	t.Helper()
-	testHooks.missed = nil
-	saved := recordCronMissed
-	recordCronMissed = func(_ context.Context, job *Job) { testHooks.missed = append(testHooks.missed, job.ID) }
-	t.Cleanup(func() { testHooks.missed, recordCronMissed = nil, saved })
-}
-
 func TestStaleRecurringRunsOnceAndBooksCollapsedSlots(t *testing.T) {
-	resetMissedHooks(t)
 	now := time.Date(2026, 5, 1, 12, 0, 0, 0, time.UTC)
 	s := newClockStore(t, &now, time.UTC)
 	job := mustCreate(t, s, CreateJobOptions{Prompt: prompt("p"), Schedule: "every 1h"})
@@ -39,7 +30,6 @@ func TestStaleRecurringRunsOnceAndBooksCollapsedSlots(t *testing.T) {
 }
 
 func TestCatchUpOffSkipsTheMissAndBooksIt(t *testing.T) {
-	resetMissedHooks(t)
 	now := time.Date(2026, 5, 1, 12, 0, 0, 0, time.UTC)
 	s := newClockStore(t, &now, time.UTC)
 	os.WriteFile(filepath.Join(s.home, "config.yaml"), []byte("cron:\n  catch_up_missed: false\n"), 0o600)
@@ -48,8 +38,8 @@ func TestCatchUpOffSkipsTheMissAndBooksIt(t *testing.T) {
 	if due := mustDue(t, s); len(due) != 0 {
 		t.Fatalf("catch up off still fired %v", jobIDs(due))
 	}
-	if len(testHooks.missed) != 1 || !strings.HasPrefix(bookedMissed(t, s)[0], job.ID+":2:skipped, catch-up off; next run ") {
-		t.Fatalf("missed %v booked %v", testHooks.missed, bookedMissed(t, s))
+	if booked := bookedMissed(t, s); len(booked) != 1 || !strings.HasPrefix(booked[0], job.ID+":2:skipped, catch-up off; next run ") {
+		t.Fatalf("booked %v", booked)
 	}
 	on := true
 	if !s.jobCatchesUp(&Job{CatchUp: &on}) || s.jobCatchesUp(&Job{Schedule: &Schedule{Kind: "once"}}) {
@@ -79,7 +69,6 @@ func TestCountMissedSlotsStopsAtNowAndCap(t *testing.T) {
 }
 
 func TestExpiredOneshotRetiredWithDiagnostic(t *testing.T) {
-	resetMissedHooks(t)
 	now := time.Date(2026, 5, 1, 12, 0, 0, 0, time.UTC)
 	s := newClockStore(t, &now, time.UTC)
 	runAt := FormatISO(now.Add(-10 * time.Minute))
@@ -105,8 +94,8 @@ func TestExpiredOneshotRetiredWithDiagnostic(t *testing.T) {
 			t.Fatalf("diagnostic lacks %q\n%s", want, text)
 		}
 	}
-	if len(testHooks.missed) != 1 || bookedMissed(t, s)[0] != "late1:1:one-shot past its grace window; catch-up off" {
-		t.Fatalf("missed %v booked %v", testHooks.missed, bookedMissed(t, s))
+	if booked := bookedMissed(t, s); len(booked) != 1 || booked[0] != "late1:1:one-shot past its grace window; catch-up off" {
+		t.Fatalf("booked %v", booked)
 	}
 }
 

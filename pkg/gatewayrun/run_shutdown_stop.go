@@ -23,14 +23,14 @@ import (
 func quietStep[T any](label string, fn func() (T, error)) (out T) {
 	defer func() {
 		if rec := recover(); rec != nil {
-			runLog().Debug(fmt.Sprintf("%s: %v", label, rec))
+			pkgLog().Debug(fmt.Sprintf("%s: %v", label, rec))
 			var zero T
 			out = zero
 		}
 	}()
 	value, err := fn()
 	if err != nil {
-		runLog().Debug(fmt.Sprintf("%s: %v", label, err))
+		pkgLog().Debug(fmt.Sprintf("%s: %v", label, err))
 		var zero T
 		return zero
 	}
@@ -45,7 +45,7 @@ func stopKillToolSubprocesses(ctx context.Context, phase string) []string {
 	}
 	countStep := func(format string, fn func() int) {
 		if n := fn(); n != 0 {
-			runLog().Info(fmt.Sprintf(format, phase, n))
+			pkgLog().Info(fmt.Sprintf(format, phase, n))
 		}
 	}
 	step("process_registry.kill_all", func() error {
@@ -58,7 +58,7 @@ func stopKillToolSubprocesses(ctx context.Context, phase string) []string {
 		interrupted := cron.MarkRunningJobsInterrupted(ctx,
 			fmt.Sprintf("Gateway shutdown (%s) killed the job's tool subprocess before the run finished.", phase))
 		if len(interrupted) > 0 {
-			runLog().Warn(fmt.Sprintf("Shutdown (%s): marked %d in-flight cron job(s) interrupted: %s",
+			pkgLog().Warn(fmt.Sprintf("Shutdown (%s): marked %d in-flight cron job(s) interrupted: %s",
 				phase, len(interrupted), strings.Join(interrupted, ", ")))
 		}
 		return interrupted, nil
@@ -95,7 +95,7 @@ func (r *GatewayRunner) stopBeginTeardown(ctx context.Context, sc *stopContext) 
 	if r.restartRequested {
 		suffix = " for restart"
 	}
-	runLog().Info(fmt.Sprintf("Stopping gateway%s...", suffix))
+	pkgLog().Info(fmt.Sprintf("Stopping gateway%s...", suffix))
 	started := pythread.Monotonic()
 	sc.startedAt = &started
 	r.running.Store(false)
@@ -106,11 +106,11 @@ func (r *GatewayRunner) stopBeginTeardown(ctx context.Context, sc *stopContext) 
 	func() {
 		defer func() {
 			if rec := recover(); rec != nil {
-				runLog().Warn("Group Chat worker could not stop cleanly; the next gateway start will recover durable work", "exc_info", rec)
+				pkgLog().Warn("Group Chat worker could not stop cleanly; the next gateway start will recover durable work", "exc_info", rec)
 			}
 		}()
 		if !r.stopHostedRoomWorker(ctx, 5.0) {
-			runLog().Warn("Group Chat worker is still settling durable work; the next gateway start will recover it")
+			pkgLog().Warn("Group Chat worker is still settling durable work; the next gateway start will recover it")
 		}
 	}()
 	r.stopSystemdWatchdog(ctx)
@@ -118,7 +118,7 @@ func (r *GatewayRunner) stopBeginTeardown(ctx context.Context, sc *stopContext) 
 		return err
 	}
 	r.notifyActiveSessionsOfShutdown(ctx)
-	runLog().Info(fmt.Sprintf("Shutdown phase: notify_active_sessions done at +%.2fs", sc.elapsed()))
+	pkgLog().Info(fmt.Sprintf("Shutdown phase: notify_active_sessions done at +%.2fs", sc.elapsed()))
 	return nil
 }
 
@@ -132,7 +132,7 @@ func (r *GatewayRunner) stopDrainActiveWork(ctx context.Context, timeout float64
 	cronLeash := gateway.EffectiveStopWatchdogDelay(r.stopTiming(), gateway.ResolveShutdownWatchdogDelay(timeout, nil))
 	cronTimeout := gateway.ResolveCronDrainBudget(timeout, cronDrainCfg, cronLeash, sc.elapsed(), nil)
 	if (cronAtStart != 0 || apiAtStart != 0) && cronTimeout > timeout {
-		runLog().Info(fmt.Sprintf("Shutdown drain: %d in-flight cron job(s), %d api_server run(s) — waiting up to "+
+		pkgLog().Info(fmt.Sprintf("Shutdown drain: %d in-flight cron job(s), %d api_server run(s) — waiting up to "+
 			"%.0fs for them (cron_drain_timeout=%.0fs, restart_drain_timeout=%.0fs)",
 			cronAtStart, apiAtStart, cronTimeout, cronDrainCfg, timeout))
 	}
@@ -143,7 +143,7 @@ func (r *GatewayRunner) stopDrainActiveWork(ctx context.Context, timeout float64
 	}
 	sc.activeAgents, sc.timedOut = active, timedOut
 	sc.drainElapsed = pythread.Monotonic() - drainStartedAt
-	runLog().Info(fmt.Sprintf("Shutdown phase: drain done at +%.2fs (drain took %.2fs, timed_out=%s, active_at_start=%d, "+
+	pkgLog().Info(fmt.Sprintf("Shutdown phase: drain done at +%.2fs (drain took %.2fs, timed_out=%s, active_at_start=%d, "+
 		"active_now=%d, cron_at_start=%d, cron_now=%d, api_at_start=%d, api_now=%d, "+
 		"deferred_at_start=%d, deferred_now=%d)", sc.elapsed(), sc.drainElapsed, pyBool(sc.timedOut), len(sc.activeAgents),
 		r.runningAgentCount(), cronAtStart, r.activeCronJobCount(), apiAtStart, r.activeAPIRunCount(),
@@ -157,7 +157,7 @@ func (r *GatewayRunner) stopDrainActiveWork(ctx context.Context, timeout float64
 			continue
 		}
 		if _, err := r.AsyncSessionStore().Store().ClearResumePending(ctx, key); err != nil {
-			runLog().Debug(fmt.Sprintf("clear_resume_pending after drain failed for %s: %v", key, err))
+			pkgLog().Debug(fmt.Sprintf("clear_resume_pending after drain failed for %s: %v", key, err))
 		}
 	}
 	return nil
@@ -182,7 +182,7 @@ func pyBool(b bool) string {
 
 // After a timed out drain marks resume pending, interrupts, waits the grace, kills tool processes and notifies cron owners
 func (r *GatewayRunner) stopInterruptRemainingWork(ctx context.Context, sc *stopContext) error {
-	runLog().Warn(fmt.Sprintf("Gateway drain timed out after %.1fs with %d active agent(s), "+
+	pkgLog().Warn(fmt.Sprintf("Gateway drain timed out after %.1fs with %d active agent(s), "+
 		"%d in-flight cron job(s), %d api_server run(s), and %d deferred agent worker(s); "+
 		"interrupting remaining work.", sc.drainElapsed, r.runningAgentCount(),
 		r.activeCronJobCount(), r.activeAPIRunCount(), sc.deferredCount()))
@@ -191,7 +191,7 @@ func (r *GatewayRunner) stopInterruptRemainingWork(ctx context.Context, sc *stop
 	r.interruptRunningAgents(reason)
 	grace := r.postInterruptGraceTimeout()
 	deadline := pythread.Monotonic() + grace
-	runLog().Info(fmt.Sprintf("Shutdown phase: allowing %.1fs for interrupted agents to unwind", grace))
+	pkgLog().Info(fmt.Sprintf("Shutdown phase: allowing %.1fs for interrupted agents to unwind", grace))
 	workLive := func() bool {
 		return r.runningAgentCount() != 0 || gateway.ManagedTurnCount(r) != 0 || r.activeAPIRunCount() != 0 || sc.deferredCount() != 0
 	}
@@ -203,22 +203,22 @@ func (r *GatewayRunner) stopInterruptRemainingWork(ctx context.Context, sc *stop
 	}
 	if workLive() {
 		r.interruptRunningAgents(reason)
-		runLog().Debug("Re-signaled interrupt for work still live at settle-window exit")
+		pkgLog().Debug("Re-signaled interrupt for work still live at settle-window exit")
 	}
 	interrupted, err := stopKillToolSubprocessesOffLoop(ctx, "post-interrupt")
 	if err != nil {
 		return err
 	}
-	runLog().Info(fmt.Sprintf("Shutdown phase: post-interrupt tool kill done at +%.2fs", sc.elapsed()))
+	pkgLog().Info(fmt.Sprintf("Shutdown phase: post-interrupt tool kill done at +%.2fs", sc.elapsed()))
 	func() {
 		defer func() {
 			if rec := recover(); rec != nil {
-				runLog().Debug(fmt.Sprintf("Cron interrupt notification failed: %v", rec))
+				pkgLog().Debug(fmt.Sprintf("Cron interrupt notification failed: %v", rec))
 			}
 		}()
 		r.notifyInterruptedCronJobs(ctx, interrupted)
 	}()
-	runLog().Info(fmt.Sprintf("Shutdown phase: cron interrupt notices done at +%.2fs", sc.elapsed()))
+	pkgLog().Info(fmt.Sprintf("Shutdown phase: cron interrupt notices done at +%.2fs", sc.elapsed()))
 	return nil
 }
 
@@ -266,7 +266,7 @@ func (r *GatewayRunner) stopFinalizeAgentsAndAdapters(ctx context.Context, sc *s
 	if r.profileAdapters != nil {
 		r.profileAdapters.Clear()
 	}
-	runLog().Info(fmt.Sprintf("Shutdown phase: all adapters disconnected at +%.2fs", sc.elapsed()))
+	pkgLog().Info(fmt.Sprintf("Shutdown phase: all adapters disconnected at +%.2fs", sc.elapsed()))
 }
 
 // Cancels background tasks, flushes pending messages, clears per session state and runs the final tool kill
@@ -330,7 +330,7 @@ func (r *GatewayRunner) stopReleaseRuntimeState(ctx context.Context, sc *stopCon
 	if _, err := stopKillToolSubprocessesOffLoop(ctx, "final-cleanup"); err != nil {
 		return err
 	}
-	runLog().Info(fmt.Sprintf("Shutdown phase: final-cleanup tool kill done at +%.2fs", sc.elapsed()))
+	pkgLog().Info(fmt.Sprintf("Shutdown phase: final-cleanup tool kill done at +%.2fs", sc.elapsed()))
 	quietStep("shutdown_cached_clients error", func() (struct{}, error) {
 		provider.ShutdownCachedClients(ctx)
 		return struct{}{}, nil
@@ -342,18 +342,18 @@ func (r *GatewayRunner) stopReleaseRuntimeState(ctx context.Context, sc *stopCon
 func (r *GatewayRunner) stopQuiesceAndCloseSessionDBs(ctx context.Context, timeout float64, sc *stopContext) {
 	budget := max(0.0, min(executorQuiesceTimeout, gateway.ResolveShutdownWatchdogDelay(timeout, nil)-sc.elapsed()-1.0))
 	if live := r.shutdownExecutor(budget); live != 0 {
-		runLog().Warn(fmt.Sprintf("Shutdown phase: %d executor worker(s) still running after a %.2fs quiesce — skipping the "+
+		pkgLog().Warn(fmt.Sprintf("Shutdown phase: %d executor worker(s) still running after a %.2fs quiesce — skipping the "+
 			"SessionDB close/checkpoint to avoid racing a live write (#101093); handles are left "+
 			"open for SQLite to recover on next open", live, budget))
 		return
 	}
-	runLog().Info(fmt.Sprintf("Shutdown phase: executor quiesced at +%.2fs", sc.elapsed()))
+	pkgLog().Info(fmt.Sprintf("Shutdown phase: executor quiesced at +%.2fs", sc.elapsed()))
 	cronLive := r.activeCronJobCount()
 	apiLive := sc.apiLive
 	apiWorkerLive := r.activeAPIWorkerCount()
 	deferredLive := sc.deferredCount() + gateway.ManagedTurnCount(r)
 	if cronLive != 0 || apiLive != 0 || apiWorkerLive != 0 || deferredLive != 0 {
-		runLog().Warn(fmt.Sprintf("Shutdown phase: %d cron job(s) / %d API-server run(s) / %d API-server worker(s) / "+
+		pkgLog().Warn(fmt.Sprintf("Shutdown phase: %d cron job(s) / %d API-server run(s) / %d API-server worker(s) / "+
 			"%d deferred/authority worker(s) still running after the executor quiesce — skipping the SessionDB "+
 			"close/checkpoint, leaving state.db open for the live writer (#102198, #116535)",
 			cronLive, apiLive, apiWorkerLive, deferredLive))
@@ -385,11 +385,11 @@ func (r *GatewayRunner) stopQuiesceAndCloseSessionDBs(ctx context.Context, timeo
 	})
 	quietStep("Shared SessionDB close error", func() (struct{}, error) {
 		if closed := state.CloseAll(); closed != 0 {
-			runLog().Debug(fmt.Sprintf("Closed %d shared SessionDB instance(s) at shutdown", closed))
+			pkgLog().Debug(fmt.Sprintf("Closed %d shared SessionDB instance(s) at shutdown", closed))
 		}
 		return struct{}{}, nil
 	})
-	runLog().Info(fmt.Sprintf("Shutdown phase: SessionDB close done at +%.2fs", sc.elapsed()))
+	pkgLog().Info(fmt.Sprintf("Shutdown phase: SessionDB close done at +%.2fs", sc.elapsed()))
 }
 
 // Writes the clean shutdown marker, restart markers and the terminal runtime status
@@ -409,7 +409,7 @@ func (r *GatewayRunner) stopPersistExitState(ctx context.Context, sc *stopContex
 			}
 		}()
 	} else {
-		runLog().Info("Skipping .clean_shutdown marker — drain timed out with interrupted agents; " +
+		pkgLog().Info("Skipping .clean_shutdown marker — drain timed out with interrupted agents; " +
 			"next startup will recover their interrupted turns.")
 	}
 	if len(sc.activeAgents) > 0 {
@@ -419,7 +419,7 @@ func (r *GatewayRunner) stopPersistExitState(ctx context.Context, sc *stopContex
 		func() {
 			defer func() {
 				if rec := recover(); rec != nil {
-					runLog().Debug(fmt.Sprintf("Failed to write planned restart notification marker: %v", rec))
+					pkgLog().Debug(fmt.Sprintf("Failed to write planned restart notification marker: %v", rec))
 				}
 			}()
 			gateway.WritePlannedRestartMarker(ctx, r.restartViaService, r.restartDetached)
@@ -434,7 +434,7 @@ func (r *GatewayRunner) stopPersistExitState(ctx context.Context, sc *stopContex
 	}
 	r.draining.Store(false)
 	if r.signalInitiatedShutdown && !r.restartRequested {
-		runLog().Info("Gateway stopped by an unexpected signal — persisting " +
+		pkgLog().Info("Gateway stopped by an unexpected signal — persisting " +
 			"gateway_state=running so container_boot auto-starts on the next boot (issue #42675)")
 		r.updateRuntimeStatus(ctx, optStr("running"), r.exitReason)
 	} else {
@@ -443,7 +443,7 @@ func (r *GatewayRunner) stopPersistExitState(ctx context.Context, sc *stopContex
 	func() {
 		defer func() {
 			if rec := recover(); rec != nil {
-				runLog().Debug("Failed to flush terminal gateway runtime status", "exc_info", rec)
+				pkgLog().Debug("Failed to flush terminal gateway runtime status", "exc_info", rec)
 			}
 		}()
 		flushTimeout := 2.0
@@ -452,13 +452,13 @@ func (r *GatewayRunner) stopPersistExitState(ctx context.Context, sc *stopContex
 		}
 		flushed, err := gateway.FlushRuntimeStatusAsync(ctx, time.Duration(flushTimeout*float64(time.Second)))
 		if err != nil {
-			runLog().Debug("Failed to flush terminal gateway runtime status", "exc_info", err)
+			pkgLog().Debug("Failed to flush terminal gateway runtime status", "exc_info", err)
 		} else if !flushed {
-			runLog().Warn("Timed out flushing terminal gateway runtime status")
+			pkgLog().Warn("Timed out flushing terminal gateway runtime status")
 		}
 	}()
 	shutdownGatewayHealthExport(r)
-	runLog().Info(fmt.Sprintf("Gateway stopped (total teardown %.2fs)", sc.elapsed()))
+	pkgLog().Info(fmt.Sprintf("Gateway stopped (total teardown %.2fs)", sc.elapsed()))
 }
 
 // State the thread watchdog dumps when teardown hangs
@@ -503,7 +503,7 @@ func (r *GatewayRunner) stopImpl(ctx context.Context) error {
 		if r.launchdExitTimeoutS != nil {
 			launchd = *r.launchdExitTimeoutS
 		}
-		runLog().Warn(fmt.Sprintf("Shutdown drain capped to %.0fs (configured %.0fs) to fit the live launchd exit "+
+		pkgLog().Warn(fmt.Sprintf("Shutdown drain capped to %.0fs (configured %.0fs) to fit the live launchd exit "+
 			"timeout of %.0fs — launchd SIGKILLs past it", timeout, r.restartDrainTimeout, launchd))
 	}
 	if err := r.stopDrainActiveWork(ctx, timeout, sc); err != nil {

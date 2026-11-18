@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
@@ -24,7 +25,7 @@ var NativeSlashNames func(ctx context.Context) []string
 // Installed by the process wiring over pkg/commands, canonical name and busy policy of a typed command
 var ResolveCommandBusy func(name string) (canonical, busyPolicy string, ok bool)
 
-// Plugin Slack action handlers, a package var the way hermes tests patch the plugin manager
+// Plugin Slack action handlers, a package var the way tests patch the plugin manager
 var slackActionHandlersFn = func(ctx context.Context) ([]*plugins.SlackActionHandler, error) {
 	manager := plugins.GetPluginManager(ctx)
 	if manager == nil {
@@ -33,7 +34,7 @@ var slackActionHandlersFn = func(ctx context.Context) ([]*plugins.SlackActionHan
 	return manager.GetSlackActionHandlers(), nil
 }
 
-// Sleeps for d unless ctx ends first, the asyncio.sleep the hermes tests patch
+// Sleeps for d unless ctx ends first, the asyncio.sleep the tests patch
 var sleepCtx = func(ctx context.Context, d time.Duration) error {
 	timer := time.NewTimer(d)
 	defer timer.Stop()
@@ -45,12 +46,12 @@ var sleepCtx = func(ctx context.Context, d time.Duration) error {
 	}
 }
 
-// Gateway dispatch of a built inbound event, a package var the way hermes tests replace handle_message
+// Gateway dispatch of a built inbound event, a package var the way tests replace handle_message
 var handleMessageFn = func(a *SlackAdapter, ctx context.Context, event *gateway.MessageEvent) error {
 	return a.HandleMessage(ctx, event)
 }
 
-// Inbound message entry the reaction and file share paths call, a package var the way hermes tests patch it
+// Inbound message entry the reaction and file share paths call, a package var the way tests patch it
 var handleSlackMessageFn = (*SlackAdapter).handleSlackMessage
 
 // Delay letting the message file_share event land before the file_shared fallback
@@ -138,7 +139,7 @@ func (a *SlackAdapter) registerBoltHandlers(ctx context.Context) error {
 	listenerFor := func(handler inboundHandler) eventListener {
 		return func(ctx context.Context, event, body map[string]any) {
 			if err := handler(ctx, event, body); err != nil {
-				slog.Error(fmt.Sprintf("Failed to run listener function (error: %v)", err))
+				pkgLog().Error(fmt.Sprintf("Failed to run listener function (error: %v)", err))
 			}
 		}
 	}
@@ -159,7 +160,7 @@ func (a *SlackAdapter) registerBoltHandlers(ctx context.Context) error {
 	}
 	app.eventPattern(regexp.MustCompile(`.*`), func(_ context.Context, event, body map[string]any) {
 		eventType := getOr(orEmptyMap(event), "type", getOr(asMap(getOr(orEmptyMap(body), "event", map[string]any{})), "type", "unknown"))
-		slog.Debug(fmt.Sprintf("[Slack] Ignoring unhandled event type=%s (no listener registered; subscribed "+
+		pkgLog().Debug(fmt.Sprintf("[Slack] Ignoring unhandled event type=%s (no listener registered; subscribed "+
 			"events not handled by Icebath can be removed from the Slack app manifest via "+
 			"`icebath slack manifest`)", pyrepr.Str(eventType)))
 	})
@@ -182,9 +183,9 @@ func (a *SlackAdapter) registerBoltHandlers(ctx context.Context) error {
 	for _, id := range confirmActionOrder {
 		app.action(actionMatcher{id: id}, a.handleSlashConfirmAction)
 	}
-	app.action(actionMatcher{id: "hermes_feedback"}, a.handleFeedbackAction)
-	app.action(actionMatcher{pattern: regexp.MustCompile(`^hermes_clarify_choice_\d+$`)}, a.handleClarifyAction)
-	app.action(actionMatcher{id: "hermes_clarify_other"}, a.handleClarifyAction)
+	app.action(actionMatcher{id: feedbackActionID}, a.handleFeedbackAction)
+	app.action(actionMatcher{pattern: clarifyChoiceActionRE}, a.handleClarifyAction)
+	app.action(actionMatcher{id: clarifyOtherActionID}, a.handleClarifyAction)
 	for _, id := range modelPickerActionIDs {
 		app.action(actionMatcher{id: id}, a.handleModelPickerAction)
 	}
@@ -199,7 +200,7 @@ func (a *SlackAdapter) registerBoltHandlers(ctx context.Context) error {
 func (a *SlackAdapter) registerPluginActionHandlers(ctx context.Context) error {
 	handlers, err := slackActionHandlersFn(ctx)
 	if err != nil {
-		slog.Warn(fmt.Sprintf("[Slack] Could not load plugin action handlers: %v", err))
+		pkgLog().Warn(fmt.Sprintf("[Slack] Could not load plugin action handlers: %v", err))
 		handlers = nil
 	}
 	a.mu.Lock()
@@ -223,10 +224,10 @@ func (a *SlackAdapter) registerPluginActionHandlers(ctx context.Context) error {
 		a.mu.Lock()
 		a.pluginActionsWired[[2]string{pyrepr.Repr(h.ActionID), h.Plugin}] = true
 		a.mu.Unlock()
-		slog.Debug(fmt.Sprintf("[Slack] Registered plugin action handler %s (from %s)", pyrepr.Str(h.ActionID), h.Plugin))
+		pkgLog().Debug(fmt.Sprintf("[Slack] Registered plugin action handler %s (from %s)", pyrepr.Str(h.ActionID), h.Plugin))
 	}
 	if len(pending) > 0 {
-		slog.Info(fmt.Sprintf("[Slack] Wired %d plugin action handler(s)", len(pending)))
+		pkgLog().Info(fmt.Sprintf("[Slack] Wired %d plugin action handler(s)", len(pending)))
 	}
 	return nil
 }
@@ -248,10 +249,10 @@ func wrapPluginAction(cb any, pluginName string) actionListener {
 				f(ctx, plain, body, action)
 				return nil
 			}
-			return fmt.Errorf("TypeError: '%s' object is not callable", pyrepr.TypeName(cb))
+			return fmt.Errorf("the action handler of plugin %s is %s, expected a function", pluginName, errchain.Kind(cb))
 		}()
 		if err != nil {
-			slog.Error(fmt.Sprintf("[Slack] Plugin '%s' action handler raised: %v", pluginName, err))
+			pkgLog().Error(fmt.Sprintf("[Slack] Plugin '%s' action handler raised: %v", pluginName, err))
 			_ = ack(nil)
 		}
 	}
@@ -264,7 +265,7 @@ func (a *SlackAdapter) RewirePluginHandlers(ctx context.Context) {
 	a.mu.Unlock()
 	if live {
 		if err := a.registerPluginActionHandlers(ctx); err != nil {
-			slog.Error(fmt.Sprintf("[Slack] Plugin action handler rewire failed: %v", err))
+			pkgLog().Error(fmt.Sprintf("[Slack] Plugin action handler rewire failed: %v", err))
 		}
 	}
 	a.BasePlatformAdapter.RewirePluginHandlers(ctx)
@@ -354,7 +355,7 @@ func (a *SlackAdapter) setAssistantSuggestedPrompts(ctx context.Context, channel
 		kwargs["thread_ts"] = threadTS
 	}
 	if _, err := a.getClient(channelID, teamID).call(ctx, "assistant.threads.setSuggestedPrompts", kwargs); err != nil {
-		slog.Debug(fmt.Sprintf("[Slack] assistant.threads.setSuggestedPrompts failed: %v", err))
+		pkgLog().Debug(fmt.Sprintf("[Slack] assistant.threads.setSuggestedPrompts failed: %v", err))
 	}
 }
 
@@ -400,7 +401,7 @@ func (a *SlackAdapter) setAssistantThreadTitle(ctx context.Context, channelID, t
 		title = pystr.Rstrip(pystr.Slice(title, 0, 77)) + "..."
 	}
 	if err := sessionTitleMethod(a.getClient(channelID, teamID))(ctx, channelID, threadTS, title); err != nil {
-		slog.Debug(fmt.Sprintf("[Slack] session title set failed: %v", err))
+		pkgLog().Debug(fmt.Sprintf("[Slack] session title set failed: %v", err))
 		return
 	}
 	a.mu.Lock()
@@ -443,7 +444,7 @@ func (a *SlackAdapter) seedDMSession(ctx context.Context, metadata map[string]st
 	}
 	source := a.BuildSource(ctx, channelID, fields)
 	if _, err := store.GetOrCreateSession(ctx, source, false, true); err != nil {
-		slog.Debug(failLog, "error", err)
+		pkgLog().Debug(failLog, "error", err)
 	}
 }
 
@@ -538,7 +539,7 @@ func (a *SlackAdapter) handleSlackReaction(ctx context.Context, event map[string
 			"channel_id": channelID, "message_ts": msgTS, "team_id": teamID,
 			"event_ts": event["event_ts"], "raw_event": event})
 		if err != nil {
-			slog.Debug(fmt.Sprintf("[Slack] reaction hook forwarding failed: %v", err))
+			pkgLog().Debug(fmt.Sprintf("[Slack] reaction hook forwarding failed: %v", err))
 		}
 	}
 	triggers := a.slackReactionTriggers(ctx)
@@ -570,14 +571,14 @@ func (a *SlackAdapter) syntheticReactionEvent(ctx context.Context, event map[str
 		ts = fmt.Sprintf("reaction-%s-%s-%s", pyrepr.Str(msgTS), reactionName, pyrepr.Str(userID))
 	}
 	synthetic := map[string]any{
-		"type":                  "message",
-		"user":                  userID,
-		"text":                  "reaction:" + action + ":" + emojiText,
-		"channel":               channelID,
-		"ts":                    ts,
-		"thread_ts":             threadTS,
-		"_hermes_force_process": true,
-		"_hermes_reaction": map[string]any{
+		"type":                   "message",
+		"user":                   userID,
+		"text":                   "reaction:" + action + ":" + emojiText,
+		"channel":                channelID,
+		"ts":                     ts,
+		"thread_ts":              threadTS,
+		"_icebath_force_process": true,
+		"_icebath_reaction": map[string]any{
 			"name": reactionName, "action": action, "reacted_to_ts": msgTS,
 			"event_ts": event["event_ts"]}}
 	if teamID != "" {
@@ -590,12 +591,12 @@ func (a *SlackAdapter) syntheticReactionEvent(ctx context.Context, event map[str
 		if strings.HasPrefix(targetChannel, "D") {
 			synthetic["channel_type"] = "im"
 		}
-		synthetic["_hermes_reaction_source_channel"] = channelID
+		synthetic["_icebath_reaction_source_channel"] = channelID
 		if targetThread != "" {
 			synthetic["thread_ts"] = targetThread
 		} else {
 			delete(synthetic, "thread_ts")
-			synthetic["_hermes_no_thread_response"] = true
+			synthetic["_icebath_no_thread_response"] = true
 		}
 	}
 	return synthetic
@@ -608,7 +609,7 @@ func (a *SlackAdapter) reactionThreadTS(ctx context.Context, client *webClient, 
 	if client != nil {
 		history, err := client.call(ctx, "conversations.replies", map[string]any{"channel": channelID, "ts": msgTS, "limit": 1, "inclusive": true})
 		if err != nil {
-			slog.Debug(fmt.Sprintf("[Slack] reaction thread_ts lookup failed for %s: %v", msgTS, err))
+			pkgLog().Debug(fmt.Sprintf("[Slack] reaction thread_ts lookup failed for %s: %v", msgTS, err))
 			return &threadTS
 		}
 		messages := asList(history.get("messages"))
@@ -730,7 +731,7 @@ func asMapOrNil(v any) map[string]any {
 func (a *SlackAdapter) handleSlackFileShared(ctx context.Context, event, body map[string]any) error {
 	channelID := strOrEmpty(firstTruthyValue(event["channel_id"], event["channel"]))
 	if a.IsIgnoredChannel(ctx, channelID) {
-		slog.Info(fmt.Sprintf("[Slack] Ignoring file_shared event in configured ignored channel %s", channelID))
+		pkgLog().Info(fmt.Sprintf("[Slack] Ignoring file_shared event in configured ignored channel %s", channelID))
 		return nil
 	}
 	fileID := strOrEmpty(firstTruthyValue(event["file_id"], asMap(event["file"])["id"]))
@@ -758,7 +759,7 @@ func (a *SlackAdapter) handleSlackFileShared(ctx context.Context, event, body ma
 		if detail == "" {
 			detail = err.Error()
 		}
-		slog.Warn(fmt.Sprintf("[Slack] files.info error for file_shared %s: %s", fileID, detail))
+		pkgLog().Warn(fmt.Sprintf("[Slack] files.info error for file_shared %s: %s", fileID, detail))
 		return nil
 	}
 	fileObj := asMap(info.get("file"))
@@ -874,7 +875,7 @@ func appendBlockText(text string, blocks []any, botUID string) string {
 	blocksText := extractAdditionalTextFromSlackBlocks(blocks, text, botUID)
 	stripped := pystr.Strip(blocksText)
 	if stripped != "" {
-		slog.Debug(fmt.Sprintf("Slack: extracted additional text from blocks (likely quoted/forwarded content; chars=%d)", pystr.Len(stripped)))
+		pkgLog().Debug(fmt.Sprintf("Slack: extracted additional text from blocks (likely quoted/forwarded content; chars=%d)", pystr.Len(stripped)))
 		text = pystr.Strip(pystr.Strip(text) + "\n" + stripped)
 	}
 	if payload := serializeSlackBlocksForAgent(blocks, slackUnfurlBlocksMaxChars); payload != "" {
@@ -909,12 +910,12 @@ func (a *SlackAdapter) earlyRejectUnauthorized(ctx context.Context, userID, chan
 		source := a.BuildSource(ctx, channelID, gateway.SourceFields{ChatName: &empty, ChatType: chatType, UserID: &userID, UserName: &empty, ThreadID: threadID})
 		ok, err := auth.IsUserAuthorized(ctx, source, true)
 		if err != nil {
-			slog.Debug(fmt.Sprintf("[Slack] runner authorization check failed: %v", err))
+			pkgLog().Debug(fmt.Sprintf("[Slack] runner authorization check failed: %v", err))
 		}
 		decision = &ok
 	}
 	if decision != nil && !*decision {
-		slog.Warn(fmt.Sprintf("[Slack] Early reject of unauthorized user %s in channel %s", userID, channelID))
+		pkgLog().Warn(fmt.Sprintf("[Slack] Early reject of unauthorized user %s in channel %s", userID, channelID))
 		return true
 	}
 	return false
@@ -923,7 +924,7 @@ func (a *SlackAdapter) earlyRejectUnauthorized(ctx context.Context, userID, chan
 // Channel and MPIM gate, free channels and mentions admit, wake checks decide the rest
 func (a *SlackAdapter) channelGateAllows(ctx context.Context, channelID, routingText, botUID string, isMentioned, isThreadReply bool, eventThreadTS, userID, teamID string, isDM, forceProcess bool) bool {
 	if allowed := a.slackAllowedChannels(ctx); len(allowed) > 0 && !allowed[channelID] {
-		slog.Debug(fmt.Sprintf("[Slack] Ignoring message in non-allowed channel: %s", channelID))
+		pkgLog().Debug(fmt.Sprintf("[Slack] Ignoring message in non-allowed channel: %s", channelID))
 		return false
 	}
 	selfUIDs := map[string]bool{}
@@ -934,7 +935,7 @@ func (a *SlackAdapter) channelGateAllows(ctx context.Context, channelID, routing
 	}
 	if a.slackIgnoreOtherUserMentions(ctx) && !isMentioned && !slackMessageMentionsSelf(routingText, selfUIDs) &&
 		slackMessageAddressedToOtherUser(routingText, selfUIDs) {
-		slog.Debug(fmt.Sprintf("[Slack] Ignoring message addressed to another user in channel %s", channelID))
+		pkgLog().Debug(fmt.Sprintf("[Slack] Ignoring message addressed to another user in channel %s", channelID))
 		return false
 	}
 	threadGated := a.slackThreadRequireMention(ctx) && isThreadReply && !isMentioned
@@ -946,7 +947,7 @@ func (a *SlackAdapter) channelGateAllows(ctx context.Context, channelID, routing
 		return false
 	}
 	if threadGated {
-		slog.Debug(fmt.Sprintf("[Slack] Ignoring thread reply without mention (thread_require_mention=true): channel=%s thread_ts=%s", channelID, eventThreadTS))
+		pkgLog().Debug(fmt.Sprintf("[Slack] Ignoring thread reply without mention (thread_require_mention=true): channel=%s thread_ts=%s", channelID, eventThreadTS))
 		return false
 	}
 	if freeChannel {
@@ -1022,7 +1023,7 @@ func (a *SlackAdapter) sessionThreadTS(event map[string]any, ts string, isDM boo
 		}
 		return &threadTS
 	}
-	if pyrepr.Truthy(event["_hermes_no_thread_response"]) {
+	if pyrepr.Truthy(event["_icebath_no_thread_response"]) {
 		if t := strOrEmpty(event["thread_ts"]); t != "" {
 			return &t
 		}
@@ -1135,7 +1136,7 @@ func (a *SlackAdapter) handleSlackMessage(ctx context.Context, event, payload ma
 		if ts != "" && !wasClaimed && claimed {
 			a.processedMessageTS.Delete(ts)
 			a.mu.Unlock()
-			slog.Warn(fmt.Sprintf("[%s] handler failed after claiming ts=%s; claim released so a retry or edit can re-drive the turn", a.Name(), ts))
+			pkgLog().Warn(fmt.Sprintf("[%s] handler failed after claiming ts=%s; claim released so a retry or edit can re-drive the turn", a.Name(), ts))
 			return
 		}
 		a.mu.Unlock()
@@ -1170,7 +1171,7 @@ func (a *SlackAdapter) dropBotSender(ctx context.Context, event map[string]any) 
 	if allowBots == "mentions" {
 		textCheck := slackMentionDetectionText(event)
 		if bot != "" && !strings.Contains(textCheck, "<@"+bot+">") {
-			slog.Debug(fmt.Sprintf("[Slack] Dropping bot message under allow_bots=mentions: no <@%s> mention in flat text or blocks", bot))
+			pkgLog().Debug(fmt.Sprintf("[Slack] Dropping bot message under allow_bots=mentions: no <@%s> mention in flat text or blocks", bot))
 			return true
 		}
 	}
@@ -1183,12 +1184,12 @@ var conversationalSubtypes = map[string]bool{"": true, "file_share": true, "thre
 
 // Normalized event, team and channel of a message worth considering, nil once dropped
 func (a *SlackAdapter) prefilterInbound(ctx context.Context, event, payload map[string]any) (map[string]any, string, string, bool) {
-	if slog.Default().Enabled(ctx, slog.LevelDebug) {
+	if pkgLog().Enabled(ctx, slog.LevelDebug) {
 		botName := ""
 		if profile, ok := event["bot_profile"].(map[string]any); ok {
 			botName = strOrEmpty(profile["name"])
 		}
-		slog.Debug(fmt.Sprintf("[Slack] event received type=%s subtype=%s user=%s bot_id=%s bot_name=%s channel=%s ts=%s thread_ts=%s",
+		pkgLog().Debug(fmt.Sprintf("[Slack] event received type=%s subtype=%s user=%s bot_id=%s bot_name=%s channel=%s ts=%s thread_ts=%s",
 			pyrepr.Str(event["type"]), pyrepr.Str(event["subtype"]), strOrEmpty(event["user"]), strOrEmpty(event["bot_id"]), botName,
 			pyrepr.Str(getOr(event, "channel", "")), pyrepr.Str(getOr(event, "ts", "")), pyrepr.Str(getOr(event, "thread_ts", ""))))
 	}
@@ -1205,7 +1206,7 @@ func (a *SlackAdapter) prefilterInbound(ctx context.Context, event, payload map[
 	}
 	channelID := strOrEmpty(event["channel"])
 	if a.IsIgnoredChannel(ctx, channelID) {
-		slog.Info(fmt.Sprintf("[Slack] Ignoring message in configured ignored channel %s", channelID))
+		pkgLog().Info(fmt.Sprintf("[Slack] Ignoring message in configured ignored channel %s", channelID))
 		return nil, "", "", false
 	}
 	if a.dropBotSender(ctx, event) {
@@ -1213,7 +1214,7 @@ func (a *SlackAdapter) prefilterInbound(ctx context.Context, event, payload map[
 	}
 	subtype, isStr := event["subtype"].(string)
 	if (event["subtype"] != nil && !isStr) || !conversationalSubtypes[subtype] {
-		slog.Debug(fmt.Sprintf("[Slack] Dropping non-conversational message subtype=%s in channel %s", pyrepr.Str(event["subtype"]), channelID))
+		pkgLog().Debug(fmt.Sprintf("[Slack] Dropping non-conversational message subtype=%s in channel %s", pyrepr.Str(event["subtype"]), channelID))
 		return nil, "", "", false
 	}
 	return event, dedupTeamID, channelID, true
@@ -1300,7 +1301,7 @@ func (a *SlackAdapter) handleSlackMessageImpl(ctx context.Context, event, payloa
 	}
 	isDM := channelType == "im" || channelType == "mpim"
 	if isDM && a.slackDisableDMs(ctx) {
-		slog.Info(fmt.Sprintf("[Slack] Ignoring DM because Slack DMs are disabled: channel=%s user=%s", channelID, userID))
+		pkgLog().Info(fmt.Sprintf("[Slack] Ignoring DM because Slack DMs are disabled: channel=%s user=%s", channelID, userID))
 		return nil
 	}
 	isOneToOneDM := channelType == "im"
@@ -1316,7 +1317,7 @@ func (a *SlackAdapter) handleSlackMessageImpl(ctx context.Context, event, payloa
 	isMentioned := (botUID != "" && strings.Contains(routingText, "<@"+botUID+">")) || a.slackMessageMatchesMentionPatterns(ctx, routingText)
 	eventThreadTS := strOrEmpty(event["thread_ts"])
 	isThreadReply := eventThreadTS != "" && eventThreadTS != ts
-	forceProcess := pyrepr.Truthy(event["_hermes_force_process"])
+	forceProcess := pyrepr.Truthy(event["_icebath_force_process"])
 	if a.peerBotDrop(ctx, event, userID, botUID, channelID, teamID, isMentioned) {
 		return nil
 	}
@@ -1410,10 +1411,10 @@ func (a *SlackAdapter) buildMessageEvent(ctx context.Context, event map[string]a
 func noteAttachmentFailure(notices *[]string, detail, fallbackMsg string) {
 	if detail != "" {
 		*notices = append(*notices, detail)
-		slog.Warn("[Slack] " + detail)
+		pkgLog().Warn("[Slack] " + detail)
 		return
 	}
-	slog.Warn(fallbackMsg)
+	pkgLog().Warn(fallbackMsg)
 }
 
 // Resolves a Slack Connect check_file_info file through files.info, nil when unresolvable
@@ -1483,7 +1484,7 @@ func (a *SlackAdapter) cacheSlackFile(ctx context.Context, kind string, f map[st
 		if kind == "audio" {
 			return &cachedFile{path, mimetype, ""}, nil
 		}
-		slog.Debug(fmt.Sprintf("[Slack] Cached voice clip (mislabeled %s) as audio: %s", mimetype, path))
+		pkgLog().Debug(fmt.Sprintf("[Slack] Cached voice clip (mislabeled %s) as audio: %s", mimetype, path))
 		mediaType, ok := slackExtToAudioMime[ext]
 		if !ok {
 			mediaType = "audio/mp4"
@@ -1507,7 +1508,7 @@ func (a *SlackAdapter) cacheSlackFile(ctx context.Context, kind string, f map[st
 		if err != nil {
 			return nil, err
 		}
-		slog.Debug("[Slack] Cached user video: " + path)
+		pkgLog().Debug("[Slack] Cached user video: " + path)
 		mediaType, ok := mediacache.SupportedVideoTypes[ext]
 		if !ok {
 			mediaType = mimetype
@@ -1534,7 +1535,7 @@ func (a *SlackAdapter) cacheSlackDocument(ctx context.Context, f map[string]any,
 	}
 	fileSize := intValue(getOr(f, "size", int64(0)))
 	if fileSize == 0 || fileSize > 20*1024*1024 {
-		slog.Warn(fmt.Sprintf("[Slack] Document too large or unknown size: %s", pyrepr.Str(getOr(f, "size", int64(0)))))
+		pkgLog().Warn(fmt.Sprintf("[Slack] Document too large or unknown size: %s", pyrepr.Str(getOr(f, "size", int64(0)))))
 		return nil, nil
 	}
 	raw, err := a.downloadSlackFileBytes(ctx, url, teamID, "file bytes")
@@ -1553,7 +1554,7 @@ func (a *SlackAdapter) cacheSlackDocument(ctx context.Context, f map[string]any,
 	if !ok {
 		docMime = orDefault(mimetype, "application/octet-stream")
 	}
-	slog.Debug(fmt.Sprintf("[Slack] Cached user document: %s (%s)", path, docMime))
+	pkgLog().Debug(fmt.Sprintf("[Slack] Cached user document: %s (%s)", path, docMime))
 	injection := ""
 	isText := gateway.TextInjectExtensions[ext] || strings.HasPrefix(mimetype, "text/")
 	if isText && len(raw) <= 100*1024 {

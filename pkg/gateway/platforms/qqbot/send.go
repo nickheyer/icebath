@@ -3,7 +3,6 @@ package qqbot
 import (
 	"context"
 	"fmt"
-	"log/slog"
 	"net/http"
 	"os"
 	"strings"
@@ -261,7 +260,7 @@ func sendQQBot(ctx context.Context, pconfig *gateway.PlatformConfig, chatID, mes
 		if ctx.Err() != nil {
 			return nil, ctx.Err()
 		}
-		slog.Debug("QQBot standalone send failed", "error", err)
+		pkgLog().Debug("QQBot standalone send failed", "error", err)
 		return gateway.SendError("QQBot send failed: " + errText(err)), nil
 	}
 	return result, nil
@@ -326,7 +325,7 @@ func sendQQBotWith(ctx context.Context, appID, secret, chatID, message string, m
 		}
 		if _, statErr := os.Stat(media.Path); statErr != nil && !isURL(media.Path) {
 			warnings = append(warnings, "QQBot media file not found, skipping: "+media.Path)
-			slog.Warn(warnings[len(warnings)-1])
+			pkgLog().Warn(warnings[len(warnings)-1])
 			continue
 		}
 		result, err := qqbotDeliverOneMedia(ctx, client, headers, chatID, media.Path, media.IsVoice, mediaCaption)
@@ -335,7 +334,7 @@ func sendQQBotWith(ctx context.Context, appID, secret, chatID, message string, m
 		}
 		if failure := result["error"]; pyrepr.Truthy(failure) {
 			warnings = append(warnings, pyrepr.Str(failure))
-			slog.Warn(fmt.Sprintf("QQBot media delivery failed, omitting attachment: %s", pyrepr.Str(failure)))
+			pkgLog().Warn(fmt.Sprintf("QQBot media delivery failed, omitting attachment: %s", pyrepr.Str(failure)))
 			continue
 		}
 		lastResult = result

@@ -260,7 +260,7 @@ func TestProxyEnvironmentDNSDelegation(t *testing.T) {
 func TestAllowPrivateURLsIntegration(t *testing.T) {
 	env := authorityEnv(t, nil)
 	t.Setenv("ICEBATH_ALLOW_PRIVATE_URLS", "true")
-	for _, c := range [][2]string{{"192.168.1.1", "http://router.local"}, {"198.18.23.183", "https://nousresearch.com"}} {
+	for _, c := range [][2]string{{"192.168.1.1", "http://router.local"}, {"198.18.23.183", "https://example.com"}} {
 		authorityResolvesTo(t, c[0])
 		if !isSafeURL(env, c[1]) {
 			t.Errorf("toggle refused %q", c[1])

@@ -239,11 +239,11 @@ func TestMakeAgentSurfacesTheProviderResolutionFailure(t *testing.T) {
 	var built []agent.AIAgentOptions
 	fakeAgentBuild(t, config.Tree{"model": map[string]any{"default": "m", "provider": "openai-codex"}},
 		func(requested, target string) (*provider.Runtime, error) {
-			return nil, errors.New("No Codex credentials stored. Run `hermes auth add openai-codex`")
+			return nil, errors.New("No Codex credentials stored. Run `icebath auth add openai-codex`")
 		},
 		func(o agent.AIAgentOptions) (any, error) {
 			if bareFails {
-				return nil, errors.New("No LLM provider configured. Run `hermes setup`")
+				return nil, errors.New("No LLM provider configured. Run `icebath model`")
 			}
 			built = append(built, o)
 			return &nsAgent{}, nil
@@ -343,7 +343,7 @@ func TestDistinctDirsStillCompareDifferent(t *testing.T) {
 }
 
 func TestMissingPathKeepsLexicalNormalization(t *testing.T) {
-	if normalizeCwdForCompare("/nonexistent-hermes-test/x/../y") != normalizeCwdForCompare("/nonexistent-hermes-test/y") {
+	if normalizeCwdForCompare("/nonexistent-icebath-test/x/../y") != normalizeCwdForCompare("/nonexistent-icebath-test/y") {
 		t.Fatal("missing path not normalized lexically")
 	}
 }

@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"log/slog"
 	"maps"
 	"math/big"
 	"slices"
@@ -44,7 +43,7 @@ func (s *SessionStore) compressionTipForSessionID(ctx context.Context, sessionID
 	}
 	tip, err := db.GetCompressionTip(ctx, sessionID)
 	if err != nil {
-		slog.Debug(fmt.Sprintf("Compression-tip lookup failed for session %s: %v", sessionID, err))
+		pkgLog().Debug(fmt.Sprintf("Compression-tip lookup failed for session %s: %v", sessionID, err))
 		return sessionID
 	}
 	if tip == "" {
@@ -61,7 +60,7 @@ func (s *SessionStore) healCompressionTipLocked(entry *SessionEntry, originalSes
 	if entry.SessionID != originalSessionID || canonicalSessionID == originalSessionID {
 		return false
 	}
-	slog.Info(fmt.Sprintf("SessionStore healed compressed session mapping: %s -> %s", entry.SessionID, canonicalSessionID))
+	pkgLog().Info(fmt.Sprintf("SessionStore healed compressed session mapping: %s -> %s", entry.SessionID, canonicalSessionID))
 	s.entries.retarget(entry, canonicalSessionID)
 	return true
 }
@@ -126,7 +125,7 @@ func (s *SessionStore) LoadTranscript(ctx context.Context, sessionID string) ([]
 		err = fmt.Errorf("'NoneType' object has no attribute 'get_messages_as_conversation'")
 	}
 	if err != nil {
-		slog.Error(fmt.Sprintf("Transcript read failed for session %s; refusing to treat the conversation as empty: %v", sessionID, err))
+		pkgLog().Error(fmt.Sprintf("Transcript read failed for session %s; refusing to treat the conversation as empty: %v", sessionID, err))
 		return nil, &TranscriptReadError{SessionID: sessionID, Cause: err}
 	}
 	out := make([]any, len(messages))
@@ -264,7 +263,7 @@ type transcriptRewriteDB interface {
 	GetActiveMessageWatermark(ctx context.Context, sessionID string) (int64, error)
 }
 
-// AttributeError text hermes raises when a store lacks a method
+// AttributeError text of a store that lacks a method
 func missingStoreMethod(db any, method string) error {
 	return fmt.Errorf("'%T' object has no attribute '%s'", db, method)
 }
@@ -298,10 +297,10 @@ func (s *SessionStore) enqueueTranscriptMessage(ctx context.Context, sessionID s
 		pending.items = pending.items[1:]
 		if spoolPath := spoolDropped(ctx, sessionID, oldest.message); spoolPath != "" {
 			lazyMap(&s.spooledDropSessions)[sessionID] = true
-			slog.Warn(fmt.Sprintf("Session DB transcript pending queue full for %s (cap=%d); spooled oldest "+
+			pkgLog().Warn(fmt.Sprintf("Session DB transcript pending queue full for %s (cap=%d); spooled oldest "+
 				"message to %s for replay after DB recovery", sessionID, transcriptMaxPendingPerSession, spoolPath))
 		} else {
-			slog.Warn(fmt.Sprintf("Session DB transcript pending queue full for %s (cap=%d); dropping oldest "+
+			pkgLog().Warn(fmt.Sprintf("Session DB transcript pending queue full for %s (cap=%d); dropping oldest "+
 				"message to make room (on-disk spool unavailable)", sessionID, transcriptMaxPendingPerSession))
 		}
 	}
@@ -319,7 +318,7 @@ func stateRefusalName(err error) string {
 
 // Stops SQLite writes on a refused handle and diverts the backlog to the spool and the JSONL fallback
 func (s *SessionStore) divertTranscriptAfterDBReplaced(ctx context.Context, sessionID, queueSessionID string, exc error) {
-	slog.Error(fmt.Sprintf("Session DB refused further writes on this handle for %s (%s); stopping SQLite writes "+
+	pkgLog().Error(fmt.Sprintf("Session DB refused further writes on this handle for %s (%s); stopping SQLite writes "+
 		"and diverting pending transcripts to the on-disk fallback: %v", sessionID, stateRefusalName(exc), exc))
 	s.transcriptRetryMu.Lock()
 	remaining := []any{}
@@ -333,11 +332,11 @@ func (s *SessionStore) divertTranscriptAfterDBReplaced(ctx context.Context, sess
 	s.transcriptRetryMu.Unlock()
 	for _, dropped := range remaining {
 		if spoolDropped(ctx, sessionID, dropped.(map[string]any)) == "" {
-			slog.Warn(fmt.Sprintf("pending fallback failed for replaced state.db transcript on %s", sessionID))
+			pkgLog().Warn(fmt.Sprintf("pending fallback failed for replaced state.db transcript on %s", sessionID))
 		}
 	}
 	if _, err := state.DivertSessionTranscriptJSONL(ctx, sessionID, remaining); err != nil {
-		slog.Warn(fmt.Sprintf("JSONL divert failed for replaced state.db transcript on %s: %v", sessionID, err))
+		pkgLog().Warn(fmt.Sprintf("JSONL divert failed for replaced state.db transcript on %s: %v", sessionID, err))
 	}
 }
 
@@ -454,7 +453,7 @@ func (s *SessionStore) appendToTranscriptSerialized(ctx context.Context, session
 				s.transcriptRetryMu.Lock()
 				ackHead()
 				s.transcriptRetryMu.Unlock()
-				slog.Error(fmt.Sprintf("Session DB transcript append rejected for compression-ended %s with "+
+				pkgLog().Error(fmt.Sprintf("Session DB transcript append rejected for compression-ended %s with "+
 					"no unique live child; not retrying", sessionID))
 				return nil
 			}
@@ -512,11 +511,11 @@ func (s *SessionStore) appendToTranscriptSerialized(ctx context.Context, session
 		s.transcriptRetryMu.Unlock()
 		if failures >= transcriptAppendFailureEscalationThreshold {
 			spooled := s.spoolStalledBacklog(ctx, sessionID, queueSessionID)
-			slog.Error(fmt.Sprintf("Session DB transcript append failed for %s (failure_count=%d, "+
+			pkgLog().Error(fmt.Sprintf("Session DB transcript append failed for %s (failure_count=%d, "+
 				"pending=%d, spooled_to_disk=%d); session is stalled and needs operator "+
 				"attention: %v", sessionID, failures, s.queueLen(pending), spooled, exc))
 		} else {
-			slog.Warn(fmt.Sprintf("Session DB transcript append failed for %s (failure_count=%d, pending=%d); "+
+			pkgLog().Warn(fmt.Sprintf("Session DB transcript append failed for %s (failure_count=%d, pending=%d); "+
 				"will retry: %v", sessionID, failures, s.queueLen(pending), exc))
 		}
 		return nil
@@ -579,7 +578,7 @@ func (s *SessionStore) drainSpooledDrops(ctx context.Context, sessionID string) 
 	}
 	_, remaining, err := DrainTranscriptSpool(ctx, sessionID, replay, knownFailing)
 	if err != nil {
-		slog.Warn(fmt.Sprintf("Failed to drain transcript spool for %s: %v", sessionID, err))
+		pkgLog().Warn(fmt.Sprintf("Failed to drain transcript spool for %s: %v", sessionID, err))
 		return nil
 	}
 	if remaining == 0 {
@@ -635,18 +634,18 @@ func (s *SessionStore) rebuildFTSOnce(ctx context.Context) (bool, error) {
 			return false, err
 		}
 		if len(holders) > 0 {
-			slog.Warn(fmt.Sprintf("Skipping Session DB FTS rebuild while foreign processes hold the database or "+
+			pkgLog().Warn(fmt.Sprintf("Skipping Session DB FTS rebuild while foreign processes hold the database or "+
 				"WAL sidecars (%v); canonical transcript writes remain available.", holders))
 			return false, nil
 		}
 	}
 	rebuilt, err := rebuilder.RebuildFTS(ctx)
 	if err != nil {
-		slog.Warn(fmt.Sprintf("Session DB FTS rebuild failed: %v", err))
+		pkgLog().Warn(fmt.Sprintf("Session DB FTS rebuild failed: %v", err))
 		return false, nil
 	}
 	if rebuilt != 0 {
-		slog.Warn(fmt.Sprintf("Rebuilt %d Session DB FTS index(es) after append corruption", rebuilt))
+		pkgLog().Warn(fmt.Sprintf("Rebuilt %d Session DB FTS index(es) after append corruption", rebuilt))
 	}
 	return rebuilt > 0, nil
 }
@@ -673,7 +672,7 @@ func (s *SessionStore) HasPlatformMessageID(ctx context.Context, sessionID, plat
 		return probe.HasPlatformMessageID(ctx, sessionID, platformMessageID)
 	}()
 	if err != nil {
-		slog.Debug(fmt.Sprintf("has_platform_message_id lookup failed: %v", err))
+		pkgLog().Debug(fmt.Sprintf("has_platform_message_id lookup failed: %v", err))
 		return false
 	}
 	return found
@@ -694,7 +693,7 @@ func (s *SessionStore) TranscriptTailRole(ctx context.Context, sessionID string)
 		return probe.LatestConversationRole(ctx, sessionID)
 	}()
 	if err != nil {
-		slog.Debug(fmt.Sprintf("transcript tail lookup failed for %s: %v", sessionID, err))
+		pkgLog().Debug(fmt.Sprintf("transcript tail lookup failed for %s: %v", sessionID, err))
 		return ""
 	}
 	return role
@@ -718,7 +717,7 @@ func (s *SessionStore) RewriteTranscript(ctx context.Context, sessionID string, 
 			RejectActiveTurnLease: rejectActiveTurnLease})
 	}
 	if err != nil {
-		slog.Debug(fmt.Sprintf("Failed to rewrite transcript in DB: %v", err))
+		pkgLog().Debug(fmt.Sprintf("Failed to rewrite transcript in DB: %v", err))
 		return false
 	}
 	s.clearDirtyTranscript(sessionID)
@@ -753,7 +752,7 @@ func (s *SessionStore) IsPublishedCompressionChild(ctx context.Context, parentSe
 		return watermark > 0, err
 	}()
 	if err != nil {
-		slog.Debug(fmt.Sprintf("published-compression-child probe failed for %s: %v", childSessionID, err))
+		pkgLog().Debug(fmt.Sprintf("published-compression-child probe failed for %s: %v", childSessionID, err))
 		return false
 	}
 	return published
@@ -811,7 +810,7 @@ func (s *SessionStore) HasInputOwner(ctx context.Context, sessionID, owner strin
 			}
 			parent, ok := row.Get("parent_session_id")
 			if !ok {
-				return false, fmt.Errorf("KeyError: 'parent_session_id'")
+				return false, errors.New("a child session row has no parent_session_id")
 			}
 			current, _ = parent.(string)
 		}
@@ -823,26 +822,26 @@ func (s *SessionStore) HasInputOwner(ctx context.Context, sessionID, owner strin
 	return found, nil
 }
 
-// Fields of hermes_state_rewind.py RewindOutcome the gateway reports after an undo
+// Fields of RewindOutcome the gateway reports after an undo
 type rewindOutcome struct {
 	RewoundCount int
 	TurnsUndone  int
 	LiveText     string
 }
 
-// Whether an error is a ValueError hermes lets propagate out of the retry guard
+// Whether an error is a ValueError that propagates out of the retry guard
 func isPyValueError(err error) bool {
 	var typed interface{ PyTypeName() string }
 	return errors.As(err, &typed) && typed.PyTypeName() == "ValueError"
 }
 
-// Store rewind of a user turn, the AttributeError hermes raises for a store without one
+// Store rewind of a user turn, an AttributeError for a store without one
 func rewindUserTurn(ctx context.Context, db SessionStoreDB, sessionID string, userOrdinal int, requireRetryable, requireComposite bool) (*rewindOutcome, error) {
 	rewinder, ok := db.(interface {
 		RewindUserTurn(context.Context, string, int, state.RewindUserTurnOptions) (*state.RewindOutcome, error)
 	})
 	if !ok {
-		return nil, fmt.Errorf("AttributeError: '%T' object has no attribute 'rewind_user_turn'", db)
+		return nil, fmt.Errorf("the session store (%T) cannot rewind a user turn", db)
 	}
 	out, err := rewinder.RewindUserTurn(ctx, sessionID, userOrdinal,
 		state.RewindUserTurnOptions{RequireRetryable: requireRetryable, RequireComposite: requireComposite})
@@ -870,12 +869,12 @@ func (s *SessionStore) RewindSession(ctx context.Context, sessionID string, n in
 	outcome, err := rewindUserTurn(ctx, db, sessionID, -max(n, 1), requireRetryableComposite, requireRetryableComposite)
 	switch {
 	case err != nil && isRewindTargetUnavailable(err):
-		slog.Debug(fmt.Sprintf("rewind_session: %v", err))
+		pkgLog().Debug(fmt.Sprintf("rewind_session: %v", err))
 		return nil, nil
 	case err != nil && isPyValueError(err):
 		return nil, err
 	case err != nil:
-		slog.Debug(fmt.Sprintf("rewind_session: rewind failed: %v", err))
+		pkgLog().Debug(fmt.Sprintf("rewind_session: rewind failed: %v", err))
 		return nil, nil
 	}
 	s.clearDirtyTranscript(sessionID)

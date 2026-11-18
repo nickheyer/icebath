@@ -83,7 +83,7 @@ func RegisterOutboundWebhooksFromConfig(ctx context.Context, cfg any) ([]*Outbou
 		return nil, nil
 	}
 	if config.EnvVarEnabled("ICEBATH_SAFE_MODE") {
-		logOutboundWebhooks.info("ICEBATH_SAFE_MODE=1 — outbound webhook registration skipped")
+		pkgLog().Info("ICEBATH_SAFE_MODE=1 — outbound webhook registration skipped")
 		return nil, nil
 	}
 	targets, err := IterConfiguredOutboundWebhooks(ctx, cfg)
@@ -103,7 +103,7 @@ func RegisterOutboundWebhooksFromConfig(ctx context.Context, cfg any) ([]*Outbou
 				continue
 			}
 			entry := &hookEntry{fn: makeOutboundWebhookCallback(event, target), name: fmt.Sprintf("outbound_webhook[%s:%s]", event, target.Label()),
-				module: "agent.outbound_webhooks"}
+				module: "plugins"}
 			manager.mu.Lock()
 			manager.hooks[event] = append(manager.hooks[event], entry)
 			manager.mu.Unlock()
@@ -113,7 +113,7 @@ func RegisterOutboundWebhooksFromConfig(ctx context.Context, cfg any) ([]*Outbou
 			if target.Matcher != "" {
 				matcher = target.Matcher
 			}
-			logOutboundWebhooks.info(fmt.Sprintf("outbound webhook registered: %s -> %s (matcher=%s, timeout=%ds)", event, target.Label(), matcher, target.Timeout))
+			pkgLog().Info(fmt.Sprintf("outbound webhook registered: %s -> %s (matcher=%s, timeout=%ds)", event, target.Label(), matcher, target.Timeout))
 		}
 		if wiredAny {
 			registered = append(registered, target)
@@ -137,7 +137,7 @@ func IterConfiguredOutboundWebhooks(ctx context.Context, cfg any) ([]*OutboundWe
 	}
 	list, ok := raw.([]any)
 	if !ok {
-		logOutboundWebhooks.warn(fmt.Sprintf("hooks.outbound must be a list of webhook targets; got %s", pyrepr.TypeName(raw)))
+		pkgLog().Warn(fmt.Sprintf("hooks.outbound must be a list of webhook targets; got %s", pyrepr.TypeName(raw)))
 		return nil, nil
 	}
 	var out []*OutboundWebhookTarget
@@ -199,7 +199,7 @@ func outboundTaskDone() {
 // One hooks.outbound[index] entry validated field by field, nil with a warning for a malformed one
 func parseOutboundWebhookTarget(ctx context.Context, index int, raw any) (*OutboundWebhookTarget, error) {
 	warn := func(format string, args ...any) {
-		logOutboundWebhooks.warn(fmt.Sprintf("hooks.outbound[%d]"+format, append([]any{index}, args...)...))
+		pkgLog().Warn(fmt.Sprintf("hooks.outbound[%d]"+format, append([]any{index}, args...)...))
 	}
 	entry, ok := raw.(map[string]any)
 	if !ok {
@@ -350,7 +350,7 @@ func makeOutboundWebhookCallback(event string, target *OutboundWebhookTarget) Ho
 			return serializeOutboundWebhookPayload(ctx, event, kwargs, deliveryID)
 		}()
 		if err != nil {
-			logOutboundWebhooks.warn(fmt.Sprintf("outbound webhook payload serialization failed (event=%s target=%s)", event, target.Label()), "error", err)
+			pkgLog().Warn(fmt.Sprintf("outbound webhook payload serialization failed (event=%s target=%s)", event, target.Label()), "error", err)
 			return nil, nil
 		}
 		enqueueOutboundWebhook(buildOutboundDelivery(event, target, body, deliveryID))
@@ -381,13 +381,11 @@ type outboundDelivery struct {
 
 func buildOutboundDelivery(event string, target *OutboundWebhookTarget, body []byte, deliveryID string) *outboundDelivery {
 	headers := map[string]string{"Content-Type": "application/json", "User-Agent": "Icebath-Agent-Outbound-Webhook",
-		"X-Hermes-Event": event, "X-Hermes-Delivery": deliveryID,
 		"X-Icebath-Event": event, "X-Icebath-Delivery": deliveryID}
 	if target.Secret != "" {
 		mac := hmac.New(sha256.New, []byte(target.Secret))
 		mac.Write(body)
-		headers["X-Hermes-Signature-256"] = "sha256=" + hex.EncodeToString(mac.Sum(nil))
-		headers["X-Icebath-Signature-256"] = headers["X-Hermes-Signature-256"]
+		headers["X-Icebath-Signature-256"] = "sha256=" + hex.EncodeToString(mac.Sum(nil))
 	}
 	return &outboundDelivery{URL: target.URL, Label: target.Label(), Event: event, Body: body, Headers: headers, Timeout: target.Timeout}
 }
@@ -408,7 +406,7 @@ func enqueueOutboundWebhook(delivery *outboundDelivery) {
 	case outboundQueue <- delivery:
 	default:
 		outboundTaskDone()
-		logOutboundWebhooks.warn(fmt.Sprintf("outbound webhook queue full (%d pending) — dropping %s event for %s", OutboundWebhookQueueMaxSize, delivery.Event, delivery.Label))
+		pkgLog().Warn(fmt.Sprintf("outbound webhook queue full (%d pending) — dropping %s event for %s", OutboundWebhookQueueMaxSize, delivery.Event, delivery.Label))
 	}
 }
 
@@ -418,7 +416,7 @@ func outboundWorkerLoop() {
 			defer outboundTaskDone()
 			defer func() {
 				if r := recover(); r != nil {
-					logOutboundWebhooks.warn(fmt.Sprintf("outbound webhook delivery crashed (target=%s)", delivery.Label), "error", r)
+					pkgLog().Warn(fmt.Sprintf("outbound webhook delivery crashed (target=%s)", delivery.Label), "error", r)
 				}
 			}()
 			deliverOutboundWebhook(delivery)
@@ -442,19 +440,19 @@ func deliverOutboundWebhook(delivery *outboundDelivery) {
 				lastError = fmt.Sprintf("%T", err)
 			}
 		case status >= 200 && status < 300:
-			logOutboundWebhooks.debug(fmt.Sprintf("outbound webhook delivered: %s -> %s (HTTP %d)", delivery.Event, delivery.Label, status))
+			pkgLog().Debug(fmt.Sprintf("outbound webhook delivered: %s -> %s (HTTP %d)", delivery.Event, delivery.Label, status))
 			return
 		case status >= 300 && status < 400:
 			lastError = fmt.Sprintf("HTTP %d", status)
 			if location == "" {
 				location = "?"
 			}
-			logOutboundWebhooks.warn(fmt.Sprintf("outbound webhook target redirected (event=%s target=%s): %s -> %s — redirects are not followed; update the configured url",
+			pkgLog().Warn(fmt.Sprintf("outbound webhook target redirected (event=%s target=%s): %s -> %s — redirects are not followed; update the configured url",
 				delivery.Event, delivery.Label, lastError, location))
 			return
 		case status >= 400 && status < 500:
 			lastError = fmt.Sprintf("HTTP %d", status)
-			logOutboundWebhooks.warn(fmt.Sprintf("outbound webhook rejected (event=%s target=%s): %s — not retrying", delivery.Event, delivery.Label, lastError))
+			pkgLog().Warn(fmt.Sprintf("outbound webhook rejected (event=%s target=%s): %s — not retrying", delivery.Event, delivery.Label, lastError))
 			return
 		default:
 			lastError = fmt.Sprintf("HTTP %d", status)
@@ -463,7 +461,7 @@ func deliverOutboundWebhook(delivery *outboundDelivery) {
 			outboundSleep(outboundWebhookRetryBackoff * time.Duration(attempt))
 		}
 	}
-	logOutboundWebhooks.warn(fmt.Sprintf("outbound webhook delivery failed after %d attempt(s) (event=%s target=%s): %s",
+	pkgLog().Warn(fmt.Sprintf("outbound webhook delivery failed after %d attempt(s) (event=%s target=%s): %s",
 		OutboundWebhookMaxDeliveryAttempts, delivery.Event, delivery.Label, lastError))
 }
 

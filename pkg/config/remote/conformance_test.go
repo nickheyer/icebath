@@ -101,10 +101,10 @@ func TestDisplayURLDropsUserInfo(t *testing.T) {
 }
 
 func TestBearerRefusedBeforeSendForForbiddenPlaneURL(t *testing.T) {
-	for _, url := range []string{"http://foreign.example:8443/plane", "http://config-config.nousresearch.com", "ftp://plane.example",
+	for _, url := range []string{"", "http://foreign.example:8443/plane", "http://config-config.example.com", "ftp://plane.example",
 		"https://user:pw@plane.example", "https://plane.example/?next=https://evil.example", "https://"} {
 		t.Setenv(URLEnv, url)
-		_, err := Request(context.Background(), "GET", t.TempDir(), "default", "", nil, "never-sent")
+		_, err := Request(context.Background(), "GET", "default", "", nil, "never-sent")
 		var derr *CredentialDestinationError
 		if !errors.As(err, &derr) || derr.Retryable || strings.Contains(err.Error(), "user:pw") {
 			t.Fatalf("%s: %v", url, err)
@@ -114,7 +114,6 @@ func TestBearerRefusedBeforeSendForForbiddenPlaneURL(t *testing.T) {
 
 func TestBearerSentToAllowedPlaneOrigin(t *testing.T) {
 	for url, expect := range map[string]string{
-		"": "https://config-config.nousresearch.com/v1/config/self?profile=default",
 		"https://config.corp.internal:9443/plane/": "https://config.corp.internal:9443/plane/v1/config/self?profile=default",
 		"http://localhost:8080":                    "http://localhost:8080/v1/config/self?profile=default",
 		"http://127.0.0.1:9":                       "http://127.0.0.1:9/v1/config/self?profile=default",
@@ -134,7 +133,7 @@ func TestIDPSecretRefusedBeforeSendForForbiddenTokenURL(t *testing.T) {
 	t.Setenv(idpEnvPrefix+"CLIENT_SECRET", configplane.ClientSecret)
 	for _, url := range []string{"http://foreign.example:8443/token", "http://idp.corp.internal/token", "https://user:pw@idp.example/token", "https://idp.example/token#frag"} {
 		t.Setenv(idpEnvPrefix+"TOKEN_URL", url)
-		_, err := PlaneToken(context.Background(), t.TempDir())
+		_, err := PlaneToken(context.Background())
 		var derr *CredentialDestinationError
 		if !errors.As(err, &derr) {
 			t.Fatalf("%s: %v", url, err)
@@ -150,7 +149,7 @@ func TestRedirectIsNotFollowedWithTheCredential(t *testing.T) {
 			http.Redirect(w, r, strings.Replace(target.URL, "http://", "http://u:p@", 1)+"/x", code)
 		}))
 		t.Setenv(URLEnv, redirect.URL)
-		_, err := Request(context.Background(), "GET", t.TempDir(), "default", "", nil, "secret-bearer")
+		_, err := Request(context.Background(), "GET", "default", "", nil, "secret-bearer")
 		var derr *CredentialDestinationError
 		if !errors.As(err, &derr) || followed || strings.Contains(err.Error(), "u:p") {
 			t.Fatalf("%d: %v followed %v", code, err, followed)

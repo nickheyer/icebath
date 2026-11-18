@@ -33,7 +33,7 @@ func (r *GatewayRunner) goalMaxTurnsFromConfig(ctx context.Context) int64 {
 // Warms the goals session database cache off the loop, a failed warm up logged and never raised
 func (r *GatewayRunner) warmGoalsSessionDB(ctx context.Context, label string) {
 	if _, err := r.runInExecutorWithContext(ctx, func(c context.Context) (any, error) { return goals.SessionDB(c), nil }); err != nil {
-		runLog().Warn(fmt.Sprintf("%s: session DB warm-up failed: %s", label, err))
+		pkgLog().Warn(fmt.Sprintf("%s: session DB warm-up failed: %s", label, err))
 	}
 }
 
@@ -42,7 +42,7 @@ func (r *GatewayRunner) sessionEntryForManager(ctx context.Context, event *gatew
 	r.warmGoalsSessionDB(ctx, label)
 	entry, err := r.sessionStore.GetOrCreateSession(ctx, event.Source, false, !event.Internal)
 	if err != nil {
-		runLog().Debug(fmt.Sprintf("%s: session lookup failed: %s", label, err))
+		pkgLog().Debug(fmt.Sprintf("%s: session lookup failed: %s", label, err))
 		return nil
 	}
 	if entry == nil || entry.SessionID == "" {
@@ -87,7 +87,7 @@ func (r *GatewayRunner) goalNoticeAdapter(ctx context.Context, source *gateway.S
 		return nil, err
 	}
 	if adapter == nil {
-		runLog().Debug(fmt.Sprintf("goal continuation: no adapter for %s", source.Platform))
+		pkgLog().Debug(fmt.Sprintf("goal continuation: no adapter for %s", source.Platform))
 	}
 	return adapter, nil
 }
@@ -119,7 +119,7 @@ func (r *GatewayRunner) sendGoalStatusNotice(ctx context.Context, source *gatewa
 		if pyrepr.Truthy(result.Error) {
 			reason = pyrepr.Str(result.Error)
 		}
-		runLog().Warn(fmt.Sprintf("goal continuation: status send failed: %s", reason))
+		pkgLog().Warn(fmt.Sprintf("goal continuation: status send failed: %s", reason))
 	}
 	return nil
 }
@@ -132,7 +132,7 @@ func (r *GatewayRunner) deferGoalStatusNoticeAfterDelivery(ctx context.Context, 
 	}
 	deliver := func(ctx context.Context) error {
 		if err := r.sendGoalStatusNotice(ctx, source, message); err != nil {
-			runLog().Warn(fmt.Sprintf("goal continuation: status send failed: %s", err))
+			pkgLog().Warn(fmt.Sprintf("goal continuation: status send failed: %s", err))
 		}
 		return nil
 	}
@@ -195,18 +195,18 @@ func (r *GatewayRunner) postTurnGoalContinuation(ctx context.Context, entry *gat
 			_, err = gateway.AdmitRouteWake(ctx, r, adapter, source, prompt, "goal-continuation")
 		}
 		if err != nil {
-			runLog().Debug("goal continuation: local admission failed", "error", err)
+			pkgLog().Debug("goal continuation: local admission failed", "error", err)
 		}
 		return nil
 	}
 	adapter, err := r.deliveryAdapterFor(ctx, source)
 	if err != nil {
-		runLog().Debug(fmt.Sprintf("goal continuation: enqueue failed: %s", err))
+		pkgLog().Debug(fmt.Sprintf("goal continuation: enqueue failed: %s", err))
 		return nil
 	}
 	quickKey, err := r.sessionKeyForSource(ctx, source)
 	if err != nil {
-		runLog().Debug(fmt.Sprintf("goal continuation: enqueue failed: %s", err))
+		pkgLog().Debug(fmt.Sprintf("goal continuation: enqueue failed: %s", err))
 		return nil
 	}
 	if adapter != nil && quickKey != "" {
@@ -227,7 +227,7 @@ func (r *GatewayRunner) runPostTurnHooks(ctx context.Context, agentResult any, s
 	finalText := finalTextForPostTurnHooks(agentResult, event)
 	entry, err := r.sessionStore.GetOrCreateSession(ctx, source, false, !isInternal)
 	if err != nil {
-		runLog().Debug(fmt.Sprintf("post-turn session resolution failed: %s", err))
+		pkgLog().Debug(fmt.Sprintf("post-turn session resolution failed: %s", err))
 		return nil
 	}
 	failed := turnFailed(ctx)
@@ -245,7 +245,7 @@ func (r *GatewayRunner) runPostTurnHooks(ctx context.Context, agentResult any, s
 	}
 	for _, hook := range hooks {
 		if err := hook.run(ctx, entry, source, finalResponse); err != nil {
-			runLog().Debug(fmt.Sprintf("%s hook failed: %s", hook.label, err))
+			pkgLog().Debug(fmt.Sprintf("%s hook failed: %s", hook.label, err))
 		}
 	}
 	return r.publishLocalControl(ctx, source, true)
@@ -363,7 +363,7 @@ func (r *GatewayRunner) loopWakeupFireOne(ctx context.Context, sid string, state
 	if adapter == nil {
 		if !warnedNoRoute[sid] {
 			warnedNoRoute[sid] = true
-			runLog().Debug(fmt.Sprintf("loop wakeup: no adapter for platform %s (session %s, profile %s)", pyrepr.Repr(platformName), sid, derefOrNoneText(profile)))
+			pkgLog().Debug(fmt.Sprintf("loop wakeup: no adapter for platform %s (session %s, profile %s)", pyrepr.Repr(platformName), sid, derefOrNoneText(profile)))
 		}
 		return nil
 	}
@@ -394,7 +394,7 @@ func (r *GatewayRunner) loopWakeupFireOne(ctx context.Context, sid string, state
 	if !mgr.IsDueAt(now) {
 		return nil
 	}
-	if tools.CheckPaused(ctx, "loop", runLog()) {
+	if tools.CheckPaused(ctx, "loop", pkgLog()) {
 		return nil
 	}
 	out, err := r.runInExecutorWithContext(ctx, func(c context.Context) (any, error) {
@@ -412,7 +412,7 @@ func (r *GatewayRunner) loopWakeupFireOne(ctx context.Context, sid string, state
 		return nil
 	}
 	if err := r.loopWakeupInject(ctx, mgr, adapter, source, wakeup, platformName); err != nil {
-		runLog().Warn(fmt.Sprintf("loop wakeup injection failed for %s: %s", sid, err))
+		pkgLog().Warn(fmt.Sprintf("loop wakeup injection failed for %s: %s", sid, err))
 		mgr.AbandonTick(ctx)
 	}
 	return r.publishLocalControl(ctx, source, false)
@@ -424,7 +424,7 @@ func (r *GatewayRunner) loopWakeupInject(ctx context.Context, mgr *agent.LoopMan
 	if state := mgr.State(); state != nil {
 		ticks = fmt.Sprint(state.TicksFired)
 	}
-	runLog().Info(fmt.Sprintf("loop wakeup #%s — injecting for %s chat=%s thread=%s", ticks, platformName, source.ChatID, derefOrNoneText(source.ThreadID)))
+	pkgLog().Info(fmt.Sprintf("loop wakeup #%s — injecting for %s chat=%s thread=%s", ticks, platformName, source.ChatID, derefOrNoneText(source.ThreadID)))
 	slash := strings.HasPrefix(pystr.Lstrip(wakeup), "/")
 	admitted := false
 	if !slash {
@@ -495,7 +495,7 @@ func (r *GatewayRunner) loopWakeupWatcher(ctx context.Context, interval float64)
 			if ctx.Err() != nil {
 				return ctx.Err()
 			}
-			runLog().Debug(fmt.Sprintf("loop wakeup watcher error: %s", err))
+			pkgLog().Debug(fmt.Sprintf("loop wakeup watcher error: %s", err))
 		}
 		if err := sleepCtx(ctx, interval); err != nil {
 			return err

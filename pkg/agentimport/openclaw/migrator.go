@@ -1088,8 +1088,8 @@ func (m *Migrator) migrateModelConfig(cfg *pyjson.Object) {
 			}
 		}
 	}
-	hermesCfg := loadYAML(destination)
-	currentModel := dget(hermesCfg, "model", nil)
+	icebathCfg := loadYAML(destination)
+	currentModel := dget(icebathCfg, "model", nil)
 	if pyrepr.Equal(currentModel, modelStr) {
 		m.record("model-config", sourcePath, destination, StatusSkipped, "Model already set to the same value")
 		return
@@ -1103,14 +1103,14 @@ func (m *Migrator) migrateModelConfig(cfg *pyjson.Object) {
 		return
 	}
 	backupPath := m.maybeBackup(destination)
-	if existing := dget(hermesCfg, "model", nil); isDict(existing) {
+	if existing := dget(icebathCfg, "model", nil); isDict(existing) {
 		dset(existing, "default", modelStr)
 	} else {
 		fresh := newYAMLMap()
 		dset(fresh, "default", modelStr)
-		dset(hermesCfg, "model", fresh)
+		dset(icebathCfg, "model", fresh)
 	}
-	dumpYAML(destination, hermesCfg)
+	dumpYAML(destination, icebathCfg)
 	m.record("model-config", sourcePath, destination, StatusMigrated, "", "backup", backupPath, "model", modelStr)
 }
 
@@ -1197,8 +1197,8 @@ func (m *Migrator) migrateTTSConfig(cfg *pyjson.Object) {
 		return
 	}
 	settingKeys := stringsToAny(mappingKeysOf(ttsData))
-	hermesCfg := loadYAML(destination)
-	existing := dget(hermesCfg, "tts", newYAMLMap())
+	icebathCfg := loadYAML(destination)
+	existing := dget(icebathCfg, "tts", newYAMLMap())
 	if !isDict(existing) {
 		existing = newYAMLMap()
 	}
@@ -1219,8 +1219,8 @@ func (m *Migrator) migrateTTSConfig(cfg *pyjson.Object) {
 			dset(merged, e.Key, e.Val)
 		}
 	}
-	dset(hermesCfg, "tts", merged)
-	dumpYAML(destination, hermesCfg)
+	dset(icebathCfg, "tts", merged)
+	dumpYAML(destination, icebathCfg)
 	m.record("tts-config", sourcePath, destination, StatusMigrated, "", "backup", backupPath, "settings", settingKeys)
 }
 

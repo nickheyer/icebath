@@ -6,7 +6,6 @@ func init() {
 	registerMemoryStore()
 	registerMemoryTool()
 	registerWriteApprovalGate()
-	registerMemoryManager()
 	registerMemoryContextFencing()
 	registerMemoryCallerScope()
 	registerMemoryProviderRegistry()

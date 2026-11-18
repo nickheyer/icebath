@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"log/slog"
 	"math"
 	"os"
 	"reflect"
@@ -22,15 +21,12 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
-	"github.com/nickheyer/icebath/pkg/kanban"
 	"github.com/nickheyer/icebath/pkg/memory"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/skills"
 	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
-
-func titleLog() *slog.Logger { return slog.Default().With("logger", "agent.title_generator") }
 
 const (
 	maxTitleInputChars       = 1000
@@ -174,7 +170,7 @@ func titleLanguage(ctx context.Context) string {
 func autoTitleEnabled(ctx context.Context) bool {
 	cfg, err := titleConfigFn(ctx)
 	if err != nil {
-		titleLog().Debug("Failed to read title_generation.enabled", "error", err)
+		pkgLog().Debug("Failed to read title_generation.enabled", "error", err)
 		return true
 	}
 	return isTruthyValue(cfg["enabled"], true)
@@ -184,7 +180,7 @@ func autoTitleEnabled(ctx context.Context) bool {
 func modelTitleUpgradeEnabled(ctx context.Context) bool {
 	cfg, err := titleConfigFn(ctx)
 	if err != nil {
-		titleLog().Debug("Failed to read title_generation.model_upgrade_enabled", "error", err)
+		pkgLog().Debug("Failed to read title_generation.model_upgrade_enabled", "error", err)
 		return true
 	}
 	return isTruthyValue(cfg["model_upgrade_enabled"], true)
@@ -518,7 +514,7 @@ func cleanTitle(text string) string {
 func titleSafeCallback(callback any, args []any, logFmt, label string) {
 	defer func() {
 		if r := recover(); r != nil {
-			titleLog().Debug(fmt.Sprintf(logFmt, label), "error", fmt.Sprint(r))
+			pkgLog().Debug(fmt.Sprintf(logFmt, label), "error", fmt.Sprint(r))
 		}
 	}()
 	if callback == nil {
@@ -595,14 +591,14 @@ type generateTitleOptions struct {
 func titleRuntimeAllows(validator func() bool) (allowed bool) {
 	defer func() {
 		if r := recover(); r != nil {
-			titleLog().Debug("Title runtime validator raised; proceeding", "error", fmt.Sprint(r))
+			pkgLog().Debug("Title runtime validator raised; proceeding", "error", fmt.Sprint(r))
 			allowed = true
 		}
 	}()
 	if validator() {
 		return true
 	}
-	titleLog().Debug("Title generation skipped: runtime validator returned False")
+	pkgLog().Debug("Title generation skipped: runtime validator returned False")
 	return false
 }
 
@@ -643,11 +639,11 @@ func requestTitle(ctx context.Context, prompt, snippet string, o generateTitleOp
 	}
 	title := cleanTitle(text)
 	if words := len(pystr.SplitWhitespace(title, -1)); title != "" && words > maxTitleWords {
-		titleLog().Debug(fmt.Sprintf("Rejecting answer-shaped title output (%d words > %d)", words, maxTitleWords))
+		pkgLog().Debug(fmt.Sprintf("Rejecting answer-shaped title output (%d words > %d)", words, maxTitleWords))
 		return "", nil
 	}
 	if title != "" && isPromptExampleEcho(title) {
-		titleLog().Debug("Rejecting prompt-example echo title: " + pyrepr.StrRepr(title))
+		pkgLog().Debug("Rejecting prompt-example echo title: " + pyrepr.StrRepr(title))
 		return "", nil
 	}
 	return title, nil
@@ -656,7 +652,7 @@ func requestTitle(ctx context.Context, prompt, snippet string, o generateTitleOp
 // Model title from the opening message alone, empty when disabled, skipped, rejected or failed
 func generateTitle(ctx context.Context, userMessage string, o generateTitleOptions) string {
 	if !autoTitleEnabled(ctx) {
-		titleLog().Debug("Auto-title skipped: auxiliary.title_generation.enabled=false")
+		pkgLog().Debug("Auto-title skipped: auxiliary.title_generation.enabled=false")
 		return ""
 	}
 	if o.RuntimeValidator != nil && !titleRuntimeAllows(o.RuntimeValidator) {
@@ -679,8 +675,8 @@ func generateTitle(ctx context.Context, userMessage string, o generateTitleOptio
 		return err
 	})
 	if err != nil {
-		titleLog().Warn("Title generation failed: " + err.Error())
-		titleLog().Debug("Title generation traceback", "error", err)
+		pkgLog().Warn("Title generation failed: " + err.Error())
+		pkgLog().Debug("Title generation traceback", "error", err)
 		reportFailure(o.FailureCallback, err, "Title generation")
 		return ""
 	}
@@ -776,7 +772,7 @@ func persistSessionTitle(ctx context.Context, db any, sessionID, title, source s
 			if done {
 				return candidate, nil
 			}
-			titleLog().Debug(fmt.Sprintf("Skipping %s title: a higher-authority title already holds session %s", source, sessionID))
+			pkgLog().Debug(fmt.Sprintf("Skipping %s title: a higher-authority title already holds session %s", source, sessionID))
 			return "", nil
 		}
 		if w, ok := db.(legacyAutoTitleWriter); ok {
@@ -834,7 +830,7 @@ func applySubagentTitle(ctx context.Context, db any, sessionID, goal string) str
 		return err
 	})
 	if err != nil {
-		titleLog().Debug(fmt.Sprintf("Subagent title failed for %s", sessionID), "error", err)
+		pkgLog().Debug(fmt.Sprintf("Subagent title failed for %s", sessionID), "error", err)
 		return ""
 	}
 	return persisted
@@ -864,7 +860,7 @@ func applyInstantTitle(ctx context.Context, db any, sessionID, userMessage strin
 		return nil
 	})
 	if err != nil {
-		titleLog().Debug("Instant title failed", "error", err)
+		pkgLog().Debug("Instant title failed", "error", err)
 		return ""
 	}
 	return persisted
@@ -895,7 +891,7 @@ func autoTitleSession(ctx context.Context, db any, sessionID, userMessage string
 				return err
 			})
 		}
-		ctx = provider.WithPortalConversationContext(ctx, conversationID)
+		ctx = provider.WithConversationContext(ctx, conversationID)
 		ctx = provider.SetAccountingContext(ctx, titleUsageRecorder(db), sessionID)
 		title, source := generateTitleFn(ctx, userMessage, generateTitleOptions{FailureCallback: o.FailureCallback, MainRuntime: o.MainRuntime,
 			RuntimeValidator: o.RuntimeValidator, TitlePreview: o.TitlePreview}), state.TitleSourceLLM
@@ -910,18 +906,18 @@ func autoTitleSession(ctx context.Context, db any, sessionID, userMessage string
 		}
 		persisted, err := persistSessionTitle(ctx, db, sessionID, title, source, true)
 		if err != nil {
-			titleLog().Debug("Failed to set auto-generated title: " + err.Error())
+			pkgLog().Debug("Failed to set auto-generated title: " + err.Error())
 			return nil
 		}
 		if persisted != "" {
-			titleLog().Debug("Auto-generated session title: " + persisted)
+			pkgLog().Debug("Auto-generated session title: " + persisted)
 			notifyTitle(o.TitleCallback, persisted, source, "Auto-title")
 		}
 		return nil
 	})
 	if err != nil {
-		titleLog().Warn("Auto-title failed (harmless; if this started after an update, restart the running icebath process): " + err.Error())
-		titleLog().Debug("Auto-title traceback", "error", err)
+		pkgLog().Warn("Auto-title failed (harmless; if this started after an update, restart the running icebath process): " + err.Error())
+		pkgLog().Debug("Auto-title traceback", "error", err)
 		reportFailure(o.FailureCallback, err, "Auto-title")
 	}
 }
@@ -950,41 +946,21 @@ func sessionIsUntitled(ctx context.Context, db any, sessionID string) bool {
 		return err
 	})
 	if err != nil {
-		titleLog().Debug(fmt.Sprintf("Untitled check failed for %s", sessionID), "error", err)
+		pkgLog().Debug(fmt.Sprintf("Untitled check failed for %s", sessionID), "error", err)
 		return false
 	}
 	return pystr.Strip(title) == ""
 }
 
-// Kanban worker card title or Kanban task id when the board cannot be read, empty outside a dispatched worker
-func kanbanTaskTitle(ctx context.Context, env *tools.Env) string {
-	taskID := pystr.Strip(os.Getenv("ICEBATH_KANBAN_TASK"))
-	if taskID == "" || !tools.IsDispatcherOwnedWorkerContext(env) {
+// Kanban worker card title, empty outside a dispatched worker, installed by the extras tier that carries kanban
+var kanbanTaskTitle func(ctx context.Context, env *tools.Env) string
+
+// Card title of a dispatched kanban worker, empty in a build without kanban
+func kanbanCardTitle(ctx context.Context, env *tools.Env) string {
+	if kanbanTaskTitle == nil {
 		return ""
 	}
-	title := ""
-	err := titleTry(func() error {
-		return kanban.ConnectClosing(ctx, "", nil, func(conn state.SQLiteConn) error {
-			task, err := kanban.GetTask(ctx, conn, taskID)
-			if err != nil {
-				return err
-			}
-			if task != nil {
-				title = strings.Join(pystr.SplitWhitespace(task.Title, -1), " ")
-			}
-			return nil
-		})
-	})
-	if err != nil {
-		titleLog().Debug(fmt.Sprintf("Kanban task %s unreadable; naming the session after its id", taskID), "error", err)
-		title = ""
-	} else if limit := state.MaxTitleLength - 4; pystr.Len(title) > limit {
-		title = pystr.Rstrip(pystr.Slice(title, 0, limit-1)) + "…"
-	}
-	if title == "" {
-		return "Kanban task " + taskID
-	}
-	return title
+	return kanbanTaskTitle(ctx, env)
 }
 
 type autoTitleOptions struct {
@@ -1012,7 +988,7 @@ func maybeAutoTitle(ctx context.Context, db any, sessionID, userMessage string, 
 	if userTurns > 1 && (hasUpgradedTitle(ctx, db, sessionID) || (userTurns > 3 && !sessionIsUntitled(ctx, db, sessionID))) {
 		return nil, false
 	}
-	if cardTitle := kanbanTaskTitle(ctx, o.Env); cardTitle != "" {
+	if cardTitle := kanbanCardTitle(ctx, o.Env); cardTitle != "" {
 		_ = titleTry(func() error {
 			persisted, err := persistSessionTitle(ctx, db, sessionID, cardTitle, state.TitleSourceLLM, true)
 			if err == nil && persisted != "" {
@@ -1026,12 +1002,12 @@ func maybeAutoTitle(ctx context.Context, db any, sessionID, userMessage string, 
 		return nil, false
 	}
 	if !autoTitleEnabled(ctx) {
-		titleLog().Debug("Auto-title skipped: auxiliary.title_generation.enabled=false")
+		pkgLog().Debug("Auto-title skipped: auxiliary.title_generation.enabled=false")
 		return nil, false
 	}
 	applyInstantTitle(ctx, db, sessionID, userMessage, o.TitleCallback, o.TitlePreview)
 	if !modelTitleUpgradeEnabled(ctx) {
-		titleLog().Debug("Instant title persisted; model upgrade disabled by auxiliary.title_generation.model_upgrade_enabled=false")
+		pkgLog().Debug("Instant title persisted; model upgrade disabled by auxiliary.title_generation.model_upgrade_enabled=false")
 		return nil, false
 	}
 	upgradeOpts := autoTitleSessionOptions{FailureCallback: o.FailureCallback, MainRuntime: o.MainRuntime, TitleCallback: o.TitleCallback,
@@ -1044,7 +1020,7 @@ func maybeAutoTitle(ctx context.Context, db any, sessionID, userMessage string, 
 		target(ctx, db, sessionID, userMessage, upgradeOpts)
 	})
 	if titleUpgradeMustWaitForTurn(ctx, o.MainRuntime) {
-		titleLog().Debug("Auto-title upgrade deferred past the turn: shares the self-hosted endpoint with the main request")
+		pkgLog().Debug("Auto-title upgrade deferred past the turn: shares the self-hosted endpoint with the main request")
 		return upgrade, false
 	}
 	startTitleUpgrade(upgrade)

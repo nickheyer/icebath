@@ -2,7 +2,6 @@ package state
 
 import (
 	"context"
-	"log/slog"
 	"strings"
 	"sync"
 
@@ -128,6 +127,6 @@ func closeConnectionQuietly(conn SQLiteConn) {
 		return
 	}
 	if err := conn.Close(); err != nil {
-		slog.Debug("Could not close a SessionDB connection", "error", err)
+		pkgLog().Debug("Could not close a SessionDB connection", "error", err)
 	}
 }

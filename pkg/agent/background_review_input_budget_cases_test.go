@@ -148,7 +148,7 @@ func TestReviewInputTokenBudgetResolution(t *testing.T) {
 	}
 }
 
-// Context engine answering only its window, the hermes fork(window) namespace
+// Context engine answering only its window, the fork(window) namespace
 type brWindowEngine struct {
 	ContextEngine
 	window int

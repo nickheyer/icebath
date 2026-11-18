@@ -408,7 +408,7 @@ func TestEnabledConfigFailureLogsWarning(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Setenv("ICEBATH_HOME", blocker)
-	records := captureLogger(t, "agent.background_review", slog.LevelWarn)
+	records := captureLogger(t, "agent", slog.LevelWarn)
 	if enabled, _ := loadBackgroundReviewSettings(context.Background()); !enabled {
 		t.Fatal("a config read failure disabled automatic review")
 	}

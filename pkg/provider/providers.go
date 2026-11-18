@@ -12,7 +12,6 @@ import (
 var icebathOverlays = map[string]IcebathOverlay{
 	"moa":        {AuthType: "virtual", BaseURLOverride: "moa://local"},
 	"openrouter": {IsAggregator: true, BaseURLEnvVar: "OPENROUTER_BASE_URL"},
-	"nous":       {AuthType: "oauth_device_code", BaseURLOverride: "https://inference-api.nousresearch.com/v1"},
 	"openai-codex": {Transport: "codex_responses", AuthType: "oauth_external",
 		BaseURLOverride: "https://chatgpt.com/backend-api/codex"},
 	"openai-api": {Transport: "codex_responses", BaseURLOverride: "https://api.openai.com/v1",
@@ -116,7 +115,7 @@ var providerDefCanonicals = func() map[string]bool {
 
 // Display labels for providers the models.dev catalog does not name
 var providerLabelOverrides = map[string]string{
-	"moa": "Mixture of Agents", "nous": "Nous Portal", "openai-codex": "ChatGPT or Codex Subscription",
+	"moa": "Mixture of Agents", "openai-codex": "ChatGPT or Codex Subscription",
 	"stepfun": "StepFun Step Plan", "xiaomi": "Xiaomi MiMo", "gmi": "GMI Cloud",
 	"upstage": "Upstage Solar", "actual": "Actual Computer", "tencent-tokenhub": "Tencent TokenHub",
 	"nebius-token-factory": "Nebius Token Factory", "tencent-tokenplan": "Tencent TokenPlan", "lmstudio": "LM Studio",
@@ -421,21 +420,17 @@ func isRoutingAggregatorCtx(ctx context.Context, providerName string) bool {
 	return isAggregatorCtx(ctx, norm)
 }
 
-// DetermineMode picks the wire from the host mandate, the Nous dual wire, then the provider transport
-func DetermineMode(providerName, baseURL, model, nousWire string) APIMode {
-	return determineModeCtx(context.Background(), providerName, baseURL, model, nousWire)
+// DetermineMode picks the wire from the host mandate, then the provider transport
+func DetermineMode(providerName, baseURL, model string) APIMode {
+	return determineModeCtx(context.Background(), providerName, baseURL, model)
 }
 
-func determineModeCtx(ctx context.Context, providerName, baseURL, model, nousWire string) APIMode {
+func determineModeCtx(ctx context.Context, providerName, baseURL, model string) APIMode {
 	if isActualRouteCtx(ctx, providerName, baseURL) {
 		return ModeChatCompletions
 	}
 	if mandated := HostMandatedMode(baseURL); mandated != "" {
 		return mandated
-	}
-	switch strings.ToLower(strings.TrimSpace(providerName)) {
-	case "nous", "nous-portal", "nousresearch":
-		return NousMode(model, nousWire)
 	}
 	if pdef := GetProviderDef(ctx, providerName, true); pdef != nil {
 		if m, ok := transportToAPIMode[pdef.Transport]; ok {
@@ -453,8 +448,8 @@ func determineModeCtx(ctx context.Context, providerName, baseURL, model, nousWir
 }
 
 // DetermineModeCtx is DetermineMode resolving the route and the provider table under ctx
-func DetermineModeCtx(ctx context.Context, providerName, baseURL, model, nousWire string) APIMode {
-	return determineModeCtx(ctx, providerName, baseURL, model, nousWire)
+func DetermineModeCtx(ctx context.Context, providerName, baseURL, model string) APIMode {
+	return determineModeCtx(ctx, providerName, baseURL, model)
 }
 
 // Distinct registry row for an exact id whose alias collapse would merge several registry providers

@@ -2,25 +2,22 @@ package tui
 
 import (
 	"bytes"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"math"
 	"os/exec"
-	"regexp"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
 	"github.com/charmbracelet/x/ansi"
-	"github.com/spf13/cobra"
 
-	"github.com/nickheyer/icebath/pkg/commands"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
-	"github.com/nickheyer/icebath/pkg/memory"
+	"github.com/nickheyer/icebath/pkg/ui/cards"
 	"github.com/nickheyer/icebath/pkg/ui/keys"
 	"github.com/nickheyer/icebath/pkg/ui/wm"
 )
@@ -248,7 +245,7 @@ func journeyBuckets(v any) []journeyBucket {
 		if m[key] == nil {
 			return ""
 		}
-		return pyrepr.Str(m[key])
+		return jsValueString(m[key])
 	}
 	number := func(m map[string]any, key string) int {
 		switch n := m[key].(type) {
@@ -336,7 +333,7 @@ func (c *journeyCard) chart(chartCap int) ([]string, map[string]any) {
 			if len(run) < 2 {
 				continue
 			}
-			text, style := pyrepr.Str(run[0]), pyrepr.Str(run[1])
+			text, style := jsValueString(run[0]), jsValueString(run[1])
 			alpha := 1.0
 			if len(run) > 2 {
 				if f, ok := run[2].(float64); ok {
@@ -344,8 +341,8 @@ func (c *journeyCard) chart(chartCap int) ([]string, map[string]any) {
 				}
 			}
 			hex := c.styleInk(p, style, alpha)
-			if len(run) > 3 && pyrepr.Truthy(run[3]) {
-				hex = p.fadeHex(pyrepr.Str(run[3]), alpha)
+			if len(run) > 3 && truthyJS(run[3]) {
+				hex = p.fadeHex(jsValueString(run[3]), alpha)
 			}
 			plain.WriteString(text)
 			b.WriteString(c.ink(text, hex, false))
@@ -373,10 +370,10 @@ func (c *journeyCard) header(chartCap int) []string {
 		}
 		style := "dim"
 		if item["style"] != nil {
-			style = pyrepr.Str(item["style"])
+			style = jsValueString(item["style"])
 		}
-		b.WriteString(c.ink(pyrepr.Str(item["glyph"])+" ", c.styleInk(p, style, 1), false))
-		b.WriteString(c.ink(pyrepr.Str(item["label"]), t.Color.Muted, false))
+		b.WriteString(c.ink(jsValueString(item["glyph"])+" ", c.styleInk(p, style, 1), false))
+		b.WriteString(c.ink(jsValueString(item["label"]), t.Color.Muted, false))
 	}
 	lines = append(lines, b.String())
 	if categories := c.legendItems("categories"); len(categories) > 0 {
@@ -386,11 +383,11 @@ func (c *journeyCard) header(chartCap int) []string {
 				cb.WriteString("  ")
 			}
 			hex := t.Color.Muted
-			if pyrepr.Truthy(item["color"]) {
-				hex = p.fadeHex(pyrepr.Str(item["color"]), 1)
+			if truthyJS(item["color"]) {
+				hex = p.fadeHex(jsValueString(item["color"]), 1)
 			}
-			cb.WriteString(c.ink(pyrepr.Str(item["glyph"])+" ", hex, false))
-			cb.WriteString(c.ink(pyrepr.Str(item["label"]), t.Color.Muted, false))
+			cb.WriteString(c.ink(jsValueString(item["glyph"])+" ", hex, false))
+			cb.WriteString(c.ink(jsValueString(item["label"]), t.Color.Muted, false))
 		}
 		lines = append(lines, cb.String())
 	}
@@ -399,11 +396,11 @@ func (c *journeyCard) header(chartCap int) []string {
 	lines = append(lines, chart...)
 	axis, _ := c.data["axis"].(map[string]any)
 	start, end := jsValueString(axis["start"]), jsValueString(axis["end"])
-	gap := max(1, c.asked[0]-2-pystr.Len(start)-pystr.Len(end))
+	gap := max(1, c.asked[0]-2-utf8.RuneCountInString(start)-utf8.RuneCountInString(end))
 	lines = append(lines, c.ink(start+strings.Repeat(" ", gap)+end, t.Color.Muted, false))
 	if frame != nil {
-		date := pyrepr.Str(frame["date"])
-		if !pyrepr.Truthy(frame["date"]) {
+		date := jsValueString(frame["date"])
+		if !truthyJS(frame["date"]) {
 			date = "—"
 		}
 		pct := int(math.RoundToEven(jsNumberOf(frame["reveal"]) * 100))
@@ -817,80 +814,156 @@ type journeyArgs struct {
 	output       string
 }
 
-// Arguments of a /journey line parsed by the journey parser of the command tree
+// Usage lines of the /journey parser and of its subcommands
+const (
+	journeyUsage = "usage: /journey [--reveal 0..1] [--play] [--fps FPS] [--width WIDTH]\n" +
+		"                [--height HEIGHT] [--no-color] [--json]\n" +
+		"                {list,delete,edit} ..."
+	journeyListUsage   = "usage: /journey list [-h] [--no-color]"
+	journeyDeleteUsage = "usage: /journey delete [-h] [-y] node"
+	journeyEditUsage   = "usage: /journey edit [-h] node"
+	journeyNodeHelp    = "  node        Node id (skill name, or a memory id exactly as `journey list`\n              prints it)."
+)
+
+// Help text of each /journey subcommand
+var journeySubHelp = map[string]string{
+	"list": journeyListUsage + "\n\noptions:\n  -h, --help  show this help message and exit\n  --no-color",
+	"delete": journeyDeleteUsage + "\n\npositional arguments:\n" + journeyNodeHelp +
+		"\n\noptions:\n  -h, --help  show this help message and exit\n  -y, --yes   Skip the confirmation prompt.",
+	"edit": journeyEditUsage + "\n\npositional arguments:\n" + journeyNodeHelp + "\n\noptions:\n  -h, --help  show this help message and exit",
+}
+
+// Refusal of a /journey line under the usage of the parser that refused it
+func journeyRefusal(usage, prog, message string) string {
+	return usage + "\n" + prog + ": error: " + message
+}
+
+// Value of an option given inline or as the next word, the index moved past it
+func journeyOptionValue(words []string, i int, inline string, hasInline bool) (string, int, bool) {
+	if hasInline {
+		return inline, i, true
+	}
+	if i+1 >= len(words) {
+		return "", i, false
+	}
+	return words[i+1], i + 1, true
+}
+
+// Arguments of a /journey line, the show options before an optional list, delete or edit subcommand
 func parseJourneyArgs(arg string) journeyArgs {
 	parsed := journeyArgs{opts: journeyOptions{reveal: 1, fps: journeyPlayFPS, color: true}}
-	words, err := commands.Shlex(arg)
+	words, err := cards.ShellWords(arg)
 	if err != nil {
 		parsed.output = err.Error()
 		return parsed
 	}
-	tree := commands.NewCLI()
-	tree.DisableHelp("journey")
-	ran := false
-	handler := func(cmd *cobra.Command, posArgs []string) error {
-		ran = true
-		ns := tree.Namespace(cmd, posArgs)
-		if path := strings.Fields(cmd.CommandPath()); len(path) > 2 {
-			parsed.action = path[2]
+	refuse := func(message string) journeyArgs {
+		parsed.output = journeyRefusal(journeyUsage, "/journey", message)
+		return parsed
+	}
+	var unknown []string
+	i := 0
+	for ; i < len(words); i++ {
+		word := words[i]
+		name, inline, hasInline := strings.Cut(word, "=")
+		if !strings.HasPrefix(word, "--") {
+			name, hasInline = word, false
 		}
-		parsed.node = pyrepr.Str(ns["node"])
-		parsed.yes, parsed.json = pyrepr.Truthy(ns["yes"]), pyrepr.Truthy(ns["json"])
-		parsed.opts.play, parsed.opts.color = pyrepr.Truthy(ns["play"]), !pyrepr.Truthy(ns["no_color"])
-		if f, ok := ns["reveal"].(float64); ok && f != 0 {
-			parsed.opts.reveal = max(0, min(1, f))
+		switch name {
+		case "--play":
+			parsed.opts.play = true
+		case "--no-color":
+			parsed.opts.color = false
+		case "--force-color":
+			parsed.opts.color = true
+		case "--json":
+			parsed.json = true
+		case "--reveal":
+			value, at, given := journeyOptionValue(words, i, inline, hasInline)
+			if !given {
+				return refuse("argument --reveal: expected one argument")
+			}
+			f, err := strconv.ParseFloat(value, 64)
+			if err != nil {
+				return refuse("argument --reveal: invalid float value: '" + value + "'")
+			}
+			if f != 0 {
+				parsed.opts.reveal = max(0, min(1, f))
+			}
+			i = at
+		case "--fps", "--width", "--height":
+			value, at, given := journeyOptionValue(words, i, inline, hasInline)
+			if !given {
+				return refuse("argument " + name + ": expected one argument")
+			}
+			n, err := strconv.Atoi(value)
+			if err != nil {
+				return refuse("argument " + name + ": invalid int value: '" + value + "'")
+			}
+			into := map[string]*int{"--fps": &parsed.opts.fps, "--width": &parsed.opts.width, "--height": &parsed.opts.height}[name]
+			*into = n
+			i = at
+		default:
+			if strings.HasPrefix(word, "-") && word != "-" {
+				unknown = append(unknown, word)
+				continue
+			}
+			if word != "list" && word != "delete" && word != "edit" {
+				return refuse("argument journey_action: invalid choice: '" + word + "' (choose from 'list', 'delete', 'edit')")
+			}
+			parsed.action = word
 		}
-		for key, into := range map[string]*int{"fps": &parsed.opts.fps, "width": &parsed.opts.width, "height": &parsed.opts.height} {
-			switch n := ns[key].(type) {
-			case int:
-				*into = n
-			case int64:
-				*into = int(n)
-			case float64:
-				*into = int(n)
+		if parsed.action != "" {
+			i++
+			break
+		}
+	}
+	if parsed.action != "" {
+		usage, prog := map[string]string{"list": journeyListUsage, "delete": journeyDeleteUsage, "edit": journeyEditUsage}[parsed.action], "/journey "+parsed.action
+		var positional []string
+		for _, word := range words[i:] {
+			switch {
+			case word == "-h" || word == "--help":
+				parsed.output = journeySubHelp[parsed.action]
+				return parsed
+			case parsed.action == "list" && (word == "--no-color" || word == "--force-color"):
+				parsed.opts.color = word == "--force-color"
+			case parsed.action == "delete" && (word == "-y" || word == "--yes"):
+				parsed.yes = true
+			case strings.HasPrefix(word, "-") && word != "-":
+				unknown = append(unknown, word)
+			default:
+				positional = append(positional, word)
 			}
 		}
-		return nil
-	}
-	for _, path := range []string{"journey", "journey list", "journey delete", "journey edit"} {
-		tree.Bind(path, handler)
-	}
-	top, _, _ := tree.Root.Find([]string{"journey"})
-	if top.Annotations == nil {
-		top.Annotations = map[string]string{}
-	}
-	top.Annotations["argparse_top"] = "/journey"
-	var help bytes.Buffer
-	tree.Root.SetOut(&help)
-	execErr := tree.Execute(append([]string{"journey"}, words...))
-	switch {
-	case help.Len() > 0:
-		parsed.output = journeyProg(strings.TrimRight(help.String(), "\n"))
-	case execErr != nil && !ran:
-		var refused *commands.ArgparseError
-		switch {
-		case !errors.As(execErr, &refused):
-			bad := execErr.Error()
-			if m := journeyUnknownWord.FindStringSubmatch(bad); m != nil {
-				bad = m[1]
+		if parsed.action != "list" {
+			if len(positional) == 0 {
+				parsed.output = journeyRefusal(usage, prog, "the following arguments are required: node")
+				return parsed
 			}
-			refused = &commands.ArgparseError{Cmd: top, Msg: "argument journey_action: invalid choice: " + pyrepr.Repr(bad) + " (choose from 'list', 'delete', 'edit')"}
-		case strings.HasPrefix(refused.Msg, "unrecognized arguments:"):
-			refused = &commands.ArgparseError{Cmd: top, Msg: refused.Msg}
+			parsed.node, positional = positional[0], positional[1:]
 		}
-		parsed.output = journeyProg(refused.Stderr())
+		unknown = append(unknown, positional...)
+	}
+	if len(unknown) > 0 {
+		return refuse("unrecognized arguments: " + strings.Join(unknown, " "))
 	}
 	return parsed
 }
 
-// Word the command tree names in its unknown subcommand refusal
-var journeyUnknownWord = regexp.MustCompile(`'(.*)' is not a ` + "`")
+// Glyphs of a learned skill and a memory entry in the journey list
+const (
+	journeySkillGlyph  = "\u25cf"
+	journeyMemoryGlyph = "\u25c6"
+)
 
-// Parser text of the journey tree under the /journey prog, usage continuation lines indented to it
-func journeyProg(text string) string {
-	const cliIndent, slashIndent = len("usage: icebath journey "), len("usage: /journey ")
-	text = strings.ReplaceAll(text, "\n"+strings.Repeat(" ", cliIndent), "\n"+strings.Repeat(" ", slashIndent))
-	return strings.ReplaceAll(text, "icebath journey", "/journey")
+// Day, month and year of a Unix timestamp in UTC, unknown for none
+func journeyDate(ts float64, present bool) string {
+	if !present || ts == 0 || math.IsNaN(ts) || math.IsInf(ts, 0) {
+		return "unknown"
+	}
+	t := time.Unix(0, 0).UTC().Add(time.Duration(ts * float64(time.Second)))
+	return fmt.Sprintf("%d %s", t.Day(), t.Format("Jan 2006"))
 }
 
 // Nodes of a learning graph oldest first with id, glyph, label and date, as journey list prints them
@@ -910,22 +983,35 @@ func journeyListText(payload map[string]any) string {
 	})
 	lines := make([]string, 0, len(nodes))
 	for _, n := range nodes {
-		glyph := memory.SkillGlyph
+		glyph := journeySkillGlyph
 		if jsValueString(n["kind"]) == "memory" {
-			glyph = memory.MemoryGlyph
+			glyph = journeyMemoryGlyph
 		}
-		var ts *float64
-		if f, ok := stamp(n); ok {
-			ts = &f
-		}
-		lines = append(lines, fmt.Sprintf("%s  %s %s  %s", jsValueString(n["id"]), glyph, jsValueString(n["label"]), memory.FormatDate(ts)))
+		ts, present := stamp(n)
+		lines = append(lines, fmt.Sprintf("%s  %s %s  %s", jsValueString(n["id"]), glyph, jsValueString(n["label"]), journeyDate(ts, present)))
 	}
 	return strings.Join(lines, "\n")
 }
 
 // Graph payload as indented JSON, the text journey --json prints
 func journeyJSONText(payload map[string]any) (string, error) {
-	return pyjson.Dumps(payload, pyjson.Indent(2), pyjson.EnsureASCII(false))
+	var buf bytes.Buffer
+	enc := json.NewEncoder(&buf)
+	enc.SetEscapeHTML(false)
+	enc.SetIndent("", "  ")
+	if err := enc.Encode(payload); err != nil {
+		return "", err
+	}
+	return strings.TrimRight(buf.String(), "\n"), nil
+}
+
+// Text of an edited file without a leading byte order mark, refused when it is not UTF-8
+func decodeUTF8Sig(saved string) (string, error) {
+	text := strings.TrimPrefix(saved, "\ufeff")
+	if !utf8.ValidString(text) {
+		return "", errors.New("the edited file is not valid UTF-8")
+	}
+	return text, nil
 }
 
 // Shows what a learning.graph answer renders to, or the journey failure line
@@ -986,7 +1072,7 @@ func (a *app) journeyDelete(r *slashRun, nodeID string, yes bool) tea.Cmd {
 			return commit()
 		}
 		label := jsValueString(detail["label"])
-		a.store.overlay.Confirm = &confirmReq{CancelLabel: "Cancel", ConfirmLabel: "Delete", Danger: true, Title: "Delete " + pyrepr.Repr(label) + "?",
+		a.store.overlay.Confirm = &confirmReq{CancelLabel: "Cancel", ConfirmLabel: "Delete", Danger: true, Title: "Delete '" + label + "'?",
 			Detail: "A skill goes to the archive the curator can restore from, a memory entry is removed.", OnConfirm: commit}
 		return nil
 	})
@@ -1000,10 +1086,10 @@ func (a *app) journeyEdit(r *slashRun, nodeID string) tea.Cmd {
 			return asyncDoneMsg{run: func() tea.Cmd {
 				var exit *exec.ExitError
 				if runErr != nil && !errors.As(runErr, &exit) {
-					r.sys("editor failed: " + pyrepr.ExceptionMessage(runErr))
+					r.sys("editor failed: " + runErr.Error())
 					return nil
 				}
-				edited, err := pystr.DecodeUTF8Sig([]byte(saved))
+				edited, err := decodeUTF8Sig(saved)
 				switch {
 				case fileErr != nil:
 					r.sys(fileErr.Error())

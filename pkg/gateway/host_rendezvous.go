@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
-	"log/slog"
 	"math"
 	"math/big"
 	"os"
@@ -67,8 +66,6 @@ var (
 	hostLockMu      sync.Mutex
 	hostLockHandles = map[[2]string]*os.File{}
 )
-
-func hostLog() *slog.Logger { return slog.Default().With("logger", "gateway.host_rendezvous") }
 
 // Record fields in their published key order, the gateway role publishing no bound address or token
 func (r *HostRecord) ToJSON() *pyjson.Object {
@@ -222,7 +219,7 @@ func pidIncarnationMatches(pid int, createTime *float64) *bool {
 func hostBootTime() *float64 {
 	boot, err := proc.BootTime()
 	if err != nil {
-		hostLog().Debug("boot time unreadable; legacy record age check skipped", "error", err)
+		pkgLog().Debug("boot time unreadable; legacy record age check skipped", "error", err)
 		return nil
 	}
 	return &boot
@@ -238,7 +235,7 @@ func hostLockIsFree(role string) *bool {
 		return boolRef(true)
 	}
 	if err != nil {
-		hostLog().Debug(fmt.Sprintf("host %s lock could not be probed", role), "error", err)
+		pkgLog().Debug(fmt.Sprintf("host %s lock could not be probed", role), "error", err)
 		return nil
 	}
 	return boolRef(!probeLockFile(f))
@@ -385,12 +382,12 @@ func ClaimHostLock(ctx context.Context, role string) (HostLockOutcome, error) {
 	}
 	path := key[1]
 	if _, err := EnsureHostStateDir(ctx); err != nil {
-		hostLog().Debug(fmt.Sprintf("host %s lock could not be opened at %s", role, path), "error", err)
+		pkgLog().Debug(fmt.Sprintf("host %s lock could not be opened at %s", role, path), "error", err)
 		return HostLockCouldNotOpen, err
 	}
 	f, err := os.OpenFile(path, os.O_RDWR|os.O_CREATE|os.O_APPEND, 0o666)
 	if err != nil {
-		hostLog().Debug(fmt.Sprintf("host %s lock could not be opened at %s", role, path), "error", err)
+		pkgLog().Debug(fmt.Sprintf("host %s lock could not be opened at %s", role, path), "error", err)
 		return HostLockCouldNotOpen, err
 	}
 	if !tryAcquireFileLock(f) {
@@ -446,7 +443,7 @@ func recordNamesLiveOwner(r *HostRecord) bool {
 		return false
 	}
 	if held := HostLockIsHeld(r.Role); held != nil && !*held {
-		hostLog().Debug(fmt.Sprintf("host %s record names pid %d but the host lock is free", r.Role, r.PID))
+		pkgLog().Debug(fmt.Sprintf("host %s record names pid %d but the host lock is free", r.Role, r.PID))
 		return false
 	}
 	return true
@@ -486,7 +483,7 @@ func PublishHostRecord(ctx context.Context, role string, o HostPublishOptions) *
 		return config.AtomicJSONWriteMode(ctx, HostRecordPath(role), r.ToJSON(), 0o600, pyjson.Indent(2))
 	}()
 	if err != nil {
-		hostLog().Warn(fmt.Sprintf("host %s record could not be published; discovery will not find it", role), "error", err)
+		pkgLog().Warn(fmt.Sprintf("host %s record could not be published; discovery will not find it", role), "error", err)
 		return nil
 	}
 	invalidateHostGatewayCache()
@@ -609,7 +606,7 @@ func HostServedProfiles(multiplex *bool) []string {
 	}
 	roster, err := hostProfilesToServe(context.Background(), enabled, false, false)
 	if err != nil {
-		hostLog().Debug("served profile roster unavailable", "error", err)
+		pkgLog().Debug("served profile roster unavailable", "error", err)
 		return []string{}
 	}
 	names := make([]string, 0, len(roster))

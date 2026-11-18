@@ -87,6 +87,6 @@ func refuseAgentJobsWithoutGateway(ctx context.Context, s *Store, due []*Job) ([
 	if err := s.noteFireRefused(home.WithOverride(ctx, s.home), agentIDs, "Skipped: "+hint); err != nil {
 		return nil, err
 	}
-	s.logAs("cron.scheduler_gateway_gate").Warn(fmt.Sprintf("Cron tick for %s skipped %d agent job(s) (%s): %s", h, len(agentIDs), strings.Join(agentIDs, ", "), hint))
+	s.log.Warn(fmt.Sprintf("Cron tick for %s skipped %d agent job(s) (%s): %s", h, len(agentIDs), strings.Join(agentIDs, ", "), hint))
 	return scriptJobs, nil
 }

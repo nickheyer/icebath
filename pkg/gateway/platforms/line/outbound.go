@@ -3,7 +3,6 @@ package line
 import (
 	"context"
 	"fmt"
-	"log/slog"
 	"os"
 	"path/filepath"
 	"strings"
@@ -78,7 +77,7 @@ func (a *LineAdapter) sendMessages(ctx context.Context, chatID string, messages 
 	start := 0
 	if usedReply && !forcePush {
 		if err := client.reply(ctx, token, batches[0]); err != nil {
-			slog.Info(fmt.Sprintf("LINE: reply token rejected (%v); falling back to push", err))
+			pkgLog().Info(fmt.Sprintf("LINE: reply token rejected (%v); falling back to push", err))
 		} else {
 			if text {
 				return gateway.SendResult{Success: true, MessageID: token}, nil
@@ -89,9 +88,9 @@ func (a *LineAdapter) sendMessages(ctx context.Context, chatID string, messages 
 	for i := start; i < len(batches); i++ {
 		if err := client.push(ctx, chatID, batches[i]); err != nil {
 			if i > 0 {
-				slog.Warn(fmt.Sprintf("LINE: push for follow-up batch failed: %v", err))
+				pkgLog().Warn(fmt.Sprintf("LINE: push for follow-up batch failed: %v", err))
 			} else if text {
-				slog.Error(fmt.Sprintf("LINE: push send failed: %v", err))
+				pkgLog().Error(fmt.Sprintf("LINE: push send failed: %v", err))
 			}
 			return gateway.SendResult{Success: false, Error: err.Error()}, nil
 		}
@@ -215,7 +214,7 @@ func (a *LineAdapter) handleMedia(ctx context.Context, request *gateway.WebReque
 	if st, err := os.Stat(entry.path); err != nil || !st.Mode().IsRegular() {
 		return gateway.WebTextResponse(404, "not found", "", nil), nil
 	}
-	hermesHome, err := pypath.Resolve(home.Dir(ctx))
+	icebathHome, err := pypath.Resolve(home.Dir(ctx))
 	if err != nil {
 		return nil, err
 	}
@@ -227,7 +226,7 @@ func (a *LineAdapter) handleMedia(ctx context.Context, request *gateway.WebReque
 	if err != nil {
 		return nil, err
 	}
-	roots := []string{hermesHome}
+	roots := []string{icebathHome}
 	for _, dir := range []string{tempdir, "/tmp"} {
 		r, err := pypath.Resolve(dir)
 		if err != nil {
@@ -243,7 +242,7 @@ func (a *LineAdapter) handleMedia(ctx context.Context, request *gateway.WebReque
 		}
 	}
 	if !allowed {
-		slog.Warn(fmt.Sprintf("LINE: refusing to serve outside allowed roots: %s", resolved))
+		pkgLog().Warn(fmt.Sprintf("LINE: refusing to serve outside allowed roots: %s", resolved))
 		return gateway.WebTextResponse(403, "forbidden", "", nil), nil
 	}
 	contentType, _, _ := pymimetypes.GuessType(entry.path, true)

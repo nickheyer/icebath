@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"log/slog"
 	"path/filepath"
 	"runtime"
 	"slices"
@@ -67,10 +66,10 @@ func closeQuietly(d *DB, debugMessage string) {
 	}
 	var capture *RetiredGenerationCaptureError
 	if errors.As(err, &capture) {
-		slog.Error(fmt.Sprintf("SessionDB for %s did not settle at close: %s", d.Path(), err))
+		pkgLog().Error(fmt.Sprintf("SessionDB for %s did not settle at close: %s", d.Path(), err))
 		return
 	}
-	slog.Debug(debugMessage, "error", err)
+	pkgLog().Debug(debugMessage, "error", err)
 }
 
 // Lifecycle mutex of path, created on first use, caller holds regMu

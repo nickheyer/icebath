@@ -6,7 +6,6 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
-	"log/slog"
 	"os"
 	"path"
 	"regexp"
@@ -96,7 +95,7 @@ func validatedDeliveryPath(ctx context.Context, raw, sessionKey, label string, d
 		if !existingRegularFile(raw) {
 			reason = "not found on this host"
 		}
-		slog.Warn(fmt.Sprintf("Skipping %s (%s): %s", label, reason, logSafePath(raw)))
+		pkgLog().Warn(fmt.Sprintf("Skipping %s (%s): %s", label, reason, logSafePath(raw)))
 		if dropped != nil {
 			*dropped = append(*dropped, map[string]any{"path": raw, "reason": reason})
 		}
@@ -238,9 +237,9 @@ func FetchRemoteMedia(ctx context.Context, raw string) (string, error) {
 	if err != nil {
 		var fetchErr *tools.FileFetchError
 		if errors.As(err, &fetchErr) {
-			slog.Warn(fmt.Sprintf("Remote media fetch of %s skipped: %s", logSafePath(candidate), fetchErr.Error()))
+			pkgLog().Warn(fmt.Sprintf("Remote media fetch of %s skipped: %s", logSafePath(candidate), fetchErr.Error()))
 		} else {
-			slog.Warn(fmt.Sprintf("Remote media fetch of %s failed", logSafePath(candidate)), "error", err)
+			pkgLog().Warn(fmt.Sprintf("Remote media fetch of %s failed", logSafePath(candidate)), "error", err)
 		}
 		return "", nil
 	}
@@ -255,7 +254,7 @@ func FetchRemoteMedia(ctx context.Context, raw string) (string, error) {
 		_ = os.Remove(dest)
 		return "", nil
 	}
-	slog.Info(fmt.Sprintf("Fetched remote media %s from the %s sandbox", logSafePath(candidate), env.EnvType()))
+	pkgLog().Info(fmt.Sprintf("Fetched remote media %s from the %s sandbox", logSafePath(candidate), env.EnvType()))
 	return validated, nil
 }
 

@@ -1,3 +1,5 @@
+//go:build !icebath_core && !icebath_noextras
+
 package pm
 
 import (
@@ -242,7 +244,7 @@ func PrepareRuntime(ctx context.Context, uv, python, root string, opts RuntimeOp
 	if inputs, ok := fact["inputs"].(string); ok && (inputs == identity || inputs == spelled) {
 		value, present := fact["generation"]
 		if !present {
-			return "", errors.New("KeyError: 'generation'")
+			return "", &PyError{Class: "KeyError", Message: "the PM runtime record has no generation"}
 		}
 		environment, err := generationPath(root, value)
 		if err != nil {
@@ -330,7 +332,7 @@ func LeaseCurrentRuntime(prefix string) error {
 }
 
 // Removes runtime generations nothing can run from, skipping while a stage holds the prepare lock
-func CollectRuntimeGenerations(root string) ([]string, error) {
+func managedCollectRuntimeGenerations(root string) ([]string, error) {
 	generations := filepath.Join(root, "generations")
 	if st, err := os.Stat(generations); err != nil || !st.IsDir() {
 		return nil, nil

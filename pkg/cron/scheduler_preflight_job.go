@@ -141,7 +141,7 @@ func (s *Store) preflightCheckDelivery(ctx context.Context, job *Job) *string {
 		if connected == nil {
 			cfg, err := loadGatewayConfig(ctx)
 			if err != nil {
-				s.logAs("cron.scheduler").Debug("preflight: gateway config unavailable — skipping delivery credential check")
+				s.log.Debug("preflight: gateway config unavailable — skipping delivery credential check")
 				return nil
 			}
 			connected = map[string]bool{}
@@ -224,7 +224,7 @@ func (s *Store) emptyRequestedMCPToolsets(ctx context.Context, job *Job, cfg con
 	}
 	reconnectingWarned.Unlock()
 	if len(unwarned) > 0 {
-		s.logAs("cron.scheduler").Warn(fmt.Sprintf("Job '%s': MCP server(s) %s named in enabled_toolsets are reconnecting — running without their tools until they recover (a server parked on a permanent error blocks the job instead)", jobID, strings.Join(unwarned, ", ")))
+		s.log.Warn(fmt.Sprintf("Job '%s': MCP server(s) %s named in enabled_toolsets are reconnecting — running without their tools until they recover (a server parked on a permanent error blocks the job instead)", jobID, strings.Join(unwarned, ", ")))
 	}
 	var still []string
 	for _, name := range missing {
@@ -253,7 +253,7 @@ func (s *Store) preflightJobConfig(ctx context.Context, job *Job, cfg config.Tre
 		reason := func() (r *string) {
 			defer func() {
 				if recover() != nil {
-					s.logAs("cron.scheduler").Debug(fmt.Sprintf("preflight check %s raised — failing open", c.name))
+					s.log.Debug(fmt.Sprintf("preflight check %s raised — failing open", c.name))
 					r = nil
 				}
 			}()

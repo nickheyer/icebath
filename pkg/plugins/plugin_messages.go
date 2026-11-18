@@ -174,7 +174,7 @@ func (h *PluginMessage) Edit(ctx context.Context, text string) map[string]any {
 		select {
 		case <-op.done:
 			if op.err != nil {
-				logPlugins.debug("plugin_message: previous operation failed", "error", op.err)
+				pkgLog().Debug("plugin_message: previous operation failed", "error", op.err)
 			}
 		case <-time.After(pluginMessageTimeout):
 			return messageErr("timeout", "the previous operation on this message has not finished")
@@ -224,7 +224,7 @@ func runOnGatewayLoop(ctx context.Context, op func(context.Context) (map[string]
 	select {
 	case <-pending.done:
 		if pending.err != nil {
-			logPlugins.warn("plugin_message: gateway hand-off failed", "error", pending.err)
+			pkgLog().Warn("plugin_message: gateway hand-off failed", "error", pending.err)
 			return messageErr("send_failed", pystr.Slice(pending.err.Error(), 0, 512))
 		}
 		return pending.result
@@ -275,7 +275,7 @@ func postFor(ctx context.Context, c *Context, text, sessionKey string, route any
 			}
 		}
 	}
-	logPlugins.info(fmt.Sprintf("plugin_message plugin=%s op=post refused: %s", pluginID, pyrepr.Str(result["error"])))
+	pkgLog().Info(fmt.Sprintf("plugin_message plugin=%s op=post refused: %s", pluginID, pyrepr.Str(result["error"])))
 	return newPluginMessage(pluginID, nil, result), nil
 }
 

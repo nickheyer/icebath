@@ -4,12 +4,13 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"os"
 	"reflect"
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 
 	"github.com/nickheyer/icebath/pkg/config"
 )
@@ -500,7 +501,7 @@ func TestRewriterChangeReachesAFreshBuild(t *testing.T) {
 	opts := DefinitionOptions{Enabled: []string{"clarify"}, Quiet: true, SkipToolSearchAssembly: true}
 	description := func() string {
 		defs := r.ToolDefinitions(context.Background(), env, opts)
-		fn, _ := defs[0]["function"].(map[string]any)
+		fn, _ := pyjson.Dict(defs[0]["function"])
 		s, _ := fn["description"].(string)
 		return s
 	}
@@ -510,7 +511,8 @@ func TestRewriterChangeReachesAFreshBuild(t *testing.T) {
 	changed := "Changed after the session pinned its tools."
 	RegisterSchemaRewriter("clarify", func(_ *Env, td map[string]any, _ map[string]bool) map[string]any {
 		fn := map[string]any{}
-		for k, v := range td["function"].(map[string]any) {
+		current, _ := pyjson.Dict(td["function"])
+		for k, v := range current {
 			fn[k] = v
 		}
 		fn["description"] = changed

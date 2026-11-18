@@ -30,7 +30,7 @@ func mustTelegramRE(pattern string) *regexp2.Regexp {
 	return re
 }
 
-// Every match replaced by the template output, the re.sub of hermes over a compiled Python pattern
+// Every match replaced by the template output over a compiled Python pattern
 func telegramSub(re *regexp2.Regexp, text string, repl func(m *regexp2.Match) string) string {
 	out, err := re.ReplaceFunc(text, func(m regexp2.Match) string { return repl(&m) }, -1, -1)
 	if err != nil {

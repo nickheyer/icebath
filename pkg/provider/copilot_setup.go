@@ -140,7 +140,6 @@ func copilotObtainToken(r *ModelFlowRun) (bool, error) {
 		}
 		if err != nil {
 			fmt.Fprintf(r.Out, "  Login failed: %v\n", err)
-			noteSetupFailure("auth")
 			return false, nil
 		}
 		flowSay(r.Out, "  Copilot token saved.", "")
@@ -302,7 +301,7 @@ func copilotStartDeviceLogin(ctx context.Context) (any, error) {
 func copilotPollDeviceLogin(ctx context.Context, state any) (any, error) {
 	deviceCode, ok := cpGet(state, "device_code")
 	if !ok {
-		return nil, errors.New("KeyError: 'device_code'")
+		return nil, errors.New("the Copilot device login state has no device_code")
 	}
 	result, err := copilotPostForm(ctx, copilotDeviceLoginBase+"/login/oauth/access_token",
 		[][2]string{{"client_id", copilotOAuthClientID}, {"device_code", pyStr(deviceCode)},

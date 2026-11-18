@@ -2,11 +2,9 @@ package plugins
 
 import (
 	"bytes"
-	"context"
 	"errors"
 	"io"
 	"path/filepath"
-	"reflect"
 	"strings"
 	"testing"
 )
@@ -26,26 +24,6 @@ func catInstallURL(t *testing.T, w *catWorldT, repo, name string, files map[stri
 		t.Fatal(err)
 	}
 	return target
-}
-
-func TestCustomInstallRecordsAnAnonymousExtensionInstallAndReinstallNone(t *testing.T) {
-	w := catWorld(t)
-	calls := []map[string]any{}
-	saved := recordExtensionInstall
-	t.Cleanup(func() { recordExtensionInstall = saved })
-	recordExtensionInstall = func(_ context.Context, kind, source string, name any, outcome string, _, _ any, _ error) {
-		calls = append(calls, map[string]any{"kind": kind, "source": source, "name": name, "outcome": outcome})
-	}
-	if res, err := UnattendedInstallPlugin(w.ctx, UnattendedInstallOptions{Identifier: refURI(w.repo)}); err != nil || res["ok"] != true {
-		t.Fatalf("url install %v %v", res, err)
-	}
-	if res, err := UnattendedInstallPlugin(w.ctx, UnattendedInstallOptions{Force: true, CatalogName: "cat-plugin"}); err != nil || res["ok"] != true {
-		t.Fatalf("catalog reinstall %v %v", res, err)
-	}
-	want := []map[string]any{{"kind": "plugin", "source": "local", "name": nil, "outcome": "success"}}
-	if !reflect.DeepEqual(calls, want) {
-		t.Fatalf("recorded %v", calls)
-	}
 }
 
 func TestKillListCoversUpdateEnableAndLoadOfAnInstalledPlugin(t *testing.T) {

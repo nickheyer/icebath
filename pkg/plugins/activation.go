@@ -2,12 +2,14 @@ package plugins
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"path/filepath"
 	"sort"
 	"strings"
 	"sync"
 
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
@@ -155,7 +157,7 @@ func pyDictOr(v any) (map[string]any, error) {
 	if m, ok := v.(map[string]any); ok {
 		return m, nil
 	}
-	return nil, fmt.Errorf("AttributeError: '%s' object has no attribute 'get'", pyrepr.TypeName(v))
+	return nil, fmt.Errorf("expected a mapping, got %s", errchain.Kind(v))
 }
 
 // Items iterating a truthy value yields, none for a falsy one, a TypeError for a non iterable
@@ -183,7 +185,7 @@ func pyItemsOr(v any) ([]any, error) {
 	case map[string]any:
 		return anyList(sortedKeys(x)), nil
 	}
-	return nil, fmt.Errorf("TypeError: '%s' object is not iterable", pyrepr.TypeName(v))
+	return nil, fmt.Errorf("expected a list, got %s", errchain.Kind(v))
 }
 
 // Length of a truthy value or zero, a TypeError for a value without a length
@@ -199,7 +201,7 @@ func pyLenOr(v any) (int, error) {
 	}
 	items, err := pyItemsOr(v)
 	if err != nil {
-		return 0, fmt.Errorf("TypeError: object of type '%s' has no len()", pyrepr.TypeName(v))
+		return 0, fmt.Errorf("expected a list to count, got %s", errchain.Kind(v))
 	}
 	return len(items), nil
 }
@@ -214,7 +216,7 @@ func pyStrItems(v any) ([]string, error) {
 	for _, item := range items {
 		s, ok := item.(string)
 		if !ok {
-			return nil, fmt.Errorf("TypeError: sequence item %d: expected str instance, %s found", len(out), pyrepr.TypeName(item))
+			return nil, fmt.Errorf("item %d is %s, expected text", len(out), errchain.Kind(item))
 		}
 		out = append(out, s)
 	}
@@ -230,7 +232,7 @@ func findActivation(summaries any, name string) (map[string]any, error) {
 	for _, e := range entries {
 		entry, ok := e.(map[string]any)
 		if !ok {
-			return nil, fmt.Errorf("AttributeError: '%s' object has no attribute 'get'", pyrepr.TypeName(e))
+			return nil, fmt.Errorf("an activation summary is %s, expected a mapping", errchain.Kind(e))
 		}
 		key := ""
 		if k := entry["key"]; pyrepr.Truthy(k) {
@@ -332,7 +334,7 @@ func reloadRunningGateway(ctx context.Context) map[string]any {
 		return nil, nil
 	})
 	if err != nil {
-		logPluginsActivation.debug("gateway reload-plugins nudge failed", "error", err)
+		pkgLog().Debug("gateway reload-plugins nudge failed", "error", err)
 		return nil
 	}
 	answer, _ := v.(map[string]any)
@@ -392,7 +394,7 @@ func goLive(ctx context.Context, name string) (map[string]any, error) {
 		return nil, nil
 	})
 	if err != nil {
-		logPluginsActivation.debug(fmt.Sprintf("in-process plugin reload after change to %s failed", pyrepr.Repr(name)), "error", err)
+		pkgLog().Debug(fmt.Sprintf("in-process plugin reload after change to %s failed", pyrepr.Repr(name)), "error", err)
 		return nil, nil
 	}
 	if activation == nil {
@@ -419,7 +421,7 @@ func goLive(ctx context.Context, name string) (map[string]any, error) {
 	if s := installedServices(); s != nil && s.RefreshPluginSessions != nil && (len(servers) > 0 || note != "") {
 		key := pyrepr.Str(activation["key"])
 		if err := callGuarded(func() error { return s.RefreshPluginSessions(ctx, home.Dir(ctx), key, note) }); err != nil {
-			logPluginsActivation.warn(fmt.Sprintf("open chats were not refreshed after activating %s", pyrepr.Repr(name)), "error", err)
+			pkgLog().Warn(fmt.Sprintf("open chats were not refreshed after activating %s", pyrepr.Repr(name)), "error", err)
 		}
 	}
 	return activation, nil
@@ -489,7 +491,7 @@ func activationHint(ctx context.Context, result map[string]any) (string, error) 
 	for _, raw := range servers {
 		s, ok := raw.(map[string]any)
 		if !ok {
-			return "", fmt.Errorf("AttributeError: '%s' object has no attribute 'get'", pyrepr.TypeName(raw))
+			return "", fmt.Errorf("a live MCP server entry is %s, expected a mapping", errchain.Kind(raw))
 		}
 		if pyrepr.Truthy(s["connected"]) {
 			connected = append(connected, s)
@@ -516,7 +518,7 @@ func activationHint(ctx context.Context, result map[string]any) (string, error) 
 	for _, s := range failed {
 		serverName, ok := s["name"]
 		if !ok {
-			return "", fmt.Errorf("KeyError: 'name'")
+			return "", errors.New("a failed MCP server entry has no name")
 		}
 		reason := "unknown error"
 		if e := s["error"]; pyrepr.Truthy(e) {

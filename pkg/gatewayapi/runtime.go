@@ -37,7 +37,7 @@ func parseModelRoutes(raw any) *modelRouteTable {
 		get = func(k string) any { return m[k] }
 	default:
 		if pyrepr.Truthy(raw) {
-			apiLog().Warn(fmt.Sprintf("api_server model_routes ignored: expected a mapping, got %s", pyrepr.TypeName(raw)))
+			pkgLog().Warn(fmt.Sprintf("api_server model_routes ignored: expected a mapping, got %s", pyrepr.TypeName(raw)))
 		}
 		return table
 	}
@@ -56,7 +56,7 @@ func parseModelRoutes(raw any) *modelRouteTable {
 			if aliasStr == "" {
 				label = alias
 			}
-			apiLog().Warn(fmt.Sprintf("api_server model_routes: dropping invalid route entry %s", pyrepr.Repr(label)))
+			pkgLog().Warn(fmt.Sprintf("api_server model_routes: dropping invalid route entry %s", pyrepr.Repr(label)))
 			continue
 		}
 		route := map[string]string{}
@@ -68,7 +68,7 @@ func parseModelRoutes(raw any) *modelRouteTable {
 			}
 		}
 		if route["model"] == "" {
-			apiLog().Warn(fmt.Sprintf("api_server model_routes: route %s has no 'model'; dropping", pyrepr.Repr(aliasStr)))
+			pkgLog().Warn(fmt.Sprintf("api_server model_routes: route %s has no 'model'; dropping", pyrepr.Repr(aliasStr)))
 			continue
 		}
 		if _, exists := table.routes[aliasStr]; !exists {
@@ -274,7 +274,7 @@ func (a *APIServerAdapter) persistSessionRuntimeLock(ctx context.Context, sessio
 	routeSource := r.routeSource
 	if err := db.UpdateSessionRuntimeLock(ctx, sessionID, state.RuntimeLock{Model: modelArg, Provider: providerArg,
 		ModelOptions: pyjson.Plain(r.modelOptions), RouteSource: &routeSource, Confirmed: r.requireModelLock}); err != nil {
-		apiLog().Warn(fmt.Sprintf("[%s] failed to persist session runtime lock for %s", a.Name(), sessionID), "error", err)
+		pkgLog().Warn(fmt.Sprintf("[%s] failed to persist session runtime lock for %s", a.Name(), sessionID), "error", err)
 		return false
 	}
 	return true
@@ -391,17 +391,17 @@ func sanitizeRuntimeMetadata(runtime, requestedRuntime *pyjson.Object, routeSour
 	return result
 }
 
-// Lowercased session source restricted to known surfaces, browser spelled hermes_browser
+// Lowercased session source restricted to known surfaces, browser and its old spelling mapped to icebath_browser
 func normalizeSessionSource(value any) string {
 	text := ""
 	if pyrepr.Truthy(value) {
 		text = strings.ToLower(strings.TrimSpace(pyrepr.Str(value)))
 	}
 	switch text {
-	case "api_server", "hermes_browser", "cli", "telegram", "discord", "slack":
+	case "api_server", "icebath_browser", "cli", "telegram", "discord", "slack":
 		return text
-	case "browser":
-		return "hermes_browser"
+	case "browser", "hermes_browser":
+		return "icebath_browser"
 	}
 	return "api_server"
 }
@@ -484,7 +484,7 @@ func resolveProviderRuntime(ctx context.Context, providerName, targetModel strin
 	if required {
 		return nil, &providerAuthResolutionError{msg: err.Error(), cause: err}
 	}
-	apiLog().Debug(fmt.Sprintf("api_server provider-runtime refresh failed for provider=%s model=%s", name, targetModel), "error", err)
+	pkgLog().Debug(fmt.Sprintf("api_server provider-runtime refresh failed for provider=%s model=%s", name, targetModel), "error", err)
 	return nil, nil
 }
 
@@ -508,7 +508,7 @@ func (a *APIServerAdapter) recoverOrRecordModel(ctx context.Context, model strin
 				defer func() { _ = recover() }()
 				model = provider.GetDefaultModelForProvider(ctx, providerName)
 				if model != "" {
-					apiLog().Info(fmt.Sprintf("No model configured — defaulting to %s for provider %s", model, providerName))
+					pkgLog().Info(fmt.Sprintf("No model configured — defaulting to %s for provider %s", model, providerName))
 				}
 			}()
 		}
@@ -521,7 +521,7 @@ func (a *APIServerAdapter) recoverOrRecordModel(ctx context.Context, model strin
 			recovered = a.lastResolvedModel["*"]
 		}
 		if recovered != "" && recovered != a.modelName {
-			apiLog().Warn(fmt.Sprintf("Empty model resolved for session=%s — recovering last-known-good model %s "+
+			pkgLog().Warn(fmt.Sprintf("Empty model resolved for session=%s — recovering last-known-good model %s "+
 				"(config read likely returned empty; see #35314)", gatewaySessionKey, recovered))
 			model = recovered
 		}
@@ -574,7 +574,7 @@ func (a *APIServerAdapter) selectAgentRuntime(ctx context.Context, runtimeKwargs
 		}
 		gateway.APIApplyRuntimeAgentOverrides(runtimeKwargs, sessionOverride)
 		if o.route != nil || requestModel != "" || requestProvider != "" {
-			apiLog().Debug("api_server request selection skipped: session /model override wins for " + sessionKey)
+			pkgLog().Debug("api_server request selection skipped: session /model override wins for " + sessionKey)
 		}
 	case sessionRowModel != "" && !o.confirmedRuntimeLock:
 		if _, err := applyProviderRuntime(ctx, runtimeKwargs, currentProvider, sessionRowModel, false); err != nil {
@@ -582,7 +582,7 @@ func (a *APIServerAdapter) selectAgentRuntime(ctx context.Context, runtimeKwargs
 		}
 		model = provider.ResolveEffectiveModel(nil, sessionRowModel, model)
 		if requestModel != "" || requestProvider != "" {
-			apiLog().Debug("api_server request selection skipped: session-persisted model wins for " + sessionKey)
+			pkgLog().Debug("api_server request selection skipped: session-persisted model wins for " + sessionKey)
 		}
 	default:
 		effectiveModel := requestModel
@@ -618,7 +618,7 @@ func (a *APIServerAdapter) selectAgentRuntime(ctx context.Context, runtimeKwargs
 			}
 		}
 		if o.route != nil {
-			apiLog().Debug(fmt.Sprintf("api_server request selection applied: model=%s provider=%v route_provider=%s request_provider=%s",
+			pkgLog().Debug(fmt.Sprintf("api_server request selection applied: model=%s provider=%v route_provider=%s request_provider=%s",
 				model, runtimeKwargs["provider"], routeProvider, requestProvider))
 		}
 	}
@@ -652,7 +652,7 @@ type agentOptions struct {
 	env                    *tools.Env
 }
 
-// API runtime metadata of an agent the adapter built, the hermes api runtime attribute
+// API runtime metadata of an agent the adapter built, the api runtime attribute
 type agentRuntimeInfo struct {
 	provider, model, routeSource string
 }

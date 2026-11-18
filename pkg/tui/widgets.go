@@ -91,17 +91,19 @@ func RegisterWidget(w Widget) error {
 	return nil
 }
 
-// Widget on screen with the state it holds
+// Widget on screen with the state it holds, when it last refreshed and whether a tick of it runs
 type activeWidget struct {
-	widget Widget
-	state  any
-	gen    int
+	widget  Widget
+	state   any
+	gen     int
+	last    time.Time
+	ticking bool
 }
 
-// Tick of one animated widget
-type widgetTickMsg struct {
-	id  string
-	gen int
+// Refresh of a widget that came due on a frame, its tick run on the update loop like every other widget call
+type widgetTickedMsg struct {
+	active *activeWidget
+	gen    int
 }
 
 // Widgets of the app, the modal one over the session and the ambient ones in their zones
@@ -204,40 +206,57 @@ func (h *widgetHost) launch(id, arg string) tea.Cmd {
 	active := &activeWidget{widget: w, state: state, gen: h.gen}
 	if ambient {
 		h.ambient = append(h.ambient, active)
-		return h.schedule(active)
-	}
-	h.modal = &widgetCard{host: h, active: active}
-	return tea.Batch(h.app.wm.ShowOverlay(h.modal), h.schedule(active))
-}
-
-// Next tick of an animated widget
-func (h *widgetHost) schedule(active *activeWidget) tea.Cmd {
-	if active.widget.Every <= 0 || active.widget.Tick == nil {
+		active.last = time.Now()
 		return nil
 	}
-	id, gen := active.widget.ID, active.gen
-	return tea.Tick(active.widget.Every, func(time.Time) tea.Msg { return widgetTickMsg{id: id, gen: gen} })
+	h.modal = &widgetCard{host: h, active: active}
+	active.last = time.Now()
+	return h.app.wm.ShowOverlay(h.modal)
 }
 
-// Advances the widget a tick names, dropped once the widget closed
-func (h *widgetHost) onTick(m widgetTickMsg) tea.Cmd {
-	actives := append([]*activeWidget{}, h.ambient...)
-	if h.modal != nil && h.app.wm.Overlay() == wm.Card(h.modal) {
-		actives = append(actives, h.modal.active)
-	}
+// Refreshes each widget whose interval passed on this frame, its tick queued for the loop, reporting whether one draws anew
+func (h *widgetHost) refresh(now time.Time, actives []*activeWidget) bool {
+	redraw := false
 	for _, active := range actives {
-		if active.widget.ID != m.id || active.gen != m.gen {
+		w := active.widget
+		if w.Every <= 0 || now.Sub(active.last) < w.Every {
 			continue
 		}
-		next, err := active.widget.Tick(h.app.ctx, active.state)
-		if err != nil {
-			h.app.sys("⚠ /" + active.widget.ID + ": " + err.Error())
-			return nil
+		active.last = now
+		redraw = true
+		if w.Tick == nil || active.ticking || h.app.post == nil {
+			continue
 		}
-		active.state = next
-		return h.schedule(active)
+		active.ticking = true
+		h.app.post(widgetTickedMsg{active: active, gen: active.gen})
 	}
-	return nil
+	return redraw
+}
+
+// Ambient widgets that refresh on an interval keep the frame clock running
+func (h *widgetHost) refreshing(actives []*activeWidget) bool {
+	for _, active := range actives {
+		if active.widget.Every > 0 {
+			return true
+		}
+	}
+	return false
+}
+
+// Runs the tick of a widget still shown and draws it anew, a failing widget refreshing no more
+func (h *widgetHost) onTicked(m widgetTickedMsg) {
+	m.active.ticking = false
+	if m.active.gen != m.gen || m.active.widget.Tick == nil {
+		return
+	}
+	next, err := m.active.widget.Tick(h.app.ctx, m.active.state)
+	if err != nil {
+		h.app.sys("⚠ /" + m.active.widget.ID + ": " + err.Error())
+		m.active.widget.Every = 0
+		return
+	}
+	m.active.state = next
+	h.app.wm.Repaint()
 }
 
 // Styled rows of a widget view at a width, each span painted in the tone of its role
@@ -394,6 +413,14 @@ func (c *widgetCard) Key() string    { return "widget:" + c.active.widget.ID }
 func (c *widgetCard) Init() tea.Cmd  { return nil }
 func (c *widgetCard) Raw() bool      { return true }
 func (c *widgetCard) Status() string { return c.active.widget.Help }
+
+// Refreshes the modal widget on the frame clock when its interval passed
+func (c *widgetCard) Animate(float64) bool {
+	return c.host.refresh(time.Now(), []*activeWidget{c.active})
+}
+
+// Keeps the frame clock running while the modal widget refreshes on an interval
+func (c *widgetCard) Awake() bool { return c.active.widget.Every > 0 }
 
 func (c *widgetCard) MinSize() (int, int) {
 	w, h := c.host.app.wm.Size()

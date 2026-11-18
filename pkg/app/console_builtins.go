@@ -21,7 +21,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/tools"
 )
 
-// Session export calls of the console, swapped by tests the way hermes tracks SessionDB methods
+// Session export calls of the console, swapped by tests that track SessionDB methods
 var (
 	consoleExportSession = (*state.SessionDB).ExportSession
 	consoleExportAll     = (*state.SessionDB).ExportAll

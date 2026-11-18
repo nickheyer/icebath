@@ -95,13 +95,13 @@ func pinnedManifest(ctx context.Context, repo, sha, subdir string) *pyjson.Objec
 	if url := rawManifestURL(repo, sha, subdir); url != "" {
 		body, status, err := fetchPresenceManifest(ctx, url)
 		if err != nil {
-			logPluginCatalogPresence.debug(fmt.Sprintf("plugin catalog presence: %s unreadable: %s", url, err))
+			pkgLog().Debug(fmt.Sprintf("plugin catalog presence: %s unreadable: %s", url, err))
 			return nil
 		}
 		if status == http.StatusOK && len(body) <= presenceMaxBytes {
 			data, err := pyjson.LoadsBytes(body)
 			if err != nil {
-				logPluginCatalogPresence.debug(fmt.Sprintf("plugin catalog presence: %s unreadable: %s", url, err))
+				pkgLog().Debug(fmt.Sprintf("plugin catalog presence: %s unreadable: %s", url, err))
 				return nil
 			}
 			manifest, _ = data.(*pyjson.Object)
@@ -220,7 +220,7 @@ func serverPresence(ctx context.Context, decl *tools.PlatformDeclaration, livene
 // Ordered server names under the vendor extension of a manifest object
 func presenceServerOrder(raw *pyjson.Object) []string {
 	cur := raw
-	for _, key := range []string{"extensions", portableExtension, "servers"} {
+	for _, key := range []string{"extensions", PortableExtension, "servers"} {
 		next, _ := cur.Vals[key].(*pyjson.Object)
 		if next == nil {
 			return nil
@@ -245,7 +245,7 @@ func CatalogPresence(ctx context.Context, entry *PluginCatalogEntry) (Presence, 
 	if !ok {
 		return Presence{}, fmt.Errorf("'%s' object has no attribute 'get'", pyTypeName(ext))
 	}
-	vendor, present := extMap[portableExtension]
+	vendor, present := extMap[PortableExtension]
 	if !present {
 		vendor = map[string]any{}
 	}
@@ -291,7 +291,7 @@ func CatalogPresence(ctx context.Context, entry *PluginCatalogEntry) (Presence, 
 		ordered = append(ordered, parsedDecl{pd, d.Liveness})
 	}
 	if err != nil {
-		logPluginCatalogPresence.debug(fmt.Sprintf("plugin catalog presence: %s declaration invalid: %s", entry.Name, err))
+		pkgLog().Debug(fmt.Sprintf("plugin catalog presence: %s declaration invalid: %s", entry.Name, err))
 		return UnknownPresence, nil
 	}
 	title := entry.Title

@@ -69,8 +69,8 @@ func TestIRCFreshInstallDiscoveryIrcAppearsInAllPlatforms(t *testing.T) {
 func TestIRCFreshInstallDiscoveryIrcStatusConfiguredWhenEnvSet(t *testing.T) {
 	plat := registerIRCPlatform(t, func(context.Context) error { return nil })
 	t.Setenv("IRC_SERVER", "irc.libera.chat")
-	t.Setenv("IRC_CHANNEL", "#hermes")
-	t.Setenv("IRC_NICKNAME", "hermes-bot")
+	t.Setenv("IRC_CHANNEL", "#icebath")
+	t.Setenv("IRC_NICKNAME", "icebath-bot")
 	status, err := PlatformStatus(context.Background(), plat)
 	if err != nil || status != "configured" {
 		t.Fatalf("status %q %v", status, err)
@@ -150,8 +150,8 @@ func TestIRCGatewaySetupFreshInstallSetupGatewayIrcCountsAsMessagingPlatform(t *
 	out := ircSetupHarness(t)
 	registerIRCPlatform(t, func(context.Context) error { return nil })
 	t.Setenv("IRC_SERVER", "irc.libera.chat")
-	t.Setenv("IRC_CHANNEL", "#hermes")
-	t.Setenv("IRC_NICKNAME", "hermes-bot")
+	t.Setenv("IRC_CHANNEL", "#icebath")
+	t.Setenv("IRC_NICKNAME", "icebath-bot")
 	WizardSetup.PromptChoice = func(string, []string, int) int { return 0 }
 	WizardSetup.PromptChecklist = func(_ string, items []string, _ []int) []int {
 		var picked []int

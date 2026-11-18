@@ -314,3 +314,43 @@ func RedirectPolicy(follow bool) func(*http.Request, []*http.Request) error {
 func PlainClient(follow bool) *http.Client {
 	return &http.Client{CheckRedirect: RedirectPolicy(follow)}
 }
+
+// Client like httpx.get with trust_env, each request sent through the environment proxy it reads at send time
+func EnvProxyClient(follow bool) *http.Client {
+	return &http.Client{Transport: EnvProxyTransport(), CheckRedirect: RedirectPolicy(follow)}
+}
+
+// Default transport whose proxy is the environment proxy each request reads at send time
+func EnvProxyTransport() http.RoundTripper { return &envProxyTransport{} }
+
+// Sends through a clone of the process default transport carrying the environment proxy, a replaced default transport routing itself
+type envProxyTransport struct {
+	mu    sync.Mutex
+	base  *http.Transport
+	clone *http.Transport
+}
+
+func (e *envProxyTransport) RoundTrip(r *http.Request) (*http.Response, error) {
+	base, ok := http.DefaultTransport.(*http.Transport)
+	if !ok {
+		return http.DefaultTransport.RoundTrip(r)
+	}
+	e.mu.Lock()
+	if e.base != base {
+		e.base, e.clone = base, base.Clone()
+		e.clone.Proxy = EnvProxy
+	}
+	t := e.clone
+	e.mu.Unlock()
+	return t.RoundTrip(r)
+}
+
+// Closes the idle connections of the proxy carrying clone
+func (e *envProxyTransport) CloseIdleConnections() {
+	e.mu.Lock()
+	t := e.clone
+	e.mu.Unlock()
+	if t != nil {
+		t.CloseIdleConnections()
+	}
+}

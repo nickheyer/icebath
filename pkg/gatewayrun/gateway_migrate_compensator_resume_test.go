@@ -24,11 +24,11 @@ type strandedHost struct {
 
 // Writes the pid file and runtime record a live gateway writes, served profiles when given
 func writeLiveGateway(t *testing.T, h string, pid int, served []any) {
-	record := pyjson.ObjectOf("pid", int64(pid), "hermes_home", h, "gateway_state", "running")
+	record := pyjson.ObjectOf("pid", int64(pid), "icebath_home", h, "gateway_state", "running")
 	if served != nil {
 		record.Set("served_profiles", served)
 	}
-	for name, v := range map[string]any{"gateway.pid": pyjson.ObjectOf("pid", int64(pid), "hermes_home", h), "gateway_state.json": record} {
+	for name, v := range map[string]any{"gateway.pid": pyjson.ObjectOf("pid", int64(pid), "icebath_home", h), "gateway_state.json": record} {
 		text, err := pyjson.Dumps(v)
 		if err != nil {
 			t.Fatal(err)

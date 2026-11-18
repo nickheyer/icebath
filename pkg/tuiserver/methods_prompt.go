@@ -13,7 +13,7 @@ func reopenIfFinalized(ctx context.Context, db *state.DB, sessionID string) erro
 	}
 	row, err := db.GetSession(ctx, sessionID)
 	if err != nil {
-		logger().Debug("finalized-session reopen check failed for "+sessionID, "error", err)
+		pkgLog().Debug("finalized-session reopen check failed for "+sessionID, "error", err)
 		return nil
 	}
 	if row == nil {

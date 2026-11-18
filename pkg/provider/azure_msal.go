@@ -324,7 +324,7 @@ func (a *msalConfidentialApp) discover(ctx context.Context) error {
 		}
 		next, ok := payload["tenant_discovery_endpoint"].(string)
 		if !ok {
-			return fmt.Errorf("KeyError: 'tenant_discovery_endpoint' (HTTP %d)", status)
+			return fmt.Errorf("the Azure tenant discovery reply has no tenant_discovery_endpoint (HTTP %d)", status)
 		}
 		endpoint = next
 	}

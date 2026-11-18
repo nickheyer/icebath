@@ -569,7 +569,7 @@ func TestExplicitMigrateWithNoStandaloneSecondariesStillFlipsFlagAndRestartsDefa
 	swapMigrateSeam(t, &migrateSpawnDetachedGateway, func(context.Context, string) (bool, error) {
 		detached = true
 		f.writePidRecord()
-		f.writeJSON(filepath.Join(f.root, "gateway_state.json"), pyjson.ObjectOf("pid", int64(f.gatewayPid), "hermes_home", f.root,
+		f.writeJSON(filepath.Join(f.root, "gateway_state.json"), pyjson.ObjectOf("pid", int64(f.gatewayPid), "icebath_home", f.root,
 			"gateway_state", "running", "served_profiles", []any{"default", "coder", "ops"}))
 		return true, nil
 	})

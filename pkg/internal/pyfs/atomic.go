@@ -18,7 +18,7 @@ type EncodeError struct{ Msg string }
 
 func (e *EncodeError) Error() string { return e.Msg }
 
-// File flush every atomic writer runs before the replace, the os.fsync hermes tests fail
+// File flush every atomic writer runs before the replace, the os.fsync tests fail
 var Fsync = func(f *os.File) error { return f.Sync() }
 
 // Keyword arguments of the shared atomic writer, Mode applying only when ModeSet

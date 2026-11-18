@@ -17,20 +17,20 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tools"
-	"github.com/nickheyer/icebath/pkg/tuigateway"
+	"github.com/nickheyer/icebath/pkg/tuihost"
 )
 
 // Owner record and transport of the snapshot cases with the subagent and delegation registries emptied
-func subagentSnapshotRuntime(t *testing.T) (*tuigateway.Session, *frameRecorder) {
+func subagentSnapshotRuntime(t *testing.T) (*tuihost.Session, *frameRecorder) {
 	t.Helper()
 	t.Setenv("ICEBATH_HOME", t.TempDir())
 	agent.ClearActiveSubagents()
 	tools.ResetAsyncDelegationForTests()
 	transport := &frameRecorder{}
-	owner := tuigateway.NewSession(map[string]any{"session_key": "parent", "history": []any{}, "transport": transport})
-	tuigateway.SetSessionRecord("ui-owner", owner)
+	owner := tuihost.NewSession(map[string]any{"session_key": "parent", "history": []any{}, "transport": transport})
+	tuihost.SetSessionRecord("ui-owner", owner)
 	t.Cleanup(func() {
-		tuigateway.SetSessionRecord("ui-owner", nil)
+		tuihost.SetSessionRecord("ui-owner", nil)
 		agent.ClearActiveSubagents()
 		tools.ResetAsyncDelegationForTests()
 	})
@@ -38,7 +38,7 @@ func subagentSnapshotRuntime(t *testing.T) (*tuigateway.Session, *frameRecorder)
 }
 
 // One RPC of the owner session through the real dispatcher on the given transport
-func subagentSnapshotCall(via tuigateway.Transport, method string, params map[string]any) map[string]any {
+func subagentSnapshotCall(via tuihost.Transport, method string, params map[string]any) map[string]any {
 	merged := map[string]any{"session_id": "ui-owner"}
 	for key, value := range params {
 		merged[key] = value
@@ -47,7 +47,7 @@ func subagentSnapshotCall(via tuigateway.Transport, method string, params map[st
 }
 
 // Result of one owner RPC, failing the case on an error reply
-func subagentSnapshotResult(t *testing.T, via tuigateway.Transport, method string, params map[string]any) map[string]any {
+func subagentSnapshotResult(t *testing.T, via tuihost.Transport, method string, params map[string]any) map[string]any {
 	t.Helper()
 	reply := subagentSnapshotCall(via, method, params)
 	result, isDict := reply["result"].(map[string]any)
@@ -81,7 +81,7 @@ func TestSnapshotProjectsOnlyThisSessionsRuntimeRecords(t *testing.T) {
 	child := agent.NewSubagentChildForTests("child", 1, did, "test", "")
 	agent.RegisterChild(ctx, child, nil, "owned task", "ui-owner", transport, owner)
 	foreign := agent.NewSubagentChildForTests("foreign", 1, "", "test", "")
-	agent.RegisterChild(ctx, foreign, nil, "foreign secret", "other", transport, tuigateway.NewSession(map[string]any{}))
+	agent.RegisterChild(ctx, foreign, nil, "foreign secret", "other", transport, tuihost.NewSession(map[string]any{}))
 	progress := agent.BuildChildProgressCallback(0, "owned task",
 		agent.NewProgressParentForTests(func(string, string, string, map[string]any, map[string]any) {}), "child")
 	agent.FireToolProgress(progress, "tool.started", "read_file")
@@ -124,7 +124,7 @@ func TestSnapshotProjectsOnlyThisSessionsRuntimeRecords(t *testing.T) {
 	if _, failed := subagentSnapshotCall(transport, "subagent.list", map[string]any{"session_id": "missing"})["error"]; !failed {
 		t.Fatal("a missing session read the roster")
 	}
-	tuigateway.SetSessionRecord("ui-owner", tuigateway.NewSession(owner.Fields()))
+	tuihost.SetSessionRecord("ui-owner", tuihost.NewSession(owner.Fields()))
 	if got := subagentSnapshotResult(t, transport, "subagent.list", nil)["subagents"]; !pyjson.Equal(got, []any{}) {
 		t.Fatalf("a replaced record still owns %v", got)
 	}
@@ -137,7 +137,7 @@ func TestLiveTailAndSteerShareExactOwnerAndEndWithChild(t *testing.T) {
 	child := agent.NewSubagentChildForTests("child", 1, "", "test", writer.Path())
 	agent.RegisterChild(ctx, child, nil, "owned task", "ui-owner", transport, owner)
 	defer agent.UnregisterSubagent("child", nil)
-	tail := func(via tuigateway.Transport) map[string]any {
+	tail := func(via tuihost.Transport) map[string]any {
 		return subagentSnapshotResult(t, via, "subagent.tail", map[string]any{"subagent_id": "child"})
 	}
 	writer.Event("tool", strings.Repeat("x", 20000))
@@ -164,11 +164,11 @@ func TestLiveTailAndSteerShareExactOwnerAndEndWithChild(t *testing.T) {
 	if _, failed := subagentSnapshotCall(&frameRecorder{}, "subagent.tail", map[string]any{"subagent_id": "child"})["error"]; !failed {
 		t.Fatal("a foreign transport read the tail")
 	}
-	tuigateway.SetSessionRecord("ui-owner", tuigateway.NewSession(owner.Fields()))
+	tuihost.SetSessionRecord("ui-owner", tuihost.NewSession(owner.Fields()))
 	if got := tail(transport); got["available"] != false {
 		t.Fatalf("a replaced record read the tail %v", got["available"])
 	}
-	tuigateway.SetSessionRecord("ui-owner", owner)
+	tuihost.SetSessionRecord("ui-owner", owner)
 	agent.UnregisterSubagent("child", nil)
 	if got := tail(transport); !pyjson.Equal(got, map[string]any{"subagent_id": "child", "available": false, "text": "", "truncated": false}) {
 		t.Fatalf("retired child tail %v", got)
@@ -181,7 +181,7 @@ func TestInterruptRequiresExactLiveOwnerButDirectHelperStaysLegacy(t *testing.T)
 	agent.RegisterChild(context.Background(), child, nil, "owned", "ui-owner", transport, owner)
 	defer agent.UnregisterSubagent("child", nil)
 	refusals := []struct {
-		via    tuigateway.Transport
+		via    tuihost.Transport
 		params map[string]any
 	}{{transport, map[string]any{"session_id": ""}}, {transport, map[string]any{"session_id": "missing"}}, {&frameRecorder{}, nil}}
 	for _, refusal := range refusals {
@@ -197,16 +197,16 @@ func TestInterruptRequiresExactLiveOwnerButDirectHelperStaysLegacy(t *testing.T)
 			t.Fatalf("a refused interrupt %v stopped the child", refusal.params)
 		}
 	}
-	tuigateway.SetSessionRecord("foreign", tuigateway.NewSession(owner.Fields()))
-	t.Cleanup(func() { tuigateway.SetSessionRecord("foreign", nil) })
+	tuihost.SetSessionRecord("foreign", tuihost.NewSession(owner.Fields()))
+	t.Cleanup(func() { tuihost.SetSessionRecord("foreign", nil) })
 	if got := subagentSnapshotResult(t, transport, "subagent.interrupt", map[string]any{"session_id": "foreign", "subagent_id": "child"}); got["found"] != false {
 		t.Fatalf("foreign record interrupt %v", got)
 	}
-	tuigateway.SetSessionRecord("ui-owner", tuigateway.NewSession(owner.Fields()))
+	tuihost.SetSessionRecord("ui-owner", tuihost.NewSession(owner.Fields()))
 	if got := subagentSnapshotResult(t, transport, "subagent.interrupt", map[string]any{"subagent_id": "child"}); got["found"] != false || child.IsInterrupted() {
 		t.Fatalf("replaced record interrupt %v", got)
 	}
-	tuigateway.SetSessionRecord("ui-owner", owner)
+	tuihost.SetSessionRecord("ui-owner", owner)
 	if got := subagentSnapshotResult(t, transport, "subagent.interrupt", map[string]any{"subagent_id": "child"}); got["found"] != true || !child.IsInterrupted() {
 		t.Fatalf("owner interrupt %v", got)
 	}
@@ -221,7 +221,7 @@ func TestInterruptRequiresExactLiveOwnerButDirectHelperStaysLegacy(t *testing.T)
 }
 
 // Subagent ids of the roster one transport reads for the owner session
-func subagentSnapshotIDs(t *testing.T, via tuigateway.Transport) map[string]bool {
+func subagentSnapshotIDs(t *testing.T, via tuihost.Transport) map[string]bool {
 	t.Helper()
 	ids := map[string]bool{}
 	rows, _ := subagentSnapshotResult(t, via, "subagent.list", nil)["subagents"].([]any)
@@ -251,9 +251,9 @@ func TestReattachPreservesChildControlsIncludingLateRegistration(t *testing.T) {
 	}()
 	register("before")
 	historyLock := &sync.Mutex{}
-	owner.Set("transport", tuigateway.DetachedWSTransport())
+	owner.Set("transport", tuihost.DetachedWSTransport())
 	owner.Set("history_lock", historyLock)
-	rebind := func(transport tuigateway.Transport, refuseCheck bool) {
+	rebind := func(transport tuihost.Transport, refuseCheck bool) {
 		sessionResumeLock.Lock()
 		historyLock.Lock()
 		defer sessionResumeLock.Unlock()
@@ -273,7 +273,7 @@ func TestReattachPreservesChildControlsIncludingLateRegistration(t *testing.T) {
 	}
 	popup := &frameRecorder{}
 	rebind(popup, false)
-	for _, peer := range []tuigateway.Transport{fresh, popup} {
+	for _, peer := range []tuihost.Transport{fresh, popup} {
 		if got := subagentSnapshotIDs(t, peer); !maps.Equal(got, both) {
 			t.Fatalf("peer roster %v", got)
 		}
@@ -284,7 +284,7 @@ func TestReattachPreservesChildControlsIncludingLateRegistration(t *testing.T) {
 	if closed, ended := closeSessionsForTransport(ctx, popup, "ws_disconnect"); closed != 0 || ended != 0 {
 		t.Fatalf("closing the popup closed %d ended %d", closed, ended)
 	}
-	if !tuigateway.SessionTransportContains(owner, fresh) || tuigateway.SessionTransportContains(owner, popup) {
+	if !tuihost.SessionTransportContains(owner, fresh) || tuihost.SessionTransportContains(owner, popup) {
 		t.Fatal("the survivor did not keep control")
 	}
 	if got := subagentSnapshotIDs(t, fresh); !maps.Equal(got, both) {
@@ -324,8 +324,8 @@ func TestReattachDoesNotAdoptForeignOrRetiredGenerations(t *testing.T) {
 	children := map[string]*agent.AIAgent{}
 	for _, row := range []struct {
 		sid, sessionID string
-		record         *tuigateway.Session
-	}{{"foreign", "other", owner}, {"retired", "ui-owner", tuigateway.NewSession(owner.Fields())}} {
+		record         *tuihost.Session
+	}{{"foreign", "other", owner}, {"retired", "ui-owner", tuihost.NewSession(owner.Fields())}} {
 		children[row.sid] = agent.NewSubagentChildForTests(row.sid, 1, "", "test", "")
 		agent.RegisterChild(ctx, children[row.sid], nil, "private", row.sessionID, old, row.record)
 	}
@@ -336,7 +336,7 @@ func TestReattachDoesNotAdoptForeignOrRetiredGenerations(t *testing.T) {
 	func() {
 		sessionResumeLock.Lock()
 		defer sessionResumeLock.Unlock()
-		if code := rpcCode(reattachRefusal(1, "ui-owner", tuigateway.NewSession(owner.Fields()))); code != 4007 {
+		if code := rpcCode(reattachRefusal(1, "ui-owner", tuihost.NewSession(owner.Fields()))); code != 4007 {
 			t.Fatalf("copied record refusal code %d", code)
 		}
 		owner.Set("_client_gone_interrupt_requested", true)
@@ -373,8 +373,8 @@ func TestAnyAttachPathCarriesSubagentAuthorityWithoutRegistrySync(t *testing.T) 
 	child := agent.NewSubagentChildForTests("child", 1, "", "test", "")
 	agent.RegisterChild(context.Background(), child, nil, "owned", "ui-owner", old, owner)
 	defer agent.UnregisterSubagent("child", nil)
-	owner.Set("transport", tuigateway.DetachedWSTransport())
-	if !tuigateway.AttachSessionTransport(owner, fresh) {
+	owner.Set("transport", tuihost.DetachedWSTransport())
+	if !tuihost.AttachSessionTransport(owner, fresh) {
 		t.Fatal("the attach was refused")
 	}
 	if got := subagentSnapshotIDs(t, fresh); !maps.Equal(got, map[string]bool{"child": true}) {
@@ -398,7 +398,7 @@ func TestAnyAttachPathCarriesSubagentAuthorityWithoutRegistrySync(t *testing.T) 
 }
 
 // Subagent ids of one session's roster in roster order
-func subagentSnapshotOrder(t *testing.T, sessionID string, via tuigateway.Transport) []string {
+func subagentSnapshotOrder(t *testing.T, sessionID string, via tuihost.Transport) []string {
 	t.Helper()
 	ids := []string{}
 	for _, row := range subagentSnapshotResult(t, via, "subagent.list", map[string]any{"session_id": sessionID})["subagents"].([]any) {
@@ -435,23 +435,23 @@ func TestListFollowsTheConversationAcrossUISidAndCompressionRotation(t *testing.
 	child := agent.NewSubagentChildForTests("child", 1, "", "test", "")
 	agent.RegisterChild(ctx, child, parent, "owned task", "ui-owner", transport, owner)
 	defer agent.UnregisterSubagent("child", nil)
-	liveSession := func(key string) *tuigateway.Session {
-		return tuigateway.NewSession(map[string]any{"session_key": key, "history": []any{}, "transport": transport,
+	liveSession := func(key string) *tuihost.Session {
+		return tuihost.NewSession(map[string]any{"session_key": key, "history": []any{}, "transport": transport,
 			"agent": agent.NewLineageParentForTests(key, db)})
 	}
 	t.Cleanup(func() {
 		for _, sid := range []string{"ui-new", "ui-new2", "ui-other"} {
-			tuigateway.SetSessionRecord(sid, nil)
+			tuihost.SetSessionRecord(sid, nil)
 		}
 	})
-	tuigateway.SetSessionRecord("ui-owner", nil)
-	tuigateway.SetSessionRecord("ui-new", liveSession("conv"))
+	tuihost.SetSessionRecord("ui-owner", nil)
+	tuihost.SetSessionRecord("ui-new", liveSession("conv"))
 	if got := subagentSnapshotOrder(t, "ui-new", transport); !slices.Equal(got, []string{"child"}) {
 		t.Fatalf("reminted sid roster %v", got)
 	}
-	tuigateway.SetSessionRecord("ui-new", nil)
-	tuigateway.SetSessionRecord("ui-new2", liveSession("conv2"))
-	tuigateway.SetSessionRecord("ui-other", liveSession("unrelated"))
+	tuihost.SetSessionRecord("ui-new", nil)
+	tuihost.SetSessionRecord("ui-new2", liveSession("conv2"))
+	tuihost.SetSessionRecord("ui-other", liveSession("unrelated"))
 	if got := subagentSnapshotOrder(t, "ui-new2", transport); !slices.Equal(got, []string{"child"}) {
 		t.Fatalf("rotated key roster %v", got)
 	}

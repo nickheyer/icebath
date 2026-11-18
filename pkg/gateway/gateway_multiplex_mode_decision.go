@@ -3,7 +3,6 @@ package gateway
 import (
 	"context"
 	"fmt"
-	"log/slog"
 	"os"
 	"path/filepath"
 	"sync"
@@ -35,11 +34,6 @@ type MultiplexDecision struct {
 	Enabled bool
 	Source  string
 	Reason  string
-}
-
-// Logger records carry the module name of the multiplex verdict
-func multiplexModeLog() *slog.Logger {
-	return slog.Default().With("logger", "hermes_cli.gateway_multiplex_mode")
 }
 
 // Whether the launching home is a named profile that opted out with gateway.standalone
@@ -109,14 +103,14 @@ func PersistResolvedDefault(ctx context.Context, decision MultiplexDecision, def
 		return false
 	}
 	if err != nil {
-		multiplexModeLog().Debug("could not persist gateway.multiplex_profiles: true", "error", err)
+		pkgLog().Debug("could not persist gateway.multiplex_profiles: true", "error", err)
 		return false
 	}
 	was := "unset"
 	if inFile != nil {
 		was = pyrepr.Repr(inFile)
 	}
-	multiplexModeLog().Info(fmt.Sprintf("Wrote gateway.multiplex_profiles: true to %s (was %s).", cfgPath, was))
+	pkgLog().Info(fmt.Sprintf("Wrote gateway.multiplex_profiles: true to %s (was %s).", cfgPath, was))
 	return true
 }
 
@@ -133,7 +127,7 @@ var pendingMultiplexDecision struct {
 func RecordMultiplexDecision(ctx context.Context, decision MultiplexDecision) {
 	defer func() {
 		if rec := recover(); rec != nil {
-			multiplexModeLog().Debug("could not record the multiplex decision", "error", rec)
+			pkgLog().Debug("could not record the multiplex decision", "error", rec)
 		}
 	}()
 	owns := OwnsGatewayRuntimeLock()
@@ -151,7 +145,7 @@ func RecordMultiplexDecision(ctx context.Context, decision MultiplexDecision) {
 		reason = decision.Reason
 	}
 	if _, err := WriteRuntimeStatus(ctx, RuntimeStatusUpdate{Fields: map[string]any{"multiplex_standalone_reason": reason}}, false, nil); err != nil {
-		multiplexModeLog().Debug("could not record the multiplex decision", "error", err)
+		pkgLog().Debug("could not record the multiplex decision", "error", err)
 	}
 }
 
@@ -170,20 +164,20 @@ func LogMultiplexDecision(ctx context.Context, decision MultiplexDecision) {
 	RecordMultiplexDecision(ctx, decision)
 	switch {
 	case decision.Source == "retired-opt-out":
-		multiplexModeLog().Warn(RetiredOptOutReason)
+		pkgLog().Warn(RetiredOptOutReason)
 		PersistResolvedDefault(ctx, decision, "")
 		for _, line := range RetiredOptOutNoticeLines() {
 			fmt.Println(line)
 		}
 	case decision.Source == "guard" && decision.Reason == SingleProfileReason:
-		multiplexModeLog().Info("Single-profile install: gateway.multiplex_profiles unset, serving the default profile only.")
+		pkgLog().Info("Single-profile install: gateway.multiplex_profiles unset, serving the default profile only.")
 	case decision.Source == "guard":
-		multiplexModeLog().Warn(fmt.Sprintf("This gateway stays standalone: %s. It serves only the launching profile.", decision.Reason))
+		pkgLog().Warn(fmt.Sprintf("This gateway stays standalone: %s. It serves only the launching profile.", decision.Reason))
 		for _, line := range StandaloneWarningLines(ctx, decision.Source, decision.Reason, nil, false) {
 			fmt.Println(line)
 		}
 	case decision.Source == "default":
-		multiplexModeLog().Info("Serving every profile on this host (gateway.multiplex_profiles unset; default on).")
+		pkgLog().Info("Serving every profile on this host (gateway.multiplex_profiles unset; default on).")
 		PersistResolvedDefault(ctx, decision, "")
 	}
 }

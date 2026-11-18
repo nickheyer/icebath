@@ -3,7 +3,6 @@ package provider
 import (
 	"context"
 	"fmt"
-	"log/slog"
 
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 )
@@ -36,7 +35,7 @@ func auxGetTaskNoProgressTimeout(ctx context.Context, task string) float64 {
 		value = 0
 	}
 	if _, isBool := raw.(bool); isBool || value <= 0 {
-		slog.Warn(fmt.Sprintf("auxiliary.%s.no_progress_timeout=%s is not a positive number of seconds; "+
+		pkgLog().Warn(fmt.Sprintf("auxiliary.%s.no_progress_timeout=%s is not a positive number of seconds; "+
 			"using the built-in %.0fs default", task, pyrepr.Repr(raw), auxStreamNoProgressTimeoutSeconds))
 		return 0
 	}

@@ -80,7 +80,7 @@ func TestAccountDefaultComparesTheResolvedUserHome(t *testing.T) {
 	}
 }
 
-// Platform default directory hermes derives from a user home with no suffix and no LOCALAPPDATA
+// Platform default directory derived from a user home with no suffix and no LOCALAPPDATA
 func platformBase(h string) string {
 	if runtime.GOOS == "windows" {
 		return pypath.PathJoin(h, "AppData", "Local", "icebath")

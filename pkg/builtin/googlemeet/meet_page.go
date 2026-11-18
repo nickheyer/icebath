@@ -19,7 +19,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/tools"
 )
 
-// Page surface the bot drives, the Playwright sync page calls the hermes bot makes
+// Page surface the bot drives, the Playwright sync page calls the bot makes
 type meetPage interface {
 	Evaluate(js string) (any, error)
 	Locator(selector string) meetLocator

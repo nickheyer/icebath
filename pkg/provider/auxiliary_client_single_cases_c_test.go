@@ -18,7 +18,7 @@ func TestVisionFallbackSkipsTextOnlyMainModel(t *testing.T) {
 		t.Fatal("must not build a client for a text-only model")
 		return nil, "", nil
 	}
-	client, model, label, err := auxTryMainAgentModelFallback(ctx, "nous", "vision", "rate limit", "", "", FailureScope(""))
+	client, model, label, err := auxTryMainAgentModelFallback(ctx, "deepseek", "vision", "rate limit", "", "", FailureScope(""))
 	if err != nil || client != nil || model != "" || label != "" {
 		t.Fatalf("got (%v, %q, %q, %v)", client, model, label, err)
 	}

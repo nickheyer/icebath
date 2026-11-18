@@ -10,7 +10,7 @@ import (
 
 const carriedSummaryText = "[CONTEXT COMPACTION] summary of the earlier turns"
 
-// Store holding four alternating old turns in one session, the hermes db fixture
+// Store holding four alternating old turns in one session, the db fixture
 func carriedTailDB(t *testing.T) *state.SessionDB {
 	t.Helper()
 	db := restoreRealDB(t, "sess1", "test")

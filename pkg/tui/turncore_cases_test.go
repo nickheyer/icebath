@@ -2,6 +2,7 @@ package tui
 
 import (
 	"context"
+	"github.com/nickheyer/icebath/pkg/tuigateway"
 	"reflect"
 	"strings"
 	"testing"
@@ -69,36 +70,6 @@ func TestTurnControllerRecordTodosPreservesTheParentField(t *testing.T) {
 		c.recordTodos([]any{map[string]any{"content": "x", "id": "a", "status": "pending"}})
 		if !reflect.DeepEqual(c.store.turn.Todos, []todoItem{{Content: "x", ID: "a", Status: "pending"}}) {
 			t.Fatalf("todos %#v", c.store.turn.Todos)
-		}
-	})
-}
-
-func TestTurnControllerStartMessageFlashAndYieldNotices(t *testing.T) {
-	newCtl := func(n notice) *turnController {
-		c := newTurnController(newTUIStore())
-		c.fullReset()
-		c.store.ui.Notice = &n
-		return c
-	}
-	t.Run("clears a standing credits.usage notice when a new turn starts", func(t *testing.T) {
-		c := newCtl(notice{Key: "credits.usage", Kind: "sticky", Level: "warn", Text: "⚠ Credits 90% used · $20.00 cap"})
-		c.startMessage()
-		if c.store.ui.Notice != nil {
-			t.Fatalf("notice %#v", c.store.ui.Notice)
-		}
-	})
-	t.Run("clears a standing credits.grant_spent notice when a new turn starts", func(t *testing.T) {
-		c := newCtl(notice{Key: "credits.grant_spent", Kind: "sticky", Level: "info", Text: "• Grant spent · $990.00 top-up left"})
-		c.startMessage()
-		if c.store.ui.Notice != nil {
-			t.Fatalf("notice %#v", c.store.ui.Notice)
-		}
-	})
-	t.Run("leaves a sticky credits.depleted notice across a new turn", func(t *testing.T) {
-		c := newCtl(notice{Key: "credits.depleted", Kind: "sticky", Level: "error", Text: "✕ Credit access paused · run /topup to top up"})
-		c.startMessage()
-		if c.store.ui.Notice == nil || c.store.ui.Notice.Key != "credits.depleted" {
-			t.Fatalf("notice %#v", c.store.ui.Notice)
 		}
 	})
 }
@@ -231,7 +202,7 @@ func TestTurnControllerTurnFlow(t *testing.T) {
 		t.Setenv("ICEBATH_HOME", t.TempDir())
 		c := stillController()
 		c.store.ui.Sid = "s1"
-		c.store.ui.Info = map[string]any{"execution_epoch": "3", "execution_generation": float64(7)}
+		c.store.ui.Info = &tuigateway.SessionInfo{AuthorityEpoch: ptr(int64(3)), ExecutionGeneration: ptr(int64(7))}
 		c.startMessage()
 		c.recordMessageDelta("x")
 		gw := &recordingGateway{canon: true, answer: map[string]any{"execution_state": "running", "execution_generation": float64(7)}}
@@ -244,7 +215,7 @@ func TestTurnControllerTurnFlow(t *testing.T) {
 		if len(appended) != 1 || !c.store.ui.Busy || c.store.ui.Status != tr("session.status.interrupting") {
 			t.Fatalf("appended %#v busy %v status %q", appended, c.store.ui.Busy, c.store.ui.Status)
 		}
-		if gw.calls[0]["params"].(map[string]any)["execution_generation"] != float64(7) {
+		if gw.calls[0]["params"].(map[string]any)["execution_generation"] != int64(7) {
 			t.Fatalf("params %#v", gw.calls[0])
 		}
 	})

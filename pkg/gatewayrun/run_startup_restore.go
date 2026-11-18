@@ -39,7 +39,7 @@ func (r *GatewayRunner) queueStartupRestoreEvent(event *gateway.MessageEvent) {
 			platform = string(source.Platform)
 		}
 	}
-	runLog().Info(fmt.Sprintf("Queued inbound message during gateway startup restore: platform=%s chat=%s", platform, chat))
+	pkgLog().Info(fmt.Sprintf("Queued inbound message during gateway startup restore: platform=%s chat=%s", platform, chat))
 }
 
 // Replays the inbound messages queued while startup auto resume ran, one failure never stopping the rest
@@ -54,7 +54,7 @@ func (r *GatewayRunner) drainStartupRestoreQueue(ctx context.Context) int {
 			if event.Source != nil {
 				platform = string(event.Source.Platform)
 			}
-			runLog().Warn(fmt.Sprintf("Dropping startup-restore queued message: adapter unavailable for %s", platform))
+			pkgLog().Warn(fmt.Sprintf("Dropping startup-restore queued message: adapter unavailable for %s", platform))
 			continue
 		}
 		if err == nil {
@@ -96,6 +96,6 @@ func (r *GatewayRunner) finishStartupRestore(ctx context.Context) {
 		drained = r.drainStartupRestoreQueue(ctx)
 	}()
 	if drained > 0 {
-		runLog().Info(fmt.Sprintf("Drained %d inbound message(s) queued during startup restore", drained))
+		pkgLog().Info(fmt.Sprintf("Drained %d inbound message(s) queued during startup restore", drained))
 	}
 }

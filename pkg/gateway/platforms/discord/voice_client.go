@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"log/slog"
 	"math"
 	"os"
 	"os/exec"
@@ -298,7 +297,7 @@ func (vc *voiceClient) sendAudioPacket(data []byte, encode bool) error {
 	}
 	if err := vc.conn.sendPacket(packet); err != nil {
 		vc.mu.Lock()
-		slog.Debug(fmt.Sprintf("A packet has been dropped (seq: %d, timestamp: %d)", vc.sequence, vc.timestamp))
+		pkgLog().Debug(fmt.Sprintf("A packet has been dropped (seq: %d, timestamp: %d)", vc.sequence, vc.timestamp))
 		vc.mu.Unlock()
 	}
 	vc.mu.Lock()
@@ -389,13 +388,13 @@ func (p *audioPlayer) doRun() error {
 		}
 		if !client.IsConnected() {
 			timeout := client.conn.timeoutValue()
-			slog.Debug(fmt.Sprintf("Not connected, waiting for %ss...", strconv.FormatFloat(timeout.Seconds(), 'f', 1, 64)))
+			pkgLog().Debug(fmt.Sprintf("Not connected, waiting for %ss...", strconv.FormatFloat(timeout.Seconds(), 'f', 1, 64)))
 			connected := client.waitUntilConnected(timeout)
 			if p.ended() || !connected {
-				slog.Debug("Aborting playback")
+				pkgLog().Debug("Aborting playback")
 				return nil
 			}
-			slog.Debug("Reconnected, resuming playback")
+			pkgLog().Debug("Reconnected, resuming playback")
 			p.speak(speakingVoice)
 			loops = 0
 			start = time.Now()
@@ -429,13 +428,13 @@ func (p *audioPlayer) run() {
 		func() {
 			defer func() {
 				if r := recover(); r != nil {
-					slog.Error(fmt.Sprintf("Calling the after function failed. %v", r))
+					pkgLog().Error(fmt.Sprintf("Calling the after function failed. %v", r))
 				}
 			}()
 			p.after(err)
 		}()
 	} else if err != nil {
-		slog.Error(fmt.Sprintf("Exception in voice thread audio-player: %s", err))
+		pkgLog().Error(fmt.Sprintf("Exception in voice thread audio-player: %s", err))
 	}
 	p.source.cleanup()
 }
@@ -452,11 +451,11 @@ func (p *audioPlayer) isPlaying() bool { return !p.ended() }
 func (p *audioPlayer) speak(state int) {
 	ws := p.client.conn.wsValue()
 	if ws == nil {
-		slog.Error("Speaking call in player failed")
+		pkgLog().Error("Speaking call in player failed")
 		return
 	}
 	if err := ws.speak(state); err != nil {
-		slog.Error(fmt.Sprintf("Speaking call in player failed: %s", err))
+		pkgLog().Error(fmt.Sprintf("Speaking call in player failed: %s", err))
 	}
 }
 
@@ -501,7 +500,7 @@ func newFFmpegPCMAudio(path, executable, options string) (*ffmpegPCMAudio, error
 	if err != nil {
 		return nil, err
 	}
-	slog.Debug(fmt.Sprintf("Spawning ffmpeg process with command: %v", cmd.Args))
+	pkgLog().Debug(fmt.Sprintf("Spawning ffmpeg process with command: %v", cmd.Args))
 	if err := cmd.Start(); err != nil {
 		if errors.Is(err, exec.ErrNotFound) || errors.Is(err, os.ErrNotExist) {
 			return nil, &voiceClientException{msg: executable + " was not found."}
@@ -552,9 +551,9 @@ func (f *ffmpegPCMAudio) cleanup() {
 	f.stopped = true
 	f.mu.Unlock()
 	pid := f.cmd.Process.Pid
-	slog.Debug(fmt.Sprintf("Preparing to terminate ffmpeg process %d.", pid))
+	pkgLog().Debug(fmt.Sprintf("Preparing to terminate ffmpeg process %d.", pid))
 	if err := f.cmd.Process.Kill(); err != nil && !errors.Is(err, os.ErrProcessDone) {
-		slog.Error(fmt.Sprintf("Ignoring error attempting to kill ffmpeg process %d", pid))
+		pkgLog().Error(fmt.Sprintf("Ignoring error attempting to kill ffmpeg process %d", pid))
 	}
 	f.cmd.Wait()
 	code := -1
@@ -564,7 +563,7 @@ func (f *ffmpegPCMAudio) cleanup() {
 			code = -int(ws.Signal())
 		}
 	}
-	slog.Info(fmt.Sprintf("ffmpeg process %d successfully terminated with return code of %d.", pid, code))
+	pkgLog().Info(fmt.Sprintf("ffmpeg process %d successfully terminated with return code of %d.", pid, code))
 }
 
 // PCM source scaling another source's samples, discord.py's PCMVolumeTransformer

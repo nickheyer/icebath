@@ -2,7 +2,7 @@ package gateway
 
 import "context"
 
-// Text batch timings of the hermes base adapter class
+// Text batch timings of the base adapter class
 const (
 	TextBatchDefaultDelayS      = textBatchDefaultDelayS
 	TextBatchMaxDelayS          = textBatchMaxDelayS

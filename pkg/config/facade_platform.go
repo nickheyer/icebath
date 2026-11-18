@@ -4,7 +4,6 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
-	"log/slog"
 	"os"
 	"path/filepath"
 	"strings"
@@ -132,7 +131,7 @@ func platformPluginManifests(h, source string, strict bool, skipped *[]string) (
 	var out []NamedPlatformManifest
 	for _, p := range platformManifestPaths(h, source) {
 		if p.path == "" {
-			slog.Warn(fmt.Sprintf("Skipping unreadable plugin directory %s: %s", p.dirName, pyOSErrorString(p.err)))
+			pkgLog().Warn(fmt.Sprintf("Skipping unreadable plugin directory %s: %s", p.dirName, pyOSErrorString(p.err)))
 			if skipped != nil {
 				*skipped = append(*skipped, p.dirName)
 			}
@@ -143,7 +142,7 @@ func platformPluginManifests(h, source string, strict bool, skipped *[]string) (
 			if strict && !p.requireKind {
 				return out, err
 			}
-			slog.Warn(fmt.Sprintf("Skipping unreadable plugin manifest %s: %s", p.path, pyOSErrorString(err)))
+			pkgLog().Warn(fmt.Sprintf("Skipping unreadable plugin manifest %s: %s", p.path, pyOSErrorString(err)))
 			if skipped != nil {
 				*skipped = append(*skipped, p.path)
 			}

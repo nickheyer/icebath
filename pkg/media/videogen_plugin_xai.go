@@ -64,7 +64,7 @@ func videoXAIHTTP[T any](fallback T, logFormat string, helper func() T) (out T) 
 	defer func() {
 		if r := recover(); r != nil {
 			if logFormat != "" {
-				videoGenLog.Debug(fmt.Sprintf(logFormat, r))
+				pkgLog().Debug(fmt.Sprintf(logFormat, r))
 			}
 			out = fallback
 		}
@@ -276,7 +276,7 @@ func runXAIVideo(env *tools.Env, label, prompt, model, aspect string, flow func(
 	}
 	res, err := flow(apiKey, baseURL)
 	if err != nil {
-		videoGenLog.Warn(fmt.Sprintf("xAI video %s unexpected failure: %v", label, err))
+		pkgLog().Warn(fmt.Sprintf("xAI video %s unexpected failure: %v", label, err))
 		if model == "" {
 			model = xaiVideoDefaultTextModel
 		}
@@ -591,7 +591,7 @@ func submitXAIVideoPayload(ctx context.Context, env *tools.Env, apiKey, baseURL,
 }
 
 func init() {
-	plugins.RegisterBundled(videoGenBackendPlugin{name: "xai", author: "NousResearch", requiresEnv: []string{"XAI_API_KEY"},
+	plugins.RegisterBundled(videoGenBackendPlugin{name: "xai", author: "Icebath", requiresEnv: []string{"XAI_API_KEY"},
 		description: "xAI Grok Imagine video generation backend. Supports text-to-video, image-to-video, reference-to-video, video editing, video extension, and stored public URLs via the xAI async videos API.",
 		provider:    func() VideoGenProvider { return newXAIVideoGenProvider() }})
 }

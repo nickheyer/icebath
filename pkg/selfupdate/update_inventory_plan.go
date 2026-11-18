@@ -58,7 +58,7 @@ func printUpdatePlan(w io.Writer, plan *UpdatePlan) {
 func recordPlanInReceipt(ctx context.Context, plan *UpdatePlan) {
 	defer func() {
 		if r := recover(); r != nil {
-			updateLog.Debug(fmt.Sprintf("Could not record plan in receipt: %v", r))
+			pkgLog().Debug(fmt.Sprintf("Could not record plan in receipt: %v", r))
 		}
 	}()
 	if current := updaterecord.CurrentReceipt(ctx); current != nil {

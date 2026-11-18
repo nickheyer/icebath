@@ -22,11 +22,8 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/logging"
 	"github.com/nickheyer/icebath/pkg/pm"
 )
-
-var leaseLog = logging.GetLogger("hermes_cli.active_sessions")
 
 // Machine readable refusal reasons, capacity and ownership calling for different operator action
 const (
@@ -440,7 +437,7 @@ func readLiveEntries(statePath string, trackLiveness bool, warn string, targetSe
 	if !errors.As(err, &regErr) || trackLiveness {
 		return nil, nil, false, err
 	}
-	leaseLog.Warning(warn)
+	pkgLog().Warn(warn)
 	return nil, nil, false, nil
 }
 
@@ -497,13 +494,13 @@ func TryAcquire(ctx context.Context, sessionID, surface string, cfg any, metadat
 		), nil
 	}
 	if pruned := len(raw) - len(entries); pruned != 0 {
-		leaseLog.Info(fmt.Sprintf("Pruned %d stale active session lease(s)", pruned))
+		pkgLog().Info(fmt.Sprintf("Pruned %d stale active session lease(s)", pruned))
 	}
 	refuse := func(message, reason, log string) (*Lease, *Refusal, error) {
 		if err := writeEntries(statePath, entries); err != nil {
 			return nil, nil, err
 		}
-		leaseLog.Info(log)
+		pkgLog().Info(log)
 		return nil, NewRefusal(message, reason), nil
 	}
 	if key != "" {
@@ -673,7 +670,7 @@ func ReleaseOrphanedLeases(liveLeaseIDs map[string]bool) (int, error) {
 			return dropped, err
 		}
 		if err != nil {
-			leaseLog.Debug(fmt.Sprintf("orphaned-lease sweep failed for %s: %s", h, err))
+			pkgLog().Debug(fmt.Sprintf("orphaned-lease sweep failed for %s: %s", h, err))
 			continue
 		}
 		dropped += n

@@ -25,7 +25,7 @@ func deferInterruptSignal(env *Env) func() {
 		signal.Stop(ch)
 		select {
 		case <-ch:
-			toolsLogger(env).Debug("sync_back: SIGINT deferred until sync completes")
+			envLog(env).Debug("sync_back: SIGINT deferred until sync completes")
 			syscall.Kill(os.Getpid(), syscall.SIGINT)
 		default:
 		}

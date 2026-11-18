@@ -2,23 +2,15 @@ package gatewayrun
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"strings"
 
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/memory"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
-
-const visionAnalysisPrompt = "Concisely describe this image in 2-4 sentences " +
-	"(~200 Chinese characters or ~150 English words). " +
-	"Cover the main subject, key visible text/data/code, and overall context. " +
-	"If it is a chart, diagram, or scientific figure, include the important " +
-	"labels, legend, and key values. Skip decorative details."
 
 // Inbound text the agent reads with attribution, media notes, transcripts, references and reply context, nil when refused
 func (r *GatewayRunner) prepareInboundMessageText(ctx context.Context, event *gateway.MessageEvent, source *gateway.SessionSource, sessionKey string) (*string, error) {
@@ -149,10 +141,10 @@ func (r *GatewayRunner) enrichInboundImages(ctx context.Context, source *gateway
 	if mode == "native" {
 		staged := append([]string{}, imagePaths...)
 		r.withSessionState(sessionKey, func(s *SessionState) { s.persistent.nativeImagePaths = staged })
-		inboundLog().Info(fmt.Sprintf("Image routing: native (model supports vision). %d image(s) will be attached inline.", len(imagePaths)))
+		pkgLog().Info(fmt.Sprintf("Image routing: native (model supports vision). %d image(s) will be attached inline.", len(imagePaths)))
 		return messageText
 	}
-	inboundLog().Info(fmt.Sprintf("Image routing: text (mode=%s). Pre-analyzing %d image(s) via vision_analyze.", mode, len(imagePaths)))
+	pkgLog().Info(fmt.Sprintf("Image routing: text (mode=%s). Pre-analyzing %d image(s) via vision_analyze.", mode, len(imagePaths)))
 	var visionRuntime map[string]any
 	if turnModel, runtime, err := r.resolveSessionAgentRuntime(ctx, source, sessionKey, nil, true); err == nil {
 		visionRuntime = map[string]any{}
@@ -161,7 +153,7 @@ func (r *GatewayRunner) enrichInboundImages(ctx context.Context, source *gateway
 		}
 		visionRuntime["model"] = turnModel
 	} else {
-		inboundLog().Debug("vision enrichment: session runtime resolution failed", "error", err)
+		pkgLog().Debug("vision enrichment: session runtime resolution failed", "error", err)
 	}
 	scoped, _ := provider.ScopedRuntimeMain(ctx, visionRuntime)
 	return r.enrichMessageWithVision(scoped, messageText, imagePaths)
@@ -171,7 +163,7 @@ func (r *GatewayRunner) enrichInboundImages(ctx context.Context, source *gateway
 func (r *GatewayRunner) decideImageInputMode(ctx context.Context, source *gateway.SessionSource, sessionKey string) (mode string) {
 	defer func() {
 		if rec := recover(); rec != nil {
-			inboundLog().Debug(fmt.Sprintf("image_routing: decision failed, falling back to text — %s", pyrepr.Str(rec)))
+			pkgLog().Debug(fmt.Sprintf("image_routing: decision failed, falling back to text — %s", pyrepr.Str(rec)))
 			mode = "text"
 		}
 	}()
@@ -180,7 +172,7 @@ func (r *GatewayRunner) decideImageInputMode(ctx context.Context, source *gatewa
 	if source != nil || sessionKey != "" {
 		turnModel, runtime, err := r.resolveSessionAgentRuntime(ctx, source, sessionKey, nil, true)
 		if err != nil {
-			inboundLog().Debug(fmt.Sprintf("image_routing: session runtime resolution failed, falling back to config — %s", err))
+			pkgLog().Debug(fmt.Sprintf("image_routing: session runtime resolution failed, falling back to config — %s", err))
 		} else {
 			resolvedModel = strings.TrimSpace(turnModel)
 			if p, ok := runtime["provider"].(string); ok {
@@ -202,44 +194,14 @@ func (r *GatewayRunner) decideImageInputMode(ctx context.Context, source *gatewa
 
 // Text with a vision description and the cached path of each attached image prepended
 func (r *GatewayRunner) enrichMessageWithVision(ctx context.Context, userText string, imagePaths []string) string {
-	env := inboundToolsEnv(ctx)
-	parts := make([]string, 0, len(imagePaths))
-	for _, path := range imagePaths {
-		inboundLog().Debug("Auto-analyzing user image: " + path)
-		var result map[string]any
-		if err := json.Unmarshal([]byte(tools.VisionAnalyzeTool(ctx, env, path, visionAnalysisPrompt)), &result); err != nil {
-			inboundLog().Error(fmt.Sprintf("Vision auto-analysis error: %s", err))
-			parts = append(parts, "[The user sent an image but something went wrong when I "+
-				"tried to look at it~ You can try examining it yourself "+
-				"with vision_analyze using image_url: "+path+"]")
-			continue
-		}
-		if pyrepr.Truthy(result["success"]) {
-			analysis, _ := result["analysis"].(string)
-			parts = append(parts, "[The user sent an image~ Here's what I can see:\n"+memory.SanitizeContext(analysis)+"]\n"+
-				"[If you need a closer look, use vision_analyze with "+
-				"image_url: "+path+" ~]")
-			continue
-		}
-		parts = append(parts, "[The user sent an image but I couldn't quite see it "+
-			"this time (>_<) You can try looking at it yourself "+
-			"with vision_analyze using image_url: "+path+"]")
-	}
-	if len(parts) == 0 {
-		return userText
-	}
-	prefix := strings.Join(parts, "\n\n")
-	if userText != "" {
-		return prefix + "\n\n" + userText
-	}
-	return prefix
+	return gateway.VisionImageNotes(ctx, inboundToolsEnv(ctx), userText, imagePaths)
 }
 
 // Persists the active turn marker under the resolved routing key and stamps its token on the event
 func (r *GatewayRunner) markDurableActiveTurn(ctx context.Context, event *gateway.MessageEvent, sessionKey string) bool {
 	token, err := r.AsyncSessionStore().Store().MarkTurnActive(ctx, sessionKey)
 	if err != nil {
-		inboundLog().Warn(fmt.Sprintf("Could not persist active-turn marker for %s: %s", sessionKey, err))
+		pkgLog().Warn(fmt.Sprintf("Could not persist active-turn marker for %s: %s", sessionKey, err))
 		return false
 	}
 	if token == "" {
@@ -265,9 +227,9 @@ func (r *GatewayRunner) clearDurableActiveTurn(ctx context.Context, event *gatew
 		}
 		lastErr = err
 		if attempt < 3 {
-			inboundLog().Debug(fmt.Sprintf("Retrying active-turn marker cleanup for %s (%d/3): %s", *sessionKey, attempt, err))
+			pkgLog().Debug(fmt.Sprintf("Retrying active-turn marker cleanup for %s (%d/3): %s", *sessionKey, attempt, err))
 		}
 	}
-	inboundLog().Warn(fmt.Sprintf("Could not clear active-turn marker for %s after 3 attempts: %s", *sessionKey, lastErr))
+	pkgLog().Warn(fmt.Sprintf("Could not clear active-turn marker for %s after 3 attempts: %s", *sessionKey, lastErr))
 	return false
 }

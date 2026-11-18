@@ -128,7 +128,7 @@ var darwinChannelBundles = []string{
 // Sentinel for a recognized Chromium pre release channel default, distinct from no Chromium default
 const UnsupportedChannel = "__unsupported_channel__"
 
-// Platform name of the host, the module attribute hermes tests patch
+// Platform name of the host, the module attribute tests patch
 var connectSystem = pyplatform.System
 
 func systemOr(system string) string {
@@ -257,7 +257,7 @@ func classifyDefault(value string, channels []string, table []defaultBrowserEntr
 
 const windowsHTTPSAssoc = `Software\Microsoft\Windows\Shell\Associations\UrlAssociations\https`
 
-// Module attributes of the default browser detection hermes tests patch
+// Module attributes of the default browser detection tests patch
 var (
 	connectWindowsShellProgID     = windowsShellProgID
 	connectWindowsRegistryProgID  = windowsRegistryProgID

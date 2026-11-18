@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"log/slog"
 	"os"
 	"path/filepath"
 	"strings"
@@ -353,7 +352,7 @@ func ImportAgent(ctx context.Context, args Args) (int, error) {
 		if err != nil {
 			fmt.Fprintln(c.Out)
 			c.PrintError(fmt.Sprintf("Import%s failed: %s", phase, pyErrText(err)))
-			slog.Debug("import-agent"+phase+" error", "error", err)
+			pkgLog().Debug("import-agent"+phase+" error", "error", err)
 			return nil
 		}
 		return report
@@ -484,7 +483,7 @@ func printRoutineNextSteps(c *cliui.Console, report *Report, product string) {
 		}
 	}
 	if len(jobs) > 0 {
-		c.PrintInfo("Results land in Icebath' cron output; to have one sent to Telegram, Discord, Slack, " +
+		c.PrintInfo("Results land in Icebath's cron output; to have one sent to Telegram, Discord, Slack, " +
 			"...: icebath cron edit <id> --deliver <platform>")
 	}
 }
@@ -492,7 +491,7 @@ func printRoutineNextSteps(c *cliui.Console, report *Report, product string) {
 // Records the source in the sync manifest so a later --sync pulls its changes in
 func registerForSync(ctx context.Context, c *cliui.Console, agent, sourceDir, target string, overwrite bool, report *Report) {
 	if err := UpdateSyncManifest(ctx, agent, sourceDir, target, overwrite, report, true); err != nil {
-		slog.Warn(fmt.Sprintf("Could not update import sync manifest: %s", pyErrText(err)))
+		pkgLog().Warn(fmt.Sprintf("Could not update import sync manifest: %s", pyErrText(err)))
 		return
 	}
 	c.PrintInfo("Source registered for sync — re-run 'icebath import-agent --sync' any time to pull in changes.")

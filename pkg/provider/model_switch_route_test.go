@@ -21,7 +21,7 @@ type switchFakes struct {
 func fakeSwitchPipeline(t *testing.T, fakeValidation bool) *switchFakes {
 	t.Helper()
 	fakes := &switchFakes{}
-	savedValidate, savedCaps, savedInfo, savedUsage := switchValidateModelFn, switchCapabilitiesFn, switchModelInfoFn, switchUsageNoticeFn
+	savedValidate, savedCaps, savedInfo := switchValidateModelFn, switchCapabilitiesFn, switchModelInfoFn
 	savedCache, savedTime := modelsDevCache, modelsDevCacheTime
 	modelsDevCache, modelsDevCacheTime = map[string]any{}, time.Now()
 	if fakeValidation {
@@ -35,9 +35,8 @@ func fakeSwitchPipeline(t *testing.T, fakeValidation bool) *switchFakes {
 		return ModelCapabilities{}, false
 	}
 	switchModelInfoFn = func(context.Context, string, string, bool) (ModelsDevEntry, bool) { return ModelsDevEntry{}, false }
-	switchUsageNoticeFn = func(context.Context, string, string, bool, string) string { return "" }
 	t.Cleanup(func() {
-		switchValidateModelFn, switchCapabilitiesFn, switchModelInfoFn, switchUsageNoticeFn = savedValidate, savedCaps, savedInfo, savedUsage
+		switchValidateModelFn, switchCapabilitiesFn, switchModelInfoFn = savedValidate, savedCaps, savedInfo
 		modelsDevCache, modelsDevCacheTime = savedCache, savedTime
 	})
 	return fakes

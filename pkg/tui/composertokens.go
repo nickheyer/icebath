@@ -3,7 +3,6 @@ package tui
 import (
 	"regexp"
 	"strings"
-	"unicode/utf8"
 )
 
 // Collapsed paste or attached image the composer shows as a label in the draft
@@ -14,12 +13,6 @@ type composerToken struct {
 	Path  string
 	Mime  string
 	Index int
-}
-
-// Outcome of a paste or attachment, the draft and the caret after it
-type composerPasteResult struct {
-	Value  string
-	Cursor int
 }
 
 // Typed reply of command.dispatch, one of alias, exec, plugin, prefill, send or skill
@@ -55,7 +48,6 @@ var (
 	slashArgumentRe     = regexp.MustCompile(`(?s)^/[^` + jsWS + `]+[` + jsWS + `]+(.+)$`)
 	inlineSlashRe       = regexp.MustCompile(`[` + jsWS + `]/([a-zA-Z][\w-]*)?$`)
 	localCommandShapeRe = regexp.MustCompile(`^/[\w-]+$`)
-	modelCommandRe      = regexp.MustCompile(`^/model(?:[` + jsWS + `]|$)`)
 	tabPathRe           = regexp.MustCompile(`((?:["']?(?:[A-Za-z]:[\\/]|\.{1,2}/|~/|/|@|[^"'` + "`" + jsWS + `]+/))[^` + jsWS + `]*)$`)
 	driveLetterRe       = regexp.MustCompile(`^[A-Za-z]:[/\\]`)
 	quotedDriveLetterRe = regexp.MustCompile(`^["'][A-Za-z]:[/\\]`)
@@ -245,7 +237,7 @@ func (s *tuiStore) completionRequestForInput(input string) (completionRequest, b
 			pathWord = m[1]
 		}
 	}
-	if isSlash && modelCommandRe.MatchString(input) {
+	if isSlash && strings.TrimFunc(input, isJSSpace) == "/model" {
 		return completionRequest{}, false
 	}
 	if query, start, inline := inlineSlashTrigger(input); inline {
@@ -323,19 +315,6 @@ func trimTokens(tokens []composerToken) []composerToken {
 		return tokens
 	}
 	return out
-}
-
-// Draft with text inserted at a byte caret, padded by a space against adjacent non space runes
-func insertAtCursor(value string, cursor int, text string) composerPasteResult {
-	lead, tail := "", ""
-	if r, _ := utf8.DecodeLastRuneInString(value[:cursor]); cursor > 0 && !isJSSpace(r) {
-		lead = " "
-	}
-	if r, _ := utf8.DecodeRuneInString(value[cursor:]); cursor < len(value) && !isJSSpace(r) {
-		tail = " "
-	}
-	insert := lead + text + tail
-	return composerPasteResult{Cursor: cursor + len(insert), Value: value[:cursor] + insert + value[cursor:]}
 }
 
 // Whether a paste reaches the configured line or character threshold for collapsing

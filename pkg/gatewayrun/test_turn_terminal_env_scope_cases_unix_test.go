@@ -53,7 +53,7 @@ func TestGatewayTurnUnderMultiplexRunsTerminalWithTheServedProfilesSecrets(t *te
 	t.Setenv("SKILL_TOKEN", "launch-skill")
 	t.Setenv("SVC_TOKEN", "")
 	os.Unsetenv("SVC_TOKEN")
-	if err := fakellm.WriteHome(served, server.BaseURL(), "", "terminal:\n  env_passthrough: [SVC_TOKEN]\n", 0); err != nil {
+	if err := fakellm.WriteHome(served, server.BaseURL(), "", "terminal:\n  env_passthrough: [SVC_TOKEN]\n"); err != nil {
 		t.Fatal(err)
 	}
 	appendFileLines(t, filepath.Join(served, ".env"), "SVC_TOKEN=served-secret\nSKILL_TOKEN=skill-secret\nGATEWAY_ALLOW_ALL_USERS=true\n")
@@ -61,7 +61,7 @@ func TestGatewayTurnUnderMultiplexRunsTerminalWithTheServedProfilesSecrets(t *te
 	t.Cleanup(tools.ClearEnvPassthrough)
 	provider.SetMultiplexActive(true)
 	t.Cleanup(func() { provider.SetMultiplexActive(false) })
-	if err := fakellm.WriteHome(launch, server.BaseURL(), "", "", 0); err != nil {
+	if err := fakellm.WriteHome(launch, server.BaseURL(), "", ""); err != nil {
 		t.Fatal(err)
 	}
 	appendFileLines(t, filepath.Join(launch, ".env"), "LAUNCH_ONLY_TOKEN=launch-secret\n")

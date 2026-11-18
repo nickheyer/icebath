@@ -5,7 +5,7 @@ import (
 	"testing"
 )
 
-// Merged string, delimiter part list, force user leading list and non list content each project as hermes does
+// Merged string, delimiter part list, force user leading list and non list content each project
 func TestHandoffOnlyContentProjectsSummaryToTheHandoff(t *testing.T) {
 	summary := "summary body\n" + SummaryEndMarker
 	if got := HandoffOnlyContent("older turn " + MergedSummaryDelimiter + "  " + summary + "\nlive ask"); got != summary {

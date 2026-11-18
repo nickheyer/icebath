@@ -3,9 +3,9 @@ package provider
 import (
 	"bytes"
 	"context"
+	_ "embed"
 	"encoding/json"
 	"io"
-	"log/slog"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -18,13 +18,19 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyhttpx"
 )
 
-// DefaultCatalogURL is the master model catalog manifest
-const DefaultCatalogURL = "https://hermes-agent.nousresearch.com/docs/api/model-catalog.json"
+// DefaultCatalogURL is the site copy of the shipped model catalog the refresh fetches
+const DefaultCatalogURL = "https://icebath.app/api/model-catalog.json"
 
-// DefaultCatalogFallbackURLs hold the same manifest on hosts without a bot challenge
+// DefaultCatalogFallbackURLs hold the same manifest at its repository path
 var DefaultCatalogFallbackURLs = []string{
-	"https://raw.githubusercontent.com/NousResearch/hermes-agent/main/website/static/api/model-catalog.json",
+	"https://raw.githubusercontent.com/nickheyer/icebath/main/pkg/provider/model-catalog.json",
 }
+
+// Repository path of the shipped manifest, also the file the site bundle publishes
+const shippedCatalogPath = "pkg/provider/model-catalog.json"
+
+//go:embed model-catalog.json
+var shippedCatalogJSON []byte
 
 const (
 	DefaultCatalogTTLMinutes = 20.0
@@ -34,11 +40,6 @@ const (
 	CatalogFetchRetryDelay  = 300 * time.Second
 	SupportedCatalogVersion = 1
 )
-
-var catalogLog = slog.Default()
-
-// Logger of the reference model catalog module
-var modelCatalogLog = slog.Default().With("logger", "hermes_cli.model_catalog")
 
 // CatalogConfig is the model_catalog config block with defaults filled in
 type CatalogConfig struct {
@@ -73,9 +74,7 @@ var loadCatalogConfig = loadCatalogConfigFromHome
 
 // Sibling slice seams the refresh command drives
 var (
-	fetchOpenRouterModelsFn      = fetchOpenRouterModels
-	fetchNousRecommendedModelsFn = fetchNousRecommendedModels
-	resolveNousPortalURLFn       = resolveNousPortalURL
+	fetchOpenRouterModelsFn = fetchOpenRouterModels
 )
 
 func catalogHomeKey(ctx context.Context) string { return home.Key(home.Dir(ctx)) }
@@ -221,26 +220,26 @@ func fetchCatalogManifestHTTP(url string, timeout time.Duration) map[string]any 
 	resp, err := urllibOpen(ctx, urllibCall{url: url, timeout: timeout,
 		headers: []pyhttpx.HeaderLine{{Name: "Accept", Value: "application/json"}, {Name: "User-Agent", Value: userAgent("icebath-cli")}}})
 	if err != nil {
-		modelCatalogLog.Info("model catalog fetch failed", "url", url, "error", err)
+		pkgLog().Info("model catalog fetch failed", "url", url, "error", err)
 		return nil
 	}
 	defer resp.Body.Close()
 	raw, err := io.ReadAll(resp.Body)
 	if err != nil {
-		modelCatalogLog.Info("model catalog fetch failed", "url", url, "error", err)
+		pkgLog().Info("model catalog fetch failed", "url", url, "error", err)
 		return nil
 	}
 	if resp.StatusCode >= 400 {
-		modelCatalogLog.Info("model catalog fetch failed", "url", url, "status", resp.StatusCode)
+		pkgLog().Info("model catalog fetch failed", "url", url, "status", resp.StatusCode)
 		return nil
 	}
 	data, err := decodeJSONBody(raw)
 	if err != nil {
-		modelCatalogLog.Info("model catalog fetch failed", "url", url, "error", err)
+		pkgLog().Info("model catalog fetch failed", "url", url, "error", err)
 		return nil
 	}
 	if !ValidateCatalogManifest(data) {
-		modelCatalogLog.Info("model catalog failed schema validation", "url", url)
+		pkgLog().Info("model catalog failed schema validation", "url", url)
 		return nil
 	}
 	m, _ := asMap(data)
@@ -257,7 +256,7 @@ func fetchCatalogManifestWithFallback(primary string, timeout time.Duration, fal
 			continue
 		}
 		if data := fetchCatalogManifest(url, timeout); data != nil {
-			modelCatalogLog.Info("model catalog primary URL failed, using fallback", "url", url)
+			pkgLog().Info("model catalog primary URL failed, using fallback", "url", url)
 			return data
 		}
 	}
@@ -343,7 +342,7 @@ func readCatalogDiskCache(ctx context.Context) (map[string]any, time.Time) {
 
 func writeCatalogDiskCache(ctx context.Context, data map[string]any) {
 	if err := atomicJSONWrite(CatalogCachePath(ctx), data); err != nil {
-		modelCatalogLog.Info("model catalog cache write failed", "error", err)
+		pkgLog().Info("model catalog cache write failed", "error", err)
 	}
 }
 
@@ -393,7 +392,17 @@ func inProcessCatalog(ctx context.Context) (map[string]any, time.Time, bool) {
 	return nil, time.Time{}, false
 }
 
-// GetCatalog returns the parsed manifest or an empty map, serving a stale disk copy while refreshing off thread
+// Manifest compiled into the binary, a fresh copy per call, the floor every catalog read falls back to
+func shippedCatalog() map[string]any {
+	data, err := decodeJSONBody(shippedCatalogJSON)
+	if err != nil || !ValidateCatalogManifest(data) {
+		panic("provider: shipped model catalog is not a valid manifest")
+	}
+	m, _ := asMap(data)
+	return m
+}
+
+// GetCatalog returns the fetched or cached manifest, else the shipped one, serving a stale disk copy while refreshing off thread
 func GetCatalog(ctx context.Context, forceRefresh bool) map[string]any {
 	cfg := loadCatalogConfig(ctx)
 	if !cfg.Enabled {
@@ -417,7 +426,7 @@ func GetCatalog(ctx context.Context, forceRefresh bool) map[string]any {
 		return rememberCatalog(ctx, diskData, diskMtime)
 	}
 	if !forceRefresh && diskData == nil && catalogBackingOff(ctx, "manifest", cfg.URL) {
-		return map[string]any{}
+		return shippedCatalog()
 	}
 	fetched := fetchCatalogManifestWithFallback(cfg.URL, DefaultCatalogTimeout, DefaultCatalogFallbackURLs)
 	noteCatalogFetchResult(ctx, "manifest", cfg.URL, fetched != nil)
@@ -431,7 +440,7 @@ func GetCatalog(ctx context.Context, forceRefresh bool) map[string]any {
 	if diskData != nil {
 		return rememberCatalog(ctx, diskData, diskMtime)
 	}
-	return map[string]any{}
+	return shippedCatalog()
 }
 
 // CatalogRefreshInterval is the configured TTL as the gateway poll cadence, at least one minute
@@ -443,44 +452,14 @@ func CatalogRefreshInterval(ctx context.Context) time.Duration {
 	return d
 }
 
-// Guest state check on a providers.nous auth row
-func isGuestState(state map[string]any) bool {
-	return state != nil && stringOf(state["auth_method"]) == AnonAccountTier
-}
-
-// RefreshCatalogs force refreshes the manifest, the OpenRouter live list and Nous recommendations for a Nous account
+// RefreshCatalogs force refreshes the manifest and the OpenRouter live list
 func RefreshCatalogs(ctx context.Context, secrets *config.Secrets) bool {
 	if !loadCatalogConfig(ctx).Enabled {
 		return false
 	}
 	ClearCatalogFetchBackoff(ctx)
 	catalog := GetCatalog(ctx, true)
-	h := home.Dir(ctx)
 	fetchOpenRouterModelsFn(ctx, true)
-	store := NewStore(h)
-	var logins []map[string]any
-	if data, err := store.Load(); err == nil {
-		logins = append(logins, store.ProviderState(data, "nous"))
-	}
-	rows, _ := store.ReadCredentialPool("nous")
-	logins = append(logins, rows...)
-	named := false
-	for _, e := range logins {
-		if len(e) > 0 && !isGuestState(e) {
-			named = true
-			break
-		}
-	}
-	key := ""
-	if secrets != nil {
-		key, _ = secrets.Get("NOUS_API_KEY")
-	}
-	if key == "" {
-		key = os.Getenv("NOUS_API_KEY")
-	}
-	if named || key != "" {
-		fetchNousRecommendedModelsFn(ctx, resolveNousPortalURLFn(ctx), true)
-	}
 	return len(catalog) > 0
 }
 
@@ -556,15 +535,6 @@ func CuratedOpenRouterModels(ctx context.Context) []CatalogModel {
 	return out
 }
 
-// CuratedNousModels returns the Nous Portal curated ids from the manifest, nil when it has none
-func CuratedNousModels(ctx context.Context) []string {
-	var out []string
-	for _, row := range catalogBlockIDs(catalogProviderBlock(ctx, "nous")) {
-		out = append(out, row.id)
-	}
-	return out
-}
-
 func defaultModelFromBlock(block map[string]any) string {
 	for _, row := range catalogBlockIDs(block) {
 		if boolOf(row.entry["default"], false) {
@@ -574,7 +544,7 @@ func defaultModelFromBlock(block map[string]any) string {
 	return ""
 }
 
-// DefaultModelFromCatalogCache returns the manifest's labeled default from memory then disk, never a fetch
+// DefaultModelFromCatalogCache returns the manifest's labeled default from memory, disk, then the shipped manifest, never a fetch
 func DefaultModelFromCatalogCache(ctx context.Context, provider string) string {
 	if cached, _, ok := inProcessCatalog(ctx); ok {
 		if found := defaultModelFromBlock(catalogBlockOf(cached, provider)); found != "" {
@@ -583,26 +553,26 @@ func DefaultModelFromCatalogCache(ctx context.Context, provider string) string {
 	}
 	diskData, _ := readCatalogDiskCache(ctx)
 	if diskData == nil {
-		return ""
+		diskData = shippedCatalog()
 	}
 	return defaultModelFromBlock(catalogBlockOf(diskData, provider))
 }
 
 // SeedCatalogCacheFromCheckout overwrites the disk cache with the checkout's shipped manifest
 func SeedCatalogCacheFromCheckout(ctx context.Context, projectRoot string) bool {
-	src := filepath.Join(projectRoot, "website", "static", "api", "model-catalog.json")
+	src := filepath.Join(projectRoot, filepath.FromSlash(shippedCatalogPath))
 	raw, err := os.ReadFile(src)
 	if err != nil {
-		modelCatalogLog.Debug("model catalog seed from checkout skipped", "path", src, "error", err)
+		pkgLog().Debug("model catalog seed from checkout skipped", "path", src, "error", err)
 		return false
 	}
 	data, err := decodeJSONBody(raw)
 	if err != nil {
-		modelCatalogLog.Debug("model catalog seed from checkout skipped", "path", src, "error", err)
+		pkgLog().Debug("model catalog seed from checkout skipped", "path", src, "error", err)
 		return false
 	}
 	if !ValidateCatalogManifest(data) {
-		modelCatalogLog.Debug("model catalog seed from checkout skipped, invalid manifest", "path", src)
+		pkgLog().Debug("model catalog seed from checkout skipped, invalid manifest", "path", src)
 		return false
 	}
 	m, _ := asMap(data)

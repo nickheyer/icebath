@@ -8,7 +8,6 @@ import (
 	"fmt"
 	"io/fs"
 	"iter"
-	"log/slog"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -26,7 +25,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/tools"
 )
 
-// Tidy budget seconds and the promisor pack count the merges work down to, both patched by hermes tests
+// Tidy budget seconds and the promisor pack count the merges work down to, both patched by tests
 var (
 	TidyBudgetSeconds = 60.0
 	PackCountTarget   = 50
@@ -62,7 +61,7 @@ type packIndex struct {
 	count int
 }
 
-// Index opener, the _Index constructor hermes tests make fail for one pack
+// Index opener, the index constructor tests make fail for one pack
 var openPackIndexFn = openPackIndex
 
 // Reads a version 2 SHA-1 pack index, refusing any other format
@@ -183,7 +182,7 @@ func pinned(pack string, cutoff float64) bool {
 	return !(fetchKeep && tidyMtime(st) < cutoff)
 }
 
-// Path unlink of the tidy, the Path.unlink hermes tests patch
+// Path unlink of the tidy, the Path.unlink tests patch
 var tidyUnlinkFn = os.Remove
 
 // Unlinks one pack part, clearing the read only bit first on Windows
@@ -249,12 +248,12 @@ func sweepRemnants(packDir string) {
 		}
 		st, err := os.Stat(part)
 		if err != nil {
-			slog.Debug(fmt.Sprintf("pack remnant %s still in use: %s", filepath.Base(part), err))
+			pkgLog().Debug(fmt.Sprintf("pack remnant %s still in use: %s", filepath.Base(part), err))
 			continue
 		}
 		if tidyMtime(st) < cutoff {
 			if _, err := removePack(part); err != nil {
-				slog.Debug(fmt.Sprintf("pack remnant %s still in use: %s", filepath.Base(part), err))
+				pkgLog().Debug(fmt.Sprintf("pack remnant %s still in use: %s", filepath.Base(part), err))
 			}
 		}
 	}
@@ -375,7 +374,7 @@ func saveState(packDir string, state *tidyState) {
 		err = os.WriteFile(filepath.Join(filepath.Dir(filepath.Dir(packDir)), tidyStateFile), []byte(text), 0o644)
 	}
 	if err != nil {
-		slog.Debug(fmt.Sprintf("could not record pack tidy state in %s: %s", packDir, err))
+		pkgLog().Debug(fmt.Sprintf("could not record pack tidy state in %s: %s", packDir, err))
 	}
 }
 
@@ -433,7 +432,7 @@ func eraseRedundantPacks(packDir string, deadline time.Time, result *TidyResult,
 	for _, pack := range order {
 		idx, err := openPackIndexFn(withSuffix(pack, ".idx"))
 		if err != nil {
-			slog.Debug(fmt.Sprintf("pack index %s unreadable: %s", filepath.Base(pack), err))
+			pkgLog().Debug(fmt.Sprintf("pack index %s unreadable: %s", filepath.Base(pack), err))
 			continue
 		}
 		indexes[packStem(pack)] = idx
@@ -472,7 +471,7 @@ func eraseRedundantPacks(packDir string, deadline time.Time, result *TidyResult,
 		delete(indexes, stem)
 		freed, err := removePack(pack)
 		if err != nil {
-			slog.Warn(fmt.Sprintf("Could not erase redundant pack %s (a later update retries): %s", filepath.Base(pack), err))
+			pkgLog().Warn(fmt.Sprintf("Could not erase redundant pack %s (a later update retries): %s", filepath.Base(pack), err))
 			continue
 		}
 		result.FreedBytes += freed
@@ -576,7 +575,7 @@ func mergeBatch(ctx context.Context, repoRoot, packDir, staging string, batch []
 	}
 	outputs, _ := filepath.Glob(filepath.Join(staging, "pack-*.idx"))
 	if done.ReturnCode != 0 || len(outputs) != 1 {
-		slog.Warn(fmt.Sprintf("Merging %d packs failed (%d outputs): %s", len(batch), len(outputs), tailRunes(strings.TrimSpace(done.Stderr), 300)))
+		pkgLog().Warn(fmt.Sprintf("Merging %d packs failed (%d outputs): %s", len(batch), len(outputs), tailRunes(strings.TrimSpace(done.Stderr), 300)))
 		return true, nil
 	}
 	newBase := strings.TrimSuffix(outputs[0], ".idx")
@@ -608,7 +607,7 @@ func mergeBatch(ctx context.Context, repoRoot, packDir, staging string, batch []
 			continue
 		}
 		if _, err := removePack(pack); err != nil {
-			slog.Warn(fmt.Sprintf("Could not retire merged pack %s: %s", filepath.Base(pack), err))
+			pkgLog().Warn(fmt.Sprintf("Could not retire merged pack %s: %s", filepath.Base(pack), err))
 		}
 	}
 	result.Merged += len(batch)
@@ -623,7 +622,7 @@ func takeTidyLock(gitDir string) (*os.File, error) {
 	}
 	held, err := pm.LockFD(f, false, 0)
 	if err != nil {
-		slog.Debug(fmt.Sprintf("pack tidy lock unavailable in %s: %s", gitDir, err))
+		pkgLog().Debug(fmt.Sprintf("pack tidy lock unavailable in %s: %s", gitDir, err))
 	}
 	if err != nil || !held {
 		_ = f.Close()
@@ -671,7 +670,7 @@ func TidyPartialClonePacks(ctx context.Context, repoRoot string, budgetSeconds f
 		return nil
 	}()
 	if err != nil {
-		slog.Warn(fmt.Sprintf("partial-clone pack tidy failed in %s: %s", repoRoot, err))
+		pkgLog().Warn(fmt.Sprintf("partial-clone pack tidy failed in %s: %s", repoRoot, err))
 	}
 	return result
 }

@@ -1,3 +1,5 @@
+//go:build !icebath_core && !icebath_noextras
+
 package pm
 
 import (
@@ -103,17 +105,6 @@ func buildEnvironment(ctx context.Context, opts BuildEnvironmentOptions) (string
 		return "", err
 	}
 	return environment.Executable(), nil
-}
-
-// LockProjectOptions are lock_project's keywords, nil Env for None
-type LockProjectOptions struct {
-	Source   string
-	Upgrade  bool
-	Python   string
-	Env      map[string]string
-	Cache    string
-	Offline  bool
-	Explicit bool
 }
 
 // Refreshes a project's resolution without creating or selecting a venv
@@ -259,7 +250,7 @@ func environmentTool(python, executable string) (string, bool, error) {
 }
 
 // Selected tool entry point of a named side environment, never an installer executable
-func PythonTool(name, executable, root string) (string, bool, error) {
+func managedPythonTool(name, executable, root string) (string, bool, error) {
 	python, ok, err := EnvironmentPython(name, root)
 	if err != nil || !ok {
 		return "", false, err
@@ -621,16 +612,6 @@ func ensureGeneration(ctx context.Context, name, root string, inputs map[string]
 		return "", err
 	}
 	return python, nil
-}
-
-// EnsurePythonToolOptions are ensure_python_tool's arguments, empty Root for None
-type EnsurePythonToolOptions struct {
-	Name         string
-	Requirements []string
-	Executable   string
-	Root         string
-	Explicit     bool
-	Timeout      time.Duration
 }
 
 // Makes an isolated tool environment current and returns its validated entry point

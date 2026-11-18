@@ -2,6 +2,7 @@ package tui
 
 import (
 	"context"
+	"github.com/nickheyer/icebath/pkg/tuigateway"
 	"regexp"
 	"slices"
 	"strings"
@@ -89,7 +90,7 @@ type interruptReplyMsg struct {
 	deps        interruptDeps
 	keepBusy    bool
 	destination submissionDestination
-	info        map[string]any
+	info        *tuigateway.SessionInfo
 	response    map[string]any
 	err         error
 }
@@ -440,8 +441,8 @@ func (c *turnController) interruptTurn(deps interruptDeps, keepBusy bool) (tea.C
 	return func() tea.Msg {
 		reply := interruptReplyMsg{deps: deps, keepBusy: keepBusy, destination: destination, info: info}
 		params := map[string]any{"session_id": sid}
-		if generation, has := info["execution_generation"]; has {
-			params["execution_generation"] = generation
+		if generation := infoOf(info).ExecutionGeneration; generation != nil {
+			params["execution_generation"] = *generation
 		}
 		value, err := gw.request(context.Background(), "session.interrupt", params, 0)
 		reply.response, _ = value.(map[string]any)
@@ -455,8 +456,8 @@ func (c *turnController) settleInterrupt(m interruptReplyMsg) {
 	isActiveTurn := func() bool {
 		ui := c.store.ui
 		return ui.Sid == m.deps.Sid && c.store.isCurrentDestination(m.destination) && ui.Busy && !c.interrupted &&
-			jsStrictEqual(ui.Info["execution_epoch"], m.info["execution_epoch"]) &&
-			jsStrictEqual(ui.Info["execution_generation"], m.info["execution_generation"])
+			sameStamp(infoOf(ui.Info).AuthorityEpoch, infoOf(m.info).AuthorityEpoch) &&
+			sameStamp(infoOf(ui.Info).ExecutionGeneration, infoOf(m.info).ExecutionGeneration)
 	}
 	if m.err != nil {
 		if isActiveTurn() {
@@ -464,7 +465,8 @@ func (c *turnController) settleInterrupt(m interruptReplyMsg) {
 		}
 		return
 	}
-	if m.response["execution_state"] != "running" || !jsStrictEqual(m.response["execution_generation"], m.info["execution_generation"]) {
+	generation, answered := m.response["execution_generation"].(float64)
+	if held := infoOf(m.info).ExecutionGeneration; m.response["execution_state"] != "running" || held == nil || !answered || generation != float64(*held) {
 		return
 	}
 	if !isActiveTurn() {
@@ -978,9 +980,6 @@ func (c *turnController) startMessage() {
 	c.interrupted = false
 	c.sealed = nil
 	clear(c.persistedToolLabels)
-	if n := c.store.ui.Notice; n != nil && (n.Key == "credits.usage" || n.Key == "credits.grant_spent") {
-		c.clearNotice(n.Key)
-	}
 	c.store.ui.Busy = true
 	c.segmentMessages, c.pendingSegmentTools = nil, nil
 	t := &c.store.turn

@@ -126,11 +126,6 @@ func (l *lister) editCell(col int, initial string, done func(l *lister, text str
 	l.edit, l.onDone = &render.Edit{Col: col, Text: initial, Selected: initial != ""}, done
 }
 
-// Waits for the next key and hands its chord over, the prompt naming what it is for
-func (l *lister) wait(prompt string, done func(l *lister, chord string) tea.Cmd) {
-	l.capture, l.asking = done, prompt
-}
-
 // Asks a yes or no question along the bottom, running yes on a yes
 func (l *lister) confirm(text string, yes func() tea.Cmd) { l.ask = &question{text: text, yes: yes} }
 

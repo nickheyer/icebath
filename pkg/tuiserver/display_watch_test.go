@@ -16,7 +16,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/proc"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/tuigateway"
+	"github.com/nickheyer/icebath/pkg/tuihost"
 )
 
 // Child mode of the test binary, a lease transition or a sleeping launcher stand in for another process
@@ -148,8 +148,8 @@ func watching(t *testing.T, h string) *eventLog {
 	log := &eventLog{}
 	prevBroadcast := broadcastGlobalEvent
 	servedProfileMu.Lock()
-	prevHome := hermesHome
-	hermesHome = h
+	prevHome := icebathHome
+	icebathHome = h
 	broadcastGlobalEvent = func(event string, payload map[string]any) {
 		log.mu.Lock()
 		log.events = append(log.events, recordedEvent{event, payload})
@@ -158,7 +158,7 @@ func watching(t *testing.T, h string) *eventLog {
 	servedProfileMu.Unlock()
 	t.Cleanup(func() {
 		servedProfileMu.Lock()
-		hermesHome, broadcastGlobalEvent = prevHome, prevBroadcast
+		icebathHome, broadcastGlobalEvent = prevHome, prevBroadcast
 		servedProfileMu.Unlock()
 	})
 	ensureLeaseWatcher()
@@ -299,11 +299,11 @@ func TestScreenStartAndStopReachTheModelsTurnNotes(t *testing.T) {
 	if err := os.Mkdir(otherHome, 0o700); err != nil {
 		t.Fatal(err)
 	}
-	tuigateway.SetSessionRecord("ws-a", tuigateway.NewSession(map[string]any{"agent": mine, "profile_home": h, "transport": tuigateway.DetachedWSTransport()}))
-	tuigateway.SetSessionRecord("ws-b", tuigateway.NewSession(map[string]any{"agent": other, "profile_home": otherHome, "transport": tuigateway.DetachedWSTransport()}))
+	tuihost.SetSessionRecord("ws-a", tuihost.NewSession(map[string]any{"agent": mine, "profile_home": h, "transport": tuihost.DetachedWSTransport()}))
+	tuihost.SetSessionRecord("ws-b", tuihost.NewSession(map[string]any{"agent": other, "profile_home": otherHome, "transport": tuihost.DetachedWSTransport()}))
 	t.Cleanup(func() {
-		tuigateway.SetSessionRecord("ws-a", nil)
-		tuigateway.SetSessionRecord("ws-b", nil)
+		tuihost.SetSessionRecord("ws-a", nil)
+		tuihost.SetSessionRecord("ws-b", nil)
 	})
 	_, line := startLauncher(t)
 	if err := pollRuntimeFiles(); err != nil {

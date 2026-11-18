@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"io/fs"
 	"log/slog"
 	"os"
@@ -12,6 +11,8 @@ import (
 	"strings"
 	"sync"
 	"testing"
+
+	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 
 	"github.com/nickheyer/icebath/pkg/config"
 )
@@ -205,7 +206,7 @@ func TestFileToolsReadWriteHandlerNonStringContent(t *testing.T) {
 func TestFileToolsReadPatchUnknownModeErrors(t *testing.T) {
 	env, _ := newFileToolTestEnv(t)
 	installScriptedFileOps(t, env, &scriptedFileOps{}, nil)
-	r := ftDecode(t, patchTool(context.Background(), env, patchArgs{mode: "invalid_mode"}, "default", nil))
+	r := ftDecode(t, patchTool(context.Background(), env, patchArgs{mode: "invalid_mode"}, "default"))
 	if _, ok := r["error"]; !ok {
 		t.Fatalf("result %v", r)
 	}
@@ -213,10 +214,10 @@ func TestFileToolsReadPatchUnknownModeErrors(t *testing.T) {
 
 func TestFileToolsReadPatchV4ARejectsTraversalInUpdateHeader(t *testing.T) {
 	env, _ := newFileToolTestEnv(t)
-	ops := &scriptedFileOps{patchV4AFn: func(string, *editProbe) *PatchResult { return &PatchResult{Success: true} }}
+	ops := &scriptedFileOps{patchV4AFn: func(string) *PatchResult { return &PatchResult{Success: true} }}
 	installScriptedFileOps(t, env, ops, nil)
 	p := "*** Begin Patch\n*** Update File: ../../../etc/shadow\n@@ -1,3 +1,3 @@\n-old\n+new\n*** End Patch\n"
-	r := ftDecode(t, patchTool(context.Background(), env, patchArgs{mode: "patch", patch: p}, "default", nil))
+	r := ftDecode(t, patchTool(context.Background(), env, patchArgs{mode: "patch", patch: p}, "default"))
 	if !strings.Contains(strings.ToLower(ftrErr(r)), "traversal") {
 		t.Fatalf("result %v", r)
 	}
@@ -229,7 +230,7 @@ func TestFileToolsReadPatchV4ARejectsTraversalInAddHeader(t *testing.T) {
 	env, _ := newFileToolTestEnv(t)
 	installScriptedFileOps(t, env, &scriptedFileOps{}, nil)
 	p := "*** Begin Patch\n*** Add File: ../../../tmp/dropped.py\n+print('pwned')\n*** End Patch\n"
-	r := ftDecode(t, patchTool(context.Background(), env, patchArgs{mode: "patch", patch: p}, "default", nil))
+	r := ftDecode(t, patchTool(context.Background(), env, patchArgs{mode: "patch", patch: p}, "default"))
 	if !strings.Contains(strings.ToLower(ftrErr(r)), "traversal") {
 		t.Fatalf("result %v", r)
 	}
@@ -239,7 +240,7 @@ func TestFileToolsReadPatchMoveToSensitiveDstBlocked(t *testing.T) {
 	env, _ := newFileToolTestEnv(t)
 	lookups := ftrInstallCounted(t, env, &scriptedFileOps{})
 	p := "*** Begin Patch\n*** Move File: /tmp/work.txt -> /etc/crontab\n*** End Patch\n"
-	r := ftDecode(t, patchTool(context.Background(), env, patchArgs{mode: "patch", patch: p}, "default", nil))
+	r := ftDecode(t, patchTool(context.Background(), env, patchArgs{mode: "patch", patch: p}, "default"))
 	if !strings.Contains(strings.ToLower(ftrErr(r)), "sensitive") {
 		t.Fatalf("result %v", r)
 	}
@@ -252,7 +253,7 @@ func TestFileToolsReadPatchUpdateNoSpaceAfterAsterisksBlocked(t *testing.T) {
 	env, _ := newFileToolTestEnv(t)
 	lookups := ftrInstallCounted(t, env, &scriptedFileOps{})
 	p := "*** Begin Patch\n***Update File: /etc/resolv.conf\n@@ @@\n-old\n+new\n*** End Patch\n"
-	r := ftDecode(t, patchTool(context.Background(), env, patchArgs{mode: "patch", patch: p}, "default", nil))
+	r := ftDecode(t, patchTool(context.Background(), env, patchArgs{mode: "patch", patch: p}, "default"))
 	if !strings.Contains(strings.ToLower(ftrErr(r)), "sensitive") {
 		t.Fatalf("result %v", r)
 	}
@@ -263,10 +264,10 @@ func TestFileToolsReadPatchUpdateNoSpaceAfterAsterisksBlocked(t *testing.T) {
 
 func TestFileToolsReadPatchMoveSafePathsNotBlocked(t *testing.T) {
 	env, ws := newFileToolTestEnv(t)
-	ops := &scriptedFileOps{patchV4AFn: func(string, *editProbe) *PatchResult { return &PatchResult{Success: true} }}
+	ops := &scriptedFileOps{patchV4AFn: func(string) *PatchResult { return &PatchResult{Success: true} }}
 	installScriptedFileOps(t, env, ops, nil)
 	p := "*** Begin Patch\n*** Move File: " + filepath.Join(ws, "a.txt") + " -> " + filepath.Join(ws, "b.txt") + "\n*** End Patch\n"
-	r := ftDecode(t, patchTool(context.Background(), env, patchArgs{mode: "patch", patch: p}, "default", nil))
+	r := ftDecode(t, patchTool(context.Background(), env, patchArgs{mode: "patch", patch: p}, "default"))
 	if _, ok := r["error"]; ok {
 		t.Fatalf("result %v", r)
 	}
@@ -286,12 +287,12 @@ func TestFileToolsReadSearchExceptionReturnsError(t *testing.T) {
 
 func TestFileToolsReadPatchNoMatchIncludesHint(t *testing.T) {
 	env, _ := newFileToolTestEnv(t)
-	ops := &scriptedFileOps{patchReplaceFn: func(path, oldString, newString string, replaceAll bool, probe *editProbe) *PatchResult {
+	ops := &scriptedFileOps{patchReplaceFn: func(path, oldString, newString string, replaceAll bool) *PatchResult {
 		return &PatchResult{Error: "Could not find match for old_string in foo.py"}
 	}}
 	installScriptedFileOps(t, env, ops, nil)
 	x, y := "x", "y"
-	r := ftDecode(t, patchTool(context.Background(), env, patchArgs{mode: "replace", path: "foo.py", oldString: &x, newString: &y}, "default", nil))
+	r := ftDecode(t, patchTool(context.Background(), env, patchArgs{mode: "replace", path: "foo.py", oldString: &x, newString: &y}, "default"))
 	if h, _ := r["_hint"].(string); h == "" {
 		t.Fatalf("result %v", r)
 	}
@@ -299,12 +300,12 @@ func TestFileToolsReadPatchNoMatchIncludesHint(t *testing.T) {
 
 func TestFileToolsReadPatchSuccessNoHint(t *testing.T) {
 	env, _ := newFileToolTestEnv(t)
-	ops := &scriptedFileOps{patchReplaceFn: func(path, oldString, newString string, replaceAll bool, probe *editProbe) *PatchResult {
+	ops := &scriptedFileOps{patchReplaceFn: func(path, oldString, newString string, replaceAll bool) *PatchResult {
 		return &PatchResult{Success: true, Diff: "--- a\n+++ b"}
 	}}
 	installScriptedFileOps(t, env, ops, nil)
 	x, y := "x", "y"
-	raw := patchTool(context.Background(), env, patchArgs{mode: "replace", path: "foo.py", oldString: &x, newString: &y}, "default", nil)
+	raw := patchTool(context.Background(), env, patchArgs{mode: "replace", path: "foo.py", oldString: &x, newString: &y}, "default")
 	if strings.Contains(raw, "_hint") {
 		t.Fatalf("raw %s", raw)
 	}
@@ -834,12 +835,12 @@ func TestFileToolsReadSchemaHostedOCRGateStates(t *testing.T) {
 		}
 		o := readFileSchemaOverrides(env)
 		if !want {
-			if o.Len() != 0 {
+			if o != nil && o.Len() != 0 {
 				t.Fatalf("%s override %v", state, o)
 			}
 			return
 		}
-		if o.Vals["description"] != upgraded || o.Len() != 1 {
+		if o == nil || o.Vals["description"] != upgraded || o.Len() != 1 {
 			t.Fatalf("%s override %v", state, o)
 		}
 	}
@@ -934,10 +935,10 @@ func TestFileToolsReadV4AFamilyDetector(t *testing.T) {
 		{"openai-codex", "codex-large", true},
 		{"azure-openai", "deploy-x", true},
 		{"openrouter", "openai/gpt-5.2", true},
-		{"nous", "openai/o5-mini", true},
+		{"kilocode", "openai/o5-mini", true},
 		{"openrouter", "anthropic/claude-sonnet-4", false},
 		{"anthropic", "claude-fable-5", false},
-		{"nous", "hermes-4-405b", false},
+		{"kilocode", "z-ai/glm-5.3", false},
 		{"", "", false},
 	} {
 		ftrSetMain(env, c.prov, c.model)
@@ -962,7 +963,7 @@ func TestFileToolsReadV4AOpenAIFamilyGetsLayer(t *testing.T) {
 func TestFileToolsReadV4ANonOpenAIGetsNoOverride(t *testing.T) {
 	env, _ := newFileToolTestEnv(t)
 	ftrSetMain(env, "anthropic", "claude-fable-5")
-	if o := patchSchemaOverrides(env); o.Len() != 0 {
+	if o := patchSchemaOverrides(env); o != nil && o.Len() != 0 {
 		t.Fatalf("override %v", o)
 	}
 }

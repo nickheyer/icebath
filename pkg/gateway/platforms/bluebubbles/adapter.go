@@ -7,7 +7,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"log/slog"
 	"math/big"
 	"net/http"
 	"strings"
@@ -495,14 +494,14 @@ func (a *BlueBubblesAdapter) probeServer(ctx context.Context) error {
 	a.helperConnected = pyrepr.Truthy(serverData["helper_connected"])
 	private, helper := a.privateAPIEnabled, a.helperConnected
 	a.mu.Unlock()
-	slog.Info(fmt.Sprintf("[bluebubbles] connected to %s (private_api=%s, helper=%s)", a.serverURL, pyrepr.Str(private), pyrepr.Str(helper)))
+	pkgLog().Info(fmt.Sprintf("[bluebubbles] connected to %s (private_api=%s, helper=%s)", a.serverURL, pyrepr.Str(private), pyrepr.Str(helper)))
 	return nil
 }
 
 // Connects to the server, binds or publishes the webhook listener and registers the webhook with the server
 func (a *BlueBubblesAdapter) Connect(ctx context.Context, isReconnect bool) (bool, error) {
 	if a.serverURL == "" || a.password == "" {
-		slog.Error("[bluebubbles] BLUEBUBBLES_SERVER_URL and BLUEBUBBLES_PASSWORD are required")
+		pkgLog().Error("[bluebubbles] BLUEBUBBLES_SERVER_URL and BLUEBUBBLES_PASSWORD are required")
 		return false, nil
 	}
 	client := gateway.LimitedHTTPClient(gateway.PlatformHTTPXLimits(), false)
@@ -514,7 +513,7 @@ func (a *BlueBubblesAdapter) Connect(ctx context.Context, isReconnect bool) (boo
 		if ctx.Err() != nil {
 			return false, ctx.Err()
 		}
-		slog.Error(fmt.Sprintf("[bluebubbles] cannot reach server at %s: %s", a.serverURL, pyrepr.ExceptionMessage(err)))
+		pkgLog().Error(fmt.Sprintf("[bluebubbles] cannot reach server at %s: %s", a.serverURL, pyrepr.ExceptionMessage(err)))
 		a.closeClient()
 		return false, nil
 	}
@@ -538,7 +537,7 @@ func (a *BlueBubblesAdapter) Connect(ctx context.Context, isReconnect bool) (boo
 	a.mu.Unlock()
 	a.MarkConnected(ctx, "")
 	if runner != nil {
-		slog.Info(fmt.Sprintf("[bluebubbles] webhook listening on http://%s:%d%s", a.webhookHost, a.webhookPort, a.webhookPath))
+		pkgLog().Info(fmt.Sprintf("[bluebubbles] webhook listening on http://%s:%d%s", a.webhookHost, a.webhookPort, a.webhookPath))
 	}
 	if _, err := a.registerWebhook(ctx); err != nil {
 		return false, err
@@ -641,7 +640,7 @@ func (a *BlueBubblesAdapter) registerWebhook(ctx context.Context) (bool, error) 
 	}
 	webhookURL, logURL := a.webhookRegisterURL(), a.webhookRegisterURLForLog()
 	if len(a.findRegisteredWebhooks(ctx, webhookURL)) > 0 {
-		slog.Info("[bluebubbles] webhook already registered: " + logURL)
+		pkgLog().Info("[bluebubbles] webhook already registered: " + logURL)
 		return true, nil
 	}
 	res, err := a.apiPost(ctx, "/api/v1/webhook", pyjson.ObjectOf("url", webhookURL, "events", []any{"new-message", "updated-message"}))
@@ -652,10 +651,10 @@ func (a *BlueBubblesAdapter) registerWebhook(ctx context.Context) (bool, error) 
 			var ok bool
 			if ok, err = statusIs2xx(status); err == nil {
 				if ok {
-					slog.Info("[bluebubbles] webhook registered with server: " + logURL)
+					pkgLog().Info("[bluebubbles] webhook registered with server: " + logURL)
 					return true, nil
 				}
-				slog.Warn(fmt.Sprintf("[bluebubbles] webhook registration returned status %s: %s", pyrepr.Str(status), pyrepr.Str(m["message"])))
+				pkgLog().Warn(fmt.Sprintf("[bluebubbles] webhook registration returned status %s: %s", pyrepr.Str(status), pyrepr.Str(m["message"])))
 				return false, nil
 			}
 		}
@@ -663,7 +662,7 @@ func (a *BlueBubblesAdapter) registerWebhook(ctx context.Context) (bool, error) 
 	if ctx.Err() != nil {
 		return false, ctx.Err()
 	}
-	slog.Warn("[bluebubbles] failed to register webhook with server: " + pyrepr.ExceptionMessage(err))
+	pkgLog().Warn("[bluebubbles] failed to register webhook with server: " + pyrepr.ExceptionMessage(err))
 	return false, nil
 }
 
@@ -703,12 +702,12 @@ func (a *BlueBubblesAdapter) unregisterWebhook(ctx context.Context) bool {
 			removed = true
 		}
 		if removed {
-			slog.Info("[bluebubbles] webhook unregistered: " + a.webhookRegisterURLForLog())
+			pkgLog().Info("[bluebubbles] webhook unregistered: " + a.webhookRegisterURLForLog())
 		}
 		return nil
 	}()
 	if err != nil {
-		slog.Debug("[bluebubbles] failed to unregister webhook (non-critical): " + pyrepr.ExceptionMessage(err))
+		pkgLog().Debug("[bluebubbles] failed to unregister webhook (non-critical): " + pyrepr.ExceptionMessage(err))
 	}
 	return removed
 }

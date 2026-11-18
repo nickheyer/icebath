@@ -43,7 +43,7 @@ func raisedObj(err error) *pyjson.Object {
 	case errors.As(err, &typed):
 		class = typed.PyTypeName()
 	case errors.As(err, &pe):
-		class, msg = pypath.OSErrorClass(err), pyOSErrorText(err)
+		class, msg = pypath.OSErrorClass(err), osErrorText(err)
 	}
 	return resultObj("error", tools.BoundErrorText(tools.SanitizeToolError(fmt.Sprintf("Tool execution failed: %s: %s", class, msg))))
 }
@@ -96,7 +96,7 @@ func (s *Scope) validateDeleteTarget(skillDir string) string {
 		return fmt.Sprintf("Refusing to delete '%s': the skill directory is a symlink/junction. Remove the link target manually if intended.", skillDir)
 	}
 	if _, err := filepath.EvalSymlinks(skillDir); err != nil && !errors.Is(err, fs.ErrNotExist) {
-		return fmt.Sprintf("Refusing to delete '%s': could not resolve path (%s).", skillDir, pyOSErrorText(err))
+		return fmt.Sprintf("Refusing to delete '%s': could not resolve path (%s).", skillDir, osErrorText(err))
 	}
 	resolved, roots := s.resolvedRoots(skillDir)
 	for _, r := range roots {

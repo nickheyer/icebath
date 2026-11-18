@@ -3,7 +3,6 @@ package monitoring
 import (
 	"context"
 	"fmt"
-	"log/slog"
 
 	"github.com/google/uuid"
 
@@ -32,7 +31,7 @@ func EnsureInstallID(ctx context.Context, cfg map[string]any) string {
 	}
 	minted := uuid.NewString()
 	if err := persistInstallID(ctx, minted); err != nil {
-		slog.Debug(fmt.Sprintf("install_id persist failed; using ephemeral id: %v", err))
+		pkgLog().Debug(fmt.Sprintf("install_id persist failed; using ephemeral id: %v", err))
 	}
 	if cfg != nil {
 		if _, ok := cfg["monitoring"]; !ok {

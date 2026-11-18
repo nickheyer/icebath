@@ -518,7 +518,7 @@ func (s *Server) respond(w http.ResponseWriter, resp any, stream bool, promptTok
 }
 
 // Writes a minimal config.yaml and .env routing the main model of a home to baseURL
-func WriteHome(home, baseURL, apiKey, extraConfig string, offerVersion int) error {
+func WriteHome(home, baseURL, apiKey, extraConfig string) error {
 	if apiKey == "" {
 		apiKey = "sk-fake-e2e"
 	}
@@ -532,11 +532,6 @@ func WriteHome(home, baseURL, apiKey, extraConfig string, offerVersion int) erro
 		"  context_length: 128000\n" +
 		"agent:\n" +
 		"  api_max_retries: 1\n" +
-		"telemetry:\n" +
-		"  shared_metrics:\n" +
-		"    enabled: false\n" +
-		"    send: false\n" +
-		"    offer_version: " + strconv.Itoa(offerVersion) + "\n" +
 		extraConfig
 	if err := os.WriteFile(filepath.Join(home, "config.yaml"), []byte(config), 0o644); err != nil {
 		return err

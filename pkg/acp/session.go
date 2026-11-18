@@ -3,7 +3,6 @@ package acp
 import (
 	"context"
 	"fmt"
-	"log/slog"
 	"path/filepath"
 	"slices"
 	"sort"
@@ -24,7 +23,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tools"
-	"github.com/nickheyer/icebath/pkg/tuigateway"
+	"github.com/nickheyer/icebath/pkg/tuihost"
 )
 
 // Per session state of one ACP managed agent
@@ -80,7 +79,7 @@ var resolveSessionRuntime = func(ctx context.Context, requested, targetModel str
 // Bounded wait for background MCP discovery before an agent snapshots its tools
 var ensureMCPDiscoveryBeforeAgentBuild = func(ctx context.Context, cfg config.Tree) {
 	env := &tools.Env{Home: home.Dir(ctx), Config: cfg, TerminalScope: tools.GetTerminalScope(ctx)}
-	mcp.EnsureDiscoveryBeforeAgentBuild(ctx, env, slog.Default().With("logger", "acp_adapter.session"), nil, false, "acp-mcp-discovery")
+	mcp.EnsureDiscoveryBeforeAgentBuild(ctx, env, pkgLog().Slog(), nil, false, "acp-mcp-discovery")
 }
 
 // Binds a task id to the editor cwd for tools
@@ -118,7 +117,7 @@ func (m *SessionManager) CreateSession(ctx context.Context, cwd string) (*Sessio
 		return nil, err
 	}
 	st := m.installState(ctx, sessionID, a, cwd, agentModel(a), []map[string]any{}, true)
-	sessionLog.Info(fmt.Sprintf("Created ACP session %s (cwd=%s)", sessionID, cwd))
+	pkgLog().Info(fmt.Sprintf("Created ACP session %s (cwd=%s)", sessionID, cwd))
 	return st, nil
 }
 
@@ -163,7 +162,7 @@ func (m *SessionManager) ForkSession(ctx context.Context, sessionID, cwd string)
 		history = []map[string]any{}
 	}
 	st := m.installState(ctx, newID, a, cwd, model, history, true)
-	sessionLog.Info(fmt.Sprintf("Forked ACP session %s -> %s", sessionID, newID))
+	pkgLog().Info(fmt.Sprintf("Forked ACP session %s -> %s", sessionID, newID))
 	return st, nil
 }
 
@@ -281,13 +280,13 @@ func (m *SessionManager) EndAllSessions(ctx context.Context, endReason string) i
 	ended := 0
 	for _, sid := range ids {
 		if err := db.EndSession(sid, endReason); err != nil {
-			sessionLog.Debug(fmt.Sprintf("Failed to end ACP session %s\n%s", sid, err))
+			pkgLog().Debug(fmt.Sprintf("Failed to end ACP session %s\n%s", sid, err))
 			continue
 		}
 		ended++
 	}
 	if ended > 0 {
-		sessionLog.Info(fmt.Sprintf("Ended %d ACP session(s) on shutdown (%s)", ended, endReason))
+		pkgLog().Info(fmt.Sprintf("Ended %d ACP session(s) on shutdown (%s)", ended, endReason))
 	}
 	return ended
 }
@@ -315,7 +314,7 @@ func (m *SessionManager) GetDB(ctx context.Context) *state.SessionDB {
 	if m.dbInstance == nil {
 		db, err := acquireSessionDB(ctx, filepath.Join(home.Dir(ctx), "state.db"))
 		if err != nil {
-			sessionLog.Debug("SessionDB unavailable for ACP persistence\n" + err.Error())
+			pkgLog().Debug("SessionDB unavailable for ACP persistence\n" + err.Error())
 		} else {
 			m.dbInstance = db
 		}
@@ -324,9 +323,9 @@ func (m *SessionManager) GetDB(ctx context.Context) *state.SessionDB {
 		m.cwdBackfilled = true
 		repaired, err := m.dbInstance.BackfillACPSessionCwd(ctx)
 		if err != nil {
-			sessionLog.Debug("ACP session cwd backfill failed\n" + err.Error())
+			pkgLog().Debug("ACP session cwd backfill failed\n" + err.Error())
 		} else if repaired > 0 {
-			sessionLog.Info(fmt.Sprintf("Backfilled cwd for %d ACP session(s) from model_config", repaired))
+			pkgLog().Info(fmt.Sprintf("Backfilled cwd for %d ACP session(s) from model_config", repaired))
 		}
 	}
 	return m.dbInstance
@@ -350,7 +349,7 @@ func (m *SessionManager) persist(ctx context.Context, st *SessionState) {
 		}
 	}
 	if err := m.persistRow(ctx, db, st, modelStr, meta); err != nil {
-		sessionLog.Warning(fmt.Sprintf("Failed to persist ACP session %s\n%s", st.SessionID, err))
+		pkgLog().Warning(fmt.Sprintf("Failed to persist ACP session %s\n%s", st.SessionID, err))
 	}
 }
 
@@ -376,7 +375,7 @@ func (m *SessionManager) persistRow(ctx context.Context, db *state.SessionDB, st
 			err = db.UpdateSessionMeta(ctx, st.SessionID, text, modelStr)
 		}
 		if err != nil {
-			sessionLog.Debug("Failed to update ACP session metadata\n" + err.Error())
+			pkgLog().Debug("Failed to update ACP session metadata\n" + err.Error())
 		}
 		if st.Cwd != "" {
 			m.scheduleGitMetadata(ctx, st, m.claimCwdGeneration(ctx, st))
@@ -396,7 +395,7 @@ func (m *SessionManager) claimCwdGeneration(ctx context.Context, st *SessionStat
 	}
 	generation, err := db.UpdateSessionCwdClaim(ctx, st.SessionID, st.Cwd, "", "", false)
 	if err != nil {
-		sessionLog.Debug(fmt.Sprintf("Failed to persist ACP session cwd column for %s\n%s", st.SessionID, err))
+		pkgLog().Debug(fmt.Sprintf("Failed to persist ACP session cwd column for %s\n%s", st.SessionID, err))
 		return nil
 	}
 	return generation
@@ -412,16 +411,16 @@ func (m *SessionManager) scheduleGitMetadata(ctx context.Context, st *SessionSta
 	go func() {
 		defer func() {
 			if r := recover(); r != nil {
-				sessionLog.Debug(fmt.Sprintf("Failed to publish ACP git metadata for %s\n%v", sessionID, r))
+				pkgLog().Debug(fmt.Sprintf("Failed to publish ACP git metadata for %s\n%v", sessionID, r))
 			}
 		}()
-		branch, root := tuigateway.Branch(cwd), tuigateway.CommonRepoRoot(cwd)
+		branch, root := tuihost.Branch(cwd), tuihost.CommonRepoRoot(cwd)
 		if branch == "" && root == "" {
 			return
 		}
 		if db := m.GetDB(detached); db != nil {
 			if _, err := db.PublishSessionGitMetadata(detached, sessionID, cwd, gen, branch, root); err != nil {
-				sessionLog.Debug(fmt.Sprintf("Failed to publish ACP git metadata for %s\n%s", sessionID, err))
+				pkgLog().Debug(fmt.Sprintf("Failed to publish ACP git metadata for %s\n%s", sessionID, err))
 			}
 		}
 	}()
@@ -435,7 +434,7 @@ func (m *SessionManager) restore(ctx context.Context, sessionID string) *Session
 	}
 	row, err := db.GetSession(ctx, sessionID)
 	if err != nil {
-		sessionLog.Debug(fmt.Sprintf("Failed to query DB for ACP session %s\n%s", sessionID, err))
+		pkgLog().Debug(fmt.Sprintf("Failed to query DB for ACP session %s\n%s", sessionID, err))
 		return nil
 	}
 	if row == nil || row.GetOr("source", nil) != "acp" {
@@ -443,7 +442,7 @@ func (m *SessionManager) restore(ctx context.Context, sessionID string) *Session
 	}
 	if row.GetOr("ended_at", nil) != nil {
 		if err := db.ReopenSession(ctx, sessionID); err != nil {
-			sessionLog.Debug(fmt.Sprintf("Failed to reopen ACP session %s\n%s", sessionID, err))
+			pkgLog().Debug(fmt.Sprintf("Failed to reopen ACP session %s\n%s", sessionID, err))
 		}
 	}
 	meta := parseModelConfig(row.GetOr("model_config", nil))
@@ -459,7 +458,7 @@ func (m *SessionManager) restore(ctx context.Context, sessionID string) *Session
 	model := orText(row.GetOr("model", nil))
 	history, err := db.GetMessagesAsConversation(ctx, sessionID, state.ConversationOptions{RepairAlternation: true})
 	if err != nil {
-		sessionLog.Warning(fmt.Sprintf("Failed to load messages for ACP session %s\n%s", sessionID, err))
+		pkgLog().Warning(fmt.Sprintf("Failed to load messages for ACP session %s\n%s", sessionID, err))
 		history = []map[string]any{}
 	}
 	if history == nil {
@@ -471,14 +470,14 @@ func (m *SessionManager) restore(ctx context.Context, sessionID string) *Session
 		BaseURL:           orText(meta.GetOr("base_url", nil), row.GetOr("billing_base_url", nil)),
 	})
 	if err != nil {
-		sessionLog.Warning(fmt.Sprintf("Failed to recreate agent for ACP session %s\n%s", sessionID, err))
+		pkgLog().Warning(fmt.Sprintf("Failed to recreate agent for ACP session %s\n%s", sessionID, err))
 		return nil
 	}
 	if model == "" {
 		model = agentModel(a)
 	}
 	st := m.installState(ctx, sessionID, a, cwd, model, history, false)
-	sessionLog.Info(fmt.Sprintf("Restored ACP session %s from DB (%d messages)", sessionID, len(history)))
+	pkgLog().Info(fmt.Sprintf("Restored ACP session %s from DB (%d messages)", sessionID, len(history)))
 	return st
 }
 
@@ -563,7 +562,7 @@ func (m *SessionManager) MakeAgent(ctx context.Context, o MakeAgentOptions) (any
 	var resolveErr error
 	if runtime, err := resolveSessionRuntime(ctx, requested, model); err != nil {
 		resolveErr = err
-		sessionLog.Debug("ACP session falling back to default provider resolution\n" + err.Error())
+		pkgLog().Debug("ACP session falling back to default provider resolution\n" + err.Error())
 	} else if runtime != nil {
 		opts.Provider, opts.APIMode, opts.BaseURL = runtime.Provider, string(runtime.APIMode), runtime.BaseURL
 		if o.APIMode != "" {
@@ -585,7 +584,7 @@ func (m *SessionManager) MakeAgent(ctx context.Context, o MakeAgentOptions) (any
 	func() {
 		defer func() {
 			if r := recover(); r != nil {
-				sessionLog.Debug(fmt.Sprintf("ACP: bounded MCP discovery wait failed\n%v", r))
+				pkgLog().Debug(fmt.Sprintf("ACP: bounded MCP discovery wait failed\n%v", r))
 			}
 		}()
 		ensureMCPDiscoveryBeforeAgentBuild(ctx, cfg)

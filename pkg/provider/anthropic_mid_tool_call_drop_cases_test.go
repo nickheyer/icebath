@@ -33,7 +33,7 @@ func (s *scriptedAnthMessageStream) HTTPResponse() *http.Response {
 func (s *scriptedAnthMessageStream) AttemptConn() net.Conn    { return nil }
 func (s *scriptedAnthMessageStream) Snapshot() map[string]any { return s.final }
 
-// Client whose messages.stream hands out a fresh scripted stream per attempt like the hermes MagicMock
+// Client whose messages.stream hands out a fresh scripted stream per attempt like the MagicMock
 type scriptedAnthClient struct {
 	events []map[string]any
 	final  map[string]any

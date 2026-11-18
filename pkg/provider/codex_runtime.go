@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"log/slog"
 	"math"
 	"strconv"
 	"strings"
@@ -111,7 +110,7 @@ func codexCallGuarded(fn func(), present bool, failMsg string) {
 	}
 	defer func() {
 		if r := recover(); r != nil {
-			slog.Debug(failMsg, "panic", r)
+			pkgLog().Debug(failMsg, "panic", r)
 		}
 	}()
 	fn()
@@ -200,7 +199,7 @@ func codexQueueTokenCounts(agent CodexRuntimeAgent, failMsg string, failExtra []
 	}
 	fail := func(err any) {
 		args := append([]any{agent.SessionID()}, failExtra...)
-		slog.Debug(pyPercentFormat(failMsg, append(args, pyrepr.Str(err))...))
+		pkgLog().Debug(pyPercentFormat(failMsg, append(args, pyrepr.Str(err))...))
 	}
 	defer func() {
 		if r := recover(); r != nil {
@@ -281,7 +280,7 @@ func recordCodexAppServerUsage(agent CodexRuntimeAgent, turn *CodexTurnResult, m
 		func() {
 			defer func() {
 				if r := recover(); r != nil {
-					slog.Debug("codex app-server usage update failed", "panic", r)
+					pkgLog().Debug("codex app-server usage update failed", "panic", r)
 				}
 			}()
 			plain := map[string]any{}
@@ -348,7 +347,7 @@ func recordCodexAppServerCompaction(agent CodexRuntimeAgent, turn *CodexTurnResu
 	if sessionLabel == "" {
 		sessionLabel = "none"
 	}
-	slog.Info(fmt.Sprintf("codex app-server compaction observed: session=%s thread=%s turn=%s force=%s", sessionLabel, turn.ThreadID, turn.TurnID, pyrepr.Str(force)))
+	pkgLog().Info(fmt.Sprintf("codex app-server compaction observed: session=%s thread=%s turn=%s force=%s", sessionLabel, turn.ThreadID, turn.TurnID, pyrepr.Str(force)))
 	if !force {
 		func() {
 			defer func() { _ = recover() }()
@@ -595,7 +594,7 @@ func startCodexThread(agent CodexRuntimeAgent) (string, error) {
 	if err == nil || !errors.As(err, &resumeErr) {
 		return id, err
 	}
-	slog.Warn(fmt.Sprintf("%s; starting a new codex thread (session=%s)", resumeErr.Message, agent.SessionID()))
+	pkgLog().Warn(fmt.Sprintf("%s; starting a new codex thread (session=%s)", resumeErr.Message, agent.SessionID()))
 	storeCodexThreadID(agent, "")
 	agent.EmitDiagnosticStatus(codexThreadResumeNotice)
 	return agent.CodexSession().EnsureStarted()

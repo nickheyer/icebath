@@ -53,14 +53,14 @@ func postTimeoutNotice(ctx context.Context, tc *TurnContext, command string, car
 	metadata := interimMetadata(tc.statusThreadMetadata)
 	defer func() {
 		if r := recover(); r != nil {
-			runLog().Debug(fmt.Sprintf("Approval timeout notice failed: %v", r))
+			pkgLog().Debug(fmt.Sprintf("Approval timeout notice failed: %v", r))
 		}
 	}()
 	if cardMessageID != nil && *cardMessageID != "" && editTimedOutCard(ctx, adapter, tc.statusChatID, *cardMessageID, notice, command, reason) {
 		return
 	}
 	if _, err := adapter.Send(ctx, tc.statusChatID, notice, "", metadata); err != nil {
-		runLog().Debug(fmt.Sprintf("Approval timeout notice failed: %s", err))
+		pkgLog().Debug(fmt.Sprintf("Approval timeout notice failed: %s", err))
 	}
 }
 
@@ -97,12 +97,12 @@ func timedOutCardBody(ctx context.Context, adapter gateway.PlatformAdapter, chat
 func editTimedOutCard(ctx context.Context, adapter gateway.PlatformAdapter, chatID, messageID, notice, command, reason string) bool {
 	body, err := timedOutCardBody(ctx, adapter, chatID, notice, command, reason)
 	if err != nil {
-		runLog().Debug(fmt.Sprintf("Approval card edit failed; sending the notice as a new message: %s", err))
+		pkgLog().Debug(fmt.Sprintf("Approval card edit failed; sending the notice as a new message: %s", err))
 		return false
 	}
 	result, err := adapter.EditMessage(ctx, chatID, messageID, body, false)
 	if err != nil {
-		runLog().Debug(fmt.Sprintf("Approval card edit failed; sending the notice as a new message: %s", err))
+		pkgLog().Debug(fmt.Sprintf("Approval card edit failed; sending the notice as a new message: %s", err))
 		return false
 	}
 	return result.Success

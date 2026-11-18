@@ -76,16 +76,16 @@ var lintersInproc = map[string]func(string) (bool, string){
 // Extensions whose write is refused when the candidate content fails to parse
 var failClosedInprocExts = setOf(".json", ".yaml", ".yml", ".toml")
 
-// JSON syntax verdict with the json.loads exception rendered as the lint error
+// JSON syntax verdict with the parse failure in plain words as the lint error
 func lintJSONInproc(content string) (bool, string) {
 	excType, msg, jerr := pyJSONLoadsCheck(content)
 	switch {
 	case excType == "":
 		return true, ""
 	case jerr != nil:
-		return false, "JSONDecodeError: " + jerr.Msg + " (line " + strconv.Itoa(jerr.Lineno) + ", column " + strconv.Itoa(jerr.Colno) + ")"
+		return false, "invalid JSON: " + jerr.Msg + " (line " + strconv.Itoa(jerr.Lineno) + ", column " + strconv.Itoa(jerr.Colno) + ")"
 	}
-	return false, excType + ": " + msg
+	return false, "invalid JSON: " + msg
 }
 
 // YAML event level syntax verdict matching the ruamel C parser the write gate uses
@@ -156,15 +156,14 @@ func pyJSONLoadsCheck(text string) (string, string, *pyjson.DecodeError) {
 		limit = scan.overflowAt
 	}
 	if scan.bigIntAt >= 0 && scan.bigIntAt < limit && (errPos < 0 || errPos > scan.bigIntAt) {
-		return "ValueError", "Exceeds the limit (" + strconv.Itoa(pyIntMaxStrDigits) + " digits) for integer string conversion: value has " +
-			strconv.Itoa(scan.bigIntDigits) + " digits; use sys.set_int_max_str_digits() to increase the limit", nil
+		return "ValueError", "an integer has " + strconv.Itoa(scan.bigIntDigits) + " digits, more than the " + strconv.Itoa(pyIntMaxStrDigits) + " allowed", nil
 	}
 	if scan.overflowAt >= 0 && (errPos < 0 || errPos > scan.overflowAt) {
 		kind := "array"
 		if rs[scan.overflowAt] == '{' {
 			kind = "object"
 		}
-		return "RecursionError", "Stack overflow (used 8156 kB) while decoding a JSON " + kind + " from a unicode string", nil
+		return "RecursionError", "the JSON " + kind + " nests deeper than the parser allows", nil
 	}
 	if jerr != nil {
 		return "JSONDecodeError", "", jerr
@@ -703,7 +702,7 @@ func queueLateVerdict(owner, absPath string, res *lspEditCheckResult, cancelled 
 	}
 }
 
-// Holds CPython defaults and counts the script module plus the hermes linter frame that sit beneath loads
+// Holds CPython defaults and counts the script module plus the linter frame that sit beneath loads
 const (
 	tomllibRecursionLimit  = 1000
 	tomllibCallerFrames    = 2
@@ -791,7 +790,7 @@ func tomllibDecode(s string) []rune {
 // Pushes one Python frame and raises RecursionError once the interpreter limit of frames is exceeded
 func (p *tomllibParser) enter() {
 	if p.depth >= tomllibRecursionLimit {
-		panic(tomllibFailure{"RecursionError: maximum recursion depth exceeded"})
+		panic(tomllibFailure{"invalid TOML: the document nests deeper than the parser allows"})
 	}
 	p.depth++
 }
@@ -824,7 +823,7 @@ func (p *tomllibParser) decodeError(msg string, pos int) tomllibFailure {
 		}
 		coord = "line " + strconv.Itoa(lineno) + ", column " + strconv.Itoa(colno)
 	}
-	return tomllibFailure{"TOMLDecodeError: " + msg + " (at " + coord + ")"}
+	return tomllibFailure{"invalid TOML: " + msg + " (at " + coord + ")"}
 }
 
 func (p *tomllibParser) at(pos int) rune {
@@ -1114,7 +1113,7 @@ func (p *tomllibParser) getOrCreateNest(root *tomllibNode, key []string, accessL
 		cont = child
 		if accessLists && cont.kind == tomllibKindArray {
 			if len(cont.items) == 0 {
-				panic(tomllibFailure{"IndexError: list index out of range"})
+				panic(tomllibFailure{"invalid TOML: a key points into an empty array of tables"})
 			}
 			cont = cont.items[len(cont.items)-1]
 		}
@@ -1353,7 +1352,7 @@ func (p *tomllibParser) parseKey(pos int) (int, []string) {
 		pos, part = p.parseKeyPart(pos)
 		key = append(key, part)
 		if len(key) > tomllibMaxKeyParts {
-			panic(tomllibFailure{"RecursionError: TOML key has more than the allowed " + strconv.Itoa(tomllibMaxKeyParts) + " parts"})
+			panic(tomllibFailure{"invalid TOML: a key has more than the allowed " + strconv.Itoa(tomllibMaxKeyParts) + " parts"})
 		}
 		pos = p.skipChars(pos, tomllibIsWS)
 	}
@@ -1839,9 +1838,8 @@ func (p *tomllibParser) matchToNumber(pos, end int, decimalInt bool) {
 		}
 	}
 	if digits > tomllibIntMaxStrDigits {
-		panic(tomllibFailure{"ValueError: Exceeds the limit (" + strconv.Itoa(tomllibIntMaxStrDigits) +
-			" digits) for integer string conversion: value has " + strconv.Itoa(digits) +
-			" digits; use sys.set_int_max_str_digits() to increase the limit"})
+		panic(tomllibFailure{"invalid TOML: an integer has " + strconv.Itoa(digits) + " digits, more than the " +
+			strconv.Itoa(tomllibIntMaxStrDigits) + " allowed"})
 	}
 }
 
@@ -2244,7 +2242,7 @@ func ruamelCParseError(content string) string {
 	return ruamelCParseStream(content, "<unicode string>")
 }
 
-// Drives the CParser event loop over the raw input bytes and renders the first failure as hermes does
+// Drives the CParser event loop over the raw input bytes and renders the first failure
 func ruamelCParseStream(input string, name string) string {
 	p := yamlParserInitialize(input)
 	for {
@@ -2417,13 +2415,13 @@ func ruamelUTF8DecodeFailure(b []byte) (int, int, string) {
 	return 0, 0, ""
 }
 
-// Renders the exception the pyx layer builds from the libyaml failure through the ruamel string methods with the hermes prefix
+// Renders the exception the pyx layer builds from the libyaml failure through the ruamel string methods with the prefix
 func ruamelParserError(p *yamlParser, name string) string {
 	switch p.errorType {
 	case yamlMemoryError:
 		return "MemoryError: "
 	case yamlReaderError:
-		return "YAMLError: unacceptable character #x" + ruamelFormatHex04(p.problemValue) + ": " + p.problem + "\n  in \"" + name + "\", position " + strconv.Itoa(p.problemOffset)
+		return "invalid YAML: unacceptable character #x" + ruamelFormatHex04(p.problemValue) + ": " + p.problem + "\n  in \"" + name + "\", position " + strconv.Itoa(p.problemOffset)
 	case yamlScannerError, yamlParserError:
 		lines := make([]string, 0, 4)
 		if p.context != "" {
@@ -2433,9 +2431,9 @@ func ruamelParserError(p *yamlParser, name string) string {
 			}
 		}
 		lines = append(lines, p.problem, ruamelMarkString(name, p.problemMark))
-		return "YAMLError: " + strings.Join(lines, "\n")
+		return "invalid YAML: " + strings.Join(lines, "\n")
 	}
-	return "ValueError: no parser error"
+	return "invalid YAML: the parser stopped without naming the problem"
 }
 
 func ruamelMarkString(name string, m yamlMark) string {

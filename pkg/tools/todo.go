@@ -46,7 +46,7 @@ func (t TodoItem) asMap() map[string]any {
 	return m
 }
 
-// Item dict in the key order hermes builds it, parent last when set
+// Item dict in its build key order, parent last when set
 func (t TodoItem) asDict() *pyjson.Object {
 	d := Dict("id", t.ID, "content", t.Content, "status", t.Status)
 	if t.Parent != "" {

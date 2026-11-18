@@ -122,6 +122,5 @@ func CheckRuntimeReadiness(ctx context.Context, requested string, strictProfileS
 	if runtime.Source != "" {
 		resolvedSource = runtime.Source
 	}
-	return pyjson.ObjectOf("ok", true, "provider", resolvedProvider, "model", model, "source", resolvedSource,
-		"free_tier_route", providerName == "nous" && provider.RouteIsWelcomeHost(runtime.BaseURL)), nil
+	return pyjson.ObjectOf("ok", true, "provider", resolvedProvider, "model", model, "source", resolvedSource), nil
 }

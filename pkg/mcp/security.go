@@ -35,7 +35,7 @@ var persistencePattern = regexp2.MustCompile(
 		`|/etc/rc\.local|/etc/systemd`+
 		`|\.bashrc\b|\.bash_profile\b|\.profile\b|\.zshrc\b`, regexp2.IgnoreCase)
 
-// Attacker artifacts of the June 2026 hermes-0day campaign, refused wherever they appear
+// Attacker artifacts of a June 2026 campaign, refused wherever they appear
 var iocSubstrings = []string{
 	"AAAAC3NzaC1lZDI1NTE5AAAAICBoh1oDC4DnsO1m5mJ4yfEKrQebaFh",
 	"hermes-0day",
@@ -162,7 +162,7 @@ func ValidateServerEntry(name string, entry map[string]any) []string {
 	flat := entryText(entry)
 	for _, ioc := range iocSubstrings {
 		if strings.Contains(flat, ioc) {
-			return append(issues, fmt.Sprintf("MCP server '%s' contains a known hermes-0day indicator-of-compromise ('%s')", name, ioc))
+			return append(issues, fmt.Sprintf("MCP server '%s' contains a known indicator-of-compromise of the June 2026 MCP backdoor campaign ('%s')", name, ioc))
 		}
 	}
 	command := entry["command"]
@@ -182,7 +182,7 @@ func ValidateServerEntry(name string, entry map[string]any) []string {
 	}
 	if reMatch(persistencePattern, script) {
 		issues = append(issues, fmt.Sprintf("MCP server '%s' uses shell interpreter '%s' to write to an OS persistence surface "+
-			"(SSH keys / PAM / sudoers / cron / shell rc) \u2014 this is the hermes-0day backdoor shape, not a real MCP server", name, pyStr(command)))
+			"(SSH keys / PAM / sudoers / cron / shell rc) \u2014 this is the backdoor shape of the June 2026 MCP campaign, not a real MCP server", name, pyStr(command)))
 	}
 	return issues
 }

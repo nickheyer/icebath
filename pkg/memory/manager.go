@@ -8,7 +8,6 @@ import (
 	"log/slog"
 	"os"
 	"reflect"
-	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -18,7 +17,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/observability"
 	"github.com/nickheyer/icebath/pkg/skills"
 	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tools"
@@ -364,7 +362,7 @@ func NewMemoryManagerWithTimeout(ctx context.Context, env *tools.Env, store *Sto
 // Built in store the memory tool writes through
 func (m *MemoryManager) Store() *Store { return m.store }
 
-func (m *MemoryManager) log() *slog.Logger { return moduleLog(m.env, "agent.memory_manager") }
+func (m *MemoryManager) log() *slog.Logger { return envLog(m.env) }
 
 func (m *MemoryManager) logf(level slog.Level, format string, args ...any) {
 	m.log().Log(context.Background(), level, fmt.Sprintf(format, args...))
@@ -921,78 +919,9 @@ func (m *MemoryManager) HandleToolCall(ctx context.Context, toolName string, arg
 			nh.Provider = p.Name()
 		}
 		m.logf(slog.LevelError, "Memory provider '%s' handle_tool_call(%s) failed: %s", p.Name(), toolName, err)
-		recordProviderMemoryCall(m.env, p.Name(), toolName, scrubbedArgs, "", true)
 		return toolError(fmt.Sprintf("Memory tool '%s' failed: %s", toolName, err), nil)
 	}
-	recordProviderMemoryCall(m.env, p.Name(), toolName, scrubbedArgs, result, false)
 	return result
-}
-
-// Metric provider value, the bounded contract name when bundled, catalogued or builtin, else plugin
-func memoryProviderName(v any) string {
-	return observability.MemoryProviderName(v)
-}
-
-// Sorted names of the bundled providers the binary ships, the shared metrics bundled memory provider list
-func bundledMemoryProviderNames() []string {
-	registryMu.RLock()
-	defer registryMu.RUnlock()
-	var names []string
-	for _, r := range registrations {
-		if r.Source == SourceBundled && !slices.Contains(names, r.Name) {
-			names = append(names, r.Name)
-		}
-	}
-	slices.Sort(names)
-	return names
-}
-
-// Operation a provider tool performs, its action argument else a verb in its name
-func memoryProviderOp(toolName string, args map[string]any) string {
-	if action, ok := args["action"].(string); ok {
-		if bucket, ok := memoryOpWords[normMetricValue(action)]; ok {
-			return bucket
-		}
-	}
-	words := strings.Split(strings.ReplaceAll(normMetricValue(toolName), "-", "_"), "_")
-	for i := len(words) - 1; i >= 0; i-- {
-		if bucket, ok := memoryOpWords[words[i]]; ok {
-			return bucket
-		}
-	}
-	return "other"
-}
-
-// Whether a provider tool result reports an error or an unsuccessful outcome in its head
-func providerResultFailed(result string) bool {
-	head := runePrefix(strings.TrimLeftFunc(result, pyIsSpace), 200)
-	return strings.HasPrefix(head, `{"error"`) || strings.Contains(head, `"success": false`) || strings.Contains(head, `"success":false`)
-}
-
-// One metric row per provider tool call
-func recordProviderMemoryCall(env *tools.Env, provider, toolName string, args map[string]any, result string, raised bool) {
-	if env == nil || env.Config == nil || !env.Config.Bool("telemetry.shared_metrics.enabled", false) {
-		return
-	}
-	failed := ""
-	switch {
-	case raised:
-		failed = "exception"
-	case providerResultFailed(result):
-		failed = "provider_error"
-	}
-	outcome, class := "success", "none"
-	if failed != "" {
-		outcome, class = "failed", failed
-	}
-	origin := "foreground"
-	if tools.CurrentOrigin(env) == backgroundReviewOrigin {
-		origin = backgroundReviewOrigin
-	}
-	env.Emit(tools.Event{Kind: "metric", Tool: toolName, Data: map[string]any{
-		"name": memoryOpMetricName, "failure_class": class, "op": memoryProviderOp(toolName, args), "origin": origin,
-		"outcome": outcome, "provider": memoryProviderName(provider),
-	}})
 }
 
 // Per turn tick to every provider with the turn author
@@ -1597,7 +1526,7 @@ func InjectMemoryProviderTools(ctx context.Context, env *tools.Env, manager *Mem
 			for i, n := range names {
 				quoted[i] = n
 			}
-			moduleLog(env, "agent.memory_manager_tools").Info(fmt.Sprintf("Memory provider(s) %s configured but the 'memory' toolset is gated off for this "+
+			envLog(env).Info(fmt.Sprintf("Memory provider(s) %s configured but the 'memory' toolset is gated off for this "+
 				"session (platform_toolsets / agent.disabled_toolsets) — provider tools and system-prompt block are both "+
 				"withheld.", pyStr(quoted)))
 		}
@@ -1614,7 +1543,7 @@ func InjectMemoryProviderTools(ctx context.Context, env *tools.Env, manager *Mem
 	for _, raw := range manager.GetAllToolSchemas(ctx) {
 		schema, ok := NormalizeToolSchema(raw)
 		if !ok {
-			moduleLog(env, "agent.memory_manager_tools").Warn(fmt.Sprintf("Memory provider returned a tool schema with no resolvable name; skipping to avoid "+
+			envLog(env).Warn(fmt.Sprintf("Memory provider returned a tool schema with no resolvable name; skipping to avoid "+
 				"poisoning the request (%s)", pyRepr(raw)))
 			continue
 		}
@@ -1628,9 +1557,4 @@ func InjectMemoryProviderTools(ctx context.Context, env *tools.Env, manager *Mem
 		added++
 	}
 	return surface, validNames, added
-}
-
-// Installs the bundled provider name list the shared metrics memory provider dimension validates provider names against
-func registerMemoryManager() {
-	observability.BundledMemoryProvidersHook = bundledMemoryProviderNames
 }

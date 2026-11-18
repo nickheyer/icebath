@@ -30,7 +30,7 @@ import (
 
 const cuaLSRegister = "/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister"
 
-// Package seams of the cua setup the tests swap as hermes monkeypatches module attributes
+// Package seams of the cua setup the tests swap
 var (
 	cuaSetupEnsure = func(ctx context.Context, name string, opts pm.EnsureOptions) error {
 		_, err := pm.Ensure(ctx, name, opts)

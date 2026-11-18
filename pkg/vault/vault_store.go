@@ -13,7 +13,6 @@ import (
 	"fmt"
 	"hash"
 	"io/fs"
-	"log/slog"
 	"math"
 	"os"
 	"path/filepath"
@@ -26,6 +25,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/nickheyer/icebath/pkg/config"
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pydatetime"
 	"github.com/nickheyer/icebath/pkg/internal/pyfernet"
@@ -152,12 +152,12 @@ func TOTPAt(seed string, digits, period int, at float64) (string, error) {
 	if strings.Contains(seed, "|") {
 		parts := strings.SplitN(seed, "|", 4)
 		if len(parts) != 4 {
-			return "", fmt.Errorf("ValueError: not enough values to unpack (expected 4, got %d)", len(parts))
+			return "", fmt.Errorf("the stored OTP seed has %d of its 4 parts", len(parts))
 		}
 		d, okD := pyint.Parse(parts[1])
 		p, okP := pyint.Parse(parts[2])
 		if !okD || !okP {
-			return "", errors.New("ValueError: invalid literal for int()")
+			return "", errors.New("the stored OTP seed digits or period is not a whole number")
 		}
 		seed, digits, period = parts[0], int(d.Int64()), int(p.Int64())
 		if h, ok := otpAlgos[strings.ToUpper(parts[3])]; ok {
@@ -384,7 +384,7 @@ func (s *VaultStore) createKey() ([]byte, error) {
 	if configuredKeyStorage(s.ctx, s.home) == "keychain" {
 		ref := vaultNewRef(s.base)
 		if err := vaultStoreKey(ref, key); err != nil {
-			slog.Warn(fmt.Sprintf("vault.key_storage is keychain, but %s; using %s instead", err, s.keyPath))
+			pkgLog().Warn(fmt.Sprintf("vault.key_storage is keychain, but %s; using %s instead", err, s.keyPath))
 		} else {
 			if err := vaultSaveNewRef(s.ctx, s.keyrefPath, ref); err != nil {
 				return nil, err
@@ -463,7 +463,7 @@ func (s *VaultStore) adopt(ref *pyjson.Object) (*pyjson.Object, error) {
 		return mine, nil
 	}
 	vaultDeleteKey(mine)
-	slog.Warn(fmt.Sprintf("could not give the copied vault in %s its own keychain entry", s.base), "error", err)
+	pkgLog().Warn(fmt.Sprintf("could not give the copied vault in %s its own keychain entry", s.base), "error", err)
 	return ref, nil
 }
 
@@ -594,17 +594,16 @@ func (s *VaultStore) migrateToKeychain() (string, error) {
 	return "keychain", nil
 }
 
-// Python str of an OSError, errno and strerror in brackets when the error carries them
+// Reason of an operating system failure followed by the path it concerns
 func pyOSErrorStr(err error) string {
 	var errno syscall.Errno
 	if !errors.As(err, &errno) {
 		return err.Error()
 	}
 	msg := errno.Error()
-	msg = fmt.Sprintf("[Errno %d] %s%s", int(errno), strings.ToUpper(msg[:1]), msg[1:])
 	var pe *fs.PathError
 	if errors.As(err, &pe) {
-		msg += ": " + pyrepr.Repr(pe.Path)
+		msg += ": " + pe.Path
 	}
 	return msg
 }
@@ -871,12 +870,12 @@ func (s *VaultStore) HasItems() bool {
 	return err == nil && has
 }
 
-// Record as a dict, the AttributeError Python raises calling get on anything else
+// Record as a mapping, an error for anything else
 func recObject(rec any) (*pyjson.Object, error) {
 	if o, ok := rec.(*pyjson.Object); ok {
 		return o, nil
 	}
-	return nil, fmt.Errorf("AttributeError: '%s' object has no attribute 'get'", pyrepr.TypeName(rec))
+	return nil, fmt.Errorf("a vault record is %s, expected a mapping", errchain.Kind(rec))
 }
 
 func recID(rec any) (any, error) {

@@ -56,7 +56,7 @@ func (r *GatewayRunner) handleKanbanCommand(ctx context.Context, event *gateway.
 			taskID := m.GroupByNumber(1).String()
 			subscribed, err := r.kanbanAutoSubscribe(ctx, event, taskID, requestedBoard)
 			if err != nil {
-				runLog().Warn(fmt.Sprintf("kanban create auto-subscribe failed: %s", pyrepr.ExceptionMessage(err)))
+				pkgLog().Warn(fmt.Sprintf("kanban create auto-subscribe failed: %s", pyrepr.ExceptionMessage(err)))
 			} else if subscribed {
 				output = pystr.Rstrip(output) + "\n" + i18n.T(ctx, "gateway.kanban.subscribed_suffix", "", map[string]any{"task_id": taskID})
 			}

@@ -683,6 +683,23 @@ SCENARIOS.update({
     "mmseen2": [OK],
 })
 
+# Sandbox desktop turn: open a page in the sandbox browser, capture the screen, click the full page button, read the title back
+DESKPAGE = ("data:text/html,<title>before</title><button style='position:fixed;inset:0;font-size:48px' "
+            "onclick=\"document.title='clicked'\">Click me</button>")
+CU = lambda **kw: ("tool_call", {"calls": [{"name": "computer_use", "arguments": kw}]})
+SCENARIOS.update({
+    "desk": [T(("browser_exec", {"code": "# Opening the test page\nnew_tab(%r)\nwait_for_load()\nprint(js('document.title'))" % DESKPAGE})),
+             T(CU(action="capture", mode="vision")),
+             T(CU(action="click", coordinate=[720, 500])),
+             T(CU(action="capture", mode="vision")),
+             T(("browser_exec", {"code": "# Reading the page title\nprint('TITLE=' + js('document.title'))"})),
+             {"content": "Desktop turn done."}],
+})
+# Apptainer sandbox turn: one terminal command reporting what the icebath sandbox SIF carries
+SCENARIOS["sif"] = [T(("terminal", {"command": "head -1 /etc/os-release; command -v cua-driver Xvnc python3 node; "
+                                    "echo telemetry=$CUA_DRIVER_RS_TELEMETRY_ENABLED update=$CUA_DRIVER_RS_UPDATE_CHECK"})),
+                    {"content": "Sandbox checked."}]
+
 
 def scn_name(body):
     msgs = body.get("messages", [])

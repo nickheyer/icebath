@@ -284,7 +284,7 @@ func TestBackupEdgeCasesIncompleteArchiveIsKeptButReportedAsFailure(t *testing.T
 	}
 }
 
-func TestBackupEdgeCasesEmptyHermesHome(t *testing.T) {
+func TestBackupEdgeCasesEmptyIcebathHome(t *testing.T) {
 	tmp, h := backupHome(t)
 	writeTree(t, h, map[string]string{"__pycache__/foo.pyc": "\x00"})
 	ok, out, err := runBackupNS(t, map[string]any{"output": filepath.Join(tmp, "out.zip")})

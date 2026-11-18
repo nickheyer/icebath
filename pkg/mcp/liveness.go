@@ -159,7 +159,7 @@ func livenessFor(ctx context.Context, serverName string) Liveness {
 	}
 	live, err := ParseLiveness(raw)
 	if err != nil {
-		mcpLogger().Warn(fmt.Sprintf("MCP server '%s' has an invalid liveness declaration (%s); treating it as static", serverName, err.Error()))
+		pkgLog().Warn(fmt.Sprintf("MCP server '%s' has an invalid liveness declaration (%s); treating it as static", serverName, err.Error()))
 		return newLiveness("static")
 	}
 	return live
@@ -188,7 +188,7 @@ func livenessAction(state, appName, gpuLabel string) (string, string) {
 	case "unsupported_gpu":
 		return fmt.Sprintf("Use %s on a machine with %s.", appName, gpuLabel), "never_here"
 	}
-	panic(fmt.Sprintf("KeyError: %s", pyReprStr(state)))
+	panic(fmt.Sprintf("unknown liveness state %s", state))
 }
 
 // Availability states that make a declared app unavailable and the state each maps to
@@ -315,7 +315,7 @@ func liveEndpoint(ctx context.Context, serverName string) (url string, headers m
 	return url, headers, true, nil
 }
 
-// toolsPlatform is the hermes_platform declaration registry and app resolver of pkg/tools
+// The declaration registry and app resolver of pkg/tools
 type toolsPlatform struct{}
 
 // Declaration registry and app resolver liveness reads

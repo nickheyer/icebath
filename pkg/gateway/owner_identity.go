@@ -40,7 +40,7 @@ func PrincipalSubject(identity map[string]any) (string, error) {
 	return subject, nil
 }
 
-var bundledLogins = map[string]bool{"basic": true, "nous": true, "self-hosted": true, "session-token": true, "server-internal": true}
+var bundledLogins = map[string]bool{"basic": true, "self-hosted": true, "session-token": true, "server-internal": true}
 
 // True for a bundled sign in
 func loginProvider(provider string) bool {
@@ -55,10 +55,10 @@ func ownerLogin(provider, user string) bool {
 	return loginProvider(provider)
 }
 
-// True for a sign in provider and user label naming the owner, never a nous account label
+// True for a sign in provider and user label naming the owner
 func ownerLoginLabel(value string) bool {
 	provider, user, sep := strings.Cut(value, ":")
-	return sep && pystr.Strip(user) != "" && provider != "nous" && ownerLogin(provider, user)
+	return sep && pystr.Strip(user) != "" && ownerLogin(provider, user)
 }
 
 // True for an auth v1 subject a sign in stored that names the owner

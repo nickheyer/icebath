@@ -125,7 +125,7 @@ func TestDesignHookEditCases(t *testing.T) {
 	out := transform(t, h, map[string]any{"tool_name": "write_file", "args": map[string]any{"path": "src/App.tsx"}, "result": `{"bytes_written": 12}`, "session_id": "s1"})
 	jsonEqual(t, out, `{"bytes_written": 12, "impeccable": "Gradient text in App.tsx"}`)
 	want := map[string]any{"hook_event_name": "PostToolUse", "cwd": f.project, "tool_name": "Write", "tool_input": map[string]any{"file_path": filepath.Join(f.project, "src/App.tsx")}, "session_id": "s1"}
-	if !reflect.DeepEqual(f.event(), want) || f.read("argv.txt") != "hook" || !strings.Contains("\n"+f.read("env.txt"), "\nIMPECCABLE_HOOK_HARNESS=hermes\n") {
+	if !reflect.DeepEqual(f.event(), want) || f.read("argv.txt") != "hook" || !strings.Contains("\n"+f.read("env.txt"), "\nIMPECCABLE_HOOK_HARNESS=icebath\n") {
 		t.Fatalf("write event %v argv %q", f.event(), f.read("argv.txt"))
 	}
 	f.reset(postFindings)

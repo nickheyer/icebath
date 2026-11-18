@@ -129,7 +129,7 @@ func TestReasoningEchoFamilies(t *testing.T) {
 		{"DeepSeek", "", "", "deepseek"},
 		{"openrouter", "deepseek/deepseek-v4", "https://openrouter.ai/api/v1", "deepseek"},
 		{"xiaomi", "", "", "mimo"},
-		{"nous", "stealth/missingno", "", "missingno"},
+		{"openrouter", "stealth/missingno", "", "missingno"},
 		{"openrouter", "anthropic/claude", "https://openrouter.ai/api/v1", ""},
 	}
 	for _, c := range cases {
@@ -143,7 +143,7 @@ func TestReasoningEchoFamilies(t *testing.T) {
 	if ok, err := MatchesReasoningEchoFamily("kimi", "KIMI-CODING", "", ""); ok || err != nil {
 		t.Fatal("kimi raw providers match case sensitively")
 	}
-	if _, err := MatchesReasoningEchoFamily("nope", "", "", ""); err == nil || err.Error() != "KeyError: 'nope'" {
+	if _, err := MatchesReasoningEchoFamily("nope", "", "", ""); err == nil || err.Error() != "unknown reasoning echo family nope" {
 		t.Fatalf("unknown family %v", err)
 	}
 }
@@ -158,7 +158,6 @@ func TestEachRouteGetsExactlyTheCarriersItReads(t *testing.T) {
 		{"custom", "https://api.groq.com/openai/v1", "m", []string{}},
 		{"custom", "https://api.cerebras.ai/v1", "m", []string{}},
 		{"fireworks", "https://api.fireworks.ai/inference/v1", "m", []string{"reasoning_content"}},
-		{"nous", "https://inference-api.nousresearch.com/v1", "z-ai/glm-5.3", []string{"reasoning", "reasoning_content", "reasoning_details"}},
 		{"kilocode", "https://api.kilo.ai/api/gateway", "m", []string{"reasoning", "reasoning_content", "reasoning_details"}},
 		{"novita", "https://api.novita.ai/openai/v1", "m", []string{"reasoning_content", "reasoning_details"}},
 		{"ollama-cloud", "https://ollama.com/v1", "m", []string{"reasoning", "reasoning_content"}},

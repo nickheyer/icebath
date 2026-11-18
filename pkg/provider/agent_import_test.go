@@ -19,7 +19,7 @@ type agentImportHarness struct {
 	childCode             int
 }
 
-// The hermes homes fixture: a fake HOME, a temp ICEBATH_HOME and recorders standing in for the prompts, the install and the child
+// Fake HOME and temp ICEBATH_HOME with recorders standing in for the prompts, the install and the child
 func newAgentImportHarness(t *testing.T) *agentImportHarness {
 	t.Helper()
 	root := t.TempDir()

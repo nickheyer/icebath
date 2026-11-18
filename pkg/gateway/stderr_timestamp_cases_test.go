@@ -144,7 +144,7 @@ func TestStderrTimestampDecodesEachInvalidByteAsReplacement(t *testing.T) {
 	}
 }
 
-func TestStderrTimestampUnopenableLogIsUncaughtException(t *testing.T) {
+func TestStderrTimestampUnopenableLogIsReportedOnOneLine(t *testing.T) {
 	dir := t.TempDir()
 	blocker := filepath.Join(dir, "file")
 	if err := os.WriteFile(blocker, nil, 0o600); err != nil {
@@ -154,13 +154,13 @@ func TestStderrTimestampUnopenableLogIsUncaughtException(t *testing.T) {
 	if rc != 1 {
 		t.Fatalf("rc = %d", rc)
 	}
-	want := "Traceback (most recent call last):\nFileExistsError: [Errno 17] File exists: '" + blocker + "'\n"
+	want := "icebath stderr timestamp wrapper failed: mkdir " + blocker + ": file exists (*fs.PathError -> syscall.Errno)\n"
 	if stderr != want {
 		t.Fatalf("stderr = %q", stderr)
 	}
 }
 
-func TestStderrTimestampBrokenStdoutEndsPumpWithThreadTraceback(t *testing.T) {
+func TestStderrTimestampBrokenStdoutEndsPumpWithOneLine(t *testing.T) {
 	logPath := filepath.Join(t.TempDir(), "gateway.error.log")
 	var errOut bytes.Buffer
 	savedOut, savedErr := stderrTimestampStdout, stderrTimestampStderr
@@ -170,7 +170,7 @@ func TestStderrTimestampBrokenStdoutEndsPumpWithThreadTraceback(t *testing.T) {
 	if rc != 3 {
 		t.Fatalf("rc = %d", rc)
 	}
-	want := "Exception in thread Thread-1 (_copy_stdout_with_timestamps):\nTraceback (most recent call last):\nBrokenPipeError: [Errno 32] Broken pipe\n"
+	want := "icebath stderr timestamp wrapper stopped copying the command's stdout: write terminal: broken pipe (*fs.PathError -> syscall.Errno)\n"
 	if errOut.String() != want {
 		t.Fatalf("stderr = %q", errOut.String())
 	}

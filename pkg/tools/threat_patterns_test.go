@@ -123,7 +123,7 @@ func TestInvisibleUnicodeAndNFKC(t *testing.T) {
 	if !found {
 		t.Fatal("zero width space not detected")
 	}
-	if !containsFinding(MustScanForThreats("ｃａｔ ~/.hermes/.env", "all"), "read_secrets") {
+	if !containsFinding(MustScanForThreats("ｃａｔ ~/.icebath/.env", "all"), "read_secrets") {
 		t.Fatal("fullwidth homograph not folded")
 	}
 	msg := FirstThreatMessage("hello​", "strict")

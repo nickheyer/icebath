@@ -340,7 +340,7 @@ func carrierIsRecord(d any) (map[string]any, bool) {
 		return nil, false
 	}
 	t, _ := m["type"].(string)
-	return m, t == nativeCarrierType || t == "hermes.native_assistant"
+	return m, t == nativeCarrierType || t == retiredNativeCarrierType
 }
 
 // Wire copy of one assistant message with each carrier lifted onto the route that reads it, else the input

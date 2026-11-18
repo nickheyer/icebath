@@ -114,7 +114,7 @@ func (r *GatewayRunner) runReleaseInProfileScope(ctx context.Context, target fun
 			func() {
 				defer func() {
 					if rec := recover(); rec != nil {
-						runLog().Warn(fmt.Sprintf("Could not resolve the owning profile for %s; releasing under the default profile", sessionKey), "error", rec)
+						pkgLog().Warn(fmt.Sprintf("Could not resolve the owning profile for %s; releasing under the default profile", sessionKey), "error", rec)
 					}
 				}()
 				owner = r.sessionStore.ProfileHomeForKey(sessionKey)
@@ -143,11 +143,11 @@ func (r *GatewayRunner) commitMemoryBeforeSoftEvict(ctx context.Context, a *agen
 	}
 	defer func() {
 		if rec := recover(); rec != nil {
-			runLog().Debug(fmt.Sprintf("Pre-evict memory commit failed for %s: %v", key, rec))
+			pkgLog().Debug(fmt.Sprintf("Pre-evict memory commit failed for %s: %v", key, rec))
 		}
 	}()
 	a.CommitMemorySession(ctx, agent.SessionMessageDicts(a.SessionMessages()))
-	runLog().Debug(fmt.Sprintf("Committed on_session_end extraction before soft-evicting session=%s (resource eviction)", key))
+	pkgLog().Debug(fmt.Sprintf("Committed on_session_end extraction before soft-evicting session=%s (resource eviction)", key))
 }
 
 // Commits end of session memory then soft releases, the commit needing the live memory manager first
@@ -177,7 +177,7 @@ func (r *GatewayRunner) agentCacheBounds(ctx context.Context) gateway.AgentCache
 	bounds := func() (bounds gateway.AgentCacheBounds) {
 		defer func() {
 			if rec := recover(); rec != nil {
-				runLog().Debug(fmt.Sprintf("Agent cache bounds config read failed: %v", rec))
+				pkgLog().Debug(fmt.Sprintf("Agent cache bounds config read failed: %v", rec))
 				bounds = gateway.ResolveAgentCacheBounds(map[string]any{})
 			}
 		}()
@@ -248,7 +248,7 @@ func (r *GatewayRunner) sweepAgentCacheUnderPressure(ctx context.Context) int {
 		if unflushed > 0 && midTurn == 0 {
 			tail = " — transcripts are not reaching the session DB (session persistence disabled or failing?); the memory valve cannot shed sessions until they persist."
 		}
-		runLog().Warn(fmt.Sprintf("Agent cache pressure: anon RSS %dMB over budget %dMB but no evictable session (%d cached, %d mid-turn, %d blocked on un-flushed persistence)%s",
+		pkgLog().Warn(fmt.Sprintf("Agent cache pressure: anon RSS %dMB over budget %dMB but no evictable session (%d cached, %d mid-turn, %d blocked on un-flushed persistence)%s",
 			*rssMB, *bounds.MemoryHighMB, len(ordered), midTurn, unflushed, tail))
 		return 0
 	}
@@ -256,7 +256,7 @@ func (r *GatewayRunner) sweepAgentCacheUnderPressure(ctx context.Context) int {
 	for i, e := range plan {
 		keys[i] = e.Key
 	}
-	runLog().Warn(fmt.Sprintf("Agent cache pressure: anon RSS %dMB over budget %dMB — evicting %d LRU session(s): %s",
+	pkgLog().Warn(fmt.Sprintf("Agent cache pressure: anon RSS %dMB over budget %dMB — evicting %d LRU session(s): %s",
 		*rssMB, *bounds.MemoryHighMB, len(plan), strings.Join(keys, ", ")))
 	go r.releasePressureBatch(context.WithoutCancel(ctx), plan)
 	return len(plan)
@@ -271,7 +271,7 @@ func (r *GatewayRunner) releasePressureBatch(ctx context.Context, plan []gateway
 		func() {
 			defer func() {
 				if rec := recover(); rec != nil {
-					runLog().Debug(fmt.Sprintf("Pressure release failed for %s: %v", entry.Key, rec))
+					pkgLog().Debug(fmt.Sprintf("Pressure release failed for %s: %v", entry.Key, rec))
 				}
 			}()
 			r.runReleaseInProfileScope(ctx, func(ctx context.Context) { r.commitThenReleaseSoft(ctx, entry.Agent, entry.Key, false) }, entry.Key)
@@ -306,11 +306,11 @@ func (r *GatewayRunner) enforceAgentCacheCap(ctx context.Context) {
 		r.agentCache.Delete(p.key)
 	}
 	if over := r.agentCache.Len() - limit; over > 0 {
-		runLog().Warn(fmt.Sprintf("Agent cache over cap (%d > %d); %d excess slot(s) held by mid-turn agents — will re-check on next insert.",
+		pkgLog().Warn(fmt.Sprintf("Agent cache over cap (%d > %d); %d excess slot(s) held by mid-turn agents — will re-check on next insert.",
 			r.agentCache.Len(), limit, over))
 	}
 	for _, p := range evictPlan {
-		runLog().Info(fmt.Sprintf("Agent cache at cap; evicting LRU session=%s (cache_size=%d)", p.key, r.agentCache.Len()))
+		pkgLog().Info(fmt.Sprintf("Agent cache at cap; evicting LRU session=%s (cache_size=%d)", p.key, r.agentCache.Len()))
 		if p.agent != nil {
 			a, key := p.agent, p.key
 			r.spawnReleaseThread(ctx, func(ctx context.Context) { r.commitThenReleaseSoft(ctx, a, key, false) }, key)
@@ -348,7 +348,7 @@ func (r *GatewayRunner) sweepIdleCachedAgents(ctx context.Context) int {
 	}
 	r.agentCacheLock.Unlock()
 	for _, p := range toEvict {
-		runLog().Info(fmt.Sprintf("Agent cache idle-TTL evict: session=%s (idle=%.0fs)", p.key, now-p.agent.LastActivityTS()))
+		pkgLog().Info(fmt.Sprintf("Agent cache idle-TTL evict: session=%s (idle=%.0fs)", p.key, now-p.agent.LastActivityTS()))
 		a, key := p.agent, p.key
 		r.spawnReleaseThread(ctx, func(ctx context.Context) { r.commitThenReleaseSoft(ctx, a, key, false) }, key)
 	}

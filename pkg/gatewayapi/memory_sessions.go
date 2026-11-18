@@ -172,7 +172,7 @@ func (m *APIServerMemorySessions) shutdownAsync(ctx context.Context, manager *me
 func shutdownMemoryManager(ctx context.Context, manager *memory.MemoryManager, owner string) {
 	defer func() {
 		if rec := recover(); rec != nil {
-			apiLog().Debug("api_server memory manager shutdown failed", "error", rec)
+			pkgLog().Debug("api_server memory manager shutdown failed", "error", rec)
 		}
 	}()
 	scoped := ctx

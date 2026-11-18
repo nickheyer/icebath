@@ -11,7 +11,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/state"
 )
 
-// Canonical authority over a fresh profile state database, the owner fixture of the hermes gateway tests
+// Canonical authority over a fresh profile state database, the owner fixture of the gateway tests
 func newAPIOwner(t *testing.T) (context.Context, *SessionAuthority, *recoverTestRunner) {
 	t.Helper()
 	ctx, db := newTestStateDB(t)

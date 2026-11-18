@@ -4,13 +4,14 @@ import (
 	"bytes"
 	"context"
 	"errors"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"log/slog"
 	"reflect"
 	"strings"
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 )
 
 // Captures the process default logger for the duration of a test

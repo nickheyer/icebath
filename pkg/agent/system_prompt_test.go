@@ -16,13 +16,13 @@ import (
 	"github.com/nickheyer/icebath/pkg/tools"
 )
 
-// Replaces the hermes_time seams with a fixed clock and the strftime directives the prompt uses
+// Replaces the time seams with a fixed clock and the strftime directives the prompt uses
 func fixedPromptClock(t *testing.T, now time.Time) {
 	t.Helper()
-	prevNow, prevTZ, prevFmt := hermesNow, hermesTimezone, safeStrftime
-	t.Cleanup(func() { hermesNow, hermesTimezone, safeStrftime = prevNow, prevTZ, prevFmt })
-	hermesNow = func(context.Context) time.Time { return now }
-	hermesTimezone = func(context.Context) (*time.Location, bool) { return now.Location(), true }
+	prevNow, prevTZ, prevFmt := icebathNow, icebathTimezone, safeStrftime
+	t.Cleanup(func() { icebathNow, icebathTimezone, safeStrftime = prevNow, prevTZ, prevFmt })
+	icebathNow = func(context.Context) time.Time { return now }
+	icebathTimezone = func(context.Context) (*time.Location, bool) { return now.Location(), true }
 	safeStrftime = func(v time.Time, format string) string {
 		return strings.NewReplacer("%A", v.Format("Monday"), "%B", v.Format("January"), "%d", v.Format("02"),
 			"%Y", v.Format("2006"), "%Z", v.Format("MST"), "%z", v.Format("-0700")).Replace(format)

@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"sync"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/spf13/cobra"
 )
 
@@ -25,7 +24,7 @@ var pluginParsers = map[string]func(c *CLI, cmd *cobra.Command){
 func UsePluginParser(parser any, name string) {
 	cmd, ok := parser.(*cobra.Command)
 	if !ok {
-		panic(fmt.Sprintf("AttributeError: '%s' object has no attribute 'add_argument'", pyrepr.TypeName(parser)))
+		panic(fmt.Sprintf("the plugin parser is %T, expected an argument parser", parser))
 	}
 	if _, known := pluginParsers[name]; !known {
 		panic("commands: no plugin parser named " + name)
@@ -40,7 +39,7 @@ func UsePluginParser(parser any, name string) {
 func PluginOptionalChoice(parser any, name, def string, choices ...string) {
 	cmd, ok := parser.(*cobra.Command)
 	if !ok {
-		panic(fmt.Sprintf("AttributeError: '%s' object has no attribute 'add_argument'", pyrepr.TypeName(parser)))
+		panic(fmt.Sprintf("the plugin parser is %T, expected an argument parser", parser))
 	}
 	specs, _ := pendingPluginPositionals.Load(cmd)
 	list, _ := specs.([]posSpec)

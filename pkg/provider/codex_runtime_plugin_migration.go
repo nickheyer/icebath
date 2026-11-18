@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"log/slog"
 	"os"
 	"slices"
 	"sort"
@@ -531,7 +530,7 @@ var codexQueryCodexPlugins = func(codexHome string, timeout float64, codexBin st
 			}
 			availability := pystr.Upper(cxStr(plugin, "availability", ""))
 			if availability != "" && availability != "AVAILABLE" {
-				slog.Debug(fmt.Sprintf("skipping plugin %s: availability=%s", pyrepr.Str(cxGet(plugin, "name")), availability))
+				pkgLog().Debug(fmt.Sprintf("skipping plugin %s: availability=%s", pyrepr.Str(cxGet(plugin, "name")), availability))
 				continue
 			}
 			name := cxStr(plugin, "name", "")

@@ -13,7 +13,7 @@ import (
 
 func billingResultFor(t *testing.T, classified *provider.Classified, summary string, calls int) map[string]any {
 	t.Helper()
-	return billingFailureResult(context.Background(), classified, summary, nil, calls, "anthropic", "https://api.anthropic.com", "claude-opus-5", nil, UsageWindowRefusal{})
+	return billingFailureResult(context.Background(), classified, summary, nil, calls, "anthropic", "https://api.anthropic.com", "claude-opus-5", nil)
 }
 
 func TestTerminalResponse(t *testing.T) {

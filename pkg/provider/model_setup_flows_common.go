@@ -9,13 +9,10 @@ import (
 	"strings"
 
 	"github.com/nickheyer/icebath/pkg/config"
-	"github.com/nickheyer/icebath/pkg/observability"
 )
 
 // Prompt strings and the config keys the model flows write are behaviour, the key order being the config.yaml key order
 const flowNoChange = "No change."
-
-var noteProviderSetupFailureFn = observability.NoteProviderSetupFailure
 
 // Api key prompt of the setup wizard, swappable so tests script the keep replace clear answer
 var promptAPIKeyFn = PromptAPIKey
@@ -26,7 +23,7 @@ var flowPromptModelSelectionFn = promptModelSelection
 // Provider activation write of the OAuth flows, swappable so tests observe it
 var flowUpdateConfigForProviderFn = updateConfigForProvider
 
-// Model choice save of every flow, the auth module attribute the hermes tests patch
+// Model choice save of every flow, the auth module attribute the tests patch
 var flowSaveModelChoiceFn = saveModelChoice
 
 // Terminal seams the flows read answers through, swappable so tests script the prompts
@@ -38,9 +35,6 @@ var (
 	flowCursesChoiceFn = CursesPromptChoice
 	flowRadiolistFn    = cursesRadiolist
 )
-
-// Records why a flow returns without a pick for the provider setup metric
-func noteSetupFailure(failureClass string) { noteProviderSetupFailureFn(failureClass) }
 
 // Prints each line, an empty string being a blank line, one call per banner block
 func flowSay(out io.Writer, lines ...string) { fmt.Fprintln(out, strings.Join(lines, "\n")) }
@@ -264,9 +258,6 @@ func loginRetryContext(pconfig *Profile) (string, string) {
 	if u, err := url.Parse(strings.TrimSpace(pconfig.PortalBaseURL)); err == nil && u.Hostname() != "" {
 		host = strings.ToLower(u.Hostname())
 	}
-	if providerID == "nous" {
-		return "icebath portal", host
-	}
 	if providerID != "" {
 		return "icebath auth add " + providerID, host
 	}
@@ -282,10 +273,6 @@ func loginSystemExit(err error) (int, string, bool) {
 	var oauthExit *OAuthLoginExitError
 	if errors.As(err, &oauthExit) {
 		return oauthExit.Code, "", true
-	}
-	var nousExit *NousLoginExitError
-	if errors.As(err, &nousExit) {
-		return nousExit.Code, "", true
 	}
 	return 0, "", false
 }

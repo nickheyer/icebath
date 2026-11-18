@@ -41,7 +41,7 @@ func TestScanClaimsABareGatewayOnlyForTheHomeItsEnvironmentNames(t *testing.T) {
 	t.Cleanup(func() { cmd.Process.Kill(); cmd.Wait() })
 	homeForPIDHook = func(ctx context.Context, pid int, require bool) (string, bool, error) {
 		if pid == cmd.Process.Pid {
-			return HermesHomeForPID(ctx, pid, require)
+			return IcebathHomeForPID(ctx, pid, require)
 		}
 		return "", false, nil
 	}
@@ -183,7 +183,7 @@ func TestServicePIDsReadSystemdMainPIDsAndLaunchdFleet(t *testing.T) {
 		case argv[1] == "print" && strings.HasPrefix(argv[2], "gui/"):
 			return CommandResult{Stdout: "state = running\n\tpid = 77\n\tpid = 99\n"}, nil
 		case argv[1] == "list" && len(argv) == 2:
-			return CommandResult{Stdout: "PID\tStatus\tLabel\n88\t0\tai.icebath.gateway-coder\n-\t0\tai.icebath.gateway-idle\n5\t0\tcom.apple.x\n"}, nil
+			return CommandResult{Stdout: "PID\tStatus\tLabel\n88\t0\tapp.icebath.gateway-coder\n-\t0\tapp.icebath.gateway-idle\n5\t0\tcom.apple.x\n"}, nil
 		}
 		return CommandResult{ReturnCode: 113}, nil
 	})

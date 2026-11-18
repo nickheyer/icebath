@@ -47,12 +47,7 @@ var (
 	flowStdinIsTTYFn          = func() bool { return streamIsTTY(os.Stdin) }
 	flowLoadPoolFn            = LoadPool
 	flowGetEnvValueFn         = config.GetEnvValue
-	flowLoginNousFn           = LoginNous
 	flowRunLoginFn            = runLogin
-	flowNousAuthStateFn       = func(r *ModelFlowRun) (map[string]any, error) { return r.store().GetProviderAuthState("nous") }
-	flowResolveNousCredsFn    = resolveNousRuntimeCredentials
-	flowCuratedNousIDsFn      = GetCuratedNousModelIDs
-	flowEnableToolGatewayFn   = PromptEnableToolGateway
 	flowCodexStatusFn         = GetCodexAuthStatus
 	flowLoginCodexFn          = LoginOpenAICodex
 	flowResolveCodexFn        = resolveCodexRuntimeCredentials
@@ -67,7 +62,7 @@ var geminiFreeTierNotice = []string{
 	"   an agent session.", "",
 	"   To use Gemini with Icebath, enable billing on your Google Cloud project and regenerate",
 	"   the key in a billing-enabled project: https://aistudio.google.com/apikey", "",
-	"   Alternatives with workable free usage: DeepSeek, OpenRouter (free models), Groq, Nous.", "",
+	"   Alternatives with workable free usage: DeepSeek, OpenRouter (free models), Groq.", "",
 	"Not saving Gemini as the default provider."}
 
 func (r *ModelFlowRun) ctx() context.Context {
@@ -103,7 +98,7 @@ func (r *ModelFlowRun) loadConfig() (config.Tree, error) {
 func (r *ModelFlowRun) registryProfile(providerID string) (Profile, error) {
 	pconfig, ok := registryProfileCtx(r.ctx(), providerID)
 	if !ok {
-		return Profile{}, fmt.Errorf("KeyError: %q", providerID)
+		return Profile{}, fmt.Errorf("no registered provider %s", providerID)
 	}
 	return pconfig, nil
 }
@@ -305,7 +300,7 @@ func modelFlowMoA(r *ModelFlowRun) error {
 func parsePyInt(s string) (int, error) {
 	n, ok := pystr.IntText(s)
 	if !ok {
-		return 0, fmt.Errorf("ValueError: invalid literal for int() with base 10: %s", config.PyRepr(s))
+		return 0, fmt.Errorf("%s is not a whole number", s)
 	}
 	if n.IsInt64() {
 		return int(n.Int64()), nil
@@ -314,254 +309,6 @@ func parsePyInt(s string) (int, error) {
 		return math.MinInt64 + 1, nil
 	}
 	return math.MaxInt64, nil
-}
-
-// Nous login arguments from the CLI namespace with the 15 second default timeout
-func nousLoginArgs(args map[string]any) NousLoginArgs {
-	if args == nil {
-		args = map[string]any{}
-	}
-	return NousLoginArgs{PortalURL: anyString(args["portal_url"]), InferenceURL: anyString(args["inference_url"]),
-		ClientID: anyString(args["client_id"]), Scope: anyString(args["scope"]), NoBrowser: truthy(args["no_browser"]),
-		Timeout: authTimeout(args, 15*time.Second), CABundle: anyString(args["ca_bundle"]), Insecure: truthy(args["insecure"])}
-}
-
-// nousPickerCatalog is the free or paid tier picker catalog with the unavailable rows and the policy narrowing flag
-type nousPickerCatalog struct {
-	modelIDs           []string
-	pricing            PricingTable
-	unavailableModels  []string
-	unavailableMessage string
-	policyNarrowed     bool
-}
-
-// Free or paid tier catalog for the Nous picker, nil when nothing is selectable with the reason printed
-func nousModelCatalog(r *ModelFlowRun, freeTier bool, portalURL string, modelIDs []string, pricing PricingTable) *nousPickerCatalog {
-	ctx := r.ctx()
-	unavailableModels := []string{}
-	unavailableMessage := ""
-	policyAllowed, _ := nousPolicyAllowedIDsFn(ctx, false)
-	if freeTier {
-		func() {
-			defer func() {
-				if recover() != nil {
-					unavailableMessage = ""
-				}
-			}()
-			info := GetNousPortalAccountInfo(ctx, true)
-			unavailableMessage = FormatNousPortalEntitlementMessage(info, "paid Nous models", false)
-		}()
-		modelIDs, pricing = unionPortalFreeFn(ctx, modelIDs, pricing, portalURL, false)
-	} else {
-		modelIDs, pricing = unionPortalPaidFn(ctx, modelIDs, pricing, portalURL, false)
-		modelIDs = UnionWithNousOnSaleModels(modelIDs, pricing)
-	}
-	before := modelIDs
-	modelIDs = RestrictToNousPolicy(modelIDs, policyAllowed, true)
-	policyNarrowed := !equalStrings(modelIDs, before)
-	if freeTier {
-		modelIDs, unavailableModels = PartitionNousModelsByTier(modelIDs, pricing, true)
-	}
-	if len(modelIDs) == 0 && len(unavailableModels) == 0 {
-		fmt.Fprintln(r.Out, "No models available for Nous Portal after filtering.")
-		noteSetupFailure("no_models")
-		return nil
-	}
-	if freeTier && len(modelIDs) == 0 {
-		fmt.Fprintln(r.Out, "No free models currently available.")
-		if len(unavailableModels) > 0 {
-			u := portalURL
-			if u == "" {
-				u = DefaultNousPortalURL
-			}
-			msg := unavailableMessage
-			if msg == "" {
-				msg = fmt.Sprintf("Upgrade at %s to access paid models.", strings.TrimRight(u, "/"))
-			}
-			fmt.Fprintln(r.Out, msg)
-		}
-		return nil
-	}
-	return &nousPickerCatalog{modelIDs: modelIDs, pricing: pricing, unavailableModels: unavailableModels, unavailableMessage: unavailableMessage, policyNarrowed: policyNarrowed}
-}
-
-func equalStrings(a, b []string) bool {
-	if len(a) != len(b) {
-		return false
-	}
-	for i := range a {
-		if a[i] != b[i] {
-			return false
-		}
-	}
-	return true
-}
-
-// Nous runtime credentials, nil after printing the diagnosis and re-logging in when the session expired
-func nousVerifiedCredentials(r *ModelFlowRun) map[string]any {
-	creds, err := flowResolveNousCredsFn(r.Env, false, "")
-	if err == nil {
-		return creds
-	}
-	var authErr *AuthError
-	relogin := errors.As(err, &authErr) && authErr.ReloginRequired
-	msg := err.Error()
-	if authErr != nil {
-		msg = formatAuthError(authErr)
-	}
-	if relogin {
-		flowSay(r.Out, fmt.Sprintf("Session expired: %s", msg), "Re-authenticating with Nous Portal...\n")
-		if lerr := flowLoginNousFn(r.Env, r.Out, nousLoginArgs(nil)); lerr != nil {
-			fmt.Fprintf(r.Out, "Re-login failed: %v\n", lerr)
-		}
-		noteSetupFailure("auth")
-		return nil
-	}
-	fmt.Fprintf(r.Out, "Could not verify credentials: %s\n", msg)
-	noteSetupFailure("auth")
-	return nil
-}
-
-// Nous persist step, model choice and provider state, the model section rewritten on a fresh config
-func nousPersistSelection(r *ModelFlowRun, selected string, creds map[string]any) (config.Tree, error) {
-	if err := flowSaveModelChoiceFn(r.Env, selected); err != nil {
-		return nil, err
-	}
-	inferenceURL := anyString(creds["base_url"])
-	if _, err := updateConfigForProvider(r.Env, "nous", inferenceURL, "", false); err != nil {
-		return nil, err
-	}
-	cfg, err := r.loadConfig()
-	if err != nil {
-		return nil, err
-	}
-	modelCfg := map[string]any{}
-	switch current := cfg["model"].(type) {
-	case map[string]any:
-		for k, v := range current {
-			modelCfg[k] = v
-		}
-		config.SetMappingKeys(modelCfg, config.MappingKeys(current))
-	case string:
-		if pystr.Strip(current) != "" {
-			pyDictSet(modelCfg, "default", pystr.Strip(current))
-		}
-	}
-	pyDictSet(modelCfg, "provider", "nous")
-	pyDictSet(modelCfg, "default", selected)
-	if pystr.Strip(inferenceURL) != "" {
-		pyDictSet(modelCfg, "base_url", strings.TrimRight(inferenceURL, "/"))
-	} else {
-		delete(modelCfg, "base_url")
-	}
-	clearModelEndpointCredentials(modelCfg, true, true, false)
-	pyDictSet(cfg, "model", modelCfg)
-	if r.envValue("OPENAI_BASE_URL") != "" {
-		if err := r.saveEnv("OPENAI_BASE_URL", ""); err != nil {
-			return nil, err
-		}
-		if err := r.saveEnv("OPENAI_API_KEY", ""); err != nil {
-			return nil, err
-		}
-	}
-	if err := config.Save(r.home(), cfg); err != nil {
-		return nil, err
-	}
-	return cfg, nil
-}
-
-// Nous Portal provider, log in when signed out, else the curated picker over verified credentials
-func modelFlowNous(r *ModelFlowRun) error {
-	state, _ := flowNousAuthStateFn(r)
-	if len(state) == 0 || !truthy(state["access_token"]) || guestWithoutFreeTierIn(r.Env, state) {
-		flowSay(r.Out, "Not logged into Nous Portal. Starting login...", "")
-		pconfig, err := r.registryProfile("nous")
-		if err != nil {
-			return err
-		}
-		flowRunLoginFn(r.Out, &pconfig, func() error {
-			if err := flowLoginNousFn(r.Env, r.Out, nousLoginArgs(r.Args)); err != nil {
-				return err
-			}
-			func() {
-				defer func() {
-					if p := recover(); isSetupControlFlow(p) {
-						panic(p)
-					}
-				}()
-				cfg, cerr := r.loadConfig()
-				if cerr != nil {
-					return
-				}
-				_, _ = flowEnableToolGatewayFn(r.Env, r.Out, cfg, true)
-			}()
-			return nil
-		})
-		return nil
-	}
-	modelIDs := flowCuratedNousIDsFn(r.ctx())
-	if len(modelIDs) == 0 {
-		fmt.Fprintln(r.Out, "No curated models available for Nous Portal.")
-		return nil
-	}
-	creds := nousVerifiedCredentials(r)
-	if creds == nil {
-		return nil
-	}
-	pricing := flowPricingFn(r.ctx(), "nous", "", false, false)
-	freeTier := checkNousFreeTierFn(r.ctx(), true, false)
-	if !freeTier {
-		if fresh, err := flowResolveNousCredsFn(r.Env, true, ""); err == nil && len(fresh) > 0 {
-			creds = fresh
-		}
-	}
-	portalURL := ""
-	if st, err := flowNousAuthStateFn(r); err == nil {
-		portalURL = anyString(st["portal_base_url"])
-	}
-	catalog := nousModelCatalog(r, freeTier, portalURL, modelIDs, pricing)
-	if catalog == nil {
-		return nil
-	}
-	if notice := nousPolicyNotice(r.Env, catalog.policyNarrowed); notice != "" {
-		fmt.Fprintln(r.Out, notice)
-	}
-	usage := NousPickerUsage(true, false)
-	modelIDs = catalog.modelIDs
-	if usage != nil {
-		modelIDs = featuredFirst(modelIDs, usage.FeaturedModelIDs)
-	}
-	fmt.Fprintf(r.Out, "Showing %d curated models — use \"Enter custom model name\" for others.\n", len(modelIDs))
-	prompt := ModelSelectionPrompt{ModelIDs: modelIDs, CurrentModel: r.CurrentModel, Pricing: catalog.pricing, UnavailableModels: catalog.unavailableModels,
-		PortalURL: portalURL, UnavailableMessage: catalog.unavailableMessage, ConfirmProvider: "nous",
-		ConfirmBaseURL: anyString(creds["base_url"]), ConfirmAPIKey: anyString(creds["api_key"])}
-	if usage != nil {
-		prompt.Usage = usage
-	}
-	selected, _ := flowPromptModelSelectionFn(r.Env, r.Out, prompt)
-	if selected == "" {
-		fmt.Fprintln(r.Out, flowNoChange)
-		return nil
-	}
-	cfg, err := nousPersistSelection(r, selected, creds)
-	if err != nil {
-		return err
-	}
-	fmt.Fprintf(r.Out, "Default model set to: %s (via Nous Portal)\n", selected)
-	if usage != nil {
-		if notice := largeModelNotice(r.Env, selected, "nous"); notice != "" {
-			fmt.Fprintf(r.Out, "⚠ %s\n", notice)
-		}
-	}
-	_, err = flowEnableToolGatewayFn(r.Env, r.Out, cfg, true)
-	return err
-}
-
-// ModelFlowNous runs the Nous Portal login and model pick for a config on the setup console of the context home
-func ModelFlowNous(ctx context.Context, cfg map[string]any) error {
-	env := homePoolEnv(home.Dir(ctx))
-	env.Ctx = ctx
-	return modelFlowNous(&ModelFlowRun{Ctx: ctx, Env: env, Out: SetupOutput(), Config: cfg})
 }
 
 // OpenAI Codex provider, ensure logged in then pick a model over the pooled or legacy token
@@ -694,7 +441,6 @@ func modelFlowMinimaxOAuth(r *ModelFlowRun) error {
 		var authErr *AuthError
 		if errors.As(err, &authErr) {
 			fmt.Fprintln(r.Out, formatAuthError(authErr))
-			noteSetupFailure("auth")
 			return nil
 		}
 		return err
@@ -1284,7 +1030,6 @@ func externalProcessLoginGate(r *ModelFlowRun, profile Profile, status map[strin
 	}
 	if !truthy(probe["logged_in"]) {
 		fmt.Fprintln(r.Out, "Login failed.")
-		noteSetupFailure("auth")
 		return false, nil
 	}
 	flowSay(r.Out, "", fmt.Sprintf("  %s credentials: ✓", profile.DisplayName), "")
@@ -1476,11 +1221,11 @@ func pluginFlowLiveRows(r *ModelFlowRun, profile Profile, apiKey, baseURL string
 func modelFlowPluginProvider(r *ModelFlowRun, providerID string) error {
 	profile, ok := pluginProfile(providerID)
 	if !ok {
-		return fmt.Errorf("AttributeError: 'NoneType' object has no attribute 'auth_type'")
+		return fmt.Errorf("no plugin provider %s", providerID)
 	}
 	step, handled := pluginFlowCredentialSteps[registryAuthType(profile)]
 	if !handled {
-		return fmt.Errorf("KeyError: %q", registryAuthType(profile))
+		return fmt.Errorf("plugin provider %s signs in with %s, which has no setup flow", providerID, registryAuthType(profile))
 	}
 	creds, err := step(r, providerID, profile)
 	if err != nil || creds == nil {

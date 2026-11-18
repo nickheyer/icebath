@@ -111,8 +111,8 @@ func TestLockTimeoutRoutedToHandleErrorIsSuppressed(t *testing.T) {
 	resetLockTimeoutWarned(t)
 	h := newTestRotating(t, filepath.Join(t.TempDir(), "agent.log"), 1, 1)
 	listener := &captureHandler{}
-	GetLogger("hermes_logging").AddHandler(listener)
-	t.Cleanup(func() { GetLogger("hermes_logging").RemoveHandler(listener) })
+	GetLogger("logging").AddHandler(listener)
+	t.Cleanup(func() { GetLogger("logging").RemoveHandler(listener) })
 	rec := testRecord("_test_concurrent_lock_timeout_agent", LevelInfo, "force rollover")
 	errText := captureStderr(t, func() {
 		h.handleError(rec, &lockTimeoutError{})
@@ -129,8 +129,8 @@ func TestLockTimeoutRoutedToHandleErrorIsSuppressed(t *testing.T) {
 func TestLockTimeoutWarningIsOneShot(t *testing.T) {
 	resetLockTimeoutWarned(t)
 	listener := &captureHandler{}
-	GetLogger("hermes_logging").AddHandler(listener)
-	t.Cleanup(func() { GetLogger("hermes_logging").RemoveHandler(listener) })
+	GetLogger("logging").AddHandler(listener)
+	t.Cleanup(func() { GetLogger("logging").RemoveHandler(listener) })
 	warnWindowsLockTimeoutOnce()
 	warnWindowsLockTimeoutOnce()
 	if len(listener.recs) != 1 || listener.recs[0].Levelno != LevelWarning || !strings.Contains(listener.recs[0].Msg, "concurrent-log-handler") {
@@ -343,7 +343,7 @@ func TestProfileRouterNeverHoldsItsLockWhileTakingTheLoggingModuleLock(t *testin
 	}
 	t.Cleanup(func() { newFileHandlerFn = prev })
 	rec := testRecord("t23", LevelError, "routed")
-	rec.HermesHome = profile
+	rec.Home = profile
 	done := make(chan struct{})
 	moduleLock.Lock()
 	go func() {
@@ -408,7 +408,7 @@ func TestProfileRouterCloseIsNeverUndoneByARecordInFlight(t *testing.T) {
 				t.Cleanup(func() { newFileHandlerFn = prev })
 			}
 			rec := testRecord("t23", LevelError, "in flight")
-			rec.HermesHome = profile
+			rec.Home = profile
 			router.Handle(context.Background(), rec)
 			if _, err := os.Stat(profileLog); err == nil {
 				t.Fatal("a closed per-home log file was reopened")
@@ -445,7 +445,7 @@ func TestRouterNeverBuildsAChildHandlerUnderALockLoggingShutdownTakes(t *testing
 	}
 	t.Cleanup(func() { newFileHandlerFn = prev })
 	rec := testRecord("lockorder", LevelWarning, "routed")
-	rec.HermesHome = profile
+	rec.Home = profile
 	holding, released := &pythread.Event{}, &pythread.Event{}
 	var got bool
 	emitterDone, clearerDone := make(chan struct{}), make(chan struct{})

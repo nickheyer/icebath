@@ -3,14 +3,12 @@ package main
 import (
 	"errors"
 	"fmt"
-	"log/slog"
 	"os"
 	"path/filepath"
 	"sort"
 
 	"github.com/nickheyer/icebath/pkg/commands"
 	"github.com/nickheyer/icebath/pkg/config"
-	"github.com/nickheyer/icebath/pkg/lsp"
 )
 
 // The value an optional argument flag takes when given without a value
@@ -53,12 +51,9 @@ func sortStrings(s []string) { sort.Strings(s) }
 
 func errorsAs(err error, target any) bool { return errors.As(err, target) }
 
-func slogWarn(msg string) { slog.Warn(msg) }
+func slogWarn(msg string) { pkgLog().Warn(msg) }
 
-func slogError(msg string, err error) { slog.Error(fmt.Sprintf("%s: %v", msg, err)) }
-
-// Tears down the LSP services the way agent.lsp registers at exit
-func lspAtExit() { lsp.AtExitShutdown() }
+func slogError(msg string, err error) { pkgLog().Error(fmt.Sprintf("%s: %v", msg, err)) }
 
 // Prints a line to stderr
 func printErr(msg string) { fmt.Fprintln(os.Stderr, msg) }

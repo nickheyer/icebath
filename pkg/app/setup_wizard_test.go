@@ -20,25 +20,13 @@ import (
 	"github.com/nickheyer/icebath/pkg/provider"
 )
 
-// Recorded hermes output of one wizard scenario
+// Recorded output of one wizard scenario
 type wizardRef struct {
 	Out    string   `json:"out"`
 	Stderr string   `json:"stderr"`
 	Err    *string  `json:"err"`
 	Asked  []string `json:"asked"`
 }
-
-// Hermes wizard text with the icebath renames applied, box lines keeping their width
-var wizardRenames = strings.NewReplacer(
-	"☤ Hermes Agent Setup Wizard                │", "☤ Icebath Agent Setup Wizard               │",
-	"Let's configure your Hermes Agent installation.       │", "Let's configure your Icebath Agent installation.      │",
-	"☤ Hermes Setup — Nous Portal (one-shot)             │", "☤ Icebath Setup — Nous Portal (one-shot)            │",
-	"☤ Hermes Setup — Agent Settings                     │", "☤ Icebath Setup — Agent Settings                    │",
-	"☤ Hermes Setup — Model & Provider                   │", "☤ Icebath Setup — Model & Provider                  │",
-	"`hermes-agent`", "`icebath-agent`", "Hermes", "Icebath",
-	"`hermes`", "`icebath`", "`hermes ", "`icebath ", "'hermes ", "'icebath ", " hermes ", " icebath ",
-	"/.hermes", "/.icebath",
-)
 
 var setupStampRe = regexp.MustCompile(`\d{8}-\d{6}`)
 
@@ -106,7 +94,6 @@ func newWizardRun(t *testing.T, stdin string, tty bool) *wizardRun {
 	})
 	swapSeam(t, &setupRunFirstTimeQuickSetupFn, func(context.Context, config.Tree, string, string) error { w.mark("first-quick", ""); return nil })
 	swapSeam(t, &setupRunBlankSlateSetupFn, func(context.Context, config.Tree, string) error { w.mark("blank", ""); return nil })
-	t.Cleanup(provider.SwapSetupRecordCompleted(func(context.Context, map[string]any) error { w.mark("recorded", ""); return nil }))
 	return w
 }
 
@@ -151,15 +138,15 @@ func (w *wizardRun) seed(t *testing.T, configText string, auth map[string]any, e
 	}
 }
 
-// Compares a run's screen and menus with the recorded hermes scenario
+// Compares a run's screen and menus with the recorded scenario
 func (w *wizardRun) assertMatches(t *testing.T, ref wizardRef) {
 	t.Helper()
-	if got, want := w.screen(), wizardRenames.Replace(ref.Out); got != want {
+	if got, want := w.screen(), ref.Out; got != want {
 		t.Fatalf("screen\n%s\nwant\n%s", got, want)
 	}
 	want := make([]string, len(ref.Asked))
 	for i, q := range ref.Asked {
-		want[i] = wizardRenames.Replace(q)
+		want[i] = q
 	}
 	if !slices.Equal(w.asked, want) && !(len(w.asked) == 0 && len(want) == 0) {
 		t.Fatalf("menus %q want %q", w.asked, want)
@@ -186,65 +173,35 @@ func normalizedConfigJSON(t *testing.T, v any) string {
 	return string(data)
 }
 
-func TestQuickSetupKeepsImportedModelUnlessUserSwitches(t *testing.T) {
-	for _, c := range []struct {
-		switchModel bool
-		nousRuns    int
-		expected    map[string]any
-	}{
-		{false, 0, map[string]any{"provider": "openrouter", "default": "anthropic/claude-sonnet-4.5"}},
-		{true, 1, map[string]any{"provider": "nous", "default": "Hermes-4-405B"}},
-	} {
-		t.Run(fmt.Sprintf("switch=%v", c.switchModel), func(t *testing.T) {
-			w := newWizardRun(t, "", true)
-			swapSeam(t, &setupRunFirstTimeQuickSetupFn, runFirstTimeQuickSetup)
-			t.Cleanup(provider.SwapSetupRadiolist(func(question string, _ []string, def int, _ string) int {
-				w.asked = append(w.asked, question)
-				if c.switchModel && strings.Contains(question, "switch to Nous Portal") {
-					return 1
-				}
-				return def
-			}))
-			swapSeam(t, &setupOfferAgentImportFn, func(ctx context.Context, h string, _ bool) (string, error) {
-				cfg, err := config.LoadContext(ctx, h, nil)
-				if err != nil {
-					return "", err
-				}
-				cfg["model"] = map[string]any{"provider": "openrouter", "default": "anthropic/claude-sonnet-4.5"}
-				if err := config.SaveConfig(ctx, h, cfg, config.SaveOptions{}); err != nil {
-					return "", err
-				}
-				return "OpenClaw", config.SaveEnvValueContext(ctx, h, "OPENROUTER_API_KEY", "sk-or-demo-not-a-real-key")
-			})
-			nousRuns := 0
-			t.Cleanup(provider.SwapSetupModelFlowNous(func(ctx context.Context, cfg map[string]any) error {
-				nousRuns++
-				cfg["model"] = map[string]any{"provider": "nous", "default": "Hermes-4-405B"}
-				return config.SaveConfig(ctx, home.Dir(ctx), cfg, config.SaveOptions{})
-			}))
-			if err := hostedQuickSetup(w.ctx, nil); err != nil {
-				t.Fatal(err)
-			}
-			if nousRuns != c.nousRuns {
-				t.Fatalf("nous ran %d times", nousRuns)
-			}
-			model, _ := loadHomeConfig(t, w.ctx)["model"].(map[string]any)
-			for k, v := range c.expected {
-				if model[k] != v {
-					t.Fatalf("model %v want %v", model, c.expected)
-				}
-			}
-			if v, _, _ := config.GetEnvValue(w.ctx, w.home, "OPENROUTER_API_KEY"); v != "sk-or-demo-not-a-real-key" {
-				t.Fatalf("imported key %q", v)
-			}
-			if w.calls["gateway"] != 1 {
-				t.Fatalf("gateway ran %d times", w.calls["gateway"])
-			}
-			if !slices.ContainsFunc(w.asked, func(q string) bool {
-				return strings.Contains(q, "Keep your imported model (OpenRouter · anthropic/claude-sonnet-4.5)")
-			}) {
-				t.Fatalf("menus %q", w.asked)
-			}
-		})
+func TestQuickSetupKeepsImportedModel(t *testing.T) {
+	w := newWizardRun(t, "", true)
+	swapSeam(t, &setupRunFirstTimeQuickSetupFn, runFirstTimeQuickSetup)
+	t.Cleanup(provider.SwapSetupRadiolist(func(question string, _ []string, def int, _ string) int {
+		w.asked = append(w.asked, question)
+		return def
+	}))
+	swapSeam(t, &setupOfferAgentImportFn, func(ctx context.Context, h string, _ bool) (string, error) {
+		cfg, err := config.LoadContext(ctx, h, nil)
+		if err != nil {
+			return "", err
+		}
+		cfg["model"] = map[string]any{"provider": "openrouter", "default": "anthropic/claude-sonnet-4.5"}
+		if err := config.SaveConfig(ctx, h, cfg, config.SaveOptions{}); err != nil {
+			return "", err
+		}
+		return "OpenClaw", config.SaveEnvValueContext(ctx, h, "OPENROUTER_API_KEY", "sk-or-demo-not-a-real-key")
+	})
+	if err := hostedQuickSetup(w.ctx, nil); err != nil {
+		t.Fatal(err)
+	}
+	model, _ := loadHomeConfig(t, w.ctx)["model"].(map[string]any)
+	if model["provider"] != "openrouter" || model["default"] != "anthropic/claude-sonnet-4.5" {
+		t.Fatalf("model %v", model)
+	}
+	if v, _, _ := config.GetEnvValue(w.ctx, w.home, "OPENROUTER_API_KEY"); v != "sk-or-demo-not-a-real-key" {
+		t.Fatalf("imported key %q", v)
+	}
+	if w.calls["gateway"] != 1 {
+		t.Fatalf("gateway ran %d times", w.calls["gateway"])
 	}
 }

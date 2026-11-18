@@ -127,7 +127,7 @@ func seedPmNodeFacts(t *testing.T, root string) []string {
 	return []string{npmDir, nodeDir}
 }
 
-func TestSystemUnitHermesHomeManagedNodeMakesSystemUnitIndependentOfCallersPath(t *testing.T) {
+func TestSystemUnitIcebathHomeManagedNodeMakesSystemUnitIndependentOfCallersPath(t *testing.T) {
 	tmp := sandboxServiceHomes(t)
 	targetHome := filepath.Join(tmp, "home", "alice")
 	rootHome := filepath.Join(tmp, "root")
@@ -154,7 +154,7 @@ func TestSystemUnitHermesHomeManagedNodeMakesSystemUnitIndependentOfCallersPath(
 	}
 }
 
-func TestSystemUnitHermesHomeSystemUnitOrdersAfterTargetUserManager(t *testing.T) {
+func TestSystemUnitIcebathHomeSystemUnitOrdersAfterTargetUserManager(t *testing.T) {
 	tmp := sandboxServiceHomes(t)
 	aliceIdentity(t, tmp)
 	noServicePathDirs(t)
@@ -166,7 +166,7 @@ func TestSystemUnitHermesHomeSystemUnitOrdersAfterTargetUserManager(t *testing.T
 	}
 }
 
-func TestSystemUnitHermesHomeInstalledUnitKeepsLdLibraryPathWhenTheShellLacksIt(t *testing.T) {
+func TestSystemUnitIcebathHomeInstalledUnitKeepsLdLibraryPathWhenTheShellLacksIt(t *testing.T) {
 	tmp := sandboxServiceHomes(t)
 	unitPath := filepath.Join(tmp, "icebath-gateway.service")
 	swapSeam(t, &systemdUnitPathOf, func(context.Context, bool) (string, error) { return unitPath, nil })
@@ -184,7 +184,7 @@ func TestSystemUnitHermesHomeInstalledUnitKeepsLdLibraryPathWhenTheShellLacksIt(
 	}
 }
 
-func TestSystemUnitHermesHomeSystemUnitRemapsCallerHomeLdLibraryPathComponents(t *testing.T) {
+func TestSystemUnitIcebathHomeSystemUnitRemapsCallerHomeLdLibraryPathComponents(t *testing.T) {
 	sandboxServiceHomes(t)
 	t.Setenv("HOME", "/root")
 	os.Unsetenv("ICEBATH_HOME")
@@ -196,7 +196,7 @@ func TestSystemUnitHermesHomeSystemUnitRemapsCallerHomeLdLibraryPathComponents(t
 	}
 }
 
-func TestSystemUnitHermesHomeSystemUnitUsesTargetUserHomeNotCallingUser(t *testing.T) {
+func TestSystemUnitIcebathHomeSystemUnitUsesTargetUserHomeNotCallingUser(t *testing.T) {
 	tmp := sandboxServiceHomes(t)
 	callerHome, targetHome := filepath.Join(tmp, "root"), filepath.Join(tmp, "alice")
 	os.Mkdir(callerHome, 0o700)
@@ -211,7 +211,7 @@ func TestSystemUnitHermesHomeSystemUnitUsesTargetUserHomeNotCallingUser(t *testi
 	}
 }
 
-func TestSystemUnitHermesHomeUserUnitUnaffectedByChange(t *testing.T) {
+func TestSystemUnitIcebathHomeUserUnitUnaffectedByChange(t *testing.T) {
 	sandboxServiceHomes(t)
 	resolved, _ := pypath.Resolve(os.Getenv("ICEBATH_HOME"))
 	if unit := mustGenerateUnit(t, false, ""); !strings.Contains(unit, "ICEBATH_HOME="+resolved) {
@@ -219,7 +219,7 @@ func TestSystemUnitHermesHomeUserUnitUnaffectedByChange(t *testing.T) {
 	}
 }
 
-func TestSystemUnitRefreshSyncsHermesHomeRefreshAdoptsUnitHermesHomeBeforeRewriting(t *testing.T) {
+func TestSystemUnitRefreshSyncsIcebathHomeRefreshAdoptsUnitIcebathHomeBeforeRewriting(t *testing.T) {
 	tmp := sandboxServiceHomes(t)
 	rootHome, aliceHome := filepath.Join(tmp, "root"), filepath.Join(tmp, "alice")
 	rootIcebath, aliceIcebath := filepath.Join(rootHome, ".icebath"), filepath.Join(aliceHome, ".icebath")
@@ -303,7 +303,7 @@ func TestSystemUnitPathRemappingSystemUnitHasNoRootPaths(t *testing.T) {
 	}
 }
 
-func TestServiceWorkingDirIsStableUserUnitWorkingdirectoryIsHermesHomeNotCheckout(t *testing.T) {
+func TestServiceWorkingDirIsStableUserUnitWorkingdirectoryIsIcebathHomeNotCheckout(t *testing.T) {
 	sandboxServiceHomes(t)
 	h := os.Getenv("ICEBATH_HOME")
 	for _, line := range strings.Split(mustGenerateUnit(t, false, ""), "\n") {

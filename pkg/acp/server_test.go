@@ -30,7 +30,7 @@ func detectedProvider(t *testing.T, name string) {
 	})
 }
 
-func newSession(t *testing.T, a *HermesACPAgent, cwd string) *pyacp.NewSessionResponse {
+func newSession(t *testing.T, a *IcebathACPAgent, cwd string) *pyacp.NewSessionResponse {
 	t.Helper()
 	resp, err := a.NewSession(context.Background(), &pyacp.NewSessionRequest{Cwd: cwd})
 	if err != nil {
@@ -162,7 +162,7 @@ func TestNewSessionReturnsAuthenticatedCrossProviderModelState(t *testing.T) {
 	m := NewSessionManager(func() any {
 		return &nsAgent{model: "gpt-5.4", provider: "openai-codex", baseURL: "https://api.openai.com/v1"}
 	}, nil)
-	a := NewHermesACPAgent(m)
+	a := NewIcebathACPAgent(m)
 	payload := map[string]any{"providers": []any{
 		map[string]any{"slug": "anthropic", "name": "Anthropic", "models": []any{"claude-sonnet-4-6", "claude-sonnet-4-6"}},
 		map[string]any{"slug": "openai-codex", "name": "OpenAI Codex", "models": []any{map[string]any{"id": "gpt-5.4"}, "gpt-5.4-mini"}},
@@ -267,7 +267,7 @@ func TestListSessionsIncludesTitleAndUpdatedAt(t *testing.T) {
 	row.Set("cwd", "/tmp/project")
 	row.Set("title", "Fix Zed session history")
 	row.Set("updated_at", 123.0)
-	a := NewHermesACPAgent(&listingSessions{SessionManager: m, rows: []*pyjson.Object{row}})
+	a := NewIcebathACPAgent(&listingSessions{SessionManager: m, rows: []*pyjson.Object{row}})
 	cwd := "/tmp/project"
 	resp, err := a.ListSessions(context.Background(), &pyacp.ListSessionsRequest{Cwd: &cwd})
 	if err != nil {
@@ -377,7 +377,7 @@ func (f *failingSave) SaveSession(ctx context.Context, sessionID string) {
 func TestPromptAfterTailExceptionRunsInsteadOfQueueing(t *testing.T) {
 	m := newMockManager(t)
 	sessions := &failingSave{SessionManager: m}
-	a := NewHermesACPAgent(sessions)
+	a := NewIcebathACPAgent(sessions)
 	ctx := context.Background()
 	resp := newSession(t, a, ".")
 	st := m.GetSession(ctx, resp.SessionID)
@@ -507,7 +507,7 @@ func (c *countingSave) SaveSession(ctx context.Context, sessionID string) {
 func TestCompactCompressesContext(t *testing.T) {
 	m := newMockManager(t)
 	sessions := &countingSave{SessionManager: m}
-	a := NewHermesACPAgent(sessions)
+	a := NewIcebathACPAgent(sessions)
 	st := slashState(t, m)
 	history := []map[string]any{
 		{"role": "user", "content": "one"}, {"role": "assistant", "content": "two"},

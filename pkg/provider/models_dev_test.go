@@ -666,7 +666,7 @@ func TestExplicitModelOverrideResolution(t *testing.T) {
 	}
 	cfg = overridesCfg(map[string]any{"fireworks-ai": map[string]any{"my-model": map[string]any{"context_window": 222222}}})
 	if got := explicitModelOverride("fireworks", "my-model", cfg); got == nil || got["context_window"] != 222222 {
-		t.Fatalf("hermes id caller %v", got)
+		t.Fatalf("icebath id caller %v", got)
 	}
 	if explicitModelOverride("anthropic", "claude-sonnet-4", overridesCfg(map[string]any{})) != nil || defaultModelOverride("anthropic", overridesCfg(map[string]any{})) != nil {
 		t.Fatal("empty overrides produced a value")

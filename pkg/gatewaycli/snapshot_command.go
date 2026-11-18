@@ -247,7 +247,7 @@ func ManualGatewayIdentity(h string, identify func(string) *pyjson.Object, fail 
 		}
 		return nil, nil
 	}
-	claimed, _ := identity.Get("hermes_home")
+	claimed, _ := home.RecordValue(identity.Get, home.RecordKey)
 	if !pyrepr.Truthy(claimed) {
 		return nil, fail("gateway control identity does not match %s", h)
 	}

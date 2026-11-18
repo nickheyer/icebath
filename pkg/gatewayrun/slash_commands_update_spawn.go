@@ -14,7 +14,7 @@ import (
 )
 
 // Spawns icebath update for the gateway detached so it outlives the restart, output and exit code in files
-func spawnDetachedUpdate(hermesCmd []string, outputPath, exitCodePath string) error {
+func spawnDetachedUpdate(icebathCmd []string, outputPath, exitCodePath string) error {
 	if runtime.GOOS == "windows" {
 		exe, err := os.Executable()
 		if err != nil {
@@ -27,8 +27,8 @@ func spawnDetachedUpdate(hermesCmd []string, outputPath, exitCodePath string) er
 		}
 		return cmd.Process.Release()
 	}
-	quoted := make([]string, len(hermesCmd))
-	for i, part := range hermesCmd {
+	quoted := make([]string, len(icebathCmd))
+	for i, part := range icebathCmd {
 		quoted[i] = pyshlex.Quote(part)
 	}
 	updateCmd := fmt.Sprintf("PYTHONUNBUFFERED=1 %s update --gateway > %s 2>&1; "+

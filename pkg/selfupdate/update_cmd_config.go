@@ -23,7 +23,7 @@ import (
 // Snapshot id the pre update backup took for each sibling profile, by profile name
 var lastSiblingSnapshots = pyjson.NewObject()
 
-// Config calls of the migration check, the facade functions hermes tests patch
+// Config calls of the migration check, the facade functions tests patch
 var (
 	configCheckVersion     = config.CheckConfigVersion
 	configMigrate          = config.MigrateConfig
@@ -90,7 +90,7 @@ func migrateSiblingProfileConfigs(ctx context.Context, notes map[string][]string
 				if isUpdateExit(err) {
 					return err
 				}
-				updateLog.Debug(fmt.Sprintf("Config migration for profile %s failed: %s", name, launchErrorText(err)))
+				pkgLog().Debug(fmt.Sprintf("Config migration for profile %s failed: %s", name, launchErrorText(err)))
 			}
 		}
 		return nil
@@ -233,7 +233,7 @@ func checkAndApplyConfigMigration(ctx context.Context, w io.Writer, assumeYes, g
 		if isUpdateExit(err) {
 			return err
 		}
-		updateLog.Debug(fmt.Sprintf("Config check during update failed: %s", launchErrorText(err)))
+		pkgLog().Debug(fmt.Sprintf("Config check during update failed: %s", launchErrorText(err)))
 		fmt.Fprintln(w, "  ⚠️  Could not check config version.")
 		fmt.Fprintln(w, "     Run 'icebath config migrate' to check manually.")
 		return nil

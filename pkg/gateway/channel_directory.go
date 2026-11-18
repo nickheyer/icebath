@@ -3,12 +3,14 @@ package gateway
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
 	"unicode/utf8"
 
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
@@ -125,7 +127,7 @@ func normalizeChannelQuery(value string) string {
 func channelTargetName(platformName string, channel *pyjson.Object) (string, error) {
 	rawName, has := channel.Get("name")
 	if !has {
-		return "", fmt.Errorf("KeyError: 'name'")
+		return "", errors.New("a channel directory entry has no name")
 	}
 	name := pyrepr.Str(rawName)
 	guild, _ := channel.Get("guild")
@@ -174,7 +176,7 @@ func directoryChannels(ctx context.Context, platformName string, iterateFalsy bo
 	}
 	platforms, ok := rawPlatforms.(*pyjson.Object)
 	if !ok {
-		return nil, fmt.Errorf("AttributeError: '%s' object has no attribute 'get'", pyrepr.TypeName(rawPlatforms))
+		return nil, fmt.Errorf("the channel directory platforms are %s, expected a mapping", errchain.Kind(rawPlatforms))
 	}
 	raw, has := platforms.Get(platformName)
 	if !has {
@@ -186,19 +188,19 @@ func directoryChannels(ctx context.Context, platformName string, iterateFalsy bo
 			return nil, nil
 		}
 		if iterateFalsy {
-			return nil, fmt.Errorf("TypeError: '%s' object is not iterable", pyrepr.TypeName(raw))
+			return nil, fmt.Errorf("the %s channel directory list is %s, expected a list", platformName, errchain.Kind(raw))
 		}
 		return nil, nil
 	}
 	list, ok := raw.([]any)
 	if !ok {
-		return nil, fmt.Errorf("TypeError: unusable channel list of type '%s'", pyrepr.TypeName(raw))
+		return nil, fmt.Errorf("the %s channel directory list is %s, expected a list", platformName, errchain.Kind(raw))
 	}
 	out := make([]*pyjson.Object, len(list))
 	for i, item := range list {
 		entry, ok := item.(*pyjson.Object)
 		if !ok {
-			return nil, fmt.Errorf("AttributeError: '%s' object has no attribute 'get'", pyrepr.TypeName(item))
+			return nil, fmt.Errorf("a %s channel directory entry is %s, expected a mapping", platformName, errchain.Kind(item))
 		}
 		out[i] = entry
 	}
@@ -229,11 +231,11 @@ func lookupChannelType(ctx context.Context, platformName, chatID string) (any, e
 func channelEntryQueryName(ch *pyjson.Object) (string, error) {
 	raw, has := ch.Get("name")
 	if !has {
-		return "", fmt.Errorf("KeyError: 'name'")
+		return "", errors.New("a channel directory entry has no name")
 	}
 	name, ok := raw.(string)
 	if !ok {
-		return "", fmt.Errorf("AttributeError: '%s' object has no attribute 'lstrip'", pyrepr.TypeName(raw))
+		return "", fmt.Errorf("a channel directory entry name is %s, expected text", errchain.Kind(raw))
 	}
 	return normalizeChannelQuery(name), nil
 }
@@ -273,7 +275,7 @@ func resolveChannelName(ctx context.Context, platformName, name string) (string,
 			}
 			guild, ok := rawGuild.(string)
 			if !ok {
-				return "", fmt.Errorf("AttributeError: '%s' object has no attribute 'strip'", pyrepr.TypeName(rawGuild))
+				return "", fmt.Errorf("a channel directory guild is %s, expected text", errchain.Kind(rawGuild))
 			}
 			if pystr.Lower(pystr.Strip(guild)) != guildPart {
 				continue
@@ -307,7 +309,7 @@ func resolveChannelName(ctx context.Context, platformName, name string) (string,
 func channelEntryID(ch *pyjson.Object) (string, error) {
 	id, has := ch.Get("id")
 	if !has {
-		return "", fmt.Errorf("KeyError: 'id'")
+		return "", errors.New("a channel directory entry has no id")
 	}
 	return pyrepr.Str(id), nil
 }

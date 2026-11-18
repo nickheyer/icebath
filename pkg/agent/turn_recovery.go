@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"log/slog"
 	"math/big"
 	"os"
 	"regexp"
@@ -86,7 +85,6 @@ func interruptibleBackoffSleep(ctx context.Context, a *AIAgent, waitTime float64
 			a.touchActivity(fmt.Sprintf("%s, %ds remaining", activityLabel, int(sleepEnd-recoveryNow())), "", false)
 		}
 	}
-	a.adoptNousKeyBeforeExpiry(ctx)
 	return nil, nil
 }
 
@@ -164,7 +162,7 @@ func validateResponseShape(a *AIAgent, response any) (bool, []string, error) {
 	if response == nil {
 		return true, []string{"response is None"}, nil
 	}
-	log := conversationLoopLog()
+	log := pkgLog()
 	if a.apiMode == "codex_responses" {
 		status := responseStatus(response)
 		if status == "failed" || status == "cancelled" {
@@ -225,7 +223,7 @@ func describeInvalidResponse(a *AIAgent, response any, apiDuration float64) (str
 		providerName = "model=" + pyrepr.Str(model)
 	}
 	if providerName == "Unknown" && responseTruthy && a.verboseLogging {
-		slog.Debug(fmt.Sprintf("Response attributes for invalid response: %s", pyrepr.Str(responseAttrs(response))))
+		pkgLog().Debug(fmt.Sprintf("Response attributes for invalid response: %s", pyrepr.Str(responseAttrs(response))))
 	}
 	var code *int64
 	if hasError {

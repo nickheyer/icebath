@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"log/slog"
 	"net"
 	"net/http"
 	"os"
@@ -15,6 +14,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/internal/pycodecs"
 	"github.com/nickheyer/icebath/pkg/internal/pyhttpx"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
@@ -87,27 +87,22 @@ func (q *a2aRequest) parseRequest() bool {
 
 // Access and error lines of the server at debug level instead of stderr
 func (q *a2aRequest) logMessage(format string, args ...any) {
-	slog.Debug(fmt.Sprintf("A2A http: "+format, args...))
+	pkgLog().Debug(fmt.Sprintf("A2A http: "+format, args...))
 }
 
 func (q *a2aRequest) logRequest(code int) {
 	q.logMessage(`"%s" %s %s`, q.r.Method+" "+q.r.RequestURI+" "+q.r.Proto, strconv.Itoa(code), "-")
 }
 
-// Prints the socketserver report of an exception a request raised
+// Reports a request that failed on one line and logs its error chain and stack
 func (q *a2aRequest) handleError(rec any) {
 	err, ok := rec.(error)
 	if !ok {
 		err = fmt.Errorf("%v", rec)
 	}
-	host, port, _ := net.SplitHostPort(q.r.RemoteAddr)
-	addr := fmt.Sprintf("(%s, %s)", pyrepr.StrRepr(host), port)
-	if strings.Contains(host, ":") {
-		addr = fmt.Sprintf("(%s, %s, 0, 0)", pyrepr.StrRepr(host), port)
-	}
-	line := strings.Repeat("-", 40)
-	fmt.Fprintf(os.Stderr, "%s\nException occurred during processing of request from %s\n%s%s: %s\n%s\n", line, addr,
-		debug.Stack(), pyrepr.ExceptionName(err), pyrepr.ExceptionMessage(err), line)
+	fmt.Fprintf(os.Stderr, "A2A request %s %s from %s failed: %s\n", q.r.Method, q.r.RequestURI, q.r.RemoteAddr, err)
+	pkgLog().Error(fmt.Sprintf("A2A request %s %s from %s failed: %s", q.r.Method, q.r.RequestURI, q.r.RemoteAddr, err),
+		"error_chain", errchain.Text(err), "stack", string(debug.Stack()))
 }
 
 // JSON body with its content type and length

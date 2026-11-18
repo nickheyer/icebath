@@ -225,7 +225,6 @@ func TestAnthropicPromptCachePolicyBlankCachePolicyAgentBranches(t *testing.T) {
 		{"anthropic", "https://api.anthropic.com", "anthropic_messages", "claude-opus-4.8", true, true},
 		{"openrouter", "https://openrouter.ai/api/v1", "chat_completions", "anthropic/claude-opus-4.8", true, false},
 		{"openrouter", "https://openrouter.ai/api/v1", "chat_completions", "moonshotai/kimi-k2.6", true, false},
-		{"nous", "https://inference-api.nousresearch.com/v1", "chat_completions", "qwen3.6-plus", true, false},
 		{"minimax", "https://api.minimax.io/anthropic", "anthropic_messages", "MiniMax-M3", false, false},
 		{"minimax", "https://api.minimax.io/anthropic", "anthropic_messages", "MiniMax-M2.7", true, true},
 		{"opencode-go", "https://opencode.ai/zen/go/v1", "chat_completions", "qwen3.6-plus", true, false},

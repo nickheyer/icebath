@@ -64,7 +64,7 @@ var anthPreservedThinking = []struct {
 	{"claude-haiku-4-5", false}, {"claude-opus-4-20250514", false}, {"claude-sonnet-4-20250514", false}, {"claude-opus-4-5-20251101", true},
 	{"claude-opus-4-6-20250414", true}, {"claude-sonnet-4-5-20250929", false}, {"claude-opus-5", true}, {"claude-sonnet-5-5", true},
 	{"claude-fable-5-1", true}, {"claude-mythos-5", true}, {"claude-mythos-preview", true}, {"claude-fable-5-2", true}, {"claude-mythos-6", true},
-	{"claude-newfamily-7", true}, {"claude-haiku-5", false}, {"claude-3-7-sonnet-20250219", false}, {"claude-sonnet-4", false}, {"hermes-4-405b", false},
+	{"claude-newfamily-7", true}, {"claude-haiku-5", false}, {"claude-3-7-sonnet-20250219", false}, {"claude-sonnet-4", false}, {"deepseek-v4-pro", false},
 }
 
 // A formerly latest turn stays byte stable where history keeps thinking and loses it elsewhere
@@ -73,7 +73,7 @@ func TestAnthropicHistoricalThinkingReplayByRoute(t *testing.T) {
 		model, base string
 		replays     bool
 	}
-	cases := []routeCase{{"claude-opus-4-6", "https://inference-api.nousresearch.com/v1/messages", true}, {"claude-opus-4-6", "https://openrouter.ai/api/v1", false}}
+	cases := []routeCase{{"claude-opus-4-6", "https://gateway.example.com/v1/messages", true}, {"claude-opus-4-6", "https://openrouter.ai/api/v1", false}}
 	for _, p := range anthPreservedThinking {
 		cases = append(cases, routeCase{p.model, "https://api.anthropic.com", p.preserved})
 	}

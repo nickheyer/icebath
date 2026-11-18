@@ -18,7 +18,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tools"
-	"github.com/nickheyer/icebath/pkg/tuigateway"
+	"github.com/nickheyer/icebath/pkg/tuihost"
 )
 
 const (
@@ -39,7 +39,7 @@ func init() {
 }
 
 // Busy refusal of a running session, nil when idle
-func busyError(rid any, session *tuigateway.Session, cmd string) map[string]any {
+func busyError(rid any, session *tuihost.Session, cmd string) map[string]any {
 	if truthy(session.Get("running")) {
 		return rpcErr(rid, 4009, busyMessage(cmd, truthy(session.Get("_manual_compress_active"))), nil)
 	}
@@ -47,7 +47,7 @@ func busyError(rid any, session *tuigateway.Session, cmd string) map[string]any 
 }
 
 // Session key the goal and loop managers act on, else the 4001 refusal
-func sessionKeyOrErr(rid any, session *tuigateway.Session) (string, map[string]any) {
+func sessionKeyOrErr(rid any, session *tuihost.Session) (string, map[string]any) {
 	if session == nil {
 		return "", rpcErr(rid, 4001, "no active session", nil)
 	}
@@ -59,7 +59,7 @@ func sessionKeyOrErr(rid any, session *tuigateway.Session) (string, map[string]a
 }
 
 // Durable history and the indices of its user originated turns, called under the history lock
-func userTurnIndices(session *tuigateway.Session) ([]map[string]any, []int) {
+func userTurnIndices(session *tuihost.Session) ([]map[string]any, []int) {
 	history := historyWithoutEphemeralScaffolding(historyList(session.Get("history")))
 	var indices []int
 	for i, m := range history {
@@ -71,7 +71,7 @@ func userTurnIndices(session *tuigateway.Session) ([]map[string]any, []int) {
 }
 
 // Busy recheck under the history lock, then the history and user turn indices or the refusal
-func rewindPrelude(rid any, session *tuigateway.Session, cmd, emptyMsg string) ([]map[string]any, []int, map[string]any) {
+func rewindPrelude(rid any, session *tuihost.Session, cmd, emptyMsg string) ([]map[string]any, []int, map[string]any) {
 	if busy := busyError(rid, session, cmd); busy != nil {
 		return nil, nil, busy
 	}
@@ -89,7 +89,7 @@ func isRewindValueError(err error) bool {
 }
 
 // Rewound history with its live view and count, a ValueError answered with its code and anything else with 5008
-func rewindOrErr(ctx context.Context, rid any, session *tuigateway.Session, keep int, valueCode int, valuePrefix, failPrefix string, requireRetryable bool) ([]map[string]any, map[string]any, int, map[string]any) {
+func rewindOrErr(ctx context.Context, rid any, session *tuihost.Session, keep int, valueCode int, valuePrefix, failPrefix string, requireRetryable bool) ([]map[string]any, map[string]any, int, map[string]any) {
 	installed, liveView, count, err := rewindActiveSessionHistory(ctx, session, keep, requireRetryable)
 	if err == nil {
 		return installed, liveView, count, nil
@@ -101,7 +101,7 @@ func rewindOrErr(ctx context.Context, rid any, session *tuigateway.Session, keep
 }
 
 // Sends the argument as the next turn
-func cmdQueue(ctx context.Context, rid any, params map[string]any, session *tuigateway.Session, name, arg string) map[string]any {
+func cmdQueue(ctx context.Context, rid any, params map[string]any, session *tuihost.Session, name, arg string) map[string]any {
 	if arg == "" {
 		return rpcErr(rid, 4004, "usage: /queue <prompt>", nil)
 	}
@@ -110,13 +110,13 @@ func cmdQueue(ctx context.Context, rid any, params map[string]any, session *tuig
 
 // Built in that submits a prompt built from the argument as a normal turn
 func promptBuiltin(build func(string) string) dispatchStage {
-	return func(ctx context.Context, rid any, params map[string]any, session *tuigateway.Session, name, arg string) map[string]any {
+	return func(ctx context.Context, rid any, params map[string]any, session *tuihost.Session, name, arg string) map[string]any {
 		return ok(rid, map[string]any{"type": "send", "message": build(arg)})
 	}
 }
 
 // AGENTS.md prompt built against the session's active directory, submitted as a normal turn
-func cmdInit(ctx context.Context, rid any, params map[string]any, session *tuigateway.Session, name, arg string) map[string]any {
+func cmdInit(ctx context.Context, rid any, params map[string]any, session *tuihost.Session, name, arg string) map[string]any {
 	var skey *string
 	if session != nil {
 		if raw, has := session.Lookup("session_key"); has && raw != nil {
@@ -139,7 +139,7 @@ func cmdInit(ctx context.Context, rid any, params map[string]any, session *tuiga
 }
 
 // One prompt through the default MoA preset with the prior model restored after the turn
-func cmdMoa(ctx context.Context, rid any, params map[string]any, session *tuigateway.Session, name, arg string) map[string]any {
+func cmdMoa(ctx context.Context, rid any, params map[string]any, session *tuihost.Session, name, arg string) map[string]any {
 	var res map[string]any
 	failure := catchPanic(func() {
 		if arg == "" {
@@ -164,7 +164,7 @@ func cmdMoa(ctx context.Context, rid any, params map[string]any, session *tuigat
 		if a != nil {
 			persist := false
 			_, err := applyModelSwitch(ctx, strOr(params["session_id"]), session, pyrepr.Str(preset)+" --provider moa",
-				modelSwitchOptions{confirmExpensiveModel: false, pinSessionOverride: true, persistOverride: &persist, countSwitch: false})
+				modelSwitchOptions{confirmExpensiveModel: false, pinSessionOverride: true, persistOverride: &persist})
 			if err != nil {
 				session.Pop("moa_one_shot_restore")
 				panic(err)
@@ -183,13 +183,13 @@ func cmdMoa(ctx context.Context, rid any, params map[string]any, session *tuigat
 }
 
 // Focus view toggle through the config.set branch the TUI uses, or its status line
-func cmdFocus(ctx context.Context, rid any, params map[string]any, session *tuigateway.Session, name, arg string) map[string]any {
+func cmdFocus(ctx context.Context, rid any, params map[string]any, session *tuihost.Session, name, arg string) map[string]any {
 	display, isDict := loadCfg(ctx)["display"].(map[string]any)
 	if !isDict {
 		display = map[string]any{}
 	}
 	cur := truthy(display["focus_view"])
-	action, target := tuigateway.ResolveFocusArg(arg, cur)
+	action, target := tuihost.ResolveFocusArg(arg, cur)
 	if action == "usage" {
 		return rpcErr(rid, 4004, "usage: /focus [on|off|status]", nil)
 	}
@@ -198,7 +198,7 @@ func cmdFocus(ctx context.Context, rid any, params map[string]any, session *tuig
 		if !truthy(saved) {
 			saved = loadToolProgressMode(ctx)
 		}
-		return execOut(rid, tuigateway.FormatFocusStatus(cur, saved))
+		return execOut(rid, tuihost.FormatFocusStatus(cur, saved))
 	}
 	value := "off"
 	if target != nil && *target {
@@ -213,11 +213,11 @@ func cmdFocus(ctx context.Context, rid any, params map[string]any, session *tuig
 	if !truthy(toolProgress) {
 		toolProgress = "all"
 	}
-	return execOut(rid, tuigateway.FormatFocusToggleMessage(target != nil && *target, toolProgress))
+	return execOut(rid, tuihost.FormatFocusToggleMessage(target != nil && *target, toolProgress))
 }
 
 // Rewinds the last user turn and resubmits its text, refusing media it cannot reconstruct
-func cmdRetry(ctx context.Context, rid any, params map[string]any, session *tuigateway.Session, name, arg string) map[string]any {
+func cmdRetry(ctx context.Context, rid any, params map[string]any, session *tuihost.Session, name, arg string) map[string]any {
 	if session == nil {
 		return rpcErr(rid, 4001, "no active session to retry", nil)
 	}
@@ -253,12 +253,11 @@ func cmdRetry(ctx context.Context, rid any, params map[string]any, session *tuig
 	if refusal != nil {
 		return refusal
 	}
-	tuiModelFriction(ctx, "retry", session, 1)
 	return ok(rid, map[string]any{"type": "send", "message": content})
 }
 
 // Queues a steer on a running agent, or sends the text as the next turn when idle or refused
-func cmdSteer(ctx context.Context, rid any, params map[string]any, session *tuigateway.Session, name, arg string) map[string]any {
+func cmdSteer(ctx context.Context, rid any, params map[string]any, session *tuihost.Session, name, arg string) map[string]any {
 	if arg == "" {
 		return rpcErr(rid, 4004, "usage: /steer <prompt>", nil)
 	}
@@ -297,7 +296,7 @@ func goalMaxTurns(cfg map[string]any) int64 {
 }
 
 // Runs the goal command on the session's goal manager in its profile scope
-func cmdGoal(ctx context.Context, rid any, params map[string]any, session *tuigateway.Session, name, arg string) map[string]any {
+func cmdGoal(ctx context.Context, rid any, params map[string]any, session *tuihost.Session, name, arg string) map[string]any {
 	scoped := profileRuntimeScope(ctx, strOr(session.Get("profile_home")), true)
 	sidKey, errResp := sessionKeyOrErr(rid, session)
 	if errResp != nil {
@@ -322,7 +321,7 @@ func cmdGoal(ctx context.Context, rid any, params map[string]any, session *tuiga
 }
 
 // Runs the loop command on the session's loop manager, noting an active goal that defers its wakeups
-func cmdLoop(ctx context.Context, rid any, params map[string]any, session *tuigateway.Session, name, arg string) map[string]any {
+func cmdLoop(ctx context.Context, rid any, params map[string]any, session *tuihost.Session, name, arg string) map[string]any {
 	sidKey, errResp := sessionKeyOrErr(rid, session)
 	if errResp != nil {
 		return errResp
@@ -342,7 +341,7 @@ func cmdLoop(ctx context.Context, rid any, params map[string]any, session *tuiga
 }
 
 // Backs up N user turns, soft deleting them on disk, and prefills the composer with the rewound text
-func cmdUndo(ctx context.Context, rid any, params map[string]any, session *tuigateway.Session, name, arg string) map[string]any {
+func cmdUndo(ctx context.Context, rid any, params map[string]any, session *tuihost.Session, name, arg string) map[string]any {
 	if session == nil {
 		return rpcErr(rid, 4001, "no active session to undo", nil)
 	}
@@ -398,7 +397,6 @@ func cmdUndo(ctx context.Context, rid any, params map[string]any, session *tuiga
 			catchPanic(step)
 		}
 	}
-	tuiModelFriction(ctx, "undo", session, turnsUndone)
 	turnWord := "turns"
 	if turnsUndone == 1 {
 		turnWord = "turn"
@@ -417,7 +415,7 @@ func isSnapshotRestore(arg string) bool {
 }
 
 // Blocks snapshot restore for attached clients, every other snapshot form falling through to the refusal
-func cmdSnapshot(ctx context.Context, rid any, params map[string]any, session *tuigateway.Session, name, arg string) map[string]any {
+func cmdSnapshot(ctx context.Context, rid any, params map[string]any, session *tuihost.Session, name, arg string) map[string]any {
 	if !isSnapshotRestore(arg) {
 		return nil
 	}
@@ -427,7 +425,7 @@ func cmdSnapshot(ctx context.Context, rid any, params map[string]any, session *t
 }
 
 // Compresses the live session
-func cmdCompress(ctx context.Context, rid any, params map[string]any, session *tuigateway.Session, name, arg string) map[string]any {
+func cmdCompress(ctx context.Context, rid any, params map[string]any, session *tuihost.Session, name, arg string) map[string]any {
 	if session == nil {
 		return rpcErr(rid, 4001, "no active session to compress", nil)
 	}
@@ -457,7 +455,7 @@ func cmdCompress(ctx context.Context, rid any, params map[string]any, session *t
 }
 
 // Memory store of the session profile, the live agent store else a freshly loaded one, nil when both fail
-func pendingSubcommandStore(ctx context.Context, session *tuigateway.Session) *memory.Store {
+func pendingSubcommandStore(ctx context.Context, session *tuihost.Session) *memory.Store {
 	if session != nil {
 		var store *memory.Store
 		catchPanic(func() {
@@ -480,7 +478,7 @@ func pendingSubcommandStore(ctx context.Context, session *tuigateway.Session) *m
 }
 
 // Runs a write approval review subcommand, the usage line when the shared handler does not claim it
-func runPendingReview(ctx context.Context, rid any, subsystem, arg string, session *tuigateway.Session, unknown string) map[string]any {
+func runPendingReview(ctx context.Context, rid any, subsystem, arg string, session *tuihost.Session, unknown string) map[string]any {
 	opts := memory.PendingOptions{SetMode: func(enabled bool) error { return writeConfigKey(ctx, subsystem+".write_approval", enabled) }}
 	if subsystem == tools.WriteApprovalMemory {
 		opts.MemoryStore = pendingSubcommandStore(ctx, session)
@@ -494,7 +492,7 @@ func runPendingReview(ctx context.Context, rid any, subsystem, arg string, sessi
 }
 
 // Reviews staged memory writes, approves or rejects them and toggles the gate
-func cmdMemory(ctx context.Context, rid any, params map[string]any, session *tuigateway.Session, name, arg string) map[string]any {
+func cmdMemory(ctx context.Context, rid any, params map[string]any, session *tuihost.Session, name, arg string) map[string]any {
 	return runPendingReview(ctx, rid, "memory", arg, session, memoryReviewUsage)
 }
 
@@ -502,7 +500,7 @@ func cmdMemory(ctx context.Context, rid any, params map[string]any, session *tui
 var skillsReviewSubcommands = []string{"pending", "approve", "reject", "diff", "approval"}
 
 // Skill write approval review subcommands, every hub subcommand falling through to the refusal
-func cmdSkills(ctx context.Context, rid any, params map[string]any, session *tuigateway.Session, name, arg string) map[string]any {
+func cmdSkills(ctx context.Context, rid any, params map[string]any, session *tuihost.Session, name, arg string) map[string]any {
 	sub := pystr.SplitWhitespace(arg, -1)
 	if len(sub) == 0 || !slices.Contains(skillsReviewSubcommands, pystr.Lower(sub[0])) {
 		return nil

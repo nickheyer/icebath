@@ -20,7 +20,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/pet"
 	"github.com/nickheyer/icebath/pkg/skills"
 	"github.com/nickheyer/icebath/pkg/state"
-	"github.com/nickheyer/icebath/pkg/tuigateway"
+	"github.com/nickheyer/icebath/pkg/tuihost"
 )
 
 // Active profile home of the watcher probes, the context override else the launch home
@@ -40,14 +40,6 @@ func watcherMtimeNS(path string) (int64, bool) {
 	return info.ModTime().UnixNano(), true
 }
 
-// mtime of a path under the watcher home as a signature, nil when it cannot be stat'ed
-func homeMtimeNS(ctx context.Context, parts ...string) any {
-	if ns, ok := watcherMtimeNS(filepath.Join(append([]string{watcherHome(ctx)}, parts...)...)); ok {
-		return ns
-	}
-	return nil
-}
-
 // Newest mtime across paths with unstat-able ones ignored, false when none stat'ed
 var newestMtimeNS = newestStatMtimeNS
 
@@ -60,44 +52,6 @@ func newestStatMtimeNS(paths ...string) (int64, bool) {
 		}
 	}
 	return newest, found
-}
-
-// One stat-able file of a multi file signature
-type watchedFile struct {
-	Path    string
-	MtimeNS int64
-	Size    int64
-}
-
-// Sorted path, mtime and size of every stat-able file so a same tick add or rewrite still moves it
-func filesSig(paths []string) []watchedFile {
-	entries := []watchedFile{}
-	for _, path := range paths {
-		if info, err := os.Stat(path); err == nil {
-			entries = append(entries, watchedFile{path, info.ModTime().UnixNano(), info.Size()})
-		}
-	}
-	slices.SortFunc(entries, func(a, b watchedFile) int {
-		if c := strings.Compare(a.Path, b.Path); c != 0 {
-			return c
-		}
-		if a.MtimeNS != b.MtimeNS {
-			return compareInt64(a.MtimeNS, b.MtimeNS)
-		}
-		return compareInt64(a.Size, b.Size)
-	})
-	return entries
-}
-
-// Ordering of two int64 values
-func compareInt64(a, b int64) int {
-	switch {
-	case a < b:
-		return -1
-	case a > b:
-		return 1
-	}
-	return 0
 }
 
 // Session columns whose change fires sessions.changed, activity stamps excluded so heartbeats stay silent
@@ -283,74 +237,6 @@ func sessionsSig(ctx context.Context) any {
 	return sig
 }
 
-// Per file stat signature of projects.db and its WAL for the watcher home and every served profile
-func projectsSig(ctx context.Context) any {
-	paths := []string{}
-	for _, root := range watchedHomes(ctx) {
-		paths = append(paths, filepath.Join(root, "projects.db"), filepath.Join(root, "projects.db-wal"))
-	}
-	return filesSig(paths)
-}
-
-// Per file stat signature of every live profile's pending and approved pairing ledgers
-func pairingSig(ctx context.Context) any {
-	entries := []string{}
-	for _, root := range pairingRoots(watcherHome(ctx)) {
-		dirEntries, err := os.ReadDir(root)
-		if err != nil {
-			continue
-		}
-		for _, entry := range dirEntries {
-			if name := entry.Name(); strings.HasSuffix(name, "-pending.json") || strings.HasSuffix(name, "-approved.json") {
-				entries = append(entries, filepath.Join(root, name))
-			}
-		}
-	}
-	return filesSig(entries)
-}
-
-// Seconds a cached live profile pairing root list stays trusted
-var pairingRootsTTLSeconds = 30.0
-
-// Liveness probe of a named profile dir, an existing dir with identity that was not deleted
-var namedProfileIsLive = home.ProfileLive
-
-// Live profile pairing roots cached on the home, the profiles dir mtime and a TTL
-var pairingRootsCache = struct {
-	sync.Mutex
-	set      bool
-	home     string
-	dirNS    int64
-	dirKnown bool
-	at       float64
-	roots    []string
-}{}
-
-// Pairing ledger dirs of the home and every live named profile under it
-func pairingRoots(h string) []string {
-	profilesDir := filepath.Join(h, "profiles")
-	dirNS, dirKnown := watcherMtimeNS(profilesDir)
-	now := pythread.Monotonic()
-	pairingRootsCache.Lock()
-	defer pairingRootsCache.Unlock()
-	if c := &pairingRootsCache; c.set && c.home == h && c.dirKnown == dirKnown && c.dirNS == dirNS && now-c.at < pairingRootsTTLSeconds {
-		return c.roots
-	}
-	roots := []string{filepath.Join(h, "pairing"), filepath.Join(h, "platforms", "pairing")}
-	if entries, err := os.ReadDir(profilesDir); err == nil {
-		for _, entry := range entries {
-			profileDir := filepath.Join(profilesDir, entry.Name())
-			if namedProfileIsLive(profileDir) {
-				roots = append(roots, filepath.Join(profileDir, "pairing"), filepath.Join(profileDir, "platforms", "pairing"))
-			}
-		}
-	}
-	pairingRootsCache.set, pairingRootsCache.home = true, h
-	pairingRootsCache.dirNS, pairingRootsCache.dirKnown = dirNS, dirKnown
-	pairingRootsCache.at, pairingRootsCache.roots = now, roots
-	return roots
-}
-
 // Skill roots stat signature of every scope a session resolved commands in
 func skillsSig(ctx context.Context) any {
 	return skills.NewScope(home.Dir(ctx), nil).PublishedScopesSignature(ctx)
@@ -433,16 +319,12 @@ func emptyChangePayload(context.Context) map[string]any { return map[string]any{
 // Watched events in their broadcast order with the stat cheap signatures that drive them
 var changeWatches = []changeWatch{
 	{"pet.changed", 2.0, petSig, petChangedPayload},
-	{"cron.changed", 1.0, func(ctx context.Context) any { return homeMtimeNS(ctx, "cron", "jobs.json") }, emptyChangePayload},
 	{"sessions.changed", 0.5, sessionsSig, emptyChangePayload},
-	{"platforms.changed", 2.0, func(ctx context.Context) any { return homeMtimeNS(ctx, "gateway_state.json") }, emptyChangePayload},
-	{"projects.changed", 2.0, projectsSig, emptyChangePayload},
-	{"pairing.changed", 2.0, pairingSig, emptyChangePayload},
 	{"skills.changed", 2.0, skillsSig, emptyChangePayload},
 }
 
 // Minimum seconds between two broadcasts of a bursty event, its trailing edge kept
-var changeBroadcastFloorS = map[string]float64{"sessions.changed": 2.0, "platforms.changed": 5.0}
+var changeBroadcastFloorS = map[string]float64{"sessions.changed": 2.0}
 
 // Last signature, check time and broadcast time of each watched event
 var changeState = struct {
@@ -530,13 +412,13 @@ func ensureSkinWatcher(ctx context.Context) {
 	skinWatcherStarted.Unlock()
 	func() {
 		defer func() { recover() }()
-		tuigateway.NoteSkinBroadcast(ctx)
+		tuihost.NoteSkinBroadcast(ctx)
 	}()
 	go func() {
 		loop := context.Background()
 		for {
 			time.Sleep(changeWatcherTick)
-			tuigateway.BroadcastSkinIfChanged(loop)
+			tuihost.BroadcastSkinIfChanged(loop)
 			broadcastWatchedChanges(loop, pythread.Monotonic())
 		}
 	}()

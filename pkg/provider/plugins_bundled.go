@@ -25,10 +25,8 @@ func init() {
 	bundledPluginPorts["actual"] = actualPluginProfiles
 	bundledPluginPorts["kimi-coding"] = kimiPluginProfiles
 	bundledPluginPorts["zai"] = zaiPluginProfiles
-	bundledPluginPorts["nous"] = nousPluginProfiles
 	bundledPluginPorts["meta-ai"] = metaAIPluginProfiles
 	bundledPluginPorts["qwen-oauth"] = qwenPluginProfiles
-	bundledPluginPorts["solstice"] = solsticePluginProfiles
 	bundledPluginPorts["deepinfra"] = deepinfraPluginProfiles
 	bundledPluginPorts["minimax"] = minimaxPluginProfiles
 	bundledPluginPorts["alibaba"] = alibabaPluginProfiles

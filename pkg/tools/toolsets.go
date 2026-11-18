@@ -146,7 +146,7 @@ var Toolsets = map[string]Toolset{
 	"memory":         ts("Persistent memory across sessions (personal notes + user profile)", []string{"memory"}),
 	"context_engine": ts("Runtime tools exposed by the active context engine", nil),
 	"session_search": ts("Search and recall past conversations with summarization", []string{"session_search"}),
-	"connections":    ts("Remote connector discovery, execution, and account authorization", []string{"manage_connections"}),
+	"connections":    ts("MCP server install, enable and authorization from the bundled catalog or config", []string{"manage_connections"}),
 	"project":        ts("Projects - create/switch named workspaces", []string{"desktop_project"}),
 	"bot_room":       ts("Verified text-only Group Chat turn capabilities", nil),
 	"clarify":        ts("Ask the user clarifying questions (multiple-choice or open-ended)", []string{"clarify"}),
@@ -705,7 +705,7 @@ func (r *Registry) applyToolsetSelection(ctx context.Context, env *Env, tools ma
 					warnedBundles[name] = true
 					warnedBundlesMu.Unlock()
 					if first {
-						checkLogger(env).Info("agent.disabled_toolsets contains a platform bundle name, core tools are preserved and only its platform specific tools are removed",
+						envLog(env).Info("agent.disabled_toolsets contains a platform bundle name, core tools are preserved and only its platform specific tools are removed",
 							"bundle", name, "removed", strings.Join(resolved, ", "))
 					}
 				}
@@ -982,7 +982,7 @@ var ConfigurableToolsets = []ConfigurableToolset{
 	{"memory", "💾 Memory", "persistent memory across sessions"},
 	{"context_engine", "🧩 Context Engine", "runtime tools from the active context engine"},
 	{"session_search", "🔎 Session Search", "search past conversations"},
-	{"connections", "🔌 Connections", "remote connector tools and account authorization"},
+	{"connections", "🔌 Connections", "MCP server install, enable and authorization"},
 	{"clarify", "❓ Clarifying Questions", "clarify"},
 	{"delegation", "👥 Task Delegation", "delegate_task"},
 	{"cronjob", "⏰ Cron Jobs", "create/list/update/pause/resume/run, with optional attached skills"},
@@ -1987,7 +1987,7 @@ func CurrentTerminalBackend(env *Env) (string, error) {
 }
 
 var multiProviderNotices = map[string]string{
-	"web": "[yellow]⚠ Web search is off[/] — no search provider is set up yet (any one of Nous subscription, Exa, " +
+	"web": "[yellow]⚠ Web search is off[/] — no search provider is set up yet (any one of Exa, Perplexity, " +
 		"Tavily, Firecrawl, Brave, or free DuckDuckGo works). Type [bold]/setup tools[/] and set one up under " +
 		"\"Web Search & Scraping\".",
 }

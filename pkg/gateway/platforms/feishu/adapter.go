@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"log/slog"
 	"os"
 	"path/filepath"
 	"sort"
@@ -176,7 +175,7 @@ func loadSettings(ctx context.Context, extra map[string]any) (FeishuAdapterSetti
 	}
 	allowBots = pystr.Lower(pystr.Strip(allowBots))
 	if allowBots != "none" && allowBots != "mentions" && allowBots != "all" {
-		slog.Warn(fmt.Sprintf("[Feishu] Unknown allow_bots=%s, falling back to 'none'. Valid: none, mentions, all.", pyrepr.Repr(allowBots)))
+		pkgLog().Warn(fmt.Sprintf("[Feishu] Unknown allow_bots=%s, falling back to 'none'. Valid: none, mentions, all.", pyrepr.Repr(allowBots)))
 		allowBots = "none"
 	}
 	allowAllDM := false
@@ -474,11 +473,11 @@ func (a *FeishuAdapter) buildEventHandler() *dispatcher.EventDispatcher {
 			return nil
 		}).
 		OnP2ChatAccessEventBotP2pChatEnteredV1(func(ctx context.Context, e *larkim.P2ChatAccessEventBotP2pChatEnteredV1) error {
-			slog.Debug("[Feishu] User entered P2P chat with bot")
+			pkgLog().Debug("[Feishu] User entered P2P chat with bot")
 			return nil
 		}).
 		OnP2MessageRecalledV1(func(ctx context.Context, e *larkim.P2MessageRecalledV1) error {
-			slog.Debug("[Feishu] Message recalled by user")
+			pkgLog().Debug("[Feishu] Message recalled by user")
 			return nil
 		}).
 		OnCustomizedEvent("drive.notice.comment_add_v1", func(ctx context.Context, e *larkevent.EventReq) error {
@@ -556,22 +555,22 @@ func (a *FeishuAdapter) Connect(ctx context.Context, isReconnect bool) (bool, er
 	a.setExecutorClosing(false)
 	s := a.settings
 	if s.AppID == "" || s.AppSecret == "" {
-		slog.Error("[Feishu] FEISHU_APP_ID or FEISHU_APP_SECRET not set")
+		pkgLog().Error("[Feishu] FEISHU_APP_ID or FEISHU_APP_SECRET not set")
 		return false, nil
 	}
 	if s.ConnectionMode != "websocket" && s.ConnectionMode != "webhook" {
-		slog.Error(fmt.Sprintf("[Feishu] Unsupported FEISHU_CONNECTION_MODE=%s. Supported modes: websocket, webhook.", s.ConnectionMode))
+		pkgLog().Error(fmt.Sprintf("[Feishu] Unsupported FEISHU_CONNECTION_MODE=%s. Supported modes: websocket, webhook.", s.ConnectionMode))
 		return false, nil
 	}
 	if s.ConnectionMode == "webhook" && s.VerificationToken == "" && s.EncryptKey == "" {
-		slog.Error("[Feishu] Webhook mode requires FEISHU_VERIFICATION_TOKEN or FEISHU_ENCRYPT_KEY.")
+		pkgLog().Error("[Feishu] Webhook mode requires FEISHU_VERIFICATION_TOKEN or FEISHU_ENCRYPT_KEY.")
 		return false, nil
 	}
 	fail := func(err error) (bool, error) {
 		a.releaseAppLock()
 		message := "Feishu startup failed: " + err.Error()
 		a.SetFatalError(ctx, "feishu_connect_error", message, true)
-		slog.Error("[Feishu] Failed to connect: " + err.Error())
+		pkgLog().Error("[Feishu] Failed to connect: " + err.Error())
 		return false, nil
 	}
 	identity := s.AppID
@@ -596,7 +595,7 @@ func (a *FeishuAdapter) Connect(ctx context.Context, isReconnect bool) (bool, er
 			message += "."
 		}
 		message += " Stop the other gateway before starting a second Feishu websocket client."
-		slog.Error("[Feishu] " + message)
+		pkgLog().Error("[Feishu] " + message)
 		a.SetFatalError(ctx, "feishu_app_lock", message, false)
 		return false, nil
 	}
@@ -615,7 +614,7 @@ func (a *FeishuAdapter) Connect(ctx context.Context, isReconnect bool) (bool, er
 		a.mu.Unlock()
 		go a.superviseWebsocketThread(supCtx)
 	}
-	slog.Info(fmt.Sprintf("[Feishu] Connected in %s mode (%s)", s.ConnectionMode, s.DomainName))
+	pkgLog().Info(fmt.Sprintf("[Feishu] Connected in %s mode (%s)", s.ConnectionMode, s.DomainName))
 	a.WirePluginHandlers(ctx, a.currentClient().Native())
 	return true, nil
 }
@@ -661,7 +660,7 @@ func (a *FeishuAdapter) Disconnect(ctx context.Context) error {
 	a.persistSeenMessageIDs(ctx)
 	a.releaseAppLock()
 	a.MarkDisconnected(ctx)
-	slog.Info("[Feishu] Disconnected")
+	pkgLog().Info("[Feishu] Disconnected")
 	return nil
 }
 
@@ -673,16 +672,16 @@ func (a *FeishuAdapter) teardownWSThread(ctx context.Context, link *wsLink) {
 		cancel()
 		switch {
 		case errors.Is(err, context.DeadlineExceeded):
-			slog.Warn("[Feishu] CLOSE frame not acknowledged within 5s — Feishu may briefly route messages to the stale " +
+			pkgLog().Warn("[Feishu] CLOSE frame not acknowledged within 5s — Feishu may briefly route messages to the stale " +
 				"connection until server-side timeout")
 		case err != nil:
-			slog.Debug("[Feishu] Could not send WebSocket CLOSE frame: " + err.Error())
+			pkgLog().Debug("[Feishu] Could not send WebSocket CLOSE frame: " + err.Error())
 		default:
-			slog.Debug("[Feishu] Sent WebSocket CLOSE frame to Feishu")
+			pkgLog().Debug("[Feishu] Sent WebSocket CLOSE frame to Feishu")
 		}
 	}
 	if link != nil && link.alive() {
-		slog.Debug("[Feishu] Cancelling websocket thread tasks and stopping loop")
+		pkgLog().Debug("[Feishu] Cancelling websocket thread tasks and stopping loop")
 		link.stop()
 	}
 	a.mu.Lock()
@@ -691,20 +690,20 @@ func (a *FeishuAdapter) teardownWSThread(ctx context.Context, link *wsLink) {
 	if fut == nil {
 		return
 	}
-	slog.Debug("[Feishu] Waiting for websocket thread to exit (timeout=10s)")
+	pkgLog().Debug("[Feishu] Waiting for websocket thread to exit (timeout=10s)")
 	timer := time.NewTimer(10 * time.Second)
 	defer timer.Stop()
 	select {
 	case <-fut.done:
 		if fut.err != nil {
-			slog.Debug("[Feishu] Websocket thread exited with error: " + fut.err.Error())
+			pkgLog().Debug("[Feishu] Websocket thread exited with error: " + fut.err.Error())
 		} else {
-			slog.Debug("[Feishu] Websocket thread exited cleanly")
+			pkgLog().Debug("[Feishu] Websocket thread exited cleanly")
 		}
 	case <-timer.C:
-		slog.Warn("[Feishu] Websocket thread did not exit within 10s - may be stuck")
+		pkgLog().Warn("[Feishu] Websocket thread did not exit within 10s - may be stuck")
 	case <-ctx.Done():
-		slog.Debug("[Feishu] Websocket thread cancelled during disconnect")
+		pkgLog().Debug("[Feishu] Websocket thread cancelled during disconnect")
 	}
 }
 
@@ -761,7 +760,7 @@ func (a *FeishuAdapter) stopWebhookServer(ctx context.Context) {
 	a.mu.Unlock()
 	if runner != nil {
 		if err := runner.Cleanup(ctx); err != nil {
-			slog.Debug("[Feishu] Webhook runner cleanup failed: " + err.Error())
+			pkgLog().Debug("[Feishu] Webhook runner cleanup failed: " + err.Error())
 		}
 	}
 }
@@ -788,7 +787,7 @@ func (a *FeishuAdapter) connectWithRetry(ctx context.Context) error {
 			return err
 		}
 		wait := 1 << attempt
-		slog.Warn(fmt.Sprintf("[Feishu] Connect attempt %d/%d failed; retrying in %ds: %s", attempt+1, feishuConnectAttempts, wait, err))
+		pkgLog().Warn(fmt.Sprintf("[Feishu] Connect attempt %d/%d failed; retrying in %ds: %s", attempt+1, feishuConnectAttempts, wait, err))
 		if !sleepCtx(ctx, time.Duration(wait)*time.Second) {
 			return ctx.Err()
 		}
@@ -820,7 +819,7 @@ func (a *FeishuAdapter) superviseWebsocketThread(ctx context.Context) {
 			return
 		}
 		if fut != lastDead {
-			slog.Error(fmt.Sprintf("[Feishu] WebSocket client thread exited unexpectedly; restarting in %.0fs", backoff))
+			pkgLog().Error(fmt.Sprintf("[Feishu] WebSocket client thread exited unexpectedly; restarting in %.0fs", backoff))
 			lastDead = fut
 			a.WriteRuntimeStatusSafe(ctx, "ws_link_lost", map[string]any{"platform_state": "retrying", "error_code": nil,
 				"error_message": "Feishu websocket link lost; rebuilding"})
@@ -832,7 +831,7 @@ func (a *FeishuAdapter) superviseWebsocketThread(ctx context.Context) {
 			return
 		}
 		if err := a.connectWebsocket(ctx); err != nil {
-			slog.Warn("[Feishu] WebSocket restart failed (retrying): " + err.Error())
+			pkgLog().Warn("[Feishu] WebSocket restart failed (retrying): " + err.Error())
 			backoff = min(backoff*2, 60.0)
 		} else {
 			backoff = initial
@@ -970,7 +969,7 @@ func (a *FeishuAdapter) loadSeenMessageIDs() {
 		}
 	}
 	if err != nil {
-		slog.Warn(fmt.Sprintf("[Feishu] Failed to load persisted dedup state from %s", a.dedupStatePath))
+		pkgLog().Warn(fmt.Sprintf("[Feishu] Failed to load persisted dedup state from %s", a.dedupStatePath))
 		return
 	}
 	var seen any = pyjson.NewObject()
@@ -1034,7 +1033,7 @@ func (a *FeishuAdapter) loadSeenMessageIDs() {
 // Writes the most recent dedup ids with their timestamps so the TTL survives restarts
 func (a *FeishuAdapter) persistSeenMessageIDs(ctx context.Context) {
 	if _, err := home.Mkdir(ctx, filepath.Dir(a.dedupStatePath)); err != nil {
-		slog.Warn(fmt.Sprintf("[Feishu] Failed to persist dedup state to %s", a.dedupStatePath))
+		pkgLog().Warn(fmt.Sprintf("[Feishu] Failed to persist dedup state to %s", a.dedupStatePath))
 		return
 	}
 	a.dedupMu.Lock()
@@ -1049,7 +1048,7 @@ func (a *FeishuAdapter) persistSeenMessageIDs(ctx context.Context) {
 	payload := pyjson.NewObject()
 	payload.Set("message_ids", ids)
 	if err := config.AtomicJSONWriteWith(ctx, a.dedupStatePath, payload); err != nil {
-		slog.Warn(fmt.Sprintf("[Feishu] Failed to persist dedup state to %s", a.dedupStatePath))
+		pkgLog().Warn(fmt.Sprintf("[Feishu] Failed to persist dedup state to %s", a.dedupStatePath))
 	}
 }
 

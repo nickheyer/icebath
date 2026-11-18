@@ -2,7 +2,6 @@ package discord
 
 import (
 	"fmt"
-	"log/slog"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -68,7 +67,7 @@ func opusCandidates() []string {
 func loadOpusCodec() {
 	for _, opusPath := range opusCandidates() {
 		if err := opus.load(opusPath); err != nil {
-			slog.Warn(fmt.Sprintf("Opus codec found at %s but failed to load", opusPath))
+			pkgLog().Warn(fmt.Sprintf("Opus codec found at %s but failed to load", opusPath))
 			continue
 		}
 		if opus.isLoaded() {
@@ -76,7 +75,7 @@ func loadOpusCodec() {
 		}
 	}
 	if !opus.isLoaded() {
-		slog.Warn("Opus codec not found — voice channel playback disabled")
+		pkgLog().Warn("Opus codec not found — voice channel playback disabled")
 	}
 }
 

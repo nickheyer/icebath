@@ -34,7 +34,7 @@ func TestFleetConfigMigrationLiveWindows(t *testing.T) {
 		if got := ucDiskVersion(t, h); got != latest {
 			t.Fatalf("%s version = %d", name, got)
 		}
-		if got := ucDiskProvider(t, h); got != "nous" {
+		if got := ucDiskProvider(t, h); got != "openrouter" {
 			t.Fatalf("%s provider = %v", name, got)
 		}
 	}

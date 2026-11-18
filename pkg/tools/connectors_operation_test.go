@@ -8,7 +8,7 @@ import (
 )
 
 func twoTargets(kind string) []*ConnTarget {
-	return []*ConnTarget{NewConnTarget("gmail", kind, "connect"), NewConnTarget("notion", kind, "connect")}
+	return []*ConnTarget{NewConnTarget("gmail", kind, "authorize"), NewConnTarget("notion", kind, "authorize")}
 }
 
 func textPtr(s string) *string { return &s }
@@ -23,7 +23,7 @@ func mustTransition(t *testing.T, o *ConnectionOperation, name string, to Target
 }
 
 func TestTransitionEnforcesTheContractAndNamesTheActor(t *testing.T) {
-	operation := NewConnectionOperation(twoTargets("connector"), "", "", nil)
+	operation := NewConnectionOperation(twoTargets("mcp"), "", "", nil)
 	mustTransition(t, operation, "gmail", TargetInitiated, ActorBackendWatcher, TransitionFields{})
 	if _, err := operation.Transition("gmail", TargetConnected, ActorUser, TransitionFields{}); err == nil {
 		t.Fatal("a card claimed connected")
@@ -42,7 +42,7 @@ func TestTransitionEnforcesTheContractAndNamesTheActor(t *testing.T) {
 }
 
 func TestTransitionReturnsTheChangeAndWakesTheWaiter(t *testing.T) {
-	operation := NewConnectionOperation(twoTargets("connector"), "", "", nil)
+	operation := NewConnectionOperation(twoTargets("mcp"), "", "", nil)
 	if operation.Wake.IsSet() {
 		t.Fatal("wake set before any change")
 	}
@@ -57,7 +57,7 @@ func TestTransitionReturnsTheChangeAndWakesTheWaiter(t *testing.T) {
 }
 
 func TestSameStateTransitionIsANoOpNotAnError(t *testing.T) {
-	operation := NewConnectionOperation(twoTargets("connector"), "", "", nil)
+	operation := NewConnectionOperation(twoTargets("mcp"), "", "", nil)
 	mustTransition(t, operation, "gmail", TargetInitiated, ActorBackendWatcher, TransitionFields{})
 	operation.Wake.Clear()
 	if change := mustTransition(t, operation, "gmail", TargetInitiated, ActorBackendWatcher, TransitionFields{}); change != nil {
@@ -69,7 +69,7 @@ func TestSameStateTransitionIsANoOpNotAnError(t *testing.T) {
 }
 
 func TestSettleIsExactlyOnceAndStampsNotConnected(t *testing.T) {
-	operation := NewConnectionOperation(twoTargets("connector"), "", "", nil)
+	operation := NewConnectionOperation(twoTargets("mcp"), "", "", nil)
 	mustTransition(t, operation, "gmail", TargetInitiated, ActorBackendWatcher, TransitionFields{})
 	mustTransition(t, operation, "gmail", TargetConnected, ActorBackendWatcher, TransitionFields{})
 	if !operation.Settle(SettleContinue) {
@@ -101,7 +101,7 @@ func TestSettleIsExactlyOnceAndStampsNotConnected(t *testing.T) {
 }
 
 func TestAllResolvedSettlesOnConnectedOrSkippedOnly(t *testing.T) {
-	operation := NewConnectionOperation(twoTargets("connector"), "", "", nil)
+	operation := NewConnectionOperation(twoTargets("mcp"), "", "", nil)
 	mustTransition(t, operation, "gmail", TargetInitiated, ActorBackendWatcher, TransitionFields{})
 	mustTransition(t, operation, "gmail", TargetFailed, ActorBackendWatcher, TransitionFields{Detail: textPtr("oauth denied")})
 	mustTransition(t, operation, "notion", TargetSkipped, ActorUser, TransitionFields{})
@@ -118,7 +118,7 @@ func TestAllResolvedSettlesOnConnectedOrSkippedOnly(t *testing.T) {
 }
 
 func TestTargetKeepsTheLinkAndTheMintDetailAcrossTransitions(t *testing.T) {
-	operation := NewConnectionOperation(twoTargets("connector"), "", "", nil)
+	operation := NewConnectionOperation(twoTargets("mcp"), "", "", nil)
 	mustTransition(t, operation, "gmail", TargetInitiated, ActorBackendWatcher, TransitionFields{ConnectURL: textPtr("https://link/gmail"), Detail: textPtr("")})
 	mustTransition(t, operation, "gmail", TargetFailed, ActorBackendWatcher, TransitionFields{Detail: textPtr("vendor said no")})
 	snap := operation.Target("gmail").snapshot(true)
@@ -131,7 +131,7 @@ func TestTargetKeepsTheLinkAndTheMintDetailAcrossTransitions(t *testing.T) {
 }
 
 func TestRequestPayloadCarriesTheLiveTargetSnapshot(t *testing.T) {
-	target := NewConnTarget("gmail", "connector", "reconnect")
+	target := NewConnTarget("gmail", "mcp", "authorize")
 	target.Instructions = "Finish setup"
 	operation := NewConnectionOperation([]*ConnTarget{target}, "", "call-1", nil)
 	mustTransition(t, operation, "gmail", TargetInitiated, ActorBackendWatcher, TransitionFields{ConnectURL: textPtr("https://l/gmail")})
@@ -140,7 +140,7 @@ func TestRequestPayloadCarriesTheLiveTargetSnapshot(t *testing.T) {
 	if len(rows.([]any)) != 1 {
 		t.Fatalf("targets %v", rows)
 	}
-	want := pyjson.ObjectOf("name", "gmail", "kind", "connector", "action", "reconnect", "state", "initiated", "resolved", false,
+	want := pyjson.ObjectOf("name", "gmail", "kind", "mcp", "action", "authorize", "state", "initiated", "resolved", false,
 		"instructions", "Finish setup", "connect_url", "https://l/gmail")
 	if !pyjson.Equal(rows.([]any)[0], want) {
 		t.Fatalf("target %v", rows.([]any)[0])

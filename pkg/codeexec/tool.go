@@ -60,15 +60,15 @@ var spillFullStdout = func(env *tools.Env, stdoutText string) string {
 	if pystr.Len(stdoutText) > maxSpilledStdoutBytes {
 		stdoutText = pystr.FromRunes(pystr.Runes(stdoutText)[:maxSpilledStdoutBytes]) + "\n\n[... spill capped at 5,000,000 bytes ...]"
 	}
-	dir := home.HermesDir(envHome(env), "cache/exec", "exec_spill")
+	dir := home.IcebathDir(envHome(env), "cache/exec", "exec_spill")
 	if err := os.MkdirAll(dir, 0o777); err != nil {
-		logger(env).Debug("Failed to spill execute_code stdout: " + err.Error())
+		pkgLog(env).Debug("Failed to spill execute_code stdout: " + err.Error())
 		return ""
 	}
 	sum := sha256.Sum256(pystr.EncodeUTF8Replace(stdoutText))
 	path := filepath.Join(dir, "stdout-"+hex.EncodeToString(sum[:])[:12]+".txt")
 	if err := tools.WriteTextExclusive(path, stdoutText, false, true); err != nil {
-		logger(env).Debug("Failed to spill execute_code stdout: " + err.Error())
+		pkgLog(env).Debug("Failed to spill execute_code stdout: " + err.Error())
 		return ""
 	}
 	return path
@@ -150,9 +150,9 @@ var killProcessGroup = func(pid int, kill func() error, exited <-chan struct{}, 
 func signalTree(pid int, kill func() error, sig syscall.Signal) {
 	defer func() {
 		if r := recover(); r != nil {
-			logger(nil).Debug(fmt.Sprintf("Could not terminate process tree: %v", r))
+			pkgLog(nil).Debug(fmt.Sprintf("Could not terminate process tree: %v", r))
 			if err := kill(); err != nil {
-				logger(nil).Debug("Could not kill process: " + err.Error())
+				pkgLog(nil).Debug("Could not kill process: " + err.Error())
 			}
 		}
 	}()
@@ -192,6 +192,6 @@ func getExecutionMode(env *tools.Env) string {
 			return value
 		}
 	}
-	logger(env).Warn("Ignoring code_execution.mode=" + pyrepr.StrRepr(value) + " (expected one of ('project', 'strict')), falling back to 'project'")
+	pkgLog(env).Warn("Ignoring code_execution.mode=" + pyrepr.StrRepr(value) + " (expected one of ('project', 'strict')), falling back to 'project'")
 	return defaultExecutionMode
 }

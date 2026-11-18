@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/home"
+	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 )
 
 const auxFastLaneCertifiedYAML = "auxiliary:\n  compression:\n    provider: ollama\n    model: qwen3:8b\n    reasoning_effort: none\n    max_output_tokens: 1400\n"
@@ -60,7 +61,7 @@ func auxFastLaneRequest(t *testing.T, configYAML, clientModel string, kwargs map
 }
 
 func auxExtraBody(request map[string]any) map[string]any {
-	body, _ := request["extra_body"].(map[string]any)
+	body, _ := pyjson.Plain(request["extra_body"]).(map[string]any)
 	return body
 }
 

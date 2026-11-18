@@ -122,7 +122,7 @@ func stripIcebathOwnedPythonpath(child map[string]string) error {
 		delete(child, "PYTHONPATH")
 	}
 	if len(stripped) > 0 {
-		toolsLogger(nil).Debug(fmt.Sprintf("Stripped Icebath-owned entries from PYTHONPATH: %s", pyrepr.Repr(stripped)))
+		envLog(nil).Debug(fmt.Sprintf("Stripped Icebath-owned entries from PYTHONPATH: %s", pyrepr.Repr(stripped)))
 	}
 	return nil
 }

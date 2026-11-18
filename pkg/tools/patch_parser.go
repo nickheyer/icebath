@@ -47,19 +47,6 @@ type v4aFileOps interface {
 	MoveFile(src, dst string) *WriteResult
 }
 
-// Optional face of a file backend carrying the metered edit call's probe
-type v4aProbed interface {
-	editProbe() *editProbe
-}
-
-// Probe of the metered edit call the backend belongs to, nil when the call is not metered
-func v4aProbe(fileOps v4aFileOps) *editProbe {
-	if p, ok := fileOps.(v4aProbed); ok {
-		return p.editProbe()
-	}
-	return nil
-}
-
 // Python str.isspace characters as a regexp class
 const pyWSClass = `[\t\n\v\f\r \x{1c}-\x{1f}\x{85}\x{a0}\x{1680}\x{2000}-\x{200a}\x{2028}\x{2029}\x{202f}\x{205f}\x{3000}]`
 
@@ -351,7 +338,7 @@ func validateV4AOperations(operations []*v4aOperation, fileOps v4aFileOps) []str
 				continue
 			}
 			searchPattern, replacement := strings.Join(searchLines, "\n"), strings.Join(replaceLines, "\n")
-			newSimulated, count, _, matchErr := fuzzyFindAndReplace(simulated, searchPattern, replacement, false, nil, v4aProbe(fileOps))
+			newSimulated, count, _, matchErr := FuzzyFindAndReplace(simulated, searchPattern, replacement, false, nil)
 			if count > 0 {
 				simulated = newSimulated
 			} else if !isAlreadyApplied(simulated, searchPattern, replacement) {
@@ -691,7 +678,7 @@ func applyV4AUpdate(op *v4aOperation, fileOps v4aFileOps) v4aApplyResult {
 			newContent = next
 			continue
 		}
-		next, count, strategy, errText := fuzzyFindAndReplace(newContent, searchPattern, replacement, false, &notes, v4aProbe(fileOps))
+		next, count, strategy, errText := FuzzyFindAndReplace(newContent, searchPattern, replacement, false, &notes)
 		newContent = next
 		if !(errText != "" && count == 0) {
 			if count > 0 {
@@ -706,7 +693,7 @@ func applyV4AUpdate(op *v4aOperation, fileOps v4aFileOps) v4aApplyResult {
 		if hintPos != -1 {
 			windowStart := runeOffsetBack(newContent, hintPos, 500)
 			windowEnd := runeOffsetFwd(newContent, hintPos, 2000)
-			windowNew, wCount, wStrategy, wErr := fuzzyFindAndReplace(newContent[windowStart:windowEnd], searchPattern, replacement, false, &notes, v4aProbe(fileOps))
+			windowNew, wCount, wStrategy, wErr := FuzzyFindAndReplace(newContent[windowStart:windowEnd], searchPattern, replacement, false, &notes)
 			errText = wErr
 			if wCount > 0 {
 				strategies = append(strategies, wStrategy)

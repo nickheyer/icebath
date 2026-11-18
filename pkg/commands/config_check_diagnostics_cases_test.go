@@ -59,22 +59,22 @@ func TestConfigCheckAndMigrateAgreeOnStalePlatformToolsets(t *testing.T) {
 	t.Setenv(config.EnvManagedDir, filepath.Join(t.TempDir(), "no-managed"))
 	root := t.TempDir()
 	stale := checkHome(t, filepath.Join(root, "stale"), "platform_toolsets:\n"+
-		"  cli: [hermes-cli, messaging, linear, mcp-linear, mcp-portable, mcp-ghost, ghost]\n"+
-		"  teams: [hermes-teams]\n"+
+		"  cli: [icebath-cli, messaging, linear, mcp-linear, mcp-portable, mcp-ghost, ghost]\n"+
+		"  teams: [icebath-teams]\n"+
 		"mcp_servers:\n"+
 		"  linear:\n"+
 		"    command: linear-mcp\n"+
 		"    enabled: false\n"+
 		"known_plugin_toolsets:\n"+
 		"  cli: [ghost]\n", "")
-	clean := checkHome(t, filepath.Join(root, "clean"), "platform_toolsets:\n  cli: [hermes-cli]\nmcp_servers: [a]\n", "")
+	clean := checkHome(t, filepath.Join(root, "clean"), "platform_toolsets:\n  cli: [icebath-cli]\nmcp_servers: [a]\n", "")
 	staleWant := map[string]bool{"messaging": true, "ghost": true, "mcp-ghost": true}
 	for _, c := range []struct {
 		h    string
 		want map[string]bool
 	}{{stale, staleWant}, {clean, map[string]bool{}}, {stale, staleWant}} {
 		output := runConfigCheck(t, c.h, ConfigCommandSources(c.h))
-		for _, name := range []string{"messaging", "ghost", "mcp-ghost", "linear", "mcp-linear", "mcp-portable", "hermes-teams"} {
+		for _, name := range []string{"messaging", "ghost", "mcp-ghost", "linear", "mcp-linear", "mcp-portable", "icebath-teams"} {
 			if got := strings.Contains(output, "unknown toolset '"+name+"'"); got != c.want[name] {
 				t.Fatalf("%s %s reported %v\n%s", filepath.Base(c.h), name, got, output)
 			}

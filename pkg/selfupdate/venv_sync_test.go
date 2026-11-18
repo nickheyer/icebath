@@ -153,7 +153,7 @@ func vsBareEnv() []string {
 	return env
 }
 
-// Runs a bare child the way the hermes harness runs python -I -S
+// Runs a bare child the way the harness runs python -I -S
 func vsRunBare(t *testing.T, mode string, args ...string) (int, string) {
 	t.Helper()
 	cmd := exec.Command(os.Args[0], vsChildArgv(mode, args...)[1:]...)

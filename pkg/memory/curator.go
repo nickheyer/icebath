@@ -25,7 +25,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyre"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/observability"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/skills"
 	"github.com/nickheyer/icebath/pkg/tools"
@@ -95,8 +94,6 @@ var CuratorHooks struct {
 
 var errCronNotLinked = errors.New("No module named 'cron'")
 
-func curatorLog() *slog.Logger { return slog.Default().With("logger", "agent.curator") }
-
 // Skills scope and tool env bound to the home the context resolves to
 func curatorScope(ctx context.Context) (*skills.Scope, *tools.Env, string) {
 	h := home.Dir(ctx)
@@ -119,7 +116,7 @@ func LoadCuratorState(ctx context.Context) (*pyjson.Object, error) {
 	raw, err := os.ReadFile(curatorStateFile(ctx))
 	if err != nil {
 		if !errors.Is(err, os.ErrNotExist) {
-			curatorLog().Debug(fmt.Sprintf("Failed to read curator state: %v", err))
+			pkgLog().Debug(fmt.Sprintf("Failed to read curator state: %v", err))
 		}
 		return base, nil
 	}
@@ -128,7 +125,7 @@ func LoadCuratorState(ctx context.Context) (*pyjson.Object, error) {
 	}
 	data, err := pyjson.Loads(strings.TrimPrefix(string(raw), "\ufeff"))
 	if err != nil {
-		curatorLog().Debug(fmt.Sprintf("Failed to read curator state: %v", err))
+		pkgLog().Debug(fmt.Sprintf("Failed to read curator state: %v", err))
 		return base, nil
 	}
 	if obj, ok := data.(*pyjson.Object); ok {
@@ -144,7 +141,7 @@ func LoadCuratorState(ctx context.Context) (*pyjson.Object, error) {
 // Writes the curator state sorted and indented, logging instead of failing
 func SaveCuratorState(ctx context.Context, data *pyjson.Object) {
 	if err := config.AtomicJSONWriteWith(ctx, curatorStateFile(ctx), data, pyjson.Indent(2), pyjson.SortKeys(true)); err != nil {
-		curatorLog().Debug(fmt.Sprintf("Failed to save curator state: %v", err))
+		pkgLog().Debug(fmt.Sprintf("Failed to save curator state: %v", err))
 	}
 }
 
@@ -208,7 +205,7 @@ func curatorConfigSection(ctx context.Context, label string, log *slog.Logger, p
 
 // curator section of the config, replaced by tests
 var curatorConfig = func(ctx context.Context) map[string]any {
-	return curatorConfigSection(ctx, "curator", curatorLog(), "curator")
+	return curatorConfigSection(ctx, "curator", pkgLog(), "curator")
 }
 
 func curatorConfigGet(ctx context.Context, key string, def any) any {
@@ -266,7 +263,7 @@ func curatorBoundedCount(ctx context.Context, key string, def int) int {
 		curatorWarned.seen[mark] = true
 		curatorWarned.Unlock()
 		if first {
-			curatorLog().Warn(fmt.Sprintf("curator.%s must be >= 1 (got %d); using the default of %d", key, value, def))
+			pkgLog().Warn(fmt.Sprintf("curator.%s must be >= 1 (got %d); using the default of %d", key, value, def))
 		}
 		return def
 	}
@@ -350,7 +347,7 @@ func curatorCronReferencedSkills(ctx context.Context) map[string]bool {
 		refs, err = CuratorHooks.ReferencedSkillNames(ctx, home.Dir(ctx))
 	}
 	if err != nil {
-		curatorLog().Debug(fmt.Sprintf("Curator could not read cron skill references: %v", err))
+		pkgLog().Debug(fmt.Sprintf("Curator could not read cron skill references: %v", err))
 		return map[string]bool{}
 	}
 	return refs
@@ -501,7 +498,7 @@ func ApplyCuratorTransitions(ctx context.Context, now time.Time) (*pyjson.Object
 func curatorReportsRoot(ctx context.Context) string {
 	root := filepath.Join(home.Dir(ctx), "logs", "curator")
 	if err := os.MkdirAll(root, 0o777); err != nil {
-		curatorLog().Debug(fmt.Sprintf("Curator reports dir create failed: %v", err))
+		pkgLog().Debug(fmt.Sprintf("Curator reports dir create failed: %v", err))
 	}
 	return root
 }
@@ -879,7 +876,7 @@ func curatorRewriteCronRefs(ctx context.Context, consolidated, pruned []*pyjson.
 		rep, err = CuratorHooks.RewriteSkillRefs(ctx, home.Dir(ctx), cmap, names)
 	}
 	if err != nil {
-		curatorLog().Debug(fmt.Sprintf("Curator cron skill rewrite failed: %v", err))
+		pkgLog().Debug(fmt.Sprintf("Curator cron skill rewrite failed: %v", err))
 		out := curatorEmptyRewrites()
 		out.Set("error", err.Error())
 		return out
@@ -921,13 +918,13 @@ func curatorWriteFile(path, label string, render any) {
 	default:
 		s, err := pyjson.Dumps(r, pyjson.Indent(2), pyjson.EnsureASCII(false))
 		if err != nil {
-			curatorLog().Debug(fmt.Sprintf("Curator %s write failed: %v", label, err))
+			pkgLog().Debug(fmt.Sprintf("Curator %s write failed: %v", label, err))
 			return
 		}
 		text = s + "\n"
 	}
 	if err := os.WriteFile(path, []byte(text), 0o666); err != nil {
-		curatorLog().Debug(fmt.Sprintf("Curator %s write failed: %v", label, err))
+		pkgLog().Debug(fmt.Sprintf("Curator %s write failed: %v", label, err))
 	}
 }
 
@@ -958,11 +955,11 @@ func curatorWriteRunReport(ctx context.Context, in curatorRunReportInput) string
 	if err := os.MkdirAll(filepath.Dir(runDir), 0o777); err == nil {
 		err = os.Mkdir(runDir, 0o777)
 		if err != nil {
-			curatorLog().Debug(fmt.Sprintf("Curator run dir create failed: %v", err))
+			pkgLog().Debug(fmt.Sprintf("Curator run dir create failed: %v", err))
 			return ""
 		}
 	} else {
-		curatorLog().Debug(fmt.Sprintf("Curator run dir create failed: %v", err))
+		pkgLog().Debug(fmt.Sprintf("Curator run dir create failed: %v", err))
 		return ""
 	}
 	toolCalls := curatorToolCalls(in.llmMeta)
@@ -1275,7 +1272,7 @@ func curatorConsolidationPass(ctx context.Context, prefix, autoSummary string, d
 	list, err := curatorRenderCandidateList(ctx)
 	switch {
 	case err != nil:
-		curatorLog().Debug(fmt.Sprintf("Curator LLM pass failed: %v", err))
+		pkgLog().Debug(fmt.Sprintf("Curator LLM pass failed: %v", err))
 		final = fmt.Sprintf("%s%s; llm: error (%v)", prefix, autoSummary, err)
 		meta = curatorLLMMeta(fmt.Sprintf("error (%v)", err), err.Error())
 	case strings.Contains(list, "No agent-created skills"):
@@ -1292,7 +1289,7 @@ func curatorConsolidationPass(ctx context.Context, prefix, autoSummary string, d
 	scope, _, _ := curatorScope(ctx)
 	after, err := scope.CuratedReport()
 	if err != nil {
-		curatorLog().Debug(fmt.Sprintf("Curator rename summary build failed: %v", err))
+		pkgLog().Debug(fmt.Sprintf("Curator rename summary build failed: %v", err))
 		return final, meta
 	}
 	finalText := curatorGetOr(meta, "final", "")
@@ -1314,7 +1311,6 @@ type CuratorRunOptions struct {
 	Synchronous bool
 	DryRun      bool
 	Consolidate *bool
-	Trigger     string
 }
 
 // One curator pass, deterministic transitions then the optional LLM fork, recording state and a report
@@ -1323,12 +1319,7 @@ func RunCuratorReview(ctx context.Context, opts CuratorRunOptions) (*pyjson.Obje
 	if opts.Consolidate != nil {
 		consolidate = *opts.Consolidate
 	}
-	trigger := opts.Trigger
-	if trigger == "" {
-		trigger = "manual"
-	}
 	start := time.Now().UTC()
-	h := home.Dir(ctx)
 	var counts *pyjson.Object
 	if opts.DryRun {
 		counts = curatorEntry("checked", len(curatorSafeReport(ctx)), "marked_stale", 0, "archived", 0, "reactivated", 0)
@@ -1336,7 +1327,7 @@ func RunCuratorReview(ctx context.Context, opts CuratorRunOptions) (*pyjson.Obje
 		if consolidate {
 			snap, ok, err := curatorSnapshotSkills(ctx, "pre-curator-run", nil)
 			if err != nil {
-				curatorLog().Debug(fmt.Sprintf("Curator pre-run snapshot failed: %v", err))
+				pkgLog().Debug(fmt.Sprintf("Curator pre-run snapshot failed: %v", err))
 			} else if ok {
 				curatorNotify(opts.OnSummary, fmt.Sprintf("curator: snapshot created (%s)", filepath.Base(snap)))
 			}
@@ -1390,7 +1381,7 @@ func RunCuratorReview(ctx context.Context, opts CuratorRunOptions) (*pyjson.Obje
 		elapsed := time.Since(start).Seconds()
 		st2, err := LoadCuratorState(ctx)
 		if err != nil {
-			curatorLog().Debug(fmt.Sprintf("Curator report write failed: %v", err))
+			pkgLog().Debug(fmt.Sprintf("Curator report write failed: %v", err))
 			return
 		}
 		st2.Set("last_run_duration_seconds", elapsed)
@@ -1400,7 +1391,6 @@ func RunCuratorReview(ctx context.Context, opts CuratorRunOptions) (*pyjson.Obje
 			st2.Set("last_report_path", dir)
 		}
 		SaveCuratorState(ctx, st2)
-		curatorRecordRunMetric(ctx, trigger, opts.DryRun, counts, beforeReport, afterReport, meta, h)
 		curatorNotify(opts.OnSummary, "curator: "+final)
 	}
 	if opts.Synchronous {
@@ -1413,33 +1403,6 @@ func RunCuratorReview(ctx context.Context, opts CuratorRunOptions) (*pyjson.Obje
 		}()
 	}
 	return curatorEntry("started_at", pydatetime.ISOFormatUTC(start), "auto_transitions", counts, "summary_so_far", autoSummary), nil
-}
-
-// Emits the curator run metric with the change counts computed only when telemetry is on
-func curatorRecordRunMetric(ctx context.Context, trigger string, dryRun bool, counts *pyjson.Object, before, after []*pyjson.Object, meta *pyjson.Object, h string) {
-	whatChanged := func() map[string]int {
-		beforeBy, afterBy := curatorByName(before), curatorByName(after)
-		final := curatorGetOr(meta, "final", nil)
-		if !pyrepr.Truthy(final) {
-			final = ""
-		}
-		diff := curatorDiffAndClassify(curatorNames(beforeBy), curatorNames(afterBy), curatorToolCalls(meta), final)
-		patched := 0
-		for n := range diff.afterNames {
-			if b, ok := beforeBy[n]; ok && curatorCount(afterBy[n], "patch_count") > curatorCount(b, "patch_count") {
-				patched++
-			}
-		}
-		return map[string]int{"archived": curatorCount(counts, "archived") + len(diff.removed), "created": len(diff.added),
-			"merged": len(diff.consolidated), "patched": patched}
-	}
-	outcome := "success"
-	if dryRun {
-		outcome = "skipped"
-	} else if pyrepr.Truthy(curatorGetOr(meta, "error", nil)) {
-		outcome = "failed"
-	}
-	curatorRecordRun(ctx, trigger, outcome, whatChanged, h)
 }
 
 type curatorReviewBinding struct {
@@ -1507,7 +1470,7 @@ func curatorResolveReviewRuntime(cfg any) (curatorReviewBinding, error) {
 	}
 	legacy := curatorSubdict(cfg, "curator", "auxiliary")
 	if pyrepr.Truthy(legacy["provider"]) && pyrepr.Truthy(legacy["model"]) {
-		curatorLog().Info("curator: using deprecated curator.auxiliary.{provider,model} config — please migrate to auxiliary.curator.{provider,model}")
+		pkgLog().Info("curator: using deprecated curator.auxiliary.{provider,model} config — please migrate to auxiliary.curator.{provider,model}")
 		return slot(pyStr(legacy["provider"]), pyStr(legacy["model"]), legacy), nil
 	}
 	main := curatorSubdict(cfg, "model")
@@ -1554,7 +1517,7 @@ func curatorResolveReviewProvider(ctx context.Context) (*provider.Runtime, strin
 		}
 	}
 	if err != nil {
-		curatorLog().Warn(fmt.Sprintf("curator: auxiliary.curator.provider '%s' (model '%s') could not be resolved: %v — the review runs on the main model instead", bindingProvider, model, err))
+		pkgLog().Warn(fmt.Sprintf("curator: auxiliary.curator.provider '%s' (model '%s') could not be resolved: %v — the review runs on the main model instead", bindingProvider, model, err))
 	}
 	return rt, model, prov, overrides
 }
@@ -1676,7 +1639,7 @@ func curatorReleaseRunClaim(ctx context.Context) { _ = os.Remove(curatorRunClaim
 func MaybeRunCurator(ctx context.Context, idleForSeconds *float64, onSummary func(string)) *pyjson.Object {
 	run, err := CuratorShouldRunNow(ctx, time.Time{})
 	if err != nil {
-		curatorLog().Debug(fmt.Sprintf("maybe_run_curator failed: %v", err))
+		pkgLog().Debug(fmt.Sprintf("maybe_run_curator failed: %v", err))
 		return nil
 	}
 	if !run || (idleForSeconds != nil && *idleForSeconds < CuratorMinIdleHours(ctx)*3600.0) {
@@ -1686,9 +1649,9 @@ func MaybeRunCurator(ctx context.Context, idleForSeconds *float64, onSummary fun
 		return nil
 	}
 	defer curatorReleaseRunClaim(ctx)
-	res, err := RunCuratorReview(ctx, CuratorRunOptions{OnSummary: onSummary, Trigger: "scheduled"})
+	res, err := RunCuratorReview(ctx, CuratorRunOptions{OnSummary: onSummary})
 	if err != nil {
-		curatorLog().Debug(fmt.Sprintf("maybe_run_curator failed: %v", err))
+		pkgLog().Debug(fmt.Sprintf("maybe_run_curator failed: %v", err))
 		return nil
 	}
 	return res
@@ -1728,8 +1691,5 @@ func curatorYAMLFence(text string) (string, bool) {
 	return m.GroupByNumber(1).String(), true
 }
 
-// Review fork entry the consolidation pass calls and the run metric sink, replaced by tests
-var (
-	curatorLLMReview = curatorRunLLMReview
-	curatorRecordRun = observability.RecordCuratorRun
-)
+// Review fork entry the consolidation pass calls, replaced by tests
+var curatorLLMReview = curatorRunLLMReview

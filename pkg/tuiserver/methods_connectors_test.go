@@ -3,10 +3,11 @@ package tuiserver
 import (
 	"context"
 	"encoding/json"
-	"net/http"
-	"net/http/httptest"
+	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -14,31 +15,28 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/provider"
+	"github.com/nickheyer/icebath/pkg/mcp"
 	"github.com/nickheyer/icebath/pkg/tools"
-	"github.com/nickheyer/icebath/pkg/tuigateway"
+	"github.com/nickheyer/icebath/pkg/tuihost"
 )
 
 const connectorRPCSID = "op-rpc-session"
 
-// Owner and stranger transports with a live TUI session the owner steers and no guest mint
-func connectorOwned(t *testing.T) (*frameRecorder, *frameRecorder, *tuigateway.Session) {
+// Owner and stranger transports with a live TUI session the owner steers
+func connectorOwned(t *testing.T) (*frameRecorder, *frameRecorder, *tuihost.Session) {
 	t.Helper()
 	t.Setenv("ICEBATH_HOME", t.TempDir())
 	tools.LiveResetForTests()
-	savedEnsure := tools.EnsureGuestIdentity
-	tools.EnsureGuestIdentity = func(*tools.Env) string { return "" }
 	owner, stranger := &frameRecorder{}, &frameRecorder{}
-	session := tuigateway.NewSession(map[string]any{"transport": owner, "agent": nil, "session_key": connectorRPCSID,
+	session := tuihost.NewSession(map[string]any{"transport": owner, "agent": nil, "session_key": connectorRPCSID,
 		"history": []any{}, "history_lock": &sync.Mutex{}, "history_version": 0, "running": false, "attached_images": []any{},
 		"source": "tui"})
-	tuigateway.SetSessionRecord(connectorRPCSID, session)
-	savedHome := hermesHome
-	hermesHome = home.Process()
+	tuihost.SetSessionRecord(connectorRPCSID, session)
+	savedHome := icebathHome
+	icebathHome = home.Process()
 	t.Cleanup(func() {
-		hermesHome = savedHome
-		tuigateway.SetSessionRecord(connectorRPCSID, nil)
-		tools.EnsureGuestIdentity = savedEnsure
+		icebathHome = savedHome
+		tuihost.SetSessionRecord(connectorRPCSID, nil)
 		tools.LiveResetForTests()
 	})
 	return owner, stranger, session
@@ -106,11 +104,11 @@ func connectorEvents(client *frameRecorder, kind string, expect int) []map[strin
 	return collect()
 }
 
-// Two pending connector targets opened as the session's live operation
+// Two pending MCP authorize targets opened as the session's live operation
 func openConnectorOp(t *testing.T) *tools.ConnectionOperation {
 	t.Helper()
-	operation := tools.NewConnectionOperation([]*tools.ConnTarget{tools.NewConnTarget("gmail", "connector", "connect"),
-		tools.NewConnTarget("notion", "connector", "connect")}, connectorRPCSID, "", nil)
+	operation := tools.NewConnectionOperation([]*tools.ConnTarget{tools.NewConnTarget("gmail", "mcp", "authorize"),
+		tools.NewConnTarget("notion", "mcp", "authorize")}, connectorRPCSID, "", nil)
 	if err := tools.LiveOpen(context.Background(), operation); err != nil {
 		t.Fatal(err)
 	}
@@ -140,80 +138,133 @@ func rpcCode(response map[string]any) int {
 	return 0
 }
 
-// Loopback connector gateway and Portal routes, each answering a status and JSON body
-type connectorBackend struct {
-	mu          sync.Mutex
-	mints       []map[string]any
-	agents      []string
-	connections func(names []string, body map[string]any) []any
-	list        func() []any
-	account     func(id string) (int, any)
-	portal      func(method, path string, body map[string]any) (int, any)
+// OAuth attempt of the fake MCP backend, pending until the case approves it
+type fakeMCPAttempt struct {
+	mu     sync.Mutex
+	url    string
+	status string
 }
 
-// Guest identity, bearer and loopback gateway and Portal that make connectors available in the case home
-func connectorBackendDouble(t *testing.T, b *connectorBackend) *connectorBackend {
-	t.Helper()
-	var srv *httptest.Server
-	srv = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		var body map[string]any
-		_ = json.NewDecoder(r.Body).Decode(&body)
-		status, reply := http.StatusOK, any(nil)
-		b.mu.Lock()
-		b.agents = append(b.agents, r.Header.Get("User-Agent"))
-		b.mu.Unlock()
-		switch {
-		case strings.HasPrefix(r.URL.Path, "/api/"):
-			if b.portal == nil {
-				http.NotFound(w, r)
-				return
-			}
-			status, reply = b.portal(r.Method, r.URL.Path, body)
-		case strings.HasSuffix(r.URL.Path, "/v1/connectors/connections"):
-			var names []string
-			for _, item := range body["connectors"].([]any) {
-				names = append(names, item.(string))
-			}
-			b.mu.Lock()
-			b.mints = append(b.mints, map[string]any{"names": names, "reinitiate": body["reinitiate"], "alias": body["alias"],
-				"connection_id": body["connectionId"], "initiator": body["initiator"]})
-			b.mu.Unlock()
-			reply = map[string]any{"results": b.connections(names, body)}
-		case strings.Contains(r.URL.Path, "/v1/connectors/accounts/"):
-			if b.account == nil {
-				status, reply = http.StatusNotFound, map[string]any{"error": map[string]any{"code": "connection_not_found"}}
-			} else {
-				status, reply = b.account(r.URL.Path[strings.LastIndex(r.URL.Path, "/")+1:])
-			}
-		case strings.HasSuffix(r.URL.Path, "/v1/connectors") && r.Method == http.MethodGet:
-			items := []any{}
-			if b.list != nil {
-				items = b.list()
-			}
-			reply = map[string]any{"items": items}
-		default:
-			http.NotFound(w, r)
-			return
-		}
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(status)
-		_ = json.NewEncoder(w).Encode(reply)
-	}))
-	t.Cleanup(srv.Close)
-	t.Setenv("CONNECTOR_GATEWAY_URL", srv.URL)
-	t.Setenv("TOOL_GATEWAY_USER_TOKEN", "guest-bearer")
-	if _, err := provider.NewStore(home.Process()).SaveActiveProviderState("nous", map[string]any{"auth_method": "anonymous",
-		"account_tier": "anonymous", "anon_token": "anon_t", "portal_base_url": srv.URL}); err != nil {
-		t.Fatal(err)
+func (a *fakeMCPAttempt) AuthURL() string            { return a.url }
+func (a *fakeMCPAttempt) Detail() string             { return "" }
+func (a *fakeMCPAttempt) Flow() *mcp.ClientOAuthFlow { return nil }
+
+// Approved attempts carry a discovery error so no server is dialed
+func (a *fakeMCPAttempt) Poll() mcp.AttemptPoll {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	if a.status == "approved" {
+		return mcp.AttemptPoll{Status: a.status, DiscoveryError: "tools are listed once the server is reachable"}
 	}
-	return b
+	return mcp.AttemptPoll{Status: a.status}
 }
 
-// Recorded mints of the double
-func (b *connectorBackend) minted() []map[string]any {
+// MCP backend whose OAuth starts are recorded by server name, a start failing with the reason set for its name
+type fakeMCPBackend struct {
+	mu       sync.Mutex
+	base     string
+	starts   []string
+	failures map[string]string
+	attempts map[string]*fakeMCPAttempt
+}
+
+func newFakeMCPBackend(base string) *fakeMCPBackend {
+	return &fakeMCPBackend{base: base, failures: map[string]string{}, attempts: map[string]*fakeMCPAttempt{}}
+}
+
+func (b *fakeMCPBackend) RequiredEnv(context.Context, string) ([]*pyjson.Object, error) {
+	return nil, nil
+}
+func (b *fakeMCPBackend) InstallsWithOAuth(context.Context, string) (bool, error) { return true, nil }
+func (b *fakeMCPBackend) Install(context.Context, string, *pyjson.Object) ([]string, error) {
+	return nil, errors.New("install is not driven by these cases")
+}
+func (b *fakeMCPBackend) Enable(context.Context, string) error { return nil }
+func (b *fakeMCPBackend) StartInstallOAuth(ctx context.Context, name string, _ *pyjson.Object) (mcp.ConnectorAttempt, error) {
+	return b.StartOAuth(ctx, name)
+}
+
+// Link numbered by the server's start count, or the failure set for the server
+func (b *fakeMCPBackend) StartOAuth(_ context.Context, name string) (mcp.ConnectorAttempt, error) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
-	return append([]map[string]any(nil), b.mints...)
+	b.starts = append(b.starts, name)
+	if reason := b.failures[name]; reason != "" {
+		return nil, errors.New(reason)
+	}
+	count := 0
+	for _, started := range b.starts {
+		if started == name {
+			count++
+		}
+	}
+	attempt := &fakeMCPAttempt{url: fmt.Sprintf("%s%s/%d", b.base, name, count), status: "pending"}
+	b.attempts[name] = attempt
+	return attempt, nil
+}
+
+// Server names of every OAuth start so far
+func (b *fakeMCPBackend) started() []string {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return slices.Clone(b.starts)
+}
+
+// Sets or clears the failure of the next starts of one server
+func (b *fakeMCPBackend) fail(name, reason string) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	b.failures[name] = reason
+}
+
+// Approves the server's open attempt
+func (b *fakeMCPBackend) setConnected(name string) {
+	b.mu.Lock()
+	attempt := b.attempts[name]
+	b.mu.Unlock()
+	attempt.mu.Lock()
+	attempt.status = "approved"
+	attempt.mu.Unlock()
+}
+
+// Configures gmail and notion as MCP servers of the case home so authorize accepts them
+func configureConnectorServers(t *testing.T) {
+	t.Helper()
+	body := "mcp_servers:\n  gmail:\n    url: https://gmail.example/mcp\n  notion:\n    url: https://notion.example/mcp\n"
+	if err := os.WriteFile(filepath.Join(home.Process(), "config.yaml"), []byte(body), 0o600); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// Card authorize of gmail and notion on the RPC session, returned once its card is drawn and settled at cleanup
+func driveConnectorOp(t *testing.T, backend *fakeMCPBackend) *tools.ConnectionOperation {
+	t.Helper()
+	configureConnectorServers(t)
+	drawn, finished := make(chan struct{}), make(chan struct{})
+	ctx, env := setSessionContext(context.Background(), connectorRPCSID, nil, "")
+	go func() {
+		defer close(finished)
+		defer clearSessionContext(env)
+		tools.ManageConnections(ctx, env, map[string]any{"action": "authorize", "connectors": []any{"gmail", "notion"}},
+			tools.ManageOptions{MCPBackend: backend, SessionID: connectorRPCSID, Callback: func(*pyjson.Object) string {
+				close(drawn)
+				return ""
+			}})
+	}()
+	select {
+	case <-drawn:
+	case <-finished:
+		t.Fatal("the operation ended before its card was drawn")
+	case <-time.After(5 * time.Second):
+		t.Fatal("no card drawn")
+	}
+	operation := tools.LiveCurrent(connectorRPCSID, "")
+	t.Cleanup(func() {
+		operation.Settle(tools.SettleContinue)
+		operation.Wake.Set()
+		<-finished
+	})
+	return operation
 }
 
 // test_connector_operation_rpc.py test_operation_status_returns_the_live_snapshot_with_the_server_deadline
@@ -344,30 +395,27 @@ func TestPendingConnectionOnResumeComesFromTheLiveRegistry(t *testing.T) {
 // test_connector_operation_rpc.py test_panel_connect_reissues_only_a_dead_link
 func TestPanelConnectReissuesOnlyADeadLink(t *testing.T) {
 	owner, _, _ := connectorOwned(t)
-	operation := openConnectorOp(t)
-	mustTransition(t, operation, "gmail", tools.TargetInitiated, tools.ActorBackendWatcher, tools.TransitionFields{ConnectURL: strPtr("https://l/gmail/1")})
-	mustTransition(t, operation, "notion", tools.TargetInitiated, tools.ActorBackendWatcher, tools.TransitionFields{ConnectURL: strPtr("https://l/notion/1")})
-	mustTransition(t, operation, "notion", tools.TargetFailed, tools.ActorBackendWatcher, tools.TransitionFields{Detail: strPtr("vendor: nope")})
-	backend := connectorBackendDouble(t, &connectorBackend{connections: func(names []string, _ map[string]any) []any {
-		var results []any
-		for _, name := range names {
-			results = append(results, map[string]any{"connector": name, "status": "initiated", "connectUrl": "https://l/" + name + "/2"})
-		}
-		return results
-	}})
-	refused := connectorRPCCall(t, owner, "connectors.connect", map[string]any{"connectors": []any{"gmail"}})
-	if code := rpcCode(refused); code != 4002 || len(backend.minted()) != 0 {
-		t.Fatalf("refused %v mints %v", refused, backend.minted())
+	backend := newFakeMCPBackend("https://l/")
+	backend.fail("notion", "vendor: nope")
+	operation := driveConnectorOp(t, backend)
+	if operation.StateOf(operation.Target("gmail")) != tools.TargetInitiated || operation.StateOf(operation.Target("notion")) != tools.TargetFailed {
+		t.Fatalf("gmail %s notion %s", operation.StateOf(operation.Target("gmail")), operation.StateOf(operation.Target("notion")))
+	}
+	before := len(backend.started())
+	refused := connectorRPCCall(t, owner, "connectors.connect", map[string]any{"connectors": []any{"gmail"}, "reconnect": true})
+	if code := rpcCode(refused); code != 4002 || len(backend.started()) != before {
+		t.Fatalf("refused %v starts %v", refused, backend.started())
 	}
 	if url := operation.Target("gmail").ConnectURL; url != "https://l/gmail/1" {
 		t.Fatalf("gmail link %q", url)
 	}
-	reply := connectorRPCCall(t, owner, "connectors.connect", map[string]any{"connectors": []any{"notion"}})
+	backend.fail("notion", "")
+	reply := connectorRPCCall(t, owner, "connectors.connect", map[string]any{"connectors": []any{"notion"}, "reconnect": true})
 	if _, isResult := reply["result"]; !isResult {
 		t.Fatalf("reply %v", reply)
 	}
-	if mints := backend.minted(); len(mints) != 1 || strings.Join(mints[0]["names"].([]string), ",") != "notion" || mints[0]["reinitiate"] != true {
-		t.Fatalf("mints %v", mints)
+	if starts := backend.started()[before:]; strings.Join(starts, ",") != "notion" {
+		t.Fatalf("starts %v", starts)
 	}
 	target := operation.Target("notion")
 	if operation.StateOf(target) != tools.TargetInitiated || target.ConnectURL != "https://l/notion/2" {
@@ -377,74 +425,19 @@ func TestPanelConnectReissuesOnlyADeadLink(t *testing.T) {
 
 // test_connector_operation_rpc.py test_a_failed_reissue_leaves_the_row_failed_with_no_link
 func TestAFailedReissueLeavesTheRowFailedWithNoLink(t *testing.T) {
-	for _, dead := range []tools.TargetState{tools.TargetFailed, tools.TargetExpired} {
-		t.Run(string(dead), func(t *testing.T) {
-			owner, _, _ := connectorOwned(t)
-			operation := openConnectorOp(t)
-			mustTransition(t, operation, "notion", tools.TargetInitiated, tools.ActorBackendWatcher, tools.TransitionFields{ConnectURL: strPtr("https://l/notion/1")})
-			actor := tools.ActorBackendWatcher
-			if dead == tools.TargetExpired {
-				actor = tools.ActorClock
-			}
-			mustTransition(t, operation, "notion", dead, actor, tools.TransitionFields{Detail: strPtr("vendor: nope")})
-			connectorBackendDouble(t, &connectorBackend{connections: func(names []string, _ map[string]any) []any {
-				var results []any
-				for _, name := range names {
-					results = append(results, map[string]any{"connector": name, "status": "failed", "statusReason": "vendor: still no"})
-				}
-				return results
-			}})
-			connectorRPCCall(t, owner, "connectors.connect", map[string]any{"connectors": []any{"notion"}})
-			target := operation.Target("notion")
-			if operation.StateOf(target) != tools.TargetFailed || target.ConnectURL != "" || target.Detail != "vendor: still no" {
-				t.Fatalf("notion %s %q %q", operation.StateOf(target), target.ConnectURL, target.Detail)
-			}
-		})
+	owner, _, _ := connectorOwned(t)
+	backend := newFakeMCPBackend("https://l/")
+	backend.fail("notion", "vendor: nope")
+	operation := driveConnectorOp(t, backend)
+	backend.fail("notion", "vendor: still no")
+	connectorRPCCall(t, owner, "connectors.connect", map[string]any{"connectors": []any{"notion"}, "reconnect": true})
+	target := operation.Target("notion")
+	if operation.StateOf(target) != tools.TargetFailed || target.ConnectURL != "" || target.Detail != "vendor: still no" {
+		t.Fatalf("notion %s %q %q", operation.StateOf(target), target.ConnectURL, target.Detail)
 	}
 }
 
 const connectorE2ESID = "connector-operation-e2e"
-
-// Tool gateway client boundary listing, minting and reading accounts, the only fake of the e2e cases
-type fakeConnectorClient struct {
-	mu        sync.Mutex
-	connected map[string]bool
-}
-
-func (c *fakeConnectorClient) ListConnectors(context.Context, time.Duration) ([]map[string]any, error) {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	return []map[string]any{{"connector": "gmail", "enabled": true, "connected": c.connected["gmail"]},
-		{"connector": "notion", "enabled": true, "connected": c.connected["notion"]}}, nil
-}
-
-func (c *fakeConnectorClient) Connections(_ context.Context, req tools.ConnectionsRequest) (map[string]any, error) {
-	results := []any{}
-	for _, name := range req.Connectors {
-		results = append(results, map[string]any{"connector": name, "status": "initiated", "connect_url": "https://connect.example/" + name,
-			"connection_id": "ca_" + name, "reinitiated": req.Reinitiate})
-	}
-	return map[string]any{"results": results}, nil
-}
-
-func (c *fakeConnectorClient) AccountStatus(_ context.Context, connectionID string, _ time.Duration) (map[string]any, error) {
-	name := connectionID[strings.Index(connectionID, "ca_")+3:]
-	c.mu.Lock()
-	active := c.connected[name]
-	c.mu.Unlock()
-	status := "pending"
-	if active {
-		status = "active"
-	}
-	return map[string]any{"connectionId": connectionID, "connector": name, "status": status, "label": name + "_a", "active": active,
-		"createdAt": "2026-09-14T10:00:00.000Z", "updatedAt": "2026-09-14T10:00:00.000Z"}, nil
-}
-
-func (c *fakeConnectorClient) setConnected(name string) {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	c.connected[name] = true
-}
 
 // Owner and stranger transports of a TUI session in a fresh home
 func connectorE2ESession(t *testing.T) (*frameRecorder, *frameRecorder) {
@@ -452,12 +445,12 @@ func connectorE2ESession(t *testing.T) (*frameRecorder, *frameRecorder) {
 	t.Setenv("ICEBATH_HOME", t.TempDir())
 	tools.LiveResetForTests()
 	owner, stranger := &frameRecorder{}, &frameRecorder{}
-	session := tuigateway.NewSession(map[string]any{"transport": owner, "agent": nil, "session_key": connectorE2ESID,
+	session := tuihost.NewSession(map[string]any{"transport": owner, "agent": nil, "session_key": connectorE2ESID,
 		"history": []any{}, "history_lock": &sync.Mutex{}, "history_version": 0, "running": false, "attached_images": []any{},
 		"source": "tui"})
-	tuigateway.SetSessionRecord(connectorE2ESID, session)
+	tuihost.SetSessionRecord(connectorE2ESID, session)
 	t.Cleanup(func() {
-		tuigateway.SetSessionRecord(connectorE2ESID, nil)
+		tuihost.SetSessionRecord(connectorE2ESID, nil)
 		tools.LiveResetForTests()
 	})
 	return owner, stranger
@@ -529,10 +522,11 @@ func targetStates(targets any) map[string]any {
 // test_connector_operation_e2e.py connect settles through the callback response
 func TestConnectSettlesThroughCallbackResponse(t *testing.T) {
 	owner, _ := connectorE2ESession(t)
-	client := &fakeConnectorClient{connected: map[string]bool{}}
-	savedTick := tools.ManagedWatchTickSeconds
-	tools.ManagedWatchTickSeconds = 0.05
-	t.Cleanup(func() { tools.ManagedWatchTickSeconds = savedTick })
+	configureConnectorServers(t)
+	backend := newFakeMCPBackend("https://connect.example/")
+	savedTick := tools.WatchIntervalSeconds
+	tools.WatchIntervalSeconds = 0.05
+	t.Cleanup(func() { tools.WatchIntervalSeconds = savedTick })
 	var raw string
 	finished := make(chan struct{})
 	go func() {
@@ -540,9 +534,8 @@ func TestConnectSettlesThroughCallbackResponse(t *testing.T) {
 		ctx, env := setSessionContext(context.Background(), connectorE2ESID, nil, "")
 		defer clearSessionContext(env)
 		cbs := agentCbs(ctx, connectorE2ESID)
-		raw = tools.ManageConnections(ctx, env, map[string]any{"action": "connect", "connectors": []any{"gmail", "notion"}},
-			tools.ManageOptions{ClientFactory: func() (tools.ManagedClient, error) { return client, nil },
-				SessionID: "20260914_rotated_agent_id",
+		raw = tools.ManageConnections(ctx, env, map[string]any{"action": "authorize", "connectors": []any{"gmail", "notion"}},
+			tools.ManageOptions{MCPBackend: backend, SessionID: "20260914_rotated_agent_id",
 				Callback: func(payload *pyjson.Object) string {
 					cbs.Connection(pyjson.Plain(payload).(map[string]any))
 					return ""
@@ -566,11 +559,11 @@ func TestConnectSettlesThroughCallbackResponse(t *testing.T) {
 	}
 	for _, item := range initiated["targets"].([]any) {
 		target := item.(map[string]any)
-		if target["connect_url"] != "https://connect.example/"+target["name"].(string) {
+		if target["connect_url"] != "https://connect.example/"+target["name"].(string)+"/1" {
 			t.Fatalf("target %v", target)
 		}
 	}
-	client.setConnected("gmail")
+	backend.setConnected("gmail")
 	if len(connectorE2EEvents(owner, "connection.update", func(p map[string]any) bool { return p["target"] == "gmail" && p["to"] == "connected" })) == 0 {
 		t.Fatal("no gmail connected update")
 	}
@@ -615,12 +608,13 @@ func TestConnectSettlesThroughCallbackResponse(t *testing.T) {
 // test_connector_operation_e2e.py test_cli_connect_returns_urls_without_emitting_a_card
 func TestCliConnectReturnsUrlsWithoutEmittingACard(t *testing.T) {
 	owner, _ := connectorE2ESession(t)
-	client := &fakeConnectorClient{connected: map[string]bool{}}
+	configureConnectorServers(t)
+	backend := newFakeMCPBackend("https://connect.example/")
 	env := &tools.Env{Home: home.Process(), Values: &sync.Map{}}
 	tools.SetSessionVars(env, tools.SessionVars{Platform: "cli", SessionKey: connectorE2ESID, SessionID: connectorE2ESID})
 	raw := tools.ManageConnections(tools.WithToolEnv(context.Background(), env), env,
-		map[string]any{"action": "connect", "connectors": []any{"gmail", "notion"}},
-		tools.ManageOptions{ClientFactory: func() (tools.ManagedClient, error) { return client, nil }, SessionID: connectorE2ESID})
+		map[string]any{"action": "authorize", "connectors": []any{"gmail", "notion"}},
+		tools.ManageOptions{MCPBackend: backend, SessionID: connectorE2ESID})
 	tools.ClearSessionVars(env)
 	var result map[string]any
 	if err := json.Unmarshal([]byte(raw), &result); err != nil {
@@ -647,7 +641,7 @@ func TestCliConnectReturnsUrlsWithoutEmittingACard(t *testing.T) {
 // test_connector_operation_e2e.py test_connection_respond_ignores_outcome_claims_and_rejects_strangers
 func TestConnectionRespondIgnoresOutcomeClaimsAndRejectsStrangers(t *testing.T) {
 	owner, stranger := connectorE2ESession(t)
-	operation := tools.NewConnectionOperation([]*tools.ConnTarget{tools.NewConnTarget("gmail", "connector", "connect")}, connectorE2ESID, "", nil)
+	operation := tools.NewConnectionOperation([]*tools.ConnTarget{tools.NewConnTarget("gmail", "mcp", "authorize")}, connectorE2ESID, "", nil)
 	if err := tools.LiveOpen(context.Background(), operation); err != nil {
 		t.Fatal(err)
 	}
@@ -664,72 +658,5 @@ func TestConnectionRespondIgnoresOutcomeClaimsAndRejectsStrangers(t *testing.T) 
 		"result": map[string]any{"targets": []any{map[string]any{"name": "gmail", "status": "skipped"}}}})
 	if code := rpcCode(foreign); code != 4001 {
 		t.Fatalf("foreign %v", foreign)
-	}
-}
-
-// Guest auth state of one home whose held connectors bearer names that home to the double
-func ticketGuestHome(t *testing.T, h, token, portal string) {
-	t.Helper()
-	if _, err := provider.NewStore(h).SaveActiveProviderState("nous", map[string]any{"auth_method": "anonymous",
-		"account_tier": "anonymous", "anon_token": "anon_" + token, "access_token": token,
-		"expires_at": time.Now().Add(time.Hour).UTC().Format(time.RFC3339), "portal_base_url": portal}); err != nil {
-		t.Fatal(err)
-	}
-}
-
-// test_legacy_fallback_ticket_profile_verbs.py test_secondary_ticket_runs_connectors_and_billing_in_its_own_profile
-func TestSecondaryTicketRunsConnectorsAndBillingInItsOwnProfile(t *testing.T) {
-	launch, bee := wsLegacyHomes(t)
-	var mu sync.Mutex
-	var seen [][2]string
-	homes := map[string]string{"Bearer launch-token": "launch", "Bearer bee-token": "bee"}
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		var label string
-		var reply any
-		switch {
-		case r.Method == http.MethodGet && strings.HasSuffix(r.URL.Path, "/v1/connectors"):
-			label, reply = "list", map[string]any{"items": []any{}}
-		case strings.Contains(r.URL.Path, "charge"):
-			label, reply = "charge", map[string]any{"chargeId": "c"}
-		default:
-			http.NotFound(w, r)
-			return
-		}
-		mu.Lock()
-		seen = append(seen, [2]string{label, homes[r.Header.Get("Authorization")]})
-		mu.Unlock()
-		w.Header().Set("Content-Type", "application/json")
-		_ = json.NewEncoder(w).Encode(reply)
-	}))
-	t.Cleanup(srv.Close)
-	t.Setenv("ICEBATH_SHARED_AUTH_DIR", t.TempDir())
-	t.Setenv("CONNECTOR_GATEWAY_URL", srv.URL)
-	if err := os.WriteFile(filepath.Join(bee, ".env"), []byte("CONNECTOR_GATEWAY_URL="+srv.URL+"\n"), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	ticketGuestHome(t, launch, "launch-token", srv.URL)
-	ticketGuestHome(t, bee, "bee-token", srv.URL)
-	calls := []struct {
-		method string
-		params map[string]any
-	}{{"connectors.list", map[string]any{"owner": map[string]any{"type": "account"}}}, {"billing.charge", map[string]any{"amount_usd": 5}}}
-	for _, call := range calls {
-		wsLegacyCall(t, context.Background(), wsLegacyActor(bee), call.method, call.params)
-	}
-	mu.Lock()
-	labels, homesSeen := map[string]bool{}, map[string]bool{}
-	for _, row := range seen {
-		labels[row[0]], homesSeen[row[1]] = true, true
-	}
-	if len(labels) != 2 || !labels["list"] || !labels["charge"] || len(homesSeen) != 1 || !homesSeen["bee"] {
-		t.Fatalf("seen %v", seen)
-	}
-	seen = nil
-	mu.Unlock()
-	wsLegacyCall(t, context.Background(), wsLegacyActor(launch), "billing.charge", map[string]any{"amount_usd": 5})
-	mu.Lock()
-	defer mu.Unlock()
-	if len(seen) != 1 || seen[0][1] != "launch" {
-		t.Fatalf("launch ticket seen %v", seen)
 	}
 }

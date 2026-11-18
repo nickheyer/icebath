@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"log/slog"
 
 	"github.com/nickheyer/icebath/pkg/tools"
 )
@@ -54,7 +53,7 @@ func auxErrorClass(err error, provider, model string) (reason string) {
 	}
 	defer func() {
 		if r := recover(); r != nil {
-			slog.Debug("Auxiliary error classification failed", "err", fmt.Sprint(r))
+			pkgLog().Debug("Auxiliary error classification failed", "err", fmt.Sprint(r))
 			reason = "unknown"
 		}
 	}()

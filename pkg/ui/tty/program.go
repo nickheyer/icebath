@@ -8,6 +8,7 @@ import (
 	"os/exec"
 	"sync"
 	"sync/atomic"
+	"syscall"
 	"time"
 
 	tea "charm.land/bubbletea/v2"
@@ -36,6 +37,7 @@ type Program struct {
 	held    bool
 	execing bool
 	conts   int
+	ended   syscall.Signal
 	fault   error
 	done    chan struct{}
 	ready   chan struct{}
@@ -73,8 +75,10 @@ func (h *host) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		h.p.runExec(req)
 		return h, nil
 	case suspendRequest:
-		h.p.suspend(req.line)
-		return h, nil
+		if h.p.suspend(req.line) {
+			return h, nil
+		}
+		msg = SuspendRefusedMsg{}
 	}
 	in, cmd := h.inner.Update(msg)
 	h.inner = in
@@ -215,8 +219,10 @@ func (p *Program) filter(_ tea.Model, msg tea.Msg) tea.Msg {
 	case tea.ColorProfileMsg:
 		p.r.SetProfile(m.Profile)
 	case tea.SuspendMsg:
-		p.suspend("")
-		return nil
+		if p.suspend("") {
+			return nil
+		}
+		return SuspendRefusedMsg{}
 	case tea.ResumeMsg:
 		p.release()
 		p.reclaim()
@@ -284,9 +290,35 @@ func (p *Program) failLocked(err error) {
 // Stop request of the model with the line written to the terminal it gave back
 type suspendRequest struct{ line string }
 
-// Gives the terminal back, writes the line and stops the process group until the shell continues it
+// Gives the terminal back, writes the line and stops the process group for the shell, refused without job control
 func Suspend(line string) tea.Cmd {
 	return func() tea.Msg { return suspendRequest{line: line} }
+}
+
+// Answer to a suspend the program refused with the terminal untouched, no shell job control holding its process group
+type SuspendRefusedMsg struct{}
+
+// Stop request of the operating system, a terminate or a hangup, that the model answers by ending the program
+type TerminateMsg struct{ Signal syscall.Signal }
+
+// Records the first stop request of the operating system and hands it to the model
+func (p *Program) terminate(s syscall.Signal) {
+	p.mu.Lock()
+	first := p.ended == 0
+	if first {
+		p.ended = s
+	}
+	p.mu.Unlock()
+	if first {
+		go p.tea.Send(TerminateMsg{Signal: s})
+	}
+}
+
+// Signal of the operating system that ended the program, zero when it ended on its own
+func (p *Program) Terminated() syscall.Signal {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	return p.ended
 }
 
 // Command handed to the program to run on its terminal

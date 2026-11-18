@@ -120,11 +120,11 @@ func (t *TurnRunner) lookupCachedAgent(sig string, maxIterations int, peekSid *s
 	sidMismatch := cached.sessionID != nil && *cached.sessionID != tc.sessionID
 	switch {
 	case sidMismatch && dead && peekSid != nil && *cached.sessionID == *peekSid:
-		runLog().Info(fmt.Sprintf("Agent cache invalidated for session %s: cached agent's session_id %s is ended in "+
+		pkgLog().Info(fmt.Sprintf("Agent cache invalidated for session %s: cached agent's session_id %s is ended in "+
 			"state.db (stale self-heal artifact, #54878 x #54947) — discarding instead of reusing across the routing recovery",
 			tc.sessionKey, *cached.sessionID))
 	case !sidMismatch && cached.msgCount != nil && msgCount != nil && *msgCount != *cached.msgCount:
-		runLog().Info(fmt.Sprintf("Agent cache invalidated for session %s: message_count changed (%d -> %d), possible cross-process write",
+		pkgLog().Info(fmt.Sprintf("Agent cache invalidated for session %s: message_count changed (%d -> %d), possible cross-process write",
 			tc.sessionKey, *cached.msgCount, *msgCount))
 	default:
 		out.agent = cached.agent
@@ -132,7 +132,7 @@ func (t *TurnRunner) lookupCachedAgent(sig string, maxIterations int, peekSid *s
 		t.runner.agentCache.Set(tc.sessionKey, cached)
 		initCachedAgentForTurn(out.agent, tc.interruptDepth)
 		out.agent.SetMaxIterations(maxIterations)
-		runLog().Debug("Reusing cached agent for session " + tc.sessionKey)
+		pkgLog().Debug("Reusing cached agent for session " + tc.sessionKey)
 		out.reused = true
 		return out
 	}
@@ -300,7 +300,7 @@ func (t *TurnRunner) resolveTurnAgent(ctx context.Context, route turnRoute, plat
 			runner.enforceAgentCacheCap(ctx)
 			runner.agentCacheLock.Unlock()
 		}
-		runLog().Debug(fmt.Sprintf("Created new agent for session %s (sig=%s)", tc.sessionKey, sig))
+		pkgLog().Debug(fmt.Sprintf("Created new agent for session %s (sig=%s)", tc.sessionKey, sig))
 	}
 	return a, found.reused, nil
 }

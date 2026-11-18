@@ -79,7 +79,7 @@ func TestHungConverseFailsAfterOneReadTimeoutNotFive(t *testing.T) {
 	}
 }
 
-func TestThrottleReachesHermesRetryLoopOnFirstRefusalWithDefaultTimeouts(t *testing.T) {
+func TestThrottleReachesTheRetryLoopOnFirstRefusalWithDefaultTimeouts(t *testing.T) {
 	s := newBedrockRefusingServer(t, "throttle")
 	c, err := bedrockConverseOnce(t)
 	var svc *AWSServiceError

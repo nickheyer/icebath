@@ -44,7 +44,7 @@ func runPreflightCompression(ctx context.Context, a *AIAgent, s *LoopState, comp
 		if contextLength != 0 {
 			ctxText = groupThousands(contextLength)
 		}
-		conversationLoopLog().Info(fmt.Sprintf("Pre-API compression: ~%s request tokens >= %s threshold (context=%s, attempt=%d/%d)",
+		pkgLog().Info(fmt.Sprintf("Pre-API compression: ~%s request tokens >= %s threshold (context=%s, attempt=%d/%d)",
 			groupThousands(tokens), groupThousands(threshold), ctxText, s.CompressionAttempts, s.MaxCompressionAttempts))
 		status := AutomaticCompactionStatusMessage(compressor, "pre_api", preAPICompressionStatus(tokens), map[string]any{
 			"approx_tokens": tokens, "threshold_tokens": threshold, "context_length": contextLength, "model": a.model,
@@ -78,7 +78,7 @@ func runPreflightCompression(ctx context.Context, a *AIAgent, s *LoopState, comp
 		s.ConversationHistory = historyAfterCompaction(a, lc, s.ConversationHistory)
 		s.APICallCount = refundAPICall(a, s.APICallCount)
 		if shouldSkipModelCallForReferenceHandoff(&s.Messages, s.UserMessage) {
-			conversationLoopLog().Info("Skipping post-compaction model call: reference-only handoff would be the sole active user turn (#80622)")
+			pkgLog().Info("Skipping post-compaction model call: reference-only handoff would be the sole active user turn (#80622)")
 			if !pyTruthy(s.FinalResponse) {
 				s.FinalResponse = handoffSkipFinalResponse
 			}
@@ -150,7 +150,7 @@ func compressAfterToolResults(ctx context.Context, a *AIAgent, s *LoopState) (bo
 		}
 		s.ConversationHistory = historyAfterCompaction(a, lc, s.ConversationHistory)
 		if shouldSkipModelCallForReferenceHandoff(&s.Messages, s.UserMessage) {
-			conversationLoopLog().Info("Skipping post-tool compaction model call: reference-only handoff would be the sole active user turn (#80622)")
+			pkgLog().Info("Skipping post-tool compaction model call: reference-only handoff would be the sole active user turn (#80622)")
 			if !pyTruthy(s.FinalResponse) {
 				s.FinalResponse = handoffSkipFinalResponse
 			}
@@ -174,7 +174,7 @@ func compressAfterToolResults(ctx context.Context, a *AIAgent, s *LoopState) (bo
 				if isUserInterruptPanic(r) {
 					panic(r)
 				}
-				conversationLoopLog().Debug(fmt.Sprintf("proactive tool-result prune failed; skipping: %v", r))
+				pkgLog().Debug(fmt.Sprintf("proactive tool-result prune failed; skipping: %v", r))
 				pruned, n = rows, 0
 			}
 		}()

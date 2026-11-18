@@ -32,7 +32,7 @@ func lineageExec(t *testing.T, db *SessionDB, query string, args ...any) {
 	}
 }
 
-// Store with an owner reset segment continued by head, the hermes lineage cache fixture
+// Store with an owner reset segment continued by head, the lineage cache fixture
 func lineageCacheDB(t *testing.T) *SessionDB {
 	t.Helper()
 	db := usageDB(t)

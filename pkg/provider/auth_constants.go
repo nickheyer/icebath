@@ -10,18 +10,7 @@ import (
 const (
 	AuthStoreVersion             = 1
 	AuthLockTimeout              = 15 * time.Second
-	DefaultNousPortalURL         = "https://portal.nousresearch.com"
-	DefaultNousInferenceURL      = "https://inference-api.nousresearch.com/v1"
-	DefaultNousWelcomeURL        = "https://welcome-api.nousresearch.com/v1"
-	DefaultNousClientID          = "hermes-cli"
-	WelcomeClaimFlag             = "welcome_claim"
-	NousInferenceInvokeScope     = "inference:invoke"
-	NousBillingManageScope       = "billing:manage"
-	DefaultNousScope             = NousInferenceInvokeScope
-	NousDeviceCodeSource         = "device_code"
-	NousAuthPathInvokeJWT        = "invoke_jwt"
 	AccessTokenRefreshSkew       = 120 * time.Second
-	NousInvokeJWTMinTTL          = AccessTokenRefreshSkew
 	DeviceAuthPollIntervalCap    = 1 * time.Second
 	DeviceCodeGrantType          = "urn:ietf:params:oauth:grant-type:device_code"
 	DefaultCodexBaseURL          = "https://chatgpt.com/backend-api/codex"
@@ -82,9 +71,6 @@ func newAuthErr(provider, message, code string, relogin bool) *AuthError {
 	return &AuthError{Message: message, Provider: provider, Code: code, ReloginRequired: relogin}
 }
 
-func nousErr(message, code string, relogin bool) *AuthError {
-	return newAuthErr("nous", message, code, relogin)
-}
 func xaiErr(message, code string, relogin bool) *AuthError {
 	return newAuthErr("xai-oauth", message, code, relogin)
 }

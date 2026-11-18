@@ -34,7 +34,7 @@ func (r *GatewayRunner) runAgentEvictOnFallback(ctx context.Context, tc *TurnCon
 			}
 		}
 		cfgModel := r.fallbackBaselineModel(ctx, sessionKey, tc.source, a, policyModel)
-		if a.Model() == cfgModel || r.isIntentionalModelSwitch(sessionKey, a, cfgModel) {
+		if a.Model() == cfgModel || r.isIntentionalModelSwitch(sessionKey, a) {
 			return nil
 		}
 	}
@@ -53,7 +53,7 @@ func (r *GatewayRunner) runAgentFinalizeStreamingTTS(tc *TurnContext, adapter ga
 	func() {
 		defer func() {
 			if rec := recover(); rec != nil {
-				runLog().Debug(fmt.Sprintf("streaming TTS wait_complete error: %v", rec))
+				pkgLog().Debug(fmt.Sprintf("streaming TTS wait_complete error: %v", rec))
 			}
 		}()
 		consumer.WaitComplete(10.0)

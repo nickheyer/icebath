@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"log/slog"
 	"math"
 	"net/http"
 	"sort"
@@ -75,7 +74,7 @@ func endpointAPIKeyText(raw any) string {
 func managedLocalStateEndpoint(h string) (string, string, bool) {
 	baseURL, apiKey, ok, err := stateEndpoint(h)
 	if err != nil {
-		slog.Warn("managed endpoint state check failed: " + err.Error())
+		pkgLog().Warn("managed endpoint state check failed: " + err.Error())
 		return "", "", false
 	}
 	return baseURL, endpointAPIKeyText(apiKey), ok
@@ -257,7 +256,7 @@ func SwapDetectServerForTests(fn func([]int) (*DetectedServer, error)) func() {
 	return func() { detectServerFn = prev }
 }
 
-// Endpoint with the default eight second boot wait, any resolution error read as no endpoint like both hermes callers
+// Endpoint with the default eight second boot wait, any resolution error read as no endpoint
 func resolveLlamacppEndpoint(ctx context.Context, cfg map[string]any, h string) (string, string, bool) {
 	return resolveLlamacppEndpointWithin(ctx, cfg, h, 8*time.Second)
 }
@@ -299,11 +298,11 @@ func kickManagedBoot(ctx context.Context, cfg map[string]any, h string) {
 		defer kickManagedBootMu.Unlock()
 		defer func() {
 			if r := recover(); r != nil {
-				slog.Warn(fmt.Sprintf("on-demand managed-server boot failed: %v", r))
+				pkgLog().Warn(fmt.Sprintf("on-demand managed-server boot failed: %v", r))
 			}
 		}()
 		if _, err := ensureLocalRuntimeFn(scoped, endpointConfig(cfg, h)); err != nil {
-			slog.Warn(fmt.Sprintf("on-demand managed-server boot failed: %v", err))
+			pkgLog().Warn(fmt.Sprintf("on-demand managed-server boot failed: %v", err))
 		}
 	}()
 }

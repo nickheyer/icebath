@@ -50,7 +50,7 @@ func lr6CapacityProbe(t *testing.T) *[]bool {
 func lr6Stage27B(t *testing.T) (string, string, string) {
 	t.Helper()
 	dir := t.TempDir()
-	t.Setenv("ICEBATH_HOME", filepath.Join(dir, ".hermes"))
+	t.Setenv("ICEBATH_HOME", filepath.Join(dir, ".icebath"))
 	lr2Isolate(t)
 	entry := CatalogByID()["qwen3.8-27b"]
 	var variant QuantVariant

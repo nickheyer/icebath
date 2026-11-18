@@ -25,7 +25,7 @@ func rowField(row *pyjson.Object, key string) any {
 // Deliver with the live compression tip, retry while ownership is uncertain, terminal for a proven foreign route
 func (r *GatewayRunner) resolveCompressionLineageTarget(ctx context.Context, db *state.AsyncSessionDB, entry *gateway.SessionEntry, pinned string) (string, string) {
 	failed := func() (string, string) {
-		inboundLog().Debug(fmt.Sprintf("Async-delegation compression ownership lookup failed for %s", pinned))
+		pkgLog().Debug(fmt.Sprintf("Async-delegation compression ownership lookup failed for %s", pinned))
 		return "retry", ""
 	}
 	target, err := db.DB().GetCompressionTip(ctx, pinned)
@@ -64,7 +64,7 @@ func (r *GatewayRunner) resolveCompressionLineageTarget(ctx context.Context, db 
 			return "deliver", target
 		}
 	}
-	inboundLog().Warn(fmt.Sprintf("Async-delegation completion for compression lineage %s -> %s does not own current route %s; dropping injection.",
+	pkgLog().Warn(fmt.Sprintf("Async-delegation completion for compression lineage %s -> %s does not own current route %s; dropping injection.",
 		pinned, target, entry.SessionID))
 	return "terminal", ""
 }
@@ -84,7 +84,7 @@ func (r *GatewayRunner) closedLocalTarget(ctx context.Context, db *state.AsyncSe
 		if err != nil {
 			var replaced *state.StateDBReplacedError
 			if _, sqliteErr := state.SQLiteClassOf(err); sqliteErr || errors.As(err, &replaced) {
-				inboundLog().Debug(fmt.Sprintf("Closed local tip lookup failed for %s", pinned))
+				pkgLog().Debug(fmt.Sprintf("Closed local tip lookup failed for %s", pinned))
 				return "", nil
 			}
 			return "", err
@@ -111,7 +111,7 @@ func (r *GatewayRunner) lookupCompletionOwner(ctx context.Context, sessionID, cu
 		seen[sessionID] = true
 		row, err := db.DB().GetSession(ctx, sessionID)
 		if err != nil {
-			inboundLog().Debug(fmt.Sprintf("Completion ownership lookup failed for %s", sessionID))
+			pkgLog().Debug(fmt.Sprintf("Completion ownership lookup failed for %s", sessionID))
 			return "retry", sessionID, nil
 		}
 		if row == nil {
@@ -128,7 +128,7 @@ func (r *GatewayRunner) lookupCompletionOwner(ctx context.Context, sessionID, cu
 		if currentSessionID != "" && rowField(row, "end_reason") == "compression" {
 			tip, err := db.DB().GetCompressionTip(ctx, sessionID)
 			if err != nil {
-				inboundLog().Debug(fmt.Sprintf("Completion compression lookup failed for %s", sessionID))
+				pkgLog().Debug(fmt.Sprintf("Completion compression lookup failed for %s", sessionID))
 				return "retry", sessionID, nil
 			}
 			if tip == currentSessionID {
@@ -192,7 +192,7 @@ func (r *GatewayRunner) watchPinGone(ctx context.Context, evt map[string]any, re
 	if route == "" {
 		route = "<none>"
 	}
-	inboundLog().Warn(fmt.Sprintf("Dropping %s notification of process %s: pinned session %s is permanently gone (closed "+
+	pkgLog().Warn(fmt.Sprintf("Dropping %s notification of process %s: pinned session %s is permanently gone (closed "+
 		"at a user boundary such as /new, or no longer an owner); the route now runs %s and "+
 		"refuses it (%s). Output remains available via process(action='log').", kind, process, pinned, route, refusal))
 	return true, nil
@@ -202,7 +202,7 @@ func (r *GatewayRunner) watchPinGone(ctx context.Context, evt map[string]any, re
 func (r *GatewayRunner) resolveAsyncDelegationSession(ctx context.Context, entry *gateway.SessionEntry, pinned, proven string, completionIDs []string) (*gateway.SessionEntry, error) {
 	db := r.sessionDB(ctx)
 	if db == nil {
-		inboundLog().Warn("Async-delegation completion has no session database; dropping injection (#55578 fail-closed).")
+		pkgLog().Warn("Async-delegation completion has no session database; dropping injection (#55578 fail-closed).")
 		return nil, nil
 	}
 	if proven != "" && proven == entry.SessionID {
@@ -219,7 +219,7 @@ func (r *GatewayRunner) resolveAsyncDelegationSession(ctx context.Context, entry
 	if pyrepr.Truthy(rowField(pinnedRow, "ended_at")) {
 		endReason := truthyText(rowField(pinnedRow, "end_reason"))
 		if userBoundaryEndReasons[endReason] {
-			inboundLog().Warn(fmt.Sprintf("Async-delegation completion pinned to user-closed session %s (end_reason=%s); dropping injection instead of resurrecting it (#55578 fail-closed).",
+			pkgLog().Warn(fmt.Sprintf("Async-delegation completion pinned to user-closed session %s (end_reason=%s); dropping injection instead of resurrecting it (#55578 fail-closed).",
 				pinned, pyrepr.Repr(endReason)))
 			return nil, nil
 		}
@@ -228,7 +228,7 @@ func (r *GatewayRunner) resolveAsyncDelegationSession(ctx context.Context, entry
 			if shown == "" {
 				shown = "idle"
 			}
-			inboundLog().Info(fmt.Sprintf("Async-delegation completion pinned to %s-ended session %s; retargeting to the chat's current session %s.",
+			pkgLog().Info(fmt.Sprintf("Async-delegation completion pinned to %s-ended session %s; retargeting to the chat's current session %s.",
 				shown, pinned, entry.SessionID))
 			return entry, nil
 		}
@@ -244,7 +244,7 @@ func (r *GatewayRunner) resolveAsyncDelegationSession(ctx context.Context, entry
 	}
 	prior := entry.SessionID
 	if !r.isSessionRunCurrent(entry.SessionKey, generation) {
-		inboundLog().Warn(fmt.Sprintf("Async-delegation completion for routing key %s was invalidated while resolving pinned session %s; leaving the route on %s and dropping injection.",
+		pkgLog().Warn(fmt.Sprintf("Async-delegation completion for routing key %s was invalidated while resolving pinned session %s; leaving the route on %s and dropping injection.",
 			entry.SessionKey, pinned, prior))
 		return nil, nil
 	}
@@ -260,11 +260,11 @@ func (r *GatewayRunner) resolveAsyncDelegationSession(ctx context.Context, entry
 		return nil, err
 	}
 	if switched == nil {
-		inboundLog().Warn(fmt.Sprintf("Async-delegation completion could not bind routing key %s to owning session %s (route moved or unknown); dropping injection.",
+		pkgLog().Warn(fmt.Sprintf("Async-delegation completion could not bind routing key %s to owning session %s (route moved or unknown); dropping injection.",
 			entry.SessionKey, target))
 		return nil, nil
 	}
-	inboundLog().Info(fmt.Sprintf("Pinned async-delegation completion to owning session %s (was %s) for routing key %s (#57498)", target, prior, entry.SessionKey))
+	pkgLog().Info(fmt.Sprintf("Pinned async-delegation completion to owning session %s (was %s) for routing key %s (#57498)", target, prior, entry.SessionKey))
 	return switched, nil
 }
 
@@ -281,14 +281,14 @@ func (r *GatewayRunner) requeueUncertainCompletion(ctx context.Context, verdict 
 	for _, id := range completionIDs {
 		requeued, err := tools.RequeueAdmittedCompletion(inboundToolsEnv(ctx), id, tools.DefaultProcessRegistry().CompletionQueue)
 		if err != nil {
-			inboundLog().Debug(fmt.Sprintf("Could not requeue admitted completion %s", id))
+			pkgLog().Debug(fmt.Sprintf("Could not requeue admitted completion %s", id))
 			requeued = false
 		}
 		outcome := "not offered again (result remains queryable)"
 		if requeued {
 			outcome = "offered again"
 		}
-		inboundLog().Warn(fmt.Sprintf("Async-delegation completion %s: owner not confirmed after admission; %s.", id, outcome))
+		pkgLog().Warn(fmt.Sprintf("Async-delegation completion %s: owner not confirmed after admission; %s.", id, outcome))
 	}
 }
 

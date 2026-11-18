@@ -2,7 +2,6 @@ package bluebubbles
 
 import (
 	"context"
-	"log/slog"
 
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
@@ -48,7 +47,7 @@ func standaloneSend(ctx context.Context, kwargs map[string]any) (map[string]any,
 		if ctx.Err() != nil {
 			return nil, ctx.Err()
 		}
-		slog.Debug("BlueBubbles standalone send failed", "error", err)
+		pkgLog().Debug("BlueBubbles standalone send failed", "error", err)
 		return gateway.SendError("BlueBubbles send failed: " + pyrepr.ExceptionMessage(err)), nil
 	}
 	adapter, err := NewBlueBubblesAdapter(ctx, cfg)
@@ -124,7 +123,7 @@ func InteractiveSetup(ctx context.Context) error {
 		ln("   Use iMessage addresses: email (user@icloud.com) or phone (+15551234567)"), nil)
 	if _, err := gateway.PlatformSetup.PromptAllowlist(ctx, "BLUEBUBBLES_ALLOWED_USERS",
 		"Allowed iMessage addresses (comma-separated, leave empty for open access)", "BlueBubbles allowlist configured",
-		"⚠️  No allowlist set — anyone who can iMessage you can use the bot!", nil); err != nil {
+		"⚠️  No allowlist set — anyone who can iMessage you can use the bot!"); err != nil {
 		return err
 	}
 	info(nil, ln("📬 Home Channel: phone or email for cron job delivery and notifications."),
@@ -160,7 +159,7 @@ type blueBubblesPlatformPlugin struct{}
 
 func (blueBubblesPlatformPlugin) Manifest() plugins.Manifest {
 	return plugins.Manifest{Name: "bluebubbles-platform", Version: "1.0.0", Kind: "platform", Source: "bundled", Key: "platforms/bluebubbles",
-		Author: "NousResearch",
+		Author: "Icebath",
 		Description: "BlueBubbles (Apple iMessage) gateway adapter for Icebath Agent. Talks to a local BlueBubbles macOS server: " +
 			"outbound sends over its REST API, inbound messages via a registered webhook listener. Supports media attachments, " +
 			"typing indicators, read receipts and tapbacks (Private API helper), group wake-word gating, and home-channel cron delivery.\n",

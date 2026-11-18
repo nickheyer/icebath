@@ -52,7 +52,7 @@ func (r *GatewayRunner) handleRetryCommand(ctx context.Context, event *gateway.M
 	if readErr != nil {
 		var transcriptErr *gateway.TranscriptReadError
 		if !errors.As(readErr, &transcriptErr) {
-			runLog().Debug(fmt.Sprintf("/retry could not read the active rows of %s", entry.SessionID), "exc_info", readErr)
+			pkgLog().Debug(fmt.Sprintf("/retry could not read the active rows of %s", entry.SessionID), "exc_info", readErr)
 		}
 		return historyUnreadable(ctx), nil
 	}
@@ -109,7 +109,6 @@ func (r *GatewayRunner) handleRetryCommand(ctx context.Context, event *gateway.M
 		}
 	}
 	entry.LastPromptTokens = 0
-	r.recordModelFriction(ctx, "retry", source, entry.SessionID, 1)
 	return r.handleMessage(ctx, retryResendEvent(ctx, event, lastUserMsg))
 }
 
@@ -131,7 +130,7 @@ func (r *GatewayRunner) retryInAdmission(ctx context.Context, event *gateway.Mes
 			case isValueError(err):
 				return i18n.T(ctx, "gateway.retry.unsafe", "", map[string]any{"error": pyrepr.ExceptionMessage(err)}), nil
 			case pyrepr.ExceptionName(err) == "RuntimeError":
-				runLog().Debug(fmt.Sprintf("/retry carrier plan refused for %s", sessionID), "exc_info", err)
+				pkgLog().Debug(fmt.Sprintf("/retry carrier plan refused for %s", sessionID), "exc_info", err)
 				return failedUnchanged(), nil
 			}
 			return nil, err
@@ -160,7 +159,6 @@ func (r *GatewayRunner) retryInAdmission(ctx context.Context, event *gateway.Mes
 	committed := func() {
 		r.sessionStore.ClearDirtyTranscript(sessionID)
 		entry.LastPromptTokens = 0
-		r.recordModelFriction(ctx, "retry", event.Source, sessionID, 1)
 	}
 	rewrite := &gateway.RetryRewrite{DB: db, SessionID: sessionID, Source: event.Source, Write: write, OnCommit: committed}
 	turn := retryResendEvent(ctx, event, resendText)
@@ -170,7 +168,7 @@ func (r *GatewayRunner) retryInAdmission(ctx context.Context, event *gateway.Mes
 	}
 	var refused *gateway.RetryRewriteRefused
 	if errors.As(err, &refused) {
-		runLog().Info(fmt.Sprintf("/retry refused with the transcript unchanged for %s: %s", sessionID, refused.Error()))
+		pkgLog().Info(fmt.Sprintf("/retry refused with the transcript unchanged for %s: %s", sessionID, refused.Error()))
 		return failedUnchanged(), nil
 	}
 	var storeErr *state.RuntimeStoreError

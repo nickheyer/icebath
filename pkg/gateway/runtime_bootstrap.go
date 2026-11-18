@@ -28,7 +28,7 @@ const (
 	ticketMaxEntries = 1024
 )
 
-// Monotonic seconds the ticket expiries read, replaced by tests the way hermes tests monkeypatch time.monotonic
+// Monotonic seconds the ticket expiries read, replaced by tests
 var ticketMonotonic = monotonicSeconds
 
 // One minted bootstrap grant with its expiry on the monotonic clock

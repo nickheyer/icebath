@@ -37,7 +37,7 @@ func TestScenarioTUIGatewayWebSocketTurn(t *testing.T) {
 		owner = controlVerb(s, "identify", nil)
 		return owner["state"] == "ready"
 	})
-	s.HasJSON(owner, `{"kind": "icebath-gateway", "protocol": 1, "runtime_protocol": 1, "profile": "default", "hermes_home": "${ICEBATH_HOME}",
+	s.HasJSON(owner, `{"kind": "icebath-gateway", "protocol": 1, "runtime_protocol": 1, "profile": "default", "icebath_home": "${ICEBATH_HOME}",
 		"served_profiles": [{"home": "${ICEBATH_HOME}", "profile_id": "${ICEBATH_HOME}"}]}`)
 	origin, _ := owner["api_origin"].(string)
 	if !strings.HasPrefix(origin, "http://127.0.0.1:") {

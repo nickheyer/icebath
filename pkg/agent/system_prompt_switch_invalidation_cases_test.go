@@ -12,7 +12,7 @@ import (
 const switchSessionID = "switch-session"
 
 func switchStoredPrompt(model, prov string) string {
-	return "You are Hermes Agent.\n\nConversation started: Thursday, September 24, 2026\nModel: " + model + "\nProvider: " + prov
+	return "You are Icebath Agent.\n\nConversation started: Thursday, September 24, 2026\nModel: " + model + "\nProvider: " + prov
 }
 
 func switchDB(t *testing.T, prompt string) *state.SessionDB {
@@ -43,7 +43,7 @@ func switchRunTurn(t *testing.T, db *state.SessionDB, model, prov, prose string)
 	prev := loopBuildSystemPrompt
 	loopBuildSystemPrompt = func(ctx context.Context, a *AIAgent, _ *string) (string, error) {
 		builds++
-		return "You are Hermes Agent.\n\n" + prose + timestampLine(ctx, a), nil
+		return "You are Icebath Agent.\n\n" + prose + timestampLine(ctx, a), nil
 	}
 	defer func() { loopBuildSystemPrompt = prev }()
 	a := &AIAgent{sessionID: switchSessionID, model: model, provider: prov, platform: "discord", sessionDB: db,
@@ -55,10 +55,10 @@ func switchRunTurn(t *testing.T, db *state.SessionDB, model, prov, prose string)
 }
 
 func TestEmptiedLiveIdentityRebuildsOnceThenReuses(t *testing.T) {
-	for _, tc := range []struct{ id, model, prov string }{{"provider_empty", "x-ai/grok-4.5", ""}, {"model_empty", "", "nous"}} {
+	for _, tc := range []struct{ id, model, prov string }{{"provider_empty", "x-ai/grok-4.5", ""}, {"model_empty", "", "deepseek"}} {
 		t.Run(tc.id, func(t *testing.T) {
 			prose := "MEMORY\nProvider: openrouter\nModel: some/other-model\n\n"
-			stale := switchStoredPrompt("x-ai/grok-4.5", "nous")
+			stale := switchStoredPrompt("x-ai/grok-4.5", "deepseek")
 			db := switchDB(t, stale)
 			if _, builds := switchRunTurn(t, db, tc.model, tc.prov, prose); builds != 1 {
 				t.Fatalf("first turn builds %d", builds)
@@ -76,7 +76,7 @@ func TestEmptiedLiveIdentityRebuildsOnceThenReuses(t *testing.T) {
 }
 
 func TestPromptWithoutIdentityLinesKeepsReusing(t *testing.T) {
-	legacy := "You are Hermes Agent.\n\nConversation started: Thursday, September 24, 2026"
+	legacy := "You are Icebath Agent.\n\nConversation started: Thursday, September 24, 2026"
 	db := switchDB(t, legacy)
 	a, builds := switchRunTurn(t, db, "x-ai/grok-4.5", "", "")
 	if builds != 0 || a.cachedSystemPrompt != legacy {

@@ -10,7 +10,7 @@ description: >
   media (image/video/audio/document), voice notes, interactive buttons, and DM
   allowlists. Complements the whatsmeow WhatsApp Web bridge (whatsapp) plugin;
   both share the WhatsApp gating, mention and formatting behaviour.
-author: NousResearch
+author: Icebath
 requires_env:
   - name: WHATSAPP_CLOUD_PHONE_NUMBER_ID
     description: "WhatsApp phone number ID from the Meta App Dashboard (WhatsApp → API Setup)"

@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 )
@@ -17,7 +18,7 @@ func NixRenderSettings(settingsJSON string) (string, error) {
 	}
 	obj, ok := pyjson.AsObject(v)
 	if !ok {
-		return "", fmt.Errorf("AttributeError: '%s' object has no attribute 'setdefault'", pyrepr.TypeName(v))
+		return "", fmt.Errorf("the Nix settings are %s, expected a mapping", errchain.Kind(v))
 	}
 	if _, has := obj.Get("_config_version"); !has {
 		obj.Set("_config_version", Defaults()["_config_version"])
@@ -53,7 +54,7 @@ func NixMergeConfig(nixJSONPath, configPath string) error {
 	}
 	nix, ok := nixValue.(map[string]any)
 	if !ok {
-		return fmt.Errorf("AttributeError: '%s' object has no attribute 'items'", pyrepr.TypeName(nixValue))
+		return fmt.Errorf("the Nix config %s is %s, expected a mapping", nixJSONPath, errchain.Kind(nixValue))
 	}
 	merged := nixDeepMerge(base, nix)
 	opts := SafeDumpOptions{AllowUnicode: true, Width: 80, Indent: &RuamelDefaultIndent, Version: "1.1"}

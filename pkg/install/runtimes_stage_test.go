@@ -51,7 +51,7 @@ func TestRuntimesStageRunsPMInstallWithTheOptOuts(t *testing.T) {
 		t.Fatalf("missing command %d %v", code, err)
 	}
 	var se *StageError
-	if !errors.As(err, &se) || se.Class != "deps_install_failed" {
-		t.Fatalf("failure class %v", err)
+	if !errors.As(err, &se) {
+		t.Fatalf("stage error %v", err)
 	}
 }

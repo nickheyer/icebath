@@ -184,8 +184,8 @@ func TestFreshExternalHandoffIsNotRecoveredBeforeWorkerAdopts(t *testing.T) {
 	if mustLedger(t)(l.MarkHandoffPending(ctx, recText(record, "id"))) == nil {
 		t.Fatal("handoff not marked")
 	}
-	patchChronos(t, &executionProcessID, "replacement-gateway")
-	patchChronos(t, &ownerIsLive, func(int64, any) (bool, error) { return false, nil })
+	patchSeam(t, &executionProcessID, "replacement-gateway")
+	patchSeam(t, &ownerIsLive, func(int64, any) (bool, error) { return false, nil })
 	if n, err := l.RecoverInterrupted(ctx); err != nil || n != 0 {
 		t.Fatalf("fresh handoff recovered %d %v", n, err)
 	}
@@ -203,10 +203,10 @@ func TestStaleExternalHandoffIsRecoveredUnknown(t *testing.T) {
 	ctx := context.Background()
 	record := mustLedger(t)(l.Create(ctx, "handoff-job", "builtin", nil))
 	pending := mustLedger(t)(l.MarkHandoffPending(ctx, recText(record, "id")))
-	patchChronos(t, &executionProcessID, "replacement-gateway")
-	patchChronos(t, &ownerIsLive, func(int64, any) (bool, error) { return false, nil })
+	patchSeam(t, &executionProcessID, "replacement-gateway")
+	patchSeam(t, &ownerIsLive, func(int64, any) (bool, error) { return false, nil })
 	started, _ := pending["handoff_started_at"].(float64)
-	patchChronos(t, &ledgerWallTime, func() float64 { return started + HandoffAdoptionGraceSeconds + 1 })
+	patchSeam(t, &ledgerWallTime, func() float64 { return started + HandoffAdoptionGraceSeconds + 1 })
 	if n, err := l.RecoverInterrupted(ctx); err != nil || n != 1 {
 		t.Fatalf("stale recovery %d %v", n, err)
 	}
@@ -225,11 +225,11 @@ func TestRecoveryDoesNotOverwriteConcurrentWorkerAdoption(t *testing.T) {
 		t.Fatal("handoff not marked")
 	}
 	started, _ := pending["handoff_started_at"].(float64)
-	patchChronos(t, &executionProcessID, "replacement-scheduler")
-	patchChronos(t, &ledgerWallTime, func() float64 { return started + HandoffAdoptionGraceSeconds + 1 })
-	patchChronos(t, &ledgerGetpid, ledgerGetpid)
-	patchChronos(t, &ledgerStartTime, ledgerStartTime)
-	patchChronos(t, &ownerIsLive, func(int64, any) (bool, error) {
+	patchSeam(t, &executionProcessID, "replacement-scheduler")
+	patchSeam(t, &ledgerWallTime, func() float64 { return started + HandoffAdoptionGraceSeconds + 1 })
+	patchSeam(t, &ledgerGetpid, ledgerGetpid)
+	patchSeam(t, &ledgerStartTime, ledgerStartTime)
+	patchSeam(t, &ownerIsLive, func(int64, any) (bool, error) {
 		executionProcessID = "external-worker"
 		ledgerGetpid = func() int { return 4242 }
 		ledgerStartTime = func(int) (int64, bool) { return 9876, true }
@@ -253,8 +253,8 @@ func TestForeignProcessCannotStartOrFinishExecution(t *testing.T) {
 	record := mustLedger(t)(l.Create(ctx, "owner-fence", "builtin", nil))
 	id, pid := recText(record, "id"), int(recInt(record, "pid"))
 	original := executionProcessID
-	patchChronos(t, &executionProcessID, "foreign-process")
-	patchChronos(t, &ledgerGetpid, func() int { return pid + 1 })
+	patchSeam(t, &executionProcessID, "foreign-process")
+	patchSeam(t, &ledgerGetpid, func() int { return pid + 1 })
 	if r := mustLedger(t)(l.MarkRunning(ctx, id)); r != nil {
 		t.Fatal("foreign start")
 	}
@@ -319,7 +319,7 @@ func TestFailedExecutionKeepsError(t *testing.T) {
 func TestRetentionBoundsTerminalHistoryButPreservesInflight(t *testing.T) {
 	l, _ := ledgerFixture(t)
 	ctx := context.Background()
-	patchChronos(t, &maxTerminalExecutions, 3)
+	patchSeam(t, &maxTerminalExecutions, 3)
 	inflight := mustLedger(t)(l.Create(ctx, "live", "builtin", nil))
 	mustLedger(t)(l.MarkRunning(ctx, recText(inflight, "id")))
 	for i := range 8 {
@@ -349,7 +349,7 @@ func TestRecentlyFinishedLongRunningExecutionSurvivesRetention(t *testing.T) {
 	s := mutableClockStore(t, &cur, time.UTC)
 	l := openExecutionsLedger(s)
 	ctx := context.Background()
-	patchChronos(t, &maxTerminalExecutions, 1)
+	patchSeam(t, &maxTerminalExecutions, 1)
 	long := mustLedger(t)(l.Create(ctx, "long-running", "builtin", nil))
 	if mustLedger(t)(l.MarkRunning(ctx, recText(long, "id"))) == nil {
 		t.Fatal("not running")
@@ -495,7 +495,7 @@ func countLedgerConnections(t *testing.T) (*[]int, *[]int) {
 	var opened, closed []int
 	var mu sync.Mutex
 	real := state.OpenDB
-	patchChronos(t, &state.OpenDB, func(ctx context.Context, path, label string, opts ...state.OpenDBOption) (state.SQLiteConn, error) {
+	patchSeam(t, &state.OpenDB, func(ctx context.Context, path, label string, opts ...state.OpenDBOption) (state.SQLiteConn, error) {
 		conn, err := real(ctx, path, label, opts...)
 		if err != nil {
 			return nil, err
@@ -590,11 +590,11 @@ func TestHistoryOrdersByInstantAcrossDstFallBack(t *testing.T) {
 func TestProviderStartRecoversInterruptedRecordsBeforeTick(t *testing.T) {
 	s, _ := newTestStore(t)
 	var events []string
-	patchChronos(t, &recoverInterruptedExecutions, func(context.Context, *Store) (int, error) {
+	patchSeam(t, &recoverInterruptedExecutions, func(context.Context, *Store) (int, error) {
 		events = append(events, "recover")
 		return 0, nil
 	})
-	patchChronos(t, &recordTickerHeartbeat, func(*Store, context.Context, bool) { events = append(events, "heartbeat") })
+	patchSeam(t, &recordTickerHeartbeat, func(*Store, context.Context, bool) { events = append(events, "heartbeat") })
 	stop := make(chan struct{})
 	close(stop)
 	interval := 1.0

@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"log/slog"
 	"math"
 	"os"
 	"path/filepath"
@@ -15,7 +14,6 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/agent"
 	"github.com/nickheyer/icebath/pkg/config"
-	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
@@ -27,7 +25,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/selfupdate/updaterecord"
 	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tools"
-	"github.com/nickheyer/icebath/pkg/tuigateway"
+	"github.com/nickheyer/icebath/pkg/tuihost"
 )
 
 // Stand in terminal cwd values resolved to the home dir at runtime, never an explicit workspace
@@ -42,34 +40,31 @@ var Banner struct {
 
 // Launch home captured on first use, the launch state db handle and the homes served besides the launch one
 var (
-	hermesHome         string
-	hermesHomeAtImport string
-	homeImportOnce     sync.Once
-	dbMu               sync.Mutex
-	sharedDB           *state.DB
-	dbError            string
-	servedProfileMu    sync.Mutex
-	servedProfileHomes = map[string]bool{}
+	icebathHome         string
+	icebathHomeAtImport string
+	homeImportOnce      sync.Once
+	dbMu                sync.Mutex
+	sharedDB            *state.DB
+	dbError             string
+	servedProfileMu     sync.Mutex
+	servedProfileHomes  = map[string]bool{}
 )
-
-// Logger every server module writes through
-func logger() *slog.Logger { return slog.Default().With("logger", "tui_gateway.server") }
 
 // Home captured on the first read after the profile override, the value tui_gateway.server takes at import
 func importedHome() string {
 	homeImportOnce.Do(func() {
-		if hermesHome == "" {
-			hermesHome = home.Process()
-			hermesHomeAtImport = hermesHome
+		if icebathHome == "" {
+			icebathHome = home.Process()
+			icebathHomeAtImport = icebathHome
 		}
 	})
-	return hermesHome
+	return icebathHome
 }
 
 // Launch profile home at call time, the swapped copy when a harness changed it else the live process home
 func launchHome() string {
-	if importedHome() != hermesHomeAtImport {
-		return hermesHome
+	if importedHome() != icebathHomeAtImport {
+		return icebathHome
 	}
 	return home.Process()
 }
@@ -85,7 +80,7 @@ func getDB(ctx context.Context) *state.DB {
 		db, err := state.Acquire(ctx, launchStateDBPath())
 		if err != nil {
 			dbError = err.Error()
-			logger().Warn(fmt.Sprintf("TUI session store unavailable — continuing without state.db features: %s", err))
+			pkgLog().Warn(fmt.Sprintf("TUI session store unavailable — continuing without state.db features: %s", err))
 			return nil
 		}
 		sharedDB, dbError = db, ""
@@ -94,7 +89,7 @@ func getDB(ctx context.Context) *state.DB {
 }
 
 // Effective user config of the active profile without the defaults merge
-func loadCfg(ctx context.Context) map[string]any { return tuigateway.LoadCfg(ctx) }
+func loadCfg(ctx context.Context) map[string]any { return tuihost.LoadCfg(ctx) }
 
 // display section of the behavioral config, empty when absent or malformed
 func displayCfg(ctx context.Context) map[string]any {
@@ -187,7 +182,7 @@ func profileConfiguredCwd(ctx context.Context, profileHome string) string {
 	if err != nil {
 		var unavailable *config.ConfigBackendUnavailable
 		if errors.As(err, &unavailable) {
-			logger().Warn(fmt.Sprintf("terminal.cwd of %s unavailable: %s", profileHome, unavailable.SystemExitCode()))
+			pkgLog().Warn(fmt.Sprintf("terminal.cwd of %s unavailable: %s", profileHome, unavailable.SystemExitCode()))
 		}
 		return ""
 	}
@@ -198,7 +193,7 @@ func profileConfiguredCwd(ctx context.Context, profileHome string) string {
 	if err != nil {
 		var unavailable *config.ConfigBackendUnavailable
 		if errors.As(err, &unavailable) {
-			logger().Warn(fmt.Sprintf("terminal.cwd of %s unavailable: %s", profileHome, unavailable.SystemExitCode()))
+			pkgLog().Warn(fmt.Sprintf("terminal.cwd of %s unavailable: %s", profileHome, unavailable.SystemExitCode()))
 		}
 		return ""
 	}
@@ -282,19 +277,7 @@ func getUsage(ctx context.Context, a *agent.AIAgent) map[string]any {
 			}
 		}
 	}
-	if capture := a.CreditsCapture(); capture != nil {
-		if gauge := gateway.PlanGauge(capture.Credits()); gauge != nil {
-			usage["plan_gauge"] = gauge
-		}
-	}
 	usage["active_subagents"] = tools.AsyncDelegationActiveCount()
-	if provider.IsTruthyValue(os.Getenv("ICEBATH_DEV_CREDITS")) {
-		if capture := a.CreditsCapture(); capture != nil {
-			if spent, ok := capture.CreditsSpentMicros(); ok {
-				usage["dev_credits_spent_micros"] = spent
-			}
-		}
-	}
 	return usage
 }
 
@@ -307,7 +290,7 @@ func probeCredentials(a *agent.AIAgent) string {
 }
 
 // Usage of the live agent, else empty
-func sessionUsageSnapshot(ctx context.Context, session *tuigateway.Session) map[string]any {
+func sessionUsageSnapshot(ctx context.Context, session *tuihost.Session) map[string]any {
 	if a := sessionAgent(session); a != nil {
 		return getUsage(ctx, a)
 	}
@@ -321,13 +304,13 @@ func projectInfoForCwd(ctx context.Context, cwd string) any {
 	}
 	db, err := tools.OpenProjectsDB(ctx, &tools.Env{Home: home.Dir(ctx)})
 	if err != nil {
-		logger().Debug("failed to resolve project for cwd", "error", err)
+		pkgLog().Debug("failed to resolve project for cwd", "error", err)
 		return nil
 	}
 	defer func() { _ = db.Close() }()
 	project, err := db.ProjectForPath(cwd, false)
 	if err != nil {
-		logger().Debug("failed to resolve project for cwd", "error", err)
+		pkgLog().Debug("failed to resolve project for cwd", "error", err)
 		return nil
 	}
 	if project == nil {
@@ -341,7 +324,7 @@ func projectInfoForCwd(ctx context.Context, cwd string) any {
 }
 
 // Epoch seconds the running turn started, nil when idle
-func turnStartedAt(session *tuigateway.Session) any {
+func turnStartedAt(session *tuihost.Session) any {
 	inflight, _ := session.Get("inflight_turn").(map[string]any)
 	if inflight == nil || !truthy(inflight["started_at"]) {
 		return nil
@@ -373,9 +356,9 @@ func fastTierApplies(view agent.SessionRuntime, model, providerName string, rout
 }
 
 // Session info payload of the status bar, model route, approvals, workspace, usage and inventory
-func sessionInfo(ctx context.Context, a *agent.AIAgent, session *tuigateway.Session) map[string]any {
+func sessionInfo(ctx context.Context, a *agent.AIAgent, session *tuihost.Session) map[string]any {
 	if session == nil {
-		for _, live := range tuigateway.LiveSessions() {
+		for _, live := range tuihost.LiveSessions() {
 			if sessionAgent(live.Session) == a {
 				session = live.Session
 				break
@@ -456,7 +439,7 @@ func sessionInfo(ctx context.Context, a *agent.AIAgent, session *tuigateway.Sess
 		"tools":                 map[string]any{},
 		"skills":                map[string]any{},
 		"cwd":                   cwd,
-		"branch":                tuigateway.Branch(cwd),
+		"branch":                tuihost.Branch(cwd),
 		"project":               projectInfoForCwd(ctx, cwd),
 		"terminal_backend":      effectiveTerminalBackend(ctx),
 		"personality":           strOr(personality),
@@ -478,6 +461,7 @@ func sessionInfo(ctx context.Context, a *agent.AIAgent, session *tuigateway.Sess
 	} else {
 		info["profile_name"] = currentProfileName(ctx)
 	}
+	info["redact_secrets"] = tools.RedactEnabled(ctx)
 	if versionInfo, err := updaterecord.GetVersionInfo(); err == nil {
 		info["version"], info["release_date"] = versionInfo.BaseVersion, Banner.ReleaseDate
 	}
@@ -546,21 +530,21 @@ func mcpStatusRows(ctx context.Context) []any {
 }
 
 // Emits session info for a session holding an agent, swallowing any failure
-func emitSessionInfoForSession(ctx context.Context, sid string, session *tuigateway.Session) {
+func emitSessionInfoForSession(ctx context.Context, sid string, session *tuihost.Session) {
 	if sessionAgent(session) != nil {
-		suppress(func() { tuigateway.Emit(ctx, "session.info", sid, sessionInfo(ctx, sessionAgent(session), session)) })
+		suppress(func() { tuihost.Emit(ctx, "session.info", sid, sessionInfo(ctx, sessionAgent(session), session)) })
 	}
 }
 
 // Re-emits session info to every live session of this process, for approvals writers outside config.set
 func BroadcastSessionInfo(ctx context.Context) {
-	for _, live := range tuigateway.LiveSessions() {
+	for _, live := range tuihost.LiveSessions() {
 		emitSessionInfoForSession(ctx, live.SID, live.Session)
 	}
 }
 
 // Live agent a session record holds, nil before its build
-func sessionAgent(session *tuigateway.Session) *agent.AIAgent {
+func sessionAgent(session *tuihost.Session) *agent.AIAgent {
 	a, _ := session.Get("agent").(*agent.AIAgent)
 	return a
 }
@@ -622,7 +606,7 @@ func dbUnavailableError(ctx context.Context, rid any, code int) map[string]any {
 }
 
 // Model and provider a live session runs, from its pending switch, agent or composer pick, else the profile default
-func liveSessionIdentity(ctx context.Context, session *tuigateway.Session) (string, string) {
+func liveSessionIdentity(ctx context.Context, session *tuihost.Session) (string, string) {
 	pending, _ := session.Get("pending_model_switch").(map[string]any)
 	a := sessionAgent(session)
 	view := agent.SessionRuntimeView(a)
@@ -689,7 +673,7 @@ func profileScoped(handler Handler) Handler {
 				panic(err)
 			}
 			scopeHome = h
-		} else if session := tuigateway.SessionRecord(strOr(params["session_id"])); session != nil {
+		} else if session := tuihost.SessionRecord(strOr(params["session_id"])); session != nil {
 			scopeHome = strOr(session.Get("profile_home"))
 		} else {
 			scopeHome = connectionProfileHome(ctx)

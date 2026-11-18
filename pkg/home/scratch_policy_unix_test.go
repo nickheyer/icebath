@@ -142,7 +142,7 @@ func TestScratchDirPermissionPolicy(t *testing.T) {
 			t.Fatalf("mode %o, want %o", got, expected)
 		}
 	})
-	t.Run("hermes uid gid applied to scratch", func(t *testing.T) {
+	t.Run("icebath uid gid applied to scratch", func(t *testing.T) {
 		tmp := t.TempDir()
 		isolatePolicyEnv(t, tmp)
 		t.Setenv("ICEBATH_UID", "1000")

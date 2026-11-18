@@ -246,7 +246,7 @@ func TestUnrecognisedServerSkipsSingleModelProbe(t *testing.T) {
 
 func TestLocalEndpointStaleCacheReconciledFromLiveProbe(t *testing.T) {
 	ctx, ft, dir := metaTest(t)
-	model, base := "NousResearch/Hermes-3-Llama-3.1-70B", "http://192.168.1.50:8000/v1"
+	model, base := "meta-llama/Llama-3.1-70B-Instruct", "http://192.168.1.50:8000/v1"
 	writeContextCacheFile(t, dir, map[string]any{model + "@" + base: 131072})
 	seedServerType(base, "")
 	ft.on("GET", base+"/models", 200, map[string]any{"data": []any{map[string]any{"id": model, "max_model_len": 32768}}})

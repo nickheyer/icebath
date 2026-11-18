@@ -3,7 +3,6 @@ package gateway
 import (
 	"context"
 	"fmt"
-	"log/slog"
 
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
@@ -100,7 +99,7 @@ func projectResult(ctx context.Context, a *SessionAuthority, ref SessionRef, liv
 	if !(mutationPolicy[operation] || operation == "reset" || operation == "compress" || operation == "rewind") || owns {
 		if operation == "workspace" {
 			if err := dropSessionTerminal(ctx, a, ref); err != nil {
-				slog.Warn(fmt.Sprintf("Session %s moved without dropping its terminal environment: %s", ref.SessionID, pyExceptionRepr(err)))
+				pkgLog().Warn(fmt.Sprintf("Session %s moved without dropping its terminal environment: %s", ref.SessionID, pyExceptionRepr(err)))
 			}
 		}
 		if err := projectCommitted(ctx, a, ref, operation, result); err != nil {

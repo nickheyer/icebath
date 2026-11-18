@@ -80,13 +80,15 @@ type AdmissionReceipt struct {
 	ExecutionGeneration *int64
 }
 
-// Queued admission with its input text, the queued row verbs served and its steering transfer flag
+// Queued admission with its input text, transcript display kind and metadata, queued row verbs and steering flag
 type PendingAdmission struct {
 	AdmissionReceipt
-	InputID  string
-	Text     string
-	Controls []string
-	Steering bool
+	InputID         string
+	Text            string
+	DisplayKind     string
+	DisplayMetadata map[string]any
+	Controls        []string
+	Steering        bool
 }
 
 // Attach snapshot with history, pending admissions, open prompts and the resolved transcript target

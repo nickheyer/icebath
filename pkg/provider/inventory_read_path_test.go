@@ -19,7 +19,7 @@ func optionsHome(t *testing.T) (context.Context, string) {
 	icebathOverlays = overlays
 	providerModelIDsFn = func(_ context.Context, p string, _ bool) CatalogRows { return CatalogRows{IDs: staticCatalogModels(p)} }
 	savedPrewarm := inventoryPrewarmFn
-	inventoryPrewarmFn = func(context.Context, []map[string]any, string, string) <-chan struct{} { return nil }
+	inventoryPrewarmFn = func(context.Context, []map[string]any) <-chan struct{} { return nil }
 	t.Cleanup(func() { inventoryPrewarmFn = savedPrewarm })
 	accountUsageCache.Lock()
 	accountUsageCache.snapshots = map[accountUsageKey]*AccountUsageSnapshot{}
@@ -117,7 +117,7 @@ func readPathHome(t *testing.T, hung string) (context.Context, func() []string, 
 	}
 	savedMap, savedPrewarm := providerToModelsDev, inventoryPrewarmFn
 	providerToModelsDev = map[string]string{"deepseek": "deepseek"}
-	inventoryPrewarmFn = func(context.Context, []map[string]any, string, string) <-chan struct{} { return nil }
+	inventoryPrewarmFn = func(context.Context, []map[string]any) <-chan struct{} { return nil }
 	t.Cleanup(func() {
 		WaitProviderModelsRefreshes()
 		providerToModelsDev, inventoryPrewarmFn = savedMap, savedPrewarm
@@ -208,7 +208,7 @@ func writeCooldownPool(t *testing.T, h, provider, cooldown, model string) map[st
 func cooldownHome(t *testing.T) (context.Context, string) {
 	t.Helper()
 	ctx, h := optionsHome(t)
-	writeConfigYAML(t, h, "model:\n  provider: nous\n  default: test-model\nauth:\n  adopt_external_logins: false\n")
+	writeConfigYAML(t, h, "model:\n  provider: deepseek\n  default: test-model\nauth:\n  adopt_external_logins: false\n")
 	pickerFetchModelsDevFn = func(context.Context, bool) map[string]any {
 		return map[string]any{"google": map[string]any{"env": []any{"GOOGLE_API_KEY", "GEMINI_API_KEY"}, "name": "Google"}}
 	}

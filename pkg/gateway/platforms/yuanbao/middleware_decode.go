@@ -151,10 +151,10 @@ func (m *DecodeMiddleware) Handle(ctx context.Context, ic *InboundContext, next 
 				head = hex.EncodeToString(data)
 				head = head[:min(128, len(head))]
 			}
-			slog.Info(fmt.Sprintf("[%s] Push decoded but no valid message. raw hex(first64)=%s", name, head))
+			pkgLog().Info(fmt.Sprintf("[%s] Push decoded but no valid message. raw hex(first64)=%s", name, head))
 		case merged == nil:
 			merged, ic.DecodedVia = push, via
-			slog.Info(fmt.Sprintf("[%s] Frame decoded (via=%s): len=%d", name, via, len(data)))
+			pkgLog().Info(fmt.Sprintf("[%s] Frame decoded (via=%s): len=%d", name, via, len(data)))
 		case pyrepr.Truthy(push.GetOr("msg_body", []any{})):
 			extra, isList := push.GetOr("msg_body", []any{}).([]any)
 			base, baseIsList := merged.GetOr("msg_body", []any{}).([]any)
@@ -164,7 +164,7 @@ func (m *DecodeMiddleware) Handle(ctx context.Context, ic *InboundContext, next 
 			}
 			body := append(append(append([]any{}, base...), textElem("\n")), extra...)
 			merged.Set("msg_body", body)
-			slog.Info(fmt.Sprintf("[%s] Merged %d extra msg_body elements from aggregated push", name, len(extra)))
+			pkgLog().Info(fmt.Sprintf("[%s] Merged %d extra msg_body elements from aggregated push", name, len(extra)))
 		}
 	}
 	if merged == nil || merged.Len() == 0 {
@@ -180,11 +180,11 @@ func (m *DecodeMiddleware) Handle(ctx context.Context, ic *InboundContext, next 
 		}
 		msgTypes = append(msgTypes, dictGetOr(d, "msg_type", ""))
 	}
-	slog.Info(fmt.Sprintf("[%s] Push decoded (via=%s): from=%s group=%s msg_id=%s msg_types=%s", name, ic.DecodedVia,
+	pkgLog().Info(fmt.Sprintf("[%s] Push decoded (via=%s): from=%s group=%s msg_id=%s msg_types=%s", name, ic.DecodedVia,
 		pyrepr.Str(merged.GetOr("from_account", "")), pyrepr.Str(merged.GetOr("group_code", "")),
 		pyrepr.Str(merged.GetOr("msg_id", "")), pyrepr.Repr(msgTypes)))
-	if slog.Default().Enabled(ctx, slog.LevelDebug) {
-		slog.Debug(fmt.Sprintf("[%s] Push payload: %s", name, pyrepr.Str(ic.Push)))
+	if pkgLog().Enabled(ctx, slog.LevelDebug) {
+		pkgLog().Debug(fmt.Sprintf("[%s] Push payload: %s", name, pyrepr.Str(ic.Push)))
 	}
 	return next()
 }
@@ -220,7 +220,7 @@ func newDedupMiddleware() InboundMiddleware {
 
 func (m *DedupMiddleware) Handle(ctx context.Context, ic *InboundContext, next func() error) error {
 	if pyrepr.Truthy(ic.MsgID) && ic.Adapter.dedup.IsDuplicate(pyrepr.Str(ic.MsgID)) {
-		slog.Debug(fmt.Sprintf("[%s] Duplicate message ignored: msg_id=%s", ic.Adapter.Name(), pyrepr.Str(ic.MsgID)))
+		pkgLog().Debug(fmt.Sprintf("[%s] Duplicate message ignored: msg_id=%s", ic.Adapter.Name(), pyrepr.Str(ic.MsgID)))
 		return nil
 	}
 	return next()
@@ -240,7 +240,7 @@ func isSelfReference(fromAccount, botID any) bool {
 
 func (m *SkipSelfMiddleware) Handle(ctx context.Context, ic *InboundContext, next func() error) error {
 	if isSelfReference(ic.FromAccount, ic.Adapter.botIDValue()) {
-		slog.Debug(fmt.Sprintf("[%s] Ignoring self-sent message from %s", ic.Adapter.Name(), pyrepr.Str(ic.FromAccount)))
+		pkgLog().Debug(fmt.Sprintf("[%s] Ignoring self-sent message from %s", ic.Adapter.Name(), pyrepr.Str(ic.FromAccount)))
 		return nil
 	}
 	return next()
@@ -318,7 +318,7 @@ func (m *AccessGuardMiddleware) Handle(ctx context.Context, ic *InboundContext, 
 			return err
 		}
 		if !allowed {
-			slog.Debug(fmt.Sprintf("[%s] DM from %s blocked by dm_policy=%s", ic.Adapter.Name(), pyrepr.Str(ic.FromAccount), policy.DMPolicy))
+			pkgLog().Debug(fmt.Sprintf("[%s] DM from %s blocked by dm_policy=%s", ic.Adapter.Name(), pyrepr.Str(ic.FromAccount), policy.DMPolicy))
 			return nil
 		}
 	}
@@ -328,7 +328,7 @@ func (m *AccessGuardMiddleware) Handle(ctx context.Context, ic *InboundContext, 
 			return err
 		}
 		if !allowed {
-			slog.Debug(fmt.Sprintf("[%s] Group %s blocked by group_policy=%s", ic.Adapter.Name(), pyrepr.Str(ic.GroupCode), policy.GroupPolicy))
+			pkgLog().Debug(fmt.Sprintf("[%s] Group %s blocked by group_policy=%s", ic.Adapter.Name(), pyrepr.Str(ic.GroupCode), policy.GroupPolicy))
 			return nil
 		}
 	}
@@ -379,10 +379,10 @@ func persistHome(ctx context.Context, adapter *YuanbaoAdapter, ic *InboundContex
 				return err
 			}
 		}
-		slog.Info(fmt.Sprintf("[%s] Auto-sethome: designated %s (%s) as Yuanbao home channel", adapter.Name(), ic.ChatID, pyrepr.Str(ic.ChatName)))
+		pkgLog().Info(fmt.Sprintf("[%s] Auto-sethome: designated %s (%s) as Yuanbao home channel", adapter.Name(), ic.ChatID, pyrepr.Str(ic.ChatName)))
 		return nil
 	}()
 	if err != nil {
-		slog.Warn(fmt.Sprintf("[%s] Auto-sethome failed: %s", adapter.Name(), errText(err)))
+		pkgLog().Warn(fmt.Sprintf("[%s] Auto-sethome failed: %s", adapter.Name(), errText(err)))
 	}
 }

@@ -30,7 +30,7 @@ func NewSupervisedTickerThread(target func(), stop <-chan struct{}, name string)
 	if name == "" {
 		name = "cron-scheduler"
 	}
-	return &SupervisedTickerThread{target: target, stop: stop, name: name, log: slog.Default()}
+	return &SupervisedTickerThread{target: target, stop: stop, name: name, log: pkgLog()}
 }
 
 // Process wide report of a failure escaping a cron goroutine, printed to stderr as threading.excepthook prints it

@@ -5,7 +5,6 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
-	"log/slog"
 
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/state"
@@ -390,7 +389,7 @@ func healReplacement(ctx context.Context, conn state.SQLiteConn, caller, holder 
 	if err != nil || bound {
 		return false, err
 	}
-	slog.Warn(fmt.Sprintf("API route of %s taken back from heal replacement %s", caller, holder))
+	pkgLog().Warn(fmt.Sprintf("API route of %s taken back from heal replacement %s", caller, holder))
 	return true, nil
 }
 

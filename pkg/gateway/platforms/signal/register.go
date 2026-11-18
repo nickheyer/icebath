@@ -2,7 +2,6 @@ package signal
 
 import (
 	"context"
-	"log/slog"
 	"strings"
 
 	"github.com/nickheyer/icebath/pkg/gateway"
@@ -28,7 +27,7 @@ func validateConfig(ctx context.Context, config *gateway.PlatformConfig) (bool, 
 	if err != nil || valid {
 		return valid, err
 	}
-	slog.Warn("Signal: SIGNAL_HTTP_URL or SIGNAL_ACCOUNT not configured")
+	pkgLog().Warn("Signal: SIGNAL_HTTP_URL or SIGNAL_ACCOUNT not configured")
 	return false, nil
 }
 
@@ -66,7 +65,7 @@ type signalPlatformPlugin struct{}
 
 func (signalPlatformPlugin) Manifest() plugins.Manifest {
 	return plugins.Manifest{Name: "signal-platform", Version: "1.0.0", Kind: "platform", Source: "bundled", Key: "platforms/signal",
-		Author: "NousResearch",
+		Author: "Icebath",
 		Description: "Signal gateway adapter for Icebath Agent via a signal-cli daemon in HTTP mode (SSE inbound, JSON-RPC 2.0 outbound). " +
 			"Supports DMs, allowlisted groups, attachments, reactions and home-channel cron delivery. Phone numbers are treated as PII in logs.\n",
 		RequiresEnv: []plugins.EnvSpec{

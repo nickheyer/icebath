@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"strings"
-	"time"
 
 	"github.com/nickheyer/icebath/pkg/agent"
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
@@ -13,7 +12,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tools"
-	"github.com/nickheyer/icebath/pkg/tuigateway"
+	"github.com/nickheyer/icebath/pkg/tuihost"
 )
 
 // Breakdown engine of the context gauge behind the live context view
@@ -75,14 +74,14 @@ func slashRows(list []any) []map[string]any {
 }
 
 // Copy of the live history taken under the history lock
-func slashHistorySnapshot(session *tuigateway.Session) []any {
+func slashHistorySnapshot(session *tuihost.Session) []any {
 	unlock := lockHistory(session)
 	defer unlock()
 	return append([]any(nil), historyList(session.Get("history"))...)
 }
 
 // Dispatches review against the live agent on the async delegation rail under the session identity
-func formatLiveReviewOutput(ctx context.Context, sid string, session *tuigateway.Session, arg string) string {
+func formatLiveReviewOutput(ctx context.Context, sid string, session *tuihost.Session, arg string) string {
 	if session == nil {
 		return "Nothing to review yet — send a message first."
 	}
@@ -123,7 +122,7 @@ type refineReviewAgent interface {
 }
 
 // Dispatches refine against the live agent, spawning the background memory and skills review directly
-func formatLiveRefineOutput(ctx context.Context, sid string, session *tuigateway.Session, arg string) string {
+func formatLiveRefineOutput(ctx context.Context, sid string, session *tuihost.Session, arg string) string {
 	if session == nil {
 		return "Refine unavailable (no session)."
 	}
@@ -146,7 +145,7 @@ func formatLiveRefineOutput(ctx context.Context, sid string, session *tuigateway
 				snapshot = rows
 			}
 		}); failure != nil {
-			logger().Debug("failed to load persisted /refine transcript", "error", failureText(failure))
+			pkgLog().Debug("failed to load persisted /refine transcript", "error", failureText(failure))
 		}
 	}
 	if len(snapshot) == 0 {
@@ -172,8 +171,8 @@ func formatLiveRefineOutput(ctx context.Context, sid string, session *tuigateway
 	return "⚗ Reviewing this conversation in the background" + tail + " — any memory/skill updates will be reported when done."
 }
 
-// Provider limits then Nous credits lines read under the session profile scope, no agent needed
-func usageAccountBlocks(ctx context.Context, session *tuigateway.Session) []string {
+// Provider account limit lines read under the session profile scope, no agent needed
+func usageAccountBlocks(ctx context.Context, session *tuihost.Session) []string {
 	a := sessionAgent(session)
 	pick, _ := session.Get("model_override").(map[string]any)
 	var lines []string
@@ -198,22 +197,11 @@ func usageAccountBlocks(ctx context.Context, session *tuigateway.Session) []stri
 		}
 		lines = append(lines, provider.RenderAccountUsageLines(provider.FetchAccountUsage(scope, providerName, opts), false)...)
 	})
-	suppress(func() {
-		var credits *provider.CreditsState
-		if a != nil {
-			credits = a.CreditsCapture().Credits()
-		}
-		if credits != nil && credits.IsUsageWindow() {
-			lines = append(lines, provider.NousCreditsLines(scope, false, 10*time.Second, credits)...)
-			return
-		}
-		lines = append(lines, provider.NousCreditsLines(scope, false, 10*time.Second, nil)...)
-	})
 	return lines
 }
 
 // Session token usage block followed by the account limits, the no agent reply when both are empty
-func formatLiveUsageOutput(ctx context.Context, sid string, session *tuigateway.Session, arg string) string {
+func formatLiveUsageOutput(ctx context.Context, sid string, session *tuihost.Session, arg string) string {
 	extra := usageAccountBlocks(ctx, session)
 	var parts []string
 	if tokens := formatLiveUsageTokens(ctx, session); tokens != "" {
@@ -229,7 +217,7 @@ func formatLiveUsageOutput(ctx context.Context, sid string, session *tuigateway.
 }
 
 // Session token usage table of the live usage snapshot, empty without an agent or usage
-func formatLiveUsageTokens(ctx context.Context, session *tuigateway.Session) string {
+func formatLiveUsageTokens(ctx context.Context, session *tuihost.Session) string {
 	a := sessionAgent(session)
 	usage := sessionUsageSnapshot(ctx, session)
 	if a == nil && len(usage) == 0 {
@@ -272,7 +260,7 @@ func formatLiveUsageTokens(ctx context.Context, session *tuigateway.Session) str
 }
 
 // Session scoped transcript with row ids, ok false without a db or key or when the read fails
-func liveSessionMessages(ctx context.Context, session *tuigateway.Session) (rows []map[string]any, ok bool) {
+func liveSessionMessages(ctx context.Context, session *tuihost.Session) (rows []map[string]any, ok bool) {
 	db, release := sessionDB(ctx, session)
 	defer release()
 	key := strOr(session.Get("session_key"))
@@ -299,12 +287,12 @@ func slashAnyList(rows []map[string]any) []any {
 }
 
 // Numbered transcript of the session, the persisted rows preferred over the live history
-func formatLiveHistoryOutput(ctx context.Context, sid string, session *tuigateway.Session, arg string) string {
+func formatLiveHistoryOutput(ctx context.Context, sid string, session *tuihost.Session, arg string) string {
 	history := slashHistorySnapshot(session)
 	if dbRows, ok := liveSessionMessages(ctx, session); ok {
 		history = slashAnyList(dbRows)
 	}
-	messages, err := tuigateway.HistoryToMessages(ctx, history, strOr(session.Get("profile_home")), true)
+	messages, err := tuihost.HistoryToMessages(ctx, history, strOr(session.Get("profile_home")), true)
 	panicIf(err)
 	if len(messages) == 0 {
 		return "No conversation history yet."
@@ -340,19 +328,19 @@ func formatLiveHistoryOutput(ctx context.Context, sid string, session *tuigatewa
 }
 
 // Context view of the session, the live agent breakdown when it renders, else the persisted state view
-func formatLiveContextOutput(ctx context.Context, sid string, session *tuigateway.Session, arg string) string {
+func formatLiveContextOutput(ctx context.Context, sid string, session *tuihost.Session, arg string) string {
 	profileHome := strOr(session.Get("profile_home"))
 	var messages []any
 	if failure := catchPanic(func() {
 		dbRows, _ := liveSessionMessages(ctx, session)
-		converted, err := tuigateway.HistoryToMessages(ctx, slashAnyList(dbRows), profileHome, true)
+		converted, err := tuihost.HistoryToMessages(ctx, slashAnyList(dbRows), profileHome, true)
 		panicIf(err)
 		messages = converted
 	}); failure != nil {
 		messages = nil
 	}
 	if len(messages) == 0 {
-		converted, err := tuigateway.HistoryToMessages(ctx, slashHistorySnapshot(session), profileHome, true)
+		converted, err := tuihost.HistoryToMessages(ctx, slashHistorySnapshot(session), profileHome, true)
 		panicIf(err)
 		messages = converted
 	}
@@ -440,7 +428,7 @@ func formatLiveContextOutput(ctx context.Context, sid string, session *tuigatewa
 }
 
 // Current model and provider of the live agent
-func formatLiveModelOutput(session *tuigateway.Session) string {
+func formatLiveModelOutput(session *tuihost.Session) string {
 	var model, providerName string
 	if session != nil {
 		if a := sessionAgent(session); a != nil {
@@ -457,7 +445,7 @@ func formatLiveModelOutput(session *tuigateway.Session) string {
 }
 
 // Output of the session status method for this session
-func formatLiveStatusOutput(ctx context.Context, sid string, session *tuigateway.Session, arg string) string {
+func formatLiveStatusOutput(ctx context.Context, sid string, session *tuihost.Session, arg string) string {
 	handler := lookupMethod("session.status")
 	if handler == nil {
 		panic(errors.New("'session.status'"))
@@ -479,7 +467,7 @@ func formatLiveStatusOutput(ctx context.Context, sid string, session *tuigateway
 // Reply when no session exists and the formatter or fixed reply of a live answered slash command
 type liveSlashEntry struct {
 	noSessionReply *string
-	format         func(ctx context.Context, sid string, session *tuigateway.Session, arg string) string
+	format         func(ctx context.Context, sid string, session *tuihost.Session, arg string) string
 	fixed          string
 }
 
@@ -491,7 +479,7 @@ var liveSlashOutput map[string]liveSlashEntry
 
 func init() {
 	liveSlashOutput = map[string]liveSlashEntry{
-		"compress": {replyText("no active session for /compress"), func(ctx context.Context, sid string, session *tuigateway.Session, arg string) string {
+		"compress": {replyText("no active session for /compress"), func(ctx context.Context, sid string, session *tuihost.Session, arg string) string {
 			return mirrorSlashSideEffects(ctx, sid, session, pystr.Strip("/compress "+arg))
 		}, ""},
 		"usage":   {replyText(noAgentUsage), formatLiveUsageOutput, ""},
@@ -507,7 +495,7 @@ func init() {
 }
 
 // Answers a slash command from the live session instead of the slash worker, ok false when it is not one of these
-func liveSlashCommandOutput(ctx context.Context, sid string, session *tuigateway.Session, name, arg string) (string, bool) {
+func liveSlashCommandOutput(ctx context.Context, sid string, session *tuihost.Session, name, arg string) (string, bool) {
 	name = pystr.Lower(strings.TrimLeft(name, "/"))
 	if name == "model" && pystr.Strip(arg) == "" {
 		return formatLiveModelOutput(session), true

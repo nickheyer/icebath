@@ -30,7 +30,7 @@ type Context struct {
 	hostInProcess            map[string]bool
 }
 
-// Context whose register_delegation_provider hands the provider to sink instead of the registry, the hermes bundled registrar
+// Context whose register_delegation_provider hands the provider to sink instead of the registry, the bundled registrar
 func (c *Context) WithDelegationSink(sink func(provider any)) *Context {
 	c.delegationSink = sink
 	return c
@@ -66,7 +66,7 @@ func (c *Context) HasPlugin(pluginID string) bool {
 func (c *Context) segments(key string) ([]string, error) {
 	segments, err := PluginRelativeSegments(key)
 	if err != nil {
-		logPlugins.warn(fmt.Sprintf("Rejected config path %s from plugin %s", config.PyRepr(key), c.PluginID()))
+		pkgLog().Warn(fmt.Sprintf("Rejected config path %s from plugin %s", config.PyRepr(key), c.PluginID()))
 	}
 	return segments, err
 }
@@ -112,7 +112,7 @@ func (c *Context) track(kind, key string, release func() error) *Registration {
 // Appends a callback under a key, warning on unknown keys, and leases its removal
 func trackCallback[T any](c *Context, kind, key string, entry *T, mapping map[string][]*T, valid map[string]bool) *Registration {
 	if !valid[key] {
-		logPlugins.warn(fmt.Sprintf("Plugin '%s' registered unknown %s '%s' (valid: %s)", c.manifest.Name, kind, key,
+		pkgLog().Warn(fmt.Sprintf("Plugin '%s' registered unknown %s '%s' (valid: %s)", c.manifest.Name, kind, key,
 			strings.Join(sortedSet(valid), ", ")))
 	}
 	c.manager.mu.Lock()
@@ -122,7 +122,7 @@ func trackCallback[T any](c *Context, kind, key string, entry *T, mapping map[st
 		removeCallback(c.manager, mapping, key, entry)
 		return nil
 	})
-	logPlugins.debug(fmt.Sprintf("Plugin %s registered %s: %s", c.manifest.Name, kind, key))
+	pkgLog().Debug(fmt.Sprintf("Plugin %s registered %s: %s", c.manifest.Name, kind, key))
 	return handle
 }
 

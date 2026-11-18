@@ -3,7 +3,6 @@ package cron
 import (
 	"context"
 	"errors"
-	"log/slog"
 	"strings"
 
 	"github.com/nickheyer/icebath/pkg/internal/pydifflib"
@@ -261,7 +260,7 @@ func HandleBlueprintCommand(ctx context.Context, h, args string, origin map[stri
 		return BlueprintCommandResult{Text: regErr.UserMessage()}, nil
 	}
 	if err != nil {
-		slog.Debug("blueprint create_job failed: " + err.Error())
+		pkgLog().Debug("blueprint create_job failed: " + err.Error())
 		return BlueprintCommandResult{Text: "Failed to create the job: " + err.Error()}, nil
 	}
 	sched := job.ScheduleDisplay

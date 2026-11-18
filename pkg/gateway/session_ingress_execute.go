@@ -6,7 +6,6 @@ import (
 	"strings"
 
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/observability"
 	"github.com/nickheyer/icebath/pkg/provider"
 )
 
@@ -120,7 +119,6 @@ func preparedText(prepared *pyjson.Object) (string, error) {
 // Runs a claimed admission through the runner's turn handler and records its result, reply and crash marker for the drain
 func executeAdmission(ctx context.Context, a *SessionAuthority, ref SessionRef, row *pyjson.Object) (reply any, retErr error) {
 	admissionID := rowString(row, "admission_id")
-	observability.BusyTurnStarted(ctx, admissionID)
 	noted, err := noteIfUnviewed(ctx, a, ref, row)
 	if err != nil {
 		return nil, err

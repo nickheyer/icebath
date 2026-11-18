@@ -1058,14 +1058,15 @@ func TestConcurrentProcessesNeverDropEachOthersLedgerRows(t *testing.T) {
 func TestAStalledLedgerLockHolderNeverBlocksRegisterChild(t *testing.T) {
 	ledger := filepath.Join(t.TempDir(), "home", "spawn-ledger.json")
 	os.MkdirAll(filepath.Dir(ledger), 0o700)
-	prevPath, prevTimeout, prevLogger := ledgerPathFn, ledgerLockTimeout, identityLogger
+	prevPath, prevTimeout, prevLogger := ledgerPathFn, ledgerLockTimeout, slog.Default()
 	ledgerPathFn = func() string { return ledger }
 	ledgerLockTimeout = 300 * time.Millisecond
 	ledgerLockWarned = false
 	rec := &recordingHandler{}
-	identityLogger = func() *slog.Logger { return slog.New(rec) }
+	slog.SetDefault(slog.New(rec))
 	t.Cleanup(func() {
-		ledgerPathFn, ledgerLockTimeout, identityLogger = prevPath, prevTimeout, prevLogger
+		ledgerPathFn, ledgerLockTimeout = prevPath, prevTimeout
+		slog.SetDefault(prevLogger)
 		ledgerLockWarned = false
 	})
 	holder, err := os.OpenFile(ledger+".lock", os.O_CREATE|os.O_RDWR, 0o600)

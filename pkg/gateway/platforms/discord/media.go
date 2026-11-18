@@ -9,7 +9,6 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
-	"log/slog"
 	"net/http"
 	"os"
 	"strconv"
@@ -122,7 +121,7 @@ func (a *DiscordAdapter) rejectOversizedUpload(ctx context.Context, ch *discordg
 	}
 	sizeMB, limitMB := float64(size)/(1024*1024), float64(limit)/(1024*1024)
 	msg := fmt.Sprintf("File too large for Discord upload: %s is %.1f MB (limit %.0f MB)", filename, sizeMB, limitMB)
-	slog.Warn(fmt.Sprintf("[%s] %s", a.Name(), msg))
+	pkgLog().Warn(fmt.Sprintf("[%s] %s", a.Name(), msg))
 	notice := i18n.T(ctx, "platform.discord.media.upload_too_large", "", map[string]any{"filename": filename,
 		"size_mb": fmt.Sprintf("%.1f", sizeMB), "limit_mb": fmt.Sprintf("%.0f", limitMB)})
 	var sendErr error
@@ -138,7 +137,7 @@ func (a *DiscordAdapter) rejectOversizedUpload(ctx context.Context, ch *discordg
 		}
 	}
 	if sendErr != nil {
-		slog.Debug(fmt.Sprintf("[%s] Failed to send oversized-file notice for %s", a.Name(), filename), "error", sendErr)
+		pkgLog().Debug(fmt.Sprintf("[%s] Failed to send oversized-file notice for %s", a.Name(), filename), "error", sendErr)
 	}
 	return &gateway.SendResult{Success: false, Error: msg}
 }
@@ -168,7 +167,7 @@ func (a *DiscordAdapter) sendFileAttachment(ctx context.Context, chatID, path, c
 	if ext == "" {
 		ext = "no-ext"
 	}
-	slog.Info(fmt.Sprintf("[%s] Sending file attachment %s (%s) to %s", a.Name(), filename, ext, chatID))
+	pkgLog().Info(fmt.Sprintf("[%s] Sending file attachment %s (%s) to %s", a.Name(), filename, ext, chatID))
 	f, err := os.Open(path)
 	if err != nil {
 		return gateway.SendResult{}, err
@@ -187,7 +186,7 @@ func (a *DiscordAdapter) sendFileAttachment(ctx context.Context, chatID, path, c
 		if shown == "" {
 			shown = "?"
 		}
-		slog.Warn(fmt.Sprintf("[%s] Discord returned message %s with no attachments for %s", a.Name(), shown, filename))
+		pkgLog().Warn(fmt.Sprintf("[%s] Discord returned message %s with no attachments for %s", a.Name(), shown, filename))
 		var id any
 		if msg.ID != "" {
 			id = msg.ID
@@ -206,7 +205,7 @@ func (a *DiscordAdapter) sendLocalFile(ctx context.Context, chatID, path, captio
 	if errors.Is(err, fs.ErrNotExist) {
 		return gateway.SendResult{Success: false, Error: notFound + ": " + path}
 	}
-	slog.Error(fmt.Sprintf("[%s] Failed to send %s: %s", a.Name(), kind, err))
+	pkgLog().Error(fmt.Sprintf("[%s] Failed to send %s: %s", a.Name(), kind, err))
 	return gateway.SendResult{Success: false, Error: err.Error()}
 }
 
@@ -248,7 +247,7 @@ func (a *DiscordAdapter) SendMultipleImages(ctx context.Context, chatID string, 
 	}
 	ch, err := a.resolveChannel(ctx, promptTargetID(chatID, metadata))
 	if err != nil {
-		slog.Warn(fmt.Sprintf("[%s] Failed to resolve channel for multi-image send: %s", a.Name(), err))
+		pkgLog().Warn(fmt.Sprintf("[%s] Failed to resolve channel for multi-image send: %s", a.Name(), err))
 		return a.BasePlatformAdapter.SendMultipleImages(ctx, chatID, images, metadata, humanDelay)
 	}
 	var chunks [][]gateway.ImageRef
@@ -266,7 +265,7 @@ func (a *DiscordAdapter) SendMultipleImages(ctx context.Context, chatID string, 
 		}
 		sent, err := a.sendImageChunk(ctx, ch, chunk, idx, len(chunks))
 		if err != nil {
-			slog.Warn(fmt.Sprintf("[%s] Multi-image Discord send failed (chunk %d/%d), falling back to per-image: %s", a.Name(), idx+1, len(chunks), err))
+			pkgLog().Warn(fmt.Sprintf("[%s] Multi-image Discord send failed (chunk %d/%d), falling back to per-image: %s", a.Name(), idx+1, len(chunks), err))
 			fallback, ferr := a.BasePlatformAdapter.SendMultipleImages(ctx, chatID, chunk, metadata, humanDelay)
 			if ferr != nil {
 				return gateway.SendResult{}, ferr
@@ -295,17 +294,17 @@ func (a *DiscordAdapter) sendImageChunk(ctx context.Context, ch *discordgo.Chann
 		if strings.HasPrefix(img.URL, "file://") {
 			localPath := pyurl.Unquote(img.URL[7:])
 			if _, err := os.Stat(localPath); err != nil {
-				slog.Warn(fmt.Sprintf("[%s] Skipping missing image: %s", a.Name(), localPath))
+				pkgLog().Warn(fmt.Sprintf("[%s] Skipping missing image: %s", a.Name(), localPath))
 				continue
 			}
 			size, err := getsize(localPath)
 			if err != nil {
-				slog.Warn(fmt.Sprintf("[%s] Skipping unreadable image %s: %s", a.Name(), localPath, pypath.OSErrorText(err)))
+				pkgLog().Warn(fmt.Sprintf("[%s] Skipping unreadable image %s: %s", a.Name(), localPath, pypath.OSErrorText(err)))
 				continue
 			}
 			if limit := a.discordUploadLimitBytes(ch); size > int64(limit) {
 				sizeMB, limitMB := float64(size)/(1024*1024), float64(limit)/(1024*1024)
-				slog.Warn(fmt.Sprintf("[%s] Skipping oversized image in batch: %s is %.1f MB (limit %.0f MB)", a.Name(), pypath.Basename(localPath), sizeMB, limitMB))
+				pkgLog().Warn(fmt.Sprintf("[%s] Skipping oversized image in batch: %s is %.1f MB (limit %.0f MB)", a.Name(), pypath.Basename(localPath), sizeMB, limitMB))
 				skipNotices = append(skipNotices, i18n.T(ctx, "platform.discord.media.image_skipped_too_large", "", map[string]any{
 					"filename": pypath.Basename(localPath), "size_mb": fmt.Sprintf("%.1f", sizeMB), "limit_mb": fmt.Sprintf("%.0f", limitMB)}))
 				continue
@@ -318,12 +317,12 @@ func (a *DiscordAdapter) sendImageChunk(ctx context.Context, ch *discordgo.Chann
 			continue
 		}
 		if !isSafeURL(env, img.URL) {
-			slog.Warn(fmt.Sprintf("[%s] Blocked unsafe image URL in batch", a.Name()))
+			pkgLog().Warn(fmt.Sprintf("[%s] Blocked unsafe image URL in batch", a.Name()))
 			continue
 		}
 		data, ext, err := a.downloadBatchImage(ctx, env, &httpClient, img.URL)
 		if err != nil {
-			slog.Warn(fmt.Sprintf("[%s] Download failed for %s: %s", a.Name(), cut(img.URL, 80), err))
+			pkgLog().Warn(fmt.Sprintf("[%s] Download failed for %s: %s", a.Name(), cut(img.URL, 80), err))
 			continue
 		}
 		if data == nil {
@@ -342,7 +341,7 @@ func (a *DiscordAdapter) sendImageChunk(ctx context.Context, ch *discordgo.Chann
 		}
 		if len(skipNotices) > 0 && shown && !isForumParent(ch) {
 			if err := a.sendPlain(ctx, ch, strings.Join(skipNotices, "\n")); err != nil {
-				slog.Debug(fmt.Sprintf("[%s] Failed to send oversized-image notices", a.Name()), "error", err)
+				pkgLog().Debug(fmt.Sprintf("[%s] Failed to send oversized-image notices", a.Name()), "error", err)
 			}
 		}
 		return false, nil
@@ -362,7 +361,7 @@ func (a *DiscordAdapter) sendImageChunk(ctx context.Context, ch *discordgo.Chann
 			content = *w
 		}
 	}
-	slog.Info(fmt.Sprintf("[%s] Sending %d image(s) as single Discord message (chunk %d/%d)", a.Name(), len(files), idx+1, total))
+	pkgLog().Info(fmt.Sprintf("[%s] Sending %d image(s) as single Discord message (chunk %d/%d)", a.Name(), len(files), idx+1, total))
 	if isForumParent(ch) {
 		a.forumPostFile(ctx, ch, "", pystr.Strip(content), files)
 		return true, nil
@@ -391,7 +390,7 @@ func (a *DiscordAdapter) downloadBatchImage(ctx context.Context, env *tools.Env,
 		return nil, "", err
 	}
 	if status != 200 {
-		slog.Warn(fmt.Sprintf("[%s] Failed to download image (HTTP %d) in batch: %s", a.Name(), status, cut(rawURL, 80)))
+		pkgLog().Warn(fmt.Sprintf("[%s] Failed to download image (HTTP %d) in batch: %s", a.Name(), status, cut(rawURL, 80)))
 		return nil, "", nil
 	}
 	contentType, ok := headers["content-type"]
@@ -408,7 +407,7 @@ func (a *DiscordAdapter) SendVoice(ctx context.Context, chatID, audioPath, capti
 	}
 	res, err := a.sendVoiceMessage(ctx, chatID, audioPath, caption, replyTo, metadata)
 	if err != nil {
-		slog.Error(fmt.Sprintf("[%s] Failed to send audio: %s", a.Name(), err))
+		pkgLog().Error(fmt.Sprintf("[%s] Failed to send audio: %s", a.Name(), err))
 		return gateway.SendResult{Success: false, Error: err.Error()}, nil
 	}
 	return res, nil
@@ -444,9 +443,9 @@ func (a *DiscordAdapter) sendVoiceMessage(ctx context.Context, chatID, audioPath
 		if verr == nil {
 			return res, nil
 		}
-		slog.Debug(fmt.Sprintf("Voice message flag failed, falling back to file: %s", verr))
+		pkgLog().Debug(fmt.Sprintf("Voice message flag failed, falling back to file: %s", verr))
 	} else {
-		slog.Warn(fmt.Sprintf("[%s] %s is not Ogg/Opus and could not be transcoded (install ffmpeg for voice messages); sending it as an audio attachment", a.Name(), filename))
+		pkgLog().Warn(fmt.Sprintf("[%s] %s is not Ogg/Opus and could not be transcoded (install ffmpeg for voice messages); sending it as an audio attachment", a.Name(), filename))
 	}
 	data, err := os.ReadFile(audioPath)
 	if err != nil {
@@ -536,12 +535,12 @@ func (a *DiscordAdapter) sendURLMedia(ctx context.Context, chatID, rawURL, capti
 		return gateway.SendResult{Success: false, Error: "Not connected"}, nil
 	}
 	if !isSafeURL(&tools.Env{Home: home.Dir(ctx)}, rawURL) {
-		slog.Warn(fmt.Sprintf("[%s] Blocked unsafe %s URL during Discord send_%s", a.Name(), kind, kind))
+		pkgLog().Warn(fmt.Sprintf("[%s] Blocked unsafe %s URL during Discord send_%s", a.Name(), kind, kind))
 		return fallback(metadata)
 	}
 	res, err := a.uploadURLMedia(ctx, chatID, rawURL, caption, kind, filenameFor, metadata)
 	if err != nil {
-		slog.Error(fmt.Sprintf("[%s] Failed to send %s attachment, falling back to URL: %s", a.Name(), kind, err))
+		pkgLog().Error(fmt.Sprintf("[%s] Failed to send %s attachment, falling back to URL: %s", a.Name(), kind, err))
 		return fallback(errorMetadata)
 	}
 	return res, nil

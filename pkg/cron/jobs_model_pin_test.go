@@ -78,11 +78,11 @@ func TestPinnedTrueLocksThenPinnedFalseReleases(t *testing.T) {
 
 func TestPinnedNeverOverridesAnExplicitModel(t *testing.T) {
 	s, calls := pinStore(t, "main-model", "openrouter")
-	job, err := s.createJob(context.Background(), CreateJobOptions{Prompt: prompt("do a thing"), Schedule: "every 1 hour", Model: "my-model", Provider: "nous", Pinned: true})
+	job, err := s.createJob(context.Background(), CreateJobOptions{Prompt: prompt("do a thing"), Schedule: "every 1 hour", Model: "my-model", Provider: "openrouter", Pinned: true})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got := pinPair(job); got != [2]string{"my-model", "nous"} {
+	if got := pinPair(job); got != [2]string{"my-model", "openrouter"} {
 		t.Fatalf("explicit model lost to the pin %v", got)
 	}
 	if *calls != 0 {
@@ -128,10 +128,10 @@ func TestMainModelPinReadsEveryModelShape(t *testing.T) {
 		resolved               int
 	}{
 		{"default key", "model:\n  default: m1\n", " OpenRouter ", [2]*string{prompt("openrouter"), prompt("m1")}, 1},
-		{"model key fallback", "model:\n  default: ''\n  model: m2\n", "nous", [2]*string{prompt("nous"), prompt("m2")}, 1},
+		{"model key fallback", "model:\n  default: ''\n  model: m2\n", "openrouter", [2]*string{prompt("openrouter"), prompt("m2")}, 1},
 		{"bare string", "model: '  m3  '\n", "", [2]*string{nil, prompt("m3")}, 1},
-		{"nothing configured", "agent:\n  max_turns: 3\n", "nous", [2]*string{nil, nil}, 0},
-		{"non text model", "model:\n  default: 5\n", "nous", [2]*string{nil, nil}, 0},
+		{"nothing configured", "agent:\n  max_turns: 3\n", "openrouter", [2]*string{nil, nil}, 0},
+		{"non text model", "model:\n  default: 5\n", "openrouter", [2]*string{nil, nil}, 0},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -155,7 +155,7 @@ func TestMainModelPinReadsEveryModelShape(t *testing.T) {
 }
 
 func TestMainModelPinWithoutConfigStaysUnpinned(t *testing.T) {
-	s, calls := pinStore(t, "unused", "nous")
+	s, calls := pinStore(t, "unused", "openrouter")
 	if err := os.Remove(s.Home() + "/config.yaml"); err != nil {
 		t.Fatal(err)
 	}

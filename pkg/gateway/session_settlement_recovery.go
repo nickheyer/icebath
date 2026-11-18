@@ -3,7 +3,6 @@ package gateway
 import (
 	"context"
 	"fmt"
-	"log/slog"
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
@@ -211,7 +210,7 @@ func publishCompletion(ctx context.Context, a *SessionAuthority, live *LiveSessi
 	func() {
 		defer func() {
 			if r := recover(); r != nil {
-				slog.Error(fmt.Sprintf("Terminal control cleanup failed for admission %s", rowString(row, "admission_id")), "error", r)
+				pkgLog().Error(fmt.Sprintf("Terminal control cleanup failed for admission %s", rowString(row, "admission_id")), "error", r)
 			}
 		}()
 		pendingControlsSnapshot(live, ref.SessionID, nil)
@@ -260,7 +259,7 @@ func gatewayRefusalBoundary(captured *pyjson.Object, outcome string) (string, *p
 // Releases a settled admission's media in its own write after publication, a failure logged and dropped
 func releaseSettledMedia(ctx context.Context, a *SessionAuthority, row *pyjson.Object) {
 	if err := releaseAdmissionMedia(ctx, a.DB, rowString(row, "admission_id")); err != nil {
-		slog.Error(fmt.Sprintf("Terminal media cleanup failed for admission %s", rowString(row, "admission_id")), "error", err)
+		pkgLog().Error(fmt.Sprintf("Terminal media cleanup failed for admission %s", rowString(row, "admission_id")), "error", err)
 	}
 }
 
@@ -319,7 +318,7 @@ func settleWithRetry(ctx context.Context, a *SessionAuthority, live *LiveSession
 			return err
 		}
 		delay := settleRetryDelaysS[attempt]
-		slog.Warn(fmt.Sprintf("Settlement of admission %s deferred by storage (%s); retrying in %.1fs", rowString(row, "admission_id"), pyExceptionRepr(err), delay))
+		pkgLog().Warn(fmt.Sprintf("Settlement of admission %s deferred by storage (%s); retrying in %.1fs", rowString(row, "admission_id"), pyExceptionRepr(err), delay))
 		timer := time.NewTimer(time.Duration(delay * float64(time.Second)))
 		select {
 		case <-timer.C:

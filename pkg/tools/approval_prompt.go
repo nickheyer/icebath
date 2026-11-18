@@ -319,7 +319,7 @@ const maxActiveTransportWorkers = 8
 
 var transportWorkerSlots = make(chan struct{}, maxActiveTransportWorkers)
 
-// Wait tuning of the transport host loop, the hermes poll_interval, on_poll and is_interrupted arguments
+// Wait tuning of the transport host loop, the poll_interval, on_poll and is_interrupted arguments
 type transportWait struct {
 	pollInterval  time.Duration
 	onPoll        func()

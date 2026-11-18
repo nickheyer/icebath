@@ -158,7 +158,7 @@ func runHelper(t *testing.T, cmd *exec.Cmd) string {
 	return strings.TrimSpace(string(out))
 }
 
-// Store with one session of five user and five assistant messages, the hermes healthy repair fixture
+// Store with one session of five user and five assistant messages, the healthy repair fixture
 func buildHealthyDB(t *testing.T, path string) string {
 	t.Helper()
 	db := mustSessionDB(t, path, false)

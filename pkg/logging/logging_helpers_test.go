@@ -131,7 +131,7 @@ func otherDir(t *testing.T, name string) string {
 	return p
 }
 
-// Context whose home override is h, the set_hermes_home_override form
+// Context whose home override is h
 func homeCtx(h string) context.Context { return home.WithOverride(context.Background(), h) }
 
 // Text of path, empty when it does not exist

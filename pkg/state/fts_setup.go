@@ -4,7 +4,6 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
-	"log/slog"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -98,7 +97,7 @@ func dropOrphanFTSShadowTables(ctx context.Context, conn SQLiteConn, families []
 				return repaired, err
 			}
 		}
-		slog.Warn(fmt.Sprintf("Dropped orphan FTS5 shadow tables of %s (%s); the index is recreated from messages",
+		pkgLog().Warn(fmt.Sprintf("Dropped orphan FTS5 shadow tables of %s (%s); the index is recreated from messages",
 			family, strings.Join(orphans, ", ")))
 		repaired = append(repaired, family)
 	}
@@ -118,7 +117,7 @@ const (
 	ftsTableStatusQueryable = ftsTableStatus(2)
 )
 
-// Chunk size bounds of the rebuild engine, class attributes hermes tests patch
+// Chunk size bounds of the rebuild engine, class attributes tests patch
 var (
 	ftsRebuildChunkMinRows = 50
 	ftsRebuildChunkMaxRows = 100_000
@@ -130,7 +129,7 @@ var ftsTables = []string{"messages_fts", "messages_fts_trigram", "messages_fts_c
 // Outcome of probing an FTS table, degraded when the module, tokenizer or content is unusable
 type ftsTableStatus int
 
-// SessionDB members the FTS lifecycle calls, provided by the hermes_state.py SessionDB
+// SessionDB members the FTS lifecycle calls, provided by the SessionDB
 type ftsSetupHost interface {
 	dbPath() string
 	raiseIfDBCorrupt(storage bool) error
@@ -203,7 +202,7 @@ func (f *sessionFTSSetup) warnTrigramUnavailable(err error) {
 	if f.trigramUnavailableWarned.Swap(true) {
 		return
 	}
-	slog.Info(fmt.Sprintf("SQLite trigram tokenizer unavailable for %s "+
+	pkgLog().Info(fmt.Sprintf("SQLite trigram tokenizer unavailable for %s "+
 		"(requires SQLite >= 3.34, this build is %s); "+
 		"CJK/substring search will fall back to LIKE: %s", f.host.dbPath(), LinkedSQLiteVersion(), errText(err)))
 }
@@ -214,7 +213,7 @@ func (f *sessionFTSSetup) warnFTS5Unavailable(err error) {
 	if f.ftsUnavailableWarned.Swap(true) {
 		return
 	}
-	slog.Warn(fmt.Sprintf("SQLite FTS5 unavailable for %s; full-text session search "+
+	pkgLog().Warn(fmt.Sprintf("SQLite FTS5 unavailable for %s; full-text session search "+
 		"disabled. Run `icebath update` to rebuild the venv with a "+
 		"current Python (managed uv guarantees FTS5). (underlying error: %s)", f.host.dbPath(), errText(err)))
 }
@@ -235,7 +234,7 @@ func (f *sessionFTSSetup) ensureFTSCJKSchema(ctx context.Context, conn SQLiteCon
 		if !isOperationalError(err) {
 			return err
 		}
-		slog.Warn("messages_fts_cjk presence check failed; CJK search stays on trigram/LIKE", "error", err)
+		pkgLog().Warn("messages_fts_cjk presence check failed; CJK search stays on trigram/LIKE", "error", err)
 		f.ftsCJKAvailable.Store(false)
 		return nil
 	}
@@ -244,7 +243,7 @@ func (f *sessionFTSSetup) ensureFTSCJKSchema(ctx context.Context, conn SQLiteCon
 		if !isOperationalError(err) {
 			return err
 		}
-		slog.Warn("messages_fts_cjk ensure failed; CJK search stays on trigram/LIKE", "error", err)
+		pkgLog().Warn("messages_fts_cjk ensure failed; CJK search stays on trigram/LIKE", "error", err)
 		available = false
 	}
 	f.ftsCJKAvailable.Store(available)
@@ -258,7 +257,7 @@ func (f *sessionFTSSetup) dropUnservableCJKTriggers(ctx context.Context, conn SQ
 	if err != nil || len(live) == 0 {
 		return err
 	}
-	slog.Warn(fmt.Sprintf("messages_fts_cjk triggers present but the "+
+	pkgLog().Warn(fmt.Sprintf("messages_fts_cjk triggers present but the "+
 		"cjk_unicode61 tokenizer is unavailable (%s) — "+
 		"dropping the cjk triggers so message writes keep "+
 		"working. CJK search falls back to trigram/LIKE; "+
@@ -369,7 +368,7 @@ func (f *sessionFTSSetup) ftsTableProbe(ctx context.Context, conn SQLiteConn, ta
 	if !strings.Contains(text, "decode to utf-8") {
 		return ftsTableStatusDegraded, err
 	}
-	slog.Warn(fmt.Sprintf("%s probe encountered invalid UTF-8 in FTS content; "+
+	pkgLog().Warn(fmt.Sprintf("%s probe encountered invalid UTF-8 in FTS content; "+
 		"search may return incomplete results until FTS is rebuilt: %s", table, errText(err)))
 	return ftsTableStatusDegraded, nil
 }
@@ -426,14 +425,14 @@ func (f *sessionFTSSetup) enterFTSFailOpen(ctx context.Context, exc error, deadl
 		if isOperationalError(detachErr) && IsSQLiteLockError(detachErr) && f.host.sleepBeforeWriteRetry(limit, patience) {
 			continue
 		}
-		slog.Error(fmt.Sprintf("Could not detach corrupt FTS indexes; canonical write still cannot proceed: %s", errText(detachErr)))
+		pkgLog().Error(fmt.Sprintf("Could not detach corrupt FTS indexes; canonical write still cannot proceed: %s", errText(detachErr)))
 		return false, nil
 	}
 	f.ftsStale.Store(true)
 	f.ftsEnabled.Store(false)
 	f.trigramAvailable.Store(false)
 	f.ftsCJKAvailable.Store(false)
-	slog.Error(fmt.Sprintf("state.db FTS indexes remain corrupt (%s); disabled FTS sync and "+
+	pkgLog().Error(fmt.Sprintf("state.db FTS indexes remain corrupt (%s); disabled FTS sync and "+
 		"retrying the canonical write. Search temporarily uses LIKE until "+
 		"a later SessionDB open rebuilds the indexes.", errText(exc)))
 	return true, nil

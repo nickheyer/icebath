@@ -3,9 +3,9 @@ package line
 import (
 	"context"
 	"fmt"
-	"log/slog"
 	"strings"
 
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pymimetypes"
@@ -28,7 +28,7 @@ func (a *LineAdapter) handleHealth(ctx context.Context, request *gateway.WebRequ
 func (a *LineAdapter) handleWebhook(ctx context.Context, request *gateway.WebRequest) (*gateway.WebResponse, error) {
 	body, err := request.Read()
 	if err != nil {
-		slog.Debug(fmt.Sprintf("LINE: read failed: %v", err))
+		pkgLog().Debug(fmt.Sprintf("LINE: read failed: %v", err))
 		return gateway.WebTextResponse(400, "bad request", "", nil), nil
 	}
 	if len(body) > webhookBodyMaxBytes {
@@ -57,11 +57,11 @@ func (a *LineAdapter) handleWebhook(ctx context.Context, request *gateway.WebReq
 	for _, event := range events {
 		obj, isObj := event.(map[string]any)
 		if !isObj {
-			slog.Error(fmt.Sprintf("LINE: dispatch_event failed\nAttributeError: '%s' object has no attribute 'get'", pyrepr.TypeName(event)))
+			pkgLog().Error(fmt.Sprintf("LINE: dispatch_event failed: an event is %s, expected a mapping", errchain.Kind(event)))
 			continue
 		}
 		if err := a.dispatchEvent(dispatchCtx, obj); err != nil {
-			slog.Error(fmt.Sprintf("LINE: dispatch_event failed\n%v", err))
+			pkgLog().Error(fmt.Sprintf("LINE: dispatch_event failed\n%v", err))
 		}
 	}
 	return gateway.WebTextResponse(200, "ok", "", nil), nil
@@ -100,7 +100,7 @@ func (a *LineAdapter) dispatchEvent(ctx context.Context, event map[string]any) e
 		webhookEventID = pyrepr.Str(v)
 	}
 	if webhookEventID != "" && a.dedup.IsDuplicate(webhookEventID) {
-		slog.Debug(fmt.Sprintf("LINE: ignoring duplicate webhook event %s", webhookEventID))
+		pkgLog().Debug(fmt.Sprintf("LINE: ignoring duplicate webhook event %s", webhookEventID))
 		return nil
 	}
 	a.mu.Lock()
@@ -110,7 +110,7 @@ func (a *LineAdapter) dispatchEvent(ctx context.Context, event map[string]any) e
 		return nil
 	}
 	if !allowedForSource(source, a.allowAll, a.allowedUsers, a.allowedGroups, a.allowedRooms) {
-		slog.Info(fmt.Sprintf("LINE: rejecting unauthorized source %s", pyrepr.Repr(source)))
+		pkgLog().Info(fmt.Sprintf("LINE: rejecting unauthorized source %s", pyrepr.Repr(source)))
 		return nil
 	}
 	typ, _ := eventType.(string)
@@ -120,9 +120,9 @@ func (a *LineAdapter) dispatchEvent(ctx context.Context, event map[string]any) e
 	case typ == "postback":
 		return a.handlePostbackEvent(ctx, event)
 	case lifecycleEvents[typ]:
-		slog.Info(fmt.Sprintf("LINE: lifecycle event %s from %s", typ, pyrepr.Repr(source)))
+		pkgLog().Info(fmt.Sprintf("LINE: lifecycle event %s from %s", typ, pyrepr.Repr(source)))
 	default:
-		slog.Debug(fmt.Sprintf("LINE: ignoring event type %s", pyrepr.Repr(eventType)))
+		pkgLog().Debug(fmt.Sprintf("LINE: ignoring event type %s", pyrepr.Repr(eventType)))
 	}
 	return nil
 }
@@ -263,7 +263,7 @@ func (a *LineAdapter) handlePostbackEvent(ctx context.Context, event map[string]
 		}
 		a.mu.Unlock()
 		if err := client.reply(ctx, replyTok, []messagingMessage{textMessage(a.expiredText)}); err != nil {
-			slog.Debug(fmt.Sprintf("LINE: postback expired-notice reply failed: %v", err))
+			pkgLog().Debug(fmt.Sprintf("LINE: postback expired-notice reply failed: %v", err))
 		}
 		return nil
 	}
@@ -283,13 +283,13 @@ func (a *LineAdapter) handlePostbackEvent(ctx context.Context, event map[string]
 	if err := client.reply(ctx, replyTok, messages); err != nil {
 		if state != StateReady {
 			if state == StateError {
-				slog.Warn(fmt.Sprintf("LINE: postback ERROR reply failed: %v", err))
+				pkgLog().Warn(fmt.Sprintf("LINE: postback ERROR reply failed: %v", err))
 			}
 			return nil
 		}
-		slog.Warn(fmt.Sprintf("LINE: postback reply failed (%v); falling back to push", err))
+		pkgLog().Warn(fmt.Sprintf("LINE: postback reply failed (%v); falling back to push", err))
 		if err2 := client.push(ctx, chatID, messages); err2 != nil {
-			slog.Error(fmt.Sprintf("LINE: postback push fallback failed: %v", err2))
+			pkgLog().Error(fmt.Sprintf("LINE: postback push fallback failed: %v", err2))
 			return nil
 		}
 	}
@@ -318,7 +318,7 @@ func (a *LineAdapter) downloadMedia(ctx context.Context, messageID, msgType, fil
 	}
 	data, err := client.fetchContent(ctx, messageID)
 	if err != nil {
-		slog.Warn(fmt.Sprintf("LINE: failed to fetch %s content for %s: %v", msgType, messageID, err))
+		pkgLog().Warn(fmt.Sprintf("LINE: failed to fetch %s content for %s: %v", msgType, messageID, err))
 		return "", ""
 	}
 	ext, ok := inboundMediaExt[msgType]
@@ -352,7 +352,7 @@ func (a *LineAdapter) downloadMedia(ctx context.Context, messageID, msgType, fil
 		path, err = gateway.CacheDocumentFromBytesAsync(ctx, data, documentName)
 	}
 	if err != nil {
-		slog.Warn(fmt.Sprintf("LINE: failed to cache %s payload: %v", msgType, err))
+		pkgLog().Warn(fmt.Sprintf("LINE: failed to cache %s payload: %v", msgType, err))
 		return "", ""
 	}
 	return path, mime

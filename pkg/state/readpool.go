@@ -3,7 +3,6 @@ package state
 import (
 	"errors"
 	"fmt"
-	"log/slog"
 	"os"
 	"runtime"
 	"sort"
@@ -279,7 +278,7 @@ func (b *pathReadBudget) register(db readPoolMember, entry weakMember) {
 	}
 	b.mu.Unlock()
 	if warn {
-		slog.Warn(fmt.Sprintf("%d live SessionDB handles on %s in this process; each holds "+
+		pkgLog().Warn(fmt.Sprintf("%d live SessionDB handles on %s in this process; each holds "+
 			"its own writer connection (read connections are capped at %d "+
 			"for the file). A long-lived process should share one handle per path. "+
 			"Created at: %s", handles, db.dbPath(), readPoolMax, creationSites))

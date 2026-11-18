@@ -5,7 +5,6 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"fmt"
-	"log/slog"
 	"math"
 	"os"
 	"path/filepath"
@@ -107,7 +106,7 @@ var (
 
 // Resolves and creates the kind's directory under the home, owner only unless the install is managed
 func (k cacheKind) dir(ctx context.Context, h string) (string, error) {
-	d := home.HermesDir(h, k.newSubpath, k.oldName)
+	d := home.IcebathDir(h, k.newSubpath, k.oldName)
 	if err := secureMediaCacheDir(ctx, h, d); err != nil {
 		return "", err
 	}
@@ -184,7 +183,7 @@ func secureMediaCacheDir(ctx context.Context, h, dir string) error {
 		return os.MkdirAll(dir, 0o777)
 	}
 	if _, err := home.MakeUserDir(ctx, dir, 0o700, true, true); err != nil {
-		slog.Debug(fmt.Sprintf("media cache dir creation failed for %s: %v", dir, err))
+		pkgLog().Debug(fmt.Sprintf("media cache dir creation failed for %s: %v", dir, err))
 		return os.MkdirAll(dir, 0o777)
 	}
 	config.SecureDir(ctx, h, dir)

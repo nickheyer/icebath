@@ -8,7 +8,6 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
-	"log/slog"
 	"os"
 	"path"
 	"path/filepath"
@@ -366,7 +365,7 @@ func (s *Scope) readManifest() (map[string]string, error) {
 func (s *Scope) writeManifest(ctx context.Context, entries map[string]string) {
 	mf := s.manifestFile()
 	if err := os.MkdirAll(filepath.Dir(mf), 0o755); err != nil {
-		slog.Default().Debug("Failed to write skills manifest", "path", mf, "err", err)
+		pkgLog().Debug("Failed to write skills manifest", "path", mf, "err", err)
 		return
 	}
 	names := make([]string, 0, len(entries))
@@ -379,7 +378,7 @@ func (s *Scope) writeManifest(ctx context.Context, entries map[string]string) {
 		b.WriteString(n + ":" + entries[n] + "\n")
 	}
 	if err := pyfs.AtomicWriteTextWith(home.WithOverride(ctx, s.Home), mf, b.String(), pyfs.TextWrite{Prefix: ".bundled_manifest_", PreserveMode: true}); err != nil {
-		slog.Default().Debug("Failed to write skills manifest", "path", mf, "err", err)
+		pkgLog().Debug("Failed to write skills manifest", "path", mf, "err", err)
 	}
 }
 
@@ -520,10 +519,10 @@ func (s *Scope) recoverRenamedSkill(st *syncState, name, dest string) (string, e
 			continue
 		}
 		if err := moveDir(candidate, dest); err != nil {
-			slog.Default().Warn("Could not relocate renamed skill", "from", candidate, "to", dest, "err", err)
+			pkgLog().Warn("Could not relocate renamed skill", "from", candidate, "to", dest, "err", err)
 			return "", nil
 		}
-		slog.Default().Info("Relocated renamed bundled skill", "from", candidate, "to", dest)
+		pkgLog().Info("Relocated renamed bundled skill", "from", candidate, "to", dest)
 		st.say(fmt.Sprintf("  → %s (moved %s → %s)", name, rel, destRel))
 		return rel, nil
 	}
@@ -550,9 +549,9 @@ func recoverOrphanBackup(dest string) {
 	orphan := bakPath(dest)
 	if pathExists(orphan) && !pathExists(dest) {
 		if err := moveDir(orphan, dest); err != nil {
-			slog.Default().Warn("Could not recover orphaned skill backup", "path", orphan, "err", err)
+			pkgLog().Warn("Could not recover orphaned skill backup", "path", orphan, "err", err)
 		} else {
-			slog.Default().Info("Recovered orphaned skill backup", "path", orphan)
+			pkgLog().Info("Recovered orphaned skill backup", "path", orphan)
 		}
 	}
 }
@@ -616,7 +615,7 @@ func (s *Scope) replaceSkillDir(t skillTree, src, dest string) error {
 					if !isOSErr(rerr) {
 						return rerr
 					}
-					slog.Default().Warn("Could not clear partial copy during restore", "path", dest, "err", rerr)
+					pkgLog().Warn("Could not clear partial copy during restore", "path", dest, "err", rerr)
 				}
 			}
 			if !pathExists(dest) {
@@ -631,7 +630,7 @@ func (s *Scope) replaceSkillDir(t skillTree, src, dest string) error {
 		if !isOSErr(err) {
 			return err
 		}
-		slog.Default().Debug("Could not remove backup", "path", backup, "err", err)
+		pkgLog().Debug("Could not remove backup", "path", backup, "err", err)
 	}
 	return nil
 }
@@ -686,10 +685,10 @@ func (s *Scope) seedCategoryDescriptions(t skillTree, onlyDirs map[string]bool) 
 		if err := os.MkdirAll(filepath.Dir(dest), 0o777); err == nil {
 			err = t.copyFile(p, dest)
 			if err != nil {
-				slog.Default().Debug("Could not copy category description", "path", p, "err", err)
+				pkgLog().Debug("Could not copy category description", "path", p, "err", err)
 			}
 		} else {
-			slog.Default().Debug("Could not copy category description", "path", p, "err", err)
+			pkgLog().Debug("Could not copy category description", "path", p, "err", err)
 		}
 	}
 }
@@ -974,7 +973,7 @@ func iterOptionalSkills(t skillTree, rootRelative bool) []optionalSkill {
 		dir := path.Dir(md)
 		install, err := safeRelInstallPath(filepath.FromSlash(dir), ".")
 		if err != nil {
-			slog.Default().Debug("Skipping optional skill with unsafe path", "dir", dir, "err", err)
+			pkgLog().Debug("Skipping optional skill with unsafe path", "dir", dir, "err", err)
 			continue
 		}
 		out = append(out, optionalSkill{md, dir, install})
@@ -1107,7 +1106,7 @@ func (s *Scope) relocatedDest(srcName string, index map[string][]string) (string
 	}
 	install, err := safeRelInstallPath(candidates[0], s.SkillsDir())
 	if err != nil {
-		slog.Default().Debug("Skipping relocated optional skill", "dir", candidates[0], "err", err)
+		pkgLog().Debug("Skipping relocated optional skill", "dir", candidates[0], "err", err)
 		return "", "", false
 	}
 	return candidates[0], install, true
@@ -1274,7 +1273,7 @@ func (s *Scope) ResetBundledSkill(ctx context.Context, name string, restore bool
 }
 
 // Repo prefixes whose install identifiers name this project's own bundled skills
-var ownRepoPrefixes = []string{"nousresearch/hermes-agent/skills/", "skills-sh/nousresearch/hermes-agent/"}
+var ownRepoPrefixes = []string{"nickheyer/icebath/pkg/skills/bundled/", "skills-sh/nickheyer/icebath/"}
 
 // Bundled skill name an install identifier means, empty when it names none
 func (s *Scope) BundledSkillForInstall(identifier string) (string, error) {
@@ -1302,7 +1301,7 @@ func (s *Scope) EnsureBundledSkill(ctx context.Context, name string) (map[string
 	}
 	src, ok := byName[name]
 	if !ok {
-		return nil, fmt.Errorf("KeyError: %s", pyrepr.Repr(name))
+		return nil, fmt.Errorf("no bundled skill named %s", name)
 	}
 	dest := s.relativeDest(src)
 	if s.IsHubInstalled(name) {

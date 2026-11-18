@@ -3,7 +3,6 @@ package teamspipeline
 import (
 	"context"
 	"fmt"
-	"log/slog"
 	"sync"
 
 	"github.com/nickheyer/icebath/pkg/gateway"
@@ -156,7 +155,7 @@ func BuildPipelineRuntime(ctx context.Context, host GatewayRuntimeHost) (*TeamsM
 			case err == nil:
 				teamsSender = newWriter(teamsConfig)
 			case pyrepr.ExceptionName(err) == "ImportError":
-				slog.Debug("TeamsSummaryWriter unavailable; Teams outbound delivery remains disabled until the adapter layer is present.")
+				pkgLog().Debug("TeamsSummaryWriter unavailable; Teams outbound delivery remains disabled until the adapter layer is present.")
 			default:
 				return nil, err
 			}
@@ -199,10 +198,10 @@ func BindGatewayRuntime(ctx context.Context, host GatewayRuntimeHost) (bool, err
 	if err != nil {
 		message := pyrepr.ExceptionMessage(err)
 		host.SetTeamsPipelineRuntimeError(&message)
-		slog.Warn(fmt.Sprintf("Teams pipeline runtime unavailable: %s. Installing a drop-scheduler "+
+		pkgLog().Warn(fmt.Sprintf("Teams pipeline runtime unavailable: %s. Installing a drop-scheduler "+
 			"so Graph notifications ack cleanly without piling up unbound.", message))
 		drop := func(_ context.Context, notification *pyjson.Object, _ *gateway.MessageEvent) error {
-			slog.Debug(fmt.Sprintf("Dropping Graph notification because runtime is unavailable: id=%s resource=%s",
+			pkgLog().Debug(fmt.Sprintf("Dropping Graph notification because runtime is unavailable: id=%s resource=%s",
 				pyrepr.Str(get(notification, "id")), pyrepr.Str(get(notification, "resource"))))
 			return nil
 		}

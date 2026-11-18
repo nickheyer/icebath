@@ -6,7 +6,6 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
-	"log/slog"
 	"net/http"
 	"strings"
 	"sync"
@@ -331,7 +330,7 @@ func (a *WeComAdapter) EnforcesOwnAccessPolicy() bool {
 // Records a retryable fatal startup error, logs it and reports the failed connect
 func (a *WeComAdapter) startupFailure(ctx context.Context, code, message string) bool {
 	a.SetFatalError(ctx, code, message, true)
-	slog.Warn(fmt.Sprintf("[%s] %s", a.Name(), message))
+	pkgLog().Warn(fmt.Sprintf("[%s] %s", a.Name(), message))
 	return false
 }
 
@@ -349,7 +348,7 @@ func (a *WeComAdapter) Connect(ctx context.Context, isReconnect bool) (bool, err
 			return false, ctx.Err()
 		}
 		a.SetFatalError(ctx, "wecom_connect_error", "WeCom startup failed: "+errText(err), true)
-		slog.Error(fmt.Sprintf("[%s] Failed to connect: %s", a.Name(), errText(err)), "error", err)
+		pkgLog().Error(fmt.Sprintf("[%s] Failed to connect: %s", a.Name(), errText(err)), "error", err)
 		a.teardown(ctx)
 		return false, nil
 	}
@@ -359,7 +358,7 @@ func (a *WeComAdapter) Connect(ctx context.Context, isReconnect bool) (bool, err
 	a.mu.Lock()
 	a.listenTask, a.heartbeatTask = listen, heartbeat
 	a.mu.Unlock()
-	slog.Info(fmt.Sprintf("[%s] Connected to %s", a.Name(), a.wsURL))
+	pkgLog().Info(fmt.Sprintf("[%s] Connected to %s", a.Name(), a.wsURL))
 	a.WirePluginHandlers(ctx, nil)
 	return true, nil
 }
@@ -381,7 +380,7 @@ func (a *WeComAdapter) Disconnect(ctx context.Context) error {
 	a.failAll(runtimeError("WeCom adapter disconnected"))
 	a.teardown(ctx)
 	a.dedup.Clear()
-	slog.Info(fmt.Sprintf("[%s] Disconnected", a.Name()))
+	pkgLog().Info(fmt.Sprintf("[%s] Disconnected", a.Name()))
 	return nil
 }
 
@@ -474,7 +473,7 @@ func (a *WeComAdapter) waitForHandshake(ctx context.Context, reqID string) (*pyj
 			if payloadReqID(payload) == reqID {
 				return payload, nil
 			}
-			slog.Debug(fmt.Sprintf("[%s] Ignoring pre-auth payload: %s", a.Name(), pyrepr.Str(payload.Vals["cmd"])))
+			pkgLog().Debug(fmt.Sprintf("[%s] Ignoring pre-auth payload: %s", a.Name(), pyrepr.Str(payload.Vals["cmd"])))
 		case pyaiohttpws.Closed, pyaiohttpws.Close, pyaiohttpws.Error:
 			return nil, runtimeError("WeCom websocket closed during authentication")
 		}
@@ -497,7 +496,7 @@ func (a *WeComAdapter) listenLoop(ctx context.Context) error {
 		if !a.IsConnected() {
 			return nil
 		}
-		slog.Warn(fmt.Sprintf("[%s] WebSocket error: %s", a.Name(), errText(err)))
+		pkgLog().Warn(fmt.Sprintf("[%s] WebSocket error: %s", a.Name(), errText(err)))
 		a.failAll(runtimeError("WeCom connection interrupted"))
 		if sendSleep(ctx, reconnectBackoff[min(backoffIdx, len(reconnectBackoff)-1)]) != nil {
 			return nil
@@ -507,12 +506,12 @@ func (a *WeComAdapter) listenLoop(ctx context.Context) error {
 			if ctx.Err() != nil {
 				return nil
 			}
-			slog.Warn(fmt.Sprintf("[%s] Reconnect failed: %s", a.Name(), errText(err)))
+			pkgLog().Warn(fmt.Sprintf("[%s] Reconnect failed: %s", a.Name(), errText(err)))
 			continue
 		}
 		backoffIdx = 0
 		a.MarkConnected(ctx, "")
-		slog.Info(fmt.Sprintf("[%s] Reconnected", a.Name()))
+		pkgLog().Info(fmt.Sprintf("[%s] Reconnected", a.Name()))
 	}
 	return nil
 }
@@ -539,7 +538,7 @@ func (a *WeComAdapter) readEvents(ctx context.Context) error {
 		case pyaiohttpws.Close, pyaiohttpws.Closed, pyaiohttpws.Error, pyaiohttpws.Closing:
 			return runtimeError("WeCom websocket closed")
 		default:
-			slog.Info(fmt.Sprintf("[%s] Inbound frame ignored: WSMsgType=%s", a.Name(), msg.Type))
+			pkgLog().Info(fmt.Sprintf("[%s] Inbound frame ignored: WSMsgType=%s", a.Name(), msg.Type))
 		}
 	}
 	return nil
@@ -564,16 +563,16 @@ func (a *WeComAdapter) handleFrame(ctx context.Context, data any, isBinary bool)
 		if b, ok := data.([]byte); ok {
 			decoded = pystr.DecodeUTF8Replace(b)
 		}
-		slog.Info(fmt.Sprintf("[%s] Inbound BINARY frame received (len=%d) head=%s — attempting JSON parse", a.Name(), dataLen, pyrepr.Repr(pystr.Slice(decoded, 0, 200))))
+		pkgLog().Info(fmt.Sprintf("[%s] Inbound BINARY frame received (len=%d) head=%s — attempting JSON parse", a.Name(), dataLen, pyrepr.Repr(pystr.Slice(decoded, 0, 200))))
 	}
 	payload := parseJSON(data)
 	switch {
 	case payload != nil && len(payload.Keys) > 0:
 		return a.dispatchPayload(ctx, payload)
 	case isBinary:
-		slog.Info(fmt.Sprintf("[%s] BINARY frame not parseable as JSON — dropped", a.Name()))
+		pkgLog().Info(fmt.Sprintf("[%s] BINARY frame not parseable as JSON — dropped", a.Name()))
 	default:
-		slog.Info(fmt.Sprintf("[%s] Inbound TEXT frame dropped (unparseable/non-dict) len=%d", a.Name(), dataLen))
+		pkgLog().Info(fmt.Sprintf("[%s] Inbound TEXT frame dropped (unparseable/non-dict) len=%d", a.Name(), dataLen))
 	}
 	return nil
 }
@@ -586,7 +585,7 @@ func (a *WeComAdapter) heartbeatLoop(ctx context.Context) error {
 		}
 		if ws := a.socket(); ws != nil && !ws.Closed() {
 			if err := a.SendJSON(ctx, obj("cmd", appCmdPing, "headers", obj("req_id", newReqID("ping")), "body", pyjson.NewObject())); err != nil {
-				slog.Debug(fmt.Sprintf("[%s] Heartbeat send failed: %s", a.Name(), errText(err)))
+				pkgLog().Debug(fmt.Sprintf("[%s] Heartbeat send failed: %s", a.Name(), errText(err)))
 			}
 		}
 	}
@@ -617,7 +616,7 @@ func (a *WeComAdapter) dispatchPayload(ctx context.Context, payload *pyjson.Obje
 		return s
 	}
 	if queues := a.stream.replyQueueKeys(); len(queues) > 0 && cmd != appCmdPing {
-		slog.Debug(fmt.Sprintf("[%s] _dispatch_payload[ALL]: req_id=%s cmd=%s active_queues=%s", a.Name(), orLabel(reqID, "(none)"),
+		pkgLog().Debug(fmt.Sprintf("[%s] _dispatch_payload[ALL]: req_id=%s cmd=%s active_queues=%s", a.Name(), orLabel(reqID, "(none)"),
 			pyrepr.Repr(orLabel(cmd, "(empty)")), listRepr(queues)))
 	}
 	if exists, pendingAck := a.stream.replyQueueState(reqID); reqID != "" && exists {
@@ -625,7 +624,7 @@ func (a *WeComAdapter) dispatchPayload(ctx context.Context, payload *pyjson.Obje
 		if bodyDict != nil {
 			errcode = pyrepr.Str(getOr(bodyDict, "errcode", "N/A"))
 		}
-		slog.Debug(fmt.Sprintf("[%s] _dispatch_payload: req_id=%s cmd=%s has_pending_ack=%s errcode=%s in_NON_RESPONSE=%s payload_keys=%s", a.Name(), reqID,
+		pkgLog().Debug(fmt.Sprintf("[%s] _dispatch_payload: req_id=%s cmd=%s has_pending_ack=%s errcode=%s in_NON_RESPONSE=%s payload_keys=%s", a.Name(), reqID,
 			pyrepr.Repr(cmd), pyrepr.Str(pendingAck), errcode, pyrepr.Str(nonResponseCommands[cmd]), listRepr(payload.Keys)))
 	}
 	if reqID != "" && !nonResponseCommands[cmd] {
@@ -655,7 +654,7 @@ func (a *WeComAdapter) dispatchPayload(ctx context.Context, payload *pyjson.Obje
 			return err
 		}
 		if pyrepr.Truthy(eventType) && pyrepr.Str(eventType) == "disconnected_event" {
-			slog.Warn(fmt.Sprintf("[%s] Kicked by server (another WS connection established). Suppressing reconnect to avoid mutual kicking. Check for duplicate gateway instances.", a.Name()))
+			pkgLog().Warn(fmt.Sprintf("[%s] Kicked by server (another WS connection established). Suppressing reconnect to avoid mutual kicking. Check for duplicate gateway instances.", a.Name()))
 			a.SetRunning(false)
 		}
 	case cmd != appCmdPing:
@@ -663,7 +662,7 @@ func (a *WeComAdapter) dispatchPayload(ctx context.Context, payload *pyjson.Obje
 		if bodyDict != nil {
 			bodyKeys = listRepr(bodyDict.Keys)
 		}
-		slog.Info(fmt.Sprintf("[%s] Unrouted websocket payload dropped: cmd=%s req_id=%s body_keys=%s", a.Name(), pyrepr.Repr(orLabel(cmd, "(empty)")),
+		pkgLog().Info(fmt.Sprintf("[%s] Unrouted websocket payload dropped: cmd=%s req_id=%s body_keys=%s", a.Name(), pyrepr.Repr(orLabel(cmd, "(empty)")),
 			orLabel(reqID, "(none)"), bodyKeys))
 	}
 	return nil
@@ -793,7 +792,7 @@ func parseJSON(raw any) *pyjson.Object {
 	case []byte:
 		text, decodeErr = pyjson.DecodeBytes(r)
 	default:
-		slog.Warn(fmt.Sprintf("Failed to parse WeCom payload: error=the JSON object must be str, bytes or bytearray, not %s len=%d", pyrepr.TypeName(raw), rawLen))
+		pkgLog().Warn(fmt.Sprintf("Failed to parse WeCom payload: error=the JSON object must be str, bytes or bytearray, not %s len=%d", pyrepr.TypeName(raw), rawLen))
 		return nil
 	}
 	var payload any
@@ -822,12 +821,12 @@ func parseJSON(raw any) *pyjson.Object {
 					tail = pyrepr.BytesRepr(r[len(r)-100:])
 				}
 			}
-			slog.Warn(fmt.Sprintf("Failed to parse WeCom payload (strict=False also failed): error=%s len=%d tail=%s", errText(err2), rawLen, tail))
+			pkgLog().Warn(fmt.Sprintf("Failed to parse WeCom payload (strict=False also failed): error=%s len=%d tail=%s", errText(err2), rawLen, tail))
 			return nil
 		}
-		slog.Info(fmt.Sprintf("WeCom payload required strict=False fallback (len=%d)", rawLen))
+		pkgLog().Info(fmt.Sprintf("WeCom payload required strict=False fallback (len=%d)", rawLen))
 	default:
-		slog.Warn(fmt.Sprintf("Failed to parse WeCom payload: error=%s len=%d", errText(err), rawLen))
+		pkgLog().Warn(fmt.Sprintf("Failed to parse WeCom payload: error=%s len=%d", errText(err), rawLen))
 		return nil
 	}
 	o, _ := payload.(*pyjson.Object)

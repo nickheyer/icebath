@@ -1,0 +1,92 @@
+# pkg/skills/bundled + pkg/skills/optional — bundled skills, authoring standards, curator
+
+Applies to the skill trees under `pkg/skills/`. User help: `icebath skills --help` and `icebath curator --help`.
+
+## Two surfaces
+
+- **`pkg/skills/bundled/`** — built-in, loadable by default, organised by category (`bundled/software-development/`, `bundled/productivity/`).
+- **`pkg/skills/optional/`** — heavier/niche skills shipped but NOT active; installed via
+  `icebath skills install official/<category>/<skill>` (adapter `pkg/skills/hub_official.go`
+  `OptionalSkillSource`). Categories: `autonomous-ai-agents, blockchain, communication, creative,
+  data-science, devops, dogfood, email, finance, gaming, health, mcp, media, mlops, payments,
+  productivity, research, security, smart-home, social-media, software-development,
+  web-development, yuanbao`.
+
+Both trees are plain source directories. `go generate ./pkg/skills/` packs them into
+`bundled.tar.zst` / `optional.tar.zst` with `bundled_manifest.txt` / `optional_manifest.txt`
+(`cmd/packtree`), which the binary embeds — run it after every change to either tree.
+
+Reviewing a skill PR: check the target directory — heavy-dep or niche skills go to `pkg/skills/optional/`.
+
+## SKILL.md frontmatter
+
+`name`, `description`, `version`, `author`, `license`, `platforms` (OS gate: `[macos]`,
+`[linux, macos]`, ...), `metadata.icebath.tags`, `metadata.icebath.category`,
+`metadata.icebath.related_skills`, `metadata.icebath.config` (config.yaml settings the skill needs —
+stored under `skills.config.<key>`, prompted during setup, injected at load). Top-level `tags:` /
+`category:` are accepted and mirrored from `metadata.icebath.*` by the loader.
+
+## Authoring standards (HARDLINE — rule 1 enforced by `TestDescriptionHardline` in `pkg/skills/authoring_standards_cases_test.go`)
+
+Every new or modernised skill — bundled, optional, or contributed — meets all of these before merge:
+
+1. **`description` ≤ 60 chars, one sentence, ends with a period.** Long descriptions bloat listings
+   and dilute attention when many skills load. State the capability, not the implementation; no
+   marketing words ("powerful", "comprehensive", "seamless", "advanced"); don't repeat the name or
+   the category name (the skill index already prints the category above the skill). 60 is the width
+   the index shows (`SkillPromptDescLimit` in `pkg/skills/skillutil.go`); `skill_manage` rejects a
+   new or changed description over it.
+2. **Prose references native Icebath tools or the MCP servers the skill expects, in backticks**
+   (`terminal`, `web_extract`, `read_file`, `patch`, `search_files`, `vision_analyze`,
+   `browser_exec`, `delegate_task`). Never name shell utilities the agent has wrapped: `grep` →
+   `search_files`, `cat`/`head`/`tail` → `read_file`, `sed`/`awk` → `patch`, `find`/`ls` →
+   `search_files target='files'`. MCP dependencies are named with setup in `## Prerequisites`.
+   Third-party CLIs and pipelines are fine inside script files, not as the headline surface.
+<!-- no-tmp: ok — names the POSIX-only anti-pattern reviewers look for -->
+3. **`platforms:` gating is audited against actual script imports.** POSIX-only primitives (hardcoded `/tmp`,
+   `fcntl`, `termios`, `os.setsid`, `os.kill(pid, 0)`, `/proc`, `signal.SIGKILL`,
+   bash heredocs, `osascript`, `apt`, `systemctl`) require a platform declaration. Fix cross-platform
+   first (`tempfile.gettempdir`, `pathlib.Path`, `psutil.pid_exists`, Python filtering instead of
+   `grep`); gate narrower only when the dependency is genuinely platform-bound.
+4. **`author` credits the human first.** External contributor's real name + GitHub handle first,
+   "Icebath Agent" second. A commit authored as "Icebath Agent" (they drafted with Icebath) is replaced
+   with the human's name — credit the human, not the tool.
+5. **Modern section order:** `# <Skill> Skill`, 2–3 sentence intro (what it does and doesn't),
+   `## When to Use`, `## Prerequisites`, `## How to Run`, `## Quick Reference`, `## Procedure`,
+   `## Pitfalls`, `## Verification`. ~200 lines for a complex skill, ~100 simple. Cut intro fluff,
+   marketing prose, and env-var re-explanations already in Prerequisites.
+6. **`scripts/`, `references/`, `templates/`.** Don't make the model inline-write parsers or
+   non-trivial logic every call — ship a helper script and reference it by skill-relative path.
+7. **Tests in the skill's own `tests/` directory** (`<skill>/tests/test_<skill>_skill.py`, as
+   `bundled/productivity/pdf/tests/` does), stdlib + pytest + `unittest.mock` only, no live network.
+   Run `python -m pytest pkg/skills/<bundled|optional>/<category>/<skill>/tests -q`.
+8. **`.env.example` additions sit in a clearly delimited block.** Contributor copies of the file are
+   usually stale; edits outside the skill's own block are dropped during salvage.
+
+No `offset`/`limit` pagination on skill-loading tools — the agent must read a skill fully (root).
+The operational walkthrough for adding or modernising an in-repo skill is the
+`icebath-agent-skill-authoring` skill (`pkg/skills/optional/software-development/`).
+
+## Curator (skill lifecycle)
+
+Background maintenance that tracks usage on agent-created skills and auto-archives stale ones;
+archives go to `~/.icebath/skills/.archive/` and are restorable. Core `pkg/memory/curator.go` (review
+loop, auto-transitions, LLM review prompt; the review fork runs through `pkg/agent/curator_review.go`)
++ `pkg/memory/curator_backup.go` (pre-run tar.gz snapshots);
+CLI `pkg/memory/curator_cli.go` (bound in `pkg/commands/cli_tree_curator.go`) → `icebath curator
+status|usage|run|pause|resume|pin|unpin|lock|unlock|list-unmanaged|adopt|restore|list-archived|prune|
+backup|rollback|ledger|purge`; telemetry
+`pkg/skills/usage.go` owns `~/.icebath/skills/.usage.json`
+(`use_count`, `view_count`, `patch_count`, `last_activity_at`, `state` active/stale/archived,
+`pinned`). Config `curator:` — `enabled, interval_hours, min_idle_hours, stale_after_days,
+archive_after_days, backup.*`; its LLM calls route through `auxiliary.curator` (the `auxiliary`
+section of `cli-config.yaml.example`).
+
+Invariants: touches only `created_by: "agent"` skills (bundled + hub-installed are off-limits;
+`prune_builtins` lets the deterministic inactivity walk archive bundled skills but never adds them
+to the LLM pass's candidate list, and neither are `skills.disabled` names, which `skill_view`
+refuses — the fork must only be offered skills it can read and write);
+never deletes on its own — archive is the maximum, and only the explicit `icebath curator purge` removes
+archived skills older than `curator.archive_ttl_days`; pinned skills are exempt from every auto-transition and
+the LLM review; `skill_manage(action="delete")` refuses pinned skills while patch/edit/write_file/
+remove_file still work so the agent can keep improving them.

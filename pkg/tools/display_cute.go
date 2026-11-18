@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"log/slog"
 	"math"
 	"regexp"
 	"strings"
@@ -795,7 +794,7 @@ func GetCuteToolMessage(ctx context.Context, env *Env, toolName string, args map
 		if rec == nil {
 			return
 		}
-		slog.Debug(fmt.Sprintf("Tool completion label failed for %s: %v", toolName, rec))
+		pkgLog().Debug(fmt.Sprintf("Tool completion label failed for %s: %v", toolName, rec))
 		safeName := displayT(ctx, "display.cute.fallback_tool_name", nil)
 		if toolName != "" {
 			safeName = pystr.Slice(toolName, 0, 9)
@@ -851,7 +850,7 @@ type ToolRowPart struct {
 func GetToolRowParts(ctx context.Context, env *Env, toolName string, args map[string]any, result any, isError bool) (parts []ToolRowPart) {
 	defer func() {
 		if rec := recover(); rec != nil {
-			slog.Debug(fmt.Sprintf("Tool row parts failed for %s", toolName), "error", rec)
+			pkgLog().Debug(fmt.Sprintf("Tool row parts failed for %s", toolName), "error", rec)
 			parts = []ToolRowPart{{Emoji: "⚡", Verb: toolName}}
 		}
 	}()

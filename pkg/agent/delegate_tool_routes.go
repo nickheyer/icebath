@@ -357,11 +357,11 @@ func routeOneTask(ctx context.Context, p tools.DelegationProvider, declared map[
 	if panicked == nil {
 		reason = err.Error()
 	}
-	delegateLog().Warn(fmt.Sprintf("delegation provider %s.route_task() raised", p.Name()), "exc_info", reason)
+	pkgLog().Warn(fmt.Sprintf("delegation provider %s.route_task() raised", p.Name()), "exc_info", reason)
 	return nil, routeError("Task %d: delegation backend '%s' failed: %s", index, p.Name(), reason)
 }
 
-// Provider the delegation section selects, the hermes _active_provider seam tests patch
+// Provider the delegation section selects, the active provider seam tests patch
 var activeDelegationProviderFn = tools.GetActiveDelegationProvider
 
 // One task route per task from the session's pinned or configured backend, a refusal text when it cannot run

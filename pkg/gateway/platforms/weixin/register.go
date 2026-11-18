@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"log/slog"
 
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/home"
@@ -169,7 +168,7 @@ func standaloneSend(ctx context.Context, kwargs map[string]any) (map[string]any,
 		if ctx.Err() != nil {
 			return nil, ctx.Err()
 		}
-		slog.Debug("Weixin standalone send failed", "error", err)
+		pkgLog().Debug("Weixin standalone send failed", "error", err)
 		return gateway.SendError("Weixin send failed: " + errText(err)), nil
 	}
 	return result, nil
@@ -235,7 +234,7 @@ func InteractiveSetup(ctx context.Context) error {
 			}
 		}
 	}()
-	credentials, err := qrLoginFn(loginCtx, w.HermesHome(ctx), "3", 480)
+	credentials, err := qrLoginFn(loginCtx, w.IcebathHome(ctx), "3", 480)
 	wasInterrupted := loginCtx.Err() != nil && ctx.Err() == nil
 	close(finished)
 	cancel()
@@ -365,7 +364,7 @@ type weixinPlatformPlugin struct{}
 
 func (weixinPlatformPlugin) Manifest() plugins.Manifest {
 	return plugins.Manifest{Name: "weixin-platform", Version: "1.0.0", Kind: "platform", Source: "bundled", Key: "platforms/weixin",
-		Author: "NousResearch",
+		Author: "Icebath",
 		Description: "Weixin (personal WeChat) gateway adapter for Icebath Agent over Tencent's iLink Bot API. Long-polls getupdates for inbound " +
 			"messages, echoes each peer's context_token on replies, and moves media through the AES-128-ECB encrypted CDN. " +
 			"`icebath gateway setup` performs the iLink QR login.\n",

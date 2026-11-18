@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"log/slog"
 	"net/http"
 	"os"
 	"runtime"
@@ -49,7 +48,7 @@ func (a *MatrixAdapter) connectAuthenticate(ctx context.Context, client *mautrix
 		client.AccessToken = a.accessToken
 		resp, err := client.Whoami(ctx)
 		if err != nil {
-			slog.Error(fmt.Sprintf("Matrix: whoami failed — check MATRIX_ACCESS_TOKEN and MATRIX_HOMESERVER: %v", err))
+			pkgLog().Error(fmt.Sprintf("Matrix: whoami failed — check MATRIX_ACCESS_TOKEN and MATRIX_HOMESERVER: %v", err))
 			return abortConnect(client, nil)
 		}
 		resolvedUserID := string(resp.UserID)
@@ -65,7 +64,7 @@ func (a *MatrixAdapter) connectAuthenticate(ctx context.Context, client *mautrix
 		}
 		var effectiveDeviceID string
 		if resolvedDeviceID != "" && a.deviceID != "" && resolvedDeviceID != a.deviceID {
-			slog.Error(fmt.Sprintf("Matrix: MATRIX_DEVICE_ID=%s does not match the device this access token "+
+			pkgLog().Error(fmt.Sprintf("Matrix: MATRIX_DEVICE_ID=%s does not match the device this access token "+
 				"belongs to (%s). A token can only upload keys for its own device, so the "+
 				"configured value is being ignored. Unset MATRIX_DEVICE_ID, or use a token "+
 				"issued for %s.", a.deviceID, resolvedDeviceID, a.deviceID))
@@ -81,7 +80,7 @@ func (a *MatrixAdapter) connectAuthenticate(ctx context.Context, client *mautrix
 		if client.DeviceID == "" {
 			devResp, err := client.QueryKeys(ctx, &mautrix.ReqQueryKeys{DeviceKeys: mautrix.DeviceKeysRequest{client.UserID: mautrix.DeviceIDList{}}})
 			if err != nil {
-				slog.Warn(fmt.Sprintf("Matrix: device list query failed: %v", err))
+				pkgLog().Warn(fmt.Sprintf("Matrix: device list query failed: %v", err))
 			} else {
 				allDevices := devResp.DeviceKeys[client.UserID]
 				if len(allDevices) == 1 {
@@ -89,12 +88,12 @@ func (a *MatrixAdapter) connectAuthenticate(ctx context.Context, client *mautrix
 						client.DeviceID = deviceID
 					}
 				} else if len(allDevices) == 0 {
-					slog.Warn(fmt.Sprintf("Matrix: no devices found for %s — key verification will be skipped", client.UserID))
+					pkgLog().Warn(fmt.Sprintf("Matrix: no devices found for %s — key verification will be skipped", client.UserID))
 				}
 			}
 		}
 		if client.DeviceID == "" {
-			slog.Warn(fmt.Sprintf("Matrix: device_id could not be resolved for %s. Set MATRIX_DEVICE_ID for full "+
+			pkgLog().Warn(fmt.Sprintf("Matrix: device_id could not be resolved for %s. Set MATRIX_DEVICE_ID for full "+
 				"key verification. E2EE will proceed without server-side device key confirmation.", client.UserID))
 			a.mu.Lock()
 			a.deviceIDUnverified = true
@@ -108,7 +107,7 @@ func (a *MatrixAdapter) connectAuthenticate(ctx context.Context, client *mautrix
 		if effectiveDeviceID != "" {
 			suffix = fmt.Sprintf(" (device %s)", effectiveDeviceID)
 		}
-		slog.Info(fmt.Sprintf("Matrix: using access token for %s%s", who, suffix))
+		pkgLog().Info(fmt.Sprintf("Matrix: using access token for %s%s", who, suffix))
 	case a.password != "" && a.userID != "":
 		resp, err := client.Login(ctx, &mautrix.ReqLogin{
 			Type:       mautrix.AuthTypePassword,
@@ -116,15 +115,15 @@ func (a *MatrixAdapter) connectAuthenticate(ctx context.Context, client *mautrix
 			Password:   a.password, DeviceID: id.DeviceID(a.deviceID), InitialDeviceDisplayName: "Icebath Agent",
 			StoreCredentials: true})
 		if err != nil {
-			slog.Error(fmt.Sprintf("Matrix: login failed — %v", err))
+			pkgLog().Error(fmt.Sprintf("Matrix: login failed — %v", err))
 			return abortConnect(client, nil)
 		}
 		if resp != nil {
 			client.DeviceID = resp.DeviceID
 		}
-		slog.Info(fmt.Sprintf("Matrix: logged in as %s", a.userID))
+		pkgLog().Info(fmt.Sprintf("Matrix: logged in as %s", a.userID))
 	default:
-		slog.Error("Matrix: need MATRIX_ACCESS_TOKEN or MATRIX_USER_ID + MATRIX_PASSWORD")
+		pkgLog().Error("Matrix: need MATRIX_ACCESS_TOKEN or MATRIX_USER_ID + MATRIX_PASSWORD")
 		return abortConnect(client, nil)
 	}
 	return true
@@ -134,7 +133,7 @@ func (a *MatrixAdapter) connectAuthenticate(ctx context.Context, client *mautrix
 func (a *MatrixAdapter) connectInitialSync(ctx context.Context, client *mautrix.Client) {
 	resp, err := client.SyncRequest(ctx, 10000, "", "", true, "")
 	if err != nil {
-		slog.Warn(fmt.Sprintf("Matrix: initial sync error: %v", err))
+		pkgLog().Warn(fmt.Sprintf("Matrix: initial sync error: %v", err))
 		return
 	}
 	a.mu.Lock()
@@ -151,11 +150,11 @@ func (a *MatrixAdapter) Connect(ctx context.Context, isReconnect bool) (bool, er
 	a.mu.Unlock()
 	if hasClient {
 		if err := a.Disconnect(ctx); err != nil {
-			slog.Warn(fmt.Sprintf("Matrix: error disconnecting before reconnect: %v", err))
+			pkgLog().Warn(fmt.Sprintf("Matrix: error disconnecting before reconnect: %v", err))
 		}
 	}
 	if a.homeserver == "" {
-		slog.Error("Matrix: homeserver URL not configured")
+		pkgLog().Error("Matrix: homeserver URL not configured")
 		return false, nil
 	}
 	if err := os.MkdirAll(a.resolveStoreDir(ctx), 0o777); err != nil {
@@ -200,7 +199,7 @@ func (a *MatrixAdapter) Connect(ctx context.Context, isReconnect bool) (bool, er
 	a.connectInitialSync(ctx, client)
 	if crypto := a.cryptoMachine(); a.encryptionOn() && crypto != nil {
 		if err := crypto.shareKeys(ctx); err != nil {
-			slog.Warn(fmt.Sprintf("Matrix: initial key share failed: %v", err))
+			pkgLog().Warn(fmt.Sprintf("Matrix: initial key share failed: %v", err))
 		}
 	}
 	task := startTask(context.WithoutCancel(ctx), a.syncLoop)
@@ -262,13 +261,13 @@ func (a *MatrixAdapter) Disconnect(ctx context.Context) error {
 	a.mu.Unlock()
 	if cryptoDB != nil {
 		if err := cryptoDB.Close(); err != nil {
-			slog.Debug(fmt.Sprintf("Matrix: could not close crypto DB on disconnect: %v", err))
+			pkgLog().Debug(fmt.Sprintf("Matrix: could not close crypto DB on disconnect: %v", err))
 		}
 	}
 	if client != nil && client.Client != nil {
 		client.Client.CloseIdleConnections()
 	}
-	slog.Info("Matrix: disconnected")
+	pkgLog().Info("Matrix: disconnected")
 	return nil
 }
 
@@ -304,10 +303,10 @@ func (a *MatrixAdapter) syncLoop(ctx context.Context) {
 			return
 		}
 		if isPermanentMatrixAuthError(err) {
-			slog.Error(fmt.Sprintf("Matrix: permanent auth error, stopping sync: %v", err))
+			pkgLog().Error(fmt.Sprintf("Matrix: permanent auth error, stopping sync: %v", err))
 			return
 		}
-		slog.Warn(fmt.Sprintf("Matrix: sync error: %v — retrying in 5s", err))
+		pkgLog().Warn(fmt.Sprintf("Matrix: sync error: %v — retrying in 5s", err))
 		select {
 		case <-ctx.Done():
 			return
@@ -335,7 +334,7 @@ func (a *MatrixAdapter) absorbSync(ctx context.Context, client *mautrix.Client, 
 		_ = client.Store.SaveNextBatch(ctx, client.UserID, nb)
 	}
 	if initial {
-		slog.Info(fmt.Sprintf("Matrix: initial sync complete, joined %d rooms", joinedCount))
+		pkgLog().Info(fmt.Sprintf("Matrix: initial sync complete, joined %d rooms", joinedCount))
 		a.refreshDMCache(ctx)
 	}
 	if err := a.dispatchSync(ctx, resp, since); err != nil {
@@ -343,7 +342,7 @@ func (a *MatrixAdapter) absorbSync(ctx context.Context, client *mautrix.Client, 
 		if initial {
 			label = "initial sync event dispatch error"
 		}
-		slog.Warn(fmt.Sprintf("Matrix: %s: %v", label, err))
+		pkgLog().Warn(fmt.Sprintf("Matrix: %s: %v", label, err))
 	}
 	a.schedulePendingInviteJoins(ctx, resp)
 	return nb
@@ -382,7 +381,7 @@ func (a *MatrixAdapter) warnEncryptedDrops(roomsJoin map[id.RoomID]*mautrix.Sync
 			cause = fmt.Sprintf("E2EE mode is %s but the decryptor was not set up at connect; "+
 				"see the earlier Matrix E2EE warning for the cause", a.e2eeMode)
 		}
-		slog.Warn(fmt.Sprintf("Matrix: dropping encrypted messages in %s — this process has no E2EE decryptor. %s. "+
+		pkgLog().Warn(fmt.Sprintf("Matrix: dropping encrypted messages in %s — this process has no E2EE decryptor. %s. "+
 			"Without it, messages in encrypted rooms never reach the agent.", roomID, cause))
 	}
 }
@@ -435,7 +434,7 @@ func (a *MatrixAdapter) batched(fn func(ctx context.Context, evt *event.Event) e
 			if err == nil || (batch != nil && batch.record(err)) {
 				return
 			}
-			slog.Warn(fmt.Sprintf("Matrix: event handler failed during sync dispatch: %v", err))
+			pkgLog().Warn(fmt.Sprintf("Matrix: event handler failed during sync dispatch: %v", err))
 		}
 		if batch == nil || !batch.join() {
 			go run()
@@ -466,7 +465,7 @@ func (a *MatrixAdapter) dispatchSync(ctx context.Context, resp *mautrix.RespSync
 	errs := batch.errs
 	batch.mu.Unlock()
 	for _, herr := range errs {
-		slog.Warn(fmt.Sprintf("Matrix: event handler failed during sync dispatch: %v", herr))
+		pkgLog().Warn(fmt.Sprintf("Matrix: event handler failed during sync dispatch: %v", herr))
 	}
 	return err
 }

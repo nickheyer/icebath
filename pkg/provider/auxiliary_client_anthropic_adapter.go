@@ -3,10 +3,10 @@ package provider
 import (
 	"context"
 	"fmt"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"log/slog"
 	"math"
 	"strings"
+
+	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/state"
@@ -57,15 +57,9 @@ type auxAnthropicCompletionsAdapter struct {
 	baseURL string
 }
 
-// Adapter whose base URL is the given one, else the client's own when it is the Nous portal
+// Adapter whose base URL is the given one
 func newAuxAnthropicCompletionsAdapter(client *anthropicSDKClient, model string, isOAuth bool, baseURL string) *auxAnthropicCompletionsAdapter {
-	a := &auxAnthropicCompletionsAdapter{client: client, model: model, isOAuth: isOAuth, baseURL: baseURL}
-	if a.baseURL == "" && client != nil {
-		if candidate := client.BaseURL(); candidate != "" && isNousPortalEndpoint(candidate) {
-			a.baseURL = candidate
-		}
-	}
-	return a
+	return &auxAnthropicCompletionsAdapter{client: client, model: model, isOAuth: isOAuth, baseURL: baseURL}
 }
 
 // Chat completions tool choice in the Anthropic vocabulary, nil when it has no equivalent
@@ -280,10 +274,10 @@ func (a *auxBedrockCompletionsAdapter) create(ctx context.Context, kwargs map[st
 		}
 	}
 	if choice := kwargs["tool_choice"]; choice != nil {
-		slog.Debug(fmt.Sprintf("BedrockAuxiliaryClient: tool_choice=%s not supported by the Converse shim — ignored.", pyrepr.Repr(choice)))
+		pkgLog().Debug(fmt.Sprintf("BedrockAuxiliaryClient: tool_choice=%s not supported by the Converse shim — ignored.", pyrepr.Repr(choice)))
 	}
 	if pyrepr.Truthy(kwargs["stream"]) {
-		slog.Debug(fmt.Sprintf("BedrockAuxiliaryClient: stream=True requested for %s — returning a complete response (Converse shim does not stream); caller downgrades to non-streaming.", model))
+		pkgLog().Debug(fmt.Sprintf("BedrockAuxiliaryClient: stream=True requested for %s — returning a complete response (Converse shim does not stream); caller downgrades to non-streaming.", model))
 	}
 	messages, err := auxKwargDicts(kwargs, "messages", false)
 	if err != nil {
@@ -443,7 +437,7 @@ func auxMaybeWrapAnthropic(ctx context.Context, client AuxClient, model string, 
 	}
 	real, err := auxBuildAnthropicClientFn(ctx, apiKey, baseURL, 0, false)
 	if err != nil {
-		slog.Warn(fmt.Sprintf("Failed to build Anthropic client for %s (%v) — falling back to OpenAI-wire client.", baseURL, err))
+		pkgLog().Warn(fmt.Sprintf("Failed to build Anthropic client for %s (%v) — falling back to OpenAI-wire client.", baseURL, err))
 		return client, nil
 	}
 	shown, mode := baseURL, apiMode
@@ -453,6 +447,6 @@ func auxMaybeWrapAnthropic(ctx context.Context, client AuxClient, model string, 
 	if mode == "" {
 		mode = "auto-detected"
 	}
-	slog.Debug(fmt.Sprintf("Auxiliary transport: wrapping client in AnthropicAuxiliaryClient (model=%s, base_url=%s, api_mode=%s)", model, shown, mode))
+	pkgLog().Debug(fmt.Sprintf("Auxiliary transport: wrapping client in AnthropicAuxiliaryClient (model=%s, base_url=%s, api_mode=%s)", model, shown, mode))
 	return newAnthropicAuxiliaryClientFrom(real, model, apiKey, baseURL, false), nil
 }

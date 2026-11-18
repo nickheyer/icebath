@@ -112,8 +112,8 @@ func TestCronHealthSnapshotGroupsFailOpenAndCountOverdue(t *testing.T) {
 		got[m.Name] = m.Value
 		order = append(order, m.Name)
 	}
-	want := map[string]any{"hermes.cron.scheduler.heartbeat_age_seconds": 3.5, "hermes.cron.scheduler.last_success_age_seconds": 0.0,
-		"hermes.cron.jobs.enabled": 3, "hermes.cron.jobs.overdue": 1, "hermes.cron.store.writable": 0, "hermes.cron.store.skipped_runs": 5}
+	want := map[string]any{"icebath.cron.scheduler.heartbeat_age_seconds": 3.5, "icebath.cron.scheduler.last_success_age_seconds": 0.0,
+		"icebath.cron.jobs.enabled": 3, "icebath.cron.jobs.overdue": 1, "icebath.cron.store.writable": 0, "icebath.cron.store.skipped_runs": 5}
 	if len(got) != len(want) {
 		t.Fatalf("metrics %v", order)
 	}

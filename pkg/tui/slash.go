@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"github.com/nickheyer/icebath/pkg/tuigateway"
 	"errors"
 	"os"
 	"slices"
@@ -76,10 +77,10 @@ func (r *slashRun) rpc(method string, params map[string]any, then func(map[strin
 // Prints the failure of a command request in the user's words
 func (r *slashRun) fail(err error) {
 	if isUnsupportedCommand(err) {
-		r.a.sys(describeSlashExecError(r.name, err))
+		r.a.sys(r.a.slashRefusal(r.name, err))
 		return
 	}
-	r.a.sys("error: " + rpcErrorMessage(err))
+	r.a.sys("error: " + refusalDetail(err))
 }
 
 // Tells a canonical gateway once that a typed command ran, a gateway refusing the verb never asked again
@@ -98,15 +99,6 @@ func (r *slashRun) ran() tea.Cmd {
 }
 
 func (r *slashRun) sys(text string) { r.a.sys(text) }
-
-// Counts a typed command in the shared metrics
-func (a *app) reportSlashCommand(name string) tea.Cmd {
-	params := map[string]any{"command": name}
-	if sid := a.store.ui.Sid; sid != "" {
-		params["session_id"] = sid
-	}
-	return a.events.quietRequest("shared_metrics.slash_command", params)
-}
 
 // Local command of a name or alias
 func (a *app) findSlashCommand(name string) *slashCommand {
@@ -153,15 +145,11 @@ func (a *app) slash(cmd string, submission *slashSubmission, typed bool) tea.Cmd
 	if arg != "" {
 		argTail = " " + arg
 	}
-	var count tea.Cmd
-	if typed {
-		count = a.reportSlashCommand(name)
-	}
 	if found := a.findSlashCommand(name); found != nil {
-		return tea.Batch(count, found.run(run))
+		return found.run(run)
 	}
 	if a.widgets.has(name) {
-		return tea.Batch(count, a.widgets.launch(name, arg))
+		return a.widgets.launch(name, arg)
 	}
 	if a.catalog != nil && len(a.catalog.Canon) > 0 {
 		needle := strings.ToLower("/" + name)
@@ -202,7 +190,7 @@ func (a *app) slash(cmd string, submission *slashSubmission, typed bool) tea.Cmd
 					shown += ", …"
 				}
 				a.sys("ambiguous command: " + shown)
-				return count
+				return nil
 			}
 		}
 	}
@@ -225,7 +213,7 @@ func (a *app) slash(cmd string, submission *slashSubmission, typed bool) tea.Cmd
 			return a.showOutput(body, name)
 		}
 		if isUnsupportedCommand(err) {
-			a.sys(describeSlashExecError(name, err))
+			a.sys(a.slashRefusal(name, err))
 			return nil
 		}
 		if !shouldFallbackToDispatch(err) {
@@ -243,7 +231,7 @@ func (a *app) slash(cmd string, submission *slashSubmission, typed bool) tea.Cmd
 			return a.handleDispatch(run, raw, false)
 		})
 	})
-	return tea.Batch(count, exec)
+	return exec
 }
 
 // Carries out what the gateway decided a command is, output, an alias, a skill or message to send, or a prefill
@@ -323,12 +311,50 @@ func (a *app) slashPaletteCommands() []wm.Command {
 	return out
 }
 
+// Actions whose key help row is one catalog text, the chords of a group joined in one row
+var hotkeyGroups = []struct {
+	ids []string
+	key string
+}{
+	{[]string{"composer.undo", "composer.redo"}, "hints.undoRedo"},
+	{[]string{"tui.suspend"}, "hints.suspend"},
+}
+
+// Row of a grouped action, empty unless it leads the group and the terminal can send a chord of it
+func (a *app) hotkeyGroupRow(id string) ([2]string, bool) {
+	for _, g := range hotkeyGroups {
+		if !slices.Contains(g.ids, id) {
+			continue
+		}
+		if g.ids[0] != id {
+			return [2]string{}, true
+		}
+		var chords []string
+		for _, member := range g.ids {
+			if c := a.keys.DisplayAll(member); c != "" {
+				chords = append(chords, c)
+			}
+		}
+		if len(chords) == 0 {
+			return [2]string{}, true
+		}
+		return [2]string{strings.Join(chords, " / "), tr(g.key)}, true
+	}
+	return [2]string{}, false
+}
+
 // Hotkeys of the session as the keymap binds them now
 func (a *app) hotkeyRows() [][2]string {
 	var rows [][2]string
 	commands := map[string]bool{"palette": true, "quit": true, "interrupt": true}
 	for _, action := range a.keys.InContexts([]string{tuiContext, keys.Session}) {
 		if action.Context == keys.Global && !commands[action.ID] {
+			continue
+		}
+		if row, grouped := a.hotkeyGroupRow(action.ID); grouped {
+			if row[0] != "" {
+				rows = append(rows, row)
+			}
 			continue
 		}
 		if chord := a.keys.DisplayAll(action.ID); chord != "" && action.Doc != "" && (action.Context == tuiContext || !action.Quiet || strings.HasPrefix(action.ID, "composer.delete")) {
@@ -467,16 +493,23 @@ func (a *app) coreCommands() []slashCommand {
 				r.sys(tr("slashCmd.core.status.noActiveSession"))
 				return nil
 			}
-			method, params := "session.status", map[string]any{"session_id": r.sid}
-			if a.gw.canonical() {
-				method, params = "slash.exec", map[string]any{"command": "status", "session_id": r.sid}
-			}
-			return r.rpc(method, params, func(res map[string]any) tea.Cmd {
-				out, _ := res["output"].(string)
+			show := func(out string) tea.Cmd {
 				if out == "" {
 					out = tr("slashCmd.core.status.empty")
 				}
 				return a.page(out, tr("slashCmd.core.status.pageTitle"))
+			}
+			if a.gw.canonical() {
+				return r.rpc("slash.exec", map[string]any{"command": "status", "session_id": r.sid}, func(res map[string]any) tea.Cmd {
+					out, _ := res["output"].(string)
+					return show(out)
+				})
+			}
+			return ask(r.rpc, a.sys, tuigateway.SessionStatus, tuigateway.SessionStatusParams{SessionID: r.sid}, func(res *tuigateway.SessionStatusResult) tea.Cmd {
+				if res == nil {
+					return nil
+				}
+				return show(res.Output)
 			})
 		}},
 		{name: "density", help: "toggle compact display", usage: "[on|off|toggle]", run: func(r *slashRun) tea.Cmd {
@@ -560,3 +593,99 @@ func configLines(value map[string]any, indent string) []string {
 
 // Asks the app to quit with a status after a command printed its last line
 type dieMsg struct{ code int }
+
+// Refusal of a command the gateway does not run, a name no catalog knows told apart with the closest known names
+func (a *app) slashRefusal(name string, err error) string {
+	known := a.knownCommandNames()
+	if slices.Contains(known, strings.ToLower(name)) {
+		return describeSlashExecError(name, err)
+	}
+	if near := closestCommands(strings.ToLower(name), known); len(near) > 0 {
+		return tr("slash.unknownCommand", name, "/"+strings.Join(near, ", /"))
+	}
+	return tr("slash.unknownCommandNoMatch", name)
+}
+
+// Names of every command the app runs itself or the gateway catalog offers, aliases included, without the slash
+func (a *app) knownCommandNames() []string {
+	seen := map[string]bool{}
+	var out []string
+	add := func(name string) {
+		name = strings.ToLower(strings.TrimPrefix(strings.TrimSpace(name), "/"))
+		if name != "" && !seen[name] {
+			seen[name] = true
+			out = append(out, name)
+		}
+	}
+	for _, c := range a.localCommands {
+		add(c.name)
+	}
+	if a.catalog != nil {
+		for _, pair := range a.catalog.Pairs {
+			if fields := strings.Fields(pair[0]); len(fields) > 0 {
+				add(fields[0])
+			}
+		}
+		for alias, canon := range a.catalog.Canon {
+			add(alias)
+			add(canon)
+		}
+	}
+	return out
+}
+
+// Up to three known names nearest a mistyped one, by edit distance with a prefix match counted close
+func closestCommands(name string, known []string) []string {
+	type scored struct {
+		name string
+		dist int
+	}
+	limit := max(2, len([]rune(name))/3)
+	var hits []scored
+	for _, k := range known {
+		d := editDistance(name, k)
+		if strings.HasPrefix(k, name) {
+			d = min(d, 1)
+		}
+		if d <= limit {
+			hits = append(hits, scored{k, d})
+		}
+	}
+	slices.SortStableFunc(hits, func(x, y scored) int {
+		if x.dist != y.dist {
+			return x.dist - y.dist
+		}
+		return strings.Compare(x.name, y.name)
+	})
+	out := []string{}
+	for _, h := range hits[:min(len(hits), 3)] {
+		out = append(out, h.name)
+	}
+	return out
+}
+
+// Edits that turn one name into the other, an adjacent swap counted as one
+func editDistance(a, b string) int {
+	x, y := []rune(a), []rune(b)
+	prev2 := make([]int, len(y)+1)
+	prev := make([]int, len(y)+1)
+	cur := make([]int, len(y)+1)
+	for j := range prev {
+		prev[j] = j
+	}
+	for i := 1; i <= len(x); i++ {
+		cur[0] = i
+		for j := 1; j <= len(y); j++ {
+			cost := 1
+			if x[i-1] == y[j-1] {
+				cost = 0
+			}
+			cur[j] = min(prev[j]+1, cur[j-1]+1, prev[j-1]+cost)
+			if i > 1 && j > 1 && x[i-1] == y[j-2] && x[i-2] == y[j-1] {
+				cur[j] = min(cur[j], prev2[j-2]+1)
+			}
+		}
+		prev2, prev, cur = prev, cur, prev2
+	}
+	return prev[len(y)]
+}

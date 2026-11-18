@@ -8,7 +8,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"log/slog"
 	"math"
 	"os"
 	"os/exec"
@@ -24,11 +23,9 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/home"
+	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
-
-// Logger every MCP diagnostic goes through, read at call time so tests can swap the default
-func mcpLogger() *slog.Logger { return slog.Default().With("logger", "tools.mcp_tool") }
 
 // Python str of a config value
 func pyStr(v any) string {
@@ -46,7 +43,7 @@ func pyStr(v any) string {
 		return pyFloatRepr(x)
 	case float32:
 		return pyFloatRepr(float64(x))
-	case []any, map[string]any, []string:
+	case []any, map[string]any, []string, *pyjson.Object:
 		return pyRepr(v)
 	}
 	return fmt.Sprint(v)
@@ -74,6 +71,15 @@ func pyRepr(v any) string {
 		parts := make([]string, len(keys))
 		for i, k := range keys {
 			parts[i] = pyReprStr(k) + ": " + pyRepr(x[k])
+		}
+		return "{" + strings.Join(parts, ", ") + "}"
+	case *pyjson.Object:
+		if x == nil {
+			return "None"
+		}
+		parts := make([]string, len(x.Keys))
+		for i, k := range x.Keys {
+			parts[i] = pyReprStr(k) + ": " + pyRepr(x.Vals[k])
 		}
 		return "{" + strings.Join(parts, ", ") + "}"
 	}
@@ -256,7 +262,7 @@ func resolveToolTimeout(cfg map[string]any, tree config.Tree) float64 {
 		if f, ok := config.AsFloat(perServer); ok {
 			return f
 		}
-		mcpLogger().Warn(fmt.Sprintf("MCP config timeout must be a number of seconds; ignoring %s", pyRepr(perServer)))
+		pkgLog().Warn(fmt.Sprintf("MCP config timeout must be a number of seconds; ignoring %s", pyRepr(perServer)))
 	}
 	if d, ok := resolveConfiguredTimeout(tree, "mcp.tool_call", time.Duration(defaultToolTimeout*float64(time.Second))); ok {
 		return d.Seconds()
@@ -416,7 +422,7 @@ func parseBoolish(value any, def bool) bool {
 			return false
 		}
 	}
-	mcpLogger().Warn(fmt.Sprintf("MCP config expected a boolean-ish value, got %s; using default=%s", pyRepr(value), pyStr(def)))
+	pkgLog().Warn(fmt.Sprintf("MCP config expected a boolean-ish value, got %s; using default=%s", pyRepr(value), pyStr(def)))
 	return def
 }
 
@@ -442,11 +448,11 @@ func lifecycleSeconds(cfg map[string]any, key string) (float64, bool) {
 	}
 	seconds, ok := pyFloat(raw)
 	if !ok {
-		mcpLogger().Warn(fmt.Sprintf("MCP config %s must be a number of seconds; ignoring %s", key, pyRepr(raw)))
+		pkgLog().Warn(fmt.Sprintf("MCP config %s must be a number of seconds; ignoring %s", key, pyRepr(raw)))
 		return 0, false
 	}
 	if seconds < 0 {
-		mcpLogger().Warn(fmt.Sprintf("MCP config %s must be positive; ignoring %s", key, pyRepr(raw)))
+		pkgLog().Warn(fmt.Sprintf("MCP config %s must be positive; ignoring %s", key, pyRepr(raw)))
 		return 0, false
 	}
 	if seconds == 0 {
@@ -492,7 +498,7 @@ func getStderrLog(ctx context.Context) *os.File {
 		fh, err = os.OpenFile(filepath.Join(logDir, "mcp-stderr.log"), os.O_WRONLY|os.O_CREATE|os.O_APPEND, 0o600)
 	}
 	if err != nil {
-		mcpLogger().Debug(fmt.Sprintf("Failed to open MCP stderr log, using devnull: %v", err))
+		pkgLog().Debug(fmt.Sprintf("Failed to open MCP stderr log, using devnull: %v", err))
 		fh, err = os.OpenFile(os.DevNull, os.O_WRONLY, 0)
 		if err != nil {
 			fh = os.Stderr
@@ -520,7 +526,7 @@ func closeStderrLogs(scope string) {
 			continue
 		}
 		if err := fh.Close(); err != nil {
-			mcpLogger().Warn(fmt.Sprintf("Could not close MCP stderr log for %s", k), "error", err)
+			pkgLog().Warn(fmt.Sprintf("Could not close MCP stderr log for %s", k), "error", err)
 		}
 	}
 }
@@ -1397,7 +1403,7 @@ func packagedNpxEntry(ctx context.Context, command string, args []string) (strin
 			if r := []rune(text); len(r) > 500 {
 				text = string(r[len(r)-500:])
 			}
-			mcpLogger().Warn(fmt.Sprintf("npm install of %s with the packaged node failed: %s", spec, text))
+			pkgLog().Warn(fmt.Sprintf("npm install of %s with the packaged node failed: %s", spec, text))
 			if !isFile() {
 				return "", nil, false, nil
 			}
@@ -1664,7 +1670,7 @@ func warnHiddenWhitespace(serverName string, cfg map[string]any) []string {
 			continue
 		}
 		whitespaceWarned[key] = true
-		mcpLogger().Warn(fmt.Sprintf("MCP server '%s': config value '%s' has hidden leading or trailing whitespace \u2014 this often "+
+		pkgLog().Warn(fmt.Sprintf("MCP server '%s': config value '%s' has hidden leading or trailing whitespace \u2014 this often "+
 			"causes authentication or connection failures. Check for stray spaces/newlines in config.yaml "+
 			"(or the referenced env var).", serverName, p))
 	}
@@ -1701,9 +1707,9 @@ func filterSuspiciousServers(servers map[string]any) map[string]any {
 			issues = ValidateServerEntry(name, m)
 		}
 		if len(issues) > 0 {
-			mcpLogger().Warn(fmt.Sprintf("Skipping suspicious MCP server '%s': %s", name, strings.Join(issues, "; ")))
+			pkgLog().Warn(fmt.Sprintf("Skipping suspicious MCP server '%s': %s", name, strings.Join(issues, "; ")))
 		} else if bad := malformedCostTable(name, cfg); bad != "" {
-			mcpLogger().Error(fmt.Sprintf("Skipping MCP server '%s': %s (fix tool_costs/spend_limit/cost_unit in config.yaml)", name, bad))
+			pkgLog().Error(fmt.Sprintf("Skipping MCP server '%s': %s (fix tool_costs/spend_limit/cost_unit in config.yaml)", name, bad))
 		} else {
 			safe[name] = cfg
 		}
@@ -1715,7 +1721,7 @@ func filterSuspiciousServers(servers map[string]any) map[string]any {
 func portableServers(ctx context.Context, safe map[string]*Rendered, rejected map[string]bool) {
 	portable, err := pluginPortableServers(home.Dir(ctx))
 	if err != nil {
-		mcpLogger().Debug("Failed to load portable MCP servers", "error", err)
+		pkgLog().Debug("Failed to load portable MCP servers", "error", err)
 		return
 	}
 	mergePortableServers(portable, safe, rejected)
@@ -1732,7 +1738,7 @@ func mergePortableServers(portable map[string]map[string]any, safe map[string]*R
 		cfg, _ := kept[name].(map[string]any)
 		switch native, exists := safe[name]; {
 		case rejected[name]:
-			mcpLogger().Warn(fmt.Sprintf("Portable MCP server '%s' skipped: the native entry of that name was rejected", name))
+			pkgLog().Warn(fmt.Sprintf("Portable MCP server '%s' skipped: the native entry of that name was rejected", name))
 		case exists:
 			var carried []string
 			merged := make(map[string]any, len(native.Config)+len(CostConfigKeys))
@@ -1749,10 +1755,10 @@ func mergePortableServers(portable map[string]map[string]any, safe map[string]*R
 			}
 			if len(carried) > 0 {
 				safe[name] = &Rendered{Config: merged, strs: native.strs}
-				mcpLogger().Warn(fmt.Sprintf("Portable MCP server '%s' conflicts with native config; using the native entry with the package's declared %s",
+				pkgLog().Warn(fmt.Sprintf("Portable MCP server '%s' conflicts with native config; using the native entry with the package's declared %s",
 					name, strings.Join(carried, ", ")))
 			} else {
-				mcpLogger().Warn(fmt.Sprintf("Portable MCP server '%s' conflicts with native config; skipping", name))
+				pkgLog().Warn(fmt.Sprintf("Portable MCP server '%s' conflicts with native config; skipping", name))
 			}
 		default:
 			cp := make(map[string]any, len(cfg))
@@ -1786,7 +1792,7 @@ func LoadServerConfigs(ctx context.Context, env *tools.Env) map[string]*Rendered
 	h := home.Dir(ctx)
 	tree, err := config.Load(h, secretsLookup(env, h))
 	if err != nil {
-		mcpLogger().Debug(fmt.Sprintf("Failed to load MCP config: %v", err))
+		pkgLog().Debug(fmt.Sprintf("Failed to load MCP config: %v", err))
 		return map[string]*Rendered{}
 	}
 	servers, _ := tree["mcp_servers"].(map[string]any)
@@ -1802,7 +1808,7 @@ func LoadServerConfigs(ctx context.Context, env *tools.Env) map[string]*Rendered
 		}
 		r, err := renderServerConfig(ctx, env, cfg)
 		if err != nil {
-			mcpLogger().Debug(fmt.Sprintf("Failed to load MCP config: %v", err))
+			pkgLog().Debug(fmt.Sprintf("Failed to load MCP config: %v", err))
 			return map[string]*Rendered{}
 		}
 		warnHiddenWhitespace(name, r.Config)
@@ -1825,7 +1831,7 @@ func resolveIdentityHeader(ctx context.Context, serverName string, cfg map[strin
 		return "", "", false
 	}
 	ignore := func(detail string) (string, string, bool) {
-		mcpLogger().Warn(fmt.Sprintf("MCP server '%s': identity_header %s \u2014 ignoring", serverName, detail))
+		pkgLog().Warn(fmt.Sprintf("MCP server '%s': identity_header %s \u2014 ignoring", serverName, detail))
 		return "", "", false
 	}
 	block, ok := raw.(map[string]any)
@@ -1886,7 +1892,7 @@ func applyIdentityHeader(ctx context.Context, serverName string, cfg map[string]
 	}
 	for k := range headers {
 		if strings.EqualFold(k, name) {
-			mcpLogger().Debug(fmt.Sprintf("MCP server '%s': identity_header '%s' already set via explicit headers config \u2014 keeping the explicit value", serverName, name))
+			pkgLog().Debug(fmt.Sprintf("MCP server '%s': identity_header '%s' already set via explicit headers config \u2014 keeping the explicit value", serverName, name))
 			return headers
 		}
 	}
@@ -1930,7 +1936,7 @@ func normalizeServerTrust(value any) string {
 	if text == TrustFull || text == TrustUntrusted {
 		return text
 	}
-	mcpLogger().Warn(fmt.Sprintf("MCP trust: unrecognized trust value %s \u2014 treating as 'untrusted' (valid values: full, untrusted)", pyRepr(value)))
+	pkgLog().Warn(fmt.Sprintf("MCP trust: unrecognized trust value %s \u2014 treating as 'untrusted' (valid values: full, untrusted)", pyRepr(value)))
 	return TrustUntrusted
 }
 
@@ -2022,7 +2028,7 @@ func ParseServerConfig(name string, cfg map[string]any, tree config.Tree) (*Serv
 		if f, isNum := pyFloat(v); isNum {
 			c.ConnectTimeout = f
 		} else {
-			mcpLogger().Warn(fmt.Sprintf("MCP server '%s': connect_timeout must be a number of seconds; ignoring %s", name, pyRepr(v)))
+			pkgLog().Warn(fmt.Sprintf("MCP server '%s': connect_timeout must be a number of seconds; ignoring %s", name, pyRepr(v)))
 		}
 	}
 	if configured, ok := cfg["keepalive_interval"]; c.IsHTTP() || (ok && configured != nil) {
@@ -2031,7 +2037,7 @@ func ParseServerConfig(name string, cfg map[string]any, tree config.Tree) (*Serv
 			if f, isNum := pyFloat(configured); isNum {
 				interval = f
 			} else {
-				mcpLogger().Warn(fmt.Sprintf("MCP server '%s': keepalive_interval must be a number of seconds; ignoring %s", name, pyRepr(configured)))
+				pkgLog().Warn(fmt.Sprintf("MCP server '%s': keepalive_interval must be a number of seconds; ignoring %s", name, pyRepr(configured)))
 			}
 		}
 		c.KeepaliveInterval = math.Max(minKeepaliveInterval, interval)

@@ -3,7 +3,6 @@ package wecom
 import (
 	"context"
 	"fmt"
-	"log/slog"
 	"sort"
 	"strings"
 	"time"
@@ -32,7 +31,7 @@ func (a *WeComAdapter) onMessage(ctx context.Context, payload *pyjson.Object) er
 		if len(sender.Keys) > 0 {
 			senderUser = sender.Vals["userid"]
 		}
-		slog.Info(fmt.Sprintf("[%s] Duplicate message %s ignored (dedup drop) req_id=%s sender=%s chattype=%s", a.Name(), msgID, reqID,
+		pkgLog().Info(fmt.Sprintf("[%s] Duplicate message %s ignored (dedup drop) req_id=%s sender=%s chattype=%s", a.Name(), msgID, reqID,
 			reprOf(senderUser), reprOf(body.Vals["chattype"])))
 		return nil
 	}
@@ -42,10 +41,10 @@ func (a *WeComAdapter) onMessage(ctx context.Context, payload *pyjson.Object) er
 		a.mu.Unlock()
 	}
 	chatID := textOf(pyrepr.Or(body.Vals["chatid"], senderID))
-	slog.Info(fmt.Sprintf("[%s] Inbound callback: chattype=%s chatid=%s sender=%s msgtype=%s has_chatid=%s", a.Name(), reprOf(body.Vals["chattype"]),
+	pkgLog().Info(fmt.Sprintf("[%s] Inbound callback: chattype=%s chatid=%s sender=%s msgtype=%s has_chatid=%s", a.Name(), reprOf(body.Vals["chattype"]),
 		reprOf(body.Vals["chatid"]), reprOf(senderID), reprOf(body.Vals["msgtype"]), pyrepr.Str(pyrepr.Truthy(body.Vals["chatid"]))))
 	if chatID == "" {
-		slog.Info(fmt.Sprintf("[%s] Missing chat id, skipping message; body_keys=%s", a.Name(), listRepr(body.Keys)))
+		pkgLog().Info(fmt.Sprintf("[%s] Missing chat id, skipping message; body_keys=%s", a.Name(), listRepr(body.Keys)))
 		return nil
 	}
 	isGroup := lowerOf(body.Vals["chattype"]) == "group"
@@ -68,7 +67,7 @@ func (a *WeComAdapter) onMessage(ctx context.Context, payload *pyjson.Object) er
 		text = replyText
 	}
 	if text == "" && len(mediaURLs) == 0 {
-		slog.Info(fmt.Sprintf("[%s] Empty WeCom message skipped: is_group=%s chat=%s msgtype=%s", a.Name(), pyrepr.Str(isGroup), chatID, reprOf(body.Vals["msgtype"])))
+		pkgLog().Info(fmt.Sprintf("[%s] Empty WeCom message skipped: is_group=%s chat=%s msgtype=%s", a.Name(), pyrepr.Str(isGroup), chatID, reprOf(body.Vals["msgtype"])))
 		return nil
 	}
 	fields := gateway.SourceFields{ChatType: "dm", MessageID: &msgID}
@@ -108,7 +107,7 @@ func (a *WeComAdapter) admitInbound(ctx context.Context, isGroup bool, chatID, s
 			return false, err
 		}
 		if !allowed {
-			slog.Info(fmt.Sprintf("[%s] DM sender %s blocked by policy", a.Name(), senderID))
+			pkgLog().Info(fmt.Sprintf("[%s] DM sender %s blocked by policy", a.Name(), senderID))
 		}
 		return allowed, nil
 	}
@@ -120,7 +119,7 @@ func (a *WeComAdapter) admitInbound(ctx context.Context, isGroup bool, chatID, s
 		return false, err
 	}
 	if !allowed {
-		slog.Info(fmt.Sprintf("[%s] Group message DROPPED by policy: chat=%s sender=%s group_policy=%s (set group_policy to 'open' or add to group_allow_from to receive)",
+		pkgLog().Info(fmt.Sprintf("[%s] Group message DROPPED by policy: chat=%s sender=%s group_policy=%s (set group_policy to 'open' or add to group_allow_from to receive)",
 			a.Name(), chatID, senderID, reprOf(a.GroupPolicy)))
 	}
 	return allowed, nil
@@ -300,7 +299,7 @@ func (a *WeComAdapter) forceReconnectOnStaleSubscription(errcode int) {
 	if errcode != StreamNotSubscribedErrcode {
 		return
 	}
-	slog.Warn(fmt.Sprintf("[%s] Got errcode %d (subscription lost) — clearing stale state", a.Name(), errcode))
+	pkgLog().Warn(fmt.Sprintf("[%s] Got errcode %d (subscription lost) — clearing stale state", a.Name(), errcode))
 	a.mu.Lock()
 	a.lastChatReqIDs.Clear()
 	a.replyReqIDs.Clear()
@@ -394,11 +393,11 @@ func (a *WeComAdapter) sendInner(ctx context.Context, chatID, content, replyTo s
 	switch {
 	case replyReqID != "":
 		if response, err = a.sendReplyMarkdown(ctx, replyReqID, content); err != nil && (isTimeout(err) || isRuntimeError(err)) {
-			slog.Warn(fmt.Sprintf("[%s] Passive reply failed (%s), falling back to proactive send", a.Name(), errText(err)))
+			pkgLog().Warn(fmt.Sprintf("[%s] Passive reply failed (%s), falling back to proactive send", a.Name(), errText(err)))
 			response, err = a.sendProactiveMarkdown(ctx, chatID, content)
 		}
 	case isGroupChat:
-		slog.Warn(fmt.Sprintf("[%s] No cached req_id for group chat %s — cannot send (groups require passive reply via req_id)", a.Name(), chatID))
+		pkgLog().Warn(fmt.Sprintf("[%s] No cached req_id for group chat %s — cannot send (groups require passive reply via req_id)", a.Name(), chatID))
 		return gateway.SendResult{Success: false, Error: "No req_id available for group chat (passive reply required)"}, nil
 	default:
 		response, err = a.sendProactiveMarkdown(ctx, chatID, content)
@@ -409,7 +408,7 @@ func (a *WeComAdapter) sendInner(ctx context.Context, chatID, content, replyTo s
 	case isTimeout(err):
 		return gateway.SendResult{Success: false, Error: "Timeout sending message to WeCom"}, nil
 	case err != nil:
-		slog.Error(fmt.Sprintf("[%s] Send failed: %s", a.Name(), errText(err)))
+		pkgLog().Error(fmt.Sprintf("[%s] Send failed: %s", a.Name(), errText(err)))
 		return a.sendFailure(errText(err), strings.Contains(errText(err), fmt.Sprint(StreamNotSubscribedErrcode))), nil
 	}
 	if failure := responseError(response); failure != "" {

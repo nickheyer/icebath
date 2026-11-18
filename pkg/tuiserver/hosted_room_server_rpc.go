@@ -12,7 +12,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/tuigateway"
+	"github.com/nickheyer/icebath/pkg/tuihost"
 )
 
 // An in process session operation the installed handler rejected
@@ -33,14 +33,14 @@ func (e *hostedRoomMissingMethodError) Error() string { return pyrepr.Repr(e.met
 // Server surface the adapter drives, its installed handlers, live session records, pending approvals and profile homes
 type HostedRoomServer struct {
 	Method          func(name string) Handler
-	SessionRecord   func(sessionID string) *tuigateway.Session
+	SessionRecord   func(sessionID string) *tuihost.Session
 	PendingApproval func(ctx context.Context, sessionKey string) map[string]any
 	ProfileHome     func(profile string) (string, error)
 }
 
 // The fully initialized server of this process
 func InstalledHostedRoomServer() HostedRoomServer {
-	return HostedRoomServer{Method: lookupMethod, SessionRecord: tuigateway.SessionRecordByIDOrKey,
+	return HostedRoomServer{Method: lookupMethod, SessionRecord: tuihost.SessionRecordByIDOrKey,
 		PendingApproval: pendingApprovalRequestPayload, ProfileHome: profileHome}
 }
 
@@ -54,11 +54,11 @@ type HostedRoomServerRPC struct {
 
 // Binds the hosted room service over these installed handlers into the process slot without starting it
 func BindHostedRoomServer() {
-	tuigateway.BindHostedRoomServer(newHostedRoomService, gateway.HostedRoomsDefaultDBPath)
+	tuihost.BindHostedRoomServer(newHostedRoomService, gateway.HostedRoomsDefaultDBPath)
 }
 
 // Hosted room service at the database whose session operations run through the installed handlers
-func newHostedRoomService(ctx context.Context, dbPath string) (tuigateway.HostedRoomService, error) {
+func newHostedRoomService(ctx context.Context, dbPath string) (tuihost.HostedRoomService, error) {
 	service, err := gateway.NewHostedRoomService(ctx, gateway.HostedRoomServiceOptions{DBPath: dbPath,
 		MakeRPC: func(path string) (gateway.HostedRoomRPC, error) {
 			return NewHostedRoomServerRPC(InstalledHostedRoomServer(), &path), nil

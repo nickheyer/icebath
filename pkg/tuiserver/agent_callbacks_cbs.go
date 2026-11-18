@@ -8,12 +8,12 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/tools"
-	"github.com/nickheyer/icebath/pkg/tuigateway"
+	"github.com/nickheyer/icebath/pkg/tuihost"
 )
 
 // Whether an agent callback may present to the session, a diagnostic one only under the TUI warning policy
 func agentPresentationEnabled(ctx context.Context, sid string, diagnostic bool) bool {
-	session := tuigateway.SessionRecord(sid)
+	session := tuihost.SessionRecord(sid)
 	a := sessionAgent(session)
 	if a != nil && a.MuteNotificationReply() {
 		return false
@@ -22,7 +22,7 @@ func agentPresentationEnabled(ctx context.Context, sid string, diagnostic bool) 
 		return true
 	}
 	if session == nil {
-		session = tuigateway.NewSession(map[string]any{})
+		session = tuihost.NewSession(map[string]any{})
 	}
 	var notificationConfig map[string]any
 	if a != nil {

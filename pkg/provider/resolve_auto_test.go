@@ -76,10 +76,10 @@ func TestResolveRequestedProviderExportPrefersArgThenConfigThenEnv(t *testing.T)
 	if got, err := ResolveRequestedProvider(ctx, bare, ""); err != nil || got != "auto" {
 		t.Fatalf("default %q %v", got, err)
 	}
-	if err := os.WriteFile(filepath.Join(bare, ".env"), []byte("ICEBATH_INFERENCE_PROVIDER= Nous \n"), 0o600); err != nil {
+	if err := os.WriteFile(filepath.Join(bare, ".env"), []byte("ICEBATH_INFERENCE_PROVIDER= DeepSeek \n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if got, err := ResolveRequestedProvider(ctx, bare, ""); err != nil || got != "nous" {
+	if got, err := ResolveRequestedProvider(ctx, bare, ""); err != nil || got != "deepseek" {
 		t.Fatalf("env %q %v", got, err)
 	}
 	if got, err := ResolveRequestedProvider(ctx, runtimeConfigHome(t, "model: [unclosed\n"), ""); err != nil || got != "auto" {
@@ -89,7 +89,7 @@ func TestResolveRequestedProviderExportPrefersArgThenConfigThenEnv(t *testing.T)
 
 func TestResolveRequestedProviderReadsBoundClientEnvBeforeSecrets(t *testing.T) {
 	bare := runtimeConfigHome(t, "model:\n  default: m\n")
-	if err := os.WriteFile(filepath.Join(bare, ".env"), []byte("ICEBATH_INFERENCE_PROVIDER=nous\n"), 0o600); err != nil {
+	if err := os.WriteFile(filepath.Join(bare, ".env"), []byte("ICEBATH_INFERENCE_PROVIDER=deepseek\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	bound := state.ClientEnvScope(context.Background(), map[string]string{"ICEBATH_INFERENCE_PROVIDER": " XAI "}, true, nil)
@@ -101,7 +101,7 @@ func TestResolveRequestedProviderReadsBoundClientEnvBeforeSecrets(t *testing.T) 
 		t.Fatalf("bound client without the key never reads the daemon secret %q %v", got, err)
 	}
 	unbound := state.ClientEnvScope(context.Background(), nil, true, nil)
-	if got, err := ResolveRequestedProvider(unbound, bare, ""); err != nil || got != "nous" {
+	if got, err := ResolveRequestedProvider(unbound, bare, ""); err != nil || got != "deepseek" {
 		t.Fatalf("unbound session reads the secret store %q %v", got, err)
 	}
 }

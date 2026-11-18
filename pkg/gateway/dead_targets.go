@@ -3,7 +3,6 @@ package gateway
 import (
 	"context"
 	"fmt"
-	"log/slog"
 	"os"
 	"path/filepath"
 	"strings"
@@ -50,18 +49,18 @@ func NewDeadTargetRegistry(ctx context.Context, path string) *DeadTargetRegistry
 	data, err := os.ReadFile(path)
 	if err != nil {
 		if !os.IsNotExist(err) {
-			slog.Debug(fmt.Sprintf("dead_targets: could not load %s (%s) — starting empty", path, pypath.OSErrorText(err)))
+			pkgLog().Debug(fmt.Sprintf("dead_targets: could not load %s (%s) — starting empty", path, pypath.OSErrorText(err)))
 		}
 		return r
 	}
 	text, err := pystr.DecodeUTF8Sig(data)
 	if err != nil {
-		slog.Debug(fmt.Sprintf("dead_targets: could not load %s (%v) — starting empty", path, err))
+		pkgLog().Debug(fmt.Sprintf("dead_targets: could not load %s (%v) — starting empty", path, err))
 		return r
 	}
 	raw, err := pyjson.Loads(text)
 	if err != nil {
-		slog.Debug(fmt.Sprintf("dead_targets: could not load %s (%v) — starting empty", path, err))
+		pkgLog().Debug(fmt.Sprintf("dead_targets: could not load %s (%v) — starting empty", path, err))
 		return r
 	}
 	if obj, ok := raw.(*pyjson.Object); ok {
@@ -86,7 +85,7 @@ func (r *DeadTargetRegistry) flushLocked() {
 		}
 	}
 	if err != nil {
-		slog.Debug(fmt.Sprintf("dead_targets: could not persist %s (%v)", r.path, err))
+		pkgLog().Debug(fmt.Sprintf("dead_targets: could not persist %s (%v)", r.path, err))
 	}
 }
 
@@ -125,7 +124,7 @@ func (r *DeadTargetRegistry) MarkDead(platform, chatID, reason string) bool {
 		if why == "" {
 			why = "no reason given"
 		}
-		slog.Info(fmt.Sprintf("dead_targets: marked %s as unreachable (%s) — future deliveries to this target will be skipped until a send succeeds", key, why))
+		pkgLog().Info(fmt.Sprintf("dead_targets: marked %s as unreachable (%s) — future deliveries to this target will be skipped until a send succeeds", key, why))
 	}
 	return !existed
 }
@@ -142,6 +141,6 @@ func (r *DeadTargetRegistry) Clear(platform, chatID string) bool {
 		return false
 	}
 	r.flushLocked()
-	slog.Info(fmt.Sprintf("dead_targets: cleared %s (delivery succeeded again)", key))
+	pkgLog().Info(fmt.Sprintf("dead_targets: cleared %s (delivery succeeded again)", key))
 	return true
 }

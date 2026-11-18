@@ -3,7 +3,6 @@ package tools
 import (
 	"context"
 	"fmt"
-	"log/slog"
 	"regexp"
 	"sort"
 	"strconv"
@@ -240,13 +239,13 @@ func validateDeferredCallArgsAt(ctx context.Context, env *Env, name string, args
 	}
 	validationSchema := validationSchemaForLocal(params)
 	if validationSchemaHasExternalRef(validationSchema) {
-		slog.Debug("Skipping local deferred-argument validation: external $ref", "tool", name)
+		pkgLog().Debug("Skipping local deferred-argument validation: external $ref", "tool", name)
 		return ""
 	}
 	candidate := deferredCandidateArgs(ctx, env, name, argsObj, def.Schema.Vals["parameters"])
 	best, err := pyjsonschema.BestMatch(candidate, validationSchema, callerDepth)
 	if err != nil {
-		slog.Debug("validate_deferred_call_args failed", "tool", name, "error", err)
+		pkgLog().Debug("validate_deferred_call_args failed", "tool", name, "error", err)
 		return ""
 	}
 	if best == nil {

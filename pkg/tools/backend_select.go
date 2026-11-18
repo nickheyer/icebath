@@ -10,15 +10,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
 
-// NousManagedProvider is the stored selection naming the Nous Tool Gateway
-const NousManagedProvider = "nous"
-
-const (
-	defaultBrowserProvider = "local"
-	defaultModalMode       = "auto"
-)
-
-var validModalModes = map[string]bool{"auto": true, "direct": true, "managed": true}
+const defaultBrowserProvider = "local"
 
 var extraSelectionKeys = map[string][]string{"web": {"search_backend", "extract_backend"}}
 var defaultNameKeys = []string{"provider", "backend", "cloud_provider"}
@@ -27,56 +19,16 @@ var selectionNameKeys = map[string][]string{
 	"image_gen": defaultNameKeys, "video_gen": defaultNameKeys, "tts": defaultNameKeys, "stt": defaultNameKeys,
 }
 
-// NousAccountSource answers Nous Portal entitlement and token questions, installed by the provider wiring
-type NousAccountSource interface {
-	ManagedToolsEnabled(env *Env, forceFresh bool) bool
-	UnavailableMessage(env *Env, capability string, forceFresh bool) string
-	PeekAccessToken(env *Env) string
-	ReadAccessToken(env *Env) string
+// PoolKeySource answers the credential pool reads of the provider key resolver, installed by the provider wiring
+type PoolKeySource interface {
+	// Whether auth remove recorded the source as suppressed for the provider
 	SourceSuppressed(env *Env, providerID, source string) bool
+	// Runtime key else access token of the first pooled credential of the pool key, empty when none
 	PoolAPIKey(env *Env, providerID string) string
-	// Whether a Nous identity exists for the profile and whether it is the anonymous guest tier
-	IdentityState(env *Env) (hasIdentity bool, isGuest bool)
-	GuestAllowed(env *Env) bool
-	LastMintFailure(env *Env) (MintFailure, bool)
-	AnonFailureCopy(env *Env, code string, retryAfter float64) string
-	EnsurePortalIdentity(env *Env) error
-	ManagedToolsRolledOut(env *Env) bool
 }
 
-// NousAccount is the installed account source, nil meaning no Portal login is available
-var NousAccount NousAccountSource
-
-// Coarse gate for the Nous Tool Gateway, false on any failure
-func managedNousToolsEnabled(env *Env, forceFresh bool) bool {
-	if NousAccount == nil {
-		return false
-	}
-	return NousAccount.ManagedToolsEnabled(env, forceFresh)
-}
-
-// Whether the Nous managed tool gateway serves this session, forceFresh bypassing the cached account read
-func ManagedNousToolsEnabled(env *Env, forceFresh bool) bool {
-	return managedNousToolsEnabled(env, forceFresh)
-}
-
-// Account aware guidance for an unavailable Nous Tool Gateway path
-func nousToolGatewayUnavailableMessage(env *Env, capability string, forceFresh bool) string {
-	if capability == "" {
-		capability = "the Nous Tool Gateway"
-	}
-	if NousAccount != nil {
-		if msg := NousAccount.UnavailableMessage(env, capability, forceFresh); msg != "" {
-			return msg
-		}
-	}
-	return capability + " is unavailable. Run `icebath model` to refresh your Nous Portal login and billing status."
-}
-
-// Message naming why the Nous tool gateway is unavailable for a capability, with the account guidance
-func NousToolGatewayUnavailableMessage(env *Env, capability string, forceFresh bool) string {
-	return nousToolGatewayUnavailableMessage(env, capability, forceFresh)
-}
+// PoolKeys is the installed credential pool reader, nil meaning no pool is consulted
+var PoolKeys PoolKeySource
 
 // NormalizeBrowserCloudProvider returns the normalized browser provider key
 func NormalizeBrowserCloudProvider(value string) string {
@@ -86,18 +38,6 @@ func NormalizeBrowserCloudProvider(value string) string {
 	}
 	return provider
 }
-
-// CoerceModalMode returns the requested modal mode when valid else the default
-func CoerceModalMode(value string) string {
-	mode := pystr.Lower(pystr.Strip(value))
-	if validModalModes[mode] {
-		return mode
-	}
-	return defaultModalMode
-}
-
-// NormalizeModalMode returns the requested modal mode when valid else the default
-func NormalizeModalMode(value string) string { return CoerceModalMode(value) }
 
 // Process home directory seam, the Path.home lookup
 var modalHomeDir = os.UserHomeDir
@@ -166,52 +106,11 @@ func HasDirectModalCredentials(env *Env) bool {
 	return err == nil
 }
 
-// ModalBackendState is the resolved direct versus managed Modal decision
-type ModalBackendState struct {
-	RequestedMode      string
-	Mode               string
-	HasDirect          bool
-	ManagedReady       bool
-	ManagedModeBlocked bool
-	SelectedBackend    string
-}
-
-// ResolveModalBackendState picks direct or managed Modal, auto preferring managed when available
-func ResolveModalBackendState(env *Env, modalMode string, hasDirect, managedReady bool, managedEnabled *bool) ModalBackendState {
-	requested := CoerceModalMode(modalMode)
-	enabled := false
-	if managedEnabled != nil {
-		enabled = *managedEnabled
-	} else {
-		enabled = managedNousToolsEnabled(env, false)
-	}
-	managedOK := enabled && managedReady
-	selected := ""
-	switch requested {
-	case "managed":
-		if managedOK {
-			selected = "managed"
-		}
-	case "direct":
-		if hasDirect {
-			selected = "direct"
-		}
-	default:
-		if managedOK {
-			selected = "managed"
-		} else if hasDirect {
-			selected = "direct"
-		}
-	}
-	return ModalBackendState{RequestedMode: requested, Mode: requested, HasDirect: hasDirect, ManagedReady: managedReady,
-		ManagedModeBlocked: requested == "managed" && !enabled, SelectedBackend: selected}
-}
-
 func envSourceSuppressed(env *Env, providerID, envVar string) bool {
-	if providerID == "" || NousAccount == nil {
+	if providerID == "" || PoolKeys == nil {
 		return false
 	}
-	return NousAccount.SourceSuppressed(env, providerID, "env:"+envVar)
+	return PoolKeys.SourceSuppressed(env, providerID, "env:"+envVar)
 }
 
 // ResolveProviderSecret resolves a voice provider key through config, scope, .env, then the credential pool
@@ -239,9 +138,9 @@ func ResolveProviderSecret(env *Env, envVar, providerID, configValue string, env
 	if key != "" || providerID == "" {
 		return key
 	}
-	if NousAccount != nil {
+	if PoolKeys != nil {
 		for _, poolKey := range []string{providerID, "custom:" + providerID} {
-			if k := pystr.Strip(NousAccount.PoolAPIKey(env, poolKey)); k != "" {
+			if k := pystr.Strip(PoolKeys.PoolAPIKey(env, poolKey)); k != "" {
 				return k
 			}
 		}
@@ -257,21 +156,11 @@ func ResolveOpenAIAudioAPIKey(env *Env) string {
 	return ResolveProviderSecret(env, "OPENAI_API_KEY", "openai-api", "", nil)
 }
 
-// PrefersGateway reports whether a config section sets use_gateway
-func PrefersGateway(env *Env, section string) bool {
-	if env == nil {
-		return false
-	}
-	sec, ok := env.Config.Get(section).(map[string]any)
-	return ok && isTruthyValue(sec["use_gateway"], false)
-}
-
 // SelectionConfigKeys lists the dotted config keys the selection readers honour
 func SelectionConfigKeys() map[string]bool {
 	out := map[string]bool{}
 	for section, nameKeys := range selectionNameKeys {
-		keys := append([]string{"use_gateway"}, nameKeys...)
-		keys = append(keys, extraSelectionKeys[section]...)
+		keys := append(append([]string(nil), nameKeys...), extraSelectionKeys[section]...)
 		for _, k := range keys {
 			out[section+"."+k] = true
 		}
@@ -303,14 +192,11 @@ func rawSection(env *Env, section string) map[string]any {
 	return m
 }
 
-// ReadSelection returns the persisted tools selection for a section, nous, a vendor, or empty
+// ReadSelection returns the persisted tools selection for a section, a vendor, or empty
 func ReadSelection(env *Env, section string) string {
 	raw := rawSection(env, section)
 	if raw == nil {
 		return ""
-	}
-	if isTruthyValue(raw["use_gateway"], false) {
-		return NousManagedProvider
 	}
 	keys, ok := selectionNameKeys[section]
 	if !ok {

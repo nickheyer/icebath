@@ -5,7 +5,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"log/slog"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -63,7 +62,7 @@ func (a *TelegramAdapter) sendMessageWithThreadFallback(ctx context.Context, par
 		return msg, nil
 	}
 	if params.MessageThreadID != 0 && isBadRequestError(err) && isThreadNotFoundError(err) {
-		slog.Warn(fmt.Sprintf("[%s] Thread %d not found for control message, retrying without message_thread_id", a.Name(), params.MessageThreadID))
+		pkgLog().Warn(fmt.Sprintf("[%s] Thread %d not found for control message, retrying without message_thread_id", a.Name(), params.MessageThreadID))
 		a.core.pruneStaleDMTopicBinding(ctx, params.ChatID, params.MessageThreadID, nil)
 		retry := *params
 		retry.MessageThreadID = 0
@@ -113,7 +112,7 @@ func (a *TelegramAdapter) sendPrompt(ctx context.Context, what, chatID string, m
 		if errors.Is(err, context.Canceled) && ctx.Err() != nil {
 			return gateway.SendResult{}, err
 		}
-		slog.Warn(fmt.Sprintf("[%s] %s failed: %s", a.Name(), what, redactTelegramErrorText(err)))
+		pkgLog().Warn(fmt.Sprintf("[%s] %s failed: %s", a.Name(), what, redactTelegramErrorText(err)))
 		return gateway.SendResult{Success: false, Error: redactTelegramErrorText(err)}, nil
 	}
 	if built.onSent != nil {
@@ -399,7 +398,7 @@ func (a *TelegramAdapter) handleChoicePickerCallback(ctx context.Context, q call
 	}
 	resultText, cbErr := state.onChoiceSelected(ctx, chatID, pyrepr.Str(pyrepr.Or(choice["value"], "")))
 	if cbErr != nil {
-		slog.Error(fmt.Sprintf("Choice picker selection failed: %s", pyrepr.ExceptionMessage(cbErr)))
+		pkgLog().Error(fmt.Sprintf("Choice picker selection failed: %s", pyrepr.ExceptionMessage(cbErr)))
 		resultText = tr(ctx, "platform.telegram.picker.apply_error", "error", pyrepr.ExceptionMessage(cbErr))
 	}
 	a.editResultText(ctx, q, resultText)
@@ -533,30 +532,18 @@ func pyCount(v any) int {
 	return 0
 }
 
-// Paginated model buttons, each carrying the plan word of window plans
-func (a *TelegramAdapter) buildModelKeyboard(ctx context.Context, modelIDs []string, page int, providerRow map[string]any) (*models.InlineKeyboardMarkup, string) {
+// Paginated model buttons
+func (a *TelegramAdapter) buildModelKeyboard(ctx context.Context, modelIDs []string, page int) (*models.InlineKeyboardMarkup, string) {
 	pageModels, meta := gateway.FormatChoicePage(ctx, modelIDs, page, modelPageSize)
 	start := metaInt(meta, "start")
-	var row any
-	if providerRow != nil {
-		row = providerRow
-	}
 	buttons := make([]models.InlineKeyboardButton, 0, len(pageModels))
 	for i, modelID := range pageModels {
 		short := modelID
 		if idx := strings.LastIndex(modelID, "/"); idx >= 0 {
 			short = modelID[idx+1:]
 		}
-		suffix := provider.PickerRowSuffix(row, modelID)
-		room := 38
-		if suffix != "" {
-			room -= len([]rune(suffix)) + 3
-		}
-		if len([]rune(short)) > room {
+		if room := 38; len([]rune(short)) > room {
 			short = string([]rune(short)[:max(room-3, 8)]) + "..."
-		}
-		if suffix != "" {
-			short = fmt.Sprintf("%s · %s", short, suffix)
 		}
 		buttons = append(buttons, button(short, fmt.Sprintf("mm:%d", start+i)))
 	}
@@ -586,7 +573,7 @@ func (a *TelegramAdapter) pickerShowModels(ctx context.Context, q callbackQuery,
 	modelIDs := state.modelList
 	state.modelPage = page
 	p := findProvider(state.providers, state.selectedProvider)
-	keyboard, pageInfo := a.buildModelKeyboard(ctx, modelIDs, page, p)
+	keyboard, pageInfo := a.buildModelKeyboard(ctx, modelIDs, page)
 	total := len(modelIDs)
 	if p != nil {
 		total = pyCount(providerModelCount(p))
@@ -643,7 +630,7 @@ func (a *TelegramAdapter) pickerSwitch(ctx context.Context, q callbackQuery, cha
 	failed := false
 	resultText, err := callback(ctx, chatID, modelID, providerSlug)
 	if err != nil {
-		slog.Error(fmt.Sprintf("Model picker switch failed: %s", pyrepr.ExceptionMessage(err)))
+		pkgLog().Error(fmt.Sprintf("Model picker switch failed: %s", pyrepr.ExceptionMessage(err)))
 		resultText = tr(ctx, "platform.telegram.picker.switch_error", "error", pyrepr.ExceptionMessage(err))
 		failed = true
 	}
@@ -811,7 +798,7 @@ func (a *TelegramAdapter) handleInlineQuery(ctx context.Context, update *Update)
 		if _, err := b.AnswerInlineQuery(ctx, &bot.AnswerInlineQueryParams{InlineQueryID: iq.ID, Results: []models.InlineQueryResult{},
 			CacheTime: CacheTimeSeconds, IsPersonal: true}); err != nil {
 			a.failUpdatePreparation(ctx)
-			slog.Debug(fmt.Sprintf("[%s] inline picker empty answer failed", a.Name()), "error", ptbError(err))
+			pkgLog().Debug(fmt.Sprintf("[%s] inline picker empty answer failed", a.Name()), "error", ptbError(err))
 		}
 		return nil
 	}
@@ -829,7 +816,7 @@ func (a *TelegramAdapter) handleInlineQuery(ctx context.Context, update *Update)
 	if _, err := b.AnswerInlineQuery(ctx, &bot.AnswerInlineQueryParams{InlineQueryID: iq.ID, Results: articles, CacheTime: CacheTimeSeconds,
 		IsPersonal: true, NextOffset: nextOffset}); err != nil {
 		a.failUpdatePreparation(ctx)
-		slog.Debug(fmt.Sprintf("[%s] inline picker answer failed", a.Name()), "error", ptbError(err))
+		pkgLog().Debug(fmt.Sprintf("[%s] inline picker answer failed", a.Name()), "error", ptbError(err))
 	}
 	return nil
 }
@@ -962,7 +949,7 @@ func (a *TelegramAdapter) handleExecApprovalCallback(ctx context.Context, q call
 	}
 	user := userDisplay(ctx, q)
 	count := tools.ResolveGatewayApproval(sessionKey, choice, false, "", "")
-	slog.Info(fmt.Sprintf("Telegram button resolved %d approval(s) for session %s (choice=%s, user=%s)", count, sessionKey, choice, user))
+	pkgLog().Info(fmt.Sprintf("Telegram button resolved %d approval(s) for session %s (choice=%s, user=%s)", count, sessionKey, choice, user))
 	var label, editText string
 	if count > 0 {
 		labelKey, ok := map[string]string{"once": "resolved_once", "session": "resolved_session", "always": "resolved_always", "deny": "resolved_deny"}[choice]
@@ -1013,7 +1000,7 @@ func (a *TelegramAdapter) handleSlashConfirmCallback(ctx context.Context, q call
 		return err
 	}
 	if err := a.sendSlashConfirmResult(ctx, q, sessionKey, confirmID, choice); err != nil {
-		slog.Error(fmt.Sprintf("[%s] slash-confirm callback failed: %s", a.Name(), pyrepr.ExceptionMessage(err)))
+		pkgLog().Error(fmt.Sprintf("[%s] slash-confirm callback failed: %s", a.Name(), pyrepr.ExceptionMessage(err)))
 	}
 	return nil
 }
@@ -1099,11 +1086,11 @@ func (a *TelegramAdapter) handleClarifyCallback(ctx context.Context, q callbackQ
 		}
 		a.editHTMLQuiet(ctx, q, fmt.Sprintf("❓ %s\n\n<b>%s:</b> %s", pyhtml.Escape(q.messageText(), true), pyhtml.Escape(user, true),
 			pyhtml.Escape(*resolvedText, true)))
-		slog.Info(fmt.Sprintf("Telegram clarify button resolved (id=%s, choice=%s, user=%s)", clarifyID, pyrepr.Repr(*resolvedText), user))
+		pkgLog().Info(fmt.Sprintf("Telegram clarify button resolved (id=%s, choice=%s, user=%s)", clarifyID, pyrepr.Repr(*resolvedText), user))
 		return nil
 	}
 	a.notifyClarifyExpired(ctx, q)
-	slog.Warn(fmt.Sprintf("Telegram clarify button: resolve_gateway_clarify returned False (id=%s)", clarifyID))
+	pkgLog().Warn(fmt.Sprintf("Telegram clarify button: resolve_gateway_clarify returned False (id=%s)", clarifyID))
 	return nil
 }
 
@@ -1129,10 +1116,10 @@ func (a *TelegramAdapter) handleUpdatePromptCallback(ctx context.Context, q call
 		writeErr = os.Rename(tmp, responsePath)
 	}
 	if writeErr != nil {
-		slog.Error(fmt.Sprintf("Failed to write update response from callback: %s", pyrepr.ExceptionMessage(writeErr)))
+		pkgLog().Error(fmt.Sprintf("Failed to write update response from callback: %s", pyrepr.ExceptionMessage(writeErr)))
 		return nil
 	}
-	slog.Info(fmt.Sprintf("Telegram update prompt answered '%s' by user %d", answer, q.q.From.ID))
+	pkgLog().Info(fmt.Sprintf("Telegram update prompt answered '%s' by user %d", answer, q.q.From.ID))
 	return nil
 }
 
@@ -1171,7 +1158,7 @@ func (a *TelegramAdapter) handleGmailTriageCallback(ctx context.Context, q callb
 		if err := q.answer(ctx, toast(ctx, "platform.telegram.gmail_triage.script_missing", map[string]any{"script": entry.script})); err != nil {
 			return err
 		}
-		slog.Error(fmt.Sprintf("[%s] gmail-triage script missing: %s", a.Name(), scriptPath))
+		pkgLog().Error(fmt.Sprintf("[%s] gmail-triage script missing: %s", a.Name(), scriptPath))
 		return nil
 	}
 	success := false
@@ -1180,7 +1167,7 @@ func (a *TelegramAdapter) handleGmailTriageCallback(ctx context.Context, q callb
 		tools.SubprocessEnvOptions{InheritProfileHome: true, ScrubSecrets: true, StripLaunchProfile: true})
 	if envErr != nil {
 		label = tr(ctx, "platform.telegram.gmail_triage.error", "verb", verb, "error", pyrepr.ExceptionMessage(envErr))
-		slog.Error(fmt.Sprintf("[%s] gmail-triage callback exception: verb=%s arg=%s err=%s", a.Name(), verb, arg, pyrepr.ExceptionMessage(envErr)))
+		pkgLog().Error(fmt.Sprintf("[%s] gmail-triage callback exception: verb=%s arg=%s err=%s", a.Name(), verb, arg, pyrepr.ExceptionMessage(envErr)))
 	} else {
 		runCtx, cancel := context.WithTimeout(ctx, 60*time.Second)
 		cmd := exec.CommandContext(runCtx, scriptPath, append([]string{arg}, entry.extraArgs...)...)
@@ -1193,11 +1180,11 @@ func (a *TelegramAdapter) handleGmailTriageCallback(ctx context.Context, q callb
 		switch {
 		case runCtx.Err() == context.DeadlineExceeded:
 			label = tr(ctx, "platform.telegram.gmail_triage.timed_out", "verb", verb)
-			slog.Error(fmt.Sprintf("[%s] gmail-triage callback timed out: verb=%s arg=%s", a.Name(), verb, arg))
+			pkgLog().Error(fmt.Sprintf("[%s] gmail-triage callback timed out: verb=%s arg=%s", a.Name(), verb, arg))
 		case runErr == nil:
 			label = tr(ctx, "platform.telegram.gmail_triage."+entry.successKey)
 			success = true
-			slog.Info(fmt.Sprintf("[%s] gmail-triage callback ok: verb=%s arg=%s", a.Name(), verb, arg))
+			pkgLog().Info(fmt.Sprintf("[%s] gmail-triage callback ok: verb=%s arg=%s", a.Name(), verb, arg))
 		case errors.As(runErr, &exitErr):
 			stderrText := pystr.Strip(strings.ToValidUTF8(stderr.String(), "�"))
 			lastLine := tr(ctx, "platform.telegram.gmail_triage.exit_code", "code", strconv.Itoa(exitErr.ExitCode()))
@@ -1206,10 +1193,10 @@ func (a *TelegramAdapter) handleGmailTriageCallback(ctx context.Context, q callb
 				lastLine = lines[len(lines)-1]
 			}
 			label = tr(ctx, "platform.telegram.gmail_triage.failed", "verb", verb, "detail", clipRunes(lastLine, 80))
-			slog.Error(fmt.Sprintf("[%s] gmail-triage callback failed: verb=%s arg=%s rc=%d stderr=%s", a.Name(), verb, arg, exitErr.ExitCode(), stderrText))
+			pkgLog().Error(fmt.Sprintf("[%s] gmail-triage callback failed: verb=%s arg=%s rc=%d stderr=%s", a.Name(), verb, arg, exitErr.ExitCode(), stderrText))
 		default:
 			label = tr(ctx, "platform.telegram.gmail_triage.error", "verb", verb, "error", pyrepr.ExceptionMessage(runErr))
-			slog.Error(fmt.Sprintf("[%s] gmail-triage callback exception: verb=%s arg=%s err=%s", a.Name(), verb, arg, pyrepr.ExceptionMessage(runErr)))
+			pkgLog().Error(fmt.Sprintf("[%s] gmail-triage callback exception: verb=%s arg=%s err=%s", a.Name(), verb, arg, pyrepr.ExceptionMessage(runErr)))
 		}
 	}
 	if err := q.answer(ctx, clipRunes(label, toastLimit)); err != nil {

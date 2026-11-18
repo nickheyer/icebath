@@ -9,7 +9,6 @@ import (
 	tea "charm.land/bubbletea/v2"
 	"github.com/charmbracelet/x/ansi"
 
-	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/ui/keys"
 )
 
@@ -18,7 +17,7 @@ const stashContext = "tui.stash"
 
 // Composer drafts parked with ctrl+s, newest first, held in memory for the process as the REPL held them
 type promptStash struct {
-	*config.PromptStash
+	*PromptStash
 	start time.Time
 	now   func() time.Time
 }
@@ -30,7 +29,7 @@ func (s *promptStash) seconds() float64 { return s.now().Sub(s.start).Seconds() 
 func (a *app) promptStash() *promptStash {
 	if a.stash == nil {
 		s := &promptStash{start: a.store.now(), now: a.store.now}
-		s.PromptStash = config.NewPromptStashWith(config.MaxStashItems, s.seconds)
+		s.PromptStash = NewPromptStashWith(MaxStashItems, s.seconds)
 		a.stash = s
 	}
 	return a.stash
@@ -97,9 +96,9 @@ func (a *app) pressStash() tea.Cmd {
 			attached = append(attached, t)
 		}
 	}
-	action, payload := config.ResolveCtrlS(a.promptStash().PromptStash, value, attached)
+	action, payload := ResolveCtrlS(a.promptStash().PromptStash, value, attached)
 	switch action {
-	case config.ActionStashed:
+	case ActionStashed:
 		if a.queueEdit != nil {
 			a.queueEdit = nil
 			if err := a.queue.setQueueEdit(nil); err != nil {
@@ -110,7 +109,7 @@ func (a *app) pressStash() tea.Cmd {
 		detached := a.syncTokens()
 		a.draftRevision++
 		return tea.Batch(cleared, detached)
-	case config.ActionRestored:
+	case ActionRestored:
 		return a.restoreDraft(payload.Text, payload.Images)
 	}
 	return nil

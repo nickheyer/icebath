@@ -3,7 +3,6 @@ package discord
 import (
 	"context"
 	"fmt"
-	"log/slog"
 	"slices"
 	"strings"
 
@@ -117,17 +116,17 @@ func (a *DiscordAdapter) runSimpleSlash(ctx context.Context, i *discordgo.Intera
 	if i.GuildID != "" {
 		guild = i.GuildID
 	}
-	slog.Info(fmt.Sprintf("[Discord] slash '%s' invoked by user=%s id=%s channel=%s guild=%s", commandText, userName, userID, i.ChannelID, guild))
+	pkgLog().Info(fmt.Sprintf("[Discord] slash '%s' invoked by user=%s id=%s channel=%s guild=%s", commandText, userName, userID, i.ChannelID, guild))
 	if !a.checkSlashAuthorization(ctx, i, commandText) {
 		return
 	}
 	deferred, err := a.deferUnlessExpired(ctx, i, "[Discord] slash %s: interaction expired before defer. Executing command anyway, skipping interaction followup.", commandText)
 	if err != nil {
-		slog.Error(fmt.Sprintf("[Discord] slash %s failed: %s", commandText, err))
+		pkgLog().Error(fmt.Sprintf("[Discord] slash %s failed: %s", commandText, err))
 		return
 	}
 	if err := a.HandleMessage(ctx, a.buildSlashEvent(ctx, i, commandText)); err != nil {
-		slog.Warn(fmt.Sprintf("[%s] Slash dispatch failed: %s", a.Name(), err))
+		pkgLog().Warn(fmt.Sprintf("[%s] Slash dispatch failed: %s", a.Name(), err))
 	}
 	if !deferred {
 		return
@@ -143,7 +142,7 @@ func (a *DiscordAdapter) runSimpleSlash(ctx context.Context, i *discordgo.Intera
 		err = client.InteractionResponseDelete(i, discordgo.WithContext(ctx))
 	}
 	if err != nil {
-		slog.Debug(fmt.Sprintf("Discord interaction cleanup failed: %s", dpyError(err)))
+		pkgLog().Debug(fmt.Sprintf("Discord interaction cleanup failed: %s", dpyError(err)))
 	}
 }
 
@@ -221,19 +220,19 @@ func (a *DiscordAdapter) registerSlashCommands(ctx context.Context) {
 		}
 	}
 	if gateway.GatewayRegistryCommands == nil {
-		slog.Warn("Discord auto-register from COMMAND_REGISTRY failed: command registry is not wired")
+		pkgLog().Warn("Discord auto-register from COMMAND_REGISTRY failed: command registry is not wired")
 	} else if entries, err := gateway.GatewayRegistryCommands(ctx); err != nil {
-		slog.Warn(fmt.Sprintf("Discord auto-register from COMMAND_REGISTRY failed: %s", err))
+		pkgLog().Warn(fmt.Sprintf("Discord auto-register from COMMAND_REGISTRY failed: %s", err))
 	} else {
 		for _, e := range entries {
 			autoRegister(e.Name, e.Description, e.ArgsHint)
 		}
-		slog.Debug(fmt.Sprintf("Discord auto-registered %d commands from COMMAND_REGISTRY", len(alreadyRegistered)))
+		pkgLog().Debug(fmt.Sprintf("Discord auto-registered %d commands from COMMAND_REGISTRY", len(alreadyRegistered)))
 	}
 	if gateway.PluginSlashCommandEntries == nil {
-		slog.Warn("Discord auto-register from plugin commands failed: plugin commands are not wired")
+		pkgLog().Warn("Discord auto-register from plugin commands failed: plugin commands are not wired")
 	} else if entries, err := gateway.PluginSlashCommandEntries(ctx); err != nil {
-		slog.Warn(fmt.Sprintf("Discord auto-register from plugin commands failed: %s", err))
+		pkgLog().Warn(fmt.Sprintf("Discord auto-register from plugin commands failed: %s", err))
 	} else {
 		for _, e := range entries {
 			autoRegister(e.Name, e.Description, e.ArgsHint)
@@ -241,7 +240,7 @@ func (a *DiscordAdapter) registerSlashCommands(ctx context.Context) {
 	}
 	a.registerSkillGroup(ctx)
 	if droppedOverCap > 0 {
-		slog.Warn(fmt.Sprintf("[%s] Reached Discord's limit of %d slash commands; skipped %d lower-priority command(s) to keep the command sync working. "+
+		pkgLog().Warn(fmt.Sprintf("[%s] Reached Discord's limit of %d slash commands; skipped %d lower-priority command(s) to keep the command sync working. "+
 			"Disable slash commands you don't need or trim installed plugins to surface them all.", a.Name(), discordMaxAppCommands, droppedOverCap))
 	}
 	switch pystr.Lower(gateway.PlatformGateEnv(ctx, "DISCORD_HIDE_SLASH_COMMANDS", "false")) {
@@ -276,7 +275,7 @@ func (a *DiscordAdapter) applyOwnerOnlyVisibility() {
 		applied++
 	}
 	a.mu.Unlock()
-	slog.Info(fmt.Sprintf("[Discord] Hid %d slash command(s) from non-admin guild members (opt-in defense in depth via DISCORD_HIDE_SLASH_COMMANDS).", applied))
+	pkgLog().Info(fmt.Sprintf("[Discord] Hid %d slash command(s) from non-admin guild members (opt-in defense in depth via DISCORD_HIDE_SLASH_COMMANDS).", applied))
 }
 
 // Registers one flat /skill command whose name option autocompletes from the skill catalog
@@ -286,7 +285,7 @@ func (a *DiscordAdapter) registerSkillGroup(ctx context.Context) {
 	a.skillEntries, a.skillLookup, a.skillGroupReservedNames = nil, map[string][2]string{}, existing
 	a.mu.Unlock()
 	if err := a.refreshSkillCatalogState(ctx); err != nil {
-		slog.Warn(fmt.Sprintf("[%s] Failed to register /skill command: %s", a.Name(), err))
+		pkgLog().Warn(fmt.Sprintf("[%s] Failed to register /skill command: %s", a.Name(), err))
 		return
 	}
 	a.mu.Lock()
@@ -342,9 +341,9 @@ func (a *DiscordAdapter) registerSkillGroup(ctx context.Context) {
 			}
 			a.runSimpleSlash(ctx, i, pystr.Strip(entry[1]+" "+pyrepr.Str(opts["args"])), "")
 		}})
-	slog.Info(fmt.Sprintf("[%s] Registered /skill command with %d skill(s) via autocomplete", a.Name(), count))
+	pkgLog().Info(fmt.Sprintf("[%s] Registered /skill command with %d skill(s) via autocomplete", a.Name(), count))
 	if hidden > 0 {
-		slog.Info(fmt.Sprintf("[%s] %d skill(s) filtered out of /skill (name clamp / reserved)", a.Name(), hidden))
+		pkgLog().Info(fmt.Sprintf("[%s] %d skill(s) filtered out of /skill (name clamp / reserved)", a.Name(), hidden))
 	}
 }
 
@@ -386,7 +385,7 @@ func (a *DiscordAdapter) refreshSkillCatalogState(ctx context.Context) error {
 // Rescans skills for live /skill autocomplete and returns the new and hidden counts
 func (a *DiscordAdapter) RefreshSkillGroup(ctx context.Context) (int, int) {
 	if err := a.refreshSkillCatalogState(ctx); err != nil {
-		slog.Warn(fmt.Sprintf("[%s] Failed to refresh /skill autocomplete after reload: %s", a.Name(), err))
+		pkgLog().Warn(fmt.Sprintf("[%s] Failed to refresh /skill autocomplete after reload: %s", a.Name(), err))
 		a.mu.Lock()
 		defer a.mu.Unlock()
 		return len(a.skillEntries), 0
@@ -394,7 +393,7 @@ func (a *DiscordAdapter) RefreshSkillGroup(ctx context.Context) (int, int) {
 	a.mu.Lock()
 	count, hidden := len(a.skillEntries), a.skillGroupHiddenCount
 	a.mu.Unlock()
-	slog.Info(fmt.Sprintf("[%s] Refreshed /skill autocomplete: %d skill(s) available (%d filtered)", a.Name(), count, hidden))
+	pkgLog().Info(fmt.Sprintf("[%s] Refreshed /skill autocomplete: %d skill(s) available (%d filtered)", a.Name(), count, hidden))
 	return count, hidden
 }
 
@@ -521,7 +520,7 @@ func (a *DiscordAdapter) handleThreadCreateSlash(ctx context.Context, i *discord
 	}
 	deferred, err := a.deferUnlessExpired(ctx, i, "[Discord] /thread: interaction expired before defer. Creating the thread anyway, skipping interaction followups.")
 	if err != nil {
-		slog.Error(fmt.Sprintf("[Discord] /thread failed: %s", err))
+		pkgLog().Error(fmt.Sprintf("[Discord] /thread failed: %s", err))
 		return
 	}
 	result := a.createThread(ctx, i, name, message, autoArchiveDuration)
@@ -532,7 +531,7 @@ func (a *DiscordAdapter) handleThreadCreateSlash(ctx context.Context, i *discord
 		}
 		if deferred {
 			if err := a.followupEphemeral(ctx, i, i18n.T(ctx, "platform.discord.command.thread.failed", "", map[string]any{"error": errText})); err != nil {
-				slog.Error(fmt.Sprintf("[Discord] /thread followup failed: %s", err))
+				pkgLog().Error(fmt.Sprintf("[Discord] /thread followup failed: %s", err))
 			}
 		}
 		return
@@ -548,13 +547,13 @@ func (a *DiscordAdapter) handleThreadCreateSlash(ctx context.Context, i *discord
 	}
 	if deferred {
 		if err := a.followupEphemeral(ctx, i, i18n.T(ctx, "platform.discord.command.thread.created", "", map[string]any{"link": link})); err != nil {
-			slog.Error(fmt.Sprintf("[Discord] /thread followup failed: %s", err))
+			pkgLog().Error(fmt.Sprintf("[Discord] /thread followup failed: %s", err))
 			return
 		}
 	}
 	if threadID != "" {
 		if err := a.threads.MarkAsync(ctx, threadID); err != nil {
-			slog.Debug(fmt.Sprintf("[%s] Thread participation save failed: %s", a.Name(), err))
+			pkgLog().Debug(fmt.Sprintf("[%s] Thread participation save failed: %s", a.Name(), err))
 		}
 	}
 	if starter := pystr.Strip(message); starter != "" && threadID != "" {
@@ -591,7 +590,7 @@ func (a *DiscordAdapter) dispatchThreadSession(ctx context.Context, i *discordgo
 		event.ChannelPrompt = &prompt
 	}
 	if err := a.HandleMessage(ctx, event); err != nil {
-		slog.Warn(fmt.Sprintf("[%s] Thread session dispatch failed: %s", a.Name(), err))
+		pkgLog().Warn(fmt.Sprintf("[%s] Thread session dispatch failed: %s", a.Name(), err))
 	}
 }
 
@@ -615,10 +614,10 @@ func (a *DiscordAdapter) rejectSlash(ctx context.Context, i *discordgo.Interacti
 	}
 	chanID := i.ChannelID
 	guildID := i.GuildID
-	slog.Warn(fmt.Sprintf("[Discord] Unauthorized slash attempt: user=%s id=%s channel=%s guild=%s cmd=%s reason=%s",
+	pkgLog().Warn(fmt.Sprintf("[Discord] Unauthorized slash attempt: user=%s id=%s channel=%s guild=%s cmd=%s reason=%s",
 		userName, userID, pyNone(chanID), pyNone(guildID), pyrepr.Repr(commandText), pyrepr.Repr(reason)))
 	if err := a.respondEphemeral(ctx, i, unauthorized(ctx)); err != nil {
-		slog.Debug(fmt.Sprintf("[Discord] Could not send unauthorized ephemeral: %s", err))
+		pkgLog().Debug(fmt.Sprintf("[Discord] Could not send unauthorized ephemeral: %s", err))
 	}
 	go a.notifyUnauthorizedSlash(context.WithoutCancel(ctx), userName, userID, chanID, guildID, commandText, reason)
 	return false
@@ -650,7 +649,7 @@ func (a *DiscordAdapter) notifyUnauthorizedSlash(ctx context.Context, userName, 
 	if profile != "" {
 		dir, err := profiles.GetProfileDir(profile)
 		if err != nil {
-			slog.Debug(fmt.Sprintf("[Discord] Admin notify: profile %s scope failed: %s", pyrepr.Repr(profile), err))
+			pkgLog().Debug(fmt.Sprintf("[Discord] Admin notify: profile %s scope failed: %s", pyrepr.Repr(profile), err))
 			return
 		}
 		ctx = gateway.ProfileRuntimeScope(ctx, dir, true)
@@ -662,7 +661,7 @@ func (a *DiscordAdapter) notifyUnauthorizedSlash(ctx context.Context, userName, 
 func (a *DiscordAdapter) deliverUnauthorizedSlashAlert(ctx context.Context, runner any, profile, userName, userID, chanID, guildID, commandText, reason string) {
 	adapters, cfg, err := alertAdaptersAndConfig(ctx, runner, profile)
 	if err != nil {
-		slog.Debug(fmt.Sprintf("[Discord] Admin notify: profile %s resolution failed: %s", pyrepr.Repr(profile), err))
+		pkgLog().Debug(fmt.Sprintf("[Discord] Admin notify: profile %s resolution failed: %s", pyrepr.Repr(profile), err))
 		return
 	}
 	for _, target := range []gateway.Platform{gateway.PlatformTelegram, gateway.PlatformSlack} {
@@ -683,14 +682,14 @@ func (a *DiscordAdapter) deliverUnauthorizedSlashAlert(ctx context.Context, runn
 			return sendErr
 		}, string(target), true, nil)
 		if err != nil {
-			slog.Debug(fmt.Sprintf("[Discord] Admin notify via %s failed: %s", target, err))
+			pkgLog().Debug(fmt.Sprintf("[Discord] Admin notify via %s failed: %s", target, err))
 			continue
 		}
 		if !presented {
 			return
 		}
 		if !result.Success {
-			slog.Debug(fmt.Sprintf("[Discord] Admin notify via %s returned success=False (error=%s); falling through", target, pyrepr.Repr(result.Error)))
+			pkgLog().Debug(fmt.Sprintf("[Discord] Admin notify via %s returned success=False (error=%s); falling through", target, pyrepr.Repr(result.Error)))
 			continue
 		}
 		return
@@ -711,7 +710,7 @@ func (a *DiscordAdapter) onInteraction(ctx context.Context, i *discordgo.Interac
 		}
 		a.mu.Unlock()
 		if cmd == nil {
-			slog.Error(fmt.Sprintf("Ignoring exception in command tree: CommandNotFound: Application command %s not found", pyrepr.Repr(data.Name)))
+			pkgLog().Error(fmt.Sprintf("Ignoring exception in command tree: CommandNotFound: Application command %s not found", pyrepr.Repr(data.Name)))
 			return
 		}
 		if i.Type == discordgo.InteractionApplicationCommandAutocomplete {
@@ -755,7 +754,7 @@ func (a *DiscordAdapter) runAutocomplete(ctx context.Context, i *discordgo.Inter
 		}
 		if err := client.InteractionRespond(i, &discordgo.InteractionResponse{Type: discordgo.InteractionApplicationCommandAutocompleteResult,
 			Data: &discordgo.InteractionResponseData{Choices: choices}}, discordgo.WithContext(ctx)); err != nil {
-			slog.Error(fmt.Sprintf("Ignoring exception in autocomplete for %s: %s", pyrepr.Repr(cmd.name), dpyError(err)))
+			pkgLog().Error(fmt.Sprintf("Ignoring exception in autocomplete for %s: %s", pyrepr.Repr(cmd.name), dpyError(err)))
 		}
 		return
 	}

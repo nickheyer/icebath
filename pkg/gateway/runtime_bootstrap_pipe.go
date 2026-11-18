@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
-	"log/slog"
 	"strconv"
 	"sync"
 	"time"
@@ -139,7 +138,7 @@ func judgePipeServer(f pipeServerFacts) (string, error) {
 	if f.ProcessSID != nil && *f.ProcessSID != "" {
 		readable = "readable"
 	}
-	slog.Info(fmt.Sprintf("control pipe server PID %d refused as %s: pipe owner %s, server process %s, server elevated %s, server session %s, own session %s",
+	pkgLog().Info(fmt.Sprintf("control pipe server PID %d refused as %s: pipe owner %s, server process %s, server elevated %s, server session %s, own session %s",
 		f.PID, reason, pipeOptText(owner), readable, pipeOptText(f.ServerElevated), pipeOptText(f.ServerSession), pipeOptText(f.OwnSession)))
 	return "", &RefusedOwner{ReasonCode: reason, Pid: f.PID, Remedy: RefusedOwnerRemedy(reason, f.PID, f.ServerSession)}
 }
@@ -341,7 +340,7 @@ func (s *NativeControlServer) stopped() bool {
 }
 
 func (s *NativeControlServer) fail(err error) {
-	slog.Debug(fmt.Sprintf("runtime control pipe stopped: %v", err))
+	pkgLog().Debug(fmt.Sprintf("runtime control pipe stopped: %v", err))
 	s.mu.Lock()
 	s.err = err
 	s.mu.Unlock()

@@ -17,7 +17,7 @@ func usageLineAgent(t *testing.T) (*AIAgent, context.Context) {
 	h := caseHome(t)
 	env := &tools.Env{Home: h, Cwd: h}
 	ctx := tools.WithToolEnv(context.Background(), env)
-	a, err := NewAIAgent(ctx, AIAgentOptions{APIKey: "k", BaseURL: "https://inference-api.nousresearch.com/v1", Provider: "nous", APIMode: "chat_completions",
+	a, err := NewAIAgent(ctx, AIAgentOptions{APIKey: "k", BaseURL: "https://openrouter.ai/api/v1", Provider: "openrouter", APIMode: "chat_completions",
 		Model: "anthropic/claude-fable-5.1", SessionID: "t", Platform: "cli", QuietMode: true, SkipContextFiles: true, SkipMemory: true,
 		EnabledToolsets: []string{"file"}, Cwd: h, Env: env})
 	if err != nil {
@@ -35,7 +35,7 @@ func usageOf(read, write, prompt int) map[string]any {
 
 func usageLine(t *testing.T, a *AIAgent, ctx context.Context, response map[string]any) string {
 	t.Helper()
-	records := captureLogger(t, "agent.conversation_loop", slog.LevelInfo)
+	records := captureLogger(t, "agent", slog.LevelInfo)
 	a.recordResponseUsage(ctx, response, rowsToMessages([]map[string]any{{"role": "user", "content": "hi"}}), 1, 0.2, 0, 3)
 	for _, r := range records() {
 		if strings.HasPrefix(r.msg, "API call #") {
@@ -67,7 +67,7 @@ func TestTurnUsageLogLine(t *testing.T) {
 				t.Fatalf("%q missing from %q", want, line)
 			}
 		}
-		if !strings.HasPrefix(line, "API call #1: model=anthropic/claude-fable-5.1 provider=nous in=62889 out=7 total=62896 latency=0.2s") {
+		if !strings.HasPrefix(line, "API call #1: model=anthropic/claude-fable-5.1 provider=openrouter in=62889 out=7 total=62896 latency=0.2s") {
 			t.Fatalf("line prefix changed %q", line)
 		}
 	})
@@ -80,9 +80,9 @@ func TestTurnUsageLogLine(t *testing.T) {
 	})
 	t.Run("test_forensics_parser_reads_the_new_fields", func(t *testing.T) {
 		log := filepath.Join(t.TempDir(), "agent.log")
-		text := "2026-09-06 19:32:08,549 INFO [s1] agent.conversation_loop: API call #3: model=anthropic/claude-fable-5.1 provider=nous " +
+		text := "2026-09-06 19:32:08,549 INFO [s1] agent.conversation_loop: API call #3: model=anthropic/claude-fable-5.1 provider=openrouter " +
 			"in=62889 out=7 total=62896 latency=0.2s cache=34283/62889 (55%) write=28604 id=gen-1788636728-qMa1 upstream=Claude Platform on AWS\n" +
-			"2026-09-06 19:32:09,549 INFO [s1] agent.conversation_loop: API call #4: model=anthropic/claude-fable-5.1 provider=nous " +
+			"2026-09-06 19:32:09,549 INFO [s1] agent.conversation_loop: API call #4: model=anthropic/claude-fable-5.1 provider=openrouter " +
 			"in=91079 out=7 total=91086 latency=0.2s cache=62887/91079 (69%)\n"
 		if err := os.WriteFile(log, []byte(text), 0o600); err != nil {
 			t.Fatal(err)

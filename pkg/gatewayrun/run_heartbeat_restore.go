@@ -94,21 +94,21 @@ func scanHeartbeatWatches(ctx context.Context, r *GatewayRunner) ([]heartbeatCan
 			}
 		}
 		if err != nil {
-			runLog().Debug(fmt.Sprintf("heartbeat restore for %s failed", entry.SessionKey), "exc_info", err)
+			pkgLog().Debug(fmt.Sprintf("heartbeat restore for %s failed", entry.SessionKey), "exc_info", err)
 		}
 	}
 	for _, k := range order {
 		group := groups[k]
 		groupCtx, err := r.profileScopeForSource(scoped, group[0].source)
 		if err != nil {
-			runLog().Debug(fmt.Sprintf("heartbeat restore scope for %s failed", group[0].entry.SessionKey), "exc_info", err)
+			pkgLog().Debug(fmt.Sprintf("heartbeat restore scope for %s failed", group[0].entry.SessionKey), "exc_info", err)
 			continue
 		}
 		for _, m := range group {
 			func() {
 				defer func() {
 					if rec := recover(); rec != nil {
-						runLog().Debug(fmt.Sprintf("heartbeat restore for %s failed", m.entry.SessionKey), "error", rec)
+						pkgLog().Debug(fmt.Sprintf("heartbeat restore for %s failed", m.entry.SessionKey), "error", rec)
 					}
 				}()
 				if agent.NewHeartbeatManager(groupCtx, m.entry.SessionID).IsActive() {
@@ -129,7 +129,7 @@ func restoreHeartbeatWatches(ctx context.Context, r *GatewayRunner) error {
 		if isCancellation(err) || ctx.Err() != nil {
 			return err
 		}
-		runLog().Debug("heartbeat restore scan failed; retrying on next poll", "exc_info", err)
+		pkgLog().Debug("heartbeat restore scan failed; retrying on next poll", "exc_info", err)
 		return nil
 	}
 	candidates, _ := out.([]heartbeatCandidate)

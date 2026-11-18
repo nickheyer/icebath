@@ -83,7 +83,7 @@ func (r *GatewayRunner) hmUpdatePromptReply(ctx context.Context, event *gateway.
 			upState.mu.Lock()
 			upState.persistent.updatePromptPending = true
 			upState.mu.Unlock()
-			runLog().Warn(fmt.Sprintf("Failed to write update response: %s", *err))
+			pkgLog().Warn(fmt.Sprintf("Failed to write update response: %s", *err))
 			reply := i18n.T(ctx, "gateway.update.reply_failed", "", map[string]any{"error": *err})
 			return &reply
 		}
@@ -96,9 +96,9 @@ func (r *GatewayRunner) hmUpdatePromptReply(ctx context.Context, event *gateway.
 	}
 	if recognized != "" {
 		if err := hmWriteUpdateResponse(ctx, ""); err == nil {
-			runLog().Info(fmt.Sprintf("Recognized /%s during pending update prompt for %s; cancelled prompt with default and dispatching command", recognized, quickKey))
+			pkgLog().Info(fmt.Sprintf("Recognized /%s during pending update prompt for %s; cancelled prompt with default and dispatching command", recognized, quickKey))
 		} else {
-			runLog().Warn(fmt.Sprintf("Failed to write cancel response for pending update prompt: %s", *err))
+			pkgLog().Warn(fmt.Sprintf("Failed to write cancel response for pending update prompt: %s", *err))
 		}
 	}
 	return nil
@@ -114,7 +114,7 @@ func (r *GatewayRunner) hmClarifyReply(ctx context.Context, event *gateway.Messa
 	raw := r.prepareClarifyReplyText(ctx, event)
 	handled := ""
 	retain := func(why string) *string {
-		runLog().Info(fmt.Sprintf("Gateway retained pending clarify after %s (session=%s, id=%s)", why, quickKey, pending.ClarifyID))
+		pkgLog().Info(fmt.Sprintf("Gateway retained pending clarify after %s (session=%s, id=%s)", why, quickKey, pending.ClarifyID))
 		return &handled
 	}
 	if hasAudio && raw == "" {
@@ -125,7 +125,7 @@ func (r *GatewayRunner) hmClarifyReply(ctx context.Context, event *gateway.Messa
 	}
 	switch tools.AttemptClarifyTextResponse(quickKey, raw) {
 	case tools.ClarifyTextResolved:
-		runLog().Info(fmt.Sprintf("Gateway intercepted clarify text response (session=%s, id=%s)", quickKey, pending.ClarifyID))
+		pkgLog().Info(fmt.Sprintf("Gateway intercepted clarify text response (session=%s, id=%s)", quickKey, pending.ClarifyID))
 		adapter, err := r.deliveryAdapterFor(ctx, source)
 		if err != nil {
 			return nil, err
@@ -138,7 +138,7 @@ func (r *GatewayRunner) hmClarifyReply(ctx context.Context, event *gateway.Messa
 					answer = *response
 				}
 				if err := retirer.RetireClarifyCard(ctx, pending.ClarifyID, i18n.T(ctx, "gateway.clarify.answered", "", map[string]any{"response": answer})); err != nil {
-					runLog().Debug("Failed to retire clarify card after typed answer", "error", err)
+					pkgLog().Debug("Failed to retire clarify card after typed answer", "error", err)
 				}
 			}
 		}
@@ -153,7 +153,7 @@ func (r *GatewayRunner) hmClarifyReply(ctx context.Context, event *gateway.Messa
 			}
 			if retirer, ok := adapter.(clarifyCardRetirer); ok {
 				if err := retirer.RetireClarifyCard(ctx, pending.ClarifyID, i18n.T(ctx, "gateway.clarify.cancelled", "", nil)); err != nil {
-					runLog().Debug("Failed to retire clarify card after prose cancellation", "error", err)
+					pkgLog().Debug("Failed to retire clarify card after prose cancellation", "error", err)
 				}
 			}
 		}

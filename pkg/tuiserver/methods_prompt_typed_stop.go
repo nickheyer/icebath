@@ -23,7 +23,7 @@ func sessionVoiceEnabled(sessionID any) (bool, error) {
 func typedStopPhrase(text string) (stop bool) {
 	defer func() {
 		if r := recover(); r != nil {
-			logger().Debug("typed stop-phrase check failed; submitting the text", "error", r)
+			pkgLog().Debug("typed stop-phrase check failed; submitting the text", "error", r)
 			stop = false
 		}
 	}()
@@ -47,7 +47,7 @@ func consumeTypedStopPhrase(ctx context.Context, text any, sessionID string, emi
 	if emit {
 		voiceEmit(ctx, "voice.transcript", map[string]any{"stop_phrase": true, "typed": true})
 	}
-	logger().Info("prompt.submit: typed stop phrase \u2014 voice chat ended")
+	pkgLog().Info("prompt.submit: typed stop phrase \u2014 voice chat ended")
 	return true, nil
 }
 

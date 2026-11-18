@@ -92,7 +92,7 @@ func sttCloudFailure(err error, filePath, label, detail string) map[string]any {
 	if errors.As(err, &re) {
 		return sttError(re.msg)
 	}
-	sttLog().Error(fmt.Sprintf("%s failed: %v", label, err))
+	pkgLog().Error(fmt.Sprintf("%s failed: %v", label, err))
 	if detail == "" {
 		detail = err.Error()
 	}
@@ -267,7 +267,7 @@ func withOpenAIClient(ctx context.Context, apiKey, baseURL, filePath, logLabel s
 	case errors.As(err, &se):
 		return sttError("API error: " + err.Error())
 	}
-	sttLog().Error(fmt.Sprintf("%s transcription failed: %v", logLabel, err))
+	pkgLog().Error(fmt.Sprintf("%s transcription failed: %v", logLabel, err))
 	return sttError(fmt.Sprintf("Transcription failed: %v", err))
 }
 
@@ -290,7 +290,7 @@ func transcribeGroq(ctx context.Context, filePath, modelName string, h sttHints)
 		return sttError("GROQ_API_KEY not set"), nil
 	}
 	if sttOpenAIModels[modelName] || sttRetiredGroqModels[modelName] {
-		sttLog().Info(fmt.Sprintf("Model %s not available on Groq, using %s", modelName, sttDefaultGroqModel))
+		pkgLog().Info(fmt.Sprintf("Model %s not available on Groq, using %s", modelName, sttDefaultGroqModel))
 		modelName = sttDefaultGroqModel
 	}
 	language := h.Language
@@ -311,7 +311,7 @@ func transcribeGroq(ctx context.Context, filePath, modelName string, h sttHints)
 		if lang == "" {
 			lang = "auto"
 		}
-		sttLog().Info(fmt.Sprintf("Transcribed %s via Groq API (%s, lang=%s, %d chars)", filepath.Base(filePath), modelName, lang, utf8.RuneCountInString(text)))
+		pkgLog().Info(fmt.Sprintf("Transcribed %s via Groq API (%s, lang=%s, %d chars)", filepath.Base(filePath), modelName, lang, utf8.RuneCountInString(text)))
 		return sttOK(text, "groq"), nil
 	}), nil
 }
@@ -358,7 +358,7 @@ func transcribeOpenAI(ctx context.Context, filePath, modelName string, e openAIE
 		language = resolveSTTLanguage(ctx, label, nil)
 	}
 	if label == "openai" && (sttGroqModels[modelName] || sttRetiredGroqModels[modelName]) {
-		sttLog().Info(fmt.Sprintf("Model %s not available on OpenAI, using %s", modelName, sttDefaultOpenAIModel))
+		pkgLog().Info(fmt.Sprintf("Model %s not available on OpenAI, using %s", modelName, sttDefaultOpenAIModel))
 		modelName = sttDefaultOpenAIModel
 	}
 	return withOpenAIClient(ctx, apiKey, baseURL, filePath, label, func(c sttTranscriptionClient) (map[string]any, error) {
@@ -374,7 +374,7 @@ func transcribeOpenAI(ctx context.Context, filePath, modelName string, e openAIE
 				} else {
 					fields = append(fields, [2]string{"language", language})
 				}
-				sttLog().Debug(fmt.Sprintf("Using language hint '%s' for OpenAI STT", language))
+				pkgLog().Debug(fmt.Sprintf("Using language hint '%s' for OpenAI STT", language))
 			}
 			if e.Prompt != "" {
 				fields = append(fields, [2]string{"prompt", e.Prompt})
@@ -404,7 +404,7 @@ func transcribeOpenAI(ctx context.Context, filePath, modelName string, e openAIE
 				}
 				return sttError(transcodeError), nil
 			}
-			sttLog().Info(fmt.Sprintf("Retrying %s STT after transcoding %s to m4a (API rejected the original container)", label, filepath.Base(filePath)))
+			pkgLog().Info(fmt.Sprintf("Retrying %s STT after transcoding %s to m4a (API rejected the original container)", label, filepath.Base(filePath)))
 			if transcription, err = create(converted); err != nil {
 				return nil, err
 			}
@@ -413,7 +413,7 @@ func transcribeOpenAI(ctx context.Context, filePath, modelName string, e openAIE
 		if err != nil {
 			return nil, err
 		}
-		sttLog().Info(fmt.Sprintf("Transcribed %s via %s (%s, %d chars)", filepath.Base(filePath), label, modelName, utf8.RuneCountInString(text)))
+		pkgLog().Info(fmt.Sprintf("Transcribed %s via %s (%s, %d chars)", filepath.Base(filePath), label, modelName, utf8.RuneCountInString(text)))
 		return sttOK(text, label), nil
 	}), nil
 }
@@ -484,7 +484,7 @@ func transcribeMistral(ctx context.Context, filePath, modelName string, h sttHin
 		var text string
 		text, err = extractTranscriptText(result)
 		if err == nil {
-			sttLog().Info(fmt.Sprintf("Transcribed %s via Mistral API (%s, %d chars)", filepath.Base(filePath), modelName, utf8.RuneCountInString(text)))
+			pkgLog().Info(fmt.Sprintf("Transcribed %s via Mistral API (%s, %d chars)", filepath.Base(filePath), modelName, utf8.RuneCountInString(text)))
 			return sttOK(text, "mistral"), nil
 		}
 		className = pyrepr.ExceptionName(err)
@@ -650,7 +650,7 @@ func transcribeXAI(ctx context.Context, filePath, modelName string, h sttHints) 
 			return nil, err
 		}
 		if (resp.Status == 401 || resp.Status == 403) && credProvider == "xai-oauth" {
-			sttLog().Info(fmt.Sprintf("xAI STT got HTTP %d; refreshing OAuth credentials and retrying once", resp.Status))
+			pkgLog().Info(fmt.Sprintf("xAI STT got HTTP %d; refreshing OAuth credentials and retrying once", resp.Status))
 			rp, rk, rb, rerr := sttRefreshXAICredentials(ctx, apiKey)
 			if rerr == nil {
 				rk = pystr.Strip(rk)
@@ -663,7 +663,7 @@ func transcribeXAI(ctx context.Context, filePath, modelName string, h sttHints) 
 				}
 			}
 			if rerr != nil {
-				sttLog().Warn(fmt.Sprintf("xAI STT OAuth refresh-and-retry after HTTP %d failed: %v", resp.Status, rerr))
+				pkgLog().Warn(fmt.Sprintf("xAI STT OAuth refresh-and-retry after HTTP %d failed: %v", resp.Status, rerr))
 			}
 		}
 		return resp, nil
@@ -678,7 +678,7 @@ func transcribeXAI(ctx context.Context, filePath, modelName string, h sttHints) 
 			duration = v
 		}
 		d, _ := sttCastFloat(duration)
-		sttLog().Info(fmt.Sprintf("Transcribed %s via xAI Grok STT (lang=%s, %.1fs audio, %d chars)", filepath.Base(filePath), pyrepr.Str(lang), d, utf8.RuneCountInString(text)))
+		pkgLog().Info(fmt.Sprintf("Transcribed %s via xAI Grok STT (lang=%s, %.1fs audio, %d chars)", filepath.Base(filePath), pyrepr.Str(lang), d, utf8.RuneCountInString(text)))
 	}
 	detail := func(body map[string]any) string {
 		errVal, ok := body["error"]
@@ -761,7 +761,7 @@ func transcribeElevenLabs(ctx context.Context, filePath, modelName string, h stt
 		return postAudioMultipart(ctx, base+"/speech-to-text", map[string]string{"xi-api-key": apiKey}, filePath, data)
 	}
 	logFn := func(text string, _ map[string]any) {
-		sttLog().Info(fmt.Sprintf("Transcribed %s via ElevenLabs Scribe (%s, %d chars)", filepath.Base(filePath), modelName, utf8.RuneCountInString(text)))
+		pkgLog().Info(fmt.Sprintf("Transcribed %s via ElevenLabs Scribe (%s, %d chars)", filepath.Base(filePath), modelName, utf8.RuneCountInString(text)))
 	}
 	return restProvider(filePath, "elevenlabs", "ElevenLabs STT", post, elevenLabsErrorDetail,
 		func(body map[string]any) (string, error) { return extractTranscriptText(body) }, logFn), nil
@@ -830,21 +830,8 @@ var sttResolveOpenAIAudioAPIKey = func(ctx context.Context) string { return tool
 // Stored stt selection, empty when never configured, the seam tests replace
 var sttReadSelection = func(ctx context.Context) string { return tools.ReadSelection(nil, "stt") }
 
-// Managed Nous tools entitlement and the gateway outage remediation, the seams tests replace
-var (
-	sttManagedNousToolsEnabled       = func() bool { return tools.ManagedNousToolsEnabled(nil, false) }
-	sttNousGatewayUnavailableMessage = func(what string) string { return tools.NousToolGatewayUnavailableMessage(nil, what, false) }
-	sttTranscode                     = transcodeAudioForSTT
-)
-
-// Managed openai-audio gateway key and base URL, false when unavailable, the seam tests replace
-var sttManagedOpenAIAudio = func(ctx context.Context) (string, string, bool, error) {
-	route, err := managedOpenAIAudioRoute(nil)
-	if err != nil || route == nil {
-		return "", "", false, err
-	}
-	return route.APIKey, route.BaseURL, true, nil
-}
+// Audio transcoder ahead of a cloud upload, the seam tests replace
+var sttTranscode = transcodeAudioForSTT
 
 // OpenAI STT key and base URL strict on the stored stt selection, a ValueError when unresolvable
 func resolveSTTOpenAIAudioClientConfig(ctx context.Context) (string, string, error) {
@@ -853,34 +840,13 @@ func resolveSTTOpenAIAudioClientConfig(ctx context.Context) (string, string, err
 		return "", "", err
 	}
 	selected := sttReadSelection(ctx)
-	if selected == NousManagedProvider {
-		key, base, ok, err := sttManagedOpenAIAudio(ctx)
-		if err != nil {
-			return "", "", err
-		}
-		if !ok {
-			return "", "", &sttValueError{msg: tools.SelectionError("stt", NousManagedProvider, "the Nous Tool Gateway is not available (not entitled or unreachable)")}
-		}
-		return key, base, nil
-	}
 	if key, base, ok := directOpenAICredentials(ctx, dictGetDefault(openaiCfg, "api_key", ""), dictGetDefault(openaiCfg, "base_url", "")); ok {
 		return key, base, nil
 	}
 	if selected != "" {
 		return "", "", &sttValueError{msg: tools.SelectionError("stt", selected, "neither stt.openai.api_key in config nor VOICE_TOOLS_OPENAI_KEY/OPENAI_API_KEY is set")}
 	}
-	key, base, ok, err := sttManagedOpenAIAudio(ctx)
-	if err != nil {
-		return "", "", err
-	}
-	if !ok {
-		message := "Neither stt.openai.api_key in config nor VOICE_TOOLS_OPENAI_KEY/OPENAI_API_KEY is set"
-		if sttManagedNousToolsEnabled() {
-			message += ". " + sttNousGatewayUnavailableMessage("managed OpenAI audio for transcription")
-		}
-		return "", "", &sttValueError{msg: message}
-	}
-	return key, base, nil
+	return "", "", &sttValueError{msg: "Neither stt.openai.api_key in config nor VOICE_TOOLS_OPENAI_KEY/OPENAI_API_KEY is set"}
 }
 
 // Plain transcript of a text, mapping or scalar response, a structured reply without text raising its error

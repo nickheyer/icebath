@@ -6,7 +6,6 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -14,7 +13,8 @@ import (
 	"sort"
 	"strings"
 	"sync"
-	"syscall"
+
+	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 
 	"github.com/nickheyer/icebath/pkg/config"
 	pyfnmatch "github.com/nickheyer/icebath/pkg/internal/fnmatch"
@@ -678,7 +678,7 @@ func (s *Scope) SkillView(ctx context.Context, name, filePath, taskID string, pr
 	}
 	content, err := readSkillText(loc.md)
 	if err != nil {
-		return failResult(fmt.Sprintf("Failed to read skill '%s': %s", name, pyOSErrorText(err)), nil)
+		return failResult(fmt.Sprintf("Failed to read skill '%s': %s", name, osErrorText(err)), nil)
 	}
 	s.logSecurityWarnings(name, loc.md, content, allDirs, active)
 	fm := safeFrontmatter(content)
@@ -816,23 +816,11 @@ func pyStrValue(v any) string {
 	return fmString(v)
 }
 
-// Text Python prints for an OSError reading a file
-func pyOSErrorText(err error) string {
+// Reason of a file failure followed by the path it concerns
+func osErrorText(err error) string {
 	var pe *fs.PathError
 	if errors.As(err, &pe) {
-		msg := pe.Err.Error()
-		switch {
-		case os.IsNotExist(err):
-			msg = "No such file or directory"
-		case os.IsPermission(err):
-			msg = "Permission denied"
-		}
-		code := 0
-		var errno syscall.Errno
-		if errors.As(pe.Err, &errno) {
-			code = int(errno)
-		}
-		return fmt.Sprintf("[Errno %d] %s: '%s'", code, msg, pe.Path)
+		return pe.Err.Error() + ": " + pe.Path
 	}
 	return err.Error()
 }
@@ -1249,9 +1237,9 @@ func (s *Scope) serveSkillFile(skillRoot, filePath, label, hint string, listAvai
 	content, err := readSkillText(target)
 	if err != nil {
 		if !readErrorPrefix {
-			return failResult(pyOSErrorText(err), nil)
+			return failResult(osErrorText(err), nil)
 		}
-		return failResult(fmt.Sprintf("Failed to read '%s': %s", filePath, pyOSErrorText(err)), nil)
+		return failResult(fmt.Sprintf("Failed to read '%s': %s", filePath, osErrorText(err)), nil)
 	}
 	if markRead {
 		markBackgroundReviewSkillRead(s.Env, target)
@@ -1275,7 +1263,7 @@ func (s *Scope) servePluginSkill(ctx context.Context, host PluginSkillHost, skil
 	}
 	content, err := readSkillText(skillMD)
 	if err != nil {
-		return failResult(fmt.Sprintf("Failed to read skill '%s': %s", qualified, pyOSErrorText(err)), nil)
+		return failResult(fmt.Sprintf("Failed to read skill '%s': %s", qualified, osErrorText(err)), nil)
 	}
 	fm := safeFrontmatter(content)
 	if s.toolSkillDisabled("", qualified) {

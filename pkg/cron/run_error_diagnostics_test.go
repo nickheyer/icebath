@@ -55,9 +55,14 @@ func TestRunErrorPersistsRedactedCauseButReturnsSummary(t *testing.T) {
 	if out.Success || out.FinalResponse != "" || out.Error == nil || *out.Error != "RuntimeError: Connection error." {
 		t.Fatalf("outcome %+v", out)
 	}
-	for _, want := range []string{"Traceback (most recent call last)", "failSetup", "ConnectionError", "localhost"} {
+	for _, want := range []string{"RuntimeError: Connection error.", "caused by ConnectionError", "localhost"} {
 		if !strings.Contains(saved, want) {
 			t.Fatalf("saved output lacks %q:\n%s", want, saved)
+		}
+	}
+	for _, stack := range []string{"Traceback (most recent call last)", "failSetup"} {
+		if strings.Contains(saved, stack) {
+			t.Fatalf("saved output carries the stack %q:\n%s", stack, saved)
 		}
 	}
 	if strings.Contains(saved, "password") || strings.Contains(saved, "secret-token") {

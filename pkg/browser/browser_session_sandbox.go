@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/botdesktop"
+	"github.com/nickheyer/icebath/pkg/browser/quiet"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pyshlex"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
@@ -23,7 +24,7 @@ const (
 	sandboxGoneRC          = 3
 	sandboxNotOursRC       = 4
 	sandboxStartTimeOfP    = `s=$(cat /proc/"$p"/stat 2>/dev/null) && s=${s##*")"} && set -- $s && printf %s "${20}"`
-	sandboxStopScript      = `p=$1; t=$(` + sandboxStartTimeOfP + `); [ -n "$t" ] && [ "$t" = "$2" ] || exit 4; ` + `ok=; while IFS= read -r -d "" a; do [ "$a" = "$3" ] && ok=1; done < /proc/"$p"/cmdline; ` + `[ -n "$ok" ] || exit 4; kill -TERM "$p"`
+	sandboxStopScript      = `p=$1; t=$(` + sandboxStartTimeOfP + `); [ -n "$t" ] && [ "$t" = "$2" ] || exit 4; ` + `c=; while IFS= read -r -d "" a; do c="$c $a"; done < /proc/"$p"/cmdline; ` + `case "$c " in *" $3 "*) ;; *) exit 4 ;; esac; kill -TERM "$p"`
 	sandboxStopScriptLabel = "icebath-sandbox-browser-stop"
 )
 
@@ -55,8 +56,8 @@ var (
 	sandboxProfileDir   = botdesktop.BrowserProfileDir
 	sandboxChromiumExe  = botdesktop.SandboxChromiumExecutable
 	sandboxTempDir      = tools.SandboxTempDir
-	sandboxRunIn        = func(e tools.Environment, argv []string, childEnv map[string]string, user string, timeoutS float64) (*tools.RunInResult, error) {
-		return tools.RunIn(context.Background(), e, argv, childEnv, user, seconds(timeoutS), nil)
+	sandboxRunIn        = func(e tools.Environment, argv []string, childEnv map[string]string, user string, timeoutS float64, stdin []byte) (*tools.RunInResult, error) {
+		return tools.RunIn(context.Background(), e, argv, childEnv, user, seconds(timeoutS), stdin)
 	}
 	sandboxForwardPort = func(e tools.Environment, port int, user string) (int, error) {
 		return tools.ForwardPort(e, port, "", user)
@@ -125,7 +126,7 @@ func isRunInTimeout(err error) bool {
 }
 
 func readSandboxDevtools(e tools.Environment, user, udd string) (devtoolsAddr, bool, error) {
-	proc, err := sandboxRunIn(e, []string{"cat", udd + "/DevToolsActivePort"}, nil, user, 10)
+	proc, err := sandboxRunIn(e, []string{"cat", udd + "/DevToolsActivePort"}, nil, user, 10, nil)
 	if err != nil {
 		return devtoolsAddr{}, false, err
 	}
@@ -149,7 +150,7 @@ func liveSandboxDevtools(env *tools.Env, e tools.Environment, user, udd string) 
 	active := pyshlex.Quote(udd + "/DevToolsActivePort")
 	script := fmt.Sprintf(`[ -s %s ] || exit %d; p=$(head -n1 %s); ( exec 3<>"/dev/tcp/127.0.0.1/$p" ) 2>/dev/null || exit %d; cat %s`,
 		active, sandboxGoneRC, active, sandboxGoneRC, active)
-	proc, err := sandboxRunIn(e, []string{"bash", "-c", script}, nil, user, 10)
+	proc, err := sandboxRunIn(e, []string{"bash", "-c", script}, nil, user, 10, nil)
 	if err != nil {
 		cfgOf(env).logger().Debug(fmt.Sprintf("sandbox browser liveness probe failed: %s", pyrepr.ExceptionMessage(err)))
 		return devtoolsAddr{}, livenessUnknown
@@ -171,6 +172,17 @@ func sandboxSharedKey(e tools.Environment, udd string) string {
 	return fmt.Sprintf("sandbox:%x:%s", envIdentity(e), udd)
 }
 
+// Writes the agent profile preferences into the sandbox profile before Chromium reads them
+func seedSandboxProfile(e tools.Environment, user, udd string) error {
+	return quiet.SeedRemoteProfile(udd, true, func(argv []string, stdin []byte) ([]byte, int, error) {
+		proc, err := sandboxRunIn(e, argv, nil, user, 30, stdin)
+		if err != nil {
+			return nil, 0, err
+		}
+		return proc.Stdout, proc.ReturnCode, nil
+	})
+}
+
 // Launches Chromium detached in the sandbox, returning its sandbox pid and start time
 func startSandboxChromium(env *tools.Env, e tools.Environment, user, exe, udd string, childEnv map[string]string) (int, string, error) {
 	extra := append(botDesktopSharedProfileArgs(), chromiumSandboxBypassArgs...)
@@ -186,7 +198,7 @@ func startSandboxChromium(env *tools.Env, e tools.Environment, user, exe, udd st
 	qudd := pyshlex.Quote(udd)
 	script := fmt.Sprintf(`mkdir -p %s && rm -f %s/DevToolsActivePort && (setsid %s >/dev/null 2>&1 & p=$!; echo "$p $(%s)")`,
 		qudd, qudd, strings.Join(unique, " "), sandboxStartTimeOfP)
-	proc, err := sandboxRunIn(e, []string{"bash", "-c", script}, childEnv, user, 30)
+	proc, err := sandboxRunIn(e, []string{"bash", "-c", script}, childEnv, user, 30, nil)
 	if err != nil {
 		return 0, "", err
 	}
@@ -251,6 +263,9 @@ func spawnOwnedSandbox(env *tools.Env, e tools.Environment, user, udd, key strin
 		childEnv[k] = v
 	}
 	childEnv["TMPDIR"] = sandboxTempDir(e)
+	if err := seedSandboxProfile(e, user, udd); err != nil {
+		return runtimeError("could not write the preferences that keep the sandbox browser from calling home: " + err.Error())
+	}
 	pid, start, err := startSandboxChromium(env, e, user, exe, udd, childEnv)
 	if err != nil {
 		return err
@@ -413,7 +428,7 @@ func stopLaunchedSandbox(env *tools.Env, key string) {
 	var proc *tools.RunInResult
 	if err == nil {
 		proc, err = sandboxRunIn(launched.env, []string{"bash", "-c", sandboxStopScript, sandboxStopScriptLabel, strconv.Itoa(launched.pid),
-			launched.start, "--user-data-dir=" + launched.udd}, nil, user, 15)
+			launched.start, "--user-data-dir=" + launched.udd}, nil, user, 15, nil)
 	}
 	if err != nil {
 		log.Debug(fmt.Sprintf("sandbox browser stop for pid %d failed: %s", launched.pid, pyrepr.ExceptionMessage(err)))

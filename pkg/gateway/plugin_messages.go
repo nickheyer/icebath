@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"log/slog"
 	"reflect"
 	"sync"
 
@@ -171,11 +170,11 @@ func supportsPluginEdit(adapter PlatformAdapter) bool {
 func ResolvePluginMessageTarget(ctx context.Context, runner any, sessionKey string, route any, pluginHome, pluginID string) (any, map[string]any, error) {
 	r, ok := runner.(PluginMessageRunner)
 	if !ok {
-		return nil, nil, fmt.Errorf("AttributeError: '%T' object has no attribute 'session_store'", runner)
+		return nil, nil, fmt.Errorf("the gateway runner (%T) has no session store", runner)
 	}
 	store := r.SessionStore()
 	if store == nil {
-		return nil, nil, errors.New("AttributeError: 'NoneType' object has no attribute 'lookup_by_session_key'")
+		return nil, nil, errors.New("the gateway runner has no session store to look the session key up in")
 	}
 	var source *SessionSource
 	if entry := store.LookupBySessionKey(ctx, sessionKey); entry != nil && entry.Origin != nil {
@@ -298,10 +297,10 @@ func PostPluginMessage(ctx context.Context, target any, text, pluginID string) m
 		result, err = sendPluginMessage(ctx, t, text)
 	}
 	if err != nil {
-		slog.Warn(fmt.Sprintf("plugin_message plugin=%s op=post send raised: %v", pluginID, err))
+		pkgLog().Warn(fmt.Sprintf("plugin_message plugin=%s op=post send raised: %v", pluginID, err))
 		result = pluginMessageErr("send_failed", runePrefix(err.Error(), 512))
 	}
-	slog.Info(fmt.Sprintf("plugin_message plugin=%s op=post platform=%s chat=%s ok=%s message_id=%s%s", pluginID,
+	pkgLog().Info(fmt.Sprintf("plugin_message plugin=%s op=post platform=%s chat=%s ok=%s message_id=%s%s", pluginID,
 		t.Platform, t.ChatID, resultField(result, "ok"), resultField(result, "message_id"), errorSuffix(result)))
 	return result
 }
@@ -315,14 +314,14 @@ func EditPluginMessage(ctx context.Context, target, messageID any, text, pluginI
 	}
 	result, err := editPluginMessage(ctx, t, id, text, pluginID)
 	if err != nil {
-		slog.Warn(fmt.Sprintf("plugin_message plugin=%s op=edit raised: %v", pluginID, err))
+		pkgLog().Warn(fmt.Sprintf("plugin_message plugin=%s op=edit raised: %v", pluginID, err))
 		result = pluginMessageErr("edit_failed", runePrefix(err.Error(), 512))
 	}
 	edited := "False"
 	if _, has := result["edited"]; has {
 		edited = resultField(result, "edited")
 	}
-	slog.Info(fmt.Sprintf("plugin_message plugin=%s op=edit platform=%s chat=%s ok=%s edited=%s message_id=%s%s", pluginID,
+	pkgLog().Info(fmt.Sprintf("plugin_message plugin=%s op=edit platform=%s chat=%s ok=%s edited=%s message_id=%s%s", pluginID,
 		t.Platform, t.ChatID, resultField(result, "ok"), edited, resultField(result, "message_id"), errorSuffix(result)))
 	return result
 }
@@ -337,7 +336,7 @@ func editPluginMessage(ctx context.Context, t *PostTarget, messageID, text, plug
 		sent, err := t.Adapter.EditMessage(ctx, t.ChatID, messageID, fitPluginText(t.Adapter, t.ChatID, text), false)
 		edited, editError := false, ""
 		if err != nil {
-			slog.Debug(fmt.Sprintf("plugin_message plugin=%s edit_message raised: %v", pluginID, err))
+			pkgLog().Debug(fmt.Sprintf("plugin_message plugin=%s edit_message raised: %v", pluginID, err))
 			editError = errText(err)
 		} else {
 			edited = sent.Success

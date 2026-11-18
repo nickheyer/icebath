@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"log/slog"
 	"os"
 	"path/filepath"
 	"slices"
@@ -12,6 +11,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/proc"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pysqlite"
@@ -43,7 +43,7 @@ const (
 	browseSiblingPollS     = 0.1
 )
 
-// RuntimeError the hermes reconcile raises for a refusal
+// RuntimeError the reconcile raises for a refusal
 func runtimeError(msg string) error { return &pyConvError{"RuntimeError", msg} }
 
 // Python message of a RuntimeError, the bare text without the class prefix
@@ -110,7 +110,7 @@ func reconcileSnapshot(ctx context.Context, path string, guard SQLiteConn) error
 	}
 	defer func() {
 		if msg := unlinkDBTriple(scratch); msg != "" {
-			slog.Warn("Could not remove reconciliation snapshot: " + msg)
+			pkgLog().Warn("Could not remove reconciliation snapshot: " + msg)
 		}
 	}()
 	if err := reconcileCopySnapshot(ctx, path, scratch, guard, nil); err != nil {
@@ -162,7 +162,7 @@ func requireHistoryTables(ctx context.Context, conn SQLiteConn) error {
 	return nil
 }
 
-// Outcome of an explicit declarative repair, empty strings standing for the None values of the hermes report
+// Outcome of an explicit declarative repair, empty strings standing for the None values of the report
 type DeclarativeRepairReport struct {
 	Repaired                    bool
 	Strategy, BackupPath, Error string
@@ -256,13 +256,17 @@ func ownerRemedy(home string) (string, string) {
 }
 
 // Restart command for the gateway holding a home's lock, naming the owner home a multiplexer recorded
-func owningGatewayRestart(home string) (string, error) {
-	canonical, err := CanonicalHome(home)
+func owningGatewayRestart(h string) (string, error) {
+	canonical, err := CanonicalHome(h)
 	if err != nil {
 		return "", err
 	}
 	record := ReadGatewayLockRecord(filepath.Join(canonical, "gateway.lock"))
-	if ownerHome, ok := rowValue(record, "hermes_home").(string); ok && ownerHome != "" {
+	ownerHome, ok := rowValue(record, home.RecordKey).(string)
+	if !ok {
+		ownerHome, ok = rowValue(record, home.RetiredRecordKey(home.RecordKey)).(string)
+	}
+	if ok && ownerHome != "" {
 		ownerCanonical, err := CanonicalHome(ownerHome)
 		if err != nil {
 			return "", err
@@ -272,7 +276,7 @@ func owningGatewayRestart(home string) (string, error) {
 			return restart, nil
 		}
 	}
-	_, restart := ownerRemedy(home)
+	_, restart := ownerRemedy(h)
 	return restart, nil
 }
 
@@ -760,7 +764,7 @@ func ReconcileDriftForBrowse(ctx context.Context, path string) (bool, error) {
 		return false, &DeclarativeDriftError{Detail: fmt.Sprintf("Session store for profile '%s' is behind this Icebath version and could not be "+
 			"caught up (%s). Run `icebath sessions repair` for that profile.", label, after)}
 	}
-	slog.Warn(fmt.Sprintf("state.db at %s lagged SCHEMA_SQL (%s); added the missing tables/columns for browsing", path, reason))
+	pkgLog().Warn(fmt.Sprintf("state.db at %s lagged SCHEMA_SQL (%s); added the missing tables/columns for browsing", path, reason))
 	return true, nil
 }
 

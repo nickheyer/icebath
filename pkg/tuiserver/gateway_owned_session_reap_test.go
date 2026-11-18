@@ -7,7 +7,7 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/agent"
 	"github.com/nickheyer/icebath/pkg/state"
-	"github.com/nickheyer/icebath/pkg/tuigateway"
+	"github.com/nickheyer/icebath/pkg/tuihost"
 )
 
 func TestIsGatewayOwnedSourceBuiltinGatewayPlatformsAreOwned(t *testing.T) {
@@ -29,7 +29,7 @@ func TestIsGatewayOwnedSourceTuiOwnedSourcesAreNot(t *testing.T) {
 }
 
 // Live session over a real agent that owns its store and a stored row of the given source
-func realOwnedSession(t *testing.T, source, sessionID string) (string, *tuigateway.Session, *agent.AIAgent) {
+func realOwnedSession(t *testing.T, source, sessionID string) (string, *tuihost.Session, *agent.AIAgent) {
 	t.Helper()
 	h := filepath.Join(t.TempDir(), "icebath_home")
 	t.Setenv("ICEBATH_HOME", h)
@@ -49,7 +49,7 @@ func realOwnedSession(t *testing.T, source, sessionID string) (string, *tuigatew
 	}
 	a.SetOwnsSessionDB(true)
 	a.SetEndSessionOnClose(true)
-	session := tuigateway.NewSession(map[string]any{"agent": a, "history": []any{map[string]any{"role": "user", "content": "x"}},
+	session := tuihost.NewSession(map[string]any{"agent": a, "history": []any{map[string]any{"role": "user", "content": "x"}},
 		"session_key": sessionID, "profile_home": h, "source": source})
 	return dbPath, session, a
 }

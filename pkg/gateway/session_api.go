@@ -10,6 +10,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/state"
 )
@@ -29,7 +30,7 @@ func apiStorageSource(ctx context.Context, db SessionStoreDB, sessionID, fallbac
 	}
 	binding, isObj := decoded.(*pyjson.Object)
 	if !isObj {
-		return "", fmt.Errorf("AttributeError: '%s' object has no attribute 'get'", pyTypeName(decoded))
+		return "", fmt.Errorf("the API session receipt is %s, expected a mapping", errchain.Kind(decoded))
 	}
 	value, has := binding.Get("storage_source")
 	if !has {
@@ -37,7 +38,7 @@ func apiStorageSource(ctx context.Context, db SessionStoreDB, sessionID, fallbac
 	}
 	label, isText := value.(string)
 	if !isText {
-		return "", fmt.Errorf("TypeError: storage_source is %s, not str", pyTypeName(value))
+		return "", fmt.Errorf("the API session storage_source is %s, expected text", errchain.Kind(value))
 	}
 	return label, nil
 }
@@ -81,7 +82,7 @@ func implicitAPISession(ctx context.Context, db *state.SessionDB, sessionID, req
 	return sid, err
 }
 
-// Terminal identity meta key of one API request on a session, hermes_state_terminal identity_key
+// Terminal identity meta key of one API request on a session
 func apiIdentityKey(sessionID, requestID string) (string, error) {
 	fp, err := state.AdmissionFingerprint(sessionID, map[string]any{"principal": "api", "request": requestID})
 	if err != nil {

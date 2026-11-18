@@ -3,11 +3,12 @@ package tools
 import (
 	"context"
 	"encoding/json"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"reflect"
 	"strings"
 	"sync"
 	"testing"
+
+	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 )
 
 // Session ids reach the registry handler on the standard path and on the execute_code path
@@ -244,7 +245,8 @@ func TestKanbanSelectionReachesChecksPerBuild(t *testing.T) {
 	names := func(enabled []string) map[string]bool {
 		out := map[string]bool{}
 		for _, d := range r.ToolDefinitions(context.Background(), env, DefinitionOptions{Enabled: enabled, Quiet: true, SkipToolSearchAssembly: true}) {
-			out[d["function"].(map[string]any)["name"].(string)] = true
+			fn, _ := pyjson.Dict(d["function"])
+			out[fn["name"].(string)] = true
 		}
 		return out
 	}

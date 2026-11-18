@@ -3,6 +3,8 @@ package provider
 import (
 	"context"
 	"testing"
+
+	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 )
 
 func TestGetTaskMaxConcurrency(t *testing.T) {
@@ -112,15 +114,10 @@ func TestBuildCallKwargsToolDedupAndExtraBody(t *testing.T) {
 	off := false
 	kw, _ = auxBuildCallKwargs(ctx, "deepinfra", "m", []any{}, auxCallKwargsOptions{Timeout: 30,
 		ExtraBody: map[string]any{"reasoning": map[string]any{"enabled": true, "effort": "high"}}, ReasoningConfig: map[string]any{"enabled": off}})
-	if eb, _ := kw["extra_body"].(map[string]any); eb != nil {
+	if eb, _ := pyjson.Plain(kw["extra_body"]).(map[string]any); eb != nil {
 		if r, _ := eb["reasoning"].(map[string]any); r != nil && r["effort"] == "high" {
 			t.Fatalf("caller disable lost to task reasoning %v", eb)
 		}
-	}
-	kw, _ = auxBuildCallKwargs(ctx, "nous", "Hermes-4", []any{}, auxCallKwargsOptions{Timeout: 30})
-	eb, _ := kw["extra_body"].(map[string]any)
-	if eb == nil || eb["tags"] == nil {
-		t.Fatalf("nous tags missing %v", kw)
 	}
 	kw, _ = auxBuildCallKwargs(ctx, "anthropic", "claude-sonnet-4", []any{}, auxCallKwargsOptions{Timeout: 30, ReasoningConfig: map[string]any{"enabled": true, "effort": "low"}})
 	if kw["_reasoning_config"] == nil {
@@ -166,10 +163,10 @@ func TestCompressionFastLaneCertification(t *testing.T) {
 	if err != nil || !lane.CertifiedNonReasoning || lane.ReasoningConfig["effort"] != "none" {
 		t.Fatalf("lane %+v %v", lane, err)
 	}
-	if lane, _ := ResolveCompressionFastLane(ctx, "nous", "fast/m", "", "", cfg); lane.CertifiedNonReasoning {
+	if lane, _ := ResolveCompressionFastLane(ctx, "deepseek", "fast/m", "", "", cfg); lane.CertifiedNonReasoning {
 		t.Fatal("certified on a different destination")
 	}
-	_, body, _ := auxCompressionFastLaneControls(ctx, "compression", "nous", "other", "", "", cfg, cfg, nil, map[string]any{"reasoning": map[string]any{"effort": "low"}})
+	_, body, _ := auxCompressionFastLaneControls(ctx, "compression", "deepseek", "other", "", "", cfg, cfg, nil, map[string]any{"reasoning": map[string]any{"effort": "low"}})
 	if _, ok := body["reasoning"]; ok {
 		t.Fatalf("fast only reasoning leaked %v", body)
 	}
@@ -205,7 +202,7 @@ func TestValidateLLMResponseShapes(t *testing.T) {
 
 func TestMergeSessionAffinityHeaders(t *testing.T) {
 	ctx := auxMainTestHome(t, "")
-	kw := MergeSessionAffinityHeaders(WithPortalConversationContext(ctx, "conv-1"), map[string]any{}, "opencode-go", "", "")
+	kw := MergeSessionAffinityHeaders(WithConversationContext(ctx, "conv-1"), map[string]any{}, "opencode-go", "", "")
 	if h := kw["extra_headers"].(map[string]any); h[OpencodeSessionHeader] != "conv-1" {
 		t.Fatalf("opencode affinity %v", h)
 	}

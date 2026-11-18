@@ -3,8 +3,9 @@ package tools
 import (
 	"context"
 	"fmt"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"strings"
+
+	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 )
 
 // Nudge for a silent background process that is almost always a bounded task missing its flag

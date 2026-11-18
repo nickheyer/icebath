@@ -48,7 +48,7 @@ func hcWindowsOnly(t *testing.T) {
 	}
 }
 
-func TestNoHermesHomeReturnsNative(t *testing.T) {
+func TestNoIcebathHomeReturnsNative(t *testing.T) {
 	hcPosixOnly(t)
 	tmp, _ := hcFresh(t)
 	if got := Root(); got != filepath.Join(tmp, ".icebath") {
@@ -77,7 +77,7 @@ func TestExpandedCustomProfileReturnsCustomRoot(t *testing.T) {
 	}
 }
 
-func TestNoHermesHomeReturnsLocalappdataRootOnWindows(t *testing.T) {
+func TestNoIcebathHomeReturnsLocalappdataRootOnWindows(t *testing.T) {
 	hcWindowsOnly(t)
 	tmp, _ := hcFresh(t)
 	t.Cleanup(PatchUserHome(filepath.Join(tmp, "Home")))
@@ -237,7 +237,7 @@ func TestNamedProfileUnsetHomeWarnsOnce(t *testing.T) {
 	}
 }
 
-func TestHermesHomeSetSuppressesWarning(t *testing.T) {
+func TestIcebathHomeSetSuppressesWarning(t *testing.T) {
 	tmp, buf := hcFresh(t)
 	profile := filepath.Join(tmp, ".icebath", "profiles", "coder")
 	os.MkdirAll(profile, 0o755)
@@ -381,7 +381,7 @@ func TestAPathCreatedLaterPicksUpTheRealAnswer(t *testing.T) {
 	}
 }
 
-func TestPointingHermesHomeSomewhereElseGivesANewKey(t *testing.T) {
+func TestPointingIcebathHomeSomewhereElseGivesANewKey(t *testing.T) {
 	tmp, _ := hcFresh(t)
 	first, second := filepath.Join(tmp, "home_one"), filepath.Join(tmp, "home_two")
 	os.Mkdir(first, 0o755)
@@ -549,7 +549,7 @@ func TestIsExecutableFile(t *testing.T) {
 
 func TestPartialUpdateHintOnlyForFirstPartyImportErrors(t *testing.T) {
 	for name, want := range map[string]bool{
-		"agent": true, "agent.foo": true, "hermes_cli.main": true, "tui_gateway.x": true,
+		"agent": true, "agent.foo": true, "icebath_cli.main": true, "tui_gateway.x": true,
 		"agentops": false, "": false, "requests": false, ".agent": false,
 	} {
 		if IsFirstPartyModule(name) != want {

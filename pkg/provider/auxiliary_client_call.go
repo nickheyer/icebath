@@ -151,7 +151,7 @@ func auxResolveCallClient(ctx context.Context, req auxCallRequest, route auxTask
 			return auxResolvedAuxRoute{}, err
 		}
 		if client == nil && resolvedProvider != "auto" && route.BaseURL == "" {
-			auxClientLog().Warn(fmt.Sprintf("Vision provider %s unavailable, falling back to auto vision backends", resolvedProvider))
+			pkgLog().Warn(fmt.Sprintf("Vision provider %s unavailable, falling back to auto vision backends", resolvedProvider))
 			effectiveProvider, client, finalModel, err = auxResolveVisionProviderClientFn(ctx, "auto", route.Model, "", nil, asyncMode, req.MainRuntime)
 			if err != nil {
 				return auxResolvedAuxRoute{}, err
@@ -175,11 +175,6 @@ func auxResolveCallClient(ctx context.Context, req auxCallRequest, route auxTask
 					return auxResolvedAuxRoute{}, err
 				}
 				if fbClient == nil {
-					if explicit == "nous" {
-						if detail, ok := NousCredentialFailureDetail(); ok && detail != "" {
-							return auxResolvedAuxRoute{}, &AuxiliaryClientUnavailable{Message: detail}
-						}
-					}
 					return auxResolvedAuxRoute{}, &AuxiliaryClientUnavailable{Message: MissingProviderCredentialsMessage(ctx, explicit)}
 				}
 				client, finalModel = fbClient, fbModel
@@ -190,7 +185,7 @@ func auxResolveCallClient(ctx context.Context, req auxCallRequest, route auxTask
 				effectiveProvider = resolvedProvider
 			}
 			if client == nil && route.BaseURL == "" {
-				auxClientLog().Info(fmt.Sprintf("Auxiliary %s: provider %s unavailable, trying auto-detection chain", auxTaskOrCall(task), resolvedProvider))
+				pkgLog().Info(fmt.Sprintf("Auxiliary %s: provider %s unavailable, trying auto-detection chain", auxTaskOrCall(task), resolvedProvider))
 				client, finalModel, err = auxGetCachedClientFn(ctx, auxCachedClientRequest{Provider: "auto", AsyncMode: asyncMode, MainRuntime: req.MainRuntime, Task: task})
 				if err != nil {
 					return auxResolvedAuxRoute{}, err
@@ -276,7 +271,7 @@ func auxPrepareAuxRequest(ctx context.Context, req auxCallRequest, asyncMode boo
 		if baseInfo != "" && !strings.Contains(baseInfo, "openrouter") {
 			at = " at " + baseInfo
 		}
-		auxClientLog().Info(fmt.Sprintf("Auxiliary %s: using %s (%s)%s", task, auxOrDefault(requestProvider, "auto"), auxOrDefault(finalModel, "default"), at))
+		pkgLog().Info(fmt.Sprintf("Auxiliary %s: using %s (%s)%s", task, auxOrDefault(requestProvider, "auto"), auxOrDefault(finalModel, "default"), at))
 	}
 	kwargs, err := auxBuildCallKwargs(ctx, requestProvider, finalModel, req.Messages, auxCallKwargsOptions{Temperature: req.Temperature,
 		MaxTokens: req.MaxTokens, Tools: req.Tools, Timeout: effectiveTimeout, ExtraBody: extraBody, ReasoningConfig: req.ReasoningConfig,
@@ -306,7 +301,7 @@ type auxLadderStep struct {
 
 type auxLadderYield func(step auxLadderStep) (any, error)
 
-// Vision resolution, response validation and async wrapping, swapped by tests the way hermes tests patch them
+// Vision resolution, response validation and async wrapping, swapped by tests
 var (
 	auxResolveVisionProviderClientFn = ResolveVisionProviderClient
 	auxValidateLLMResponseFn         = auxValidateLLMResponse
@@ -316,8 +311,6 @@ var (
 // Credential, refresh and provider fallback collaborators of the recovery ladder, swapped by tests
 var (
 	auxLadderProviderFallbackFn      = auxLadderProviderFallback
-	auxRefreshNousAuxiliaryClientFn  = auxRefreshNousAuxiliaryClient
-	auxNousFreshPaidAccessFn         = auxNousPortalAccountHasFreshPaidAccess
 	auxAuthRefreshProviderForRouteFn = auxAuthRefreshProviderForRoute
 	auxRefreshProviderCredentialsFn  = auxRefreshProviderCredentials
 	auxEvictCachedClientsFn          = auxEvictCachedClients
@@ -460,7 +453,7 @@ func auxLadderParameterRungs(yield auxLadderYield, firstErr error, route auxLadd
 		r := rungs[hit]
 		rungs = append(rungs[:hit:hit], rungs[hit+1:]...)
 		retryKwargs := r.strip(kwargs)
-		auxClientLog().Info(fmt.Sprintf("Auxiliary %s%s: %s: %v", auxTaskOrCall(route.Task), route.Tag, r.message, firstErr))
+		pkgLog().Info(fmt.Sprintf("Auxiliary %s%s: %s: %v", auxTaskOrCall(route.Task), route.Tag, r.message, firstErr))
 		rejection := firstErr
 		resp, accepted, raised := auxRung(yield, auxLadderStep{Kind: "call", Args: []any{route.Client, retryKwargs}}, auxParamRungAccepts)
 		if raised != nil {
@@ -480,81 +473,11 @@ func auxLadderParameterRungs(yield auxLadderYield, firstErr error, route auxLadd
 	return nil, firstErr, kwargs, nil
 }
 
-// Call step on a rebuilt Nous client after a credential event, nil when nothing refreshed
-func auxRefreshedNousStep(ctx context.Context, route auxLadderRoute, kwargs map[string]any, message string) (*auxLadderStep, error) {
-	client, model, err := auxRefreshNousAuxiliaryClientFn(ctx, auxNousRefreshRequest{CacheProvider: auxOrDefault(route.ResolvedProvider, "nous"),
-		Model: route.FinalModel, LookupModel: route.ResolvedModel, LookupTask: route.Task, AsyncMode: route.AsyncMode, BaseURL: route.ResolvedBaseURL,
-		APIKey: route.ResolvedAPIKey, APIMode: route.ResolvedAPIMode, MainRuntime: route.MainRuntime, IsVision: route.Task == "vision"})
-	if err != nil || client == nil {
-		return nil, err
-	}
-	auxClientLog().Info(fmt.Sprintf(message, auxTaskOrCall(route.Task), route.Tag))
-	if model != "" && model != kwargs["model"] {
-		kwargs["model"] = model
-	}
-	return &auxLadderStep{Kind: "call", Args: []any{client, kwargs}}, nil
-}
-
-// Nous stale model heal, paid account refresh and 401 refresh rungs
-func auxLadderNousRungs(ctx context.Context, yield auxLadderYield, firstErr error, route auxLadderRoute, kwargs map[string]any, clientIsNous bool) (any, error, error) {
-	task, tag := route.Task, route.Tag
-	refreshAccepts := func(err error) bool { return auxCredentialRungAccepts(err) || auxIsConnectionError(err) }
-	if auxIsModelNotFoundError(firstErr) && clientIsNous {
-		stale, _ := kwargs["model"].(string)
-		if healed := auxRefreshNousRecommendedModel(ctx, task == "vision", stale); healed != "" && healed != stale {
-			auxClientLog().Warn(fmt.Sprintf("Auxiliary %s%s: model %s no longer in Nous catalog; retrying with refreshed recommendation %s",
-				auxTaskOrCall(task), tag, pyrepr.Repr(kwargs["model"]), pyrepr.Repr(healed)))
-			kwargs["model"] = healed
-			resp, accepted, raised := auxRung(yield, auxLadderStep{Kind: "call", Args: []any{route.Client, kwargs}}, func(error) bool { return true })
-			if raised != nil {
-				return nil, nil, raised
-			}
-			if accepted == nil {
-				return resp, nil, nil
-			}
-			firstErr = accepted
-		}
-	}
-	if auxIsPaymentError(firstErr) && clientIsNous && auxNousFreshPaidAccessFn(ctx) {
-		step, err := auxRefreshedNousStep(ctx, route, kwargs, "Auxiliary %s%s: refreshed Nous runtime credentials after paid account check, retrying")
-		if err != nil {
-			return nil, nil, err
-		}
-		if step != nil {
-			resp, accepted, raised := auxRung(yield, *step, refreshAccepts)
-			if raised != nil {
-				return nil, nil, raised
-			}
-			if accepted == nil {
-				return resp, nil, nil
-			}
-			firstErr = accepted
-		}
-	}
-	if auxIsAuthError(firstErr) && clientIsNous {
-		step, err := auxRefreshedNousStep(ctx, route, kwargs, "Auxiliary %s%s: refreshed Nous runtime credentials after 401, retrying")
-		if err != nil {
-			return nil, nil, err
-		}
-		if step != nil {
-			resp, accepted, raised := auxRung(yield, *step, refreshAccepts)
-			if raised != nil {
-				return nil, nil, raised
-			}
-			if accepted == nil {
-				return resp, nil, nil
-			}
-			firstErr = accepted
-		}
-	}
-	return nil, firstErr, nil
-}
-
 // OAuth refresh with a same provider retry, then credential pool rotation
-func auxLadderCredentialRungs(ctx context.Context, yield auxLadderYield, firstErr error, route auxLadderRoute, kwargs map[string]any, clientIsNous bool) (any, error, error) {
+func auxLadderCredentialRungs(ctx context.Context, yield auxLadderYield, firstErr error, route auxLadderRoute, kwargs map[string]any) (any, error, error) {
 	client, task, tag, resolvedProvider := route.Client, route.Task, route.Tag, route.ResolvedProvider
 	authRefreshProvider := auxAuthRefreshProviderForRouteFn(ctx, resolvedProvider, route.BaseInfo, auxEffectiveProviderForClient(client, ""))
-	if auxIsAuthError(firstErr) && authRefreshProvider != "auto" && authRefreshProvider != "" && !clientIsNous {
+	if auxIsAuthError(firstErr) && authRefreshProvider != "auto" && authRefreshProvider != "" {
 		key := ""
 		if authRefreshProvider == "anthropic" {
 			key = auxClientAPIKeyText(client)
@@ -563,7 +486,7 @@ func auxLadderCredentialRungs(ctx context.Context, yield auxLadderYield, firstEr
 			if authRefreshProvider != auxNormalizeAuxProvider(ctx, resolvedProvider) {
 				auxEvictCachedClientsFn(ctx, resolvedProvider)
 			}
-			auxClientLog().Info(fmt.Sprintf("Auxiliary %s%s: refreshed %s credentials after auth error, retrying", auxTaskOrCall(task), tag, authRefreshProvider))
+			pkgLog().Info(fmt.Sprintf("Auxiliary %s%s: refreshed %s credentials after auth error, retrying", auxTaskOrCall(task), tag, authRefreshProvider))
 			step := auxLadderStep{Kind: "retry_same_provider", Args: []any{authRefreshProvider, auxOrDefault(route.ResolvedModel, route.FinalModel)}}
 			resp, accepted, raised := auxRung(yield, step, func(err error) bool { return auxCredentialRungAccepts(err) || auxIsConnectionError(err) })
 			if raised != nil {
@@ -593,7 +516,7 @@ func auxLadderCredentialRungs(ctx context.Context, yield auxLadderYield, firstEr
 			recoveryErr = accepted
 		}
 		if auxRecoverProviderPool(ctx, poolProvider, recoveryErr, clientAPIKey) {
-			auxClientLog().Info(fmt.Sprintf("Auxiliary %s%s: recovered %s via credential-pool rotation after %s", auxTaskOrCall(task), tag, poolProvider, auxTypeName(recoveryErr)))
+			pkgLog().Info(fmt.Sprintf("Auxiliary %s%s: recovered %s via credential-pool rotation after %s", auxTaskOrCall(task), tag, poolProvider, auxTypeName(recoveryErr)))
 			resp, retryErr := yield(auxLadderStep{Kind: "retry_same_provider", Args: []any{resolvedProvider, route.ResolvedModel}})
 			if retryErr == nil {
 				return resp, nil, nil
@@ -670,10 +593,10 @@ func auxLadderProviderFallback(ctx context.Context, yield auxLadderYield, firstE
 		if stalled {
 			detail, knob = firstErr.Error(), "no_progress_timeout"
 		}
-		auxClientLog().Warn(fmt.Sprintf("Auxiliary %s%s: request to %s %s (raise auxiliary.%s.%s for slow or reasoning models) on %s, trying fallback",
+		pkgLog().Warn(fmt.Sprintf("Auxiliary %s%s: request to %s %s (raise auxiliary.%s.%s for slow or reasoning models) on %s, trying fallback",
 			auxTaskOrCall(task), tag, auxOrDefault(route.BaseInfo, resolvedProvider), detail, auxTaskOrCall(task), knob, resolvedProvider))
 	} else {
-		auxClientLog().Info(fmt.Sprintf("Auxiliary %s%s: %s on %s (%v), trying fallback", auxTaskOrCall(task), tag, reason, resolvedProvider, firstErr))
+		pkgLog().Info(fmt.Sprintf("Auxiliary %s%s: %s on %s (%v), trying fallback", auxTaskOrCall(task), tag, reason, resolvedProvider, firstErr))
 	}
 	chainFailedModel := route.FinalModel
 	if reason == "auth error" || reason == "payment error" {
@@ -733,7 +656,7 @@ func auxLadderProviderFallback(ctx context.Context, yield auxLadderYield, firstE
 			return nil, err
 		}
 	}
-	auxClientLog().Warn(fmt.Sprintf("Auxiliary %s%s: %s on %s and all fallbacks exhausted (fallback_chain + main agent model). Raising the primary error.",
+	pkgLog().Warn(fmt.Sprintf("Auxiliary %s%s: %s on %s and all fallbacks exhausted (fallback_chain + main agent model). Raising the primary error.",
 		auxTaskOrCall(task), tag, reason, resolvedProvider))
 	if primaryRoute != nil && route.RouteInfo != nil {
 		for k, v := range primaryRoute {
@@ -766,14 +689,7 @@ func auxRecoveryLadder(ctx context.Context, firstErr error, req auxPreparedAuxRe
 			return resp, nil
 		}
 		firstErr = narrowed
-		clientIsNous := req.ResolvedProvider == "nous" || baseURLHostMatches(req.BaseInfo, "inference-api.nousresearch.com")
-		if resp, narrowed, raised = auxLadderNousRungs(ctx, yield, firstErr, route, kwargs, clientIsNous); raised != nil {
-			return nil, raised
-		} else if narrowed == nil {
-			return resp, nil
-		}
-		firstErr = narrowed
-		if resp, narrowed, raised = auxLadderCredentialRungs(ctx, yield, firstErr, route, kwargs, clientIsNous); raised != nil {
+		if resp, narrowed, raised = auxLadderCredentialRungs(ctx, yield, firstErr, route, kwargs); raised != nil {
 			return nil, raised
 		} else if narrowed == nil {
 			return resp, nil
@@ -1000,7 +916,7 @@ func auxShouldRetrySameProvider(task string, err error, tag string) bool {
 		return false
 	}
 	if auxShouldSkipSameProviderRetry(task, err) {
-		auxClientLog().Info(fmt.Sprintf("Auxiliary %s%s: timeout on the critical path; skipping same-provider retry and falling back: %v", task, tag, err))
+		pkgLog().Info(fmt.Sprintf("Auxiliary %s%s: timeout on the critical path; skipping same-provider retry and falling back: %v", task, tag, err))
 		return false
 	}
 	return true
@@ -1054,7 +970,7 @@ func auxCallImpl(ctx context.Context, req auxCallRequest, asyncMode bool) (any, 
 	}
 	if auxShouldRetrySameProvider(task, firstErr, tag) {
 		if asyncMode {
-			auxClientLog().Info(fmt.Sprintf("Auxiliary %s (async): transient transport error; retrying once on the same provider before fallback: %v", auxTaskOrCall(task), firstErr))
+			pkgLog().Info(fmt.Sprintf("Auxiliary %s (async): transient transport error; retrying once on the same provider before fallback: %v", auxTaskOrCall(task), firstErr))
 			resp, firstErr = primary("", "")
 		} else {
 			resp, firstErr = auxTransientRetries(ctx, task, firstErr, func() (any, error) { return primary("", "") })
@@ -1105,7 +1021,7 @@ func auxTransientRetries(ctx context.Context, task string, transientErr error, p
 	last := transientErr
 	for attempt := 1; attempt <= maxRetries; attempt++ {
 		backoff := math.Min(auxTransientRetryBackoffBase*math.Pow(2.0, float64(attempt-1)), 8.0)
-		auxClientLog().Info(fmt.Sprintf("Auxiliary %s: transient transport error (attempt %d/%d); retrying same provider after %.1fs before fallback: %v",
+		pkgLog().Info(fmt.Sprintf("Auxiliary %s: transient transport error (attempt %d/%d); retrying same provider after %.1fs before fallback: %v",
 			auxTaskOrCall(task), attempt, maxRetries, backoff, last))
 		if err := auxSleepCtx(ctx, backoff); err != nil {
 			return nil, err

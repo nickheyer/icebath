@@ -101,7 +101,7 @@ var scanPluginTree = func(h, pluginDir, identifier string, opts scanOptions) (*s
 			"Review the findings above. Install only plugins from sources you trust. (Scanning can be configured via "+
 			"plugins.scan_on_install in config.yaml.)", reason, FormatPluginScanReport(result)), &result)
 	}
-	logPluginsCmd.info(fmt.Sprintf("plugin scan passed for %s: %s", filepath.Base(pluginDir), reason))
+	pkgLog().Info(fmt.Sprintf("plugin scan passed for %s: %s", filepath.Base(pluginDir), reason))
 	return &result, nil
 }
 
@@ -236,14 +236,14 @@ func readManifest(pluginDir string) (map[string]any, error) {
 		}
 		manifest, _, err := ReadAgentPluginManifest(pluginDir)
 		if err != nil {
-			logPluginsCmd.warn(fmt.Sprintf("Failed to read plugin.json in %s: %v", pluginDir, err))
+			pkgLog().Warn(fmt.Sprintf("Failed to read plugin.json in %s: %v", pluginDir, err))
 			return map[string]any{}, nil
 		}
 		return manifest, nil
 	}
 	manifest, err := pm.ReadNativeManifest(native)
 	if err != nil {
-		logPluginsCmd.warn(fmt.Sprintf("Failed to read plugin.yaml in %s: %v", pluginDir, err))
+		pkgLog().Warn(fmt.Sprintf("Failed to read plugin.yaml in %s: %v", pluginDir, err))
 		return map[string]any{}, nil
 	}
 	if manifest == nil {
@@ -365,9 +365,13 @@ func admitAndSavePluginSets(ctx context.Context, h string, enabled, disabled map
 		opts.Console.Print("[red]✗[/red] " + pyrich.Escape(conflict.Error()))
 		opts.Console.Print("[dim]config.yaml and the active environment are unchanged.[/dim]")
 	case errors.As(err, &refused):
-		opts.Console.Print(fmt.Sprintf("[red]✗[/red] %s refused: %s", action, refused.Error()))
-		opts.Console.Print("[dim]config.yaml and the active environment are unchanged. " +
-			"Run `icebath pm install` to resolve dependencies, then retry.[/dim]")
+		opts.Console.Print(fmt.Sprintf("[red]✗[/red] %s refused: %s", action, pyrich.Escape(refused.Error())))
+		if pm.BinaryInstall() {
+			opts.Console.Print("[dim]config.yaml and the active environment are unchanged.[/dim]")
+		} else {
+			opts.Console.Print("[dim]config.yaml and the active environment are unchanged. " +
+				"Run `icebath pm install` to resolve dependencies, then retry.[/dim]")
+		}
 	}
 	return err
 }

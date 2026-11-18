@@ -2,7 +2,6 @@ package telegram
 
 import (
 	"context"
-	"log/slog"
 
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
@@ -44,7 +43,7 @@ func ApplyRootDMTopicTransfer(ctx context.Context, adapter TopicTransferHost, ev
 	}
 	threadID, created, ok, err := transfer(ctx, source)
 	if err != nil {
-		slog.Debug("telegram topic transfer hook failed", "error", err)
+		pkgLog().Debug("telegram topic transfer hook failed", "error", err)
 		return
 	}
 	if !ok {

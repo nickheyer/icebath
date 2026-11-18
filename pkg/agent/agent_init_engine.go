@@ -42,7 +42,7 @@ func selectContextEngine(ctx context.Context, agentCfg map[string]any) ContextEn
 		if eng, err := newHostedContextEngine(ctx, obj); err == nil {
 			selected = eng
 		} else {
-			runAgentLog().Debug(fmt.Sprintf("Context engine load from plugins/context_engine/: %v", err))
+			pkgLog().Debug(fmt.Sprintf("Context engine load from plugins/context_engine/: %v", err))
 		}
 	}
 	if selected == nil {
@@ -60,7 +60,7 @@ func selectContextEngine(ctx context.Context, agentCfg map[string]any) ContextEn
 				defer func() {
 					if r := recover(); r != nil {
 						copyFailed = true
-						runAgentLog().Warn(fmt.Sprintf("Context engine '%s' could not be safely copied for this agent (%v) — falling back to built-in compressor. Plugin engines that hold uncopyable state (locks, DB connections) should override clone_for_agent() (or __deepcopy__) to copy only mutable budget state.", name, r))
+						pkgLog().Warn(fmt.Sprintf("Context engine '%s' could not be safely copied for this agent (%v) — falling back to built-in compressor. Plugin engines that hold uncopyable state (locks, DB connections) should override clone_for_agent() (or __deepcopy__) to copy only mutable budget state.", name, r))
 					}
 				}()
 				selected = candidate.CloneForAgent()
@@ -68,7 +68,7 @@ func selectContextEngine(ctx context.Context, agentCfg map[string]any) ContextEn
 		}
 	}
 	if selected == nil && !copyFailed {
-		runAgentLog().Warn(fmt.Sprintf("Context engine '%s' not found — falling back to built-in compressor", name))
+		pkgLog().Warn(fmt.Sprintf("Context engine '%s' not found — falling back to built-in compressor", name))
 	}
 	return selected
 }
@@ -105,7 +105,7 @@ func buildContextEngine(ctx context.Context, a *AIAgent, agentCfg map[string]any
 		}
 		selected.UpdateModel(a.model, pluginCtxLen, a.baseURL, a.apiKey, a.provider, a.apiMode)
 		if !a.quietMode {
-			runAgentLog().Info("Using context engine: " + selected.Name())
+			pkgLog().Info("Using context engine: " + selected.Name())
 		}
 	} else {
 		providers := make([]any, len(customProviders))
@@ -141,7 +141,7 @@ func buildContextEngine(ctx context.Context, a *AIAgent, agentCfg map[string]any
 	cc, native := a.contextCompressor.(*ContextCompressor)
 	a.compressionEnabled, a.compressionInPlace = cs.Enabled, cs.InPlace
 	if cs.CheckpointRequired && cs.MicroCompact {
-		compressionLog().Warn("compression.checkpoint_required is enabled: post-turn micro-compaction is disabled for this agent so every lossy rewrite passes through the checkpoint-gated compressor.")
+		pkgLog().Warn("compression.checkpoint_required is enabled: post-turn micro-compaction is disabled for this agent so every lossy rewrite passes through the checkpoint-gated compressor.")
 		cs.MicroCompact = false
 	}
 	if native {
@@ -203,17 +203,6 @@ func (e *contextBelowMinimumError) Error() string { return e.msg }
 
 func (e *contextBelowMinimumError) PyTypeName() string { return "ValueError" }
 
-// Warns gateway and cron surfaces once that a Nous Hermes 3 or 4 model is not agentic
-func warnNonagenticHermesModel(a *AIAgent) {
-	if a.quietMode || a.platform == "" || a.platform == "cli" {
-		return
-	}
-	if warning := provider.CheckHermesModelWarning(a.model); warning != "" {
-		a.emitWarning("⚠ Nous Research Hermes 3 & 4 models are NOT agentic — they lack reliable tool-calling for agent workflows (delegation, cron, proactive tools). Consider an agentic model instead (Claude, GPT, Gemini, Qwen-Coder, etc.).")
-		runAgentLog().Warn(warning)
-	}
-}
-
 // Context engine tool schemas appended to the surface, then the engine session start hook
 func injectContextEngineTools(ctx context.Context, a *AIAgent) {
 	a.contextEngineToolNames = map[string]bool{}
@@ -227,7 +216,7 @@ func injectContextEngineTools(ctx context.Context, a *AIAgent) {
 		for _, raw := range a.contextCompressor.GetToolSchemas() {
 			schema, ok := memory.NormalizeToolSchema(raw)
 			if !ok {
-				runAgentLog().Warn("Context engine returned a tool schema with no resolvable name; skipping to avoid poisoning the request (" + pyrepr.Repr(raw) + ")")
+				pkgLog().Warn("Context engine returned a tool schema with no resolvable name; skipping to avoid poisoning the request (" + pyrepr.Repr(raw) + ")")
 				continue
 			}
 			name, _ := schema["name"].(string)
@@ -253,11 +242,11 @@ func injectContextEngineTools(ctx context.Context, a *AIAgent) {
 		func() {
 			defer func() {
 				if r := recover(); r != nil {
-					runAgentLog().Debug(fmt.Sprintf("Context engine on_session_start: %v", r))
+					pkgLog().Debug(fmt.Sprintf("Context engine on_session_start: %v", r))
 				}
 			}()
 			a.contextCompressor.OnSessionStart(a.sessionID, map[string]any{
-				"hermes_home": home.Dir(ctx), "platform": platform, "model": a.model,
+				home.RecordKey: home.Dir(ctx), "platform": platform, "model": a.model,
 				"context_length": engineContextLength(a.contextCompressor), "conversation_id": conversationID,
 			})
 		}()
@@ -291,13 +280,13 @@ var agentConfigLoader = func(ctx context.Context) (map[string]any, error) {
 func loadAgentConfig(ctx context.Context) map[string]any {
 	tree, err := agentConfigLoader(ctx)
 	if err != nil {
-		runAgentLog().Warn(fmt.Sprintf("Agent configuration could not be loaded (%s); using defaults for memory, skills, compression and related settings. Run 'icebath config check' and correct the reported configuration.", pyErrorClass(err)))
+		pkgLog().Warn(fmt.Sprintf("Agent configuration could not be loaded (%s); using defaults for memory, skills, compression and related settings. Run 'icebath config check' and correct the reported configuration.", pyErrorClass(err)))
 		return map[string]any{}
 	}
 	return tree
 }
 
-// Constructs the agent in hermes order from routing through the primary runtime snapshot
+// Constructs the agent in order from routing through the primary runtime snapshot
 func initAgent(ctx context.Context, a *AIAgent, o AIAgentOptions) error {
 	if config.SafeWorkerEnabled() {
 		o.SkipContextFiles, o.SkipMemory, o.SkipBackgroundReview = true, true, true
@@ -312,7 +301,7 @@ func initAgent(ctx context.Context, a *AIAgent, o AIAgentOptions) error {
 	if a.env == nil {
 		a.env = tools.ToolEnvFrom(ctx)
 	}
-	a.env = tools.WithRuntimeMainSlot(withToolMetricSink(ctx, a.env))
+	a.env = tools.WithRuntimeMainSlot(a.env)
 	a.sessionCwd = o.Cwd
 	budget := o.IterationBudget
 	if budget == nil {
@@ -412,7 +401,6 @@ func initAgent(ctx context.Context, a *AIAgent, o AIAgentOptions) error {
 	if err := enforceMinimumContext(a); err != nil {
 		return err
 	}
-	warnNonagenticHermesModel(a)
 	injectContextEngineTools(ctx, a)
 	initUsageState(a)
 	clampCompressorToOllamaNumCtx(a)

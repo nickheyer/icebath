@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"log/slog"
 	"reflect"
 	"sync"
 	"time"
@@ -92,7 +91,7 @@ func (l *loop) spawn(parent context.Context, fn func(ctx context.Context)) *task
 		defer l.mu.Unlock()
 		defer func() {
 			if r := recover(); r != nil {
-				slog.Default().Error("Task exception was never retrieved", "logger", "asyncio", "exception", fmt.Sprint(r))
+				pkgLog().Error("Task exception was never retrieved", "exception", fmt.Sprint(r))
 			}
 		}()
 		fn(ctx)

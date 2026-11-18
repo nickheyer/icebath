@@ -132,12 +132,12 @@ func (r *recorderBase) openLiveSession(ctx context.Context, sampleRate int) {
 	r.mu.Unlock()
 	live, err := voiceOpenStreamingSession(ctx, onPartial)
 	if err != nil {
-		voiceLog().Debug(fmt.Sprintf("Live STT session did not open: %s", err))
+		pkgLog().Debug(fmt.Sprintf("Live STT session did not open: %s", err))
 		live = nil
 	}
 	if live != nil {
 		live.SetInputRate(sampleRate)
-		voiceLog().Info(fmt.Sprintf("Live STT streaming (%s)", live.Provider()))
+		pkgLog().Info(fmt.Sprintf("Live STT streaming (%s)", live.Provider()))
 	}
 	r.mu.Lock()
 	r.live = live
@@ -253,7 +253,7 @@ func (r *TermuxAudioRecorder) Start(context.Context, func()) error {
 	r.mu.Lock()
 	r.startTime, r.recording, r.currentRMS = voiceMonotonic(), true, 0
 	r.mu.Unlock()
-	voiceLog().Info("Termux voice recording started")
+	pkgLog().Info("Termux voice recording started")
 	return nil
 }
 
@@ -291,7 +291,7 @@ func (r *TermuxAudioRecorder) Stop() (string, error) {
 		unlinkQuietly(path)
 		return "", nil
 	}
-	voiceLog().Info(fmt.Sprintf("Termux voice recording stopped: %s", path))
+	pkgLog().Info(fmt.Sprintf("Termux voice recording stopped: %s", path))
 	return path, nil
 }
 
@@ -300,7 +300,7 @@ func (r *TermuxAudioRecorder) Cancel() {
 	_, path, _ := r.resetState()
 	_ = r.stopTermuxRecording()
 	unlinkQuietly(path)
-	voiceLog().Info("Termux voice recording cancelled")
+	pkgLog().Info("Termux voice recording cancelled")
 }
 
 func (r *TermuxAudioRecorder) Shutdown() { r.Cancel() }
@@ -352,7 +352,7 @@ func (r *AudioRecorder) trackSpeech(rms int, now float64) {
 			r.speechStart = now
 		} else if !r.hasSpoken && now-r.speechStart >= r.minSpeechDuration {
 			r.hasSpoken = true
-			voiceLog().Debug(fmt.Sprintf("Speech confirmed (%.2fs above threshold)", now-r.speechStart))
+			pkgLog().Debug(fmt.Sprintf("Speech confirmed (%.2fs above threshold)", now-r.speechStart))
 		}
 		if !r.hasSpoken {
 			r.silenceStart = 0
@@ -378,7 +378,7 @@ func (r *AudioRecorder) trackSpeech(rms int, now float64) {
 		if r.dipStart == 0 {
 			r.dipStart = now
 		} else if now-r.dipStart >= r.maxDipTolerance {
-			voiceLog().Debug(fmt.Sprintf("Speech attempt reset (dip lasted %.2fs)", now-r.dipStart))
+			pkgLog().Debug(fmt.Sprintf("Speech attempt reset (dip lasted %.2fs)", now-r.dipStart))
 			r.speechStart = 0
 			r.dipStart = 0
 		}
@@ -392,15 +392,15 @@ func (r *AudioRecorder) shouldAutoStop(rms int, now float64) bool {
 		if r.silenceStart == 0 {
 			r.silenceStart = now
 		} else if now-r.silenceStart >= r.silenceDuration {
-			voiceLog().Info(fmt.Sprintf("Silence detected (%.1fs), auto-stopping", r.silenceDuration))
+			pkgLog().Info(fmt.Sprintf("Silence detected (%.1fs), auto-stopping", r.silenceDuration))
 			return true
 		}
 	} else if !r.hasSpoken && elapsed >= r.maxWait {
-		voiceLog().Info(fmt.Sprintf("No speech within %.0fs, auto-stopping", r.maxWait))
+		pkgLog().Info(fmt.Sprintf("No speech within %.0fs, auto-stopping", r.maxWait))
 		return true
 	}
 	if r.maxDurationReached(elapsed) {
-		voiceLog().Info(fmt.Sprintf("Max recording length reached (%.0fs), auto-stopping", r.maxRecordingSeconds))
+		pkgLog().Info(fmt.Sprintf("Max recording length reached (%.0fs), auto-stopping", r.maxRecordingSeconds))
 		return true
 	}
 	return false
@@ -418,7 +418,7 @@ func (r *AudioRecorder) fireSilenceCallback() {
 	go func() {
 		defer func() {
 			if p := recover(); p != nil {
-				voiceLog().Error(fmt.Sprintf("Silence callback failed: %v", p))
+				pkgLog().Error(fmt.Sprintf("Silence callback failed: %v", p))
 			}
 		}()
 		cb()
@@ -456,7 +456,7 @@ func (r *AudioRecorder) onAudioBlock(indata []int16) bool {
 
 func (r *AudioRecorder) callback(indata []int16, _ int, status pysounddevice.CallbackFlags) pysounddevice.CallbackResult {
 	if status != 0 {
-		voiceLog().Debug(fmt.Sprintf("sounddevice status: %s", status))
+		pkgLog().Debug(fmt.Sprintf("sounddevice status: %s", status))
 	}
 	if r.IsRecording() && !r.onAudioBlock(indata) {
 		return pysounddevice.Abort
@@ -475,9 +475,9 @@ func (r *AudioRecorder) ensureStream() error {
 			return nil
 		}
 		if err != nil {
-			voiceLog().Debug(fmt.Sprintf("Audio input stream liveness probe failed: %s", err))
+			pkgLog().Debug(fmt.Sprintf("Audio input stream liveness probe failed: %s", err))
 		}
-		voiceLog().Debug("Rebuilding inactive audio input stream")
+		pkgLog().Debug("Rebuilding inactive audio input stream")
 		r.closeStreamWithTimeout(3.0)
 	}
 	sd, err := importAudio()
@@ -502,7 +502,7 @@ func (r *AudioRecorder) ensureStream() error {
 		if attempt > 0 || !strings.Contains(pystr.Lower(err.Error()), "timed out") {
 			return fmt.Errorf("Failed to open audio input stream: %s. Check that a microphone is connected and accessible.", err)
 		}
-		voiceLog().Info("Audio input stream start timed out; retrying once")
+		pkgLog().Info("Audio input stream start timed out; retrying once")
 	}
 	r.mu.Lock()
 	r.stream = opened
@@ -545,7 +545,7 @@ func (r *AudioRecorder) Start(ctx context.Context, onSilenceStop func()) error {
 	r.mu.Lock()
 	r.recording = true
 	r.mu.Unlock()
-	voiceLog().Info(fmt.Sprintf("Voice recording started (rate=%d, channels=%d)", rate, voiceChannels))
+	pkgLog().Info(fmt.Sprintf("Voice recording started (rate=%d, channels=%d)", rate, voiceChannels))
 	return nil
 }
 
@@ -567,7 +567,7 @@ func (r *AudioRecorder) closeStreamWithTimeout(timeout float64) {
 	select {
 	case <-done:
 	case <-time.After(time.Duration(timeout * float64(time.Second))):
-		voiceLog().Warn(fmt.Sprintf("Audio stream close timed out after %.1fs — forcing ahead", timeout))
+		pkgLog().Warn(fmt.Sprintf("Audio stream close timed out after %.1fs — forcing ahead", timeout))
 	}
 }
 
@@ -603,13 +603,13 @@ func (r *AudioRecorder) stopCapture() (string, error) {
 		audio = append(audio, frame...)
 	}
 	r.frames = nil
-	voiceLog().Info(fmt.Sprintf("Voice recording stopped (%.1fs, %d samples)", voiceMonotonic()-r.startTime, len(audio)))
+	pkgLog().Info(fmt.Sprintf("Voice recording stopped (%.1fs, %d samples)", voiceMonotonic()-r.startTime, len(audio)))
 	if len(audio) < int(float64(r.sampleRate)*0.3) {
-		voiceLog().Debug(fmt.Sprintf("Recording too short (%d samples), discarding", len(audio)))
+		pkgLog().Debug(fmt.Sprintf("Recording too short (%d samples), discarding", len(audio)))
 		return "", nil
 	}
 	if float64(r.peakRMS) < r.silenceThreshold {
-		voiceLog().Info(fmt.Sprintf("Recording too quiet (peak RMS=%d < %d), discarding", r.peakRMS, int(r.silenceThreshold)))
+		pkgLog().Info(fmt.Sprintf("Recording too quiet (peak RMS=%d < %d), discarding", r.peakRMS, int(r.silenceThreshold)))
 		return "", nil
 	}
 	return voiceWriteWAV(audio, r.sampleRate)
@@ -627,14 +627,14 @@ func (r *AudioRecorder) discard() {
 
 func (r *AudioRecorder) Cancel() {
 	r.discard()
-	voiceLog().Info("Voice recording cancelled")
+	pkgLog().Info("Voice recording cancelled")
 }
 
 // Discards the recording and releases the input stream
 func (r *AudioRecorder) Shutdown() {
 	r.discard()
 	r.closeStreamWithTimeout(3.0)
-	voiceLog().Info("AudioRecorder shut down")
+	pkgLog().Info("AudioRecorder shut down")
 }
 
 // Writes int16 mono PCM as a new recording WAV
@@ -650,7 +650,7 @@ func writeRecordingWAV(audio []int16, sampleRate int) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	voiceLog().Info(fmt.Sprintf("WAV written: %s (%d bytes)", wavPath, info.Size()))
+	pkgLog().Info(fmt.Sprintf("WAV written: %s (%d bytes)", wavPath, info.Size()))
 	return wavPath, nil
 }
 
@@ -676,7 +676,7 @@ func liveResult(wavPath string) map[string]any {
 	if pyTruthy(result["error"]) {
 		reason = pyrepr.Str(result["error"])
 	}
-	voiceLog().Info(fmt.Sprintf("Live STT gave no transcript (%s); transcribing the recording", reason))
+	pkgLog().Info(fmt.Sprintf("Live STT gave no transcript (%s); transcribing the recording", reason))
 	return nil
 }
 
@@ -696,7 +696,7 @@ func TranscribeRecording(ctx context.Context, wavPath, model string) (map[string
 			raw = pyrepr.Str(v)
 		}
 		if isWhisperHallucination(raw) && !isVoiceStopPhrase(raw, nil) {
-			voiceLog().Info(fmt.Sprintf("Filtered Whisper hallucination: %s", pyrepr.Repr(result["transcript"])))
+			pkgLog().Info(fmt.Sprintf("Filtered Whisper hallucination: %s", pyrepr.Repr(result["transcript"])))
 			return map[string]any{"success": true, "transcript": "", "filtered": true}, nil
 		}
 	}

@@ -25,7 +25,7 @@ func ccTransportKwargs(t *testing.T, model string, messages []map[string]any, pa
 
 // Extra body of built kwargs, empty when absent
 func ccExtraBody(kw map[string]any) map[string]any {
-	eb, _ := kw["extra_body"].(map[string]any)
+	eb, _ := pyjson.Plain(kw["extra_body"]).(map[string]any)
 	if eb == nil {
 		return map[string]any{}
 	}
@@ -100,11 +100,6 @@ func TestTransportParityProfiles(t *testing.T) {
 	kw = ccTransportKwargs(t, "anthropic/claude-sonnet-4.6", nil, map[string]any{"provider_profile": openrouter, "provider_preferences": prefs})
 	if !reflect.DeepEqual(ccExtraBody(kw)["provider"], prefs) {
 		t.Fatalf("openrouter prefs %v", kw)
-	}
-	nous, _ := GetProviderProfile(context.Background(), "nous")
-	kw = ccTransportKwargs(t, "hermes-3-llama-3.1-405b", nil, map[string]any{"provider_profile": nous})
-	if !reflect.DeepEqual(ccExtraBody(kw)["tags"], ccNousTags()) {
-		t.Fatalf("nous tags %v", ccExtraBody(kw)["tags"])
 	}
 	qwen, _ := GetProviderProfile(context.Background(), "qwen-oauth")
 	kw = ccTransportKwargs(t, "qwen3.5-plus", nil, map[string]any{"provider_profile": qwen})
@@ -384,13 +379,6 @@ func TestChatCompletionsBuildKwargsProfiles(t *testing.T) {
 	if !reflect.DeepEqual(ccExtraBody(kw)["provider"], map[string]any{"only": []any{"openai"}}) {
 		t.Fatal(kw)
 	}
-	nous, _ := GetProviderProfile(context.Background(), "nous")
-	if kw := ccTransportKwargs(t, "gpt-4o", hi, map[string]any{"provider_profile": nous}); !reflect.DeepEqual(ccExtraBody(kw)["tags"], ccNousTags()) {
-		t.Fatal(kw)
-	}
-	if kw := ccTransportKwargs(t, "gpt-4o", hi, map[string]any{"provider_profile": nous, "supports_reasoning": true, "reasoning_config": map[string]any{"enabled": false}}); ccExtraBody(kw)["reasoning"] != nil {
-		t.Fatal(kw)
-	}
 	custom, _ := GetProviderProfile(context.Background(), "custom")
 	if kw := ccTransportKwargs(t, "llama3", hi, map[string]any{"provider_profile": custom, "ollama_num_ctx": 32768}); ccExtraBody(kw)["options"].(map[string]any)["num_ctx"] != 32768 {
 		t.Fatal(kw)
@@ -405,7 +393,7 @@ func TestChatCompletionsBuildKwargsProfiles(t *testing.T) {
 	if kw := ccTransportKwargs(t, "gpt-4o", hi, map[string]any{"provider_profile": Profile{Name: "_t", OmitTemperature: true}, "temperature": 0.3}); kw["temperature"] != nil {
 		t.Fatal(kw)
 	}
-	for _, provider := range []string{"nous", "openrouter"} {
+	for _, provider := range []string{"openrouter"} {
 		p, _ := GetProviderProfile(context.Background(), provider)
 		kw := ccTransportKwargs(t, "openai/gpt-5.6-sol", hi, map[string]any{"reasoning_config": map[string]any{"enabled": true, "effort": "ultra"},
 			"supports_reasoning": true, "provider_profile": p, "provider_name": provider, "base_url": p.BaseURL})
@@ -458,20 +446,6 @@ func TestChatCompletionsBuildKwargsGemini(t *testing.T) {
 	}
 	if kw := ccTransportKwargs(t, "gemini-3.7-flash", hi, params("")); kw["max_tokens"] != 4096 {
 		t.Fatal(kw)
-	}
-	nous, _ := GetProviderProfile(context.Background(), "nous")
-	for _, tc := range []struct {
-		model, baseURL string
-		tags           bool
-	}{
-		{"anthropic/claude-sonnet-4.6", "https://generativelanguage.googleapis.com/v1beta", false},
-		{"hermes-3-405b", "https://inference.nousresearch.com/v1", true},
-		{"anthropic/claude-sonnet-4.6", "https://generativelanguage.googleapis.com/v1beta/openai", true},
-	} {
-		kw := ccTransportKwargs(t, tc.model, []map[string]any{{"role": "user", "content": "hi"}}, map[string]any{"provider_profile": nous, "base_url": tc.baseURL, "session_id": "s1", "max_tokens": nil})
-		if _, has := ccExtraBody(kw)["tags"]; has != tc.tags {
-			t.Fatalf("%s tags %v: %v", tc.baseURL, has, kw)
-		}
 	}
 }
 
@@ -608,15 +582,6 @@ func TestPromptCacheKeyCallerOverrides(t *testing.T) {
 	if _, has := kw["prompt_cache_key"]; has {
 		t.Fatal(kw)
 	}
-}
-
-// Nous Portal tags without a session in the list shape the profile body carries
-func ccNousTags() []any {
-	var out []any
-	for _, tag := range nousPortalTags(context.Background(), "") {
-		out = append(out, tag)
-	}
-	return out
 }
 
 func TestProfileHookWithoutLMStudioKeywordStillCalled(t *testing.T) {

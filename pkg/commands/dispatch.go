@@ -81,7 +81,12 @@ func (e *UnboundError) Error() string { return "commands: /" + e.Name + " has no
 // Refusal of a name no registry entry resolves
 type UnknownCommandError struct{ Name string }
 
-func (e *UnknownCommandError) Error() string { return "commands: unknown command /" + e.Name }
+func (e *UnknownCommandError) Error() string {
+	if refusal, ok := SlashTierRefusal(e.Name); ok {
+		return refusal
+	}
+	return "commands: unknown command /" + e.Name
+}
 
 // Runs the handler bound to a typed command or alias against the host it hands its work to
 func RunHandler(ctx context.Context, r *Registry, name, args string, host any) error {

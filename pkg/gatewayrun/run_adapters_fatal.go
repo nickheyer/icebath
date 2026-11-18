@@ -9,7 +9,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pythread"
-	"github.com/nickheyer/icebath/pkg/observability"
 )
 
 // Runs the fatal handler detached and shielded so the failing adapter's own task cannot cancel it mid flight
@@ -45,7 +44,7 @@ func (r *GatewayRunner) queueRetryableFatalPlatform(ctx context.Context, adapter
 		return false
 	}
 	r.failedPlatforms.Set(base.Platform, r.reconnectQueueEntry(base.Platform, adapter, platformConfig, 0, 0, true))
-	runLog().Info(fmt.Sprintf("%s queued for background reconnection", base.Platform))
+	pkgLog().Info(fmt.Sprintf("%s queued for background reconnection", base.Platform))
 	r.ensureReconnectWatcherRunning(ctx)
 	return true
 }
@@ -58,13 +57,13 @@ func (r *GatewayRunner) handleAdapterFatalErrorDetached(ctx context.Context, ada
 		if base.FatalErrorRetryable() && !r.adapters.Has(platform) && !r.failedPlatforms.Has(platform) &&
 			!(r.shutdownEvent != nil && r.shutdownEvent.IsSet()) {
 			if r.onAllAdaptersDown() == "stay_alive" {
-				runLog().Warn(fmt.Sprintf("%s adapter was lost without entering the reconnection queue; "+
+				pkgLog().Warn(fmt.Sprintf("%s adapter was lost without entering the reconnection queue; "+
 					"on_all_adapters_down=stay_alive — gateway staying alive, reconnect "+
 					"watcher owns recovery.", platform))
 				r.ensureReconnectWatcherRunning(ctx)
 				return
 			}
-			runLog().Error(fmt.Sprintf("%s adapter was lost without entering the reconnection "+
+			pkgLog().Error(fmt.Sprintf("%s adapter was lost without entering the reconnection "+
 				"queue; exiting gateway so the service manager restarts it.", platform))
 			reason := fmt.Sprintf("%s adapter lost without reconnection queue", platform)
 			r.exitReason = &reason
@@ -92,7 +91,7 @@ func (r *GatewayRunner) handleAdapterFatalErrorDetached(ctx context.Context, ada
 			return err
 		}
 		if !finished {
-			runLog().Error(fmt.Sprintf("Fatal-error handling for %s timed out after %.1fs; "+
+			pkgLog().Error(fmt.Sprintf("Fatal-error handling for %s timed out after %.1fs; "+
 				"ensuring reconnect queue is populated", base.Platform, outer))
 			r.queueRetryableFatalPlatform(ctx, adapter)
 		}
@@ -105,7 +104,7 @@ func (r *GatewayRunner) handleAdapterFatalErrorDetached(ctx context.Context, ada
 		r.queueRetryableBestEffort(ctx, adapter, "cancellation")
 		return raised
 	}
-	runLog().Error(fmt.Sprintf("Fatal-error handling for %s raised unexpectedly", base.Platform), "exc_info", raised)
+	pkgLog().Error(fmt.Sprintf("Fatal-error handling for %s raised unexpectedly", base.Platform), "exc_info", raised)
 	r.queueRetryableBestEffort(ctx, adapter, "exception")
 	return nil
 }
@@ -114,7 +113,7 @@ func (r *GatewayRunner) handleAdapterFatalErrorDetached(ctx context.Context, ada
 func (r *GatewayRunner) queueRetryableBestEffort(ctx context.Context, adapter gateway.PlatformAdapter, why string) {
 	defer func() {
 		if rec := recover(); rec != nil {
-			runLog().Debug(fmt.Sprintf("Failed to queue %s after fatal-handler %s", adapter.Base().Platform, why), "error", rec)
+			pkgLog().Debug(fmt.Sprintf("Failed to queue %s after fatal-handler %s", adapter.Base().Platform, why), "error", rec)
 		}
 	}()
 	r.queueRetryableFatalPlatform(ctx, adapter)
@@ -134,11 +133,11 @@ func (r *GatewayRunner) handleAdapterFatalErrorImpl(ctx context.Context, adapter
 	platform := base.Platform
 	existing, live := r.adapters.Get(platform)
 	if live && existing != nil && existing != adapter {
-		runLog().Debug(fmt.Sprintf("Ignoring stale fatal error from a superseded %s adapter instance: %s",
+		pkgLog().Debug(fmt.Sprintf("Ignoring stale fatal error from a superseded %s adapter instance: %s",
 			platform, orText(base.FatalErrorCode(), "unknown")))
 		return nil
 	}
-	runLog().Error(fmt.Sprintf("Fatal %s adapter error (%s): %s", platform,
+	pkgLog().Error(fmt.Sprintf("Fatal %s adapter error (%s): %s", platform,
 		orText(base.FatalErrorCode(), "unknown"), orText(base.FatalErrorMessage(), "unknown error")))
 	state := "fatal"
 	if code := base.FatalErrorCode(); code != nil && *code == "relay_disabled" {
@@ -150,7 +149,6 @@ func (r *GatewayRunner) handleAdapterFatalErrorImpl(ctx context.Context, adapter
 		errorCode: base.FatalErrorCode(), errorMessage: base.FatalErrorMessage()})
 	owned := live && existing == adapter
 	if owned {
-		observability.RecordPlatformDisconnect(ctx, adapter, "")
 		r.adapters.Delete(platform)
 		r.deliveryRouter.Adapters = r.adapters
 	}
@@ -161,7 +159,7 @@ func (r *GatewayRunner) handleAdapterFatalErrorImpl(ctx context.Context, adapter
 	switch {
 	case r.adapters.Len() == 0 && r.failedPlatforms.Len() == 0:
 		if base.FatalErrorRetryable() && r.onAllAdaptersDown() == "stay_alive" {
-			runLog().Warn(fmt.Sprintf("No connected messaging platforms remain; on_all_adapters_down=stay_alive — "+
+			pkgLog().Warn(fmt.Sprintf("No connected messaging platforms remain; on_all_adapters_down=stay_alive — "+
 				"gateway staying alive, reconnect watcher owns recovery of %s.", platform))
 			r.ensureReconnectWatcherRunning(ctx)
 			return nil
@@ -173,13 +171,13 @@ func (r *GatewayRunner) handleAdapterFatalErrorImpl(ctx context.Context, adapter
 		r.exitReason = &reason
 		if base.FatalErrorRetryable() {
 			r.exitWithFailure = true
-			runLog().Error("No connected messaging platforms remain. Shutting down gateway for service restart.")
+			pkgLog().Error("No connected messaging platforms remain. Shutting down gateway for service restart.")
 		} else {
-			runLog().Error("No connected messaging platforms remain. Shutting down gateway cleanly.")
+			pkgLog().Error("No connected messaging platforms remain. Shutting down gateway cleanly.")
 		}
 		return r.Stop(ctx, false, false, false)
 	case r.adapters.Len() == 0:
-		runLog().Warn(fmt.Sprintf("No connected messaging platforms remain, but %d platform(s) "+
+		pkgLog().Warn(fmt.Sprintf("No connected messaging platforms remain, but %d platform(s) "+
 			"queued for reconnection — gateway staying alive, watcher will "+
 			"retry in background.", r.failedPlatforms.Len()))
 	}
@@ -195,7 +193,7 @@ func (r *GatewayRunner) onReconnectWatcherGaveUp(ctx context.Context, name strin
 		r.scheduleSlowReconnectWatcherRespawn(ctx, 0)
 		return
 	}
-	runLog().Warn("Reconnect watcher supervision exhausted with an empty retry " +
+	pkgLog().Warn("Reconnect watcher supervision exhausted with an empty retry " +
 		"queue — leaving it down until a platform is queued.")
 }
 
@@ -206,7 +204,7 @@ func (r *GatewayRunner) scheduleSlowReconnectWatcherRespawn(ctx context.Context,
 		for _, p := range r.failedPlatforms.Keys() {
 			names = append(names, string(p))
 		}
-		runLog().Error(fmt.Sprintf("Reconnect watcher could not be kept alive after %d slow respawns; %d platform(s) remain "+
+		pkgLog().Error(fmt.Sprintf("Reconnect watcher could not be kept alive after %d slow respawns; %d platform(s) remain "+
 			"queued and unattended: %s. Manual intervention or a gateway restart is required.",
 			attempt, r.failedPlatforms.Len(), strings.Join(names, ", ")))
 		return
@@ -219,7 +217,7 @@ func (r *GatewayRunner) scheduleSlowReconnectWatcherRespawn(ctx context.Context,
 		if !r.running.Load() || r.failedPlatforms.Len() == 0 || (task != nil && !task.isDone()) {
 			return nil, nil
 		}
-		runLog().Warn(fmt.Sprintf("Reconnect watcher still down with %d platform(s) queued — slow respawn %d/%d",
+		pkgLog().Warn(fmt.Sprintf("Reconnect watcher still down with %d platform(s) queued — slow respawn %d/%d",
 			r.failedPlatforms.Len(), attempt+1, r.maxSlowWatcherRespawns))
 		r.spawnReconnectWatcher(c, func(string) { r.scheduleSlowReconnectWatcherRespawn(c, attempt+1) })
 		return nil, nil
@@ -247,7 +245,7 @@ func (r *GatewayRunner) ensureReconnectWatcherRunning(ctx context.Context) {
 	if task != nil {
 		done = "True"
 	}
-	runLog().Warn(fmt.Sprintf("Reconnect watcher task is dead (done=%s) — respawning", done))
+	pkgLog().Warn(fmt.Sprintf("Reconnect watcher task is dead (done=%s) — respawning", done))
 	r.spawnReconnectWatcher(ctx, nil)
 }
 
@@ -318,7 +316,7 @@ func (r *GatewayRunner) reconnectFailedPlatform(ctx context.Context, platform ga
 		r.dropFromReconnectQueue(platform, "no bot credential on queued config")
 		return nil
 	}
-	runLog().Info(fmt.Sprintf("Reconnecting %s (attempt %d)...", platform, attempt))
+	pkgLog().Info(fmt.Sprintf("Reconnecting %s (attempt %d)...", platform, attempt))
 	predecessor := info["predecessor"]
 	var adapter gateway.PlatformAdapter
 	err := func() (err error) {
@@ -347,7 +345,7 @@ func (r *GatewayRunner) reconnectFailedPlatform(ctx context.Context, platform ga
 				return err
 			}
 			backoff := r.bumpReconnectBackoff(ctx, platform, info, attempt, optStr("adapter_unavailable"), adapterUnavailableMessage(platform, true))
-			runLog().Info(fmt.Sprintf("Reconnect %s: no adapter yet, next retry in %ds", platform, int(backoff)))
+			pkgLog().Info(fmt.Sprintf("Reconnect %s: no adapter yet, next retry in %ds", platform, int(backoff)))
 			return nil
 		}
 		gateway.CarryInboundDedup(predecessor, adapter)
@@ -362,7 +360,7 @@ func (r *GatewayRunner) reconnectFailedPlatform(ctx context.Context, platform ga
 			return r.installReconnectedAdapter(ctx, platform, adapter)
 		case base.HasFatalError() && !base.FatalErrorRetryable():
 			r.markPlatformFatal(ctx, string(platform), adapter)
-			runLog().Warn(fmt.Sprintf("Reconnect %s: non-retryable error (%s), removing from retry queue",
+			pkgLog().Warn(fmt.Sprintf("Reconnect %s: non-retryable error (%s), removing from retry queue",
 				platform, pyrepr.Str(optAny(base.FatalErrorMessage()))))
 			if err := disposeUnusedAdapter(ctx, adapter); err != nil {
 				return err
@@ -371,7 +369,7 @@ func (r *GatewayRunner) reconnectFailedPlatform(ctx context.Context, platform ga
 		default:
 			message := orText(base.FatalErrorMessage(), "failed to reconnect")
 			backoff := r.bumpReconnectBackoff(ctx, platform, info, attempt, base.FatalErrorCode(), message)
-			runLog().Info(fmt.Sprintf("Reconnect %s failed, next retry in %ds", platform, int(backoff)))
+			pkgLog().Info(fmt.Sprintf("Reconnect %s failed, next retry in %ds", platform, int(backoff)))
 			if err := disposeUnusedAdapter(ctx, adapter); err != nil {
 				return err
 			}
@@ -394,7 +392,7 @@ func (r *GatewayRunner) reconnectFailedPlatform(ctx context.Context, platform ga
 		}
 	}
 	backoff := r.bumpReconnectBackoff(ctx, platform, info, attempt, nil, err.Error())
-	runLog().Warn(fmt.Sprintf("Reconnect %s error: %s, next retry in %ds", platform, err.Error(), int(backoff)))
+	pkgLog().Warn(fmt.Sprintf("Reconnect %s error: %s, next retry in %ds", platform, err.Error(), int(backoff)))
 	return nil
 }
 
@@ -439,15 +437,15 @@ func (r *GatewayRunner) installReconnectedAdapter(ctx context.Context, platform 
 	}
 	r.updatePlatformRuntimeStatus(ctx, string(platform), status)
 	if degraded {
-		runLog().Info(fmt.Sprintf("⚠ %s reconnected in degraded mode (receive path not yet confirmed)", platform))
+		pkgLog().Info(fmt.Sprintf("⚠ %s reconnected in degraded mode (receive path not yet confirmed)", platform))
 	} else {
-		runLog().Info(fmt.Sprintf("✓ %s reconnected successfully", platform))
+		pkgLog().Info(fmt.Sprintf("✓ %s reconnected successfully", platform))
 	}
 	r.schedulePlannedRestartReplay(ctx)
 	func() {
 		defer func() {
 			if rec := recover(); rec != nil {
-				runLog().Debug(fmt.Sprintf("failed-obligation redelivery after %s reconnect failed", platform), "error", rec)
+				pkgLog().Debug(fmt.Sprintf("failed-obligation redelivery after %s reconnect failed", platform), "error", rec)
 			}
 		}()
 		r.redeliverFailedObligationsForPlatform(ctx, platform, nil)
@@ -457,7 +455,7 @@ func (r *GatewayRunner) installReconnectedAdapter(ctx context.Context, platform 
 		_, _ = gateway.BuildChannelDirectory(ctx, r.adapters)
 	}()
 	if _, err := r.scheduleResumePendingSessions(ctx, &platform); err != nil {
-		runLog().Debug(fmt.Sprintf("resume-pending reschedule after %s reconnect failed", platform), "error", err)
+		pkgLog().Debug(fmt.Sprintf("resume-pending reschedule after %s reconnect failed", platform), "error", err)
 	}
 	return nil
 }

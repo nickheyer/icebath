@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"log/slog"
 )
 
 // Identity pinned on the source, else one resolved against the primary home, nil when the route is unresolved
@@ -15,7 +14,7 @@ func CanonicalIdentity(ctx context.Context, source *SessionSource, runner Transp
 	identity, err := resolveIdentity(ctx, source, runner, adapter, transportProfile, primaryHome)
 	var unresolved *IdentityUnresolved
 	if errors.As(err, &unresolved) {
-		slog.Debug(fmt.Sprintf("identity unresolved: %s", unresolved.Reason))
+		pkgLog().Debug(fmt.Sprintf("identity unresolved: %s", unresolved.Reason))
 		return nil, nil
 	}
 	return identity, err
@@ -26,7 +25,7 @@ type AttrAdapter interface {
 	AdapterAttr(name string) any
 }
 
-// Pins the adapter that built a source, the transport adapter weakref of hermes
+// Pins the adapter that built a source
 func SetTransportAdapterRef(source *SessionSource, adapter PlatformAdapter) {
 	source.transportAdapterRef = adapter
 }

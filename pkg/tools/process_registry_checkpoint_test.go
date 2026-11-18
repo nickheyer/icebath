@@ -350,7 +350,7 @@ func TestCheckpointRewriteKeepsForeignEntryOrderAndNumberTypes(t *testing.T) {
 	}
 }
 
-func TestMalformedCheckpointFailsAsHermesDoes(t *testing.T) {
+func TestMalformedCheckpointFails(t *testing.T) {
 	cases := []struct{ text, recoverErr, writeErr string }{
 		{`{"a":1}`, "AttributeError: 'str' object has no attribute 'get'", ""},
 		{`"abc"`, "AttributeError: 'str' object has no attribute 'get'", ""},

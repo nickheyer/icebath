@@ -5,7 +5,6 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
-	"log/slog"
 	"os"
 	"regexp"
 	"strings"
@@ -17,8 +16,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/mediacache"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
-
-func imageReplayLog() *slog.Logger { return slog.Default().With("logger", "agent.image_replay") }
 
 // Newest user images resent on turns rebuilt from the session store
 const DefaultReplayRecentImages = 3
@@ -58,7 +55,7 @@ func ResolveReplayRecentImages(cfg map[string]any) int {
 			return int(n)
 		}
 	}
-	imageReplayLog().Warn(fmt.Sprintf("vision.replay_recent_images=%s is not a non-negative integer (0 = off, default %d); not replaying earlier images",
+	pkgLog().Warn(fmt.Sprintf("vision.replay_recent_images=%s is not a non-negative integer (0 = off, default %d); not replaying earlier images",
 		pyrepr.Repr(raw), DefaultReplayRecentImages))
 	return 0
 }
@@ -291,6 +288,6 @@ func replayForAgent(ctx context.Context, a *AIAgent, apiMessages []map[string]an
 		return
 	}
 	if attached := a.replayRecentImages(ctx, apiMessages, keep); attached > 0 {
-		imageReplayLog().Info(fmt.Sprintf("image_replay: re-attached %d earlier image(s) to the request", attached))
+		pkgLog().Info(fmt.Sprintf("image_replay: re-attached %d earlier image(s) to the request", attached))
 	}
 }

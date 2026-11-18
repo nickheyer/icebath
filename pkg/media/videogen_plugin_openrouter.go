@@ -378,7 +378,7 @@ func (p *openRouterVideoGenProvider) IsAvailable() bool {
 func (p *openRouterVideoGenProvider) availableIn(ctx context.Context) bool {
 	key, _, err := p.credentials(ctx)
 	if err != nil {
-		videoGenLog.Debug(fmt.Sprintf("OpenRouter video credential resolution failed: %v", err))
+		pkgLog().Debug(fmt.Sprintf("OpenRouter video credential resolution failed: %v", err))
 		return false
 	}
 	return key != ""
@@ -395,7 +395,7 @@ func (p *openRouterVideoGenProvider) liveCatalog(ctx context.Context) []map[stri
 	p.mu.Unlock()
 	entries, err := p.fetchCatalog(ctx)
 	if err != nil {
-		videoGenLog.Debug(fmt.Sprintf("OpenRouter video catalog unavailable: %v", err))
+		pkgLog().Debug(fmt.Sprintf("OpenRouter video catalog unavailable: %v", err))
 	}
 	if len(entries) == 0 {
 		return openRouterFallbackCatalog()
@@ -597,7 +597,7 @@ func (p *openRouterVideoGenProvider) Generate(ctx context.Context, env *tools.En
 	jobID, job, videoPath, failure, failureKind, err := p.run(ctx, env, client, base, headers, payload)
 	client.CloseIdleConnections()
 	if err != nil {
-		videoGenLog.Debug("OpenRouter video generation failed", "err", err)
+		pkgLog().Debug("OpenRouter video generation failed", "err", err)
 		return fail(fmt.Sprintf("OpenRouter video generation failed: %v", err), "api_error"), nil
 	}
 	if failure != "" {
@@ -772,7 +772,7 @@ func requestsTimeoutError(req *http.Request, timeout time.Duration) error {
 }
 
 func init() {
-	plugins.RegisterBundled(videoGenBackendPlugin{name: "openrouter", author: "Nous Research", requiresEnv: []string{"OPENROUTER_API_KEY"},
+	plugins.RegisterBundled(videoGenBackendPlugin{name: "openrouter", author: "Icebath", requiresEnv: []string{"OPENROUTER_API_KEY"},
 		description: "OpenRouter video generation backend. Every generative model on the /api/v1/videos API (Veo, Sora, Kling, Seedance, Wan, Hailuo, Grok Imagine, FLUX Video, …) — text-to-video, image-to-video and reference-to-video; catalog and per-model limits discovered live.",
 		provider:    func() VideoGenProvider { return newOpenRouterVideoGenProvider() }})
 }

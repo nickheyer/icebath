@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"log/slog"
 	"os"
 	"regexp"
 	"sort"
@@ -294,8 +293,6 @@ var builtinBackendProviders = struct {
 	providers map[string]BackendProvider
 }{providers: map[string]BackendProvider{}}
 
-var terminalEnvRegistryLog = slog.Default().With("logger", "agent.terminal_env_registry")
-
 // Python ValueError a plugin raises by taking a name owned by an in tree backend
 func rejectBuiltinBackendCollision(name string) error {
 	return &providerregistry.ValueError{Message: fmt.Sprintf("Terminal backend name '%s' is reserved for the built-in %s backend and cannot be registered by a plugin", name, name)}
@@ -303,7 +300,7 @@ func rejectBuiltinBackendCollision(name string) error {
 
 // Plugin terminal backends by lower case name, the global layer plus one layer per profile scope
 var terminalEnvRegistry = providerregistry.New[BackendProvider](providerregistry.Options{
-	Label: "Terminal environment", ProviderCls: "TerminalEnvironmentProvider", Logger: terminalEnvRegistryLog,
+	Label: "Terminal environment", ProviderCls: "TerminalEnvironmentProvider", Logger: pkgLog(),
 	Normalize: providerregistry.LowerKey, BuiltinNames: builtinBackends, OnBuiltinCollision: rejectBuiltinBackendCollision,
 })
 

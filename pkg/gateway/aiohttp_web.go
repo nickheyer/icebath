@@ -366,7 +366,7 @@ func newWebResource(path string) (*webResource, error) {
 			continue
 		}
 		if strings.ContainsAny(part, "{}") {
-			return nil, fmt.Errorf("ValueError: Invalid path '%s'['%s']", path, part)
+			return nil, fmt.Errorf("route path %s is not valid at %s", path, part)
 		}
 		part = requotePath(part)
 		formatter += part
@@ -374,7 +374,7 @@ func newWebResource(path string) (*webResource, error) {
 	}
 	compiled, err := regexp.Compile("^(?:" + pattern + ")$")
 	if err != nil {
-		return nil, fmt.Errorf("ValueError: Bad pattern '%s': %v", pattern, err)
+		return nil, fmt.Errorf("route path pattern %s is not valid: %v", pattern, err)
 	}
 	res.pattern, res.dynamic = compiled, true
 	key := formatter
@@ -429,7 +429,7 @@ func NewHTTPApp(clientMaxSize int64) *HTTPApp {
 // Resource for the path, the last one reused when it has the same path
 func (a *HTTPApp) addResource(path string) (*webResource, error) {
 	if path != "" && !strings.HasPrefix(path, "/") {
-		return nil, errors.New("ValueError: path should be started with / or be empty")
+		return nil, errors.New("a route path must start with / or be empty")
 	}
 	if n := len(a.resources); n > 0 && a.resources[n-1].origPath == path {
 		return a.resources[n-1], nil
@@ -587,7 +587,7 @@ func WebResponseFor(request *WebRequest, resp *WebResponse, err error) *WebRespo
 	if errors.As(err, &httpErr) {
 		return httpErr.Response()
 	}
-	slog.Default().With("logger", "aiohttp.server").Error("Error handling request", "error", err)
+	pkgLog().Error("Error handling request", "error", err)
 	title := "500 Internal Server Error"
 	msg := "Server got itself in trouble"
 	if strings.Contains(request.Header.Get("Accept"), "text/html") {
@@ -738,7 +738,7 @@ func StartHTTPApp(ctx context.Context, app *HTTPApp, host *string, port int, opt
 	if !opts.AccessLog.Disabled {
 		rn.accessLog = opts.AccessLog.Logger
 		if rn.accessLog == nil {
-			rn.accessLog = slog.Default().With("logger", "aiohttp.access")
+			rn.accessLog = pkgLog()
 		}
 	}
 	app.Freeze()

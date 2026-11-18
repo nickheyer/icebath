@@ -3,7 +3,6 @@ package plugins
 import (
 	"context"
 	"errors"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -11,6 +10,8 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 
 	"github.com/nickheyer/icebath/pkg/internal/pyctx"
 	"github.com/nickheyer/icebath/pkg/tools"
@@ -190,7 +191,7 @@ type ledgerBundled struct {
 func (f ledgerBundled) Manifest() Manifest          { return f.m }
 func (f ledgerBundled) Register(ctx *Context) error { return f.register(ctx) }
 
-// Compiled-in plugin driving every registrar kind of the ledger, the Go twin of the hermes ledger_probe
+// Compiled-in plugin driving every registrar kind of the ledger, the Go twin of the ledger_probe
 func ledgerProbePlugin(unloaded *[]string, mu *sync.Mutex) Plugin {
 	return ledgerBundled{m: Manifest{Name: "ledger_probe", Version: "0.1.0", Description: "ownership ledger probe"}, register: func(ctx *Context) error {
 		bg := context.Background()
@@ -702,7 +703,7 @@ func TestResolvedDeferredPlatformRestoresItsDisplacedLoader(t *testing.T) {
 	}
 }
 
-// Compiled-in profile probe reading its marker from the home it loads in, the Go twin of the hermes profile_probe
+// Compiled-in profile probe reading its marker from the home it loads in, the Go twin of the profile_probe
 func profileProbePlugin() Plugin {
 	return ledgerBundled{m: Manifest{Name: "profile_probe", Version: "0.1.0", Description: "profile probe"}, register: func(ctx *Context) error {
 		raw, err := os.ReadFile(filepath.Join(ctx.manager.home, "profile_probe_marker"))
@@ -726,8 +727,8 @@ func writeProfileProbe(t *testing.T, h, marker string) {
 	writeFile(t, filepath.Join(h, "config.yaml"), "plugins:\n  enabled: [profile_probe]\n")
 }
 
-// Port of test_same_name_tool_and_platform_are_isolated_by_hermes_home
-func TestSameNameToolAndPlatformAreIsolatedByHermesHome(t *testing.T) {
+// Same name tool and platform are isolated by home
+func TestSameNameToolAndPlatformAreIsolatedByIcebathHome(t *testing.T) {
 	platforms, _ := installLedgerServices(t)
 	ledgerSwapBundled(t, profileProbePlugin())
 	homeA, homeB := t.TempDir(), t.TempDir()

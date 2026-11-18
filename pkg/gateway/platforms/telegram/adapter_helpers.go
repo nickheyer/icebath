@@ -30,7 +30,7 @@ func redactTelegramErrorText(err error) (out string) {
 	return tools.RedactSensitiveTextWith(nil, text, tools.RedactOptions{Force: true})
 }
 
-// Deadline expiry of a bounded Telegram call, the builtin TimeoutError hermes raises
+// Deadline expiry of a bounded Telegram call, reported as the builtin TimeoutError
 type deadlineTimeoutError struct{ msg string }
 
 func (e *deadlineTimeoutError) Error() string      { return e.msg }

@@ -16,7 +16,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tools"
-	"github.com/nickheyer/icebath/pkg/tuigateway"
+	"github.com/nickheyer/icebath/pkg/tuihost"
 )
 
 // Child side of a lease holder process, holding a liveness tracked lease from the ready file until the release file
@@ -170,21 +170,21 @@ func (a *takeoverAgent) wasInterrupted() bool {
 }
 
 // Runtime record of a TUI chat on a transport
-func runtimeRecord(sessionKey string, transport tuigateway.Transport, running bool) *tuigateway.Session {
+func runtimeRecord(sessionKey string, transport tuihost.Transport, running bool) *tuihost.Session {
 	now := nowSeconds()
-	return tuigateway.NewSession(map[string]any{"agent": &takeoverAgent{}, "agent_ready": nil, "transport": transport,
+	return tuihost.NewSession(map[string]any{"agent": &takeoverAgent{}, "agent_ready": nil, "transport": transport,
 		"running": running, "last_active": now, "created_at": now, "source": "tui", "session_key": sessionKey,
 		"history": []any{}, "active_session_lease": nil, "profile_home": nil})
 }
 
 // Lease a record holds
-func recordLease(session *tuigateway.Session) *activesessions.Lease {
+func recordLease(session *tuihost.Session) *activesessions.Lease {
 	lease, _ := session.Get("active_session_lease").(*activesessions.Lease)
 	return lease
 }
 
 // Interrupt double of a record
-func recordAgent(session *tuigateway.Session) *takeoverAgent {
+func recordAgent(session *tuihost.Session) *takeoverAgent {
 	return session.Get("agent").(*takeoverAgent)
 }
 
@@ -200,8 +200,8 @@ func TestClaimFailsClosedWhenRegistrySetupFails(t *testing.T) {
 	h, _ := ownershipHome(t)
 	breakRegistry(t, h)
 	ctx := context.Background()
-	tuiLease, tuiRefusal := tuigateway.ClaimActiveSessionSlotRefusal(ctx, "tui-session", "tui-runtime", "tui", "")
-	if tuiLease != nil || tuiRefusal == nil || tuiRefusal.Message != tuigateway.SessionOwnershipUnavailable {
+	tuiLease, tuiRefusal := tuihost.ClaimActiveSessionSlotRefusal(ctx, "tui-session", "tui-runtime", "tui", "")
+	if tuiLease != nil || tuiRefusal == nil || tuiRefusal.Message != tuihost.SessionOwnershipUnavailable {
 		t.Fatalf("tui claim %v %v", tuiLease, tuiRefusal)
 	}
 }
@@ -235,7 +235,7 @@ func (*flakyLease) TracksLiveness() bool { return true }
 
 func TestServerReleaseRetriesLivenessLeaseBeforeDroppingReference(t *testing.T) {
 	lease := &flakyLease{}
-	session := tuigateway.NewSession(map[string]any{"active_session_lease": lease})
+	session := tuihost.NewSession(map[string]any{"active_session_lease": lease})
 	if !releaseActiveSessionSlot(session) {
 		t.Fatal("release reported failure")
 	}
@@ -249,10 +249,10 @@ func TestServerReleaseRetriesLivenessLeaseBeforeDroppingReference(t *testing.T) 
 
 func TestOwnLiveLeaseIdsReportsLiveOwnersAndSkipsTheExcluded(t *testing.T) {
 	first, second := &activesessions.Lease{LeaseID: "first"}, &activesessions.Lease{LeaseID: "second"}
-	swapSessions(t, map[string]*tuigateway.Session{
-		"one":   tuigateway.NewSession(map[string]any{"active_session_lease": first}),
-		"two":   tuigateway.NewSession(map[string]any{"active_session_lease": second}),
-		"three": tuigateway.NewSession(map[string]any{"active_session_lease": nil}),
+	swapSessions(t, map[string]*tuihost.Session{
+		"one":   tuihost.NewSession(map[string]any{"active_session_lease": first}),
+		"two":   tuihost.NewSession(map[string]any{"active_session_lease": second}),
+		"three": tuihost.NewSession(map[string]any{"active_session_lease": nil}),
 	})
 	if got := ownLiveLeaseIDs(nil); len(got) != 2 || !got["first"] || !got["second"] {
 		t.Fatalf("live ids %v", got)
@@ -266,9 +266,9 @@ func TestNewRuntimeTakesOverDetachedSiblingLeaseInSameProcess(t *testing.T) {
 	ctx := context.Background()
 	ownershipHome(t)
 	key := "restored-chat"
-	old := runtimeRecord(key, tuigateway.DetachedWSTransport(), true)
+	old := runtimeRecord(key, tuihost.DetachedWSTransport(), true)
 	fresh := runtimeRecord(key, &orphanRacePeer{id: 10}, false)
-	swapSessions(t, map[string]*tuigateway.Session{"old": old, "new": fresh})
+	swapSessions(t, map[string]*tuihost.Session{"old": old, "new": fresh})
 	if refusal := ensureActiveSessionSlot(ctx, "old", old); refusal != nil {
 		t.Fatalf("old claim %v", refusal)
 	}
@@ -289,7 +289,7 @@ func TestNewRuntimeTakesOverDetachedSiblingLeaseInSameProcess(t *testing.T) {
 	if metadata, _ := entries[0]["metadata"].(map[string]any); metadata["live_session_id"] != "new" {
 		t.Fatalf("metadata %v", entries[0]["metadata"])
 	}
-	fresh.Set("transport", tuigateway.DetachedWSTransport())
+	fresh.Set("transport", tuihost.DetachedWSTransport())
 	if refusal := ensureActiveSessionSlot(ctx, "old", old); refusal != nil {
 		t.Fatalf("old reclaim %v", refusal)
 	}
@@ -309,12 +309,12 @@ func TestNewRuntimeNeverTakesALiveForeignOrAttachedLease(t *testing.T) {
 	foreign := runtimeRecord("foreign-chat", &orphanRacePeer{id: 11}, false)
 	attached := runtimeRecord("two-windows", &orphanRacePeer{id: 12}, false)
 	second := runtimeRecord("two-windows", &orphanRacePeer{id: 13}, false)
-	swapSessions(t, map[string]*tuigateway.Session{"f": foreign, "w1": attached, "w2": second})
+	swapSessions(t, map[string]*tuihost.Session{"f": foreign, "w1": attached, "w2": second})
 	if refusal := ensureActiveSessionSlot(ctx, "w1", attached); refusal != nil {
 		t.Fatalf("first window claim %v", refusal)
 	}
 	for _, sid := range []string{"f", "w2"} {
-		record := map[string]*tuigateway.Session{"f": foreign, "w2": second}[sid]
+		record := map[string]*tuihost.Session{"f": foreign, "w2": second}[sid]
 		refusal := ensureActiveSessionSlot(ctx, sid, record)
 		if refusal == nil || refusal.Reason != activesessions.SessionNotOwned {
 			t.Fatalf("%s claim %v", sid, refusal)
@@ -335,11 +335,11 @@ func TestTakeoverStaysWithinTheProfile(t *testing.T) {
 	ownershipHome(t)
 	homeA, homeB := filepath.Join(t.TempDir(), "A"), filepath.Join(t.TempDir(), "B")
 	key := "20260916_175430_a9e77f"
-	sibling := runtimeRecord(key, tuigateway.DetachedWSTransport(), true)
+	sibling := runtimeRecord(key, tuihost.DetachedWSTransport(), true)
 	sibling.Set("profile_home", homeA)
 	fresh := runtimeRecord(key, &orphanRacePeer{id: 14}, false)
 	fresh.Set("profile_home", homeB)
-	swapSessions(t, map[string]*tuigateway.Session{"a": sibling, "b": fresh})
+	swapSessions(t, map[string]*tuihost.Session{"a": sibling, "b": fresh})
 	if refusal := ensureActiveSessionSlot(ctx, "a", sibling); refusal != nil {
 		t.Fatalf("profile A claim %v", refusal)
 	}
@@ -367,11 +367,11 @@ func TestTakenOverRuntimeFinalizeSparesTheNewOwnersRow(t *testing.T) {
 	ctx := context.Background()
 	h, _ := ownershipHome(t)
 	key := "restored-tui-chat"
-	old := runtimeRecord(key, tuigateway.DetachedWSTransport(), true)
+	old := runtimeRecord(key, tuihost.DetachedWSTransport(), true)
 	old.Update(map[string]any{"source": "tui", "slash_worker": nil})
 	fresh := runtimeRecord(key, &orphanRacePeer{id: 15}, false)
 	fresh.Set("source", "tui")
-	swapSessions(t, map[string]*tuigateway.Session{"old": old, "new": fresh})
+	swapSessions(t, map[string]*tuihost.Session{"old": old, "new": fresh})
 	if refusal := ensureActiveSessionSlot(ctx, "old", old); refusal != nil {
 		t.Fatalf("old claim %v", refusal)
 	}

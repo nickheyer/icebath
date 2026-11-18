@@ -210,7 +210,7 @@ type mattermostPlatformPlugin struct{}
 
 func (mattermostPlatformPlugin) Manifest() plugins.Manifest {
 	return plugins.Manifest{Name: "mattermost-platform", Version: "1.0.0", Kind: "platform", Source: "bundled", Key: "platforms/mattermost",
-		Author: "NousResearch",
+		Author: "Icebath",
 		Description: "Mattermost gateway adapter for Icebath Agent. Connects to a self-hosted or cloud Mattermost instance via " +
 			"the v4 REST API + WebSocket event stream and relays messages between Mattermost channels/DMs and the Icebath " +
 			"agent. Supports thread-mode replies, native file uploads, channel-scoped allowlists, and home-channel cron " +

@@ -3,19 +3,17 @@ package selfupdate
 import (
 	"context"
 	"fmt"
-	"log/slog"
 	"path/filepath"
 	"sort"
 
 	"github.com/nickheyer/icebath/pkg/config"
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/gatewaycli"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 )
-
-var inventoryLog = slog.Default().With("logger", "hermes_cli.update_inventory")
 
 // One running or expected runtime on this machine
 type RuntimeRecord struct {
@@ -98,7 +96,7 @@ func planField(data any, key string) (any, bool) {
 func UpdatePlanFromDict(data any) (*UpdatePlan, error) {
 	plan := NewUpdatePlan()
 	typeError := func(field string, v any) error {
-		return fmt.Errorf("TypeError: update plan field %s holds %s", field, pyrepr.TypeName(v))
+		return fmt.Errorf("update plan field %s is %s, which it cannot hold", field, errchain.Kind(v))
 	}
 	if v, ok := planField(data, "install_method"); ok {
 		s, isStr := v.(string)
@@ -154,7 +152,7 @@ func runtimeRecordFromDict(row any) (*RuntimeRecord, error) {
 	for _, required := range []string{"kind", "profile"} {
 		value, present := planField(row, required)
 		if !present {
-			return nil, fmt.Errorf("TypeError: RuntimeRecord.__init__() missing 1 required positional argument: '%s'", required)
+			return nil, fmt.Errorf("a runtime record has no %s", required)
 		}
 		text := pyrepr.Str(value)
 		if required == "kind" {
@@ -289,11 +287,11 @@ func newRuntime(kind, profile string, pid *int, supervisor string, codeSHA, code
 func inventoryProbe(label string, collect func() error) {
 	defer func() {
 		if r := recover(); r != nil {
-			inventoryLog.Debug(fmt.Sprintf("%s failed: %v", label, r))
+			pkgLog().Debug(fmt.Sprintf("%s failed: %v", label, r))
 		}
 	}()
 	if err := collect(); err != nil {
-		inventoryLog.Debug(fmt.Sprintf("%s failed: %s", label, err))
+		pkgLog().Debug(fmt.Sprintf("%s failed: %s", label, err))
 	}
 }
 

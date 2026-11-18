@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"log/slog"
 	"math"
 	"net/http"
 	"os"
@@ -106,18 +105,18 @@ func (a *QQAdapter) uploadMedia(ctx context.Context, targetType, targetID string
 
 // Polls the transport for a reconnection the listener is making, false when it does not come back in time
 func (a *QQAdapter) waitForReconnection(ctx context.Context) (bool, error) {
-	slog.Info(fmt.Sprintf("[%s] Not connected — waiting for reconnection (up to %.0fs)", a.logTag(), reconnectWaitSeconds))
+	pkgLog().Info(fmt.Sprintf("[%s] Not connected — waiting for reconnection (up to %.0fs)", a.logTag(), reconnectWaitSeconds))
 	for waited := 0.0; waited < reconnectWaitSeconds; {
 		if err := sleep(ctx, reconnectPollInterval); err != nil {
 			return false, err
 		}
 		waited += reconnectPollInterval
 		if a.IsConnected() {
-			slog.Info(fmt.Sprintf("[%s] Reconnected after %.1fs", a.logTag(), waited))
+			pkgLog().Info(fmt.Sprintf("[%s] Reconnected after %.1fs", a.logTag(), waited))
 			return true, nil
 		}
 	}
-	slog.Warn(fmt.Sprintf("[%s] Still not connected after %.0fs", a.logTag(), reconnectWaitSeconds))
+	pkgLog().Warn(fmt.Sprintf("[%s] Still not connected after %.0fs", a.logTag(), reconnectWaitSeconds))
 	return false, nil
 }
 
@@ -180,14 +179,14 @@ func (a *QQAdapter) sendChunk(ctx context.Context, chatID, content, replyTo stri
 		}
 		if attempt < 2 {
 			delay := 1.0 * math.Pow(2, float64(attempt))
-			slog.Warn(fmt.Sprintf("[%s] send retry %d/3 after %.1fs: %s", a.logTag(), attempt+1, delay, errText(err)))
+			pkgLog().Warn(fmt.Sprintf("[%s] send retry %d/3 after %.1fs: %s", a.logTag(), attempt+1, delay, errText(err)))
 			if serr := sleep(ctx, delay); serr != nil {
 				return gateway.SendResult{}, serr
 			}
 		}
 	}
 	errorMsg := errTextOrName(lastErr)
-	slog.Error(fmt.Sprintf("[%s] Send failed: %s", a.logTag(), errorMsg))
+	pkgLog().Error(fmt.Sprintf("[%s] Send failed: %s", a.logTag(), errorMsg))
 	return gateway.SendResult{Success: false, Error: errorMsg, Retryable: !containsAny(pystr.Lower(errorMsg), permanentSendErrors...)}, nil
 }
 
@@ -281,7 +280,7 @@ func (a *QQAdapter) SendWithKeyboard(ctx context.Context, chatID, content string
 		if ctx.Err() != nil {
 			return gateway.SendResult{}, ctx.Err()
 		}
-		slog.Error(fmt.Sprintf("[%s] send_with_keyboard failed: %s", a.logTag(), errText(err)))
+		pkgLog().Error(fmt.Sprintf("[%s] send_with_keyboard failed: %s", a.logTag(), errText(err)))
 		return gateway.SendResult{Success: false, Error: errTextOrName(err)}, nil
 	}
 	return result, nil
@@ -343,7 +342,7 @@ func (a *QQAdapter) SendImage(ctx context.Context, chatID, imageURL, caption, re
 	if err != nil || result.Success || !isURL(imageURL) {
 		return result, err
 	}
-	slog.Warn(fmt.Sprintf("[%s] Image send failed, falling back to text: %s", a.logTag(), pyrepr.Str(result.Error)))
+	pkgLog().Warn(fmt.Sprintf("[%s] Image send failed, falling back to text: %s", a.logTag(), pyrepr.Str(result.Error)))
 	fallback := imageURL
 	if caption != "" {
 		fallback = caption + "\n" + imageURL
@@ -395,15 +394,15 @@ func (a *QQAdapter) sendMedia(ctx context.Context, chatID, mediaSource string, f
 	var tooLarge *UploadFileTooLargeError
 	switch {
 	case errors.As(err, &dailyLimit):
-		slog.Warn(fmt.Sprintf("[%s] Daily upload limit exceeded for %s (%s)", a.logTag(), dailyLimit.FileName, dailyLimit.FileSizeHuman()))
+		pkgLog().Warn(fmt.Sprintf("[%s] Daily upload limit exceeded for %s (%s)", a.logTag(), dailyLimit.FileName, dailyLimit.FileSizeHuman()))
 		return gateway.SendResult{Success: false, Retryable: false,
 			Error: fmt.Sprintf("QQ daily upload limit exceeded for %s (%s). Retry tomorrow.", pyrepr.Repr(dailyLimit.FileName), dailyLimit.FileSizeHuman())}, nil
 	case errors.As(err, &tooLarge):
-		slog.Warn(fmt.Sprintf("[%s] File too large: %s (%s, platform limit %s)", a.logTag(), tooLarge.FileName, tooLarge.FileSizeHuman(), tooLarge.LimitHuman()))
+		pkgLog().Warn(fmt.Sprintf("[%s] File too large: %s (%s, platform limit %s)", a.logTag(), tooLarge.FileName, tooLarge.FileSizeHuman(), tooLarge.LimitHuman()))
 		return gateway.SendResult{Success: false, Retryable: false,
 			Error: fmt.Sprintf("%s (%s) exceeds the QQ per-file upload limit (%s).", pyrepr.Repr(tooLarge.FileName), tooLarge.FileSizeHuman(), tooLarge.LimitHuman())}, nil
 	}
-	slog.Error(fmt.Sprintf("[%s] Media send failed: %s", a.logTag(), errText(err)))
+	pkgLog().Error(fmt.Sprintf("[%s] Media send failed: %s", a.logTag(), errText(err)))
 	return gateway.SendResult{Success: false, Error: errTextOrName(err)}, nil
 }
 
@@ -530,7 +529,7 @@ func (a *QQAdapter) SendTyping(ctx context.Context, chatID string, metadata map[
 		if ctx.Err() != nil {
 			return ctx.Err()
 		}
-		slog.Debug(fmt.Sprintf("[%s] send_typing failed: %s", a.logTag(), errText(err)))
+		pkgLog().Debug(fmt.Sprintf("[%s] send_typing failed: %s", a.logTag(), errText(err)))
 		return nil
 	}
 	a.mu.Lock()

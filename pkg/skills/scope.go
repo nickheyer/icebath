@@ -1,11 +1,12 @@
 package skills
 
 import (
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"log/slog"
 	"os"
 	"path/filepath"
 	"strings"
+
+	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/home"
@@ -36,7 +37,7 @@ func NewScope(h string, cfg config.Tree) *Scope {
 		cfg = config.Defaults()
 	}
 	cwd, _ := os.Getwd()
-	return &Scope{Home: h, Config: cfg, Secrets: config.NewSecrets(h), Platform: envPlatform(), Cwd: cwd, Log: slog.Default(), live: live}
+	return &Scope{Home: h, Config: cfg, Secrets: config.NewSecrets(h), Platform: envPlatform(), Cwd: cwd, Log: pkgLog(), live: live}
 }
 
 // Scope derived from a tool environment
@@ -62,7 +63,7 @@ func ScopeFromEnv(env *tools.Env) *Scope {
 		s.Cwd, _ = os.Getwd()
 	}
 	if s.Log == nil {
-		s.Log = slog.Default()
+		s.Log = pkgLog()
 	}
 	return s
 }
@@ -83,12 +84,12 @@ func (s *Scope) SkillsDir() string {
 	return home.SkillsDir(s.Home)
 }
 
-// Logger of the scope
+// Logger of the scope named after this package
 func (s *Scope) logger() *slog.Logger {
 	if s.Log == nil {
-		return slog.Default()
+		return pkgLog()
 	}
-	return s.Log
+	return s.Log.With("logger", logName)
 }
 
 // Skills section of the config, nil when absent or malformed

@@ -37,8 +37,8 @@ func (m *Migrator) migrateMCPServers(cfg *pyjson.Object) {
 		return
 	}
 	path := m.configPath()
-	hermesCfg := loadYAML(path)
-	existingMCP := or(dget(hermesCfg, "mcp_servers", nil), newYAMLMap())
+	icebathCfg := loadYAML(path)
+	existingMCP := or(dget(icebathCfg, "mcp_servers", nil), newYAMLMap())
 	added := 0
 	for _, e := range ditems(mcpRaw) {
 		name, srv := e.Key, e.Val
@@ -49,36 +49,36 @@ func (m *Migrator) migrateMCPServers(cfg *pyjson.Object) {
 			m.record("mcp-servers", "mcp.servers."+name, "mcp_servers."+name, StatusConflict, "MCP server already exists in Icebath config")
 			continue
 		}
-		hermesSrv := newYAMLMap()
+		icebathSrv := newYAMLMap()
 		if truthy(dget(srv, "command", nil)) {
-			dset(hermesSrv, "command", toYAML(dindex(srv, "command")))
+			dset(icebathSrv, "command", toYAML(dindex(srv, "command")))
 			for _, k := range []string{"args", "env", "cwd"} {
 				if truthy(dget(srv, k, nil)) {
-					dset(hermesSrv, k, toYAML(dindex(srv, k)))
+					dset(icebathSrv, k, toYAML(dindex(srv, k)))
 				}
 			}
 		}
 		if truthy(dget(srv, "url", nil)) {
-			dset(hermesSrv, "url", toYAML(dindex(srv, "url")))
+			dset(icebathSrv, "url", toYAML(dindex(srv, "url")))
 			for _, k := range []string{"headers", "auth"} {
 				if truthy(dget(srv, k, nil)) {
-					dset(hermesSrv, k, toYAML(dindex(srv, k)))
+					dset(icebathSrv, k, toYAML(dindex(srv, k)))
 				}
 			}
 		}
 		if isFalse(dget(srv, "enabled", nil)) {
-			dset(hermesSrv, "enabled", false)
+			dset(icebathSrv, "enabled", false)
 		}
 		if truthy(dget(srv, "timeout", nil)) {
-			dset(hermesSrv, "timeout", toYAML(dindex(srv, "timeout")))
+			dset(icebathSrv, "timeout", toYAML(dindex(srv, "timeout")))
 		}
 		if truthy(dget(srv, "connectTimeout", nil)) {
-			dset(hermesSrv, "connect_timeout", toYAML(dindex(srv, "connectTimeout")))
+			dset(icebathSrv, "connect_timeout", toYAML(dindex(srv, "connectTimeout")))
 		}
 		toolsCfg := or(dget(srv, "tools", nil), pyjson.NewObject())
 		if truthy(dget(toolsCfg, "include", nil)) || truthy(dget(toolsCfg, "exclude", nil)) {
 			tools := newYAMLMap()
-			dset(hermesSrv, "tools", tools)
+			dset(icebathSrv, "tools", tools)
 			for _, k := range []string{"include", "exclude"} {
 				if truthy(dget(toolsCfg, k, nil)) {
 					dset(tools, k, toYAML(dindex(toolsCfg, k)))
@@ -99,16 +99,16 @@ func (m *Migrator) migrateMCPServers(cfg *pyjson.Object) {
 					dset(out, f.Key, toYAML(f.Val))
 				}
 			}
-			dset(hermesSrv, "sampling", out)
+			dset(icebathSrv, "sampling", out)
 		}
-		dset(existingMCP, name, hermesSrv)
+		dset(existingMCP, name, icebathSrv)
 		added++
 		m.record("mcp-servers", "mcp.servers."+name, "config.yaml mcp_servers."+name, StatusMigrated, "", "servers_added", int64(added))
 	}
 	if added > 0 && m.execute {
 		m.maybeBackup(path)
-		dset(hermesCfg, "mcp_servers", existingMCP)
-		dumpYAML(path, hermesCfg)
+		dset(icebathCfg, "mcp_servers", existingMCP)
+		dumpYAML(path, icebathCfg)
 	}
 }
 
@@ -221,9 +221,9 @@ func (m *Migrator) migrateAgentConfig(cfg *pyjson.Object) {
 		return
 	}
 	path := m.configPath()
-	hermesCfg := loadYAML(path)
+	icebathCfg := loadYAML(path)
 	changes := false
-	agentCfg := or(dget(hermesCfg, "agent", nil), newYAMLMap())
+	agentCfg := or(dget(icebathCfg, "agent", nil), newYAMLMap())
 	dget(defaults, "contextTokens", nil)
 	if truthy(dget(defaults, "timeoutSeconds", nil)) {
 		dset(agentCfg, "max_turns", floorDiv10Min200(dindex(defaults, "timeoutSeconds")))
@@ -246,19 +246,19 @@ func (m *Migrator) migrateAgentConfig(cfg *pyjson.Object) {
 		changes = true
 	}
 	if compaction := or(dget(defaults, "compaction", nil), pyjson.NewObject()); truthy(compaction) {
-		compression := or(dget(hermesCfg, "compression", nil), newYAMLMap())
+		compression := or(dget(icebathCfg, "compression", nil), newYAMLMap())
 		dset(compression, "enabled", !eqStr(dget(compaction, "mode", nil), "off"))
 		dget(compaction, "timeout", nil)
 		if truthy(dget(compaction, "model", nil)) {
-			aux := dsetdefaultDict(hermesCfg, "auxiliary")
+			aux := dsetdefaultDict(icebathCfg, "auxiliary")
 			auxComp := dsetdefaultDict(aux, "compression")
 			dset(auxComp, "model", toYAML(dindex(compaction, "model")))
 		}
-		dset(hermesCfg, "compression", compression)
+		dset(icebathCfg, "compression", compression)
 		changes = true
 	}
 	if humanDelay := or(dget(defaults, "humanDelay", nil), pyjson.NewObject()); truthy(humanDelay) {
-		hd := or(dget(hermesCfg, "human_delay", nil), newYAMLMap())
+		hd := or(dget(icebathCfg, "human_delay", nil), newYAMLMap())
 		var natural any
 		if truthy(dget(humanDelay, "enabled", nil)) {
 			natural = "natural"
@@ -273,35 +273,35 @@ func (m *Migrator) migrateAgentConfig(cfg *pyjson.Object) {
 		if truthy(dget(humanDelay, "maxMs", nil)) {
 			dset(hd, "max_ms", toYAML(dindex(humanDelay, "maxMs")))
 		}
-		dset(hermesCfg, "human_delay", hd)
+		dset(icebathCfg, "human_delay", hd)
 		changes = true
 	}
 	if truthy(dget(defaults, "userTimezone", nil)) {
-		dset(hermesCfg, "timezone", toYAML(dindex(defaults, "userTimezone")))
+		dset(icebathCfg, "timezone", toYAML(dindex(defaults, "userTimezone")))
 		changes = true
 	}
 	if execCfg := or(dget(or(dget(cfg, "tools", nil), pyjson.NewObject()), "exec", nil), pyjson.NewObject()); truthy(execCfg) {
-		terminalCfg := or(dget(hermesCfg, "terminal", nil), newYAMLMap())
+		terminalCfg := or(dget(icebathCfg, "terminal", nil), newYAMLMap())
 		if timeout := orElse(dget(execCfg, "timeoutSec", nil), lazyGet(execCfg, "timeout")); truthy(timeout) {
 			dset(terminalCfg, "timeout", toYAML(orElse(dget(execCfg, "timeoutSec", nil), lazyGet(execCfg, "timeout"))))
 			changes = true
 		}
-		dset(hermesCfg, "terminal", terminalCfg)
+		dset(icebathCfg, "terminal", terminalCfg)
 	}
 	if sandbox := or(dget(defaults, "sandbox", nil), pyjson.NewObject()); truthy(sandbox) && eqStr(dget(sandbox, "backend", nil), "docker") {
-		terminalCfg := or(dget(hermesCfg, "terminal", nil), newYAMLMap())
+		terminalCfg := or(dget(icebathCfg, "terminal", nil), newYAMLMap())
 		dset(terminalCfg, "backend", "docker")
 		if truthy(dget(dget(sandbox, "docker", pyjson.NewObject()), "image", nil)) {
 			dset(terminalCfg, "docker_image", toYAML(dindex(dindex(sandbox, "docker"), "image")))
 		}
-		dset(hermesCfg, "terminal", terminalCfg)
+		dset(icebathCfg, "terminal", terminalCfg)
 		changes = true
 	}
 	if changes {
-		dset(hermesCfg, "agent", agentCfg)
+		dset(icebathCfg, "agent", agentCfg)
 		if m.execute {
 			m.maybeBackup(path)
-			dumpYAML(path, hermesCfg)
+			dumpYAML(path, icebathCfg)
 		}
 		m.record("agent-config", "openclaw.json agents.defaults", "config.yaml agent/compression/terminal", StatusMigrated, "Agent defaults mapped to Icebath config")
 	}
@@ -385,8 +385,8 @@ func (m *Migrator) migrateFullProviders(cfg *pyjson.Object) {
 		return
 	}
 	path := m.configPath()
-	hermesCfg := loadYAML(path)
-	customProviders := or(dget(hermesCfg, "custom_providers", nil), []any{})
+	icebathCfg := loadYAML(path)
+	customProviders := or(dget(icebathCfg, "custom_providers", nil), []any{})
 	added := 0
 	for _, e := range ditems(providers) {
 		provName, provCfg := e.Key, e.Val
@@ -431,8 +431,8 @@ func (m *Migrator) migrateFullProviders(cfg *pyjson.Object) {
 	}
 	if added > 0 && m.execute {
 		m.maybeBackup(path)
-		dset(hermesCfg, "custom_providers", customProviders)
-		dumpYAML(path, hermesCfg)
+		dset(icebathCfg, "custom_providers", customProviders)
+		dumpYAML(path, icebathCfg)
 	}
 	agentDefaults := or(dget(or(dget(cfg, "agents", nil), pyjson.NewObject()), "defaults", nil), pyjson.NewObject())
 	if aliases := or(dget(agentDefaults, "models", nil), pyjson.NewObject()); truthy(aliases) {
@@ -519,20 +519,20 @@ func (m *Migrator) migrateDeepChannels(cfg *pyjson.Object) {
 	}
 	if discord := or(dget(channels, "discord", nil), pyjson.NewObject()); truthy(discord) {
 		path := m.configPath()
-		hermesCfg := loadYAML(path)
-		discordHermes := or(dget(hermesCfg, "discord", nil), newYAMLMap())
+		icebathCfg := loadYAML(path)
+		discordIcebath := or(dget(icebathCfg, "discord", nil), newYAMLMap())
 		changed := false
 		if contains(discord, "requireMention") {
-			dset(discordHermes, "require_mention", toYAML(dindex(discord, "requireMention")))
+			dset(discordIcebath, "require_mention", toYAML(dindex(discord, "requireMention")))
 			changed = true
 		}
 		if dget(discord, "autoThread", nil) != nil {
-			dset(discordHermes, "auto_thread", toYAML(dindex(discord, "autoThread")))
+			dset(discordIcebath, "auto_thread", toYAML(dindex(discord, "autoThread")))
 			changed = true
 		}
 		if changed && m.execute {
-			dset(hermesCfg, "discord", discordHermes)
-			dumpYAML(path, hermesCfg)
+			dset(icebathCfg, "discord", discordIcebath)
+			dumpYAML(path, icebathCfg)
 		}
 	}
 	complexArchive := pyjson.NewObject()
@@ -570,22 +570,22 @@ func (m *Migrator) migrateBrowserConfig(cfg *pyjson.Object) {
 		return
 	}
 	path := m.configPath()
-	hermesCfg := loadYAML(path)
-	browserHermes := or(dget(hermesCfg, "browser", nil), newYAMLMap())
+	icebathCfg := loadYAML(path)
+	browserIcebath := or(dget(icebathCfg, "browser", nil), newYAMLMap())
 	changed := false
 	if truthy(dget(browser, "cdpUrl", nil)) {
-		dset(browserHermes, "cdp_url", toYAML(dindex(browser, "cdpUrl")))
+		dset(browserIcebath, "cdp_url", toYAML(dindex(browser, "cdpUrl")))
 		changed = true
 	}
 	if dget(browser, "headless", nil) != nil {
-		dset(browserHermes, "headless", toYAML(dindex(browser, "headless")))
+		dset(browserIcebath, "headless", toYAML(dindex(browser, "headless")))
 		changed = true
 	}
 	if changed {
-		dset(hermesCfg, "browser", browserHermes)
+		dset(icebathCfg, "browser", browserIcebath)
 		if m.execute {
 			m.maybeBackup(path)
-			dumpYAML(path, hermesCfg)
+			dumpYAML(path, icebathCfg)
 		}
 		m.record("browser-config", "openclaw.json browser.*", "config.yaml browser", StatusMigrated, "")
 	}
@@ -612,13 +612,13 @@ func (m *Migrator) migrateToolsConfig(cfg *pyjson.Object) {
 		return
 	}
 	path := m.configPath()
-	hermesCfg := loadYAML(path)
+	icebathCfg := loadYAML(path)
 	changed := false
 	execCfg := or(dget(tools, "exec", nil), pyjson.NewObject())
 	if timeoutVal := orElse(dget(execCfg, "timeoutSec", nil), lazyGet(execCfg, "timeout")); truthy(timeoutVal) {
-		terminalCfg := or(dget(hermesCfg, "terminal", nil), newYAMLMap())
+		terminalCfg := or(dget(icebathCfg, "terminal", nil), newYAMLMap())
 		dset(terminalCfg, "timeout", toYAML(timeoutVal))
-		dset(hermesCfg, "terminal", terminalCfg)
+		dset(icebathCfg, "terminal", terminalCfg)
 		changed = true
 	}
 	webCfg := orElse(dget(tools, "web", nil), func() any { return or(dget(tools, "webSearch", nil), pyjson.NewObject()) })
@@ -635,7 +635,7 @@ func (m *Migrator) migrateToolsConfig(cfg *pyjson.Object) {
 	}
 	if changed && m.execute {
 		m.maybeBackup(path)
-		dumpYAML(path, hermesCfg)
+		dumpYAML(path, icebathCfg)
 		m.record("tools-config", "openclaw.json tools.*", "config.yaml terminal", StatusMigrated, "")
 	}
 	if m.archiveDir != "" {
@@ -658,7 +658,7 @@ func (m *Migrator) migrateApprovalsConfig(cfg *pyjson.Object) {
 		return
 	}
 	path := m.configPath()
-	hermesCfg := loadYAML(path)
+	icebathCfg := loadYAML(path)
 	execApprovals := or(dget(approvals, "exec", nil), pyjson.NewObject())
 	var execMode any
 	if isDict(execApprovals) {
@@ -667,19 +667,19 @@ func (m *Migrator) migrateApprovalsConfig(cfg *pyjson.Object) {
 	mode := orElse(execMode, func() any { return orElse(dget(approvals, "mode", nil), lazyGet(approvals, "defaultMode")) })
 	if truthy(mode) {
 		requireHashable(mode)
-		hermesMode := "manual"
+		icebathMode := "manual"
 		if s, ok := mode.(string); ok {
 			if mapped, known := approvalModeMap[s]; known {
-				hermesMode = mapped
+				icebathMode = mapped
 			}
 		}
-		dset(dsetdefaultDict(hermesCfg, "approvals"), "mode", hermesMode)
+		dset(dsetdefaultDict(icebathCfg, "approvals"), "mode", icebathMode)
 		if m.execute {
 			m.maybeBackup(path)
-			dumpYAML(path, hermesCfg)
+			dumpYAML(path, icebathCfg)
 		}
 		m.record("approvals-config", "openclaw.json approvals.mode", "config.yaml approvals.mode", StatusMigrated,
-			fmt.Sprintf("Mapped '%s' -> '%s'", pyStr(mode), hermesMode))
+			fmt.Sprintf("Mapped '%s' -> '%s'", pyStr(mode), icebathMode))
 	}
 	if pyLen(approvals) > 1 && m.archiveDir != "" {
 		if m.execute {

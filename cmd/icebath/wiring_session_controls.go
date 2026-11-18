@@ -11,7 +11,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/tuiserver"
 )
 
-// Registry of the builtin command table alone, the lookup hermes_cli resolve_command reads
+// Registry of the builtin command table alone, the lookup reads
 var builtinCommands = sync.OnceValue(func() *commands.Registry {
 	r := commands.NewRegistry()
 	commands.Install(r)
@@ -33,6 +33,9 @@ func catalogRegistry(ctx context.Context) ([]tuiserver.CatalogCommand, map[strin
 	rows := make([]tuiserver.CatalogCommand, 0, len(commands.Builtin))
 	for i := range commands.Builtin {
 		d := &commands.Builtin[i]
+		if !commands.SlashLinked(d.Name) {
+			continue
+		}
 		desc := d.Describe(ctx)
 		if d.ArgsHint != "" {
 			desc = i18n.T(ctx, "slash.shared.usage_suffix", "", map[string]any{"description": desc, "name": d.Name, "args_hint": d.ArgsHint})

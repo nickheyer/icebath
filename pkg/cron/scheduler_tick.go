@@ -15,7 +15,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/mcp"
-	"github.com/nickheyer/icebath/pkg/observability"
 )
 
 const (
@@ -54,7 +53,7 @@ func (s *Store) logTickYieldOnce(reason string) {
 	lastYieldLog.Lock()
 	defer lastYieldLog.Unlock()
 	if !lastYieldLog.set || lastYieldLog.reason != reason || now-lastYieldLog.at >= yieldLogIntervalSeconds {
-		s.logAs("cron.scheduler").Error(fmt.Sprintf("Cron tick yielded: this process is running stale code (%s) and a "+
+		s.log.Error(fmt.Sprintf("Cron tick yielded: this process is running stale code (%s) and a "+
 			"fresher gateway owns the runtime lock — jobs will fire from that "+
 			"process. Restart this one to reclaim its ticks.", reason))
 	}
@@ -78,15 +77,15 @@ func (s *Store) acquireTickLock(lockFile string) (*os.File, error) {
 		}
 		f.Close()
 		if isLockContentionErrno(err) {
-			s.logAs("cron.scheduler").Info("Tick skipped — another instance holds the lock")
+			s.log.Info("Tick skipped — another instance holds the lock")
 			return nil, nil
 		}
 	}
 	if isFDExhaustion(err) {
-		s.logAs("cron.scheduler").Error(fmt.Sprintf("Cron tick could not acquire tick lock: %s — scheduler will "+
+		s.log.Error(fmt.Sprintf("Cron tick could not acquire tick lock: %s — scheduler will "+
 			"attempt fd reclamation and retry with backoff", pypath.OSErrorText(err)))
 	} else if !isUnwritableErrno(err) {
-		s.logAs("cron.scheduler").Error(fmt.Sprintf("Cron tick could not acquire tick lock: %s", pypath.OSErrorText(err)))
+		s.log.Error(fmt.Sprintf("Cron tick could not acquire tick lock: %s", pypath.OSErrorText(err)))
 	}
 	return nil, err
 }
@@ -145,7 +144,7 @@ func (s *Store) preDispatchHousekeeping(ctx context.Context, headless bool) erro
 		return err
 	}
 	if err := drainLegacyPending(ctx, s); err != nil {
-		s.logAs("cron.scheduler").Warn(fmt.Sprintf("Legacy Bot Chat pending drain failed: %s", err))
+		s.log.Warn(fmt.Sprintf("Legacy Bot Chat pending drain failed: %s", err))
 	}
 	s.maybeReapDeadOwners(ctx)
 	return nil
@@ -176,7 +175,7 @@ func (s *Store) tickLocked(ctx context.Context, o tickOptions) (int, error) {
 		return 0, nil
 	}
 	if o.CanDispatch != nil && !o.CanDispatch() {
-		s.logAs("cron.scheduler").Debug("Cron dispatch paused while gateway drains existing work")
+		s.log.Debug("Cron dispatch paused while gateway drains existing work")
 		return 0, nil
 	}
 	if err := s.preDispatchHousekeeping(ctx, o.Headless); err != nil {
@@ -195,7 +194,7 @@ func (s *Store) tickLocked(ctx context.Context, o tickOptions) (int, error) {
 	}
 	if len(due) == 0 {
 		if o.Verbose {
-			s.logAs("cron.scheduler").Info(fmt.Sprintf("%s - No jobs due", s.clk.now().Format("15:04:05")))
+			s.log.Info(fmt.Sprintf("%s - No jobs due", s.clk.now().Format("15:04:05")))
 		}
 		if err := s.recheckIdle(home.WithOverride(ctx, s.home)); err != nil {
 			return 0, err
@@ -208,7 +207,7 @@ func (s *Store) tickLocked(ctx context.Context, o tickOptions) (int, error) {
 		return 0, nil
 	}
 	if o.Verbose {
-		s.logAs("cron.scheduler").Info(fmt.Sprintf("%s - %d job(s) due", s.clk.now().Format("15:04:05"), len(due)))
+		s.log.Info(fmt.Sprintf("%s - %d job(s) due", s.clk.now().Format("15:04:05"), len(due)))
 	}
 	if due, err = s.advanceOrDropRecurring(home.WithOverride(ctx, s.home), due); err != nil {
 		return 0, err
@@ -223,7 +222,7 @@ func (s *Store) tickLocked(ctx context.Context, o tickOptions) (int, error) {
 		if maxWorkers != nil {
 			cap = fmt.Sprint(*maxWorkers)
 		}
-		s.logAs("cron.scheduler").Info(fmt.Sprintf("Running %d job(s) in parallel (max_workers=%s)", len(due), cap))
+		s.log.Info(fmt.Sprintf("Running %d job(s) in parallel (max_workers=%s)", len(due), cap))
 	}
 	if maxWorkers != nil && *maxWorkers <= 0 {
 		return 0, errors.New("max_workers must be greater than 0")
@@ -249,7 +248,7 @@ func (s *Store) tickLocked(ctx context.Context, o tickOptions) (int, error) {
 	for _, run := range runs {
 		<-run.fut.done
 		if run.err != nil {
-			s.logAs("cron.scheduler").Error(fmt.Sprintf("Cron job future failed: %s", run.err))
+			s.log.Error(fmt.Sprintf("Cron job future failed: %s", run.err))
 		} else if run.ok {
 			count++
 		}
@@ -272,11 +271,11 @@ func (s *Store) maybeReapDeadOwners(ctx context.Context) {
 	lastDeadOwnerReap.Unlock()
 	reclaimed, err := openExecutionsLedger(s).RecoverInterrupted(ctx)
 	if err != nil {
-		s.logAs("cron.scheduler").Debug(fmt.Sprintf("Dead-owner execution reclaim failed: %s", err))
+		s.log.Debug(fmt.Sprintf("Dead-owner execution reclaim failed: %s", err))
 		return
 	}
 	if reclaimed > 0 {
-		s.logAs("cron.scheduler").Warn(fmt.Sprintf("Reclaimed %d cron execution(s) whose owner process died "+
+		s.log.Warn(fmt.Sprintf("Reclaimed %d cron execution(s) whose owner process died "+
 			"before reaching a terminal state (marked unknown)", reclaimed))
 	}
 }
@@ -312,7 +311,7 @@ func (s *Store) sweepStaleInflightForTick(ctx context.Context, due []*Job) {
 	}
 	defer func() {
 		if r := recover(); r != nil {
-			s.logAs("cron.scheduler").Warn(fmt.Sprintf("Stale in-flight sweep failed: %v", r))
+			s.log.Warn(fmt.Sprintf("Stale in-flight sweep failed: %v", r))
 		}
 	}()
 	s.sweepStaleInflight(sweep)
@@ -354,7 +353,7 @@ func (s *Store) resolveMaxParallelWorkers(ctx context.Context) *int {
 			}
 			return &n
 		}
-		s.logAs("cron.scheduler").Warn("Invalid ICEBATH_CRON_MAX_PARALLEL value; defaulting to unbounded")
+		s.log.Warn("Invalid ICEBATH_CRON_MAX_PARALLEL value; defaulting to unbounded")
 	}
 	if v := s.cronConfigValue("max_parallel_jobs", nil); v != nil {
 		if n, ok := pyIntCoerce(v); ok {
@@ -371,7 +370,7 @@ func (s *Store) resolveMaxParallelWorkers(ctx context.Context) *int {
 func (s *Store) sweepMCPOrphans() {
 	defer func() {
 		if r := recover(); r != nil {
-			s.logAs("cron.scheduler").Debug(fmt.Sprintf("Post-tick MCP orphan cleanup failed: %v", r))
+			s.log.Debug(fmt.Sprintf("Post-tick MCP orphan cleanup failed: %v", r))
 		}
 	}()
 	mcp.KillOrphanedMCPChildren(false, "")
@@ -426,12 +425,12 @@ func (s *Store) submitWithGuard(ctx context.Context, job *Job, pool *parallelPoo
 			return
 		}
 		if _, err := s.clearRunClaim(home.WithOverride(ctx, s.home), jobID); err != nil {
-			s.logAs("cron.scheduler").Warn(fmt.Sprintf("Could not clear run_claim for job '%s' after dispatch "+
+			s.log.Warn(fmt.Sprintf("Could not clear run_claim for job '%s' after dispatch "+
 				"failure: %s (claim will expire at TTL)", label, err))
 		}
 	}
 	notDispatchedShutdown := func() {
-		s.logAs("cron.scheduler").Warn(fmt.Sprintf("Job '%s' not dispatched — interpreter is shutting down", label))
+		s.log.Warn(fmt.Sprintf("Job '%s' not dispatched — interpreter is shutting down", label))
 	}
 	if interpreterShuttingDown(nil) {
 		notDispatchedShutdown()
@@ -440,7 +439,7 @@ func (s *Store) submitWithGuard(ctx context.Context, job *Job, pool *parallelPoo
 	}
 	owner := &registrationOwner{}
 	if !s.tryRegisterRunningJob(jobID, owner, futurePending) {
-		s.logAs("cron.scheduler").Info(fmt.Sprintf("Job '%s' already running — skipping", label))
+		s.log.Info(fmt.Sprintf("Job '%s' already running — skipping", label))
 		return nil
 	}
 	claimHome := s.Home()
@@ -449,17 +448,12 @@ func (s *Store) submitWithGuard(ctx context.Context, job *Job, pool *parallelPoo
 	if err != nil {
 		s.releaseRunningJob(jobID, claimHome, owner)
 		clearRunClaim()
-		s.logAs("cron.scheduler").Error(fmt.Sprintf("Job '%s' not dispatched: %s failed: %s", label, "execution creation", err))
+		s.log.Error(fmt.Sprintf("Job '%s' not dispatched: %s failed: %s", label, "execution creation", err))
 		return nil
 	}
 	execID := recText(execution, "id")
 	dispatched := job.Clone()
 	dispatched.ExecutionID = &execID
-	var deliver any
-	if job.Deliver != nil {
-		deliver = *job.Deliver
-	}
-	observability.NoteCronExecution(map[string]any{"execution_id": execID, "deliver": deliver})
 	run := &tickRun{}
 	fut, err := pool.Submit(func() {
 		defer s.releaseRunningJob(jobID, claimHome, owner)
@@ -478,7 +472,7 @@ func (s *Store) submitWithGuard(ctx context.Context, job *Job, pool *parallelPoo
 		if interpreterShuttingDown(err) {
 			notDispatchedShutdown()
 		} else {
-			s.logAs("cron.scheduler").Error(fmt.Sprintf("Job '%s' not dispatched: %s", label, err))
+			s.log.Error(fmt.Sprintf("Job '%s' not dispatched: %s", label, err))
 		}
 		return nil
 	}
@@ -501,7 +495,7 @@ func (s *Store) sweepMCPOrphansWhenAllDone(runs []*tickRun) {
 		for _, run := range runs {
 			<-run.fut.done
 			if run.err != nil {
-				s.logAs("cron.scheduler").Error(fmt.Sprintf("Cron job future failed in async mode: %s", run.err))
+				s.log.Error(fmt.Sprintf("Cron job future failed in async mode: %s", run.err))
 			}
 		}
 		s.sweepMCPOrphans()

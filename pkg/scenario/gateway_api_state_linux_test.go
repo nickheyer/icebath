@@ -65,17 +65,17 @@ func TestScenarioGatewayAPISessions(t *testing.T) {
 	auth := []string{"Authorization", "Bearer " + apiKey}
 	s.HTTP("GET", "${API}/api/sessions", nil).Code(401)
 	created := s.HTTP("POST", "${API}/api/sessions", map[string]any{"title": "API made"}, auth...).Code(201)
-	s.HasJSON(created.Body, `{"object": "hermes.session", "session": {"source": "api_server", "title": "API made", "message_count": 0}}`)
+	s.HasJSON(created.Body, `{"object": "icebath.session", "session": {"source": "api_server", "title": "API made", "message_count": 0}}`)
 	id, _ := Dig(created.JSON(), "session", "id").(string)
 	if !strings.HasPrefix(id, "api_") {
 		s.Failf("session id %q does not start with api_", id)
 	}
 	s.HasJSON(s.HTTP("GET", "${API}/api/sessions", nil, auth...).Code(200).Body, `{"object": "list", "data": [{"id": "`+id+`", "title": "API made"}]}`)
 	s.HasJSON(s.HTTP("PATCH", "${API}/api/sessions/"+id, map[string]any{"title": "Renamed by API"}, auth...).Code(200).Body,
-		`{"object": "hermes.session", "session": {"id": "`+id+`", "title": "Renamed by API"}}`)
+		`{"object": "icebath.session", "session": {"id": "`+id+`", "title": "Renamed by API"}}`)
 
 	turn := s.HTTP("POST", "${API}/api/sessions/"+id+"/chat", map[string]any{"input": "One session turn"}, auth...).Code(200)
-	s.HasJSON(turn.Body, `{"object": "hermes.session.chat.completion", "status": "completed", "session_id": "`+id+`",
+	s.HasJSON(turn.Body, `{"object": "icebath.session.chat.completion", "status": "completed", "session_id": "`+id+`",
 		"message": {"role": "assistant", "content": "Session turn answer."}}`)
 	if Dig(s.LastMessages(), -1, "content") != "One session turn" {
 		s.Failf("the session turn input did not reach the model")
@@ -96,7 +96,7 @@ func TestScenarioGatewayAPISessions(t *testing.T) {
 	s.HasJSON(s.HTTP("GET", "${API}/api/sessions/"+id, nil, auth...).Code(200).Body, `{"session": {"id": "`+id+`", "title": "Renamed by API", "model": "fake-model"}}`)
 	s.Run("sessions", "list", "--source", "api_server").Exit(0).Has(id)
 
-	s.SameJSON(s.HTTP("DELETE", "${API}/api/sessions/"+id, nil, auth...).Code(200).Body, `{"object": "hermes.session.deleted", "id": "`+id+`", "deleted": true}`)
+	s.SameJSON(s.HTTP("DELETE", "${API}/api/sessions/"+id, nil, auth...).Code(200).Body, `{"object": "icebath.session.deleted", "id": "`+id+`", "deleted": true}`)
 	s.HTTP("GET", "${API}/api/sessions/"+id, nil, auth...).Code(404)
 	gw.Stop()
 }

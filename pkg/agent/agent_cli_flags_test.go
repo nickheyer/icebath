@@ -114,7 +114,7 @@ func TestControlUpdateCallbackFiresWhenAutomationStateMoves(t *testing.T) {
 	a, db := newCLIFlagsAgent(t)
 	calls := 0
 	a.SetControlUpdateCallback(func() { calls++ })
-	a.NoteToolResult("read_file", "c1", "ok", "ok")
+	a.ToolResultCommitted()
 	if calls != 0 {
 		t.Fatalf("published %d times with no automation state", calls)
 	}
@@ -125,8 +125,8 @@ func TestControlUpdateCallbackFiresWhenAutomationStateMoves(t *testing.T) {
 	if err := db.SetMeta(t.Context(), goals.GoalMetaKey("sess-flags"), goal); err != nil {
 		t.Fatal(err)
 	}
-	a.NoteToolResult("goal_tool", "c2", "ok", "ok")
-	a.NoteToolResult("read_file", "c3", "ok", "ok")
+	a.ToolResultCommitted()
+	a.ToolResultCommitted()
 	if calls != 1 {
 		t.Fatalf("published %d times for one goal change", calls)
 	}
@@ -136,7 +136,7 @@ func TestControlUpdateCallbackFiresWhenAutomationStateMoves(t *testing.T) {
 	if err := db.SetMeta(t.Context(), goals.GoalMetaKey("sess-flags"), moved); err != nil {
 		t.Fatal(err)
 	}
-	a.NoteToolResult("goal_tool", "c4", "ok", "ok")
+	a.ToolResultCommitted()
 	if calls != 2 {
 		t.Fatalf("published %d times after the goal advanced", calls)
 	}
@@ -146,7 +146,7 @@ func TestControlUpdateCallbackFiresWhenAutomationStateMoves(t *testing.T) {
 	if err := db.SetMeta(t.Context(), goals.GoalMetaKey("sess-flags"), gone); err != nil {
 		t.Fatal(err)
 	}
-	a.NoteToolResult("goal_tool", "c5", "ok", "ok")
+	a.ToolResultCommitted()
 	if calls != 3 || a.controlRevision != "" {
 		t.Fatalf("calls %d revision %q after the goal cleared", calls, a.controlRevision)
 	}

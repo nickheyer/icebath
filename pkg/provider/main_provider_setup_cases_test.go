@@ -15,7 +15,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/home"
 )
 
-// Isolated home bound to the context with setup prints captured, the hermes conftest home
+// Isolated home bound to the context with setup prints captured, the test setup home
 func pickerCaseHome(t *testing.T) (string, context.Context, *bytes.Buffer) {
 	t.Helper()
 	h := newTestHome(t)
@@ -52,7 +52,7 @@ func choosePrefix(prefix string) func(choices []string) (int, bool) {
 	}
 }
 
-// Writes the config document the way yaml.safe_dump writes the hermes fixture
+// Writes the config document the way yaml.safe_dump writes the test fixture
 func writePickerConfig(t *testing.T, h, body string) {
 	t.Helper()
 	if err := os.WriteFile(home.ConfigPath(h), []byte(body), 0o600); err != nil {
@@ -147,8 +147,8 @@ func TestDelegationCfgAsTaskProjection(t *testing.T) {
 	if got := formatAuxCurrent(delegationCfgAsTask(map[string]any{})); got != "auto" {
 		t.Fatalf("empty %q", got)
 	}
-	shaped := delegationCfgAsTask(map[string]any{"delegation": map[string]any{"provider": "nous", "model": "Hermes-4.5"}})
-	if got := formatAuxCurrent(shaped); got != "nous · Hermes-4.5" {
+	shaped := delegationCfgAsTask(map[string]any{"delegation": map[string]any{"provider": "deepseek", "model": "deepseek-v4-pro"}})
+	if got := formatAuxCurrent(shaped); got != "deepseek · deepseek-v4-pro" {
 		t.Fatalf("shaped %q", got)
 	}
 	if got := formatAuxCurrent(delegationCfgAsTask(map[string]any{"delegation": "bogus"})); got != "auto" {
@@ -156,7 +156,7 @@ func TestDelegationCfgAsTaskProjection(t *testing.T) {
 	}
 }
 
-// Writes provider and model into config.yaml through load and save like the hermes _write_provider helper
+// Writes provider and model into config.yaml through load and save like the write provider helper
 func writeProviderConfig(t *testing.T, h, provider, model string) {
 	t.Helper()
 	cfg, err := config.Load(h, config.NewSecrets(h).Lookup())
@@ -207,7 +207,7 @@ func TestClearStaleOpenaiBaseUrlPreservesWhenProviderIsCustom(t *testing.T) {
 
 func TestClearStaleOpenaiBaseUrlTruncatesALongShownValue(t *testing.T) {
 	h, ctx, out := pickerCaseHome(t)
-	writeProviderConfig(t, h, "nous", "m")
+	writeProviderConfig(t, h, "deepseek", "m")
 	long := "http://very-long-hostname.internal.example.com:11434/v1"
 	if err := config.SaveEnvValue(h, "OPENAI_BASE_URL", long); err != nil {
 		t.Fatal(err)
@@ -263,7 +263,7 @@ func TestCurrentReasoningEffortReadsDictForm(t *testing.T) {
 	}
 }
 
-func TestHermesModelOffersReasoningWheneverAPickIsSaved(t *testing.T) {
+func TestIcebathModelOffersReasoningWheneverAPickIsSaved(t *testing.T) {
 	h, ctx, _ := pickerCaseHome(t)
 	writeProviderConfig(t, h, "openrouter", "m")
 	var prompted [][2]string
@@ -272,11 +272,11 @@ func TestHermesModelOffersReasoningWheneverAPickIsSaved(t *testing.T) {
 		return nil
 	})
 	swapFlowSeam(t, &clearStaleOpenAIBaseURLFn, func(*ModelFlowRun) error { return nil })
-	pickSameModelOnNous := func(r *ModelFlowRun) error {
+	pickSameModelOnDeepSeek := func(r *ModelFlowRun) error {
 		if err := saveModelChoice(r.Env, r.CurrentModel); err != nil {
 			return err
 		}
-		writeProviderConfig(t, h, "nous", r.CurrentModel)
+		writeProviderConfig(t, h, "deepseek", r.CurrentModel)
 		return nil
 	}
 	noChange := func(r *ModelFlowRun) error {
@@ -287,7 +287,7 @@ func TestHermesModelOffersReasoningWheneverAPickIsSaved(t *testing.T) {
 		slug     string
 		flow     func(r *ModelFlowRun) error
 		expected [][2]string
-	}{{"nous", pickSameModelOnNous, [][2]string{{"m", "nous"}}}, {"anthropic", noChange, nil}} {
+	}{{"deepseek", pickSameModelOnDeepSeek, [][2]string{{"m", "deepseek"}}}, {"anthropic", noChange, nil}} {
 		prompted = nil
 		slug := tc.slug
 		swapFlowSeam(t, &pickProviderFn, func(*ModelFlowRun, map[string]any, string, map[string]string, *customProviderMap) (string, bool, error) {
@@ -315,7 +315,7 @@ func registryPconfig(t *testing.T, ctx context.Context, id string) Profile {
 	return p
 }
 
-// Answers the raw input with choice and the masked prompt with newKey like the hermes _run_prompt helper
+// Answers the raw input with choice and the masked prompt with newKey like the run prompt helper
 func scriptPromptAPIKey(t *testing.T, choice, newKey string) *[]string {
 	t.Helper()
 	prompts := &[]string{}
@@ -628,7 +628,7 @@ func TestGmiMainFlowSelectProviderAndModelRoutesGmiToGenericFlow(t *testing.T) {
 	}
 }
 
-// Provider menu labels of the first picker call, cancelled right after like the hermes capture helper
+// Provider menu labels of the first picker call, cancelled right after like the capture helper
 func capturePickerLabels(t *testing.T, ctx context.Context) []string {
 	t.Helper()
 	var labels []string
@@ -662,7 +662,7 @@ func TestCliPickerHidesExcludedProviderByAlias(t *testing.T) {
 	h, ctx, _ := pickerCaseHome(t)
 	targetAlias, targetSlug := "glm", "zai"
 	if CatalogProviderAliases()[targetAlias] != targetSlug || !IsCanonicalProvider(targetSlug) {
-		t.Fatalf("the first hermes alias %s no longer names the canonical %s", targetAlias, targetSlug)
+		t.Fatalf("the first icebath alias %s no longer names the canonical %s", targetAlias, targetSlug)
 	}
 	fragment := labelOr(catalogProviderLabelsCopy(), targetSlug)
 	contains := func(labels []string) bool {
@@ -703,7 +703,7 @@ func TestPromptModelSelectionUsesLineEditorForCustomModel(t *testing.T) {
 	}
 }
 
-// Picker row keys for a config with no active provider and no custom providers, the hermes _picker_keys helper
+// Picker row keys for a config with no active provider and no custom providers, the picker keys helper
 func pickerRowKeys(t *testing.T, cfg map[string]any) []string {
 	t.Helper()
 	rows, _, err := buildProviderPickerRows(context.Background(), cfg, "", map[string]string{}, newCustomProviderMap())
@@ -739,8 +739,8 @@ func TestLocalModelsRowFollowsTheEnginePinAndExclusions(t *testing.T) {
 func TestProviderPickerRowsRaiseOnAMalformedModelCatalog(t *testing.T) {
 	pickerCaseHome(t)
 	for cfg, want := range map[string]map[string]any{
-		"AttributeError: 'list' object has no attribute 'get'": {"model_catalog": []any{"openrouter"}},
-		"TypeError: 'int' object is not iterable":              {"model_catalog": map[string]any{"excluded_providers": 5}},
+		"model_catalog in config is a list, expected a mapping":         {"model_catalog": []any{"openrouter"}},
+		"model_catalog.excluded_providers is a number, expected a list": {"model_catalog": map[string]any{"excluded_providers": 5}},
 	} {
 		if _, _, err := buildProviderPickerRows(context.Background(), want, "", map[string]string{}, newCustomProviderMap()); err == nil || err.Error() != cfg {
 			t.Fatalf("err %v want %s", err, cfg)

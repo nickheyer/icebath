@@ -26,7 +26,7 @@ func (r *GatewayRunner) runCoroutineThreadsafe(ctx context.Context, fn func(ctx 
 		return fut
 	}
 	if err := r.gatewayLoop.CallSoonThreadsafe(start); err != nil {
-		runLog().Debug(fmt.Sprintf("%s: %s", logMessage, err))
+		pkgLog().Debug(fmt.Sprintf("%s: %s", logMessage, err))
 		return nil
 	}
 	return fut

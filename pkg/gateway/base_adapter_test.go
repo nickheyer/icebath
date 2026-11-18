@@ -175,7 +175,7 @@ func TestLockConflictNamesOwningProfile(t *testing.T) {
 	quietRuntimeStatus(t)
 	a := newBaseFake(PlatformTelegram)
 	patchAcquire(t, [2]any{false, lockRecord("pid", 559, "start_time", 123, "profile", "lead-gen-outreach",
-		"hermes_home", "/opt/data/profiles/lead-gen-outreach")})
+		"icebath_home", "/opt/data/profiles/lead-gen-outreach")})
 	ok, _ := a.AcquirePlatformLock(context.Background(), "telegram-bot-token", "test-token", "Telegram bot token")
 	msg := *a.FatalErrorMessage()
 	if ok || !strings.Contains(msg, "lead-gen-outreach") || !strings.Contains(msg, "559") || !a.FatalErrorRetryable() ||
@@ -184,10 +184,10 @@ func TestLockConflictNamesOwningProfile(t *testing.T) {
 	}
 }
 
-func TestLockConflictInfersProfileFromLegacyHermesHome(t *testing.T) {
+func TestLockConflictInfersProfileFromLegacyIcebathHome(t *testing.T) {
 	quietRuntimeStatus(t)
 	a := newBaseFake(PlatformTelegram)
-	patchAcquire(t, [2]any{false, lockRecord("pid", 559, "start_time", 123, "hermes_home", "/opt/data/profiles/lead-gen-outreach")})
+	patchAcquire(t, [2]any{false, lockRecord("pid", 559, "start_time", 123, "icebath_home", "/opt/data/profiles/lead-gen-outreach")})
 	ok, _ := a.AcquirePlatformLock(context.Background(), "telegram-bot-token", "test-token", "Telegram bot token")
 	if msg := *a.FatalErrorMessage(); ok || !strings.Contains(msg, "lead-gen-outreach") {
 		t.Fatalf("ok %v message %q", ok, msg)

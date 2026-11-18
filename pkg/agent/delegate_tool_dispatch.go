@@ -5,14 +5,12 @@ import (
 	"errors"
 	"fmt"
 	"math"
-	"reflect"
 	"sort"
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
-	"github.com/nickheyer/icebath/pkg/observability"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
 
@@ -144,7 +142,7 @@ func objectMap(o *pyjson.Object) map[string]any {
 func recordFinishedChild(batch *delegateBatch, entry *pyjson.Object, honorParentInterrupt bool) {
 	if !honorParentInterrupt && batch.UnitID != "" && entry != nil {
 		if err := tools.RecordUnitChild(batch.Parent.env, batch.UnitID, entry); err != nil {
-			delegateLog().Debug("record_unit_child failed", "error", err)
+			pkgLog().Debug("record_unit_child failed", "error", err)
 		}
 	}
 }
@@ -259,14 +257,6 @@ func runChildrenParallel(ctx context.Context, batch *delegateBatch, results *[]*
 	sortByTaskIndex(*results)
 }
 
-// Identity of the call every unit of one delegate_task shares
-func batchCallKey(batch *delegateBatch) any {
-	if len(batch.TaskList) == 0 {
-		return batch
-	}
-	return reflect.ValueOf(batch.TaskList).Pointer()
-}
-
 // Runs, joins and finalizes the batch's children and returns the combined result
 func executeAndAggregate(ctx context.Context, batch *delegateBatch, honorParentInterrupt bool) *pyjson.Object {
 	var results []*pyjson.Object
@@ -283,7 +273,7 @@ func executeAndAggregate(ctx context.Context, batch *delegateBatch, honorParentI
 		if isInt && idx >= 0 && idx < len(batch.LiveWriters) && batch.LiveWriters[idx] != nil {
 			delegateQuiet("Live transcript finalize failed", func() {
 				if err := batch.LiveWriters[idx].Finalize(entry); err != nil {
-					delegateLog().Debug("Live transcript finalize failed", "error", err)
+					pkgLog().Debug("Live transcript finalize failed", "error", err)
 				}
 			})
 			if idx < len(batch.LivePaths) {
@@ -300,7 +290,6 @@ func executeAndAggregate(ctx context.Context, batch *delegateBatch, honorParentI
 	for i, r := range results {
 		anyResults[i] = r
 	}
-	observability.FinishDelegationUnit(ctx, batchCallKey(batch), anyResults, !honorParentInterrupt)
 	combined := pyjson.NewObject()
 	combined.Set("results", anyResults)
 	combined.Set("total_duration_seconds", totalDuration)
@@ -362,12 +351,12 @@ func resolveAsyncWakeSID(env *tools.Env, originWakeSID string, historyDelivery, 
 		return "", true
 	}
 	if originWakeSID != "" && historyDelivery {
-		delegateLog().Info(fmt.Sprintf("delegate_task: session %s resumes server history — detached result will be persisted "+
+		pkgLog().Info(fmt.Sprintf("delegate_task: session %s resumes server history — detached result will be persisted "+
 			"for the next client turn (no model wake).", originWakeSID))
 		return originWakeSID, true
 	}
 	if originWakeSID != "" {
-		delegateLog().Info(fmt.Sprintf("delegate_task: session %s has no declared server-history consumer — running the batch "+
+		pkgLog().Info(fmt.Sprintf("delegate_task: session %s has no declared server-history consumer — running the batch "+
 			"synchronously so the result returns in this turn.", originWakeSID))
 	}
 	return "", false
@@ -614,7 +603,7 @@ func dispatchBackground(ctx context.Context, batch *delegateBatch) string {
 	pinned, isPinned := batch.Parent.oneshotSession.Pinned()
 	wakeSID, ok := resolveAsyncWakeSID(env, batch.Origin.WakeSID, batch.Origin.SessionHistoryDelivery, isPinned && pinned)
 	if !ok {
-		delegateLog().Info("delegate_task: async delivery unsupported on this session runtime; running the batch synchronously instead.")
+		pkgLog().Info("delegate_task: async delivery unsupported on this session runtime; running the batch synchronously instead.")
 		return runSyncWithNote(ctx, batch, syncNoteNoAsync)
 	}
 	parent := batch.Parent
@@ -660,7 +649,7 @@ func dispatchBackground(ctx context.Context, batch *delegateBatch) string {
 		}
 		restoreParentCancellation(unit)
 		if len(dispatched) == 0 {
-			delegateLog().Info(fmt.Sprintf("delegate_task: async pool at capacity (%s); running the whole batch synchronously instead.", reason))
+			pkgLog().Info(fmt.Sprintf("delegate_task: async pool at capacity (%s); running the whole batch synchronously instead.", reason))
 			return runSyncWithNote(ctx, batch, syncNoteAtCapacity)
 		}
 		shown := "None"
@@ -669,7 +658,7 @@ func dispatchBackground(ctx context.Context, batch *delegateBatch) string {
 		} else if e, ok := dispatch["error"]; ok {
 			shown = pyrepr.Str(e)
 		}
-		delegateLog().Warn(fmt.Sprintf("delegate_task: unit %d/%d not accepted (%s); running it inline.", k+1, len(units), shown))
+		pkgLog().Warn(fmt.Sprintf("delegate_task: unit %d/%d not accepted (%s); running it inline.", k+1, len(units), shown))
 		results, _ := entryValue(executeAndAggregate(ctx, unit, true), "results").([]any)
 		inline = append(inline, results...)
 	}
@@ -682,7 +671,6 @@ func dispatchBackground(ctx context.Context, batch *delegateBatch) string {
 
 // Tool result JSON of a delegate_task call, a dispatch handle in the background or the joined results
 func runDelegateBatch(ctx context.Context, batch *delegateBatch, background bool) (string, error) {
-	observability.BeginDelegationRun(ctx, batchCallKey(batch), len(batch.Children), batch.Parent.delegateDepth+1)
 	if background && !sessionJoinsDelegation(batch.Parent) {
 		return dispatchBackground(ctx, batch), nil
 	}

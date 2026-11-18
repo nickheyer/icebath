@@ -13,7 +13,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/provider"
 )
 
-// The hermes_cli.cli_output functions platform wizards resolve at call time, a table tests replace like the patched module
+// The functions platform wizards resolve at call time, a table tests replace like the patched module
 type CLIOutputFns struct {
 	Prompt       func(question, def string, password bool) string
 	PromptYesNo  func(ctx context.Context, question string, def bool) bool
@@ -24,7 +24,7 @@ type CLIOutputFns struct {
 	PrintError   func(text string)
 }
 
-// The hermes_cli.cli_output module as the platform wizards see it, reading and printing on the setup console
+// The module as the platform wizards see it, reading and printing on the setup console
 var WizardCLI = CLIOutputFns{
 	Prompt: func(question, def string, password bool) string {
 		return provider.SetupConsole().Prompt(question, def, password)
@@ -39,14 +39,14 @@ var WizardCLI = CLIOutputFns{
 	PrintError:   provider.SetupPrintError,
 }
 
-// The hermes_cli.config env file functions platform wizards resolve at call time
+// The env file functions platform wizards resolve at call time
 type ConfigFns struct {
 	GetEnvValue    func(ctx context.Context, key string) (string, error)
 	SaveEnvValue   func(ctx context.Context, key, value string) error
 	RemoveEnvValue func(ctx context.Context, key string) (bool, error)
 }
 
-// The hermes_cli.config module as the platform wizards see it, every call on the home in ctx
+// The module as the platform wizards see it, every call on the home in ctx
 var WizardConfig = ConfigFns{
 	GetEnvValue: func(ctx context.Context, key string) (string, error) {
 		v, _, err := config.GetEnvValue(ctx, home.Dir(ctx), key)

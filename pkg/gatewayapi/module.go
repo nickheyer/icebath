@@ -5,7 +5,6 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
-	"log/slog"
 	"math/big"
 	"net/http"
 	"sort"
@@ -50,11 +49,6 @@ const (
 	ProviderRateLimitedLabel = "Provider rate-limited"
 )
 
-// Logger of the API server platform module
-func apiLog() *slog.Logger {
-	return slog.Default().With("logger", "gateway.platforms.api_server")
-}
-
 // Static feature flags of the capabilities payload in wire order
 var staticFeatureFlags = pyjson.ObjectOf(
 	"run_status", true, "run_events_sse", true, "run_stop", true, "run_steer", true,
@@ -64,8 +58,8 @@ var staticFeatureFlags = pyjson.ObjectOf(
 	"reasoning_streaming", true,
 	"admin_config_rw", false, "jobs_admin", false, "memory_write_api", false,
 	"skills_api", true, "audio_api", false, "realtime_voice", false,
-	"session_continuity_header", "X-Hermes-Session-Id",
-	"session_key_header", "X-Hermes-Session-Key")
+	"session_continuity_header", "X-Icebath-Session-Id",
+	"session_key_header", "X-Icebath-Session-Key")
 
 // Endpoint advertised by the capabilities payload, gated on a feature flag when one is named
 type capabilityEndpoint struct {
@@ -126,7 +120,7 @@ func approvalRequestEvent(ctx context.Context, runID string, approvalData *pyjso
 }
 
 // Canonical base version reported by protocol and compatibility payloads
-func hermesVersion() string {
+func icebathVersion() string {
 	info, err := updaterecord.GetVersionInfo()
 	if err != nil {
 		panic(err)
@@ -313,7 +307,7 @@ func multimodalValidationError(err error, param string) *gateway.WebResponse {
 	return errorResponse(message, http.StatusBadRequest, errOpts{Code: code, Param: param})
 }
 
-// Turn process ownership a gateway reaper reads, keyed by agent the way hermes sets agent attributes
+// Turn process ownership a gateway reaper reads, keyed by agent
 type turnProcessOwnership struct {
 	taskID   string
 	baseline map[string]bool
@@ -468,7 +462,7 @@ func CheckAPIServerRequirements() bool { return true }
 
 var corsHeaders = [][2]string{
 	{"Access-Control-Allow-Methods", "GET, POST, DELETE, OPTIONS"},
-	{"Access-Control-Allow-Headers", "Authorization, Content-Type, Idempotency-Key, X-Hermes-Session-Id, X-Icebath-Session-Id"},
+	{"Access-Control-Allow-Headers", "Authorization, Content-Type, Idempotency-Key, X-Icebath-Session-Id, X-Icebath-Session-Key"},
 }
 
 var securityHeaders = [][2]string{
@@ -509,7 +503,7 @@ func corsMiddleware(ctx context.Context, app *gateway.HTTPApp, request *gateway.
 		}
 		return resp, nil
 	}
-	icebathRequestHeaders(request.Header)
+	acceptLegacyRequestHeaders(request.Header)
 	resp, err := handler(ctx, request)
 	if err != nil {
 		return nil, err
@@ -517,7 +511,6 @@ func corsMiddleware(ctx context.Context, app *gateway.HTTPApp, request *gateway.
 	for _, h := range headers {
 		resp.Headers.Set(h[0], h[1])
 	}
-	icebathResponseHeaders(resp.Headers)
 	return resp, nil
 }
 

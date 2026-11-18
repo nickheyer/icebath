@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
-	"log/slog"
 	"os"
 	"path/filepath"
 	"strings"
@@ -61,7 +60,7 @@ func RestartWaitOpen(runner DrainRunner) bool {
 }
 
 var restartWaitWSMethods = map[string]bool{
-	"ping": true, "runtime.describe": true, "session.resume": true, "session.detach": true, "session.events.since": true,
+	"ping": true, "runtime.describe": true, "session.resume": true, "session.detach": true,
 	"session.info": true, "session.list": true, "prompt.submit": true, "prompt.receipt": true, "session.interrupt": true,
 	"approval.respond": true, "clarify.respond": true, "clarify.lock": true,
 }
@@ -143,7 +142,7 @@ func ClearDrainRequest(ctx context.Context, h string) bool {
 		return true
 	}
 	if !errors.Is(err, fs.ErrNotExist) {
-		slog.Warn(fmt.Sprintf("drain-control: failed to remove %s: %s", path, pypath.OSErrorText(err)))
+		pkgLog().Warn(fmt.Sprintf("drain-control: failed to remove %s: %s", path, pypath.OSErrorText(err)))
 	}
 	return false
 }
@@ -168,7 +167,7 @@ func markerIsExpired(body *pyjson.Object) bool {
 	expiryLogMu.Unlock()
 	if first {
 		principal, _ := body.Get("principal")
-		slog.Warn(fmt.Sprintf("drain-control: ignoring expired drain marker (requested_at=%s, age=%.0fs > max %.0fs, principal=%s) "+
+		pkgLog().Warn(fmt.Sprintf("drain-control: ignoring expired drain marker (requested_at=%s, age=%.0fs > max %.0fs, principal=%s) "+
 			"— the drain that wrote it was never cancelled; treating as stale so the gateway keeps accepting turns.",
 			rawText, age, DrainRequestMaxAgeSeconds, pyrepr.Str(principal)))
 	}
@@ -211,7 +210,7 @@ func ReadDrainRequest(ctx context.Context, h string) *pyjson.Object {
 	b, err := os.ReadFile(path)
 	if err != nil {
 		if !errors.Is(err, fs.ErrNotExist) {
-			slog.Warn(fmt.Sprintf("drain-control: failed to read %s: %s", path, pypath.OSErrorText(err)))
+			pkgLog().Warn(fmt.Sprintf("drain-control: failed to read %s: %s", path, pypath.OSErrorText(err)))
 		}
 		return nil
 	}

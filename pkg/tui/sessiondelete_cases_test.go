@@ -8,6 +8,7 @@ import (
 	tea "charm.land/bubbletea/v2"
 
 	"github.com/nickheyer/icebath/pkg/ui/cards"
+	"github.com/nickheyer/icebath/pkg/ui/keys"
 )
 
 // Session switcher over a canonical gateway listing one stored session, the mutate answer given by the case
@@ -37,6 +38,12 @@ func canonicalSwitcher(t *testing.T, resolve func(string) string, viewing string
 		t.Fatalf("overlay %T", a.wm.Overlay())
 	}
 	return a, g, list
+}
+
+// Presses a key on the app and runs what it returns
+func press(a *app, key string) {
+	_, cmd := a.Update(keys.Press(key))
+	drain(a, cmd)
 }
 
 // Deletes the stored row of the switcher through its confirmation

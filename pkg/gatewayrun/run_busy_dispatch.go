@@ -45,14 +45,14 @@ func handlerOf[T any](fn func(ctx context.Context, event *gateway.MessageEvent) 
 var plainCommands = []string{
 	"status", "context", "restart", "approve", "deny", "pause", "discard", "agents", "bg", "btw",
 	"kanban", "subgoal", "heartbeat", "busy", "yolo", "verbose", "footer", "help",
-	"commands", "profile", "login", "update", "version", "autoprune",
+	"commands", "profile", "update", "version", "autoprune",
 }
 
 // Slash handlers dispatched only on the idle path
 var idleCommands = []string{
 	"topic", "whoami", "platform", "stop", "reasoning", "memory", "skills", "fast",
 	"approvals", "model", "codex-runtime", "personality", "suggestions", "save", "retry",
-	"sethome", "compress", "usage", "topup", "insights", "reload-mcp", "reload-skills",
+	"sethome", "compress", "usage", "insights", "reload-mcp", "reload-skills",
 	"bundles", "debug", "title", "resume", "sessions", "branch", "rollback", "diff", "goal",
 	"loop", "refine", "review", "voice", "curator",
 }
@@ -100,8 +100,6 @@ func (r *GatewayRunner) commandHandlerFor(name string) commandHandler {
 		return handlerOf(r.handleCommandsCommand)
 	case "profile":
 		return handlerOf(r.handleProfileCommand)
-	case "login":
-		return handlerOf(r.handleLoginCommand)
 	case "update":
 		return handlerOf(r.handleUpdateCommand)
 	case "version":
@@ -144,8 +142,6 @@ func (r *GatewayRunner) commandHandlerFor(name string) commandHandler {
 		return handlerOf(r.handleCompressCommand)
 	case "usage":
 		return handlerOf(r.handleUsageCommand)
-	case "topup":
-		return handlerOf(r.handleTopupCommand)
 	case "insights":
 		return handlerOf(r.handleInsightsCommand)
 	case "reload-mcp":
@@ -232,7 +228,7 @@ func (r *GatewayRunner) busySlashRoute(def busyCommandDef) (string, string, comm
 		if plain := r.gatewayPlainCommandHandlers()[def.name]; plain != nil {
 			return "plain", "", plain
 		}
-		runLog().Warn(fmt.Sprintf("busy_policy=%s for /%s has no mid-run handler — falling back to busy-reject", policy, def.name))
+		pkgLog().Warn(fmt.Sprintf("busy_policy=%s for /%s has no mid-run handler — falling back to busy-reject", policy, def.name))
 	}
 	return "reject", "", nil
 }

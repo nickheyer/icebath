@@ -24,14 +24,14 @@ func installRelayValidator(t *testing.T, validate func(payload map[string]any) (
 func TestRelayBindingBridgesFailLikeTheMissingWheel(t *testing.T) {
 	tools.RegisterNemoRelayBinding(nil)
 	t.Cleanup(func() { tools.RegisterNemoRelayBinding(nil) })
-	if _, err := ValidateRelayPluginPayload(context.Background(), relayObject("version", 1)); relayExceptionText(err) != "ModuleNotFoundError: No module named 'nemo_relay'" {
+	if _, err := ValidateRelayPluginPayload(context.Background(), relayObject("version", 1)); relayExceptionText(err) != "the Relay runtime binding is not installed" {
 		t.Fatalf("validate without binding %v", err)
 	}
-	if _, err := RelayPluginPayloadFromLegacyEnv(map[string]any{}); relayExceptionText(err) != "ModuleNotFoundError: No module named 'nemo_relay'" {
+	if _, err := RelayPluginPayloadFromLegacyEnv(map[string]any{}); relayExceptionText(err) != "the Relay runtime binding is not installed" {
 		t.Fatalf("payload without binding %v", err)
 	}
 	tools.RegisterNemoRelayBinding(func() (*tools.NemoRelay, error) { return nil, nil })
-	if _, err := loadNemoRelayBinding(); relayExceptionText(err) != "ModuleNotFoundError: No module named 'nemo_relay'" {
+	if _, err := loadNemoRelayBinding(); relayExceptionText(err) != "the Relay runtime binding is not installed" {
 		t.Fatalf("nil binding %v", err)
 	}
 	broken := &tools.RelayError{Class: "ImportError", Message: "libnemo_relay.so: cannot open shared object file"}
@@ -43,9 +43,9 @@ func TestRelayBindingBridgesFailLikeTheMissingWheel(t *testing.T) {
 		relay *tools.NemoRelay
 		want  string
 	}{
-		{nil, "ModuleNotFoundError: No module named 'nemo_relay'"},
-		{&tools.NemoRelay{}, "AttributeError: 'NemoRelay' object has no attribute 'plugin'"},
-		{&tools.NemoRelay{Plugin: &tools.NemoRelayPlugin{}}, "AttributeError: 'NemoRelayPlugin' object has no attribute 'validate_exact'"},
+		{nil, "the Relay runtime binding is not installed"},
+		{&tools.NemoRelay{}, "the Relay runtime binding has no plugin interface"},
+		{&tools.NemoRelay{Plugin: &tools.NemoRelayPlugin{}}, "the Relay plugin interface cannot validate a payload"},
 	} {
 		if _, err := relayValidateExact(context.Background(), c.relay, map[string]any{"version": 1}); relayExceptionText(err) != c.want {
 			t.Fatalf("%+v %v", c.relay, err)
@@ -81,7 +81,7 @@ func TestRelayNonMappingDiagnosticRaisesAttributeError(t *testing.T) {
 		return relayReport(map[string]any{"level": "error", "message": "rejected"}, "loose"), nil
 	})
 	_, err := ValidateRelayPluginPayload(context.Background(), relayObject("version", 1))
-	if err == nil || relayExceptionText(err) != "AttributeError: 'str' object has no attribute 'get'" {
+	if err == nil || relayExceptionText(err) != "a Relay validation diagnostic is text, expected a mapping" {
 		t.Fatalf("err %v", err)
 	}
 }

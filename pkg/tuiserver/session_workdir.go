@@ -16,7 +16,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tools"
-	"github.com/nickheyer/icebath/pkg/tuigateway"
+	"github.com/nickheyer/icebath/pkg/tuihost"
 )
 
 // A Windows drive path rewritten to its WSL mount on POSIX hosts, user syntax expanded
@@ -41,7 +41,7 @@ func completionCwd(ctx context.Context, params map[string]any) (string, error) {
 	}
 	clientCwd := strOr(params["cwd"])
 	profile := strOr(params["profile"])
-	sessionCwd := strOr(tuigateway.SessionRecord(strOr(params["session_id"])).Get("cwd"))
+	sessionCwd := strOr(tuihost.SessionRecord(strOr(params["session_id"])).Get("cwd"))
 	profileHomePath := ""
 	if profile != "" {
 		resolved, err := resolveProfileHome(profile)
@@ -242,7 +242,7 @@ func workspaceCwd(ctx context.Context, profileHome, raw string) (string, error) 
 }
 
 // Session cwd, else the completion cwd
-func sessionCwd(ctx context.Context, session *tuigateway.Session) string {
+func sessionCwd(ctx context.Context, session *tuihost.Session) string {
 	if cwd := strOr(session.Get("cwd")); cwd != "" {
 		return cwd
 	}
@@ -278,17 +278,17 @@ func healDeadCwd(cwd string) (healed string) {
 			healed = probe
 		}
 	}()
-	if root := tuigateway.CommonRepoRoot(probe); root != "" {
+	if root := tuihost.CommonRepoRoot(probe); root != "" {
 		return root
 	}
-	if root := tuigateway.RepoRoot(probe); root != "" {
+	if root := tuihost.RepoRoot(probe); root != "" {
 		return root
 	}
 	return probe
 }
 
 // Whether the session cwd can be stat'ed and git probed on this host
-func sessionIsLocalBackend(ctx context.Context, session *tuigateway.Session) bool {
+func sessionIsLocalBackend(ctx context.Context, session *tuihost.Session) bool {
 	if profileHome := strOr(session.Get("profile_home")); profileHome != "" && boundTerminalBackend(ctx, profileHome) != "local" {
 		return false
 	}
@@ -308,7 +308,7 @@ func effectiveTerminalBackend(ctx context.Context) string {
 }
 
 // Session cwd for display and probes, healed past deleted worktrees with the healed value persisted, local only
-func displaySessionCwd(ctx context.Context, session *tuigateway.Session) string {
+func displaySessionCwd(ctx context.Context, session *tuihost.Session) string {
 	cwd := sessionCwd(ctx, session)
 	if !sessionIsLocalBackend(ctx, session) {
 		return cwd
@@ -322,7 +322,7 @@ func displaySessionCwd(ctx context.Context, session *tuigateway.Session) string 
 }
 
 // Session store owning the row of a session, a profile db handle else the shared launch one, with its release
-func workdirOwnerDB(ctx context.Context, session *tuigateway.Session, failLog string) (db *state.DB, failed bool, release func()) {
+func workdirOwnerDB(ctx context.Context, session *tuihost.Session, failLog string) (db *state.DB, failed bool, release func()) {
 	release = func() {}
 	profileHome := strOr(session.Get("profile_home"))
 	if profileHome == "" {
@@ -330,7 +330,7 @@ func workdirOwnerDB(ctx context.Context, session *tuigateway.Session, failLog st
 	}
 	opened, err := state.Acquire(ctx, filepath.Join(profileHome, "state.db"))
 	if err != nil {
-		logger().Debug(failLog, "error", err)
+		pkgLog().Debug(failLog, "error", err)
 		return nil, true, release
 	}
 	return opened, false, func() {
@@ -339,7 +339,7 @@ func workdirOwnerDB(ctx context.Context, session *tuigateway.Session, failLog st
 }
 
 // Session store owning the row of a session with its release, nil when unavailable
-func sessionDB(ctx context.Context, session *tuigateway.Session) (*state.DB, func()) {
+func sessionDB(ctx context.Context, session *tuihost.Session) (*state.DB, func()) {
 	db, failed, release := workdirOwnerDB(ctx, session, "failed to open profile db for session")
 	if failed {
 		return nil, release
@@ -353,22 +353,22 @@ func workdirValidGeneration(generation *int64) bool {
 }
 
 // Resolves and persists the git branch and repo root of a session cwd in the background for one generation
-func persistSessionGitMeta(ctx context.Context, session *tuigateway.Session, cwd string, generation *int64) {
+func persistSessionGitMeta(ctx context.Context, session *tuihost.Session, cwd string, generation *int64) {
 	sessionKey := strOr(session.Get("session_key"))
 	if sessionKey == "" || cwd == "" || !workdirValidGeneration(generation) {
 		return
 	}
-	dbSession := tuigateway.NewSession(map[string]any{"session_key": sessionKey, "profile_home": session.Get("profile_home")})
+	dbSession := tuihost.NewSession(map[string]any{"session_key": sessionKey, "profile_home": session.Get("profile_home")})
 	claimed := *generation
 	ctx = context.WithoutCancel(ctx)
 	go func() {
 		defer threadExceptHook("git-meta")
 		defer func() {
 			if r := recover(); r != nil {
-				logger().Debug("failed to persist session git metadata", "error", r)
+				pkgLog().Debug("failed to persist session git metadata", "error", r)
 			}
 		}()
-		branch, root := tuigateway.Branch(cwd), tuigateway.CommonRepoRoot(cwd)
+		branch, root := tuihost.Branch(cwd), tuihost.CommonRepoRoot(cwd)
 		if branch == "" && root == "" {
 			return
 		}
@@ -376,18 +376,18 @@ func persistSessionGitMeta(ctx context.Context, session *tuigateway.Session, cwd
 		defer release()
 		if db != nil {
 			if _, err := db.PublishSessionGitMetadata(ctx, sessionKey, cwd, claimed, branch, root); err != nil {
-				logger().Debug("failed to persist session git metadata", "error", err)
+				pkgLog().Debug("failed to persist session git metadata", "error", err)
 			}
 		}
 	}()
 }
 
 // Claims a db backed probe generation for the new cwd then starts git enrichment, nil when nothing was claimed
-func persistSessionCwdAndScheduleGitMeta(ctx context.Context, session *tuigateway.Session, cwd string, db *state.DB) *int64 {
+func persistSessionCwdAndScheduleGitMeta(ctx context.Context, session *tuihost.Session, cwd string, db *state.DB) *int64 {
 	generation, ok := func() (generation *int64, ok bool) {
 		defer func() {
 			if r := recover(); r != nil {
-				logger().Debug("failed to persist session cwd", "error", r)
+				pkgLog().Debug("failed to persist session cwd", "error", r)
 				generation, ok = nil, false
 			}
 		}()
@@ -401,7 +401,7 @@ func persistSessionCwdAndScheduleGitMeta(ctx context.Context, session *tuigatewa
 		}
 		claimed, err := owner.UpdateSessionCwdClaim(ctx, strOr(session.Get("session_key")), cwd, "", "", false)
 		if err != nil {
-			logger().Debug("failed to persist session cwd", "error", err)
+			pkgLog().Debug("failed to persist session cwd", "error", err)
 			return nil, false
 		}
 		return claimed, true
@@ -414,13 +414,13 @@ func persistSessionCwdAndScheduleGitMeta(ctx context.Context, session *tuigatewa
 }
 
 // Cwd the terminal tool uses for a session, not host validated, empty when the backend default applies
-func terminalTaskCwd(ctx context.Context, session *tuigateway.Session) string {
+func terminalTaskCwd(ctx context.Context, session *tuihost.Session) string {
 	cwd, _ := terminalTaskCwdWithSource(ctx, session)
 	return cwd
 }
 
 // Terminal cwd and its source, session for this session's workspace or process for the global fallback
-func terminalTaskCwdWithSource(ctx context.Context, session *tuigateway.Session) (string, string) {
+func terminalTaskCwdWithSource(ctx context.Context, session *tuihost.Session) (string, string) {
 	profileHome := strOr(session.Get("profile_home"))
 	namedSSH := profileHome != "" && cwdIsRemote(ctx, profileHome)
 	backend := "ssh"
@@ -488,7 +488,7 @@ func resolveCreateCwd(ctx context.Context, params map[string]any, profileHome st
 }
 
 // Cwd to stamp on the session db row, empty to leave it unset under the launch dir rule
-func persistedSessionCwd(ctx context.Context, session *tuigateway.Session) string {
+func persistedSessionCwd(ctx context.Context, session *tuihost.Session) string {
 	if truthy(session.Get("explicit_cwd")) {
 		return sessionCwd(ctx, session)
 	}
@@ -499,7 +499,7 @@ func persistedSessionCwd(ctx context.Context, session *tuigateway.Session) strin
 }
 
 // Whether an unpicked session cwd is a host directory the session's remote or sandbox terminal never runs in
-func isRemoteLaunchCwd(ctx context.Context, session *tuigateway.Session) bool {
+func isRemoteLaunchCwd(ctx context.Context, session *tuihost.Session) bool {
 	if session == nil || truthy(session.Get("explicit_cwd")) {
 		return false
 	}
@@ -526,7 +526,7 @@ func hostCwdIsTerminalCwd(ctx context.Context, profileHome string) bool {
 }
 
 // Whether an absolute cwd sits in the root home tree or the install tree, never a tilde remote path
-func isHermesOwnedCwd(ctx context.Context, cwd, profileHome string) bool {
+func isIcebathOwnedCwd(ctx context.Context, cwd, profileHome string) bool {
 	if !filepath.IsAbs(cwd) {
 		return false
 	}
@@ -623,7 +623,7 @@ func isOtherProfilesCwd(ctx context.Context, cwd, profileHome string) bool {
 // Stored cwd a resume may adopt, empty for an ssh host launch dir, a sandbox dir or another profile dir
 func resumableStoredCwd(ctx context.Context, cwd any, profileHome string) string {
 	text := strOr(cwd)
-	if text != "" && cwdIsRemote(ctx, profileHome) && isHermesOwnedCwd(ctx, text, profileHome) {
+	if text != "" && cwdIsRemote(ctx, profileHome) && isIcebathOwnedCwd(ctx, text, profileHome) {
 		return ""
 	}
 	if text != "" && !cwdIsRemote(ctx, profileHome) && !hostCwdIsTerminalCwd(ctx, profileHome) && isLaunchDir(ctx, text, profileHome) {

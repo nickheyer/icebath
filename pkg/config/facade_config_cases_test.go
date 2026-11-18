@@ -197,10 +197,10 @@ func TestAtOrAboveFloorMigratesIdenticallyToPreFloor(t *testing.T) {
 				"memory": map[string]any{"write_approval": true}, "model": map[string]any{"default": "openai/gpt-5.4", "provider": "openrouter"},
 				"model_catalog": map[string]any{}, "plugins": map[string]any{"enabled": []any{}}, "stt": map[string]any{"provider": "local"}},
 			"LLM_MODEL=\nOPENAI_MODEL=\nOPENROUTER_API_KEY=test\n"},
-		{map[string]any{"_config_version": 20, "model": map[string]any{"default": "anthropic/claude-fable-5", "provider": "nous"},
+		{map[string]any{"_config_version": 20, "model": map[string]any{"default": "anthropic/claude-fable-5", "provider": "anthropic"},
 			"plugins": map[string]any{"disabled": []any{"foo"}}, "skills": map[string]any{"write_mode": "on"},
 			"model_catalog": map[string]any{"ttl_hours": 24}, "agent": map[string]any{}},
-			map[string]any{"model": map[string]any{"default": "anthropic/claude-fable-5", "provider": "nous"}, "model_catalog": map[string]any{},
+			map[string]any{"model": map[string]any{"default": "anthropic/claude-fable-5", "provider": "anthropic"}, "model_catalog": map[string]any{},
 				"plugins": map[string]any{"disabled": []any{"foo"}, "enabled": []any{}}},
 			envFixture},
 	} {

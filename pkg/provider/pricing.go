@@ -11,7 +11,6 @@ import (
 	"math/big"
 	"os"
 	"regexp"
-	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -24,7 +23,6 @@ import (
 // ---- usage_pricing: cost computation ----
 
 const (
-	nousDefaultBaseURL = "https://inference-api.nousresearch.com/v1"
 	// IncludedNote marks a cost result that is covered by a subscription rather than a $0 rate card
 	IncludedNote = "subscription-included; no provider invoice for usage"
 )
@@ -46,15 +44,11 @@ var pricingNow = func() time.Time { return time.Now().UTC() }
 
 // Metadata and sibling slice seams so pricing tests never probe a live endpoint or credential store
 var (
-	fetchModelMetadataFn                      = FetchModelMetadata
-	fetchEndpointModelMetadataFn              = FetchEndpointModelMetadata
-	nousInferenceEnvOverrideFn                = nousInferenceEnvOverride
-	resolveNousRuntimeCredentialsBackgroundFn = resolveNousRuntimeCredentialsBackground
-	nousPolicyPresentFn                       = nousPolicyPresent
-	validateNousInferenceURLFromNetworkFn     = validateNousInferenceURLFromNetwork
-	deepinfraCatalogURLFn                     = deepinfraCatalogURL
-	deepinfraCatalogCachedFn                  = deepinfraCatalogCached
-	fetchDeepinfraModelsByTagFn               = fetchDeepinfraModelsByTag
+	fetchModelMetadataFn         = FetchModelMetadata
+	fetchEndpointModelMetadataFn = FetchEndpointModelMetadata
+	deepinfraCatalogURLFn        = deepinfraCatalogURL
+	deepinfraCatalogCachedFn     = deepinfraCatalogCached
+	fetchDeepinfraModelsByTagFn  = fetchDeepinfraModelsByTag
 )
 
 // Exact decimal from a rate string, nil when unparsable
@@ -483,13 +477,6 @@ func ResolveBillingRoute(modelName, provider, baseURL string) BillingRoute {
 	if providerName == "openrouter" || host("openrouter.ai") {
 		return BillingRoute{"openrouter", model, url, "official_models_api"}
 	}
-	if providerName == "nous" || host("inference-api.nousresearch.com") {
-		routeURL := baseURL
-		if routeURL == "" {
-			routeURL = nousDefaultBaseURL
-		}
-		return BillingRoute{"nous", model, routeURL, "official_models_api"}
-	}
 	snapshotProvider := snapshotProviderAliases[providerName]
 	if snapshotProvider == "" {
 		if googleProviderNames[providerName] || host("aiplatform.googleapis.com") || host("generativelanguage.googleapis.com") {
@@ -765,7 +752,7 @@ func NormalizeUsage(responseUsage any, provider, apiMode string) CanonicalUsage 
 	}
 	reasoning := firstNonzero(u, []string{"output_tokens_details", "reasoning_tokens"}, []string{"completion_tokens_details", "reasoning_tokens"})
 	if (providerName == "minimax" || providerName == "minimax-cn") && mode == "anthropic_messages" {
-		catalogLog.Debug(fmt.Sprintf("cache_observability provider=%s mode=%s input_tokens=%d output_tokens=%d cache_read_tokens=%d cache_write_tokens=%d (note: on MiniMax-M3 cache_read carries a +128 constant floor and is not a reliable hit signal - track input_tokens drops across calls instead)",
+		pkgLog().Debug(fmt.Sprintf("cache_observability provider=%s mode=%s input_tokens=%d output_tokens=%d cache_read_tokens=%d cache_write_tokens=%d (note: on MiniMax-M3 cache_read carries a +128 constant floor and is not a reliable hit signal - track input_tokens drops across calls instead)",
 			providerName, mode, inputTokens, outputTokens, cacheRead, cacheWrite))
 	}
 	raw := make(map[string]any, len(u))
@@ -958,15 +945,10 @@ func FormatTokenCountCompact(value int) string {
 type PricingTable = map[string]map[string]any
 
 const (
-	failedCatalogTTL        = 120 * time.Second
-	pricingAuthKeyPrefix    = "\x00auth:"
-	defaultNousInferenceURL = "https://inference-api.nousresearch.com"
-	openRouterPricingBase   = "https://openrouter.ai/api"
-	fireworksPricingKey     = "models.dev/fireworks"
-	// NousCatalogTTL bounds how long an org policy shaped Nous catalog stays trusted
-	NousCatalogTTL = 300 * time.Second
-	// NousPolicyAppendMax is the largest allowlist still worth showing in place of an empty picker
-	NousPolicyAppendMax = 64
+	failedCatalogTTL      = 120 * time.Second
+	pricingAuthKeyPrefix  = "\x00auth:"
+	openRouterPricingBase = "https://openrouter.ai/api"
+	fireworksPricingKey   = "models.dev/fireworks"
 	// AIGatewayBaseURL is the Vercel AI Gateway OpenAI compatible root
 	AIGatewayBaseURL = home.AIGatewayBaseURL
 )
@@ -1129,8 +1111,8 @@ func roundTo(v float64, places int) float64 {
 	return math.RoundToEven(v*scale) / scale
 }
 
-// Finite price as a float, positive or non negative as asked, false when unset or invalid
-func priceFloat(raw any, positive bool) (float64, bool) {
+// Finite non negative price as a float, false when unset or invalid
+func priceFloat(raw any) (float64, bool) {
 	if raw == nil {
 		return 0, false
 	}
@@ -1148,27 +1130,10 @@ func priceFloat(raw any, positive bool) (float64, bool) {
 	if !ok || math.IsNaN(n) {
 		return 0, false
 	}
-	if positive && n <= 0 || !positive && n < 0 {
+	if n < 0 {
 		return 0, false
 	}
 	return n, true
-}
-
-// Percent discount when current is strictly below original
-func salePct(current, original any) (int, bool) {
-	cur, ok1 := priceFloat(current, true)
-	orig, ok2 := priceFloat(original, true)
-	if !ok1 || !ok2 || cur >= orig {
-		return 0, false
-	}
-	return int(math.RoundToEven((1.0 - cur/orig) * 100)), true
-}
-
-// SaleDiscount is the picker sale chrome for a Nous Portal row
-type SaleDiscount struct {
-	Percent       int
-	WasPrompt     string
-	WasCompletion string
 }
 
 func rawPriceString(v any) string {
@@ -1182,34 +1147,6 @@ func rawPriceString(v any) string {
 		return strconv.FormatFloat(f, 'g', -1, 64)
 	}
 	return fmt.Sprint(v)
-}
-
-// ComputeSaleDiscount derives the sale percent and was prices from a gateway pricing.original block
-func ComputeSaleDiscount(prompt, completion string, original any) (SaleDiscount, bool) {
-	origDict, isDict := asMap(original)
-	wasPrompt := rawPriceString(origDict["prompt"])
-	wasCompletion := rawPriceString(origDict["completion"])
-	promptVal, promptOK := priceFloat(prompt, false)
-	completionVal, completionOK := priceFloat(completion, false)
-	if promptOK && promptVal == 0 && (!completionOK || completionVal == 0) {
-		return SaleDiscount{100, wasPrompt, wasCompletion}, true
-	}
-	if !isDict || (wasPrompt == "" && wasCompletion == "") {
-		return SaleDiscount{}, false
-	}
-	if pct, ok := salePct(prompt, origDict["prompt"]); ok {
-		if pct >= 1 {
-			return SaleDiscount{pct, wasPrompt, wasCompletion}, true
-		}
-		return SaleDiscount{}, false
-	}
-	if pct, ok := salePct(completion, origDict["completion"]); ok {
-		if pct >= 1 {
-			return SaleDiscount{pct, wasPrompt, wasCompletion}, true
-		}
-		return SaleDiscount{}, false
-	}
-	return SaleDiscount{}, false
 }
 
 // GET a catalog URL as JSON through open_credentialed_url or plain urlopen, headers in recorded order, nil on any failure
@@ -1243,7 +1180,7 @@ func pricingGetJSONHTTP(url string, headers map[string]string, timeout time.Dura
 	return m
 }
 
-// Picker shaped row from a catalog pricing block already using the hermes cache field names
+// Picker shaped row from a catalog pricing block already using the cache field names
 func pricingRow(pricing map[string]any, promptKey, completionKey string) map[string]any {
 	entry := map[string]any{"prompt": rawPriceString(pricing[promptKey]), "completion": rawPriceString(pricing[completionKey])}
 	for _, key := range []string{"input_cache_read", "input_cache_write"} {
@@ -1271,20 +1208,6 @@ func pricingCatalogItems(payload map[string]any) []map[string]any {
 	return out
 }
 
-// Permissive tools support read from an OpenRouter shaped catalog row
-func openRouterModelSupportsTools(item map[string]any) bool {
-	params, ok := asList(item["supported_parameters"])
-	if !ok {
-		return true
-	}
-	for _, p := range params {
-		if p == "tools" {
-			return true
-		}
-	}
-	return false
-}
-
 // Mirrors a fetched /v1/models document into the reasoning capability cache for its URL
 func seedReasoningCaps(ctx context.Context, url string, items any) bool {
 	list, ok := asList(items)
@@ -1305,12 +1228,11 @@ func seedReasoningCaps(ctx context.Context, url string, items any) bool {
 
 // PricingFetchOptions control one OpenRouter compatible pricing fetch
 type PricingFetchOptions struct {
-	APIKey              string
-	BaseURL             string
-	Timeout             time.Duration
-	ForceRefresh        bool
-	IncludeSaleOriginal bool
-	CacheTTL            time.Duration
+	APIKey       string
+	BaseURL      string
+	Timeout      time.Duration
+	ForceRefresh bool
+	CacheTTL     time.Duration
 }
 
 // FetchModelsWithPricing reads /v1/models pricing cached per base URL and per credential
@@ -1345,39 +1267,7 @@ func FetchModelsWithPricing(ctx context.Context, opts PricingFetchOptions) Prici
 		if mid == "" || !ok {
 			continue
 		}
-		entry := pricingRow(pricing, "prompt", "completion")
-		if opts.IncludeSaleOriginal {
-			if original, ok := asMap(pricing["original"]); ok {
-				orig := map[string]any{}
-				for _, key := range []string{"prompt", "completion", "input_cache_read", "input_cache_write"} {
-					if v := original[key]; v != nil && v != "" {
-						orig[key] = rawPriceString(v)
-					}
-				}
-				if truthy(orig["prompt"]) || truthy(orig["completion"]) {
-					entry["original"] = orig
-				}
-			}
-			if item["billing_mode"] == "subscription" {
-				entry["billing_mode"] = "subscription"
-			}
-			if item["top_tier"] == true {
-				entry["top_tier"] = true
-			}
-			if level, ok := item["usage_level"].(string); ok {
-				entry["usage_level"] = level
-			}
-			if name, ok := item["name"].(string); ok && strings.TrimSpace(name) != "" && strings.TrimSpace(name) != mid {
-				entry["name"] = strings.TrimSpace(name)
-			}
-			if !openRouterModelSupportsTools(item) {
-				entry["tools"] = false
-			}
-			if CatalogItemIsGeneration(item) {
-				entry["generation"] = true
-			}
-		}
-		result[mid] = entry
+		result[mid] = pricingRow(pricing, "prompt", "completion")
 	}
 	return cacheCatalog(cacheKey, result, opts.CacheTTL)
 }
@@ -1411,73 +1301,6 @@ func FetchAIGatewayPricing(timeout time.Duration, forceRefresh bool) PricingTabl
 
 func resolveOpenRouterPricingAPIKey() string {
 	return strings.TrimSpace(os.Getenv("OPENROUTER_API_KEY"))
-}
-
-// Nous pricing credentials as key and bare origin, env override then resolved credential then default
-func resolveNousPricingCredentials(ctx context.Context) (apiKey, baseURL string) {
-	envBase := nousInferenceEnvOverrideFn()
-	credsBase := ""
-	if key, base, ok := resolveNousRuntimeCredentialsBackgroundFn(ctx); ok {
-		apiKey = key
-		credsBase = strings.TrimSpace(base)
-	}
-	baseURL = envBase
-	if baseURL == "" {
-		baseURL = credsBase
-	}
-	if baseURL == "" {
-		baseURL = defaultNousInferenceURL
-	}
-	baseURL = strings.TrimSuffix(strings.TrimRight(baseURL, "/"), "/v1")
-	return apiKey, baseURL
-}
-
-// Shared Nous fetch so pricing and policy lookups read one cache entry
-func fetchNousPricing(ctx context.Context, apiKey, baseURL string, forceRefresh bool) PricingTable {
-	return FetchModelsWithPricing(ctx, PricingFetchOptions{APIKey: apiKey, BaseURL: baseURL, ForceRefresh: forceRefresh, IncludeSaleOriginal: true, CacheTTL: NousCatalogTTL})
-}
-
-// NousPolicyAllowedIDs returns the model ids the caller's org may reach, or false to not filter
-func NousPolicyAllowedIDs(ctx context.Context, forceRefresh bool) (map[string]bool, bool) {
-	present, known := nousPolicyPresentFn(ctx)
-	if !known || !present {
-		return nil, false
-	}
-	apiKey, baseURL := resolveNousPricingCredentials(ctx)
-	if apiKey == "" || baseURL == "" {
-		return nil, false
-	}
-	table := fetchNousPricing(ctx, apiKey, baseURL, forceRefresh)
-	if len(table) == 0 {
-		return nil, false
-	}
-	allowed := make(map[string]bool, len(table))
-	for mid := range table {
-		allowed[mid] = true
-	}
-	return allowed, true
-}
-
-// RestrictToNousPolicy narrows model ids to the allowlist keeping free siblings of reachable bases
-func RestrictToNousPolicy(modelIDs []string, allowed map[string]bool, rescueEmpty bool) []string {
-	if len(allowed) == 0 {
-		return cloneStrings(modelIDs)
-	}
-	kept := []string{}
-	for _, mid := range modelIDs {
-		if allowed[mid] || allowed[strings.SplitN(mid, ":", 2)[0]] {
-			kept = append(kept, mid)
-		}
-	}
-	if rescueEmpty && len(kept) == 0 && len(allowed) <= NousPolicyAppendMax {
-		out := make([]string, 0, len(allowed))
-		for mid := range allowed {
-			out = append(out, mid)
-		}
-		sort.Strings(out)
-		return out
-	}
-	return kept
 }
 
 func pricingProfileKey(ctx context.Context) string { return home.Key(home.Dir(ctx)) }
@@ -1556,10 +1379,10 @@ func fetchKilocodePricing(timeout time.Duration, forceRefresh bool) PricingTable
 			entry["completion"] = "0"
 			delete(entry, "input_cache_read")
 		}
-		if _, ok := priceFloat(entry["prompt"], false); !ok {
+		if _, ok := priceFloat(entry["prompt"]); !ok {
 			continue
 		}
-		if _, ok := priceFloat(entry["completion"], false); !ok {
+		if _, ok := priceFloat(entry["completion"]); !ok {
 			continue
 		}
 		result[mid] = entry
@@ -1577,15 +1400,6 @@ func fetchKilocodePricingForProvider(ctx context.Context, forceRefresh bool) Pri
 	return fetchKilocodePricing(0, forceRefresh)
 }
 
-func fetchNousPricingForProvider(ctx context.Context, forceRefresh bool) PricingTable {
-	apiKey, baseURL := resolveNousPricingCredentials(ctx)
-	if baseURL == "" {
-		return PricingTable{}
-	}
-	rememberProviderCacheKey(ctx, "nous", strings.TrimRight(baseURL, "/")+pricingAuthFingerprint(apiKey))
-	return fetchNousPricing(ctx, apiKey, baseURL, forceRefresh)
-}
-
 func aiGatewayPricingScope() string { return strings.TrimRight(AIGatewayBaseURL, "/") }
 
 func novitaPricingScope() string {
@@ -1594,18 +1408,6 @@ func novitaPricingScope() string {
 		base = "https://api.novita.ai/openai/v1"
 	}
 	return strings.TrimRight(base, "/")
-}
-
-// CachedNousInferenceBaseURL returns the profile's persisted Nous endpoint as a bare origin without refreshing auth
-func CachedNousInferenceBaseURL(ctx context.Context) string {
-	store := NewStore(home.Dir(ctx))
-	data, err := store.Load()
-	if err != nil {
-		return ""
-	}
-	state := store.ProviderState(data, "nous")
-	url := validateNousInferenceURLFromNetworkFn(optionalBaseURL(state["inference_base_url"]))
-	return strings.TrimSuffix(strings.TrimRight(url, "/"), "/v1")
 }
 
 // Static endpoint identity per provider, dynamic ones resolved in PricingCacheScope
@@ -1655,7 +1457,7 @@ func ResolvePricingProvider(provider, baseURL string) string {
 }
 
 // PricingCacheScope is the current endpoint identity a provider's pricing cache is keyed on, resolved locally
-func PricingCacheScope(ctx context.Context, provider, baseURL, currentProvider, currentBaseURL string) string {
+func PricingCacheScope(ctx context.Context, provider, baseURL string) string {
 	normalized := ResolvePricingProvider(provider, baseURL)
 	if static := staticPricingScopes[normalized]; static != nil {
 		return static()
@@ -1663,21 +1465,6 @@ func PricingCacheScope(ctx context.Context, provider, baseURL, currentProvider, 
 	if normalized == "deepinfra" {
 		key, _ := deepinfraCatalogURLFn()
 		return key
-	}
-	if normalized == "nous" {
-		if envBase := nousInferenceEnvOverrideFn(); envBase != "" {
-			return strings.TrimSuffix(strings.TrimRight(envBase, "/"), "/v1")
-		}
-		if catalogNormalizeProvider(currentProvider) == "nous" && currentBaseURL != "" {
-			return strings.TrimSuffix(strings.TrimRight(currentBaseURL, "/"), "/v1")
-		}
-		if persisted := CachedNousInferenceBaseURL(ctx); persisted != "" {
-			return persisted
-		}
-		if key, ok := providerCacheKeyFor(ctx, normalized); ok {
-			return key
-		}
-		return defaultNousInferenceURL
 	}
 	return ""
 }
@@ -1711,7 +1498,6 @@ var pricingFetchers = map[string]func(context.Context, bool) PricingTable{
 	"deepinfra":  func(ctx context.Context, force bool) PricingTable { return fetchDeepinfraPricing(0, force) },
 	"fireworks":  fetchFireworksPricingForProvider,
 	"kilocode":   fetchKilocodePricingForProvider,
-	"nous":       fetchNousPricingForProvider,
 }
 
 // GetPricingForProvider returns live pricing for the providers that publish it, empty for everything else
@@ -1853,97 +1639,4 @@ func zeroPriced(pricing any, keys [2]string, def string) bool {
 		}
 	}
 	return true
-}
-
-// IsSubscriptionBilled reports a catalog row the gateway bills to a subscription the account holds
-func IsSubscriptionBilled(entry any) bool {
-	m, ok := asMap(entry)
-	return ok && m["billing_mode"] == "subscription"
-}
-
-// IsModelFree reports a row that costs no credits, zero prompt and completion or subscription billed
-func IsModelFree(modelID string, pricing map[string]any) bool {
-	entry, ok := pricing[modelID]
-	if !ok || !truthy(entry) {
-		return false
-	}
-	return IsSubscriptionBilled(entry) || zeroPriced(entry, [2]string{"prompt", "completion"}, "1")
-}
-
-// PricingTableAsAny widens a pricing table to the generic map the plan limit readers take
-func PricingTableAsAny(table PricingTable) map[string]any {
-	out := make(map[string]any, len(table))
-	for k, v := range table {
-		out[k] = v
-	}
-	return out
-}
-
-// CachedPricing is the calling profile's own cached Nous catalog without any fetch
-func CachedPricing(baseURL string) map[string]any {
-	ctx := home.WithOverride(context.Background(), home.Process())
-	return PricingTableAsAny(GetPricingForProvider(ctx, "nous", "", false, true))
-}
-
-// IsPlanFree reports a model that is $0 to the plan, a free id or a row the catalog lists as free
-func IsPlanFree(model string, pricing map[string]any) bool {
-	if model == "" {
-		return false
-	}
-	if strings.HasSuffix(model, ":free") {
-		return true
-	}
-	return len(pricing) > 0 && IsModelFree(model, pricing)
-}
-
-// UsageLevels maps models to free, low, medium or top_tier from what the gateway stamped on the catalog
-func UsageLevels(modelIDs []string, pricing map[string]any) map[string]string {
-	out := map[string]string{}
-	for _, mid := range modelIDs {
-		row := dictOrEmpty(pricing[mid])
-		level, _ := row["usage_level"].(string)
-		switch {
-		case IsPlanFree(mid, pricing):
-			out[mid] = "free"
-		case level == "free" || level == "low" || level == "medium" || level == "top_tier":
-			out[mid] = level
-		case row["top_tier"] == true:
-			out[mid] = "top_tier"
-		}
-	}
-	return out
-}
-
-// IsTopTier reports a model the gateway marked top tier by the same rule as the picker tags
-func IsTopTier(model string, pricing map[string]any) bool {
-	if model == "" {
-		return false
-	}
-	return UsageLevels([]string{model}, pricing)[model] == "top_tier"
-}
-
-// PlanModelLabel is the catalog display name of a model or its id
-func PlanModelLabel(model string, pricing map[string]any) string {
-	if name, ok := dictOrEmpty(pricing[model])["name"].(string); ok && strings.TrimSpace(name) != "" {
-		return strings.TrimSpace(name)
-	}
-	return model
-}
-
-// IsFreeTierModel reports a Nous free tier model from local data only, never a fetch
-func IsFreeTierModel(model, baseURL string) bool {
-	if model == "" {
-		return false
-	}
-	if strings.HasSuffix(model, ":free") || strings.HasPrefix(model, "stealth/") {
-		return true
-	}
-	if baseURL == "" {
-		return false
-	}
-	if RouteIsWelcomeHost(baseURL) {
-		return true
-	}
-	pricing := PeekCachedPricing(baseURL)
-	return len(pricing) > 0 && IsModelFree(model, PricingTableAsAny(pricing))
 }

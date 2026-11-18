@@ -3,7 +3,6 @@ package gateway
 import (
 	"context"
 	"fmt"
-	"log/slog"
 	"slices"
 
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
@@ -73,7 +72,7 @@ func releaseSupersededBotChat(ctx context.Context, db SessionStoreDB, store *Ses
 		return err
 	}
 	if moved {
-		slog.Info(fmt.Sprintf("Bot Chat %s was handed off to %s and that lane moved on: moved it aside", root, route))
+		pkgLog().Info(fmt.Sprintf("Bot Chat %s was handed off to %s and that lane moved on: moved it aside", root, route))
 	}
 	return nil
 }

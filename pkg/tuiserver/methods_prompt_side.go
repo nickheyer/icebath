@@ -10,7 +10,7 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/agent"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/tuigateway"
+	"github.com/nickheyer/icebath/pkg/tuihost"
 )
 
 var promptSideRegistry = &handlerRegistry{}
@@ -37,7 +37,7 @@ func sideTaskID(prefix string) string {
 }
 
 // Shared admission of the side agent RPCs, the session, the text, the parent sid and a fresh task id
-func sideAgentArgs(ctx context.Context, rid any, params map[string]any, prefix string) (*tuigateway.Session, any, string, string, map[string]any) {
+func sideAgentArgs(ctx context.Context, rid any, params map[string]any, prefix string) (*tuihost.Session, any, string, string, map[string]any) {
 	session, errResp := sess(ctx, params, rid)
 	if errResp != nil {
 		return nil, nil, "", "", errResp
@@ -54,7 +54,7 @@ func sideAgentArgs(ctx context.Context, rid any, params map[string]any, prefix s
 }
 
 // Runs body on a session work thread in the session profile and cwd, its text or error emitted on parent
-func spawnSideAgent(ctx context.Context, rid any, session *tuigateway.Session, taskID, parent, event string,
+func spawnSideAgent(ctx context.Context, rid any, session *tuihost.Session, taskID, parent, event string,
 	body func(ctx context.Context) (string, error), extra map[string]any) map[string]any {
 	run := func(workCtx context.Context) {
 		dir := sessionCwd(workCtx, session)
@@ -74,7 +74,7 @@ func spawnSideAgent(ctx context.Context, rid any, session *tuigateway.Session, t
 		} else {
 			payload["text"] = text
 		}
-		tuigateway.Emit(bound, event, parent, payload)
+		tuihost.Emit(bound, event, parent, payload)
 	}
 	startSessionWork(ctx, run, "side-agent-"+taskID, nil)
 	return ok(rid, map[string]any{"task_id": taskID})

@@ -3,7 +3,6 @@ package gateway
 import (
 	"context"
 	"fmt"
-	"log/slog"
 	"slices"
 	"strings"
 	"sync"
@@ -132,7 +131,7 @@ func optStr(v *string) any {
 	return *v
 }
 
-// Wire form of the entry in hermes key order
+// Wire form of the entry in its fixed key order
 func (e *SessionEntry) ToDict() *pyjson.Object {
 	out := pyjson.NewObject()
 	out.Set("session_key", e.SessionKey)
@@ -255,7 +254,7 @@ func SessionEntryFromDict(ctx context.Context, data *pyjson.Object) (*SessionEnt
 		if p, ok := platformMember(pyStrOf(raw)); ok {
 			platform = p
 		} else {
-			slog.Debug(fmt.Sprintf("Unknown platform value %v", raw))
+			pkgLog().Debug(fmt.Sprintf("Unknown platform value %v", raw))
 		}
 	}
 	tokenRaw, _ := data.Get("active_turn_token")
@@ -557,8 +556,10 @@ type SessionStore struct {
 	ftsRebuildLastAttemptAt    *float64
 	spooledDropSessions        map[string]bool
 	profileHomeCache           map[string]string
-	sessionOwnerHints          map[string]string
-	routingHome                string
+	// Guards the profile home cache apart from mu, which the startup prune holds while it resolves homes
+	homeMu            sync.Mutex
+	sessionOwnerHints map[string]string
+	routingHome       string
 }
 
 // Store over the sessions dir priming the state database handle of the active scope
@@ -597,7 +598,7 @@ func (s *SessionStore) hasActiveProcessesSafe(sessionKey, context string) bool {
 	}
 	active, err := s.hasActiveProcessesFn(sessionKey)
 	if err != nil {
-		slog.Warn(fmt.Sprintf("has_active_processes_fn raised during %s for %s; keeping session alive: %v", context, sessionKey, err))
+		pkgLog().Warn(fmt.Sprintf("has_active_processes_fn raised during %s for %s; keeping session alive: %v", context, sessionKey, err))
 		return true
 	}
 	return active
@@ -753,7 +754,7 @@ func (s *SessionStore) applyRouteChecks(ctx context.Context, sessionKey string, 
 		resetReason = checks.resetReason
 	}
 	if staleHit {
-		slog.Warn(fmt.Sprintf("gateway.session: routing key %q -> %s is ended in state.db but still live in sessions.json; "+
+		pkgLog().Warn(fmt.Sprintf("gateway.session: routing key %q -> %s is ended in state.db but still live in sessions.json; "+
 			"dropping stale entry and recovering/recreating the session (#54878)", sessionKey, entry.SessionID))
 	}
 	if staleHit || resetReason != "" {
@@ -1084,7 +1085,7 @@ func (s *SessionStore) RemoveBySessionID(ctx context.Context, sessionID string) 
 		if len(dropped) == 1 {
 			plural = "y"
 		}
-		slog.Info(fmt.Sprintf("SessionStore removed %d routing entr%s for deleted session %s", len(dropped), plural, sessionID))
+		pkgLog().Info(fmt.Sprintf("SessionStore removed %d routing entr%s for deleted session %s", len(dropped), plural, sessionID))
 	}
 	return len(dropped), err
 }
@@ -1098,7 +1099,7 @@ func (s *SessionStore) SwitchSession(ctx context.Context, sessionKey, targetSess
 		return nil, nil
 	}
 	if expectedSessionID != nil && old.SessionID != *expectedSessionID {
-		slog.Info(fmt.Sprintf("Session switch for %s refused: route moved from %s to %s after the caller's snapshot", sessionKey, *expectedSessionID, old.SessionID))
+		pkgLog().Info(fmt.Sprintf("Session switch for %s refused: route moved from %s to %s after the caller's snapshot", sessionKey, *expectedSessionID, old.SessionID))
 		s.mu.Unlock()
 		return nil, nil
 	}
@@ -1120,7 +1121,7 @@ func (s *SessionStore) SwitchSession(ctx context.Context, sessionKey, targetSess
 		defer s.rowSettled(targetSessionID)
 		if s.dbForKey(ctx, sessionKey) != nil && old.SessionID != "" {
 			s.promoteSessionReset(ctx, sessionKey, old.SessionID, "session_switch", func(err error) {
-				slog.Debug(fmt.Sprintf("Session DB end_session failed: %v", err))
+				pkgLog().Debug(fmt.Sprintf("Session DB end_session failed: %v", err))
 			})
 		}
 		if s.dbForKey(ctx, sessionKey) != nil {

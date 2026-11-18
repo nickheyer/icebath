@@ -8,7 +8,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"log/slog"
 	"net"
 	"net/http"
 	"os"
@@ -96,7 +95,7 @@ func lrStablePort() (int, error) {
 		l.Close()
 		return lrDefaultPort, nil
 	}
-	slog.Warn(fmt.Sprintf("port %d busy; managed llama-server falling back to an ephemeral port — resumed sessions follow the live endpoint", lrDefaultPort))
+	pkgLog().Warn(fmt.Sprintf("port %d busy; managed llama-server falling back to an ephemeral port — resumed sessions follow the live endpoint", lrDefaultPort))
 	return lrFreePort()
 }
 
@@ -123,7 +122,7 @@ func lrStableAPIKey() (string, error) {
 		err = os.WriteFile(keyPath, []byte(key), 0o666)
 	}
 	if err != nil {
-		slog.Warn(fmt.Sprintf("could not persist api key (%s); sessions will need a re-pick after restart", err))
+		pkgLog().Warn(fmt.Sprintf("could not persist api key (%s); sessions will need a re-pick after restart", err))
 	}
 	return key, nil
 }
@@ -581,7 +580,7 @@ func (s *LlamaServerSupervisor) spawn(ctx context.Context) error {
 	s.mu.Lock()
 	s.proc, s.job = proc, job
 	s.mu.Unlock()
-	slog.Info(fmt.Sprintf("llama-server router spawned pid=%d port=%d", proc.Pid(), s.Port))
+	pkgLog().Info(fmt.Sprintf("llama-server router spawned pid=%d port=%d", proc.Pid(), s.Port))
 	return s.writeState()
 }
 
@@ -751,7 +750,7 @@ func (s *LlamaServerSupervisor) watch(ctx context.Context) {
 		restarts := s.restarts
 		s.mu.Unlock()
 		backoff := lrRestartBackoff[min(restarts, len(lrRestartBackoff)-1)]
-		slog.Warn(fmt.Sprintf("llama-server exited rc=%d; restart #%d in %ss", rc, restarts+1, pyFloatOrInt(backoff.Seconds())))
+		pkgLog().Warn(fmt.Sprintf("llama-server exited rc=%d; restart #%d in %ss", rc, restarts+1, pyFloatOrInt(backoff.Seconds())))
 		if supBackoffWait(s, backoff) {
 			return
 		}
@@ -763,7 +762,7 @@ func (s *LlamaServerSupervisor) watch(ctx context.Context) {
 			return
 		}
 		if err != nil {
-			slog.Error(fmt.Sprintf("llama-server restart failed: %s", err))
+			pkgLog().Error(fmt.Sprintf("llama-server restart failed: %s", err))
 		}
 	}
 }
@@ -938,7 +937,7 @@ func (s *LlamaServerSupervisor) Models(timeout time.Duration) (RouterModels, err
 		}
 		rawID, ok := m["id"]
 		if !ok {
-			return out, errors.New("KeyError: 'id'")
+			return out, errors.New("a llama-server router model entry has no id")
 		}
 		id, ok := rawID.(string)
 		if !ok {
@@ -1018,7 +1017,7 @@ func (s *LlamaServerSupervisor) SweepIdle(now *float64) []string {
 			if !ok {
 				since = t
 			}
-			slog.Info(fmt.Sprintf("idle probe for %s failed; keeping idle clock (idle %ds)", modelID, int64(t-since)))
+			pkgLog().Info(fmt.Sprintf("idle probe for %s failed; keeping idle clock (idle %ds)", modelID, int64(t-since)))
 			continue
 		}
 		if !*probe {
@@ -1036,12 +1035,12 @@ func (s *LlamaServerSupervisor) SweepIdle(now *float64) []string {
 			continue
 		}
 		if err := s.UnloadModel(modelID); err != nil {
-			slog.Warn(fmt.Sprintf("idle unload of %s failed: %s", modelID, err))
+			pkgLog().Warn(fmt.Sprintf("idle unload of %s failed: %s", modelID, err))
 			continue
 		}
 		s.dropIdle(modelID)
 		unloaded = append(unloaded, modelID)
-		slog.Info(fmt.Sprintf("idle-unloaded %s (idle %ds)", modelID, int64(t-firstIdle)))
+		pkgLog().Info(fmt.Sprintf("idle-unloaded %s (idle %ds)", modelID, int64(t-firstIdle)))
 	}
 	return unloaded
 }
@@ -1056,7 +1055,7 @@ func (s *LlamaServerSupervisor) dropIdle(modelID string) {
 func (s *LlamaServerSupervisor) TouchGenerate(modelID string, timeout time.Duration) bool {
 	ok, err := s.touch(modelID, timeout)
 	if err != nil {
-		slog.Warn(fmt.Sprintf("touch generation failed for %s: %s", modelID, err))
+		pkgLog().Warn(fmt.Sprintf("touch generation failed for %s: %s", modelID, err))
 		return false
 	}
 	return ok
@@ -1083,7 +1082,7 @@ func (s *LlamaServerSupervisor) touch(modelID string, timeout time.Duration) (bo
 	}
 	msg, ok := choice["message"].(map[string]any)
 	if !ok {
-		return false, errors.New("KeyError: 'message'")
+		return false, errors.New("the llama-server reply has no message")
 	}
 	content, err := lrTextOrEmpty(msg["content"])
 	if err != nil {

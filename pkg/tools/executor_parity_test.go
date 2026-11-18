@@ -3,11 +3,12 @@ package tools
 import (
 	"context"
 	"encoding/json"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"reflect"
 	"strings"
 	"sync"
 	"testing"
+
+	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/state"

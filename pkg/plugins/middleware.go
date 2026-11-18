@@ -9,8 +9,8 @@ import (
 )
 
 const (
-	ObserverSchemaVersion   = "hermes.observer.v1"
-	MiddlewareSchemaVersion = "hermes.middleware.v1"
+	ObserverSchemaVersion   = "icebath.observer.v1"
+	MiddlewareSchemaVersion = "icebath.middleware.v1"
 	ToolRequestMiddleware   = "tool_request"
 	ToolExecutionMiddleware = "tool_execution"
 	LLMRequestMiddleware    = "llm_request"

@@ -3,7 +3,6 @@ package feishu
 import (
 	"context"
 	"fmt"
-	"log/slog"
 	"net/http"
 	"sort"
 	"strings"
@@ -125,7 +124,7 @@ func execRequest(ctx context.Context, client larkAPI, method, uri string, paths,
 	if pyrepr.Truthy(body) {
 		bodyText = pystr.Slice(dumpsNoASCII(body), 0, 500)
 	}
-	slog.Info(fmt.Sprintf("[Feishu-Comment] API >>> %s %s paths=%s queries=%s body=%s", method, uri, reprPaths(paths), reprPairs(queries), bodyText))
+	pkgLog().Info(fmt.Sprintf("[Feishu-Comment] API >>> %s %s paths=%s queries=%s body=%s", method, uri, reprPaths(paths), reprPairs(queries), bodyText))
 	httpMethod := http.MethodPost
 	if method == "GET" {
 		httpMethod = http.MethodGet
@@ -164,13 +163,13 @@ func execRequest(ctx context.Context, client larkAPI, method, uri string, paths,
 	if data.Len() > 0 {
 		keys = pyrepr.Repr(anyStrings(data.Keys))
 	}
-	slog.Info(fmt.Sprintf("[Feishu-Comment] API <<< %s %s code=%s msg=%s data_keys=%s", method, uri, pyrepr.Str(code), msg, keys))
+	pkgLog().Info(fmt.Sprintf("[Feishu-Comment] API <<< %s %s code=%s msg=%s data_keys=%s", method, uri, pyrepr.Str(code), msg, keys))
 	if !numberIs(code, 0) {
 		shown := ""
 		if hasRaw {
 			shown = pystr.Slice(string(resp.RawBody), 0, 500)
 		}
-		slog.Warn("[Feishu-Comment] API FAIL raw response: " + shown)
+		pkgLog().Warn("[Feishu-Comment] API FAIL raw response: " + shown)
 	}
 	return code, msg, data
 }
@@ -188,23 +187,23 @@ func codeOK(code any) bool { return numberIs(code, 0) }
 // Warning on a failed code, info otherwise
 func logOutcome(code any, fail, ok string) {
 	if !codeOK(code) {
-		slog.Warn(fail)
+		pkgLog().Warn(fail)
 	} else {
-		slog.Info(ok)
+		pkgLog().Info(ok)
 	}
 }
 
 // Flat field dict of a drive comment event, nil when it carries no event
 func parseDriveCommentEvent(data any) (map[string]string, bool, bool) {
-	slog.Debug("[Feishu-Comment] parse_drive_comment_event: data type=" + pyrepr.TypeName(data))
+	pkgLog().Debug("[Feishu-Comment] parse_drive_comment_event: data type=" + pyrepr.TypeName(data))
 	root := asDictObj(maybeJSON(data, pyjson.NewObject()))
 	event, ok := root.Get("event")
 	if !ok || event == nil {
-		slog.Debug("[Feishu-Comment] parse_drive_comment_event: no .event attribute, returning None")
+		pkgLog().Debug("[Feishu-Comment] parse_drive_comment_event: no .event attribute, returning None")
 		return nil, false, false
 	}
 	evt := asDictObj(event)
-	slog.Debug("[Feishu-Comment] parse_drive_comment_event: evt keys=" + pyrepr.Repr(anyStrings(evt.Keys)))
+	pkgLog().Debug("[Feishu-Comment] parse_drive_comment_event: evt keys=" + pyrepr.Repr(anyStrings(evt.Keys)))
 	meta := asDictObj(orObj(dget(evt, "notice_meta")))
 	fields := map[string]string{}
 	for _, k := range []string{"event_id", "comment_id", "reply_id", "timestamp"} {
@@ -244,18 +243,18 @@ func updateCommentReaction(ctx context.Context, client larkAPI, action, fileToke
 
 // Title, URL and doc type of a document from the batch meta API, empty on failure
 func queryDocumentMeta(ctx context.Context, client larkAPI, fileToken, fileType string) *pyjson.Object {
-	slog.Debug(fmt.Sprintf("[Feishu-Comment] query_document_meta: file_token=%s file_type=%s", fileToken, fileType))
+	pkgLog().Debug(fmt.Sprintf("[Feishu-Comment] query_document_meta: file_token=%s file_type=%s", fileToken, fileType))
 	code, msg, data := execRequest(ctx, client, "POST", batchQueryMetaURI, nil, nil,
 		obj("request_docs", []any{obj("doc_token", fileToken, "doc_type", fileType)}, "with_url", true))
 	if !codeOK(code) {
-		slog.Warn(fmt.Sprintf("[Feishu-Comment] Meta batch_query failed: code=%s msg=%s", pyrepr.Str(code), msg))
+		pkgLog().Warn(fmt.Sprintf("[Feishu-Comment] Meta batch_query failed: code=%s msg=%s", pyrepr.Str(code), msg))
 		return pyjson.NewObject()
 	}
 	metas := dgetDef(data, "metas", []any{})
-	slog.Debug(fmt.Sprintf("[Feishu-Comment] query_document_meta: raw metas type=%s value=%s", pyrepr.TypeName(metas), pystr.Slice(pyrepr.Str(metas), 0, 300)))
+	pkgLog().Debug(fmt.Sprintf("[Feishu-Comment] query_document_meta: raw metas type=%s value=%s", pyrepr.TypeName(metas), pystr.Slice(pyrepr.Str(metas), 0, 300)))
 	_, isDict := metas.(*pyjson.Object)
 	if !pyrepr.Truthy(metas) && !isDict {
-		slog.Debug("[Feishu-Comment] query_document_meta: no metas found")
+		pkgLog().Debug("[Feishu-Comment] query_document_meta: no metas found")
 		return pyjson.NewObject()
 	}
 	var meta *pyjson.Object
@@ -276,23 +275,23 @@ func queryDocumentMeta(ctx context.Context, client larkAPI, fileToken, fileType 
 	if !pyrepr.Truthy(dget(result, "url")) {
 		url = ""
 	}
-	slog.Info(fmt.Sprintf("[Feishu-Comment] query_document_meta: title=%s url=%s", pyrepr.Str(dget(result, "title")), pystr.Slice(url, 0, 80)))
+	pkgLog().Info(fmt.Sprintf("[Feishu-Comment] query_document_meta: title=%s url=%s", pyrepr.Str(dget(result, "title")), pystr.Slice(url, 0, 80)))
 	return result
 }
 
 // Logs and sleeps between retries, logging the final failure on the last attempt
 func retryPause(ctx context.Context, attempt int, retryMsg, failMsg string) bool {
 	if attempt < commentRetryLimit-1 {
-		slog.Info(retryMsg)
+		pkgLog().Info(retryMsg)
 		return sleepCtx(ctx, commentRetryDelayTime)
 	}
-	slog.Warn(failMsg)
+	pkgLog().Warn(failMsg)
 	return false
 }
 
 // One comment's details with retries while it is not queryable yet, empty on failure
 func batchQueryComment(ctx context.Context, client larkAPI, fileToken, fileType, commentID string) *pyjson.Object {
-	slog.Debug(fmt.Sprintf("[Feishu-Comment] batch_query_comment: file_token=%s comment_id=%s", fileToken, commentID))
+	pkgLog().Debug(fmt.Sprintf("[Feishu-Comment] batch_query_comment: file_token=%s comment_id=%s", fileToken, commentID))
 	var data *pyjson.Object
 	for attempt := 0; attempt < commentRetryLimit; attempt++ {
 		code, msg, d := execRequest(ctx, client, "POST", batchQueryCommentURI, [][2]string{{"file_token", fileToken}},
@@ -312,9 +311,9 @@ func batchQueryComment(ctx context.Context, client larkAPI, fileToken, fileType,
 	if isList {
 		n = len(list)
 	}
-	slog.Debug(fmt.Sprintf("[Feishu-Comment] batch_query_comment: got %d items", n))
+	pkgLog().Debug(fmt.Sprintf("[Feishu-Comment] batch_query_comment: got %d items", n))
 	if !pyrepr.Truthy(items) || !isList {
-		slog.Warn("[Feishu-Comment] batch_query_comment: empty items, raw data keys=" + pyrepr.Repr(anyStrings(data.Keys)))
+		pkgLog().Warn("[Feishu-Comment] batch_query_comment: empty items, raw data keys=" + pyrepr.Repr(anyStrings(data.Keys)))
 		return pyjson.NewObject()
 	}
 	item := mustObj(list[0])
@@ -323,7 +322,7 @@ func batchQueryComment(ctx context.Context, client larkAPI, fileToken, fileType,
 		replies, _ := dgetDef(rl, "replies", []any{}).([]any)
 		replyCount = fmt.Sprint(len(replies))
 	}
-	slog.Info(fmt.Sprintf("[Feishu-Comment] batch_query_comment: is_whole=%s quote=%s reply_count=%s", pyrepr.Str(dget(item, "is_whole")),
+	pkgLog().Info(fmt.Sprintf("[Feishu-Comment] batch_query_comment: is_whole=%s quote=%s reply_count=%s", pyrepr.Str(dget(item, "is_whole")),
 		pystr.Slice(strOr(dgetDef(item, "quote", "")), 0, 60), replyCount))
 	return item
 }
@@ -339,14 +338,14 @@ func listAllPages(ctx context.Context, client larkAPI, uri string, paths, querie
 		}
 		code, msg, data := execRequest(ctx, client, "GET", uri, paths, q, nil)
 		if !codeOK(code) {
-			slog.Warn(fmt.Sprintf(failFmt, pyrepr.Str(code), msg))
+			pkgLog().Warn(fmt.Sprintf(failFmt, pyrepr.Str(code), msg))
 			return out, false
 		}
 		items, isList := dgetDef(data, "items", []any{}).([]any)
 		if isList {
 			out = append(out, items...)
 			if pageFmt != "" {
-				slog.Debug(fmt.Sprintf(pageFmt, len(items), len(out)))
+				pkgLog().Debug(fmt.Sprintf(pageFmt, len(items), len(out)))
 			}
 		}
 		pageToken = ""
@@ -369,17 +368,17 @@ func strOrRaw(v any) string {
 
 // Every whole document comment, paginated
 func listWholeComments(ctx context.Context, client larkAPI, fileToken, fileType string) []any {
-	slog.Debug("[Feishu-Comment] list_whole_comments: file_token=" + fileToken)
+	pkgLog().Debug("[Feishu-Comment] list_whole_comments: file_token=" + fileToken)
 	all, _ := listAllPages(ctx, client, listCommentsURI, [][2]string{{"file_token", fileToken}},
 		[][2]string{{"file_type", fileType}, {"is_whole", "true"}, {"page_size", "100"}, {"user_id_type", "open_id"}},
 		"[Feishu-Comment] List whole comments failed: code=%s msg=%s", "[Feishu-Comment] list_whole_comments: page got %d items, total=%d")
-	slog.Info(fmt.Sprintf("[Feishu-Comment] list_whole_comments: total %d whole comments fetched", len(all)))
+	pkgLog().Info(fmt.Sprintf("[Feishu-Comment] list_whole_comments: total %d whole comments fetched", len(all)))
 	return all
 }
 
 // Every reply of a thread, retrying while an expected reply id is not listed yet
 func listCommentReplies(ctx context.Context, client larkAPI, fileToken, fileType, commentID, expectReplyID string) []any {
-	slog.Debug(fmt.Sprintf("[Feishu-Comment] list_comment_replies: file_token=%s comment_id=%s", fileToken, commentID))
+	pkgLog().Debug(fmt.Sprintf("[Feishu-Comment] list_comment_replies: file_token=%s comment_id=%s", fileToken, commentID))
 	var all []any
 	for attempt := 0; attempt < commentRetryLimit; attempt++ {
 		var ok bool
@@ -398,7 +397,7 @@ func listCommentReplies(ctx context.Context, client larkAPI, fileToken, fileType
 		retryPause(ctx, attempt, fmt.Sprintf("[Feishu-Comment] list_comment_replies: reply_id=%s not found, retry %d/%d", expectReplyID, attempt+1, commentRetryLimit),
 			fmt.Sprintf("[Feishu-Comment] list_comment_replies: reply_id=%s not found after %d attempts", expectReplyID, commentRetryLimit))
 	}
-	slog.Info(fmt.Sprintf("[Feishu-Comment] list_comment_replies: total %d replies fetched", len(all)))
+	pkgLog().Info(fmt.Sprintf("[Feishu-Comment] list_comment_replies: total %d replies fetched", len(all)))
 	return all
 }
 
@@ -410,7 +409,7 @@ func sanitizeCommentText(text string) string {
 // Posts a reply to a local comment thread, returning success and the code
 func replyToComment(ctx context.Context, client larkAPI, fileToken, fileType, commentID, text string) (bool, any) {
 	text = sanitizeCommentText(text)
-	slog.Info(fmt.Sprintf("[Feishu-Comment] reply_to_comment: comment_id=%s text=%s", commentID, pystr.Slice(text, 0, 100)))
+	pkgLog().Info(fmt.Sprintf("[Feishu-Comment] reply_to_comment: comment_id=%s text=%s", commentID, pystr.Slice(text, 0, 100)))
 	code, msg, _ := execRequest(ctx, client, "POST", repliesURI, [][2]string{{"file_token", fileToken}, {"comment_id", commentID}},
 		[][2]string{{"file_type", fileType}}, obj("content", obj("elements", []any{obj("type", "text_run", "text_run", obj("text", text))})))
 	logOutcome(code, fmt.Sprintf("[Feishu-Comment] reply_to_comment FAILED: code=%s msg=%s comment_id=%s", pyrepr.Str(code), msg, commentID),
@@ -421,7 +420,7 @@ func replyToComment(ctx context.Context, client larkAPI, fileToken, fileType, co
 // Adds a new whole document comment, reporting success
 func addWholeComment(ctx context.Context, client larkAPI, fileToken, fileType, text string) bool {
 	text = sanitizeCommentText(text)
-	slog.Info(fmt.Sprintf("[Feishu-Comment] add_whole_comment: file_token=%s text=%s", fileToken, pystr.Slice(text, 0, 100)))
+	pkgLog().Info(fmt.Sprintf("[Feishu-Comment] add_whole_comment: file_token=%s text=%s", fileToken, pystr.Slice(text, 0, 100)))
 	code, msg, _ := execRequest(ctx, client, "POST", addCommentURI, [][2]string{{"file_token", fileToken}}, nil,
 		obj("file_type", fileType, "reply_elements", []any{obj("type", "text", "text", text)}))
 	logOutcome(code, fmt.Sprintf("[Feishu-Comment] add_whole_comment FAILED: code=%s msg=%s", pyrepr.Str(code), msg), "[Feishu-Comment] add_whole_comment OK")
@@ -458,18 +457,18 @@ func lastIndexRune(r []rune, c rune) int {
 // Posts the agent reply in chunks, a local reply falling back to whole comments when replies are not allowed
 func deliverCommentReply(ctx context.Context, client larkAPI, fileToken, fileType, commentID, text string, isWhole bool) bool {
 	chunks := chunkText(text, replyChunkSize)
-	slog.Info(fmt.Sprintf("[Feishu-Comment] deliver_comment_reply: is_whole=%s comment_id=%s text_len=%d chunks=%d", pyBool(isWhole), commentID,
+	pkgLog().Info(fmt.Sprintf("[Feishu-Comment] deliver_comment_reply: is_whole=%s comment_id=%s text_len=%d chunks=%d", pyBool(isWhole), commentID,
 		pystr.Len(text), len(chunks)))
 	for i, chunk := range chunks {
 		if len(chunks) > 1 {
-			slog.Info(fmt.Sprintf("[Feishu-Comment] deliver_comment_reply: sending chunk %d/%d (%d chars)", i+1, len(chunks), pystr.Len(chunk)))
+			pkgLog().Info(fmt.Sprintf("[Feishu-Comment] deliver_comment_reply: sending chunk %d/%d (%d chars)", i+1, len(chunks), pystr.Len(chunk)))
 		}
 		ok, code := true, any(int64(0))
 		if !isWhole {
 			ok, code = replyToComment(ctx, client, fileToken, fileType, commentID, chunk)
 		}
 		if !isWhole && !ok && numberIs(code, 1069302) {
-			slog.Info("[Feishu-Comment] Reply not allowed (1069302), falling back to add_whole_comment")
+			pkgLog().Info("[Feishu-Comment] Reply not allowed (1069302), falling back to add_whole_comment")
 			isWhole = true
 		}
 		if isWhole {
@@ -586,7 +585,7 @@ func extractDocsLinks(replies []any) []*docLink {
 func wikiNode(ctx context.Context, client larkAPI, queries [][2]string, failMsg func(code any, msg string) string) *pyjson.Object {
 	code, msg, data := execRequest(ctx, client, "GET", wikiGetNodeURI, nil, queries, nil)
 	if !codeOK(code) {
-		slog.Warn(failMsg(code, msg))
+		pkgLog().Warn(failMsg(code, msg))
 		return nil
 	}
 	return mustObj(dgetDef(data, "node", pyjson.NewObject()))
@@ -618,10 +617,10 @@ func resolveWikiNodes(ctx context.Context, client larkAPI, links []*docLink) []*
 		}
 		rtype, rtoken := strOrRaw(dgetDef(node, "obj_type", "")), strOrRaw(dgetDef(node, "obj_token", ""))
 		if rtype != "" && rtoken != "" {
-			slog.Info(fmt.Sprintf("[Feishu-Comment] Wiki resolved: %s -> %s:%s", token, rtype, rtoken))
+			pkgLog().Info(fmt.Sprintf("[Feishu-Comment] Wiki resolved: %s -> %s:%s", token, rtype, rtoken))
 			link.ResolvedType, link.ResolvedToken, link.resolvedTypeSet, link.resolvedSet = rtype, rtoken, true, true
 		} else {
-			slog.Warn("[Feishu-Comment] Wiki resolve returned empty: " + token)
+			pkgLog().Warn("[Feishu-Comment] Wiki resolve returned empty: " + token)
 		}
 	}
 	return links
@@ -769,7 +768,7 @@ func loadSessionHistory(key string) []map[string]any {
 	entry, ok := commentSessionCache[key]
 	if ok && nowFn()-entry.lastAccess > sessionTTLSeconds {
 		delete(commentSessionCache, key)
-		slog.Info("[Feishu-Comment] Session expired: " + key)
+		pkgLog().Info("[Feishu-Comment] Session expired: " + key)
 		return nil
 	}
 	if !ok {
@@ -794,7 +793,7 @@ func saveSessionHistory(key string, messages []map[string]any) {
 	commentSessionMu.Lock()
 	commentSessionCache[key] = &commentSession{messages: cleaned, lastAccess: nowFn()}
 	commentSessionMu.Unlock()
-	slog.Info(fmt.Sprintf("[Feishu-Comment] Session saved: %s (%d messages)", key, len(cleaned)))
+	pkgLog().Info(fmt.Sprintf("[Feishu-Comment] Session saved: %s (%d messages)", key, len(cleaned)))
 }
 
 // CommentAgentRun is the outcome of one comment agent turn
@@ -822,7 +821,7 @@ var CommentAgentRunner func(ctx context.Context, prompt string, hooks CommentAge
 
 // Runs the comment agent with the lark client injected for the feishu tools, empty on failure
 func runCommentAgent(ctx context.Context, prompt string, client larkAPI, sessionKey string) string {
-	slog.Info("[Feishu-Comment] _run_comment_agent: injecting lark client into tool thread-locals")
+	pkgLog().Info("[Feishu-Comment] _run_comment_agent: injecting lark client into tool thread-locals")
 	var turnClient tools.FeishuAPI
 	if client != nil {
 		turnClient = client
@@ -831,26 +830,26 @@ func runCommentAgent(ctx context.Context, prompt string, client larkAPI, session
 	var history []map[string]any
 	hooks := CommentAgentHooks{
 		OnRuntime: func(rt CommentAgentRuntime) []map[string]any {
-			slog.Info(fmt.Sprintf("[Feishu-Comment] _run_comment_agent: model=%s provider=%s base_url=%s", rt.Model, rt.Provider, pystr.Slice(rt.BaseURL, 0, 50)))
+			pkgLog().Info(fmt.Sprintf("[Feishu-Comment] _run_comment_agent: model=%s provider=%s base_url=%s", rt.Model, rt.Provider, pystr.Slice(rt.BaseURL, 0, 50)))
 			if sessionKey != "" {
 				history = loadSessionHistory(sessionKey)
 			}
 			if len(history) > 0 {
-				slog.Info(fmt.Sprintf("[Feishu-Comment] _run_comment_agent: loaded %d history messages from session %s", len(history), sessionKey))
+				pkgLog().Info(fmt.Sprintf("[Feishu-Comment] _run_comment_agent: loaded %d history messages from session %s", len(history), sessionKey))
 			}
 			return history
 		},
 		OnRun: func() {
-			slog.Info(fmt.Sprintf("[Feishu-Comment] _run_comment_agent: calling run_conversation (prompt=%d chars, history=%d)", pystr.Len(prompt), len(history)))
+			pkgLog().Info(fmt.Sprintf("[Feishu-Comment] _run_comment_agent: calling run_conversation (prompt=%d chars, history=%d)", pystr.Len(prompt), len(history)))
 		},
 	}
 	run, err := CommentAgentRunner(ctx, prompt, hooks)
 	if err != nil {
-		slog.Error("[Feishu-Comment] _run_comment_agent: agent failed: " + err.Error())
+		pkgLog().Error("[Feishu-Comment] _run_comment_agent: agent failed: " + err.Error())
 		return ""
 	}
 	response := pystr.Strip(run.FinalResponse)
-	slog.Info(fmt.Sprintf("[Feishu-Comment] _run_comment_agent: done api_calls=%d response_len=%d response=%s", run.APICalls, pystr.Len(response), pystr.Slice(response, 0, 200)))
+	pkgLog().Info(fmt.Sprintf("[Feishu-Comment] _run_comment_agent: done api_calls=%d response_len=%d response=%s", run.APICalls, pystr.Len(response), pystr.Slice(response, 0, 200)))
 	if sessionKey != "" && len(run.Messages) > 0 {
 		saveSessionHistory(sessionKey, run.Messages)
 	}
@@ -874,7 +873,7 @@ func newTimelineEntry(r *pyjson.Object, selfOpenID string) timelineEntry {
 
 // Prompt for a whole document comment from every whole comment's replies
 func wholeCommentPrompt(ctx context.Context, client larkAPI, fromOpenID string, doc commentDoc) string {
-	slog.Info("[Feishu-Comment] Fetching whole-document comments for timeline...")
+	pkgLog().Info("[Feishu-Comment] Fetching whole-document comments for timeline...")
 	var replies []any
 	for _, wc := range listWholeComments(ctx, client, doc.FileToken, doc.FileType) {
 		replies = append(replies, replyListReplies(mustObj(wc))...)
@@ -901,13 +900,13 @@ func wholeCommentPrompt(ctx context.Context, client larkAPI, fromOpenID string, 
 	if currentText != "" {
 		shown = pystr.Slice(currentText, 0, 80)
 	}
-	slog.Info(fmt.Sprintf("[Feishu-Comment] Whole timeline: %d entries, current_idx=%d, self_idx=%d, text=%s", len(timeline), currentIndex, nearestSelf, shown))
+	pkgLog().Info(fmt.Sprintf("[Feishu-Comment] Whole timeline: %d entries, current_idx=%d, self_idx=%d, text=%s", len(timeline), currentIndex, nearestSelf, shown))
 	return buildWholeCommentPrompt(doc, currentText, timeline, currentIndex, nearestSelf, referencedDocsText(ctx, client, replies, doc.FileToken))
 }
 
 // Prompt for a local comment from its thread replies
 func localCommentPrompt(ctx context.Context, client larkAPI, commentID, replyID, fromOpenID, quoteText string, doc commentDoc) string {
-	slog.Info("[Feishu-Comment] Fetching comment thread replies...")
+	pkgLog().Info("[Feishu-Comment] Fetching comment thread replies...")
 	replies := listCommentReplies(ctx, client, doc.FileToken, doc.FileType, commentID, replyID)
 	timeline := make([]timelineEntry, len(replies))
 	for i, r := range replies {
@@ -934,7 +933,7 @@ func localCommentPrompt(ctx context.Context, client larkAPI, commentID, replyID,
 		}
 		return pystr.Slice(t, 0, 60)
 	}
-	slog.Info(fmt.Sprintf("[Feishu-Comment] Local timeline: %d entries, target_idx=%d, quote=%s root=%s target=%s", len(timeline), targetIndex,
+	pkgLog().Info(fmt.Sprintf("[Feishu-Comment] Local timeline: %d entries, target_idx=%d, quote=%s root=%s target=%s", len(timeline), targetIndex,
 		short(quoteText), short(rootText), short(targetText)))
 	return buildLocalCommentPrompt(doc, commentID, quoteText, rootText, targetText, timeline, targetIndex, referencedDocsText(ctx, client, replies, doc.FileToken))
 }
@@ -955,7 +954,7 @@ func HandleDriveCommentEvent(ctx context.Context, client larkAPI, data any, self
 		return nil
 	}
 	if secondary && provider.IsMultiplexActive(ctx) {
-		slog.Warn("[Feishu-Comment] Dropping unscoped comment event from a secondary profile adapter")
+		pkgLog().Warn("[Feishu-Comment] Dropping unscoped comment event from a secondary profile adapter")
 		return nil
 	}
 	handleDriveCommentEvent(provider.WithLaunchProfileScopeIfMultiplexed(ctx), client, data, selfOpenID)
@@ -964,30 +963,30 @@ func HandleDriveCommentEvent(ctx context.Context, client larkAPI, data any, self
 
 // Parses, filters and access checks a comment event, then builds the prompt, runs the agent and delivers the reply
 func handleDriveCommentEvent(ctx context.Context, client larkAPI, data any, selfOpenID string) {
-	slog.Info("[Feishu-Comment] ========== handle_drive_comment_event START ==========")
+	pkgLog().Info("[Feishu-Comment] ========== handle_drive_comment_event START ==========")
 	parsed, _, ok := parseDriveCommentEvent(data)
 	if !ok {
-		slog.Warn("[Feishu-Comment] Dropping malformed drive comment event")
+		pkgLog().Warn("[Feishu-Comment] Dropping malformed drive comment event")
 		return
 	}
-	slog.Info("[Feishu-Comment] [Step 0/5] Event parsed successfully")
+	pkgLog().Info("[Feishu-Comment] [Step 0/5] Event parsed successfully")
 	fileToken, fileType, commentID, replyID := parsed["file_token"], parsed["file_type"], parsed["comment_id"], parsed["reply_id"]
 	fromOpenID, toOpenID, noticeType := parsed["from_open_id"], parsed["to_open_id"], parsed["notice_type"]
 	switch {
 	case fromOpenID != "" && selfOpenID != "" && fromOpenID == selfOpenID:
-		slog.Debug("[Feishu-Comment] Skipping self-authored event: from=" + fromOpenID)
+		pkgLog().Debug("[Feishu-Comment] Skipping self-authored event: from=" + fromOpenID)
 		return
 	case toOpenID == "" || (selfOpenID != "" && toOpenID != selfOpenID):
-		slog.Debug("[Feishu-Comment] Skipping event not addressed to self: to=" + firstNonEmpty(toOpenID, "(empty)"))
+		pkgLog().Debug("[Feishu-Comment] Skipping event not addressed to self: to=" + firstNonEmpty(toOpenID, "(empty)"))
 		return
 	case noticeType != "" && !allowedNoticeTypes[noticeType]:
-		slog.Debug("[Feishu-Comment] Skipping notice_type=" + noticeType)
+		pkgLog().Debug("[Feishu-Comment] Skipping notice_type=" + noticeType)
 		return
 	case fileToken == "" || fileType == "" || commentID == "":
-		slog.Warn("[Feishu-Comment] Missing required fields, skipping")
+		pkgLog().Warn("[Feishu-Comment] Missing required fields, skipping")
 		return
 	}
-	slog.Info(fmt.Sprintf("[Feishu-Comment] Event: notice=%s file=%s:%s comment=%s from=%s", noticeType, fileType, fileToken, commentID, fromOpenID))
+	pkgLog().Info(fmt.Sprintf("[Feishu-Comment] Event: notice=%s file=%s:%s comment=%s from=%s", noticeType, fileType, fileToken, commentID, fromOpenID))
 	cfg, err := LoadConfig(ctx)
 	if err != nil {
 		panic(attrError{err.Error()})
@@ -999,7 +998,7 @@ func handleDriveCommentEvent(ctx context.Context, client larkAPI, data any, self
 		}
 	}
 	if !pyrepr.Truthy(rule.Enabled) {
-		slog.Info(fmt.Sprintf("[Feishu-Comment] Comments disabled for %s:%s, skipping", fileType, fileToken))
+		pkgLog().Info(fmt.Sprintf("[Feishu-Comment] Comments disabled for %s:%s, skipping", fileType, fileToken))
 		return
 	}
 	allowed, err := IsUserAllowed(ctx, rule, fromOpenID)
@@ -1007,17 +1006,17 @@ func handleDriveCommentEvent(ctx context.Context, client larkAPI, data any, self
 		panic(attrError{err.Error()})
 	}
 	if !allowed {
-		slog.Info(fmt.Sprintf("[Feishu-Comment] User %s denied (policy=%s, rule=%s)", fromOpenID, rule.Policy, rule.MatchSource))
+		pkgLog().Info(fmt.Sprintf("[Feishu-Comment] User %s denied (policy=%s, rule=%s)", fromOpenID, rule.Policy, rule.MatchSource))
 		return
 	}
-	slog.Info(fmt.Sprintf("[Feishu-Comment] Access granted: user=%s policy=%s rule=%s", fromOpenID, rule.Policy, rule.MatchSource))
+	pkgLog().Info(fmt.Sprintf("[Feishu-Comment] Access granted: user=%s policy=%s rule=%s", fromOpenID, rule.Policy, rule.MatchSource))
 	if replyID != "" {
 		go func() {
 			defer func() { _ = recover() }()
 			updateCommentReaction(context.WithoutCancel(ctx), client, "add", fileToken, fileType, replyID, "OK")
 		}()
 	}
-	slog.Info("[Feishu-Comment] [Step 2/5] Parallel fetch: doc meta + comment batch_query")
+	pkgLog().Info("[Feishu-Comment] [Step 2/5] Parallel fetch: doc meta + comment batch_query")
 	var meta, detail *pyjson.Object
 	var wg sync.WaitGroup
 	var metaPanic, detailPanic any
@@ -1041,30 +1040,30 @@ func handleDriveCommentEvent(ctx context.Context, client larkAPI, data any, self
 	doc := commentDoc{Title: pyrepr.Str(dgetDef(meta, "title", "Untitled")), URL: pyrepr.Str(dgetDef(meta, "url", "")), FileToken: fileToken,
 		FileType: fileType, SelfOpenID: selfOpenID}
 	isWhole := pyrepr.Truthy(dget(detail, "is_whole"))
-	slog.Info(fmt.Sprintf("[Feishu-Comment] Comment context: title=%s is_whole=%s", doc.Title, pyBool(isWhole)))
-	slog.Info(fmt.Sprintf("[Feishu-Comment] [Step 3/5] Building timeline (is_whole=%s)", pyBool(isWhole)))
+	pkgLog().Info(fmt.Sprintf("[Feishu-Comment] Comment context: title=%s is_whole=%s", doc.Title, pyBool(isWhole)))
+	pkgLog().Info(fmt.Sprintf("[Feishu-Comment] [Step 3/5] Building timeline (is_whole=%s)", pyBool(isWhole)))
 	var prompt string
 	if isWhole {
 		prompt = wholeCommentPrompt(ctx, client, fromOpenID, doc)
 	} else {
 		prompt = localCommentPrompt(ctx, client, commentID, replyID, fromOpenID, pyrepr.Str(dgetDef(detail, "quote", "")), doc)
 	}
-	slog.Info(fmt.Sprintf("[Feishu-Comment] [Step 4/5] Prompt built (%d chars), running agent...", pystr.Len(prompt)))
-	slog.Debug("[Feishu-Comment] Full prompt:\n" + prompt)
+	pkgLog().Info(fmt.Sprintf("[Feishu-Comment] [Step 4/5] Prompt built (%d chars), running agent...", pystr.Len(prompt)))
+	pkgLog().Debug("[Feishu-Comment] Full prompt:\n" + prompt)
 	response := runCommentAgent(ctx, prompt, client, commentSessionKey(fileType, fileToken))
 	if response == "" || strings.Contains(response, noReplySentinel) {
-		slog.Info("[Feishu-Comment] Agent returned NO_REPLY, skipping delivery")
+		pkgLog().Info("[Feishu-Comment] Agent returned NO_REPLY, skipping delivery")
 	} else {
-		slog.Info(fmt.Sprintf("[Feishu-Comment] Agent response (%d chars): %s", pystr.Len(response), pystr.Slice(response, 0, 200)))
-		slog.Info(fmt.Sprintf("[Feishu-Comment] [Step 5/5] Delivering reply (is_whole=%s, comment_id=%s)", pyBool(isWhole), commentID))
+		pkgLog().Info(fmt.Sprintf("[Feishu-Comment] Agent response (%d chars): %s", pystr.Len(response), pystr.Slice(response, 0, 200)))
+		pkgLog().Info(fmt.Sprintf("[Feishu-Comment] [Step 5/5] Delivering reply (is_whole=%s, comment_id=%s)", pyBool(isWhole), commentID))
 		if deliverCommentReply(ctx, client, fileToken, fileType, commentID, response, isWhole) {
-			slog.Info("[Feishu-Comment] Reply delivered successfully")
+			pkgLog().Info("[Feishu-Comment] Reply delivered successfully")
 		} else {
-			slog.Error("[Feishu-Comment] Failed to deliver reply")
+			pkgLog().Error("[Feishu-Comment] Failed to deliver reply")
 		}
 	}
 	if replyID != "" {
 		updateCommentReaction(ctx, client, "delete", fileToken, fileType, replyID, "OK")
 	}
-	slog.Info("[Feishu-Comment] ========== handle_drive_comment_event END ==========")
+	pkgLog().Info("[Feishu-Comment] ========== handle_drive_comment_event END ==========")
 }

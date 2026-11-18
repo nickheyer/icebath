@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"iter"
-	"log/slog"
 	"os"
 	"strings"
 	"sync"
@@ -37,8 +36,6 @@ var (
 	hostProfileIsStandalone   = profiles.ProfileIsStandalone
 	hostLiveGatewayPidForHome = LiveGatewayPidForHome
 )
-
-func attachLog() *slog.Logger { return slog.Default().With("logger", "gateway.host_attach") }
 
 // Normalized profile name, a lowered trimmed name when it is not a valid profile id
 func normalizeAttachProfile(name string) string {
@@ -149,11 +146,11 @@ func identityMatches(identity *pyjson.Object, pid int, h string) bool {
 	if got, _ := identity.Get("pid"); !jsonEqualsInt(got, pid) {
 		return false
 	}
-	reported, _ := identity.Get("hermes_home")
+	reported, _ := home.RecordValue(identity.Get, home.RecordKey)
 	if !pyTruthy(reported) {
 		return true
 	}
-	same, err := sameHermesHome(pyrepr.Str(reported), h)
+	same, err := sameIcebathHome(pyrepr.Str(reported), h)
 	if err != nil {
 		return pyrepr.Str(reported) == h
 	}
@@ -359,7 +356,7 @@ func StandaloneAttachDecision(ctx context.Context, ourHome string, owner *HostGa
 			return &HostAttachDecision{Outcome: HostAttachRefuse, Message: StandaloneRescanMessage(profile), Owner: peer, Transient: true}, nil
 		}
 	}
-	attachLog().Info(fmt.Sprintf("Profile '%s' is standalone by config; starting beside the host multiplexer", profile))
+	pkgLog().Info(fmt.Sprintf("Profile '%s' is standalone by config; starting beside the host multiplexer", profile))
 	return &HostAttachDecision{Outcome: HostAttachStart, Owner: owner}, nil
 }
 
@@ -412,7 +409,7 @@ func DecideHostAttach(ctx context.Context, ourHome string, replace bool) (HostAt
 		return HostAttachDecision{Outcome: HostAttachAttach, Message: AttachMessage(attached, profile), Owner: attached, Transient: true}, nil
 	}
 	if attached != nil && attached.Standalone {
-		attachLog().Info(fmt.Sprintf("Another profile's standalone gateway owns this host (%s); starting profile '%s' beside it. "+
+		pkgLog().Info(fmt.Sprintf("Another profile's standalone gateway owns this host (%s); starting profile '%s' beside it. "+
 			"Fold every profile onto one gateway with: %s", attached.Describe(), profile, HostMigrateCommand))
 		return HostAttachDecision{Outcome: HostAttachStart}, nil
 	}
@@ -435,7 +432,7 @@ func HostMultiplexerServing(ctx context.Context, profileName string) (string, bo
 	if name == "" {
 		current, err := currentProfileName(ctx)
 		if err != nil {
-			attachLog().Debug("Host multiplexer probe failed", "error", err)
+			pkgLog().Debug("Host multiplexer probe failed", "error", err)
 			return "", false, nil
 		}
 		name = current
@@ -449,11 +446,11 @@ func HostMultiplexerServing(ctx context.Context, profileName string) (string, bo
 	}
 	other, err := launchedByOtherTenant(g.Home, home.Dir(ctx))
 	if err != nil {
-		attachLog().Debug("Host multiplexer probe failed", "error", err)
+		pkgLog().Debug("Host multiplexer probe failed", "error", err)
 		return "", false, nil
 	}
 	if other {
-		attachLog().Debug(fmt.Sprintf("Host gateway %s belongs to another Icebath home; not ours", g.Describe()))
+		pkgLog().Debug(fmt.Sprintf("Host gateway %s belongs to another Icebath home; not ours", g.Describe()))
 		return "", false, nil
 	}
 	return g.ProfileLabel(), true, nil

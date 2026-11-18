@@ -20,6 +20,7 @@ import (
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	"go.opentelemetry.io/otel/sdk/trace/tracetest"
 
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/internal/pybase64"
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
@@ -65,7 +66,7 @@ func mediaFromDataURI(uri string) *lfMedia {
 	m := &lfMedia{source: "base64_data_uri"}
 	content, contentType, err := parseDataURI(uri)
 	if err != nil {
-		sdkLog().Error("Error parsing base64 data URI", "error", err)
+		pkgLog().Error("Error parsing base64 data URI", "error", err)
 	} else {
 		m.content, m.hasContent, m.contentType, m.hasType = content, true, contentType, true
 	}
@@ -235,7 +236,7 @@ func (m *mediaManager) join() {
 func (m *mediaManager) run(job *uploadJob) {
 	sdkDebug(fmt.Sprintf("Media: Processing upload for media_id=%s in trace_id=%s", job.mediaID, job.traceID))
 	if err := m.upload(job); err != nil {
-		sdkLog().Error(fmt.Sprintf("Media upload error: Failed to upload media due to unexpected error. Queue item marked as done. Error: %v", err))
+		pkgLog().Error(fmt.Sprintf("Media upload error: Failed to upload media due to unexpected error. Queue item marked as done. Error: %v", err))
 	}
 	m.mu.Lock()
 	m.pending--
@@ -266,7 +267,7 @@ func (m *mediaManager) enqueue(media *lfMedia, traceID, observationID, field str
 		return
 	}
 	if !media.hasID {
-		sdkLog().Error("Media ID is None. Skipping upload.")
+		pkgLog().Error("Media ID is None. Skipping upload.")
 		return
 	}
 	job := &uploadJob{mediaID: media.mediaID, content: media.content, contentType: media.contentType,
@@ -284,7 +285,7 @@ func (m *mediaManager) enqueue(media *lfMedia, traceID, observationID, field str
 			m.idle.Broadcast()
 		}
 		m.mu.Unlock()
-		sdkLog().Warn(fmt.Sprintf("Queue capacity: Media queue is full. Failed to process media_id=%s for trace_id=%s. Consider increasing queue capacity.",
+		pkgLog().Warn(fmt.Sprintf("Queue capacity: Media queue is full. Failed to process media_id=%s for trace_id=%s. Consider increasing queue capacity.",
 			media.mediaID, traceID))
 	}
 }
@@ -383,7 +384,7 @@ func (m *mediaManager) walk(data any, level int, traceID, observationID, field s
 func concatStr(prefix string, v any) string {
 	s, ok := v.(string)
 	if !ok {
-		panic(fmt.Sprintf("TypeError: can only concatenate str (not \"%s\") to str", pyrepr.TypeName(v)))
+		panic(fmt.Sprintf("expected text, got %s", errchain.Kind(v)))
 	}
 	return prefix + s
 }
@@ -493,7 +494,7 @@ func (m *mediaManager) upload(job *uploadJob) error {
 		return nil
 	}
 	if answer.MediaID != job.mediaID {
-		sdkLog().Error(fmt.Sprintf("Media integrity error: Media ID mismatch between SDK (%s) and Server (%s). Upload cancelled. Please check media ID generation logic.",
+		pkgLog().Error(fmt.Sprintf("Media integrity error: Media ID mismatch between SDK (%s) and Server (%s). Upload cancelled. Please check media ID generation logic.",
 			job.mediaID, answer.MediaID))
 		return nil
 	}
@@ -619,7 +620,7 @@ func (e *mediaExporter) processAttribute(span sdktrace.ReadOnlySpan, kv attribut
 	defer func() {
 		if r := recover(); r != nil {
 			sc := span.SpanContext()
-			sdkLog().Warn(fmt.Sprintf("Media processing error: Failed to process span attribute before export. Leaving attribute unchanged. "+
+			pkgLog().Warn(fmt.Sprintf("Media processing error: Failed to process span attribute before export. Leaving attribute unchanged. "+
 				"span_name='%s' trace_id='%s' span_id='%s' attribute_key='%s' error='%v'", span.Name(), sc.TraceID(), sc.SpanID(), key, r))
 			out, changed = kv, false
 		}

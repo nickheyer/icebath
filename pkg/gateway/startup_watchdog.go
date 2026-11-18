@@ -60,10 +60,6 @@ var (
 	startupWatchdogHandle     *StartupWatchdogHandle
 )
 
-func startupWatchdogLog() *slog.Logger {
-	return slog.Default().With("logger", "hermes_startup_watchdog")
-}
-
 // Path of logs/gateway-startup-watchdog.log under h, the process home when h is empty
 func GetStartupWatchdogDumpPath(h string) string {
 	if h == "" {
@@ -89,7 +85,7 @@ func ResolveStartupWatchdogTimeout() float64 {
 	}
 	value, err := pyint.ParseFloat(raw)
 	if err != nil {
-		startupWatchdogLog().Warn(fmt.Sprintf("Ignoring non-numeric %s=%s; using default %.0fs",
+		pkgLog().Warn(fmt.Sprintf("Ignoring non-numeric %s=%s; using default %.0fs",
 			EnvStartupWatchdogTimeoutS, pyrepr.Repr(raw), DefaultStartupWatchdogTimeoutS))
 		return DefaultStartupWatchdogTimeoutS
 	}
@@ -119,7 +115,7 @@ func appendStartupWatchdogDump(write func(f *os.File) error, failureMsg string) 
 		return write(f)
 	}()
 	if err != nil {
-		startupWatchdogLog().Debug(failureMsg, "exc_info", err)
+		pkgLog().Debug(failureMsg, "exc_info", err)
 	}
 }
 
@@ -147,7 +143,7 @@ func dumpStartupWatchdogTraceback(file *os.File) error {
 // Logs at level and swallows a panicking handler
 func startupWatchdogLogQuietly(level slog.Level, msg string) {
 	defer func() { _ = recover() }()
-	startupWatchdogLog().Log(context.Background(), level, msg)
+	pkgLog().Log(context.Background(), level, msg)
 }
 
 // Records the watchdog exit in the lifecycle sentinel and swallows any failure
@@ -289,7 +285,7 @@ func (h *StartupWatchdogHandle) fire() {
 	))
 	appendStartupWatchdogDump(h.seams.dumpTraceback, "Startup watchdog file-based faulthandler dump failed")
 	if err := h.seams.dumpTraceback(nil); err != nil {
-		startupWatchdogLog().Debug("Startup watchdog faulthandler dump failed", "exc_info", err)
+		pkgLog().Debug("Startup watchdog faulthandler dump failed", "exc_info", err)
 	}
 	ledgerDone := make(chan struct{})
 	go func() {
@@ -422,7 +418,7 @@ func ArmStartupWatchdog(ctx context.Context) {
 func armStartupWatchdog(timeoutS any, exitCode int) (handle *StartupWatchdogHandle) {
 	defer func() {
 		if r := recover(); r != nil {
-			startupWatchdogLog().Debug("Failed to arm gateway startup watchdog", "exc_info", fmt.Errorf("%v", r))
+			pkgLog().Debug("Failed to arm gateway startup watchdog", "exc_info", fmt.Errorf("%v", r))
 			handle = nil
 		}
 	}()
@@ -438,7 +434,7 @@ func armStartupWatchdog(timeoutS any, exitCode int) (handle *StartupWatchdogHand
 	if timeoutS != nil {
 		value, err := pyint.Float(timeoutS)
 		if err != nil {
-			startupWatchdogLog().Debug("Failed to arm gateway startup watchdog", "exc_info", err)
+			pkgLog().Debug("Failed to arm gateway startup watchdog", "exc_info", err)
 			return nil
 		}
 		resolved = value
@@ -477,7 +473,7 @@ func armedStartupWatchdog() *StartupWatchdogHandle {
 func withArmedStartupWatchdog(failureMsg string, call func(h *StartupWatchdogHandle)) {
 	defer func() {
 		if r := recover(); r != nil {
-			startupWatchdogLog().Debug(failureMsg, "exc_info", fmt.Sprintf("%v", r))
+			pkgLog().Debug(failureMsg, "exc_info", fmt.Sprintf("%v", r))
 		}
 	}()
 	if handle := armedStartupWatchdog(); handle != nil {

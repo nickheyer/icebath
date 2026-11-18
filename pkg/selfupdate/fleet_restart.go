@@ -24,7 +24,7 @@ import (
 
 const manualGatewaySkipReason = "manual gateway has no supervisor relaunch authority; left running for explicit operator restart"
 
-// Gateway calls of the restart phase the hermes tests replace
+// Gateway calls of the restart phase the tests replace
 var (
 	fleetIsMacOS              = gateway.IsMacOS
 	fleetSupportsSystemd      = gateway.SupportsSystemdServices
@@ -51,6 +51,7 @@ var (
 	fleetMarkHostRestarted     = updaterecord.MarkHostRestartCompleted
 	fleetRecordGatewayRestart  = updaterecord.RecordGatewayRestart
 
+	fleetMigrateRetired      = gateway.MigrateRetiredGatewayServicesForInstall
 	fleetRestartSystemdUnits = restartSystemdGatewayUnits
 	fleetRestartLaunchd      = restartMacosLaunchdGateways
 	fleetRestartManual       = restartManualGateways
@@ -139,7 +140,7 @@ func liveFleetCurrentRows(ctx context.Context) []any {
 	}
 	fleet, err := probeLiveFleet()
 	if err != nil {
-		fleetObligationLog.Debug(fmt.Sprintf("Pending fleet restart: fleet probe failed: %s", launchErrorText(err)))
+		pkgLog().Debug(fmt.Sprintf("Pending fleet restart: fleet probe failed: %s", launchErrorText(err)))
 		return nil
 	}
 	if len(fleet) == 0 {
@@ -225,7 +226,7 @@ func warnIncompleteGatewayFleetRestart(w io.Writer, failedUnits []string) {
 	fmt.Fprintln(w, "    icebath gateway status")
 	units, labels := false, false
 	for _, name := range ordered {
-		if strings.HasPrefix(name, "ai.icebath.") {
+		if gateway.IsIcebathLaunchdLabel(name) {
 			labels = true
 		} else {
 			units = true
@@ -247,7 +248,7 @@ func survivingGatewayPidsAfterFailedRestart(ctx context.Context) (pids []int, kn
 		found, err = fleetScopedManualPids(ctx, io.Discard, found, nil, true)
 	}
 	if err != nil {
-		updateLog.Debug(fmt.Sprintf("Could not probe for surviving gateways after update: %s", launchErrorText(err)))
+		pkgLog().Debug(fmt.Sprintf("Could not probe for surviving gateways after update: %s", launchErrorText(err)))
 		return nil, false
 	}
 	return found, true
@@ -492,7 +493,7 @@ func forceKillStuckGateways(ctx context.Context, w io.Writer, killedPIDs map[int
 
 // Runs the fresh process recovery of an aborted restart phase and settles the fail closed verdict
 func recoverAfterRestartPhaseAbort(ctx context.Context, w io.Writer, phaseErr error, plan *UpdatePlan, out *gatewayRestartOutcome, gatewayMode bool) error {
-	updateLog.Debug(fmt.Sprintf("Gateway restart during update failed: %s", launchErrorText(phaseErr)))
+	pkgLog().Debug(fmt.Sprintf("Gateway restart during update failed: %s", launchErrorText(phaseErr)))
 	out.PhaseErrors = append(out.PhaseErrors, launchErrorText(phaseErr))
 	surviving, survivorsKnown := survivingGatewayPidsAfterFailedRestart(ctx)
 	planned := map[string]bool{}
@@ -580,6 +581,28 @@ func gatewayDrainBudget(ctx context.Context) (budget float64) {
 	return math.Max(wait, 45.0)
 }
 
+// Moves gateway services under retired names to the current ones, started on the new code so the restart skips them
+func migrateRetiredGatewayServices(ctx context.Context, w io.Writer, out *gatewayRestartOutcome) {
+	moved, err := fleetMigrateRetired(ctx, w)
+	names := make([]string, 0, len(moved))
+	for _, svc := range moved {
+		names = append(names, svc.Name)
+		if fleetIsMacOS() {
+			alreadyRestarted().Labels[svc.Name] = true
+		} else {
+			alreadyRestarted().Units[gateway.ServiceScopeLabel(svc.System)+"/"+svc.Name] = true
+		}
+	}
+	if len(names) > 0 {
+		fmt.Fprintf(w, "  ↻ gateway services moved to their current names: %s\n", strings.Join(names, ", "))
+		out.RestartedServices = append(out.RestartedServices, names...)
+	}
+	if err != nil {
+		fmt.Fprintf(w, "  ⚠ Could not move a gateway service under a retired name: %s\n    Recover manually: icebath gateway install\n", err)
+		out.FailedOrStaleUnits = append(out.FailedOrStaleUnits, "retired gateway service")
+	}
+}
+
 // Restarts every running gateway of this update onto the pulled code and returns the phase bookkeeping
 func restartGatewayFleetAfterUpdate(ctx context.Context, w io.Writer, plan *UpdatePlan, gatewayMode bool) (*gatewayRestartOutcome, error) {
 	out := newGatewayRestartOutcome()
@@ -587,6 +610,7 @@ func restartGatewayFleetAfterUpdate(ctx context.Context, w io.Writer, plan *Upda
 
 	phase := func() error {
 		drainBudget := fleetDrainBudget(ctx)
+		migrateRetiredGatewayServices(ctx, w, out)
 		if found, findErr := fleetFindGatewayPIDs(ctx, nil, true); findErr != nil {
 			out.PreRestartGatewayPIDs = nil
 		} else if out.PreRestartGatewayPIDs, findErr = fleetScopedManualPids(ctx, io.Discard, found, nil, true); findErr != nil {

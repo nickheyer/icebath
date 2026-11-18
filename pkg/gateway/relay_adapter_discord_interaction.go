@@ -3,7 +3,6 @@ package gateway
 import (
 	"context"
 	"fmt"
-	"log/slog"
 	"regexp"
 	"strings"
 	"unicode/utf8"
@@ -17,10 +16,6 @@ const relayDiscordLabelsMax = 2048
 
 // Connector prompt codec id alphabet, Python's dollar also matching before one trailing newline
 var relayPromptIDRe = regexp.MustCompile(`^[A-Za-z0-9_.\-]{1,32}\n?$`)
-
-func relayDiscordLog() *slog.Logger {
-	return slog.Default().With("logger", "gateway.relay.adapter_discord_interaction")
-}
 
 // Chat name and topic the Discord text lane last carried for a chat
 type relayChatLabels struct {
@@ -106,7 +101,7 @@ func (a *RelayAdapter) rememberDiscordLabels(ctx context.Context, source *Sessio
 		if ctx.Err() != nil {
 			return ctx.Err()
 		}
-		relayDiscordLog().Debug("relay: Discord chat labels not recorded", "exc_info", err)
+		pkgLog().Debug("relay: Discord chat labels not recorded", "exc_info", err)
 		written = false
 	}
 	a.mu.Lock()
@@ -137,7 +132,7 @@ func (a *RelayAdapter) discordChatLabelsFor(ctx context.Context, scope, chatID s
 			if ctx.Err() != nil {
 				return relayChatLabels{}, ctx.Err()
 			}
-			relayDiscordLog().Debug("relay: recorded Discord chat labels unreadable", "exc_info", err)
+			pkgLog().Debug("relay: recorded Discord chat labels unreadable", "exc_info", err)
 			return relayChatLabels{}, nil
 		}
 		if found {
@@ -165,7 +160,7 @@ func (a *RelayAdapter) onPassthrough(ctx context.Context, forward *PassthroughFo
 		if ctx.Err() != nil {
 			return ctx.Err()
 		}
-		relayDiscordLog().Warn("relay passthrough_forward handling failed", "exc_info", err)
+		pkgLog().Warn("relay passthrough_forward handling failed", "exc_info", err)
 	}
 	return nil
 }
@@ -196,7 +191,7 @@ func (a *RelayAdapter) passthroughDiscord(ctx context.Context, forward *Passthro
 			return a.HandleMessage(RelayPassthroughEvent(ctx, a.transport, forward, event), event)
 		}
 	}
-	relayDiscordLog().Info(fmt.Sprintf("relay passthrough_forward dropped (no handler): platform=%s method=%s path=%s",
+	pkgLog().Info(fmt.Sprintf("relay passthrough_forward dropped (no handler): platform=%s method=%s path=%s",
 		forward.Platform, forward.Method, forward.Path))
 	return nil
 }

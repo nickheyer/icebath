@@ -17,8 +17,8 @@ var (
 	ClientHostBehaviour    = []string{"ICEBATH_PREFILL_MESSAGES_FILE", "ICEBATH_ENABLE_PROJECT_PLUGINS"}
 	ClientToolEnv          = []string{"PATH", "VIRTUAL_ENV", "GOPATH", "GOROOT", "CARGO_HOME", "RUSTUP_HOME", "JAVA_HOME"}
 	ClientToolEnvPrefixes  = []string{"CONDA_", "NODE_", "NVM_", "PYENV_"}
-	SecretEnvName          func(name string) bool
-	SecretEnvSubstrings    []string
+	SecretEnvName          = IsSecretEnvName
+	SecretEnvSubstrings    = SecretSubstrings
 	errClientEnvNotFlatMap = pyValueError("client_env must be a map of variable names to string values")
 )
 
@@ -38,7 +38,7 @@ type ClientEnvRules struct {
 	Secret    []string
 }
 
-// Rules as the dict hermes freezes into client_env_rules_json
+// Rules as the dict frozen into client_env_rules_json
 func (r *ClientEnvRules) Object() *pyjson.Object {
 	out := pyjson.NewObject()
 	for _, kv := range []struct {
@@ -89,7 +89,7 @@ func ParseClientEnvRules(raw any) (*ClientEnvRules, error) {
 	return &ClientEnvRules{Behaviour: lists[0], Names: lists[1], Prefixes: lists[2], Secret: lists[3]}, nil
 }
 
-// An error carrying the Python exception class hermes raises
+// An error carrying its Python exception class name
 type stateTypedError struct{ kind, msg string }
 
 func (e *stateTypedError) Error() string      { return e.msg }
@@ -148,10 +148,25 @@ func clientEnvTravels(name string, secret []string, useLive bool) bool {
 	return !hidden && !strings.HasPrefix(name, "ICEBATH_")
 }
 
-// Live secret policy the process wiring installs from codeexec
+// SecretSubstrings are the name fragments that mark an environment variable as a credential
+var SecretSubstrings = []string{"KEY", "TOKEN", "SECRET", "PASSWORD", "CREDENTIAL", "PASSWD", "AUTH", "DSN",
+	"WEBHOOK", "CREDS", "BEARER", "APIKEY", "COOKIE"}
+
+// Reports whether a variable name contains a credential fragment in any letter case
+func IsSecretEnvName(name string) bool {
+	upper := pystr.Upper(name)
+	for _, s := range SecretSubstrings {
+		if strings.Contains(upper, s) {
+			return true
+		}
+	}
+	return false
+}
+
+// Live secret policy of the session env rules
 func secretEnvNameLive(name string) bool {
 	if SecretEnvName == nil {
-		panic("state.SecretEnvName unassigned: the process wiring installs codeexec.IsSecretEnvName")
+		panic("state.SecretEnvName is nil")
 	}
 	return SecretEnvName(name)
 }
@@ -159,7 +174,7 @@ func secretEnvNameLive(name string) bool {
 // Rules frozen with a session map, a client not proven local keeping only values that name nothing on this host
 func ClientEnvRulesFor(config any, local bool) *ClientEnvRules {
 	if SecretEnvSubstrings == nil {
-		panic("state.SecretEnvSubstrings unassigned: the process wiring installs codeexec.SecretSubstrings")
+		panic("state.SecretEnvSubstrings is nil")
 	}
 	rules := &ClientEnvRules{Names: []string{}, Prefixes: []string{}, Secret: slices.Clone(SecretEnvSubstrings)}
 	for _, n := range ClientBehaviourEnv {

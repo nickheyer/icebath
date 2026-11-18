@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"context"
 	"fmt"
-	"log/slog"
 	"os"
 	"path/filepath"
 	"sort"
@@ -19,7 +18,7 @@ const DefaultBackupKeep = 5
 
 var legacySiblingGlobs = []string{"config.yaml.bak.[0-9]*", "config.yaml.corrupt.*.bak", "config.yaml.bak-pre-migrate-*"}
 
-// Local time stamp a backup name ends with, the time.strftime call hermes tests replace
+// Local time stamp a backup name ends with, the time.strftime call tests replace
 var backupTimestamp = func() string { return time.Now().Format("20060102-150405") }
 
 // Directory holding the dated config backups beside a config file
@@ -64,7 +63,7 @@ func BackupConfig(ctx context.Context, configPath, reason string, keep int) (str
 	}
 	root := BackupsDir(configPath)
 	fail := func(err error) string {
-		slog.Warn(fmt.Sprintf("Could not back up %s (%s): %s", configPath, reason, pyOSErrorString(err)))
+		pkgLog().Warn(fmt.Sprintf("Could not back up %s (%s): %s", configPath, reason, pyOSErrorString(err)))
 		return ""
 	}
 	if err := os.MkdirAll(root, 0o777); err != nil {
@@ -121,7 +120,7 @@ func LoadNewestGoodBackup(ctx context.Context, configPath string) (map[string]an
 		doc, err = FastSafeLoad(data)
 	}
 	if err != nil {
-		slog.Warn(fmt.Sprintf("Last-known-good backup %s is unreadable: %s", newest[0], pyOSErrorString(err)))
+		pkgLog().Warn(fmt.Sprintf("Last-known-good backup %s is unreadable: %s", newest[0], pyOSErrorString(err)))
 		return nil, nil
 	}
 	if m, ok := doc.(map[string]any); ok {
@@ -140,7 +139,7 @@ func sweepLegacySiblings(configPath, root string) {
 				continue
 			}
 			if err := os.Rename(old, filepath.Join(root, filepath.Base(old))); err != nil {
-				slog.Debug(fmt.Sprintf("Could not move legacy backup %s: %s", old, pyOSErrorString(err)))
+				pkgLog().Debug(fmt.Sprintf("Could not move legacy backup %s: %s", old, pyOSErrorString(err)))
 			}
 		}
 	}

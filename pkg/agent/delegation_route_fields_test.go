@@ -81,7 +81,7 @@ func routeFieldsConstruct(o AIAgentOptions) *AIAgent {
 		reasoningConfig: o.ReasoningConfig, serviceTier: o.ServiceTier}
 }
 
-// Writes the delegation section of a temp home config the way the hermes test patches _load_config
+// Writes the delegation section of a temp home config the way the test patches load config
 func writeDelegationConfig(t *testing.T, cfg map[string]any) {
 	t.Helper()
 	h := t.TempDir()

@@ -6,7 +6,7 @@ import (
 	"testing"
 )
 
-// Fails when the source text differs from the hermes constant with the icebath renames applied
+// Fails when the source text differs from the constant with the icebath renames applied
 func assertSourceSHA256(t *testing.T, text, want string) {
 	t.Helper()
 	sum := sha256.Sum256([]byte(text))

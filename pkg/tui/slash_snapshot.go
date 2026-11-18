@@ -1,19 +1,12 @@
 package tui
 
 import (
-	"fmt"
 	"strings"
 	"time"
 
 	tea "charm.land/bubbletea/v2"
 
-	"github.com/nickheyer/icebath/pkg/backup"
-	"github.com/nickheyer/icebath/pkg/gateway"
-	"github.com/nickheyer/icebath/pkg/gatewaycli"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
-	"github.com/nickheyer/icebath/pkg/state"
 )
 
 // Drops the gateway socket and blocks every reconnect until the returned func starts the owner again
@@ -39,31 +32,24 @@ func (c *gatewayClient) releaseForMaintenance() func() {
 	}
 }
 
-// Whether the state database of the home holds the session id
-func sessionInState(h, sid string) (bool, error) {
-	db, err := state.OpenHome(h, state.Options{ReadOnly: true})
-	if err != nil {
-		return false, err
-	}
-	defer state.CloseAllUnder(h)
-	id, err := db.ResolveSessionID(sid)
-	return id == sid, err
-}
-
-// Home and catalog of a /snapshot run in this terminal UI
-func (a *app) snapshotCommand() gatewaycli.SnapshotCommand {
-	return gatewaycli.SnapshotCommand{Home: home.Dir(a.ctx), T: func(key string, kwargs map[string]any) string {
-		return commandText(a.ctx, key, kwargs)
-	}}
-}
-
-// Shows the lines of a snapshot subcommand, a table in the pager and short answers as a system line
+// Shows the lines of a snapshot answer, a table in the pager and a failure as a system line
 func (a *app) snapshotOutput(lines []string, err error) tea.Cmd {
 	if err != nil {
-		a.sys("/snapshot: " + err.Error())
+		a.sys("/snapshot: " + rpcErrorMessage(err))
 		return nil
 	}
 	return a.showOutput(strings.Join(lines, "\n"), "snapshot")
+}
+
+// Runs a snapshot method, with the words after the subcommand when it takes them, and shows its lines
+func (a *app) snapshotLines(method string, args []string) tea.Cmd {
+	params := map[string]any{}
+	if args != nil {
+		params["args"] = args
+	}
+	return gatewayCall(a.gw, method, params, func(v any, err error) tea.Cmd {
+		return a.snapshotOutput(rpcStrings(asRPCResult(v)["lines"]), err)
+	})
 }
 
 // Subcommands the argument completes to
@@ -77,76 +63,38 @@ func snapshotSuggestions(prefix string) []string {
 	return kept
 }
 
-// Restores a quick snapshot with the profile handed off the gateway, then reopens the session on the restored state
-func (a *app) restoreSnapshot(snap gatewaycli.SnapshotCommand, snapID string) tea.Cmd {
+// Restores a quick snapshot through the launcher, the socket released for the handoff, then reopens the session
+func (a *app) restoreSnapshot(snapID string) tea.Cmd {
 	ui := &a.store.ui
-	local := attachURLEnv() == ""
-	handoff := false
-	var targetErr error
-	if local {
-		dir, err := backup.QuickSnapshotDir(snapID, snap.Home)
-		handoff, targetErr = dir != "", err
-	}
-	if targetErr != nil || !handoff {
-		return func() tea.Msg {
-			restored, err := false, targetErr
-			if err == nil {
-				restored, err = backup.RestoreQuickSnapshot(a.ctx, snapID, snap.Home)
-			}
-			return asyncDoneMsg{run: func() tea.Cmd {
-				return a.snapshotOutput(snap.RestoreReport(snapID, restored, err, local))
-			}}
-		}
-	}
+	handoff := attachURLEnv() == ""
 	stored := ui.StoredSid
 	if stored == "" {
 		stored = ui.Sid
 	}
 	connected, status := ui.GatewayConnected, ui.Status
-	off := false
-	ui.GatewayConnected, ui.Status = &off, "restoring snapshot"
+	if handoff {
+		off := false
+		ui.GatewayConnected, ui.Status = &off, "restoring snapshot"
+	}
 	return func() tea.Msg {
 		var reopen func()
-		res, err := gatewaycli.RestoreSnapshotOffGateway(a.ctx, snap.Home, snapID, func(h string) (*pyjson.Object, error) {
-			return gatewaycli.ManualGatewayIdentity(h, func(h string) *pyjson.Object {
-				return gateway.IdentifyGateway(h, gateway.DefaultControlClientTimeout)
-			}, fmt.Errorf)
-		}, func(h string) error {
-			reopen = a.gw.releaseForMaintenance()
-			state.CloseAllUnder(h)
-			return nil
-		})
-		kept := true
-		var probeErr error
-		if res.Restored && stored != "" {
-			kept, probeErr = sessionInState(snap.Home, stored)
-		}
+		res := a.host.RestoreSnapshot(a.ctx, snapID, stored, handoff, func() { reopen = a.gw.releaseForMaintenance() })
 		return asyncDoneMsg{run: func() tea.Cmd {
-			report := func() tea.Cmd {
-				shown := a.snapshotOutput(snap.RestoreReport(snapID, res.Restored, err, true))
-				if line := res.ReserveLine(); line != "" {
-					a.sys(line)
+			if !res.Released {
+				if handoff {
+					ui.GatewayConnected, ui.Status = connected, status
 				}
-				if probeErr != nil {
-					a.sys("/snapshot: " + probeErr.Error())
-				} else if !kept {
-					a.sys("This session is not part of the restored state.")
-				}
-				return shown
-			}
-			if !res.Detached {
-				ui.GatewayConnected, ui.Status = connected, status
-				return report()
+				return a.snapshotOutput(res.Lines, nil)
 			}
 			previous := ui.Sid
 			a.turn.reset()
 			ui.Busy, ui.Compacting, ui.Status = false, false, tr("session.status.reconnecting")
 			a.recoverSid = stored
-			if probeErr == nil && !kept {
+			if !res.SessionKept {
 				a.recoverSid, a.events.startupResumeID = "", ""
 			}
 			reopen()
-			return a.afterReopen(previous, a.recoverSid != "", time.Now().Add(90*time.Second), report)
+			return a.afterReopen(previous, a.recoverSid != "", time.Now().Add(90*time.Second), func() tea.Cmd { return a.snapshotOutput(res.Lines, nil) })
 		}}
 	}
 }
@@ -169,29 +117,30 @@ func (a *app) snapshotCommands() []slashCommand {
 	return []slashCommand{
 		{name: "snapshot", aliases: []string{"snap"}, help: "create, list, restore or prune state snapshots",
 			usage: "[list|create [label]|restore <id>|prune [N]]", suggest: snapshotSuggestions, run: func(r *slashRun) tea.Cmd {
-				parts := append([]string{"/snapshot"}, strings.Fields(r.arg)...)
+				words := strings.Fields(r.arg)
 				sub := "list"
-				if len(parts) > 1 {
-					sub = pystr.Lower(parts[1])
+				if len(words) > 0 {
+					sub, words = strings.ToLower(words[0]), words[1:]
 				}
-				snap := a.snapshotCommand()
 				switch sub {
 				case "list", "ls":
-					return tea.Batch(r.ran(), a.snapshotOutput(snap.List()))
-				case "create":
-					return tea.Batch(r.ran(), a.snapshotOutput(snap.Create(parts)))
-				case "prune":
-					return tea.Batch(r.ran(), a.snapshotOutput(snap.Prune(parts)))
+					return tea.Batch(r.ran(), a.snapshotLines("snapshot.list", nil))
+				case "create", "prune":
+					return tea.Batch(r.ran(), a.snapshotLines("snapshot."+sub, words))
 				case "restore", "rewind":
-					snapID, lines, err := snap.RestoreTarget(parts)
-					if err != nil || lines != nil {
-						return tea.Batch(r.ran(), a.snapshotOutput(lines, err))
-					}
-					return a.confirmDestructive("Restore snapshot "+snapID+"?",
-						"State files of "+home.Display(snap.Home)+" go back to this snapshot. The gateway stops for the restore and the session reopens on the restored state.",
-						"Restore", "Cancel", func() tea.Cmd { return tea.Batch(r.ran(), a.restoreSnapshot(snap, snapID)) })
+					return tea.Batch(r.ran(), gatewayCall(a.gw, "snapshot.target", map[string]any{"args": words}, func(v any, err error) tea.Cmd {
+						answer := asRPCResult(v)
+						snapID, named := answer["id"].(string)
+						if err != nil || !named {
+							return a.snapshotOutput(rpcStrings(answer["lines"]), err)
+						}
+						return a.confirmDestructive("Restore snapshot "+snapID+"?",
+							"State files of "+home.Display(home.Dir(a.ctx))+" go back to this snapshot. The gateway stops for the restore and the session reopens on the restored state.",
+							"Restore", "Cancel", func() tea.Cmd { return a.restoreSnapshot(snapID) })
+					}))
 				}
-				return tea.Batch(r.ran(), a.snapshotOutput(snap.Unknown(sub), nil))
+				return tea.Batch(r.ran(), a.snapshotOutput([]string{commandText(a.ctx, "snapshot.unknown_subcommand", map[string]any{"subcommand": sub}),
+					commandText(a.ctx, "snapshot.usage", nil)}, nil))
 			}},
 	}
 }

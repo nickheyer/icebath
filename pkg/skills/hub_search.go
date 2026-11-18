@@ -2,6 +2,7 @@ package skills
 
 import (
 	"context"
+	_ "embed"
 	"fmt"
 	"math"
 	"os"
@@ -10,15 +11,46 @@ import (
 	"strings"
 	"time"
 
+	"github.com/klauspost/compress/zstd"
+
 	"github.com/nickheyer/icebath/pkg/internal/pyhttpx"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
 
 const (
-	HermesIndexURL = "https://hermes-agent.nousresearch.com/docs/api/skills-index.json"
-	HermesIndexTTL = 6 * 3600.0
+	IndexURL = "https://icebath.app/api/skills-index.json"
+	IndexTTL = 6 * 3600.0
 )
+
+//go:embed skills-index.json.zst
+var shippedIndexArchive []byte
+
+// Skills index compiled into the binary, decoded afresh on each call
+func shippedSkillsIndex() any {
+	dec, err := zstd.NewReader(nil, zstd.WithDecoderConcurrency(1))
+	if err != nil {
+		panic("skills: shipped index decoder: " + err.Error())
+	}
+	defer dec.Close()
+	raw, err := dec.DecodeAll(shippedIndexArchive, nil)
+	if err != nil {
+		panic("skills: shipped index archive: " + err.Error())
+	}
+	v, err := pyjson.Loads(string(raw))
+	if err != nil {
+		panic("skills: shipped index document: " + err.Error())
+	}
+	return v
+}
+
+// Shipped index through the hub seam
+func (h *Hub) shippedIndex() any {
+	if h.io.shippedIndex != nil {
+		return h.io.shippedIndex()
+	}
+	return shippedSkillsIndex()
+}
 
 // Sources the centralized index covers, skipped while it answers an unfiltered search
 var apiSourceIDs = map[string]bool{"github": true, "skills-sh": true, "clawhub": true, "lobehub": true, "well-known": true}
@@ -28,13 +60,13 @@ var indexMissFallbackIDs = map[string]bool{"skills-sh": true, "clawhub": true, "
 
 var indexMissFallbackBudget = 8 * time.Second
 
-func (h *Hub) hermesIndexCacheFile() string {
-	return filepath.Join(h.IndexCacheDir(), "hermes-index.json")
+func (h *Hub) indexCacheFile() string {
+	return filepath.Join(h.IndexCacheDir(), "skills-index.json")
 }
 
-// Centralized skills index cached for the TTL, the stale cache on any fetch failure
-func (h *Hub) loadHermesIndex(ctx context.Context) any {
-	cached, err := readJSONIfFresh(h.hermesIndexCacheFile(), HermesIndexTTL)
+// Skills index cached for the TTL, the stale cache then the shipped index on any fetch failure
+func (h *Hub) loadIndex(ctx context.Context) any {
+	cached, err := readJSONIfFresh(h.indexCacheFile(), IndexTTL)
 	if err != nil {
 		hubRaise(err)
 	}
@@ -44,7 +76,7 @@ func (h *Hub) loadHermesIndex(ctx context.Context) any {
 	log := h.S.logger()
 	var data any
 	for _, enc := range []string{"gzip, deflate", "identity"} {
-		resp, err := h.skillsHubHTTPGet(ctx, HermesIndexURL, hubGet{Timeout: 15 * time.Second, FollowRedirects: true,
+		resp, err := h.skillsHubHTTPGet(ctx, IndexURL, hubGet{Timeout: 15 * time.Second, FollowRedirects: true,
 			Headers: map[string]string{"Accept-Encoding": enc}})
 		if err != nil {
 			if pass := hubPassThrough(err); pass != nil {
@@ -83,7 +115,7 @@ func (h *Hub) loadHermesIndex(ctx context.Context) any {
 		return h.loadStaleIndexCache()
 	}
 	if text, err := pyjson.Dumps(obj); err == nil {
-		file := h.hermesIndexCacheFile()
+		file := h.indexCacheFile()
 		if os.MkdirAll(filepath.Dir(file), 0o755) == nil {
 			os.WriteFile(file, []byte(text), 0o644)
 		}
@@ -93,13 +125,16 @@ func (h *Hub) loadHermesIndex(ctx context.Context) any {
 	return obj
 }
 
-// Cached index regardless of age
+// Cached index regardless of age, the shipped index when nothing is cached
 func (h *Hub) loadStaleIndexCache() any {
-	v, err := readJSONIfFresh(h.hermesIndexCacheFile(), math.Inf(1))
+	v, err := readJSONIfFresh(h.indexCacheFile(), math.Inf(1))
 	if err != nil {
 		hubRaise(err)
 	}
-	return v
+	if v != nil {
+		return v
+	}
+	return h.shippedIndex()
 }
 
 // Every configured source adapter in priority order, a taps file failure raised to the caller boundary
@@ -112,7 +147,7 @@ func (h *Hub) createSourceRouter(auth *GitHubAuth) []SkillSource {
 		hubRaise(err)
 	}
 	extra := tapsFromList(taps)
-	return []SkillSource{NewOptionalSkillSource(h, auth), NewHermesIndexSource(h, auth), NewSkillsShSource(h, auth),
+	return []SkillSource{NewOptionalSkillSource(h, auth), NewIndexSource(h, auth), NewSkillsShSource(h, auth),
 		NewWellKnownSkillSource(h), NewUrlSource(h), NewGitHubSource(h, auth, extra), NewClawHubSource(h),
 		NewLobeHubSource(h), NewBrowseShSource(h)}
 }
@@ -134,7 +169,7 @@ func (h *Hub) searchOneSource(ctx context.Context, src SkillSource, query string
 	var err error
 	ps, narrows := src.(providerSearcher)
 	switch src.(type) {
-	case *HermesIndexSource, *GitHubSource:
+	case *IndexSource, *GitHubSource:
 	default:
 		narrows = false
 	}
@@ -159,7 +194,7 @@ func selectActiveSources(sources []SkillSource, sourceFilter string) []SkillSour
 	indexAvailable := false
 	if effective == "all" {
 		for _, src := range sources {
-			if a, ok := src.(interface{ IsAvailable() bool }); ok && src.SourceID() == "hermes-index" && a.IsAvailable() {
+			if a, ok := src.(interface{ IsAvailable() bool }); ok && src.SourceID() == "skills-index" && a.IsAvailable() {
 				indexAvailable = true
 				break
 			}
@@ -181,10 +216,10 @@ func selectActiveSources(sources []SkillSource, sourceFilter string) []SkillSour
 
 // Registries to ask after the index answered a non empty unfiltered query with nothing
 func indexMissFallbackSources(sources, active []SkillSource, query string, counts *pyjson.Object, providerFilter string) []SkillSource {
-	if pystr.Strip(query) == "" || providerFilter != "" || !slices.ContainsFunc(active, func(s SkillSource) bool { return s.SourceID() == "hermes-index" }) {
+	if pystr.Strip(query) == "" || providerFilter != "" || !slices.ContainsFunc(active, func(s SkillSource) bool { return s.SourceID() == "skills-index" }) {
 		return nil
 	}
-	if n, ok := counts.Get("hermes-index"); !ok || n != 0 {
+	if n, ok := counts.Get("skills-index"); !ok || n != 0 {
 		return nil
 	}
 	var out []SkillSource

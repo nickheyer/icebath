@@ -8,6 +8,7 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/agent"
 	"github.com/nickheyer/icebath/pkg/config"
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/i18n"
@@ -109,7 +110,7 @@ func (r *GatewayRunner) writeApprovalSetter(ctx context.Context, section string,
 		}
 		sectionMap, ok := userConfig[section].(map[string]any)
 		if !ok {
-			return fmt.Errorf("TypeError: '%s' object does not support item assignment", pyrepr.TypeName(userConfig[section]))
+			return fmt.Errorf("%s in config is %s, expected a mapping", section, errchain.Kind(userConfig[section]))
 		}
 		sectionMap["write_approval"] = enabled
 		if err := config.AtomicConfigWrite(ctx, configHome, configPath, userConfig, ""); err != nil {

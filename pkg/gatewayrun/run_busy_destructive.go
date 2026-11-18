@@ -22,14 +22,14 @@ func (r *GatewayRunner) sendCommandAck(ctx context.Context, source *gateway.Sess
 	}
 	adapter, err := r.deliveryAdapterFor(ctx, source)
 	if err != nil {
-		runLog().Debug(fmt.Sprintf("%s ack send failed", label), "error", err)
+		pkgLog().Debug(fmt.Sprintf("%s ack send failed", label), "error", err)
 		return
 	}
 	if adapter == nil {
 		return
 	}
 	if _, err := adapter.Send(ctx, source.ChatID, text, "", r.threadMetadataForSource(source, nil)); err != nil {
-		runLog().Debug(fmt.Sprintf("%s ack send failed", label), "error", err)
+		pkgLog().Debug(fmt.Sprintf("%s ack send failed", label), "error", err)
 	}
 }
 
@@ -52,7 +52,7 @@ func commandOriginForSource(source *gateway.SessionSource) map[string]any {
 func (r *GatewayRunner) handleSuggestionsCommand(ctx context.Context, event *gateway.MessageEvent) (any, error) {
 	reply, err := cron.HandleSuggestionsCommand(ctx, pystr.Strip(event.GetCommandArgs()), commandOriginForSource(event.Source), "gateway")
 	if err != nil {
-		runLog().Debug(fmt.Sprintf("suggestions command failed: %s", err))
+		pkgLog().Debug(fmt.Sprintf("suggestions command failed: %s", err))
 		return i18n.T(ctx, "gateway.suggestions.failed", "", map[string]any{"error": err.Error()}), nil
 	}
 	return reply, nil
@@ -62,7 +62,7 @@ func (r *GatewayRunner) handleSuggestionsCommand(ctx context.Context, event *gat
 func (r *GatewayRunner) handleBlueprintCommand(ctx context.Context, event *gateway.MessageEvent) cron.BlueprintCommandResult {
 	result, err := cron.HandleBlueprintCommand(ctx, home.Dir(ctx), pystr.Strip(event.GetCommandArgs()), commandOriginForSource(event.Source), "gateway")
 	if err != nil {
-		runLog().Debug(fmt.Sprintf("blueprint command failed: %s", err))
+		pkgLog().Debug(fmt.Sprintf("blueprint command failed: %s", err))
 		return cron.BlueprintCommandResult{Text: i18n.T(ctx, "gateway.blueprint.failed", "", map[string]any{"error": err.Error()})}
 	}
 	return result
@@ -108,9 +108,9 @@ func runConfirmedDestructiveSlash(ctx context.Context, choice, command string, e
 	if choice == "always" {
 		persisted = SaveConfigValue(ctx, "approvals.destructive_slash_confirm", false)
 		if persisted {
-			runLog().Info(fmt.Sprintf("User opted out of destructive slash confirm (session=%s)", sessionKey))
+			pkgLog().Info(fmt.Sprintf("User opted out of destructive slash confirm (session=%s)", sessionKey))
 		} else {
-			runLog().Warn(fmt.Sprintf("Could not persist destructive_slash_confirm=false (session=%s); config.yaml is not writable", sessionKey))
+			pkgLog().Warn(fmt.Sprintf("Could not persist destructive_slash_confirm=false (session=%s); config.yaml is not writable", sessionKey))
 		}
 	}
 	result, err := execute(ctx)
@@ -143,13 +143,13 @@ func (r *GatewayRunner) requestSlashConfirm(ctx context.Context, event *gateway.
 	if adapter != nil {
 		result, sendErr := adapter.SendSlashConfirm(ctx, source.ChatID, title, message, sessionKey, confirmID, metadata)
 		if sendErr != nil {
-			runLog().Debug(fmt.Sprintf("send_slash_confirm failed for %s on %s: %s", command, source.Platform, sendErr))
+			pkgLog().Debug(fmt.Sprintf("send_slash_confirm failed for %s on %s: %s", command, source.Platform, sendErr))
 		} else {
 			if result.Success {
 				return nil, nil
 			}
 			if gateway.DeclinedSend(&result) {
-				runLog().Warn(fmt.Sprintf("slash-confirm DECLINED by the connector's egress guard for %s on %s — suppressing the text fallback: %s",
+				pkgLog().Warn(fmt.Sprintf("slash-confirm DECLINED by the connector's egress guard for %s on %s — suppressing the text fallback: %s",
 					command, source.Platform, pyrepr.Str(result.Error)))
 				SlashConfirmClear(sessionKey)
 				return nil, nil

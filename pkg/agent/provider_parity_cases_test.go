@@ -1,7 +1,6 @@
 package agent
 
 import (
-	"context"
 	"encoding/json"
 	"reflect"
 	"testing"
@@ -10,7 +9,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/state"
 )
 
-// Tool definitions the hermes parity fixture patches into model_tools.get_tool_definitions
+// Tool definitions the test fixture patches into model_tools.get_tool_definitions
 func parityToolDefs(names ...string) []any {
 	out := make([]any, 0, len(names))
 	for _, n := range names {
@@ -23,9 +22,6 @@ func parityToolDefs(names ...string) []any {
 // Agent built like tests/agent/test_provider_parity.py _make_agent with web_search and terminal as its tools
 func parityAgent(t *testing.T, providerName, apiMode, baseURL, model string) *AIAgent {
 	t.Helper()
-	if model == "" && providerName == "nous" {
-		model = "gpt-5"
-	}
 	a := newFixtureAgent(t, AIAgentOptions{Provider: providerName, APIMode: apiMode, BaseURL: baseURL, Model: model, MaxIterations: new(4)})
 	a.tools = parityToolDefs("web_search", "terminal")
 	return a
@@ -239,61 +235,6 @@ func TestBuildApiKwargsAIGatewayIncludesReasoningInExtraBody(t *testing.T) {
 	kwargs := parityKwargs(t, a, []map[string]any{{"role": "user", "content": "hi"}})
 	if !parityHas(t, kwargs, "reasoning", "extra_body") || parityAt(t, kwargs, "extra_body", "reasoning", "enabled") != true {
 		t.Fatalf("extra_body %v", kwargs["extra_body"])
-	}
-}
-
-func TestBuildApiKwargsNousPortalIncludesNousProductTags(t *testing.T) {
-	a := parityAgent(t, "nous", "chat_completions", "https://inference-api.nousresearch.com/v1", "gpt-5")
-	kwargs := parityKwargs(t, a, []map[string]any{{"role": "user", "content": "hi"}})
-	paritySame(t, parityAt(t, kwargs, "extra_body", "tags"), provider.NousPortalTags(context.Background(), a.sessionID), "tags")
-}
-
-func TestBuildApiKwargsNousPortalConnectorDataUseAsksForANoTrainingRouteAndNeverReachesTheWire(t *testing.T) {
-	cases := []struct {
-		dataUse  []any
-		provider map[string]any
-	}{
-		{nil, nil},
-		{[]any{"no_training"}, map[string]any{"data_collection": "deny"}},
-		{[]any{"zero_retention"}, map[string]any{"data_collection": "deny", "zdr": true}},
-	}
-	for _, tc := range cases {
-		a := parityAgent(t, "nous", "chat_completions", "https://inference-api.nousresearch.com/v1", "gpt-5")
-		tool := map[string]any{"role": "tool", "tool_call_id": "c1", "content": "inbox"}
-		last := map[string]any{"role": "tool", "tool_call_id": "c1", "content": "inbox"}
-		if tc.dataUse != nil {
-			last["data_use"] = tc.dataUse
-		}
-		kwargs := parityKwargs(t, a, []map[string]any{
-			{"role": "user", "content": "read my mail"},
-			{"role": "assistant", "content": "", "tool_calls": []any{map[string]any{"id": "c1", "type": "function",
-				"function": map[string]any{"name": "tool_call", "arguments": "{}"}}}},
-			last,
-		})
-		var want any
-		if tc.provider != nil {
-			want = tc.provider
-		}
-		paritySame(t, parityAt(t, kwargs, "extra_body", "provider"), want, "provider routing")
-		messages := kwargs["messages"].([]any)
-		paritySame(t, messages[len(messages)-1], tool, "wire tool message")
-	}
-}
-
-func TestBuildApiKwargsNousPortalConnectorDataUseIsNotSentToOtherProviders(t *testing.T) {
-	a := parityAgent(t, "openrouter", "chat_completions", "https://openrouter.ai/api/v1", "")
-	kwargs := parityKwargs(t, a, []map[string]any{
-		{"role": "user", "content": "hi"},
-		{"role": "assistant", "content": "", "tool_calls": []any{map[string]any{"id": "c1", "type": "function",
-			"function": map[string]any{"name": "tool_call", "arguments": "{}"}}}},
-		{"role": "tool", "tool_call_id": "c1", "content": "inbox", "data_use": []any{"no_training"}},
-	})
-	if extra, _ := kwargs["extra_body"].(map[string]any); extra != nil && extra["provider"] != nil {
-		t.Fatalf("provider routing sent to openrouter: %v", extra["provider"])
-	}
-	messages := kwargs["messages"].([]any)
-	if parityHas(t, messages[len(messages)-1], "data_use") {
-		t.Fatal("data_use reached the wire")
 	}
 }
 

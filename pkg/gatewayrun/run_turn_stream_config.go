@@ -153,7 +153,7 @@ func (r *GatewayRunner) proxyStreamConsumer(ctx context.Context, source *gateway
 	}
 	adapter, err := r.deliveryAdapterFor(ctx, source)
 	if err != nil {
-		runLog().Debug("Proxy: could not set up stream consumer: " + pyrepr.ExceptionMessage(err))
+		pkgLog().Debug("Proxy: could not set up stream consumer: " + pyrepr.ExceptionMessage(err))
 		return nil
 	}
 	if adapter == nil {
@@ -161,7 +161,7 @@ func (r *GatewayRunner) proxyStreamConsumer(ctx context.Context, source *gateway
 	}
 	consumerCfg, pauseTyping, err := r.buildStreamConsumerConfig(source, scfg, adapter, "fallback")
 	if err != nil {
-		runLog().Debug("Proxy: could not set up stream consumer: " + pyrepr.ExceptionMessage(err))
+		pkgLog().Debug("Proxy: could not set up stream consumer: " + pyrepr.ExceptionMessage(err))
 		return nil
 	}
 	return gateway.NewGatewayStreamConsumer(adapter, source.ChatID, gateway.StreamConsumerOptions{Config: consumerCfg,

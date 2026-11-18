@@ -23,7 +23,7 @@ func hostRecordIsOwn(path string) bool {
 	uid := hostGetuid()
 	fileUID := int(info.Sys().(*syscall.Stat_t).Uid)
 	if fileUID != uid || int(parent.Sys().(*syscall.Stat_t).Uid) != uid {
-		hostLog().Warn(fmt.Sprintf("ignoring host record %s: owned by uid %d (expected %d)", path, fileUID, uid))
+		pkgLog().Warn(fmt.Sprintf("ignoring host record %s: owned by uid %d (expected %d)", path, fileUID, uid))
 		return false
 	}
 	return true

@@ -5,7 +5,7 @@ import (
 	"sync"
 )
 
-// First in first out lock a waiter leaves when its context is cancelled, the asyncio Lock of hermes
+// First in first out lock a waiter leaves when its context is cancelled
 type asyncLock struct {
 	once sync.Once
 	slot chan struct{}

@@ -2,7 +2,6 @@ package agent
 
 import (
 	"fmt"
-	"log/slog"
 	"math"
 	"reflect"
 	"strings"
@@ -16,8 +15,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
-
-func replayCleanupLog() *slog.Logger { return slog.Default().With("logger", "agent.replay_cleanup") }
 
 // Orphan recovery notices, side effecting first, for an interrupted block and for a dangling tail
 var (
@@ -185,14 +182,14 @@ func StripInterruptedToolTails(history []map[string]any) []map[string]any {
 						cleaned = append(cleaned, r)
 					}
 				} else {
-					replayCleanupLog().Debug(fmt.Sprintf("Stripping interrupted read-only assistant→tool replay block (indices %d–%d, tool_results=%d)", i, j-1, len(results)))
+					pkgLog().Debug(fmt.Sprintf("Stripping interrupted read-only assistant→tool replay block (indices %d–%d, tool_results=%d)", i, j-1, len(results)))
 				}
 				i = j
 				continue
 			}
 		}
 		if msg["role"] == "tool" && IsInterruptedToolResult(rowContent(msg)) {
-			replayCleanupLog().Debug("Stripping orphan interrupted tool result from replay history")
+			pkgLog().Debug("Stripping orphan interrupted tool result from replay history")
 		} else {
 			cleaned = append(cleaned, msg)
 		}
@@ -221,14 +218,14 @@ func StripDanglingToolCallTail(history []map[string]any) []map[string]any {
 			disposition, content := orphanRecovery(name, danglingNotices)
 			recovered = append(recovered, toolResultDict(name, content, replayCallID(c), disposition))
 		}
-		replayCleanupLog().Warn("Recovered dangling side-effecting tool call(s) as UNKNOWN instead of erasing them")
+		pkgLog().Warn("Recovered dangling side-effecting tool call(s) as UNKNOWN instead of erasing them")
 		return recovered
 	}
-	replayCleanupLog().Debug(fmt.Sprintf("Stripping dangling unanswered read-only assistant(tool_calls) tail (%d call(s))", len(calls)))
+	pkgLog().Debug(fmt.Sprintf("Stripping dangling unanswered read-only assistant(tool_calls) tail (%d call(s))", len(calls)))
 	return history[:len(history)-1]
 }
 
-// Tool result row in the hermes dict shape, wire name plus top level risk and effect disposition keys
+// Tool result row in the dict shape, wire name plus top level risk and effect disposition keys
 func toolResultDict(name, content, toolCallID, disposition string) map[string]any {
 	d := state.MessageToDict(tools.MakeToolResultMessage(name, content, toolCallID, disposition))
 	out := map[string]any{"role": d["role"], "name": name}
@@ -329,7 +326,7 @@ func StripStaleDangerousConfirmations(history []map[string]any, now, expirySecon
 		}
 		preview, _ := msg["content"].(string)
 		runes := []rune(preview)
-		replayCleanupLog().Debug(fmt.Sprintf("Redacting stale dangerous-confirmation text in user message (age=%ss, expiry=%ss): %s",
+		pkgLog().Debug(fmt.Sprintf("Redacting stale dangerous-confirmation text in user message (age=%ss, expiry=%ss): %s",
 			pyFixed1(age), pyFixed1(expirySeconds), pyStrRepr(string(runes[:min(len(runes), 80)]))))
 		redacted := make(map[string]any, len(msg))
 		for k, v := range msg {

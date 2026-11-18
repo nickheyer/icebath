@@ -596,7 +596,15 @@ func PlanPublication(roomValue any, events []any, task DiscussionTaskPlan, statu
 	if newer && status != "deferred" {
 		effective = "cancelled"
 	}
-	if effective == "settled" && discussionRequiresDirectReply(room, source, task.Member, task.RoundIndex) && IsPassText(discussionTerminalText(result, "text", "")) {
+	var files []any
+	if mapping, ok := hostedMapping(result); ok && mapping["attachments"] != nil {
+		manifest, err := discussionMessageManifest(mapping["attachments"])
+		if err != nil {
+			return PublicationPlan{}, err
+		}
+		files = manifest
+	}
+	if effective == "settled" && len(files) == 0 && discussionRequiresDirectReply(room, source, task.Member, task.RoundIndex) && IsPassText(discussionTerminalText(result, "text", "")) {
 		effective = "failed"
 		result = map[string]any{"error": "@" + task.Member.Handle + " was directly addressed but returned no visible reply."}
 	}
@@ -609,13 +617,19 @@ func PlanPublication(roomValue any, events []any, task DiscussionTaskPlan, statu
 	switch effective {
 	case "settled":
 		text := discussionTruncateUTF8(discussionTerminalText(result, "text", ""), maxMemberTextBytes, discussionTruncatedNote)
-		if IsPassText(text) {
+		if IsPassText(text) && len(files) == 0 {
 			extra = map[string]any{"message_event_id": nil, "passed": true}
 		} else {
 			messageEventID := "dmessage:" + digest
 			extra = map[string]any{"message_event_id": messageEventID, "passed": false}
 			payload := discussionTurnCoordinateFields(task)
+			if IsPassText(text) {
+				text = ""
+			}
 			payload["text"] = text
+			if len(files) > 0 {
+				payload["attachments"] = files
+			}
 			effects = append(effects, EventPlan{messageEventID, "message.member", discussionMemberActor(task.Member, true), payload, room.GatewayID, room.AuthorityEpoch})
 		}
 	case "failed":

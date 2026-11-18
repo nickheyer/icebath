@@ -10,7 +10,7 @@ import (
 func AuxiliaryMaxTokensParam(ctx context.Context, value int, model string) map[string]any {
 	customBase := auxCurrentCustomBaseURL(ctx)
 	openrouterKey, _ := scopedKeyEnv(ctx, "OPENROUTER_API_KEY")
-	direct := openrouterKey == "" && auxReadNousAuth(ctx) == nil &&
+	direct := openrouterKey == "" &&
 		(baseURLHostname(customBase) == "api.openai.com" ||
 			routeAnswer(ctx, "max_tokens_param", "", nil, map[string]any{"base_url": customBase, "model": model}) == "max_completion_tokens")
 	if direct || config.ModelForcesMaxCompletionTokens(model) {

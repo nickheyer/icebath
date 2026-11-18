@@ -3,7 +3,6 @@ package app
 import (
 	"context"
 	"fmt"
-	"log/slog"
 	"sync"
 	"time"
 
@@ -200,7 +199,7 @@ func reloadGatewaySkills(ctx context.Context) any {
 		if !isGatewayClientError(err) {
 			panic(err)
 		}
-		slog.Debug(fmt.Sprintf("skills.reload failed: %s", err.Error()))
+		pkgLog().Debug(fmt.Sprintf("skills.reload failed: %s", err.Error()))
 		return nil
 	}
 	result, _ := pyjson.Plain(raw).(map[string]any)
@@ -248,7 +247,7 @@ func (v *GatewayProcessView) refresh(ctx context.Context, force bool) {
 	v.mu.Unlock()
 	raw, err := v.connection.CallWith(ctx, "process.list", map[string]any{"session_id": v.sessionID()}, gatewaycli.CallOptions{Timeout: 5 * time.Second})
 	if err != nil {
-		slog.Debug(fmt.Sprintf("process.list failed: %s", err.Error()))
+		pkgLog().Debug(fmt.Sprintf("process.list failed: %s", err.Error()))
 		return
 	}
 	result, _ := pyjson.Plain(raw).(map[string]any)

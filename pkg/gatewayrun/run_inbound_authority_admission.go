@@ -8,7 +8,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
-	"github.com/nickheyer/icebath/pkg/observability"
 	"github.com/nickheyer/icebath/pkg/state"
 )
 
@@ -25,12 +24,12 @@ func (r *GatewayRunner) hmBusySteer(ctx context.Context, event *gateway.MessageE
 		func() {
 			defer func() {
 				if rec := recover(); rec != nil {
-					runLog().Warn(fmt.Sprintf("PRIORITY steer failed for session %s: %s", quickKey, pyrepr.Str(rec)))
+					pkgLog().Warn(fmt.Sprintf("PRIORITY steer failed for session %s: %s", quickKey, pyrepr.Str(rec)))
 				}
 			}()
 			withOrigin, err := r.steerTextWithOrigin(ctx, steerText, event)
 			if err != nil {
-				runLog().Warn(fmt.Sprintf("PRIORITY steer failed for session %s: %s", quickKey, err))
+				pkgLog().Warn(fmt.Sprintf("PRIORITY steer failed for session %s: %s", quickKey, err))
 				return
 			}
 			steered = steerRunningAgent(runningAgent, withOrigin)
@@ -38,10 +37,10 @@ func (r *GatewayRunner) hmBusySteer(ctx context.Context, event *gateway.MessageE
 	}
 	if steered {
 		r.foldIntoRunningTurn(runningAgent, quickKey, event)
-		runLog().Debug(fmt.Sprintf("PRIORITY steer for session %s", quickKey))
+		pkgLog().Debug(fmt.Sprintf("PRIORITY steer for session %s", quickKey))
 		return nil
 	}
-	runLog().Debug(fmt.Sprintf("PRIORITY steer-fallback-to-queue for session %s", quickKey))
+	pkgLog().Debug(fmt.Sprintf("PRIORITY steer-fallback-to-queue for session %s", quickKey))
 	return r.queueOrReplacePendingEvent(ctx, quickKey, event)
 }
 
@@ -49,11 +48,11 @@ func (r *GatewayRunner) hmBusySteer(ctx context.Context, event *gateway.MessageE
 func (r *GatewayRunner) hmBusyInterrupt(ctx context.Context, event *gateway.MessageEvent, source *gateway.SessionSource, runningAgent *agent.AIAgent, quickKey string) error {
 	if hmTextOnly(event) && runningAgent.SupportsActiveTurnRedirect() {
 		if r.redirectActiveTurn(ctx, runningAgent, pystr.Strip(event.Text), quickKey, event) {
-			runLog().Debug(fmt.Sprintf("PRIORITY redirect for session %s", quickKey))
+			pkgLog().Debug(fmt.Sprintf("PRIORITY redirect for session %s", quickKey))
 			return nil
 		}
 	}
-	runLog().Debug(fmt.Sprintf("PRIORITY interrupt for session %s", quickKey))
+	pkgLog().Debug(fmt.Sprintf("PRIORITY interrupt for session %s", quickKey))
 	interruptText := event.Text
 	if len(pendingEventAudioPaths(event)) > 0 {
 		adapter, err := r.deliveryAdapterFor(ctx, source)
@@ -85,8 +84,6 @@ func (r *GatewayRunner) hmBusyPreempt(ctx context.Context, event *gateway.Messag
 	if err != nil {
 		return false, err
 	}
-	observability.NoteBusyOutcome(ctx, gateway.BusyEventOf(event), observability.BusySteerOutcome{
-		Steered: outcome.steered, Redirected: outcome.redirected, EffectiveMode: outcome.effectiveMode})
 	if err := r.busyInterruptAndAck(ctx, event, quickKey, adapter, busyState, runningAgent, outcome); err != nil {
 		return false, err
 	}
@@ -103,14 +100,6 @@ func (r *GatewayRunner) hmAuthorityAdmission(ctx context.Context, event *gateway
 	if authority != nil && !isCommand && !isInternal && !gateway.ExecutingAdmission(ctx) {
 		fifoOnly, _ := event.FIFOOnly()
 		busy := r.isSessionRunning(quickKey) && !fifoOnly
-		if busy {
-			adapter, err := r.deliveryAdapterFor(ctx, source)
-			if err != nil {
-				return false, nil, err
-			}
-			observability.StampBusyArrival(adapter, gateway.BusyEventOf(event))
-		}
-		defer observability.SettleBusyArrival(ctx, gateway.BusyEventOf(event), false)
 		return r.hmAdmitToFIFO(ctx, authority, event, source, quickKey, busy)
 	}
 	if authority == nil && !isInternal && !isCommand && r.sessionAuthority != nil {
@@ -152,7 +141,6 @@ func (r *GatewayRunner) hmAdmitToFIFO(ctx context.Context, authority *gateway.Se
 			return true, nil, nil
 		}
 	}
-	observability.NoteBusyAdmitting(ctx, gateway.BusyEventOf(event))
 	reply, err := gateway.AdmitMessage(ctx, authority, event)
 	if err != nil {
 		return false, nil, err

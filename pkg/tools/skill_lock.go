@@ -455,10 +455,10 @@ func (s *skillLockScope) firstHit(words []string, ancestor string) string {
 }
 
 func skillCheckUnlock(verb string, args []string, s *skillLockScope) string {
-	cli := verb == "icebath" || verb == "hermes"
+	cli := verb == "icebath"
 	if !cli && strings.HasPrefix(verb, "python") {
 		for _, a := range args {
-			if a == "icebath_cli.main" || a == "hermes_cli.main" {
+			if a == "icebath_cli.main" {
 				cli = true
 			}
 		}
@@ -687,7 +687,6 @@ func skillCodeRefusal(env *Env, code string, locked []lockedSkill, record, cwd s
 	}
 	home := expandUser("~")
 	text := strings.ReplaceAll(code, "$ICEBATH_HOME", envHome(env))
-	text = strings.ReplaceAll(text, "$HERMES_HOME", envHome(env))
 	text = strings.ReplaceAll(text, "~", home)
 	skillsRoot := realPathOf(skillLocks().SkillsDir(env))
 	if strings.Contains(text, ".usage.json") {

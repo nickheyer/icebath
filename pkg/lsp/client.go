@@ -51,8 +51,6 @@ var killServerTree = func(p *serverProc) {
 	proc.Kill(p.cmd)
 }
 
-const clientLogger = "agent.lsp.client"
-
 var clientCapabilities = map[string]any{
 	"window": map[string]any{"workDoneProgress": true},
 	"workspace": map[string]any{"configuration": true, "workspaceFolders": true,
@@ -402,7 +400,7 @@ func newClient(l *loop, rt *Runtime, o ClientOptions) *Client {
 }
 
 func (c *Client) logf(level slog.Level, format string, args ...any) {
-	c.rt.logf(level, clientLogger, format, args...)
+	c.rt.logf(level, format, args...)
 }
 
 // State of the client lifecycle

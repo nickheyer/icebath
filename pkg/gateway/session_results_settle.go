@@ -12,7 +12,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/tools"
 )
 
-// Display kind of the Hermes authored boundary that ends a failed turn
+// Display kind of the icebath authored boundary that ends a failed turn
 const failedTurnDisplayKind = "failed_turn"
 
 // Boundary copy of a turn whose side effects are unknown
@@ -222,7 +222,7 @@ var closeDiscardedTurn func(ctx context.Context, db *state.SessionDB, conn state
 
 func init() { closeDiscardedTurn = closeDiscardedTail }
 
-// Closes a discarded turn's open transcript tail with a Hermes authored boundary on the resolution's own transaction
+// Closes a discarded turn's open transcript tail with an icebath authored boundary on the resolution's own transaction
 func closeDiscardedTail(ctx context.Context, db *state.SessionDB, conn state.SQLiteConn, row *pyjson.Object, notice any, replaceAfter any, displayMetadata *pyjson.Object) (bool, error) {
 	physical, err := state.LocalPhysicalTarget(ctx, conn, rowString(row, "target_session_id"))
 	if err != nil {

@@ -8,11 +8,11 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/agent"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/tuigateway"
+	"github.com/nickheyer/icebath/pkg/tuihost"
 )
 
 // Detached idle TUI session under a fresh home, with a 20 s orphan grace and no delegations
-func detachedLoopSession(t *testing.T) (string, *tuigateway.Session) {
+func detachedLoopSession(t *testing.T) (string, *tuihost.Session) {
 	t.Helper()
 	sid := "sid-detached-loop"
 	session := orphanRaceSession(t, sid, 600, map[string]any{"session_key": "tui-loop-session", "running": false,
@@ -46,9 +46,9 @@ func fireOrphanReap(sid string) {
 }
 
 // Fails unless the reap kept the session registered with its timer re-armed
-func assertKeptDetached(t *testing.T, sid string, session *tuigateway.Session) {
+func assertKeptDetached(t *testing.T, sid string, session *tuihost.Session) {
 	t.Helper()
-	if tuigateway.SessionRecord(sid) != session {
+	if tuihost.SessionRecord(sid) != session {
 		t.Fatal("detached session was reaped")
 	}
 	if pendingReap(sid) == nil {
@@ -59,7 +59,7 @@ func assertKeptDetached(t *testing.T, sid string, session *tuigateway.Session) {
 // Fails unless the reap popped the session
 func assertCollected(t *testing.T, sid string) {
 	t.Helper()
-	if tuigateway.SessionRecord(sid) != nil {
+	if tuihost.SessionRecord(sid) != nil {
 		t.Fatal("detached session survived the reap")
 	}
 }
@@ -118,7 +118,7 @@ func TestSettledClientGoneInterruptIsCollectedDespiteActiveLoop(t *testing.T) {
 	session.Set("_run_thread", liveTurnThread(t))
 	session.Set("running", true)
 	fireOrphanReap(sid)
-	if !truthy(session.Get("_client_gone_interrupt_requested")) || tuigateway.SessionRecord(sid) != session {
+	if !truthy(session.Get("_client_gone_interrupt_requested")) || tuihost.SessionRecord(sid) != session {
 		t.Fatal("stale detached turn was not interrupted in place")
 	}
 	session.Set("running", false)
@@ -130,7 +130,7 @@ func TestOrphanReapKeepsDetachedSessionWithActiveLocalHeartbeat(t *testing.T) {
 	sid, session := detachedLoopSession(t)
 	setSessionHeartbeat(t, "tui-loop-session")
 	fireOrphanReap(sid)
-	if tuigateway.SessionRecord(sid) != session {
+	if tuihost.SessionRecord(sid) != session {
 		t.Fatal("detached session with a local heartbeat was reaped")
 	}
 }

@@ -27,7 +27,7 @@ func installEntrySignals(e *stdioEntry) {
 func closeRPCStdinOnExec() {
 	file, hasFD := entryStdin.(interface{ Fd() uintptr })
 	if !hasFD {
-		entryLogger().Debug("could not mark TUI RPC stdin close-on-exec", "exc_info", "stdin has no file descriptor")
+		pkgLog().Debug("could not mark TUI RPC stdin close-on-exec", "exc_info", "stdin has no file descriptor")
 		return
 	}
 	fd := int(file.Fd())
@@ -36,6 +36,6 @@ func closeRPCStdinOnExec() {
 		_, err = unix.FcntlInt(uintptr(fd), unix.F_SETFD, flags|unix.FD_CLOEXEC)
 	}
 	if err != nil {
-		entryLogger().Debug("could not mark TUI RPC stdin close-on-exec", "exc_info", err.Error())
+		pkgLog().Debug("could not mark TUI RPC stdin close-on-exec", "exc_info", err.Error())
 	}
 }

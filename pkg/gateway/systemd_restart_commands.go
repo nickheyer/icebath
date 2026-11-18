@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 )
 
@@ -20,7 +21,7 @@ func SystemdRestartCommands(unit string, scope any) ([]string, error) {
 				return []string{systemCmd}, nil
 			}
 		case map[string]any, []any:
-			return nil, fmt.Errorf("TypeError: unhashable type: '%s'", pyrepr.TypeName(scope))
+			return nil, fmt.Errorf("restart scope must be user or system, got %s", errchain.Kind(scope))
 		}
 	}
 	return []string{userCmd, systemCmd}, nil

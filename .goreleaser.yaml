@@ -36,7 +36,7 @@ archives:
       - goos: windows
         formats: [zip]
     name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
-    files: [LICENSE, README.md, cli-config.yaml.example, .env.example]
+    files: [LICENSE, THIRD_PARTY_NOTICES, README.md, cli-config.yaml.example, .env.example]
   - id: binary
     ids: [icebath]
     formats: [binary]
@@ -89,9 +89,10 @@ nfpms:
         dst: /usr/lib/icebath/.env.example
       - src: LICENSE
         dst: /usr/share/licenses/icebath/LICENSE
+      - src: THIRD_PARTY_NOTICES
+        dst: /usr/share/licenses/icebath/THIRD_PARTY_NOTICES
     scripts:
       postinstall: packaging/scripts/postinstall.sh
-      preremove: packaging/scripts/preremove.sh
     rpm:
       signature:
         key_file: "{{ .Env.REPO_GPG_KEY_FILE }}"
@@ -107,7 +108,7 @@ dockers_v2:
     images: [ghcr.io/nickheyer/icebath]
     tags: ["{{ .Version }}", latest]
     platforms: [linux/amd64, linux/arm64]
-    extra_files: [LICENSE, README.md, cli-config.yaml.example, .env.example, docker/SOUL.md, docker/profile-icebath-path.sh]
+    extra_files: [LICENSE, THIRD_PARTY_NOTICES, README.md, cli-config.yaml.example, .env.example, docker/SOUL.md, docker/profile-icebath-path.sh]
     build_args:
       BINARY_SOURCE: release
       VERSION: "{{ .Version }}"
@@ -150,10 +151,6 @@ homebrew_casks:
           on_macos do
             run "/usr/bin/xattr", args: ["-dr", "com.apple.quarantine", "#{staged_path}/icebath"]
           end
-          Dir.mktmpdir do |home|
-            system_command "#{staged_path}/icebath", args: ["pm", "install", "--extra", "nemo-relay"],
-                           env: { "ICEBATH_HOME" => home }, print_stdout: true, print_stderr: true, must_succeed: true
-          end
     repository:
       owner: nickheyer
       name: homebrew-tap
@@ -167,10 +164,6 @@ scoops:
     ids: [archive]
     post_install:
       - "Set-Content -Path \"$dir\\.install_method\" -Value 'scoop' -Encoding ascii"
-      - "$icebathHome = Join-Path ([System.IO.Path]::GetTempPath()) ([System.Guid]::NewGuid().ToString())"
-      - "$env:ICEBATH_HOME = $icebathHome; & \"$dir\\icebath.exe\" pm install --extra nemo-relay; $relayExit = $LASTEXITCODE; Remove-Item Env:ICEBATH_HOME"
-      - "Remove-Item -Recurse -Force $icebathHome -ErrorAction SilentlyContinue"
-      - "if ($relayExit -ne 0) { throw \"NeMo Relay runtime provisioning failed with exit code $relayExit\" }"
     homepage: https://icebath.app
     description: Tiling agentic harness and netrunner toolkit
     license: MIT
@@ -208,6 +201,7 @@ aurs:
       install -dm755 "${pkgdir}/usr/bin"
       ln -s /usr/lib/icebath/icebath "${pkgdir}/usr/bin/icebath"
       install -Dm644 ./LICENSE "${pkgdir}/usr/share/licenses/icebath/LICENSE"
+      install -Dm644 ./THIRD_PARTY_NOTICES "${pkgdir}/usr/share/licenses/icebath/THIRD_PARTY_NOTICES"
 
 aur_sources:
   - name: icebath
@@ -242,6 +236,7 @@ aur_sources:
       install -dm755 "${pkgdir}/usr/bin"
       ln -s /usr/lib/icebath/icebath "${pkgdir}/usr/bin/icebath"
       install -Dm644 ./LICENSE "${pkgdir}/usr/share/licenses/icebath/LICENSE"
+      install -Dm644 ./THIRD_PARTY_NOTICES "${pkgdir}/usr/share/licenses/icebath/THIRD_PARTY_NOTICES"
 
 nix:
   - name: icebath
@@ -250,16 +245,12 @@ nix:
     description: Tiling agentic harness and netrunner toolkit
     license: mit
     main_program: icebath
-    dependencies:
-      - name: python314
-      - name: unzip
-      - name: patchelf
-        os: linux
     extra_install: |-
       printf 'nix\n' > $out/bin/.install_method
       install -Dm644 ./cli-config.yaml.example $out/bin/cli-config.yaml.example
       install -Dm644 ./.env.example $out/bin/.env.example
-      ${let wheels = { x86_64-linux = { url = "https://files.pythonhosted.org/packages/b1/bf/9978ec3f8e5ee0dd1d2c7c1abba5f7358e0ae340d41bf1722097f3f19e1d/nemo_relay-0.11.0-cp311-abi3-manylinux_2_17_x86_64.manylinux2014_x86_64.whl"; sha256 = "146aecca2cb3d9c7490084fac83f838c09588ddce9360c942dcd1f2660d23f21"; }; aarch64-linux = { url = "https://files.pythonhosted.org/packages/93/5c/eed59ecb29abe4eb0661e6a807efaf24749b3fc9a381449bfc78f94bd34d/nemo_relay-0.11.0-cp311-abi3-manylinux_2_17_aarch64.manylinux2014_aarch64.whl"; sha256 = "b5c4d07ecfa35e09cf64c625c970778d8b0596143473ec29c25a8b33efa5c53c"; }; aarch64-darwin = { url = "https://files.pythonhosted.org/packages/49/41/49e6ac6733ef92e0a7a5e84bb5cac17e75e82218b2f55d6166dc4de0e0db/nemo_relay-0.11.0-cp311-abi3-macosx_11_0_arm64.whl"; sha256 = "26bf5b96d23ef39971b8c7721e8d74a78f59498b3b4922ce2b137da52043dcb4"; }; }; site = "$out/bin/venv/${python314.sitePackages}"; in lib.optionalString (wheels ? ${system}) "${python314.interpreter} -m venv --without-pip $out/bin/venv && ${unzip}/bin/unzip -q ${fetchurl wheels.${system}} -d ${site}${lib.optionalString stdenvNoCC.isLinux " && ${patchelf}/bin/patchelf --add-rpath ${python314.stdenv.cc.cc.lib}/lib ${site}/nemo_relay/_native.abi3.so"}"}
+      install -Dm644 ./LICENSE $out/share/licenses/icebath/LICENSE
+      install -Dm644 ./THIRD_PARTY_NOTICES $out/share/licenses/icebath/THIRD_PARTY_NOTICES
     path: pkgs/icebath/default.nix
     commit_author:
       name: nickheyer

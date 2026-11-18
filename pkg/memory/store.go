@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"log/slog"
 	"math"
 	"os"
@@ -18,6 +17,8 @@ import (
 	"time"
 	"unicode"
 	"unicode/utf8"
+
+	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pyfs"
@@ -314,11 +315,12 @@ func NewStore(dir string, memoryCharLimit, userCharLimit int, memoryEnabled, use
 	}
 }
 
+// Logger of the store or the process default, named after this package
 func (s *Store) log() *slog.Logger {
 	if s.Log != nil {
-		return s.Log.With("logger", memoryToolLogger)
+		return s.Log.With("logger", logName)
 	}
-	return slog.Default().With("logger", memoryToolLogger)
+	return pkgLog()
 }
 
 // Whether built in writes to the target are enabled in config
@@ -1462,7 +1464,7 @@ func missingPathError(err error) bool {
 	return errors.Is(err, os.ErrNotExist) || errors.Is(err, syscall.ENOTDIR) || errors.Is(err, syscall.ELOOP) || errors.Is(err, syscall.EBADF)
 }
 
-// Python OSError text, the errno label, capitalized strerror and quoted filename
+// Reason of an operating system failure followed by the paths it concerns
 func osErrorText(err error) string {
 	var pe *pyError
 	if errors.As(err, &pe) {
@@ -1472,19 +1474,14 @@ func osErrorText(err error) string {
 	if !errors.As(err, &errno) {
 		return err.Error()
 	}
-	msg := errno.Error()
-	if msg != "" {
-		r, size := utf8.DecodeRuneInString(msg)
-		msg = string(unicode.ToUpper(r)) + msg[size:]
-	}
-	text := fmt.Sprintf("[%s %d] %s", errnoLabel, int(errno), msg)
+	text := errno.Error()
 	var pathErr *os.PathError
 	var linkErr *os.LinkError
 	switch {
 	case errors.As(err, &linkErr):
-		text += fmt.Sprintf(": %s -> %s", pyRepr(linkErr.Old), pyRepr(linkErr.New))
+		text += ": " + linkErr.Old + " -> " + linkErr.New
 	case errors.As(err, &pathErr):
-		text += ": " + pyRepr(pathErr.Path)
+		text += ": " + pathErr.Path
 	}
 	return text
 }

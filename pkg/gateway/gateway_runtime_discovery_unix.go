@@ -110,7 +110,7 @@ func openModeError(path string, mode, expected uint32) *DiscoveryError {
 		fmt.Sprintf("chmod %o %s", expected, pyshlex.Quote(path)))
 }
 
-// Socket path resolution of the private clients, replaced by tests the way hermes tests monkeypatch _socket_path
+// Socket path resolution of the private clients, replaced by tests
 var discoverySocketPath = controlSocketPath
 
 // Connected control socket of home whose listener runs as this user

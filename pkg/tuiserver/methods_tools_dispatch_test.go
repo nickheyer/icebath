@@ -16,11 +16,11 @@ import (
 	"github.com/nickheyer/icebath/pkg/skills"
 	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tools"
-	"github.com/nickheyer/icebath/pkg/tuigateway"
+	"github.com/nickheyer/icebath/pkg/tuihost"
 )
 
 // Session with three persisted user turns and replies on a live agent, the store serving as the launch store
-func undoSessionWithHistory(t *testing.T) (string, *tuigateway.Session) {
+func undoSessionWithHistory(t *testing.T) (string, *tuihost.Session) {
 	t.Helper()
 	ctx := context.Background()
 	h := t.TempDir()

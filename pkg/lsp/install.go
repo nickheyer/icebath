@@ -166,7 +166,7 @@ func existingBinary(rt *Runtime, name string, windows bool) (string, error) {
 		})
 		binary, ok := found.bin, found.ok
 		if err != nil {
-			rt.logf(slog.LevelWarn, "agent.lsp.install", "[install] cannot read Python server %s: %s", name, err)
+			rt.logf(slog.LevelWarn, "[install] cannot read Python server %s: %s", name, err)
 		} else if ok {
 			return binary, nil
 		}
@@ -246,7 +246,7 @@ func doInstall(rt *Runtime, pkg string) (string, error) {
 	}
 	switch strategy {
 	case "manual":
-		rt.logf(slog.LevelDebug, "agent.lsp.install", "[install] %s requires manual install (recipe=%s)", pkg, recipeRepr(recipe))
+		rt.logf(slog.LevelDebug, "[install] %s requires manual install (recipe=%s)", pkg, recipeRepr(recipe))
 		return "", nil
 	case "npm":
 		return installNpm(rt, recipe.Pkg, binName, recipe.ExtraPkgs)
@@ -255,7 +255,7 @@ func doInstall(rt *Runtime, pkg string) (string, error) {
 	case "pip":
 		return installPip(rt, recipe.Pkg, binName)
 	}
-	rt.logf(slog.LevelWarn, "agent.lsp.install", "[install] unknown strategy %s for %s", pyrepr.StrRepr(strategy), pkg)
+	rt.logf(slog.LevelWarn, "[install] unknown strategy %s for %s", pyrepr.StrRepr(strategy), pkg)
 	return "", nil
 }
 
@@ -331,7 +331,7 @@ func runePrefix(s string, n int) string {
 func runInstaller(rt *Runtime, tool, pkg string, cmd []string, timeout time.Duration, env map[string]string) bool {
 	res, err := runInstallCommand(cmd, timeout, env)
 	if err != nil {
-		rt.logf(slog.LevelWarn, "agent.lsp.install", "[install] %s install errored for %s: %s", tool, pkg, errText(err))
+		rt.logf(slog.LevelWarn, "[install] %s install errored for %s: %s", tool, pkg, errText(err))
 		return false
 	}
 	if res.code != 0 {
@@ -339,7 +339,7 @@ func runInstaller(rt *Runtime, tool, pkg string, cmd []string, timeout time.Dura
 		if detail == "" {
 			detail = pystr.Strip(res.stdout)
 		}
-		rt.logf(slog.LevelWarn, "agent.lsp.install", "[install] %s install failed for %s: %s", tool, pkg, runePrefix(detail, 500))
+		rt.logf(slog.LevelWarn, "[install] %s install failed for %s: %s", tool, pkg, runePrefix(detail, 500))
 		return false
 	}
 	return true
@@ -409,7 +409,7 @@ func nodePackageManager(rt *Runtime) string {
 		pm = strings.ToLower(pystr.Strip(pyrepr.Str(v)))
 	}
 	if _, ok := nodePMArgv[pm]; !ok {
-		rt.logf(slog.LevelWarn, "agent.lsp.install", "[install] lsp.package_manager=%s is not one of %s; skipping install",
+		rt.logf(slog.LevelWarn, "[install] lsp.package_manager=%s is not one of %s; skipping install",
 			pyrepr.StrRepr(pm), pyrepr.Repr([]string{"npm", "pnpm", "yarn"}))
 		return ""
 	}
@@ -504,12 +504,12 @@ func installNpm(rt *Runtime, pkg, binName string, extraPkgs []string) (string, e
 			pmBin, err = findNodeExecutable(rt, "npm")
 		}
 		if err != nil {
-			rt.logf(slog.LevelWarn, "agent.lsp.install", "[install] cannot install %s: managed npm unavailable (%s)", pkg, errText(err))
+			rt.logf(slog.LevelWarn, "[install] cannot install %s: managed npm unavailable (%s)", pkg, errText(err))
 			return "", nil
 		}
 	}
 	if pmBin == "" {
-		rt.logf(slog.LevelWarn, "agent.lsp.install", "[install] cannot install %s: lsp.package_manager is %s but no usable %s was found "+
+		rt.logf(slog.LevelWarn, "[install] cannot install %s: lsp.package_manager is %s but no usable %s was found "+
 			"(install it, or set lsp.package_manager: npm)", pkg, pyrepr.StrRepr(pm), pm)
 		return "", nil
 	}
@@ -521,7 +521,7 @@ func installNpm(rt *Runtime, pkg, binName string, extraPkgs []string) (string, e
 	cmd := append([]string{pmBin}, nodePMArgv[pm](staging)...)
 	cmd = append(cmd, pkg)
 	cmd = append(cmd, extraPkgs...)
-	rt.logf(slog.LevelInfo, "agent.lsp.install", "[install] %s %s", pm, strings.Join(cmd[1:], " "))
+	rt.logf(slog.LevelInfo, "[install] %s %s", pm, strings.Join(cmd[1:], " "))
 	base, err := rt.subprocessEnv()
 	if err != nil {
 		return "", err
@@ -540,7 +540,7 @@ func installNpm(rt *Runtime, pkg, binName string, extraPkgs []string) (string, e
 		}
 		return linkIntoBin(rt, found)
 	}
-	rt.logf(slog.LevelWarn, "agent.lsp.install", "[install] %s install for %s succeeded but bin %s not found", pm, pkg, binName)
+	rt.logf(slog.LevelWarn, "[install] %s install for %s succeeded but bin %s not found", pm, pkg, binName)
 	return "", nil
 }
 
@@ -548,14 +548,14 @@ func installNpm(rt *Runtime, pkg, binName string, extraPkgs []string) (string, e
 func installGo(rt *Runtime, pkg, binName string) (string, error) {
 	goBin := pyWhich("go")
 	if goBin == "" {
-		rt.logf(slog.LevelInfo, "agent.lsp.install", "[install] cannot install %s: go not on PATH", pkg)
+		rt.logf(slog.LevelInfo, "[install] cannot install %s: go not on PATH", pkg)
 		return "", nil
 	}
 	staging, err := BinDir(rt)
 	if err != nil {
 		return "", err
 	}
-	rt.logf(slog.LevelInfo, "agent.lsp.install", "[install] go install %s (GOBIN=%s)", pkg, staging)
+	rt.logf(slog.LevelInfo, "[install] go install %s (GOBIN=%s)", pkg, staging)
 	env, err := rt.subprocessEnv()
 	if err != nil {
 		return "", err
@@ -572,7 +572,7 @@ func installGo(rt *Runtime, pkg, binName string) (string, error) {
 	if osPathExists(binPath) {
 		return binPath, nil
 	}
-	rt.logf(slog.LevelWarn, "agent.lsp.install", "[install] go install for %s succeeded but bin %s not found", pkg, binName)
+	rt.logf(slog.LevelWarn, "[install] go install for %s succeeded but bin %s not found", pkg, binName)
 	return "", nil
 }
 
@@ -585,7 +585,7 @@ func installPip(rt *Runtime, pkg, binName string) (string, error) {
 		return rt.EnsurePythonTool("lsp-"+binName, []string{pkg}, binName, 300*time.Second)
 	})
 	if err != nil {
-		rt.logf(slog.LevelWarn, "agent.lsp.install", "[install] Python server install failed for %s: %s", pkg, errText(err))
+		rt.logf(slog.LevelWarn, "[install] Python server install failed for %s: %s", pkg, errText(err))
 		return "", nil
 	}
 	return path, nil

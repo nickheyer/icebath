@@ -102,7 +102,7 @@ func (t *TurnRunner) renderApprovalSync(approvalData map[string]any) error {
 		return nil
 	}
 	if _, err := fut.resultWithin(15); err != nil {
-		runLog().Error(fmt.Sprintf("Failed to send approval request: %s", err))
+		pkgLog().Error(fmt.Sprintf("Failed to send approval request: %s", err))
 		return nil
 	}
 	registerTimeoutNotice(t, approvalData, cmd, nil)
@@ -122,7 +122,7 @@ func (t *TurnRunner) sendApprovalCard(sender execApprovalCardSender, approvalDat
 		return sender.SendExecApproval(ctx, chatID, cmd, sessionKey, &desc, metadata, allowPermanent, allowSession, smartDenied, requestID)
 	}, "send_exec_approval scheduling error")
 	if fut == nil {
-		runLog().Warn(fmt.Sprintf("Button-based approval failed, falling back to text: %s", errors.New("send_exec_approval: loop unavailable")))
+		pkgLog().Warn(fmt.Sprintf("Button-based approval failed, falling back to text: %s", errors.New("send_exec_approval: loop unavailable")))
 		return false, nil
 	}
 	switch approvalSendOutcome(fut, 15) {
@@ -136,12 +136,12 @@ func (t *TurnRunner) sendApprovalCard(sender execApprovalCardSender, approvalDat
 		registerTimeoutNotice(t, approvalData, cmd, cardID)
 		return true, nil
 	case "ambiguous":
-		runLog().Warn("Button-based approval send timed out — treating as possibly-delivered (no re-send; the prompt stays armed for a late tap)")
+		pkgLog().Warn("Button-based approval send timed out — treating as possibly-delivered (no re-send; the prompt stays armed for a late tap)")
 		return true, nil
 	case "declined":
-		runLog().Warn("Button-based approval DECLINED by the connector's egress guard — not falling back to text (the destination is not approved for this connection)")
+		pkgLog().Warn("Button-based approval DECLINED by the connector's egress guard — not falling back to text (the destination is not approved for this connection)")
 		return true, &execApprovalDeclinedError{"exec approval undeliverable: connector egress declined this destination"}
 	}
-	runLog().Warn("Button-based approval failed (send returned error), falling back to text")
+	pkgLog().Warn("Button-based approval failed (send returned error), falling back to text")
 	return false, nil
 }

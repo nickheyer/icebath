@@ -3,7 +3,6 @@ package monitoring
 import (
 	"context"
 	"fmt"
-	"log/slog"
 	"math"
 	"sync"
 	"time"
@@ -188,7 +187,7 @@ func EmitExecutionState(record map[string]any, deliveryOutcome *string) {
 	}
 	defer func() {
 		if r := recover(); r != nil {
-			slog.Debug(fmt.Sprintf("cron execution telemetry emit failed: %v", r))
+			pkgLog().Debug(fmt.Sprintf("cron execution telemetry emit failed: %v", r))
 		}
 	}()
 	event := ProjectExecutionEvent(record, deliveryOutcome)
@@ -228,14 +227,14 @@ func jobMetrics(ctx context.Context, src CronHealthSources, metrics *[]GatewayMe
 			enabled = append(enabled, j)
 		}
 	}
-	*metrics = append(*metrics, GatewayMetric{"hermes.cron.jobs.enabled", len(enabled), map[string]string{}})
+	*metrics = append(*metrics, GatewayMetric{"icebath.cron.jobs.enabled", len(enabled), map[string]string{}})
 	overdue := 0
 	for _, j := range enabled {
 		if isOverdue(j, src.Now()) {
 			overdue++
 		}
 	}
-	*metrics = append(*metrics, GatewayMetric{"hermes.cron.jobs.overdue", overdue, map[string]string{}})
+	*metrics = append(*metrics, GatewayMetric{"icebath.cron.jobs.overdue", overdue, map[string]string{}})
 	return nil
 }
 
@@ -272,12 +271,12 @@ type metricGroup struct {
 
 // Each group fails open on its own so one unavailable source never hides the rest
 var metricGroups = []metricGroup{
-	{freshnessMetric("hermes.cron.scheduler.heartbeat_age_seconds", func(s CronHealthSources) (*float64, error) { return s.TickerHeartbeatAge() }), "cron freshness metric unavailable"},
-	{freshnessMetric("hermes.cron.scheduler.last_success_age_seconds", func(s CronHealthSources) (*float64, error) { return s.TickerSuccessAge() }), "cron freshness metric unavailable"},
-	{singleMetric("hermes.cron.scheduler.catch_up_occurrences", func(s CronHealthSources) (any, error) { return s.CatchUpOccurrenceCount() }), "cron catch-up metric unavailable"},
+	{freshnessMetric("icebath.cron.scheduler.heartbeat_age_seconds", func(s CronHealthSources) (*float64, error) { return s.TickerHeartbeatAge() }), "cron freshness metric unavailable"},
+	{freshnessMetric("icebath.cron.scheduler.last_success_age_seconds", func(s CronHealthSources) (*float64, error) { return s.TickerSuccessAge() }), "cron freshness metric unavailable"},
+	{singleMetric("icebath.cron.scheduler.catch_up_occurrences", func(s CronHealthSources) (any, error) { return s.CatchUpOccurrenceCount() }), "cron catch-up metric unavailable"},
 	{jobMetrics, "cron job metrics unavailable"},
-	{singleMetric("hermes.cron.jobs.running", func(s CronHealthSources) (any, error) { return s.RunningJobCount() }), "cron running-job metric unavailable"},
-	{singleMetric("hermes.cron.store.writable", func(s CronHealthSources) (any, error) {
+	{singleMetric("icebath.cron.jobs.running", func(s CronHealthSources) (any, error) { return s.RunningJobCount() }), "cron running-job metric unavailable"},
+	{singleMetric("icebath.cron.store.writable", func(s CronHealthSources) (any, error) {
 		runs, err := s.DegradedSkippedRuns()
 		if err != nil {
 			return nil, err
@@ -287,7 +286,7 @@ var metricGroups = []metricGroup{
 		}
 		return 0, nil
 	}), "cron store metric unavailable"},
-	{singleMetric("hermes.cron.store.skipped_runs", func(s CronHealthSources) (any, error) {
+	{singleMetric("icebath.cron.store.skipped_runs", func(s CronHealthSources) (any, error) {
 		runs, err := s.DegradedSkippedRuns()
 		total := 0
 		for _, r := range runs {
@@ -301,11 +300,11 @@ var metricGroups = []metricGroup{
 func runMetricGroup(ctx context.Context, g metricGroup, src CronHealthSources, metrics *[]GatewayMetric) {
 	defer func() {
 		if r := recover(); r != nil {
-			slog.Debug(fmt.Sprintf("%s: %v", g.failure, r))
+			pkgLog().Debug(fmt.Sprintf("%s: %v", g.failure, r))
 		}
 	}()
 	if err := g.build(ctx, src, metrics); err != nil {
-		slog.Debug(fmt.Sprintf("%s: %v", g.failure, err))
+		pkgLog().Debug(fmt.Sprintf("%s: %v", g.failure, err))
 	}
 }
 

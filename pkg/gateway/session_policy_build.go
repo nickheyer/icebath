@@ -3,7 +3,6 @@ package gateway
 import (
 	"context"
 	"fmt"
-	"log/slog"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -581,7 +580,7 @@ func resolveToolsets(ctx context.Context, params, cfg map[string]any, source str
 func inCodingWorkspace(ctx context.Context, cfg map[string]any, source, cwd string) (inFocus bool) {
 	defer func() {
 		if rec := recover(); rec != nil {
-			slog.Debug(fmt.Sprintf("coding posture detection failed for %s; keeping the profile default", cwd), "error", rec)
+			pkgLog().Debug(fmt.Sprintf("coding posture detection failed for %s; keeping the profile default", cwd), "error", rec)
 			inFocus = false
 		}
 	}()
@@ -631,7 +630,7 @@ func renderLaunchSkills(ctx context.Context, params map[string]any, sessionID st
 		return nil, state.NewRuntimeStoreError("unknown_skill", nil, nil)
 	}
 	if len(missing) > 0 {
-		slog.Warn(fmt.Sprintf("Skipping %s for session %s; continuing with: %s",
+		pkgLog().Warn(fmt.Sprintf("Skipping %s for session %s; continuing with: %s",
 			skills.FormatMissingSkills(missing), sessionID, strings.Join(loaded, ", ")))
 	}
 	if prompt == "" {

@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"log/slog"
 	"net/http"
 	"net/url"
 	"strings"
@@ -92,11 +91,11 @@ func cancelSocketTasks(tasks []*socketTask) {
 			continue
 		}
 		if t.err != nil && !errors.Is(t.err, context.Canceled) {
-			slog.Debug("[Slack] Socket Mode task failed while stopping", "error", t.err)
+			pkgLog().Debug("[Slack] Socket Mode task failed while stopping", "error", t.err)
 		}
 	}
 	if stillRunning > 0 {
-		slog.Warn(fmt.Sprintf("[Slack] %d Socket Mode task(s) did not stop within %.1fs", stillRunning, socketTaskCancelTimeout.Seconds()))
+		pkgLog().Warn(fmt.Sprintf("[Slack] %d Socket Mode task(s) did not stop within %.1fs", stillRunning, socketTaskCancelTimeout.Seconds()))
 	}
 }
 
@@ -120,12 +119,12 @@ func resolveSlackProxyURL(ctx context.Context) string {
 	}
 	normalized := strings.ToLower(proxyURL)
 	if !strings.HasPrefix(normalized, "http://") && !strings.HasPrefix(normalized, "https://") {
-		slog.Info(fmt.Sprintf("[Slack] Ignoring unsupported proxy scheme for Slack transport: %s", gateway.SafeURLForLog(proxyURL, 80)))
+		pkgLog().Info(fmt.Sprintf("[Slack] Ignoring unsupported proxy scheme for Slack transport: %s", gateway.SafeURLForLog(proxyURL, 80)))
 		return ""
 	}
 	for _, host := range slackProxyHosts {
 		if gateway.IsHostExcludedByNoProxy(host, nil) {
-			slog.Info("[Slack] NO_PROXY bypasses Slack proxy configuration")
+			pkgLog().Info("[Slack] NO_PROXY bypasses Slack proxy configuration")
 			return ""
 		}
 	}

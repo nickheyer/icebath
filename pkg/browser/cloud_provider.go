@@ -42,7 +42,6 @@ func isValueError(err error) bool {
 // Credentials and endpoint one call of a cloud provider uses
 type cloudConfig struct {
 	APIKey, ProjectID, BaseURL string
-	ManagedMode                bool
 }
 
 // Vendor hooks the shared lifecycle calls, the subclass overrides of CloudBrowserProvider
@@ -56,7 +55,7 @@ type cloudHooks interface {
 
 // Shared REST lifecycle of the bundled cloud browser vendors, one create request and one release request
 type CloudBrowserProvider struct {
-	providerID, label, module  string
+	providerID, label          string
 	releaseMethod, releasePath string
 	missingCredentialsError    string
 	setupTag                   string
@@ -70,7 +69,7 @@ func (p *CloudBrowserProvider) Name() string        { return p.providerID }
 func (p *CloudBrowserProvider) DisplayName() string { return p.label }
 
 func (p *CloudBrowserProvider) log(env *tools.Env) *slog.Logger {
-	return cfgOf(env).logger().With("logger", p.module)
+	return cfgOf(env).logger()
 }
 
 // Available when the vendor config resolves, a raised resolution error propagating as a panic

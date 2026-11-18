@@ -21,6 +21,7 @@ import (
 	"github.com/google/uuid"
 
 	"encoding/base64"
+
 	"github.com/nickheyer/icebath/pkg/internal/pyast"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
@@ -226,7 +227,7 @@ func oweFor(ctx context.Context, root, sha string) error {
 	if !isUpdateOSError(err) {
 		return err
 	}
-	updateLog.Warn(fmt.Sprintf("Could not re-arm the update obligations for %s: %s", short(sha), launchErrorText(err)))
+	pkgLog().Warn(fmt.Sprintf("Could not re-arm the update obligations for %s: %s", short(sha), launchErrorText(err)))
 	fmt.Fprintf(commitStderr, "  ⚠ Could not record the restart this update still owes for %s (%s); run `icebath gateway restart` once the update is done.\n", short(sha), launchErrorText(err))
 	return nil
 }
@@ -623,7 +624,7 @@ func compileHere(sources []sourceFile) (*syntaxFault, error) {
 			}
 			var other *pyast.LimitError
 			if errors.As(err, &other) && other.Class == "ValueError" {
-				return &syntaxFault{Path: source.Rel, Error: "ValueError: " + other.Msg}, nil
+				return &syntaxFault{Path: source.Rel, Error: other.Msg}, nil
 			}
 			return nil, err
 		}

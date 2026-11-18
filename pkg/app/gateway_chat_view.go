@@ -2,13 +2,14 @@ package app
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
-	"log/slog"
 	"strings"
 	"sync"
 	"time"
 
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/i18n"
 	"github.com/nickheyer/icebath/pkg/internal/pydict"
@@ -288,7 +289,7 @@ func gatewayAnswerMap(raw any) (map[string]any, error) {
 	if m, ok := pyjson.Plain(raw).(map[string]any); ok {
 		return m, nil
 	}
-	return nil, fmt.Errorf("AttributeError: '%s' object has no attribute 'get'", pyrepr.TypeName(pyjson.Plain(raw)))
+	return nil, fmt.Errorf("the gateway answer is %s, expected a mapping", errchain.Kind(pyjson.Plain(raw)))
 }
 
 // Waits for the event with the view lock released
@@ -522,7 +523,7 @@ func (v *GatewayChatView) recover(ctx context.Context, admission any, sid string
 	} else if receipt, err = gatewayAnswerMap(raw); err != nil {
 		return err
 	} else if receipt == nil {
-		return fmt.Errorf("AttributeError: 'NoneType' object has no attribute 'get'")
+		return errors.New("the gateway returned no receipt for the admission")
 	}
 	var verdict *bool
 	no := false
@@ -801,12 +802,12 @@ func (v *GatewayChatView) settledResult(ctx context.Context, admission any) (*py
 		if ctx.Err() != nil {
 			return nil, ctx.Err()
 		}
-		slog.Debug(fmt.Sprintf("settled result for %s unavailable: %v", pyrepr.Str(admission), err))
+		pkgLog().Debug(fmt.Sprintf("settled result for %s unavailable: %v", pyrepr.Str(admission), err))
 		return pyjson.NewObject(), nil
 	}
 	receipt, ok := raw.(*pyjson.Object)
 	if !ok {
-		slog.Debug(fmt.Sprintf("settled result for %s unavailable: receipt is not a mapping", pyrepr.Str(admission)))
+		pkgLog().Debug(fmt.Sprintf("settled result for %s unavailable: receipt is not a mapping", pyrepr.Str(admission)))
 		return pyjson.NewObject(), nil
 	}
 	return gatewayResultCopy(receipt.Vals["result"]), nil

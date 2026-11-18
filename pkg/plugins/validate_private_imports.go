@@ -14,23 +14,23 @@ var privateImportsPublic = func() map[string]bool {
 	public := map[string]bool{}
 	for _, entry := range []string{
 		"agent.account_usage", "agent.acp_client", "agent.browser_provider", "agent.context_engine", "agent.credential_pool",
-		"agent.delegation_backends", "agent.delegation_provider", "hermes_cli.auth_model_picker:prompt_model_selection",
-		"hermes_cli.auth:resolve_external_process_provider_credentials", "hermes_cli.model_setup",
+		"agent.delegation_backends", "agent.delegation_provider", "icebath_cli.auth_model_picker:prompt_model_selection",
+		"icebath_cli.auth:resolve_external_process_provider_credentials", "icebath_cli.model_setup",
 		"agent.image_gen_provider", "agent.memory_manager", "agent.memory_provider", "agent.secret_scope",
 		"agent.secret_sources.base", "agent.subagent_lifecycle", "agent.terminal_env_provider",
 		"agent.transports", "agent.transports.chat_completions", "agent.video_gen_provider",
 		"agent.web_search_provider", "cli", "gateway.config", "gateway.platform_registry",
 		"gateway.platforms._shared", "gateway.platforms.base", "gateway.platforms.event",
-		"gateway.platforms.helpers", "gateway.status", "hermes_cli.auth_oauth_pkce_plugin",
-		"hermes_cli.config", "hermes_cli.plugin_events", "hermes_cli.plugin_provider_requests",
-		"hermes_constants", "hermes_platform", "hermes_state", "plugins.plugin_storage", "plugins.plugin_utils", "pm",
+		"gateway.platforms.helpers", "gateway.status", "icebath_cli.auth_oauth_pkce_plugin",
+		"icebath_cli.config", "icebath_cli.plugin_events", "icebath_cli.plugin_provider_requests",
+		"icebath_constants", "icebath_platform", "icebath_state", "plugins.plugin_storage", "plugins.plugin_utils", "pm",
 		"providers", "providers.base", "tools.browser_supervisor", "tools.browser_supervisor_capture",
 		"tools.computer_use.backend", "tools.registry",
 		"agent.context_references", "agent.plugin_llm", "agent.transcription_provider", "agent.tts_provider",
 		"cron.execution_identity",
-		"hermes_cli.platform_actions", "hermes_cli.plugins:PluginContext",
-		"hermes_cli.plugins_ledger:PluginRegistration", "hermes_cli.plugins_state:PluginState",
-		"agent.runtime_cwd:resolve_agent_cwd", "agent.usage_pricing:CostResult", "hermes_cli.auth_constants:AuthError",
+		"icebath_cli.platform_actions", "icebath_cli.plugins:PluginContext",
+		"icebath_cli.plugins_ledger:PluginRegistration", "icebath_cli.plugins_state:PluginState",
+		"agent.runtime_cwd:resolve_agent_cwd", "agent.usage_pricing:CostResult", "icebath_cli.auth_constants:AuthError",
 		"tools.environments.base:BaseEnvironment", "tools.environments:BaseEnvironment",
 		"utils:atomic_json_write", "utils:read_json_or_empty",
 		"gateway.platforms.access_policy_mixin:OwnAccessPolicyMixin", "tools.approval:resolve_gateway_approval",
@@ -38,21 +38,16 @@ var privateImportsPublic = func() map[string]bool {
 		"tools.clarify_gateway:mark_awaiting_text", "tools.clarify_gateway:SKIPPED",
 		"tools.url_safety:is_safe_url", "tools.url_safety:create_ssrf_safe_async_client",
 		"gateway.platforms._http_client_limits:platform_httpx_limits",
-		"hermes_cli.gateway_setup_wizard:print_setup_header", "hermes_cli.gateway_setup_wizard:confirm_reconfigure",
-		"hermes_cli.gateway_setup_wizard:offer_home_channel", "hermes_cli.gateway_setup_wizard:save_env_values",
-		"hermes_cli.gateway_setup_wizard:prompt_csv", "hermes_cli.setup:prompt", "hermes_cli.setup:prompt_choice",
-		"hermes_cli.setup:prompt_yes_no", "hermes_cli.cli_output",
+		"icebath_cli.gateway_setup_wizard:print_setup_header", "icebath_cli.gateway_setup_wizard:confirm_reconfigure",
+		"icebath_cli.gateway_setup_wizard:offer_home_channel", "icebath_cli.gateway_setup_wizard:save_env_values",
+		"icebath_cli.gateway_setup_wizard:prompt_csv", "icebath_cli.setup:prompt", "icebath_cli.setup:prompt_choice",
+		"icebath_cli.setup:prompt_yes_no", "icebath_cli.cli_output",
 		"tools.skills_tool:find_all_skills", "tools.skills_tool:sort_skills", "tools.skills_tool:skill_search_dirs",
 		"tools.skills_tool:locate_skill", "tools.skills_tool:skill_lookup_path_error",
 		"tools.skills_sync:dir_hash", "tools.skill_usage:read_skill_name",
 		"gateway.session_context:get_session_env",
 	} {
 		public[entry] = true
-		for from, to := range map[string]string{"hermes_cli": "icebath_cli", "hermes_constants": "icebath_constants"} {
-			if entry == from || strings.HasPrefix(entry, from+".") || strings.HasPrefix(entry, from+":") {
-				public[to+entry[len(from):]] = true
-			}
-		}
 	}
 	return public
 }()
@@ -153,14 +148,15 @@ func isOwnModulePath(module string, local map[string]bool) bool {
 
 // Dotted target to report, empty when the import is public, local or not Icebath's
 func privateTarget(module, name string, core, local map[string]bool) string {
-	target := module
+	target, canon := module, currentModuleName(module)
+	canonTarget := canon
 	if name != "" {
-		target = module + "." + name
+		target, canonTarget = module+"."+name, canon+"."+name
 	}
-	own := isOwnModulePath(module, local) || (name != "" && isOwnModulePath(target, local))
-	icebath := core[strings.Split(module, ".")[0]] && !local[module] && !own
-	public := privateImportsPublic[target] || privateImportsPublic[module+":"+name] ||
-		(privateImportsPublic[module] && !strings.HasPrefix(name, "_"))
+	own := isOwnModulePath(canon, local) || (name != "" && isOwnModulePath(canonTarget, local))
+	icebath := core[strings.Split(canon, ".")[0]] && !local[module] && !own
+	public := privateImportsPublic[canonTarget] || privateImportsPublic[canon+":"+name] ||
+		(privateImportsPublic[canon] && !strings.HasPrefix(name, "_"))
 	if icebath && !public {
 		return target
 	}

@@ -7,7 +7,7 @@ import (
 	"testing"
 
 	"github.com/nickheyer/icebath/pkg/state"
-	"github.com/nickheyer/icebath/pkg/tuigateway"
+	"github.com/nickheyer/icebath/pkg/tuihost"
 )
 
 // Launch store holding a kanban worker transcript and an ordinary chat
@@ -35,7 +35,7 @@ func kanbanResume(sessionID string) map[string]any {
 
 // Whether any live session holds the stored key
 func liveForKey(key string) bool {
-	for _, live := range tuigateway.LiveSessions() {
+	for _, live := range tuihost.LiveSessions() {
 		if live.Session.Get("session_key") == key {
 			return true
 		}

@@ -167,7 +167,7 @@ func TestVoiceChannelCommandsJoinSuccess(t *testing.T) {
 	adapter.channel, adapter.joinOK = namedVoiceChannel("General"), true
 	event := discordVoiceEvent("/voice channel")
 	event.Source.ChatType = "group"
-	event.Source.ChatName = kstr("Hermes Server / #general")
+	event.Source.ChatName = kstr("Icebath Server / #general")
 	r.adapters.Set(gateway.PlatformDiscord, adapter)
 	result, err := r.handleVoiceChannelJoin(context.Background(), event)
 	if err != nil {

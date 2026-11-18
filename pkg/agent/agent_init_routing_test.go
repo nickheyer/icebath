@@ -3,7 +3,6 @@ package agent
 import (
 	"context"
 	"strings"
-	"sync/atomic"
 	"testing"
 
 	"github.com/nickheyer/icebath/pkg/provider"
@@ -57,26 +56,6 @@ func TestExplicitAPIModeIsNeverUpgraded(t *testing.T) {
 	a.finalizeRouting(context.Background(), "chat_completions")
 	if a.apiMode != "chat_completions" {
 		t.Fatalf("api_mode = %q", a.apiMode)
-	}
-}
-
-func TestKeepaliveThreadStartsWhenAnAgentRoutesToNous(t *testing.T) {
-	t.Setenv("ICEBATH_HOME", t.TempDir())
-	var started atomic.Int32
-	prev := nousKeepaliveStart
-	nousKeepaliveStart = func(provider.PoolEnv, provider.NousKeepaliveStartOptions) bool { started.Add(1); return true }
-	prevPrewarm := openrouterPrewarmFn
-	openrouterPrewarmFn = func(context.Context) {}
-	t.Cleanup(func() { nousKeepaliveStart, openrouterPrewarmFn = prev, prevPrewarm })
-	nous := &AIAgent{provider: "nous", baseURL: "https://inference-api.nousresearch.com/v1", model: "anthropic/claude-fable-5.1", apiMode: "chat_completions"}
-	nous.finalizeRouting(context.Background(), "")
-	if started.Load() != 1 {
-		t.Fatalf("started = %d after the nous agent", started.Load())
-	}
-	or := &AIAgent{provider: "openrouter", baseURL: "https://openrouter.ai/api/v1", model: "anthropic/claude-fable-5.1", apiMode: "chat_completions"}
-	or.finalizeRouting(context.Background(), "")
-	if started.Load() != 1 {
-		t.Fatalf("started = %d after the openrouter agent", started.Load())
 	}
 }
 

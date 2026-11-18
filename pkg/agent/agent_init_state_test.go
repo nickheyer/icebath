@@ -135,7 +135,7 @@ func TestInitStateTablesGiveEachAgentFreshState(t *testing.T) {
 	if !a.supportsActiveTurnRedirect || a.toolWorkerThreads == nil || a.activeChildren == nil || a.deliveredInterimTexts == nil || a.anthropicImageFallbackCache == nil {
 		t.Fatal("control or stream defaults missing")
 	}
-	if a.lastActivityDesc != "initializing" || a.lastActivityTS == 0 || a.runBudgetSeconds != 90 || a.CreditsCapture().Latch() == nil {
+	if a.lastActivityDesc != "initializing" || a.lastActivityTS == 0 || a.runBudgetSeconds != 90 || a.HeaderCapture() == nil {
 		t.Fatalf("turn state desc %q ts %v budget %v", a.lastActivityDesc, a.lastActivityTS, a.runBudgetSeconds)
 	}
 	initTurnState(a, nil)

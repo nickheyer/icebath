@@ -208,7 +208,7 @@ func TestSwitchValidationTrustsProfileOwnedCatalog(t *testing.T) {
 	}
 }
 
-// Installs a curated row for the provider the way the hermes tests patch _PROVIDER_MODELS
+// Installs a curated row for the provider the way the tests patch PROVIDER MODELS
 func setCuratedModels(t *testing.T, provider string, ids []string) {
 	t.Helper()
 	HasCuratedCatalog(provider)

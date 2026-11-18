@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"log/slog"
 	"math/big"
 	"slices"
 	"sort"
@@ -177,7 +176,7 @@ type GatewayAgent struct {
 	turnReasoning         string
 	usageListener         *gatewaycli.SessionListener
 	requestListener       *gatewaycli.SessionListener
-	credits               *provider.CreditsCapture
+	headerCapture         *provider.HeaderCapture
 	notificationConfig    map[string]any
 	muteNotificationReply bool
 }
@@ -296,7 +295,7 @@ func (a *GatewayAgent) SetToolProgressMode(mode string) {
 	}
 	if _, err := a.connection.Call(a.ctx, "config.set", map[string]any{"session_id": a.SessionID(), "key": "verbose", "value": mode}); err != nil {
 		if isGatewayClientError(err) {
-			slog.Debug(fmt.Sprintf("config.set verbose failed: %s", err.Error()))
+			pkgLog().Debug(fmt.Sprintf("config.set verbose failed: %s", err.Error()))
 			return
 		}
 		panic(err)
@@ -367,7 +366,7 @@ func (a *GatewayAgent) setReasoning(config map[string]any, explicit bool) bool {
 	}
 	if err != nil {
 		if isGatewayClientError(err) || errors.Is(err, errSnapshotFence) {
-			slog.Debug(fmt.Sprintf("session.mutate reasoning failed: %s", err.Error()))
+			pkgLog().Debug(fmt.Sprintf("session.mutate reasoning failed: %s", err.Error()))
 			return false
 		}
 		panic(err)
@@ -490,7 +489,7 @@ func (a *GatewayAgent) SwitchModel(newModel, newProvider string, once, restore b
 		if !isGatewayClientError(err) {
 			return false, err
 		}
-		slog.Warn(fmt.Sprintf("session.resume after the committed model switch failed: %s", err.Error()))
+		pkgLog().Warn(fmt.Sprintf("session.resume after the committed model switch failed: %s", err.Error()))
 	} else {
 		state.AdoptSnapshot(after)
 	}
@@ -560,13 +559,13 @@ func (a *GatewayAgent) SetSessionID(value string) {
 			if !isGatewayClientError(err) {
 				panic(err)
 			}
-			slog.Debug(fmt.Sprintf("session.resume %s failed: %s", value, err.Error()))
+			pkgLog().Debug(fmt.Sprintf("session.resume %s failed: %s", value, err.Error()))
 		}
 	} else if _, err := a.connection.Call(a.ctx, "session.resume", map[string]any{"session_id": value}); err != nil {
 		if !isGatewayClientError(err) {
 			panic(err)
 		}
-		slog.Debug(fmt.Sprintf("session.resume %s failed: %s", value, err.Error()))
+		pkgLog().Debug(fmt.Sprintf("session.resume %s failed: %s", value, err.Error()))
 	}
 	a.listen(value)
 	a.applyInfo(a.stateInfo())
@@ -617,7 +616,7 @@ func (a *GatewayAgent) syncShowReasoning() {
 		if !isGatewayClientError(err) {
 			panic(err)
 		}
-		slog.Debug(fmt.Sprintf("config.set show_reasoning failed: %s", err.Error()))
+		pkgLog().Debug(fmt.Sprintf("config.set show_reasoning failed: %s", err.Error()))
 		return
 	}
 	a.mu.Lock()
@@ -650,7 +649,7 @@ func (a *GatewayAgent) SetServiceTier(tier string) {
 		if !isGatewayClientError(err) {
 			panic(err)
 		}
-		slog.Debug(fmt.Sprintf("config.set service_tier failed: %s", err.Error()))
+		pkgLog().Debug(fmt.Sprintf("config.set service_tier failed: %s", err.Error()))
 		return
 	}
 	state.Lock()
@@ -903,7 +902,7 @@ func (a *GatewayAgent) Interrupt() {
 	}
 	if _, err := a.connection.CallWith(a.ctx, "session.interrupt", map[string]any{"session_id": a.SessionID(), "execution_generation": generation},
 		gatewaycli.CallOptions{Timeout: 5 * time.Second}); err != nil {
-		slog.Debug(fmt.Sprintf("session.interrupt failed: %s", err.Error()))
+		pkgLog().Debug(fmt.Sprintf("session.interrupt failed: %s", err.Error()))
 	}
 }
 

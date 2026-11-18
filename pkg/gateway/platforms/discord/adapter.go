@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"log/slog"
 	"math"
 	"sync"
 
@@ -117,7 +116,7 @@ func (a *DiscordAdapter) warnLivenessConfigDisabled(key string, raw any) {
 	if key == "websocket_event_max_silence_seconds" {
 		scope = "the event-silence dimension of the websocket liveness probe"
 	}
-	slog.Warn(fmt.Sprintf("[%s] Discord liveness knob %s=%s is not a usable positive number; %s is disabled by this value",
+	pkgLog().Warn(fmt.Sprintf("[%s] Discord liveness knob %s=%s is not a usable positive number; %s is disabled by this value",
 		a.Name(), key, pyrepr.Repr(raw), scope))
 }
 
@@ -173,11 +172,11 @@ func (a *DiscordAdapter) handleBotTaskDone(ctx context.Context, task *botTask) {
 	if task.err != nil {
 		message = fmt.Sprintf("Discord gateway task exited: %s", task.err)
 	}
-	slog.Error(fmt.Sprintf("[%s] %s", a.Name(), message))
+	pkgLog().Error(fmt.Sprintf("[%s] %s", a.Name(), message))
 	a.SetFatalError(ctx, "discord_gateway_task_exited", message, true)
 	go func() {
 		if err := a.NotifyFatalError(ctx); err != nil {
-			slog.Warn(fmt.Sprintf("[%s] Failed to notify gateway supervisor about Discord task exit: %s", a.Name(), err))
+			pkgLog().Warn(fmt.Sprintf("[%s] Failed to notify gateway supervisor about Discord task exit: %s", a.Name(), err))
 		}
 	}()
 }
@@ -261,7 +260,7 @@ func (a *DiscordAdapter) firePlatformEvent(ctx context.Context, event map[string
 		return
 	}
 	if err := handler(ctx, event, source); err != nil {
-		slog.Debug(fmt.Sprintf("[%s] gateway_platform_event dispatch error", a.Name()), "err", err)
+		pkgLog().Debug(fmt.Sprintf("[%s] gateway_platform_event dispatch error", a.Name()), "err", err)
 	}
 }
 
@@ -284,7 +283,7 @@ func (a *DiscordAdapter) emitPlatformEvent(ctx context.Context, eventType string
 	}
 	source, err := a.sourceForPlatformEvent(ctx, *fields)
 	if err != nil {
-		slog.Debug(fmt.Sprintf("[%s] %s normalize error", a.Name(), eventType), "err", err)
+		pkgLog().Debug(fmt.Sprintf("[%s] %s normalize error", a.Name(), eventType), "err", err)
 		return
 	}
 	a.firePlatformEvent(ctx, map[string]any{"platform": "discord", "event_type": eventType, "payload": payload}, source)

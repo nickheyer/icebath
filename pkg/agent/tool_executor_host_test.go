@@ -162,19 +162,6 @@ func TestNoticeNoToolCarriedRidesNextUserTurnOnce(t *testing.T) {
 	}
 }
 
-func TestToolMetricSinkConsumesMetricsAndForwardsTheRest(t *testing.T) {
-	var forwarded []tools.Event
-	env := withToolMetricSink(t.Context(), &tools.Env{Notify: func(ev tools.Event) { forwarded = append(forwarded, ev) }})
-	env.Emit(tools.Event{Kind: "metric", Data: map[string]any{"name": ""}})
-	env.Emit(tools.Event{Kind: "progress", Data: map[string]any{"text": "x"}})
-	if len(forwarded) != 1 || forwarded[0].Kind != "progress" {
-		t.Fatalf("forwarded %+v", forwarded)
-	}
-	if withToolMetricSink(t.Context(), nil) != nil {
-		t.Fatal("nil env grew a sink")
-	}
-}
-
 func TestToolCallbacksAdaptBetweenExecutorAndCodexShapes(t *testing.T) {
 	a := runAgentFixture(t)
 	var gotExtra map[string]any

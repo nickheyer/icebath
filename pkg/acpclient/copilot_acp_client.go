@@ -1,7 +1,6 @@
 package acpclient
 
 import (
-	"log/slog"
 	"strings"
 	"sync/atomic"
 
@@ -34,7 +33,7 @@ var (
 // Logs the alias deprecation once per process on the silent py.warnings channel
 func warnFormerCopilotName(name string) {
 	if formerCopilotWarned.CompareAndSwap(false, true) {
-		slog.Default().With("logger", "py.warnings").Debug("DeprecationWarning: agent.copilot_acp_client." + name +
+		pkgLog().Debug("DeprecationWarning: agent.copilot_acp_client." + name +
 			" is deprecated; subclass agent.acp_client.ACPClient instead.")
 	}
 }

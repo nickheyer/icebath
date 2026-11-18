@@ -28,7 +28,7 @@ func (r *GatewayRunner) clearResumePendingForClaimedObligations(ctx context.Cont
 			continue
 		}
 		if _, err := r.sessionStore.ClearResumePending(ctx, row.SessionKey); err != nil {
-			runLog().Debug(fmt.Sprintf("clear_resume_pending failed for %s", row.SessionKey), "exc_info", err)
+			pkgLog().Debug(fmt.Sprintf("clear_resume_pending failed for %s", row.SessionKey), "exc_info", err)
 			if requireSuccess {
 				continue
 			}
@@ -69,7 +69,7 @@ func (r *GatewayRunner) claimPendingObligations(ctx context.Context) []gateway.C
 	}
 	claimed, err := gateway.SweepRecoverable(ctx, nil, platforms, targets)
 	if err != nil {
-		runLog().Debug("delivery ledger sweep failed", "exc_info", err)
+		pkgLog().Debug("delivery ledger sweep failed", "exc_info", err)
 		return nil
 	}
 	if len(claimed) == 0 {
@@ -85,7 +85,7 @@ func releaseRuntimeClaimQuiet(ctx context.Context, obligationID, logFmt, errText
 		errText = "send_path_degraded"
 	}
 	if _, err := gateway.ReleaseRuntimeClaim(ctx, obligationID, errText); err != nil {
-		runLog().Debug(fmt.Sprintf(logFmt, obligationID), "exc_info", err)
+		pkgLog().Debug(fmt.Sprintf(logFmt, obligationID), "exc_info", err)
 	}
 }
 
@@ -189,7 +189,7 @@ func (r *GatewayRunner) redeliverClaimedObligations(ctx context.Context, claimed
 		}
 		result, err := adapter.Send(ctx, row.ChatID, content, "", metadata)
 		if err != nil {
-			runLog().Warn(fmt.Sprintf("obligation %s: redelivery send raised: %s", row.ObligationID, err))
+			pkgLog().Warn(fmt.Sprintf("obligation %s: redelivery send raised: %s", row.ObligationID, err))
 		}
 		if err == nil && result.Success {
 			if err := gateway.MarkDelivered(ctx, row.ObligationID); err != nil {
@@ -197,7 +197,7 @@ func (r *GatewayRunner) redeliverClaimedObligations(ctx context.Context, claimed
 				continue
 			}
 			redelivered++
-			runLog().Info(fmt.Sprintf("Redelivered recovered final response to %s:%s (obligation %s, attempt %d)", row.Platform, row.ChatID, row.ObligationID, row.Attempts))
+			pkgLog().Info(fmt.Sprintf("Redelivered recovered final response to %s:%s (obligation %s, attempt %d)", row.Platform, row.ChatID, row.ObligationID, row.Attempts))
 		} else {
 			errText := "send failed"
 			if err == nil && pyrepr.Truthy(result.Error) {
@@ -214,7 +214,7 @@ func (r *GatewayRunner) redeliverClaimedObligations(ctx context.Context, claimed
 func (r *GatewayRunner) obligationAdapter(ctx context.Context, row gateway.ClaimedObligation) gateway.PlatformAdapter {
 	platform, err := gateway.ParsePlatform(ctx, row.Platform)
 	if err != nil {
-		runLog().Debug(fmt.Sprintf("obligation %s: unknown platform '%s'", row.ObligationID, row.Platform))
+		pkgLog().Debug(fmt.Sprintf("obligation %s: unknown platform '%s'", row.ObligationID, row.Platform))
 		return nil
 	}
 	profile := row.Profile
@@ -241,7 +241,7 @@ func (r *GatewayRunner) redeliverFailedObligationsForPlatform(ctx context.Contex
 	}
 	claimed, err := gateway.SweepFailedForRuntime(ctx, string(platform), nil, profile)
 	if err != nil {
-		runLog().Debug(fmt.Sprintf("runtime delivery ledger sweep failed after %s reconnect", platform), "exc_info", err)
+		pkgLog().Debug(fmt.Sprintf("runtime delivery ledger sweep failed after %s reconnect", platform), "exc_info", err)
 		return 0
 	}
 	if len(claimed) == 0 {

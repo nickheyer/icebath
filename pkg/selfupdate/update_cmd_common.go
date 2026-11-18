@@ -11,6 +11,6 @@ func bestEffort(ctx context.Context, message string, step func() error) error {
 	if err == nil || isUpdateExit(err) {
 		return err
 	}
-	updateLog.DebugContext(ctx, fmt.Sprintf(message, launchErrorText(err)))
+	pkgLog().DebugContext(ctx, fmt.Sprintf(message, launchErrorText(err)))
 	return nil
 }

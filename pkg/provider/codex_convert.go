@@ -7,13 +7,13 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"log/slog"
 	"regexp"
 	"sort"
 	"strings"
 	"sync"
 	"unicode"
+
+	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 
 	"github.com/google/uuid"
 
@@ -23,8 +23,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
-
-var codexLog = slog.Default()
 
 // ---- endpoint quirks and issuer kinds ----
 
@@ -846,7 +844,7 @@ func replayReasoningItems(msg *codexMsg, seen map[string]bool, opts codexConvert
 		foreignModel := !modelCanReadBlob(opts.currentIssuerKind, itemModel, opts.currentIssuerModel)
 		if foreignIssuer || foreignModel {
 			crossIssuerWarnOnce.Do(func() {
-				codexLog.Warn(fmt.Sprintf("Dropping reasoning item minted by %s/%s while calling %s/%s — encrypted_content is sealed to its issuer and model. This happens when a session switches model mid-conversation.",
+				pkgLog().Warn(fmt.Sprintf("Dropping reasoning item minted by %s/%s while calling %s/%s — encrypted_content is sealed to its issuer and model. This happens when a session switches model mid-conversation.",
 					itemIssuer, itemModel, opts.currentIssuerKind, opts.currentIssuerModel))
 			})
 			continue
@@ -1845,7 +1843,7 @@ func captureEncryptedItem(item map[string]any, itemType, issuerKind, issuerModel
 	}
 	itemID, _ := item["id"].(string)
 	if strings.HasPrefix(itemID, "rs_tmp_") {
-		codexLog.Debug("Skipping transient Codex reasoning item during normalization: " + itemID)
+		pkgLog().Debug("Skipping transient Codex reasoning item during normalization: " + itemID)
 		return nil
 	}
 	if itemID != "" {
@@ -1909,7 +1907,7 @@ func (s *codexOutputScan) scan(output []any, issuerKind, issuerModel string) {
 			if captured := captureEncryptedItem(item, itemType, issuerKind, issuerModel); captured != nil {
 				s.reasoningItemsRaw = append(s.reasoningItemsRaw, captured)
 				if itemType == "compaction" {
-					codexLog.Info(fmt.Sprintf("Native Responses compaction item captured (%d chars encrypted).", len(captured["encrypted_content"].(string))))
+					pkgLog().Info(fmt.Sprintf("Native Responses compaction item captured (%d chars encrypted).", len(captured["encrypted_content"].(string))))
 				}
 			}
 		case itemType == "custom_tool_call" || (itemType == "function_call" && !codexIncompleteStatuses[itemStatus]):
@@ -1974,7 +1972,7 @@ func normalizeCodexResponse(resp map[string]any, issuerKind, issuerModel string,
 		var content []any
 		switch {
 		case outText != "":
-			codexLog.Debug(fmt.Sprintf("Codex response has empty output but output_text is present (%d chars); synthesizing output item.", len(outText)))
+			pkgLog().Debug(fmt.Sprintf("Codex response has empty output but output_text is present (%d chars); synthesizing output item.", len(outText)))
 			content = []any{map[string]any{"type": "output_text", "text": outText}}
 		case contentFilter:
 			content = []any{}
@@ -2002,7 +2000,7 @@ func normalizeCodexResponse(resp map[string]any, issuerKind, issuerModel string,
 		if len(snippet) > 300 {
 			snippet = snippet[:300]
 		}
-		codexLog.Warn("Codex response contains leaked tool-call text in assistant content (no structured function_call items). Treating as incomplete so the continuation path can re-elicit a proper tool call. Leaked snippet: " + pyRepr(snippet))
+		pkgLog().Warn("Codex response contains leaked tool-call text in assistant content (no structured function_call items). Treating as incomplete so the continuation path can re-elicit a proper tool call. Leaked snippet: " + pyRepr(snippet))
 		finalText = ""
 	}
 	if issuerKind == "xai_responses" && finalText == "" && len(toolCalls) == 0 && len(reasoningParts) > 0 {
@@ -2015,7 +2013,7 @@ func normalizeCodexResponse(resp map[string]any, issuerKind, issuerModel string,
 			salvaged = strings.TrimSpace(tail)
 		}
 		if salvaged != "" {
-			codexLog.Warn(fmt.Sprintf("xAI response delivered its final answer inside the reasoning channel (<response> delimiter); promoting %d chars to assistant content.", len(salvaged)))
+			pkgLog().Warn(fmt.Sprintf("xAI response delivered its final answer inside the reasoning channel (<response> delimiter); promoting %d chars to assistant content.", len(salvaged)))
 			finalText = salvaged
 			prefix := strings.TrimSpace(joined[:marker])
 			reasoningParts = nil
@@ -2197,7 +2195,7 @@ func nativeCompactionContextManagement(in nativeCompactionInputs) []map[string]a
 	}
 	if in.checkpointRequired {
 		checkpointSuppressionOnce.Do(func() {
-			codexLog.Warn("compression.checkpoint_required is enabled: server-side native compaction (context_management) is disabled for this agent so the checkpoint-aware Icebath compressor stays authoritative.")
+			pkgLog().Warn("compression.checkpoint_required is enabled: server-side native compaction (context_management) is disabled for this agent so the checkpoint-aware Icebath compressor stays authoritative.")
 		})
 		return nil
 	}
@@ -2543,7 +2541,7 @@ func prunePreCheckpointItems(items []map[string]any, userBudget, summaryBudget i
 		result = append(result, retainedReversed[i])
 	}
 	result = append(result, items[lastCP+1:]...)
-	codexLog.Debug(fmt.Sprintf("Pruned pre-checkpoint items: %d input -> %d retained (user_rem=%d, summary_rem=%d)", len(items), len(result), userRemaining, summaryRemaining))
+	pkgLog().Debug(fmt.Sprintf("Pruned pre-checkpoint items: %d input -> %d retained (user_rem=%d, summary_rem=%d)", len(items), len(result), userRemaining, summaryRemaining))
 	return result
 }
 
@@ -2652,7 +2650,7 @@ func codexStripSlashEnum(toolList []map[string]any) []map[string]any {
 		out = append(out, cp)
 	}
 	if stripped > 0 {
-		codexLog.Info("schema_sanitizer: stripped enum keyword(s) containing '/' from tool schemas (xAI Responses grammar-compile recovery)", "count", stripped)
+		pkgLog().Info("schema_sanitizer: stripped enum keyword(s) containing '/' from tool schemas (xAI Responses grammar-compile recovery)", "count", stripped)
 	}
 	return out
 }

@@ -3,7 +3,6 @@ package telegram
 import (
 	"context"
 	"fmt"
-	"log/slog"
 	"math/big"
 	"path/filepath"
 	"strconv"
@@ -36,20 +35,20 @@ func (a *TelegramAdapter) CreateDMTopic(ctx context.Context, chatID int64, name 
 		low := errLower(err)
 		switch {
 		case strings.Contains(low, "topic_name_duplicate") || strings.Contains(low, "already"):
-			slog.Info(fmt.Sprintf("[%s] DM topic '%s' already exists in chat %d (will be mapped from incoming messages)", a.Name(), name, chatID))
+			pkgLog().Info(fmt.Sprintf("[%s] DM topic '%s' already exists in chat %d (will be mapped from incoming messages)", a.Name(), name, chatID))
 		case strings.Contains(low, "not a forum") || strings.Contains(low, "forums_disabled"):
-			slog.Warn(fmt.Sprintf("[%s] Cannot create DM topic '%s' in chat %d: Threaded Mode is not enabled. "+
+			pkgLog().Warn(fmt.Sprintf("[%s] Cannot create DM topic '%s' in chat %d: Threaded Mode is not enabled. "+
 				"The bot owner must open the BotFather Mini App (search 'botfather' in "+
 				"Telegram, tap Open on the search result) -> My bots -> this bot -> Bot "+
 				"Settings -> Threads Settings -> enable Threaded Mode. This cannot be enabled "+
 				"from the DM chat, nor from the BotFather /mybots text menu.", a.Name(), name, chatID))
 		default:
-			slog.Warn(fmt.Sprintf("[%s] Failed to create DM topic '%s' in chat %d: %s", a.Name(), name, chatID, redactTelegramErrorText(err)))
+			pkgLog().Warn(fmt.Sprintf("[%s] Failed to create DM topic '%s' in chat %d: %s", a.Name(), name, chatID, redactTelegramErrorText(err)))
 		}
 		return nil, nil
 	}
 	threadID := int64(topic.MessageThreadID)
-	slog.Info(fmt.Sprintf("[%s] Created DM topic '%s' in chat %d -> thread_id=%d", a.Name(), name, chatID, threadID))
+	pkgLog().Info(fmt.Sprintf("[%s] Created DM topic '%s' in chat %d -> thread_id=%d", a.Name(), name, chatID, threadID))
 	return &threadID, nil
 }
 
@@ -173,7 +172,7 @@ func (a *TelegramAdapter) RenameDMTopic(ctx context.Context, chatID string, thre
 	if _, err := b.EditForumTopic(ctx, &bot.EditForumTopicParams{ChatID: chatArg, MessageThreadID: int(threadID.Int64()), Name: title}); err != nil {
 		return ptbError(err)
 	}
-	slog.Info(fmt.Sprintf("[%s] Renamed DM topic in chat %s thread_id=%s -> '%s'", a.Name(), chatID, threadID.String(), title))
+	pkgLog().Info(fmt.Sprintf("[%s] Renamed DM topic in chat %s thread_id=%s -> '%s'", a.Name(), chatID, threadID.String(), title))
 	return nil
 }
 
@@ -187,7 +186,7 @@ func (a *TelegramAdapter) persistDMTopicThreadID(ctx context.Context, chatID int
 			return err
 		}
 		if !exists {
-			slog.Warn(fmt.Sprintf("[%s] Config file not found at %s, cannot persist thread_id", a.Name(), configPath))
+			pkgLog().Warn(fmt.Sprintf("[%s] Config file not found at %s, cannot persist thread_id", a.Name(), configPath))
 			return nil
 		}
 		cfg, err := config.ReadUserConfigRaw(ctx, configPath)
@@ -249,11 +248,11 @@ func (a *TelegramAdapter) persistDMTopicThreadID(ctx context.Context, chatID int
 		if err := config.AtomicConfigWrite(ctx, h, configPath, cfg, ""); err != nil {
 			return err
 		}
-		slog.Info(fmt.Sprintf("[%s] Persisted thread_id=%d for topic '%s' in config.yaml", a.Name(), threadID, topicName))
+		pkgLog().Info(fmt.Sprintf("[%s] Persisted thread_id=%d for topic '%s' in config.yaml", a.Name(), threadID, topicName))
 		return nil
 	}()
 	if err != nil {
-		slog.Warn(fmt.Sprintf("[%s] Failed to persist thread_id to config: %s", a.Name(), pyrepr.ExceptionMessage(err)))
+		pkgLog().Warn(fmt.Sprintf("[%s] Failed to persist thread_id to config: %s", a.Name(), pyrepr.ExceptionMessage(err)))
 	}
 }
 
@@ -285,7 +284,7 @@ func (a *TelegramAdapter) setupDMTopics(ctx context.Context) error {
 		if !pyTruthy(chatID) || len(topics) == 0 {
 			continue
 		}
-		slog.Info(fmt.Sprintf("[%s] Setting up %d DM topic(s) for chat %s", a.Name(), len(topics), pyrepr.Str(chatID)))
+		pkgLog().Info(fmt.Sprintf("[%s] Setting up %d DM topic(s) for chat %s", a.Name(), len(topics), pyrepr.Str(chatID)))
 		for _, t := range topics {
 			topicConf, ok := t.(map[string]any)
 			if !ok {
@@ -304,7 +303,7 @@ func (a *TelegramAdapter) setupDMTopics(ctx context.Context) error {
 				a.mu.Lock()
 				a.dmTopics.Set(cacheKey, n)
 				a.mu.Unlock()
-				slog.Info(fmt.Sprintf("[%s] DM topic loaded from config: %s -> thread_id=%s", a.Name(), cacheKey, pyrepr.Str(existing)))
+				pkgLog().Info(fmt.Sprintf("[%s] DM topic loaded from config: %s -> thread_id=%s", a.Name(), cacheKey, pyrepr.Str(existing)))
 				continue
 			}
 			normalized, ok := configInt(NormalizeTelegramChatID(chatID))
@@ -331,12 +330,12 @@ func (a *TelegramAdapter) setupDMTopics(ctx context.Context) error {
 			a.mu.Lock()
 			a.dmTopics.Set(cacheKey, *threadID)
 			a.mu.Unlock()
-			slog.Info(fmt.Sprintf("[%s] DM topic cached: %s -> thread_id=%d", a.Name(), cacheKey, *threadID))
+			pkgLog().Info(fmt.Sprintf("[%s] DM topic cached: %s -> thread_id=%d", a.Name(), cacheKey, *threadID))
 			a.persistDMTopicThreadID(ctx, normalized, topicName, *threadID, false)
 			thread := int(*threadID)
 			_, seedErr := a.boundedSendMessage(ctx, &bot.SendMessageParams{ChatID: normalized, MessageThreadID: thread, Text: "\U0001f4cc " + topicName})
 			if seedErr != nil {
-				slog.Debug(fmt.Sprintf("[%s] Could not send seed message to topic '%s': %s", a.Name(), topicName, pyrepr.ExceptionMessage(seedErr)))
+				pkgLog().Debug(fmt.Sprintf("[%s] Could not send seed message to topic '%s': %s", a.Name(), topicName, pyrepr.ExceptionMessage(seedErr)))
 			}
 		}
 	}
@@ -347,7 +346,7 @@ func (a *TelegramAdapter) setupDMTopics(ctx context.Context) error {
 func (a *TelegramAdapter) reloadDMTopicsFromConfig(ctx context.Context) {
 	tree, err := config.LoadReadonly(ctx, home.Dir(ctx), nil)
 	if err != nil {
-		slog.Debug(fmt.Sprintf("[%s] Failed to reload dm_topics from config: %s", a.Name(), pyrepr.ExceptionMessage(err)))
+		pkgLog().Debug(fmt.Sprintf("[%s] Failed to reload dm_topics from config: %s", a.Name(), pyrepr.ExceptionMessage(err)))
 		return
 	}
 	platforms, _ := tree["platforms"].(map[string]any)
@@ -387,12 +386,12 @@ func (a *TelegramAdapter) reloadDMTopicsFromConfig(ctx context.Context) {
 			}
 			n, ok := configInt(topic["thread_id"])
 			if !ok {
-				slog.Debug(fmt.Sprintf("[%s] Failed to reload dm_topics from config: %s", a.Name(),
+				pkgLog().Debug(fmt.Sprintf("[%s] Failed to reload dm_topics from config: %s", a.Name(),
 					"invalid literal for int() with base 10: "+pyrepr.Repr(topic["thread_id"])))
 				return
 			}
 			a.dmTopics.Set(key, n)
-			slog.Info(fmt.Sprintf("[%s] Hot-loaded DM topic from config: %s -> thread_id=%s", a.Name(), key, pyrepr.Str(topic["thread_id"])))
+			pkgLog().Info(fmt.Sprintf("[%s] Hot-loaded DM topic from config: %s -> thread_id=%s", a.Name(), key, pyrepr.Str(topic["thread_id"])))
 		}
 	}
 }
@@ -466,5 +465,5 @@ func (a *TelegramAdapter) cacheDMTopicFromMessage(chatID, threadID, topicName st
 	}
 	a.dmTopics.Set(key, tid)
 	a.mu.Unlock()
-	slog.Info(fmt.Sprintf("[%s] Cached DM topic from message: %s -> thread_id=%s", a.Name(), key, threadID))
+	pkgLog().Info(fmt.Sprintf("[%s] Cached DM topic from message: %s -> thread_id=%s", a.Name(), key, threadID))
 }

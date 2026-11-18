@@ -16,11 +16,11 @@ var agentHooks struct {
 	maxIteration  func(result any) bool
 }
 
-// Python ModuleNotFoundError raised when an agent module the run path imports is absent
-type agentModuleMissingError struct{ module string }
+// Agent hook the run path needs that this build never installed, classed ModuleNotFoundError
+type agentModuleMissingError struct{ hook string }
 
 func (e *agentModuleMissingError) Error() string {
-	return fmt.Sprintf("No module named '%s'", e.module)
+	return fmt.Sprintf("the cron %s is not linked into this build", e.hook)
 }
 
 func (e *agentModuleMissingError) PyTypeName() string { return "ModuleNotFoundError" }
@@ -68,11 +68,11 @@ var newCronAgent = func(ctx context.Context, o AgentOptions) (CronAgent, error) 
 	agentHooks.RUnlock()
 	switch {
 	case factory == nil || explain == nil:
-		return nil, &agentModuleMissingError{"run_agent"}
+		return nil, &agentModuleMissingError{"agent factory"}
 	case interrupt == nil:
-		return nil, &agentModuleMissingError{"agent.interrupt_compat"}
+		return nil, &agentModuleMissingError{"hard interrupt hook"}
 	case maxIteration == nil:
-		return nil, &agentModuleMissingError{"agent.turn_failure_copy"}
+		return nil, &agentModuleMissingError{"turn failure explanation hook"}
 	}
 	return factory(ctx, o)
 }
@@ -107,7 +107,7 @@ func cleanupStaleAsyncClients() error {
 	f := agentHooks.cleanup
 	agentHooks.RUnlock()
 	if f == nil {
-		return &agentModuleMissingError{"agent.auxiliary_client"}
+		return &agentModuleMissingError{"auxiliary client cleanup hook"}
 	}
 	f()
 	return nil

@@ -48,7 +48,7 @@ func toolProgressReporter(callback func(event, name, preview string, args map[st
 		}
 		defer func() {
 			if r := recover(); r != nil {
-				toolsLogger(nil).Debug("tool.progress callback failed for "+toolName, "panic", r)
+				envLog(nil).Debug("tool.progress callback failed for "+toolName, "panic", r)
 			}
 		}()
 		callback(ToolProgressEvent, toolName, message, nil, map[string]any{

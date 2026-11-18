@@ -9,12 +9,11 @@ const (
 	TargetConnected    TargetState = "connected"
 	TargetSkipped      TargetState = "skipped"
 	TargetFailed       TargetState = "failed"
-	TargetExpired      TargetState = "expired"
 	TargetNotConnected TargetState = "not_connected"
 )
 
 // Every TargetState member in declaration order
-var TargetStates = []TargetState{TargetPending, TargetInitiated, TargetConnected, TargetSkipped, TargetFailed, TargetExpired, TargetNotConnected}
+var TargetStates = []TargetState{TargetPending, TargetInitiated, TargetConnected, TargetSkipped, TargetFailed, TargetNotConnected}
 
 // ConnActor names who may cause a target transition
 type ConnActor string
@@ -22,7 +21,6 @@ type ConnActor string
 const (
 	ActorUser           ConnActor = "user"
 	ActorBackendWatcher ConnActor = "backend_watcher"
-	ActorClock          ConnActor = "clock"
 )
 
 // SettleReason names why an operation froze its result
@@ -39,7 +37,7 @@ const (
 var SettleReasons = []SettleReason{SettleAllResolved, SettleContinue, SettleDeadline, SettleInterrupt}
 
 // ConnectorKinds lists every target kind a connection operation carries
-var ConnectorKinds = []string{"connector", "mcp", "plugin", "skill"}
+var ConnectorKinds = []string{"mcp", "plugin", "skill"}
 
 // Reports whether the state ends the target, a failed catalog row counting as done for plugins and skills
 func TargetResolves(kind string, state TargetState) bool {
@@ -59,14 +57,9 @@ var connTransitions = buildConnTransitions()
 // Builds the kind and state table of allowed moves with the one actor each move admits
 func buildConnTransitions() map[connEdge]map[TargetState]ConnActor {
 	t := map[connEdge]map[TargetState]ConnActor{
-		{"connector", TargetPending}: {TargetInitiated: ActorBackendWatcher, TargetFailed: ActorBackendWatcher, TargetSkipped: ActorUser},
-		{"connector", TargetInitiated}: {TargetConnected: ActorBackendWatcher, TargetFailed: ActorBackendWatcher,
-			TargetExpired: ActorClock, TargetSkipped: ActorUser},
-		{"connector", TargetFailed}:  {TargetInitiated: ActorUser, TargetSkipped: ActorUser},
-		{"connector", TargetExpired}: {TargetInitiated: ActorUser, TargetSkipped: ActorUser},
-		{"mcp", TargetPending}:       {TargetInitiated: ActorBackendWatcher, TargetFailed: ActorBackendWatcher, TargetSkipped: ActorUser},
-		{"mcp", TargetInitiated}:     {TargetConnected: ActorBackendWatcher, TargetFailed: ActorBackendWatcher, TargetSkipped: ActorUser},
-		{"mcp", TargetFailed}:        {TargetInitiated: ActorUser, TargetSkipped: ActorUser},
+		{"mcp", TargetPending}:   {TargetInitiated: ActorBackendWatcher, TargetFailed: ActorBackendWatcher, TargetSkipped: ActorUser},
+		{"mcp", TargetInitiated}: {TargetConnected: ActorBackendWatcher, TargetFailed: ActorBackendWatcher, TargetSkipped: ActorUser},
+		{"mcp", TargetFailed}:    {TargetInitiated: ActorUser, TargetSkipped: ActorUser},
 	}
 	for _, kind := range []string{"plugin", "skill"} {
 		for edge, moves := range t {

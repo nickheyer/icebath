@@ -6,7 +6,6 @@ import (
 	"encoding/base64"
 	"encoding/hex"
 	"fmt"
-	"log/slog"
 	"math"
 	"strings"
 	"sync"
@@ -259,7 +258,7 @@ func (a *WeixinAdapter) Connect(ctx context.Context, isReconnect bool) (bool, er
 	} {
 		if !check.ok {
 			a.SetFatalError(ctx, check.code, "Weixin startup failed: "+check.reason, false)
-			slog.Warn(fmt.Sprintf("[%s] Weixin startup failed: %s", a.Name(), check.reason))
+			pkgLog().Warn(fmt.Sprintf("[%s] Weixin startup failed: %s", a.Name(), check.reason))
 			return false, nil
 		}
 	}
@@ -268,7 +267,7 @@ func (a *WeixinAdapter) Connect(ctx context.Context, isReconnect bool) (bool, er
 	case err != nil && ctx.Err() != nil:
 		return false, ctx.Err()
 	case err != nil:
-		slog.Debug(fmt.Sprintf("[%s] Token lock unavailable (non-fatal): %s", a.Name(), errText(err)))
+		pkgLog().Debug(fmt.Sprintf("[%s] Token lock unavailable (non-fatal): %s", a.Name(), errText(err)))
 	case !acquired:
 		return false, nil
 	}
@@ -287,9 +286,9 @@ func (a *WeixinAdapter) Connect(ctx context.Context, isReconnect bool) (bool, er
 	liveAdapters.Lock()
 	liveAdapters.byToken[a.token] = a
 	liveAdapters.Unlock()
-	slog.Info(fmt.Sprintf("[%s] Connected account=%s base=%s", a.Name(), safeID(a.accountID), a.baseURL))
+	pkgLog().Info(fmt.Sprintf("[%s] Connected account=%s base=%s", a.Name(), safeID(a.accountID), a.baseURL))
 	if a.GroupPolicy != "disabled" {
-		slog.Warn(fmt.Sprintf("[%s] WEIXIN_GROUP_POLICY=%s is set, but QR-login connects an iLink bot identity (e.g. ...@im.bot) "+
+		pkgLog().Warn(fmt.Sprintf("[%s] WEIXIN_GROUP_POLICY=%s is set, but QR-login connects an iLink bot identity (e.g. ...@im.bot) "+
 			"which typically cannot be invited into ordinary WeChat groups. iLink usually does not deliver "+
 			"ordinary-group events for these accounts, so group messages may never reach Icebath regardless of "+
 			"this policy. If group delivery doesn't work, the limitation is on the iLink side, not in Icebath.", a.Name(), a.GroupPolicy))
@@ -328,7 +327,7 @@ func (a *WeixinAdapter) Disconnect(ctx context.Context) error {
 	}
 	a.ReleasePlatformLock()
 	a.MarkDisconnected(ctx)
-	slog.Info(fmt.Sprintf("[%s] Disconnected", a.Name()))
+	pkgLog().Info(fmt.Sprintf("[%s] Disconnected", a.Name()))
 	return nil
 }
 
@@ -370,7 +369,7 @@ func (a *WeixinAdapter) pollLoop(ctx context.Context) error {
 			ret, errcode := getOr(response, "ret", int64(0)), getOr(response, "errcode", int64(0))
 			if !zeroOrNone(ret) || !zeroOrNone(errcode) {
 				if isSessionExpired(response, ret, errcode) {
-					slog.Error(fmt.Sprintf("[%s] Session expired; pausing for 10 minutes", a.Name()))
+					pkgLog().Error(fmt.Sprintf("[%s] Session expired; pausing for 10 minutes", a.Name()))
 					if err := sleep(ctx, sessionExpiredPauseSeconds); err != nil {
 						return err
 					}
@@ -378,7 +377,7 @@ func (a *WeixinAdapter) pollLoop(ctx context.Context) error {
 					return nil
 				}
 				consecutiveFailures++
-				slog.Warn(fmt.Sprintf("[%s] getUpdates failed ret=%s errcode=%s errmsg=%s (%d/%d)", a.Name(), pyrepr.Str(ret), pyrepr.Str(errcode),
+				pkgLog().Warn(fmt.Sprintf("[%s] getUpdates failed ret=%s errcode=%s errmsg=%s (%d/%d)", a.Name(), pyrepr.Str(ret), pyrepr.Str(errcode),
 					pyrepr.Str(getOr(response, "errmsg", "")), consecutiveFailures, maxConsecutiveFailures))
 				var err error
 				consecutiveFailures, err = backoff()
@@ -410,7 +409,7 @@ func (a *WeixinAdapter) pollLoop(ctx context.Context) error {
 			continue
 		}
 		consecutiveFailures++
-		slog.Error(fmt.Sprintf("[%s] poll error (%d/%d): %s", a.Name(), consecutiveFailures, maxConsecutiveFailures, errText(pollErr)))
+		pkgLog().Error(fmt.Sprintf("[%s] poll error (%d/%d): %s", a.Name(), consecutiveFailures, maxConsecutiveFailures, errText(pollErr)))
 		var err error
 		if consecutiveFailures, err = backoff(); err != nil {
 			break
@@ -454,7 +453,7 @@ func (a *WeixinAdapter) processMessageSafe(ctx context.Context, message any) {
 	if m, ok := pyjson.AsObject(message); ok {
 		from = m.Vals["from_user_id"]
 	}
-	slog.Error(fmt.Sprintf("[%s] unhandled inbound error from=%s: %s", a.Name(), safeID(from), errText(err)), "error", err)
+	pkgLog().Error(fmt.Sprintf("[%s] unhandled inbound error from=%s: %s", a.Name(), safeID(from), errText(err)), "error", err)
 }
 
 // Dedups, gates and converts one inbound message, caching its context token and media before dispatch
@@ -485,7 +484,7 @@ func (a *WeixinAdapter) processMessage(ctx context.Context, raw any) error {
 	if text != "" {
 		sum := md5.Sum([]byte(text))
 		if a.dedup.IsDuplicate("content:" + senderID + ":" + hex.EncodeToString(sum[:])) {
-			slog.Debug(fmt.Sprintf("[%s] Content-dedup: skipping duplicate message from %s", a.Name(), senderID))
+			pkgLog().Debug(fmt.Sprintf("[%s] Content-dedup: skipping duplicate message from %s", a.Name(), senderID))
 			return nil
 		}
 	}
@@ -543,7 +542,7 @@ func (a *WeixinAdapter) processMessage(ctx context.Context, raw any) error {
 		event.MessageID = &messageID
 	}
 	event.MediaURLs, event.MediaTypes, event.Timestamp = mediaPaths, mediaTypes, time.Now()
-	slog.Info(fmt.Sprintf("[%s] inbound from=%s type=%s media=%d", a.Name(), safeID(senderID), source.ChatType, len(mediaPaths)))
+	pkgLog().Info(fmt.Sprintf("[%s] inbound from=%s type=%s media=%d", a.Name(), safeID(senderID), source.ChatType, len(mediaPaths)))
 	if event.MessageType == gateway.MessageTypeText {
 		return a.EnqueueTextEvent(ctx, event)
 	}
@@ -612,7 +611,7 @@ func (a *WeixinAdapter) downloadMedia(ctx context.Context, item *pyjson.Object, 
 		if ctx.Err() != nil {
 			return "", "", ctx.Err()
 		}
-		slog.Warn(fmt.Sprintf("[%s] %s download failed: %s", a.Name(), spec.label, errText(err)))
+		pkgLog().Warn(fmt.Sprintf("[%s] %s download failed: %s", a.Name(), spec.label, errText(err)))
 		return "", mime, nil
 	}
 	return path, mime, nil
@@ -623,7 +622,7 @@ func (a *WeixinAdapter) fetchTypingTicket(ctx context.Context, session *ilinkSes
 	response, err := getConfig(ctx, session, a.baseURL, a.token, userID, contextToken)
 	if err != nil {
 		if ctx.Err() == nil {
-			slog.Debug(fmt.Sprintf("[%s] %s for %s: %s", a.Name(), failureLabel, safeID(userID), errText(err)))
+			pkgLog().Debug(fmt.Sprintf("[%s] %s for %s: %s", a.Name(), failureLabel, safeID(userID), errText(err)))
 		}
 		return ""
 	}
@@ -704,7 +703,7 @@ func (a *WeixinAdapter) sendTextChunk(ctx context.Context, chatID, chunk, contex
 			if isSessionExpired(resp, ret, errcode) && !retriedWithoutToken && contextToken != "" {
 				retriedWithoutToken, contextToken = true, ""
 				a.tokenStore.drop(a.accountID, chatID)
-				slog.Warn(fmt.Sprintf("[%s] session expired for %s; retrying without context_token", a.Name(), safeID(chatID)))
+				pkgLog().Warn(fmt.Sprintf("[%s] session expired for %s; retrying without context_token", a.Name(), safeID(chatID)))
 				continue
 			}
 			if isStaleSessionRet(ret, errcode, errmsg) {
@@ -727,7 +726,7 @@ func (a *WeixinAdapter) sendTextChunk(ctx context.Context, chatID, chunk, contex
 				}
 				attempt++
 				wait := a.sendChunkRetryDelaySeconds * 3
-				slog.Warn(fmt.Sprintf("[%s] rate limited for %s; backing off %.1fs before retry", a.Name(), safeID(chatID), wait))
+				pkgLog().Warn(fmt.Sprintf("[%s] rate limited for %s; backing off %.1fs before retry", a.Name(), safeID(chatID), wait))
 				if serr := sleep(ctx, wait); serr != nil {
 					return serr
 				}
@@ -743,7 +742,7 @@ func (a *WeixinAdapter) sendTextChunk(ctx context.Context, chatID, chunk, contex
 		}
 		attempt++
 		wait := a.sendChunkRetryDelaySeconds * float64(attempt)
-		slog.Warn(fmt.Sprintf("[%s] send chunk failed to=%s attempt=%d/%d, retrying in %.2fs: %s", a.Name(), safeID(chatID), attempt,
+		pkgLog().Warn(fmt.Sprintf("[%s] send chunk failed to=%s attempt=%d/%d, retrying in %.2fs: %s", a.Name(), safeID(chatID), attempt,
 			a.sendChunkRetries+1, wait, errText(err)))
 		if wait > 0 {
 			if serr := sleep(ctx, wait); serr != nil {

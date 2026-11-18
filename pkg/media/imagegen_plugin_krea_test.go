@@ -139,18 +139,6 @@ func kreaGenerate(t *testing.T, env *tools.Env, req ImageGenRequest) map[string]
 	return out
 }
 
-func kreaManagedConfig(origin string) func(*tools.Env) *tools.ManagedToolGatewayConfig {
-	return func(*tools.Env) *tools.ManagedToolGatewayConfig {
-		return &tools.ManagedToolGatewayConfig{Vendor: "krea", GatewayOrigin: origin, NousUserToken: "nous-tok-abc", ManagedMode: true}
-	}
-}
-
-func useKreaManaged(t *testing.T, fn func(*tools.Env) *tools.ManagedToolGatewayConfig) {
-	prev := kreaManagedGateway
-	kreaManagedGateway = fn
-	t.Cleanup(func() { kreaManagedGateway = prev })
-}
-
 func TestKreaImageGenProvider(t *testing.T) {
 	t.Run("test_is_available_with_key", func(t *testing.T) {
 		kreaTestEnv(t)
@@ -323,19 +311,18 @@ func TestKreaGenerateErrors(t *testing.T) {
 			t.Fatal(out)
 		}
 	})
-	t.Run("test_submit_failure_marks_whether_a_fal_fallback_is_safe", func(t *testing.T) {
+	t.Run("test_submit_failure_reports_its_error", func(t *testing.T) {
 		for _, c := range []struct {
-			name     string
-			reply    kreaReply
-			eligible bool
+			name  string
+			reply kreaReply
 		}{
-			{"refused", kreaReply{}, true},
-			{"429", kreaReply{429, `{"error": "nope"}`, 0, false}, true},
-			{"disconnected", kreaReply{drop: true}, false},
-			{"503", kreaReply{503, `{"error": "nope"}`, 0, false}, false},
-			{"422", kreaReply{422, `{"error": "nope"}`, 0, false}, false},
-			{"timeout", kreaReply{200, kreaSubmitBody(kreaJobID), time.Second, false}, false},
-			{"invalid_json", kreaReply{200, "not json", 0, false}, false},
+			{"refused", kreaReply{}},
+			{"429", kreaReply{429, `{"error": "nope"}`, 0, false}},
+			{"disconnected", kreaReply{drop: true}},
+			{"503", kreaReply{503, `{"error": "nope"}`, 0, false}},
+			{"422", kreaReply{422, `{"error": "nope"}`, 0, false}},
+			{"timeout", kreaReply{200, kreaSubmitBody(kreaJobID), time.Second, false}},
+			{"invalid_json", kreaReply{200, "not json", 0, false}},
 		} {
 			t.Run(c.name, func(t *testing.T) {
 				env, f := kreaTestEnv(t)
@@ -349,7 +336,7 @@ func TestKreaGenerateErrors(t *testing.T) {
 					kreaRequestTimeout = 200 * time.Millisecond
 				}
 				out := kreaGenerate(t, env, ImageGenRequest{Prompt: "test"})
-				if out["success"] != false || out["fallback_eligible"] != c.eligible {
+				if _, has := out["fallback_eligible"]; out["success"] != false || has {
 					t.Fatal(out)
 				}
 				if c.name == "timeout" && out["error"] != "Krea submit timed out (30s)" {
@@ -426,39 +413,6 @@ func TestKreaPollRetryPolicy(t *testing.T) {
 		f.gets = []kreaReply{{200, `{"status": "sampling"}`, 0, false}}
 		out := kreaGenerate(t, env, ImageGenRequest{Prompt: "test"})
 		if out["error_type"] != "timeout" || out["error"] != "Krea job "+kreaJobID+" did not complete within 180s (last status: sampling)" {
-			t.Fatal(out)
-		}
-	})
-}
-
-func TestKreaManagedGateway(t *testing.T) {
-	t.Run("test_managed_submit_uses_gateway_origin_and_nous_token", func(t *testing.T) {
-		env, f := kreaTestEnv(t)
-		useKreaManaged(t, kreaManagedConfig(f.srv.URL+"/"))
-		kreaBaseURL = "http://direct.invalid"
-		out := kreaGenerate(t, env, ImageGenRequest{Prompt: "A managed lamp", Kwargs: map[string]any{"upscale": false}})
-		post, get := f.requests("POST"), f.requests("GET")
-		if out["success"] != true || post[0].path != "/generate/image/krea/krea-2/medium" || post[0].header.Get("Authorization") != "Bearer nous-tok-abc" ||
-			post[0].header.Get("x-idempotency-key") == "" || !strings.HasPrefix(get[0].path, "/jobs/") || get[0].header.Get("Authorization") != "Bearer nous-tok-abc" ||
-			get[0].header.Get("x-idempotency-key") != "" {
-			t.Fatal(out, post, get)
-		}
-	})
-	t.Run("test_managed_429_concurrency_hint", func(t *testing.T) {
-		env, f := kreaTestEnv(t)
-		useKreaManaged(t, kreaManagedConfig(f.srv.URL))
-		f.posts = []kreaReply{{429, `{"error": {"message": "maximum number of concurrent jobs"}}`, 0, false}}
-		out := kreaGenerate(t, env, ImageGenRequest{Prompt: "test"})
-		if e := out["error"].(string); out["success"] != false || !strings.Contains(e, "429") || !strings.Contains(strings.ToLower(e), "concurrency") {
-			t.Fatal(out)
-		}
-	})
-	t.Run("managed_refuses_loras_and_moodboards_before_submit", func(t *testing.T) {
-		env, f := kreaTestEnv(t)
-		useKreaManaged(t, kreaManagedConfig(f.srv.URL))
-		out := kreaGenerate(t, env, ImageGenRequest{Prompt: "test", Kwargs: map[string]any{"moodboards": []any{map[string]any{"url": "https://m"}}}})
-		if out["error_type"] != "unsupported_argument" || out["error"] != "Managed Krea (Nous Subscription) does not support moodboards. Set KREA_API_KEY to use Krea directly, or omit `moodboards`." ||
-			len(f.requests("POST")) != 0 {
 			t.Fatal(out)
 		}
 	})
@@ -620,73 +574,17 @@ func TestKrea3(t *testing.T) {
 		}
 	})
 	t.Run("test_capabilities_describe_the_stored_model_the_dispatcher_sends", func(t *testing.T) {
-		env, f := kreaTestEnv(t)
+		env, _ := kreaTestEnv(t)
 		t.Setenv("KREA_IMAGE_MODEL", "krea-2-large")
 		p := newKreaImageGenProvider()
 		p.env = func(context.Context) *tools.Env { return env }
 		prev := kreaLoadConfig
 		t.Cleanup(func() { kreaLoadConfig = prev })
-		for _, c := range []struct {
-			provider string
-			gateway  func(*tools.Env) *tools.ManagedToolGatewayConfig
-		}{{"nous", kreaManagedConfig(f.srv.URL)}, {"krea", func(*tools.Env) *tools.ManagedToolGatewayConfig { return nil }}} {
-			kreaLoadConfig = func(*tools.Env) map[string]any { return map[string]any{"provider": c.provider, "model": "krea-3"} }
-			useKreaManaged(t, c.gateway)
-			if got := p.Capabilities()["creative_controls"]; !reflect.DeepEqual(got, []any{"thinking", "resolution"}) {
-				t.Fatal(c.provider, got)
-			}
+		kreaLoadConfig = func(*tools.Env) map[string]any { return map[string]any{"provider": "krea", "model": "krea-3"} }
+		if got := p.Capabilities()["creative_controls"]; !reflect.DeepEqual(got, []any{"thinking", "resolution"}) {
+			t.Fatal(got)
 		}
 	})
-}
-
-func TestKreaFallbackToFalEnabled(t *testing.T) {
-	for _, c := range []struct {
-		cfg  config.Tree
-		want bool
-	}{
-		{config.Tree{}, true},
-		{config.Tree{"image_gen": map[string]any{"krea": map[string]any{"fallback_to_fal": false}}}, false},
-		{config.Tree{"image_gen": map[string]any{"krea": map[string]any{"fallback_to_fal": "false"}}}, true},
-		{config.Tree{"image_gen": map[string]any{"krea": map[string]any{"fallback_to_fal": nil}}}, true},
-		{config.Tree{"image_gen": map[string]any{"krea": "off"}}, true},
-	} {
-		if got := kreaFallbackToFalEnabled(imageEnv(t, c.cfg)); got != c.want {
-			t.Fatalf("%v -> %v", c.cfg, got)
-		}
-	}
-}
-
-func TestResolveManagedKreaGatewaySelection(t *testing.T) {
-	sel := func(provider string) *tools.Env {
-		if provider == "" {
-			return imageEnv(t, config.Tree{})
-		}
-		return imageEnv(t, config.Tree{"image_gen": map[string]any{"provider": provider}})
-	}
-	t.Setenv("KREA_GATEWAY_URL", "https://krea-gateway.example.com")
-	t.Setenv("TOOL_GATEWAY_USER_TOKEN", "managed-token")
-	t.Setenv("KREA_API_KEY", "")
-	useNousAccount(t, true)
-	if gw := resolveManagedKreaGateway(sel("nous")); gw == nil || gw.Vendor != "krea" || gw.GatewayOrigin != "https://krea-gateway.example.com" || gw.NousUserToken != "managed-token" {
-		t.Fatalf("nous selection %+v", gw)
-	}
-	if gw := resolveManagedKreaGateway(sel("")); gw == nil {
-		t.Fatal("unconfigured without a key stays managed")
-	}
-	if gw := resolveManagedKreaGateway(sel("krea")); gw != nil {
-		t.Fatal("explicit vendor selection pins direct")
-	}
-	t.Setenv("KREA_API_KEY", "direct")
-	if gw := resolveManagedKreaGateway(sel("")); gw != nil {
-		t.Fatal("direct key wins when unconfigured")
-	}
-	if gw := resolveManagedKreaGateway(sel("nous")); gw == nil {
-		t.Fatal("nous selection keeps the gateway despite a direct key")
-	}
-	useNousAccount(t, false)
-	if gw := resolveManagedKreaGateway(sel("nous")); gw != nil {
-		t.Fatal("unentitled account has no gateway")
-	}
 }
 
 func TestKreaSubmitErrorMessage(t *testing.T) {

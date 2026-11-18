@@ -2,6 +2,7 @@ package agent
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"time"
 
@@ -57,7 +58,7 @@ func (p primaryRestoreRoute) loadPool(ctx context.Context) *provider.Pool {
 
 // Puts the agent back on its primary runtime when a fallback ran, true when the restore happened
 func (a *AIAgent) restorePrimaryRuntime(ctx context.Context) (bool, error) {
-	log := agentRuntimeHelpersLog()
+	log := pkgLog()
 	if !a.fallbackActivated {
 		a.fallbackIndex = 0
 		return false, a.revertCredentialRotation(ctx)
@@ -120,7 +121,7 @@ func reinstallPrimaryRuntime(ctx context.Context, a *AIAgent, route primaryResto
 
 // Reloads the primary pool over a cross provider one and reselects its best entry with a usable key
 func (a *AIAgent) rebindPrimaryCredentialPool(ctx context.Context, route primaryRestoreRoute, prefetchedPool *provider.Pool, prefetched bool) error {
-	log := agentRuntimeHelpersLog()
+	log := pkgLog()
 	if pool := a.credentialPool; pool != nil && pystr.Lower(pystr.Strip(pool.Provider())) != "" && !route.matchesPool(ctx, pool) {
 		a.credentialPool, a.credentialPoolEntryID = nil, ""
 		if prefetched {
@@ -164,7 +165,7 @@ func (a *AIAgent) revertCredentialRotation(ctx context.Context) error {
 	var entry provider.PooledCredential
 	var ok bool
 	if err := guardPhase(func() error { entry, ok = pool.Reclaim(revertID, a.model); return nil }); err != nil {
-		agentRuntimeHelpersLog().Warn(fmt.Sprintf("Credential revert check failed: %s", err.Error()))
+		pkgLog().Warn(fmt.Sprintf("Credential revert check failed: %s", err.Error()))
 		return nil
 	}
 	if !ok {
@@ -175,7 +176,7 @@ func (a *AIAgent) revertCredentialRotation(ctx context.Context) error {
 		return err
 	}
 	if swapped {
-		agentRuntimeHelpersLog().Info(fmt.Sprintf("Credential %s (%s) available again — reverted pool rotation", entry.ID, entry.Label))
+		pkgLog().Info(fmt.Sprintf("Credential %s (%s) available again — reverted pool rotation", entry.ID, entry.Label))
 	}
 	a.credentialPoolRevertID = ""
 	return nil
@@ -206,7 +207,7 @@ func (a *AIAgent) primaryQuotaReopenedEarly(ctx context.Context, route primaryRe
 		reopened = pool.LiftReopenedCooldowns(route.model)
 		return nil
 	}); err != nil {
-		agentRuntimeHelpersLog().Debug("Early quota-reopen check failed; keeping the cooldown")
+		pkgLog().Debug("Early quota-reopen check failed; keeping the cooldown")
 		return false
 	}
 	return reopened
@@ -221,7 +222,7 @@ func (a *AIAgent) primaryResetGateBlocks(ctx context.Context, route primaryResto
 			prefetchedPool, prefetched = pool, true
 		}
 		if route.rt == nil {
-			return fmt.Errorf("AttributeError: 'NoneType' object has no attribute 'get'")
+			return errors.New("the primary route has no runtime")
 		}
 		if pool == nil {
 			return nil
@@ -232,13 +233,13 @@ func (a *AIAgent) primaryResetGateBlocks(ctx context.Context, route primaryResto
 		}
 		if !a.restoreWaitLogged {
 			a.restoreWaitLogged = true
-			agentRuntimeHelpersLog().Info(fmt.Sprintf("Primary %s rate-limited until %s; staying on fallback %s/%s until the reset elapses",
+			pkgLog().Info(fmt.Sprintf("Primary %s rate-limited until %s; staying on fallback %s/%s until the reset elapses",
 				pyStrOr(route.provider, "?"), nextAt.Local().Format("2006-01-02T15:04:05"), a.provider, a.model))
 		}
 		blocked = true
 		return nil
 	}); err != nil {
-		agentRuntimeHelpersLog().Debug("Reset-aware restore gate failed; falling back to per-turn retry")
+		pkgLog().Debug("Reset-aware restore gate failed; falling back to per-turn retry")
 		return false, prefetchedPool, prefetched
 	}
 	return blocked, prefetchedPool, prefetched

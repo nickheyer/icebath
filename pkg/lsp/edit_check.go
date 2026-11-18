@@ -20,8 +20,6 @@ const (
 	spawnCeiling = 60 * time.Second
 )
 
-const editCheckLogger = "agent.lsp.edit_check"
-
 // Note is one undelivered diagnostics note with the pre edit text its verdict was diffed against
 type Note struct {
 	Text         string
@@ -290,7 +288,7 @@ func serializedCheck(ctx context.Context, s *Service, absPath string, preText, p
 		if isCancellation(cerr) {
 			return nil, cerr
 		}
-		s.rt.logf(slog.LevelDebug, editCheckLogger, "LSP edit check failed for %s", absPath)
+		s.rt.logf(slog.LevelDebug, "LSP edit check failed for %s", absPath)
 		if err := s.markBrokenForFileAsync(ctx, absPath, cerr); err != nil {
 			return nil, err
 		}
@@ -449,7 +447,7 @@ func resyncDisk(ctx context.Context, s *Service, client *Client, absPath, langua
 			if isCancellation(err) {
 				return err
 			}
-			s.rt.logf(slog.LevelDebug, editCheckLogger, "LSP resync of %s failed", absPath)
+			s.rt.logf(slog.LevelDebug, "LSP resync of %s failed", absPath)
 		}
 		return nil
 	}

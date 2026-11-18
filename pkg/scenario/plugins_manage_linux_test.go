@@ -69,7 +69,6 @@ func TestScenarioPluginsManageHub(t *testing.T) {
 // The Plugins hub toggle enables a bundled plugin and answers with its listing row
 func TestScenarioPluginsManageToggle(t *testing.T) {
 	s := Start(t, Setup{Home: map[string]string{"cache/plugin-catalog.json": `{"entries": []}`}})
-	s.Finding("SF-2")
 	p := s.SpawnStep(Step{Args: []string{"__icebath_tui_gateway_entry__"}, Pipe: true})
 	p.Await(`"type": "gateway.ready"`)
 	toggled := stdioRPC(s, p, 1, "plugins.manage", map[string]any{"action": "toggle", "name": "disk-cleanup", "enable": true})

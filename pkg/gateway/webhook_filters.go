@@ -33,11 +33,6 @@ type webhookMissingValue struct{}
 
 var webhookMissing any = &webhookMissingValue{}
 
-// Logger of the route filter and script module
-func webhookFiltersLog() *slog.Logger {
-	return slog.Default().With("logger", "gateway.platforms.webhook_filters")
-}
-
 // Text a filter operator compares against, JSON for dicts and lists and empty when missing
 func webhookStringifyFilterValue(value any) (string, error) {
 	if value == webhookMissing {
@@ -50,7 +45,7 @@ func webhookStringifyFilterValue(value any) (string, error) {
 	return pyrepr.Str(value), nil
 }
 
-// Profile home path of a user path with the dot hermes prefix mapped onto the active home
+// Profile home path of a user path with the ~/.icebath prefix mapped onto the active home
 func webhookResolveProfilePath(ctx context.Context, pathValue any) (string, bool, error) {
 	text, ok := pathValue.(string)
 	if !ok {
@@ -133,7 +128,7 @@ func webhookLoadFilterFileValues(ctx context.Context, pathValue any) ([]any, err
 	}
 	data, err := os.ReadFile(path)
 	if err != nil {
-		webhookFiltersLog().Warn(fmt.Sprintf("[webhook] filter in_file read failed for %s: %s", path, pyrepr.ExceptionMessage(err)))
+		pkgLog().Warn(fmt.Sprintf("[webhook] filter in_file read failed for %s: %s", path, pyrepr.ExceptionMessage(err)))
 		return nil, nil
 	}
 	data = []byte(strings.TrimPrefix(string(data), "\ufeff"))
@@ -224,7 +219,7 @@ func webhookOpRegex(value, pattern any) (bool, error) {
 	}
 	re, err := pyre.Compile(pyrepr.Str(pattern))
 	if err != nil {
-		webhookFiltersLog().Warn("[webhook] Invalid webhook filter regex: " + err.Error())
+		pkgLog().Warn("[webhook] Invalid webhook filter regex: " + err.Error())
 		return false, nil
 	}
 	text, err := webhookStringifyFilterValue(value)
@@ -361,7 +356,7 @@ func webhookIsDigits(text string) bool {
 func (p *WebhookRouteProcessor) FilterMatches(ctx context.Context, spec, payload, eventType any, headers *pyjson.Object) (bool, error) {
 	obj, ok := pyjson.AsObject(spec)
 	if !ok {
-		webhookFiltersLog().Warn("[webhook] Ignoring invalid filter spec: " + pyrepr.Repr(spec))
+		pkgLog().Warn("[webhook] Ignoring invalid filter spec: " + pyrepr.Repr(spec))
 		return false, nil
 	}
 	for _, key := range []string{"all", "any"} {
@@ -403,7 +398,7 @@ func (p *WebhookRouteProcessor) FilterMatches(ctx context.Context, spec, payload
 			return op.match(ctx, value, arg)
 		}
 	}
-	webhookFiltersLog().Warn("[webhook] Filter spec has no supported operator: " + pyrepr.Repr(spec))
+	pkgLog().Warn("[webhook] Filter spec has no supported operator: " + pyrepr.Repr(spec))
 	return false, nil
 }
 
@@ -425,7 +420,7 @@ func (p *WebhookRouteProcessor) RouteFiltersMatch(ctx context.Context, routeConf
 		}
 		return true, nil
 	}
-	webhookFiltersLog().Warn("[webhook] filters must be a list or object")
+	pkgLog().Warn("[webhook] filters must be a list or object")
 	return false, nil
 }
 
@@ -443,7 +438,7 @@ func webhookSysExecutable() (string, error) {
 
 // Runs a route script on the payload, false drops the webhook and a JSON object replaces the payload
 func (p *WebhookRouteProcessor) RunRouteScript(ctx context.Context, scriptValue any, payload any) (bool, *pyjson.Object, error) {
-	log := webhookFiltersLog()
+	log := pkgLog()
 	path, reason, err := webhookResolveScriptPath(ctx, scriptValue)
 	if err != nil {
 		return false, nil, err

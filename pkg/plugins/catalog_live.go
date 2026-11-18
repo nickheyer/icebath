@@ -24,8 +24,8 @@ import (
 	"github.com/nickheyer/icebath/pkg/pm"
 )
 
-// Published catalog document the docs build generates
-var LiveCatalogURL = "https://hermes-agent.nousresearch.com/docs/api/plugin-catalog.json"
+// Site copy of the shipped catalog document the refresh fetches
+var LiveCatalogURL = "https://icebath.app/api/plugin-catalog.json"
 
 const (
 	LiveCatalogTTLSeconds        = 6 * 60 * 60
@@ -73,7 +73,7 @@ func FetchLiveCatalog(ctx context.Context, force bool) map[string]any {
 		if err == nil {
 			return data
 		}
-		logPluginCatalog.debug("Plugin catalog: unreadable live cache "+cache, "error", err)
+		pkgLog().Debug("Plugin catalog: unreadable live cache "+cache, "error", err)
 	}
 	liveFetchMu.Lock()
 	failedUntil := liveFetchFailedUntil
@@ -83,7 +83,7 @@ func FetchLiveCatalog(ctx context.Context, force bool) map[string]any {
 	}
 	data, err := downloadLiveCatalog(ctx, cache)
 	if err != nil {
-		logPluginCatalog.debug("Plugin catalog: live fetch failed", "error", err)
+		pkgLog().Debug("Plugin catalog: live fetch failed", "error", err)
 		liveFetchMu.Lock()
 		liveFetchFailedUntil = epochNow() + LiveCatalogFailureTTLSeconds
 		liveFetchMu.Unlock()
@@ -167,7 +167,7 @@ func InTreeCatalogTime() *float64 {
 			if v, err := strconv.ParseFloat(out, 64); err == nil {
 				resolved = &v
 			} else {
-				logPluginCatalog.debug("Plugin catalog: could not date the in-tree catalog", "error", err)
+				pkgLog().Debug("Plugin catalog: could not date the in-tree catalog", "error", err)
 			}
 		}
 		if resolved == nil {

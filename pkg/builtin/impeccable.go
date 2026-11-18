@@ -32,7 +32,7 @@ func (impeccablePlugin) Manifest() plugins.Manifest {
 	return m
 }
 
-// Registers the hermes rendered skill, the impeccable slash command and the design hooks
+// Registers the icebath rendered skill, the impeccable slash command and the design hooks
 func (impeccablePlugin) Register(ctx *plugins.Context) error {
 	t, err := Materialize()
 	if err != nil {

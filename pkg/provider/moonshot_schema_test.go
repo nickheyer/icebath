@@ -24,7 +24,7 @@ func moonshotProps(t *testing.T, out map[string]any, names ...string) map[string
 
 func TestMoonshotModelDetectionPositiveMatches(t *testing.T) {
 	for _, model := range []string{"kimi-k2.6", "kimi-k2-thinking", "k3", "K3", "moonshotai/k3", "k3.1-preview", "moonshotai/Kimi-K2.6", "moonshotai/kimi-k2.6",
-		"nous/moonshotai/kimi-k2.6", "openrouter/moonshotai/kimi-k2-thinking", "MOONSHOTAI/KIMI-K2.6"} {
+		"kilocode/moonshotai/kimi-k2.6", "openrouter/moonshotai/kimi-k2-thinking", "MOONSHOTAI/KIMI-K2.6"} {
 		if !isMoonshotModel(model) {
 			t.Errorf("%q not detected", model)
 		}

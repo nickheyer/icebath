@@ -2,7 +2,7 @@ package gateway
 
 import "strings"
 
-// Argv word that runs the gateway module entry in a child of this binary, the python -m gateway.run of hermes
+// Argv word that runs the gateway module entry in a child of this binary
 const GatewayRunModuleEntry = "__icebath_gateway_run__"
 
 // Whether lowered command line tokens run the gateway module entry of an icebath binary

@@ -114,7 +114,7 @@ func TestSlackToolsLoadedDetectsRealMCPRegistration(t *testing.T) {
 	}
 }
 
-// test_session.py test_local_delivery_path_uses_display_hermes_home
+// Local delivery path uses the display home
 func TestLocalDeliveryPathUsesDisplayHome(t *testing.T) {
 	ctx := context.Background()
 	prev := displayIcebathHome

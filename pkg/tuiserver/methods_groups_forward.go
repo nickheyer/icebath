@@ -140,7 +140,7 @@ func groupsCall(ctx context.Context, rid any, h string, endpoint *gateway.Gatewa
 			}
 			return rpcErr(rid, code, rpcFailure.Error(), data)
 		}
-		logger().Warn(fmt.Sprintf("Group Chat %s: the gateway that owns it did not answer: %s", method, err))
+		pkgLog().Warn(fmt.Sprintf("Group Chat %s: the gateway that owns it did not answer: %s", method, err))
 		return rpcErr(rid, ownerLostCode, "The Icebath gateway did not answer. Try again.", nil)
 	}
 	result, isDict := pyjson.Plain(raw).(map[string]any)

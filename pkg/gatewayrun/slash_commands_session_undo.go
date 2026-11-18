@@ -10,7 +10,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/i18n"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
-	"github.com/nickheyer/icebath/pkg/observability"
 	"github.com/nickheyer/icebath/pkg/state"
 )
 
@@ -92,20 +91,6 @@ func (r *GatewayRunner) retryAuthorityRefusal(ctx context.Context, source *gatew
 	return "", false, nil
 }
 
-// Model friction signal under the profile home owning the source when the gateway multiplexes profiles
-func (r *GatewayRunner) recordModelFriction(ctx context.Context, signal string, source *gateway.SessionSource, sessionID string, turns int) {
-	profileHome := ""
-	if r.multiplexProfiles() {
-		func() {
-			defer func() { _ = recover() }()
-			if h, err := r.ResolveProfileHomeForSource(ctx, source); err == nil {
-				profileHome = h
-			}
-		}()
-	}
-	observability.RecordModelFriction(ctx, signal, observability.FrictionOptions{SessionID: sessionID, HomeDir: profileHome, Turns: turns})
-}
-
 // Backs up N user turns, soft deleting the truncated rows and echoing the backed up text
 func (r *GatewayRunner) handleUndoCommand(ctx context.Context, event *gateway.MessageEvent) (string, error) {
 	source := event.Source
@@ -139,20 +124,15 @@ func (r *GatewayRunner) handleUndoCommand(ctx context.Context, event *gateway.Me
 		return i18n.T(ctx, "gateway.undo.nothing", "", nil), nil
 	}
 	entry.LastPromptTokens = 0
-	turns := 1
-	if undone, _ := result["turns_undone"].(int); undone != 0 {
-		turns = undone
-	}
-	r.recordModelFriction(ctx, "undo", source, entry.SessionID, turns)
 	func() {
 		defer func() {
 			if rec := recover(); rec != nil {
-				runLog().Debug(fmt.Sprintf("undo: cached-agent eviction skipped: %s", pyrepr.Str(rec)))
+				pkgLog().Debug(fmt.Sprintf("undo: cached-agent eviction skipped: %s", pyrepr.Str(rec)))
 			}
 		}()
 		sessionKey, err := r.sessionKeyForSource(ctx, source)
 		if err != nil {
-			runLog().Debug(fmt.Sprintf("undo: cached-agent eviction skipped: %s", pyrepr.ExceptionMessage(err)))
+			pkgLog().Debug(fmt.Sprintf("undo: cached-agent eviction skipped: %s", pyrepr.ExceptionMessage(err)))
 			return
 		}
 		r.evictCachedAgent(ctx, sessionKey, false, false)

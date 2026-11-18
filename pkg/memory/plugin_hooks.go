@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"log/slog"
 	"os"
 
 	"github.com/nickheyer/icebath/pkg/config"
@@ -17,7 +16,7 @@ import (
 func homeEnv(ctx context.Context, h string) *tools.Env {
 	cfg, _ := config.LoadReadonly(ctx, h, nil)
 	cwd, _ := os.Getwd()
-	return &tools.Env{Home: h, Config: cfg, Cwd: cwd, Log: slog.Default()}
+	return &tools.Env{Home: h, Config: cfg, Cwd: cwd, Log: pkgLog()}
 }
 
 // Provider directory a name resolves to in a home, false when the loader cannot resolve it
@@ -51,7 +50,7 @@ func PrepareMemoryProviderDependenciesForPlugin(ctx context.Context, env *tools.
 	return err
 }
 
-// Curator subcommands with their help, in the hermes argparse order
+// Curator subcommands with their help, in the argparse order
 var curatorSubcommandHelp = [][2]string{
 	{"status", "Show curator status and skill stats"},
 	{"usage", "Show usage telemetry for ALL skills (built-in, hub, agent) with provenance"},

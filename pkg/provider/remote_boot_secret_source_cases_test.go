@@ -35,7 +35,7 @@ func sourceRefusal(t *testing.T, fn func()) (msg string) {
 
 // The remote secrets section drives the sources at boot and a mapped plane credential refuses the start
 func TestBootRefusesRemoteSecretsSourceThatMapsPlaneCredential(t *testing.T) {
-	p := setupBootPlane(t, true)
+	p := setupBootPlane(t)
 	p.Upper = map[string]any{"secrets": map[string]any{"command": map[string]any{"enabled": true}}}
 	var seen map[string]any
 	fakeApplyAll(t, func(cfg map[string]any, homePath string, environ *SourceEnvironment) (*ApplyReport, error) {
@@ -56,7 +56,7 @@ func TestBootRefusesRemoteSecretsSourceThatMapsPlaneCredential(t *testing.T) {
 
 // A real command source writing the selector cannot disarm remote mode at boot
 func TestSecretSourceCannotSwitchRemoteModeOffAtBoot(t *testing.T) {
-	p := setupBootPlane(t, true)
+	p := setupBootPlane(t)
 	ResetSecretSourceCache("")
 	t.Cleanup(func() { ResetSecretSourceCache("") })
 	local, _ := json.Marshal(map[string]any{"display": map[string]any{"personality": "local"}})
@@ -116,7 +116,7 @@ func TestFileModeIgnoresASourceThatSelectsTheBackend(t *testing.T) {
 
 // A source supplying another plane URL is staged, so a request in the gap still reaches the configured plane
 func TestRefusedSourcePlaneUrlIsNeverVisibleToAConcurrentRequest(t *testing.T) {
-	p := setupBootPlane(t, true)
+	p := setupBootPlane(t)
 	ResetSecretSourceCache("")
 	t.Cleanup(func() { ResetSecretSourceCache("") })
 	other := configplane.New(t, remoteplane.Rules())
@@ -186,7 +186,7 @@ func TestFileModePublishesPermittedSourceValues(t *testing.T) {
 // Plane fixture with a real profiles root under the user home and the default profile booted
 func providerProfilePlane(t *testing.T) *configplane.Plane {
 	t.Helper()
-	p := setupBootPlane(t, true)
+	p := setupBootPlane(t)
 	tmp := t.TempDir()
 	h := filepath.Join(tmp, ".icebath")
 	if err := os.MkdirAll(h, 0o755); err != nil {
@@ -208,8 +208,8 @@ func TestRoutedHydrationRefusesASourceThatSuppliesAProtectedName(t *testing.T) {
 	t.Cleanup(func() { ResetSecretSourceCache("") })
 	SetMultiplexActive(false)
 	t.Cleanup(func() { SetMultiplexActive(false) })
-	t.Setenv("ICEBATH_PORTAL_BASE_URL", "")
-	os.Unsetenv("ICEBATH_PORTAL_BASE_URL")
+	t.Setenv("GATEWAY_RELAY_IDP_SCOPE", "")
+	os.Unsetenv("GATEWAY_RELAY_IDP_SCOPE")
 	captureSecretStatus(t)
 	named := filepath.Join(p.Home, "profiles", "routed")
 	if err := os.MkdirAll(named, 0o755); err != nil {
@@ -220,24 +220,24 @@ func TestRoutedHydrationRefusesASourceThatSuppliesAProtectedName(t *testing.T) {
 	}
 	p.Mu.Lock()
 	p.Profile("routed").Values = map[string]any{"secrets": map[string]any{"command": map[string]any{
-		"enabled": true, "override_existing": true, "command": "printf 'ICEBATH_PORTAL_BASE_URL=http://127.0.0.1:1\\n'"}}}
+		"enabled": true, "override_existing": true, "command": "printf 'GATEWAY_RELAY_IDP_SCOPE=config.write\\n'"}}}
 	p.Profile("routed").Version = 1
 	p.Mu.Unlock()
 	for range 2 {
 		msg := sourceRefusal(t, func() { _ = currentProfileScope(home.WithOverride(context.Background(), named)) })
-		if !strings.Contains(msg, "ICEBATH_PORTAL_BASE_URL") {
+		if !strings.Contains(msg, "GATEWAY_RELAY_IDP_SCOPE") {
 			t.Fatalf("refusal %q", msg)
 		}
 		if values := SecretSourceValues(named); len(values) != 0 {
 			t.Fatalf("snapshot %v", values)
 		}
 		secretSourceCacheMu.Lock()
-		applied, supplied := appliedSecretHomes[homeKey(named)], sourceSuppliedNames["ICEBATH_PORTAL_BASE_URL"]
+		applied, supplied := appliedSecretHomes[homeKey(named)], sourceSuppliedNames["GATEWAY_RELAY_IDP_SCOPE"]
 		secretSourceCacheMu.Unlock()
 		if applied || supplied {
 			t.Fatalf("applied %v supplied %v", applied, supplied)
 		}
-		if _, set := os.LookupEnv("ICEBATH_PORTAL_BASE_URL"); set {
+		if _, set := os.LookupEnv("GATEWAY_RELAY_IDP_SCOPE"); set {
 			t.Fatal("the protected name reached the process env")
 		}
 	}

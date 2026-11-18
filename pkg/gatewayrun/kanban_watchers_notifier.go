@@ -108,7 +108,7 @@ func wakeScopeID(adapter gateway.PlatformAdapter, sub *pyjson.Object) *string {
 		return resolver.ScopeIDForChat(chat), nil
 	}()
 	if failure != nil {
-		runLog().Debug(fmt.Sprintf("kanban notifier: scope lookup failed for chat %s: %s", pyrepr.Str(objValue(sub, "chat_id")), pyrepr.Str(failure)))
+		pkgLog().Debug(fmt.Sprintf("kanban notifier: scope lookup failed for chat %s: %s", pyrepr.Str(objValue(sub, "chat_id")), pyrepr.Str(failure)))
 		return nil
 	}
 	if resolved == nil || *resolved == "" {
@@ -196,7 +196,7 @@ func warnAnchorlessThreadSubOnce(sub *pyjson.Object, platform string) {
 	if seen {
 		return
 	}
-	runLog().Warn(fmt.Sprintf("kanban notifier: subscription for %s on %s thread %s has no parent_chat_id anchor and matched no "+
+	pkgLog().Warn(fmt.Sprintf("kanban notifier: subscription for %s on %s thread %s has no parent_chat_id anchor and matched no "+
 		"profile route; it will not be delivered. Re-subscribe with `icebath kanban notify-subscribe ... "+
 		"--parent-chat-id <channel id> [--guild-id <guild id>]`.",
 		pyrepr.Str(objValue(sub, "task_id")), platform, pyrepr.Str(objValue(sub, "chat_id"))))
@@ -212,7 +212,7 @@ func warnUnroutableSubOnce(sub *pyjson.Object, platform gateway.Platform, stampe
 	if seen {
 		return
 	}
-	runLog().Warn(fmt.Sprintf("kanban notifier: subscription for %s on %s chat %s is stamped with profile %s but a "+
+	pkgLog().Warn(fmt.Sprintf("kanban notifier: subscription for %s on %s chat %s is stamped with profile %s but a "+
 		"profile_routes entry pins that chat to profile %s; it will not be delivered. "+
 		"Re-subscribe with `icebath kanban notify-subscribe ... --notifier-profile %s`.",
 		pyrepr.Str(objValue(sub, "task_id")), string(platform), pyrepr.Str(objValue(sub, "chat_id")), stamped, pinned, pinned))
@@ -427,7 +427,7 @@ func pinFirst(ctx context.Context) context.Context {
 // Claims unseen events on every board once per resolved database path
 func (c *kanbanCollector) collect(ctx context.Context) ([]*kanbanDelivery, error) {
 	if len(c.activePlatforms) == 0 {
-		runLog().Debug("kanban notifier: no connected adapters; skipping tick")
+		pkgLog().Debug("kanban notifier: no connected adapters; skipping tick")
 		return c.deliveries, nil
 	}
 	pinned := pinFirst(ctx)
@@ -456,7 +456,7 @@ func (c *kanbanCollector) collect(ctx context.Context) ([]*kanbanDelivery, error
 			}
 		}
 		if seen[resolved] {
-			runLog().Debug(fmt.Sprintf("kanban notifier: skipping duplicate board slug %s for DB %s", slug, resolved))
+			pkgLog().Debug(fmt.Sprintf("kanban notifier: skipping duplicate board slug %s for DB %s", slug, resolved))
 			continue
 		}
 		seen[resolved] = true
@@ -471,7 +471,7 @@ func (c *kanbanCollector) collect(ctx context.Context) ([]*kanbanDelivery, error
 func (c *kanbanCollector) boardHasSubs(ctx context.Context, slug string) bool {
 	count, err := kanban.CountNotifySubs(ctx, "", &slug, c.ownerScope(), nil, nil, nil)
 	if err != nil {
-		runLog().Debug(fmt.Sprintf("kanban notifier: read-only subscription probe failed "+
+		pkgLog().Debug(fmt.Sprintf("kanban notifier: read-only subscription probe failed "+
 			"for board %s (%s); falling back to writable open", slug, pyrepr.Str(err)))
 		return true
 	}
@@ -482,7 +482,7 @@ func (c *kanbanCollector) boardHasSubs(ctx context.Context, slug string) bool {
 		for i, p := range sorted {
 			items[i] = p
 		}
-		runLog().Debug(fmt.Sprintf("kanban notifier: board %s has no subscriptions owned by %s; skipping open", slug, pyrepr.Repr(items)))
+		pkgLog().Debug(fmt.Sprintf("kanban notifier: board %s has no subscriptions owned by %s; skipping open", slug, pyrepr.Repr(items)))
 	}
 	return count != 0
 }
@@ -491,11 +491,11 @@ func (c *kanbanCollector) boardHasSubs(ctx context.Context, slug string) bool {
 func (c *kanbanCollector) gcStaleSubs(ctx context.Context, conn state.SQLiteConn, slug string) {
 	purged, err := kanban.PurgeStaleDoneNotifySubs(ctx, conn, c.gcRetentionDays)
 	if err != nil {
-		runLog().Debug(fmt.Sprintf("kanban notifier: stale-sub GC failed for board %s: %s", slug, pyrepr.Str(err)))
+		pkgLog().Debug(fmt.Sprintf("kanban notifier: stale-sub GC failed for board %s: %s", slug, pyrepr.Str(err)))
 		return
 	}
 	if purged > 0 {
-		runLog().Info(fmt.Sprintf("kanban notifier: purged %d stale done/blocked-task subscription(s) on board %s (retention %dd)",
+		pkgLog().Info(fmt.Sprintf("kanban notifier: purged %d stale done/blocked-task subscription(s) on board %s (retention %dd)",
 			purged, slug, c.gcRetentionDays))
 	}
 }
@@ -509,7 +509,7 @@ func (c *kanbanCollector) claimForSub(ctx context.Context, conn state.SQLiteConn
 		if shown == "" {
 			shown = "<missing>"
 		}
-		runLog().Debug(fmt.Sprintf("kanban notifier: subscription for %s on %s skipped; adapter not connected",
+		pkgLog().Debug(fmt.Sprintf("kanban notifier: subscription for %s on %s skipped; adapter not connected",
 			pyrepr.Str(objValue(sub, "task_id")), shown))
 		return nil, nil
 	}
@@ -542,7 +542,7 @@ func (c *kanbanCollector) claimForSub(ctx context.Context, conn state.SQLiteConn
 	if err != nil {
 		return nil, err
 	}
-	runLog().Debug(fmt.Sprintf("kanban notifier: claimed %d event(s) for %s on board %s cursor %d→%d",
+	pkgLog().Debug(fmt.Sprintf("kanban notifier: claimed %d event(s) for %s on board %s cursor %d→%d",
 		len(events), taskID, slug, oldCursor, cursor))
 	return &kanbanDelivery{sub: sub, oldCursor: oldCursor, cursor: cursor, events: events, task: task, board: slug}, nil
 }
@@ -554,7 +554,7 @@ func (c *kanbanCollector) collectBoard(ctx context.Context, slug string) error {
 	}
 	conn, err := kanbanConnect(ctx, "", &slug)
 	if err != nil {
-		runLog().Debug(fmt.Sprintf("kanban notifier: cannot open board %s: %s", slug, pyrepr.Str(err)))
+		pkgLog().Debug(fmt.Sprintf("kanban notifier: cannot open board %s: %s", slug, pyrepr.Str(err)))
 		return nil
 	}
 	defer conn.Close()
@@ -566,12 +566,12 @@ func (c *kanbanCollector) collectBoard(ctx context.Context, slug string) error {
 		return err
 	}
 	if len(subs) == 0 {
-		runLog().Debug(fmt.Sprintf("kanban notifier: board %s has no subscriptions", slug))
+		pkgLog().Debug(fmt.Sprintf("kanban notifier: board %s has no subscriptions", slug))
 	}
 	for _, sub := range subs {
 		claimed, err := c.claimForSub(ctx, conn, slug, sub)
 		if err != nil {
-			runLog().Warn(fmt.Sprintf("kanban notifier: subscription for %s on board %s failed: %s",
+			pkgLog().Warn(fmt.Sprintf("kanban notifier: subscription for %s on board %s failed: %s",
 				pyrepr.Str(objValue(sub, "task_id")), slug, pyrepr.Str(err)))
 			continue
 		}
@@ -852,12 +852,12 @@ func (n *kanbanNotification) deliveryFailed(ctx context.Context, msg func(fails 
 	fails := n.subFailCounts[n.subKey] + 1
 	n.subFailCounts[n.subKey] = fails
 	if excInfo {
-		runLog().Warn(msg(fails), "exc_info", exc)
+		pkgLog().Warn(msg(fails), "exc_info", exc)
 	} else {
-		runLog().Warn(msg(fails))
+		pkgLog().Warn(msg(fails))
 	}
 	if fails >= kanbanMaxSendFailures {
-		runLog().Warn(fmt.Sprintf(dropFmt, n.taskID, n.platformStr, fails))
+		pkgLog().Warn(fmt.Sprintf(dropFmt, n.taskID, n.platformStr, fails))
 		if err := n.unsub(ctx); err != nil {
 			return err
 		}
@@ -988,7 +988,7 @@ func (n *kanbanNotification) logWoke() {
 	if profile == "" {
 		profile = "default"
 	}
-	runLog().Info(fmt.Sprintf("kanban notifier: woke agent for %s on %s/%s profile=%s events=%s",
+	pkgLog().Info(fmt.Sprintf("kanban notifier: woke agent for %s on %s/%s profile=%s events=%s",
 		n.taskID, n.platformStr, subText(n.sub, "chat_id"), profile, wakeKindsRepr(n.wakeKinds)))
 }
 
@@ -1109,11 +1109,11 @@ func (n *kanbanNotification) sendEvent(ctx context.Context, ev *kanban.Event, ms
 		}
 		return false, fmt.Errorf("adapter send() reported failure: %s", detail)
 	}
-	runLog().Debug(fmt.Sprintf("kanban notifier: delivered %s event for %s to %s/%s on board %s",
+	pkgLog().Debug(fmt.Sprintf("kanban notifier: delivered %s event for %s to %s/%s on board %s",
 		ev.Kind, n.taskID, n.platformStr, chatID, boardDisplay(n.boardSlug)))
 	if ev.Kind == "completed" || ev.Kind == "review_requested" {
 		if err := n.runner.deliverKanbanArtifacts(ctx, adapter, chatID, metadata, ev.Payload, n.task); err != nil {
-			runLog().Debug(fmt.Sprintf("kanban notifier: artifact delivery for %s failed: %s", n.taskID, pyrepr.Str(err)))
+			pkgLog().Debug(fmt.Sprintf("kanban notifier: artifact delivery for %s failed: %s", n.taskID, pyrepr.Str(err)))
 		}
 	}
 	return true, nil
@@ -1138,7 +1138,7 @@ func (n *kanbanNotification) sendPings(ctx context.Context) (bool, error) {
 			continue
 		}
 		if !n.isPushAdapter && n.wakeAgent {
-			runLog().Debug(fmt.Sprintf("kanban notifier: adapter %s has no push channel; skipping text ping for %s, relying "+
+			pkgLog().Debug(fmt.Sprintf("kanban notifier: adapter %s has no push channel; skipping text ping for %s, relying "+
 				"on wake self-post instead", n.platformStr, n.taskID))
 			continue
 		}
@@ -1200,7 +1200,7 @@ func (n *kanbanNotification) deliver(ctx context.Context) error {
 		return err
 	}
 	if adapter == nil {
-		runLog().Debug(fmt.Sprintf("kanban notifier: adapter %s disconnected before delivery for %s; rewinding claim",
+		pkgLog().Debug(fmt.Sprintf("kanban notifier: adapter %s disconnected before delivery for %s; rewinding claim",
 			n.platformStr, n.taskID))
 		return n.rewind(ctx)
 	}

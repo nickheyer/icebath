@@ -13,7 +13,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/state"
-	"github.com/nickheyer/icebath/pkg/tuigateway"
+	"github.com/nickheyer/icebath/pkg/tuihost"
 )
 
 // Transport of the legacy fallback cases that records what a pooled handler writes
@@ -64,8 +64,8 @@ func wsLegacyCall(t *testing.T, ctx context.Context, actor gateway.Principal, me
 func wsTestSwapLaunchHome(h string) string {
 	servedProfileMu.Lock()
 	defer servedProfileMu.Unlock()
-	prev := hermesHome
-	hermesHome = h
+	prev := icebathHome
+	icebathHome = h
 	return prev
 }
 
@@ -112,10 +112,10 @@ func TestProfileBoundTicketReadsOnlyItsOwnProfile(t *testing.T) {
 	wsLegacySeedSession(t, launch, "launch-sid", "LAUNCH_PROFILE_SECRET_TITLE")
 	wsLegacySeedSession(t, bee, "bee-sid", "BEE_TITLE")
 	for sid, profileHome := range map[string]any{"live-launch": nil, "live-bee": bee} {
-		tuigateway.SetSessionRecord(sid, tuigateway.NewSession(map[string]any{
+		tuihost.SetSessionRecord(sid, tuihost.NewSession(map[string]any{
 			"session_key": sid, "history": []any{map[string]any{"role": "user", "content": "PRIVATE " + sid}},
 			"history_lock": &sync.Mutex{}, "profile_home": profileHome, "created_at": 1, "last_active": 1}))
-		t.Cleanup(func() { tuigateway.SetSessionRecord(sid, nil) })
+		t.Cleanup(func() { tuihost.SetSessionRecord(sid, nil) })
 	}
 	call := func(profileID, method string) map[string]any {
 		actor := wsLegacyActor(profileID)
@@ -159,7 +159,7 @@ func TestProfileBoundTicketReadsOnlyItsOwnProfile(t *testing.T) {
 func TestTicketWhoseHomeVanishedIsRefusedNotTheLaunchProfile(t *testing.T) {
 	_, bee := wsLegacyHomes(t)
 	gone := filepath.Join(filepath.Dir(bee), "gone")
-	reply := wsLegacyCall(t, context.Background(), wsLegacyActor(gone), "billing.charge", map[string]any{"amount_usd": 5})
+	reply := wsLegacyCall(t, context.Background(), wsLegacyActor(gone), "paste.collapse", map[string]any{"text": "secret\npaste"})
 	failure, _ := reply["error"].(map[string]any)
 	if failure["code"] != 4064 {
 		t.Fatalf("reply %v", reply)

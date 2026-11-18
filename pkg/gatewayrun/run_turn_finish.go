@@ -49,7 +49,7 @@ func (r *GatewayRunner) runAgentCleanupTurnTasks(ctx context.Context, tc *TurnCo
 			continue
 		}
 		if _, err := task.wait(context.WithoutCancel(ctx)); err != nil && !isCancellation(err) {
-			runLog().Debug("background turn task failed during cleanup", "exc_info", err)
+			pkgLog().Debug("background turn task failed during cleanup", "exc_info", err)
 		}
 	}
 }
@@ -59,15 +59,15 @@ func (r *GatewayRunner) runAgentEditStreamedMessage(ctx context.Context, sc *gat
 	response map[string]any, content, sessionKey, ok, failResult, failExc string) {
 	res, err := sc.Adapter().EditMessage(ctx, source.ChatID, sc.MessageID(), content, true)
 	if err != nil {
-		runLog().Warn(fmt.Sprintf(failExc, sessionKey, err))
+		pkgLog().Warn(fmt.Sprintf(failExc, sessionKey, err))
 		return
 	}
 	if !res.Success {
-		runLog().Warn(fmt.Sprintf(failResult, sessionKey, pyrepr.Str(res.Error)))
+		pkgLog().Warn(fmt.Sprintf(failResult, sessionKey, pyrepr.Str(res.Error)))
 		return
 	}
 	response["already_sent"] = true
-	runLog().Info(ok)
+	pkgLog().Info(ok)
 }
 
 // Marks the response already sent when streaming delivered the exact final reply, reconciling a stale finalize by edit
@@ -101,21 +101,21 @@ func (r *GatewayRunner) runAgentMarkStreamedDelivery(ctx context.Context, respon
 	sk := logSessionKey(sessionKey)
 	switch {
 	case !transformed && (streamed || contentDelivered):
-		runLog().Info(fmt.Sprintf("Suppressing normal final send for session %s: final delivery already confirmed (streamed=%s previewed=%s content_delivered=%s).",
+		pkgLog().Info(fmt.Sprintf("Suppressing normal final send for session %s: final delivery already confirmed (streamed=%s previewed=%s content_delivered=%s).",
 			sk, pyrepr.Str(streamed), pyrepr.Str(previewed), pyrepr.Str(contentDelivered)))
 		response["already_sent"] = true
 	case !transformed && staleFinalized && sc != nil:
 		scMsgID := sc.MessageID()
 		switch {
 		case sc.TurnSplitDelivery():
-			runLog().Info(fmt.Sprintf("Stale streamed finalize detected for session %s on a multi-message split; skipping the in-place reconciliation edit and delivering the complete response via normal final send (#78541).", sk))
+			pkgLog().Info(fmt.Sprintf("Stale streamed finalize detected for session %s on a multi-message split; skipping the in-place reconciliation edit and delivering the complete response via normal final send (#78541).", sk))
 		case scMsgID != "" && scMsgID != "__no_edit__" && sc.Adapter() != nil:
 			r.runAgentEditStreamedMessage(ctx, sc, source, response, final, sk,
 				fmt.Sprintf("Reconciled stale streamed finalize for session %s: edited message %s with the complete response (#71643).", sk, scMsgID),
 				"Stale-finalize reconciliation edit failed for session %s (%s); sending complete response via normal final send.",
 				"Stale-finalize reconciliation edit failed for session %s: %s; sending complete response via normal final send.")
 		default:
-			runLog().Info(fmt.Sprintf("Stale streamed finalize detected for session %s with no editable message; delivering complete response via normal final send (#71643).", sk))
+			pkgLog().Info(fmt.Sprintf("Stale streamed finalize detected for session %s with no editable message; delivering complete response via normal final send (#71643).", sk))
 		}
 	case transformed && sc != nil:
 		if scMsgID := sc.MessageID(); scMsgID != "" {
@@ -125,7 +125,7 @@ func (r *GatewayRunner) runAgentMarkStreamedDelivery(ctx context.Context, respon
 				"Failed to edit streamed message for session %s: %s")
 		}
 	case sc != nil && sc.StreamDeltasEnabled:
-		runLog().Warn(fmt.Sprintf("Normal final-send NOT suppressed despite active stream consumer for session %s: "+
+		pkgLog().Warn(fmt.Sprintf("Normal final-send NOT suppressed despite active stream consumer for session %s: "+
 			"streamed=%s previewed=%s content_delivered=%s transformed=%s final_len=%d — "+
 			"possible duplicate send (see wecom ack-timeout RCA).",
 			sk, pyrepr.Str(streamed), pyrepr.Str(previewed), pyrepr.Str(contentDelivered), pyrepr.Str(transformed), utf8.RuneCountInString(final)))
@@ -135,12 +135,12 @@ func (r *GatewayRunner) runAgentMarkStreamedDelivery(ctx context.Context, respon
 // Runs a coroutine on the loop from a callback, logging the reason when the loop is missing or refuses
 func safeScheduleOnLoop(ctx context.Context, loop gateway.EventLoop, name string, fn func(ctx context.Context) (any, error), logMessage string) {
 	if loop == nil {
-		runLog().Debug(fmt.Sprintf("%s: loop is None", logMessage))
+		pkgLog().Debug(fmt.Sprintf("%s: loop is None", logMessage))
 		return
 	}
 	taskCtx := context.WithoutCancel(ctx)
 	if err := loop.CallSoonThreadsafe(func() { spawnGatewayTask(taskCtx, name, fn) }); err != nil {
-		runLog().Debug(fmt.Sprintf("%s: %s", logMessage, err))
+		pkgLog().Debug(fmt.Sprintf("%s: %s", logMessage, err))
 	}
 }
 
@@ -171,7 +171,7 @@ func (r *GatewayRunner) runAgentScheduleBubbleCleanup(response map[string]any, c
 	func() {
 		defer func() {
 			if rec := recover(); rec != nil {
-				runLog().Debug(fmt.Sprintf("Post-delivery cleanup registration failed: %s", pyrepr.Str(rec)))
+				pkgLog().Debug(fmt.Sprintf("Post-delivery cleanup registration failed: %s", pyrepr.Str(rec)))
 			}
 		}()
 		cleanupAdapter.Base().RegisterPostDeliveryCallback(sessionKey, cleanupTempBubbles, tc.runGeneration)
@@ -279,7 +279,7 @@ func (r *GatewayRunner) runAgentNotifyLongRunning(ctx context.Context, disp *run
 		if heartbeatMsgID != "" {
 			res, err := notifyAdapter.EditMessage(ctx, source.ChatID, heartbeatMsgID, heartbeatText, false)
 			if err != nil {
-				runLog().Debug(fmt.Sprintf("Heartbeat edit failed: %s", err))
+				pkgLog().Debug(fmt.Sprintf("Heartbeat edit failed: %s", err))
 			} else {
 				notifyRes = &res
 			}
@@ -292,7 +292,7 @@ func (r *GatewayRunner) runAgentNotifyLongRunning(ctx context.Context, disp *run
 		}
 		res, err := notifyAdapter.Send(ctx, source.ChatID, heartbeatText, "", interimMetadata(nonConversationalMetadata(statusThreadMetadata, source.Platform)))
 		if err != nil {
-			runLog().Debug(fmt.Sprintf("Long-running notification error: %s", err))
+			pkgLog().Debug(fmt.Sprintf("Long-running notification error: %s", err))
 			continue
 		}
 		if res.Success && pyrepr.Truthy(res.MessageID) {

@@ -323,12 +323,3 @@ func TestResolveApiKeyProviderSkipsUnconfiguredCopilot(t *testing.T) {
 		}
 	}
 }
-
-func TestPoolRuntimeBaseUrlUsesNousEnvOverride(t *testing.T) {
-	ctx := auxMainTestHome(t, "")
-	entry := &PooledCredential{Provider: "nous", InferenceBaseURL: "https://inference-api.nousresearch.com/v1", BaseURL: "https://inference-api.nousresearch.com/v1"}
-	t.Setenv("NOUS_INFERENCE_BASE_URL", "https://ai.wildebeest-newton.ts.net/v1")
-	if got := auxPoolRuntimeBaseURL(ctx, entry, ""); got != "https://ai.wildebeest-newton.ts.net/v1" {
-		t.Fatalf("got %q", got)
-	}
-}

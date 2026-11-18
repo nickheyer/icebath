@@ -4,7 +4,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/agent"
 )
 
-// CLI agent whose staging lands on an in process agent the way the hermes CLI shares one with its turn
+// CLI agent whose staging lands on an in process agent the way the CLI shares one with its turn
 type inProcessStageAgent struct {
 	*GatewayAgent
 	real *agent.AIAgent

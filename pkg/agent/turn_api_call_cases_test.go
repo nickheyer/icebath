@@ -1,17 +1,13 @@
 package agent
 
 import (
-	"context"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
-	"net/http"
 	"reflect"
 	"strings"
 	"testing"
-	"time"
 
-	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/state"
 )
@@ -73,52 +69,4 @@ func guardJWT(t *testing.T, tier string) string {
 	}
 	seg := func(b []byte) string { return base64.RawURLEncoding.EncodeToString(b) }
 	return seg([]byte(`{"alg":"none"}`)) + "." + seg(raw) + ".sig"
-}
-
-func TestNousRateLimitGuardPhase(t *testing.T) {
-	h := caseHome(t)
-	ctx := home.WithOverride(context.Background(), h)
-	guardAgent := func(apiKey string) *AIAgent {
-		a := bareSteerAgent()
-		a.provider, a.apiKey, a.quietMode = "nous", apiKey, true
-		a.setBaseURL("https://welcome-api.nousresearch.com/v1")
-		return a
-	}
-	state0 := func() *LoopState {
-		return &LoopState{ActiveSystemPrompt: "system", Retry: &TurnRetryState{}, RetryCount: 2, CompressionAttempts: 1}
-	}
-	guest := guardAgent(guardJWT(t, "anonymous"))
-	if v := nousRateLimitGuard(ctx, guest, state0()); v.Action != "fallthrough" {
-		t.Fatalf("no recorded limit must fall through, got %q", v.Action)
-	}
-	header := http.Header{}
-	header.Set("retry-after", "600")
-	if err := (&provider.NousRateGuard{Home: h, Anonymous: true}).Record(header, time.Time{}, 300*time.Second); err != nil {
-		t.Fatal(err)
-	}
-	statuses := captureStatuses(guest)
-	verdict := nousRateLimitGuard(ctx, guest, state0())
-	expected := strings.ReplaceAll(provider.FreeTierRateLimitChat, "{reset}", provider.FriendlyWait(600))
-	final, _ := verdict.Result["final_response"].(string)
-	if verdict.Action != "return" || !strings.Contains(final, expected) || !strings.Contains(expected, "/login") || strings.Contains(expected, "Nous Portal") {
-		t.Fatalf("action %q final %q expected %q", verdict.Action, final, expected)
-	}
-	if !reflect.DeepEqual(*statuses, []string{"⏳ " + expected}) {
-		t.Fatalf("statuses %q", *statuses)
-	}
-	if free, _ := verdict.Result["free_tier"].(map[string]any); free["kind"] != "rate_limited" || verdict.Result["failed"] != true ||
-		verdict.Result["failure_reason"] != string(provider.ReasonRateLimit) {
-		t.Fatalf("result %v", verdict.Result)
-	}
-	named := guardAgent(guardJWT(t, "free"))
-	if v := nousRateLimitGuard(ctx, named, state0()); v.Action != "fallthrough" {
-		t.Fatalf("a signed in credential does not inherit the anonymous cooldown, got %q", v.Action)
-	}
-	if err := (&provider.NousRateGuard{Home: h}).Record(http.Header{"Retry-After": []string{"300"}}, time.Time{}, 300*time.Second); err != nil {
-		t.Fatal(err)
-	}
-	blocked := nousRateLimitGuard(ctx, named, state0())
-	if _, hasFree := blocked.Result["free_tier"]; blocked.Action != "return" || hasFree || !strings.Contains(fmt.Sprint(blocked.Result["final_response"]), "Your Nous account has hit its rate limit") {
-		t.Fatalf("named guard %q result %v", blocked.Action, blocked.Result)
-	}
 }

@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/base64"
 	"fmt"
-	"log/slog"
 	"os"
 	"strings"
 	"sync"
@@ -50,8 +49,6 @@ var xaiFileOutputExtraKeys = []string{"filename", "expires_at", "public_url_expi
 
 // Connect and read timeout of the images request
 var xaiImageRequestTimeout = 120 * time.Second
-
-var xaiImageLog = slog.Default().With("logger", "plugins.image_gen.xai")
 
 // Bearer credentials of the direct xAI HTTP endpoints
 type xaiImageCreds struct{ Provider, APIKey, BaseURL string }
@@ -143,7 +140,7 @@ var xaiLiveNow = time.Now
 func fetchXAILiveImageModelsOrEmpty(ctx context.Context, env *tools.Env, creds *xaiImageCreds) xaiLiveCatalog {
 	live, err := fetchXAILiveImageModels(ctx, env, creds)
 	if err != nil {
-		xaiImageLog.Debug(fmt.Sprintf("xAI live image model catalog unavailable: %v", err))
+		pkgLog().Debug(fmt.Sprintf("xAI live image model catalog unavailable: %v", err))
 		return xaiLiveCatalog{}
 	}
 	return live
@@ -484,7 +481,7 @@ func (p *xaiImageGenProvider) Generate(ctx context.Context, env *tools.Env, req 
 	}
 	if failure != nil {
 		if failure.Kind == "http" {
-			xaiImageLog.Error(fmt.Sprintf("xAI image gen failed (%d): %s", failure.Status, failure.Message))
+			pkgLog().Error(fmt.Sprintf("xAI image gen failed (%d): %s", failure.Status, failure.Message))
 		}
 		return fail(failure.Error, failure.ErrorType), nil
 	}
@@ -520,7 +517,7 @@ func (p *xaiImageGenProvider) Generate(ctx context.Context, env *tools.Env, req 
 		rawURL, _ := first.Vals["url"].(string)
 		var envelope map[string]any
 		imageRef, envelope = materializeImage(ctx, env, b64, rawURL, materializeOptions{Prefix: "xai_" + modelID, Label: "xAI", Provider: "xai",
-			Model: modelID, Prompt: req.Prompt, Aspect: aspect, Log: xaiImageLog})
+			Model: modelID, Prompt: req.Prompt, Aspect: aspect, Log: pkgLog()})
 		if envelope != nil {
 			return envelope, nil
 		}

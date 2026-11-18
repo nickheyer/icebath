@@ -3,7 +3,6 @@ package gateway
 import (
 	"context"
 	"fmt"
-	"log/slog"
 	"strings"
 
 	"github.com/nickheyer/icebath/pkg/internal/pyre"
@@ -103,7 +102,7 @@ func ResolveSendTarget(ctx context.Context, platform, ref string, passUnresolved
 		}
 		verdict, failed := guardPluginCall(func() any { return entry.ValidateTargetRefFn(chatID) })
 		if failed {
-			slog.Debug("Plugin target validator failed for " + platform)
+			pkgLog().Debug("Plugin target validator failed for " + platform)
 			return "", nil, fmt.Sprintf("Target validator failed for platform '%s'", platform)
 		}
 		if verdict == true {
@@ -126,7 +125,7 @@ func ResolveSendTarget(ctx context.Context, platform, ref string, passUnresolved
 			return parsed{c, t, ok}
 		})
 		if failed {
-			slog.Debug("Plugin target parser failed for " + platform)
+			pkgLog().Debug("Plugin target parser failed for " + platform)
 			return "", nil, fmt.Sprintf("Target parser failed for platform '%s'", platform)
 		}
 		if got.ok {
@@ -160,7 +159,7 @@ func ResolveSendTarget(ctx context.Context, platform, ref string, passUnresolved
 	if passUnresolvedReferences && (!isPlugin || entry.ParseTargetRefFn == nil) {
 		chatID, threadID, errText := validated(ref, nil)
 		if errText == "" {
-			slog.Debug(fmt.Sprintf("Handing unresolved target '%s' to the %s adapter unchanged (the adapter validates it)", ref, platform))
+			pkgLog().Debug(fmt.Sprintf("Handing unresolved target '%s' to the %s adapter unchanged (the adapter validates it)", ref, platform))
 		}
 		return chatID, threadID, errText
 	}

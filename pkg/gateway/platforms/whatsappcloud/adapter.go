@@ -6,7 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"log/slog"
 	"net/http"
 	"strings"
 	"sync"
@@ -466,13 +465,13 @@ func (a *WhatsAppCloudAdapter) Connect(ctx context.Context, isReconnect bool) (b
 		if a.webhookHost != nil {
 			host = *a.webhookHost
 		}
-		slog.Info(fmt.Sprintf("[whatsapp_cloud] Listening on %s:%d%s (Graph %s, phone_id=%s)", host, a.webhookPort, a.webhookPath, a.apiVersion, a.phoneNumberID))
+		pkgLog().Info(fmt.Sprintf("[whatsapp_cloud] Listening on %s:%d%s (Graph %s, phone_id=%s)", host, a.webhookPort, a.webhookPath, a.apiVersion, a.phoneNumberID))
 	}
 	if a.verifyToken == "" {
-		slog.Warn("[whatsapp_cloud] WHATSAPP_CLOUD_VERIFY_TOKEN is not set — the GET subscription handshake will fail until it is.")
+		pkgLog().Warn("[whatsapp_cloud] WHATSAPP_CLOUD_VERIFY_TOKEN is not set — the GET subscription handshake will fail until it is.")
 	}
 	if a.appSecret == "" {
-		slog.Warn("[whatsapp_cloud] WHATSAPP_CLOUD_APP_SECRET is not set — incoming webhook POSTs will be refused " +
+		pkgLog().Warn("[whatsapp_cloud] WHATSAPP_CLOUD_APP_SECRET is not set — incoming webhook POSTs will be refused " +
 			"with 503. Set the app secret to enable inbound message delivery.")
 	}
 	a.WirePluginHandlers(ctx, nil)
@@ -486,7 +485,7 @@ func (a *WhatsAppCloudAdapter) Disconnect(ctx context.Context) error {
 	a.mu.Unlock()
 	if runner != nil {
 		if err := runner.Cleanup(ctx); err != nil {
-			slog.Error("[whatsapp_cloud] webhook server cleanup failed: " + err.Error())
+			pkgLog().Error("[whatsapp_cloud] webhook server cleanup failed: " + err.Error())
 		}
 		a.mu.Lock()
 		a.runner = nil
@@ -591,7 +590,7 @@ func (a *WhatsAppCloudAdapter) postMessages(ctx context.Context, client *http.Cl
 		if ctx.Err() != nil {
 			return nil, nil, ctx.Err()
 		}
-		slog.Error(logs.fail + ": " + err.Error())
+		pkgLog().Error(logs.fail + ": " + err.Error())
 		msg := errText(err)
 		return nil, &msg, nil
 	}
@@ -601,7 +600,7 @@ func (a *WhatsAppCloudAdapter) postMessages(ctx context.Context, client *http.Cl
 			return nil, nil, err
 		}
 		args := append(append([]any{resp.StatusCode}, logs.rejectArgs...), errorMsg)
-		slog.Warn(fmt.Sprintf(logs.reject, args...))
+		pkgLog().Warn(fmt.Sprintf(logs.reject, args...))
 		return nil, &errorMsg, nil
 	}
 	decoded, err := resp.JSON()
@@ -721,9 +720,9 @@ func (a *WhatsAppCloudAdapter) SendTyping(ctx context.Context, chatID string, me
 		}
 	}
 	if pyrepr.Equal(code, int64(131009)) {
-		slog.Info(fmt.Sprintf("[whatsapp_cloud] typing/read indicator rejected: wamid %s likely older than 30 days", wamid))
+		pkgLog().Info(fmt.Sprintf("[whatsapp_cloud] typing/read indicator rejected: wamid %s likely older than 30 days", wamid))
 	} else {
-		slog.Debug(fmt.Sprintf("[whatsapp_cloud] typing/read indicator returned %d (%s)", resp.StatusCode, pyrepr.Str(code)))
+		pkgLog().Debug(fmt.Sprintf("[whatsapp_cloud] typing/read indicator returned %d (%s)", resp.StatusCode, pyrepr.Str(code)))
 	}
 	return nil
 }

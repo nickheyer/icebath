@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"log/slog"
 	"math"
 	"math/big"
 	"os"
@@ -69,7 +68,7 @@ func SpoolDroppedTranscriptMessage(ctx context.Context, sessionID string, messag
 			return path
 		}
 	}
-	slog.Debug(fmt.Sprintf("Failed to spool cap-dropped transcript message for %s: %v", sessionID, err))
+	pkgLog().Debug(fmt.Sprintf("Failed to spool cap-dropped transcript message for %s: %v", sessionID, err))
 	return ""
 }
 
@@ -97,7 +96,7 @@ func DrainTranscriptSpool(ctx context.Context, sessionID string, replay func(mes
 		candidates, err = spoolDirMatches(flushDir, "pending-*.json")
 	}
 	if err != nil {
-		slog.Debug(fmt.Sprintf("Cannot scan transcript spool: %v", err))
+		pkgLog().Debug(fmt.Sprintf("Cannot scan transcript spool: %v", err))
 		return 0, 0, nil
 	}
 	var entries []spoolEntry
@@ -130,7 +129,7 @@ func DrainTranscriptSpool(ctx context.Context, sessionID string, replay func(mes
 		}
 		msg, ok := message.(*pyjson.Object)
 		if !ok {
-			slog.Warn(fmt.Sprintf("Removing structurally invalid transcript spool file %s", path))
+			pkgLog().Warn(fmt.Sprintf("Removing structurally invalid transcript spool file %s", path))
 			_ = os.Remove(path)
 			continue
 		}
@@ -148,9 +147,9 @@ func DrainTranscriptSpool(ctx context.Context, sessionID string, replay func(mes
 			}
 			msg := fmt.Sprintf("Replay of spooled transcript message %s for %s failed; keeping spool file for retry: %v", e.path, sessionID, err)
 			if dbKnownFailing {
-				slog.Debug(msg)
+				pkgLog().Debug(msg)
 			} else {
-				slog.Warn(msg)
+				pkgLog().Warn(msg)
 			}
 			remaining = len(entries) - idx
 			break
@@ -159,7 +158,7 @@ func DrainTranscriptSpool(ctx context.Context, sessionID string, replay func(mes
 		replayed++
 	}
 	if replayed > 0 {
-		slog.Info(fmt.Sprintf("Replayed %d spooled transcript message(s) for %s after DB recovery", replayed, sessionID))
+		pkgLog().Info(fmt.Sprintf("Replayed %d spooled transcript message(s) for %s after DB recovery", replayed, sessionID))
 	}
 	return replayed, remaining, nil
 }
@@ -239,7 +238,7 @@ func removeReplayed(path, sessionID string) {
 		replayedUnremovable.Lock()
 		replayedUnremovable.paths[path] = true
 		replayedUnremovable.Unlock()
-		slog.Error(fmt.Sprintf("Spooled transcript row for %s was written, but %s could not be deleted (%v); delete it by hand, or the next start writes that row again", sessionID, path, err))
+		pkgLog().Error(fmt.Sprintf("Spooled transcript row for %s was written, but %s could not be deleted (%v); delete it by hand, or the next start writes that row again", sessionID, path, err))
 	}
 }
 
@@ -247,10 +246,10 @@ func removeReplayed(path, sessionID string) {
 func quarantineSpoolFile(path, sessionID string, cause error) {
 	target := path + QuarantineSuffix
 	if err := os.Rename(path, target); err != nil {
-		slog.Error(fmt.Sprintf("Spooled transcript row for %s in %s was rejected by the database (%v) and could not be quarantined: %v", sessionID, path, cause, err))
+		pkgLog().Error(fmt.Sprintf("Spooled transcript row for %s in %s was rejected by the database (%v) and could not be quarantined: %v", sessionID, path, cause, err))
 		return
 	}
-	slog.Warn(fmt.Sprintf("Spooled transcript row for %s was rejected by the database (%v); moved it to %s for manual recovery and continuing with the session's later rows", sessionID, cause, target))
+	pkgLog().Warn(fmt.Sprintf("Spooled transcript row for %s was rejected by the database (%v); moved it to %s for manual recovery and continuing with the session's later rows", sessionID, cause, target))
 }
 
 // Orders recovery files by drop key, unparseable or non object files last by name
@@ -330,7 +329,7 @@ func RecoverPendingSpool(ctx context.Context, sessionDB TranscriptAppender, reso
 			}
 		}
 		if err != nil {
-			slog.Warn(fmt.Sprintf("Failed to recover pending message from %s: %v", path, err))
+			pkgLog().Warn(fmt.Sprintf("Failed to recover pending message from %s: %v", path, err))
 			continue
 		}
 		if ok {
@@ -339,7 +338,7 @@ func RecoverPendingSpool(ctx context.Context, sessionDB TranscriptAppender, reso
 		}
 	}
 	if recovered > 0 {
-		slog.Info(fmt.Sprintf("Recovered %d pending message(s) from shutdown flush", recovered))
+		pkgLog().Info(fmt.Sprintf("Recovered %d pending message(s) from shutdown flush", recovered))
 	}
 	held := map[string]bool{}
 	if len(blocked) > 0 {
@@ -350,7 +349,7 @@ func RecoverPendingSpool(ctx context.Context, sessionDB TranscriptAppender, reso
 			parts = append(parts, fmt.Sprintf("%s (%d)", sid, blocked[sid]))
 			held[sid] = true
 		}
-		slog.Info(fmt.Sprintf("Held back %d spooled transcript file(s) for the next start after a failed replay: %s", total, strings.Join(parts, ", ")))
+		pkgLog().Info(fmt.Sprintf("Held back %d spooled transcript file(s) for the next start after a failed replay: %s", total, strings.Join(parts, ", ")))
 	}
 	return recovered, held, nil
 }
@@ -414,7 +413,7 @@ func recoverOnePayload(ctx context.Context, sessionDB TranscriptAppender, path s
 		rawMessage, _ := data.Get("message")
 		message, isDict := rawMessage.(*pyjson.Object)
 		if !pyTruthy(rawSID) || !isDict {
-			slog.Warn(fmt.Sprintf("Cannot recover structurally invalid transcript spool file %s; preserved for manual inspection", path))
+			pkgLog().Warn(fmt.Sprintf("Cannot recover structurally invalid transcript spool file %s; preserved for manual inspection", path))
 			return false, nil
 		}
 		spooledSID := pyStrOf(rawSID)
@@ -451,7 +450,7 @@ func recoverOnePayload(ctx context.Context, sessionDB TranscriptAppender, path s
 		text = ""
 	}
 	if !pyTruthy(text) || !pyTruthy(rawKey) {
-		slog.Warn(fmt.Sprintf("Cannot recover structurally invalid pending message from %s; the flush file has been preserved", path))
+		pkgLog().Warn(fmt.Sprintf("Cannot recover structurally invalid pending message from %s; the flush file has been preserved", path))
 		return false, nil
 	}
 	sessionKey := pyStrOf(rawKey)
@@ -463,7 +462,7 @@ func recoverOnePayload(ctx context.Context, sessionDB TranscriptAppender, path s
 	ts, hasTS := payload.Get("ts")
 	if sessionID == "" && resolver != nil {
 		if notAfter, err := spoolNotAfter(ts); err != nil {
-			slog.Debug(fmt.Sprintf("Session key->id resolution failed for %s: %v", sessionKey, err))
+			pkgLog().Debug(fmt.Sprintf("Session key->id resolution failed for %s: %v", sessionKey, err))
 		} else if sid, db := resolver(ctx, sessionKey, notAfter); db != nil {
 			appender, ok := db.(TranscriptAppender)
 			if !ok {
@@ -473,7 +472,7 @@ func recoverOnePayload(ctx context.Context, sessionDB TranscriptAppender, path s
 		}
 	}
 	if sessionID == "" {
-		slog.Warn(fmt.Sprintf("Cannot recover pending message for %s: no session_id in flush file and session_key-to-id resolution failed. The message text is preserved in %s", sessionKey, path))
+		pkgLog().Warn(fmt.Sprintf("Cannot recover pending message for %s: no session_id in flush file and session_key-to-id resolution failed. The message text is preserved in %s", sessionKey, path))
 		return false, nil
 	}
 	if !hasTS {
@@ -533,7 +532,7 @@ func RecoverGatewayPending(ctx context.Context, store *SessionStore, cfg *Gatewa
 		}
 		count, held, err := RecoverPendingSpool(home.WithOverride(ctx, served.Home), nil, store.ResolveSessionIDForKey)
 		if err != nil {
-			slog.Warn(fmt.Sprintf("Pending-message recovery failed for profile %s", served.Name), "error", err)
+			pkgLog().Warn(fmt.Sprintf("Pending-message recovery failed for profile %s", served.Name), "error", err)
 			continue
 		}
 		recovered += count
@@ -581,9 +580,9 @@ func FlushAgentHistoryToFile(ctx context.Context, sessionID *string, history []a
 		payload.Set("count", len(snapshot))
 		payload.Set("messages", snapshot)
 		if _, err = writeFlushPayload(ctx, flushDir, payload); err == nil {
-			slog.Warn(fmt.Sprintf("Preserved %d in-memory message(s) for session %s (possible FTS corruption — recover after repairing state.db)", len(snapshot), pyrepr.Str(sid)))
+			pkgLog().Warn(fmt.Sprintf("Preserved %d in-memory message(s) for session %s (possible FTS corruption — recover after repairing state.db)", len(snapshot), pyrepr.Str(sid)))
 			return
 		}
 	}
-	slog.Warn(fmt.Sprintf("Agent-history shutdown preservation failed for session %s: %v", pyrepr.Str(sid), err))
+	pkgLog().Warn(fmt.Sprintf("Agent-history shutdown preservation failed for session %s: %v", pyrepr.Str(sid), err))
 }

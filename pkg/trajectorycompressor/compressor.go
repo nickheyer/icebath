@@ -21,7 +21,7 @@ import (
 
 // Ordered hostname to provider table, codex matched separately
 var providerHosts = [][2]string{
-	{"openrouter.ai", "openrouter"}, {"nousresearch.com", "nous"}, {"z.ai", "zai"}, {"moonshot.ai", "kimi-coding"},
+	{"openrouter.ai", "openrouter"}, {"z.ai", "zai"}, {"moonshot.ai", "kimi-coding"},
 	{"moonshot.cn", "kimi-coding"}, {"api.kimi.com", "kimi-coding"}, {"arcee.ai", "arcee"}, {"minimaxi.com", "minimax-cn"},
 	{"minimax.io", "minimax"},
 }
@@ -55,7 +55,7 @@ func NewCompressor(ctx context.Context, cfg *CompressionConfig) (*Compressor, er
 	if err := c.initSummarizer(ctx); err != nil {
 		return nil, err
 	}
-	c.logger = logging.GetLogger("trajectory_compressor")
+	c.logger = logging.GetLogger("trajectorycompressor")
 	return c, nil
 }
 

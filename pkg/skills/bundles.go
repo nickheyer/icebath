@@ -124,7 +124,7 @@ func pathStem(p string) string {
 func (s *Scope) loadBundleFile(path string) (map[string]any, error) {
 	raw, err := os.ReadFile(path)
 	if err != nil {
-		s.logger().Warn(fmt.Sprintf("Could not read bundle %s: %s", path, pyOSErrorText(err)))
+		s.logger().Warn(fmt.Sprintf("Could not read bundle %s: %s", path, osErrorText(err)))
 		return nil, nil
 	}
 	text, err := decodeUTF8Sig(raw)

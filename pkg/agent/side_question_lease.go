@@ -5,7 +5,6 @@ import (
 	"crypto/rand"
 	"encoding/base64"
 	"fmt"
-	"log/slog"
 	"sync"
 	"weak"
 
@@ -40,10 +39,6 @@ var (
 	sideQuestionNow     = pythread.Monotonic
 	askSideQuestion     = askTextOnly
 )
-
-func sideQuestionLeaseLog() *slog.Logger {
-	return slog.Default().With("logger", "agent.side_question_lease")
-}
 
 // Profile config the capability grant is read from, swapped by tests
 var sideQuestionGrantConfig = func(ctx context.Context) (map[string]any, error) {
@@ -149,7 +144,7 @@ func RedeemSideQuestion(ctx context.Context, token, prompt any, pluginID, h stri
 	}
 	if lease != nil && lease.homeKey != homeKey {
 		sideQuestionLeaseMu.Unlock()
-		sideQuestionLeaseLog().Info(fmt.Sprintf("side_question plugin=%s outcome=rejected:other_profile", pluginID))
+		pkgLog().Info(fmt.Sprintf("side_question plugin=%s outcome=rejected:other_profile", pluginID))
 		return nil, nil
 	}
 	if lease != nil {
@@ -158,7 +153,7 @@ func RedeemSideQuestion(ctx context.Context, token, prompt any, pluginID, h stri
 	purgeSideQuestionLeasesLocked(sideQuestionNow(), nil)
 	sideQuestionLeaseMu.Unlock()
 	if reason := sideQuestionRedeemable(lease, prompt); reason != "" {
-		sideQuestionLeaseLog().Info(fmt.Sprintf("side_question plugin=%s outcome=rejected:%s", pluginID, reason))
+		pkgLog().Info(fmt.Sprintf("side_question plugin=%s outcome=rejected:%s", pluginID, reason))
 		return nil, nil
 	}
 	seconds := plugins.ArgFloat(timeout, sideQuestionDefaultTimeout)

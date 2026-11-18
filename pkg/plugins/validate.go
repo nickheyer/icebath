@@ -136,7 +136,7 @@ func checkManifestFields(report *ValidationReport, manifest map[string]any) {
 	}
 }
 
-// The requires_icebath value, requires_hermes when the icebath key is empty, as the manifest loader reads it
+// The requires_icebath value, the retired key spelling when it is empty, as the manifest loader reads it
 func manifestRequiresSpec(manifest map[string]any) string {
 	for _, key := range []string{"requires_icebath", "requires_hermes"} {
 		if v := manifest[key]; config.PyTruthy(v) {
@@ -692,7 +692,7 @@ func validatePortablePlugin(ctx context.Context, report *ValidationReport, plugi
 		report.add("manifest fields", false, "plugin.json missing required 'name'")
 	}
 	manifestJSON := filepath.Join(pluginDir, "plugin.json")
-	checkConfigSpec(report, manifestConfigSchema(pkg.Manifest), jsonObjectKeyOrder(manifestJSON, "extensions", portableExtension, "config_schema"))
+	checkConfigSpec(report, manifestConfigSchema(pkg.Manifest), jsonObjectKeyOrder(manifestJSON, "extensions", PortableExtension, "config_schema"))
 	serverOrder := jsonObjectKeyOrder(filepath.Join(pluginDir, "mcp.json"), "mcpServers")
 	servers := make(map[string]any, len(pkg.MCPServers))
 	for k, v := range pkg.MCPServers {
@@ -732,7 +732,7 @@ func validatePortablePlugin(ctx context.Context, report *ValidationReport, plugi
 		if err != nil {
 			return nil, err
 		}
-		for _, serverName := range orderedMapKeys(declarations, jsonObjectKeyOrder(manifestJSON, "extensions", portableExtension, "servers")) {
+		for _, serverName := range orderedMapKeys(declarations, jsonObjectKeyOrder(manifestJSON, "extensions", PortableExtension, "servers")) {
 			result, err := availability(ctx, pkg.ServerDeclarations[serverName])
 			if err != nil {
 				return nil, err

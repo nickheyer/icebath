@@ -76,11 +76,11 @@ func (r *GatewayRunner) interruptRunningAgents(reason string) {
 		func() {
 			defer func() {
 				if rec := recover(); rec != nil {
-					runLog().Debug(fmt.Sprintf("Failed interrupting agent during shutdown: %v", rec))
+					pkgLog().Debug(fmt.Sprintf("Failed interrupting agent during shutdown: %v", rec))
 				}
 			}()
 			agent.RequestHardInterrupt(item.agent, reason, interruptToolReasonGatewayShutdown)
-			runLog().Debug(fmt.Sprintf("Interrupted running agent for session %s during shutdown", item.sessionKey))
+			pkgLog().Debug(fmt.Sprintf("Interrupted running agent for session %s during shutdown", item.sessionKey))
 		}()
 	}
 	counts := []struct {
@@ -94,7 +94,7 @@ func (r *GatewayRunner) interruptRunningAgents(reason string) {
 	}
 	for _, c := range counts {
 		if c.count != 0 {
-			runLog().Debug(fmt.Sprintf("Interrupted %d %s during shutdown", c.count, c.what))
+			pkgLog().Debug(fmt.Sprintf("Interrupted %d %s during shutdown", c.count, c.what))
 		}
 	}
 }

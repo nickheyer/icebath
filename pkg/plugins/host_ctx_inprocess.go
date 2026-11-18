@@ -30,8 +30,8 @@ func hostedCheck(v any) func() bool {
 
 // Classes the request and decision of a hosted approval transport are restored into and judged against
 const (
-	approvalRequestRef  = "hermes_cli.approval_transport:ApprovalRequest"
-	approvalDecisionRef = "hermes_cli.approval_transport:ApprovalDecision"
+	approvalRequestRef  = "pluginsdk:ApprovalRequest"
+	approvalDecisionRef = "pluginsdk:ApprovalDecision"
 )
 
 // Present function running a hosted transport on the request restored as an ApprovalRequest, any non decision answer invalid

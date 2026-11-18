@@ -16,7 +16,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"log/slog"
 	"math/big"
 	mrand "math/rand/v2"
 	"mime"
@@ -191,7 +190,7 @@ func gcpParsePrivateKey(pemText string) (crypto.Signer, error) {
 	return signer, nil
 }
 
-// Compact JWS of google-auth jwt.encode, header and payload in json.dumps form, RS256 or ES256 with the key id
+// Compact JWS with compact JSON header and payload, RS256 or ES256 with the key id
 func gcpEncodeJWT(signer crypto.Signer, keyID string, payload *pyjson.Object) (string, error) {
 	header := pyjson.NewObject()
 	header.Set("typ", "JWT")
@@ -202,11 +201,11 @@ func gcpEncodeJWT(signer crypto.Signer, keyID string, payload *pyjson.Object) (s
 	if keyID != "" {
 		header.Set("kid", keyID)
 	}
-	hb, err := pyjson.Dumps(header)
+	hb, err := pyjson.Dumps(header, pyjson.Separators(",", ":"))
 	if err != nil {
 		return "", err
 	}
-	pb, err := pyjson.Dumps(payload)
+	pb, err := pyjson.Dumps(payload, pyjson.Separators(",", ":"))
 	if err != nil {
 		return "", err
 	}
@@ -277,11 +276,11 @@ func gcpTokenEndpointRequest(ctx context.Context, tokenURI string, form [][2]str
 	var payload []byte
 	contentType := "application/x-www-form-urlencoded"
 	if jsonBody != nil {
-		b, err := pyjson.Dumps(jsonBody)
+		b, err := pyhttpx.JSONBody(jsonBody)
 		if err != nil {
 			return nil, err
 		}
-		payload, contentType = []byte(b), "application/json"
+		payload, contentType = b, "application/json"
 	} else {
 		payload = []byte(pyurl.URLEncode(form))
 	}
@@ -420,7 +419,7 @@ func gcpAuthorizedUserFromInfo(info map[string]any, scopes []string) (*gcpCreden
 	refreshToken, rapt := gcpStr(info, "refresh_token"), gcpStr(info, "rapt_token")
 	c := &gcpCredentials{kind: "authorized_user", quotaProjectID: gcpStr(info, "quota_project_id"), scopes: scopes}
 	if clientID == gcpCloudSDKClientID && c.quotaProjectID == "" {
-		slog.Default().Warn(gcpCloudSDKCredentialsWarning)
+		pkgLog().Warn(gcpCloudSDKCredentialsWarning)
 	}
 	c.mint = func(ctx context.Context) (string, time.Time, error) {
 		if refreshToken == "" || tokenURI == "" || clientID == "" || clientSecret == "" {
@@ -514,7 +513,7 @@ func gcpMetadataPing(ctx context.Context) bool {
 		req.Header.Set("metadata-flavor", "Google")
 		resp, err := client.Do(req)
 		if err != nil {
-			slog.Default().Warn(fmt.Sprintf("Compute Engine Metadata server unavailable on attempt %d of 3. Reason: %v", attempt, err))
+			pkgLog().Warn(fmt.Sprintf("Compute Engine Metadata server unavailable on attempt %d of 3. Reason: %v", attempt, err))
 			continue
 		}
 		resp.Body.Close()
@@ -570,7 +569,7 @@ func gcpMetadataGet(ctx context.Context, path string, params url.Values) (any, e
 		req.Header.Set("metadata-flavor", "Google")
 		r, err := client.Do(req)
 		if err != nil {
-			slog.Default().Warn(fmt.Sprintf("Compute Engine Metadata server unavailable on attempt %d of 5. Reason: %v", attempt, err))
+			pkgLog().Warn(fmt.Sprintf("Compute Engine Metadata server unavailable on attempt %d of 5. Reason: %v", attempt, err))
 			failure = err.Error()
 			continue
 		}
@@ -578,7 +577,7 @@ func gcpMetadataGet(ctx context.Context, path string, params url.Values) (any, e
 		r.Body.Close()
 		switch r.StatusCode {
 		case http.StatusInternalServerError, http.StatusServiceUnavailable, http.StatusRequestTimeout, http.StatusTooManyRequests:
-			slog.Default().Warn(fmt.Sprintf("Compute Engine Metadata server unavailable on attempt %d of 5. Response status: %d", attempt, r.StatusCode))
+			pkgLog().Warn(fmt.Sprintf("Compute Engine Metadata server unavailable on attempt %d of 5. Response status: %d", attempt, r.StatusCode))
 			failure = string(b)
 			continue
 		}
@@ -769,7 +768,7 @@ func gcpExplicitEnvironCredentials(ctx context.Context, scopes []string) (*gcpCr
 // Compute Engine metadata credentials when the host is a GCE machine
 func gcpGCECredentials(ctx context.Context, scopes []string) (*gcpCredentials, string, error) {
 	if !gcpIsOnGCE(ctx) {
-		slog.Default().Warn("Authentication failed using Compute Engine authentication due to unavailable metadata server.")
+		pkgLog().Warn("Authentication failed using Compute Engine authentication due to unavailable metadata server.")
 		return nil, "", nil
 	}
 	project := ""
@@ -804,7 +803,7 @@ func gcpDefaultCredentials(ctx context.Context, scopes []string) (*gcpCredential
 			effective, _ = c.projectLookup(ctx)
 		}
 		if effective == "" {
-			slog.Default().Warn("No project ID could be determined. Consider running `gcloud config set project` or setting the GOOGLE_CLOUD_PROJECT environment variable")
+			pkgLog().Warn("No project ID could be determined. Consider running `gcloud config set project` or setting the GOOGLE_CLOUD_PROJECT environment variable")
 		}
 		return c, effective, nil
 	}

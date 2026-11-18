@@ -128,7 +128,7 @@ func TestUpdateHandsGeneratedLaunchdInnerArgvBackWithoutWatcher(t *testing.T) {
 
 func TestUpdateFollowsWrapperUpgradeOfStalePlistArgv(t *testing.T) {
 	stale := []string{"/usr/bin/python3", "-m", "icebath_cli.main", "gateway", "run", "--replace"}
-	upgraded := prepareChildCommand(stale, map[string]string{"XPC_SERVICE_NAME": "ai.icebath.gateway-work"})
+	upgraded := prepareChildCommand(stale, map[string]string{"XPC_SERVICE_NAME": "app.icebath.gateway-work"})
 	if upgraded[len(upgraded)-1] != "--external-supervisor" {
 		t.Fatalf("%v", upgraded)
 	}

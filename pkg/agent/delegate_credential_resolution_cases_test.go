@@ -125,7 +125,7 @@ func TestDelegationProviderIntegrationCrossProviderDelegation(t *testing.T) {
 		return map[string]any{"model": "google/gemini-3-flash-preview", "provider": "openrouter", "base_url": "https://openrouter.ai/api/v1", "api_key": "sk-or-key", "api_mode": "chat_completions"}, nil
 	}
 	t.Cleanup(func() { resolveDelegationCredentialsFn = prev })
-	parent.provider, parent.baseURL, parent.apiKey = "nous", "https://inference-api.nousresearch.com/v1", "nous-key-abc"
+	parent.provider, parent.baseURL, parent.apiKey = "deepseek", "https://api.deepseek.com/v1", "ds-key-abc"
 	built := captureChildBuilds(t, parent.env, "done")
 	if _, err := delegateTask(tools.WithToolEnv(context.Background(), parent.env), parent, map[string]any{"goal": "Cross-provider test"}); err != nil {
 		t.Fatal(err)

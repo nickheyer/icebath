@@ -38,8 +38,8 @@ func TestNoCredentialsNoSwitch(t *testing.T) {
 		t.Fatalf("credentialed vendor: %q %q", p, m)
 	}
 	delete(granted, "anthropic")
-	detectStaticProviderForModelFn = func(context.Context, string, string) (string, string, bool) { return "nous", "hermes-4-405b", true }
-	if p, m, ok := DetectProviderForModel(ctx, "nous", "deepseek"); !ok || p != "nous" || m != "hermes-4-405b" {
+	detectStaticProviderForModelFn = func(context.Context, string, string) (string, string, bool) { return "zai", "glm-5.2", true }
+	if p, m, ok := DetectProviderForModel(ctx, "zai", "deepseek"); !ok || p != "zai" || m != "glm-5.2" {
 		t.Fatalf("an explicitly named provider is not gated: %q %q", p, m)
 	}
 }
@@ -65,19 +65,19 @@ func TestSharedSlugTiebreak(t *testing.T) {
 
 func TestCurrentProviderCatalogWins(t *testing.T) {
 	ctx, catalogs, granted := modelsDetectFixture(t)
-	for _, c := range [][2]string{{"openai-codex", "gpt-6-astra"}, {"nous", "some-portal-only-model"}, {"ollama-cloud", "glm-5.3-flash"}} {
+	for _, c := range [][2]string{{"openai-codex", "gpt-6-astra"}, {"kilocode", "some-gateway-only-model"}, {"ollama-cloud", "glm-5.3-flash"}} {
 		catalogs[c[0]] = []string{c[1]}
 		if p, m, ok := DetectProviderForModel(ctx, c[1], c[0]); ok {
 			t.Fatalf("served model stays on %s: %q %q", c[0], p, m)
 		}
 	}
-	catalogs["nous"] = []string{"zai/glm-5.3-flash"}
-	if p, m, ok := DetectProviderForModel(ctx, "glm-5.3-flash", "nous"); !ok || p != "nous" || m != "zai/glm-5.3-flash" {
+	catalogs["kilocode"] = []string{"zai/glm-5.3-flash"}
+	if p, m, ok := DetectProviderForModel(ctx, "glm-5.3-flash", "kilocode"); !ok || p != "kilocode" || m != "zai/glm-5.3-flash" {
 		t.Fatalf("bare name resolves to the current provider's full slug: %q %q", p, m)
 	}
 	granted["openrouter"] = true
-	catalogs["nous"] = []string{"hermes-4-405b"}
-	if p, m, ok := DetectProviderForModel(ctx, "no-such-model", "nous"); !ok || p != "openrouter" || m != "vendor/no-such-model" {
+	catalogs["kilocode"] = []string{"kilo-only-model"}
+	if p, m, ok := DetectProviderForModel(ctx, "no-such-model", "kilocode"); !ok || p != "openrouter" || m != "vendor/no-such-model" {
 		t.Fatalf("unserved model still walks the ladder: %q %q", p, m)
 	}
 }

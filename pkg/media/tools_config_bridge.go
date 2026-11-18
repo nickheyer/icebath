@@ -23,7 +23,6 @@ func init() {
 	hooks.FALModels = func() ([]string, map[string]map[string]any, string) {
 		return slices.Clone(falModelOrder), falModels, falDefaultModel
 	}
-	hooks.ManagedImageCatalog = managedImageCatalog
 	hooks.ImageGenRegistry = &tools.PickerRegistry{
 		List: func(ctx context.Context, _ *tools.Env) []tools.PickerProvider {
 			return pickerProviders(ListImageGenProviders(ctx, ""))

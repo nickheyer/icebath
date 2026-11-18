@@ -51,19 +51,19 @@ func TestFallbackChainKeepsProviderAndModelEntriesAndPrintsTheChain(t *testing.T
 	t.Setenv("ICEBATH_HOME", t.TempDir())
 	out := captureStatusStdout(t)
 	a := &AIAgent{credentialPoolEntryID: "stale"}
-	initFallbackChain(a, []map[string]any{{"provider": "openrouter", "model": "a"}, {"provider": "x"}, nil, {"provider": "nous", "model": "b"}})
+	initFallbackChain(a, []map[string]any{{"provider": "openrouter", "model": "a"}, {"provider": "x"}, nil, {"provider": "deepseek", "model": "b"}})
 	if len(a.fallbackChain) != 2 || a.fallbackIndex != 0 || a.credentialPoolEntryID != "" {
 		t.Fatalf("chain %v entry %q", a.fallbackChain, a.credentialPoolEntryID)
 	}
-	if got := out.String(); got != "\U0001f504 Fallback chain (2 providers): a (openrouter) → b (nous)\n" {
+	if got := out.String(); got != "\U0001f504 Fallback chain (2 providers): a (openrouter) → b (deepseek)\n" {
 		t.Fatalf("banner %q", got)
 	}
 	if a.FallbackModel()["model"] != "a" {
 		t.Fatal("legacy fallback model is the first entry")
 	}
 	out.Reset()
-	initFallbackChain(a, []map[string]any{{"provider": "nous", "model": "b"}})
-	if out.String() != "\U0001f504 Fallback model: b (nous)\n" {
+	initFallbackChain(a, []map[string]any{{"provider": "deepseek", "model": "b"}})
+	if out.String() != "\U0001f504 Fallback model: b (deepseek)\n" {
 		t.Fatalf("single banner %q", out.String())
 	}
 	out.Reset()
@@ -106,7 +106,7 @@ func TestOllamaNumCtxOverrideAndCompressorClamp(t *testing.T) {
 
 var testAutoraise = map[string]any{"model": "gpt-5.5", "from": 0.50, "to": 0.85}
 
-func TestMarkerLivesUnderHermesHome(t *testing.T) {
+func TestMarkerLivesUnderIcebathHome(t *testing.T) {
 	t.Setenv("ICEBATH_HOME", t.TempDir())
 	h := t.TempDir()
 	ctx := home.WithOverride(context.Background(), h)

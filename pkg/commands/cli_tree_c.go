@@ -30,9 +30,9 @@ func (c *CLI) addTreeC(root *cobra.Command) {
 	c.pos(jEdit, p("node"))
 
 	memory := c.newCmd(root, "memory", "Configure external memory provider",
-		"Set up and manage external memory provider plugins.\n\nBundled providers: retaindb, byterover.\nCatalog providers (e.g. honcho, hindsight, supermemory,\nmem0, openviking, holographic): icebath plugins install <name>.\n\nOnly one external provider can be active at a time.\nBuilt-in memory (MEMORY.md/USER.md) is always active.")
+		"Set up and manage external memory provider plugins.\n\nBundled providers: retaindb, byterover.\nOther providers: icebath plugins install <source>.\n\nOnly one external provider can be active at a time.\nBuilt-in memory (MEMORY.md/USER.md) is always active.")
 	mSetup := c.newCmd(memory, "setup", "Interactive provider selection and configuration", "")
-	c.pos(mSetup, pOpt("provider").withHelp("Provider to configure directly (e.g. honcho), skipping the picker"))
+	c.pos(mSetup, pOpt("provider").withHelp("Provider to configure directly (e.g. retaindb), skipping the picker"))
 	c.newCmd(memory, "status", "Show current memory provider config", "")
 	c.newCmd(memory, "off", "Disable external provider (built-in only)", "")
 	mReset := c.newCmd(memory, "reset", "Erase all built-in memory (MEMORY.md and USER.md)", "")
@@ -83,29 +83,9 @@ func (c *CLI) addTreeC(root *cobra.Command) {
 	c.pos(mReauth, pOpt("name"))
 	bf(mReauth, "all", "", "Re-authenticate every OAuth server in config, one at a time")
 	c.newCmd(mcp, "picker", "Interactive catalog picker (also the default for `icebath mcp`)", "")
-	c.newCmd(mcp, "catalog", "List Nous-approved MCPs available for one-click install", "")
+	c.newCmd(mcp, "catalog", "List the bundled catalog MCPs available for one-click install", "")
 	mInstall := c.newCmd(mcp, "install", "Install a catalog MCP by name (e.g. `icebath mcp install deepwiki`)", "")
 	c.pos(mInstall, p("identifier"))
-
-	connectors := c.newCmd(root, "connectors", "Manage hosted app connectors and their accounts",
-		"List, connect, rename and remove the app accounts Icebath uses through Nous Portal.")
-	c.newCmd(connectors, "list", "Show every connector and whether it is connected", "", "ls")
-	accounts := c.newCmd(connectors, "accounts", "Show connected accounts", "")
-	c.pos(accounts, pOpt("app"))
-	bf(accounts, "all", "", "Also show retired accounts")
-	connect := c.newCmd(connectors, "connect", "Connect an app account in your browser", "")
-	c.pos(connect, p("app"))
-	sf(connect, "alias", "", "", "Name for a new account (for example work); with --reconnect, the name or label to repair")
-	bf(connect, "reconnect", "", "Repair an account that stopped working")
-	bf(connect, "force", "", "With --reconnect, sign in again even if the account is connected")
-	rename := c.newCmd(connectors, "rename", "Rename an account", "")
-	c.pos(rename, p("app"), p("name"))
-	sf(rename, "to", "", "", "New name for the account")
-	_ = rename.MarkFlagRequired("to")
-	disconnect := c.newCmd(connectors, "disconnect", "Remove an account", "")
-	c.pos(disconnect, p("app"))
-	sf(disconnect, "alias", "", "", "Name or label of the account to remove")
-	bf(disconnect, "yes", "y", "Skip the confirmation prompt")
 
 	c.addSessions(root)
 
@@ -292,7 +272,7 @@ func (c *CLI) addComputerUse(root *cobra.Command) {
 	cu := c.helpCmd(root, "computer-use", "Manage the Computer Use (cua-driver) backend (macOS/Windows/Linux)",
 		"Install or check the cua-driver binary used by the\n`computer_use` toolset. Supported on macOS, Windows, and\nLinux.\n\nUse `icebath computer-use install` to prepare the pinned\ncua-driver package and host integration. This is equivalent to the\npost-setup hook that `icebath tools` runs when you first\nenable the Computer Use toolset, and is a stable target\nfor re-running the install if it didn't fire (e.g. when\ntoggling the toolset on a returning-user setup).\n\nUse `icebath computer-use doctor` to run cua-driver's\n`health_report` MCP tool and surface its check matrix\n(TCC, bundle identity, version, platform support, ...)\nin human-readable form.", 0)
 	install := c.newCmd(cu, "install", "Install or repair the cua-driver binary (macOS/Windows/Linux)", "")
-	bf(install, "upgrade", "", "Reconcile cua-driver with Icebath' pinned PM package and repair host setup.")
+	bf(install, "upgrade", "", "Reconcile cua-driver with Icebath's pinned PM package and repair host setup.")
 	c.newCmd(cu, "status", "Check the selected cua-driver and its runtime contract", "")
 	doctor := c.newCmd(cu, "doctor", "Run cua-driver `health_report` and surface the check matrix",
 		"Drive cua-driver's stable `health_report` MCP tool and render\nits check matrix (TCC permissions, bundle identity, version,\nplatform support, screenshot probe, …) as human-readable\noutput. cua-driver owns the health model; this command stays\nthin so new checks added upstream surface here without code\nchanges. Exits 0 when overall=ok, 1 when degraded/failed, 2\nwhen the binary is missing or unreachable.")
@@ -333,7 +313,7 @@ func (c *CLI) addSessions(root *cobra.Command) {
 		inf(cmd, "min-messages", "", 0, "Only match sessions with >= N messages")
 		inf(cmd, "max-messages", "", 0, "Only match sessions with <= N messages")
 		sf(cmd, "model", "", "", "Only match sessions whose model name contains this substring (e.g. 'sonnet', 'gpt-5', 'icebath')")
-		sf(cmd, "provider", "", "", "Only match sessions billed through this provider (e.g. openrouter, anthropic, nous)")
+		sf(cmd, "provider", "", "", "Only match sessions billed through this provider (e.g. openrouter, anthropic, openai-codex)")
 		sf(cmd, "user", "", "", "Only match sessions from this user ID")
 		sf(cmd, "chat-id", "", "", "Only match sessions from this chat/channel ID")
 		sf(cmd, "chat-type", "", "", "Only match sessions with this chat type (e.g. dm, group)")

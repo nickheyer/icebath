@@ -14,7 +14,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
@@ -584,26 +583,5 @@ func TestGoalPidAliveAndTruncate(t *testing.T) {
 	}
 	if goalSessionWaiting("") || CountActiveDelegations("") != 0 {
 		t.Fatal("an empty id waited or counted")
-	}
-}
-
-func TestGoalJudgeReasonNamesNousAuthFailureAndStillFailsOpen(t *testing.T) {
-	provider.ClearNousCredentialFailure()
-	t.Cleanup(provider.ClearNousCredentialFailure)
-	h := t.TempDir()
-	t.Setenv("ICEBATH_HOME", h)
-	ClearSessionDBCache()
-	cfg := "model:\n  provider: nous\n  default: test-model\nauxiliary:\n  goal_judge:\n    provider: nous\n    model: test-model\n"
-	if err := os.WriteFile(filepath.Join(h, "config.yaml"), []byte(cfg), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	timeout := 5.0
-	result := JudgeGoal(context.Background(), "ship the fix", "edited the file and ran the tests", JudgeOptions{Timeout: &timeout})
-	if result.Verdict != "continue" || result.ParseFailed || result.Wait != nil || !result.TransportFailed {
-		t.Fatalf("result %+v", result)
-	}
-	if !strings.HasPrefix(result.Reason, "goal_judge auxiliary client unavailable: Nous Portal runtime credentials unavailable:") ||
-		!strings.Contains(result.Reason, "icebath model") || strings.Contains(result.Reason, "judge error") {
-		t.Fatalf("reason %q", result.Reason)
 	}
 }

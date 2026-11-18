@@ -68,13 +68,10 @@ func (r *GatewayRunner) restoreSessionModelOverride(ctx context.Context, session
 	r.evictCachedAgent(ctx, sessionKey, false, false)
 }
 
-// True when the agent runs another model than the config on purpose, a session override or the recorded Nous switch
-func (r *GatewayRunner) isIntentionalModelSwitch(sessionKey string, a *agent.AIAgent, configModel string) bool {
-	if override := r.sessionModelOverride(sessionKey); override != nil && pyrepr.Equal(override["model"], a.Model()) {
-		return true
-	}
-	switched := a.NousModelSwitch()
-	return switched != nil && switched[0] == configModel && switched[1] == a.Model()
+// True when the agent runs another model than the config on purpose through a session override
+func (r *GatewayRunner) isIntentionalModelSwitch(sessionKey string, a *agent.AIAgent) bool {
+	override := r.sessionModelOverride(sessionKey)
+	return override != nil && pyrepr.Equal(override["model"], a.Model())
 }
 
 // Fresh monotonically increasing run generation for a session, never reset
@@ -98,7 +95,7 @@ func (r *GatewayRunner) invalidateSessionRunGeneration(ctx context.Context, sess
 	r.restorePendingOneTurnModelOverride(ctx, sessionKey, nil)
 	generation := r.beginSessionRunGeneration(sessionKey)
 	if reason != "" {
-		runLog().Info(fmt.Sprintf("Invalidated run generation for %s → %d (%s)", sessionKey, generation, reason))
+		pkgLog().Info(fmt.Sprintf("Invalidated run generation for %s → %d (%s)", sessionKey, generation, reason))
 	}
 	return generation
 }
@@ -156,7 +153,7 @@ func (r *GatewayRunner) releaseTurnLease(sessionKey string, runGeneration int) (
 	}
 	defer func() {
 		if rec := recover(); rec != nil {
-			runLog().Debug("Failed to release turn lease", "error", rec)
+			pkgLog().Debug("Failed to release turn lease", "error", rec)
 			released = false
 		}
 	}()
@@ -174,7 +171,7 @@ func (r *GatewayRunner) rebindTurnLease(sessionKey string, runGeneration int, ne
 	}
 	defer func() {
 		if rec := recover(); rec != nil {
-			runLog().Debug("Failed to rebind turn lease", "error", rec)
+			pkgLog().Debug("Failed to rebind turn lease", "error", rec)
 			rebound = false
 		}
 	}()
@@ -270,7 +267,7 @@ func (r *GatewayRunner) rehydratePromptPins(ctx context.Context, sessionKey stri
 	failed := func() (failed bool) {
 		defer func() {
 			if rec := recover(); rec != nil {
-				runLog().Debug(fmt.Sprintf("Failed to read persisted prompt pin for %s", sessionKey), "error", rec)
+				pkgLog().Debug(fmt.Sprintf("Failed to read persisted prompt pin for %s", sessionKey), "error", rec)
 				failed = true
 			}
 		}()
@@ -329,11 +326,11 @@ func (r *GatewayRunner) persistPromptPins(ctx context.Context, sessionKey string
 	func() {
 		defer func() {
 			if rec := recover(); rec != nil {
-				runLog().Debug(fmt.Sprintf("Failed to persist prompt pin for %s", sessionKey), "error", rec)
+				pkgLog().Debug(fmt.Sprintf("Failed to persist prompt pin for %s", sessionKey), "error", rec)
 			}
 		}()
 		if _, err := r.asyncStore().Store().SetPromptPin(ctx, sessionKey, snapshot, expectedSessionID); err != nil {
-			runLog().Debug(fmt.Sprintf("Failed to persist prompt pin for %s", sessionKey), "error", err)
+			pkgLog().Debug(fmt.Sprintf("Failed to persist prompt pin for %s", sessionKey), "error", err)
 		}
 	}()
 }

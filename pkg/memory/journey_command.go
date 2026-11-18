@@ -170,7 +170,7 @@ func journeyFloat(v any) (float64, bool) {
 	return 0, false
 }
 
-// Terminal size of stdout with the hermes fallback of 90 by 30, overrides winning, floors of 40 and 10
+// Terminal size of stdout with the fallback of 90 by 30, overrides winning, floors of 40 and 10
 func journeyTermSize(width, height int) (int, int) {
 	cols, rows := journeyDefaultCols, journeyDefaultRows
 	if c, r, err := xterm.GetSize(os.Stdout.Fd()); err == nil && c > 0 && r > 0 {
@@ -765,7 +765,7 @@ func journeyOpenInEditor(w io.Writer, initial, suffix string) (string, bool) {
 	return text, true
 }
 
-// JourneyCommand runs icebath journey, hermes_cli/journey.py show, list, delete and edit
+// Runs icebath journey, show, list, delete and edit
 func JourneyCommand(ctx context.Context, env *tools.Env, ns map[string]any, w io.Writer) (int, error) {
 	action := ""
 	if pyrepr.Truthy(ns["journey_action"]) {

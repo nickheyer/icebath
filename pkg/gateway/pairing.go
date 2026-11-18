@@ -10,7 +10,6 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
-	"log/slog"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -48,14 +47,12 @@ const (
 	PairingDeclineDedupeSeconds  = 24 * 3600
 )
 
-func pairingLog() *slog.Logger { return slog.Default().With("logger", "gateway.pairing") }
-
 // Seconds since the epoch as time.time reports them
 func pairingNow() float64 { return float64(time.Now().UnixNano()) / 1e9 }
 
 // Pairing directory of the home bound to ctx, resolved on every call
 func defaultPairingDir(ctx context.Context) string {
-	return home.HermesDir(home.Dir(ctx), "platforms/pairing", "pairing")
+	return home.IcebathDir(home.Dir(ctx), "platforms/pairing", "pairing")
 }
 
 // Allowlist env var name a platform declares, empty when it has none
@@ -375,7 +372,7 @@ func loadPairingJSONFile(path string) (*pyjson.Object, error) {
 			if st, statErr := os.Stat(path); statErr == nil {
 				ownerInfo = fmt.Sprintf("owner_uid=%d mode=%04o", statOwnerUID(st), unixModeBits(st.Mode()))
 			}
-			pairingLog().Warn(fmt.Sprintf("Pairing file %s exists but is not readable as uid=%s (%s; %s). "+
+			pkgLog().Warn(fmt.Sprintf("Pairing file %s exists but is not readable as uid=%s (%s; %s). "+
 				"If you ran `docker exec <container> icebath pairing approve ...` as root, "+
 				"re-run with `docker exec -u icebath <container> ...` and "+
 				"chown the existing file to the icebath user, or restart the "+
@@ -545,7 +542,7 @@ func NewPairingStore(ctx context.Context, profile string) (*PairingStore, error)
 	if profile != "default" {
 		profileHome = filepath.Join(root, "profiles", profile)
 	}
-	return newPairingStoreAt(ctx, home.HermesDir(profileHome, "platforms/pairing", "pairing"), profileHome, profile)
+	return newPairingStoreAt(ctx, home.IcebathDir(profileHome, "platforms/pairing", "pairing"), profileHome, profile)
 }
 
 // Store over an explicit directory, the other layout under the home merged into it first

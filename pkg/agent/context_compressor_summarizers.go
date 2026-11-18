@@ -3,10 +3,10 @@ package agent
 import (
 	"context"
 	"fmt"
-	"log/slog"
 	"strings"
 
 	"github.com/dlclark/regexp2/v2"
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/internal/pydatetime"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyre"
@@ -95,7 +95,7 @@ var summarizeToolResultUnguarded = summarizeToolResultUnguardedImpl
 // One line summary of a tool call and result that never fails, a size line when a branch breaks
 func summarizeToolResult(toolName string, toolArgs, toolContent any) (out string) {
 	fallback := func(err any) string {
-		slog.Debug(fmt.Sprintf("Tool-result summary failed for %s: %v", toolName, err))
+		pkgLog().Debug(fmt.Sprintf("Tool-result summary failed for %s: %v", toolName, err))
 		n := 0
 		if s, ok := toolContent.(string); ok {
 			n = pystr.Len(s)
@@ -178,7 +178,7 @@ func sumWebExtract(name string, args *pyjson.Object, content string, contentLen,
 			}
 			first = f
 		default:
-			return "", fmt.Errorf("TypeError: unsupported operand type(s) for +=: '%s' and 'str'", pyrepr.TypeName(first))
+			return "", fmt.Errorf("web extract content is %s, expected text", errchain.Kind(first))
 		}
 	}
 	return "[web_extract] " + pyrepr.Str(first) + " (" + groupedInt(contentLen) + " chars)" + resultFailureSuffix(content), nil
@@ -499,7 +499,7 @@ func summarizeToolResultUnguardedImpl(toolName string, toolArgs, toolContent any
 	content, isStr := toolContent.(string)
 	if !isStr {
 		if pyrepr.Truthy(toolContent) {
-			return "", fmt.Errorf("AttributeError: '%s' object has no attribute 'lstrip'", pyrepr.TypeName(toolContent))
+			return "", fmt.Errorf("tool result content is %s, expected text", errchain.Kind(toolContent))
 		}
 		content = ""
 	}
@@ -539,5 +539,5 @@ func memoryProviderSection(env *tools.Env, memoryContext string) string {
 
 // Date only in the configured timezone for temporal anchoring of the summary
 func todayForPrompt(ctx context.Context) string {
-	return pydatetime.Strftime(hermesNow(ctx), "%Y-%m-%d")
+	return pydatetime.Strftime(icebathNow(ctx), "%Y-%m-%d")
 }

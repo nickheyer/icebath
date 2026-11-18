@@ -226,10 +226,10 @@ func TestEnsureTccAnchorBootGateRefusalLeavesVenvUntouched(t *testing.T) {
 // Captures the anchor module's warnings
 func tccCaptureLog(t *testing.T) *bytes.Buffer {
 	t.Helper()
-	saved := tccLog
-	t.Cleanup(func() { tccLog = saved })
+	saved := slog.Default()
+	t.Cleanup(func() { slog.SetDefault(saved) })
 	buf := &bytes.Buffer{}
-	tccLog = slog.New(slog.NewTextHandler(buf, &slog.HandlerOptions{Level: slog.LevelWarn}))
+	slog.SetDefault(slog.New(slog.NewTextHandler(buf, &slog.HandlerOptions{Level: slog.LevelWarn})))
 	return buf
 }
 

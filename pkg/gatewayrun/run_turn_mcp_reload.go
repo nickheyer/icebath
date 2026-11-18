@@ -19,7 +19,7 @@ import (
 func (r *GatewayRunner) MCPReloadRefreshCachedAgents(multiplex bool, profile string) {
 	defer func() {
 		if rec := recover(); rec != nil {
-			runLog().Debug(fmt.Sprintf("Failed to update cached agent tools after MCP reload: %v", rec))
+			pkgLog().Debug(fmt.Sprintf("Failed to update cached agent tools after MCP reload: %v", rec))
 		}
 	}()
 	if r.agentCacheLock == nil || r.agentCache == nil || r.agentCache.Len() == 0 {
@@ -64,7 +64,7 @@ func (r *GatewayRunner) executeMCPReload(ctx context.Context, event *gateway.Mes
 	}
 	reply, err := r.mcpReloadBody(ctx, event, multiplex)
 	if err != nil {
-		runLog().Warn(fmt.Sprintf("MCP reload failed: %s", pyrepr.ExceptionMessage(err)))
+		pkgLog().Warn(fmt.Sprintf("MCP reload failed: %s", pyrepr.ExceptionMessage(err)))
 		return i18n.T(ctx, "gateway.reload_mcp.failed", "", map[string]any{"error": pyrepr.ExceptionMessage(err)}), nil
 	}
 	return reply, nil

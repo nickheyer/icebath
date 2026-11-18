@@ -3,7 +3,6 @@ package gateway
 import (
 	"context"
 	"errors"
-	"log/slog"
 	"math/big"
 	"os"
 	"sync"
@@ -15,8 +14,6 @@ import (
 
 // Serializes every load, mutate and save of the restart failure counters file
 var restartFailureCountsLock sync.Mutex
-
-func stuckLoopLog() *slog.Logger { return slog.Default().With("logger", "gateway.stuck_loop_counts") }
 
 // Parsed counters, empty when the file is missing, unreadable or not a JSON object
 func readRestartFailureCounts(path string) *pyjson.Object {
@@ -49,13 +46,13 @@ func IncrementRestartFailureCounts(ctx context.Context, path string, activeSessi
 		prev, _ := counts.Get(key)
 		n, err := pyAddOne(prev)
 		if err != nil {
-			stuckLoopLog().Debug("Could not write restart-failure counters to "+path, "exc_info", err)
+			pkgLog().Debug("Could not write restart-failure counters to "+path, "exc_info", err)
 			return
 		}
 		next.Set(key, n)
 	}
 	if err := config.AtomicJSONWriteWith(ctx, path, next); err != nil {
-		stuckLoopLog().Debug("Could not write restart-failure counters to "+path, "exc_info", err)
+		pkgLog().Debug("Could not write restart-failure counters to "+path, "exc_info", err)
 	}
 }
 
@@ -76,7 +73,7 @@ func pyAddOne(v any) (any, error) {
 		}
 		return int64(1), nil
 	}
-	return nil, errors.New("TypeError: can only add numbers to the restart failure count")
+	return nil, errors.New("the restart failure count is not a number")
 }
 
 // Drops a completed session's counter, removing the file once no counter is left
@@ -95,6 +92,6 @@ func ClearRestartFailureCount(ctx context.Context, path, sessionKey string) {
 		err = rmErr
 	}
 	if err != nil {
-		stuckLoopLog().Debug("Could not clear restart-failure counter in "+path, "exc_info", err)
+		pkgLog().Debug("Could not clear restart-failure counter in "+path, "exc_info", err)
 	}
 }

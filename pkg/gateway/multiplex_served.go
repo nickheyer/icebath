@@ -3,7 +3,6 @@ package gateway
 import (
 	"context"
 	"fmt"
-	"log/slog"
 	"sort"
 	"strings"
 	"time"
@@ -14,7 +13,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 )
 
-// Pid of the default profile's gateway when a verified live process owns it, the module attribute hermes tests patch
+// Pid of the default profile's gateway when a verified live process owns it, the module attribute tests patch
 var LiveDefaultGatewayPid = func() (int, bool, error) {
 	return LiveGatewayPidForHome(home.Root())
 }
@@ -185,7 +184,7 @@ func NotifyMultiplexerProfilesChanged(ctx context.Context, profileName string, t
 		return rescanGatewayProfiles(ctx, home.Root(), timeout)
 	}()
 	if err != nil {
-		slog.Debug(fmt.Sprintf("multiplexer rescan notification failed for %s: %v", pyrepr.Repr(profileName), err))
+		pkgLog().Debug(fmt.Sprintf("multiplexer rescan notification failed for %s: %v", pyrepr.Repr(profileName), err))
 		return nil, false
 	}
 	obj, ok := answer.(*pyjson.Object)

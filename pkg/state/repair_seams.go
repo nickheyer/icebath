@@ -7,7 +7,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyfs"
 )
 
-// Repair collaborators as swappable values, the module attributes the hermes repair tests patch
+// Repair collaborators as swappable values, the module attributes the repair tests patch
 var (
 	repairProbeFn        = dbOpensCleanly
 	repairScratchSpaceFn = repairScratchSpaceError

@@ -2,7 +2,6 @@ package home
 
 import (
 	"fmt"
-	"log/slog"
 	"os"
 
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
@@ -26,7 +25,7 @@ func SecureParentDir(path string) {
 	}
 	if root := InstallRoot(); root != "" {
 		if _, inside := pypath.PathRelativeTo(parent, root); inside {
-			slog.Warn(fmt.Sprintf("Not restricting permissions on %s: it is inside the "+
+			pkgLog().Warn(fmt.Sprintf("Not restricting permissions on %s: it is inside the "+
 				"icebath-agent install directory (%s). Credential files are "+
 				"normally stored under the icebath home directory instead.", parent, root))
 			return

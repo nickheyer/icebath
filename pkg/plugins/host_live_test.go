@@ -188,7 +188,7 @@ func installLiveServices(t *testing.T) *liveServices {
 
 var hostEnvHooksOnce sync.Once
 
-// Installs the tools env hooks the profiles and gateway ports install in production, valued as a hermes test process sees them
+// Installs the tools env hooks the profiles and gateway ports install in production, valued as a test process sees them
 func installHostEnvHooks() {
 	hostEnvHooksOnce.Do(func() {
 		config.RegisterConfigFacade(config.FacadeHooks{CoreDeclaredEnvNames: config.StaticCoreEnvNames})

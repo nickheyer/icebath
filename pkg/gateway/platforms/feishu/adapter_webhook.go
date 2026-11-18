@@ -8,7 +8,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"log/slog"
 	"strings"
 	"time"
 
@@ -49,7 +48,7 @@ func (a *FeishuAdapter) recordWebhookAnomaly(remoteIP, status string) {
 	}
 	count++
 	if count%feishuWebhookAnomalyThreshold == 0 {
-		slog.Warn(fmt.Sprintf("[Feishu] Webhook anomaly: %d consecutive error responses (%s) from %s over the last %.0fs", count, status, remoteIP, now-firstSeen))
+		pkgLog().Warn(fmt.Sprintf("[Feishu] Webhook anomaly: %d consecutive error responses (%s) from %s over the last %.0fs", count, status, remoteIP, now-firstSeen))
 	}
 	a.webhookAnomalyCounts[remoteIP] = anomalyEntry{count: count, lastStatus: status, firstSeen: firstSeen}
 }
@@ -79,16 +78,16 @@ func (a *FeishuAdapter) handleWebhookRequest(ctx context.Context, request *gatew
 		remoteIP = "unknown"
 	}
 	if !a.checkWebhookRateLimit(a.settings.AppID + ":" + a.settings.WebhookPath + ":" + remoteIP) {
-		slog.Warn("[Feishu] Webhook rate limit exceeded for " + remoteIP)
+		pkgLog().Warn("[Feishu] Webhook rate limit exceeded for " + remoteIP)
 		return a.webhookReject(remoteIP, "429", 429, "Too Many Requests", "")
 	}
 	contentType := pystr.Lower(pystr.Strip(strings.Split(request.Header.Get("Content-Type"), ";")[0]))
 	if contentType != "" && contentType != "application/json" {
-		slog.Warn(fmt.Sprintf("[Feishu] Webhook rejected: unexpected Content-Type %s from %s", pyrepr.Repr(contentType), remoteIP))
+		pkgLog().Warn(fmt.Sprintf("[Feishu] Webhook rejected: unexpected Content-Type %s from %s", pyrepr.Repr(contentType), remoteIP))
 		return a.webhookReject(remoteIP, "415", 415, "Unsupported Media Type", "")
 	}
 	if request.ContentLength != nil && *request.ContentLength > feishuWebhookMaxBodyBytes {
-		slog.Warn(fmt.Sprintf("[Feishu] Webhook body too large (%d bytes) from %s", *request.ContentLength, remoteIP))
+		pkgLog().Warn(fmt.Sprintf("[Feishu] Webhook body too large (%d bytes) from %s", *request.ContentLength, remoteIP))
 		return a.webhookReject(remoteIP, "413", 413, "Request body too large", "")
 	}
 	readCtx, cancel := context.WithTimeout(ctx, feishuWebhookBodyTimeoutSeconds*time.Second)
@@ -97,10 +96,10 @@ func (a *FeishuAdapter) handleWebhookRequest(ctx context.Context, request *gatew
 	cancel()
 	switch {
 	case errors.Is(err, errPayloadTooLarge):
-		slog.Warn("[Feishu] Webhook body exceeds limit from " + remoteIP)
+		pkgLog().Warn("[Feishu] Webhook body exceeds limit from " + remoteIP)
 		return a.webhookReject(remoteIP, "413", 413, "Request body too large", "")
 	case err != nil && timedOut:
-		slog.Warn(fmt.Sprintf("[Feishu] Webhook body read timed out after %ds from %s", feishuWebhookBodyTimeoutSeconds, remoteIP))
+		pkgLog().Warn(fmt.Sprintf("[Feishu] Webhook body read timed out after %ds from %s", feishuWebhookBodyTimeoutSeconds, remoteIP))
 		return a.webhookReject(remoteIP, "408", 408, "Request Timeout", "")
 	case err != nil:
 		return a.webhookReject(remoteIP, "400", 400, "", "failed to read body")
@@ -132,7 +131,7 @@ func (a *FeishuAdapter) handleWebhookRequest(ctx context.Context, request *gatew
 		}
 		incomingToken := strOr(incoming)
 		if incomingToken == "" || !hmac.Equal([]byte(incomingToken), []byte(token)) {
-			slog.Warn("[Feishu] Webhook rejected: invalid verification token from " + remoteIP)
+			pkgLog().Warn("[Feishu] Webhook rejected: invalid verification token from " + remoteIP)
 			return a.webhookReject(remoteIP, "401-token", 401, "Invalid verification token", "")
 		}
 	}
@@ -142,11 +141,11 @@ func (a *FeishuAdapter) handleWebhookRequest(ctx context.Context, request *gatew
 		return gateway.WebJSONResponse(out, 200, nil)
 	}
 	if a.settings.EncryptKey != "" && !a.isWebhookSignatureValid(request, body) {
-		slog.Warn("[Feishu] Webhook rejected: invalid signature from " + remoteIP)
+		pkgLog().Warn("[Feishu] Webhook rejected: invalid signature from " + remoteIP)
 		return a.webhookReject(remoteIP, "401-sig", 401, "Invalid signature", "")
 	}
 	if pyrepr.Truthy(dget(payload, "encrypt")) {
-		slog.Error("[Feishu] Encrypted webhook payloads are not supported by Icebath webhook mode")
+		pkgLog().Error("[Feishu] Encrypted webhook payloads are not supported by Icebath webhook mode")
 		return a.webhookReject(remoteIP, "400-encrypted", 400, "", "encrypted webhook payloads are not supported")
 	}
 	a.clearWebhookAnomaly(remoteIP)
@@ -162,7 +161,7 @@ func (a *FeishuAdapter) handleWebhookRequest(ctx context.Context, request *gatew
 func (a *FeishuAdapter) dispatchWebhookEvent(eventType string, body []byte, payload *pyjson.Object) {
 	decode := func(v any) {
 		if err := json.Unmarshal(body, v); err != nil {
-			slog.Debug("[Feishu] Webhook event payload did not decode fully: " + err.Error())
+			pkgLog().Debug("[Feishu] Webhook event payload did not decode fully: " + err.Error())
 		}
 	}
 	switch eventType {
@@ -195,7 +194,7 @@ func (a *FeishuAdapter) dispatchWebhookEvent(eventType string, body []byte, payl
 	case "vc.bot.meeting_invited_v1":
 		a.onMeetingInvitedEvent(string(body))
 	default:
-		slog.Debug("[Feishu] Ignoring webhook event type: " + firstNonEmpty(eventType, "unknown"))
+		pkgLog().Debug("[Feishu] Ignoring webhook event type: " + firstNonEmpty(eventType, "unknown"))
 	}
 }
 
@@ -230,7 +229,7 @@ func (a *FeishuAdapter) checkWebhookRateLimit(rateKey string) bool {
 			}
 		}
 		if _, tracked := a.webhookRateCounts[rateKey]; !tracked && len(a.webhookRateCounts) >= feishuWebhookRateMaxKeys {
-			slog.Warn(fmt.Sprintf("[Feishu] Webhook rate-limit table at capacity (%d keys) — denying untracked key", feishuWebhookRateMaxKeys))
+			pkgLog().Warn(fmt.Sprintf("[Feishu] Webhook rate-limit table at capacity (%d keys) — denying untracked key", feishuWebhookRateMaxKeys))
 			return false
 		}
 	}

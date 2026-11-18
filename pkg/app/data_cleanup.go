@@ -11,6 +11,7 @@ import (
 	"strings"
 
 	"github.com/nickheyer/icebath/pkg/home"
+	"github.com/nickheyer/icebath/pkg/install"
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pyshutil"
@@ -109,8 +110,8 @@ func planDataRemoval(ctx context.Context, h, project string) (*dataRemovalPlan, 
 	if pathEq(h, machine) {
 		protected = append(protected, filepath.Join(machine, "profiles"))
 	}
-	canonical := filepath.Join(h, "icebath-agent")
-	if st, err := os.Stat(filepath.Join(canonical, "hermes_cli", "__init__.py")); err == nil && st.Mode().IsRegular() {
+	canonical := filepath.Join(h, install.InstallDirName)
+	if install.InstallerCreated(canonical) || install.IsSourceCheckout(canonical) {
 		protected = append(protected, canonical)
 	}
 	var remove, keep []string

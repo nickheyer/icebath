@@ -15,7 +15,7 @@ import (
 func auxFixedProjection(t *testing.T, p auxProfileProjection) {
 	t.Helper()
 	prev := auxProjectProviderProfileFn
-	auxProjectProviderProfileFn = func(context.Context, string, string, string, string, map[string]any, map[string]bool) auxProfileProjection {
+	auxProjectProviderProfileFn = func(context.Context, string, string, string, string, map[string]any) auxProfileProjection {
 		return p
 	}
 	t.Cleanup(func() { auxProjectProviderProfileFn = prev })
@@ -29,7 +29,7 @@ func auxExtraBodyKwargs(t *testing.T, ctx context.Context, provider, model strin
 	if err != nil {
 		t.Fatal(err)
 	}
-	body, _ := kw["extra_body"].(map[string]any)
+	body, _ := pyjson.Plain(kw["extra_body"]).(map[string]any)
 	return kw, body
 }
 
@@ -119,9 +119,9 @@ func TestAuxiliaryTaskExtraBodyProfileProjectionReceivesWireClampedEffort(t *tes
 	ctx := auxMainTestHome(t, "")
 	var seen map[string]any
 	real := auxProjectProviderProfileFn
-	auxProjectProviderProfileFn = func(ctx context.Context, provider, providerNorm, model, effectiveBase string, reasoningConfig map[string]any, dataUse map[string]bool) auxProfileProjection {
+	auxProjectProviderProfileFn = func(ctx context.Context, provider, providerNorm, model, effectiveBase string, reasoningConfig map[string]any) auxProfileProjection {
 		seen = reasoningConfig
-		return real(ctx, provider, providerNorm, model, effectiveBase, reasoningConfig, dataUse)
+		return real(ctx, provider, providerNorm, model, effectiveBase, reasoningConfig)
 	}
 	t.Cleanup(func() { auxProjectProviderProfileFn = real })
 	kw, body := auxExtraBodyKwargs(t, ctx, "openrouter", "deepseek/deepseek-v4.1-flash", auxCallKwargsOptions{ReasoningConfig: map[string]any{"enabled": true, "effort": "ultra"}, Task: "moa_aggregator"})
@@ -174,7 +174,7 @@ func TestAuxiliaryTaskExtraBodyAnthropicAuxClientForwardsExtraBodyReasoning(t *t
 func TestAuxiliaryTaskExtraBodyAnthropicAuxExtraBodyPassthrough(t *testing.T) {
 	extra := map[string]any{"thinking": map[string]any{"type": "disabled"}, "metadata": map[string]any{"user_id": "u1"}}
 	api := auxCaptureAnthropicKwargs(t, extra, false, nil)
-	if !reflect.DeepEqual(api["extra_body"], extra) {
+	if !reflect.DeepEqual(pyjson.Plain(api["extra_body"]), extra) {
 		t.Fatalf("extra_body %v", api["extra_body"])
 	}
 }

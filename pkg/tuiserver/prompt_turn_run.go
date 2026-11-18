@@ -24,7 +24,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tools"
-	"github.com/nickheyer/icebath/pkg/tuigateway"
+	"github.com/nickheyer/icebath/pkg/tuihost"
 )
 
 // Shared state of one turn goroutine, the agent bound eagerly so recovery and release always have one
@@ -62,7 +62,7 @@ type promptSubmitOptions struct {
 }
 
 // Folds turns another surface appended to this session into the model facing history before the turn snapshots it
-func adoptOutOfBandTurns(ctx context.Context, session *tuigateway.Session) {
+func adoptOutOfBandTurns(ctx context.Context, session *tuihost.Session) {
 	unlock := lockHistory(session)
 	history, version := historyList(session.Get("history")), intOr(session.Get("history_version"))
 	unlock()
@@ -92,7 +92,7 @@ func adoptOutOfBandTurns(ctx context.Context, session *tuigateway.Session) {
 		}
 		rows, err := db.GetMessages(ctx, submitRowTargetKey(session), state.GetMessagesOptions{AfterID: seen})
 		if err != nil {
-			logger().Debug("out-of-band history probe failed; turn runs on the in-memory history", "error", err)
+			pkgLog().Debug("out-of-band history probe failed; turn runs on the in-memory history", "error", err)
 			return true
 		}
 		newer = rows
@@ -157,7 +157,7 @@ func objectRowID(row *pyjson.Object) (int64, bool) {
 }
 
 // Catches a record whose messages carry no durable row id up with a strictly longer matching store lineage
-func adoptStoreTailWithoutRowIDs(ctx context.Context, session *tuigateway.Session, history []any, version int64, belowCeiling func(int64, bool) bool) {
+func adoptStoreTailWithoutRowIDs(ctx context.Context, session *tuihost.Session, history []any, version int64, belowCeiling func(int64, bool) bool) {
 	var rows []map[string]any
 	durable, _ := loadDurableTruncationHistory(ctx, session, "", true)
 	for _, m := range durable {
@@ -219,7 +219,7 @@ func containsEqual(list []any, v any) bool {
 }
 
 // Whether the install already has session rows beyond the current one
-func installHasPriorSessions(ctx context.Context, session *tuigateway.Session) bool {
+func installHasPriorSessions(ctx context.Context, session *tuihost.Session) bool {
 	db, release := sessionDB(ctx, session)
 	defer release()
 	if db == nil {
@@ -227,14 +227,14 @@ func installHasPriorSessions(ctx context.Context, session *tuigateway.Session) b
 	}
 	ok, err := db.SessionCountGE(ctx, 2)
 	if err != nil {
-		logger().Debug("session count probe failed for first-contact check", "error", err)
+		pkgLog().Debug("session count probe failed for first-contact check", "error", err)
 		return false
 	}
 	return ok
 }
 
 // Stages the install's first message onboarding note for this turn as a gateway turn context note
-func stageFirstContactOnboardingNote(ctx context.Context, session *tuigateway.Session, a *agent.AIAgent, historyEmpty bool) {
+func stageFirstContactOnboardingNote(ctx context.Context, session *tuihost.Session, a *agent.AIAgent, historyEmpty bool) {
 	if failure := catchPanic(func() {
 		cfg, err := loadConfig(ctx)
 		if err != nil {
@@ -251,7 +251,7 @@ func stageFirstContactOnboardingNote(ctx context.Context, session *tuigateway.Se
 			a.SetGatewayTurnContextNotes(*note)
 		}
 	}); failure != nil {
-		logger().Debug("first-contact onboarding note failed", "error", pyrepr.Str(failure))
+		pkgLog().Debug("first-contact onboarding note failed", "error", pyrepr.Str(failure))
 	}
 }
 
@@ -269,7 +269,7 @@ func syncAgentDaybreak(ctx context.Context, a *agent.AIAgent) {
 }
 
 // Binds scopes, syncs the agent, snapshots history and builds the run message, ok false when expansion was refused
-func prepareTurnInput(ctx context.Context, sid string, session *tuigateway.Session, st *turnRun, text any, images []string) (context.Context, any, any, int, streamRenderer, bool) {
+func prepareTurnInput(ctx context.Context, sid string, session *tuihost.Session, st *turnRun, text any, images []string) (context.Context, any, any, int, streamRenderer, bool) {
 	sessionKey := strOr(session.Get("session_key"))
 	ctx, env := setSessionContext(ctx, sessionKey, nil, sid)
 	if env == nil {
@@ -325,7 +325,7 @@ func prepareTurnInput(ctx context.Context, sid string, session *tuigateway.Sessi
 			if message == "" {
 				message = "Context injection refused."
 			}
-			tuigateway.Emit(ctx, "error", sid, map[string]any{"message": message})
+			tuihost.Emit(ctx, "error", sid, map[string]any{"message": message})
 			return ctx, nil, nil, 0, nil, false
 		}
 		prompt = refs.Message
@@ -339,7 +339,7 @@ func prepareTurnInput(ctx context.Context, sid string, session *tuigateway.Sessi
 		st.ttsQueue, st.thinkingStarted = startTurnVoice(ctx)
 	}
 	if media.TakeSpeechInterrupted() {
-		runMessage = prependNote(runMessage, media.SpeechInterruptedNote)
+		runMessage = prependNote(runMessage, agent.SpeechInterruptedNote)
 	}
 	runMessage = prependNote(runMessage, pendingReactionNotes(ctx, session))
 	voiceTurn, _ := session.Pop("voice_turn")
@@ -359,7 +359,7 @@ func profileHomeScope(ctx context.Context, profileHome string) context.Context {
 }
 
 // Wires the streaming callbacks and runs the conversation into the turn result
-func invokeAgent(ctx context.Context, sid string, session *tuigateway.Session, st *turnRun, prompt, runMessage any, streamer streamRenderer, images []string, displayKind string, displayMetadata, turnAuthor map[string]any, text any) {
+func invokeAgent(ctx context.Context, sid string, session *tuihost.Session, st *turnRun, prompt, runMessage any, streamer streamRenderer, images []string, displayKind string, displayMetadata, turnAuthor map[string]any, text any) {
 	a := st.agent
 	if count, ok := a.ContextCompressionCount(); ok {
 		st.compressionCount = &count
@@ -381,7 +381,7 @@ func invokeAgent(ctx context.Context, sid string, session *tuigateway.Session, s
 		if st.ttsQueue != nil {
 			st.ttsQueue.Put(delta)
 		}
-		tuigateway.Emit(ctx, "message.delta", sid, payload)
+		tuihost.Emit(ctx, "message.delta", sid, payload)
 	}
 	stream := func(delta string) {
 		if a.MuteNotificationReply() {
@@ -400,7 +400,7 @@ func invokeAgent(ctx context.Context, sid string, session *tuigateway.Session, s
 			if a.MuteNotificationReply() {
 				return
 			}
-			tuigateway.Emit(ctx, "message.interim", sid, map[string]any{"text": text, "already_streamed": alreadyStreamed})
+			tuihost.Emit(ctx, "message.interim", sid, map[string]any{"text": text, "already_streamed": alreadyStreamed})
 		})
 	} else {
 		a.SetInterimAssistantCallback(nil)
@@ -408,7 +408,7 @@ func invokeAgent(ctx context.Context, sid string, session *tuigateway.Session, s
 	var persistUserMessage any = prompt
 	if len(images) > 0 {
 		promptText, _ := prompt.(string)
-		persistUserMessage = tuigateway.BuildPersistUserMessage(promptText, images, runMessage)
+		persistUserMessage = tuihost.BuildPersistUserMessage(promptText, images, runMessage)
 	}
 	opts := &agent.RunConversationOptions{ConversationHistory: historyAsMessages(st.history), StreamCallback: stream,
 		PersistUserMessage: persistUserMessage, TaskID: strOr(session.Get("session_key"))}
@@ -425,7 +425,7 @@ func invokeAgent(ctx context.Context, sid string, session *tuigateway.Session, s
 	adoptSubmitUserRow(ctx, session, a, persistUserMessage, text)
 	titleKey := sessionKeyOr(session, sid)
 	a.SetOnSessionTitle(func(title, _ string) {
-		tuigateway.Emit(ctx, "session.title", sid, map[string]any{"session_id": titleKey, "title": title})
+		tuihost.Emit(ctx, "session.title", sid, map[string]any{"session_id": titleKey, "title": title})
 	})
 	stopUsage := startUsageTicker(ctx, sid, a, time.Second)
 	defer stopUsage()
@@ -444,7 +444,7 @@ func invokeAgent(ctx context.Context, sid string, session *tuigateway.Session, s
 }
 
 // Stamps a synthesized turn's display kind, restores a one shot model and commits history, returning the history warning
-func absorbTurnResult(ctx context.Context, sid string, session *tuigateway.Session, st *turnRun, text any, displayKind string, displayMetadata map[string]any) string {
+func absorbTurnResult(ctx context.Context, sid string, session *tuihost.Session, st *turnRun, text any, displayKind string, displayMetadata map[string]any) string {
 	result, a := st.result, st.agent
 	messages, hasMessages := resultMessages(result)
 	if s, isText := text.(string); displayKind != "" && isText {
@@ -458,7 +458,7 @@ func absorbTurnResult(ctx context.Context, sid string, session *tuigateway.Sessi
 				meta = displayMetadata
 			}
 			if _, err := db.SetLatestMatchingMessageDisplayKind(ctx, currentSessionID, "user", s, displayKind, meta); err != nil {
-				logger().Debug("failed to stamp synthetic display kind", "error", err)
+				pkgLog().Debug("failed to stamp synthetic display kind", "error", err)
 			}
 		}
 		if hasMessages {
@@ -490,11 +490,11 @@ func absorbTurnResult(ctx context.Context, sid string, session *tuigateway.Sessi
 				}
 				if failure := catchPanic(func() {
 					if _, err := applyModelSwitch(ctx, sid, session, raw, modelSwitchOptions{pinSessionOverride: truthy(prevOverride),
-						persistOverride: new(bool), countSwitch: false, confirmExpensiveModel: false}); err != nil {
+						persistOverride: new(bool), confirmExpensiveModel: false}); err != nil {
 						panic(err)
 					}
 				}); failure != nil {
-					logger().Warn("MoA one-shot model restore failed: " + pyrepr.Str(failure))
+					pkgLog().Warn("MoA one-shot model restore failed: " + pyrepr.Str(failure))
 				}
 			}
 		case nil:
@@ -543,7 +543,7 @@ func persistedTurnReceiptOf(st *turnRun, raw any, status string) map[string]any 
 }
 
 // Payload, raw text and status of message complete, retaining or clearing the in flight turn
-func completeTurnPayload(ctx context.Context, session *tuigateway.Session, st *turnRun, statusNote string, cols int) (map[string]any, any, string) {
+func completeTurnPayload(ctx context.Context, session *tuihost.Session, st *turnRun, statusNote string, cols int) (map[string]any, any, string) {
 	result, a := st.result, st.agent
 	var errorSurface map[string]any
 	if resultStatus(result) == "error" {
@@ -642,7 +642,7 @@ func completeTurnPayload(ctx context.Context, session *tuigateway.Session, st *t
 func crashLogPath() string { return filepath.Join(launchHome(), "logs", "tui_gateway_crash.log") }
 
 // Except path of the turn, the crash log, the history restore and the terminal error frame
-func recoverTurnException(ctx context.Context, sid string, session *tuigateway.Session, st *turnRun, failure any) {
+func recoverTurnException(ctx context.Context, sid string, session *tuihost.Session, st *turnRun, failure any) {
 	err, ok := failure.(error)
 	if !ok {
 		err = fmt.Errorf("%s", pyrepr.Str(failure))
@@ -668,7 +668,7 @@ func recoverTurnException(ctx context.Context, sid string, session *tuigateway.S
 			st.terminalCallback(map[string]any{"status": "failed", "text": "", "error": err.Error()})
 			st.receiptCommitted = true
 		}); cbFailure != nil {
-			logger().Error("hosted room terminal receipt commit failed", "error", pyrepr.Str(cbFailure))
+			pkgLog().Error("hosted room terminal receipt commit failed", "error", pyrepr.Str(cbFailure))
 		}
 	}
 	if emitFailure := catchPanic(func() {
@@ -677,12 +677,12 @@ func recoverTurnException(ctx context.Context, sid string, session *tuigateway.S
 		st.errorDetail = turnFailureDetail(err, pyrepr.TypeName(err), st.promptText)
 	}); emitFailure != nil {
 		fmt.Fprintf(os.Stderr, "[gateway-turn] terminal error emit failed: %s: %s\n", pyrepr.TypeName(emitFailure), pyrepr.Str(emitFailure))
-		tuigateway.Emit(ctx, "error", sid, map[string]any{"message": err.Error()})
+		tuihost.Emit(ctx, "error", sid, map[string]any{"message": err.Error()})
 	}
 }
 
 // Finally path before settlement, dropping snapshots, ending turn audio, undoing a one turn model and resetting scopes
-func releaseTurnScopes(ctx context.Context, sid string, session *tuigateway.Session, st *turnRun) {
+func releaseTurnScopes(ctx context.Context, sid string, session *tuihost.Session, st *turnRun) {
 	st.history = st.history[:0]
 	if st.runOpts != nil {
 		*st.runOpts = agent.RunConversationOptions{}
@@ -700,7 +700,7 @@ func releaseTurnScopes(ctx context.Context, sid string, session *tuigateway.Sess
 			persistLiveSessionRuntime(ctx, session)
 			persistLiveSessionSystemPrompt(ctx, session)
 		}); failure != nil {
-			logger().Debug("TUI one-turn model restore failed", "error", pyrepr.Str(failure))
+			pkgLog().Debug("TUI one-turn model restore failed", "error", pyrepr.Str(failure))
 		}
 	}
 	suppress(func() { tools.ResetCurrentSessionKey(st.sessionEnv) })
@@ -733,21 +733,21 @@ func postTurnHousekeeping(sid string, st *turnRun) {
 			memory.TrimMemory(ctx, configEnv(ctx), memory.TrimOptions{Reason: "tui turn completion", AllocatorOnly: true})
 		}
 	}); failure != nil {
-		logger().Debug("post-turn memory trim failed", "error", pyrepr.Str(failure))
+		pkgLog().Debug("post-turn memory trim failed", "error", pyrepr.Str(failure))
 	}
 }
 
 const routingReopenPatienceS = 0.5
 
 // Clears an explicit close stamp of a session still registered here and about to run a turn
-func reopenRoutedSessionRow(ctx context.Context, db *state.DB, sid string, session *tuigateway.Session) {
+func reopenRoutedSessionRow(ctx context.Context, db *state.DB, sid string, session *tuihost.Session) {
 	a := sessionAgent(session)
 	if db == nil || a == nil || a.SessionID() == "" {
 		return
 	}
 	patience := routingReopenPatienceS
 	if _, err := db.ReopenIfExplicitlyClosed(ctx, a.SessionID(), "TUI session "+sid+" is still registered and accepting a turn", &patience); err != nil {
-		logger().Debug("routing-provenance reopen failed for "+a.SessionID(), "error", err)
+		pkgLog().Debug("routing-provenance reopen failed for "+a.SessionID(), "error", err)
 	}
 }
 
@@ -761,15 +761,15 @@ func isValueError(err error) bool {
 	return errors.As(err, &pyErr) && pyErr.Kind == "ValueError"
 }
 
-// Turn starter every submit path calls, the real one swapped only where a hermes case records dispatches
-var runPromptSubmit func(ctx context.Context, rid any, sid string, session *tuigateway.Session, text any, o promptSubmitOptions) bool
+// Turn starter every submit path calls, the real one swapped only where a test records dispatches
+var runPromptSubmit func(ctx context.Context, rid any, sid string, session *tuihost.Session, text any, o promptSubmitOptions) bool
 
 func init() { runPromptSubmit = runPromptSubmitTurn }
 
 // Admits and starts one prompt turn on its own goroutine, false when it never started
-func runPromptSubmitTurn(ctx context.Context, rid any, sid string, session *tuigateway.Session, text any, o promptSubmitOptions) bool {
+func runPromptSubmitTurn(ctx context.Context, rid any, sid string, session *tuihost.Session, text any, o promptSubmitOptions) bool {
 	if !ensureSessionDBRow(ctx, session) {
-		logger().Warn(fmt.Sprintf("prompt dispatch: session store unavailable for %s — this turn may not persist", sessionKeyOr(session, sid)))
+		pkgLog().Warn(fmt.Sprintf("prompt dispatch: session store unavailable for %s — this turn may not persist", sessionKeyOr(session, sid)))
 	}
 	images, a, admitted := admitPromptTurn(ctx, sid, session, text, o.imagePaths, o.queuedPromptGeneration, o.displayKind, o.displayMetadata, !o.silentOwnershipRefusal)
 	if !admitted {
@@ -791,19 +791,19 @@ func runPromptSubmitTurn(ctx context.Context, rid any, sid string, session *tuig
 	if s, ok := text.(string); ok {
 		chars = fmt.Sprint(pystr.Len(s))
 	}
-	logger().Info(fmt.Sprintf("tui prompt accepted: ui_session=%s session_key=%s agent_session_id=%s kind=%s chars=%s images=%d",
+	pkgLog().Info(fmt.Sprintf("tui prompt accepted: ui_session=%s session_key=%s agent_session_id=%s kind=%s chars=%s images=%d",
 		sid, strOr(session.Get("session_key")), a.SessionID(), kind, chars, len(images)))
-	segments := tuigateway.NewTurnSegments()
-	session.Set(tuigateway.SessionSegmentsKey, segments)
+	segments := tuihost.NewTurnSegments()
+	session.Set(tuihost.SessionSegmentsKey, segments)
 	if !muted {
-		tuigateway.Emit(ctx, "message.start", sid, nil)
+		tuihost.Emit(ctx, "message.start", sid, nil)
 	}
 	notificationCategory := ""
 	if c, ok := o.displayMetadata["notification_category"].(string); ok {
 		notificationCategory = c
 	}
 	runBody := func(ctx context.Context) (result map[string]any, goalFollowup string) {
-		ctx = tuigateway.BindTransport(ctx, transportOf(session.Get("transport")))
+		ctx = tuihost.BindTransport(ctx, transportOf(session.Get("transport")))
 		ctx = withRuntimeSessionRecord(ctx, session)
 		restore, _ := session.Pop("one_turn_model_restore")
 		restoreMap, _ := restore.(map[string]any)
@@ -825,8 +825,8 @@ func runPromptSubmitTurn(ctx context.Context, rid any, sid string, session *tuig
 					clearInflightTurn(session)
 				}
 				releaseHostedRoomTurnSlot(session)
-				if session.Get(tuigateway.SessionSegmentsKey) == segments {
-					session.Pop(tuigateway.SessionSegmentsKey)
+				if session.Get(tuihost.SessionSegmentsKey) == segments {
+					session.Pop(tuihost.SessionSegmentsKey)
 				}
 			}()
 			status := "complete"
@@ -835,7 +835,7 @@ func runPromptSubmitTurn(ctx context.Context, rid any, sid string, session *tuig
 			} else if st.errorRetained {
 				status = "error"
 			}
-			logger().Info(fmt.Sprintf("tui turn finished: ui_session=%s session_key=%s agent_session_id=%s status=%s error_retained=%s duration=%.1fs%s",
+			pkgLog().Info(fmt.Sprintf("tui turn finished: ui_session=%s session_key=%s agent_session_id=%s status=%s error_retained=%s duration=%.1fs%s",
 				sid, strOr(session.Get("session_key")), st.agent.SessionID(), status, pyrepr.Str(st.errorRetained), time.Since(started).Seconds(), st.errorDetail))
 			if st.receiptCommitted {
 				retireTurnMarker(settle, session, st.markerKey)
@@ -863,10 +863,7 @@ func runPromptSubmitTurn(ctx context.Context, rid any, sid string, session *tuig
 			invokeAgent(turnCtx, sid, session, st, prompt, runMessage, streamer, images, displayKind, o.displayMetadata, o.turnAuthor, text)
 			statusNote := absorbTurnResult(turnCtx, sid, session, st, text, displayKind, o.displayMetadata)
 			payload, raw, status := completeTurnPayload(turnCtx, session, st, statusNote, cols)
-			if status == "complete" {
-				noteTaskDone(turnCtx, session, st.result, st.agent, displayKind)
-			}
-			tuigateway.Emit(turnCtx, "message.complete", sid, payload)
+			tuihost.Emit(turnCtx, "message.complete", sid, payload)
 			goalFollowup = goalFollowupAfterTurn(turnCtx, sid, session, st.result, status, raw)
 			if status == "complete" {
 				afterCompleteTurn(turnCtx, sid, session, st, raw)
@@ -894,7 +891,7 @@ func runPromptSubmitTurn(ctx context.Context, rid any, sid string, session *tuig
 		defer release()
 		sessionsLock.Lock()
 		defer sessionsLock.Unlock()
-		registered := tuigateway.SessionRecord(sid)
+		registered := tuihost.SessionRecord(sid)
 		canStart = !truthy(session.Get("_closing")) && (registered == nil || registered == session)
 		if canStart {
 			if registered == session {
@@ -906,8 +903,8 @@ func runPromptSubmitTurn(ctx context.Context, rid any, sid string, session *tuig
 	if !canStart {
 		unlock := lockHistory(session)
 		session.Set("running", false)
-		if session.Get(tuigateway.SessionSegmentsKey) == segments {
-			session.Pop(tuigateway.SessionSegmentsKey)
+		if session.Get(tuihost.SessionSegmentsKey) == segments {
+			session.Pop(tuihost.SessionSegmentsKey)
 		}
 		unlock()
 	}
@@ -915,17 +912,17 @@ func runPromptSubmitTurn(ctx context.Context, rid any, sid string, session *tuig
 }
 
 // The session's own store for the routing provenance heal, nil when it cannot be resolved
-func routingProvenanceDB(ctx context.Context, session *tuigateway.Session) (db *state.DB, release func()) {
+func routingProvenanceDB(ctx context.Context, session *tuihost.Session) (db *state.DB, release func()) {
 	release = func() {}
 	if failure := catchPanic(func() { db, release = sessionDB(ctx, session) }); failure != nil {
-		logger().Debug("could not resolve the session db for routing provenance", "error", pyrepr.Str(failure))
+		pkgLog().Debug("could not resolve the session db for routing provenance", "error", pyrepr.Str(failure))
 		return nil, func() {}
 	}
 	return db, release
 }
 
 // Transport slot of a record, nil when it holds none
-func transportOf(v any) tuigateway.Transport {
-	t, _ := v.(tuigateway.Transport)
+func transportOf(v any) tuihost.Transport {
+	t, _ := v.(tuihost.Transport)
 	return t
 }

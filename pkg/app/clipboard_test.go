@@ -293,7 +293,7 @@ func TestExtractionFailsCleansUp(t *testing.T) {
 	}
 }
 
-// Pins the resolved PowerShell executable the way the hermes cases patch _get_ps_exe
+// Pins the resolved PowerShell executable the way the tests patch get ps exe
 func pinPSExe(t *testing.T, exe string) {
 	t.Helper()
 	psExeMu.Lock()

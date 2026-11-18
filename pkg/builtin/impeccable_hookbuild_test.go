@@ -4,32 +4,12 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
-	"regexp"
 	"slices"
 	"sort"
 	"strings"
 	"testing"
 	"time"
 )
-
-func TestImpeccableHermesDesignHookPluginCarriedVerbatim(t *testing.T) {
-	var files []string
-	for _, rel := range payloadUnder(impeccableSkillRoot + "/hermes-plugin") {
-		files = append(files, filepath.Base(rel))
-	}
-	sort.Strings(files)
-	if !slices.Equal(files, []string{"__init__.py", "plugin.yaml"}) {
-		t.Fatalf("hermes-plugin files %v", files)
-	}
-	manifest, _ := payloadFile(impeccableSkillRoot + "/hermes-plugin/plugin.yaml")
-	if !regexp.MustCompile(`(?m)^name: impeccable-design-hook$`).Match(manifest) ||
-		!regexp.MustCompile(`(?m)^provides_hooks:\n  - transform_tool_result\n  - pre_verify$`).Match(manifest) {
-		t.Fatalf("plugin.yaml %s", manifest)
-	}
-	if got := (impeccablePlugin{}).Manifest().ProvidesHooks; !slices.Equal(got, []string{"transform_tool_result", "pre_verify"}) {
-		t.Fatalf("impeccable plugin provides %v, plugin.yaml provides transform_tool_result and pre_verify", got)
-	}
-}
 
 func TestImpeccableClaudePluginHooksMapOntoDesignHook(t *testing.T) {
 	raw, err := payloadFile("impeccable/plugin/hooks/hooks.json")

@@ -308,21 +308,6 @@ func TestControlAnswerFailureText(t *testing.T) {
 	}
 }
 
-func TestHonchoHostBlockMigrates(t *testing.T) {
-	tmp := manageEnv(t)
-	out := captureOut(t)
-	dir := namedProfile(t, tmp, "writer")
-	writeFile(t, filepath.Join(dir, "honcho.json"), `{"hosts": {"icebath_coder": {"workspace": "w"}, "other": {}}}`)
-	if err := migrateHonchoProfileHost(context.Background(), "coder", "writer", dir); err != nil {
-		t.Fatal(err)
-	}
-	got := readText(t, filepath.Join(dir, "honcho.json"))
-	want := "{\n  \"hosts\": {\n    \"other\": {},\n    \"icebath_writer\": {\n      \"workspace\": \"w\",\n      \"aiPeer\": \"coder\"\n    }\n  }\n}"
-	if got != want || !strings.Contains(out.String(), "Honcho host updated: icebath_coder → icebath_writer") {
-		t.Fatalf("%s\n%s", got, out.String())
-	}
-}
-
 func TestProfileExportPathUsesManagedDirectory(t *testing.T) {
 	tmp := manageEnv(t)
 	p, err := GetProfileExportPath("coder", "20260101-000000")

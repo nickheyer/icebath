@@ -19,8 +19,8 @@ import (
 )
 
 // Seeded default every install between its introduction and the rewrite carried, kept as a literal
-const preRewriteDefaultSoul = "You are Icebath Agent, an intelligent AI assistant created by Nous " +
-	"Research. You are helpful, knowledgeable, and direct. You assist " +
+const preRewriteDefaultSoul = "You are Icebath Agent, an intelligent AI assistant created by Example " +
+	"Labs. You are helpful, knowledgeable, and direct. You assist " +
 	"users with a wide range of tasks including answering questions, " +
 	"writing and editing code, analyzing information, creative work, " +
 	"and executing actions via your tools. You communicate clearly, " +
@@ -102,7 +102,7 @@ func moduleRead(t *testing.T, path string) string {
 	return string(data)
 }
 
-func TestGetHermesHomeDefaultPath(t *testing.T) {
+func TestGetIcebathHomeDefaultPath(t *testing.T) {
 	t.Setenv("ICEBATH_HOME", "")
 	os.Unsetenv("ICEBATH_HOME")
 	if got, want := home.Dir(t.Context()), home.PlatformDefault(); got != want {
@@ -110,7 +110,7 @@ func TestGetHermesHomeDefaultPath(t *testing.T) {
 	}
 }
 
-func TestEnsureHermesHomeCreatesDefaultSoulMdIfMissing(t *testing.T) {
+func TestEnsureIcebathHomeCreatesDefaultSoulMdIfMissing(t *testing.T) {
 	h := t.TempDir()
 	t.Setenv("ICEBATH_HOME", h)
 	if err := EnsureIcebathHome(t.Context(), h); err != nil {
@@ -121,7 +121,7 @@ func TestEnsureHermesHomeCreatesDefaultSoulMdIfMissing(t *testing.T) {
 	}
 }
 
-func TestEnsureHermesHomeUpgradesLegacyTemplateSoulMd(t *testing.T) {
+func TestEnsureIcebathHomeUpgradesLegacyTemplateSoulMd(t *testing.T) {
 	h := t.TempDir()
 	t.Setenv("ICEBATH_HOME", h)
 	soul := filepath.Join(h, "SOUL.md")
@@ -136,7 +136,7 @@ func TestEnsureHermesHomeUpgradesLegacyTemplateSoulMd(t *testing.T) {
 	}
 }
 
-func TestEnsureHermesHomeUpgradesPreRewriteDefaultSoulMd(t *testing.T) {
+func TestEnsureIcebathHomeUpgradesPreRewriteDefaultSoulMd(t *testing.T) {
 	if preRewriteDefaultSoul == DefaultIdentity {
 		t.Fatal("fixture must predate the rewrite")
 	}
@@ -154,7 +154,7 @@ func TestEnsureHermesHomeUpgradesPreRewriteDefaultSoulMd(t *testing.T) {
 	}
 }
 
-func TestEnsureHermesHomeDoesNotUpgradeUserCustomizedSoulMd(t *testing.T) {
+func TestEnsureIcebathHomeDoesNotUpgradeUserCustomizedSoulMd(t *testing.T) {
 	customized := preRewriteDefaultSoul + " Also: always answer in rhyming couplets."
 	h := t.TempDir()
 	t.Setenv("ICEBATH_HOME", h)
@@ -171,7 +171,7 @@ func TestEnsureHermesHomeDoesNotUpgradeUserCustomizedSoulMd(t *testing.T) {
 }
 
 func TestLegacyTemplateSoulsCoverEveryEarlierSeed(t *testing.T) {
-	if len(legacyTemplateSouls) != 5 {
+	if len(legacyTemplateSouls) != 6 {
 		t.Fatalf("%d legacy texts", len(legacyTemplateSouls))
 	}
 	for i, text := range legacyTemplateSouls {
@@ -606,7 +606,7 @@ func TestOptionalEnvVarsRegistryMaxIterationsNotOfferedAsEnvVar(t *testing.T) {
 	}
 }
 
-func TestConfigSupportFloorFloorMessageUsesDisplayHermesHome(t *testing.T) {
+func TestConfigSupportFloorFloorMessageUsesDisplayIcebathHome(t *testing.T) {
 	h := t.TempDir()
 	t.Setenv("ICEBATH_HOME", h)
 	if msg := SupportFloorMessage(h); !strings.Contains(msg, home.Display(h)+"/config.yaml") {

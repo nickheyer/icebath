@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"math/rand/v2"
 	"os"
 	"strings"
 	"sync"
@@ -14,6 +13,7 @@ import (
 	"github.com/mattn/go-isatty"
 
 	"github.com/nickheyer/icebath/pkg/config"
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/i18n"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/tools"
@@ -67,9 +67,9 @@ func skinSpinnerList(ctx context.Context, key string, fallback []string) ([]stri
 	case string:
 		return strings.Split(v, ""), nil
 	case map[string]any:
-		return nil, fmt.Errorf("KeyError: %d", rand.IntN(len(v)))
+		return nil, fmt.Errorf("skin spinner %s is a mapping, expected a list", key)
 	}
-	return nil, fmt.Errorf("TypeError: object of type '%s' has no len()", config.PyTypeName(value))
+	return nil, fmt.Errorf("skin spinner %s is %s, expected a list", key, errchain.Kind(value))
 }
 
 // Skin waiting faces or the kawaii waiting defaults

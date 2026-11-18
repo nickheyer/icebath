@@ -13,7 +13,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
 
-// BlueprintFillError reports slot values that fail validation, a ValueError in hermes
+// Reports slot values that fail validation
 type BlueprintFillError struct{ Msg string }
 
 func (e *BlueprintFillError) Error() string { return e.Msg }

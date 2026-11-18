@@ -2,7 +2,6 @@ package agent
 
 import (
 	"fmt"
-	"log/slog"
 	"strings"
 
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
@@ -46,14 +45,14 @@ func warnCheckpointRequiredWithoutCapableProvider(required bool, mm *memory.Memo
 	if mm != nil {
 		supported, probeErr := probeCheckpointSupport(mm)
 		if probeErr != nil {
-			slog.Debug(fmt.Sprintf("checkpoint-required capability probe failed; init continues: %v", probeErr))
+			pkgLog().Debug(fmt.Sprintf("checkpoint-required capability probe failed; init continues: %v", probeErr))
 			return
 		}
 		if supported {
 			return
 		}
 	}
-	slog.Warn(fmt.Sprintf("compression.checkpoint_required is enabled but the active memory "+
+	pkgLog().Warn(fmt.Sprintf("compression.checkpoint_required is enabled but the active memory "+
 		"provider (%s) does not implement checkpoint API v%d. Compress will "+
 		"fail closed. Recover by %s.", activeMemoryProviderLabel(mm), memory.PreCompressCheckpointAPIVersion,
 		checkpointRequiredRemediation))

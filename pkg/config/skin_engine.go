@@ -3,7 +3,6 @@ package config
 import (
 	"context"
 	_ "embed"
-	"log/slog"
 	"os"
 	"path/filepath"
 	"sort"
@@ -153,12 +152,12 @@ func skinsDir(ctx context.Context) string { return filepath.Join(home.Dir(ctx), 
 func loadSkinFromYAML(path string) map[string]any {
 	data, err := os.ReadFile(path)
 	if err != nil {
-		slog.Debug("Failed to load skin", "path", path, "error", err)
+		pkgLog().Debug("Failed to load skin", "path", path, "error", err)
 		return nil
 	}
 	doc, err := FastSafeLoad([]byte(strings.TrimPrefix(string(data), "\uFEFF")))
 	if err != nil {
-		slog.Debug("Failed to load skin", "path", path, "error", err)
+		pkgLog().Debug("Failed to load skin", "path", path, "error", err)
 		return nil
 	}
 	m, ok := doc.(map[string]any)
@@ -198,7 +197,7 @@ func buildSkinConfig(data map[string]any) *SkinConfig {
 			return m
 		}
 		if present && value != nil {
-			slog.Warn("Skin has invalid section type; ignoring section", "skin", name, "section", key, "type", PyTypeName(value))
+			pkgLog().Warn("Skin has invalid section type; ignoring section", "skin", name, "section", key, "type", PyTypeName(value))
 		}
 		return map[string]any{}
 	}
@@ -269,7 +268,7 @@ func LoadSkin(ctx context.Context, name string) *SkinConfig {
 	}
 	builtin, isBuiltin := builtinSkin(name)
 	if len(data) == 0 && !isBuiltin {
-		slog.Warn("Skin not found, using default", "skin", name)
+		pkgLog().Warn("Skin not found, using default", "skin", name)
 	}
 	switch {
 	case len(data) > 0:

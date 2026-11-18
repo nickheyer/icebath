@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"log/slog"
 	"math"
 	"math/big"
 	"os"
@@ -140,11 +139,11 @@ func ledgerReadJSON(path string) *pyjson.Object {
 func writeSentinel(ctx context.Context, payload *pyjson.Object, h string) {
 	path := GetLifecycleSentinelPath(ctx, h)
 	if _, err := home.Mkdir(ctx, filepath.Dir(path)); err != nil {
-		slog.Debug(fmt.Sprintf("Failed to write lifecycle sentinel: %v", err))
+		pkgLog().Debug(fmt.Sprintf("Failed to write lifecycle sentinel: %v", err))
 		return
 	}
 	if err := config.AtomicJSONWriteWith(ctx, path, payload); err != nil {
-		slog.Debug(fmt.Sprintf("Failed to write lifecycle sentinel: %v", err))
+		pkgLog().Debug(fmt.Sprintf("Failed to write lifecycle sentinel: %v", err))
 	}
 }
 
@@ -153,11 +152,11 @@ func appendExitDiag(ctx context.Context, record *pyjson.Object, h string) {
 	path := ledgerHomePath(ctx, h, "logs", "gateway-exit-diag.log")
 	text, err := pyjson.Dumps(record, pyjson.Default(func(v any) (any, error) { return pyrepr.Str(v), nil }))
 	if err != nil {
-		slog.Debug(fmt.Sprintf("Failed to append unclean-exit record: %v", err))
+		pkgLog().Debug(fmt.Sprintf("Failed to append unclean-exit record: %v", err))
 		return
 	}
 	if _, err := home.Mkdir(ctx, filepath.Dir(path)); err != nil {
-		slog.Debug(fmt.Sprintf("Failed to append unclean-exit record: %v", err))
+		pkgLog().Debug(fmt.Sprintf("Failed to append unclean-exit record: %v", err))
 		return
 	}
 	f, err := os.OpenFile(path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o666)
@@ -168,7 +167,7 @@ func appendExitDiag(ctx context.Context, record *pyjson.Object, h string) {
 		}
 	}
 	if err != nil {
-		slog.Debug(fmt.Sprintf("Failed to append unclean-exit record: %v", err))
+		pkgLog().Debug(fmt.Sprintf("Failed to append unclean-exit record: %v", err))
 	}
 }
 
@@ -354,13 +353,13 @@ func integrityQuickCheck(path string, deadline *time.Time) (any, error) {
 func stateDBJournalMode(path string) string {
 	conn, err := state.ConnectSQLite(path, state.SQLiteConfig{Timeout: 1.0})
 	if err != nil {
-		slog.Debug(fmt.Sprintf("Could not read state.db journal mode: %s", state.ErrText(err)))
+		pkgLog().Debug(fmt.Sprintf("Could not read state.db journal mode: %s", state.ErrText(err)))
 		return ""
 	}
 	defer conn.Close()
 	mode, ok, err := ledgerOnDiskJournalMode(context.Background(), conn)
 	if err != nil {
-		slog.Debug(fmt.Sprintf("Could not read state.db journal mode: %s", state.ErrText(err)))
+		pkgLog().Debug(fmt.Sprintf("Could not read state.db journal mode: %s", state.ErrText(err)))
 		return ""
 	}
 	if !ok {
@@ -380,7 +379,7 @@ func reportUncleanExit(ctx context.Context, evidence *pyjson.Object, h string, d
 		verdict := checkStateDBIntegrity(ctx, h, nil)
 		evidence.Set("state_db_integrity", verdict)
 		if verdict != "ok" && verdict != "absent" {
-			slog.Error(fmt.Sprintf(stateDBFailedIntegrity, verdict))
+			pkgLog().Error(fmt.Sprintf(stateDBFailedIntegrity, verdict))
 		}
 	}
 	record := pyjson.NewObject()
@@ -395,7 +394,7 @@ func reportUncleanExit(ctx context.Context, evidence *pyjson.Object, h string, d
 	if _, ok := evidence.Get("suspected_oom"); !ok {
 		oom = false
 	}
-	slog.Warn(fmt.Sprintf("Previous gateway life (pid=%s, started_at=%s) exited UNCLEANLY (no exit path ran — SIGKILL / OOM / "+
+	pkgLog().Warn(fmt.Sprintf("Previous gateway life (pid=%s, started_at=%s) exited UNCLEANLY (no exit path ran — SIGKILL / OOM / "+
 		"VM death, or a process kill issued by the agent or one of its descendants, e.g. a pkill/taskkill of "+
 		"the host interpreter image; see #113667). last_heartbeat_at=%s last_mem=%s suspected_oom=%s",
 		pyrepr.Str(recGet(evidence, "prior_pid")), pyrepr.Str(recGet(evidence, "prior_started_at")),
@@ -406,7 +405,7 @@ func reportUncleanExit(ctx context.Context, evidence *pyjson.Object, h string, d
 func RecordStartup(ctx context.Context, h string, deferIntegrityCheck bool) *pyjson.Object {
 	evidence, err := DetectUncleanExit(ctx, h)
 	if err != nil {
-		slog.Debug(fmt.Sprintf("Unclean-exit detection failed: %v", err))
+		pkgLog().Debug(fmt.Sprintf("Unclean-exit detection failed: %v", err))
 		evidence = nil
 	} else if evidence != nil {
 		reportUncleanExit(ctx, evidence, h, deferIntegrityCheck)
@@ -433,7 +432,7 @@ func RecordStartup(ctx context.Context, h string, deferIntegrityCheck bool) *pyj
 func RunDeferredIntegrityCheck(ctx context.Context, evidence *pyjson.Object, h string, deadlineS float64) (verdict string) {
 	defer func() {
 		if r := recover(); r != nil {
-			slog.Debug(fmt.Sprintf("Deferred state.db integrity check failed: %v", r))
+			pkgLog().Debug(fmt.Sprintf("Deferred state.db integrity check failed: %v", r))
 			verdict = "check-failed: deferred scan raised"
 		}
 	}()
@@ -448,14 +447,14 @@ func RunDeferredIntegrityCheck(ctx context.Context, evidence *pyjson.Object, h s
 			shown = "unknown"
 		}
 		verdict = "skipped: rollback-journal store (journal_mode=" + shown + "), scan would block live writes"
-		slog.Warn(fmt.Sprintf("Previous gateway exit was unclean, but the state.db integrity check was skipped: %s is a "+
+		pkgLog().Warn(fmt.Sprintf("Previous gateway exit was unclean, but the state.db integrity check was skipped: %s is a "+
 			"rollback-journal store (journal_mode=%s) and a background scan would block live writes. "+
 			"To check it, stop the gateway and run: sqlite3 %s 'PRAGMA quick_check'", path, shown, path))
 	} else {
 		verdict = checkStateDBIntegrity(ctx, h, &deadlineS)
 	}
 	if verdict != "ok" && verdict != "absent" && !strings.HasPrefix(verdict, "skipped:") {
-		slog.Error(fmt.Sprintf(stateDBFailedIntegrity, verdict))
+		pkgLog().Error(fmt.Sprintf(stateDBFailedIntegrity, verdict))
 	}
 	record := pyjson.NewObject()
 	record.Set("ts", ledgerNowISO())

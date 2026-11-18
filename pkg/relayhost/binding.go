@@ -234,7 +234,7 @@ func (c *Client) liftTag(tag string, body any) (any, error) {
 	switch tag {
 	case "$r":
 		if len(parts) != 3 {
-			return nil, errors.New("ValueError: malformed native object reference")
+			return nil, errors.New("a Relay native object reference is malformed")
 		}
 		o := &Object{id: wireInt(parts[0]), uuid: parts[1]}
 		runtime.AddCleanup(o, c.release, o.id)
@@ -251,7 +251,7 @@ func (c *Client) liftTag(tag string, body any) (any, error) {
 		}
 		pair, _ := lifted.([]any)
 		if len(pair) != 2 {
-			return nil, errors.New("ValueError: malformed LLMRequest")
+			return nil, errors.New("a Relay LLM request is malformed")
 		}
 		headers, _ := pair[0].(map[string]any)
 		return &tools.RelayLLMRequest{Headers: headers, Content: pair[1]}, nil
@@ -271,7 +271,7 @@ func (c *Client) liftTag(tag string, body any) (any, error) {
 			ScopeCategory: lifted["scope_category"], CategoryProfile: lifted["category_profile"], Metadata: lifted["metadata"],
 			Data: lifted["data"]}, nil
 	}
-	return nil, fmt.Errorf("ValueError: unknown wire tag %s", tag)
+	return nil, fmt.Errorf("unknown Relay wire tag %s", tag)
 }
 
 // Wire tree of the arguments of an op, Go callbacks and iterators registered for the child to call back
@@ -886,15 +886,6 @@ var (
 	}
 )
 
-// Interpreter of the dependency environment the binding hosts, the selected venv's python
-func environmentPython(ctx context.Context) (string, error) {
-	venv, err := pm.SelectedVenv(ctx, pm.RepoRoot())
-	if err != nil {
-		return "", err
-	}
-	return pm.VenvPython(venv), nil
-}
-
 // Site directory stamp so a package installed after a failed import is seen on the next load
 func siteStamp(python string) time.Time {
 	site, _ := pm.SitePackages(filepath.Dir(filepath.Dir(python)))
@@ -905,92 +896,51 @@ func siteStamp(python string) time.Time {
 	return st.ModTime()
 }
 
-// Imports nemo_relay in the relay host child of the selected environment, waiting for the one provisioning when not ready
+// Remedy every unprovisioned relay environment names
+const provisionRemedy = "run `icebath pm install --extra nemo-relay` to provision it"
+
+// Imports nemo_relay in the relay host child of the relay environment, never provisioning it
 func Load() (*tools.NemoRelay, error) {
-	ctx := context.Background()
-	python, err := environmentPython(ctx)
-	if err != nil {
-		return nil, err
-	}
 	if !wheelPinned() {
-		return LoadFrom(python)
+		return nil, errNoRelayModule
 	}
-	_, ready, err := pm.RuntimeEnvironmentReady(ctx)
+	venv, ready, err := pm.RuntimeEnvironmentReady(context.Background())
 	if err != nil {
 		return nil, err
 	}
-	if ready {
-		relay, err := LoadFrom(python)
-		if !errors.Is(err, errNoRelayModule) {
-			return relay, err
-		}
+	if !ready {
+		return nil, &pm.RuntimeUnprovisioned{Venv: venv, Err: errors.New(provisionRemedy)}
 	}
-	venv, err := pm.EnsureRuntimeEnvironment(ctx, pm.RuntimeEnvironmentOptions{})
-	if err != nil {
-		return nil, err
-	}
-	loadMu.Lock()
-	loadFailed.err = nil
-	loadMu.Unlock()
 	return LoadFrom(pm.VenvPython(venv))
 }
 
-// Whether Load imports without waiting for a provisioning, starting the background provisioning when it would wait
+// Whether Load finds the relay environment provisioned
 func Ready() bool {
 	if !wheelPinned() {
-		return true
+		return false
 	}
-	ctx := context.Background()
-	python, err := environmentPython(ctx)
-	if err != nil {
-		return true
-	}
-	loadMu.Lock()
-	alive := loaded != nil && loaded.python == python && loaded.Alive()
-	loadMu.Unlock()
-	if alive {
-		return true
-	}
-	if _, ready, err := pm.RuntimeEnvironmentReady(ctx); err != nil || ready {
-		return true
-	}
-	StartProvisioning()
-	return false
+	_, ready, err := pm.RuntimeEnvironmentReady(context.Background())
+	return err == nil && ready
 }
 
-// Starts the detached provisioning of the relay runtime for an install that lacks it, the process start hook
-func StartProvisioning() {
-	if !wheelPinned() {
-		return
-	}
-	if err := pm.StartRuntimeEnvironment(context.Background()); err != nil {
-		slog.Debug("NeMo Relay runtime provisioning could not start", "err", err)
-	}
-}
-
-// Provisions the relay runtime in this process when the environment lacks the pinned set, the install and update time step
+// Provisions the relay environment in this process with progress on w, the step that switches Relay on
 func ProvisionRuntime(ctx context.Context, w io.Writer) error {
 	if !wheelPinned() {
-		return nil
+		target, err := pm.CurrentTarget()
+		if err != nil {
+			return err
+		}
+		return fmt.Errorf("NeMo Relay publishes no wheel for %s", target)
 	}
 	if _, ready, err := pm.RuntimeEnvironmentReady(ctx); err != nil || ready {
 		return err
 	}
 	fmt.Fprintln(w, "→ Provisioning the NeMo Relay runtime...")
-	if _, err := pm.EnsureRuntimeEnvironment(ctx, pm.RuntimeEnvironmentOptions{Explicit: true, Output: w}); err != nil {
+	if _, err := pm.EnsureRuntimeEnvironment(ctx, pm.RuntimeEnvironmentOptions{Output: w}); err != nil {
 		return fmt.Errorf("NeMo Relay runtime was not provisioned: %w", err)
 	}
 	fmt.Fprintln(w, "✓ NeMo Relay runtime provisioned")
 	return nil
-}
-
-// Executable and entry verb of the provisioning child, registered by DispatchRelayHostEntry
-func provisionCommand() ([]string, error) {
-	exe, err := os.Executable()
-	if err != nil {
-		return nil, err
-	}
-	return []string{exe, ProvisionEntry}, nil
 }
 
 // Imports nemo_relay in a relay host child of python, reusing its running child and starting one after an exit
@@ -1008,10 +958,13 @@ func LoadFrom(python string) (*tools.NemoRelay, error) {
 	return client.relay, nil
 }
 
-// Missing module error of an environment without nemo_relay, the message the Python import raises
-var errNoRelayModule = errors.New("No module named 'nemo_relay'")
+// Message the Python import raises in an environment without nemo_relay
+const pythonNoRelayModule = "No module named 'nemo_relay'"
 
-// Whether the lock pins a nemo-relay wheel for this host, the hermes marker deciding where Relay exists
+// Missing Relay runtime of an environment without nemo_relay
+var errNoRelayModule = errors.New("the Relay runtime is not installed in the selected Python environment")
+
+// Whether the lock pins a nemo-relay wheel for this host, the marker deciding where Relay exists
 func wheelPinned() bool {
 	target, err := pm.CurrentTarget()
 	if err != nil {
@@ -1033,7 +986,7 @@ func startEnvironment(ctx context.Context, python string) (*Client, error) {
 	client, err := Start(ctx, python)
 	if err != nil {
 		var re *tools.RelayError
-		if errors.As(err, &re) && re.Class == "ModuleNotFoundError" && re.Message == errNoRelayModule.Error() {
+		if errors.As(err, &re) && re.Class == "ModuleNotFoundError" && re.Message == pythonNoRelayModule {
 			err = errNoRelayModule
 		}
 		loadFailed.python, loadFailed.stamp, loadFailed.err = python, stamp, err

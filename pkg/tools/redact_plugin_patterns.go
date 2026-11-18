@@ -3,7 +3,6 @@ package tools
 import (
 	"errors"
 	"fmt"
-	"log/slog"
 	"reflect"
 	"sort"
 	"strings"
@@ -278,7 +277,7 @@ func RegisterRedactionPatterns(patterns any, source string) (int, error) {
 	for _, raw := range items {
 		pattern, ok := raw.(string)
 		if !ok || pystr.Strip(pattern) == "" {
-			slog.Warn(fmt.Sprintf("%s: skipping empty/non-string redaction pattern", source))
+			pkgLog().Warn(fmt.Sprintf("%s: skipping empty/non-string redaction pattern", source))
 			continue
 		}
 		pattern = pystr.Strip(pattern)
@@ -287,7 +286,7 @@ func RegisterRedactionPatterns(patterns any, source string) (int, error) {
 			if errors.As(cerr, &overflow) {
 				return 0, cerr
 			}
-			slog.Warn(fmt.Sprintf("%s: skipping invalid redaction pattern %s (%s)", source, pyrepr.StrRepr(pattern), cerr))
+			pkgLog().Warn(fmt.Sprintf("%s: skipping invalid redaction pattern %s (%s)", source, pyrepr.StrRepr(pattern), cerr))
 			continue
 		}
 		rejected := ""
@@ -298,11 +297,11 @@ func RegisterRedactionPatterns(patterns any, source string) (int, error) {
 			}
 		}
 		if rejected != "" {
-			slog.Warn(rejected)
+			pkgLog().Warn(rejected)
 			continue
 		}
 		if containsString(known, pattern) || containsString(accepted, pattern) {
-			slog.Debug(fmt.Sprintf("%s: redaction pattern %s already registered", source, pyrepr.StrRepr(pattern)))
+			pkgLog().Debug(fmt.Sprintf("%s: redaction pattern %s already registered", source, pyrepr.StrRepr(pattern)))
 			continue
 		}
 		accepted = append(accepted, pattern)
@@ -325,7 +324,7 @@ func RegisterRedactionPatterns(patterns any, source string) (int, error) {
 		if err != nil {
 			return 0, err
 		}
-		slog.Info(fmt.Sprintf("%s: registered %d redaction pattern(s)", source, len(accepted)))
+		pkgLog().Info(fmt.Sprintf("%s: registered %d redaction pattern(s)", source, len(accepted)))
 	}
 	return len(accepted), nil
 }

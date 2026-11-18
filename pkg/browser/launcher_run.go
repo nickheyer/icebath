@@ -15,6 +15,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/nickheyer/icebath/pkg/browser/quiet"
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/hostinfo"
@@ -38,6 +39,8 @@ type LaunchOptions struct {
 	Timeout       *time.Duration
 	SandboxBypass bool
 	Prepare       func() string
+	// The copy of the user's own browser profile, which keeps its browser sign in
+	UserProfile bool
 }
 
 // A spawned Chromium whose exit a goroutine reaps, its code negative for a signal as Popen reports it
@@ -114,7 +117,7 @@ var (
 	servedHomes          = map[string]bool{}
 )
 
-// Seams tests replace the way hermes tests monkeypatch the launcher module
+// Seams tests replace
 var (
 	launcherResolveExecutable   = resolveExecutable
 	launcherIsTermux            = hostinfo.IsTermux
@@ -230,9 +233,9 @@ func maybeAutoinstallChromium(env *tools.Env) bool {
 	if !launcherLazyInstallsAllowed() {
 		return false
 	}
-	launcherLogger().Info("browser: installing PM's pinned Chromium")
+	pkgLog().Info("browser: installing PM's pinned Chromium")
 	if err := launcherEnsureChromium(); err != nil {
-		launcherLogger().Warn(fmt.Sprintf("browser: Chromium auto-install failed: %s", err))
+		pkgLog().Warn(fmt.Sprintf("browser: Chromium auto-install failed: %s", err))
 		return false
 	}
 	return true
@@ -416,7 +419,7 @@ func attachRunning(ctx context.Context, key, userDataDir, homeKey string) (*Laun
 	if !ok {
 		return nil, nil
 	}
-	launcherLogger().Info(fmt.Sprintf("browser: attaching to the Chromium already running on %s (pid %d)", userDataDir, pid))
+	pkgLog().Info(fmt.Sprintf("browser: attaching to the Chromium already running on %s (pid %d)", userDataDir, pid))
 	b := makeBrowser(key, port, path, int64p(pid), startTimeOf(pid), userDataDir, false, false, homeKey)
 	if records := stateDir(b); records != "" {
 		bindLaunchRecord(records, b)
@@ -453,7 +456,7 @@ func attachForeign(ctx context.Context, key, userDataDir, homeKey string, pid in
 	if !found || !launcherEndpointLive(port, path) {
 		return nil, nil
 	}
-	launcherLogger().Info(fmt.Sprintf("browser: attaching to the Chromium another environment runs on %s (its pid %d there)",
+	pkgLog().Info(fmt.Sprintf("browser: attaching to the Chromium another environment runs on %s (its pid %d there)",
 		userDataDir, pid))
 	b := makeBrowser(key, port, path, int64p(pid), nil, userDataDir, false, false, homeKey)
 	b.Foreign = true
@@ -603,6 +606,9 @@ func launchOwned(ctx context.Context, env *tools.Env, key, executable, udd strin
 	if err := prepareDir(udd, ephemeral); err != nil {
 		return nil, fmt.Sprintf("Could not create the browser profile directory %s: %s", udd, err)
 	}
+	if err := quiet.SeedProfile(udd, !opts.UserProfile); err != nil {
+		return nil, fmt.Sprintf("Could not write the preferences that keep the browser from calling home into %s: %s", udd, err)
+	}
 	argv := buildChromiumArgv(env, executable, udd, packaged, resolveHeaded(env, opts.Headed, procEnv), opts.SandboxBypass, opts.ExtraArgs)
 	p, err := launcherSpawn(argv, procEnv, udd)
 	if err != nil {
@@ -633,7 +639,7 @@ func launchOwned(ctx context.Context, env *tools.Env, key, executable, udd strin
 	browsers.set(key, b)
 	procs[key] = p
 	launcherMu.Unlock()
-	launcherLogger().Info(fmt.Sprintf("browser: launched Chromium pid %d for %s (port %d)", pid, key, port))
+	pkgLog().Info(fmt.Sprintf("browser: launched Chromium pid %d for %s (port %d)", pid, key, port))
 	return b, ""
 }
 
@@ -675,7 +681,7 @@ func getBrowser(key string) *LaunchedBrowser {
 		if alive(b) {
 			return b
 		}
-		launcherLogger().Info(fmt.Sprintf("browser: Chromium for %s (pid %s) is gone", key, pidText(b.PID)))
+		pkgLog().Info(fmt.Sprintf("browser: Chromium for %s (pid %s) is gone", key, pidText(b.PID)))
 		forgetLocked(key, b, true)
 		return nil
 	}
@@ -686,7 +692,7 @@ func getBrowser(key string) *LaunchedBrowser {
 	launcherMu.Lock()
 	defer launcherMu.Unlock()
 	if browsers.get(key) == b {
-		launcherLogger().Info(fmt.Sprintf("browser: the Chromium another environment ran for %s is gone", key))
+		pkgLog().Info(fmt.Sprintf("browser: the Chromium another environment ran for %s is gone", key))
 		forgetLocked(key, b, true)
 	}
 	return nil
@@ -787,7 +793,7 @@ func stopLocked(ctx context.Context, key string) {
 	}
 	_, unlock, err := recordsLock(filepath.Dir(record), true)
 	if err != nil {
-		launcherLogger().Error(fmt.Sprintf("browser: could not stop the Chromium for %s: %s", key, err))
+		pkgLog().Error(fmt.Sprintf("browser: could not stop the Chromium for %s: %s", key, err))
 		return
 	}
 	defer unlock()
@@ -820,7 +826,7 @@ func lastHolderOut(ctx context.Context, record string, b *LaunchedBrowser) bool 
 	heldElsewhere := data != nil && !heldHere(data, "owner_pid") && ownerAlive(data)
 	if heir := successor(others); heir != nil && data != nil && !heldElsewhere {
 		if err := handOver(ctx, record, data, heir); err != nil {
-			launcherLogger().Debug(fmt.Sprintf("browser: could not hand over %s: %s", record, err))
+			pkgLog().Debug(fmt.Sprintf("browser: could not hand over %s: %s", record, err))
 		}
 	}
 	if len(others) > 0 || heldElsewhere {
@@ -913,7 +919,7 @@ func writeRecord(ctx context.Context, b *LaunchedBrowser) {
 	record.Set("devtools", devtoolsIDValue(b))
 	if path := recordPath(b); path != "" {
 		if err := config.AtomicJSONWriteWith(ctx, path, record); err != nil {
-			launcherLogger().Debug(fmt.Sprintf("browser: could not write launch record for pid %s: %s", pidText(b.PID), err))
+			pkgLog().Debug(fmt.Sprintf("browser: could not write launch record for pid %s: %s", pidText(b.PID), err))
 		}
 	}
 }
@@ -921,7 +927,7 @@ func writeRecord(ctx context.Context, b *LaunchedBrowser) {
 func removeRecord(b *LaunchedBrowser) {
 	if path := recordPath(b); path != "" {
 		if err := os.Remove(path); err != nil && !errors.Is(err, fs.ErrNotExist) {
-			launcherLogger().Debug(fmt.Sprintf("browser: could not remove launch record for pid %s: %s", pidText(b.PID), err))
+			pkgLog().Debug(fmt.Sprintf("browser: could not remove launch record for pid %s: %s", pidText(b.PID), err))
 		}
 	}
 }
@@ -978,7 +984,7 @@ func isRecordedBrowser(record *pyjson.Object, homeDir string) bool {
 		return false
 	}
 	if pyrepr.Truthy(objGet(record, "ephemeral")) && !insideEphemeralRoot(udd, homeDir) {
-		launcherLogger().Debug(fmt.Sprintf("browser: ignoring launch record for pid %d: %s is not a launcher profile dir", pid, udd))
+		pkgLog().Debug(fmt.Sprintf("browser: ignoring launch record for pid %d: %s is not a launcher profile dir", pid, udd))
 		return false
 	}
 	expected := objGet(record, "start_time")
@@ -986,7 +992,7 @@ func isRecordedBrowser(record *pyjson.Object, homeDir string) bool {
 		return false
 	}
 	if !launcherNamesDir(int(pid), udd) {
-		launcherLogger().Warn(fmt.Sprintf("browser: refusing to reap pid %d: its command line does not name %s", pid, udd))
+		pkgLog().Warn(fmt.Sprintf("browser: refusing to reap pid %d: its command line does not name %s", pid, udd))
 		return false
 	}
 	return true
@@ -1029,7 +1035,7 @@ func reapRecord(ctx context.Context, path, homeDir string) bool {
 	}
 	if tracked := trackedBrowser(record); tracked != nil {
 		if err := adoptRecord(ctx, tracked); err != nil {
-			launcherLogger().Error(fmt.Sprintf("browser: could not adopt launch record %s: %s", path, err))
+			pkgLog().Error(fmt.Sprintf("browser: could not adopt launch record %s: %s", path, err))
 		}
 		return false
 	}
@@ -1039,7 +1045,7 @@ func reapRecord(ctx context.Context, path, homeDir string) bool {
 	if others := otherLiveHolders(path, objGet(record, "start_time")); len(others) > 0 {
 		if heir := successor(others); heir != nil {
 			if err := handOver(ctx, path, record, heir); err != nil {
-				launcherLogger().Debug(fmt.Sprintf("browser: could not hand over %s: %s", path, err))
+				pkgLog().Debug(fmt.Sprintf("browser: could not hand over %s: %s", path, err))
 			}
 		}
 		return false
@@ -1047,7 +1053,7 @@ func reapRecord(ctx context.Context, path, homeDir string) bool {
 	reaped := isRecordedBrowser(record, homeDir)
 	if reaped {
 		launcherTerminate(jsonIntPtr(objGet(record, "pid")), jsonIntPtr(objGet(record, "start_time")), nil)
-		launcherLogger().Info(fmt.Sprintf("browser: reaped orphaned Chromium pid %s (%s)", pyrepr.Str(objGet(record, "pid")),
+		pkgLog().Info(fmt.Sprintf("browser: reaped orphaned Chromium pid %s (%s)", pyrepr.Str(objGet(record, "pid")),
 			pyrepr.Str(objGet(record, "user_data_dir"))))
 	}
 	udd, isStr := objGet(record, "user_data_dir").(string)
@@ -1070,7 +1076,7 @@ func reapSharedProfiles(ctx context.Context) int {
 	}
 	entries, err := os.ReadDir(root)
 	if err != nil {
-		launcherLogger().Debug(fmt.Sprintf("browser: shared-profile launcher state unavailable in %s: %s", root, err))
+		pkgLog().Debug(fmt.Sprintf("browser: shared-profile launcher state unavailable in %s: %s", root, err))
 		return 0
 	}
 	reaped := 0
@@ -1086,22 +1092,22 @@ func reapStateDir(ctx context.Context, records, homeDir string) int {
 		return 0
 	}
 	if !isPrivateDir(records) {
-		launcherLogger().Debug(fmt.Sprintf("browser: not reaping from %s: not a private directory of this user", records))
+		pkgLog().Debug(fmt.Sprintf("browser: not reaping from %s: not a private directory of this user", records))
 		return 0
 	}
 	locked, unlock, err := recordsLock(records, homeDir != "")
 	if err != nil {
-		launcherLogger().Error(fmt.Sprintf("browser: could not lock %s for reaping: %s", records, err))
+		pkgLog().Error(fmt.Sprintf("browser: could not lock %s for reaping: %s", records, err))
 		return 0
 	}
 	if !locked {
-		launcherLogger().Debug(fmt.Sprintf("browser: %s is busy (a launch or stop holds it); reaping it next pass", records))
+		pkgLog().Debug(fmt.Sprintf("browser: %s is busy (a launch or stop holds it); reaping it next pass", records))
 		return 0
 	}
 	defer unlock()
 	paths, err := filepath.Glob(filepath.Join(globEscape(records), "*.json"))
 	if err != nil {
-		launcherLogger().Debug(fmt.Sprintf("browser: launch records unavailable in %s: %s", records, err))
+		pkgLog().Debug(fmt.Sprintf("browser: launch records unavailable in %s: %s", records, err))
 		return 0
 	}
 	sort.Strings(paths)
@@ -1131,7 +1137,7 @@ func reclaimThrowawayDirs(homeDir string) {
 	}
 	entries, err := os.ReadDir(root)
 	if err != nil {
-		launcherLogger().Debug(fmt.Sprintf("browser: throwaway profiles unavailable in %s: %s", root, err))
+		pkgLog().Debug(fmt.Sprintf("browser: throwaway profiles unavailable in %s: %s", root, err))
 		return
 	}
 	for _, e := range entries {
@@ -1154,11 +1160,11 @@ func reclaimThrowawayDirs(homeDir string) {
 		}
 		entry := filepath.Join(root, e.Name())
 		if browserRunningOn(entry) {
-			launcherLogger().Debug(fmt.Sprintf("browser: keeping the throwaway profile %s: a Chromium still runs on it", entry))
+			pkgLog().Debug(fmt.Sprintf("browser: keeping the throwaway profile %s: a Chromium still runs on it", entry))
 			continue
 		}
 		launcherRemoveAll(entry)
-		launcherLogger().Info(fmt.Sprintf("browser: removed the throwaway profile %s of an Icebath process that is gone", entry))
+		pkgLog().Info(fmt.Sprintf("browser: removed the throwaway profile %s of an Icebath process that is gone", entry))
 	}
 }
 

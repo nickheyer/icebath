@@ -30,7 +30,7 @@ var (
 	hasPilk          = newFindSpecFlag("pilk")
 )
 
-// Serves the faster_whisper probe to the provider tool gateway status
+// Serves the faster_whisper probe to the provider tool feature status
 func registerTranscriptionAPI() {
 	provider.FasterWhisperImportable = func() bool { return hasFasterWhisper() }
 }
@@ -156,7 +156,7 @@ func resolveExplicitOpenAI(ctx context.Context) (string, error) {
 	if reason == "" {
 		return "openai", nil
 	}
-	sttLog().Warn("STT provider 'openai' configured but unavailable: " + reason)
+	pkgLog().Warn("STT provider 'openai' configured but unavailable: " + reason)
 	return "none", nil
 }
 
@@ -175,7 +175,7 @@ func detectLocalBackend(ctx context.Context) string {
 func resolveExplicitLocal(ctx context.Context) (string, error) {
 	backend := detectLocalBackend(ctx)
 	if backend == "" {
-		sttLog().Warn("STT provider 'local' configured but unavailable (install faster-whisper or set " + localSTTCommandEnv + ")")
+		pkgLog().Warn("STT provider 'local' configured but unavailable (install faster-whisper or set " + localSTTCommandEnv + ")")
 		return "none", nil
 	}
 	return backend, nil
@@ -187,10 +187,10 @@ func resolveExplicitLocalCommand(ctx context.Context) (string, error) {
 		return "local_command", nil
 	}
 	if hasFasterWhisper() {
-		sttLog().Info("Local STT command unavailable, using local faster-whisper")
+		pkgLog().Info("Local STT command unavailable, using local faster-whisper")
 		return "local", nil
 	}
-	sttLog().Warn("STT provider 'local_command' configured but unavailable")
+	pkgLog().Warn("STT provider 'local_command' configured but unavailable")
 	return "none", nil
 }
 
@@ -244,7 +244,7 @@ func resolveExplicitProvider(ctx context.Context, providerName string) (string, 
 		if err != nil || ok {
 			return providerName, err
 		}
-		sttLog().Warn(spec.warning)
+		pkgLog().Warn(spec.warning)
 		return "none", nil
 	}
 	return providerName, nil
@@ -258,9 +258,6 @@ func getProvider(ctx context.Context, sttConfig map[string]any) (string, error) 
 	_, explicit := sttConfig["provider"]
 	raw := dictGetDefault(sttConfig, "provider", sttDefaultProvider)
 	providerName := pyrepr.Str(raw)
-	if s, ok := raw.(string); ok && pystr.Lower(pystr.Strip(s)) == "nous" {
-		providerName = "openai"
-	}
 	if explicit && providerName == "local" && sttReadSelection(ctx) == "" {
 		explicit = false
 	}
@@ -276,7 +273,7 @@ func getProvider(ctx context.Context, sttConfig map[string]any) (string, error) 
 			return "", err
 		}
 		if ok {
-			sttLog().Info(spec.message)
+			pkgLog().Info(spec.message)
 			return spec.name, nil
 		}
 	}
@@ -300,7 +297,7 @@ func unloadLocalModel() {
 		if name == "" {
 			name = "unknown"
 		}
-		sttLog().Info(fmt.Sprintf("Unloading local whisper model '%s' after idle timeout", name))
+		pkgLog().Info(fmt.Sprintf("Unloading local whisper model '%s' after idle timeout", name))
 		localModel.release()
 		localModel, localModelName = nil, ""
 	}
@@ -381,7 +378,7 @@ func getOrLoadLocalModel(ctx context.Context, modelName string, localCfg map[str
 	localModelMu.Lock()
 	defer localModelMu.Unlock()
 	if localModel == nil || localModelName != modelName {
-		sttLog().Info(fmt.Sprintf("Loading faster-whisper model '%s' (first load downloads the model)...", modelName))
+		pkgLog().Info(fmt.Sprintf("Loading faster-whisper model '%s' (first load downloads the model)...", modelName))
 		m, err := loadLocalWhisperModel(ctx, modelName, dictGetDefault(localCfg, "device", "auto"), dictGetDefault(localCfg, "compute_type", "auto"))
 		if err != nil {
 			return nil, err
@@ -416,12 +413,12 @@ func replaceCachedModelOnCPU(ctx context.Context, modelName string) (*whisperHan
 
 // faster-whisper transcription with a one time CPU retry when the CUDA runtime fails mid decode
 func transcribeLocal(ctx context.Context, filePath, modelName string, h sttHints) (map[string]any, error) {
-	if !hasFasterWhisper() && !tryLazyInstallSTT(ctx) {
-		return sttError("faster-whisper not installed"), nil
+	if !hasFasterWhisper() && !whisperProvisioned() {
+		return sttError(whisperMissingText), nil
 	}
 	result, err := transcribeLocalBody(ctx, filePath, modelName, h)
 	if err != nil {
-		sttLog().Error(fmt.Sprintf("Local transcription failed: %v", err))
+		pkgLog().Error(fmt.Sprintf("Local transcription failed: %v", err))
 		return sttError(fmt.Sprintf("Local transcription failed: %v", err)), nil
 	}
 	return result, nil
@@ -464,7 +461,7 @@ func transcribeLocalBody(ctx context.Context, filePath, modelName string, h sttH
 		if !looksLikeCudaLibError(err) {
 			return nil, err
 		}
-		sttLog().Warn(fmt.Sprintf("faster-whisper CUDA runtime failed mid-transcribe (%v) — evicting cached model and retrying on CPU (int8).", err))
+		pkgLog().Warn(fmt.Sprintf("faster-whisper CUDA runtime failed mid-transcribe (%v) — evicting cached model and retrying on CPU (int8).", err))
 		replacement, rerr := replaceCachedModelOnCPU(ctx, modelName)
 		if rerr != nil {
 			return nil, rerr
@@ -476,7 +473,7 @@ func transcribeLocalBody(ctx context.Context, filePath, modelName string, h sttH
 		}
 	}
 	transcript := joinConfidentSegments(segments, localCfg)
-	sttLog().Info(fmt.Sprintf("Transcribed %s via local whisper (%s, lang=%s, %.1fs audio)", filepath.Base(filePath), modelName, info.Language, info.Duration))
+	pkgLog().Info(fmt.Sprintf("Transcribed %s via local whisper (%s, lang=%s, %.1fs audio)", filepath.Base(filePath), modelName, info.Language, info.Duration))
 	touchTranscriptionTime()
 	if idle := getIdleUnloadSeconds(localCfg); idle > 0 {
 		startIdleUnloadWatcher(ctx, idle)

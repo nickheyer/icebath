@@ -52,8 +52,19 @@ func adapterListenerClaim(platform gateway.Platform, adapter any) *[4]any {
 	return &[4]any{"listener", "photon", strings.ToLower(pystr.Strip(bind)), port}
 }
 
+// Salt of the credential fingerprint, and the one an older icebath hashed stored connectors with
+const (
+	credentialFingerprintSalt       = "icebath-mux:"
+	legacyCredentialFingerprintSalt = "hermes-mux:"
+)
+
 // Salted log safe hash of an adapter's credential, empty when none is discoverable
 func adapterCredentialFingerprint(adapter any) string {
+	return saltedCredentialFingerprint(adapter, credentialFingerprintSalt)
+}
+
+// Hash of an adapter's first discoverable credential under the salt, empty when none is discoverable
+func saltedCredentialFingerprint(adapter any, salt string) string {
 	values := make([]any, 0, len(credentialAttrs)+1)
 	for _, name := range credentialAttrs {
 		values = append(values, adapterAttr(adapter, name))
@@ -64,7 +75,7 @@ func adapterCredentialFingerprint(adapter any) string {
 		if !ok || pystr.Strip(text) == "" {
 			continue
 		}
-		digest := sha256.Sum256([]byte("hermes-mux:" + pystr.Strip(text)))
+		digest := sha256.Sum256([]byte(salt + pystr.Strip(text)))
 		return hex.EncodeToString(digest[:])[:16]
 	}
 	return ""

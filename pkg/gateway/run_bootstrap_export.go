@@ -34,7 +34,7 @@ func RecordLooksLikeGateway(record *pyjson.Object) bool { return recordLooksLike
 func PidFromRecord(record *pyjson.Object) (int, bool) { return pidFromRecord(record, "pid") }
 
 // Home this process resolves as its own
-func ProcessHome() string { return processHermesHome() }
+func ProcessHome() string { return processIcebathHome() }
 
 // Children of pid captured before a takeover signals it
 func SnapshotGatewayChildren(pid int) []GatewayChild { return statusSnapshotGatewayChildren(pid) }

@@ -246,7 +246,7 @@ func CmdUpdateTakeover(ctx context.Context, ns map[string]any, w io.Writer) (int
 	}
 	rootValue, hasRoot := request.Get("root")
 	if !hasRoot {
-		return 0, fmt.Errorf("KeyError: %s", pyrepr.Repr("root"))
+		return 0, fmt.Errorf("the takeover request %s has no root", contextPath)
 	}
 	root := pyrepr.Str(rootValue)
 	held, holder, release, err := takeoverAcquireLock(ctx, root)

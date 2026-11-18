@@ -12,7 +12,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pythread"
 	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tools"
-	"github.com/nickheyer/icebath/pkg/tuigateway"
+	"github.com/nickheyer/icebath/pkg/tuihost"
 )
 
 // MoA facade progress keys mapped onto the payload keys the TUI gateway emits
@@ -132,7 +132,7 @@ func publishLocalProgress(ctx context.Context, t *TurnRunner, eventType, name, p
 		if err != nil {
 			return err
 		}
-		payload, err := tuigateway.SubagentPayload(eventType, name, preview, kwargs, shown)
+		payload, err := tuihost.SubagentPayload(eventType, name, preview, kwargs, shown)
 		if err != nil {
 			return err
 		}
@@ -233,7 +233,7 @@ func noteLocalToolStart(t *TurnRunner, callID any, toolName *string, args any) {
 	func() {
 		defer func() {
 			if rec := recover(); rec != nil {
-				runLog().Debug("Edit snapshot capture failed for "+*toolName, "error", rec)
+				pkgLog().Debug("Edit snapshot capture failed for "+*toolName, "error", rec)
 				snapshot = nil
 			}
 		}()
@@ -280,7 +280,7 @@ func localCompleteFields(ctx context.Context, t *TurnRunner, callID any, toolNam
 	func() {
 		defer func() {
 			if rec := recover(); rec != nil {
-				runLog().Debug("Edit diff preview failed for "+*toolName, "error", rec)
+				pkgLog().Debug("Edit diff preview failed for "+*toolName, "error", rec)
 				rendered = nil
 			}
 		}()
@@ -313,7 +313,7 @@ func localTodoState(toolName string, result any) *pyjson.Object {
 		}
 		value = parsed
 	}
-	return tuigateway.NormalizeTodoState(value)
+	return tuihost.NormalizeTodoState(value)
 }
 
 // Whether a local viewer turn runs on a classic CLI surface session whose viewer reads the raw result

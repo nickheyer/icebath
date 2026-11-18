@@ -77,21 +77,10 @@ func TestTryActivateFallbackSkipsTheBackendThatJustFailed(t *testing.T) {
 func TestTryActivateFallbackSkipsUnentitledAndUnavailableEntries(t *testing.T) {
 	a := kwargsTestAgent(t, "openrouter", "https://openrouter.ai/api/v1", "a/b", "chat_completions")
 	a.entitlementRejectedModels = map[[2]string]bool{{"openai-codex", "gpt-5"}: true}
-	a.unavailableFallbackKeys = map[[3]string]bool{{"nous", "m", ""}: true}
-	a.fallbackChain = []map[string]any{{"provider": "openai-codex", "model": "gpt-5"}, {"provider": "nous", "model": "m"}}
+	a.unavailableFallbackKeys = map[[3]string]bool{{"deepseek", "m", ""}: true}
+	a.fallbackChain = []map[string]any{{"provider": "openai-codex", "model": "gpt-5"}, {"provider": "deepseek", "model": "m"}}
 	if a.tryActivateFallback(context.Background(), provider.ReasonServerError) || a.fallbackIndex != 2 {
 		t.Fatalf("activated or wrong index %d", a.fallbackIndex)
-	}
-}
-
-func TestFallbackEntryUnavailableWithoutNetworkNeedsANousToken(t *testing.T) {
-	t.Setenv("ICEBATH_HOME", t.TempDir())
-	ctx := context.Background()
-	if r := fallbackEntryUnavailableWithoutNetwork(ctx, map[string]any{"provider": "openrouter"}); r != "" {
-		t.Fatalf("non nous entry skipped: %q", r)
-	}
-	if r := fallbackEntryUnavailableWithoutNetwork(ctx, map[string]any{"provider": " Nous "}); r != "nous_token_missing" {
-		t.Fatalf("reason %q", r)
 	}
 }
 

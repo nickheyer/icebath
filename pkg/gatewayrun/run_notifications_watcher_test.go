@@ -14,12 +14,12 @@ import (
 // Runner serving one telegram adapter with the notification mode written to its config
 func notifyModeRunner(t *testing.T, mode string) (*GatewayRunner, *updateTestAdapter) {
 	t.Helper()
-	r, adapter, hermesHome := updateRunner(t)
-	writeHomeFile(t, hermesHome, "config.yaml", []byte(fmt.Sprintf("display:\n  background_process_notifications: %s\n", mode)))
+	r, adapter, icebathHome := updateRunner(t)
+	writeHomeFile(t, icebathHome, "config.yaml", []byte(fmt.Sprintf("display:\n  background_process_notifications: %s\n", mode)))
 	return r, adapter
 }
 
-// Watcher descriptor of a telegram chat, the hermes _watcher_dict
+// Watcher descriptor of a telegram chat, the watcher dict
 func watcherDict(sessionID string) map[string]any {
 	return map[string]any{"session_id": sessionID, "check_interval": 0, "platform": "telegram", "chat_id": "123"}
 }

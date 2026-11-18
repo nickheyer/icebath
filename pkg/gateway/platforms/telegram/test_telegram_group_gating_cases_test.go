@@ -12,7 +12,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/gateway"
 )
 
-// Adapter of the hermes _make_adapter helper, bot id 999 with the given handle, empty allow lists unless set
+// Adapter of the make adapter helper, bot id 999 with the given handle, empty allow lists unless set
 func gatingAdapter(t *testing.T, extra map[string]any, botUsername string) (*TelegramAdapter, *scriptedBot) {
 	t.Helper()
 	t.Setenv("ICEBATH_HOME", t.TempDir())
@@ -25,18 +25,18 @@ func gatingAdapter(t *testing.T, extra map[string]any, botUsername string) (*Tel
 		cfg.Extra[k] = v
 	}
 	if botUsername == "" {
-		botUsername = "hermes_bot"
+		botUsername = "icebath_bot"
 	}
 	a := NewTelegramAdapter(context.Background(), cfg)
 	fake := &scriptedBot{}
 	attachScriptedBot(t, a, fake)
 	a.app.mu.Lock()
-	a.app.botUser = &models.User{ID: 999, IsBot: true, FirstName: "Hermes", Username: botUsername}
+	a.app.botUser = &models.User{ID: 999, IsBot: true, FirstName: "Icebath", Username: botUsername}
 	a.app.mu.Unlock()
 	return a, fake
 }
 
-// Event sink standing in for the hermes AsyncMock message handler
+// Event sink standing in for the AsyncMock message handler
 type eventSink struct {
 	mu     sync.Mutex
 	events []*gateway.MessageEvent
@@ -74,7 +74,7 @@ func (s *eventSink) count() int {
 	return len(s.events)
 }
 
-// Session store double of the hermes _FakeSessionStore
+// Session store double of the fake session store
 type observeRecorder struct {
 	sources  []*gateway.SessionSource
 	messages []observedLine
@@ -96,7 +96,7 @@ func (s *observeRecorder) AppendToTranscript(_ context.Context, sessionID string
 	return nil
 }
 
-// Options of the hermes _group_message helper
+// Options of the group message helper
 type groupMsgOpts struct {
 	chatID      int64
 	fromID      int64
@@ -108,7 +108,7 @@ type groupMsgOpts struct {
 	captionEnts []models.MessageEntity
 }
 
-// Group message of the hermes _group_message helper
+// Group message of the group message helper
 func groupMessage(text string, o groupMsgOpts) *models.Message {
 	if o.chatID == 0 {
 		o.chatID = -100
@@ -130,7 +130,7 @@ func groupMessage(text string, o groupMsgOpts) *models.Message {
 	return m
 }
 
-// Private message of the hermes _dm_message helper
+// Private message of the dm message helper
 func dmMessage(text string) *models.Message {
 	return &models.Message{ID: 43, Text: text, Chat: models.Chat{ID: 111, Type: "private", FirstName: "Alice", LastName: "Example"},
 		From: &models.User{ID: 111, FirstName: "Alice", LastName: "Example"}}
@@ -201,8 +201,8 @@ func TestObservedGroupContextUsesSharedSourceAndPromptForLaterMentions(t *testin
 	a, _ := gatingAdapter(t, map[string]any{"require_mention": true, "allowed_chats": []any{"-100"},
 		"group_allowed_chats": []any{"-100"}, "observe_unmentioned_group_messages": true}, "")
 	a.SetSessionStore(&observeRecorder{})
-	text := "@hermes_bot what did Alice say?"
-	msg := groupMessage(text, groupMsgOpts{fromID: 222, fromName: "Bob Example", entities: mentionEnts(text, "@hermes_bot")})
+	text := "@icebath_bot what did Alice say?"
+	msg := groupMessage(text, groupMsgOpts{fromID: 222, fromName: "Bob Example", entities: mentionEnts(text, "@icebath_bot")})
 	id := int64(1003)
 	event := a.buildMessageEvent(ctx, msg, gateway.MessageTypeText, &id)
 	event.Text = *a.cleanBotTriggerText(&event.Text)
@@ -226,12 +226,12 @@ func TestObservedGroupContextPreservesSlashCommandTextForDispatch(t *testing.T) 
 	a, _ := gatingAdapter(t, map[string]any{"require_mention": true, "allowed_chats": []any{"-100"},
 		"group_allowed_chats": []any{"-100"}, "observe_unmentioned_group_messages": true}, "")
 	user, name, thread := "111", "Alice", "7"
-	event := gateway.NewMessageEvent("/new@hermes_bot")
+	event := gateway.NewMessageEvent("/new@icebath_bot")
 	event.MessageType = gateway.MessageTypeCommand
 	event.Source = &gateway.SessionSource{Platform: gateway.PlatformTelegram, ChatID: "-100", UserID: &user, UserName: &name, ChatType: "group", ThreadID: &thread}
-	event.RawMessage = groupMessage("/new@hermes_bot", groupMsgOpts{entities: []models.MessageEntity{{Type: "bot_command", Offset: 0, Length: len("/new@hermes_bot")}}})
+	event.RawMessage = groupMessage("/new@icebath_bot", groupMsgOpts{entities: []models.MessageEntity{{Type: "bot_command", Offset: 0, Length: len("/new@icebath_bot")}}})
 	attributed := a.applyGroupObserveAttribution(context.Background(), event)
-	if attributed.Text != "/new@hermes_bot" {
+	if attributed.Text != "/new@icebath_bot" {
 		t.Fatalf("text %q", attributed.Text)
 	}
 	if cmd, ok := attributed.GetCommand(); !ok || cmd != "new" {
@@ -290,10 +290,10 @@ func TestInternBotsIgnoreMessagesAddressedToOtherInternBot(t *testing.T) {
 }
 
 func TestRawBotMentionFallbackDoesNotMatchEmailOrSubstring(t *testing.T) {
-	a, _ := gatingAdapter(t, map[string]any{"require_mention": true}, "hermes_bot")
-	expectGate(t, a, groupMessage("email ops@hermes_bot.example", groupMsgOpts{}), false)
-	expectGate(t, a, groupMessage("prefix@hermes_bot hi", groupMsgOpts{}), false)
-	expectGate(t, a, groupMessage("hi @hermes_bot", groupMsgOpts{}), true)
+	a, _ := gatingAdapter(t, map[string]any{"require_mention": true}, "icebath_bot")
+	expectGate(t, a, groupMessage("email ops@icebath_bot.example", groupMsgOpts{}), false)
+	expectGate(t, a, groupMessage("prefix@icebath_bot hi", groupMsgOpts{}), false)
+	expectGate(t, a, groupMessage("hi @icebath_bot", groupMsgOpts{}), true)
 }
 
 func TestExclusiveBotMentionsCanBeDisabledForLegacyGroups(t *testing.T) {
@@ -315,7 +315,7 @@ func TestFreeResponseTopicMessagesAreDispatchedNotObserved(t *testing.T) {
 func TestGuestModeAllowsOnlyDirectMentionsOutsideAllowedChats(t *testing.T) {
 	a, _ := gatingAdapter(t, map[string]any{"require_mention": true, "allowed_chats": []any{"-200"}, "guest_mode": true,
 		"mention_patterns": []any{`^\s*chompy\b`}}, "")
-	expectGate(t, a, groupMessage("hi @hermes_bot", groupMsgOpts{chatID: -201, entities: mentionEnts("hi @hermes_bot", "@hermes_bot")}), true)
+	expectGate(t, a, groupMessage("hi @icebath_bot", groupMsgOpts{chatID: -201, entities: mentionEnts("hi @icebath_bot", "@icebath_bot")}), true)
 	expectGate(t, a, groupMessage("reply", groupMsgOpts{chatID: -201, replyToBot: true}), false)
 	expectGate(t, a, groupMessage("chompy status", groupMsgOpts{chatID: -201}), false)
 	expectGate(t, a, groupMessage("hello", groupMsgOpts{chatID: -201}), false)
@@ -325,7 +325,7 @@ func TestAllowedTopicsDropOtherForumTopicsBeforeOtherGates(t *testing.T) {
 	a, _ := gatingAdapter(t, map[string]any{"require_mention": false, "allowed_chats": []any{"-100"}, "allowed_topics": []any{"8"}}, "")
 	expectGate(t, a, groupMessage("hello", groupMsgOpts{chatID: -100, threadID: 8}), true)
 	expectGate(t, a, groupMessage("hello", groupMsgOpts{chatID: -100, threadID: 11}), false)
-	expectGate(t, a, groupMessage("hi @hermes_bot", groupMsgOpts{chatID: -100, threadID: 11, entities: mentionEnts("hi @hermes_bot", "@hermes_bot")}), false)
+	expectGate(t, a, groupMessage("hi @icebath_bot", groupMsgOpts{chatID: -100, threadID: 11, entities: mentionEnts("hi @icebath_bot", "@icebath_bot")}), false)
 }
 
 func TestGatingIgnoresNonForumReplyAnchorThreadId(t *testing.T) {
@@ -371,7 +371,7 @@ func TestStaleUsernameSchedulesBackgroundIdentityRecheck(t *testing.T) {
 	a, fake := gatingAdapter(t, map[string]any{"require_mention": true, "exclusive_bot_mentions": true}, "old_helper_bot")
 	fake.respond = func(method string, _ map[string]string) (int, string) {
 		if method == "getMe" {
-			return 200, `{"ok":true,"result":{"id":999,"is_bot":true,"first_name":"Hermes","username":"new_helper_bot"}}`
+			return 200, `{"ok":true,"result":{"id":999,"is_bot":true,"first_name":"Icebath","username":"new_helper_bot"}}`
 		}
 		return 0, ""
 	}
@@ -397,11 +397,11 @@ func TestStaleUsernameSchedulesBackgroundIdentityRecheck(t *testing.T) {
 }
 
 func TestBotNeverAdoptsAnotherAccountsUsername(t *testing.T) {
-	a, _ := gatingAdapter(t, map[string]any{"require_mention": true}, "hermes_bot")
+	a, _ := gatingAdapter(t, map[string]any{"require_mention": true}, "icebath_bot")
 	m := groupMessage("hello", groupMsgOpts{})
 	m.From = &models.User{ID: 555, Username: "impostor_bot", FirstName: "Impostor"}
 	a.observeBotIdentityFromMessage(m)
-	if got := a.currentBotUsername(); got != "hermes_bot" {
+	if got := a.currentBotUsername(); got != "icebath_bot" {
 		t.Fatalf("username %q", got)
 	}
 }
@@ -435,8 +435,8 @@ func TestBotQuoteReplyLoopIsBrokenByBotsRequireMention(t *testing.T) {
 	expectGate(t, loop, botSenderMessage("auto-reply", true, nil), true)
 	gated, _ := gatingAdapter(t, map[string]any{"require_mention": true, "bots_require_mention": true}, "")
 	expectGate(t, gated, botSenderMessage("auto-reply", true, nil), false)
-	text := "@hermes_bot ping"
-	expectGate(t, gated, botSenderMessage(text, false, mentionEnts(text, "@hermes_bot")), true)
+	text := "@icebath_bot ping"
+	expectGate(t, gated, botSenderMessage(text, false, mentionEnts(text, "@icebath_bot")), true)
 }
 
 func TestHumanReplyUnaffectedByBotsRequireMention(t *testing.T) {
@@ -446,7 +446,7 @@ func TestHumanReplyUnaffectedByBotsRequireMention(t *testing.T) {
 
 // Extra of the sibling bot cases, wake word plus observe mode in an allowed group
 func siblingExtra() map[string]any {
-	return map[string]any{"require_mention": true, "bots_require_mention": true, "mention_patterns": []any{"hermes"},
+	return map[string]any{"require_mention": true, "bots_require_mention": true, "mention_patterns": []any{"icebath"},
 		"allowed_chats": []any{"-100"}, "group_allowed_chats": []any{"-100"}, "observe_unmentioned_group_messages": true}
 }
 
@@ -455,7 +455,7 @@ func TestSiblingBotWakeWordMessageIsObservedNotDropped(t *testing.T) {
 	sink := newEventSink(a)
 	store := &observeRecorder{}
 	a.SetSessionStore(store)
-	msg := botSenderMessage("hermes, can you take this one?", false, nil)
+	msg := botSenderMessage("icebath, can you take this one?", false, nil)
 	expectGate(t, a, msg, false)
 	if err := a.handleTextMessage(context.Background(), updateOf(2001, msg)); err != nil {
 		t.Fatal(err)
@@ -465,26 +465,26 @@ func TestSiblingBotWakeWordMessageIsObservedNotDropped(t *testing.T) {
 	}
 	line := store.messages[0].message
 	content, _ := line["content"].(string)
-	if line["observed"] != true || !strings.HasSuffix(content, "hermes, can you take this one?") {
+	if line["observed"] != true || !strings.HasSuffix(content, "icebath, can you take this one?") {
 		t.Fatalf("line %v", line)
 	}
 }
 
 func TestSiblingBotExplicitMentionStillDispatchesAndIsNotObserved(t *testing.T) {
 	a, _ := gatingAdapter(t, siblingExtra(), "")
-	text := "@hermes_bot ping"
-	msg := botSenderMessage(text, false, mentionEnts(text, "@hermes_bot"))
+	text := "@icebath_bot ping"
+	msg := botSenderMessage(text, false, mentionEnts(text, "@icebath_bot"))
 	expectGate(t, a, msg, true)
 	expectObserve(t, a, msg, false)
 	quoted := botSenderMessage("auto-reply", true, nil)
 	expectGate(t, a, quoted, false)
 	expectObserve(t, a, quoted, true)
-	human := groupMessage("hermes, hello", groupMsgOpts{})
+	human := groupMessage("icebath, hello", groupMsgOpts{})
 	expectGate(t, a, human, true)
 	expectObserve(t, a, human, false)
 }
 
-// Message of the hermes _replying_to helper
+// Message of the replying to helper
 func replyingTo(m *models.Message, userID int64, messageID int, senderChat int64) *models.Message {
 	reply := &models.Message{ID: messageID, Text: "earlier"}
 	if userID != 0 {
@@ -497,7 +497,7 @@ func replyingTo(m *models.Message, userID int64, messageID int, senderChat int64
 	return m
 }
 
-// Message of the hermes _with_media helper
+// Message of the with media helper
 func withMedia(m *models.Message, kind string) *models.Message {
 	switch kind {
 	case "voice":
@@ -520,9 +520,9 @@ func TestReplyExpectedFollowsWhoTheGroupMessageAddresses(t *testing.T) {
 		message  *models.Message
 		expected *bool
 	}{
-		{"mention", groupMessage("@hermes_bot when is rent due?", groupMsgOpts{entities: ent("@hermes_bot when is rent due?", "@hermes_bot")}), &yes},
+		{"mention", groupMessage("@icebath_bot when is rent due?", groupMsgOpts{entities: ent("@icebath_bot when is rent due?", "@icebath_bot")}), &yes},
 		{"reply-to-bot", groupMessage("sure, saturday", groupMsgOpts{replyToBot: true}), &yes},
-		{"wake-word", groupMessage("hermes, add milk to the list", groupMsgOpts{}), &yes},
+		{"wake-word", groupMessage("icebath, add milk to the list", groupMsgOpts{}), &yes},
 		{"caption-command", groupMessage("", groupMsgOpts{caption: "/status"}), &yes},
 		{"indented-command", groupMessage(" /status", groupMsgOpts{}), &yes},
 		{"dm", dmMessage("hello"), &yes},
@@ -544,7 +544,7 @@ func TestReplyExpectedFollowsWhoTheGroupMessageAddresses(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.id, func(t *testing.T) {
-			a, _ := gatingAdapter(t, map[string]any{"require_mention": false, "mention_patterns": []any{"hermes"}}, "")
+			a, _ := gatingAdapter(t, map[string]any{"require_mention": false, "mention_patterns": []any{"icebath"}}, "")
 			got := a.buildMessageEvent(context.Background(), tc.message, gateway.MessageTypeText, nil).ReplyExpected
 			if (got == nil) != (tc.expected == nil) || (got != nil && *got != *tc.expected) {
 				t.Fatalf("reply expected %v, want %v", got, tc.expected)

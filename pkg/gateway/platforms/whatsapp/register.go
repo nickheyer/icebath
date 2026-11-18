@@ -93,7 +93,7 @@ func interactiveSetup(ctx context.Context) error {
 type whatsappPlugin struct{}
 
 func (whatsappPlugin) Manifest() plugins.Manifest {
-	return plugins.Manifest{Name: "whatsapp-platform", Key: "platforms/whatsapp", Kind: "platform", Version: "1.0.0", Author: "NousResearch",
+	return plugins.Manifest{Name: "whatsapp-platform", Key: "platforms/whatsapp", Kind: "platform", Version: "1.0.0", Author: "Icebath",
 		Description: "WhatsApp gateway adapter for Icebath Agent. Connects to WhatsApp through the built-in WhatsApp Web client and relays " +
 			"messages between WhatsApp chats and the Icebath agent. Supports DM/group policies, mention gating, free-response chats, and per-user allowlists.\n",
 		RequiresEnv: []plugins.EnvSpec{{Name: "WHATSAPP_ENABLED", Description: "Enable the WhatsApp adapter"}}}

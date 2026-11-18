@@ -11,16 +11,13 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/state"
-	"github.com/nickheyer/icebath/pkg/tuigateway"
+	"github.com/nickheyer/icebath/pkg/tuihost"
 )
 
 // Declares session.branch and session.branch_whole on the session module registry
 func registerSessionBranchHandlers() {
-	sessionMethod("session.branch", true, func(ctx context.Context, rid any, params map[string]any, session *tuigateway.Session) map[string]any {
+	sessionMethod("session.branch", true, func(ctx context.Context, rid any, params map[string]any, session *tuihost.Session) map[string]any {
 		return branchLive(ctx, rid, params, session, false)
-	})
-	sessionMethod("session.branch_whole", true, func(ctx context.Context, rid any, params map[string]any, session *tuigateway.Session) map[string]any {
-		return branchLive(ctx, rid, params, session, true)
 	})
 }
 
@@ -44,7 +41,7 @@ func visibleBranchHistory(messages []any) []any {
 		if !isDict || (m["role"] != "user" && m["role"] != "assistant") {
 			continue
 		}
-		if pystr.Strip(tuigateway.CoerceMessageText(m["content"], true)) == "" {
+		if pystr.Strip(tuihost.CoerceMessageText(m["content"], true)) == "" {
 			continue
 		}
 		copied := make(map[string]any, len(m))
@@ -57,7 +54,7 @@ func visibleBranchHistory(messages []any) []any {
 }
 
 // Columns count of a session record, eighty when it holds none
-func sessionCols(session *tuigateway.Session) int {
+func sessionCols(session *tuihost.Session) int {
 	raw, present := session.Lookup("cols")
 	if !present {
 		return 80
@@ -68,9 +65,9 @@ func sessionCols(session *tuigateway.Session) int {
 }
 
 // Builds and registers the branched agent in the parent's profile, releasing an untransferred dedicated db
-func buildBranchAgent(ctx context.Context, session *tuigateway.Session, newSID, newKey string, history []any, source string) (built any, err error) {
+func buildBranchAgent(ctx context.Context, session *tuihost.Session, newSID, newKey string, history []any, source string) (built any, err error) {
 	parentHome := strOr(session.Get("profile_home"))
-	parentUserID := tuigateway.SessionAuthUserID(session)
+	parentUserID := tuihost.SessionAuthUserID(session)
 	var branchDB *state.DB
 	branchOwnsDB := false
 	if parentHome != "" {
@@ -102,7 +99,7 @@ func buildBranchAgent(ctx context.Context, session *tuigateway.Session, newSID, 
 	if err != nil {
 		return nil, err
 	}
-	if child := tuigateway.SessionRecord(newSID); child != nil {
+	if child := tuihost.SessionRecord(newSID); child != nil {
 		child.Set("active_session_lease", nil)
 		var userID any
 		if parentUserID != nil {
@@ -119,7 +116,7 @@ var branchCopyFields = []string{"reasoning", "reasoning_content", "reasoning_det
 	"display_kind", "display_metadata", "timestamp"}
 
 // Rows a branch copies, the persisted display projection reconciled with live memory, else memory alone
-func branchSourceHistory(ctx context.Context, db *state.DB, session *tuigateway.Session, oldKey string) []any {
+func branchSourceHistory(ctx context.Context, db *state.DB, session *tuihost.Session, oldKey string) []any {
 	unlock := lockHistory(session)
 	var inMemory []any
 	for _, msg := range append(append([]any(nil), historyList(session.Get("display_history_prefix"))...), historyList(session.Get("history"))...) {
@@ -142,7 +139,7 @@ func branchSourceHistory(ctx context.Context, db *state.DB, session *tuigateway.
 		}
 		history = visibleBranchHistory(reconcileDisplayWithLive(display, inMemory))
 	}); failure != nil {
-		logger().Debug("branch display projection read failed", "exc_info", failureText(failure))
+		pkgLog().Debug("branch display projection read failed", "exc_info", failureText(failure))
 	}
 	if len(history) > 0 {
 		return history
@@ -151,7 +148,7 @@ func branchSourceHistory(ctx context.Context, db *state.DB, session *tuigateway.
 }
 
 // Branches a live session into a new child, a retried idempotency key answering with the same child
-func branchLive(ctx context.Context, rid any, params map[string]any, session *tuigateway.Session, omitMessages bool) map[string]any {
+func branchLive(ctx context.Context, rid any, params map[string]any, session *tuihost.Session, omitMessages bool) map[string]any {
 	idemKey := strParam(params, "idempotency_key", "")
 	if idemKey != "" {
 		if hit, found := idempotentBranchHit(ctx, idemKey, omitMessages); found {
@@ -197,7 +194,7 @@ func branchLive(ctx context.Context, rid any, params map[string]any, session *tu
 			titleSource = "user"
 		}
 		panicIf(persistBranch(ctx, db, newKey, oldKey, title, historyRows(history), source, cwd, profileName, model,
-			branchCopyFields, false, titleSource, tuigateway.SessionAuthUserID(session)))
+			branchCopyFields, false, titleSource, tuihost.SessionAuthUserID(session)))
 	})
 	release()
 	if persistFailure != nil {
@@ -210,14 +207,14 @@ func branchLive(ctx context.Context, rid any, params map[string]any, session *tu
 	if idemKey != "" {
 		sessionsLock.Lock()
 		idempotencyKeys[idemKey] = idempotencyEntry{sid: newSID, at: nowSeconds()}
-		if child := tuigateway.SessionRecord(newSID); child != nil {
+		if child := tuihost.SessionRecord(newSID); child != nil {
 			child.Set("branch_title", title)
 		}
 		sessionsLock.Unlock()
 	}
 	a, _ := built.(*agent.AIAgent)
 	response := map[string]any{"session_id": newSID, "stored_session_id": newKey, "title": title, "parent": oldKey,
-		"message_count": len(history), "info": sessionInfo(ctx, a, tuigateway.SessionRecord(newSID))}
+		"message_count": len(history), "info": sessionInfo(ctx, a, tuihost.SessionRecord(newSID))}
 	if omitMessages {
 		response["messages_omitted"] = true
 	} else {
@@ -235,7 +232,7 @@ func idempotentBranchHit(ctx context.Context, idemKey string, omitMessages bool)
 	if !known {
 		return nil, false
 	}
-	child := tuigateway.SessionRecord(existing.sid)
+	child := tuihost.SessionRecord(existing.sid)
 	if child == nil {
 		return nil, false
 	}
@@ -248,7 +245,7 @@ func idempotentBranchHit(ctx context.Context, idemKey string, omitMessages bool)
 }
 
 // Result shape of a fresh branch for an existing child
-func branchIdempotentHit(ctx context.Context, existingSID string, session *tuigateway.Session, omitMessages bool) map[string]any {
+func branchIdempotentHit(ctx context.Context, existingSID string, session *tuihost.Session, omitMessages bool) map[string]any {
 	history := historyList(session.Get("history"))
 	title := session.Get("branch_title")
 	if !truthy(title) {
@@ -265,7 +262,7 @@ func branchIdempotentHit(ctx context.Context, existingSID string, session *tuiga
 }
 
 // Persisted title of a branch child from its stored row, empty when unreadable
-func branchTitleFor(ctx context.Context, session *tuigateway.Session) (title string) {
+func branchTitleFor(ctx context.Context, session *tuihost.Session) (title string) {
 	suppress(func() {
 		db, release := sessionDB(ctx, session)
 		defer release()

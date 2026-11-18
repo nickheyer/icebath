@@ -3,7 +3,6 @@ package telegram
 import (
 	"context"
 	"fmt"
-	"log/slog"
 
 	"github.com/go-telegram/bot"
 	"github.com/go-telegram/bot/models"
@@ -71,7 +70,7 @@ func (g *adapterCore) isCallbackUserAuthorized(ctx context.Context, userID strin
 		if err == nil {
 			return ok
 		}
-		slog.Debug(fmt.Sprintf("[Telegram] Falling back to env-only callback auth for user %s", normalizedUserID), "error", err)
+		pkgLog().Debug(fmt.Sprintf("[Telegram] Falling back to env-only callback auth for user %s", normalizedUserID), "error", err)
 	}
 	decision := envAllowlistDecision(ctx, normalizedUserID)
 	if decision == nil {
@@ -181,7 +180,7 @@ func (g *adapterCore) shouldPassUnauthorizedDMForPairing(ctx context.Context, so
 		if resolved, err := callDMBehavior(ctx, behavior, profile); err == nil {
 			return resolved != "ignore"
 		} else {
-			slog.Debug("[Telegram] Failed to resolve unauthorized DM behavior; falling back to adapter-local override", "error", err)
+			pkgLog().Debug("[Telegram] Failed to resolve unauthorized DM behavior; falling back to adapter-local override", "error", err)
 		}
 	}
 	var raw any
@@ -248,7 +247,7 @@ func (g *adapterCore) isUserAuthorizedFromMessage(ctx context.Context, message *
 				if ok, err := auth.IsUserAuthorized(ctx, source, true); err == nil {
 					authorized = &ok
 				} else {
-					slog.Debug(fmt.Sprintf("[Telegram] Falling back to env-only auth for user %s", userID), "error", err)
+					pkgLog().Debug(fmt.Sprintf("[Telegram] Falling back to env-only auth for user %s", userID), "error", err)
 				}
 			}
 		}
@@ -293,19 +292,19 @@ func (g *adapterCore) pruneStaleDMTopicBinding(ctx context.Context, chatID, thre
 		return
 	}
 	profileName := "default"
-	if p := metadata["hermes_profile"]; pyTruthy(p) {
+	if p := metadata["profile"]; pyTruthy(p) {
 		profileName = pyrepr.Str(p)
 	} else if name := g.base.ProfileName(); name != "" {
 		profileName = name
 	}
 	removed, err := bindings.DeleteTelegramTopicBinding(ctx, pyrepr.Str(chatID), pyrepr.Str(threadID), profileName)
 	if err != nil {
-		slog.Debug(fmt.Sprintf("[%s] delete_telegram_topic_binding failed for chat=%s thread=%s — skipping prune",
+		pkgLog().Debug(fmt.Sprintf("[%s] delete_telegram_topic_binding failed for chat=%s thread=%s — skipping prune",
 			g.base.Name(), pyrepr.Str(chatID), pyrepr.Str(threadID)), "error", err)
 		return
 	}
 	if removed != 0 {
-		slog.Info(fmt.Sprintf("[%s] Pruned stale Telegram DM topic binding chat=%s thread=%s (Bot API: thread not found)",
+		pkgLog().Info(fmt.Sprintf("[%s] Pruned stale Telegram DM topic binding chat=%s thread=%s (Bot API: thread not found)",
 			g.base.Name(), pyrepr.Str(chatID), pyrepr.Str(threadID)))
 	}
 }

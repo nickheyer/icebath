@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/base64"
 	"fmt"
-	"log/slog"
 	"os"
 	"strings"
 
@@ -92,7 +91,7 @@ func (a *TeamsAdapter) Send(ctx context.Context, chatID, content, replyTo string
 				result, err = a.appSend(ctx, threaded, textActivity(chunk))
 			}
 			if err != nil {
-				slog.Debug(fmt.Sprintf("Teams reply() failed, falling back to flat send: %v", err))
+				pkgLog().Debug(fmt.Sprintf("Teams reply() failed, falling back to flat send: %v", err))
 				result, err = a.appSend(ctx, chatID, textActivity(chunk))
 			}
 		} else {
@@ -133,8 +132,8 @@ func (a *TeamsAdapter) SendExecApprovalPrompt(ctx context.Context, prompt *gatew
 	a.mu.Unlock()
 	actions := []any{}
 	for _, action := range prompt.Actions {
-		data := pyjson.ObjectOf("session_key", prompt.SessionKey, "prompt_id", promptID, "hermes_action", eaCardActions[action.Choice])
-		btn := pyjson.ObjectOf("type", "Action.Execute", "title", action.Label, "verb", "hermes_approve", "data", data)
+		data := pyjson.ObjectOf("session_key", prompt.SessionKey, "prompt_id", promptID, "icebath_action", eaCardActions[action.Choice])
+		btn := pyjson.ObjectOf("type", "Action.Execute", "title", action.Label, "verb", "icebath_approve", "data", data)
 		if action.Style != "" {
 			btn.Set("style", eaCardStyles[action.Style])
 		}
@@ -147,7 +146,7 @@ func (a *TeamsAdapter) SendExecApprovalPrompt(ctx context.Context, prompt *gatew
 	}
 	result, err := a.sendCard(ctx, prompt.ChatID, adaptiveCard(body, actions))
 	if err != nil {
-		slog.Error(fmt.Sprintf("[teams] send_exec_approval failed: %v", err))
+		pkgLog().Error(fmt.Sprintf("[teams] send_exec_approval failed: %v", err))
 		return gateway.SendResult{Success: false, Error: err.Error(), Retryable: true}, nil
 	}
 	return gateway.SendResult{Success: true, MessageID: sentID(result)}, nil
@@ -186,7 +185,7 @@ func (a *TeamsAdapter) sendMediaAttachment(ctx context.Context, chatID, source, 
 		return a.sendViaConvRef(ctx, chatID, activity)
 	}()
 	if err != nil {
-		slog.Error(fmt.Sprintf("[teams] send_%s failed: %v", mediaLabel, err))
+		pkgLog().Error(fmt.Sprintf("[teams] send_%s failed: %v", mediaLabel, err))
 		return gateway.SendResult{Success: false, Error: err.Error(), Retryable: true}, nil
 	}
 	return gateway.SendResult{Success: true, MessageID: sentID(result)}, nil

@@ -19,7 +19,7 @@ func TestParseBlueprint(t *testing.T) {
 		spec.Prompt == nil || !strings.HasPrefix(*spec.Prompt, "Summarize") {
 		t.Fatalf("%+v %v", spec, err)
 	}
-	spec, _ = ParseBlueprint("---\nname: r\ndescription: d\nmetadata:\n  hermes:\n    blueprint:\n      schedule: \"every 1h\"\n---\n\nbody")
+	spec, _ = ParseBlueprint("---\nname: r\ndescription: d\nmetadata:\n  icebath:\n    blueprint:\n      schedule: \"every 1h\"\n---\n\nbody")
 	if spec == nil || spec.Deliver != "origin" {
 		t.Fatalf("%+v", spec)
 	}

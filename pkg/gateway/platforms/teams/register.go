@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"log/slog"
 	"net/http"
 	"strings"
 	"time"
@@ -96,7 +95,7 @@ func standaloneSend(ctx context.Context, kwargs map[string]any) (map[string]any,
 	}
 	result, err := standalonePost(ctx, tenantID, clientID, clientSecret, serviceURL+"v3/conversations/"+chatID+"/activities", message)
 	if err != nil {
-		slog.Debug(fmt.Sprintf("Teams standalone send raised: %v", err))
+		pkgLog().Debug(fmt.Sprintf("Teams standalone send raised: %v", err))
 		return gateway.SendError("Teams standalone send failed: " + err.Error()), nil
 	}
 	return result, nil

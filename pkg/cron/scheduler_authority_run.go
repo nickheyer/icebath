@@ -103,7 +103,7 @@ func (s *Store) runCanonicalJob(ctx context.Context, job *Job, extra *string, ca
 		}
 		stored, has := loaded.Get("params")
 		if !has {
-			return jobRunOutcome{}, errors.New("KeyError: 'params'")
+			return jobRunOutcome{}, errors.New("the canonical cron job has no params")
 		}
 		if !jsonEqual(stored, params) {
 			return jobRunOutcome{}, &CronExecutionUnknown{Msg: "cron admission identity conflict"}
@@ -263,7 +263,7 @@ func (s *Store) reconcilePendingJournals(ctx context.Context, allowConnect bool)
 	sort.Strings(journals)
 	for _, journal := range journals {
 		if err := s.reconcileJournal(ctx, journal, allowConnect); err != nil {
-			s.logAs("cron.scheduler_authority").Warn(fmt.Sprintf("Cron receipt recovery deferred: %s", journal), "error", err)
+			s.log.Warn(fmt.Sprintf("Cron receipt recovery deferred: %s", journal), "error", err)
 		}
 	}
 	return nil

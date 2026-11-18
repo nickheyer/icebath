@@ -33,7 +33,7 @@ type replayCall struct {
 	Files  map[string]*string `json:"files"`
 }
 
-// Source built engine calls and the upstream hermes plugin results of the hermes stop oracle case
+// Source built engine calls and the upstream design hook plugin results of the stop oracle case
 type replayRecording struct {
 	Engine string       `json:"engine"`
 	Calls  []replayCall `json:"calls"`

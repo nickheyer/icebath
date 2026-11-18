@@ -5,7 +5,6 @@ package state
 import (
 	"errors"
 	"fmt"
-	"log/slog"
 	"sync"
 	"syscall"
 )
@@ -126,7 +125,7 @@ func lockGuardHold(dbPath string, held lockGuardHeld) lockGuardHeld {
 		rng := ranges[own.ident]
 		ok, err := ofdLock(own.fd, lockGuard.rdlck, rng.start, rng.length, false)
 		if err != nil {
-			slog.Debug(fmt.Sprintf("WAL lock guard unavailable for %s", dbPath), "error", err)
+			pkgLog().Debug(fmt.Sprintf("WAL lock guard unavailable for %s", dbPath), "error", err)
 			break
 		}
 		if _, have := held[own.ident]; ok && !have {

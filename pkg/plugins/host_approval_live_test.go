@@ -1,13 +1,11 @@
 package plugins
 
-import ()
-
 const approvalPlugin = `
 import asyncio, dataclasses, json, sys, types
 
-# Stands in for the upstream hermes_cli.approval_transport module the way a hermes test installs a module double
-sys.modules.setdefault("hermes_cli", types.ModuleType("hermes_cli"))
-_module = types.ModuleType("hermes_cli.approval_transport")
+# Module double holding the request and decision classes the approval refs name
+sys.modules.setdefault("pluginsdk", types.ModuleType("pluginsdk"))
+_module = types.ModuleType("pluginsdk")
 @dataclasses.dataclass(frozen=True)
 class ApprovalDecision:
     request_id: str
@@ -28,7 +26,7 @@ class ApprovalRequest:
     def respond(self, choice):
         return ApprovalDecision(self.request_id, self.digest, choice)
 _module.ApprovalRequest, _module.ApprovalDecision = ApprovalRequest, ApprovalDecision
-sys.modules["hermes_cli.approval_transport"] = _module
+sys.modules["pluginsdk"] = _module
 
 ERRORS = []
 SEEN = []

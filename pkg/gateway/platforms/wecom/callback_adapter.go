@@ -7,7 +7,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"log/slog"
 	"net"
 	"net/http"
 	"strings"
@@ -269,13 +268,13 @@ func appLabel(app map[string]any) string { return pyrepr.Str(extraOr(app, "name"
 // Binds or publishes the callback listener, starts the poll loop and refreshes every app token
 func (a *WecomCallbackAdapter) Connect(ctx context.Context, isReconnect bool) (bool, error) {
 	if len(a.apps) == 0 {
-		slog.Warn("[WecomCallback] No callback apps configured")
+		pkgLog().Warn("[WecomCallback] No callback apps configured")
 		return false, nil
 	}
 	if gateway.SharedIngressProfile(a) == "" {
 		if conn, err := net.DialTimeout("tcp", fmt.Sprintf("127.0.0.1:%d", a.port), time.Second); err == nil {
 			conn.Close()
-			slog.Error(fmt.Sprintf("[WecomCallback] Port %d already in use", a.port))
+			pkgLog().Error(fmt.Sprintf("[WecomCallback] Port %d already in use", a.port))
 			return false, nil
 		}
 	}
@@ -284,7 +283,7 @@ func (a *WecomCallbackAdapter) Connect(ctx context.Context, isReconnect bool) (b
 			return false, ctx.Err()
 		}
 		a.cleanup(ctx)
-		slog.Error("[WecomCallback] Failed to start", "error", err)
+		pkgLog().Error("[WecomCallback] Failed to start", "error", err)
 		return false, nil
 	}
 	return true, nil
@@ -320,14 +319,14 @@ func (a *WecomCallbackAdapter) start(ctx context.Context) error {
 		if a.host != nil {
 			host = *a.host
 		}
-		slog.Info(fmt.Sprintf("[WecomCallback] HTTP server listening on %s:%d%s", host, a.port, a.path))
+		pkgLog().Info(fmt.Sprintf("[WecomCallback] HTTP server listening on %s:%d%s", host, a.port, a.path))
 	}
 	for _, app := range a.apps {
 		if _, err := a.refreshAccessToken(ctx, app); err != nil {
 			if ctx.Err() != nil {
 				return ctx.Err()
 			}
-			slog.Warn(fmt.Sprintf("[WecomCallback] Initial token refresh failed for app '%s': %s", appLabel(app), errText(err)))
+			pkgLog().Warn(fmt.Sprintf("[WecomCallback] Initial token refresh failed for app '%s': %s", appLabel(app), errText(err)))
 		}
 	}
 	return nil
@@ -343,7 +342,7 @@ func (a *WecomCallbackAdapter) Disconnect(ctx context.Context) error {
 	gateway.CancelTask(ctx, poll)
 	err := a.cleanup(ctx)
 	a.MarkDisconnected(ctx)
-	slog.Info("[WecomCallback] Disconnected")
+	pkgLog().Info("[WecomCallback] Disconnected")
 	return err
 }
 
@@ -430,7 +429,7 @@ func (a *WecomCallbackAdapter) postText(ctx context.Context, app map[string]any,
 		}
 		errcode := data.Vals["errcode"]
 		if (pyjson.Equal(errcode, int64(40001)) || pyjson.Equal(errcode, int64(42001))) && attempt == 0 {
-			slog.Warn(fmt.Sprintf("[WecomCallback] Token rejected for app '%s' (errcode=%s), refreshing", appLabel(app), pyrepr.Str(errcode)))
+			pkgLog().Warn(fmt.Sprintf("[WecomCallback] Token rejected for app '%s' (errcode=%s), refreshing", appLabel(app), pyrepr.Str(errcode)))
 			name, err := appName(app)
 			if err != nil {
 				return gateway.SendResult{}, err
@@ -548,7 +547,7 @@ func (a *WecomCallbackAdapter) handleCallback(ctx context.Context, request *gate
 		return nil, err
 	}
 	if len(bodyBytes) > callbackMaxBody {
-		slog.Warn(fmt.Sprintf("[WecomCallback] Payload too large (%d bytes) — rejected", len(bodyBytes)))
+		pkgLog().Warn(fmt.Sprintf("[WecomCallback] Payload too large (%d bytes) — rejected", len(bodyBytes)))
 		return gateway.WebTextResponse(http.StatusRequestEntityTooLarge, "payload too large", "", nil), nil
 	}
 	body := pystr.DecodeUTF8Replace(bodyBytes)
@@ -559,20 +558,20 @@ func (a *WecomCallbackAdapter) handleCallback(ctx context.Context, request *gate
 			continue
 		}
 		if err != nil {
-			slog.Error("[WecomCallback] Error handling message", "error", err)
+			pkgLog().Error("[WecomCallback] Error handling message", "error", err)
 			break
 		}
 		if event == nil {
 			return callbackAck(), nil
 		}
 		if event.MessageID != nil && *event.MessageID != "" && a.dedup.IsDuplicate(*event.MessageID) {
-			slog.Debug(fmt.Sprintf("[WecomCallback] Duplicate MsgId %s, skipping", *event.MessageID))
+			pkgLog().Debug(fmt.Sprintf("[WecomCallback] Duplicate MsgId %s, skipping", *event.MessageID))
 			return callbackAck(), nil
 		}
 		if event.Source != nil && event.Source.UserID != nil && *event.Source.UserID != "" {
 			name, ok := app["name"]
 			if !ok {
-				slog.Error("[WecomCallback] Error handling message", "error", &pyErr{"KeyError", "'name'"})
+				pkgLog().Error("[WecomCallback] Error handling message", "error", &pyErr{"KeyError", "'name'"})
 				break
 			}
 			a.mu.Lock()
@@ -727,6 +726,6 @@ func (a *WecomCallbackAdapter) refreshAccessToken(ctx context.Context, app map[s
 	a.mu.Lock()
 	a.accessTokens[name] = accessToken{token: token, expiresAt: callbackNow() + float64(expiresIn)}
 	a.mu.Unlock()
-	slog.Info(fmt.Sprintf("[WecomCallback] Token refreshed for app '%s' (corp=%s), expires in %ds", appLabel(app), pyrepr.Str(extraOr(app, "corp_id", "")), expiresIn))
+	pkgLog().Info(fmt.Sprintf("[WecomCallback] Token refreshed for app '%s' (corp=%s), expires in %ds", appLabel(app), pyrepr.Str(extraOr(app, "corp_id", "")), expiresIn))
 	return token, nil
 }

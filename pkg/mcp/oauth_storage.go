@@ -107,13 +107,13 @@ func readOAuthJSON(path string) any {
 	data, err := os.ReadFile(path)
 	if err != nil {
 		if !errors.Is(err, fs.ErrNotExist) {
-			mcpLogger().Warn(fmt.Sprintf("Failed to read %s: %v", path, err))
+			pkgLog().Warn(fmt.Sprintf("Failed to read %s: %v", path, err))
 		}
 		return nil
 	}
 	doc, err := decodeJSONDocument(data)
 	if err != nil {
-		mcpLogger().Warn(fmt.Sprintf("Failed to read %s: %v", path, err))
+		pkgLog().Warn(fmt.Sprintf("Failed to read %s: %v", path, err))
 		return nil
 	}
 	return doc
@@ -200,7 +200,7 @@ func (s *TokenStorage) loadModel(path, label string, fixup func(m map[string]any
 	}
 	m, ok := documentMap(doc)
 	if !ok {
-		mcpLogger().Warn(fmt.Sprintf("Corrupt %s at %s -- ignoring: expected a JSON object, got %s", label, path, pyJSONTypeName(doc)))
+		pkgLog().Warn(fmt.Sprintf("Corrupt %s at %s -- ignoring: expected a JSON object, got %s", label, path, pyJSONTypeName(doc)))
 		return nil, nil
 	}
 	if fixup != nil {
@@ -215,7 +215,7 @@ func (s *TokenStorage) loadModel(path, label string, fixup func(m map[string]any
 		if errors.As(err, &ve) {
 			detail = "validation failed for " + ve.Fields()
 		}
-		mcpLogger().Warn(fmt.Sprintf("Corrupt %s at %s -- ignoring: %s", label, path, detail))
+		pkgLog().Warn(fmt.Sprintf("Corrupt %s at %s -- ignoring: %s", label, path, detail))
 		return nil, nil
 	}
 	return model, nil
@@ -285,19 +285,47 @@ func pyIntOfJSON(v any) (int64, bool) {
 	return 0, false
 }
 
+// Issuer record key of a token file, and the spelling token files of older builds carry
+const (
+	issuerRecordKey        = "icebath_issuer"
+	retiredIssuerRecordKey = "hermes_issuer"
+)
+
 // Stored tokens with expiry rebased and the issuer record popped, nil when absent or corrupt
 func (s *TokenStorage) GetTokens() (*OAuthToken, error) {
 	s.setLoadedIssuer("")
+	retired := false
 	model, err := s.loadModel(s.TokensPath(), "tokens", func(m map[string]any) error {
-		issuer, _ := m["hermes_issuer"].(string)
-		delete(m, "hermes_issuer")
+		issuer, _ := m[issuerRecordKey].(string)
+		if old, has := m[retiredIssuerRecordKey]; has {
+			retired = true
+			if issuer == "" {
+				issuer, _ = old.(string)
+			}
+		}
+		delete(m, issuerRecordKey)
+		delete(m, retiredIssuerRecordKey)
 		s.setLoadedIssuer(issuer)
 		return s.rebaseExpiresIn(m)
 	}, func(m map[string]any) (any, error) { return validateOAuthToken(m) })
 	if err != nil || model == nil {
 		return nil, err
 	}
+	if retired {
+		s.renameRetiredIssuerRecord()
+	}
 	return model.(*OAuthToken), nil
+}
+
+// Rewrites a token file so its issuer record sits under the current key, at the position the old key held
+func (s *TokenStorage) renameRetiredIssuerRecord() {
+	obj, ok := readOAuthJSON(s.TokensPath()).(*jsonObject)
+	if !ok || !obj.renameKey(retiredIssuerRecordKey, issuerRecordKey) {
+		return
+	}
+	if err := writeOAuthJSON(home.WithOverride(context.Background(), s.homeDir), s.TokensPath(), obj); err != nil {
+		pkgLog().Debug(fmt.Sprintf("Could not rename the issuer record on tokens for %s: %v", s.serverName, err))
+	}
 }
 
 // Persists tokens with an absolute expiry and the bound issuer stamped
@@ -309,14 +337,14 @@ func (s *TokenStorage) SetTokens(ctx context.Context, t *OAuthToken) error {
 	s.mu.Lock()
 	bound := s.boundIssuer
 	if bound != "" {
-		payload.set("hermes_issuer", bound)
+		payload.set(issuerRecordKey, bound)
 		s.loadedIssuer = bound
 	}
 	s.mu.Unlock()
 	if err := writeOAuthJSON(home.WithOverride(ctx, s.homeDir), s.TokensPath(), payload); err != nil {
 		return err
 	}
-	mcpLogger().Debug(fmt.Sprintf("OAuth tokens saved for %s", s.serverName))
+	pkgLog().Debug(fmt.Sprintf("OAuth tokens saved for %s", s.serverName))
 	return nil
 }
 
@@ -330,12 +358,12 @@ func (s *TokenStorage) BindIssuer(issuer string) {
 // Backfills the issuer onto a token file written before issuer binding existed
 func (s *TokenStorage) StampIssuer(ctx context.Context, issuer string) {
 	obj, ok := readOAuthJSON(s.TokensPath()).(*jsonObject)
-	if !ok || jsonTruthy(obj.get("hermes_issuer")) {
+	if !ok || jsonTruthy(obj.get(issuerRecordKey)) || jsonTruthy(obj.get(retiredIssuerRecordKey)) {
 		return
 	}
-	obj.set("hermes_issuer", issuer)
+	obj.set(issuerRecordKey, issuer)
 	if err := writeOAuthJSON(home.WithOverride(ctx, s.homeDir), s.TokensPath(), obj); err != nil {
-		mcpLogger().Debug(fmt.Sprintf("Could not stamp issuer on tokens for %s: %v", s.serverName, err))
+		pkgLog().Debug(fmt.Sprintf("Could not stamp issuer on tokens for %s: %v", s.serverName, err))
 		return
 	}
 	s.setLoadedIssuer(issuer)
@@ -348,13 +376,14 @@ func (s *TokenStorage) StripRefreshToken(ctx context.Context) {
 		return
 	}
 	obj.pop("refresh_token")
-	obj.pop("hermes_issuer")
+	obj.pop(issuerRecordKey)
+	obj.pop(retiredIssuerRecordKey)
 	s.setLoadedIssuer("")
 	if err := writeOAuthJSON(home.WithOverride(ctx, s.homeDir), s.TokensPath(), obj); err != nil {
-		mcpLogger().Warn(fmt.Sprintf("Could not strip refresh token for %s: %v", s.serverName, err))
+		pkgLog().Warn(fmt.Sprintf("Could not strip refresh token for %s: %v", s.serverName, err))
 		return
 	}
-	mcpLogger().Info(fmt.Sprintf("Removed issuer-mismatched refresh token for %s (re-authorization will be required "+
+	pkgLog().Info(fmt.Sprintf("Removed issuer-mismatched refresh token for %s (re-authorization will be required "+
 		"when the access token expires)", s.serverName))
 }
 
@@ -396,7 +425,7 @@ func (s *TokenStorage) SetClientInfo(ctx context.Context, info *OAuthClientInfo)
 	if err := writeOAuthJSON(home.WithOverride(ctx, s.homeDir), s.ClientInfoPath(), data); err != nil {
 		return err
 	}
-	mcpLogger().Debug(fmt.Sprintf("OAuth client info saved for %s", s.serverName))
+	pkgLog().Debug(fmt.Sprintf("OAuth client info saved for %s", s.serverName))
 	return nil
 }
 
@@ -405,7 +434,7 @@ func (s *TokenStorage) SaveOAuthMetadata(ctx context.Context, md *OAuthMetadata)
 	if err := writeOAuthJSON(home.WithOverride(ctx, s.homeDir), s.MetaPath(), md.dump()); err != nil {
 		return err
 	}
-	mcpLogger().Debug(fmt.Sprintf("OAuth metadata saved for %s", s.serverName))
+	pkgLog().Debug(fmt.Sprintf("OAuth metadata saved for %s", s.serverName))
 	return nil
 }
 
@@ -422,12 +451,12 @@ func (s *TokenStorage) LoadOAuthMetadata() *OAuthMetadata {
 func (s *TokenStorage) MarkCIMDRejected(ctx context.Context) {
 	path := s.CIMDRejectedPath()
 	if _, err := home.Mkdir(home.WithOverride(ctx, s.homeDir), filepath.Dir(path)); err != nil {
-		mcpLogger().Debug(fmt.Sprintf("Could not record CIMD rejection at %s: %v", path, err))
+		pkgLog().Debug(fmt.Sprintf("Could not record CIMD rejection at %s: %v", path, err))
 		return
 	}
 	f, err := os.OpenFile(path, os.O_CREATE|os.O_WRONLY, 0o666)
 	if err != nil {
-		mcpLogger().Debug(fmt.Sprintf("Could not record CIMD rejection at %s: %v", path, err))
+		pkgLog().Debug(fmt.Sprintf("Could not record CIMD rejection at %s: %v", path, err))
 		return
 	}
 	f.Close()
@@ -471,7 +500,7 @@ func (s *TokenStorage) Restore(ctx context.Context, snap map[string][]byte, only
 	if onlyIfAbsent {
 		for _, p := range s.statePaths() {
 			if _, err := os.Stat(p); err == nil {
-				mcpLogger().Info(fmt.Sprintf("Skipping OAuth rollback for %s because newer state exists", s.serverName))
+				pkgLog().Info(fmt.Sprintf("Skipping OAuth rollback for %s because newer state exists", s.serverName))
 				return nil
 			}
 		}
@@ -495,7 +524,7 @@ func (s *TokenStorage) Restore(ctx context.Context, snap map[string][]byte, only
 			}
 		}
 		if err != nil {
-			mcpLogger().Warn(fmt.Sprintf("Failed to restore OAuth state %s: %v", name, err))
+			pkgLog().Warn(fmt.Sprintf("Failed to restore OAuth state %s: %v", name, err))
 		}
 	}
 	return nil
@@ -509,13 +538,13 @@ func (s *TokenStorage) PoisonClientRegistration() bool {
 		if _, statErr := os.Stat(clientPath); statErr != nil {
 			return false
 		}
-		mcpLogger().Warn(fmt.Sprintf("Could not back up client info at %s: %v", clientPath, err))
+		pkgLog().Warn(fmt.Sprintf("Could not back up client info at %s: %v", clientPath, err))
 	} else if werr := os.WriteFile(clientPath+".bak", data, 0o666); werr != nil {
-		mcpLogger().Warn(fmt.Sprintf("Could not back up client info at %s: %v", clientPath, werr))
+		pkgLog().Warn(fmt.Sprintf("Could not back up client info at %s: %v", clientPath, werr))
 	}
 	_ = os.Remove(clientPath)
 	_ = os.Remove(s.MetaPath())
-	mcpLogger().Warn(fmt.Sprintf("MCP OAuth '%s': cached client registration rejected as invalid_client; "+
+	pkgLog().Warn(fmt.Sprintf("MCP OAuth '%s': cached client registration rejected as invalid_client; "+
 		"removed client.json + meta.json (backup at %s) to force re-registration", s.serverName, filepath.Base(clientPath+".bak")))
 	return true
 }
@@ -564,6 +593,6 @@ func RemoveOAuthTokens(ctx context.Context, serverName, homeDir string) error {
 	if err := NewTokenStorage(ctx, serverName, homeDir).Remove(false); err != nil {
 		return err
 	}
-	mcpLogger().Info(fmt.Sprintf("OAuth tokens removed for '%s'", serverName))
+	pkgLog().Info(fmt.Sprintf("OAuth tokens removed for '%s'", serverName))
 	return nil
 }

@@ -3,12 +3,12 @@ package provider
 import (
 	"context"
 	"fmt"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"log/slog"
 	"reflect"
 	"regexp"
 	"strings"
 	"sync"
+
+	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
@@ -46,7 +46,7 @@ func auxResolveTaskProviderModel(ctx context.Context, task any, provider, model,
 	return out
 }
 
-// Task route resolution, swapped by tests the way hermes tests patch the module function
+// Task route resolution, swapped by tests
 var auxResolveTaskProviderModelFn = auxResolveTaskProviderModel
 
 // Configured provider of a task with no explicit args, auto when nothing is configured
@@ -232,7 +232,7 @@ func auxWithCustomEndpointExtraBody(ctx context.Context, extraBody map[string]an
 		}
 		inherited = CustomProviderExtraBodyForAgent(provider, model, baseURL, CompatibleCustomProviders(cfg))
 	}); err != nil {
-		slog.Debug("custom provider extra_body lookup failed for aux request", "error", err)
+		pkgLog().Debug("custom provider extra_body lookup failed for aux request", "error", err)
 		return extraBody
 	}
 	if len(inherited) == 0 {
@@ -263,14 +263,14 @@ func auxGetTaskExtraBody(ctx context.Context, task string) (map[string]any, erro
 		return result, nil
 	}
 	if task == "moa_reference" || task == "moa_aggregator" {
-		slog.Warn(fmt.Sprintf("auxiliary.%s.reasoning_effort is not supported — MoA reasoning depth is per-slot: set reasoning_effort "+
+		pkgLog().Warn(fmt.Sprintf("auxiliary.%s.reasoning_effort is not supported — MoA reasoning depth is per-slot: set reasoning_effort "+
 			"on the preset's reference_models entries / aggregator instead (moa.presets.<name>...). Ignoring.", task))
 		return result, nil
 	}
 	if parsed := ParseReasoningEffort(effort); parsed != nil {
 		result["reasoning"] = parsed
 	} else {
-		slog.Warn(fmt.Sprintf("auxiliary.%s.reasoning_effort %s is not a valid level (none, minimal, low, medium, high, xhigh, max, ultra) — ignoring", task, pyrepr.Repr(effort)))
+		pkgLog().Warn(fmt.Sprintf("auxiliary.%s.reasoning_effort %s is not a valid level (none, minimal, low, medium, high, xhigh, max, ultra) — ignoring", task, pyrepr.Repr(effort)))
 	}
 	return result, nil
 }
@@ -401,18 +401,6 @@ func auxContainsProfileReasoningFields(value any) bool {
 	return false
 }
 
-var auxNousProviderNames = map[string]bool{"nous": true, "nous-portal": true, "nousresearch": true}
-
-// True when a Nous Portal route serves the model over the Messages wire
-func auxNousOnMessagesWire(ctx context.Context, providerNorm, model string) bool {
-	if !auxNousProviderNames[providerNorm] {
-		return false
-	}
-	var cfg map[string]any
-	_ = auxRecoverRaise(func() { cfg, _ = auxLoadConfigReadonlyFn(ctx) })
-	return string(NousMode(model, newResolver(ctx, cfg, nil, "", nil).nousAnthropicWire())) == "anthropic_messages"
-}
-
 var (
 	auxNvidiaProviderNames       = map[string]bool{"nvidia": true, "nvidia-nim": true, "nim": true, "build-nvidia": true, "nemotron": true}
 	auxGeminiNativeProviderNames = map[string]bool{"gemini": true, "google": true, "google-gemini": true, "google-ai-studio": true}
@@ -439,7 +427,6 @@ func auxIsGeminiNativeRoute(providerNorm, effectiveBase string) bool {
 // True when an explicit max_tokens is forwarded on the route where it is mandatory or honored
 func auxForwardsMaxTokens(ctx context.Context, provider, providerNorm, model, effectiveBase, task string) bool {
 	return auxIsAnthropicCompatEndpoint(provider, effectiveBase) ||
-		auxNousOnMessagesWire(ctx, providerNorm, model) ||
 		auxNvidiaProviderNames[providerNorm] ||
 		baseURLHostMatches(effectiveBase, "integrate.api.nvidia.com") ||
 		task == "moa_reference" ||
@@ -461,7 +448,7 @@ func auxDedupeToolNames(tools []any, provider, model string) []any {
 			}
 		}
 		if name != "" && seen[name] {
-			slog.Warn(fmt.Sprintf("_build_call_kwargs: duplicate tool name '%s' removed (provider=%s model=%s)", name, provider, model))
+			pkgLog().Warn(fmt.Sprintf("_build_call_kwargs: duplicate tool name '%s' removed (provider=%s model=%s)", name, provider, model))
 			continue
 		}
 		if name != "" {
@@ -498,7 +485,7 @@ func auxRoutesToCustomEndpoint(ctx context.Context, providerNorm string) bool {
 // Projection seam the call kwargs builder goes through, replaced by tests
 var auxProjectProviderProfileFn = auxProjectProviderProfile
 
-func auxProjectProviderProfile(ctx context.Context, provider, providerNorm, model, effectiveBase string, reasoningConfig map[string]any, dataUse map[string]bool) auxProfileProjection {
+func auxProjectProviderProfile(ctx context.Context, provider, providerNorm, model, effectiveBase string, reasoningConfig map[string]any) auxProfileProjection {
 	p := auxProfileProjection{Body: pyjson.NewObject(), ReasoningExtra: pyjson.NewObject(), TopLevel: map[string]any{}}
 	if err := auxRecoverRaise(func() {
 		profile, found := auxGetProviderProfileFn(ctx, providerNorm)
@@ -510,7 +497,7 @@ func auxProjectProviderProfile(ctx context.Context, provider, providerNorm, mode
 		}
 		p.MessagesWire = string(profile.Mode) == "anthropic_messages"
 		reasoning := reasoningPtrOfDict(reasoningConfig)
-		bodyCtx := map[string]any{"model": model, "base_url": effectiveBase, "reasoning_config": reasoning, "data_use": dataUse, hookCtxKey: ctx}
+		bodyCtx := map[string]any{"model": model, "base_url": effectiveBase, "reasoning_config": reasoning, hookCtxKey: ctx}
 		if body := profile.BuildExtraBody("", bodyCtx); body != nil {
 			p.Body = body
 		}
@@ -527,7 +514,7 @@ func auxProjectProviderProfile(ctx context.Context, provider, providerNorm, mode
 			auxContainsProfileReasoningFields(p.ReasoningExtra) ||
 			auxContainsProfileReasoningFields(p.TopLevel)
 	}); err != nil {
-		slog.Debug(fmt.Sprintf("_build_call_kwargs: provider profile projection failed for %s: %v", provider, err))
+		pkgLog().Debug(fmt.Sprintf("_build_call_kwargs: provider profile projection failed for %s: %v", provider, err))
 	}
 	return p
 }
@@ -547,7 +534,7 @@ func auxGenericNestedReasoning(reasoningConfig map[string]any) *pyjson.Object {
 	return pyjson.ObjectOf("reasoning", pyjson.ObjectOf("enabled", true, "effort", effort))
 }
 
-// Caller extra_body merged with the profile body and reasoning, the generic reasoning fallback and Nous tags
+// Caller extra_body merged with the profile body and reasoning and the generic reasoning fallback
 func auxMergeAuxExtraBody(ctx context.Context, extraBody any, projection auxProfileProjection, reasoningConfig map[string]any, providerNorm string) *pyjson.Object {
 	merged := pyjson.NewObject()
 	if src, ok := pyjson.AsObject(extraBody); ok {
@@ -571,16 +558,6 @@ func auxMergeAuxExtraBody(ctx context.Context, extraBody any, projection auxProf
 	}
 	if r, ok := pyjson.AsObject(merged.Vals["reasoning"]); ok {
 		merged.Set("reasoning", clampReasoningConfigObject(r, openAICompatWireEfforts))
-	}
-	if auxNousProviderNames[providerNorm] {
-		if _, ok := merged.Get("tags"); !ok {
-			merged.Set("tags", nousPortalTags(ctx, ""))
-		}
-		if _, ok := merged.Get("session_id"); !ok {
-			if sticky := portalConversationContext(ctx); sticky != "" {
-				merged.Set("session_id", sticky)
-			}
-		}
 	}
 	return merged
 }
@@ -666,7 +643,7 @@ func auxBuildCallKwargs(ctx context.Context, provider, model string, messages an
 	}
 	reasoningConfig, _ = floored.(map[string]any)
 	reasoningConfig = clampReasoningConfigDict(reasoningConfig, openAICompatWireEfforts)
-	projection := auxProjectProviderProfileFn(ctx, provider, providerNorm, model, effectiveBase, reasoningConfig, auxDataUseRequirement(messages))
+	projection := auxProjectProviderProfileFn(ctx, provider, providerNorm, model, effectiveBase, reasoningConfig)
 	for k, v := range projection.TopLevel {
 		kwargs[k] = v
 	}
@@ -685,7 +662,7 @@ func auxBuildCallKwargs(ctx context.Context, provider, model string, messages an
 		if err != nil {
 			return nil, err
 		}
-		if providerNorm == "anthropic" || projection.MessagesWire || auxNousOnMessagesWire(ctx, providerNorm, model) || speaks || auxIsAnthropicCompatEndpoint(providerNorm, rawBase) {
+		if providerNorm == "anthropic" || projection.MessagesWire || speaks || auxIsAnthropicCompatEndpoint(providerNorm, rawBase) {
 			kwargs["_reasoning_config"] = auxCloneMap(reasoningConfig)
 		}
 	}
@@ -696,34 +673,6 @@ func auxBuildCallKwargs(ctx context.Context, provider, model string, messages an
 // AuxCallKwargs is the auxiliary chat completions request for one provider and model routed at baseURL
 func AuxCallKwargs(ctx context.Context, provider, model string, messages any, baseURL string) (map[string]any, error) {
 	return auxBuildCallKwargs(ctx, provider, model, messages, auxCallKwargsOptions{BaseURL: baseURL})
-}
-
-// Union of data_use over messages, what the receiving model must guarantee
-func auxDataUseRequirement(messages any) map[string]bool {
-	out := map[string]bool{}
-	list, _ := messages.([]any)
-	if dicts, ok := messages.([]map[string]any); ok {
-		for _, m := range dicts {
-			list = append(list, m)
-		}
-	}
-	for _, raw := range list {
-		m, ok := raw.(map[string]any)
-		if !ok {
-			continue
-		}
-		switch v := m["data_use"].(type) {
-		case []any:
-			for _, r := range v {
-				out[pyrepr.Str(r)] = true
-			}
-		case []string:
-			for _, r := range v {
-				out[r] = true
-			}
-		}
-	}
-	return out
 }
 
 // Response with a choices[0].message shape after usage accounting, an error naming an invalid shape or a router shim

@@ -176,7 +176,7 @@ func ensureLoop(ctx context.Context, h string, deadline float64, idleExit bool) 
 	replaced := map[string]bool{}
 	delay := 0.025
 	for {
-		fenced, err := ensureUpdateFenced(ctx, []string{h, processHermesHome(), home.Root()})
+		fenced, err := ensureUpdateFenced(ctx, []string{h, processIcebathHome(), home.Root()})
 		if err != nil {
 			return ObservedEndpoint{}, err
 		}

@@ -27,7 +27,7 @@ func TestAdmittedMessageCarriesWhetherItWasAddressed(t *testing.T) {
 	}{
 		{"dm", nil, replyMessage("hi", "1.1", dm), &yes},
 		{"mention", nil, replyMessage("<@"+ignoreBotUserID+"> hi", "1.2", nil), &yes},
-		{"reaction", nil, replyMessage("reaction:added:eyes", "1.3", map[string]any{"thread_ts": replyThread, "_hermes_force_process": true}), &yes},
+		{"reaction", nil, replyMessage("reaction:added:eyes", "1.3", map[string]any{"thread_ts": replyThread, "_icebath_force_process": true}), &yes},
 		{"thread-followup", nil, replyMessage("done?", "1.4", inThread), nil},
 		{"peer-addressed", nil, replyMessage("<@"+ignoreOtherUserID+"> can you check?", "1.5", inThread), &no},
 		{"free-channel-top-level", map[string]any{"free_response_channels": ignoreChannelID}, replyMessage("side chatter", "1.6", nil), &no},

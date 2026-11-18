@@ -2,6 +2,7 @@ package agent
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 	"unicode/utf8"
@@ -58,7 +59,7 @@ func (a *AIAgent) latestTodoResponse(history []map[string]any) ([]any, any, bool
 			if sid == "" {
 				sid = "none"
 			}
-			runAgentLog().Warn(fmt.Sprintf("Skipping oversized todo tool response during hydration: session=%s chars=%d", sid, utf8.RuneCountInString(content)))
+			pkgLog().Warn(fmt.Sprintf("Skipping oversized todo tool response during hydration: session=%s chars=%d", sid, utf8.RuneCountInString(content)))
 			continue
 		}
 		if !strings.Contains(content, `"todos"`) {
@@ -82,12 +83,12 @@ func (a *AIAgent) latestTodoResponse(history []map[string]any) ([]any, any, bool
 		case []any:
 			for _, item := range d {
 				if s, ok := item.(string); ok && s == "todos" {
-					panic(fmt.Errorf("TypeError: list indices must be integers or slices, not str"))
+					panic(errors.New("the todo tool result is a list, expected a mapping"))
 				}
 			}
 		case string:
 			if strings.Contains(d, "todos") {
-				panic(fmt.Errorf("TypeError: string indices must be integers, not 'str'"))
+				panic(errors.New("the todo tool result is text, expected a mapping"))
 			}
 		}
 	}
@@ -249,7 +250,7 @@ func capDelegateTaskCalls(ctx context.Context, toolCalls []state.ToolCall) []sta
 		}
 		truncated = append(truncated, tc)
 	}
-	runAgentLog().Warn(fmt.Sprintf("Truncated %d excess delegate_task call(s) to enforce max_concurrent_children=%d limit", delegateCount-maxChildren, maxChildren))
+	pkgLog().Warn(fmt.Sprintf("Truncated %d excess delegate_task call(s) to enforce max_concurrent_children=%d limit", delegateCount-maxChildren, maxChildren))
 	return truncated
 }
 
@@ -267,7 +268,7 @@ func deduplicateToolCalls(toolCalls []state.ToolCall) []state.ToolCall {
 		}
 		k := key{tc.Function.Name, args}
 		if seen[k] {
-			runAgentLog().Warn("Removed duplicate tool call: " + tc.Function.Name)
+			pkgLog().Warn("Removed duplicate tool call: " + tc.Function.Name)
 			continue
 		}
 		seen[k] = true
@@ -287,9 +288,6 @@ func (a *AIAgent) setToolGuardrailHalt(d tools.ToolGuardrailDecision) {
 	if d.ShouldHalt() && a.toolGuardrailHaltDecision == nil {
 		dc := d
 		a.toolGuardrailHaltDecision = &dc
-	}
-	if d.ShouldHalt() {
-		recordGuardrailDecision(a, d.Action, d.Code)
 	}
 }
 
@@ -311,16 +309,16 @@ func (a *AIAgent) Guardrails() *tools.ToolCallGuardrailController { return a.too
 func (a *AIAgent) AppendGuardrailObservation(name string, args map[string]any, result string, failed bool, toolCallID string) string {
 	res, fail := result, failed
 	decision := a.toolGuardrails.AfterCall(name, args, &res, &fail)
-	var stallNotice, resultStub, stallKind string
+	var stallNotice, resultStub string
 	if a.stallGuardsEnabled() {
 		func() {
 			defer func() {
 				if r := recover(); r != nil {
-					runAgentLog().Debug(fmt.Sprintf("stall-guard identical-call observation failed: %v", r))
+					pkgLog().Debug(fmt.Sprintf("stall-guard identical-call observation failed: %v", r))
 				}
 			}()
 			obs := a.toolGuardrails.ObserveCall(name, args, result, toolCallID, failed)
-			stallNotice, resultStub, stallKind = obs.Notice, obs.Stub, obs.Kind
+			stallNotice, resultStub = obs.Notice, obs.Stub
 		}()
 	}
 	if resultStub != "" {
@@ -329,11 +327,6 @@ func (a *AIAgent) AppendGuardrailObservation(name string, args map[string]any, r
 	if decision.Action == "warn" || decision.Action == "halt" {
 		result = tools.AppendToolguardGuidance(result, decision)
 	}
-	kind := ""
-	if stallNotice != "" {
-		kind = stallKind
-	}
-	recordGuardrailWarnings(a, decision, kind)
 	if decision.ShouldHalt() {
 		a.setToolGuardrailHalt(decision)
 	} else if streak := a.toolGuardrails.HaltDecision(); streak != nil && (streak.Code == "identical_call_streak_halt" || streak.Code == "identical_cycle_halt") {
@@ -360,7 +353,6 @@ func (a *AIAgent) executeToolCalls(ctx context.Context, assistantMessage *state.
 	toolCalls := assistantMessage.ToolCalls
 	a.executingTools = true
 	err := func() error {
-		ctx := tools.WithConnectionSurface(ctx, agentConnectionSurface(a))
 		prevCtx := a.toolCallCtx
 		a.toolCallCtx = ctx
 		defer func() { a.executingTools, a.toolCallCtx = false, prevCtx }()

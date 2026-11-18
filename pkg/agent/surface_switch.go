@@ -3,12 +3,10 @@ package agent
 import (
 	"context"
 	"fmt"
-	"log/slog"
 	"strings"
 
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/mcp"
-	"github.com/nickheyer/icebath/pkg/observability"
 	"github.com/nickheyer/icebath/pkg/state"
 )
 
@@ -20,8 +18,6 @@ const (
 
 // Tool names of the agent in wire order, a seam over the run_agent snapshot
 var agentToolNamesFn = func(a *AIAgent) []string { return mcp.AgentToolNames(a) }
-
-func init() { observability.IdentityLineValueHook = IdentityLineValue }
 
 // SplitRuntimeBoundary splits a persisted prompt into identity, runtime marker and runtime, all identity without the end marker
 func SplitRuntimeBoundary(prompt string) (string, string, string) {
@@ -145,7 +141,7 @@ func StageSurfaceSwitchNote(ctx context.Context, a *AIAgent, prompt string, hist
 		note += "\n" + hint
 	}
 	a.surfaceSwitchNote = note
-	slog.Info(fmt.Sprintf("Session %s switched surface %s -> %s; keeping the stored system prompt and delivering "+
+	pkgLog().Info(fmt.Sprintf("Session %s switched surface %s -> %s; keeping the stored system prompt and delivering "+
 		"the new surface guidance as a turn note (prefix cache preserved).", a.sessionID, told, current))
 	return true
 }

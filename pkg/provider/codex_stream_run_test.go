@@ -19,6 +19,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
 
@@ -247,7 +248,7 @@ func codexSetDrainTimeout(t *testing.T, seconds float64) {
 }
 
 func codexRequestKwargs() map[string]any {
-	return map[string]any{"model": "gpt-5-codex", "instructions": "You are Hermes.",
+	return map[string]any{"model": "gpt-5-codex", "instructions": "You are Icebath.",
 		"input": []any{map[string]any{"role": "user", "content": "Ping"}}, "tools": nil, "store": false}
 }
 
@@ -346,7 +347,7 @@ func TestRunCodexStreamStripsNestedRequestOverrideRetention(t *testing.T) {
 	agent.primary = client
 	transport := &responsesAPITransport{codex: newCodexTransport()}
 	request, err := transport.BuildKwargs("gpt-5.6-sol", []map[string]any{
-		{"role": "system", "content": "You are Hermes."}, {"role": "user", "content": "Ping"},
+		{"role": "system", "content": "You are Icebath."}, {"role": "user", "content": "Ping"},
 	}, []map[string]any{}, map[string]any{"is_codex_backend": true, "base_url": "https://chatgpt.com/backend-api/codex",
 		"request_overrides": map[string]any{"extra_body": map[string]any{"prompt_cache_retention": "24h"}}})
 	if err != nil {
@@ -361,7 +362,7 @@ func TestRunCodexStreamStripsNestedRequestOverrideRetention(t *testing.T) {
 		t.Fatal(err)
 	}
 	captured := client.calls[0]
-	extra, _ := captured["extra_body"].(map[string]any)
+	extra, _ := pyjson.Plain(captured["extra_body"]).(map[string]any)
 	if _, has := captured["prompt_cache_retention"]; has {
 		t.Fatalf("captured %v", captured)
 	}
@@ -383,7 +384,7 @@ func TestConsumerCodexWireGuardStripsNestedExtraBodyRetention(t *testing.T) {
 	request := map[string]any{"model": "gpt-5.6-sol", "prompt_cache_key": "cache-key-sentinel", "extra_body": extraBody}
 	captureLogs(t)
 	sanitized := sanitizeConsumerCodexRequest(agent, request)
-	extra, _ := sanitized["extra_body"].(map[string]any)
+	extra, _ := pyjson.Plain(sanitized["extra_body"]).(map[string]any)
 	if _, has := extra["prompt_cache_retention"]; has {
 		t.Fatalf("sanitized %v", sanitized)
 	}
@@ -396,7 +397,7 @@ func TestConsumerCodexWireGuardPreservesNestedRetentionOnCompatibleEndpoint(t *t
 	agent := newCodexStreamAgent()
 	request := map[string]any{"model": "openai.gpt-5.5", "extra_body": map[string]any{"prompt_cache_retention": "24h"}}
 	sanitized := sanitizeConsumerCodexRequest(agent, request)
-	if sanitized["extra_body"].(map[string]any)["prompt_cache_retention"] != "24h" {
+	if pyjson.Plain(sanitized["extra_body"]).(map[string]any)["prompt_cache_retention"] != "24h" {
 		t.Fatalf("sanitized %v", sanitized)
 	}
 }
@@ -995,7 +996,7 @@ func TestCreateReceivesInputViaExtraBody(t *testing.T) {
 	client := codexStreamClient(func() any {
 		return newCodexFakeStream(codexStreamCompleted("id", "r1", "output", []any{}, "usage", nil))
 	})
-	kwargs := map[string]any{"model": "gpt-5.6-sol", "instructions": "You are Hermes.",
+	kwargs := map[string]any{"model": "gpt-5.6-sol", "instructions": "You are Icebath.",
 		"input": []any{
 			map[string]any{"role": "user", "content": []any{map[string]any{"type": "input_text", "text": "Ping"}}},
 			map[string]any{"type": "function_call_output", "call_id": "c1", "output": "ok"},
@@ -1006,7 +1007,7 @@ func TestCreateReceivesInputViaExtraBody(t *testing.T) {
 		t.Fatal(err)
 	}
 	created := client.calls[0]
-	extra, _ := created["extra_body"].(map[string]any)
+	extra, _ := pyjson.Dict(created["extra_body"])
 	input, _ := extra["input"].([]any)
 	tools, _ := extra["tools"].([]any)
 	_, hasInput := created["input"]
@@ -1057,7 +1058,7 @@ func codexZeroEventThenCompletedClient(seen *[]any) *codexFakeClient {
 	return &codexFakeClient{create: func(_ int, kwargs map[string]any) (any, error) {
 		input := kwargs["input"]
 		if input == nil {
-			if extra, ok := kwargs["extra_body"].(map[string]any); ok {
+			if extra, ok := pyjson.Dict(kwargs["extra_body"]); ok {
 				input = extra["input"]
 			}
 		}
@@ -1071,7 +1072,7 @@ func codexZeroEventThenCompletedClient(seen *[]any) *codexFakeClient {
 }
 
 func codexOversizedKwargs(size int) map[string]any {
-	return map[string]any{"model": "gpt-5-codex", "instructions": "You are Hermes.", "store": false, "tools": nil,
+	return map[string]any{"model": "gpt-5-codex", "instructions": "You are Icebath.", "store": false, "tools": nil,
 		"input": []any{
 			map[string]any{"role": "user", "content": "look"},
 			map[string]any{"type": "function_call", "call_id": "call_browser", "name": "browser_exec", "arguments": "{}"},

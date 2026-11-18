@@ -9,12 +9,11 @@ import (
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/state"
-	"github.com/nickheyer/icebath/pkg/tuigateway"
+	"github.com/nickheyer/icebath/pkg/tuihost"
 )
 
 // Declares the cwd, workspace and live session bookkeeping methods on the session module registry
 func registerSessionWorkspaceHandlers() {
-	sessionMethod("session.cwd.set", false, sessionCwdSet)
 	sessionRegistry.method("session.workspace.move", sessionWorkspaceMove)
 	sessionRegistry.method("session.active_list", sessionActiveList)
 	sessionMethod("session.activate", false, sessionActivate)
@@ -22,11 +21,11 @@ func registerSessionWorkspaceHandlers() {
 }
 
 // Session info after a cwd change, the full agent view or the lazy shape
-func cwdInfo(ctx context.Context, session *tuigateway.Session, cwd string, branch *string) map[string]any {
+func cwdInfo(ctx context.Context, session *tuihost.Session, cwd string, branch *string) map[string]any {
 	if session.Get("agent") != nil {
 		return sessionInfo(ctx, sessionAgent(session), session)
 	}
-	current := tuigateway.Branch(cwd)
+	current := tuihost.Branch(cwd)
 	if branch != nil {
 		current = *branch
 	}
@@ -34,31 +33,10 @@ func cwdInfo(ctx context.Context, session *tuigateway.Session, cwd string, branc
 }
 
 // Live sessions of this process in registry order
-func snapshotSessions() []tuigateway.LiveSession {
+func snapshotSessions() []tuihost.LiveSession {
 	sessionsLock.Lock()
 	defer sessionsLock.Unlock()
-	return tuigateway.LiveSessions()
-}
-
-// Moves an idle live session to a new working directory
-func sessionCwdSet(ctx context.Context, rid any, params map[string]any, session *tuigateway.Session) map[string]any {
-	if truthy(session.Get("running")) {
-		return rpcErr(rid, 4009, "session busy", nil)
-	}
-	raw := strParam(params, "cwd", "")
-	if raw == "" {
-		return rpcErr(rid, 4016, "cwd required", nil)
-	}
-	cwd, err := setSessionCwd(ctx, session, raw)
-	if err != nil {
-		if isValueError(err) {
-			return rpcErr(rid, 4017, err.Error(), nil)
-		}
-		panic(err)
-	}
-	info := cwdInfo(ctx, session, cwd, nil)
-	tuigateway.Emit(ctx, "session.info", strOr(params["session_id"]), info)
-	return ok(rid, info)
+	return tuihost.LiveSessions()
 }
 
 // Rehomes a stored session's workspace by key, replacing its git meta and moving a live agent along
@@ -72,7 +50,7 @@ func sessionWorkspaceMove(ctx context.Context, rid any, params map[string]any) m
 		return rpcErr(rid, 4016, "cwd required", nil)
 	}
 	liveSID := ""
-	var live *tuigateway.Session
+	var live *tuihost.Session
 	for _, entry := range snapshotSessions() {
 		if entry.Session.Get("session_key") == target {
 			liveSID, live = entry.SID, entry.Session
@@ -94,7 +72,7 @@ func sessionWorkspaceMove(ctx context.Context, rid any, params map[string]any) m
 		}
 		panic(err)
 	}
-	branch, root := tuigateway.Branch(targetCwd), tuigateway.CommonRepoRoot(targetCwd)
+	branch, root := tuihost.Branch(targetCwd), tuihost.CommonRepoRoot(targetCwd)
 	if resp := func() map[string]any {
 		db, release, err := profileDB(ctx, params, true)
 		panicIf(err)
@@ -124,7 +102,7 @@ func sessionWorkspaceMove(ctx context.Context, rid any, params map[string]any) m
 			}
 			panic(err)
 		}
-		tuigateway.Emit(ctx, "session.info", liveSID, cwdInfo(ctx, live, targetCwd, &branch))
+		tuihost.Emit(ctx, "session.info", liveSID, cwdInfo(ctx, live, targetCwd, &branch))
 	}
 	return ok(rid, map[string]any{"cwd": targetCwd, "branch": branch, "git_repo_root": root})
 }
@@ -145,7 +123,7 @@ func sessionActiveList(ctx context.Context, rid any, params map[string]any) map[
 }
 
 // Attaches the caller to a live session without closing the one it focused before
-func sessionActivate(ctx context.Context, rid any, params map[string]any, session *tuigateway.Session) map[string]any {
+func sessionActivate(ctx context.Context, rid any, params map[string]any, session *tuihost.Session) map[string]any {
 	sid := ""
 	if truthy(params["session_id"]) {
 		sid = strOr(params["session_id"])

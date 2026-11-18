@@ -8,7 +8,6 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
-	"log/slog"
 	"math/big"
 	"net/http"
 	"os"
@@ -116,7 +115,7 @@ func (a *WhatsAppCloudAdapter) handleWebhook(ctx context.Context, request *gatew
 		return gateway.NewWebResponse(http.StatusBadRequest, nil), nil
 	}
 	if a.appSecret == "" {
-		slog.Error("[whatsapp_cloud] webhook POST refused: app_secret unset. Set WHATSAPP_CLOUD_APP_SECRET to enable inbound delivery.")
+		pkgLog().Error("[whatsapp_cloud] webhook POST refused: app_secret unset. Set WHATSAPP_CLOUD_APP_SECRET to enable inbound delivery.")
 		return gateway.WebTextResponse(http.StatusServiceUnavailable, "app_secret not configured", "", nil), nil
 	}
 	signatureHeader := request.Header.Get("X-Hub-Signature-256")
@@ -124,12 +123,12 @@ func (a *WhatsAppCloudAdapter) handleWebhook(ctx context.Context, request *gatew
 		a.mu.Lock()
 		a.rejectedSignatureCount++
 		a.mu.Unlock()
-		slog.Warn(fmt.Sprintf("[whatsapp_cloud] rejected webhook: invalid X-Hub-Signature-256 (header=%s, body_len=%d)", pyrepr.Repr(signatureHeader), len(raw)))
+		pkgLog().Warn(fmt.Sprintf("[whatsapp_cloud] rejected webhook: invalid X-Hub-Signature-256 (header=%s, body_len=%d)", pyrepr.Repr(signatureHeader), len(raw)))
 		return gateway.NewWebResponse(http.StatusUnauthorized, nil), nil
 	}
 	payload, err := pyjson.LoadsBytes(raw)
 	if err != nil {
-		slog.Warn("[whatsapp_cloud] webhook body is not valid JSON")
+		pkgLog().Warn("[whatsapp_cloud] webhook body is not valid JSON")
 		payload = nil
 	}
 	pm, ok := pyjson.Dict(payload)
@@ -174,7 +173,7 @@ func (a *WhatsAppCloudAdapter) dedupWamid(wamid string) bool {
 // Walks entry changes for message ingress, dispatching each message and logging status receipts
 func (a *WhatsAppCloudAdapter) dispatchPayload(ctx context.Context, payload map[string]any) error {
 	if s, _ := payload["object"].(string); s != "whatsapp_business_account" {
-		slog.Debug("[whatsapp_cloud] ignoring non-WABA payload (object=" + pyrepr.Repr(payload["object"]) + ")")
+		pkgLog().Debug("[whatsapp_cloud] ignoring non-WABA payload (object=" + pyrepr.Repr(payload["object"]) + ")")
 		return nil
 	}
 	entries, err := pyIter(payload["entry"])
@@ -232,9 +231,9 @@ func (a *WhatsAppCloudAdapter) dispatchChange(ctx context.Context, entry, value 
 		msg := fmt.Sprintf("[whatsapp_cloud] ignoring signed webhook for waba=%s phone_number_id=%s (configured waba=%s phone_number_id=%s)",
 			pyrepr.Repr(entry["id"]), pyrepr.Repr(phone), waba, pyrepr.Repr(a.phoneNumberID))
 		if pyrepr.Truthy(value["messages"]) {
-			slog.Warn(msg)
+			pkgLog().Warn(msg)
 		} else {
-			slog.Debug(msg)
+			pkgLog().Debug(msg)
 		}
 		return nil
 	}
@@ -276,7 +275,7 @@ func (a *WhatsAppCloudAdapter) dispatchChange(ctx context.Context, entry, value 
 	}
 	for _, rawStatus := range statuses {
 		if status, ok := pyjson.Dict(rawStatus); ok {
-			slog.Debug(fmt.Sprintf("[whatsapp_cloud] status %s for %s", pyrepr.Str(status["status"]), pyrepr.Str(status["id"])))
+			pkgLog().Debug(fmt.Sprintf("[whatsapp_cloud] status %s for %s", pyrepr.Str(status["status"]), pyrepr.Str(status["id"])))
 		}
 	}
 	return nil
@@ -286,7 +285,7 @@ func (a *WhatsAppCloudAdapter) dispatchChange(ctx context.Context, entry, value 
 func (a *WhatsAppCloudAdapter) ingestMessage(ctx context.Context, raw map[string]any, contactsByWaid map[string]string, metadata map[string]any) error {
 	wamid := strField(raw["id"])
 	if !a.dedupWamid(wamid) {
-		slog.Debug("[whatsapp_cloud] duplicate wamid " + wamid + ", skipping")
+		pkgLog().Debug("[whatsapp_cloud] duplicate wamid " + wamid + ", skipping")
 		return nil
 	}
 	event, err := a.buildMessageEventFromCloud(ctx, raw, contactsByWaid, metadata)
@@ -294,7 +293,7 @@ func (a *WhatsAppCloudAdapter) ingestMessage(ctx context.Context, raw map[string
 		if ctx.Err() != nil {
 			return ctx.Err()
 		}
-		slog.Error(fmt.Sprintf("[whatsapp_cloud] failed to build event for wamid %s: %s", wamid, err.Error()))
+		pkgLog().Error(fmt.Sprintf("[whatsapp_cloud] failed to build event for wamid %s: %s", wamid, err.Error()))
 		return nil
 	}
 	if event == nil {
@@ -307,7 +306,7 @@ func (a *WhatsAppCloudAdapter) ingestMessage(ctx context.Context, raw map[string
 		if ctx.Err() != nil {
 			return ctx.Err()
 		}
-		slog.Error(fmt.Sprintf("[whatsapp_cloud] handle_message raised for wamid %s: %s", wamid, err.Error()))
+		pkgLog().Error(fmt.Sprintf("[whatsapp_cloud] handle_message raised for wamid %s: %s", wamid, err.Error()))
 	}
 	return nil
 }
@@ -334,7 +333,7 @@ func (a *WhatsAppCloudAdapter) dispatchInteractiveReply(ctx context.Context, raw
 		if who == "" {
 			who = "<unknown>"
 		}
-		slog.Warn(fmt.Sprintf("[whatsapp_cloud] Rejected unauthorized interactive tap from %s (button_id=%s)", who, pyrepr.Repr(buttonID)))
+		pkgLog().Warn(fmt.Sprintf("[whatsapp_cloud] Rejected unauthorized interactive tap from %s (button_id=%s)", who, pyrepr.Repr(buttonID)))
 		return true, nil
 	}
 	parts := strings.SplitN(buttonID, ":", 3)
@@ -360,7 +359,7 @@ func (a *WhatsAppCloudAdapter) dispatchInteractiveReply(ctx context.Context, raw
 // Sends a confirmation text, logging instead of raising a failure
 func (a *WhatsAppCloudAdapter) replyBestEffort(ctx context.Context, to, text, failLog string) {
 	if _, err := a.Send(ctx, to, text, "", nil); err != nil {
-		slog.Error(failLog + ": " + err.Error())
+		pkgLog().Error(failLog + ": " + err.Error())
 	}
 }
 
@@ -371,7 +370,7 @@ func (a *WhatsAppCloudAdapter) popTapState(state *pydict.Dict[string, string], k
 	sessionKey, _ := state.Get(key)
 	state.Delete(key)
 	if sessionKey == "" {
-		slog.Info(fmt.Sprintf(staleLog, key))
+		pkgLog().Info(fmt.Sprintf(staleLog, key))
 		return ""
 	}
 	if len(valid) > 0 {
@@ -403,7 +402,7 @@ func (a *WhatsAppCloudAdapter) handleClarifyTap(ctx context.Context, to string, 
 	}
 	if choice == "other" {
 		if !tools.MarkClarifyAwaitingText(clarifyID) {
-			slog.Info(fmt.Sprintf("[whatsapp_cloud] clarify 'Other' tap but entry missing (clarify_id=%s); falling back to text", clarifyID))
+			pkgLog().Info(fmt.Sprintf("[whatsapp_cloud] clarify 'Other' tap but entry missing (clarify_id=%s); falling back to text", clarifyID))
 			return false, nil
 		}
 		a.keepTapState(a.clarifyState, clarifyID, sessionKey)
@@ -412,7 +411,7 @@ func (a *WhatsAppCloudAdapter) handleClarifyTap(ctx context.Context, to string, 
 	}
 	idx, ok := pyint.Parse(choice)
 	if !ok {
-		slog.Warn("[whatsapp_cloud] clarify tap had non-int choice: " + pyrepr.Repr(choice))
+		pkgLog().Warn("[whatsapp_cloud] clarify tap had non-int choice: " + pyrepr.Repr(choice))
 		a.keepTapState(a.clarifyState, clarifyID, sessionKey)
 		return false, nil
 	}
@@ -421,7 +420,7 @@ func (a *WhatsAppCloudAdapter) handleClarifyTap(ctx context.Context, to string, 
 		title = pyrepr.Str(inner["title"])
 	}
 	if !tools.ResolveGatewayClarify(clarifyID, title) {
-		slog.Info(fmt.Sprintf("[whatsapp_cloud] clarify resolver reported no waiter (clarify_id=%s) — falling back to text", clarifyID))
+		pkgLog().Info(fmt.Sprintf("[whatsapp_cloud] clarify resolver reported no waiter (clarify_id=%s) — falling back to text", clarifyID))
 		return false, nil
 	}
 	return true, nil
@@ -443,7 +442,7 @@ func (a *WhatsAppCloudAdapter) handleApprovalTap(ctx context.Context, to string,
 		}
 		confirmText = t(ctx, key)
 	} else {
-		slog.Info(fmt.Sprintf("[whatsapp_cloud] approval resolver reported no waiter (session_key=%s) — likely already resolved", sessionKey))
+		pkgLog().Info(fmt.Sprintf("[whatsapp_cloud] approval resolver reported no waiter (session_key=%s) — likely already resolved", sessionKey))
 		confirmText = t(ctx, "platform.whatsapp.approval_expired")
 	}
 	a.replyBestEffort(ctx, to, confirmText, "[whatsapp_cloud] approval confirm failed")
@@ -459,7 +458,7 @@ func (a *WhatsAppCloudAdapter) handleSlashConfirmTap(ctx context.Context, to str
 		return false, nil
 	}
 	if gateway.SlashConfirmResolve == nil {
-		slog.Warn("[whatsapp_cloud] slash_confirm resolver unavailable")
+		pkgLog().Warn("[whatsapp_cloud] slash_confirm resolver unavailable")
 		return false, nil
 	}
 	if resultText := gateway.SlashConfirmResolve(ctx, sessionKey, confirmID, choice); resultText != "" {
@@ -483,9 +482,9 @@ func (a *WhatsAppCloudAdapter) collectInboundMedia(ctx context.Context, kind str
 		return nil, nil, body, err
 	}
 	if localPath != "" {
-		slog.Info(fmt.Sprintf("[whatsapp_cloud] cached inbound %s media: %s", kind, localPath))
+		pkgLog().Info(fmt.Sprintf("[whatsapp_cloud] cached inbound %s media: %s", kind, localPath))
 	} else {
-		slog.Warn(fmt.Sprintf("[whatsapp_cloud] failed to download inbound %s (id=%s) — agent will see message metadata but not the binary", kind, mediaID))
+		pkgLog().Warn(fmt.Sprintf("[whatsapp_cloud] failed to download inbound %s (id=%s) — agent will see message metadata but not the binary", kind, mediaID))
 	}
 	fname := ""
 	if kind == "document" {
@@ -516,16 +515,16 @@ func injectDocumentText(mediaURLs []string, body string) (string, []bool) {
 		}
 		info, err := os.Stat(doc)
 		if err != nil {
-			slog.Error(fmt.Sprintf("[whatsapp_cloud] failed to read document text: %s: %s", doc, pypath.OSErrorText(err)))
+			pkgLog().Error(fmt.Sprintf("[whatsapp_cloud] failed to read document text: %s: %s", doc, pypath.OSErrorText(err)))
 			continue
 		}
 		if size := info.Size(); size > maxTextInjectBytes {
-			slog.Info(fmt.Sprintf("[whatsapp_cloud] skipping text injection for %s (%d bytes > %d)", doc, size, maxTextInjectBytes))
+			pkgLog().Info(fmt.Sprintf("[whatsapp_cloud] skipping text injection for %s (%d bytes > %d)", doc, size, maxTextInjectBytes))
 			continue
 		}
 		data, err := os.ReadFile(doc)
 		if err != nil {
-			slog.Error(fmt.Sprintf("[whatsapp_cloud] failed to read document text: %s: %s", doc, pypath.OSErrorText(err)))
+			pkgLog().Error(fmt.Sprintf("[whatsapp_cloud] failed to read document text: %s: %s", doc, pypath.OSErrorText(err)))
 			continue
 		}
 		injection := "[Content of " + filepath.Base(doc) + "]:\n" + pystr.TranslateNewlines(pystr.DecodeUTF8SigReplace(data))
@@ -546,7 +545,7 @@ func (a *WhatsAppCloudAdapter) buildMessageEventFromCloud(ctx context.Context, r
 		kind = pystr.Lower(pyrepr.Str(raw["type"]))
 	}
 	if contentlessKinds[kind] {
-		slog.Debug(fmt.Sprintf("[whatsapp_cloud] skipping contentless %s envelope (wamid=%s)", kind, pyrepr.Str(raw["id"])))
+		pkgLog().Debug(fmt.Sprintf("[whatsapp_cloud] skipping contentless %s envelope (wamid=%s)", kind, pyrepr.Str(raw["id"])))
 		return nil, nil
 	}
 	if kind == "interactive" {
@@ -565,7 +564,7 @@ func (a *WhatsAppCloudAdapter) buildMessageEventFromCloud(ctx context.Context, r
 	senderID := chatID
 	senderName := contactsByWaid[senderID]
 	if pyrepr.Truthy(raw["chat"]) {
-		slog.Warn(fmt.Sprintf("[whatsapp_cloud] received group-shaped message (chat=%s, wamid=%s) — group support is not yet "+
+		pkgLog().Warn(fmt.Sprintf("[whatsapp_cloud] received group-shaped message (chat=%s, wamid=%s) — group support is not yet "+
 			"implemented; dropping. Use the Baileys whatsapp adapter for group chats.", pyrepr.Str(raw["chat"]), pyrepr.Str(raw["id"])))
 		return nil, nil
 	}

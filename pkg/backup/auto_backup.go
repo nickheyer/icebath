@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"log/slog"
 	"os"
 	"sort"
 	"strings"
@@ -60,7 +59,7 @@ func pruneOldest(newest []string, keep int, remove func(string) error, what stri
 	deleted := 0
 	for _, p := range newest[sliceFrom(len(newest), keep):] {
 		if err := remove(p); err != nil {
-			slog.Warn(fmt.Sprintf("Failed to prune %s %s: %s", what, pypath.PathName(p), excText(err)))
+			pkgLog().Warn(fmt.Sprintf("Failed to prune %s %s: %s", what, pypath.PathName(p), excText(err)))
 			continue
 		}
 		deleted++
@@ -110,7 +109,7 @@ func createPrefixedFullBackup(ctx context.Context, h, prefix string, keep int, w
 	}
 	backupDir := pypath.PathJoin(root, preUpdateBackupsDir)
 	if err := home.PathMkdir(backupDir, 0o777, true, true); err != nil {
-		slog.Warn(fmt.Sprintf("Could not create %s backup dir %s: %s", what, backupDir, excText(err)))
+		pkgLog().Warn(fmt.Sprintf("Could not create %s backup dir %s: %s", what, backupDir, excText(err)))
 		return "", nil
 	}
 	outPath := pypath.PathJoin(backupDir, prefix+backupNow().Format("2006-01-02-150405")+".zip")
@@ -148,7 +147,7 @@ func writeFullZipBackup(ctx context.Context, outPath, root string) (string, erro
 	})
 	var busy *BackupInProgressError
 	if errors.As(err, &busy) {
-		slog.Warn("Full-zip backup skipped: " + busy.Msg)
+		pkgLog().Warn("Full-zip backup skipped: " + busy.Msg)
 		return "", nil
 	}
 	return written, err
@@ -157,12 +156,12 @@ func writeFullZipBackup(ctx context.Context, outPath, root string) (string, erro
 // Writes the automatic archive, publishing an incomplete one as salvage and an all failed one nowhere
 func writeFullZipBackupLocked(ctx context.Context, outPath, root string) (string, error) {
 	scanStarted := time.Now()
-	slog.Info("automatic backup phase=scan status=started")
+	pkgLog().Info("automatic backup phase=scan status=started")
 	files := iterBackupFiles(root, outPath, nil)
 	if len(files) == 0 {
 		return "", nil
 	}
-	slog.Info(fmt.Sprintf("automatic backup phase=scan status=complete duration_ms=%.1f files=%d", sinceMS(scanStarted), len(files)))
+	pkgLog().Info(fmt.Sprintf("automatic backup phase=scan status=complete duration_ms=%.1f files=%d", sinceMS(scanStarted), len(files)))
 	var errs []string
 	cappedErrors := func() string {
 		shown := strings.Join(errs[:min(10, len(errs))], "; ")
@@ -190,13 +189,13 @@ func writeFullZipBackupLocked(ctx context.Context, outPath, root string) (string
 		}
 		_, bodyErr := writeZipEntries(ctx, zf, files, outPath, zipEntryHooks{
 			onDBFailure: func(rel string) error {
-				slog.Warn("Full-zip backup aborted: SQLite snapshot failed for " + rel)
+				pkgLog().Warn("Full-zip backup aborted: SQLite snapshot failed for " + rel)
 				return &sqliteSnapshotError{rel}
 			},
 			trackBytes: false,
 			onError:    func(rel string, err error) { errs = append(errs, rel+": "+excText(err)) },
 			onProgress: func(i int) {
-				slog.Info(fmt.Sprintf("automatic backup phase=archive status=progress completed=%d total=%d", i, len(files)))
+				pkgLog().Info(fmt.Sprintf("automatic backup phase=archive status=progress completed=%d total=%d", i, len(files)))
 			},
 		})
 		if err := zf.Close(); err != nil {
@@ -207,13 +206,13 @@ func writeFullZipBackupLocked(ctx context.Context, outPath, root string) (string
 	if err != nil {
 		var snap *sqliteSnapshotError
 		if pypath.IsOSError(err) || errors.As(err, &snap) {
-			slog.Warn("Full-zip backup: zip write failed: " + excText(err))
+			pkgLog().Warn("Full-zip backup: zip write failed: " + excText(err))
 			return "", nil
 		}
 		return "", err
 	}
 	if published == "" {
-		slog.Warn("Full-zip backup: every entry failed, nothing salvaged: " + cappedErrors())
+		pkgLog().Warn("Full-zip backup: every entry failed, nothing salvaged: " + cappedErrors())
 		return "", nil
 	}
 	st, err := os.Stat(published)
@@ -221,11 +220,11 @@ func writeFullZipBackupLocked(ctx context.Context, outPath, root string) (string
 		return "", err
 	}
 	if published != outPath {
-		slog.Warn(fmt.Sprintf("automatic backup phase=archive status=incomplete duration_ms=%.1f files=%d errors=%d "+
+		pkgLog().Warn(fmt.Sprintf("automatic backup phase=archive status=incomplete duration_ms=%.1f files=%d errors=%d "+
 			"bytes=%d salvage=%s skipped=%s", sinceMS(archiveStarted), len(files), len(errs), st.Size(), salvagePath, cappedErrors()))
 		return "", nil
 	}
-	slog.Info(fmt.Sprintf("automatic backup phase=archive status=complete duration_ms=%.1f files=%d bytes=%d",
+	pkgLog().Info(fmt.Sprintf("automatic backup phase=archive status=complete duration_ms=%.1f files=%d bytes=%d",
 		sinceMS(archiveStarted), len(files), st.Size()))
 	return outPath, nil
 }

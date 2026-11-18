@@ -105,11 +105,11 @@ func reconcilePluginMCPServers(ctx context.Context, r *GatewayRunner, profileHom
 			return mcp.Reconcile(mcp.SuppressInteractiveOAuth(scope), nil)
 		}()
 		if err != nil {
-			runLog().Warn(fmt.Sprintf("MCP reconcile after reload-plugins failed for %s", profileHome), "exc_info", err)
+			pkgLog().Warn(fmt.Sprintf("MCP reconcile after reload-plugins failed for %s", profileHome), "exc_info", err)
 			return
 		}
 		if len(result.Removed) > 0 || len(result.Added) > 0 {
-			runLog().Info(fmt.Sprintf("MCP servers reconciled after reload-plugins (%s): removed=%s added=%s",
+			pkgLog().Info(fmt.Sprintf("MCP servers reconciled after reload-plugins (%s): removed=%s added=%s",
 				profileHome, pyrepr.Repr(stringsAny(result.Removed)), pyrepr.Repr(stringsAny(result.Added))))
 		}
 	}()

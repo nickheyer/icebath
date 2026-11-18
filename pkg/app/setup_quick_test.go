@@ -13,7 +13,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/provider"
 )
 
-// Recorded hermes output of one setup_quick scenario, with the checklists it showed
+// Recorded output of one quick setup scenario, with the checklists it showed
 type quickRef struct {
 	Out    string          `json:"out"`
 	Err    *string         `json:"err"`
@@ -70,7 +70,7 @@ func (w *wizardRun) assertQuickMatches(t *testing.T, ref quickRef, checks [][]an
 	for i := range checks {
 		got, _ := json.Marshal(checks[i])
 		want, _ := json.Marshal(ref.Checks[i])
-		if wizardRenames.Replace(string(got)) != wizardRenames.Replace(string(want)) {
+		if string(got) != string(want) {
 			t.Fatalf("checklist %d\n%s\nwant\n%s", i, got, want)
 		}
 	}

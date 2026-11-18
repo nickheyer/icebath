@@ -3,7 +3,6 @@ package tools
 import (
 	"context"
 	"errors"
-	"io"
 	"os"
 	"path/filepath"
 	"slices"
@@ -48,10 +47,9 @@ func assertLinesInOrder(t *testing.T, out string, lines ...string) {
 func TestConfigureToolCategoryMenuAndSkip(t *testing.T) {
 	unsetEnv(t, "XAI_API_KEY")
 	s, out := newTestToolsSetup(t, "3\n")
-	swapHook(t, &ToolsConfigHooks.NousFeatures, nousFeaturesDouble(false, nil, nil))
 	cat := catalogCategory("x_search")
 	cfg := config.Tree{}
-	if err := s.configureToolCategory("x_search", cat, cfg, true, false); err != nil {
+	if err := s.configureToolCategory("x_search", cat, cfg, false); err != nil {
 		t.Fatal(err)
 	}
 	note := rowText(cat, "setup_note")
@@ -68,7 +66,7 @@ func TestConfigureToolCategoryMenuAndSkip(t *testing.T) {
 	}
 	s, out = newTestToolsSetup(t, "2\n")
 	shown := secretAnswers(s, "xai-typed")
-	if err := s.configureToolCategory("x_search", cat, cfg, true, false); err != nil {
+	if err := s.configureToolCategory("x_search", cat, cfg, false); err != nil {
 		t.Fatal(err)
 	}
 	if got, _ := s.getEnvValue("XAI_API_KEY"); got != "xai-typed" {
@@ -85,23 +83,21 @@ func TestConfigureToolCategoryMenuAndSkip(t *testing.T) {
 }
 
 func TestConfigureToolCategoryMarksRowsAndReconfigures(t *testing.T) {
-	s, out := newTestToolsSetup(t, "4\n")
+	s, out := newTestToolsSetup(t, "3\n")
 	swapHook(t, &postSetupSyncVenv, func(context.Context, pm.SyncVenvOptions) error { return nil })
 	writeHomeEnv(t, s.home(), map[string]string{"GROQ_API_KEY": "gsk", "VOICE_TOOLS_OPENAI_KEY": "sk"})
 	unsetEnv(t, "GROQ_API_KEY", "VOICE_TOOLS_OPENAI_KEY")
 	installSTTCatalogDoubles(t)
-	swapHook(t, &ToolsConfigHooks.NousFeatures, nousFeaturesDouble(true, map[string]NousToolFeature{"stt": {}}, nil))
 	cfg := config.Tree{"stt": map[string]any{"provider": "groq"}}
-	if err := s.configureToolCategory("stt", catalogCategory("stt"), cfg, true, false); err != nil {
+	if err := s.configureToolCategory("stt", catalogCategory("stt"), cfg, false); err != nil {
 		t.Fatal(err)
 	}
 	assertLinesInOrder(t, out.String(),
 		"  --- 🎙️ Speech-to-Text - Choose a provider ---\n",
 		" 1. Local Whisper [★ recommended · free] — faster-whisper on-device, no API key\n",
-		" 2. Nous Subscription [subscription] — Managed OpenAI transcription billed to your subscription  ★ Included with your Nous subscription\n",
-		" 3. OpenAI [paid] — whisper-1, gpt-4o-transcribe, gpt-transcribe [configured]\n",
-		" 4. Groq [free tier] — whisper-large-v3-turbo, whisper-large-v3 — very fast [active]\n",
-		"Choice [default 3]: ",
+		" 2. OpenAI [paid] — whisper-1, gpt-4o-transcribe, gpt-transcribe [configured]\n",
+		" 3. Groq [free tier] — whisper-large-v3-turbo, whisper-large-v3 — very fast [active]\n",
+		"Choice [default 2]: ",
 		"✓   STT provider set to: groq\n",
 		"✓   GROQ_API_KEY: already configured\n",
 		"✓   Groq configured!\n",
@@ -112,7 +108,7 @@ func TestConfigureToolCategoryMarksRowsAndReconfigures(t *testing.T) {
 	s, out = newTestToolsSetup(t, "1\n\n\n")
 	swapHook(t, &postSetupSyncVenv, func(context.Context, pm.SyncVenvOptions) error { return nil })
 	writeHomeEnv(t, s.home(), map[string]string{"GROQ_API_KEY": "gsk-123456789"})
-	if err := s.configureToolCategory("stt", catalogCategory("stt"), cfg, true, true); err != nil {
+	if err := s.configureToolCategory("stt", catalogCategory("stt"), cfg, true); err != nil {
 		t.Fatal(err)
 	}
 	if strings.Contains(out.String(), "Skip — keep defaults") || strings.Contains(out.String(), "★ Included") {
@@ -127,9 +123,8 @@ func TestConfigureToolCategorySingleProviderRunsItsHook(t *testing.T) {
 	swapHook(t, &ToolsConfigHooks.ComputerUseProviders, func(*Env) ([][2]string, error) { return [][2]string{{"cua", "x"}}, nil })
 	installs := 0
 	swapHook(t, &ToolsConfigHooks.InstallCuaDriver, func(context.Context, *Env, *cliui.Console) (bool, error) { installs++; return true, nil })
-	swapHook(t, &ToolsConfigHooks.NousFeatures, nousFeaturesDouble(false, nil, nil))
 	cfg := config.Tree{}
-	if err := s.configureToolCategory("computer_use", catalogCategory("computer_use"), cfg, true, false); err != nil {
+	if err := s.configureToolCategory("computer_use", catalogCategory("computer_use"), cfg, false); err != nil {
 		t.Fatal(err)
 	}
 	want := "\n  --- 🖱️ Computer Use (macOS/Windows/Linux) (cua-driver (background)) ---\n" +
@@ -140,7 +135,7 @@ func TestConfigureToolCategorySingleProviderRunsItsHook(t *testing.T) {
 	}
 	s, out = newTestToolsSetup(t, "")
 	swapHook(t, &ToolsConfigHooks.InstallCuaDriver, func(context.Context, *Env, *cliui.Console) (bool, error) { installs++; return true, nil })
-	if err := s.configureToolCategory("computer_use", catalogCategory("computer_use"), cfg, true, true); err != nil {
+	if err := s.configureToolCategory("computer_use", catalogCategory("computer_use"), cfg, true); err != nil {
 		t.Fatal(err)
 	}
 	if out.String() != "\n  --- 🖱️ Computer Use (macOS/Windows/Linux) (cua-driver (background)) ---\n"+
@@ -187,7 +182,7 @@ func TestPickModelFromCatalogListsTheCurrentModelFirst(t *testing.T) {
 		t.Fatal("unhashable model accepted")
 	}
 	bad := catalogOf([]string{"m"}, map[string]map[string]any{"m": {"speed": 4}})
-	if err := s.pickModelFromCatalog(bad, "", "image_gen", "X", config.Tree{}, ""); err == nil || err.Error() != "TypeError: object of type 'int' has no len()" {
+	if err := s.pickModelFromCatalog(bad, "", "image_gen", "X", config.Tree{}, ""); err == nil || err.Error() != "model metadata speed is a number, expected text" {
 		t.Fatalf("non string speed %v", err)
 	}
 	if err := s.pickModelFromCatalog(newModelCatalog(), "", "image_gen", "X", config.Tree{}, ""); err != nil {
@@ -249,25 +244,17 @@ func TestConfigureXAIImagineStorageChoices(t *testing.T) {
 	}
 }
 
-func TestSelectPluginGenProviderWritesTheVendorOrNous(t *testing.T) {
+func TestSelectPluginGenProviderWritesTheVendor(t *testing.T) {
 	swapHook(t, &ToolsConfigHooks.VideoGenRegistry, fakePickerRegistry(nil, &fakePickerProvider{name: "xai"}))
 	s, out := newTestToolsSetup(t, "2\n")
-	cfg := config.Tree{"video_gen": map[string]any{"use_gateway": true}}
-	if err := s.selectPluginVideoGenProvider("xai", cfg, false); err != nil {
+	cfg := config.Tree{"video_gen": map[string]any{}}
+	if err := s.selectPluginVideoGenProvider("xai", cfg); err != nil {
 		t.Fatal(err)
 	}
 	if !pyjson.Equal(cfg["video_gen"], map[string]any{"provider": "xai", "xai": map[string]any{"storage": map[string]any{"enabled": false}}}) {
 		t.Fatalf("video section %v", cfg["video_gen"])
 	}
 	assertLinesInOrder(t, out.String(), "✓   video_gen.provider set to: xai\n", "✓   xAI stored public URLs disabled\n")
-	swapHook(t, &ToolsConfigHooks.ImageGenRegistry, fakePickerRegistry(nil, &fakePickerProvider{name: "fluxy"}))
-	s, out = newTestToolsSetup(t, "")
-	if err := s.selectPluginImageGenProvider("fluxy", cfg, true); err != nil {
-		t.Fatal(err)
-	}
-	if out.String() != "✓   image_gen.provider set to: nous\n" || !pyjson.Equal(cfg["image_gen"], map[string]any{"provider": "nous"}) {
-		t.Fatalf("managed pick %q %v", out.String(), cfg["image_gen"])
-	}
 }
 
 func TestConfigureSTTModelCatalogs(t *testing.T) {
@@ -309,127 +296,37 @@ func TestFinishProviderSelectionRunsTheModelPickers(t *testing.T) {
 		return []string{"fal-ai/flux"}, map[string]map[string]any{"fal-ai/flux": {}}, "fal-ai/flux"
 	})
 	s, _ := newTestToolsSetup(t, "\n")
-	cfg := config.Tree{"image_gen": map[string]any{"use_gateway": true}}
-	if err := s.finishProviderSelection(toolRow("FAL", "", "", nil, "imagegen_backend", "fal"), cfg, ""); err != nil {
+	cfg := config.Tree{"image_gen": map[string]any{}}
+	if err := s.finishProviderSelection(toolRow("FAL", "", "", nil, "imagegen_backend", "fal"), cfg); err != nil {
 		t.Fatal(err)
 	}
 	if !pyjson.Equal(cfg["image_gen"], map[string]any{"model": "fal-ai/flux", "provider": "fal"}) {
 		t.Fatalf("fal pick %v", cfg["image_gen"])
-	}
-	swapHook(t, &ToolsConfigHooks.ManagedImageCatalog, func(context.Context, *Env, bool, bool) ([]string, map[string]map[string]any, string) {
-		return []string{"krea-3"}, map[string]map[string]any{"krea-3": {}}, "krea-3"
-	})
-	swapHook(t, &ToolsConfigHooks.NousFeatures, nousFeaturesDouble(true, nil, nil))
-	s, _ = newTestToolsSetup(t, "\n")
-	if err := s.finishProviderSelection(toolRow("Nous", "", "", nil, "imagegen_backend", "nous", "managed_nous_feature", "image_gen"), cfg, "image_gen"); err != nil {
-		t.Fatal(err)
-	}
-	if !pyjson.Equal(cfg["image_gen"], map[string]any{"model": "krea-3", "provider": "nous"}) {
-		t.Fatalf("managed pick %v", cfg["image_gen"])
-	}
-	s, out := newTestToolsSetup(t, "")
-	if err := s.finishProviderSelection(toolRow("Nous STT", "", "", nil, "stt_provider", "openai", "managed_nous_feature", "stt"), cfg, "stt"); err != nil || out.Len() != 0 {
-		t.Fatalf("managed stt prompted %v %q", err, out.String())
-	}
-}
-
-func TestNousProviderGateBranches(t *testing.T) {
-	s, out := newTestToolsSetup(t, "")
-	var asked [][2]string
-	swapHook(t, &ToolsConfigHooks.EnsureNousPortalAccess, func(_ context.Context, _ string, w io.Writer, capability, category string) bool {
-		asked = append(asked, [2]string{capability, category})
-		return len(asked) > 1
-	})
-	swapHook(t, &ToolsConfigHooks.ManagedCoverageCategory, func(f string) (string, bool) { return "fal-image", f == "image_gen" })
-	managed := toolRow("Nous Subscription", "", "", nil, "managed_nous_feature", "image_gen")
-	if s.nousProviderGate(managed, config.Tree{}, "image_gen", true) {
-		t.Fatal("denied portal access passed the gate")
-	}
-	if !s.nousProviderGate(managed, config.Tree{}, "image_gen", true) {
-		t.Fatal("granted portal access blocked")
-	}
-	if !slices.Equal(asked, [][2]string{{"Nous Subscription", "fal-image"}, {"Nous Subscription", "fal-image"}}) ||
-		out.String() != "⚠   Not enabled — Nous Portal access is required for this backend.\n" {
-		t.Fatalf("asked %v output %q", asked, out.String())
-	}
-	preAuth := toolRow("Nous only", "", "", nil, "requires_nous_auth", true)
-	var messages []string
-	swapHook(t, &ToolsConfigHooks.NousEntitlementMessage, func(acct *NousToolAccount, capability string) string {
-		messages = append(messages, capability)
-		if acct != nil {
-			return "Upgrade at portal"
-		}
-		return ""
-	})
-	for _, c := range []struct {
-		f    NousToolFeatures
-		pass bool
-		want string
-	}{
-		{NousToolFeatures{}, false, "⚠   Nous Subscription is only available after logging into Nous Portal.\n"},
-		{NousToolFeatures{NousAuthPresent: true, Account: accountDouble(true, boolRef(false), true)}, false, "⚠   Upgrade at portal\n"},
-		{NousToolFeatures{NousAuthPresent: true, Account: accountDouble(true, boolRef(true), true)}, true, ""},
-	} {
-		s, out := newTestToolsSetup(t, "")
-		f := c.f
-		swapHook(t, &ToolsConfigHooks.NousFeatures, func(context.Context, string, map[string]any, bool) NousToolFeatures { return f })
-		if got := s.nousProviderGate(preAuth, config.Tree{}, "", false); got != c.pass || out.String() != c.want {
-			t.Fatalf("%+v got %v %q", c.f, got, out.String())
-		}
-	}
-	if !slices.Equal(messages, []string{"Nous only", "Nous only"}) {
-		t.Fatalf("entitlement capabilities %v", messages)
-	}
-	if !s.nousProviderGate(toolRow("Plain", "", "", nil), config.Tree{}, "", false) {
-		t.Fatal("plain row blocked")
 	}
 }
 
 func TestPrintProviderSelectionLines(t *testing.T) {
 	for _, c := range []struct {
 		row         *pyjson.Object
-		managed     string
 		reconfigure bool
 		want        string
 	}{
-		{toolRow("Edge", "", "", nil, "tts_provider", "edge"), "", false, ""},
-		{toolRow("Edge", "", "", nil, "tts_provider", "edge"), "", true, "✓   TTS provider set to: edge\n"},
-		{toolRow("Local", "", "", nil, "browser_provider", "local", "browser_engine", "auto"), "", false, "✓   Browser set to local mode\n"},
-		{toolRow("LP", "", "", nil, "browser_provider", "local", "browser_engine", "lightpanda"), "", false,
+		{toolRow("Edge", "", "", nil, "tts_provider", "edge"), false, ""},
+		{toolRow("Edge", "", "", nil, "tts_provider", "edge"), true, "✓   TTS provider set to: edge\n"},
+		{toolRow("Local", "", "", nil, "browser_provider", "local", "browser_engine", "auto"), false, "✓   Browser set to local mode\n"},
+		{toolRow("LP", "", "", nil, "browser_provider", "local", "browser_engine", "lightpanda"), false,
 			"✓   Browser set to local mode\n✓   Browser engine set to: lightpanda\n"},
-		{toolRow("BB", "", "", nil, "browser_provider", "browserbase"), "", false, "✓   Browser cloud provider set to: browserbase\n"},
-		{toolRow("Nous BU", "", "", nil, "browser_provider", "", "managed_nous_feature", "browser"), "browser", true, "✓   Browser cloud provider set to: nous\n"},
-		{toolRow("Empty", "", "", nil, "browser_provider", ""), "", false, ""},
-		{toolRow("Exa", "", "", nil, "web_backend", "exa", "web_tier", "paid"), "", true, "✓   Web backend set to: exa (paid tier)\n"},
-		{toolRow("Exa", "", "", nil, "web_backend", "exa", "web_tier", "paid"), "", false, "✓   Web backend set to: exa\n"},
-		{toolRow("cua", "", "", nil, "computer_use_backend", "cua"), "", false, ""},
+		{toolRow("BB", "", "", nil, "browser_provider", "browserbase"), false, "✓   Browser cloud provider set to: browserbase\n"},
+		{toolRow("Empty", "", "", nil, "browser_provider", ""), false, ""},
+		{toolRow("Exa", "", "", nil, "web_backend", "exa", "web_tier", "paid"), true, "✓   Web backend set to: exa (paid tier)\n"},
+		{toolRow("Exa", "", "", nil, "web_backend", "exa", "web_tier", "paid"), false, "✓   Web backend set to: exa\n"},
+		{toolRow("cua", "", "", nil, "computer_use_backend", "cua"), false, ""},
 	} {
 		s, out := newTestToolsSetup(t, "")
-		s.printProviderSelection(c.row, c.managed, c.reconfigure)
+		s.printProviderSelection(c.row, c.reconfigure)
 		if out.String() != c.want {
 			t.Fatalf("%v reconfigure %v output %q", rowPairs(c.row), c.reconfigure, out.String())
 		}
-	}
-}
-
-func TestShowPortalHintForKeyedRowsWithAManagedSibling(t *testing.T) {
-	s, _ := newTestToolsSetup(t, "")
-	openaiTTS := catalogProviders(catalogCategory("tts"))[2]
-	swapHook(t, &ToolsConfigHooks.NousFeatures, nousFeaturesDouble(false, nil, nil))
-	if !s.showPortalHint(openaiTTS, config.Tree{}, "", false) {
-		t.Fatal("no hint for an unauthed keyed row")
-	}
-	swapHook(t, &ToolsConfigHooks.NousFeatures, nousFeaturesDouble(true, nil, nil))
-	if s.showPortalHint(openaiTTS, config.Tree{}, "", false) {
-		t.Fatal("hint shown to a Nous user")
-	}
-	xaiKey := catalogProviders(catalogCategory("x_search"))[1]
-	if s.showPortalHint(xaiKey, config.Tree{}, "", false) || s.showPortalHint(openaiTTS, config.Tree{}, "tts", false) {
-		t.Fatal("hint for a row without a managed sibling or a managed pick")
-	}
-	swapHook(t, &ToolsConfigHooks.NousFeatures, func(context.Context, string, map[string]any, bool) NousToolFeatures { panic("portal down") })
-	if s.showPortalHint(openaiTTS, config.Tree{}, "", false) {
-		t.Fatal("failed feature fetch showed the hint")
 	}
 }
 
@@ -488,7 +385,7 @@ func TestConfigureProviderKeyFlows(t *testing.T) {
 	writeHomeEnv(t, s.home(), map[string]string{"FIRST_KEY": "one"})
 	secretAnswers(s)
 	cfg := config.Tree{}
-	if err := s.configureProvider(row, cfg, true, false); err != nil {
+	if err := s.configureProvider(row, cfg, false); err != nil {
 		t.Fatal(err)
 	}
 	if out.String() != "✓   FIRST_KEY: already configured\n\n⚠     Skipped\n" {
@@ -500,7 +397,7 @@ func TestConfigureProviderKeyFlows(t *testing.T) {
 	s, out = newTestToolsSetup(t, "")
 	writeHomeEnv(t, s.home(), map[string]string{"FIRST_KEY": "one-1234567890"})
 	secretAnswers(s, "", "two")
-	if err := s.configureProvider(row, cfg, true, true); err != nil {
+	if err := s.configureProvider(row, cfg, true); err != nil {
 		t.Fatal(err)
 	}
 	want := "✓   TTS provider set to: twokeys\n" +
@@ -515,29 +412,19 @@ func TestConfigureProviderKeyFlows(t *testing.T) {
 	}
 	os.Unsetenv("SECOND_KEY")
 	s, out = newTestToolsSetup(t, "")
-	swapHook(t, &ToolsConfigHooks.NousFeatures, nousFeaturesDouble(false, nil, nil))
-	openaiTTS := catalogProviders(catalogCategory("tts"))[2]
+	openaiTTS := catalogProviders(catalogCategory("tts"))[1]
 	unsetEnv(t, "VOICE_TOOLS_OPENAI_KEY")
 	secretAnswers(s, "sk-voice")
-	if err := s.reconfigureProvider(openaiTTS, cfg, true); err != nil {
+	if err := s.reconfigureProvider(openaiTTS, cfg); err != nil {
 		t.Fatal(err)
-	}
-	if strings.Contains(out.String(), "Available through Nous Portal") {
-		t.Fatal("reconfigure showed the portal hint")
 	}
 	os.Unsetenv("VOICE_TOOLS_OPENAI_KEY")
 	s, out = newTestToolsSetup(t, "")
 	secretAnswers(s, "sk-voice")
-	if err := s.configureProvider(openaiTTS, cfg, true, false); err != nil {
+	if err := s.configureProvider(openaiTTS, cfg, false); err != nil {
 		t.Fatal(err)
 	}
-	assertLinesInOrder(t, out.String(), "    Available through Nous Portal subscription.\n", "✓     Saved\n", "✓   OpenAI TTS configured!\n")
-	os.Unsetenv("VOICE_TOOLS_OPENAI_KEY")
-	s, out = newTestToolsSetup(t, "")
-	swapHook(t, &nousProviderGateFn, func(*ToolsSetup, *pyjson.Object, config.Tree, string, bool) bool { return false })
-	if err := s.configureProvider(openaiTTS, cfg, true, false); err != nil || out.Len() != 0 {
-		t.Fatalf("gated row ran %v %q", err, out.String())
-	}
+	assertLinesInOrder(t, out.String(), "✓     Saved\n", "✓   OpenAI TTS configured!\n")
 }
 
 func TestConfigureVisionBackendChoices(t *testing.T) {
@@ -675,7 +562,7 @@ func TestConfigureVisionProviderModelPicker(t *testing.T) {
 
 func TestConfigureSimpleRequirementsPrompts(t *testing.T) {
 	var checks []string
-	swapHook(t, &toolsetHasKeysFn, func(_ *ToolsSetup, key string, cfg config.Tree, forceFresh bool, f *NousToolFeatures) (bool, error) {
+	swapHook(t, &toolsetHasKeysFn, func(_ *ToolsSetup, key string, cfg config.Tree) (bool, error) {
 		checks = append(checks, key)
 		return true, nil
 	})
@@ -683,7 +570,7 @@ func TestConfigureSimpleRequirementsPrompts(t *testing.T) {
 	if err := s.configureSimpleRequirements("vision", false); err != nil || out.Len() != 0 || !slices.Equal(checks, []string{"vision"}) {
 		t.Fatalf("configured vision %v %q %v", err, out.String(), checks)
 	}
-	swapHook(t, &toolsetHasKeysFn, func(*ToolsSetup, string, config.Tree, bool, *NousToolFeatures) (bool, error) { return false, nil })
+	swapHook(t, &toolsetHasKeysFn, func(*ToolsSetup, string, config.Tree) (bool, error) { return false, nil })
 	s, out = newTestToolsSetup(t, "4\n")
 	if err := s.configureSimpleRequirements("vision", false); err != nil || !strings.Contains(out.String(), "Skipped vision configuration") {
 		t.Fatalf("unconfigured vision %v %q", err, out.String())
@@ -726,13 +613,13 @@ func TestConfigureSimpleRequirementsPrompts(t *testing.T) {
 
 func TestToolsetNeedsConfigurationPromptWithoutCategory(t *testing.T) {
 	var asked []string
-	swapHook(t, &toolsetHasKeysFn, func(_ *ToolsSetup, key string, _ config.Tree, forceFresh bool, _ *NousToolFeatures) (bool, error) {
+	swapHook(t, &toolsetHasKeysFn, func(_ *ToolsSetup, key string, _ config.Tree) (bool, error) {
 		asked = append(asked, key)
 		return key == "vision", nil
 	})
 	s, _ := newTestToolsSetup(t, "")
 	for key, want := range map[string]bool{"vision": false, "terminal": true} {
-		if got, err := s.toolsetNeedsConfigurationPrompt(key, config.Tree{}, true); err != nil || got != want {
+		if got, err := s.toolsetNeedsConfigurationPrompt(key, config.Tree{}); err != nil || got != want {
 			t.Fatalf("%s needs %v %v", key, got, err)
 		}
 	}

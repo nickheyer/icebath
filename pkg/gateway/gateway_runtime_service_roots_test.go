@@ -44,7 +44,7 @@ func TestMalformedInstalledPlistHasABoundedRefusal(t *testing.T) {
 <plist version="1.0">
 <dict>
 	<key>Label</key>
-	<string>ai.icebath.gateway</string>
+	<string>app.icebath.gateway</string>
 </dict>
 </plist>
 `))
@@ -55,7 +55,7 @@ func TestMalformedInstalledPlistHasABoundedRefusal(t *testing.T) {
 	if !ok || d.Len() != 1 {
 		t.Fatalf("%#v", definition)
 	}
-	if label, _ := d.Get("Label"); label != "ai.icebath.gateway" {
+	if label, _ := d.Get("Label"); label != "app.icebath.gateway" {
 		t.Fatalf("%#v", definition)
 	}
 }

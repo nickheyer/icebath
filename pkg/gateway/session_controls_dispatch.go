@@ -8,6 +8,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tuigateway"
+	"github.com/nickheyer/icebath/pkg/tuihost"
 )
 
 // Method to handler of every verb dispatch serves outside the group controls, session_controls.py handlers L215
@@ -25,17 +26,17 @@ func (c *AuthorityConnection) handlers() map[string]controlHandler {
 		"cron.cancel": c.cronCancel, "cron.recover": c.cronRecover,
 		"worker.register": c.workerRegister, "worker.adopt": c.workerAdopt,
 		"worker.persist": c.workerPersist,
-		"setup.status":   c.setupStatus, "setup.runtime_check": c.setupRuntimeCheck,
+		"setup.status":   c.setupStatus,
 		"session.resume": c.resume, "session.detach": c.detach,
 		"prompt.submit":  c.submit,
 		"prompt.receipt": c.receipt, "prompt.cancel": c.cancel,
 		"prompt.resolve_unknown": c.resolveUnknown,
-		"session.interrupt":      c.interrupt, "session.events.since": c.eventsSince,
-		"approval.respond": c.respond, "clarify.respond": c.respondClarify,
+		"session.interrupt":      c.interrupt,
+		"approval.respond":       c.respond, "clarify.respond": c.respondClarify,
 	}
 	for _, group := range []map[string]controlHandler{
 		busyControlHandlers(c), queuedHandlersOf(c), sessionConfigHandlers(c), tuiConfigHandlers(c),
-		ancillaryHandlers(c), shellHandlers(c), tuiOpsHandlers(c), tuiSideHandlers(c), oneshotHandlers(c), handoffHandlers(c),
+		ancillaryHandlers(c), shellHandlers(c), tuiOpsHandlers(c), tuiSideHandlers(c), handoffHandlers(c),
 	} {
 		for name, handler := range group {
 			verbs[name] = handler
@@ -56,7 +57,6 @@ func (c *AuthorityConnection) handlers() map[string]controlHandler {
 	for name, handler := range connectionHandlers(c) {
 		verbs[name] = handler
 	}
-	verbs["session.control"] = bind(control)
 	return verbs
 }
 
@@ -116,15 +116,24 @@ func (c *AuthorityConnection) Dispatch(ctx context.Context, request *pyjson.Obje
 	}
 	sessionID, _ := params.GetOr("session_id", "").(string)
 	ref := SessionRef{ProfileID: c.actor.ProfileID, SessionID: sessionID}
-	contract := tuigateway.CanonicalMethods[method]
-	if contract != nil {
-		if problems := tuigateway.CanonicalParamProblems(contract, params); len(problems) > 0 {
+	typed := tuigateway.Lookup(tuigateway.KindCanonical, method)
+	if typed == nil {
+		typed = tuigateway.Lookup(tuigateway.KindMethod, method)
+	}
+	var contract *tuihost.MethodContract
+	if typed != nil {
+		var refused *tuigateway.ParamsRefusal
+		if err := typed.FitParams(params); errors.As(err, &refused) {
+			return refusalReply(rid, 4001, "invalid_params", map[string]any{"reason": "invalid_params", "fields": refused.Fields(), "detail": refused.Error()}), nil
+		}
+	} else if contract = tuihost.CanonicalMethods[method]; contract != nil {
+		if problems := tuihost.CanonicalParamProblems(contract, params); len(problems) > 0 {
 			return refusalReply(rid, 4001, "invalid_params", map[string]any{"reason": "invalid_params", "fields": problems}), nil
 		}
 	}
 	original := params.Copy()
-	if contract == nil {
-		contract = tuigateway.Methods[method]
+	if contract == nil && typed == nil {
+		contract = tuihost.Methods[method]
 	}
 	a := c.authority
 	if _, held := a.live(ref.SessionID); ref.SessionID != "" && !a.Retiring && ref.ProfileID == a.ProfileID && !held {
@@ -140,12 +149,11 @@ func (c *AuthorityConnection) Dispatch(ctx context.Context, request *pyjson.Obje
 	case groupMethods[method] != "" || method == "profiles.list":
 		result, err = dispatchGroupControl(scoped, c, method, params)
 	case verbs[method] == nil || (connectionMethods[method] && !sessionOwned(params)):
-		return refusalReply(rid, -32601, tuigateway.UnknownMethodMessage(method), map[string]any{"reason": "unknown_method"}), nil
+		return refusalReply(rid, -32601, tuihost.UnknownMethodMessage(method), map[string]any{"reason": "unknown_method"}), nil
 	default:
 		result, err = verbs[method](scoped, ref, params)
 		if deferred, isDeferred := result.(*DeferredReply); err == nil && isDeferred {
-			tuigateway.CheckParamsAccepted(contract, original)
-			check := func(result any) error { tuigateway.CheckResult(contract, result); return nil }
+			check := func(result any) error { checkCanonicalResult(typed, contract, original, method, result); return nil }
 			if err = deferred.Start(scoped, c, rid, check); err == nil {
 				return nil, nil
 			}
@@ -168,7 +176,16 @@ func (c *AuthorityConnection) Dispatch(ctx context.Context, request *pyjson.Obje
 		}
 		return nil, err
 	}
-	tuigateway.CheckParamsAccepted(contract, original)
-	tuigateway.CheckResult(contract, result)
-	return pyjson.ObjectOf("jsonrpc", "2.0", "id", rid, "result", result), nil
+	return pyjson.ObjectOf("jsonrpc", "2.0", "id", rid, "result", checkCanonicalResult(typed, contract, original, method, result)), nil
+}
+
+// Result of a verb checked against its typed contract or its pydantic one, a misfit reported and the result sent as the verb gave it
+func checkCanonicalResult(typed *tuigateway.Entry, contract *tuihost.MethodContract, original *pyjson.Object, method string, result any) any {
+	if typed == nil {
+		tuihost.CheckParamsAccepted(contract, original)
+		tuihost.CheckResult(contract, result)
+	} else if err := typed.CheckResult(result); err != nil {
+		tuihost.ReportMisfit("result of", method, err)
+	}
+	return result
 }

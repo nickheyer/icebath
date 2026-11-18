@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"log/slog"
 	"reflect"
 	"runtime"
 	"sort"
@@ -359,7 +358,7 @@ func (r *PlatformRegistry) resolve(ctx context.Context, name, scope string) {
 	}
 	if !isLoader && loading[key] {
 		r.mu.Unlock()
-		platformRegistryLog().Warn(fmt.Sprintf("Deferred platform '%s' recursively requested while loading", name))
+		pkgLog().Warn(fmt.Sprintf("Deferred platform '%s' recursively requested while loading", name))
 		return
 	}
 	r.mu.Unlock()
@@ -559,10 +558,10 @@ func (r *PlatformRegistry) register(entry *PlatformEntry, scope string) {
 	delete(r.consumedLoaders, loadKey{scope, entry.Name})
 	delete(deferred, entry.Name)
 	if prev, _ := entries.Get(entry.Name); prev != nil {
-		platformRegistryLog().Info(fmt.Sprintf("Platform '%s' re-registered (was %s, now %s)", entry.Name, prev.Source, entry.Source))
+		pkgLog().Info(fmt.Sprintf("Platform '%s' re-registered (was %s, now %s)", entry.Name, prev.Source, entry.Source))
 	}
 	entries.Set(entry.Name, entry)
-	platformRegistryLog().Debug(fmt.Sprintf("Registered platform adapter: %s (%s)", entry.Name, entry.Source))
+	pkgLog().Debug(fmt.Sprintf("Registered platform adapter: %s (%s)", entry.Name, entry.Source))
 }
 
 // Removes an entry, true when it existed, the scope inferred from the caller when not given
@@ -710,13 +709,13 @@ func (r *PlatformRegistry) CreateAdapter(ctx context.Context, name string, cfg *
 	probe := func(fn func() (bool, error), failureMsg string) (ok bool) {
 		defer func() {
 			if rec := recover(); rec != nil {
-				platformRegistryLog().Warn(fmt.Sprintf(failureMsg, entry.Label, pyrepr.Str(rec)))
+				pkgLog().Warn(fmt.Sprintf(failureMsg, entry.Label, pyrepr.Str(rec)))
 				ok = false
 			}
 		}()
 		got, err := fn()
 		if err != nil {
-			platformRegistryLog().Warn(fmt.Sprintf(failureMsg, entry.Label, err))
+			pkgLog().Warn(fmt.Sprintf(failureMsg, entry.Label, err))
 			return false
 		}
 		return got
@@ -728,7 +727,7 @@ func (r *PlatformRegistry) CreateAdapter(ctx context.Context, name string, cfg *
 		return entry.RunCheck(ctx), nil
 	}, "Platform '%s' check_fn raised: %s")
 	if !depsOK && entry.EnsureDepsFn != nil {
-		platformRegistryLog().Info(fmt.Sprintf("Platform '%s' dependencies missing — attempting install...", entry.Label))
+		pkgLog().Info(fmt.Sprintf("Platform '%s' dependencies missing — attempting install...", entry.Label))
 		depsOK = probe(func() (bool, error) { return entry.EnsureDepsFn(ctx) }, "Platform '%s' dependency install raised: %s")
 	}
 	if !depsOK {
@@ -736,17 +735,17 @@ func (r *PlatformRegistry) CreateAdapter(ctx context.Context, name string, cfg *
 		if entry.InstallHint != "" {
 			hint = " (" + entry.InstallHint + ")"
 		}
-		platformRegistryLog().Warn(fmt.Sprintf("Platform '%s' requirements not met%s", entry.Label, hint))
+		pkgLog().Warn(fmt.Sprintf("Platform '%s' requirements not met%s", entry.Label, hint))
 		return nil
 	}
 	if entry.HasValidateConfig() {
 		valid, err := guardedCall(func() (bool, error) { return entry.RunValidateConfig(ctx, cfg) })
 		if err != nil {
-			platformRegistryLog().Warn(fmt.Sprintf("Platform '%s' config validation error: %s", entry.Label, err))
+			pkgLog().Warn(fmt.Sprintf("Platform '%s' config validation error: %s", entry.Label, err))
 			return nil
 		}
 		if !valid {
-			platformRegistryLog().Warn(fmt.Sprintf("Platform '%s' config validation failed", entry.Label))
+			pkgLog().Warn(fmt.Sprintf("Platform '%s' config validation failed", entry.Label))
 			return nil
 		}
 	}
@@ -757,7 +756,7 @@ func (r *PlatformRegistry) CreateAdapter(ctx context.Context, name string, cfg *
 		return entry.AdapterFactory(ctx, cfg)
 	})
 	if err != nil {
-		platformRegistryLog().Error(fmt.Sprintf("Failed to create adapter for platform '%s': %s", entry.Label, err))
+		pkgLog().Error(fmt.Sprintf("Failed to create adapter for platform '%s': %s", entry.Label, err))
 		return nil
 	}
 	return adapter
@@ -875,6 +874,3 @@ func (s platformRegistryService) Unregister(name string) {
 	}
 	s.r.unregister(ctx, name, inferred)
 }
-
-// Logger of the reference module gateway.platform_registry
-func platformRegistryLog() *slog.Logger { return slog.Default().With("logger", "gateway.platform_registry") }

@@ -3,7 +3,6 @@ package gateway
 import (
 	"context"
 	"fmt"
-	"log/slog"
 	"os"
 	"strings"
 
@@ -24,8 +23,6 @@ const (
 	relayRedialHoldMaxS         = 60.0
 	relayAmbiguousReaderExitOps = "send_media"
 )
-
-func wsLog() *slog.Logger { return slog.Default().With("logger", "gateway.relay.ws_transport") }
 
 // Name and alias to command table of the parent slash, installed by the process wiring from pkg/commands
 var RelaySlackSubcommandMap func(ctx context.Context) map[string]string
@@ -179,7 +176,7 @@ func relayMediaTypesFromWire(raw *pyjson.Object) []string {
 		}
 	}
 	if media, ok := raw.GetOr("media", nil).([]any); missing > 0 && ok && len(media) > 0 {
-		wsLog().Debug(fmt.Sprintf("relay inbound: %d/%d media_urls had no matching media[] mime", missing, len(types)))
+		pkgLog().Debug(fmt.Sprintf("relay inbound: %d/%d media_urls had no matching media[] mime", missing, len(types)))
 	}
 	return types
 }

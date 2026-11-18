@@ -11,7 +11,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 )
 
-// In memory store carrying the live schema, as the hermes cascade fixture builds it
+// In memory store carrying the live schema, as the cascade fixture builds it
 func cascadeConn(t *testing.T) SQLiteConn {
 	t.Helper()
 	t.Setenv("ICEBATH_CJK_FTS", "off")

@@ -34,7 +34,7 @@ type Cooldown struct {
 
 // NewCooldown returns an unarmed cooldown reading the deferral threshold from config
 func NewCooldown(cfg config.Tree) *Cooldown {
-	return &Cooldown{MinSwitchReset: MinSwitchResetFromConfig(cfg), now: time.Now, rejected: map[[2]string]bool{}, Log: slog.Default()}
+	return &Cooldown{MinSwitchReset: MinSwitchResetFromConfig(cfg), now: time.Now, rejected: map[[2]string]bool{}, Log: pkgLog()}
 }
 
 func (c *Cooldown) clock() time.Time {
@@ -46,9 +46,9 @@ func (c *Cooldown) clock() time.Time {
 
 func (c *Cooldown) logger() *slog.Logger {
 	if c.Log == nil {
-		return slog.Default()
+		return pkgLog()
 	}
-	return c.Log
+	return c.Log.With("logger", logName)
 }
 
 // MinSwitchResetFromConfig reads fallback.min_switch_reset_seconds, zero or unreadable means off

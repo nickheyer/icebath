@@ -8,15 +8,15 @@ import (
 )
 
 var gatewayLifecycleLaunchctl = []string{
-	"launchctl kickstart -k gui/501/ai.icebath.gateway",
-	"launchctl unload ~/Library/LaunchAgents/ai.icebath.gateway.plist",
-	"launchctl load ~/Library/LaunchAgents/ai.icebath.gateway.plist",
+	"launchctl kickstart -k gui/501/app.icebath.gateway",
+	"launchctl unload ~/Library/LaunchAgents/app.icebath.gateway.plist",
+	"launchctl load ~/Library/LaunchAgents/app.icebath.gateway.plist",
+	"launchctl stop app.icebath.gateway",
+	"launchctl restart app.icebath.gateway",
+	"launchctl bootout gui/501/app.icebath.gateway",
+	"launchctl remove app.icebath.gateway",
+	"launchctl disable gui/501/app.icebath.gateway",
 	"launchctl stop ai.icebath.gateway",
-	"launchctl restart ai.icebath.gateway",
-	"launchctl bootout gui/501/ai.icebath.gateway",
-	"launchctl remove ai.icebath.gateway",
-	"launchctl disable gui/501/ai.icebath.gateway",
-	"launchctl stop ai.hermes.gateway",
 }
 
 func TestLifecycleGuardLaunchctlParity(t *testing.T) {
@@ -29,7 +29,7 @@ func TestLifecycleGuardLaunchctlParity(t *testing.T) {
 		}
 	}
 	for _, cmd := range []string{
-		"launchctl bootout gui/501/com.example.unrelated", "launchctl remove ai.icebath.update-checker",
+		"launchctl bootout gui/501/com.example.unrelated", "launchctl remove app.icebath.update-checker",
 		"launchctl disable gui/501/com.apple.WindowServer", "launchctl print system/com.apple.WindowServer",
 	} {
 		if ContainsGatewayLifecycleCommand(cmd) {
@@ -40,11 +40,11 @@ func TestLifecycleGuardLaunchctlParity(t *testing.T) {
 
 func TestGatewayLifecycleShapes(t *testing.T) {
 	for _, cmd := range []string{
-		"icebath gateway restart", "hermes gateway stop", "icebath.exe gateway uninstall",
+		"icebath gateway restart", "icebath gateway stop", "icebath.exe gateway uninstall",
 		"systemctl --user restart icebath-gateway", "pkill -f 'icebath gateway'", "taskkill /F /FI \"imagename eq icebath\" gateway",
-		`launchctl kick"start" -k gui/501/ai.icebath.gateway`, "launchctl \\\n  bootout gui/501/ai.icebath.gateway",
-		`subprocess.run(["launchctl", "bootout", "gui/501/ai.icebath.gateway"])`,
-		"label=ai.icebath.gateway; launchctl bootout \"gui/501/$label\"",
+		`launchctl kick"start" -k gui/501/app.icebath.gateway`, "launchctl \\\n  bootout gui/501/app.icebath.gateway",
+		`subprocess.run(["launchctl", "bootout", "gui/501/app.icebath.gateway"])`,
+		"label=app.icebath.gateway; launchctl bootout \"gui/501/$label\"",
 		"cat <<'EOF'\nicebath gateway restart\nEOF\nicebath gateway restart",
 		"pkill -9 python3", "taskkill /F /IM python.exe", "killall python", "pgrep python | xargs kill", "Get-Process python | Stop-Process",
 	} {

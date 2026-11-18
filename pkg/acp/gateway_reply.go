@@ -10,10 +10,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyacp"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
-	"github.com/nickheyer/icebath/pkg/logging"
 )
-
-var gatewayReplyLog = logging.GetLogger("acp_adapter.gateway_reply")
 
 // Reply text of a message frame, empty when text is absent or null
 func replyText(payload *pyjson.Object) string {
@@ -40,7 +37,7 @@ func (a *GatewayACPAgent) projectTool(ctx context.Context, kind, sid, editorID, 
 		}
 	}
 	if !dhas(payload, "tool_call_id") {
-		return errors.New("KeyError: 'tool_call_id'")
+		return errors.New("the gateway tool event has no tool_call_id")
 	}
 	callID := pyStr(dget(payload, "tool_call_id"))
 	key := toolKey{sid, callID}
@@ -214,7 +211,7 @@ func (a *GatewayACPAgent) closeCard(ctx context.Context, editorID string, toolCa
 		if errors.Is(err, context.Canceled) {
 			return err
 		}
-		gatewayReplyLog.Debug(fmt.Sprintf("ACP permission card %s not closed\n%s", toolCall.ToolCallID, err))
+		pkgLog().Debug(fmt.Sprintf("ACP permission card %s not closed\n%s", toolCall.ToolCallID, err))
 	}
 	return nil
 }

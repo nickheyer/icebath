@@ -27,7 +27,7 @@ func persistedSessionID(k *kanbanCall, sessionID any) (*string, error) {
 	}
 	db, err := state.Open(home.StatePath(k.home()), state.Options{ReadOnly: true})
 	if err != nil {
-		kanbanToolsLog.Debug("Could not open state.db to verify Kanban provenance", "exc_info", excText(err))
+		pkgLog().Debug("Could not open state.db to verify Kanban provenance", "exc_info", excText(err))
 		return nil, nil
 	}
 	defer func() { _ = db.Close() }()
@@ -507,7 +507,7 @@ func maybeAutoSubscribe(k *kanbanCall, conn state.SQLiteConn, taskID string) (su
 		if target != nil {
 			platform, keySet = target.Platform, target.ChatID != ""
 		}
-		kanbanToolsLog.Warn(fmt.Sprintf("_maybe_auto_subscribe failed: %s (platform=%s key_set=%s)",
+		pkgLog().Warn(fmt.Sprintf("_maybe_auto_subscribe failed: %s (platform=%s key_set=%s)",
 			excRepr(cause), pyrepr.StrRepr(platform), pyrepr.Repr(keySet)))
 		return false
 	}

@@ -275,7 +275,7 @@ func countOllamaProbes(t *testing.T) *int {
 	return calls
 }
 
-// Ordered models mapping like the hermes dict literal
+// Ordered models mapping like the dict literal
 func orderedModels(ids ...string) map[string]any {
 	m := map[string]any{}
 	for _, id := range ids {

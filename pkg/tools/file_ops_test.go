@@ -548,7 +548,7 @@ func TestFileOpsPatchReplaceFailsWhenNotPersisted(t *testing.T) {
 		}
 		return &ExecResult{}
 	}), "")
-	r := ops.patchReplace("/tmp/test/a.py", "hello", "hi", false, nil)
+	r := ops.patchReplace("/tmp/test/a.py", "hello", "hi", false)
 	if r.Error == "" || !strings.Contains(strings.ToLower(r.Error), "verification failed") || !strings.Contains(strings.ToLower(r.Error), "did not persist") {
 		t.Fatalf("got success=%v diff=%q error=%q", r.Success, r.Diff, r.Error)
 	}
@@ -574,7 +574,7 @@ func TestFileOpsPatchReplaceFailsWhenVerifyReadErrors(t *testing.T) {
 		}
 		return &ExecResult{}
 	}), "")
-	r := ops.patchReplace("/tmp/test/a.py", "hello", "hi", false, nil)
+	r := ops.patchReplace("/tmp/test/a.py", "hello", "hi", false)
 	if r.Error == "" || !strings.Contains(strings.ToLower(r.Error), "could not re-read") {
 		t.Fatalf("got %+v", r)
 	}
@@ -813,7 +813,7 @@ func TestFileOpsDeleteRefusalTextMatchesSnippet(t *testing.T) {
 	native := ops.DeleteFile("./" + strings.ReplaceAll(rel, "/", "//"))
 	t.Setenv("ICEBATH_NATIVE_FILE_READ", "0")
 	shell := ops.DeleteFile("./" + strings.ReplaceAll(rel, "/", "//"))
-	want := "Failed to delete ./ro//f: [Errno 13] Permission denied: 'ro/f'"
+	want := "Failed to delete ./ro//f: permission denied: ro/f"
 	if native.Error != want {
 		t.Fatalf("native %q", native.Error)
 	}
@@ -1089,7 +1089,7 @@ func TestFileOpsHeredocStdinBackendsAreByteExact(t *testing.T) {
 	env := &fakeTermEnv{envType: "local", cwd: dir, execute: bashExecute(true, nil)}
 	ops := newShellFileOps(remoteTestEnv(t), env, dir)
 	p := writeTestFile(t, dir, "notes.txt", []byte("line one\nline two\nimportant data"))
-	r := ops.patchReplace(p, "line two", "line 2", false, nil)
+	r := ops.patchReplace(p, "line two", "line 2", false)
 	if data, _ := os.ReadFile(p); string(data) != "line one\nline 2\nimportant data" || !r.Success {
 		t.Fatalf("patch %q %+v", data, r)
 	}
@@ -1335,7 +1335,7 @@ func TestFileOpsReadFileRawAndPatchOnBoundaryCutCJK(t *testing.T) {
 			t.Fatalf("native=%v raw %+v", native, raw.Error)
 		}
 		p := writeTestFile(t, dir, "doc.md", []byte(strings.Repeat("漢字テキスト", 200)+"\nEND-MARKER\n"))
-		r := ops.patchReplace(p, "END-MARKER", "END-PATCHED", false, nil)
+		r := ops.patchReplace(p, "END-MARKER", "END-PATCHED", false)
 		if data, _ := os.ReadFile(p); !r.Success || !strings.Contains(string(data), "END-PATCHED") {
 			t.Fatalf("native=%v patch %+v", native, r)
 		}
@@ -1396,7 +1396,7 @@ func TestFileOpsFailClosedSyntaxGate(t *testing.T) {
 			t.Fatalf("native=%v invalid json written", native)
 		}
 		want := "Refusing to write '" + target + "': candidate content fails .json syntax validation " +
-			"(JSONDecodeError: Expecting property name enclosed in double quotes (line 1, column 9)). The file was NOT created or modified. Fix the content and retry."
+			"(invalid JSON: Expecting property name enclosed in double quotes (line 1, column 9)). The file was NOT created or modified. Fix the content and retry."
 		if r.Error != want {
 			t.Fatalf("native=%v message %q", native, r.Error)
 		}
@@ -1437,7 +1437,7 @@ func TestFileOpsFailClosedSyntaxGateYAMLAndTOML(t *testing.T) {
 		bad := filepath.Join(dir, "bad.yaml")
 		r := ops.WriteFile(bad, "key: value\n  bad: indent\n", nil)
 		want := "Refusing to write '" + bad + "': candidate content fails .yaml syntax validation " +
-			"(YAMLError: mapping values are not allowed in this context\n  in \"<unicode string>\", line 2, column 6). " +
+			"(invalid YAML: mapping values are not allowed in this context\n  in \"<unicode string>\", line 2, column 6). " +
 			"The file was NOT created or modified. Fix the content and retry."
 		if r.Error != want {
 			t.Fatalf("native=%v yaml refusal %q", native, r.Error)
@@ -1447,7 +1447,7 @@ func TestFileOpsFailClosedSyntaxGateYAMLAndTOML(t *testing.T) {
 		}
 		toml := filepath.Join(dir, "b.toml")
 		r = ops.WriteFile(toml, "[section\nk = \"v\"", nil)
-		if !strings.Contains(r.Error, "(TOMLDecodeError: Expected ']' at the end of a table declaration (at line 1, column 9))") {
+		if !strings.Contains(r.Error, "(invalid TOML: Expected ']' at the end of a table declaration (at line 1, column 9))") {
 			t.Fatalf("native=%v toml refusal %q", native, r.Error)
 		}
 		if _, err := os.Stat(toml); err == nil {
@@ -1460,12 +1460,12 @@ func TestLintCheckLintTOMLAndYAMLInproc(t *testing.T) {
 	ops := newShellFileOps(nil, mockFileOpsEnv(nil), "/")
 	content := "[section\nk = \"v\""
 	r := ops.checkLint("/tmp/b.toml", &content)
-	if r.Success || r.Output != "TOMLDecodeError: Expected ']' at the end of a table declaration (at line 1, column 9)" {
+	if r.Success || r.Output != "invalid TOML: Expected ']' at the end of a table declaration (at line 1, column 9)" {
 		t.Fatalf("%+v", r)
 	}
 	flow := "a: [1, 2\nb: 3\n"
 	r = ops.checkLint("/tmp/c.yml", &flow)
-	want := "YAMLError: while parsing a flow sequence\n  in \"<unicode string>\", line 1, column 4\n" +
+	want := "invalid YAML: while parsing a flow sequence\n  in \"<unicode string>\", line 1, column 4\n" +
 		"did not find expected ',' or ']'\n  in \"<unicode string>\", line 2, column 2"
 	if r.Success || r.Output != want {
 		t.Fatalf("%+v", r)
@@ -1479,7 +1479,7 @@ func TestLintCheckLintTOMLAndYAMLInproc(t *testing.T) {
 func TestFileOpsPatchReplaceResultShape(t *testing.T) {
 	ops, _, dir := hostFileOps(t, true)
 	p := writeTestFile(t, dir, "notes.txt", []byte("alpha\r\nbeta\r\n"))
-	r := ops.patchReplace(p, "beta", "gamma delta epsilon", false, nil)
+	r := ops.patchReplace(p, "beta", "gamma delta epsilon", false)
 	if !r.Success || r.Error != "" || len(r.FilesModified) != 1 || r.FilesModified[0] != p || len(r.Writes) != 1 {
 		t.Fatalf("%+v", r)
 	}
@@ -1492,11 +1492,11 @@ func TestFileOpsPatchReplaceResultShape(t *testing.T) {
 	if !r.Writes[0].readKnown || !r.Writes[0].writtenKnown || r.Writes[0].path != p {
 		t.Fatalf("writes %+v", r.Writes)
 	}
-	again := ops.patchReplace(p, "zzz missing", "gamma delta epsilon", false, nil)
+	again := ops.patchReplace(p, "zzz missing", "gamma delta epsilon", false)
 	if again.Error != "" || !again.Success || !again.NoChange {
 		t.Fatalf("already applied %+v", again)
 	}
-	miss := ops.patchReplace(p, "nowhere to be found", "replacement text", false, nil)
+	miss := ops.patchReplace(p, "nowhere to be found", "replacement text", false)
 	if miss.Success || !strings.HasPrefix(miss.Error, "Could not find a match for old_string") {
 		t.Fatalf("miss %+v", miss)
 	}
@@ -1505,20 +1505,16 @@ func TestFileOpsPatchReplaceResultShape(t *testing.T) {
 func TestFileOpsPatchV4AThroughBackend(t *testing.T) {
 	ops, _, dir := hostFileOps(t, true)
 	p := writeTestFile(t, dir, "v.txt", []byte("one\ntwo\nthree\n"))
-	probe := &editProbe{}
 	patch := "*** Begin Patch\n*** Update File: " + p + "\n@@\n one\n-two\n+TWO\n three\n*** End Patch"
-	r := ops.patchV4A(patch, probe)
+	r := ops.patchV4A(patch)
 	if !r.Success || r.Error != "" {
 		t.Fatalf("%+v", r)
 	}
 	if data, _ := os.ReadFile(p); string(data) != "one\nTWO\nthree\n" {
 		t.Fatalf("content %q", data)
 	}
-	if bad := ops.patchV4A("not a patch", probe); !strings.HasPrefix(bad.Error, "Failed to parse patch: ") && !strings.Contains(bad.Error, "validation failed") {
+	if bad := ops.patchV4A("not a patch"); !strings.HasPrefix(bad.Error, "Failed to parse patch: ") && !strings.Contains(bad.Error, "validation failed") {
 		t.Fatalf("bad patch %+v", bad)
-	}
-	if got := v4aProbe(probedShellFileOps{shellFileOps: ops, probe: probe}); got != probe {
-		t.Fatal("probe not visible to the applier")
 	}
 }
 
@@ -1754,7 +1750,7 @@ func TestFileOpsPatchReplaceFunnelRejectsSurrogateNewString(t *testing.T) {
 	for _, native := range []bool{true, false} {
 		ops, _, dir := hostFileOps(t, native)
 		p := writeTestFile(t, dir, "patchme.txt", []byte("old\n"))
-		r := ops.patchReplace(p, "old", "new\xed\xb1\xbf", false, nil)
+		r := ops.patchReplace(p, "old", "new\xed\xb1\xbf", false)
 		if !strings.Contains(r.Error, "surrogate") || r.Error != "Failed to write changes: "+loneSurrogateRefusal(p, `'\udc7f'`) {
 			t.Fatalf("native=%v %+v", native, r)
 		}

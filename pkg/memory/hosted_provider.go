@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 
+	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/plugins"
 )
@@ -112,7 +113,7 @@ func (p *hostedProvider) UnavailableReason(ctx context.Context) string {
 
 func (p *hostedProvider) Initialize(ctx context.Context, sessionID string, opts InitOptions) error {
 	kwargs := map[string]any{"session_id": sessionID}
-	for key, value := range map[string]string{"platform": opts.Platform, "hermes_home": opts.Home, "agent_context": opts.AgentContext,
+	for key, value := range map[string]string{"platform": opts.Platform, home.RecordKey: opts.Home, "agent_context": opts.AgentContext,
 		"agent_identity": opts.AgentIdentity, "agent_workspace": opts.AgentWorkspace, "agent_id": opts.AgentID,
 		"parent_session_id": opts.ParentSessionID, "session_title": opts.SessionTitle, "session_title_source": opts.SessionTitleSource,
 		"cwd": opts.Cwd, "user_id": opts.UserID, "user_id_alt": opts.UserIDAlt, "user_name": opts.UserName, "chat_id": opts.ChatID,
@@ -205,7 +206,7 @@ func (p *hostedProvider) ToolSchemas(ctx context.Context) ([]map[string]any, err
 
 func (p *hostedProvider) HandleToolCall(ctx context.Context, toolName string, args map[string]any, opts ToolCallOptions) (string, error) {
 	kwargs := map[string]any{}
-	setIf(kwargs, "hermes_home", opts.Home)
+	setIf(kwargs, home.RecordKey, opts.Home)
 	setIf(kwargs, "agent_identity", opts.AgentIdentity)
 	setIf(kwargs, "caller_gsk", opts.CallerGSK)
 	v, err := p.obj.Call(ctx, "handle_tool_call", []any{toolName, args}, p.accepted("handle_tool_call", kwargs))

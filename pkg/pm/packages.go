@@ -47,16 +47,14 @@ var nodePlat = map[string]string{
 // Target the catalogue compares against, replaced by tests the way they patch the module name
 var packagesCurrentTarget = CurrentTarget
 
-// Python KeyError text for a missing mapping key
-func keyError(key string) error { return fmt.Errorf("KeyError: %s", pyrepr.StrRepr(key)) }
+// Lookup failure in a package table, classed KeyError for the worker wire
+func missingKey(msg string) error { return &PyError{Class: "KeyError", Message: msg} }
 
-// Python ValueError text of unpacking a split into exactly two names
-func unpackTwo(parts []string) (string, string, error) {
-	switch {
-	case len(parts) > 2:
-		return "", "", fmt.Errorf("ValueError: too many values to unpack (expected 2, got %d)", len(parts))
-	case len(parts) < 2:
-		return "", "", fmt.Errorf("ValueError: not enough values to unpack (expected 2, got %d)", len(parts))
+// Two parts of s split at sep, a ValueError classed failure naming what s is otherwise
+func unpackTwo(s, sep, what string) (string, string, error) {
+	parts := strings.Split(s, sep)
+	if len(parts) != 2 {
+		return "", "", &PyError{Class: "ValueError", Message: fmt.Sprintf("%s %s must be two parts joined by %s", what, s, sep)}
 	}
 	return parts[0], parts[1], nil
 }
@@ -381,10 +379,10 @@ func osNormcase(path string) string {
 	return path
 }
 
-// Registers every catalogue tool package
+// Registers every catalogue tool package of the binary store, the package manager registering the project venv
 func init() {
 	for _, p := range []Package{
-		newUv(), newPython(), newVenv(""), newNodejs(), newTermuxDocker(), newNpm(), newGit(), newGh(),
+		newUv(), newPython(), newNodejs(), newTermuxDocker(), newNpm(), newGit(), newGh(),
 		newFfmpeg(), newRipgrep(), newCuaDriver(), newChromium(), newWhisperCppCpu(),
 	} {
 		MustRegister(p)

@@ -20,7 +20,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/tools"
 )
 
-// Calls of the target selection the hermes tests replace, the resolver, the config read and the run's channel
+// Calls of the target selection the tests replace, the resolver, the config read and the run's channel
 var (
 	checkResolveSourceTarget = ResolveSourceTarget
 	checkReadableConfig      = config.RequireReadableConfigBeforeWrite
@@ -414,7 +414,7 @@ func fetchReleaseTag(ctx context.Context, w io.Writer, gitCmd []string, root str
 	return nil
 }
 
-var updateCheckLog = updateLog.With("logger", "hermes_cli.update_cmd_check")
+var updateCheckLog = pkgLog()
 
 // HEAD's sha when the channel's release predates the gateway runtime these stores use, else empty
 func holdChannelReleaseBehindRuntime(ctx context.Context, w io.Writer, gitCmd []string, targetRef, channel string) string {

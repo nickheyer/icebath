@@ -14,7 +14,7 @@ func liveOwnerLedger(t *testing.T) (*Ledger, *Store) {
 	t.Helper()
 	now := time.Date(2026, 5, 1, 12, 0, 0, 0, time.UTC)
 	s := newClockStore(t, &now, time.UTC)
-	patchChronos(t, &ownerIsLive, func(int64, any) (bool, error) { return true, nil })
+	patchSeam(t, &ownerIsLive, func(int64, any) (bool, error) { return true, nil })
 	return openExecutionsLedger(s), s
 }
 
@@ -119,7 +119,7 @@ func TestProgressStampedDuringTheSweepKeepsTheRun(t *testing.T) {
 		t.Fatal("no bound")
 	}
 	eid := seedRunning(t, l, "job-resumed", bound+3600, 99999)
-	patchChronos(t, &ownerIsLive, func(int64, any) (bool, error) {
+	patchSeam(t, &ownerIsLive, func(int64, any) (bool, error) {
 		editExecution(t, l, eid, "progress_at", FormatISO(s.clk.now()))
 		return true, nil
 	})

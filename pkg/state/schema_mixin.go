@@ -5,7 +5,6 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
-	"log/slog"
 	"math/big"
 	"os"
 	"path/filepath"
@@ -280,7 +279,7 @@ func writeSchemaColumnsCache(cachePath, schemaHash string, tables *pyjson.Object
 	}
 }
 
-// SessionDB members the schema migrations call, implemented by the hermes_state SessionDB
+// SessionDB members the schema migrations call, implemented by the SessionDB
 type schemaHost interface {
 	ftsSetupHost
 	setMeta(ctx context.Context, key, value string, cursor SQLiteConn) error
@@ -322,7 +321,7 @@ func (s *sessionSchema) dedupeLegacySystemPrompts(ctx context.Context, conn SQLi
 		}
 		if err != nil {
 			if isOperationalError(err) {
-				slog.Warn(fmt.Sprintf("v25 prompt dedupe paused after contention (%s); "+
+				pkgLog().Warn(fmt.Sprintf("v25 prompt dedupe paused after contention (%s); "+
 					"unmigrated rows keep the legacy inline prompt and the next schema init resumes the migration.", errText(err)))
 				return nil
 			}
@@ -334,9 +333,9 @@ func (s *sessionSchema) dedupeLegacySystemPrompts(ctx context.Context, conn SQLi
 
 // Reports whether the linked SQLite can create an FTS5 table, warning once when the module is missing
 func (s *sessionSchema) sqliteSupportsFTS5(ctx context.Context, conn SQLiteConn) (bool, error) {
-	_, err := conn.ExecContext(ctx, "CREATE VIRTUAL TABLE temp._hermes_fts5_probe USING fts5(x)")
+	_, err := conn.ExecContext(ctx, "CREATE VIRTUAL TABLE temp._icebath_fts5_probe USING fts5(x)")
 	if err == nil {
-		_, err = conn.ExecContext(ctx, "DROP TABLE temp._hermes_fts5_probe")
+		_, err = conn.ExecContext(ctx, "DROP TABLE temp._icebath_fts5_probe")
 	}
 	if err == nil {
 		return true, nil
@@ -414,7 +413,7 @@ func (s *sessionSchema) migrateBroadFTSUpdateTriggers(ctx context.Context, conn 
 	if slices.Contains(toDrop, "messages_fts_cjk_update") {
 		if err := s.fts.ensureFTSCJKSchema(ctx, conn); err != nil {
 			s.quarantineCJKAfterUpdateOfMigration(ctx, conn)
-			slog.Error("CJK FTS re-ensure after UPDATE OF migration failed\n" + errText(err))
+			pkgLog().Error("CJK FTS re-ensure after UPDATE OF migration failed\n" + errText(err))
 			return 0, err
 		}
 		row, err := fetchOne(ctx, conn, "SELECT sql FROM sqlite_master WHERE type = 'trigger' AND name = ?", "messages_fts_cjk_update")
@@ -423,11 +422,11 @@ func (s *sessionSchema) migrateBroadFTSUpdateTriggers(ctx context.Context, conn 
 		}
 		if row == nil || ftsUpdateTriggerNeedsNarrowing(row[0]) {
 			s.quarantineCJKAfterUpdateOfMigration(ctx, conn)
-			slog.Warn("CJK FTS UPDATE trigger missing or still broad after " +
+			pkgLog().Warn("CJK FTS UPDATE trigger missing or still broad after " +
 				"UPDATE OF migration; marked stale and unavailable")
 		}
 	}
-	slog.Info(fmt.Sprintf("Migrated %d broad FTS UPDATE trigger(s) to AFTER UPDATE OF (no rebuild required)", len(toDrop)))
+	pkgLog().Info(fmt.Sprintf("Migrated %d broad FTS UPDATE trigger(s) to AFTER UPDATE OF (no rebuild required)", len(toDrop)))
 	return len(toDrop), nil
 }
 
@@ -667,10 +666,10 @@ func (s *sessionSchema) migrateTrigramCronExclusion(ctx context.Context, conn SQ
 func (s *sessionSchema) quarantineCJKAfterUpdateOfMigration(ctx context.Context, conn SQLiteConn) {
 	s.fts.ftsCJKAvailable.Store(false)
 	if err := s.host.setMeta(ctx, FTSCJKStaleKey, "1", conn); err != nil {
-		slog.Debug("Could not persist CJK FTS stale breadcrumb\n" + errText(err))
+		pkgLog().Debug("Could not persist CJK FTS stale breadcrumb\n" + errText(err))
 	}
 	if _, err := conn.ExecContext(ctx, "DROP TRIGGER IF EXISTS messages_fts_cjk_update"); err != nil {
-		slog.Debug("Could not drop residual CJK UPDATE trigger after quarantine\n" + errText(err))
+		pkgLog().Debug("Could not drop residual CJK UPDATE trigger after quarantine\n" + errText(err))
 	}
 }
 
@@ -700,7 +699,7 @@ func rebuildFTSIndexes(ctx context.Context, conn SQLiteConn, legacy, includeTrig
 	return err
 }
 
-// Rebuild admission the startup paths consult, the schema module binding hermes tests patch
+// Rebuild admission the startup paths consult, the schema module binding tests patch
 var startupRebuildAdmission = FTSRebuildAdmission
 
 // Runs a startup FTS rebuild under cross process admission, detaching FTS sync with a stale breadcrumb when refused
@@ -716,7 +715,7 @@ func (s *sessionSchema) runAdmittedStartupRebuild(ctx context.Context, conn SQLi
 	if err != nil || admittedRun {
 		return err
 	}
-	slog.Warn("Deferred startup FTS rebuild: another process holds the " +
+	pkgLog().Warn("Deferred startup FTS rebuild: another process holds the " +
 		"rebuild authority for this state.db; detaching FTS sync until the stale-index recovery path rebuilds it.")
 	if _, err := conn.ExecContext(ctx, staleKeyUpsertSQL, FTSStaleKey); err != nil {
 		return err

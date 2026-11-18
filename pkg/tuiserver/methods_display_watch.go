@@ -16,7 +16,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/tools"
-	"github.com/nickheyer/icebath/pkg/tuigateway"
+	"github.com/nickheyer/icebath/pkg/tuihost"
 )
 
 const (
@@ -91,7 +91,7 @@ func notifyAgentsOfScreenChange(profileKey string, payload *pyjson.Object) {
 		return
 	}
 	var targets []*agent.AIAgent
-	for _, live := range tuigateway.LiveSessions() {
+	for _, live := range tuihost.LiveSessions() {
 		a := sessionAgent(live.Session)
 		if a == nil {
 			continue
@@ -213,7 +213,7 @@ func ensureLeaseWatcher() {
 	go func() {
 		for {
 			if err := leaseWatchPass(); err != nil {
-				logger().Debug(fmt.Sprintf("lease watcher poll failed: %s", err))
+				pkgLog().Debug(fmt.Sprintf("lease watcher poll failed: %s", err))
 			}
 			time.Sleep(leasePollInterval)
 		}

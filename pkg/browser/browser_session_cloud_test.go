@@ -40,7 +40,7 @@ func resolutionCached(env *tools.Env) bool {
 	return false
 }
 
-// TestCloudProviderCachePolicy test_cache_is_isolated_by_hermes_home
+// Cloud provider cache is isolated by home
 func TestCloudProviderCacheIsolatedByHome(t *testing.T) {
 	freshProviderCache(t)
 	root := t.TempDir()
@@ -219,43 +219,11 @@ func TestCloudProviderUnregisteredExplicitNameRaisesValueError(t *testing.T) {
 	if resolutionCached(env) {
 		t.Fatal("raised resolution cached")
 	}
-	if name, err := browserBackendName(env, ""); err == nil || name != "" {
-		t.Fatalf("backend name swallowed the ValueError %q %v", name, err)
-	}
 }
 
-func TestNousSelectionResolvesBrowserUse(t *testing.T) {
+func TestCDPOverrideIsNeverALocalBackend(t *testing.T) {
 	freshProviderCache(t)
-	pin(t, &ensureBrowserPluginsLoaded, func(*tools.Env) {})
-	var asked []string
-	bu := newFakeCloud("browser-use", true)
-	pin(t, &cloudGetProvider, func(_ *tools.Env, name string) BrowserProvider { asked = append(asked, name); return bu })
-	env := cloudEnv(t, "", map[string]any{"cloud_provider": " NOUS "})
-	if p, err := getCloudProvider(env); err != nil || p != bu || strings.Join(asked, ",") != "browser-use" {
-		t.Fatalf("nous routed %v %v %v", p, err, asked)
-	}
-	if name, err := browserBackendName(env, ""); err != nil || name != "browser-use" {
-		t.Fatalf("backend %q %v", name, err)
-	}
-	if name, _ := browserBackendName(env, "lightpanda"); name != "lightpanda" {
-		t.Fatalf("local engine label %q", name)
-	}
-}
-
-func TestBrowserBackendNamePrecedence(t *testing.T) {
-	freshProviderCache(t)
-	env := cloudEnv(t, "", map[string]any{"cloud_provider": "local", "engine": "lightpanda"})
-	if name, _ := browserBackendName(env, ""); name != "lightpanda" {
-		t.Fatalf("engine label %q", name)
-	}
-	env.Config = config.Tree{"browser": map[string]any{"cloud_provider": "local"}}
-	if name, _ := browserBackendName(env, ""); name != "local" {
-		t.Fatalf("local label %q", name)
-	}
-	env.Config = config.Tree{"browser": map[string]any{"cloud_provider": "local", "cdp_url": "ws://127.0.0.1:9/x"}}
-	if name, _ := browserBackendName(env, "lightpanda"); name != "cdp" {
-		t.Fatalf("cdp label %q", name)
-	}
+	env := cloudEnv(t, "", map[string]any{"cloud_provider": "local", "cdp_url": "ws://127.0.0.1:9/x"})
 	if isLocalBackend(env) {
 		t.Fatal("a CDP override was trusted as local")
 	}
@@ -307,14 +275,12 @@ func clearCloudEnv(t *testing.T) {
 	}
 }
 
-// test_managed_browserbase_and_modal test_browser_use_explicit_local_mode_stays_local_even_when_managed_gateway_is_ready
-func TestExplicitLocalStaysLocalWithManagedGatewayReady(t *testing.T) {
+// Explicit local mode resolves no cloud provider and is a local backend
+func TestExplicitLocalStaysLocal(t *testing.T) {
 	freshProviderCache(t)
 	clearCloudEnv(t)
 	h := t.TempDir()
 	t.Setenv("ICEBATH_HOME", h)
-	t.Setenv("TOOL_GATEWAY_USER_TOKEN", "nous-token")
-	t.Setenv("BROWSER_USE_GATEWAY_URL", "http://127.0.0.1:3009")
 	if err := os.WriteFile(filepath.Join(h, "config.yaml"), []byte("browser:\n  cloud_provider: local\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
@@ -331,56 +297,29 @@ func TestExplicitLocalStaysLocalWithManagedGatewayReady(t *testing.T) {
 	}
 }
 
-// test_managed_browserbase_and_modal test_browserbase_does_not_use_gateway_only_configuration
-func TestBrowserbaseIgnoresGatewayOnlyConfiguration(t *testing.T) {
-	clearCloudEnv(t)
-	t.Setenv("TOOL_GATEWAY_USER_TOKEN", "nous-token")
-	t.Setenv("BROWSERBASE_GATEWAY_URL", "http://127.0.0.1:3009")
-	if newBrowserbaseProvider().IsAvailable(testEnv(t)) {
-		t.Fatal("browserbase available from a gateway only configuration")
-	}
-}
-
-func browserUseCase(t *testing.T, key, selection string, gw *tools.ManagedToolGatewayConfig) (*tools.Env, *int) {
+func browserUseCase(t *testing.T, key, selection string) *tools.Env {
 	clearCloudEnv(t)
 	if key != "" {
 		t.Setenv("BROWSER_USE_API_KEY", key)
 	}
-	calls := 0
 	pin(t, &browserUseReadSelection, func(*tools.Env, string) string { return selection })
-	pin(t, &browserUseResolveGateway, func(*tools.Env, string, func(string) (string, error), func(*tools.Env) string) (*tools.ManagedToolGatewayConfig, error) {
-		calls++
-		return gw, nil
-	})
-	return testEnv(t), &calls
+	return testEnv(t)
 }
 
-// TestBrowserUseStrictSelection test_nous_selection_routes_managed_even_with_direct_key
-func TestBrowserUseNousSelectionRoutesManaged(t *testing.T) {
-	env, _ := browserUseCase(t, "bu-key", "nous", &tools.ManagedToolGatewayConfig{Vendor: "browser-use", GatewayOrigin: "https://gw.example/", NousUserToken: "managed-token", ManagedMode: true})
-	c, err := newBrowserUseProvider().configOrNone(env)
-	if err != nil || c == nil || !c.ManagedMode || c.APIKey != "managed-token" {
-		t.Fatalf("config %+v %v", c, err)
-	}
-}
-
-// TestBrowserUseStrictSelection test_vendor_selection_missing_key_errors_without_managed_call
+// A stored Browser Use selection without a key names the missing key
 func TestBrowserUseVendorSelectionMissingKeyErrors(t *testing.T) {
-	env, calls := browserUseCase(t, "", "browser-use", nil)
+	env := browserUseCase(t, "", "browser-use")
 	_, err := newBrowserUseProvider().config(env)
 	if !isValueError(err) || !strings.Contains(err.Error(), "browser is configured to use browser-use") || !strings.Contains(err.Error(), "BROWSER_USE_API_KEY") {
 		t.Fatalf("err %v", err)
-	}
-	if *calls != 0 {
-		t.Fatalf("managed gateway consulted %d times", *calls)
 	}
 }
 
 // TestBrowserUseStrictSelection test_never_configured_key_still_routes_direct
 func TestBrowserUseNeverConfiguredRoutesDirect(t *testing.T) {
-	env, _ := browserUseCase(t, "bu-key", "", nil)
+	env := browserUseCase(t, "bu-key", "")
 	c, err := newBrowserUseProvider().configOrNone(env)
-	if err != nil || c == nil || c.ManagedMode || c.APIKey != "bu-key" {
+	if err != nil || c == nil || c.APIKey != "bu-key" {
 		t.Fatalf("config %+v %v", c, err)
 	}
 }

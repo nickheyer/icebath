@@ -16,7 +16,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/internal/pythread"
 	"github.com/nickheyer/icebath/pkg/internal/pyurl"
-	"github.com/nickheyer/icebath/pkg/observability"
 	"github.com/nickheyer/icebath/pkg/provider"
 )
 
@@ -87,23 +86,6 @@ func orEmpty(v any) any {
 	return v
 }
 
-// Skip reason for a chain entry known to be unusable locally, empty when usable
-func fallbackEntryUnavailableWithoutNetwork(ctx context.Context, fb map[string]any) string {
-	if pystr.Lower(pystr.Strip(pyrepr.Str(orEmpty(fb["provider"])))) != "nous" {
-		return ""
-	}
-	state, err := provider.NewStore(home.Dir(ctx)).GetProviderAuthState("nous")
-	if err != nil {
-		return "nous_auth_unreadable:" + pyErrorClass(err)
-	}
-	for _, key := range []string{"access_token", "refresh_token"} {
-		if s, ok := state[key].(string); ok && pystr.Strip(s) != "" {
-			return ""
-		}
-	}
-	return "nous_token_missing"
-}
-
 // Messages wire host match shared with the api mode detection
 func isAnthropicWireURL(url string) bool {
 	return provider.HostMandatedMode(url) == provider.ModeAnthropicMessages
@@ -137,9 +119,6 @@ func (a *AIAgent) fallbackAPIModeResolved(ctx context.Context, fbProvider, fbMod
 	if family := provider.OpencodeFamilyForCustom(fbProvider, fbBaseURL); family != "" {
 		return string(provider.OpenCodeModelMode(family, fbModel))
 	}
-	if fbProvider == "nous" || fbProvider == "nous-portal" || fbProvider == "nousresearch" {
-		return provider.NousAPIMode(ctx, fbModel)
-	}
 	if isAnthropicWireURL(fbBaseURL) {
 		return "anthropic_messages"
 	}
@@ -164,7 +143,7 @@ func (a *AIAgent) rebindFallbackCredentialPool(ctx context.Context, fbProvider, 
 	if a.credentialPool != nil {
 		poolProvider := pystr.Lower(pystr.Strip(a.credentialPool.Provider()))
 		if poolProvider != "" && poolProvider != fbProvider {
-			chatCompletionHelpersLog().Info(fmt.Sprintf("Fallback to %s/%s: clearing primary credential pool (pool_provider=%s) to prevent cross-provider contamination", fbProvider, fbModel, poolProvider))
+			pkgLog().Info(fmt.Sprintf("Fallback to %s/%s: clearing primary credential pool (pool_provider=%s) to prevent cross-provider contamination", fbProvider, fbModel, poolProvider))
 			a.credentialPool, a.credentialPoolEntryID = nil, ""
 		}
 	}
@@ -174,12 +153,12 @@ func (a *AIAgent) rebindFallbackCredentialPool(ctx context.Context, fbProvider, 
 	func() {
 		defer func() {
 			if r := recover(); r != nil {
-				chatCompletionHelpersLog().Debug(fmt.Sprintf("Fallback to %s/%s: could not attach credential pool: %v", fbProvider, fbModel, r))
+				pkgLog().Debug(fmt.Sprintf("Fallback to %s/%s: could not attach credential pool: %v", fbProvider, fbModel, r))
 			}
 		}()
 		if pool := agentLoadPool(agentPoolEnv(ctx), fbProvider); pool != nil && pool.HasCredentials() {
 			a.credentialPool = pool
-			chatCompletionHelpersLog().Info(fmt.Sprintf("Fallback to %s/%s: attached fallback credential pool", fbProvider, fbModel))
+			pkgLog().Info(fmt.Sprintf("Fallback to %s/%s: attached fallback credential pool", fbProvider, fbModel))
 		}
 	}()
 }
@@ -187,7 +166,7 @@ func (a *AIAgent) rebindFallbackCredentialPool(ctx context.Context, fbProvider, 
 // Billing switches warn with the profile and remedy, every other reason logs at info
 func logFallbackActivated(ctx context.Context, reason provider.FailoverReason, oldModel, oldProvider, fbModel, fbProvider string) {
 	if reason != provider.ReasonBilling {
-		chatCompletionHelpersLog().Info(fmt.Sprintf("Fallback activated: %s → %s (%s)", oldModel, fbModel, fbProvider))
+		pkgLog().Info(fmt.Sprintf("Fallback activated: %s → %s (%s)", oldModel, fbModel, fbProvider))
 		return
 	}
 	profile := home.ProfileNameFor(home.Dir(ctx))
@@ -198,7 +177,7 @@ func logFallbackActivated(ctx context.Context, reason provider.FailoverReason, o
 	if profile != "default" {
 		remedy = "icebath -p " + profile + " model"
 	}
-	chatCompletionHelpersLog().Warn(fmt.Sprintf("Profile %s: %s via %s refused for billing/credits — using fallback %s via %s. "+
+	pkgLog().Warn(fmt.Sprintf("Profile %s: %s via %s refused for billing/credits — using fallback %s via %s. "+
 		"Top up credits, or run `%s` to pick a model this account can use.", profile, oldModel, oldProvider, fbModel, fbProvider, remedy))
 }
 
@@ -247,7 +226,7 @@ func isEntitlementRejected(ctx context.Context, a *AIAgent, providerName, model 
 
 // True for an unavailable, malformed, unentitled, exhausted or locally unusable entry or the backend that just failed
 func (a *AIAgent) shouldSkipFallbackCandidate(ctx context.Context, fb map[string]any, key [3]string, fbProvider, fbModel string) bool {
-	log := chatCompletionHelpersLog()
+	log := pkgLog()
 	if a.unavailableFallbackKeys[key] {
 		log.Debug(fmt.Sprintf("Fallback skip: %s previously marked unavailable", pyrepr.Repr(pyrepr.Tuple{key[0], key[1], key[2]})))
 		return true
@@ -261,11 +240,6 @@ func (a *AIAgent) shouldSkipFallbackCandidate(ctx context.Context, fb map[string
 	}
 	if a.candidatePoolExhausted(ctx, fbProvider, fbModel) {
 		log.Warn(fmt.Sprintf("Fallback skip: %s/%s credential pool is exhausted (every entry in cooldown)", fbProvider, fbModel))
-		return true
-	}
-	if reason := fallbackEntryUnavailableWithoutNetwork(ctx, fb); reason != "" {
-		a.unavailableFallbackKeys[key] = true
-		log.Warn(fmt.Sprintf("Fallback skip: %s/%s is not locally usable (%s); suppressing for this session", fbProvider, fbModel, reason))
 		return true
 	}
 	current := provider.BuildBackendIdentity(a.provider, a.model, a.baseURL)
@@ -304,11 +278,11 @@ func (a *AIAgent) updateFallbackContextCompressor(ctx context.Context) {
 func (a *AIAgent) reresolveFallbackReasoningConfig(ctx context.Context) {
 	cfg, err := config.Load(home.Dir(ctx), os.LookupEnv)
 	if err != nil {
-		chatCompletionHelpersLog().Debug(fmt.Sprintf("Failed to resolve reasoning_config for fallback %s; keeping current: %v", a.model, err))
+		pkgLog().Debug(fmt.Sprintf("Failed to resolve reasoning_config for fallback %s; keeping current: %v", a.model, err))
 		return
 	}
 	a.reasoningConfig = config.ResolveReasoningConfig(map[string]any(cfg), a.model)
-	chatCompletionHelpersLog().Info(fmt.Sprintf("Fallback %s: reasoning_config resolved: %s", a.model, pyrepr.Repr(dictOrNone(a.reasoningConfig))))
+	pkgLog().Info(fmt.Sprintf("Fallback %s: reasoning_config resolved: %s", a.model, pyrepr.Repr(dictOrNone(a.reasoningConfig))))
 }
 
 // Drops the old provider's injected extra_body keys still at their injected values, then merges the new provider's
@@ -339,7 +313,7 @@ func (a *AIAgent) rescopeFallbackExtraBody(oldModel, oldProvider, oldBaseURL str
 		a.requestOverrides = overrides
 	}
 	a.mergeCustomProviderExtraBody(customProviders)
-	chatCompletionHelpersLog().Info(fmt.Sprintf("Fallback %s: extra_body resolved: %s", a.model, pyrepr.Repr(a.requestOverrides["extra_body"])))
+	pkgLog().Info(fmt.Sprintf("Fallback %s: extra_body resolved: %s", a.model, pyrepr.Repr(a.requestOverrides["extra_body"])))
 }
 
 // Buffers the switch notice for a terminal failure and keeps it as the pending one shot notice
@@ -365,7 +339,7 @@ func (a *AIAgent) switchDeferredByReset(ctx context.Context, reason provider.Fai
 	if !ok || delay >= threshold {
 		return false
 	}
-	chatCompletionHelpersLog().Info(fmt.Sprintf("Rate limit resets in %.0f s (< fallback.min_switch_reset_seconds=%.0f): staying on the primary", delay.Seconds(), threshold.Seconds()))
+	pkgLog().Info(fmt.Sprintf("Rate limit resets in %.0f s (< fallback.min_switch_reset_seconds=%.0f): staying on the primary", delay.Seconds(), threshold.Seconds()))
 	return true
 }
 
@@ -390,7 +364,7 @@ func (a *AIAgent) armRateLimitCooldown(reason provider.FailoverReason, resetAt a
 		seconds = int64(math.Min(60*math.Pow(2, float64(count)), 14400))
 	}
 	a.rateLimitedUntil = pythread.Monotonic() + float64(seconds)
-	chatCompletionHelpersLog().Info(fmt.Sprintf("Rate-limit backoff level %d: cooldown %d s (%.1f min, backoff#%d, %s)", count, seconds, float64(seconds)/60, count+1, source))
+	pkgLog().Info(fmt.Sprintf("Rate-limit backoff level %d: cooldown %d s (%.1f min, backoff#%d, %s)", count, seconds, float64(seconds)/60, count+1, source))
 	return seconds
 }
 
@@ -491,15 +465,15 @@ func (a *AIAgent) activateFallbackEntry(ctx context.Context, fb map[string]any, 
 			if isUserInterruptPanic(r) {
 				panic(r)
 			}
-			ok = a.fallbackActivationFailed(key, fbProvider, fbModel, fmt.Sprint(r))
+			ok = a.fallbackActivationFailed(fbModel, fmt.Sprint(r))
 		}
 	}()
 	oldModel, oldProvider, bound, err := a.bindRouteEntry(ctx, fb, fbProvider, fbModel)
 	if err != nil {
-		return a.fallbackActivationFailed(key, fbProvider, fbModel, err.Error())
+		return a.fallbackActivationFailed(fbModel, err.Error())
 	}
 	if !bound {
-		chatCompletionHelpersLog().Warn(fmt.Sprintf("Fallback to %s failed: provider not configured", fbProvider))
+		pkgLog().Warn(fmt.Sprintf("Fallback to %s failed: provider not configured", fbProvider))
 		a.unavailableFallbackKeys[key] = true
 		return false
 	}
@@ -515,21 +489,13 @@ func (a *AIAgent) activateFallbackEntry(ctx context.Context, fb map[string]any, 
 	a.providerFallbackActive = true
 	a.providerFallbackRoute = [2]string{fbModel, fbProvider}
 	logFallbackActivated(ctx, reason, oldModel, oldProvider, fbModel, fbProvider)
-	var reasonValue any
-	if reason != "" {
-		reasonValue = string(reason)
-	}
-	observability.RecordFallback(ctx, oldProvider, fbProvider, reasonValue)
 	a.RetrySession().ResetStaleStreak()
 	a.runtimeCapabilities = map[string]bool{"native_compaction": provider.ResolveNativeCompactionCapability(a.model, a.baseURL, fbProvider, fbProvider == "openai-codex")}
 	return true
 }
 
-// Logs a failed swap and marks a failed Nous entry unavailable, false so the walk tries the next entry
-func (a *AIAgent) fallbackActivationFailed(key [3]string, fbProvider, fbModel, detail string) bool {
-	if fbProvider == "nous" {
-		a.unavailableFallbackKeys[key] = true
-	}
-	chatCompletionHelpersLog().Error(fmt.Sprintf("Failed to activate fallback %s: %s", fbModel, detail))
+// Logs a failed swap, false so the walk tries the next entry
+func (a *AIAgent) fallbackActivationFailed(fbModel, detail string) bool {
+	pkgLog().Error(fmt.Sprintf("Failed to activate fallback %s: %s", fbModel, detail))
 	return false
 }

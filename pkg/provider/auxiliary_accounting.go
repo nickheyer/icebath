@@ -3,7 +3,6 @@ package provider
 import (
 	"context"
 	"fmt"
-	"log/slog"
 )
 
 // AuxiliaryUsage is one auxiliary call's token and cost row for a session's usage ledger
@@ -46,7 +45,7 @@ func SetAccountingContext(ctx context.Context, db AuxUsageRecorder, sessionID st
 func RecordAuxUsage(ctx context.Context, response map[string]any, task, provider, baseURL string) {
 	defer func() {
 		if r := recover(); r != nil {
-			slog.Debug("Aux usage recording failed (non-fatal)", "err", fmt.Sprint(r))
+			pkgLog().Debug("Aux usage recording failed (non-fatal)", "err", fmt.Sprint(r))
 		}
 	}()
 	if task == "" || auxAccountingExcludedTasks[task] {
@@ -77,7 +76,7 @@ func RecordAuxUsage(ctx context.Context, response map[string]any, task, provider
 		ReasoningTokens: usage.ReasoningTokens}
 	row.EstimatedCostUSD = auxEstimateCost(ctx, model, usage, provider, baseURL)
 	if err := scope.db.RecordAuxiliaryUsage(ctx, scope.sessionID, task, row); err != nil {
-		slog.Debug("Aux usage recording failed (non-fatal)", "err", err)
+		pkgLog().Debug("Aux usage recording failed (non-fatal)", "err", err)
 	}
 }
 
@@ -85,7 +84,7 @@ func RecordAuxUsage(ctx context.Context, response map[string]any, task, provider
 func auxEstimateCost(ctx context.Context, model string, usage CanonicalUsage, provider, baseURL string) (out *float64) {
 	defer func() {
 		if r := recover(); r != nil {
-			slog.Debug("Aux usage cost estimation failed", "err", fmt.Sprint(r))
+			pkgLog().Debug("Aux usage cost estimation failed", "err", fmt.Sprint(r))
 			out = nil
 		}
 	}()

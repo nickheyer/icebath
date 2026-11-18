@@ -2,7 +2,6 @@ package updaterecord
 
 import (
 	"fmt"
-	"log/slog"
 	"math"
 	"os"
 	"path/filepath"
@@ -68,7 +67,7 @@ func pidAlive(pid int) bool {
 	}
 	alive, err := pidRunning(pid)
 	if err != nil {
-		slog.Debug(fmt.Sprintf("Could not probe pid %d: %s", pid, err))
+		pkgLog().Debug(fmt.Sprintf("Could not probe pid %d: %s", pid, err))
 		return false
 	}
 	return alive

@@ -395,7 +395,7 @@ func cmdUninstall(ctx context.Context, w io.Writer, ns map[string]any) error {
 
 // Whether the host gateway runs on this process home
 func hostMultiplexerIsOurs(owner *gateway.HostGateway) bool {
-	same, err := gateway.SameHermesHome(owner.Home, home.Process())
+	same, err := gateway.SameIcebathHome(owner.Home, home.Process())
 	return err == nil && same
 }
 
@@ -720,7 +720,7 @@ func cmdMigrateLegacy(ctx context.Context, w io.Writer, ns map[string]any) error
 		fmt.Fprintln(w, "Legacy unit migration only applies to systemd-based Linux hosts.")
 		return nil
 	}
-	_, _, err := gateway.RemoveLegacyHermesUnits(ctx, w, !nsFlag(ns, "yes"), nsFlag(ns, "dry_run"))
+	_, _, err := gateway.RemoveLegacyIcebathUnits(ctx, w, !nsFlag(ns, "yes"), nsFlag(ns, "dry_run"))
 	return err
 }
 

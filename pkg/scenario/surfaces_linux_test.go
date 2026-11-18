@@ -22,7 +22,7 @@ func TestScenarioToolsListDisableEnable(t *testing.T) {
 	s.Run("tools", "list").Exit(0).Has("✓ enabled  web")
 }
 
-// Read only commands of a fresh home report their empty state in the words hermes uses
+// Read only commands of a fresh home report their empty state in their own words
 func TestScenarioFreshHomeReports(t *testing.T) {
 	s := Start(t, Setup{})
 	s.Run("auth", "list").Exit(0).Has("openai-api (1 credentials):", "OPENAI_API_KEY", "api_key", "env:OPENAI_API_KEY").Lacks("sk-fake-e2e")

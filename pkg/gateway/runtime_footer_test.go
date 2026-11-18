@@ -22,11 +22,11 @@ func TestModelShortDropsVendorPrefix(t *testing.T) {
 func TestHomeRelativeCwdCollapsesHome(t *testing.T) {
 	tmp := t.TempDir()
 	t.Setenv("HOME", tmp)
-	sub := filepath.Join(tmp, "projects", "hermes")
+	sub := filepath.Join(tmp, "projects", "icebath")
 	if err := os.MkdirAll(sub, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if got := homeRelativeCwd(sub); got != "~/projects/hermes" {
+	if got := homeRelativeCwd(sub); got != "~/projects/icebath" {
 		t.Fatalf("got %q", got)
 	}
 }
@@ -34,12 +34,12 @@ func TestHomeRelativeCwdCollapsesHome(t *testing.T) {
 func TestFormatFooterAllFields(t *testing.T) {
 	tmp := t.TempDir()
 	t.Setenv("HOME", tmp)
-	t.Setenv("TERMINAL_CWD", filepath.Join(tmp, "projects", "hermes"))
-	if err := os.MkdirAll(filepath.Join(tmp, "projects", "hermes"), 0o755); err != nil {
+	t.Setenv("TERMINAL_CWD", filepath.Join(tmp, "projects", "icebath"))
+	if err := os.MkdirAll(filepath.Join(tmp, "projects", "icebath"), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	out, err := FormatRuntimeFooter(context.Background(), FooterInputs{Model: "openrouter/openai/gpt-5.4", ContextTokens: 68000, ContextLength: 100000}, []string{"model", "context_pct", "cwd"})
-	if err != nil || out != "gpt-5.4 · 68% · ~/projects/hermes" {
+	if err != nil || out != "gpt-5.4 · 68% · ~/projects/icebath" {
 		t.Fatalf("got %q %v", out, err)
 	}
 }
@@ -176,10 +176,10 @@ func TestFormatFooterServedModelIsOptInAndSkipsSameModel(t *testing.T) {
 		}
 		return out
 	}
-	if strings.Contains(render(FooterInputs{Model: "hermes-router", Cwd: "/x", ServedModel: "gpt-4o-2024-11-20"}, defaultFooterFields), "→") {
+	if strings.Contains(render(FooterInputs{Model: "auto-router", Cwd: "/x", ServedModel: "gpt-4o-2024-11-20"}, defaultFooterFields), "→") {
 		t.Fatal("served model shown by default")
 	}
-	if got := render(FooterInputs{Model: "hermes-router", Cwd: "/x", ServedModel: "gpt-4o-2024-11-20"}, []string{"served_model"}); got != "hermes-router → gpt-4o-2024-11-20" {
+	if got := render(FooterInputs{Model: "auto-router", Cwd: "/x", ServedModel: "gpt-4o-2024-11-20"}, []string{"served_model"}); got != "auto-router → gpt-4o-2024-11-20" {
 		t.Fatalf("got %q", got)
 	}
 	if got := render(FooterInputs{Model: "qwen/qwen3.8-max", Cwd: "/x", RequestedModel: "gpt-5.6-sol", ServedModel: "qwen/qwen3.8-max"}, []string{"served_model"}); got != "gpt-5.6-sol → qwen/qwen3.8-max" {

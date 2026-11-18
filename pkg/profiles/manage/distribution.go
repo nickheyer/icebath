@@ -100,7 +100,7 @@ func parseSemver(v string) ([3]*big.Int, error) {
 }
 
 // Errors when current does not satisfy spec, a bare version meaning at least that version
-func CheckHermesRequires(spec, current string) error {
+func CheckIcebathRequires(spec, current string) error {
 	if pystr.Strip(spec) == "" {
 		return nil
 	}
@@ -277,7 +277,7 @@ func PlanInstall(ctx context.Context, source, workdir, overrideName string) (*In
 	if manifest == nil {
 		return nil, distErr("No %s found at the distribution root — this source is not an Icebath distribution.", profiles.ManifestFilename)
 	}
-	if err := CheckHermesRequires(manifest.HermesRequires, distBaseVersion()); err != nil {
+	if err := CheckIcebathRequires(manifest.IcebathRequires, distBaseVersion()); err != nil {
 		return nil, err
 	}
 	name := overrideName

@@ -80,7 +80,7 @@ type matrixPlatformPlugin struct{}
 
 func (matrixPlatformPlugin) Manifest() plugins.Manifest {
 	return plugins.Manifest{Name: "matrix-platform", Version: "1.0.0", Kind: "platform", Source: "bundled", Key: "platforms/matrix",
-		Author: "NousResearch",
+		Author: "Icebath",
 		Description: "Matrix gateway adapter for Icebath Agent. Connects to a Matrix homeserver via mautrix (with optional E2EE) and relays " +
 			"messages between Matrix rooms/DMs and the Icebath agent. Supports threads, HTML/markdown rendering, native media uploads, " +
 			"mention gating, free-response rooms, and per-room allowlists.\n",

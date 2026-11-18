@@ -18,7 +18,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/tools"
 )
 
-// Store over a temp memories dir with the hermes fixture limits, loaded
+// Store over a temp memories dir with the test fixture limits, loaded
 func newTestStore(t *testing.T) *Store {
 	t.Helper()
 	s := NewStore(t.TempDir(), 500, 300, true, true)

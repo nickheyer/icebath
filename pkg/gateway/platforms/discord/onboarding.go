@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/config"
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
@@ -64,11 +65,11 @@ func object(v any) *pyjson.Object {
 // Value of a key of a JSON object, the KeyError of a missing one
 func mustKey(o *pyjson.Object, key string) (any, error) {
 	if o == nil {
-		return nil, fmt.Errorf("KeyError: '%s'", key)
+		return nil, fmt.Errorf("the Discord reply has no %s", key)
 	}
 	v, ok := o.Vals[key]
 	if !ok {
-		return nil, fmt.Errorf("KeyError: '%s'", key)
+		return nil, fmt.Errorf("the Discord reply has no %s", key)
 	}
 	return v, nil
 }
@@ -129,7 +130,7 @@ func CheckBotToken(ctx context.Context, token string) (*DiscordBotCheck, error) 
 	}
 	app := object(decoded)
 	if app == nil {
-		return nil, fmt.Errorf("AttributeError: '%s' object has no attribute 'get'", pyrepr.TypeName(decoded))
+		return nil, fmt.Errorf("the Discord application reply is %s, expected a mapping", errchain.Kind(decoded))
 	}
 	var flags int64
 	if raw := app.Vals["flags"]; pyrepr.Truthy(raw) {

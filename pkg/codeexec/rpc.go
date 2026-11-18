@@ -270,7 +270,7 @@ func rpcServerLoop(ctx context.Context, env *tools.Env, ln net.Listener, taskID 
 	if dispatch == nil {
 		dispatch = defaultDispatch(env, taskID)
 	}
-	log := func(msg string, args ...any) { logger(env).Debug(msg, args...) }
+	log := func(msg string, args ...any) { pkgLog(env).Debug(msg, args...) }
 	var conn net.Conn
 	for conn == nil {
 		select {
@@ -370,7 +370,7 @@ func rpcPollLoop(ctx context.Context, env *tools.Env, envr tools.Environment, rp
 	if dispatch == nil {
 		dispatch = defaultDispatch(env, taskID)
 	}
-	log := func(msg string, args ...any) { logger(env).Debug(msg, args...) }
+	log := func(msg string, args ...any) { pkgLog(env).Debug(msg, args...) }
 	pollInterval := 100 * time.Millisecond
 	quotedDir := pyshlex.Quote(rpcDir)
 	exec := func(cmd string, timeout int) (*tools.ExecResult, error) {

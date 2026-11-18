@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
-	"log/slog"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -20,6 +19,7 @@ import (
 	"time"
 	"unicode"
 
+	"github.com/nickheyer/icebath/pkg/browser/quiet"
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/internal/proc"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
@@ -31,11 +31,6 @@ import (
 
 // Chromium startup flags for a host where its sandbox cannot work, shared with the Bot Desktop dock
 var chromiumSandboxBypassArgs = []string{"--no-sandbox", "--disable-dev-shm-usage"}
-
-var baseFlags = []string{
-	"--no-first-run", "--no-default-browser-check", "--disable-background-networking",
-	"--disable-component-update", "--disable-default-apps", "--disable-sync", "--disable-features=Translate",
-}
 
 var (
 	packagedOnlyFlags      = []string{"--password-store=basic"}
@@ -80,8 +75,6 @@ var (
 	needsChromiumSandboxBypass = hostNeedsChromiumSandboxBypass
 	launcherChromiumArgs       = func(env *tools.Env) []string { return cfgOf(env).chromiumArgs() }
 )
-
-func launcherLogger() *slog.Logger { return slog.Default() }
 
 // Host facts the sandbox bypass and auto install read, seams for tests
 var (
@@ -152,7 +145,7 @@ func resolveHeaded(env *tools.Env, headed *bool, procEnv map[string]string) bool
 
 // The launch argv from its inputs, host sandbox facts and browser.chromium_args
 func buildChromiumArgv(env *tools.Env, executable, userDataDir string, packaged, headed, sandboxBypass bool, extraArgs []string) []string {
-	argv := append([]string{executable, "--remote-debugging-port=0", "--user-data-dir=" + userDataDir}, baseFlags...)
+	argv := append([]string{executable, "--remote-debugging-port=0", "--user-data-dir=" + userDataDir}, quiet.Args()...)
 	if packaged {
 		argv = append(argv, packagedOnlyFlags...)
 		if runtime.GOOS == "darwin" {
@@ -172,7 +165,7 @@ func buildChromiumArgv(env *tools.Env, executable, userDataDir string, packaged,
 	}
 	argv = append(argv, extraArgs...)
 	argv = append(argv, configured...)
-	return append(argv, "about:blank")
+	return append(quiet.MergeFeatureSwitches(argv), "about:blank")
 }
 
 func makeBrowser(key string, port int, path string, pid, startTime *int64, userDataDir string, owned, ephemeral bool, homeKey string) *LaunchedBrowser {
@@ -210,7 +203,7 @@ func privateDir(path string) string {
 	if isPrivateDir(path) {
 		return path
 	}
-	launcherLogger().Debug(fmt.Sprintf("browser: not using %s for launcher state: not a private directory of this user", path))
+	pkgLog().Debug(fmt.Sprintf("browser: not using %s for launcher state: not a private directory of this user", path))
 	return ""
 }
 

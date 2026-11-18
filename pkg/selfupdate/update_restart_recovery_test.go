@@ -204,9 +204,9 @@ func TestServiceMatchingIsExactForOverlappingProfileNames(t *testing.T) {
 	}{
 		{"foo", "icebath-gateway-foo.service", true},
 		{"foo", "icebath-gateway-foobar.service", false},
-		{"default", "ai.icebath.gateway", true},
-		{"default", "ai.icebath.gateway-foo", false},
-		{"default", "gui/501/ai.icebath.gateway", true},
+		{"default", "app.icebath.gateway", true},
+		{"default", "app.icebath.gateway-foo", false},
+		{"default", "gui/501/app.icebath.gateway", true},
 		{"foo", "user/icebath-gateway-foo.service", true},
 	} {
 		if got := gatewayServiceMatchesProfile(c.profile, c.service); got != c.want {

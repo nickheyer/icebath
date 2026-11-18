@@ -3,7 +3,6 @@ package commands
 import (
 	"context"
 	"fmt"
-	"log/slog"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -608,7 +607,7 @@ func (c *SlashCompleter) fuzzyFileCompletions(word, query string, limit int) []C
 func (c *SlashCompleter) pluginCommands() (out map[string]string) {
 	defer func() {
 		if r := recover(); r != nil {
-			slog.Debug("plugin command completion unavailable", "panic", r)
+			pkgLog().Debug("plugin command completion unavailable", "panic", r)
 			out = map[string]string{}
 		}
 	}()

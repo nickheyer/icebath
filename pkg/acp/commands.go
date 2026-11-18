@@ -3,10 +3,11 @@ package acp
 import (
 	"context"
 	"fmt"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"strconv"
 	"strings"
 	"sync"
+
+	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 
 	"github.com/nickheyer/icebath/pkg/agent"
 	"github.com/nickheyer/icebath/pkg/home"
@@ -14,7 +15,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/logging"
 	"github.com/nickheyer/icebath/pkg/memory"
-	"github.com/nickheyer/icebath/pkg/observability"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/selfupdate/updaterecord"
 	"github.com/nickheyer/icebath/pkg/state"
@@ -105,7 +105,7 @@ func availableCommands() []pyacp.AvailableCommand {
 }
 
 // Advertises the supported slash commands to the connected client
-func (a *HermesACPAgent) sendAvailableCommandsUpdate(ctx context.Context, sessionID string) {
+func (a *IcebathACPAgent) sendAvailableCommandsUpdate(ctx context.Context, sessionID string) {
 	if a.client() == nil {
 		return
 	}
@@ -114,7 +114,7 @@ func (a *HermesACPAgent) sendAvailableCommandsUpdate(ctx context.Context, sessio
 }
 
 // Advertises the slash commands right after the current response is queued
-func (a *HermesACPAgent) scheduleAvailableCommandsUpdate(ctx context.Context, sessionID string) {
+func (a *IcebathACPAgent) scheduleAvailableCommandsUpdate(ctx context.Context, sessionID string) {
 	a.scheduleSoon(ctx, func(ctx context.Context) { a.sendAvailableCommandsUpdate(ctx, sessionID) })
 }
 
@@ -131,14 +131,13 @@ func splitCommand(text string) (head, rest string) {
 }
 
 // Reply of a known slash command, false for an unknown one so it falls through to the model
-func (a *HermesACPAgent) handleSlashCommand(ctx context.Context, text string, st *SessionState) (reply string, known bool) {
+func (a *IcebathACPAgent) handleSlashCommand(ctx context.Context, text string, st *SessionState) (reply string, known bool) {
 	head, args := splitCommand(text)
 	cmd := strings.ToLower(strings.TrimLeft(head, "/"))
 	handler, ok := a.commandHandlers[cmd]
 	if !ok {
 		return "", false
 	}
-	observability.RecordSlashCommand(ctx, cmd, "acp")
 	mutating := midTurnBlockedCommands[cmd]
 	if mutating {
 		st.RuntimeLock.Lock()
@@ -156,7 +155,7 @@ func (a *HermesACPAgent) handleSlashCommand(ctx context.Context, text string, st
 	}
 	defer func() {
 		if r := recover(); r != nil {
-			serverLog.Error(fmt.Sprintf("Slash command /%s error: %v", cmd, r))
+			pkgLog().Error(fmt.Sprintf("Slash command /%s error: %v", cmd, r))
 			reply, known = fmt.Sprintf("Error executing /%s: %v", cmd, r), true
 		}
 	}()
@@ -166,13 +165,13 @@ func (a *HermesACPAgent) handleSlashCommand(ctx context.Context, text string, st
 	}
 	out, err := handler(ctx, args, st)
 	if err != nil {
-		serverLog.Error(fmt.Sprintf("Slash command /%s error: %s", cmd, err))
+		pkgLog().Error(fmt.Sprintf("Slash command /%s error: %s", cmd, err))
 		return fmt.Sprintf("Error executing /%s: %s", cmd, err), true
 	}
 	return out, true
 }
 
-func (a *HermesACPAgent) cmdHelp(ctx context.Context, args string, st *SessionState) (string, error) {
+func (a *IcebathACPAgent) cmdHelp(ctx context.Context, args string, st *SessionState) (string, error) {
 	lines := []string{"Available commands:", ""}
 	for _, c := range slashCommands {
 		lines = append(lines, fmt.Sprintf("  /%-10s  %s", c.Name, c.Help))
@@ -181,7 +180,7 @@ func (a *HermesACPAgent) cmdHelp(ctx context.Context, args string, st *SessionSt
 	return strings.Join(lines, "\n"), nil
 }
 
-func (a *HermesACPAgent) cmdModel(ctx context.Context, args string, st *SessionState) (string, error) {
+func (a *IcebathACPAgent) cmdModel(ctx context.Context, args string, st *SessionState) (string, error) {
 	if args == "" {
 		model := st.Model
 		if model == "" {
@@ -207,15 +206,11 @@ func (a *HermesACPAgent) cmdModel(ctx context.Context, args string, st *SessionS
 			break
 		}
 	}
-	serverLog.Info(fmt.Sprintf("Session %s: model switched to %s", st.SessionID, newModel))
-	reply := fmt.Sprintf("Model switched to: %s\nProvider: %s", newModel, label)
-	if notice := provider.LargeModelNoticeFor(ctx, newModel, targetProvider, false, "en"); notice != "" {
-		reply += "\n⚠ " + notice
-	}
-	return reply, nil
+	pkgLog().Info(fmt.Sprintf("Session %s: model switched to %s", st.SessionID, newModel))
+	return fmt.Sprintf("Model switched to: %s\nProvider: %s", newModel, label), nil
 }
 
-func (a *HermesACPAgent) cmdTools(ctx context.Context, args string, st *SessionState) (reply string, err error) {
+func (a *IcebathACPAgent) cmdTools(ctx context.Context, args string, st *SessionState) (reply string, err error) {
 	defer func() {
 		if r := recover(); r != nil {
 			reply, err = fmt.Sprintf("Could not list tools: %v", r), nil
@@ -268,7 +263,7 @@ func grouped(n int) string {
 	return sign + s
 }
 
-func (a *HermesACPAgent) cmdContext(ctx context.Context, args string, st *SessionState) (string, error) {
+func (a *IcebathACPAgent) cmdContext(ctx context.Context, args string, st *SessionState) (string, error) {
 	nMessages := len(st.History)
 	roles := map[string]int{}
 	for _, msg := range st.History {
@@ -291,7 +286,7 @@ func (a *HermesACPAgent) cmdContext(ctx context.Context, args string, st *Sessio
 	func() {
 		defer func() {
 			if r := recover(); r != nil {
-				serverLog.Debug(fmt.Sprintf("Could not estimate ACP context usage\n%v", r))
+				pkgLog().Debug(fmt.Sprintf("Could not estimate ACP context usage\n%v", r))
 				approxTokens = 0
 			}
 		}()
@@ -341,12 +336,12 @@ func (a *HermesACPAgent) cmdContext(ctx context.Context, args string, st *Sessio
 	return strings.Join(lines, "\n"), nil
 }
 
-func (a *HermesACPAgent) cmdReset(ctx context.Context, args string, st *SessionState) (reply string, err error) {
+func (a *IcebathACPAgent) cmdReset(ctx context.Context, args string, st *SessionState) (reply string, err error) {
 	st.History = st.History[:0]
 	defer a.SessionManager.SaveSession(ctx, st.SessionID)
 	defer func() {
 		if r := recover(); r != nil {
-			serverLog.Warning(fmt.Sprintf("ACP session state reset failed for %s\n%v", st.SessionID, r))
+			pkgLog().Warning(fmt.Sprintf("ACP session state reset failed for %s\n%v", st.SessionID, r))
 			reply, err = "Conversation history cleared. Agent session state reset failed; see logs.", nil
 		}
 	}()
@@ -356,7 +351,7 @@ func (a *HermesACPAgent) cmdReset(ctx context.Context, args string, st *SessionS
 	return "Conversation history cleared.", nil
 }
 
-func (a *HermesACPAgent) cmdCompress(ctx context.Context, args string, st *SessionState) (string, error) {
+func (a *IcebathACPAgent) cmdCompress(ctx context.Context, args string, st *SessionState) (string, error) {
 	if len(st.History) == 0 {
 		return "Nothing to compress — conversation is empty.", nil
 	}
@@ -396,7 +391,7 @@ func (a *HermesACPAgent) cmdCompress(ctx context.Context, args string, st *Sessi
 		grouped(result.BeforeTokens), grouped(result.AfterTokens)), nil
 }
 
-func (a *HermesACPAgent) cmdSteer(ctx context.Context, args string, st *SessionState) (reply string, err error) {
+func (a *IcebathACPAgent) cmdSteer(ctx context.Context, args string, st *SessionState) (reply string, err error) {
 	steerText := pystr.Strip(args)
 	if steerText == "" {
 		return "Usage: /steer <guidance>", nil
@@ -407,7 +402,7 @@ func (a *HermesACPAgent) cmdSteer(ctx context.Context, args string, st *SessionS
 			return steerer.Steer(steerText), nil
 		}()
 		if failure != nil {
-			serverLog.Warning(fmt.Sprintf("ACP steer failed for session %s: %v", st.SessionID, failure))
+			pkgLog().Warning(fmt.Sprintf("ACP steer failed for session %s: %v", st.SessionID, failure))
 			return fmt.Sprintf("⚠️ Steer failed: %v", failure), nil
 		}
 		if steered {
@@ -421,7 +416,7 @@ func (a *HermesACPAgent) cmdSteer(ctx context.Context, args string, st *SessionS
 	return fmt.Sprintf("No active turn — queued for the next turn. (%d queued)", queuePrompt(st, steerText)), nil
 }
 
-func (a *HermesACPAgent) cmdQueue(ctx context.Context, args string, st *SessionState) (string, error) {
+func (a *IcebathACPAgent) cmdQueue(ctx context.Context, args string, st *SessionState) (string, error) {
 	queued := pystr.Strip(args)
 	if queued == "" {
 		return "Usage: /queue <prompt>", nil
@@ -429,7 +424,7 @@ func (a *HermesACPAgent) cmdQueue(ctx context.Context, args string, st *SessionS
 	return fmt.Sprintf("Queued for the next turn. (%d queued)", queuePrompt(st, queued)), nil
 }
 
-func (a *HermesACPAgent) cmdVersion(ctx context.Context, args string, st *SessionState) (string, error) {
+func (a *IcebathACPAgent) cmdVersion(ctx context.Context, args string, st *SessionState) (string, error) {
 	info, err := getVersionInfo()
 	if err != nil {
 		return "", err

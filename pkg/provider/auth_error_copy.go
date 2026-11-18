@@ -120,7 +120,7 @@ func IsCancelled(err error) bool {
 // DeviceFlowError builds the user facing error for an OAuth device flow error code
 func DeviceFlowError(code, description, retryCommand string) *SignInCopyError {
 	if retryCommand == "" {
-		retryCommand = "icebath portal"
+		retryCommand = "icebath model"
 	}
 	lead := strings.ReplaceAll(DeviceFlowErrorCopy[code], "{retry}", retryCommand)
 	if lead == "" {
@@ -166,12 +166,11 @@ func classifySignInError(err error, rules []signInCopyRule, other string) string
 // SignInFailureLines are the lines to print when a device code or browser sign in fails for a non timeout reason
 func SignInFailureLines(err error, serviceHost, retryCommand string) []string {
 	if serviceHost == "" {
-		serviceHost = "portal.nousresearch.com"
+		serviceHost = "the sign-in service"
 	}
 	if retryCommand == "" {
-		retryCommand = "icebath portal"
+		retryCommand = "icebath model"
 	}
-	noteSignInFailure(err)
 	var copyErr *SignInCopyError
 	if errors.As(err, &copyErr) {
 		return strings.Split(copyErr.Message, "\n")

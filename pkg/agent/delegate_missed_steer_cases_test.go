@@ -96,7 +96,7 @@ func TestMissedSteerRetentionAcceptedSteerRacingCompletionIsDurablyRetained(t *t
 	}
 }
 
-// Progress callback whose flush blocks until released, the blocked completion callback of the hermes test
+// Progress callback whose flush blocks until released, the blocked completion callback of the test
 type blockingFlushProgress struct {
 	entered chan struct{}
 	release chan struct{}

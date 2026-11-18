@@ -184,7 +184,7 @@ func (r *GatewayRunner) handleBundlesCommand(ctx context.Context, event *gateway
 		return "", err
 	}
 	if msg, ok := reply.Data["error"]; ok {
-		runLog().Warn(fmt.Sprintf("Bundles command unavailable: %s", pyrepr.Str(msg)))
+		pkgLog().Warn(fmt.Sprintf("Bundles command unavailable: %s", pyrepr.Str(msg)))
 		return reply.Text, nil
 	}
 	bundles := bundleMaps(reply.Data["bundles"])

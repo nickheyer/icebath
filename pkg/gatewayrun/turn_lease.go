@@ -3,7 +3,6 @@ package gatewayrun
 import (
 	"context"
 	"fmt"
-	"log/slog"
 	"math"
 	"sort"
 	"sync"
@@ -17,9 +16,6 @@ const defaultMaxLeases = 512
 
 // Seconds a waiter waits when the caller passes no positive timeout
 const defaultLeaseWait = 5.0
-
-// Logger of the turn lease module
-func turnLeaseLog() *slog.Logger { return slog.Default().With("logger", "gateway.turn_lease") }
 
 // Seconds since the epoch as time.time reads them
 func epochNow() float64 {
@@ -145,7 +141,7 @@ func (r *SessionTurnLeaseRegistry) Acquire(ctx context.Context, sessionID, owner
 			heldFor = epochNow() - lease.acquiredAt
 		}
 		holderKey, holderGen := holderDesc(lease.holder)
-		turnLeaseLog().Warn(fmt.Sprintf("turn lease contention on session %s: routing key %s (gen %d) waiting behind "+
+		pkgLog().Warn(fmt.Sprintf("turn lease contention on session %s: routing key %s (gen %d) waiting behind "+
 			"in-flight turn held by routing key %v (gen %v, held %.0fs) — two routing keys "+
 			"are mapped to one session_id (#64934); serializing this turn behind the previous "+
 			"turn's flush", sessionID, ownerKey, generation, holderKey, holderGen, heldFor))
@@ -161,7 +157,7 @@ func (r *SessionTurnLeaseRegistry) Acquire(ctx context.Context, sessionID, owner
 		r.mu.Lock()
 		holderKey, holderGen := holderDesc(lease.holder)
 		r.mu.Unlock()
-		turnLeaseLog().Error(fmt.Sprintf("turn lease wait timed out after %.0fs on session %s (waiter: routing key %s gen "+
+		pkgLog().Error(fmt.Sprintf("turn lease wait timed out after %.0fs on session %s (waiter: routing key %s gen "+
 			"%d; holder: routing key %v gen %v) — failing closed: refusing to run this turn "+
 			"UNSERIALIZED against the still-held lease", wait, sessionID, ownerKey, generation, holderKey, holderGen))
 		failure = &TurnLeaseTimeoutError{SessionID: sessionID, OwnerKey: ownerKey, Generation: generation, WaitSeconds: wait}
@@ -194,7 +190,7 @@ func (r *SessionTurnLeaseRegistry) Rebind(token *TurnLeaseToken, newSessionID st
 	existing := r.leases[newSessionID]
 	if existing != nil && existing != lease && !existing.idle() {
 		holderKey, holderGen := holderDesc(existing.holder)
-		turnLeaseLog().Warn(fmt.Sprintf("turn lease rebind blocked: session %s rotated to %s mid-turn (holder: routing key "+
+		pkgLog().Warn(fmt.Sprintf("turn lease rebind blocked: session %s rotated to %s mid-turn (holder: routing key "+
 			"%s gen %d) but the target session's lease is already live (holder: routing key %v "+
 			"gen %v) — keeping the lease on the old id; transcript writes on %s may "+
 			"interleave (#64934 rotation-alias edge)", token.sessionID, newSessionID, token.ownerKey,
@@ -217,7 +213,7 @@ func (r *SessionTurnLeaseRegistry) Release(token *TurnLeaseToken) bool {
 	token.released = true
 	lease := token.lease
 	if lease.holder != token {
-		turnLeaseLog().Debug(fmt.Sprintf("turn lease release skipped on session %s: token (key %s gen %d) is not "+
+		pkgLog().Debug(fmt.Sprintf("turn lease release skipped on session %s: token (key %s gen %d) is not "+
 			"the current holder", token.sessionID, token.ownerKey, token.generation))
 		return false
 	}

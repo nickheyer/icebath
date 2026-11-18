@@ -71,7 +71,7 @@ func SystemdStatus(ctx context.Context, w io.Writer, deep, system, full bool, pr
 		}
 		fmt.Fprintln(w)
 	}
-	if hasLegacyHermesUnits(ctx) {
+	if hasLegacyIcebathUnits(ctx) {
 		printLegacyUnitWarning(ctx, w)
 		fmt.Fprintln(w)
 	}

@@ -28,11 +28,11 @@ const (
 // Seconds the fleet probe keeps polling for a restarted gateway to publish its state
 var fleetProbeSettleTimeoutSeconds = 120.0
 
-// Calls of the verification pass the hermes tests replace
+// Calls of the verification pass the tests replace
 var (
 	fleetPrintLegacyUnits     = printLegacyUnitsWarning
-	fleetHasLegacyUnits       = gateway.HasLegacyHermesUnits
-	fleetFindLegacyUnits      = gateway.FindLegacyHermesUnits
+	fleetHasLegacyUnits       = gateway.HasLegacyIcebathUnits
+	fleetFindLegacyUnits      = gateway.FindLegacyIcebathUnits
 	fleetCollectSnapshot      = collectFleetSnapshot
 	fleetProbeExpected        = fleetProbeExpectedRuntimes
 	fleetPrintMatrix          = printFleetVersionMatrixTo
@@ -503,7 +503,7 @@ func verifyFleetAfterUpdate(ctx context.Context, w io.Writer, restart *gatewayRe
 	}
 	if err := bestEffort(ctx, "Update receipt finalize failed: %s", func() error {
 		if receiptPath := fleetFinalizeReceipt(ctx, "success", fleetRowsAsAny(fleetSnapshot), ""); receiptPath != "" {
-			updateLog.Info(fmt.Sprintf("Update receipt written: %s", receiptPath))
+			pkgLog().Info(fmt.Sprintf("Update receipt written: %s", receiptPath))
 		}
 		return nil
 	}); err != nil {
@@ -521,7 +521,7 @@ func verifyFleetAfterUpdate(ctx context.Context, w io.Writer, restart *gatewayRe
 		if isKeyboardInterrupt(err) {
 			return err
 		}
-		updateLog.Warn(fmt.Sprintf("Multiplex auto-migration after update failed: %s", launchErrorText(err)))
+		pkgLog().Warn(fmt.Sprintf("Multiplex auto-migration after update failed: %s", launchErrorText(err)))
 		fmt.Fprintf(w, "  ⚠ Gateway multiplex migration did not finish: %s (run `icebath gateway migrate` later)\n", launchErrorText(err))
 	}
 	return nil

@@ -57,7 +57,7 @@ func forgetInitialized(resolved string) {
 
 // Busy timeout for kanban connections, long so WAL serializes worker stampedes
 func resolveBusyTimeoutMS() int64 {
-	return envInt("HERMES_KANBAN_BUSY_TIMEOUT_MS", DefaultBusyTimeoutMS, 1)
+	return envInt("ICEBATH_KANBAN_BUSY_TIMEOUT_MS", DefaultBusyTimeoutMS, 1)
 }
 
 // Opens a tracked kanban connection with its busy timeout, closing it again when the pragma fails
@@ -102,7 +102,7 @@ func crossProcessInitLock(path string) (func() error, error) {
 		return ok, ok
 	}, initLockTimeout, initLockPoll)
 	if !acquired {
-		log.Warn(fmt.Sprintf("kanban init lock for %s not acquired within %.0fs — proceeding "+
+		pkgLog().Warn(fmt.Sprintf("kanban init lock for %s not acquired within %.0fs — proceeding "+
 			"without the cross-process lock (in-process lock + idempotent "+
 			"init are the correctness backstop). A stuck holder is no longer "+
 			"able to block this connect indefinitely (#36644).", lockPath, initLockTimeout.Seconds()))
@@ -158,14 +158,14 @@ func maybeCheckpointWAL(ctx context.Context, conn state.SQLiteConn, dbPath strin
 	walCheckpointMu.Unlock()
 	row, err := QueryOne(ctx, conn, "PRAGMA wal_checkpoint(PASSIVE)")
 	if err != nil {
-		log.Debug(fmt.Sprintf("kanban WAL checkpoint on %s skipped: %s", key, state.ErrText(err)))
+		pkgLog().Debug(fmt.Sprintf("kanban WAL checkpoint on %s skipped: %s", key, state.ErrText(err)))
 		return
 	}
 	shown := "None"
 	if row != nil {
 		shown = pyrepr.Repr(pyrepr.Tuple(row.Vals))
 	}
-	log.Debug(fmt.Sprintf("kanban WAL checkpoint (PASSIVE) on %s -> %s (busy, wal_frames, checkpointed_frames)", key, shown))
+	pkgLog().Debug(fmt.Sprintf("kanban WAL checkpoint (PASSIVE) on %s -> %s (busy, wal_frames, checkpointed_frames)", key, shown))
 }
 
 // Reports whether a TLS record header starts at offset
@@ -274,7 +274,7 @@ func backupCorruptDB(path string) string {
 	}
 	parent, baseName := pypath.PathParent(resolved), pypath.PathName(resolved)
 	if state.HasLiveConnection(resolved) {
-		log.Error(fmt.Sprintf("refusing to quarantine %s: a connection to it is still open in "+
+		pkgLog().Error(fmt.Sprintf("refusing to quarantine %s: a connection to it is still open in "+
 			"this process, and fingerprinting the file would cancel that "+
 			"connection's POSIX locks. Close all connections first.", resolved))
 		return ""
@@ -441,11 +441,11 @@ func guardExistingDBIsHealthy(ctx context.Context, path string) error {
 	backup := backupCorruptDB(resolved)
 	if names := repairableIndexNames(messages); len(names) > 0 {
 		joined := strings.Join(names, ", ")
-		log.Warn(fmt.Sprintf("kanban DB %s failed integrity_check with index-only errors "+
+		pkgLog().Warn(fmt.Sprintf("kanban DB %s failed integrity_check with index-only errors "+
 			"(%s); pre-repair backup at %s — attempting REINDEX auto-repair.", resolved, joined, backupLabel(backup)))
 		repaired, post := attemptIndexReindexRepair(ctx, resolved, names)
 		if repaired {
-			log.Warn(fmt.Sprintf("kanban DB %s auto-repaired via REINDEX (%s); "+
+			pkgLog().Warn(fmt.Sprintf("kanban DB %s auto-repaired via REINDEX (%s); "+
 				"integrity_check now clean. Pre-repair copy kept at %s.", resolved, joined, backupLabel(backup)))
 			return nil
 		}
@@ -653,7 +653,7 @@ func connectImpl(ctx context.Context, dbPath string, board *string) (conn state.
 		initLock.Lock()
 		forgetInitialized(resolved)
 		initLock.Unlock()
-		log.Warn(fmt.Sprintf("kanban DB %s lost its schema after this process initialized it "+
+		pkgLog().Warn(fmt.Sprintf("kanban DB %s lost its schema after this process initialized it "+
 			"(deleted or replaced externally); re-initializing.", path))
 	}
 	release, err := crossProcessInitLockFn(path)

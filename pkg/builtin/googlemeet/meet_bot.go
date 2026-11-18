@@ -572,7 +572,7 @@ func configFromEnv() (botConfig, error) {
 	lobbyRaw := envOr("ICEBATH_MEET_LOBBY_TIMEOUT", "300")
 	lobby, err := pyint.ParseFloat(lobbyRaw)
 	if err != nil {
-		return botConfig{}, fmt.Errorf("ValueError: could not convert string to float: %s", pyrepr.StrRepr(lobbyRaw))
+		return botConfig{}, fmt.Errorf("ICEBATH_MEET_LOBBY_TIMEOUT %s is not a number of seconds", lobbyRaw)
 	}
 	headed := pystr.Lower(envOr("ICEBATH_MEET_HEADED", ""))
 	return botConfig{

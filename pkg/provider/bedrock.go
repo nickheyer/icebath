@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"log/slog"
 	"net"
 	"net/http"
 	"net/url"
@@ -24,8 +23,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/internal/pyurl"
 )
-
-var bedrockLog = slog.Default()
 
 // ---- routed profile credentials ----
 
@@ -928,7 +925,7 @@ func DiscoverBedrockModels(ctx context.Context, region string, providerFilter []
 	}
 	client, err := bedrockControlClient(ctx, region)
 	if err != nil {
-		bedrockLog.Warn(fmt.Sprintf("Failed to create Bedrock client for model discovery: %v", err))
+		pkgLog().Warn(fmt.Sprintf("Failed to create Bedrock client for model discovery: %v", err))
 		return []BedrockModel{}
 	}
 	filter := map[string]bool{}
@@ -937,10 +934,10 @@ func DiscoverBedrockModels(ctx context.Context, region string, providerFilter []
 	}
 	models := []BedrockModel{}
 	if err := bedrockListFoundationModels(ctx, client, filter, &models); err != nil {
-		bedrockLog.Warn(fmt.Sprintf("Failed to list Bedrock foundation models: %v", err))
+		pkgLog().Warn(fmt.Sprintf("Failed to list Bedrock foundation models: %v", err))
 	}
 	if err := bedrockListInferenceProfiles(ctx, client, filter, &models); err != nil {
-		bedrockLog.Debug(fmt.Sprintf("Skipping inference profile discovery: %v", err))
+		pkgLog().Debug(fmt.Sprintf("Skipping inference profile discovery: %v", err))
 	}
 	sort.SliceStable(models, func(i, j int) bool {
 		gi, gj := strings.HasPrefix(models[i].ID, "global."), strings.HasPrefix(models[j].ID, "global.")
@@ -1021,7 +1018,7 @@ func probeBedrockContextLengthLive(ctx context.Context, model, region string) in
 	}
 	client, err := bedrockRuntimeClient(ctx, region, model)
 	if err != nil {
-		bedrockLog.Debug(fmt.Sprintf("Bedrock context probe skipped for %s: %v", model, err))
+		pkgLog().Debug(fmt.Sprintf("Bedrock context probe skipped for %s: %v", model, err))
 		return 0
 	}
 	lastError := ""
@@ -1031,19 +1028,19 @@ func probeBedrockContextLengthLive(ctx context.Context, model, region string) in
 			"inferenceConfig": map[string]any{"maxTokens": 8}}
 		err := client.doJSON(ctx, "Converse", http.MethodPost, botocoreModelPath(model, "converse"), nil, body, nil)
 		if err == nil {
-			bedrockLog.Debug(fmt.Sprintf("Bedrock context probe for %s accepted ~%s-token prompt; window is at least that", model, commaInt(tier)))
+			pkgLog().Debug(fmt.Sprintf("Bedrock context probe for %s accepted ~%s-token prompt; window is at least that", model, commaInt(tier)))
 			return tier
 		}
 		lastError = err.Error()
 		if limit, ok := ParseContextLimitFromError(lastError); ok && limit >= 1024 {
-			bedrockLog.Info(fmt.Sprintf("Probed Bedrock context window for %s: %s tokens", model, commaInt(limit)))
+			pkgLog().Info(fmt.Sprintf("Probed Bedrock context window for %s: %s tokens", model, commaInt(limit)))
 			return limit
 		}
 	}
 	if len(lastError) > 200 {
 		lastError = lastError[:200]
 	}
-	bedrockLog.Debug(fmt.Sprintf("Bedrock context probe for %s returned no parseable limit: %s", model, lastError))
+	pkgLog().Debug(fmt.Sprintf("Bedrock context probe for %s returned no parseable limit: %s", model, lastError))
 	return 0
 }
 
@@ -1093,7 +1090,7 @@ func bedrockContextLength(ctx context.Context, model, region string, probe bool)
 		return bedrockContextLengths[best].length
 	}
 	if profileARN != "" {
-		bedrockLog.Warn(fmt.Sprintf("Bedrock inference profile %s resolved no known model window; using the %s default. "+
+		pkgLog().Warn(fmt.Sprintf("Bedrock inference profile %s resolved no known model window; using the %s default. "+
 			"Grant bedrock:GetInferenceProfile or set model.context_length explicitly if the wrapped model has a larger window.",
 			profileARN, commaInt(BedrockDefaultContextLength)))
 	} else {
@@ -1102,7 +1099,7 @@ func bedrockContextLength(ctx context.Context, model, region string, probe bool)
 		bedrockWarnedDefault[model] = true
 		bedrockWarnedMu.Unlock()
 		if first {
-			bedrockLog.Warn(fmt.Sprintf("Bedrock model %s has no known context window; using the static %s-token fallback "+
+			pkgLog().Warn(fmt.Sprintf("Bedrock model %s has no known context window; using the static %s-token fallback "+
 				"(not a detected limit). Set model.context_length in config.yaml if the model's window is larger.", model, commaInt(BedrockDefaultContextLength)))
 		}
 	}
@@ -1161,7 +1158,7 @@ func resolveInferenceProfileModelID(ctx context.Context, profileARN, region stri
 		}
 	}
 	if err != nil {
-		bedrockLog.Debug(fmt.Sprintf("Inference profile resolution skipped for %s: %v", profileARN, err))
+		pkgLog().Debug(fmt.Sprintf("Inference profile resolution skipped for %s: %v", profileARN, err))
 	}
 	bedrockProfileMu.Lock()
 	bedrockProfileCache[profileARN] = resolved

@@ -54,14 +54,14 @@ func (r *GatewayRunner) dispatchPluginMessageInjection(ctx context.Context, sess
 	event := gateway.NewMessageEvent(content)
 	event.Source, event.Internal, event.AllowGatewayControl = source, true, false
 	event.Metadata = map[string]any{
-		"hermes_plugin_id": pluginID, "hermes_plugin_injection": true,
+		"icebath_plugin_id": pluginID, "icebath_plugin_injection": true,
 		"gateway_session_key": key, "gateway_session_id": entry.SessionID,
 		"gateway_session_strict": true,
 	}
 	if err := adapter.HandleMessage(scoped, event); err != nil {
 		return false, err
 	}
-	runLog().Info(fmt.Sprintf("Plugin message injection dispatched: plugin=%s session=%s session_id=%s", pluginID, key, entry.SessionID))
+	pkgLog().Info(fmt.Sprintf("Plugin message injection dispatched: plugin=%s session=%s session_id=%s", pluginID, key, entry.SessionID))
 	return true, nil
 }
 
@@ -94,7 +94,7 @@ func (r *GatewayRunner) dispatchPluginOriginInjection(ctx context.Context, sourc
 		return false, err
 	}
 	if adapter == nil {
-		runLog().Warn(fmt.Sprintf("Plugin message injection: adapter for %s went away before dispatch", target))
+		pkgLog().Warn(fmt.Sprintf("Plugin message injection: adapter for %s went away before dispatch", target))
 		return false, nil
 	}
 	if !r.pluginInjectionAuthorized(ctx, source, pluginID, target) {
@@ -115,7 +115,7 @@ func (r *GatewayRunner) dispatchPluginOriginInjection(ctx context.Context, sourc
 	if authority != nil {
 		entry := r.asyncSessionStore.Store().LookupBySessionKey(scoped, sessionKey)
 		if entry == nil {
-			runLog().Warn(fmt.Sprintf("Plugin message injection refused: plugin=%s %s has no session under the session authority yet", pluginID, target))
+			pkgLog().Warn(fmt.Sprintf("Plugin message injection refused: plugin=%s %s has no session under the session authority yet", pluginID, target))
 			return false, nil
 		}
 		admitted, err := r.admitPluginInjection(scoped, adapter, source, sessionKey, entry.SessionID, content, pluginID)
@@ -124,13 +124,13 @@ func (r *GatewayRunner) dispatchPluginOriginInjection(ctx context.Context, sourc
 	event := gateway.NewMessageEvent(content)
 	event.Source, event.Internal, event.AllowGatewayControl = source, true, false
 	event.Metadata = map[string]any{
-		"hermes_plugin_id": pluginID, "hermes_plugin_injection": true,
+		"icebath_plugin_id": pluginID, "icebath_plugin_injection": true,
 		"gateway_session_key": sessionKey,
 	}
 	if err := adapter.HandleMessage(scoped, event); err != nil {
 		return false, err
 	}
-	runLog().Info(fmt.Sprintf("Plugin message injection dispatched: plugin=%s %s session=%s", pluginID, target, sessionKey))
+	pkgLog().Info(fmt.Sprintf("Plugin message injection dispatched: plugin=%s %s session=%s", pluginID, target, sessionKey))
 	return true, nil
 }
 
@@ -150,11 +150,11 @@ func (r *GatewayRunner) admitPluginInjection(ctx context.Context, adapter gatewa
 	if _, err := authority.AdmitAutomation(ctx, adapter, event, identity, nil, nil); err != nil {
 		var refusal *state.RuntimeStoreError
 		if errors.As(err, &refusal) {
-			runLog().Warn(fmt.Sprintf("Plugin message injection refused by the session authority: plugin=%s session=%s (%s)", pluginID, sessionKey, refusal.Reason))
+			pkgLog().Warn(fmt.Sprintf("Plugin message injection refused by the session authority: plugin=%s session=%s (%s)", pluginID, sessionKey, refusal.Reason))
 			return boolp(false), nil
 		}
 		return nil, err
 	}
-	runLog().Info(fmt.Sprintf("Plugin message injection admitted: plugin=%s session=%s session_id=%s", pluginID, sessionKey, sessionID))
+	pkgLog().Info(fmt.Sprintf("Plugin message injection admitted: plugin=%s session=%s session_id=%s", pluginID, sessionKey, sessionID))
 	return boolp(true), nil
 }

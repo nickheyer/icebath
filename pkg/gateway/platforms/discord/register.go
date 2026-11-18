@@ -17,7 +17,7 @@ func discordDepsPresent() bool { return true }
 type discordPlugin struct{}
 
 func (discordPlugin) Manifest() plugins.Manifest {
-	return plugins.Manifest{Name: "discord-platform", Key: "platforms/discord", Kind: "platform", Version: "1.0.0", Author: "NousResearch",
+	return plugins.Manifest{Name: "discord-platform", Key: "platforms/discord", Kind: "platform", Version: "1.0.0", Author: "Icebath",
 		Description: "Discord gateway adapter for Icebath Agent. Connects to Discord via the discordgo library and relays messages between " +
 			"Discord guilds/DMs and the Icebath agent. Supports voice mode, slash commands, free-response channels, role-based DM auth, " +
 			"threads, reactions, and channel skill bindings.\n",

@@ -294,7 +294,7 @@ func TestSealedPayloadVenvFollowsAMovedStoreInterpreter(t *testing.T) {
 	}
 }
 
-func TestVenvSitePthPathLinesImportLinesAndDottedPackagesBehaveAsInHermes(t *testing.T) {
+func TestVenvSitePthPathLinesImportLinesAndDottedPackagesBehaveAsInSite(t *testing.T) {
 	if runtime.GOOS != "linux" && runtime.GOOS != "darwin" {
 		t.Skip("platforms linux, macos")
 	}

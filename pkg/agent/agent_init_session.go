@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/config"
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
@@ -27,7 +28,7 @@ var loadToolDefinitions = func(ctx context.Context, env *tools.Env, o tools.Defi
 	return tools.Default.ToolDefinitions(ctx, env, o)
 }
 
-// Plugin discovery the tool snapshot runs first, hermes_cli.plugins.discover_plugins
+// Plugin discovery the tool snapshot runs first
 var discoverPluginsAtLoad = func(ctx context.Context) { plugins.DiscoverPlugins(ctx, false) }
 
 // Availability of every toolset's requirements, the model_tools.check_toolset_requirements the banner reads
@@ -41,7 +42,7 @@ func loadTools(ctx context.Context, a *AIAgent, enabled, disabled []string) {
 	func() {
 		defer func() {
 			if r := recover(); r != nil {
-				runAgentLog().Warn(fmt.Sprintf("Plugin discovery failed during agent setup: %v", r))
+				pkgLog().Warn(fmt.Sprintf("Plugin discovery failed during agent setup: %v", r))
 			}
 		}()
 		discoverPluginsAtLoad(ctx)
@@ -182,7 +183,7 @@ func applyDisplayConfig(a *AIAgent, agentCfg map[string]any, platform string) er
 		window = cfgValue(section, "fast_auto_seconds", window)
 	default:
 		if pyrepr.Truthy(section) {
-			return fmt.Errorf("AttributeError: '%s' object has no attribute 'get'", pyrepr.TypeName(section))
+			return fmt.Errorf("the agent section of the config is %s, expected a mapping", errchain.Kind(section))
 		}
 	}
 	a.fastAutoSeconds = float64(provider.DefaultFastWindowSeconds)
@@ -196,12 +197,12 @@ func applyDisplayConfig(a *AIAgent, agentCfg map[string]any, platform string) er
 		a.lmstudioLoadMode = loadMode
 	}
 	if a.lmstudioLoadMode != loadMode {
-		runAgentLog().Warn(fmt.Sprintf("Invalid model.lmstudio_load_mode=%s; expected 'explicit' or 'jit'. Using explicit.", pyrepr.Repr(modelSection["lmstudio_load_mode"])))
+		pkgLog().Warn(fmt.Sprintf("Invalid model.lmstudio_load_mode=%s; expected 'explicit' or 'jit'. Using explicit.", pyrepr.Repr(modelSection["lmstudio_load_mode"])))
 	}
 	streaming := strings.ToLower(strings.TrimSpace(pyrepr.Str(cfgValue(modelSection, "streaming", "true"))))
 	a.RetrySession().DisableStreaming = slices.Contains([]string{"false", "0", "no", "off"}, streaming)
 	if !a.RetrySession().DisableStreaming && !slices.Contains([]string{"true", "1", "yes", "on"}, streaming) {
-		runAgentLog().Warn(fmt.Sprintf("Invalid model.streaming=%s; expected a boolean. Using streaming (default).", pyrepr.Repr(modelSection["streaming"])))
+		pkgLog().Warn(fmt.Sprintf("Invalid model.streaming=%s; expected a boolean. Using streaming (default).", pyrepr.Repr(modelSection["streaming"])))
 	}
 	a.stream5xxProbeTS = 0
 	guardrails, _ := agentCfg["tool_loop_guardrails"].(map[string]any)
@@ -279,12 +280,12 @@ func initMemory(ctx context.Context, a *AIAgent, agentCfg map[string]any, skipMe
 			}
 			switch {
 			case err != nil:
-				runAgentLog().Warn(fmt.Sprintf("Memory provider plugin init failed: %v", err))
+				pkgLog().Warn(fmt.Sprintf("Memory provider plugin init failed: %v", err))
 			case len(mm.Providers()) > 0 && mm.InitializeForAgent(ctx, a.sessionID, memoryProviderInitOptions(ctx, a, platform), a.emitStartupWarning):
 				a.memoryManager = mm
-				runAgentLog().Info(fmt.Sprintf("Memory provider '%s' activated", name))
+				pkgLog().Info(fmt.Sprintf("Memory provider '%s' activated", name))
 			default:
-				runAgentLog().Debug(fmt.Sprintf("Memory provider '%s' not found or not available", name))
+				pkgLog().Debug(fmt.Sprintf("Memory provider '%s' not found or not available", name))
 			}
 		}
 	}
@@ -326,7 +327,7 @@ func applyAgentSection(a *AIAgent, agentCfg map[string]any) {
 	a.intentAckContinuation = cfgValue(section, "intent_ack_continuation", "auto")
 	verbosity := strings.ToLower(strings.TrimSpace(cfgText(section["text_verbosity"])))
 	if verbosity != "" && verbosity != "low" && verbosity != "medium" && verbosity != "high" {
-		runAgentLog().Warn(fmt.Sprintf("Unknown agent.text_verbosity %s; expected low, medium or high — ignoring", pyrepr.Repr(verbosity)))
+		pkgLog().Warn(fmt.Sprintf("Unknown agent.text_verbosity %s; expected low, medium or high — ignoring", pyrepr.Repr(verbosity)))
 		verbosity = ""
 	}
 	a.textVerbosity = verbosity

@@ -47,7 +47,7 @@ func settleHeartbeatAttempt(event *gateway.MessageEvent, manager *agent.Heartbea
 	}
 	defer func() {
 		if rec := recover(); rec != nil {
-			runLog().Warn("Failed to refund unexecuted heartbeat", "exc_info", rec)
+			pkgLog().Warn("Failed to refund unexecuted heartbeat", "exc_info", rec)
 		}
 	}()
 	manager.AbandonFire()

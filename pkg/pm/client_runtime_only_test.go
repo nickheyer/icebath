@@ -8,8 +8,8 @@ import (
 	"testing"
 )
 
-// A dependency sync of a tree without a project provisions its runtime set and never builds a project environment
-func TestSyncVenvOfAProjectlessTreeProvisionsItsRuntimeSet(t *testing.T) {
+// A dependency sync of a tree without a project provisions the relay set only for its explicit extra and never builds a project environment
+func TestSyncVenvOfAProjectlessTreeProvisionsTheRelaySetOnlyForItsExtra(t *testing.T) {
 	root := t.TempDir()
 	t.Cleanup(PatchRepoRoot(root))
 	savedRuntime, savedWorker := syncRuntimeEnvironment, clientWorkerCall
@@ -33,16 +33,22 @@ func TestSyncVenvOfAProjectlessTreeProvisionsItsRuntimeSet(t *testing.T) {
 			t.Fatalf("%+v: %v", opts, err)
 		}
 	}
-	if worker != 0 || len(provisioned) != 3 || !provisioned[0].Explicit || !provisioned[2].Explicit || provisioned[0].Output == nil {
+	if worker != 0 || len(provisioned) != 1 || provisioned[0].Output == nil {
 		t.Fatalf("worker %d provisioned %+v", worker, provisioned)
 	}
-	if err := SyncVenv(context.Background(), SyncVenvOptions{Explicit: true, Extras: []string{"matrix"}}); err == nil || worker != 1 {
-		t.Fatalf("an extra beyond the runtime set must reach the project sync: worker %d err %v", worker, err)
+	var refused *InstallError
+	if err := SyncVenv(context.Background(), SyncVenvOptions{Extras: []string{"nemo-relay"}}); !errors.As(err, &refused) || len(provisioned) != 1 {
+		t.Fatalf("a lazy relay sync provisioned %d times: %v", len(provisioned), err)
+	}
+	var unknown *InstallError
+	if err := SyncVenv(context.Background(), SyncVenvOptions{Explicit: true, Extras: []string{"matrix"}}); !errors.As(err, &unknown) ||
+		unknown.Cause != "no extra of that name" || worker != 0 || len(provisioned) != 1 {
+		t.Fatalf("an extra the lock does not know must be refused before anything runs: worker %d err %v", worker, err)
 	}
 	if err := os.WriteFile(filepath.Join(root, "pyproject.toml"), []byte("[project]\nname = \"x\"\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if err := SyncVenv(context.Background(), SyncVenvOptions{Explicit: true}); err == nil || worker != 2 || len(provisioned) != 3 {
+	if err := SyncVenv(context.Background(), SyncVenvOptions{Explicit: true}); err == nil || worker != 1 || len(provisioned) != 1 {
 		t.Fatalf("a tree with a project must reach the project sync: worker %d provisioned %d err %v", worker, len(provisioned), err)
 	}
 }

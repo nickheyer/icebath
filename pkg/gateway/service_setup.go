@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"log/slog"
 	"os"
 	"strconv"
 	"strings"
@@ -263,7 +262,7 @@ func EnsureGatewayService(ctx context.Context, w io.Writer, o ServiceSetupOption
 	case errors.As(err, &exit):
 		con.PrintWarning("Gateway service install did not complete. Retry: icebath gateway install")
 	default:
-		slog.Debug("gateway service setup failed", "err", err)
+		pkgLog().Debug("gateway service setup failed", "err", err)
 		con.PrintWarning("Gateway service setup failed: " + err.Error())
 		con.PrintInfo("You can retry manually: icebath gateway install")
 	}
@@ -517,7 +516,7 @@ func hostMultiplexerServing(ctx context.Context, profileName *string) *HostGatew
 	} else {
 		current, err := currentProfileName(ctx)
 		if err != nil {
-			slog.Debug("Host multiplexer probe failed", "err", err)
+			pkgLog().Debug("Host multiplexer probe failed", "err", err)
 			return nil
 		}
 		name = current
@@ -531,11 +530,11 @@ func hostMultiplexerServing(ctx context.Context, profileName *string) *HostGatew
 	}
 	other, err := launchedByOtherTenant(g.Home, home.Dir(ctx))
 	if err != nil {
-		slog.Debug("Host multiplexer probe failed", "err", err)
+		pkgLog().Debug("Host multiplexer probe failed", "err", err)
 		return nil
 	}
 	if other {
-		slog.Debug(fmt.Sprintf("Host gateway %s belongs to another Icebath home; not ours", g.Describe()))
+		pkgLog().Debug(fmt.Sprintf("Host gateway %s belongs to another Icebath home; not ours", g.Describe()))
 		return nil
 	}
 	return g
@@ -547,9 +546,9 @@ func servedByAnotherHostGateway(ctx context.Context, profileName *string) *HostG
 	if g == nil {
 		return nil
 	}
-	same, err := SameHermesHome(g.Home, processHermesHome())
+	same, err := SameIcebathHome(g.Home, processIcebathHome())
 	if err != nil {
-		slog.Debug("Host multiplexer home comparison failed", "err", err)
+		pkgLog().Debug("Host multiplexer home comparison failed", "err", err)
 	} else if same {
 		return nil
 	}
@@ -614,7 +613,7 @@ func namedProfileServedByRunningMultiplexer(ctx context.Context, profileName *st
 		return flag != nil && *flag, err
 	}()
 	if err != nil {
-		slog.Debug("Multiplexer-serving probe failed", "err", err)
+		pkgLog().Debug("Multiplexer-serving probe failed", "err", err)
 		return false, nil
 	}
 	return served, nil

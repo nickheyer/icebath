@@ -2,7 +2,6 @@ package gateway
 
 import (
 	"context"
-	"log/slog"
 	"os"
 	"strings"
 
@@ -70,7 +69,7 @@ func relayBotIDsMap() any {
 	}
 	parsed, err := pyjson.Loads(raw)
 	if err != nil {
-		slog.Warn("GATEWAY_RELAY_BOT_IDS is not valid JSON; treating as empty")
+		pkgLog().Warn("GATEWAY_RELAY_BOT_IDS is not valid JSON; treating as empty")
 		return map[string]any{}
 	}
 	if _, _, ok := jsonObjectGet(parsed, ""); ok {

@@ -4,8 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"log/slog"
-	"maps"
 	"net/http"
 
 	"github.com/nickheyer/icebath/pkg/home"
@@ -14,10 +12,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
-
-func turnRecoveryCodexLog() *slog.Logger {
-	return slog.Default().With("logger", "agent.turn_recovery_codex")
-}
 
 // Body or response of an API error as Python str renders it, cut to the first 200 characters
 func apiErrorBodyOrResponse(err error) string {
@@ -32,30 +26,6 @@ func apiErrorBodyOrResponse(err error) string {
 		text = string(r[:200])
 	}
 	return text
-}
-
-// Prints the Nous 401 guidance once a credential refresh could not lift it
-func printNous401Diagnostics(ctx context.Context, a *AIAgent, apiError error) {
-	bodyText := apiErrorBodyOrResponse(apiError)
-	plines(a, "🔐 Nous 401 — Portal authentication failed.")
-	if bodyText != "" {
-		plines(a, "   Response: "+bodyText)
-	}
-	if provider.IsAnonymousRequest(a.provider, a.apiKey) {
-		plines(a, "   Your session ended and Icebath couldn't start a new one.",
-			"   Sign in with a Nous account (it's free), or switch providers with /model.")
-		return
-	}
-	if !printNousEntitlementGuidance(ctx, a, "Nous model access") {
-		plines(a, "   Most likely: Portal OAuth expired, account out of credits, or agent key revoked.")
-	}
-	plines(a,
-		"   Troubleshooting:",
-		"     • Re-authenticate: icebath auth add nous",
-		"     • Check credits / billing: https://portal.nousresearch.com",
-		fmt.Sprintf("     • Verify stored credentials: %s/auth.json", home.Display(home.Dir(ctx))),
-		"     • Switch providers temporarily: /model <model> --provider openrouter",
-	)
 }
 
 // Prints the Anthropic auth method and fixes once a credential refresh could not lift a 401
@@ -114,20 +84,6 @@ func refreshCredentialsAfter401(ctx context.Context, a *AIAgent, apiError error,
 			a.bufferVprint("🔐 Vertex AI token refreshed after 401. Retrying request...")
 			return true, nil
 		}
-	}
-	if (a.apiMode == "chat_completions" || a.apiMode == "anthropic_messages") && a.provider == "nous" && !retry.NousAuthRetryAttempted {
-		retry.NousAuthRetryAttempted = true
-		if !provider.NousPoolRefreshedThisTurn(poolAuthAgent{a: a, ctx: ctx}) {
-			ok, err := a.tryRefreshNousClientCredentials(ctx, true, nil)
-			if err != nil {
-				return false, err
-			}
-			if ok {
-				a.bufferVprint("🔐 Nous agent key refreshed after 401. Retrying request...")
-				return true, nil
-			}
-		}
-		printNous401Diagnostics(ctx, a, apiError)
 	}
 	if !retry.ProviderAuthRefreshAttempted {
 		if profile := credentialRefreshProfile(ctx, a); profile != nil {
@@ -207,7 +163,7 @@ func recoverFormatErrors(a *AIAgent, apiError error, classified *provider.Classi
 			detail = "stripped reasoning_details"
 		}
 		vlines(a, fmt.Sprintf("⚠️  Thinking block signature invalid, %s and retrying...", detail))
-		conversationLoopLog().Warn(fmt.Sprintf("%sThinking block signature recovery: %s from %d carrier/message(s) (canonical messages unchanged)", a.logPrefix, detail, removed))
+		pkgLog().Warn(fmt.Sprintf("%sThinking block signature recovery: %s from %d carrier/message(s) (canonical messages unchanged)", a.logPrefix, detail, removed))
 		return true, nil
 	}
 
@@ -225,7 +181,7 @@ func recoverFormatErrors(a *AIAgent, apiError error, classified *provider.Classi
 			a.codexResponsesNativeCompaction = false
 			vlines(a, "⚠️  Provider rejected native compaction (context_management) — disabled for this session, "+
 				"local compression stays active. Retrying...")
-			conversationLoopLog().Warn(fmt.Sprintf("%sNative compaction rejection recovery: disabled codex_responses_native for this session and retrying", a.logPrefix))
+			pkgLog().Warn(fmt.Sprintf("%sNative compaction rejection recovery: disabled codex_responses_native for this session and retrying", a.logPrefix))
 			return true, nil
 		}
 	}
@@ -244,63 +200,12 @@ func recoverFormatErrors(a *AIAgent, apiError error, classified *provider.Classi
 		}
 		if stripped > 0 {
 			vlines(a, fmt.Sprintf("⚠️  llama.cpp rejected tool schema grammar — stripped %d pattern/format keyword(s), retrying...", stripped))
-			conversationLoopLog().Warn(fmt.Sprintf("%sllama.cpp grammar recovery: stripped %d pattern/format keyword(s) from tool schemas", a.logPrefix, stripped))
+			pkgLog().Warn(fmt.Sprintf("%sllama.cpp grammar recovery: stripped %d pattern/format keyword(s) from tool schemas", a.logPrefix, stripped))
 			return true, nil
 		}
-		conversationLoopLog().Warn(fmt.Sprintf("%sllama.cpp grammar error but no pattern/format keywords to strip — falling through to normal retry", a.logPrefix))
+		pkgLog().Warn(fmt.Sprintf("%sllama.cpp grammar error but no pattern/format keywords to strip — falling through to normal retry", a.logPrefix))
 	}
 	return false, nil
-}
-
-// Chat copy naming each healed Nous free tier route
-var welcomeRouteHealCopy = map[string]string{
-	"anon_on_paid_host":     "Reconnected to the free model's own route.",
-	"named_on_welcome_host": "Reconnected to your Nous account's own route.",
-	"session_expired":       "Renewed the connection to the free model.",
-}
-
-// Moves a model_not_free refusal to the gateway's alternate, or heals a stale free tier route, once each
-func recoverWelcomeTier(ctx context.Context, a *AIAgent, classified *provider.Classified, retry *TurnRetryState) bool {
-	refusal, _ := classified.Context["welcome_refusal"].(map[string]any)
-	if typed, ok := classified.Context["welcome_refusal"].(provider.WelcomeRefusal); ok {
-		refusal = map[string]any{"reason": typed.Reason, "alternates": typed.Alternates}
-	}
-	if refusal != nil && refusal["reason"] == "model_not_free" && !retry.WelcomeModelSwitchAttempted {
-		retry.WelcomeModelSwitchAttempted = true
-		var alternates []string
-		if list, ok := refusal["alternates"].([]any); ok {
-			for _, alt := range list {
-				if s, ok := alt.(string); ok && s != "" {
-					alternates = append(alternates, s)
-				}
-			}
-		} else if list, ok := refusal["alternates"].([]string); ok {
-			for _, s := range list {
-				if s != "" {
-					alternates = append(alternates, s)
-				}
-			}
-		}
-		requested := a.model
-		if len(alternates) > 0 && alternates[0] != requested {
-			target := alternates[0]
-			a.model, a.modelNone = target, false
-			a.nousModelSwitch = &[2]string{requested, target}
-			vlines(a, fmt.Sprintf("↪️  %s isn't available without signing in; using %s for now. Retrying...", requested, target))
-			conversationLoopLog().Info(fmt.Sprintf("%sNous free tier: moved %s -> %s after model_not_free", a.logPrefix, requested, target))
-			return true
-		}
-	}
-	route, _ := classified.Context["welcome_route"].(string)
-	if copyText, known := welcomeRouteHealCopy[route]; known && !retry.WelcomeRouteHealAttempted {
-		retry.WelcomeRouteHealAttempted = true
-		healed, err := a.tryRefreshNousClientCredentials(ctx, true, nil)
-		if err == nil && healed {
-			vlines(a, fmt.Sprintf("🔐 %s Retrying request...", copyText))
-			return true
-		}
-	}
-	return false
 }
 
 // Retries a credit limited 402 once with the output cap lowered to the affordable budget
@@ -315,7 +220,7 @@ func clampToAffordableBudget(a *AIAgent, apiError error, classified *provider.Cl
 	retry.Affordable402ClampAttempted = true
 	a.ephemeralMaxOutputTokens = affordable
 	vlines(a, fmt.Sprintf("💳 Credit balance covers fewer output tokens — retrying with max_tokens=%s...", pystr.GroupThousands(int64(affordable))))
-	conversationLoopLog().Info(fmt.Sprintf("%sCredit-limited 402: retrying once with max_tokens=%d", a.logPrefix, affordable))
+	pkgLog().Info(fmt.Sprintf("%sCredit-limited 402: retrying once with max_tokens=%d", a.logPrefix, affordable))
 	return true
 }
 
@@ -336,55 +241,6 @@ func rejectAllTurns(a *AIAgent, apiError error) bool {
 		return c.RejectAllTurns(apiError)
 	}
 	return false
-}
-
-// Error context the credential pool sees, a usage window 402 benching the refused model until its reset
-func poolErrorContext(a *AIAgent, classified *provider.Classified, errorContext map[string]any) map[string]any {
-	if !pyTruthy(classified.Context["usage_window"]) {
-		return errorContext
-	}
-	out := maps.Clone(errorContext)
-	if out == nil {
-		out = map[string]any{}
-	}
-	out["usage_window"] = true
-	maps.Copy(out, usageWindowResetContext(a))
-	return out
-}
-
-// Epoch seconds the refused usage window frees up, empty when the credits state names none
-func usageWindowResetContext(a *AIAgent) (out map[string]any) {
-	defer func() {
-		if r := recover(); r != nil {
-			conversationLoopLog().Debug("usage-window reset unavailable for the pool", "error", fmt.Sprint(r))
-			out = map[string]any{}
-		}
-	}()
-	capture := a.creditsCapture()
-	st := capture.Credits()
-	if st == nil {
-		return map[string]any{}
-	}
-	resetsMs := provider.WindowStopResetsAtMs(st, provider.CurrentModelIsTopTier(capture))
-	if resetsMs == nil || *resetsMs <= 0 {
-		return map[string]any{}
-	}
-	return map[string]any{"reset_at": float64(*resetsMs) / 1000}
-}
-
-// Refreshes Nous runtime credentials after a fresh account check confirms paid access
-func tryRefreshNousPaidEntitlementCredentials(ctx context.Context, a *AIAgent) (ok bool) {
-	defer func() {
-		if r := recover(); r != nil {
-			ok = false
-		}
-	}()
-	info := provider.GetNousPortalAccountInfo(ctx, true)
-	if info == nil || info.PaidServiceAccess == nil || !*info.PaidServiceAccess {
-		return false
-	}
-	refreshed, err := a.tryRefreshNousClientCredentials(ctx, true, nil)
-	return err == nil && refreshed
 }
 
 // 401 token_expired from the Codex backend, the stale replayed reasoning blob signature
@@ -457,14 +313,14 @@ func recoverStaleCodexReasoning(a *AIAgent, retry *TurnRetryState, messages []*s
 		action = "stripped stale"
 	}
 	vlines(a, fmt.Sprintf("⚠️  Encrypted reasoning replay was rejected by the provider — %s %d item(s) from %d message(s), retrying...", action, stats["items"], stats["messages"]))
-	turnRecoveryCodexLog().Warn(fmt.Sprintf("%sInvalid encrypted reasoning recovery: %s %d items from %d messages", a.logPrefix, action, stats["items"], stats["messages"]))
+	pkgLog().Warn(fmt.Sprintf("%sInvalid encrypted reasoning recovery: %s %d items from %d messages", a.logPrefix, action, stats["items"], stats["messages"]))
 	return true
 }
 
 // One shot recovery chain after classification, reporting a retry and whether the credential pool recovered
 func recoverAfterClassification(ctx context.Context, a *AIAgent, s *LoopState, e *apiErrorTurn) (bool, bool, error) {
 	retry, classified, apiError := s.Retry, e.classified, e.apiError
-	if recoverWelcomeTier(ctx, a, classified, retry) || clampToAffordableBudget(a, apiError, classified, retry) ||
+	if clampToAffordableBudget(a, apiError, classified, retry) ||
 		(a.apiMode == "codex_responses" && rejectAllTurns(a, apiError)) {
 		return true, false, nil
 	}
@@ -473,17 +329,8 @@ func recoverAfterClassification(ctx context.Context, a *AIAgent, s *LoopState, e
 		return true, false, nil
 	}
 
-	if classified.Reason == provider.ReasonBilling && !pyTruthy(classified.Context["usage_window"]) &&
-		isNousInferenceRoute(a.provider, a.baseURL) && !retry.NousPaidEntitlementRefreshAttempted {
-		retry.NousPaidEntitlementRefreshAttempted = true
-		if tryRefreshNousPaidEntitlementCredentials(ctx, a) {
-			vlines(a, "🔐 Nous paid access verified — refreshed runtime credentials and retrying request...")
-			return true, false, nil
-		}
-	}
-
 	recoveredWithPool, retried429, err := a.recoverWithCredentialPool(ctx, e.statusCode, retry.HasRetried429, classified.Reason,
-		poolErrorContext(a, classified, e.errorContext), classified.BillingUnverified())
+		e.errorContext, classified.BillingUnverified())
 	if err != nil {
 		return false, false, err
 	}
@@ -502,7 +349,7 @@ func recoverAfterClassification(ctx context.Context, a *AIAgent, s *LoopState, e
 			vlines(a, "📐 Image(s) exceeded provider size limit — shrank and retrying...")
 			return true, false, nil
 		}
-		conversationLoopLog().Info("image-shrink recovery: no data-URL image parts found or shrink didn't reduce size; surfacing original error.")
+		pkgLog().Info("image-shrink recovery: no data-URL image parts found or shrink didn't reduce size; surfacing original error.")
 	}
 
 	if classified.Reason == provider.ReasonMultimodalToolContent && !retry.MultimodalToolContentRetryAttempted {
@@ -511,7 +358,7 @@ func recoverAfterClassification(ctx context.Context, a *AIAgent, s *LoopState, e
 			vlines(a, "📐 Provider rejected list-type tool content — downgraded screenshots to text and retrying...")
 			return true, false, nil
 		}
-		conversationLoopLog().Info("multimodal-tool-content recovery: no list-type tool messages with image parts found; surfacing original error.")
+		pkgLog().Info("multimodal-tool-content recovery: no list-type tool messages with image parts found; surfacing original error.")
 	}
 
 	if classified.Reason == provider.ReasonReasoningMandatory && !retry.ReasoningMandatoryRetryAttempted {
@@ -519,7 +366,7 @@ func recoverAfterClassification(ctx context.Context, a *AIAgent, s *LoopState, e
 		if sent := a.wireReasoningConfig; sent != nil && sent["enabled"] != false && sent["effort"] != nil && sent["effort"] != "none" {
 			a.reasoningEffortRejected = true
 			vlines(a, fmt.Sprintf("⚠️  %s rejects reasoning effort %s — using the route's default for this session, retrying...", a.model, fmt.Sprint(sent["effort"])))
-			conversationLoopLog().Warn(fmt.Sprintf("%sReasoning-effort recovery: dropping reasoning config for %s", a.logPrefix, a.model))
+			pkgLog().Warn(fmt.Sprintf("%sReasoning-effort recovery: dropping reasoning config for %s", a.logPrefix, a.model))
 			return true, false, nil
 		}
 		a.reasoningDisableRejected = true
@@ -530,10 +377,10 @@ func recoverAfterClassification(ctx context.Context, a *AIAgent, s *LoopState, e
 		}()
 		if a.reasoningFloorRequired {
 			vlines(a, fmt.Sprintf("⚠️  %s cannot disable reasoning — using effort=%s for this session, retrying...", a.model, provider.ReasoningFloorEffort))
-			conversationLoopLog().Warn(fmt.Sprintf("%sReasoning-disable recovery: stepping reasoning up to %s for %s", a.logPrefix, provider.ReasoningFloorEffort, a.model))
+			pkgLog().Warn(fmt.Sprintf("%sReasoning-disable recovery: stepping reasoning up to %s for %s", a.logPrefix, provider.ReasoningFloorEffort, a.model))
 		} else {
 			vlines(a, fmt.Sprintf("⚠️  %s rejects disabling reasoning — using the route's default for this session, retrying...", a.model))
-			conversationLoopLog().Warn(fmt.Sprintf("%sReasoning-disable recovery: dropping reasoning disable for %s", a.logPrefix, a.model))
+			pkgLog().Warn(fmt.Sprintf("%sReasoning-disable recovery: dropping reasoning disable for %s", a.logPrefix, a.model))
 		}
 		return true, false, nil
 	}
@@ -542,7 +389,7 @@ func recoverAfterClassification(ctx context.Context, a *AIAgent, s *LoopState, e
 		if stripRequestImagesAndRetry(a, &s.APIMessages) {
 			return true, false, nil
 		}
-		conversationLoopLog().Info("image-corrupt recovery: no image parts found to strip; surfacing original error.")
+		pkgLog().Info("image-corrupt recovery: no image parts found to strip; surfacing original error.")
 	}
 
 	if classified.Reason == provider.ReasonOAuthLongContextBetaForbid && a.apiMode == "anthropic_messages" &&

@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"log/slog"
 	"os"
 
 	"github.com/mattn/go-isatty"
@@ -17,7 +16,7 @@ import (
 	"github.com/spf13/cobra"
 )
 
-// The parsed top level and chat namespace of hermes_cli/main.py, read from the cobra tree
+// The parsed top level and chat namespace of, read from the cobra tree
 type chatArgs struct {
 	Command, SubCommand                 string
 	Query, QueryFile, Image, Model      string
@@ -261,23 +260,23 @@ func prepareAgentStartup(a *chatArgs) {
 		return
 	}
 	if shouldBackgroundMCPStartup(a) {
-		mcp.StartBackgroundDiscovery(ctx, processToolsEnv(ctx), slog.Default(), "cli-mcp-discovery")
+		mcp.StartBackgroundDiscovery(ctx, processToolsEnv(ctx), pkgLog(), "cli-mcp-discovery")
 	}
 	cfg, err := config.Load(home.Dir(ctx), nil)
 	if err != nil {
-		slog.Debug(fmt.Sprintf("shell-hook registration failed at CLI startup: %v", err))
+		pkgLog().Debug(fmt.Sprintf("shell-hook registration failed at CLI startup: %v", err))
 		return
 	}
 	interactive := a.Command == "" || a.Command == "chat" || a.Command == "rl"
 	if _, err := plugins.RegisterShellHooksFromConfig(ctx, map[string]any(cfg), a.AcceptHooks, interactive); err != nil {
-		slog.Debug(fmt.Sprintf("shell-hook registration failed at CLI startup: %v", err))
+		pkgLog().Debug(fmt.Sprintf("shell-hook registration failed at CLI startup: %v", err))
 		return
 	}
 	if a.AcceptHooks && a.Command == "gateway" {
 		plugins.AcceptShellHooksForProcess()
 	}
 	if _, err := plugins.RegisterOutboundWebhooksFromConfig(ctx, map[string]any(cfg)); err != nil {
-		slog.Debug(fmt.Sprintf("outbound-webhook registration failed at CLI startup: %v", err))
+		pkgLog().Debug(fmt.Sprintf("outbound-webhook registration failed at CLI startup: %v", err))
 	}
 }
 
@@ -286,7 +285,7 @@ func processToolsEnv(ctx context.Context) *tools.Env {
 	h := home.Dir(ctx)
 	cfg, _ := config.LoadReadonly(ctx, h, nil)
 	cwd, _ := os.Getwd()
-	return &tools.Env{Home: h, Config: cfg, Cwd: cwd, Log: slog.Default()}
+	return &tools.Env{Home: h, Config: cfg, Cwd: cwd, Log: pkgLog()}
 }
 
 // Top level --oneshot, the transport launcher that never returns

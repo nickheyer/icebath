@@ -17,7 +17,7 @@ func launchdSeam(t *testing.T, plistBody string) (*[][]string, *bytes.Buffer, st
 	t.Helper()
 	dir := t.TempDir()
 	t.Setenv("ICEBATH_HOME", filepath.Join(dir, "home"))
-	plistPath := filepath.Join(dir, "ai.icebath.gateway.plist")
+	plistPath := filepath.Join(dir, "app.icebath.gateway.plist")
 	if err := os.WriteFile(plistPath, []byte(plistBody), 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -38,7 +38,7 @@ func launchdSeam(t *testing.T, plistBody string) (*[][]string, *bytes.Buffer, st
 			restore()
 		}
 	})
-	launchdLabelOf = func(context.Context) (string, error) { return "ai.icebath.gateway", nil }
+	launchdLabelOf = func(context.Context) (string, error) { return "app.icebath.gateway", nil }
 	launchdDomainOf = func(context.Context) (string, error) { return "gui/501", nil }
 	launchdPlistPathOf = func(context.Context) (string, error) { return plistPath, nil }
 	lifecycleRunningPid = func() (int, bool) { return 0, false }

@@ -18,13 +18,13 @@ func TestPromptCacheMetaHostMandatedResponses(t *testing.T) {
 			t.Fatalf("spoof %q mandated %q", u, got)
 		}
 	}
-	if DetermineMode("meta", "https://api.meta.ai/v1", "", "") != ModeCodexResponses || DetermineMode("custom", "https://api.meta.ai/v1", "", "") != ModeCodexResponses {
+	if DetermineMode("meta", "https://api.meta.ai/v1", "") != ModeCodexResponses || DetermineMode("custom", "https://api.meta.ai/v1", "") != ModeCodexResponses {
 		t.Fatal("meta route must determine codex_responses")
 	}
-	if DetermineMode("generic", "https://generic.example.com/v1", "", "") != ModeChatCompletions {
+	if DetermineMode("generic", "https://generic.example.com/v1", "") != ModeChatCompletions {
 		t.Fatal("generic route must determine chat_completions")
 	}
-	if DetermineMode("meta", "https://api.meta.ai/v1/", "", "") != ModeCodexResponses {
+	if DetermineMode("meta", "https://api.meta.ai/v1/", "") != ModeCodexResponses {
 		t.Fatal("trailing slash lost the meta mode")
 	}
 	for _, u := range []string{"https://api.meta.ai/v1", "https://api.meta.ai/v1/chat/completions", "https://API.META.AI/v1"} {

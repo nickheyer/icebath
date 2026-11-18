@@ -8,7 +8,7 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
+	"github.com/nickheyer/icebath/pkg/errchain"
 )
 
 // LlamaCpp is one llama.cpp backend build with every library it loads staged beside llama-server
@@ -83,7 +83,7 @@ func (p *LlamaCpp) MissingReason(target string) string {
 func (p *LlamaCpp) assetNames(version, target string) ([]string, error) {
 	infix, ok := p.Assets[target]
 	if !ok {
-		return nil, keyError(target)
+		return nil, missingKey("no download for target " + target)
 	}
 	ext := "tar.gz"
 	if strings.HasPrefix(target, "win32") {
@@ -123,26 +123,6 @@ func (p *LlamaCpp) FetchURL(version, target string) (string, error) {
 	return urls[0], nil
 }
 
-// The llama.app latest pointer first, then the bucket tree, then GitHub releases when the bucket shows nothing
-func (p *LlamaCpp) LatestVersions(target, locked string) ([]string, error) {
-	if latest, ok := LlamaAppLatest(); ok {
-		return append([]string{latest}, LlamaAppBucketVersions()...), nil
-	}
-	if bucket := LlamaAppBucketVersions(); len(bucket) > 0 {
-		return bucket, nil
-	}
-	return GithubReleaseTags("ggml-org/llama.cpp", "b")
-}
-
-// Digest GitHub's release API publishes for the asset, so pinning skips the download
-func (p *LlamaCpp) KnownSHA256(version, url string) (string, error) {
-	digests, err := githubReleaseDigests("ggml-org/llama.cpp", "b"+version)
-	if err != nil {
-		return "", err
-	}
-	return digests[url[strings.LastIndex(url, "/")+1:]], nil
-}
-
 func (p *LlamaCpp) Unpack(archive, staged, target string) error {
 	if strings.HasSuffix(filepath.Base(archive), ".deb") {
 		return UnpackDeb(p.Name, archive, staged)
@@ -154,7 +134,7 @@ func (p *LlamaCpp) Unpack(archive, staged, target string) error {
 func (p *LlamaCpp) Stage(store *Store, staged, version, target string) error {
 	bin := p.dispatch().Binary(staged, target)
 	if bin == "" {
-		return fmt.Errorf("AttributeError: 'NoneType' object has no attribute 'name'")
+		return &PyError{Class: "AttributeError", Message: "the staged llama.cpp build has no llama-server binary"}
 	}
 	server := filepath.Base(bin)
 	if !isRegularFile(filepath.Join(staged, server)) {
@@ -242,58 +222,6 @@ var (
 	releaseDigestCache = map[[2]string]map[string]string{}
 )
 
-// Asset name to sha256 digest of one GitHub release, empty when the release API cannot be read
-func githubReleaseDigests(repo, tag string) (map[string]string, error) {
-	key := [2]string{repo, tag}
-	releaseDigestMu.Lock()
-	cached, ok := releaseDigestCache[key]
-	releaseDigestMu.Unlock()
-	if ok {
-		return cached, nil
-	}
-	data, err := getJSON(fmt.Sprintf("https://api.github.com/repos/%s/releases/tags/%s", repo, tag))
-	if err != nil {
-		return map[string]string{}, nil
-	}
-	release, isMap := data.(map[string]any)
-	if !isMap {
-		return nil, fmt.Errorf("AttributeError: '%s' object has no attribute 'get'", pyrepr.TypeName(data))
-	}
-	digests := map[string]string{}
-	assets := []any{}
-	if raw, present := release["assets"]; present {
-		if assets, err = pyIterItems(raw); err != nil {
-			return nil, err
-		}
-	}
-	for _, item := range assets {
-		asset, isAsset := item.(map[string]any)
-		if !isAsset {
-			return nil, fmt.Errorf("AttributeError: '%s' object has no attribute 'get'", pyrepr.TypeName(item))
-		}
-		digest := ""
-		if raw := asset["digest"]; pyrepr.Truthy(raw) {
-			text, isText := raw.(string)
-			if !isText {
-				return nil, fmt.Errorf("AttributeError: '%s' object has no attribute 'partition'", pyrepr.TypeName(raw))
-			}
-			_, digest, _ = strings.Cut(text, "sha256:")
-		}
-		if digest == "" {
-			continue
-		}
-		name, present := asset["name"]
-		if !present {
-			return nil, keyError("name")
-		}
-		digests[pyrepr.Str(name)] = digest
-	}
-	releaseDigestMu.Lock()
-	releaseDigestCache[key] = digests
-	releaseDigestMu.Unlock()
-	return digests, nil
-}
-
 // WhisperCppCpu is native local speech to text for ARM64 Windows, where faster-whisper has no wheel
 type WhisperCppCpu struct {
 	BinaryPackage
@@ -334,7 +262,7 @@ func pyIterItems(v any) ([]any, error) {
 		}
 		return out, nil
 	}
-	return nil, fmt.Errorf("TypeError: '%s' object is not iterable", pyrepr.TypeName(v))
+	return nil, &PyError{Class: "TypeError", Message: fmt.Sprintf("the GitHub release assets are %s, expected a list", errchain.Kind(v))}
 }
 
 // Children of dir whose names match a single component pattern, case folded where pathlib folds case

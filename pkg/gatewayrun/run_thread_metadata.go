@@ -39,7 +39,7 @@ func isTelegramDMTopicTarget(platform gateway.Platform, chatID string, threadID 
 	if lookup, ok := adapter.(dmTopicInfoAdapter); ok && adapter != nil && chatID != "" {
 		info, err := lookup.GetDMTopicInfo(chatID, *threadID)
 		if err != nil {
-			inboundLog().Debug("Failed to inspect Telegram DM topic metadata", "exc_info", err)
+			pkgLog().Debug("Failed to inspect Telegram DM topic metadata", "exc_info", err)
 			return false
 		}
 		_, isDict := info.(map[string]any)

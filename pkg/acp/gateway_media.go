@@ -13,11 +13,8 @@ import (
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pybase64"
-	"github.com/nickheyer/icebath/pkg/logging"
 	"github.com/nickheyer/icebath/pkg/mediacache"
 )
-
-var gatewayMediaLog = logging.GetLogger("acp_adapter.gateway_media")
 
 // Downloads an image URL into the image cache through the SSRF guarded fetcher
 var cacheImageFromURL = gateway.CacheImageFromURL
@@ -32,7 +29,7 @@ type StagedAttachment struct {
 func fetchRemoteImage(ctx context.Context, url string) ([]byte, bool, error) {
 	path, err := cacheImageFromURL(ctx, url, ".img", 0)
 	if err != nil {
-		gatewayMediaLog.Info("ACP remote image not fetched; sent as text\n" + err.Error())
+		pkgLog().Info("ACP remote image not fetched; sent as text\n" + err.Error())
 		return nil, false, nil
 	}
 	data, err := takeFetched(path)

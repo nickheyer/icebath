@@ -13,10 +13,10 @@ import (
 // Marks a re-executed test binary that runs the program entry with its own arguments
 const runMainEnv = "ICEBATH_TEST_RUN_MAIN"
 
-// Names the hermes fixture a re-executed test binary sets up before the program entry or runs in its place
+// Names the test fixture a re-executed test binary sets up before the program entry or runs in its place
 const childModeEnv = "ICEBATH_TEST_CHILD_MODE"
 
-// Comma list of customizations every re-executed test binary applies, the sitecustomize each hermes interpreter loads
+// Comma list of customizations every re-executed test binary applies, the sitecustomize each interpreter loads
 const testSiteEnv = "ICEBATH_TEST_SITE"
 
 // Fixture setups by name, each returns to the program entry or exits the process with its own status

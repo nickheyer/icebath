@@ -19,7 +19,7 @@ func resolvedOrSelf(p string) string {
 	return p
 }
 
-// Skills eligible as gateway slash commands for a platform, hermes_cli/commands_platforms.py _iter_gateway_skills
+// Skills eligible as gateway slash commands for a platform
 func IterGatewaySkills(scope *skills.Scope, platform string) []GatewaySkill {
 	disabled := scope.DisabledSkillNames(platform)
 	skillsDir := resolvedOrSelf(scope.SkillsDir())

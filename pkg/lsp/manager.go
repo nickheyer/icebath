@@ -30,8 +30,6 @@ const (
 	deltaBaselineCap   = 256
 )
 
-const managerLogger = "agent.lsp.manager"
-
 // Server id and root a client or broken pair is keyed by
 type pairKey struct{ serverID, root string }
 
@@ -171,7 +169,7 @@ func pathList(v any) ([]string, bool) {
 func ParseTrustedWorkspaces(rt *Runtime, value any) []string {
 	roots, ok := pathList(value)
 	if !ok {
-		rt.logf(slog.LevelWarn, eventLogger, "lsp.trusted_workspaces must be a list of directories, e.g. ['~/code/my-app'] (got %s); only the "+
+		rt.logf(slog.LevelWarn, "lsp.trusted_workspaces must be a list of directories, e.g. ['~/code/my-app'] (got %s); only the "+
 			"workspaces you launched Icebath or opened a session in are trusted until the key is fixed", pyrepr.TypeName(value))
 		return []string{}
 	}
@@ -182,7 +180,7 @@ func ParseTrustedWorkspaces(rt *Runtime, value any) []string {
 func parseExcludeRoots(rt *Runtime, value any) ([]string, bool) {
 	roots, ok := pathList(value)
 	if !ok {
-		rt.logf(slog.LevelWarn, eventLogger, "lsp.exclude_roots must be a list of glob patterns, e.g. ['~/big-monorepo', '/srv/*/vendor'] "+
+		rt.logf(slog.LevelWarn, "lsp.exclude_roots must be a list of glob patterns, e.g. ['~/big-monorepo', '/srv/*/vendor'] "+
 			"(got %s); LSP is skipped for every workspace until the key is fixed", pyrepr.TypeName(value))
 	}
 	return roots, ok
@@ -556,7 +554,7 @@ func (s *Service) SnapshotBaseline(filePath string, operatorRoots map[string]boo
 		return s.snapshotAsync(ctx, filePath, budget)
 	})
 	if err != nil {
-		s.rt.logf(slog.LevelDebug, managerLogger, "baseline snapshot failed for %s: %s", filePath, errText(err))
+		s.rt.logf(slog.LevelDebug, "baseline snapshot failed for %s: %s", filePath, errText(err))
 		s.markBrokenForFile(filePath, err)
 		diags = nil
 	}
@@ -614,10 +612,10 @@ func (s *Service) GetDiagnosticsSync(filePath string, delta bool, timeout time.D
 		var te *TimeoutError
 		if errors.As(err, &te) {
 			logTimeout(s.rt, serverID, filePath, "diagnostics")
-			s.rt.logf(slog.LevelDebug, managerLogger, "LSP diagnostics timeout for %s: %s", filePath, errText(err))
+			s.rt.logf(slog.LevelDebug, "LSP diagnostics timeout for %s: %s", filePath, errText(err))
 		} else {
 			logServerError(s.rt, serverID, filePath, err)
-			s.rt.logf(slog.LevelDebug, managerLogger, "LSP diagnostics fetch failed for %s: %s", filePath, errText(err))
+			s.rt.logf(slog.LevelDebug, "LSP diagnostics fetch failed for %s: %s", filePath, errText(err))
 		}
 		s.markBrokenForFile(filePath, err)
 		return []map[string]any{}, nil
@@ -729,7 +727,7 @@ func (s *Service) markBrokenForFileAsync(ctx context.Context, filePath string, c
 		if isCancellation(err) {
 			return err
 		}
-		s.rt.logf(slog.LevelDebug, managerLogger, "shutdown of broken LSP client failed")
+		s.rt.logf(slog.LevelDebug, "shutdown of broken LSP client failed")
 	}
 	return nil
 }
@@ -742,7 +740,7 @@ func (s *Service) Shutdown() {
 	if _, err := runOnLoop(s.l, 10*time.Second, func(ctx context.Context) (struct{}, error) {
 		return struct{}{}, s.shutdownAsync(ctx)
 	}); err != nil {
-		s.rt.logf(slog.LevelDebug, managerLogger, "LSP shutdown error: %s", errText(err))
+		s.rt.logf(slog.LevelDebug, "LSP shutdown error: %s", errText(err))
 	}
 	s.l.stop()
 	ClearWorkspaceCache()
@@ -856,9 +854,9 @@ func (s *Service) openAndWaitAsync(ctx context.Context, filePath string, snapsho
 			return nil, false, err
 		}
 		if snapshot {
-			s.rt.logf(slog.LevelDebug, managerLogger, "snapshot open/wait failed: %s", errText(err))
+			s.rt.logf(slog.LevelDebug, "snapshot open/wait failed: %s", errText(err))
 		} else {
-			s.rt.logf(slog.LevelDebug, managerLogger, "open/wait failed for %s: %s", filePath, errText(err))
+			s.rt.logf(slog.LevelDebug, "open/wait failed for %s: %s", filePath, errText(err))
 		}
 		return nil, false, nil
 	}
@@ -1037,7 +1035,7 @@ func (s *Service) idleReaperLoop(ctx context.Context) {
 			if isCancellation(err) {
 				return
 			}
-			s.rt.logf(slog.LevelDebug, managerLogger, "LSP idle reaper sweep error: %s", errText(err))
+			s.rt.logf(slog.LevelDebug, "LSP idle reaper sweep error: %s", errText(err))
 		}
 	}
 }
@@ -1101,7 +1099,7 @@ func (s *Service) ReleaseWorkspace(workspaceRoot string) (int, error) {
 	}
 	n, err := runOnLoop(s.l, 15*time.Second, func(ctx context.Context) (int, error) { return s.releaseAsync(ctx, root) })
 	if err != nil {
-		s.rt.logf(slog.LevelDebug, managerLogger, "LSP release of %s failed: %s", root, errText(err))
+		s.rt.logf(slog.LevelDebug, "LSP release of %s failed: %s", root, errText(err))
 		return 0, nil
 	}
 	return n, nil
@@ -1186,7 +1184,7 @@ func (s *Service) detachRoots(ctx context.Context, isGone func(string) bool, rea
 				if isCancellation(err) {
 					return 0, err
 				}
-				s.rt.logf(slog.LevelDebug, managerLogger, "LSP folder removal for %s failed: %s", f, errText(err))
+				s.rt.logf(slog.LevelDebug, "LSP folder removal for %s failed: %s", f, errText(err))
 			}
 		}
 	}

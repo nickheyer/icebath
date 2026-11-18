@@ -3,7 +3,6 @@ package gateway
 import (
 	"context"
 	"fmt"
-	"log/slog"
 	"strings"
 
 	"github.com/nickheyer/icebath/pkg/home"
@@ -163,12 +162,12 @@ func retireLiveSessions(ctx context.Context, a *SessionAuthority, sessionIDs []s
 		if len(sessionIDs) > 0 && routing != nil && routingDBPath(routing) != a.DB.Path() {
 			fenceErr = fenceRetiredRoutes(ctx, a, store, sessionIDs)
 			if fenceErr != nil {
-				slog.Warn("could not fence shared routing rows for deleted sessions: " + pyExceptionRepr(fenceErr))
+				pkgLog().Warn("could not fence shared routing rows for deleted sessions: " + pyExceptionRepr(fenceErr))
 			}
 		}
 		if len(sessionIDs) > 0 {
 			if err := store.StripRetiredMirrorRoutes(ctx, sessionIDs); err != nil {
-				slog.Warn("could not strip retired routes from sessions.json: " + pyExceptionRepr(err))
+				pkgLog().Warn("could not strip retired routes from sessions.json: " + pyExceptionRepr(err))
 			}
 		}
 	}

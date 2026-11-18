@@ -14,9 +14,9 @@ func TestPausedCreationIsInertUntilOperatorAction(t *testing.T) {
 		registered = append(registered, job.ID)
 		return nil
 	}}
-	patchChronos(t, &schedulerResolver, func(*Store) CronScheduler { return provider })
+	patchSeam(t, &schedulerResolver, func(*Store) CronScheduler { return provider })
 	var writes [][]*Job
-	patchChronos(t, &jobsPayloadStager, func(st *Store, rows []*Job) (string, error) {
+	patchSeam(t, &jobsPayloadStager, func(st *Store, rows []*Job) (string, error) {
 		snapshot := make([]*Job, len(rows))
 		for i, row := range rows {
 			snapshot[i] = row.Clone()

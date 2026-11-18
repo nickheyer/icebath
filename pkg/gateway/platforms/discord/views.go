@@ -7,7 +7,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"log/slog"
 	"net/http"
 	"sort"
 	"sync"
@@ -347,12 +346,12 @@ func (a *DiscordAdapter) dispatchComponent(ctx context.Context, i *discordgo.Int
 	callback := item.callback
 	v.mu.Unlock()
 	if err := callback(ctx, i); err != nil {
-		slog.Error(fmt.Sprintf("Ignoring exception in view %s for item %s: %s", v.repr(), item.repr(), err))
+		pkgLog().Error(fmt.Sprintf("Ignoring exception in view %s for item %s: %s", v.repr(), item.repr(), err))
 	}
 }
 
-// Shared plumbing of the hermes component views, allowlist auth, the single use flag and the sent message
-type hermesView struct {
+// Shared plumbing of the component views, allowlist auth, the single use flag and the sent message
+type icebathView struct {
 	uiView
 	adapter        *DiscordAdapter
 	allowedUserIDs strSet
@@ -363,7 +362,7 @@ type hermesView struct {
 }
 
 // Fills the shared view state, the timeout in seconds as discord.py takes it
-func (h *hermesView) initView(a *DiscordAdapter, name string, hooks viewHooks, users, roles strSet, timeoutSeconds float64) {
+func (h *icebathView) initView(a *DiscordAdapter, name string, hooks viewHooks, users, roles strSet, timeoutSeconds float64) {
 	if roles == nil {
 		roles = strSet{}
 	}
@@ -372,7 +371,7 @@ func (h *hermesView) initView(a *DiscordAdapter, name string, hooks viewHooks, u
 }
 
 // Adds a button bound to a callback, a random custom id standing in for an unset one
-func (h *hermesView) addButtonLocked(label string, style discordgo.ButtonStyle, emoji, customID string, cb func(context.Context, *discordgo.Interaction) error) (*viewItem, error) {
+func (h *icebathView) addButtonLocked(label string, style discordgo.ButtonStyle, emoji, customID string, cb func(context.Context, *discordgo.Interaction) error) (*viewItem, error) {
 	if customID == "" {
 		customID = randomCustomID()
 	}
@@ -381,7 +380,7 @@ func (h *hermesView) addButtonLocked(label string, style discordgo.ButtonStyle, 
 }
 
 // Adds a single choice select bound to a callback, a random custom id standing in for an unset one
-func (h *hermesView) addSelectLocked(hint string, options []selectOption, customID string, cb func(context.Context, *discordgo.Interaction) error) error {
+func (h *icebathView) addSelectLocked(hint string, options []selectOption, customID string, cb func(context.Context, *discordgo.Interaction) error) error {
 	if customID == "" {
 		customID = randomCustomID()
 	}
@@ -389,7 +388,7 @@ func (h *hermesView) addSelectLocked(hint string, options []selectOption, custom
 }
 
 // Click authorisation against the view allowlists confirmed by the live gateway check
-func (h *hermesView) checkAuth(ctx context.Context, i *discordgo.Interaction) bool {
+func (h *icebathView) checkAuth(ctx context.Context, i *discordgo.Interaction) bool {
 	h.mu.Lock()
 	live := h.liveAuth
 	h.mu.Unlock()
@@ -397,7 +396,7 @@ func (h *hermesView) checkAuth(ctx context.Context, i *discordgo.Interaction) bo
 }
 
 // Ephemerally refuses an answered or unauthorised click, true when the click may proceed
-func (h *hermesView) gate(ctx context.Context, i *discordgo.Interaction, resolvedMsg *string, unauthMsg string) (bool, error) {
+func (h *icebathView) gate(ctx context.Context, i *discordgo.Interaction, resolvedMsg *string, unauthMsg string) (bool, error) {
 	h.mu.Lock()
 	resolved := h.resolved
 	h.mu.Unlock()
@@ -411,7 +410,7 @@ func (h *hermesView) gate(ctx context.Context, i *discordgo.Interaction, resolve
 }
 
 // Whether a click already answered the view
-func (h *hermesView) isResolved() bool {
+func (h *icebathView) isResolved() bool {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	return h.resolved
@@ -437,7 +436,7 @@ func stampedEmbed(embed *discordgo.MessageEmbed, color int, footer string) *disc
 }
 
 // Greys the sent card and stamps a footer, its controls kept disabled or removed, failures only logged
-func (h *hermesView) expireEmbed(ctx context.Context, footer string, keepControls bool) {
+func (h *icebathView) expireEmbed(ctx context.Context, footer string, keepControls bool) {
 	h.mu.Lock()
 	msg := h.message
 	if msg == nil {
@@ -455,12 +454,12 @@ func (h *hermesView) expireEmbed(ctx context.Context, footer string, keepControl
 	}
 	h.mu.Unlock()
 	if err := h.adapter.editViewMessage(ctx, msg, embed, comps, view); err != nil {
-		slog.Debug("[Discord] Could not stamp prompt card", "error", err)
+		pkgLog().Debug("[Discord] Could not stamp prompt card", "error", err)
 	}
 }
 
 // Marks the view answered, stamps the clicked card, disables its controls and edits in place, stopping the view either way
-func (h *hermesView) finalizeEmbed(ctx context.Context, i *discordgo.Interaction, color int, footer string) error {
+func (h *icebathView) finalizeEmbed(ctx context.Context, i *discordgo.Interaction, color int, footer string) error {
 	h.mu.Lock()
 	h.resolved = true
 	embed := stampedEmbed(firstEmbed(i.Message), color, footer)
@@ -472,7 +471,7 @@ func (h *hermesView) finalizeEmbed(ctx context.Context, i *discordgo.Interaction
 }
 
 // Relabels buttons from the catalog in the active language within the 80 unit label cap
-func (h *hermesView) localizeButtonsLocked(ctx context.Context, keys map[*viewItem]string) {
+func (h *icebathView) localizeButtonsLocked(ctx context.Context, keys map[*viewItem]string) {
 	for item, key := range keys {
 		if item != nil {
 			item.label = tDiscord(ctx, key, discordButtonLabelLimit, nil)
@@ -481,7 +480,7 @@ func (h *hermesView) localizeButtonsLocked(ctx context.Context, keys map[*viewIt
 }
 
 // Disables the controls and greys the card with the expiry footer unless a click already answered it
-func (h *hermesView) onTimeout(ctx context.Context) {
+func (h *icebathView) onTimeout(ctx context.Context) {
 	h.mu.Lock()
 	if h.resolved {
 		h.mu.Unlock()

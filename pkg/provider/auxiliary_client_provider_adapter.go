@@ -10,6 +10,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tools"
@@ -88,7 +89,7 @@ func auxRequestFromChatKwargs(kwargs map[string]any) (*Request, map[string]strin
 			req.Stop = append(req.Stop, pyrepr.Str(s))
 		}
 	}
-	extraBody, _ := kwargs["extra_body"].(map[string]any)
+	extraBody, _ := pyjson.Dict(kwargs["extra_body"])
 	switch {
 	case kwargs["reasoning_effort"] != nil:
 		req.Reasoning = Reasoning{Effort: pyrepr.Str(kwargs["reasoning_effort"])}

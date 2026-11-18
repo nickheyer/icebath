@@ -150,12 +150,11 @@ var (
 	catalogRootOverride = "ICEBATH_OPTIONAL_MCPS"
 )
 
-// Seams over the cli config probe, the shared metrics recorder and the git runner
+// Seams over the cli config probe and the git runner
 var (
-	catalogProbeServer   = probeSingleServer
-	catalogRecordInstall = recordExtensionInstall
-	catalogRunGit        = runGitWithCredentialFallback
-	catalogLookPath      = exec.LookPath
+	catalogProbeServer = probeSingleServer
+	catalogRunGit      = runGitWithCredentialFallback
+	catalogLookPath    = exec.LookPath
 )
 
 // Catalog tree and its display path, the env override directory or the embedded manifests
@@ -1252,35 +1251,9 @@ func CardInstallConfig(ctx context.Context, ui TerminalUI, entry *CatalogEntry) 
 	return cfg, nil
 }
 
-// One shared metrics extension install for an MCP server, name empty for a custom server
-func RecordMCPInstall(ctx context.Context, source, name, outcome, failureClass string, err error) {
-	catalogRecordInstall(ctx, "mcp_server", source, name, outcome, failureClass, err)
-}
-
-// Runs body and records a first install of the entry once, failed when body errors and success otherwise
-func recordedCatalogInstall(ctx context.Context, name string, body func() error) error {
-	installed, err := IsInstalled(ctx, name)
-	if err != nil {
-		return err
-	}
-	fresh := !installed
-	if err := body(); err != nil {
-		if fresh {
-			RecordMCPInstall(ctx, "catalog", name, "failed", "", err)
-		}
-		return err
-	}
-	if fresh {
-		RecordMCPInstall(ctx, "catalog", name, "success", "", nil)
-	}
-	return nil
-}
-
-// Installs a catalog entry end to end and records the first install metric
+// Installs a catalog entry end to end
 func InstallEntry(ctx context.Context, env *tools.Env, ui TerminalUI, entry *CatalogEntry, enable bool, preloadedEnv map[string]string) error {
-	return recordedCatalogInstall(ctx, entry.Name, func() error {
-		return installEntry(ctx, env, ui, entry, enable, preloadedEnv)
-	})
+	return installEntry(ctx, env, ui, entry, enable, preloadedEnv)
 }
 
 // Clone and bootstrap, credential prompts, server block write, tool selection and post install notes

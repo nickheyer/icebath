@@ -16,16 +16,14 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
-	"github.com/nickheyer/icebath/pkg/logging"
 	"github.com/nickheyer/icebath/pkg/profiles"
 	"github.com/nickheyer/icebath/pkg/state"
 )
 
 var (
-	repairProfilesLog           = logging.GetLogger("hermes_cli.sessions_repair_profiles")
 	repairLegacyMainChoices     = []string{"report", "rekey", "move"}
 	repairVoiceModeFile         = "gateway_voice_mode.json"
-	errRepairEmptyStoreWritable = errors.New("AttributeError: '_EmptyStore' object has no attribute for a repair")
+	errRepairEmptyStoreWritable = errors.New("this profile has no session database to write a repair into")
 )
 
 // One profile state.db, routing marking the store owning the multiplexer index
@@ -707,7 +705,7 @@ func (p *repairProfilesPlan) apply(ctx context.Context, session *repairProfilesS
 		}()
 		if err != nil {
 			name, msg := pyrepr.ExceptionName(err), pyrepr.ExceptionMessage(err)
-			repairProfilesLog.Warning(fmt.Sprintf("repair-profiles: %s on %s failed\n%s: %s", finding.kind, finding.subject, name, msg))
+			pkgLog().Warn(fmt.Sprintf("repair-profiles: %s on %s failed\n%s: %s", finding.kind, finding.subject, name, msg))
 			failures = append(failures, pyjson.ObjectOf("kind", finding.kind, "subject", finding.subject,
 				"error", name+": "+msg))
 		}
@@ -812,7 +810,7 @@ func (b *repairMoveBatch) run(session *repairProfilesSession) (map[string]*pyjso
 			return nil, err
 		}
 		if count < len(payload.Messages) {
-			repairProfilesLog.Warning(fmt.Sprintf("repair-profiles: %s copied into %s with fewer messages than the source; "+
+			pkgLog().Warn(fmt.Sprintf("repair-profiles: %s copied into %s with fewer messages than the source; "+
 				"source row kept", sid, b.dst.profile))
 			result[sid] = pyjson.ObjectOf("copied_incomplete", 1)
 			continue
@@ -1072,7 +1070,7 @@ func defaultSnapshot(ctx context.Context, store repairProfilesStore) (string, bo
 	label := "repair-profiles"
 	id, err := backup.CreateQuickSnapshot(&label, store.home, nil, nil)
 	if err != nil {
-		repairProfilesLog.Warning(fmt.Sprintf("repair-profiles: snapshot of %s failed: %s", store.home, pyrepr.ExceptionMessage(err)))
+		pkgLog().Warn(fmt.Sprintf("repair-profiles: snapshot of %s failed: %s", store.home, pyrepr.ExceptionMessage(err)))
 		return "", false
 	}
 	if id == "" {

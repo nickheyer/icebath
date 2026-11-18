@@ -1,7 +1,5 @@
 package plugins
 
-import ()
-
 const jsonProviderSource = `import contextlib
 import json
 import threading

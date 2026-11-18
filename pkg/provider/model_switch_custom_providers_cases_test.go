@@ -606,7 +606,7 @@ func TestLmstudioBareProvidersBlockDoesNotHideLiveCatalog(t *testing.T) {
 			matches = append(matches, r)
 		}
 	}
-	if len(matches) != 1 || !reflect.DeepEqual(sortedStrings(rowModels(matches[0])), sortedStrings(live)) || matches[0]["total_models"] != 3 || matches[0]["source"] != "hermes" {
+	if len(matches) != 1 || !reflect.DeepEqual(sortedStrings(rowModels(matches[0])), sortedStrings(live)) || matches[0]["total_models"] != 3 || matches[0]["source"] != "icebath" {
 		t.Fatalf("rows %v", matches)
 	}
 }
@@ -857,7 +857,7 @@ func noProbeRow(t *testing.T, ctx context.Context, url string, opts Authenticate
 		return []string{"should-not-be-reached"}, true
 	}
 	if opts.CurrentProvider == "" {
-		opts.CurrentProvider = "nous"
+		opts.CurrentProvider = "deepseek"
 	}
 	if opts.UserProviders == nil {
 		opts.UserProviders = map[string]any{}
@@ -1017,7 +1017,7 @@ func TestKeylessEndpointWithSavedCatalogIsStillNotProbed(t *testing.T) {
 	}
 	entry := localEntry("omlx-model-1")
 	entry["models"] = []any{"omlx-model-1"}
-	rows := mustListProviders(t, ctx, AuthenticatedProvidersOptions{CurrentProvider: "nous", UserProviders: map[string]any{}, CustomProviders: []any{entry}, ForPicker: true})
+	rows := mustListProviders(t, ctx, AuthenticatedProvidersOptions{CurrentProvider: "deepseek", UserProviders: map[string]any{}, CustomProviders: []any{entry}, ForPicker: true})
 	row := rowWithAPIURL(rows, localEndpoint)
 	if len(row) == 0 || !reflect.DeepEqual(rowModels(row[0]), []string{"omlx-model-1"}) || len(fetched) != 0 {
 		t.Fatalf("rows %v fetched %v", row, fetched)

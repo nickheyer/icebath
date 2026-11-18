@@ -3,7 +3,6 @@ package gateway
 import (
 	"context"
 	"fmt"
-	"log/slog"
 	"math"
 	"strings"
 	"time"
@@ -11,17 +10,16 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/observability"
 	"github.com/nickheyer/icebath/pkg/profiles"
 	"github.com/nickheyer/icebath/pkg/state"
 )
 
-// Routing peer recorder of hermes_state_gateway record_gateway_session_peer
+// Routing peer recorder of
 type gatewaySessionPeerRecorder interface {
 	RecordGatewaySessionPeer(ctx context.Context, sessionID string, p state.GatewayPeer) error
 }
 
-// Peer row finder of hermes_state_gateway find_latest_gateway_session_for_peer
+// Peer row finder of
 type gatewaySessionPeerFinder interface {
 	FindLatestGatewaySessionForPeer(ctx context.Context, q state.GatewayPeerQuery) (*pyjson.Object, error)
 }
@@ -239,7 +237,7 @@ func peerRow(ctx context.Context, db SessionStoreDB, source, sessionKey string, 
 	q.Source, q.SessionKey = source, &sessionKey
 	row, err := finder.FindLatestGatewaySessionForPeer(ctx, q)
 	if err != nil {
-		slog.Debug(fmt.Sprintf("Gateway session DB recovery failed for %s: %v", sessionKey, err))
+		pkgLog().Debug(fmt.Sprintf("Gateway session DB recovery failed for %s: %v", sessionKey, err))
 		if raiseOnLookupError {
 			return nil, err
 		}
@@ -346,7 +344,7 @@ func (s *SessionStore) queryRecoverableRow(ctx context.Context, sessionKey strin
 	}
 	if !s.recoveredRowAllowedForActiveProfile(sessionKey, recovered) {
 		key, _ := recovered.Get("session_key")
-		slog.Warn(fmt.Sprintf("Gateway session DB recovery ignored %v for %s because the row belongs to a different profile", key, sessionKey))
+		pkgLog().Warn(fmt.Sprintf("Gateway session DB recovery ignored %v for %s because the row belongs to a different profile", key, sessionKey))
 		return nil, false, nil
 	}
 	return s.createEntryFromRecoveredRow(recovered, sessionKey, source), migrated, nil
@@ -395,9 +393,9 @@ func (s *SessionStore) reopenSessionRow(ctx context.Context, sessionKey, session
 		return
 	}
 	if logPrefix != "" {
-		slog.Debug(fmt.Sprintf("%s: %v", logPrefix, err))
+		pkgLog().Debug(fmt.Sprintf("%s: %v", logPrefix, err))
 	} else {
-		slog.Debug(fmt.Sprintf("Gateway session DB reopen failed for %s: %v", sessionKey, err))
+		pkgLog().Debug(fmt.Sprintf("Gateway session DB reopen failed for %s: %v", sessionKey, err))
 	}
 }
 
@@ -438,7 +436,7 @@ func (s *SessionStore) recordGatewaySessionPeer(ctx context.Context, sessionID, 
 		IncludeCompressionAncestors: includeCompressionAncestors, TransportProfile: optionalString(transport),
 	}
 	if err := recorder.RecordGatewaySessionPeer(ctx, sessionID, peer); err != nil {
-		slog.Debug(fmt.Sprintf("Gateway session peer record failed for %s: %v", sessionKey, err))
+		pkgLog().Debug(fmt.Sprintf("Gateway session peer record failed for %s: %v", sessionKey, err))
 	}
 	return nil
 }
@@ -476,19 +474,16 @@ func (s *SessionStore) adoptLegacySlackEntry(ctx context.Context, source *Sessio
 
 // Database side of a routing transition outside the lock, promoting the predecessor then creating the row
 func (s *SessionStore) finishRouteTransition(ctx context.Context, sessionKey string, endSessionID *string, endReason string, create *sessionCreateArgs, origin *SessionSource, displayName *string, during string) {
-	if endSessionID != nil && *endSessionID != "" {
-		observability.CloseSessionRun(ctx, *endSessionID)
-	}
 	if s.dbForKey(ctx, sessionKey) != nil && endSessionID != nil && *endSessionID != "" {
 		endID := *endSessionID
 		s.promoteSessionReset(ctx, sessionKey, endID, endReason, func(err error) {
-			slog.Warn(fmt.Sprintf("Failed to end predecessor session row %s for %s%s: %v — the old row remains "+
+			pkgLog().Warn(fmt.Sprintf("Failed to end predecessor session row %s for %s%s: %v — the old row remains "+
 				"open and may win restart recovery until the next successful peer refresh", endID, sessionKey, during, err))
 		})
 	}
 	if s.dbForKey(ctx, sessionKey) != nil && create != nil {
 		s.createSessionRow(ctx, sessionKey, create, origin, displayName, func(err error) {
-			slog.Warn(fmt.Sprintf("Failed to create session row %s for %s%s: %v — deferring to the "+
+			pkgLog().Warn(fmt.Sprintf("Failed to create session row %s for %s%s: %v — deferring to the "+
 				"self-healing peer refresh on the next turn", create.SessionID, sessionKey, during, err))
 		})
 	}

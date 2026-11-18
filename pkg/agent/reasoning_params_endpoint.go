@@ -16,7 +16,7 @@ var openrouterReasoningPrefixes = []string{
 }
 
 // Hosts whose reasoning gate core owns even when a plugin profile claims them
-var coreReasoningGatedHosts = []string{"nousresearch.com", "ai-gateway.vercel.sh", "ollama.com"}
+var coreReasoningGatedHosts = []string{"ai-gateway.vercel.sh", "ollama.com"}
 
 const reasoningProbeTTL = 60 * time.Second
 
@@ -90,10 +90,10 @@ func (a *AIAgent) endpointReasoningPayload(ctx context.Context) any {
 		[]any{a.model, provider.ReasoningOfConfig(a.reasoningConfig)}, map[string]any{"base_url": a.baseURL})
 }
 
-// True when reasoning extra_body is safe on this route, gated to known reasoning families and direct Nous Portal
+// True when reasoning extra_body is safe on this route, gated to known reasoning families and the AI Gateway
 func (a *AIAgent) supportsReasoningExtraBody(ctx context.Context) bool {
 	url := a.baseURLLower
-	if hostMatches(url, "nousresearch.com") || hostMatches(url, "ai-gateway.vercel.sh") {
+	if hostMatches(url, "ai-gateway.vercel.sh") {
 		return true
 	}
 	if profile := a.reasoningEndpointProfile(ctx); profile != nil {

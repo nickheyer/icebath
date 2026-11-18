@@ -3,7 +3,6 @@ package qqbot
 import (
 	"context"
 	"fmt"
-	"log/slog"
 	"os"
 	"path/filepath"
 	"strings"
@@ -56,7 +55,7 @@ func (a *QQAdapter) onMessage(ctx context.Context, eventType string, raw any) er
 	}
 	msgID := strAt(d, "id")
 	if msgID == "" || a.dedup.IsDuplicate(msgID) {
-		slog.Debug(fmt.Sprintf("[%s] Duplicate or missing message id: %s", a.logTag(), msgID))
+		pkgLog().Debug(fmt.Sprintf("[%s] Duplicate or missing message id: %s", a.logTag(), msgID))
 		return nil
 	}
 	handler := inboundHandlers[eventType]
@@ -84,29 +83,29 @@ func (a *QQAdapter) onInteraction(ctx context.Context, raw any) {
 	}
 	event, err := ParseInteractionEvent(raw)
 	if err != nil {
-		slog.Warn(fmt.Sprintf("[%s] Failed to parse INTERACTION_CREATE: %s", a.logTag(), errText(err)))
+		pkgLog().Warn(fmt.Sprintf("[%s] Failed to parse INTERACTION_CREATE: %s", a.logTag(), errText(err)))
 		return
 	}
 	if event.ID == "" {
-		slog.Warn(fmt.Sprintf("[%s] INTERACTION_CREATE missing id, skipping ACK", a.logTag()))
+		pkgLog().Warn(fmt.Sprintf("[%s] INTERACTION_CREATE missing id, skipping ACK", a.logTag()))
 		return
 	}
 	if err := a.acknowledgeInteraction(ctx, event.ID, 0); err != nil {
 		if ctx.Err() != nil {
 			return
 		}
-		slog.Warn(fmt.Sprintf("[%s] Failed to ACK interaction %s: %s", a.logTag(), event.ID, errText(err)))
+		pkgLog().Warn(fmt.Sprintf("[%s] Failed to ACK interaction %s: %s", a.logTag(), event.ID, errText(err)))
 	}
-	slog.Info(fmt.Sprintf("[%s] Interaction: scene=%s button_data=%s operator=%s", a.logTag(), event.Scene, pyrepr.Repr(event.ButtonData), event.OperatorOpenID()))
+	pkgLog().Info(fmt.Sprintf("[%s] Interaction: scene=%s button_data=%s operator=%s", a.logTag(), event.Scene, pyrepr.Repr(event.ButtonData), event.OperatorOpenID()))
 	a.mu.Lock()
 	callback := a.interactionCallback
 	a.mu.Unlock()
 	if callback == nil {
-		slog.Debug(fmt.Sprintf("[%s] No interaction callback registered; dropping button click %s", a.logTag(), pyrepr.Repr(event.ButtonData)))
+		pkgLog().Debug(fmt.Sprintf("[%s] No interaction callback registered; dropping button click %s", a.logTag(), pyrepr.Repr(event.ButtonData)))
 		return
 	}
 	if err := callback(ctx, event); err != nil && ctx.Err() == nil {
-		slog.Error(fmt.Sprintf("[%s] Interaction callback raised: %s", a.logTag(), errText(err)), "error", err)
+		pkgLog().Error(fmt.Sprintf("[%s] Interaction callback raised: %s", a.logTag(), errText(err)), "error", err)
 	}
 }
 
@@ -186,15 +185,15 @@ func (a *QQAdapter) defaultInteractionDispatch(ctx context.Context, event Intera
 	if sessionKey, decision, ok := ParseApprovalButtonData(buttonData); ok {
 		choice, known := approvalButtonToChoice[decision]
 		if !known {
-			slog.Warn(fmt.Sprintf("[%s] Unknown approval decision %s (session=%s)", a.logTag(), pyrepr.Repr(decision), sessionKey))
+			pkgLog().Warn(fmt.Sprintf("[%s] Unknown approval decision %s (session=%s)", a.logTag(), pyrepr.Repr(decision), sessionKey))
 			return nil
 		}
 		if !isAuthorizedInteractionForSession(event, sessionKey) {
-			slog.Warn(fmt.Sprintf("[%s] Rejected unauthorized approval click for session %s (operator=%s)", a.logTag(), sessionKey, event.OperatorOpenID()))
+			pkgLog().Warn(fmt.Sprintf("[%s] Rejected unauthorized approval click for session %s (operator=%s)", a.logTag(), sessionKey, event.OperatorOpenID()))
 			return nil
 		}
 		count := tools.ResolveGatewayApproval(sessionKey, choice, false, "", "")
-		slog.Info(fmt.Sprintf("[%s] Button resolved %d approval(s) for session %s (choice=%s, operator=%s)", a.logTag(), count, sessionKey, choice,
+		pkgLog().Info(fmt.Sprintf("[%s] Button resolved %d approval(s) for session %s (choice=%s, operator=%s)", a.logTag(), count, sessionKey, choice,
 			event.OperatorOpenID()))
 		return nil
 	}
@@ -210,13 +209,13 @@ func (a *QQAdapter) defaultInteractionDispatch(ctx context.Context, event Intera
 			return err
 		}
 		if !isAuthorizedInteractionForSession(event, sessionKey) {
-			slog.Warn(fmt.Sprintf("[%s] Rejected unauthorized update prompt click (operator=%s)", a.logTag(), event.OperatorOpenID()))
+			pkgLog().Warn(fmt.Sprintf("[%s] Rejected unauthorized update prompt click (operator=%s)", a.logTag(), event.OperatorOpenID()))
 			return nil
 		}
 		writeUpdateResponse(ctx, updateAnswer, event.OperatorOpenID())
 		return nil
 	}
-	slog.Debug(fmt.Sprintf("[%s] Unrecognised button_data %s from interaction %s", a.logTag(), pyrepr.Repr(buttonData), event.ID))
+	pkgLog().Debug(fmt.Sprintf("[%s] Unrecognised button_data %s from interaction %s", a.logTag(), pyrepr.Repr(buttonData), event.ID))
 	return nil
 }
 
@@ -229,13 +228,13 @@ func writeUpdateResponse(ctx context.Context, answer, operator string) {
 		err = os.Rename(tmp, responsePath)
 	}
 	if err != nil {
-		slog.Error(fmt.Sprintf("Failed to write update response: %s", errText(err)))
+		pkgLog().Error(fmt.Sprintf("Failed to write update response: %s", errText(err)))
 		return
 	}
 	if operator == "" {
 		operator = "(unknown)"
 	}
-	slog.Info(fmt.Sprintf("QQ update prompt answered %s by %s", pyrepr.Repr(answer), operator))
+	pkgLog().Info(fmt.Sprintf("QQ update prompt answered %s by %s", pyrepr.Repr(answer), operator))
 }
 
 // Source fields of an inbound message beyond its chat id
@@ -260,11 +259,11 @@ func (a *QQAdapter) handleC2CMessage(ctx context.Context, d map[string]any, msgI
 	if pyrepr.Truthy(attachmentsRaw) {
 		summary = fmt.Sprintf("%d items", len(list))
 	}
-	slog.Info(fmt.Sprintf("[%s] C2C message: id=%s content=%s attachments=%s", a.logTag(), msgID, pyrepr.Repr(pystr.Slice(content, 0, 50)), summary))
+	pkgLog().Info(fmt.Sprintf("[%s] C2C message: id=%s content=%s attachments=%s", a.logTag(), msgID, pyrepr.Repr(pystr.Slice(content, 0, 50)), summary))
 	if isList {
 		for i, raw := range list {
 			if att, ok := asDict(raw); ok {
-				slog.Info(fmt.Sprintf("[%s] attachment[%d]: content_type=%s url=%s filename=%s", a.logTag(), i, strAt(att, "content_type"),
+				pkgLog().Info(fmt.Sprintf("[%s] attachment[%d]: content_type=%s url=%s filename=%s", a.logTag(), i, strAt(att, "content_type"),
 					pystr.Slice(strAt(att, "url"), 0, 80), strAt(att, "filename")))
 			}
 		}
@@ -302,7 +301,7 @@ func (a *QQAdapter) handleGuildMessage(ctx context.Context, d map[string]any, ms
 		return err
 	}
 	if !allowed {
-		slog.Debug(fmt.Sprintf("[%s] Guild message blocked by ACL: channel=%s user=%s", a.logTag(), channelID, authorID))
+		pkgLog().Debug(fmt.Sprintf("[%s] Guild message blocked by ACL: channel=%s user=%s", a.logTag(), channelID, authorID))
 		return nil
 	}
 	member, isDict := asDict(d["member"])
@@ -332,7 +331,7 @@ func (a *QQAdapter) handleDMMessage(ctx context.Context, d map[string]any, msgID
 		return err
 	}
 	if !allowed {
-		slog.Debug(fmt.Sprintf("[%s] Guild DM blocked by ACL: guild=%s user=%s", a.logTag(), guildID, authorID))
+		pkgLog().Debug(fmt.Sprintf("[%s] Guild DM blocked by ACL: guild=%s user=%s", a.logTag(), guildID, authorID))
 		return nil
 	}
 	return a.ingest(ctx, d, msgID, content, d["attachments"], timestamp,
@@ -362,7 +361,7 @@ func (a *QQAdapter) ingest(ctx context.Context, d map[string]any, msgID, content
 	}
 	imageURLs, imageMediaTypes := att.imageURLs, att.imageMediaTypes
 	if src.verbose {
-		slog.Info(fmt.Sprintf("[%s] After processing: images=%d, voice=%d", a.logTag(), len(imageURLs), len(att.voiceTranscripts)))
+		pkgLog().Info(fmt.Sprintf("[%s] After processing: images=%d, voice=%d", a.logTag(), len(imageURLs), len(att.voiceTranscripts)))
 	}
 	quoted, err := a.processQuotedContext(ctx, d)
 	if err != nil {
@@ -490,7 +489,7 @@ func detectMessageType(mediaURLs, mediaTypes []string) gateway.MessageType {
 	case contains("image", "photo"):
 		return gateway.MessageTypePhoto
 	}
-	slog.Debug(fmt.Sprintf("Unknown media content_type '%s', defaulting to TEXT", firstType))
+	pkgLog().Debug(fmt.Sprintf("Unknown media content_type '%s', defaulting to TEXT", firstType))
 	return gateway.MessageTypeText
 }
 
@@ -527,7 +526,7 @@ func (a *QQAdapter) processAttachments(ctx context.Context, attachments any) (pr
 		if strings.HasPrefix(url, "//") {
 			url = "https:" + url
 		}
-		slog.Debug(fmt.Sprintf("[%s] Processing attachment: content_type=%s, url=%s, filename=%s", a.logTag(), ct, pystr.Slice(url, 0, 80), filename))
+		pkgLog().Debug(fmt.Sprintf("[%s] Processing attachment: content_type=%s, url=%s, filename=%s", a.logTag(), ct, pystr.Slice(url, 0, 80), filename))
 		if isVoiceContentType(ct, filename) {
 			transcript, err := a.sttVoiceAttachment(ctx, url, ct, filename, optStr(att["asr_refer_text"]), optStr(att["voice_wav_url"]))
 			if err != nil {
@@ -535,9 +534,9 @@ func (a *QQAdapter) processAttachments(ctx context.Context, attachments any) (pr
 			}
 			if transcript != "" {
 				out.voiceTranscripts = append(out.voiceTranscripts, "[Voice] "+transcript)
-				slog.Debug(fmt.Sprintf("[%s] Voice transcript: %s", a.logTag(), transcript))
+				pkgLog().Debug(fmt.Sprintf("[%s] Voice transcript: %s", a.logTag(), transcript))
 			} else {
-				slog.Warn(fmt.Sprintf("[%s] Voice STT failed for %s", a.logTag(), pystr.Slice(url, 0, 60)))
+				pkgLog().Warn(fmt.Sprintf("[%s] Voice STT failed for %s", a.logTag(), pystr.Slice(url, 0, 60)))
 				out.voiceTranscripts = append(out.voiceTranscripts, "[Voice] [语音识别失败]")
 			}
 			continue
@@ -552,7 +551,7 @@ func (a *QQAdapter) processAttachments(ctx context.Context, attachments any) (pr
 			if isImage {
 				kind = "image"
 			}
-			slog.Debug(fmt.Sprintf("[%s] Failed to cache %s: %s", a.logTag(), kind, errText(err)))
+			pkgLog().Debug(fmt.Sprintf("[%s] Failed to cache %s: %s", a.logTag(), kind, errText(err)))
 			continue
 		}
 		if cachedPath == "" {
@@ -577,7 +576,7 @@ func (a *QQAdapter) processAttachments(ctx context.Context, attachments any) (pr
 			}
 			out.imageMediaTypes = append(out.imageMediaTypes, mediaType)
 		default:
-			slog.Warn(fmt.Sprintf("[%s] Cached image path does not exist: %s", a.logTag(), cachedPath))
+			pkgLog().Warn(fmt.Sprintf("[%s] Cached image path does not exist: %s", a.logTag(), cachedPath))
 		}
 	}
 	out.attachmentInfo = strings.Join(otherAttachments, "\n")

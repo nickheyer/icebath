@@ -3,7 +3,6 @@ package builtin
 import (
 	"bytes"
 	"context"
-	"log/slog"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -240,7 +239,7 @@ func (h *designHook) runHook(ctx context.Context, launcher, cwd string, event *p
 		cmd.Env = os.Environ()
 	}
 	cmd.Dir = cwd
-	cmd.Env = append(cmd.Env, "IMPECCABLE_HOOK_HARNESS=hermes")
+	cmd.Env = append(cmd.Env, "IMPECCABLE_HOOK_HARNESS=icebath")
 	return runHookCommand(ctx, cmd, event)
 }
 
@@ -268,7 +267,7 @@ func (h *designHook) transformToolResult(ctx context.Context, kw map[string]any)
 		}
 		out, err := h.runHook(ctx, launcher, cwd, event, impeccableEditTimeout)
 		if err != nil {
-			slog.Debug("impeccable-design-hook: edit hook skipped for " + p + ": " + err.Error())
+			pkgLog().Debug("impeccable-design-hook: edit hook skipped for " + p + ": " + err.Error())
 			continue
 		}
 		if t := additionalContext(out); t != "" {
@@ -297,7 +296,7 @@ func (h *designHook) preVerify(ctx context.Context, kw map[string]any) (any, err
 	}
 	out, err := h.runHook(ctx, launcher, cwd, event, impeccableStopTimeout)
 	if err != nil {
-		slog.Debug("impeccable-design-hook: stop hook skipped: " + err.Error())
+		pkgLog().Debug("impeccable-design-hook: stop hook skipped: " + err.Error())
 		return nil, nil
 	}
 	if out == nil || out.Len() == 0 {
@@ -351,7 +350,7 @@ func (h *hallmarkHook) transformToolResult(ctx context.Context, kw map[string]an
 			return runHookCommand(runCtx, cmd, event)
 		}()
 		if err != nil {
-			slog.Debug("hallmark: lint hook skipped for " + p + ": " + err.Error())
+			pkgLog().Debug("hallmark: lint hook skipped for " + p + ": " + err.Error())
 			continue
 		}
 		if t := additionalContext(out); t != "" {

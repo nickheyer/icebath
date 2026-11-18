@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/nickheyer/icebath/pkg/tuigateway"
 	"os"
 	"strings"
 	"time"
@@ -52,6 +53,7 @@ type busyControl struct {
 // Terminal UI of one icebath session over the shared gateway
 type app struct {
 	ctx     context.Context
+	host    Host
 	wm      *wm.Model
 	keys    *keys.Map
 	gw      *gatewayClient
@@ -70,14 +72,19 @@ type app struct {
 	arena   *arenaFeed
 	post    func(tea.Msg)
 
-	history        []msg
-	lastUserMsg    string
-	stickyPrompt   string
-	sessionStart   float64
-	turnStartedAt  time.Time
-	catalog        *slashCatalog
-	tokens         []composerToken
-	localCommands  []slashCommand
+	history       []msg
+	lastUserMsg   string
+	stickyPrompt  string
+	sessionStart  float64
+	droppedTurns  int
+	argCache      map[string]argCacheEntry
+	turnStartedAt time.Time
+	catalog       *slashCatalog
+	tokens        []composerToken
+	localCommands []slashCommand
+	// Terminal windows opened so far, numbering the next, and those whose program may still run
+	terminalCount  int
+	terminals      []*cards.Terminal
 	draftRevision  int
 	editorRevision int
 	editorTarget   submissionDestination
@@ -91,32 +98,34 @@ type app struct {
 	voiceProcessing bool
 	voiceKey        voiceRecordKey
 
-	recoverSid       string
-	recoveryAttempts []float64
-	gaveUp           bool
-	seenSid          string
-	seenAttach       string
-	seenCwd          string
-	seenBusy         bool
-	seenTheme        theme
-	toolkit          uitheme.Theme
-	themeLook        string
-	refreshGen       int
-	typingGen        int
-	slashFlight      int
-	lastInterrupt    time.Time
-	exitCode         int
-	quitting         bool
-	boot             tea.Cmd
-	dialogs          dialogState
-	widgets          *widgetHost
-	pet              *petView
+	recoverSid         string
+	recoveryAttempts   []float64
+	gaveUp             bool
+	seenSid            string
+	seenAttach         string
+	seenCwd            string
+	seenBusy           bool
+	seenTheme          theme
+	toolkit            uitheme.Theme
+	themeLook          string
+	refreshGen         int
+	typingGen          int
+	slashFlight        int
+	lastInterrupt      time.Time
+	exitCode           int
+	quitting           bool
+	boot               tea.Cmd
+	dialogs            dialogState
+	widgets            *widgetHost
+	pet                *petView
 	stash              *promptStash
 	spawnSections      map[string]bool
 	agentDockCollapsed bool
 	dockClockArmed     bool
 	observeUnsupported bool
 	completion         composerCompletion
+	// Reloads the session switcher while it is open, nil when it is closed
+	switcherReload func() tea.Cmd
 }
 
 var (
@@ -150,20 +159,20 @@ func tuiKeymap() *keys.Map {
 		km.Register(a)
 	}
 	registerListKeys(km)
+	registerRoomKeys(km)
 	registerSpawnTreeKeys(km)
 	registerJourneyKeys(km)
 	registerStashKeys(km)
-	registerBillingKeys(km)
 	arena.RegisterKeys(km)
 	return km
 }
 
-// App over a fresh store, its gateway client not started yet
-func newApp(ctx context.Context) *app {
+// App over a fresh store and the launcher's host, its gateway client not started yet
+func newApp(ctx context.Context, host Host) *app {
 	store := newTUIStore()
 	turn := newTurnController(store)
-	gw := newGatewayClient()
-	a := &app{ctx: ctx, keys: tuiKeymap(), gw: gw, store: store, turn: turn, git: newGitBranchTracker(), battery: &batteryPoller{},
+	gw := newGatewayClient(host.Attach)
+	a := &app{ctx: ctx, host: host, keys: tuiKeymap(), gw: gw, store: store, turn: turn, git: newGitBranchTracker(), battery: &batteryPoller{},
 		resize: newResizeCoalescer(32 * time.Millisecond), inputs: newComposerHistory(newInputHistory(ctx))}
 	a.events, a.boot = newEventHandler(store, turn, gw, a)
 	a.life = newSessionLifecycle(store, turn, gw, a)
@@ -176,7 +185,10 @@ func newApp(ctx context.Context) *app {
 	a.localCommands = append(append(append(append(append(append(a.coreCommands(), a.transcriptCommands()...), a.opsCommands()...), a.sessionCommands()...), a.controlCommands()...), a.wmCommands()...), a.recoveryCommands()...)
 	a.localCommands = append(a.localCommands, a.nativeCommands()...)
 	a.localCommands = append(a.localCommands, a.agentsCommands()...)
-	a.localCommands = append(a.localCommands, a.connectorsCommands()...)
+	a.localCommands = append(a.localCommands, a.mcpCommands()...)
+	a.localCommands = append(a.localCommands, a.roomsCommands()...)
+	a.localCommands = append(a.localCommands, a.terminalCommands()...)
+	a.localCommands = append(a.localCommands, a.screenCommands()...)
 	a.localCommands = append(append(a.localCommands, a.petCommands()...), a.hatchCommands()...)
 	a.pet = newPetView(a)
 	a.card = newSessionCard(a)
@@ -197,12 +209,12 @@ func bootMotion() float64 {
 	return 1
 }
 
-// Runs the terminal UI until the user quits, the exit status as the result, profiled into ICEBATH_CPUPROFILE when set
-func Run(ctx context.Context) int {
+// Runs the terminal UI, prints the session summary when it ends and returns the exit status
+func Run(ctx context.Context, host Host) int {
 	if stop := startCPUProfile(os.Getenv("ICEBATH_CPUPROFILE")); stop != nil {
 		defer stop()
 	}
-	a := newApp(ctx)
+	a := newApp(ctx, host)
 	p := tty.NewProgram(ctx, a)
 	a.post = newMailbox(ctx, p.Send).post
 	a.gw.attach(p.Send)
@@ -210,12 +222,17 @@ func Run(ctx context.Context) int {
 	_, err := p.Run()
 	gfx.Sweep()
 	a.gw.kill("terminal UI exit")
-	settleNewWorktrees(ctx, os.Stdout)
+	a.settleNewWorktrees()
+	err = errors.Join(err, a.printExitSummary(os.Stdout))
+	code := a.exitCode
 	if err != nil && !errors.Is(err, tea.ErrProgramKilled) && !errors.Is(err, context.Canceled) {
 		fmt.Fprintln(os.Stderr, "icebath: "+err.Error())
-		return 1
+		code = 1
 	}
-	return a.exitCode
+	if s := p.Terminated(); s != 0 {
+		code = signalExitCode(s)
+	}
+	return code
 }
 
 func (a *app) Init() tea.Cmd {
@@ -236,7 +253,7 @@ func (a *app) View() tea.View {
 	case "wheel", "buttons":
 		v.MouseMode = tea.MouseModeCellMotion
 	}
-	v.WindowTitle = composeTabTitle(a.tabMarker(), a.store.ui.SessionTitle, infoText(a.store.ui.Info, "model"), a.store.sessionCwd(), 40)
+	v.WindowTitle = composeTabTitle(a.tabMarker(), a.store.ui.SessionTitle, infoText(infoOf(a.store.ui.Info).Model), a.store.sessionCwd(), 40)
 	return v
 }
 
@@ -298,19 +315,27 @@ func (a *app) Update(m tea.Msg) (tea.Model, tea.Cmd) {
 			a.turn.relaxStreaming()
 		}
 	case cards.SubmitMsg:
-		cmd = a.dispatchSubmission(m.Text)
+		if room := a.roomCardOf(m.Session); room != nil {
+			cmd = room.send(m.Text)
+		} else {
+			cmd = a.dispatchSubmission(m.Text)
+		}
 	case editorDoneMsg:
 		cmd = a.onEditorDone(m)
 	case sectionCommandMsg:
 		cmd = a.onSectionCommand(m)
 	case exitMsg:
 		a.exitCode = m.code
+		a.closeTerminals()
 		return a, tea.Quit
 	default:
 		var petCmd tea.Cmd
 		if ev, isEvent := m.(gatewayEventMsg); isEvent {
 			a.arena.observe(ev)
 			petCmd = a.pet.observe(ev)
+			if ev.Type == "sessions.changed" && a.switcherReload != nil {
+				petCmd = tea.Batch(petCmd, a.switcherReload())
+			}
 		}
 		if handled, c := a.events.update(m); handled {
 			cmd = c
@@ -450,16 +475,14 @@ func (a *app) refreshRosters() tea.Cmd {
 			processes, _ := r["processes"].([]any)
 			a.store.applyProcessSnapshot(sid, processes)
 		}),
-		requestLiveSessions(a.gw, sid, func(v any, err error) tea.Cmd {
-			sessions, isList := asRPCResult(v)["sessions"].([]any)
-			if err != nil || !isList {
+		requestSessions(a.gw, true, sid, func(sessions []listedSession, err error) tea.Cmd {
+			if err != nil {
 				return nil
 			}
 			title := ""
-			for _, raw := range sessions {
-				if s, _ := raw.(map[string]any); s != nil && (truthyJS(s["current"]) || s["id"] == a.store.ui.Sid) {
-					title, _ = s["title"].(string)
-					title = trimJS(title)
+			for _, s := range sessions {
+				if s.Current || s.ID == a.store.ui.Sid {
+					title = trimJS(s.Title)
 					break
 				}
 			}
@@ -484,10 +507,9 @@ func (a *app) readControl() tea.Cmd {
 	if sid == "" {
 		return nil
 	}
-	return gatewayCall(a.gw, "session.control.read", map[string]any{"session_id": sid}, func(v any, err error) tea.Cmd {
-		if r := asRPCResult(v); err == nil && r != nil && a.store.ui.Sid == sid {
-			control, _ := r["control"].(map[string]any)
-			a.store.applyControlSnapshot(sid, control)
+	return call(a.gw, tuigateway.SessionControlRead, tuigateway.SessionControlReadParams{SessionID: sid}, func(r *tuigateway.SessionControlReadResult, err error) tea.Cmd {
+		if err == nil && a.store.ui.Sid == sid {
+			a.store.applyControlSnapshot(sid, r.Control)
 		}
 		return nil
 	})
@@ -499,7 +521,7 @@ func (a *app) reportResize() tea.Cmd {
 		return nil
 	}
 	w, _ := a.wm.Size()
-	return gatewayCall(a.gw, "terminal.resize", map[string]any{"session_id": a.store.ui.Sid, "cols": w}, func(any, error) tea.Cmd { return nil })
+	return call(a.gw, tuigateway.TerminalResize, tuigateway.TerminalResizeParams{SessionID: a.store.ui.Sid, Cols: ptr(int64(w))}, func(*tuigateway.TerminalResizeResult, error) tea.Cmd { return nil })
 }
 
 // Gateway transport ended, the turn reset and the session marked for recovery
@@ -543,8 +565,13 @@ func (a *app) onGatewayExit(code int) {
 
 func (a *app) sys(text string) { a.appendMessage(msg{Role: "system", Text: text}) }
 
+// Appends a transcript row, counting the user turns the history cap drops
 func (a *app) appendMessage(m msg) {
-	a.history = capTranscriptHistory(appendTranscriptMessage(a.history, m, a.store.nowMillis))
+	full := appendTranscriptMessage(a.history, m, a.store.nowMillis)
+	a.history = capTranscriptHistory(full)
+	if len(a.history) < len(full) {
+		a.droppedTurns += userRows(full) - userRows(a.history)
+	}
 	a.store.transcriptGen++
 }
 
@@ -604,7 +631,7 @@ func (a *app) recoverSidRef() *string             { return &a.recoverSid }
 func (a *app) bellOnComplete() bool               { return a.bellComplete }
 func (a *app) bellOnPrompt() bool                 { return a.bellPrompt }
 func (a *app) setLastUserMsg(text string)         { a.lastUserMsg = text }
-func (a *app) setSessionStartedAt(ms float64)     { a.sessionStart = ms }
+func (a *app) setSessionStartedAt(ms float64)     { a.sessionStart, a.droppedTurns = ms, 0 }
 func (a *app) setStickyPrompt(text string)        { a.stickyPrompt = text }
 func (a *app) scroll() scrollHandle               { return a.card.view }
 func (a *app) onFreshSessionStarted(string)       { a.gaveUp = false }
@@ -741,7 +768,8 @@ func (a *app) captureBusyControl() (busyControl, error) {
 		return busyControl{}, err
 	}
 	control := busyControl{destination: destination, mode: a.store.ui.BusyInputMode}
-	if generation, isNum := a.store.ui.Info["execution_generation"].(float64); isNum {
+	if stamp := infoOf(a.store.ui.Info).ExecutionGeneration; stamp != nil {
+		generation := float64(*stamp)
 		control.generation = &generation
 	}
 	return control, nil
@@ -833,7 +861,7 @@ func (a *app) dispatchSubmission(full string) tea.Cmd {
 			}
 			clearInput()
 			a.sys(`queued: "` + truncateEnd(queued.Display, 50) + `"`)
-			return a.reportSlashCommand(name)
+			return nil
 		}
 		clearInput()
 		return a.slash(command, &slashSubmission{attachments: attachments, expand: expandTokens(tokens)}, true)
@@ -981,6 +1009,9 @@ func (a *app) commands() []wm.Command {
 		{ID: "open.agents", Title: "agents", When: idle, Run: func() tea.Cmd { return a.openSpawnTree(0, nil) }},
 		{ID: "open.skills", Title: "skills", When: idle, Run: a.openSkillsHub},
 		{ID: "open.plugins", Title: "plugins", When: idle, Run: a.openPluginsHub},
+		{ID: "open.rooms", Title: "rooms", When: idle, Run: a.openRooms},
+		{ID: "terminal.new", Title: "terminal", Run: func() tea.Cmd { return a.openTerminal("", false) }},
+		{ID: "terminal.tab", Title: "terminal as a tab", Run: func() tea.Cmd { return a.openTerminal("", true) }},
 		{ID: "session.compact", Title: "compact", When: idle, Run: func() tea.Cmd { return a.slash("/compress", nil, false) }},
 		{ID: "run.cancel", Title: "interrupt the turn", When: func() bool { return a.store.ui.Busy }, Run: a.interruptTurn},
 		{ID: "tui.exit", When: func() bool { return a.card.composer.Empty() && !a.store.ui.Busy }, Run: func() tea.Cmd { return a.die(0) }},
@@ -1045,7 +1076,7 @@ func (a *app) barStatus() wm.Status {
 	if a.sessionStart > 0 && show("duration") {
 		dials = append(dials, wm.Segment{Text: fmtDuration(a.store.nowMillis() - a.sessionStart), Style: wm.Dim})
 	}
-	if cost, isNum := ui.Usage["cost_usd"].(float64); isNum && cost > 0 && show("cost") {
+	if cost := val(usageOf(ui.Usage).CostUsd); cost > 0 && show("cost") {
 		dials = append(dials, wm.Segment{Text: render.Money(cost), Style: wm.Plain})
 	}
 	if ui.StatusBar == "bottom" {
@@ -1055,7 +1086,7 @@ func (a *app) barStatus() wm.Status {
 	if text, style, has := contextDial(ui.Usage); has && show("context") {
 		dials = append(dials, wm.Segment{Text: text, Style: style})
 	}
-	if model := infoText(ui.Info, "model"); model != "" && show("model") {
+	if model := infoText(infoOf(ui.Info).Model); model != "" && show("model") {
 		dials = append(dials, wm.Segment{Text: model, Style: wm.Cool, Action: "model.switch"})
 	}
 	status.Dials = dials
@@ -1063,12 +1094,12 @@ func (a *app) barStatus() wm.Status {
 }
 
 // Context use of the session as a dial, warmer as the window fills
-func contextDial(usage map[string]any) (string, wm.SegmentStyle, bool) {
-	used, hasUsed := usage["context_used"].(float64)
-	limit, hasMax := usage["context_max"].(float64)
-	if !hasUsed || !hasMax || limit <= 0 {
+func contextDial(raw *tuigateway.Usage) (string, wm.SegmentStyle, bool) {
+	usage := usageOf(raw)
+	if usage.ContextUsed == nil || usage.ContextMax == nil || *usage.ContextMax <= 0 {
 		return "", wm.Plain, false
 	}
+	used, limit := float64(*usage.ContextUsed), float64(*usage.ContextMax)
 	pct := used / limit
 	style := wm.Good
 	switch {
@@ -1096,8 +1127,8 @@ func batteryText(b *batteryInfo) string {
 func (a *app) frameStatus() string {
 	ui := a.store.ui
 	var parts []string
-	if total, isNum := ui.Usage["total"].(float64); isNum && total > 0 {
-		parts = append(parts, compactNumber(total)+" tokens")
+	if total := usageOf(ui.Usage).Total; total > 0 {
+		parts = append(parts, compactNumber(float64(total))+" tokens")
 	}
 	if n := a.store.turn.ReasoningTokens; n > 0 && ui.Busy {
 		parts = append(parts, compactNumber(float64(n))+" reasoning")
@@ -1110,4 +1141,3 @@ func (a *app) frameStatus() string {
 	}
 	return strings.Join(parts, " · ")
 }
-

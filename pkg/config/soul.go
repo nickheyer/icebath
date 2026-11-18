@@ -3,6 +3,7 @@ package config
 import (
 	"context"
 	"os"
+	"regexp"
 	"strings"
 	"unicode/utf8"
 
@@ -10,8 +11,11 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
 
+// IdentityAuthor is the builder the default identity names
+const IdentityAuthor = "Nicholas W. Heyer"
+
 // Identity text seeded into SOUL.md on first run and used when a home carries no SOUL.md
-const DefaultIdentity = "You are Icebath Agent, built by Nous Research. Be direct: match the length of your reply to the weight of " +
+const DefaultIdentity = "You are Icebath Agent, built by " + IdentityAuthor + ". Be direct: match the length of your reply to the weight of " +
 	"the ask \u2014 a one-line question gets a one-line answer, and finished work gets a short report of what " +
 	"changed, what's verified, and what's left, never a replay of the process. No filler (\"Great question,\" " +
 	"\"I'd be happy to\"), no restating the request back, no re-summarizing what you already said, no narrating " +
@@ -25,6 +29,12 @@ const scaffoldHead = "# Icebath Agent Persona\n\n<!--\nThis file defines the age
 const scaffoldTail = "This file is loaded fresh each message -- no restart needed.\n" +
 	"Delete the contents (or this file) to use the default personality.\n-->"
 
+// Builder slot of a legacy text, standing for whatever one line name an earlier seed carried
+const soulAuthorSlot = "{author}"
+
+// The default identity as earlier seeds wrote it, its builder left open
+var seededIdentity = strings.Replace(DefaultIdentity, IdentityAuthor, soulAuthorSlot, 1)
+
 // Seeded SOUL.md texts that carry no user intent, the scaffolds and every earlier generation of the seeded default
 var legacyTemplateSouls = []string{
 	scaffoldHead +
@@ -34,20 +44,34 @@ var legacyTemplateSouls = []string{
 		"  - \"You speak like a friendly coworker who happens to know everything.\"\n\n" +
 		scaffoldTail,
 	scaffoldHead + scaffoldTail,
-	"You are Icebath Agent, an intelligent AI assistant created by Nous Research. You are helpful, " +
+	"You are Icebath Agent, an intelligent AI assistant created by " + soulAuthorSlot + ". You are helpful, " +
 		"knowledgeable, and direct. You assist users with a wide range of tasks including answering questions, " +
 		"writing and editing code, analyzing information, creative work, and executing actions via your tools. " +
 		"You communicate clearly, admit uncertainty when appropriate, and prioritize being genuinely useful over " +
 		"being verbose unless otherwise directed below. Be targeted and efficient in your exploration and " +
 		"investigations.",
-	strings.ReplaceAll(DefaultIdentity, "\u2014", "--"),
+	strings.ReplaceAll(seededIdentity, "\u2014", "--"),
 	"You are icebath, an agent that lives in the terminal. Be direct: match the length of your reply to the weight of " +
 		"the ask, a one-line question gets a one-line answer, and finished work gets a short report of what " +
 		"changed, what is verified, and what is left, never a replay of the process. No filler, no restating the request back, " +
 		"no re-summarizing what you already said, no narrating tool calls the user can see. Plain claims over adjectives; when " +
 		"unsure, say so plainly. Agree because it is right, not because the user said it. Depth is earned, give it when the user " +
 		"asks for detail, teaches, or the stakes demand it, not by default.",
+	seededIdentity,
 }
+
+// Anchored pattern of every legacy text with its builder slot matching any one line name
+var legacySoulPatterns = func() []*regexp.Regexp {
+	out := make([]*regexp.Regexp, len(legacyTemplateSouls))
+	for i, t := range legacyTemplateSouls {
+		before, after, slotted := strings.Cut(regexp.QuoteMeta(normalizeSoul(t)), regexp.QuoteMeta(soulAuthorSlot))
+		if slotted {
+			before += `[^\n]+` + after
+		}
+		out[i] = regexp.MustCompile(`^` + before + `$`)
+	}
+	return out
+}()
 
 // Text with line endings unified, leading BOMs dropped and surrounding whitespace trimmed
 func normalizeSoul(text string) string {
@@ -56,11 +80,14 @@ func normalizeSoul(text string) string {
 	return pystr.Strip(strings.TrimLeft(text, "\ufeff"))
 }
 
-// Reports whether a SOUL.md still holds an auto seeded text nobody edited
+// Reports whether a SOUL.md still holds an earlier auto seeded text nobody edited, never the current default
 func IsLegacyTemplateSoul(text string) bool {
 	n := normalizeSoul(text)
-	for _, t := range legacyTemplateSouls {
-		if n == normalizeSoul(t) {
+	if n == normalizeSoul(DefaultIdentity) {
+		return false
+	}
+	for _, pattern := range legacySoulPatterns {
+		if pattern.MatchString(n) {
 			return true
 		}
 	}

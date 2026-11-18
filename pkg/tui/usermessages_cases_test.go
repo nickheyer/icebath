@@ -188,7 +188,7 @@ func TestBackendLifecycleCopy(t *testing.T) {
 			"Traceback (most recent call last):":                 true,
 			"[gateway-turn] ValueError: nope":                    true,
 			"ValueError: nope":                                   true,
-			"INFO hermes.mcp: discovered 3 servers":              false,
+			"INFO icebath.mcp: discovered 3 servers":             false,
 			"gateway incompatible: runtime_protocol":             true,
 			"gateway inaccessible: profile_parked":               true,
 			"the gateway incompatible: x":                        false,

@@ -20,9 +20,9 @@ func TestRenderHandlesRawRichRaggedAndMalformedCells(t *testing.T) {
 		[]any{rawCell("Name"), richCell("Status")},
 		"not-a-row",
 		[]any{rawCell(""), nil},
-		[]any{rawCell("Hermes"), richCell("ok"), map[string]any{"type": "mystery"}},
+		[]any{rawCell("Icebath"), richCell("ok"), map[string]any{"type": "mystery"}},
 	)
-	if got := renderSlackTableBlock(block, slackTableMaxChars); got != "Name | Status\nHermes | ok | " {
+	if got := renderSlackTableBlock(block, slackTableMaxChars); got != "Name | Status\nIcebath | ok | " {
 		t.Fatalf("got %q", got)
 	}
 	if got := renderSlackTableBlock(map[string]any{"type": "table"}, slackTableMaxChars); got != "" {

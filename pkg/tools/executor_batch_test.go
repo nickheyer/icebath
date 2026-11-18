@@ -20,7 +20,6 @@ func timeoutEnv(t *testing.T, tools map[string]any, envValue string) *Env {
 		env.Config = config.Tree{"timeouts": map[string]any{"tools": tools}}
 	}
 	t.Setenv("ICEBATH_CONCURRENT_TOOL_TIMEOUT_S", envValue)
-	t.Setenv("HERMES_CONCURRENT_TOOL_TIMEOUT_S", "")
 	return env
 }
 

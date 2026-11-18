@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
@@ -86,7 +87,7 @@ func apiPost(ctx context.Context, path string, payload *pyjson.Object) (*pyjson.
 	}
 	data, ok := decoded.(*pyjson.Object)
 	if !ok {
-		return nil, fmt.Errorf("AttributeError: '%s' object has no attribute 'get'", pyrepr.TypeName(decoded))
+		return nil, fmt.Errorf("the DingTalk reply is %s, expected a mapping", errchain.Kind(decoded))
 	}
 	errcode, present := data.Vals["errcode"]
 	if !present {

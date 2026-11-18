@@ -168,7 +168,7 @@ func activityText(activity map[string]any, keys ...string) string {
 
 // Logs one stall episode and delivers its notice, true only when sent and latched
 func (r *GatewayRunner) notifySessionStall(ctx context.Context, sessionKey string, adapter gateway.PlatformAdapter, pending *gateway.MessageEvent, idleSeconds float64, activity map[string]any, timeoutSeconds float64) (bool, error) {
-	runLog().Warn(fmt.Sprintf("Session stall detected: session=%s idle=%.0fs (timeout=%.0fs, ~%d min); pending "+
+	pkgLog().Warn(fmt.Sprintf("Session stall detected: session=%s idle=%.0fs (timeout=%.0fs, ~%d min); pending "+
 		"inbound present | last_activity=%s | provenance=%s (agent.session_stall_timeout)",
 		sessionKey, idleSeconds, timeoutSeconds, max(1, int(idleSeconds/60)),
 		activityText(activity, "last_activity_desc", "last_activity_description"),
@@ -178,7 +178,7 @@ func (r *GatewayRunner) notifySessionStall(ctx context.Context, sessionKey strin
 		source = pending.Source
 	}
 	if source == nil || source.ChatID == "" {
-		runLog().Warn(fmt.Sprintf("Session stall notify skipped (no chat_id): session=%s", sessionKey))
+		pkgLog().Warn(fmt.Sprintf("Session stall notify skipped (no chat_id): session=%s", sessionKey))
 		r.setStallNotified(sessionKey, true)
 		return false, nil
 	}
@@ -193,7 +193,7 @@ func (r *GatewayRunner) notifySessionStall(ctx context.Context, sessionKey strin
 		if freshIdle != nil {
 			fresh = *freshIdle
 		}
-		runLog().Info(fmt.Sprintf("Session stall notify aborted (no longer stale): session=%s pending=%s fresh_idle=%s",
+		pkgLog().Info(fmt.Sprintf("Session stall notify aborted (no longer stale): session=%s pending=%s fresh_idle=%s",
 			sessionKey, pyrepr.Str(stillPending), pyrepr.Str(fresh)))
 		r.setStallNotified(sessionKey, false)
 		return false, nil
@@ -236,14 +236,14 @@ func (r *GatewayRunner) notifySessionStall(ctx context.Context, sessionKey strin
 	case errors.Is(err, errStallSuppressed):
 		return false, nil
 	case errors.Is(err, context.DeadlineExceeded) && ctx.Err() == nil:
-		runLog().Warn(fmt.Sprintf("Session stall notify send timed out after %.0fs for %s; will retry next tick",
+		pkgLog().Warn(fmt.Sprintf("Session stall notify send timed out after %.0fs for %s; will retry next tick",
 			stallNotifySendTimeoutSeconds, sessionKey))
 		return false, nil
 	case err != nil:
 		if isCancellation(err) || ctx.Err() != nil {
 			return false, err
 		}
-		runLog().Warn(fmt.Sprintf("Session stall notify failed for %s: %s", sessionKey, err.Error()))
+		pkgLog().Warn(fmt.Sprintf("Session stall notify failed for %s: %s", sessionKey, err.Error()))
 		return false, nil
 	}
 	r.setStallNotified(sessionKey, true)
@@ -270,7 +270,7 @@ func (r *GatewayRunner) modelCatalogRefreshWatcher(ctx context.Context) error {
 			if isCancellation(err) || ctx.Err() != nil {
 				return err
 			}
-			runLog().Debug(fmt.Sprintf("Model catalog refresh failed: %s", err.Error()))
+			pkgLog().Debug(fmt.Sprintf("Model catalog refresh failed: %s", err.Error()))
 		}
 		interval := provider.CatalogRefreshInterval(ctx).Seconds()
 		deadline := pythread.Monotonic() + interval
@@ -294,7 +294,7 @@ func (r *GatewayRunner) sessionStallWatcher(ctx context.Context, interval float6
 				if isCancellation(err) || ctx.Err() != nil {
 					return err
 				}
-				runLog().Debug(fmt.Sprintf("Session stall watcher error: %s", err.Error()))
+				pkgLog().Debug(fmt.Sprintf("Session stall watcher error: %s", err.Error()))
 			}
 		}
 		if err := interruptibleSleep(ctx, r, max(1, int(interval))); err != nil {

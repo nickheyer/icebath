@@ -50,12 +50,12 @@ func ReleaseWorkspace(path string) int {
 		func() {
 			defer func() {
 				if r := recover(); r != nil {
-					svc.rt.logf(slog.LevelDebug, "agent.lsp", "LSP workspace release failed for %s: %s", path, fmt.Sprint(r))
+					svc.rt.logf(slog.LevelDebug, "LSP workspace release failed for %s: %s", path, fmt.Sprint(r))
 				}
 			}()
 			n, err := svc.ReleaseWorkspace(path)
 			if err != nil {
-				svc.rt.logf(slog.LevelDebug, "agent.lsp", "LSP workspace release failed for %s: %s", path, errText(err))
+				svc.rt.logf(slog.LevelDebug, "LSP workspace release failed for %s: %s", path, errText(err))
 				return
 			}
 			released += n
@@ -80,7 +80,7 @@ func ShutdownServices() {
 		func() {
 			defer func() {
 				if r := recover(); r != nil {
-					svc.rt.logf(slog.LevelDebug, "agent.lsp", "LSP shutdown error: %s", fmt.Sprint(r))
+					svc.rt.logf(slog.LevelDebug, "LSP shutdown error: %s", fmt.Sprint(r))
 				}
 			}()
 			svc.Shutdown()
@@ -92,7 +92,7 @@ func ShutdownServices() {
 func AtExitShutdown() {
 	defer func() {
 		if r := recover(); r != nil {
-			slog.Default().Debug(fmt.Sprintf("atexit LSP shutdown failed: %s", fmt.Sprint(r)), "logger", "agent.lsp")
+			pkgLog().Debug(fmt.Sprintf("atexit LSP shutdown failed: %s", fmt.Sprint(r)))
 		}
 	}()
 	shutdownServicesHook()

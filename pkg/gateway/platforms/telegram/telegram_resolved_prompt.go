@@ -2,7 +2,6 @@ package telegram
 
 import (
 	"context"
-	"log/slog"
 	"sort"
 	"strconv"
 	"strings"
@@ -24,7 +23,7 @@ func editKeepingPrompt(ctx context.Context, a *TelegramAdapter, q callbackQuery,
 		switch {
 		case isPTBError(err, "BadRequest"):
 		case isPTBError(err, "NetworkError"):
-			slog.Debug("Telegram resolved-prompt edit failed: " + redactTelegramErrorText(err))
+			pkgLog().Debug("Telegram resolved-prompt edit failed: " + redactTelegramErrorText(err))
 			return nil
 		default:
 			return err

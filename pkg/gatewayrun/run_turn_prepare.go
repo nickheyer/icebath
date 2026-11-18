@@ -13,7 +13,7 @@ func recoverOrRememberModel(r *GatewayRunner, sessionKey, model string) string {
 			recovered, _ = r.lastResolvedModel().Get("*")
 		}
 		if recovered != "" {
-			runLog().Warn(fmt.Sprintf("Empty model resolved for session=%s — recovering last-known-good model %s (config read likely returned empty; see #35314)",
+			pkgLog().Warn(fmt.Sprintf("Empty model resolved for session=%s — recovering last-known-good model %s (config read likely returned empty; see #35314)",
 				sessionKey, recovered))
 			model = recovered
 		}

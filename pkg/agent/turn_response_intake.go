@@ -9,7 +9,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
-	"github.com/nickheyer/icebath/pkg/observability"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tools"
@@ -270,11 +269,6 @@ func normalizeModelResponse(ctx context.Context, a *AIAgent, s *LoopState) (Phas
 
 	spliceProviderProjection(a, s.Response, &s.Messages)
 	firePostAPIRequestHook(ctx, a, s, assistantMessage, finishReason)
-	var replyMessage map[string]any
-	if assistantMessage.Message != nil {
-		replyMessage = state.MessageToDict(assistantMessage.Message)
-	}
-	observability.RecordReplyContent(ctx, a, s.Response, replyMessage)
 
 	if pyrepr.Truthy(content) && !a.quietMode {
 		if a.verboseLogging {

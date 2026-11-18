@@ -95,7 +95,7 @@ func credentialHeaders() map[string]string {
 		"CF-Access-Client-Secret": "cloudflare-secret",
 		"X-Custom-Auth":           "tenant-secret",
 		"Accept":                  "application/json",
-		"User-Agent":              "hermes-test",
+		"User-Agent":              "icebath-test",
 	}
 }
 
@@ -128,7 +128,7 @@ func TestCrossHostRedirectDropsArbitraryCredentialsOnWire(t *testing.T) {
 	if last.method != "GET" {
 		t.Fatalf("method = %q", last.method)
 	}
-	if last.headers["accept"] != "application/json" || last.headers["user-agent"] != "hermes-test" {
+	if last.headers["accept"] != "application/json" || last.headers["user-agent"] != "icebath-test" {
 		t.Fatalf("safe headers lost: %v", last.headers)
 	}
 	for _, name := range []string{"authorization", "cookie", "cf-access-client-secret", "x-custom-auth"} {
@@ -365,7 +365,7 @@ func openerHTTPSContext(t *testing.T, opener *Opener) *tls.Config {
 	return transport.TLSClientConfig
 }
 
-func TestHermesOwnedOpenerUsesResolvedHttpsContext(t *testing.T) {
+func TestIcebathOwnedOpenerUsesResolvedHttpsContext(t *testing.T) {
 	context := &tls.Config{MinVersion: tls.VersionTLS12}
 	InstallOpener(nil)
 	swapResolvedHTTPSContext(t, func() *tls.Config { return context })

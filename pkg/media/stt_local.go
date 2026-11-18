@@ -69,7 +69,7 @@ func normalizeLocalSTTLanguage(language any, supported []string) string {
 		}
 	}
 	if !alpha || !shapeValid {
-		sttLog().Warn(fmt.Sprintf("Local STT language %s is not a language code; using fallback", pyrepr.StrRepr(raw)))
+		pkgLog().Warn(fmt.Sprintf("Local STT language %s is not a language code; using fallback", pyrepr.StrRepr(raw)))
 		return ""
 	}
 	if supported != nil {
@@ -80,7 +80,7 @@ func normalizeLocalSTTLanguage(language any, supported []string) string {
 			}
 		}
 		if !found {
-			sttLog().Warn(fmt.Sprintf("Local STT language %s is unsupported; using fallback", pyrepr.StrRepr(raw)))
+			pkgLog().Warn(fmt.Sprintf("Local STT language %s is unsupported; using fallback", pyrepr.StrRepr(raw)))
 			return ""
 		}
 	}
@@ -146,7 +146,7 @@ func ensureWhisperCppModels(ctx context.Context, modelName string) error {
 	if len(pending) == 0 {
 		return nil
 	}
-	sttLog().Info("Preparing whisper.cpp Base and VAD models (first use downloads about 149 MB)")
+	pkgLog().Info("Preparing whisper.cpp Base and VAD models (first use downloads about 149 MB)")
 	if err := sttRunWhisperCppDownload(pending, filepath.Join(destination, "partials")); err != nil {
 		return err
 	}
@@ -192,30 +192,30 @@ func normalizeLocalModel(modelName string) string {
 		return sttDefaultLocalModel
 	}
 	if sttOpenAIModels[modelName] || sttGroqModels[modelName] || sttRetiredGroqModels[modelName] {
-		sttLog().Warn(fmt.Sprintf("STT model '%s' is a cloud-only name and cannot be used with the local provider. Falling back to '%s'. "+
+		pkgLog().Warn(fmt.Sprintf("STT model '%s' is a cloud-only name and cannot be used with the local provider. Falling back to '%s'. "+
 			"Set stt.local.model to a valid faster-whisper size (%s).", modelName, sttDefaultLocalModel, strings.Join(sttModelCatalog["local"], ", ")))
 		return sttDefaultLocalModel
 	}
 	return modelName
 }
 
-// Installs faster-whisper on an action path and reports whether it became importable
-func tryLazyInstallSTT(ctx context.Context) bool {
-	err := pluginCall(func() error { return sttEnsureImport(ctx, "stt-whisper") })
-	if err == nil {
-		if safeFindSpec("faster_whisper") {
-			return true
-		}
-		sttLog().Warn("faster-whisper was installed but importlib still cannot find it (may require Python restart)")
-		return false
+// Whether faster-whisper is provisioned, the first miss of a process logging the command that provisions it
+func whisperProvisioned() bool {
+	if safeFindSpec("faster_whisper") {
+		return true
 	}
-	sttLog().Warn(fmt.Sprintf("Lazy install of faster-whisper failed: %v. "+
-		"When the message names a restart, this process selected its dependency generation at "+
-		"boot and a new one cannot take effect in-flight; otherwise the Icebath process user "+
-		"may not be able to write to the dependency environment. Run `icebath tools` as the "+
-		"Icebath installation owner and select Local Whisper under Speech-to-Text.", err))
+	whisperMissingOnce.Do(func() {
+		pkgLog().Warn("Local Whisper is not provisioned. Run `" + pm.InstallHint("stt-whisper") + "`, or run `icebath tools` " +
+			"and select Local Whisper under Speech-to-Text.")
+	})
 	return false
 }
+
+// Logs the missing faster-whisper remedy once per process
+var whisperMissingOnce sync.Once
+
+// Error envelope of a local transcription that needs faster-whisper provisioned first
+var whisperMissingText = "faster-whisper not installed; run `" + pm.InstallHint("stt-whisper") + "`"
 
 // Whether an error names a missing or broken CUDA runtime library
 func looksLikeCudaLibError(err error) bool {
@@ -388,7 +388,7 @@ func (w *fasterWhisperWorker) Close() {
 
 // One WhisperModel construction in a fresh worker, the seam tests replace
 var whisperModelCtor = func(ctx context.Context, modelName string, device, computeType any, localFilesOnly bool) (localWhisperModel, error) {
-	python, err := managedPythonCommand(ctx)
+	python, err := managedPythonCommand(ctx, "stt-whisper")
 	if err != nil {
 		return nil, err
 	}
@@ -439,7 +439,7 @@ func createWhisperModel(ctx context.Context, modelName string, device, computeTy
 	if !errors.As(err, &le) || (le.RuntimeError && !strings.Contains(le.Msg, "Unable to open file")) || (!le.RuntimeError && !le.CacheMiss) {
 		return nil, err
 	}
-	sttLog().Info(fmt.Sprintf("faster-whisper model '%s' is not cached; downloading it from the Hugging Face Hub", modelName))
+	pkgLog().Info(fmt.Sprintf("faster-whisper model '%s' is not cached; downloading it from the Hugging Face Hub", modelName))
 	model, err = whisperModelCtor(ctx, modelName, device, computeType, false)
 	if err == nil {
 		return model, nil
@@ -458,14 +458,14 @@ func loadLocalWhisperModel(ctx context.Context, modelName string, device, comput
 		if _, ok := os.LookupEnv("KMP_DUPLICATE_LIB_OK"); !ok {
 			os.Setenv("KMP_DUPLICATE_LIB_OK", "TRUE")
 		}
-		sttLog().Info("Apple Silicon/Rosetta detected — loading faster-whisper on CPU (int8) to avoid native device autodetection crashes")
+		pkgLog().Info("Apple Silicon/Rosetta detected — loading faster-whisper on CPU (int8) to avoid native device autodetection crashes")
 		return createWhisperModel(ctx, modelName, "cpu", "int8")
 	}
 	model, err := createWhisperModel(ctx, modelName, device, computeType)
 	if err == nil || !looksLikeCudaLibError(err) {
 		return model, err
 	}
-	sttLog().Warn(fmt.Sprintf("faster-whisper CUDA load failed (%v) — falling back to CPU (int8). "+
+	pkgLog().Warn(fmt.Sprintf("faster-whisper CUDA load failed (%v) — falling back to CPU (int8). "+
 		"Install the NVIDIA CUDA runtime (libcublas/libcudnn) to use GPU.", err))
 	return createWhisperModel(ctx, modelName, "cpu", "int8")
 }
@@ -515,7 +515,7 @@ func joinConfidentSegments(segments []whisperSegment, localCfg map[string]any) s
 	kept := []string{}
 	for _, s := range segments {
 		if isHallucinatedSegment(s, noSpeech, logprob) {
-			sttLog().Debug(fmt.Sprintf("Dropping probable hallucinated segment %s (no_speech_prob=%.3f, avg_logprob=%.3f)",
+			pkgLog().Debug(fmt.Sprintf("Dropping probable hallucinated segment %s (no_speech_prob=%.3f, avg_logprob=%.3f)",
 				pyrepr.StrRepr(s.Text), *s.NoSpeechProb, *s.AvgLogprob))
 			continue
 		}
@@ -566,10 +566,10 @@ func transcribeLocalCommand(ctx context.Context, filePath, modelName string, h s
 		return sttError(fmt.Sprintf("Invalid %s template, missing placeholder: %s", localSTTCommandEnv, fe.Msg)), nil
 	case errors.As(err, &pe):
 		details := processErrorDetail(pe)
-		sttLog().Error(fmt.Sprintf("Local STT command failed for %s: %s", filePath, details))
+		pkgLog().Error(fmt.Sprintf("Local STT command failed for %s: %s", filePath, details))
 		return sttError("Local STT failed: " + details), nil
 	}
-	sttLog().Error(fmt.Sprintf("Unexpected error during local command transcription: %v", err))
+	pkgLog().Error(fmt.Sprintf("Unexpected error during local command transcription: %v", err))
 	return sttError(fmt.Sprintf("Local transcription failed: %v", err)), nil
 }
 
@@ -628,6 +628,6 @@ func runLocalCommand(ctx context.Context, filePath, template, language, model st
 		return nil, err
 	}
 	text = pystr.Strip(text)
-	sttLog().Info(fmt.Sprintf("Transcribed %s via local STT command (%s, %d chars)", filepath.Base(filePath), model, utf8.RuneCountInString(text)))
+	pkgLog().Info(fmt.Sprintf("Transcribed %s via local STT command (%s, %d chars)", filepath.Base(filePath), model, utf8.RuneCountInString(text)))
 	return sttOK(text, "local_command"), nil
 }

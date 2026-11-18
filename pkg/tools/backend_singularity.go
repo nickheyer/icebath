@@ -314,6 +314,9 @@ func singularityGetOrBuildSIF(ctx context.Context, env *Env, image, executable s
 	if !strings.HasPrefix(image, "docker://") {
 		return image, nil
 	}
+	if IsDefaultSandboxImage(strings.TrimPrefix(image, "docker://")) {
+		return apptainerSandboxSIF(ctx, env, executable)
+	}
 	imageName := strings.NewReplacer("/", "-", ":", "-").Replace(strings.ReplaceAll(image, "docker://", ""))
 	cacheDir, err := apptainerCacheDir(env)
 	if err != nil {
@@ -382,7 +385,7 @@ type singularityEnv struct {
 
 func (s *singularityEnv) EnvType() string { return "singularity" }
 
-// Python class name of the environment as hermes logs and records it
+// Python class name of the environment as logs and records name it
 func (s *singularityEnv) ClassName() string { return "SingularityEnvironment" }
 
 var _ interface{ ClassName() string } = (*singularityEnv)(nil)
@@ -501,12 +504,12 @@ func (s *singularityEnv) startInstance(ctx context.Context) error {
 	return nil
 }
 
-// Spawns bash inside the running instance
+// Spawns bash inside the running instance from the root dir, never the host cwd the container lacks
 func (s *singularityEnv) runBash(ctx context.Context, cmd string, login bool, timeout int, stdinData *string) (ProcessHandle, error) {
 	if !s.instanceStarted.Load() {
 		return nil, errors.New("Singularity instance not started")
 	}
-	argv := append([]string{s.executable, "exec", "instance://" + s.instanceID}, bashArgv(cmd, login)...)
+	argv := append([]string{s.executable, "exec", "--pwd", "/", "instance://" + s.instanceID}, bashArgv(cmd, login)...)
 	return popenBash(argv, stdinData, nil)
 }
 
@@ -515,7 +518,7 @@ func (s *singularityEnv) ExecPrefix(user string, interactive bool) ([]string, er
 	if !s.instanceStarted.Load() {
 		return nil, nil
 	}
-	return []string{s.executable, "exec", "instance://" + s.instanceID}, nil
+	return []string{s.executable, "exec", "--pwd", "/", "instance://" + s.instanceID}, nil
 }
 
 // Cleanup stops the instance, a persistent overlay surviving until the exit sweep

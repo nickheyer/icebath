@@ -70,11 +70,11 @@ func runtimeKeysHome(t *testing.T) (string, *bytes.Buffer, *bytes.Buffer) {
 
 func TestConfigGetBrowserSelectionKeysPrintValueWithoutNotice(t *testing.T) {
 	h, out, errOut := runtimeKeysHome(t)
-	writeRuntimeKeysConfig(t, h, map[string]any{"browser": map[string]any{"cloud_provider": "browser-use", "use_gateway": true}})
+	writeRuntimeKeysConfig(t, h, map[string]any{"browser": map[string]any{"cloud_provider": "browser-use"}, "web": map[string]any{"search_backend": "exa"}})
 	for _, tc := range []struct {
 		key  string
 		want any
-	}{{"browser.cloud_provider", "browser-use"}, {"browser.use_gateway", true}} {
+	}{{"browser.cloud_provider", "browser-use"}, {"web.search_backend", "exa"}} {
 		out.Reset()
 		errOut.Reset()
 		err := config.ConfigCommand(context.Background(), h, config.ConfigArgs{Command: "get", Key: tc.key, JSON: true}, runtimeKeySources(h))
@@ -94,7 +94,7 @@ func TestConfigGetBrowserSelectionKeysPrintValueWithoutNotice(t *testing.T) {
 func TestConfigSetRuntimeReadKeyIsSilent(t *testing.T) {
 	for _, tc := range [][2]string{
 		{"browser.cloud_provider", "browserbase"},
-		{"web.use_gateway", "true"},
+		{"web.search_backend", "exa"},
 	} {
 		h, out, errOut := runtimeKeysHome(t)
 		if runtimeKeyNotice(t, h, tc[0], tc[1], out, errOut) {
@@ -159,13 +159,13 @@ func TestPluginConfigKeysCountOnlyWhileThePluginIsEnabled(t *testing.T) {
 	}
 }
 
-func TestPortablePluginDeclaresConfigKeysInItsHermesExtension(t *testing.T) {
+func TestPortablePluginDeclaresConfigKeysInItsIcebathExtension(t *testing.T) {
 	h, out, errOut := runtimeKeysHome(t)
 	dir := filepath.Join(h, "plugins", "portwidget")
 	os.MkdirAll(dir, 0o755)
 	text, _ := json.Marshal(map[string]any{
 		"$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json", "name": "portwidget", "version": "1.0.0",
-		"extensions": map[string]any{"com.nousresearch.hermes": map[string]any{"config_keys": []any{"display.portwidget"}}},
+		"extensions": map[string]any{"app.icebath": map[string]any{"config_keys": []any{"display.portwidget"}}},
 	})
 	os.WriteFile(filepath.Join(dir, "plugin.json"), text, 0o644)
 	if !runtimeKeyNotice(t, h, "display.portwidget.size", "3", out, errOut) {

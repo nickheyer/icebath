@@ -280,7 +280,7 @@ func TestDiscordChannelPromptsConfigMigratePreservesCustomProvidersAndNoDefaults
 	}
 }
 
-func TestEnvWriteDenylistHermesIntegrationKeysStillWritable(t *testing.T) {
+func TestEnvWriteDenylistIcebathIntegrationKeysStillWritable(t *testing.T) {
 	for _, key := range []string{"ICEBATH_LANGFUSE_PUBLIC_KEY", "ICEBATH_SPOTIFY_CLIENT_ID", "ICEBATH_QWEN_BASE_URL", "ICEBATH_MAX_ITERATIONS"} {
 		t.Run(key, func(t *testing.T) {
 			h := configModuleHome(t, key)
@@ -313,7 +313,7 @@ func refuseEnvWrite(t *testing.T, key string) {
 	}
 }
 
-func TestEnvWriteDenylistHermesSecurityControlKeysAreNotWritable(t *testing.T) {
+func TestEnvWriteDenylistIcebathSecurityControlKeysAreNotWritable(t *testing.T) {
 	for _, key := range []string{
 		"ICEBATH_CONFIG_PATH", "ICEBATH_ENV_PATH", "ICEBATH_OPTIONAL_MCPS", "ICEBATH_COPILOT_ACP_COMMAND",
 		"ICEBATH_COPILOT_ACP_ARGS", "ICEBATH_YOLO_MODE", "ICEBATH_ACCEPT_HOOKS", "ICEBATH_REDACT_SECRETS",
@@ -492,9 +492,9 @@ func TestBackgroundNotificationsConciseMigrationUnsetKeyIsNotMaterialized(t *tes
 }
 
 func TestCodexAppServerAutoConfigPreservesExistingCodexAppServerAutoValue(t *testing.T) {
-	h, path, _ := configModuleCase(t, "_config_version: 31\ncompression:\n  codex_app_server_auto: hermes\n")
+	h, path, _ := configModuleCase(t, "_config_version: 31\ncompression:\n  codex_app_server_auto: icebath\n")
 	configModuleMigrate(t, h, true)
-	if got := configModuleRaw(t, path).Get("compression.codex_app_server_auto"); got != "hermes" {
+	if got := configModuleRaw(t, path).Get("compression.codex_app_server_auto"); got != "icebath" {
 		t.Fatalf("codex_app_server_auto %v", got)
 	}
 }

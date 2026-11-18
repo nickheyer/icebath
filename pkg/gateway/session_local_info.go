@@ -82,9 +82,6 @@ func lazyModel(ctx context.Context, a *SessionAuthority, policy *LocalSessionPol
 	if route := strings.ToLower(strings.TrimSpace(anyText(policy.Provider()))); route != "" && route != "auto" {
 		return model, nil
 	}
-	if provider.FreeTierRoute(ownerScope(ctx, a, false)) {
-		return provider.GuestModel, nil
-	}
 	return model, nil
 }
 
@@ -189,7 +186,8 @@ func localSessionInfo(ctx context.Context, a *SessionAuthority, ref SessionRef) 
 		return nil, err
 	}
 	info := pyjson.ObjectOf("source", source, "model", anyText(model), "lazy", agent == nil, "profile_id", a.ProfileID,
-		"gateway_protocol", CanonicalGatewayProtocol, "profile_name", servedProfileName(a.ProfileID))
+		"gateway_protocol", CanonicalGatewayProtocol, "profile_name", servedProfileName(a.ProfileID),
+		"redact_secrets", tools.RedactEnabled(ctx))
 	if policy != nil {
 		info.Set("cwd", policy.Cwd)
 		if policy.Source == "acp" {

@@ -56,7 +56,7 @@ func launchedByOtherTenant(ownerHome, ourHome string) (bool, error) {
 	if ownerHome == "" {
 		return false, nil
 	}
-	same, err := sameHermesHome(home.RootOf(ownerHome), home.RootOf(ourHome))
+	same, err := sameIcebathHome(home.RootOf(ownerHome), home.RootOf(ourHome))
 	return !same, err
 }
 

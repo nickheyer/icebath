@@ -117,7 +117,7 @@ func TestExpectedRows(t *testing.T) {
 		{nil, []int{}, map[string]any{"profiles": map[string]any{"default": 4321}}, none, nil, false},
 		{nil, []int{}, map[string]any{"unmapped": []any{map[string]any{"pid": 99}}}, none, nil, false},
 		{planOfKinds(), []int{}, map[string]any{"profiles": map[string]any{"work": 777}}, none, nil, false},
-		{nil, []int{}, map[string]any{"services": []any{"HermesGateway"}}, none, nil, false},
+		{nil, []int{}, map[string]any{"services": []any{"IcebathGateway"}}, none, nil, false},
 		{nil, []int{}, map[string]any{}, none, nil, false},
 		{nil, []int{}, nil, none, nil, false},
 		{planOfKinds(), []int{}, nil, none, nil, false},
@@ -197,13 +197,13 @@ func TestFleetRestartTimeoutIsolationOnlyGatewayUnitsAreIncluded(t *testing.T) {
 	}
 }
 
-func TestFleetRestartTimeoutIsolationHermesServerNearPrefixIsRejected(t *testing.T) {
+func TestFleetRestartTimeoutIsolationIcebathServerNearPrefixIsRejected(t *testing.T) {
 	if seen := seenGatewayUnits(t, listUnitsStdout("icebath-server")); len(seen) != 0 {
 		t.Fatalf("seen = %v", seen)
 	}
 }
 
-func TestFleetRestartTimeoutIsolationHermesGatewayNearPrefixIsRejected(t *testing.T) {
+func TestFleetRestartTimeoutIsolationIcebathGatewayNearPrefixIsRejected(t *testing.T) {
 	if seen := seenGatewayUnits(t, listUnitsStdout("icebath-gatewayd", "icebath-gateway-coder")); !reflect.DeepEqual(seen, []string{"icebath-gateway-coder"}) {
 		t.Fatalf("seen = %v", seen)
 	}
@@ -239,13 +239,13 @@ func ownLaunchd(t *testing.T, plistExists bool, restartErr error, supervised boo
 	job := &ownLaunchdJob{}
 	tmp := t.TempDir()
 	t.Setenv("ICEBATH_HOME", filepath.Join(tmp, "home"))
-	plist := filepath.Join(tmp, "ai.icebath.gateway.plist")
+	plist := filepath.Join(tmp, "app.icebath.gateway.plist")
 	if plistExists {
 		if err := os.WriteFile(plist, []byte("<plist/>"), 0o644); err != nil {
 			t.Fatal(err)
 		}
 	}
-	vsSwap(t, &fleetLaunchdLabel, func(context.Context) (string, error) { return "ai.icebath.gateway", nil })
+	vsSwap(t, &fleetLaunchdLabel, func(context.Context) (string, error) { return "app.icebath.gateway", nil })
 	vsSwap(t, &fleetLaunchdPlistPath, func(context.Context) (string, error) { return plist, nil })
 	vsSwap(t, &fleetLaunchdRestart, func(context.Context) error {
 		if restartErr != nil {
@@ -258,7 +258,7 @@ func ownLaunchd(t *testing.T, plistExists bool, restartErr error, supervised boo
 		job.commands = append(job.commands, cmd)
 		return &pysubprocess.Completed{Args: cmd}, nil
 	})
-	vsSwap(t, &fleetLaunchdLabelsForInstall, func(context.Context) ([]string, error) { return []string{"ai.icebath.gateway"}, nil })
+	vsSwap(t, &fleetLaunchdLabelsForInstall, func(context.Context) ([]string, error) { return []string{"app.icebath.gateway"}, nil })
 	vsSwap(t, &fleetIsPidAncestor, func(int) bool { return false })
 	vsSwap(t, &fleetWaitLaunchdSupervised, func(_ context.Context, label string, _ int, _ bool) (bool, error) {
 		job.verifies++
@@ -281,7 +281,7 @@ func TestLaunchdRestartAfterUpdatePlistPresentAlwaysRestartsWithoutClassifying(t
 	job := ownLaunchd(t, true, nil, true)
 	var out bytes.Buffer
 	restarted, failed := ownLaunchdRestart(t, &out)
-	if !reflect.DeepEqual(restarted, []string{"ai.icebath.gateway"}) || len(failed) != 0 || job.restarts != 1 || len(job.commands) != 0 ||
+	if !reflect.DeepEqual(restarted, []string{"app.icebath.gateway"}) || len(failed) != 0 || job.restarts != 1 || len(job.commands) != 0 ||
 		strings.Contains(out.String(), "NOT running") {
 		t.Fatalf("restarted=%v failed=%v job=%+v out=%q", restarted, failed, job, out.String())
 	}
@@ -291,7 +291,7 @@ func TestLaunchdRestartAfterUpdateRestartFailureWarnsThatGatewayIsDown(t *testin
 	ownLaunchd(t, true, &gateway.CalledProcessError{Cmd: []string{"launchctl", "kickstart"}, ReturnCode: 1, Stderr: "kickstart refused"}, true)
 	var out bytes.Buffer
 	restarted, failed := ownLaunchdRestart(t, &out)
-	if len(restarted) != 0 || !reflect.DeepEqual(failed, []string{"ai.icebath.gateway"}) ||
+	if len(restarted) != 0 || !reflect.DeepEqual(failed, []string{"app.icebath.gateway"}) ||
 		!strings.Contains(out.String(), "kickstart refused") || !strings.Contains(out.String(), "icebath gateway restart") {
 		t.Fatalf("restarted=%v failed=%v out=%q", restarted, failed, out.String())
 	}
@@ -307,7 +307,7 @@ func TestLaunchdRestartAfterUpdateLaunchctlUnusableIsNotSwallowed(t *testing.T) 
 			job := ownLaunchd(t, true, failure, true)
 			var out bytes.Buffer
 			restarted, failed := ownLaunchdRestart(t, &out)
-			if len(restarted) != 0 || !reflect.DeepEqual(failed, []string{"ai.icebath.gateway"}) || job.restarts != 0 ||
+			if len(restarted) != 0 || !reflect.DeepEqual(failed, []string{"app.icebath.gateway"}) || job.restarts != 0 ||
 				!strings.Contains(out.String(), "icebath gateway restart") {
 				t.Fatalf("restarted=%v failed=%v out=%q", restarted, failed, out.String())
 			}
@@ -336,8 +336,8 @@ func runOwnFleetRestart(t *testing.T, w io.Writer) ([]string, []string) {
 func TestInvokingProfileIsVerifiedLikeItsSiblingsReportsRestartedOnlyAfterSupervisionIsConfirmed(t *testing.T) {
 	job := ownLaunchd(t, true, nil, true)
 	restarted, failed := runOwnFleetRestart(t, io.Discard)
-	if !reflect.DeepEqual(restarted, []string{"ai.icebath.gateway"}) || len(failed) != 0 || job.restarts != 1 || job.verifies != 1 ||
-		job.verifiedLabel != "ai.icebath.gateway" {
+	if !reflect.DeepEqual(restarted, []string{"app.icebath.gateway"}) || len(failed) != 0 || job.restarts != 1 || job.verifies != 1 ||
+		job.verifiedLabel != "app.icebath.gateway" {
 		t.Fatalf("restarted=%v failed=%v job=%+v", restarted, failed, job)
 	}
 }
@@ -346,7 +346,7 @@ func TestInvokingProfileIsVerifiedLikeItsSiblingsUnverifiedRestartIsNotReportedA
 	ownLaunchd(t, true, nil, false)
 	var out bytes.Buffer
 	restarted, failed := runOwnFleetRestart(t, &out)
-	if len(restarted) != 0 || !reflect.DeepEqual(failed, []string{"ai.icebath.gateway"}) || !strings.Contains(out.String(), "ai.icebath.gateway") {
+	if len(restarted) != 0 || !reflect.DeepEqual(failed, []string{"app.icebath.gateway"}) || !strings.Contains(out.String(), "app.icebath.gateway") {
 		t.Fatalf("restarted=%v failed=%v out=%q", restarted, failed, out.String())
 	}
 }
@@ -355,7 +355,7 @@ func TestInvokingProfileIsVerifiedLikeItsSiblingsRaisedRestartFailureIsNotVerifi
 	job := ownLaunchd(t, true, &gateway.CalledProcessError{Cmd: []string{"launchctl"}, ReturnCode: 1, Stderr: "boom"}, true)
 	var out bytes.Buffer
 	restarted, failed := runOwnFleetRestart(t, &out)
-	if len(restarted) != 0 || !reflect.DeepEqual(failed, []string{"ai.icebath.gateway"}) || job.verifies != 0 || !strings.Contains(out.String(), "boom") {
+	if len(restarted) != 0 || !reflect.DeepEqual(failed, []string{"app.icebath.gateway"}) || job.verifies != 0 || !strings.Contains(out.String(), "boom") {
 		t.Fatalf("restarted=%v failed=%v job=%+v out=%q", restarted, failed, job, out.String())
 	}
 }
@@ -371,7 +371,7 @@ func TestInvokingProfileIsVerifiedLikeItsSiblingsNoPlistMeansTheGatewayIsNotLaun
 func TestInvokingProfileIsVerifiedLikeItsSiblingsUnregisteredLabelIsRestartedNotSkipped(t *testing.T) {
 	job := ownLaunchd(t, true, nil, true)
 	restarted, failed := runOwnFleetRestart(t, io.Discard)
-	if !reflect.DeepEqual(restarted, []string{"ai.icebath.gateway"}) || len(failed) != 0 || job.restarts != 1 || job.verifies != 1 {
+	if !reflect.DeepEqual(restarted, []string{"app.icebath.gateway"}) || len(failed) != 0 || job.restarts != 1 || job.verifies != 1 {
 		t.Fatalf("restarted=%v failed=%v job=%+v", restarted, failed, job)
 	}
 }

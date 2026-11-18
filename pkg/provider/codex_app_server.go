@@ -477,7 +477,7 @@ func (c *CodexAppServerClient) send(obj any) error {
 	if c.stdin == nil {
 		return codexTransportLost("codex app-server stdin not available")
 	}
-	text, err := pyjson.Dumps(obj)
+	text, err := pyjson.Dumps(obj, pyjson.Separators(",", ":"), pyjson.EnsureASCII(false))
 	if err != nil {
 		return err
 	}

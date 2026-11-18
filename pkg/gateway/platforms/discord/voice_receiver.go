@@ -4,8 +4,8 @@ import (
 	"context"
 	"encoding/binary"
 	"encoding/hex"
+	"errors"
 	"fmt"
-	"log/slog"
 	"strconv"
 	"strings"
 	"sync"
@@ -13,7 +13,7 @@ import (
 	"time"
 )
 
-// Receiver tuning of hermes's VoiceReceiver
+// Receiver tuning of VoiceReceiver
 const (
 	voiceSilenceThreshold    = 1500 * time.Millisecond
 	voiceMinSpeechDuration   = 0.5
@@ -78,7 +78,7 @@ func (r *voiceReceiver) start() error {
 	r.installSpeakingHook(conn)
 	r.listenerID = conn.addSocketListener(r.onPacket)
 	r.running.Store(true)
-	slog.Info(fmt.Sprintf("VoiceReceiver started (bot_ssrc=%d)", r.botSSRC.Load()))
+	pkgLog().Info(fmt.Sprintf("VoiceReceiver started (bot_ssrc=%d)", r.botSSRC.Load()))
 	return nil
 }
 
@@ -87,7 +87,7 @@ func (r *voiceReceiver) resolveCredentials(conn *voiceConnState) error {
 	conn.mu.Lock()
 	if conn.secretKey == nil {
 		conn.mu.Unlock()
-		return fmt.Errorf("TypeError: cannot convert 'MissingSentinel' object to bytes")
+		return errors.New("the Discord voice secret key has not arrived yet")
 	}
 	c := &voiceCreds{secretKey: append([]byte(nil), conn.secretKey...), mode: conn.mode,
 		daveProtocolVersion: conn.daveProtocolVersion, daveDowngraded: conn.daveDowngraded}
@@ -132,7 +132,7 @@ func (r *voiceReceiver) RefreshCredentials(reason string) {
 		return
 	}
 	if err := r.resolveCredentials(r.vc.conn); err != nil {
-		slog.Warn(fmt.Sprintf("VoiceReceiver credential refresh failed (%s): %s", reason, err))
+		pkgLog().Warn(fmt.Sprintf("VoiceReceiver credential refresh failed (%s): %s", reason, err))
 		return
 	}
 	r.mu.Lock()
@@ -142,7 +142,7 @@ func (r *voiceReceiver) RefreshCredentials(reason string) {
 	if r.daveSession() != nil {
 		dave = "on"
 	}
-	slog.Info(fmt.Sprintf("VoiceReceiver credentials refreshed (%s; bot_ssrc=%d, dave=%s)", reason, r.botSSRC.Load(), dave))
+	pkgLog().Info(fmt.Sprintf("VoiceReceiver credentials refreshed (%s; bot_ssrc=%d, dave=%s)", reason, r.botSSRC.Load(), dave))
 }
 
 // Stops taking packets, clears every per SSRC state and logs the decode health counters
@@ -156,7 +156,7 @@ func (r *voiceReceiver) Stop() {
 	clear(r.ssrcToUser)
 	ok, failed, dropped := r.decodeOK, r.decodeFailed, r.daveUnmappedDropped
 	r.mu.Unlock()
-	slog.Info(fmt.Sprintf("VoiceReceiver stopped (frames ok=%d, decrypt_failed=%d, dave_unmapped_dropped=%d)", ok, failed, dropped))
+	pkgLog().Info(fmt.Sprintf("VoiceReceiver stopped (frames ok=%d, decrypt_failed=%d, dave_unmapped_dropped=%d)", ok, failed, dropped))
 }
 
 // Ignores packets while the bot plays audio
@@ -180,7 +180,7 @@ func (r *voiceReceiver) installSpeakingHook(conn *voiceConnState) {
 			ssrc, okS := voiceInt(msg.D["ssrc"])
 			userID, okU := voiceInt(msg.D["user_id"])
 			if okS && okU && ssrc != 0 && userID != 0 {
-				slog.Info(fmt.Sprintf("SPEAKING event: ssrc=%d -> user=%d", ssrc, userID))
+				pkgLog().Info(fmt.Sprintf("SPEAKING event: ssrc=%d -> user=%d", ssrc, userID))
 				r.mapSSRC(uint32(ssrc), userID)
 			}
 		}
@@ -206,7 +206,7 @@ func (r *voiceReceiver) installSpeakingHook(conn *voiceConnState) {
 	live := conn.ws != nil
 	conn.mu.Unlock()
 	if live {
-		slog.Info("Speaking hook installed on live websocket")
+		pkgLog().Info("Speaking hook installed on live websocket")
 	}
 }
 
@@ -225,14 +225,14 @@ func (r *voiceReceiver) onPacket(data []byte) {
 		if len(data) >= 4 {
 			first = hex.EncodeToString(data[:4])
 		}
-		slog.Debug(fmt.Sprintf("Raw UDP packet: len=%d, first_bytes=%s", len(data), first))
+		pkgLog().Debug(fmt.Sprintf("Raw UDP packet: len=%d, first_bytes=%s", len(data), first))
 	}
 	if len(data) < 16 {
 		return
 	}
 	if data[0]>>6 != 2 || data[1]&0x7f != 0x78 {
 		if debugCount <= 5 {
-			slog.Debug(fmt.Sprintf("Skipped non-RTP: byte0=0x%02x byte1=0x%02x", data[0], data[1]))
+			pkgLog().Debug(fmt.Sprintf("Skipped non-RTP: byte0=0x%02x byte1=0x%02x", data[0], data[1]))
 		}
 		return
 	}
@@ -264,7 +264,7 @@ func (r *voiceReceiver) onPacket(data []byte) {
 			known = strconv.FormatInt(uid, 10)
 		}
 		r.mu.Unlock()
-		slog.Debug(fmt.Sprintf("RTP packet: ssrc=%d, seq=%d, user=%s, hdr=%d, ext_data=%d", ssrc, seq, known, headerSize, extDataLen))
+		pkgLog().Debug(fmt.Sprintf("RTP packet: ssrc=%d, seq=%d, user=%s, hdr=%d, ext_data=%d", ssrc, seq, known, headerSize, extDataLen))
 	}
 	header := data[:headerSize]
 	payloadWithNonce := data[headerSize:]
@@ -283,7 +283,7 @@ func (r *voiceReceiver) onPacket(data []byte) {
 		streak := r.decryptFailStreak
 		r.mu.Unlock()
 		if debugCount <= 10 || streak%250 == 0 {
-			slog.Warn(fmt.Sprintf("Voice transport decrypt failed: %s (hdr=%d, enc=%d, streak=%d)", err, headerSize, len(encrypted), streak))
+			pkgLog().Warn(fmt.Sprintf("Voice transport decrypt failed: %s (hdr=%d, enc=%d, streak=%d)", err, headerSize, len(encrypted), streak))
 		}
 		if streak >= voiceRekeyFailureStreak {
 			r.RefreshCredentials("decrypt-failure streak")
@@ -299,14 +299,14 @@ func (r *voiceReceiver) onPacket(data []byte) {
 	if hasPadding {
 		if len(decrypted) == 0 {
 			if debugCount <= 10 {
-				slog.Warn(fmt.Sprintf("RTP padding bit set but no payload (ssrc=%d)", ssrc))
+				pkgLog().Warn(fmt.Sprintf("RTP padding bit set but no payload (ssrc=%d)", ssrc))
 			}
 			return
 		}
 		padLen := int(decrypted[len(decrypted)-1])
 		if padLen == 0 || padLen > len(decrypted) {
 			if debugCount <= 10 {
-				slog.Warn(fmt.Sprintf("Invalid RTP padding length %d for payload size %d (ssrc=%d)", padLen, len(decrypted), ssrc))
+				pkgLog().Warn(fmt.Sprintf("Invalid RTP padding length %d for payload size %d (ssrc=%d)", padLen, len(decrypted), ssrc))
 			}
 			return
 		}
@@ -327,7 +327,7 @@ func (r *voiceReceiver) onPacket(data []byte) {
 			if err != nil {
 				if !strings.Contains(err.Error(), "Unencrypted") {
 					if debugCount <= 10 {
-						slog.Warn(fmt.Sprintf("DAVE decrypt failed for ssrc=%d: %s", ssrc, err))
+						pkgLog().Warn(fmt.Sprintf("DAVE decrypt failed for ssrc=%d: %s", ssrc, err))
 					}
 					return
 				}
@@ -344,7 +344,7 @@ func (r *voiceReceiver) onPacket(data []byte) {
 				dropped := r.daveUnmappedDropped
 				r.mu.Unlock()
 				if debugCount <= 10 || dropped%250 == 1 {
-					slog.Debug(fmt.Sprintf("Dropping DAVE frame for unmapped ssrc=%d (dropped=%d)", ssrc, dropped))
+					pkgLog().Debug(fmt.Sprintf("Dropping DAVE frame for unmapped ssrc=%d (dropped=%d)", ssrc, dropped))
 				}
 				return
 			}
@@ -356,7 +356,7 @@ func (r *voiceReceiver) onPacket(data []byte) {
 	if !ok {
 		var err error
 		if dec, err = newOpusDecoder(); err != nil {
-			slog.Debug(fmt.Sprintf("Opus decode error for SSRC %d; reset decoder: %s", ssrc, err))
+			pkgLog().Debug(fmt.Sprintf("Opus decode error for SSRC %d; reset decoder: %s", ssrc, err))
 			return
 		}
 		r.mu.Lock()
@@ -368,7 +368,7 @@ func (r *voiceReceiver) onPacket(data []byte) {
 		r.mu.Lock()
 		delete(r.decoders, ssrc)
 		r.mu.Unlock()
-		slog.Debug(fmt.Sprintf("Opus decode error for SSRC %d; reset decoder: %s", ssrc, err))
+		pkgLog().Debug(fmt.Sprintf("Opus decode error for SSRC %d; reset decoder: %s", ssrc, err))
 		return
 	}
 	r.mu.Lock()
@@ -401,7 +401,7 @@ func (r *voiceReceiver) inferUserForSSRCLocked(ssrc uint32) int64 {
 		return 0
 	}
 	r.ssrcToUser[ssrc] = candidates[0]
-	slog.Info(fmt.Sprintf("Auto-mapped ssrc=%d -> user=%d (sole allowed member)", ssrc, candidates[0]))
+	pkgLog().Info(fmt.Sprintf("Auto-mapped ssrc=%d -> user=%d (sole allowed member)", ssrc, candidates[0]))
 	return candidates[0]
 }
 

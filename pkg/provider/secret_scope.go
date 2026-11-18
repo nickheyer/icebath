@@ -178,7 +178,7 @@ func (e *UnscopedSecretError) Error() string {
 
 var globalEnvNames = map[string]bool{
 	"ICEBATH_HOME": true, "ICEBATH_PROFILE": true, "ICEBATH_GATEWAY_LOCK_DIR": true, "ICEBATH_MAX_ITERATIONS": true,
-	"ICEBATH_API_TIMEOUT": true, "ICEBATH_REDACT_SECRETS": true, "ICEBATH_NOUS_TIMEOUT_SECONDS": true, "_ICEBATH_GATEWAY": true,
+	"ICEBATH_API_TIMEOUT": true, "ICEBATH_REDACT_SECRETS": true, "_ICEBATH_GATEWAY": true,
 	"PATH": true, "HOME": true, "USER": true, "LANG": true, "LC_ALL": true, "TZ": true, "PWD": true, "SHELL": true, "TMPDIR": true,
 	"VIRTUAL_ENV": true, "PYTHONPATH": true, "SSL_CERT_FILE": true,
 	"ICEBATH_KANBAN_DB": true, "ICEBATH_KANBAN_WORKSPACES_ROOT": true, "ICEBATH_KANBAN_BOARD": true,
@@ -290,7 +290,7 @@ func GetSecretStr(ctx context.Context, name, def string) string {
 // SecretSourceLabel is the " (from X)" suffix naming the external source that supplied the env var
 func SecretSourceLabel(h, name string) string { return FormatSecretSourceSuffix(h, name) }
 
-// External secret source reader of the profile scope, the module attribute hermes tests patch
+// External secret source reader of the profile scope, the module attribute tests patch
 var secretSourceValues = SecretSourceValues
 
 // BuildProfileSecretScope assembles a profile's secrets from .env, its secret sources and the managed env

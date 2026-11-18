@@ -94,7 +94,7 @@ func (r *GatewayRunner) handleVoiceChannelJoin(ctx context.Context, event *gatew
 	}
 	success, err := joiner.JoinVoiceChannel(ctx, voiceChannel)
 	if err != nil {
-		runLog().Warn(fmt.Sprintf("Failed to join voice channel: %s", pyrepr.ExceptionMessage(err)))
+		pkgLog().Warn(fmt.Sprintf("Failed to join voice channel: %s", pyrepr.ExceptionMessage(err)))
 		joiner.SetVoiceInputCallback(nil)
 		var native interface{ VoiceDependencyHint() string }
 		if errors.As(err, &native) {
@@ -108,7 +108,7 @@ func (r *GatewayRunner) handleVoiceChannelJoin(ctx context.Context, event *gatew
 	}
 	textChannelID, err := strconv.ParseInt(pystr.Strip(event.Source.ChatID), 10, 64)
 	if err != nil {
-		return "", fmt.Errorf("ValueError: invalid literal for int() with base 10: %s", pyrepr.Repr(event.Source.ChatID))
+		return "", fmt.Errorf("channel id %s is not a whole number", event.Source.ChatID)
 	}
 	if previous, found := joiner.VoiceTextChannel(guildID); found && previous != textChannelID {
 		if discarder, ok := adapter.(pendingVoiceDiscarder); ok {
@@ -138,7 +138,7 @@ func (r *GatewayRunner) handleVoiceChannelLeave(ctx context.Context, event *gate
 		return i18n.T(ctx, "gateway.voice.channel_not_joined", "", nil), nil
 	}
 	if err := leaver.LeaveVoiceChannel(ctx, guildID); err != nil {
-		runLog().Warn(fmt.Sprintf("Error leaving voice channel: %s", pyrepr.ExceptionMessage(err)))
+		pkgLog().Warn(fmt.Sprintf("Error leaving voice channel: %s", pyrepr.ExceptionMessage(err)))
 	}
 	r.applyVoiceMode(adapter, r.voiceKeyForSource(event.Source), event.Source.ChatID, "off")
 	if binder, ok := adapter.(voiceInputBinder); ok {

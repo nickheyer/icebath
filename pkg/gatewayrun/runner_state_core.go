@@ -164,7 +164,7 @@ type runnerCoreState struct {
 	reconnectWatcherTask            *gatewayTask
 }
 
-// Runner holding only the class level defaults, the object.__new__ of hermes
+// Runner holding only the class level defaults
 func allocGatewayRunner() *GatewayRunner {
 	r := &GatewayRunner{}
 	r.busyInputMode = "interrupt"

@@ -85,7 +85,7 @@ var trailingV1 = regexp.MustCompile(`/v1/?$`)
 // Api mode, base url and capability map of the switch destination
 func resolveSwitchDestination(ctx context.Context, a *AIAgent, newModel, newProvider, baseURL, apiMode string, capabilities map[string]bool, oldNorm, newNorm string) (string, string, map[string]bool) {
 	if apiMode == "" {
-		apiMode = string(provider.DetermineModeCtx(ctx, newProvider, baseURL, newModel, nousAnthropicWire(ctx)))
+		apiMode = string(provider.DetermineModeCtx(ctx, newProvider, baseURL, newModel))
 	}
 	if baseURL == "" && newNorm == "openai" {
 		baseURL = "https://api.openai.com/v1"
@@ -151,7 +151,7 @@ func buildSwitchedClient(ctx context.Context, a *AIAgent, newProvider, apiKey, b
 	effectiveBase := stringOr(baseURL, a.baseURL)
 	a.clientKwargs = map[string]any{"api_key": stringOr(apiKey, a.apiKey), "base_url": effectiveBase}
 	if cfg, err := config.LoadReadonly(ctx, home.Dir(ctx), os.LookupEnv); err != nil {
-		agentRuntimeHelpersLog().Debug("custom-provider TLS resolution skipped on switch_model")
+		pkgLog().Debug("custom-provider TLS resolution skipped on switch_model")
 	} else {
 		provider.ApplyCustomProviderTLSToClientKwargs(a.clientKwargs, effectiveBase, provider.CompatibleCustomProviders(cfg), nil)
 	}
@@ -189,7 +189,7 @@ func swapSwitchRuntime(ctx context.Context, a *AIAgent, newModel, newProvider, a
 	if oldNorm != newNorm || a.credentialPool == nil {
 		a.credentialPool, a.credentialPoolEntryID = nil, ""
 		if err := guardPhase(func() error { a.credentialPool = agentLoadPool(agentPoolEnv(ctx), newProvider); return nil }); err != nil {
-			agentRuntimeHelpersLog().Warn(fmt.Sprintf("switch_model: credential pool reload failed for %s (%s); continuing without pool rotation this turn", newProvider, err.Error()))
+			pkgLog().Warn(fmt.Sprintf("switch_model: credential pool reload failed for %s (%s); continuing without pool rotation this turn", newProvider, err.Error()))
 		}
 	}
 	if err := buildSwitchedClient(ctx, a, newProvider, apiKey, baseURL, apiMode, newNorm); err != nil {
@@ -222,7 +222,7 @@ func resolveSwitchContextLength(ctx context.Context, a *AIAgent, snapshot *switc
 		return nil, false, 0, err
 	}
 	if lmstudioLoadWasUnverified(runtime) {
-		agentRuntimeHelpersLog().Warn("LM Studio model activation was rejected or completed without a verifiable active context length during model switch; continuing with configured context")
+		pkgLog().Warn("LM Studio model activation was rejected or completed without a verifiable active context length during model switch; continuing with configured context")
 	}
 	var intentValue any
 	if intent != nil {
@@ -272,7 +272,7 @@ func finishSwitch(ctx context.Context, a *AIAgent, newProvider, oldNorm, newNorm
 	}
 	a.fallbackChain = chain
 	if err := guardPhase(func() error { applySwitchedProviderRequestOverrides(ctx, a, newProvider); return nil }); err != nil {
-		agentRuntimeHelpersLog().Debug("switch_model: request_overrides re-derivation failed")
+		pkgLog().Debug("switch_model: request_overrides re-derivation failed")
 	}
 }
 
@@ -304,13 +304,13 @@ func persistSwitchBillingRoute(ctx context.Context, a *AIAgent) {
 	}
 	mode := a.apiMode
 	if err := a.sessionDB.UpdateSessionBillingRoute(ctx, a.sessionID, a.provider, a.baseURL, &mode); err != nil {
-		agentRuntimeHelpersLog().Warn("Failed to persist billing route after model switch", "error", err)
+		pkgLog().Warn("Failed to persist billing route after model switch", "error", err)
 	}
 }
 
 // Switches model, provider and api mode in place and persists the route across turns, rolling back a failed rebuild
 func (a *AIAgent) switchModel(ctx context.Context, newModel, newProvider, apiKey, baseURL, apiMode string, capabilities map[string]bool) error {
-	log := agentRuntimeHelpersLog()
+	log := pkgLog()
 	oldModel, oldProvider := a.model, a.provider
 	oldNorm, newNorm := pystr.Lower(pystr.Strip(oldProvider)), pystr.Lower(pystr.Strip(newProvider))
 	apiMode, baseURL, destination := resolveSwitchDestination(ctx, a, newModel, newProvider, baseURL, apiMode, capabilities, oldNorm, newNorm)

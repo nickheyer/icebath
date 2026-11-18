@@ -26,7 +26,7 @@ func loadGatewayConfigForRunner(ctx context.Context) (*gateway.GatewayConfig, er
 	func() {
 		defer func() {
 			if rec := recover(); rec != nil {
-				runLog().Debug("could not set multiplex-active before primary config load", "exc_info", rec)
+				pkgLog().Debug("could not set multiplex-active before primary config load", "exc_info", rec)
 			}
 		}()
 		provider.SetMultiplexActive(true)
@@ -51,7 +51,7 @@ func loadGatewayConfigForRunner(ctx context.Context) (*gateway.GatewayConfig, er
 		return gateway.LoadGatewayConfig(gateway.ProfileRuntimeScope(ctx, root, true))
 	}()
 	if err != nil {
-		runLog().Debug("multiplex default-scope config reload failed; using unscoped load", "exc_info", err)
+		pkgLog().Debug("multiplex default-scope config reload failed; using unscoped load", "exc_info", err)
 		return cfg, nil
 	}
 	scoped.MultiplexProfiles = cfg.MultiplexProfiles

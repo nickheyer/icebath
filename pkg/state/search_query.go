@@ -3,7 +3,6 @@ package state
 import (
 	"context"
 	"fmt"
-	"log/slog"
 	"regexp"
 	"strings"
 	"unicode/utf8"
@@ -231,7 +230,7 @@ func (s *sessionSearch) matchRows(ctx context.Context, table, matchQuery, orderB
 	}
 	if isOperationalError(err) {
 		if operationalDebug != "" {
-			slog.Debug(operationalDebug + "\n" + errText(err))
+			pkgLog().Debug(operationalDebug + "\n" + errText(err))
 		}
 		return nil, false, nil
 	}
@@ -245,7 +244,7 @@ func (s *sessionSearch) matchRows(ctx context.Context, table, matchQuery, orderB
 	if !detached {
 		return nil, false, err
 	}
-	slog.Warn(fmt.Sprintf("%s FTS search hit a corruption error (%s); detached FTS and falling back to canonical LIKE.",
+	pkgLog().Warn(fmt.Sprintf("%s FTS search hit a corruption error (%s); detached FTS and falling back to canonical LIKE.",
 		failOpen, errText(err)))
 	return nil, false, nil
 }
@@ -475,7 +474,7 @@ func (s *sessionSearch) OptimizeFTS(ctx context.Context) (int, error) {
 			if !isDatabaseError(err) {
 				return optimized, err
 			}
-			slog.Warn(fmt.Sprintf("FTS optimize failed for %s: %s", tbl, errText(err)))
+			pkgLog().Warn(fmt.Sprintf("FTS optimize failed for %s: %s", tbl, errText(err)))
 			continue
 		}
 		optimized++
@@ -491,7 +490,7 @@ func (s *sessionSearch) RebuildFTS(ctx context.Context) (int, error) {
 	rebuilt := 0
 	err := FTSRebuildAdmission(s.host.dbPath(), nil, func(admitted bool) error {
 		if !admitted {
-			slog.Warn("Deferred in-place FTS rebuild: another process holds the rebuild authority for this state.db.")
+			pkgLog().Warn("Deferred in-place FTS rebuild: another process holds the rebuild authority for this state.db.")
 			return nil
 		}
 		lock := s.host.writerLock()
@@ -526,10 +525,10 @@ func (s *sessionSearch) RebuildFTS(ctx context.Context) (int, error) {
 				return rerr
 			}
 			if IsMalformedDBError(err) {
-				slog.Error(fmt.Sprintf("FTS rebuild failed with a corruption-class error for %s: %s; "+
+				pkgLog().Error(fmt.Sprintf("FTS rebuild failed with a corruption-class error for %s: %s; "+
 					"run 'icebath sessions repair' (or 'icebath doctor --fix') to rebuild the index offline", tbl, errText(err)))
 			} else {
-				slog.Warn(fmt.Sprintf("FTS rebuild failed for %s: %s", tbl, errText(err)))
+				pkgLog().Warn(fmt.Sprintf("FTS rebuild failed for %s: %s", tbl, errText(err)))
 			}
 		}
 		return nil

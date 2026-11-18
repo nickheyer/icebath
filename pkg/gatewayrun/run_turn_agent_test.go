@@ -67,7 +67,7 @@ func newCleanupCaptureAdapter() *cleanupCaptureAdapter {
 	return a
 }
 
-// Bare runner serving the adapter on a running gateway loop, the _make_runner of the hermes cases
+// Bare runner serving the adapter on a running gateway loop, the make runner of the tests
 func makeTurnRunner(t *testing.T, adapter gateway.PlatformAdapter) *GatewayRunner {
 	r := allocGatewayRunner()
 	r.adapters = pydict.New[gateway.Platform, gateway.PlatformAdapter]()
@@ -92,7 +92,7 @@ func installTurnFakes(t *testing.T, server *fakellm.Server, extraConfig string) 
 		t.Fatal(err)
 	}
 	t.Setenv("ICEBATH_TOOL_PROGRESS_MODE", "all")
-	if err := fakellm.WriteHome(home, server.BaseURL(), "", extraConfig, 0); err != nil {
+	if err := fakellm.WriteHome(home, server.BaseURL(), "", extraConfig); err != nil {
 		t.Fatal(err)
 	}
 }

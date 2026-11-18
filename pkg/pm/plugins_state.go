@@ -5,7 +5,6 @@ import (
 	"context"
 	"errors"
 	"io/fs"
-	"log/slog"
 	"os"
 	"path/filepath"
 	"sort"
@@ -205,7 +204,7 @@ func EnabledPluginsOrdered(ctx context.Context, opts EnabledPluginsOptions) ([]H
 			if !opts.SkipInvalidSecondary || i == 0 || !errors.As(err, &pyErr) || pyErr.Class != "ValueError" {
 				return nil, err
 			}
-			slog.Warn("Skipping broken secondary profile during dependency verification", "home", homeDir, "error", err.Error())
+			pkgLog().Warn("Skipping broken secondary profile during dependency verification", "home", homeDir, "error", err.Error())
 			continue
 		}
 		if config == nil {

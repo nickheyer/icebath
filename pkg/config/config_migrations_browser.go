@@ -186,7 +186,6 @@ var browserBackendReasons = map[string]string{
 	"local":         "browser_exec launches icebath's packaged Chromium itself (browser.cloud_provider: local)",
 	"browserbase":   "a cloud browser is chosen with browser.cloud_provider (`icebath tools` \u2192 Browser Automation)",
 	"firecrawl":     "a cloud browser is chosen with browser.cloud_provider (`icebath tools` \u2192 Browser Automation)",
-	"nous":          "a cloud browser is chosen with browser.cloud_provider (`icebath tools` \u2192 Browser Automation)",
 }
 
 // Config added note naming a removed browser.backend value and why it went

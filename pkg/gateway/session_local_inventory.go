@@ -3,7 +3,6 @@ package gateway
 import (
 	"context"
 	"encoding/json"
-	"log/slog"
 	"slices"
 	"strings"
 	"sync/atomic"
@@ -99,13 +98,13 @@ func inventoryProject(ctx context.Context, cwd string) any {
 	}
 	db, err := tools.OpenProjectsDB(ctx, &tools.Env{Home: home.Dir(ctx)})
 	if err != nil {
-		slog.Debug("failed to resolve project for cwd", "error", err)
+		pkgLog().Debug("failed to resolve project for cwd", "error", err)
 		return nil
 	}
 	defer func() { _ = db.Close() }()
 	project, err := db.ProjectForPath(cwd, false)
 	if err != nil {
-		slog.Debug("failed to resolve project for cwd", "error", err)
+		pkgLog().Debug("failed to resolve project for cwd", "error", err)
 		return nil
 	}
 	if project == nil {
@@ -301,7 +300,7 @@ func sessionInventory(ctx context.Context, a *SessionAuthority, policy *LocalSes
 			var loaded []map[string]any
 			var err error
 			if !suppressed(func() { enabled, loaded, err = policyTools(scoped, policy, cfg) }) || err != nil {
-				slog.Warn("session inventory: tool snapshot failed", "error", err)
+				pkgLog().Warn("session inventory: tool snapshot failed", "error", err)
 				enabled = nil
 			} else {
 				info.Set("tools", groupedTools(scoped, loaded))

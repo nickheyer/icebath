@@ -1,7 +1,5 @@
 package plugins
 
-import ()
-
 const postPlugin = `
 import asyncio, json
 

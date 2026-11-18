@@ -8,13 +8,7 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/observability"
 	"github.com/nickheyer/icebath/pkg/provider"
-)
-
-const (
-	consentEnabledKey = "telemetry.shared_metrics.enabled"
-	consentSendKey    = "telemetry.shared_metrics.send"
 )
 
 var setupSectionRegistry = &handlerRegistry{}
@@ -155,7 +149,7 @@ func setupSectionLoad(ctx context.Context, rid any, params map[string]any) (map[
 	return ok(rid, map[string]any{"config": values, "env": env, "secrets": secrets, "facts": facts, "values": probed}), nil
 }
 
-// Writes the answers of one setup section, consent keys through the consent writer, and returns what the files hold
+// Writes the answers of one setup section and returns what the files hold
 func setupSectionSave(ctx context.Context, rid any, params map[string]any) (map[string]any, error) {
 	h := home.Dir(ctx)
 	if config.IsManaged(ctx, h) {
@@ -163,7 +157,6 @@ func setupSectionSave(ctx context.Context, rid any, params map[string]any) (map[
 	}
 	sets, unsets, written := []config.KeyValue{}, []string{}, []string{}
 	envSets, envUnsets := [][2]string{}, []string{}
-	consent := map[string]bool{}
 	for _, write := range wireMaps(params["writes"]) {
 		key, kind := strOr(write["key"]), strOr(write["kind"])
 		if kind == "held" && strOr(write["target"]) == "env" && key != "" {
@@ -180,18 +173,12 @@ func setupSectionSave(ctx context.Context, rid any, params map[string]any) (map[
 		if key == "" || !fits {
 			return rpcErr(rid, 4001, "write "+key+" does not hold a "+kind+" value", nil), nil
 		}
-		answer, isBool := value.(bool)
 		text, isText := value.(string)
 		switch {
 		case strOr(write["target"]) == "env" && isText:
 			envSets = append(envSets, [2]string{key, text})
 		case strOr(write["target"]) == "env":
 			return rpcErr(rid, 4001, "env key "+key+" takes a text value", nil), nil
-		case (key == consentEnabledKey || key == consentSendKey) && isBool:
-			consent[key] = answer
-			written = append(written, key)
-		case key == consentEnabledKey || key == consentSendKey:
-			return rpcErr(rid, 4001, key+" takes a bool value", nil), nil
 		default:
 			sets = append(sets, config.KeyValue{Key: key, Value: value})
 			written = append(written, key)
@@ -204,19 +191,11 @@ func setupSectionSave(ctx context.Context, rid any, params map[string]any) (map[
 			unsets = append(unsets, strOr(removal["key"]))
 		}
 	}
-	if len(consent) == 1 {
-		return rpcErr(rid, 4001, consentEnabledKey+" and "+consentSendKey+" are saved together", nil), nil
-	}
 	locked, unlock := provider.LockConfigMutation(ctx)
 	defer unlock()
 	before, err := loadCfgRaw(locked)
 	if err != nil {
 		return nil, err
-	}
-	if len(consent) == 2 {
-		if err := observability.SaveConsent(locked, consent[consentEnabledKey], consent[consentSendKey], nil); err != nil {
-			return nil, err
-		}
 	}
 	fullSave := params["full_save"] == true
 	switch {

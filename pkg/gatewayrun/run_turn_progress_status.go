@@ -28,7 +28,7 @@ func (t *TurnRunner) sendStatusText(text string, metadata map[string]any, logMes
 func (t *TurnRunner) eventCallbackSync(eventType string, hookContext map[string]any) {
 	tc := t.ctx
 	if tc.loopForStep == nil || tc.hooksRef == nil {
-		runLog().Debug("event_callback hook error: loop is None")
+		pkgLog().Debug("event_callback hook error: loop is None")
 		return
 	}
 	hooks := tc.hooksRef
@@ -38,7 +38,7 @@ func (t *TurnRunner) eventCallbackSync(eventType string, hookContext map[string]
 			return nil, hooks.emit(ctx, eventType, hookContext)
 		})
 	}); err != nil {
-		runLog().Debug(fmt.Sprintf("event_callback hook error: %s", err))
+		pkgLog().Debug(fmt.Sprintf("event_callback hook error: %s", err))
 	}
 }
 
@@ -54,7 +54,7 @@ func (t *TurnRunner) localNoticeCallbackSync(notice provider.AgentNotice) {
 		return nil
 	}, string(tc.source.Platform), config.IsDiagnosticNotice(notice.Level, notice.Key), tc.userConfig)
 	if err != nil {
-		runLog().Debug(fmt.Sprintf("local notice render failed: %s", err))
+		pkgLog().Debug(fmt.Sprintf("local notice render failed: %s", err))
 	}
 }
 
@@ -81,7 +81,7 @@ func (t *TurnRunner) statusCallbackSync(eventType string, message any) {
 		if pyrepr.Truthy(message) {
 			text = pyrepr.Str(message)
 		}
-		runLog().Debug(fmt.Sprintf("status_callback suppressed for %s/%s: %s", platform, eventType,
+		pkgLog().Debug(fmt.Sprintf("status_callback suppressed for %s/%s: %s", platform, eventType,
 			pystr.Slice(redactGatewayUserFacingSecrets(t.turnCtx, text), 0, 160)))
 		return
 	}
@@ -101,6 +101,6 @@ func (t *TurnRunner) statusCallbackSync(eventType string, message any) {
 		return nil
 	}
 	if _, err := config.RenderNotification(t.turnCtx, present, string(tc.source.Platform), config.IsWarningStatus(eventType, message), tc.userConfig); err != nil {
-		runLog().Debug(fmt.Sprintf("status render failed: %s", err))
+		pkgLog().Debug(fmt.Sprintf("status render failed: %s", err))
 	}
 }

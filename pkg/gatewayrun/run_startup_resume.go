@@ -10,23 +10,10 @@ import (
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/internal/pydatetime"
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
-	"github.com/nickheyer/icebath/pkg/observability"
 )
 
 // Resume reasons the boot auto continue picks up
 var autoResumeReasons = map[string]bool{"restart_timeout": true, "shutdown_timeout": true, "restart_interrupted": true}
-
-// Profile home resolver binding the runner to the context its lookups run in
-type runnerHomeResolver struct {
-	ctx context.Context
-	r   *GatewayRunner
-}
-
-// Profile home a source's turn runs under
-func (h runnerHomeResolver) ResolveProfileHomeForSource(source any) (string, error) {
-	s, _ := source.(*gateway.SessionSource)
-	return h.r.ResolveProfileHomeForSource(h.ctx, s)
-}
 
 // Epoch seconds of a stored gateway timestamp, nil when missing or unparseable
 func coerceGatewayTimestamp(value any) *float64 {
@@ -97,14 +84,14 @@ func (r *GatewayRunner) resumePendingCandidates(ctx context.Context, platform *g
 		})
 		return nil
 	}(); err != nil {
-		runLog().Warn(fmt.Sprintf("Failed to enumerate resume-pending sessions: %s", err))
+		pkgLog().Warn(fmt.Sprintf("Failed to enumerate resume-pending sessions: %s", err))
 		return nil
 	}
 	if len(candidates) > 0 {
 		maxRestarts, window, maxGap := r.restartLoopGuardConfig(ctx)
 		tripped, err := gateway.RestartLoopCheckAndRecord(ctx, maxRestarts, window, nil, maxGap)
 		if err != nil {
-			runLog().Debug(fmt.Sprintf("Restart-loop guard check skipped: %s", err))
+			pkgLog().Debug(fmt.Sprintf("Restart-loop guard check skipped: %s", err))
 		} else if tripped {
 			return nil
 		}
@@ -116,13 +103,13 @@ func (r *GatewayRunner) resumePendingCandidates(ctx context.Context, platform *g
 func (r *GatewayRunner) resumeOwnerAuthorized(ctx context.Context, sessionKey string, source *gateway.SessionSource) bool {
 	authorized, err := r.isUserAuthorizedForSource(ctx, source, true)
 	if err != nil {
-		runLog().Warn(fmt.Sprintf("Skipping auto-resume for %s: authorization check failed: %s", sessionKey, err))
+		pkgLog().Warn(fmt.Sprintf("Skipping auto-resume for %s: authorization check failed: %s", sessionKey, err))
 		return false
 	}
 	if authorized {
 		return true
 	}
-	runLog().Warn(fmt.Sprintf("Skipping auto-resume for %s: session owner is no longer authorized under the current allowlist", sessionKey))
+	pkgLog().Warn(fmt.Sprintf("Skipping auto-resume for %s: session owner is no longer authorized under the current allowlist", sessionKey))
 	return false
 }
 
@@ -164,7 +151,7 @@ func (r *GatewayRunner) scheduleResumePendingSessions(ctx context.Context, platf
 			return scheduled, err
 		}
 		if adapter == nil {
-			runLog().Debug(fmt.Sprintf("Skipping auto-resume for %s: adapter not ready for %s", entry.SessionKey, source.Platform))
+			pkgLog().Debug(fmt.Sprintf("Skipping auto-resume for %s: adapter not ready for %s", entry.SessionKey, source.Platform))
 			continue
 		}
 		if !r.resumeOwnerAuthorized(ctx, entry.SessionKey, source) {
@@ -174,7 +161,6 @@ func (r *GatewayRunner) scheduleResumePendingSessions(ctx context.Context, platf
 			s.turn.agent = agentPendingSentinel
 			s.turn.startedTS = float64(time.Now().UnixNano()) / 1e9
 		})
-		observability.NoteRunningChatOwner(runnerHomeResolver{ctx, r}, entry.SessionKey, source)
 		r.persistActiveAgents(ctx)
 		event := gateway.NewMessageEvent("")
 		event.Source, event.Internal = source, true
@@ -190,7 +176,7 @@ func (r *GatewayRunner) scheduleResumePendingSessions(ctx context.Context, platf
 		scheduled++
 	}
 	if scheduled > 0 {
-		runLog().Info(fmt.Sprintf("Scheduled auto-resume for %d restart-interrupted session(s)", scheduled))
+		pkgLog().Info(fmt.Sprintf("Scheduled auto-resume for %d restart-interrupted session(s)", scheduled))
 	}
 	return scheduled, nil
 }

@@ -32,12 +32,12 @@ func retireProfileAuthority(ctx context.Context, a *gateway.SessionAuthority, ti
 		if !errors.As(err, &timeoutErr) || timeoutErr.Kind != "TimeoutError" {
 			return false, err
 		}
-		runtimeLog().Error(fmt.Sprintf("Profile %s workers did not stop; ownership retained", a.ProfileID))
+		pkgLog().Error(fmt.Sprintf("Profile %s workers did not stop; ownership retained", a.ProfileID))
 		workersStopped = false
 	}
 	roomsStopped := rooms == nil || <-rooms
 	if !roomsStopped {
-		runtimeLog().Error(fmt.Sprintf("Profile %s hosted rooms did not stop; ownership retained", a.ProfileID))
+		pkgLog().Error(fmt.Sprintf("Profile %s hosted rooms did not stop; ownership retained", a.ProfileID))
 	}
 	if !(workersStopped && roomsStopped) {
 		return false, nil
@@ -188,7 +188,7 @@ func recoverProfileBotMailbox(ctx context.Context, r *GatewayRunner, authority *
 	if !served {
 		return err
 	}
-	runtimeLog().Error(fmt.Sprintf("[MULTIPLEX] Profile '%s' not served: startup recovery failed: %s", name, err), "exc_info", err)
+	pkgLog().Error(fmt.Sprintf("[MULTIPLEX] Profile '%s' not served: startup recovery failed: %s", name, err), "exc_info", err)
 	resolved, resolveErr := pypath.Resolve(authority.ProfileID)
 	if resolveErr != nil {
 		return resolveErr
@@ -215,7 +215,7 @@ func recoverProfileBotMailbox(ctx context.Context, r *GatewayRunner, authority *
 	return nil
 }
 
-// Listener start of the runtime API, the real function swapped only where a hermes case installs a fake
+// Listener start of the runtime API, the real function swapped only where a test installs a fake
 var startGatewayAPIFn = startGatewayAPI
 
 // Starts the loopback session listener and recovers the Bot Chat mailbox of every served profile

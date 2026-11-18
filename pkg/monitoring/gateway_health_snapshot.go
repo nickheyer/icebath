@@ -3,7 +3,6 @@ package monitoring
 import (
 	"context"
 	"fmt"
-	"log/slog"
 	"regexp"
 	"strings"
 
@@ -28,10 +27,6 @@ var (
 	GatewayDeriveBusy      func(gatewayRunning bool, gatewayState, activeAgents any) (bool, error)
 	GatewayDeriveDrainable func(gatewayRunning bool, gatewayState any) bool
 )
-
-func healthLog() *slog.Logger {
-	return slog.Default().With("logger", "agent.monitoring.gateway_health")
-}
 
 // Bounded source controlled gateway logger name for the OTLP scope, nil for any other name
 func SourceLoggerForExport(name any) *string {
@@ -122,9 +117,9 @@ func BuildGatewayHealthSnapshot(runtime *pyjson.Object, gatewayRunning bool, pro
 		mode = "unknown"
 	}
 	base := map[string]string{
-		"service.instance.id":     safeInstanceID(installID),
-		"service.version":         safeMetricValue(version, 64),
-		"hermes.supervision_mode": mode,
+		"service.instance.id":      safeInstanceID(installID),
+		"service.version":          safeMetricValue(version, 64),
+		"icebath.supervision_mode": mode,
 	}
 	metric := func(name string, value any, extra ...string) GatewayMetric {
 		attrs := make(map[string]string, len(base)+len(extra)/2)
@@ -143,12 +138,12 @@ func BuildGatewayHealthSnapshot(runtime *pyjson.Object, gatewayRunning bool, pro
 		return 0
 	}
 	metrics := []GatewayMetric{
-		metric("hermes.gateway.up", flag(gatewayRunning)),
-		metric("hermes.gateway.active_agents", activeAgents),
-		metric("hermes.gateway.busy", flag(busy)),
-		metric("hermes.gateway.drainable", flag(drainable)),
-		metric("hermes.gateway.restart_requested", flag(pyrepr.Truthy(runtime.GetOr("restart_requested", nil)))),
-		metric("hermes.gateway.state", 1, "hermes.gateway.state", gatewayState),
+		metric("icebath.gateway.up", flag(gatewayRunning)),
+		metric("icebath.gateway.active_agents", activeAgents),
+		metric("icebath.gateway.busy", flag(busy)),
+		metric("icebath.gateway.drainable", flag(drainable)),
+		metric("icebath.gateway.restart_requested", flag(pyrepr.Truthy(runtime.GetOr("restart_requested", nil)))),
+		metric("icebath.gateway.state", 1, "icebath.gateway.state", gatewayState),
 	}
 	fatalCount := 0
 	var events []Event
@@ -159,8 +154,8 @@ func BuildGatewayHealthSnapshot(runtime *pyjson.Object, gatewayRunning bool, pro
 		degraded := fatalPlatformStates[state]
 		fatalCount += flag(degraded)
 		metrics = append(metrics,
-			metric("hermes.platform.up", flag(runningStateSet[state]), "hermes.platform", platform, "hermes.platform.state", state),
-			metric("hermes.platform.degraded", flag(degraded), "hermes.platform", platform, "hermes.platform.state", state, "hermes.error_code", errorCode))
+			metric("icebath.platform.up", flag(runningStateSet[state]), "icebath.platform", platform, "icebath.platform.state", state),
+			metric("icebath.platform.degraded", flag(degraded), "icebath.platform", platform, "icebath.platform.state", state, "icebath.error_code", errorCode))
 		if degraded {
 			ev := NewGatewayDiagnosticEvent("platform.fatal", "platform."+platform)
 			ev.Platform, ev.ErrorCode, ev.ErrorClass = new(platform), new(errorCode), errorCode
@@ -200,7 +195,7 @@ func (h *GatewayDiagnosticLogHandler) Close() error { return nil }
 func (h *GatewayDiagnosticLogHandler) Handle(_ context.Context, rec *logging.Record) bool {
 	defer func() {
 		if r := recover(); r != nil {
-			healthLog().Debug(fmt.Sprintf("gateway diagnostic emit failed: %v", r))
+			pkgLog().Debug(fmt.Sprintf("gateway diagnostic emit failed: %v", r))
 		}
 	}()
 	if rec.Levelno < logging.LevelWarning || !(rec.Name == "gateway" || strings.HasPrefix(rec.Name, "gateway.")) {

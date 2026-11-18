@@ -10,7 +10,7 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/app"
 	"github.com/nickheyer/icebath/pkg/state"
-	"github.com/nickheyer/icebath/pkg/tuigateway"
+	"github.com/nickheyer/icebath/pkg/tuihost"
 	"github.com/nickheyer/icebath/pkg/tuiserver"
 )
 
@@ -47,8 +47,8 @@ func statusRecord(t *testing.T, sid, profileHome string) {
 	if profileHome != "" {
 		fields["profile_home"] = profileHome
 	}
-	tuigateway.SetSessionRecord(sid, tuigateway.NewSession(fields))
-	t.Cleanup(func() { tuigateway.SetSessionRecord(sid, nil) })
+	tuihost.SetSessionRecord(sid, tuihost.NewSession(fields))
+	t.Cleanup(func() { tuihost.SetSessionRecord(sid, nil) })
 }
 
 func statusOutput(t *testing.T, sid string) string {

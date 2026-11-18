@@ -42,7 +42,7 @@ func (f hookAsker) Ask(ctx context.Context, questions []Question) (FormResult, e
 	return f(ctx, questions)
 }
 
-// Captures the two human input hooks the way the hermes fixture patches invoke_hook
+// Captures the two human input hooks the way the test fixture patches invoke_hook
 func captureHumanInputHooks(t *testing.T) *humanHookCapture {
 	t.Helper()
 	capture := &humanHookCapture{}

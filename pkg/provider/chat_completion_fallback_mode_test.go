@@ -14,16 +14,14 @@ func (a *fakeFallbackModeAgent) ProviderModelRequiresResponsesAPI(model, provide
 	return a.responses
 }
 
-func TestFallbackAPIModeResolvedWalksProviderHostAndModelInHermesOrder(t *testing.T) {
-	ctx := auxMainTestHome(t, "nous:\n  anthropic_wire: native\n")
+func TestFallbackAPIModeResolvedWalksProviderHostAndModelInOrder(t *testing.T) {
+	ctx := auxMainTestHome(t, "")
 	cases := []struct {
 		name, provider, model, base, want string
 		agent                             fakeFallbackModeAgent
 	}{
 		{"codex provider", "openai-codex", "gpt-5.6", "https://chatgpt.com/backend-api/codex", "codex_responses", fakeFallbackModeAgent{}},
 		{"opencode family by host", "custom", "claude-sonnet-4-6", "https://opencode.ai/zen/v1", string(OpenCodeModelMode("opencode-zen", "claude-sonnet-4-6")), fakeFallbackModeAgent{}},
-		{"nous anthropic slug on the native wire", "nous", "anthropic/claude-opus-4.6", "https://inference-api.nousresearch.com/v1", "anthropic_messages", fakeFallbackModeAgent{}},
-		{"nous other slug", "nous-portal", "hermes-4-405b", "", "chat_completions", fakeFallbackModeAgent{responses: true}},
 		{"anthropic wire host", "cron-anthropic", "claude-opus-4-6", "https://proxy.example.com/anthropic", "anthropic_messages", fakeFallbackModeAgent{direct: true}},
 		{"azure stays on chat", "azure", "gpt-5.6", "https://x.openai.azure.com/openai/v1", "chat_completions", fakeFallbackModeAgent{azure: true, direct: true}},
 		{"direct openai", "openai", "gpt-4.1", "https://api.openai.com/v1", "codex_responses", fakeFallbackModeAgent{direct: true}},
@@ -46,9 +44,6 @@ func TestFallbackAPIModeResolvedWalksProviderHostAndModelInHermesOrder(t *testin
 	}
 	if _, err := FallbackAPIModeResolved(ctx, &fakeFallbackModeAgent{}, "custom", "m", "http://[::1"); err == nil {
 		t.Fatal("a base url urlparse rejects must raise")
-	}
-	if got, err := FallbackAPIModeResolved(auxMainTestHome(t, ""), &fakeFallbackModeAgent{}, "nous", "anthropic/claude-opus-4.6", ""); err != nil || got != "chat_completions" {
-		t.Fatalf("default nous wire got %q %v", got, err)
 	}
 }
 

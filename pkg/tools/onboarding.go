@@ -3,7 +3,6 @@ package tools
 import (
 	"context"
 	"fmt"
-	"log/slog"
 	"os"
 	"path/filepath"
 
@@ -177,7 +176,7 @@ func IsSeen(cfg any, flag string) bool {
 func MarkSeen(ctx context.Context, configPath, flag string) bool {
 	cfg, err := config.ReadUserConfigRaw(ctx, configPath)
 	if err != nil {
-		slog.Debug(fmt.Sprintf("onboarding: failed to mark flag %s: %s", flag, err))
+		pkgLog().Debug(fmt.Sprintf("onboarding: failed to mark flag %s: %s", flag, err))
 		return false
 	}
 	section, ok := cfg["onboarding"].(map[string]any)
@@ -193,7 +192,7 @@ func MarkSeen(ctx context.Context, configPath, flag string) bool {
 	if seen[flag] != true {
 		seen[flag] = true
 		if err := config.AtomicConfigWrite(ctx, filepath.Dir(configPath), configPath, cfg, ""); err != nil {
-			slog.Debug(fmt.Sprintf("onboarding: failed to mark flag %s: %s", flag, err))
+			pkgLog().Debug(fmt.Sprintf("onboarding: failed to mark flag %s: %s", flag, err))
 			return false
 		}
 	}

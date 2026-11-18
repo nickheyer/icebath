@@ -3,6 +3,8 @@ package provider
 import (
 	"reflect"
 	"testing"
+
+	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 )
 
 func TestAnthropicAuxiliaryReasoningTranslationReasoningConfigReachesNativeAnthropicWireKwargs(t *testing.T) {
@@ -77,7 +79,7 @@ func TestAuxiliaryProviderProfileReasoningKimiReasoningUsesTopLevelEffort(t *tes
 	if err != nil || kwargs["reasoning_effort"] != "high" {
 		t.Fatalf("kwargs %v err %v", kwargs, err)
 	}
-	body, _ := kwargs["extra_body"].(map[string]any)
+	body, _ := pyjson.Plain(kwargs["extra_body"]).(map[string]any)
 	if _, has := body["reasoning"]; has {
 		t.Fatalf("extra_body reasoning %v", body)
 	}
@@ -98,7 +100,7 @@ func TestAuxiliaryProviderProfileReasoningAsyncCallLlmPreservesProfileReasoningK
 		t.Fatalf("result %v err %v", result, err)
 	}
 	final := client.sent[len(client.sent)-1]
-	body, _ := final["extra_body"].(map[string]any)
+	body, _ := pyjson.Plain(final["extra_body"]).(map[string]any)
 	if _, has := body["reasoning"]; final["reasoning_effort"] != "high" || has {
 		t.Fatalf("final kwargs %v", final)
 	}

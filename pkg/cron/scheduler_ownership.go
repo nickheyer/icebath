@@ -31,7 +31,7 @@ var gatewayProbes = struct {
 	runningPid           func(pidPath string, cleanupStale bool) (int, bool, error)
 	readRuntimeStatus    func(path string) *pyjson.Object
 	runtimeStatusIsStale func(record *pyjson.Object, ttl int) bool
-	sameHermesHome       func(left, right string) (bool, error)
+	sameIcebathHome      func(left, right string) (bool, error)
 	profileLabelForHome  func(h string) string
 	pidExists            func(pid int) bool
 	hostname             func() (string, error)
@@ -41,7 +41,7 @@ var gatewayProbes = struct {
 	runningPid:           gateway.GetRunningPid,
 	readRuntimeStatus:    gateway.ReadRuntimeStatus,
 	runtimeStatusIsStale: gateway.RuntimeStatusIsStale,
-	sameHermesHome:       gateway.SameHermesHome,
+	sameIcebathHome:      gateway.SameIcebathHome,
 	profileLabelForHome:  gateway.ProfileLabelForHome,
 	pidExists:            proc.Exists,
 	hostname:             os.Hostname,
@@ -145,12 +145,12 @@ func recordServesProfile(record *pyjson.Object, h string) bool {
 	}
 	target := ownershipHome(h)
 	same, err := probeResult(func() (bool, error) {
-		recordHome, _ := record.Get("hermes_home")
+		recordHome, _ := home.RecordValue(record.Get, home.RecordKey)
 		text, ok := recordHome.(string)
 		if !ok || pystr.Strip(text) == "" {
 			text = home.Process()
 		}
-		return gatewayProbes.sameHermesHome(text, target)
+		return gatewayProbes.sameIcebathHome(text, target)
 	})
 	if err != nil {
 		return false

@@ -166,7 +166,7 @@ func (r *GatewayRunner) handleCompressCommandInner(ctx context.Context, event *g
 	}
 	reply, err := r.runManualCompression(ctx, source, entry, history, request)
 	if err != nil {
-		runLog().Warn(fmt.Sprintf("Manual compress failed: %s", pyrepr.ExceptionMessage(err)))
+		pkgLog().Warn(fmt.Sprintf("Manual compress failed: %s", pyrepr.ExceptionMessage(err)))
 		return i18n.T(ctx, "gateway.compress.failed", "", map[string]any{"error": pyrepr.ExceptionMessage(err)}), nil
 	}
 	return reply, nil
@@ -247,7 +247,7 @@ func (r *GatewayRunner) runManualCompression(ctx context.Context, source *gatewa
 		return reply, nil
 	}
 	if summary == nil {
-		return "", errors.New("TypeError: 'NoneType' object is not subscriptable")
+		return "", errors.New("manual compression returned no summary")
 	}
 	return strings.Join(manualCompressionReplyLines(ctx, summary, compressor, request.FocusTopic), "\n"), nil
 }
@@ -259,7 +259,7 @@ func (r *GatewayRunner) buildManualCompressionAgent(ctx context.Context, session
 	if asyncDB != nil {
 		row, err := state.AsyncCall(ctx, asyncDB, func(d *state.SessionDB) (*pyjson.Object, error) { return d.GetSession(ctx, sessionID) })
 		if err != nil {
-			runLog().Warn(fmt.Sprintf("Manual compression could not restore the system prompt for session %s: %s. "+
+			pkgLog().Warn(fmt.Sprintf("Manual compression could not restore the system prompt for session %s: %s. "+
 				"Preserving an empty prompt so the live turn rebuilds it with its configured providers.", sessionID, pyrepr.ExceptionMessage(err)),
 				"exc_info", err)
 		} else {
@@ -304,7 +304,7 @@ func (r *GatewayRunner) persistManualCompression(ctx context.Context, tmpAgent *
 		}
 		r.syncTelegramTopicBinding(ctx, source, entry, "compress-command")
 	} else if !tmpAgent.LastCompactionInPlace() {
-		runLog().Warn("Manual /compress: session rotation did not occur (session_id unchanged) and in-place " +
+		pkgLog().Warn("Manual /compress: session rotation did not occur (session_id unchanged) and in-place " +
 			"mode is off — preserving original transcript instead of overwriting it (#44794).")
 	}
 	zero := int64(0)

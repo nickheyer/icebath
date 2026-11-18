@@ -358,7 +358,7 @@ func TestFreshAutostashIsNotFlagged(t *testing.T) {
 	}
 }
 
-func TestNonHermesStashIsIgnored(t *testing.T) {
+func TestNonIcebathStashIsIgnored(t *testing.T) {
 	repo := usRepoWithLocalChange(t, "user's own WIP\n")
 	ugGit(t, repo, "stash", "push", "-m", "my own stash from 20200101-000000")
 	var out bytes.Buffer

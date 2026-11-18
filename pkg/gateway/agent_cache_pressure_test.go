@@ -87,12 +87,12 @@ func TestAutoIsDisabledWhenNoLimitIsDiscoverable(t *testing.T) {
 // Routes the own cgroup and its high limit and stat files to fixed text, a nil stat raising
 func installPressureCgroup(t *testing.T, statText *string) {
 	savedOwn, savedRead, savedSnap := cgroupOwnPath, acpReadText, acpMemorySnapshot
-	cgroupOwnPath = func() (string, error) { return "/hermes.service", nil }
+	cgroupOwnPath = func() (string, error) { return "/icebath-gateway.service", nil }
 	acpReadText = func(path string) (string, error) {
 		switch path {
-		case "/sys/fs/cgroup/hermes.service/memory.high":
+		case "/sys/fs/cgroup/icebath-gateway.service/memory.high":
 			return "6979321856\n", nil
-		case "/sys/fs/cgroup/hermes.service/memory.stat":
+		case "/sys/fs/cgroup/icebath-gateway.service/memory.stat":
 			if statText == nil {
 				return "", errors.New("restricted /sys mount")
 			}

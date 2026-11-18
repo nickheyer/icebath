@@ -5,7 +5,6 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"fmt"
-	"log/slog"
 	"math"
 	"os"
 	"strconv"
@@ -367,7 +366,7 @@ func (s *SessionStore) PruneOldEntries(ctx context.Context, maxAgeDays int) (int
 	}
 	s.mu.Unlock()
 	if len(removed) > 0 {
-		slog.Info(fmt.Sprintf("SessionStore pruned %d entries older than %d days", len(removed), maxAgeDays))
+		pkgLog().Info(fmt.Sprintf("SessionStore pruned %d entries older than %d days", len(removed), maxAgeDays))
 	}
 	return len(removed), err
 }

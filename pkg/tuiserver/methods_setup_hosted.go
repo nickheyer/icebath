@@ -11,7 +11,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/setupflow"
-	"github.com/nickheyer/icebath/pkg/tuigateway"
+	"github.com/nickheyer/icebath/pkg/tuihost"
 )
 
 var hostedFlowRegistry = &handlerRegistry{}
@@ -37,7 +37,7 @@ type flowJob struct {
 	id       string
 	lines    *setupJob
 	cancel   context.CancelFunc
-	owner    tuigateway.Transport
+	owner    tuihost.Transport
 	mu       sync.Mutex
 	seq      int
 	question *flowQuestion
@@ -174,7 +174,7 @@ func hostedFlowStart(ctx context.Context, rid any, params map[string]any) (map[s
 		return rpcErr(rid, 4001, "setup flow "+flow+" takes no entry", nil), nil
 	}
 	jobCtx, cancel := context.WithCancel(context.WithoutCancel(ctx))
-	job := &flowJob{lines: &setupJob{}, cancel: cancel, owner: tuigateway.CurrentTransport(ctx)}
+	job := &flowJob{lines: &setupJob{}, cancel: cancel, owner: tuihost.CurrentTransport(ctx)}
 	flowJobsMu.Lock()
 	if flowActive != nil {
 		flowActive.cancel()
@@ -209,7 +209,7 @@ func hostedFlowPoll(ctx context.Context, rid any, params map[string]any) (map[st
 	}
 	deadline := time.Now().Add(2 * time.Second)
 	for {
-		lines, done, outcome := job.lines.since(after.(int))
+		lines, _, done, outcome := job.lines.since(after.(int))
 		var question any
 		if pending := job.pending(); pending != nil {
 			question = pending

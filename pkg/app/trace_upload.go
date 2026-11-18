@@ -14,7 +14,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/internal/pysubprocess"
-	"github.com/nickheyer/icebath/pkg/logging"
 	"github.com/nickheyer/icebath/pkg/memory"
 	"github.com/nickheyer/icebath/pkg/state"
 )
@@ -35,7 +34,6 @@ const (
 )
 
 var (
-	traceLog       = logging.GetLogger("agent.trace_upload")
 	traceTokenVars = []string{"HF_TOKEN", "HUGGINGFACE_HUB_TOKEN", "HUGGING_FACE_HUB_TOKEN", "HUGGINGFACE_TOKEN"}
 )
 
@@ -56,7 +54,7 @@ func traceRedact(text any, enabled bool) (out any, err error) {
 	}
 	defer func() {
 		if p := recover(); p != nil {
-			traceLog.Warning(fmt.Sprintf("Trace upload redaction failed; refusing upload\n%v", p))
+			pkgLog().Warn(fmt.Sprintf("Trace upload redaction failed; refusing upload\n%v", p))
 			out, err = nil, &traceRedactionError{traceRedactionBlocked}
 		}
 	}()
@@ -211,7 +209,7 @@ func traceToolCallsToBlocks(toolCalls any, redact bool) ([]any, error) {
 				return nil, err
 			}
 			if parsed, err = pyjson.Loads(redacted.(string)); err != nil {
-				traceLog.Warning("Trace upload redacted tool arguments are not valid JSON; refusing upload")
+				pkgLog().Warn("Trace upload redacted tool arguments are not valid JSON; refusing upload")
 				return nil, &traceRedactionError{traceRedactionBlocked}
 			}
 		}
@@ -371,7 +369,7 @@ func traceResolveHFToken() string {
 func traceDoUpload(ctx context.Context, jsonl, token, sessionID, datasetName string, private bool) string {
 	who, err := hfWhoami(ctx, token)
 	if err != nil {
-		traceLog.Warning(fmt.Sprintf("HF whoami failed: %s", pyrepr.ExceptionMessage(err)))
+		pkgLog().Warn(fmt.Sprintf("HF whoami failed: %s", pyrepr.ExceptionMessage(err)))
 		return "Your Hugging Face token was rejected (whoami failed). Make sure it has WRITE access and isn't expired."
 	}
 	var user any
@@ -383,12 +381,12 @@ func traceDoUpload(ctx context.Context, jsonl, token, sessionID, datasetName str
 	}
 	repoID := pyrepr.Str(user) + "/" + datasetName
 	if err := hfCreateDatasetRepo(ctx, token, repoID, private); err != nil {
-		traceLog.Warning(fmt.Sprintf("HF create_repo failed for %s: %s", repoID, pyrepr.ExceptionMessage(err)))
+		pkgLog().Warn(fmt.Sprintf("HF create_repo failed for %s: %s", repoID, pyrepr.ExceptionMessage(err)))
 		return fmt.Sprintf("Could not create/access dataset %s: %s", repoID, pyrepr.ExceptionMessage(err))
 	}
 	pathInRepo := "sessions/" + sessionID + ".jsonl"
 	if err := hfUploadFile(ctx, token, repoID, pathInRepo, []byte(jsonl), "add session trace "+sessionID); err != nil {
-		traceLog.Warning(fmt.Sprintf("HF upload_file failed for %s: %s", repoID, pyrepr.ExceptionMessage(err)))
+		pkgLog().Warn(fmt.Sprintf("HF upload_file failed for %s: %s", repoID, pyrepr.ExceptionMessage(err)))
 		return "Upload to Hugging Face failed: " + pyrepr.ExceptionMessage(err)
 	}
 	return fmt.Sprintf("Uploaded -> https://huggingface.co/datasets/%s/blob/main/%s\n"+
@@ -431,7 +429,7 @@ func uploadSessionTrace(ctx context.Context, sessionID, cwd string, redact, priv
 	return uploadSessionTraceWith(ctx, sessionID, "", cwd, redact, private, traceDefaultDataset, "", "")
 }
 
-// Trace upload with every keyword of the hermes entry point
+// Trace upload with every keyword of the entry point
 func uploadSessionTraceWith(ctx context.Context, sessionID, model, cwd string, redact, private bool, datasetName, dbPath, token string) (string, error) {
 	if sessionID == "" {
 		return "No active session to upload.", nil
@@ -444,7 +442,7 @@ func uploadSessionTraceWith(ctx context.Context, sessionID, model, cwd string, r
 	}
 	messages, meta, err := traceLoadSessionMessages(ctx, sessionID, dbPath)
 	if err != nil {
-		traceLog.Warning(fmt.Sprintf("Failed to load session %s for trace upload: %s", sessionID, pyrepr.ExceptionMessage(err)))
+		pkgLog().Warn(fmt.Sprintf("Failed to load session %s for trace upload: %s", sessionID, pyrepr.ExceptionMessage(err)))
 		return fmt.Sprintf("Could not load session %s: %s", sessionID, pyrepr.ExceptionMessage(err)), nil
 	}
 	if len(messages) == 0 {

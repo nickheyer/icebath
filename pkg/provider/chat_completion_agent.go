@@ -3,16 +3,12 @@ package provider
 import (
 	"context"
 	"fmt"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"log/slog"
 	"math"
 	"strings"
 	"sync"
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/internal/pyhttpx"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
 
@@ -37,7 +33,6 @@ type ChatCompletionAgent interface {
 	RunCodexStream(ctx context.Context, apiKwargs map[string]any, client any, onFirstDelta func()) (any, error)
 	CodexOnFirstDelta() func()
 	AnthropicMessagesCreate(ctx context.Context, apiKwargs map[string]any, client any) (any, error)
-	ChatCompletionCapturingHeaders(ctx context.Context, client any, apiKwargs map[string]any) (any, error)
 	CodexSilentHangHint(model any) (string, error)
 	ReasoningConfig() map[string]any
 	EphemeralReasoningOff() bool
@@ -101,7 +96,7 @@ type ChatCompletionAgent interface {
 	CurrentAPIRequestID() string
 	IsSubagent() bool
 	FallbackIndex() int
-	CreditsCapture() *CreditsCapture
+	HeaderCapture() *HeaderCapture
 	CurrentStreamedAssistantText() string
 	RouteSuppressedStreamText(text string)
 	ResetStreamDeliveryTracking()
@@ -163,7 +158,7 @@ func DispatchNonstreamingAPIRequest(ctx context.Context, agent ChatCompletionAge
 		}
 		creator, ok := client.(chatCompletionCreator)
 		if !ok {
-			return nil, fmt.Errorf("AttributeError: '%T' object has no attribute 'chat'", client)
+			return nil, fmt.Errorf("the API client (%T) has no chat completions API", client)
 		}
 		return creator.CreateChatCompletion(ctx, apiKwargs)
 	}
@@ -172,7 +167,11 @@ func DispatchNonstreamingAPIRequest(ctx context.Context, agent ChatCompletionAge
 		return nil, err
 	}
 	apiKwargs = BypassChatSDKRequestTransform(apiKwargs, client)
-	return agent.ChatCompletionCapturingHeaders(ctx, client, apiKwargs)
+	creator, ok := client.(chatCompletionCreator)
+	if !ok {
+		return nil, fmt.Errorf("the API client (%T) has no chat completions API", client)
+	}
+	return creator.CreateChatCompletion(ctx, apiKwargs)
 }
 
 // Non streaming Converse call of agent kwargs with the routing keys popped
@@ -235,7 +234,7 @@ type directInlineRequest struct {
 // Aborts the registered client through the agent and logs a failed abort at debug
 func (r *directInlineRequest) abortClient(client any, reason, logMsg string) {
 	if err := r.agent.AbortRequestOpenAIClient(client, reason); err != nil {
-		nonStreamLog.Debug(logMsg, "exc_info", err)
+		pkgLog().Debug(logMsg, "exc_info", err)
 	}
 }
 
@@ -331,7 +330,7 @@ func agentRequestSurface(agent ChatCompletionAgent) func(StreamEvent) {
 	}
 }
 
-// Stale watchdog timer seam the inline call tests swap the way hermes tests patch threading.Timer
+// Stale watchdog timer seam the inline call tests swap
 var directWatchdogArmFn = time.AfterFunc
 
 // Replaces the inline stale watchdog timer for a test in another package, the returned function restoring it
@@ -509,7 +508,7 @@ func ReasoningConfigForWire(ctx context.Context, agent ChatCompletionAgent) map[
 	return cfg
 }
 
-// Model capability seam the unset effort tests swap the way hermes tests patch get_model_capabilities
+// Model capability seam the unset effort tests swap
 var modelsDevCapabilitiesFn = ModelsDevCapabilities
 
 // Profile default reasoning for an unset effort on chat completions, nil when the model or local server cannot reason
@@ -553,7 +552,7 @@ func RebindFallbackCredentialPool(agent ChatCompletionAgent, fbProvider, fbModel
 	if existing := agent.CredentialPool(); existing != nil {
 		poolProvider := strings.ToLower(strings.TrimSpace(existing.Provider()))
 		if poolProvider != "" && poolProvider != fbProvider {
-			nonStreamLog.Info(fmt.Sprintf("Fallback to %s/%s: clearing primary credential pool (pool_provider=%s) to prevent cross-provider contamination", fbProvider, fbModel, poolProvider))
+			pkgLog().Info(fmt.Sprintf("Fallback to %s/%s: clearing primary credential pool (pool_provider=%s) to prevent cross-provider contamination", fbProvider, fbModel, poolProvider))
 			agent.ClearCredentialPool()
 		}
 	}
@@ -563,12 +562,12 @@ func RebindFallbackCredentialPool(agent ChatCompletionAgent, fbProvider, fbModel
 	func() {
 		defer func() {
 			if rec := recover(); rec != nil {
-				nonStreamLog.Debug(fmt.Sprintf("Fallback to %s/%s: could not attach credential pool: %v", fbProvider, fbModel, rec))
+				pkgLog().Debug(fmt.Sprintf("Fallback to %s/%s: could not attach credential pool: %v", fbProvider, fbModel, rec))
 			}
 		}()
 		if pool := LoadPool(agent.CredentialPoolEnv(), fbProvider); pool != nil && pool.HasCredentials() {
 			agent.SetCredentialPool(pool)
-			nonStreamLog.Info(fmt.Sprintf("Fallback to %s/%s: attached fallback credential pool", fbProvider, fbModel))
+			pkgLog().Info(fmt.Sprintf("Fallback to %s/%s: attached fallback credential pool", fbProvider, fbModel))
 		}
 	}()
 }
@@ -598,47 +597,14 @@ func CleanupTaskResources(ctx context.Context, agent ChatCompletionAgent, taskID
 			}
 			if skip {
 				if agent.VerboseLogging() {
-					slog.Debug(fmt.Sprintf("Skipping per-turn %s %s; idle reaper will handle it.", s.skipWhat, taskID))
+					pkgLog().Debug(fmt.Sprintf("Skipping per-turn %s %s; idle reaper will handle it.", s.skipWhat, taskID))
 				}
 				return nil
 			}
 			return s.cleanup(ctx)
 		}()
 		if err != nil && agent.VerboseLogging() {
-			nonStreamLog.Warn(fmt.Sprintf("Failed to cleanup %s for task %s: %s", s.label, taskID, err))
+			pkgLog().Warn(fmt.Sprintf("Failed to cleanup %s for task %s: %s", s.label, taskID, err))
 		}
 	}
-}
-
-// Merges the nous profile extra_body into Messages wire kwargs of a nous agent, never provider_preferences
-func MergeNousPortalMessagesExtraBody(ctx context.Context, agent ChatCompletionAgent, anthropicKwargs map[string]any, apiMessages []map[string]any) map[string]any {
-	switch agent.Provider() {
-	case "nous", "nous-portal", "nousresearch":
-	default:
-		return anthropicKwargs
-	}
-	func() {
-		defer func() {
-			if p := recover(); p != nil {
-				nonStreamLog.Debug(fmt.Sprintf("Nous Portal extra_body merge failed: %v", p))
-			}
-		}()
-		profile, ok := GetProviderProfile(ctx, "nous")
-		if !ok {
-			return
-		}
-		existing, present := anthropicKwargs["extra_body"]
-		extra, isMap := pyjson.AsObject(existing)
-		if present && !isMap {
-			nonStreamLog.Debug(fmt.Sprintf("Nous Portal extra_body merge failed: '%s' object has no attribute 'update'", pyrepr.TypeName(existing)))
-			return
-		}
-		if !present {
-			extra = pyjson.NewObject()
-		}
-		anthropicKwargs["extra_body"] = extra
-		body := profile.BuildExtraBody(agent.SessionID(), map[string]any{hookCtxKey: ctx, "data_use": state.DataUseRequirement(apiMessages)})
-		extra.Update(body)
-	}()
-	return anthropicKwargs
 }

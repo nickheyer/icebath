@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/hex"
 	"fmt"
-	"log/slog"
 	"reflect"
 	"slices"
 	"strconv"
@@ -15,7 +14,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/home"
 )
 
-// Auxiliary client cache key, the hermes tuple with every composite slot rendered secret free
+// Auxiliary client cache key, the tuple with every composite slot rendered secret free
 type auxClientCacheKey struct {
 	Home     string
 	Provider string
@@ -323,45 +322,6 @@ func auxStoreCachedClient(key auxClientCacheKey, client AuxClient, defaultModel 
 	auxClientCacheSetLocked(key, auxCachedClient{Client: client, DefaultModel: defaultModel, BoundLoop: boundLoop, Retained: retained})
 }
 
-// Nous refresh request, the lookup model and task naming the cache entry the stale client came from
-type auxNousRefreshRequest struct {
-	CacheProvider string
-	Model         string
-	AsyncMode     bool
-	BaseURL       string
-	APIKey        any
-	APIMode       string
-	MainRuntime   map[string]any
-	IsVision      bool
-	LookupModel   string
-	LookupTask    string
-}
-
-// OpenAI client factory of the Nous refresh, swapped by the end to end eviction tests
-var auxCreateOpenAIClientFn = auxCreateOpenAIClient
-
-// Refreshes Nous runtime credentials and replaces the stale cache entry with a rebuilt client
-func auxRefreshNousAuxiliaryClient(ctx context.Context, req auxNousRefreshRequest) (AuxClient, string, error) {
-	stale, _ := req.APIKey.(string)
-	freshKey, freshBaseURL, ok := auxResolveNousRuntimeAPIFn(ctx, true, stale)
-	if !ok {
-		return nil, req.Model, nil
-	}
-	syncClient := auxCreateOpenAIClientFn(ctx, freshKey, freshBaseURL, auxOpenAIOptions{})
-	var currentLoop any
-	client, finalModel := syncClient, req.Model
-	if req.AsyncMode {
-		currentLoop = auxCurrentEventLoop(ctx)
-		client, finalModel = auxToAsyncClientFn(ctx, syncClient, req.Model, req.IsVision)
-	}
-	key, retained, err := auxClientCacheKeyFor(ctx, req.CacheProvider, req.AsyncMode, req.BaseURL, req.APIKey, req.APIMode, req.MainRuntime, req.IsVision, req.LookupTask, req.LookupModel)
-	if err != nil {
-		return nil, "", err
-	}
-	auxStoreCachedClient(key, client, finalModel, currentLoop, retained)
-	return client, finalModel, nil
-}
-
 // ShutdownCachedClients closes and clears every cached client outside the lock, a live foreign loop's clients only neutered
 func ShutdownCachedClients(ctx context.Context) {
 	auxClientCacheMu.Lock()
@@ -417,7 +377,7 @@ type auxCachedClientRequest struct {
 	Task        string
 }
 
-// Cached client acquisition, swapped by tests the way hermes tests patch the module function
+// Cached client acquisition, swapped by tests
 var auxGetCachedClientFn = auxGetCachedClient
 
 // Cached client for a provider config built on a miss, async hits valid only on the open loop they were built on
@@ -541,7 +501,7 @@ func auxBuiltinProviderPresent(ctx context.Context, name string) bool {
 	var def *ProviderDef
 	if err := auxRecoverRaise(func() { def = auxGetProviderDefFn(ctx, name) }); err != nil {
 		switch name {
-		case "anthropic", "minimax-oauth", "nous", "openai-codex", "qwen-oauth", "xai-oauth":
+		case "anthropic", "minimax-oauth", "openai-codex", "qwen-oauth", "xai-oauth":
 			return true
 		}
 		return auxProfileCredentialsBypassCustom(ctx, name)
@@ -557,7 +517,7 @@ func auxProfileCredentialsBypassCustom(ctx context.Context, name string) bool {
 	var profile Profile
 	var found bool
 	if err := auxRecoverRaise(func() { profile, found = auxGetProviderProfileFn(ctx, name) }); err != nil {
-		slog.Debug(fmt.Sprintf("provider profile lookup for %s failed", name), "error", err)
+		pkgLog().Debug(fmt.Sprintf("provider profile lookup for %s failed", name), "error", err)
 		return false
 	}
 	return found && profile.Name == name && (profile.AmbientCredentials || profile.AuthType == "external_process")

@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"log/slog"
 	"math/big"
 	"os"
 	"path/filepath"
@@ -27,10 +26,10 @@ func LoadLegacyGatewayJSON(h string) any {
 	}
 	data, err := readLegacyJSON(path)
 	if err != nil {
-		slog.Warn(fmt.Sprintf("Failed to load %s: %s", path, err))
+		pkgLog().Warn(fmt.Sprintf("Failed to load %s: %s", path, err))
 		return map[string]any{}
 	}
-	slog.Info(fmt.Sprintf("Loaded legacy %s — consider moving settings to config.yaml", path))
+	pkgLog().Info(fmt.Sprintf("Loaded legacy %s — consider moving settings to config.yaml", path))
 	return data
 }
 
@@ -104,7 +103,7 @@ func quickCommandsOK(value any) bool {
 	if _, ok := value.(map[string]any); ok {
 		return true
 	}
-	slog.Warn(fmt.Sprintf("Ignoring invalid quick_commands in config.yaml (expected mapping, got %s)", pyrepr.TypeName(value)))
+	pkgLog().Warn(fmt.Sprintf("Ignoring invalid quick_commands in config.yaml (expected mapping, got %s)", pyrepr.TypeName(value)))
 	return false
 }
 
@@ -265,7 +264,7 @@ func BridgeCoreEnvSettings(ctx context.Context, yamlCfg, platformsData map[strin
 		}
 		if bridgedAllowAll.set {
 			os.Setenv("GATEWAY_ALLOW_ALL_USERS", "true")
-			slog.Warn("config.yaml allow_all_users: true grants every sender on every platform access (bridged to GATEWAY_ALLOW_ALL_USERS; an explicit env var wins).")
+			pkgLog().Warn("config.yaml allow_all_users: true grants every sender on every platform access (bridged to GATEWAY_ALLOW_ALL_USERS; an explicit env var wins).")
 		} else {
 			os.Unsetenv("GATEWAY_ALLOW_ALL_USERS")
 		}

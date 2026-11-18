@@ -13,7 +13,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pythread"
 	"github.com/nickheyer/icebath/pkg/memory"
-	"github.com/nickheyer/icebath/pkg/observability"
 	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
@@ -95,7 +94,6 @@ func adoptLiveCompressionChild(ctx context.Context, a *AIAgent, sessionDB any, p
 	}
 	a.sessionID = tip
 	rebindSessionContext(ctx, a, tip)
-	handOffMetricsSegment(ctx, parentSessionID, tip)
 	a.sessionDBCreated = true
 	childPrompt, _ := child.Get("system_prompt")
 	prompt, _ := childPrompt.(string)
@@ -150,11 +148,11 @@ func reopenOrphanedParent(ctx context.Context, sessionDB any, sessionID string) 
 	}
 	reopened, err := reopener.ReopenOrphanedCompressionSession(ctx, sessionID)
 	if err != nil {
-		compressionLog().Warn(fmt.Sprintf("orphaned compression session reopen failed for %s: %v", sessionID, err))
+		pkgLog().Warn(fmt.Sprintf("orphaned compression session reopen failed for %s: %v", sessionID, err))
 		return
 	}
 	if reopened {
-		compressionLog().Warn(fmt.Sprintf("compression recovery: reopened orphaned session=%s with no continuation", sessionID))
+		pkgLog().Warn(fmt.Sprintf("compression recovery: reopened orphaned session=%s with no continuation", sessionID))
 	}
 }
 
@@ -166,12 +164,12 @@ func recoverRotatedCompressionSession(ctx context.Context, a *AIAgent) (recovere
 	sessionID := a.sessionID
 	defer func() {
 		if r := recover(); r != nil {
-			compressionLog().Warn(fmt.Sprintf("compression session recovery failed for session=%s (%T: %v)", sessionID, r, r))
+			pkgLog().Warn(fmt.Sprintf("compression session recovery failed for session=%s (%T: %v)", sessionID, r, r))
 			recovered, ok = nil, false
 		}
 	}()
 	fail := func(err error) ([]map[string]any, bool) {
-		compressionLog().Warn(fmt.Sprintf("compression session recovery failed for session=%s (%s: %v)", sessionID, pyErrorClass(err), err))
+		pkgLog().Warn(fmt.Sprintf("compression session recovery failed for session=%s (%s: %v)", sessionID, pyErrorClass(err), err))
 		return nil, false
 	}
 	rotated, err := sessionWasRotatedByCompression(ctx, a.sessionDB, sessionID)
@@ -222,21 +220,12 @@ func compressionLockHolder(a *AIAgent) string {
 		uintptr(unsafe.Pointer(a)), hex.EncodeToString(nonce))
 }
 
-// Counts one conversation across a session rotation in the shared metrics
-func handOffMetricsSegment(ctx context.Context, oldSessionID, newSessionID string) {
-	swallowCompression("shared-metrics segment hand-off failed", true, func() error {
-		observability.RotateSegment(ctx, oldSessionID, newSessionID)
-		return nil
-	})
-}
-
 // Notifies the relay coordinator and the context engine after a durable compression commit
 func notifyContextEngineCompressionComplete(ctx context.Context, a *AIAgent, newSessionID, oldSessionID string) (notified bool) {
 	swallowCompression("relay segment rotation notification failed", true, func() error {
 		tools.RelayCoordinator.NotifySessionCompacted(ctx, tools.CurrentRelayProfileKey(ctx), newSessionID, oldSessionID)
 		return nil
 	})
-	handOffMetricsSegment(ctx, oldSessionID, newSessionID)
 	if a.contextCompressor == nil || isNilEngine(a.contextCompressor) {
 		return false
 	}
@@ -250,7 +239,7 @@ func notifyContextEngineCompressionComplete(ctx context.Context, a *AIAgent, new
 	}
 	defer func() {
 		if r := recover(); r != nil {
-			compressionLog().Debug("context engine on_session_start (compression) failed", "error", fmt.Sprint(r))
+			pkgLog().Debug("context engine on_session_start (compression) failed", "error", fmt.Sprint(r))
 			notified = false
 		}
 	}()

@@ -12,17 +12,17 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/tools"
-	"github.com/nickheyer/icebath/pkg/tuigateway"
+	"github.com/nickheyer/icebath/pkg/tuihost"
 )
 
 // Session event emitter of the callback sinks, swapped where a case records the emitted events
-var emitEvent = tuigateway.Emit
+var emitEvent = tuihost.Emit
 
 // Guards the per session tool slots parallel tool callbacks share
 var toolSlotsMu sync.Mutex
 
 // Per call slot map of a session, created on first use, the caller holding toolSlotsMu
-func toolSlot[V any](session *tuigateway.Session, key string) map[string]V {
+func toolSlot[V any](session *tuihost.Session, key string) map[string]V {
 	slot, ok := session.Get(key).(map[string]V)
 	if !ok || slot == nil {
 		slot = map[string]V{}
@@ -124,30 +124,30 @@ func todoRevision(state *pyjson.Object) int64 {
 }
 
 // Keeps the newest todo snapshot on the session, revision monotonic
-func cacheTodoState(session *tuigateway.Session, state *pyjson.Object) {
+func cacheTodoState(session *tuihost.Session, state *pyjson.Object) {
 	if state == nil {
 		return
 	}
-	cached := tuigateway.NormalizeTodoState(session.Get("todo_state"))
+	cached := tuihost.NormalizeTodoState(session.Get("todo_state"))
 	if cached == nil || todoRevision(state) >= todoRevision(cached) {
 		session.Set("todo_state", state)
 	}
 }
 
 // Newest live or cached todo snapshot of a runtime session
-func sessionTodoState(session *tuigateway.Session) *pyjson.Object {
-	cached := tuigateway.NormalizeTodoState(session.Get("todo_state"))
+func sessionTodoState(session *tuihost.Session) *pyjson.Object {
+	cached := tuihost.NormalizeTodoState(session.Get("todo_state"))
 	var live *pyjson.Object
 	if a := sessionAgent(session); a != nil {
 		if store := a.TodoStore(); store != nil {
 			func() {
 				defer func() {
 					if failure := recover(); failure != nil {
-						logger().Debug("failed to read live todo state", "exc_info", failureText(failure))
+						pkgLog().Debug("failed to read live todo state", "exc_info", failureText(failure))
 					}
 				}()
 				snapshot, _ := pyjson.AsObject(store.Snapshot())
-				live = tuigateway.NormalizeTodoState(snapshot)
+				live = tuihost.NormalizeTodoState(snapshot)
 			}()
 		}
 	}
@@ -161,7 +161,7 @@ func sessionTodoState(session *tuigateway.Session) *pyjson.Object {
 }
 
 // Attaches the authoritative todo snapshot to a session response
-func attachTodoState(payload map[string]any, session *tuigateway.Session) map[string]any {
+func attachTodoState(payload map[string]any, session *tuihost.Session) map[string]any {
 	if state := sessionTodoState(session); state != nil {
 		payload["todo_state"] = state
 	}
@@ -175,7 +175,7 @@ func todoStateFromDB(ctx context.Context, db todoResultReader, sessionID string)
 	}
 	defer func() {
 		if failure := recover(); failure != nil {
-			logger().Debug("failed to read persisted todo state", "exc_info", failureText(failure))
+			pkgLog().Debug("failed to read persisted todo state", "exc_info", failureText(failure))
 			state = nil
 		}
 	}()
@@ -190,7 +190,7 @@ func todoStateFromDB(ctx context.Context, db todoResultReader, sessionID string)
 	if err != nil {
 		return nil
 	}
-	return tuigateway.NormalizeTodoState(decoded)
+	return tuihost.NormalizeTodoState(decoded)
 }
 
 // Store that serves the newest todo tool result of a session
@@ -244,9 +244,9 @@ func toolLabels(ctx context.Context, name string, args map[string]any) []any {
 	return out
 }
 
-// Whether a call drives a connector, directly or through a bridged tool_call batch
+// Whether a call drives manage_connections, directly or through a bridged tool_call batch
 func connectorToolLifecycle(name string, args map[string]any) bool {
-	if name == "manage_connections" || tools.IsConnectorName(name) {
+	if name == "manage_connections" {
 		return true
 	}
 	if name != "tool_call" || args == nil {
@@ -262,7 +262,7 @@ func connectorToolLifecycle(name string, args map[string]any) bool {
 			continue
 		}
 		callName, _ := call["name"].(string)
-		if callName == "manage_connections" || tools.IsConnectorName(callName) {
+		if callName == "manage_connections" {
 			return true
 		}
 	}
@@ -275,7 +275,7 @@ func connectorLifecycleIsStale(ctx context.Context, sid, name string, args map[s
 		return false
 	}
 	owner := currentRuntimeSessionRecord(ctx)
-	return owner != nil && (tuigateway.SessionRecord(sid) != owner || truthy(owner.Get("_finalized")))
+	return owner != nil && (tuihost.SessionRecord(sid) != owner || truthy(owner.Get("_finalized")))
 }
 
 // Emits a tool lifecycle event, a connector one projected and written to the owner's transport
@@ -284,22 +284,22 @@ func emitToolLifecycle(ctx context.Context, event, sid, name string, args map[st
 		emitEvent(ctx, event, sid, payload)
 		return
 	}
-	projected, _ := tuigateway.ConnectorUIPayload(payload).(map[string]any)
+	projected, _ := tuihost.ConnectorUIPayload(payload).(map[string]any)
 	sessionsLock.Lock()
 	if connectorLifecycleIsStale(ctx, sid, name, args) {
 		sessionsLock.Unlock()
 		return
 	}
-	transport, _ := tuigateway.SessionRecord(sid).Get("transport").(tuigateway.Transport)
+	transport, _ := tuihost.SessionRecord(sid).Get("transport").(tuihost.Transport)
 	if transport == nil {
-		if transport = tuigateway.CurrentTransport(ctx); transport == nil {
-			transport = tuigateway.ModuleStdioTransport()
+		if transport = tuihost.CurrentTransport(ctx); transport == nil {
+			transport = tuihost.ModuleStdioTransport()
 		}
 	}
 	sessionsLock.Unlock()
-	frame := tuigateway.EventFrame(event, sid, projected)
-	tuigateway.StampEvent(frame)
-	tuigateway.ProjectRoomMemberActivity(ctx, frame, tuigateway.SessionRecord)
+	frame := tuihost.EventFrame(event, sid, projected)
+	tuihost.StampEvent(frame)
+	tuihost.ProjectRoomMemberActivity(ctx, frame, tuihost.SessionRecord)
 	transport.Write(frame)
 }
 
@@ -314,7 +314,7 @@ func toolArgsText(args map[string]any) string {
 	if err != nil {
 		text = pyrepr.Str(value)
 	}
-	return tuigateway.RedactVerboseText(text)
+	return tuihost.RedactVerboseText(text)
 }
 
 // Records the tool start, snapshots a local edit and emits tool.start when the session shows it
@@ -322,7 +322,7 @@ func onToolStart(ctx context.Context, sid, toolCallID, name string, args map[str
 	if connectorLifecycleIsStale(ctx, sid, name, args) {
 		return
 	}
-	if session := tuigateway.SessionRecord(sid); session != nil {
+	if session := tuihost.SessionRecord(sid); session != nil {
 		suppress(func() {
 			taskID := strOr(session.Get("session_key"))
 			if taskID == "" {
@@ -344,7 +344,7 @@ func onToolStart(ctx context.Context, sid, toolCallID, name string, args map[str
 		toolSlotsMu.Unlock()
 	}
 	if toolProgressEnabled(sid) || toolLifecycleRequiredForUI(name) || connectorToolLifecycle(name, args) {
-		payload := map[string]any{"tool_id": toolCallID, "name": name, "context": tuigateway.ToolCtx(name, args)}
+		payload := map[string]any{"tool_id": toolCallID, "name": name, "context": tuihost.ToolCtx(name, args)}
 		if labels := toolLabels(ctx, name, args); labels != nil {
 			payload["labels"] = labels
 		}
@@ -362,7 +362,7 @@ func onToolStart(ctx context.Context, sid, toolCallID, name string, args map[str
 
 // Prepares the inline diff preview of a tool result without emitting, kept on the session for the completion event
 func prepareToolResultMetadata(ctx context.Context, sid, toolCallID, name string, args map[string]any, result string) map[string]any {
-	session := tuigateway.SessionRecord(sid)
+	session := tuihost.SessionRecord(sid)
 	var snapshot *tools.LocalEditSnapshot
 	if session != nil {
 		toolSlotsMu.Lock()
@@ -489,14 +489,14 @@ func progressMoaAggregating(ctx context.Context, sid string, name, preview any, 
 
 // Emits a subagent lifecycle event and mirrors it into the child's watch window
 func progressSubagent(ctx context.Context, sid string, name, preview any, kw map[string]any, eventType string) {
-	payload, err := tuigateway.SubagentPayload(eventType, name, preview, kw, sessionShowReasoning(ctx, sid))
+	payload, err := tuihost.SubagentPayload(eventType, name, preview, kw, sessionShowReasoning(ctx, sid))
 	if err != nil {
 		panic(err)
 	}
 	if eventType != "subagent.text" {
 		emitEvent(ctx, eventType, sid, objectMap(payload))
 	}
-	if parent := tuigateway.SessionRecord(sid); parent != nil {
+	if parent := tuihost.SessionRecord(sid); parent != nil {
 		mirrorSubagentToChild(ctx, eventType, objectMap(payload), parent.Get("profile_home"))
 	}
 }

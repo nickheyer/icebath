@@ -10,12 +10,11 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/config"
-	"github.com/nickheyer/icebath/pkg/cron"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pythread"
-	"github.com/nickheyer/icebath/pkg/observability"
+	"github.com/nickheyer/icebath/pkg/periodic"
 	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
@@ -32,7 +31,6 @@ const (
 type turnLeaseState struct {
 	sessionTurnLeaseRefreshInterval *float64
 	sessionDBReserved               bool
-	turnExit                        observability.TurnExitState
 	executionGoroutineID            atomic.Uint64
 }
 
@@ -110,7 +108,7 @@ type durableTurnLease struct {
 	turnActive        bool
 	interruptMessage  string
 	watchdog          *turnLivenessWatchdog
-	timerHandles      []*cron.ScheduledHandle
+	timerHandles      []*periodic.ScheduledHandle
 }
 
 // Lease on the admitted row with its authority deadline at the committed expiry or a TTL from now
@@ -150,15 +148,14 @@ func (l *durableTurnLease) BuildThreads(ctx context.Context) error {
 	return nil
 }
 
-// Activates the turn, stamps the activity clock, arms exit metrics and schedules both timers
+// Activates the turn, stamps the activity clock and schedules both timers
 func (l *durableTurnLease) Start(ctx context.Context) {
 	l.mu.Lock()
 	l.turnActive = true
 	l.mu.Unlock()
 	l.agent.TouchActivity("starting new turn")
-	observability.ArmTurn(ctx, &l.agent.turnExit)
 	timerCtx := context.WithoutCancel(ctx)
-	l.timerHandles = append(l.timerHandles, cron.SchedulePeriodic(timerCtx, func(context.Context) bool { return l.RefreshTick() }, time.Duration(l.refreshInterval*float64(time.Second))))
+	l.timerHandles = append(l.timerHandles, periodic.SchedulePeriodic(timerCtx, func(context.Context) bool { return l.RefreshTick() }, time.Duration(l.refreshInterval*float64(time.Second))))
 	if l.watchdog != nil {
 		l.timerHandles = append(l.timerHandles, l.watchdog.schedule(timerCtx))
 	}
@@ -188,11 +185,11 @@ func (l *durableTurnLease) Release() {
 	func() {
 		defer func() {
 			if r := recover(); r != nil {
-				runAgentLog().Error("Failed to release session turn lease: "+l.sessionID, "error", r)
+				pkgLog().Error("Failed to release session turn lease: "+l.sessionID, "error", r)
 			}
 		}()
 		if err := l.db.ReleaseSessionTurnLease(l.sessionID, l.holder); err != nil {
-			runAgentLog().Error("Failed to release session turn lease: "+l.sessionID, "error", err)
+			pkgLog().Error("Failed to release session turn lease: "+l.sessionID, "error", err)
 		}
 	}()
 	if h := l.agent.activeSessionTurnLeaseHolder; h != nil && *h == l.holder {
@@ -252,7 +249,7 @@ func (l *durableTurnLease) CommitLivenessAbort(snapshot activitySnapshot, messag
 	l.mu.Unlock()
 	published, err := l.publishInterrupt(message, InterruptOptions{HardCancel: true, ToolReason: "turn liveness watchdog", RequireGeneration: &currentGeneration})
 	if err != nil {
-		runAgentLog().Debug("Turn liveness abort interrupt raised; declining the abort", "error", err)
+		pkgLog().Debug("Turn liveness abort interrupt raised; declining the abort", "error", err)
 		published = false
 	}
 	if !published {
@@ -290,7 +287,7 @@ func (l *durableTurnLease) ClearInterrupt() {
 
 // Stops the turn once no renewal can land before the row expires
 func (l *durableTurnLease) stopOnExhaustedAuthority() bool {
-	runAgentLog().Warn("Session turn lease refresh stayed locked through its lifetime: " + l.currentSessionID())
+	pkgLog().Warn("Session turn lease refresh stayed locked through its lifetime: " + l.currentSessionID())
 	l.interruptTurn("Session turn lease could not be refreshed; stopping to protect the transcript.")
 	return false
 }
@@ -324,7 +321,7 @@ func (l *durableTurnLease) RefreshTick() bool {
 		if l.stop.IsSet() {
 			return false
 		}
-		runAgentLog().Error("Lost session turn lease while turn is active: " + l.currentSessionID())
+		pkgLog().Error("Lost session turn lease while turn is active: " + l.currentSessionID())
 		l.interruptTurn("Session turn lease lost; stopping to protect the transcript.")
 		return false
 	}
@@ -335,10 +332,10 @@ func (l *durableTurnLease) RefreshTick() bool {
 		if leaseWallNow()+l.refreshInterval+refreshExpiryMarginS >= l.authorityDeadline {
 			return l.stopOnExhaustedAuthority()
 		}
-		runAgentLog().Warn("Session turn lease refresh hit a SQLite lock; will retry: " + l.currentSessionID())
+		pkgLog().Warn("Session turn lease refresh hit a SQLite lock; will retry: " + l.currentSessionID())
 		return true
 	}
-	runAgentLog().Warn("Failed to refresh session turn lease: "+l.currentSessionID(), "error", err)
+	pkgLog().Warn("Failed to refresh session turn lease: "+l.currentSessionID(), "error", err)
 	l.interruptTurn("Session turn lease could not be refreshed; stopping to protect the transcript.")
 	return false
 }
@@ -355,7 +352,7 @@ func committedLeaseExpiry(db turnLeaseStore, sessionID, holder string, floor flo
 			return reader.SessionTurnLeaseExpiresAt(sessionID, holder)
 		}()
 		if err != nil {
-			runAgentLog().Debug("Could not read the admitted turn lease expiry; using the pre-acquire floor", "error", err)
+			pkgLog().Debug("Could not read the admitted turn lease expiry; using the pre-acquire floor", "error", err)
 		} else if committed != nil {
 			return *committed
 		}
@@ -374,7 +371,7 @@ func durableSessionExists(ctx context.Context, db turnLeaseAdmissionStore, sessi
 		return db.GetSession(ctx, sessionID)
 	}()
 	if err != nil {
-		runAgentLog().Warn("Could not check durable session after turn lease admission; row state is unknown", "error", err)
+		pkgLog().Warn("Could not check durable session after turn lease admission; row state is unknown", "error", err)
 		return nil
 	}
 	exists := row != nil
@@ -510,7 +507,7 @@ func carryUnadmittedUserMessage(result map[string]any, userMessage any, persistU
 func leaseNotAcquiredResult(a *AIAgent, sessionID string, conversationHistory []map[string]any, waited bool) map[string]any {
 	messages := append([]map[string]any{}, conversationHistory...)
 	if a.interruptRequested.Load() {
-		runAgentLog().Info("session turn lease wait aborted by interrupt: " + sessionID)
+		pkgLog().Info("session turn lease wait aborted by interrupt: " + sessionID)
 		hardInterrupted := a.hardInterruptRequested != nil && a.hardInterruptRequested.IsSet()
 		final := "Stopped before this turn started. Your message was not processed."
 		if waited {
@@ -536,11 +533,11 @@ func leaseNotAcquiredResult(a *AIAgent, sessionID string, conversationHistory []
 	}
 	timeoutMsg := "⏳ Another Icebath process kept this session busy too long. Your message was not " +
 		"processed - wait for the other process to finish, then send it again."
-	runAgentLog().Error("session turn lease wait timed out for " + sessionID)
+	pkgLog().Error("session turn lease wait timed out for " + sessionID)
 	func() {
 		defer func() {
 			if r := recover(); r != nil {
-				runAgentLog().Debug("Failed to emit session turn lease timeout warning", "error", r)
+				pkgLog().Debug("Failed to emit session turn lease timeout warning", "error", r)
 			}
 		}()
 		a.emitWarning(timeoutMsg)

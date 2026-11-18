@@ -28,7 +28,6 @@ pairing list
 toolsets
 tips
 version
-honcho status
 backup --help
 debug --help
 curator status

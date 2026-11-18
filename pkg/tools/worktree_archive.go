@@ -531,7 +531,7 @@ func SnapshotWorktree(repoRoot, wtPath, reason string, maxUntrackedMB float64) (
 	if err != nil {
 		return nil, err
 	}
-	toolsLogger(nil).Info(fmt.Sprintf("Archived worktree %s -> %s (%s)", wtPath, ref, reason))
+	envLog(nil).Info(fmt.Sprintf("Archived worktree %s -> %s (%s)", wtPath, ref, reason))
 	created, _ := meta.Get("created")
 	return &Archive{Ref: ref, Name: ref[len(ArchivePrefix):], Sha: sha, Created: float64(created.(int64)), Meta: meta, Staged: staged}, nil
 }

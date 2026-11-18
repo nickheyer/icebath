@@ -347,7 +347,7 @@ func rebuildDriftedTables(ctx context.Context, conn state.SQLiteConn) error {
 			if err != nil {
 				return err
 			}
-			log.Info(fmt.Sprintf("kanban migration: rebuilding %s to match current schema", table))
+			pkgLog().Info(fmt.Sprintf("kanban migration: rebuilding %s to match current schema", table))
 			if _, err := conn.ExecContext(ctx, fmt.Sprintf("ALTER TABLE %s RENAME TO %s_legacy", table, table)); err != nil {
 				return err
 			}

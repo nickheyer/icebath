@@ -6,7 +6,6 @@ import (
 	"encoding/binary"
 	"errors"
 	"fmt"
-	"log/slog"
 	"net/http"
 	"strconv"
 	"strings"
@@ -35,8 +34,6 @@ var (
 	streamingProviders = map[string]bool{"openai": true, "xai": true, "elevenlabs": true}
 	streamMonotonic    = pythread.Monotonic
 )
-
-func streamLog() *slog.Logger { return slog.Default().With("logger", "tools.transcription_streaming") }
 
 // Resampler converts s16le mono PCM between rates across chunk boundaries, averaging integer ratios
 type Resampler struct {
@@ -255,7 +252,7 @@ func (s *StreamingSession) setPartial(text string) {
 		func() {
 			defer func() {
 				if r := recover(); r != nil {
-					streamLog().Debug(fmt.Sprintf("on_partial callback raised: %v", r))
+					pkgLog().Debug(fmt.Sprintf("on_partial callback raised: %v", r))
 				}
 			}()
 			s.onPartial(text)
@@ -288,7 +285,7 @@ func (s *StreamingSession) run() {
 		return s.driver.session(s)
 	}()
 	if err != nil {
-		streamLog().Warn(fmt.Sprintf("Live STT (%s) failed: %s", s.provider, err))
+		pkgLog().Warn(fmt.Sprintf("Live STT (%s) failed: %s", s.provider, err))
 		s.finish(s.errorEnvelope(fmt.Sprintf("live transcription failed: %s", err)))
 		return
 	}
@@ -796,11 +793,8 @@ func streamingEnabled(sttConfig map[string]any) bool {
 	return provider.IsTruthyValue(v)
 }
 
-// OpenAI key and base URL for live STT, absent under the managed Nous selection or when unresolvable
+// OpenAI key and base URL for live STT, absent when unresolvable
 func openAIStreamingCredentials(ctx context.Context) (string, string, bool, error) {
-	if sttReadSelection(ctx) == NousManagedProvider {
-		return "", "", false, nil
-	}
 	key, base, err := resolveSTTOpenAIAudioClientConfig(ctx)
 	var valueErr *sttValueError
 	if errors.As(err, &valueErr) {
@@ -942,7 +936,7 @@ func OpenStreamingSession(ctx context.Context, onPartial func(string), sttConfig
 		return pluginStreamingSession(ctx, providerName, language, prompt, onPartial)
 	}()
 	if err != nil {
-		streamLog().Warn(fmt.Sprintf("Live STT session for %s could not open: %s", providerName, err))
+		pkgLog().Warn(fmt.Sprintf("Live STT session for %s could not open: %s", providerName, err))
 		return nil, nil
 	}
 	if session == nil {

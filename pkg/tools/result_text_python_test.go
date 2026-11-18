@@ -5,7 +5,7 @@ import (
 	"testing"
 )
 
-func TestToolResultTextMatchesJSONDumpsOfHermes(t *testing.T) {
+func TestToolResultTextMatchesJSONDumps(t *testing.T) {
 	store := NewTodoStore()
 	todoOut := todoTool(store, []any{
 		map[string]any{"id": "1", "content": "\u00e9", "status": "pending"},

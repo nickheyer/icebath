@@ -9,7 +9,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"log/slog"
 	"net"
 	"net/http"
 	"net/url"
@@ -24,7 +23,6 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyhttpx"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 )
 
@@ -113,7 +111,7 @@ func NewDownloadTransportError(rawURL string, cause error) *DownloadError {
 	if refused == "" && (status == 401 || status == 403) {
 		refused = "the host refused access"
 	}
-	reason := urllibErrorText(cause)
+	reason := transportErrorText(cause)
 	if refused != "" {
 		reason = fmt.Sprintf("%s; %s", reason, refused)
 	}
@@ -121,8 +119,8 @@ func NewDownloadTransportError(rawURL string, cause error) *DownloadError {
 		URL: rawURL, Status: status, FallbackAllowed: fallback, Cause: cause}
 }
 
-// str of the urllib exception a failed request raises, a connection failure inside the urlopen error brackets
-func urllibErrorText(cause error) string {
+// Plain words of an exhausted network failure, the HTTP status or what the connection reported
+func transportErrorText(cause error) string {
 	var httpErr *HTTPError
 	if errors.As(cause, &httpErr) {
 		return httpErr.Error()
@@ -130,15 +128,15 @@ func urllibErrorText(cause error) string {
 	var urlErr *url.Error
 	if errors.As(cause, &urlErr) {
 		if urlErr.Timeout() {
-			return "<urlopen error timed out>"
+			return "the connection timed out"
 		}
-		return "<urlopen error " + pyhttpx.OSErrorText(urlErr.Err) + ">"
+		return urlErr.Err.Error()
 	}
 	var netErr net.Error
 	if errors.As(cause, &netErr) && netErr.Timeout() {
-		return "The read operation timed out"
+		return "the read timed out"
 	}
-	return pyhttpx.OSErrorText(cause)
+	return cause.Error()
 }
 
 // Refuses a redirect that leaves https, plain http staying allowed only from loopback to loopback
@@ -730,7 +728,7 @@ func (d *Download) trySources(source Source, operation func(Source) error, failu
 			}
 			return Source{}, &DownloadError{Kind: DownloadFailed, Message: strings.Join(messages, "\n"), Cause: de}
 		}
-		slog.Debug(fmt.Sprintf("%s; trying pinned mirror %s", de, urls[index+1]))
+		pkgLog().Debug(fmt.Sprintf("%s; trying pinned mirror %s", de, urls[index+1]))
 	}
 	return Source{}, downloadError(DownloadFailed, "no download url for %s", source.Dest)
 }
@@ -1053,7 +1051,7 @@ func (d *Download) fetchRanged(source Source, remote remoteInfo, tick func([]Ran
 		}
 		if len(errs) > 0 {
 			if d.Connections > 1 && allRefusedRanges(errs) {
-				slog.Warn(fmt.Sprintf("parallel range fetch refused for %s; retrying with one connection", source.URL))
+				pkgLog().Warn(fmt.Sprintf("parallel range fetch refused for %s; retrying with one connection", source.URL))
 				d.Connections = 1
 				continue
 			}
@@ -1214,7 +1212,7 @@ func (d *Download) rangedAttempt(source Source, remote remoteInfo, part string, 
 		if !time.Now().Before(nextCheckpoint) {
 			if !slices.Equal(snapshot, checkpointed) {
 				if err := writeSidecar(part[:len(part)-len(filepath.Ext(part))]+".ranges", part, snapshot, remote, source.SHA256); err != nil {
-					slog.Warn(fmt.Sprintf("could not save download progress for %s; continuing: %s", filepath.Base(source.Dest), err))
+					pkgLog().Warn(fmt.Sprintf("could not save download progress for %s; continuing: %s", filepath.Base(source.Dest), err))
 				} else {
 					d.durableDone.Store(coveredBytes(snapshot))
 					checkpointed = snapshot

@@ -15,7 +15,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/mcp"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/tools"
-	"github.com/nickheyer/icebath/pkg/tuigateway"
+	"github.com/nickheyer/icebath/pkg/tuihost"
 )
 
 var toolsMCPRegistry = &handlerRegistry{}
@@ -31,7 +31,6 @@ func init() {
 	mcpRPC(toolsMCPRegistry, "oauth.start", nameParam, mcpOAuthStart)
 	mcpRPC(toolsMCPRegistry, "oauth.poll", nameSessionParams, mcpOAuthPoll)
 	mcpRPC(toolsMCPRegistry, "oauth.cancel", nameSessionParams, mcpOAuthCancel)
-	mcpRPC(toolsMCPRegistry, "oauth.callback", nameSessionParams, mcpOAuthCallback)
 	toolsMCPRegistry.install()
 }
 
@@ -138,25 +137,6 @@ func summarizeMCPServer(ctx context.Context, name string, cfg map[string]any, pl
 		"tools": cfg["tools"], "source": source, "plugin": pluginName}
 }
 
-// Counts an mcp.servers.add as an MCP extension install, failed when the save rejected the config
-func recordMCPAdd(ctx context.Context, entry *mcp.CatalogEntry, serverConfig map[string]any, saved bool) {
-	source := "local"
-	if entry != nil {
-		source = "catalog"
-	} else if truthy(serverConfig["url"]) {
-		source = "url"
-	}
-	name := ""
-	if entry != nil {
-		name = entry.Name
-	}
-	outcome, failureClass := "success", ""
-	if !saved {
-		outcome, failureClass = "failed", "config_rejected"
-	}
-	mcp.RecordMCPInstall(ctx, source, name, outcome, failureClass, nil)
-}
-
 // Python dataclass repr of a catalog transport spec
 func transportSpecRepr(t mcp.TransportSpec) string {
 	args := make([]any, len(t.Args))
@@ -177,7 +157,7 @@ func transportSpecRepr(t mcp.TransportSpec) string {
 }
 
 // Catalog servers of the profile with their install and enable state
-func mcpCatalog(ctx context.Context, rid any, params map[string]any, _ *tuigateway.Session) (map[string]any, error) {
+func mcpCatalog(ctx context.Context, rid any, params map[string]any, _ *tuihost.Session) (map[string]any, error) {
 	entries, err := mcp.ListCatalog()
 	if err != nil {
 		return nil, err
@@ -203,7 +183,7 @@ func mcpCatalog(ctx context.Context, rid any, params map[string]any, _ *tuigatew
 }
 
 // Summaries of every configured and plugin server sorted by name
-func mcpServersList(ctx context.Context, rid any, params map[string]any, _ *tuigateway.Session) (map[string]any, error) {
+func mcpServersList(ctx context.Context, rid any, params map[string]any, _ *tuihost.Session) (map[string]any, error) {
 	servers, owners := mcpServerRows(ctx)
 	names := make([]string, 0, len(servers))
 	for name := range servers {
@@ -218,7 +198,7 @@ func mcpServersList(ctx context.Context, rid any, params map[string]any, _ *tuig
 }
 
 // Cached runtime state of each server, never connecting, the runtime view only for the served profile
-func mcpServersStatus(ctx context.Context, rid any, params map[string]any, _ *tuigateway.Session) (map[string]any, error) {
+func mcpServersStatus(ctx context.Context, rid any, params map[string]any, _ *tuihost.Session) (map[string]any, error) {
 	configured, owners := mcpServerRows(ctx)
 	includeRuntime := provider.IsMultiplexActive(ctx) || home.Key(home.Dir(ctx)) == home.Key(home.Process())
 	rendered := make(map[string]*mcp.Rendered, len(configured))
@@ -239,7 +219,7 @@ func mcpServersStatus(ctx context.Context, rid any, params map[string]any, _ *tu
 }
 
 // Adds a server from a catalog id, preset or explicit config, saving its bearer token to the profile env
-func mcpServersAdd(ctx context.Context, rid any, params map[string]any, _ *tuigateway.Session) (map[string]any, error) {
+func mcpServersAdd(ctx context.Context, rid any, params map[string]any, _ *tuihost.Session) (map[string]any, error) {
 	name, preset := strArg(params, "name"), strArg(params, "preset")
 	servers, owners := mcpServerRows(ctx)
 	if refusal := mcpPluginWriteError(rid, name, owners); refusal != nil {
@@ -295,7 +275,6 @@ func mcpServersAdd(ctx context.Context, rid any, params map[string]any, _ *tuiga
 	if err != nil {
 		return nil, err
 	}
-	recordMCPAdd(ctx, entry, serverConfig, savedOK)
 	if !savedOK {
 		return rpcErr(rid, 4001, fmt.Sprintf("server '%s' rejected: suspicious command/args configuration", name), nil), nil
 	}
@@ -311,7 +290,7 @@ func mcpServersAdd(ctx context.Context, rid any, params map[string]any, _ *tuiga
 }
 
 // Saves a server credential to the profile env and points the config at it by reference
-func mcpServersSetAPIKey(ctx context.Context, rid any, params map[string]any, _ *tuigateway.Session) (map[string]any, error) {
+func mcpServersSetAPIKey(ctx context.Context, rid any, params map[string]any, _ *tuihost.Session) (map[string]any, error) {
 	name, servers, errResp := mcpConfigServerOrError(ctx, rid, params)
 	if errResp != nil {
 		return errResp, nil
@@ -370,7 +349,7 @@ func mcpServersSetAPIKey(ctx context.Context, rid any, params map[string]any, _ 
 }
 
 // Connects to one server, lists its tools and disconnects, an oauth server also needing a stored token
-func mcpServersTest(ctx context.Context, rid any, params map[string]any, _ *tuigateway.Session) (map[string]any, error) {
+func mcpServersTest(ctx context.Context, rid any, params map[string]any, _ *tuihost.Session) (map[string]any, error) {
 	name, servers, errResp := mcpNamedServer(ctx, rid, params)
 	if errResp != nil {
 		return errResp, nil
@@ -413,7 +392,7 @@ func mcpServersTest(ctx context.Context, rid any, params map[string]any, _ *tuig
 }
 
 // Removes a config server from the profile config
-func mcpServersRemove(ctx context.Context, rid any, params map[string]any, _ *tuigateway.Session) (map[string]any, error) {
+func mcpServersRemove(ctx context.Context, rid any, params map[string]any, _ *tuihost.Session) (map[string]any, error) {
 	name := strArg(params, "name")
 	_, owners := mcpServerRows(ctx)
 	if refusal := mcpPluginWriteError(rid, name, owners); refusal != nil {
@@ -430,7 +409,7 @@ func mcpServersRemove(ctx context.Context, rid any, params map[string]any, _ *tu
 }
 
 // Begins a session backed OAuth flow for an http server and answers its authorization URL
-func mcpOAuthStart(ctx context.Context, rid any, params map[string]any, _ *tuigateway.Session) (map[string]any, error) {
+func mcpOAuthStart(ctx context.Context, rid any, params map[string]any, _ *tuihost.Session) (map[string]any, error) {
 	var clientRedirectURI *string
 	if uri := strArg(params, "client_redirect_uri"); uri != "" {
 		if _, err := mcp.ValidateClientRedirectURI(uri); err != nil {
@@ -469,23 +448,17 @@ func mcpOAuthStart(ctx context.Context, rid any, params map[string]any, _ *tuiga
 }
 
 // Polls a flow for pending, approved or error, approved tokens persisted per profile
-func mcpOAuthPoll(ctx context.Context, rid any, params map[string]any, _ *tuigateway.Session) (map[string]any, error) {
+func mcpOAuthPoll(ctx context.Context, rid any, params map[string]any, _ *tuihost.Session) (map[string]any, error) {
 	out := pyjson.ObjectOf("ok", true)
 	out.Update(mcp.PollOAuthFlow(ctx, strArg(params, "session_id"), strArg(params, "name")))
 	return ok(rid, out), nil
 }
 
 // Cancels a flow the resolved profile owns, waking its callback worker
-func mcpOAuthCancel(ctx context.Context, rid any, params map[string]any, _ *tuigateway.Session) (map[string]any, error) {
+func mcpOAuthCancel(ctx context.Context, rid any, params map[string]any, _ *tuihost.Session) (map[string]any, error) {
 	homeDir, err := pypath.Resolve(pypath.Expanduser(home.Dir(ctx)))
 	if err != nil {
 		return nil, err
 	}
 	return ok(rid, mcp.CancelOAuthFlow(ctx, strArg(params, "session_id"), strArg(params, "name"), homeDir)), nil
-}
-
-// Relays a client captured redirect into a client redirect flow
-func mcpOAuthCallback(ctx context.Context, rid any, params map[string]any, _ *tuigateway.Session) (map[string]any, error) {
-	return ok(rid, mcp.DeliverOAuthCallbackFlow(ctx, strArg(params, "session_id"), strArg(params, "name"), strOr(params["code"]),
-		strOr(params["state"]), strOr(params["error"]), strOr(params["iss"]))), nil
 }

@@ -225,7 +225,7 @@ func touchActivityIfDue(ctx context.Context, env *Env, st *activityState, label 
 		func() {
 			defer func() {
 				if r := recover(); r != nil {
-					toolsLogger(env).Debug("activity callback failed during a long-running command", "panic", r)
+					envLog(env).Debug("activity callback failed during a long-running command", "panic", r)
 				}
 			}()
 			cb(text)
@@ -289,7 +289,7 @@ func envUpdateJSONStore(ctx context.Context, path string, update func(*pyjson.Ob
 	os.MkdirAll(filepath.Dir(lockPath), 0o755)
 	unlock, err := lockStoreFile(lockPath, jsonStoreLockTimeout)
 	if err != nil {
-		slog.Warn("Updating snapshot store without its lock", "path", path, "error", err)
+		pkgLog().Warn("Updating snapshot store without its lock", "path", path, "error", err)
 	} else {
 		defer unlock()
 	}
@@ -1103,7 +1103,7 @@ type waitTrace struct {
 
 // Tracer that stays silent unless ICEBATH_DEBUG_INTERRUPT is set
 func newWaitTrace(ctx context.Context, env *Env, proc ProcessHandle, timeout int) *waitTrace {
-	t := &waitTrace{enabled: debugInterrupt, timeout: timeout, ctx: ctx, log: toolsLogger(env)}
+	t := &waitTrace{enabled: debugInterrupt, timeout: timeout, ctx: ctx, log: envLog(env)}
 	if !t.enabled {
 		return t
 	}
@@ -1452,7 +1452,7 @@ func (b *baseEnv) snapshotScriptArgs(cwd string) snapshotScriptArgs {
 // Captures the login shell environment into the snapshot, falling back to bash -l or bash -c per command
 func (b *baseEnv) initSession(ctx context.Context) {
 	bootstrap := snapshotBootstrapScript(b.snapshotScriptArgs(b.Cwd()), b.snapshotExcludedPassthroughNames())
-	log := toolsLogger(b.env).With("logger", "tools.environments.base")
+	log := envLog(b.env)
 	err := func() error {
 		p, err := b.self.runBash(ctx, bootstrap, true, b.snapshotTimeout, nil)
 		if err != nil {
@@ -1638,7 +1638,7 @@ func (b *baseEnv) waitForProcess(ctx context.Context, p ProcessHandle, o waitOpt
 func (b *baseEnv) callYieldHandler(h func(ProcessHandle, string) *ExecResult, p ProcessHandle, soFar string) (handed *ExecResult) {
 	defer func() {
 		if r := recover(); r != nil {
-			toolsLogger(b.env).Warn("yield-to-background handoff failed; continuing to wait", "panic", r)
+			envLog(b.env).Warn("yield-to-background handoff failed; continuing to wait", "panic", r)
 			handed = nil
 		}
 	}()
@@ -1776,7 +1776,7 @@ func (b *baseEnv) killSpawnedTree(p ProcessHandle) {
 	func() {
 		defer func() {
 			if r := recover(); r != nil {
-				toolsLogger(b.env).Debug("terminal wait-bound kill_process failed", "panic", r)
+				envLog(b.env).Debug("terminal wait-bound kill_process failed", "panic", r)
 			}
 		}()
 		b.self.killProcess(p)
@@ -1903,7 +1903,7 @@ func ExecPrefix(e Environment, user string, interactive bool) []string {
 	}
 	prefix, err := p.ExecPrefix(user, interactive)
 	if err != nil {
-		slog.Warn(fmt.Sprintf("%s.exec_prefix() failed; treating the backend as unable to stream", e.EnvType()), "error", err)
+		pkgLog().Warn(fmt.Sprintf("%s.exec_prefix() failed; treating the backend as unable to stream", e.EnvType()), "error", err)
 		return nil
 	}
 	if len(prefix) == 0 {
@@ -2040,8 +2040,24 @@ type RunInResult struct {
 	ReturnCode int
 }
 
-// RunIn runs one short argv inside the environment capturing bytes output
+// Backend able to bring back its container after a command output says it was removed out of band
+type goneRecoverer interface {
+	RecoverGone(ctx context.Context, output string) bool
+}
+
+// RunIn runs one short argv inside the environment capturing bytes output, retrying once on a recovered container
 func RunIn(ctx context.Context, e Environment, argv []string, childEnv map[string]string, user string, timeout time.Duration, stdin []byte) (*RunInResult, error) {
+	res, err := runInOnce(ctx, e, argv, childEnv, user, timeout, stdin)
+	if err != nil || res.ReturnCode == 0 {
+		return res, err
+	}
+	if r, ok := e.(goneRecoverer); ok && r.RecoverGone(ctx, string(res.Stderr)) {
+		return runInOnce(ctx, e, argv, childEnv, user, timeout, stdin)
+	}
+	return res, nil
+}
+
+func runInOnce(ctx context.Context, e Environment, argv []string, childEnv map[string]string, user string, timeout time.Duration, stdin []byte) (*RunInResult, error) {
 	command := RemoteCommand(e, argv, childEnv, user, stdin != nil)
 	if command == nil {
 		return nil, fmt.Errorf("%s cannot exec argv", e.EnvType())

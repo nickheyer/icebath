@@ -305,57 +305,11 @@ func TestStatusSnapshotLeavesTheAuthStoreManifestByteIdentical(t *testing.T) {
 	}
 }
 
-// ---- nous status cache ----
-
-func TestGetNousAuthStatusCachesConsecutiveCalls(t *testing.T) {
-	h, env := codexTestEnv(t)
-	writeAuthStore(t, h, map[string]any{"providers": map[string]any{}})
-	InvalidateNousAuthStatusCache()
-	t.Cleanup(InvalidateNousAuthStatusCache)
-	calls := 0
-	prev := computeNousAuthStatusFn
-	computeNousAuthStatusFn = func(PoolEnv) map[string]any {
-		calls++
-		return map[string]any{"logged_in": false, "source": "auth_store", "call": calls}
-	}
-	t.Cleanup(func() { computeNousAuthStatusFn = prev })
-	first := GetNousAuthStatus(env)
-	second := GetNousAuthStatus(env)
-	third := GetNousAuthStatus(env)
-	if calls != 1 {
-		t.Fatalf("compute called %d times", calls)
-	}
-	if !config.Equal(first, second) || !config.Equal(second, third) {
-		t.Fatal("cached snapshots differ")
-	}
-	first["mutated"] = true
-	if _, has := GetNousAuthStatus(env)["mutated"]; has {
-		t.Fatal("caller mutation leaked into the cache")
-	}
-	writeAuthStore(t, h, map[string]any{"providers": map[string]any{"nous": map[string]any{}}})
-	touched := time.Now().Add(2 * time.Second)
-	_ = os.Chtimes(filepath.Join(h, "auth.json"), touched, touched)
-	GetNousAuthStatus(env)
-	if calls != 2 {
-		t.Fatalf("a store rewrite did not invalidate the memo, calls %d", calls)
-	}
-}
-
 // ---- oauth flow table ----
 
 func TestOAuthProviderFlowTerminalRefreshCodes(t *testing.T) {
-	dead := nousErr("dead", "invalid_grant", true)
-	if !isTerminalNousRefreshError(dead) || !isTerminalRefreshError(dead, "nous") {
-		t.Fatal("nous invalid_grant must be terminal")
-	}
-	if !isTerminalNousRefreshError(nousErr("no login", "nous_auth_missing", true)) {
-		t.Fatal("nous missing state must be terminal")
-	}
-	if isTerminalNousRefreshError(nousErr("dead", "invalid_grant", false)) {
-		t.Fatal("relogin not required is never terminal")
-	}
-	if isTerminalCodexOAuthRefreshError(dead) {
-		t.Fatal("a nous error is not a codex terminal error")
+	if isTerminalCodexOAuthRefreshError(xaiErr("dead", "invalid_grant", true)) {
+		t.Fatal("an xai error is not a codex terminal error")
 	}
 	if !isTerminalCodexOAuthRefreshError(codexErr("x", "codex_auth_missing_refresh_token", true)) {
 		t.Fatal("codex missing refresh token must be terminal")
@@ -366,7 +320,7 @@ func TestOAuthProviderFlowTerminalRefreshCodes(t *testing.T) {
 	if isTerminalCodexOAuthRefreshError(nil) || isTerminalCodexOAuthRefreshError(os.ErrNotExist) {
 		t.Fatal("non auth errors are never terminal")
 	}
-	for _, id := range []string{"nous", "openai-codex", "xai-oauth"} {
+	for _, id := range []string{"openai-codex", "xai-oauth"} {
 		if !OAuthProviderFlows[id].LogoutFromConfig {
 			t.Fatalf("%s must log out from config", id)
 		}
@@ -475,7 +429,7 @@ func TestUpdateConfigForProviderDefaultModelAndClearDefault(t *testing.T) {
 	if _, has := modelCfg["base_url"]; has {
 		t.Fatal("a stale base_url survived a provider switch without one")
 	}
-	if _, err := updateConfigForProvider(env, "nous", "", "", true); err != nil {
+	if _, err := updateConfigForProvider(env, "deepseek", "", "", true); err != nil {
 		t.Fatal(err)
 	}
 	if _, has := readModelCfg(t, h)["default"]; has {

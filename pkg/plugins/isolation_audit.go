@@ -20,10 +20,10 @@ const (
 
 // Top level packages that are the agent's own process state when a plugin imports them
 var IcebathPackages = map[string]bool{
-	"agent": true, "tools": true, "hermes_cli": true, "icebath_cli": true, "gateway": true, "cron": true, "providers": true,
+	"agent": true, "tools": true, "icebath_cli": true, "gateway": true, "cron": true, "providers": true,
 	"plugins": true, "tui_gateway": true, "acp_adapter": true, "run_agent": true, "cli": true, "model_tools": true,
-	"toolsets": true, "hermes_state": true, "hermes_constants": true, "icebath_constants": true, "hermes_logging": true,
-	"hermes_time": true, "utils": true, "registration_lifecycle": true, "hermes_platform": true,
+	"toolsets": true, "icebath_state": true, "icebath_constants": true, "icebath_logging": true,
+	"icebath_time": true, "utils": true, "registration_lifecycle": true, "icebath_platform": true,
 }
 
 var isolationKindReasons = map[string]string{

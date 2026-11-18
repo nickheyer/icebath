@@ -8,7 +8,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"log/slog"
 	"math"
 	"os"
 	"os/exec"
@@ -53,8 +52,6 @@ type processProber interface {
 }
 
 var identityProber processProber = osProcessProber{}
-
-var identityLogger = func() *slog.Logger { return slog.Default() }
 
 // Pid of this process, swapped by tests that stamp another spawner
 var currentPid = os.Getpid
@@ -254,7 +251,7 @@ type LedgerEntry struct {
 	SpawnerCreate *float64 `json:"spawner_create"`
 	RegisteredAt  float64  `json:"registered_at"`
 	Argv          string   `json:"argv"`
-	IcebathHome   string   `json:"hermes_home"`
+	IcebathHome   string   `json:"icebath_home"`
 	BootStart     *float64 `json:"boot_start"`
 	SpawnerBoot   *float64 `json:"spawner_boot"`
 	BootID        *string  `json:"boot_id"`
@@ -264,7 +261,7 @@ type LedgerEntry struct {
 func (e LedgerEntry) asObject() *pyjson.Object {
 	o := pyjson.ObjectOf(
 		"pid", e.Pid, "create_time", nil, "purpose", e.Purpose, "install", e.Install, "spawner_pid", nil,
-		"spawner_create", nil, "registered_at", e.RegisteredAt, "argv", e.Argv, "hermes_home", e.IcebathHome,
+		"spawner_create", nil, "registered_at", e.RegisteredAt, "argv", e.Argv, home.RecordKey, e.IcebathHome,
 		"boot_start", nil, "spawner_boot", nil, "boot_id", nil)
 	if e.CreateTime != nil {
 		o.Set("create_time", *e.CreateTime)
@@ -359,10 +356,27 @@ func readLedger(path string) ([]*pyjson.Object, bool) {
 	out := make([]*pyjson.Object, 0, len(list))
 	for _, item := range list {
 		if m, ok := item.(*pyjson.Object); ok {
+			renameRetiredHomeKey(m)
 			out = append(out, m)
 		}
 	}
 	return out, true
+}
+
+// Moves the home of a row an older icebath wrote to the current key in place, so the next write carries it
+func renameRetiredHomeKey(row *pyjson.Object) {
+	retired := home.RetiredRecordKey(home.RecordKey)
+	if _, has := row.Get(home.RecordKey); has {
+		return
+	}
+	for i, k := range row.Keys {
+		if k == retired {
+			row.Keys[i] = home.RecordKey
+			row.Vals[home.RecordKey] = row.Vals[retired]
+			delete(row.Vals, retired)
+			return
+		}
+	}
 }
 
 // Ledger entries, false after parking a corrupt file, caller holds the ledger lock
@@ -371,7 +385,7 @@ func readLedgerOrQuarantine(path string) ([]*pyjson.Object, bool) {
 	if !ok {
 		parked := path + ".corrupt"
 		if err := os.Rename(path, parked); err == nil {
-			identityLogger().Warn(fmt.Sprintf("spawn ledger was unreadable; moved to %s", parked))
+			pkgLog().Warn(fmt.Sprintf("spawn ledger was unreadable; moved to %s", parked))
 		}
 	}
 	return entries, ok
@@ -474,9 +488,9 @@ func appendLedgerEntry(ctx context.Context, entry LedgerEntry) bool {
 	if err != nil {
 		if !ledgerLockWarned {
 			ledgerLockWarned = true
-			identityLogger().Warn("spawn ledger lock unavailable (a stalled holder, or no file locks here); writing without it, so concurrent icebath processes may drop each other's rows")
+			pkgLog().Warn("spawn ledger lock unavailable (a stalled holder, or no file locks here); writing without it, so concurrent icebath processes may drop each other's rows")
 		}
-		identityLogger().Debug("spawn ledger lock unavailable", "error", err)
+		pkgLog().Debug("spawn ledger lock unavailable", "error", err)
 	} else {
 		defer unlock()
 	}
@@ -491,11 +505,11 @@ func appendLedgerEntry(ctx context.Context, entry LedgerEntry) bool {
 	}
 	pruned = append(pruned, entry.asObject())
 	if _, err := home.Mkdir(ctx, filepath.Dir(path)); err != nil {
-		identityLogger().Debug("spawn ledger write failed", "error", err)
+		pkgLog().Debug("spawn ledger write failed", "error", err)
 		return false
 	}
 	if err := procAtomicJSONWrite(path, pruned, 0o600, true); err != nil {
-		identityLogger().Debug("spawn ledger write failed", "error", err)
+		pkgLog().Debug("spawn ledger write failed", "error", err)
 		return false
 	}
 	return true
@@ -700,7 +714,7 @@ func ReapOrphanedMCPHelpers(projectRoot string, killFn func(int) error) []int {
 		}
 		if killFn != nil {
 			if err := killFn(pid); err != nil {
-				identityLogger().Debug(fmt.Sprintf("mcp-helper orphan reap failed for %v", entry), "error", err)
+				pkgLog().Debug(fmt.Sprintf("mcp-helper orphan reap failed for %v", entry), "error", err)
 				continue
 			}
 		} else {
@@ -711,7 +725,7 @@ func ReapOrphanedMCPHelpers(projectRoot string, killFn func(int) error) []int {
 				killProcessTreeWindows(pid)
 			} else {
 				if err := identityProber.Terminate(pid); err != nil {
-					identityLogger().Debug(fmt.Sprintf("mcp-helper orphan reap failed for %v", entry), "error", err)
+					pkgLog().Debug(fmt.Sprintf("mcp-helper orphan reap failed for %v", entry), "error", err)
 					continue
 				}
 				if !waitProcessGone(pid, 2*time.Second) {
@@ -722,7 +736,7 @@ func ReapOrphanedMCPHelpers(projectRoot string, killFn func(int) error) []int {
 		reaped = append(reaped, pid)
 	}
 	if len(reaped) > 0 {
-		identityLogger().Info(fmt.Sprintf("reaped %d orphaned stdio MCP helper(s): %v", len(reaped), reaped))
+		pkgLog().Info(fmt.Sprintf("reaped %d orphaned stdio MCP helper(s): %v", len(reaped), reaped))
 	}
 	return reaped
 }
@@ -812,7 +826,7 @@ func ProcessGroupSupervised(pgid int) bool {
 func spawnSupervisor() supervisorHandle {
 	h, err := startSupervisorProcess()
 	if err != nil {
-		identityLogger().Debug("Could not start the owner-death supervisor", "error", err)
+		pkgLog().Debug("Could not start the owner-death supervisor", "error", err)
 		return nil
 	}
 	watchSupervisor(h)
@@ -842,7 +856,7 @@ func watchSupervisor(h supervisorHandle) {
 		if restart {
 			what = "restarting it"
 		}
-		identityLogger().Warn(fmt.Sprintf("owner-death supervisor exited (status %d) with %d process group(s) registered; %s", code, len(supervisedPgids), what))
+		pkgLog().Warn(fmt.Sprintf("owner-death supervisor exited (status %d) with %d process group(s) registered; %s", code, len(supervisedPgids), what))
 		if restart {
 			startingYoungRestart = youngSignal
 			startSupervisorLocked()

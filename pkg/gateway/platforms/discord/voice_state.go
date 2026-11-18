@@ -5,7 +5,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"log/slog"
 	"os"
 	"os/exec"
 	"strconv"
@@ -51,7 +50,7 @@ type voiceUtterance struct {
 	pcm    []byte
 }
 
-// Per guild voice state the adapter holds, keyed by guild id like hermes
+// Per guild voice state the adapter holds, keyed by guild id
 type voiceState struct {
 	voiceClients       map[int64]voiceConnection
 	voiceLocks         map[int64]*sync.Mutex
@@ -147,7 +146,7 @@ func (a *DiscordAdapter) onVoiceStateUpdate(ctx context.Context, before *discord
 	if after.Member != nil {
 		display = memberDisplayName(after.Member)
 	}
-	slog.Info(fmt.Sprintf("Voice state: %s (%s) %s (guild %d)", display, after.UserID, what, guildID))
+	pkgLog().Info(fmt.Sprintf("Voice state: %s (%s) %s (guild %d)", display, after.UserID, what, guildID))
 	if vc == nil || receiver == nil {
 		return
 	}
@@ -241,7 +240,7 @@ func (e *ffmpegError) Error() string { return e.err.Error() }
 func (a *DiscordAdapter) processVoiceInput(ctx context.Context, guildID, userID int64, pcm []byte, capturedFor *int64) {
 	f, err := os.CreateTemp("", "vc_listen_*.wav")
 	if err != nil {
-		slog.Warn(fmt.Sprintf("Voice input processing failed: %s", err))
+		pkgLog().Warn(fmt.Sprintf("Voice input processing failed: %s", err))
 		return
 	}
 	wavPath := f.Name()
@@ -250,10 +249,10 @@ func (a *DiscordAdapter) processVoiceInput(ctx context.Context, guildID, userID 
 	fail := func(err error) {
 		var fe *ffmpegError
 		if errors.As(err, &fe) && fe.stderr != "" {
-			slog.Warn(fmt.Sprintf("Voice input processing failed: %s (ffmpeg: %s)", err, pystr.Strip(fe.stderr)))
+			pkgLog().Warn(fmt.Sprintf("Voice input processing failed: %s (ffmpeg: %s)", err, pystr.Strip(fe.stderr)))
 			return
 		}
-		slog.Warn(fmt.Sprintf("Voice input processing failed: %s", err))
+		pkgLog().Warn(fmt.Sprintf("Voice input processing failed: %s", err))
 	}
 	if err := pcmToWav(ctx, pcm, wavPath, 48000, 2); err != nil {
 		fail(err)
@@ -272,13 +271,13 @@ func (a *DiscordAdapter) processVoiceInput(ctx context.Context, guildID, userID 
 	if transcript == "" || media.IsWhisperHallucination(transcript) {
 		return
 	}
-	slog.Info(fmt.Sprintf("Voice input from user %d: %s", userID, cut(transcript, 100)))
+	pkgLog().Info(fmt.Sprintf("Voice input from user %d: %s", userID, cut(transcript, 100)))
 	a.mu.Lock()
 	current, bound := a.voiceTextChannels[guildID]
 	callback := a.voiceInputCallback
 	a.mu.Unlock()
 	if bound != (capturedFor != nil) || (bound && current != *capturedFor) {
-		slog.Info(fmt.Sprintf("Dropping voice input from user %d: binding moved during transcription", userID))
+		pkgLog().Info(fmt.Sprintf("Dropping voice input from user %d: binding moved during transcription", userID))
 		return
 	}
 	if callback != nil {

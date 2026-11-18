@@ -3,7 +3,6 @@ package state
 import (
 	"context"
 	"fmt"
-	"log/slog"
 	"strings"
 	"sync"
 	"time"
@@ -352,7 +351,7 @@ var tokenCoalescer = func(batch []queuedTokenDelta) []queuedTokenDelta { return 
 func coalesceOrRaw(batch []queuedTokenDelta) (out []queuedTokenDelta) {
 	defer func() {
 		if r := recover(); r != nil {
-			slog.Warn(fmt.Sprintf("async token accounting: coalesce failed, applying raw batch: %v", r))
+			pkgLog().Warn(fmt.Sprintf("async token accounting: coalesce failed, applying raw batch: %v", r))
 			out = batch
 		}
 	}()
@@ -374,7 +373,7 @@ func (d *SessionDB) applyTokenUpdate(sessionID string, delta TokenCountDelta) er
 func (d *SessionDB) applyTokenBatch(batch []queuedTokenDelta) {
 	for _, item := range coalesceOrRaw(batch) {
 		if err := d.applyTokenUpdate(item.sessionID, item.delta); err != nil {
-			slog.Warn(fmt.Sprintf("async token accounting: apply failed (session=%s): %s", item.sessionID, err))
+			pkgLog().Warn(fmt.Sprintf("async token accounting: apply failed (session=%s): %s", item.sessionID, err))
 		}
 	}
 }
@@ -516,7 +515,7 @@ func (d *SessionDB) stopTokenWriter(joinTimeoutS float64) {
 			s.tokenMu.Lock()
 			queued := len(s.tokenQueue)
 			s.tokenMu.Unlock()
-			slog.Warn(fmt.Sprintf("async token accounting: writer did not stop within %.0fs; %d queued delta(s) not persisted", joinTimeoutS, queued))
+			pkgLog().Warn(fmt.Sprintf("async token accounting: writer did not stop within %.0fs; %d queued delta(s) not persisted", joinTimeoutS, queued))
 			return
 		}
 	}
@@ -525,7 +524,7 @@ func (d *SessionDB) stopTokenWriter(joinTimeoutS float64) {
 	for s.tokenBusy {
 		remaining := deadline - monotonicSeconds()
 		if remaining <= 0 {
-			slog.Warn(fmt.Sprintf("async token accounting: concurrent drain did not finish within %.0fs; %d queued delta(s) not persisted", joinTimeoutS, len(s.tokenQueue)))
+			pkgLog().Warn(fmt.Sprintf("async token accounting: concurrent drain did not finish within %.0fs; %d queued delta(s) not persisted", joinTimeoutS, len(s.tokenQueue)))
 			s.tokenMu.Unlock()
 			return
 		}

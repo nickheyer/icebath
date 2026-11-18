@@ -3,7 +3,6 @@ package yuanbao
 import (
 	"context"
 	"fmt"
-	"log/slog"
 	"strings"
 	"time"
 
@@ -23,7 +22,7 @@ const (
 	groupQueuePollS = 0.1
 )
 
-// Gateway dispatch of a built inbound event, a package var the way hermes tests replace handle_message
+// Gateway dispatch of a built inbound event, a package var the way tests replace handle_message
 var handleMessageFn = func(ctx context.Context, adapter *YuanbaoAdapter, event *gateway.MessageEvent) error {
 	return adapter.HandleMessage(ctx, event)
 }
@@ -172,7 +171,7 @@ func consumeGroupQueue(ctx context.Context, adapter *YuanbaoAdapter, sessionKey 
 		if err != nil || dispatch == nil {
 			return err
 		}
-		slog.Debug(fmt.Sprintf("[%s] Group queue: dispatching for %s (remaining=%d)", adapter.Name(), pystr.Slice(sessionKey, 0, 50), remaining))
+		pkgLog().Debug(fmt.Sprintf("[%s] Group queue: dispatching for %s (remaining=%d)", adapter.Name(), pystr.Slice(sessionKey, 0, 50), remaining))
 		err = dispatch(ctx)
 		for err == nil && adapter.HasActiveSession(sessionKey) {
 			err = sleep(ctx, groupQueuePollS)
@@ -181,7 +180,7 @@ func consumeGroupQueue(ctx context.Context, adapter *YuanbaoAdapter, sessionKey 
 			return ctx.Err()
 		}
 		if err != nil {
-			slog.Error(fmt.Sprintf("[%s] Group queue consumer error", adapter.Name()), "error", err)
+			pkgLog().Error(fmt.Sprintf("[%s] Group queue consumer error", adapter.Name()), "error", err)
 		}
 	}
 }
@@ -196,7 +195,7 @@ func (m *DispatchMiddleware) Handle(ctx context.Context, ic *InboundContext, nex
 	dispatch := func(tctx context.Context) error { return dispatchInboundEvent(tctx, adapter, ic, sessionKey) }
 	if ic.ChatType == "group" {
 		size, created := adapter.enqueueGroupDispatch(sessionKey, dispatch)
-		slog.Info(fmt.Sprintf("[%s] Group message enqueued (qsize=%d) for %s", adapter.Name(), size, pystr.Slice(sessionKey, 0, 50)))
+		pkgLog().Info(fmt.Sprintf("[%s] Group message enqueued (qsize=%d) for %s", adapter.Name(), size, pystr.Slice(sessionKey, 0, 50)))
 		if created {
 			adapter.trackInbound(gateway.SpawnAdapterTask(ctx, func(tctx context.Context) error {
 				return consumeGroupQueue(tctx, adapter, sessionKey)

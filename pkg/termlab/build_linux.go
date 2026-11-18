@@ -13,8 +13,6 @@ import (
 	"syscall"
 
 	"golang.org/x/sys/unix"
-
-	"github.com/nickheyer/icebath/pkg/observability"
 )
 
 // Environment variable carrying the address space limit and command of a limited exec, as JSON
@@ -129,7 +127,7 @@ func RemoveBuild() error {
 	return os.RemoveAll(built.dir)
 }
 
-// Writes an icebath home with a loopback provider, metrics declined and the settings given
+// Writes an icebath home with a loopback provider and the settings given
 func WriteConfig(dir string, settings map[string]string) error {
 	arena := map[string]any{}
 	cfg := map[string]any{
@@ -138,7 +136,6 @@ func WriteConfig(dir string, settings map[string]string) error {
 		"auxiliary": map[string]any{"title_generation": map[string]any{"enabled": false}},
 		"updates":   map[string]any{"check": false},
 	}
-	observability.SetAnswer(cfg, false, false)
 	for key, value := range settings {
 		if name, ok := strings.CutPrefix(key, "arena."); ok {
 			arena[name] = value

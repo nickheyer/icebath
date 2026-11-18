@@ -175,7 +175,7 @@ func dispatchOnGatewayLoop(ctx context.Context, runner any, makeCoro func(ctx co
 		}()
 	}
 	if err := gatewayLoop.CallSoonThreadsafe(start); err != nil {
-		sendLog().Debug(fmt.Sprintf("%s: %s", logMessage, err))
+		pkgLog().Debug(fmt.Sprintf("%s: %s", logMessage, err))
 		return map[string]any{"error": "Gateway loop unavailable for send dispatch"}, nil
 	}
 	select {
@@ -267,7 +267,7 @@ func sendViaAdapter(ctx context.Context, platform gateway.Platform, pconfig *gat
 		if errors.Is(err, context.Canceled) {
 			return nil, err
 		}
-		sendLog().Debug(fmt.Sprintf("Plugin standalone send for %s raised", platformName), "error", err)
+		pkgLog().Debug(fmt.Sprintf("Plugin standalone send for %s raised", platformName), "error", err)
 		return map[string]any{"error": "Plugin standalone send failed: " + boundedSendError(err)}, nil
 	}
 	if result != nil && (pyrepr.Truthy(result["success"]) || pyrepr.Truthy(result["error"])) {

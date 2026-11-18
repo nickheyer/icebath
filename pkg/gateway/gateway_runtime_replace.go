@@ -83,7 +83,7 @@ func replaceVerifiedOwner(control string, payload *pyjson.Object) (int, any, str
 	if n, ok := protocol.(*big.Int); ok && n.Cmp(big.NewInt(1)) > 0 {
 		return 0, nil, "owner_newer"
 	}
-	reported, _ := payload.Get("hermes_home")
+	reported, _ := home.RecordValue(payload.Get, home.RecordKey)
 	if !replaceWithinInstall(control, replaceInstallRootOf()) || !replaceSame(reported, control) {
 		return 0, nil, "foreign_install"
 	}

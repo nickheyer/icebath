@@ -4,8 +4,8 @@ package camofox
 import (
 	"context"
 	"fmt"
+
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"log/slog"
 
 	"github.com/nickheyer/icebath/pkg/plugins"
 	"github.com/nickheyer/icebath/pkg/tools"
@@ -57,7 +57,7 @@ func (Plugin) Register(pctx *plugins.Context) error {
 		}
 	}
 	if _, err := pctx.RegisterBrowserPageBackend(newPageBackend(pctx.HomeContext())); err != nil {
-		pluginLog().Info(fmt.Sprintf("camofox: browser_vault fill unavailable here (%v)", err))
+		pkgLog().Info(fmt.Sprintf("camofox: browser_vault fill unavailable here (%v)", err))
 	}
 	pctx.RegisterHook("on_session_end", onSessionEnd, false)
 	pctx.RegisterHook("on_session_finalize", onSessionFinalize, false)
@@ -92,6 +92,3 @@ func onSessionFinalize(ctx context.Context, kwargs map[string]any) (any, error) 
 	}
 	return nil, nil
 }
-
-// Logger of the reference camofox module
-func pluginLog() *slog.Logger { return slog.Default().With("logger", "hermes_plugins.camofox") }

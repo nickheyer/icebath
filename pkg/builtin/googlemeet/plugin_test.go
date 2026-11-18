@@ -108,13 +108,9 @@ func TestCLIRegisterIncludesNodeSubcommand(t *testing.T) {
 func TestCmdInstallUsesDeclaredDependenciesAndPMChromium(t *testing.T) {
 	requireMeetPlatform(t)
 	out := captureCLI(t)
-	ps, pe, pr := pmSyncVenv, pmEnsure, installRun
-	t.Cleanup(func() { pmSyncVenv, pmEnsure, installRun = ps, pe, pr })
+	pe, pr := pmEnsure, installRun
+	t.Cleanup(func() { pmEnsure, installRun = pe, pr })
 	var calls []any
-	pmSyncVenv = func(_ context.Context, o pm.SyncVenvOptions) error {
-		calls = append(calls, o)
-		return nil
-	}
 	pmEnsure = func(_ context.Context, name string, o pm.EnsureOptions) (*pm.Runner, error) {
 		calls = append(calls, name, o)
 		return &pm.Runner{Name: name}, nil
@@ -126,14 +122,9 @@ func TestCmdInstallUsesDeclaredDependenciesAndPMChromium(t *testing.T) {
 	if code := cmdInstall(context.Background(), false, true); code != 0 {
 		t.Fatal(code, out.String())
 	}
-	want := []any{pm.SyncVenvOptions{Extras: []string{"google-meet"}, Explicit: true}, "chromium", pm.EnsureOptions{Explicit: true}}
+	want := []any{"chromium", pm.EnsureOptions{Explicit: true}}
 	if !reflect.DeepEqual(calls, want) {
 		t.Fatalf("%#v", calls)
-	}
-	for _, extra := range calls[0].(pm.SyncVenvOptions).Extras {
-		if _, ok := pm.Anchors[extra]; !ok {
-			t.Fatalf("extra %s is not declared", extra)
-		}
 	}
 	if !strings.Contains(out.String(), "icebath meet setup") {
 		t.Fatal(out.String())
@@ -143,10 +134,10 @@ func TestCmdInstallUsesDeclaredDependenciesAndPMChromium(t *testing.T) {
 func TestCmdInstallReportsDependencyFailure(t *testing.T) {
 	requireMeetPlatform(t)
 	out := captureCLI(t)
-	ps := pmSyncVenv
-	t.Cleanup(func() { pmSyncVenv = ps })
-	pmSyncVenv = func(context.Context, pm.SyncVenvOptions) error {
-		return errors.New("dependency resolution failed")
+	pe := pmEnsure
+	t.Cleanup(func() { pmEnsure = pe })
+	pmEnsure = func(context.Context, string, pm.EnsureOptions) (*pm.Runner, error) {
+		return nil, errors.New("dependency resolution failed")
 	}
 	if code := cmdInstall(context.Background(), false, true); code != 1 {
 		t.Fatal(code)

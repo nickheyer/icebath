@@ -6,14 +6,11 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
-	"math"
-	"os"
 	"strings"
 	"sync"
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/config"
-	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
@@ -34,187 +31,8 @@ func auxEntryExtra(entry *PooledCredential, key string, def any) any {
 	return def
 }
 
-// Nous provider state from the pool or the active profile auth.json, nil when not active with a token
-func auxReadNousAuth(ctx context.Context) map[string]any {
-	present, entry := auxSelectPoolEntryFn(ctx, "nous")
-	if present {
-		if entry == nil {
-			return nil
-		}
-		return map[string]any{
-			"access_token":       entry.AccessToken,
-			"refresh_token":      auxEntryAttr(entry.RefreshToken),
-			"agent_key":          auxEntryAttr(entry.AgentKey),
-			"inference_base_url": auxPoolRuntimeBaseURL(ctx, entry, auxNousDefaultBaseURL),
-			"portal_base_url":    auxEntryExtra(entry, "portal_base_url", nil),
-			"client_id":          auxEntryExtra(entry, "client_id", nil),
-			"scope":              auxEntryExtra(entry, "scope", nil),
-			"token_type":         auxEntryExtra(entry, "token_type", "Bearer"),
-			"source":             "pool",
-		}
-	}
-	provider, err := auxReadNousAuthFile(ctx)
-	if err != nil {
-		slog.Debug(fmt.Sprintf("Could not read Nous auth: %v", err))
-		return nil
-	}
-	return provider
-}
-
-// Nous state of an auth.json whose active provider is nous, nil when absent, inactive or tokenless
-func auxReadNousAuthFile(ctx context.Context) (map[string]any, error) {
-	path := auxAuthJSONPath(ctx)
-	if info, err := os.Stat(path); err != nil || !info.Mode().IsRegular() {
-		return nil, nil
-	}
-	raw, err := os.ReadFile(path)
-	if err != nil {
-		return nil, err
-	}
-	var parsed any
-	if err := json.Unmarshal([]byte(strings.TrimPrefix(string(raw), "\ufeff")), &parsed); err != nil {
-		return nil, err
-	}
-	data, ok := parsed.(map[string]any)
-	if !ok {
-		return nil, &auxAttributeError{typeName: pyrepr.TypeName(parsed), attr: "get"}
-	}
-	if data["active_provider"] != "nous" {
-		return nil, nil
-	}
-	providers, ok := data["providers"]
-	if !ok {
-		providers = map[string]any{}
-	}
-	pm, ok := providers.(map[string]any)
-	if !ok {
-		return nil, &auxAttributeError{typeName: pyrepr.TypeName(providers), attr: "get"}
-	}
-	nous, ok := pm["nous"]
-	if !ok {
-		nous = map[string]any{}
-	}
-	provider, ok := nous.(map[string]any)
-	if !ok {
-		return nil, &auxAttributeError{typeName: pyrepr.TypeName(nous), attr: "get"}
-	}
-	if !pyrepr.Truthy(provider["agent_key"]) && !pyrepr.Truthy(provider["access_token"]) {
-		return nil, nil
-	}
-	return provider, nil
-}
-
-// Usable Nous inference JWT of stored auth state, agent key before access token, empty when neither
-func auxNousAPIKey(provider map[string]any) string {
-	for _, pair := range [][2]string{{"agent_key", "agent_key_expires_at"}, {"access_token", "expires_at"}} {
-		token, ok := provider[pair[0]].(string)
-		if !ok || strings.TrimSpace(token) == "" {
-			continue
-		}
-		if NousInvokeJWTStatus(token, provider["scope"], provider[pair[1]], NousInvokeJWTMinTTL) == "" {
-			return token
-		}
-	}
-	return ""
-}
-
-// Agent key and access token state of a Nous pool row for the usability checks
-func auxNousEntryState(entry *PooledCredential) map[string]any {
-	return map[string]any{
-		"agent_key": auxEntryAttr(entry.AgentKey), "agent_key_expires_at": auxEntryAttr(entry.AgentKeyExpiresAt),
-		"access_token": auxEntryAttr(entry.AccessToken), "expires_at": auxEntryAttr(entry.ExpiresAt),
-		"scope": auxEntryExtra(entry, "scope", nil),
-	}
-}
-
-// Credential pool surface the Nous runtime read selects from and refreshes
-type auxRefreshablePool interface {
-	HasCredentials() bool
-	Select(model string) (PooledCredential, bool)
-	TryRefreshCurrent() (PooledCredential, bool)
-}
-
-// Nous pool loader seam, nil when the profile holds no Nous pool
-var auxLoadNousPoolFn = func(ctx context.Context) auxRefreshablePool {
-	if pool := LoadPool(modelsPoolEnv(ctx), "nous"); pool != nil {
-		return pool
-	}
-	return nil
-}
-
 // Pool entry selector seam the tests swap for a present but exhausted pool
 var auxSelectPoolEntryFn = auxSelectPoolEntry
-
-// Nous key and base URL from the selected pool row, refreshed when the agent key is short lived or forced
-func auxResolveNousPoolRuntimeAPI(ctx context.Context, forceRefresh bool) (string, string, bool) {
-	var pool auxRefreshablePool
-	if err := auxRecoverRaise(func() { pool = auxLoadNousPoolFn(ctx) }); err != nil {
-		slog.Debug(fmt.Sprintf("Auxiliary Nous pool credential resolution failed: %v", err))
-		return "", "", false
-	}
-	if pool == nil || !pool.HasCredentials() {
-		return "", "", false
-	}
-	var entry PooledCredential
-	var found bool
-	if err := auxRecoverRaise(func() { entry, found = pool.Select("") }); err != nil {
-		slog.Debug(fmt.Sprintf("Auxiliary Nous pool selection failed: %v", err))
-		return "", "", false
-	}
-	if !found {
-		return "", "", false
-	}
-	minTTL := time.Duration(auxNousMinKeyTTLSeconds()) * time.Second
-	if forceRefresh || !nousAgentKeyIsUsable(auxNousEntryState(&entry), minTTL) {
-		var refreshed PooledCredential
-		var ok bool
-		if err := auxRecoverRaise(func() { refreshed, ok = pool.TryRefreshCurrent() }); err != nil {
-			slog.Debug(fmt.Sprintf("Auxiliary Nous pool refresh failed: %v", err))
-			ok = false
-		}
-		if !ok {
-			return "", "", false
-		}
-		entry = refreshed
-	}
-	apiKey := auxNousAPIKey(auxNousEntryState(&entry))
-	baseURL := auxPoolRuntimeBaseURL(ctx, &entry, auxNousDefaultBaseURL)
-	if apiKey == "" || baseURL == "" {
-		return "", "", false
-	}
-	return apiKey, baseURL, true
-}
-
-// Nous runtime credential fetch, swapped by tests the way hermes tests patch the module function
-var auxResolveNousRuntimeAPIFn = auxResolveNousRuntimeAPI
-
-// Fresh Nous runtime credentials from the pool, then the auth store with a JWT refresh
-func auxResolveNousRuntimeAPI(ctx context.Context, forceRefresh bool, staleAccessToken string) (string, string, bool) {
-	if key, base, ok := auxResolveNousPoolRuntimeAPI(ctx, forceRefresh); ok {
-		return key, base, true
-	}
-	timeout := time.Duration(envFloat("ICEBATH_NOUS_TIMEOUT_SECONDS", 15) * float64(time.Second))
-	var creds map[string]any
-	err := auxRecoverRaise(func() {
-		var resolveErr error
-		creds, resolveErr = auxResolveNousRuntimeCredentialsFn(ctx, NousResolveOptions{Timeout: timeout, ForceRefresh: forceRefresh,
-			StaleAccessToken: staleAccessToken})
-		if resolveErr != nil {
-			panic(resolveErr)
-		}
-	})
-	if err != nil {
-		RecordNousCredentialFailure(ctx, err)
-		return "", "", false
-	}
-	ClearNousCredentialFailure()
-	return auxCredsPair(creds)
-}
-
-// Auth store Nous resolver seam the tests swap for a failing or canned refresh
-var auxResolveNousRuntimeCredentialsFn = func(ctx context.Context, opts NousResolveOptions) (map[string]any, error) {
-	return resolveNousRuntimeCredentialsWith(modelsPoolEnv(ctx), opts)
-}
 
 // Key and slash trimmed base URL of a runtime credentials map, false when either is missing
 func auxCredsPair(creds map[string]any) (string, string, bool) {
@@ -242,7 +60,7 @@ func auxResolveXaiOAuthForAux(ctx context.Context) (string, string, bool) {
 		}
 	})
 	if err != nil {
-		slog.Debug(fmt.Sprintf("Auxiliary xAI OAuth pool credential resolution failed: %v", err))
+		pkgLog().Debug(fmt.Sprintf("Auxiliary xAI OAuth pool credential resolution failed: %v", err))
 	} else if apiKey != "" && baseURL != "" {
 		return apiKey, baseURL, true
 	}
@@ -254,7 +72,7 @@ func auxResolveXaiOAuthForAux(ctx context.Context) (string, string, bool) {
 			panic(resolveErr)
 		}
 	}); err != nil {
-		slog.Debug(fmt.Sprintf("Auxiliary xAI OAuth runtime credential resolution failed: %v", err))
+		pkgLog().Debug(fmt.Sprintf("Auxiliary xAI OAuth runtime credential resolution failed: %v", err))
 		return "", "", false
 	}
 	return auxCredsPair(creds)
@@ -294,7 +112,7 @@ func auxXaiOAuthPoolPair(ctx context.Context) (string, string, error) {
 	return apiKey, xaiValidateInferenceBaseURL(env, candidate, DefaultXAIOAuthBaseURL), nil
 }
 
-// Singleton xAI OAuth resolver seam, refreshing an expiring token as hermes does by default
+// Singleton xAI OAuth resolver seam, refreshing an expiring token by default
 var auxResolveXaiOAuthRuntimeCredentialsFn = func(ctx context.Context) (map[string]any, error) {
 	return resolveXAIOAuthRuntimeCredentials(modelsPoolEnv(ctx), false, true, 0)
 }
@@ -325,7 +143,7 @@ func ResolveCodexCredentialAndBase(ctx context.Context) (string, string, error) 
 	return auxResolveCodexCredentialAndBase(ctx)
 }
 
-// Registry rows and the auth.json Codex token reader, swapped by tests the way hermes tests patch them
+// Registry rows and the auth.json Codex token reader, swapped by tests
 var (
 	auxRegistryRowsFn            = canonicalRegistryRows
 	auxReadCodexSingletonTokenFn = auxReadCodexSingletonToken
@@ -344,7 +162,7 @@ func auxReadCodexSingletonToken(ctx context.Context) string {
 			panic(readErr)
 		}
 	}); err != nil {
-		slog.Debug(fmt.Sprintf("Could not read Codex auth for auxiliary client: %v", err))
+		pkgLog().Debug(fmt.Sprintf("Could not read Codex auth for auxiliary client: %v", err))
 		return ""
 	}
 	accessToken, ok := data.tokens["access_token"].(string)
@@ -352,7 +170,7 @@ func auxReadCodexSingletonToken(ctx context.Context) string {
 		return ""
 	}
 	if exp, ok := auxJWTExp(accessToken); ok && exp != 0 && auxCodexNow() > exp {
-		slog.Debug(fmt.Sprintf("Codex access token expired (exp=%s), skipping", pyrepr.Float(exp)))
+		pkgLog().Debug(fmt.Sprintf("Codex access token expired (exp=%s), skipping", pyrepr.Float(exp)))
 		return ""
 	}
 	return strings.TrimSpace(accessToken)
@@ -397,7 +215,7 @@ func auxResolveAPIKeyProvider(ctx context.Context) (AuxClient, string, error) {
 			continue
 		}
 		if auxIsProviderUnhealthy(ctx, providerID, "") {
-			slog.Debug(fmt.Sprintf("Auxiliary api-key chain: %s is unhealthy, skipping", providerID))
+			pkgLog().Debug(fmt.Sprintf("Auxiliary api-key chain: %s is unhealthy, skipping", providerID))
 			continue
 		}
 		if providerID == "anthropic" {
@@ -456,7 +274,7 @@ func auxResolveAPIKeyProvider(ctx context.Context) (AuxClient, string, error) {
 		if name == "" {
 			name = providerID
 		}
-		slog.Debug(fmt.Sprintf("Auxiliary text client: %s (%s)%s", name, model, via))
+		pkgLog().Debug(fmt.Sprintf("Auxiliary text client: %s (%s)%s", name, model, via))
 		baseURL := auxToOpenAIBaseURL(rawBaseURL)
 		keyStr, _ := apiKey.(string)
 		if providerID == "gemini" && isNativeGeminiBaseURL(baseURL) {
@@ -601,7 +419,7 @@ func auxWarnPaidLaneOnce(model string) {
 	if seen {
 		return
 	}
-	slog.Warn(fmt.Sprintf("Auxiliary client: PAID lane engaged for auxiliary task — OpenRouter fallback model %s is not "+
+	pkgLog().Warn(fmt.Sprintf("Auxiliary client: PAID lane engaged for auxiliary task — OpenRouter fallback model %s is not "+
 		"a :free SKU and may incur real spend. Set auxiliary.free_only: true to restrict auxiliary "+
 		"fallbacks to free models, or auxiliary.openrouter_model to a :free model.", pyrepr.Repr(model)))
 }
@@ -614,7 +432,7 @@ func auxTryOpenrouter(ctx context.Context, explicitAPIKey any, model, explicitBa
 		orModel = cfgModel
 	}
 	if freeOnly && !auxIsFreeModel(orModel) {
-		slog.Warn(fmt.Sprintf("Auxiliary client: auxiliary.free_only is enabled but the OpenRouter fallback model %s is "+
+		pkgLog().Warn(fmt.Sprintf("Auxiliary client: auxiliary.free_only is enabled but the OpenRouter fallback model %s is "+
 			"not a :free SKU — skipping the OpenRouter fallback. Set auxiliary.openrouter_model to a "+
 			":free model (e.g. nvidia/nemotron-3-ultra-550b-a55b:free) or disable auxiliary.free_only.", pyrepr.Repr(orModel)))
 		return nil, "", nil
@@ -637,14 +455,14 @@ func auxTryOpenrouter(ctx context.Context, explicitAPIKey any, model, explicitBa
 			if baseURL == "" {
 				baseURL = OpenRouterBaseURL
 			}
-			slog.Debug("Auxiliary client: OpenRouter via pool")
+			pkgLog().Debug("Auxiliary client: OpenRouter via pool")
 			headers, err := BuildORHeaders(ctx, nil)
 			if err != nil {
 				return nil, "", err
 			}
 			return auxCreateOpenAIClient(ctx, orKey, baseURL, auxOpenAIOptions{DefaultHeaders: headers}), orModel, nil
 		}
-		slog.Debug("Auxiliary client: OpenRouter pool exhausted, trying OPENROUTER_API_KEY")
+		pkgLog().Debug("Auxiliary client: OpenRouter pool exhausted, trying OPENROUTER_API_KEY")
 	}
 	orKey := explicitAPIKey
 	if !auxKeyTruthy(orKey) {
@@ -662,7 +480,7 @@ func auxTryOpenrouter(ctx context.Context, explicitAPIKey any, model, explicitBa
 		auxMarkProviderUnhealthy(ctx, "openrouter", 60, "", reason, slog.LevelDebug)
 		return nil, "", nil
 	}
-	slog.Debug("Auxiliary client: OpenRouter")
+	pkgLog().Debug("Auxiliary client: OpenRouter")
 	headers, err := BuildORHeaders(ctx, nil)
 	if err != nil {
 		return nil, "", err
@@ -702,107 +520,4 @@ func auxDescribeOpenrouterUnavailable(ctx context.Context, model string) (string
 		return "OPENROUTER_API_KEY not set", nil
 	}
 	return "no usable OpenRouter credentials found", nil
-}
-
-// Portal recommended auxiliary model lookup seam
-var auxGetNousRecommendedAuxModelFn = func(ctx context.Context, vision, forceRefresh bool) string {
-	return GetNousRecommendedAuxModel(ctx, vision, nil, "", forceRefresh)
-}
-
-// Seconds left on the shared Nous rate limit, false when not limited
-var auxNousRateLimitRemainingFn = func(ctx context.Context, anonymous bool) (float64, bool) {
-	guard := &NousRateGuard{Home: home.Dir(ctx), Anonymous: anonymous}
-	remaining, ok := guard.Remaining()
-	return remaining.Seconds(), ok
-}
-
-// Nous route seam tests swap the way hermes tests patch _try_nous
-var auxTryNousFn = auxTryNous
-
-// Nous Portal client from fresh runtime credentials or the stored JWT, nil when unauthenticated or rate limited
-func auxTryNous(ctx context.Context, vision bool) (AuxClient, string, error) {
-	nous := auxReadNousAuth(ctx)
-	apiKey, baseURL, haveRuntime := auxResolveNousRuntimeAPIFn(ctx, false, "")
-	if !haveRuntime && nous == nil {
-		slog.Warn("Auxiliary Nous client unavailable: no Nous authentication found (run: icebath auth).")
-		auxMarkProviderUnhealthy(ctx, "nous", 60, "", "no Nous authentication found", slog.LevelDebug)
-		return nil, "", nil
-	}
-	if !haveRuntime {
-		slog.Debug("Auxiliary Nous: runtime JWT refresh failed; checking stored auth.json token.")
-		apiKey = auxNousAPIKey(nous)
-		if apiKey == "" {
-			slog.Warn("Auxiliary Nous client unavailable: no usable inference JWT found " +
-				"(run: icebath auth add nous).")
-			auxMarkProviderUnhealthy(ctx, "nous", 60, "", "no usable Nous inference JWT", slog.LevelDebug)
-			return nil, "", nil
-		}
-		base := nous["inference_base_url"]
-		if !pyrepr.Truthy(base) {
-			envBase, err := auxScopedKeyEnv(ctx, "NOUS_INFERENCE_BASE_URL")
-			if err != nil {
-				return nil, "", err
-			}
-			base = envBase
-		}
-		if !pyrepr.Truthy(base) {
-			base = auxNousDefaultBaseURL
-		}
-		baseURL = strings.TrimRight(pyrepr.Str(base), "/")
-	}
-	limited := false
-	_ = auxRecoverRaise(func() {
-		anonymous := IsAnonymousRequest("nous", apiKey)
-		remaining, ok := auxNousRateLimitRemainingFn(ctx, anonymous)
-		if ok && remaining > 0 {
-			slog.Debug(fmt.Sprintf("Auxiliary: skipping Nous Portal (rate-limited, resets in %.0fs)", remaining))
-			ttl := remaining
-			if anonymous {
-				ttl = math.Min(remaining, 60.0)
-			}
-			auxMarkProviderUnhealthy(ctx, "nous", ttl, "", "Nous Portal rate-limited", slog.LevelInfo)
-			limited = true
-		}
-	})
-	if limited {
-		return nil, "", nil
-	}
-	lane := "text"
-	if vision {
-		lane = "vision"
-	}
-	if RouteIsWelcomeHost(baseURL) {
-		slog.Debug(fmt.Sprintf("Auxiliary/%s: Nous free tier; using %s", lane, GuestModel))
-		return auxCreateOpenAIClient(ctx, apiKey, baseURL, auxOpenAIOptions{}), GuestModel, nil
-	}
-	slog.Debug("Auxiliary client: Nous Portal")
-	model := auxNousModel
-	if !auxProbeActive(ctx) {
-		var recommended string
-		if err := auxRecoverRaise(func() { recommended = auxGetNousRecommendedAuxModelFn(ctx, vision, false) }); err != nil {
-			slog.Debug(fmt.Sprintf("Auxiliary/%s: recommended-models lookup failed (%v); falling back to %s", lane, err, model))
-		} else if recommended != "" {
-			model = recommended
-			slog.Debug(fmt.Sprintf("Auxiliary/%s: using Portal-recommended model %s", lane, model))
-		} else {
-			slog.Debug(fmt.Sprintf("Auxiliary/%s: no Portal recommendation, falling back to %s", lane, model))
-		}
-	}
-	return auxCreateOpenAIClient(ctx, apiKey, baseURL, auxOpenAIOptions{}), model, nil
-}
-
-// Fresh Portal recommendation after a stale model 404, else the default, whichever differs from the stale model
-func auxRefreshNousRecommendedModel(ctx context.Context, vision bool, staleModel string) string {
-	stale := strings.ToLower(strings.TrimSpace(staleModel))
-	fresh := ""
-	if err := auxRecoverRaise(func() { fresh = auxGetNousRecommendedAuxModelFn(ctx, vision, true) }); err != nil {
-		slog.Debug(fmt.Sprintf("Nous recommended-model refresh failed (%v); using default %s", err, auxNousModel))
-	}
-	if fresh != "" && strings.ToLower(strings.TrimSpace(fresh)) != stale {
-		return fresh
-	}
-	if strings.ToLower(strings.TrimSpace(auxNousModel)) != stale {
-		return auxNousModel
-	}
-	return ""
 }

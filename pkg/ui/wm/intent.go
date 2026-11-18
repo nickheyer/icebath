@@ -64,11 +64,6 @@ func intent(in Intent) tea.Cmd {
 // Asks the manager to close the card
 func RequestClose(from Card) tea.Cmd { return intent(Intent{From: from, kind: intentClose}) }
 
-// Asks the manager to glow the card with the urgency until it is focused, Calm clearing it
-func RequestAttention(from Card, u Urgency) tea.Cmd {
-	return intent(Intent{From: from, kind: intentAttention, urgency: u})
-}
-
 // Asks the manager to show a card above everything with first claim on input
 func RequestOverlay(card Card) tea.Cmd {
 	return intent(Intent{kind: intentOverlay, card: card})
@@ -106,6 +101,9 @@ func (m *Model) handleIntent(in Intent) tea.Cmd {
 	case intentFocus:
 		return m.focusEntry(e)
 	case intentClose:
+		if g, grouped := e.card.(*Tabs); grouped && e.card != in.From {
+			return m.closeTab(e, g, in.From)
+		}
 		return m.closeEntry(e)
 	case intentOpen:
 		if in.card == nil {
@@ -223,4 +221,9 @@ func (m *Model) stepToasts(dt float64) bool {
 	}
 	m.dropToasts()
 	return moving
+}
+
+// Asks the manager to glow the card with the urgency until it is focused, Calm clearing it
+func RequestAttention(from Card, u Urgency) tea.Cmd {
+	return intent(Intent{From: from, kind: intentAttention, urgency: u})
 }

@@ -5,7 +5,6 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
-	"log/slog"
 	"regexp"
 	"strings"
 
@@ -143,7 +142,7 @@ func (c *AuthorityConnection) a2aForward(ctx context.Context, ref SessionRef, pa
 			return nil, err
 		}
 		if legacy != nil {
-			slog.Warn(fmt.Sprintf("A2A: pre-authority session %s titled %s has no peer identity; "+
+			pkgLog().Warn(fmt.Sprintf("A2A: pre-authority session %s titled %s has no peer identity; "+
 				"forwarding into a new session instead of adopting it", pyrepr.Str(legacy.GetOr("id", nil)), pyrepr.Repr(title)))
 		}
 		existing, staged, err := stageLocalSession(withForwardIdentity(ctx, identity), a, actor,

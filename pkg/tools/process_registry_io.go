@@ -56,7 +56,7 @@ func workerMemoryMaxBytes() int64 {
 		if parsed >= minWorkerMemoryMaxBytes {
 			overrideBound = parsed
 		} else {
-			toolsLogger(nil).Warn(fmt.Sprintf("Ignoring invalid TERMINAL_LOCAL_MEMORY_MAX_MB=%q; expected an integer representing at least %d MiB", override, minWorkerMemoryMaxBytes/(1024*1024)))
+			envLog(nil).Warn(fmt.Sprintf("Ignoring invalid TERMINAL_LOCAL_MEMORY_MAX_MB=%q; expected an integer representing at least %d MiB", override, minWorkerMemoryMaxBytes/(1024*1024)))
 		}
 	}
 	candidates := []int64{}
@@ -183,7 +183,7 @@ func systemdRunUserScopeAvailable() bool {
 			}
 			available = code == 0
 			if !available {
-				toolsLogger(nil).Debug(fmt.Sprintf("systemd-run --user --scope probe failed (rc=%d): %s", code, strings.TrimSpace(stderr)))
+				envLog(nil).Debug(fmt.Sprintf("systemd-run --user --scope probe failed (rc=%d): %s", code, strings.TrimSpace(stderr)))
 			}
 		}
 	}
@@ -224,12 +224,12 @@ func isSupervisedGatewayProcess() bool {
 		return false
 	}
 	if SupervisedGatewayPid == nil {
-		toolsLogger(nil).Debug("Could not verify supervised gateway process identity: no gateway installed SupervisedGatewayPid")
+		envLog(nil).Debug("Could not verify supervised gateway process identity: no gateway installed SupervisedGatewayPid")
 		return false
 	}
 	supervised, pid, err := SupervisedGatewayPid()
 	if err != nil {
-		toolsLogger(nil).Debug(fmt.Sprintf("Could not verify supervised gateway process identity: %v", err))
+		envLog(nil).Debug(fmt.Sprintf("Could not verify supervised gateway process identity: %v", err))
 		return false
 	}
 	return supervised && pid == os.Getpid()
@@ -263,7 +263,7 @@ func warnScopeDegradedOnce(detail, consequence string) {
 	if already {
 		return
 	}
-	toolsLogger(nil).Warn(detail + "; " + consequence)
+	envLog(nil).Warn(detail + "; " + consequence)
 }
 
 const cronDegradedConsequence = "cron children are dispatched as direct external subprocesses without restart-safe " +
@@ -353,10 +353,10 @@ var stopSystemdUnit = func(unitName string) bool {
 					return true
 				}
 			}
-			toolsLogger(nil).Debug(fmt.Sprintf("systemctl --user stop %s exited %d: %s", unitName, exitErr.ExitCode(), text))
+			envLog(nil).Debug(fmt.Sprintf("systemctl --user stop %s exited %d: %s", unitName, exitErr.ExitCode(), text))
 			return false
 		}
-		toolsLogger(nil).Debug(fmt.Sprintf("systemctl --user stop %s failed: %v", unitName, err))
+		envLog(nil).Debug(fmt.Sprintf("systemctl --user stop %s failed: %v", unitName, err))
 		return false
 	}
 	return true
@@ -548,7 +548,7 @@ func procAlive(pid int) bool {
 // Terminates a host visible pid and its descendants after re validating its start time
 func (r *ProcessRegistry) terminateHostPid(env *Env, pid int, expectedStart *int64) {
 	if expectedStart != nil && !hostPidIsOurs(pid, expectedStart) {
-		toolsLogger(nil).Warn(fmt.Sprintf("Refusing to terminate host pid %d: start-time mismatch — PID was recycled onto an unrelated process.", pid))
+		envLog(nil).Warn(fmt.Sprintf("Refusing to terminate host pid %d: start-time mismatch — PID was recycled onto an unrelated process.", pid))
 		return
 	}
 	if isWindowsHost {
@@ -612,7 +612,7 @@ func (r *ProcessRegistry) terminateHostPid(env *Env, pid int, expectedStart *int
 	for _, p := range targets {
 		if procAlive(p) {
 			identityProber.Kill(p)
-			toolsLogger(nil).Info(fmt.Sprintf("Escalated to SIGKILL for pid %d (ignored SIGTERM within %.1fs grace)", p, grace))
+			envLog(nil).Info(fmt.Sprintf("Escalated to SIGKILL for pid %d (ignored SIGTERM within %.1fs grace)", p, grace))
 		}
 	}
 }

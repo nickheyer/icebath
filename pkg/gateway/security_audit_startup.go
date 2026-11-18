@@ -5,7 +5,6 @@ import (
 	"cmp"
 	"context"
 	"fmt"
-	"log/slog"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -19,7 +18,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
 
-// Seams over the host facts the posture audit reads, replaced by tests the way hermes tests monkeypatch the module
+// Seams over the host facts the posture audit reads, replaced by tests
 var (
 	auditIsRoot               = auditIsRootLive
 	auditIterSshdConfigLines  = auditIterSshdConfigLinesLive
@@ -28,9 +27,6 @@ var (
 	auditRan                  bool
 	auditPasswordAuthDirectRe = regexp.MustCompile(`(?i)^PasswordAuthentication\s+(\w+)`)
 )
-
-// Records of the posture audit carry its upstream logger name
-func auditLog() *slog.Logger { return slog.Default().With("logger", "hermes.security_audit") }
 
 // True when the process runs as POSIX uid 0, never on Windows
 func auditIsRootLive() bool { return os.Geteuid() == 0 }
@@ -233,9 +229,9 @@ func LogStartupSecurityWarnings(ctx context.Context, dataHome string, cfg map[st
 	auditRanMu.Unlock()
 	findings := RunSecurityAudit(ctx, dataHome, cfg)
 	if len(findings) > 0 {
-		auditLog().Warn(fmt.Sprintf("Security posture audit found %d issue(s) \u2014 review your deployment:", len(findings)))
+		pkgLog().Warn(fmt.Sprintf("Security posture audit found %d issue(s) \u2014 review your deployment:", len(findings)))
 		for i, f := range findings {
-			auditLog().Warn(fmt.Sprintf("  [security %d/%d] %s", i+1, len(findings), f))
+			pkgLog().Warn(fmt.Sprintf("  [security %d/%d] %s", i+1, len(findings), f))
 		}
 	}
 	return findings

@@ -105,7 +105,7 @@ type feishuPlatformPlugin struct{}
 
 func (feishuPlatformPlugin) Manifest() plugins.Manifest {
 	return plugins.Manifest{Name: "feishu-platform", Version: "1.0.0", Kind: "platform", Source: "bundled", Key: "platforms/feishu",
-		Author: "NousResearch",
+		Author: "Icebath",
 		Description: "Feishu / Lark gateway adapter for Icebath Agent. Connects to Feishu (China) or Lark (International) via the official " +
 			"lark SDK over WebSocket or webhook and relays messages between Feishu/Lark chats and the Icebath agent. Supports text, images, " +
 			"video, voice, documents, threads, DM pairing, group @mention gating, drive comment events, and meeting invites.\n",

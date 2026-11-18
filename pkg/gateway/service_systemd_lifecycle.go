@@ -98,7 +98,7 @@ var (
 	lifecycleRefuseForeign                   = RefuseForeignSystemdUnit
 	lifecycleProbeLiveness                   = ProbeGatewayLoopLiveness
 	lifecycleEscalate                        = escalateWedgedGateway
-	lifecycleSyncHome                        = SyncHermesHomeFromSystemdUnit
+	lifecycleSyncHome                        = SyncIcebathHomeFromSystemdUnit
 	lifecycleRecoverPending                  = recoverPendingSystemdRestart
 	lifecycleWaitRestart                     = waitForSystemdServiceRestart
 	lifecycleStartLimited                    = systemdServiceIsStartLimited
@@ -106,12 +106,12 @@ var (
 	lifecycleWaitUserBus                     = waitForUserDbusSocket
 )
 
-// Installed by the package that ports hermes_cli/update_cmd_drain_report.py, returns the per poll drain report callback
+// Installed by the package that ports, returns the per poll drain report callback
 var DrainProgressReporterHook func(ctx context.Context, h string, budgetS float64) func()
 
 func lifecyclePrintf(format string, a ...any) { fmt.Fprintf(lifecycleOut, format, a...) }
 
-// Prints a red cross line the way hermes_cli/cli_output.py print_error does
+// Prints a red cross line the way does
 func printLifecycleError(text string) {
 	fmt.Fprintln(lifecycleOut, cliui.Color("✗ "+text, cliui.Red))
 }
@@ -242,7 +242,7 @@ func GetSystemdLingerStatus(ctx context.Context, username string) (*bool, string
 	}
 	res, err := RunServiceCommand(ctx, loginctlShowUserTimeout, "loginctl", "show-user", username, "--property=Linger", "--value")
 	if err != nil {
-		return nil, pythonExceptionText(err)
+		return nil, err.Error()
 	}
 	if res.ReturnCode != 0 {
 		detail := completedProcessDetail(res)
@@ -263,14 +263,6 @@ func GetSystemdLingerStatus(ctx context.Context, username string) (*bool, string
 		value = "<empty>"
 	}
 	return nil, "unexpected loginctl output: " + value
-}
-
-// Text Python shows for a subprocess launch failure of the service helpers
-func pythonExceptionText(err error) string {
-	if errors.Is(err, ErrCommandNotFound) {
-		return "[Errno 2] " + err.Error()
-	}
-	return err.Error()
 }
 
 // Builds the remediation message of an unreachable user D-Bus session
@@ -308,7 +300,7 @@ func preflightUserSystemd(ctx context.Context, autoEnableLinger bool) error {
 	if _, lookErr := serviceLookPath("loginctl"); autoEnableLinger && lookErr == nil {
 		res, err := loginctlEnableLinger(ctx, username)
 		if err != nil {
-			return userSystemdUnavailable(fmt.Sprintf("loginctl enable-linger failed (%s).", pythonExceptionText(err)), sudoHint)
+			return userSystemdUnavailable(fmt.Sprintf("loginctl enable-linger failed (%s).", err.Error()), sudoHint)
 		}
 		if res.ReturnCode == 0 {
 			if lifecycleWaitUserBus(5 * time.Second) {
@@ -359,7 +351,7 @@ func ForeignSystemdUnitHome(ctx context.Context, system bool) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	unitHome, err := hermesHomePinnedByUnit(unitPath)
+	unitHome, err := icebathHomePinnedByUnit(unitPath)
 	if err != nil || unitHome == "" {
 		return "", err
 	}
@@ -524,7 +516,7 @@ func systemdGracefulRestartAction(ctx context.Context, system bool, pid int) (st
 	lifecyclePrintf("⏳ %s service restarting gracefully (PID %d) — waiting up to %.0fs for in-flight turns + drain...\n", scopeLabelTitle(system), pid, budget)
 	hook := DrainProgressReporterHook
 	if hook == nil {
-		panic("gateway: the hermes_cli/update_cmd_drain_report.py port must install DrainProgressReporterHook")
+		panic("gateway: pkg/selfupdate must install DrainProgressReporterHook")
 	}
 	if !lifecycleGracefulRestart(pid, budget, hook(ctx, "", budget)) {
 		lifecyclePrintf("⚠ Graceful restart did not complete within %ds; forcing a service restart...\n", int(budget))

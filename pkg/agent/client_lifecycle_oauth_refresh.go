@@ -33,7 +33,7 @@ func (a *AIAgent) tryRefreshCodexClientCredentials(ctx context.Context, force bo
 	env := agentPoolEnv(ctx)
 	singletonNow, err := resolve(env, false, false)
 	if err != nil {
-		clientLifecycleLog().Debug(fmt.Sprintf("%s singleton read failed: %v", a.provider, err))
+		pkgLog().Debug(fmt.Sprintf("%s singleton read failed: %v", a.provider, err))
 		return false
 	}
 	singletonKey := ""
@@ -42,13 +42,13 @@ func (a *AIAgent) tryRefreshCodexClientCredentials(ctx context.Context, force bo
 	}
 	oldKey := pystr.Strip(a.apiKey)
 	if singletonKey != "" && oldKey != "" && singletonKey != oldKey {
-		clientLifecycleLog().Debug(fmt.Sprintf("%s singleton tokens differ from the active api_key; skipping singleton force-refresh to avoid "+
+		pkgLog().Debug(fmt.Sprintf("%s singleton tokens differ from the active api_key; skipping singleton force-refresh to avoid "+
 			"silent account swap. Reactive credential rotation should go through the pool.", a.provider))
 		return false
 	}
 	creds, err := resolve(env, force, true)
 	if err != nil {
-		clientLifecycleLog().Debug(fmt.Sprintf("%s credential refresh failed: %v", a.provider, err))
+		pkgLog().Debug(fmt.Sprintf("%s credential refresh failed: %v", a.provider, err))
 		return false
 	}
 	if !validCredentialPair(creds["api_key"], creds["base_url"]) {
@@ -56,7 +56,7 @@ func (a *AIAgent) tryRefreshCodexClientCredentials(ctx context.Context, force bo
 	}
 	apiKey, baseURL := creds["api_key"].(string), creds["base_url"].(string)
 	if oldKey != "" && pystr.Strip(apiKey) == oldKey {
-		clientLifecycleLog().Debug(fmt.Sprintf("%s credential refresh returned the same token; refresh likely failed silently", a.provider))
+		pkgLog().Debug(fmt.Sprintf("%s credential refresh returned the same token; refresh likely failed silently", a.provider))
 		return false
 	}
 	return a.adoptOpenAICredentials(apiKey, baseURL, a.provider+"_credential_refresh")
@@ -70,7 +70,7 @@ func (a *AIAgent) tryRefreshVertexClientCredentials(ctx context.Context) bool {
 	token, baseURL := vertexConfig(ctx)
 	ok := validCredentialPair(token, baseURL) && a.adoptOpenAICredentials(token, baseURL, "vertex_credential_refresh")
 	if ok {
-		clientLifecycleLog().Info("Vertex AI OAuth token refreshed")
+		pkgLog().Info("Vertex AI OAuth token refreshed")
 	}
 	return ok
 }

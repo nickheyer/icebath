@@ -690,7 +690,7 @@ func TestWebBackendSelectionForExaAndParallel(t *testing.T) {
 			settings["web.backend"] = c.backend
 		}
 		env := sdkProviderEnv(t, "", settings)
-		for _, k := range []string{"FIRECRAWL_API_KEY", "FIRECRAWL_API_URL", "FIRECRAWL_GATEWAY_URL", "TOOL_GATEWAY_DOMAIN", "TOOL_GATEWAY_USER_TOKEN", "KEENABLE_API_KEY", "TAVILY_API_KEY", "PERPLEXITY_API_KEY"} {
+		for _, k := range []string{"FIRECRAWL_API_KEY", "FIRECRAWL_API_URL", "KEENABLE_API_KEY", "TAVILY_API_KEY", "PERPLEXITY_API_KEY"} {
 			t.Setenv(k, "")
 		}
 		for k, v := range c.keys {

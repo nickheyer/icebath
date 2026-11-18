@@ -13,9 +13,6 @@ import (
 	"golang.org/x/sys/windows"
 )
 
-// Python labels Windows OS errors with the WinError code
-const errnoLabel = "WinError"
-
 // Byte range lock on the lock sibling retried ten times a second apart like msvcrt LK_LOCK
 func fileLock(ctx context.Context, path string) (func(), error) {
 	lockPath := path + ".lock"
@@ -39,7 +36,7 @@ func fileLock(ctx context.Context, path string) (func(), error) {
 		}
 		if attempt == 9 {
 			f.Close()
-			return nil, &pyError{class: "OSError", msg: "[Errno 36] Resource deadlock avoided"}
+			return nil, &pyError{class: "OSError", msg: "the memory file lock is still held after ten tries"}
 		}
 		time.Sleep(time.Second)
 	}

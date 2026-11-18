@@ -6,7 +6,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/state"
-	"github.com/nickheyer/icebath/pkg/tuigateway"
+	"github.com/nickheyer/icebath/pkg/tuihost"
 )
 
 // TUI display rows of a snapshot's stored rows through the sidecar's own history projection, row ids carried as _row_id
@@ -25,7 +25,7 @@ func displayProjection(ctx context.Context, history []map[string]any, profileHom
 		copied["_row_id"] = rowID
 		rows[i] = copied
 	}
-	return tuigateway.HistoryToMessages(ctx, rows, profileHome, true)
+	return tuihost.HistoryToMessages(ctx, rows, profileHome, true)
 }
 
 // Whether a live row is a micro compaction merge the model reads but nobody typed, never rendered
@@ -43,7 +43,7 @@ func modelOnly(row map[string]any) bool {
 func resumeTranscript(ctx context.Context, a *SessionAuthority, ref SessionRef, snapshot SubscriptionSnapshot, history []map[string]any, omit bool) (*pyjson.Object, error) {
 	if !omit {
 		var todo any
-		if plan := tuigateway.TodoStateFromHistory(history); plan != nil {
+		if plan := tuihost.TodoStateFromHistory(history); plan != nil {
 			todo = plan
 		}
 		messages := make([]any, len(history))

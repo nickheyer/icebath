@@ -5,11 +5,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 )
 
-// Shared metrics toggle of the menu for the external configurator tests
-func (s *ToolsSetup) ConfigureSharedMetricsInteractiveForTest(cfg config.Tree) error {
-	return s.configureSharedMetricsInteractive(cfg)
-}
-
 // Swaps one configurator seam for an external test, the returned func restoring it
 func swapSeam[T any](seam *T, fn T) func() {
 	prev := *seam
@@ -23,7 +18,7 @@ func SwapToolsConfigSaveForTest(fn func(s *ToolsSetup, cfg config.Tree) error) f
 }
 
 // Replaces the per platform checklist for an external test
-func SwapPromptToolsetChecklistForTest(fn func(s *ToolsSetup, label string, enabled map[string]bool, platform string, forceFresh bool) (map[string]bool, error)) func() {
+func SwapPromptToolsetChecklistForTest(fn func(s *ToolsSetup, label string, enabled map[string]bool, platform string) (map[string]bool, error)) func() {
 	return swapSeam(&promptToolsetChecklist, fn)
 }
 
@@ -33,7 +28,7 @@ func SwapGetEnabledPlatformsForTest(fn func(s *ToolsSetup) ([]string, error)) fu
 }
 
 // Replaces the per toolset setup for an external test
-func SwapConfigureToolsetForTest(fn func(s *ToolsSetup, tsKey string, cfg config.Tree, forceFresh, reconfigure bool) error) func() {
+func SwapConfigureToolsetForTest(fn func(s *ToolsSetup, tsKey string, cfg config.Tree, reconfigure bool) error) func() {
 	return swapSeam(&configureToolset, fn)
 }
 

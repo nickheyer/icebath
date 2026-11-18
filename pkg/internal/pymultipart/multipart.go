@@ -3,7 +3,6 @@ package pymultipart
 import (
 	"bytes"
 	"fmt"
-	"log/slog"
 	"math"
 	"strings"
 
@@ -71,10 +70,6 @@ func (e *ValueError) Error() string      { return e.Msg }
 func (e *ValueError) PyTypeName() string { return "ValueError" }
 
 type raised struct{ err error }
-
-func parserLog() *slog.Logger {
-	return slog.Default().With("logger", "python_multipart.multipart")
-}
 
 // Python slice data[start:end] with both bounds clamped to the data
 func pySlice(data []byte, start, end int) []byte {
@@ -269,7 +264,7 @@ func (p *QuerystringParser) Write(data []byte) (n int, err error) {
 	dataLen := len(data)
 	if float64(p.currentSize+dataLen) > p.maxSize {
 		newSize := int(p.maxSize - float64(p.currentSize))
-		parserLog().Warn(fmt.Sprintf("Current size is %d (max %d), so truncating data length from %d to %d",
+		pkgLog().Warn(fmt.Sprintf("Current size is %d (max %d), so truncating data length from %d to %d",
 			p.currentSize, int64(p.maxSize), dataLen, newSize))
 		dataLen = newSize
 	}
@@ -293,7 +288,7 @@ func (p *QuerystringParser) internalWrite(data []byte, length int) int {
 					if strictParsing {
 						panic(raised{&FormParserError{Class: "QuerystringParseError", Msg: fmt.Sprintf("Skipping duplicate ampersand at %d", i), Offset: i}})
 					}
-					parserLog().Debug(fmt.Sprintf("Skipping duplicate ampersand at %d", i))
+					pkgLog().Debug(fmt.Sprintf("Skipping duplicate ampersand at %d", i))
 				} else {
 					foundSep = true
 				}
@@ -346,7 +341,7 @@ func (p *QuerystringParser) internalWrite(data []byte, length int) int {
 			}
 		default:
 			msg := fmt.Sprintf("Reached an unknown state %d at %d", state, i)
-			parserLog().Warn(msg)
+			pkgLog().Warn(msg)
 			panic(raised{&FormParserError{Class: "QuerystringParseError", Msg: msg, Offset: i}})
 		}
 		i++
@@ -476,7 +471,7 @@ func (p *MultipartParser) callback(name string, data []byte, start, end int) {
 
 func (p *MultipartParser) fail(msg string, offset int, warn bool) {
 	if warn {
-		parserLog().Warn(msg)
+		pkgLog().Warn(msg)
 	}
 	panic(raised{&FormParserError{Class: "MultipartParseError", Msg: msg, Offset: offset}})
 }
@@ -486,7 +481,7 @@ func (p *MultipartParser) Write(data []byte) (n int, err error) {
 	dataLen := len(data)
 	if float64(p.currentSize+dataLen) > p.maxSize {
 		newSize := int(p.maxSize - float64(p.currentSize))
-		parserLog().Warn(fmt.Sprintf("Current size is %d (max %d), so truncating data length from %d to %d",
+		pkgLog().Warn(fmt.Sprintf("Current size is %d (max %d), so truncating data length from %d to %d",
 			p.currentSize, int64(p.maxSize), dataLen, newSize))
 		dataLen = newSize
 	}
@@ -530,7 +525,7 @@ func (p *MultipartParser) internalWrite(data []byte, length int) int {
 			} else if p.flags&flagLastBoundary != 0 {
 				p.callback(name, append(append([]byte{}, boundary...), "--\r\n"...), 0, lookbehindLen)
 			} else {
-				parserLog().Warn("Look-back buffer error")
+				pkgLog().Warn("Look-back buffer error")
 			}
 			if endI > 0 {
 				p.callback(name, data, 0, endI)

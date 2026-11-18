@@ -341,7 +341,7 @@ func (a *APIServerAdapter) closeRunState(ctx context.Context) {
 		return
 	}
 	if err := a.runIdempotencyStore.Close(); err != nil {
-		apiLog().Debug(fmt.Sprintf("Failed to close run idempotency store for %s", a.Name()), "error", err)
+		pkgLog().Debug(fmt.Sprintf("Failed to close run idempotency store for %s", a.Name()), "error", err)
 	}
 }
 
@@ -364,7 +364,7 @@ func (a *APIServerAdapter) setRunStatus(ctx context.Context, runID, status strin
 		names[k] = true
 		extra.Set(k, fields[i+1])
 	}
-	current.Set("object", "hermes.run")
+	current.Set("object", "icebath.run")
 	current.Set("run_id", runID)
 	current.Set("status", status)
 	current.Set("updated_at", now)
@@ -392,7 +392,7 @@ func (a *APIServerAdapter) setRunStatus(ctx context.Context, runID, status strin
 	a.mu.Unlock()
 	if idempotent && persist {
 		if err := a.runIdempotencyStore.UpdateStatus(ctx, runID, snapshot); err != nil {
-			apiLog().Error(fmt.Sprintf("[api_server] failed to persist idempotent run status %s", runID), "error", err)
+			pkgLog().Error(fmt.Sprintf("[api_server] failed to persist idempotent run status %s", runID), "error", err)
 		}
 	}
 	return current

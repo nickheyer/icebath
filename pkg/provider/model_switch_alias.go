@@ -369,10 +369,10 @@ func GetAuthenticatedProviderSlugs(ctx context.Context, currentProvider string, 
 	return slugs
 }
 
-// First alias resolution across the authenticated providers, openrouter then nous when none are given
+// First alias resolution across the authenticated providers, openrouter when none are given
 func resolveAliasFallback(ctx context.Context, rawInput string, authenticated []string, userProviders map[string]any, customProviders []any) (*AliasMatch, error) {
 	if len(authenticated) == 0 {
-		authenticated = []string{"openrouter", "nous"}
+		authenticated = []string{"openrouter"}
 	}
 	for _, p := range authenticated {
 		match, err := ResolveAlias(ctx, rawInput, p, userProviders, customProviders)

@@ -145,7 +145,7 @@ func (r *GatewayRunner) runAgentDisplaySettings(ctx context.Context, source *gat
 	genericStatusPhrase := func(kind string) (phrase string) {
 		defer func() {
 			if rec := recover(); rec != nil {
-				runLog().Debug(fmt.Sprintf("generic status phrase selection failed: %v", rec))
+				pkgLog().Debug(fmt.Sprintf("generic status phrase selection failed: %v", rec))
 				switch kind {
 				case "heartbeat", "waiting", "long_running", "status":
 					phrase = i18n.T(ctx, "gateway.progress.status_fallback_long", "", nil)
@@ -171,7 +171,7 @@ func (r *GatewayRunner) runAgentDisplaySettings(ctx context.Context, source *gat
 	if cards, ok := adapter.(nativeTaskCardsAdapter); ok && adapter != nil && source.Platform == gateway.PlatformSlack && !(explicit && progressMode == "off") {
 		enabled, err := cards.NativeTaskCardsEnabled()
 		if err != nil {
-			runLog().Debug("Slack native task-card config check failed", "exc_info", err)
+			pkgLog().Debug("Slack native task-card config check failed", "exc_info", err)
 		} else {
 			nativeCards = enabled
 		}

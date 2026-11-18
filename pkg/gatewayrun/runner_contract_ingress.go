@@ -28,6 +28,15 @@ func (r *GatewayRunner) AdapterCredentialFingerprint(adapter gateway.PlatformAda
 	return &fingerprint
 }
 
+// Credential fingerprint under the salt an older icebath used, nil when none is discoverable
+func (r *GatewayRunner) LegacyAdapterCredentialFingerprint(adapter gateway.PlatformAdapter) *string {
+	fingerprint := saltedCredentialFingerprint(adapter, legacyCredentialFingerprintSalt)
+	if fingerprint == "" {
+		return nil
+	}
+	return &fingerprint
+}
+
 // Truth of a named flag on the adapter that authorizes the platform for the profile
 func (r *GatewayRunner) AdapterFlag(ctx context.Context, platform gateway.Platform, name string, profile *string) bool {
 	return r.adapterFlag(ctx, platform, name, profile)

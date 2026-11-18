@@ -27,15 +27,6 @@ const (
 func (c *CLI) addTreeB(root *cobra.Command) {
 	c.buildPeerParser(root)
 
-	portal := c.newCmd(root, "portal", "Set up Nous Portal (login, model pick, Tool Gateway); see also `portal info`",
-		"Run `icebath portal` with no subcommand to log in to Nous Portal and set it up — pick a model, set Nous as your provider, and offer the Tool Gateway (the human-readable alias for `icebath auth add nous --type oauth`). Subcommands: login (default), info, open, tools.")
-	c.newCmd(portal, "login", "Log in to Nous Portal + set it up (default; one-shot onboarding)", "")
-	c.newCmd(portal, "info", "Show Portal auth + Tool Gateway routing summary", "")
-	pStatus := c.newCmd(portal, "status", "", "")
-	pStatus.Hidden = true
-	c.newCmd(portal, "open", "Open the Portal subscription page in your default browser", "")
-	c.newCmd(portal, "tools", "List Tool Gateway tools and which are routed via Nous", "")
-
 	c.addKanban(root)
 	c.addProject(root)
 
@@ -91,14 +82,13 @@ func (c *CLI) addTreeB(root *cobra.Command) {
 
 	debug := c.newCmd(root, "debug", "Debug tools — upload logs and system info for support",
 		"Debug utilities for Icebath Agent. Use 'icebath debug share' to upload a debug report (system info + recent logs) to a paste service and get a shareable URL.")
-	c.epilog(debug, "Examples:\n    icebath debug share              Upload debug report (asks for confirmation)\n    icebath debug share --yes        Skip confirmation (for scripts/CI)\n    icebath debug share --lines 500  Include more log lines\n    icebath debug share --expire 30  Keep dpaste.com fallback pastes for 30 days\n    icebath debug share --local      Print report locally (no upload)\n    icebath debug share --no-redact  Disable upload-time secret redaction\n    icebath debug share --nous       Upload to Nous-internal storage (private)\n    icebath debug delete <url>       Delete a previously uploaded paste")
+	c.epilog(debug, "Examples:\n    icebath debug share              Upload debug report (asks for confirmation)\n    icebath debug share --yes        Skip confirmation (for scripts/CI)\n    icebath debug share --lines 500  Include more log lines\n    icebath debug share --expire 30  Keep dpaste.com fallback pastes for 30 days\n    icebath debug share --local      Print report locally (no upload)\n    icebath debug share --no-redact  Disable upload-time secret redaction\n    icebath debug delete <url>       Delete a previously uploaded paste")
 	share := c.newCmd(debug, "share", "Upload debug report to a paste service and print a shareable URL", "")
 	inf(share, "lines", "", 200, "Number of log lines to include per log file (default: 200)")
 	inf(share, "expire", "", 1, "dpaste.com fallback retention in days (minimum 1; default: 1). paste.rs pastes are always deleted after 6 hours, but if the upload falls back to dpaste.com the pastes live for this many days and cannot be deleted.")
 	bf(share, "local", "", "Print the report locally instead of uploading")
 	bf(share, "yes", "y", "Skip the confirmation prompt and upload immediately. Required in non-interactive contexts (scripts/CI); without it, and with no TTY on stdin, the command refuses rather than upload silently.")
 	bf(share, "no-redact", "", "Disable upload-time secret redaction (default: redact). Logs are normally run through the sensitive text redactor with force=True before upload so credentials are not leaked into the public paste service.")
-	bf(share, "nous", "", "Upload the debug bundle to Nous-internal storage (AWS S3) instead of a public paste service. The bundle is private — viewable only by Nous staff (and allowlisted Discord mods) via a Google-login-gated viewer — and auto-deletes after 14 days. Still force-redacts secrets unless --no-redact is also passed.")
 	del := c.newCmd(debug, "delete", "Delete a paste uploaded by 'icebath debug share'", "")
 	c.pos(del, pAny("urls"))
 
@@ -614,7 +604,7 @@ func (c *CLI) addPlugins(root *cobra.Command) {
 	plugins := c.newCmd(root, "plugins", "Manage and validate plugins",
 		"Install, update, remove, list, or validate native Icebath plugins and portable Agent Plugins v1 packages. Portable packages install disabled.")
 	install := c.newCmd(plugins, "install", "Install a plugin from the curated catalog, a Git URL, or owner/repo", "")
-	c.pos(install, p("identifier").withHelp("Bare plugin catalog entry name (see `icebath plugins search`), Git URL, or owner/repo shorthand (e.g. anpicasso/hermes-plugin-chrome-profiles)"))
+	c.pos(install, p("identifier").withHelp("Bare plugin catalog entry name (see `icebath plugins search`), Git URL, or owner/repo shorthand (e.g. anpicasso/icebath-plugin-chrome-profiles)"))
 	bf(install, "force", "f", "Reinstall over an existing plugin (from the same source, your untracked files are kept)")
 	sf(install, "ref", "", "", "Install exactly one immutable 40-character Git commit SHA")
 	bf(install, "allow-removed", "", "DANGEROUS: bypass the catalog removed-plugin blocklist check")

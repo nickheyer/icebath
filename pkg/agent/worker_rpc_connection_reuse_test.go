@@ -81,7 +81,7 @@ func (r *ownerRelay) stall(seconds float64) {
 	time.AfterFunc(time.Duration(seconds*float64(time.Second)), func() { close(gate) })
 }
 
-// In process owner of the reuse cases, its state the hermes fixture's SimpleNamespace
+// In process owner of the reuse cases, its state the test fixture's SimpleNamespace
 type reuseOwner struct {
 	mu          sync.Mutex
 	connections int
@@ -106,7 +106,7 @@ func (o *reuseOwner) setDrop(mode string) {
 	o.mu.Unlock()
 }
 
-// Serves one worker connection the way the hermes fixture's handler does
+// Serves one worker connection the way the test fixture's handler does
 func (o *reuseOwner) serve(ws *websocket.Conn) {
 	o.mu.Lock()
 	o.connections++

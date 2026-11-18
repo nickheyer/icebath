@@ -12,7 +12,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/memory"
 	"github.com/nickheyer/icebath/pkg/state"
-	"github.com/nickheyer/icebath/pkg/tuigateway"
+	"github.com/nickheyer/icebath/pkg/tuihost"
 )
 
 const staleTargetMsg = "target user message is no longer in session history"
@@ -83,7 +83,7 @@ func findUserTurnByRowID(history []map[string]any, targetRowID int64) (int, int,
 }
 
 // Durable live replay transcript of the session, ok false when it cannot be proven safe
-func loadDurableTruncationHistory(ctx context.Context, session *tuigateway.Session, fallbackSID string, repairAlternation bool) ([]map[string]any, bool) {
+func loadDurableTruncationHistory(ctx context.Context, session *tuihost.Session, fallbackSID string, repairAlternation bool) ([]map[string]any, bool) {
 	sessionKey := submitRowTargetKey(session)
 	if sessionKey == "" {
 		sessionKey = fallbackSID
@@ -105,7 +105,7 @@ func loadDurableTruncationHistory(ctx context.Context, session *tuigateway.Sessi
 		history = rows
 	})
 	if failure != nil {
-		logger().Debug("prompt.submit: failed loading durable history for session "+sessionKey, "error", pyrepr.Str(failure))
+		pkgLog().Debug("prompt.submit: failed loading durable history for session "+sessionKey, "error", pyrepr.Str(failure))
 		return nil, false
 	}
 	if history == nil {
@@ -122,7 +122,7 @@ type truncateTarget struct {
 }
 
 // Resolves truncate_before_row_id against the live list, healing missing stamps from an aligned durable copy
-func resolveTruncateRowID(ctx context.Context, session *tuigateway.Session, history []map[string]any, targetRowID int64) (truncateTarget, bool) {
+func resolveTruncateRowID(ctx context.Context, session *tuihost.Session, history []map[string]any, targetRowID int64) (truncateTarget, bool) {
 	if ord, idx, ok := findUserTurnByRowID(history, targetRowID); ok {
 		return truncateTarget{ordinal: ord, index: idx}, true
 	}
@@ -210,7 +210,7 @@ func coerceTruncateInt(rid, value any, paramName string) (int64, map[string]any)
 }
 
 // Note block of the reactions since the last turn, empty unless display.message_reactions is on
-func pendingReactionNotes(ctx context.Context, session *tuigateway.Session) string {
+func pendingReactionNotes(ctx context.Context, session *tuihost.Session) string {
 	sessionKey := strOr(session.Get("session_key"))
 	if sessionKey == "" {
 		return ""
@@ -232,7 +232,7 @@ func pendingReactionNotes(ctx context.Context, session *tuigateway.Session) stri
 		}
 		pending = rows
 	}); failure != nil {
-		logger().Debug("Failed to read pending reactions", "error", pyrepr.Str(failure))
+		pkgLog().Debug("Failed to read pending reactions", "error", pyrepr.Str(failure))
 		return ""
 	}
 	var notes []string
@@ -256,7 +256,7 @@ func pendingReactionNotes(ctx context.Context, session *tuigateway.Session) stri
 }
 
 // Live session row an off turn submit write targets, the rotated agent session id else the session key
-func submitRowTargetKey(session *tuigateway.Session) string {
+func submitRowTargetKey(session *tuihost.Session) string {
 	if a := sessionAgent(session); a != nil && a.SessionID() != "" {
 		return a.SessionID()
 	}

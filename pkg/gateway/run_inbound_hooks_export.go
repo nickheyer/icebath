@@ -17,7 +17,7 @@ func ReplaceMessageEventText(event *MessageEvent, text string) *MessageEvent {
 	copied.notificationReplyMuted, copied.pendingSTTText, copied.pendingSTTTranscripts = nil, nil, nil
 	copied.pendingSTTClips, copied.pendingSTTEchoed = nil, 0
 	copied.turnMarkerHandoff, copied.activeTurnToken, copied.markerReleased = false, nil, nil
-	copied.heartbeatSessionID, copied.lastChunkLen, copied.busyArrival = nil, 0, nil
+	copied.heartbeatSessionID, copied.lastChunkLen = nil, 0
 	copied.claimedOwner, copied.activeTurnSessionKey, copied.turnRefusal = nil, nil, nil
 	copied.heartbeatResolvedID, copied.heartbeatStarted = nil, false
 	copied.producerDelivery, copied.ingressSHA256, copied.consumerReply, copied.webhookDuplicate = false, "", nil, false

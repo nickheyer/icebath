@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
 	"sort"
 	"strings"
 
@@ -267,22 +268,43 @@ func (c *CLI) handleJourneyCommand(cmdOriginal string) {
 	for _, path := range []string{"journey", "journey list", "journey delete", "journey edit"} {
 		tree.Bind(path, handler)
 	}
+	// The journey subtree parses as its own parser, so leftover arguments are refused under its usage
+	top, _, _ := tree.Root.Find([]string{"journey"})
+	if top.Annotations == nil {
+		top.Annotations = map[string]string{}
+	}
+	top.Annotations["argparse_top"] = "/journey"
 	var help bytes.Buffer
 	tree.Root.SetOut(&help)
 	execErr := tree.Execute(append([]string{"journey"}, args...))
 	if help.Len() > 0 {
-		fmt.Fprint(pysys.Stdout, strings.ReplaceAll(help.String(), "icebath journey", "/journey"))
+		fmt.Fprint(pysys.Stdout, slashJourneyProg(help.String()))
 	}
 	if execErr != nil && !ran {
-		var ae *commands.ArgparseError
-		if errors.As(execErr, &ae) {
-			fmt.Fprintln(pysys.Stderr, strings.ReplaceAll(ae.Stderr(), "icebath journey", "/journey"))
+		var refused *commands.ArgparseError
+		if !errors.As(execErr, &refused) {
+			bad := execErr.Error()
+			if m := slashJourneyUnknownWord.FindStringSubmatch(bad); m != nil {
+				bad = m[1]
+			}
+			refused = &commands.ArgparseError{Cmd: top, Msg: "argument journey_action: invalid choice: " + pyrepr.Repr(bad) + " (choose from 'list', 'delete', 'edit')"}
 		}
+		fmt.Fprintln(pysys.Stderr, slashJourneyProg(refused.Stderr()))
 		return
 	}
 	if runErr != nil {
 		cp("  " + c.commandsT("journey.failed", map[string]any{"error": runErr.Error()}))
 	}
+}
+
+// Word the command tree names in its unknown subcommand refusal
+var slashJourneyUnknownWord = regexp.MustCompile(`'(.*)' is not a ` + "`")
+
+// Parser text of the journey tree under the /journey prog, usage continuation lines indented to it
+func slashJourneyProg(text string) string {
+	const cliIndent, slashIndent = len("usage: icebath journey "), len("usage: /journey ")
+	text = strings.ReplaceAll(text, "\n"+strings.Repeat(" ", cliIndent), "\n"+strings.Repeat(" ", slashIndent))
+	return strings.ReplaceAll(text, "icebath journey", "/journey")
 }
 
 // Handles /paste, attaching a clipboard image for terminals whose paste never delivers one

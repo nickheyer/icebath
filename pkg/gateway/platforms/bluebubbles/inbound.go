@@ -3,7 +3,6 @@ package bluebubbles
 import (
 	"context"
 	"fmt"
-	"log/slog"
 	"net/http"
 	"strings"
 
@@ -227,7 +226,7 @@ func (a *BlueBubblesAdapter) handleWebhook(ctx context.Context, request *gateway
 		payload, err = parseWebhookBody(raw)
 	}
 	if err != nil {
-		slog.Error("[bluebubbles] webhook parse error: " + pyrepr.ExceptionMessage(err))
+		pkgLog().Error("[bluebubbles] webhook parse error: " + pyrepr.ExceptionMessage(err))
 		return gateway.WebJSONResponse(pyjson.ObjectOf("error", "invalid payload"), http.StatusBadRequest, nil)
 	}
 	pm, err := dictOf(payload)
@@ -256,7 +255,7 @@ func (a *BlueBubblesAdapter) handleWebhook(ctx context.Context, request *gateway
 	isGroup := pyrepr.Truthy(record["isGroup"]) || strings.Contains(chatGUID, ";+;")
 	if isGroup && a.requireMention {
 		if !a.messageMatchesMentionPatterns(text) {
-			slog.Debug("[bluebubbles] ignoring group message (require_mention=true, no mention pattern matched)")
+			pkgLog().Debug("[bluebubbles] ignoring group message (require_mention=true, no mention pattern matched)")
 			return okResponse(), nil
 		}
 		text = a.cleanMentionText(text)

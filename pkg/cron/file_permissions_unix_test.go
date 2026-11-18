@@ -124,9 +124,9 @@ func TestTickerErrorMarkerClearRemovesMarker(t *testing.T) {
 // One iteration of the built in ticker loop over the given tick
 func runOneTickerIteration(t *testing.T, s *Store, tick func(context.Context, *Store, tickOptions) (int, error)) {
 	t.Helper()
-	patchChronos(t, &recoverInterruptedExecutions, func(context.Context, *Store) (int, error) { return 0, nil })
-	patchChronos(t, &tickHook, tick)
-	patchChronos(t, &tickerWait, func(<-chan struct{}, float64) bool { return true })
+	patchSeam(t, &recoverInterruptedExecutions, func(context.Context, *Store) (int, error) { return 0, nil })
+	patchSeam(t, &tickHook, tick)
+	patchSeam(t, &tickerWait, func(<-chan struct{}, float64) bool { return true })
 	(&InProcessCronScheduler{}).Start(withCronStore(context.Background(), s), make(chan struct{}), StartOptions{})
 }
 

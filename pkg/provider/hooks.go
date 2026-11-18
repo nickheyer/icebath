@@ -425,7 +425,7 @@ func RequestPayloadForHook(req *Request) any {
 	return SanitizeHookPayload(map[string]any{"method": "POST", "body": requestBody(req)})
 }
 
-// UsageSummaryForHook returns the token buckets of a response with hermes prompt and total sums
+// Token buckets of a response with prompt and total sums
 func UsageSummaryForHook(resp *Response) map[string]any {
 	if resp == nil {
 		return nil

@@ -381,7 +381,7 @@ func tapsFromList(list []any) []GitHubTap {
 		}
 		repo, found := o.Get("repo")
 		if !found {
-			hubRaise(fmt.Errorf("KeyError: 'repo'"))
+			hubRaise(errors.New("a tap entry has no repo"))
 		}
 		tap := GitHubTap{Repo: pyrepr.Str(repo), Path: pyrepr.Str(pyGet(o, "path", ""))}
 		if b := pyGet(o, "bucket", nil); pyrepr.Truthy(b) {
@@ -405,7 +405,7 @@ type ghGet struct {
 	MaxRetries int
 }
 
-// Overrides of the GitHub source internals the hermes tests patch per instance
+// Overrides of the GitHub source internals tests replace per instance
 type ghSeams struct {
 	githubGet           func(url string, o ghGet) *pyhttpx.Response
 	githubJSON          func(url string, o ghGet) any
@@ -708,7 +708,7 @@ func (g *GitHubSource) listSkillsInRepo(ctx context.Context, repo, path, bucket 
 		}
 		nameV, found := entry.(*pyjson.Object).Get("name")
 		if !found {
-			hubRaise(errors.New("KeyError: 'name'"))
+			hubRaise(errors.New("a GitHub skill entry has no name"))
 		}
 		dirName, isStr := nameV.(string)
 		if !isStr {

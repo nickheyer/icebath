@@ -185,7 +185,7 @@ func scopeContextLengthToDefaultRuntime(ctx context.Context, a *AIAgent, agentCf
 		if configContextLength != nil {
 			pin = *configContextLength
 		}
-		runAgentLog().Debug(fmt.Sprintf("Ignoring model.context_length=%s for startup runtime %s at %s (configured default is %s at %s)",
+		pkgLog().Debug(fmt.Sprintf("Ignoring model.context_length=%s for startup runtime %s at %s (configured default is %s at %s)",
 			pyrepr.Str(pin), a.model, shownURL, configuredModel, pyrepr.Str(configuredShown)))
 		return nil
 	}
@@ -219,7 +219,7 @@ func setConfigContextLength(ctx context.Context, a *AIAgent, value *int) error {
 func configContextLengthForRuntime(ctx context.Context, a *AIAgent, cfg map[string]any) (out *int) {
 	defer func() {
 		if r := recover(); r != nil {
-			runAgentLog().Debug("Could not re-read model.context_length for the current runtime", "error", r)
+			pkgLog().Debug("Could not re-read model.context_length for the current runtime", "error", r)
 			out = nil
 		}
 	}()
@@ -240,7 +240,7 @@ func configContextLengthForRuntime(ctx context.Context, a *AIAgent, cfg map[stri
 	}
 	pin, ok := configIntOf(pinRaw)
 	if !ok {
-		runAgentLog().Debug("Could not re-read model.context_length for the current runtime")
+		pkgLog().Debug("Could not re-read model.context_length for the current runtime")
 		return nil
 	}
 	if pin <= 0 {
@@ -341,7 +341,7 @@ func resolveContextLength(ctx context.Context, a *AIAgent, agentCfg map[string]a
 	}
 	runtime := a.ensureLMStudioRuntimeLoaded(ctx, configContextLength)
 	if lmstudioLoadWasUnverified(runtime) {
-		runAgentLog().Warn("LM Studio model activation was rejected or completed without a verifiable active context length; falling back to configured context")
+		pkgLog().Warn("LM Studio model activation was rejected or completed without a verifiable active context length; falling back to configured context")
 	}
 	return configContextLength, customProviders, effectiveLMStudioContextLength(pin, runtime), modelCfg
 }

@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"io/fs"
-	"log/slog"
 	"os"
 	"path/filepath"
 	"sort"
@@ -448,7 +447,7 @@ func RenderEditDiffWithDelta(ctx context.Context, toolName, result string, args 
 	}
 	lines, err := summarizeDiffSectionsFn(ctx, diff)
 	if err != nil {
-		slog.Default().With("logger", "agent.display").Debug(fmt.Sprintf("Could not render inline diff: %s", err))
+		pkgLog().Debug(fmt.Sprintf("Could not render inline diff: %s", err))
 		return false
 	}
 	return emitInlineDiff(ctx, strings.Join(lines, "\n"), printFn)

@@ -3,7 +3,6 @@ package gateway
 import (
 	"context"
 	"fmt"
-	"log/slog"
 	"math"
 	"os"
 	"path/filepath"
@@ -66,11 +65,11 @@ func rootCredentialPaths() []string {
 var mediaDeliverySafeRoots = func() []string {
 	launch := home.Process()
 	roots := []string{
-		home.HermesDir(launch, "cache/images", "image_cache"),
-		home.HermesDir(launch, "cache/audio", "audio_cache"),
-		home.HermesDir(launch, "cache/videos", "video_cache"),
-		home.HermesDir(launch, "cache/documents", "document_cache"),
-		home.HermesDir(launch, "cache/screenshots", "browser_screenshots"),
+		home.IcebathDir(launch, "cache/images", "image_cache"),
+		home.IcebathDir(launch, "cache/audio", "audio_cache"),
+		home.IcebathDir(launch, "cache/videos", "video_cache"),
+		home.IcebathDir(launch, "cache/documents", "document_cache"),
+		home.IcebathDir(launch, "cache/screenshots", "browser_screenshots"),
 	}
 	for _, d := range []string{"image_cache", "audio_cache", "video_cache", "document_cache", "browser_screenshots"} {
 		roots = append(roots, filepath.Join(launch, d))
@@ -414,7 +413,7 @@ func warnUnresolvedDockerMedia(ctx context.Context, candidate, sessionKey, reaso
 	if sessionKey != "" {
 		suffix = ", session_key=" + sessionKey
 	}
-	slog.Warn(fmt.Sprintf("Docker MEDIA path %s did not resolve to a host sandbox file (%s%s); the producing container's sandbox directory may not exist yet or was pruned",
+	pkgLog().Warn(fmt.Sprintf("Docker MEDIA path %s did not resolve to a host sandbox file (%s%s); the producing container's sandbox directory may not exist yet or was pruned",
 		logSafePath(candidate), reason, suffix))
 	return nil
 }

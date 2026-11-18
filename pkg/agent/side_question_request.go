@@ -2,8 +2,8 @@ package agent
 
 import (
 	"context"
+	"errors"
 	"fmt"
-	"log/slog"
 	"reflect"
 	"strings"
 	"sync"
@@ -30,10 +30,6 @@ var (
 	clientToolTypes              = map[string]bool{"function": true, "custom": true}
 	routingOnlyOpenRouterPlugins = map[string]bool{"pareto-router": true}
 )
-
-func sideQuestionRequestLog() *slog.Logger {
-	return slog.Default().With("logger", "agent.side_question_request")
-}
 
 // Model, provider, base URL, api mode and reasoning config the fork talks to
 type sideQuestionRuntime struct {
@@ -141,7 +137,7 @@ func sideQuestionBuildFork(ctx context.Context, parent *AIAgent, capture *sideQu
 		fn, _ := pyjson.Dict(entry["function"])
 		name, ok := fn["name"].(string)
 		if !ok {
-			return nil, fmt.Errorf("KeyError: 'name'")
+			return nil, errors.New("a parent tool schema has no name")
 		}
 		names[name] = true
 	}
@@ -167,7 +163,7 @@ func sendSideQuestion(ctx context.Context, fork *AIAgent, capture *sideQuestionC
 	}
 	s := &LoopState{
 		Messages: messages, CurrentTurnUserIdx: len(messages) - 1, ActiveSystemPrompt: fork.cachedSystemPrompt,
-		OriginalUserMessage: prompt, RequestLogger: sideQuestionRequestLog(),
+		OriginalUserMessage: prompt, RequestLogger: pkgLog(),
 		APICallCount: 1, APIRequestID: apiRequestID, EffectiveTaskID: taskID, TurnID: turnID,
 	}
 	if err := assembleAPIRequest(ctx, fork, s); err != nil {
@@ -250,7 +246,7 @@ func sideQuestionLogAudit(audit *sideQuestionAudit) {
 	for _, key := range []string{"api_calls", "input_tokens", "cache_read_tokens", "cache_write_tokens", "output_tokens"} {
 		counts = append(counts, pyIntOf(audit.usage[key]))
 	}
-	sideQuestionRequestLog().Info(fmt.Sprintf("side_question plugin=%s outcome=%s calls=%d in=%d cache_read=%d cache_write=%d out=%d latency=%.1fs",
+	pkgLog().Info(fmt.Sprintf("side_question plugin=%s outcome=%s calls=%d in=%d cache_read=%d cache_write=%d out=%d latency=%.1fs",
 		append(append([]any{pluginID, audit.outcome}, counts...), pythread.Monotonic()-audit.started)...))
 }
 
@@ -291,7 +287,7 @@ func askTextOnly(ctx context.Context, capture *sideQuestionCapture, prompt, plug
 		if name == "" {
 			name = "?"
 		}
-		sideQuestionRequestLog().Warn(fmt.Sprintf("side question %s (plugin=%s)", audit.outcome, name), "error", err)
+		pkgLog().Warn(fmt.Sprintf("side question %s (plugin=%s)", audit.outcome, name), "error", err)
 		answer = nil
 	}
 	defer func() {

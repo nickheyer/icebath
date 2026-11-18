@@ -218,10 +218,6 @@ gateway:
     denied_reason_singular: "❌ Commande refusée. Raison transmise à l'agent: \"{reason}\""
     denied_reason_plural: "❌ Commandes refusées ({count} commandes). Raison transmise à l'agent: \"{reason}\""
 
-  usage_limit:
-
-    picker_title: "Continuer avec un autre modèle :"
-    switch_choice: "Passer à {model} ({note})"
   fast:
 
     not_supported: "⚡ /fast n'est disponible que pour les modèles OpenAI qui prennent en charge Priority Processing."
@@ -635,7 +631,7 @@ gateway:
 
     platform_not_messaging: "✗ /update n'est disponible que depuis les plateformes de messagerie. Exécutez `icebath update` depuis le terminal."
     not_git_repo: "✗ Pas un dépôt git — impossible de mettre à jour."
-    hermes_cmd_not_found: "✗ Impossible de localiser la commande `icebath`. Icebath est en cours d'exécution, mais la commande de mise à jour n'a pas pu trouver l'exécutable dans le PATH ni via l'interpréteur Python actuel. Essayez d'exécuter `icebath update` manuellement dans votre terminal."
+    icebath_cmd_not_found: "✗ Impossible de localiser la commande `icebath`. Icebath est en cours d'exécution, mais la commande de mise à jour n'a pas pu trouver l'exécutable dans le PATH ni via l'interpréteur Python actuel. Essayez d'exécuter `icebath update` manuellement dans votre terminal."
     start_failed: "✗ Échec du démarrage de la mise à jour : {error}"
     starting: "☤ Démarrage de la mise à jour Icebath… Je diffuserai la progression ici."
     reply_failed: "✗ Échec de l'envoi de la réponse au processus de mise à jour : {error}"
@@ -694,9 +690,6 @@ gateway:
     no_data: "Aucune donnée d'utilisation disponible pour cette session."
     unknown_subcommand: "Sous-commande /usage inconnue : `{args}`. Essayez `/usage` ou `/usage reset [--force]`."
     reset_wrong_provider: "Les réinitialisations de limite en réserve ne sont disponibles qu'avec le fournisseur openai-codex. Changez d'abord avec `/model`."
-  credits:
-
-    not_logged_in: "Non connecté à Nous Portal. Connecte-toi pour voir ton solde de crédits et recharger."
   verbose:
 
     not_enabled: "La commande `/verbose` n'est pas activée pour les plateformes de messagerie.\n\nActivez-la dans `config.yaml` :\n```yaml\ndisplay:\n  tool_progress_command: true\n```"
@@ -1237,16 +1230,6 @@ gateway:
   codex_runtime:
 
     config_load_failed: "❌ Impossible de charger la configuration : {error}"
-  topup:
-
-    header: "💳 **Solde Nous**"
-    portal_link: "Gérez votre facturation sur le portail : {url}"
-    hint: "Rechargez et gérez votre facturation dans le navigateur — votre solde sera mis à jour ici ensuite."
-  login:
-
-    free_tier_remaining: |2-
-
-      Certaines discussions sont encore sur l'offre gratuite ; utilisez /model dans ces discussions pour changer de modèle.
 platform:
 
   whatsapp:
@@ -1815,7 +1798,7 @@ platform:
         🔧 L'envoi natif des pièces jointes n'est **pas configuré**.
         **Étape 1 (une seule fois, sur l'hôte) :** créez des identifiants de client OAuth sur https://console.cloud.google.com/apis/credentials → *Créer des identifiants* → *ID client OAuth* → *Application de bureau*. Téléchargez le JSON. Puis, sur l'hôte, exécutez :
         ```
-        python -m plugins.platforms.google_chat.oauth --client-secret /path/to/client_secret.json
+        icebath google_chat oauth --client-secret /path/to/client_secret.json
         ```
         **Étape 2 :** revenez ici et envoyez `/setup-files start`.
       start_instructions: |-
@@ -1957,7 +1940,7 @@ slash:
     slack_alias_for: "Alias de /{name} — {description}"
     plugin_default_desc: "Exécuter /{name}"
     plugin_command_desc: "Commande de plugin"
-  hermes:
+  icebath:
 
     description: "Parler à Icebath ou exécuter une sous-commande"
   start:
@@ -2218,15 +2201,6 @@ slash:
   usage:
 
     description: "Afficher la consommation de tokens et les limites de débit ; `reset` utilise une réinitialisation de limite Codex mise en réserve"
-  subscription:
-
-    description: "Voir votre forfait Nous et le modifier dans le navigateur"
-  login:
-
-    description: "Se connecter avec un compte Nous (conserve vos connecteurs)"
-  topup:
-
-    description: "Afficher votre solde Nous et gérer la facturation sur le portail"
   platforms:
 
     description: "Afficher l'état du gateway et des plateformes de messagerie"
@@ -2258,66 +2232,6 @@ cli:
     thought_for: "Réflexion pendant {seconds}s"
     thought: "Réflexion"
     preparing: "Préparation de {what}…"
-  billing:
-
-    load_failed: "{label} : {error}"
-    load_failed_label: "Facturation indisponible"
-    not_logged_in: "Non connecté à Nous Portal."
-    run_portal_then: "Lancez `icebath portal` pour vous connecter, puis {cmd}."
-    org_line: "Org : {org}"
-    org_line_role: "Org : {org} · {role}"
-    bar_plan_label: "abonnement"
-    bar_topup_label: "recharge"
-    bar_pct_used: " · {pct} % consommés"
-    bar_plan: "{label}[{bar}]  ${remaining} restants sur ${total}{pct}"
-    bar_topup: "{label}[{bar}]  ${remaining} · sans expiration"
-    total_spendable: "Total disponible : ${amount}"
-    manage_on_portal_url: "Gérer sur le portail : {url}"
-    under_five: "moins de 5 $"
-    plan_free: "Gratuit"
-    renews_suffix: " · renouvellement le {date}"
-    plan_line: "Abonnement : {plan}{renews}"
-    free_models_only_hint: "> Gratuit · modèles gratuits uniquement. Lancez /subscription pour accéder aux modèles payants."
-    low_balance_usage: "! Solde faible · {amount} restants. Lancez /topup ou /subscription."
-    usage_cta: "Lancez /subscription pour changer d'abonnement · /topup pour recharger votre solde"
-    topup_header: "Recharger · solde {balance}"
-    auto_reload_on_line: "Recharge automatique : activée — sous {threshold} → recharger jusqu'à {reload_to}"
-    auto_reload_off_line: "Recharge automatique : désactivée"
-    card_line: "Carte : {card}"
-    no_saved_card_add_funds_hint: "Aucune carte enregistrée — « Ajouter des fonds » vous guide pour en ajouter une."
-    actions_require_admin: "Les actions de facturation nécessitent un admin ou propriétaire de l'org."
-    remote_spending_off_for_org: "Les dépenses à distance sont désactivées pour cette org."
-    killswitch_reason_overview: "Un admin de facturation peut les activer depuis la page Icebath Agent du portail pour ajouter des fonds ici."
-    # Keep going on credits (window plans only; the portal sends the setting only there)
-    keep_going_on_line: "Continuer avec les crédits : activé (utilise vos crédits quand l’usage inclus est épuisé)"
-    keep_going_off_line: "Continuer avec les crédits : désactivé (Icebath attend la réinitialisation)"
-  subscription:
-
-    load_failed_label: "Impossible de charger l'abonnement"
-    team_header: "Abonnement d'équipe"
-    a_team_org: "une organisation d'équipe"
-    team_connected: "Ce terminal est connecté à {org}. Les équipes fonctionnent sur un solde partagé · utilisez /topup pour ajouter des fonds."
-    personal_note: "Les abonnements personnels sont rattachés à votre compte personnel."
-    your_plan: "votre forfait"
-    cancels: "se résilie"
-    end_of_billing_period: "la fin de la période de facturation"
-    end_of_cycle: "la fin du cycle"
-    status_flip_cancels: " → résiliation"
-    status_flip_to: " → {tier}"
-    status_left: " · ${amount} restants"
-    status_view_only: " · lecture seule"
-    status_renews: " · renouvellement le {date}"
-    status_line: "Forfait : {plan}{flip}{left}{tail}"
-    status_free: "Forfait : Gratuit · modèles gratuits uniquement"
-    scheduled_change: "Changement planifié"
-    scheduled_change_line: "{from_plan} ──▶ {to_plan}  {when}"
-    scheduled_when: "· {when}"
-    keep_until_then: "Vous conservez {plan} (et ses crédits) jusque-là."
-    paid_models_need_subscription: "> Les modèles payants nécessitent un abonnement. Souscrivez-en un pour y accéder."
-    low_balance: "! Solde faible · {amount} restants. Rechargez ou passez à un forfait supérieur pour éviter une coupure en cours d'exécution."
-    plan_changes_need_admin: "Changer de forfait requiert un admin/propriétaire de l'org."
-    manage_url_line: "Gérez votre abonnement : {url}"
-    open_then_rerun: "Ouvrez-la dans votre navigateur, puis relancez /subscription."
   model:
 
     switched: "✓ Modèle changé : {model}"
@@ -2387,6 +2301,7 @@ cli:
 
     interrupting: "⚡ Interruption de l'agent..."
     suspend_unsupported: "La suspension (Ctrl+Z) n'est pas prise en charge sous Windows."
+    suspend_no_job_control: "La suspension (Ctrl+Z) nécessite le contrôle des tâches, et le shell qui a lancé {agent_name} n'en dispose pas."
     suspended: "{agent_name} a été suspendu. Exécutez `fg` pour ramener {agent_name} au premier plan."
   voice:
 
@@ -2642,7 +2557,6 @@ cli:
     delivering_leftover_steer: "⏩ /steer restant transmis comme prochain tour : '{preview}'"
     reasoning_label: "Raisonnement"
     reasoning_more_lines: "... ({count} lignes de plus — /reasoning full pour les afficher)"
-    billing_cta_nous: "Exécutez [bold]/topup[/] pour ajouter des crédits, ou [bold]/subscription[/] pour changer de formule."
     billing_cta_provider: "Ajoutez des crédits chez {provider}"
     your_provider: "votre fournisseur"
     billing_cta_switch: "Ou changez de fournisseur avec [bold]/model <model> --provider <provider>[/]."
@@ -3159,11 +3073,6 @@ cli:
 
       complete: "{label} terminée"
       failed: "❌ {label} a échoué : {error}"
-    login:
-
-      label: "Connexion"
-      title_suffix: "(connexion)"
-      no_result: "(Aucun résultat)"
     btw:
 
       usage: |-
@@ -3339,9 +3248,6 @@ cli:
     fix_lm_studio: "Correctif LM Studio : réglez la longueur de contexte dans les paramètres du modèle → rechargez le modèle"
     fix_local_server: "Correctif : démarrez votre serveur avec au moins {tokens_k}K de contexte (llama.cpp : -c {tokens}), ou réglez model.ollama_num_ctx dans config.yaml sur la fenêtre réellement servie"
     fix_config: "Correctif : réglez model.context_length dans config.yaml, ou augmentez le paramètre de contexte de votre serveur"
-    hermes_models_not_agentic: "⚠  Les modèles Nous Research Hermes 3 et 4 ne sont PAS agentiques et ne sont pas conçus pour Icebath Agent."
-    hermes_models_lack_tools: "Ils ne disposent pas des capacités d'appel d'outils requises pour les workflows agentiques. Préférez un modèle agentique (Claude, GPT, Gemini, DeepSeek, etc.)."
-    hermes_models_switch_hint: "Changez avec : /model sonnet  ou  /model gpt5"
     project_skills_loaded: "◆ {count} skill(s) de projet chargée(s) depuis ce dépôt"
     project_skills_untrusted: "◆ {count} skill(s) de projet trouvée(s) dans {root} mais non chargée(s) — exécutez `icebath skills trust` pour les activer."
   command:
@@ -3862,7 +3768,7 @@ tips:
   t078: "icebath profile create work --clone copie votre configuration et vos clés actuelles dans un nouveau profil."
   t079: "icebath update synchronise automatiquement les nouvelles skills intégrées vers TOUS les profils."
   t080: "icebath gateway install installe Icebath comme service système (systemd/launchd)."
-  t081: "icebath memory setup permet de configurer un fournisseur de mémoire externe (Honcho, Mem0, etc.)."
+  t081: "icebath memory setup permet de configurer un fournisseur de mémoire externe (RetainDB, ByteRover, etc.)."
   t082: "icebath webhook subscribe crée des routes webhook événementielles avec validation HMAC."
   t083: "Économisez : icebath tools désactive les outils inutilisés, icebath skills config allège les skills."
   t084: "/reasoning low ou /reasoning minimal réduit la profondeur de réflexion sous la valeur par défaut (medium) — réponses plus rapides et moins chères."
@@ -3965,8 +3871,8 @@ tips:
   t181: "Camofox (Firefox anti-détection) est intégré : configurez-le avec icebath camofox setup."
   t182: "browser_exec exécute plusieurs étapes navigateur en un seul appel Python — naviguer, extraire et cliquer ensemble."
   t183: "browser.dialog_policy définit la gestion des boîtes de dialogue natives des pages : must_respond (l'agent répond avec browser_dialog), auto_dismiss ou auto_accept."
-  t184: "icebath mcp ouvre un sélecteur interactif de MCP approuvés par Nous, installables en une touche."
-  t185: "icebath mcp catalog liste les serveurs MCP approuvés par Nous fournis avec le dépôt."
+  t184: "icebath mcp ouvre un sélecteur interactif des MCP du catalogue intégré d'icebath, installables en une touche."
+  t185: "icebath mcp catalog liste les serveurs MCP intégrés à icebath."
   t186: "icebath mcp install <name> installe une entrée du catalogue, demande les identifiants et vous laisse choisir les outils à activer."
   t187: "Les serveurs MCP se configurent dans config.yaml — transports stdio et HTTP pris en charge."
   t188: "Filtrage d'outils par serveur : tools.include met des outils en liste blanche, tools.exclude en liste noire."
@@ -3981,7 +3887,7 @@ tips:
   t197: "L'enregistrement des trajectoires (--save-trajectories) capture les traces complètes d'utilisation des outils pour l'entraînement de modèles."
   t198: "Trois types de plugins : généraux (outils/hooks), fournisseurs de mémoire et moteurs de contexte."
   t199: "icebath plugins install owner/repo installe des plugins directement depuis GitHub."
-  t200: "Fournisseurs de mémoire externes : Honcho, Hindsight, Mem0, OpenViking et d'autres via icebath plugins install."
+  t200: "Fournisseurs de mémoire externes : RetainDB et ByteRover sont intégrés, d'autres via icebath plugins install <source>."
   t201: "Les hooks de plugin incluent pre/post_tool_call, pre/post_llm_call et transform_terminal_output pour normaliser la sortie."
   t202: "Le cache de prompt (Anthropic) réduit les coûts en réutilisant les préfixes de prompt système déjà mis en cache."
   t203: "L'agent génère les titres de session dans un thread d'arrière-plan — aucun impact sur la latence."
@@ -3993,7 +3899,7 @@ tips:
   t209: "Fournisseurs personnalisés : enregistrez des endpoints nommés dans config.yaml sous custom_providers."
   t210: "ICEBATH_EPHEMERAL_SYSTEM_PROMPT injecte un prompt système qui n'est jamais conservé dans l'historique."
   t211: "credential_pool_strategies prend en charge les rotations fill_first, round_robin, least_used et random."
-  t212: "icebath auth add nous ou icebath auth add openai-codex configure des fournisseurs basés sur OAuth."
+  t212: "icebath auth add xai-oauth ou icebath auth add openai-codex configure des fournisseurs basés sur OAuth."
   t213: "Le serveur API prend en charge à la fois Chat Completions et l'API Responses avec état côté serveur."
   t214: "tool_preview_length: 0 dans la configuration affiche les chemins de fichiers complets dans le flux d'activité du spinner."
   t215: "icebath status --deep effectue des vérifications de diagnostic approfondies sur tous les composants."
@@ -4089,70 +3995,69 @@ tips:
   t305: "icebath curator rollback restaure les skills depuis un instantané pré-exécution — les sauvegardes vivent sous skills/.curator_backups/."
   t306: "icebath auth reset <provider> [target] efface les temps de repos et les indicateurs d'épuisement d'un pool d'identifiants entier, ou d'un seul identifiant par index, id ou libellé."
   t307: "credential_pool_strategies.<provider>: round_robin fait tourner les clés de façon équitable au lieu du fill_first par défaut."
-  t308: "use_gateway: true par outil route web, image, tts ou browser via votre abonnement Nous — aucune clé supplémentaire."
-  t309: "provider_routing.data_collection: deny exclut les fournisseurs qui conservent les données sur OpenRouter."
-  t310: "provider_routing.require_parameters: true ne route que vers les fournisseurs prenant en charge chaque paramètre de votre requête."
-  t311: "ICEBATH_TUI_RESUME=1 se rattache automatiquement à la session TUI la plus récente au lancement — pratique après une coupure SSH."
-  t312: "ICEBATH_TUI_THEME=light|dark|<hex> force le thème de la TUI sur les terminaux qui ne définissent pas COLORFGBG."
-  t313: "Ctrl+G ou Ctrl+X Ctrl+E dans la TUI ouvre le tampon de saisie dans $EDITOR pour les longs prompts multilignes."
-  t314: "La TUI affiche le LaTeX en ligne — $E=mc^2$ devient des maths Unicode au lieu de TeX brut."
-  t315: "display.tool_progress_command: true expose /verbose sur les plateformes de messagerie ; par défaut, il est réservé à la CLI."
-  t316: "ICEBATH_BACKGROUND_NOTIFICATIONS=result ne vous notifie qu'à la fin des tâches d'arrière-plan (au lieu de concise/all/error/off)."
-  t317: "ICEBATH_WRITE_SAFE_ROOT restreint write_file/patch à des préfixes de répertoires ; plusieurs chemins via os.pathsep (: ou ;)."
-  t318: "ICEBATH_IGNORE_RULES désactive l'injection automatique d'AGENTS.md, SOUL.md, .cursorrules, de la mémoire et des skills préchargées."
-  t319: "ICEBATH_ACCEPT_HOOKS approuve automatiquement les hooks shell inédits déclarés dans config.yaml, sans invite dans le terminal."
-  t320: "auxiliary.goal_judge.model envoie le juge de /goal vers un modèle rapide et peu coûteux pour garder le coût des boucles proche de zéro."
-  t321: "Les points de contrôle ignorent les répertoires de plus de 50 000 fichiers pour éviter des opérations git lentes sur les monorepos géants."
-  t322: "tts.provider: piper exécute une TTS locale en 44 langues sur CPU — les voix se téléchargent automatiquement dans ~/.icebath/cache/fetch/."
-  t323: "tts.providers.<name>.type: command branche n'importe quel moteur TTS en ligne de commande grâce aux placeholders {input_path} et {output_path}."
-  t324: "API_SERVER_ENABLED=true lance un point de terminaison compatible OpenAI à côté du gateway, pour Open WebUI et LibreChat."
-  t325: "GATEWAY_PROXY_URL met en place une configuration scindée : les E/S des plateformes en local, le travail de l'agent délégué à un serveur API distant."
-  t326: "MATRIX_DEVICE_ID fixe un ID d'appareil stable pour l'E2EE — sans lui, les clés changent à chaque démarrage et le déchiffrement de l'historique casse."
-  t327: "TELEGRAM_WEBHOOK_SECRET est obligatoire dès que TELEGRAM_WEBHOOK_URL est défini — générez-le avec openssl rand -hex 32."
-  t328: "batch_runner.py --resume reconnaît les prompts déjà traités par leur texte, donc réordonner le jeu de données ne relance pas le travail terminé."
-  t329: "/new démarre une nouvelle session sur place (alias /reset) — nouvel ID de session, historique vierge, la CLI reste ouverte."
-  t330: "/clear efface l'écran du terminal ET démarre une nouvelle session — un seul raccourci pour repartir à zéro visuellement."
-  t331: "/history affiche la conversation en cours directement dans la CLI sans la quitter — pratique pour une relecture rapide."
-  t332: "/save écrit la conversation en cours sur le disque sans terminer la session."
-  t333: "/status affiche les infos de session en un coup d'œil : ID, titre, modèle, consommation de tokens et temps écoulé."
-  t334: "/image <path> joint un fichier image local à votre prochain prompt, sans coller ni glisser-déposer."
-  t335: "/platforms affiche l'état de connexion du gateway et des plateformes de messagerie, directement depuis le chat."
-  t336: "/commands pagine la liste complète des commandes slash et des skills installées — pratique sur les plateformes sans complétion par tabulation."
-  t337: "/toolsets liste tous les toolsets disponibles pour savoir ce qu'accepte -t/--toolsets."
-  t338: "/voice tts bascule en mode TTS seul — l'agent répond à voix haute mais vous continuez à taper vos prompts."
-  t339: "/reload-skills rescanne ~/.icebath/skills/ pour que les skills déposées apparaissent sans redémarrer la session."
-  t340: "/indicator kaomoji|emoji|unicode|ascii choisit le style de l'indicateur d'activité de la TUI affiché pendant les exécutions de l'agent."
-  t341: "/debug téléverse un bundle de support (infos système + journaux) et renvoie des liens partageables — fonctionne aussi dans le chat."
-  t342: "icebath -z \"<prompt>\" est le one-shot le plus pur : la réponse finale sur stdout, rien d'autre — idéal pour les pipes dans des scripts."
-  t343: "icebath chat --pass-session-id injecte l'ID de session dans le prompt système pour que l'agent puisse y faire référence lui-même."
-  t344: "icebath chat --image path/to/pic.png joint une image locale à une requête -q unique, sans étape de téléversement séparée."
-  t345: "icebath chat --ignore-user-config ignore la configuration utilisateur active — pour des rapports de bug reproductibles et des exécutions en CI."
-  t346: "icebath chat --source tool étiquette les chats programmatiques pour qu'ils n'encombrent pas icebath sessions list."
-  t347: "icebath dump --show-keys inclut des empreintes masquées des clés API pour un débogage plus poussé avec le support."
-  t348: "icebath sessions rename <ID> \"nouveau titre\" renomme n'importe quelle session passée ; icebath sessions delete <ID> en supprime une."
-  t349: "icebath import restaure un zip de sauvegarde Icebath complet."
-  t350: "icebath fallback gère la chaîne fallback_model de manière interactive — sans modifier config.yaml à la main."
-  t351: "icebath pairing renouvelle le token d'appairage des DM — la première personne qui écrit après le renouvellement obtient l'accès au bot."
-  t352: "/setup guide les nouveaux utilisateurs à travers le fournisseur, les clés et le branchement des plateformes en un seul parcours interactif."
-  t353: "icebath status --deep lance le bilan de santé complet de chaque composant ; icebath status seul donne la vue rapide."
-  t354: "ICEBATH_AGENT_TIMEOUT=0 désactive l'arrêt pour inactivité du gateway sur un agent en cours — utile pour les longues sessions de recherche."
-  t355: "ICEBATH_ENABLE_PROJECT_PLUGINS=1 charge automatiquement les plugins locaux au dépôt depuis ./.icebath/plugins/ — soumis à une validation de confiance par conception."
-  t356: "ICEBATH_DISABLE_FILE_STATE_GUARD=1 désactive la protection « fichier modifié depuis votre lecture » sur patch et write_file."
-  t357: "ICEBATH_ALLOW_PRIVATE_URLS=true autorise les outils web à atteindre localhost et les réseaux privés — désactivé par défaut en mode gateway."
-  t358: "ICEBATH_OPTIONAL_SKILLS=name1,name2 installe automatiquement des skills supplémentaires du catalogue optionnel au premier lancement de chaque profil."
-  t359: "ICEBATH_BUNDLED_SKILLS pointe vers une arborescence personnalisée de skills embarquées — utilisé par les paquets Homebrew et Nix."
-  t360: "ICEBATH_DUMP_REQUEST_STDOUT=1 écrit la charge utile de chaque requête API sur stdout plutôt que dans les fichiers journaux."
-  t361: "ICEBATH_OAUTH_TRACE=1 journalise (avec masquage) les échanges et renouvellements de tokens OAuth pour déboguer l'authentification des fournisseurs."
-  t362: "ICEBATH_STREAM_RETRIES (3 par défaut) contrôle le nombre de tentatives de reconnexion en cours de flux lors d'erreurs réseau passagères."
-  t363: "ICEBATH_GATEWAY_BUSY_ACK_ENABLED=false supprime les accusés de réception ⚡/⏳/⏩ quand un utilisateur écrit à un agent occupé."
-  t364: "ICEBATH_AGENT_NOTIFY_INTERVAL (180s par défaut) définit la fréquence à laquelle le gateway envoie un point d'avancement sur les tours longs."
-  t365: "ICEBATH_RESTART_DRAIN_TIMEOUT (900s par défaut) plafonne le temps pendant lequel /restart attend les exécutions en cours avant de forcer."
-  t366: "ICEBATH_CHECKPOINT_TIMEOUT (30s par défaut) plafonne la création des points de contrôle du système de fichiers — augmentez-le sur les monorepos géants."
-  t367: "image_gen.model dans config.yaml choisit le modèle FAL : flux-2/klein, gpt-image-2, nano-banana-pro, et d'autres."
-  t368: "image_gen.provider fait passer la génération d'images par un plugin (OpenAI Images, Codex, FAL) au lieu du fournisseur par défaut."
-  t369: "AUXILIARY_VISION_BASE_URL + AUXILIARY_VISION_API_KEY dirigent l'analyse d'images vers n'importe quel point de terminaison compatible OpenAI."
-  t370: "API_SERVER_MODEL_NAME personnalise le nom du modèle sur /v1/models — indispensable pour les configurations Open WebUI multi-profils."
-  t371: "Les chats --source tool sont exclus de icebath sessions list par défaut — passez --source explicitement pour les voir."
+  t308: "provider_routing.data_collection: deny exclut les fournisseurs qui conservent les données sur OpenRouter."
+  t309: "provider_routing.require_parameters: true ne route que vers les fournisseurs prenant en charge chaque paramètre de votre requête."
+  t310: "ICEBATH_TUI_RESUME=1 se rattache automatiquement à la session TUI la plus récente au lancement — pratique après une coupure SSH."
+  t311: "ICEBATH_TUI_THEME=light|dark|<hex> force le thème de la TUI sur les terminaux qui ne définissent pas COLORFGBG."
+  t312: "Ctrl+G ou Ctrl+X Ctrl+E dans la TUI ouvre le tampon de saisie dans $EDITOR pour les longs prompts multilignes."
+  t313: "La TUI affiche le LaTeX en ligne — $E=mc^2$ devient des maths Unicode au lieu de TeX brut."
+  t314: "display.tool_progress_command: true expose /verbose sur les plateformes de messagerie ; par défaut, il est réservé à la CLI."
+  t315: "ICEBATH_BACKGROUND_NOTIFICATIONS=result ne vous notifie qu'à la fin des tâches d'arrière-plan (au lieu de concise/all/error/off)."
+  t316: "ICEBATH_WRITE_SAFE_ROOT restreint write_file/patch à des préfixes de répertoires ; plusieurs chemins via os.pathsep (: ou ;)."
+  t317: "ICEBATH_IGNORE_RULES désactive l'injection automatique d'AGENTS.md, SOUL.md, .cursorrules, de la mémoire et des skills préchargées."
+  t318: "ICEBATH_ACCEPT_HOOKS approuve automatiquement les hooks shell inédits déclarés dans config.yaml, sans invite dans le terminal."
+  t319: "auxiliary.goal_judge.model envoie le juge de /goal vers un modèle rapide et peu coûteux pour garder le coût des boucles proche de zéro."
+  t320: "Les points de contrôle ignorent les répertoires de plus de 50 000 fichiers pour éviter des opérations git lentes sur les monorepos géants."
+  t321: "tts.provider: piper exécute une TTS locale en 44 langues sur CPU — les voix se téléchargent automatiquement dans ~/.icebath/cache/fetch/."
+  t322: "tts.providers.<name>.type: command branche n'importe quel moteur TTS en ligne de commande grâce aux placeholders {input_path} et {output_path}."
+  t323: "API_SERVER_ENABLED=true lance un point de terminaison compatible OpenAI à côté du gateway, pour Open WebUI et LibreChat."
+  t324: "GATEWAY_PROXY_URL met en place une configuration scindée : les E/S des plateformes en local, le travail de l'agent délégué à un serveur API distant."
+  t325: "MATRIX_DEVICE_ID fixe un ID d'appareil stable pour l'E2EE — sans lui, les clés changent à chaque démarrage et le déchiffrement de l'historique casse."
+  t326: "TELEGRAM_WEBHOOK_SECRET est obligatoire dès que TELEGRAM_WEBHOOK_URL est défini — générez-le avec openssl rand -hex 32."
+  t327: "batch_runner.py --resume reconnaît les prompts déjà traités par leur texte, donc réordonner le jeu de données ne relance pas le travail terminé."
+  t328: "/new démarre une nouvelle session sur place (alias /reset) — nouvel ID de session, historique vierge, la CLI reste ouverte."
+  t329: "/clear efface l'écran du terminal ET démarre une nouvelle session — un seul raccourci pour repartir à zéro visuellement."
+  t330: "/history affiche la conversation en cours directement dans la CLI sans la quitter — pratique pour une relecture rapide."
+  t331: "/save écrit la conversation en cours sur le disque sans terminer la session."
+  t332: "/status affiche les infos de session en un coup d'œil : ID, titre, modèle, consommation de tokens et temps écoulé."
+  t333: "/image <path> joint un fichier image local à votre prochain prompt, sans coller ni glisser-déposer."
+  t334: "/platforms affiche l'état de connexion du gateway et des plateformes de messagerie, directement depuis le chat."
+  t335: "/commands pagine la liste complète des commandes slash et des skills installées — pratique sur les plateformes sans complétion par tabulation."
+  t336: "/toolsets liste tous les toolsets disponibles pour savoir ce qu'accepte -t/--toolsets."
+  t337: "/voice tts bascule en mode TTS seul — l'agent répond à voix haute mais vous continuez à taper vos prompts."
+  t338: "/reload-skills rescanne ~/.icebath/skills/ pour que les skills déposées apparaissent sans redémarrer la session."
+  t339: "/indicator kaomoji|emoji|unicode|ascii choisit le style de l'indicateur d'activité de la TUI affiché pendant les exécutions de l'agent."
+  t340: "/debug téléverse un bundle de support (infos système + journaux) et renvoie des liens partageables — fonctionne aussi dans le chat."
+  t341: "icebath -z \"<prompt>\" est le one-shot le plus pur : la réponse finale sur stdout, rien d'autre — idéal pour les pipes dans des scripts."
+  t342: "icebath chat --pass-session-id injecte l'ID de session dans le prompt système pour que l'agent puisse y faire référence lui-même."
+  t343: "icebath chat --image path/to/pic.png joint une image locale à une requête -q unique, sans étape de téléversement séparée."
+  t344: "icebath chat --ignore-user-config ignore la configuration utilisateur active — pour des rapports de bug reproductibles et des exécutions en CI."
+  t345: "icebath chat --source tool étiquette les chats programmatiques pour qu'ils n'encombrent pas icebath sessions list."
+  t346: "icebath dump --show-keys inclut des empreintes masquées des clés API pour un débogage plus poussé avec le support."
+  t347: "icebath sessions rename <ID> \"nouveau titre\" renomme n'importe quelle session passée ; icebath sessions delete <ID> en supprime une."
+  t348: "icebath import restaure un zip de sauvegarde Icebath complet."
+  t349: "icebath fallback gère la chaîne fallback_model de manière interactive — sans modifier config.yaml à la main."
+  t350: "icebath pairing renouvelle le token d'appairage des DM — la première personne qui écrit après le renouvellement obtient l'accès au bot."
+  t351: "/setup guide les nouveaux utilisateurs à travers le fournisseur, les clés et le branchement des plateformes en un seul parcours interactif."
+  t352: "icebath status --deep lance le bilan de santé complet de chaque composant ; icebath status seul donne la vue rapide."
+  t353: "ICEBATH_AGENT_TIMEOUT=0 désactive l'arrêt pour inactivité du gateway sur un agent en cours — utile pour les longues sessions de recherche."
+  t354: "ICEBATH_ENABLE_PROJECT_PLUGINS=1 charge automatiquement les plugins locaux au dépôt depuis ./.icebath/plugins/ — soumis à une validation de confiance par conception."
+  t355: "ICEBATH_DISABLE_FILE_STATE_GUARD=1 désactive la protection « fichier modifié depuis votre lecture » sur patch et write_file."
+  t356: "ICEBATH_ALLOW_PRIVATE_URLS=true autorise les outils web à atteindre localhost et les réseaux privés — désactivé par défaut en mode gateway."
+  t357: "ICEBATH_OPTIONAL_SKILLS=name1,name2 installe automatiquement des skills supplémentaires du catalogue optionnel au premier lancement de chaque profil."
+  t358: "ICEBATH_BUNDLED_SKILLS pointe vers une arborescence personnalisée de skills embarquées — utilisé par les paquets Homebrew et Nix."
+  t359: "ICEBATH_DUMP_REQUEST_STDOUT=1 écrit la charge utile de chaque requête API sur stdout plutôt que dans les fichiers journaux."
+  t360: "ICEBATH_OAUTH_TRACE=1 journalise (avec masquage) les échanges et renouvellements de tokens OAuth pour déboguer l'authentification des fournisseurs."
+  t361: "ICEBATH_STREAM_RETRIES (3 par défaut) contrôle le nombre de tentatives de reconnexion en cours de flux lors d'erreurs réseau passagères."
+  t362: "ICEBATH_GATEWAY_BUSY_ACK_ENABLED=false supprime les accusés de réception ⚡/⏳/⏩ quand un utilisateur écrit à un agent occupé."
+  t363: "ICEBATH_AGENT_NOTIFY_INTERVAL (180s par défaut) définit la fréquence à laquelle le gateway envoie un point d'avancement sur les tours longs."
+  t364: "ICEBATH_RESTART_DRAIN_TIMEOUT (900s par défaut) plafonne le temps pendant lequel /restart attend les exécutions en cours avant de forcer."
+  t365: "ICEBATH_CHECKPOINT_TIMEOUT (30s par défaut) plafonne la création des points de contrôle du système de fichiers — augmentez-le sur les monorepos géants."
+  t366: "image_gen.model dans config.yaml choisit le modèle FAL : flux-2/klein, gpt-image-2, nano-banana-pro, et d'autres."
+  t367: "image_gen.provider fait passer la génération d'images par un plugin (OpenAI Images, Codex, FAL) au lieu du fournisseur par défaut."
+  t368: "AUXILIARY_VISION_BASE_URL + AUXILIARY_VISION_API_KEY dirigent l'analyse d'images vers n'importe quel point de terminaison compatible OpenAI."
+  t369: "API_SERVER_MODEL_NAME personnalise le nom du modèle sur /v1/models — indispensable pour les configurations Open WebUI multi-profils."
+  t370: "Les chats --source tool sont exclus de icebath sessions list par défaut — passez --source explicitement pour les voir."
   placeholder:
 
     p01: "Posez une question, ou tapez / pour les commandes…"
@@ -4166,25 +4071,3 @@ tips:
     p09: "Explique cette erreur et comment la corriger"
     p10: "Définis un rappel ou planifie une tâche récurrente"
     p11: "Tapez / pour parcourir les commandes, ou Ctrl+P pour la palette"
-
-# Window plans (Nous subscription with included usage): picker words, limit lines, Large-model notice.
-plan_usage:
-
-  level_free: "Gratuit"
-  level_top_tier: "Grand"
-  resets_in: "réinitialisation dans {duration}"
-  resets_soon: "réinitialisation bientôt"
-  limit_reached: "Limite {name} atteinte · {resets}"
-  limit_day: "quotidienne"
-  limit_week: "hebdomadaire"
-  limit_month: "mensuelle"
-  limit_top_tier: "mensuelle des grands modèles"
-  then_credits: "les modèles payants utilisent maintenant vos crédits (paiement à l'usage)"
-  then_credits_large: "les grands modèles utilisent maintenant vos crédits (paiement à l'usage)"
-  then_wait: "uniquement les modèles gratuits d'ici là"
-  then_wait_large: "grands modèles en pause d'ici là"
-  large_notice: "Grand modèle : consomme davantage de votre forfait par message."
-  large_notice_credits: "Grand modèle : consomme davantage de crédits par message (paiement à l'usage)."
-  large_notice_limit: "Grand modèle : votre limite {name} est atteinte ({resets})."
-  large_notice_limit_stops: "Grand modèle : votre limite {name} est atteinte ({resets}), il ne fonctionnera pas d'ici là."
-  large_notice_percent: "Grand modèle : consomme davantage de votre forfait par message. Limite mensuelle des grands modèles : {percent} utilisé."

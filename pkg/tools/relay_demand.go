@@ -8,28 +8,26 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/nickheyer/icebath/pkg/internal/pydict"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
+	"github.com/nickheyer/icebath/pkg/pm"
 )
 
-// Reason of the host a turn gets while the runtime is provisioned and nothing consumes Relay
-const relayProvisioningReason = "the NeMo Relay runtime is being provisioned and no Relay consumer is configured"
+// Reason of the host a turn gets while the runtime is unprovisioned and no Relay plugin is configured
+const relayUnconfiguredReason = "the NeMo Relay runtime is not provisioned and no Relay plugin is configured"
 
 var (
 	relayReadinessMu sync.Mutex
 	relayReadiness   func() bool
-	relayDemandMu    sync.Mutex
-	relayDemands     = pydict.New[string, func(ctx context.Context) bool]()
 )
 
-// Installs the check whether the registered binding loads without waiting for its runtime to be provisioned
+// Installs the check whether the registered binding finds its runtime provisioned
 func RegisterNemoRelayReadiness(ready func() bool) {
 	relayReadinessMu.Lock()
 	relayReadiness = ready
 	relayReadinessMu.Unlock()
 }
 
-// Whether the binding loads without waiting for a provisioning, true when its loader registered no readiness check
+// Whether the binding finds its runtime provisioned, true when its loader registered no readiness check
 func relayBindingReady() bool {
 	relayReadinessMu.Lock()
 	ready := relayReadiness
@@ -37,22 +35,8 @@ func relayBindingReady() bool {
 	return ready == nil || ready()
 }
 
-// Registers under name a check that a consumer of profile Relay events exists, a nil check removing it
-func RegisterRelayDemand(name string, demanded func(ctx context.Context) bool) {
-	relayDemandMu.Lock()
-	defer relayDemandMu.Unlock()
-	if demanded == nil {
-		relayDemands.Delete(name)
-		return
-	}
-	relayDemands.Set(name, demanded)
-}
-
-// Whether Relay has a consumer for ctx's profile, a plugin file Relay discovers, a plugin variable, or a registered consumer
-func RelayDemanded(ctx context.Context) bool { return RelayDemandedBeyond(ctx, "") }
-
-// Whether Relay has a consumer for ctx's profile other than the consumer registered under name
-func RelayDemandedBeyond(ctx context.Context, name string) bool {
+// Whether Relay has a consumer for this process, a plugin file Relay discovers, the plugins variable or a legacy exporter variable
+func RelayDemanded(ctx context.Context) bool {
 	if pystr.Strip(os.Getenv(RelayPluginsConfigEnv)) != "" || len(RelayDiscoveredPluginFiles()) > 0 {
 		return true
 	}
@@ -62,23 +46,19 @@ func RelayDemandedBeyond(ctx context.Context, name string) bool {
 			environ[k] = v
 		}
 	}
-	if len(ConfiguredLegacyRelayEnvVars(environ)) > 0 {
-		return true
+	return len(ConfiguredLegacyRelayEnvVars(environ)) > 0
+}
+
+// Warning for a session whose configured Relay plugins wait on an unprovisioned runtime, empty when Relay runs or has no consumer
+func RelayUnprovisionedNotice(ctx context.Context) string {
+	target, err := pm.CurrentTarget()
+	if err != nil {
+		return ""
 	}
-	relayDemandMu.Lock()
-	var checks []func(ctx context.Context) bool
-	for registered, demanded := range relayDemands.All() {
-		if registered != name {
-			checks = append(checks, demanded)
-		}
+	if _, ok := pm.NemoRelayWheel(target); !ok || relayBindingReady() || !RelayDemanded(ctx) {
+		return ""
 	}
-	relayDemandMu.Unlock()
-	for _, demanded := range checks {
-		if demanded(ctx) {
-			return true
-		}
-	}
-	return false
+	return "Relay plugins are configured but the NeMo Relay runtime is not provisioned, so this session runs without them. Run `icebath pm install --extra nemo-relay` to provision it."
 }
 
 // Existing plugins.toml files Relay 0.11 discovers for this process, the user file then the system file

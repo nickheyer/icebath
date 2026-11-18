@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"log/slog"
 	"strings"
 	"sync"
 	"time"
@@ -193,7 +192,7 @@ func gatewaySkillsAndNotice(c *CLI) (map[string]map[string]any, string, bool) {
 			if !isGatewayClientError(err) {
 				panic(err)
 			}
-			slog.Debug(fmt.Sprintf("commands.catalog unavailable: %s", err.Error()))
+			pkgLog().Debug(fmt.Sprintf("commands.catalog unavailable: %s", err.Error()))
 			return map[string]map[string]any{}, "", true
 		}
 		c.uiMu.Lock()
@@ -270,7 +269,7 @@ func gatewayPluginToolsets(c *CLI) ([]tools.ConfigurableToolset, map[string]bool
 		if !isGatewayClientError(err) {
 			panic(err)
 		}
-		slog.Debug(fmt.Sprintf("plugins.list unavailable: %s", err.Error()))
+		pkgLog().Debug(fmt.Sprintf("plugins.list unavailable: %s", err.Error()))
 		return []tools.ConfigurableToolset{}, map[string]bool{}, true
 	}
 	reply, _ := pyjson.Plain(raw).(map[string]any)
@@ -524,7 +523,7 @@ func observeGatewayCommand(c *CLI, name, arg string, runs bool) bool {
 	case err == nil:
 	case errors.As(err, &refused):
 		if !(refused.Code != nil && *refused.Code == -32601) && refused.Error() != "unknown_method" {
-			slog.Debug(fmt.Sprintf("command.observe /%s refused: %s", name, err.Error()))
+			pkgLog().Debug(fmt.Sprintf("command.observe /%s refused: %s", name, err.Error()))
 			return true
 		}
 		c.uiMu.Lock()
@@ -537,7 +536,7 @@ func observeGatewayCommand(c *CLI, name, arg string, runs bool) bool {
 				"runs itself until it restarts.")
 		}
 	case isGatewayClientError(err):
-		slog.Debug(fmt.Sprintf("command.observe /%s not delivered: %s", name, err.Error()))
+		pkgLog().Debug(fmt.Sprintf("command.observe /%s not delivered: %s", name, err.Error()))
 	default:
 		panic(err)
 	}

@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"log/slog"
 	"math/big"
 	"net/http"
 	"os"
@@ -97,7 +96,7 @@ func getMaxEntitiesConfig(ctx context.Context) (*big.Int, error) {
 	}
 	value, ok := parseIntStr(raw)
 	if !ok {
-		toolsLog().Debug(fmt.Sprintf("Ignoring non-integer HASS_MAX_ENTITIES value %s", pyrepr.StrRepr(raw)))
+		pkgLog().Debug(fmt.Sprintf("Ignoring non-integer HASS_MAX_ENTITIES value %s", pyrepr.StrRepr(raw)))
 		return nil, nil
 	}
 	if value.Sign() > 0 {
@@ -820,7 +819,7 @@ func pullRegistry(ctx context.Context, wsURL, token string) (entArea, entDev key
 		if !pyrepr.Truthy(reason) {
 			reason = authType
 		}
-		toolsLog().Warn(fmt.Sprintf("HA registry websocket auth failed (%s); area filter degraded", pyrepr.Str(reason)))
+		pkgLog().Warn(fmt.Sprintf("HA registry websocket auth failed (%s); area filter degraded", pyrepr.Str(reason)))
 		return nil, nil, true, nil
 	}
 	areaReg, err := registryFetch(ctx, conn, 1, "config/area_registry/list")
@@ -958,9 +957,9 @@ func registryAreaMap(ctx context.Context) (keyedMap, keyedMap, error) {
 	pulled := err == nil && !refused && !timedOut
 	switch {
 	case timedOut:
-		toolsLog().Warn(fmt.Sprintf("HA registry lookup timed out after %ss; area filter degraded", pyrepr.Float(registryTimeout)))
+		pkgLog().Warn(fmt.Sprintf("HA registry lookup timed out after %ss; area filter degraded", pyrepr.Float(registryTimeout)))
 	case err != nil:
-		toolsLog().Warn(fmt.Sprintf("HA registry lookup failed (%s: %s); area filter degraded", pyrepr.ExceptionName(err), err.Error()))
+		pkgLog().Warn(fmt.Sprintf("HA registry lookup failed (%s: %s); area filter degraded", pyrepr.ExceptionName(err), err.Error()))
 	}
 	registryCache.Lock()
 	defer registryCache.Unlock()
@@ -1221,7 +1220,7 @@ func listServices(ctx context.Context, domain any) (any, error) {
 func dispatch(run func() (any, error), logName, failMsg string) string {
 	value, err := run()
 	if err != nil {
-		toolsLog().Error(fmt.Sprintf("%s error: %s", logName, err.Error()))
+		pkgLog().Error(fmt.Sprintf("%s error: %s", logName, err.Error()))
 		return toolError(failMsg + ": " + err.Error())
 	}
 	return tools.JSONASCII(tools.Dict("result", value))
@@ -1357,57 +1356,57 @@ func checkHAAvailable(env *tools.Env) bool { return scopedSecretRaw(env, "HASS_T
 
 var haListEntitiesSchema = pyjson.ObjectOf(
 	"name", "ha_list_entities",
-	"description", "List Home Assistant entities. On a large install a bare call can return " +
-		"thousands of entities, so use the filters (domain, area, name, " +
-		"entity_ids) to keep the response small and targeted. Each entity " +
-		"includes its area and device when known (always after an area query).\n" +
-		"For a request about a room (\"the kitchen lights\"), filter by `area`, " +
-		"not `name`: a device belongs to a room by its Home Assistant area, and " +
-		"its name often does not mention the room. Take everything the area " +
-		"filter returns as part of that room, and judge what an entity is by " +
-		"the domain prefix of its entity_id (every light.* is a light), not by " +
-		"its name.\n" +
-		"An operator may configure a global cap (HASS_MAX_ENTITIES); when that " +
-		"or a 'max' parameter limits a result, the response is marked " +
+	"description", "List Home Assistant entities. On a large install a bare call can return "+
+		"thousands of entities, so use the filters (domain, area, name, "+
+		"entity_ids) to keep the response small and targeted. Each entity "+
+		"includes its area and device when known (always after an area query).\n"+
+		"For a request about a room (\"the kitchen lights\"), filter by `area`, "+
+		"not `name`: a device belongs to a room by its Home Assistant area, and "+
+		"its name often does not mention the room. Take everything the area "+
+		"filter returns as part of that room, and judge what an entity is by "+
+		"the domain prefix of its entity_id (every light.* is a light), not by "+
+		"its name.\n"+
+		"An operator may configure a global cap (HASS_MAX_ENTITIES); when that "+
+		"or a 'max' parameter limits a result, the response is marked "+
 		"'truncated' with a note on how to narrow the query or get more.",
 	"parameters", pyjson.ObjectOf(
 		"type", "object",
 		"properties", pyjson.ObjectOf(
 			"domain", pyjson.ObjectOf(
 				"type", "string",
-				"description", "Entity domain to filter by (e.g. 'light', 'switch', 'climate', " +
-					"'sensor', 'binary_sensor', 'cover', 'fan', 'media_player'). " +
-					"The cheapest filter; combine with area or name for a " +
+				"description", "Entity domain to filter by (e.g. 'light', 'switch', 'climate', "+
+					"'sensor', 'binary_sensor', 'cover', 'fan', 'media_player'). "+
+					"The cheapest filter; combine with area or name for a "+
 					"targeted query. Omit to list all entities.",
 			),
 			"area", pyjson.ObjectOf(
 				"type", "string",
-				"description", "Area/room name to filter by (e.g. 'living room', 'kitchen'). " +
-					"Use this, not name, for any request about a room. " +
-					"Resolved against the Home Assistant area registry, so an " +
-					"entity is matched even when its name does not mention the " +
-					"room; falls back to matching friendly names when the " +
+				"description", "Area/room name to filter by (e.g. 'living room', 'kitchen'). "+
+					"Use this, not name, for any request about a room. "+
+					"Resolved against the Home Assistant area registry, so an "+
+					"entity is matched even when its name does not mention the "+
+					"room; falls back to matching friendly names when the "+
 					"registry is unreachable. Omit to list all.",
 			),
 			"name", pyjson.ObjectOf(
 				"type", "string",
-				"description", "Substring to match against entity friendly names and " +
-					"entity_ids (e.g. 'thermostat', 'temperature'). " +
-					"Useful when you don't know the domain. Not for rooms: " +
+				"description", "Substring to match against entity friendly names and "+
+					"entity_ids (e.g. 'thermostat', 'temperature'). "+
+					"Useful when you don't know the domain. Not for rooms: "+
 					"use area, because names rarely mention the room.",
 			),
 			"entity_ids", pyjson.ObjectOf(
-				"type",  "array",
+				"type", "array",
 				"items", pyjson.ObjectOf("type", "string"),
-				"description", "Exact list of entity_ids to fetch (e.g. " +
-					"['climate.office', 'sensor.office_temp']). Returns just " +
+				"description", "Exact list of entity_ids to fetch (e.g. "+
+					"['climate.office', 'sensor.office_temp']). Returns just "+
 					"these entities, ignoring the domain/area/name filters.",
 			),
 			"max", pyjson.ObjectOf(
 				"type", "integer",
-				"description", "Maximum number of entities to return for this call. " +
-					"Overrides any operator-configured cap (HASS_MAX_ENTITIES) " +
-					"for this one call; set higher if you genuinely need a " +
+				"description", "Maximum number of entities to return for this call. "+
+					"Overrides any operator-configured cap (HASS_MAX_ENTITIES) "+
+					"for this one call; set higher if you genuinely need a "+
 					"larger batch and the query is already well filtered.",
 			),
 		),
@@ -1417,14 +1416,14 @@ var haListEntitiesSchema = pyjson.ObjectOf(
 
 var haGetStateSchema = pyjson.ObjectOf(
 	"name", "ha_get_state",
-	"description", "Get the detailed state of a single Home Assistant entity, including all " +
+	"description", "Get the detailed state of a single Home Assistant entity, including all "+
 		"attributes (brightness, color, temperature setpoint, sensor readings, etc.).",
 	"parameters", pyjson.ObjectOf(
 		"type", "object",
 		"properties", pyjson.ObjectOf(
 			"entity_id", pyjson.ObjectOf(
 				"type", "string",
-				"description", "The entity ID to query (e.g. 'light.living_room', " +
+				"description", "The entity ID to query (e.g. 'light.living_room', "+
 					"'climate.thermostat', 'sensor.temperature').",
 			),
 		),
@@ -1434,16 +1433,16 @@ var haGetStateSchema = pyjson.ObjectOf(
 
 var haListServicesSchema = pyjson.ObjectOf(
 	"name", "ha_list_services",
-	"description", "List available Home Assistant services (actions) for device control. " +
-		"Shows what actions can be performed on each device type and what " +
-		"parameters they accept. Use this to discover how to control devices " +
+	"description", "List available Home Assistant services (actions) for device control. "+
+		"Shows what actions can be performed on each device type and what "+
+		"parameters they accept. Use this to discover how to control devices "+
 		"found via ha_list_entities.",
 	"parameters", pyjson.ObjectOf(
 		"type", "object",
 		"properties", pyjson.ObjectOf(
 			"domain", pyjson.ObjectOf(
 				"type", "string",
-				"description", "Filter by domain (e.g. 'light', 'climate', 'switch'). " +
+				"description", "Filter by domain (e.g. 'light', 'climate', 'switch'). "+
 					"Omit to list services for all domains.",
 			),
 		),
@@ -1453,41 +1452,41 @@ var haListServicesSchema = pyjson.ObjectOf(
 
 var haCallServiceSchema = pyjson.ObjectOf(
 	"name", "ha_call_service",
-	"description", "Call a Home Assistant service to control a device. Use ha_list_services " +
-		"to discover available services and their parameters for each domain. " +
-		"Never guess an entity_id: call ha_list_entities first (optionally with a " +
-		"domain filter) and use the exact ids it returns. The service domain MUST " +
-		"match the entity's own domain: a light.* entity needs light.turn_on, a " +
-		"switch.* entity needs switch.turn_on, an input_boolean.* toggle needs " +
-		"input_boolean.turn_on — calling the wrong domain affects nothing. The " +
-		"error field explains exactly what went wrong (missing entity, wrong " +
-		"domain, or already in that state) — follow its suggestion and retry. " +
-		"If the operator restricts entities, target explicit entity_ids: calls " +
+	"description", "Call a Home Assistant service to control a device. Use ha_list_services "+
+		"to discover available services and their parameters for each domain. "+
+		"Never guess an entity_id: call ha_list_entities first (optionally with a "+
+		"domain filter) and use the exact ids it returns. The service domain MUST "+
+		"match the entity's own domain: a light.* entity needs light.turn_on, a "+
+		"switch.* entity needs switch.turn_on, an input_boolean.* toggle needs "+
+		"input_boolean.turn_on — calling the wrong domain affects nothing. The "+
+		"error field explains exactly what went wrong (missing entity, wrong "+
+		"domain, or already in that state) — follow its suggestion and retry. "+
+		"If the operator restricts entities, target explicit entity_ids: calls "+
 		"on restricted entities, or by area/device/label or with no target, are refused.",
 	"parameters", pyjson.ObjectOf(
 		"type", "object",
 		"properties", pyjson.ObjectOf(
 			"domain", pyjson.ObjectOf(
 				"type", "string",
-				"description", "Service domain (e.g. 'light', 'switch', 'climate', " +
+				"description", "Service domain (e.g. 'light', 'switch', 'climate', "+
 					"'cover', 'media_player', 'fan', 'scene', 'script').",
 			),
 			"service", pyjson.ObjectOf(
 				"type", "string",
-				"description", "Service name (e.g. 'turn_on', 'turn_off', 'toggle', " +
-					"'set_temperature', 'set_hvac_mode', 'open_cover', " +
+				"description", "Service name (e.g. 'turn_on', 'turn_off', 'toggle', "+
+					"'set_temperature', 'set_hvac_mode', 'open_cover', "+
 					"'close_cover', 'set_volume_level').",
 			),
 			"entity_id", pyjson.ObjectOf(
 				"type", "string",
-				"description", "Target entity ID (e.g. 'light.living_room'). " +
+				"description", "Target entity ID (e.g. 'light.living_room'). "+
 					"Some services (like scene.turn_on) may not need this.",
 			),
 			"data", pyjson.ObjectOf(
 				"type", "string",
-				"description", "Additional service data as a JSON string. Examples: " +
-					`{"brightness": 255, "color_name": "blue"} for lights, ` +
-					`{"temperature": 22, "hvac_mode": "heat"} for climate, ` +
+				"description", "Additional service data as a JSON string. Examples: "+
+					`{"brightness": 255, "color_name": "blue"} for lights, `+
+					`{"temperature": 22, "hvac_mode": "heat"} for climate, `+
 					`{"volume_level": 0.5} for media players.`,
 			),
 		),
@@ -1516,9 +1515,4 @@ func registerTools(pctx *plugins.Context) error {
 		}
 	}
 	return nil
-}
-
-// Logger of the reference homeassistant tools module
-func toolsLog() *slog.Logger {
-	return slog.Default().With("logger", "hermes_plugins.homeassistant.tools")
 }

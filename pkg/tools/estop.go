@@ -189,7 +189,7 @@ func CheckPaused(ctx context.Context, component string, log *slog.Logger) bool {
 			suffix = " (reason: " + state.Reason + ")"
 		}
 		if log == nil {
-			log = slog.Default()
+			log = pkgLog()
 		}
 		log.Info(fmt.Sprintf("%s dispatch paused by global emergency stop%s — remove with `icebath resume` (%s)",
 			component, suffix, SentinelPath(ctx)))

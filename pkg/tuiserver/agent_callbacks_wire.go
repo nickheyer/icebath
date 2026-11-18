@@ -15,7 +15,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/skills"
 	"github.com/nickheyer/icebath/pkg/tools"
-	"github.com/nickheyer/icebath/pkg/tuigateway"
+	"github.com/nickheyer/icebath/pkg/tuihost"
 )
 
 // Re anchors the live session of a project tool call at its primary folder and pushes session info
@@ -25,15 +25,15 @@ func applyProjectWorkspace(taskID, path, _ string) {
 	}
 	key := taskID
 	var sid string
-	var session *tuigateway.Session
+	var session *tuihost.Session
 	func() {
 		sessionsLock.Lock()
 		defer sessionsLock.Unlock()
-		if live := tuigateway.SessionRecord(key); live != nil {
+		if live := tuihost.SessionRecord(key); live != nil {
 			sid, session = key, live
 			return
 		}
-		for _, live := range tuigateway.LiveSessions() {
+		for _, live := range tuihost.LiveSessions() {
 			if strOr(live.Session.Get("session_key")) == key {
 				sid, session = live.SID, live.Session
 				return
@@ -58,17 +58,17 @@ func applyProjectWorkspace(taskID, path, _ string) {
 	func() {
 		defer func() {
 			if r := recover(); r != nil {
-				logger().Debug("failed to emit session.info after project workspace move", "error", r)
+				pkgLog().Debug("failed to emit session.info after project workspace move", "error", r)
 			}
 		}()
 		var info map[string]any
 		if a := sessionAgent(session); a != nil {
 			info = sessionInfo(ctx, a, session)
 		} else {
-			info = map[string]any{"cwd": resolved, "branch": tuigateway.Branch(resolved),
+			info = map[string]any{"cwd": resolved, "branch": tuihost.Branch(resolved),
 				"project": projectInfoForCwd(ctx, resolved), "lazy": true}
 		}
-		tuigateway.Emit(ctx, "session.info", sid, info)
+		tuihost.Emit(ctx, "session.info", sid, info)
 	}()
 }
 
@@ -80,8 +80,8 @@ func tuiSecretCapture(ctx context.Context, envVar, prompt string, metadata map[s
 	}
 	ownerSID := tools.GetSessionEnv(tools.ToolEnvFrom(ctx), "ICEBATH_UI_SESSION_ID", "")
 	value := ""
-	if ownerSID != "" && tuigateway.SessionRecord(ownerSID) == nil {
-		logger().Info("secret prompt for " + ownerSID + " refused: its UI session is closed")
+	if ownerSID != "" && tuihost.SessionRecord(ownerSID) == nil {
+		pkgLog().Info("secret prompt for " + ownerSID + " refused: its UI session is closed")
 	} else if ownerSID != "" {
 		value = ask(ctx, "secret", ownerSID, payload, nil)
 	}
@@ -137,14 +137,14 @@ func wireCallbacks(ctx context.Context, sid string) {
 }
 
 // Adopts fallback provider edits into the cached agent at turn start, keeping the last good chain on a bad config
-func syncAgentFallbackWithConfig(ctx context.Context, sid string, session *tuigateway.Session) {
+func syncAgentFallbackWithConfig(ctx context.Context, sid string, session *tuihost.Session) {
 	a := sessionAgent(session)
 	if a == nil {
 		return
 	}
 	cfg, err := config.LoadUserEffectiveFailClosed(filepath.Join(home.Dir(ctx), "config.yaml"), os.LookupEnv)
 	if err != nil {
-		logger().Warn("fallback chain sync skipped for " + sid + " (keeping current chain): " + err.Error())
+		pkgLog().Warn("fallback chain sync skipped for " + sid + " (keeping current chain): " + err.Error())
 		return
 	}
 	a.ApplyFallbackChain(provider.GetFallbackChain(cfg))

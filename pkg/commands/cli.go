@@ -100,10 +100,10 @@ var PreArgparseInheritedFlags = [][2]string{{"--profile", "1"}, {"-p", "1"}}
 var BuiltinSubcommands = map[string]bool{}
 
 func init() {
-	for _, n := range strings.Fields(`acp approvals auth backup bundles checkpoints codex-runtime completion computer-use connectors
+	for _, n := range strings.Fields(`acp approvals auth backup bundles checkpoints codex-runtime completion computer-use
 		config console cron curator debug doctor dump egress fallback gateway hooks import insights
 		kanban login logout logs lsp mcp memory migrate moa journey memory-graph learning
-		model monitoring pairing pause peer pets plugins portal profile project proxy prompt-size resume send sessions
+		model monitoring pairing pause peer pets plugins profile project proxy prompt-size resume send sessions
 		skin skills slack status tools uninstall update usage vault webhook whatsapp whatsapp-cloud worktree chat secrets security
 		browser verify help`) {
 		BuiltinSubcommands[n] = true
@@ -208,6 +208,7 @@ func NewCLI() *CLI {
 	c.finishAll(root)
 	c.argparseAbbrev(c.find("skills"))
 	c.argparseAbbrev(c.find("bundles"))
+	c.applyTiers(root)
 	return c
 }
 
@@ -846,7 +847,7 @@ var sessionNameSubcommands = map[string]bool{}
 
 func init() {
 	for _, n := range strings.Fields(`chat model gateway whatsapp whatsapp-cloud login logout auth status cron doctor config pairing skills
-		tools mcp sessions insights update uninstall profile honcho claw plugins security acp webhook peer
+		tools mcp sessions insights update uninstall profile claw plugins security acp webhook peer
 		memory dump debug backup import completion logs usage`) {
 		sessionNameSubcommands[n] = true
 	}

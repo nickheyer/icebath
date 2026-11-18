@@ -484,49 +484,6 @@ func oauthPostForm(ctx context.Context, client *http.Client, endpoint string, fo
 	return oauthDo(client, req, 0, nil)
 }
 
-// Requests a device code from the Portal, every RFC 8628 field required
-func requestDeviceCode(ctx context.Context, client *http.Client, portalBaseURL, clientID, scope string) (map[string]any, error) {
-	form := url.Values{"client_id": {clientID}}
-	if scope != "" {
-		form.Set("scope", scope)
-	}
-	resp, err := oauthPostForm(ctx, client, portalBaseURL+"/api/oauth/device/code", form, nil)
-	if err != nil {
-		return nil, err
-	}
-	if err := resp.RaiseForStatus(); err != nil {
-		return nil, err
-	}
-	data, err := resp.JSONObject()
-	if err != nil {
-		return nil, err
-	}
-	var missing []string
-	for _, field := range []string{"device_code", "user_code", "verification_uri", "verification_uri_complete", "expires_in", "interval"} {
-		if _, ok := data[field]; !ok {
-			missing = append(missing, field)
-		}
-	}
-	if len(missing) > 0 {
-		return nil, fmt.Errorf("Device code response missing fields: %s", strings.Join(missing, ", "))
-	}
-	return data, nil
-}
-
-// Actionable timeout text pointing at the Portal login page and the retry command
-func nousDeviceAuthTimeoutMessage(portalBaseURL string) string {
-	portal := strings.TrimRight(portalBaseURL, "/")
-	if portal == "" {
-		portal = DefaultNousPortalURL
-	}
-	return "Timed out waiting for device authorization.\n" +
-		"  Portal sign-in is required before the device code can be approved.\n" +
-		"  If the browser showed a CAPTCHA / 'You did not pass CAPTCHA' error,\n" +
-		"  finish signing in at the Portal in a normal browser tab, then retry:\n" +
-		"    icebath portal\n" +
-		"  Portal login: " + portal + "/login"
-}
-
 // Prints the shared To continue block and optionally opens the browser
 func printDeviceCodeInstructions(out io.Writer, verificationURL, userCode string, openBrowser bool, failureDash string, swallowOpenErrors bool) error {
 	if failureDash == "" {
@@ -685,45 +642,6 @@ func maxFloat(a, b float64) float64 {
 		return a
 	}
 	return b
-}
-
-// Polls the Nous token endpoint until the user approves or the code expires
-func pollForToken(ctx context.Context, client *http.Client, portalBaseURL, clientID, deviceCode string, expiresIn, pollInterval int, cancelled func() bool) (map[string]any, error) {
-	interval := pollInterval
-	if cap := int(DeviceAuthPollIntervalCap / time.Second); interval > cap {
-		interval = cap
-	}
-	if interval < 1 {
-		interval = 1
-	}
-	return pollDeviceTokenGeneric(deviceTokenPoll{
-		post: func() (*oauthHTTPResponse, error) {
-			return oauthPostForm(ctx, client, portalBaseURL+"/api/oauth/token", url.Values{
-				"grant_type": {DeviceCodeGrantType}, "client_id": {clientID}, "device_code": {deviceCode}}, nil)
-		},
-		expiresIn:    expiresIn,
-		pollInterval: interval,
-		validateSuccess: func(payload map[string]any) error {
-			if _, ok := payload["access_token"]; !ok {
-				return errors.New("Token response did not include access_token")
-			}
-			return nil
-		},
-		onError: func(_ *oauthHTTPResponse, payload map[string]any) error {
-			description := anyString(payload["error_description"])
-			if description == "" {
-				description = "Unknown authentication error"
-			}
-			return DeviceFlowError(anyString(payload["error"]), description, "")
-		},
-		onNonJSONError: func(*oauthHTTPResponse) error {
-			return errors.New("Token endpoint returned a non-JSON error response")
-		},
-		onTimeout: func(cause error) error {
-			return &DeviceCodeExpiredError{Message: nousDeviceAuthTimeoutMessage(portalBaseURL), Cause: cause}
-		},
-		cancelled: cancelled,
-	})
 }
 
 // Asks a yes or no question, EOF or an interrupt counting as the default

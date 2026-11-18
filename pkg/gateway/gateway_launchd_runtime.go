@@ -14,8 +14,8 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pythread"
 )
 
-// Label prefix of one off runtime jobs, never the installed ai.icebath service prefix fleet scans read
-const launchdRuntimeLabelPrefix = "ai.icebath.runtime."
+// Label prefix of one off runtime jobs, never the installed gateway service prefix fleet scans read
+const launchdRuntimeLabelPrefix = "app.icebath.runtime."
 
 const launchdRuntimePollInterval = 0.5
 
@@ -115,10 +115,23 @@ func removeFinishedJobs(ctx context.Context, deadline float64) {
 	}
 	for _, line := range strings.Split(strings.ReplaceAll(listed.Stdout, "\r\n", "\n"), "\n") {
 		fields := strings.Fields(line)
-		if len(fields) == 3 && fields[0] == "-" && strings.HasPrefix(fields[2], launchdRuntimeLabelPrefix) {
+		if len(fields) == 3 && fields[0] == "-" && isRuntimeJobLabel(fields[2]) {
 			launchdRuntimeLaunchctl(ctx, launchdRuntimeBudget(deadline, 10), "remove", fields[2])
 		}
 	}
+}
+
+// Whether a launchd label names a one off runtime job under the current prefix or a retired one
+func isRuntimeJobLabel(label string) bool {
+	if strings.HasPrefix(label, launchdRuntimeLabelPrefix) {
+		return true
+	}
+	for _, prefix := range RetiredLaunchdLabelPrefixes {
+		if strings.HasPrefix(label, prefix+"runtime.") {
+			return true
+		}
+	}
+	return false
 }
 
 // Runs command as a one off job in the user's GUI launchd domain, nil when launchd cannot take it

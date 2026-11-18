@@ -9,7 +9,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"log/slog"
 	"math"
 	"math/big"
 	"net/http"
@@ -72,16 +71,13 @@ var (
 	errExportURL = errors.New("langfuse: the OTLP traces endpoint is not an http or https URL")
 )
 
-// Logger of the Langfuse SDK layer
-func sdkLog() *slog.Logger { return slog.Default().With("logger", "langfuse") }
-
 // SDK debug line, visible at info when LANGFUSE_DEBUG is true
 func sdkDebug(message string) {
 	if strings.ToLower(os.Getenv("LANGFUSE_DEBUG")) == "true" {
-		sdkLog().Info(message)
+		pkgLog().Info(message)
 		return
 	}
-	sdkLog().Debug(message)
+	pkgLog().Debug(message)
 }
 
 // Python json.dumps through the Langfuse event serializer, a string passed through untouched and nil absent
@@ -335,7 +331,7 @@ func toAttr(key string, v any) (attribute.KeyValue, bool) {
 			return attribute.StringSlice(key, strs), true
 		}
 	}
-	sdkLog().Warn(fmt.Sprintf("Invalid type %s for attribute '%s' value. Expected one of ['bool', 'str', 'bytes', 'int', 'float'] or a sequence of those types",
+	pkgLog().Warn(fmt.Sprintf("Invalid type %s for attribute '%s' value. Expected one of ['bool', 'str', 'bytes', 'int', 'float'] or a sequence of those types",
 		pyrepr.TypeName(v), key))
 	return attribute.KeyValue{}, false
 }
@@ -363,11 +359,11 @@ func strLen(s string) int { return pystr.Len(s) }
 func validPropagatedString(value any, key string) bool {
 	s, ok := value.(string)
 	if !ok {
-		sdkLog().Warn(fmt.Sprintf("Propagated attribute '%s' value is not a string. Dropping value.", key))
+		pkgLog().Warn(fmt.Sprintf("Propagated attribute '%s' value is not a string. Dropping value.", key))
 		return false
 	}
 	if n := strLen(s); n > 200 {
-		sdkLog().Warn(fmt.Sprintf("Propagated attribute '%s' value is over 200 characters (%d chars). Dropping value.", key, n))
+		pkgLog().Warn(fmt.Sprintf("Propagated attribute '%s' value is over 200 characters (%d chars). Dropping value.", key, n))
 		return false
 	}
 	return true
@@ -492,11 +488,11 @@ func newClient(o clientOptions) (*lfClient, error) {
 	}
 	tracingEnabled := strings.ToLower(envOr("LANGFUSE_TRACING_ENABLED", "true")) != "false"
 	if !tracingEnabled {
-		sdkLog().Info("Configuration: Langfuse tracing is explicitly disabled. No data will be sent to the Langfuse API.")
+		pkgLog().Info("Configuration: Langfuse tracing is explicitly disabled. No data will be sent to the Langfuse API.")
 	}
 	sdkDisabled := strings.ToLower(envOr("OTEL_SDK_DISABLED", "false")) == "true"
 	if sdkDisabled {
-		sdkLog().Warn("OTEL_SDK_DISABLED is set. Langfuse tracing will be disabled and no traces will appear in the UI.")
+		pkgLog().Warn("OTEL_SDK_DISABLED is set. Langfuse tracing will be disabled and no traces will appear in the UI.")
 	}
 	c := &lfClient{publicKey: o.publicKey, secretKey: o.secretKey, baseURL: o.baseURL, environment: environment,
 		release: release, timeout: time.Duration(timeoutSecs) * time.Second}
@@ -624,7 +620,7 @@ func (c *lfClient) buildResource(defaultService bool) *resource.Resource {
 	opts = append(opts, resource.WithAttributes(lf...))
 	res, err := resource.New(context.Background(), opts...)
 	if err != nil {
-		sdkLog().Warn(fmt.Sprintf("Invalid key value resource attribute pair in OTEL_RESOURCE_ATTRIBUTES: %v", err))
+		pkgLog().Warn(fmt.Sprintf("Invalid key value resource attribute pair in OTEL_RESOURCE_ATTRIBUTES: %v", err))
 	}
 	if res == nil {
 		res = resource.Empty()
@@ -700,11 +696,11 @@ type observation struct {
 // Root observation of a trace id under a remote parent, stamped with the propagated trace attributes
 func (c *lfClient) startRoot(traceID, name, asType string, input, metadata any, propagated *pyjson.Object) *observation {
 	if !isHex(traceID, 32) {
-		sdkLog().Warn(fmt.Sprintf("Passed trace ID '%s' is not a valid 32 lowercase hex char Langfuse trace id. Ignoring trace ID.", traceID))
+		pkgLog().Warn(fmt.Sprintf("Passed trace ID '%s' is not a valid 32 lowercase hex char Langfuse trace id. Ignoring trace ID.", traceID))
 	}
 	tid, err := trace.TraceIDFromHex(traceID)
 	if err != nil {
-		panic(fmt.Sprintf("ValueError: invalid literal for int() with base 16: %s", pyrepr.StrRepr(traceID)))
+		panic(fmt.Sprintf("Langfuse trace id %s is not hexadecimal", traceID))
 	}
 	var sid trace.SpanID
 	_, _ = rand.Read(sid[:])
@@ -720,7 +716,7 @@ func (c *lfClient) startRoot(traceID, name, asType string, input, metadata any, 
 // Child observation under parent, stamped with the propagated trace attributes
 func (p *observation) startChild(name, asType string, f obsFields, propagated *pyjson.Object) *observation {
 	if !generationLikeTypes[asType] && !spanLikeTypes[asType] {
-		sdkLog().Warn(fmt.Sprintf("Unknown observation type: %s, falling back to LangfuseSpan", asType))
+		pkgLog().Warn(fmt.Sprintf("Unknown observation type: %s, falling back to LangfuseSpan", asType))
 		asType = "span"
 	}
 	_, span := p.client.tracer.Start(trace.ContextWithSpan(context.Background(), p.span), name)

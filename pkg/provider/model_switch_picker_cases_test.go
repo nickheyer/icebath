@@ -29,7 +29,7 @@ func pickerCredentialHome(t *testing.T, providers map[string]any) context.Contex
 	t.Setenv("CODEX_HOME", filepath.Join(t.TempDir(), "no_codex"))
 	writeAuthStore(t, os.Getenv("ICEBATH_HOME"), map[string]any{"version": 2, "providers": providers})
 	for _, name := range []string{"OPENROUTER_API_KEY", "OPENAI_API_KEY", "ANTHROPIC_API_KEY", "ANTHROPIC_TOKEN", "CLAUDE_CODE_OAUTH_TOKEN",
-		"NOUS_API_KEY", "DEEPSEEK_API_KEY", "COPILOT_GITHUB_TOKEN", "GH_TOKEN", "GEMINI_API_KEY"} {
+		"DEEPSEEK_API_KEY", "COPILOT_GITHUB_TOKEN", "GH_TOKEN", "GEMINI_API_KEY"} {
 		t.Setenv(name, "")
 	}
 	return ctx

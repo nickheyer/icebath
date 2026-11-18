@@ -3,7 +3,6 @@ package raft
 import (
 	"context"
 	"fmt"
-	"log/slog"
 	"math"
 	"math/big"
 	"sort"
@@ -435,7 +434,7 @@ var onSessionStart = raftHook(func(ctx context.Context, kwargs map[string]any) e
 	func() {
 		defer func() {
 			if r := recover(); r != nil {
-				slog.Debug("[raft] failed to register RAFT_PROFILE env passthrough", "error", r)
+				pkgLog().Debug("[raft] failed to register RAFT_PROFILE env passthrough", "error", r)
 			}
 		}()
 		tools.RegisterEnvPassthrough(&tools.Env{Home: home.Dir(ctx), TerminalScope: tools.GetTerminalScope(ctx)}, []string{"RAFT_PROFILE"})

@@ -3,7 +3,6 @@ package gateway
 import (
 	"context"
 	"fmt"
-	"log/slog"
 
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
@@ -28,11 +27,11 @@ func backfillLegacySessionOwners(ctx context.Context, db *state.SessionDB) int {
 	}
 	stamped, err := db.BackfillNullSessionProfiles(ctx, stamp)
 	if err != nil {
-		slog.Warn("Legacy session owner backfill failed for "+db.Path(), "error", err)
+		pkgLog().Warn("Legacy session owner backfill failed for "+db.Path(), "error", err)
 		return 0
 	}
 	if stamped != 0 {
-		slog.Info(fmt.Sprintf("Stamped %d legacy session row(s) with owner profile %s", stamped, pyrepr.Repr(stamp)))
+		pkgLog().Info(fmt.Sprintf("Stamped %d legacy session row(s) with owner profile %s", stamped, pyrepr.Repr(stamp)))
 	}
 	return stamped
 }
@@ -41,11 +40,11 @@ func backfillLegacySessionOwners(ctx context.Context, db *state.SessionDB) int {
 func backfillCompressionCreatedSources(ctx context.Context, db *state.SessionDB) int64 {
 	stamped, err := db.StampLegacyCompressionChains(ctx)
 	if err != nil {
-		slog.Warn("Compression created_source repair failed for "+db.Path(), "error", err)
+		pkgLog().Warn("Compression created_source repair failed for "+db.Path(), "error", err)
 		return 0
 	}
 	if stamped != 0 {
-		slog.Info(fmt.Sprintf("Stamped created_source on %d compressed session row(s)", stamped))
+		pkgLog().Info(fmt.Sprintf("Stamped created_source on %d compressed session row(s)", stamped))
 	}
 	return stamped
 }

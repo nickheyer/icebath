@@ -71,14 +71,14 @@ func scanDirectory(path, source string, skipNames map[string]bool, prefix string
 	}
 	entries, err := pluginDirRead(path)
 	if err != nil {
-		logPlugins.warn(fmt.Sprintf("Skipping unreadable plugin directory %s: %s", path, pyErrorText(err)))
+		pkgLog().Warn(fmt.Sprintf("Skipping unreadable plugin directory %s: %s", path, pyErrorText(err)))
 		return out
 	}
 	sort.Slice(entries, func(i, j int) bool { return entries[i].Name() < entries[j].Name() })
 	for _, e := range entries {
 		child := filepath.Join(path, e.Name())
 		if isSkippedPluginDir(e.Name()) {
-			logPlugins.debug(fmt.Sprintf("Skipping %s (dunder or foreign-harness manifest dir)", child))
+			pkgLog().Debug(fmt.Sprintf("Skipping %s (dunder or foreign-harness manifest dir)", child))
 			continue
 		}
 		manifestFile, portableFile, hasPortable := "", filepath.Join(child, "plugin.json"), false
@@ -106,7 +106,7 @@ func scanDirectory(path, source string, skipNames map[string]bool, prefix string
 			}
 		}
 		if err != nil {
-			logPlugins.warn(fmt.Sprintf("Skipping unreadable plugin directory %s: %s", child, pyErrorText(err)))
+			pkgLog().Warn(fmt.Sprintf("Skipping unreadable plugin directory %s: %s", child, pyErrorText(err)))
 			continue
 		}
 		switch {
@@ -117,12 +117,12 @@ func scanDirectory(path, source string, skipNames map[string]bool, prefix string
 		case hasPortable:
 			m, err := portablePluginManifest(child, source, prefix)
 			if err != nil {
-				logPlugins.warn(fmt.Sprintf("Failed to parse %s: %s", portableFile, err))
+				pkgLog().Warn(fmt.Sprintf("Failed to parse %s: %s", portableFile, err))
 				continue
 			}
 			out = append(out, m)
 		case depth >= 1:
-			logPlugins.debug(fmt.Sprintf("Skipping %s (no plugin.yaml, depth cap reached)", child))
+			pkgLog().Debug(fmt.Sprintf("Skipping %s (no plugin.yaml, depth cap reached)", child))
 		default:
 			sub := e.Name()
 			if prefix != "" {
@@ -158,11 +158,11 @@ func ResolveManifestWinners(manifests []*Manifest) map[string]*Manifest {
 		if shadowed, ok := winners[key]; ok && shadowed.Source == "bundled" && (m.Source == "user" || m.Source == "project") {
 			own, bundled := filepath.Base(m.Path), filepath.Base(shadowed.Path)
 			if m.Path != "" && shadowed.Path != "" && own != bundled {
-				logPlugins.warn(fmt.Sprintf("Ignoring %s plugin at %s: its manifest name '%s' is a bundled plugin's key but the directory is named '%s'; rename the directory to '%s' to override the bundled plugin",
+				pkgLog().Warn(fmt.Sprintf("Ignoring %s plugin at %s: its manifest name '%s' is a bundled plugin's key but the directory is named '%s'; rename the directory to '%s' to override the bundled plugin",
 					m.Source, m.Path, key, own, bundled))
 				continue
 			}
-			logPlugins.info(fmt.Sprintf("Plugin '%s' at %s (%s) shadows the bundled copy at %s", key, m.Path, m.Source, shadowed.Path))
+			pkgLog().Info(fmt.Sprintf("Plugin '%s' at %s (%s) shadows the bundled copy at %s", key, m.Path, m.Source, shadowed.Path))
 		}
 		winners[key] = m
 	}
@@ -284,8 +284,8 @@ func logGate(g ManifestGate) {
 		return
 	}
 	if g.Level == "warn" {
-		logPlugins.warn(g.Log)
+		pkgLog().Warn(g.Log)
 	} else {
-		logPlugins.debug(g.Log)
+		pkgLog().Debug(g.Log)
 	}
 }

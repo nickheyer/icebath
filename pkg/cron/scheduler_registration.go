@@ -4,9 +4,9 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"log/slog"
 	"strings"
 
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
@@ -17,11 +17,11 @@ import (
 func (s *Store) notifyProviderJobsChanged() {
 	defer func() {
 		if r := recover(); r != nil {
-			slog.Debug(fmt.Sprintf("on_jobs_changed notify failed: %v", r))
+			pkgLog().Debug(fmt.Sprintf("on_jobs_changed notify failed: %v", r))
 		}
 	}()
 	if err := schedulerOnJobsChanged(schedulerResolver(s)); err != nil {
-		slog.Debug(fmt.Sprintf("on_jobs_changed notify failed: %v", err))
+		pkgLog().Debug(fmt.Sprintf("on_jobs_changed notify failed: %v", err))
 	}
 }
 
@@ -86,20 +86,17 @@ func createJobOptionsFromSpec(spec *pyjson.Object) (CreateJobOptions, error) {
 	}
 	for _, k := range spec.Keys {
 		if !known[k] {
-			return o, fmt.Errorf("TypeError: create_job() got an unexpected keyword argument %s", pyrepr.Repr(k))
+			return o, fmt.Errorf("unknown cron job field %s", k)
 		}
 	}
 	var missing []string
 	for _, p := range []string{"prompt", "schedule"} {
 		if _, ok := spec.Vals[p]; !ok {
-			missing = append(missing, pyrepr.Repr(p))
+			missing = append(missing, p)
 		}
 	}
-	switch len(missing) {
-	case 1:
-		return o, fmt.Errorf("TypeError: create_job() missing 1 required positional argument: %s", missing[0])
-	case 2:
-		return o, fmt.Errorf("TypeError: create_job() missing 2 required positional arguments: %s", strings.Join(missing, " and "))
+	if len(missing) > 0 {
+		return o, fmt.Errorf("a cron job spec needs %s", strings.Join(missing, " and "))
 	}
 	optStr := func(key string) (*string, error) {
 		switch v := spec.Vals[key].(type) {
@@ -108,7 +105,7 @@ func createJobOptionsFromSpec(spec *pyjson.Object) (CreateJobOptions, error) {
 		case string:
 			return &v, nil
 		default:
-			return nil, fmt.Errorf("TypeError: create_job() argument %s must be str or None, not %s", pyrepr.Repr(key), pyrepr.TypeName(v))
+			return nil, fmt.Errorf("cron job field %s must be text, got %s", key, errchain.Kind(v))
 		}
 	}
 	var err error
@@ -117,7 +114,7 @@ func createJobOptionsFromSpec(spec *pyjson.Object) (CreateJobOptions, error) {
 	}
 	sched, ok := spec.Vals["schedule"].(string)
 	if !ok {
-		return o, fmt.Errorf("TypeError: create_job() argument 'schedule' must be str, not %s", pyrepr.TypeName(spec.Vals["schedule"]))
+		return o, fmt.Errorf("cron job field schedule must be text, got %s", errchain.Kind(spec.Vals["schedule"]))
 	}
 	o.Schedule = sched
 	for key, dst := range map[string]**string{"name": &o.Name, "deliver": &o.Deliver, "skill": &o.Skill} {
@@ -135,7 +132,7 @@ func createJobOptionsFromSpec(spec *pyjson.Object) (CreateJobOptions, error) {
 			o.Origin[k] = v.Vals[k]
 		}
 	default:
-		return o, fmt.Errorf("TypeError: create_job() argument 'origin' must be dict or None, not %s", pyrepr.TypeName(v))
+		return o, fmt.Errorf("cron job field origin must be a mapping, got %s", errchain.Kind(v))
 	}
 	o.Repeat, o.Skills, o.Model, o.Provider = spec.Vals["repeat"], spec.Vals["skills"], spec.Vals["model"], spec.Vals["provider"]
 	o.BaseURL, o.Script, o.ContextFrom, o.EnabledToolsets = spec.Vals["base_url"], spec.Vals["script"], spec.Vals["context_from"], spec.Vals["enabled_toolsets"]

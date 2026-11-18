@@ -6,7 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"log/slog"
 	"net/http"
 	"net/url"
 	"strings"
@@ -231,7 +230,7 @@ func (a *TeamsAdapter) Connect(ctx context.Context, isReconnect bool) (bool, err
 	}
 	if err := a.connect(ctx); err != nil {
 		a.SetFatalError(ctx, "CONNECT_FAILED", fmt.Sprintf("Teams connection failed: %v", err), true)
-		slog.Error(fmt.Sprintf("[teams] Failed to connect: %v", err))
+		pkgLog().Error(fmt.Sprintf("[teams] Failed to connect: %v", err))
 		return false, nil
 	}
 	return true, nil
@@ -266,7 +265,7 @@ func (a *TeamsAdapter) connect(ctx context.Context) error {
 		if a.host != nil {
 			hostText = *a.host
 		}
-		slog.Info(fmt.Sprintf("[teams] Webhook server listening on %s:%d%s", hostText, a.port, webhookPath))
+		pkgLog().Info(fmt.Sprintf("[teams] Webhook server listening on %s:%d%s", hostText, a.port, webhookPath))
 	}
 	return nil
 }
@@ -283,7 +282,7 @@ func (a *TeamsAdapter) Disconnect(ctx context.Context) error {
 		}
 	}
 	a.MarkDisconnected(ctx)
-	slog.Info("[teams] Disconnected")
+	pkgLog().Info("[teams] Disconnected")
 	return nil
 }
 
@@ -348,7 +347,7 @@ func (a *TeamsAdapter) fetchAttachmentBytes(ctx context.Context, rawURL string, 
 	req.Header.Set("User-Agent", "Mozilla/5.0 (compatible; IcebathAgent/1.0)")
 	if isBotframeworkAttachmentURL(rawURL) {
 		if token, err := a.getBotFrameworkToken(ctx); err != nil {
-			slog.Warn(fmt.Sprintf("[teams] Could not acquire Bot Framework token for attachment: %v", err))
+			pkgLog().Warn(fmt.Sprintf("[teams] Could not acquire Bot Framework token for attachment: %v", err))
 		} else {
 			req.Header.Set("Authorization", "Bearer "+token)
 		}

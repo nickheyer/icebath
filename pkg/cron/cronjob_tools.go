@@ -306,7 +306,7 @@ func (s *Store) claimForManualRun(ctx context.Context, jobID, logLabel string) (
 		}
 		err = gerr
 	}
-	s.logAs("tools.cronjob_tools").Error(fmt.Sprintf("Failed to claim cron job %s for %s: %s", jobID, logLabel, err))
+	s.log.Error(fmt.Sprintf("Failed to claim cron job %s for %s: %s", jobID, logLabel, err))
 	msg := err.Error()
 	_, _ = s.markJobRun(ctx, jobID, false, MarkOptions{Error: &msg})
 	return nil, &manualRunResult{Claimed: true, Success: false, Error: msg}
@@ -342,7 +342,7 @@ func (s *Store) runHeartbeat(ctx context.Context, jobName string) func() {
 			}
 			elapsed := time.Since(started)
 			if elapsed > cronRunHeartbeatCeiling {
-				s.logAs("tools.cronjob_tools").Warn(fmt.Sprintf("cronjob run heartbeat ceiling reached for job '%s' (%.0fs) — stopping heartbeat; gateway watchdog regains authority", jobName, elapsed.Seconds()))
+				s.log.Warn(fmt.Sprintf("cronjob run heartbeat ceiling reached for job '%s' (%.0fs) — stopping heartbeat; gateway watchdog regains authority", jobName, elapsed.Seconds()))
 				return
 			}
 			func() {
@@ -374,7 +374,7 @@ func (s *Store) runClaimedJob(ctx context.Context, job *Job, extraPrompt *string
 		close(future.done)
 	}()
 	fail := func(err error) *manualRunResult {
-		s.logAs("tools.cronjob_tools").Error(fmt.Sprintf("Failed to execute cron job %s immediately: %s", jobID, err))
+		s.log.Error(fmt.Sprintf("Failed to execute cron job %s immediately: %s", jobID, err))
 		msg := err.Error()
 		_, _ = s.markJobRun(ctx, jobID, false, MarkOptions{Error: &msg, ExpectedFireOwner: fireOwner})
 		return &manualRunResult{Claimed: true, Success: false, Error: msg}
@@ -501,11 +501,11 @@ func (s *Store) latestJobOutputExcerpt(jobID string, maxChars int) string {
 func (s *Store) reapStaleExecutions(ctx context.Context, jobName string) {
 	reclaimed, err := openExecutionsLedger(s).RecoverInterrupted(ctx)
 	if err != nil {
-		s.logAs("tools.cronjob_tools").Debug(fmt.Sprintf("Stale execution reclaim failed: %s", err))
+		s.log.Debug(fmt.Sprintf("Stale execution reclaim failed: %s", err))
 		return
 	}
 	if reclaimed > 0 {
-		s.logAs("tools.cronjob_tools").Warn(fmt.Sprintf("Reclaimed %d stale cron execution(s) from dead owner(s) before dispatching job '%s'", reclaimed, jobName))
+		s.log.Warn(fmt.Sprintf("Reclaimed %d stale cron execution(s) from dead owner(s) before dispatching job '%s'", reclaimed, jobName))
 	}
 }
 
@@ -533,7 +533,7 @@ func (s *Store) runSessionUsage(ctx context.Context, jobID string, executionID *
 	defer db.Close()
 	runs, err := db.ListCronJobRuns(ctx, jobID, 50)
 	if err != nil {
-		s.logAs("tools.cronjob_tools").Debug(fmt.Sprintf("cronjob run: run-session usage lookup failed for %s: %s", jobID, err))
+		s.log.Debug(fmt.Sprintf("cronjob run: run-session usage lookup failed for %s: %s", jobID, err))
 		return out
 	}
 	var run *pyjson.Object
@@ -549,14 +549,14 @@ func (s *Store) runSessionUsage(ctx context.Context, jobID string, executionID *
 	runID, _ := run.Get("id")
 	chain, err := db.GetCompressionChain(ctx, pyrepr.Str(runID))
 	if err != nil {
-		s.logAs("tools.cronjob_tools").Debug(fmt.Sprintf("cronjob run: run-session usage lookup failed for %s: %s", jobID, err))
+		s.log.Debug(fmt.Sprintf("cronjob run: run-session usage lookup failed for %s: %s", jobID, err))
 		return out
 	}
 	var rows []*pyjson.Object
 	for _, sid := range chain {
 		row, err := db.GetSession(ctx, sid)
 		if err != nil {
-			s.logAs("tools.cronjob_tools").Debug(fmt.Sprintf("cronjob run: run-session usage lookup failed for %s: %s", jobID, err))
+			s.log.Debug(fmt.Sprintf("cronjob run: run-session usage lookup failed for %s: %s", jobID, err))
 			return out
 		}
 		if row == nil {
@@ -676,7 +676,7 @@ func (s *Store) tryDispatchBackgroundRun(ctx context.Context, env *tools.Env, jo
 	if v, ok := dispatch["error"]; ok {
 		reason = v
 	}
-	s.logAs("tools.cronjob_tools").Info(fmt.Sprintf("cronjob run: background pool unavailable (%s); running job '%s' inline.", pyrepr.Str(reason), jobName))
+	s.log.Info(fmt.Sprintf("cronjob run: background pool unavailable (%s); running job '%s' inline.", pyrepr.Str(reason), jobName))
 	result := s.runClaimedJob(ctx, job, extraPrompt)
 	f := false
 	result.Dispatched = &f

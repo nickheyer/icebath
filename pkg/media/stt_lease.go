@@ -3,7 +3,6 @@ package media
 import (
 	"context"
 	"fmt"
-	"log/slog"
 	"slices"
 	"sync"
 	"time"
@@ -16,8 +15,6 @@ var (
 	sttLeaseMu sync.Mutex
 	sttLeases  = map[string]bool{}
 )
-
-func sttLeaseLog() *slog.Logger { return slog.Default().With("logger", "tools.stt_lease") }
 
 // Preloads the configured local STT model so the next transcription starts hot, the result naming what happened
 func WarmSTTProvider(ctx context.Context, sttConfig map[string]any, provider string) (*pyjson.Object, error) {
@@ -41,9 +38,9 @@ func WarmSTTProvider(ctx context.Context, sttConfig map[string]any, provider str
 		result.Set("warmed", true)
 		return result, nil
 	}
-	if !hasFasterWhisper() && !tryLazyInstallSTT(ctx) {
+	if !hasFasterWhisper() && !whisperProvisioned() {
 		result.Set("action", "error")
-		result.Set("error", "faster-whisper not installed")
+		result.Set("error", whisperMissingText)
 		return result, nil
 	}
 	localCfg, _ := sttConfig["local"].(map[string]any)
@@ -57,7 +54,7 @@ func WarmSTTProvider(ctx context.Context, sttConfig map[string]any, provider str
 	started := time.Now()
 	model, err := getOrLoadLocalModel(ctx, modelName, localCfg)
 	if err != nil {
-		sttLeaseLog().Warn(fmt.Sprintf("[STT] warm-up for local model '%s' failed: %v", modelName, err))
+		pkgLog().Warn(fmt.Sprintf("[STT] warm-up for local model '%s' failed: %v", modelName, err))
 		result.Set("action", "error")
 		result.Set("error", err.Error())
 		return result, nil
@@ -80,7 +77,7 @@ func WarmSTTProvider(ctx context.Context, sttConfig map[string]any, provider str
 	result.Set("warmed", true)
 	result.Set("action", action)
 	result.Set("elapsed_ms", elapsedMS)
-	sttLeaseLog().Info(fmt.Sprintf("[STT] warm-up local model '%s': %s in %dms", modelName, action, elapsedMS))
+	pkgLog().Info(fmt.Sprintf("[STT] warm-up local model '%s': %s in %dms", modelName, action, elapsedMS))
 	return result, nil
 }
 

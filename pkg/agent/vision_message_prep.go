@@ -5,7 +5,6 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
-	"log/slog"
 	"os"
 	"strings"
 
@@ -35,9 +34,6 @@ type visionPrepState struct {
 	noListToolContentModels     map[[2]string]bool
 	transportCache              map[string]provider.Transport
 }
-
-// Logger records carry the run_agent logger name of the origin module
-func runAgentLog() *slog.Logger { return slog.Default().With("logger", "run_agent") }
 
 // Python str of a value after the or default, empty for falsy values
 func pyStrOr(v any, def string) string {
@@ -108,7 +104,7 @@ func contentHasImageParts(content any) bool {
 func materializeDataURLForVision(imageURL any) (string, error) {
 	header, data, _ := strings.Cut(pyStrOr(imageURL, ""), ",")
 	if n := pystr.Len(data); n > maxDataURLBase64Bytes {
-		runAgentLog().Warn(fmt.Sprintf("data-URL payload too large (%d bytes), skipping", n))
+		pkgLog().Warn(fmt.Sprintf("data-URL payload too large (%d bytes), skipping", n))
 		return "", nil
 	}
 	mime := ""
@@ -343,12 +339,12 @@ func (a *AIAgent) toolResultContentForActiveModel(ctx context.Context, toolName 
 	}
 	if a.modelSupportsVision(ctx) {
 		if !a.providerSupportsVisionToolMessages(ctx) {
-			runAgentLog().Debug(fmt.Sprintf("Tool %s: provider %s does not accept list-type tool content — sending text summary", toolName, a.provider))
+			pkgLog().Debug(fmt.Sprintf("Tool %s: provider %s does not accept list-type tool content — sending text summary", toolName, a.provider))
 			return tools.MultimodalTextSummary(result)
 		}
 		key := providerModelKey(a)
 		if a.noListToolContentModels[key] {
-			runAgentLog().Debug(fmt.Sprintf("Tool %s: model %s/%s known to reject list-type tool content this session — sending text summary", toolName, key[0], key[1]))
+			pkgLog().Debug(fmt.Sprintf("Tool %s: model %s/%s known to reject list-type tool content this session — sending text summary", toolName, key[0], key[1]))
 			return tools.MultimodalTextSummary(result)
 		}
 		return content
@@ -364,7 +360,7 @@ func (a *AIAgent) toolResultContentForActiveModel(ctx context.Context, toolName 
 		text, _ := pyjson.Dumps(payload)
 		return text
 	}
-	runAgentLog().Warn(fmt.Sprintf("Tool %s returned image content for non-vision model %s/%s; falling back to text summary", toolName, a.provider, a.model))
+	pkgLog().Warn(fmt.Sprintf("Tool %s returned image content for non-vision model %s/%s; falling back to text summary", toolName, a.provider, a.model))
 	return summary
 }
 

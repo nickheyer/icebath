@@ -15,7 +15,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/tools"
 )
 
-// ContextCompressorOptions carries the constructor keywords with their hermes defaults from DefaultContextCompressorOptions
+// Constructor keywords with their defaults from DefaultContextCompressorOptions
 type ContextCompressorOptions struct {
 	Model                          string
 	ThresholdPercent               float64
@@ -42,7 +42,7 @@ type ContextCompressorOptions struct {
 	Env                            *tools.Env
 }
 
-// Keyword defaults of the hermes constructor for model
+// Keyword defaults of the constructor for model
 func DefaultContextCompressorOptions(model string) ContextCompressorOptions {
 	return ContextCompressorOptions{Model: model, ThresholdPercent: 0.50, ProtectFirstN: 3, ProtectLastN: 20, SummaryTargetRatio: 0.20,
 		ProactivePruneMinResultChars: 8000, ProactivePruneMinReclaimTokens: 4096, MinTailUserMessages: 1, TailMode: "lean"}
@@ -415,7 +415,7 @@ func (c *ContextCompressor) PreviousSummary() string {
 	return *c.previousSummary
 }
 
-// Summary generator every compress path calls, swapped by tests as hermes patches _generate_summary
+// Summary generator every compress path calls, swapped by tests
 var compressorGenerateSummary = (*ContextCompressor).generateSummary
 
 func (c *ContextCompressor) GenerateWindowSummary(ctx context.Context, turns []map[string]any, focusTopic *string, memoryContext string) (*string, error) {

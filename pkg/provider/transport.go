@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"sync"
 
+	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/state"
 )
 
@@ -99,7 +100,7 @@ func kwargInt(kwargs map[string]any, key string) int {
 
 // Reasoning config dict of the agent as the provider neutral reasoning controls
 func reasoningFromConfig(v any) Reasoning {
-	cfg, _ := v.(map[string]any)
+	cfg, _ := pyjson.Dict(v)
 	var r Reasoning
 	if cfg == nil {
 		return r
@@ -303,7 +304,7 @@ func PreflightKwargs(t Transport, apiKwargs map[string]any, allowStream, dropRep
 	if rt, ok := t.(*responsesAPITransport); ok && rt.codex != nil {
 		return rt.codex.preflightKwargs(apiKwargs, allowStream, dropReplayItemIDs, sanitizeHarmony)
 	}
-	return nil, fmt.Errorf("AttributeError: '%s' object has no attribute 'preflight_kwargs'", transportClassName(t))
+	return nil, fmt.Errorf("%s cannot preflight request options", transportClassName(t))
 }
 
 // Python class name of a transport for the AttributeError text

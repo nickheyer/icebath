@@ -3,7 +3,6 @@ package provider
 import (
 	"context"
 	"fmt"
-	"log/slog"
 	"math"
 	"net/url"
 	"os"
@@ -18,11 +17,9 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
 
-// Default auxiliary models and endpoints of the OpenRouter, Nous and Anthropic routes
+// Default auxiliary models and endpoints of the OpenRouter and Anthropic routes
 const (
 	auxOpenRouterModel         = "nvidia/nemotron-3-ultra-550b-a55b:free"
-	auxNousModel               = "google/gemini-3.6-flash"
-	auxNousDefaultBaseURL      = "https://inference-api.nousresearch.com/v1"
 	auxAnthropicDefaultBaseURL = "https://api.anthropic.com"
 )
 
@@ -251,20 +248,20 @@ func auxToOpenAIBaseURL(baseURL string) string {
 		stem := strings.TrimSuffix(raw, "/anthropic")
 		if baseURLHostMatches(raw, "open.bigmodel.cn") || baseURLHostMatches(raw, "api.z.ai") {
 			rewritten := stem + "/coding/paas/v4"
-			slog.Debug("Auxiliary client: rewrote ZAI base URL " + raw + " → " + rewritten)
+			pkgLog().Debug("Auxiliary client: rewrote ZAI base URL " + raw + " → " + rewritten)
 			return rewritten
 		}
 		if auxIsDualSurfaceAnthropicHost(raw) {
 			rewritten := stem + "/v1"
-			slog.Debug("Auxiliary client: rewrote dual-surface base URL " + raw + " → " + rewritten)
+			pkgLog().Debug("Auxiliary client: rewrote dual-surface base URL " + raw + " → " + rewritten)
 			return rewritten
 		}
-		slog.Debug("Auxiliary client: keeping Anthropic-only base URL " + raw + " (no dual-surface host match)")
+		pkgLog().Debug("Auxiliary client: keeping Anthropic-only base URL " + raw + " (no dual-surface host match)")
 		return raw
 	}
 	if baseURLHostMatches(raw, "api.kimi.com") && strings.HasSuffix(raw, "/coding") {
 		rewritten := raw + "/v1"
-		slog.Debug("Auxiliary client: rewrote Kimi base URL " + raw + " → " + rewritten)
+		pkgLog().Debug("Auxiliary client: rewrote Kimi base URL " + raw + " → " + rewritten)
 		return rewritten
 	}
 	return raw

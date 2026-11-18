@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"log/slog"
 	"sync"
 	"time"
 
@@ -54,7 +53,7 @@ func commandBusyPolicy(name string) (bool, bool) {
 	return CommandBusyPolicy(name)
 }
 
-// Pending clarify prompt lookup of a session, swapped by tests the way hermes tests patch clarify_gateway
+// Pending clarify prompt lookup of a session, swapped by tests
 var pendingClarifyForSession = func(sessionKey string) bool {
 	return tools.GetPendingClarifyForSession(sessionKey, true) != nil
 }
@@ -97,7 +96,7 @@ func (b *BasePlatformAdapter) isQueueTextDebounceCandidate(event *MessageEvent) 
 	result := mode == "queue" && event.MessageType == MessageTypeText && !event.Internal && !event.IsCommand() &&
 		pystr.Strip(event.Text) != ""
 	if result {
-		slog.Debug(fmt.Sprintf("[%s] Queue-text debounce candidate accepted: session=%s text_len=%d", b.Self().Name(), "?",
+		pkgLog().Debug(fmt.Sprintf("[%s] Queue-text debounce candidate accepted: session=%s text_len=%d", b.Self().Name(), "?",
 			pystr.Len(event.Text)))
 	}
 	return result
@@ -284,7 +283,7 @@ func (b *BasePlatformAdapter) healStaleSessionLock(sessionKey string) bool {
 	if !b.HasActiveSession(sessionKey) || !b.sessionTaskIsStale(sessionKey) {
 		return false
 	}
-	slog.Warn(fmt.Sprintf("[%s] Healing stale session lock for %s (owner task is done/absent)", b.Self().Name(), sessionKey))
+	pkgLog().Warn(fmt.Sprintf("[%s] Healing stale session lock for %s (owner task is done/absent)", b.Self().Name(), sessionKey))
 	b.mu.Lock()
 	delete(b.activeSessions, sessionKey)
 	delete(b.pendingMessages, sessionKey)
@@ -350,7 +349,7 @@ func (b *BasePlatformAdapter) CancelSessionProcessing(ctx context.Context, sessi
 	delete(b.sessionTasks, sessionKey)
 	b.mu.Unlock()
 	if task != nil && !task.finished() {
-		slog.Debug(fmt.Sprintf("[%s] Cancelling active processing for session %s", b.Self().Name(), sessionKey))
+		pkgLog().Debug(fmt.Sprintf("[%s] Cancelling active processing for session %s", b.Self().Name(), sessionKey))
 		b.mu.Lock()
 		lazyAttr(&b.expectedCancelledTasks)[task] = struct{}{}
 		b.mu.Unlock()
@@ -359,10 +358,10 @@ func (b *BasePlatformAdapter) CancelSessionProcessing(ctx context.Context, sessi
 		select {
 		case <-task.done:
 			if task.err != nil && !errors.Is(task.err, context.Canceled) {
-				slog.Debug(fmt.Sprintf("[%s] Session cancellation raised while unwinding %s: %v", b.Self().Name(), sessionKey, task.err))
+				pkgLog().Debug(fmt.Sprintf("[%s] Session cancellation raised while unwinding %s: %v", b.Self().Name(), sessionKey, task.err))
 			}
 		case <-timer.C:
-			slog.Warn(fmt.Sprintf("[%s] Cancelled task for %s did not exit within 5s; "+
+			pkgLog().Warn(fmt.Sprintf("[%s] Cancelled task for %s did not exit within 5s; "+
 				"unblocking dispatch and letting the task unwind in the background", b.Self().Name(), sessionKey))
 		case <-ctx.Done():
 		}
@@ -394,7 +393,7 @@ func (b *BasePlatformAdapter) drainPendingAfterSessionCommand(ctx context.Contex
 
 // Dispatches a reset like bypass command under its own guard, cancelling the old task after the reply
 func (b *BasePlatformAdapter) dispatchActiveSessionCommand(ctx context.Context, event *MessageEvent, sessionKey, cmd string) error {
-	slog.Debug(fmt.Sprintf("[%s] Command '/%s' bypassing active-session guard for %s", b.Self().Name(), cmd, sessionKey))
+	pkgLog().Debug(fmt.Sprintf("[%s] Command '/%s' bypassing active-session guard for %s", b.Self().Name(), cmd, sessionKey))
 	commandGuard := NewInterruptEvent()
 	b.mu.Lock()
 	currentGuard := b.activeSessions[sessionKey]
@@ -434,7 +433,7 @@ func (b *BasePlatformAdapter) HandleMessage(ctx context.Context, event *MessageE
 		b.noMessageHandlerLogged = true
 		b.mu.Unlock()
 		if !logged {
-			slog.Error(fmt.Sprintf("[%s] Dropping inbound message: no gateway message handler "+
+			pkgLog().Error(fmt.Sprintf("[%s] Dropping inbound message: no gateway message handler "+
 				"is installed on this adapter. The adapter is connected and "+
 				"can send, but every inbound message is discarded.", self.Name()))
 		}
@@ -463,7 +462,7 @@ func (b *BasePlatformAdapter) HandleMessage(ctx context.Context, event *MessageE
 		return err
 	}
 	if expected != "" && sessionKey != expected {
-		slog.Warn(fmt.Sprintf("Dropping internally routed event: expected session=%s derived=%s", expected, sessionKey))
+		pkgLog().Warn(fmt.Sprintf("Dropping internally routed event: expected session=%s derived=%s", expected, sessionKey))
 		return nil
 	}
 	behindBurst, err := burstGate(ctx, self, event, sessionKey)
@@ -504,10 +503,10 @@ func (b *BasePlatformAdapter) pendingRecoveryOwners(ctx context.Context, event *
 	if runner, ok := b.GatewayRunner.(DeliveryAdapterRunner); ok {
 		delivery, err = runner.DeliveryAdapterFor(ctx, event.Source)
 	} else {
-		err = fmt.Errorf("AttributeError: '%T' object has no attribute '_delivery_adapter_for'", b.GatewayRunner)
+		err = fmt.Errorf("the gateway runner (%T) cannot pick the delivery adapter of a source", b.GatewayRunner)
 	}
 	if err != nil {
-		slog.Debug(fmt.Sprintf("[%s] Delivery-adapter lookup failed during pending recovery: %v", b.Self().Name(), err))
+		pkgLog().Debug(fmt.Sprintf("[%s] Delivery-adapter lookup failed during pending recovery: %v", b.Self().Name(), err))
 		return owners
 	}
 	if delivery == nil {
@@ -533,18 +532,18 @@ func (b *BasePlatformAdapter) handleMessageWhileActive(ctx context.Context, even
 			b.discardTextDebounce(sessionKey)
 			err = b.dispatchActiveSessionCommand(ctx, event, sessionKey, cmd)
 		} else {
-			slog.Debug(fmt.Sprintf("[%s] Command '/%s' bypassing active-session guard for %s", self.Name(), cmd, sessionKey))
+			pkgLog().Debug(fmt.Sprintf("[%s] Command '/%s' bypassing active-session guard for %s", self.Name(), cmd, sessionKey))
 			err = b.dispatchInlineReply(ctx, event, nil)
 		}
 		if err != nil {
-			slog.Error(fmt.Sprintf("[%s] Command '/%s' dispatch failed: %v", self.Name(), cmd, err))
+			pkgLog().Error(fmt.Sprintf("[%s] Command '/%s' dispatch failed: %v", self.Name(), cmd, err))
 		}
 		return nil
 	}
 	if cmd == "" && event.AllowGatewayControl && pendingClarifyForSession(sessionKey) {
-		slog.Debug(fmt.Sprintf("[%s] Routing message to clarify text-intercept for %s", self.Name(), sessionKey))
+		pkgLog().Debug(fmt.Sprintf("[%s] Routing message to clarify text-intercept for %s", self.Name(), sessionKey))
 		if err := b.dispatchInlineReply(ctx, event, nil); err != nil {
-			slog.Error(fmt.Sprintf("[%s] Clarify text-intercept dispatch failed: %v", self.Name(), err))
+			pkgLog().Error(fmt.Sprintf("[%s] Clarify text-intercept dispatch failed: %v", self.Name(), err))
 		}
 		return nil
 	}
@@ -554,7 +553,7 @@ func (b *BasePlatformAdapter) handleMessageWhileActive(ctx context.Context, even
 	if busy != nil {
 		handled, err := busy(ctx, event, sessionKey)
 		if err != nil {
-			slog.Error(fmt.Sprintf("[%s] Busy-session handler failed: %v", self.Name(), err))
+			pkgLog().Error(fmt.Sprintf("[%s] Busy-session handler failed: %v", self.Name(), err))
 			handled = event.GatewayAccepted()
 		}
 		if !b.HasActiveSession(sessionKey) {
@@ -581,7 +580,7 @@ func (b *BasePlatformAdapter) handleMessageWhileActive(ctx context.Context, even
 		return nil
 	}
 	if event.MessageType == MessageTypePhoto {
-		slog.Debug(fmt.Sprintf("[%s] Queuing photo follow-up for session %s without interrupt", self.Name(), sessionKey))
+		pkgLog().Debug(fmt.Sprintf("[%s] Queuing photo follow-up for session %s without interrupt", self.Name(), sessionKey))
 		b.mu.Lock()
 		MergePendingMessageEvent(lazyAttr(&b.pendingMessages), sessionKey, event, false)
 		b.mu.Unlock()
@@ -592,12 +591,12 @@ func (b *BasePlatformAdapter) handleMessageWhileActive(ctx context.Context, even
 		b.mu.Lock()
 		window := b.busyTextDebounceSeconds
 		b.mu.Unlock()
-		slog.Debug(fmt.Sprintf("[%s] New text message while session %s is active — "+
+		pkgLog().Debug(fmt.Sprintf("[%s] New text message while session %s is active — "+
 			"debouncing follow-up (busy_text_mode=queue, window=%.2fs)", self.Name(), sessionKey, window))
 		b.queueTextDebounce(ctx, sessionKey, event)
 		return nil
 	}
-	slog.Debug(fmt.Sprintf("[%s] New message while session %s is active — queuing follow-up "+
+	pkgLog().Debug(fmt.Sprintf("[%s] New message while session %s is active — queuing follow-up "+
 		"(no interrupt, will cascade after current turn)", self.Name(), sessionKey))
 	b.mu.Lock()
 	MergePendingMessageEvent(lazyAttr(&b.pendingMessages), sessionKey, event, event.MessageType == MessageTypeText)

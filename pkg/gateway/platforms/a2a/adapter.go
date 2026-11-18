@@ -91,7 +91,7 @@ var rpcMethods = func() map[string]rpcMethod {
 	return out
 }()
 
-// Module functions the hermes cases replace, each holding the real function in production
+// Module functions the tests replace, each holding the real function in production
 var (
 	redactOutbound         = RedactOutbound
 	persistMessage         = PersistMessage
@@ -370,11 +370,11 @@ func (a *A2AAdapter) Connect(ctx context.Context, isReconnect bool) (bool, error
 	ln, err := net.Listen(httpServerNetwork(a.host), net.JoinHostPort(a.host, strconv.Itoa(a.port)))
 	if err != nil {
 		text := pyhttpx.OSErrorText(err)
-		slog.Error(fmt.Sprintf("A2A: could not bind %s:%d — %s", a.host, a.port, text))
+		pkgLog().Error(fmt.Sprintf("A2A: could not bind %s:%d — %s", a.host, a.port, text))
 		a.SetFatalError(ctx, "bind_failed", "A2A bind failed: "+text, true)
 		return false, nil
 	}
-	srv := &http.Server{Handler: requestHandler{a}, ErrorLog: slog.NewLogLogger(slog.Default().Handler(), slog.LevelDebug)}
+	srv := &http.Server{Handler: requestHandler{a}, ErrorLog: slog.NewLogLogger(pkgLog().Handler(), slog.LevelDebug)}
 	srv.SetKeepAlivesEnabled(false)
 	stop := make(chan struct{})
 	a.mu.Lock()
@@ -388,10 +388,10 @@ func (a *A2AAdapter) Connect(ctx context.Context, isReconnect bool) (bool, error
 	if sec.LocalhostOnly() {
 		mode = "localhost-only"
 	}
-	slog.Info(fmt.Sprintf("A2A: serving Agent Card + JSON-RPC on http://%s:%d (%s) as %s; %d routed agent(s)", a.host, a.port, mode,
+	pkgLog().Info(fmt.Sprintf("A2A: serving Agent Card + JSON-RPC on http://%s:%d (%s) as %s; %d routed agent(s)", a.host, a.port, mode,
 		pyrepr.StrRepr(a.agentName), a.agents.Len()))
 	if sec.DispatchFailsClosed() {
-		slog.Error(fmt.Sprintf("A2A: exposed on non-loopback bind %s with no A2A_TRUSTED_PEERS; every dispatch will be refused (403). "+
+		pkgLog().Error(fmt.Sprintf("A2A: exposed on non-loopback bind %s with no A2A_TRUSTED_PEERS; every dispatch will be refused (403). "+
 			"Set A2A_TRUSTED_PEERS, or A2A_ALLOW_ALL_USERS=true for a trusted network.", a.host))
 	}
 	a.WirePluginHandlers(ctx, nil)
@@ -435,7 +435,7 @@ func (a *A2AAdapter) watchdogLoop(stop <-chan struct{}) {
 		func() {
 			defer func() {
 				if rec := recover(); rec != nil {
-					slog.Debug("A2A: watchdog error", "exc_info", rec)
+					pkgLog().Debug("A2A: watchdog error", "exc_info", rec)
 				}
 			}()
 			a.failOrphansOnce()
@@ -451,7 +451,7 @@ func (a *A2AAdapter) failOrphansOnce() []string {
 	timeout := orphanTimeout()
 	failed := a.tasks.FailOrphans(timeout, active)
 	for _, tid := range failed {
-		slog.Warn(fmt.Sprintf("A2A: orphaned task %s marked failed (timeout %gs)", tid, timeout))
+		pkgLog().Warn(fmt.Sprintf("A2A: orphaned task %s marked failed (timeout %gs)", tid, timeout))
 		SharedMetrics.TasksFailed.Add(1)
 	}
 	return failed
@@ -508,7 +508,7 @@ func (a *A2AAdapter) loadServedAgents(ctx context.Context, extra map[string]any)
 		}
 		pathSegment := cleanSlug(pyrepr.Str(pyOr(pyGet(val, "path", nil), slug)))
 		if pathSegment == "" || reserved[pathSegment] {
-			slog.Warn(fmt.Sprintf("A2A: ignoring served agent %s with reserved/invalid path %s", pyrepr.StrRepr(slug), pyrepr.StrRepr(pathSegment)))
+			pkgLog().Warn(fmt.Sprintf("A2A: ignoring served agent %s with reserved/invalid path %s", pyrepr.StrRepr(slug), pyrepr.StrRepr(pathSegment)))
 			continue
 		}
 		profile := pystr.Strip(pyrepr.Str(pyOr(pyGet(val, "profile", nil), slug)))
@@ -525,7 +525,7 @@ func (a *A2AAdapter) loadServedAgents(ctx context.Context, extra map[string]any)
 		tenant := pystr.Strip(pyrepr.Str(pyOr(pyGet(val, "tenant", nil), slug)))
 		if tenant != "" {
 			if owner, dup := tenants[tenant]; dup {
-				slog.Warn(fmt.Sprintf("A2A: ignoring served agent %s with duplicate tenant %s already used by %s",
+				pkgLog().Warn(fmt.Sprintf("A2A: ignoring served agent %s with duplicate tenant %s already used by %s",
 					pyrepr.StrRepr(slug), pyrepr.StrRepr(tenant), pyrepr.StrRepr(owner)))
 				continue
 			}
@@ -827,7 +827,7 @@ func (a *A2AAdapter) prepareTaskImpl(params *pyjson.Object, peer string, agent *
 	}
 	if turn > maxTurns {
 		SharedMetrics.AntiLoopTriggers.Add(1)
-		slog.Warn(fmt.Sprintf("A2A: anti-loop triggered for context %s (turn %d > %d)", contextID, turn, maxTurns))
+		pkgLog().Warn(fmt.Sprintf("A2A: anti-loop triggered for context %s (turn %d > %d)", contextID, turn, maxTurns))
 		return a.endTask(rec, StateRejected, fmt.Sprintf("Anti-loop protection: context %s exceeded "+
 			"%d turns. Start a new context or increase A2A_MAX_PINGPONG_TURNS.", contextID, maxTurns), "")
 	}
@@ -921,7 +921,7 @@ func (a *A2AAdapter) forwardToProfileImpl(agent *servedAgent, peer, contextID, f
 		return "[profile reply unverified; accepted work was not cancelled]", StateFailed
 	}
 	if err != nil {
-		slog.Warn(fmt.Sprintf("A2A: dispatch to profile %s unverified", pyrepr.StrRepr(profile)), "exc_info", err)
+		pkgLog().Warn(fmt.Sprintf("A2A: dispatch to profile %s unverified", pyrepr.StrRepr(profile)), "exc_info", err)
 		return redactOutbound(fmt.Sprintf("Profile dispatch unverified: %s", pyrepr.ExceptionMessage(err))), StateFailed
 	}
 	result := pyOr(receipt["result"], map[string]any{})
@@ -1072,7 +1072,7 @@ func (a *A2AAdapter) rpcMessageStream(q *a2aRequest, reqID any, params *pyjson.O
 		if pending != nil {
 			a.finalizeTask(pending, StateFailed, "[client disconnected]")
 		}
-		slog.Debug("A2A: stream client disconnected")
+		pkgLog().Debug("A2A: stream client disconnected")
 	}
 }
 
@@ -1094,7 +1094,7 @@ func (a *A2AAdapter) rpcTasksSubscribe(q *a2aRequest, reqID any, params *pyjson.
 		return a.emitTerminal(q, taskID, rec.ContextID, state, reply, reqID)
 	}()
 	if err != nil {
-		slog.Debug("A2A: subscribe client disconnected")
+		pkgLog().Debug("A2A: subscribe client disconnected")
 	}
 }
 
@@ -1236,7 +1236,7 @@ func (a *A2AAdapter) rpcPushConfigDelete(reqID any, params *pyjson.Object, agent
 func (a *A2AAdapter) sendPushNotification(ctx context.Context, taskID, contextID, reply, state string) {
 	fail := func(format string, args ...any) {
 		SharedMetrics.PushFailed.Add(1)
-		slog.Warn(fmt.Sprintf("A2A: push notification for task %s "+format, append([]any{taskID}, args...)...))
+		pkgLog().Warn(fmt.Sprintf("A2A: push notification for task %s "+format, append([]any{taskID}, args...)...))
 	}
 	callbackURL := a.tasks.PopPushURL(taskID)
 	if callbackURL == "" {
@@ -1266,15 +1266,15 @@ func (a *A2AAdapter) sendPushNotification(ctx context.Context, taskID, contextID
 		return
 	}
 	SharedMetrics.PushSent.Add(1)
-	slog.Debug(fmt.Sprintf("A2A: push notification sent for task %s", taskID))
+	pkgLog().Debug(fmt.Sprintf("A2A: push notification sent for task %s", taskID))
 }
 
 // Fulfils the oldest reply waiter of the context, only a final notify send satisfying it
 func (a *A2AAdapter) Send(ctx context.Context, chatID, content, replyTo string, metadata map[string]any) (gateway.SendResult, error) {
 	if !pyrepr.Truthy(metadata["notify"]) {
-		slog.Debug(fmt.Sprintf("A2A: ignoring non-final send for context %s", chatID))
+		pkgLog().Debug(fmt.Sprintf("A2A: ignoring non-final send for context %s", chatID))
 	} else if !a.resolveOldestForContext(chatID, StateCompleted, content) {
-		slog.Debug(fmt.Sprintf("A2A: send() for context %s had no pending waiter", chatID))
+		pkgLog().Debug(fmt.Sprintf("A2A: send() for context %s had no pending waiter", chatID))
 	}
 	return gateway.SendResult{Success: true, MessageID: strconv.FormatInt(time.Now().UnixMilli(), 10)}, nil
 }

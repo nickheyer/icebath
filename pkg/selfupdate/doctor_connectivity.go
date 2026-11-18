@@ -66,13 +66,14 @@ type doctorProbeEnv struct {
 	ctx        context.Context
 	d          *Doctor
 	client     *http.Client
+	proxy      func(req *http.Request) (*url.URL, error)
 	lookupIPv6 func(ctx context.Context, host string) ([]net.IP, error)
 	tcpConnect func(addr string, timeout time.Duration) error
 }
 
-// Probe dependencies of a doctor run, a plain client, the system resolver and a real IPv6 connect
+// Probe dependencies of a doctor run, a client and IPv6 target honouring the environment proxies, the system resolver
 func newDoctorProbeEnv(ctx context.Context, d *Doctor) *doctorProbeEnv {
-	return &doctorProbeEnv{ctx: ctx, d: d, client: pyhttpx.PlainClient(false), tcpConnect: doctorTCPConnect,
+	return &doctorProbeEnv{ctx: ctx, d: d, client: pyhttpx.EnvProxyClient(false), proxy: pyhttpx.EnvProxy, tcpConnect: doctorTCPConnect,
 		lookupIPv6: func(ctx context.Context, host string) ([]net.IP, error) {
 			return net.DefaultResolver.LookupIP(ctx, "ip6", host)
 		}}
@@ -545,28 +546,58 @@ func doctorNoIPv6RouteErrnos() []syscall.Errno {
 	return []syscall.Errno{syscall.ENETUNREACH, syscall.EHOSTUNREACH, syscall.EADDRNOTAVAIL}
 }
 
+// Port a proxy URL without one is reached on, by its scheme
+var doctorProxyDefaultPorts = map[string]string{"http": "80", "https": "443", "socks5": "1080", "socks5h": "1080"}
+
+// Host and port a request for target connects to first, the environment proxy when one applies, shown as the row names it
+func (e *doctorProbeEnv) doctorIPv6ProbeTarget(target *url.URL) (host, port, shown string, err error) {
+	proxyURL, err := e.proxy(&http.Request{Method: http.MethodGet, URL: target})
+	if err != nil {
+		return "", "", "", err
+	}
+	if proxyURL == nil {
+		return target.Hostname(), "443", target.Hostname(), nil
+	}
+	host, port = proxyURL.Hostname(), proxyURL.Port()
+	if port == "" {
+		port = doctorProxyDefaultPorts[strings.ToLower(proxyURL.Scheme)]
+	}
+	return host, port, "proxy " + net.JoinHostPort(host, port), nil
+}
+
 // Detects an advertised IPv6 route that only times out and names the force_ipv4 remedy
 func (e *doctorProbeEnv) probeIPv6Path() (doctorProbeResult, error) {
 	name := "IPv6 route"
 	if pyrepr.Truthy(e.doctorLoadNetworkConfig()["force_ipv4"]) {
 		return doctorConnectivitySkip(name), nil
 	}
-	parsed, err := url.Parse(home.OpenRouterModelsURL)
+	target, err := url.Parse(home.OpenRouterModelsURL)
 	if err != nil {
 		return doctorProbeResult{}, err
 	}
-	host := parsed.Hostname()
-	addrs, err := e.lookupIPv6(e.ctx, host)
-	if err != nil || len(addrs) == 0 {
+	host, port, shown, err := e.doctorIPv6ProbeTarget(target)
+	if err != nil {
+		return e.doctorConnectivityRow(name, "fail", "(proxy environment unusable: "+err.Error()+")",
+			[]string{"Proxy environment unusable: " + err.Error() + ". Fix HTTPS_PROXY, HTTP_PROXY or ALL_PROXY"}, ""), nil
+	}
+	var addrs []net.IP
+	if ip := net.ParseIP(host); ip != nil {
+		if ip.To4() == nil {
+			addrs = []net.IP{ip}
+		}
+	} else if found, lookupErr := e.lookupIPv6(e.ctx, host); lookupErr == nil {
+		addrs = found
+	}
+	if len(addrs) == 0 {
 		return doctorConnectivitySkip(name), nil
 	}
-	cerr := e.tcpConnect(net.JoinHostPort(addrs[0].String(), "443"), doctorIPv6ProbeTimeout)
+	cerr := e.tcpConnect(net.JoinHostPort(addrs[0].String(), port), doctorIPv6ProbeTimeout)
 	if cerr != nil {
 		var netErr net.Error
 		if errors.Is(cerr, os.ErrDeadlineExceeded) || errors.Is(cerr, syscall.ETIMEDOUT) || (errors.As(cerr, &netErr) && netErr.Timeout()) {
 			remedy := "set `network.force_ipv4: true` in config.yaml (or fix the IPv6 route)"
 			return e.doctorConnectivityRow(name, "warn", fmt.Sprintf("(IPv6 route to %s advertised but dead: connect timed out after "+
-				"%gs — %s)", host, doctorIPv6ProbeTimeout.Seconds(), remedy),
+				"%gs — %s)", shown, doctorIPv6ProbeTimeout.Seconds(), remedy),
 				[]string{"Dead IPv6 route: every IPv6-first connect stalls before IPv4 answers. Fix: " + remedy}, ""), nil
 		}
 		var errno syscall.Errno
@@ -578,7 +609,7 @@ func (e *doctorProbeEnv) probeIPv6Path() (doctorProbeResult, error) {
 			}
 		}
 	}
-	return e.doctorConnectivityRow(name, "ok", "(IPv6 path to "+host+" reachable)", nil, ""), nil
+	return e.doctorConnectivityRow(name, "ok", "(IPv6 path to "+shown+" reachable)", nil, ""), nil
 }
 
 // Endpoint every GitHub token type can reach without spending quota

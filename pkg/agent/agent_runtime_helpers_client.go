@@ -59,21 +59,21 @@ func openAIClientFromKwargs(kwargs map[string]any) (any, error) {
 			if value != nil {
 				seconds, ok := kwargSeconds(value)
 				if !ok {
-					return nil, fmt.Errorf("TypeError: invalid timeout %s", pyrepr.Repr(value))
+					return nil, fmt.Errorf("timeout %v is not a number of seconds", value)
 				}
 				opts.Timeout = seconds
 			}
 		case "max_retries":
 			n, ok := value.(int)
 			if !ok {
-				return nil, fmt.Errorf("TypeError: max_retries must be an int, got %s", pyrepr.Repr(value))
+				return nil, fmt.Errorf("max_retries must be a whole number, got %v", value)
 			}
 			opts.MaxRetries = &n
 		case "http_client":
 			if value != nil {
 				hc, ok := value.(*http.Client)
 				if !ok {
-					return nil, fmt.Errorf("TypeError: Invalid `http_client` argument; Expected an instance of `httpx.Client` but got %T", value)
+					return nil, fmt.Errorf("http_client must be an HTTP client, got %T", value)
 				}
 				opts.HTTPClient = hc
 			}
@@ -85,7 +85,7 @@ func openAIClientFromKwargs(kwargs map[string]any) (any, error) {
 				}
 			}
 		default:
-			return nil, fmt.Errorf("TypeError: OpenAI.__init__() got an unexpected keyword argument '%s'", key)
+			return nil, fmt.Errorf("unknown OpenAI client option %s", key)
 		}
 	}
 	if len(headers) > 0 {
@@ -119,7 +119,7 @@ func providerSuppliedClient(ctx context.Context, a *AIAgent, clientKwargs map[st
 		if name == "" {
 			name = "?"
 		}
-		runAgentLog().Warn(fmt.Sprintf("Provider profile %s failed to create a client; falling back to the standard client path", pyrepr.Repr(name)), "error", detail)
+		pkgLog().Warn(fmt.Sprintf("Provider profile %s failed to create a client; falling back to the standard client path", pyrepr.Repr(name)), "error", detail)
 	}
 	defer func() {
 		if r := recover(); r != nil {
@@ -198,7 +198,7 @@ func geminiNativeClient(a *AIAgent, clientKwargs map[string]any, verify provider
 	if err != nil {
 		return nil, err
 	}
-	runAgentLog().Info(fmt.Sprintf("Gemini native client created (%s, shared=%s) %s", reason, pyBoolStr(shared), a.ClientLogContext()))
+	pkgLog().Info(fmt.Sprintf("Gemini native client created (%s, shared=%s) %s", reason, pyBoolStr(shared), a.ClientLogContext()))
 	return client, nil
 }
 
@@ -214,7 +214,7 @@ func (a *AIAgent) createOpenAIClient(ctx context.Context, clientKwargs map[strin
 	func() {
 		defer func() {
 			if r := recover(); r != nil {
-				runAgentLog().Debug("Provider client-kwargs hook skipped", "error", r)
+				pkgLog().Debug("Provider client-kwargs hook skipped", "error", r)
 			}
 		}()
 		if profile, ok := provider.GetProviderProfile(ctx, a.provider); ok {
@@ -232,7 +232,7 @@ func (a *AIAgent) createOpenAIClient(ctx context.Context, clientKwargs map[strin
 	sslVerify := kwargs["ssl_verify"]
 	delete(kwargs, "ssl_ca_cert")
 	delete(kwargs, "ssl_verify")
-	verify := provider.ResolveTLSVerify(runAgentLog(), sslCACert, sslVerify, kwargText(kwargs["base_url"]))
+	verify := provider.ResolveTLSVerify(pkgLog(), sslCACert, sslVerify, kwargText(kwargs["base_url"]))
 	if err := provider.ValidateProxyEnvURLs(); err != nil {
 		return nil, err
 	}
@@ -240,7 +240,7 @@ func (a *AIAgent) createOpenAIClient(ctx context.Context, clientKwargs map[strin
 		return nil, err
 	}
 	if client := providerSuppliedClient(ctx, a, kwargs); client != nil {
-		runAgentLog().Info(fmt.Sprintf("%s client created from provider profile (%s, shared=%s) %s", a.provider, reason, pyBoolStr(shared), a.ClientLogContext()))
+		pkgLog().Info(fmt.Sprintf("%s client created from provider profile (%s, shared=%s) %s", a.provider, reason, pyBoolStr(shared), a.ClientLogContext()))
 		return client, nil
 	}
 	if provider.IsGeminiNativeProviderName(a.provider) {
@@ -276,6 +276,6 @@ func (a *AIAgent) createOpenAIClient(ctx context.Context, clientKwargs map[strin
 		return nil, err
 	}
 	installServedModelCapture(a, client)
-	runAgentLog().Info(fmt.Sprintf("OpenAI client created (%s, shared=%s) %s", reason, pyBoolStr(shared), a.ClientLogContext()))
+	pkgLog().Info(fmt.Sprintf("OpenAI client created (%s, shared=%s) %s", reason, pyBoolStr(shared), a.ClientLogContext()))
 	return client, nil
 }

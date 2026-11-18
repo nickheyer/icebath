@@ -9,7 +9,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/internal/pythread"
-	"github.com/nickheyer/icebath/pkg/observability"
 )
 
 // Longest interim edit interval flood backoff may reach
@@ -71,9 +70,9 @@ func (s *GatewayStreamConsumer) trySeedFrame(ctx context.Context, failLog string
 func tryFrame(sent bool, err error, failLog string, excInfo bool) bool {
 	if err != nil {
 		if excInfo {
-			streamLog().Debug(failLog, "error", err)
+			pkgLog().Debug(failLog, "error", err)
 		} else {
-			streamLog().Debug(strings.Replace(failLog, "%s", pyrepr.ExceptionMessage(err), 1))
+			pkgLog().Debug(strings.Replace(failLog, "%s", pyrepr.ExceptionMessage(err), 1))
 		}
 		return false
 	}
@@ -157,7 +156,7 @@ func (s *GatewayStreamConsumer) deletePreviews(ctx context.Context, staleIDs idS
 			_, err = deleter.DeleteMessage(ctx, s.chatID, staleID)
 		}
 		if err != nil {
-			streamLog().Debug(fmt.Sprintf("%s preview cleanup failed (%s): %s", label, staleID, pyrepr.ExceptionMessage(err)))
+			pkgLog().Debug(fmt.Sprintf("%s preview cleanup failed (%s): %s", label, staleID, pyrepr.ExceptionMessage(err)))
 		}
 	}
 }
@@ -174,14 +173,14 @@ func (s *GatewayStreamConsumer) resolveDraftStreaming() bool {
 	supported := func() (ok bool) {
 		defer func() {
 			if r := recover(); r != nil {
-				streamLog().Debug("supports_draft_streaming probe raised", "error", r)
+				pkgLog().Debug("supports_draft_streaming probe raised", "error", r)
 				ok = false
 			}
 		}()
 		return s.adapter.SupportsDraftStreaming(s.cfg.ChatType, s.metadata, s.chatID)
 	}()
 	if !supported && transport == "draft" {
-		streamLog().Debug(fmt.Sprintf("Draft streaming requested but unsupported (chat=%s, type=%s) — falling back to edit", s.chatID, pyrepr.Repr(s.cfg.ChatType)))
+		pkgLog().Debug(fmt.Sprintf("Draft streaming requested but unsupported (chat=%s, type=%s) — falling back to edit", s.chatID, pyrepr.Repr(s.cfg.ChatType)))
 	}
 	return supported
 }
@@ -198,7 +197,7 @@ func (s *GatewayStreamConsumer) resolveNativeStreaming() bool {
 	return func() (supported bool) {
 		defer func() {
 			if r := recover(); r != nil {
-				streamLog().Debug("supports_native_streaming probe raised", "error", r)
+				pkgLog().Debug("supports_native_streaming probe raised", "error", r)
 				supported = false
 			}
 		}()
@@ -214,17 +213,17 @@ func (s *GatewayStreamConsumer) sendDraftFrame(ctx context.Context, text string)
 	}
 	result, err := s.adapter.SendDraft(ctx, s.chatID, int(*s.draftID), text, s.draftMetadata())
 	if err != nil {
-		streamLog().Debug("send_draft raised, disabling draft transport for this run: " + pyrepr.ExceptionMessage(err))
+		pkgLog().Debug("send_draft raised, disabling draft transport for this run: " + pyrepr.ExceptionMessage(err))
 	} else {
 		if result.Success {
 			s.lastSentText = text
 			return true
 		}
 		if DeclinedSend(&result) {
-			streamLog().Warn("send_draft DECLINED by the connector's egress guard; suppressing every later send for this run (the destination is not approved for this connection)")
+			pkgLog().Warn("send_draft DECLINED by the connector's egress guard; suppressing every later send for this run (the destination is not approved for this connection)")
 			s.egressDeclined = true
 		}
-		streamLog().Debug("send_draft returned success=False, disabling draft transport: " + pyrepr.Str(pyrepr.Or(result.Error, "unknown")))
+		pkgLog().Debug("send_draft returned success=False, disabling draft transport: " + pyrepr.Str(pyrepr.Or(result.Error, "unknown")))
 	}
 	s.draftFailures++
 	s.useDraftStreaming = false
@@ -245,7 +244,7 @@ func (s *GatewayStreamConsumer) abandonNativeStream(ctx context.Context) {
 		text = cleanForDisplay(s.accumulated)
 	}
 	if _, err := abandoner.AbandonOpenDraft(ctx, s.chatID, text, s.draftMetadata()); err != nil {
-		streamLog().Debug("abandon_open_draft failed (best-effort): " + pyrepr.ExceptionMessage(err))
+		pkgLog().Debug("abandon_open_draft failed (best-effort): " + pyrepr.ExceptionMessage(err))
 	}
 }
 
@@ -293,7 +292,7 @@ func (s *GatewayStreamConsumer) adapterPrefersFreshFinal(text string) bool {
 	return func() (prefers bool) {
 		defer func() {
 			if r := recover(); r != nil {
-				streamLog().Debug(fmt.Sprintf("prefers_fresh_final_streaming check failed: %v", r))
+				pkgLog().Debug(fmt.Sprintf("prefers_fresh_final_streaming check failed: %v", r))
 				prefers = false
 			}
 		}()
@@ -309,7 +308,7 @@ func (s *GatewayStreamConsumer) tryFreshFinal(ctx context.Context, text string, 
 	staleIDs := s.stalePreviewIDs(false)
 	result, err := s.adapter.Send(ctx, s.chatID, text, "", s.metadataForSend(true, false))
 	if err != nil {
-		streamLog().Debug("Fresh-final send failed, falling back to edit: " + pyrepr.ExceptionMessage(err))
+		pkgLog().Debug("Fresh-final send failed, falling back to edit: " + pyrepr.ExceptionMessage(err))
 		return false
 	}
 	if !result.Success {
@@ -340,17 +339,8 @@ func (s *GatewayStreamConsumer) adoptMessageID(messageID string) {
 	s.messageCreatedTS = nil
 }
 
-// Sends or edits the streaming message through the reply clock, true when delivered
+// Transport ordered send or edit, native frame then draft then edit then first send, true when delivered
 func (s *GatewayStreamConsumer) sendOrEdit(ctx context.Context, text string, finalize, isTurnFinal bool) bool {
-	ok, _ := observability.StopsReplyClock(ctx, s, func() (any, error) {
-		return s.sendOrEditInner(ctx, text, finalize, isTurnFinal), nil
-	})
-	delivered, _ := ok.(bool)
-	return delivered
-}
-
-// Transport ordered send or edit, native frame then draft then edit then first send
-func (s *GatewayStreamConsumer) sendOrEditInner(ctx context.Context, text string, finalize, isTurnFinal bool) bool {
 	text = cleanForDisplay(text)
 	preFenceText := text
 	text = EnsureClosedCodeFences(text)
@@ -390,7 +380,7 @@ func (s *GatewayStreamConsumer) sendOrEditInner(ctx context.Context, text string
 		}
 		ok, err := s.firstSend(ctx, text, finalize)
 		if err != nil {
-			streamLog().Error("Stream send/edit error: " + pyrepr.ExceptionMessage(err))
+			pkgLog().Error("Stream send/edit error: " + pyrepr.ExceptionMessage(err))
 			return false
 		}
 		return ok
@@ -400,7 +390,7 @@ func (s *GatewayStreamConsumer) sendOrEditInner(ctx context.Context, text string
 	}
 	ok, err := s.editExisting(ctx, text, finalize, isTurnFinal)
 	if err != nil {
-		streamLog().Error("Stream send/edit error: " + pyrepr.ExceptionMessage(err))
+		pkgLog().Error("Stream send/edit error: " + pyrepr.ExceptionMessage(err))
 		return false
 	}
 	return ok
@@ -416,7 +406,7 @@ func (s *GatewayStreamConsumer) nativePush(ctx context.Context, text string, fin
 		}
 		s.nativeStreamOpened.Store(true)
 		s.awaitingReopenAfterBoundary.Store(false)
-		streamLog().Info(fmt.Sprintf("[latency] Re-opened native stream after boundary (turn=%s, waited for first delta)", s.turnID))
+		pkgLog().Info(fmt.Sprintf("[latency] Re-opened native stream after boundary (turn=%s, waited for first delta)", s.turnID))
 	}
 	finalize = finalize && isTurnFinal
 	if !finalize && text == s.lastSentText {
@@ -443,9 +433,9 @@ func (s *GatewayStreamConsumer) nativePush(ctx context.Context, text string, fin
 	s.useNativeStreaming.Store(false)
 	if s.nativeStreamOpened.Load() {
 		if _, err := s.sendFrame(ctx, text, true); err != nil {
-			streamLog().Debug("Native fallback: failed to finalize stream: " + pyrepr.ExceptionMessage(err))
+			pkgLog().Debug("Native fallback: failed to finalize stream: " + pyrepr.ExceptionMessage(err))
 		} else {
-			streamLog().Debug("Native fallback: finalized stream (best-effort close)")
+			pkgLog().Debug("Native fallback: finalized stream (best-effort close)")
 		}
 	}
 	return nil
@@ -477,7 +467,7 @@ func (s *GatewayStreamConsumer) draftPush(ctx context.Context, text, preFenceTex
 // First send threaded to the user's message
 func (s *GatewayStreamConsumer) firstSend(ctx context.Context, text string, finalize bool) (bool, error) {
 	if s.egressDeclined {
-		streamLog().Warn("suppressing the plain-send fallback: the connector already declined this destination for this run")
+		pkgLog().Warn("suppressing the plain-send fallback: the connector already declined this destination for this run")
 		return false, nil
 	}
 	result, err := s.adapter.Send(ctx, s.chatID, text, s.initialReplyToID, s.metadataForSend(finalize, !finalize))
@@ -547,7 +537,7 @@ func (s *GatewayStreamConsumer) enterFallbackMode(prefix string) {
 // Classifies a failed edit as a decline, a partial overflow, flood backoff or fallback mode, always false
 func (s *GatewayStreamConsumer) onEditFailure(ctx context.Context, result SendResult, text string, finalize, isTurnFinal bool) bool {
 	if DeclinedSend(&result) {
-		streamLog().Warn("edit DECLINED by the connector's egress guard; suppressing every later send for this run (the destination is not approved for this connection)")
+		pkgLog().Warn("edit DECLINED by the connector's egress guard; suppressing every later send for this run (the destination is not approved for this connection)")
 		s.egressDeclined = true
 		s.editSupported = false
 		return false
@@ -587,7 +577,7 @@ func (s *GatewayStreamConsumer) onEditFailure(ctx context.Context, result SendRe
 			backoff = max(backoff, min(*result.RetryAfter, maxEditBackoffSecs))
 		}
 		s.currentEditInterval = backoff
-		streamLog().Debug(fmt.Sprintf("Flood control on edit (strike %d/%d), backoff interval → %.1fs", s.floodStrikes, maxFloodStrikes, s.currentEditInterval))
+		pkgLog().Debug(fmt.Sprintf("Flood control on edit (strike %d/%d), backoff interval → %.1fs", s.floodStrikes, maxFloodStrikes, s.currentEditInterval))
 		if flood, ok := s.adapter.(FinalEditFloodFallback); ok {
 			immediateFinalFallback = turnFinal && flood.FallbackOnFinalEditFlood()
 		}
@@ -596,10 +586,10 @@ func (s *GatewayStreamConsumer) onEditFailure(ctx context.Context, result SendRe
 			return false
 		}
 		if immediateFinalFallback {
-			streamLog().Debug("Turn-final edit hit flood control; entering fallback immediately")
+			pkgLog().Debug("Turn-final edit hit flood control; entering fallback immediately")
 		}
 	}
-	streamLog().Debug(fmt.Sprintf("Edit failed (strikes=%d), entering fallback mode", s.floodStrikes))
+	pkgLog().Debug(fmt.Sprintf("Edit failed (strikes=%d), entering fallback mode", s.floodStrikes))
 	s.enterFallbackMode(s.visiblePrefix())
 	if !immediateFinalFallback {
 		s.tryStripCursor(ctx)

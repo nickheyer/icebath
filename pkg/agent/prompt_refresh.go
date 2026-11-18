@@ -3,20 +3,16 @@ package agent
 import (
 	"context"
 	"fmt"
-	"log/slog"
 	"math"
 
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/observability"
 	"github.com/nickheyer/icebath/pkg/skills"
 	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
 
 const sessionEpochKey = "prompt_refresh_epoch"
-
-func promptRefreshLog() *slog.Logger { return slog.Default().With("logger", "agent.prompt_refresh") }
 
 // Store recording operator prompt refresh requests, a managed worker facade keeps none
 type promptRefreshEpochReader interface {
@@ -33,7 +29,7 @@ func requestedEpoch(ctx context.Context, a *AIAgent) int {
 	}
 	epoch, err := reader.PromptRefreshEpoch(ctx, a.sessionID)
 	if err != nil {
-		promptRefreshLog().Warn(fmt.Sprintf("Prompt refresh epoch read failed (session=%s); reusing the stored prompt.", a.sessionID), "error", err)
+		pkgLog().Warn(fmt.Sprintf("Prompt refresh epoch read failed (session=%s); reusing the stored prompt.", a.sessionID), "error", err)
 		return 0
 	}
 	return epoch
@@ -87,7 +83,7 @@ func persistPromptEpoch(ctx context.Context, a *AIAgent, epoch int) bool {
 		return true
 	}
 	if err := a.sessionDB.PatchSessionModelConfig(ctx, a.sessionID, map[string]any{sessionEpochKey: epoch}); err != nil {
-		promptRefreshLog().Warn(fmt.Sprintf("Could not record the prompt refresh epoch (session=%s); the refresh re-fires next turn.", a.sessionID), "error", err)
+		pkgLog().Warn(fmt.Sprintf("Could not record the prompt refresh epoch (session=%s); the refresh re-fires next turn.", a.sessionID), "error", err)
 		return false
 	}
 	return true
@@ -95,7 +91,7 @@ func persistPromptEpoch(ctx context.Context, a *AIAgent, epoch int) bool {
 
 // Rebuilds the session prompt from current sources and persists it with epoch
 func rebuildForRefresh(ctx context.Context, a *AIAgent, systemMessage *string, conversationHistory []map[string]any, epoch int) error {
-	promptRefreshLog().Info(fmt.Sprintf("Operator requested a system prompt refresh (epoch %d) for session %s; rebuilding it "+
+	pkgLog().Info(fmt.Sprintf("Operator requested a system prompt refresh (epoch %d) for session %s; rebuilding it "+
 		"from current SOUL.md, skills and context files (one-time prefix-cache break).", epoch, a.sessionID))
 	if err := InvalidateSystemPrompt(tools.WithEnvHome(ctx, a.env), a); err != nil {
 		return err
@@ -107,11 +103,10 @@ func rebuildForRefresh(ctx context.Context, a *AIAgent, systemMessage *string, c
 		return err
 	}
 	a.cachedSystemPrompt = prompt
-	observability.RecordCacheBreak(ctx, a, "system_prompt_rebuild")
 	StageSurfaceSwitchNote(ctx, a, a.cachedSystemPrompt, conversationHistory)
 	if a.sessionDB != nil {
 		if err := a.sessionDB.UpdateSystemPrompt(ctx, a.sessionID, &prompt); err != nil {
-			promptRefreshLog().Warn(fmt.Sprintf("Could not persist the refreshed system prompt (session=%s); the refresh re-fires next turn.", a.sessionID), "error", err)
+			pkgLog().Warn(fmt.Sprintf("Could not persist the refreshed system prompt (session=%s); the refresh re-fires next turn.", a.sessionID), "error", err)
 			return nil
 		}
 	}

@@ -138,7 +138,7 @@ func (r *GatewayRunner) startCheckAccessPolicy(ctx context.Context) bool {
 	anyAllowed := slices.ContainsFunc(allowedVars, func(v string) bool { return os.Getenv(v) != "" })
 	anyAllowAll := slices.ContainsFunc(allowAllVars, func(v string) bool { return envOptIn(os.Getenv(v)) })
 	if hasMessaging && !anyAllowed && !anyAllowAll {
-		runLog().Warn("No env user allowlists configured. Messaging platforms default to pairing/allowlist " +
+		pkgLog().Warn("No env user allowlists configured. Messaging platforms default to pairing/allowlist " +
 			"policies and will deny unknown senders unless you configure platform allowlists (e.g., " +
 			"TELEGRAM_ALLOWED_USERS=your_id) or explicitly opt in with GATEWAY_ALLOW_ALL_USERS=true " +
 			"plus dm_policy/group_policy: open on the platform.")
@@ -155,7 +155,7 @@ func (r *GatewayRunner) startCheckAccessPolicy(ctx context.Context) bool {
 	if allowAllEnv == "" {
 		allowAllEnv = "a platform allow-all flag"
 	}
-	runLog().Error(fmt.Sprintf("Refusing to start: %s has dm_policy/group_policy set to 'open' "+
+	pkgLog().Error(fmt.Sprintf("Refusing to start: %s has dm_policy/group_policy set to 'open' "+
 		"but neither GATEWAY_ALLOW_ALL_USERS nor %s is enabled.", platformValue, allowAllEnv))
 	writeRuntimeStatusQuiet(ctx, gateway.RuntimeStatusUpdate{Fields: map[string]any{"gateway_state": "startup_failed", "exit_reason": reason}})
 	r.requestCleanExit(reason)

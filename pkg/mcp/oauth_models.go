@@ -85,6 +85,27 @@ func (o *jsonObject) set(key string, v any) {
 	o.setRaw(key, json.RawMessage(encodeJSONValue(v)))
 }
 
+// Moves a key's value to a new key at the same position, the old one dropped when the new one exists
+func (o *jsonObject) renameKey(from, to string) bool {
+	raw, ok := o.vals[from]
+	if !ok {
+		return false
+	}
+	if _, has := o.vals[to]; has {
+		o.pop(from)
+		return true
+	}
+	delete(o.vals, from)
+	o.vals[to] = raw
+	for i, k := range o.keys {
+		if k == from {
+			o.keys[i] = to
+			break
+		}
+	}
+	return true
+}
+
 // Removes a key, reporting whether it was present
 func (o *jsonObject) pop(key string) (any, bool) {
 	raw, ok := o.vals[key]

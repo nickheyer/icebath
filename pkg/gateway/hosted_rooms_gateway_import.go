@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
-	"log/slog"
 	"path/filepath"
 	"sort"
 
@@ -224,11 +223,11 @@ func ImportStandaloneRooms(ctx context.Context, targetDB string, runtimeEpoch *i
 		if !hostedImportRetryable(err) {
 			return 0, err
 		}
-		slog.Warn(fmt.Sprintf("hosted rooms: could not import the standalone Group Chats from %s (%v); will retry on the next start", source, err))
+		pkgLog().Warn(fmt.Sprintf("hosted rooms: could not import the standalone Group Chats from %s (%v); will retry on the next start", source, err))
 		return 0, nil
 	}
 	if copied > 0 {
-		slog.Info(fmt.Sprintf("hosted rooms: imported %d standalone Group Chat(s) from %s", copied, source))
+		pkgLog().Info(fmt.Sprintf("hosted rooms: imported %d standalone Group Chat(s) from %s", copied, source))
 	}
 	return copied, nil
 }

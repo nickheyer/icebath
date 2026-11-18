@@ -53,6 +53,6 @@ func (c *CLI) writeOSC52Clipboard(text string) {
 		seq = "\x1bP" + seq + "\x1b\\"
 	}
 	if _, err := io.WriteString(console().Out, seq); err != nil {
-		cliLogger.Debug("OSC 52 clipboard write failed", "error", err)
+		pkgLog().Debug("OSC 52 clipboard write failed", "error", err)
 	}
 }

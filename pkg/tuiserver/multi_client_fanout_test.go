@@ -12,12 +12,12 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/tuigateway"
+	"github.com/nickheyer/icebath/pkg/tuihost"
 )
 
 // Stdio transport over a real OS pipe whose reader decodes every frame
 type fanoutPipeClient struct {
-	transport *tuigateway.StdioTransport
+	transport *tuihost.StdioTransport
 	writer    *os.File
 	closed    atomic.Bool
 	frames    chan map[string]any
@@ -30,7 +30,7 @@ func newFanoutPipeClient(t *testing.T) *fanoutPipeClient {
 		t.Fatal(err)
 	}
 	c := &fanoutPipeClient{writer: writer, frames: make(chan map[string]any, 1024)}
-	c.transport = tuigateway.NewStdioTransport(func() io.Writer { return c.writer }, &sync.Mutex{})
+	c.transport = tuihost.NewStdioTransport(func() io.Writer { return c.writer }, &sync.Mutex{})
 	done := make(chan struct{})
 	go func() {
 		defer close(done)
@@ -78,18 +78,18 @@ func TestMembershipPreservesTerminalDeliveryAndRevokesDepartedPeers(t *testing.T
 			t.Setenv("ICEBATH_HOME", t.TempDir())
 			ctx := context.Background()
 			a, b, stranger := newFanoutPipeClient(t), newFanoutPipeClient(t), newFanoutPipeClient(t)
-			session := tuigateway.NewSession(map[string]any{"transport": a, "agent": nil, "session_key": "fanout-invariant", "history": []any{},
+			session := tuihost.NewSession(map[string]any{"transport": a, "agent": nil, "session_key": "fanout-invariant", "history": []any{},
 				"history_lock": &sync.Mutex{}, "history_version": int64(0), "running": false, "attached_images": []any{}})
-			swapSessions(t, map[string]*tuigateway.Session{"fanout-invariant": session})
-			var newcomer tuigateway.Transport = b
+			swapSessions(t, map[string]*tuihost.Session{"fanout-invariant": session})
+			var newcomer tuihost.Transport = b
 			if attachment == "flattened" {
-				newcomer = tuigateway.NewFanoutTransport(a, b)
+				newcomer = tuihost.NewFanoutTransport(a, b)
 			}
-			if !tuigateway.AttachSessionTransport(session, newcomer) || !tuigateway.AttachSessionTransport(session, b) {
+			if !tuihost.AttachSessionTransport(session, newcomer) || !tuihost.AttachSessionTransport(session, b) {
 				t.Fatal("attach refused")
 			}
 			for _, kind := range []string{"message.delta", "reasoning.delta", "message.complete"} {
-				tuigateway.Emit(ctx, kind, "fanout-invariant", map[string]any{"text": "α"})
+				tuihost.Emit(ctx, kind, "fanout-invariant", map[string]any{"text": "α"})
 				first, second := a.receive(t), b.receive(t)
 				params, _ := first["params"].(map[string]any)
 				if !pyjson.Equal(first, second) || params["type"] != kind {
@@ -100,41 +100,41 @@ func TestMembershipPreservesTerminalDeliveryAndRevokesDepartedPeers(t *testing.T
 				client  *fanoutPipeClient
 				allowed bool
 			}{{a, true}, {b, true}, {stranger, false}} {
-				authority, _ := currentSessionSteerAuthority(tuigateway.BindTransport(ctx, c.client), "fanout-invariant")
-				if (authority == tuigateway.Transport(c.client)) != c.allowed {
+				authority, _ := currentSessionSteerAuthority(tuihost.BindTransport(ctx, c.client), "fanout-invariant")
+				if (authority == tuihost.Transport(c.client)) != c.allowed {
 					t.Fatalf("steer authority %v for %p", authority, c.client)
 				}
 			}
-			if !tuigateway.WriteJSON(tuigateway.BindTransport(ctx, a), pyjson.ObjectOf("jsonrpc", "2.0", "id", "private", "result", "owner only")) {
+			if !tuihost.WriteJSON(tuihost.BindTransport(ctx, a), pyjson.ObjectOf("jsonrpc", "2.0", "id", "private", "result", "owner only")) {
 				t.Fatal("reply write failed")
 			}
 			if reply := a.receive(t); reply["id"] != "private" || !b.empty() {
 				t.Fatalf("reply %v leaked to the subscriber set", reply)
 			}
-			session.Set("viewers", map[tuigateway.Transport]float64{b: 0, stranger: 0})
-			if !tuigateway.DetachSessionTransport(session, b) {
+			session.Set("viewers", map[tuihost.Transport]float64{b: 0, stranger: 0})
+			if !tuihost.DetachSessionTransport(session, b) {
 				t.Fatal("detach refused")
 			}
-			if viewers, _ := session.Get("viewers").(map[tuigateway.Transport]float64); len(viewers) != 0 || tuigateway.SessionTransportContains(session, b) {
-				t.Fatalf("viewers %v contains %v", viewers, tuigateway.SessionTransportContains(session, b))
+			if viewers, _ := session.Get("viewers").(map[tuihost.Transport]float64); len(viewers) != 0 || tuihost.SessionTransportContains(session, b) {
+				t.Fatalf("viewers %v contains %v", viewers, tuihost.SessionTransportContains(session, b))
 			}
-			tuigateway.Emit(ctx, "message.complete", "fanout-invariant", map[string]any{"text": "only A"})
+			tuihost.Emit(ctx, "message.complete", "fanout-invariant", map[string]any{"text": "only A"})
 			payload, _ := a.receive(t)["params"].(map[string]any)["payload"].(map[string]any)
 			if payload["text"] != "only A" || !b.empty() {
 				t.Fatalf("payload %v", payload)
 			}
-			if !tuigateway.AttachSessionTransport(session, b) {
+			if !tuihost.AttachSessionTransport(session, b) {
 				t.Fatal("reattach refused")
 			}
-			tuigateway.Emit(ctx, "message.complete", "fanout-invariant", map[string]any{"text": "reattached"})
+			tuihost.Emit(ctx, "message.complete", "fanout-invariant", map[string]any{"text": "reattached"})
 			if first, second := a.receive(t), b.receive(t); !pyjson.Equal(first, second) {
 				t.Fatalf("first %v second %v", first, second)
 			}
 			b.Close()
-			if tuigateway.AttachSessionTransport(session, b) || tuigateway.SessionTransportContains(session, b) {
+			if tuihost.AttachSessionTransport(session, b) || tuihost.SessionTransportContains(session, b) {
 				t.Fatal("a dead peer regained authority")
 			}
-			if tuigateway.AttachSessionTransport(session, tuigateway.ProcessStdioTransport()) {
+			if tuihost.AttachSessionTransport(session, tuihost.ProcessStdioTransport()) {
 				t.Fatal("stdio joined a websocket session")
 			}
 			if reaped, detached := closeSessionsForTransport(ctx, b, "ws_disconnect"); reaped != 0 || detached != 0 {
@@ -143,7 +143,7 @@ func TestMembershipPreservesTerminalDeliveryAndRevokesDepartedPeers(t *testing.T
 			if reaped, detached := closeSessionsForTransport(ctx, a, "ws_disconnect"); reaped != 0 || detached != 1 {
 				t.Fatalf("a counts %d %d", reaped, detached)
 			}
-			if session.Get("transport") != tuigateway.DetachedWSTransport() {
+			if session.Get("transport") != tuihost.DetachedWSTransport() {
 				t.Fatalf("transport %v", session.Get("transport"))
 			}
 		})

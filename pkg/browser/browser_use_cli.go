@@ -7,7 +7,6 @@ import (
 	"os"
 
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/observability"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
 
@@ -19,11 +18,11 @@ func (s settings) rawSecret(name string) string {
 	return os.Getenv(name)
 }
 
-// Pre CLI Browser Use cloud config, no other provider and no gateway with BROWSER_USE_API_KEY set
+// Pre CLI Browser Use cloud config, no other provider with BROWSER_USE_API_KEY set
 func isLegacyBrowserUseCloudConfig(env *tools.Env) bool {
 	s := cfgOf(env)
 	sel, _ := s.cloudProviderSelection()
-	if (sel != "browser-use" && sel != "") || s.useGateway() {
+	if sel != "browser-use" && sel != "" {
 		return false
 	}
 	return s.rawSecret("BROWSER_USE_API_KEY") != ""
@@ -133,14 +132,11 @@ func handleBrowserExec(ctx context.Context, call *tools.Call) string {
 		timeout = execDefaultTimeoutS
 	}
 	local := pyrepr.Truthy(args["local"])
-	localEngine := ""
-	out, err := observability.RecordBrowserCall(ctx, call.Env, func() (any, error) {
-		return browserExec(ctx, call.Env, code, session, timeout, call.TaskID, local, &localEngine)
-	}, func() (string, error) { return browserBackendName(call.Env, localEngine) })
+	out, err := browserExec(ctx, call.Env, code, session, timeout, call.TaskID, local)
 	if err != nil {
 		panic(err)
 	}
-	return out.(string)
+	return out
 }
 
 func registerBrowserExecTool() {

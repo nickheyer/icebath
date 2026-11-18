@@ -13,7 +13,7 @@ import (
 
 // A switch to a new endpoint stores null over inherited endpoint bound keys a profile unset cannot reach
 func TestModelSwitchMasksInheritedEndpointCredentials(t *testing.T) {
-	p := setupBootPlane(t, true)
+	p := setupBootPlane(t)
 	p.Upper = map[string]any{"model": map[string]any{"default": "old", "provider": "custom:old", "base_url": "https://old.example/v1",
 		"api_key": "${OLD_KEY}", "key_env": "OLD_KEY", "api_key_env": "OLD_KEY", "context_length": 123456}}
 	path := filepath.Join(p.Home, "config.yaml")
@@ -52,7 +52,7 @@ func TestModelSwitchRefusesWhenALockLandsAfterTheGuard(t *testing.T) {
 	for _, conflictFirst := range []bool{false, true} {
 		name := map[bool]string{false: "poll", true: "cas-retry"}[conflictFirst]
 		t.Run(name, func(t *testing.T) {
-			p := setupBootPlane(t, true)
+			p := setupBootPlane(t)
 			url := "https://new.example/v1"
 			p.Upper = map[string]any{"model": map[string]any{"default": "old", "provider": "custom:old", "base_url": "https://old.example/v1",
 				"api_key": "${OLD_KEY}", "key_env": "OLD_KEY", "api_key_env": "OLD_KEY", "context_length": 123456},

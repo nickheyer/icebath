@@ -41,7 +41,7 @@ func TestFinalStagedBatchNeverReachesWireAllProviderPrefixed(t *testing.T) {
 				return nil, false, errStaged
 			}
 			t.Cleanup(func() { stageToolCallMessage = orig })
-			a := &AIAgent{provider: "nous", model: "m", sessionID: "s1", validToolNames: map[string]bool{"read_file": true}, quietMode: true}
+			a := &AIAgent{provider: "openrouter", model: "m", sessionID: "s1", validToolNames: map[string]bool{"read_file": true}, quietMode: true}
 			calls := shape([]state.ToolCall{roundToolCall("chatcmpl-tool-a", "a"), roundToolCall("chatcmpl-tool-b", "b")})
 			s := &LoopState{
 				AssistantMessage: &provider.Response{Message: &state.Message{Role: "assistant", Content: "", ToolCalls: calls}},
@@ -94,7 +94,7 @@ func TestAnEmptyFollowUpAfterACardRoundKeepsTheCardsLine(t *testing.T) {
 	}{{"setup_beat", true}, {"terminal", false}} {
 		t.Run(c.tool, func(t *testing.T) {
 			t.Setenv("ICEBATH_HOME", t.TempDir())
-			a := &AIAgent{provider: "nous", model: "m", sessionID: "s1", quietMode: true, apiMode: "chat_completions"}
+			a := &AIAgent{provider: "openrouter", model: "m", sessionID: "s1", quietMode: true, apiMode: "chat_completions"}
 			line := "Pick a colour whenever you're back."
 			messages := []*state.Message{{Role: "user", Content: "hi"}}
 			call := state.ToolCall{ID: "call_" + c.tool, Type: "function", Function: state.ToolCallFunction{Name: c.tool, Arguments: "{}"}}
@@ -147,7 +147,7 @@ func mintCall(rawID string, n int, callID string) state.ToolCall {
 }
 
 func mintAgent() *AIAgent {
-	return &AIAgent{provider: "nous", model: "m", sessionID: "s1", validToolNames: map[string]bool{"read_file": true}}
+	return &AIAgent{provider: "openrouter", model: "m", sessionID: "s1", validToolNames: map[string]bool{"read_file": true}}
 }
 
 // Runs the agent validation mint path and returns the rows a store and replay would carry

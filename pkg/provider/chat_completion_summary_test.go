@@ -10,9 +10,11 @@ import (
 	"slices"
 	"strings"
 	"testing"
+
+	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 )
 
-// Agent side summary state the fake records, the calls hermes assertions read
+// Agent side summary state the fake records, the calls the assertions read
 type summaryFake struct {
 	maxIter                  int
 	suppress, sanitize       bool
@@ -31,7 +33,6 @@ type summaryFake struct {
 	evicted, stripped, drops int
 	kwargs                   map[string]any
 	dispatch                 func(ctx context.Context, apiKwargs map[string]any) (any, error)
-	sdkSeen                  []map[string]any
 }
 
 func (a *fakeChatAgent) s() *summaryFake {
@@ -310,41 +311,14 @@ func TestSummaryRequestSubstitutesSidecarBytes(t *testing.T) {
 	}
 }
 
-// MoA facade double recording the messages each prepared request was built from
-type summaryMoaFacade struct{ prepared [][]map[string]any }
-
-func (f *summaryMoaFacade) PrepareRequest(messages []map[string]any) (map[string]any, error) {
-	f.prepared = append(f.prepared, messages)
-	return map[string]any{"messages": messages}, nil
-}
-
-func TestMaxIterationsSummaryKeepsTheDataUseRequirementOnTheMoaPreparedRequest(t *testing.T) {
-	agent := summaryAgent(t, "chat_completions")
-	agent.provider, agent.baseURL, agent.model = "moa", "moa://local", "review"
-	facade := &summaryMoaFacade{}
-	agent.client = facade
-	agent.s().replies = []any{chatReply("summary")}
-	messages := []map[string]any{
-		{"role": "user", "content": "read my mail"},
-		{"role": "assistant", "content": "", "tool_calls": []any{map[string]any{"id": "c1", "type": "function", "function": map[string]any{"name": "read_file", "arguments": "{}"}}}},
-		{"role": "tool", "tool_call_id": "c1", "content": "inbox", "data_use": []any{"no_training"}},
-	}
-	out, err := HandleMaxIterations(t.Context(), agent, &messages)
-	if err != nil || out != "summary" || len(facade.prepared) != 1 {
-		t.Fatalf("summary %q err %v prepared %d", out, err, len(facade.prepared))
-	}
-	found := false
-	for _, m := range facade.prepared[0] {
-		if m["role"] == "tool" {
-			found = reflect.DeepEqual(m["data_use"], []any{"no_training"})
-		}
-	}
-	if !found || agent.s().sent[0]["_moa_prepared_request"] == nil {
-		t.Fatalf("data_use lost on the MoA prepared request %v", facade.prepared[0])
-	}
-}
-
 func TestIterationSummaryPathHandsTheSDKOnlyEmptyBulkSlots(t *testing.T) {
+	var seen []map[string]any
+	prevBuild := auxSDKBuildRequestFn
+	auxSDKBuildRequestFn = func(c *auxOpenAIClient, kwargs map[string]any) (*auxSDKRequest, error) {
+		seen = append(seen, kwargs)
+		return prevBuild(c, kwargs)
+	}
+	t.Cleanup(func() { auxSDKBuildRequestFn = prevBuild })
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("content-type", "application/json")
 		raw, _ := json.Marshal(chatReply("ok"))
@@ -368,7 +342,6 @@ func TestIterationSummaryPathHandsTheSDKOnlyEmptyBulkSlots(t *testing.T) {
 	if out, err := attempt(t.Context(), 0); err != nil || out != "ok" {
 		t.Fatalf("summary %q %v", out, err)
 	}
-	seen := agent.s().sdkSeen
 	if len(seen) != 1 {
 		t.Fatalf("sdk calls %d", len(seen))
 	}
@@ -378,7 +351,7 @@ func TestIterationSummaryPathHandsTheSDKOnlyEmptyBulkSlots(t *testing.T) {
 	if tl, _ := seen[0]["tools"].([]any); tl == nil || len(tl) != 0 {
 		t.Fatalf("sdk tools slot %v", seen[0]["tools"])
 	}
-	if extra, _ := seen[0]["extra_body"].(map[string]any); !reflect.DeepEqual(extra["messages"], messages) {
+	if extra, _ := pyjson.Plain(seen[0]["extra_body"]).(map[string]any); !reflect.DeepEqual(extra["messages"], messages) {
 		t.Fatalf("extra body messages %v", seen[0]["extra_body"])
 	}
 }

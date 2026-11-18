@@ -431,7 +431,7 @@ func (s *xaiStreamer) pump(ctx context.Context, text string, q chan any, stop *p
 			}
 			enqueued += len(pcm)
 			if enqueued > streamSentenceByteCap {
-				ttsStreamingLog().Warn(fmt.Sprintf("xAI streaming TTS exceeded %d bytes for one sentence; closing upstream", streamSentenceByteCap))
+				pkgLog().Warn(fmt.Sprintf("xAI streaming TTS exceeded %d bytes for one sentence; closing upstream", streamSentenceByteCap))
 				return nil
 			}
 			if !putUnlessStopped(q, pcm, stop, 0.1) {

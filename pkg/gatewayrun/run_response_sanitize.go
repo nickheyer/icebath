@@ -262,7 +262,7 @@ func normalizeEmptyAgentResponse(ctx context.Context, agentResult map[string]any
 			return contextOverflowReply(ctx)
 		}
 		detail := []rune(pyrepr.Str(errorDetail))
-		runLog().Warn(fmt.Sprintf("Agent turn failed; reply sanitized for chat. Detail: %s", string(detail[:min(len(detail), 500)])))
+		pkgLog().Warn(fmt.Sprintf("Agent turn failed; reply sanitized for chat. Detail: %s", string(detail[:min(len(detail), 500)])))
 		return t("gateway.errors.generic_failed", nil)
 	}
 	apiCalls := 0
@@ -299,7 +299,7 @@ func normalizeEmptyAgentResponse(ctx context.Context, agentResult map[string]any
 			reason := ""
 			runes := []rune(err)
 			if looksLikeGatewayProviderError(err) {
-				runLog().Warn(fmt.Sprintf("Agent turn ended partially; reply sanitized for chat. Detail: %s", string(runes[:min(len(runes), 500)])))
+				pkgLog().Warn(fmt.Sprintf("Agent turn ended partially; reply sanitized for chat. Detail: %s", string(runes[:min(len(runes), 500)])))
 			} else {
 				reason = ": " + string(runes[:min(len(runes), 200)])
 			}

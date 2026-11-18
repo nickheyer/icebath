@@ -45,11 +45,18 @@ RUN if [ "$ICEBATH_BOT_DESKTOP" = "1" ]; then \
         rm -rf /var/lib/apt/lists/*; \
     fi
 
+# Chromium policy that keeps the browser from calling Google services on its own
+RUN set -eu; \
+    policy='{"AIModeSettings":1,"AlternateErrorPagesEnabled":false,"BrowserNetworkTimeQueriesEnabled":false,"BrowserSignin":0,"ChromeVariations":2,"ComponentUpdatesEnabled":false,"DefaultBrowserSettingEnabled":false,"DomainReliabilityAllowed":false,"EnableMediaRouter":false,"GenAILocalFoundationalModelSettings":1,"MetricsReportingEnabled":false,"NetworkPredictionOptions":2,"NewTabPageLocation":"about:blank","PasswordLeakDetectionEnabled":false,"PromotionsEnabled":false,"SafeBrowsingProtectionLevel":0,"SearchSuggestEnabled":false,"SpellCheckServiceEnabled":false,"SpellcheckEnabled":false,"SyncDisabled":true,"TranslateEnabled":false,"UrlKeyedAnonymizedDataCollectionEnabled":false}'; \
+    for d in /etc/opt/chrome_for_testing/policies/managed /etc/chromium/policies/managed; do \
+        mkdir -p "$d"; printf '%s\n' "$policy" > "$d/icebath.json"; \
+    done
+
 RUN useradd -u 10000 -m -d /opt/data icebath && \
     mkdir -p /run/s6 /run/service && chown 10000:10000 /run/s6 /run/service
 WORKDIR /opt/icebath
 COPY --from=binary --chmod=0755 /out/icebath /out/icebath-init /opt/icebath/
-COPY --chmod=0644 LICENSE README.md cli-config.yaml.example .env.example /opt/icebath/
+COPY --chmod=0644 LICENSE THIRD_PARTY_NOTICES README.md cli-config.yaml.example .env.example /opt/icebath/
 COPY --chmod=0644 docker/SOUL.md /opt/icebath/docker/SOUL.md
 
 # icebath-init is the init, supervisor, s6 control verbs and tini shim under those names, handing icebath work to the binary beside it
@@ -62,16 +69,15 @@ RUN set -eu; \
         ln -s "/command/$verb" "/usr/bin/$verb"; \
     done
 
-# Hash pinned tools and the NeMo Relay runtime from pm, the tools linked onto PATH by image-tools
+# Hash pinned tools from pm, linked onto PATH by image-tools
 ENV ICEBATH_RUNTIME_DIR=/opt/icebath/tools
 RUN set -eu; \
-    ICEBATH_HOME=/tmp/icebath-image-home /opt/icebath/icebath pm install python chromium npm ffmpeg ripgrep --extra nemo-relay; \
+    ICEBATH_HOME=/tmp/icebath-image-home /opt/icebath/icebath pm install python chromium npm ffmpeg ripgrep; \
     ICEBATH_HOME=/tmp/icebath-image-home /opt/icebath/icebath container-stage image-tools; \
     ffmpeg -version >/dev/null; ffprobe -version >/dev/null; rg --version >/dev/null; \
     python3 --version; node --version; npm --version; npx --version; \
     "$(cat /etc/icebath/chromium-executable-path)" --version; \
-    /opt/icebath/venv/bin/python -I -c 'import nemo_relay'; \
-    rm -rf /tmp/icebath-image-home /opt/icebath/venv-runtime/uv-cache; \
+    rm -rf /tmp/icebath-image-home; \
     chmod -R a+rX,go-w /opt/icebath
 
 # Install method and provenance stamps live beside the code, never in the

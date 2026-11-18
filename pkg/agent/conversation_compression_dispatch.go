@@ -56,7 +56,7 @@ func resolveCompressCall(a *AIAgent, approxTokens *int, focusTopic *string, forc
 		}
 		if a.lastMemoryContextUnsupportedEngine == nil || *a.lastMemoryContextUnsupportedEngine != name {
 			a.lastMemoryContextUnsupportedEngine = &name
-			compressionLog().Warn(fmt.Sprintf("context engine %s does not accept memory_context; continuing without provider-supplied summary context", name))
+			pkgLog().Warn(fmt.Sprintf("context engine %s does not accept memory_context; continuing without provider-supplied summary context", name))
 		}
 	}
 	return compressCall{engine: engine, kwargs: kwargs}
@@ -83,7 +83,7 @@ func runSummaryDispatch(ctx context.Context, a *AIAgent, messages []map[string]a
 		if sid == "" {
 			sid = "none"
 		}
-		compressionLog().Info(fmt.Sprintf("Compression cancelled before summary dispatch (session=%s) — skipping summary work.", sid))
+		pkgLog().Info(fmt.Sprintf("Compression cancelled before summary dispatch (session=%s) — skipping summary work.", sid))
 		return messages, nil
 	}
 	scoped := provider.AuxProgressHook(attemptCtx, progressHook)
@@ -237,7 +237,7 @@ func rebuildSystemPromptAtBoundary(ctx context.Context, a *AIAgent, systemMessag
 	func() {
 		defer func() {
 			if r := recover(); r != nil {
-				compressionLog().Warn("compaction tool-definition refresh failed; keeping the session's existing tool snapshot", "error", fmt.Sprint(r))
+				pkgLog().Warn("compaction tool-definition refresh failed; keeping the session's existing tool snapshot", "error", fmt.Sprint(r))
 			}
 		}()
 		refreshAgentToolDefinitions(ctx, a)
@@ -260,9 +260,9 @@ func rebuildSystemPromptAtBoundary(ctx context.Context, a *AIAgent, systemMessag
 		line := fmt.Sprintf("Compaction rebuilt a drifted system prompt (session=%s, %d -> %d chars): builder output changed since the stored snapshot (update, config change, or memory/skills growth)",
 			sid, utf8.RuneCountInString(cached), utf8.RuneCountInString(rebuilt))
 		if a.compactionPromptDriftLogged {
-			compressionLog().Debug(line)
+			pkgLog().Debug(line)
 		} else {
-			compressionLog().Info(line)
+			pkgLog().Info(line)
 		}
 		a.compactionPromptDriftLogged = true
 	}
@@ -284,7 +284,7 @@ func salvageOrRefuseGrownTranscript(ctx context.Context, a *AIAgent, original, c
 		budget := roughIn
 		if salvaged := SalvageGrownTranscript(ctx, original, compressed, &budget); salvaged != nil {
 			if est := estimateRowsRough(ctx, salvaged); est < roughIn {
-				compressionLog().Info(fmt.Sprintf("Compression salvage recovered a shrinking transcript (session=%s, ~%s -> ~%s tokens)", sid, groupThousands(roughIn), groupThousands(est)))
+				pkgLog().Info(fmt.Sprintf("Compression salvage recovered a shrinking transcript (session=%s, ~%s -> ~%s tokens)", sid, groupThousands(roughIn), groupThousands(est)))
 				compressed, roughOut = salvaged, est
 			}
 		}
@@ -292,7 +292,7 @@ func salvageOrRefuseGrownTranscript(ctx context.Context, a *AIAgent, original, c
 	if roughOut <= roughIn {
 		return compressed, nil, nil
 	}
-	compressionLog().Warn(fmt.Sprintf("Compression refused: compressed transcript would be larger than the original (session=%s, ~%s -> ~%s tokens); keeping the original transcript unchanged", sid, groupThousands(roughIn), groupThousands(roughOut)))
+	pkgLog().Warn(fmt.Sprintf("Compression refused: compressed transcript would be larger than the original (session=%s, ~%s -> ~%s tokens); keeping the original transcript unchanged", sid, groupThousands(roughIn), groupThousands(roughOut)))
 	if cc, ok := a.contextCompressor.(*ContextCompressor); ok {
 		cc.lastCompressRefusedWouldGrow = true
 	}
@@ -380,11 +380,11 @@ func carrySessionStateToChild(ctx context.Context, a *AIAgent, oldSessionID, old
 		return err
 	})
 	if a.sessionDB == nil {
-		compressionLog().Debug("Could not propagate title on compression: 'NoneType' object has no attribute 'set_session_title'")
+		pkgLog().Debug("Could not propagate title on compression: 'NoneType' object has no attribute 'set_session_title'")
 		return
 	}
 	if _, err := a.sessionDB.SetSessionTitle(ctx, a.sessionID, oldTitle); err != nil {
-		compressionLog().Debug(fmt.Sprintf("Could not propagate title on compression: %v", err))
+		pkgLog().Debug(fmt.Sprintf("Could not propagate title on compression: %v", err))
 		return
 	}
 	if src != nil {

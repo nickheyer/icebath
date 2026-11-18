@@ -22,7 +22,7 @@ func pathSuffix(p string) string {
 // ICEBATH_HOME pinned by the systemd unit or launchd plist at definition, empty when it pins none
 func ServicePinnedHome(definition string) (string, error) {
 	if pathSuffix(definition) != ".plist" {
-		return hermesHomePinnedByUnit(definition)
+		return icebathHomePinnedByUnit(definition)
 	}
 	raw, err := os.ReadFile(definition)
 	if err != nil {

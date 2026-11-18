@@ -4,12 +4,14 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"log/slog"
 	"regexp"
 
+	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
+	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/state"
+	"github.com/nickheyer/icebath/pkg/tools"
 )
 
 const apiSettingsPrefix = "gateway.api.settings.v1."
@@ -276,6 +278,31 @@ func APIPolicyScope(ctx context.Context) (context.Context, error) {
 	return BindRoomExecutionPolicy(ctx, bound), nil
 }
 
+// Room member turn text with its images described, empty unless this gateway routes images as text
+func roomImagesAsText(ctx context.Context, settings any, parts, media []any) (string, error) {
+	dispatch, err := pyDictGet(settings, "room_dispatch", nil)
+	if err != nil || dispatch == nil || len(media) == 0 {
+		return "", err
+	}
+	env := &tools.Env{Home: home.Dir(ctx), TerminalScope: tools.GetTerminalScope(ctx)}
+	if tools.DecideImageInputMode(ctx, env, provider.AuxReadMainProvider(ctx), provider.AuxReadMainModel(ctx), "") == "native" {
+		return "", nil
+	}
+	paths, err := restoreNativeMedia(ctx, media)
+	if err != nil {
+		return "", err
+	}
+	text := ""
+	for _, part := range parts {
+		if obj, ok := part.(*pyjson.Object); ok && obj.GetOr("type", nil) == "text" {
+			text, _ = obj.GetOr("text", "").(string)
+			break
+		}
+	}
+	pkgLog().Info(fmt.Sprintf("Image routing: text for a room member turn. Pre-analyzing %d image(s) via vision_analyze.", len(paths)))
+	return VisionImageNotes(ctx, env, text, paths), nil
+}
+
 // Execution state of one admitted API turn, its adapter, settings, history and content
 func prepareAPIExecution(ctx context.Context, a *SessionAuthority, ref SessionRef, payload *pyjson.Object) (*pyjson.Object, error) {
 	adapter, err := checkAPITurn(ctx, a, ref, payload)
@@ -309,6 +336,13 @@ func prepareAPIExecution(ctx context.Context, a *SessionAuthority, ref SessionRe
 			return nil, err
 		}
 		content = restored
+		described, err := roomImagesAsText(ctx, settings, parts, mediaList)
+		if err != nil {
+			return nil, err
+		}
+		if described != "" {
+			content = []any{pyjson.ObjectOf("type", "text", "text", described)}
+		}
 	}
 	var history, author, relay any
 	resume := false
@@ -384,7 +418,7 @@ func notifyObservers(a *SessionAuthority, sessionID, key string, args []any, kwa
 			continue
 		}
 		if err := callback(args, kwargs); err != nil {
-			slog.Warn(fmt.Sprintf("API observer %s failed for %s", key, sessionID), "error", err)
+			pkgLog().Warn(fmt.Sprintf("API observer %s failed for %s", key, sessionID), "error", err)
 			continue
 		}
 		accepted = true

@@ -2,7 +2,6 @@ package provider
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"slices"
 	"strings"
@@ -34,10 +33,9 @@ func TestGetTextAuxiliaryClientReturnsNoneWhenNothingAvailable(t *testing.T) {
 		t.Setenv(name, "")
 	}
 	auxFixedPoolEntry(t, false, nil)
-	prevRows, prevNous := auxRegistryRowsFn, auxResolveNousRuntimeAPIFn
+	prevRows := auxRegistryRowsFn
 	auxRegistryRowsFn = func(context.Context) []*Profile { return nil }
-	auxResolveNousRuntimeAPIFn = func(context.Context, bool, string) (string, string, bool) { return "", "", false }
-	t.Cleanup(func() { auxRegistryRowsFn, auxResolveNousRuntimeAPIFn = prevRows, prevNous })
+	t.Cleanup(func() { auxRegistryRowsFn = prevRows })
 	client, model, err := GetTextAuxiliaryClient(ctx, "", nil)
 	if err != nil || client != nil || model != "" {
 		t.Fatalf("got %v %q %v", client, model, err)
@@ -49,14 +47,13 @@ func TestGetTextAuxiliaryClientCustomEndpointUsesCodexWrapperWhenRuntimeRequests
 	auxClearUnhealthy(t)
 	t.Setenv("OPENROUTER_API_KEY", "")
 	auxFixedPoolEntry(t, false, nil)
-	prevCustom, prevNous, prevMain := auxResolveCustomRuntimeFn, auxResolveNousRuntimeAPIFn, auxReadMainModel
+	prevCustom, prevMain := auxResolveCustomRuntimeFn, auxReadMainModel
 	auxResolveCustomRuntimeFn = func(context.Context) (string, any, string, error) {
 		return "https://api.openai.com/v1", "sk-test", "codex_responses", nil
 	}
-	auxResolveNousRuntimeAPIFn = func(context.Context, bool, string) (string, string, bool) { return "", "", false }
 	auxReadMainModel = func(context.Context) string { return "gpt-5.3-codex" }
 	t.Cleanup(func() {
-		auxResolveCustomRuntimeFn, auxResolveNousRuntimeAPIFn, auxReadMainModel = prevCustom, prevNous, prevMain
+		auxResolveCustomRuntimeFn, auxReadMainModel = prevCustom, prevMain
 	})
 	client, model, err := GetTextAuxiliaryClient(ctx, "", nil)
 	if err != nil || model != "gpt-5.3-codex" {
@@ -174,16 +171,9 @@ func TestIsPaymentError404GenericNotFoundIsNotPayment(t *testing.T) {
 	}
 }
 
-func TestIsModelNotFoundErrorNousOpenrouterCatalog404(t *testing.T) {
+func TestIsModelNotFoundErrorOpenrouterCatalog404(t *testing.T) {
 	if !auxIsModelNotFoundError(auxExc("Model 'gpt-5.4-mini' not found. The requested model does not exist in our configuration or OpenRouter catalog.", 404)) {
 		t.Fatal("catalog 404 not model not found")
-	}
-}
-
-func TestIsModelNotFoundErrorBilling404IsNotModelNotFound(t *testing.T) {
-	exc := auxExc("Model 'gpt-5' is not available on the free tier. Upgrade.", 404)
-	if auxIsModelNotFoundError(exc) || !auxIsPaymentError(exc) {
-		t.Fatalf("model not found %v payment %v", auxIsModelNotFoundError(exc), auxIsPaymentError(exc))
 	}
 }
 
@@ -209,26 +199,6 @@ func TestIsModelIncompatibleErrorNotFoundIsNotIncompatible(t *testing.T) {
 func TestIsModelIncompatibleErrorPayment400IsNotIncompatible(t *testing.T) {
 	if auxIsModelIncompatibleError(auxExc("insufficient credits: model is not supported on free tier", 400)) {
 		t.Fatal("billing 400 is incompatible")
-	}
-}
-
-func TestRefreshNousRecommendedModelFallsBackToDefaultWhenPortalUnavailable(t *testing.T) {
-	ctx := auxMainTestHome(t, "")
-	prev := auxGetNousRecommendedAuxModelFn
-	auxGetNousRecommendedAuxModelFn = func(context.Context, bool, bool) string { panic(errors.New("portal down")) }
-	t.Cleanup(func() { auxGetNousRecommendedAuxModelFn = prev })
-	if out := auxRefreshNousRecommendedModel(ctx, false, "some/dead-model"); out != auxNousModel {
-		t.Fatalf("got %q", out)
-	}
-}
-
-func TestRefreshNousRecommendedModelReturnsNoneWhenNoDistinctAlternative(t *testing.T) {
-	ctx := auxMainTestHome(t, "")
-	prev := auxGetNousRecommendedAuxModelFn
-	auxGetNousRecommendedAuxModelFn = func(context.Context, bool, bool) string { return auxNousModel }
-	t.Cleanup(func() { auxGetNousRecommendedAuxModelFn = prev })
-	if out := auxRefreshNousRecommendedModel(ctx, false, auxNousModel); out != "" {
-		t.Fatalf("got %q", out)
 	}
 }
 

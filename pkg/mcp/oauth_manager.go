@@ -110,7 +110,7 @@ func (m *OAuthManager) getOrBuildProvider(ctx context.Context, serverName, serve
 	defer m.mu.Unlock()
 	e := m.entries[key]
 	if e != nil && e.serverURL != serverURL {
-		mcpLogger().Info(fmt.Sprintf("MCP OAuth '%s': URL changed from %s to %s, discarding cache", serverName, e.serverURL, serverURL))
+		pkgLog().Info(fmt.Sprintf("MCP OAuth '%s': URL changed from %s to %s, discarding cache", serverName, e.serverURL, serverURL))
 		e = nil
 	}
 	if e == nil {
@@ -154,7 +154,7 @@ func (m *OAuthManager) remove(ctx context.Context, serverName, homeDir string) (
 	if err := RemoveOAuthTokens(ctx, serverName, homeDir); err != nil {
 		return e, err
 	}
-	mcpLogger().Info(fmt.Sprintf("MCP OAuth '%s': evicted from cache and removed from disk", serverName))
+	pkgLog().Info(fmt.Sprintf("MCP OAuth '%s': evicted from cache and removed from disk", serverName))
 	return e, nil
 }
 
@@ -223,7 +223,7 @@ func (m *OAuthManager) invalidateIfDiskChanged(ctx context.Context, serverName, 
 		return false, nil
 	}
 	p.initialized = false
-	mcpLogger().Info(fmt.Sprintf("MCP OAuth '%s': tokens file changed (mtime %d -> %d), forcing reload", serverName, old, version.mtimeNs))
+	pkgLog().Info(fmt.Sprintf("MCP OAuth '%s': tokens file changed (mtime %d -> %d), forcing reload", serverName, old, version.mtimeNs))
 	return true, nil
 }
 
@@ -234,7 +234,7 @@ var recoverDiskCheck = (*OAuthManager).invalidateIfDiskChanged
 func (m *OAuthManager) recover401(ctx context.Context, serverName string, e *providerEntry, p *OAuthProvider, key string, pending *pending401) {
 	canRefresh, err := recoverDiskCheck(m, ctx, serverName, "")
 	if err != nil {
-		mcpLogger().Warn(fmt.Sprintf("MCP OAuth '%s': 401 handler failed: %s", serverName, err))
+		pkgLog().Warn(fmt.Sprintf("MCP OAuth '%s': 401 handler failed: %s", serverName, err))
 		canRefresh = false
 	} else if !canRefresh {
 		if lerr := p.lock(ctx); lerr == nil {
@@ -286,7 +286,7 @@ type managerHooks struct {
 }
 
 func (h *managerHooks) logNonfatal(what string, err error) {
-	mcpLogger().Debug(fmt.Sprintf("MCP OAuth '%s': %s failed (non-fatal): %s", h.name, what, err))
+	pkgLog().Debug(fmt.Sprintf("MCP OAuth '%s': %s failed (non-fatal): %s", h.name, what, err))
 }
 
 func (h *managerHooks) beforeFlow(ctx context.Context, _ *OAuthProvider) {
@@ -332,7 +332,7 @@ func (h *managerHooks) prefetchOAuthMetadata(ctx context.Context, p *OAuthProvid
 				err = rerr
 			}
 		}
-		mcpLogger().Debug(fmt.Sprintf("MCP OAuth '%s': %s discovery to %s failed: %s", h.name, label, rawURL, err))
+		pkgLog().Debug(fmt.Sprintf("MCP OAuth '%s': %s discovery to %s failed: %s", h.name, label, rawURL, err))
 		return nil
 	}
 	for _, u := range buildProtectedResourceMetadataDiscoveryURLs("", p.serverURL) {
@@ -362,7 +362,7 @@ func (h *managerHooks) prefetchOAuthMetadata(ctx context.Context, p *OAuthProvid
 			if err := p.storage.SaveOAuthMetadata(ctx, asm); err != nil {
 				return err
 			}
-			mcpLogger().Debug(fmt.Sprintf("MCP OAuth '%s': pre-flight ASM discovered token_endpoint=%s", h.name, asm.TokenEndpoint))
+			pkgLog().Debug(fmt.Sprintf("MCP OAuth '%s': pre-flight ASM discovered token_endpoint=%s", h.name, asm.TokenEndpoint))
 			break
 		}
 	}
@@ -430,7 +430,7 @@ func (h *managerHooks) inspectResponse(ctx context.Context, p *OAuthProvider, r 
 		return
 	}
 	if p.clientMetadataURL != "" && p.clientInfo != nil && p.clientInfo.ClientID == p.clientMetadataURL {
-		mcpLogger().Warn(fmt.Sprintf("MCP OAuth '%s': authorization server rejected our Client ID Metadata Document (%s) "+
+		pkgLog().Warn(fmt.Sprintf("MCP OAuth '%s': authorization server rejected our Client ID Metadata Document (%s) "+
 			"with invalid_client — falling back to dynamic client registration.", h.name, p.clientMetadataURL))
 		p.clientMetadataURL = ""
 		p.storage.MarkCIMDRejected(ctx)
@@ -448,7 +448,7 @@ func (h *managerHooks) flowFinished(ctx context.Context, p *OAuthProvider) {
 	}
 	if existing := p.storage.LoadOAuthMetadata(); existing == nil || existing.TokenEndpoint != md.TokenEndpoint {
 		if err := p.storage.SaveOAuthMetadata(ctx, md); err != nil {
-			mcpLogger().Error(fmt.Sprintf("MCP OAuth '%s': saving discovered metadata failed: %s", h.name, err))
+			pkgLog().Error(fmt.Sprintf("MCP OAuth '%s': saving discovered metadata failed: %s", h.name, err))
 		}
 	}
 }
