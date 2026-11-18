@@ -291,7 +291,7 @@ func (a *app) controlCommands() []slashCommand {
 				return a.resumeByID(child, nil)
 			})
 		}},
-		{name: "setup", help: "configure a section, the provider and model, the agent or shared metrics", usage: "[section]", suggest: func(string) []string {
+		{name: "setup", help: "configure a section, the provider and model, the agent or shared metrics", usage: "[section] [provider]", suggest: func(string) []string {
 			keys := []string{}
 			for _, s := range setupSections() {
 				keys = append(keys, s.key)
@@ -347,9 +347,9 @@ func (a *app) controlCommands() []slashCommand {
 			case "off":
 				a.store.wakeUserDisabled = true
 				return r.rpc("wake.stop", map[string]any{"persist": true}, func(res map[string]any) tea.Cmd {
-					saved := ""
+					saved := detail(res)
 					if truthyJS(res["disabled_persisted"]) {
-						saved = " · " + tr("slashCmd.wake.disabledInConfig")
+						saved += " · " + tr("slashCmd.wake.disabledInConfig")
 					}
 					if truthyJS(res["stopped"]) {
 						r.sys(tr("slashCmd.wake.listenerOff", saved))
@@ -388,15 +388,11 @@ func (a *app) controlCommands() []slashCommand {
 		}},
 		{name: "usage", help: "session usage and plan windows", run: func(r *slashRun) tea.Cmd {
 			if r.sid == "" || !a.gw.canonical() {
-				return r.viaWorker("usage", tr("slashCmd.session.usage.noCalls"))
+				return a.sessionUsage(r)
 			}
 			return tea.Batch(r.ran(), r.rpc("session.stats", map[string]any{"session_id": r.sid}, func(res map[string]any) tea.Cmd {
 				usage := usageFromTick(res)
-				number := func(key string) float64 {
-					n, _ := usage[key].(float64)
-					return n
-				}
-				if number("calls") == 0 {
+				if n, _ := usage["calls"].(float64); n == 0 {
 					r.sys(tr("slashCmd.session.usage.noCalls"))
 				} else {
 					merged := map[string]any{}
@@ -407,25 +403,7 @@ func (a *app) controlCommands() []slashCommand {
 						merged[k] = v
 					}
 					a.store.ui.Usage = merged
-					model, _ := usage["model"].(string)
-					sections := []panelSection{{Rows: [][2]string{
-						{tr("slashCmd.session.usage.rowModel"), model}, {tr("slashCmd.session.usage.rowInputTokens"), groupDigits(number("input"))},
-						{tr("slashCmd.session.usage.rowOutputTokens"), groupDigits(number("output"))}, {tr("slashCmd.session.usage.rowTotalTokens"), groupDigits(number("total"))},
-						{tr("slashCmd.session.usage.rowApiCalls"), groupDigits(number("calls"))},
-					}}}
-					if number("context_max") > 0 {
-						mark := ""
-						if truthyJS(usage["context_estimated"]) {
-							mark = "~"
-						}
-						text := tr("slashCmd.session.usage.context", mark+groupDigits(number("context_used")), groupDigits(number("context_max")), mark+jsString(number("context_percent")))
-						sections = append(sections, panelSection{Text: &text})
-					}
-					if n := number("compressions"); n > 0 {
-						text := tr("slashCmd.session.usage.compressions", jsString(n))
-						sections = append(sections, panelSection{Text: &text})
-					}
-					a.panel(tr("slashCmd.session.usage.usageTitle"), sections)
+					a.panel(tr("slashCmd.session.usage.usageTitle"), usageTotalsSections(usage))
 				}
 				r.sys(tr("slashCmd.session.usage.cta"))
 				return gatewayCall(a.gw, "billing.state", map[string]any{}, func(v any, err error) tea.Cmd {

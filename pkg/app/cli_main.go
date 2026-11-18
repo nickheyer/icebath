@@ -14,7 +14,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/i18n"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/profiles"
-	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/skills"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
@@ -31,9 +30,6 @@ type MainOptions struct {
 
 // ErrSetupCancelled reports a provider picker the user left with Ctrl+C, EOF or an exit
 var ErrSetupCancelled = errors.New("provider setup cancelled")
-
-// Seam over the shared provider picker, the hermes_cli.main.select_provider_and_model the first run tests patch
-var firstRunProviderPicker = provider.SelectProviderAndModel
 
 // Runs one query or image turn in process and returns the exit code with the error it raises
 func Main(ctx context.Context, o MainOptions) (code int, err error) {

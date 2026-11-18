@@ -118,7 +118,7 @@ func (slackPlatformPlugin) Register(ctx *plugins.Context) error {
 		}),
 		Check:       slackDepsPresent,
 		RequiredEnv: []string{"SLACK_BOT_TOKEN", "SLACK_APP_TOKEN"},
-		InstallHint: "Run `icebath setup` to install Slack support.",
+		InstallHint: "Start `icebath` and type `/setup gateway` to install Slack support.",
 		Extra:       extra,
 	})
 	return err

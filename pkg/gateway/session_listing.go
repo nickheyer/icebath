@@ -237,7 +237,7 @@ func storedClosed(ctx context.Context, a *SessionAuthority, actor Principal, own
 	if row == nil || row.GetOr("ended_at", nil) == nil {
 		return false, nil
 	}
-	admissions, err := a.DB.ListSessionAdmissions(ctx, owner, false)
+	admissions, err := a.DB.ListSessionAdmissions(ctx, owner, true)
 	if err != nil {
 		return false, err
 	}

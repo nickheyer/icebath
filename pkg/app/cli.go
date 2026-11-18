@@ -183,8 +183,6 @@ type seededQueryMessage struct {
 	AdmissionID string
 }
 
-func (m *seededQueryMessage) String() string { return m.Text }
-
 // chatTurn holds the per turn state the chat phases and the agent worker share
 type chatTurn struct {
 	mu                    sync.Mutex
@@ -340,7 +338,6 @@ type CLI struct {
 	activeAgentRouteSignature  string
 	agent                      atomic.Pointer[cliAgentSlot]
 	toolCallbacksInstalled     bool
-	app                        tuiApplication
 	conversationHistory        []map[string]any
 	sessionStart               time.Time
 	promptStartTime            *float64
@@ -363,129 +360,122 @@ type CLI struct {
 	quietNotifyLingerDone      bool
 	ownsProcessNotification    func(map[string]any) bool
 
-	pendingInput                    *inputQueue
-	interruptQueue                  *inputQueue
-	agentRunning                    bool
-	shouldExit                      bool
-	detachOnExit                    bool
-	lastTurnInterrupted             bool
-	terminalIOBroken                bool
-	deleteSessionOnExit             bool
-	pendingRelaunch                 []string
-	lastCtrlCTime                   float64
-	clarifyState                    *clarifyModalState
-	clarifyMultiBase                *[]string
-	clarifyFreetext                 bool
-	clarifyPrefill                  string
-	sudoState                       *sudoModalState
-	modalInputSnapshot              *modalInputSnapshot
-	approvalState                   *approvalModalState
-	slashConfirmState               *slashConfirmModalState
-	modelPickerState                any
-	clarifyDeadline                 *float64
-	sudoDeadline                    float64
-	approvalDeadline                float64
-	slashConfirmDeadline            float64
-	approvalLock                    sync.Mutex
-	composerPlaceholder             string
-	commandPaletteState             *commandPaletteModalState
-	secretState                     *secretModalState
-	pendingResumeSessions           []map[string]any
-	pendingAgentSeed                any
-	slashWorker                     bool
-	slashMetricsOff                 bool
-	secretDeadline                  float64
-	toolStartTime                   float64
-	pendingToolInfo                 map[string][]map[string]any
-	spinnerText                     string
-	commandStatus                   string
-	lastScrollbackTool              string
-	commandRunning                  bool
-	commandBlocksInput              bool
-	petRenderer                     *pet.Renderer
-	petAnimRunning                  bool
-	petAnimStop                     chan struct{}
-	petSlug                         string
-	petKittyPending                 string
-	petEnabled                      bool
-	petCols                         int
-	petScale                        float64
-	petFramesCache                  map[string][][][]pet.Cell
-	petKittyCache                   map[string]*petKittyEntry
-	petAnimDone                     chan struct{}
-	statusBarTitleSessionID         string
-	statusBarTitleCache             string
-	statusBarTitleCheckedAt         float64
-	statusBarFieldSet               map[string]bool
-	statusBarFieldSetLoaded         bool
-	voiceRecordKeyDisplayCache      string
-	goalManager                     goals.Manager
-	automationStale                 bool
-	petKittyImageID                 int
-	petFrameIdx                     int
-	petLock                         sync.Mutex
-	petCfgChecked                   float64
-	petEventUntil                   float64
-	petEvent                        string
-	petReasoning                    bool
-	petTurnError                    bool
-	attachedImages                  []string
-	imageCounter                    int
-	promptStash                     *config.PromptStash
-	preloadedSkills                 []string
-	startupSkillsLineShown          bool
-	autoLoadSkillsResult            *skillsPromptResult
-	preloadSkillsDone               chan struct{}
-	preloadSkillsResult             *skillsPromptResult
-	preloadSkillsError              error
-	preloadSkillsRequested          []string
-	preloadSkillsFinalized          bool
-	activeSessionLease              ActiveSessionLease
-	voiceLock                       sync.Mutex
-	voiceMode                       bool
-	voiceTTS                        bool
-	voiceRecording                  bool
-	voiceProcessing                 bool
-	voiceContinuous                 bool
-	voiceRecorder                   any
-	voiceTTSStop                    *syncEvent
-	voiceLiveText                   string
-	voiceTTSDone                    *syncEvent
-	voiceBargeCapture               *syncEvent
-	voiceLastTTSText                string
-	voiceBargePhase                 string
-	voiceExtra                      cliVoiceExtra
-	statusBarVisible                bool
-	batteryVisible                  bool
-	vimMode                         bool
-	statusBarSuppressedAfterResize  atomic.Bool
-	resizeRecoveryPending           bool
-	resizeRecoveryLock              sync.Mutex
-	resizeRecoveryTimer             *time.Timer
-	statusBarUnsuppressTimer        *time.Timer
-	lastResizeWidth                 *int
-	backgroundTasks                 map[string]chan struct{}
-	backgroundTaskCounter           int
-	cacheHitBaselinePrompt          int
-	cacheHitBaselineRead            int
-	cacheHitBaselineCompressions    int
-	cacheHitBaselineModel           string
-	seededFirstMessage              *seededQueryMessage
-	gatewaySessionOpen              bool
-	gatewayPluginCommands           *gatewayPluginCatalog
-	gatewaySkills                   *gatewaySkillCatalog
-	gatewayPluginToolsetCache       *gatewayToolsetCatalog
-	gatewayCommandWait              *pythread.Event
-	observeUnsupported              *gatewayBoundary
-	observeNoticeShown              bool
-	backgroundReviewNoticeDelivered bool
-	turnCtx                         context.Context
-	turnCancel                      context.CancelFunc
-	signalStop                      func()
-	uiMu                            sync.Mutex
-	connectionState                 any
-	tui                             tuiRunState
-	subagentMonitor                 *subagentMonitor
+	pendingInput                   *inputQueue
+	interruptQueue                 *inputQueue
+	agentRunning                   bool
+	shouldExit                     bool
+	detachOnExit                   bool
+	lastTurnInterrupted            bool
+	deleteSessionOnExit            bool
+	pendingRelaunch                []string
+	lastCtrlCTime                  float64
+	clarifyState                   *clarifyModalState
+	clarifyMultiBase               *[]string
+	clarifyFreetext                bool
+	clarifyPrefill                 string
+	sudoState                      *sudoModalState
+	approvalState                  *approvalModalState
+	slashConfirmState              *slashConfirmModalState
+	modelPickerState               any
+	clarifyDeadline                *float64
+	sudoDeadline                   float64
+	approvalDeadline               float64
+	slashConfirmDeadline           float64
+	approvalLock                   sync.Mutex
+	composerPlaceholder            string
+	commandPaletteState            *commandPaletteModalState
+	secretState                    *secretModalState
+	pendingResumeSessions          []map[string]any
+	pendingAgentSeed               any
+	slashWorker                    bool
+	slashMetricsOff                bool
+	secretDeadline                 float64
+	toolStartTime                  float64
+	pendingToolInfo                map[string][]map[string]any
+	spinnerText                    string
+	commandStatus                  string
+	lastScrollbackTool             string
+	commandRunning                 bool
+	commandBlocksInput             bool
+	petRenderer                    *pet.Renderer
+	petAnimRunning                 bool
+	petAnimStop                    chan struct{}
+	petSlug                        string
+	petKittyPending                string
+	petEnabled                     bool
+	petCols                        int
+	petScale                       float64
+	petFramesCache                 map[string][][][]pet.Cell
+	petKittyCache                  map[string]*petKittyEntry
+	petAnimDone                    chan struct{}
+	statusBarTitleSessionID        string
+	statusBarTitleCache            string
+	statusBarTitleCheckedAt        float64
+	statusBarFieldSet              map[string]bool
+	statusBarFieldSetLoaded        bool
+	voiceRecordKeyDisplayCache     string
+	goalManager                    goals.Manager
+	automationStale                bool
+	petKittyImageID                int
+	petFrameIdx                    int
+	petLock                        sync.Mutex
+	petCfgChecked                  float64
+	petEventUntil                  float64
+	petEvent                       string
+	petReasoning                   bool
+	petTurnError                   bool
+	attachedImages                 []string
+	imageCounter                   int
+	promptStash                    *config.PromptStash
+	preloadedSkills                []string
+	startupSkillsLineShown         bool
+	autoLoadSkillsResult           *skillsPromptResult
+	preloadSkillsDone              chan struct{}
+	preloadSkillsResult            *skillsPromptResult
+	preloadSkillsError             error
+	preloadSkillsRequested         []string
+	preloadSkillsFinalized         bool
+	activeSessionLease             ActiveSessionLease
+	voiceLock                      sync.Mutex
+	voiceMode                      bool
+	voiceTTS                       bool
+	voiceRecording                 bool
+	voiceProcessing                bool
+	voiceContinuous                bool
+	voiceRecorder                  any
+	voiceTTSStop                   *syncEvent
+	voiceLiveText                  string
+	voiceTTSDone                   *syncEvent
+	voiceBargeCapture              *syncEvent
+	voiceLastTTSText               string
+	voiceBargePhase                string
+	voiceExtra                     cliVoiceExtra
+	statusBarVisible               bool
+	batteryVisible                 bool
+	vimMode                        bool
+	statusBarSuppressedAfterResize atomic.Bool
+	resizeRecoveryPending          bool
+	resizeRecoveryTimer            *time.Timer
+	statusBarUnsuppressTimer       *time.Timer
+	lastResizeWidth                *int
+	backgroundTasks                map[string]chan struct{}
+	backgroundTaskCounter          int
+	cacheHitBaselinePrompt         int
+	cacheHitBaselineRead           int
+	cacheHitBaselineCompressions   int
+	cacheHitBaselineModel          string
+	gatewaySessionOpen             bool
+	gatewayPluginCommands          *gatewayPluginCatalog
+	gatewaySkills                  *gatewaySkillCatalog
+	gatewayPluginToolsetCache      *gatewayToolsetCatalog
+	gatewayCommandWait             *pythread.Event
+	observeUnsupported             *gatewayBoundary
+	observeNoticeShown             bool
+	turnCtx                        context.Context
+	turnCancel                     context.CancelFunc
+	signalStop                     func()
+	uiMu                           sync.Mutex
+	connectionState                any
 	cliCommandState
 }
 
@@ -534,8 +524,6 @@ var (
 	outputHistorySuppressed                  bool
 	outputHistoryMaxLines                    = 200
 	outputHistory                            []any
-	activeTUIApp                             tuiApplication
-	activeTUIAppMu                           sync.Mutex
 	osExit                                   = os.Exit
 	TryAcquireActiveSession                  func(ctx context.Context, sessionID, surface string, cfg map[string]any, metadata map[string]any) (ActiveSessionLease, *activesessions.Refusal, error)
 	FormatRefusalStderr                      func(message *activesessions.Refusal) string
@@ -673,13 +661,6 @@ func markSessionHandedOff(sessionID string) {
 	sessionIDSetsMu.Lock()
 	handedOffSessionIDs[sessionID] = true
 	sessionIDSetsMu.Unlock()
-}
-
-// Returns the active TUI application when run owns the screen, nil otherwise
-func tuiApp() tuiApplication {
-	activeTUIAppMu.Lock()
-	defer activeTUIAppMu.Unlock()
-	return activeTUIApp
 }
 
 // Configures the recent CLI output replayed after terminal redraws

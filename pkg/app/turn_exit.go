@@ -15,8 +15,3 @@ type TurnExitOptions = kanban.TurnExitOptions
 func TurnExitCode(result map[string]any, o TurnExitOptions) int {
 	return kanban.TurnExitCode(result, o)
 }
-
-// CredentialFailureFlags reads the exit code credential flags from an error raised before any turn ran
-func CredentialFailureFlags(err error) (rateLimited, terminal, found bool) {
-	return kanban.CredentialFailureFlags(err)
-}

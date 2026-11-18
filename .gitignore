@@ -491,6 +491,7 @@ dist/
 
 # Install markers and build outputs of an installer made checkout, never a code change, admitted by the ZIP update guard
 /venv/
+/venv-runtime/
 .bytecode-fingerprint
 .bytecode-fingerprint.tmp
 .icebath-bootstrap-complete

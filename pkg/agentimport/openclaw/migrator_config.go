@@ -845,7 +845,7 @@ func (m *Migrator) generateMigrationNotes() {
 		"",
 		"After migration, you may want to:",
 		"- Run `icebath claw cleanup` to archive the OpenClaw directory (prevents state confusion)",
-		"- Run `icebath setup` to configure any remaining settings",
+		"- Start `icebath` and type `/setup` to configure any remaining settings",
 		"- Run `icebath mcp list` to verify MCP servers were imported correctly",
 	)
 	if hasCronConfig {

@@ -172,9 +172,9 @@ func TestMinimaxResolveQuarantinesDeadTokensOnTerminalRefreshFailure(t *testing.
 func TestMinimaxOAuthLoginSetsActiveProvider(t *testing.T) {
 	h := newTestHome(t)
 	env := testEnv(t, h)
-	prevSleep := minimaxSleepFn
-	minimaxSleepFn = func(time.Duration) {}
-	t.Cleanup(func() { minimaxSleepFn = prevSleep })
+	prevSleep := oauthSleep
+	oauthSleep = func(time.Duration) {}
+	t.Cleanup(func() { oauthSleep = prevSleep })
 	polls := 0
 	scriptClient(t, &minimaxHTTPClientFn, func(req *http.Request) (*http.Response, error) {
 		form := readForm(t, req)

@@ -12,10 +12,14 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/internal/pyhost"
+	"github.com/nickheyer/icebath/pkg/pm"
 )
 
 // Hidden verb of the binary that hosts nemo_relay in an embedded interpreter
 const Entry = "relay-host"
+
+// Hidden verb of the binary that provisions the relay runtime environment as a detached child
+const ProvisionEntry = "relay-provision"
 
 const (
 	exitStartFailed    = 3
@@ -26,11 +30,18 @@ const (
 
 var entryDispatched atomic.Bool
 
-// Runs the relay host child when this binary was started as one, exiting with its status
+// Registers the provisioning child command, then runs the relay host or provisioning child when started as one
 func DispatchRelayHostEntry(ctx context.Context) {
 	entryDispatched.Store(true)
-	if len(os.Args) > 1 && os.Args[1] == Entry {
+	pm.RegisterRuntimeProvisioner(provisionCommand)
+	if len(os.Args) < 2 {
+		return
+	}
+	switch os.Args[1] {
+	case Entry:
 		os.Exit(runChild(ctx, os.Args[2:]))
+	case ProvisionEntry:
+		os.Exit(pm.ServeRuntimeProvisioning(ctx, os.Args[2:]))
 	}
 }
 

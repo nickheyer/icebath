@@ -210,7 +210,7 @@ func (c *CLI) addTreeA(root *cobra.Command) {
 	c.addGateway(root)
 	c.addLSP(root)
 
-	setup := c.newCmd(root, "setup", "Interactive setup wizard", "Configure Icebath Agent with an interactive wizard. Run a specific section: icebath setup model|tts|terminal|gateway|tools|telemetry|agent")
+	setup := c.newCmd(root, "setup", "Interactive setup wizard", "Configure Icebath Agent with an interactive wizard. Every section also runs in the terminal UI: start icebath and type /setup model|tts|terminal|gateway|tools|telemetry|agent")
 	c.pos(setup, pOptChoice("section", "", "model", "tts", "terminal", "gateway", "tools", "telemetry", "agent").withHelp("Run a specific setup section instead of the full wizard"))
 	bf(setup, "non-interactive", "", "Non-interactive mode (use defaults/env vars)")
 	bf(setup, "reset", "", "Reset configuration to defaults")
@@ -239,7 +239,7 @@ func (c *CLI) addTreeA(root *cobra.Command) {
 
 	c.addSend(root)
 
-	login := c.newCmd(root, "login", "", "Deprecated. Use `icebath auth` to manage credentials, `icebath model` to select a provider, or `icebath setup` for full setup.")
+	login := c.newCmd(root, "login", "", "Deprecated. Use `icebath auth` to manage credentials, `icebath model` to select a provider, or start `icebath` and type `/setup` for full setup.")
 	login.Hidden = true
 	sf(login, "provider", "", "", "(deprecated) Provider name; ignored — see `icebath model`")
 	nousLoginFlags(login, "")
@@ -400,7 +400,7 @@ func (c *CLI) addGateway(root *cobra.Command) {
 	bf(gmigrate, "dry-run", "", "Print the plan and blockers without changing anything")
 	bf(gmigrate, "yes", "y", "Apply without confirmation")
 	enroll := c.newCmd(gw, "enroll", "Enroll this gateway with a relay connector (writes relay auth creds to .env)",
-		"Redeem a single-use enrollment token with a relay connector. Authenticates as your Nous Portal account (the connector derives the authoritative tenant from it), mints this gateway's per-gateway secret and per-tenant delivery key, and writes GATEWAY_RELAY_ID / GATEWAY_RELAY_SECRET / GATEWAY_RELAY_DELIVERY_KEY into ~/.icebath/.env. Requires being logged in (icebath setup). Not available in managed installs.")
+		"Redeem a single-use enrollment token with a relay connector. Authenticates as your Nous Portal account (the connector derives the authoritative tenant from it), mints this gateway's per-gateway secret and per-tenant delivery key, and writes GATEWAY_RELAY_ID / GATEWAY_RELAY_SECRET / GATEWAY_RELAY_DELIVERY_KEY into ~/.icebath/.env. Requires being logged in (start icebath and type /setup model). Not available in managed installs.")
 	sf(enroll, "token", "", "", "The single-use enrollment token from the connector (delivered with your gateway config). Also settable via GATEWAY_RELAY_ENROLL_TOKEN.")
 	sf(enroll, "connector-url", "", "", "The connector base/relay URL, e.g. wss://connector.example.com/relay or https://connector.example.com. Also settable via GATEWAY_RELAY_URL / gateway.relay_url in config.yaml.")
 	sf(enroll, "gateway-id", "", "", "A stable id for this gateway instance (kill-switch granularity). Defaults to gw-<hostname>.")
@@ -572,7 +572,7 @@ func init() { BuiltinSubcommands["import-agent"], BuiltinSubcommands["claw"] = t
 // Adds icebath import-agent and icebath claw with their migrate and cleanup subcommands
 func (c *CLI) addImportAgent(root *cobra.Command) {
 	ia := c.newCmd(root, "import-agent", "Import an OpenClaw, Claude Code, Codex CLI, Cursor, Grok Bot or OpenBot setup into Icebath",
-		"One-command import of another agent's setup into Icebath. Maps CLAUDE.md/AGENTS.md instructions, Cursor rules, permission allowlists, MCP servers, skills, and memories into their Icebath equivalents; Grok Bot and OpenBot routines become cron jobs. Always shows a preview before making changes. API keys and credentials are never imported — run 'icebath setup' for those. OpenClaw (the former 'icebath claw migrate') imports allowlisted secrets only with --migrate-secrets.")
+		"One-command import of another agent's setup into Icebath. Maps CLAUDE.md/AGENTS.md instructions, Cursor rules, permission allowlists, MCP servers, skills, and memories into their Icebath equivalents; Grok Bot and OpenBot routines become cron jobs. Always shows a preview before making changes. API keys and credentials are never imported — start 'icebath' and type '/setup model' for those. OpenClaw (the former 'icebath claw migrate') imports allowlisted secrets only with --migrate-secrets.")
 	c.pos(ia, pOptChoice("agent", "", "openclaw", "claude-code", "codex", "cursor", "grok-bot", "openbot").withHelp("Which agent to import from (default: auto-detect "+importDirsHint+")"))
 	sf(ia, "source", "", "", "Path to the agent's config directory (default: "+importDirsHint+"); for grok-bot, the export file the Bot wrote (or a folder of them, or - to read a pasted reply from stdin); for openbot, its user data folder (the one holding openbot.db)")
 	bf(ia, "dry-run", "", "Preview only — stop after showing what would be imported")

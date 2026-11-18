@@ -11,6 +11,7 @@ import (
 	"sync"
 	"syscall"
 
+	"github.com/nickheyer/icebath/pkg/internal/pyhttpx"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 )
@@ -97,7 +98,7 @@ func (s *anthSDKMessageStream) Next(ctx context.Context) (any, error) {
 				_ = s.Close()
 				return nil, io.EOF
 			}
-			return nil, anthStreamReadError(err)
+			return nil, sdkStreamReadError(err, s.resp)
 		}
 		switch f.Event {
 		case "completion", "message_start", "message_delta", "message_stop", "content_block_start", "content_block_delta", "content_block_stop":
@@ -140,16 +141,25 @@ func (s *anthSDKMessageStream) errorEvent(data string) error {
 	return &AuxSDKError{Class: auxSDKStatusClass(s.resp.StatusCode), StatusCode: s.resp.StatusCode, Message: message, Body: body, Headers: s.resp.Header.Clone()}
 }
 
-// Transport failure reading the body as the httpx error class the reader raises
-func anthStreamReadError(err error) error {
+// Transport failure reading the body as the httpx error class and text the reader raises, carrying the request
+func sdkStreamReadError(err error, resp *http.Response) error {
+	out := &AuxTransportError{Class: "RemoteProtocolError", Message: err.Error(), Err: err}
 	var ne net.Error
 	if errors.As(err, &ne) && ne.Timeout() {
-		return &AuxTransportError{Class: "ReadTimeout", Message: "timed out", Err: err}
+		out.Class, out.Message = "ReadTimeout", "timed out"
+	} else if errors.Is(err, syscall.ECONNRESET) || errors.Is(err, syscall.EPIPE) || errors.Is(err, syscall.ECONNABORTED) {
+		out.Class, out.Message = "ReadError", pyhttpx.OSErrorText(err)
 	}
-	if errors.Is(err, syscall.ECONNRESET) || errors.Is(err, syscall.EPIPE) || errors.Is(err, syscall.ECONNABORTED) {
-		return &AuxTransportError{Class: "ReadError", Message: err.Error(), Err: err}
+	out.Request = failedRequestOfResponse(resp)
+	return out
+}
+
+// Buffered request behind a response, nil without one
+func failedRequestOfResponse(resp *http.Response) *FailedStreamRequest {
+	if resp == nil || resp.Request == nil {
+		return nil
 	}
-	return &AuxTransportError{Class: "RemoteProtocolError", Message: err.Error(), Err: err}
+	return failedStreamRequestOf(resp.Request)
 }
 
 // Fills a null usage on message_start and message_delta before the snapshot accumulates it

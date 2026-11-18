@@ -134,7 +134,7 @@ func TestV11ConfigIsRefusedAndUntouched(t *testing.T) {
 	}
 	out, errOut := output()
 	fragment := "This config predates version 12 (~2 years old) and can no longer be auto-migrated."
-	if !strings.Contains(out, fragment) || !strings.Contains(errOut, fragment) || !strings.Contains(out, "run `icebath setup` to regenerate") ||
+	if !strings.Contains(out, fragment) || !strings.Contains(errOut, fragment) || !strings.Contains(out, "type `/setup` to regenerate it") ||
 		!strings.Contains(out, "_config_version: 12") || strings.Contains(out, "Config version:") {
 		t.Fatalf("stdout %q stderr %q", out, errOut)
 	}

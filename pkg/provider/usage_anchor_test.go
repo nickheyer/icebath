@@ -6,6 +6,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/state"
 )
 
@@ -179,6 +180,54 @@ func TestAnchorInvalidationPersistAndRestoreAcrossProcesses(t *testing.T) {
 		t.Fatal("persist disabled writes nothing and a non turn base set keeps the turn anchor")
 	}
 	(&UsageAnchorState{SessionID: "s4", Store: &anchorStore{fail: true}}).Set(nil, false)
+}
+
+func TestAnchorFingerprintsMatchTheReferenceDigests(t *testing.T) {
+	if got := MessageFingerprint(anchorMsg("user", "markdown")); got != "4c2fa7cd7d8f7ccbeff8580c143b346e85c30005e7a9993766e6dd0987f70f86" {
+		t.Fatalf("user fingerprint %s", got)
+	}
+	if got := pricedPrefixFingerprint([]*state.Message{anchorMsg("user", "markdown")}, 1); got != "78785a98c15c63ae0b58342873a12b4e6ba6defbf825ac5a687a4d0ca9ec891d" {
+		t.Fatalf("prefix fingerprint %s", got)
+	}
+	messages := []*state.Message{anchorMsg("user", "café 日本語 \U0001f680"),
+		{Role: "assistant", ToolCalls: []state.ToolCall{{ID: "call_1", Type: "function", Function: state.ToolCallFunction{Name: "terminal", Arguments: `{"command": "ls"}`}}}},
+		{Role: "tool", Content: "ok", ToolCallID: "call_1"}}
+	want := []string{"09bce09fb701cca555bc4039e7dce7b10151fb614eb95fed2e40abc0861ab4f8", "7ddd43e27343f19a1c4804853db9f8e5f313aa87bfd83f3c58892a795bd88f46",
+		"7443da779ab0f3c84d3c59d67de556efc233da5bea6944797af0a9ca8b19c32f"}
+	for i, m := range messages {
+		if got := MessageFingerprint(m); got != want[i] {
+			t.Fatalf("message %d fingerprint %s", i, got)
+		}
+	}
+	anchor := CaptureUsageAnchor(1200, 80, messages)
+	if anchor.BasePrefixFP != "beeb87e2a90759f2974a00d6681e056a254a147eefda5e98b624dbb5975457ca" {
+		t.Fatalf("prefix fingerprint %s", anchor.BasePrefixFP)
+	}
+	store := &anchorStore{rows: map[string]map[string]any{}}
+	(&UsageAnchorState{SessionID: "s1", Store: store}).Set(anchor, true)
+	text, err := pyjson.Dumps(store.rows["s1"][UsageAnchorModelConfigKey])
+	if err != nil || text != `{"prompt_tokens": 1200, "completion_tokens": 80, "base_count": 3, "base_last_role": "tool", "base_last_fp": "7443da779ab0f3c84d3c59d67de556efc233da5bea6944797af0a9ca8b19c32f", "base_prefix_fp": "beeb87e2a90759f2974a00d6681e056a254a147eefda5e98b624dbb5975457ca"}` {
+		t.Fatalf("persisted blob %s %v", text, err)
+	}
+}
+
+func TestAnchorRestoresFromTheBlobTheSessionRowLoads(t *testing.T) {
+	messages := anchorPlainHistory()
+	anchor := CaptureUsageAnchor(30_000, 50, messages)
+	text, err := pyjson.Dumps(anchor.toObject())
+	if err != nil {
+		t.Fatal(err)
+	}
+	loaded, err := pyjson.Loads(text)
+	if err != nil {
+		t.Fatal(err)
+	}
+	store := &anchorStore{rows: map[string]map[string]any{"s1": {UsageAnchorModelConfigKey: loaded}}}
+	fresh := &UsageAnchorState{SessionID: "s1", Store: store}
+	fresh.Restore(messages, true)
+	if fresh.Anchor == nil || *fresh.Anchor != *anchor {
+		t.Fatalf("restored %+v from %T", fresh.Anchor, loaded)
+	}
 }
 
 func TestPlanPromptIncludesTaskVerbatimAndInfersWithoutOne(t *testing.T) {

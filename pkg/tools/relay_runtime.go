@@ -153,11 +153,12 @@ var (
 	relayBindingLoader func() (*NemoRelay, error)
 )
 
-// Installs the native binding loader the runtime imports on first use
+// Installs the native binding loader the runtime imports on first use, dropping the readiness check of the loader it replaces
 func RegisterNemoRelayBinding(load func() (*NemoRelay, error)) {
 	relayBindingMu.Lock()
 	relayBindingLoader = load
 	relayBindingMu.Unlock()
+	RegisterNemoRelayReadiness(nil)
 }
 
 // Loads the binding only when a producer or consumer needs Relay

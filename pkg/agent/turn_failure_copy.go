@@ -262,7 +262,7 @@ const nonretryableDefaultCopy = "{label} rejected the request and retrying won't
 var authCopy = map[string]string{
 	"oauth": "{label} rejected your sign-in, so the model can't be reached. Sign in again: `{relogin}`.",
 	"api_key": "{label} rejected your API key, so the model can't be reached. Update it in " +
-		"Settings → Providers, or run `icebath setup` in a terminal.",
+		"Settings → Providers, or start `icebath` and type `/setup model`.",
 }
 
 // Chat copy once retries and fallback are exhausted, naming a known reset window or the lifetime cap

@@ -466,12 +466,16 @@ func printNumbered(out io.Writer, title string, rows []string, defaultIdx int) {
 	}
 }
 
-// Use, reauth or cancel from the standard radio prompt with a numbered fallback
+// Use, reauth or cancel from the standard radio prompt with a numbered fallback, a TUI back out cancelling
 func promptAuthCredentialsChoice(out io.Writer, title string) string {
 	choices := []string{"Use existing credentials", "Reauthenticate (new OAuth login)", "Cancel"}
-	if idx, ok := cursesChoice(title, choices, 0); ok && idx >= 0 {
+	idx, ok := cursesChoice(title, choices, 0)
+	switch {
+	case ok && idx >= 0:
 		fmt.Fprintln(out)
 		return []string{"use", "reauth", "cancel"}[idx]
+	case ok && hostedAsker() != nil:
+		return "cancel"
 	}
 	printNumbered(out, title, choices, 0)
 	fmt.Fprintln(out)

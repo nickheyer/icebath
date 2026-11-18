@@ -34,6 +34,7 @@ type turnRun struct {
 	terminalCallback func(map[string]any)
 	receiptCommitted bool
 	sessionEnv       *tools.Env
+	agentEnv         *tools.Env
 	homeCtx          context.Context
 	result           map[string]any
 	ttsQueue         *ttsTurnQueue
@@ -290,6 +291,7 @@ func prepareTurnInput(ctx context.Context, sid string, session *tuigateway.Sessi
 	adoptOutOfBandTurns(ctx, session)
 	a := sessionAgent(session)
 	st.agent = a
+	st.agentEnv = bindAgentTurnEnv(a, env, sessionKey)
 	syncAgentDaybreak(ctx, a)
 	unlock := lockHistory(session)
 	st.history = historyList(session.Get("history"))
@@ -535,8 +537,8 @@ func persistedTurnReceiptOf(st *turnRun, raw any, status string) map[string]any 
 	}
 	return agent.PersistedTurnReceipt(st.result["messages"], st.agent.PersistUserMessageIdx(), historyAsMessages(st.history), raw, status,
 		unchanged, func(before, after any) bool {
-			b := agent.CommittedRowID(before)
-			return b != nil && pyjson.Equal(b, agent.CommittedRowID(after))
+			b, c := agent.CommittedRowID(before), agent.CommittedRowID(after)
+			return b != nil && c != nil && *b == *c
 		})
 }
 
@@ -703,6 +705,24 @@ func releaseTurnScopes(ctx context.Context, sid string, session *tuigateway.Sess
 	}
 	suppress(func() { tools.ResetCurrentSessionKey(st.sessionEnv) })
 	clearSessionContext(st.sessionEnv)
+	if st.agentEnv != nil {
+		suppress(func() { tools.ResetCurrentSessionKey(st.agentEnv) })
+		clearSessionContext(st.agentEnv)
+	}
+}
+
+// Mirrors the turn's session variables and approval key onto the agent's tool env, nil when they are the same
+func bindAgentTurnEnv(a *agent.AIAgent, env *tools.Env, sessionKey string) *tools.Env {
+	if a == nil || a.Env() == nil || a.Env() == env {
+		return nil
+	}
+	agentEnv := a.Env()
+	for _, name := range tools.SessionContextEnvVars {
+		value, had := tools.BoundSessionVar(env, name)
+		tools.RestoreSessionVar(agentEnv, name, value, had)
+	}
+	tools.SetCurrentSessionKey(agentEnv, sessionKey)
+	return agentEnv
 }
 
 // Tail after the turn settled, the memory trim while the profile home is still bound

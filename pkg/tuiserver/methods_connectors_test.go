@@ -176,7 +176,7 @@ func connectorBackendDouble(t *testing.T, b *connectorBackend) *connectorBackend
 			}
 			b.mu.Lock()
 			b.mints = append(b.mints, map[string]any{"names": names, "reinitiate": body["reinitiate"], "alias": body["alias"],
-				"connection_id": body["connectionId"]})
+				"connection_id": body["connectionId"], "initiator": body["initiator"]})
 			b.mu.Unlock()
 			reply = map[string]any{"results": b.connections(names, body)}
 		case strings.Contains(r.URL.Path, "/v1/connectors/accounts/"):
@@ -677,7 +677,8 @@ func ticketGuestHome(t *testing.T, h, token, portal string) {
 	}
 }
 
-func TestSecondaryTicketRunsBillingInItsOwnProfile(t *testing.T) {
+// test_legacy_fallback_ticket_profile_verbs.py test_secondary_ticket_runs_connectors_and_billing_in_its_own_profile
+func TestSecondaryTicketRunsConnectorsAndBillingInItsOwnProfile(t *testing.T) {
 	launch, bee := wsLegacyHomes(t)
 	var mu sync.Mutex
 	var seen [][2]string
@@ -686,6 +687,8 @@ func TestSecondaryTicketRunsBillingInItsOwnProfile(t *testing.T) {
 		var label string
 		var reply any
 		switch {
+		case r.Method == http.MethodGet && strings.HasSuffix(r.URL.Path, "/v1/connectors"):
+			label, reply = "list", map[string]any{"items": []any{}}
 		case strings.Contains(r.URL.Path, "charge"):
 			label, reply = "charge", map[string]any{"chargeId": "c"}
 		default:
@@ -709,7 +712,7 @@ func TestSecondaryTicketRunsBillingInItsOwnProfile(t *testing.T) {
 	calls := []struct {
 		method string
 		params map[string]any
-	}{{"billing.charge", map[string]any{"amount_usd": 5}}}
+	}{{"connectors.list", map[string]any{"owner": map[string]any{"type": "account"}}}, {"billing.charge", map[string]any{"amount_usd": 5}}}
 	for _, call := range calls {
 		wsLegacyCall(t, context.Background(), wsLegacyActor(bee), call.method, call.params)
 	}
@@ -718,7 +721,7 @@ func TestSecondaryTicketRunsBillingInItsOwnProfile(t *testing.T) {
 	for _, row := range seen {
 		labels[row[0]], homesSeen[row[1]] = true, true
 	}
-	if len(labels) != 1 || !labels["charge"] || len(homesSeen) != 1 || !homesSeen["bee"] {
+	if len(labels) != 2 || !labels["list"] || !labels["charge"] || len(homesSeen) != 1 || !homesSeen["bee"] {
 		t.Fatalf("seen %v", seen)
 	}
 	seen = nil

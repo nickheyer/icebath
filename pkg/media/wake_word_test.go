@@ -127,7 +127,7 @@ func TestConfigDefaultsAndClamping(t *testing.T) {
 	if got := WakePhrase(ctx, map[string]any{"phrase": "hey hermes"}); got != "hey hermes" {
 		t.Errorf("phrase = %q", got)
 	}
-	if got := WakePhrase(ctx, map[string]any{}); got != "hey hermes" {
+	if got := WakePhrase(ctx, map[string]any{}); got != "hey icebath" {
 		t.Errorf("default phrase = %q", got)
 	}
 }
@@ -184,11 +184,14 @@ func TestLoadedWakeDefaultsResolveSupportedProvider(t *testing.T) {
 					t.Fatalf("loaded provider = %v", cfg["provider"])
 				}
 				supported := wakeSupportedOn(p.system, p.machine)
-				if got := mustProvider(t, cfg, supported); got != p.expected {
-					t.Fatalf("provider of loaded config = %q, want %q", got, p.expected)
+				if got := mustProvider(t, cfg, supported); got != "sherpa" {
+					t.Fatalf("provider of loaded config = %q, want the open vocabulary sherpa engine", got)
 				}
-				if got := mustProvider(t, map[string]any{}, supported); got != p.expected {
-					t.Fatalf("provider of {} = %q, want %q", got, p.expected)
+				if got := mustProvider(t, map[string]any{}, supported); got != "sherpa" {
+					t.Fatalf("provider of {} = %q, want the open vocabulary sherpa engine", got)
+				}
+				if got := mustProvider(t, map[string]any{"phrase": "hey hermes"}, supported); got != p.expected {
+					t.Fatalf("provider of the bundled phrase = %q, want %q", got, p.expected)
 				}
 				if ok, err := supported(WakeProviders[p.expected].Extra); err != nil || !ok {
 					t.Fatalf("expected provider unsupported: %v %v", ok, err)

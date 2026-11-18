@@ -82,6 +82,10 @@ func providerRetryAfterSeconds(apiError error) (time.Duration, bool) {
 	if d, ok := provider.RetryAfterFromHeaders(apiErrorHeaders(apiError)); ok {
 		return d, d > 0
 	}
+	var sdkErr *provider.AuxSDKError
+	if errors.As(apiError, &sdkErr) {
+		return provider.BodyRetryAfter(sdkErr.Body)
+	}
 	var apiErr *provider.APIError
 	if !errors.As(apiError, &apiErr) {
 		return 0, false
@@ -102,9 +106,7 @@ func computeErrorBackoff(a *AIAgent, apiError error, retryCount, maxRetries int,
 	policy := ""
 	adaptive := isRateLimited || isZAICodingOverload
 	if adaptive && !hasRetryAfter {
-		var apiErr *provider.APIError
-		errors.As(apiError, &apiErr)
-		wait, policy = provider.AdaptiveRateLimitBackoff(retryCount, baseURL, model, apiErr, wait)
+		wait, policy = provider.AdaptiveRateLimitBackoff(retryCount, baseURL, model, apiError, wait)
 	}
 	reset := ""
 	if adaptive {

@@ -3,15 +3,15 @@ label: ntfy
 kind: platform
 version: 1.0.0
 description: >
-  ntfy push-notification gateway adapter for Hermes Agent.
-  Subscribes to a topic on ntfy.sh or any self-hosted ntfy server via
-  HTTP streaming, and publishes replies via HTTP POST. Lightweight —
-  no external SDK, only httpx (already a Hermes dependency).
+  ntfy push-notification gateway adapter for Icebath Agent. Subscribes to a
+  topic on ntfy.sh or any self-hosted ntfy server via HTTP streaming, and
+  publishes replies via HTTP POST. Lightweight — no external SDK, only net/http
+  (already an Icebath dependency).
 
-  ntfy has no native user-identity primitive; the adapter treats each
-  topic as a single trusted channel and never derives user identity
-  from publisher-controlled fields. Use a private topic + read token
-  for any real trust boundary.
+  ntfy has no native user-identity primitive; the adapter treats each topic as a
+  single trusted channel and never derives user identity from
+  publisher-controlled fields. Use a private topic + read token for any real
+  trust boundary.
 author: sprmn24
 # ``requires_env`` and ``optional_env`` entries are surfaced in the
 # ``icebath config`` UI via the platform-plugin env var injector in

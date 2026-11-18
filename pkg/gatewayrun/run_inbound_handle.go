@@ -263,6 +263,9 @@ func (r *GatewayRunner) hmDispatchIdleCommands(ctx context.Context, event *gatew
 	}
 	if !handled {
 		rewritten, err := r.runInExecutorWithContext(ctx, func(ctx context.Context) (any, error) {
+			if bound, reply := r.hmBoundCommandRewrite(ctx, event, source, quickKey, command); bound {
+				return reply, nil
+			}
 			return r.hmSkillSlashRewrite(ctx, event, source, quickKey, command), nil
 		})
 		if err != nil {

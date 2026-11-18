@@ -137,7 +137,7 @@ func installTTSExtra(ctx context.Context, extra string) (bool, error) {
 			detail = pypath.OSErrorText(err)
 		}
 		ttsSetup.printError(fmt.Sprintf("Failed to install %s: %s", extra, detail))
-		ttsSetup.printInfo("Retry with: icebath setup tts")
+		ttsSetup.printInfo("Retry with: /setup tts")
 		return false, nil
 	}
 	ttsSetup.printSuccess(extra + " installed. Restart Icebath to use it.")
@@ -359,7 +359,7 @@ func xaiAPIKeyPath(ctx context.Context) (string, error) {
 		ttsSetup.printSuccess("xAI TTS API key saved")
 		return "", nil
 	}
-	return "No xAI API key provided for TTS. Configure XAI_API_KEY via icebath setup model " +
+	return "No xAI API key provided for TTS. Configure XAI_API_KEY via /setup model " +
 		"or " + home.Display(home.Dir(ctx)) + "/.env to use xAI TTS. Falling back to Edge TTS.", nil
 }
 

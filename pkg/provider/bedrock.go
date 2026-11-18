@@ -468,8 +468,8 @@ var awsAuthEnvChain = [][]string{
 // Default chain probe, replaced by tests counting walks
 var awsChainHasCredentialsFn = awsChainHasCredentials
 
-// Active AWS auth source from an environment mapping, then iam-role through the default chain, else empty
-func resolveAWSAuthEnvVarFrom(env func(string) string, instanceMetadata bool) string {
+// Active AWS auth source from an environment mapping, then iam-role through the default chain walked under ctx, else empty
+func resolveAWSAuthEnvVarFrom(ctx context.Context, env func(string) string, instanceMetadata bool) string {
 	for _, group := range awsAuthEnvChain {
 		all := true
 		for _, name := range group {
@@ -482,27 +482,29 @@ func resolveAWSAuthEnvVarFrom(env func(string) string, instanceMetadata bool) st
 			return group[0]
 		}
 	}
-	if awsChainHasCredentialsFn(instanceMetadata) {
+	if awsChainHasCredentialsFn(ctx, instanceMetadata) {
 		return "iam-role"
 	}
 	return ""
 }
 
 // Active AWS auth source name of the process environment, empty when none resolves
-func resolveAWSAuthEnvVar() string {
-	return resolveAWSAuthEnvVarFrom(os.Getenv, true)
+func resolveAWSAuthEnvVar(ctx context.Context) string {
+	return resolveAWSAuthEnvVarFrom(ctx, os.Getenv, true)
 }
 
 // Reports any AWS credential source, env fast path then the default chain with IMDS when asked
-func hasAWSCredentials(instanceMetadata bool) bool {
-	return resolveAWSAuthEnvVarFrom(os.Getenv, instanceMetadata) != ""
+func hasAWSCredentials(ctx context.Context, instanceMetadata bool) bool {
+	return resolveAWSAuthEnvVarFrom(ctx, os.Getenv, instanceMetadata) != ""
 }
 
 // HasAWSCredentials reports whether any AWS credential source resolves for the process
-func HasAWSCredentials(instanceMetadata bool) bool { return hasAWSCredentials(instanceMetadata) }
+func HasAWSCredentials(ctx context.Context, instanceMetadata bool) bool {
+	return hasAWSCredentials(ctx, instanceMetadata)
+}
 
 // ResolveAWSAuthEnvVar names the active AWS auth source of the process, empty when none
-func ResolveAWSAuthEnvVar() string { return resolveAWSAuthEnvVar() }
+func ResolveAWSAuthEnvVar(ctx context.Context) string { return resolveAWSAuthEnvVar(ctx) }
 
 // ---- region and guardrail ----
 

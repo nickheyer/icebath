@@ -47,7 +47,7 @@ func TestTryAcquireLocksRegistryAndRefusalsSurviveCopy(t *testing.T) {
 	}
 	claimed := make(chan *Refusal, 1)
 	go func() {
-		_, r, _ := TryAcquire(ctx, "s1", "desktop", map[string]any{}, map[string]any{"live_session_id": "b"}, "", false)
+		_, r, _ := TryAcquire(ctx, "s1", "tui", map[string]any{}, map[string]any{"live_session_id": "b"}, "", false)
 		claimed <- r
 	}()
 	select {
@@ -72,7 +72,7 @@ func TestTryAcquireLocksRegistryAndRefusalsSurviveCopy(t *testing.T) {
 		t.Fatalf("same writer reclaim gave lease %+v refusal %v err %v", same, refusal, err)
 	}
 
-	_, full, err := TryAcquire(ctx, "s2", "desktop", map[string]any{"max_concurrent_sessions": 1}, nil, "", false)
+	_, full, err := TryAcquire(ctx, "s2", "tui", map[string]any{"max_concurrent_sessions": 1}, nil, "", false)
 	if err != nil || full == nil || full.Reason != MaxConcurrentSessions ||
 		full.Message != "Icebath is at the active session limit (1/1). Held by: cli, oldest 0m ago. Try again when another session finishes." {
 		t.Fatalf("capacity refusal %+v err %v", full, err)

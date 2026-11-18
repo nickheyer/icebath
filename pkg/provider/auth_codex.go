@@ -417,7 +417,7 @@ func codexPost(ctx context.Context, client *http.Client, endpoint string, body [
 	return codexDo(client, req)
 }
 
-// One 15 second POST of the device login flow retried twice on a transient transport blip
+// One 15 second device login POST retried twice on a transient transport blip and ended by a cancel
 func codexLoginPost(ctx context.Context, endpoint string, body []byte, headers map[string]string, failure [2]string) (*oauthHTTPResponse, error) {
 	const attempts = 3
 	for attempt := 1; ; attempt++ {
@@ -425,12 +425,17 @@ func codexLoginPost(ctx context.Context, endpoint string, body []byte, headers m
 		if err == nil {
 			return resp, nil
 		}
+		if ctx.Err() != nil {
+			return nil, &SignInCancelledError{ExitCode: 130, HasCode: true}
+		}
 		if attempt == attempts || !codexIsTransientTransportError(err) {
 			ae := codexErr(fmt.Sprintf("%s: %v%s", failure[0], err, codexSSLInteropHint(err)), failure[1], false)
 			ae.Err = err
 			return nil, ae
 		}
-		oauthSleep(time.Duration(attempt) * time.Second)
+		if err := cancellableSleep(time.Duration(attempt)*time.Second, ctxCancelled(ctx)); err != nil {
+			return nil, &SignInCancelledError{ExitCode: 130, HasCode: true}
+		}
 	}
 }
 
@@ -1119,7 +1124,9 @@ func codexRequestDeviceCode(ctx context.Context, out io.Writer, issuer, clientID
 				delay = 60
 			}
 			fmt.Fprintf(out, "OpenAI is rate-limiting login requests (429); retrying in %ds...\n", delay)
-			oauthSleep(time.Duration(delay) * time.Second)
+			if err := cancellableSleep(time.Duration(delay)*time.Second, ctxCancelled(ctx)); err != nil {
+				return nil, &SignInCancelledError{ExitCode: 130, HasCode: true}
+			}
 		}
 	}
 	if resp.Status == 429 {
@@ -1164,8 +1171,7 @@ func codexPollAuthorizationCode(ctx context.Context, out io.Writer, issuer, devi
 	body, _ := json.Marshal(map[string]string{"device_auth_id": deviceAuthID, "user_code": userCode})
 	consecutiveBlips := 0
 	for time.Since(start) < maxWait {
-		oauthSleep(time.Duration(pollInterval) * time.Second)
-		if ctx.Err() != nil {
+		if err := cancellableSleep(time.Duration(pollInterval)*time.Second, ctxCancelled(ctx)); err != nil || ctx.Err() != nil {
 			fmt.Fprintln(out, "\nLogin cancelled.")
 			return nil, &SignInCancelledError{ExitCode: 130, HasCode: true}
 		}

@@ -319,7 +319,7 @@ func routedClientKwargs(ctx context.Context, a *AIAgent, fallbackModel []map[str
 	if explicit != "" && explicit != "auto" && explicit != "openrouter" && explicit != "custom" {
 		return nil, &provider.ProviderNotConfiguredError{Message: provider.MissingProviderCredentialsMessage(ctx, explicit)}
 	}
-	return nil, &provider.ProviderNotConfiguredError{Message: "No LLM provider configured. Run `icebath model` to select a provider, or run `icebath setup` for first-time configuration."}
+	return nil, &provider.ProviderNotConfiguredError{Message: "No LLM provider configured. Run `icebath model` to select a provider, or start `icebath` and type `/setup` for first-time configuration."}
 }
 
 // OpenRouter Claude beta header, the model default headers, then the custom provider TLS and extra headers

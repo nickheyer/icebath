@@ -110,9 +110,9 @@ func launchdLabelForeignHomeIn(ctx context.Context, label string, scope map[stri
 // One notice line for a runtime the update leaves alone, a foreign home or unreadable ownership
 func describeSkippedRuntime(kind, name, runtimeHome string, known bool) string {
 	if !known {
-		return fmt.Sprintf("  ↷ %s: %s whose Hermes home could not be read — left alone (not restarted)", name, kind)
+		return fmt.Sprintf("  ↷ %s: %s whose Icebath home could not be read — left alone (not restarted)", name, kind)
 	}
-	return fmt.Sprintf("  ↷ %s: %s of another Hermes home (%s) — left alone (not restarted)", name, kind, runtimeHome)
+	return fmt.Sprintf("  ↷ %s: %s of another Icebath home (%s) — left alone (not restarted)", name, kind, runtimeHome)
 }
 
 // Prints the left alone notice once per update run and names the runtime on the open receipt

@@ -2,6 +2,7 @@ package gateway
 
 import (
 	"context"
+	"fmt"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -267,4 +268,29 @@ func TestSendRaisingSocketReturnsErrorDict(t *testing.T) {
 	reader.cancel()
 	<-reader.done
 	relayDisconnectNow(tr)
+}
+
+// A 4401 the reader latches while the retry dial is still sending its hellos ends the retries with that dial
+func TestA4401LatchedDuringTheHellosOfTheRetryDialEndsTheRetries(t *testing.T) {
+	t.Setenv("ICEBATH_HOME", t.TempDir())
+	srv := newRelayScriptedServer(t, relayDialRefuse, relayDialClose4401AfterHello, relayDialIdle, relayDialIdle)
+	tr := relayZeroBackoffTransport(srv.url)
+	tr.mu.Lock()
+	for i := range 400 {
+		tr.identities = append(tr.identities, [2]string{"telegram", fmt.Sprintf("bot%d", i)})
+	}
+	tr.authRetryPending = true
+	tr.authRetry = startRelayTask(context.Background(), tr.redialWithFreshToken)
+	tr.mu.Unlock()
+	defer relayDisconnectNow(tr)
+	if !relayWaitUntil(tr.AuthRevoked) {
+		t.Fatal("the 4401 on the first judged fresh token never latched")
+	}
+	time.Sleep(200 * time.Millisecond)
+	tr.mu.Lock()
+	running := tr.dialerRunningLocked()
+	tr.mu.Unlock()
+	if srv.dials() != 2 || running {
+		t.Fatalf("a revocation the reader latched mid hello must end the retries: %d dials, dialer running %v", srv.dials(), running)
+	}
 }

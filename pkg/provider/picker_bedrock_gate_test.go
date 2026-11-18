@@ -14,7 +14,7 @@ func bedrockGatePicker(t *testing.T) (context.Context, *int) {
 	saved := pickerAWSCredentialsFn
 	t.Cleanup(func() { pickerAWSCredentialsFn = saved })
 	calls := 0
-	pickerAWSCredentialsFn = func(bool) bool {
+	pickerAWSCredentialsFn = func(context.Context, bool) bool {
 		calls++
 		return false
 	}

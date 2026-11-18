@@ -6,7 +6,7 @@ import "testing"
 func TestCLISetupTreeMatchesBuildSetupParser(t *testing.T) {
 	flag := func(name, help string) parserFlag { return parserFlag{name, "", "bool", "false", help} }
 	assertParser(t, NewCLI(), "setup", "Interactive setup wizard",
-		"Configure Icebath Agent with an interactive wizard. Run a specific section: icebath setup model|tts|terminal|gateway|tools|telemetry|agent",
+		"Configure Icebath Agent with an interactive wizard. Every section also runs in the terminal UI: start icebath and type /setup model|tts|terminal|gateway|tools|telemetry|agent",
 		"  section   Run a specific setup section instead of the full wizard",
 		flag("non-interactive", "Non-interactive mode (use defaults/env vars)"),
 		flag("reset", "Reset configuration to defaults"),

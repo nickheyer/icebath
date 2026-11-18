@@ -2,8 +2,10 @@ package relaytest
 
 import (
 	"archive/zip"
+	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"io"
 	"io/fs"
@@ -17,6 +19,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/nickheyer/icebath/pkg/internal/homeguard"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/pm"
 	"github.com/nickheyer/icebath/pkg/relayhost"
@@ -164,6 +167,36 @@ func hasAll(s string, tokens []string) bool {
 	return !(strings.Contains(s, "musllinux") && tokens[0] == "manylinux")
 }
 
+// Toolchain a provisioning child of the test binary looks up, a uv and python pair or a failure cause
+const childToolchainEnv = "RELAYTEST_CHILD_TOOLCHAIN"
+
+// Points this process's toolchain lookup at the one its parent test chose, called first in TestMain
+func ChildToolchain() {
+	spec, ok := os.LookupEnv(childToolchainEnv)
+	if !ok {
+		return
+	}
+	if cause, failing := strings.CutPrefix(spec, "fail:"); failing {
+		pm.SwapToolchain(func(context.Context, bool, bool) (string, string, bool, error) {
+			return "", "", false, errors.New(cause)
+		})
+		return
+	}
+	uv, python, _ := strings.Cut(spec, string(os.PathListSeparator))
+	pm.SwapToolchain(func(context.Context, bool, bool) (string, string, bool, error) { return uv, python, true, nil })
+}
+
+// Makes provisioning children of the test binary use the pinned test toolchain, or fail its lookup with a given cause
+func ChildUsesToolchain(t testing.TB, cause string) {
+	t.Helper()
+	if cause != "" {
+		t.Setenv(childToolchainEnv, "fail:"+cause)
+		return
+	}
+	uv, python := Toolchain(t)
+	t.Setenv(childToolchainEnv, uv+string(os.PathListSeparator)+python)
+}
+
 // Registers the real binding over the provisioned environment, failing when provisioning failed
 func Use(t testing.TB) {
 	t.Helper()
@@ -176,10 +209,11 @@ func Use(t testing.TB) {
 	t.Cleanup(func() { tools.RegisterNemoRelayBinding(nil) })
 }
 
+// Shared cache the pm suite unpacks pinned tools into, outside the private home of the test binary
 func cacheRoot() (string, error) {
-	dir, err := os.UserCacheDir()
-	if err != nil {
-		return "", err
+	dir := homeguard.SharedCache()
+	if dir == "" {
+		return "", &fs.PathError{Op: "cache", Path: "developer cache directory", Err: fs.ErrNotExist}
 	}
 	return filepath.Join(dir, "icebath-pm-tests"), nil
 }

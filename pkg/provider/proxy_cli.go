@@ -27,10 +27,6 @@ func proxyErr(errw io.Writer, msg string) {
 
 // Runs the proxy server in the foreground
 func cmdProxyStart(cli *proxyCLI) (int, error) {
-	if !aiohttpAvailable {
-		proxyErr(cli.errw, "icebath proxy requires aiohttp. Run `icebath setup` to install it.")
-		return 1, nil
-	}
 	provider := nsText(cli.ns, "provider")
 	if provider == "" {
 		provider = "nous"

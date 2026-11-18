@@ -43,6 +43,7 @@ func main() {
 	bootLaunch()
 	argv := os.Args[1:]
 	if argvIsGatewayRun(argv) {
+		app.MarkGatewayProcess()
 		armStartupWatchdog()
 	}
 	suppressMouseResidueEarly(argv)
@@ -77,12 +78,14 @@ func run(argv []string) int {
 	cleanupQuarantinedExes()
 	selfupdate.SweepStaleBytecodeIfCheckoutChanged()
 	recoverUpdateDebtsOnStartup()
-	if first, _ := firstPositional(argv); first != "update" {
+	first, _ := firstPositional(argv)
+	if first != "update" {
 		maybeRunBootBootstrap(pm.InstallRoot())
 	}
 	if problem := checkRuntime(pm.InstallRoot()); problem != "" {
 		fmt.Fprintln(os.Stderr, "⚠ "+problem)
 	}
+	startRelayProvisioning(argv, first)
 	for _, fast := range []func([]string) (bool, int){tryTermuxFastTUILaunch, tryTermuxFastCLILaunch, tryFastChatLaunch} {
 		if handled, code := fast(argv); handled {
 			return code

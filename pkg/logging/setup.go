@@ -17,15 +17,13 @@ import (
 
 // Logger name prefixes of each component, gating component logs and logs --component
 var ComponentPrefixes = map[string][]string{
-	"gateway": {"gateway", "hermes_plugins", "plugins.platforms", "agent.memory_caller_scope", "tui_gateway"},
+	"gateway": {"gateway", "hermes_plugins", "plugins.platforms", "agent.memory_caller_scope"},
 	"agent":   {"agent", "run_agent", "model_tools", "batch_runner"},
 	"tools":   {"tools"},
 	"cli":     {"hermes_cli", "cli"},
 	"cron":    {"cron"},
+	"gui":     {"tui_gateway"},
 }
-
-// Component names in declaration order
-var ComponentNames = []string{"gateway", "agent", "tools", "cli", "cron"}
 
 var noisyLoggers = []string{
 	"openai", "openai._base_client", "httpx", "httpcore", "asyncio", "hpack", "hpack.hpack",

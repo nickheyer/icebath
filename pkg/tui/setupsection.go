@@ -10,6 +10,7 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 
+	"github.com/nickheyer/icebath/pkg/ui/tty"
 	"github.com/nickheyer/icebath/pkg/ui/wm"
 )
 
@@ -25,6 +26,7 @@ const (
 	fieldNotice
 	fieldAction
 	fieldCommand
+	fieldDerived
 )
 
 // Dotted config key or env key an answer is written to
@@ -58,12 +60,23 @@ type sectionField struct {
 	settle   func(run *sectionRun, value any) any
 	action   string
 	argv     []string
+	// Hooks over the loaded state, the options, wording, starting answer and action parameters of a field
+	choicesFrom func(run *sectionRun) []sectionChoice
+	labelFrom   func(run *sectionRun) string
+	seed        func(run *sectionRun) any
+	params      func(run *sectionRun) map[string]any
+	// The wizard saves the config once this field is answered, so later new sections land after it
+	savePoint bool
 }
 
-// Value a section writes on every save without asking
+// Answer that saves the value a secret key already resolves to, from the environment or .env, into .env
+type sectionHeld struct{}
+
+// Value a section writes on every save without asking, only when its condition holds, a nil value removing the target
 type sectionConstant struct {
 	target sectionTarget
 	value  any
+	when   sectionCond
 }
 
 // Declarative setup section, its questions in order and its unconditional writes
@@ -75,6 +88,10 @@ type sectionSpec struct {
 	fields    []sectionField
 	constants []sectionConstant
 	facts     []string
+	// Named gateway values, keys read without being asked, and the whole config save the wizard ends with
+	values   []string
+	reads    []sectionTarget
+	fullSave bool
 }
 
 // One walk through a section, what its targets held when it opened and the answers so far
@@ -85,6 +102,7 @@ type sectionRun struct {
 	secrets map[string]bool
 	answers map[string]any
 	facts   map[string]bool
+	values  map[string]any
 }
 
 // Wire name of the file a target lives in
@@ -146,6 +164,9 @@ func numberBetween(low, high float64, reason string) func(any) string {
 
 // One write of the save verb, the stored type following the Go type of the value
 func sectionWrite(t sectionTarget, value any) map[string]any {
+	if _, held := value.(sectionHeld); held && t.env {
+		return map[string]any{"target": "env", "key": t.key, "kind": "held", "value": ""}
+	}
 	if t.env {
 		return map[string]any{"target": "env", "key": t.key, "kind": "text", "value": sectionText(value)}
 	}
@@ -163,6 +184,9 @@ func sectionWrite(t sectionTarget, value any) map[string]any {
 
 // Value the first target holds in the type of the field, a toggle on only when every target is on
 func (run *sectionRun) current(f sectionField) any {
+	if f.seed != nil {
+		return f.seed(run)
+	}
 	if f.kind == fieldSecret || len(f.targets) == 0 {
 		return nil
 	}
@@ -197,9 +221,15 @@ func (run *sectionRun) current(f sectionField) any {
 
 // Loads what the targets of a section hold, prints its introduction and asks the first field
 func (a *app) runSection(spec sectionSpec) tea.Cmd {
-	params := map[string]any{"config_keys": []any{}, "env_keys": []any{}, "secret_config_keys": []any{}, "secret_env_keys": []any{}, "facts": []any{}}
+	params := map[string]any{"config_keys": []any{}, "env_keys": []any{}, "secret_config_keys": []any{}, "secret_env_keys": []any{}, "facts": []any{}, "values": []any{}}
 	for _, name := range spec.facts {
 		params["facts"] = append(params["facts"].([]any), name)
+	}
+	for _, name := range spec.values {
+		params["values"] = append(params["values"].([]any), name)
+	}
+	for _, t := range spec.reads {
+		params[t.file()+"_keys"] = append(params[t.file()+"_keys"].([]any), t.key)
 	}
 	for _, f := range spec.fields {
 		for _, t := range f.targets {
@@ -223,6 +253,7 @@ func (a *app) runSection(spec sectionSpec) tea.Cmd {
 		}
 		run.held, _ = res["config"].(map[string]any)
 		run.env, _ = res["env"].(map[string]any)
+		run.values, _ = res["values"].(map[string]any)
 		for _, key := range stringList(res["secrets"]) {
 			run.secrets[key] = true
 		}
@@ -242,6 +273,12 @@ func (a *app) askSectionField(run *sectionRun, index int) tea.Cmd {
 		return a.saveSection(run)
 	}
 	f := run.spec.fields[index]
+	if f.labelFrom != nil {
+		f.label = f.labelFrom(run)
+	}
+	if f.choicesFrom != nil {
+		f.choices = f.choicesFrom(run)
+	}
 	current := run.current(f)
 	answer := func(value any) tea.Cmd {
 		if value != nil {
@@ -253,10 +290,12 @@ func (a *app) askSectionField(run *sectionRun, index int) tea.Cmd {
 	case fieldNotice:
 		a.sys(f.label)
 		return a.askSectionField(run, index+1)
+	case fieldDerived:
+		return answer(current)
 	case fieldAction:
 		return a.runSectionAction(run, index)
 	case fieldCommand:
-		return tea.ExecProcess(exec.Command(f.argv[0], f.argv[1:]...), func(err error) tea.Msg {
+		return tty.Exec(exec.Command(f.argv[0], f.argv[1:]...), func(err error) tea.Msg {
 			return sectionCommandMsg{run: run, index: index, err: err}
 		})
 	}
@@ -295,7 +334,7 @@ func (a *app) askSectionField(run *sectionRun, index int) tea.Cmd {
 	case current != nil && sectionText(current) != "":
 		placeholder = tr("setupFlow.section.keep", f.label, sectionText(current))
 	}
-	return a.wm.ShowOverlay(wm.NewPrompt(a.toolkit, placeholder, "", func(text string) tea.Cmd {
+	submit := func(text string) tea.Cmd {
 		entered := trimJS(text)
 		if entered == "" {
 			return answer(current)
@@ -321,15 +360,29 @@ func (a *app) askSectionField(run *sectionRun, index int) tea.Cmd {
 			}
 		}
 		return answer(value)
-	}))
+	}
+	if f.kind == fieldSecret {
+		d := &dialogCard{app: a, kind: "setupSecret", requestID: run.spec.key + ":" + f.id, marks: map[int]bool{}, title: placeholder,
+			fields: []dialogField{{label: placeholder, masked: true}}}
+		d.onAnswer = func(_ *dialogChoice, _ []string, fields []string) tea.Cmd { return submit(fields[0]) }
+		return a.wm.ShowOverlay(d)
+	}
+	return a.wm.ShowOverlay(wm.NewPrompt(a.toolkit, placeholder, "", submit))
 }
 
 // Sends every constant and answer of the section in one save and prints what the files hold after it
 func (a *app) saveSection(run *sectionRun) tea.Cmd {
 	writes, removals := []any{}, []any{}
 	secret, sent := map[string]bool{}, map[string]string{}
+	split := 0
 	for _, c := range run.spec.constants {
-		writes = append(writes, sectionWrite(c.target, c.value))
+		switch {
+		case c.when != nil && !c.when(run):
+		case c.value == nil:
+			removals = append(removals, map[string]any{"target": c.target.file(), "key": c.target.key})
+		default:
+			writes = append(writes, sectionWrite(c.target, c.value))
+		}
 	}
 	for _, f := range run.spec.fields {
 		value, answered := run.answers[f.id]
@@ -349,44 +402,81 @@ func (a *app) saveSection(run *sectionRun) tea.Cmd {
 		for _, t := range f.clears {
 			removals = append(removals, map[string]any{"target": t.file(), "key": t.key})
 		}
+		if f.savePoint && split == 0 {
+			split = len(writes)
+		}
 	}
-	if len(writes)+len(removals) == 0 {
+	if len(writes)+len(removals) == 0 && !run.spec.fullSave {
 		a.sys(tr("setupFlow.section.unchanged", run.spec.title))
 		return nil
 	}
 	a.store.ui.Status = tr("setupFlow.section.saving")
-	return a.events.rpc("setup.section.save", map[string]any{"writes": writes, "removals": removals}, func(res map[string]any) tea.Cmd {
-		a.store.ui.Status = a.store.statusFromBusy()
-		if res == nil {
-			return nil
+	if split == 0 || split == len(writes) {
+		split = len(writes)
+	}
+	first := map[string]any{"writes": writes[:split], "removals": removals, "full_save": run.spec.fullSave}
+	return a.events.rpc("setup.section.save", first, func(res map[string]any) tea.Cmd {
+		if res == nil || split == len(writes) {
+			return a.reportSectionSave(run, writes, secret, sent, res)
 		}
-		lines := []string{tr("setupFlow.section.saved", run.spec.title)}
-		held, _ := res["config"].(map[string]any)
-		inEnv := map[string]bool{}
-		for _, key := range stringList(res["env"]) {
-			inEnv[key] = true
-		}
-		for _, raw := range writes {
-			row := raw.(map[string]any)
-			key := row["key"].(string)
-			stored, inConfig := held[key]
-			switch {
-			case secret[key] && (inEnv[key] || inConfig):
-				lines = append(lines, tr("setupFlow.section.secretSaved", key))
-			case inEnv[key]:
-				lines = append(lines, tr("setupFlow.section.envValue", key, sent[key]))
-			case inConfig:
-				lines = append(lines, tr("setupFlow.section.value", key, sectionText(stored)))
-			default:
-				lines = append(lines, tr("setupFlow.section.missing", key))
-			}
-		}
-		for _, key := range stringList(res["removed"]) {
-			lines = append(lines, tr("setupFlow.section.removed", key))
-		}
-		a.sys(strings.Join(lines, "\n"))
-		return nil
+		return a.events.rpc("setup.section.save", map[string]any{"writes": writes[split:], "removals": []any{}, "full_save": run.spec.fullSave},
+			func(rest map[string]any) tea.Cmd {
+				if rest == nil {
+					return a.reportSectionSave(run, writes[:split], secret, sent, res)
+				}
+				held, _ := res["config"].(map[string]any)
+				if held == nil {
+					held = map[string]any{}
+					res["config"] = held
+				}
+				later, _ := rest["config"].(map[string]any)
+				for key, value := range later {
+					held[key] = value
+				}
+				res["env"] = append(append([]any{}, wireAny(res["env"])...), wireAny(rest["env"])...)
+				return a.reportSectionSave(run, writes, secret, sent, res)
+			})
 	})
+}
+
+// Elements of a wire list, none for anything else
+func wireAny(v any) []any {
+	list, _ := v.([]any)
+	return list
+}
+
+// Prints what the files hold for every write after a section save
+func (a *app) reportSectionSave(run *sectionRun, writes []any, secret map[string]bool, sent map[string]string, res map[string]any) tea.Cmd {
+	a.store.ui.Status = a.store.statusFromBusy()
+	if res == nil {
+		return nil
+	}
+	lines := []string{tr("setupFlow.section.saved", run.spec.title)}
+	held, _ := res["config"].(map[string]any)
+	inEnv := map[string]bool{}
+	for _, key := range stringList(res["env"]) {
+		inEnv[key] = true
+	}
+	for _, raw := range writes {
+		row := raw.(map[string]any)
+		key := row["key"].(string)
+		stored, inConfig := held[key]
+		switch {
+		case secret[key] && (inEnv[key] || inConfig):
+			lines = append(lines, tr("setupFlow.section.secretSaved", key))
+		case inEnv[key]:
+			lines = append(lines, tr("setupFlow.section.envValue", key, sent[key]))
+		case inConfig:
+			lines = append(lines, tr("setupFlow.section.value", key, sectionText(stored)))
+		default:
+			lines = append(lines, tr("setupFlow.section.missing", key))
+		}
+	}
+	for _, key := range stringList(res["removed"]) {
+		lines = append(lines, tr("setupFlow.section.removed", key))
+	}
+	a.sys(strings.Join(lines, "\n"))
+	return nil
 }
 
 // Iteration budget, tool progress mode and context compression of the agent
@@ -399,15 +489,16 @@ func agentSection() sectionSpec {
 		{"verbose", "verbose", tr("setupFlow.agent.progress.verbose")},
 		{"log", "log", tr("setupFlow.agent.progress.log")},
 	}
-	return sectionSpec{key: "agent", title: tr("setupFlow.agent.title"), detail: tr("setupFlow.agent.detail"), intro: tr("setupFlow.agent.intro"),
-		constants: []sectionConstant{{sectionTarget{key: "compression.enabled"}, true}},
+	return sectionSpec{key: "agent", title: tr("setupFlow.agent.title"), detail: tr("setupFlow.agent.detail"), intro: tr("setupFlow.agent.intro"), fullSave: true,
+		constants: []sectionConstant{{target: sectionTarget{key: "compression.enabled"}, value: true}},
 		fields: []sectionField{
-			{id: "max_turns", kind: fieldNumber, whole: true, fallback: 90, label: tr("setupFlow.agent.maxTurns"),
+			{id: "max_turns", kind: fieldNumber, whole: true, label: tr("setupFlow.agent.maxTurns"),
+				seed:     func(run *sectionRun) any { return run.held["agent.max_turns"] },
 				targets:  []sectionTarget{{key: "agent.max_turns"}},
 				clears:   []sectionTarget{{key: "max_turns"}, {env: true, key: "ICEBATH_MAX_ITERATIONS"}},
 				validate: numberBetween(1, math.Inf(1), tr("setupFlow.agent.maxTurnsRange"))},
 			{id: "tool_progress", kind: fieldChoice, label: tr("setupFlow.agent.progressLabel"),
-				targets: []sectionTarget{{key: "display.tool_progress"}}, choices: progress},
+				targets: []sectionTarget{{key: "display.tool_progress"}}, choices: progress, savePoint: true},
 			{id: "threshold", kind: fieldNumber, fallback: 0.5, label: tr("setupFlow.agent.threshold"),
 				targets:  []sectionTarget{{key: "compression.threshold"}},
 				validate: numberBetween(0.5, 0.95, tr("setupFlow.agent.thresholdRange"))},
@@ -416,7 +507,7 @@ func agentSection() sectionSpec {
 
 // Shared metrics consent, one answer written to the collection key and the sending key
 func telemetrySection() sectionSpec {
-	return sectionSpec{key: "telemetry", title: tr("setupFlow.telemetry.title"), detail: tr("setupFlow.telemetry.detail"), intro: tr("setupFlow.telemetry.intro"),
+	return sectionSpec{key: "telemetry", title: tr("setupFlow.telemetry.title"), detail: tr("setupFlow.telemetry.detail"), intro: tr("setupFlow.telemetry.intro"), fullSave: true,
 		fields: []sectionField{{id: "share", kind: fieldToggle, label: tr("setupFlow.telemetry.share"),
 			targets: []sectionTarget{{key: "telemetry.shared_metrics.enabled"}, {key: "telemetry.shared_metrics.send"}}}}}
 }
@@ -471,7 +562,11 @@ func (a *app) runSectionAction(run *sectionRun, index int) tea.Cmd {
 			return a.askSectionField(run, index+1)
 		})
 	}
-	return a.events.rpc("setup.action.start", map[string]any{"action": f.action}, func(res map[string]any) tea.Cmd {
+	start := map[string]any{"action": f.action}
+	if f.params != nil {
+		start["params"] = f.params(run)
+	}
+	return a.events.rpc("setup.action.start", start, func(res map[string]any) tea.Cmd {
 		if res == nil {
 			a.store.ui.Status = a.store.statusFromBusy()
 			return nil

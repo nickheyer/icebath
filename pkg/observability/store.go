@@ -217,6 +217,15 @@ type SharedMetricsStore struct {
 	deferredMu      sync.Mutex
 	deferred        []storeWrite
 	drainAtExit     bool
+	batchOpen       sync.Mutex
+	batchMu         sync.Mutex
+	batch           *storeBatch
+}
+
+// Write transaction a flush holds open with the writes that ran in it, replayed after a contended commit
+type storeBatch struct {
+	conn state.SQLiteConn
+	ran  []storeWrite
 }
 
 // Resource dimensions of one aggregate row keyed by column, values in column order
@@ -554,7 +563,7 @@ func isContention(err error) bool {
 	return strings.Contains(text, "locked") || strings.Contains(text, "busy")
 }
 
-// Runs write after deferred ones in one transaction, keeping them in memory when another writer holds the store
+// Runs write after deferred ones in one transaction, keeping them in memory while another writer holds the store
 func (s *SharedMetricsStore) writeOrDefer(ctx context.Context, write storeWrite) error {
 	s.deferredMu.Lock()
 	pending := append(append([]storeWrite(nil), s.deferred...), write)
@@ -572,12 +581,21 @@ func (s *SharedMetricsStore) writeOrDefer(ctx context.Context, write storeWrite)
 		return err
 	}
 	busy := isContention(err)
-	s.deferredMu.Lock()
 	kept := pending
 	if !busy {
 		kept = pending[:len(pending)-1]
 	}
-	s.deferred = lastWrites(append(append([]storeWrite(nil), kept...), s.deferred...))
+	s.keepDeferred(kept)
+	if !busy {
+		return err
+	}
+	return nil
+}
+
+// Queues writes ahead of the already deferred ones and arranges their drain at process exit
+func (s *SharedMetricsStore) keepDeferred(writes []storeWrite) {
+	s.deferredMu.Lock()
+	s.deferred = lastWrites(append(append([]storeWrite(nil), writes...), s.deferred...))
 	register := !s.drainAtExit
 	s.drainAtExit = true
 	s.deferredMu.Unlock()
@@ -586,10 +604,83 @@ func (s *SharedMetricsStore) writeOrDefer(ctx context.Context, write storeWrite)
 		deferringStores = append(deferringStores, s)
 		deferringStoresMu.Unlock()
 	}
-	if !busy {
+}
+
+// Runs body with every store write joining one write transaction committed after it, writing unbatched when none opens
+func (s *SharedMetricsStore) Batch(ctx context.Context, body func() error) error {
+	if !s.batchOpen.TryLock() {
+		return body()
+	}
+	defer s.batchOpen.Unlock()
+	opened := false
+	var bodyErr error
+	err := s.connection(ctx, busyTimeoutMS, func(conn state.SQLiteConn) error {
+		if _, err := conn.ExecContext(ctx, "BEGIN IMMEDIATE"); err != nil {
+			return err
+		}
+		opened = true
+		batch := &storeBatch{conn: conn}
+		s.setBatch(batch)
+		func() {
+			defer s.setBatch(nil)
+			bodyErr = body()
+		}()
+		return s.commitBatch(ctx, batch)
+	})
+	if !opened {
+		slog.Debug("Shared-metrics batch transaction did not open, each write commits alone", "error", err)
+		return body()
+	}
+	if bodyErr != nil {
+		if err != nil {
+			slog.Warn("Unable to commit batched shared-metrics updates", "error", err)
+		}
+		return bodyErr
+	}
+	return err
+}
+
+// Installs or clears the open batch, waiting for the write that runs in it
+func (s *SharedMetricsStore) setBatch(batch *storeBatch) {
+	s.batchMu.Lock()
+	s.batch = batch
+	s.batchMu.Unlock()
+}
+
+// Commits the batch, keeping the writes that ran in it for a later drain when another writer holds the store
+func (s *SharedMetricsStore) commitBatch(ctx context.Context, batch *storeBatch) error {
+	_, err := batch.conn.ExecContext(ctx, "COMMIT")
+	if err == nil {
+		return nil
+	}
+	if _, rerr := batch.conn.ExecContext(ctx, "ROLLBACK"); rerr != nil && !isSQLiteOperational(rerr) {
+		return rerr
+	}
+	if isSQLiteOperational(err) && isContention(err) {
+		s.keepDeferred(batch.ran)
+		return nil
+	}
+	return fmt.Errorf("Unable to commit %d batched shared-metrics updates: %w", len(batch.ran), err)
+}
+
+// Runs body in a savepoint of the batch, a failure rolling back only its own changes
+func (b *storeBatch) run(ctx context.Context, body func(conn state.SQLiteConn) error) error {
+	if _, err := b.conn.ExecContext(ctx, "SAVEPOINT batch_write"); err != nil {
 		return err
 	}
-	return nil
+	err := body(b.conn)
+	if err != nil {
+		if _, rerr := b.conn.ExecContext(ctx, "ROLLBACK TO batch_write"); rerr != nil {
+			return rerr
+		}
+	}
+	if _, rerr := b.conn.ExecContext(ctx, "RELEASE batch_write"); rerr != nil {
+		return rerr
+	}
+	if err == nil {
+		b.ran = append(b.ran, func(_ context.Context, conn state.SQLiteConn) error { return body(conn) })
+	}
+	return err
 }
 
 // Newest deferred writes within the in memory bound
@@ -697,8 +788,14 @@ func (s *SharedMetricsStore) connection(ctx context.Context, busyTimeout int, bo
 	return body(conn)
 }
 
-// Runs body on a fresh connection inside one IMMEDIATE write transaction
+// Runs body in a savepoint of the open batch, else on a fresh connection inside one IMMEDIATE write transaction
 func (s *SharedMetricsStore) write(ctx context.Context, busyTimeout int, body func(conn state.SQLiteConn) error) error {
+	s.batchMu.Lock()
+	if batch := s.batch; batch != nil {
+		defer s.batchMu.Unlock()
+		return batch.run(ctx, body)
+	}
+	s.batchMu.Unlock()
 	return s.connection(ctx, busyTimeout, func(conn state.SQLiteConn) error {
 		return state.WriteTxn(ctx, conn, func() error { return body(conn) })
 	})

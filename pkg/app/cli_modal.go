@@ -31,12 +31,6 @@ func approvalOutcomeLabel(ctx context.Context, result string) string {
 	return result
 }
 
-// Draft text and cursor saved while a modal prompt owns the input buffer
-type modalInputSnapshot struct {
-	Text   string
-	Cursor int
-}
-
 // Sudo panel state, shared by the vault unlock, save login and verification code prompts
 type sudoModalState struct {
 	VaultBackend string
@@ -97,13 +91,9 @@ func deadlineAfter(ctx context.Context, seconds float64) float64 {
 	return monotonic() + seconds
 }
 
-// Blocks until an answer lands or the deadline passes, repainting every refresh seconds, a cancelled context answering onCancel
-func pollModalQueue[T any](c *CLI, ctx context.Context, response <-chan T, deadline func() (float64, bool), refresh float64, paint func(), onCancel T) (T, bool) {
+// Blocks until an answer lands or the deadline passes, a cancelled context answering onCancel
+func pollModalQueue[T any](ctx context.Context, response <-chan T, deadline func() (float64, bool), onCancel T) (T, bool) {
 	var zero T
-	if paint == nil {
-		paint = c.paintNow
-	}
-	last := monotonic()
 	timer := time.NewTimer(modalPollInterval)
 	defer timer.Stop()
 	for {
@@ -119,10 +109,6 @@ func pollModalQueue[T any](c *CLI, ctx context.Context, response <-chan T, deadl
 		}
 		if d, ok := deadline(); ok && d-monotonic() <= 0 {
 			return zero, true
-		}
-		if now := monotonic(); now-last >= refresh {
-			last = now
-			paint()
 		}
 		timer.Reset(modalPollInterval)
 	}
@@ -164,14 +150,10 @@ func (c *CLI) dimNote(key string, kwargs map[string]any) {
 // Prompts for a sudo password on the sudo panel, empty on skip or timeout
 func (c *CLI) sudoPasswordCallback(ctx context.Context) string {
 	response := make(chan string, 1)
-	c.captureModalInputSnapshot()
 	c.setSudoModal(&sudoModalState{response: response}, deadlineAfter(ctx, 45))
 	c.ringBell(true, i18n.T(c.ctx, "cli.secret.bell_sudo", "", nil), "")
-	c.paintNow()
-	result, timedOut := pollModalQueue(c, ctx, response, c.sudoDeadlineAt, 0, nil, "")
+	result, timedOut := pollModalQueue(ctx, response, c.sudoDeadlineAt, "")
 	c.setSudoModal(nil, 0)
-	c.restoreModalInputSnapshot()
-	c.paintNow()
 	switch {
 	case timedOut:
 		c.dimNote("cli.secret.sudo_timeout", nil)
@@ -197,10 +179,8 @@ func (c *CLI) approvalCallback(ctx context.Context, command, description string,
 	c.setApprovalModal(&approvalModalState{Command: command, Description: description,
 		Choices: c.approvalChoices(command, allowPermanent, allowSession, smartDenied), response: response}, deadlineAfter(ctx, float64(timeout)))
 	c.ringBell(true, i18n.T(c.ctx, "cli.approval.bell_context", "", nil), command)
-	c.paintNow()
-	result, timedOut := pollModalQueue(c, ctx, response, c.approvalDeadlineAt, 1.0, nil, "deny")
+	result, timedOut := pollModalQueue(ctx, response, c.approvalDeadlineAt, "deny")
 	c.setApprovalModal(nil, 0)
-	c.paintNow()
 	label := i18n.T(c.ctx, "cli.approval.label", "", nil)
 	if timedOut {
 		c.dimNote("cli.approval.timeout_denying", nil)
@@ -231,14 +211,10 @@ func (c *CLI) approvalChoices(command string, allowPermanent, allowSession, smar
 // Masked master password prompt for an external password manager on the sudo panel, empty when it stays locked
 func (c *CLI) vaultUnlockCallback(backendName, displayName string) string {
 	response := make(chan string, 1)
-	c.captureModalInputSnapshot()
 	c.setSudoModal(&sudoModalState{VaultBackend: displayName, response: response}, monotonic()+120)
 	c.ringBell(true, i18n.T(c.ctx, "cli.secret.bell_unlock", "", map[string]any{"name": displayName}), "")
-	c.paintNow()
-	result, timedOut := pollModalQueue(c, c.ctx, response, c.sudoDeadlineAt, 0, nil, "")
+	result, timedOut := pollModalQueue(c.ctx, response, c.sudoDeadlineAt, "")
 	c.setSudoModal(nil, 0)
-	c.restoreModalInputSnapshot()
-	c.paintNow()
 	if timedOut || result == "" {
 		c.dimNote("cli.secret.stays_locked", map[string]any{"name": displayName})
 		return ""
@@ -252,16 +228,12 @@ func (c *CLI) vaultSaveLoginCallback(origin, site string) map[string]string {
 	answer := map[string]string{}
 	for _, step := range []string{"identifier", "password"} {
 		response := make(chan string, 1)
-		c.captureModalInputSnapshot()
 		c.setSudoModal(&sudoModalState{VaultSave: &vaultSavePrompt{Site: site, Origin: origin, Step: step}, response: response}, monotonic()+180)
 		if step == "identifier" {
 			c.ringBell(true, i18n.T(c.ctx, "cli.secret.bell_save_login", "", map[string]any{"site": site}), "")
 		}
-		c.paintNow()
-		result, timedOut := pollModalQueue(c, c.ctx, response, c.sudoDeadlineAt, 0, nil, "")
+		result, timedOut := pollModalQueue(c.ctx, response, c.sudoDeadlineAt, "")
 		c.setSudoModal(nil, 0)
-		c.restoreModalInputSnapshot()
-		c.paintNow()
 		if timedOut || result == "" {
 			c.dimNote("cli.secret.login_not_saved", map[string]any{"site": site})
 			return nil
@@ -275,14 +247,10 @@ func (c *CLI) vaultSaveLoginCallback(origin, site string) map[string]string {
 // One time code prompt shown as typed on the sudo panel, empty when declined or timed out
 func (c *CLI) vaultCodeCallback(site, hint string) string {
 	response := make(chan string, 1)
-	c.captureModalInputSnapshot()
 	c.setSudoModal(&sudoModalState{VaultCode: &vaultCodePrompt{Site: site, Hint: hint}, response: response}, monotonic()+180)
 	c.ringBell(true, i18n.T(c.ctx, "cli.secret.bell_verification_code", "", map[string]any{"site": site}), "")
-	c.paintNow()
-	result, timedOut := pollModalQueue(c, c.ctx, response, c.sudoDeadlineAt, 0, nil, "")
+	result, timedOut := pollModalQueue(c.ctx, response, c.sudoDeadlineAt, "")
 	c.setSudoModal(nil, 0)
-	c.restoreModalInputSnapshot()
-	c.paintNow()
 	if timedOut || result == "" {
 		c.dimNote("cli.secret.code_not_entered", map[string]any{"site": site})
 		return ""
@@ -293,35 +261,7 @@ func (c *CLI) vaultCodeCallback(site, hint string) string {
 
 // Captures a secret for a skill through the secret panel, restoring the draft afterwards
 func (c *CLI) secretCaptureCallback(varName, prompt string, metadata map[string]any) (map[string]any, error) {
-	c.captureModalInputSnapshot()
-	defer func() {
-		c.restoreModalInputSnapshot()
-		c.paintNow()
-	}()
 	return promptForSecret(c, varName, prompt, metadata)
-}
-
-// Clears the input buffer and saves the user's in progress draft before a modal prompt opens
-func (c *CLI) captureModalInputSnapshot() {
-	c.uiMu.Lock()
-	defer c.uiMu.Unlock()
-	if c.modalInputSnapshot != nil || c.app == nil {
-		return
-	}
-	c.modalInputSnapshot = &modalInputSnapshot{Text: c.app.BufferText(), Cursor: c.app.BufferCursor()}
-	c.app.ResetBuffer()
-}
-
-// Restores the draft text present before a modal prompt opened
-func (c *CLI) restoreModalInputSnapshot() {
-	c.uiMu.Lock()
-	defer c.uiMu.Unlock()
-	snapshot := c.modalInputSnapshot
-	c.modalInputSnapshot = nil
-	if snapshot == nil || c.app == nil {
-		return
-	}
-	c.app.SetBuffer(snapshot.Text, min(snapshot.Cursor, utf8.RuneCountInString(snapshot.Text)))
 }
 
 // Rings the terminal bell and sends the OS notification when the display flag allows
@@ -331,10 +271,8 @@ func (c *CLI) ringBell(prompt bool, text, detail string) {
 	if prompt {
 		flag = c.bellOnPrompt
 	}
-	broken := c.terminalIOBroken
-	app := c.app
 	c.uiMu.Unlock()
-	if !flag || broken {
+	if !flag {
 		return
 	}
 	body := text
@@ -349,12 +287,7 @@ func (c *CLI) ringBell(prompt bool, text, detail string) {
 	if err != nil {
 		return
 	}
-	seq := "\a" + notify
-	if app == nil || !app.IsRunning() {
-		writeTTY(seq)
-		return
-	}
-	runOnAppLoop(app, func() { _ = writeTerminalSequence(app, seq) })
+	writeTTY("\a" + notify)
 }
 
 // Drains and clears every input blocking overlay an interrupted agent left behind
@@ -376,18 +309,13 @@ func (c *CLI) clearActiveOverlaysForInterrupt() {
 		c.clarifyFreetext = false
 		c.clarifyMultiBase = nil
 	}
-	restore := false
 	if st := c.sudoState; st != nil {
 		offer(st.response, "")
 		c.sudoState = nil
 		c.sudoDeadline = 0
-		restore = true
 	}
 	secret := c.secretState != nil
 	c.uiMu.Unlock()
-	if restore {
-		c.restoreModalInputSnapshot()
-	}
 	if secret {
 		c.cancelSecretCapture()
 	}
@@ -404,23 +332,14 @@ func (c *CLI) submitSecretResponse(value string) {
 	offer(state.response, value)
 	c.secretState, c.secretDeadline = nil, 0
 	c.uiMu.Unlock()
-	c.paintNow()
 }
 
 // Cancels an open secret capture, reporting it skipped
 func (c *CLI) cancelSecretCapture() { c.submitSecretResponse("") }
-
-// Resets the composer buffer while the secret panel owns input
-func (c *CLI) clearSecretInputBuffer() {
-	if app := c.app; app != nil {
-		app.ResetBuffer()
-	}
-}
 
 // Clears the clarify panel state and repaints
 func (c *CLI) clarifyTeardown() {
 	c.uiMu.Lock()
 	c.clarifyState, c.clarifyFreetext, c.clarifyDeadline, c.clarifyMultiBase = nil, false, nil, nil
 	c.uiMu.Unlock()
-	c.paintNow()
 }

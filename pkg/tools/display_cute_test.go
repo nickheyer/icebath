@@ -90,10 +90,10 @@ func TestDetectToolFailureTerminalDegradedBackendShowsFullReasonAndRetryHint(t *
 	ctx := cuteTestHome(t)
 	result := displayDumps(t, "output", "", "exit_code", -1, "status", "degraded",
 		"reason", "Docker daemon is not reachable at unix:///var/run/docker.sock",
-		"retry_hint", "Start Docker, or run `icebath setup terminal` to switch to Local, then retry",
+		"retry_hint", "Start Docker, or start `icebath` and type `/setup terminal` to switch to Local, then retry",
 		"error", "Terminal backend degraded: Docker daemon is not reachable at unix:///var/run/docker.sock")
 	failed, suffix := DetectToolFailure(ctx, "terminal", result)
-	if !failed || !strings.Contains(suffix, "unix:///var/run/docker.sock") || !strings.Contains(suffix, "icebath setup terminal") ||
+	if !failed || !strings.Contains(suffix, "unix:///var/run/docker.sock") || !strings.Contains(suffix, "/setup terminal") ||
 		strings.Contains(suffix, "Terminal backend degraded:") {
 		t.Fatalf("got %v %q", failed, suffix)
 	}

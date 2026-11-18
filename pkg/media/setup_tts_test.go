@@ -197,7 +197,7 @@ func TestPythonSetupUsesDeclaredExtrasAndReportsRestart(t *testing.T) {
 				if succeeds && !strings.Contains(text, "Restart Icebath") {
 					t.Fatalf("output %q", text)
 				}
-				if !succeeds && (!strings.Contains(text, "resolution refused") || !strings.Contains(text, "Retry with: icebath setup") || strings.Contains(text, "installed.")) {
+				if !succeeds && (!strings.Contains(text, "resolution refused") || !strings.Contains(text, "Retry with: /setup") || strings.Contains(text, "installed.")) {
 					t.Fatalf("output %q", text)
 				}
 			})
@@ -216,7 +216,7 @@ func TestInstallTTSExtraReportsAnOSErrorAsPythonPrintsIt(t *testing.T) {
 		t.Fatalf("got %v %v", ok, err)
 	}
 	want := "Failed to install kittentts: [Errno 13] Permission denied: '/venv/lock'"
-	if text := out.String(); !strings.Contains(text, want) || !strings.Contains(text, "Retry with: icebath setup tts") {
+	if text := out.String(); !strings.Contains(text, want) || !strings.Contains(text, "Retry with: /setup tts") {
 		t.Fatalf("output %q lacks %q", text, want)
 	}
 }

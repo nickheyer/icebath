@@ -11,7 +11,7 @@ var (
 		"subscription.resume": true, "subscription.upgrade": true, "usage.bars": true, "session.usage": true,
 		"billing.step_up": true, "browser.manage": true, "cli.exec": true, "complete.path": true, "complete.slash": true,
 		"llm.oneshot": true, "model.options": true, "pet.cells": true, "pet.gallery": true, "pet.generate": true,
-		"pet.hatch": true, "pet.info": true, "pet.select": true, "learning.frames": true,
+		"pet.hatch": true, "pet.info": true, "pet.select": true, "learning.frames": true, "learning.graph": true,
 		"plugins.manage": true, "plugins.catalog.lookup": true, "reload.mcp": true, "mcp.servers.test": true,
 		"mcp.servers.oauth.start": true, "process.list": true, "profiles.configure": true, "profiles.create": true,
 		"profiles.describe": true, "profiles.get_asset": true, "profiles.list": true, "profiles.set_asset": true,

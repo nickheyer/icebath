@@ -447,10 +447,10 @@ func (e *doctorProbeEnv) doctorAPIKeyRequest(key, baseEnv, defaultURL string) (s
 // Probes the Bedrock control plane with the AWS credentials in use
 func (e *doctorProbeEnv) probeBedrock() (doctorProbeResult, error) {
 	name := "AWS Bedrock"
-	if !provider.HasAWSCredentials(true) {
+	if !provider.HasAWSCredentials(e.ctx, true) {
 		return doctorConnectivitySkip(name), nil
 	}
-	authVar, region, label := provider.ResolveAWSAuthEnvVar(), provider.ResolveBedrockRegion(), doctorLjust(name, 20)
+	authVar, region, label := provider.ResolveAWSAuthEnvVar(e.ctx), provider.ResolveBedrockRegion(), doctorLjust(name, 20)
 	n, err := provider.BedrockFoundationModelCount(e.ctx, region)
 	if err != nil {
 		errName := provider.AWSErrorClassName(err)

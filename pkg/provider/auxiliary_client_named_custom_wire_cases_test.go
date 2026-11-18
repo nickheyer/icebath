@@ -36,12 +36,11 @@ func auxWireHeaders(t *testing.T, client AuxClient) http.Header {
 	if err != nil {
 		t.Fatal(err)
 	}
-	req, err := http.NewRequest(http.MethodPost, sdk.BaseURL()+"/chat/completions", nil)
-	if err != nil {
-		t.Fatal(err)
+	out := http.Header{}
+	for _, l := range sdk.wireHeaders(key, &auxSDKRequest{path: "/chat/completions"}, 0).Lines() {
+		out.Add(l.Name, l.Value)
 	}
-	sdk.applyHeaders(req, key, &auxSDKRequest{path: "/chat/completions"}, 0)
-	return req.Header
+	return out
 }
 
 func TestBareNamedAuxCredentialSurvivesAsyncRebuildAsyncTaskClientCarriesKeyCmdBearerAndExtraHeaders(t *testing.T) {

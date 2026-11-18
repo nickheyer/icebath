@@ -453,9 +453,9 @@ func IsNoninteractive() bool {
 	return false
 }
 
-// PromptYesNo asks yes or no, headless and closed stdin answering the default, inside setup through the menu
+// Yes or no answer, headless runs taking the default, inside setup and the TUI through the menu
 func PromptYesNo(question string, def bool, description string) bool {
-	if IsNoninteractive() {
+	if IsNoninteractive() && hostedAsker() == nil {
 		return def
 	}
 	if currentSetupNavigation() != nil {

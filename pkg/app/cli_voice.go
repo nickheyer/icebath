@@ -90,13 +90,6 @@ func voiceUnlinkQuietly(path string) {
 // Dim voice line through cprint
 func voiceDim(text string) string { return dimANSI + text + resetANSI }
 
-// Repaints the TUI when the app is live
-func (c *CLI) voiceInvalidate() {
-	if c.app != nil {
-		_ = c.app.Invalidate()
-	}
-}
-
 // Starts microphone capture after checking requirements, with the silence auto stop and level refresh
 func (c *CLI) voiceStartRecording() error {
 	c.uiMu.Lock()
@@ -154,7 +147,6 @@ func (c *CLI) voiceStartRecording() error {
 			return
 		}
 		cprint("\n" + voiceDim(c.t("cli.voice.silence_autostop", nil)))
-		c.voiceInvalidate()
 		c.voiceStopAndTranscribe()
 	}
 	c.voiceBeep(880, 1)
@@ -180,7 +172,6 @@ func (c *CLI) voiceStartRecording() error {
 			if !still {
 				return
 			}
-			c.voiceInvalidate()
 			time.Sleep(150 * time.Millisecond)
 		}
 	}()
@@ -222,14 +213,12 @@ func (c *CLI) voiceRestartRecordingAsync() {
 			cprint(voiceDim(c.t("cli.voice.autorestart_failed", map[string]any{"error": pyrepr.ExceptionMessage(err)})))
 			return
 		}
-		c.voiceInvalidate()
 	}()
 }
 
 // Shows a live STT partial in the input hint while recording
 func (c *CLI) voiceOnLivePartial(text string) {
 	c.voiceLiveText = text
-	c.voiceInvalidate()
 }
 
 // Stops recording, transcribes and queues the transcript as voice input, restarting continuous capture
@@ -249,7 +238,6 @@ func (c *CLI) voiceStopAndTranscribe() {
 		c.voiceProcessing = false
 		c.voiceLock.Unlock()
 		c.voiceLiveText = ""
-		c.voiceInvalidate()
 		if wavPath != "" {
 			if fi, err := os.Stat(wavPath); err == nil && fi.Mode().IsRegular() {
 				if failed {
@@ -295,7 +283,6 @@ func (c *CLI) voiceStopAndTranscribe() {
 			cprint(voiceDim(c.t("cli.voice.no_speech", nil)))
 			return nil
 		}
-		c.voiceInvalidate()
 		model := c.voiceSTTModel()
 		if c.voiceSTTProvider() == "local" {
 			cprint(voiceDim(c.t("cli.voice.preparing_stt", map[string]any{"model": model})))
@@ -315,7 +302,6 @@ func (c *CLI) voiceStopAndTranscribe() {
 				return nil
 			}
 			c.attachedImages = nil
-			c.voiceInvalidate()
 			c.pendingInput.Put(&voiceInputMessage{Text: transcript})
 			submitted = true
 		case pyrepr.Truthy(result["success"]):
@@ -754,9 +740,6 @@ func (c *CLI) onWakeWord() error {
 		return nil
 	}
 	cprint("\n" + accentANSI.String() + c.t("cli.voice.wake_detected", nil) + resetANSI)
-	if c.app != nil {
-		_ = c.app.Invalidate()
-	}
 	if c.voiceExtra.wakeStartNewSession {
 		probeCall(func() { c.newSession(true, "") })
 	}

@@ -1369,7 +1369,7 @@ func (app *entraPublicApp) interactiveViaBrowser(ctx context.Context, req entraI
 			"following link. Otherwise, this auth attempt would either timeout (current timeout setting is %d) or be aborted by "+
 			"CTRL+C. Auth URI: %s", server.Port(), server.Port(), server.Port(), int(req.timeout.Seconds()), authURI))
 	}
-	values, err := serveLoopbackCallback(server, result, req.timeout, errFn, "entra_timeout")
+	values, err := serveLoopbackCallback(ctx, server, result, req.timeout, errFn, "entra_timeout")
 	if err != nil {
 		return nil, errors.New("User did not complete the flow in time")
 	}

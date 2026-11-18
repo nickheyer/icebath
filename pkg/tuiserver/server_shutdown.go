@@ -2,8 +2,11 @@ package tuiserver
 
 import (
 	"context"
+	"path/filepath"
 	"sync"
 
+	"github.com/nickheyer/icebath/pkg/pm"
+	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/tuigateway"
 )
 
@@ -33,13 +36,25 @@ func shutdownSessions() {
 	}
 }
 
-// Runs the import time effects of the server module once
-var serverModuleOnce sync.Once
+// Whether the import time effects of the server module already ran in this process
+var serverModule struct {
+	mu     sync.Mutex
+	loaded bool
+}
 
-// Registers the exit teardown of every live session and starts the idle reaper, once per process
-func loadServerModule() {
-	serverModuleOnce.Do(func() {
-		registerAtExit(shutdownSessions)
-		startIdleReaper()
-	})
+// Loads the home dotenv, registers the exit teardown of every live session and starts the idle reaper, once per process
+func loadServerModule() error {
+	serverModule.mu.Lock()
+	defer serverModule.mu.Unlock()
+	if serverModule.loaded {
+		return nil
+	}
+	options := provider.DotenvLoadOptions{ProjectEnv: filepath.Join(pm.RepoRoot(), ".env")}
+	if _, err := provider.LoadIcebathDotenv(context.Background(), options); err != nil {
+		return err
+	}
+	registerAtExit(shutdownSessions)
+	startIdleReaper()
+	serverModule.loaded = true
+	return nil
 }

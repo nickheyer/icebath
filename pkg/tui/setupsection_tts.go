@@ -180,7 +180,7 @@ func ttsSection() sectionSpec {
 		sectionField{id: "xai_no_key", kind: fieldNotice, label: tr("setupFlow.tts.xaiNoKey"), when: allOf(answerIs("xai_auth", "key"), answerIs("xai_key", nil))},
 		sectionField{id: "xai_skipped", kind: fieldNotice, label: tr("setupFlow.tts.xaiSkipped"), when: answerIs("xai_auth", "skip")},
 		sectionField{id: "xai_voice", kind: fieldText, label: tr("setupFlow.tts.xaiVoice"),
-			targets: []sectionTarget{{key: "tts.xai.voice_id"}}, when: ttsOutcomeIs("xai")})
+			targets: []sectionTarget{{key: "tts.xai.voice_id"}}, when: ttsOutcomeIs("xai"), seed: seedOf(nil)})
 	fields = append(fields, ttsEngineFields("neutts", "NeuTTS")...)
 	fields = append(fields, ttsEngineFields("kittentts", "KittenTTS")...)
 	voice := []sectionTarget{{key: "tts.edge.voice"}}
@@ -201,5 +201,5 @@ func ttsSection() sectionSpec {
 			}},
 		sectionField{id: "edge_other", kind: fieldText, label: tr("setupFlow.tts.voiceOther"), targets: voice, when: answerIs("edge_voice", "other")})
 	return sectionSpec{key: "tts", title: tr("setupFlow.tts.title"), detail: tr("setupFlow.tts.detail"), intro: tr("setupFlow.tts.intro"),
-		facts: facts, fields: fields}
+		facts: facts, fields: fields, fullSave: true}
 }

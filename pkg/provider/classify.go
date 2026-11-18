@@ -15,6 +15,7 @@ import (
 	"os"
 	"reflect"
 	"regexp"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -1534,6 +1535,23 @@ func ClassifyError(in ClassifyInput) *Classified {
 		}
 	} else if in.Err != nil {
 		raw = in.Err.Error()
+		var sdkErr *AuxSDKError
+		var streamErr *ProviderStreamError
+		if errors.As(in.Err, &sdkErr) {
+			if status == 0 {
+				status = sdkErr.StatusCode
+			}
+			if m, ok := sdkErr.Body.(map[string]any); ok && body == nil {
+				body = m
+			}
+		} else if errors.As(in.Err, &streamErr) {
+			if status == 0 {
+				status = streamErr.StatusCode
+			}
+			if body == nil && streamErr.Body != nil {
+				body = streamErr.Body
+			}
+		}
 	}
 	if headers == nil {
 		var hc HeaderCarrier
@@ -1724,6 +1742,9 @@ func IsProviderStreamParseError(err error) bool {
 	if errors.As(err, &syntaxErr) || errors.As(err, &typeErr) || errors.As(err, &apiErr) {
 		return false
 	}
+	if mro := declaredExceptionMRO(err); mro != nil && (!slices.Contains(mro, "ValueError") || slices.Contains(mro, "JSONDecodeError") || slices.Contains(mro, "UnicodeEncodeError")) {
+		return false
+	}
 	return anyIn(strings.ToLower(err.Error()), ProviderStreamParseMarkers)
 }
 
@@ -1736,7 +1757,7 @@ var NetworkResolutionMarkers = []string{
 }
 
 // OfflineSummary is the one line shown when the provider host cannot be resolved
-const OfflineSummary = "Hermes can't reach the model provider. You may be offline. Check your internet connection and try again."
+const OfflineSummary = "Icebath can't reach the model provider. You may be offline. Check your internet connection and try again."
 
 // XAIEntitlementHint is appended to xAI's permission denied body so Premium+ holders learn why
 const XAIEntitlementHint = " — xAI rejected this OAuth account. NOTE: X Premium+ does NOT " +
@@ -1877,6 +1898,23 @@ func TimeoutPhase(err error) string {
 		switch e := cur.(type) {
 		case *APIError:
 			continue
+		case *AuxSDKError:
+			if e.Class != "APITimeoutError" {
+				return phase
+			}
+			phase = TimeoutPhaseRead
+			continue
+		case *AuxTransportError:
+			switch e.Class {
+			case "ConnectTimeout":
+				return TimeoutPhaseConnect
+			case "PoolTimeout", "WriteTimeout":
+				return ""
+			case "ReadTimeout", "TimeoutException":
+				phase = TimeoutPhaseRead
+				continue
+			}
+			return phase
 		case *TimeoutPhaseError:
 			switch e.Phase {
 			case TimeoutPhaseConnect:
@@ -1936,6 +1974,14 @@ func httpPrefix(err error) string {
 	if errors.As(err, &apiErr) && apiErr.StatusCode > 0 {
 		return fmt.Sprintf("HTTP %d: ", apiErr.StatusCode)
 	}
+	var sdkErr *AuxSDKError
+	if errors.As(err, &sdkErr) && sdkErr.StatusCode > 0 {
+		return fmt.Sprintf("HTTP %d: ", sdkErr.StatusCode)
+	}
+	var streamErr *ProviderStreamError
+	if errors.As(err, &streamErr) && streamErr.StatusCode > 0 {
+		return fmt.Sprintf("HTTP %d: ", streamErr.StatusCode)
+	}
 	return ""
 }
 
@@ -1989,9 +2035,18 @@ func SummarizeAPIError(err error, provider string) string {
 	}
 	prefix := httpPrefix(err)
 	var apiErr *APIError
+	var sdkErr *AuxSDKError
+	var streamErr *ProviderStreamError
 	body := ""
+	var bodyMap map[string]any
 	if errors.As(err, &apiErr) {
 		body = apiErr.Body
+		bodyMap = decodeJSONObject(body)
+	} else if errors.As(err, &sdkErr) {
+		body = sdkErr.ResponseText
+		bodyMap, _ = sdkErr.Body.(map[string]any)
+	} else if errors.As(err, &streamErr) {
+		bodyMap = streamErr.Body
 	}
 	if strings.Contains(raw, "<!DOCTYPE") || strings.Contains(raw, "<html") {
 		return summarizeHTMLPage(raw, prefix)
@@ -2002,7 +2057,7 @@ func SummarizeAPIError(err error, provider string) string {
 	if strings.HasSuffix(fmt.Sprintf("%T", err), "GeminiAPIError") {
 		return redactSensitiveText(truncate(raw, 1000))
 	}
-	if payload := decodeJSONObject(body); payload != nil {
+	if payload := bodyMap; payload != nil {
 		var msg any
 		if errObj, ok := payload["error"].(map[string]any); ok {
 			msg = errObj["message"]

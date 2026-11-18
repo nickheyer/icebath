@@ -12,10 +12,8 @@ import (
 	"path/filepath"
 	"reflect"
 	"runtime"
-	"runtime/debug"
 	"strings"
 	"sync"
-	"sync/atomic"
 	"testing"
 	"time"
 
@@ -284,53 +282,53 @@ build_editable = build_wheel
 	}
 }
 
+// Reachable heap after every streamed chunk stays within 2MiB of the start, like tracemalloc peak in the reference
 func TestEnvironmentBuildStreamingBoundsMemoryWithoutLosingFailureClass(t *testing.T) {
 	python := peHostPython(t)
-	for _, diagnostic := range []string{"No solution found", "Connection timed out", "Failed to build wheel", "The build backend returned an error"} {
-		t.Run(diagnostic, func(t *testing.T) {
-			root := t.TempDir()
-			script := fmt.Sprintf("import os, time; os.write(2, %s); time.sleep(.15); os.write(2, %s); "+
-				"[os.write(2, b'x' * 65536) for _ in range(128)]; os.write(2, b'final diagnostic'); raise SystemExit(1)",
-				"b"+pyrepr.StrRepr(diagnostic[:4]), "b"+pyrepr.StrRepr(diagnostic[4:]))
-			e := &PythonEnvironment{UV: python, Python: python, Destination: filepath.Join(root, "venv"), Cache: filepath.Join(root, "cache"),
-				Env: pyEnviron(), Output: io.Discard}
-			previous := debug.SetGCPercent(1)
-			defer debug.SetGCPercent(previous)
-			runtime.GC()
-			var base runtime.MemStats
-			runtime.ReadMemStats(&base)
-			var peak atomic.Uint64
-			done := make(chan struct{})
-			go func() {
-				var m runtime.MemStats
-				for {
-					select {
-					case <-done:
-						return
-					case <-time.After(2 * time.Millisecond):
-						runtime.ReadMemStats(&m)
-						if m.HeapAlloc > peak.Load() {
-							peak.Store(m.HeapAlloc)
-						}
-					}
+	for _, verbose := range []string{"0", "1"} {
+		for _, diagnostic := range []string{"No solution found", "Connection timed out", "Failed to build wheel", "The build backend returned an error"} {
+			t.Run("verbose"+verbose+"/"+diagnostic, func(t *testing.T) {
+				t.Setenv("ICEBATH_VERBOSE", verbose)
+				root := t.TempDir()
+				script := fmt.Sprintf("import os, time; os.write(2, %s); time.sleep(.15); os.write(2, %s); "+
+					"[os.write(2, b'x' * 65536) for _ in range(128)]; os.write(2, b'final diagnostic'); raise SystemExit(1)",
+					"b"+pyrepr.StrRepr(diagnostic[:4]), "b"+pyrepr.StrRepr(diagnostic[4:]))
+				e := &PythonEnvironment{UV: python, Python: python, Destination: filepath.Join(root, "venv"), Cache: filepath.Join(root, "cache"),
+					Env: pyEnviron(), Output: io.Discard}
+				var now runtime.MemStats
+				var peak uint64
+				streamed := 0
+				peSwap(t, &uvStreamRunner, func(ctx context.Context, command []string, cwd string, env map[string]string, timeout time.Duration, write func(string)) (uvResult, error) {
+					return runStreaming(ctx, command, cwd, env, timeout, func(text string) {
+						write(text)
+						streamed += len(text)
+						runtime.GC()
+						runtime.ReadMemStats(&now)
+						peak = max(peak, now.HeapAlloc)
+					})
+				})
+				runtime.GC()
+				var base runtime.MemStats
+				runtime.ReadMemStats(&base)
+				result, err := e.run(context.Background(), []string{"-c", script}, root, 30*time.Second)
+				if err != nil {
+					t.Fatal(err)
 				}
-			}()
-			result, err := e.run(context.Background(), []string{"-c", script}, root, 30*time.Second)
-			close(done)
-			if err != nil {
-				t.Fatal(err)
-			}
-			if result.Code != 1 || len([]rune(result.Stderr)) > 2000 {
-				t.Fatalf("code %d tail %d", result.Code, len([]rune(result.Stderr)))
-			}
-			if grown := int64(peak.Load()) - int64(base.HeapAlloc); grown > 2*1024*1024 {
-				t.Fatalf("stream capture retained %d bytes", grown)
-			}
-			actual := ClassifyUVFailure("sync", result.Code, result.Stderr)
-			if reflect.TypeOf(actual) != reflect.TypeOf(ClassifyUVFailure("sync", 1, diagnostic)) || !strings.Contains(actual.Error(), "final diagnostic") {
-				t.Fatalf("classified %T %v", actual, actual)
-			}
-		})
+				if result.Code != 1 || len([]rune(result.Stderr)) > 2000 {
+					t.Fatalf("code %d tail %d", result.Code, len([]rune(result.Stderr)))
+				}
+				if streamed < 128*65536 {
+					t.Fatalf("stream delivered %d bytes", streamed)
+				}
+				if grown := int64(peak) - int64(base.HeapAlloc); grown > 2*1024*1024 {
+					t.Fatalf("stream capture retained %d bytes", grown)
+				}
+				actual := ClassifyUVFailure("sync", result.Code, result.Stderr)
+				if reflect.TypeOf(actual) != reflect.TypeOf(ClassifyUVFailure("sync", 1, diagnostic)) || !strings.Contains(actual.Error(), "final diagnostic") {
+					t.Fatalf("classified %T %v", actual, actual)
+				}
+			})
+		}
 	}
 }
 

@@ -295,20 +295,35 @@ func (t *Terminal) Protocol() Protocol {
 }
 
 func (t *Terminal) protocolLocked() Protocol {
-	_, _, measured := t.cellLocked()
-	switch {
-	case t.kitty && t.traits.placeholders && !t.broken[KittyCells]:
-		return KittyCells
-	case t.tmux:
-		return None
-	case t.kitty && !t.broken[KittyPlaced]:
-		return KittyPlaced
-	case t.traits.itermSure && !t.broken[ITerm]:
-		return ITerm
-	case t.sixel && measured && !t.broken[Sixel]:
-		return Sixel
+	for _, p := range []Protocol{KittyCells, KittyPlaced, ITerm, Sixel} {
+		if t.drawsLocked(p) {
+			return p
+		}
 	}
 	return None
+}
+
+// Reports whether the terminal has been verified to draw the protocol
+func (t *Terminal) Draws(p Protocol) bool {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	return t.drawsLocked(p)
+}
+
+// Verified check of one protocol, only kitty cells passing through tmux
+func (t *Terminal) drawsLocked(p Protocol) bool {
+	_, _, measured := t.cellLocked()
+	switch p {
+	case KittyCells:
+		return t.kitty && t.traits.placeholders && !t.broken[KittyCells]
+	case KittyPlaced:
+		return !t.tmux && t.kitty && !t.broken[KittyPlaced]
+	case ITerm:
+		return !t.tmux && t.traits.itermSure && !t.broken[ITerm]
+	case Sixel:
+		return !t.tmux && t.sixel && measured && !t.broken[Sixel]
+	}
+	return false
 }
 
 // Best protocol worth trying when the person forces images, the verified one else iTerm2 where it is plausible

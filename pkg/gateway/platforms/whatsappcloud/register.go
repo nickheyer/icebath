@@ -53,8 +53,8 @@ func (whatsAppCloudPlatformPlugin) Manifest() plugins.Manifest {
 		Description: "WhatsApp Business Cloud API adapter for Icebath Agent. Connects to WhatsApp via Meta's official Cloud API " +
 			"(Business account and a public webhook URL required, token-based auth): Graph API for outbound, a net/http webhook " +
 			"receiver with X-Hub-Signature-256 verification for inbound. Supports text, media (image/video/audio/document), voice " +
-			"notes, interactive buttons, and DM allowlists. Complements the Baileys bridge (whatsapp) plugin; both share " +
-			"WhatsAppBehaviorMixin.\n",
+			"notes, interactive buttons, and DM allowlists. Complements the whatsmeow WhatsApp Web bridge (whatsapp) plugin; both " +
+			"share the WhatsApp gating, mention and formatting behaviour.\n",
 		RequiresEnv: []plugins.EnvSpec{
 			{Name: "WHATSAPP_CLOUD_PHONE_NUMBER_ID", Description: "WhatsApp phone number ID from the Meta App Dashboard (WhatsApp → API Setup)"},
 			{Name: "WHATSAPP_CLOUD_ACCESS_TOKEN", Description: "System User permanent access token", Secret: true}}}

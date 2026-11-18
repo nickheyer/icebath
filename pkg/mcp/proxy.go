@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/nickheyer/icebath/pkg/config"
+	"github.com/nickheyer/icebath/pkg/internal/pyurl"
 	"github.com/nickheyer/icebath/pkg/provider"
 )
 
@@ -15,7 +16,7 @@ var splitPortRE = regexp.MustCompile(`(?s)^(.*):([0-9]*)$`)
 
 // Operating system proxy sources, replaced in tests so the host configuration cannot leak in
 var (
-	systemProxies     = getproxiesSystem
+	systemProxies     = pyurl.SystemProxies
 	systemProxyBypass = proxyBypassSystem
 )
 

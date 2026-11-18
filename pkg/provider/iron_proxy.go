@@ -736,7 +736,11 @@ func (p IronProxy) LoadMappings() ([]TokenMapping, error) {
 	return out, nil
 }
 
+// String items of a decoded or native string list, nil for anything else
 func anyStrings(v any) []string {
+	if native, ok := v.([]string); ok {
+		return append([]string(nil), native...)
+	}
 	list, ok := v.([]any)
 	if !ok {
 		return nil

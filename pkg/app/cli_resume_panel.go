@@ -19,10 +19,6 @@ func richStyled(style, text string) string {
 
 // Prints a Rich panel through the prompt safe console once the prompt is live, else straight to the console
 func (c *CLI) consolePrintPanel(panel pyrich.Panel) {
-	if c.app != nil {
-		defaultChatConsole.PrintPanel(panel)
-		return
-	}
 	columns, _ := pyshutil.GetTerminalSize(80, 24)
 	fmt.Fprintln(c.console.Out, panel.Render(c.console.ShouldUseColor(), columns))
 }

@@ -240,7 +240,6 @@ func (c *CLI) restoreModelRuntimeSnapshot(snapshot map[string]any) {
 
 // Opens the prompt native model picker on its provider stage
 func (c *CLI) openModelPicker(providers []map[string]any, currentModel, currentProvider string, userProvs map[string]any, customProvs []any) {
-	c.captureModalInputSnapshot()
 	selected := 0
 	for i, p := range providers {
 		if cliTruthy(p["is_current"]) {
@@ -253,13 +252,6 @@ func (c *CLI) openModelPicker(providers []map[string]any, currentModel, currentP
 	c.uiMu.Lock()
 	c.modelPickerState = state
 	c.uiMu.Unlock()
-	_ = c.invalidateWithin(0)
-}
-
-// pickerEntry is a model picker row with the index it has in the unfiltered list
-type pickerEntry struct {
-	Index int
-	Model string
 }
 
 // Switch result of a raw model pick resolved against this CLI's live route
@@ -273,20 +265,8 @@ func (c *CLI) switchModelFrom(rawInput string, isGlobal bool, explicitProvider s
 	return &result, nil
 }
 
-// Switch resolver and worker launcher of the model switch paths, replaced by tests the way the hermes cases patch them
-var (
-	switchModelResolve = provider.SwitchModel
-	startSwitchWorker  = func(target func()) { go target() }
-)
-
-// Runs a confirm and apply sequence on a worker while the TUI is live so its modal can render
-func (c *CLI) runConfirmAndApply(target func()) {
-	if c.app != nil {
-		startSwitchWorker(target)
-		return
-	}
-	target()
-}
+// Switch resolver of the model switch paths, replaced by tests the way the hermes cases patch them
+var switchModelResolve = provider.SwitchModel
 
 // Asks whether to switch anyway past a model guard, true only on an explicit yes
 func (c *CLI) askSwitchAnyway(title, detail string) bool {
@@ -795,7 +775,7 @@ func (c *CLI) handleModelSwitch(cmdOriginal string) {
 	}
 	c.mergePreflightWarning(result, customProvs)
 	effort := request.ReasoningEffort
-	c.runConfirmAndApply(func() { c.confirmAndApplyCLIModelSwitch(result, persistGlobal, oneTurn, customProvs, effort) })
+	c.confirmAndApplyCLIModelSwitch(result, persistGlobal, oneTurn, customProvs, effort)
 }
 
 // Confirms a costly typed switch and commits it, the once path judged against the persisted anchor

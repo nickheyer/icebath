@@ -132,7 +132,7 @@ func codexBrowserLogin(env PoolEnv, out io.Writer, openBrowser bool, timeout tim
 		wait = CodexBrowserCallbackWait
 	}
 	fmt.Fprintf(out, "Waiting for the OpenAI callback on %s (timeout %ds, Ctrl+C to cancel)...\n", redirectURI, int(wait.Seconds()))
-	callback, err := serveLoopbackCallback(server, result, wait,
+	callback, err := serveLoopbackCallback(env.ctx(), server, result, wait,
 		func(message, code string) *AuthError { return codexErr(message, code, false) }, "codex_browser_callback_timeout")
 	if err != nil {
 		if env.ctx().Err() != nil {

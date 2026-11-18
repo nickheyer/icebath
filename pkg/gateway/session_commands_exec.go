@@ -2,6 +2,7 @@ package gateway
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"os"
@@ -28,6 +29,42 @@ type RegistryCommand struct {
 
 // Command registry lookup of pkg/commands, assigned in cmd/icebath/wiring.go
 var ResolveRegistryCommand func(name string) (RegistryCommand, bool)
+
+// Registry command a plugin bound a turn building handler to, assigned in cmd/icebath/wiring.go
+var ResolveBoundCommand func(name string) (RegistryCommand, bool)
+
+// Runs the handler bound to a registry command against the host taking its turn, assigned in cmd/icebath/wiring.go
+var RunBoundCommand func(ctx context.Context, name, arg string, host any) error
+
+// Turn a bound command handler builds for one session, held for the surface to submit
+type BoundTurn struct {
+	TaskID, Platform, Message string
+	submitted                 bool
+}
+
+// Holds the one turn the handler built, refusing a second
+func (t *BoundTurn) SubmitUserTurn(ctx context.Context, message string) error {
+	if t.submitted {
+		return errors.New("a slash command submits one turn")
+	}
+	t.Message, t.submitted = message, true
+	return nil
+}
+
+// Task id and platform of the session the turn is built for
+func (t *BoundTurn) TurnSession() (string, string) { return t.TaskID, t.Platform }
+
+// Turn of a bound command for one session, an empty turn refused as unavailable
+func RunBoundTurn(ctx context.Context, name, arg, taskID, platform string) (string, error) {
+	turn := &BoundTurn{TaskID: taskID, Platform: platform}
+	if err := RunBoundCommand(ctx, name, arg, turn); err != nil {
+		return "", err
+	}
+	if turn.Message == "" {
+		return "", runtimeRefusal("command_unavailable")
+	}
+	return turn.Message, nil
+}
 
 // Runner surface of the messaging gateway's own command dispatch a local session's slash exec runs
 type localCommandRunner interface {
@@ -64,12 +101,12 @@ var (
 
 // What to run instead, for the client local commands a shared gateway session cannot run
 var RefusalHints = map[string]string{
-	"export":   "Run `icebath profile export [name] -o <file>` in a terminal.",
-	"import":   "Run `icebath profile import <archive> [--name <name>]` in a terminal.",
+	"export":   "Type /export [profile] [-o <file>] in the terminal UI (bare `icebath`), or run `icebath profile export [name] -o <file>`.",
+	"import":   "Type /import <archive> [--name <name>] in the terminal UI (bare `icebath`), or run `icebath profile import <archive> [--name <name>]`.",
 	"snapshot": "Type /snapshot in the terminal UI (bare `icebath`): list, create [label], restore <id>, prune [N]. `icebath backup --quick` creates one from a shell.",
-	"handoff":  "Hand off from the classic CLI: `icebath --cli --resume <session>`, then /handoff <platform>.",
-	"hatch":    "Generate a pet from the classic CLI (`icebath --cli`, then /hatch), or use /pet to pick one.",
-	"worktree": "Start in a fresh worktree with `icebath -w`, or run `icebath worktree list` and `icebath worktree prune` in a terminal.",
+	"handoff":  "Type /handoff <platform> in the terminal UI (bare `icebath`) on the session to hand off.",
+	"hatch":    "Type /hatch [description] in the terminal UI (bare `icebath`), or /pet to pick a gallery pet.",
+	"worktree": "Type /worktree [new [name]|list|prune] in the terminal UI (bare `icebath`), or start in a fresh worktree with `icebath -w`.",
 	"palette":  "Type / to search commands (the composer completes and filters them).",
 }
 
@@ -385,15 +422,50 @@ func skillDirective(ctx context.Context, name, arg, route string) (*pyjson.Objec
 	if stacked {
 		shown = strings.Join(loaded, ", ")
 	}
+	return skillTurnDirective(ctx, shown, message, missing), nil
+}
+
+// Skill directive the client submits as its next turn, noting any skills that were missing
+func skillTurnDirective(ctx context.Context, name, message string, missing []string) *pyjson.Object {
 	var display any
 	if described, ok := skills.DescribeSkillInvocation(message, " "); ok {
 		display = described
 	}
-	out := pyjson.ObjectOf("type", "skill", "name", shown, "message", message, "display", display)
+	out := pyjson.ObjectOf("type", "skill", "name", name, "message", message, "display", display)
 	if len(missing) > 0 {
 		out.Set("notice", i18n.T(ctx, "cli.skills.skipped_missing", "", map[string]any{"names": strings.Join(missing, ", ")}))
 	}
-	return out, nil
+	return out
+}
+
+// Bound command reply of a local session, its built turn as a skill directive when idle, its busy policy otherwise
+func boundCommandReply(ctx context.Context, a *SessionAuthority, ref SessionRef, live *LiveSession, bound RegistryCommand, arg string, before func(context.Context) error) (*pyjson.Object, error) {
+	handle, err := a.handle(ctx, ref)
+	if err != nil {
+		return nil, err
+	}
+	if handle.ExecutionState != "idle" {
+		runner, ok := a.Runner.(localCommandRunner)
+		if !ok {
+			return nil, attributeError("_dispatch_busy_slash_command")
+		}
+		event := NewMessageEvent(pystr.Strip("/" + bound.Name + " " + arg))
+		event.Source = live.Source
+		captured, sink := CaptureCommandSink(ctx)
+		output, err := runner.LocalBusySlashCommand(WithBusyAccepted(captured, before), event, bound, live.Route, live.Source)
+		if err != nil {
+			return nil, err
+		}
+		return pyjson.ObjectOf("type", "exec", "output", joinNonEmpty(append(append([]string{}, sink.Notices...), commandText(output))...)), nil
+	}
+	if err := before(ctx); err != nil {
+		return nil, err
+	}
+	message, err := RunBoundTurn(ctx, bound.Name, arg, live.Route, "")
+	if err != nil {
+		return nil, err
+	}
+	return skillTurnDirective(ctx, bound.Name, message, nil), nil
 }
 
 // Main's TUI text for a TUI session's status or context read, nil for any other read
@@ -662,6 +734,12 @@ func executeCommand(ctx context.Context, c *AuthorityConnection, ref SessionRef,
 			return nil, err
 		}
 	}
+	bound, isBound := RegistryCommand{}, false
+	if !known && !hasRunnerCommand {
+		if bound, isBound = ResolveBoundCommand(name); isBound {
+			canonical = bound.Name
+		}
+	}
 	capability := "session:submit"
 	switch {
 	case verdict == "read":
@@ -727,6 +805,13 @@ func executeCommand(ctx context.Context, c *AuthorityConnection, ref SessionRef,
 			return nil, err
 		}
 		return pyjson.ObjectOf("type", "exec", "output", commandText(output)), nil
+	}
+	if isBound {
+		inWorkspace, err := workspace()
+		if err != nil {
+			return nil, err
+		}
+		return boundCommandReply(inWorkspace, a, ref, live, bound, arg, before)
 	}
 	if !known {
 		inWorkspace, err := workspace()

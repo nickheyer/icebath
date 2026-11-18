@@ -11,7 +11,6 @@ import (
 	"testing"
 
 	"github.com/nickheyer/icebath/pkg/install"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/pm"
 )
 
@@ -49,53 +48,6 @@ func TestReleaseBinaryInstallFollowsTheStamp(t *testing.T) {
 	}
 	if got, err := releaseBinaryInstall(context.Background(), t.TempDir()); err != nil || got {
 		t.Fatalf("a tree without the binary is not a release install %v %v", got, err)
-	}
-}
-
-func TestUpdateViaReleaseHandsTheSwappedReleaseToTheCompletion(t *testing.T) {
-	t.Setenv("ICEBATH_HOME", t.TempDir())
-	root := releaseTree(t, "script", false)
-	savedRoot, savedUpdate, savedComplete := fleetProjectRoot, releaseBinaryUpdate, zipCompleteSourceUpdate
-	t.Cleanup(func() {
-		fleetProjectRoot, releaseBinaryUpdate, zipCompleteSourceUpdate = savedRoot, savedUpdate, savedComplete
-	})
-	fleetProjectRoot = func() string { return root }
-	var calls []string
-	result, failure := install.BinaryUpdate{Tag: "v1.2.0", Commit: strings.Repeat("b", 40), Changed: true}, error(nil)
-	releaseBinaryUpdate = func(_ context.Context, dir, repoURL, commit, branch string, _ io.Writer) (install.BinaryUpdate, error) {
-		calls = append(calls, strings.Join([]string{dir, repoURL, commit, branch}, " "))
-		return result, failure
-	}
-	var completed []map[string]any
-	zipCompleteSourceUpdate = func(_ context.Context, _ io.Writer, request map[string]any) error {
-		completed = append(completed, request)
-		return nil
-	}
-	pinned := strings.Repeat("a", 40)
-	request := map[string]any{}
-	if err := updateViaRelease(context.Background(), &bytes.Buffer{}, applyTarget{Ref: pinned, ReleaseSHA: pinned}, request); err != nil {
-		t.Fatal(err)
-	}
-	if calls[0] != root+" https://github.com/"+OfficialRepository+" "+pinned+" " {
-		t.Fatalf("stable call %q", calls[0])
-	}
-	if request["apply_mode"] != "release" || request["expected_sha"] != result.Commit || request["completion_message"] != nil || len(completed) != 1 {
-		t.Fatalf("request %v", request)
-	}
-	result.Changed = false
-	request = map[string]any{}
-	if err := updateViaRelease(context.Background(), &bytes.Buffer{}, applyTarget{Ref: "origin/main", Repository: "fork/icebath"}, request); err != nil {
-		t.Fatal(err)
-	}
-	if calls[1] != root+" https://github.com/fork/icebath  main" || request["completion_message"] != "✓ Already up to date!" {
-		t.Fatalf("branch call %q request %v", calls[1], request)
-	}
-	failure = errors.New("no published release of x follows branch main")
-	var out bytes.Buffer
-	err := updateViaRelease(context.Background(), &out, applyTarget{Ref: "origin/main"}, map[string]any{})
-	var exit *pm.SystemExit
-	if !errors.As(err, &exit) || exit.Code != 1 || !strings.Contains(out.String(), "✗ Release update failed: no published release") || len(completed) != 2 {
-		t.Fatalf("failure %v %q", err, out.String())
 	}
 }
 
@@ -151,42 +103,5 @@ func TestReleaseRevisionFeedsTheSourceCheckOnlyForReleaseInstalls(t *testing.T) 
 	releaseCheckoutSHA = func() (*string, error) { return &short, nil }
 	if got := releaseRevision(context.Background(), releaseTree(t, "script", false)); got != "" {
 		t.Fatalf("partial revision %q", got)
-	}
-}
-
-func TestCheckReleaseUpdateReportsTheSourceCheckVerdict(t *testing.T) {
-	t.Setenv("ICEBATH_HOME", t.TempDir())
-	saved := releaseSourceCheck
-	t.Cleanup(func() { releaseSourceCheck = saved })
-	var status *pyjson.Object
-	var seen SourceCheckOptions
-	releaseSourceCheck = func(_ context.Context, opts SourceCheckOptions) (*pyjson.Object, error) {
-		seen = opts
-		return status, nil
-	}
-	for _, tc := range []struct {
-		status *pyjson.Object
-		want   string
-		code   int
-	}{
-		{pyjson.ObjectOf("behind", int64(0), "branch", "main"), "✓ Already up to date.\n", 0},
-		{pyjson.ObjectOf("behind", int64(3), "channel", "stable"), "⚕ Update available: 3 commits behind stable.\n  Run 'icebath update' to install.\n", 0},
-		{pyjson.ObjectOf("behind", int64(UpdateAvailableNoCount), "branch", "main"), "⚕ Update available (behind main).\n  Run 'icebath update' to install.\n", 0},
-		{pyjson.ObjectOf("behind", nil, "reason", "network"), "✗ Could not check for updates: network\n", 1},
-	} {
-		status = tc.status
-		var out bytes.Buffer
-		err := checkReleaseUpdate(context.Background(), &out, "main", false, nil)
-		var exit *pm.SystemExit
-		if (tc.code == 0 && err != nil) || (tc.code != 0 && (!errors.As(err, &exit) || exit.Code != tc.code)) || out.String() != tc.want {
-			t.Fatalf("status %v got %q %v", tc.status, out.String(), err)
-		}
-		if !seen.Force || seen.Branch != nil {
-			t.Fatalf("options %+v", seen)
-		}
-	}
-	status = pyjson.ObjectOf("behind", int64(0))
-	if err := checkReleaseUpdate(context.Background(), &bytes.Buffer{}, "feature", true, nil); err != nil || seen.Branch == nil || *seen.Branch != "feature" {
-		t.Fatalf("explicit branch %+v %v", seen, err)
 	}
 }

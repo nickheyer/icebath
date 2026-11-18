@@ -200,7 +200,7 @@ func auxResolveCallClient(ctx context.Context, req auxCallRequest, route auxTask
 		}
 	}
 	if client == nil {
-		return auxResolvedAuxRoute{}, &AuxiliaryClientUnavailable{Message: fmt.Sprintf("No LLM provider configured for task=%s provider=%s. Run: icebath setup",
+		return auxResolvedAuxRoute{}, &AuxiliaryClientUnavailable{Message: fmt.Sprintf("No LLM provider configured for task=%s provider=%s. Start icebath and type /setup aux",
 			auxTaskText(task), resolvedProvider)}
 	}
 	return auxResolvedAuxRoute{Client: client, FinalModel: finalModel, ResolvedProvider: resolvedProvider, EffectiveProvider: effectiveProvider}, nil

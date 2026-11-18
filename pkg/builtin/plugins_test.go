@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/nickheyer/icebath/pkg/commands"
+	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/plugins"
 )
 
@@ -98,7 +99,7 @@ func TestBundledPluginsRegisterThroughManager(t *testing.T) {
 	if data, _ := os.ReadFile(ip); !strings.Contains(string(data), filepath.Join(filepath.Dir(ip), "scripts")+"/impeccable") {
 		t.Error("rendered impeccable skill does not point at the materialized scripts")
 	}
-	if def := commands.Default.Lookup("impeccable"); def == nil || len(def.Subcommands) != 24 {
+	if def := commands.Default.Lookup("impeccable"); def == nil || len(def.Subcommands) != 24 || def.Handler == nil {
 		t.Fatalf("impeccable command %+v", def)
 	}
 	out := m.InvokeHook(context.Background(), "transform_tool_result", map[string]any{"tool_name": "read_file", "args": map[string]any{}, "result": "{}"})
@@ -106,5 +107,33 @@ func TestBundledPluginsRegisterThroughManager(t *testing.T) {
 		if v != nil {
 			t.Fatalf("read_file transformed %v", out)
 		}
+	}
+}
+
+func TestImpeccableCommandBuildsTheRenderedSkillTurn(t *testing.T) {
+	h := t.TempDir()
+	t.Setenv("ICEBATH_HOME", h)
+	os.WriteFile(filepath.Join(h, "config.yaml"), []byte("plugins:\n  enabled:\n    - impeccable\n"), 0o644)
+	ctx := context.Background()
+	plugins.DiscoverPlugins(ctx, false)
+	host := &turnHost{task: "impeccable-turn-session", platform: "cli"}
+	if err := commands.RunHandler(ctx, commands.Default, "impeccable", "teach the checkout flow", host); err != nil {
+		t.Fatal(err)
+	}
+	ip, _ := plugins.GetPluginManager(ctx).FindPluginSkill("impeccable:impeccable")
+	for _, want := range []string{`[IMPORTANT: The user has invoked the "impeccable`, "init the checkout flow", filepath.Dir(ip)} {
+		if !strings.Contains(host.msg, want) {
+			t.Fatalf("skill turn lacks %q\n%s", want, host.msg)
+		}
+	}
+	if strings.Contains(host.msg, "teach the checkout flow") {
+		t.Fatalf("teach was not routed to init\n%s", host.msg)
+	}
+	disabled := &turnHost{task: "impeccable-turn-session", platform: "telegram"}
+	os.WriteFile(filepath.Join(h, "config.yaml"), []byte("plugins:\n  enabled:\n    - impeccable\nskills:\n  platform_disabled:\n    telegram:\n      - impeccable\n"), 0o644)
+	config.ResetCache()
+	err := commands.RunHandler(ctx, commands.Default, "impeccable", "audit", disabled)
+	if err == nil || err.Error() != "impeccable: skill impeccable:impeccable is not available" || disabled.msg != "" {
+		t.Fatalf("platform disabled skill %v %q", err, disabled.msg)
 	}
 }

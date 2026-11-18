@@ -292,14 +292,14 @@ var ddgsText = func(ctx context.Context, query string, maxResults int) ([]*ddgsT
 	return newDDGSClient(10).text(ctx, ddgsQuery{query: query, region: "us-en", safesearch: "moderate", page: 1}, maxResults)
 }
 
-// Whether the DuckDuckGo client can search, always since it is compiled into the binary and needs no key
-var ddgsClientAvailable = func(context.Context) bool { return true }
+// Whether ddgs is installed in the reference sense, once config selects it as the reference tools setup installs its extra
+var ddgsClientAvailable = func(env *Env) bool { return webConfigSelects(env, "ddgs") }
 
 type ddgsProvider struct{ baseWebProvider }
 
-// Available reports the compiled in DuckDuckGo client, never touching the network
+// Available reports the ddgs backend selected in config, never touching the network
 func (p *ddgsProvider) Available(env *Env) bool {
-	return ddgsClientAvailable(context.Background())
+	return ddgsClientAvailable(env)
 }
 
 // Search in a disposable worker with a hard wall clock timeout, every failure a search error result

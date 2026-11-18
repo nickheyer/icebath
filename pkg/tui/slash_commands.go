@@ -1116,37 +1116,6 @@ func (a *app) opsCommands() []slashCommand {
 		{name: arena.Name, help: "watch the agents of the session work on a voxel platform, with their tickets, log and replay", run: func(r *slashRun) tea.Cmd {
 			return a.openArena()
 		}},
-		{name: "agents", aliases: []string{"tasks"}, help: "open the agents of the session, with stop and pause controls", usage: "[pause|resume|status]",
-			suggest: func(string) []string { return []string{"pause", "resume", "status"} },
-			run: func(r *slashRun) tea.Cmd {
-				switch sub := strings.ToLower(trimJS(r.arg)); sub {
-				case "pause", "resume", "unpause":
-					return r.rpc("delegation.pause", map[string]any{"paused": sub == "pause"}, func(res map[string]any) tea.Cmd {
-						a.store.applyDelegationStatus(map[string]any{"paused": res["paused"]})
-						if truthyJS(res["paused"]) {
-							r.sys(tr("slashCmd.ops.agents.paused"))
-						} else {
-							r.sys(tr("slashCmd.ops.agents.resumed"))
-						}
-						return nil
-					})
-				case "status":
-					d := a.store.delegation
-					state := tr("slashCmd.ops.agents.stateActive")
-					if d.Paused {
-						state = tr("slashCmd.ops.agents.statePaused")
-					}
-					limit := func(v *float64) string {
-						if v == nil {
-							return "?"
-						}
-						return jsString(*v)
-					}
-					r.sys(tr("slashCmd.ops.agents.status", state, limit(d.MaxSpawnDepth), limit(d.MaxConcurrentChildren)))
-					return nil
-				}
-				return a.openAgents()
-			}},
 	}
 }
 

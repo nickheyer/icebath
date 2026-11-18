@@ -1988,11 +1988,11 @@ func CurrentTerminalBackend(env *Env) (string, error) {
 
 var multiProviderNotices = map[string]string{
 	"web": "[yellow]⚠ Web search is off[/] — no search provider is set up yet (any one of Nous subscription, Exa, " +
-		"Tavily, Firecrawl, Brave, or free DuckDuckGo works). Run [bold]icebath setup tools[/] and set one up under " +
+		"Tavily, Firecrawl, Brave, or free DuckDuckGo works). Type [bold]/setup tools[/] and set one up under " +
 		"\"Web Search & Scraping\".",
 }
 
-const genericNoticeFooter = "[dim]   Run 'icebath setup tools' to configure[/]"
+const genericNoticeFooter = "[dim]   Type '/setup tools' to configure[/]"
 
 func terminalNoticeLine(backend, reason string) string {
 	detail := ""
@@ -2000,7 +2000,7 @@ func terminalNoticeLine(backend, reason string) string {
 		detail = " (" + reason + ")"
 	}
 	return fmt.Sprintf("[yellow]⚠ Terminal tool disabled:[/] the '%s' backend is not usable%s. ", backend, detail) +
-		"Run [bold]icebath doctor[/] for details, or [bold]icebath setup terminal[/] to pick another backend."
+		"Run [bold]icebath doctor[/] for details, or type [bold]/setup terminal[/] to pick another backend."
 }
 
 // ToolAvailabilityWarningLines renders the Rich markup startup notices for toolsets switched off by missing requirements

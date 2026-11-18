@@ -41,9 +41,6 @@ const (
 	proxyMaxRequestBytes = 10_000_000
 )
 
-// The HTTP stack hermes imports lazily is part of the Go runtime
-const aiohttpAvailable = true
-
 var proxyLoopbackHosts = map[string]bool{"localhost": true, "127.0.0.1": true, "::1": true}
 
 // Sec-Fetch-Site values a browser sends for a request no foreign page made
@@ -58,13 +55,6 @@ func withDroppedHeaders(base map[string]bool, extra ...string) map[string]bool {
 		out[name] = true
 	}
 	return out
-}
-
-func requireAiohttp() error {
-	if !aiohttpAvailable {
-		return errors.New("aiohttp is required for `icebath proxy`. Run `icebath setup` to install it.")
-	}
-	return nil
 }
 
 // Writes an OpenAI style error JSON response
@@ -384,9 +374,6 @@ func handleProxy(w http.ResponseWriter, r *http.Request, adapter UpstreamAdapter
 
 // Runs the proxy until the shutdown channel closes or, when it is nil, until SIGINT or SIGTERM arrives
 func runProxyServer(ctx context.Context, adapter UpstreamAdapter, host string, port int, shutdown <-chan struct{}, log *slog.Logger) error {
-	if err := requireAiohttp(); err != nil {
-		return err
-	}
 	handler := createProxyApp(adapter, host, log)
 	listener, err := net.Listen("tcp", net.JoinHostPort(host, strconv.Itoa(port)))
 	if err != nil {

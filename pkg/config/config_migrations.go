@@ -30,7 +30,7 @@ const SupportFloorVersion = 12
 // Explanation shown when a config predates the support floor
 func SupportFloorMessage(h string) string {
 	return fmt.Sprintf("This config predates version %d (~2 years old) and can no longer be auto-migrated. Back up "+
-		"%s/config.yaml and run `icebath setup` to regenerate, or manually set _config_version: %d "+
+		"%s/config.yaml, then start `icebath` and type `/setup` to regenerate it, or manually set _config_version: %d "+
 		"after reviewing the changelog.", SupportFloorVersion, home.Display(h), SupportFloorVersion)
 }
 
@@ -1306,7 +1306,50 @@ func migrationSteps() []migrationStep {
 			added:      "removed wake_word.capture",
 			message:    "  \u2713 Removed wake_word.capture \u2014 the wake word always listens on this machine's microphone (wake_word.input_device).",
 			extraGuard: func(raw map[string]any) bool { _, has := raw["capture"]; return has }})},
+		{56, migrateTo56},
+		{57, rewriteStaleDefault(retiredWakePhrase, rewriteSpec{section: "wake_word", key: "phrase", newValue: "hey icebath",
+			added: "wake_word.phrase=hey icebath (was: hey hermes)",
+			message: "  ✓ Changed wake_word.phrase from \"hey hermes\" to \"hey icebath\" — the open vocabulary sherpa engine detects it. " +
+				"Set wake_word.phrase back to \"hey hermes\" to keep the bundled openWakeWord model.",
+			extraGuard: wakeEngineLeftToAuto})},
 	}
+}
+
+// Wake phrase of the bundled openWakeWord model, the default before the icebath phrase
+const retiredWakePhrase = "hey hermes"
+
+// Whether the wake engine is still auto on the bundled openWakeWord model the old default phrase came with
+func wakeEngineLeftToAuto(raw map[string]any) bool {
+	if provider, has := raw["provider"]; has && provider != nil && !lowerIs("auto")(provider, true) {
+		return false
+	}
+	oww, _ := raw["openwakeword"].(map[string]any)
+	model, has := oww["model"]
+	return !has || model == nil || model == "" || model == "hey_hermes"
+}
+
+// Section and key of each setting only the desktop app read
+var desktopOnlyKeys = [][2]string{{"terminal", "font_family"}, {"display", "resume_last_session"}, {"onboarding", "run"}}
+
+// Drops the settings only the desktop app read and keeps the rest of their sections
+func migrateTo56(r *migrationRun) error {
+	cfg := r.read()
+	var removed []string
+	for _, pair := range desktopOnlyKeys {
+		section, ok := cfg[pair[0]].(map[string]any)
+		if !ok {
+			continue
+		}
+		if _, has := section[pair[1]]; has {
+			delete(section, pair[1])
+			removed = append(removed, pair[0]+"."+pair[1])
+		}
+	}
+	if len(removed) == 0 {
+		return nil
+	}
+	list := strings.Join(removed, ", ")
+	return r.commit(cfg, "removed "+list, "  ✓ Removed "+list+" — the terminal UI is the one interface.")
 }
 
 // Session socket keys the dashboard section held that the sessions section now carries

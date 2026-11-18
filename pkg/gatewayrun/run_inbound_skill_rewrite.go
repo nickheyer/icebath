@@ -64,6 +64,25 @@ func hmUnknownSlashReply(ctx context.Context, command string, source *gateway.Se
 	return &reply
 }
 
+// Rewrites a command bound to a turn building handler into that turn, replying the failure when the handler fails
+func (r *GatewayRunner) hmBoundCommandRewrite(ctx context.Context, event *gateway.MessageEvent, source *gateway.SessionSource, quickKey, command string) (bool, *string) {
+	if command == "" {
+		return false, nil
+	}
+	bound, ok := gateway.ResolveBoundCommand(command)
+	if !ok {
+		return false, nil
+	}
+	message, err := gateway.RunBoundTurn(ctx, bound.Name, pystr.Strip(event.GetCommandArgs()), quickKey, sourcePlatformValue(source))
+	if err != nil {
+		runLog().Warn(fmt.Sprintf("Bound command /%s failed: %s", bound.Name, err))
+		reply := i18n.T(ctx, "cli.plugin.command_error", "", map[string]any{"error": err.Error()})
+		return true, &reply
+	}
+	event.Text = message
+	return true, nil
+}
+
 // Rewrites a bundle or skill command into the skill prompt on the event text, a reply when disabled, unknown or failed
 func (r *GatewayRunner) hmSkillSlashRewrite(ctx context.Context, event *gateway.MessageEvent, source *gateway.SessionSource, quickKey, command string) *string {
 	if command == "" || r.hmBundleSlashRewrite(ctx, event, source, quickKey, command) {

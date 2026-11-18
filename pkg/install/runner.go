@@ -48,21 +48,17 @@ func (e *StageError) Error() string { return e.Reason }
 
 func fail(reason, class string) error { return &StageError{Reason: reason, Class: class} }
 
-// Runs install stages in process, reporting every line and transition through the sink
+// Runs install stages in process, reporting every line through the sink
 type Runner struct {
-	opts           Options
-	sink           func(Event)
-	color          bool
-	quiet          bool
-	childrenToSink bool
-	home           string
-	installDir     string
-	stage          string
-	skipped        bool
-	stdout         io.Writer
-	stderr         io.Writer
-	lastErr        error
-	mu             sync.Mutex
+	opts       Options
+	sink       func(Event)
+	color      bool
+	quiet      bool
+	home       string
+	installDir string
+	stdout     io.Writer
+	stderr     io.Writer
+	mu         sync.Mutex
 }
 
 // Runner for the options, the home and install dir resolved and exported like install.sh does
@@ -122,7 +118,7 @@ func (r *Runner) emit(e Event) {
 	r.sink(e)
 }
 
-func (r *Runner) line(stream LogStream, text string) { r.emit(LogEvent(r.stage, text, stream)) }
+func (r *Runner) line(stream LogStream, text string) { r.emit(Event{Line: text, Stream: stream}) }
 
 func (r *Runner) paint(code, glyph string) string {
 	if !r.color {
@@ -136,13 +132,10 @@ func (r *Runner) logSuccess(text string) { r.line(Stdout, r.paint("\x1b[0;32m", 
 func (r *Runner) logWarn(text string)    { r.line(Stdout, r.paint("\x1b[0;33m", "⚠")+" "+text) }
 func (r *Runner) logError(text string)   { r.line(Stderr, r.paint("\x1b[0;31m", "✗")+" "+text) }
 
-// Runs one stage and returns its result and exit status
-func (r *Runner) RunStage(ctx context.Context, name string) (StageResult, int) {
-	r.stage, r.skipped, r.lastErr = name, false, nil
-	reason := ""
+// Runs one stage and returns its exit status and failure, the interactive stages passing in a non interactive run
+func (r *Runner) RunStage(ctx context.Context, name string) (int, error) {
 	if r.opts.NonInteractive && (name == "setup" || name == "gateway") {
-		r.skipped = true
-		return StageResult{Stage: name, OK: true, Skipped: true, Reason: strPtr("needs user input")}, 0
+		return 0, nil
 	}
 	var err error
 	switch name {
@@ -163,27 +156,15 @@ func (r *Runner) RunStage(ctx context.Context, name string) (StageResult, int) {
 	case "complete":
 		err = r.stageComplete(ctx)
 	default:
-		reason = "unknown stage: " + name
-		r.lastErr = fail(reason, "other")
+		reason := "unknown stage: " + name
 		r.line(Stderr, reason)
-		return StageResult{Stage: name, OK: false, Reason: strPtr(reason)}, 2
+		return 2, fail(reason, "other")
 	}
-	r.lastErr = err
 	if err == nil {
-		return StageResult{Stage: name, OK: true, Skipped: r.skipped}, 0
+		return 0, nil
 	}
-	var se *StageError
-	if errors.As(err, &se) {
-		r.logError(se.Reason)
-		reason = se.Reason
-	} else {
-		reason = err.Error()
-		r.logError(reason)
-	}
-	if reason == "" {
-		reason = "stage failed (exit 1)"
-	}
-	return StageResult{Stage: name, OK: false, Reason: strPtr(reason)}, 1
+	r.logError(err.Error())
+	return 1, err
 }
 
 // Closed failure class of a stage error, other when it names none
@@ -320,13 +301,13 @@ func (r *Runner) runLadder(ctx context.Context) int {
 				}
 			}
 		}()
-		res, code, err := r.runStageForLadder(stageCtx, name)
+		code, err := r.RunStage(stageCtx, name)
 		close(done)
 		cancel()
 		notedMu.Lock()
 		pending = noted
 		notedMu.Unlock()
-		if res.OK {
+		if code == 0 {
 			if pending == os.Interrupt {
 				notedMu.Lock()
 				noted = nil
@@ -349,12 +330,6 @@ func (r *Runner) runLadder(ctx context.Context) int {
 	}
 	r.printPathReloadHint()
 	return 0
-}
-
-// One ladder stage with its error kept for the receipt class
-func (r *Runner) runStageForLadder(ctx context.Context, name string) (StageResult, int, error) {
-	res, code := r.RunStage(ctx, name)
-	return res, code, r.lastErr
 }
 
 // Prints how to reach the command from the current shell when its inherited PATH lacks the user bin

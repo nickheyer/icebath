@@ -24,9 +24,6 @@ var minimaxHTTPClientFn = func(timeout time.Duration) *http.Client {
 	return &http.Client{Timeout: timeout, Transport: oauthTransport(oauthVerify{TLS: PlatformTLSConfig()})}
 }
 
-// Sleep between MiniMax token polls, swappable so tests run the poll loop without waiting
-var minimaxSleepFn = time.Sleep
-
 // OAuthLoginExitError carries the process exit code a failed provider login asks for
 type OAuthLoginExitError struct {
 	Code int
@@ -167,7 +164,7 @@ func minimaxExpiryFields(expiredIn any) (map[string]any, error) {
 	}, nil
 }
 
-// Polls the MiniMax token endpoint until success, error or the code's deadline
+// Polls the MiniMax token endpoint until success, error, the code's deadline or the context ends
 func minimaxPollToken(ctx context.Context, client *http.Client, portalBaseURL, clientID, userCode, codeVerifier string, expiredIn int64, intervalMS *int) (map[string]any, error) {
 	deadline := minimaxResolveTokenExpiryUnix(expiredIn, nowFunc().UTC())
 	ms := 2000
@@ -180,6 +177,9 @@ func minimaxPollToken(ctx context.Context, client *http.Client, portalBaseURL, c
 			"grant_type": {MinimaxOAuthGrantType}, "client_id": {clientID}, "user_code": {userCode}, "code_verifier": {codeVerifier},
 		}, formJSONHeaders)
 		if err != nil {
+			if ctx.Err() != nil {
+				return nil, &SignInCancelledError{ExitCode: 130, HasCode: true}
+			}
 			return nil, err
 		}
 		if resp.Status != 200 {
@@ -211,7 +211,9 @@ func minimaxPollToken(ctx context.Context, client *http.Client, portalBaseURL, c
 			}
 			return payload, nil
 		}
-		minimaxSleepFn(time.Duration(interval * float64(time.Second)))
+		if err := cancellableSleep(time.Duration(interval*float64(time.Second)), ctxCancelled(ctx)); err != nil {
+			return nil, &SignInCancelledError{ExitCode: 130, HasCode: true}
+		}
 	}
 	return nil, minimaxErr("MiniMax OAuth timed out before authorization completed.", "timeout", false)
 }

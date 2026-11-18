@@ -347,7 +347,7 @@ func TestSearXNGProvider(t *testing.T) {
 	if !CheckWebAPIKey(httpxProviderEnv(t, "SEARXNG_URL=http://localhost:8080\n", map[string]any{"web.backend": "searxng"})) {
 		t.Fatal("searxng failed the gate")
 	}
-	swapDDGS(t, &ddgsClientAvailable, func(context.Context) bool { return false })
+	swapDDGS(t, &ddgsClientAvailable, func(*Env) bool { return false })
 	if CheckWebAPIKey(httpxProviderEnv(t, "", map[string]any{"web.keyless_fallback": false})) {
 		t.Fatal("no credentials passed the gate")
 	}

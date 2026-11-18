@@ -27,7 +27,7 @@ var ProfileCredentialPaths = func() map[string]bool {
 		"google_chat_user_tokens", "google_chat_user_client_secret.json", "google_chat_user_oauth_pending.json",
 		"google_chat_user_token.json", "google_chat_user_oauth_pending",
 		"slack_tokens.json", "honcho.json", "mem0.json", "webhook_subscriptions.json", "teams_pipeline_store.json",
-		"mcp-tokens", "vault", "browser-profile", "browser_auth", "bot-desktop",
+		"mcp-tokens", "vault", "browser-profile", "browser_auth", "bot-desktop", "webapp",
 		"browser-profiles", "browser_profiles", "pairing", "platforms/pairing", "feishu_comment_pairing.json",
 		"whatsapp/session", "platforms/whatsapp/session", "matrix/store", "platforms/matrix/store",
 		"workspace/meetings/node_token.json", "weixin/accounts", ".copilot_jwt.json", "proxy", "chrome-debug",

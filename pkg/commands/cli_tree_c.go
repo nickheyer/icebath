@@ -196,7 +196,7 @@ func (c *CLI) addTreeC(root *cobra.Command) {
 	sf(logs, "level", "", "", "Minimum log level to show (DEBUG, INFO, WARNING, ERROR)")
 	sf(logs, "session", "", "", "Filter lines containing this session ID substring")
 	sf(logs, "since", "", "", "Show lines since TIME ago (e.g. 1h, 30m, 2d)")
-	sf(logs, "component", "", "", "Filter by component: gateway, agent, tools, cli, cron")
+	sf(logs, "component", "", "", "Filter by component: gateway, agent, tools, cli, cron, gui")
 
 	promptSize := c.newCmd(root, "prompt-size", "Show a byte breakdown of the system prompt + tool schemas",
 		"Report the fixed prompt budget for a fresh session: system prompt total, skills index, memory, user profile, and tool-schema JSON. Runs offline (no API call).")

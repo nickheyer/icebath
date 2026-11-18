@@ -62,15 +62,15 @@ RUN set -eu; \
         ln -s "/command/$verb" "/usr/bin/$verb"; \
     done
 
-# Chromium, ffmpeg and ripgrep come from pm's sha-verified lock into the
-# read-only tool store; image-tools links them onto PATH and pins Chromium.
+# Hash pinned tools and the NeMo Relay runtime from pm, the tools linked onto PATH by image-tools
 ENV ICEBATH_RUNTIME_DIR=/opt/icebath/tools
 RUN set -eu; \
-    ICEBATH_HOME=/tmp/icebath-image-home /opt/icebath/icebath pm install chromium ffmpeg ripgrep; \
+    ICEBATH_HOME=/tmp/icebath-image-home /opt/icebath/icebath pm install chromium npm ffmpeg ripgrep --extra nemo-relay; \
     ICEBATH_HOME=/tmp/icebath-image-home /opt/icebath/icebath container-stage image-tools; \
     ffmpeg -version >/dev/null; ffprobe -version >/dev/null; rg --version >/dev/null; \
     "$(cat /etc/icebath/chromium-executable-path)" --version; \
-    rm -rf /tmp/icebath-image-home; \
+    /opt/icebath/venv/bin/python -I -c 'import nemo_relay'; \
+    rm -rf /tmp/icebath-image-home /opt/icebath/venv-runtime/uv-cache; \
     chmod -R a+rX,go-w /opt/icebath
 
 # Install method and provenance stamps live beside the code, never in the
@@ -82,8 +82,9 @@ RUN set -eu; \
     printf 'docker\n' > /opt/icebath/.install_method; \
     if [ ! -f /opt/icebath/install-stamp.json ]; then \
         commit="${REVISION:-0000000000000000000000000000000000000000}"; \
-        printf '{"schemaVersion":2,"commit":"%s","distribution":"docker","source":"%s","updateMechanism":"external"}\n' \
-            "$commit" "$([ -n "$REVISION" ] && echo git || echo fallback)" > /opt/icebath/install-stamp.json; \
+        release=""; [ "$VERSION" = dev ] || release="$(printf '"baseVersion":"%s","displayVersion":"%s",' "${VERSION#v}" "${VERSION#v}")"; \
+        printf '{"schemaVersion":2,%s"commit":"%s","distribution":"docker","source":"%s","updateMechanism":"external"}\n' \
+            "$release" "$commit" "$([ -n "$REVISION" ] && echo git || echo fallback)" > /opt/icebath/install-stamp.json; \
     fi; \
     mkdir -p /etc/icebath; \
     revision=null; [ -n "$REVISION" ] && revision="\"$REVISION\""; \

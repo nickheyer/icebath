@@ -349,12 +349,12 @@ func awsCallerIdentityARN(ctx context.Context, region string) (string, error) {
 
 // Shows the AWS Bedrock credential status, which lives in the SDK chain rather than the pool
 func (c *authCLI) printBedrockStatus() {
-	if !hasAWSCredentials(true) {
+	if !hasAWSCredentials(c.ctx, true) {
 		return
 	}
 	region := ResolveBedrockRegion()
 	fmt.Fprintln(c.out, "bedrock (AWS SDK credential chain):")
-	auth := resolveAWSAuthEnvVar()
+	auth := resolveAWSAuthEnvVar(c.ctx)
 	if auth == "" {
 		auth = "unknown"
 	}

@@ -3,13 +3,13 @@ label: WhatsApp Business (Cloud)
 kind: platform
 version: 1.0.0
 description: >
-  WhatsApp Business Cloud API adapter for Hermes Agent.
-  Connects to WhatsApp via Meta's official Cloud API (Business account and a
-  public webhook URL required, token-based auth): Graph API for outbound,
-  an aiohttp webhook receiver with X-Hub-Signature-256 verification for
-  inbound. Supports text, media (image/video/audio/document), voice notes,
-  interactive buttons, and DM allowlists. Complements the Baileys bridge
-  (whatsapp) plugin; both share WhatsAppBehaviorMixin.
+  WhatsApp Business Cloud API adapter for Icebath Agent. Connects to WhatsApp
+  via Meta's official Cloud API (Business account and a public webhook URL
+  required, token-based auth): Graph API for outbound, a net/http webhook
+  receiver with X-Hub-Signature-256 verification for inbound. Supports text,
+  media (image/video/audio/document), voice notes, interactive buttons, and DM
+  allowlists. Complements the whatsmeow WhatsApp Web bridge (whatsapp) plugin;
+  both share the WhatsApp gating, mention and formatting behaviour.
 author: NousResearch
 requires_env:
   - name: WHATSAPP_CLOUD_PHONE_NUMBER_ID

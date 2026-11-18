@@ -89,11 +89,15 @@ func progressLine(view map[string]any) string {
 	return line
 }
 
-// Renders a job until it settles and returns its status, Ctrl-C pausing a pausable phase
+// Renders a job until it settles and returns its status, Ctrl-C or a stopped TUI flow pausing a pausable phase
 func followJob(r *ModelFlowRun, jobID string) (string, error) {
 	interrupts := make(chan os.Signal, 1)
 	signal.Notify(interrupts, os.Interrupt)
 	defer signal.Stop(interrupts)
+	var stopped <-chan struct{}
+	if hostedAsker() != nil {
+		stopped = r.ctx().Done()
+	}
 	shownPhase, width, phaseShown := "", 0, false
 	var view map[string]any
 	for {
@@ -114,36 +118,45 @@ func followJob(r *ModelFlowRun, jobID string) (string, error) {
 		length := utf8.RuneCountInString(line)
 		fmt.Fprintf(r.Out, "\r%s%s", line, strings.Repeat(" ", max(0, width-length)))
 		width = length
+		hostedStop := false
 		select {
 		case <-interrupts:
-			fmt.Fprintln(r.Out)
-			current, err := LocalModelsJobView(jobID)
+		case <-stopped:
+			hostedStop = true
+		case <-time.After(localModelsPollInterval):
+			continue
+		}
+		fmt.Fprintln(r.Out)
+		current, err := LocalModelsJobView(jobID)
+		if err != nil {
+			return "", err
+		}
+		if !truthy(current["can_pause"]) || !LocalModelsPauseJob(jobID) {
+			if hostedStop {
+				fmt.Fprintln(r.Out, "  This step cannot pause, so setup waits for it to finish.")
+				stopped, phaseShown = nil, false
+				continue
+			}
+			fmt.Fprintln(r.Out, "  Stopped following. Setup continues only while this process runs.")
+			return "interrupted", nil
+		}
+		deadline := time.Now().Add(localModelsPauseWait)
+		for time.Now().Before(deadline) {
+			settled, err := LocalModelsJobView(jobID)
 			if err != nil {
 				return "", err
 			}
-			if !truthy(current["can_pause"]) || !LocalModelsPauseJob(jobID) {
-				fmt.Fprintln(r.Out, "  Stopped following. Setup continues only while this process runs.")
-				return "interrupted", nil
+			if anyString(settled["status"]) != "running" {
+				break
 			}
-			deadline := time.Now().Add(localModelsPauseWait)
-			for time.Now().Before(deadline) {
-				settled, err := LocalModelsJobView(jobID)
-				if err != nil {
-					return "", err
-				}
-				if anyString(settled["status"]) != "running" {
-					break
-				}
-				select {
-				case <-interrupts:
-					return "", errFlowCancelled
-				case <-time.After(localModelsPollInterval):
-				}
+			select {
+			case <-interrupts:
+				return "", errFlowCancelled
+			case <-time.After(localModelsPollInterval):
 			}
-			fmt.Fprintln(r.Out, "  Paused. Run `icebath model` → Local models again to resume; finished bytes are kept.")
-			return "paused", nil
-		case <-time.After(localModelsPollInterval):
 		}
+		fmt.Fprintln(r.Out, "  Paused. Run `icebath model` → Local models again to resume; finished bytes are kept.")
+		return "paused", nil
 	}
 	if phaseShown {
 		fmt.Fprintln(r.Out)

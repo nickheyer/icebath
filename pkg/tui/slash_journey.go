@@ -1,0 +1,975 @@
+package tui
+
+import (
+	"bytes"
+	"errors"
+	"fmt"
+	"math"
+	"os/exec"
+	"regexp"
+	"sort"
+	"strings"
+	"time"
+
+	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
+	"github.com/charmbracelet/x/ansi"
+	"github.com/spf13/cobra"
+
+	"github.com/nickheyer/icebath/pkg/commands"
+	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
+	"github.com/nickheyer/icebath/pkg/internal/pystr"
+	"github.com/nickheyer/icebath/pkg/memory"
+	"github.com/nickheyer/icebath/pkg/ui/wm"
+)
+
+// Frames and rate of the build up animation, and the fewest chart and tree rows the window keeps
+const (
+	journeyPlayFrames = 42
+	journeyPlayFPS    = 12
+	journeyChartRows  = 3
+	journeyTreeRows   = 6
+)
+
+// Show options of a /journey run as the journey parser reads them
+type journeyOptions struct {
+	reveal        float64
+	play          bool
+	fps           int
+	width, height int
+	color         bool
+}
+
+// One learned skill or memory row of the timeline tree
+type journeyNode struct {
+	ID, Glyph, Label, FullLabel, Meta, Body, Style string
+}
+
+// One time slice of the timeline with its counts and nodes
+type journeyBucket struct {
+	Label, Date, Category, Color string
+	Skills, Memories             int
+	Nodes                        []journeyNode
+}
+
+// Row of the flattened tree, a slice header, a node under it, or a gap between slices
+type journeyRow struct {
+	kind   string
+	bucket *journeyBucket
+	node   *journeyNode
+	last   bool
+}
+
+// Window of the learning journey, the chart at a reveal over the tree of slices and their nodes
+type journeyCard struct {
+	a       *app
+	opts    journeyOptions
+	payload map[string]any
+	buckets []journeyBucket
+	rows    []journeyRow
+	err     string
+	loaded  bool
+	cursor  int
+	item    bool
+	scroll  int
+	reveal  float64
+	gen     int
+	confirm bool
+	notice  string
+	busy    bool
+	width   int
+}
+
+// Opens the journey window and starts loading the learning graph
+func (a *app) openJourney(opts journeyOptions) tea.Cmd {
+	card := &journeyCard{a: a, opts: opts, reveal: opts.reveal}
+	if opts.play {
+		card.reveal = 0
+	}
+	return tea.Batch(a.wm.ShowOverlay(card), card.load())
+}
+
+// Asks the gateway for the profile's learning graph and hands it to the card
+func (c *journeyCard) load() tea.Cmd {
+	c.gen++
+	gen := c.gen
+	return gatewayCall(c.a.gw, "learning.graph", map[string]any{}, func(v any, err error) tea.Cmd {
+		if err == nil && asRPCResult(v) == nil {
+			err = errors.New(tr("session.common.invalidResponse", "learning.graph"))
+		}
+		return c.loadedGraph(gen, asRPCResult(v), err)
+	})
+}
+
+// Takes a fresh graph, keeping the cursor on the newest row, and starts the animation when asked
+func (c *journeyCard) loadedGraph(gen int, payload map[string]any, err error) tea.Cmd {
+	if gen != c.gen {
+		return nil
+	}
+	c.loaded, c.busy = true, false
+	if err != nil {
+		c.err = rpcErrorMessage(err)
+		return nil
+	}
+	c.payload, c.err, c.width = payload, "", 0
+	c.item, c.scroll = false, 0
+	if c.opts.play {
+		c.reveal = 0
+		return c.tick(gen, 0)
+	}
+	return nil
+}
+
+// Next frame of the build up animation, the last one resting on the full timeline
+func (c *journeyCard) tick(gen, frame int) tea.Cmd {
+	delay := time.Duration(float64(time.Second) / float64(max(1, min(60, c.opts.fps))))
+	return tea.Tick(delay, func(time.Time) tea.Msg {
+		return asyncDoneMsg{run: func() tea.Cmd {
+			if gen != c.gen {
+				return nil
+			}
+			c.reveal = float64(frame) / float64(journeyPlayFrames-1)
+			if frame+1 < journeyPlayFrames {
+				return c.tick(gen, frame+1)
+			}
+			c.reveal = 1
+			return nil
+		}}
+	})
+}
+
+// Chart columns and field rows of the render, the parser overrides first
+func (c *journeyCard) chartSize(w int, summary int) (int, int) {
+	if c.opts.width != 0 {
+		w = c.opts.width
+	}
+	cols := max(24, max(40, w)-2)
+	rows := 14
+	if c.opts.height != 0 {
+		rows = max(6, max(10, c.opts.height)-10-summary)
+	}
+	return cols, rows
+}
+
+// Slices and nodes of the timeline for a chart width, rebuilt when the width changes
+func (c *journeyCard) layoutTree(w int) {
+	if c.width == w || c.payload == nil {
+		return
+	}
+	c.width = w
+	summary, _ := memory.BuildSummary(c.payload)
+	cols, rows := c.chartSize(w, len(summary))
+	frames, err := memory.RenderFrames(c.payload, cols, rows, 2)
+	if err != nil {
+		c.err = err.Error()
+		return
+	}
+	c.buckets = journeyBuckets(frames["buckets"])
+	c.rows = nil
+	for b := range c.buckets {
+		bucket := &c.buckets[b]
+		if b > 0 {
+			c.rows = append(c.rows, journeyRow{kind: "gap"})
+		}
+		c.rows = append(c.rows, journeyRow{kind: "slice", bucket: bucket})
+		for n := range bucket.Nodes {
+			c.rows = append(c.rows, journeyRow{kind: "node", bucket: bucket, node: &bucket.Nodes[n], last: n == len(bucket.Nodes)-1})
+		}
+	}
+	c.cursor = max(0, len(c.rows)-1)
+}
+
+// Buckets of the frames payload as typed slices
+func journeyBuckets(v any) []journeyBucket {
+	var rows []map[string]any
+	switch items := v.(type) {
+	case []map[string]any:
+		rows = items
+	case []any:
+		for _, item := range items {
+			if m, ok := item.(map[string]any); ok {
+				rows = append(rows, m)
+			}
+		}
+	}
+	text := func(m map[string]any, key string) string {
+		if m[key] == nil {
+			return ""
+		}
+		return pyrepr.Str(m[key])
+	}
+	number := func(m map[string]any, key string) int {
+		switch n := m[key].(type) {
+		case int:
+			return n
+		case int64:
+			return int(n)
+		case float64:
+			return int(n)
+		}
+		return 0
+	}
+	out := make([]journeyBucket, 0, len(rows))
+	for _, row := range rows {
+		b := journeyBucket{Label: text(row, "label"), Date: text(row, "date"), Category: text(row, "category"), Color: text(row, "color"),
+			Skills: number(row, "skills"), Memories: number(row, "memories")}
+		var nodes []map[string]any
+		switch items := row["nodes"].(type) {
+		case []map[string]any:
+			nodes = items
+		case []any:
+			for _, item := range items {
+				if m, ok := item.(map[string]any); ok {
+					nodes = append(nodes, m)
+				}
+			}
+		}
+		for _, n := range nodes {
+			b.Nodes = append(b.Nodes, journeyNode{ID: text(n, "id"), Glyph: text(n, "glyph"), Label: text(n, "label"), FullLabel: text(n, "fullLabel"),
+				Meta: text(n, "meta"), Body: text(n, "body"), Style: text(n, "style")})
+		}
+		out = append(out, b)
+	}
+	return out
+}
+
+func (c *journeyCard) Title() string  { return "journey" }
+func (c *journeyCard) Key() string    { return "tui:journey" }
+func (c *journeyCard) Init() tea.Cmd  { return nil }
+func (c *journeyCard) Raw() bool      { return true }
+func (c *journeyCard) Status() string { return tr("journey.subtitle") }
+
+func (c *journeyCard) MinSize() (int, int) {
+	w, h := c.a.wm.Size()
+	return max(min(w-4, 120), 40), max(h-4, 16)
+}
+
+// Painted text in a hex color, plain when color is off or the hex is empty
+func (c *journeyCard) ink(text, hex string, bold bool) string {
+	if !c.opts.color || hex == "" {
+		if bold && c.opts.color {
+			return lipgloss.NewStyle().Bold(true).Render(text)
+		}
+		return text
+	}
+	return lipgloss.NewStyle().Foreground(toneColor(hex)).Bold(bold).Render(text)
+}
+
+// Starmap palette of the session theme the chart and the tree are inked with
+func (c *journeyCard) palette() starmapPalette {
+	t := c.a.store.ui.Theme
+	return deriveStarmapPalette(t.Color.Primary, t.Color.Text)
+}
+
+// Ink of a render style at an alpha, empty for a style the palette does not know
+func (c *journeyCard) styleInk(p starmapPalette, style string, alpha float64) string {
+	hex, _ := p.fadeInk(style, alpha)
+	return hex
+}
+
+// Chart rows of the frame at the current reveal, each run inked from its style or category color
+func (c *journeyCard) chart(w int) ([]string, map[string]any) {
+	summary, _ := memory.BuildSummary(c.payload)
+	cols, rows := c.chartSize(w, len(summary))
+	frame, err := memory.RenderGraph(c.payload, cols, rows, c.reveal)
+	if err != nil {
+		return []string{c.ink(tr("journey.error", err.Error()), c.a.store.ui.Theme.Color.Error, false)}, nil
+	}
+	p := c.palette()
+	grid, _ := frame["grid"].([]any)
+	var out []string
+	for _, rawRow := range grid {
+		row, _ := rawRow.([]any)
+		var b strings.Builder
+		b.WriteString("  ")
+		for _, rawRun := range row {
+			run, _ := rawRun.([]any)
+			if len(run) < 2 {
+				continue
+			}
+			text, style := pyrepr.Str(run[0]), pyrepr.Str(run[1])
+			alpha := 1.0
+			if len(run) > 2 {
+				if f, ok := run[2].(float64); ok {
+					alpha = f
+				}
+			}
+			hex := c.styleInk(p, style, alpha)
+			if len(run) > 3 && pyrepr.Truthy(run[3]) {
+				hex = p.fadeHex(pyrepr.Str(run[3]), alpha)
+			}
+			b.WriteString(c.ink(text, hex, false))
+		}
+		out = append(out, b.String())
+	}
+	return out, frame
+}
+
+// Header, legends, chart, axis and playhead footer at the card width, the oldest chart rows dropped past the cap
+func (c *journeyCard) header(w, chartCap int) []string {
+	t := c.a.store.ui.Theme
+	p := c.palette()
+	lines := []string{c.ink("✦ "+tr("journey.title"), t.Color.Primary, true) + c.ink(" "+tr("journey.subtitle"), t.Color.Muted, false)}
+	legend, _ := memory.BuildLegend(c.payload)
+	var b strings.Builder
+	for i, item := range legend {
+		if i > 0 {
+			b.WriteString("   ")
+		}
+		b.WriteString(c.ink(pyrepr.Str(item["glyph"])+" ", c.styleInk(p, pyrepr.Str(item["style"]), 1), false))
+		b.WriteString(c.ink(pyrepr.Str(item["label"]), t.Color.Muted, false))
+	}
+	lines = append(lines, b.String())
+	if categories, _ := memory.CategoryLegend(c.payload, 4); len(categories) > 0 {
+		var cb strings.Builder
+		for i, item := range categories {
+			if i > 0 {
+				cb.WriteString("  ")
+			}
+			hex := t.Color.Muted
+			if color := pyrepr.Str(item["color"]); item["color"] != nil && color != "" {
+				hex = p.fadeHex(color, 1)
+			}
+			cb.WriteString(c.ink(pyrepr.Str(item["glyph"])+" ", hex, false))
+			cb.WriteString(c.ink(pyrepr.Str(item["label"]), t.Color.Muted, false))
+		}
+		lines = append(lines, cb.String())
+	}
+	lines = append(lines, "")
+	chart, frame := c.chart(w)
+	if len(chart) > chartCap {
+		chart = chart[len(chart)-chartCap:]
+	}
+	lines = append(lines, chart...)
+	axis, _ := memory.AxisLabels(c.payload)
+	cols, _ := c.chartSize(w, 0)
+	gap := max(1, cols-pystr.Len(axis["start"])-pystr.Len(axis["end"]))
+	lines = append(lines, "  "+c.ink(axis["start"]+strings.Repeat(" ", gap)+axis["end"], t.Color.Muted, false))
+	if frame != nil {
+		date := pyrepr.Str(frame["date"])
+		if !pyrepr.Truthy(frame["date"]) {
+			date = "—"
+		}
+		count := len(journeyPayloadNodes(c.payload))
+		pct := int(math.RoundToEven(c.reveal * 100))
+		lines = append(lines, "  "+c.ink("◷ ", t.Color.Muted, false)+c.ink(date, t.Color.Primary, false)+
+			c.ink(fmt.Sprintf("   %s/%d revealed · %d%%", pyrepr.Str(frame["visible"]), count, pct), t.Color.Muted, false))
+	}
+	return lines
+}
+
+// Nodes of a learning graph payload
+func journeyPayloadNodes(payload map[string]any) []map[string]any {
+	switch nodes := payload["nodes"].(type) {
+	case []map[string]any:
+		return nodes
+	case []any:
+		out := make([]map[string]any, 0, len(nodes))
+		for _, n := range nodes {
+			if m, ok := n.(map[string]any); ok {
+				out = append(out, m)
+			}
+		}
+		return out
+	}
+	return nil
+}
+
+// Count with its singular or plural catalog form
+func journeyCount(one, other string, n int) string {
+	if n == 1 {
+		return tr(one, fmt.Sprint(n))
+	}
+	return tr(other, fmt.Sprint(n))
+}
+
+// One tree row painted, the row under the cursor on the selection chip
+func (c *journeyCard) treeLine(row journeyRow, active bool, w int) string {
+	t := c.a.store.ui.Theme
+	p := c.palette()
+	var cells [][2]string
+	switch row.kind {
+	case "gap":
+		return ""
+	case "slice":
+		b := row.bucket
+		hex := t.Color.Label
+		if b.Color != "" {
+			hex = p.fadeHex(b.Color, 0.85)
+		}
+		meta := " · " + journeyCount("journey.slice.skillsOne", "journey.slice.skillsOther", b.Skills) + " · " +
+			journeyCount("journey.slice.memoriesOne", "journey.slice.memoriesOther", b.Memories)
+		if b.Category != "" {
+			meta += " · " + b.Category
+		}
+		cells = [][2]string{{b.Label, hex}, {meta, t.Color.Muted}}
+	default:
+		n := row.node
+		branch := " ├─ "
+		if row.last {
+			branch = " └─ "
+		}
+		label := n.FullLabel
+		if label == "" {
+			label = n.Label
+		}
+		more := ""
+		if n.Body != "" {
+			more = "  ›"
+		}
+		cells = [][2]string{{branch, t.Color.Muted}, {n.Glyph + " " + label, c.styleInk(p, n.Style, 1)}, {"  " + n.Meta + more, t.Color.Muted}}
+	}
+	var b strings.Builder
+	for _, cell := range cells {
+		hex := cell[1]
+		if active {
+			hex = t.Color.Accent
+		}
+		b.WriteString(c.ink(cell[0], hex, active))
+	}
+	line := ansi.Truncate(b.String(), w, "…")
+	if active && c.opts.color && t.Color.SelectionBg != "" {
+		pad := strings.Repeat(" ", max(0, w-ansi.StringWidth(line)))
+		return lipgloss.NewStyle().Background(toneColor(t.Color.SelectionBg)).Render(line + pad)
+	}
+	return line
+}
+
+// Node under the cursor, nil on a slice header
+func (c *journeyCard) activeNode() *journeyNode {
+	if c.cursor < 0 || c.cursor >= len(c.rows) {
+		return nil
+	}
+	return c.rows[c.cursor].node
+}
+
+// Status line of a pending delete or the last notice
+func (c *journeyCard) status() string {
+	t := c.a.store.ui.Theme
+	if c.confirm {
+		if n := c.activeNode(); n != nil {
+			label := n.FullLabel
+			if label == "" {
+				label = n.Label
+			}
+			return c.ink(tr("journey.confirmDelete", label), t.Color.Error, false)
+		}
+	}
+	if c.notice != "" {
+		return c.ink(c.notice, t.Color.Accent, false)
+	}
+	return ""
+}
+
+func (c *journeyCard) View(w, h int) string {
+	t := c.a.store.ui.Theme
+	shell := func(line string) string {
+		return strings.Join([]string{c.ink("✦ "+tr("journey.title"), t.Color.Primary, true), line, c.ink(tr("journey.closeHint"), t.Color.Muted, false)}, "\n")
+	}
+	switch {
+	case c.err != "":
+		return shell(c.ink(tr("journey.error", c.err), t.Color.Error, false))
+	case !c.loaded:
+		return shell(c.ink(tr("journey.loading"), t.Color.Muted, false))
+	case len(journeyPayloadNodes(c.payload)) == 0:
+		return shell(c.ink(tr("journey.empty"), t.Color.Muted, false))
+	}
+	c.layoutTree(w)
+	if c.item {
+		return c.itemView(w, h)
+	}
+	head := c.header(w, h)
+	var foot []string
+	if status := c.status(); status != "" {
+		foot = append(foot, status)
+	} else if summary, _ := memory.BuildSummary(c.payload); len(summary) > 0 {
+		foot = append(foot, c.ink(ansi.Truncate(strings.Join(summary, " · "), w, "…"), t.Color.Muted, false))
+	}
+	node := c.activeNode()
+	hints := []string{tr("journey.hint.move")}
+	if node != nil && node.Body != "" {
+		hints = append(hints, tr("journey.hint.open"))
+	}
+	if node != nil {
+		hints = append(hints, tr("journey.hint.edit"), tr("journey.hint.delete"))
+	}
+	hints = append(hints, tr("journey.hint.topBottom"), tr("journey.hint.close"))
+	foot = append(foot, c.ink(ansi.Truncate(strings.Join(hints, " · "), w, "…"), t.Color.Muted, false))
+	if spare := h - len(head) - len(foot) - 2 - journeyTreeRows; spare < 0 {
+		chartRows, _ := c.chart(w)
+		head = c.header(w, max(journeyChartRows, len(chartRows)+spare))
+	}
+	listH := max(3, h-len(head)-len(foot)-2)
+	start := max(0, min(max(0, len(c.rows)-listH), c.cursor-listH/2))
+	out := append(append([]string{}, head...), "")
+	for i := start; i < min(len(c.rows), start+listH); i++ {
+		out = append(out, c.treeLine(c.rows[i], i == c.cursor, w))
+	}
+	out = append(append(out, ""), foot...)
+	if len(out) > h {
+		out = out[len(out)-h:]
+	}
+	return strings.Join(out, "\n")
+}
+
+// Body of the memory under the cursor, wrapped and scrolled
+func (c *journeyCard) itemView(w, h int) string {
+	t := c.a.store.ui.Theme
+	n := c.activeNode()
+	if n == nil {
+		c.item = false
+		return c.View(w, h)
+	}
+	label := n.FullLabel
+	if label == "" {
+		label = n.Label
+	}
+	head := []string{c.ink(ansi.Truncate(n.Glyph+" "+label, w, "…"), c.styleInk(c.palette(), n.Style, 1), true),
+		c.ink(c.rows[c.cursor].bucket.Label+" · "+n.Meta, t.Color.Muted, false), ""}
+	body := []string{tr("journey.noDetail")}
+	if n.Body != "" {
+		body = nil
+		for _, line := range strings.Split(strings.ReplaceAll(n.Body, "\r\n", "\n"), "\n") {
+			body = append(body, strings.Split(ansi.Wrap(line, max(10, w-1), ""), "\n")...)
+		}
+	}
+	var foot []string
+	if status := c.status(); status != "" {
+		foot = append(foot, status)
+	}
+	foot = append(foot, c.ink(ansi.Truncate(tr("journey.hint.item"), w, "…"), t.Color.Muted, false))
+	bodyH := max(1, h-len(head)-len(foot)-1)
+	c.scroll = max(0, min(c.scroll, len(body)-bodyH))
+	out := append([]string{}, head...)
+	for _, line := range body[c.scroll:min(len(body), c.scroll+bodyH)] {
+		out = append(out, c.ink(line, t.Color.Text, false))
+	}
+	return strings.Join(append(append(out, ""), foot...), "\n")
+}
+
+// Next row in a direction that is not a gap, the same row at either end
+func (c *journeyCard) step(from, dir int) int {
+	i := from + dir
+	for i >= 0 && i < len(c.rows) && c.rows[i].kind == "gap" {
+		i += dir
+	}
+	if i < 0 || i >= len(c.rows) {
+		return from
+	}
+	return i
+}
+
+// Nearest real row to an index
+func (c *journeyCard) snap(i int) int {
+	i = max(0, min(len(c.rows)-1, i))
+	if i < 0 || c.rows[i].kind != "gap" {
+		return max(i, 0)
+	}
+	if next := c.step(i, 1); next != i {
+		return next
+	}
+	return c.step(i, -1)
+}
+
+// Key names of the palette actions the window manager fires at an overlay in place of the keys
+var journeyActionKeys = map[string]string{"palette.pick": "enter", "palette.up": "up", "palette.down": "down",
+	"palette.page.up": "pgup", "palette.page.down": "pgdown", "palette.left": "left", "palette.right": "right",
+	"palette.home": "g", "palette.end": "G", "palette.clear": "ctrl+u"}
+
+func (c *journeyCard) Update(m tea.Msg) (wm.Card, tea.Cmd) {
+	if c.busy {
+		return c, nil
+	}
+	k := ""
+	switch m := m.(type) {
+	case tea.KeyPressMsg:
+		k = m.String()
+	case wm.ActionMsg:
+		k = journeyActionKeys[m.ID]
+	case tea.MouseWheelMsg:
+		k = "down"
+		if m.Button == tea.MouseWheelUp {
+			k = "up"
+		}
+	}
+	if k == "" {
+		return c, nil
+	}
+	if c.confirm {
+		c.confirm = false
+		if k == "y" || k == "Y" || k == "shift+y" {
+			return c, c.deleteActive()
+		}
+		return c, nil
+	}
+	if k == "q" || k == "ctrl+c" || k == "esc" || (!c.item && (k == "left" || k == "h")) {
+		c.gen++
+		return c, wm.RequestDismissOf(c)
+	}
+	if !c.loaded || c.payload == nil {
+		return c, nil
+	}
+	_, h := c.a.wm.Size()
+	page := max(4, h-12)
+	node := c.activeNode()
+	if node != nil && k == "d" {
+		c.notice, c.confirm = "", true
+		return c, nil
+	}
+	if node != nil && k == "e" {
+		c.notice = ""
+		return c, c.editActive()
+	}
+	if c.item {
+		switch k {
+		case "left", "h":
+			c.item = false
+		case "up", "k":
+			c.scroll = max(0, c.scroll-2)
+		case "down", "j":
+			c.scroll += 2
+		case "pgup", "ctrl+u":
+			c.scroll = max(0, c.scroll-page)
+		case "pgdown", "ctrl+d", "space":
+			c.scroll += page
+		case "g":
+			c.scroll = 0
+		case "G", "shift+g":
+			c.scroll = math.MaxInt / 2
+		}
+		return c, nil
+	}
+	switch k {
+	case "enter", "right", "l":
+		if node != nil && node.Body != "" {
+			c.item, c.scroll = true, 0
+		}
+	case "up", "k":
+		c.cursor = c.step(c.cursor, -1)
+	case "down", "j":
+		c.cursor = c.step(c.cursor, 1)
+	case "pgup", "ctrl+u":
+		c.cursor = c.snap(c.cursor - page)
+	case "pgdown", "ctrl+d":
+		c.cursor = c.snap(c.cursor + page)
+	case "g":
+		c.cursor = c.snap(0)
+	case "G", "shift+g":
+		c.cursor = max(0, len(c.rows)-1)
+	}
+	return c, nil
+}
+
+// Deletes the node under the cursor and reloads the timeline when it went
+func (c *journeyCard) deleteActive() tea.Cmd {
+	n := c.activeNode()
+	if n == nil {
+		return nil
+	}
+	c.busy = true
+	return gatewayCall(c.a.gw, "learning.delete", map[string]any{"id": n.ID}, func(v any, err error) tea.Cmd {
+		c.busy = false
+		if err != nil {
+			c.notice = rpcErrorMessage(err)
+			return nil
+		}
+		res := asRPCResult(v)
+		c.notice = jsValueString(res["message"])
+		if truthyJS(res["ok"]) {
+			return c.load()
+		}
+		return nil
+	})
+}
+
+// Edits the node under the cursor in the external editor and reloads the timeline after a change
+func (c *journeyCard) editActive() tea.Cmd {
+	n := c.activeNode()
+	if n == nil {
+		return nil
+	}
+	c.busy = true
+	id := n.ID
+	return gatewayCall(c.a.gw, "learning.detail", map[string]any{"id": id}, func(v any, err error) tea.Cmd {
+		detail := asRPCResult(v)
+		if err != nil || !truthyJS(detail["ok"]) || detail["content"] == nil {
+			c.busy = false
+			c.notice = tr("journey.notice.cannotEdit")
+			if err != nil {
+				c.notice = rpcErrorMessage(err)
+			} else if message := jsValueString(detail["message"]); message != "" {
+				c.notice = message
+			}
+			return nil
+		}
+		content := jsValueString(detail["content"])
+		return editText(content, journeySuffix(detail), func(edited string, runErr, fileErr error) tea.Msg {
+			return asyncDoneMsg{run: func() tea.Cmd {
+				if fileErr != nil || runErr != nil || strings.TrimSpace(edited) == strings.TrimSpace(content) {
+					c.busy = false
+					c.notice = tr("journey.notice.noChanges")
+					if fileErr != nil {
+						c.notice = fileErr.Error()
+					}
+					return nil
+				}
+				return gatewayCall(c.a.gw, "learning.edit", map[string]any{"id": id, "content": edited}, func(v any, err error) tea.Cmd {
+					c.busy = false
+					if err != nil {
+						c.notice = rpcErrorMessage(err)
+						return nil
+					}
+					res := asRPCResult(v)
+					c.notice = jsValueString(res["message"])
+					if truthyJS(res["ok"]) {
+						return c.load()
+					}
+					return nil
+				})
+			}}
+		})
+	})
+}
+
+// File suffix of a node's editor buffer, markdown for a skill
+func journeySuffix(detail map[string]any) string {
+	if jsValueString(detail["kind"]) == "skill" {
+		return ".md"
+	}
+	return ".txt"
+}
+
+// Parsed /journey run, the show options or a subcommand with its node, and the parser output when it refused
+type journeyArgs struct {
+	action, node string
+	yes, json    bool
+	opts         journeyOptions
+	output       string
+}
+
+// Arguments of a /journey line parsed by the journey parser of the command tree
+func parseJourneyArgs(arg string) journeyArgs {
+	parsed := journeyArgs{opts: journeyOptions{reveal: 1, fps: journeyPlayFPS, color: true}}
+	words, err := commands.Shlex(arg)
+	if err != nil {
+		parsed.output = err.Error()
+		return parsed
+	}
+	tree := commands.NewCLI()
+	tree.DisableHelp("journey")
+	ran := false
+	handler := func(cmd *cobra.Command, posArgs []string) error {
+		ran = true
+		ns := tree.Namespace(cmd, posArgs)
+		if path := strings.Fields(cmd.CommandPath()); len(path) > 2 {
+			parsed.action = path[2]
+		}
+		parsed.node = pyrepr.Str(ns["node"])
+		parsed.yes, parsed.json = pyrepr.Truthy(ns["yes"]), pyrepr.Truthy(ns["json"])
+		parsed.opts.play, parsed.opts.color = pyrepr.Truthy(ns["play"]), !pyrepr.Truthy(ns["no_color"])
+		if f, ok := ns["reveal"].(float64); ok && f != 0 {
+			parsed.opts.reveal = max(0, min(1, f))
+		}
+		for key, into := range map[string]*int{"fps": &parsed.opts.fps, "width": &parsed.opts.width, "height": &parsed.opts.height} {
+			switch n := ns[key].(type) {
+			case int:
+				*into = n
+			case int64:
+				*into = int(n)
+			case float64:
+				*into = int(n)
+			}
+		}
+		return nil
+	}
+	for _, path := range []string{"journey", "journey list", "journey delete", "journey edit"} {
+		tree.Bind(path, handler)
+	}
+	var help bytes.Buffer
+	tree.Root.SetOut(&help)
+	execErr := tree.Execute(append([]string{"journey"}, words...))
+	top, _, _ := tree.Root.Find([]string{"journey"})
+	switch {
+	case help.Len() > 0:
+		parsed.output = journeyProg(strings.TrimRight(help.String(), "\n"))
+	case execErr != nil && !ran:
+		var refused *commands.ArgparseError
+		switch {
+		case !errors.As(execErr, &refused):
+			bad := execErr.Error()
+			if m := journeyUnknownWord.FindStringSubmatch(bad); m != nil {
+				bad = m[1]
+			}
+			refused = &commands.ArgparseError{Cmd: top, Msg: "argument journey_action: invalid choice: " + pyrepr.Repr(bad) + " (choose from 'list', 'delete', 'edit')"}
+		case strings.HasPrefix(refused.Msg, "unrecognized arguments:"):
+			refused = &commands.ArgparseError{Cmd: top, Msg: refused.Msg}
+		}
+		parsed.output = journeyProg(refused.Stderr())
+	}
+	return parsed
+}
+
+// Word the command tree names in its unknown subcommand refusal
+var journeyUnknownWord = regexp.MustCompile(`'(.*)' is not a ` + "`")
+
+// Parser text of the journey tree under the /journey prog, usage continuation lines indented to it
+func journeyProg(text string) string {
+	const cliIndent, slashIndent = len("usage: icebath journey "), len("usage: /journey ")
+	text = strings.ReplaceAll(text, "\n"+strings.Repeat(" ", cliIndent), "\n"+strings.Repeat(" ", slashIndent))
+	return strings.ReplaceAll(text, "icebath journey", "/journey")
+}
+
+// Nodes of a learning graph oldest first with id, glyph, label and date, as journey list prints them
+func journeyListText(payload map[string]any) string {
+	nodes := append([]map[string]any(nil), journeyPayloadNodes(payload)...)
+	if len(nodes) == 0 {
+		return "No learning yet."
+	}
+	stamp := func(n map[string]any) (float64, bool) {
+		f, ok := n["timestamp"].(float64)
+		return f, ok
+	}
+	sort.SliceStable(nodes, func(i, j int) bool {
+		ti, _ := stamp(nodes[i])
+		tj, _ := stamp(nodes[j])
+		return ti < tj
+	})
+	lines := make([]string, 0, len(nodes))
+	for _, n := range nodes {
+		glyph := memory.SkillGlyph
+		if jsValueString(n["kind"]) == "memory" {
+			glyph = memory.MemoryGlyph
+		}
+		var ts *float64
+		if f, ok := stamp(n); ok {
+			ts = &f
+		}
+		lines = append(lines, fmt.Sprintf("%s  %s %s  %s", jsValueString(n["id"]), glyph, jsValueString(n["label"]), memory.FormatDate(ts)))
+	}
+	return strings.Join(lines, "\n")
+}
+
+// Graph payload as indented JSON, the text journey --json prints
+func journeyJSONText(payload map[string]any) (string, error) {
+	return pyjson.Dumps(payload, pyjson.Indent(2), pyjson.EnsureASCII(false))
+}
+
+// Shows what a learning.graph answer renders to, or the journey failure line
+func (a *app) withJourneyGraph(render func(map[string]any) (string, error)) tea.Cmd {
+	return gatewayCall(a.gw, "learning.graph", map[string]any{}, func(v any, err error) tea.Cmd {
+		payload, text := asRPCResult(v), ""
+		if err == nil && payload == nil {
+			err = errors.New(tr("session.common.invalidResponse", "learning.graph"))
+		}
+		if err == nil {
+			text, err = render(payload)
+		}
+		if err != nil {
+			a.sys(commandText(a.ctx, "journey.failed", map[string]any{"error": rpcErrorMessage(err)}))
+			return nil
+		}
+		return a.showOutput(text, "journey")
+	})
+}
+
+// Node detail of an id from the gateway, its failure printed and then skipped
+func (a *app) journeyDetail(r *slashRun, nodeID string, then func(detail map[string]any) tea.Cmd) tea.Cmd {
+	return gatewayCall(a.gw, "learning.detail", map[string]any{"id": nodeID}, func(v any, err error) tea.Cmd {
+		detail := asRPCResult(v)
+		switch {
+		case err != nil:
+			r.sys(commandText(a.ctx, "journey.failed", map[string]any{"error": rpcErrorMessage(err)}))
+			return nil
+		case !truthyJS(detail["ok"]):
+			message := jsValueString(detail["message"])
+			if message == "" {
+				message = "not found"
+			}
+			r.sys(message)
+			return nil
+		}
+		return then(detail)
+	})
+}
+
+// Message of a learning mutation answer, the failure line when the call failed
+func (a *app) journeyMutation(r *slashRun, method string, params map[string]any) tea.Cmd {
+	return gatewayCall(a.gw, method, params, func(v any, err error) tea.Cmd {
+		if err != nil {
+			r.sys(commandText(a.ctx, "journey.failed", map[string]any{"error": rpcErrorMessage(err)}))
+			return nil
+		}
+		r.sys(jsValueString(asRPCResult(v)["message"]))
+		return nil
+	})
+}
+
+// Deletes a node by id after the confirm dialog unless yes was given
+func (a *app) journeyDelete(r *slashRun, nodeID string, yes bool) tea.Cmd {
+	return a.journeyDetail(r, nodeID, func(detail map[string]any) tea.Cmd {
+		commit := func() tea.Cmd { return a.journeyMutation(r, "learning.delete", map[string]any{"id": nodeID}) }
+		if yes {
+			return commit()
+		}
+		label := jsValueString(detail["label"])
+		a.store.overlay.Confirm = &confirmReq{CancelLabel: "Cancel", ConfirmLabel: "Delete", Danger: true, Title: "Delete " + pyrepr.Repr(label) + "?",
+			Detail: "A skill goes to the archive the curator can restore from, a memory entry is removed.", OnConfirm: commit}
+		return nil
+	})
+}
+
+// Edits a node by id in the external editor and applies a changed text
+func (a *app) journeyEdit(r *slashRun, nodeID string) tea.Cmd {
+	return a.journeyDetail(r, nodeID, func(detail map[string]any) tea.Cmd {
+		content := jsValueString(detail["content"])
+		return editText(content, journeySuffix(detail), func(saved string, runErr, fileErr error) tea.Msg {
+			return asyncDoneMsg{run: func() tea.Cmd {
+				var exit *exec.ExitError
+				if runErr != nil && !errors.As(runErr, &exit) {
+					r.sys("editor failed: " + pyrepr.ExceptionMessage(runErr))
+					return nil
+				}
+				edited, err := pystr.DecodeUTF8Sig([]byte(saved))
+				switch {
+				case fileErr != nil:
+					r.sys(fileErr.Error())
+					return nil
+				case err != nil:
+					r.sys(err.Error())
+					return nil
+				case strings.TrimSpace(edited) == strings.TrimSpace(content):
+					r.sys("no changes")
+					return nil
+				}
+				return a.journeyMutation(r, "learning.edit", map[string]any{"id": nodeID, "content": edited})
+			}}
+		})
+	})
+}
+
+// Slash command of the learning journey, the timeline window, the node list, and delete and edit by node id
+func (a *app) journeyCommands() []slashCommand {
+	return []slashCommand{
+		{name: "journey", aliases: []string{"learning", "memory-graph"}, help: "open the learning journey timeline",
+			usage: "[list|delete <id>|edit <id>]", suggest: func(string) []string { return []string{"list", "delete", "edit"} },
+			run: func(r *slashRun) tea.Cmd {
+				parsed := parseJourneyArgs(r.arg)
+				if parsed.output != "" {
+					return a.showOutput(parsed.output, "journey")
+				}
+				switch parsed.action {
+				case "list":
+					return tea.Batch(r.ran(), a.withJourneyGraph(func(payload map[string]any) (string, error) { return journeyListText(payload), nil }))
+				case "delete":
+					return tea.Batch(r.ran(), a.journeyDelete(r, parsed.node, parsed.yes))
+				case "edit":
+					return tea.Batch(r.ran(), a.journeyEdit(r, parsed.node))
+				}
+				if parsed.json {
+					return tea.Batch(r.ran(), a.withJourneyGraph(journeyJSONText))
+				}
+				return tea.Batch(r.ran(), a.openJourney(parsed.opts))
+			}},
+	}
+}

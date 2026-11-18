@@ -86,10 +86,10 @@ func TestARefusalWarnsOncePerWindowAndExpiredMarksAreDropped(t *testing.T) {
 	})
 	logs := captureLogRecords(t, slog.LevelDebug)
 	clock := 1000.0
-	keylessRefuseAt(clock, "old", "none", "no classic CLI session is attached in its profile")
-	keylessRefuseAt(clock, "old", "none", "no classic CLI session is attached in its profile")
+	keylessRefuseAt(clock, "old", "none", "no terminal UI session is attached in its profile")
+	keylessRefuseAt(clock, "old", "none", "no terminal UI session is attached in its profile")
 	clock += keylessWarnWindowS
-	keylessRefuseAt(clock, "new", "several", "2 classic CLI sessions are attached in its profile")
+	keylessRefuseAt(clock, "new", "several", "2 terminal UI sessions are attached in its profile")
 	var heads []string
 	for _, msg := range logs.messages(slog.LevelWarn) {
 		heads = append(heads, strings.SplitN(msg, " has ", 2)[0])

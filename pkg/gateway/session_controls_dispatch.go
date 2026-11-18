@@ -35,7 +35,7 @@ func (c *AuthorityConnection) handlers() map[string]controlHandler {
 	}
 	for _, group := range []map[string]controlHandler{
 		busyControlHandlers(c), queuedHandlersOf(c), sessionConfigHandlers(c), tuiConfigHandlers(c),
-		ancillaryHandlers(c), shellHandlers(c), tuiOpsHandlers(c), tuiSideHandlers(c), oneshotHandlers(c),
+		ancillaryHandlers(c), shellHandlers(c), tuiOpsHandlers(c), tuiSideHandlers(c), oneshotHandlers(c), handoffHandlers(c),
 	} {
 		for name, handler := range group {
 			verbs[name] = handler

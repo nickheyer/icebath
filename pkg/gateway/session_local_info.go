@@ -188,7 +188,7 @@ func localSessionInfo(ctx context.Context, a *SessionAuthority, ref SessionRef) 
 	} else if model, err = lazyModel(ctx, a, policy); err != nil {
 		return nil, err
 	}
-	info := pyjson.ObjectOf("source", source, "model", model, "lazy", agent == nil, "profile_id", a.ProfileID,
+	info := pyjson.ObjectOf("source", source, "model", anyText(model), "lazy", agent == nil, "profile_id", a.ProfileID,
 		"gateway_protocol", CanonicalGatewayProtocol, "profile_name", servedProfileName(a.ProfileID))
 	if policy != nil {
 		info.Set("cwd", policy.Cwd)
@@ -241,7 +241,7 @@ func mergeObject(dst, src *pyjson.Object) {
 	}
 }
 
-// Stored title and times, yolo, API mode, tool count and masked credential hint the classic CLI read off itself
+// Stored title text or empty, times, yolo, API mode, tool count and masked credential hint of the session
 func classicCLIFields(ctx context.Context, a *SessionAuthority, ref SessionRef, live *LiveSession, agent sessionInfoAgent, policy *LocalSessionPolicy) *pyjson.Object {
 	storedID := ref.SessionID
 	if target, err := receiptEntryTarget(ctx, a.DB, ref.SessionID); err == nil && target != "" {
@@ -281,7 +281,7 @@ func classicCLIFields(ctx context.Context, a *SessionAuthority, ref SessionRef, 
 	if !pyTruthy(lastActive) {
 		lastActive = started
 	}
-	return pyjson.ObjectOf("title", title, "started_at", started, "last_active_at", lastActive, "yolo", yolo,
+	return pyjson.ObjectOf("title", strings.TrimSpace(anyText(title)), "started_at", started, "last_active_at", lastActive, "yolo", yolo,
 		"api_mode", apiMode, "tool_count", toolCount, "credential_hint", hint)
 }
 

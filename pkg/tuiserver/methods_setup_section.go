@@ -145,7 +145,14 @@ func setupSectionLoad(ctx context.Context, rid any, params map[string]any) (map[
 		}
 		facts[name] = holds
 	}
-	return ok(rid, map[string]any{"config": values, "env": env, "secrets": secrets, "facts": facts}), nil
+	probed, known, err := loadSetupValues(ctx, h, cfg, wireStrings(params["values"]))
+	if err != nil {
+		return nil, err
+	}
+	if !known {
+		return rpcErr(rid, 4001, "unknown setup value in "+strings.Join(wireStrings(params["values"]), ", "), nil), nil
+	}
+	return ok(rid, map[string]any{"config": values, "env": env, "secrets": secrets, "facts": facts, "values": probed}), nil
 }
 
 // Writes the answers of one setup section, consent keys through the consent writer, and returns what the files hold
@@ -159,6 +166,16 @@ func setupSectionSave(ctx context.Context, rid any, params map[string]any) (map[
 	consent := map[string]bool{}
 	for _, write := range wireMaps(params["writes"]) {
 		key, kind := strOr(write["key"]), strOr(write["kind"])
+		if kind == "held" && strOr(write["target"]) == "env" && key != "" {
+			held, _, err := config.GetEnvValue(ctx, h, key)
+			if err != nil {
+				return nil, err
+			}
+			if held != "" {
+				envSets = append(envSets, [2]string{key, held})
+			}
+			continue
+		}
 		value, fits := sectionWriteValue(kind, write["value"])
 		if key == "" || !fits {
 			return rpcErr(rid, 4001, "write "+key+" does not hold a "+kind+" value", nil), nil
@@ -201,7 +218,13 @@ func setupSectionSave(ctx context.Context, rid any, params map[string]any) (map[
 			return nil, err
 		}
 	}
-	if len(sets)+len(unsets) > 0 {
+	fullSave := params["full_save"] == true
+	switch {
+	case fullSave:
+		if err := fullSetupSave(locked, h, sets, unsets); err != nil {
+			return nil, err
+		}
+	case len(sets)+len(unsets) > 0:
 		if err := writeConfigChanges(locked, sets, unsets); err != nil {
 			return nil, err
 		}
@@ -228,7 +251,12 @@ func setupSectionSave(ctx context.Context, rid any, params map[string]any) (map[
 		}
 	}
 	dropCfgCache()
-	after, err := loadCfgRaw(locked)
+	var after map[string]any
+	if fullSave {
+		after, err = config.LoadContext(locked, h, nil)
+	} else {
+		after, err = loadCfgRaw(locked)
+	}
 	if err != nil {
 		return nil, err
 	}

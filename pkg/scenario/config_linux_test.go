@@ -65,7 +65,7 @@ func TestScenarioConfigGetSetUnsetMigrate(t *testing.T) {
 	s.Write("config.yaml", ancient)
 	refused := s.RunStep(Step{Args: []string{"config", "migrate"}, Stdin: strings.Repeat("n\n", 12)}).Exit(0)
 	refused.Has("This config predates version 12 (~2 years old) and can no longer be auto-migrated.",
-		"/config.yaml and run `icebath setup` to regenerate, or manually set _config_version: 12 after reviewing the changelog.")
+		"/config.yaml, then start `icebath` and type `/setup` to regenerate it, or manually set _config_version: 12 after reviewing the changelog.")
 	if !strings.Contains(refused.Stderr, "⚠ icebath config: This config predates version 12") {
 		s.Failf("the support floor refusal is also written to standard error\n%s", refused.dump())
 	}

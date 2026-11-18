@@ -2,7 +2,6 @@ package agent
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"maps"
 	"time"
@@ -175,9 +174,7 @@ func routeClassifiedError(ctx context.Context, a *AIAgent, s *LoopState, e *apiE
 		}
 	}
 	isTransportFailure := transportFailureReasons[classified.Reason]
-	var apiErr *provider.APIError
-	errors.As(apiError, &apiErr)
-	e.isZAICodingOverload = apiErr != nil && provider.IsZAICodingOverload(e.baseURL, e.model, apiErr)
+	e.isZAICodingOverload = provider.IsZAICodingOverload(e.baseURL, e.model, apiError)
 	if e.isZAICodingOverload {
 		s.MaxRetries = max(s.MaxRetries, provider.ZAICodingOverloadRetryCeiling())
 	}

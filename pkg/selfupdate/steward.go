@@ -190,9 +190,12 @@ func installBinary(projectRoot string) string {
 	return filepath.Join(projectRoot, name)
 }
 
-// Steward owning the sealed tree, nil for a git checkout and unknown when nothing proves ownership
+// Steward of a sealed tree, nil for a git checkout or an installer stamped release tree
 func SealedSteward(projectRoot string) *string {
 	if _, err := os.Stat(filepath.Join(projectRoot, ".git")); err == nil {
+		return nil
+	}
+	if method, err := config.InstallMethodStamp(projectRoot); err == nil && config.IsReleaseBinaryInstallMethod(method) {
 		return nil
 	}
 	steward := "unknown"
@@ -211,13 +214,4 @@ func SealedSteward(projectRoot string) *string {
 		}
 	}
 	return &steward
-}
-
-// Steward and whether code removal is allowed, a git checkout reporting git and true
-func ClassifyInstall(projectRoot string) (string, bool) {
-	steward := SealedSteward(projectRoot)
-	if steward == nil {
-		return "git", true
-	}
-	return *steward, false
 }

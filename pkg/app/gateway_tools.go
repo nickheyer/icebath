@@ -4,11 +4,9 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
-	"strings"
 	"sync"
 	"time"
 
-	"github.com/nickheyer/icebath/pkg/agent"
 	"github.com/nickheyer/icebath/pkg/gatewaycli"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
@@ -27,9 +25,6 @@ const gatewayToolsRetainSeconds = 60.0
 // Process registry surface the dock, status bar, agents and stop commands read
 type cliProcessRegistry interface {
 	listSessions(ctx context.Context) []map[string]any
-	get(id string) (tools.ProcessDockFields, bool)
-	countRunning() int
-	killProcess(ctx context.Context, id string) map[string]any
 	killAll(ctx context.Context, source string) (int, error)
 }
 
@@ -38,22 +33,6 @@ type localProcessRegistry struct{ env *tools.Env }
 
 func (l localProcessRegistry) listSessions(ctx context.Context) []map[string]any {
 	return tools.DefaultProcessRegistry().ListSessions(ctx, l.env, "", "", false)
-}
-
-func (l localProcessRegistry) get(id string) (tools.ProcessDockFields, bool) {
-	proc := tools.DefaultProcessRegistry().Get(l.env, id)
-	if proc == nil {
-		return tools.ProcessDockFields{}, false
-	}
-	return proc.DockFields(), true
-}
-
-func (l localProcessRegistry) countRunning() int {
-	return tools.DefaultProcessRegistry().CountRunning()
-}
-
-func (l localProcessRegistry) killProcess(ctx context.Context, id string) map[string]any {
-	return tools.DefaultProcessRegistry().KillProcess(ctx, l.env, id, "process.kill", true)
 }
 
 func (l localProcessRegistry) killAll(ctx context.Context, source string) (int, error) {
@@ -93,19 +72,8 @@ type GatewayProcessView struct {
 	delegations         int
 	polled              float64
 	refreshing          sync.Mutex
-	subagents           []map[string]any
 	subagentsPolled     float64
-	subagentsSeen       float64
-	subagentsRefreshing sync.Mutex
-	tail                *gatewayTail
 	subagentsWatchUntil float64
-}
-
-// Cached transcript tail of one subagent
-type gatewayTail struct {
-	subagentID string
-	at         float64
-	text       *string
 }
 
 var (
@@ -321,17 +289,6 @@ func (v *GatewayProcessView) listSessions(ctx context.Context) []map[string]any 
 	return out
 }
 
-func (v *GatewayProcessView) get(id string) (tools.ProcessDockFields, bool) {
-	v.mu.Lock()
-	defer v.mu.Unlock()
-	for _, p := range v.rows {
-		if p.fields.ID == id {
-			return p.fields, true
-		}
-	}
-	return tools.ProcessDockFields{}, false
-}
-
 // Running processes from the cache, the status bar never waiting on an RPC
 func (v *GatewayProcessView) countRunning() int {
 	v.mu.Lock()
@@ -343,19 +300,6 @@ func (v *GatewayProcessView) countRunning() int {
 		}
 	}
 	return n
-}
-
-func (v *GatewayProcessView) killProcess(ctx context.Context, id string) map[string]any {
-	raw, err := v.connection.Call(ctx, "process.kill", map[string]any{"session_id": v.sessionID(), "process_id": id})
-	if err != nil {
-		if !isGatewayClientError(err) {
-			panic(err)
-		}
-		return map[string]any{"status": "error", "error": err.Error()}
-	}
-	v.refresh(ctx, true)
-	result, _ := pyjson.Plain(raw).(map[string]any)
-	return result
 }
 
 // Stops the session's processes and background delegations, returning the processes killed
@@ -407,118 +351,4 @@ func (v *GatewayProcessView) watchSubagents(seconds float64) {
 	defer v.mu.Unlock()
 	v.subagentsWatchUntil = nowSeconds() + seconds
 	v.subagentsPolled = 0
-}
-
-// Live children of the session, read at most once a second and only while there is a reason to
-func (v *GatewayProcessView) subagentRows(busy bool) []map[string]any {
-	now := nowSeconds()
-	v.mu.Lock()
-	wanted := busy || len(v.subagents) > 0 || now < v.subagentsWatchUntil
-	polled := v.subagentsPolled
-	v.mu.Unlock()
-	wanted = wanted || v.activeDelegations() != 0
-	if wanted && now-polled >= gatewayToolsPollSeconds && v.subagentsRefreshing.TryLock() {
-		func() {
-			defer v.subagentsRefreshing.Unlock()
-			v.mu.Lock()
-			v.subagentsPolled = now
-			v.mu.Unlock()
-			raw, err := v.connection.CallWith(context.Background(), "subagent.list", map[string]any{"session_id": v.sessionID()},
-				gatewaycli.CallOptions{Timeout: 5 * time.Second})
-			v.mu.Lock()
-			defer v.mu.Unlock()
-			if err != nil {
-				slog.Debug(fmt.Sprintf("subagent.list failed: %s", err.Error()))
-				if now-v.subagentsSeen > gatewayToolsRetainSeconds {
-					v.subagents = nil
-				}
-				return
-			}
-			result, _ := pyjson.Plain(raw).(map[string]any)
-			listed, _ := result["subagents"].([]any)
-			v.subagents = anyRows(listed)
-			v.subagentsSeen = now
-		}()
-	}
-	v.mu.Lock()
-	defer v.mu.Unlock()
-	out := make([]map[string]any, len(v.subagents))
-	for i, row := range v.subagents {
-		out[i] = copyMap(row)
-	}
-	return out
-}
-
-// Child's live transcript tail from the cache, nil when the gateway has none, fetching at most once a second
-func (v *GatewayProcessView) subagentTail(subagentID string, fetch bool) *string {
-	now := nowSeconds()
-	v.mu.Lock()
-	var cached *gatewayTail
-	if v.tail != nil && v.tail.subagentID == subagentID {
-		cached = v.tail
-	}
-	v.mu.Unlock()
-	if !fetch || (cached != nil && now-cached.at < gatewayToolsPollSeconds) {
-		if cached != nil {
-			return cached.text
-		}
-		return nil
-	}
-	var text *string
-	raw, err := v.connection.CallWith(context.Background(), "subagent.tail", map[string]any{"session_id": v.sessionID(), "subagent_id": subagentID},
-		gatewaycli.CallOptions{Timeout: 5 * time.Second})
-	if err != nil {
-		slog.Debug(fmt.Sprintf("subagent.tail failed: %s", err.Error()))
-	} else {
-		result, _ := pyjson.Plain(raw).(map[string]any)
-		if got, isStr := result["text"].(string); pyrepr.Truthy(result["available"]) && isStr {
-			var b strings.Builder
-			for _, r := range got {
-				if pystr.IsPrintable(r) || r == '\n' || r == '\t' {
-					b.WriteRune(r)
-				}
-			}
-			filtered := b.String()
-			text = &filtered
-		}
-	}
-	v.mu.Lock()
-	v.tail = &gatewayTail{subagentID: subagentID, at: now, text: text}
-	v.mu.Unlock()
-	return text
-}
-
-// Steers or stops one child of the session, answering a note or an error like the local registry
-func (v *GatewayProcessView) subagentControl(action, subagentID string, message any) (map[string]any, error) {
-	status, note, failure, known := agent.SubagentControlOutcome(action)
-	if !known {
-		panic(fmt.Sprintf("KeyError: %s", pyrepr.Repr(action)))
-	}
-	var ok bool
-	var raw any
-	var err error
-	if action == "steer" {
-		raw, err = v.connection.CallWith(context.Background(), "subagent.steer", map[string]any{"session_id": v.sessionID(), "subagent_id": subagentID,
-			"text": message}, gatewaycli.CallOptions{Timeout: 5 * time.Second})
-		result, _ := pyjson.Plain(raw).(map[string]any)
-		ok = result["status"] == "queued"
-	} else {
-		raw, err = v.connection.CallWith(context.Background(), "subagent.interrupt", map[string]any{"session_id": v.sessionID(), "subagent_id": subagentID},
-			gatewaycli.CallOptions{Timeout: 5 * time.Second})
-		result, _ := pyjson.Plain(raw).(map[string]any)
-		ok = pyrepr.Truthy(result["found"])
-	}
-	if err != nil {
-		if !isGatewayClientError(err) {
-			return nil, err
-		}
-		return map[string]any{"error": err.Error()}, nil
-	}
-	v.mu.Lock()
-	v.subagentsPolled = 0
-	v.mu.Unlock()
-	if ok {
-		return map[string]any{"action": action, "subagent_id": subagentID, "status": status, "note": note}, nil
-	}
-	return map[string]any{"error": fmt.Sprintf(failure, subagentID)}, nil
 }

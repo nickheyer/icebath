@@ -563,7 +563,7 @@ func bootServe(ctx context.Context, section map[string]any) (*LlamaServerSupervi
 		return nil, err
 	}
 	if engine == nil {
-		slog.Info("local runtime enabled but no PM engine installed; use the Local Models pane")
+		slog.Info("local runtime enabled but no PM engine installed; use /setup model → Local models")
 		return nil, nil
 	}
 	bootMu.Lock()

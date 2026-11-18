@@ -305,6 +305,21 @@ type applyTarget struct {
 	Repository      string
 }
 
+// Prints a retired channel's destination, recording the retirement on the request when the saved channel retired
+func noteChannelRetirement(w io.Writer, args, request, original map[string]any, selected string, target SourceTarget) {
+	if !target.Retired() {
+		return
+	}
+	fmt.Fprintf(w, "→ %s retired; source destination: %s\n", selected, target.Channel)
+	previous, recorded := original["channel"]
+	if !recorded {
+		previous = "main"
+	}
+	if !pyrepr.Truthy(args["channel"]) && pyrepr.Equal(previous, selected) {
+		request["channel_retirement"] = map[string]any{"original": original, "destination": target.Channel}
+	}
+}
+
 // Resolves the update's target before any tree write, recording branch, pin and retirement on the request
 func selectApplyTarget(ctx context.Context, w io.Writer, args map[string]any, branch string, request map[string]any, gitCmd []string, stop func() error) (applyTarget, error) {
 	if pyrepr.Truthy(args["branch"]) {
@@ -337,16 +352,7 @@ func selectApplyTarget(ctx context.Context, w io.Writer, args map[string]any, br
 		recordStop(ctx, "channel_unresolved")
 		return applyTarget{}, &pm.SystemExit{Code: 1}
 	}
-	if target.Retired() {
-		fmt.Fprintf(w, "→ %s retired; source destination: %s\n", selected, target.Channel)
-		previous, recorded := original["channel"]
-		if !recorded {
-			previous = "main"
-		}
-		if !pyrepr.Truthy(args["channel"]) && pyrepr.Equal(previous, selected) {
-			request["channel_retirement"] = map[string]any{"original": original, "destination": target.Channel}
-		}
-	}
+	noteChannelRetirement(w, args, request, original, selected, target)
 	if target.Commit != "" {
 		label := "Latest release"
 		if target.Ahead {

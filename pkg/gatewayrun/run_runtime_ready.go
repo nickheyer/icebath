@@ -28,10 +28,18 @@ func sessionAPIDone(r *GatewayRunner) bool {
 	}
 }
 
-// Marks the session runtime ready with its capabilities and starts the ready hosted room services
+// Whether this gateway began its own drain or stop, still true once the ended stop cleared draining
+func ownStopBegun(r *GatewayRunner) bool {
+	return r.draining.Load() || r.currentStopTask() != nil
+}
+
+// Marks the session runtime ready and starts hosted room services, publishing nothing once a stop began
 func publishGatewayRuntimeReady(r *GatewayRunner) error {
 	if r.sessionAPI == nil {
 		return errNoSessionAPI
+	}
+	if r.currentStopTask() != nil {
+		return nil
 	}
 	if sessionAPIDone(r) || !r.running.Load() || r.draining.Load() {
 		return errors.New("gateway stopped before session API readiness")
@@ -43,7 +51,30 @@ func publishGatewayRuntimeReady(r *GatewayRunner) error {
 	return gateway.StartReadyHostedServices(r)
 }
 
-// Waits for shutdown, a session API listener that vanishes outside a drain failing the runtime
+// Publishes ready and starts the systemd and idle watchdogs as one step a concurrent stop waits out or skips
+func startGatewayReadyTail(ctx context.Context, r *GatewayRunner, idleExit bool) error {
+	r.readyTail.Lock()
+	defer r.readyTail.Unlock()
+	if r.currentStopTask() != nil {
+		return nil
+	}
+	if err := publishRuntimeReady(r); err != nil {
+		return err
+	}
+	r.startSystemdWatchdog(ctx)
+	if idleExit {
+		armUnmanagedIdleExit(r)
+	}
+	return nil
+}
+
+// Waits out a ready publication in progress so the teardown stops everything it started
+func (r *GatewayRunner) awaitReadyTail() {
+	r.readyTail.Lock()
+	defer r.readyTail.Unlock()
+}
+
+// Waits for shutdown, a session API listener that vanishes before any drain or stop began failing the runtime
 func waitGatewayRuntime(ctx context.Context, r *GatewayRunner) error {
 	if r.sessionAPI == nil {
 		return errNoSessionAPI
@@ -56,7 +87,7 @@ func waitGatewayRuntime(ctx context.Context, r *GatewayRunner) error {
 	case err := <-shutdown:
 		return err
 	case <-r.sessionAPI.task:
-		if !r.draining.Load() {
+		if !ownStopBegun(r) {
 			r.sessionRuntimeDescriptor.update(func(descriptor map[string]any) {
 				descriptor["state"] = "failed"
 				descriptor["capabilities"] = []any{}

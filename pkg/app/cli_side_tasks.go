@@ -33,18 +33,9 @@ func (c *CLI) freshThreadContext() context.Context {
 	return pyctx.With(tools.WithThreadLocals(context.WithoutCancel(c.ctx)), pyctx.New())
 }
 
-// Invalidates the running TUI with a brief pause for the redraw, then prints a blank separator
-func (c *CLI) refreshTUIBeforePrint() {
-	if c.app != nil {
-		_ = c.app.Invalidate()
-		time.Sleep(50 * time.Millisecond)
-	}
-	printLines("")
-}
-
 // Prints a worker result between accent rules and its body in a skinned panel, or the empty note
 func (c *CLI) printSideResultPanel(headerLines []string, body, titleSuffix, emptyNote string, console sideConsole) {
-	c.refreshTUIBeforePrint()
+	printLines("")
 	var richConsole sideConsole = console
 	if console == nil {
 		richConsole = newChatConsole()
@@ -91,7 +82,7 @@ type sideWorkerSpec struct {
 func (c *CLI) sideWorker(produce func() (string, error), spec sideWorkerSpec) func() {
 	return func() {
 		fail := func(err any) {
-			c.refreshTUIBeforePrint()
+			printLines("")
 			line := "  " + c.commandsT("side_result.failed", map[string]any{"label": spec.failLabel, "error": err})
 			if spec.console != nil {
 				spec.console.Print(pyrich.Escape(line))
@@ -102,9 +93,6 @@ func (c *CLI) sideWorker(produce func() (string, error), spec sideWorkerSpec) fu
 		defer func() {
 			if spec.onDone != nil {
 				spec.onDone()
-			}
-			if c.app != nil {
-				_ = c.invalidateWithin(0)
 			}
 		}()
 		defer func() {
@@ -217,9 +205,6 @@ func (c *CLI) handleBackgroundCommand(cmd string) {
 					c.spinnerText = text
 				}
 				c.uiMu.Unlock()
-				if !running && c.app != nil {
-					_ = c.app.Invalidate()
-				}
 			},
 		})
 		if err != nil {
@@ -266,9 +251,7 @@ func firstSignInState(states iter.Seq[provider.SignInState]) (provider.SignInSta
 // Handles /login, printing the device code and finishing the sign in on a worker without blocking input
 func (c *CLI) handleLoginCommand(cmdOriginal string) {
 	var console sideConsole
-	if c.app == nil {
-		console = &pyrich.Console{Out: c.console.Out, Color: c.console.ShouldUseColor(), Terminal: c.console.StdoutIsTTY(), Width: terminalColumns()}
-	}
+	console = &pyrich.Console{Out: c.console.Out, Color: c.console.ShouldUseColor(), Terminal: c.console.StdoutIsTTY(), Width: terminalColumns()}
 	cp("  " + provider.LoginStarting)
 	h := home.Dir(c.ctx)
 	env := provider.PoolEnv{Store: provider.NewStore(h), Secrets: config.NewSecrets(h), Scope: provider.SecretScopeFrom(c.ctx),

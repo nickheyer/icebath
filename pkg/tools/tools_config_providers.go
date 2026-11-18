@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"slices"
 	"strings"
 	"unicode/utf8"
@@ -14,6 +15,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/internal/pyurl"
+	"github.com/nickheyer/icebath/pkg/setupflow"
 )
 
 // ProviderSelectionError is the KeyError of a provider selection naming an unknown toolset or provider
@@ -669,14 +671,14 @@ func (s *ToolsSetup) configureToolCategory(tsKey string, cat *pyjson.Object, cfg
 			nousLoggedIn = s.nousFeatures(cfg, forceFresh).NousAuthPresent
 		}()
 	}
-	choices := []string{}
+	choices, options := []string{}, []setupflow.Option{}
 	for _, p := range providers {
 		badge, tag, configured, subMarker := "", "", "", ""
 		if pyTruthy(rowGet(p, "badge")) {
 			badge = " [" + rowText(p, "badge") + "]"
 		}
 		if pyTruthy(rowGet(p, "tag")) {
-			tag = " — " + rowText(p, "tag")
+			tag = rowText(p, "tag")
 		}
 		ready, err := providerEnvReady(s.ctx(), s.home(), p)
 		if err != nil {
@@ -694,15 +696,26 @@ func (s *ToolsSetup) configureToolCategory(tsKey string, cat *pyjson.Object, cfg
 			}
 		}
 		if !reconfigure && pyTruthy(rowGet(p, "managed_nous_feature")) {
-			subMarker = "  ★ via Nous Portal (login on select)"
+			subMarker = "★ via Nous Portal (login on select)"
 			if nousLoggedIn {
-				subMarker = "  ★ Included with your Nous subscription"
+				subMarker = "★ Included with your Nous subscription"
 			}
 		}
-		choices = append(choices, rowText(p, "name")+badge+tag+configured+subMarker)
+		label := rowText(p, "name") + badge
+		if tag != "" {
+			label += " — " + tag
+		}
+		label += configured
+		if subMarker != "" {
+			label += "  " + subMarker
+		}
+		choices = append(choices, label)
+		options = append(options, setupflow.Option{Title: rowText(p, "name") + badge + configured,
+			Detail: strings.TrimSpace(strings.Join([]string{tag, subMarker}, "  "))})
 	}
 	if !reconfigure {
 		choices = append(choices, "Skip — keep defaults / configure later")
+		options = append(options, setupflow.Option{Title: "Skip — keep defaults / configure later"})
 	}
 	defaultIdx, err := s.detectActiveProviderIndex(providers, cfg, forceFresh)
 	if err != nil {
@@ -712,7 +725,7 @@ func (s *ToolsSetup) configureToolCategory(tsKey string, cat *pyjson.Object, cfg
 	if reconfigure {
 		question = "  Select provider:"
 	}
-	idx, err := s.promptChoice(question, choices, defaultIdx)
+	idx, err := s.chooseOption(question, options, choices, defaultIdx)
 	if err != nil {
 		return err
 	}
@@ -1127,6 +1140,9 @@ func (s *ToolsSetup) pickModelFromCatalog(cat *modelCatalog, defaultModel, cfgKe
 			ordered = append(ordered, m)
 		}
 	}
+	if s.Ask != nil {
+		return s.pickModelOption(cat, ordered, currentModel, cfgKey, display, cfg)
+	}
 	widthModel, widthSpeed, widthStrengths := 0, 0, 0
 	for _, m := range cat.ids {
 		widthModel = max(widthModel, utf8.RuneCountInString(m))
@@ -1162,6 +1178,39 @@ func (s *ToolsSetup) pickModelFromCatalog(cat *modelCatalog, defaultModel, cfgKe
 	}
 	chosen := ordered[idx]
 	curCfg["model"] = chosen
+	s.Con.PrintSuccess("  Model set to: " + chosen)
+	return nil
+}
+
+// Model choice through the asker, each row naming its speed, strengths, price and whether it is in use
+func (s *ToolsSetup) pickModelOption(cat *modelCatalog, ordered []string, currentModel, cfgKey, display string, cfg config.Tree) error {
+	options := make([]setupflow.Option, 0, len(ordered))
+	for _, mid := range ordered {
+		meta := cat.meta[mid]
+		parts := []string{}
+		for _, field := range []string{"speed", "strengths"} {
+			text, err := metaText(meta, field)
+			if err != nil {
+				return err
+			}
+			if text != "" {
+				parts = append(parts, text)
+			}
+		}
+		if price := pyrepr.Str(mapGetOr(meta, "price", "")); price != "" {
+			parts = append(parts, price)
+		}
+		if mid == currentModel {
+			parts = append(parts, "currently in use")
+		}
+		options = append(options, setupflow.Option{Title: mid, Detail: strings.Join(parts, " · ")})
+	}
+	idx, err := s.Ask.Choose("  Choose "+display+" model:", options, 0)
+	if err != nil {
+		return err
+	}
+	chosen := ordered[idx]
+	cfgSection(cfg, cfgKey)["model"] = chosen
 	s.Con.PrintSuccess("  Model set to: " + chosen)
 	return nil
 }
@@ -1445,6 +1494,12 @@ var nousProviderGateFn = (*ToolsSetup).nousProviderGate
 func (s *ToolsSetup) nousProviderGate(provider *pyjson.Object, cfg config.Tree, managedFeature string, forceFresh bool) bool {
 	if managedFeature != "" {
 		ensure := ToolsConfigHooks.EnsureNousPortalAccess
+		if s.Ask != nil {
+			requireFlowHook("PortalAccess", s.Flow.PortalAccess != nil)
+			ensure = func(ctx context.Context, h string, out io.Writer, capability, coverage string) bool {
+				return s.Flow.PortalAccess(ctx, h, out, capability, coverage, s.Ask)
+			}
+		}
 		requireToolsConfigHook("EnsureNousPortalAccess", ensure != nil)
 		capability := pyrepr.Str(rowGetOr(provider, "name", "the Nous Tool Gateway"))
 		if !ensure(s.ctx(), s.home(), s.Con.Out, capability, managedCoverageCategory(managedFeature)) {
@@ -1577,8 +1632,11 @@ func (s *ToolsSetup) promptSecret(key, label, url, defaultVal string, reconfigur
 		s.Con.PrintInfo("  " + urlLabel + ": " + url)
 	}
 	if reconfigure {
-		value := pystr.Strip(s.Con.Prompt("    "+label+" (Enter to keep current)", "", defaultVal == ""))
-		if value != "" {
+		answer, err := s.promptText("    "+label+" (Enter to keep current)", "", defaultVal == "")
+		if err != nil {
+			return false, err
+		}
+		if value := pystr.Strip(answer); value != "" {
 			if err := s.saveEnvValue(key, value); err != nil {
 				return false, err
 			}
@@ -1588,11 +1646,9 @@ func (s *ToolsSetup) promptSecret(key, label, url, defaultVal string, reconfigur
 		}
 		return true, nil
 	}
-	var value string
-	if defaultVal != "" {
-		value = s.Con.Prompt("    "+label, defaultVal, false)
-	} else {
-		value = s.Con.Prompt("    "+label, "", true)
+	value, err := s.promptText("    "+label, defaultVal, defaultVal == "")
+	if err != nil {
+		return false, err
 	}
 	if strip {
 		value = pystr.Strip(value)
@@ -1751,7 +1807,11 @@ func (s *ToolsSetup) configureVisionBackend() error {
 	case 1:
 		return s.configureVisionProviderModel(cfg, visionCfg)
 	case 2:
-		baseURL := pystr.Strip(s.Con.Prompt("    Base URL (blank for OpenAI)", "", false))
+		answer, err := s.promptText("    Base URL (blank for OpenAI)", "", false)
+		if err != nil {
+			return err
+		}
+		baseURL := pystr.Strip(answer)
 		if baseURL == "" {
 			baseURL = "https://api.openai.com/v1"
 		}
@@ -1764,7 +1824,10 @@ func (s *ToolsSetup) configureVisionBackend() error {
 		if isNativeOpenAI {
 			keyLabel = "    OPENAI_API_KEY"
 		}
-		apiKey := s.Con.Prompt(keyLabel, "", true)
+		apiKey, err := s.promptText(keyLabel, "", true)
+		if err != nil {
+			return err
+		}
 		if pystr.Strip(apiKey) == "" {
 			s.Con.PrintWarning("    Skipped")
 			return nil
@@ -1774,7 +1837,11 @@ func (s *ToolsSetup) configureVisionBackend() error {
 			defaultModel = "gpt-4o-mini"
 			question += " (blank for " + defaultModel + ")"
 		}
-		model := pystr.Strip(s.Con.Prompt(question, "", false))
+		answer, err = s.promptText(question, "", false)
+		if err != nil {
+			return err
+		}
+		model := pystr.Strip(answer)
 		if model == "" {
 			model = defaultModel
 		}
@@ -1866,8 +1933,11 @@ func (s *ToolsSetup) configureVisionProviderModel(cfg config.Tree, visionCfg map
 	if midx < len(models) {
 		model = models[midx]
 	} else {
-		model = pystr.Strip(s.Con.Prompt("    Model id", "", false))
-		if model == "" {
+		answer, err := s.promptText("    Model id", "", false)
+		if err != nil {
+			return err
+		}
+		if model = pystr.Strip(answer); model == "" {
 			s.Con.PrintWarning("  No model entered — cancelled")
 			return nil
 		}

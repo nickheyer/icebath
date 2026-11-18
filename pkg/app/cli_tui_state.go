@@ -8,50 +8,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/tools"
 )
 
-// Rows below an overlay panel taken by spinner, status bar, input, rules and prompt symbol
-const panelReservedBelow = 6
-
-// Characters that type into the picker and palette filters
-const tuiTypingChars = "0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ-_.:/ "
-
-// Approval choice ids to the catalog keys of their labels
-var approvalChoiceKeys = map[string]string{"once": "cli.tui.approval_once", "session": "cli.tui.approval_session",
-	"always": "cli.tui.approval_always", "deny": "cli.tui.approval_deny", "view": "cli.tui.approval_view"}
-
-// tuiRunState is the prompt state one interactive run owns
-type tuiRunState struct {
-	app                    *ptApplication
-	multilineShortcuts     bool
-	pasteCounter           int
-	prevTextLen            int
-	prevNewlineCount       int
-	pasteJustCollapsed     bool
-	skipPasteCollapse      bool
-	lastTextChange         float64
-	pasteBurstAt           *float64
-	heldEnter              *struct{}
-	styleBase              *styleDict
-	petWidget              *ptWindow
-	stashPanelWidget       *ptWindow
-	subagentDockWidget     *ptWindow
-	extraWidgets           func() []*ptWindow
-	extraKeybindings       func(kb *ptKeyBindings, app *ptApplication)
-	configSig              []any
-	configMCPServers       any
-	lastConfigCheck        float64
-	lastFocusRedraw        *float64
-	chromePaints           [][]chromePaint
-	chromePaintsScreen     uint64
-	resizeSeenAt           *float64
-	resizeHoldSince        *float64
-	resizeNarrowest        *int
-	resizeOriginalOnResize func()
-	resizeWidthProbe       func() (int, bool)
-	unsuppressOverride     func(app tuiScreenApp, delay float64)
-	inlineCommandHook      func(e *ptEvent, text string, hasImages bool) bool
-	enterWhileBusyHook     func(text string, images []string, payload any, mode string)
-}
-
 // slashConfirmChoice is one answer of a slash command confirmation
 type slashConfirmChoice struct{ Value, Label, Desc string }
 
@@ -60,7 +16,6 @@ type slashConfirmModalState struct {
 	Title, Detail string
 	Choices       []slashConfirmChoice
 	Selected      int
-	response      chan string
 }
 
 // commandPaletteEntry is one palette row, command, category and description
@@ -87,12 +42,6 @@ type clarifyAnswerMeta struct {
 	Kind      string
 	Choices   []string
 	OtherText string
-}
-
-// wrappedRow is one wrapped line tagged with the index of the item it came from
-type wrappedRow struct {
-	Index int
-	Text  string
 }
 
 // Entries of the clarify callback payload as questions
@@ -209,8 +158,7 @@ func (c *CLI) clarifyCallback(questions []any) map[string]any {
 	}
 	c.uiMu.Unlock()
 	c.ringBell(true, i18n.T(c.ctx, "cli.clarify.bell_context", "", nil), "")
-	c.paintNow()
-	result, timedOut := pollModalQueue(c, c.ctx, response, c.clarifyDeadlineAt, 1.0, nil, nil)
+	result, timedOut := pollModalQueue(c.ctx, response, c.clarifyDeadlineAt, nil)
 	if !timedOut {
 		c.uiMu.Lock()
 		c.clarifyDeadline = nil

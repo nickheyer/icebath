@@ -122,6 +122,11 @@ func installMethodStamp(path string) (string, error) {
 	return method, nil
 }
 
+// Install method the stamp beside the binary of root names, empty when unstamped or unsupported
+func InstallMethodStamp(root string) (string, error) {
+	return installMethodStamp(filepath.Join(root, ".install_method"))
+}
+
 // Tree this process runs from, the steward install root override or the resolved executable directory
 func installCodeRoot() string {
 	if env := os.Getenv("ICEBATH_INSTALL_ROOT"); env != "" {

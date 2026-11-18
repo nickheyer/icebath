@@ -687,7 +687,8 @@ func TestNativeOwnerHardKillRecoversQueuedAdmissionOnce(t *testing.T) {
 		}
 		ws.Close()
 		if err := hn.plannedStop(t, owner, descriptor); err != nil {
-			t.Fatalf("planned stop of %s = %v", name, err)
+			gatewayLog, _ := os.ReadFile(filepath.Join(h, "logs", "gateway.log"))
+			t.Fatalf("planned stop of %s = %v\n%s\n%s", name, err, owner.output(), tail(string(gatewayLog), 16000))
 		}
 	}
 	texts := peer.texts()

@@ -78,11 +78,15 @@ func numberedIndex(val string) (*big.Int, bool) {
 	return new(big.Int).Sub(n, big.NewInt(1)), true
 }
 
-// Provider menu index with arrow keys, a numbered fallback without curses, false when the user cancels
+// Provider menu index with arrow keys, a numbered fallback without curses, false when the user or the TUI cancels
 func promptProviderChoice(out io.Writer, choices []string, def int, title string) (int, bool) {
-	if idx, err := flowCursesChoiceFn(title, choices, def, ""); err == nil && idx >= 0 {
+	idx, err := flowCursesChoiceFn(title, choices, def, "")
+	switch {
+	case err == nil && idx >= 0:
 		fmt.Fprintln(out)
 		return idx, true
+	case err == nil && hostedAsker() != nil:
+		return 0, false
 	}
 	printNumbered(out, title, choices, def)
 	fmt.Fprintln(out)
@@ -197,7 +201,7 @@ func PromptAPIKey(env PoolEnv, out io.Writer, pconfig Profile, existingKey, prov
 		if err := config.SaveEnvValue(h, keyEnv, ""); err != nil {
 			return "", false, err
 		}
-		fmt.Fprintf(out, "  API key cleared.  Re-run `icebath setup` to configure %s again.\n", name)
+		fmt.Fprintf(out, "  API key cleared.  Type `/setup model` to configure %s again.\n", name)
 		return "", true, nil
 	}
 	fmt.Fprintln(out)

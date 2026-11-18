@@ -376,7 +376,7 @@ func (c *kanbanCLI) cmdInit() (int, error) {
 			fmt.Fprintf(c.w, "  %s\n", name)
 		}
 	} else {
-		fmt.Fprintln(c.w, "No profiles found under ~/.icebath/profiles/.\nCreate one with `icebath -p <name> setup` before assigning tasks.")
+		fmt.Fprintln(c.w, "No profiles found under ~/.icebath/profiles/.\nCreate one with `icebath profile create <name>`, then start `icebath -p <name>` and type `/setup` before assigning tasks.")
 	}
 	fmt.Fprintln(c.w, "\nNext step: start the gateway so ready tasks actually get picked up.\n"+
 		"  icebath gateway start\n\n"+
@@ -422,7 +422,7 @@ func (c *kanbanCLI) cmdAssignees() (int, error) {
 		return 0, err
 	}
 	if len(data) == 0 {
-		fmt.Fprintln(c.w, "(no assignees — create a profile with `icebath -p <name> setup`)")
+		fmt.Fprintln(c.w, "(no assignees — create a profile with `icebath profile create <name>`)")
 		return 0, nil
 	}
 	fmt.Fprintf(c.w, "%-20s  %-8s  COUNTS\n", "NAME", "ON DISK")

@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/internal/hermetic"
+	"github.com/nickheyer/icebath/pkg/internal/homeguard"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/pm"
 )
@@ -69,11 +70,11 @@ func needHost(t *testing.T) *Host {
 	return testHost
 }
 
-// Shared cache the pm suite unpacks pinned tools into, outside the home the gate hides
+// Shared cache the pm suite unpacks pinned tools into, outside the private home of the test binary
 func testCacheRoot() (string, error) {
-	dir, err := os.UserCacheDir()
-	if err != nil {
-		return "", err
+	dir := homeguard.SharedCache()
+	if dir == "" {
+		return "", &fs.PathError{Op: "cache", Path: "developer cache directory", Err: fs.ErrNotExist}
 	}
 	return filepath.Join(dir, "icebath-pm-tests"), nil
 }

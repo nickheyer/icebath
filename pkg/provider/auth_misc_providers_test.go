@@ -215,7 +215,7 @@ func TestOpenRouterAuthLoopbackCodeAndDenial(t *testing.T) {
 			}
 		}
 	}()
-	code, err := openrouterLoopbackCode(out, [][2]string{{"code_challenge", "ch"}, {"code_challenge_method", "S256"}}, false, 3*time.Second)
+	code, err := openrouterLoopbackCode(context.Background(), out, [][2]string{{"code_challenge", "ch"}, {"code_challenge_method", "S256"}}, false, 3*time.Second)
 	if err != nil || code != "the-code" {
 		t.Fatal(code, err)
 	}

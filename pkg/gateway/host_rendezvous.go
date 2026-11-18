@@ -70,7 +70,7 @@ var (
 
 func hostLog() *slog.Logger { return slog.Default().With("logger", "gateway.host_rendezvous") }
 
-// Record fields in their published key order
+// Record fields in their published key order, the gateway role publishing no bound address or token
 func (r *HostRecord) ToJSON() *pyjson.Object {
 	o := pyjson.NewObject()
 	o.Set("role", r.Role)
@@ -87,7 +87,10 @@ func (r *HostRecord) ToJSON() *pyjson.Object {
 		o.Set("startTime", nil)
 	}
 	o.Set("bootEpoch", r.BootEpoch)
+	o.Set("host", "")
+	o.Set("port", nil)
 	o.Set("protocolVersion", int64(r.ProtocolVersion))
+	o.Set("tokenFingerprint", "")
 	ps := make([]any, len(r.Profiles))
 	for i, p := range r.Profiles {
 		ps[i] = p
@@ -616,11 +619,11 @@ func HostServedProfiles(multiplex *bool) []string {
 	return names
 }
 
-// One line human description used by attach messages and conflict logs
+// One line human description used by attach messages and conflict logs, a gateway record binding no port
 func DescribeHostRecord(r *HostRecord) string {
 	ps := "unknown"
 	if len(r.Profiles) > 0 {
 		ps = strings.Join(r.Profiles, ", ")
 	}
-	return fmt.Sprintf("PID %d (profiles: %s)", r.PID, ps)
+	return fmt.Sprintf("PID %d (no bound port; profiles: %s)", r.PID, ps)
 }

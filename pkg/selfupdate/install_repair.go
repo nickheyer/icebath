@@ -362,7 +362,7 @@ func configuredFeaturesMissingDeps(ctx context.Context) []pm.ConfiguredFeatureGa
 			if !entry.RunCheck(ctx) {
 				hint := entry.InstallHint
 				if hint == "" {
-					hint = "Run `icebath setup` to install support."
+					hint = "Start `icebath` and type `/setup gateway` to install support."
 				}
 				missing = append(missing, pm.ConfiguredFeatureGap{Feature: entry.Label, Hint: hint, Extra: entry.Name})
 			}

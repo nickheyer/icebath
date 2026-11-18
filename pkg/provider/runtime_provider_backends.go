@@ -157,7 +157,7 @@ var explicitBedrockNames = map[string]bool{"bedrock": true, "aws": true, "aws-be
 // AWS Bedrock with Mantle Responses for bare OpenAI ids, Anthropic Messages for Claude, else Converse
 func (r *resolver) resolveBedrockRuntime(requestedProvider string, modelCfg map[string]any, targetModel string) (*Runtime, error) {
 	isExplicit := explicitBedrockNames[requestedProvider]
-	if !isExplicit && !hasAWSCredentials(false) {
+	if !isExplicit && !hasAWSCredentials(r.ctx, false) {
 		return nil, newAuthErr("bedrock", "No AWS credentials found for Bedrock. Configure one of:\n"+
 			"  - AWS_ACCESS_KEY_ID + AWS_SECRET_ACCESS_KEY\n"+
 			"  - AWS_PROFILE (for SSO / named profiles)\n"+
@@ -170,7 +170,7 @@ func (r *resolver) resolveBedrockRuntime(requestedProvider string, modelCfg map[
 	}
 	scoped := map[string]any{"bedrock": bedrockCfg}
 	region := resolveBedrockRuntimeRegion(scoped)
-	authSource := resolveAWSAuthEnvVar()
+	authSource := resolveAWSAuthEnvVar(r.ctx)
 	if authSource == "" {
 		authSource = "aws-sdk-default-chain"
 	}

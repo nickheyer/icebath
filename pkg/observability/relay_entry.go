@@ -56,6 +56,7 @@ func init() {
 	recordModelSwitchAfter = RecordModelSwitchAfter
 	shutdownRuntimes = ShutdownRuntimes
 	tools.RelayCoordinator.RegisterSessionInitializer(SubscriberName, prepareCoreSession)
+	tools.RegisterRelayDemand(SubscriberName, func(ctx context.Context) bool { return relayEnabled(ctx) })
 }
 
 type relayHookHandler func(ctx context.Context, env *tools.Env, rt *Runtime, kw map[string]any) error

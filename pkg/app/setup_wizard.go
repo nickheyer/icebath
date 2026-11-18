@@ -62,7 +62,7 @@ func promptToolAPIKey(ctx context.Context, v config.MissingEnvVar) error {
 		provider.SetupPrintInfo("  Get your key at: " + v.URL)
 	}
 	setupPrintln("")
-	return promptAndSaveEnvVar(ctx, v, "  ✓ Saved", "  Skipped (configure later with 'icebath setup')")
+	return promptAndSaveEnvVar(ctx, v, "  ✓ Saved", "  Skipped (configure later with '/setup')")
 }
 
 // One icebath setup section, the key a user names, its banner label and its runner
@@ -148,8 +148,7 @@ func RunSetupWizard(ctx context.Context, ns map[string]any) (code int, err error
 	defer cliui.RestoreTerminal()
 	defer provider.WithSetupConsole(flow)()
 	defer provider.RecoverSetupExit(&code)
-	err = provider.RunWizardWithSetupNavigation(func() error { return runSetupWizardImpl(ctx, ns) },
-		"Setup cancelled. Remaining sections were not changed.")
+	err = provider.RunWizardWithSetupNavigation(func() error { return runSetupWizardImpl(ctx, ns) }, setupCancelledMessage)
 	if exitCode, message, exit := provider.SetupSystemExit(err); exit {
 		if message != "" {
 			fmt.Fprintln(stderrWriter(), message)
@@ -286,6 +285,52 @@ func setupIsExistingInstall(ctx context.Context) (bool, error) {
 	return present && active != nil, nil
 }
 
+// Message a setup run prints when navigation backs out of it
+const setupCancelledMessage = "Setup cancelled. Remaining sections were not changed."
+
+// Ensures the home and takes the pre-setup backup a setup run starts with, empty when no config was there
+func setupBackup(ctx context.Context, h string) (string, error) {
+	if err := config.EnsureIcebathHome(ctx, h); err != nil {
+		return "", err
+	}
+	return config.BackupConfig(ctx, home.ConfigPath(h), "pre-setup", config.DefaultBackupKeep)
+}
+
+// Prints the title box of a whole setup run
+func printSetupWizardTitle() {
+	provider.PrintSetupTitle("Setup · ctrl+c exits at any time and keeps what is already saved",
+		"│             ☤ Icebath Agent Setup Wizard               │",
+		"├─────────────────────────────────────────────────────────┤",
+		"│  Let's configure your Icebath Agent installation.      │",
+		"│  Press Ctrl+C at any time to exit.                     │")
+}
+
+// Quick Setup of an existing install as one step, then the setup recorded as completed
+func runExistingQuickSetup(ctx context.Context, cfg config.Tree, h string) error {
+	if err := provider.RunSetupSteps([]provider.SetupStep{{Label: "Quick Setup", Action: func() error { return setupRunQuickSetupFn(ctx, cfg, h) }}}); err != nil {
+		return err
+	}
+	return provider.RecordSetupCompleted(ctx, cfg)
+}
+
+// Offers the agent import of a first setup, returning the config it left and the agents it imported
+func offerFirstSetupImport(ctx context.Context, h string) (config.Tree, string, error) {
+	importedFrom, err := setupOfferAgentImportFn(ctx, h, true)
+	if err != nil {
+		return nil, "", err
+	}
+	cfg, err := config.LoadContext(ctx, h, nil)
+	return cfg, importedFrom, err
+}
+
+// Runs a first time mode as one step, then the setup recorded as completed
+func runFirstTimeMode(ctx context.Context, cfg config.Tree, h string, mode firstTimeMode, importedFrom string) error {
+	if err := provider.RunSetupSteps([]provider.SetupStep{{Label: mode.label, Action: func() error { return mode.run(ctx, cfg, h, importedFrom) }}}); err != nil {
+		return err
+	}
+	return provider.RecordSetupCompleted(ctx, cfg)
+}
+
 // The setup wizard, full or quick by install state, the portal one shot, or one named section
 func runSetupWizardImpl(ctx context.Context, ns map[string]any) error {
 	h := home.Dir(ctx)
@@ -293,11 +338,8 @@ func runSetupWizardImpl(ctx context.Context, ns map[string]any) error {
 		config.ManagedError(ctx, h, "run setup wizard")
 		return nil
 	}
-	if err := config.EnsureIcebathHome(ctx, h); err != nil {
-		return err
-	}
 	configPath := home.ConfigPath(h)
-	backupPath, err := config.BackupConfig(ctx, configPath, "pre-setup", config.DefaultBackupKeep)
+	backupPath, err := setupBackup(ctx, h)
 	if err != nil {
 		return err
 	}
@@ -330,34 +372,24 @@ func runSetupWizardImpl(ctx context.Context, ns map[string]any) error {
 	if err != nil {
 		return err
 	}
-	provider.PrintSetupTitle("Setup · ctrl+c exits at any time and keeps what is already saved",
-		"│             ☤ Icebath Agent Setup Wizard               │",
-		"├─────────────────────────────────────────────────────────┤",
-		"│  Let's configure your Icebath Agent installation.      │",
-		"│  Press Ctrl+C at any time to exit.                     │")
+	printSetupWizardTitle()
 	importedFrom := ""
 	if isExisting {
 		if quickRequested {
-			if err := provider.RunSetupSteps([]provider.SetupStep{{Label: "Quick Setup", Action: func() error { return setupRunQuickSetupFn(ctx, cfg, h) }}}); err != nil {
-				return err
-			}
-			return provider.RecordSetupCompleted(ctx, cfg)
+			return runExistingQuickSetup(ctx, cfg, h)
 		}
 		provider.PrintSetupHeader("Reconfigure", true)
 		provider.SetupPrintSuccess("You already have Icebath configured.")
 		provider.SetupInfo("Running the full wizard — each prompt shows your current value.",
 			"Press Enter to keep it, or type a new value to change it.", "",
-			"Tip: jump straight to a section with 'icebath setup model|terminal|",
-			"     gateway|tools|agent', or fill only missing items with --quick.")
+			"Tip: jump straight to a section with '/setup model|terminal|",
+			"     gateway|tools|agent', or fill only missing items with '/setup quick'.")
 	} else {
 		setupPrintln("")
 		if reconfigureRequested || quickRequested {
 			provider.SetupInfo("No existing configuration found — running first-time setup.", nil)
 		}
-		if importedFrom, err = setupOfferAgentImportFn(ctx, h, true); err != nil {
-			return err
-		}
-		if cfg, err = config.LoadContext(ctx, h, nil); err != nil {
+		if cfg, importedFrom, err = offerFirstSetupImport(ctx, h); err != nil {
 			return err
 		}
 		labels := make([]string, len(firstTimeModes))
@@ -366,10 +398,7 @@ func runSetupWizardImpl(ctx context.Context, ns map[string]any) error {
 		}
 		mode := firstTimeModes[provider.PromptChoice("How would you like to set up Icebath?", labels, 0, "")]
 		if mode.run != nil {
-			if err := provider.RunSetupSteps([]provider.SetupStep{{Label: mode.label, Action: func() error { return mode.run(ctx, cfg, h, importedFrom) }}}); err != nil {
-				return err
-			}
-			return provider.RecordSetupCompleted(ctx, cfg)
+			return runFirstTimeMode(ctx, cfg, h, mode, importedFrom)
 		}
 	}
 	if err := runFullSetup(ctx, cfg, h, isExisting, importedFrom); err != nil {

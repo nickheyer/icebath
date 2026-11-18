@@ -184,7 +184,7 @@ func probeCompressionModelFeasibility(ctx context.Context, a *AIAgent) error {
 		if cfgProvider != "" && cfgProvider != "auto" {
 			msg = fmt.Sprintf("⚠ Configured auxiliary compression provider '%s' is unavailable, so older messages in long chats will be cut without a summary. Sign in to that provider again, or change auxiliary.compression in your config.", cfgProvider)
 		} else {
-			msg = "⚠ No auxiliary LLM provider configured: Icebath has no helper model for summarising long chats, so older messages will be cut without a summary. Run `icebath setup` to add one."
+			msg = "⚠ No auxiliary LLM provider configured: Icebath has no helper model for summarising long chats, so older messages will be cut without a summary. Start `icebath` and type `/setup aux` to add one."
 		}
 		emitFeasibilityNotice(a, msg)
 		compressionLog().Warn("No auxiliary LLM provider for compression — summaries will be unavailable.")

@@ -33,8 +33,9 @@ func (p *fakeImageProvider) DisplayName() string { return pystr.Title(p.name) }
 func (p *fakeImageProvider) GetSetupSchema() map[string]any {
 	return map[string]any{"name": p.DisplayName(), "badge": "", "tag": "", "env_vars": []any{}}
 }
-func (p *fakeImageProvider) IsAvailable() bool            { return !p.unavailable }
-func (p *fakeImageProvider) ListModels() []map[string]any { return p.models }
+func (p *fakeImageProvider) IsAvailable() bool                { return !p.unavailable }
+func (p *fakeImageProvider) AvailableIn(context.Context) bool { return !p.unavailable }
+func (p *fakeImageProvider) ListModels() []map[string]any     { return p.models }
 func (p *fakeImageProvider) DefaultModel() string {
 	if len(p.models) == 0 {
 		return ""

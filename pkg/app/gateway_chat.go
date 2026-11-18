@@ -479,11 +479,6 @@ func LaunchFromArgs(ctx context.Context, args map[string]any, ensure func() (boo
 	return launchFromArgs(ctx, args, ensure, connectGatewayChat)
 }
 
-// Launches from keyword options, the namespace being the options themselves
-func LaunchFromKwargs(ctx context.Context, options map[string]any, ensure func() (bool, error)) int {
-	return LaunchFromArgs(ctx, options, ensure)
-}
-
 // The launch with its owner connector, every failed start closing the stream json protocol with a result
 func launchFromArgs(ctx context.Context, args map[string]any, ensure func() (bool, error),
 	connect func(ctx context.Context) (gatewayChatConn, error)) int {

@@ -3,6 +3,7 @@ package tools
 import (
 	"bytes"
 	"context"
+	"os"
 	"strings"
 	"testing"
 	"time"
@@ -68,7 +69,7 @@ func swapDDGS[T any](t *testing.T, p *T, v T) {
 // Installs a fake ddgs package whose text search yields the given rows, the importable latch set
 func fakeDDGSPackage(t *testing.T, rows [][3]string, fail error) {
 	t.Helper()
-	swapDDGS(t, &ddgsClientAvailable, func(context.Context) bool { return true })
+	swapDDGS(t, &ddgsClientAvailable, func(*Env) bool { return true })
 	swapDDGS(t, &ddgsText, func(_ context.Context, _ string, _ int) ([]*ddgsTextResult, error) {
 		if fail != nil {
 			return nil, fail
@@ -218,7 +219,7 @@ func TestDDGSNoOrphanAfterSuccessfulSearch(t *testing.T) {
 
 func TestDDGSBackendWiring(t *testing.T) {
 	t.Setenv("ICEBATH_HOME", t.TempDir())
-	swapDDGS(t, &ddgsClientAvailable, func(context.Context) bool { return true })
+	swapDDGS(t, &ddgsClientAvailable, func(*Env) bool { return true })
 	env := httpxProviderEnv(t, "", nil)
 	if !isWebBackendAvailable(env, "ddgs") {
 		t.Fatal("ddgs backend unavailable with the package importable")
@@ -236,7 +237,7 @@ func TestDDGSBackendWiring(t *testing.T) {
 
 func TestDDGSWebExtractReturnsSearchOnlyError(t *testing.T) {
 	t.Setenv("ICEBATH_HOME", t.TempDir())
-	swapDDGS(t, &ddgsClientAvailable, func(context.Context) bool { return true })
+	swapDDGS(t, &ddgsClientAvailable, func(*Env) bool { return true })
 	swapDDGS(t, &webExtractURLSafe, func(*Env, string) bool { return true })
 	out := mustJSONMap(WebExtractTool(context.Background(), httpxProviderEnv(t, "", map[string]any{"web.backend": "ddgs"}), []any{"https://example.com"}, "", nil))
 	msg := strings.ToLower(asStr(out["error"]))
@@ -351,14 +352,39 @@ func TestDDGSLxmlDocumentIsEmpty(t *testing.T) {
 
 func TestDDGSProviderNeedsNoPythonPackageOrSetup(t *testing.T) {
 	t.Setenv("ICEBATH_HOME", t.TempDir())
-	if !ddgsP().Available(httpxProviderEnv(t, "", nil)) {
-		t.Fatal("the compiled in DuckDuckGo client read as unavailable")
-	}
 	schema := ddgsP().SetupSchema()
 	if _, ok := schema["post_setup"]; ok || strings.Contains(asStr(schema["tag"]), "Python") {
 		t.Fatalf("schema %v", schema)
 	}
 	if _, ok := pythonPostSetupHooks["ddgs"]; ok {
 		t.Fatal("ddgs still installs a Python extra")
+	}
+}
+
+func TestDDGSIsAvailableOnlyOnceConfigSelectsIt(t *testing.T) {
+	t.Setenv("ICEBATH_HOME", t.TempDir())
+	if ddgsP().Available(httpxProviderEnv(t, "", nil)) {
+		t.Fatal("a fresh home must not count ddgs available, the reference has no ddgs extra there")
+	}
+	for _, key := range []string{"web.backend", "web.search_backend", "web.extract_backend"} {
+		if !ddgsP().Available(httpxProviderEnv(t, "", map[string]any{key: "ddgs"})) {
+			t.Fatalf("ddgs selected by %s is not available", key)
+		}
+	}
+}
+
+func TestFeishuToolsNeedThePlatformCredentials(t *testing.T) {
+	for _, k := range []string{"FEISHU_APP_ID", "FEISHU_APP_SECRET"} {
+		t.Setenv(k, "")
+		os.Unsetenv(k)
+	}
+	if feishuToolsReady(httpxProviderEnv(t, "", nil)) {
+		t.Fatal("feishu tools ready without app credentials")
+	}
+	if feishuToolsReady(httpxProviderEnv(t, "FEISHU_APP_ID=cli_a\n", nil)) {
+		t.Fatal("feishu tools ready with the app id alone")
+	}
+	if !feishuToolsReady(httpxProviderEnv(t, "FEISHU_APP_ID=cli_a\nFEISHU_APP_SECRET=s\n", nil)) {
+		t.Fatal("feishu tools not ready with both app credentials")
 	}
 }

@@ -39,11 +39,19 @@ var (
 		return fn(s.ctx(), s.home())
 	}
 	setupTelemetry = func(s *ToolsSetup, cfg config.Tree) error {
+		if s.Ask != nil {
+			requireFlowHook("Consent", s.Flow.Consent != nil)
+			return s.Flow.Consent(s.ctx(), s.home(), cfg, s.Ask)
+		}
 		fn := ToolsCommandHooks.SetupTelemetry
 		requireToolsCommandHook("SetupTelemetry", "pkg/provider", fn != nil)
 		return fn(s.ctx(), s.home(), s.Con.Out, map[string]any(cfg))
 	}
 	configureMCPToolsInteractive = func(s *ToolsSetup, cfg config.Tree) error {
+		if s.Ask != nil {
+			requireFlowHook("ConfigureMCP", s.Flow.ConfigureMCP != nil)
+			return s.Flow.ConfigureMCP(s.ctx(), cfg, s.Ask)
+		}
 		fn := ToolsCommandHooks.ConfigureMCPTools
 		requireToolsCommandHook("ConfigureMCPTools", "pkg/commands", fn != nil)
 		return fn(s.ctx(), s.Con, cfg)
@@ -70,9 +78,9 @@ var (
 	toolsCommandStderr io.Writer = pysys.Stderr
 )
 
-// Single select menu with arrow keys, cancel keeping the default
+// Single select over plain labels through the asker or the arrow key menu, a console cancel keeping the default
 func (s *ToolsSetup) promptChoice(question string, choices []string, def int) (int, error) {
-	return toolsPromptChoice(s, question, choices, def)
+	return s.chooseOption(question, flowOptions(choices), choices, def)
 }
 
 // Console printing to w and reading standard input, the process console when w is standard output

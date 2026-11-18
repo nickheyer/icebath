@@ -188,7 +188,7 @@ func CmdGatewayEnroll(ctx context.Context, ns map[string]any, w io.Writer) (int,
 		if errors.As(err, &authErr) {
 			if authErr.ReloginRequired {
 				return enrollFail(w, "✗ You're not logged into Nous Portal.",
-					"  Run `icebath setup` (or `icebath auth add nous`) first, then retry.")
+					"  Run `icebath auth add nous` (or start `icebath` and type `/setup model`) first, then retry.")
 			}
 			return enrollFail(w, fmt.Sprintf("✗ Could not resolve a Nous Portal access token: %s", err))
 		}

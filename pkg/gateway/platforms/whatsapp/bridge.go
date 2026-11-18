@@ -196,6 +196,10 @@ type bridgeHost struct {
 var (
 	liveBridgesMu sync.Mutex
 	liveBridges   = map[string]*bridgeHost{}
+	// Binds the bridge's loopback port, replaceable by tests that hold the port from pick to serve
+	bridgeListen = func(port int) (net.Listener, error) {
+		return net.Listen("tcp4", net.JoinHostPort("127.0.0.1", strconv.Itoa(port)))
+	}
 )
 
 // Stops the bridge this process serves for the session, waiting out the grace before forcing it
@@ -283,7 +287,7 @@ func RunPairingEnv(ctx context.Context, session, mode string, overrides map[stri
 
 // Binds the loopback HTTP server, a FATAL line and exit 1 when the port is taken
 func (b *bridgeHost) listen() {
-	ln, err := net.Listen("tcp4", net.JoinHostPort("127.0.0.1", strconv.Itoa(b.cfg.port)))
+	ln, err := bridgeListen(b.cfg.port)
 	if err != nil {
 		if errors.Is(err, syscall.EADDRINUSE) || strings.Contains(err.Error(), "address already in use") || strings.Contains(err.Error(), "Only one usage") {
 			b.console.log("FATAL: port %d already in use on 127.0.0.1 — another bridge or process is listening there.", b.cfg.port)

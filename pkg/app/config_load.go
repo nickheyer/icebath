@@ -20,7 +20,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/logging"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/state"
-	"github.com/nickheyer/icebath/pkg/tools"
 )
 
 var cliLog = logging.GetLogger("cli")
@@ -375,25 +374,6 @@ func executableDir() string {
 		return cwd
 	}
 	return filepath.Dir(exe)
-}
-
-// Startup side effects from the loaded config, logging, config warnings, skin and display knobs, each failure ignored
-func initLoggingAndDisplayFromConfig(ctx context.Context) {
-	cfg := CLIConfig(ctx)
-	display := sectionOf(cfg, "display")
-	steps := []func(){
-		func() { logging.SetupLogging(ctx, logging.Options{Mode: "cli"}) },
-		func() { config.PrintConfigWarnings(ctx, home.Dir(ctx), nil, tools.RemovedBackendNote) },
-		func() { config.InitSkinFromConfig(ctx, cfg) },
-		func() { tools.SetToolPreviewMaxLen(intOr(valueOr(display["tool_preview_length"], 0), 0)) },
-		func() { tools.SetFriendlyToolLabels(pyrepr.Truthy(valueOr(display["friendly_tool_labels"], true))) },
-	}
-	for _, step := range steps {
-		func() {
-			defer func() { recover() }()
-			step()
-		}()
-	}
 }
 
 // Python int() of a bool, integer, float or numeric string, false when it does not parse

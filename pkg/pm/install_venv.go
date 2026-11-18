@@ -751,8 +751,8 @@ func syncVenv(ctx context.Context, opts SyncVenvOptions) error {
 	return nil
 }
 
-// Validates a sync request, takes the dependency lock and reaches the selection, leaving out failing carried extras
-func syncVenvBody(ctx context.Context, opts SyncVenvOptions) error {
+// ValueError of a sync request whose repair, eviction or carried extras contradict the rest of it
+func validateSyncVenv(opts SyncVenvOptions) error {
 	if opts.Repair && (opts.Extras != nil || opts.Plugins != nil) {
 		return &PyError{Class: "ValueError", Message: "repair restores the recorded environment; it cannot change features or plugins"}
 	}
@@ -761,6 +761,14 @@ func syncVenvBody(ctx context.Context, opts SyncVenvOptions) error {
 	}
 	if len(opts.Carried) > 0 && (opts.Repair || opts.Plugins != nil || !subsetOf(opts.Carried, opts.Extras)) {
 		return &PyError{Class: "ValueError", Message: "carried extras belong to a feature sync of the discovered selection"}
+	}
+	return nil
+}
+
+// Validates a sync request, takes the dependency lock and reaches the selection, leaving out failing carried extras
+func syncVenvBody(ctx context.Context, opts SyncVenvOptions) error {
+	if err := validateSyncVenv(opts); err != nil {
+		return err
 	}
 	shipped, frozen, err := syncFeaturePolicy(ctx, opts.Extras, opts.Repair)
 	if err != nil {

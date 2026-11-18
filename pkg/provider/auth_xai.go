@@ -587,12 +587,12 @@ func xaiOAuthRequestDeviceCode(ctx context.Context, client *http.Client, scope s
 	return payload, nil
 }
 
-// Polls the xAI token endpoint until the device code is approved, declined or expired
+// Polls the xAI token endpoint until the device code is approved, declined, expired or the context ends
 func xaiOAuthPollDeviceToken(ctx context.Context, client *http.Client, tokenEndpoint, deviceCode string, expiresIn, pollInterval int) (map[string]any, error) {
 	if pollInterval < 1 {
 		pollInterval = 1
 	}
-	return pollDeviceTokenGeneric(deviceTokenPoll{
+	payload, err := pollDeviceTokenGeneric(deviceTokenPoll{
 		post: func() (*oauthHTTPResponse, error) {
 			return oauthPostForm(ctx, client, tokenEndpoint, url.Values{
 				"grant_type": {DeviceCodeGrantType}, "client_id": {XAIOAuthClientID}, "device_code": {deviceCode}}, formJSONHeaders)
@@ -625,7 +625,12 @@ func xaiOAuthPollDeviceToken(ctx context.Context, client *http.Client, tokenEndp
 		onTimeout: func(error) error {
 			return xaiErr("Timed out waiting for xAI device authorization.", "device_code_timeout", false)
 		},
+		cancelled: ctxCancelled(ctx),
 	})
+	if err != nil && ctx.Err() != nil {
+		return nil, &SignInCancelledError{ExitCode: 130, HasCode: true}
+	}
+	return payload, err
 }
 
 // Runs the xAI device code login and returns the token block, discovery and inference base URL

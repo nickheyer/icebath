@@ -34,9 +34,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/tools"
 )
 
-// Seconds between config.yaml signature reads of the MCP config watcher
-const configWatchInterval = 5.0
-
 // Tool progress modes in /verbose cycling order
 var toolProgressCycle = []string{"off", "new", "all", "verbose"}
 
@@ -59,8 +56,6 @@ var (
 		return tools.Default.ToolsetForTool(c.ctx, bannerToolEnv(c.ctx).Home, name)
 	}
 	welcomeBannerPrinter = buildWelcomeBanner
-	checkBangApproval    = commands.CheckBangApproval
-	runBangCommand       = commands.RunBangCommand
 	redeemCodexReset     = provider.RedeemCodexResetCredit
 	fetchAccountUsage    = provider.FetchAccountUsage
 	reloadSkillsFor      = func(c *CLI) (map[string]any, error) { return skillsScope(c.ctx).ReloadSkills(c.ctx) }
@@ -118,10 +113,6 @@ func infoPrint(text string) { fmt.Fprintln(console().Out, text) }
 
 // Prints a renderable through the prompt safe console once the prompt is live, else straight to the console
 func (c *CLI) consolePrintRenderable(r pyrich.Renderable) {
-	if c.app != nil {
-		defaultChatConsole.PrintRenderable(r)
-		return
-	}
 	(&pyrich.Console{Out: c.console.Out, Color: c.console.ShouldUseColor(), Terminal: c.console.StdoutIsTTY(), Width: terminalColumns()}).PrintRenderable(r)
 }
 
@@ -1083,14 +1074,6 @@ func (c *CLI) confirmAndReloadMCP(cmdOriginal string) {
 	if err := c.busyCommand(c.slowCommandStatus(cmdOriginal), true, c.reloadMCPEntry); err != nil {
 		panic(err)
 	}
-}
-
-// Python str of a connection key, the bare name or the scope and name tuple repr
-func serverKeyText(k mcp.ServerKey) string {
-	if !k.Scoped() {
-		return k.Name
-	}
-	return "(" + pyrepr.StrRepr(k.Scope) + ", " + pyrepr.StrRepr(k.Name) + ")"
 }
 
 // Sorted comma joined connection keys, the TypeError Python raises for scoped keys returned

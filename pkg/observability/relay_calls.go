@@ -7,6 +7,7 @@ import (
 	"maps"
 	"time"
 
+	"github.com/nickheyer/icebath/pkg/internal/pyctx"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
@@ -369,7 +370,7 @@ func (r *Runtime) scheduleFlushAndExport(ctx context.Context, failureMessage str
 	}
 	done := make(chan struct{})
 	r.flushThread = done
-	go r.runFlushWorker(context.WithoutCancel(ctx), failureMessage, done)
+	go r.runFlushWorker(pyctx.With(context.WithoutCancel(ctx), pyctx.CopyContext(ctx)), failureMessage, done)
 }
 
 // Runs flush passes until no trigger landed during the last one
@@ -388,9 +389,9 @@ func (r *Runtime) runFlushWorker(ctx context.Context, failureMessage string, don
 	}
 }
 
-// Flushes the subscriber then exports under this profile's scope, a failed flush skipping the export
+// Flushes the subscriber committing its writes together, then exports under the profile scope unless the flush failed
 func (r *Runtime) flushAndExport(ctx context.Context, failureMessage string) {
-	if err := r.subscribersFlush(); err != nil {
+	if err := r.Subscriber.Store.Batch(ctx, r.subscribersFlush); err != nil {
 		slog.Warn(failureMessage, "error", err)
 		return
 	}

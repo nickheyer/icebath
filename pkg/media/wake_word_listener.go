@@ -19,6 +19,9 @@ var (
 	wakeDetector         *WakeWordDetector
 	wakeDetectorOwner    any
 	wakeDetectorFileLock *os.File
+	// Phrase and provider the running detector's engine was built for
+	wakeDetectorPhrase   string
+	wakeDetectorProvider string
 	wakeLockPath         = func() string { return filepath.Join(home.Root(), "runtime", "wake-word.lock") }
 )
 
@@ -104,6 +107,7 @@ func releaseMachineLock(f *os.File) {
 func teardownLocked(closeFn func()) {
 	handle := wakeDetectorFileLock
 	wakeDetector, wakeDetectorOwner, wakeDetectorFileLock = nil, nil, nil
+	wakeDetectorPhrase, wakeDetectorProvider = "", ""
 	defer releaseMachineLock(handle)
 	closeFn()
 }
@@ -151,12 +155,17 @@ func StartListening(ctx context.Context, onWake func() error, owner any, cfg map
 		if cfg == nil {
 			cfg = LoadWakeWordConfig(ctx)
 		}
+		provider, err := wakeProvider(ctx, cfg, nil)
+		if err != nil {
+			return nil, err
+		}
 		engine, err := wakeBuildEngine(ctx, cfg)
 		if err != nil {
 			return nil, err
 		}
 		wakeDetector = NewWakeWordDetector(engine, onWake, WakeDetectorOptions{OnFailure: detectorFailed, InputDevice: wakeInputDevice(cfg)})
 		wakeDetectorOwner = owner
+		wakeDetectorPhrase, wakeDetectorProvider = WakePhrase(ctx, cfg), provider
 		return wakeDetector, wakeDetector.Start()
 	}()
 	if err != nil {
@@ -184,6 +193,16 @@ func ownedCall(owner any, action func(*WakeWordDetector) error) (bool, error) {
 		}
 	}
 	return true, nil
+}
+
+// Phrase and provider owner's running detector was built for, false when owner holds no detector
+func ListeningFor(owner any) (phrase, provider string, ok bool) {
+	wakeDetectorLock.Lock()
+	defer wakeDetectorLock.Unlock()
+	if ownedDetector(owner) == nil {
+		return "", "", false
+	}
+	return wakeDetectorPhrase, wakeDetectorProvider, true
 }
 
 // OwnsListener reports whether owner holds the wake word lease

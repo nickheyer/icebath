@@ -442,7 +442,6 @@ display.reasoning_full
 display.reasoning_style
 display.resume_display
 display.resume_exchanges
-display.resume_last_session
 display.resume_max_assistant_chars
 display.resume_max_assistant_lines
 display.resume_max_user_chars
@@ -615,7 +614,6 @@ nous.anthropic_wire
 nous.guest
 nous.keepalive_interval_seconds
 onboarding.profile_build
-onboarding.run
 onboarding.seen
 openrouter.min_coding_score
 openrouter.response_cache
@@ -787,7 +785,6 @@ terminal.docker_shm_size
 terminal.docker_snap_compat
 terminal.docker_volumes
 terminal.env_passthrough
-terminal.font_family
 terminal.home_mode
 terminal.modal_image
 terminal.modal_mode
@@ -986,8 +983,8 @@ func TestDefaultsRootsAreKnownAndContainerSlotsFollowThem(t *testing.T) {
 			t.Errorf("container slot %s is missing", path)
 		}
 	}
-	if Defaults()["_config_version"] != 55 || Version != 55 {
-		t.Errorf("schema version %v, want 55", Defaults()["_config_version"])
+	if Defaults()["_config_version"] != 57 || Version != 57 {
+		t.Errorf("schema version %v, want 57", Defaults()["_config_version"])
 	}
 }
 

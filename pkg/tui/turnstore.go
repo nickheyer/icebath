@@ -113,6 +113,7 @@ type uiState struct {
 	Theme                      theme
 	Usage                      map[string]any
 	Arena                      any
+	Pet                        any
 }
 
 // UI state of a fresh session

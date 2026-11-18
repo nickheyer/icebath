@@ -7,7 +7,7 @@
 # Schema version of this file. The installers copy it to seed config.yaml, and
 # `icebath update` uses it to know which one-time migrations the file already
 # has. icebath manages it: do not copy it into another config.
-_config_version: 55
+_config_version: 57
 
 # =============================================================================
 # Database Configuration
@@ -1811,10 +1811,15 @@ stt:
 #     voice: "default"
 
 # "Hey icebath" hands-free wake word (off by default; toggle with /wake).
-# The wake word listens on this machine's PortAudio microphone.
+# The wake word listens on this machine's PortAudio microphone. With provider
+# auto, "hey icebath" and any other phrase run on the open vocabulary sherpa
+# engine (its keyword model downloads on first use); "hey hermes" runs on the
+# bundled openWakeWord model.
 # wake_word:
 #   enabled: false
 #   input_device: null   # PortAudio input index or name, null for the system default
+#   provider: "auto"     # auto | sherpa | openwakeword | porcupine
+#   phrase: "hey icebath"
 
 # Image generation. Each provider plugin reads its own ``image_gen.<name>``
 # block; deepinfra discovers models live from

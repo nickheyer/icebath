@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
@@ -92,6 +93,25 @@ func TestStatusIsPullFromLocalStateAndAckPersistsOnTheIdentity(t *testing.T) {
 	status = freeTierCall(t, ctx, "free_tier.status", nil)
 	if status["has_guest"] != true || status["enabled"] != false || status["available"] != false || status["notice_pending"] != false {
 		t.Fatalf("guest off status %v", status)
+	}
+}
+
+// test_free_tier_rpc.py test_status_carries_the_pending_browser_challenge_and_drops_it_once_cleared
+func TestStatusCarriesThePendingBrowserChallengeAndDropsItOnceCleared(t *testing.T) {
+	_, ctx := freeTierGuest(t)
+	if _, carried := freeTierCall(t, ctx, "free_tier.status", nil)["challenge"]; carried {
+		t.Fatal("a status with no challenge carried one")
+	}
+	env := scopedPoolEnv(ctx)
+	challenge := provider.RecordChallengeForTests(env, provider.BrowserChallenge{URL: "https://portal.example.test/challenge?code=t",
+		Required: true, ExpiresIn: 600 * time.Second, Interval: 2 * time.Second, Message: "A quick check first."}, false)
+	carried := freeTierCall(t, ctx, "free_tier.status", nil)["challenge"]
+	provider.ClearPendingChallengeForTests(env)
+	if !pyjson.Equal(carried, challenge.AsPayload()) {
+		t.Fatalf("challenge %v want %v", carried, challenge.AsPayload())
+	}
+	if _, carried := freeTierCall(t, ctx, "free_tier.status", nil)["challenge"]; carried {
+		t.Fatal("a cleared challenge stayed on the status")
 	}
 }
 

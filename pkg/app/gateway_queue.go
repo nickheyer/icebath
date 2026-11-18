@@ -6,16 +6,12 @@ import (
 	"log/slog"
 	"slices"
 	"sort"
-	"time"
 
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/gatewaycli"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 )
-
-// How long the input loop holds a local input behind this viewer's own queued admission at most
-const ownQueueHoldSeconds = 2.0
 
 // Refusals of a queued admission the owner already started
 var queueStartedRefusals = map[string]bool{"stale_generation": true, "admission_started": true}
@@ -137,18 +133,6 @@ func queuedRows(c *CLI, store *gatewaycli.GatewaySessionStore) []queuedRow {
 	}
 	sort.SliceStable(out, func(i, j int) bool { return rows[out[i].admission].sequence < rows[out[j].admission].sequence })
 	return out
-}
-
-// Local input held while this viewer's own queued admission is the owner's next turn
-type ownQueueHold struct {
-	item             any
-	state            *gatewaycli.SessionState
-	admission        string
-	seq              int
-	allowedIdleLists int
-	idleLists        int
-	deadline         time.Time
-	taken            bool
 }
 
 // Retires one queued admission, cancelled when it never ran, stopped when its run was interrupted, started otherwise

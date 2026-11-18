@@ -5,9 +5,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 )
 
-// Outcomes of a queued admission that never ran
-var gatewayNeverRan = map[string]bool{"cancelled": true, "rejected": true}
-
 // Gateway session store of the CLI, nil when none is open
 func (c *CLI) gatewayStore() *gatewaycli.GatewaySessionStore { return c.sessionDB }
 

@@ -353,6 +353,9 @@ func (a *app) slashPaletteCommands() []wm.Command {
 	return out
 }
 
+// Catalog wording of the hotkeys whose help row follows the language of the session
+var hotkeyHints = map[string]string{"tui.suspend": "hints.suspend"}
+
 // Hotkeys of the session as the keymap binds them now
 func (a *app) hotkeyRows() [][2]string {
 	var rows [][2]string
@@ -362,7 +365,11 @@ func (a *app) hotkeyRows() [][2]string {
 			continue
 		}
 		if chord := a.keys.DisplayAll(action.ID); chord != "" && action.Doc != "" && (action.Context == tuiContext || !action.Quiet || strings.HasPrefix(action.ID, "composer.delete")) {
-			rows = append(rows, [2]string{chord, action.Doc})
+			doc := action.Doc
+			if key, localized := hotkeyHints[action.ID]; localized {
+				doc = tr(key)
+			}
+			rows = append(rows, [2]string{chord, doc})
 		}
 	}
 	return append(rows, [2]string{`\ + enter`, "continue the prompt on a new line"}, [2]string{"!<cmd>", "run a shell command in the session"}, [2]string{"{!<cmd>}", "put the output of a shell command into the prompt"})

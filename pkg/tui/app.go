@@ -13,9 +13,11 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/ui/anim"
 	"github.com/nickheyer/icebath/pkg/ui/cards"
+	"github.com/nickheyer/icebath/pkg/ui/gfx"
 	"github.com/nickheyer/icebath/pkg/ui/keys"
 	"github.com/nickheyer/icebath/pkg/ui/render"
 	uitheme "github.com/nickheyer/icebath/pkg/ui/theme"
+	"github.com/nickheyer/icebath/pkg/ui/tty"
 	"github.com/nickheyer/icebath/pkg/ui/wm"
 	"github.com/nickheyer/icebath/pkg/vxl/arena"
 )
@@ -78,6 +80,7 @@ type app struct {
 	localCommands  []slashCommand
 	draftRevision  int
 	editorRevision int
+	editorTarget   submissionDestination
 	queueEdit      *int
 	expandWith     func(string) string
 
@@ -106,6 +109,9 @@ type app struct {
 	boot             tea.Cmd
 	dialogs          dialogState
 	widgets          *widgetHost
+	pet              *petView
+	stash            *promptStash
+	spawnSections    map[string]bool
 }
 
 var (
@@ -124,7 +130,7 @@ func tuiKeymap() *keys.Map {
 	for _, a := range []keys.Action{
 		{ID: "tui.model", Context: tuiContext, Label: "model", Doc: "choose the model of the session", Default: []string{"ctrl+o"}},
 		{ID: "tui.sessions", Context: tuiContext, Label: "sessions", Doc: "switch between live and stored sessions", Default: []string{"ctrl+x"}},
-		{ID: "tui.agents", Context: tuiContext, Label: "agents", Doc: "open the agents of the session", Default: []string{"ctrl+t"}},
+		{ID: "tui.agents", Context: tuiContext, Label: "agents", Doc: "open the spawn tree of the agents of the session", Default: []string{"ctrl+t"}},
 		{ID: "tui.editor", Context: tuiContext, Label: "editor", Doc: "edit the prompt in the external editor", Default: []string{"ctrl+g", "alt+g"}},
 		{ID: "tui.redraw", Context: tuiContext, Label: "redraw", Doc: "repaint the screen", Default: []string{"ctrl+l"}},
 		{ID: "tui.exit", Context: tuiContext, Label: "exit", Doc: "quit on an empty prompt", Default: []string{"ctrl+d"}},
@@ -137,7 +143,13 @@ func tuiKeymap() *keys.Map {
 	} {
 		km.Register(a)
 	}
+	if tty.JobControl() {
+		km.Register(keys.Action{ID: "tui.suspend", Context: tuiContext, Label: "suspend", Doc: "suspend to the shell, fg brings it back", Default: []string{"ctrl+z"}})
+	}
 	registerListKeys(km)
+	registerSpawnTreeKeys(km)
+	registerStashKeys(km)
+	registerBillingKeys(km)
 	arena.RegisterKeys(km)
 	return km
 }
@@ -158,8 +170,11 @@ func newApp(ctx context.Context) *app {
 	a.syncTheme()
 	a.widgets = newWidgetHost(a)
 	a.localCommands = append(append(append(append(append(append(a.coreCommands(), a.transcriptCommands()...), a.opsCommands()...), a.sessionCommands()...), a.controlCommands()...), a.wmCommands()...), a.recoveryCommands()...)
-	a.localCommands = append(a.localCommands, a.toolsCommands()...)
-	a.localCommands = append(a.localCommands, a.snapshotCommands()...)
+	a.localCommands = append(a.localCommands, a.nativeCommands()...)
+	a.localCommands = append(a.localCommands, a.agentsCommands()...)
+	a.localCommands = append(a.localCommands, a.connectorsCommands()...)
+	a.localCommands = append(append(a.localCommands, a.petCommands()...), a.hatchCommands()...)
+	a.pet = newPetView(a)
 	a.card = newSessionCard(a)
 	a.wm = wm.New(wm.WithTheme(a.toolkit), wm.WithKeys(a.keys), wm.WithWindowTitle("icebath"), wm.WithMotion(bootMotion()))
 	_, open := a.wm.AddWorkspace("session", a.card)
@@ -184,12 +199,14 @@ func Run(ctx context.Context) int {
 		defer stop()
 	}
 	a := newApp(ctx)
-	p := tea.NewProgram(a, tea.WithContext(ctx))
+	p := tty.NewProgram(ctx, a)
 	a.post = newMailbox(ctx, p.Send).post
 	a.gw.attach(p.Send)
 	a.gw.start()
 	_, err := p.Run()
+	gfx.Sweep()
 	a.gw.kill("terminal UI exit")
+	settleNewWorktrees(ctx, os.Stdout)
 	if err != nil && !errors.Is(err, tea.ErrProgramKilled) && !errors.Is(err, context.Canceled) {
 		fmt.Fprintln(os.Stderr, "icebath: "+err.Error())
 		return 1
@@ -201,7 +218,7 @@ func Run(ctx context.Context) int {
 }
 
 func (a *app) Init() tea.Cmd {
-	return tea.Batch(a.wm.Init(), a.boot, a.scheduleRefresh(), a.widgets.warm())
+	return tea.Batch(a.wm.Init(), a.boot, a.scheduleRefresh(), a.widgets.warm(), a.pet.start())
 }
 
 func (a *app) View() tea.View {
@@ -289,18 +306,23 @@ func (a *app) Update(m tea.Msg) (tea.Model, tea.Cmd) {
 		a.exitCode = m.code
 		return a, tea.Quit
 	default:
+		var petCmd tea.Cmd
 		if ev, isEvent := m.(gatewayEventMsg); isEvent {
 			a.arena.observe(ev)
+			petCmd = a.pet.observe(ev)
 		}
 		if handled, c := a.events.update(m); handled {
 			cmd = c
 		} else if handled, c := a.git.update(m); handled {
+			cmd = c
+		} else if handled, c := a.pet.update(m); handled {
 			cmd = c
 		} else if handled, c := a.updateExtras(m); handled {
 			cmd = c
 		} else {
 			_, cmd = a.wm.Update(m)
 		}
+		cmd = tea.Batch(petCmd, cmd)
 	}
 	after := a.afterUpdate()
 	if feedsArena(m) {
@@ -312,7 +334,7 @@ func (a *app) Update(m tea.Msg) (tea.Model, tea.Cmd) {
 // Reports whether a message may change what the arena shows, window manager and arena frames never doing so
 func feedsArena(m tea.Msg) bool {
 	switch m.(type) {
-	case anim.FrameMsg, wm.Addressed:
+	case anim.FrameMsg, wm.Addressed, petTickMsg:
 		return false
 	}
 	return true
@@ -905,7 +927,7 @@ func (a *app) commands() []wm.Command {
 		{ID: "session.new", Title: "new session", When: idle, Run: func() tea.Cmd { return a.slash("/new", nil, false) }},
 		{ID: "model.switch", Title: "model", When: idle, Run: a.openModelPicker},
 		{ID: "open.sessions", Title: "sessions", When: idle, Run: a.openSessionSwitcher},
-		{ID: "open.agents", Title: "agents", When: idle, Run: a.openAgents},
+		{ID: "open.agents", Title: "agents", When: idle, Run: func() tea.Cmd { return a.openSpawnTree(0, nil) }},
 		{ID: "open.skills", Title: "skills", When: idle, Run: a.openSkillsHub},
 		{ID: "open.plugins", Title: "plugins", When: idle, Run: a.openPluginsHub},
 		{ID: "session.compact", Title: "compact", When: idle, Run: func() tea.Cmd { return a.slash("/compress", nil, false) }},
@@ -960,6 +982,9 @@ func (a *app) barStatus() wm.Status {
 		return ui.StatusBar != "off" && (fields == nil || fields[name] || len(fields) == 0)
 	}
 	var dials []wm.Segment
+	if pin := a.stashIndicator(); pin != "" {
+		dials = append(dials, wm.Segment{Text: pin, Style: wm.Plain})
+	}
 	if b := ui.BatteryStatus; ui.Battery && b != nil && b.Available {
 		dials = append(dials, wm.Segment{Text: batteryText(b), Style: wm.Dim})
 	}

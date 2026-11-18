@@ -67,7 +67,7 @@ func TestDiscoverAllPluginsListsTheShippedBundledTreeWithoutOverride(t *testing.
 	}
 	telegram := byKey["platforms/telegram"]
 	if telegram.Name != "telegram-platform" || telegram.Version != "1.0.0" || telegram.Dir != "" ||
-		!strings.HasPrefix(telegram.Description, "Telegram gateway adapter for Hermes Agent.") {
+		!strings.HasPrefix(telegram.Description, "Telegram gateway adapter for Icebath Agent. Connects to Telegram via go-telegram/bot") {
 		t.Fatalf("telegram row %+v", telegram)
 	}
 	if tavily := byKey["web/tavily"]; tavily.Name != "web-tavily" || !strings.Contains(tavily.Description, "Opt-in keyless via icebath tools") {

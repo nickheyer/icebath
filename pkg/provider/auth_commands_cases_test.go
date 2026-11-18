@@ -632,7 +632,7 @@ func TestOpenrouterLoopbackCallbackBindsNoncePathAndRejectsForgedRedirect(t *tes
 		return nil
 	}
 	defer func() { openBrowserFn = prev }()
-	code, err := openrouterLoopbackCode(io.Discard, [][2]string{{"code_challenge", "c"}, {"code_challenge_method", "S256"}}, true, 10*time.Second)
+	code, err := openrouterLoopbackCode(context.Background(), io.Discard, [][2]string{{"code_challenge", "c"}, {"code_challenge_method", "S256"}}, true, 10*time.Second)
 	if err != nil {
 		t.Fatal(err)
 	}

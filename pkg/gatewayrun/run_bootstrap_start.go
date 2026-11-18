@@ -552,12 +552,8 @@ func runStartedGateway(ctx context.Context, o StartGatewayOptions, resolved *gat
 	}
 	ch := startCronAndHousekeeping(ctx, r)
 	waitErr := func() error {
-		if err := publishRuntimeReady(r); err != nil {
+		if err := startGatewayReadyTail(ctx, r, o.IdleExit); err != nil {
 			return err
-		}
-		r.startSystemdWatchdog(ctx)
-		if o.IdleExit {
-			armUnmanagedIdleExit(r)
 		}
 		return waitGatewayRuntime(ctx, r)
 	}()

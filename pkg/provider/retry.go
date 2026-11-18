@@ -1,6 +1,8 @@
 package provider
 
 import (
+	"errors"
+	"fmt"
 	"math"
 	"math/rand/v2"
 	"net/http"
@@ -10,6 +12,8 @@ import (
 	"strings"
 	"sync/atomic"
 	"time"
+
+	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 )
 
 var jitterCounter atomic.Uint64
@@ -148,18 +152,28 @@ func errorText(e *APIError) string {
 }
 
 // IsZAICodingOverload matches only the narrow 429 code 1305 shape on the Z.AI coding GLM-5.2 endpoint
-func IsZAICodingOverload(baseURL, model string, e *APIError) bool {
-	if e == nil || e.StatusCode != 429 {
+func IsZAICodingOverload(baseURL, model string, err error) bool {
+	status, text := 0, ""
+	var apiErr *APIError
+	var sdkErr *AuxSDKError
+	switch {
+	case errors.As(err, &apiErr) && apiErr != nil:
+		status, text = apiErr.StatusCode, errorText(apiErr)
+	case errors.As(err, &sdkErr) && sdkErr != nil:
+		status = sdkErr.StatusCode
+		text = strings.ToLower(sdkErr.Message + " " + sdkErr.Message + " " + pyrepr.Str(sdkErr.Body) +
+			fmt.Sprintf(" <Response [%d %s]>", sdkErr.StatusCode, http.StatusText(sdkErr.StatusCode)))
+	}
+	if status != 429 {
 		return false
 	}
-	text := errorText(e)
 	return strings.Contains(strings.ToLower(baseURL), "api.z.ai/api/coding/paas/v4") &&
 		strings.Contains(strings.ToLower(model), "glm-5.2") &&
 		(strings.Contains(text, "1305") || strings.Contains(text, "temporarily overloaded"))
 }
 
 // AdaptiveRateLimitBackoff keeps the default wait except Z.AI overloads which widen to 30 60 90 120s after the short attempts
-func AdaptiveRateLimitBackoff(attempt int, baseURL, model string, e *APIError, defaultWait time.Duration) (time.Duration, string) {
+func AdaptiveRateLimitBackoff(attempt int, baseURL, model string, e error, defaultWait time.Duration) (time.Duration, string) {
 	if !IsZAICodingOverload(baseURL, model, e) {
 		return defaultWait, ""
 	}
@@ -188,17 +202,25 @@ func ProviderRetryAfter(e *APIError) (time.Duration, bool) {
 		return *e.RetryAfterHeader, *e.RetryAfterHeader > 0
 	}
 	if body := decodeJSONObject(e.Body); body != nil {
-		target := body
-		if nested, ok := body["error"].(map[string]any); ok {
-			target = nested
-		}
-		if d, ok := retryAfterValue(target["retry_after"]); ok {
-			return d, d > 0
-		}
-		return 0, false
+		return BodyRetryAfter(body)
 	}
 	if e.RetryAfter > 0 {
 		return e.RetryAfter, true
+	}
+	return 0, false
+}
+
+// Positive cooldown a retry_after field declares at the top of an SDK error body or under its error object
+func BodyRetryAfter(body any) (time.Duration, bool) {
+	target, ok := body.(map[string]any)
+	if !ok {
+		return 0, false
+	}
+	if nested, ok := target["error"].(map[string]any); ok {
+		target = nested
+	}
+	if d, ok := retryAfterValue(target["retry_after"]); ok {
+		return d, d > 0
 	}
 	return 0, false
 }

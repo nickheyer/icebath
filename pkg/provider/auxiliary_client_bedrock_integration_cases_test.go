@@ -182,7 +182,7 @@ func TestAuxiliaryClientBedrockResolutionBedrockReturnsClientWithCredentials(t *
 func TestAuxiliaryClientBedrockResolutionBedrockReturnsNoneWithoutCredentials(t *testing.T) {
 	ctx := bedrockAuxEnv(t, "")
 	prev := auxHasAWSCredentialsFn
-	auxHasAWSCredentialsFn = func(bool) bool { return false }
+	auxHasAWSCredentialsFn = func(context.Context, bool) bool { return false }
 	t.Cleanup(func() { auxHasAWSCredentialsFn = prev })
 	client, model, err := ResolveProviderClient(ctx, "bedrock", "", ProviderClientOptions{})
 	if err != nil || client != nil || model != "" {

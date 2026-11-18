@@ -11,6 +11,7 @@ import (
 	"net/url"
 	"os"
 	"regexp"
+	"slices"
 	"strconv"
 	"strings"
 	"sync/atomic"
@@ -1387,11 +1388,32 @@ func IsLocalValidationError(err error) bool {
 	if errors.As(err, &local) {
 		return true
 	}
+	if mro := declaredExceptionMRO(err); mro != nil {
+		if !slices.Contains(mro, "ValueError") && !slices.Contains(mro, "TypeError") {
+			return false
+		}
+		if slices.Contains(mro, "JSONDecodeError") || slices.Contains(mro, "UnicodeEncodeError") || slices.Contains(mro, "SSLError") {
+			return false
+		}
+	}
 	text := strings.ToLower(err.Error())
 	if strings.Contains(text, "nonetype") && strings.Contains(text, "not iterable") {
 		return false
 	}
 	return true
+}
+
+// Python classes of the first error in the chain that declares its class, nil when none does
+func declaredExceptionMRO(err error) []string {
+	var declared interface{ PyExceptionMRO() []string }
+	if errors.As(err, &declared) {
+		return declared.PyExceptionMRO()
+	}
+	var named pyrepr.PyTypeNamed
+	if errors.As(err, &named) && named.PyTypeName() != "" {
+		return pyrepr.ExceptionMROFrom(named.PyTypeName(), nil)
+	}
+	return nil
 }
 
 // LocalValidationError marks a request the adapter refused before any transport attempt
@@ -2098,7 +2120,7 @@ func (l *doLoop) nonretryableAuthGuidance(cl *Classified, status int) []string {
 		return lines
 	}
 	emit("   💡 Your API key was rejected by the provider. Check:",
-		"      • Is the key valid? Run: icebath setup",
+		"      • Is the key valid? Start icebath and type /setup model",
 		fmt.Sprintf("      • Does your account have access to %s?", l.route.Model))
 	if HostMatches(l.route.BaseURL, "openrouter.ai") {
 		emit("      • Check credits: https://openrouter.ai/settings/credits")

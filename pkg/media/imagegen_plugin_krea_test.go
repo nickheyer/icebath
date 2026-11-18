@@ -607,7 +607,7 @@ func TestKrea3(t *testing.T) {
 	t.Run("test_capabilities_follow_the_active_model", func(t *testing.T) {
 		env, _ := kreaTestEnv(t)
 		p := newKreaImageGenProvider()
-		p.env = func() *tools.Env { return env }
+		p.env = func(context.Context) *tools.Env { return env }
 		t.Setenv("KREA_IMAGE_MODEL", "krea-3")
 		c3 := p.Capabilities()
 		if _, has := c3["source_image_role"]; c3["max_reference_images"] != 4 || !reflect.DeepEqual(c3["creative_controls"], []any{"thinking", "resolution"}) || has {
@@ -623,7 +623,7 @@ func TestKrea3(t *testing.T) {
 		env, f := kreaTestEnv(t)
 		t.Setenv("KREA_IMAGE_MODEL", "krea-2-large")
 		p := newKreaImageGenProvider()
-		p.env = func() *tools.Env { return env }
+		p.env = func(context.Context) *tools.Env { return env }
 		prev := kreaLoadConfig
 		t.Cleanup(func() { kreaLoadConfig = prev })
 		for _, c := range []struct {

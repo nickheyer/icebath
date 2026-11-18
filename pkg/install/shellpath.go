@@ -6,7 +6,6 @@ import (
 	"path/filepath"
 	"regexp"
 	"runtime"
-	"strings"
 )
 
 // Comment line the installer writes above each PATH line it appends
@@ -100,71 +99,6 @@ func (r *Runner) wireShellPath() error {
 	}
 	if err := WireShellPath(userHome, os.Getenv("SHELL"), r.logSuccess); err != nil {
 		return fail(err.Error(), "filesystem_error")
-	}
-	return nil
-}
-
-// Removes every marker and PATH line pair the installer appended, reporting the files it rewrote
-func UnwireShellPath(userHome string) ([]string, error) {
-	var changed []string
-	seen := map[string]bool{}
-	for _, shell := range []string{"zsh", "fish", "bash"} {
-		for _, t := range shellPathTargets(userHome, shell) {
-			if seen[t.rc] {
-				continue
-			}
-			seen[t.rc] = true
-			data, err := os.ReadFile(t.rc)
-			if err != nil {
-				continue
-			}
-			block := "\n" + ShellPathMarker + "\n" + t.line + "\n"
-			text := string(data)
-			if !strings.Contains(text, block) {
-				continue
-			}
-			info, err := os.Stat(t.rc)
-			if err != nil {
-				return changed, err
-			}
-			out := strings.ReplaceAll(text, block, "")
-			tmp := t.rc + ".icebath-tmp"
-			if err := os.WriteFile(tmp, []byte(out), info.Mode().Perm()); err != nil {
-				os.Remove(tmp)
-				return changed, err
-			}
-			target := t.rc
-			if resolved, err := filepath.EvalSymlinks(t.rc); err == nil {
-				target = resolved
-			}
-			if err := os.Rename(tmp, target); err != nil {
-				os.Remove(tmp)
-				return changed, err
-			}
-			changed = append(changed, t.rc)
-		}
-	}
-	return changed, nil
-}
-
-// Removes the shell PATH lines and the install marker the installer placed
-func UninstallHooks(report func(string)) error {
-	userHome, err := os.UserHomeDir()
-	if err != nil {
-		return err
-	}
-	changed, err := UnwireShellPath(userHome)
-	for _, rc := range changed {
-		report("removed the Icebath Agent PATH line from " + rc)
-	}
-	if err != nil {
-		return err
-	}
-	marker := BootstrapMarkerPath(InstallRootOf(Home()))
-	if rmErr := os.Remove(marker); rmErr == nil {
-		report("removed " + marker)
-	} else if !os.IsNotExist(rmErr) {
-		return rmErr
 	}
 	return nil
 }

@@ -65,7 +65,11 @@ func overflowSlowPeer(t *testing.T, fan *FanoutTransport, healthy *gatedRecorder
 	return 0
 }
 
+// The stalled send outlives the case, so a loaded run never reaches the send deadline's own 1011 close
 func TestOverflowClosesOnlyTheSlowPeerAndHealthyKeepsStreaming(t *testing.T) {
+	savedDeadline := wsSendDeadline
+	wsSendDeadline = time.Hour
+	t.Cleanup(func() { wsSendDeadline = savedDeadline })
 	stalled := &neverSendingWS{done: make(chan struct{})}
 	t.Cleanup(func() { close(stalled.done) })
 	slow := NewWSTransport(stalled, "slow", nil)

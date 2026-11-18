@@ -172,13 +172,17 @@ func (s *tuiStore) sessionCwd() string {
 	return os.Getenv("ICEBATH_CWD")
 }
 
+// Folder a path typed into this terminal resolves against, the launch folder when a remote gateway owns the session
+func (s *tuiStore) typedPathBase() string {
+	if attachURLEnv() != "" {
+		return os.Getenv("ICEBATH_CWD")
+	}
+	return s.sessionCwd()
+}
+
 // Stages an image for the destination session, uploaded to a remote owner or copied into the profile image cache
 func (s *tuiStore) stageImagePath(raw string, gw turnGateway, destination submissionDestination, then func(*stagedImage, error) tea.Cmd) tea.Cmd {
-	remote := strings.TrimFunc(os.Getenv("ICEBATH_TUI_GATEWAY_URL"), isJSSpace) != ""
-	base := s.sessionCwd()
-	if remote {
-		base = os.Getenv("ICEBATH_CWD")
-	}
+	remote, base := attachURLEnv() != "", s.typedPathBase()
 	return func() tea.Msg {
 		staged, err := stageImageFile(raw, base, remote, gw, destination)
 		return asyncDoneMsg{run: func() tea.Cmd { return then(staged, err) }}

@@ -2,6 +2,7 @@ package tui
 
 import (
 	"fmt"
+	"hash/fnv"
 	"strconv"
 	"strings"
 	"time"
@@ -101,9 +102,32 @@ func (v *transcriptView) scrollTop() {
 // Drops every rendered block, after a theme or details change
 func (v *transcriptView) invalidate() { clear(v.cache) }
 
-// Rows of one block, rendered on the first ask and kept
+// Digest of what a block paints beyond its height key, the banner info, panel content and trail counts
+func paintedFields(m msg) string {
+	h := fnv.New64a()
+	switch {
+	case m.Kind == "intro":
+		fmt.Fprint(h, m.Info)
+	case m.Kind == "panel" && m.PanelData != nil:
+		fmt.Fprintf(h, "%q", m.PanelData.Title)
+		for _, s := range m.PanelData.Sections {
+			title, text := "", ""
+			if s.Title != nil {
+				title = *s.Title
+			}
+			if s.Text != nil {
+				text = *s.Text
+			}
+			fmt.Fprintf(h, "%q%q%q%q", title, text, s.Items, s.Rows)
+		}
+	}
+	fmt.Fprint(h, m.IsMoaReference, m.IsLiveReasoning, m.ThinkingTokens, m.ToolTokens, m.Todos)
+	return strconv.FormatUint(h.Sum64(), 36)
+}
+
+// Rows of one block, rendered on the first ask and kept until anything it paints changes
 func (v *transcriptView) block(m msg, c renderCtx) []string {
-	key := blockKey{key: messageHeightKey(m), width: c.width, look: c.look}
+	key := blockKey{key: messageHeightKey(m) + ":" + paintedFields(m), width: c.width, look: c.look}
 	if m.CreatedAt != nil && c.timestamps {
 		key.key += "@" + strconv.FormatFloat(*m.CreatedAt, 'f', 0, 64)
 	}
@@ -451,7 +475,7 @@ func (v *transcriptView) liveLines(s *tuiStore, stream string, c renderCtx, tick
 			if d := s.now().Sub(tool.StartedAt); !tool.StartedAt.IsZero() && d >= 12*time.Second {
 				elapsed += toneStyle(c.t.Color.Muted).Italic(true).Render(" · " + longRunCharms[int(d/(12*time.Second))%len(longRunCharms)])
 			}
-			lines = append(lines, pad+render.Spinner(tick, c.ut)+" "+toneStyle(c.t.Color.Tool).Render(truncateEnd(call, max(c.width-transcriptIndent-40, 8)))+elapsed)
+			lines = append(lines, pad+render.Spinner(tick, c.ut)+" "+toneStyle(c.t.Color.Tool).Render(truncateEnd(call, max(c.width-transcriptIndent-40, 8)))+delegateMonitorHint(tool.Name, c)+elapsed)
 			if tool.VerboseArgs != "" {
 				lines = append(lines, wrapUnder(boundedRenderText(tool.VerboseArgs, "", 600, 8), c.width-2, "", toneStyle(c.t.Color.Muted))...)
 			}
@@ -485,6 +509,9 @@ func (v *transcriptView) liveLines(s *tuiStore, stream string, c renderCtx, tick
 		}
 	}
 	if sectionMode("subagents", c.details.DetailsMode, c.details.Sections, c.details.CommandOverride) != "hidden" {
+		if len(turn.Subagents) > 0 {
+			lines = append(lines, pad+ansi.Truncate(spawnTreeHeadline(turn.Subagents, c), max(c.width-transcriptIndent, 8), "…"))
+		}
 		for _, sub := range turn.Subagents {
 			mark, tone := render.Spinner(tick, c.ut), c.t.Color.Tool
 			switch sub.Status {
@@ -569,18 +596,21 @@ func (v *transcriptView) view(lines []string, width, height int, c renderCtx) st
 		out[0] = lead + toneStyle(c.t.Color.Muted).Render(truncateEnd(strings.ReplaceAll(sticky, "\n", " "), max(width-6, 8)))
 	}
 	if v.total > height && width > 4 {
-		thumb := max(height*height/v.total, 1)
-		start := 0
-		if v.total > height {
-			start = top * (height - thumb) / (v.total - height)
-		}
-		for i := range out {
-			mark := toneStyle(c.t.Color.Border).Render("│")
-			if i >= start && i < start+thumb {
-				mark = toneStyle(c.t.Color.Accent).Render("┃")
-			}
-			out[i] = render.Fit(out[i], width-1, c.ut) + mark
-		}
+		scrollbarRows(out, top, v.total, width, c.t, c.ut)
 	}
 	return strings.Join(out, "\n")
+}
+
+// Window rows fitted one column short of the width with a scrollbar beside them, its thumb at the scroll position
+func scrollbarRows(out []string, top, total, width int, t theme, ut uitheme.Theme) {
+	height := len(out)
+	thumb := max(height*height/total, 1)
+	start := top * (height - thumb) / (total - height)
+	for i := range out {
+		mark := toneStyle(t.Color.Border).Render("│")
+		if i >= start && i < start+thumb {
+			mark = toneStyle(t.Color.Accent).Render("┃")
+		}
+		out[i] = render.Fit(out[i], width-1, ut) + mark
+	}
 }

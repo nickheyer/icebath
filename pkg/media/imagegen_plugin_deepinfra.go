@@ -81,7 +81,7 @@ func resolveDeepInfraImageModel(env *tools.Env, catalog []map[string]any, cfg ma
 // DeepInfra images.generations backend over the live image-gen catalog
 type deepInfraImageGenProvider struct {
 	staticImageGenProvider
-	env func() *tools.Env
+	env func(context.Context) *tools.Env
 }
 
 func newDeepInfraImageGenProvider() *deepInfraImageGenProvider {
@@ -91,8 +91,11 @@ func newDeepInfraImageGenProvider() *deepInfraImageGenProvider {
 }
 
 // Available when the DeepInfra key resolves through the process secret scope
-func (p *deepInfraImageGenProvider) IsAvailable() bool {
-	return deepInfraKeyAvailable(context.Background())
+func (p *deepInfraImageGenProvider) IsAvailable() bool { return p.AvailableIn(context.Background()) }
+
+// Available when the DeepInfra key resolves through the secret scope the context carries
+func (p *deepInfraImageGenProvider) AvailableIn(ctx context.Context) bool {
+	return deepInfraKeyAvailable(ctx)
 }
 
 // True when the DeepInfra key resolves non blank through the secret scope the context carries
@@ -103,7 +106,8 @@ func deepInfraKeyAvailable(ctx context.Context) bool {
 // Picker rows of the live catalog
 func (p *deepInfraImageGenProvider) ListModels() []map[string]any {
 	rows := []map[string]any{}
-	for _, item := range deepInfraImageLiveModels(context.Background(), p.env()) {
+	ctx := context.Background()
+	for _, item := range deepInfraImageLiveModels(ctx, p.env(ctx)) {
 		rows = append(rows, formatDeepInfraCatalogRow(item))
 	}
 	return rows
@@ -125,7 +129,7 @@ func (p *deepInfraImageGenProvider) Capabilities() map[string]any {
 // Generates through the OpenAI compatible endpoint with the resolved live model and caches the result
 func (p *deepInfraImageGenProvider) Generate(ctx context.Context, env *tools.Env, req ImageGenRequest) (map[string]any, error) {
 	if env == nil {
-		env = p.env()
+		env = p.env(ctx)
 	}
 	prompt := strings.TrimSpace(req.Prompt)
 	aspect := resolveAspectRatio(req.AspectRatio)
@@ -140,7 +144,7 @@ func (p *deepInfraImageGenProvider) Generate(ctx context.Context, env *tools.Env
 	apiKey := strings.TrimSpace(mustSecret(ctx, "DEEPINFRA_API_KEY"))
 	if apiKey == "" {
 		return fail("DEEPINFRA_API_KEY not set. Run `icebath tools` → Image "+
-			"Generation → DeepInfra to configure, or `icebath setup` to add the key.", "auth_required"), nil
+			"Generation → DeepInfra to configure, or start `icebath` and type `/setup tools` to add the key.", "auth_required"), nil
 	}
 	diCfg := loadImageGenConfig(env, "deepinfra")
 	modelID := resolveDeepInfraImageModel(env, deepInfraImageLiveModels(ctx, env), diCfg)

@@ -11,6 +11,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -19,9 +20,13 @@ import (
 var fixtureBinaries sync.Map
 
 // Tiny Go program built with -X main.version=tag so buildinfo names its release
-func fixtureBinary(t *testing.T, tag string) []byte {
+func fixtureBinary(t *testing.T, tag string) []byte { return fixtureBuild(t, tag, "") }
+
+// Fixture program naming tag and commit as its release identity
+func fixtureBuild(t *testing.T, tag, commit string) []byte {
 	t.Helper()
-	if cached, ok := fixtureBinaries.Load(tag); ok {
+	key := tag + "@" + commit
+	if cached, ok := fixtureBinaries.Load(key); ok {
 		return cached.([]byte)
 	}
 	gobin, err := exec.LookPath("go")
@@ -40,11 +45,11 @@ import (
 	"strings"
 )
 
-var version string
+var version, commit string
 
 func main() {
 	if strings.Join(os.Args[1:], " ") == "install-self --release-info" {
-		fmt.Printf("{\"tag\":\"%s\",\"commit\":\"\"}\n", version)
+		fmt.Printf("{\"tag\":\"%s\",\"commit\":\"%s\"}\n", version, commit)
 		return
 	}
 	fmt.Println("icebath fixture " + version + " " + fmt.Sprint(os.Args[1:]))
@@ -54,7 +59,7 @@ func main() {
 		t.Fatal(err)
 	}
 	out := filepath.Join(dir, "icebath")
-	cmd := exec.Command(gobin, "build", "-ldflags", "-X main.version="+tag, "-o", out, ".")
+	cmd := exec.Command(gobin, "build", "-ldflags", "-X main.version="+tag+" -X main.commit="+commit, "-o", out, ".")
 	cmd.Dir = dir
 	cmd.Env = append(os.Environ(), "GOTOOLCHAIN=local", "GOFLAGS=-trimpath", "CGO_ENABLED=0")
 	if msg, err := cmd.CombinedOutput(); err != nil {
@@ -64,7 +69,7 @@ func main() {
 	if err != nil {
 		t.Fatal(err)
 	}
-	fixtureBinaries.Store(tag, data)
+	fixtureBinaries.Store(key, data)
 	return data
 }
 
@@ -74,12 +79,13 @@ type fixtureRelease struct {
 	Published   string
 }
 
-// Loopback release host serving the API, the latest redirect, smart HTTP refs and asset downloads of one repo
+// Loopback release host of one repo, its API with a linear history compare, latest redirect, refs and asset downloads
 type releaseFixture struct {
 	srv      *httptest.Server
 	repo     string
 	releases []fixtureRelease
 	refs     map[string]string
+	history  []string
 	noAPI    bool
 	mu       sync.Mutex
 	hits     []string
@@ -135,6 +141,19 @@ func (f *releaseFixture) serve(w http.ResponseWriter, r *http.Request) {
 			json.NewEncoder(w).Encode(out)
 		case rest == "releases/latest" && len(f.releases) > 0:
 			json.NewEncoder(w).Encode(f.apiJSON(f.releases[0]))
+		case strings.HasPrefix(rest, "compare/"):
+			base, head, _ := strings.Cut(strings.TrimPrefix(rest, "compare/"), "...")
+			from, to := slices.Index(f.history, base), slices.Index(f.history, head)
+			switch {
+			case from < 0 || to < 0:
+				http.NotFound(w, r)
+			case to > from:
+				json.NewEncoder(w).Encode(map[string]any{"status": "ahead", "ahead_by": to - from, "behind_by": 0})
+			case to < from:
+				json.NewEncoder(w).Encode(map[string]any{"status": "behind", "ahead_by": 0, "behind_by": from - to})
+			default:
+				json.NewEncoder(w).Encode(map[string]any{"status": "identical", "ahead_by": 0, "behind_by": 0})
+			}
 		case strings.HasPrefix(rest, "releases/tags/"):
 			for _, rel := range f.releases {
 				if rel.Tag == strings.TrimPrefix(rest, "releases/tags/") {

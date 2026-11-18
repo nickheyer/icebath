@@ -36,7 +36,7 @@ func finishReload(ctx context.Context, rid any, params map[string]any, coalesced
 
 // Hints of the argv heads that must not run headless in the gateway process
 var cliExecBlockedHeads = map[string]string{
-	"setup":   "`icebath setup` needs a full terminal — run it outside the TUI",
+	"setup":   "setup runs in the TUI — type /setup instead",
 	"gateway": "`icebath gateway` is long-running — run it in another terminal",
 }
 

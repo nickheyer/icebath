@@ -25,14 +25,6 @@ func uninstallLine(w io.Writer, mark, col, msg string) {
 	fmt.Fprintf(w, "%s %s\n", cliui.Color(mark, col), msg)
 }
 
-// Path of an environment variable when set, else the fallback
-func uninstallEnvDir(name, fallback string) string {
-	if v := os.Getenv(name); v != "" {
-		return v
-	}
-	return fallback
-}
-
 // User home the way Path.home answers
 func uninstallUserHome() string {
 	h, err := pypath.PathHome()

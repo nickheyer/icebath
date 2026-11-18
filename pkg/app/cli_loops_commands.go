@@ -99,12 +99,6 @@ func (c *CLI) cmdExit(cmdOriginal string) bool {
 // Handles /help with an optional command or category
 func (c *CLI) cmdHelp(cmdOriginal string) { c.showHelp(slashArgs(cmdOriginal)) }
 
-// Handles /redraw, the manual recovery for terminal buffer drift
-func (c *CLI) cmdRedraw(string) {
-	c.forceFullRedraw()
-	cprint("  " + dimANSI + c.t("cli.display.ui_redrawn", nil) + resetANSI)
-}
-
 // Handles /clear, confirming then starting a fresh session on a cleared screen with the banner
 func (c *CLI) cmdClear(cmdOriginal string) {
 	if c.confirmDestructiveSlash("clear", "This clears the screen and starts a new session.\n"+
@@ -113,33 +107,9 @@ func (c *CLI) cmdClear(cmdOriginal string) {
 	}
 	c.newSession(true, "")
 	clearOutputHistory()
-	if c.app == nil {
-		c.clearConsole()
-		c.showBanner()
-		printLines(c.freshStart())
-		c.printRandomTip()
-		return
-	}
-	_ = c.app.WriteRaw("\x1b[2J\x1b[0;0H")
-	plan := bannerPlan(c)
-	if plan.Banner == nil {
-		chatConsolePrint(buildCompactBanner())
-	} else if plan.Inventory != nil {
-		var bannerErr error
-		defaultChatConsole.emit(func(r *pyrich.Console) { bannerErr = c.showGatewayBanner(r, plan.Inventory, *plan.Banner) })
-		if bannerErr != nil {
-			panic(bannerErr)
-		}
-	} else {
-		kw := *plan.Banner
-		kw.Tools = toolDefinitionsFor(c, false)
-		var bannerErr error
-		defaultChatConsole.emit(func(r *pyrich.Console) { bannerErr = welcomeBannerPrinter(c.ctx, r, kw) })
-		if bannerErr != nil {
-			panic(bannerErr)
-		}
-	}
-	cprint(c.freshStart())
+	c.clearConsole()
+	c.showBanner()
+	printLines(c.freshStart())
 	c.printRandomTip()
 }
 

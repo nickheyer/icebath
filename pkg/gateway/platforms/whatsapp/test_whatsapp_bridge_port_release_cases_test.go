@@ -38,8 +38,7 @@ func portReleaseSetup(t *testing.T, port int) *WhatsAppAdapter {
 func TestPortReleasedBeforeSpawnSlowExitingBridgeIsEscalatedAndPortIsFreeAtSpawn(t *testing.T) {
 	fastGrace(t)
 	noSleep(t)
-	port := freePort(t)
-	holder := spawnHolder(t, true, port, t.TempDir())
+	holder, port := spawnHolder(t, true, t.TempDir())
 	waitPortHeld(t, port, true)
 	a := portReleaseSetup(t, port)
 	spawns, freeAtSpawn := 0, false
@@ -72,8 +71,7 @@ func TestPortReleasedBeforeSpawnSlowExitingBridgeIsEscalatedAndPortIsFreeAtSpawn
 func TestPortReleasedBeforeSpawnStrangerHoldingPortIsLeftAloneAndNoSpawn(t *testing.T) {
 	fastGrace(t)
 	noSleep(t)
-	port := freePort(t)
-	stranger := spawnHolder(t, false, port, "")
+	stranger, port := spawnHolder(t, false, "")
 	waitPortHeld(t, port, true)
 	a := portReleaseSetup(t, port)
 	spawns := 0
@@ -185,8 +183,7 @@ func TestPidfileHygieneSpawnDeathUnlinksPidfile(t *testing.T) {
 func TestPidfileHygienePidfileReapEscalatesToSigkill(t *testing.T) {
 	fastGrace(t)
 	dir := t.TempDir()
-	port := freePort(t)
-	holder := spawnHolder(t, true, port, dir)
+	holder, port := spawnHolder(t, true, dir)
 	waitPortHeld(t, port, true)
 	writeBridgePidfile(dir, holder.Pid(), nil)
 	if start := gateway.GetProcessStartTime(holder.Pid()); start == nil {
@@ -209,8 +206,7 @@ func TestDisconnectWaitsDisconnectForceKillWaitsForExit(t *testing.T) {
 	hermeticHome(t)
 	noSleep(t)
 	dir := t.TempDir()
-	port := freePort(t)
-	holder := spawnHolder(t, true, port, dir)
+	holder, port := spawnHolder(t, true, dir)
 	waitPortHeld(t, port, true)
 	a := newBareAdapter(t, "", dir, port)
 	a.bridgeProcess = holder

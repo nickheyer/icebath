@@ -11,6 +11,8 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 
+	"github.com/nickheyer/icebath/pkg/i18n"
+	"github.com/nickheyer/icebath/pkg/ui/tty"
 	"github.com/nickheyer/icebath/pkg/ui/wm"
 )
 
@@ -314,21 +316,27 @@ func (a *app) clearAttachments() tea.Cmd {
 
 // Opens the draft in the external editor, the screen handed over until it exits
 func (a *app) openEditor() tea.Cmd {
-	a.editorRevision = a.composerRevision()
+	destination, err := a.store.captureDestination()
+	if err != nil {
+		a.sys(tr("session.input.failedToOpenEditorWith", err.Error()))
+		return nil
+	}
+	a.editorRevision, a.editorTarget = a.composerRevision(), destination
 	return openInEditor(expandPasteTokens(a.tokens)(a.card.composer.Value()), ".md")
 }
 
-// Takes the edited draft back, sent at once when the editor saved text
+// Sends the saved draft, queued for its own session instead when the draft or session changed meanwhile
 func (a *app) onEditorDone(m editorDoneMsg) tea.Cmd {
 	if m.err != nil {
-		a.sys("error: " + m.err.Error())
+		a.sys(tr("session.input.failedToOpenEditorWith", m.err.Error()))
 		return nil
 	}
-	if !m.ok || a.editorRevision != a.composerRevision() {
+	text := strings.TrimRightFunc(m.text, isJSSpace)
+	if !m.ok || text == "" {
 		return tea.ClearScreen
 	}
-	text := strings.TrimRight(m.text, "\n")
-	if trimJS(text) == "" {
+	if !a.store.isCurrentDestination(a.editorTarget) || a.editorRevision != a.composerRevision() {
+		a.enqueue(text, text, a.editorTarget)
 		return tea.ClearScreen
 	}
 	var kept []composerToken
@@ -338,7 +346,8 @@ func (a *app) onEditorDone(m editorDoneMsg) tea.Cmd {
 		}
 	}
 	a.tokens = kept
-	return tea.Batch(tea.ClearScreen, a.card.composer.SetValue(text))
+	emptied := a.card.composer.SetValue("")
+	return tea.Batch(tea.ClearScreen, emptied, a.submit(text))
 }
 
 // Runs every shell command a prompt names between braces and hands the prompt with their output to then
@@ -433,7 +442,7 @@ func (a *app) tuiAction(id string) (tea.Cmd, bool) {
 	case "tui.sessions":
 		return a.openSessionSwitcher(), true
 	case "tui.agents":
-		return a.openAgents(), true
+		return a.openSpawnTree(0, nil), true
 	case "tui.editor":
 		return a.openEditor(), true
 	case "tui.redraw":
@@ -447,8 +456,19 @@ func (a *app) tuiAction(id string) (tea.Cmd, bool) {
 		return a.card.composer.Insert("\n"), true
 	case "composer.paste":
 		return a.pasteFromClipboard(), true
+	case "tui.suspend":
+		return a.suspendToShell(), true
 	}
-	return nil, false
+	return a.stashAction(id)
+}
+
+// Suspends the terminal UI to the shell like a Ctrl+Z job, naming the agent and how fg brings it back
+func (a *app) suspendToShell() tea.Cmd {
+	name := trimJS(a.store.ui.Theme.Brand.Name)
+	if name == "" {
+		name = defaultBrand.Name
+	}
+	return tty.Suspend(i18n.T(a.ctx, "cli.tui.suspended", "", map[string]any{"agent_name": name}))
 }
 
 // Messages of the composer and widget machinery the root update hands on

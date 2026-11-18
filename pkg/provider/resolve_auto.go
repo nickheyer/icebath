@@ -1296,7 +1296,7 @@ func (r *resolver) refuseEnvAdoptionIfConfigCorrupt() error {
 	path := r.home + "/config.yaml"
 	return newAuthErr("", fmt.Sprintf("config.yaml at %s is corrupt (%v) — refusing to auto-select "+
 		"an inference provider from environment keys. Fix the YAML (a backup "+
-		"was saved next to it) or run icebath setup.", path, r.cfgError), "corrupt_config", false)
+		"was saved next to it), or start icebath and type /setup model.", path, r.cfgError), "corrupt_config", false)
 }
 
 // True when an OpenRouter credential exists via env key or the login store
@@ -1456,7 +1456,7 @@ func (r *resolver) resolveProvider(requested, explicitAPIKey, explicitBaseURL st
 			return "nous", nil
 		}
 	}
-	if hasAWSCredentials(true) {
+	if hasAWSCredentials(r.ctx, true) {
 		return "bedrock", nil
 	}
 	return "", newAuthErr("", fmt.Sprintf("Icebath is not connected to any AI provider yet. Run `icebath model` to pick one, type `/login` in chat, "+
@@ -2093,7 +2093,7 @@ func (r *resolver) resolveVertexRuntime(requestedProvider string) (*Runtime, err
 		return nil, newAuthErr("vertex", "Vertex AI credentials could not be resolved. Vertex uses OAuth2 (not a static API key): provide a "+
 			"service-account JSON via GOOGLE_APPLICATION_CREDENTIALS (or VERTEX_CREDENTIALS_PATH) in ~/.icebath/.env, "+
 			"or run 'gcloud auth application-default login' for ADC. Set the GCP project/region under vertex: in "+
-			"config.yaml if they aren't embedded in the credentials. Run `icebath setup` to install Vertex support.", "", false)
+			"config.yaml if they aren't embedded in the credentials. Start `icebath` and type `/setup model` to configure Vertex.", "", false)
 	}
 	rt := r.runtime("vertex", ModeChatCompletions, strings.TrimRight(baseURL, "/"), "", "vertex-oauth")
 	rt.TokenSource = tokenSrc

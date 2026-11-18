@@ -481,6 +481,7 @@ func (t *WebSocketRelayTransport) dialAndStart(ctx context.Context) error {
 			hello.Set("command_manifest", rows)
 		}
 		if err := t.send(hello); err != nil {
+			awaitReaderVerdict(ctx, reader)
 			return err
 		}
 	}
@@ -488,6 +489,17 @@ func (t *WebSocketRelayTransport) dialAndStart(ctx context.Context) error {
 		return &PyError{"ConnectionError", "relay ws closed during hello"}
 	}
 	return nil
+}
+
+// Waits for the reader of a socket whose hello failed to record its close verdict, bounded by the open timeout
+func awaitReaderVerdict(ctx context.Context, reader *relayTask) {
+	timer := time.NewTimer(relayWSOpenTimeout)
+	defer timer.Stop()
+	select {
+	case <-reader.done:
+	case <-timer.C:
+	case <-ctx.Done():
+	}
 }
 
 // Opening handshake with the upgrade bearer, environment proxies, compression and the open timeout
@@ -1091,7 +1103,7 @@ func (t *WebSocketRelayTransport) redialWithFreshToken(ctx context.Context) {
 	t.mu.Lock()
 	closing = t.closing
 	t.mu.Unlock()
-	if closing || t.latchIfFreshTokenRefused(err) {
+	if closing || t.latchIfFreshTokenRefused(err) || t.AuthRevoked() {
 		return
 	}
 	wsLog().Warn(fmt.Sprintf("relay ws fresh-token re-dial failed: %s", relayExcStr(err)))
@@ -1141,7 +1153,7 @@ func (t *WebSocketRelayTransport) reconnectLoop(ctx context.Context) {
 			wsLog().Info("relay ws reconnected")
 			return
 		}
-		if ctx.Err() != nil || t.latchIfFreshTokenRefused(err) {
+		if ctx.Err() != nil || t.latchIfFreshTokenRefused(err) || t.AuthRevoked() {
 			return
 		}
 		wsLog().Warn(fmt.Sprintf("relay ws reconnect failed: %s", relayExcStr(err)))

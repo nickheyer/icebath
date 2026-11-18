@@ -257,7 +257,7 @@ func retryInvalidResponse(ctx context.Context, a *AIAgent, s *LoopState, errorDe
 		}, InvalidResponseFailureReason(s.Response), true)}, nil
 	}
 
-	wait := provider.JitteredBackoff(s.RetryCount, provider.BackoffOptions{BaseDelay: 5 * time.Second, MaxDelay: 120 * time.Second})
+	wait := provider.JitteredBackoff(s.RetryCount, provider.BackoffOptions{BaseDelay: 5 * time.Second, MaxDelay: 120 * time.Second, JitterRatio: 0.5})
 	waitTime := wait.Seconds()
 	a.bufferVprint(fmt.Sprintf("⏳ Retrying in %.1fs (%s)...", waitTime, failureHint))
 	conversationLoopLog().Warn(fmt.Sprintf("Invalid API response (retry %d/%d): %s | Provider: %s", s.RetryCount, s.MaxRetries, strings.Join(errorDetails, ", "), providerName))

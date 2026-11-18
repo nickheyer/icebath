@@ -515,8 +515,8 @@ func GetExternalProcessProviderStatus(env PoolEnv, providerID string) map[string
 }
 
 // AWS SDK providers answer through the credential chain
-func getAWSSDKAuthStatus(target string) map[string]any {
-	return map[string]any{"logged_in": hasAWSCredentials(true), "provider": target}
+func getAWSSDKAuthStatus(ctx context.Context, target string) map[string]any {
+	return map[string]any{"logged_in": hasAWSCredentials(ctx, true), "provider": target}
 }
 
 // Bespoke status builders winning over the auth type keyed fallbacks
@@ -532,7 +532,7 @@ func bespokeStatusFunctions() map[string]func(env PoolEnv) map[string]any {
 var statusByAuthType = map[string]func(env PoolEnv, provider string) map[string]any{
 	AuthTypeExternalProcess: GetExternalProcessProviderStatus,
 	AuthTypeAPIKey:          GetAPIKeyProviderStatus,
-	AuthTypeAWSSDK:          func(env PoolEnv, provider string) map[string]any { return getAWSSDKAuthStatus(provider) },
+	AuthTypeAWSSDK:          func(env PoolEnv, provider string) map[string]any { return getAWSSDKAuthStatus(env.ctx(), provider) },
 	AuthTypeOAuthDeviceCode: getPluginOAuthAuthStatus,
 	AuthTypeOAuthExternal:   getPluginOAuthAuthStatus,
 }
@@ -776,7 +776,7 @@ func resetConfigProvider(env PoolEnv) (string, error) {
 
 // LoginCommand prints the removal notice of the retired login command
 func LoginCommand(out io.Writer) {
-	fmt.Fprintln(out, "The 'icebath login' command has been removed.\nUse 'icebath auth' to manage credentials,\n'icebath model' to select a provider, or 'icebath setup' for full setup.")
+	fmt.Fprintln(out, "The 'icebath login' command has been removed.\nUse 'icebath auth' to manage credentials,\n'icebath model' to select a provider, or start 'icebath' and type '/setup' for full setup.")
 }
 
 // GetMinimaxOAuthAuthStatus is the MiniMax OAuth status snapshot

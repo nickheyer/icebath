@@ -30,7 +30,6 @@ const visionAnalysisPrompt = "Describe everything visible in this image in thoro
 var (
 	streamOpenTags, streamCloseTags [][]rune
 	streamMaxCloseTagLen            int
-	commandSpinnerFrames            = []string{"⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"}
 	reasoningParagraphRe            = regexp.MustCompile(`\n` + pyWSClass + `*\n+`)
 	pasteRefRe                      = regexp.MustCompile(`\[Pasted text #\p{Nd}+: \p{Nd}+ lines \x{2192} (.+?)\]`)
 	visionAnalyzeTool               = tools.VisionAnalyzeTool
@@ -76,13 +75,6 @@ func (c *CLI) agentNotificationConfig() map[string]any {
 	return a.NotificationConfig()
 }
 
-// Repaints through the throttle and logs a failure at debug level
-func (c *CLI) invalidateQuiet() {
-	if err := c.invalidate(); err != nil {
-		cliLogger.Debug("invalidate failed", "error", err)
-	}
-}
-
 // Sets the spinner text the status line shows
 func (c *CLI) setSpinnerText(text string) {
 	c.uiMu.Lock()
@@ -110,7 +102,7 @@ func (c *CLI) onThinking(text any) {
 		c.spinnerText = shown
 		c.toolStartTime = 0
 		c.uiMu.Unlock()
-		return c.invalidate()
+		return nil
 	}
 	if _, err := config.RenderNotification(c.ctx, show, "cli", diagnostic, c.agentNotificationConfig()); err != nil {
 		cliLogger.Debug("thinking callback failed", "error", err)
@@ -639,7 +631,6 @@ func (c *CLI) renderStreamText(text string) {
 			preview = preview[cut+1:]
 		}
 		c.setSpinnerText("… " + pystr.FromRunes(preview))
-		c.invalidateQuiet()
 	}
 }
 
@@ -730,18 +721,12 @@ func (c *CLI) busyCommand(status string, blocksInput bool, fn func()) (err error
 	c.commandBlocksInput = blocksInput
 	c.commandStatus = status
 	c.uiMu.Unlock()
-	if err := c.invalidateWithin(0); err != nil {
-		return err
-	}
 	defer func() {
 		c.uiMu.Lock()
 		c.commandRunning = false
 		c.commandBlocksInput = previousBlocksInput
 		c.commandStatus = ""
 		c.uiMu.Unlock()
-		if ierr := c.invalidateWithin(0); ierr != nil && err == nil {
-			err = ierr
-		}
 	}()
 	cprint("⏳ " + status)
 	fn()
@@ -841,10 +826,6 @@ func panicText(r any) string {
 
 // Prints Rich markup through the command safe console, prompt safe once the TUI is live
 func (c *CLI) consolePrint(markup string) {
-	if c.app != nil {
-		chatConsolePrint(markup)
-		return
-	}
 	(&pyrich.Console{Out: c.console.Out, Color: c.console.ShouldUseColor(), Terminal: c.console.StdoutIsTTY(), Width: terminalColumns()}).Print(markup)
 }
 
@@ -871,7 +852,6 @@ func (c *CLI) onToolGenStart(toolName string) {
 	emoji := tools.GetToolEmoji(c.env, toolName, "⚡")
 	if c.modernLayout {
 		c.setSpinnerText(emoji + " " + c.t("cli.modern.preparing", map[string]any{"what": what}))
-		c.invalidateQuiet()
 		return
 	}
 	cprint("  ┊ " + c.t("cli.stream.tool_preparing", map[string]any{"emoji": emoji, "what": what}))
@@ -924,7 +904,6 @@ func (c *CLI) onToolProgress(eventType, functionName, preview string, functionAr
 			}()
 			c.emitReasoningPreview(preview)
 		}()
-		c.invalidateQuiet()
 		return
 	case "moa.aggregating":
 		if functionName != "" {
@@ -932,7 +911,6 @@ func (c *CLI) onToolProgress(eventType, functionName, preview string, functionAr
 		} else {
 			c.setSpinnerText(c.t("cli.stream.aggregating", nil))
 		}
-		c.invalidateQuiet()
 		return
 	}
 	isError := pyrepr.Truthy(extra["is_error"])
@@ -989,7 +967,6 @@ func (c *CLI) onToolProgress(eventType, functionName, preview string, functionAr
 	c.spinnerText = spinner
 	c.toolStartTime = monotonic()
 	c.uiMu.Unlock()
-	c.invalidateQuiet()
 }
 
 // Commits the scrollback line of one completed tool call and the one time long tool hint
@@ -1029,7 +1006,6 @@ func (c *CLI) onToolCompletedProgress(functionName string, extra map[string]any,
 		}
 		c.streamMu.Unlock()
 		if repeat {
-			c.invalidateQuiet()
 			return
 		}
 		if numeric {
@@ -1037,7 +1013,6 @@ func (c *CLI) onToolCompletedProgress(functionName string, extra map[string]any,
 			c.maybeShowLongToolHint(duration)
 		}
 	}
-	c.invalidateQuiet()
 }
 
 // Prints the completed tool line, a rendering failure leaving scrollback untouched
@@ -1105,26 +1080,6 @@ func (c *CLI) showToolProgress(eventType, functionName, message string, percent 
 		parts = append(parts, message)
 	}
 	c.setSpinnerText(strings.Join(parts, " · "))
-	c.invalidateQuiet()
-}
-
-// Captures the local before state of a write capable tool call
-func (c *CLI) onToolStart(toolCallID, functionName string, functionArgs map[string]any) {
-	defer func() {
-		if r := recover(); r != nil {
-			cliLogger.Debug(fmt.Sprintf("Edit snapshot capture failed for %s", functionName), "error", r)
-		}
-	}()
-	snapshot := tools.CaptureLocalEditSnapshot(c.env, functionName, functionArgs, nil)
-	if snapshot == nil {
-		return
-	}
-	c.streamMu.Lock()
-	if c.pendingEditSnapshots == nil {
-		c.pendingEditSnapshots = map[string]*tools.LocalEditSnapshot{}
-	}
-	c.pendingEditSnapshots[toolCallID] = snapshot
-	c.streamMu.Unlock()
 }
 
 // Announces a background delegation once and renders file edits as an inline diff

@@ -10,6 +10,7 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/config"
@@ -391,7 +392,7 @@ func launchTUIWith(ctx context.Context, l TUILaunch, deps tuiLaunchDeps) int {
 		return tuiLaunchExitCode(err, deps.stderr)
 	}
 	env["ICEBATH_CWD"] = cwd
-	if err := refuseOwnedTUIResume(env, l.Resume, ""); err != nil {
+	if err := configureTUIAttachment(ctx, env, l.Resume, ""); err != nil {
 		fmt.Fprintf(deps.stderr, "Error: %v\n", err)
 		return 1
 	}
@@ -523,6 +524,9 @@ func launchTUIWith(ctx context.Context, l TUILaunch, deps tuiLaunchDeps) int {
 	return code
 }
 
+// Set while the terminal UI runs in this process, so nothing else reads the terminal under it
+var terminalUIRunning atomic.Bool
+
 // Runs the Go terminal UI in this process with the launch environment as the process environment
 func runTerminalUI(ctx context.Context, env map[string]string) (int, error) {
 	for _, kv := range os.Environ() {
@@ -539,5 +543,7 @@ func runTerminalUI(ctx context.Context, env map[string]string) (int, error) {
 			return 0, err
 		}
 	}
+	terminalUIRunning.Store(true)
+	defer terminalUIRunning.Store(false)
 	return tui.Run(ctx), nil
 }

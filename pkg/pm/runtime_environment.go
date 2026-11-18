@@ -37,7 +37,7 @@ func (r RuntimeRequirement) ServesTarget(target string) bool {
 	return false
 }
 
-// Embedded hash pinned package set a selected environment is provisioned with on first use
+// Embedded hash pinned package set a selected environment is provisioned with
 type RuntimeSet struct {
 	pinned []byte
 	refuse func(ctx context.Context) *InstallError
@@ -84,44 +84,159 @@ func (s *RuntimeSet) requirementsText() ([]byte, error) {
 	return []byte(b.String()), nil
 }
 
-// Options of one runtime provisioning, explicit for an install the user asked for, the tool runtime when Set is nil
+// Whether venv has its interpreter and a dist-info of every set package this host needs, pinned versions when pinned
+func (s *RuntimeSet) installedIn(venv string, pinned bool) (bool, error) {
+	if !isRegularFile(VenvPython(venv)) {
+		return false, nil
+	}
+	reqs, err := s.Requirements()
+	if err != nil {
+		return false, err
+	}
+	target, err := CurrentTarget()
+	if err != nil {
+		return false, err
+	}
+	site, err := SitePackages(venv)
+	if err != nil {
+		return false, err
+	}
+	entries, err := os.ReadDir(site)
+	if err != nil && !os.IsNotExist(err) {
+		return false, err
+	}
+	for _, r := range reqs {
+		if !r.ServesTarget(target) {
+			continue
+		}
+		stem := strings.ReplaceAll(CanonicalizeName(r.Name), "-", "_") + "-"
+		found := false
+		for _, e := range entries {
+			name := e.Name()
+			if e.IsDir() && strings.HasPrefix(name, stem) && strings.HasSuffix(name, ".dist-info") &&
+				(!pinned || name == stem+r.Version+".dist-info") {
+				found = true
+				break
+			}
+		}
+		if !found {
+			return false, nil
+		}
+	}
+	return true, nil
+}
+
+// Options of one runtime provisioning, explicit for an install the user asked for, else joined through the detached child
 type RuntimeEnvironmentOptions struct {
 	Explicit bool
 	Output   io.Writer
-	Set      *RuntimeSet
 }
 
-// Selected environment made to hold the runtime set, created with the managed interpreter when missing
+// Runtime environment a caller needed that is not provisioned, with the refusal, deferral or failure that left it so
+type RuntimeUnprovisioned struct {
+	Venv string
+	Err  error
+}
+
+func (e *RuntimeUnprovisioned) Error() string {
+	return "the runtime environment " + e.Venv + " is not provisioned: " + e.Err.Error()
+}
+
+func (e *RuntimeUnprovisioned) Unwrap() error { return e.Err }
+
+// Selected environment made to hold the runtime set, in this process when explicit, else by the single detached provisioning
 func EnsureRuntimeEnvironment(ctx context.Context, opts RuntimeEnvironmentOptions) (string, error) {
-	set := opts.Set
-	if set == nil {
-		set = ToolRuntime
-	}
 	venv, err := SelectedVenv(ctx, RepoRoot())
 	if err != nil {
 		return "", err
 	}
-	if !opts.Explicit && !LazyInstallsAllowedFor(ctx) {
-		return "", set.refuse(ctx)
+	if !opts.Explicit {
+		return awaitRuntimeEnvironment(ctx, venv)
 	}
-	toolchainCtx, cache, err := runtimeToolchainContext(ctx, venv)
+	requirements, err := ToolRuntime.requirementsText()
 	if err != nil {
 		return "", err
+	}
+	gate := newProvisionGate(venv, requirements)
+	release, err := gate.enter(ctx)
+	if err != nil {
+		return "", err
+	}
+	defer release()
+	if err := provisionUnderGate(ctx, gate, venv, opts, requirements); err != nil {
+		return "", err
+	}
+	return venv, nil
+}
+
+// Selected environment and whether it holds the runtime set with no provisioning changing it or left unfinished
+func RuntimeEnvironmentReady(ctx context.Context) (string, bool, error) {
+	root := RepoRoot()
+	venv, err := SelectedVenv(ctx, root)
+	if err != nil {
+		return "", false, err
+	}
+	requirements, err := ToolRuntime.requirementsText()
+	if err != nil {
+		return "", false, err
+	}
+	ready, err := runtimeSetReady(ctx, root, venv, newProvisionGate(venv, requirements))
+	return venv, ready, err
+}
+
+// Whether venv holds the set, pinned in the tree's runtime only environment, any version where a project owns it
+func runtimeSetReady(ctx context.Context, root, venv string, gate provisionGate) (bool, error) {
+	if gate.unfinished() {
+		return false, nil
+	}
+	owned, err := runtimeSetOwned(ctx, root)
+	if err != nil {
+		return false, err
+	}
+	return ToolRuntime.installedIn(venv, owned)
+}
+
+// Whether the selected environment of root is the runtime only tree's own, which holds exactly the pinned set
+func runtimeSetOwned(ctx context.Context, root string) (bool, error) {
+	if !runtimeOnlyProject(root) {
+		return false, nil
+	}
+	recorded, err := recordedVenv(ctx, root)
+	if err != nil || recorded != "" {
+		return false, err
+	}
+	payload, err := PayloadVenv(root)
+	return payload == "", err
+}
+
+// Installs the set holding the gate, a run an earlier one left unfinished reinstalling it, success clearing marker and record
+func provisionUnderGate(ctx context.Context, gate provisionGate, venv string, opts RuntimeEnvironmentOptions, requirements []byte) error {
+	reinstall := gate.unfinished()
+	if err := gate.begin(); err != nil {
+		return err
+	}
+	if err := provisionRuntimeSet(ctx, venv, opts, requirements, reinstall); err != nil {
+		return err
+	}
+	return gate.finish()
+}
+
+// Builds the environment on the pinned toolchain when missing and installs the pinned requirement bytes into it
+func provisionRuntimeSet(ctx context.Context, venv string, opts RuntimeEnvironmentOptions, requirements []byte, reinstall bool) error {
+	toolchainCtx, cache, err := runtimeToolchainContext(ctx, venv)
+	if err != nil {
+		return err
 	}
 	env, err := ManagedEnvironment(toolchainCtx, venv, ManagedEnvironmentOptions{Explicit: opts.Explicit, Output: opts.Output, Cache: cache})
 	if err != nil {
-		return "", err
+		return err
 	}
 	if !isRegularFile(env.Executable()) {
 		if err := env.Create(ctx); err != nil {
-			return "", err
+			return err
 		}
 	}
-	requirements, err := set.requirementsText()
-	if err != nil {
-		return "", err
-	}
-	return venv, env.installPinned(ctx, requirements)
+	return env.installPinned(ctx, requirements, reinstall)
 }
 
 // Store beside the environment with its own facts, holding the interpreter and uv the environment is built on
@@ -142,8 +257,8 @@ func runtimeToolchainContext(ctx context.Context, venv string) (context.Context,
 	return WithRuntimeStore(ctx, store), filepath.Join(store, "uv-cache"), nil
 }
 
-// Installs a hash pinned requirement set exactly as locked, without resolving dependencies again
-func (e *PythonEnvironment) installPinned(ctx context.Context, requirements []byte) error {
+// Installs a hash pinned requirement set exactly as locked without resolving dependencies again, replacing installed copies when reinstall
+func (e *PythonEnvironment) installPinned(ctx context.Context, requirements []byte, reinstall bool) error {
 	temporary, err := os.MkdirTemp("", "pm-runtime-")
 	if err != nil {
 		return err
@@ -154,6 +269,9 @@ func (e *PythonEnvironment) installPinned(ctx context.Context, requirements []by
 		return err
 	}
 	command := []string{"pip", "install", "--no-config", "--python", e.Executable(), "--require-hashes", "--no-deps", "--requirements", file}
+	if reinstall {
+		command = append(command, "--reinstall")
+	}
 	result, err := e.withCacheRecovery(ctx, "pip", func() (uvResult, error) {
 		return e.run(ctx, command, temporary, defaultUVTimeout)
 	})

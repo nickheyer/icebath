@@ -262,7 +262,7 @@ func (hc hostedCalls) install(p *Profile, attr string) {
 	switch attr {
 	case "auth_handler":
 		p.AuthHandler = func(action string, args []string, provider string) (bool, error) {
-			out, err := hc.call(bg, attr, []any{action, hostedAuthNamespace{Provider: provider, Argv: args}}, nil)
+			out, err := hc.call(pluginSignInCtx(bg), attr, []any{action, hostedAuthNamespace{Provider: provider, Argv: args}}, nil)
 			return pyTruthy(out), err
 		}
 	case "refresh_credential":

@@ -51,7 +51,7 @@ const (
 		"on the default generativelanguage.googleapis.com host — remove the explicit aiplatform base_url so " +
 		"the default surface is used."
 	geminiMissingKeyError = "Gemini native client requires an API key, but none was provided. Set GOOGLE_API_KEY or GEMINI_API_KEY in your " +
-		"environment / ~/.icebath/.env (get one at https://aistudio.google.com/app/apikey), or run `icebath setup` to " +
+		"environment / ~/.icebath/.env (get one at https://aistudio.google.com/app/apikey), or start `icebath` and type `/setup model` to " +
 		"configure the Google provider."
 	geminiVertexCredentialsError = "Vertex AI credentials could not be resolved for the native Gemini route. Vertex uses OAuth2 (not a static API key): " +
 		"provide a service-account JSON via GOOGLE_APPLICATION_CREDENTIALS (or VERTEX_CREDENTIALS_PATH) in ~/.icebath/.env, " +

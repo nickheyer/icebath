@@ -28,7 +28,7 @@ const (
 	codexMaxReferenceImages = 16
 	codexMaxInputImageBytes = 25 * 1024 * 1024
 	codexNoAuth             = "No Codex/ChatGPT OAuth credentials available. Run " +
-		"`icebath auth add openai-codex` (or `icebath setup` → Codex) to sign in."
+		"`icebath auth add openai-codex` (or start `icebath`, type `/setup model` and choose Codex) to sign in."
 )
 
 // Raster types the Codex edit endpoint accepts, the shared sniffer also knowing SVG, TIFF and ICO
@@ -259,7 +259,7 @@ func pngPixelSize(raw []byte) (string, bool) {
 // gpt-image-2 routed through ChatGPT or Codex OAuth instead of an API key
 type openAICodexImageGenProvider struct {
 	staticImageGenProvider
-	env func() *tools.Env
+	env func(context.Context) *tools.Env
 }
 
 func newOpenAICodexImageGenProvider() *openAICodexImageGenProvider {
@@ -268,13 +268,11 @@ func newOpenAICodexImageGenProvider() *openAICodexImageGenProvider {
 		label: "OpenAI (Codex auth)", models: gptImage2Tiers, defaultModelID: gptImage2Default, price: &price}}
 }
 
-// Available when a Codex token resolves
-func (p *openAICodexImageGenProvider) IsAvailable() bool {
-	return codexImageAvailable(context.Background())
-}
+// Available when a Codex token resolves for the process profile
+func (p *openAICodexImageGenProvider) IsAvailable() bool { return p.AvailableIn(context.Background()) }
 
 // Codex token presence through the secret scope the context carries
-func codexImageAvailable(ctx context.Context) bool {
+func (p *openAICodexImageGenProvider) AvailableIn(ctx context.Context) bool {
 	token, _ := readCodexImageCredential(ctx)
 	return token != ""
 }
@@ -287,7 +285,7 @@ func (p *openAICodexImageGenProvider) GetSetupSchema() map[string]any {
 		"tag":        "gpt-image-2 via ChatGPT/Codex OAuth — no API key required; supports text and image inputs",
 		"env_vars":   []any{},
 		"post_setup": "openai_codex",
-		"post_setup_hint": "Sign in with `icebath auth add openai-codex` (or `icebath setup` → Codex) " +
+		"post_setup_hint": "Sign in with `icebath auth add openai-codex` (or type `/setup model` and choose Codex) " +
 			"if you haven't already. No API key needed.",
 	}
 }
@@ -300,7 +298,7 @@ func (p *openAICodexImageGenProvider) Capabilities() map[string]any {
 // Generates or edits through the native Codex images endpoints and caches the PNG
 func (p *openAICodexImageGenProvider) Generate(ctx context.Context, env *tools.Env, req ImageGenRequest) (map[string]any, error) {
 	if env == nil {
-		env = p.env()
+		env = p.env(ctx)
 	}
 	prompt := pystr.Strip(req.Prompt)
 	aspect := resolveAspectRatio(req.AspectRatio)

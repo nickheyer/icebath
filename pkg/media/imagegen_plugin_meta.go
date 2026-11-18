@@ -51,7 +51,7 @@ func resolveMetaImageModel(env *tools.Env, callerModel string) (string, map[stri
 // Meta Model API images.generate backend for muse-image
 type metaImageGenProvider struct {
 	staticImageGenProvider
-	env func() *tools.Env
+	env func(context.Context) *tools.Env
 }
 
 func newMetaImageGenProvider() *metaImageGenProvider {
@@ -66,9 +66,12 @@ func (p *metaImageGenProvider) ListModels() []map[string]any {
 	return catalogRows(metaImageModels, p.catalogFields, p.price)
 }
 
-// Available with any auth alias set
-func (p *metaImageGenProvider) IsAvailable() bool {
-	return resolveMetaAPIKey(context.Background()) != ""
+// Available with any auth alias set for the process profile
+func (p *metaImageGenProvider) IsAvailable() bool { return p.AvailableIn(context.Background()) }
+
+// Available with any auth alias set in the secret scope the context carries
+func (p *metaImageGenProvider) AvailableIn(ctx context.Context) bool {
+	return resolveMetaAPIKey(ctx) != ""
 }
 
 // Text to image only until image to image is verified against Meta
@@ -79,7 +82,7 @@ func (p *metaImageGenProvider) Capabilities() map[string]any {
 // Generates through Meta's OpenAI compatible endpoint and caches the WebP result
 func (p *metaImageGenProvider) Generate(ctx context.Context, env *tools.Env, req ImageGenRequest) (map[string]any, error) {
 	if env == nil {
-		env = p.env()
+		env = p.env(ctx)
 	}
 	prompt := strings.TrimSpace(req.Prompt)
 	aspect := resolveAspectRatio(req.AspectRatio)

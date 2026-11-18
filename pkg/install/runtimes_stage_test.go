@@ -32,9 +32,8 @@ func TestRuntimesStageRunsPMInstallWithTheOptOuts(t *testing.T) {
 		}
 		var out bytes.Buffer
 		r.stdout, r.stderr = &out, &out
-		res, code := r.RunStage(context.Background(), "runtimes")
-		if !res.OK || code != 0 {
-			t.Fatalf("stage %+v %d\n%s", res, code, out.String())
+		if code, err := r.RunStage(context.Background(), "runtimes"); code != 0 || err != nil {
+			t.Fatalf("stage %d %v\n%s", code, err, out.String())
 		}
 		if !strings.Contains(out.String(), "icebath fixture v9.9.9 "+tc.args) || !strings.Contains(strings.Join(events, "\n"), "dependencies installed") {
 			t.Fatalf("stage output %q events %v", out.String(), events)
@@ -47,12 +46,12 @@ func TestRuntimesStageRunsPMInstallWithTheOptOuts(t *testing.T) {
 	}
 	var out bytes.Buffer
 	r.stdout, r.stderr = &out, &out
-	res, code := r.RunStage(context.Background(), "runtimes")
-	if res.OK || code == 0 || res.Reason == nil || *res.Reason != "pm install failed" {
-		t.Fatalf("missing command %+v %d", res, code)
+	code, err := r.RunStage(context.Background(), "runtimes")
+	if code == 0 || err == nil || err.Error() != "pm install failed" {
+		t.Fatalf("missing command %d %v", code, err)
 	}
 	var se *StageError
-	if !errors.As(r.lastErr, &se) || se.Class != "deps_install_failed" {
-		t.Fatalf("failure class %v", r.lastErr)
+	if !errors.As(err, &se) || se.Class != "deps_install_failed" {
+		t.Fatalf("failure class %v", err)
 	}
 }

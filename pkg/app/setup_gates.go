@@ -12,9 +12,6 @@ func IsInteractiveStdin() bool {
 	return c.StdinIsTTY()
 }
 
-// InteractiveTerminal reports a terminal on both streams that draws the live setup prompts
-func InteractiveTerminal() bool { return console().Interactive() }
-
 // Prints the headless setup guidance with the config commands replacing the interactive wizard
 func PrintNoninteractiveSetupGuidance(reason string) {
 	c := console()
@@ -30,7 +27,7 @@ func PrintNoninteractiveSetupGuidance(reason string) {
 		"  icebath config set model.base_url http://localhost:8080/v1",
 		"  icebath config set model.default your-model-name", "",
 		"Or set OPENROUTER_API_KEY (OpenRouter) / OPENAI_API_KEY (OpenAI) in your environment.",
-		"Run 'icebath setup' in an interactive terminal to use the full wizard.", "")
+		"Start 'icebath' in an interactive terminal and type '/setup' to use the full setup.", "")
 }
 
 // Prints each line as info in order, an empty entry printing a bare blank line

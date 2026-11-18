@@ -49,9 +49,6 @@ func TestStewardSealedTreeNamesItsSteward(t *testing.T) {
 		if got := stSteward(SealedSteward(root)); got != tc[0] {
 			t.Fatalf("%s got %s", tc[0], got)
 		}
-		if steward, allowed := ClassifyInstall(root); steward != tc[0] || allowed {
-			t.Fatalf("classify %s %v", steward, allowed)
-		}
 	}
 }
 
@@ -60,9 +57,6 @@ func TestStewardGitCheckoutIsNotStewardOwned(t *testing.T) {
 	os.MkdirAll(filepath.Join(root, ".git"), 0o755)
 	if SealedSteward(root) != nil {
 		t.Fatal("checkout sealed")
-	}
-	if steward, allowed := ClassifyInstall(root); steward != "git" || !allowed {
-		t.Fatalf("classify %s %v", steward, allowed)
 	}
 }
 
@@ -84,15 +78,31 @@ func TestStewardWorktreeGitfileCountsAsCheckout(t *testing.T) {
 	}
 }
 
+// A release tree the icebath installer stamped is ours to update and remove, another method stays sealed
+func TestStewardInstallerStampedReleaseTreeIsOurs(t *testing.T) {
+	stNoOwner(t)
+	for method, sealed := range map[string]bool{"script\n": false, "\ufeffSetup-App\r\n": false, "homebrew\n": true, "": true} {
+		root := filepath.Join(t.TempDir(), "install")
+		if err := os.MkdirAll(root, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if method != "" {
+			if err := os.WriteFile(filepath.Join(root, ".install_method"), []byte(method), 0o644); err != nil {
+				t.Fatal(err)
+			}
+		}
+		if got := SealedSteward(root); (got != nil) != sealed {
+			t.Fatalf("%q sealed %s", method, stSteward(got))
+		}
+	}
+}
+
 func TestStewardMissingStampGivesUnknownSteward(t *testing.T) {
 	stNoOwner(t)
 	root := filepath.Join(t.TempDir(), "bare")
 	os.MkdirAll(root, 0o755)
 	if got := stSteward(SealedSteward(root)); got != "unknown" {
 		t.Fatal(got)
-	}
-	if steward, allowed := ClassifyInstall(root); steward != "unknown" || allowed {
-		t.Fatalf("classify %s %v", steward, allowed)
 	}
 }
 

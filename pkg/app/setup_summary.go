@@ -33,8 +33,8 @@ var (
 		"minimax":    {label: "MiniMax", envVars: []string{"MINIMAX_API_KEY"}},
 		"mistral":    {label: "Mistral Voxtral", envVars: []string{"MISTRAL_API_KEY"}},
 		"gemini":     {label: "Google Gemini", envVars: []string{"GEMINI_API_KEY", "GOOGLE_API_KEY"}},
-		"neutts":     {label: "NeuTTS", module: "neutts", hint: "run 'icebath setup tts'"},
-		"kittentts":  {label: "KittenTTS", module: "kittentts", hint: "run 'icebath setup tts'"},
+		"neutts":     {label: "NeuTTS", module: "neutts", hint: "type '/setup tts'"},
+		"kittentts":  {label: "KittenTTS", module: "kittentts", hint: "type '/setup tts'"},
 	}
 	ttsSummaryDefault = voiceSummaryRow{label: "Edge TTS"}
 	sttSummaryRows    = map[string]voiceSummaryRow{
@@ -68,7 +68,7 @@ var setupDoneBanner = []string{
 
 // Command and description rows, the description carrying its own alignment padding
 var (
-	editWizardRows = [][2]string{{"icebath setup", "          Re-run the full wizard"}, {"icebath setup model", "    Change model/provider"}, {"icebath setup terminal", " Change terminal backend"}, {"icebath setup gateway", "  Configure messaging"}, {"icebath setup tools", "    Configure tool providers"}}
+	editWizardRows = [][2]string{{"/setup", "                 Pick any setup section"}, {"/setup model", "           Change model/provider"}, {"/setup terminal", "        Change terminal backend"}, {"/setup gateway", "         Configure messaging"}, {"/setup tools", "           Configure tool providers"}}
 	editConfigRows = [][2]string{{"icebath config", "         View current settings"}, {"icebath config edit", "    Open config in your editor"}, {"icebath config set <key> <value>", ""}}
 	readyRows      = [][2]string{{"icebath", "              Start chatting"}, {"icebath gateway", "      Start messaging gateway"}, {"icebath doctor", "       Check for issues"}}
 )
@@ -206,7 +206,7 @@ func visionRow(ctx context.Context, _ config.Tree, _ provider.NousSubscriptionFe
 	ok := err == nil && len(backends) > 0
 	hint := ""
 	if !ok {
-		hint = "run 'icebath setup' to configure"
+		hint = "type '/setup tools' to configure"
 	}
 	return []toolStatusRow{{"Vision (image analysis)", ok, hint}}, nil
 }
@@ -288,7 +288,7 @@ func modalRow(ctx context.Context, cfg config.Tree, feats provider.NousSubscript
 		if modal.DirectOverride {
 			return []toolStatusRow{{name: "Modal Execution (direct Modal)", available: true}}, nil
 		}
-		return []toolStatusRow{{name: "Modal Execution", missing: "run 'icebath setup terminal'"}}, nil
+		return []toolStatusRow{{name: "Modal Execution", missing: "type '/setup terminal'"}}, nil
 	}
 	if setupManagedNousTools(ctx) && feats.NousAuthPresent {
 		return []toolStatusRow{{name: "Modal Execution (optional via Nous subscription)", available: true}}, nil
@@ -352,7 +352,7 @@ func printSetupSummary(ctx context.Context, cfg config.Tree, icebathHome string)
 		provider.SetupPrintWarning("No inference provider is configured — Icebath cannot chat yet.")
 		provider.SetupInfo("  Finish this one step with either of:",
 			"    icebath model            (pick any provider/model)",
-			"    icebath setup --portal   (Nous Portal OAuth, no API key)")
+			"    icebath portal           (Nous Portal OAuth, no API key)")
 	}
 	setupPrintln("")
 	provider.PrintSetupHeader("Tool Availability Summary", false)
@@ -381,7 +381,7 @@ func printSetupSummary(ctx context.Context, cfg config.Tree, icebathHome string)
 	setupPrintln("")
 	display := home.Display(h)
 	if availableCount < len(toolStatus) {
-		provider.SetupPrintWarning("Some tools are disabled. Run 'icebath setup tools' to configure them,")
+		provider.SetupPrintWarning("Some tools are disabled. Type '/setup tools' to configure them,")
 		provider.SetupPrintWarning("or edit " + display + "/.env directly to add the missing API keys.")
 		setupPrintln("")
 	}

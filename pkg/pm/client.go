@@ -82,6 +82,9 @@ var (
 // Binds the worker exchange seams at init because the operations they run reach the facades again
 func init() { clientWorkerCall, clientRequest = workerCall, request }
 
+// Runtime set provisioning a dependency sync of a projectless tree runs, replaced by tests
+var syncRuntimeEnvironment = EnsureRuntimeEnvironment
+
 // Records a lazy sync refused because PM's engine is not ready and returns the error to raise
 func refuseColdRuntime(ctx context.Context, cold *InstallError, extras []string) error {
 	refusal := cold
@@ -397,7 +400,7 @@ func (s *workerSession) finish() {
 
 // Runs the request through to its result, relaying each callback and accepting the receipt by correlation
 func (s *workerSession) exchange(ctx context.Context, message map[string]any, callbacks map[string]func(args []any) error, updateID *string) (any, error) {
-	if err := s.send(message); err != nil {
+	if err := s.send(message); err != nil && !brokenPipe(err) {
 		return nil, err
 	}
 	if s.pause != nil {
@@ -699,7 +702,7 @@ func Ensure(ctx context.Context, name string, opts EnsureOptions) (*Runner, erro
 	return &Runner{Name: name, Env: env}, nil
 }
 
-// Syncs the dependency environment for an application caller, a foreign checkout going through its own worker
+// Syncs an application caller's dependency environment, a foreign checkout through its worker, a projectless tree to its runtime set
 func SyncVenv(ctx context.Context, opts SyncVenvOptions) error {
 	root := RepoRoot()
 	if opts.ProjectRoot != "" {
@@ -745,6 +748,17 @@ func SyncVenv(ctx context.Context, opts SyncVenvOptions) error {
 			"automatic": optionalList(opts.Automatic), "carried": optionalList(opts.Carried),
 		}
 		_, err := clientRequest(ctx, "sync_venv", arguments, workerHooks{}, opts.ProjectRoot)
+		return err
+	}
+	if runtimeOnlyProject(root) && onlyRelayAlias(opts.Extras) && opts.Plugins == nil {
+		if err := validateSyncVenv(opts); err != nil {
+			return err
+		}
+		out := opts.Stdout
+		if out == nil {
+			out = SyncOutput(ctx)
+		}
+		_, err := syncRuntimeEnvironment(ctx, RuntimeEnvironmentOptions{Explicit: opts.Explicit || opts.Repair, Output: out})
 		return err
 	}
 	return clientWorkerCall(ctx, "sync_venv", policyArgs{Explicit: opts.Explicit, Repair: opts.Repair, Extras: opts.Extras}, func(workerCtx context.Context) error {

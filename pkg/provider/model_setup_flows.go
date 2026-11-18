@@ -165,15 +165,20 @@ func modelFlowOpenrouter(r *ModelFlowRun) error {
 	if err != nil || abort {
 		return err
 	}
-	models := OpenRouterModelIDs(r.ctx(), true)
-	pricing := flowPricingFn(r.ctx(), "openrouter", "", true, false)
 	confirmKey := resolved
 	if confirmKey == "" {
 		confirmKey = existingKey
 	}
+	return openrouterPickModel(r, confirmKey)
+}
+
+// Model step of the OpenRouter flow, the live catalog with pricing saved with the OpenRouter base URL
+func openrouterPickModel(r *ModelFlowRun, confirmKey string) error {
+	models := OpenRouterModelIDs(r.ctx(), true)
+	pricing := flowPricingFn(r.ctx(), "openrouter", "", true, false)
 	selected, _ := flowPromptModelSelectionFn(r.Env, r.Out, ModelSelectionPrompt{ModelIDs: models, CurrentModel: r.CurrentModel, Pricing: pricing,
 		ConfirmProvider: "openrouter", ConfirmBaseURL: home.OpenRouterBaseURL, ConfirmAPIKey: confirmKey})
-	_, err = finishModelFn(r.Env, r.Out, selected, "openrouter", fmt.Sprintf("Default model set to: %s (via OpenRouter)", selected), flowNoChange,
+	_, err := finishModelFn(r.Env, r.Out, selected, "openrouter", fmt.Sprintf("Default model set to: %s (via OpenRouter)", selected), flowNoChange,
 		persistModelOptions{BaseURL: optStr(home.OpenRouterBaseURL), APIMode: optStr("chat_completions")})
 	return err
 }
@@ -201,7 +206,7 @@ func modelFlowAIGateway(r *ModelFlowRun) error {
 	return err
 }
 
-// Mixture of Agents virtual provider, pick a preset, persist it and print the breakdown
+// Mixture of Agents virtual provider, pick a preset or configure one in the TUI, persist it and print the breakdown
 func modelFlowMoA(r *ModelFlowRun) error {
 	var rawMoA any
 	if r.Config != nil {
@@ -238,7 +243,12 @@ func modelFlowMoA(r *ModelFlowRun) error {
 		rows = append(rows, fmt.Sprintf("%s  (acting: %s, %d refs)%s", n, aggLabel, len(refs), suffix))
 	}
 	title := "Select a Mixture of Agents preset:"
-	idx, ok := cursesChoice(title, rows, defaultIdx)
+	hosted := hostedAsker() != nil
+	shown := rows
+	if hosted {
+		shown = append(append([]string{}, rows...), hostedMoAConfigureRow)
+	}
+	idx, ok := cursesChoice(title, shown, defaultIdx)
 	if !ok {
 		printNumbered(r.Out, title, rows, defaultIdx)
 		raw, answered := flowAskFn(r.Out, fmt.Sprintf("  Choice [1-%d]: ", len(rows)), flowAskOptions{Raw: true, CancelMsg: optStr(flowNoChange)})
@@ -259,6 +269,9 @@ func modelFlowMoA(r *ModelFlowRun) error {
 	if idx < 0 {
 		fmt.Fprintln(r.Out, flowNoChange)
 		return nil
+	}
+	if hosted && idx == len(names) {
+		return hostedMoAConfigure(r)
 	}
 	selectedName := names[idx]
 	cfg, model, err := loadConfigModelSection(r.home())
@@ -1133,27 +1146,33 @@ func anthropicAuthenticate(r *ModelFlowRun) (bool, error) {
 	case "1":
 		return runAnthropicOAuthFlow(r.ctx(), r.Env, r.Out, save)
 	case "2":
-		flowSay(r.Out, "", "  Get an API key at: https://platform.claude.com/settings/keys", "")
-		apiKey, ok := flowAskFn(r.Out, "  API key (sk-ant-...): ", flowAskOptions{Secret: true, CancelMsg: optStr("")})
-		if !ok {
-			return false, nil
-		}
-		if apiKey == "" {
-			fmt.Fprintln(r.Out, "  Cancelled.")
-			return false, nil
-		}
-		if err := config.SaveAnthropicAPIKey(r.ctx(), h, apiKey, save); err != nil {
-			return false, err
-		}
-		fmt.Fprintln(r.Out, "  ✓ API key saved.")
-		return true, nil
+		return anthropicAPIKeyEntry(r)
 	}
 	fmt.Fprintln(r.Out, "  No change.")
 	return false, nil
 }
 
-// Anthropic provider over OAuth subscription, api key or Claude Code credentials
-func modelFlowAnthropic(r *ModelFlowRun) error {
+// Pasted Anthropic API key saved to the env file, false when the user cancelled
+func anthropicAPIKeyEntry(r *ModelFlowRun) (bool, error) {
+	h := r.home()
+	flowSay(r.Out, "", "  Get an API key at: https://platform.claude.com/settings/keys", "")
+	apiKey, ok := flowAskFn(r.Out, "  API key (sk-ant-...): ", flowAskOptions{Secret: true, CancelMsg: optStr("")})
+	if !ok {
+		return false, nil
+	}
+	if apiKey == "" {
+		fmt.Fprintln(r.Out, "  Cancelled.")
+		return false, nil
+	}
+	if err := config.SaveAnthropicAPIKey(r.ctx(), h, apiKey, func(name, value string) error { return config.SaveEnvValue(h, name, value) }); err != nil {
+		return false, err
+	}
+	fmt.Fprintln(r.Out, "  ✓ API key saved.")
+	return true, nil
+}
+
+// Line naming the usable Anthropic key with its source or the detected Claude Code login, empty when neither is usable
+func anthropicHeldCredentialLine(r *ModelFlowRun) string {
 	existingKey := GetAnthropicKey(r.ctx())
 	ccAvailable := false
 	func() {
@@ -1164,25 +1183,32 @@ func modelFlowAnthropic(r *ModelFlowRun) error {
 		}
 	}()
 	existingIsStaleOAuth := existingKey != "" && isOAuthToken(existingKey) && !ccAvailable
-	hasCreds := (existingKey != "" && !existingIsStaleOAuth) || ccAvailable
-	needsAuth := !hasCreds
-	if hasCreds {
-		if existingKey != "" {
-			sourceSuffix := ""
-			if pconfig, ok := registryProfileCtx(r.ctx(), "anthropic"); ok {
-				for _, v := range pconfig.KeyEnv {
-					if strings.TrimSpace(os.Getenv(v)) == existingKey {
-						sourceSuffix = FormatSecretSourceSuffix(r.home(), v)
-						if sourceSuffix != "" {
-							break
-						}
-					}
+	switch {
+	case !(existingKey != "" && !existingIsStaleOAuth) && !ccAvailable:
+		return ""
+	case existingKey == "":
+		return "  Claude Code credentials: ✓ (auto-detected)"
+	}
+	sourceSuffix := ""
+	if pconfig, ok := registryProfileCtx(r.ctx(), "anthropic"); ok {
+		for _, v := range pconfig.KeyEnv {
+			if strings.TrimSpace(os.Getenv(v)) == existingKey {
+				sourceSuffix = FormatSecretSourceSuffix(r.home(), v)
+				if sourceSuffix != "" {
+					break
 				}
 			}
-			fmt.Fprintf(r.Out, "  Anthropic credentials: %s... ✓%s\n", prefixRunes(existingKey, 12), sourceSuffix)
-		} else if ccAvailable {
-			fmt.Fprintln(r.Out, "  Claude Code credentials: ✓ (auto-detected)")
 		}
+	}
+	return fmt.Sprintf("  Anthropic credentials: %s... ✓%s", prefixRunes(existingKey, 12), sourceSuffix)
+}
+
+// Anthropic provider over OAuth subscription, api key or Claude Code credentials
+func modelFlowAnthropic(r *ModelFlowRun) error {
+	held := anthropicHeldCredentialLine(r)
+	needsAuth := held == ""
+	if held != "" {
+		fmt.Fprintln(r.Out, held)
 		fmt.Fprintln(r.Out)
 		switch promptAuthCredentialsChoice(r.Out, "Anthropic credentials:") {
 		case "reauth":
@@ -1197,6 +1223,11 @@ func modelFlowAnthropic(r *ModelFlowRun) error {
 			return err
 		}
 	}
+	return anthropicPickModel(r)
+}
+
+// Model step of the Anthropic flow, the curated catalog or a typed name saved with the provider
+func anthropicPickModel(r *ModelFlowRun) error {
 	fmt.Fprintln(r.Out)
 	selected, _ := pickModelOrPromptFn(r.Env, r.Out, staticCatalogModels("anthropic"), "Model name (e.g., claude-sonnet-4-20250514): ",
 		ModelSelectionPrompt{CurrentModel: r.CurrentModel, ConfirmProvider: "anthropic"})
@@ -1262,6 +1293,10 @@ func externalProcessLoginGate(r *ModelFlowRun, profile Profile, status map[strin
 
 // Runs the CLI login on the terminal, false when it could not start or Ctrl-C interrupted it
 func runLoginCommand(ctx context.Context, login []string) bool {
+	if ask := hostedAsker(); ask != nil {
+		ran, err := askHostedCommand(ask, login)
+		return ran && err == nil
+	}
 	cmd := exec.CommandContext(ctx, login[0], login[1:]...)
 	cmd.Stdin, cmd.Stdout, cmd.Stderr = os.Stdin, os.Stdout, os.Stderr
 	interrupts := make(chan os.Signal, 1)
@@ -1311,7 +1346,7 @@ func pluginFlowExternalProcess(r *ModelFlowRun, providerID string, profile Profi
 	if marker == "" {
 		marker = profile.BaseURL
 	}
-	flowSay(r.Out, fmt.Sprintf("  %s delegates Hermes turns to a local `%s` process.", name, command),
+	flowSay(r.Out, fmt.Sprintf("  %s delegates Icebath turns to a local `%s` process.", name, command),
 		fmt.Sprintf("  Command: %s", resolved), fmt.Sprintf("  Backend marker: %s", marker), "")
 	runtime, err := authResolver(r.Env).resolveExternalProcessRuntime(providerID, providerID)
 	if err != nil {
@@ -1339,7 +1374,7 @@ func pluginFlowExternalProcess(r *ModelFlowRun, providerID string, profile Profi
 	return &pluginFlowCredentials{baseURL: baseURL}, nil
 }
 
-// OAuth plugin provider credential step, signed in through the pool or the auth status
+// OAuth plugin provider credential step from the pool or auth status, a TUI flow signing in first when needed
 func pluginFlowOAuth(r *ModelFlowRun, providerID string, profile Profile) (*pluginFlowCredentials, error) {
 	status := GetAuthStatus(r.Env, providerID)
 	if !truthy(status["logged_in"]) {
@@ -1347,14 +1382,24 @@ func pluginFlowOAuth(r *ModelFlowRun, providerID string, profile Profile) (*plug
 		if name == "" {
 			name = providerID
 		}
-		hint := anyString(status["hint"])
-		if missing := pluginMissingAuthHandlerError(providerID, "add"); missing != nil {
-			hint = missing.Error()
-		} else if hint == "" {
-			hint = fmt.Sprintf("Run `icebath auth add %s` to sign in.", providerID)
+		ask := hostedAsker()
+		if ask == nil {
+			hint := anyString(status["hint"])
+			if missing := pluginMissingAuthHandlerError(providerID, "add"); missing != nil {
+				hint = missing.Error()
+			} else if hint == "" {
+				hint = fmt.Sprintf("Run `icebath auth add %s` to sign in.", providerID)
+			}
+			flowSay(r.Out, fmt.Sprintf("  ⚠ Not signed in to %s.", name), fmt.Sprintf("  %s", hint))
+			return nil, nil
 		}
-		flowSay(r.Out, fmt.Sprintf("  ⚠ Not signed in to %s.", name), fmt.Sprintf("  %s", hint))
-		return nil, nil
+		if !hostedPluginSignIn(r, ask, providerID, name, profile) {
+			return nil, nil
+		}
+		if status = GetAuthStatus(r.Env, providerID); !truthy(status["logged_in"]) {
+			flowSay(r.Out, fmt.Sprintf("  ⚠ The sign-in finished but %s still holds no live credential.", name))
+			return nil, nil
+		}
 	}
 	baseURL, apiKey := "", ""
 	if entry, ok := flowLoadPoolFn(r.Env, providerID).Select(""); ok {

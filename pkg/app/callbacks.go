@@ -4,19 +4,12 @@ import (
 	"context"
 	"errors"
 	"sync"
-	"time"
 
 	"github.com/nickheyer/icebath/pkg/cliui"
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/providerregistry"
 )
-
-// Repaints the CLI straight away so a secret panel state change shows
-func invalidateCLI(c *CLI) { c.paintNow() }
-
-// Drops stale draft input so Enter never stores it as the secret
-func clearSecretInput(c *CLI) { c.clearSecretInputBuffer() }
 
 // Saver of a captured secret, swapped while a gateway secret request captures the value instead
 type secretSaver func(ctx context.Context, h, key, value string) (config.SecureSaveResult, error)
@@ -69,53 +62,12 @@ func secretResult(c *CLI, varName, value string) (map[string]any, error) {
 
 // Prompts for a secret value through the TUI or the masked console prompt and stores it in the home .env
 func promptForSecret(c *CLI, varName, prompt string, metadata map[string]any) (map[string]any, error) {
-	if c.app == nil {
-		value, err := console().MaskedSecret(prompt + " (hidden, ESC or empty Enter to skip): ")
-		if err != nil {
-			if !errors.Is(err, cliui.ErrInterrupt) && !errors.Is(err, cliui.ErrEOF) {
-				return nil, err
-			}
-			value = ""
+	value, err := console().MaskedSecret(prompt + " (hidden, ESC or empty Enter to skip): ")
+	if err != nil {
+		if !errors.Is(err, cliui.ErrInterrupt) && !errors.Is(err, cliui.ErrEOF) {
+			return nil, err
 		}
-		return secretResult(c, varName, value)
+		value = ""
 	}
-	if metadata == nil {
-		metadata = map[string]any{}
-	}
-	response := make(chan string, 1)
-	c.uiMu.Lock()
-	c.secretState = &secretModalState{VarName: varName, Prompt: prompt, Metadata: metadata, response: response}
-	c.secretDeadline = monotonic() + 120
-	c.uiMu.Unlock()
-	c.ringBell(true, "secret needed ("+varName+")", "")
-	clearSecretInput(c)
-	invalidateCLI(c)
-	timer := time.NewTimer(modalPollInterval)
-	defer timer.Stop()
-	for {
-		select {
-		case value := <-response:
-			c.uiMu.Lock()
-			c.secretState, c.secretDeadline = nil, 0
-			c.uiMu.Unlock()
-			invalidateCLI(c)
-			return secretResult(c, varName, value)
-		case <-timer.C:
-		}
-		c.uiMu.Lock()
-		expired := c.secretDeadline-monotonic() <= 0
-		c.uiMu.Unlock()
-		if expired {
-			break
-		}
-		invalidateCLI(c)
-		timer.Reset(modalPollInterval)
-	}
-	c.uiMu.Lock()
-	c.secretState, c.secretDeadline = nil, 0
-	c.uiMu.Unlock()
-	clearSecretInput(c)
-	invalidateCLI(c)
-	cprint("\n" + cliui.Dim + "  ⏱ Timeout — secret capture cancelled" + cliui.Reset)
-	return skippedSecret(varName, "timeout", "Secret setup timed out and was skipped."), nil
+	return secretResult(c, varName, value)
 }

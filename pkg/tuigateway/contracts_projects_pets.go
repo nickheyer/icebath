@@ -222,3 +222,16 @@ var PetExportResult = pydantic.NewModel("PetExportResult", ClosedConfig,
 )
 
 var _ = Method("pet.export", PetSlugParams, PetExportResult, "Export an installed pet as a re-importable .zip.")
+
+var _ = Method("pet.disable", ProfileParams, OkResult, "Turn the pet display off (/pet off, the /pet toggle off side).")
+
+var PetScaleParams = pydantic.Extend(ProfileParams, "PetScaleParams", ParamsConfig,
+	pydantic.Def("scale", pydantic.Any, nil),
+).Described("``scale``: a number or numeric string; a non-number answers 4004.")
+
+var PetScaleResult = pydantic.NewModel("PetScaleResult", ClosedConfig,
+	pydantic.Req("ok", pydantic.Bool),
+	pydantic.Req("scale", pydantic.Float),
+)
+
+var _ = Method("pet.scale", PetScaleParams, PetScaleResult, "Persist display.pet.scale (clamped to engine bounds) for /pet scale.")

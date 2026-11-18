@@ -43,10 +43,10 @@ func discoverImagePlugins(ctx context.Context) {
 	plugins.GetPluginManager(ctx).DiscoverAndLoad(ctx, false)
 }
 
-// Registered provider of the name when it has credentials, nil otherwise
+// Registered provider of the name when it has credentials in the context's profile scope, nil otherwise
 func availableProvider(ctx context.Context, name string) media.ImageGenProvider {
 	p := media.GetImageGenProvider(ctx, name, "")
-	if p != nil && p.IsAvailable() {
+	if p != nil && p.AvailableIn(ctx) {
 		return p
 	}
 	return nil
@@ -82,7 +82,7 @@ func ResolveProvider(ctx context.Context, env *tools.Env, requireReferences bool
 	if active != nil {
 		activeName = active.Name()
 	}
-	if isRefCapable(activeName) && active.IsAvailable() {
+	if isRefCapable(activeName) && active.AvailableIn(ctx) {
 		return &SpriteProvider{Name: activeName, Provider: active, SupportsReferences: true}, nil
 	}
 	for _, name := range refCapable {
@@ -90,7 +90,7 @@ func ResolveProvider(ctx context.Context, env *tools.Env, requireReferences bool
 			return &SpriteProvider{Name: name, Provider: p, SupportsReferences: true}, nil
 		}
 	}
-	if !requireReferences && active != nil && active.IsAvailable() {
+	if !requireReferences && active != nil && active.AvailableIn(ctx) {
 		name := activeName
 		if name == "" {
 			name = "unknown"

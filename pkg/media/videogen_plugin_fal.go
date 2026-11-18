@@ -523,7 +523,7 @@ var falUpscaleVideo = func(ctx context.Context, env *tools.Env, videoURL, source
 }
 
 const falNoBackendMsg = "No FAL backend available. Either set FAL_KEY (run `icebath tools` → Video Generation → FAL to configure) " +
-	"or sign in to Nous (`icebath setup`) for managed gateway access."
+	"or sign in to Nous (start `icebath` and type `/setup model`) for managed gateway access."
 
 var falModalityMissingMsg = map[string]string{
 	"image": "FAL family %s has no image-to-video endpoint. Pick a family with image-to-video support via `icebath tools` → Video Generation.",

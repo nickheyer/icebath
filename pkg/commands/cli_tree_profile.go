@@ -646,7 +646,7 @@ func createProfileAlias(p *profileIO, name string) error {
 func printCreateNextSteps(p *profileIO, a ProfileArgs, name, profileDir string) error {
 	display := tildePosix(profileDir)
 	p.println("\nNext steps:")
-	p.println("  %s setup              Configure API keys and model", name)
+	p.println("  %s, type /setup       Configure API keys and model", name)
 	p.println("  %s chat               Start chatting", name)
 	served, recorded, err := manage.RecordedServedProfiles()
 	if err != nil {
@@ -678,7 +678,7 @@ func printCreateNextSteps(p *profileIO, a ProfileArgs, name, profileDir string) 
 		p.println("\n  Edit %s/.env for different API keys", display)
 		p.println("  Edit %s/SOUL.md for different personality", display)
 	} else {
-		p.println("\n  ⚠ This profile has no API keys yet. Run '%s setup' first,", name)
+		p.println("\n  ⚠ This profile has no API keys yet. Start '%s' and type '/setup model' first,", name)
 		p.println("    or it will inherit keys from your shell environment.")
 		p.println("  Edit %s/SOUL.md to customize personality", display)
 	}

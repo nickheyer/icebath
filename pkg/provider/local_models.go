@@ -1712,7 +1712,7 @@ func lmQuickstartTarget(ctx context.Context, modelID string, budget HardwareBudg
 		picked, _ := lmDeps.recommendedEntry(budget, eligible, backend)
 		if picked == nil {
 			return CatalogEntry{}, QuantVariant{}, httpException(409,
-				"No automatic recommendation for this machine — open Local Models to browse or choose a model explicitly")
+				"No automatic recommendation for this machine — open /setup model → Local models to browse or choose a model explicitly")
 		}
 		candidates = []CatalogEntry{*picked}
 		for _, e := range Catalog() {
@@ -1735,7 +1735,7 @@ func lmQuickstartTarget(ctx context.Context, modelID string, budget HardwareBudg
 		}
 	}
 	return CatalogEntry{}, QuantVariant{}, httpException(409,
-		"no catalog model fits this machine — open Local Models to browse for a smaller build")
+		"no catalog model fits this machine — open /setup model → Local models to browse for a smaller build")
 }
 
 // Re-picks once the engine is installed, its device probe pricing the GPU the preflight could only guess
@@ -1828,7 +1828,7 @@ func LocalModelsQuickstart(ctx context.Context, modelID string) (map[string]any,
 		if err != nil {
 			return err
 		}
-		if err := lmDeps.ensureServer(sctx, job, cfg, variant.ModelID(), "The local server could not start — open Local Models for details",
+		if err := lmDeps.ensureServer(sctx, job, cfg, variant.ModelID(), "The local server could not start — open /setup model → Local models for details",
 			"quickstart rescan check skipped"); err != nil {
 			return err
 		}

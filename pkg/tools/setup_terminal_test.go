@@ -260,7 +260,7 @@ func TestReadNearestVercelProjectBranches(t *testing.T) {
 		os.MkdirAll(filepath.Join(dir, ".vercel"), 0o755)
 		file := filepath.Join(dir, ".vercel", "project.json")
 		os.WriteFile(file, []byte(c.body), 0o644)
-		got, err := readNearestVercelProject(file)
+		got, err := NearestVercelProject(file)
 		if (err != nil) != c.wantErr || fmt.Sprint(got) != fmt.Sprint(c.want) {
 			t.Fatalf("%q -> %v %v", c.body, got, err)
 		}

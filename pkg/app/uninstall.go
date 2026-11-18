@@ -46,7 +46,6 @@ var (
 	uninstallWrapperStep          = removeWrapperScript
 	uninstallNodeSymlinksStep     = removeNodeSymlinks
 	uninstallLegacyRuntimeStep    = removeLegacyRuntimeTrees
-	uninstallRmtreeIfExists       = rmtreeIfExists
 	uninstallRmtreeStep           = rmtreeStep
 	uninstallRmtree               = pyshutil.Rmtree
 	uninstallNodeSymlinkDirs      = nodeSymlinkCandidateDirs
@@ -450,40 +449,6 @@ func removeWindowsGateway(ctx context.Context, w io.Writer) (bool, error) {
 	}
 	uninstallSuccess(w, "Removed Windows gateway (Scheduled Task + Startup entry)")
 	return true, nil
-}
-
-// Prefixes of the icebath owned User PATH entries, the managed bin only when it is about to be deleted
-func icebathPathMarkers(h string, includeManagedBin bool) []string {
-	root := strings.TrimRight(h, `\/`)
-	subs := []string{"icebath-agent", "git", "node", "venv"}
-	if includeManagedBin {
-		subs = append(subs, "bin")
-	}
-	out := make([]string, len(subs))
-	for i, sub := range subs {
-		out[i] = root + `\` + sub
-	}
-	return out
-}
-
-// Splits a User PATH value into the kept entries and the icebath owned ones by marker prefix
-func splitUserPath(pathValue string, markers []string) (kept, removed []string) {
-	lowered := make([]string, len(markers))
-	for i, m := range markers {
-		lowered[i] = pystr.Lower(m)
-	}
-	for _, entry := range strings.Split(pathValue, ";") {
-		if entry == "" {
-			continue
-		}
-		probe := pystr.Lower(strings.TrimRight(entry, `\/`))
-		if slices.ContainsFunc(lowered, func(m string) bool { return strings.HasPrefix(probe, m) }) {
-			removed = append(removed, entry)
-		} else {
-			kept = append(kept, entry)
-		}
-	}
-	return kept, removed
 }
 
 // Deletes the PortableGit, Node and gateway service dirs the Windows installer created under the home
@@ -904,21 +869,10 @@ func rmtreeStep(w io.Writer, p, indent string, fully bool) {
 	uninstallSuccess(w, indent+"Removed "+p)
 }
 
-// Removes an existing tree reporting true, false when nothing is there
-func rmtreeIfExists(p string) (bool, error) {
-	if !uninstallPathExists(p) {
-		return false, nil
-	}
-	if err := uninstallRmtree(p); err != nil {
-		return false, err
-	}
-	return true, nil
-}
-
 // Reinstall command per platform, keyed by whether this is Windows
 var uninstallReinstallHint = map[bool]string{
-	true:  "  iex (irm https://hermes-agent.nousresearch.com/install.ps1)",
-	false: "  curl -fsSL https://hermes-agent.nousresearch.com/install.sh | bash",
+	true:  "  irm icebath.app | iex",
+	false: "  curl -fsSL icebath.app | sh",
 }
 
 // Shell reload advice lines and their colors per platform, keyed by whether this is Windows

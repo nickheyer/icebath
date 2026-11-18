@@ -44,6 +44,7 @@ var (
 	wsNewAuthorityConnection    = newWSAuthorityConnection
 	wsCloseSessionsForTransport = closeSessionsForTransport
 	wsReleaseWakeForTransport   = releaseWakeForTransport
+	wsReleaseSetupForTransport  = releaseSetupForTransport
 	wsEnsureSkinWatcher         = ensureSkinWatcher
 	wsEnsureLeaseWatcher        = ensureLeaseWatcher
 	wsStartBackendLiveness      = startBackendLiveness
@@ -734,7 +735,9 @@ func installFreeTierServerHooks() {
 // Runs one WebSocket session wire compatible with the stdio entry, the identity the upgrade verified owning its sessions
 func HandleWS(ctx context.Context, ws ServedSocket, authIdentity map[string]any, subprotocol *string, operator bool) error {
 	freeTierServerHooksOnce.Do(installFreeTierServerHooks)
-	loadServerModule()
+	if err := loadServerModule(); err != nil {
+		return err
+	}
 	c := &wsConnection{ctx: ctx, ws: ws, peer: wsPeerLabel(ws), disconnectReason: "not_connected",
 		pending:       make(chan any, wsDispatchQueueMax),
 		sendFailed:    make(chan struct{}),
@@ -906,6 +909,14 @@ func (c *wsConnection) teardown() error {
 				}
 			}()
 			wsReleaseWakeForTransport(c.transport)
+		}()
+		func() {
+			defer func() {
+				if failure := recover(); failure != nil {
+					wsLogger().Error(fmt.Sprintf("ws setup teardown failed peer=%s: %s", c.peer, failureText(failure)))
+				}
+			}()
+			wsReleaseSetupForTransport(c.transport)
 		}()
 		func() {
 			defer func() {

@@ -9,13 +9,16 @@ import (
 	"github.com/nickheyer/icebath/pkg/cliui"
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/home"
+	"github.com/nickheyer/icebath/pkg/setupflow"
 )
 
-// ToolsSetup is one tools configuration run, the context, tool env and console its prompts and output use
+// One tools configuration run, its questions going through Ask and Flow when set else the console
 type ToolsSetup struct {
-	Ctx context.Context
-	Env *Env
-	Con *cliui.Console
+	Ctx  context.Context
+	Env  *Env
+	Con  *cliui.Console
+	Ask  setupflow.Asker
+	Flow ToolsFlowHooks
 }
 
 // NousToolFeature is the availability and managed state of one Nous subscription feature

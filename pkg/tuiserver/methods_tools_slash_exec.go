@@ -8,6 +8,7 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/internal/pysubprocess"
@@ -153,6 +154,9 @@ func slashExec(ctx context.Context, rid any, params map[string]any) map[string]a
 		scoped, err := sessionHomeScope(session, "", "")(ctx)
 		panicIf(err)
 		target, routed = bundleKeyFor(scoped, base)
+	}
+	if _, bound := gateway.ResolveBoundCommand(base); bound && !routed {
+		target, routed = base, true
 	}
 	if routed {
 		return lookupMethod("command.dispatch")(ctx, rid, map[string]any{"name": strings.TrimLeft(target, "/"), "arg": arg, "session_id": sid})

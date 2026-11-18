@@ -93,6 +93,7 @@ type auxAsyncOpenAIClient struct {
 // Async SDK client registering the collection time close of its transport
 func newAuxAsyncOpenAIClient(apiKey any, baseURL string, opts auxOpenAIOptions) *auxAsyncOpenAIClient {
 	inner := newAuxOpenAIClient(apiKey, baseURL, opts)
+	inner.async = true
 	t := &auxAsyncTransport{http: inner.httpClient, owns: inner.ownsHTTP}
 	inner.ownsHTTP = false
 	c := &auxAsyncOpenAIClient{auxOpenAIClient: inner, transport: t}
@@ -225,7 +226,7 @@ func auxNamedCustomAPIKey(ctx context.Context, entry map[string]any, provider, c
 
 // Bedrock client by model family, Anthropic SDK, Mantle Responses or Converse, nil without AWS credentials
 func auxBuildBedrockClient(ctx context.Context, provider, model string, rawCodex bool) (AuxClient, string) {
-	if !auxHasAWSCredentialsFn(true) {
+	if !auxHasAWSCredentialsFn(ctx, true) {
 		slog.Debug("resolve_provider_client: bedrock requested but no AWS credentials found")
 		return nil, ""
 	}

@@ -31,6 +31,9 @@ const (
 	wakeDefaultConfirmationFrames = 3
 	wakeSilencePeak               = 10
 	wakeBundledModelName          = "hey_hermes"
+	// Phrase the bundled openWakeWord model detects, and the icebath phrase the open vocabulary engine detects
+	wakeBundledPhrase = "hey hermes"
+	wakeDefaultPhrase = "hey icebath"
 )
 
 var (
@@ -87,7 +90,7 @@ func (e *WakeWordError) Unwrap() error { return e.Cause }
 
 var wakeDefaults = map[string]any{
 	"enabled": false, "surface": "auto", "input_device": nil,
-	"provider": "auto", "phrase": "hey hermes", "sensitivity": 0.6,
+	"provider": "auto", "phrase": wakeDefaultPhrase, "sensitivity": 0.6,
 	"confirmation_frames": wakeDefaultConfirmationFrames, "start_new_session": true,
 }
 
@@ -209,14 +212,32 @@ func pyCastFallback(err error) bool {
 	return errors.As(err, &e) && (e.Kind == "TypeError" || e.Kind == "ValueError")
 }
 
-// Configured provider alias, auto resolving to the first supported engine of the preference list
-func wakeProvider(ctx context.Context, cfg map[string]any, supported func(string) (bool, error)) (string, error) {
-	provider := pystr.Lower(pystr.Strip(pyrepr.Str(wakeGet(cfg, "provider"))))
-	if provider == "" {
-		provider = "auto"
+// Provider alias as configured, auto when blank
+func wakeConfiguredProvider(cfg map[string]any) string {
+	if provider := pystr.Lower(pystr.Strip(pyrepr.Str(wakeGet(cfg, "provider")))); provider != "" {
+		return provider
 	}
+	return "auto"
+}
+
+// Whether the openWakeWord model hears the phrase, a custom model always and the bundled one only its own
+func wakeOpenWakeWordHears(ctx context.Context, cfg map[string]any) bool {
+	sub := wakeSub(cfg, "openwakeword")
+	if pyTruthy(sub["model"]) && !wakeBundledModelAliases[pystr.Lower(pystr.Strip(pyrepr.Str(sub["model"])))] {
+		return true
+	}
+	words := strings.Fields(strings.ReplaceAll(pystr.Lower(WakePhrase(ctx, cfg)), "_", " "))
+	return strings.Join(words, " ") == wakeBundledPhrase
+}
+
+// Configured provider, auto taking sherpa for a phrase the openWakeWord model cannot hear, else the first supported engine
+func wakeProvider(ctx context.Context, cfg map[string]any, supported func(string) (bool, error)) (string, error) {
+	provider := wakeConfiguredProvider(cfg)
 	if provider != "auto" {
 		return provider, nil
+	}
+	if !wakeOpenWakeWordHears(ctx, cfg) {
+		return "sherpa", nil
 	}
 	if supported == nil {
 		supported = func(extra string) (bool, error) { return wakeExtraSupported(ctx, extra) }
@@ -248,7 +269,7 @@ func wakeInputDevice(cfg map[string]any) any {
 	return nil
 }
 
-// WakePhrase returns the human facing wake phrase label, the engine keys detection
+// Wake phrase of the config, the icebath default when blank
 func WakePhrase(ctx context.Context, cfg map[string]any) string {
 	if cfg == nil {
 		cfg = LoadWakeWordConfig(ctx)
@@ -256,7 +277,7 @@ func WakePhrase(ctx context.Context, cfg map[string]any) string {
 	if s := pyrepr.Str(wakeGet(cfg, "phrase")); s != "" {
 		return s
 	}
-	return "hey hermes"
+	return wakeDefaultPhrase
 }
 
 // Input channel count of a PortAudio device record
@@ -640,6 +661,15 @@ func CheckWakeWordRequirements(ctx context.Context, cfg map[string]any, supporte
 	ttsOK := wakeTTSReady(ctx)
 	hint := ""
 	switch {
+	case !platformOK && wakeConfiguredProvider(cfg) == "auto" && !wakeOpenWakeWordHears(ctx, cfg):
+		hint = fmt.Sprintf("The %s wake engine that detects %s is not supported on this platform.", provider, pyrepr.StrRepr(WakePhrase(ctx, cfg)))
+		bundled, err := supported(WakeProviders["openwakeword"].Extra)
+		if err != nil {
+			return WakeRequirements{}, err
+		}
+		if bundled {
+			hint += fmt.Sprintf(" Set wake_word.phrase to %s for the bundled openWakeWord model.", pyrepr.StrRepr(wakeBundledPhrase))
+		}
 	case !platformOK:
 		var alternatives []string
 		for _, name := range []string{"sherpa", "porcupine"} {

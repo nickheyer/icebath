@@ -695,7 +695,7 @@ func kreaUpscaleRequested(env *tools.Env, explicit any, meta map[string]any) boo
 // Krea image backend serving Krea 3 edits and the Krea 2 tiers
 type kreaImageGenProvider struct {
 	staticImageGenProvider
-	env func() *tools.Env
+	env func(context.Context) *tools.Env
 }
 
 func newKreaImageGenProvider() *kreaImageGenProvider {
@@ -706,15 +706,18 @@ func newKreaImageGenProvider() *kreaImageGenProvider {
 			Key: "KREA_API_KEY", Prompt: "Krea API key", URL: "https://www.krea.ai/settings/api-tokens"}}}
 }
 
-// Available with a direct key or a ready managed Nous gateway
-func (p *kreaImageGenProvider) IsAvailable() bool {
-	env := p.env()
+// Available with a direct key or a ready managed Nous gateway for the process profile
+func (p *kreaImageGenProvider) IsAvailable() bool { return p.AvailableIn(context.Background()) }
+
+// Available with a direct key or a ready managed Nous gateway in the profile home the context binds
+func (p *kreaImageGenProvider) AvailableIn(ctx context.Context) bool {
+	env := p.env(ctx)
 	return secret(env, "KREA_API_KEY") != "" || tools.IsManagedToolGatewayReady(env, "krea", nil, nil)
 }
 
 // Krea 3 edit controls or Krea 2 style controls for the stored model the dispatcher names
 func (p *kreaImageGenProvider) Capabilities() map[string]any {
-	env := p.env()
+	env := p.env(context.Background())
 	stored, _ := kreaLoadConfig(env)["model"].(string)
 	if _, meta := kreaResolveModel(env, stored); pyTruthy(meta["edit"]) {
 		return map[string]any{"modalities": []any{"text", "image"}, "max_reference_images": kreaMaxKrea3ReferenceImages,
@@ -748,7 +751,7 @@ func (p *kreaImageGenProvider) Generate(ctx context.Context, env *tools.Env, req
 				"Generation → Krea to configure, get a key at "+
 				"https://www.krea.ai/settings/api-tokens, or sign in to "+
 				"a Nous account with the managed Krea gateway enabled "+
-				"(`icebath setup`).", "auth_required"), nil
+				"(start `icebath` and type `/setup model`).", "auth_required"), nil
 		}
 	}
 	explicit, _ := kwargs["model"].(string)

@@ -495,7 +495,7 @@ func SanitizeLoadedCredentials() {
 		secretStatusPrint(fmt.Sprintf("  Warning: %s contained %d non-ASCII character%s (%s) — stripped so the key can be sent as an HTTP header.", key, stripped, plural, detail))
 		secretStatusPrint("  This usually means the key was copy-pasted from a PDF, rich-text editor, or web page that substituted lookalike\n" +
 			"  Unicode glyphs for ASCII letters. If authentication fails (e.g. \"API key not valid\"), re-copy the key from the\n" +
-			"  provider's dashboard and run `icebath setup` (or edit the .env file in a plain-text editor).")
+			"  provider's dashboard, then start `icebath` and type `/setup model` (or edit the .env file in a plain-text editor).")
 	}
 }
 

@@ -959,9 +959,6 @@ func (a *GatewayAgent) Redirect(text string) any {
 	return accepted
 }
 
-// Whether a steer or redirect answer means the text was taken
-func gatewayCorrectionTaken(answer any) bool { return answer == true || answer == gatewayVoiceStopped }
-
 // Whether the owner took the text as a typed voice stop
 func gatewayCorrectionVoiceStopped(answer any) bool { return answer == gatewayVoiceStopped }
 

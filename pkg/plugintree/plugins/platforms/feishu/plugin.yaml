@@ -3,12 +3,11 @@ label: Feishu / Lark
 kind: platform
 version: 1.0.0
 description: >
-  Feishu / Lark gateway adapter for Hermes Agent.
-  Connects to Feishu (China) or Lark (International) via the official
-  lark-oapi SDK over WebSocket or webhook and relays messages between
-  Feishu/Lark chats and the Hermes agent. Supports text, images, video,
-  voice, documents, threads, DM pairing, group @mention gating, drive
-  comment events, and meeting invites.
+  Feishu / Lark gateway adapter for Icebath Agent. Connects to Feishu (China) or
+  Lark (International) via the official lark SDK over WebSocket or webhook and
+  relays messages between Feishu/Lark chats and the Icebath agent. Supports
+  text, images, video, voice, documents, threads, DM pairing, group @mention
+  gating, drive comment events, and meeting invites.
 author: NousResearch
 requires_env:
   - name: FEISHU_APP_ID

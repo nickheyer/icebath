@@ -341,7 +341,7 @@ func (s *statusRun) renderTerminal() error {
 			terminalCfg["vercel_image"], config.DefaultVercelImage)
 		s.kv("Image:", image)
 		s.kvFlag("SDK:", tools.GetTerminalBackendScoped(s.ctx, "vercel_sandbox", "") != nil, "installed",
-			"missing (run icebath setup terminal and select Vercel Sandbox, then restart Icebath)")
+			"missing (start icebath, type /setup terminal and select Vercel Sandbox, then restart Icebath)")
 		s.kv("Auth:", s.checkMark(auth.OK)+" "+auth.Label)
 		for _, line := range auth.DetailLines {
 			s.kv("Auth detail:", line)
@@ -705,7 +705,7 @@ func (s *statusRun) renderDeep() error {
 }
 
 func (s *statusRun) renderFooter() error {
-	s.banner([]string{strings.Repeat("─", 60), "  Run 'icebath doctor' for detailed diagnostics", "  Run 'icebath setup' to configure"},
+	s.banner([]string{strings.Repeat("─", 60), "  Run 'icebath doctor' for detailed diagnostics", "  Start 'icebath' and type '/setup' to configure"},
 		cliui.Dim)
 	s.println()
 	return nil

@@ -48,11 +48,6 @@ type MenuNavigationHandler func(event MenuNavigationEvent, value ...any) (*MenuN
 
 type navHandlerKey struct{}
 
-// WithMenuNavigationHandler scopes setup style cancel and back behavior to menus run under ctx
-func WithMenuNavigationHandler(ctx context.Context, h MenuNavigationHandler) context.Context {
-	return context.WithValue(ctx, navHandlerKey{}, h)
-}
-
 // Handler scoped on ctx, else the process handler set for the running CLI invocation
 func navHandler(ctx context.Context) MenuNavigationHandler {
 	if ctx != nil {

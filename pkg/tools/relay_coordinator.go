@@ -22,10 +22,11 @@ type RelayHost interface {
 	Shutdown()
 }
 
-// Explicit reduced capability host for platforms without the Relay binding
+// Explicit reduced capability host for platforms without the Relay binding or a runtime still being provisioned
 type NoopRelayRuntime struct {
-	ProfileKey string
-	Reason     string
+	ProfileKey   string
+	Reason       string
+	Provisioning bool
 }
 
 func (NoopRelayRuntime) ApplyToolRequestIntercepts(_ context.Context, _, _ string, args map[string]any) (map[string]any, error) {
@@ -41,38 +42,80 @@ type RelayHostSource interface {
 	ForProfile(ctx context.Context, profileKey string, create bool) RelayHost
 }
 
-// Exactly one Relay host for each canonical icebath profile
+// Exactly one Relay host for each canonical icebath profile, first creations running outside the lock
 type RelayHostRegistry struct {
-	mu    sync.Mutex
-	hosts *pydict.Dict[string, RelayHost]
+	mu       sync.Mutex
+	hosts    *pydict.Dict[string, RelayHost]
+	creating map[string]chan struct{}
+	epoch    uint64
 }
 
 // Empty host registry
 func NewRelayHostRegistry() *RelayHostRegistry {
-	return &RelayHostRegistry{hosts: pydict.New[string, RelayHost]()}
+	return &RelayHostRegistry{hosts: pydict.New[string, RelayHost](), creating: map[string]chan struct{}{}}
 }
 
-// Host of the profile, created on first use unless create is false, the no op host when Relay cannot start
+// Host of the profile, created on first use unless create is false, the no op host while Relay cannot start
 func (g *RelayHostRegistry) ForProfile(ctx context.Context, profileKey string, create bool) RelayHost {
 	key := profileKey
 	if key == "" {
 		key = CurrentRelayProfileKey(ctx)
 	}
 	g.mu.Lock()
-	defer g.mu.Unlock()
-	host, _ := g.hosts.Get(key)
-	if host != nil || !create {
-		return host
+	for {
+		host, _ := g.hosts.Get(key)
+		noop, pending := host.(NoopRelayRuntime)
+		if !create || (host != nil && !(pending && noop.Provisioning)) {
+			g.mu.Unlock()
+			return host
+		}
+		inflight, busy := g.creating[key]
+		if !busy {
+			break
+		}
+		g.mu.Unlock()
+		select {
+		case <-inflight:
+		case <-ctx.Done():
+			return NoopRelayRuntime{ProfileKey: key, Reason: ctx.Err().Error()}
+		}
+		g.mu.Lock()
+	}
+	current, _ := g.hosts.Get(key)
+	done := make(chan struct{})
+	g.creating[key] = done
+	epoch := g.epoch
+	g.mu.Unlock()
+	built, keep := buildRelayHost(ctx, key, current)
+	g.mu.Lock()
+	delete(g.creating, key)
+	close(done)
+	stale := keep && g.epoch != epoch
+	if keep && !stale {
+		g.hosts.Set(key, built)
+	}
+	g.mu.Unlock()
+	if stale {
+		built.Shutdown()
+	}
+	return built
+}
+
+// Host a first use builds over the stored provisioning host, keep false when nothing new is stored
+func buildRelayHost(ctx context.Context, key string, current RelayHost) (RelayHost, bool) {
+	ready := relayBindingReady()
+	if current != nil && !ready {
+		return current, false
+	}
+	if !ready && !RelayDemanded(ctx) {
+		return NoopRelayRuntime{ProfileKey: key, Reason: relayProvisioningReason, Provisioning: true}, false
 	}
 	rt, err := NewRelayRuntime(ctx, nil, key)
 	if err != nil {
 		relayLogger().WarnContext(ctx, "Icebath Relay runtime initialization failed", "err", err)
-		host = NoopRelayRuntime{ProfileKey: key, Reason: err.Error()}
-	} else {
-		host = rt
+		return NoopRelayRuntime{ProfileKey: key, Reason: err.Error(), Provisioning: !relayBindingReady()}, true
 	}
-	g.hosts.Set(key, host)
-	return host
+	return rt, true
 }
 
 // Shuts down every host and empties the registry
@@ -80,6 +123,7 @@ func (g *RelayHostRegistry) ShutdownAll() {
 	g.mu.Lock()
 	hosts := g.hosts.Values()
 	g.hosts = pydict.New[string, RelayHost]()
+	g.epoch++
 	g.mu.Unlock()
 	for _, h := range hosts {
 		h.Shutdown()

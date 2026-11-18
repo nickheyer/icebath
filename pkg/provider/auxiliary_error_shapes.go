@@ -18,11 +18,16 @@ type AuxSDKError struct {
 	Type       string
 	Class      string
 	Err        error
+	// Raw response body text the way httpx response.text reads it, empty without a response
+	ResponseText string
 }
 
 func (e *AuxSDKError) Error() string { return e.Message }
 
 func (e *AuxSDKError) Unwrap() error { return e.Err }
+
+// Headers of the failed response, nil without a response
+func (e *AuxSDKError) ResponseHeaders() http.Header { return e.Headers }
 
 // Python module of the SDK exception classes
 func (e *AuxSDKError) PyModule() string { return "openai" }

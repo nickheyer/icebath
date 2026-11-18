@@ -14,6 +14,12 @@ import (
 // Name prefix of the private homes, followed by the pid namespace and the pid of the owning test binary
 const privatePrefix = "icebath-test-home-"
 
+// Variable handing the developer cache directory down to test binaries a test binary starts
+const sharedCacheEnv = "HOMEGUARD_SHARED_CACHE"
+
+// Variable handing the temp dir of the first test binary down to test binaries it starts under another temp dir
+const tempRootEnv = "HOMEGUARD_TEMP_ROOT"
+
 // Directories of the go toolchain a test spawned go command keeps using after the home moves
 var toolchainDirs = []struct {
 	name string
@@ -35,8 +41,8 @@ var xdgSearchPaths = []string{"XDG_CONFIG_DIRS", "XDG_DATA_DIRS"}
 var productDirs = []string{".icebath", ".hermes"}
 
 var guard struct {
-	active         bool
-	home, original string
+	active                bool
+	home, original, cache string
 }
 
 func init() {
@@ -59,6 +65,14 @@ func Original() string {
 		return ""
 	}
 	return guard.original
+}
+
+// Developer cache directory where test suites keep pinned downloads between runs, empty outside go test binaries
+func SharedCache() string {
+	if !guard.active {
+		return ""
+	}
+	return guard.cache
 }
 
 // Current account with its home swapped for the private home inside a test binary
@@ -98,6 +112,14 @@ func swap(u *user.User, err error) (*user.User, error) {
 func isolate() {
 	tmp := tempBase()
 	original := userHomeEnv()
+	if os.Getenv(tempRootEnv) == "" {
+		os.Setenv(tempRootEnv, tmp)
+	}
+	guard.cache = os.Getenv(sharedCacheEnv)
+	if guard.cache == "" {
+		guard.cache, _ = os.UserCacheDir()
+		os.Setenv(sharedCacheEnv, guard.cache)
+	}
 	if original != "" && underTemp(resolve(original)) {
 		guard.active, guard.home, guard.original = true, original, original
 		return
@@ -132,13 +154,17 @@ func tempBase() string {
 	return resolve(os.TempDir())
 }
 
-// Whether path lies in the system temp dir or GOTMPDIR, a temp root holding the account home never counting
+// Whether path lies in the system temp dir, GOTMPDIR or the inherited temp root, a root holding the account home never counting
 func underTemp(path string) bool {
 	account := ""
 	if u, err := user.Current(); err == nil && u.HomeDir != "" {
 		account = resolve(u.HomeDir)
 	}
-	for _, root := range []string{resolve(os.TempDir()), tempBase()} {
+	roots := []string{resolve(os.TempDir()), tempBase()}
+	if inherited := os.Getenv(tempRootEnv); inherited != "" {
+		roots = append(roots, resolve(inherited))
+	}
+	for _, root := range roots {
 		if within(path, root) && (account == "" || !within(account, root)) {
 			return true
 		}

@@ -1,7 +1,7 @@
 package config
 
 // Schema version written to config.yaml, bumped only when existing files need a migration
-const Version = 55
+const Version = 57
 
 // Toolset selection every new config starts from
 const DefaultToolset = "icebath-cli"
@@ -117,7 +117,6 @@ func defaultsLiteral() Tree {
 			"degraded_mode":                   "warn",
 			"cwd":                             ".",
 			"temp_dir":                        "",
-			"font_family":                     "",
 			"timeout":                         180,
 			"daemon_term_grace_seconds":       2.0,
 			"oneshot_completion_wait_seconds": 600.0,
@@ -480,7 +479,6 @@ func defaultsLiteral() Tree {
 			"cli_layout":                       "modern",
 			"tui_native":                       false,
 			"tui_auto_resume_recent":           false,
-			"resume_last_session":              true,
 			"tui_agents_nudge":                 true,
 			"bell_on_complete":                 false,
 			"bell_on_prompt":                   false,
@@ -697,7 +695,7 @@ func defaultsLiteral() Tree {
 			"surface":             "auto",
 			"input_device":        nil,
 			"provider":            "auto",
-			"phrase":              "hey hermes",
+			"phrase":              "hey icebath",
 			"sensitivity":         0.6,
 			"confirmation_frames": 3,
 			"start_new_session":   true,
@@ -1155,7 +1153,6 @@ func defaultsLiteral() Tree {
 		"onboarding": map[string]any{
 			"seen":          map[string]any{},
 			"profile_build": "ask",
-			"run":           nil,
 		},
 		"telemetry": map[string]any{
 			"shared_metrics": map[string]any{

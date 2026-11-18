@@ -3,7 +3,7 @@ name: site
 on:
   push:
     branches: [main]
-    paths: [site/**]
+    paths: [site/**, scripts/install.sh]
   workflow_dispatch:
   workflow_call:
     inputs:

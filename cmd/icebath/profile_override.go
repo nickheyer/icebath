@@ -16,9 +16,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/profiles"
 )
 
-// Profile named by a consumed -p or --profile flag, empty when the sticky active_profile chose
-var explicitCLIProfile string
-
 // Expands a literal tilde or variable in ICEBATH_HOME once so every reader sees one absolute spelling
 func normalizeHomeEnv() {
 	raw := os.Getenv(home.EnvHome)
@@ -143,7 +140,6 @@ func isStaleProfileRecoveryCommand(argv []string) bool {
 
 // Pre parses -p/--profile, sets ICEBATH_HOME and strips the flag, falling back to the sticky active_profile
 func applyProfileOverride(argv []string) []string {
-	explicitCLIProfile = ""
 	cli := commands.NewCLI()
 	profileName, consume, index, err := cli.ScanProfileFlag(argv)
 	if err != nil {
@@ -197,7 +193,6 @@ func applyProfileOverride(argv []string) []string {
 	}
 	os.Setenv(home.EnvHome, resolved)
 	if consume > 0 {
-		explicitCLIProfile = profileName
 		argv = append(append([]string{}, argv[:index]...), argv[index+consume:]...)
 		os.Args = append([]string{os.Args[0]}, argv...)
 	}

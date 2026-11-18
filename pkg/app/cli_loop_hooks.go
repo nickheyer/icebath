@@ -8,14 +8,14 @@ import (
 
 // cliCommandState holds the slash command, loop and model switch state of the interactive CLI
 type cliCommandState struct {
-	loopManager          agent.LoopAutomation
-	lastLoopTickCheck    float64
-	lastGoalBarrierCheck float64
+	loopManager agent.LoopAutomation
 	// Heartbeat manager of the current session and whether its idle watchdog runs
 	heartbeatManager         agent.HeartbeatAutomation
 	heartbeatWatchdogStarted bool
 	// Marks the next process command call as an internal re entry the user's metrics already counted
 	slashRedispatch bool
+	// Quick command aliases the current typed command already followed, a repeat raising the recursion error
+	quickAliasChain map[string]bool
 	// Model switch staging of the current confirm and apply sequence
 	confirmedSwitchWarning  string
 	oneTurnSelectionContext *provider.SelectionContext

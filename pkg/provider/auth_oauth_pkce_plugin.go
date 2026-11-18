@@ -16,6 +16,7 @@ import (
 	"os"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -49,6 +50,45 @@ func NewOAuthPKCEConfig(clientID, authorizeURL, tokenURL string) OAuthPKCEConfig
 
 // Process home pool env the plugin hooks read and write, swappable so tests can inject transports
 var pkceEnvFn = func() PoolEnv { return modelsPoolEnv(context.Background()) }
+
+// Env of the hosted flow running a plugin sign in, nil while none runs
+var (
+	pluginSignInMu  sync.Mutex
+	pluginSignInEnv *PoolEnv
+)
+
+// Env a plugin sign in reads and writes, the hosted flow env while the TUI runs one
+func pkceAuthEnv() PoolEnv {
+	pluginSignInMu.Lock()
+	defer pluginSignInMu.Unlock()
+	if pluginSignInEnv != nil {
+		return *pluginSignInEnv
+	}
+	return pkceEnvFn()
+}
+
+// Context a plugin auth handler runs under, the hosted flow context so stopping the flow cancels it
+func pluginSignInCtx(fallback context.Context) context.Context {
+	pluginSignInMu.Lock()
+	defer pluginSignInMu.Unlock()
+	if pluginSignInEnv != nil {
+		return pluginSignInEnv.ctx()
+	}
+	return fallback
+}
+
+// Runs a plugin sign in with its login and auth handler on the env of the hosted flow running it
+func withPluginSignInEnv(env PoolEnv, fn func() error) error {
+	pluginSignInMu.Lock()
+	pluginSignInEnv = &env
+	pluginSignInMu.Unlock()
+	defer func() {
+		pluginSignInMu.Lock()
+		pluginSignInEnv = nil
+		pluginSignInMu.Unlock()
+	}()
+	return fn()
+}
 
 // Console the login and handler messages print to
 var pkceOut io.Writer = os.Stdout
@@ -287,7 +327,7 @@ func orderedQuery(pairs [][2]string) string {
 
 // LoginOAuthPKCE runs the browser authorization code plus PKCE flow and returns the pool fields of the new grant
 func LoginOAuthPKCE(provider string, cfg OAuthPKCEConfig, openBrowser bool) (map[string]any, error) {
-	return pkceLogin(pkceEnvFn(), pkceOut, provider, cfg, openBrowser)
+	return pkceLogin(pkceAuthEnv(), pkceOut, provider, cfg, openBrowser)
 }
 
 func pkceLogin(env PoolEnv, out io.Writer, provider string, cfg OAuthPKCEConfig, openBrowser bool) (map[string]any, error) {
@@ -341,7 +381,7 @@ func pkceLogin(env PoolEnv, out io.Writer, provider string, cfg OAuthPKCEConfig,
 			fmt.Fprintln(out, "Could not open the browser automatically; use the URL above.")
 		}
 	}
-	callback, err := serveLoopbackCallback(server, result, time.Duration(cfg.TimeoutSeconds*float64(time.Second)), errFn, "oauth_callback_timeout")
+	callback, err := serveLoopbackCallback(env.ctx(), server, result, time.Duration(cfg.TimeoutSeconds*float64(time.Second)), errFn, "oauth_callback_timeout")
 	if err != nil {
 		if env.ctx().Err() != nil {
 			fmt.Fprintln(out, "\nLogin cancelled.")
@@ -390,7 +430,7 @@ func pkceEntryExpiry(entry PooledCredential) any {
 // PKCEAuthHandler owns add, status and logout for the provider and declines refresh to the pool's generic refresh
 func PKCEAuthHandler(cfg OAuthPKCEConfig) func(action string, args []string, provider string) (bool, error) {
 	return func(action string, args []string, provider string) (bool, error) {
-		env := pkceEnvFn()
+		env := pkceAuthEnv()
 		out := pkceOut
 		provider = pkcePoolProvider(provider)
 		label := cfg.Label

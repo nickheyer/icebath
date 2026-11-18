@@ -15,13 +15,14 @@ import (
 	"testing"
 
 	"github.com/nickheyer/icebath/pkg/home"
+	"github.com/nickheyer/icebath/pkg/internal/homeguard"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/pm"
 )
 
-// User cache directory read before any test moves HOME
-var vsCacheRoot, _ = os.UserCacheDir()
+// Developer cache directory the pm suite keeps its pinned downloads in
+var vsCacheRoot = homeguard.SharedCache()
 
 // Real uv from PATH or the pinned copy the pm suite caches for this host
 func vsRealUV(t *testing.T) string {

@@ -181,21 +181,31 @@ func wakeStart(ctx context.Context, rid any, params map[string]any) map[string]a
 	wakeMu.Lock()
 	wakeOwnerTransport, wakeOwnerSurface = transport, surface
 	wakeMu.Unlock()
-	voiceLogger().Info(fmt.Sprintf("wake.start(%s): listening for %s (%s)", surface, pyrepr.Repr(reqs.Phrase), reqs.Provider))
-	return ok(rid, map[string]any{"started": true, "phrase": reqs.Phrase, "provider": reqs.Provider, "owner_surface": surface,
+	phrase, provider, armed := media.ListeningFor(transport)
+	if !armed {
+		phrase, provider = reqs.Phrase, reqs.Provider
+	}
+	voiceLogger().Info(fmt.Sprintf("wake.start(%s): listening for %s (%s)", surface, pyrepr.Repr(phrase), provider))
+	return ok(rid, map[string]any{"started": true, "phrase": phrase, "provider": provider, "owner_surface": surface,
 		"enabled_persisted": enabledPersisted})
 }
 
-// Stops this surface's listener, persist also writing wake_word.enabled false
+// Stops this surface's listener, persist also writing wake_word.enabled false, naming the phrase and engine it ran
 func wakeStop(ctx context.Context, rid any, params map[string]any) map[string]any {
-	stopped := releaseWakeForTransport(callerTransport(ctx))
+	transport := callerTransport(ctx)
+	phrase, provider, running := media.ListeningFor(transport)
+	stopped := releaseWakeForTransport(transport)
 	disabledPersisted := false
 	if truthy(params["persist"]) {
 		currentlyEnabled := true
 		suppress(func() { currentlyEnabled = truthy(media.LoadWakeWordConfig(ctx)["enabled"]) })
 		disabledPersisted = currentlyEnabled && persistWakeEnabled(ctx, false)
 	}
-	return ownerResult(rid, "stopped", stopped, map[string]any{"disabled_persisted": disabledPersisted})
+	if !running {
+		phrase, provider = media.WakePhrase(ctx, nil), ""
+	}
+	return ownerResult(rid, "stopped", stopped, map[string]any{"disabled_persisted": disabledPersisted,
+		"phrase": phrase, "provider": provider})
 }
 
 // Reclaims the microphone after a pause, nothing when the listener is not armed

@@ -518,9 +518,6 @@ func (c *CLI) chatMonitorAgentThread(turn *chatTurn, done <-chan struct{}) any {
 		c.raiseIfTurnCancelled()
 		msg, got := c.interruptQueue.Get(interruptPollInterval)
 		if !got {
-			if err := c.invalidateWithin(0.15); err != nil {
-				panic(err)
-			}
 			continue
 		}
 		interruptMsg = msg

@@ -663,7 +663,7 @@ func buildNoBackendSetupMessage(env *tools.Env) string {
 	lines = append(lines, "", "To enable image generation, do one of:",
 		"  1. Get a free API key at https://fal.ai and set FAL_KEY=<your-key> (then restart the session)")
 	if managed {
-		lines = append(lines, "  2. Sign in to a Nous account that has the managed FAL gateway enabled (`icebath setup`)")
+		lines = append(lines, "  2. Sign in to a Nous account that has the managed FAL gateway enabled (start `icebath` and type `/setup model`)")
 	}
 	lines = append(lines, "  3. Configure a different image_gen provider via `icebath tools` → Image Generation "+
 		"(run `icebath plugins list` to see installed backends)")

@@ -8,6 +8,8 @@ def norm(s):
     s = s.replace("@ROOT@/uh-ref", "<UH>").replace("@ROOT@/uh-ib", "<UH>")
     s = re.sub(r"\d{4}-\d\d-\d\d[ T]\d\d:\d\d(:\d\d)?(\.\d+)?", "<TS>", s)
     s = re.sub(r"\b\d{8}_\d{6}_[0-9a-f]+\b", "<SID>", s)
+    s = re.sub(r"\blocal-[0-9a-f]{64}\b", "<SID>", s)
+    s = s.replace("icebath_home:      ", "icebath_home:     ")
     s = re.sub(r"[ \t]+\n", "\n", s)
     return s
 def run(which, cmd):

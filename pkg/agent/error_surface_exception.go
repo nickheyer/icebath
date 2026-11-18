@@ -76,6 +76,14 @@ func surfaceExceptionStatus(err error) (int, bool) {
 	if errors.As(err, &apiErr) {
 		return apiErr.StatusCode, true
 	}
+	var sdkErr *provider.AuxSDKError
+	if errors.As(err, &sdkErr) && sdkErr.StatusCode != 0 {
+		return sdkErr.StatusCode, true
+	}
+	var streamErr *provider.ProviderStreamError
+	if errors.As(err, &streamErr) && streamErr.StatusCode != 0 {
+		return streamErr.StatusCode, true
+	}
 	var sc statusCoded
 	if errors.As(err, &sc) {
 		return sc.StatusCode(), true

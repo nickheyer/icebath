@@ -14,7 +14,6 @@ func TestScenarioFallbackProviderServesTheTurn(t *testing.T) {
 		overloaded[i] = fakellm.Error{Status: 503, Message: "the engine is overloaded"}
 	}
 	s := Start(t, Setup{Model: overloaded})
-	s.Finding("SF-8")
 	backup := s.AddModel("backup", []any{fakellm.Text{Text: "Answer from the backup."}}, fakellm.Options{})
 	s.Write("config.yaml", s.Read("config.yaml")+"fallback_providers:\n  - provider: custom\n    model: backup-model\n    base_url: ${MODEL_backup}\n")
 

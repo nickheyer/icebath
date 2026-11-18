@@ -8,13 +8,11 @@ import (
 	"os/exec"
 	"path/filepath"
 	"slices"
-	"sort"
 	"strings"
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
@@ -173,7 +171,7 @@ func (s *terminalSetup) promptVercelSandboxSettings(cfg map[string]any) error {
 	}
 	terminal["container_disk"] = 51200
 	s.info(nil, "Vercel authentication:", "  Use a long-lived Vercel access token plus project/team IDs.")
-	linked, err := readNearestVercelProject("")
+	linked, err := NearestVercelProject("")
 	if err != nil {
 		return err
 	}
@@ -206,67 +204,6 @@ func (s *terminalSetup) promptVercelSandboxSettings(cfg map[string]any) error {
 		}
 	}
 	return nil
-}
-
-// Project and team ids of the nearest .vercel/project.json at or above start, the cwd when start is empty
-func readNearestVercelProject(start string) (map[string]string, error) {
-	if start == "" {
-		cwd, err := os.Getwd()
-		if err != nil {
-			return nil, err
-		}
-		start = cwd
-	}
-	current, err := pypath.Resolve(start)
-	if err != nil {
-		return nil, err
-	}
-	if info, err := os.Stat(current); err == nil && info.Mode().IsRegular() {
-		current = filepath.Dir(current)
-	}
-	for directory := current; ; directory = filepath.Dir(directory) {
-		projectFile := filepath.Join(directory, ".vercel", "project.json")
-		if _, err := os.Stat(projectFile); err == nil {
-			return readVercelProjectFile(projectFile)
-		}
-		if filepath.Dir(directory) == directory {
-			return map[string]string{}, nil
-		}
-	}
-}
-
-// Non blank string projectId and orgId of a link file, empty on read failure, malformed JSON or a non object
-func readVercelProjectFile(projectFile string) (map[string]string, error) {
-	out := map[string]string{}
-	raw, err := os.ReadFile(projectFile)
-	if err != nil {
-		return out, nil
-	}
-	text, err := pystr.DecodeUTF8Sig(raw)
-	if err != nil {
-		return nil, err
-	}
-	data, err := pyjson.Loads(text)
-	if err != nil {
-		return out, nil
-	}
-	get := func(key string) (any, bool) { return nil, false }
-	switch obj := data.(type) {
-	case *pyjson.Object:
-		get = obj.Get
-	case map[string]any:
-		get = func(key string) (any, bool) { v, ok := obj[key]; return v, ok }
-	default:
-		return out, nil
-	}
-	for _, key := range []string{"projectId", "orgId"} {
-		if v, ok := get(key); ok {
-			if str, isStr := v.(string); isStr && pystr.Strip(str) != "" {
-				out[key] = str
-			}
-		}
-	}
-	return out, nil
 }
 
 // Prompts for a secret and saves it to the home .env when non empty, confirming when asked to
@@ -343,10 +280,10 @@ func (s *terminalSetup) backendLocal(cfg map[string]any) error {
 // Reports the container runtime, defaults the image and offers the egress firewall
 func (s *terminalSetup) backendDocker(cfg map[string]any) error {
 	s.ui.PrintSuccess("Terminal backend: Docker / Podman")
-	dockerExe := setupFindDocker(s.env)
+	dockerExe, runtimeName := SetupDockerRuntime(s.env)
 	prefix := ""
 	if dockerExe != "" {
-		prefix = DockerRuntimeName(dockerExe) + " found: "
+		prefix = runtimeName + " found: "
 	}
 	s.reportBinary(dockerExe, "Docker or Podman not found in PATH!",
 		"Install Docker: https://docs.docker.com/get-docker/ or Podman: https://podman.io/docs/installation", prefix)
@@ -378,12 +315,9 @@ func (s *terminalSetup) backendDocker(cfg map[string]any) error {
 func (s *terminalSetup) backendModal(cfg map[string]any) error {
 	s.ui.PrintSuccess("Terminal backend: Modal")
 	s.ui.PrintInfo("Serverless cloud sandboxes. Each session gets its own container.")
-	managedAvailable := false
-	if setupManagedNousToolsEnabled(s.env) {
-		if NousSubscriptionAuthPresent == nil {
-			return errNousFeaturesUnwired
-		}
-		managedAvailable = NousSubscriptionAuthPresent(s.env, cfg) && setupManagedGatewayReady(s.env, "modal")
+	managedAvailable, err := SetupModalManagedAvailable(s.env, cfg)
+	if err != nil {
+		return err
 	}
 	modeValue, _ := config.CfgGet(cfg, "terminal", "modal_mode")
 	modalMode := NormalizeModalMode(pyOrStr(modeValue))
@@ -512,19 +446,7 @@ func (s *terminalSetup) backendSSH(cfg map[string]any) error {
 		return nil
 	}
 	s.ui.PrintInfo("  Testing connection...")
-	argv := []string{"ssh", "-o", "BatchMode=yes", "-o", "ConnectTimeout=5"}
-	if sshKey != "" {
-		argv = append(argv, "-i", sshKey)
-	}
-	if port != "" && port != "22" {
-		argv = append(argv, "-p", port)
-	}
-	target := host
-	if user != "" {
-		target = user + "@" + host
-	}
-	argv = append(argv, target, "echo ok")
-	code, stderr, err := setupRunSSH(s.ctx, argv)
+	code, stderr, err := setupRunSSH(s.ctx, sshProbeArgv(host, user, port, sshKey))
 	if err != nil {
 		return err
 	}
@@ -560,26 +482,7 @@ func runSetupSSH(ctx context.Context, argv []string) (int, string, error) {
 
 // Runs a plugin backend's setup lines and post setup hook, any failure printed as a warning
 func (s *terminalSetup) backendPlugin(backend string) {
-	err := func() (err error) {
-		defer func() {
-			if r := recover(); r != nil {
-				err = fmt.Errorf("%v", r)
-			}
-		}()
-		provider := GetTerminalBackend(backend)
-		if provider == nil {
-			return errors.New("'NoneType' object has no attribute 'display_name'")
-		}
-		s.ui.PrintSuccess("Terminal backend: " + provider.DisplayName())
-		for _, line := range provider.SetupInstructions(s.env) {
-			s.ui.PrintInfo(line)
-		}
-		if hook, ok := provider.(TerminalBackendPostSetup); ok {
-			return hook.PostSetup(s.ctx, s.env)
-		}
-		return nil
-	}()
-	if err != nil {
+	if err := runPluginBackendSetup(s.ctx, s.env, backend, s.ui.PrintSuccess, s.ui.PrintInfo); err != nil {
 		s.ui.PrintWarning(fmt.Sprintf("Backend plugin setup hook failed: %s", err.Error()))
 	}
 }
@@ -605,39 +508,11 @@ var backendEnvMirror = map[string][3]any{
 	"vercel_sandbox": {"TERMINAL_VERCEL_IMAGE", "vercel_image", config.DefaultVercelImage},
 }
 
-// Plugin registered backends sorted by name, the built in reserved names left out
-func pluginTerminalBackends() []BackendProvider {
-	var providers []BackendProvider
-	for _, name := range TerminalBackendNames() {
-		if builtinBackends[name] {
-			continue
-		}
-		if p := GetTerminalBackend(name); p != nil {
-			providers = append(providers, p)
-		}
-	}
-	sort.SliceStable(providers, func(i, j int) bool { return providers[i].Name() < providers[j].Name() })
-	return providers
-}
-
 // Menu rows for plugin backends, none when discovery fails like the fail soft wizard
 func (s *terminalSetup) pluginBackendRows() (rows [][2]string, names []string) {
-	defer func() {
-		if r := recover(); r != nil {
-			toolsLogger(s.env).Debug(fmt.Sprintf("terminal backend plugin listing failed: %v", r))
-		}
-	}()
-	discoverErr := errPluginDiscoveryUnwired
-	if EnsurePluginsDiscovered != nil {
-		discoverErr = EnsurePluginsDiscovered(s.ctx)
-	}
-	if discoverErr != nil {
-		return nil, nil
-	}
-	for _, provider := range pluginTerminalBackends() {
-		pname := pystr.Lower(pystr.Strip(provider.Name()))
-		rows = append(rows, [2]string{pname, provider.DisplayName() + " - " + provider.Description()})
-		names = append(names, pname)
+	for _, row := range SetupTerminalBackendRows(s.ctx, s.env) {
+		rows = append(rows, [2]string{row.Name, row.DisplayName + " - " + row.Description})
+		names = append(names, row.Name)
 	}
 	return rows, names
 }

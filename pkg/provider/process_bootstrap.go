@@ -18,6 +18,7 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/config"
+	"github.com/nickheyer/icebath/pkg/internal/pyhttpx"
 )
 
 // Stagger between dual stack connection attempts
@@ -261,27 +262,19 @@ func (d *keepaliveDialer) DialContext(ctx context.Context, network, address stri
 	return kc, nil
 }
 
-// TCP connect plus TLS handshake under one connect deadline with HTTP/1.1 negotiated
-func (d *keepaliveDialer) dialTLS(cfg *tls.Config) func(ctx context.Context, network, address string) (net.Conn, error) {
+// TCP connect, any proxy tunnel and the TLS handshake under one connect deadline with HTTP/1.1 negotiated
+func (d *keepaliveDialer) dialTLS(cfg *tls.Config, proxy *url.URL) func(ctx context.Context, network, address string) (net.Conn, error) {
 	return func(ctx context.Context, network, address string) (net.Conn, error) {
 		connectCtx, cancel := context.WithTimeout(ctx, keepaliveConnectTimeout)
 		defer cancel()
-		raw, err := d.DialContext(connectCtx, network, address)
-		if err != nil {
-			return nil, err
-		}
-		conf := cfg.Clone()
-		if conf.ServerName == "" {
-			host, _, _ := net.SplitHostPort(address)
-			conf.ServerName = host
-		}
-		conf.NextProtos = []string{"http/1.1"}
-		conn := tls.Client(raw, conf)
-		if err := conn.HandshakeContext(connectCtx); err != nil {
-			_ = raw.Close()
-			return nil, err
-		}
-		return conn, nil
+		return pyhttpx.DialWireTLS(connectCtx, d.DialContext, proxy, network, address, cfg)
+	}
+}
+
+// Plaintext pooled connection under the wire layer, through the SOCKS or HTTPS proxy when one is given
+func (d *keepaliveDialer) dialWire(proxy *url.URL) func(ctx context.Context, network, address string) (net.Conn, error) {
+	return func(ctx context.Context, network, address string) (net.Conn, error) {
+		return pyhttpx.DialWire(ctx, d.DialContext, proxy, network, address)
 	}
 }
 
@@ -331,18 +324,15 @@ func newKeepaliveTransport(tlsConfig *tls.Config, limits keepaliveLimits, proxy 
 	d := &keepaliveDialer{proxied: proxy != nil, slots: make(chan struct{}, limits.maxConns)}
 	d.racing.Store(racing)
 	t := &http.Transport{
-		DialContext:           d.DialContext,
+		Proxy:                 pyhttpx.PlainProxy(proxy),
+		DialContext:           d.dialWire(proxy),
+		DialTLSContext:        d.dialTLS(tlsConfig, proxy),
 		TLSClientConfig:       tlsConfig,
 		TLSHandshakeTimeout:   keepaliveConnectTimeout,
 		MaxIdleConns:          limits.maxKeepalive,
 		MaxIdleConnsPerHost:   limits.maxKeepalive,
 		IdleConnTimeout:       limits.expiry,
 		ExpectContinueTimeout: time.Second,
-	}
-	if proxy != nil {
-		t.Proxy = http.ProxyURL(proxy)
-	} else {
-		t.DialTLSContext = d.dialTLS(tlsConfig)
 	}
 	auxPoolConnSets.Store(t, &d.live)
 	return &keepaliveTransport{transport: t, dialer: d}

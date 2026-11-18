@@ -123,7 +123,7 @@ func printNonretryableAuthGuidance(ctx context.Context, a *AIAgent, classified *
 	}
 	vlines(a,
 		"   💡 Your API key was rejected by the provider. Check:",
-		"      • Is the key valid? Run: icebath setup",
+		"      • Is the key valid? Start icebath and type /setup model",
 		fmt.Sprintf("      • Does your account have access to %s?", model))
 	if matches, _ := pyurl.BaseURLHostMatches(baseURL, "openrouter.ai"); matches {
 		vlines(a, "      • Check credits: https://openrouter.ai/settings/credits")

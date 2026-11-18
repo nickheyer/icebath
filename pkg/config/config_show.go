@@ -333,7 +333,7 @@ func ShowConfig(out io.Writer, src ShowSources) error {
 	p.line("%s", colorize(strings.Repeat("─", 60), ColorDim))
 	p.line("%s", colorize("  icebath config edit    # Edit config file", ColorDim))
 	p.line("%s", colorize("  icebath config set <key> <value>", ColorDim))
-	p.line("%s", colorize("  icebath setup          # Run setup wizard", ColorDim))
+	p.line("%s", colorize("  icebath, type /setup   # Set up in the terminal UI", ColorDim))
 	p.line("")
 	return nil
 }

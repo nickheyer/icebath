@@ -59,8 +59,8 @@ func keylessLocal(r *GatewayRunner, live *gateway.LiveSession) (bool, error) {
 	return verdict != nil && *verdict, nil
 }
 
-// Whether a live local session was launched by the classic CLI, false when its frozen policy cannot be read
-func keylessLaunchedByClassicCLI(ctx context.Context, r *GatewayRunner, live *gateway.LiveSession) (bool, error) {
+// Whether a live local session was launched by the terminal UI, false when its frozen policy cannot be read
+func keylessLaunchedByTerminalUI(ctx context.Context, r *GatewayRunner, live *gateway.LiveSession) (bool, error) {
 	policy, err := gateway.LocalPolicyForSource(ctx, r, live.Source)
 	if err != nil {
 		var refusal *state.RuntimeStoreError
@@ -69,7 +69,7 @@ func keylessLaunchedByClassicCLI(ctx context.Context, r *GatewayRunner, live *ga
 		}
 		return false, err
 	}
-	return policy != nil && policy.Source == "cli", nil
+	return policy != nil && policy.Source == "tui", nil
 }
 
 // Authority and live session a key less inject goes to, nil logged when nothing may receive it
@@ -127,11 +127,11 @@ func keylessResolve(ctx context.Context, r *GatewayRunner, pluginHome, callingSe
 		if !local {
 			continue
 		}
-		cli, err := keylessLaunchedByClassicCLI(ctx, r, s.Live)
+		tui, err := keylessLaunchedByTerminalUI(ctx, r, s.Live)
 		if err != nil {
 			return nil, nil, err
 		}
-		if cli {
+		if tui {
 			attached = append(attached, s.Live)
 		}
 	}
@@ -139,9 +139,9 @@ func keylessResolve(ctx context.Context, r *GatewayRunner, pluginHome, callingSe
 	case 1:
 		return authority, attached[0], nil
 	case 0:
-		keylessRefuse(pluginID, "none", "no classic CLI session is attached in its profile")
+		keylessRefuse(pluginID, "none", "no terminal UI session is attached in its profile")
 	default:
-		keylessRefuse(pluginID, "several", fmt.Sprintf("%d classic CLI sessions are attached in its profile", len(attached)))
+		keylessRefuse(pluginID, "several", fmt.Sprintf("%d terminal UI sessions are attached in its profile", len(attached)))
 	}
 	return nil, nil, nil
 }

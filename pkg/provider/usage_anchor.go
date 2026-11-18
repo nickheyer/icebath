@@ -5,10 +5,11 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
-	"fmt"
 	"math"
-	"strings"
+	"sort"
 
+	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/state"
 )
 
@@ -35,61 +36,51 @@ func (a UsageAnchor) ToMap() map[string]any {
 		"base_last_role": role, "base_last_fp": a.BaseLastFP, "base_prefix_fp": a.BasePrefixFP}
 }
 
-// Python json.dumps text with sorted keys, ASCII escapes and compact separators, str for unknown values
-func usageAnchorDumps(v any) string {
-	text, ok := pyJSONDumps(v)
-	if !ok {
-		text, _ = pyJSONDumps(fmt.Sprint(v))
+// Persisted anchor blob in the key order the reference writes, an empty last role written as null
+func (a UsageAnchor) toObject() *pyjson.Object {
+	var role any
+	if a.BaseLastRole != "" {
+		role = a.BaseLastRole
 	}
-	var b strings.Builder
-	for _, r := range text {
-		switch {
-		case r < 0x80:
-			b.WriteRune(r)
-		case r > 0xFFFF:
-			r -= 0x10000
-			fmt.Fprintf(&b, `\u%04x\u%04x`, 0xD800+(r>>10), 0xDC00+(r&0x3FF))
-		default:
-			fmt.Fprintf(&b, `\u%04x`, r)
-		}
-	}
-	return b.String()
+	return pyjson.ObjectOf("prompt_tokens", a.PromptTokens, "completion_tokens", a.CompletionTokens, "base_count", a.BaseCount,
+		"base_last_role", role, "base_last_fp", a.BaseLastFP, "base_prefix_fp", a.BasePrefixFP)
 }
 
-// Plain JSON shape of a typed value through its JSON tags
-func usageAnchorPlain(v any) any {
-	raw, err := json.Marshal(v)
-	if err != nil {
-		return fmt.Sprint(v)
+// Message payload text with sorted keys, ASCII escapes, compact separators and str for unknown values, else the repr of its sorted items
+func usageAnchorPayloadDumps(payload map[string]any) string {
+	text, err := pyjson.Dumps(payload, pyjson.SortKeys(true), pyjson.Separators(",", ":"),
+		pyjson.Default(func(v any) (any, error) { return pyrepr.Str(v), nil }))
+	if err == nil {
+		return text
 	}
-	dec := json.NewDecoder(strings.NewReader(string(raw)))
-	dec.UseNumber()
-	var out any
-	if dec.Decode(&out) != nil {
-		return fmt.Sprint(v)
+	keys := make([]string, 0, len(payload))
+	for k := range payload {
+		keys = append(keys, k)
 	}
-	return out
+	sort.Strings(keys)
+	items := make([]any, 0, len(keys))
+	for _, k := range keys {
+		items = append(items, pyrepr.Tuple{k, payload[k]})
+	}
+	return pyrepr.Repr(items)
 }
+
+// Message dict keys a fingerprint covers, the provider visible fields that round trip the session DB
+var usageAnchorFingerprintKeys = []string{"role", "content", "api_content", "tool_call_id", "tool_calls"}
 
 // MessageFingerprint is a stable digest of one message over its provider visible persisted fields
 func MessageFingerprint(m *state.Message) string {
 	if m == nil {
 		return ""
 	}
-	payload := map[string]any{"role": m.Role}
-	if m.Content != nil {
-		payload["content"] = usageAnchorPlain(m.Content)
+	dict := state.MessageToDict(m)
+	payload := map[string]any{}
+	for _, k := range usageAnchorFingerprintKeys {
+		if v, ok := dict[k]; ok && v != nil {
+			payload[k] = v
+		}
 	}
-	if m.APIContent != "" {
-		payload["api_content"] = m.APIContent
-	}
-	if m.ToolCallID != "" {
-		payload["tool_call_id"] = m.ToolCallID
-	}
-	if m.ToolCalls != nil {
-		payload["tool_calls"] = usageAnchorPlain(m.ToolCalls)
-	}
-	sum := sha256.Sum256([]byte(usageAnchorDumps(payload)))
+	sum := sha256.Sum256([]byte(usageAnchorPayloadDumps(payload)))
 	return hex.EncodeToString(sum[:])
 }
 
@@ -110,7 +101,8 @@ func pricedPrefixFingerprint(messages []*state.Message, baseCount int) string {
 		}
 		fps = append(fps, []any{role, fp})
 	}
-	sum := sha256.Sum256([]byte(usageAnchorDumps(fps)))
+	text, _ := pyjson.Dumps(fps, pyjson.Separators(",", ":"))
+	sum := sha256.Sum256([]byte(text))
 	return hex.EncodeToString(sum[:])
 }
 
@@ -196,8 +188,11 @@ func AnchoredContextTokens(ctx context.Context, messages []*state.Message, ancho
 func usageAnchorFromAny(v any) *UsageAnchor {
 	var m map[string]any
 	switch t := v.(type) {
-	case map[string]any:
-		m = t
+	case map[string]any, *pyjson.Object:
+		var ok bool
+		if m, ok = pyjson.Dict(t); !ok {
+			return nil
+		}
 	case *UsageAnchor:
 		if t == nil {
 			return nil
@@ -245,7 +240,7 @@ func (s *UsageAnchorState) Persist(anchor *UsageAnchor) {
 	}
 	var blob any
 	if a := usageAnchorFromAny(anchor); a != nil {
-		blob = a.ToMap()
+		blob = a.toObject()
 	}
 	if err := s.Store.PatchModelConfig(s.SessionID, map[string]any{UsageAnchorModelConfigKey: blob}); err != nil {
 		modelsLog.Debug("usage anchor persist failed", "err", err)

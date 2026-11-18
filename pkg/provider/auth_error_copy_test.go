@@ -91,8 +91,8 @@ func TestProviderSetupFailureLines(t *testing.T) {
 	if len(lines) != 2 || lines[0] != "Could not finish connecting a provider (sign-in was cancelled)." {
 		t.Fatalf("cancelled %v", lines)
 	}
-	lines = ProviderSetupFailureLines(&net.DNSError{Err: "no such host", Name: "p"}, "icebath setup")
-	if len(lines) != 3 || lines[0] != "Could not finish connecting a provider (no internet connection, or the provider could not be reached)." || !strings.Contains(lines[1], "`icebath setup`") {
+	lines = ProviderSetupFailureLines(&net.DNSError{Err: "no such host", Name: "p"}, "/setup model")
+	if len(lines) != 3 || lines[0] != "Could not finish connecting a provider (no internet connection, or the provider could not be reached)." || !strings.Contains(lines[1], "`/setup model`") {
 		t.Fatalf("network %v", lines)
 	}
 	lines = ProviderSetupFailureLines(errors.New("boom"), "")

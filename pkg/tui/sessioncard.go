@@ -65,12 +65,16 @@ func (c *sessionCard) Closable() bool      { return false }
 func (c *sessionCard) Selectable() bool    { return true }
 func (c *sessionCard) MinSize() (int, int) { return 40, 10 }
 
-// Keys in force, the completion popup or a waiting question first, then the terminal UI keys over the toolkit session keys
+// Keys in force, the stash panel and completion popup first, then the terminal UI keys over the session keys
 func (c *sessionCard) Contexts() []string {
-	if c.composer.Completing() {
-		return []string{keys.Complete, tuiContext, keys.Session}
+	var ctxs []string
+	if c.app.stashBrowsing() {
+		ctxs = append(ctxs, stashContext)
 	}
-	return []string{tuiContext, keys.Session}
+	if c.composer.Completing() {
+		ctxs = append(ctxs, keys.Complete)
+	}
+	return append(ctxs, tuiContext, keys.Session)
 }
 
 // Spinner frames advance while a turn runs, the window repainting on each
@@ -254,6 +258,9 @@ func (c *sessionCard) statusRow(width int, rc renderCtx) string {
 		if cwd := c.app.store.sessionCwd(); cwd != "" {
 			dials = append(dials, fmtCwdBranch(cwd, c.app.git.current(), 28))
 		}
+		if pin := c.app.stashIndicator(); pin != "" {
+			dials = append(dials, pin)
+		}
 		right = strings.TrimSpace(right + "  " + toneStyle(rc.t.Color.Muted).Render(strings.Join(dials, " │ ")))
 	}
 	if extra := c.composer.Status(); extra != "" {
@@ -270,6 +277,7 @@ func (c *sessionCard) statusRow(width int, rc renderCtx) string {
 func (c *sessionCard) View(w, h int) string {
 	c.width, c.height = w, h
 	rc := c.renderCtx(w)
+	c.composer.Hint = c.app.composerPlaceholder()
 	c.composer.Fit(w)
 	var chrome []string
 	chrome = append(chrome, c.queueRows(w, rc)...)
@@ -282,16 +290,19 @@ func (c *sessionCard) View(w, h int) string {
 	for _, row := range c.app.dockRows(w, rc) {
 		chrome = append(chrome, row)
 	}
+	chrome = append(chrome, c.app.stashPanelRows(w, rc)...)
 	chrome = append(chrome, c.statusRow(w, rc))
 	composerRows := min(c.composer.Height(), max(h-len(chrome)-3, 2))
 	bodyRows := max(h-len(chrome)-composerRows, 1)
 	top := c.app.widgets.dock("dock-top", w)
 	bottom := c.app.widgets.dock("dock-bottom", w)
 	bodyRows = max(bodyRows-len(top)-len(bottom), 1)
+	pet := c.app.pet.place(w, bodyRows, len(top))
 	wrap := rc
-	wrap.width = scrollbarRoom(w)
+	wrap.width = scrollbarRoom(w - pet.gutter)
 	c.lines = c.view.rows(c.app.history, c.app.store, c.app.turn.visibleStream(), wrap, c.tick)
-	body := strings.Join(c.app.widgets.overlayCorners(strings.Split(c.view.view(c.lines, w, bodyRows, rc), "\n"), w), "\n")
+	rows := pet.over(strings.Split(c.view.view(c.lines, w-pet.gutter, bodyRows-pet.band, rc), "\n"), w)
+	body := strings.Join(c.app.widgets.overlayCorners(rows, w), "\n")
 	if len(top) > 0 {
 		body = strings.Join(top, "\n") + "\n" + body
 	}
@@ -305,6 +316,12 @@ func (c *sessionCard) View(w, h int) string {
 	parts = append(parts, c.composer.View(w, composerRows))
 	return strings.Join(parts, "\n")
 }
+
+// Screen cell the content starts at, where the pet image is placed from
+func (c *sessionCard) Origin(x, y int) { c.app.pet.origin(x, y) }
+
+// Box of a pet image the terminal places under the cells
+func (c *sessionCard) Holes() []wm.Box { return c.app.pet.holes() }
 
 // Cursor of the prompt, moved below the transcript and chrome
 func (c *sessionCard) Cursor() *tea.Cursor {

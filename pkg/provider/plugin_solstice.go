@@ -79,7 +79,7 @@ func solsticeNASBaseURL(env PoolEnv) (string, error) {
 
 // Portal request carrying the user's Nous access token, every failure an auth error with its code
 func solsticeNASRequest(method, path string, body map[string]string) (map[string]any, error) {
-	env := pkceEnvFn()
+	env := pkceAuthEnv()
 	token, err := resolveNousAccessToken(env, NousAccessTokenOptions{})
 	if err != nil {
 		return nil, solsticeErr("sign in to Nous Portal first (`icebath auth add nous`).", "solstice_nous_login_required", true, err)

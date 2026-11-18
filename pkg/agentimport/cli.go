@@ -342,7 +342,7 @@ func ImportAgent(ctx context.Context, args Args) (int, error) {
 	if fromSetup {
 		c.PrintInfo("Secrets:     never imported")
 	} else {
-		c.PrintInfo("Secrets:     never imported — run 'icebath setup' for credentials")
+		c.PrintInfo("Secrets:     never imported — start 'icebath' and type '/setup model' for credentials")
 	}
 	if err := ensureConfigFile(icebathHome); err != nil {
 		return 1, err
@@ -423,7 +423,7 @@ func ImportAgent(ctx context.Context, args Args) (int, error) {
 	if fromSetup {
 		c.PrintInfo("API keys and credentials were NOT imported.")
 	} else {
-		c.PrintInfo("API keys and credentials were NOT imported — run 'icebath setup' " +
+		c.PrintInfo("API keys and credentials were NOT imported — start 'icebath' and type '/setup model' " +
 			"to configure providers, or add them to " + home.Display(icebathHome) + "/.env.")
 	}
 	if report.Summary["error"] > 0 {
@@ -556,7 +556,7 @@ func printImportReport(ctx context.Context, c *cliui.Console, report *Report, dr
 		if fromSetup {
 			c.PrintInfo("Re-add them deliberately in " + home.Display(home.Dir(ctx)) + "/.env.")
 		} else {
-			c.PrintInfo("Re-add credentials deliberately via 'icebath setup' or the profile's .env.")
+			c.PrintInfo("Re-add credentials deliberately with '/setup model' in 'icebath' or in the profile's .env.")
 		}
 		fmt.Fprintln(c.Out)
 	}

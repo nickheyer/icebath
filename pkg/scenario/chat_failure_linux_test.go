@@ -15,7 +15,7 @@ func TestScenarioChatProviderFailureExitCodes(t *testing.T) {
 	}
 	s := Start(t, Setup{Model: refusals})
 	quiet := s.Run("chat", "-q", "Say hello", "-Q").Exit(1)
-	for _, part := range []string{"custom rejected your API key, so the model can't be reached.", "run `icebath setup` in a terminal.",
+	for _, part := range []string{"custom rejected your API key, so the model can't be reached.", "start `icebath` and type `/setup model`.",
 		"Provider said: ", "invalid api key for scenario"} {
 		if !strings.Contains(quiet.Stdout, part) {
 			s.Failf("the failure explanation on standard output lacks %q\n%s", part, quiet.dump())

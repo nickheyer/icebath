@@ -47,6 +47,8 @@ var SetupReadyPayload = pydantic.NewModel("SetupReadyPayload", OpenConfig,
 
 var _ = Event("setup.ready", SetupReadyPayload, "The free-tier bootstrap finished (broadcast) with its setup record.")
 
+var _ = Event("free_tier.challenge", FreeTierChallengePayload, "The account service wants a browser challenge cleared before the free-tier token exchange (broadcast), the terminal UI prints and opens ``url``.")
+
 var ErrorPayload = pydantic.NewModel("ErrorPayload", ClosedConfig,
 	pydantic.Req("message", pydantic.Str),
 ).Described("Every ``_emit(\"error\", …)`` site sets exactly ``message``.")

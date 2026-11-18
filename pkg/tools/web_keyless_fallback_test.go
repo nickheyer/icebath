@@ -426,7 +426,7 @@ func TestGetBackendAndAPIKeyGateWithTheKeylessTier(t *testing.T) {
 	for _, k := range []string{"FIRECRAWL_API_KEY", "FIRECRAWL_API_URL", "TAVILY_API_KEY", "KEENABLE_API_KEY", "BRAVE_SEARCH_API_KEY", "SEARXNG_URL", "TOOL_GATEWAY_USER_TOKEN"} {
 		t.Setenv(k, "")
 	}
-	swapDDGS(t, &ddgsClientAvailable, func(context.Context) bool { return false })
+	swapDDGS(t, &ddgsClientAvailable, func(*Env) bool { return false })
 	env := sdkProviderEnv(t, "", nil)
 	want := keylessPreference()[0]
 	if got := getWebBackend(env); got != want {

@@ -8,6 +8,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"strings"
 	"sync"
 	"testing"
@@ -332,12 +333,15 @@ func TestCreateOpenAIClientRoutesViaEnvProxy(t *testing.T) {
 	ct := keepaliveMounts(t, sdk.httpClient)
 	for scheme, rt := range ct.mounts {
 		tr, ok := rt.(*http.Transport)
-		if !ok || tr.Proxy == nil {
+		if !ok || tr.Proxy == nil || tr.DialTLSContext == nil {
 			t.Fatalf("%s mount %T is not proxy backed", scheme, rt)
 		}
-		u, _ := tr.Proxy(&http.Request{})
+		u, _ := tr.Proxy(&http.Request{URL: &url.URL{Scheme: "http", Host: "litellm.internal.example.com"}})
 		if u == nil || u.String() != "http://127.0.0.1:7897" {
-			t.Fatalf("proxy %v", u)
+			t.Fatalf("plain proxy %v", u)
+		}
+		if u, _ := tr.Proxy(&http.Request{URL: &url.URL{Scheme: "https", Host: "litellm.internal.example.com"}}); u != nil {
+			t.Fatalf("an https target must reach the proxy through the wire tunnel, not the transport proxy %v", u)
 		}
 	}
 	if sdk.maxRetries != 0 {
@@ -357,7 +361,7 @@ func TestMissingBootstrapHelperDegradesInsteadOfRaising(t *testing.T) {
 		}
 	}
 	sdk := auxCreateOpenAIClient(context.Background(), "k", "https://api.example.com/v1", auxOpenAIOptions{}).(*auxOpenAIClient)
-	if sdk.httpClient != auxSDKDefaultHTTPClient() || sdk.ownsHTTP || sdk.timeout != auxSDKDefaultTimeout {
+	if hc, err := auxSDKDefaultHTTPClient(); err != nil || sdk.httpClient != hc || sdk.ownsHTTP || sdk.timeout != auxSDKDefaultTimeout {
 		t.Fatal("the SDK default client takes over")
 	}
 }
@@ -421,7 +425,7 @@ func TestAuxClientCustomHeadersCopiesTheSDKHeaders(t *testing.T) {
 func TestNewOpenAIClientExportBuildsTheSDKClient(t *testing.T) {
 	retries := 0
 	c, ok := NewOpenAIClient("k", "https://api.example.com/v1", OpenAIClientOptions{DefaultHeaders: map[string]string{"X-A": "b"}, MaxRetries: &retries}).(*auxOpenAIClient)
-	if !ok || c.baseURL != "https://api.example.com/v1/" || c.customHeaders["X-A"] != "b" || c.maxRetries != 0 || c.httpClient != SDKDefaultHTTPClient() {
+	if hc, err := auxSDKDefaultHTTPClient(); err != nil || !ok || c.baseURL != "https://api.example.com/v1/" || c.customHeaders["X-A"] != "b" || c.maxRetries != 0 || c.httpClient != hc {
 		t.Fatalf("client %+v", c)
 	}
 	if SDKDefaultTimeout != auxSDKDefaultTimeout || c.timeout != SDKDefaultTimeout {
@@ -475,11 +479,13 @@ func TestAddOpenAIClientResponseHookRunsOncePerMarkOnEveryResponse(t *testing.T)
 
 func TestAuxClientDefaultHeadersAndCredentialExports(t *testing.T) {
 	t.Setenv("OPENAI_ORG_ID", "org-1")
-	t.Setenv("OPENAI_PROJECT_ID", "")
+	unsetEnvForTest(t, "OPENAI_PROJECT_ID")
 	static := newAuxOpenAIClient("sk-static", "http://h/v1", auxOpenAIOptions{DefaultHeaders: map[string]string{"User-Agent": "KimiCLI/1.0", "X-Extra": "1"}})
 	got := AuxClientDefaultHeaders(static)
 	want := map[string]string{"Accept": "application/json", "Content-Type": "application/json", "User-Agent": "KimiCLI/1.0",
-		"Authorization": "Bearer sk-static", "OpenAI-Organization": "org-1", "X-Extra": "1"}
+		"X-Stainless-Lang": "python", "X-Stainless-Package-Version": "2.54.0", "X-Stainless-OS": stainlessOS(), "X-Stainless-Arch": stainlessArch(),
+		"X-Stainless-Runtime": "CPython", "X-Stainless-Runtime-Version": pinnedPythonRuntimeVersion(), "X-Stainless-Async": "false",
+		"OpenAI-Organization": "org-1", "X-Extra": "1"}
 	if fmt.Sprint(got) != fmt.Sprint(want) {
 		t.Fatalf("default headers: got %v want %v", got, want)
 	}

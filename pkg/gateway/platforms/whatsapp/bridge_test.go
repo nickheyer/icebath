@@ -57,12 +57,13 @@ func bridgeHTTP(t *testing.T, port int, method, path, host, body string) (int, m
 func TestBridgeServesTheHTTPAPIBeforeWhatsAppConnects(t *testing.T) {
 	hermeticHome(t)
 	session := filepath.Join(t.TempDir(), "session")
-	port := freePort(t)
+	port, released := heldBridgePort(t)
 	out := &lockedBuffer{}
 	b := startBridge(context.Background(), bridgeArgs{Port: port, Session: session, Mode: "bot"}, out,
 		map[string]string{"WHATSAPP_SEND_READ_RECEIPTS": "true", "WHATSAPP_DM_POLICY": "pairing"})
 	defer b.Kill()
-	if err := eventually(10*time.Second, func() bool { return !portIsFree(port) }); err != nil {
+	listening := "WhatsApp bridge listening on port " + strconv.Itoa(port)
+	if err := eventually(10*time.Second, func() bool { return strings.Contains(out.String(), listening) }); err != nil {
 		t.Fatalf("bridge never listened: %s", out.String())
 	}
 	status, health := bridgeHTTP(t, port, "GET", "/health", "", "")
@@ -94,7 +95,7 @@ func TestBridgeServesTheHTTPAPIBeforeWhatsAppConnects(t *testing.T) {
 	if code, done := b.Wait(5 * time.Second); !done || code != -15 {
 		t.Fatalf("terminate = %d %v", code, done)
 	}
-	if err := eventually(5*time.Second, func() bool { return portIsFree(port) }); err != nil {
+	if err := eventually(5*time.Second, released); err != nil {
 		t.Fatal("port held after the bridge stopped")
 	}
 }
@@ -109,7 +110,8 @@ func TestBridgeExitsOnAStaleSessionLikeALoggedOutSocket(t *testing.T) {
 		t.Fatal(err)
 	}
 	out := &lockedBuffer{}
-	b := startBridge(context.Background(), bridgeArgs{Port: freePort(t), Session: session}, out, map[string]string{})
+	port, _ := heldBridgePort(t)
+	b := startBridge(context.Background(), bridgeArgs{Port: port, Session: session}, out, map[string]string{})
 	code, done := b.Wait(60 * time.Second)
 	if !done || code != 1 {
 		t.Fatalf("exit = %d %v:\n%s", code, done, out.String())

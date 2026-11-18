@@ -670,7 +670,7 @@ func resolveAWSCredentialSource(ctx context.Context, s *awsSession) (awsCredenti
 	}
 	links := []awsChainLink{}
 	if envEnabled {
-		links = append(links, awsChainLink{"env", func(ctx context.Context, s *awsSession) (awsCredentialProvider, error) { return awsEnvProvider(s) }})
+		links = append(links, awsChainLink{"env", func(ctx context.Context, s *awsSession) (awsCredentialProvider, error) { return awsEnvProvider(ctx, s) }})
 	}
 	links = append(links,
 		awsChainLink{"assume-role", func(ctx context.Context, s *awsSession) (awsCredentialProvider, error) {
@@ -711,7 +711,7 @@ func awsProfileLinks(profile string, disableEnv bool) []awsChainLink {
 			return awsSharedCredentialsProvider(s, profile)
 		}},
 		{"custom-process", func(ctx context.Context, s *awsSession) (awsCredentialProvider, error) {
-			return awsProcessProvider(s, profile)
+			return awsProcessProvider(ctx, s, profile)
 		}},
 		{"config-file", func(ctx context.Context, s *awsSession) (awsCredentialProvider, error) {
 			return awsConfigFileProvider(s, profile)
@@ -720,7 +720,7 @@ func awsProfileLinks(profile string, disableEnv bool) []awsChainLink {
 }
 
 // Static or expiring keys from the AWS_ environment variables, partial keys are an error
-func awsEnvProvider(s *awsSession) (awsCredentialProvider, error) {
+func awsEnvProvider(ctx context.Context, s *awsSession) (awsCredentialProvider, error) {
 	if s.env("AWS_ACCESS_KEY_ID") == "" {
 		return nil, nil
 	}
@@ -747,7 +747,7 @@ func awsEnvProvider(s *awsSession) (awsCredentialProvider, error) {
 		}
 		return creds, nil
 	}
-	creds, err := read(context.Background())
+	creds, err := read(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -807,7 +807,7 @@ type awsProcessOutput struct {
 }
 
 // Runs the profile credential_process and parses its version 1 JSON
-func awsProcessProvider(s *awsSession, profile string) (awsCredentialProvider, error) {
+func awsProcessProvider(ctx context.Context, s *awsSession, profile string) (awsCredentialProvider, error) {
 	p, err := s.profile(profile)
 	if err != nil {
 		return nil, err
@@ -817,7 +817,7 @@ func awsProcessProvider(s *awsSession, profile string) (awsCredentialProvider, e
 		return nil, nil
 	}
 	fetch := func(ctx context.Context) (awsCredentials, error) { return awsRunCredentialProcess(ctx, command) }
-	creds, err := fetch(context.Background())
+	creds, err := fetch(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -827,6 +827,7 @@ func awsProcessProvider(s *awsSession, profile string) (awsCredentialProvider, e
 	return newAWSRefreshing(fetch, &creds), nil
 }
 
+// Runs the command untimed like botocore, killed once ctx ends, with pipes an orphan keeps open closed after a second
 func awsRunCredentialProcess(ctx context.Context, command string) (awsCredentials, error) {
 	argv, err := awsShellSplit(command)
 	if err != nil {
@@ -836,9 +837,13 @@ func awsRunCredentialProcess(ctx context.Context, command string) (awsCredential
 		return awsCredentials{}, &AWSCredentialError{Provider: "custom-process", Message: "credential_process is empty"}
 	}
 	cmd := exec.CommandContext(ctx, argv[0], argv[1:]...)
+	cmd.WaitDelay = time.Second
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout, cmd.Stderr = &stdout, &stderr
-	if err := cmd.Run(); err != nil {
+	if err := cmd.Run(); err != nil && !errors.Is(err, exec.ErrWaitDelay) {
+		if ctx.Err() != nil {
+			return awsCredentials{}, ctx.Err()
+		}
 		var exitErr *exec.ExitError
 		if errors.As(err, &exitErr) {
 			return awsCredentials{}, &AWSCredentialError{Provider: "custom-process", Message: stderr.String()}
@@ -1004,9 +1009,18 @@ func awsDefaultRoleSessionName() string {
 
 // ---- assume role ----
 
-// Prompt reading an MFA token code for a serial, replaced by tests
-var awsMFAPrompt = func(serial string) (string, error) {
-	return awsReadHiddenLine(fmt.Sprintf("Enter MFA code for %s: ", serial))
+// Hidden line reader the MFA code is typed into, the controlling terminal unless a hosted flow installs its question
+var (
+	awsMFAPromptMu sync.Mutex
+	awsMFAPrompt   = awsReadHiddenLine
+)
+
+// MFA code for a serial from the prompt installed now, abandoned once ctx ends
+func awsMFACode(ctx context.Context, serial string) (string, error) {
+	awsMFAPromptMu.Lock()
+	prompt := awsMFAPrompt
+	awsMFAPromptMu.Unlock()
+	return prompt(ctx, fmt.Sprintf("Enter MFA code for %s: ", serial))
 }
 
 // Resolver for role_arn profiles, following source_profile chains with loop detection
@@ -1104,7 +1118,7 @@ func (r *awsAssumeRoleResolver) viaAssumeRole(ctx context.Context, profile strin
 		}
 		q.Set("RoleSessionName", name)
 		if hasMFA {
-			code, err := awsMFAPrompt(mfaSerial)
+			code, err := awsMFACode(ctx, mfaSerial)
 			if err != nil {
 				return awsCredentials{}, err
 			}
@@ -1173,7 +1187,7 @@ func (r *awsAssumeRoleResolver) fromCredentialSource(ctx context.Context, name, 
 	var err error
 	switch strings.ToLower(name) {
 	case "environment":
-		prov, err = awsEnvProvider(r.s)
+		prov, err = awsEnvProvider(ctx, r.s)
 	case "ec2instancemetadata":
 		prov, err = awsIMDSProvider(ctx, r.s)
 	case "ecscontainer":
@@ -1274,16 +1288,28 @@ func awsSSOProvider(s *awsSession, profile string) (awsCredentialProvider, error
 	if len(missing) > 0 {
 		return nil, &AWSCredentialError{Message: fmt.Sprintf("The profile %q is configured to use SSO but is missing required configuration: %s", profile, strings.Join(missing, ", "))}
 	}
-	tokens := &awsSSOTokenSource{s: s, startURL: resolved["sso_start_url"], region: resolved["sso_region"], session: resolved["session_name"]}
+	tokens := &awsSSOTokenSource{s: s, profile: profile, startURL: resolved["sso_start_url"], region: resolved["sso_region"], session: resolved["session_name"]}
 	fetch := func(ctx context.Context) (awsCredentials, error) {
 		token, err := tokens.token(ctx)
 		if err != nil {
 			return awsCredentials{}, err
 		}
-		return s.ssoRoleCredentials(ctx, resolved["sso_region"], resolved["sso_account_id"], resolved["sso_role_name"], token)
+		return s.ssoRoleCredentials(ctx, profile, resolved["sso_region"], resolved["sso_account_id"], resolved["sso_role_name"], token)
 	}
 	return newAWSRefreshing(fetch, nil), nil
 }
+
+// SSO token state that aws sso login for the profile clears, missing, unreadable, expired or refused by the portal
+type awsSSOLoginError struct {
+	profile string
+	cause   error
+}
+
+func (e *awsSSOLoginError) Error() string {
+	return fmt.Sprintf("the SSO token of profile %s needs aws sso login", e.profile)
+}
+
+func (e *awsSSOLoginError) Unwrap() error { return e.cause }
 
 // Cached SSO token file of the aws sso login flow
 type awsSSOToken struct {
@@ -1314,6 +1340,7 @@ func awsSSOCachePath(startURL, session string) string {
 // SSO access token loader refreshing sso-session tokens through sso-oidc inside the 15 minute window
 type awsSSOTokenSource struct {
 	s        *awsSession
+	profile  string
 	startURL string
 	region   string
 	session  string
@@ -1327,16 +1354,18 @@ func (t *awsSSOTokenSource) load() (map[string]any, awsSSOToken, error) {
 		if t.session != "" {
 			subject = t.session
 		}
-		return nil, awsSSOToken{}, &AWSCredentialError{Message: fmt.Sprintf("Error loading SSO Token: Token for %s does not exist", subject), Err: err}
+		return nil, awsSSOToken{}, &AWSCredentialError{Message: fmt.Sprintf("Error loading SSO Token: Token for %s does not exist", subject),
+			Err: &awsSSOLoginError{profile: t.profile, cause: err}}
 	}
 	var raw map[string]any
 	var tok awsSSOToken
 	if err := json.Unmarshal(data, &raw); err != nil {
-		return nil, awsSSOToken{}, &AWSCredentialError{Message: "Error loading SSO Token: " + err.Error(), Err: err}
+		return nil, awsSSOToken{}, &AWSCredentialError{Message: "Error loading SSO Token: " + err.Error(), Err: &awsSSOLoginError{profile: t.profile, cause: err}}
 	}
 	_ = json.Unmarshal(data, &tok)
 	if tok.AccessToken == "" || tok.ExpiresAt == "" {
-		return nil, awsSSOToken{}, &AWSCredentialError{Message: fmt.Sprintf("Error loading SSO Token: Token for %s is invalid", t.startURL)}
+		return nil, awsSSOToken{}, &AWSCredentialError{Message: fmt.Sprintf("Error loading SSO Token: Token for %s is invalid", t.startURL),
+			Err: &awsSSOLoginError{profile: t.profile}}
 	}
 	return raw, tok, nil
 }
@@ -1351,7 +1380,7 @@ func (t *awsSSOTokenSource) token(ctx context.Context) (string, error) {
 	}
 	expires, err := awsParseTime(tok.ExpiresAt)
 	if err != nil {
-		return "", &AWSCredentialError{Message: "Error loading SSO Token: " + err.Error()}
+		return "", &AWSCredentialError{Message: "Error loading SSO Token: " + err.Error(), Err: &awsSSOLoginError{profile: t.profile, cause: err}}
 	}
 	now := awsNow()
 	if expires.Sub(now) < awsAdvisoryRefresh {
@@ -1372,7 +1401,7 @@ func (t *awsSSOTokenSource) token(ctx context.Context) (string, error) {
 		}
 	}
 	if !expires.After(awsNow()) {
-		return "", &AWSCredentialError{Provider: "sso", Message: "Token has expired and refresh failed"}
+		return "", &AWSCredentialError{Provider: "sso", Message: "Token has expired and refresh failed", Err: &awsSSOLoginError{profile: t.profile}}
 	}
 	return tok.AccessToken, nil
 }
@@ -1422,8 +1451,8 @@ func (t *awsSSOTokenSource) refresh(ctx context.Context, tok awsSSOToken) (awsSS
 		ExpiresAt: awsNow().Add(time.Duration(out.ExpiresIn * float64(time.Second))).UTC().Format(time.RFC3339)}, true
 }
 
-// SSO portal GetRoleCredentials for one account and role
-func (s *awsSession) ssoRoleCredentials(ctx context.Context, region, account, role, token string) (awsCredentials, error) {
+// SSO portal GetRoleCredentials for one account and role of a profile
+func (s *awsSession) ssoRoleCredentials(ctx context.Context, profile, region, account, role, token string) (awsCredentials, error) {
 	endpoint := s.configuredEndpoint("sso")
 	if endpoint == "" {
 		endpoint = "https://portal.sso." + region + "." + awsPartitionDNSSuffix(region)
@@ -1441,7 +1470,8 @@ func (s *awsSession) ssoRoleCredentials(ctx context.Context, region, account, ro
 	defer resp.Body.Close()
 	data, _ := io.ReadAll(resp.Body)
 	if resp.StatusCode == http.StatusUnauthorized {
-		return awsCredentials{}, &AWSCredentialError{Provider: "sso", Message: "The SSO session associated with this profile has expired or is otherwise invalid. To refresh this SSO session run aws sso login with the corresponding profile."}
+		return awsCredentials{}, &AWSCredentialError{Provider: "sso", Message: "The SSO session associated with this profile has expired or is otherwise invalid. To refresh this SSO session run aws sso login with the corresponding profile.",
+			Err: &awsSSOLoginError{profile: profile}}
 	}
 	if resp.StatusCode != http.StatusOK {
 		var e struct {
@@ -1745,9 +1775,8 @@ func awsIMDSFetch(ctx context.Context, client *http.Client, cfg awsIMDSConfig) (
 
 // ---- chain probes ----
 
-// Walks a fresh default chain and reports whether it yields an access key
-func awsChainHasCredentials(instanceMetadata bool) bool {
-	ctx := context.Background()
+// Walks a fresh default chain under ctx and reports whether it yields an access key
+func awsChainHasCredentials(ctx context.Context, instanceMetadata bool) bool {
 	s := newAWSSession(awsSessionOptions{DisableIMDS: !instanceMetadata})
 	src, err := resolveAWSCredentialSource(ctx, s)
 	if err != nil {

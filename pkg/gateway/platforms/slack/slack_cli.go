@@ -129,8 +129,8 @@ func ManifestCommand(ctx context.Context, ns map[string]any, w, errw io.Writer) 
 		"  3. Save; Slack will prompt to reinstall the app if scopes or\n"+
 		"     slash commands changed.\n"+
 		"  4. Make sure Socket Mode is enabled and you have a bot token\n"+
-		"     (xoxb-...) and app token (xapp-...) configured via\n"+
-		"     `icebath setup`.\n\n", target)
+		"     (xoxb-...) and app token (xapp-...) configured: start\n"+
+		"     `icebath` and type `/setup gateway`.\n\n", target)
 	return 0, nil
 }
 

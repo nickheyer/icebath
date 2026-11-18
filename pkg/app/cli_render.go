@@ -6,14 +6,11 @@ import (
 	"fmt"
 	"os"
 	"regexp"
-	"sort"
 	"strconv"
 	"strings"
 	"sync"
-	"sync/atomic"
 
 	"github.com/dlclark/regexp2/v2"
-	"github.com/mattn/go-runewidth"
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/i18n"
 	"github.com/nickheyer/icebath/pkg/internal/pyrich"
@@ -235,21 +232,6 @@ func detectLightMode() bool {
 	return result
 }
 
-// Forgets the cached light mode so the next read detects again
-func resetLightModeCache() {
-	lightModeMu.Lock()
-	lightModeCache = nil
-	lightModeMu.Unlock()
-}
-
-// Installs the skin color remap and detects light mode before the prompt owns the tty
-func primeLightModeForInteractive() {
-	installSkinLightModeHook()
-	if console().StdinIsTTY() && console().StdoutIsTTY() {
-		detectLightMode()
-	}
-}
-
 // Light mode equivalents of skin colors unreadable on cream backgrounds, standalone foregrounds only
 var lightModeRemap = map[string]string{
 	"#FFF8DC": "#1A1A1A", "#FFD700": "#9A6B00", "#FFBF00": "#8A5A00", "#B8860B": "#5C4500",
@@ -278,9 +260,6 @@ func maybeRemapForLightMode(hexColor string) string {
 	}
 	return hexColor
 }
-
-// Routes every skin color read through the light mode remap, idempotently
-func installSkinLightModeHook() { config.InstallSkinColorFilter(maybeRemapForLightMode) }
 
 // skinAwareANSI is an ANSI escape resolved from the skin on first use and reset after a skin switch
 type skinAwareANSI struct {
@@ -455,7 +434,6 @@ func clearOutputHistory() {
 	outputHistoryMu.Lock()
 	outputHistory = nil
 	outputHistoryMu.Unlock()
-	setChromeFloor(nil)
 }
 
 // Reports whether output is being recorded for replay
@@ -488,12 +466,6 @@ func recordOutputHistoryEntry(entry any) {
 
 // Width the terminal soft wraps a print at right now, nil when unknown
 func paintedColumns() *int {
-	if app := tuiApp(); app != nil {
-		if cols, _, ok := app.Size(); ok {
-			return &cols
-		}
-		return nil
-	}
 	_, cols, err := console().Size()
 	if err != nil {
 		return nil
@@ -514,418 +486,15 @@ func recordOutputHistory(text string, force bool) {
 	appendOutputHistory(lines...)
 }
 
-var ansiSequenceRe = regexp.MustCompile(`\x1b(?:\[[0-?]*[ -/]*[@-~]|\][^\x07\x1b]*(?:\x07|\x1b\\)|[@-Z\\-_])`)
-
-// The line without its first visible cells, escape sequences kept for their styling
-func ansiDropCells(line string, cells int) string {
-	var out strings.Builder
-	pos := 0
-	drop := func(segment string) {
-		for _, ch := range segment {
-			if cells > 0 {
-				cells -= runewidth.RuneWidth(ch)
-			} else {
-				out.WriteRune(ch)
-			}
-		}
-	}
-	for _, loc := range ansiSequenceRe.FindAllStringIndex(line, -1) {
-		drop(line[pos:loc[0]])
-		out.WriteString(line[loc[0]:loc[1]])
-		pos = loc[1]
-	}
-	drop(line[pos:])
-	return out.String()
-}
-
-var (
-	reflowTermPrefixes   = []string{"tmux", "screen", "xterm-kitty", "alacritty", "foot", "xterm-ghostty", "wezterm", "contour", "vte"}
-	noReflowTermPrefixes = []string{"linux", "st", "mosh", "vt", "cons", "rxvt"}
-	multiplexerEnv       = []string{"TMUX", "STY"}
-	noReflowEnv          = []string{"XTERM_VERSION"}
-	reflowEnv            = []string{"VTE_VERSION", "KITTY_WINDOW_ID", "WT_SESSION", "KONSOLE_VERSION", "ALACRITTY_WINDOW_ID", "WEZTERM_PANE", "GHOSTTY_RESOURCES_DIR"}
-	reflowTermPrograms   = []string{"iTerm.app", "Apple_Terminal", "WezTerm", "vscode", "ghostty", "Tabby", "Hyper"}
-)
-
-// Reports one of the environment names set
-func anyEnvSet(names []string) bool {
-	for _, name := range names {
-		if os.Getenv(name) != "" {
-			return true
-		}
-	}
-	return false
-}
-
-// Reports one of the prefixes starting the text
-func hasAnyPrefix(text string, prefixes []string) bool {
-	for _, p := range prefixes {
-		if strings.HasPrefix(text, p) {
-			return true
-		}
-	}
-	return false
-}
-
-// Whether the terminal re wraps shown rows when its width changes, known false when nothing says
-func terminalReflows() (bool, bool) {
-	term := strings.ToLower(os.Getenv("TERM"))
-	if hasAnyPrefix(term, reflowTermPrefixes) {
-		return true, true
-	}
-	if hasAnyPrefix(term, noReflowTermPrefixes) {
-		return false, true
-	}
-	if anyEnvSet(multiplexerEnv) {
-		return true, true
-	}
-	if anyEnvSet(noReflowEnv) {
-		return false, true
-	}
-	if anyEnvSet(reflowEnv) {
-		return true, true
-	}
-	for _, program := range reflowTermPrograms {
-		if os.Getenv("TERM_PROGRAM") == program {
-			return true, true
-		}
-	}
-	if os.Getenv("LC_TERMINAL") == "iTerm2" {
-		return true, true
-	}
-	return false, false
-}
-
-// Rows the line fills when the terminal soft wraps it at columns
-func lineRows(line string, columns int) int {
-	width := runewidth.StringWidth(ansiSequenceRe.ReplaceAllString(line, ""))
-	if columns <= 0 {
-		return 1
-	}
-	return max(1, (width+columns-1)/columns)
-}
-
-// Newest lines filling maxRows, wrapped at the painted width or columns, the oldest cut to its bottom rows
-func outputTailFitting(lines []*paintedLine, maxRows, columns int, painted bool) []*paintedLine {
-	var kept []*paintedLine
-	used := 0
-	for i := len(lines) - 1; i >= 0; i-- {
-		if used >= maxRows {
-			break
-		}
-		line := lines[i]
-		cols := columns
-		if painted && line.Width != nil && *line.Width != 0 {
-			cols = *line.Width
-		}
-		height := lineRows(line.Text, cols)
-		if used+height > maxRows {
-			kept = append(kept, &paintedLine{Text: ansiDropCells(line.Text, (height-(maxRows-used))*cols), plain: true})
-			break
-		}
-		used += height
-		kept = append(kept, line)
-	}
-	for l, r := 0, len(kept)-1; l < r; l, r = l+1, r-1 {
-		kept[l], kept[r] = kept[r], kept[l]
-	}
-	return kept
-}
-
-// The recorded output as the lines a replay paints, callable entries rendered now
-func outputHistoryLines() []*paintedLine {
-	outputHistoryMu.Lock()
-	entries := append([]any(nil), outputHistory...)
-	outputHistoryMu.Unlock()
-	var rendered []*paintedLine
-	for _, entry := range entries {
-		switch e := entry.(type) {
-		case *paintedLine:
-			rendered = append(rendered, e)
-		case func() []string:
-			for _, line := range e() {
-				rendered = append(rendered, &paintedLine{Text: line, plain: true})
-			}
-		case func() string:
-			for _, line := range pystr.Splitlines(e(), false) {
-				rendered = append(rendered, &paintedLine{Text: line, plain: true})
-			}
-		case string:
-			rendered = append(rendered, &paintedLine{Text: e, plain: true})
-		}
-	}
-	return rendered
-}
-
-// Rows the whole recorded output fills, nil when that reaches the limit or recording is off
-func outputHistoryRows(limit, columns int, painted bool) *int {
-	outputHistoryMu.Lock()
-	enabled := outputHistoryEnabled
-	outputHistoryMu.Unlock()
-	if !enabled {
-		return nil
-	}
-	total := 0
-	lines := outputHistoryLines()
-	for i := len(lines) - 1; i >= 0; i-- {
-		cols := columns
-		if painted && lines[i].Width != nil && *lines[i].Width != 0 {
-			cols = *lines[i].Width
-		}
-		total += lineRows(lines[i].Text, cols)
-		if total >= limit {
-			return nil
-		}
-	}
-	return &total
-}
-
 // Prints ANSI text and a newline straight to the console
 func ptPrintANSI(text string) { fmt.Fprintln(console().Out, text) }
 
-// heldPaint is one paint deferred while a resize awaits its recovery
-type heldPaint struct {
-	seq   int64
-	paint func()
-}
-
-// paintGateEntry is the running application and the gate telling when output must wait for a resize recovery
-type paintGateEntry struct {
-	app  tuiApplication
-	gate func() bool
-}
-
-var (
-	heldPaintsMu  sync.Mutex
-	heldPaints    []heldPaint
-	paintsHeld    bool
-	paintSeq      atomic.Int64
-	renderStateMu sync.Mutex
-	paintGate     *paintGateEntry
-	chromeFloor   *int
-	suspectRows   int
-)
-
-// Records the rows from the top of the prompt chrome to the bottom of the screen, nil when unknown
-func setChromeFloor(rows *int) {
-	renderStateMu.Lock()
-	chromeFloor = rows
-	renderStateMu.Unlock()
-}
-
-// Rows from the top of the prompt chrome to the bottom of the screen, nil when unknown
-func currentChromeFloor() *int {
-	renderStateMu.Lock()
-	defer renderStateMu.Unlock()
-	return chromeFloor
-}
-
-// Adds rows output scrolled into scrollback while the width changed under it
-func addSuspectRows(rows int) {
-	renderStateMu.Lock()
-	suspectRows += max(0, rows)
-	renderStateMu.Unlock()
-}
-
-// Takes and resets the suspect row count
-func takeSuspectRows() int {
-	renderStateMu.Lock()
-	defer renderStateMu.Unlock()
-	rows := suspectRows
-	suspectRows = 0
-	return rows
-}
-
-// Holds cprint paints until released while a resize awaits its recovery
-func holdPaints() {
-	heldPaintsMu.Lock()
-	if !paintsHeld {
-		paintsHeld, heldPaints = true, nil
-	}
-	heldPaintsMu.Unlock()
-}
-
-// Paints, in request order, what holdPaints held
-func releasePaints() {
-	heldPaintsMu.Lock()
-	held := heldPaints
-	heldPaints, paintsHeld = nil, false
-	heldPaintsMu.Unlock()
-	sort.SliceStable(held, func(i, j int) bool { return held[i].seq < held[j].seq })
-	for _, h := range held {
-		func() {
-			defer func() { _ = recover() }()
-			h.paint()
-		}()
-	}
-}
-
-// Queues the paint when paints are held, or must be because the width changed under the app
-func paintHeld(seq int64, paint func(), app tuiApplication) bool {
-	renderStateMu.Lock()
-	gate := paintGate
-	renderStateMu.Unlock()
-	if gate != nil && gate.app == app && gate.gate() {
-		holdPaints()
-	}
-	heldPaintsMu.Lock()
-	defer heldPaintsMu.Unlock()
-	if !paintsHeld {
-		return false
-	}
-	heldPaints = append(heldPaints, heldPaint{seq: seq, paint: paint})
-	return true
-}
-
-// Prints ANSI text through the live application renderer, else straight to the console
+// Prints ANSI text straight to the console, recording it in the output history
 func cprint(text string) {
-	app := tuiApp()
-	if app == nil || !app.IsRunning() {
-		recording := outputHistoryRecording()
-		releasePaints()
-		if recording {
-			recordOutputHistory(text, true)
-		}
-		ptPrintANSI(text)
-		return
+	if outputHistoryRecording() {
+		recordOutputHistory(text, true)
 	}
-	paintThroughTUIApp(text)
-}
-
-// Paints text above the running prompt, on the loop directly, from elsewhere scheduled onto it
-func paintThroughTUIApp(text string) {
-	app := tuiApp()
-	recording := outputHistoryRecording()
-	seq := paintSeq.Add(1)
-	painted := func(paint func()) func() {
-		return func() {
-			if recording {
-				recordOutputHistory(text, true)
-			}
-			paint()
-		}
-	}
-	paintFallback := painted(func() { ptPrintANSI(text) })
-	if app == nil || !app.IsRunning() {
-		releasePaints()
-		paintFallback()
-		return
-	}
-	paintPT := painted(func() { app.PrintAbove(text) })
-	if app.OnLoop() {
-		if !paintHeld(seq, paintPT, app) {
-			paintPT()
-		}
-		return
-	}
-	var schedule func()
-	schedule = func() {
-		if !app.IsRunning() {
-			paintFallback()
-			return
-		}
-		if paintHeld(seq, schedule, app) {
-			return
-		}
-		if app.TerminalBusy() {
-			app.RunInTerminal(func() {
-				if !paintHeld(seq, schedule, app) {
-					paintPT()
-				}
-			})
-			return
-		}
-		floor := currentChromeFloor()
-		if floor != nil {
-			f := max(*floor, app.ChromeRows())
-			floor = &f
-		}
-		columns, _, _ := app.Size()
-		paintPT()
-		printed := 0
-		for _, line := range strings.Split(text, "\n") {
-			printed += lineRows(line, columns)
-		}
-		if cols, _, _ := app.Size(); cols != columns {
-			addSuspectRows(printed)
-		}
-		if floor != nil {
-			f := max(0, *floor-printed)
-			setChromeFloor(&f)
-		}
-	}
-	if !app.CallSoonThreadsafe(schedule) {
-		paintFallback()
-	}
-}
-
-// replayFit limits a history replay to the newest lines fitting rows from screen row top
-type replayFit struct {
-	Rows, Columns int
-	Painted       bool
-	Top           *int
-}
-
-// Repaints recent output above the prompt after a full screen clear
-func replayOutputHistory(fit *replayFit, output tuiApplication) {
-	outputHistoryMu.Lock()
-	if !outputHistoryEnabled || len(outputHistory) == 0 {
-		outputHistoryMu.Unlock()
-		return
-	}
-	outputHistoryReplaying = true
-	outputHistoryMu.Unlock()
-	defer func() {
-		outputHistoryMu.Lock()
-		outputHistoryReplaying = false
-		outputHistoryMu.Unlock()
-	}()
-	rendered := outputHistoryLines()
-	var top *int
-	columns := 0
-	if fit != nil {
-		rendered = outputTailFitting(rendered, fit.Rows, fit.Columns, fit.Painted)
-		columns, top = fit.Columns, fit.Top
-	}
-	if len(rendered) == 0 {
-		return
-	}
-	texts := make([]string, len(rendered))
-	for i, line := range rendered {
-		texts[i] = line.Text
-	}
-	joined := strings.Join(texts, "\n")
-	if output == nil {
-		if app := tuiApp(); app != nil && app.IsRunning() {
-			app.PrintAbove(joined)
-		} else {
-			ptPrintANSI(joined)
-		}
-	} else {
-		output.PrintRaw(joined + "\n")
-		cols, rows, _ := output.Size()
-		if top != nil {
-			t := *top
-			for _, line := range rendered {
-				t += lineRows(line.Text, columns)
-			}
-			f := max(0, rows-t)
-			setChromeFloor(&f)
-			if cols != columns {
-				addSuspectRows(t + 1 - rows)
-			}
-		}
-	}
-	width := paintedColumns()
-	if fit != nil {
-		w := columns
-		width = &w
-	}
-	for _, line := range rendered {
-		if !line.plain {
-			line.Width = width
-		}
-	}
+	ptPrintANSI(text)
 }
 
 // Prepends a one shot note to a user message, folded into the first text part of a content list
@@ -965,22 +534,11 @@ func prependNoteToMessage(message any, note string) any {
 	return message
 }
 
-// Reports whether a prompt application currently owns the live terminal
-func PromptAppIsRunning() bool { return ptAppIsRunning() }
+// Reports whether the terminal UI runs in this process and owns the terminal
+func PromptAppIsRunning() bool { return terminalUIRunning.Load() }
 
-func ptAppIsRunning() bool {
-	app := tuiApp()
-	return app != nil && app.IsRunning()
-}
-
-// Prints to the console unless a prompt application owns the terminal, then through it
-func cliVisiblePrint(text string) {
-	if ptAppIsRunning() {
-		cprint(text)
-		return
-	}
-	fmt.Fprintln(console().Out, text)
-}
+// Prints one line straight to the console without recording it
+func cliVisiblePrint(text string) { fmt.Fprintln(console().Out, text) }
 
 var oscEscapeRe = regexp.MustCompile(`\x1b\][\s\S]*?(?:\x07|\x1b\\)`)
 

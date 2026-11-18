@@ -79,7 +79,7 @@ func (s *Store) preflightCheckProviderKey(ctx context.Context, job *Job, cfg con
 	if provider.IsRateLimitedAuthError(authErr) {
 		return nil
 	}
-	msg := fmt.Sprintf("provider credential missing: %v %s. Set the provider API key in .env (or `icebath setup`) for that home, or pin a working provider via `icebath cron edit %s --provider <p>`.", authErr, s.credentialStoreScopeLabel(ctx), job.ID)
+	msg := fmt.Sprintf("provider credential missing: %v %s. Set the provider API key in .env (or start `icebath` and type `/setup model`) for that home, or pin a working provider via `icebath cron edit %s --provider <p>`.", authErr, s.credentialStoreScopeLabel(ctx), job.ID)
 	return &msg
 }
 
@@ -153,7 +153,7 @@ func (s *Store) preflightCheckDelivery(ctx context.Context, job *Job) *string {
 			}
 		}
 		if !connected[strings.ToLower(platform)] && !s.deliveryPlatformRoutedFromPrimaryGateway(ctx, platform) {
-			msg := fmt.Sprintf("delivery platform '%s' has no gateway credentials configured (not connected). Configure it via `icebath setup` or change the job's `deliver` target.", platform)
+			msg := fmt.Sprintf("delivery platform '%s' has no gateway credentials configured (not connected). Configure it (start `icebath` and type `/setup gateway`) or change the job's `deliver` target.", platform)
 			return &msg
 		}
 	}

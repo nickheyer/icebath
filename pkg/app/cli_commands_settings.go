@@ -5,7 +5,6 @@ import (
 	"os"
 	"os/exec"
 	"strings"
-	"time"
 
 	"github.com/nickheyer/icebath/pkg/commands"
 	"github.com/nickheyer/icebath/pkg/config"
@@ -110,7 +109,7 @@ func (c *CLI) handleBranchCommand(cmdOriginal string) {
 		return
 	}
 	_, branchName := parseBranchArgs(commandArg(cmdOriginal, false))
-	now := time.Now()
+	now := cliNow()
 	var newSessionID, branchTitle, parentSessionID string
 	err := func() (err error) {
 		defer func() {
@@ -400,9 +399,6 @@ func (c *CLI) handleSkinCommand(cmd string) {
 		saved = c.commandsT("skin.saved_suffix", nil)
 	}
 	printLines("  "+c.commandsT("skin.set_to", map[string]any{"name": newSkin, "saved": saved}), "  "+c.commandsT("skin.banner_note", nil))
-	if c.applyTUISkinStyle() {
-		printLines("  " + c.commandsT("skin.colors_updated", nil))
-	}
 }
 
 // Opens the editor on a temp markdown file and returns the saved text with comment lines removed

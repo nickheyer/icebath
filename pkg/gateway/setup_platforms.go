@@ -564,7 +564,7 @@ func SetupGateway(ctx context.Context, cfg config.Tree) error {
 	}
 	selected := WizardSetup.PromptChecklist("Select platforms to configure:", items, preSelected)
 	if len(selected) == 0 {
-		WizardSetup.PrintInfo("No platforms selected. Run 'icebath setup gateway' later to configure.")
+		WizardSetup.PrintInfo("No platforms selected. Type '/setup gateway' in icebath later to configure.")
 	}
 	for _, idx := range selected {
 		at, ok := pyIndex(idx, len(platforms))

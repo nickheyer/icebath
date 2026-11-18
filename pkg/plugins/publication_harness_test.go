@@ -14,17 +14,17 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/home"
+	"github.com/nickheyer/icebath/pkg/internal/homeguard"
 	"github.com/nickheyer/icebath/pkg/pm"
 )
 
-// Real uv from PATH, else the pinned uv the pm suite caches under the user cache
+// Real uv from PATH, else the pinned uv the pm suite keeps in the shared developer cache
 func pubUV(t *testing.T) string {
 	t.Helper()
 	if found, err := exec.LookPath("uv"); err == nil {
 		return found
 	}
-	cache, err := os.UserCacheDir()
-	if err == nil {
+	if cache := homeguard.SharedCache(); cache != "" {
 		matches, _ := filepath.Glob(filepath.Join(cache, "icebath-pm-tests", "uv-*"))
 		for _, root := range matches {
 			found := ""

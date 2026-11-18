@@ -21,7 +21,7 @@ func discoveryEnv(t *testing.T, logs *bytes.Buffer) *Env {
 
 func TestEnsureWebPluginsLoadedRunsDiscoveryFirst(t *testing.T) {
 	stubPublicHosts(t)
-	swapDDGS(t, &ddgsClientAvailable, func(context.Context) bool { return false })
+	swapDDGS(t, &ddgsClientAvailable, func(*Env) bool { return false })
 	var logs bytes.Buffer
 	env := discoveryEnv(t, &logs)
 	var mu sync.Mutex
@@ -35,7 +35,7 @@ func TestEnsureWebPluginsLoadedRunsDiscoveryFirst(t *testing.T) {
 		return nil
 	}
 	stubPublicHosts(t)
-	swapDDGS(t, &ddgsClientAvailable, func(context.Context) bool { return false })
+	swapDDGS(t, &ddgsClientAvailable, func(*Env) bool { return false })
 	WebSearchTool(context.Background(), env, "q", 3)
 	WebExtractTool(context.Background(), env, []any{"https://example.com/page"}, "", nil)
 	CheckWebAPIKey(env)

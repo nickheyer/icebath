@@ -13,6 +13,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/agent"
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/i18n"
+	"github.com/nickheyer/icebath/pkg/internal/pydatetime"
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pyrich"
@@ -107,6 +108,9 @@ func (c *CLI) wipeConsoleOnExit() {
 	_ = runClearCommand(cmd)
 }
 
+// Session clock reading the wall time as datetime.now() does, swapped by tests
+var cliNow = pydatetime.Now
+
 // Prints the session resume commands, title, duration and message counts on exit
 func (c *CLI) printExitSummary(clearScreen bool) {
 	if clearScreen {
@@ -131,7 +135,7 @@ func (c *CLI) printExitSummary(clearScreen bool) {
 			toolCalls++
 		}
 	}
-	total := int(time.Since(c.sessionStart).Seconds())
+	total := int(cliNow().Sub(c.sessionStart) / time.Second)
 	hours, remainder := floorDivMod(total, 3600)
 	minutes, seconds := floorDivMod(remainder, 60)
 	duration := c.t("cli.shared.duration_s", map[string]any{"seconds": seconds})

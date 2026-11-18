@@ -278,7 +278,7 @@ func spotifyWaitForCallback(h, redirectURI string, timeoutSeconds float64) (map[
 		server.listener = tls.NewListener(server.listener, cfg)
 		server.server.ErrorLog = log.New(io.Discard, "", 0)
 	}
-	return serveLoopbackCallback(server, result, time.Duration(timeoutSeconds*float64(time.Second)), errFn, "spotify_callback_timeout")
+	return serveLoopbackCallback(context.Background(), server, result, time.Duration(timeoutSeconds*float64(time.Second)), errFn, "spotify_callback_timeout")
 }
 
 // Whole non negative seconds of an expires_in value, zero when int() of it fails

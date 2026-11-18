@@ -5,7 +5,6 @@ import (
 	"errors"
 	"strings"
 
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/pet"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
@@ -19,14 +18,7 @@ func HatchCommand(ctx context.Context, env *tools.Env, home, concept string, t f
 		say(t("hatch.usage", nil))
 		return nil
 	}
-	words := pystr.SplitWhitespace(concept, -1)
-	if len(words) > 3 {
-		words = words[:3]
-	}
-	for i, w := range words {
-		words[i] = pystr.Capitalize(w)
-	}
-	displayName := pystr.Strip(pystr.Slice(strings.Join(words, " "), 0, 28))
+	displayName := pet.DisplayNameFor(concept)
 	if displayName == "" {
 		displayName = t("hatch.default_name", nil)
 	}

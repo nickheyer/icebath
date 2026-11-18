@@ -21,14 +21,17 @@ func normalizeGitBashPath(p string) string {
 	return strings.ToUpper(m[1]) + ":\\" + strings.ReplaceAll(m[2], "/", "\\")
 }
 
-// Git repo root of the working directory in Git Bash normalized form, empty outside a repo
-func gitRepoRoot() string {
-	out, ok, err := worktreeGitOut([]string{"rev-parse", "--show-toplevel"}, "", 5*time.Second)
+// Repository root of a directory in Git Bash normalized form, the working directory when empty, empty outside a repo
+func GitRepoRootOf(cwd string) string {
+	out, ok, err := worktreeGitOut([]string{"rev-parse", "--show-toplevel"}, cwd, 5*time.Second)
 	if err != nil || !ok {
 		return ""
 	}
 	return normalizeGitBashPath(out)
 }
+
+// Git repo root of the working directory in Git Bash normalized form, empty outside a repo
+func gitRepoRoot() string { return GitRepoRootOf("") }
 
 // GitRepoRoot returns the repository root of the working directory, empty outside a repository
 func GitRepoRoot() string { return gitRepoRoot() }

@@ -103,7 +103,7 @@ func TestDoctorToolAvailabilitySummaryImageGenWithoutProviderReportsSetupHintNot
 	}
 	found := false
 	for _, issue := range f.Issues {
-		found = found || strings.Contains(issue, "icebath setup")
+		found = found || strings.Contains(issue, "/setup tools")
 	}
 	if !found {
 		t.Fatalf("issues = %q", f.Issues)

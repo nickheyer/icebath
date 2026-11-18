@@ -1,7 +1,10 @@
 package commands
 
 import (
+	"context"
 	"strings"
+
+	"github.com/nickheyer/icebath/pkg/gateway"
 )
 
 // Kind classifies one typed composer line
@@ -49,11 +52,6 @@ func SlashArgs(cmd string) string {
 	return strings.TrimSpace(rest[len(parts[0]):])
 }
 
-// Parse classifies a typed line and builds the invocation for slash and bang input
-func Parse(line string) (*Invocation, Kind) {
-	return ParseWith(Default, line)
-}
-
 // ParseWith classifies a typed line against a specific registry
 func ParseWith(r *Registry, line string) (*Invocation, Kind) {
 	if IsBangCommand(line) {
@@ -75,5 +73,43 @@ func ParseWith(r *Registry, line string) (*Invocation, Kind) {
 	return inv, KindSkill
 }
 
-// ExecuteKeyOf returns the shared executor key of a command, empty when it has none
-func ExecuteKeyOf(name string) string { return MetaOf(name).Execute }
+// Refusal of a registered command that has no handler bound
+type UnboundError struct{ Name string }
+
+func (e *UnboundError) Error() string { return "commands: /" + e.Name + " has no handler bound" }
+
+// Refusal of a name no registry entry resolves
+type UnknownCommandError struct{ Name string }
+
+func (e *UnknownCommandError) Error() string { return "commands: unknown command /" + e.Name }
+
+// Runs the handler bound to a typed command or alias against the host it hands its work to
+func RunHandler(ctx context.Context, r *Registry, name, args string, host any) error {
+	line := "/" + strings.TrimLeft(name, "/")
+	if strings.TrimSpace(args) != "" {
+		line += " " + args
+	}
+	inv, kind := ParseWith(r, line)
+	if kind != KindSlash {
+		return &UnknownCommandError{Name: strings.TrimLeft(strings.ToLower(name), "/")}
+	}
+	if inv.Def.Handler == nil {
+		return &UnboundError{Name: inv.Def.Name}
+	}
+	inv.Host = host
+	return inv.Def.Handler(ctx, inv)
+}
+
+// Gateway view of the default registry command a typed name binds a handler to, false when it binds none
+func BoundGatewayCommand(name string) (gateway.RegistryCommand, bool) {
+	d := Resolve(name)
+	if d == nil || d.Handler == nil {
+		return gateway.RegistryCommand{}, false
+	}
+	return gateway.RegistryCommand{Name: d.Name, BusyPolicy: string(d.BusyPolicy), BusyHandler: d.BusyHandler}, true
+}
+
+// Runs the default registry handler bound to a typed name against the host taking its turn
+func RunBoundGatewayCommand(ctx context.Context, name, arg string, host any) error {
+	return RunHandler(ctx, Default, name, arg, host)
+}

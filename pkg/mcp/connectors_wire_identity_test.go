@@ -140,13 +140,16 @@ func TestWireEachConnectPathNamesItsInitiator(t *testing.T) {
 	g := wireMintGateway(t)
 	env := &tools.Env{Home: dir}
 	ctx := context.Background()
-	op := tools.NewConnectionOperation([]*tools.ConnTarget{tools.NewConnTarget("gmail", "connector", "connect")}, "", "", nil)
-	client, err := tools.NewManagedClient(env, true, tools.InitiatorAgentTool, nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := tools.Mint(ctx, env, client, op, []string{"gmail"}, false, tools.ActorBackendWatcher, ""); err != nil {
-		t.Fatal(err)
+	var op *tools.ConnectionOperation
+	for _, initiator := range []string{tools.InitiatorAgentTool, tools.InitiatorConnectorsPage} {
+		op = tools.NewConnectionOperation([]*tools.ConnTarget{tools.NewConnTarget("gmail", "connector", "connect")}, "", "", nil)
+		client, err := tools.NewManagedClient(env, true, initiator, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := tools.Mint(ctx, env, client, op, []string{"gmail"}, false, tools.ActorBackendWatcher, ""); err != nil {
+			t.Fatal(err)
+		}
 	}
 	if _, err := op.Transition("gmail", tools.TargetFailed, tools.ActorBackendWatcher, tools.TransitionFields{}); err != nil {
 		t.Fatal(err)
@@ -158,7 +161,7 @@ func TestWireEachConnectPathNamesItsInitiator(t *testing.T) {
 	for _, body := range g.sent {
 		initiators = append(initiators, body["initiator"])
 	}
-	if !reflect.DeepEqual(initiators, []any{"agent_tool", "card_retry"}) {
+	if !reflect.DeepEqual(initiators, []any{"agent_tool", "desktop_page", "card_retry"}) {
 		t.Fatalf("initiators %v", initiators)
 	}
 }

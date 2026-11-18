@@ -14,7 +14,7 @@ func TestAuthLockTimeoutContentionGetsTheWaitCopy(t *testing.T) {
 	} {
 		t.Run(name, func(t *testing.T) {
 			message := agentInitFailedMessage(errors.New(text))
-			if strings.Contains(message, "/model") || strings.Contains(message, "icebath setup") {
+			if strings.Contains(message, "/model") || strings.Contains(message, "/setup model") {
 				t.Fatalf("lock contention kept the setup hints: %q", message)
 			}
 			if !strings.Contains(message, "lock") || !strings.Contains(message, "background icebath process") {
@@ -26,14 +26,14 @@ func TestAuthLockTimeoutContentionGetsTheWaitCopy(t *testing.T) {
 
 func TestGenericTimeoutKeepsTheModelSetupHints(t *testing.T) {
 	message := agentInitFailedMessage(errors.New("connect timed out"))
-	if !strings.Contains(message, "/model") || !strings.Contains(message, "icebath setup") {
+	if !strings.Contains(message, "/model") || !strings.Contains(message, "/setup model") {
 		t.Fatalf("message = %q", message)
 	}
 }
 
 func TestOtherInitFailuresKeepTheModelSetupHints(t *testing.T) {
 	message := agentInitFailedMessage(errors.New("provider bootstrap failed"))
-	if !strings.Contains(message, "/model") || !strings.Contains(message, "icebath setup") {
+	if !strings.Contains(message, "/model") || !strings.Contains(message, "/setup model") {
 		t.Fatalf("message = %q", message)
 	}
 }

@@ -134,18 +134,3 @@ func queryOSC11Background() (string, bool, error) {
 	}
 	return fmt.Sprintf("#%02X%02X%02X", osc11Component(m[1]), osc11Component(m[2]), osc11Component(m[3])), true, nil
 }
-
-// Re applies raw mode when the descriptor drifted back to cooked, false when already raw or not a tty
-func healCookedModeDrift(fd int) bool {
-	attrs, err := termiosGet(fd)
-	if err != nil {
-		return false
-	}
-	if attrs.Lflag&(unix.ICANON|unix.ECHO) == 0 {
-		return false
-	}
-	attrs.Lflag &^= unix.ECHO | unix.ICANON | unix.IEXTEN | unix.ISIG
-	attrs.Iflag &^= unix.IXON | unix.IXOFF | unix.ICRNL | unix.INLCR | unix.IGNCR
-	attrs.Cc[unix.VMIN] = 1
-	return termiosSet(fd, tcSetsNow, attrs) == nil
-}

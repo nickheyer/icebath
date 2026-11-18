@@ -2,6 +2,7 @@ package selfupdate
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -17,11 +18,11 @@ import (
 	"github.com/nickheyer/icebath/pkg/selfupdate/updaterecord"
 )
 
-// Release download and swap, checkout rebuild, source check and build revision, replaced by tests
+// Release planning and swap, checkout rebuild and build revision, replaced by tests
 var (
-	releaseBinaryUpdate = install.UpdateBinary
+	releasePlanner      = install.PlanRelease
+	releaseApply        = install.ApplyRelease
 	checkoutBinaryBuild = buildCheckoutBinary
-	releaseSourceCheck  = CheckForUpdates
 	releaseCheckoutSHA  = updaterecord.ReadCheckoutSHA
 )
 
@@ -48,82 +49,193 @@ func releaseRevision(ctx context.Context, root string) string {
 	return ""
 }
 
-// Reports a release install's distance from its channel through the source check of its build revision
-func checkReleaseUpdate(ctx context.Context, w io.Writer, branch string, branchExplicit bool, channel *string) error {
-	opts := SourceCheckOptions{Force: true, Channel: channel}
-	if branchExplicit {
-		opts.Branch = &branch
+// Repository a release install updates from, ICEBATH_REPO_URL first, then the one it recorded, then the official one
+func releaseRepository(root string) string {
+	if repo := strings.TrimSpace(os.Getenv("ICEBATH_REPO_URL")); repo != "" {
+		return repo
 	}
-	status, err := releaseSourceCheck(ctx, opts)
+	if repo := install.InstalledRepository(root); repo != "" {
+		return repo
+	}
+	return install.DefaultRepoURL
+}
+
+// Release a release install's update selects, ordered against the installed build under its channel's rules
+type releaseUpdate struct {
+	plan    *install.ReleasePlan
+	channel string
+	follows string
+	pinned  bool
+	forward bool
+	source  *SourceTarget
+	record  map[string]any
+}
+
+// Failure to name or resolve the update channel, the stop an update records as channel_unresolved
+type releaseChannelError struct{ err error }
+
+func (e *releaseChannelError) Error() string { return e.err.Error() }
+
+func (e *releaseChannelError) Unwrap() error { return e.err }
+
+// Whether the update moves back to an older release, only a pinning channel the user chose consenting
+func (u *releaseUpdate) rollback() bool {
+	return u.plan.Order == install.ReleaseOlder && u.pinned && !u.forward
+}
+
+// Whether the update replaces the binary, a newer release or a consented move back
+func (u *releaseUpdate) moves() bool { return u.plan.Order == install.ReleaseNewer || u.rollback() }
+
+// Release, its version and commit, the way release channels name their target
+func (u *releaseUpdate) label() string {
+	label := u.follows + " " + u.plan.Target.Tag
+	if commit := u.plan.Target.Commit; commit != "" {
+		label += " (" + commit[:min(12, len(commit))] + ")"
+	}
+	return label
+}
+
+// Selects the release and its order for the channel or explicit branch, the one plan check and update read
+func planReleaseUpdate(ctx context.Context, root string, channelArg *string, branch string, branchExplicit bool) (*releaseUpdate, error) {
+	cfg, err := config.RequireReadableConfigBeforeWrite(ctx, filepath.Join(home.Dir(ctx), "config.yaml"))
 	if err != nil {
-		return err
+		return nil, err
 	}
-	behind, _ := status.Get("behind")
-	label := branch
-	if selected, ok := status.Get("channel"); ok && pyrepr.Truthy(selected) {
-		label = pyrepr.Str(selected)
-	} else if selected, ok := status.Get("branch"); ok && pyrepr.Truthy(selected) {
-		label = pyrepr.Str(selected)
+	var channel string
+	if channelArg != nil && *channelArg != "" {
+		channel, err = ValidateChannelName(*channelArg)
+	} else {
+		channel, err = ResolveUpdateChannel(cfg, root)
 	}
-	count, counted := pyrepr.Int(behind)
+	if err != nil {
+		return nil, &releaseChannelError{err}
+	}
+	record := ChannelRecord(cfg, root)
+	forward, err := RidesDefaultChannel(record, channel, root)
+	if err != nil {
+		return nil, err
+	}
+	u := &releaseUpdate{channel: channel, follows: channel, forward: forward, record: deepCopyRecord(record)}
+	repository := releaseRepository(root)
+	query := install.ReleaseQuery{Branch: channel}
 	switch {
-	case !counted:
-		reason := "the release this binary was built from is unknown"
-		for _, key := range []string{"message", "error", "reason"} {
-			if value, ok := status.Get(key); ok && pyrepr.Truthy(value) {
-				reason = pyrepr.Str(value)
-				break
-			}
+	case branchExplicit:
+		query, u.follows = install.ReleaseQuery{Branch: branch}, branch
+	case channel == ChannelStable:
+		query, u.pinned = install.ReleaseQuery{Stable: true}, true
+	case channel != ChannelMain:
+		repo, err := install.ParseRepo(repository)
+		if err != nil {
+			return nil, err
 		}
-		fmt.Fprintf(w, "✗ Could not check for updates: %s\n", reason)
+		source, err := checkResolveSourceTarget(WithRetryingReads(ctx), channel, nil, root, repo.Owner+"/"+repo.Name, false)
+		if err != nil {
+			return nil, &releaseChannelError{err}
+		}
+		u.source, u.follows = &source, source.Channel
+		if source.Commit != "" {
+			query, u.pinned = install.ReleaseQuery{Commit: source.Commit}, true
+		} else {
+			query = install.ReleaseQuery{Branch: source.Branch}
+		}
+	}
+	if u.plan, err = releasePlanner(ctx, root, repository, query); err != nil {
+		return nil, err
+	}
+	return u, nil
+}
+
+// Verdict line of a plan that moves nowhere or back, printed alike by the check and the update
+func (u *releaseUpdate) heldLine() string {
+	switch {
+	case u.rollback():
+		return fmt.Sprintf("→ This build is newer than the selected release: %s.\n"+
+			"  `icebath update` moves it back to that release (`icebath update --set-channel main` follows every commit).", u.label())
+	case u.plan.Order == install.ReleaseOlder && u.pinned:
+		return fmt.Sprintf("✓ No newer release: %s; this build is newer and waits for the next release"+
+			" (`icebath update --set-channel main` follows every commit).", u.label())
+	case u.pinned:
+		return fmt.Sprintf("✓ Up to date with the latest release (%s).", u.label())
+	}
+	return "✓ Already up to date."
+}
+
+// Reports a release install's distance from its channel through the same plan the update applies
+func checkReleaseUpdate(ctx context.Context, w io.Writer, branch string, branchExplicit bool, channel *string) error {
+	root := fleetProjectRoot()
+	u, err := planReleaseUpdate(ctx, root, channel, branch, branchExplicit)
+	if err != nil {
+		if ctx.Err() != nil {
+			return ctx.Err()
+		}
+		fmt.Fprintf(w, "✗ Could not check for updates: %s\n", launchErrorText(err))
 		return &pm.SystemExit{Code: 1}
-	case count.Sign() == 0:
-		fmt.Fprintln(w, "✓ Already up to date.")
+	}
+	fmt.Fprintf(w, "→ Update channel: %s\n", u.channel)
+	if u.plan.Order != install.ReleaseNewer {
+		fmt.Fprintln(w, u.heldLine())
 		return nil
-	case pyrepr.Equal(behind, UpdateAvailableNoCount):
-		fmt.Fprintf(w, "⚕ Update available (behind %s).\n", label)
-	default:
-		n := int(count.Int64())
-		fmt.Fprintf(w, "⚕ Update available: %d %s behind %s.\n", n, commitsWord(n), label)
 	}
 	command, err := config.RecommendedUpdateCommand(ctx, home.Dir(ctx))
 	if err != nil {
 		return err
 	}
-	fmt.Fprintf(w, "  Run '%s' to install.\n", command)
+	switch {
+	case u.pinned:
+		fmt.Fprintf(w, "→ Selected release available: %s\n  Run `%s` to install it.\n", u.label(), command)
+	case u.plan.Ahead >= 0:
+		fmt.Fprintf(w, "⚕ Update available: %d %s behind %s.\n  Run '%s' to install.\n", u.plan.Ahead, commitsWord(u.plan.Ahead), u.follows, command)
+	default:
+		fmt.Fprintf(w, "⚕ Update available (behind %s).\n  Run '%s' to install.\n", u.follows, command)
+	}
 	return nil
 }
 
-// Replaces the binary with the selected release, then hands the completion to the new binary
-func updateViaRelease(ctx context.Context, w io.Writer, target applyTarget, completionRequest map[string]any) error {
+// Swaps in the planned release when it moves, then hands the completion to the binary in place
+func updateViaRelease(ctx context.Context, w io.Writer, args map[string]any, completionRequest map[string]any) error {
 	if completionRequest == nil {
 		return pm.StopForRelaunchIncomplete(ctx)
 	}
-	repository := target.Repository
-	if repository == "" {
-		repository = OfficialRepository
+	root := fleetProjectRoot()
+	var channelArg *string
+	if pyrepr.Truthy(args["channel"]) {
+		text := pyrepr.Str(args["channel"])
+		channelArg = &text
 	}
-	branch := ""
-	if target.ReleaseSHA == "" {
-		branch = strings.TrimPrefix(target.Ref, "origin/")
+	u, err := planReleaseUpdate(ctx, root, channelArg, resolveUpdateBranch(args), pyrepr.Truthy(args["branch"]))
+	if err == nil {
+		fmt.Fprintf(w, "→ Update channel: %s\n", u.channel)
+		if u.source != nil {
+			noteChannelRetirement(w, args, completionRequest, u.record, u.channel, *u.source)
+		}
+		if u.moves() {
+			fmt.Fprintf(w, "→ Release: %s\n", u.label())
+			err = releaseApply(ctx, root, u.plan.Target, w)
+		}
 	}
-	result, err := releaseBinaryUpdate(ctx, fleetProjectRoot(), "https://github.com/"+repository, target.ReleaseSHA, branch, w)
 	if err != nil {
 		if ctx.Err() != nil {
 			return ctx.Err()
+		}
+		if unresolved := (*releaseChannelError)(nil); errors.As(err, &unresolved) {
+			recordStop(ctx, "channel_unresolved")
 		}
 		fmt.Fprintf(w, "✗ Release update failed: %s\n", launchErrorText(err))
 		fmt.Fprintln(w, "  Your existing install was left in place.")
 		fmt.Fprintln(w, "  Re-run `icebath update` to retry.")
 		return &pm.SystemExit{Code: 1}
 	}
-	if result.Commit != "" {
-		completionRequest["expected_sha"] = result.Commit
+	commit := u.plan.Installed.Commit
+	if u.moves() {
+		commit = u.plan.Target.Commit
+	} else {
+		fmt.Fprintln(w, u.heldLine())
+		completionRequest["completion_message"] = "✓ Already up to date!"
+	}
+	if commit != "" {
+		completionRequest["expected_sha"] = commit
 	} else {
 		completionRequest["expected_sha"] = nil
-	}
-	if !result.Changed {
-		completionRequest["completion_message"] = "✓ Already up to date!"
 	}
 	completionRequest["apply_mode"] = "release"
 	return zipCompleteSourceUpdate(ctx, w, completionRequest)

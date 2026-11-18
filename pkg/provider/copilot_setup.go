@@ -127,6 +127,10 @@ func copilotObtainToken(r *ModelFlowRun) (bool, error) {
 	switch choice {
 	case "1":
 		token, err := copilotDeviceCodeLogin(r.ctx(), r.Out, "github.com", 300*time.Second)
+		if (err != nil || token == "") && r.ctx().Err() != nil {
+			fmt.Fprintln(r.Out, "  Sign-in was cancelled.")
+			return false, nil
+		}
 		if err == nil && token == "" {
 			fmt.Fprintln(r.Out, "  Login cancelled or failed.")
 			return false, nil

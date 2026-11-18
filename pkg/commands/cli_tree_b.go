@@ -28,7 +28,7 @@ func (c *CLI) addTreeB(root *cobra.Command) {
 	c.buildPeerParser(root)
 
 	portal := c.newCmd(root, "portal", "Set up Nous Portal (login, model pick, Tool Gateway); see also `portal info`",
-		"Run `icebath portal` with no subcommand to log in to Nous Portal and set it up — pick a model, set Nous as your provider, and offer the Tool Gateway (the human-readable alias for `icebath auth add nous --type oauth`, identical to `icebath setup --portal`). Subcommands: login (default), info, open, tools.")
+		"Run `icebath portal` with no subcommand to log in to Nous Portal and set it up — pick a model, set Nous as your provider, and offer the Tool Gateway (the human-readable alias for `icebath auth add nous --type oauth`). Subcommands: login (default), info, open, tools.")
 	c.newCmd(portal, "login", "Log in to Nous Portal + set it up (default; one-shot onboarding)", "")
 	c.newCmd(portal, "info", "Show Portal auth + Tool Gateway routing summary", "")
 	pStatus := c.newCmd(portal, "status", "", "")

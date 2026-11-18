@@ -77,7 +77,7 @@ func consoleStripStatusFooter(text string) string {
 	}
 	last := pystr.Strip(tools.StripANSI(lines[len(lines)-1]))
 	prev := pystr.Strip(tools.StripANSI(lines[len(lines)-2]))
-	if !strings.HasPrefix(prev, "Run 'icebath doctor'") || !strings.HasPrefix(last, "Run 'icebath setup'") {
+	if !strings.HasPrefix(prev, "Run 'icebath doctor'") || !strings.HasPrefix(last, "Start 'icebath' and type '/setup'") {
 		return pystr.Rstrip(text)
 	}
 	lines = consoleDropTrailingBlank(lines[:len(lines)-2])

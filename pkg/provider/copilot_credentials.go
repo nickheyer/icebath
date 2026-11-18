@@ -404,6 +404,9 @@ func copilotDeviceCodeLogin(ctx context.Context, out io.Writer, host string, tim
 	if errors.As(err, &notDict) {
 		return "", err
 	}
+	if err != nil && ctx.Err() != nil {
+		return "", ctx.Err()
+	}
 	if err != nil {
 		slog.Default().Error(fmt.Sprintf("Failed to initiate device authorization: %v", err))
 		fmt.Fprintf(out, "  ✗ Failed to start device authorization: %v\n", err)

@@ -955,7 +955,7 @@ func CloneChannelsRefusal(ctx context.Context, sourceDir, sourceLabel string) (s
 	return fmt.Sprintf("--clone-channels would copy %s from '%s', which the running "+
 		"multiplexed gateway already serves: the bot can only belong to one profile, so the copy would be "+
 		"parked as a duplicate credential. Clone without --clone-channels and give the new profile its own bot "+
-		"(icebath -p <name> setup), or route its chats with gateway.profile_routes instead.",
+		"(start icebath -p <name> and type /setup gateway), or route its chats with gateway.profile_routes instead.",
 		strings.Join(platforms, ", "), sourceLabel), nil
 }
 
@@ -1024,7 +1024,7 @@ func SharedChannelCredentials(ctx context.Context, profileDir, sourceDir string)
 // Warning that a profile shares a bot credential with its source
 func SharedCredentialWarning(profile string, platforms []string, source string) string {
 	return fmt.Sprintf("⚠ Profile '%s' shares its %s credential with %s: the bot can "+
-		"only belong to one profile. Give '%s' its own bot (icebath -p %s setup) "+
+		"only belong to one profile. Give '%s' its own bot (start icebath -p %s and type /setup gateway) "+
 		"or remove the token from '%s'; a multiplexed gateway parks "+
 		"the duplicate and `icebath gateway migrate --multiplex` refuses until it is gone.",
 		profile, strings.Join(platforms, ", "), source, profile, profile, profile)
@@ -1038,7 +1038,7 @@ func FormatStrippedNotice(profile string, platforms []string, cloneFlag string) 
 	return []string{
 		fmt.Sprintf("Messaging channels were NOT cloned (%s): a copied bot token or allowlist "+
 			"would make two gateways fight over one bot.", strings.Join(platforms, ", ")),
-		fmt.Sprintf("  Configure this profile's own bots:  icebath -p %s setup", profile),
+		fmt.Sprintf("  Configure this profile's own bots:  start icebath -p %s and type /setup gateway", profile),
 		fmt.Sprintf("  To copy the source's channels anyway:  icebath profile create %s %s --clone-channels", profile, cloneFlag),
 	}
 }

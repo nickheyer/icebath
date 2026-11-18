@@ -18,6 +18,7 @@ import (
 	"net/mail"
 	"net/url"
 	"os"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -27,6 +28,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
+	"github.com/nickheyer/icebath/pkg/internal/pyurl"
 )
 
 // AuxClient is one resolved auxiliary chat client, the OpenAI SDK client or a wire adapter
@@ -45,7 +47,6 @@ const (
 	auxSDKInitialRetryDelay     = 0.5
 	auxSDKMaxRetryDelay         = 8.0
 	auxSDKDefaultBaseURL        = "https://api.openai.com/v1"
-	auxSDKUserAgent             = "icebath-agent"
 )
 
 // SDKDefaultTimeout is the OpenAI SDK default request timeout in seconds
@@ -63,23 +64,23 @@ var auxSDKSleep = func(ctx context.Context, d time.Duration) error {
 	}
 }
 
-// Shared default HTTP client of SDK clients built without a keepalive client
-var auxSDKDefaultHTTPClient = sync.OnceValue(func() *http.Client {
-	return &http.Client{Transport: auxTrackPoolConns(&http.Transport{
-		Proxy:                 http.ProxyFromEnvironment,
-		DialContext:           (&net.Dialer{Timeout: time.Duration(auxSDKDefaultConnectTimeout * float64(time.Second)), KeepAlive: 30 * time.Second}).DialContext,
-		TLSClientConfig:       PlatformTLSConfig(),
-		TLSHandshakeTimeout:   time.Duration(auxSDKDefaultConnectTimeout * float64(time.Second)),
+// Shared default HTTP client of SDK clients built without a keepalive client, an error for an environment proxy httpx refuses
+var auxSDKDefaultHTTPClient = sync.OnceValues(func() (*http.Client, error) {
+	proxies, err := pyhttpx.NewEnvProxies(pyurl.Getproxies())
+	if err != nil {
+		return nil, err
+	}
+	connect := time.Duration(auxSDKDefaultConnectTimeout * float64(time.Second))
+	t := &http.Transport{
 		MaxIdleConns:          100,
 		MaxIdleConnsPerHost:   100,
 		MaxConnsPerHost:       1000,
 		IdleConnTimeout:       5 * time.Second,
 		ExpectContinueTimeout: time.Second,
-	})}
+	}
+	wireEnvDials(t, (&net.Dialer{Timeout: connect, KeepAlive: 30 * time.Second}).DialContext, PlatformTLSConfig(), connect, proxies)
+	return &http.Client{Transport: auxTrackPoolConns(t)}, nil
 })
-
-// SDKDefaultHTTPClient is the shared default HTTP client of SDK clients built without a keepalive client
-func SDKDefaultHTTPClient() *http.Client { return auxSDKDefaultHTTPClient() }
 
 // OpenAI SDK chat client of an auxiliary route
 type auxOpenAIClient struct {
@@ -89,16 +90,20 @@ type auxOpenAIClient struct {
 	apiKeyProvider func() (string, error)
 	baseURL        string
 	customHeaders  map[string]string
+	customOrder    []string
 	customQuery    map[string]string
+	async          bool
 	timeout        float64
-	hasTimeout     bool
-	maxRetries     int
-	httpClient     *http.Client
-	ownsHTTP       bool
-	closed         bool
-	initErr        error
-	responseHooks  []func(*http.Response)
-	responseMarks  map[string]bool
+	// str of the client timeout read phase as x-stainless-read-timeout carries it
+	timeoutText   string
+	hasTimeout    bool
+	maxRetries    int
+	httpClient    *http.Client
+	ownsHTTP      bool
+	closed        bool
+	initErr       error
+	responseHooks []func(*http.Response)
+	responseMarks map[string]bool
 }
 
 // Appends a response hook to the SDK client once per mark, false when the client has no SDK HTTP client
@@ -146,20 +151,21 @@ func (t auxResponseHookTransport) RoundTrip(req *http.Request) (*http.Response, 
 	return resp, nil
 }
 
-// HTTP client of one request, the shared client unchanged unless response hooks are registered
+// HTTP client of one request, writing the httpx wire head and decoding as httpx does, response hooks outermost
 func (c *auxOpenAIClient) requestHTTPClient() *http.Client {
 	c.mu.Lock()
 	hooks := c.responseHooks
 	c.mu.Unlock()
-	if len(hooks) == 0 {
-		return c.httpClient
-	}
 	hc := *c.httpClient
 	base := hc.Transport
 	if base == nil {
 		base = http.DefaultTransport
 	}
-	hc.Transport = auxResponseHookTransport{base: base, hooks: hooks}
+	var rt http.RoundTripper = pyhttpx.WireTransport{Base: base, Decoders: httpxDecoders}
+	if len(hooks) > 0 {
+		rt = auxResponseHookTransport{base: rt, hooks: hooks}
+	}
+	hc.Transport = rt
 	return &hc
 }
 
@@ -185,17 +191,10 @@ func AuxClientDefaultHeaders(c AuxClient) map[string]string {
 	}
 	oc.mu.Lock()
 	defer oc.mu.Unlock()
-	out := map[string]string{"Accept": "application/json", "Content-Type": "application/json", "User-Agent": auxSDKUserAgent}
-	if oc.apiKey != "" {
-		out["Authorization"] = "Bearer " + oc.apiKey
+	out := map[string]string{}
+	for _, l := range oc.sdkDefaultHeaders().lines {
+		out[l.Name] = l.Value
 	}
-	if org := os.Getenv("OPENAI_ORG_ID"); org != "" {
-		out["OpenAI-Organization"] = org
-	}
-	if project := os.Getenv("OPENAI_PROJECT_ID"); project != "" {
-		out["OpenAI-Project"] = project
-	}
-	maps.Copy(out, oc.customHeaders)
 	return out
 }
 
@@ -231,6 +230,7 @@ func newAuxOpenAIClient(apiKey any, baseURL string, opts auxOpenAIOptions) *auxO
 	for k, v := range opts.DefaultHeaders {
 		c.customHeaders[k] = v
 	}
+	c.customOrder = sortedHeaderKeys(opts.DefaultHeaders)
 	for k, v := range opts.DefaultQuery {
 		c.customQuery[k] = v
 	}
@@ -239,15 +239,19 @@ func newAuxOpenAIClient(apiKey any, baseURL string, opts auxOpenAIOptions) *auxO
 	}
 	switch {
 	case opts.Timeout > 0:
-		c.timeout, c.hasTimeout = opts.Timeout, true
+		c.timeout, c.hasTimeout, c.timeoutText = opts.Timeout, true, pyFloatRepr(opts.Timeout)
 	case opts.HTTPClient != nil:
 		c.hasTimeout = false
 	default:
-		c.timeout, c.hasTimeout = auxSDKDefaultTimeout, true
+		c.timeout, c.hasTimeout, c.timeoutText = auxSDKDefaultTimeout, true, strconv.Itoa(int(auxSDKDefaultTimeout))
 	}
 	c.httpClient = opts.HTTPClient
 	if c.httpClient == nil {
-		c.httpClient = auxSDKDefaultHTTPClient()
+		hc, err := auxSDKDefaultHTTPClient()
+		if err != nil && c.initErr == nil {
+			c.initErr = err
+		}
+		c.httpClient = hc
 	} else {
 		c.ownsHTTP = true
 	}
@@ -323,9 +327,15 @@ type auxSDKRequest struct {
 	path    string
 	body    []byte
 	stream  bool
+	params  map[string]any
+	extra   *pyjson.Object
 	headers map[string]any
-	query   map[string]string
-	timeout auxSDKTimeouts
+	// Order of the per request headers, the extra_headers mapping order
+	headerOrder []string
+	query       map[string]string
+	timeout     auxSDKTimeouts
+	// str of the read timeout as the SDK writes x-stainless-read-timeout
+	readTimeoutText string
 }
 
 // One httpx phase limit, a phase without a limit never times out
@@ -355,29 +365,42 @@ func sdkStreamTimeout(connect, read, write, pool float64) pyhttpx.Timeout {
 }
 
 func auxSDKBuildRequest(c *auxOpenAIClient, kwargs map[string]any) (*auxSDKRequest, error) {
-	r := &auxSDKRequest{path: "chat/completions", query: map[string]string{}, headers: map[string]any{}, timeout: auxUniformTimeouts(c.timeout, c.hasTimeout)}
-	body := map[string]any{}
+	r := &auxSDKRequest{path: "chat/completions", query: map[string]string{}, headers: map[string]any{}, timeout: auxUniformTimeouts(c.timeout, c.hasTimeout),
+		readTimeoutText: c.timeoutText}
+	r.params, r.extra = map[string]any{}, pyjson.NewObject()
 	for k, v := range kwargs {
 		switch k {
 		case "extra_body", "extra_headers", "extra_query", "timeout":
 		default:
-			body[k] = v
+			r.params[k] = v
 		}
 	}
-	if extra, ok := kwargs["extra_body"].(map[string]any); ok {
-		for k, v := range extra {
-			body[k] = v
+	switch extra := kwargs["extra_body"].(type) {
+	case *pyjson.Object:
+		for _, k := range extra.Keys {
+			r.extra.Set(k, extra.Vals[k])
+		}
+	case map[string]any:
+		for _, k := range sortedHeaderKeys(extra) {
+			r.extra.Set(k, extra[k])
 		}
 	}
 	switch h := kwargs["extra_headers"].(type) {
+	case *pyjson.Object:
+		for _, k := range h.Keys {
+			r.headers[k] = h.Vals[k]
+		}
+		r.headerOrder = append([]string(nil), h.Keys...)
 	case map[string]any:
 		for k, v := range h {
 			r.headers[k] = v
 		}
+		r.headerOrder = sortedHeaderKeys(h)
 	case map[string]string:
 		for k, v := range h {
 			r.headers[k] = v
 		}
+		r.headerOrder = sortedHeaderKeys(h)
 	}
 	switch q := kwargs["extra_query"].(type) {
 	case map[string]any:
@@ -394,28 +417,65 @@ func auxSDKBuildRequest(c *auxOpenAIClient, kwargs map[string]any) (*auxSDKReque
 		case nil:
 			r.timeout = auxUniformTimeouts(0, false)
 		case float64:
-			r.timeout = auxUniformTimeouts(v, true)
+			r.timeout, r.readTimeoutText = auxUniformTimeouts(v, true), pyFloatRepr(v)
 		case float32:
-			r.timeout = auxUniformTimeouts(float64(v), true)
+			r.timeout, r.readTimeoutText = auxUniformTimeouts(float64(v), true), pyFloatRepr(float64(v))
 		case int:
-			r.timeout = auxUniformTimeouts(float64(v), true)
+			r.timeout, r.readTimeoutText = auxUniformTimeouts(float64(v), true), strconv.Itoa(v)
 		case int64:
-			r.timeout = auxUniformTimeouts(float64(v), true)
+			r.timeout, r.readTimeoutText = auxUniformTimeouts(float64(v), true), strconv.FormatInt(v, 10)
 		case time.Duration:
-			r.timeout = auxUniformTimeouts(v.Seconds(), true)
+			r.timeout, r.readTimeoutText = auxUniformTimeouts(v.Seconds(), true), pyFloatRepr(v.Seconds())
 		case pyhttpx.Timeout:
-			r.timeout = auxPhaseTimeouts(v)
+			r.timeout, r.readTimeoutText = auxPhaseTimeouts(v), pyFloatRepr(v.Read.Seconds())
 		default:
 			return nil, fmt.Errorf("Timeout value must be a float, a Timeout or None, got %s", pyrepr.Repr(v))
 		}
 	}
-	r.stream, _ = body["stream"].(bool)
-	raw, err := json.Marshal(body)
-	if err != nil {
+	if err := r.encodeBody(); err != nil {
 		return nil, err
 	}
-	r.body = raw
 	return r, nil
+}
+
+// Body parameters of the SDK create() methods in the order their signatures merge them into the request body
+var auxSDKBodyOrder = map[string][]string{
+	"chat/completions": {"messages", "model", "audio", "frequency_penalty", "function_call", "functions", "logit_bias", "logprobs",
+		"max_completion_tokens", "max_tokens", "metadata", "modalities", "moderation", "n", "parallel_tool_calls", "prediction",
+		"presence_penalty", "prompt_cache_key", "prompt_cache_options", "prompt_cache_retention", "reasoning_effort", "response_format",
+		"safety_identifier", "seed", "service_tier", "stop", "store", "stream", "stream_options", "temperature", "tool_choice", "tools",
+		"top_logprobs", "top_p", "user", "verbosity", "web_search_options"},
+	"responses": {"background", "context_management", "conversation", "include", "input", "instructions", "max_output_tokens",
+		"max_tool_calls", "metadata", "model", "moderation", "parallel_tool_calls", "previous_response_id", "prompt", "prompt_cache_key",
+		"prompt_cache_options", "prompt_cache_retention", "reasoning", "safety_identifier", "service_tier", "store", "stream",
+		"stream_options", "temperature", "text", "tool_choice", "tools", "top_logprobs", "top_p", "truncation", "user"},
+}
+
+// Encodes the body for the request path, signature parameters first, other keys sorted, then extra_body merged over them
+func (r *auxSDKRequest) encodeBody() error {
+	body := pyjson.NewObject()
+	for _, k := range auxSDKBodyOrder[r.path] {
+		if v, ok := r.params[k]; ok {
+			body.Set(k, v)
+		}
+	}
+	for _, k := range sortedHeaderKeys(r.params) {
+		if _, placed := body.Vals[k]; !placed {
+			body.Set(k, r.params[k])
+		}
+	}
+	if r.extra != nil {
+		for _, k := range r.extra.Keys {
+			body.Set(k, r.extra.Vals[k])
+		}
+	}
+	r.stream, _ = body.Vals["stream"].(bool)
+	raw, err := pyhttpx.JSONBody(body)
+	if err != nil {
+		return err
+	}
+	r.body = raw
+	return nil
 }
 
 // Sends one chat completion with SDK retries, a response map or an SSE chunk stream when streaming
@@ -450,7 +510,12 @@ func (c *auxOpenAIClient) createRaw(ctx context.Context, path string, kwargs map
 	if err != nil {
 		return nil, nil, err
 	}
-	req.path = path
+	if req.path != path {
+		req.path = path
+		if err := req.encodeBody(); err != nil {
+			return nil, nil, err
+		}
+	}
 	for retries := 0; ; retries++ {
 		out, headers, retry, err := c.attempt(ctx, req, retries)
 		if !retry || retries >= c.maxRetries {
@@ -538,7 +603,8 @@ func (c *auxOpenAIClient) attempt(ctx context.Context, r *auxSDKRequest, retries
 		cancel()
 		return nil, nil, false, err
 	}
-	c.applyHeaders(httpReq, key, r, retries)
+	httpReq.Host = httpxHost(target)
+	httpReq = pyhttpx.WithWire(httpReq, c.wireHeaders(key, r, retries))
 	resp, err := c.requestHTTPClient().Do(httpReq)
 	idle.retire()
 	if err != nil {
@@ -589,40 +655,125 @@ func (c *auxOpenAIClient) attempt(ctx context.Context, r *auxSDKRequest, retries
 		}
 		return nil, nil, true, &AuxSDKError{Class: "APIConnectionError", Message: "Connection error.", Err: err}
 	}
-	var payload any
-	if err := json.Unmarshal(data, &payload); err != nil {
-		return string(data), resp.Header, false, nil
+	payload, err := auxSDKResponseData(resp.Header, data)
+	if err != nil {
+		return nil, nil, false, err
 	}
 	return payload, resp.Header, false, nil
 }
 
-// SDK headers, auth, organization and project, retry count, then client defaults and per request extras
-func (c *auxOpenAIClient) applyHeaders(req *http.Request, key string, r *auxSDKRequest, retries int) {
-	req.Header.Set("Accept", "application/json")
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("User-Agent", auxSDKUserAgent)
-	if key != "" {
-		req.Header.Set("Authorization", "Bearer "+key)
+// Body the SDK parses as response.json(), else the response.text a non JSON content type falls back to
+func auxSDKResponseData(header http.Header, data []byte) (any, error) {
+	parsed, err := pyjson.LoadsBytes(data)
+	if err == nil {
+		return pyjson.WTF8Shape(parsed), nil
 	}
-	if org := os.Getenv("OPENAI_ORG_ID"); org != "" {
-		req.Header.Set("OpenAI-Organization", org)
+	if contentType, _, _ := strings.Cut(header.Get("Content-Type"), ";"); !strings.HasSuffix(contentType, "json") {
+		return pyhttpx.DecodeText(header, data), nil
 	}
-	if project := os.Getenv("OPENAI_PROJECT_ID"); project != "" {
-		req.Header.Set("OpenAI-Project", project)
+	var decodeErr *pyjson.DecodeError
+	if !errors.As(err, &decodeErr) {
+		return nil, err
 	}
-	for k, v := range c.customHeaders {
-		req.Header.Set(k, v)
+	doc, textErr := pyjson.DecodeBytes(data)
+	if textErr != nil {
+		return nil, textErr
 	}
-	for k, v := range r.headers {
-		if v == nil {
-			req.Header.Del(k)
-			continue
+	return nil, &AuxTransportError{Class: "JSONDecodeError", Message: err.Error(), Err: err, Doc: doc}
+}
+
+// Keys of a map in sorted order, the order a map without a recorded declaration order is sent in
+func sortedHeaderKeys[V any](headers map[string]V) []string {
+	keys := make([]string, 0, len(headers))
+	for k := range headers {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	return keys
+}
+
+// default_headers of the SDK client, its identity and platform lines, the async label, organization, project and custom headers
+func (c *auxOpenAIClient) sdkDefaultHeaders() *sdkHeaderDict {
+	d := &sdkHeaderDict{}
+	d.set("Accept", "application/json")
+	d.set("Content-Type", "application/json")
+	d.set("User-Agent", c.userAgent())
+	for _, l := range stainlessPlatformHeaders(openAISDKVersion) {
+		d.set(l.Name, l.Value)
+	}
+	for _, l := range c.customHeaderLines() {
+		d.set(l.Name, l.Value)
+	}
+	d.set("X-Stainless-Async", c.asyncLabel())
+	if org, set := os.LookupEnv("OPENAI_ORG_ID"); set {
+		d.set("OpenAI-Organization", org)
+	}
+	if project, set := os.LookupEnv("OPENAI_PROJECT_ID"); set {
+		d.set("OpenAI-Project", project)
+	}
+	for _, l := range c.customHeaderLines() {
+		d.set(l.Name, l.Value)
+	}
+	return d
+}
+
+// User-Agent of the client class, AsyncOpenAI for the async client
+func (c *auxOpenAIClient) userAgent() string {
+	if c.async {
+		return "AsyncOpenAI/Python " + openAISDKVersion
+	}
+	return "OpenAI/Python " + openAISDKVersion
+}
+
+// X-Stainless-Async of the client class, the asyncio label for the async client
+func (c *auxOpenAIClient) asyncLabel() string {
+	if c.async {
+		return "async:asyncio"
+	}
+	return "false"
+}
+
+// Custom default headers in the order the client was given them
+func (c *auxOpenAIClient) customHeaderLines() []pyhttpx.HeaderLine {
+	out := make([]pyhttpx.HeaderLine, 0, len(c.customOrder))
+	for _, k := range c.customOrder {
+		if v, ok := c.customHeaders[k]; ok {
+			out = append(out, pyhttpx.HeaderLine{Name: k, Value: v})
 		}
-		req.Header.Set(k, pyrepr.Str(v))
 	}
-	if req.Header.Get("X-Stainless-Retry-Count") == "" {
-		req.Header.Set("X-Stainless-Retry-Count", strconv.Itoa(retries))
+	return out
+}
+
+// Header lines of one attempt as the SDK merges them and its httpx client sends them
+func (c *auxOpenAIClient) wireHeaders(key string, r *auxSDKRequest, retries int) *pyhttpx.Headers {
+	c.mu.Lock()
+	d := &sdkHeaderDict{}
+	if key != "" {
+		d.set("Authorization", "Bearer "+key)
 	}
+	for _, l := range c.sdkDefaultHeaders().lines {
+		d.set(l.Name, l.Value)
+	}
+	c.mu.Unlock()
+	custom := map[string]bool{}
+	for _, k := range r.headerOrder {
+		custom[strings.ToLower(k)] = true
+		if v := r.headers[k]; v == nil {
+			d.omit(k)
+		} else {
+			d.set(k, pyrepr.Str(v))
+		}
+	}
+	sdk := pyhttpx.NewHeaders(d.lines...)
+	if !custom["x-stainless-retry-count"] {
+		sdk.Set("x-stainless-retry-count", strconv.Itoa(retries))
+	}
+	if !custom["x-stainless-read-timeout"] && r.timeout.read.on {
+		sdk.Set("x-stainless-read-timeout", r.readTimeoutText)
+	}
+	h := httpxClientHeaders()
+	h.Update(sdk.Lines())
+	return h
 }
 
 // SDK status error with the Error code message, the error object body and the status class
@@ -632,7 +783,8 @@ func auxSDKStatusError(resp *http.Response, data []byte) *AuxSDKError {
 		e.Message = fmt.Sprintf("Error code: %d", resp.StatusCode)
 		return e
 	}
-	text := strings.TrimSpace(pystr.DecodeUTF8Replace(data))
+	e.ResponseText = pystr.DecodeUTF8Replace(data)
+	text := strings.TrimSpace(e.ResponseText)
 	var body any = text
 	parsed, err := pyjson.Loads(text)
 	if err == nil {
@@ -944,9 +1096,9 @@ func (s *auxSDKStream) Next(ctx context.Context) (map[string]any, error) {
 				return nil, io.EOF
 			}
 			if s.idle.fired() {
-				return nil, &AuxTransportError{Class: "ReadTimeout", Message: "timed out", Err: &keepaliveTimeoutError{msg: "timed out"}}
+				return nil, &AuxTransportError{Class: "ReadTimeout", Message: "timed out", Err: &keepaliveTimeoutError{msg: "timed out"}, Request: failedRequestOfResponse(s.resp)}
 			}
-			return nil, &AuxTransportError{Class: "RemoteProtocolError", Message: err.Error(), Err: err}
+			return nil, sdkStreamReadError(err, s.resp)
 		}
 		if strings.HasPrefix(ev.data, "[DONE]") {
 			s.finish()

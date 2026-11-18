@@ -18,6 +18,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyurl"
 	"github.com/nickheyer/icebath/pkg/mcp"
 	"github.com/nickheyer/icebath/pkg/plugins"
+	"github.com/nickheyer/icebath/pkg/pm"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
@@ -145,6 +146,12 @@ func checkRelayPlugins(ctx context.Context, d *Doctor, shouldFix bool) (*Finding
 	return doctorCheckGuarded(d.W, "Relay plugin check failed: {e}", "", func(f *Finding) error {
 		sources, err := tools.ResolveRelayPluginSources(ctx, nil)
 		if err != nil {
+			if unprovisioned := (*pm.RuntimeUnprovisioned)(nil); errors.As(err, &unprovisioned) {
+				doctorCheckWarn(d.W, "NeMo Relay runtime is not provisioned", "(Icebath runs without Relay plugins)")
+				doctorRelayInfoLines(d.W, []string{unprovisioned.Err.Error()})
+				f.ManualIssues = append(f.ManualIssues, "Run `icebath pm install` to provision the NeMo Relay runtime.")
+				return nil
+			}
 			if name, missing := strings.CutPrefix(err.Error(), "No module named "); missing {
 				if strings.Trim(name, "'") != "nemo_relay" {
 					return err
@@ -259,7 +266,7 @@ func checkEnvFile(ctx context.Context, d *Doctor, shouldFix bool) (*Finding, err
 			if !doctorCheckBool(d.W, doctorHasProviderEnvConfig(string(content)),
 				doctorRow{Text: "API key or custom endpoint configured"},
 				doctorRow{Text: "No API key found in " + d.DisplayHome + "/.env"}, false) {
-				f.Issues = append(f.Issues, "Run 'icebath setup' to configure API keys")
+				f.Issues = append(f.Issues, "Start 'icebath' and type '/setup model' to configure API keys")
 			}
 			return nil
 		}
@@ -269,8 +276,8 @@ func checkEnvFile(ctx context.Context, d *Doctor, shouldFix bool) (*Finding, err
 		}
 		doctorCheckFail(d.W, d.DisplayHome+"/.env file missing", "")
 		if !shouldFix {
-			doctorCheckInfo(d.W, "Run 'icebath setup' to create one")
-			f.Issues = append(f.Issues, "Run 'icebath setup' to create .env")
+			doctorCheckInfo(d.W, "Start 'icebath' and type '/setup model' to create one")
+			f.Issues = append(f.Issues, "Start 'icebath' and type '/setup model' to create .env")
 			return nil
 		}
 		if err := pyfs.Makedirs(pypath.PathParent(envPath), 0o777, true); err != nil {
@@ -285,7 +292,7 @@ func checkEnvFile(ctx context.Context, d *Doctor, shouldFix bool) (*Finding, err
 		}
 		_ = os.Chmod(envPath, 0o600)
 		doctorCheckOK(d.W, "Created empty "+d.DisplayHome+"/.env", "")
-		doctorCheckInfo(d.W, "Run 'icebath setup' to configure API keys")
+		doctorCheckInfo(d.W, "Start 'icebath' and type '/setup model' to configure API keys")
 		f.Fixed++
 		return nil
 	})
@@ -469,8 +476,8 @@ func doctorValidateModelConfig(ctx context.Context, d *Doctor, configPath string
 	if runtimeProvider != "" && runtimeProvider != "auto" && runtimeProvider != "custom" {
 		if has, cerr := doctorProviderHasCredentials(ctx, d.Home, runtimeProvider); cerr == nil && !has {
 			doctorFailAndIssue(d.W, "model.provider '"+runtimeProvider+"' is set but no API key is configured",
-				"(add it to "+d.DisplayHome+"/.env or run 'icebath setup')",
-				"No credentials found for provider '"+runtimeProvider+"'. Run 'icebath setup' or set the provider's "+
+				"(add it to "+d.DisplayHome+"/.env or type '/setup model' in 'icebath')",
+				"No credentials found for provider '"+runtimeProvider+"'. Start 'icebath' and type '/setup model', or set the provider's "+
 					"API key in "+d.DisplayHome+"/.env, or switch providers with 'icebath config set model.provider <name>'", issues)
 		}
 	}
@@ -637,12 +644,12 @@ func doctorDriftConfigVersion(ctx context.Context, d *Doctor, f *Finding, should
 		return nil
 	}
 	if !shouldFix {
-		f.Issues = append(f.Issues, "Run 'icebath doctor --fix' or 'icebath setup' to migrate config")
+		f.Issues = append(f.Issues, "Run 'icebath doctor --fix' to migrate config")
 		return nil
 	}
 	if _, merr := config.MigrateConfig(ctx, d.Home, false, false); merr != nil {
 		doctorCheckWarn(d.W, "Auto-migration failed: "+merr.Error(), "")
-		f.Issues = append(f.Issues, "Run 'icebath setup' to migrate config")
+		f.Issues = append(f.Issues, "Start 'icebath' and type '/setup' to rewrite config.yaml at the latest version")
 		return nil
 	}
 	doctorCheckOK(d.W, "Config migrated to latest version", "")
@@ -712,7 +719,7 @@ func doctorDriftMaxIterationsGhost(ctx context.Context, d *Doctor, f *Finding, s
 	}
 	turns := pyrepr.Str(cfgMaxTurns)
 	doctorCheckWarn(d.W, "ICEBATH_MAX_ITERATIONS="+envGhost+" in .env shadows agent.max_turns="+turns+" in config.yaml",
-		"(stale ghost from an earlier `icebath setup` run)")
+		"(stale ghost from an earlier setup run)")
 	if !shouldFix {
 		f.Issues = append(f.Issues, "Stale ICEBATH_MAX_ITERATIONS in .env shadows config.yaml — run 'icebath doctor --fix'")
 		return nil

@@ -445,6 +445,7 @@ func (e *ModelsDevFetchDeadlineError) Error() string {
 }
 
 var modelsDevHTTPClient = &http.Client{Transport: &http.Transport{
+	Proxy:                 http.ProxyFromEnvironment,
 	DialContext:           (&net.Dialer{Timeout: modelsDevConnectLimit}).DialContext,
 	TLSHandshakeTimeout:   modelsDevConnectLimit,
 	ResponseHeaderTimeout: modelsDevReadLimit,

@@ -83,18 +83,30 @@ func Start(ctx context.Context, python string) (*Client, error) {
 		return nil, err
 	}
 	cmd := exec.Command(argv[0], argv[1:]...)
-	cmd.Stderr = os.Stderr
+	errRead, errWrite, err := os.Pipe()
+	if err != nil {
+		return nil, err
+	}
+	cmd.Stderr = errWrite
 	stdin, err := cmd.StdinPipe()
 	if err != nil {
+		errRead.Close()
+		errWrite.Close()
 		return nil, err
 	}
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {
+		errRead.Close()
+		errWrite.Close()
 		return nil, err
 	}
-	if err := cmd.Start(); err != nil {
+	err = cmd.Start()
+	errWrite.Close()
+	if err != nil {
+		errRead.Close()
 		return nil, err
 	}
+	go relayStderr(os.Stderr, errRead)
 	cl := &Client{python: python, cmd: cmd, stdin: stdin, callbacks: map[int64]any{}, ops: map[int64]*clientOp{},
 		codecs: map[weak.Pointer[tools.NemoRelayCodec]]*Object{}, releases: make(chan int64, 4096)}
 	cl.c = newConn(stdout, stdin, false, cl.serve)
@@ -113,6 +125,17 @@ func Start(ctx context.Context, python string) (*Client, error) {
 	info, _ := hello.(map[string]any)
 	cl.relay = cl.binding(info)
 	return cl, nil
+}
+
+// Copies the child's stderr onto dst and drains it once dst fails, so the child never meets a broken pipe
+func relayStderr(dst io.Writer, r *os.File) {
+	defer r.Close()
+	if _, err := io.Copy(dst, r); err != nil {
+		slog.Debug("relay host stderr copy stopped, draining the rest", "err", err)
+		if _, err := io.Copy(io.Discard, r); err != nil {
+			slog.Debug("relay host stderr drain ended", "err", err)
+		}
+	}
 }
 
 // Whether the child still serves requests
@@ -882,28 +905,92 @@ func siteStamp(python string) time.Time {
 	return st.ModTime()
 }
 
-// Imports nemo_relay in the relay host child of the selected environment, provisioning the runtime set on first use
+// Imports nemo_relay in the relay host child of the selected environment, waiting for the one provisioning when not ready
 func Load() (*tools.NemoRelay, error) {
 	ctx := context.Background()
 	python, err := environmentPython(ctx)
 	if err != nil {
 		return nil, err
 	}
-	relay, err := LoadFrom(python)
-	if !errors.Is(err, errNoRelayModule) || !wheelPinned() {
-		return relay, err
+	if !wheelPinned() {
+		return LoadFrom(python)
 	}
-	if _, perr := pm.EnsureRuntimeEnvironment(ctx, pm.RuntimeEnvironmentOptions{}); perr != nil {
-		slog.Warn("NeMo Relay runtime provisioning failed", "err", perr)
+	_, ready, err := pm.RuntimeEnvironmentReady(ctx)
+	if err != nil {
 		return nil, err
 	}
-	if python, err = environmentPython(ctx); err != nil {
+	if ready {
+		relay, err := LoadFrom(python)
+		if !errors.Is(err, errNoRelayModule) {
+			return relay, err
+		}
+	}
+	venv, err := pm.EnsureRuntimeEnvironment(ctx, pm.RuntimeEnvironmentOptions{})
+	if err != nil {
 		return nil, err
 	}
 	loadMu.Lock()
 	loadFailed.err = nil
 	loadMu.Unlock()
-	return LoadFrom(python)
+	return LoadFrom(pm.VenvPython(venv))
+}
+
+// Whether Load imports without waiting for a provisioning, starting the background provisioning when it would wait
+func Ready() bool {
+	if !wheelPinned() {
+		return true
+	}
+	ctx := context.Background()
+	python, err := environmentPython(ctx)
+	if err != nil {
+		return true
+	}
+	loadMu.Lock()
+	alive := loaded != nil && loaded.python == python && loaded.Alive()
+	loadMu.Unlock()
+	if alive {
+		return true
+	}
+	if _, ready, err := pm.RuntimeEnvironmentReady(ctx); err != nil || ready {
+		return true
+	}
+	StartProvisioning()
+	return false
+}
+
+// Starts the detached provisioning of the relay runtime for an install that lacks it, the process start hook
+func StartProvisioning() {
+	if !wheelPinned() {
+		return
+	}
+	if err := pm.StartRuntimeEnvironment(context.Background()); err != nil {
+		slog.Debug("NeMo Relay runtime provisioning could not start", "err", err)
+	}
+}
+
+// Provisions the relay runtime in this process when the environment lacks the pinned set, the install and update time step
+func ProvisionRuntime(ctx context.Context, w io.Writer) error {
+	if !wheelPinned() {
+		return nil
+	}
+	if _, ready, err := pm.RuntimeEnvironmentReady(ctx); err != nil || ready {
+		return err
+	}
+	fmt.Fprintln(w, "→ Provisioning the NeMo Relay runtime...")
+	if _, err := pm.EnsureRuntimeEnvironment(ctx, pm.RuntimeEnvironmentOptions{Explicit: true, Output: w}); err != nil {
+		return fmt.Errorf("NeMo Relay runtime was not provisioned: %w", err)
+	}
+	fmt.Fprintln(w, "✓ NeMo Relay runtime provisioned")
+	return nil
+}
+
+// Executable and entry verb of the provisioning child, registered by DispatchRelayHostEntry
+func provisionCommand() ([]string, error) {
+	exe, err := os.Executable()
+	if err != nil {
+		return nil, err
+	}
+	return []string{exe, ProvisionEntry}, nil
 }
 
 // Imports nemo_relay in a relay host child of python, reusing its running child and starting one after an exit

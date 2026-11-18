@@ -25,13 +25,14 @@ import (
 	"github.com/nickheyer/icebath/pkg/cliui"
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/home"
+	"github.com/nickheyer/icebath/pkg/internal/homeguard"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/pm"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
 
-// User cache directory read before any test moves HOME
-var admissionCacheRoot, _ = os.UserCacheDir()
+// Developer cache directory the pinned uv is kept in between runs
+var admissionCacheRoot = homeguard.SharedCache()
 
 var (
 	admissionUVOnce sync.Once

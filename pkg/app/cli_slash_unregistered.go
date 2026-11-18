@@ -10,6 +10,7 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/commands"
 	"github.com/nickheyer/icebath/pkg/config"
+	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pydatetime"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
@@ -33,17 +34,20 @@ func init() {
 	slashRunSkill, slashExpandPrefix = (*CLI).runSkillSlashCommand, (*CLI).expandSlashPrefix
 }
 
-// Slash input with no built in handler, quick commands then plugins then bundles then skills then prefix expansion
+// Unhandled slash input routed to quick commands, plugins, bound commands, bundles, skills, then prefix expansion
 func (c *CLI) processUnregisteredSlash(cmdOriginal, cmdLower string) bool {
 	baseCmd := pystr.SplitWhitespace(cmdLower, -1)[0]
 	bare := pystr.LstripChars(baseCmd, "/")
 	skillBundles := slashSkillBundles(c.ctx)
-	quickCommands := config.AsMap(mapValueOr(c.config, "quick_commands", map[string]any{}))
 	userArgs := ""
 	if n := len([]rune(baseCmd)); n < len([]rune(cmdOriginal)) {
 		userArgs = pystr.Strip(string([]rune(cmdOriginal)[n:]))
 	}
-	if entry, ok := quickCommands[bare]; ok {
+	entry, quick, err := commands.QuickCommandEntry(config.Tree(c.config), bare)
+	if err != nil {
+		panic(err)
+	}
+	if quick {
 		return c.runQuickCommand(baseCmd, entry, userArgs)
 	}
 	plugin, err := gatewayPluginLookup(c, bare)
@@ -62,6 +66,10 @@ func (c *CLI) processUnregisteredSlash(cmdOriginal, cmdLower string) bool {
 			return true
 		}
 		skillCommands = sessionSkillCommands(c)
+	}
+	if bound := commands.Resolve(bare); bound != nil && bound.Handler != nil {
+		c.runBoundCommand(bound.Name, userArgs)
+		return true
 	}
 	if info, ok := skillBundles[baseCmd]; ok {
 		slashRunSkillBundle(c, baseCmd, info, userArgs)
@@ -86,15 +94,30 @@ func skillsAsAny(table skills.SkillCommands) map[string]any {
 func (c *CLI) runQuickCommand(baseCmd string, raw any, userArgs string) bool {
 	qcmd := config.AsMap(raw)
 	if qcmd == nil {
-		panic(fmt.Sprintf("AttributeError: '%s' object has no attribute 'get'", config.PyTypeName(raw)))
+		panic(&commands.RaisedError{Msg: fmt.Sprintf("'%s' object has no attribute 'get'", config.PyTypeName(raw))})
 	}
 	qtype := qcmd["type"]
 	if qtype == "alias" {
-		target := pystr.Strip(cliStr(mapValueOr(qcmd, "target", ""), ""))
+		target := ""
+		if value, has := qcmd["target"]; has {
+			text, isText := value.(string)
+			if !isText {
+				panic(&commands.RaisedError{Msg: fmt.Sprintf("'%s' object has no attribute 'strip'", config.PyTypeName(value))})
+			}
+			target = pystr.Strip(text)
+		}
 		if target != "" {
 			if !strings.HasPrefix(target, "/") {
 				target = "/" + target
 			}
+			bare := pystr.LstripChars(baseCmd, "/")
+			if c.quickAliasChain[bare] {
+				panic(&commands.RaisedError{Msg: "maximum recursion depth exceeded"})
+			}
+			if c.quickAliasChain == nil {
+				c.quickAliasChain = map[string]bool{}
+			}
+			c.quickAliasChain[bare] = true
 			return c.redispatchCommand(pystr.Strip(target + " " + userArgs))
 		}
 		c.consolePrint("[bold red]" + c.t("cli.quick.no_target", map[string]any{"command": baseCmd}) + "[/]")
@@ -355,4 +378,18 @@ func (c *CLI) showConfig() {
 func (c *CLI) redispatchCommand(text string) bool {
 	c.slashRedispatch = true
 	return c.processCommand(text)
+}
+
+// Runs the handler a plugin bound to the command, the turn it builds seeding the next agent turn
+func (c *CLI) runBoundCommand(name, args string) {
+	turn := &gateway.BoundTurn{TaskID: c.sessionID}
+	err := commands.RunHandler(c.ctx, commands.Default, name, args, turn)
+	if err == nil && turn.Message == "" {
+		err = errors.New("/" + name + " built no turn")
+	}
+	if err != nil {
+		cprint("\033[1;31m" + c.t("cli.plugin.command_error", map[string]any{"error": err.Error()}) + resetANSI)
+		return
+	}
+	c.pendingAgentSeed = turn.Message
 }

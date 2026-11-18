@@ -237,17 +237,20 @@ func (s *ToolsSetup) postSetupXAIGrok() error {
 		return nil
 	}
 	s.Con.PrintInfo("    xAI needs credentials. Choose one:")
-	choose, ask, login := ToolsConfigHooks.SetupPromptChoice, ToolsConfigHooks.SetupPrompt, ToolsConfigHooks.XAIOAuthLoginFromSetup
+	choose, ask, login := s.xaiSetupHelpers()
 	if choose == nil || ask == nil || login == nil {
 		s.Con.PrintWarning("    Could not load setup helpers: " + errSetupHelpersUnwired.Error())
 		s.infoLines("Run later: icebath auth add xai-oauth   (or set XAI_API_KEY)")
 		return nil
 	}
-	idx := choose("    How do you want xAI to authenticate?", []string{
+	idx, err := choose("    How do you want xAI to authenticate?", []string{
 		"Sign in with xAI Grok OAuth (SuperGrok / Premium+) — browser login",
 		"Paste an xAI API key (console.x.ai)",
 		"Skip — configure later via `icebath auth add xai-oauth`",
 	}, 0)
+	if err != nil {
+		return err
+	}
 	switch idx {
 	case 0:
 		if login(s.ctx(), s.home()) {
@@ -256,7 +259,10 @@ func (s *ToolsSetup) postSetupXAIGrok() error {
 			s.Con.PrintWarning("    xAI Grok OAuth login did not complete. Run later: icebath auth add xai-oauth")
 		}
 	case 1:
-		apiKey := ask("    xAI API key", "", true)
+		apiKey, err := ask("    xAI API key", "", true)
+		if err != nil {
+			return err
+		}
 		if apiKey == "" {
 			s.Con.PrintWarning("    No API key provided. Run later: icebath auth add xai-oauth")
 			return nil
@@ -269,6 +275,37 @@ func (s *ToolsSetup) postSetupXAIGrok() error {
 		s.Con.PrintInfo("    xAI will remain inactive until credentials are configured.")
 	}
 	return nil
+}
+
+// Choice, text and OAuth login of the xAI step, the flow ones when set else the setup console hooks
+func (s *ToolsSetup) xaiSetupHelpers() (func(string, []string, int) (int, error), func(string, string, bool) (string, error), func(context.Context, string) bool) {
+	if s.Ask != nil {
+		requireFlowHook("XAILogin", s.Flow.XAILogin != nil)
+		return s.promptChoice, s.promptText, func(ctx context.Context, h string) bool { return s.Flow.XAILogin(ctx, h, s.Con.Out) }
+	}
+	choose, ask, login := ToolsConfigHooks.SetupPromptChoice, ToolsConfigHooks.SetupPrompt, ToolsConfigHooks.XAIOAuthLoginFromSetup
+	if choose == nil || ask == nil || login == nil {
+		return nil, nil, nil
+	}
+	pick := func(question string, choices []string, def int) (int, error) {
+		return choose(question, choices, def), nil
+	}
+	text := func(question, def string, password bool) (string, error) { return ask(question, def, password), nil }
+	return pick, text, login
+}
+
+// Choice of the Codex step and whether a terminal can answer, the flow asker when set else the console hook
+func (s *ToolsSetup) codexSetupChoice() (choose func(string, []string, int) (int, error), interactive bool) {
+	if s.Ask != nil {
+		return s.promptChoice, true
+	}
+	noninteractive, prompt := ToolsConfigHooks.SetupIsNoninteractive, ToolsConfigHooks.SetupPromptChoice
+	if noninteractive == nil || prompt == nil {
+		return nil, true
+	}
+	return func(question string, choices []string, def int) (int, error) {
+		return prompt(question, choices, def), nil
+	}, !noninteractive()
 }
 
 // Offline check for Codex or ChatGPT OAuth credentials in the auth store and pool
@@ -294,20 +331,23 @@ func (s *ToolsSetup) postSetupOpenAICodex() error {
 	relogin := "icebath auth add openai-codex"
 	s.Con.PrintInfo("    OpenAI (Codex auth) needs credentials.")
 	login, save := ToolsConfigHooks.CodexDeviceCodeLogin, ToolsConfigHooks.SaveCodexTokens
-	noninteractive, choose := ToolsConfigHooks.SetupIsNoninteractive, ToolsConfigHooks.SetupPromptChoice
-	if login == nil || save == nil || noninteractive == nil || choose == nil {
+	choose, interactive := s.codexSetupChoice()
+	if login == nil || save == nil || choose == nil {
 		s.Con.PrintWarning("    Could not load setup helpers: " + errSetupHelpersUnwired.Error())
 		s.infoLines("Run later: " + relogin)
 		return nil
 	}
-	if noninteractive() {
+	if !interactive {
 		s.infoLines("No terminal to sign in from. Run: " + relogin)
 		return nil
 	}
-	idx := choose("    How do you want to sign in?", []string{
+	idx, err := choose("    How do you want to sign in?", []string{
 		"Sign in with ChatGPT/Codex OAuth — browser login",
 		"Skip — configure later via `" + relogin + "`",
 	}, 0)
+	if err != nil {
+		return err
+	}
 	if idx != 0 {
 		s.Con.PrintInfo("    Codex image generation will remain inactive until you sign in.")
 		return nil

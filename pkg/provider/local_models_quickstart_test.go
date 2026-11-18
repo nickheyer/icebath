@@ -155,7 +155,7 @@ func TestQuickstartRefusesWhenNothingFits(t *testing.T) {
 	lmTestHome(t, ".icebath")
 	catalogSelectVariantFn = func(CatalogEntry, HardwareBudget) *VariantChoice { return nil }
 	_, err := LocalModelsQuickstart(context.Background(), "")
-	if lmStatusOf(err) != 409 || !strings.Contains(err.(*HTTPException).Detail, "Local Models") {
+	if lmStatusOf(err) != 409 || !strings.Contains(err.(*HTTPException).Detail, "/setup model → Local models") {
 		t.Fatalf("quickstart %v", err)
 	}
 }

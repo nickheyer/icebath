@@ -223,7 +223,7 @@ func (p *xaiVideoGenProvider) ListModels() []map[string]any {
 func (p *xaiVideoGenProvider) GetSetupSchema() map[string]any {
 	tag := "grok-imagine-video for text/reference; grok-imagine-video-1.5 for image-to-video; edit/extend: pass the stored public " +
 		"HTTPS MP4 (`video` / `public_url` from a prior Imagine result); uses xAI Grok OAuth or XAI_API_KEY"
-	if notice := videoXAIHTTP("", "", func() string { return xaiStorageNoticeText(pluginEnv(), "video_gen") }); notice != "" {
+	if notice := videoXAIHTTP("", "", func() string { return xaiStorageNoticeText(pluginEnv(context.Background()), "video_gen") }); notice != "" {
 		tag += ". " + notice
 	}
 	return map[string]any{"name": "xAI Grok Imagine", "badge": "paid", "tag": tag, "env_vars": []any{}, "post_setup": "xai_grok"}
@@ -238,7 +238,7 @@ func (p *xaiVideoGenProvider) Capabilities() map[string]any {
 // Text, image or reference to video with the configured model, never a per request override
 func (p *xaiVideoGenProvider) Generate(ctx context.Context, env *tools.Env, req VideoGenRequest) (map[string]any, error) {
 	if env == nil {
-		env = pluginEnv()
+		env = pluginEnv(ctx)
 	}
 	aspect := req.aspect()
 	return runXAIVideo(env, "generation", req.Prompt, req.Model, aspect, func(apiKey, baseURL string) (map[string]any, error) {

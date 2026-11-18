@@ -16,7 +16,7 @@ const childEnv = "HOMEGUARD_TEST_CHILD"
 
 func TestMain(m *testing.M) {
 	if os.Getenv(childEnv) == "1" {
-		os.Stdout.WriteString(Home() + "\n" + os.Getenv("HOME") + "\n")
+		os.Stdout.WriteString(Home() + "\n" + os.Getenv("HOME") + "\n" + SharedCache() + "\n")
 		os.Exit(0)
 	}
 	os.Exit(m.Run())
@@ -25,7 +25,7 @@ func TestMain(m *testing.M) {
 // Saves every variable isolate rewrites so the test can run it again over a fake developer environment
 func saveIsolationEnv(t *testing.T) {
 	names := append([]string{"HOME", "USERPROFILE", "LOCALAPPDATA", "APPDATA", "HOMEDRIVE", "HOMEPATH", "XDG_RUNTIME_DIR",
-		"DBUS_SESSION_BUS_ADDRESS", "ICEBATH_HOME", "HERMES_HOME", "ICEBATH_REAL_HOME", "ICEBATH_ELSEWHERE", "ICEBATH_TMP_HOME"},
+		"DBUS_SESSION_BUS_ADDRESS", "ICEBATH_HOME", "HERMES_HOME", "ICEBATH_REAL_HOME", "ICEBATH_ELSEWHERE", "ICEBATH_TMP_HOME", sharedCacheEnv},
 		append(xdgHomes, xdgSearchPaths...)...)
 	for _, dir := range toolchainDirs {
 		names = append(names, dir.name)
@@ -107,8 +107,11 @@ func TestChildTestBinaryKeepsTheHomeItsParentGaveIt(t *testing.T) {
 		t.Fatal(err)
 	}
 	lines := strings.Split(strings.TrimSpace(string(out)), "\n")
-	if len(lines) != 2 || lines[0] != Home() || lines[1] != Home() {
+	if len(lines) != 3 || lines[0] != Home() || lines[1] != Home() {
 		t.Fatalf("child reported %q, parent private home %q", lines, Home())
+	}
+	if SharedCache() == "" || lines[2] != SharedCache() || within(resolve(SharedCache()), resolve(Home())) {
+		t.Fatalf("child shared cache %q, parent shared cache %q, private home %q", lines[2], SharedCache(), Home())
 	}
 }
 
@@ -131,8 +134,14 @@ func TestIsolateReplacesADeveloperHomeAndEveryPointerIntoIt(t *testing.T) {
 		os.Unsetenv(name)
 	}
 	os.Setenv("XDG_CACHE_HOME", filepath.Join(dev, ".cache"))
+	os.Unsetenv(sharedCacheEnv)
+	developerCache, _ := os.UserCacheDir()
 	isolate()
 	private := Home()
+	if SharedCache() != developerCache || os.Getenv(sharedCacheEnv) != developerCache ||
+		(runtime.GOOS == "linux" && developerCache != filepath.Join(dev, ".cache")) {
+		t.Fatalf("shared cache %q handed down as %q, developer cache %q", SharedCache(), os.Getenv(sharedCacheEnv), developerCache)
+	}
 	if Original() != dev || !underTemp(resolve(private)) || os.Getenv("HOME") != private {
 		t.Fatalf("original %q private %q HOME %q", Original(), private, os.Getenv("HOME"))
 	}
@@ -187,5 +196,44 @@ func TestReapRemovesOnlyThePrivateHomesOfExitedBinariesInThisNamespace(t *testin
 		if kept != (err == nil) {
 			t.Errorf("%s kept=%v stat err %v", name, kept, err)
 		}
+	}
+}
+
+func TestEveryTestBinaryOfTheModuleLinksTheGuard(t *testing.T) {
+	root, err := filepath.Abs(filepath.Join("..", "..", ".."))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(filepath.Join(root, "go.mod")); err != nil {
+		t.Fatalf("module root %s: %v", root, err)
+	}
+	list := exec.Command("go", "list", "-tags=goolm", "-test", "-f", `{{.ImportPath}}|{{join .Deps ","}}`, "./...")
+	list.Dir = root
+	list.Stderr = os.Stderr
+	out, err := list.Output()
+	if err != nil {
+		t.Fatalf("go list: %v", err)
+	}
+	const guard = "github.com/nickheyer/icebath/pkg/internal/homeguard"
+	binaries := 0
+	for _, line := range strings.Split(strings.TrimSpace(string(out)), "\n") {
+		name, deps, _ := strings.Cut(line, "|")
+		binary, isTest := strings.CutSuffix(name, ".test")
+		if !isTest {
+			continue
+		}
+		binaries++
+		linked := binary == guard
+		for _, dep := range strings.Split(deps, ",") {
+			if dep, _, _ = strings.Cut(dep, " "); dep == guard {
+				linked = true
+			}
+		}
+		if !linked {
+			t.Errorf("the tests of %s run without the private home, add a homeguard_import_test.go", binary)
+		}
+	}
+	if binaries < 100 {
+		t.Fatalf("go list named %d test binaries", binaries)
 	}
 }

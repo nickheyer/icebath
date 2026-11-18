@@ -40,6 +40,18 @@ type gatewayIdentity struct {
 
 var unmappedGateway = gatewayIdentity{"gateway", ""}
 
+// Supervisors an earlier release recorded on serve and dashboard rows
+var supervisedServeBackends = map[string]bool{
+	"manual-serve": true, "desktop": true, "desktop-ssh": true, "systemd": true, "launchd": true, "windows-service": true, "service": true,
+}
+
+// Reports a historical serve or dashboard row whose supervisor owns its restart, never gateway evidence
+func supervisedServeRow(row any) bool {
+	kind := rowValue(row, "kind")
+	supervisor, _ := rowValue(row, "supervisor").(string)
+	return (kind == "serve" || kind == "dashboard") && supervisedServeBackends[supervisor]
+}
+
 // Identity of a gateway profile value, an error for a value Python cannot hash into a set
 func gatewayOf(profile any) (gatewayIdentity, error) {
 	switch profile.(type) {
@@ -232,6 +244,9 @@ func receiptOwedGateways(receipt any) (map[gatewayIdentity]bool, bool, error) {
 			unverified = true
 			continue
 		}
+		if supervisedServeRow(e.row) {
+			continue
+		}
 		kind := rowValueOr(e.row, "kind", e.defaultKind)
 		profile := rowValue(e.row, "profile")
 		if kind != "gateway" || !pyrepr.Truthy(profile) || profile == "unknown" {
@@ -354,6 +369,9 @@ func markerOwedGateways(ctx context.Context, inventory any) (owed map[gatewayIde
 	for _, runtime := range runtimes {
 		if !isRowDict(runtime) {
 			return nil, false, &inventoryValueError{"fleet-restart inventory row is not an object"}
+		}
+		if supervisedServeRow(runtime) {
+			continue
 		}
 		if rowValue(runtime, "kind") == "gateway" && pyrepr.Truthy(rowValue(runtime, "stopped_unmapped")) {
 			owed[unmappedGateway] = true

@@ -36,6 +36,7 @@ func TestMain(m *testing.M) {
 	}
 	DispatchCustodyLauncher()
 	gateway.DispatchGatewayRestartWatcherEntry(context.Background())
+	tools.DispatchCommitGraphRefreshEntry(context.Background())
 	if len(os.Args) > 1 && os.Args[1] == servedGatewayStandInEntry {
 		time.Sleep(10 * time.Minute)
 		os.Exit(0)

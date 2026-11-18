@@ -50,11 +50,11 @@ func sizeFor(aspect string) string {
 	return openAISizes["square"]
 }
 
-// Process environment a plugin provider reads when a method carries no call environment
-func pluginEnv() *tools.Env {
-	h := home.Process()
+// Config and .env of the profile home the context binds, read when a provider method gets no call environment
+func pluginEnv(ctx context.Context) *tools.Env {
+	h := home.Dir(ctx)
 	secrets := config.NewSecrets(h)
-	cfg, err := config.Load(h, secrets.Lookup())
+	cfg, err := config.LoadContext(ctx, h, secrets.Lookup())
 	if err != nil {
 		cfg = config.Tree{}
 	}

@@ -81,7 +81,7 @@ func FindOrStartAccountOperation(ctx context.Context, env *Env, names []string, 
 		LiveClose(op)
 		return nil, err
 	}
-	go runAccountOperation(context.WithoutCancel(ctx), env, start, action, initiator)
+	go runAccountOperation(context.WithoutCancel(ctx), ForkSessionContext(env), start, action, initiator)
 	return start, nil
 }
 

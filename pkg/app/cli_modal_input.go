@@ -4,24 +4,8 @@ import (
 	"context"
 	"fmt"
 	"runtime"
-	"sort"
 	"strings"
-	"time"
-
-	"github.com/nickheyer/icebath/pkg/commands"
 )
-
-// Places text in the prompt buffer for editing
-func (c *CLI) prefillInputBuffer(text string) {
-	c.uiMu.Lock()
-	app := c.app
-	c.uiMu.Unlock()
-	if app == nil {
-		return
-	}
-	app.SetBuffer(text, len([]rune(text)))
-	_ = app.Invalidate()
-}
 
 // Typed answers the slash confirm modal accepts, mapped onto the canonical choice values
 var confirmAliases = map[string]string{
@@ -83,36 +67,14 @@ func gatedConfirm(c *CLI, command, key string, p gatedConfirmPrompt) string {
 // Platform the modal prompt fallback reads, swapped by tests
 var modalGOOS = runtime.GOOS
 
-// Prompts for a line of text, cancelled when an application runs and the caller is not on its loop
+// Prompts for a line of text on the console, false when nothing was typed
 func (c *CLI) promptTextInput(promptText string) (string, bool) {
-	result, ok := "", false
-	ask := func() {
-		line, err := console().Input(promptText)
-		if err != nil {
-			return
-		}
-		if line = strings.TrimSpace(line); line != "" {
-			result, ok = line, true
-		}
-	}
-	c.uiMu.Lock()
-	app := c.app
-	c.uiMu.Unlock()
-	switch {
-	case app != nil && !app.OnLoop():
-		_ = c.invalidate()
+	line, err := console().Input(promptText)
+	if err != nil {
 		return "", false
-	case app != nil:
-		wasVisible := c.statusBarVisible
-		c.statusBarVisible = false
-		_ = app.Invalidate()
-		app.RunInTerminal(ask)
-		c.statusBarVisible = wasVisible
-		_ = app.Invalidate()
-	default:
-		ask()
 	}
-	return result, ok
+	line = strings.TrimSpace(line)
+	return line, line != ""
 }
 
 // Asks a slash command confirmation through the prompt composer, false when it timed out or could not be shown
@@ -120,78 +82,7 @@ func (c *CLI) promptTextInputModal(title, detail string, choices []slashConfirmC
 	if len(choices) == 0 {
 		return "", false
 	}
-	c.uiMu.Lock()
-	app := c.app
-	c.uiMu.Unlock()
-	if app == nil {
-		return c.promptTextInput(c.t("cli.modal.choice_prompt", nil))
-	}
-	onLoop := app.OnLoop()
-	stdinFallback := func() (string, bool) {
-		if modalGOOS == "windows" && !onLoop {
-			_ = c.invalidate()
-			return "", false
-		}
-		return c.promptTextInput(c.t("cli.modal.choice_prompt", nil))
-	}
-	hasLoop := app.IsRunning()
-	if !onLoop && !hasLoop {
-		return stdinFallback()
-	}
-	response := make(chan string, 1)
-	setup := func() {
-		c.captureModalInputSnapshot()
-		c.uiMu.Lock()
-		c.slashConfirmState = &slashConfirmModalState{Title: title, Detail: detail, Choices: choices, response: response}
-		c.slashConfirmDeadline = monotonic() + timeout
-		c.uiMu.Unlock()
-		_ = c.invalidate()
-	}
-	teardown := func() {
-		c.uiMu.Lock()
-		c.slashConfirmState, c.slashConfirmDeadline = nil, 0
-		c.uiMu.Unlock()
-		c.restoreModalInputSnapshot()
-		_ = c.invalidate()
-	}
-	runOnLoop := func(fn func()) bool {
-		if onLoop || !hasLoop {
-			fn()
-			return true
-		}
-		ready := make(chan struct{})
-		if !app.CallSoonThreadsafe(func() { defer close(ready); fn() }) {
-			return false
-		}
-		select {
-		case <-ready:
-			return true
-		case <-time.After(5 * time.Second):
-			return false
-		}
-	}
-	if !runOnLoop(setup) {
-		return stdinFallback()
-	}
-	defer func() {
-		c.uiMu.Lock()
-		open := c.slashConfirmState != nil
-		c.uiMu.Unlock()
-		if open {
-			runOnLoop(teardown)
-		}
-	}()
-	deadline := func() (float64, bool) {
-		c.uiMu.Lock()
-		defer c.uiMu.Unlock()
-		return c.slashConfirmDeadline, true
-	}
-	result, timedOut := pollModalQueue(c, c.ctx, response, deadline, 5.0, func() { _ = c.invalidate() }, "")
-	if timedOut {
-		return "", false
-	}
-	runOnLoop(teardown)
-	return result, result != ""
+	return c.promptTextInput(c.t("cli.modal.choice_prompt", nil))
 }
 
 // Canonical choice a typed answer names among the offered ones, empty when it names none
@@ -211,45 +102,6 @@ func (c *CLI) normalizeSlashConfirmChoice(raw string, choices []slashConfirmChoi
 		return typed
 	}
 	return ""
-}
-
-// Flat palette rows, the commands behind the help listing allowed on this surface plus installed skill commands
-func (c *CLI) buildCommandPaletteEntries() []commandPaletteEntry {
-	var entries []commandPaletteEntry
-	for _, group := range commands.CommandsByCategory(commands.Default) {
-		for _, row := range group.Rows {
-			if c.commandAvailable(row.Command) {
-				entries = append(entries, commandPaletteEntry{row.Command, group.Category, row.Description})
-			}
-		}
-	}
-	found := sessionSkillCommands(c)
-	names := make([]string, 0, len(found))
-	for name := range found {
-		names = append(names, name)
-	}
-	sort.Strings(names)
-	for _, name := range names {
-		entries = append(entries, commandPaletteEntry{name, c.t("cli.palette.category_skill", nil), cliStr(found[name]["description"], "")})
-	}
-	return entries
-}
-
-// Opens the command palette, never over another modal
-func (c *CLI) openCommandPalette() {
-	c.uiMu.Lock()
-	blocked := c.commandPaletteState != nil || c.modelPickerState != nil || c.clarifyState != nil || c.approvalState != nil ||
-		c.slashConfirmState != nil || c.sudoState != nil || c.secretState != nil || c.connectionState != nil
-	c.uiMu.Unlock()
-	if blocked {
-		return
-	}
-	c.captureModalInputSnapshot()
-	entries := c.buildCommandPaletteEntries()
-	c.uiMu.Lock()
-	c.commandPaletteState = &commandPaletteModalState{Entries: entries}
-	c.uiMu.Unlock()
-	_ = c.invalidateWithin(0)
 }
 
 // Splits the skip tokens out of a destructive slash command, returning the remaining argument text and whether one was found

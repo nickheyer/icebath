@@ -12,7 +12,6 @@ import (
 	"strings"
 	"sync"
 	"time"
-	"unicode/utf8"
 
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/home"
@@ -722,109 +721,4 @@ func (c *SlashCompleter) Complete(text string) []Completion {
 		}
 	}
 	return out
-}
-
-// SlashCommandAutoSuggest ghosts slash commands and subcommands and falls back to a history suggester
-type SlashCommandAutoSuggest[B, D any] struct {
-	history   func(B, D) (string, bool)
-	completer *SlashCompleter
-}
-
-// Suggester over an optional history source and an optional completer whose filter and skill tables it reuses
-func NewSlashCommandAutoSuggest[B, D any](history func(B, D) (string, bool), completer *SlashCompleter) *SlashCommandAutoSuggest[B, D] {
-	return &SlashCommandAutoSuggest[B, D]{history: history, completer: completer}
-}
-
-func (s *SlashCommandAutoSuggest[B, D]) allowed(cmd string) bool {
-	return s.completer == nil || s.completer.commandAllowed(cmd)
-}
-
-func (s *SlashCommandAutoSuggest[B, D]) historySuggestion(b B, doc D) (string, bool) {
-	if s.history == nil {
-		return "", false
-	}
-	return s.history(b, doc)
-}
-
-// Ghost text for the text before the cursor, ok false when nothing is suggested
-func (s *SlashCommandAutoSuggest[B, D]) GetSuggestion(b B, doc D, text string) (string, bool) {
-	if !strings.HasPrefix(text, "/") {
-		return s.historySuggestion(b, doc)
-	}
-	parts := pystr.SplitWhitespace(text, 1)
-	base := pystr.Lower(parts[0])
-	if len(parts) == 1 && !strings.HasSuffix(text, " ") {
-		word := pystr.Lower(text[1:])
-		reg := Default
-		if s.completer != nil {
-			reg = s.completer.src.Registry
-		}
-		names := commandsInOrder(reg)
-		sort.SliceStable(names, func(i, j int) bool { return utf8.RuneCountInString(names[i]) < utf8.RuneCountInString(names[j]) })
-		for _, cmd := range names {
-			name := cmd[1:]
-			if s.allowed(cmd) && strings.HasPrefix(name, word) && name != word {
-				return name[len(word):], true
-			}
-		}
-		return "", false
-	}
-	sub := ""
-	if len(parts) > 1 {
-		sub = parts[1]
-	}
-	subLower := pystr.Lower(sub)
-	if s.completer != nil && s.completer.isSkillCommand(base) {
-		for _, comp := range s.completer.stackedSkillCompletions(text) {
-			remainder := comp.Text
-			if comp.Start != 0 {
-				remainder = pySliceFrom(comp.Text, -comp.Start)
-			}
-			if pystr.Strip(remainder) != "" {
-				return remainder, true
-			}
-		}
-	}
-	if !s.allowed(base) {
-		return "", false
-	}
-	if !strings.Contains(sub, " ") {
-		reg := Default
-		if s.completer != nil {
-			reg = s.completer.src.Registry
-		}
-		for _, cand := range Subcommands(reg)[base] {
-			if strings.HasPrefix(cand, subLower) && cand != subLower {
-				return pySliceFrom(cand, utf8.RuneCountInString(sub)), true
-			}
-		}
-	}
-	return s.historySuggestion(b, doc)
-}
-
-// Flat command table keys in category order, a repeated key keeping its first position
-func commandsInOrder(r *Registry) []string {
-	var out []string
-	seen := map[string]bool{}
-	for _, g := range CommandsByCategory(r) {
-		for _, row := range g.Rows {
-			if !seen[row.Command] {
-				seen[row.Command] = true
-				out = append(out, row.Command)
-			}
-		}
-	}
-	return out
-}
-
-// Code point suffix from index n as Python slicing gives it, empty past the end
-func pySliceFrom(s string, n int) string {
-	r := []rune(s)
-	if n >= len(r) {
-		return ""
-	}
-	if n < 0 {
-		n = max(len(r)+n, 0)
-	}
-	return string(r[n:])
 }

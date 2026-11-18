@@ -30,6 +30,8 @@ type ImageGenRequest struct {
 // Image generation backend selected by image_gen.provider
 type ImageGenProvider interface {
 	provider.CatalogProviderBase
+	// Whether credentials resolve under the profile home and secret scope the context binds
+	AvailableIn(ctx context.Context) bool
 	Capabilities() map[string]any
 	Generate(ctx context.Context, env *tools.Env, req ImageGenRequest) (map[string]any, error)
 }
@@ -206,7 +208,7 @@ func GetActiveImageGenProvider(ctx context.Context, env *tools.Env) ImageGenProv
 		imageGenLog.Debug(fmt.Sprintf("image_gen.provider='%s' configured but not registered; falling back", configured))
 	}
 	available := func(p ImageGenProvider) bool {
-		return provider.IsAvailableSafe(p, imageGenLog, "image_gen provider %s.is_available() raised %s", slog.LevelDebug, false)
+		return provider.IsAvailableSafe(scopedImageGenProvider{p, ctx}, imageGenLog, "image_gen provider %s.is_available() raised %s", slog.LevelDebug, false)
 	}
 	var avail []ImageGenProvider
 	for _, p := range snapshot.Values() {
@@ -222,6 +224,14 @@ func GetActiveImageGenProvider(ctx context.Context, env *tools.Env) ImageGenProv
 	}
 	return nil
 }
+
+// Provider whose availability probe answers for the profile scope of one context
+type scopedImageGenProvider struct {
+	ImageGenProvider
+	ctx context.Context
+}
+
+func (s scopedImageGenProvider) IsAvailable() bool { return s.AvailableIn(s.ctx) }
 
 // Python plugin provider object proxied from the plugin host
 type hostedImageGenProvider struct{ obj *plugins.HostedObject }
@@ -270,8 +280,11 @@ func (h hostedImageGenProvider) GetSetupSchema() map[string]any {
 	return map[string]any{"name": h.DisplayName(), "badge": "", "tag": "", "env_vars": []any{}}
 }
 
-func (h hostedImageGenProvider) IsAvailable() bool {
-	v, err := h.obj.Call(context.Background(), "is_available", nil, nil)
+func (h hostedImageGenProvider) IsAvailable() bool { return h.AvailableIn(context.Background()) }
+
+// The plugin's is_available answered with the caller's profile scope riding the host call
+func (h hostedImageGenProvider) AvailableIn(ctx context.Context) bool {
+	v, err := h.obj.Call(ctx, "is_available", nil, nil)
 	if err != nil {
 		panic(err)
 	}

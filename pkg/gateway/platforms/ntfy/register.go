@@ -117,7 +117,7 @@ func (ntfyPlatformPlugin) Manifest() plugins.Manifest {
 	return plugins.Manifest{Name: "ntfy-platform", Version: "1.0.0", Kind: "platform", Source: "bundled", Key: "platforms/ntfy",
 		Author: "sprmn24",
 		Description: "ntfy push-notification gateway adapter for Icebath Agent. Subscribes to a topic on ntfy.sh or any " +
-			"self-hosted ntfy server via HTTP streaming, and publishes replies via HTTP POST. Lightweight — no external SDK, " +
+			"self-hosted ntfy server via HTTP streaming, and publishes replies via HTTP POST. Lightweight \u2014 no external SDK, " +
 			"only net/http (already an Icebath dependency).\n" +
 			"ntfy has no native user-identity primitive; the adapter treats each topic as a single trusted channel and never " +
 			"derives user identity from publisher-controlled fields. Use a private topic + read token for any real trust " +

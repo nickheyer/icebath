@@ -56,6 +56,14 @@ func EnvironProxies(environ []string) map[string]string {
 	return proxies
 }
 
+// Environment proxies, or the operating system ones when the environment sets none, as urllib getproxies reads them
+func Getproxies() map[string]string {
+	if proxies := EnvironProxies(os.Environ()); len(proxies) > 0 {
+		return proxies
+	}
+	return SystemProxies()
+}
+
 // Reports whether no_proxy exempts the host the way urllib proxy_bypass_environment decides
 func ProxyBypassEnvironment(host string, proxies map[string]string) bool {
 	noProxy, ok := proxies["no"]

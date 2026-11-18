@@ -108,9 +108,13 @@ func streamErrorTransport(err error) (timeout, conn bool) {
 		case "ConnectError", "ReadError", "RemoteProtocolError":
 			return false, true
 		}
+		return false, false
 	}
 	if _, ok := err.(*AnthropicConnectionError); ok {
 		return false, true
+	}
+	if _, ok := err.(*AuxSDKError); ok {
+		return false, false
 	}
 	for _, errno := range []syscall.Errno{syscall.ECONNRESET, syscall.ECONNREFUSED, syscall.ECONNABORTED, syscall.EPIPE, syscall.ESHUTDOWN} {
 		if errors.Is(err, errno) {

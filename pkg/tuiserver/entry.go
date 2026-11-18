@@ -138,10 +138,14 @@ func DispatchTUIGatewayEntry(ctx context.Context, exit func(int)) {
 	runStdioEntry(ctx, exit)
 }
 
-// Loads the server module, keeps stray prints off the RPC stdout, installs the signals and runs main
+// Keeps stray prints off the RPC stdout, loads the server module, installs the signals and runs main
 func runStdioEntry(ctx context.Context, exit func(int)) {
-	loadServerModule()
 	os.Stdout = os.Stderr
+	if err := loadServerModule(); err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		exit(1)
+		return
+	}
 	e := &stdioEntry{ctx: ctx, exit: exit}
 	installEntrySignals(e)
 	e.finish(e.main())

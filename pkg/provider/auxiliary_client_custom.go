@@ -142,7 +142,7 @@ func auxValidateBaseURL(baseURL string) error {
 	}
 	if err != nil {
 		return &AuxRuntimeError{Message: fmt.Sprintf("Malformed custom endpoint URL: %s. "+
-			"Run `icebath setup` or `icebath model` and enter a valid http(s) base URL.", pyrepr.Repr(candidate))}
+			"Run `icebath model`, or start `icebath` and type `/setup model`, and enter a valid http(s) base URL.", pyrepr.Repr(candidate))}
 	}
 	return nil
 }

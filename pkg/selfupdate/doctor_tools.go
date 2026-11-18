@@ -327,7 +327,7 @@ func doctorCheckDockerBackend(ctx context.Context, w io.Writer, terminalEnv stri
 	case terminalEnv == "docker":
 		if dockerExe == "" {
 			doctorFailAndIssue(w, "Docker or Podman not installed", "(needed for the 'docker' terminal backend)",
-				"Install Docker or Podman, or run `icebath setup terminal` to switch backend.", issues)
+				"Install Docker or Podman, or start `icebath` and type `/setup terminal` to switch backend.", issues)
 			return nil
 		}
 		runtimeName := tools.DockerRuntimeName(dockerExe)
@@ -342,7 +342,7 @@ func doctorCheckDockerBackend(ctx context.Context, w io.Writer, terminalEnv stri
 		}
 		doctorRequire(w, reachable, doctorRow{runtimeName, okDetail},
 			doctorRow{unreachable, "(needed for the 'docker' terminal backend)"},
-			doctorCapitalize(hint)+", or run `icebath setup terminal` to switch backend.", issues)
+			doctorCapitalize(hint)+", or start `icebath` and type `/setup terminal` to switch backend.", issues)
 	case dockerExe != "":
 		doctorCheckOK(w, tools.DockerRuntimeName(dockerExe), "(optional)")
 	case doctorIsTermux():
@@ -358,7 +358,7 @@ func doctorCheckSSHBackend(ctx context.Context, d *Doctor, issues *[]string) err
 	sshHost := os.Getenv("TERMINAL_SSH_HOST")
 	if sshHost == "" {
 		doctorFailAndIssue(d.W, "SSH host not configured", "(needed for the 'ssh' terminal backend)",
-			"run `icebath setup terminal` and enter the SSH host and user.", issues)
+			"start `icebath`, type `/setup terminal` and enter the SSH host and user.", issues)
 		return nil
 	}
 	sshUser, sshPort, sshKey := os.Getenv("TERMINAL_SSH_USER"), os.Getenv("TERMINAL_SSH_PORT"), os.Getenv("TERMINAL_SSH_KEY")
@@ -392,12 +392,12 @@ func doctorBackendClientLinked(ctx context.Context, name string) bool {
 func doctorCheckDaytonaBackend(ctx context.Context, d *Doctor, issues *[]string) error {
 	doctorRequire(d.W, os.Getenv("DAYTONA_API_KEY") != "", doctorRow{"Daytona API key", "(configured)"},
 		doctorRow{"Daytona API key missing", "(needed for the 'daytona' terminal backend)"},
-		"run `icebath setup terminal` (Daytona) to enter it.", issues)
+		"start `icebath` and type `/setup terminal` (Daytona) to enter it.", issues)
 	if doctorBackendClientLinked(ctx, "daytona") {
 		doctorCheckOK(d.W, "daytona SDK", "(installed)")
 	} else {
-		doctorFailAndIssue(d.W, "daytona SDK not installed", "(run icebath setup terminal)",
-			"Run icebath setup terminal and select Daytona, then restart Icebath", issues)
+		doctorFailAndIssue(d.W, "daytona SDK not installed", "(type /setup terminal in icebath)",
+			"Start icebath, type /setup terminal and select Daytona, then restart Icebath", issues)
 	}
 	return nil
 }
@@ -426,8 +426,8 @@ func doctorCheckVercelBackend(ctx context.Context, d *Doctor, issues *[]string) 
 		doctorRow{"Vercel custom disk unsupported", "(reset terminal.container_disk to 51200)"},
 		"Vercel Sandbox does not support custom container_disk; use the shared default 51200", issues)
 	doctorRequire(d.W, doctorBackendClientLinked(ctx, "vercel_sandbox"), doctorRow{"vercel SDK", "(installed)"},
-		doctorRow{"vercel SDK not installed", "(run icebath setup terminal)"},
-		"Run icebath setup terminal and select Vercel Sandbox, then restart Icebath", issues)
+		doctorRow{"vercel SDK not installed", "(type /setup terminal in icebath)"},
+		"Start icebath, type /setup terminal and select Vercel Sandbox, then restart Icebath", issues)
 	auth := doctorDescribeVercelAuth()
 	switch {
 	case auth.OK:
@@ -723,7 +723,7 @@ func checkToolAvailability(ctx context.Context, d *Doctor, shouldFix bool) (*Fin
 			doctorCheckWarn(d.W, item.Name, detail)
 		}
 		if len(doctorMissingAPIKeyToolsetsForSummary(ctx, d, unavailable)) > 0 || webNotOK {
-			f.Issues = append(f.Issues, "Run 'icebath setup' to configure missing API keys for full tool access")
+			f.Issues = append(f.Issues, "Start 'icebath' and type '/setup tools' to configure missing API keys for full tool access")
 		}
 		return doctorWarnPartiallyStrippedToolsets(ctx, d, f)
 	})

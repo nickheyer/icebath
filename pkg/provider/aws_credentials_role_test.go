@@ -1,6 +1,7 @@
 package provider
 
 import (
+	"context"
 	"crypto/sha1"
 	"encoding/hex"
 	"encoding/json"
@@ -217,10 +218,10 @@ func TestAWSChainAssumeRoleMFAPromptsOnceThenRefusesRefresh(t *testing.T) {
 	f.expiry = func(string) string { return awsNow().Add(5 * time.Minute).UTC().Format(time.RFC3339) }
 	prompts := 0
 	prev := awsMFAPrompt
-	awsMFAPrompt = func(serial string) (string, error) {
+	awsMFAPrompt = func(_ context.Context, prompt string) (string, error) {
 		prompts++
-		if serial != "arn:aws:iam::1:mfa/me" {
-			t.Errorf("serial %q", serial)
+		if prompt != "Enter MFA code for arn:aws:iam::1:mfa/me: " {
+			t.Errorf("prompt %q", prompt)
 		}
 		return "123456", nil
 	}

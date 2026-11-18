@@ -42,3 +42,18 @@ func catalogRegistry(ctx context.Context) ([]tuiserver.CatalogCommand, map[strin
 	}
 	return rows, commands.Subcommands(builtins)
 }
+
+// Plugin owned commands of the process registry with their localized descriptions and subcommand table
+func registryPluginCommands(ctx context.Context) ([]tuiserver.CatalogCommand, map[string][]string) {
+	defs := commands.PluginEntries(commands.Default)
+	rows := make([]tuiserver.CatalogCommand, 0, len(defs))
+	subcommands := map[string][]string{}
+	for _, d := range defs {
+		rows = append(rows, tuiserver.CatalogCommand{Name: d.Name, Category: d.Category, Description: d.Describe(ctx),
+			Aliases: append([]string(nil), d.Aliases...)})
+		if len(d.Subcommands) > 0 {
+			subcommands["/"+d.Name] = append([]string(nil), d.Subcommands...)
+		}
+	}
+	return rows, subcommands
+}

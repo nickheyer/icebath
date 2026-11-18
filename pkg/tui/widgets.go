@@ -290,10 +290,15 @@ func (h *widgetHost) box(active *activeWidget, cols, rows int) []string {
 	}
 	width = min(width, max(cols-2, 12))
 	inner := h.paint(active, width-4, max(rows-2, 1))
+	return framedBox(t, " /"+active.widget.ID+" ", inner[:min(len(inner), max(rows-2, 1))], width)
+}
+
+// Rounded frame of a total width in the border tone around rows, the title cut into the top edge
+func framedBox(t theme, title string, inner []string, width int) []string {
 	border := toneStyle(t.Color.Border)
-	title := " /" + active.widget.ID + " "
+	title = ansi.Truncate(title, max(width-4, 0), "")
 	out := []string{border.Render("╭─" + title + strings.Repeat("─", max(width-4-ansi.StringWidth(title), 0)) + "─╮")}
-	for _, line := range inner[:min(len(inner), max(rows-2, 1))] {
+	for _, line := range inner {
 		pad := max(width-4-ansi.StringWidth(line), 0)
 		out = append(out, border.Render("│ ")+line+strings.Repeat(" ", pad)+border.Render(" │"))
 	}

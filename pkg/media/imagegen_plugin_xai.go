@@ -366,26 +366,31 @@ func checkXAISourceImages(sources []string, imageURL string, fail errorFn) map[s
 // xAI grok-imagine-image backend
 type xaiImageGenProvider struct {
 	staticImageGenProvider
-	env func() *tools.Env
+	env func(context.Context) *tools.Env
 }
 
 func newXAIImageGenProvider() *xaiImageGenProvider {
 	return &xaiImageGenProvider{env: pluginEnv, staticImageGenProvider: staticImageGenProvider{providerID: "xai", label: "xAI (Grok)"}}
 }
 
-// Available when xAI OAuth or XAI_API_KEY resolves a key
-func (p *xaiImageGenProvider) IsAvailable() bool {
-	return resolveXAIImageCreds(p.env()).APIKey != ""
+// Available when xAI OAuth or XAI_API_KEY resolves a key for the process profile
+func (p *xaiImageGenProvider) IsAvailable() bool { return p.AvailableIn(context.Background()) }
+
+// Available when xAI OAuth or XAI_API_KEY resolves a key in the profile home the context binds
+func (p *xaiImageGenProvider) AvailableIn(ctx context.Context) bool {
+	return resolveXAIImageCreds(p.env(ctx)).APIKey != ""
 }
 
 // Picker rows of the merged live and curated catalog
 func (p *xaiImageGenProvider) ListModels() []map[string]any {
-	return catalogRows(xaiImageCatalog(context.Background(), p.env()), []string{"display", "speed", "strengths"}, nil)
+	ctx := context.Background()
+	return catalogRows(xaiImageCatalog(ctx, p.env(ctx)), []string{"display", "speed", "strengths"}, nil)
 }
 
 // First model of the merged catalog
 func (p *xaiImageGenProvider) DefaultModel() string {
-	if cat := xaiImageCatalog(context.Background(), p.env()); len(cat.order) > 0 {
+	ctx := context.Background()
+	if cat := xaiImageCatalog(ctx, p.env(ctx)); len(cat.order) > 0 {
 		return cat.order[0]
 	}
 	return ""
@@ -394,7 +399,7 @@ func (p *xaiImageGenProvider) DefaultModel() string {
 // OAuth driven setup with the storage notice appended to the tag when one applies
 func (p *xaiImageGenProvider) GetSetupSchema() map[string]any {
 	tag := "grok-imagine-image - text-to-image & image editing; uses xAI Grok OAuth or XAI_API_KEY"
-	if notice := xaiStorageNoticeText(p.env(), "image_gen"); notice != "" {
+	if notice := xaiStorageNoticeText(p.env(context.Background()), "image_gen"); notice != "" {
 		tag += ". " + notice
 	}
 	return map[string]any{"name": "xAI Grok Imagine (image)", "badge": "paid", "tag": tag, "env_vars": []any{}, "post_setup": "xai_grok"}
@@ -408,7 +413,7 @@ func (p *xaiImageGenProvider) Capabilities() map[string]any {
 // Text to image through images/generations or editing through the JSON images/edits endpoint
 func (p *xaiImageGenProvider) Generate(ctx context.Context, env *tools.Env, req ImageGenRequest) (map[string]any, error) {
 	if env == nil {
-		env = p.env()
+		env = p.env(ctx)
 	}
 	creds := resolveXAIImageCreds(env)
 	apiKey := pystr.Strip(creds.APIKey)

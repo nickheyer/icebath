@@ -4,13 +4,14 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"github.com/nickheyer/icebath/pkg/profiles"
 	"io"
 	"os"
 	"regexp"
 	"sort"
 	"strconv"
 	"strings"
+
+	"github.com/nickheyer/icebath/pkg/profiles"
 
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
@@ -123,7 +124,7 @@ const rootEpilog = `Examples:
     icebath --resume <session_id>  Resume a specific session by ID
     icebath --resume latest        Resume the most recent session (same as -c)
     icebath --resume latest --in ./dir   Resume ./dir's latest session
-    icebath setup                  Run setup wizard
+    icebath, then /setup           Set up in the terminal UI
     icebath logout                 Clear stored authentication
     icebath auth add <provider>    Add a pooled credential
     icebath auth list              List pooled credentials
@@ -217,7 +218,7 @@ func (c *CLI) addRootFlags(root *cobra.Command) {
 	f.String("usage-file", "", "One-shot mode only: after the run, write a JSON usage report (estimated cost, token counts, model, api_calls) to PATH. The report is written even when the run fails, so pipelines can always account for spend. No effect outside -z/--oneshot.")
 	f.StringP("model", "m", "", "Model override for this invocation (e.g. anthropic/claude-sonnet-4.6). Applies to -z/--oneshot and the TUI. Also settable via ICEBATH_INFERENCE_MODEL env var.")
 	c.inherited(root, "model")
-	f.String("provider", "", "Provider override for this invocation (e.g. openrouter, anthropic). Applies to -z/--oneshot and the TUI. The persistent provider lives in config.yaml under model.provider — use `icebath setup` or edit the file to change it.")
+	f.String("provider", "", "Provider override for this invocation (e.g. openrouter, anthropic). Applies to -z/--oneshot and the TUI. The persistent provider lives in config.yaml under model.provider — use `icebath model`, type `/setup model` in `icebath`, or edit the file to change it.")
 	c.inherited(root, "provider")
 	f.String("reasoning", "", "Reasoning effort for this invocation: none, minimal, low, medium, high, xhigh, max, or ultra. Overrides agent.reasoning_effort in config.yaml for this run only; the persistent level lives there (or per-model under agent.reasoning_overrides).")
 	c.inherited(root, "reasoning")

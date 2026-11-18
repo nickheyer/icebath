@@ -8,6 +8,7 @@ import (
 	"maps"
 	"unsafe"
 
+	"github.com/nickheyer/icebath/pkg/internal/pyctx"
 	"github.com/nickheyer/icebath/pkg/internal/pydict"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 )
@@ -479,7 +480,7 @@ func (r *Runtime) sendExportedPackages(ctx context.Context) {
 	}
 	done := make(chan struct{})
 	r.sendThread = done
-	passCtx := context.WithoutCancel(ctx)
+	passCtx := pyctx.With(context.WithoutCancel(ctx), pyctx.CopyContext(ctx))
 	go func() {
 		defer close(done)
 		r.runSendPass(passCtx, resolved.Endpoint)

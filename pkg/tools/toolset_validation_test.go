@@ -174,7 +174,7 @@ var (
 
 func TestToolAvailabilityWarningLines(t *testing.T) {
 	text := strings.Join(ToolAvailabilityWarningLines([]UnavailableToolset{tvTerminal}, "Docker is installed but the Docker daemon is not running", "docker"), "\n")
-	for _, part := range []string{"Terminal tool disabled", "'docker'", "Docker daemon is not running", "icebath doctor", "icebath setup terminal"} {
+	for _, part := range []string{"Terminal tool disabled", "'docker'", "Docker daemon is not running", "icebath doctor", "/setup terminal"} {
 		if !strings.Contains(text, part) || strings.Contains(text, "TERMINAL_ENV") {
 			t.Fatalf("terminal line %q lacks %q", text, part)
 		}
@@ -183,11 +183,11 @@ func TestToolAvailabilityWarningLines(t *testing.T) {
 		t.Fatal("terminal without reason")
 	}
 	text = strings.Join(ToolAvailabilityWarningLines([]UnavailableToolset{tvWeb}, "", "local"), "\n")
-	if strings.Contains(text, "EXA_API_KEY") || !strings.Contains(text, "Web search is off") || !strings.Contains(text, "icebath setup tools") {
+	if strings.Contains(text, "EXA_API_KEY") || !strings.Contains(text, "Web search is off") || !strings.Contains(text, "/setup tools") {
 		t.Fatalf("web line %q", text)
 	}
 	got := ToolAvailabilityWarningLines([]UnavailableToolset{tvRL}, "", "local")
-	want := []string{"[yellow]⚠️  Some tools disabled (missing API keys):[/]", "   [dim]• rl[/] [dim italic](TINKER_API_KEY)[/]", "[dim]   Run 'icebath setup tools' to configure[/]"}
+	want := []string{"[yellow]⚠️  Some tools disabled (missing API keys):[/]", "   [dim]• rl[/] [dim italic](TINKER_API_KEY)[/]", "[dim]   Type '/setup tools' to configure[/]"}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("generic %q", got)
 	}

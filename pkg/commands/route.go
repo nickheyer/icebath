@@ -1,21 +1,13 @@
 package commands
 
 import (
-	"regexp"
+	"fmt"
+	"reflect"
 	"strings"
 
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/internal/pydifflib"
 )
-
-// CommandArg returns everything after the slash command word, optionally lowercased
-func CommandArg(cmd string, lower bool) string {
-	arg := SlashArgs(cmd)
-	if lower {
-		return strings.ToLower(arg)
-	}
-	return arg
-}
 
 // ShlexArgs splits the tokens after the command word, whitespace splitting on unbalanced quotes
 func ShlexArgs(cmd string) []string {
@@ -115,18 +107,6 @@ type BundleInfo struct {
 // MaxStackedSkills caps the leading skill tokens one line may stack
 const MaxStackedSkills = 5
 
-var skillInvalidChars = regexp.MustCompile(`[^\w-]`)
-var skillMultiHyphen = regexp.MustCompile(`-{2,}`)
-
-// SlugifySkillName normalizes a skill or bundle name to its slash slug
-func SlugifySkillName(name string) string {
-	cmd := strings.ToLower(name)
-	cmd = strings.ReplaceAll(cmd, " ", "-")
-	cmd = strings.ReplaceAll(cmd, "_", "-")
-	cmd = skillInvalidChars.ReplaceAllString(cmd, "")
-	return strings.Trim(skillMultiHyphen.ReplaceAllString(cmd, "-"), "-")
-}
-
 // NormalizeSkillToken returns the canonical hyphenated slash key of a typed token
 func NormalizeSkillToken(token string) string {
 	return "/" + strings.ToLower(strings.ReplaceAll(strings.TrimLeft(token, "/"), "_", "-"))
@@ -157,15 +137,6 @@ func contains(list []string, s string) bool {
 	return false
 }
 
-// SkillCommandCollisionNote explains a skill whose slug a builtin command already owns
-func SkillCommandCollisionNote(r *Registry, name string) string {
-	slug := SlugifySkillName(name)
-	if slug == "" || r.Lookup(slug) == nil {
-		return ""
-	}
-	return "slash command /" + slug + " unavailable — name taken by built-in; use /skill " + name
-}
-
 // QuickCommand is one user defined slash shortcut from config
 type QuickCommand struct {
 	Type        string
@@ -173,62 +144,36 @@ type QuickCommand struct {
 	Description string
 }
 
-// QuickCommands reads the quick_commands mapping from config, empty when unset or malformed
-func QuickCommands(cfg config.Tree) map[string]QuickCommand {
-	out := map[string]QuickCommand{}
-	for name, raw := range cfg.Map("quick_commands") {
-		entry := config.AsMap(raw)
-		if entry == nil {
-			continue
-		}
-		var q QuickCommand
-		q.Type, _ = entry["type"].(string)
-		q.Target, _ = entry["target"].(string)
-		q.Description, _ = entry["description"].(string)
-		out[name] = q
+// Python exception a slash command raises, its message the str the slash worker answers
+type RaisedError struct{ Msg string }
+
+func (e *RaisedError) Error() string { return e.Msg }
+
+// Membership and lookup of bare in the raw quick_commands value with the TypeErrors in and indexing raise
+func QuickCommandEntry(cfg config.Tree, bare string) (any, bool, error) {
+	raw, ok := cfg.Lookup("quick_commands")
+	if !ok {
+		return nil, false, nil
 	}
-	return out
-}
-
-// AliasChainError reports a quick command alias chain that cannot resolve
-type AliasChainError struct{ Code string }
-
-func (e *AliasChainError) Error() string { return "quick command alias: " + e.Code }
-
-// ResolveAliasChain follows alias quick commands until a builtin or exec quick command
-func ResolveAliasChain(r *Registry, quick map[string]QuickCommand, name, arg string) (string, string, error) {
-	seen := map[string]bool{}
-	for r.Lookup(name) == nil {
-		entry, ok := quick[name]
-		if !ok {
-			break
-		}
-		if seen[name] {
-			return "", "", &AliasChainError{"invalid_params"}
-		}
-		seen[name] = true
-		if entry.Type != "alias" && entry.Type != "exec" {
-			return "", "", &AliasChainError{"unsupported_command"}
-		}
-		if entry.Type == "exec" {
-			return name, arg, nil
-		}
-		target := strings.TrimLeft(strings.TrimSpace(entry.Target), "/")
-		if strings.TrimSpace(target) == "" {
-			return "", "", &AliasChainError{"invalid_params"}
-		}
-		parts := strings.Fields(target)
-		name = parts[0]
-		var joined []string
-		if len(parts) > 1 {
-			joined = append(joined, strings.Join(parts[1:], " "))
-		}
-		if arg != "" {
-			joined = append(joined, arg)
-		}
-		arg = strings.Join(joined, " ")
+	if m := config.AsMap(raw); m != nil {
+		entry, found := m[bare]
+		return entry, found, nil
 	}
-	return name, arg, nil
+	if s, ok := raw.(string); ok {
+		if strings.Contains(s, bare) {
+			return nil, false, &RaisedError{"string indices must be integers, not 'str'"}
+		}
+		return nil, false, nil
+	}
+	if rv := reflect.ValueOf(raw); rv.Kind() == reflect.Slice {
+		for i := 0; i < rv.Len(); i++ {
+			if s, ok := rv.Index(i).Interface().(string); ok && s == bare {
+				return nil, false, &RaisedError{"list indices must be integers or slices, not str"}
+			}
+		}
+		return nil, false, nil
+	}
+	return nil, false, &RaisedError{fmt.Sprintf("argument of type '%s' is not a container or iterable", config.PyTypeName(raw))}
 }
 
 // UnknownCommandLines returns the lead and pointer lines for a slash token with no handler
@@ -246,21 +191,3 @@ func UnknownCommandLines(typed string, known []string) (string, string) {
 
 // DestructiveSkipTokens bypass the destructive slash confirmation inline
 var DestructiveSkipTokens = map[string]bool{"now": true, "--yes": true, "-y": true}
-
-// SplitDestructiveSkip removes the command word and skip tokens and reports whether one was present
-func SplitDestructiveSkip(cmdText string) (string, bool) {
-	tokens := strings.Fields(cmdText)
-	if len(tokens) == 0 {
-		return "", false
-	}
-	if strings.HasPrefix(tokens[0], "/") {
-		tokens = tokens[1:]
-	}
-	kept := make([]string, 0, len(tokens))
-	for _, tok := range tokens {
-		if !DestructiveSkipTokens[strings.ToLower(tok)] {
-			kept = append(kept, tok)
-		}
-	}
-	return strings.Join(kept, " "), len(kept) != len(tokens)
-}

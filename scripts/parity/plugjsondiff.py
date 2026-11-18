@@ -8,5 +8,5 @@ for n in sorted(set(a) | set(b)):
     if n not in a: print("ONLY IB ", n, b[n]["status"], b[n]["source"]); continue
     for k in sorted(set(a[n]) | set(b[n])):
         x, y = a[n].get(k), b[n].get(k)
-        if isinstance(x, str): x = x.replace("hermes", "icebath").replace("Hermes", "Icebath")
+        if isinstance(x, str): x = x.replace("a Hermes", "an Icebath").replace("hermes", "icebath").replace("Hermes", "Icebath").replace("HERMES", "ICEBATH")
         if x != y: print("DIFF %s %s\n   ref %r\n   ib  %r" % (n, k, a[n].get(k), y))

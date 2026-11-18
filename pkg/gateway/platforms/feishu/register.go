@@ -144,7 +144,7 @@ func (feishuPlatformPlugin) Register(ctx *plugins.Context) error {
 		}),
 		Check:       feishuDepsPresent,
 		RequiredEnv: []string{"FEISHU_APP_ID", "FEISHU_APP_SECRET"},
-		InstallHint: "Run `icebath setup` to install Feishu support.",
+		InstallHint: "Start `icebath` and type `/setup gateway` to install Feishu support.",
 		Extra:       extra,
 	})
 	return err

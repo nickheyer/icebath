@@ -21,7 +21,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyrich"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/memory"
-	"github.com/nickheyer/icebath/pkg/plugins"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tools"
@@ -322,27 +321,6 @@ func (c *CLI) showHistory() {
 	cliVisiblePrint("")
 }
 
-// Fires the on_session_finalize or on_session_reset boundary hook, never failing
-func (c *CLI) notifySessionBoundary(eventType string) {
-	defer func() { _ = recover() }()
-	var sessionID any
-	if c.agentRef() != nil {
-		sessionID = c.agentRef().SessionID()
-	}
-	reason := "session_boundary"
-	if eventType == "on_session_reset" {
-		reason = "new_session"
-	}
-	kwargs := map[string]any{"session_id": sessionID, "platform": "cli", "reason": reason}
-	if eventType == "on_session_finalize" {
-		for _, message := range agent.SessionEndMessages(agent.FinalizeSession(c.ctx, kwargs)) {
-			cliVisiblePrint(message)
-		}
-		return
-	}
-	agent.LifecycleInvokeHook(c.ctx, eventType, kwargs)
-}
-
 // Starts a fresh gateway session with cleared agent state, the old one ended first so the gateway finalizes it
 func (c *CLI) newSession(silent bool, title string) {
 	oldSessionID := c.sessionID
@@ -355,7 +333,7 @@ func (c *CLI) newSession(silent bool, title string) {
 		}
 		c.discardSessionIfEmpty(oldSessionID)
 	}
-	c.sessionStart = time.Now()
+	c.sessionStart = cliNow()
 	sid, err := c.newSessionID(c.sessionStart, "", "")
 	if err != nil {
 		panic(err)
@@ -606,9 +584,6 @@ func (c *CLI) undoLast(n int, prefill bool) int {
 	}
 	printLines(c.t(key, map[string]any{"count": turnsUndone, "messages": messages, "backup": backup}))
 	printLines("  " + c.t("cli.session.undo_remaining", map[string]any{"count": len(c.conversationHistory)}))
-	if prefill && removedText != "" {
-		c.prefillInputBuffer(removedText)
-	}
 	return turnsUndone
 }
 
@@ -756,11 +731,4 @@ func parsePyInt(token string) (int, bool) {
 		return 0, false
 	}
 	return n, true
-}
-
-// Notifies plugins of a command the CLI runs, the in process pre_command hook
-func firePreCommand(c *CLI, canonical, aliasUsed, argsRaw string) {
-	sessionKey := c.sessionID
-	platform := "cli"
-	plugins.FirePreCommandHook(c.ctx, "cli", canonical, aliasUsed, argsRaw, &sessionKey, &platform)
 }

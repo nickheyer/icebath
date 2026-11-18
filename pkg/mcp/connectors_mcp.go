@@ -372,15 +372,12 @@ func (b catalogBackend) Enable(ctx context.Context, name string) error {
 	return config.SaveUser(tools.WithEnvHome(ctx, b.env), h, doc)
 }
 
-var configMutationMu sync.Mutex
-
-// ConfigWriteScope enters the profile scope then the process config mutation lock
+// ConfigWriteScope enters the profile scope then the one process wide config mutation lock
 var ConfigWriteScope = func(ctx context.Context, profile string) (context.Context, func()) {
 	if profile != "" {
 		ctx = home.WithOverride(ctx, profile)
 	}
-	configMutationMu.Lock()
-	return ctx, configMutationMu.Unlock
+	return provider.LockConfigMutation(ctx)
 }
 
 // Refuses the whole env map before the first write when any key is undeclared or unwritable

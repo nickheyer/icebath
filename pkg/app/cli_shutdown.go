@@ -86,9 +86,6 @@ func stopCLIWakeWord(ctx context.Context, env *tools.Env) {
 	}
 }
 
-// Interrupts every async delegation for CLI shutdown
-func interruptAsyncDelegations() { tools.InterruptAllAsyncDelegations("CLI shutdown") }
-
 // Shuts down every MCP server of the process
 func shutdownMCPServers(ctx context.Context) { mcp.ShutdownMCPServers(ctx, nil, nil, 0) }
 

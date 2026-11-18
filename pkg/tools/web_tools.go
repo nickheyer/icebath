@@ -70,7 +70,7 @@ func autodetectWebBackend(env *Env) string {
 		{"parallel", webHasEnv(env, "PARALLEL_API_KEY")}, {"keenable", webHasEnv(env, "KEENABLE_API_KEY")},
 		{"firecrawl", webHasEnv(env, "FIRECRAWL_API_KEY") || webHasEnv(env, "FIRECRAWL_API_URL")},
 		{"firecrawl", firecrawlGatewayReady(env)}, {"searxng", webHasEnv(env, "SEARXNG_URL")},
-		{"brave-free", webHasEnv(env, "BRAVE_SEARCH_API_KEY")}, {"ddgs", ddgsClientAvailable(context.Background())},
+		{"brave-free", webHasEnv(env, "BRAVE_SEARCH_API_KEY")}, {"ddgs", ddgsClientAvailable(env)},
 	}
 	for _, c := range candidates {
 		if c.available {
@@ -196,7 +196,7 @@ var builtinWebAvailability = map[string]func(env *Env) bool{
 	"perplexity": func(env *Env) bool { return webHasEnv(env, "PERPLEXITY_API_KEY") || managedWebSearch(env) },
 	"searxng":    func(env *Env) bool { return webHasEnv(env, "SEARXNG_URL") },
 	"brave-free": func(env *Env) bool { return webHasEnv(env, "BRAVE_SEARCH_API_KEY") },
-	"ddgs":       func(env *Env) bool { return ddgsClientAvailable(context.Background()) },
+	"ddgs":       func(env *Env) bool { return ddgsClientAvailable(env) },
 	"xai":        func(env *Env) bool { return hasXAICredentials(env) },
 }
 

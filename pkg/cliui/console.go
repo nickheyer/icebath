@@ -311,8 +311,16 @@ func (c *Console) readByte(timeout time.Duration, interrupt <-chan os.Signal) (b
 	}
 }
 
+// Input stream that answers each line a console reads as the question its prompt asks
+type LineAsker interface {
+	AskLine(prompt string) (string, error)
+}
+
 // Python input, writing the prompt and reading one line, Ctrl-C and end of input as errors
 func (c *Console) input(prompt string) (string, error) {
+	if asker, asks := c.In.(LineAsker); asks {
+		return asker.AskLine(prompt)
+	}
 	io.WriteString(c.Out, prompt)
 	var sigCh chan os.Signal
 	if c.stdinTTY() {

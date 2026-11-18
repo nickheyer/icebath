@@ -12,7 +12,7 @@ import (
 // FAL backend delegating to the image_generate pipeline at call time
 type falImageGenProvider struct {
 	staticImageGenProvider
-	env func() *tools.Env
+	env func(context.Context) *tools.Env
 }
 
 func newFalImageGenProvider() *falImageGenProvider {
@@ -22,14 +22,17 @@ func newFalImageGenProvider() *falImageGenProvider {
 			Key: "FAL_KEY", Prompt: "FAL API key", URL: "https://fal.ai/dashboard/keys"}}}
 }
 
-// Whether a FAL key or the managed gateway serves the configured selection, false when the check panics
-func (p *falImageGenProvider) IsAvailable() (ok bool) {
+// Whether a FAL key or the managed gateway serves the process profile's selection
+func (p *falImageGenProvider) IsAvailable() bool { return p.AvailableIn(context.Background()) }
+
+// Whether a FAL key or the managed gateway serves the selection of the context's profile, false when the check panics
+func (p *falImageGenProvider) AvailableIn(ctx context.Context) (ok bool) {
 	defer func() {
 		if recover() != nil {
 			ok = false
 		}
 	}()
-	return checkFalAPIKeyHook(p.env())
+	return checkFalAPIKeyHook(p.env(ctx))
 }
 
 func (p *falImageGenProvider) ListModels() []map[string]any {
@@ -40,7 +43,7 @@ func (p *falImageGenProvider) DefaultModel() string { return falDefaultModel }
 
 // Edit modality and reference cap of the configured FAL model, upscale always offered
 func (p *falImageGenProvider) Capabilities() map[string]any {
-	_, meta := resolveFalModel(p.env())
+	_, meta := resolveFalModel(p.env(context.Background()))
 	if edit, _ := meta["edit_endpoint"].(string); edit != "" {
 		refs := positiveInt(meta["max_reference_images"])
 		if refs == 0 {

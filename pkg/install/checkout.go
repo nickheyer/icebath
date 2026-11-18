@@ -4,8 +4,10 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"io/fs"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"runtime"
 	"strings"
@@ -36,6 +38,16 @@ func ResolvedPathsJSON(opts Options) (string, error) {
 	}
 	data, err := json.Marshal(report)
 	return string(data), err
+}
+
+// Provisions the NeMo Relay runtime beside a checkout's binary through that binary's pm, the dependency step of a git install
+func ProvisionCheckoutRuntime(ctx context.Context, checkout string, stdout, stderr io.Writer) error {
+	cmd := exec.CommandContext(ctx, InstallBinaryPath(checkout), "pm", "install", "--extra", "nemo-relay")
+	cmd.Dir, cmd.Stdout, cmd.Stderr = checkout, stdout, stderr
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("NeMo Relay runtime provisioning failed: %w", err)
+	}
+	return nil
 }
 
 // User bin the setup script publishes commands into, the home bin on Windows

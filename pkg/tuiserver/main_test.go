@@ -57,6 +57,7 @@ func TestMain(m *testing.M) {
 		}
 		return ResolvedCommand{Name: d.Name, Category: d.Category, Describe: d.Describe}, true
 	}
+	gateway.ResolveBoundCommand, gateway.RunBoundCommand = commands.BoundGatewayCommand, commands.RunBoundGatewayCommand
 	CommandsByCategory = func() []HelpCategory {
 		var out []HelpCategory
 		for _, g := range commands.CommandsByCategory(commands.Default) {

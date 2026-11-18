@@ -182,7 +182,7 @@ func ConfigLoadIssue(err error) ConfigIssue {
 		return ConfigIssue{Severity: "error", Message: "Icebath storage is unavailable: " + err.Error(),
 			Hint: "Check the reported path, link target, mount and permissions; keep config.yaml unchanged."}
 	}
-	return ConfigIssue{Severity: "error", Message: "Could not load config.yaml", Hint: "Run 'icebath setup' to create a valid config"}
+	return ConfigIssue{Severity: "error", Message: "Could not load config.yaml", Hint: "Start 'icebath' and type '/setup' to write a valid config"}
 }
 
 // Owner only directory unless managed, container defaults or ICEBATH_HOME_MODE say otherwise

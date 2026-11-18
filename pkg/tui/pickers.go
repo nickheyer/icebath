@@ -2,7 +2,6 @@ package tui
 
 import (
 	"errors"
-	"fmt"
 	"sort"
 	"strings"
 	"time"
@@ -18,29 +17,34 @@ import (
 // Keymap contexts of the list windows of the terminal UI
 const (
 	sessionsContext = "tui.sessions"
-	agentsContext   = "tui.agents"
 	skillsContext   = "tui.skills"
 	pluginsContext  = "tui.plugins"
 )
 
 // Keys of the list windows, registered with the keymap of the app
 func registerListKeys(km *keys.Map) {
-	for name, doc := range map[string]string{sessionsContext: "session switcher", agentsContext: "agents window", skillsContext: "skills hub", pluginsContext: "plugins hub"} {
+	for name, doc := range map[string]string{sessionsContext: "session switcher", skillsContext: "skills hub", pluginsContext: "plugins hub",
+		connectorsContext: "connector accounts", connectorsLinkContext: "connector sign in link"} {
 		if keys.ContextDocs[name] == "" {
-			_ = keys.AddContext(name, doc)
+			if err := keys.AddContext(name, doc); err != nil {
+				panic(err)
+			}
 		}
 	}
 	for _, a := range []keys.Action{
 		{ID: "tui.sessions.open", Context: sessionsContext, Label: "open", Doc: "switch to the session", Default: []string{"enter"}},
 		{ID: "tui.sessions.delete", Context: sessionsContext, Label: "delete", Doc: "delete the stored session after a confirmation", Default: []string{"d"}},
 		{ID: "tui.sessions.new", Context: sessionsContext, Label: "new", Doc: "start a new session beside this one", Default: []string{"n"}},
-		{ID: "tui.agents.tail", Context: agentsContext, Label: "transcript", Doc: "read the newest output of the agent", Default: []string{"enter"}},
-		{ID: "tui.agents.stop", Context: agentsContext, Label: "stop", Doc: "interrupt the agent", Default: []string{"x"}},
-		{ID: "tui.agents.steer", Context: agentsContext, Label: "steer", Doc: "send guidance to the agent", Default: []string{"s"}},
-		{ID: "tui.agents.pause", Context: agentsContext, Label: "pause", Doc: "pause or resume spawning of new agents", Default: []string{"p"}},
 		{ID: "tui.skills.inspect", Context: skillsContext, Label: "inspect", Doc: "show or hide what the skill does", Default: []string{"enter"}},
 		{ID: "tui.skills.install", Context: skillsContext, Label: "install", Doc: "install the skill", Default: []string{"i"}},
 		{ID: "tui.plugins.toggle", Context: pluginsContext, Label: "toggle", Doc: "enable or disable the plugin", Default: []string{"enter", "space"}},
+		{ID: "tui.connectors.rename", Context: connectorsContext, Label: "rename", Doc: "rename the connector account", Default: []string{"r"}},
+		{ID: "tui.connectors.add", Context: connectorsContext, Label: "add", Doc: "add another account of a connector", Default: []string{"a"}},
+		{ID: "tui.connectors.reconnect", Context: connectorsContext, Label: "reconnect", Doc: "sign in again to an account that stopped working", Default: []string{"c"}},
+		{ID: "tui.connectors.remove", Context: connectorsContext, Label: "remove", Doc: "remove the connector account after a confirmation", Default: []string{"x"}},
+		{ID: "tui.connectors.retired", Context: connectorsContext, Label: "retired", Doc: "show or hide the accounts a reconnect retired", Default: []string{"tab"}},
+		{ID: "tui.connectors.link.open", Context: connectorsLinkContext, Label: "open", Doc: "open the sign in link in the browser", Default: []string{"enter"}},
+		{ID: "tui.connectors.link.stop", Context: connectorsLinkContext, Label: "stop waiting", Doc: "stop waiting, the link stays valid until it expires", Default: []string{"esc"}},
 	} {
 		km.Register(a)
 	}
@@ -189,7 +193,7 @@ func (a *app) openSessionSwitcher() tea.Cmd {
 						s, _ := item.(map[string]any)
 						id, _ := s["id"].(string)
 						running := truthyJS(s["running"])
-						if id == "" || seen[id] || (live && a.gw.canonical() && !running && id != current && id != stored) {
+						if id == "" || seen[id] {
 							continue
 						}
 						seen[id] = true
@@ -282,10 +286,7 @@ func (a *app) openSessionSwitcher() tea.Cmd {
 					name = sessionLabel(row.id)
 				}
 				l.Confirm("delete "+name+"?", func() tea.Cmd {
-					return a.events.rpc("session.delete", map[string]any{"session_id": row.id}, func(r map[string]any) tea.Cmd {
-						if r == nil {
-							return nil
-						}
+					return a.deleteStoredSession(row.id, func() tea.Cmd {
 						return load(func() tea.Cmd { l.Refresh(); return nil })
 					})
 				})
@@ -294,106 +295,6 @@ func (a *app) openSessionSwitcher() tea.Cmd {
 		},
 	})
 	return load(func() tea.Cmd { return a.wm.ShowOverlay(list) })
-}
-
-// Agents of the session with their state, the newest output of one, and stop, steer and pause controls
-func (a *app) openAgents() tea.Cmd {
-	roster := func() []subagentProgress { return a.store.currentAgentRoster() }
-	sid := a.store.ui.Sid
-	list := cards.NewList(a.cardEnv(), cards.ListSpec{
-		Title: "agents", Glyph: a.toolkit.Glyphs.Agent, Key: "tui:agents", Context: agentsContext, Primary: "tui.agents.tail", Follow: true,
-		Columns: []render.Column{{Title: "state"}, {Title: "goal", Flex: 4}, {Title: "model", Flex: 1, Max: 28}, {Title: "tools", Right: true}, {Title: "time", Right: true}},
-		Rows: func() [][]string {
-			agents := roster()
-			out := make([][]string, len(agents))
-			for i, s := range agents {
-				elapsed := ""
-				if s.DurationSeconds != nil {
-					elapsed = render.Elapsed(time.Duration(*s.DurationSeconds * float64(time.Second)).Truncate(time.Second))
-				}
-				out[i] = []string{s.Status, strings.Repeat("  ", s.Depth) + strings.ReplaceAll(s.Goal, "\n", " "), s.Model, fmt.Sprint(s.ToolCount), elapsed}
-			}
-			return out
-		},
-		Detail: func(i int) []string {
-			agents := roster()
-			if i < 0 || i >= len(agents) {
-				return nil
-			}
-			s := agents[i]
-			lines := []string{s.Goal}
-			if s.Summary != "" {
-				lines = append(lines, "", s.Summary)
-			}
-			for _, note := range s.Notes {
-				lines = append(lines, "· "+note)
-			}
-			for _, out := range s.OutputTail {
-				lines = append(lines, out.Tool+": "+out.Preview)
-			}
-			return lines
-		},
-		Free: map[string]bool{"tui.agents.pause": true},
-		Empty: func() string {
-			if a.store.delegation.Paused {
-				return "no agents are running, spawning is paused"
-			}
-			return "no agents are running in this session"
-		},
-		Actions: map[string]func(l *cards.List, i int) tea.Cmd{
-			"tui.agents.tail": func(l *cards.List, i int) tea.Cmd {
-				agent := roster()[i]
-				return gatewayCall(a.gw, "subagent.tail", map[string]any{"session_id": sid, "subagent_id": agent.ID}, func(v any, err error) tea.Cmd {
-					r := asRPCResult(v)
-					text, _ := r["text"].(string)
-					switch {
-					case err != nil:
-						return wm.Notify(rpcErrorMessage(err), wm.Error)
-					case !truthyJS(r["available"]) || text == "":
-						return l.ToggleDetail()
-					}
-					return a.page(text, "agent · "+truncateEnd(agent.Goal, 40))
-				})
-			},
-			"tui.agents.stop": func(l *cards.List, i int) tea.Cmd {
-				agent := roster()[i]
-				return a.events.rpc("subagent.interrupt", map[string]any{"session_id": sid, "subagent_id": agent.ID}, func(r map[string]any) tea.Cmd {
-					if r != nil && !truthyJS(r["found"]) {
-						return wm.Notify("the agent already finished", wm.Info)
-					}
-					return wm.Notify("agent interrupted", wm.Success)
-				})
-			},
-			"tui.agents.steer": func(l *cards.List, i int) tea.Cmd {
-				agent := roster()[i]
-				return a.wm.ShowOverlay(wm.NewPrompt(a.toolkit, "guidance for the agent", "", func(text string) tea.Cmd {
-					if trimJS(text) == "" {
-						return nil
-					}
-					return a.events.rpc("subagent.steer", map[string]any{"session_id": sid, "subagent_id": agent.ID, "text": text}, func(r map[string]any) tea.Cmd {
-						if r != nil {
-							a.sys("guidance queued for the agent at its next tool boundary")
-						}
-						return nil
-					})
-				}))
-			},
-			"tui.agents.pause": func(l *cards.List, _ int) tea.Cmd {
-				return a.events.rpc("delegation.pause", map[string]any{"paused": !a.store.delegation.Paused}, func(r map[string]any) tea.Cmd {
-					if r == nil {
-						return nil
-					}
-					a.store.applyDelegationStatus(map[string]any{"paused": r["paused"]})
-					if truthyJS(r["paused"]) {
-						return wm.Notify(tr("slashCmd.ops.agents.paused"), wm.Info)
-					}
-					return wm.Notify(tr("slashCmd.ops.agents.resumed"), wm.Info)
-				})
-			},
-		},
-	})
-	a.events.refreshDelegationStatus(true)
-	return a.wm.ShowOverlay(list)
 }
 
 // Lists what a hub shows, an owner without the hub method answering through its command worker in the pager

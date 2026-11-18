@@ -105,19 +105,19 @@ type a2aPlatformPlugin struct{}
 func (a2aPlatformPlugin) Manifest() plugins.Manifest {
 	return plugins.Manifest{Name: "a2a-platform", Version: "1.0.0", Kind: "platform", Source: "bundled", Key: "platforms/a2a",
 		Author: "Nous Research",
-		Description: "A2A (Agent-to-Agent) protocol v1.0 support for Icebath Agent — both directions of the open Linux Foundation standard " +
+		Description: "A2A (Agent-to-Agent) protocol v1.0 support for Icebath Agent \u2014 both directions of the open Linux Foundation standard " +
 			"for inter-agent communication.\n" +
 			"OUTBOUND (client tools): a2a_discover, a2a_call, a2a_list, a2a_history, and a2a_orchestrate let the agent fetch another " +
-			"agent's Agent Card and send it tasks over JSON-RPC — works with any A2A-compliant peer (Hermes, LangChain, CrewAI, " +
+			"agent's Agent Card and send it tasks over JSON-RPC \u2014 works with any A2A-compliant peer (Hermes, LangChain, CrewAI, " +
 			"Google ADK, OpenClaw, ...).\n" +
 			"INBOUND (platform adapter): exposes Icebath as an A2A-discoverable agent. An Agent Card is served at " +
 			"/.well-known/agent-card.json (v1.0 canonical path; legacy agent.json also answers) and incoming tasks are routed into " +
-			"the agent's live gateway session like any other platform — so the agent that replies is the same one talking to its " +
+			"the agent's live gateway session like any other platform \u2014 so the agent that replies is the same one talking to its " +
 			"user, with full memory and context, not a throwaway clone.\n" +
 			"Security is on by default: no bearer token configured => localhost-only bind. Inbound task text passes through " +
 			"prompt-injection filters; outbound text is scrubbed of credential-shaped strings; every exchange is audit-logged and " +
 			"persisted to disk outside the context-compaction pipeline so conversations survive compaction and restarts.\n" +
-			"Pure Go standard library transport (net/http) — no a2a-go dependency required.\n",
+			"Pure Go standard library transport (net/http) \u2014 no a2a-go dependency required.\n",
 		ProvidesTools: []string{"a2a_discover", "a2a_call", "a2a_list", "a2a_history", "a2a_orchestrate"},
 		RequiresEnv:   []plugins.EnvSpec{}}
 }

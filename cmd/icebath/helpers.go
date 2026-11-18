@@ -4,7 +4,6 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
-	"math/big"
 	"os"
 	"path/filepath"
 	"sort"
@@ -31,21 +30,6 @@ func pyStrOrEmpty(v any) string {
 // Python truthiness of a value
 func truthy(v any) bool { return config.PyTruthy(v) }
 
-// Integer of a JSON number, zero for anything else
-func intOf(v any) int {
-	switch n := v.(type) {
-	case int:
-		return n
-	case int64:
-		return int(n)
-	case float64:
-		return int(n)
-	case *big.Int:
-		return int(n.Int64())
-	}
-	return 0
-}
-
 // Value of a key on a row, nil when the row or key is absent
 func rowValue(row map[string]any, key string) any {
 	if row == nil {
@@ -68,8 +52,6 @@ func realpath(p string) string {
 func sortStrings(s []string) { sort.Strings(s) }
 
 func errorsAs(err error, target any) bool { return errors.As(err, target) }
-
-func slogDebug(msg string) { slog.Debug(msg) }
 
 func slogWarn(msg string) { slog.Warn(msg) }
 

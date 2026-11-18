@@ -32,12 +32,6 @@ var bedrockRecommendedBases = []string{
 	"anthropic.claude-sonnet-4-6", "anthropic.claude-opus-4-6", "anthropic.claude-haiku-4-5", "amazon.nova-pro",
 	"amazon.nova-lite", "amazon.nova-micro", "deepseek.v3", "meta.llama4-maverick", "meta.llama4-scout"}
 
-// Bedrock flow seams, swappable so tests script the discovery and the credential chain probe
-var (
-	bedrockDiscoverModelsFn = DiscoverBedrockModels
-	bedrockHasCredentialsFn = func() bool { return hasAWSCredentials(true) }
-)
-
 // BedrockRegionGeoPrefix maps an AWS region name to its inference profile geo prefix, empty when unknown
 func BedrockRegionGeoPrefix(regionName string) string {
 	r := strings.ToLower(regionName)
@@ -209,11 +203,12 @@ func bedrockTextModelIDs(liveModels []BedrockModel, region string) []string {
 
 // AWS Bedrock wizard over the IAM credential chain, region pick, live model discovery and persist
 func modelFlowBedrock(r *ModelFlowRun) error {
-	if !bedrockHasCredentialsFn() {
+	ctx := r.ctx()
+	authVar := resolveAWSAuthEnvVar(ctx)
+	if authVar == "" {
 		flowSay(r.Out, "  ⚠ No AWS credentials detected via environment variables.",
 			"  Bedrock will use boto3's default credential chain (IMDS, SSO, etc.)", "")
 	}
-	authVar := resolveAWSAuthEnvVar()
 	credLine := "  AWS credentials: boto3 default chain (instance role / SSO)"
 	if authVar != "" {
 		credLine = fmt.Sprintf("  AWS credentials: %s ✓", authVar)
@@ -247,8 +242,11 @@ func modelFlowBedrock(r *ModelFlowRun) error {
 	if authChoice == "2" {
 		return modelFlowBedrockAPIKey(r, region)
 	}
+	if ask := hostedAsker(); ask != nil {
+		bedrockHostedSSOLogin(r, ask, region)
+	}
 	fmt.Fprintf(r.Out, "  Discovering models in %s...\n", region)
-	liveModels := bedrockDiscoverModelsFn(r.ctx(), region, nil)
+	liveModels := DiscoverBedrockModels(ctx, region, nil)
 	var modelList []string
 	if len(liveModels) > 0 {
 		modelList = bedrockTextModelIDs(liveModels, region)

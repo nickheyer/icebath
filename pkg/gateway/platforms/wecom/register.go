@@ -100,7 +100,7 @@ const platformHint = "You are on WeCom (企业微信). Markdown is supported. " 
 	"(.mp4) play inline. Voice messages must be AMR — other audio formats send as file attachments. Image " +
 	"URLs via ![alt](url) are downloaded and sent as photos. Never claim you lack file-sending."
 
-const installHint = "Run `icebath setup` to install WeCom support."
+const installHint = "Start `icebath` and type `/setup gateway` to install WeCom support."
 
 // WeCom platform plugin compiled into the binary under the bundled platforms/wecom key
 type wecomPlatformPlugin struct{}

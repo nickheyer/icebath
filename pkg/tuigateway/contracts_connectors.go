@@ -30,7 +30,7 @@ var ConnectorsListResult = pydantic.NewModel("ConnectorsListResult", ClosedConfi
 	pydantic.Req("connectors", pydantic.List(ConnectorRow)),
 )
 
-var _ = Method("connectors.list", ConnectorsListParams, ConnectorsListResult, "Connector catalog + connection state for one session owner.")
+var _ = Method("connectors.list", ConnectorsListParams, ConnectorsListResult, "Connector catalog + connection state for one session or profile account owner.")
 
 var ConnectorsConnectParams = pydantic.Extend(ProfileParams, "ConnectorsConnectParams", ParamsConfig,
 	pydantic.Req("owner", ConnectorOwner),
@@ -45,7 +45,7 @@ var ConnectorsConnectResult = pydantic.Extend(ConnectionOperationStatus, "Connec
 	pydantic.Def("note", pydantic.Nullable(pydantic.Str), nil),
 ).Described("``methods_connectors._reissue``: the operation the connect opened; ``status``/``note`` ride along from the tool result.")
 
-var _ = Method("connectors.connect", ConnectorsConnectParams, ConnectorsConnectResult, "Start or re-initiate authorization for named connectors on a session operation.")
+var _ = Method("connectors.connect", ConnectorsConnectParams, ConnectorsConnectResult, "Start or re-initiate authorization for named connectors on a session or account operation.")
 
 // Refuses an alias over several connectors and a connection_id outside a single connector reconnect
 func oneConnectorPerAlias(r *pydantic.Instance) error {
@@ -59,3 +59,47 @@ func oneConnectorPerAlias(r *pydantic.Instance) error {
 	}
 	return nil
 }
+
+var ConnectorAccountStatus = pydantic.Enum("ConnectorAccountStatus", "pending", "pending", "active", "active", "failed", "failed", "expired", "expired", "revoked", "revoked", "inactive", "inactive")
+
+var ConnectorAccountsParams = pydantic.Extend(ProfileParams, "ConnectorAccountsParams", ParamsConfig,
+	pydantic.Def("connector", pydantic.Nullable(ConnectorSlug), nil),
+)
+
+var ConnectorAccountRow = pydantic.NewModel("ConnectorAccountRow", ClosedConfig,
+	pydantic.Req("connection_id", pydantic.Str),
+	pydantic.Req("connector", pydantic.Str),
+	pydantic.Req("status", ConnectorAccountStatus),
+	pydantic.Def("status_reason", pydantic.Nullable(pydantic.Str), nil),
+	pydantic.Req("label", pydantic.Str),
+	pydantic.Def("alias", pydantic.Nullable(pydantic.Str), nil),
+	pydantic.Req("active", pydantic.Bool),
+	pydantic.Def("disabled", pydantic.Bool, false),
+	pydantic.Req("created_at", pydantic.Str),
+	pydantic.Req("updated_at", pydantic.Str),
+)
+
+var ConnectorAccountsResult = pydantic.NewModel("ConnectorAccountsResult", ClosedConfig,
+	pydantic.Req("accounts", pydantic.List(ConnectorAccountRow)),
+)
+
+var _ = Method("connectors.accounts", ConnectorAccountsParams, ConnectorAccountsResult, "The scoped member's hosted connector accounts, optionally filtered by connector slug.")
+
+var ConnectorAccountsRemoveParams = pydantic.Extend(ProfileParams, "ConnectorAccountsRemoveParams", ParamsConfig,
+	pydantic.Req("connection_id", pydantic.ConStr(pydantic.MinLen(1))),
+)
+
+var ConnectorAccountsRemoveResult = pydantic.NewModel("ConnectorAccountsRemoveResult", ClosedConfig,
+	pydantic.Req("connection_id", pydantic.Str),
+	pydantic.Req("connector", pydantic.Str),
+	pydantic.Req("status", pydantic.Literal("removed")),
+)
+
+var _ = Method("connectors.accounts.remove", ConnectorAccountsRemoveParams, ConnectorAccountsRemoveResult, "Remove one hosted connector account owned by the scoped member.")
+
+var ConnectorAccountsRenameParams = pydantic.Extend(ProfileParams, "ConnectorAccountsRenameParams", ParamsConfig,
+	pydantic.Req("connection_id", pydantic.ConStr(pydantic.MinLen(1))),
+	pydantic.Req("alias", ConnectorAlias),
+)
+
+var _ = Method("connectors.accounts.rename", ConnectorAccountsRenameParams, ConnectorAccountRow, "Name or rename one hosted connector account owned by the scoped member.")

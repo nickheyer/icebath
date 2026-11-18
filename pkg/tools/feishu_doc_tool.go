@@ -62,7 +62,12 @@ func handleFeishuDocRead(ctx context.Context, call *Call) string {
 	return toolErrorJSON("No content returned from document API", nil)
 }
 
+// Feishu tools exist once the platform holds its app credentials, the state in which the reference adapter installs lark_oapi
+func feishuToolsReady(env *Env) bool {
+	return webHasEnv(env, "FEISHU_APP_ID") && webHasEnv(env, "FEISHU_APP_SECRET")
+}
+
 func init() {
 	Register(Def{Name: "feishu_doc_read", Toolset: "feishu_doc", Schema: feishuDocReadSchema, Handler: handleFeishuDocRead,
-		RequiresEnv: []string{}, Description: "Read Feishu document content", Emoji: "\U0001f4c4"})
+		Check: feishuToolsReady, RequiresEnv: []string{}, Description: "Read Feishu document content", Emoji: "\U0001f4c4"})
 }

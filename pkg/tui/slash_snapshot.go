@@ -11,7 +11,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/gatewaycli"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/i18n"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/state"
@@ -54,7 +53,7 @@ func sessionInState(h, sid string) (bool, error) {
 // Home and catalog of a /snapshot run in this terminal UI
 func (a *app) snapshotCommand() gatewaycli.SnapshotCommand {
 	return gatewaycli.SnapshotCommand{Home: home.Dir(a.ctx), T: func(key string, kwargs map[string]any) string {
-		return i18n.T(a.ctx, "cli.commands."+key, "", kwargs)
+		return commandText(a.ctx, key, kwargs)
 	}}
 }
 

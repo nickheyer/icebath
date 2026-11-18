@@ -1,10 +1,7 @@
 package app
 
 import (
-	"context"
-
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/provider"
 )
 
 // connectionModalState is the open connection setup card
@@ -18,19 +15,6 @@ type connectionModalState struct {
 	Phase       string
 	Drafts      map[string]map[string]string
 }
-
-// Browser launch and the two card answers, swapped by tests
-var (
-	openConnectionURL = provider.OpenBrowserURL
-	connectionRespond = func(ctx context.Context, c *CLI, opID string, result map[string]any) error {
-		_, err := c.agentRef().ConnectionRespond(opID, result)
-		return err
-	}
-	connectionRetryFn = func(ctx context.Context, c *CLI, name string) error {
-		_, err := c.agentRef().ConnectionRetry(name)
-		return err
-	}
-)
 
 // Rows of a payload list as maps
 func connectionRows(v any) []map[string]any {
@@ -59,8 +43,6 @@ func (c *CLI) connectionClose() {
 	c.uiMu.Lock()
 	c.connectionState = nil
 	c.uiMu.Unlock()
-	c.restoreModalInputSnapshot()
-	c.paintNow()
 }
 
 // Copies of the input fields a target requires
@@ -127,38 +109,6 @@ func (c *CLI) connectionShowTarget(payload map[string]any, index int) {
 	c.connectionState = &connectionModalState{Payload: payload, TargetIndex: index, Target: target, Fields: fields,
 		Phase: connectionOpeningPhase(target), Drafts: drafts}
 	c.uiMu.Unlock()
-	c.connectionSyncInputBuffer()
-	c.paintNow()
-}
-
-// Reports whether the field being edited on the card is a secret
-func (c *CLI) connectionActiveFieldIsSecret() bool {
-	state := c.connectionModal()
-	if state == nil || (state.Phase != "form" && state.Phase != "failed") {
-		return false
-	}
-	return state.FieldIndex >= 0 && state.FieldIndex < len(state.Fields) && state.Fields[state.FieldIndex]["type"] == "secret"
-}
-
-// Draft text of the field being edited, empty for a secret or an action row
-func (c *CLI) connectionPrefillText() string {
-	state := c.connectionModal()
-	if state == nil || c.connectionActiveFieldIsSecret() || state.FieldIndex < 0 || state.FieldIndex >= len(state.Fields) {
-		return ""
-	}
-	return state.Drafts[cliStr(state.Target["name"], "")][cliStr(state.Fields[state.FieldIndex]["name"], "")]
-}
-
-// Loads the draft of the field being edited into the prompt buffer
-func (c *CLI) connectionSyncInputBuffer() {
-	c.uiMu.Lock()
-	app := c.app
-	c.uiMu.Unlock()
-	if app == nil {
-		return
-	}
-	text := c.connectionPrefillText()
-	app.SetBuffer(text, len([]rune(text)))
 }
 
 // Opens the card for a connection request, a replay of the open card applied as an update
@@ -176,9 +126,6 @@ func (c *CLI) connectionCallback(args ...any) {
 			c.connectionOnChange(payload)
 		}
 		return
-	}
-	if state == nil {
-		c.captureModalInputSnapshot()
 	}
 	index := 0
 	for i, item := range connectionRows(payload["targets"]) {
@@ -248,7 +195,6 @@ func (c *CLI) connectionOnChange(snapshot map[string]any) {
 			}
 		}
 		state.Phase = "form"
-		c.connectionSyncInputBuffer()
 	case targetState == "connected" && pyTruthy(target["discovery_error"]):
 		state.Phase = "authorized"
 	case targetState == "connected" || targetState == "skipped":
@@ -262,5 +208,4 @@ func (c *CLI) connectionOnChange(snapshot map[string]any) {
 	default:
 		state.Phase = "waiting"
 	}
-	c.paintNow()
 }

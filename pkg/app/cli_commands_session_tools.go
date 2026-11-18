@@ -9,7 +9,6 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/nickheyer/icebath/pkg/cliui"
 	"github.com/nickheyer/icebath/pkg/commands"
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/home"
@@ -423,19 +422,9 @@ func (c *CLI) handleToolsCommand(cmd string) {
 
 // Runs the tools list, disable or enable action, captured with color and reprinted inside the TUI
 func (c *CLI) runToolsConfig(action string, names []string) {
-	if c.app == nil {
-		if err := tools.ToolsCommandHooks.ToolsAction(c.ctx, c.console, action, "cli", names); err != nil {
-			panic(err)
-		}
-		return
-	}
-	var buf bytes.Buffer
-	con := &cliui.Console{In: c.console.In, Out: &buf, Getenv: c.console.Getenv, StdinTTY: c.console.StdinTTY,
-		StdoutTTY: func() bool { return true }, TermSize: c.console.TermSize}
-	if err := tools.ToolsCommandHooks.ToolsAction(c.ctx, con, action, "cli", names); err != nil {
+	if err := tools.ToolsCommandHooks.ToolsAction(c.ctx, c.console, action, "cli", names); err != nil {
 		panic(err)
 	}
-	cp(pystr.Splitlines(buf.String(), false)...)
 }
 
 // Handles /autoprune through the shared executor

@@ -79,7 +79,8 @@ func SetupSystemExit(err error) (code int, message string, ok bool) {
 
 // Reports a KeyboardInterrupt leaving a prompt or a tool wait
 func isSetupKeyboardInterrupt(err error) bool {
-	return errors.Is(err, cliui.ErrInterrupt) || errors.Is(err, tools.ErrKeyboardInterrupt) || errors.Is(err, context.Canceled)
+	return errors.Is(err, cliui.ErrInterrupt) || errors.Is(err, tools.ErrKeyboardInterrupt) || errors.Is(err, context.Canceled) ||
+		errors.Is(err, errFlowCancelled)
 }
 
 // Runs the provider picker under the setup surface, a sys.exit or Ctrl-C answering skipped instead of failing
@@ -157,7 +158,7 @@ func ApplyDefaultAgentSettings(ctx context.Context, cfg config.Tree) error {
 		return err
 	}
 	SetupPrintSuccess("Applied recommended defaults:")
-	SetupInfo("  Max iterations: 150", "  Compression threshold: 0.50", "  Run `icebath setup agent` later to customize.")
+	SetupInfo("  Max iterations: 150", "  Compression threshold: 0.50", "  Type `/setup agent` later to customize.")
 	return nil
 }
 

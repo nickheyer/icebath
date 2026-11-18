@@ -39,7 +39,7 @@ func TestTUII18nCatalog(t *testing.T) {
 				t.Fatalf("%s is a leaf and a namespace", keys[i-1])
 			}
 		}
-		if len(keys) != 1510 {
+		if len(keys) != 1690 {
 			t.Fatalf("%d keys", len(keys))
 		}
 	})

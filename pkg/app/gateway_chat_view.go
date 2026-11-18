@@ -197,8 +197,6 @@ type GatewayChatView struct {
 	failure         error
 	failed          *gatewayViewEvent
 	mutations       *PreparedMutations
-	composer        *ptPromptSession
-	prefill         string
 	out             io.Writer
 	errOut          io.Writer
 }
@@ -760,21 +758,6 @@ func (v *GatewayChatView) submit(ctx context.Context, text string) (map[string]a
 		}
 	}
 	return receipt, nil
-}
-
-// Attaches the view to another session snapshot, moving this terminal continue pointer when interactive
-func (v *GatewayChatView) adopt(ctx context.Context, snapshot map[string]any) error {
-	v.sessionID = pyrepr.Str(requireKey(snapshot, "stored_session_id"))
-	v.generation = requireKey(snapshot, "execution_generation")
-	v.prompts = gatewaySnapshotPrompts(snapshot)
-	v.pending, _ = gatewayGetOr(snapshot, "pending", []any{}).([]any)
-	info, _ := snapshot["info"].(map[string]any)
-	v.model = gatewayModelName(gatewayText(info["model"], v.model), v.model)
-	if !v.finite {
-		sid := v.sessionID
-		v.await(func() { WriteBreadcrumb(ctx, sid, "") })
-	}
-	return nil
 }
 
 // Says why a one shot cannot go on and exits 3, closing stream json with a failed result

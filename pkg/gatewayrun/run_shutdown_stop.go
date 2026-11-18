@@ -493,6 +493,7 @@ func (r *GatewayRunner) stopImpl(ctx context.Context) error {
 			SnapshotFn: func() (any, error) { return r.shutdownWatchdogSnapshot(sc), nil },
 		})
 	}
+	r.awaitReadyTail()
 	if err := r.stopBeginTeardown(ctx, sc); err != nil {
 		return err
 	}

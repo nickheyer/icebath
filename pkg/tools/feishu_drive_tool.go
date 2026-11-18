@@ -201,6 +201,6 @@ func init() {
 		{feishuDriveAddCommentSchema, handleFeishuAddComment, "Add a whole-document comment", "✉️"},
 	} {
 		Register(Def{Name: t.schema["name"].(string), Toolset: "feishu_drive", Schema: t.schema, Handler: t.handler,
-			RequiresEnv: []string{}, Description: t.desc, Emoji: t.emoji})
+			Check: feishuToolsReady, RequiresEnv: []string{}, Description: t.desc, Emoji: t.emoji})
 	}
 }

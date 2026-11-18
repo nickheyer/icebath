@@ -10,7 +10,7 @@ import (
 // Picker rows of the video-gen tagged live DeepInfra catalog, empty when it is unreachable
 func deepInfraVideoModels(ctx context.Context) []map[string]any {
 	rows := []map[string]any{}
-	for _, item := range deepInfraModelsByTag(ctx, pluginEnv(), "video-gen") {
+	for _, item := range deepInfraModelsByTag(ctx, pluginEnv(ctx), "video-gen") {
 		id, _ := item["id"].(string)
 		if !pyTruthy(item["id"]) {
 			continue

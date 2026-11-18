@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"context"
 	"encoding/base64"
-	"fmt"
 	"math/big"
 	"os"
 	"regexp"
@@ -201,14 +200,16 @@ type toolCallArgs struct {
 
 // Dict member of a mapping with a default, raising like a Python get on a non dict
 func dictGet(v any, key string, def any) any {
-	d, isDict := v.(map[string]any)
-	if !isDict {
-		panic("AttributeError: '" + pyrepr.TypeName(v) + "' object has no attribute 'get'" + fmt.Sprintf(" DEBUGTYPE %T key %s", v, key))
+	switch d := v.(type) {
+	case map[string]any:
+		if value, present := d[key]; present {
+			return value
+		}
+		return def
+	case *pyjson.Object:
+		return d.GetOr(key, def)
 	}
-	if value, present := d[key]; present {
-		return value
-	}
-	return def
+	panic("AttributeError: '" + pyrepr.TypeName(v) + "' object has no attribute 'get'")
 }
 
 // Indexes the calls of an assistant row by id so their tool rows render with name and args

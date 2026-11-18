@@ -16,7 +16,7 @@ import (
 	"github.com/spf13/cobra"
 )
 
-// Runs the install, the checkout publish, the uninstall hooks or the release report as the flags select
+// Runs the install, the checkout publish or the release report as the flags select
 func installSelfGroup(ctx context.Context, cli *commands.CLI, cmd *cobra.Command, path string, args []string) (int, error) {
 	str := func(name string) string { v, _ := cmd.Flags().GetString(name); return v }
 	flag := func(name string) bool { v, _ := cmd.Flags().GetBool(name); return v }
@@ -31,13 +31,6 @@ func installSelfGroup(ctx context.Context, cli *commands.CLI, cmd *cobra.Command
 	}
 	if flag("from-checkout") {
 		return installFromCheckout(ctx, str("dir"), stdout, stderr), nil
-	}
-	if flag("uninstall") {
-		if err := install.UninstallHooks(func(line string) { fmt.Fprintln(stdout, line) }); err != nil {
-			fmt.Fprintln(stderr, err)
-			return 1, nil
-		}
-		return 0, nil
 	}
 	opts := install.Options{
 		Channel: str("channel"), Branch: str("branch"), Commit: str("commit"), Dir: str("dir"), Home: str("icebath-home"),
@@ -57,7 +50,7 @@ func installSelfGroup(ctx context.Context, cli *commands.CLI, cmd *cobra.Command
 	return install.Main(opts, os.Stdout, os.Stderr), nil
 }
 
-// Publishes a source checkout's built binary, then syncs bundled skills, copying them when the sync fails
+// Publishes a source checkout's built binary, provisions its relay runtime, then syncs bundled skills, copying them when the sync fails
 func installFromCheckout(ctx context.Context, checkout string, stdout, stderr io.Writer) int {
 	if checkout == "" {
 		fmt.Fprintln(stderr, "--from-checkout needs --dir CHECKOUT")
@@ -65,6 +58,10 @@ func installFromCheckout(ctx context.Context, checkout string, stdout, stderr io
 	}
 	report := func(line string) { fmt.Fprintln(stdout, line) }
 	if err := install.SetupFromCheckout(ctx, checkout, report); err != nil {
+		fmt.Fprintln(stderr, "✗ "+err.Error())
+		return 1
+	}
+	if err := install.ProvisionCheckoutRuntime(ctx, checkout, stdout, stderr); err != nil {
 		fmt.Fprintln(stderr, "✗ "+err.Error())
 		return 1
 	}

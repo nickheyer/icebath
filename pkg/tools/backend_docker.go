@@ -445,14 +445,14 @@ func ensureDockerAvailable(ctx context.Context, env *Env) error {
 	if docker == "" {
 		return dockerUnavailable(env, "Docker backend selected but no docker executable was found in PATH or known install locations. Install Docker Desktop and ensure the CLI is available.",
 			"Docker executable not found in PATH or known install locations. Install Docker and ensure the 'docker' command is available.",
-			"Install Docker (or fix PATH) and retry, or run `icebath setup terminal` to switch to Local.")
+			"Install Docker (or fix PATH) and retry, or start `icebath` and type `/setup terminal` to switch to Local.")
 	}
 	res, err := runCapture(ctx, []string{docker, "version"}, 5*time.Second, false, nil)
 	if err != nil {
 		if errors.Is(err, ErrCaptureTimeout) {
 			return dockerUnavailable(env, "Docker backend selected but '"+docker+" version' timed out. The Docker daemon may not be running.",
 				"Docker daemon is not responding. Ensure Docker is running and try again.",
-				"Start Docker (e.g. `systemctl start docker` or launch Docker Desktop), then retry — or run `icebath setup terminal` to switch to Local.")
+				"Start Docker (e.g. `systemctl start docker` or launch Docker Desktop), then retry — or start `icebath` and type `/setup terminal` to switch to Local.")
 		}
 		return dockerUnavailable(env, "Docker backend selected but the resolved docker executable '"+docker+"' could not be executed.",
 			"Docker executable could not be executed. Check your Docker installation.",
@@ -461,7 +461,7 @@ func ensureDockerAvailable(ctx context.Context, env *Env) error {
 	if res.Code != 0 {
 		return dockerUnavailable(env, fmt.Sprintf("Docker backend selected but '%s version' failed (exit code %d, stderr=%s)", docker, res.Code, strings.TrimSpace(res.Stderr)),
 			"Docker command is available but 'docker version' failed. Check your Docker installation.",
-			"Start Docker, or add your user to the docker group, then retry — or run `icebath setup terminal` to switch to Local.")
+			"Start Docker, or add your user to the docker group, then retry — or start `icebath` and type `/setup terminal` to switch to Local.")
 	}
 	return nil
 }

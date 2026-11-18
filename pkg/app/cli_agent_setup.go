@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"strings"
-	"time"
 
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 
@@ -47,25 +46,8 @@ func routeSignature(model string, rt *cliRuntime) string {
 	return fmt.Sprintf("%q|%q|%q|%q|%q|%q|%q", model, rt.Provider, rt.RequestedProvider, rt.BaseURL, rt.APIMode, rt.Command, strings.Join(rt.Args, "\x00"))
 }
 
-// Credential pool surface the startup gate reads, the agent.credential_pool.CredentialPool methods it calls
-type startupCredentialPool interface {
-	HasCredentials() bool
-	HasAvailable(model string) bool
-	NextAvailableAt(model string) (time.Time, bool)
-	Entries() []provider.PooledCredential
-}
-
 // Seams over the pool loader and the runtime resolver, the agent.credential_pool and runtime_provider names the first run tests patch
 var (
-	startupLoadPool = func(c *CLI, providerName string) startupCredentialPool {
-		env := provider.HomePoolEnv(home.Dir(c.ctx))
-		env.Ctx = c.ctx
-		env.Config = func() map[string]any { return c.config }
-		if pool := provider.LoadPool(env, providerName); pool != nil {
-			return pool
-		}
-		return nil
-	}
 	resolveRuntimeProviderFn = provider.ResolveRuntimeProvider
 )
 

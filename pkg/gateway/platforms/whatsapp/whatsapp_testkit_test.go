@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"math/rand/v2"
 	"net"
 	"os"
 	"os/exec"
@@ -30,9 +31,9 @@ func runHelperRole(role string) int {
 		if parts[1] == "ignore" {
 			signal.Ignore(syscall.SIGTERM)
 		}
-		ln, err := net.Listen("tcp4", "127.0.0.1:"+parts[2])
+		ln, err := net.FileListener(os.NewFile(3, "held-port"))
 		if err != nil {
-			fmt.Println("bind failed", err)
+			fmt.Println("inherited listener failed", err)
 			return 3
 		}
 		fmt.Println("ready")
@@ -78,14 +79,26 @@ func spawnHelper(t *testing.T, role string, nodeNamedDir string, extra ...string
 	return cmd
 }
 
-// Port holder process, bound and ready, ignoring SIGTERM when asked and named node when a dir is given
-func spawnHolder(t *testing.T, ignoreTerm bool, port int, nodeNamedDir string) *procBridge {
+// Port holder process serving an inherited listener, ignoring SIGTERM when asked and named node under a dir
+func spawnHolder(t *testing.T, ignoreTerm bool, nodeNamedDir string) (*procBridge, int) {
 	t.Helper()
 	mode := "polite"
 	if ignoreTerm {
 		mode = "ignore"
 	}
-	cmd := spawnHelper(t, fmt.Sprintf("holder:%s:%d", mode, port), nodeNamedDir)
+	ln, err := net.Listen("tcp4", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	port := ln.Addr().(*net.TCPAddr).Port
+	held, err := ln.(*net.TCPListener).File()
+	ln.Close()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer held.Close()
+	cmd := spawnHelper(t, "holder:"+mode, nodeNamedDir)
+	cmd.ExtraFiles = []*os.File{held}
 	out, err := cmd.StdoutPipe()
 	if err != nil {
 		t.Fatal(err)
@@ -99,7 +112,7 @@ func spawnHolder(t *testing.T, ignoreTerm bool, port int, nodeNamedDir string) *
 	}
 	p := wrapProc(cmd)
 	t.Cleanup(func() { p.stop() })
-	return p
+	return p, port
 }
 
 // Started helper process wrapped as a bridge handle
@@ -191,15 +204,62 @@ func exitedProc(code int) *fakeProc {
 	return &fakeProc{pid: 4190000, poll: func() (int, bool) { return code, true }}
 }
 
-// Free loopback port
+// Free loopback port below the ephemeral range, which no outbound connection on the host can autobind
 func freePort(t *testing.T) int {
+	t.Helper()
+	low := 32768
+	if raw, err := os.ReadFile("/proc/sys/net/ipv4/ip_local_port_range"); err == nil {
+		if fields := strings.Fields(string(raw)); len(fields) == 2 {
+			if n, err := strconv.Atoi(fields[0]); err == nil && n > 10001 {
+				low = n
+			}
+		}
+	}
+	for range 1000 {
+		if port := 10000 + rand.IntN(low-10000); portIsFree(port) {
+			return port
+		}
+	}
+	t.Fatalf("no free port in 10000..%d", low-1)
+	return 0
+}
+
+// Loopback port bound now and handed to the in-process bridge when it binds, with a probe of its release
+func heldBridgePort(t *testing.T) (int, func() bool) {
 	t.Helper()
 	ln, err := net.Listen("tcp4", "127.0.0.1:0")
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer ln.Close()
-	return ln.Addr().(*net.TCPAddr).Port
+	port := ln.Addr().(*net.TCPAddr).Port
+	var handover sync.Once
+	previous := bridgeListen
+	bridgeListen = func(p int) (net.Listener, error) {
+		handed := false
+		if p == port {
+			handover.Do(func() { handed = true })
+		}
+		if handed {
+			return ln, nil
+		}
+		return previous(p)
+	}
+	t.Cleanup(func() {
+		bridgeListen = previous
+		handover.Do(func() { ln.Close() })
+	})
+	released := func() bool {
+		tcp := ln.(*net.TCPListener)
+		if err := tcp.SetDeadline(time.Now()); err != nil {
+			return errors.Is(err, net.ErrClosed)
+		}
+		conn, err := tcp.Accept()
+		if conn != nil {
+			conn.Close()
+		}
+		return errors.Is(err, net.ErrClosed)
+	}
+	return port, released
 }
 
 // Waits until a bind probe agrees the port is held or free

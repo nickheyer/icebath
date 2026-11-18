@@ -110,6 +110,15 @@ var DiagnosticsShareNousResult = pydantic.NewModel("DiagnosticsShareNousResult",
 
 var _ = Method("diagnostics.share_nous", DiagnosticsShareNousParams, DiagnosticsShareNousResult, "Upload a force-redacted debug bundle to Nous-internal diagnostics storage.")
 
+var FreeTierChallengePayload = pydantic.NewModel("FreeTierChallengePayload", OpenConfig,
+	pydantic.Req("type", pydantic.Literal("browser")),
+	pydantic.Req("url", pydantic.Str),
+	pydantic.Req("required", pydantic.Bool),
+	pydantic.Req("expires_in", pydantic.Int),
+	pydantic.Req("message", pydantic.Str),
+	pydantic.Def("attempt", pydantic.Int, 0),
+).Described("``hermes_cli/anon_challenge.py::BrowserChallenge.as_payload``: the ``free_tier.challenge``\nevent, and ``free_tier.status``'s ``challenge`` field for a client that connected after it.")
+
 var FreeTierStatusResult = pydantic.NewModel("FreeTierStatusResult", ClosedConfig,
 	pydantic.Req("has_guest", pydantic.Bool),
 	pydantic.Req("enabled", pydantic.Bool),
@@ -121,6 +130,7 @@ var FreeTierStatusResult = pydantic.NewModel("FreeTierStatusResult", ClosedConfi
 	pydantic.Def("error_code", pydantic.Nullable(pydantic.Str), nil),
 	pydantic.Def("retryable", pydantic.Nullable(pydantic.Bool), nil),
 	pydantic.Def("retry_after", pydantic.Nullable(pydantic.Int), nil),
+	pydantic.Def("challenge", pydantic.Nullable(FreeTierChallengePayload), nil),
 	pydantic.Def("nudge_due_in", pydantic.Nullable(pydantic.Int), nil),
 	pydantic.Def("connector_nudge_due_in", pydantic.Nullable(pydantic.Int), nil),
 ).Described("``available`` = an identity exists AND the tier is on; whether inference runs on it is\n``setup.runtime_check.free_tier_route``'s question.")

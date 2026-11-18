@@ -884,7 +884,7 @@ func downloadAndSwapZip(ctx context.Context, w io.Writer, branch, zipURL, target
 	}
 	fmt.Fprintf(w, "✗ ZIP update failed: %s\n", launchErrorText(err))
 	fmt.Fprintln(w, "  Your existing install was left in place.")
-	fmt.Fprintln(w, "  Re-run `icebath update` to retry; if the agent won't start, reinstall from https://hermes-agent.nousresearch.com")
+	fmt.Fprintln(w, "  Re-run `icebath update` to retry; if the agent won't start, reinstall from https://icebath.app")
 	recordStop(ctx, zipStopClass(err, downloaded))
 	return "", &pm.SystemExit{Code: 1}
 }

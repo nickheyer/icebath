@@ -176,16 +176,19 @@ func TestBedrockCredentialProbeWalksChainOnce(t *testing.T) {
 	bedrockIsolatedEnv(t)
 	var walks []bool
 	prev := awsChainHasCredentialsFn
-	awsChainHasCredentialsFn = func(instanceMetadata bool) bool { walks = append(walks, instanceMetadata); return false }
+	awsChainHasCredentialsFn = func(_ context.Context, instanceMetadata bool) bool {
+		walks = append(walks, instanceMetadata)
+		return false
+	}
 	t.Cleanup(func() { awsChainHasCredentialsFn = prev })
-	if hasAWSCredentials(true) {
+	if hasAWSCredentials(t.Context(), true) {
 		t.Fatal("credentials reported with an empty chain")
 	}
 	if len(walks) != 1 {
 		t.Fatalf("chain walked %d times", len(walks))
 	}
 	walks = nil
-	if hasAWSCredentials(false) || len(walks) != 1 || walks[0] {
+	if hasAWSCredentials(t.Context(), false) || len(walks) != 1 || walks[0] {
 		t.Fatalf("no metadata probe walks %v", walks)
 	}
 }

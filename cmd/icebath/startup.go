@@ -8,6 +8,9 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+	"testing"
+
+	"github.com/spf13/cobra"
 
 	"github.com/nickheyer/icebath/pkg/selfupdate/updaterecord"
 
@@ -264,6 +267,9 @@ func cleanupQuarantinedExes() {
 // Reports a fleet restart a previous update still owes and recovers gateways a killed update paused
 func recoverUpdateDebtsOnStartup() {
 	ctx := context.Background()
+	if selfupdate.UpdateInternalCommand(os.Args[1:]) {
+		return
+	}
 	if !containsArg(os.Args[1:], "update") {
 		selfupdate.WarnPendingFleetRestartOnStartup(ctx, home.Dir(ctx), os.Stderr)
 	}
@@ -273,6 +279,25 @@ func recoverUpdateDebtsOnStartup() {
 // Runs the boot bootstrap when the install identity changed since the last recorded run
 func maybeRunBootBootstrap(projectRoot string) {
 	selfupdate.MaybeRunBootBootstrap(context.Background(), projectRoot)
+}
+
+// First positionals whose commands never start the relay runtime provisioning
+var provisioningFreeCommands = map[string]bool{
+	"help": true, "version": true, "completion": true, cobra.ShellCompRequestCmd: true, cobra.ShellCompNoDescRequestCmd: true,
+	"uninstall": true, "install-self": true, "update": true,
+}
+
+// Starts the relay runtime provisioning off the launch path, never for help, version, completion, install verbs or tests
+func startRelayProvisioning(argv []string, first string) {
+	if testing.Testing() || selfupdate.UpdateInternalCommand(argv) || provisioningFreeCommands[first] {
+		return
+	}
+	for _, flag := range []string{"-h", "--help", "-V", "--version"} {
+		if containsArg(argv, flag) {
+			return
+		}
+	}
+	go relayhost.StartProvisioning()
 }
 
 // Prints the install's runtime command for a launch asked for it and exits with its status

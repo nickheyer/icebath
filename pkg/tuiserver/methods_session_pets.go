@@ -38,6 +38,8 @@ func init() {
 	petMethod("pet.remove", nil, true, true, petRemove)
 	petMethod("pet.export", nil, true, true, petExport)
 	petMethod("pet.rename", nil, true, true, petRename)
+	petMethod("pet.disable", nil, false, true, petDisable)
+	petMethod("pet.scale", nil, false, true, petScale)
 	petMethodsRegistry.method("pet.cancel", petCancel)
 	petMethod("pet.generate.status", func(map[string]any) map[string]any {
 		return map[string]any{"available": false, "providers": []any{}}
@@ -82,12 +84,12 @@ func petMethod(name string, failOpen func(map[string]any) map[string]any, slug, 
 	petMethodsRegistry.method(name, handler)
 }
 
-// Tool env of the pet store's network fetches under the bound home
+// Tool env of the pet store fetches and image backends, the bound home's config and secrets loaded
 func petEnv(ctx context.Context) *tools.Env {
 	if env := tools.ToolEnvFrom(ctx); env != nil {
 		return env
 	}
-	return &tools.Env{Home: home.Dir(ctx), Values: &sync.Map{}}
+	return tools.EnvForProfileHome(ctx, &tools.Env{Values: &sync.Map{}}, home.Dir(ctx))
 }
 
 // Progress emit whose failure is logged and never aborts a generation
@@ -363,6 +365,26 @@ func petRename(ctx context.Context, rid any, params map[string]any, slug string)
 		petConfigFollowup("pet.rename", func() (bool, error) { return renameActivePetIf(ctx, slug, newSlug) })
 	}
 	return ok(rid, map[string]any{"ok": true, "slug": newSlug, "displayName": name}), nil
+}
+
+// Turns the pet display off
+func petDisable(ctx context.Context, rid any, _ map[string]any, _ string) (map[string]any, error) {
+	if _, err := updatePetConfig(ctx, nil, map[string]any{"enabled": false}); err != nil {
+		return nil, err
+	}
+	return ok(rid, map[string]any{"ok": true}), nil
+}
+
+// Persists display.pet.scale clamped to the engine bounds, a non number answered 4004 with nothing written
+func petScale(ctx context.Context, rid any, params map[string]any, _ string) (map[string]any, error) {
+	scale, message, err := (&pet.Run{Ctx: ctx, Home: home.Dir(ctx)}).SetPetScale(params["scale"])
+	if err != nil {
+		return nil, err
+	}
+	if message != "" {
+		return rpcErr(rid, 4004, message, nil), nil
+	}
+	return ok(rid, map[string]any{"ok": true, "scale": scale}), nil
 }
 
 // Stops an in flight generate or hatch by its token, idempotent

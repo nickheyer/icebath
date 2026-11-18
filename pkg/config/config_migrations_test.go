@@ -374,6 +374,45 @@ func TestV55DropsWakeWordCaptureAndKeepsTheRestOfTheSection(t *testing.T) {
 	}
 }
 
+func TestV56DropsTheDesktopOnlyKeysAndKeepsTheRestOfTheirSections(t *testing.T) {
+	h := writeMigrationHome(t, t.TempDir(), map[string]any{"_config_version": 55,
+		"terminal":   map[string]any{"font_family": "Fira Code", "backend": "local"},
+		"display":    map[string]any{"resume_last_session": false, "skin": "default"},
+		"onboarding": map[string]any{"run": true, "seen": map[string]any{"busy_input_prompt": true}}}, "")
+	res := runFrom(t, h, 55)
+	raw := rawMigrated(t, h)
+	want := map[string]any{
+		"terminal":   map[string]any{"backend": "local"},
+		"display":    map[string]any{"skin": "default"},
+		"onboarding": map[string]any{"seen": map[string]any{"busy_input_prompt": true}}}
+	for section, kept := range want {
+		if !reflect.DeepEqual(raw[section], kept) {
+			t.Fatalf("%s %v, want %v", section, raw[section], kept)
+		}
+	}
+	if !strings.Contains(strings.Join(res.ConfigAdded, "\n"), "removed terminal.font_family, display.resume_last_session, onboarding.run") {
+		t.Fatalf("config added %v", res.ConfigAdded)
+	}
+	for _, pair := range desktopOnlyKeys {
+		if _, ok := AsMap(Defaults()[pair[0]])[pair[1]]; ok {
+			t.Fatalf("default %s carries %s", pair[0], pair[1])
+		}
+	}
+}
+
+func TestV56LeavesAConfigWithoutDesktopOnlyKeysAsItWas(t *testing.T) {
+	h := writeMigrationHome(t, t.TempDir(), map[string]any{"_config_version": 55,
+		"terminal": map[string]any{"backend": "local"}, "display": "compact"}, "")
+	res := runFrom(t, h, 55)
+	raw := rawMigrated(t, h)
+	if !reflect.DeepEqual(raw["terminal"], map[string]any{"backend": "local"}) || raw["display"] != "compact" {
+		t.Fatalf("config %v", raw)
+	}
+	if strings.Contains(strings.Join(res.ConfigAdded, "\n"), "removed terminal") {
+		t.Fatalf("config added %v", res.ConfigAdded)
+	}
+}
+
 func TestUnversionedConfigDropsTheRetiredBotChatTimeout(t *testing.T) {
 	h := writeMigrationHome(t, t.TempDir(), map[string]any{"cron": map[string]any{"bot_chat_delivery_timeout_seconds": 900, "max_parallel_jobs": 2}}, "")
 	migrateFromStamp(t, h, true)

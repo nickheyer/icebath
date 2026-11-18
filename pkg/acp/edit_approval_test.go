@@ -8,7 +8,6 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pyacp"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/tools"
@@ -96,8 +95,7 @@ func TestMultifileV4aPatchChecksEveryRealPathNotTheJoinedDisplayString(t *testin
 	if tools.ShouldAutoApproveEdit(p, "session", tmp) || tools.ShouldAutoApproveEdit(p, "workspace_session", tmp) {
 		t.Fatal("hidden env approved")
 	}
-	userHome, _ := home.UserHome()
-	escape := filepath.Join(userHome, ".icebath-acp-escape-test.txt")
+	escape := filepath.Join(filepath.VolumeName(tmp)+string(filepath.Separator), ".icebath-acp-escape-test.txt")
 	p = build("*** Update File: " + tmp + "/src/ok.py\n@@\n+ok\n*** Update File: " + escape + "\n@@\n+evil\n")
 	if tools.ShouldAutoApproveEdit(p, "workspace_session", tmp) {
 		t.Fatal("escape approved")

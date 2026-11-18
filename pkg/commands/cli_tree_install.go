@@ -4,7 +4,7 @@ import "github.com/spf13/cobra"
 
 // Attaches the hidden install-self verb the install scripts hand over to
 func (c *CLI) addInstallSelf(root *cobra.Command) {
-	cmd := c.newCmd(root, "install-self", "install, update or unhook an icebath release in the icebath home", "")
+	cmd := c.newCmd(root, "install-self", "install an icebath release into the icebath home", "")
 	cmd.Hidden = true
 	sf(cmd, "channel", "", "", "stable (default): the latest published release, then release to release. main: the newest release build of main. Also ICEBATH_INSTALL_CHANNEL; an explicit choice is saved like 'icebath update --set-channel'.")
 	sf(cmd, "branch", "", "", "install the newest release built from this branch (default main)")
@@ -22,5 +22,4 @@ func (c *CLI) addInstallSelf(root *cobra.Command) {
 	bf(cmd, "no-playwright", "", "alias of --skip-browser")
 	bf(cmd, "skip-computer-use", "", "Do not install the computer-use driver (cua-driver). Remembered the same way; undo with 'icebath pm install cua-driver'.")
 	bf(cmd, "release-info", "", "print the release tag and commit of this binary as JSON")
-	bf(cmd, "uninstall", "", "remove the shell PATH lines, shortcuts and staged installer the install added")
 }

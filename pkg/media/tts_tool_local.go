@@ -552,7 +552,7 @@ def main():
     try:
         from neutts import NeuTTS
     except ImportError:
-        print("Error: neutts not installed. Run icebath setup tts and choose NeuTTS.", file=sys.stderr)
+        print("Error: neutts not installed. Start icebath, type /setup tts and choose NeuTTS.", file=sys.stderr)
         sys.exit(1)
     tts = NeuTTS(
         backbone_repo=args.model,

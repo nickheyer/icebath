@@ -857,15 +857,20 @@ func RunOAuthSetupToken(env PoolEnv) (string, error) {
 			return "", err
 		}
 	}
+	return claudeSetupTokenResult(env), nil
+}
+
+// Token claude setup-token left behind, the Claude Code credentials then the token variables, empty when none holds one
+func claudeSetupTokenResult(env PoolEnv) string {
 	if creds := ReadClaudeCodeCredentials(env); creds != nil && IsClaudeCodeTokenValid(creds) {
-		return anyString(creds["accessToken"]), nil
+		return anyString(creds["accessToken"])
 	}
 	for _, n := range []string{"CLAUDE_CODE_OAUTH_TOKEN", "ANTHROPIC_TOKEN"} {
 		if v := strings.TrimSpace(env.secretStr(n)); v != "" {
-			return v, nil
+			return v
 		}
 	}
-	return "", nil
+	return ""
 }
 
 // HermesOAuthFile is the icebath owned Anthropic PKCE credential file of the home

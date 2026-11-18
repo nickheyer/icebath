@@ -80,7 +80,7 @@ func summaryOutput(t *testing.T, providerReady bool) string {
 
 func TestSummaryWarnsWhenNoProvider(t *testing.T) {
 	out := summaryOutput(t, false)
-	if !strings.Contains(out, "No inference provider is configured") || !strings.Contains(out, "icebath model") || !strings.Contains(out, "icebath setup --portal") {
+	if !strings.Contains(out, "No inference provider is configured") || !strings.Contains(out, "icebath model") || !strings.Contains(out, "icebath portal") {
 		t.Fatalf("screen %q", out)
 	}
 }

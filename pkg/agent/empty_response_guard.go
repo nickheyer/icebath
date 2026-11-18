@@ -12,6 +12,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/provider"
+	"github.com/nickheyer/icebath/pkg/state"
 )
 
 const (
@@ -153,7 +154,7 @@ func (a *AIAgent) emptyAttempts() *[]emptyAttempt { return &a.emptyAttemptHistor
 
 // Canonical usage of the response, false when it carries none or its normalization fails
 func (a *AIAgent) emptyGuardUsage(response any, what string) (usage provider.CanonicalUsage, ok bool) {
-	rawUsage := pyAttr(response, "usage")
+	rawUsage := state.ToolCallField(response, "usage")
 	if !pyrepr.Truthy(rawUsage) {
 		return provider.CanonicalUsage{}, false
 	}

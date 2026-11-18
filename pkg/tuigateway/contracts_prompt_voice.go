@@ -259,6 +259,8 @@ var WakeOwnerResult = pydantic.NewModel("WakeOwnerResult", ClosedConfig,
 var WakeStopResult = pydantic.Extend(WakeOwnerResult, "WakeStopResult", ClosedConfig,
 	pydantic.Req("stopped", pydantic.Bool),
 	pydantic.Req("disabled_persisted", pydantic.Bool),
+	pydantic.Def("phrase", pydantic.Nullable(pydantic.Str), nil),
+	pydantic.Def("provider", pydantic.Nullable(pydantic.Str), nil),
 )
 
 var _ = Method("wake.stop", WakeStopParams, WakeStopResult, "Stop this surface's listener; persist also writes wake_word.enabled: false.")

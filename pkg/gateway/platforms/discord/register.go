@@ -20,7 +20,7 @@ func (discordPlugin) Manifest() plugins.Manifest {
 	return plugins.Manifest{Name: "discord-platform", Key: "platforms/discord", Kind: "platform", Version: "1.0.0", Author: "NousResearch",
 		Description: "Discord gateway adapter for Icebath Agent. Connects to Discord via the discordgo library and relays messages between " +
 			"Discord guilds/DMs and the Icebath agent. Supports voice mode, slash commands, free-response channels, role-based DM auth, " +
-			"threads, reactions, and channel skill bindings.",
+			"threads, reactions, and channel skill bindings.\n",
 		RequiresEnv: []plugins.EnvSpec{{Name: "DISCORD_BOT_TOKEN", Description: "Discord bot token"}}}
 }
 
@@ -51,7 +51,7 @@ func (discordPlugin) Register(ctx *plugins.Context) error {
 	_, err := ctx.RegisterPlatform(plugins.PlatformSpec{Name: "discord", Label: "Discord",
 		AdapterFactory: gateway.AdapterFactory(func(c context.Context, cfg *gateway.PlatformConfig) (any, error) { return NewDiscordAdapter(c, cfg) }),
 		Check:          discordDepsPresent, RequiredEnv: []string{"DISCORD_BOT_TOKEN"},
-		InstallHint: "Run `icebath setup` to install Discord support.", Extra: extra})
+		InstallHint: "Start `icebath` and type `/setup gateway` to install Discord support.", Extra: extra})
 	return err
 }
 

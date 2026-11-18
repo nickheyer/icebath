@@ -25,6 +25,18 @@ func Slugify(name string) string {
 	return slug
 }
 
+// Short name of the first three capitalized words of a concept cut to 28 runes, empty for none
+func DisplayNameFor(concept string) string {
+	words := pystr.SplitWhitespace(concept, -1)
+	if len(words) > 3 {
+		words = words[:3]
+	}
+	for i, w := range words {
+		words[i] = pystr.Capitalize(w)
+	}
+	return pystr.Strip(pystr.Slice(strings.Join(words, " "), 0, 28))
+}
+
 // Slug of the name that does not collide with an existing pet directory
 func UniqueSlug(h, name string) (string, error) {
 	dir, err := PetsDir(h)

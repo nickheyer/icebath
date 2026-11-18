@@ -349,6 +349,9 @@ func (e *ProviderStreamError) Code() string {
 // ResponseHeaders exposes the stream response headers for reset and welcome tier parsing
 func (e *ProviderStreamError) ResponseHeaders() http.Header { return e.Headers }
 
+// Python class the stream helper raises, a plain Exception subclass
+func (e *ProviderStreamError) PyTypeName() string { return "ProviderStreamError" }
+
 // Body as JSON text for classification
 func (e *ProviderStreamError) BodyText() string {
 	b, _ := json.Marshal(e.Body)

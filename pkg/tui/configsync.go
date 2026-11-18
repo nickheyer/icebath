@@ -254,7 +254,7 @@ func (c *configSync) applyDisplay(cfg map[string]any, applyBusy bool) tea.Cmd {
 	ui.Sections, ui.ShowReasoning = resolveSections(d["sections"]), truthyJS(d["show_reasoning"])
 	ui.StatusBar, ui.StatusBarFields = normalizeStatusBar(d["tui_statusbar"]), normalizeStatusBarFields(statusBar["fields"])
 	ui.Streaming, ui.Timestamps = d["streaming"] != false, d["timestamps"] == true
-	ui.Arena = d["arena"]
+	ui.Arena, ui.Pet = d["arena"], d["pet"]
 	return cmd
 }
 

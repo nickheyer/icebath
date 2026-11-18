@@ -462,7 +462,7 @@ func (sshBackend) CheckRequirements(env *Env, cfg map[string]any) error {
 	if truthy(cfg["ssh_host"]) && truthy(cfg["ssh_user"]) {
 		return nil
 	}
-	return errors.New("the SSH host and user are not configured (TERMINAL_SSH_HOST / TERMINAL_SSH_USER); run `icebath setup terminal` to enter them or pick the 'local' backend")
+	return errors.New("the SSH host and user are not configured (TERMINAL_SSH_HOST / TERMINAL_SSH_USER); start `icebath` and type `/setup terminal` to enter them or pick the 'local' backend")
 }
 
 // Probe reports whether the configured host answers

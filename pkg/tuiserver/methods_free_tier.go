@@ -49,6 +49,9 @@ func freeTierStatus(ctx context.Context, rid any, _ map[string]any) (response ma
 			payload[key] = value
 		}
 	}
+	if challenge := provider.PendingChallenge(env); challenge != nil {
+		payload["challenge"] = challenge
+	}
 	return ok(rid, payload)
 }
 

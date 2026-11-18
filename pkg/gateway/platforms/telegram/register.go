@@ -74,7 +74,7 @@ func (telegramPlugin) Manifest() plugins.Manifest {
 	return plugins.Manifest{Name: "telegram-platform", Key: "platforms/telegram", Kind: "platform", Version: "1.0.0", Author: "NousResearch",
 		Description: "Telegram gateway adapter for Icebath Agent. Connects to Telegram via go-telegram/bot and relays messages between " +
 			"Telegram chats/groups/topics and the Icebath agent. Supports threads/topics, streaming edits, native media, inline keyboards, " +
-			"slash commands, fallback network transport (direct-IP failover), notification modes, mention gating, and per-user/chat allowlists.",
+			"slash commands, fallback network transport (direct-IP failover), notification modes, mention gating, and per-user/chat allowlists.\n",
 		RequiresEnv: []plugins.EnvSpec{{Name: "TELEGRAM_BOT_TOKEN", Description: "Telegram bot token from @BotFather", URL: "https://t.me/BotFather",
 			Secret: true}}}
 }

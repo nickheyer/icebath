@@ -64,6 +64,7 @@ func installProcessWiring() {
 	installAgentImportWiring()
 	registerCommandArgv()
 	tools.RegisterNemoRelayBinding(relayhost.Load)
+	tools.RegisterNemoRelayReadiness(relayhost.Ready)
 	commands.BannerVersionLabel = app.FormatBannerVersionLabel
 	gatewayrun.ResolveEphemeralSystemPromptFromConfig = commands.ResolveEphemeralSystemPrompt
 	gatewayrun.ParseServiceTierConfig = app.ParseServiceTierConfig
@@ -202,10 +203,12 @@ func installProcessWiring() {
 	tuiserver.ForeignSessions.Import = app.ImportBrowserSession
 	tuiserver.Personality.EphemeralSystemPrompt = commands.ResolveEphemeralSystemPrompt
 	tuiserver.GatewayKnownCommands = commands.GatewayKnownCommands
-	tuiserver.CatalogRegistry = catalogRegistry
+	tuiserver.CatalogRegistry, tuiserver.RegistryPluginCommands = catalogRegistry, registryPluginCommands
 	tuiserver.SaveConfigValue = app.SaveConfigValue
+	tuiserver.HostedSetupFlows = app.HostedSetupFlows
 	gateway.CommandCatalog, gateway.SlashCompletions = tuiserver.CommandCatalog, tuiserver.SlashCompletions
 	gateway.ResolveRegistryCommand = resolveRegistryCommand
+	gateway.ResolveBoundCommand, gateway.RunBoundCommand = commands.BoundGatewayCommand, commands.RunBoundGatewayCommand
 	gateway.SessionReadLines.Toolsets, gateway.SessionReadLines.Platforms = app.ToolsetsLines, app.PlatformsLines
 	gateway.HostedEntryKeywords = hosted.EntryKeywords
 	gateway.SessionReadLines.Cron = cron.CronCommandLines

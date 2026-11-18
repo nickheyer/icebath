@@ -41,7 +41,7 @@ var turnErrorLayerCopy = map[string]turnErrorCopy{
 }
 
 var turnErrorNoRetryHint = map[string]string{
-	"local_runtime_unavailable": "Start the local model server (`icebath model` → Local models), or switch with /model.",
+	"local_runtime_unavailable": "Start the local model server (`/setup model` → Local models), or switch with /model.",
 }
 
 var turnErrorDefault = turnErrorCopy{"The request failed", "Send /retry, or switch with /model."}
@@ -130,7 +130,7 @@ func agentInitFailedMessage(err any) string {
 		}
 	}
 	return "Icebath could not start the assistant for this session. Details: " + detail + ". " +
-		"Check the model and provider with /model, or run `icebath setup` in a terminal to reconfigure."
+		"Check the model and provider with /model, or type /setup model to reconfigure."
 }
 
 const agentStillStarting = "Icebath is still starting this session (loading tools), so this command could not run yet. " +

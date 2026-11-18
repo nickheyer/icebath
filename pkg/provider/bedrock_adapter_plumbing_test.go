@@ -110,17 +110,17 @@ func bcaMultiplex(t *testing.T) {
 
 func bcaNoChain(t *testing.T) {
 	prev := awsChainHasCredentialsFn
-	awsChainHasCredentialsFn = func(bool) bool { return false }
+	awsChainHasCredentialsFn = func(context.Context, bool) bool { return false }
 	t.Cleanup(func() { awsChainHasCredentialsFn = prev })
 }
 
 func TestBedrockResolveAWSAuthEnvVar(t *testing.T) {
 	bcaNoChain(t)
 	env := func(m map[string]string) func(string) string { return func(k string) string { return m[k] } }
-	if got := resolveAWSAuthEnvVarFrom(env(map[string]string{"AWS_ACCESS_KEY_ID": "AKIA..."}), true); got == "AWS_ACCESS_KEY_ID" {
+	if got := resolveAWSAuthEnvVarFrom(t.Context(), env(map[string]string{"AWS_ACCESS_KEY_ID": "AKIA..."}), true); got == "AWS_ACCESS_KEY_ID" {
 		t.Fatal("an access key without its secret counted")
 	}
-	if got := resolveAWSAuthEnvVarFrom(env(map[string]string{}), true); got != "" {
+	if got := resolveAWSAuthEnvVarFrom(t.Context(), env(map[string]string{}), true); got != "" {
 		t.Fatalf("no auth resolved %q", got)
 	}
 }
@@ -128,11 +128,11 @@ func TestBedrockResolveAWSAuthEnvVar(t *testing.T) {
 func TestBedrockHasAWSCredentials(t *testing.T) {
 	bedrockIsolatedEnv(t)
 	bcaNoChain(t)
-	if hasAWSCredentials(true) {
+	if hasAWSCredentials(t.Context(), true) {
 		t.Fatal("empty env has credentials")
 	}
 	t.Setenv("AWS_PROFILE", "default")
-	if !hasAWSCredentials(true) {
+	if !hasAWSCredentials(t.Context(), true) {
 		t.Fatal("AWS_PROFILE not counted")
 	}
 }

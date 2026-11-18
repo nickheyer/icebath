@@ -198,7 +198,7 @@ func openAINamedFile(ctx context.Context, env *tools.Env, ref string) (openAIFil
 // OpenAI images.generate and images.edit backend with the selectable API models
 type openAIImageGenProvider struct {
 	staticImageGenProvider
-	env func() *tools.Env
+	env func(context.Context) *tools.Env
 }
 
 func newOpenAIImageGenProvider() *openAIImageGenProvider {
@@ -209,9 +209,12 @@ func newOpenAIImageGenProvider() *openAIImageGenProvider {
 			Key: "OPENAI_API_KEY", Prompt: "OpenAI API key", URL: "https://platform.openai.com/api-keys"}}}
 }
 
-// Available when the resolved endpoint carries a key
-func (p *openAIImageGenProvider) IsAvailable() bool {
-	_, key, err := resolveOpenAIEndpoint(context.Background(), p.env())
+// Available when the endpoint resolved for the process profile carries a key
+func (p *openAIImageGenProvider) IsAvailable() bool { return p.AvailableIn(context.Background()) }
+
+// Available when the endpoint resolved under the context's profile home and secret scope carries a key
+func (p *openAIImageGenProvider) AvailableIn(ctx context.Context) bool {
+	_, key, err := resolveOpenAIEndpoint(ctx, p.env(ctx))
 	if err != nil {
 		panic(err)
 	}
@@ -226,7 +229,7 @@ func (p *openAIImageGenProvider) Capabilities() map[string]any {
 // Generates or edits through the OpenAI Images API and caches the result
 func (p *openAIImageGenProvider) Generate(ctx context.Context, env *tools.Env, req ImageGenRequest) (map[string]any, error) {
 	if env == nil {
-		env = p.env()
+		env = p.env(ctx)
 	}
 	prompt := strings.TrimSpace(req.Prompt)
 	aspect := resolveAspectRatio(req.AspectRatio)
@@ -239,7 +242,7 @@ func (p *openAIImageGenProvider) Generate(ctx context.Context, env *tools.Env, r
 	}
 	if apiKey == "" {
 		return errorFactory("openai", aspect, "", "")("OPENAI_API_KEY not set (or the variable named by image_gen.openai.key_env is empty). "+
-			"Run `icebath tools` → Image Generation → OpenAI to configure, or `icebath setup` to add the key.", "auth_required"), nil
+			"Run `icebath tools` → Image Generation → OpenAI to configure, or start `icebath` and type `/setup tools` to add the key.", "auth_required"), nil
 	}
 	newClient := newOpenAIClientHook
 	tierID, meta := resolveOpenAIImageModel(env)

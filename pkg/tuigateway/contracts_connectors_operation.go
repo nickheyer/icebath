@@ -129,7 +129,7 @@ var ConnectionOperationParams = pydantic.Extend(ProfileParams, "ConnectionOperat
 	pydantic.Req("op_id", pydantic.Str),
 )
 
-var _ = Method("connectors.operation.status", ConnectionOperationParams, ConnectionOperationStatus, "The current snapshot of one open session operation.")
+var _ = Method("connectors.operation.status", ConnectionOperationParams, ConnectionOperationStatus, "The current snapshot of one open session or account operation.")
 
 var ConnectionWakeResult = pydantic.NewModel("ConnectionWakeResult", ClosedConfig,
 	pydantic.Req("status", pydantic.Literal("ok")),

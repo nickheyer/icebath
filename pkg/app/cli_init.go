@@ -348,9 +348,8 @@ func (c *CLI) initRuntimeState(resume string) {
 	c.activeAgentRouteSignature = ""
 	c.setAgent(nil)
 	c.toolCallbacksInstalled = false
-	c.app = nil
 	c.conversationHistory = []map[string]any{}
-	c.sessionStart = time.Now()
+	c.sessionStart = cliNow()
 	c.promptStartTime = nil
 	c.promptDuration = 0
 	c.lastTurnFinishedAt = nil
@@ -382,14 +381,13 @@ func (c *CLI) initUIState() {
 	c.agentRunning, c.shouldExit = false, false
 	c.detachOnExit = false
 	c.lastTurnInterrupted = false
-	c.terminalIOBroken = false
 	c.deleteSessionOnExit = false
 	c.pendingRelaunch = nil
 	c.lastCtrlCTime = 0
 	c.clarifyState, c.clarifyMultiBase = nil, nil
 	c.clarifyFreetext = false
 	c.clarifyPrefill = ""
-	c.sudoState, c.modalInputSnapshot, c.approvalState = nil, nil, nil
+	c.sudoState, c.approvalState = nil, nil
 	c.slashConfirmState, c.modelPickerState = nil, nil
 	c.clarifyDeadline = new(float64)
 	c.sudoDeadline, c.approvalDeadline, c.slashConfirmDeadline = 0, 0, 0

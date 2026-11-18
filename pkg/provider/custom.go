@@ -1291,7 +1291,7 @@ func (r *resolver) resolveLlamacppRuntime(requestedProvider, explicitAPIKey stri
 			"starting — try again in a moment, or switch to another model with /model.", Retryable: true}
 	}
 	return nil, &LocalRuntimeUnavailableError{Message: "The local model server is turned off. Start it from " +
-		"`icebath model` → Local models, or switch to another model with /model."}
+		"`/setup model` → Local models, or switch to another model with /model."}
 }
 
 // Custom runtime with URL detected api mode fallback and the no auth placeholder

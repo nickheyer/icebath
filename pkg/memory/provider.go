@@ -7,6 +7,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/nickheyer/icebath/pkg/internal/pyctx"
 )
 
 // Checkpoint contract version a provider advertises when every successful pre compress hook is durable
@@ -229,12 +231,12 @@ func (BaseProvider) OnMemoryWrite(ctx context.Context, action, target, content s
 
 func (BaseProvider) BackupPaths() ([]string, error) { return []string{}, nil }
 
-// Spawner context values without its cancellation, so a background job keeps the profile scope
+// Spawner values without its cancellation over a copy of its Python context, as contextvars copy_context gives a thread
 func CtxBound(ctx context.Context) context.Context {
 	if ctx == nil {
 		return context.Background()
 	}
-	return context.WithoutCancel(ctx)
+	return pyctx.With(context.WithoutCancel(ctx), pyctx.CopyContext(ctx))
 }
 
 // Background job that runs under its spawner context values

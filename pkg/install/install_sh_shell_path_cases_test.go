@@ -118,15 +118,3 @@ func TestBashLoginOnlyUserGetsLocalBin(t *testing.T) {
 		t.Fatal("a .bash_login user must get the user bin")
 	}
 }
-
-func TestUnwireShellPathRemovesOnlyTheInstallersLines(t *testing.T) {
-	h := shellHome(t, map[string]string{".bashrc": "# mine\n"})
-	wire(t, h, 1)
-	changed, err := UnwireShellPath(h)
-	if err != nil || len(changed) == 0 {
-		t.Fatalf("changed=%v err=%v", changed, err)
-	}
-	if data, _ := os.ReadFile(filepath.Join(h, ".bashrc")); string(data) != "# mine\n" {
-		t.Fatalf(".bashrc after unwire %q", data)
-	}
-}

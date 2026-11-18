@@ -2,13 +2,18 @@ package tuiserver
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 
 	"github.com/nickheyer/icebath/pkg/agent"
+	"github.com/nickheyer/icebath/pkg/commands"
 	"github.com/nickheyer/icebath/pkg/goals"
+	"github.com/nickheyer/icebath/pkg/home"
+	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+	"github.com/nickheyer/icebath/pkg/skills"
 	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tools"
 	"github.com/nickheyer/icebath/pkg/tuigateway"
@@ -223,5 +228,100 @@ func TestGoalResumeWithoutGoalStaysExec(t *testing.T) {
 	result := resultOf(t, callMethod(t, "command.dispatch", map[string]any{"name": "goal", "arg": "resume", "session_id": "sid-test"}))
 	if result["type"] != "exec" {
 		t.Fatalf("type = %v", result["type"])
+	}
+}
+
+// Plugin owned registry command loading the named skill of the session home as the turn its handler hands over
+func registerBoundSkillCommand(t *testing.T, name, skill string) *[]string {
+	t.Helper()
+	dir := filepath.Join(home.Dir(context.Background()), "skills", skill)
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "SKILL.md"), []byte("---\nname: "+skill+"\ndescription: bound fixture\n---\n\nBody marker of "+skill+"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	var sessions []string
+	commands.Register(commands.Def{Name: name, Plugin: "fixture", Handler: func(ctx context.Context, inv *commands.Invocation) error {
+		host := inv.Host.(interface {
+			SubmitUserTurn(context.Context, string) error
+			TurnSession() (string, string)
+		})
+		taskID, platform := host.TurnSession()
+		sessions = append(sessions, taskID+"|"+platform)
+		msg, found, err := skills.NewScope(home.Dir(ctx), nil).BuildSkillInvocationMessage(ctx, "/"+skill, inv.Args, taskID, "")
+		if err != nil || !found {
+			return fmt.Errorf("skill %s found %v: %v", skill, found, err)
+		}
+		return host.SubmitUserTurn(ctx, msg)
+	}})
+	t.Cleanup(func() { commands.Default.Remove(name) })
+	return &sessions
+}
+
+func TestBoundPluginCommandAnswersItsTurnAsASkillDirective(t *testing.T) {
+	slashSession(t, "sid-bound", "tui-bound-session-1")
+	sessions := registerBoundSkillCommand(t, "boundfix", "bound-design")
+	for _, call := range []map[string]any{
+		callMethod(t, "command.dispatch", map[string]any{"name": "boundfix", "arg": "audit the header", "session_id": "sid-bound"}),
+		callMethod(t, "slash.exec", map[string]any{"command": "/boundfix audit the header", "session_id": "sid-bound"}),
+	} {
+		result := resultOf(t, call)
+		message, _ := result["message"].(string)
+		if result["type"] != "skill" || result["name"] != "boundfix" || result["display"] != "/bound-design audit the header" ||
+			!strings.Contains(message, `[IMPORTANT: The user has invoked the "bound-design" skill`) || !strings.Contains(message, "Body marker of bound-design") ||
+			!strings.Contains(message, "audit the header") {
+			t.Fatalf("result %v", result)
+		}
+	}
+	if len(*sessions) != 2 || (*sessions)[0] != "tui-bound-session-1|tui" || (*sessions)[1] != (*sessions)[0] {
+		t.Fatalf("turn sessions %v", *sessions)
+	}
+	if err := os.RemoveAll(filepath.Join(home.Dir(context.Background()), "skills", "bound-design")); err != nil {
+		t.Fatal(err)
+	}
+	failed := errorOf(t, callMethod(t, "command.dispatch", map[string]any{"name": "boundfix", "arg": "audit", "session_id": "sid-bound"}))
+	if failed["code"] != 4018 || !strings.HasPrefix(failed["message"].(string), "bound command failed: skill bound-design found false") {
+		t.Fatalf("failure %v", failed)
+	}
+}
+
+func TestCommandCatalogListsPluginOwnedRegistryCommandsWithTheirSubcommands(t *testing.T) {
+	t.Setenv("ICEBATH_HOME", t.TempDir())
+	prevRegistry, prevPlugins := CatalogRegistry, RegistryPluginCommands
+	CatalogRegistry = func(context.Context) ([]CatalogCommand, map[string][]string) {
+		return []CatalogCommand{{Name: "help", Category: "Info", Description: "Show help"}}, map[string][]string{}
+	}
+	RegistryPluginCommands = func(context.Context) ([]CatalogCommand, map[string][]string) {
+		return []CatalogCommand{{Name: "boundfix", Category: "Plugins", Description: "Design fixture", Aliases: []string{"bf"}},
+			{Name: "help", Category: "Plugins", Description: "shadowed"}}, map[string][]string{"/boundfix": {"audit", "polish"}}
+	}
+	t.Cleanup(func() { CatalogRegistry, RegistryPluginCommands = prevRegistry, prevPlugins })
+	catalog, err := CommandCatalog(context.Background(), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	pairs := fmt.Sprint(catalog["pairs"])
+	if !strings.Contains(pairs, "[/boundfix Design fixture]") || strings.Contains(pairs, "shadowed") {
+		t.Fatalf("pairs %s", pairs)
+	}
+	canon := catalog["canon"].(*pyjson.Object)
+	if bf, _ := canon.Get("/bf"); bf != "/boundfix" {
+		t.Fatalf("alias canon %v", bf)
+	}
+	sub := catalog["sub"].(*pyjson.Object)
+	if subs, _ := sub.Get("/boundfix"); fmt.Sprint(subs) != "[audit polish]" {
+		t.Fatalf("subcommands %v", subs)
+	}
+	listed := false
+	for _, raw := range catalog["categories"].([]any) {
+		group := raw.(*pyjson.Object)
+		if name, _ := group.Get("name"); name == "Plugin commands" {
+			rows, _ := group.Get("pairs")
+			listed = strings.Contains(fmt.Sprint(rows), "[/boundfix Design fixture]")
+		}
+	}
+	if !listed {
+		t.Fatalf("categories %v", catalog["categories"])
 	}
 }

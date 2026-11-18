@@ -21,6 +21,7 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/home"
+	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/skills"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
@@ -550,8 +551,8 @@ type skillFile struct {
 	mtime    func() (time.Time, error)
 }
 
-// Every SKILL.md under a root, symlinked directories listed but never descended like rglob
-func skillFiles(root SkillRoot) []skillFile {
+// Every SKILL.md under a root, a disk root in the order Path.rglob yields, symlinked directories never descended
+func skillFiles(root SkillRoot) ([]skillFile, error) {
 	var out []skillFile
 	if root.FS != nil {
 		_ = fs.WalkDir(root.FS, ".", func(p string, d fs.DirEntry, err error) error {
@@ -574,28 +575,23 @@ func skillFiles(root SkillRoot) []skillFile {
 			})
 			return nil
 		})
-		return out
+		return out, nil
 	}
 	if _, err := os.Stat(root.Dir); err != nil {
-		return nil
+		return nil, nil
 	}
 	base, err := filepath.Abs(root.Dir)
 	if err != nil {
 		base = root.Dir
 	}
-	_ = filepath.WalkDir(root.Dir, func(p string, d fs.DirEntry, err error) error {
-		if err != nil {
-			if d != nil && d.IsDir() && p != root.Dir {
-				return fs.SkipDir
-			}
-			return nil
-		}
-		if d.IsDir() || d.Name() != "SKILL.md" {
-			return nil
-		}
+	found, err := pypath.Glob(root.Dir, "**/SKILL.md")
+	if err != nil {
+		return nil, err
+	}
+	for _, p := range found {
 		rel, err := filepath.Rel(root.Dir, p)
 		if err != nil {
-			return nil
+			return nil, err
 		}
 		relParts := strings.Split(filepath.ToSlash(rel), "/")
 		abs := strings.Split(filepath.ToSlash(filepath.Join(base, rel)), "/")
@@ -613,9 +609,8 @@ func skillFiles(root SkillRoot) []skillFile {
 				return st.ModTime(), nil
 			},
 		})
-		return nil
-	})
-	return out
+	}
+	return out, nil
 }
 
 // Text decoded as utf-8-sig, the UnicodeDecodeError read_text raises for invalid bytes
@@ -712,7 +707,11 @@ func BuildSkillNodes(roots []SkillRoot, usage map[string]map[string]any, isExter
 	var nodes []*SkillNode
 	seen := map[string]bool{}
 	for _, root := range roots {
-		for _, f := range skillFiles(root) {
+		files, err := skillFiles(root)
+		if err != nil {
+			return nil, err
+		}
+		for _, f := range files {
 			excluded := false
 			for _, part := range f.rel {
 				if skills.ExcludedSkillDirs[part] {

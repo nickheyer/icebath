@@ -175,7 +175,7 @@ func TestPrintNoninteractiveSetupGuidanceListsTheConfigCommands(t *testing.T) {
 	PrintNoninteractiveSetupGuidance("No interactive TTY detected for the first-run setup prompt.")
 	text := out.String()
 	for _, want := range []string{"Icebath Setup — Non-interactive mode", "No interactive TTY detected", "icebath config set model.provider custom",
-		"icebath config set model.base_url http://localhost:8080/v1", "Run 'icebath setup' in an interactive terminal"} {
+		"icebath config set model.base_url http://localhost:8080/v1", "Start 'icebath' in an interactive terminal and type '/setup'"} {
 		if !strings.Contains(text, want) {
 			t.Fatalf("missing %q in %q", want, text)
 		}

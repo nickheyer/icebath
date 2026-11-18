@@ -114,9 +114,6 @@ func currentUpdateCheck() *updateCheckSignal {
 	return updateCheck
 }
 
-// Registry query of the retired updater kept inert, the commit distance is never known
-func checkViaPyPI() *int64 { return nil }
-
 // Result of fn, or def when fn fails or panics
 func quiet[T any](fn func() (T, error), def T) (out T) {
 	defer func() {
@@ -226,9 +223,6 @@ type BannerGitState struct {
 	Upstream, Local string
 	Ahead           int
 }
-
-// Git hashes of the default checkout for the startup banner, computed once per process
-func GitBannerState() *BannerGitState { return getGitBannerState(context.Background(), "") }
 
 // Git hashes of repoDir, or of the default checkout through the per process cache when repoDir is empty
 func getGitBannerState(ctx context.Context, repoDir string) *BannerGitState {
@@ -925,7 +919,7 @@ func bannerLeftLines(ctx context.Context, model, cwd, sessionID string, contextL
 		}
 		lines = append(lines, fmt.Sprintf("[%s]MoA: %s[/]%s%s%s", accent, shortLabel(model), aggStr, ctxStr, nousStr))
 	case stripped == "" || strings.ToLower(stripped) == "unknown":
-		lines = append(lines, fmt.Sprintf("[bold red]no model configured[/] [dim %s]— run /model or icebath setup[/]", dim))
+		lines = append(lines, fmt.Sprintf("[bold red]no model configured[/] [dim %s]— run /model or /setup model[/]", dim))
 	default:
 		modelShort := strings.TrimSuffix(model[strings.LastIndex(model, "/")+1:], ".gguf")
 		lines = append(lines, fmt.Sprintf("[%s]%s[/]%s%s", accent, shortLabel(modelShort), ctxStr, nousStr))

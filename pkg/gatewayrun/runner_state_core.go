@@ -101,6 +101,7 @@ type runnerCoreState struct {
 	bootedFromRestart            bool
 	stopTask                     *gatewayTask
 	stopTaskMu                   sync.Mutex
+	readyTail                    sync.Mutex
 	restartTask                  *gatewayTask
 	executorLock                 *sync.Mutex
 	executor                     gatewayExecutor

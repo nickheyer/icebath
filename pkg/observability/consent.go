@@ -44,7 +44,7 @@ var offerDescription = strings.Join([]string{
 		"day. Apart from a one-time install note, data from before you opt in is never " +
 		"sent.",
 	"Details: " + DocsURL,
-	"Change it any time: icebath setup telemetry",
+	"Change it any time: start icebath and type /setup telemetry",
 }, "\n")
 
 // OfferDescription is the explainer the consent offer shows under its question
@@ -205,11 +205,11 @@ func OfferConsent(ctx context.Context, cfg map[string]any, reask bool) (bool, er
 		if err := SaveConsent(ctx, false, false, cfg); err != nil {
 			return false, err
 		}
-		c.PrintInfo("Kept \"No thanks\". Change it any time with `icebath setup telemetry`.")
+		c.PrintInfo("Kept \"No thanks\". Change it any time: start `icebath` and type `/setup telemetry`.")
 		return true, nil
 	}
 	if idx < 0 {
-		c.PrintInfo("Not answered; Icebath will ask again. Decide any time with `icebath setup telemetry`.")
+		c.PrintInfo("Not answered; Icebath will ask again. Decide any time: start `icebath` and type `/setup telemetry`.")
 		return false, nil
 	}
 	choice := OfferChoices[idx]
@@ -220,7 +220,7 @@ func OfferConsent(ctx context.Context, cfg map[string]any, reask bool) (bool, er
 	if choice.Send {
 		outcome = "sent to Nous once a day"
 	}
-	c.PrintSuccess(fmt.Sprintf("Shared metrics %s. Change it any time with `icebath setup telemetry`.", outcome))
+	c.PrintSuccess(fmt.Sprintf("Shared metrics %s. Change it any time: start `icebath` and type `/setup telemetry`.", outcome))
 	return true, nil
 }
 

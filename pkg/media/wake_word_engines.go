@@ -273,7 +273,7 @@ func newSherpaKwsEngine(ctx context.Context, cfg map[string]any) (WakeEngine, er
 	}
 	phraseValue := wakeGet(cfg, "phrase")
 	if !pyTruthy(phraseValue) {
-		phraseValue = "hey hermes"
+		phraseValue = wakeDefaultPhrase
 	}
 	phrase := pystr.Strip(pyrepr.Str(phraseValue))
 	var phrases []string

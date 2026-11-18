@@ -175,7 +175,7 @@ func getPluginProvider(ctx context.Context, env *tools.Env, name string, force b
 
 var checkFalAPIKeyHook = checkFalAPIKey
 
-// True when FAL or the explicitly configured image backend is available
+// True when FAL or the explicitly configured image backend is available in the environment's profile home
 func checkImageGenerationRequirements(env *tools.Env) bool {
 	if checkFalAPIKeyHook(env) {
 		loadFalClient()
@@ -185,8 +185,9 @@ func checkImageGenerationRequirements(env *tools.Env) bool {
 	if configured == "" {
 		return false
 	}
-	p := getPluginProvider(context.Background(), env, configured, false)
-	return p != nil && p.IsAvailable()
+	ctx := envContext(context.Background(), env)
+	p := getPluginProvider(ctx, env, configured, false)
+	return p != nil && p.AvailableIn(ctx)
 }
 
 // Static image_generate schema the dynamic overrides rebuild at definition time

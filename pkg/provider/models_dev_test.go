@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"log/slog"
+	"net/http"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -946,5 +947,12 @@ func TestParseModelsDevEntryCapabilities(t *testing.T) {
 	bare := parseModelsDevEntry("y", map[string]any{}, "acme")
 	if bare.Name != "y" || bare.Interleaved != false || bare.HasCostData() {
 		t.Fatalf("%+v", bare)
+	}
+}
+
+func TestModelsDevFetchHonorsTheEnvironmentProxies(t *testing.T) {
+	tr, ok := modelsDevHTTPClient.Transport.(*http.Transport)
+	if !ok || tr.Proxy == nil {
+		t.Fatal("the models.dev fetch must go through HTTPS_PROXY and HTTP_PROXY like the reference requests.get")
 	}
 }

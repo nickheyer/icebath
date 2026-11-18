@@ -12,6 +12,7 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/home"
+	"github.com/nickheyer/icebath/pkg/install"
 	"github.com/nickheyer/icebath/pkg/internal/fnmatch"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
@@ -759,6 +760,13 @@ func CheckForUpdates(ctx context.Context, opts SourceCheckOptions) (*pyjson.Obje
 		}
 	}
 	result.Set("fetchedAt", int64(now*1000))
+	if release, err := releaseBinaryInstall(ctx, root); err != nil {
+		return nil, err
+	} else if release && opts.InstallRoot == "" {
+		releaseCheckResult(ctx, result, root, channel, opts.Branch)
+		writeCheckCache(ctx, cacheFile, identity, now, result)
+		return result, nil
+	}
 	var target *SourceTarget
 	if !isFullSHA(co.head) {
 		result.Set("error", "head-unavailable")
@@ -780,4 +788,33 @@ func CheckForUpdates(ctx context.Context, opts SourceCheckOptions) (*pyjson.Obje
 		holdRefusedRelease(ctx, result, co, h)
 	}
 	return result, nil
+}
+
+// Fills a release install's status from the release plan its update applies
+func releaseCheckResult(ctx context.Context, result *pyjson.Object, root, channel string, branch *string) {
+	explicit := branch != nil && *branch != ""
+	selected := ""
+	if explicit {
+		selected = *branch
+	}
+	u, err := planReleaseUpdate(ctx, root, &channel, selected, explicit)
+	if err != nil {
+		result.Set("error", "release-unavailable")
+		result.Set("message", launchErrorText(err))
+		return
+	}
+	result.Set("targetSha", nullable(u.plan.Target.Commit))
+	switch {
+	case u.plan.Order == install.ReleaseNewer && u.plan.Ahead >= 0:
+		result.Set("behind", int64(u.plan.Ahead))
+	case u.plan.Order == install.ReleaseNewer:
+		result.Set("behind", int64(UpdateAvailableNoCount))
+	default:
+		result.Set("behind", int64(0))
+	}
+	result.Set("updateAvailable", u.moves())
+	result.Set("rollback", u.rollback())
+	if u.rollback() {
+		result.Set("sourceVersion", strings.TrimPrefix(u.plan.Target.Tag, "v"))
+	}
 }

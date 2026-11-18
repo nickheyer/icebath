@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -11,10 +12,16 @@ import (
 	"strings"
 	"sync/atomic"
 	"testing"
+
+	"github.com/nickheyer/icebath/pkg/commands"
 )
 
-func TestImpeccableCommandDefShape(t *testing.T) {
-	def, err := impeccableCommandDef("impeccable")
+func TestImpeccableCommandDefShapeAndDispatch(t *testing.T) {
+	var gotKey, gotArgs, gotTask, gotPlatform string
+	def, err := impeccableCommandDef("impeccable", func(ctx context.Context, key, instruction, taskID, platform string) (string, bool, error) {
+		gotKey, gotArgs, gotTask, gotPlatform = key, instruction, taskID, platform
+		return "SKILL TURN " + instruction, true, nil
+	})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -22,7 +29,47 @@ func TestImpeccableCommandDefShape(t *testing.T) {
 	if def.Name != "impeccable" || len(def.Subcommands) != 24 || def.Subcommands[0] != "craft" || def.ArgsHint != wantHint || def.Plugin != "impeccable" {
 		t.Fatalf("def %+v", def)
 	}
+	host := &turnHost{task: "agent:main:telegram:dm:c1", platform: "telegram"}
+	if err := def.Handler(context.Background(), &commands.Invocation{Name: "impeccable", Args: "audit header", Host: host}); err != nil {
+		t.Fatal(err)
+	}
+	if gotKey != "/impeccable:impeccable" || gotArgs != "audit header" || host.msg != "SKILL TURN audit header" ||
+		gotTask != "agent:main:telegram:dm:c1" || gotPlatform != "telegram" {
+		t.Fatalf("dispatch %q %q %q %q %q", gotKey, gotArgs, host.msg, gotTask, gotPlatform)
+	}
+	if err := def.Handler(context.Background(), &commands.Invocation{Name: "impeccable", Host: struct{}{}}); err == nil {
+		t.Fatal("surface without a turn submitter accepted the command")
+	}
 }
+
+func TestImpeccableDispatchRefusesAMissingSkillAndBuildFailures(t *testing.T) {
+	failure := errors.New("scan failed")
+	for _, c := range []struct {
+		found bool
+		err   error
+		want  string
+	}{{false, nil, "impeccable: skill impeccable:impeccable is not available"}, {true, failure, "scan failed"}} {
+		def, err := impeccableCommandDef("impeccable", func(context.Context, string, string, string, string) (string, bool, error) {
+			return "", c.found, c.err
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		host := &turnHost{}
+		if err := def.Handler(context.Background(), &commands.Invocation{Name: "impeccable", Args: "audit", Host: host}); err == nil || err.Error() != c.want || host.msg != "" {
+			t.Fatalf("handler %v submitted %q", err, host.msg)
+		}
+	}
+}
+
+type turnHost struct{ msg, task, platform string }
+
+func (h *turnHost) SubmitUserTurn(ctx context.Context, message string) error {
+	h.msg = message
+	return nil
+}
+
+func (h *turnHost) TurnSession() (string, string) { return h.task, h.platform }
 
 // Fake engine scripts directory pinning a version whose linux x64 digest is the given sum
 func engineFixture(t *testing.T, sum string) (*engineLauncher, string, map[string]string) {
@@ -131,5 +178,29 @@ func TestEngineLocalSourcesAndPlatform(t *testing.T) {
 	}
 	if got := strings.Join(l.exports(), " "); got != "IMPECCABLE_SKILL_DIR="+filepath.Dir(l.ScriptsDir)+" IMPECCABLE_SELF="+filepath.Join(l.ScriptsDir, "impeccable") {
 		t.Fatalf("exports %s", got)
+	}
+}
+
+func TestImpeccableDispatchHonoursRoutingAliases(t *testing.T) {
+	var got string
+	def, err := impeccableCommandDef("impeccable", func(ctx context.Context, key, instruction, taskID, platform string) (string, bool, error) {
+		got = instruction
+		return instruction, true, nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	src, _ := payloadFile(impeccableSkillRoot + "/SKILL.src.md")
+	if !strings.Contains(string(src), "- `teach` aliases `init`.") {
+		t.Fatal("SKILL.src.md no longer names the teach alias")
+	}
+	for args, want := range map[string]string{"teach": "init", "teach the checkout flow": "init the checkout flow", "  teach\tpricing": "init\tpricing",
+		"teacher page": "teacher page", "audit teach": "audit teach", "craft hero": "craft hero", "": ""} {
+		if err := def.Handler(context.Background(), &commands.Invocation{Name: "impeccable", Args: args, Host: &turnHost{}}); err != nil {
+			t.Fatal(err)
+		}
+		if got != want {
+			t.Errorf("%q dispatched as %q, want %q", args, got, want)
+		}
 	}
 }

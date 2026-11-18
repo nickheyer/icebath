@@ -84,7 +84,7 @@ func (c *Compressor) initSummarizer(ctx context.Context) error {
 			return err
 		}
 		if client == nil {
-			return runtimeError("Provider '%s' is not configured. Check your API key or run: icebath setup", prov)
+			return runtimeError("Provider '%s' is not configured. Check your API key, or start icebath and type /setup model", prov)
 		}
 	} else {
 		apiKey := os.Getenv(c.Config.APIKeyEnv)

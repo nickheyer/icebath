@@ -9,7 +9,7 @@ import (
 var wireModelConfig = pydantic.Config{Extra: pydantic.ExtraIgnore, PopulateByName: true}
 
 // Who asked for a connect so the gateway can attribute each minted link
-var connectorInitiator = pydantic.Literal("agent_tool", "card_retry")
+var connectorInitiator = pydantic.Literal("agent_tool", "desktop_page", "card_retry")
 
 // One use case query of a connector search
 var ConnectorSearchQuery = pydantic.NewModel("ConnectorSearchQuery", wireModelConfig,

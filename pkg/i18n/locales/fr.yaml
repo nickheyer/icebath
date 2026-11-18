@@ -131,7 +131,7 @@ gateway:
     rerun_hint: |2-
 
       Demandez-moi de la relancer ou d'afficher le journal complet.
-    no_credentials: "❌ La tâche d'arrière-plan n'a pas pu démarrer car aucune connexion à un modèle d'IA n'est configurée. Utilisez /login, ou lancez `icebath setup` sur l'hôte."
+    no_credentials: "❌ La tâche d'arrière-plan n'a pas pu démarrer car aucune connexion à un modèle d'IA n'est configurée. Utilisez /login, ou lancez `icebath` sur l'hôte et tapez `/setup model`."
     complete_header: |+
       ✅ Tâche d'arrière-plan terminée
       Prompt : "{preview}"
@@ -1645,7 +1645,7 @@ platform:
       error: "❌ erreur {verb} : {error}"
       appended_by: "— {label} par {user}"
     user_fallback: "Utilisateur"
-    install_hint: "Exécutez `icebath setup` pour installer la prise en charge de Telegram."
+    install_hint: "Lancez `icebath` et tapez `/setup gateway` pour installer la prise en charge de Telegram."
   slack:
 
     approval:
@@ -2741,7 +2741,7 @@ cli:
     stdin_unavailable: |-
       Erreur : stdin (fd 0) n'est pas disponible.
       Cela peut arriver avec certaines installations de Python (p. ex. cPython géré par uv sur macOS).
-      Essayez de réinstaller Python via pyenv ou Homebrew, puis relancez : icebath setup
+      Essayez de réinstaller Python via pyenv ou Homebrew, puis lancez icebath et tapez : /setup
     shutting_down: "Arrêt en cours… (finalisation de la session)"
     session_deleted: "✓ Session {session_id} supprimée"
     session_delete_missing: "✗ Session {session_id} introuvable pour la suppression"
@@ -2813,7 +2813,7 @@ cli:
     mic_silent_macos_hint: "Sur macOS : Réglages Système > Confidentialité et sécurité > Microphone — autorisez votre terminal/Icebath, puis /wake off + /wake on."
     wake_enable_hint: "Activez avec /wake on"
     enable_first_hint: "Activez d'abord le mode vocal : /voice on"
-    tts_no_provider: "Avertissement : le fournisseur TTS configuré n'est pas prêt. Définissez sa clé API ou choisissez-en un autre avec `icebath setup tts`."
+    tts_no_provider: "Avertissement : le fournisseur TTS configuré n'est pas prêt. Définissez sa clé API ou choisissez-en un autre avec `/setup tts`."
     tts_status: "TTS vocal {status}."
     status_title: "État du mode vocal"
     label_mode: "  Mode :          {value}"
@@ -3081,13 +3081,13 @@ cli:
     provider_resolution_failed: "La résolution du fournisseur a échoué."
     no_api_key_for_provider: "⚠️  Aucune clé API trouvée pour le fournisseur '{provider}'."
     no_provider_configured: "⚠️  Aucun fournisseur d'inférence n'est configuré."
-    run_model_or_setup: "Exécutez 'icebath model' pour choisir un fournisseur, ou 'icebath setup' pour la configuration initiale."
-    empty_base_url: "⚠️  Le résolveur de fournisseur a renvoyé une URL de base vide. Vérifiez la configuration de votre fournisseur ou exécutez : icebath setup"
+    run_model_or_setup: "Exécutez 'icebath model' pour choisir un fournisseur, ou lancez 'icebath' et tapez '/setup' pour la configuration initiale."
+    empty_base_url: "⚠️  Le résolveur de fournisseur a renvoyé une URL de base vide. Vérifiez la configuration de votre fournisseur, ou lancez icebath et tapez : /setup model"
     switching_to_fallback: "⚠️  {reason} — bascule vers le fournisseur de secours : {provider} / {model}"
     first_run_no_provider: "☤ Aucun fournisseur d'inférence n'est encore configuré — réglons cela."
     first_run_pick_provider: "Vous allez choisir un fournisseur (Nous Portal OAuth est le plus rapide ; aucune clé API requise) puis un modèle."
     first_run_prompt: "Configurer un fournisseur maintenant ? [Y/n] :"
-    first_run_skipped: "Ignoré. Exécutez 'icebath model' ou 'icebath setup' à tout moment."
+    first_run_skipped: "Ignoré. Exécutez 'icebath model', ou lancez 'icebath' et tapez '/setup', à tout moment."
     first_run_cancelled: "Configuration annulée. Exécutez 'icebath model' à tout moment."
     provider_setup_failed: "⚠️  La configuration du fournisseur a échoué : {error}"
     run_model_to_retry: "Exécutez 'icebath model' pour réessayer."
@@ -3099,7 +3099,7 @@ cli:
       Erreur : stdin est inutilisable ({error}).
       Cela peut arriver avec certaines installations de Python (p. ex. cPython géré par uv sur macOS)
       où kqueue ne parvient pas à enregistrer le fd 0.
-      Essayez de réinstaller Python via pyenv ou Homebrew, puis relancez : icebath setup
+      Essayez de réinstaller Python via pyenv ou Homebrew, puis lancez icebath et tapez : /setup
     warning: "Avertissement : {warning}"
   chat:
 
@@ -4661,7 +4661,7 @@ tips:
   t349: "icebath import restaure un zip de sauvegarde Icebath complet."
   t350: "icebath fallback gère la chaîne fallback_model de manière interactive — sans modifier config.yaml à la main."
   t351: "icebath pairing renouvelle le token d'appairage des DM — la première personne qui écrit après le renouvellement obtient l'accès au bot."
-  t352: "icebath setup guide les nouveaux utilisateurs à travers le fournisseur, les clés et le branchement des plateformes en un seul parcours interactif."
+  t352: "/setup guide les nouveaux utilisateurs à travers le fournisseur, les clés et le branchement des plateformes en un seul parcours interactif."
   t353: "icebath status --deep lance le bilan de santé complet de chaque composant ; icebath status seul donne la vue rapide."
   t354: "ICEBATH_AGENT_TIMEOUT=0 désactive l'arrêt pour inactivité du gateway sur un agent en cours — utile pour les longues sessions de recherche."
   t355: "ICEBATH_ENABLE_PROJECT_PLUGINS=1 charge automatiquement les plugins locaux au dépôt depuis ./.icebath/plugins/ — soumis à une validation de confiance par conception."

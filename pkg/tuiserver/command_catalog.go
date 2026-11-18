@@ -25,6 +25,9 @@ type CatalogCommand struct {
 // Builtin registry rows in registry order and the subcommand table of pkg/commands, assigned in cmd/icebath/wiring.go
 var CatalogRegistry func(ctx context.Context) ([]CatalogCommand, map[string][]string)
 
+// Plugin owned registry commands sorted by name with their subcommand table, assigned in cmd/icebath/wiring.go
+var RegistryPluginCommands func(ctx context.Context) ([]CatalogCommand, map[string][]string)
+
 var catalogHidden = map[string]bool{"sethome": true, "set-home": true, "commands": true, "approve": true, "deny": true}
 
 var catalogExtras = [][3]string{
@@ -131,10 +134,11 @@ func catalogQuickCommands(ctx context.Context, cat *commandCatalogAcc) error {
 	return nil
 }
 
-// Plugin slash commands the registry does not claim, every plugin command kept with its description
-func catalogPluginCommands(ctx context.Context, cat *commandCatalogAcc) {
+// Plugin slash commands the registry does not claim then the plugin owned registry commands, returning their subcommands
+func catalogPluginCommands(ctx context.Context, cat *commandCatalogAcc) map[string][]string {
 	pluginCmds := plugins.GetPluginCommands(ctx)
-	if len(pluginCmds) > 0 {
+	registered, registeredSubs := RegistryPluginCommands(ctx)
+	if len(pluginCmds) > 0 || len(registered) > 0 {
 		cat.category("Plugin commands")
 	}
 	names := make([]string, 0, len(pluginCmds))
@@ -158,6 +162,17 @@ func catalogPluginCommands(ctx context.Context, cat *commandCatalogAcc) {
 		}
 		cat.add(key, desc, "Plugin commands")
 	}
+	for _, cmd := range registered {
+		key := "/" + cmd.Name
+		if _, claimed := cat.canon.Get(strings.ToLower(key)); claimed {
+			continue
+		}
+		cat.add(key, cmd.Description, "Plugin commands")
+		for _, alias := range cmd.Aliases {
+			cat.canon.Set(strings.ToLower("/"+alias), key)
+		}
+	}
+	return registeredSubs
 }
 
 // Skill pairs with their usage and origin, returning the built in name collision notice of skills
@@ -223,7 +238,8 @@ func CommandCatalog(ctx context.Context, scope func(context.Context) (context.Co
 		discoveryLogger().Debug("quick_commands discovery failed", "error", err)
 		warning = fmt.Sprintf("quick_commands discovery unavailable: %s", err)
 	}
-	if failure := catchPanic(func() { catalogPluginCommands(scoped, cat) }); failure != nil {
+	var pluginSubcommands map[string][]string
+	if failure := catchPanic(func() { pluginSubcommands = catalogPluginCommands(scoped, cat) }); failure != nil {
 		err := fmt.Errorf("%v", failure)
 		discoveryLogger().Debug("plugin command discovery failed", "error", err)
 		pluginError = err.Error()
@@ -252,6 +268,16 @@ func CommandCatalog(ctx context.Context, scope func(context.Context) (context.Co
 	sort.Strings(rest)
 	for _, key := range rest {
 		sub.Set(key, stringItems(subcommands[key]))
+	}
+	var plugged []string
+	for key := range pluginSubcommands {
+		if _, done := sub.Get(key); !done {
+			plugged = append(plugged, key)
+		}
+	}
+	sort.Strings(plugged)
+	for _, key := range plugged {
+		sub.Set(key, stringItems(pluginSubcommands[key]))
 	}
 	categories := make([]any, 0, cat.catMap.Len())
 	for _, name := range cat.catMap.Keys {

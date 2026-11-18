@@ -7,8 +7,6 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/agent"
-	"github.com/nickheyer/icebath/pkg/config"
-	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/hostinfo"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
@@ -18,9 +16,6 @@ import (
 )
 
 const (
-	statusBarClass       = "class:status-bar"
-	statusBarDim         = "class:status-bar-dim"
-	statusBarStrong      = "class:status-bar-strong"
 	petFrameInterval     = 160 * time.Millisecond
 	petConfigIntervalSec = 2.5
 )
@@ -29,18 +24,9 @@ var (
 	agentCounters = []string{"session_input_tokens", "session_output_tokens", "session_cache_read_tokens",
 		"session_cache_write_tokens", "session_prompt_tokens", "session_completion_tokens",
 		"session_total_tokens", "session_api_calls"}
-	readBattery          = hostinfo.ReadBattery
-	loadStatusBarConfig  = func(c *CLI) (map[string]any, error) { return config.Load(home.Dir(c.ctx), nil) }
-	statusBarUsage       = func(c *CLI, a cliAgent) agent.StatusBarUsage { return a.StatusBarUsage(c.ctx) }
-	statusBarSnapshotFor = (*CLI).getStatusBarSnapshot
-	tuiTerminalWidthFor  = (*CLI).getTUITerminalWidth
+	readBattery    = hostinfo.ReadBattery
+	statusBarUsage = func(c *CLI, a cliAgent) agent.StatusBarUsage { return a.StatusBarUsage(c.ctx) }
 )
-
-// threshold is one descending bound of a status bar colour ladder
-type threshold struct {
-	bound float64
-	name  string
-}
 
 // Drops missing, negative and absurd provider timings
 func finiteTiming(v *float64) *float64 {
@@ -337,16 +323,6 @@ func statusBarDisplayWidth(text string) int {
 		width += max(0, pyunicode.WcWidth(r))
 	}
 	return width
-}
-
-// Width of the live prompt, the terminal columns when no application reports one
-func (c *CLI) getTUITerminalWidth() int {
-	if app := c.app; app != nil {
-		if columns, _, ok := app.Size(); ok {
-			return columns
-		}
-	}
-	return terminalColumns()
 }
 
 // Full viewport width for printed scrollback box rules, floored at thirty two columns

@@ -176,19 +176,24 @@ func rawFrames(sheetPath, state string, frameW, frameH, framesPerState int) []*i
 			renderLog.Debug(fmt.Sprintf("pet frame decode failed (%s, %s): %s", sheetPath, state, err))
 			return nil
 		}
-		sheet := pypil.ToNRGBA(decoded)
-		width, height := sheet.Rect.Dx(), sheet.Rect.Dy()
-		cols, rows := max(1, width/frameW), max(1, height/frameH)
-		top := min(StateRowIndex(state, rows)*frameH, max(0, height-frameH))
-		for i := 0; i < min(framesPerState, cols); i++ {
-			frame := crop(sheet, image.Rect(i*frameW, top, (i+1)*frameW, top+frameH))
-			if frameIsBlank(frame) {
-				break
-			}
-			frames = append(frames, frame)
-		}
-		return frames
+		return SheetFrames(pypil.ToNRGBA(decoded), state, frameW, frameH, framesPerState)
 	})
+}
+
+// Cropped frames of one state row of a decoded spritesheet up to the first blank column
+func SheetFrames(sheet *image.NRGBA, state string, frameW, frameH, framesPerState int) []*image.NRGBA {
+	width, height := sheet.Rect.Dx(), sheet.Rect.Dy()
+	cols, rows := max(1, width/frameW), max(1, height/frameH)
+	top := min(StateRowIndex(state, rows)*frameH, max(0, height-frameH))
+	var frames []*image.NRGBA
+	for i := 0; i < min(framesPerState, cols); i++ {
+		frame := crop(sheet, image.Rect(i*frameW, top, (i+1)*frameW, top+frameH))
+		if frameIsBlank(frame) {
+			break
+		}
+		frames = append(frames, frame)
+	}
+	return frames
 }
 
 // Raw frames scaled to the given pixel box, both steps cached
@@ -336,7 +341,7 @@ func encodeIterm(frame *image.NRGBA) string {
 }
 
 // Rows of half block cells of a frame downscaled to the target column count
-func downscaleCells(frame *image.NRGBA, targetCols int) [][]Cell {
+func DownscaleCells(frame *image.NRGBA, targetCols int) [][]Cell {
 	targetCols = max(4, targetCols)
 	aspect := float64(frame.Rect.Dy()) / float64(max(1, frame.Rect.Dx()))
 	targetRows := max(2, int(math.RoundToEven(float64(targetCols)*aspect*0.5))*2)
@@ -361,7 +366,7 @@ func downscaleCells(frame *image.NRGBA, targetCols int) [][]Cell {
 
 func encodeUnicode(frame *image.NRGBA, targetCols int) string {
 	var rows []string
-	for _, row := range downscaleCells(frame, targetCols) {
+	for _, row := range DownscaleCells(frame, targetCols) {
 		var b strings.Builder
 		for _, cell := range row {
 			top, bottom := cell[0], cell[1]
@@ -423,7 +428,7 @@ func (r *Renderer) Cells(state string, index, cols int) [][]Cell {
 	if cols == 0 {
 		cols = r.UnicodeCols
 	}
-	return downscaleCells(frames[pyMod(index, len(frames))], cols)
+	return DownscaleCells(frames[pyMod(index, len(frames))], cols)
 }
 
 // Builds the virtual placement escapes and text grid of a state, nil when the state has no frames

@@ -108,6 +108,11 @@ func hasRefusalReason(err error) bool {
 
 // Compare and swap mutation of a session, reading its revision first unless a pending request is retried
 func (s *tuiStore) mutateCanonical(gw turnGateway, sid, operation string, payload map[string]any, stale func() bool, then func(*mutationOutcome, error) tea.Cmd) tea.Cmd {
+	return s.mutateCanonicalRead(gw, sid, operation, payload, stale, nil, then)
+}
+
+// Compare and swap mutation handing onRead the snapshot of the revision read before it is checked
+func (s *tuiStore) mutateCanonicalRead(gw turnGateway, sid, operation string, payload map[string]any, stale func() bool, onRead func(map[string]any), then func(*mutationOutcome, error) tea.Cmd) tea.Cmd {
 	if s.pendingMutations == nil {
 		s.pendingMutations = map[string]pendingMutation{}
 	}
@@ -143,6 +148,9 @@ func (s *tuiStore) mutateCanonical(gw turnGateway, sid, operation string, payloa
 			return then(nil, err)
 		}
 		snapshot := asRPCResult(v)
+		if snapshot != nil && onRead != nil {
+			onRead(snapshot)
+		}
 		if stale() {
 			return then(nil, nil)
 		}

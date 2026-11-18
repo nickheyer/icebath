@@ -185,7 +185,11 @@ var SessionOwner = pydantic.NewModel("SessionOwner", ParamsConfig,
 	pydantic.Req("session_id", pydantic.ConStr(pydantic.MinLen(1))),
 )
 
-var ConnectorOwner = pydantic.Tagged("type", SessionOwner)
+var AccountOwner = pydantic.NewModel("AccountOwner", ParamsConfig,
+	pydantic.Req("type", pydantic.Literal("account")),
+)
+
+var ConnectorOwner = pydantic.Tagged("type", SessionOwner, AccountOwner)
 
 var OkResult = pydantic.NewModel("OkResult", ClosedConfig,
 	pydantic.Def("ok", pydantic.Bool, true),

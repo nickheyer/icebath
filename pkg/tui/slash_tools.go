@@ -5,6 +5,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"sort"
 	"strings"
 
 	tea "charm.land/bubbletea/v2"
@@ -12,6 +13,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/i18n"
 	"github.com/nickheyer/icebath/pkg/internal/pyshlex"
 	"github.com/nickheyer/icebath/pkg/mcp"
+	"github.com/nickheyer/icebath/pkg/tools"
 )
 
 // Capturing surface of the shared per toolset listing, plain text and never interactive
@@ -57,10 +59,30 @@ func toolsCatalogText(ctx context.Context, res map[string]any) string {
 	return strings.Join(append(lines, "  "+i18n.T(ctx, "cli.tools.total", "", map[string]any{"count": total})), "\n")
 }
 
+// Error line for a known toolset the platform cannot host, empty when the toolset may go there
+func toolsetPlatformRefusal(ctx context.Context, name, platform string) string {
+	if tools.ToolsetAllowedForPlatform(name, platform) {
+		return ""
+	}
+	known := false
+	for _, ts := range tools.ConfigurableToolsets {
+		known = known || ts.Key == name
+	}
+	if !known && !tools.PluginToolsetKeys(ctx)[name] {
+		return ""
+	}
+	platforms := make([]string, 0, len(tools.ToolsetPlatformRestrictions[name]))
+	for p := range tools.ToolsetPlatformRestrictions[name] {
+		platforms = append(platforms, p)
+	}
+	sort.Strings(platforms)
+	return fmt.Sprintf("✗ Toolset '%s' is not available on platform '%s' (only: %s)", name, platform, strings.Join(platforms, ", "))
+}
+
 // Slash command that lists the session tools and enables or disables toolsets and MCP tools
 func (a *app) toolsCommands() []slashCommand {
 	text := func(key string, kwargs map[string]any) string {
-		return i18n.T(a.ctx, "cli.commands.tools."+key, "", kwargs)
+		return commandText(a.ctx, "tools."+key, kwargs)
 	}
 	return []slashCommand{
 		{name: "tools", help: "list tools, or enable and disable toolsets and MCP tools", usage: "[list | enable <name>... | disable <name>...]", suggest: func(string) []string {
@@ -98,19 +120,21 @@ func (a *app) toolsCommands() []slashCommand {
 				}
 				started := text(progress, map[string]any{"names": strings.Join(names, ", ")})
 				r.sys(started)
-				targets := make([]any, len(names))
-				for i, name := range names {
-					targets[i] = name
+				restricted := []string{}
+				targets := []any{}
+				for _, name := range names {
+					if refusal := toolsetPlatformRefusal(a.ctx, name, "cli"); refusal != "" {
+						restricted = append(restricted, refusal)
+						continue
+					}
+					targets = append(targets, name)
 				}
-				params := map[string]any{"action": subcommand, "names": targets}
-				if r.sid != "" {
-					params["session_id"] = r.sid
-				}
-				return tea.Batch(r.ran(), r.rpc("tools.configure", params, func(res map[string]any) tea.Cmd {
+				reset := func(res map[string]any) tea.Cmd {
 					lines := []string{started}
 					for _, name := range rpcStrings(res["unknown"]) {
 						lines = append(lines, fmt.Sprintf("\u2717 Unknown toolset '%s'", name))
 					}
+					lines = append(lines, restricted...)
 					for _, server := range rpcStrings(res["missing_servers"]) {
 						lines = append(lines, fmt.Sprintf("\u2717 MCP server '%s' not found in config", server))
 					}
@@ -119,7 +143,15 @@ func (a *app) toolsCommands() []slashCommand {
 					}
 					a.store.ui.Status = tr("slashCmd.core.clear.forgingSession")
 					return a.life.newSession(strings.Join(append(lines, text("session_reset", nil)), "\n"), "", nil)
-				}))
+				}
+				if len(targets) == 0 {
+					return tea.Batch(r.ran(), reset(map[string]any{}))
+				}
+				params := map[string]any{"action": subcommand, "names": targets}
+				if r.sid != "" {
+					params["session_id"] = r.sid
+				}
+				return tea.Batch(r.ran(), r.rpc("tools.configure", params, reset))
 			}
 			if r.sid == "" {
 				r.sys(tr("slashCmd.core.status.noActiveSession"))

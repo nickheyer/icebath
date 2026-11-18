@@ -40,7 +40,7 @@ func TestHelperSessionLeaseHolder(t *testing.T) {
 	if err := os.WriteFile(os.Getenv("BOUNDARY_FILE"), []byte("boundary"), 0o644); err != nil {
 		fail(err.Error())
 	}
-	lease, refusal, err := TryAcquire(context.Background(), os.Getenv("SESSION_ID"), "desktop", map[string]any{}, nil, "", true)
+	lease, refusal, err := TryAcquire(context.Background(), os.Getenv("SESSION_ID"), "tui", map[string]any{}, nil, "", true)
 	if err != nil || lease == nil || refusal != nil {
 		fail("acquire failed")
 	}

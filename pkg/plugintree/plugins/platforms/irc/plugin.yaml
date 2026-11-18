@@ -3,10 +3,9 @@ label: IRC
 kind: platform
 version: 1.0.0
 description: >
-  IRC gateway adapter for Hermes Agent.
-  Connects to an IRC server and relays messages between an IRC channel
-  (or DMs) and the Hermes agent.  No external dependencies — uses
-  Python's stdlib asyncio for the IRC protocol.
+  IRC gateway adapter for Icebath Agent. Connects to an IRC server and relays
+  messages between an IRC channel (or DMs) and the Icebath agent.  No external
+  dependencies — uses the Go standard library net package for the IRC protocol.
 author: Nous Research
 # ``requires_env`` entries are surfaced in ``icebath config`` UI via the
 # platform-plugin env var injector in ``hermes_cli/config.py``.

@@ -1100,7 +1100,7 @@ func (c *entraInteractiveBrowserCredential) GetToken(ctx context.Context, scopes
 		if err := openBrowserURL(authURL); err != nil {
 			return EntraAccessToken{}, &entraAuthError{Msg: "Failed to open a browser"}
 		}
-		values, err := serveLoopbackCallback(server, result, 300*time.Second, errFn, "entra_timeout")
+		values, err := serveLoopbackCallback(ctx, server, result, 300*time.Second, errFn, "entra_timeout")
 		if err != nil {
 			return EntraAccessToken{}, &entraAuthError{Msg: "Timed out after waiting 300 seconds for the user to authenticate"}
 		}
@@ -1401,7 +1401,7 @@ func entraTokenProvider(scope string) (func(context.Context) (string, error), er
 	return entraTokenProviderIn(context.Background(), scope)
 }
 
-// Token or error from one chain walk under a deadline, nil when the deadline passes first
+// Token or error from one chain walk, the context error on a cancel, nil when the deadline passes first
 func entraProbeToken(ctx context.Context, cfg EntraIdentityConfig, timeout time.Duration) map[string]any {
 	done := make(chan map[string]any, 1)
 	go func() {
@@ -1428,6 +1428,8 @@ func entraProbeToken(ctx context.Context, cfg EntraIdentityConfig, timeout time.
 	select {
 	case r := <-done:
 		return r
+	case <-ctx.Done():
+		return map[string]any{"error": ctx.Err().Error()}
 	case <-t.C:
 		return nil
 	}

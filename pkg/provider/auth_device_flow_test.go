@@ -154,7 +154,7 @@ func TestLoopbackCallbackHandlerAndServer(t *testing.T) {
 			resp.Body.Close()
 		}
 	}()
-	callback, err := serveLoopbackCallback(server, result, 10*time.Second, func(message, code string) *AuthError { return codexErr(message, code, false) }, "timeout")
+	callback, err := serveLoopbackCallback(context.Background(), server, result, 10*time.Second, func(message, code string) *AuthError { return codexErr(message, code, false) }, "timeout")
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -35,7 +35,12 @@ var (
 	setupSysPlatform    = runtime.GOOS
 	setupUserHomeDir    = pypath.PathHome
 	setupReadDirNames   = func(path string) error { _, err := os.ReadDir(path); return err }
-	setupRunToolsPicker = func(ctx context.Context, cfg config.Tree) error { return provider.SetupTools(ctx, cfg, false) }
+	setupRunToolsPicker = func(ctx context.Context, cfg config.Tree) error {
+		if picker, hosted := ctx.Value(hostedToolsPickerKey{}).(func(ctx context.Context) error); hosted {
+			return picker(ctx)
+		}
+		return provider.SetupTools(ctx, cfg, false)
+	}
 )
 
 // Messaging env name fragments, their platform labels and emoji, the first match winning
@@ -53,7 +58,7 @@ func blankSlateDone(ctx context.Context, cfg config.Tree, icebathHome, toolsLine
 	for _, line := range extra {
 		lines = append(lines, line)
 	}
-	lines = append(lines, "  Tune agent settings: icebath setup agent", nil)
+	lines = append(lines, "  Tune agent settings: /setup agent", nil)
 	provider.SetupInfo(lines...)
 	return setupPrintSetupSummaryFn(ctx, cfg, icebathHome)
 }
@@ -147,7 +152,7 @@ func runFirstTimeQuickSetup(ctx context.Context, cfg config.Tree, icebathHome, i
 	}
 	setupPrintln("")
 	gatewayChoice := provider.PromptChoice("Connect a messaging platform? (Telegram, Discord, etc.)", []string{
-		"Set up messaging now (recommended)", "Skip — set up later with 'icebath setup gateway'",
+		"Set up messaging now (recommended)", "Skip — set up later with '/setup gateway'",
 	}, 0, "")
 	if gatewayChoice == 0 {
 		if err := setupGatewayFn(ctx, cfg); err != nil {
@@ -161,9 +166,9 @@ func runFirstTimeQuickSetup(ctx context.Context, cfg config.Tree, icebathHome, i
 	}
 	setupPrintln("")
 	provider.SetupPrintSuccess("Setup complete! You're ready to go.")
-	provider.SetupInfo(nil, "  Configure all settings:    icebath setup")
+	provider.SetupInfo(nil, "  Configure all settings:    /setup")
 	if gatewayChoice != 0 {
-		provider.SetupPrintInfo("  Connect Telegram/Discord:  icebath setup gateway")
+		provider.SetupPrintInfo("  Connect Telegram/Discord:  /setup gateway")
 	}
 	if err := printMacosFDATip(); err != nil {
 		return err
@@ -360,8 +365,8 @@ func runQuickSetup(ctx context.Context, cfg config.Tree, icebathHome string) err
 	}
 	if len(missingRequired) == 0 && len(missingOptional) == 0 && len(missingConfig) == 0 && currentVer >= latestVer {
 		provider.SetupPrintSuccess("Everything is configured! Nothing to do.")
-		provider.SetupInfo(nil, "Run 'icebath setup' and choose 'Full Setup' to reconfigure,",
-			"or pick a specific section from the menu.")
+		provider.SetupInfo(nil, "Type '/setup' to reconfigure,",
+			"then pick a section from the menu.")
 		return nil
 	}
 	if len(missingRequired) > 0 {
@@ -409,7 +414,7 @@ func runQuickSetup(ctx context.Context, cfg config.Tree, icebathHome string) err
 	if len(missingMessaging) > 0 {
 		provider.PrintSetupHeader("Messaging Platforms", true)
 		provider.SetupInfo("Connect Icebath to messaging apps to chat from anywhere.",
-			"You can configure these later with 'icebath setup gateway'.")
+			"You can configure these later with '/setup gateway'.")
 		grouped := map[string][]config.MissingEnvVar{}
 		emojis := map[string]string{}
 		var platformOrder []string

@@ -10,6 +10,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/pm"
+	"github.com/nickheyer/icebath/pkg/setupflow"
 )
 
 // Shim that hands an old updater's install call to the takeover child instead of installing
@@ -133,14 +134,20 @@ func (s *ToolsSetup) promptToolsetChecklistImpl(platformLabel string, enabled ma
 		}
 	}
 	labels := make([]string, len(effective))
+	items := make([]setupflow.Item, len(effective))
 	for i, ts := range effective {
-		labels[i] = ts.Label + "  (" + ts.Description + ")"
 		has, err := s.toolsetHasKeys(ts.Key, nil, forceFresh, nil)
 		if err != nil {
 			return nil, err
 		}
+		marker := ""
 		if !has && isConfigurableToolset(ts.Key) {
-			labels[i] += "  [no API key]"
+			marker = "  [no API key]"
+		}
+		labels[i] = ts.Label + "  (" + ts.Description + ")" + marker
+		items[i] = setupflow.Item{Title: ts.Label, Detail: ts.Description + marker}
+		if len(toolTokens) > 0 {
+			items[i].Tools = Default.ResolveToolset(ctx, "", ts.Key)
 		}
 	}
 	pre := map[int]bool{}
@@ -149,12 +156,46 @@ func (s *ToolsSetup) promptToolsetChecklistImpl(platformLabel string, enabled ma
 			pre[i] = true
 		}
 	}
+	chosen, err := s.toolsetChecklist("Tools for "+platformLabel, labels, items, pre, toolTokens)
+	if err != nil {
+		return nil, err
+	}
+	out := map[string]bool{}
+	for i := range chosen {
+		j, ok := pyListIndex(len(effective), i)
+		if !ok {
+			return nil, fmt.Errorf("IndexError: list index out of range")
+		}
+		out[effective[j].Key] = true
+	}
+	return out, nil
+}
+
+// Picked toolset rows, the asker with the tools estimate or the curses list with its token status line
+func (s *ToolsSetup) toolsetChecklist(title string, labels []string, items []setupflow.Item, pre map[int]bool, toolTokens map[string]int) (map[int]bool, error) {
+	if s.Ask != nil {
+		var tokens map[string]int
+		if len(toolTokens) > 0 {
+			tokens = toolTokens
+		}
+		picked, err := s.Ask.Check(title, items, pre, tokens)
+		if err != nil {
+			return nil, err
+		}
+		chosen := map[int]bool{}
+		for i, on := range picked {
+			if on {
+				chosen[i] = true
+			}
+		}
+		return chosen, nil
+	}
 	var statusFn func(map[int]bool) string
 	if len(toolTokens) > 0 {
 		statusFn = func(chosen map[int]bool) string {
 			all := map[string]bool{}
 			for idx := range chosen {
-				for _, t := range Default.ResolveToolset(ctx, "", effective[idx].Key) {
+				for _, t := range items[idx].Tools {
 					all[t] = true
 				}
 			}
@@ -168,19 +209,7 @@ func (s *ToolsSetup) promptToolsetChecklistImpl(platformLabel string, enabled ma
 			return "Est. tool context: ~" + strconv.Itoa(total) + " tokens"
 		}
 	}
-	chosen, err := toolsChecklist(s, "Tools for "+platformLabel, labels, pre, maps.Clone(pre), statusFn)
-	if err != nil {
-		return nil, err
-	}
-	out := map[string]bool{}
-	for i := range chosen {
-		j, ok := pyListIndex(len(effective), i)
-		if !ok {
-			return nil, fmt.Errorf("IndexError: list index out of range")
-		}
-		out[effective[j].Key] = true
-	}
-	return out, nil
+	return toolsChecklist(s, title, labels, pre, maps.Clone(pre), statusFn)
 }
 
 // Provider selection and keys for a category toolset, plain env var prompts for the rest

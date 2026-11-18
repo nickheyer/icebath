@@ -92,7 +92,7 @@ func openrouterHeadlessCode(out io.Writer, authURL string) (string, error) {
 }
 
 // Local flow that serves a nonce path on a loopback port and waits for OpenRouter's callback
-func openrouterLoopbackCode(out io.Writer, params [][2]string, openBrowser bool, timeout time.Duration) (string, error) {
+func openrouterLoopbackCode(ctx context.Context, out io.Writer, params [][2]string, openBrowser bool, timeout time.Duration) (string, error) {
 	path := "/callback/" + pkceTokenURLSafe(16)
 	handler, result := newLoopbackCallbackHandler(path, "OpenRouter")
 	server, err := bindLoopbackCallbackServer("127.0.0.1", 0, handler, openrouterErrFn, "openrouter_callback_bind_failed")
@@ -110,7 +110,7 @@ func openrouterLoopbackCode(out io.Writer, params [][2]string, openBrowser bool,
 		}
 	}
 	fmt.Fprintln(out, "Waiting for the OpenRouter callback...")
-	callback, err := serveLoopbackCallback(server, result, timeout, openrouterErrFn, "openrouter_callback_timeout")
+	callback, err := serveLoopbackCallback(ctx, server, result, timeout, openrouterErrFn, "openrouter_callback_timeout")
 	if err != nil {
 		return "", err
 	}
@@ -140,7 +140,7 @@ func OpenrouterPKCELogin(env PoolEnv, out io.Writer, openBrowser bool, timeout t
 	if isRemoteSession() {
 		code, err = openrouterHeadlessCode(out, OpenRouterAuthURL+"?"+orderedQuery(append(params, [2]string{"key_label", "icebath-agent"})))
 	} else {
-		code, err = openrouterLoopbackCode(out, params, openBrowser, timeout)
+		code, err = openrouterLoopbackCode(env.ctx(), out, params, openBrowser, timeout)
 	}
 	if err != nil {
 		return nil, err

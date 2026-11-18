@@ -2,8 +2,10 @@ package commands
 
 import (
 	"context"
+	"errors"
 	"os"
 	"path/filepath"
+	"reflect"
 	"testing"
 
 	"github.com/nickheyer/icebath/pkg/i18n"
@@ -41,5 +43,47 @@ func TestDescribeUsesCatalogEntryWhenPresent(t *testing.T) {
 	}
 	if got := help.Describe(context.Background()); got != "Localized help" {
 		t.Fatalf("describe %q", got)
+	}
+}
+
+func TestRunHandlerDrivesTheBoundHandlerWithItsHost(t *testing.T) {
+	r := NewRegistry()
+	var got *Invocation
+	failure := errors.New("handler failed")
+	r.Register(Def{Name: "bound", Aliases: []string{"bd"}, Handler: func(ctx context.Context, inv *Invocation) error {
+		got = inv
+		if inv.Args == "fail" {
+			return failure
+		}
+		return nil
+	}})
+	r.Register(Def{Name: "plain"})
+	host := &struct{ turns []string }{}
+	if err := RunHandler(context.Background(), r, "bd", "  audit 'the header' ", host); err != nil {
+		t.Fatal(err)
+	}
+	if got.Name != "bound" || got.Def.Name != "bound" || got.Args != "audit 'the header'" || got.Raw != "/bd   audit 'the header'" ||
+		!reflect.DeepEqual(got.Argv, []string{"audit", "the header"}) || got.Host != host {
+		t.Fatalf("invocation %+v", got)
+	}
+	if err := RunHandler(context.Background(), r, "/BOUND", "", host); err != nil || got.Args != "" || got.Raw != "/BOUND" {
+		t.Fatalf("bare invocation %+v %v", got, err)
+	}
+	if err := RunHandler(context.Background(), r, "bound", "fail", host); !errors.Is(err, failure) {
+		t.Fatalf("handler error %v", err)
+	}
+	var unbound *UnboundError
+	if err := RunHandler(context.Background(), r, "plain", "x", host); !errors.As(err, &unbound) || unbound.Name != "plain" ||
+		err.Error() != "commands: /plain has no handler bound" {
+		t.Fatalf("unbound %v", err)
+	}
+	var unknown *UnknownCommandError
+	for _, name := range []string{"nope", "/a/b"} {
+		if err := RunHandler(context.Background(), r, name, "", host); !errors.As(err, &unknown) {
+			t.Fatalf("%s unknown %v", name, err)
+		}
+	}
+	if unknown.Name != "a/b" || (&UnknownCommandError{Name: "nope"}).Error() != "commands: unknown command /nope" {
+		t.Fatalf("unknown %+v", unknown)
 	}
 }

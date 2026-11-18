@@ -1,12 +1,16 @@
 package relayhost_test
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/nickheyer/icebath/pkg/internal/hermetic"
 	"github.com/nickheyer/icebath/pkg/internal/pyctx"
@@ -16,8 +20,9 @@ import (
 	"github.com/nickheyer/icebath/pkg/tools"
 )
 
-// Provisions the nemo_relay environment before the network is blocked, then dispatches the child or runs the suite
+// Provisions the nemo_relay environment before the network is blocked, then dispatches a child or runs the suite
 func TestMain(m *testing.M) {
+	relaytest.ChildToolchain()
 	relayhost.DispatchRelayHostEntry(context.Background())
 	relaytest.Provision()
 	hermetic.BlockExternalHTTP()
@@ -98,25 +103,39 @@ func TestBindingDrivesNativeRelay(t *testing.T) {
 	}
 }
 
-// A project without an environment gets the hash pinned runtime set from the index the first time Relay loads
-func TestLoadProvisionsTheRuntimeSetOnFirstUse(t *testing.T) {
+// Fresh install tree whose provisioning children find the pinned test toolchain and loopback index, or fail with a set cause
+func freshRelayTree(t *testing.T, cause string) (root, venv string) {
+	t.Helper()
 	t.Setenv("ICEBATH_HOME", t.TempDir())
-	root := t.TempDir()
+	root = t.TempDir()
 	t.Cleanup(pm.PatchRepoRoot(root))
-	uv, python := relaytest.Toolchain(t)
-	prev := pm.SwapToolchain(func(context.Context, bool, bool) (string, string, bool, error) { return uv, python, true, nil })
-	t.Cleanup(func() { pm.SwapToolchain(prev) })
+	relaytest.ChildUsesToolchain(t, cause)
 	t.Setenv("UV_INDEX_URL", relaytest.ServeIndex(t))
+	venv, err := pm.SelectedVenv(context.Background(), root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return root, venv
+}
+
+func provisionLog(t *testing.T, venv string) string {
+	t.Helper()
+	data, err := os.ReadFile(filepath.Join(pm.RuntimeSetStore(venv), "provision.log"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	return string(data)
+}
+
+// A load on a tree without an environment waits for the detached child that provisions the hash pinned set
+func TestLoadWaitsForTheDetachedChildToProvisionTheRuntimeSet(t *testing.T) {
+	_, venv := freshRelayTree(t, "")
 	relay, err := relayhost.Load()
 	if err != nil {
 		t.Fatal(err)
 	}
 	if relay.LLM == nil || relay.LLM.Execute == nil || relay.Plugin == nil || relay.Plugin.Initialize == nil {
 		t.Fatalf("binding surface %#v", relay)
-	}
-	venv, err := pm.SelectedVenv(context.Background(), root)
-	if err != nil {
-		t.Fatal(err)
 	}
 	site, err := pm.SitePackages(venv)
 	if err != nil {
@@ -125,5 +144,123 @@ func TestLoadProvisionsTheRuntimeSetOnFirstUse(t *testing.T) {
 	dist := "nemo_relay-0.11.0.dist-info"
 	if _, err := os.Stat(filepath.Join(site, dist)); err != nil {
 		t.Fatalf("%s missing from %s: %v", dist, site, err)
+	}
+	if log := provisionLog(t, venv); !strings.Contains(log, " provisioned\n") {
+		t.Fatalf("provision log %q", log)
+	}
+	if _, ready, err := pm.RuntimeEnvironmentReady(context.Background()); err != nil || !ready {
+		t.Fatalf("ready %v %v", ready, err)
+	}
+}
+
+// A failed provisioning reaches the loader as the recorded failure, defers without a child, and an explicit install ends it
+func TestLoadAfterAFailedProvisioningDefersUntilAnExplicitInstall(t *testing.T) {
+	_, venv := freshRelayTree(t, "download failed")
+	_, err := relayhost.Load()
+	var unprovisioned *pm.RuntimeUnprovisioned
+	var deferred *pm.ProvisionDeferred
+	if !errors.As(err, &unprovisioned) || !errors.As(err, &deferred) || deferred.Cause != "download failed" || unprovisioned.Venv != venv {
+		t.Fatalf("load over a failing toolchain %v", err)
+	}
+	record := filepath.Join(pm.RuntimeSetStore(venv), "provision-failure.json")
+	if _, err := os.Stat(record); err != nil {
+		t.Fatalf("failure record %v", err)
+	}
+	log := provisionLog(t, venv)
+	if !strings.Contains(log, "failed: download failed") {
+		t.Fatalf("provision log %q", log)
+	}
+	if _, err := relayhost.Load(); !errors.As(err, &deferred) || deferred.Cause != "download failed" {
+		t.Fatalf("load inside the retry wait %v", err)
+	}
+	if again := provisionLog(t, venv); again != log {
+		t.Fatalf("a child ran inside the retry wait %q", again)
+	}
+	uv, python := relaytest.Toolchain(t)
+	prev := pm.SwapToolchain(func(context.Context, bool, bool) (string, string, bool, error) { return uv, python, true, nil })
+	t.Cleanup(func() { pm.SwapToolchain(prev) })
+	if _, err := pm.EnsureRuntimeEnvironment(context.Background(), pm.RuntimeEnvironmentOptions{Explicit: true}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(record); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("failure record after the explicit install %v", err)
+	}
+	relay, err := relayhost.Load()
+	if err != nil || relay.LLM == nil || relay.Plugin == nil {
+		t.Fatalf("load after the explicit install %v %#v", err, relay)
+	}
+}
+
+// Readiness answers at once on a tree without an environment, starts the background child, and turns true once it provisioned
+func TestReadyStartsTheBackgroundProvisioningAndTurnsTrueOnceItFinished(t *testing.T) {
+	_, venv := freshRelayTree(t, "")
+	started := time.Now()
+	if relayhost.Ready() {
+		t.Fatal("ready without an environment")
+	}
+	if took := time.Since(started); took > 2*time.Second {
+		t.Fatalf("readiness took %s", took)
+	}
+	deadline := time.Now().Add(3 * time.Minute)
+	for !relayhost.Ready() {
+		if time.Now().After(deadline) {
+			t.Fatalf("background provisioning never finished, log %q", provisionLog(t, venv))
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
+	if log := provisionLog(t, venv); !strings.Contains(log, " provisioned\n") {
+		t.Fatalf("provision log %q", log)
+	}
+	relay, err := relayhost.Load()
+	if err != nil || relay.Plugin == nil {
+		t.Fatalf("load after the background provisioning %v %#v", err, relay)
+	}
+}
+
+// The provisioning entry refuses a command line without the environment it provisions
+func TestProvisionEntryRefusesAMissingEnvironment(t *testing.T) {
+	cmd := exec.Command(os.Args[0], relayhost.ProvisionEntry)
+	out, err := cmd.CombinedOutput()
+	var exit *exec.ExitError
+	if !errors.As(err, &exit) || exit.ExitCode() != 2 || !strings.Contains(string(out), "usage: --venv <environment>") {
+		t.Fatalf("exit %v output %q", err, out)
+	}
+}
+
+// The update step provisions a tree that lacks the set in this process and leaves a ready tree alone
+func TestProvisionRuntimeInstallsTheSetOnceAndSkipsAReadyEnvironment(t *testing.T) {
+	freshRelayTree(t, "")
+	uv, python := relaytest.Toolchain(t)
+	prev := pm.SwapToolchain(func(context.Context, bool, bool) (string, string, bool, error) { return uv, python, true, nil })
+	t.Cleanup(func() { pm.SwapToolchain(prev) })
+	ctx := context.Background()
+	var out bytes.Buffer
+	if err := relayhost.ProvisionRuntime(ctx, &out); err != nil {
+		t.Fatal(err)
+	}
+	if text := out.String(); !strings.Contains(text, "→ Provisioning the NeMo Relay runtime...") || !strings.Contains(text, "✓ NeMo Relay runtime provisioned") {
+		t.Fatalf("output %q", text)
+	}
+	if _, ready, err := pm.RuntimeEnvironmentReady(ctx); err != nil || !ready {
+		t.Fatalf("ready %v %v", ready, err)
+	}
+	out.Reset()
+	if err := relayhost.ProvisionRuntime(ctx, &out); err != nil || out.Len() != 0 {
+		t.Fatalf("ready environment %v output %q", err, out.String())
+	}
+}
+
+// A failed provisioning step returns its cause after the progress line
+func TestProvisionRuntimeReturnsTheFailureItsInstallMet(t *testing.T) {
+	freshRelayTree(t, "")
+	prev := pm.SwapToolchain(func(context.Context, bool, bool) (string, string, bool, error) {
+		return "", "", false, errors.New("download failed")
+	})
+	t.Cleanup(func() { pm.SwapToolchain(prev) })
+	var out bytes.Buffer
+	err := relayhost.ProvisionRuntime(context.Background(), &out)
+	if err == nil || err.Error() != "NeMo Relay runtime was not provisioned: download failed" ||
+		out.String() != "→ Provisioning the NeMo Relay runtime...\n" {
+		t.Fatalf("error %v output %q", err, out.String())
 	}
 }

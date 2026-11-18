@@ -65,7 +65,7 @@ func TestRepeatedSetupRoutesRecordsOnce(t *testing.T) {
 							accepted := map[string]bool{
 								"agent.log":   level >= lv.minimum,
 								"errors.log":  level >= LevelWarning,
-								"gateway.log": (i == 2 || i == 3 || i == 4) && level >= max(LevelInfo, lv.minimum),
+								"gateway.log": (i == 2 || i == 3) && level >= max(LevelInfo, lv.minimum),
 							}[name]
 							w := fmt.Sprintf("routing-witness-%d-%d", i, level)
 							n := 0

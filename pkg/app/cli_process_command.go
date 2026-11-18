@@ -24,9 +24,9 @@ func noArg(fn func(c *CLI)) slashHandler {
 // Canonical command to handler, the _SLASH_DISPATCH table plus every _handle_name_command of the CLI
 var slashDispatch = map[string]slashHandler{
 	"exit": (*CLI).cmdExit, "quit": (*CLI).cmdExit, "help": withArg((*CLI).cmdHelp),
-	"palette": noArg((*CLI).openCommandPalette), "whoami": noArg((*CLI).handleWhoamiCommand),
+	"whoami":  noArg((*CLI).handleWhoamiCommand),
 	"profile": noArg((*CLI).handleProfileCommand), "toolsets": noArg((*CLI).showToolsets),
-	"config": noArg((*CLI).showConfig), "redraw": withArg((*CLI).cmdRedraw), "clear": withArg((*CLI).cmdClear),
+	"config": noArg((*CLI).showConfig), "clear": withArg((*CLI).cmdClear),
 	"history": noArg((*CLI).showHistory), "title": withArg((*CLI).cmdTitle), "new": withArg((*CLI).cmdNew),
 	"model": withArg((*CLI).handleModelSwitch), "codex-runtime": withArg((*CLI).handleCodexRuntime),
 	"retry": withArg((*CLI).cmdRetry), "prompt": withArg((*CLI).handlePromptComposeCommand),
@@ -80,6 +80,9 @@ var slashDispatch = map[string]slashHandler{
 func (c *CLI) processCommand(command string) bool {
 	redispatch := c.slashRedispatch
 	c.slashRedispatch = false
+	if !redispatch {
+		c.quickAliasChain = nil
+	}
 	cmdLower := strings.ToLower(strings.TrimSpace(command))
 	cmdOriginal := strings.TrimSpace(command)
 	words := strings.Fields(cmdLower)

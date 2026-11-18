@@ -15,7 +15,7 @@ import (
 var inlineThinkRe = regexp.MustCompile(`(?i)<think>|<thinking>|<reasoning>`)
 
 // Budgeted empty response retry returning the loop action or empty, the interrupt result and whether the empties are deterministic
-func retryEmpty(ctx context.Context, a *AIAgent, s *LoopState, response *provider.Response, finishReason string, emptyCandidate, observedGeneration bool) (string, map[string]any, bool, error) {
+func retryEmpty(ctx context.Context, a *AIAgent, s *LoopState, response any, finishReason string, emptyCandidate, observedGeneration bool) (string, map[string]any, bool, error) {
 	if emptyCandidate {
 		a.recordEmptyAttempt(ctx, finishReason, response, observedGeneration)
 	}
@@ -29,7 +29,7 @@ func retryEmpty(ctx context.Context, a *AIAgent, s *LoopState, response *provide
 	}
 	a.emptyContentRetries++
 	n := a.emptyContentRetries
-	wait := provider.JitteredBackoff(n, provider.BackoffOptions{BaseDelay: 5 * time.Second, MaxDelay: 60 * time.Second}).Seconds()
+	wait := provider.JitteredBackoff(n, provider.BackoffOptions{BaseDelay: 5 * time.Second, MaxDelay: 60 * time.Second, JitterRatio: 0.5}).Seconds()
 	conversationLoopLog().Warn(fmt.Sprintf("Empty response (no content or reasoning) — retry %d/%d in %.1fs (model=%s)", n, budget, wait, a.model))
 	note := ""
 	if budget < defaultEmptyRetryBudget {
@@ -165,7 +165,7 @@ func recoverEmptyResponse(ctx context.Context, a *AIAgent, s *LoopState, assista
 	}
 	trulyEmpty := pystr.Strip(a.stripThinkBlocks(finalResponse)) == ""
 	candidate := trulyEmpty && (!structured || a.thinkingPrefillRetries >= 2)
-	action, interruptResult, deterministic, err := retryEmpty(ctx, a, s, assistantMessage, finishReason, candidate, structured)
+	action, interruptResult, deterministic, err := retryEmpty(ctx, a, s, s.Response, finishReason, candidate, structured)
 	if err != nil {
 		return PhaseVerdict{}, err
 	}

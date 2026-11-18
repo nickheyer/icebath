@@ -43,10 +43,11 @@ const ManagedNote = "Settled once. connected → use the app now; skipped → th
 // GuestSetupFailed is the error code of a guest identity that could not be created for a connect
 const GuestSetupFailed = "GUEST_SETUP_FAILED"
 
-// Connect request initiators, the agent tool and the card's Try again
+// Connect request initiators, the agent tool, the connectors page of the profile account and the card's Try again
 const (
-	InitiatorAgentTool = "agent_tool"
-	InitiatorCardRetry = "card_retry"
+	InitiatorAgentTool      = "agent_tool"
+	InitiatorConnectorsPage = "desktop_page"
+	InitiatorCardRetry      = "card_retry"
 )
 
 // NoteAppConnected counts a finished connect toward the guest connector offer, installed by pkg/mcp over pkg/provider

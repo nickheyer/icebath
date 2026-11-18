@@ -3,11 +3,10 @@ label: WhatsApp
 kind: platform
 version: 1.0.0
 description: >
-  WhatsApp gateway adapter for Hermes Agent.
-  Connects to WhatsApp via a local Node.js bridge (WhatsApp Web client) over
-  an HTTP API and relays messages between WhatsApp chats and the Hermes agent.
-  Supports DM/group policies, mention gating, free-response chats, and
-  per-user allowlists.
+  WhatsApp gateway adapter for Icebath Agent. Connects to WhatsApp through the
+  built-in WhatsApp Web client and relays messages between WhatsApp chats and
+  the Icebath agent. Supports DM/group policies, mention gating, free-response
+  chats, and per-user allowlists.
 author: NousResearch
 requires_env:
   - name: WHATSAPP_ENABLED

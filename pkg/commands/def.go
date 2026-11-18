@@ -1,4 +1,4 @@
-// Package commands defines slash commands, their metadata and the CLI command tree
+// Package commands defines slash commands and dispatches them to bound handlers
 package commands
 
 import (
@@ -18,7 +18,10 @@ const (
 	BusyInterruptThenDispatch BusyPolicy = "interrupt_then_dispatch"
 )
 
-// Def is one slash command with its metadata
+// Executes one parsed slash command against the host its invocation carries
+type Handler func(ctx context.Context, inv *Invocation) error
+
+// One slash command with its metadata and bound handler
 type Def struct {
 	Name        string
 	Description string
@@ -30,6 +33,7 @@ type Def struct {
 	BusyPolicy  BusyPolicy
 	BusyHandler string
 	Plugin      string
+	Handler     Handler
 	Meta
 }
 
@@ -49,6 +53,8 @@ type Invocation struct {
 	Args string
 	Argv []string
 	Def  *Def
+	// Host surface the handler drives, typed by the binding package
+	Host any
 }
 
 // Registry maps command names and aliases to definitions

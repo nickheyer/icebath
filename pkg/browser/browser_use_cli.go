@@ -33,7 +33,7 @@ const (
 	execMaxTimeoutS     = 1800
 )
 
-const execHeaderBase = "Drive a real browser for JS pages, logins, forms and clicks. `code` runs as full " +
+const execHeaderBase = "Drive a real browser for JS pages, logins, forms and clicks (Browser Use CLI). `code` runs as full " +
 	"Python (stdlib available) with pre-imported browser helpers; stdout comes back in the result. Start `code` with a one-line " +
 	"comment describing the step for the user in plain language, max 60 chars " +
 	"(e.g. `# Searching Amazon for paper towels`) \u2014 the UI shows it as the step label.\n\n" +
@@ -85,7 +85,7 @@ func BrowserExecSchema() map[string]any {
 			"type": "object",
 			"properties": map[string]any{
 				"code":    map[string]any{"type": "string", "description": "Python code to execute using the pre-imported browser helpers. Use print(...) for any data you need back."},
-				"session": map[string]any{"type": "string", "description": "Named isolated browser session \u2014 its own tab and (on cloud backends) own browser, so concurrent tasks don't share tabs. Reuse the same name on every related call; omit for the shared default session."},
+				"session": map[string]any{"type": "string", "description": "Named isolated browser session \u2014 its own daemon and (on cloud backends) own browser, so concurrent tasks don't share tabs. Reuse the same name on every related call; omit for the shared default session."},
 				"timeout_s": map[string]any{"type": "integer", "default": execDefaultTimeoutS,
 					"description": fmt.Sprintf("Max seconds to wait for the code to finish (default %d, max %d).", execDefaultTimeoutS, execMaxTimeoutS)},
 			},

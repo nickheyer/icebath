@@ -18,7 +18,6 @@ const (
 	CategoryConfiguration = "Configuration"
 	CategoryInfo          = "Info"
 	CategoryToolsSkills   = "Tools & Skills"
-	CategoryPlugins       = "Plugins"
 	CategoryExit          = "Exit"
 	CategoryContext       = "Context"
 	CategoryBackground    = "Background & Automation"
@@ -433,17 +432,6 @@ func IsGatewayKnownCommand(ctx context.Context, r *Registry, name string) bool {
 	return false
 }
 
-// ActiveSessionBypassCommands lists canonical names whose busy policy is not reject
-func ActiveSessionBypassCommands() map[string]bool {
-	out := map[string]bool{}
-	for _, d := range Builtin {
-		if d.BusyPolicy != BusyReject {
-			out[d.Name] = true
-		}
-	}
-	return out
-}
-
 // IsInterruptThenDispatch reports whether a name resolves to an interrupt first command
 func IsInterruptThenDispatch(name string) bool {
 	d := Resolve(name)
@@ -511,16 +499,5 @@ func Commands(r *Registry) map[string]string {
 			out[row.Command] = row.Description
 		}
 	}
-	return out
-}
-
-// CommandNames lists every CLI visible /command and alias sorted
-func CommandNames(r *Registry) []string {
-	flat := Commands(r)
-	out := make([]string, 0, len(flat))
-	for k := range flat {
-		out = append(out, k)
-	}
-	sort.Strings(out)
 	return out
 }

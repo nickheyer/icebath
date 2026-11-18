@@ -43,11 +43,6 @@ func pinKanbanBoardEnv() {
 	}
 }
 
-// Seeds the home skills directory with the bundled library, failures swallowed
-func syncBundledSkillsQuietly() {
-	_, _ = skills.SyncSkills(context.Background(), true)
-}
-
 // Git repo root when the cwd sits in a repo, else the cwd, empty when neither resolves
 func resolveWorkspaceKey() string {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)

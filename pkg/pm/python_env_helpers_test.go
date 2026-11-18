@@ -18,11 +18,12 @@ import (
 	"testing"
 	"time"
 
+	"github.com/nickheyer/icebath/pkg/internal/homeguard"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 )
 
-// User cache directory read before any test moves HOME
-var peCacheRoot, _ = os.UserCacheDir()
+// Developer cache directory the pinned downloads are kept in between runs
+var peCacheRoot = homeguard.SharedCache()
 
 var (
 	peUVOnce sync.Once

@@ -88,3 +88,14 @@ func TestBrowserToolsRegistered(t *testing.T) {
 		t.Fatal("cdp schema required")
 	}
 }
+
+func TestBrowserExecSchemaCarriesTheReferenceWording(t *testing.T) {
+	schema := BrowserExecSchema()
+	if desc, _ := schema["description"].(string); !strings.HasPrefix(desc, "Drive a real browser for JS pages, logins, forms and clicks (Browser Use CLI). ") {
+		t.Fatalf("description %q", desc[:80])
+	}
+	session := schema["parameters"].(map[string]any)["properties"].(map[string]any)["session"].(map[string]any)
+	if session["description"] != "Named isolated browser session — its own daemon and (on cloud backends) own browser, so concurrent tasks don't share tabs. Reuse the same name on every related call; omit for the shared default session." {
+		t.Fatalf("session %q", session["description"])
+	}
+}

@@ -587,14 +587,14 @@ func hasFastAWSSDKSignal() bool {
 }
 
 // AWS SDK credentials, the full chain consulted only for the current provider
-func hasAWSSDKCredsForListing(slug, currentProvider string) bool {
+func hasAWSSDKCredsForListing(ctx context.Context, slug, currentProvider string) bool {
 	if hasFastAWSSDKSignal() {
 		return true
 	}
 	if strings.ToLower(strings.TrimSpace(slug)) != strings.ToLower(strings.TrimSpace(currentProvider)) {
 		return false
 	}
-	return pickerAWSCredentialsFn(true)
+	return pickerAWSCredentialsFn(ctx, true)
 }
 
 func isAWSSDK(pconfig *Profile) bool { return pconfig != nil && pconfig.AuthType == "aws_sdk" }
@@ -1131,7 +1131,7 @@ func lapBuiltinRows(b *pickerBuild, data, userProviders map[string]any) error {
 func overlayHasCreds(b *pickerBuild, pid, hermesSlug string, overlay IcebathOverlay) (bool, error) {
 	var hasCreds bool
 	if overlay.AuthType == "aws_sdk" {
-		hasCreds = hasAWSSDKCredsForListing(hermesSlug, b.currentProvider)
+		hasCreds = hasAWSSDKCredsForListing(b.ctx, hermesSlug, b.currentProvider)
 	} else {
 		var err error
 		if hasCreds, err = overlayHasEnvCreds(b.ctx, pid, hermesSlug, overlay, pickerScopedEnv(b.ctx)); err != nil {
@@ -1234,7 +1234,7 @@ func lapCanonicalRows(b *pickerBuild) {
 			}
 		}
 		hasCreds = hasCreds || authStoreHasProvider(b.ctx, cp.Slug) || credentialPoolIsUsable(b.ctx, cp.Slug, false, b.forPicker) ||
-			(isAWSSDK(cpConfig) && hasAWSSDKCredsForListing(cp.Slug, b.currentProvider))
+			(isAWSSDK(cpConfig) && hasAWSSDKCredsForListing(b.ctx, cp.Slug, b.currentProvider))
 		if !hasCreds && cpConfig != nil && cpConfig.AuthType == "external_process" {
 			hasCreds = pyTruthy(GetExternalProcessProviderStatus(env, cp.Slug)["configured"])
 		}

@@ -344,6 +344,22 @@ func (a *AIAgent) bufferVprint(text string) { a.bufferRetryMessage("vprint", tex
 
 func (a *AIAgent) clearStatusBuffer() { a.retryStatusBuffer = a.retryStatusBuffer[:0] }
 
+// Text of every buffered retry line, the copies a once per turn notice compares against
+func (a *AIAgent) RetryStatusMessages() []string {
+	out := make([]string, 0, len(a.retryStatusBuffer))
+	for _, line := range a.retryStatusBuffer {
+		switch m := line.message.(type) {
+		case config.DiagnosticText:
+			out = append(out, string(m))
+		case string:
+			out = append(out, m)
+		default:
+			out = append(out, fmt.Sprint(m))
+		}
+	}
+	return out
+}
+
 // Surfaces the one shot fallback switch lines on recovery, cleared before emitting
 func (a *AIAgent) emitPendingFallbackNotice() {
 	notice := a.pendingFallbackNotice

@@ -52,6 +52,8 @@ type Palette struct {
 	Placeholder string
 	// Called with the text when enter is pressed on a palette without items
 	OnText func(text string) tea.Cmd
+	// Called once when the palette loses its place as the overlay
+	OnClose func() tea.Cmd
 }
 
 // Builds a palette over the items
@@ -194,6 +196,11 @@ func (p *Palette) filter() {
 
 func (p *Palette) Update(msg tea.Msg) (Card, tea.Cmd) {
 	switch msg := msg.(type) {
+	case FocusMsg:
+		if closed := p.OnClose; !msg.Focused && closed != nil {
+			p.OnClose = nil
+			return p, closed()
+		}
 	case ActionMsg:
 		return p, p.action(msg.ID)
 	case tea.KeyPressMsg:
