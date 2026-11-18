@@ -166,7 +166,7 @@ func TestKanbanToolsHiddenWithoutEnvVar(t *testing.T) {
 	}
 	var kanban []string
 	for _, s := range tools.Default.Definitions(ctx, nil, names, true) {
-		fn, isFn := s["function"].(map[string]any)
+		fn, isFn := pyjson.Dict(s["function"])
 		if !isFn {
 			continue
 		}
@@ -234,7 +234,7 @@ func TestWorkerToolBareCallOutsideWorkerErrorIsActionable(t *testing.T) {
 func TestKanbanTaskIDDescriptionsStateTheNonWorkerCase(t *testing.T) {
 	var seen []string
 	for _, tool := range kanbanTools {
-		params := tool.schema.Vals["parameters"].(map[string]any)
+		params := pyjson.Plain(tool.schema.Vals["parameters"]).(map[string]any)
 		props := params["properties"].(map[string]any)
 		prop, _ := props["task_id"].(map[string]any)
 		desc, _ := prop["description"].(string)

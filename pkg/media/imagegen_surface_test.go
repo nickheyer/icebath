@@ -348,7 +348,7 @@ func TestImageSchemaParamGatingFollowsFalCatalog(t *testing.T) {
 	}
 	fal := falSchemaFor(t, multi)
 	fp := schemaProps(fal)
-	if !jsonEqual(fp["image_url"], imageURLParam()) {
+	if !jsonEqual(fp["image_url"], pyjson.Plain(imageURLParam())) {
 		t.Fatalf("fal image_url %v", fp["image_url"])
 	}
 	for _, k := range []string{"reference_image_urls", "prompt"} {

@@ -482,7 +482,7 @@ func TestChatCompletionsMoonshotToolSchemas(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		return kw["tools"].([]map[string]any)[0]["function"].(map[string]any)["parameters"].(map[string]any)
+		return pyjson.Plain(kw["tools"].([]map[string]any)[0]["function"]).(map[string]any)["parameters"].(map[string]any)
 	}
 	missingType := func() map[string]any {
 		return map[string]any{"type": "object", "properties": map[string]any{"q": map[string]any{"description": "query"}}}

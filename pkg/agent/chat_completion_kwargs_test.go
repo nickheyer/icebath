@@ -131,7 +131,7 @@ func TestAliasToolSearchBridgeForXAIRoundTripsThroughTheTransport(t *testing.T) 
 	tr := a.getTransport("")
 	toolsIn := []map[string]any{{"type": "function", "function": map[string]any{"name": "tool_search", "parameters": map[string]any{}}}}
 	out := a.aliasToolSearchBridgeForXAI(tr, toolsIn)
-	if out[0]["function"].(map[string]any)["name"] != "icebath_tool_search" {
+	if fn, _ := pyjson.Dict(out[0]["function"]); fn["name"] != "icebath_tool_search" {
 		t.Fatalf("bridge not aliased: %v", out)
 	}
 	if toolsIn[0]["function"].(map[string]any)["name"] != "tool_search" {

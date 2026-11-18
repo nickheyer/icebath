@@ -12,6 +12,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
 
@@ -76,7 +77,7 @@ func TestGeneratedFileRPCKwargsCorrelationAndAuthority(t *testing.T) {
 		if def == nil {
 			t.Fatalf("%s is not registered", c.name)
 		}
-		params, _ := def.Schema.Vals["parameters"].(map[string]any)
+		params, _ := pyjson.Plain(def.Schema.Vals["parameters"]).(map[string]any)
 		props, _ := params["properties"].(map[string]any)
 		for key := range props {
 			blocked := c.name == "terminal" && slices.Contains(terminalBlockedParams, key)

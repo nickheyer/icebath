@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"github.com/dlclark/regexp2/v2"
+	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
@@ -173,7 +174,7 @@ func NativeAnthropicAccountingProjection(messages any) (any, []string) {
 			delete(shadow, "reasoning_content")
 		}
 		for _, block := range carrier {
-			b, _ := block.(map[string]any)
+			b, _ := pyjson.Dict(block)
 			if text, ok := b["thinking"].(string); ok && b["type"] == "thinking" && text != "" {
 				replayed = append(replayed, text)
 			}

@@ -6,6 +6,8 @@ import (
 	"io"
 	"reflect"
 	"testing"
+
+	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 )
 
 func auxCodexStatusMessage(text, phase, status string) map[string]any {
@@ -136,11 +138,11 @@ func TestActualAdapterPreservesCompletionContract(t *testing.T) {
 				t.Fatalf("%s streamed=%v: content %v finish %v, want %v %v", tc.id, streamed, message["content"], choice["finish_reason"], tc.expectContent, tc.expectFinish)
 			}
 			if tc.expectFinish == "tool_calls" {
-				calls := auxKwargMaps(message["tool_calls"])
+				calls := auxKwargMaps(pyjson.Plain(message["tool_calls"]))
 				if len(calls) != 1 {
 					t.Fatalf("%s streamed=%v: tool calls %v", tc.id, streamed, message["tool_calls"])
 				}
-				fn, _ := calls[0]["function"].(map[string]any)
+				fn, _ := pyjson.Dict(calls[0]["function"])
 				if calls[0]["id"] != "call_1" || fn["name"] != "inspect" || fn["arguments"] != `{"path":"x"}` {
 					t.Fatalf("%s streamed=%v: tool call %v", tc.id, streamed, calls[0])
 				}

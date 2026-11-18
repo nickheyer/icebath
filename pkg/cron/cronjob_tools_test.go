@@ -9,6 +9,7 @@ import (
 	"sync"
 	"testing"
 
+	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
 
@@ -209,7 +210,7 @@ func TestCronjobCreateAndUpdateNormalizeListFormDeliver(t *testing.T) {
 }
 
 func TestCronjobSchemaHasNoInferencePinParams(t *testing.T) {
-	props := cronjobSchema.Vals["parameters"].(map[string]any)["properties"].(map[string]any)
+	props := pyjson.Plain(cronjobSchema.Vals["parameters"]).(map[string]any)["properties"].(map[string]any)
 	for _, k := range []string{"model", "provider", "base_url"} {
 		if _, ok := props[k]; ok {
 			t.Fatalf("schema exposes %s", k)

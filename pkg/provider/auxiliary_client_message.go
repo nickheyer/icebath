@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
+	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 )
 
@@ -137,7 +138,7 @@ func ExtractContentOrReasoning(response any, maxReasoningChars int) string {
 	}
 	if details, ok := MessageField(msg, "reasoning_details").([]any); ok {
 		for _, d := range details {
-			detail, ok := d.(map[string]any)
+			detail, ok := pyjson.Dict(d)
 			if !ok {
 				continue
 			}

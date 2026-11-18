@@ -107,7 +107,7 @@ func trajectoryToolCallTurn(msg map[string]any) (string, error) {
 		if err != nil {
 			return "", err
 		}
-		fn, ok := fnValue.(map[string]any)
+		fn, ok := pyjson.Dict(fnValue)
 		if !ok {
 			return "", fmt.Errorf("TypeError: '%s' object is not subscriptable", pyrepr.TypeName(fnValue))
 		}
@@ -168,7 +168,7 @@ func trajectoryToolResponses(msg map[string]any, messages []map[string]any, star
 		}
 		name := any("unknown")
 		if idx := len(responses); idx < len(calls) {
-			call, ok := calls[idx].(map[string]any)
+			call, ok := pyjson.Dict(calls[idx])
 			if !ok {
 				return nil, 0, fmt.Errorf("TypeError: '%s' object is not subscriptable", pyrepr.TypeName(calls[idx]))
 			}
@@ -176,7 +176,7 @@ func trajectoryToolResponses(msg map[string]any, messages []map[string]any, star
 			if err != nil {
 				return nil, 0, err
 			}
-			fn, ok := fnValue.(map[string]any)
+			fn, ok := pyjson.Dict(fnValue)
 			if !ok {
 				return nil, 0, fmt.Errorf("TypeError: '%s' object is not subscriptable", pyrepr.TypeName(fnValue))
 			}

@@ -193,7 +193,7 @@ func TestGroupSchemaTracksDeliveryPolicyWithoutMutatingPreviousDefinitions(t *te
 	}{{"", false}, {"  independent_completions: true\n", true}, {"  independent_completions: false\n", false}} {
 		writeDelegationBlock(t, env.Home, cfg.block)
 		definition := delegateDefinition(t, ctx, env)
-		function := definition["function"].(map[string]any)
+		function := pyjson.Plain(definition["function"]).(map[string]any)
 		task := function["parameters"].(map[string]any)["properties"].(map[string]any)["tasks"].(map[string]any)["items"].(map[string]any)
 		_, hasGroup := task["properties"].(map[string]any)["group"]
 		if hasGroup != cfg.enabled {

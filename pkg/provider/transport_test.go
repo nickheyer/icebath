@@ -1,6 +1,10 @@
 package provider
 
-import "testing"
+import (
+	"testing"
+
+	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+)
 
 func TestPreflightKwargsRunsOnlyOnTheResponsesTransport(t *testing.T) {
 	out, err := PreflightKwargs(GetTransport(string(ModeCodexResponses)), map[string]any{"model": "gpt-5.4", "instructions": "be brief",
@@ -19,7 +23,7 @@ func TestPreflightKwargsRunsOnlyOnTheResponsesTransport(t *testing.T) {
 func TestChatTransportReversesOnlyRecordedWireAliases(t *testing.T) {
 	tr := GetTransport(string(ModeChatCompletions))
 	tools, aliases := RenameToolSearchBridgeForXAI([]map[string]any{{"type": "function", "function": map[string]any{"name": "tool_search"}}})
-	if tools[0]["function"].(map[string]any)["name"] != "icebath_tool_search" || aliases["icebath_tool_search"] != "tool_search" {
+	if fn, _ := pyjson.Dict(tools[0]["function"]); fn["name"] != "icebath_tool_search" || aliases["icebath_tool_search"] != "tool_search" {
 		t.Fatal("rename")
 	}
 	tr.(WireAliasTransport).SetLastWireAliases(map[string]string{})

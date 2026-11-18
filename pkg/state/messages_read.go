@@ -677,7 +677,7 @@ func (d *SessionDB) rowsToConversation(rows []*pyjson.Object, sessionID string, 
 					if err != nil {
 						return nil, err
 					}
-					put(col, orderedDictTree(v))
+					put(col, plainDictTree(v))
 				}
 			}
 			if seqTruthy(msg["tool_calls"]) {

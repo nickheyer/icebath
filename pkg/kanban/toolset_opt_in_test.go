@@ -24,7 +24,7 @@ func optInKanbanNames(ctx context.Context, env *tools.Env, selection, disabled [
 	out := map[string]bool{}
 	opts := tools.DefinitionOptions{Enabled: selection, Disabled: disabled, Quiet: true, SkipToolSearchAssembly: true}
 	for _, row := range tools.Default.ToolDefinitions(ctx, env, opts) {
-		fn, _ := row["function"].(map[string]any)
+		fn, _ := pyjson.Dict(row["function"])
 		if name, _ := fn["name"].(string); strings.HasPrefix(name, "kanban_") {
 			out[name] = true
 		}

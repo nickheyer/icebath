@@ -11,6 +11,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/mcp"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/state"
@@ -88,7 +89,8 @@ func captureStatusWarnings(a *AIAgent) *[]string {
 func toolNames(tools []any) []string {
 	var names []string
 	for _, tool := range tools {
-		names = append(names, tool.(map[string]any)["function"].(map[string]any)["name"].(string))
+		fn, _ := pyjson.Dict(tool.(map[string]any)["function"])
+		names = append(names, fn["name"].(string))
 	}
 	return names
 }

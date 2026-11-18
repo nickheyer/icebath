@@ -441,7 +441,7 @@ func changedEntries(result map[string]any, kind string) []string {
 	if pyTruthy(single) {
 		out = append(out, pyStr(single))
 	}
-	batch, _ := result[kind+"_entries"].(map[string]any)
+	batch, _ := pyjson.Dict(result[kind+"_entries"])
 	keys := make([]string, 0, len(batch))
 	for k := range batch {
 		keys = append(keys, k)

@@ -312,7 +312,7 @@ func TestDelegatedChildContextSuppressesEnvGatedKanbanTools(t *testing.T) {
 	names := map[string]bool{}
 	var kanban []string
 	for _, s := range schema {
-		fn, isFn := s["function"].(map[string]any)
+		fn, isFn := pyjson.Dict(s["function"])
 		if !isFn {
 			continue
 		}

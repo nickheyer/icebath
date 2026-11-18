@@ -10,6 +10,7 @@ import (
 	"sync"
 	"testing"
 
+	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
@@ -43,7 +44,7 @@ func childSpec(parent *AIAgent, goal string, model any, maxIterations int, role 
 func toolNamesOfDefinitions(defs []map[string]any) map[string]bool {
 	names := map[string]bool{}
 	for _, d := range defs {
-		fn, _ := d["function"].(map[string]any)
+		fn, _ := pyjson.Dict(d["function"])
 		if n, _ := fn["name"].(string); n != "" {
 			names[n] = true
 		}

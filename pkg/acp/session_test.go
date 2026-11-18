@@ -161,7 +161,7 @@ func TestFreshAgentToolSurfaceHonoursToolsetConfig(t *testing.T) {
 			surface := func(enabled, disabled []string) map[string]bool {
 				names := map[string]bool{}
 				for _, def := range tools.Default.ToolDefinitions(ctx, env, tools.DefinitionOptions{Enabled: enabled, Disabled: disabled, Quiet: true}) {
-					fn, _ := def["function"].(map[string]any)
+					fn, _ := pyjson.Dict(def["function"])
 					names[pyStr(fn["name"])] = true
 				}
 				return names

@@ -5,6 +5,8 @@ import (
 	"log/slog"
 	"reflect"
 	"testing"
+
+	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 )
 
 func TestAuxiliaryClientPoisonedCacheEvictionCallLlmEvictsOnConnectionErrorWithExplicitProvider(t *testing.T) {
@@ -45,7 +47,7 @@ func TestBuildCallKwargsToolDedupDuplicateToolNamesAreDeduplicated(t *testing.T)
 	var names []string
 	seen := map[string]bool{}
 	for _, item := range auxKwargMaps(kwargs["tools"]) {
-		fn, _ := item["function"].(map[string]any)
+		fn, _ := pyjson.Dict(item["function"])
 		name := pyStr(fn["name"])
 		if seen[name] {
 			t.Fatalf("Duplicate tool names found: %v", kwargs["tools"])

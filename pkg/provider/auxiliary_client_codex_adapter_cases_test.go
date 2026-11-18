@@ -8,6 +8,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 )
 
 // Responses client answering create with the scripted events or completed response and recording the kwargs
@@ -433,8 +435,8 @@ func TestCodexAuxiliaryAdapterReservedToolAliasesCreateMapsAliasesBackAndNeverSe
 	}
 	_, message := auxChoiceMessage(t, out)
 	var called []string
-	for _, tc := range auxKwargMaps(message["tool_calls"]) {
-		fn, _ := tc["function"].(map[string]any)
+	for _, tc := range auxKwargMaps(pyjson.Plain(message["tool_calls"])) {
+		fn, _ := pyjson.Dict(tc["function"])
 		called = append(called, pyStr(fn["name"]))
 	}
 	if !reflect.DeepEqual(called, []string{"search_files"}) {

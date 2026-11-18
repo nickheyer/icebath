@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/home"
+	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
@@ -148,7 +149,7 @@ func TestRetainDBClientAddMemoryTriesFallback(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got.(map[string]any)["id"] != "mem-1" {
+	if got, _ := pyjson.Dict(got); got["id"] != "mem-1" {
 		t.Fatalf("result %v", got)
 	}
 	reqs := srv.seen()
@@ -172,7 +173,7 @@ func TestRetainDBClientDeleteMemoryTriesFallback(t *testing.T) {
 	})
 	c := newRetainDBClient("k", srv.URL, "p")
 	got, err := c.deleteMemory(context.Background(), "mem 123/x")
-	if err != nil || got.(map[string]any)["deleted"] != true {
+	if deleted, _ := pyjson.Dict(got); err != nil || deleted["deleted"] != true {
 		t.Fatalf("delete %v %v", got, err)
 	}
 	reqs := srv.seen()
@@ -509,7 +510,7 @@ func TestRetainDBUploadFileAllowsRegularFile(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	result := got.(map[string]any)
+	result := pyjson.Plain(got).(map[string]any)
 	if result["file"].(map[string]any)["id"] != "file-1" || result["ingest"].(map[string]any)["ingested"] != true {
 		t.Fatalf("result %v", result)
 	}

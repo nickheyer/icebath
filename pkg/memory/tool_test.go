@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/nickheyer/icebath/pkg/config"
+	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
 
@@ -549,7 +550,7 @@ func registryCall(t *testing.T, s *Store, args map[string]any) map[string]any {
 }
 
 func TestMemorySchemaHasNoForbiddenTopLevelCombinators(t *testing.T) {
-	params := MemorySchema().Vals["parameters"].(map[string]any)
+	params := pyjson.Plain(MemorySchema().Vals["parameters"]).(map[string]any)
 	for _, key := range []string{"allOf", "anyOf", "oneOf", "enum", "not"} {
 		if _, has := params[key]; has {
 			t.Fatalf("top level %s", key)
@@ -558,7 +559,7 @@ func TestMemorySchemaHasNoForbiddenTopLevelCombinators(t *testing.T) {
 }
 
 func TestMemorySchemaAdvertisesEachFieldOnceAndLegacyShapesStillWrite(t *testing.T) {
-	params := MemorySchema().Vals["parameters"].(map[string]any)
+	params := pyjson.Plain(MemorySchema().Vals["parameters"]).(map[string]any)
 	props := params["properties"].(map[string]any)
 	if len(props) != 2 || props["target"] == nil || props["operations"] == nil {
 		t.Fatal(props)
@@ -670,7 +671,7 @@ func writeMemoryConfig(t *testing.T, env *tools.Env, memoryEnabled, userEnabled 
 // Memory tool definition from one quiet registry definition pass, nil when the check hides it
 func memoryDefinition(t *testing.T, env *tools.Env) map[string]any {
 	for _, td := range tools.Default.Definitions(t.Context(), env, map[string]bool{"memory": true}, true) {
-		if fn, _ := td["function"].(map[string]any); fn["name"] == "memory" {
+		if fn, _ := pyjson.Plain(td["function"]).(map[string]any); fn["name"] == "memory" {
 			return fn
 		}
 	}
@@ -678,7 +679,7 @@ func memoryDefinition(t *testing.T, env *tools.Env) map[string]any {
 }
 
 func targetEnum(def map[string]any) []any {
-	return def["parameters"].(map[string]any)["properties"].(map[string]any)["target"].(map[string]any)["enum"].([]any)
+	return pyjson.Plain(def["parameters"]).(map[string]any)["properties"].(map[string]any)["target"].(map[string]any)["enum"].([]any)
 }
 
 func TestBuiltinMemoryToolHiddenWhenBothStoresDisabled(t *testing.T) {

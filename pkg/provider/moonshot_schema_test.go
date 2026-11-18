@@ -62,7 +62,7 @@ func TestConditionalSchemaNotGivenSyntheticTypeIfThenNodeIsNotGivenSyntheticType
 			map[string]any{"required": []any{"goal"}, "not": map[string]any{"required": []any{"prompt"}}}},
 		"allOf": []any{map[string]any{"if": map[string]any{"required": []any{"goal"}},
 			"then": map[string]any{"properties": map[string]any{"mode": map[string]any{"enum": []any{"build", "edit"}}}}}}})
-	conditional := out.Vals["allOf"].([]any)[0].(map[string]any)
+	conditional := pyjson.Plain(out.Vals["allOf"]).([]any)[0].(map[string]any)
 	if _, has := conditional["type"]; has {
 		t.Fatalf("conditional typed %v", conditional)
 	}
@@ -103,7 +103,7 @@ func TestAnyOfParentTypeAnyofEnumWithNullCollapsed(t *testing.T) {
 func TestTopLevelGuaranteesNonDictInputReturnsEmptyObject(t *testing.T) {
 	empty := map[string]any{"type": "object", "properties": map[string]any{}, "required": []any{}}
 	for _, in := range []any{nil, "garbage", []any{}} {
-		if got := sanitizeMoonshotToolParameters(in); !reflect.DeepEqual(got, empty) {
+		if got := sanitizeMoonshotToolParameters(in); !reflect.DeepEqual(pyjson.Plain(got), empty) {
 			t.Fatalf("%v -> %v", in, got)
 		}
 	}
@@ -150,11 +150,11 @@ func TestToolListSanitizerAppliesPerTool(t *testing.T) {
 			"parameters": map[string]any{"type": "object", "properties": map[string]any{}}}},
 	}
 	out := sanitizeMoonshotTools(tools)
-	first := out[0]["function"].(map[string]any)["parameters"].(map[string]any)
+	first := pyjson.Plain(out[0]["function"]).(map[string]any)["parameters"].(map[string]any)
 	if got := moonshotProps(t, first, "q")["type"]; got != "string" {
 		t.Fatalf("first tool q type %v", got)
 	}
-	second := out[1]["function"].(map[string]any)["parameters"]
+	second := pyjson.Plain(out[1]["function"]).(map[string]any)["parameters"]
 	if !reflect.DeepEqual(second, map[string]any{"type": "object", "properties": map[string]any{}, "required": []any{}}) {
 		t.Fatalf("second tool parameters %v", second)
 	}

@@ -279,26 +279,40 @@ func carrierStripFunctionSignature(toolCalls []any) []any {
 	out := make([]any, len(toolCalls))
 	for i, tc := range toolCalls {
 		out[i] = tc
-		m, ok := tc.(map[string]any)
+		call, ok := pyjson.Dict(tc)
 		if !ok {
 			continue
 		}
-		fn, ok := pyjson.Dict(m["function"])
+		fn, ok := pyjson.Dict(call["function"])
 		if !ok {
 			continue
 		}
 		if _, has := fn["thought_signature"]; !has {
 			continue
 		}
-		cp := make(map[string]any, len(m))
-		for k, v := range m {
-			cp[k] = v
-		}
-		stripped := make(map[string]any, len(fn))
-		for k, v := range fn {
-			if k != "thought_signature" {
-				stripped[k] = v
+		var stripped any
+		if o, ordered := call["function"].(*pyjson.Object); ordered {
+			cp := o.Copy()
+			cp.Delete("thought_signature")
+			stripped = cp
+		} else {
+			cp := make(map[string]any, len(fn))
+			for k, v := range fn {
+				if k != "thought_signature" {
+					cp[k] = v
+				}
 			}
+			stripped = cp
+		}
+		if o, ordered := tc.(*pyjson.Object); ordered {
+			cp := o.Copy()
+			cp.Set("function", stripped)
+			out[i] = cp
+			continue
+		}
+		cp := make(map[string]any, len(call))
+		for k, v := range call {
+			cp[k] = v
 		}
 		cp["function"] = stripped
 		out[i] = cp

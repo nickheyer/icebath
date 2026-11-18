@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/home"
+	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
 
@@ -232,7 +233,8 @@ func TestCheckFnVerdictOfOneServerDoesNotShadowAnotherInTheSameProfile(t *testin
 	both := map[string]bool{"mcp__gone__t": true, "mcp__live__t": true}
 	var got []string
 	for _, d := range tools.Default.Definitions(ctx, env, both, true) {
-		got = append(got, d["function"].(map[string]any)["name"].(string))
+		fn, _ := pyjson.Dict(d["function"])
+		got = append(got, fn["name"].(string))
 	}
 	if !slices.Equal(got, []string{"mcp__live__t"}) {
 		t.Fatalf("one pass over both servers exposed %v", got)

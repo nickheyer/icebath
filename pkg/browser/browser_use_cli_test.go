@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/nickheyer/icebath/pkg/config"
+	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
 
@@ -13,7 +14,7 @@ func browserEnv(section map[string]any) *tools.Env {
 }
 
 func staticExecProps() map[string]any {
-	return BrowserExecSchema().Vals["parameters"].(map[string]any)["properties"].(map[string]any)
+	return pyjson.Plain(BrowserExecSchema().Vals["parameters"]).(map[string]any)["properties"].(map[string]any)
 }
 
 // test_browser_real_profile.py TestBrowserExecSchemaGating test_local_arg_absent_without_consent
@@ -30,7 +31,7 @@ func TestExecSchemaLocalArgAbsentWithoutConsent(t *testing.T) {
 // test_browser_real_profile.py TestBrowserExecSchemaGating test_local_arg_present_with_consent
 func TestExecSchemaLocalArgPresentWithConsent(t *testing.T) {
 	overrides := BrowserExecSchemaOverrides(browserEnv(map[string]any{"use_real_profile": true}))
-	params := overrides.Vals["parameters"].(map[string]any)
+	params := pyjson.Plain(overrides.Vals["parameters"]).(map[string]any)
 	local, ok := params["properties"].(map[string]any)["local"].(map[string]any)
 	if !ok || local["type"] != "boolean" || local["default"] != false {
 		t.Fatalf("local %v", local)
@@ -81,10 +82,10 @@ func TestBrowserToolsRegistered(t *testing.T) {
 	if tools.Default.Get("browser_exec").DynamicSchema == nil || tools.Default.Get("browser_cdp").DynamicSchema != nil {
 		t.Fatal("only browser_exec tailors its schema per session")
 	}
-	if required := BrowserExecSchema().Vals["parameters"].(map[string]any)["required"].([]any); len(required) != 1 || required[0] != "code" {
+	if required := pyjson.Plain(BrowserExecSchema().Vals["parameters"]).(map[string]any)["required"].([]any); len(required) != 1 || required[0] != "code" {
 		t.Fatalf("exec schema requires %v", required)
 	}
-	if BrowserCDPSchema().Vals["parameters"].(map[string]any)["required"].([]any)[0] != "method" {
+	if pyjson.Plain(BrowserCDPSchema().Vals["parameters"]).(map[string]any)["required"].([]any)[0] != "method" {
 		t.Fatal("cdp schema required")
 	}
 }
@@ -94,7 +95,7 @@ func TestBrowserExecSchemaCarriesTheReferenceWording(t *testing.T) {
 	if desc, _ := schema.Vals["description"].(string); !strings.HasPrefix(desc, "Drive a real browser for JS pages, logins, forms and clicks (Browser Use CLI). ") {
 		t.Fatalf("description %q", desc[:80])
 	}
-	session := schema.Vals["parameters"].(map[string]any)["properties"].(map[string]any)["session"].(map[string]any)
+	session := pyjson.Plain(schema.Vals["parameters"]).(map[string]any)["properties"].(map[string]any)["session"].(map[string]any)
 	if session["description"] != "Named isolated browser session — its own daemon and (on cloud backends) own browser, so concurrent tasks don't share tabs. Reuse the same name on every related call; omit for the shared default session." {
 		t.Fatalf("session %q", session["description"])
 	}

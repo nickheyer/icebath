@@ -12,13 +12,13 @@ import (
 	"net/url"
 	"os"
 	"path"
-	"reflect"
 	"regexp"
 	"strings"
 
 	_ "golang.org/x/image/bmp"
 	_ "golang.org/x/image/webp"
 
+	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
 
@@ -484,11 +484,11 @@ func contentDualEmitsStructured(result *CallToolResult, structured any) bool {
 		if blk == nil || blk.Text == "" {
 			continue
 		}
-		var parsed any
-		if err := json.Unmarshal([]byte(blk.Text), &parsed); err != nil {
+		parsed, err := pyjson.Loads(blk.Text)
+		if err != nil {
 			continue
 		}
-		if reflect.DeepEqual(parsed, structured) {
+		if pyjson.Equal(parsed, structured) {
 			return true
 		}
 	}

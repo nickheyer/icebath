@@ -451,6 +451,22 @@ func neutralizeHarmonyStructure(value any) (any, error) {
 			out[k] = v
 		}
 		return out, nil
+	case *pyjson.Object:
+		if t == nil {
+			return value, nil
+		}
+		out := pyjson.NewObject()
+		for _, k := range t.Keys {
+			if neutralizeHarmonyTokens(k) != k {
+				return nil, errHarmonyKey
+			}
+			v, err := neutralizeHarmonyStructure(t.Vals[k])
+			if err != nil {
+				return nil, err
+			}
+			out.Set(k, v)
+		}
+		return out, nil
 	}
 	return value, nil
 }
@@ -2580,12 +2596,20 @@ func MergeInterimReasoningItems(prior, newer []map[string]any) []map[string]any 
 	return append(kept, out...)
 }
 
-// Walks every nested object of a schema value
-func codexSchemaNodes(v any, fn func(map[string]any)) {
+// Hands the enum keyword and its remover of every nested object of a schema value to fn
+func codexSchemaNodes(v any, fn func(enum any, drop func())) {
 	switch t := v.(type) {
 	case map[string]any:
-		fn(t)
+		fn(t["enum"], func() { delete(t, "enum") })
 		for _, child := range t {
+			codexSchemaNodes(child, fn)
+		}
+	case *pyjson.Object:
+		if t == nil {
+			return
+		}
+		fn(t.Vals["enum"], func() { t.Delete("enum") })
+		for _, child := range t.Vals {
 			codexSchemaNodes(child, fn)
 		}
 	case []any:
@@ -2608,18 +2632,16 @@ func codexStripSlashEnum(toolList []map[string]any) []map[string]any {
 		for k, v := range tool {
 			cp[k] = v
 		}
-		if params, ok := cp["parameters"].(map[string]any); ok {
-			var clone any
-			raw, _ := json.Marshal(params)
-			_ = json.Unmarshal(raw, &clone)
-			codexSchemaNodes(clone, func(node map[string]any) {
-				enum, ok := node["enum"].([]any)
+		if _, isDict := pyjson.Dict(cp["parameters"]); isDict {
+			clone := pyjson.Clone(cp["parameters"])
+			codexSchemaNodes(clone, func(rawEnum any, drop func()) {
+				enum, ok := rawEnum.([]any)
 				if !ok {
 					return
 				}
 				for _, v := range enum {
 					if s, ok := v.(string); ok && strings.Contains(s, "/") {
-						delete(node, "enum")
+						drop()
 						stripped++
 						return
 					}
